@@ -1,4 +1,4 @@
-export const DATA_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-schduler/data/schedule.json";
+export const DATA_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/schedule.json";
 // For local development, temporarily comment out the line above and uncomment:
 // export const DATA_URL = "../../fixtures/schedule.sample.json";
 

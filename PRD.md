@@ -1,8 +1,8 @@
-# PRD — 夢限大みゅーたいぷ 방송 예고 스케줄러 (mewtype-schduler)
+# PRD — 夢限大みゅーたいぷ 방송 예고 스케줄러 (mewtype-scheduler)
 
 > 작성일: 2026-08-30
 > 근거 인터뷰: `INTERVIEW.md`, `INTERVIEW_2nd.md`, `INTERVIEW_3rd.md`
-> 레포: https://github.com/sbb2002/mewtype-schduler
+> 레포: https://github.com/sbb2002/mewtype-scheduler
 
 ---
 

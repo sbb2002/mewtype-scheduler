@@ -15,7 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 저장소 구조
 
 이 `mewtype-scheduler/` 폴더는 상위 `pyworks` 저장소 안에 **중첩된 별도 git 저장소**다
-(`origin` = `github.com/sbb2002/mewtype-schduler` — 원격 레포명에 'e' 없음). 상위 `pyworks`와 무관하게 취급.
+(`origin` = `github.com/sbb2002/mewtype-scheduler`). 상위 `pyworks`와 무관하게 취급.
+(2026-08-30: 레포명 오타 `mewtype-schduler` → `mewtype-scheduler` 로 변경됨. 옛 raw URL은 404됨)
 
 ```
 src/

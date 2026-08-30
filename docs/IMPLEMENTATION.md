@@ -226,7 +226,7 @@ mewtype-scheduler/
   - 다크 단일 테마 권장(자유). 색은 CSS 변수로.
 - **js/config.js**: 상수만 export.
   ```js
-  export const DATA_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-schduler/data/schedule.json";
+  export const DATA_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/schedule.json";
   export const POLL_MS = 75000;
   export const COUNTDOWN_TICK_MS = 60000;
   export const FETCH_TIMEOUT_MS = 8000;
