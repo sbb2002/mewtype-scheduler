@@ -1,0 +1,48 @@
+{
+  "broadcasts": [],
+  "channel_order": [
+    "arale",
+    "yuno",
+    "nonoka",
+    "ritsu",
+    "miyako"
+  ],
+  "channels": {
+    "arale": {
+      "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g",
+      "channel_url": "https://www.youtube.com/@arale_yumemita",
+      "handle": "arale_yumemita",
+      "name": "仲町あられ -Nakamachi Arale-",
+      "name_ko": "나카마치 아라레"
+    },
+    "miyako": {
+      "channel_id": "UCZXxRYaP7mfuglPnptnBBCA",
+      "channel_url": "https://www.youtube.com/@miyako_yumemita",
+      "handle": "miyako_yumemita",
+      "name": "藤都子 -Fuji Miyako-",
+      "name_ko": "후지 미야코"
+    },
+    "nonoka": {
+      "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A",
+      "channel_url": "https://www.youtube.com/@nonoka_yumemita",
+      "handle": "nonoka_yumemita",
+      "name": "宮永ののか -Miyanaga Nonoka-",
+      "name_ko": "미야나가 노노카"
+    },
+    "ritsu": {
+      "channel_id": "UCxc0MrPoACKTFlV24GqX2sg",
+      "channel_url": "https://www.youtube.com/@ritsu_yumemita",
+      "handle": "ritsu_yumemita",
+      "name": "峰月律 -Minetsuki Ritsu-",
+      "name_ko": "미네츠키 리츠"
+    },
+    "yuno": {
+      "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw",
+      "channel_url": "https://www.youtube.com/@yuno_yumemita",
+      "handle": "yuno_yumemita",
+      "name": "千石ユノ -Sengoku Yuno-",
+      "name_ko": "센고쿠 유노"
+    }
+  },
+  "generated_at": null
+}
