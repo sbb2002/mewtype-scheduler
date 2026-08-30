@@ -218,11 +218,14 @@ mewtype-scheduler/
   - `.lane`: 세로 flex, 상단 헤더 sticky 선택.
   - `.lane__header`: 방송인명. `.lane__name-ko` 강조, `.lane__name-orig` 작게 1줄 말줄임.
   - `#foot`: 하단 고정 바, 작은 글씨.
-- **css/card.css**:
-  - `.card`: 가로 레이아웃(썸네일 좌 + 본문 우) 또는 세로(썸네일 위). 시안상 세로 권장. 링크 hover 상태.
-  - `.card__thumb-wrap`: 16:9 비율 유지(`aspect-ratio:16/9; position:relative`).
+- **css/card.css** (mobile `@media` 블록은 파일 끝 — layout.css 뒤 로드라 기본 규칙을 확실히 덮음):
+  - PC: `.card`는 **고정 세로 크기 `--card-h`**(썸네일 132px + 본문). 폭 = 레인 컬럼. 세로 레이아웃.
+    모바일(`<768px`): 가로 레이아웃(작은 썸네일 좌 42%/최대150px + 텍스트 우), `height:auto`.
+  - `.card__thumb-wrap`: PC 고정 `height:132px` + `object-fit:cover`. 모바일은 `aspect-ratio:16/9`.
   - `.card__badge--live`: 우상단 절대배치, 빨강 배경 + "LIVE" 텍스트(색만으로 구분 금지).
-  - `.card__title`: 2줄 말줄임(`-webkit-line-clamp:2`).
+  - `.card__title`: PC 1줄(`white-space:nowrap`). 넘치면 `render.js`의 `applyMarquees()`가
+    `.card__title--marquee` + `.card__title-track`(텍스트 2벌)로 바꿔 무한 흐름(속도는 길이 비례,
+    hover 시 정지, `prefers-reduced-motion` 존중). 모바일은 2줄 클램프(줄바꿈이라 marquee 안 걸림).
   - `.card--live`: 테두리/배경 강조.
   - `.lane__empty`: 흐린 안내 텍스트, 중앙.
   - `.card__thumb--broken`: 회색 플레이스홀더 배경(이미지 숨김).

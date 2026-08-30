@@ -277,8 +277,35 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
     sampleLaneColor(avatarSized(channelData.avatar, 88), lane);
   }
 
+  applyMarquees(boardEl);          // 클론 전에 — 캐러셀 클론이 marquee 마크업까지 복제
   carouselBoard = boardEl;
   initMobileCarousel(boardEl);
+}
+
+/* 제목이 카드 폭을 넘치면 흐르는 marquee 로 전환 (PC). 줄바꿈되는 모바일은
+   scrollWidth ≈ clientWidth 라 자동으로 건너뜀. */
+function applyMarquees(boardEl) {
+  for (const t of boardEl.querySelectorAll(".card__title")) {
+    if (t.classList.contains("card__title--marquee")) continue;
+    if (t.scrollWidth - t.clientWidth <= 4) continue;   // 넘치지 않으면 그대로
+
+    const text = t.textContent;
+    t.textContent = "";
+    const track = document.createElement("span");
+    track.className = "card__title-track";
+    const a = document.createElement("span");
+    a.textContent = text;
+    const b = document.createElement("span");
+    b.textContent = text;
+    b.setAttribute("aria-hidden", "true");
+    track.append(a, b);
+    t.appendChild(track);
+    t.classList.add("card__title--marquee");
+
+    // 한 벌 폭(+ padding-right 2.5rem ≈ 40px) 기준 ~55px/s 로 흐르게 → 길수록 오래
+    const copyW = a.getBoundingClientRect().width + 40;
+    t.style.setProperty("--marquee-dur", `${Math.max(6, Math.round(copyW / 55))}s`);
+  }
 }
 
 /* ─── 모바일 캐러셀 (방송인 1명씩 가로 스와이프 · 5명 무한 회전) ───────────
