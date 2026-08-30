@@ -247,8 +247,9 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
   }
 
   for (const key of channelOrder) {
-    const channelData = channels[key];
-    if (!channelData) continue;
+    // schedule.json 에 빠진 필드(예: 아직 수집 안 된 avatar)는 폴백으로 필드 단위 보강
+    const channelData = { ...(FALLBACK_CHANNELS[key] || {}), ...(channels[key] || {}) };
+    if (!channelData.name && !channelData.name_ko) continue;
 
     const lane = document.createElement("section");
     lane.className = "lane";
