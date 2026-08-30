@@ -283,6 +283,8 @@ body {
   :root {
     --m-pad: 1rem;     /* 화면 가장자리 패딩 (PC 최소 패딩과 동일) */
     --m-peek: 26px;    /* 스냅된 상태에서 옆 유닛이 보이는 폭 */
+    --m-foot: 45px;    /* 하단 고정 푸터 높이 */
+    --m-dots: 44px;    /* 페이지 인디케이터 띠 — 콘텐츠 하단과 푸터 사이 여백 */
   }
 
   #board {
@@ -295,8 +297,8 @@ body {
     margin: 0;
     min-height: 0;
     gap: var(--gap);
-    /* 좌우 패딩(가장자리 여백) + 위/아래 패딩 유지 */
-    padding: var(--gap) calc(var(--m-pad) + var(--m-peek)) 90px;
+    /* 좌우 패딩(가장자리 여백). 하단은 .lane 높이로 제어(도트 띠 + 푸터 공간 확보) */
+    padding: var(--gap) calc(var(--m-pad) + var(--m-peek)) 0;
     scroll-padding-inline: calc(var(--m-pad) + var(--m-peek));
     overflow-x: auto;
     overflow-y: visible;
@@ -311,7 +313,7 @@ body {
     flex: 0 0 calc(100vw - 2 * var(--m-pad) - 2 * var(--m-peek));
     scroll-snap-align: start;
     scroll-snap-stop: always;                         /* 한 번에 한 유닛씩만 (통과 방지) */
-    height: calc(100dvh - 118px);
+    height: calc(100dvh - var(--gap) - var(--m-dots) - var(--m-foot));
     overflow-y: auto;
   }
   .lane__header { position: sticky; top: 0; }
@@ -323,17 +325,17 @@ body {
   .lane__bucket { flex: none; }
   .lane__bucket-list { flex: none; max-height: none; }
 
-  /* 페이지 인디케이터 — 방송인 캐릭터 색 동그라미, 현재 위치는 크게 */
+  /* 페이지 인디케이터 — 콘텐츠 하단과 푸터 사이 띠의 세로 중앙에 배치 */
   #pager-dots {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 42px;
+    bottom: var(--m-foot);        /* 푸터 바로 위 */
+    height: var(--m-dots);        /* 콘텐츠 하단 ~ 푸터 상단 사이 공간 */
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: center;          /* 그 공간의 정중앙 */
     gap: 10px;
-    padding: 8px;
     z-index: 25;
   }
   #pager-dots .dot {
