@@ -6,6 +6,7 @@
   --color-border: #333333;
   --color-live: #ff0000;
   --color-live-text: #ffffff;
+  --color-late: #e0a030;         /* 예정 시각 지남(라이브 전환 미확인) 경고색 */
   --gap: 1rem;
   --lane-min-width: 240px;
   --lane-max-width: 280px;      /* PC에서 레인이 이 이상 넓어지지 않음 */

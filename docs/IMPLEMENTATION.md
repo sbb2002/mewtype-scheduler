@@ -176,7 +176,7 @@ mewtype-scheduler/
     <p class="card__title">{title}</p>
     <p class="card__meta">
       <time class="card__time" datetime="{scheduled_start ISO}">08/31 20:00</time>
-      <span class="card__rel">3시간 후</span>   <!-- live면 "방송 중" -->
+      <span class="card__rel">3시간 후</span>   <!-- live면 "방송 중", 예정 시각 지남(live 미확인)이면 class="card__rel card__rel--late" + "n분 지각" -->
     </p>
   </div>
 </a>
@@ -192,10 +192,13 @@ mewtype-scheduler/
 - `relativeLabel(iso, nowMs)`:
   | 조건 (start - now) | 출력 |
   |---|---|
-  | < 60초 (지난 것 포함) | `"곧 시작"` |
+  | < 0 (예정 시각을 이미 지남, 아직 upcoming=live 전환 미확인) | `"{n}분 지각"` / `"{h}시간 {m}분 지각"` (최소 1분) |
+  | < 60초 | `"곧 시작"` |
   | < 24시간 | `"{h}시간 {m}분 남음"` (h==0: `"{m}분 남음"`, m==0: `"{h}시간 남음"`) — '오늘' 구간 카운트다운 |
   | < 7일 | `"{n}일 후"` (올림, 최소 1) |
   | ≥ 7일 | `formatKST(iso)` 그대로 |
+- `isLate(iso, nowMs)`: `scheduled_start`가 지났는지 여부(boolean). `render.js`가 `.card__rel--late`
+  토글에 사용 — 지각 중인 카드는 `--color-late`(주황) 로 강조.
 - 라이브 카드의 상대 라벨은 render.js가 `"방송 중"`으로 고정(‑> time.js 호출 안 함).
 - `.card__rel` 텍스트는 `updateCountdowns()`가 **1분마다 사용자 장치 시계 기준**으로 갱신
   (`main.js`의 `COUNTDOWN_TICK_MS`). 시간이 흘러 카드가 다른 시간대 구간으로

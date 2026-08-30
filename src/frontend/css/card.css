@@ -140,6 +140,12 @@
   font-weight: 600;
 }
 
+/* 예정 시각이 지났는데 아직 live 전환이 확인 안 된 경우 ("n분 지각") */
+.card__rel--late {
+  color: var(--color-late, #e0a030);
+  font-weight: 600;
+}
+
 /* ── 모바일: 가로 카드 (작은 썸네일 좌 + 텍스트 우) ──────────────
    card.css 는 layout.css 뒤에 로드되므로 이 @media 를 여기 파일 끝에 둬야
    기본 .card 규칙을 확실히 덮는다. */

@@ -1,4 +1,4 @@
-import { formatKST, relativeLabel } from "./time.js";
+import { formatKST, relativeLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 
 const DAY_MS = 86400000;
@@ -107,6 +107,8 @@ function createCard(broadcast, nowMs) {
     relSpan.textContent = "방송 중";
   } else if (broadcast.scheduled_start) {
     relSpan.textContent = relativeLabel(broadcast.scheduled_start, nowMs);
+    // 예정 시각이 지났는데 아직 upcoming(=live 전환 미확인)이면 "지각" 스타일 표시
+    relSpan.classList.toggle("card__rel--late", isLate(broadcast.scheduled_start, nowMs));
   } else {
     relSpan.textContent = "곧 시작";
   }
@@ -472,6 +474,7 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
     const timeEl = cardEl.querySelector(".card__time");
     if (!relSpan || !timeEl || !timeEl.dateTime) continue;
     relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
+    relSpan.classList.toggle("card__rel--late", isLate(timeEl.dateTime, nowMs));
     // 시간이 흘러 다른 구간(예: 7일 이내 → 오늘)에 속하게 됐으면 재렌더 필요
     const cur = cardEl.closest(".lane__bucket")?.dataset.bucket;
     if (cur && bucketKey({ scheduled_start: timeEl.dateTime }, nowMs) !== cur) {
