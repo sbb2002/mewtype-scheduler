@@ -6,6 +6,7 @@ const board = document.getElementById("board");
 const foot = document.getElementById("foot");
 
 let lastSchedule = null;
+let lastJSON = null;   // 내용이 안 바뀌면 renderBoard 생략 (모바일 캐러셀 위치 보존)
 
 /**
  * Poll for new schedule data and update UI
@@ -16,7 +17,11 @@ async function poll() {
   if (result.ok) {
     // Success: update with new data
     lastSchedule = result.data;
-    renderBoard(board, lastSchedule);
+    const j = JSON.stringify(result.data);
+    if (j !== lastJSON) {
+      lastJSON = j;
+      renderBoard(board, lastSchedule);
+    }
     renderFooter(foot, lastSchedule, { stale: false });
   } else {
     // Failure

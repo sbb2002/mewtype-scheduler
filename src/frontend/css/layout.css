@@ -276,23 +276,43 @@ body {
   display: none;
 }
 
-/* Responsive: <1100px — 방송인 5명을 세로로 쌓고 각 레인을 화면 폭 전체로.
-   레인/라이브/버킷 고정 높이 해제 → 내용만큼만. 카드는 세로 리스트(데스크톱과 동일),
-   아래로 스크롤하면 5명 모두 보임. */
+#pager-dots[hidden] { display: none; }
+
+/* Responsive: <1100px — 방송인 1명이 화면을 채우고, 가로 스와이프로 한 명씩 이동.
+   render.js 가 앞뒤에 클론 레인을 넣어 5명이 무한 회전. 하단 도트로 현재 위치 표시. */
 @media (max-width: 1099px) {
   #board {
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: start;
     grid-template-columns: none;
-    max-width: 560px;
-    overflow-x: visible;
-    padding: 0.75rem 0.75rem 72px;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: auto;         /* 무한회전 순간이동이 애니메이션 되지 않도록 */
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #board::-webkit-scrollbar { display: none; }
+
+  .lane {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    height: calc(100dvh - 92px);   /* footer + 도트 영역 확보 */
+    overflow-y: auto;
+    border-radius: 0;
+    border-inline: none;
+  }
+  .lane__header {
+    position: sticky;
+    top: 0;
   }
 
-  .lane { height: auto; }               /* 955px 고정 해제 */
-
-  /* 라이브 영역 — 내용만큼 (OFF-AIR는 한 줄) */
   .lane__live {
     height: auto;
     margin: 0.75rem;
@@ -300,11 +320,33 @@ body {
   }
   .lane__live[data-state="off"] { min-height: 56px; }
 
-  /* 예고 3구간 — 세로로 쌓되 각 구간 높이는 내용만큼, 아주 길면 그 구간만 스크롤 */
   .lane__buckets { height: auto; padding: 0 0.75rem 0.75rem; }
   .lane__bucket { flex: none; }
-  .lane__bucket-list {
-    flex: none;
-    max-height: 66vh;
+  .lane__bucket-list { flex: none; max-height: none; }
+
+  /* 페이지 인디케이터 (5개, 무한 회전이라 현재 방송인 강조만) */
+  #pager-dots {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 42px;                  /* footer 바로 위 */
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
+    z-index: 25;
+  }
+  #pager-dots .dot {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--color-border);
+    transition: background 0.15s, transform 0.15s;
+  }
+  #pager-dots .dot--on {
+    background: var(--color-text);
+    transform: scale(1.35);
   }
 }

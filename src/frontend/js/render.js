@@ -25,7 +25,13 @@ function sampleLaneColor(url, laneEl) {
       const d = ctx.getImageData(0, 0, 16, 16).data;
       let r = 0, g = 0, b = 0, n = 0;
       for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-      laneEl.style.setProperty("--lane-color", `rgb(${(r / n) | 0} ${(g / n) | 0} ${(b / n) | 0})`);
+      const rgb = `rgb(${(r / n) | 0} ${(g / n) | 0} ${(b / n) | 0})`;
+      // 모바일 캐러셀 클론까지 함께 반영 (같은 data-channel 전부)
+      const key = laneEl.dataset.channel;
+      const targets = key
+        ? document.querySelectorAll(`#board .lane[data-channel="${CSS.escape(key)}"]`)
+        : [laneEl];
+      targets.forEach((el) => el.style.setProperty("--lane-color", rgb));
     } catch {
       /* tainted canvas — 폴백색 유지 */
     }
@@ -267,6 +273,106 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
     boardEl.appendChild(lane);
     sampleLaneColor(avatarSized(channelData.avatar, 88), lane);
   }
+
+  carouselBoard = boardEl;
+  initMobileCarousel(boardEl);
+}
+
+/* ─── 모바일 캐러셀 (방송인 1명씩 가로 스와이프 · 5명 무한 회전) ───────────
+   데스크톱(>1099px)에서는 클론/도트 없이 원래 그리드. */
+
+let activeIdx = 0;                 // 마지막으로 보던 방송인 (재렌더/회전 넘어가도 유지)
+let carouselBoard = null;
+const mqlMobile = window.matchMedia("(max-width: 1099px)");
+mqlMobile.addEventListener("change", () => {
+  if (carouselBoard) initMobileCarousel(carouselBoard);
+});
+
+function clearCarousel(boardEl) {
+  boardEl.querySelectorAll(".lane--clone").forEach((n) => n.remove());
+  boardEl.classList.remove("board--carousel");
+  if (boardEl._carouselCleanup) { boardEl._carouselCleanup(); boardEl._carouselCleanup = null; }
+  const dots = document.getElementById("pager-dots");
+  if (dots) { dots.innerHTML = ""; dots.hidden = true; }
+}
+
+function initMobileCarousel(boardEl) {
+  clearCarousel(boardEl);
+  if (!mqlMobile.matches) return;
+
+  const reals = [...boardEl.querySelectorAll(".lane")];
+  const n = reals.length;
+  if (n < 2) return;
+
+  boardEl.classList.add("board--carousel");
+
+  // 앞뒤에 클론 1개씩 → 끝에서 반대편으로 순간이동해 무한 회전
+  const headClone = reals[n - 1].cloneNode(true);   // 맨 앞에 '마지막' 방송인
+  const tailClone = reals[0].cloneNode(true);       // 맨 뒤에 '처음' 방송인
+  for (const c of [headClone, tailClone]) {
+    c.classList.add("lane--clone");
+    c.setAttribute("aria-hidden", "true");
+  }
+  boardEl.insertBefore(headClone, reals[0]);
+  boardEl.appendChild(tailClone);
+
+  const slideW = () => boardEl.clientWidth || 1;
+  const jumpTo = (i) => { boardEl.scrollLeft = (i + 1) * slideW(); };            // 클론 1칸 보정
+  const glideTo = (i) => boardEl.scrollTo({ left: (i + 1) * slideW(), behavior: "smooth" });
+
+  activeIdx = ((activeIdx % n) + n) % n;
+  jumpTo(activeIdx);                                   // 즉시
+  requestAnimationFrame(() => jumpTo(activeIdx));      // 레이아웃 후
+  setTimeout(() => jumpTo(activeIdx), 60);             // 스냅 보정 후 (rAF 미실행 환경 대비)
+
+  // 도트 인디케이터
+  const dots = document.getElementById("pager-dots");
+  const setActiveDot = (i) => {
+    dots?.querySelectorAll(".dot").forEach((d, di) => d.classList.toggle("dot--on", di === i));
+  };
+  if (dots) {
+    dots.hidden = false;
+    dots.innerHTML = "";
+    reals.forEach((lane, i) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "dot";
+      btn.setAttribute(
+        "aria-label",
+        (lane.querySelector(".lane__name-ko")?.textContent || `${i + 1}번`) + " 보기"
+      );
+      btn.addEventListener("click", () => glideTo(i));
+      dots.appendChild(btn);
+    });
+    setActiveDot(activeIdx);
+  }
+
+  // 스크롤: active 갱신 + 클론에 닿으면 정지 후 반대편으로 순간이동
+  let settle = null;
+  const onScroll = () => {
+    const raw = Math.round(boardEl.scrollLeft / slideW());   // 0 = headClone, n+1 = tailClone
+    let real = raw - 1;
+    if (real < 0) real = n - 1;
+    else if (real > n - 1) real = 0;
+    if (real !== activeIdx) { activeIdx = real; setActiveDot(real); }
+
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      const r = Math.round(boardEl.scrollLeft / slideW());
+      if (r <= 0) jumpTo(n - 1);
+      else if (r >= n + 1) jumpTo(0);
+    }, 100);
+  };
+  boardEl.addEventListener("scroll", onScroll, { passive: true });
+
+  const onResize = () => jumpTo(activeIdx);
+  window.addEventListener("resize", onResize);
+
+  boardEl._carouselCleanup = () => {
+    boardEl.removeEventListener("scroll", onScroll);
+    window.removeEventListener("resize", onResize);
+    clearTimeout(settle);
+  };
 }
 
 /**
