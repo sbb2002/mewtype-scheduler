@@ -8,6 +8,10 @@
   --color-live-text: #ffffff;
   --gap: 1rem;
   --lane-min-width: 240px;
+  --lane-max-width: 280px;      /* PC에서 레인이 이 이상 넓어지지 않음 */
+  --page-pad: clamp(1rem, 4vw, 3rem);  /* 가장자리 최소 패딩 */
+  /* 보드 최대 폭 = 레인5 + gap4 + 좌우 패딩(3rem*2). 이 폭에서 레인이 정확히 lane-max-width */
+  --content-max: calc(5 * var(--lane-max-width) + 4 * var(--gap) + 6rem);
 }
 
 html {
@@ -25,9 +29,11 @@ body {
 /* Main board */
 #board {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--gap);
-  padding: var(--gap);
+  max-width: var(--content-max);   /* 이 폭에서 멈춤 → 레인이 lane-max-width 이상 안 커짐 */
+  margin-inline: auto;             /* 남는 공간은 좌우 여백으로 (중앙 정렬) */
+  padding: var(--gap) var(--page-pad);
   min-height: 100vh;
   padding-bottom: 80px; /* Account for fixed footer */
 }
@@ -35,8 +41,10 @@ body {
 /* Responsive: below 1100px */
 @media (max-width: 1099px) {
   #board {
+    grid-template-columns: none;
     grid-auto-flow: column;
     grid-auto-columns: minmax(var(--lane-min-width), 1fr);
+    justify-content: start;
     overflow-x: auto;
     overflow-y: hidden;
     min-height: 100vh;
@@ -126,13 +134,19 @@ body {
   right: 0;
   background-color: var(--color-bg-secondary);
   border-top: 1px solid var(--color-border);
-  padding: 0.75rem 1rem;
   font-size: 0.85rem;
   color: var(--color-text-muted);
+  z-index: 20;
+}
+
+/* 풀블리드 배경은 유지하되 내용은 보드와 같은 폭/여백에 정렬 */
+.foot__inner {
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: 0.75rem var(--page-pad);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  z-index: 20;
 }
 
 #foot-updated {
