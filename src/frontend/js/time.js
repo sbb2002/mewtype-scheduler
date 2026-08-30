@@ -27,11 +27,15 @@ export function formatKST(iso) {
 
 const DAY_MS = 86400000;
 
+// 예정 시각을 넘겨도 5분까지는 오차 범위로 보고 "곧 시작" 유지 — 그 이상 지나야 "지각" 판정.
+const LATE_GRACE_MS = 5 * 60000;
+
 /**
  * Generate relative time label for a scheduled start time.
  * 24시간 이내면 "H시간 M분 남음"(분 단위), 그 밖은 "{n}일 후" / 날짜.
- * 예정 시각이 이미 지났는데 아직 upcoming 상태(=라이브 전환이 확인 안 됨)면
- * "{n}분/시간 지각"으로 표시 — 수집기가 다음 주기에 live 여부를 다시 확인할 때까지의 잠정 표시.
+ * 예정 시각을 LATE_GRACE_MS(5분) 넘게 지났는데 아직 upcoming 상태(=라이브 전환이
+ * 확인 안 됨)면 "{n}분/시간 지각"으로 표시 — 수집기가 다음 주기에 live 여부를
+ * 다시 확인할 때까지의 잠정 표시. 그 전(예정 시각 직전 ~ 지난 지 5분 이내)은 "곧 시작".
  * 남은 시간은 nowMs 를 넘겨주는 쪽(1분마다 갱신)이 계산 기준을 정한다.
  * @param {string} iso - ISO UTC string for scheduled_start
  * @param {number} nowMs - Current time in milliseconds (default: Date.now())
@@ -40,8 +44,8 @@ const DAY_MS = 86400000;
 export function relativeLabel(iso, nowMs = Date.now()) {
   const deltaMs = new Date(iso).getTime() - nowMs;
 
-  if (deltaMs < 0) return lateLabel(-deltaMs);  // 예정 시각을 이미 지남
-  if (deltaMs < 60000) return "곧 시작";         // 1분 미만 남음
+  if (deltaMs < -LATE_GRACE_MS) return lateLabel(-deltaMs);  // 5분 넘게 지남
+  if (deltaMs < 60000) return "곧 시작";                       // 임박 ~ 5분 지각 전
 
   const totalMin = Math.floor(deltaMs / 60000);
   const h = Math.floor(totalMin / 60);
@@ -77,10 +81,10 @@ function lateLabel(overMs) {
 }
 
 /**
- * scheduled_start가 이미 지났는지 여부 (지각 표시 스타일 토글용).
+ * scheduled_start를 LATE_GRACE_MS(5분) 넘게 지났는지 여부 (지각 표시 스타일 토글용).
  * @param {string} iso
  * @param {number} nowMs
  */
 export function isLate(iso, nowMs = Date.now()) {
-  return new Date(iso).getTime() - nowMs < 0;
+  return new Date(iso).getTime() - nowMs < -LATE_GRACE_MS;
 }
