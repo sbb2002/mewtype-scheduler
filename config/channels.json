@@ -1,0 +1,10 @@
+{
+  "channel_order": ["arale", "yuno", "nonoka", "ritsu", "miyako"],
+  "channels": {
+    "arale":  { "name": "仲町あられ -Nakamachi Arale-",  "name_ko": "나카마치 아라레",   "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g", "handle": "arale_yumemita" },
+    "yuno":   { "name": "千石ユノ -Sengoku Yuno-",        "name_ko": "센고쿠 유노",     "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw", "handle": "yuno_yumemita" },
+    "nonoka": { "name": "宮永ののか -Miyanaga Nonoka-",   "name_ko": "미야나가 노노카", "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A", "handle": "nonoka_yumemita" },
+    "ritsu":  { "name": "峰月律 -Minetsuki Ritsu-",        "name_ko": "미네츠키 리츠",   "channel_id": "UCxc0MrPoACKTFlV24GqX2sg", "handle": "ritsu_yumemita" },
+    "miyako": { "name": "藤都子 -Fuji Miyako-",            "name_ko": "후지 미야코",     "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita" }
+  }
+}

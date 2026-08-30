@@ -1,0 +1,104 @@
+{
+  "generated_at": "2026-08-30T12:00:00Z",
+  "channel_order": ["arale", "yuno", "nonoka", "ritsu", "miyako"],
+  "channels": {
+    "arale":  { "name": "仲町あられ -Nakamachi Arale-",  "name_ko": "나카마치 아라레",   "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g", "handle": "arale_yumemita",  "channel_url": "https://www.youtube.com/@arale_yumemita" },
+    "yuno":   { "name": "千石ユノ -Sengoku Yuno-",        "name_ko": "센고쿠 유노",     "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw", "handle": "yuno_yumemita",   "channel_url": "https://www.youtube.com/@yuno_yumemita" },
+    "nonoka": { "name": "宮永ののか -Miyanaga Nonoka-",   "name_ko": "미야나가 노노카", "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A", "handle": "nonoka_yumemita", "channel_url": "https://www.youtube.com/@nonoka_yumemita" },
+    "ritsu":  { "name": "峰月律 -Minetsuki Ritsu-",        "name_ko": "미네츠키 리츠",   "channel_id": "UCxc0MrPoACKTFlV24GqX2sg", "handle": "ritsu_yumemita",  "channel_url": "https://www.youtube.com/@ritsu_yumemita" },
+    "miyako": { "name": "藤都子 -Fuji Miyako-",            "name_ko": "후지 미야코",     "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita", "channel_url": "https://www.youtube.com/@miyako_yumemita" }
+  },
+  "broadcasts": [
+    {
+      "video_id": "MGVRS_MYXSw",
+      "channel_key": "arale",
+      "title": "【🟡夜間警備】後編。ホラーゲーム👻 チラズアートさん作品…怖すぎて汗とSAN値ヤバくて持ち越し…",
+      "url": "https://www.youtube.com/watch?v=MGVRS_MYXSw",
+      "thumbnail": "https://i.ytimg.com/vi/MGVRS_MYXSw/hqdefault.jpg",
+      "status": "live",
+      "scheduled_start": "2026-08-30T11:30:00Z",
+      "actual_start": "2026-08-30T11:33:12Z",
+      "concurrent_viewers": 2417,
+      "first_seen": "2026-08-30T09:00:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    },
+    {
+      "video_id": "ws0Ha2YJauc",
+      "channel_key": "arale",
+      "title": "【🟡歌枠】まったりお歌〜うたってく〜⸜🌷︎⸝‍",
+      "url": "https://www.youtube.com/watch?v=ws0Ha2YJauc",
+      "thumbnail": "https://i.ytimg.com/vi/ws0Ha2YJauc/hqdefault.jpg",
+      "status": "upcoming",
+      "scheduled_start": "2026-08-30T13:00:00Z",
+      "actual_start": null,
+      "concurrent_viewers": null,
+      "first_seen": "2026-08-29T20:00:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    },
+    {
+      "video_id": "h31Mi6AS7a0",
+      "channel_key": "arale",
+      "title": "🌟プレイガイド先行受付中🌟NAKAMACHI ARALE LIVE 2026「RESONEXT」 2026年12月24日(木) @大手町三井ホール",
+      "url": "https://www.youtube.com/watch?v=h31Mi6AS7a0",
+      "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/hqdefault.jpg",
+      "status": "upcoming",
+      "scheduled_start": "2026-09-06T10:00:00Z",
+      "actual_start": null,
+      "concurrent_viewers": null,
+      "first_seen": "2026-08-29T17:00:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    },
+    {
+      "video_id": "0qxn9UjCyYU",
+      "channel_key": "yuno",
+      "title": "【 #歌枠 】千石ユノさんの歌枠〜👆",
+      "url": "https://www.youtube.com/watch?v=0qxn9UjCyYU",
+      "thumbnail": "https://i.ytimg.com/vi/0qxn9UjCyYU/hqdefault.jpg",
+      "status": "upcoming",
+      "scheduled_start": "2026-08-30T12:20:00Z",
+      "actual_start": null,
+      "concurrent_viewers": null,
+      "first_seen": "2026-08-30T08:00:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    },
+    {
+      "video_id": "PpiAS9wzRcE",
+      "channel_key": "yuno",
+      "title": "【月に一度の】ユノの生存報告 #50",
+      "url": "https://www.youtube.com/watch?v=PpiAS9wzRcE",
+      "thumbnail": "https://i.ytimg.com/vi/PpiAS9wzRcE/hqdefault.jpg",
+      "status": "upcoming",
+      "scheduled_start": "2026-09-01T13:00:00Z",
+      "actual_start": null,
+      "concurrent_viewers": null,
+      "first_seen": "2026-08-30T08:00:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    },
+    {
+      "video_id": "abcdEFGH123",
+      "channel_key": "ritsu",
+      "title": "【朝活】おはようございます、律です",
+      "url": "https://www.youtube.com/watch?v=abcdEFGH123",
+      "thumbnail": "https://i.ytimg.com/vi/abcdEFGH123/hqdefault.jpg",
+      "status": "upcoming",
+      "scheduled_start": "2026-08-31T22:00:00Z",
+      "actual_start": null,
+      "concurrent_viewers": null,
+      "first_seen": "2026-08-30T10:00:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    },
+    {
+      "video_id": "ZYXwvu98765",
+      "channel_key": "miyako",
+      "title": "【重大告知】みんなに伝えたいことがあります",
+      "url": "https://www.youtube.com/watch?v=ZYXwvu98765",
+      "thumbnail": "https://i.ytimg.com/vi/ZYXwvu98765/hqdefault.jpg",
+      "status": "live",
+      "scheduled_start": null,
+      "actual_start": "2026-08-30T11:50:00Z",
+      "concurrent_viewers": 5893,
+      "first_seen": "2026-08-30T11:45:00Z",
+      "last_updated": "2026-08-30T12:00:00Z"
+    }
+  ]
+}

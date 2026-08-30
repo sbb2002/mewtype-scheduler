@@ -1,0 +1,1 @@
+"""mewtype-scheduler collector package."""
