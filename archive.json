@@ -1,4 +1,18 @@
 {
-  "broadcasts": [],
-  "updated_at": null
+  "broadcasts": [
+    {
+      "actual_end": "2026-08-30T13:03:11Z",
+      "actual_start": "2026-08-30T12:01:34Z",
+      "archived_at": "2026-08-30T13:06:48Z",
+      "channel_key": "ritsu",
+      "reason": "ended",
+      "scheduled_start": "2026-08-30T12:00:00Z",
+      "status": "ended",
+      "thumbnail": "https://i.ytimg.com/vi/Igx--BDE0n8/maxresdefault_live.jpg",
+      "title": "【初配信】はじめまして。クレマチスです。【峰月律/ゆめみた】#クレマチス初配信",
+      "url": "https://www.youtube.com/watch?v=Igx--BDE0n8",
+      "video_id": "Igx--BDE0n8"
+    }
+  ],
+  "updated_at": "2026-08-30T13:06:48Z"
 }
