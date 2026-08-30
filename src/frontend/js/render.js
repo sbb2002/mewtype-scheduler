@@ -26,11 +26,12 @@ function sampleLaneColor(url, laneEl) {
       let r = 0, g = 0, b = 0, n = 0;
       for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
       const rgb = `rgb(${(r / n) | 0} ${(g / n) | 0} ${(b / n) | 0})`;
-      // 모바일 캐러셀 클론까지 함께 반영 (같은 data-channel 전부)
+      // 같은 방송인의 레인(캐러셀 클론 포함) + 하단 페이지 도트에 반영
       const key = laneEl.dataset.channel;
-      const targets = key
-        ? document.querySelectorAll(`#board .lane[data-channel="${CSS.escape(key)}"]`)
-        : [laneEl];
+      const sel = key
+        ? `#board .lane[data-channel="${CSS.escape(key)}"], #pager-dots .dot[data-channel="${CSS.escape(key)}"]`
+        : null;
+      const targets = sel ? document.querySelectorAll(sel) : [laneEl];
       targets.forEach((el) => el.style.setProperty("--lane-color", rgb));
     } catch {
       /* tainted canvas — 폴백색 유지 */
@@ -368,6 +369,11 @@ function initMobileCarousel(boardEl) {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "dot";
+      const key = lane.dataset.channel;
+      if (key) btn.dataset.channel = key;
+      // 아바타 색이 이미 샘플링됐으면 그 값, 아니면 나중에 sampleLaneColor 가 채움
+      const c = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
+      if (c) btn.style.setProperty("--lane-color", c);
       btn.setAttribute(
         "aria-label",
         (lane.querySelector(".lane__name-ko")?.textContent || `${i + 1}번`) + " 보기"
