@@ -12,26 +12,31 @@ export const FALLBACK_CHANNELS = {
   arale: {
     name: "仲町あられ -Nakamachi Arale-",
     name_ko: "나카마치 아라레",
+    handle: "arale_yumemita",
     channel_url: "https://www.youtube.com/@arale_yumemita"
   },
   yuno: {
     name: "千石ユノ -Sengoku Yuno-",
     name_ko: "센고쿠 유노",
+    handle: "yuno_yumemita",
     channel_url: "https://www.youtube.com/@yuno_yumemita"
   },
   nonoka: {
     name: "宮永ののか -Miyanaga Nonoka-",
     name_ko: "미야나가 노노카",
+    handle: "nonoka_yumemita",
     channel_url: "https://www.youtube.com/@nonoka_yumemita"
   },
   ritsu: {
     name: "峰月律 -Minetsuki Ritsu-",
     name_ko: "미네츠키 리츠",
+    handle: "ritsu_yumemita",
     channel_url: "https://www.youtube.com/@ritsu_yumemita"
   },
   miyako: {
     name: "藤都子 -Fuji Miyako-",
     name_ko: "후지 미야코",
+    handle: "miyako_yumemita",
     channel_url: "https://www.youtube.com/@miyako_yumemita"
   }
 };

@@ -16,6 +16,7 @@ def build_schedule(
     videos: dict[str, "VideoInfo"],
     prev_schedule: dict,
     now_iso: str,
+    avatars: dict | None = None,
 ) -> tuple[dict, list[dict]]:
     """
     Build new schedule and identify newly ended broadcasts.
@@ -25,12 +26,16 @@ def build_schedule(
         videos: {video_id: VideoInfo}
         prev_schedule: Previous schedule.json (or default if new)
         now_iso: Current time in ISO format (e.g., "2026-08-30T12:00:00Z")
+        avatars: optional {channel_id: avatar_url}. When a channel is absent here,
+                 its avatar is carried over from prev_schedule.
 
     Returns:
         (new_schedule, newly_ended) where:
         - new_schedule follows contract A
         - newly_ended is a list of archive records (contract B)
     """
+    avatars = avatars or {}
+    prev_channels = (prev_schedule or {}).get("channels", {}) or {}
     # Build channel_id -> channel_key mapping
     channel_id_to_key = {}
     for key, channel_info in channels_cfg["channels"].items():
@@ -54,6 +59,9 @@ def build_schedule(
     for key in channels_cfg["channel_order"]:
         ch = channels_cfg["channels"][key].copy()
         ch["channel_url"] = f"https://www.youtube.com/@{ch['handle']}"
+        avatar = avatars.get(ch["channel_id"]) or prev_channels.get(key, {}).get("avatar")
+        if avatar:
+            ch["avatar"] = avatar
         new_schedule["channels"][key] = ch
 
     newly_ended = []

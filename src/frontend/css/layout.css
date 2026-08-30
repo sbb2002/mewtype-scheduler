@@ -30,6 +30,7 @@ body {
 #board {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: start;              /* 레인은 내용 높이만큼만 (100vh 강제 늘어남 방지) */
   gap: var(--gap);
   max-width: var(--content-max);   /* 이 폭에서 멈춤 → 레인이 lane-max-width 이상 안 커짐 */
   margin-inline: auto;             /* 남는 공간은 좌우 여백으로 (중앙 정렬) */
@@ -61,62 +62,145 @@ body {
   overflow: hidden;
 }
 
-/* Lane header */
+/* sampleLaneColor()가 아바타 평균색을 넣음. 실패 시 이 폴백색 사용 */
+.lane {
+  --lane-color: var(--color-border);
+}
+
+/* Lane header — 아바타(좌) + 이름/핸들, 좌→우 캐릭터색 그라데이션 */
 .lane__header {
-  position: sticky;
-  top: 0;
+  position: relative;
+  overflow: hidden;
   z-index: 10;
-  padding: 1rem;
+  padding: 0.8rem 1rem;
   background-color: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
+.lane__header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--lane-color) 60%, transparent),
+    transparent 72%
+  );
+}
 
 .lane__link {
+  position: relative; /* 그라데이션 위로 */
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  align-items: center;
+  gap: 0.6rem;
   transition: opacity 0.2s;
 }
-
 .lane__link:hover {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
+.lane__avatar {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--lane-color);
+  background: var(--color-bg) center / cover no-repeat;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.lane__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0; /* 자식 ellipsis 허용 */
+}
+.lane__name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
 .lane__name-ko {
-  font-weight: 600;
-  font-size: 1.05rem;
+  flex: none;
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
 }
-
 .lane__name-orig {
-  font-size: 0.85rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lane__handle {
+  font-size: 0.72rem;
   color: var(--color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Live section */
+/* 라이브 영역 — 빨간 테두리로 존을 표시, 비어있으면 OFF-AIR */
 .lane__live {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap);
-  padding: var(--gap);
   flex-shrink: 0;
-}
-
-/* Upcoming section */
-.lane__upcoming {
+  margin: var(--gap);
+  padding: var(--gap);
+  border: 2px solid var(--color-live);
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
-  padding: var(--gap);
-  flex: 1;
-  overflow-y: auto;
+  min-height: 68px;
+}
+.lane__live[data-state="off"] {
+  align-items: center;
+  justify-content: center;
+  border-color: color-mix(in srgb, var(--color-live) 45%, transparent);
+}
+.lane__live-off {
+  color: var(--color-text-muted);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
 }
 
-.lane__item {
-  /* <li> container for upcoming card */
+/* 예고 3분할 — 7일 이내 / 한 달 이내 / 그 이후, 각 구간 개별 스크롤 */
+.lane__buckets {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--gap) var(--gap);
+}
+.lane__bucket {
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--gap);
+}
+.lane__bucket + .lane__bucket {
+  border-top: 1px solid var(--color-border);
+}
+.lane__bucket-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+.lane__bucket-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  overflow-y: auto;
+  max-height: var(--bucket-max, clamp(160px, 26vh, 300px));
+}
+.lane__bucket-none {
+  padding: 0.1rem 0 0.3rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  opacity: 0.6;
 }
 
 .lane__empty {

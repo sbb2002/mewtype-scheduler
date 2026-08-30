@@ -1,11 +1,43 @@
 import { formatKST, relativeLabel } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 
+const DAY_MS = 86400000;
+
+/* 아바타 URL을 표시/샘플링에 충분한 작은 크기로 정규화 (yt3 URL의 =sNNN 파라미터). */
+function avatarSized(url, size) {
+  return typeof url === "string" ? url.replace(/=s\d+/, `=s${size}`) : url;
+}
+
+/**
+ * 아바타 평균색을 뽑아 lane 요소의 --lane-color 로 설정 (live-translator 방식).
+ * CORS 읽기 실패(canvas taint) 시 조용히 무시 → CSS 폴백색 사용.
+ */
+function sampleLaneColor(url, laneEl) {
+  if (!url) return;
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = 16;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 16, 16);
+      const d = ctx.getImageData(0, 0, 16, 16).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      laneEl.style.setProperty("--lane-color", `rgb(${(r / n) | 0} ${(g / n) | 0} ${(b / n) | 0})`);
+    } catch {
+      /* tainted canvas — 폴백색 유지 */
+    }
+  };
+  img.src = url;
+}
+
 /**
  * Create a card element (live or upcoming)
- * @param {Object} broadcast - Broadcast data
- * @param {number} nowMs - Current time in milliseconds
- * @returns {HTMLElement} - <a> card element
+ * @param {Object} broadcast
+ * @param {number} nowMs
+ * @returns {HTMLAnchorElement}
  */
 function createCard(broadcast, nowMs) {
   const a = document.createElement("a");
@@ -14,7 +46,6 @@ function createCard(broadcast, nowMs) {
   a.rel = "noopener";
   a.className = broadcast.status === "live" ? "card card--live" : "card card--upcoming";
 
-  // Thumbnail wrapper
   const thumbWrap = document.createElement("div");
   thumbWrap.className = "card__thumb-wrap";
 
@@ -23,8 +54,7 @@ function createCard(broadcast, nowMs) {
   img.src = broadcast.thumbnail;
   img.loading = "lazy";
   img.alt = "";
-  // Onerror fallback: hqdefault -> mqdefault -> broken state
-  img.onerror = function() {
+  img.onerror = function () {
     if (this.dataset.fallback) {
       this.classList.add("card__thumb--broken");
     } else {
@@ -32,20 +62,16 @@ function createCard(broadcast, nowMs) {
       this.src = this.src.replace("hqdefault", "mqdefault");
     }
   };
-
   thumbWrap.appendChild(img);
 
-  // LIVE badge (only for live cards)
   if (broadcast.status === "live") {
     const badge = document.createElement("span");
     badge.className = "card__badge card__badge--live";
     badge.textContent = "LIVE";
     thumbWrap.appendChild(badge);
   }
-
   a.appendChild(thumbWrap);
 
-  // Body
   const body = document.createElement("div");
   body.className = "card__body";
 
@@ -57,30 +83,17 @@ function createCard(broadcast, nowMs) {
   const meta = document.createElement("p");
   meta.className = "card__meta";
 
-  // Time
-  let timeEl = null;
-  if (broadcast.status === "live") {
-    // For live: use scheduled_start or actual_start
-    const timeStr = broadcast.scheduled_start || broadcast.actual_start;
-    if (timeStr) {
-      timeEl = document.createElement("time");
-      timeEl.className = "card__time";
-      timeEl.dateTime = timeStr;
-      timeEl.textContent = formatKST(timeStr);
-      meta.appendChild(timeEl);
-    }
-  } else {
-    // For upcoming: use scheduled_start
-    if (broadcast.scheduled_start) {
-      timeEl = document.createElement("time");
-      timeEl.className = "card__time";
-      timeEl.dateTime = broadcast.scheduled_start;
-      timeEl.textContent = formatKST(broadcast.scheduled_start);
-      meta.appendChild(timeEl);
-    }
+  const timeStr = broadcast.status === "live"
+    ? (broadcast.scheduled_start || broadcast.actual_start)
+    : broadcast.scheduled_start;
+  if (timeStr) {
+    const timeEl = document.createElement("time");
+    timeEl.className = "card__time";
+    timeEl.dateTime = timeStr;
+    timeEl.textContent = formatKST(timeStr);
+    meta.appendChild(timeEl);
   }
 
-  // Relative label
   const relSpan = document.createElement("span");
   relSpan.className = "card__rel";
   if (broadcast.status === "live") {
@@ -94,153 +107,202 @@ function createCard(broadcast, nowMs) {
 
   body.appendChild(meta);
   a.appendChild(body);
-
   return a;
 }
 
+/* ── 레인 헤더 (아바타 + 이름 + 핸들) ─────────────────────────────── */
+function buildHeader(channelData) {
+  const header = document.createElement("header");
+  header.className = "lane__header";
+
+  const link = document.createElement("a");
+  link.className = "lane__link";
+  link.href = channelData.channel_url || "#";
+  link.target = "_blank";
+  link.rel = "noopener";
+
+  const avatar = document.createElement("span");
+  avatar.className = "lane__avatar";
+  if (channelData.avatar) {
+    avatar.style.backgroundImage = `url("${avatarSized(channelData.avatar, 176)}")`;
+  }
+  link.appendChild(avatar);
+
+  const metaWrap = document.createElement("span");
+  metaWrap.className = "lane__meta";
+
+  const nameLine = document.createElement("span");
+  nameLine.className = "lane__name-line";
+  const nameKo = document.createElement("span");
+  nameKo.className = "lane__name-ko";
+  nameKo.textContent = channelData.name_ko || "";
+  const nameOrig = document.createElement("span");
+  nameOrig.className = "lane__name-orig";
+  nameOrig.textContent = channelData.name || "";
+  nameLine.append(nameKo, nameOrig);
+
+  const handle = document.createElement("span");
+  handle.className = "lane__handle";
+  handle.textContent = channelData.handle ? `@${channelData.handle}` : "";
+
+  metaWrap.append(nameLine, handle);
+  link.appendChild(metaWrap);
+  header.appendChild(link);
+  return header;
+}
+
+/* ── 라이브 영역 (빨간 테두리 존 · 비어있으면 OFF-AIR) ────────────── */
+function buildLive(liveBroadcasts, nowMs) {
+  const el = document.createElement("div");
+  el.className = "lane__live";
+  if (liveBroadcasts.length) {
+    el.dataset.state = "on";
+    for (const b of liveBroadcasts) el.appendChild(createCard(b, nowMs));
+  } else {
+    el.dataset.state = "off";
+    const off = document.createElement("span");
+    off.className = "lane__live-off";
+    off.textContent = "OFF-AIR";
+    el.appendChild(off);
+  }
+  return el;
+}
+
+/* ── 예고 3분할 (7일 이내 / 한 달 이내 / 그 이후) · 각 구간 개별 스크롤 ── */
+const BUCKET_DEFS = [
+  ["week", "7일 이내"],
+  ["month", "한 달 이내"],
+  ["later", "그 이후"],
+];
+
+function bucketKey(broadcast, nowMs) {
+  if (!broadcast.scheduled_start) return "later";
+  const delta = new Date(broadcast.scheduled_start).getTime() - nowMs;
+  if (delta < 7 * DAY_MS) return "week";
+  if (delta < 30 * DAY_MS) return "month";
+  return "later";
+}
+
+function buildBuckets(upcoming, nowMs) {
+  const wrap = document.createElement("div");
+  wrap.className = "lane__buckets";
+
+  if (upcoming.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "lane__empty";
+    empty.textContent = "예정된 방송이 없어요";
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const groups = { week: [], month: [], later: [] };
+  for (const b of upcoming) groups[bucketKey(b, nowMs)].push(b);
+
+  for (const [key, label] of BUCKET_DEFS) {
+    const sec = document.createElement("section");
+    sec.className = "lane__bucket";
+    sec.dataset.bucket = key;
+
+    const h = document.createElement("h3");
+    h.className = "lane__bucket-label";
+    h.textContent = label;
+    sec.appendChild(h);
+
+    const list = document.createElement("ul");
+    list.className = "lane__bucket-list";
+    if (groups[key].length === 0) {
+      const none = document.createElement("li");
+      none.className = "lane__bucket-none";
+      none.textContent = "예고 없음";
+      list.appendChild(none);
+    } else {
+      for (const b of groups[key]) {
+        const li = document.createElement("li");
+        li.className = "lane__item";
+        li.appendChild(createCard(b, nowMs));
+        list.appendChild(li);
+      }
+    }
+    sec.appendChild(list);
+    wrap.appendChild(sec);
+  }
+  return wrap;
+}
+
+function byScheduledAsc(a, b) {
+  if (a.scheduled_start === b.scheduled_start) return 0;
+  if (!a.scheduled_start) return 1;
+  if (!b.scheduled_start) return -1;
+  return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
+}
+
 /**
- * Render the entire board with all lanes and cards
- * @param {HTMLElement} boardEl - #board element
- * @param {Object} schedule - Schedule data
- * @param {number} nowMs - Current time in milliseconds (default: Date.now())
+ * 보드 전체 재구성.
+ * @param {HTMLElement} boardEl
+ * @param {Object} schedule
+ * @param {number} nowMs
  */
 export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
-  // Clear board
   boardEl.innerHTML = "";
 
-  // Get channel order and channels
   const channelOrder = schedule.channel_order || FALLBACK_CHANNEL_ORDER;
   const channels = schedule.channels || FALLBACK_CHANNELS;
 
-  // Group broadcasts by channel_key
-  const broadcastsByChannel = {};
-  for (const broadcast of schedule.broadcasts || []) {
-    if (!broadcastsByChannel[broadcast.channel_key]) {
-      broadcastsByChannel[broadcast.channel_key] = [];
-    }
-    broadcastsByChannel[broadcast.channel_key].push(broadcast);
+  const byChannel = {};
+  for (const b of schedule.broadcasts || []) {
+    (byChannel[b.channel_key] ||= []).push(b);
   }
 
-  // Create lanes
-  for (const channelKey of channelOrder) {
-    const channelData = channels[channelKey];
+  for (const key of channelOrder) {
+    const channelData = channels[key];
     if (!channelData) continue;
 
     const lane = document.createElement("section");
     lane.className = "lane";
-    lane.dataset.channel = channelKey;
+    lane.dataset.channel = key;
 
-    // Header
-    const header = document.createElement("header");
-    header.className = "lane__header";
+    lane.appendChild(buildHeader(channelData));
 
-    const link = document.createElement("a");
-    link.className = "lane__link";
-    link.href = channelData.channel_url || "#";
-    link.target = "_blank";
-    link.rel = "noopener";
+    const list = byChannel[key] || [];
+    const live = list.filter((b) => b.status === "live");
+    const upcoming = list.filter((b) => b.status === "upcoming").sort(byScheduledAsc);
 
-    const nameKo = document.createElement("span");
-    nameKo.className = "lane__name-ko";
-    nameKo.textContent = channelData.name_ko;
-    link.appendChild(nameKo);
+    lane.appendChild(buildLive(live, nowMs));
+    lane.appendChild(buildBuckets(upcoming, nowMs));
 
-    const nameOrig = document.createElement("span");
-    nameOrig.className = "lane__name-orig";
-    nameOrig.textContent = channelData.name;
-    link.appendChild(nameOrig);
-
-    header.appendChild(link);
-    lane.appendChild(header);
-
-    // Live section
-    const liveDiv = document.createElement("div");
-    liveDiv.className = "lane__live";
-
-    // Upcoming section
-    const upcomingUl = document.createElement("ul");
-    upcomingUl.className = "lane__upcoming";
-
-    // Get broadcasts for this channel
-    const broadcasts = broadcastsByChannel[channelKey] || [];
-
-    // Separate live and upcoming
-    const liveBroadcasts = broadcasts.filter(b => b.status === "live");
-    const upcomingBroadcasts = broadcasts
-      .filter(b => b.status === "upcoming")
-      .sort((a, b) => {
-        // Sort by scheduled_start ascending, nulls last
-        if (a.scheduled_start === null) return 1;
-        if (b.scheduled_start === null) return -1;
-        return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
-      });
-
-    // Add live cards
-    for (const broadcast of liveBroadcasts) {
-      liveDiv.appendChild(createCard(broadcast, nowMs));
-    }
-
-    // Add upcoming cards or empty state
-    if (upcomingBroadcasts.length === 0) {
-      const emptyLi = document.createElement("li");
-      emptyLi.className = "lane__empty";
-      emptyLi.textContent = "예정된 방송이 없어요";
-      upcomingUl.appendChild(emptyLi);
-    } else {
-      for (const broadcast of upcomingBroadcasts) {
-        const li = document.createElement("li");
-        li.className = "lane__item";
-        li.appendChild(createCard(broadcast, nowMs));
-        upcomingUl.appendChild(li);
-      }
-    }
-
-    lane.appendChild(liveDiv);
-    lane.appendChild(upcomingUl);
     boardEl.appendChild(lane);
+    sampleLaneColor(avatarSized(channelData.avatar, 88), lane);
   }
 }
 
 /**
- * Update footer with current time and stale status
- * @param {HTMLElement} footEl - #foot element
- * @param {Object} schedule - Schedule data
- * @param {Object} options - { stale: boolean }
+ * @param {HTMLElement} footEl
+ * @param {Object} schedule
+ * @param {{stale?: boolean}} opts
  */
 export function renderFooter(footEl, schedule, { stale = false } = {}) {
   const updatedSpan = footEl.querySelector("#foot-updated");
   const statusSpan = footEl.querySelector("#foot-status");
 
   if (updatedSpan) {
-    // Show when the data itself was generated (KST), not the render time.
     const gen = schedule && schedule.generated_at;
-    updatedSpan.textContent = gen
-      ? `업데이트: ${formatKST(gen)}`
-      : "업데이트: --/-- --:--";
+    updatedSpan.textContent = gen ? `업데이트: ${formatKST(gen)}` : "업데이트: --/-- --:--";
   }
-
   if (statusSpan) {
-    if (stale) {
-      statusSpan.hidden = false;
-      statusSpan.textContent = "업데이트 지연";
-    } else {
-      statusSpan.hidden = true;
-    }
+    statusSpan.hidden = !stale;
+    if (stale) statusSpan.textContent = "업데이트 지연";
   }
 }
 
 /**
- * Update countdown text (.card__rel) for all upcoming cards without DOM rebuild
- * @param {HTMLElement} boardEl - #board element
- * @param {number} nowMs - Current time in milliseconds (default: Date.now())
+ * DOM 재구성 없이 .card--upcoming 의 .card__rel 텍스트만 갱신.
+ * @param {HTMLElement} boardEl
+ * @param {number} nowMs
  */
 export function updateCountdowns(boardEl, nowMs = Date.now()) {
-  const upcomingCards = boardEl.querySelectorAll(".card--upcoming");
-
-  for (const cardEl of upcomingCards) {
+  for (const cardEl of boardEl.querySelectorAll(".card--upcoming")) {
     const relSpan = cardEl.querySelector(".card__rel");
     const timeEl = cardEl.querySelector(".card__time");
-
     if (relSpan && timeEl && timeEl.dateTime) {
       relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
     }

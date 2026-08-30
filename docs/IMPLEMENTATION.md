@@ -60,7 +60,8 @@ mewtype-scheduler/
       "name_ko": "나카마치 아라레",
       "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g",
       "handle": "arale_yumemita",
-      "channel_url": "https://www.youtube.com/@arale_yumemita"
+      "channel_url": "https://www.youtube.com/@arale_yumemita",
+      "avatar": "https://yt3.googleusercontent.com/...=s176-c-k-c0x00ffffff-no-rj"  // deep 스캔이 channels.list로 취득. light는 이전 값 유지. 없을 수도 있음(프론트가 원형 폴백)
     }
     // yuno / nonoka / ritsu / miyako 동일 구조
   },
@@ -117,30 +118,46 @@ mewtype-scheduler/
 
 ```html
 <main id="board">
-  <section class="lane" data-channel="arale">
-    <header class="lane__header">
+  <section class="lane" data-channel="arale" style="--lane-color: rgb(...)">
+    <!-- --lane-color: render.js가 아바타 평균색을 canvas 샘플링해서 인라인 설정. 실패 시 CSS 폴백 -->
+    <header class="lane__header">   <!-- ::before = 좌→우 캐릭터색 그라데이션 -->
       <a class="lane__link" href="{channels[key].channel_url}" target="_blank" rel="noopener">
-        <span class="lane__name-ko">나카마치 아라레</span>
-        <span class="lane__name-orig">仲町あられ -Nakamachi Arale-</span>
+        <span class="lane__avatar" style="background-image:url('{avatar =s176}')"></span>  <!-- 원형, 없으면 빈 원 -->
+        <span class="lane__meta">
+          <span class="lane__name-line">
+            <span class="lane__name-ko">나카마치 아라레</span>
+            <span class="lane__name-orig">仲町あられ -Nakamachi Arale-</span>   <!-- 작게·회색, 넘치면 … -->
+          </span>
+          <span class="lane__handle">@arale_yumemita</span>
+        </span>
       </a>
     </header>
 
-    <div class="lane__live">
-      <!-- status=="live" 카드 0개 이상 -->
+    <div class="lane__live" data-state="on">     <!-- 빨간 테두리 존. data-state: "on" | "off" -->
+      <!-- on: status=="live" 카드 1개 이상 -->
+      <!-- off: <span class="lane__live-off">OFF-AIR</span> (회색 중앙) -->
     </div>
 
-    <ul class="lane__upcoming">
-      <li class="lane__item"><!-- upcoming 카드 --></li>
-      <!-- 없으면: -->
-      <li class="lane__empty">예정된 방송이 없어요</li>
-    </ul>
+    <!-- upcoming 0개면: <p class="lane__empty">예정된 방송이 없어요</p> -->
+    <div class="lane__buckets">
+      <section class="lane__bucket" data-bucket="week">   <!-- week(<7일) / month(7~30일) / later(≥30일·null) -->
+        <h3 class="lane__bucket-label">7일 이내</h3>       <!-- month="한 달 이내", later="그 이후" -->
+        <ul class="lane__bucket-list">                    <!-- overflow-y:auto, 길면 개별 스크롤 -->
+          <li class="lane__item"><!-- upcoming 카드 --></li>
+          <!-- 비었으면: <li class="lane__bucket-none">예고 없음</li> -->
+        </ul>
+      </section>
+      <!-- month, later 섹션 동일 구조로 항상 3개 렌더 -->
+    </div>
   </section>
   <!-- channel_order 순서대로 lane 반복 -->
 </main>
 
 <footer id="foot">
-  <span id="foot-updated">업데이트: 08/30 21:00</span>
-  <span id="foot-status" hidden>업데이트 지연</span>
+  <div class="foot__inner">
+    <span id="foot-updated">업데이트: 08/30 21:00</span>
+    <span id="foot-status" hidden>업데이트 지연</span>
+  </div>
 </footer>
 ```
 

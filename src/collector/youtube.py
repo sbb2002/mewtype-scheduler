@@ -246,6 +246,46 @@ class YouTubeClient:
             logger.warning(f"Failed to parse search results for {channel_id}: {e}")
             return []
 
+    def channels_list(self, channel_ids: List[str]) -> Dict[str, str]:
+        """
+        Fetch channel avatar (profile picture) URLs.
+
+        part=snippet, batched up to 50 ids per request (quota_used += 1 each).
+        Returns {channel_id: avatar_url} using the largest available thumbnail
+        (high > medium > default). Channels without a thumbnail are omitted.
+        On HTTP error: logs warning and returns whatever was gathered so far.
+        """
+        result: Dict[str, str] = {}
+        headers = {'User-Agent': USER_AGENT}
+        for i in range(0, len(channel_ids), 50):
+            chunk = channel_ids[i:i + 50]
+            params = {
+                'key': self.api_key,
+                'part': 'snippet',
+                'id': ','.join(chunk),
+            }
+            try:
+                response = self.session.get(
+                    self.BASE + "/channels",
+                    params=params,
+                    headers=headers,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except requests.RequestException as e:
+                logger.warning(f"channels.list failed: {e}")
+                return result
+
+            self.quota_used += 1
+            for item in response.json().get('items', []):
+                cid = item.get('id')
+                thumbs = item.get('snippet', {}).get('thumbnails', {})
+                for key in ('high', 'medium', 'default'):
+                    if key in thumbs and 'url' in thumbs[key]:
+                        result[cid] = thumbs[key]['url']
+                        break
+        return result
+
 
 if __name__ == "__main__":
     # Test _video_from_item with sample API responses

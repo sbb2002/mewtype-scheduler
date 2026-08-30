@@ -54,10 +54,15 @@ def run(mode: str) -> int:
 
     yt = YouTubeClient(get_api_key())
 
+    avatars: dict[str, str] = {}
     if mode == "deep":
         for cid in id_by_key.values():
             candidates.update(yt.search_upcoming(cid))
-        log.info("after deep scan: %d candidates (quota_used=%d)", len(candidates), yt.quota_used)
+        avatars = yt.channels_list(list(id_by_key.values()))
+        log.info(
+            "after deep scan: %d candidates, %d avatars (quota_used=%d)",
+            len(candidates), len(avatars), yt.quota_used,
+        )
 
     if not candidates:
         log.warning("no candidate video ids; previous schedule left untouched")
@@ -67,7 +72,7 @@ def run(mode: str) -> int:
     log.info("videos.list: %d/%d resolved, quota_used=%d", len(videos), len(candidates), yt.quota_used)
 
     now_iso = _now_iso()
-    new_schedule, newly_ended = build_schedule(cfg, videos, prev, now_iso)
+    new_schedule, newly_ended = build_schedule(cfg, videos, prev, now_iso, avatars)
 
     changed_sched = store.save_schedule(new_schedule)
     changed_arch = store.append_archive(newly_ended) if newly_ended else False
