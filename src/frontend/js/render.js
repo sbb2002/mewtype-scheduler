@@ -187,14 +187,7 @@ function buildBuckets(upcoming, nowMs) {
   const wrap = document.createElement("div");
   wrap.className = "lane__buckets";
 
-  if (upcoming.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "lane__empty";
-    empty.textContent = "예정된 방송이 없어요";
-    wrap.appendChild(empty);
-    return wrap;
-  }
-
+  // 세 구간은 항상 렌더 — 레인끼리 높이가 가지런하도록. 빈 구간은 "예고 없음".
   const groups = { week: [], month: [], later: [] };
   for (const b of upcoming) groups[bucketKey(b, nowMs)].push(b);
 

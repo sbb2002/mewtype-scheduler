@@ -12,10 +12,36 @@
   --page-pad: clamp(1rem, 4vw, 3rem);  /* 가장자리 최소 패딩 */
   /* 보드 최대 폭 = 레인5 + gap4 + 좌우 패딩(3rem*2). 이 폭에서 레인이 정확히 lane-max-width */
   --content-max: calc(5 * var(--lane-max-width) + 4 * var(--gap) + 6rem);
+  /* 레인 정렬용 고정 높이 — 모든 레인이 같은 높이가 되도록 */
+  --live-h: 220px;             /* 라이브 영역 (OFF-AIR도 동일 크기) */
+  --buckets-h: 630px;          /* 예고 3구간 합계 → 각 구간 = 1/3 균등 (약 210px씩) */
+  --scrollbar: var(--color-border);
+  --scrollbar-hover: var(--color-text-muted);
 }
 
 html {
   scroll-behavior: smooth;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+/* 테마에 맞춘 스크롤바 (내부 스크롤 영역 + 페이지) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
 }
 
 body {
@@ -143,9 +169,11 @@ body {
   text-overflow: ellipsis;
 }
 
-/* 라이브 영역 — 빨간 테두리로 존을 표시, 비어있으면 OFF-AIR */
+/* 라이브 영역 — 빨간 테두리 존. 고정 높이(--live-h)라 OFF-AIR도 ON-AIR와 같은 크기 */
 .lane__live {
   flex-shrink: 0;
+  box-sizing: border-box;
+  height: var(--live-h);
   margin: var(--gap);
   padding: var(--gap);
   border: 2px solid var(--color-live);
@@ -153,11 +181,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--gap);
-  min-height: 68px;
+  overflow-y: auto;            /* 라이브 여러 개면 내부 스크롤 */
 }
 .lane__live[data-state="off"] {
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border-color: color-mix(in srgb, var(--color-live) 45%, transparent);
 }
 .lane__live-off {
@@ -166,15 +195,24 @@ body {
   font-size: 0.8rem;
   letter-spacing: 0.15em;
 }
+/* 라이브 영역 안의 카드는 폭 꽉 채우고 높이는 내용대로 */
+.lane__live .card {
+  flex: none;
+}
 
-/* 예고 3분할 — 7일 이내 / 한 달 이내 / 그 이후, 각 구간 개별 스크롤 */
+/* 예고 3분할 — 7일 이내 / 한 달 이내 / 그 이후.
+   .lane__buckets 고정 높이 + 자식 flex:1 → 세 구간이 정확히 균등, 길면 구간별 스크롤 */
 .lane__buckets {
   flex: none;
+  box-sizing: border-box;
+  height: var(--buckets-h);
   display: flex;
   flex-direction: column;
   padding: 0 var(--gap) var(--gap);
 }
 .lane__bucket {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding-top: var(--gap);
@@ -183,6 +221,7 @@ body {
   border-top: 1px solid var(--color-border);
 }
 .lane__bucket-label {
+  flex: none;
   margin: 0 0 0.5rem;
   font-size: 0.7rem;
   font-weight: 700;
@@ -190,11 +229,15 @@ body {
   color: var(--color-text-muted);
 }
 .lane__bucket-list {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--gap);
   overflow-y: auto;
-  max-height: var(--bucket-max, clamp(160px, 26vh, 300px));
+}
+.lane__bucket-list > .lane__item {
+  flex: none;
 }
 .lane__bucket-none {
   padding: 0.1rem 0 0.3rem;
