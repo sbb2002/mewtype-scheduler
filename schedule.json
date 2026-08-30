@@ -5,7 +5,7 @@
       "channel_key": "ritsu",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2026-08-30T12:00:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/Igx--BDE0n8/maxresdefault_live.jpg",
@@ -18,7 +18,7 @@
       "channel_key": "miyako",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2026-08-30T12:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/VJV4VdE395s/maxresdefault_live.jpg",
@@ -31,7 +31,7 @@
       "channel_key": "miyako",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2026-08-31T14:00:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/rLfpBK5PUcU/maxresdefault_live.jpg",
@@ -44,7 +44,7 @@
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2026-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/maxresdefault_live.jpg",
@@ -57,7 +57,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -70,7 +70,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -83,7 +83,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-30T07:21:11Z",
+      "last_updated": "2026-08-30T10:31:43Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -101,6 +101,7 @@
   ],
   "channels": {
     "arale": {
+      "avatar": "https://yt3.ggpht.com/I0mwftAJiprbJyaBo_1UwcLlO1iWJvinlMdEQ3RlLQutvqZ0PRFH4Oyw1p1zHxRTp5QyAvLNkg8=s800-c-k-c0x00ffffff-no-rj",
       "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g",
       "channel_url": "https://www.youtube.com/@arale_yumemita",
       "handle": "arale_yumemita",
@@ -108,6 +109,7 @@
       "name_ko": "나카마치 아라레"
     },
     "miyako": {
+      "avatar": "https://yt3.ggpht.com/qsuSTaNiWOw_ddYcMRiHbSawpbhfVpKrwGnffmXBpEikilgiBfxOlZmlBlUu5de0r9McYYLo=s800-c-k-c0x00ffffff-no-rj",
       "channel_id": "UCZXxRYaP7mfuglPnptnBBCA",
       "channel_url": "https://www.youtube.com/@miyako_yumemita",
       "handle": "miyako_yumemita",
@@ -115,6 +117,7 @@
       "name_ko": "후지 미야코"
     },
     "nonoka": {
+      "avatar": "https://yt3.ggpht.com/nZ3SFdbhOcw4_GrJ3kUvQ98Oss8usOumquIRHOMrhdFWWAxiPkgRYXQA4TTnH8y6uUy6wLE0=s800-c-k-c0x00ffffff-no-rj",
       "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A",
       "channel_url": "https://www.youtube.com/@nonoka_yumemita",
       "handle": "nonoka_yumemita",
@@ -122,6 +125,7 @@
       "name_ko": "미야나가 노노카"
     },
     "ritsu": {
+      "avatar": "https://yt3.ggpht.com/UD-po-IezRUMR-_k_Rgl9APp-W-CZfNEv1b3BJyztb4W_D6EJfeflpfEd9l3FekTbrEgg2Pi=s800-c-k-c0x00ffffff-no-rj",
       "channel_id": "UCxc0MrPoACKTFlV24GqX2sg",
       "channel_url": "https://www.youtube.com/@ritsu_yumemita",
       "handle": "ritsu_yumemita",
@@ -129,6 +133,7 @@
       "name_ko": "미네츠키 리츠"
     },
     "yuno": {
+      "avatar": "https://yt3.ggpht.com/r9DwFMzCr4Df7o52ZpNgVvPlAdUD4wwsCbkhhyJTlGUCodEKQMH7axWtJf42bxo-5-M6HOwX0w=s800-c-k-c0x00ffffff-no-rj",
       "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw",
       "channel_url": "https://www.youtube.com/@yuno_yumemita",
       "handle": "yuno_yumemita",
@@ -136,5 +141,5 @@
       "name_ko": "센고쿠 유노"
     }
   },
-  "generated_at": "2026-08-30T07:21:11Z"
+  "generated_at": "2026-08-30T10:31:43Z"
 }
