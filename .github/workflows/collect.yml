@@ -1,0 +1,85 @@
+name: collect
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options:
+          - auto
+          - light
+          - deep
+        default: auto
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/checkout@v4
+        with:
+          ref: data
+          path: _data
+          fetch-depth: 1
+        continue-on-error: true
+
+      - run: mkdir -p _data
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r src/collector/requirements.txt
+
+      - name: decide mode
+        id: m
+        run: |
+          IN="${{ github.event.inputs.mode }}"
+          if [ -z "$IN" ] || [ "$IN" = "auto" ]; then
+            if [ "$(( $(date -u +%H) % 6 ))" -eq 0 ]; then
+              echo "mode=deep" >> "$GITHUB_OUTPUT"
+            else
+              echo "mode=light" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "mode=$IN" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: collect
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          DATA_DIR: _data
+        run: python -m src.collector.main ${{ steps.m.outputs.mode }}
+
+      - name: commit
+        working-directory: _data
+        run: |
+          git config user.name "mewtype-collector[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          if [ ! -d .git ]; then
+            git init
+            git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git checkout -b data
+          else
+            git remote set-url origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no change"
+            exit 0
+          fi
+          git commit -m "data: sync ${{ steps.m.outputs.mode }} $(date -u +%FT%TZ)"
+          git branch -M data
+          git push origin data

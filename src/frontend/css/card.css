@@ -1,0 +1,116 @@
+/* Card - vertical layout (thumbnail top, body bottom) */
+.card {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Live card styling */
+.card--live {
+  border-color: var(--color-live);
+  border-width: 2px;
+}
+
+.card--live:hover {
+  box-shadow: 0 4px 12px rgba(255, 0, 0, 0.2);
+}
+
+/* Thumbnail wrapper - 16:9 aspect ratio */
+.card__thumb-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: var(--color-bg);
+  overflow: hidden;
+}
+
+.card__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.card__thumb--broken {
+  display: none; /* Hide broken image, show gray background */
+}
+
+.card__thumb-wrap:has(.card__thumb--broken) {
+  background-color: #444444;
+}
+
+/* Badge - LIVE indicator */
+.card__badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background-color: var(--color-live);
+  color: var(--color-live-text);
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.3);
+}
+
+.card__badge--live {
+  /* Inherits from .card__badge */
+}
+
+/* Body - title and meta */
+.card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  flex: 1;
+}
+
+.card__title {
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+  /* 2-line clamp */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.card__time {
+  display: block;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.card__rel {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.card--live .card__rel {
+  color: var(--color-live);
+  font-weight: 600;
+}
