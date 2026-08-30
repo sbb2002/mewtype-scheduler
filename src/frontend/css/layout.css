@@ -278,9 +278,13 @@ body {
 
 #pager-dots[hidden] { display: none; }
 
-/* Responsive: <1100px — 방송인 1명이 화면을 채우고, 가로 스와이프로 한 명씩 이동.
-   render.js 가 앞뒤에 클론 레인을 넣어 5명이 무한 회전. 하단 도트로 현재 위치 표시. */
-@media (max-width: 1099px) {
+/* Responsive: 폰(<768px)만 캐러셀. 태블릿/데스크톱(≥768px)은 5열 그리드 그대로. */
+@media (max-width: 767px) {
+  :root {
+    --m-pad: 1rem;     /* 화면 가장자리 패딩 (PC 최소 패딩과 동일) */
+    --m-peek: 26px;    /* 스냅된 상태에서 옆 유닛이 보이는 폭 */
+  }
+
   #board {
     display: flex;
     flex-direction: row;
@@ -289,47 +293,42 @@ body {
     grid-template-columns: none;
     max-width: none;
     margin: 0;
-    padding: 0;
     min-height: 0;
+    gap: var(--gap);
+    /* 좌우 패딩(가장자리 여백) + 위/아래 패딩 유지 */
+    padding: var(--gap) calc(var(--m-pad) + var(--m-peek)) 90px;
+    scroll-padding-inline: calc(var(--m-pad) + var(--m-peek));
     overflow-x: auto;
     overflow-y: visible;
     scroll-snap-type: x mandatory;
-    scroll-behavior: auto;         /* 무한회전 순간이동이 애니메이션 되지 않도록 */
+    scroll-behavior: auto;                            /* 무한회전 순간이동이 애니메이션 안 되게 */
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
   #board::-webkit-scrollbar { display: none; }
 
   .lane {
-    flex: 0 0 100%;
+    flex: 0 0 calc(100vw - 2 * var(--m-pad) - 2 * var(--m-peek));
     scroll-snap-align: start;
-    height: calc(100dvh - 92px);   /* footer + 도트 영역 확보 */
+    scroll-snap-stop: always;                         /* 한 번에 한 유닛씩만 (통과 방지) */
+    height: calc(100dvh - 118px);
     overflow-y: auto;
-    border-radius: 0;
-    border-inline: none;
   }
-  .lane__header {
-    position: sticky;
-    top: 0;
-  }
+  .lane__header { position: sticky; top: 0; }
 
-  .lane__live {
-    height: auto;
-    margin: 0.75rem;
-    padding: 0.75rem;
-  }
+  .lane__live { height: auto; margin: var(--gap); padding: var(--gap); }
   .lane__live[data-state="off"] { min-height: 56px; }
 
-  .lane__buckets { height: auto; padding: 0 0.75rem 0.75rem; }
+  .lane__buckets { height: auto; padding: 0 var(--gap) var(--gap); }
   .lane__bucket { flex: none; }
   .lane__bucket-list { flex: none; max-height: none; }
 
-  /* 페이지 인디케이터 (5개, 무한 회전이라 현재 방송인 강조만) */
+  /* 페이지 인디케이터 */
   #pager-dots {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 42px;                  /* footer 바로 위 */
+    bottom: 42px;
     display: flex;
     justify-content: center;
     gap: 8px;

@@ -279,12 +279,14 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
 }
 
 /* ─── 모바일 캐러셀 (방송인 1명씩 가로 스와이프 · 5명 무한 회전) ───────────
-   데스크톱(>1099px)에서는 클론/도트 없이 원래 그리드. */
+   폰(<768px)에서만. 태블릿/데스크톱(≥768px)은 클론/도트 없이 5열 그리드 그대로.
+   위치 계산은 폭이 아니라 실제 DOM 기하( getBoundingClientRect )로 해서
+   좌우 패딩·옆 유닛 미리보기(peek)·gap 이 있어도 정확히 한 칸씩 스냅. */
 
 let activeIdx = 0;                 // 마지막으로 보던 방송인 (재렌더/회전 넘어가도 유지)
 let carouselBoard = null;
-const mqlMobile = window.matchMedia("(max-width: 1099px)");
-mqlMobile.addEventListener("change", () => {
+const mqlPhone = window.matchMedia("(max-width: 767px)");
+mqlPhone.addEventListener("change", () => {
   if (carouselBoard) initMobileCarousel(carouselBoard);
 });
 
@@ -298,7 +300,7 @@ function clearCarousel(boardEl) {
 
 function initMobileCarousel(boardEl) {
   clearCarousel(boardEl);
-  if (!mqlMobile.matches) return;
+  if (!mqlPhone.matches) return;
 
   const reals = [...boardEl.querySelectorAll(".lane")];
   const n = reals.length;
@@ -316,14 +318,43 @@ function initMobileCarousel(boardEl) {
   boardEl.insertBefore(headClone, reals[0]);
   boardEl.appendChild(tailClone);
 
-  const slideW = () => boardEl.clientWidth || 1;
-  const jumpTo = (i) => { boardEl.scrollLeft = (i + 1) * slideW(); };            // 클론 1칸 보정
-  const glideTo = (i) => boardEl.scrollTo({ left: (i + 1) * slideW(), behavior: "smooth" });
+  // DOM 순서: [headClone(=마지막), real0..real(n-1), tailClone(=처음)]
+  const slides = () => [...boardEl.querySelectorAll(".lane")];
+  const padLeft = () => {
+    const v = parseFloat(getComputedStyle(boardEl).scrollPaddingLeft);
+    return Number.isFinite(v) ? v : 42;   // CSS: calc(--m-pad 1rem + --m-peek 26px)
+  };
+
+  // 스냅 기준선(보드 왼쪽 + scroll-padding-left)에 슬라이드 di 의 왼쪽을 맞추는 scrollLeft
+  const targetFor = (di) => {
+    const s = slides()[di];
+    if (!s) return boardEl.scrollLeft;
+    const off = s.getBoundingClientRect().left - boardEl.getBoundingClientRect().left - padLeft();
+    return boardEl.scrollLeft + off;
+  };
+  const goDom = (di, smooth) => {
+    const left = targetFor(di);
+    if (smooth) boardEl.scrollTo({ left, behavior: "smooth" });
+    else boardEl.scrollLeft = left;
+  };
+  const jumpReal = (i) => goDom(i + 1, false);
+  const glideReal = (i) => goDom(i + 1, true);
+
+  // 현재 스냅된 슬라이드의 DOM 인덱스 (기준선에 가장 가까운 것)
+  const currentDom = () => {
+    const base = boardEl.getBoundingClientRect().left + padLeft();
+    let bi = 0, bd = Infinity;
+    slides().forEach((s, di) => {
+      const d = Math.abs(s.getBoundingClientRect().left - base);
+      if (d < bd) { bd = d; bi = di; }
+    });
+    return bi;
+  };
 
   activeIdx = ((activeIdx % n) + n) % n;
-  jumpTo(activeIdx);                                   // 즉시
-  requestAnimationFrame(() => jumpTo(activeIdx));      // 레이아웃 후
-  setTimeout(() => jumpTo(activeIdx), 60);             // 스냅 보정 후 (rAF 미실행 환경 대비)
+  jumpReal(activeIdx);                                  // 즉시
+  requestAnimationFrame(() => jumpReal(activeIdx));     // 레이아웃 후
+  setTimeout(() => jumpReal(activeIdx), 60);            // 스냅 보정 후 (rAF 미실행 대비)
 
   // 도트 인디케이터
   const dots = document.getElementById("pager-dots");
@@ -341,31 +372,31 @@ function initMobileCarousel(boardEl) {
         "aria-label",
         (lane.querySelector(".lane__name-ko")?.textContent || `${i + 1}번`) + " 보기"
       );
-      btn.addEventListener("click", () => glideTo(i));
+      btn.addEventListener("click", () => glideReal(i));
       dots.appendChild(btn);
     });
     setActiveDot(activeIdx);
   }
 
-  // 스크롤: active 갱신 + 클론에 닿으면 정지 후 반대편으로 순간이동
+  // 스크롤: active 갱신 + 클론에 닿으면 멈춘 뒤 반대편 실제 슬라이드로 순간이동
   let settle = null;
   const onScroll = () => {
-    const raw = Math.round(boardEl.scrollLeft / slideW());   // 0 = headClone, n+1 = tailClone
-    let real = raw - 1;
+    const di = currentDom();
+    let real = di - 1;
     if (real < 0) real = n - 1;
     else if (real > n - 1) real = 0;
     if (real !== activeIdx) { activeIdx = real; setActiveDot(real); }
 
     clearTimeout(settle);
     settle = setTimeout(() => {
-      const r = Math.round(boardEl.scrollLeft / slideW());
-      if (r <= 0) jumpTo(n - 1);
-      else if (r >= n + 1) jumpTo(0);
-    }, 100);
+      const d = currentDom();
+      if (d <= 0) jumpReal(n - 1);
+      else if (d >= n + 1) jumpReal(0);
+    }, 90);
   };
   boardEl.addEventListener("scroll", onScroll, { passive: true });
 
-  const onResize = () => jumpTo(activeIdx);
+  const onResize = () => jumpReal(activeIdx);
   window.addEventListener("resize", onResize);
 
   boardEl._carouselCleanup = () => {
