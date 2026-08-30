@@ -155,7 +155,7 @@
     height: auto;
     aspect-ratio: 16 / 9;
     flex: none;
-    align-self: flex-start;
+    align-self: center;
     border-radius: 6px;
   }
   .card__body {
