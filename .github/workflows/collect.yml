@@ -48,13 +48,17 @@ jobs:
         run: |
           IN="${{ github.event.inputs.mode }}"
           if [ -z "$IN" ] || [ "$IN" = "auto" ]; then
-            # deep scan every 2 hours (even UTC hours); light sync on odd hours.
+            # Deep-scan schedule keyed to JST (= UTC+9), where announcements cluster:
+            #   JST 18:00-02:00 (announce peak): deep every hour -> JST 18,19,20,21,22,23,00,01
+            #   JST 02:00-18:00 (daytime, quiet): deep at        -> JST 02,10,14  (JST 06 skipped)
+            # = 11 deep scans/day (~5,500 units). Every other UTC hour still runs a
+            #   cheap light sync (~2 units) so daytime RSS pickups aren't delayed.
             # 10#$(...) forces base-10 so "08"/"09" aren't parsed as octal.
-            if [ "$(( 10#$(date -u +%H) % 2 ))" -eq 0 ]; then
-              echo "mode=deep" >> "$GITHUB_OUTPUT"
-            else
-              echo "mode=light" >> "$GITHUB_OUTPUT"
-            fi
+            H=$(( 10#$(date -u +%H) ))
+            case " 1 5 9 10 11 12 13 14 15 16 17 " in
+              *" $H "*) echo "mode=deep"  >> "$GITHUB_OUTPUT" ;;
+              *)        echo "mode=light" >> "$GITHUB_OUTPUT" ;;
+            esac
           else
             echo "mode=$IN" >> "$GITHUB_OUTPUT"
           fi
