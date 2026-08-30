@@ -288,3 +288,83 @@ body {
 #foot-status[hidden] {
   display: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   [미리보기] 가로/세로축 전환 — 방송인 = 가로 행, 피드 = 가로 흐름
+   커밋 전 시안. 승인되면 위 규칙에 정식 반영.
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  --lane-row-h: 292px;     /* 각 방송인 행 높이 (모두 동일) */
+  --header-w: 210px;       /* 헤더(아바타+이름) 폭 */
+  --live-w: 220px;         /* 라이브 영역 폭 */
+  --hcard-w: 208px;        /* 가로 스크롤 안 카드 폭 */
+}
+
+#board {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 1900px;
+  gap: var(--gap);
+}
+@media (max-width: 1099px) {
+  #board { grid-auto-flow: row; overflow-x: visible; }
+}
+
+.lane {
+  flex-direction: row;
+  height: var(--lane-row-h);
+}
+
+.lane__header {
+  width: var(--header-w);
+  flex: none;
+  display: flex;
+  align-items: center;
+  border-bottom: none;
+  border-right: 1px solid var(--color-border);
+}
+
+.lane__live {
+  width: var(--live-w);
+  flex: none;
+  height: auto;                /* 행 높이에 맞춰 stretch */
+  align-self: stretch;
+}
+.lane__live[data-state="on"] {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.lane__buckets {
+  flex: 1;
+  flex-direction: row;
+  height: auto;
+  align-self: stretch;
+  padding: var(--gap) var(--gap) var(--gap) 0;
+}
+.lane__bucket {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-top: 0;
+  padding-left: var(--gap);
+}
+.lane__bucket + .lane__bucket {
+  border-top: none;
+  border-left: 1px solid var(--color-border);
+}
+.lane__bucket-list {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.lane__live .card,
+.lane__bucket-list > .lane__item .card {
+  width: var(--hcard-w);
+  flex: none;
+}
+.lane__bucket-list > .lane__item {
+  flex: none;
+}
