@@ -25,41 +25,37 @@ export function formatKST(iso) {
   return `${obj.month}/${obj.day} ${obj.hour}:${obj.minute}`;
 }
 
+const DAY_MS = 86400000;
+
 /**
- * Generate relative time label for a scheduled start time
+ * Generate relative time label for a scheduled start time.
+ * 24시간 이내면 "H시간 M분 남음"(분 단위), 그 밖은 "{n}일 후" / 날짜.
+ * 남은 시간은 nowMs 를 넘겨주는 쪽(1분마다 갱신)이 계산 기준을 정한다.
  * @param {string} iso - ISO UTC string for scheduled_start
  * @param {number} nowMs - Current time in milliseconds (default: Date.now())
- * @returns {string} Relative time label
+ * @returns {string}
  */
 export function relativeLabel(iso, nowMs = Date.now()) {
-  const scheduledMs = new Date(iso).getTime();
-  const deltaMs = scheduledMs - nowMs;
+  const deltaMs = new Date(iso).getTime() - nowMs;
 
-  // <= 0 or < 60 seconds: "곧 시작"
-  if (deltaMs <= 0 || deltaMs < 60000) {
-    return "곧 시작";
+  if (deltaMs < 60000) return "곧 시작";        // 지났거나 1분 미만
+
+  const totalMin = Math.floor(deltaMs / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+
+  // < 24시간 → 시·분 카운트다운
+  if (deltaMs < DAY_MS) {
+    if (h === 0) return `${m}분 남음`;
+    if (m === 0) return `${h}시간 남음`;
+    return `${h}시간 ${m}분 남음`;
   }
 
-  const deltaSec = Math.floor(deltaMs / 1000);
-  const deltaMin = Math.floor(deltaSec / 60);
-  const deltaHr = Math.floor(deltaMin / 60);
-
-  // < 60 minutes: "{n}분 후"
-  if (deltaMin < 60) {
-    return `${deltaMin}분 후`;
+  // < 7일 → "{n}일 후" (올림, 최소 1)
+  if (deltaMs < 7 * DAY_MS) {
+    return `${Math.max(1, Math.ceil(deltaMs / DAY_MS))}일 후`;
   }
 
-  // < 24 hours: "{n}시간 후" (floor)
-  if (deltaHr < 24) {
-    return `${deltaHr}시간 후`;
-  }
-
-  // < 7 days: "{n}일 후" (ceil, min 1)
-  if (deltaHr < 7 * 24) {
-    const dayCount = Math.ceil(deltaHr / 24);
-    return `${Math.max(1, dayCount)}일 후`;
-  }
-
-  // >= 7 days: formatKST
+  // >= 7일 → 날짜
   return formatKST(iso);
 }

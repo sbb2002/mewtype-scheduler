@@ -175,8 +175,9 @@ function buildLive(liveBroadcasts, nowMs) {
   return el;
 }
 
-/* ── 예고 3분할 (7일 이내 / 한 달 이내 / 그 이후) · 각 구간 개별 스크롤 ── */
+/* ── 예고 시간대별 분할 (오늘 / 7일 이내 / 한 달 이내 / 그 이후) ── */
 const BUCKET_DEFS = [
+  ["today", "오늘"],
   ["week", "7일 이내"],
   ["month", "한 달 이내"],
   ["later", "그 이후"],
@@ -185,6 +186,7 @@ const BUCKET_DEFS = [
 function bucketKey(broadcast, nowMs) {
   if (!broadcast.scheduled_start) return "later";
   const delta = new Date(broadcast.scheduled_start).getTime() - nowMs;
+  if (delta < DAY_MS) return "today";        // 24시간 이내
   if (delta < 7 * DAY_MS) return "week";
   if (delta < 30 * DAY_MS) return "month";
   return "later";
@@ -194,8 +196,8 @@ function buildBuckets(upcoming, nowMs) {
   const wrap = document.createElement("div");
   wrap.className = "lane__buckets";
 
-  // 세 구간은 항상 렌더 — 레인끼리 높이가 가지런하도록. 빈 구간은 "예고 없음".
-  const groups = { week: [], month: [], later: [] };
+  // 네 구간은 항상 렌더 — 레인끼리 높이가 가지런하도록. 빈 구간은 "예고 없음".
+  const groups = { today: [], week: [], month: [], later: [] };
   for (const b of upcoming) groups[bucketKey(b, nowMs)].push(b);
 
   for (const [key, label] of BUCKET_DEFS) {
@@ -437,11 +439,17 @@ export function renderFooter(footEl, schedule, { stale = false } = {}) {
  * @param {number} nowMs
  */
 export function updateCountdowns(boardEl, nowMs = Date.now()) {
+  let bucketChanged = false;
   for (const cardEl of boardEl.querySelectorAll(".card--upcoming")) {
     const relSpan = cardEl.querySelector(".card__rel");
     const timeEl = cardEl.querySelector(".card__time");
-    if (relSpan && timeEl && timeEl.dateTime) {
-      relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
+    if (!relSpan || !timeEl || !timeEl.dateTime) continue;
+    relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
+    // 시간이 흘러 다른 구간(예: 7일 이내 → 오늘)에 속하게 됐으면 재렌더 필요
+    const cur = cardEl.closest(".lane__bucket")?.dataset.bucket;
+    if (cur && bucketKey({ scheduled_start: timeEl.dateTime }, nowMs) !== cur) {
+      bucketChanged = true;
     }
   }
+  return bucketChanged;
 }

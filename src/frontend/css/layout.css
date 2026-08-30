@@ -14,7 +14,7 @@
   --content-max: calc(5 * var(--lane-max-width) + 4 * var(--gap) + 6rem);
   /* 레인 정렬용 고정 높이 — 모든 레인이 같은 높이가 되도록 */
   --live-h: 220px;             /* 라이브 영역 (OFF-AIR도 동일 크기) */
-  --buckets-h: 630px;          /* 예고 3구간 합계 → 각 구간 = 1/3 균등 (약 210px씩) */
+  --buckets-h: 820px;          /* 예고 4구간 합계 → 각 구간 = 1/4 균등 (약 195px씩) */
   --scrollbar: var(--color-border);
   --scrollbar-hover: var(--color-text-muted);
 }

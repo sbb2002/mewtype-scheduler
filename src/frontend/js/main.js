@@ -49,6 +49,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Set up recurring polls
   setInterval(poll, POLL_MS);
 
-  // Set up countdown updates
-  setInterval(() => updateCountdowns(board), COUNTDOWN_TICK_MS);
+  // 1분마다 남은시간 텍스트 갱신 (사용자 장치 시계 기준).
+  // 시간이 흘러 카드가 다른 시간대 구간으로 넘어갔으면 보드 재렌더.
+  setInterval(() => {
+    if (updateCountdowns(board) && lastSchedule) renderBoard(board, lastSchedule);
+  }, COUNTDOWN_TICK_MS);
 });

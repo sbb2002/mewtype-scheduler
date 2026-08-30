@@ -140,14 +140,14 @@ mewtype-scheduler/
 
     <!-- upcoming 0개면: <p class="lane__empty">예정된 방송이 없어요</p> -->
     <div class="lane__buckets">
-      <section class="lane__bucket" data-bucket="week">   <!-- week(<7일) / month(7~30일) / later(≥30일·null) -->
-        <h3 class="lane__bucket-label">7일 이내</h3>       <!-- month="한 달 이내", later="그 이후" -->
+      <section class="lane__bucket" data-bucket="today">  <!-- today(<24h) / week(24h~7일) / month(7~30일) / later(≥30일·null) -->
+        <h3 class="lane__bucket-label">오늘</h3>            <!-- week="7일 이내", month="한 달 이내", later="그 이후" -->
         <ul class="lane__bucket-list">                    <!-- overflow-y:auto, 길면 개별 스크롤 -->
           <li class="lane__item"><!-- upcoming 카드 --></li>
           <!-- 비었으면: <li class="lane__bucket-none">예고 없음</li> -->
         </ul>
       </section>
-      <!-- month, later 섹션 동일 구조로 항상 3개 렌더 -->
+      <!-- week, month, later 섹션 동일 구조로 항상 4개 렌더 -->
     </div>
   </section>
   <!-- channel_order 순서대로 lane 반복 -->
@@ -192,12 +192,15 @@ mewtype-scheduler/
 - `relativeLabel(iso, nowMs)`:
   | 조건 (start - now) | 출력 |
   |---|---|
-  | ≤ 0 또는 < 60초 | `"곧 시작"` |
-  | < 60분 | `"{n}분 후"` |
-  | < 24시간 | `"{n}시간 후"` (내림) |
+  | < 60초 (지난 것 포함) | `"곧 시작"` |
+  | < 24시간 | `"{h}시간 {m}분 남음"` (h==0: `"{m}분 남음"`, m==0: `"{h}시간 남음"`) — '오늘' 구간 카운트다운 |
   | < 7일 | `"{n}일 후"` (올림, 최소 1) |
   | ≥ 7일 | `formatKST(iso)` 그대로 |
 - 라이브 카드의 상대 라벨은 render.js가 `"방송 중"`으로 고정(‑> time.js 호출 안 함).
+- `.card__rel` 텍스트는 `updateCountdowns()`가 **1분마다 사용자 장치 시계 기준**으로 갱신
+  (`main.js`의 `COUNTDOWN_TICK_MS`). 시간이 흘러 카드가 다른 시간대 구간으로
+  넘어가면 `updateCountdowns()`가 `true`를 반환해 `main.js`가 보드를 재렌더(재분류)한다.
+  데이터 브랜치와 무관.
 
 ---
 
