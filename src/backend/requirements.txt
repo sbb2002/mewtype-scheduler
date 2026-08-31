@@ -1,0 +1,5 @@
+requests>=2.31
+flask>=3.0
+gunicorn>=21
+google-cloud-tasks>=2.16
+google-auth>=2.28
