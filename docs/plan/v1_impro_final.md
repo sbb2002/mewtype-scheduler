@@ -3,19 +3,26 @@
 
 ## Backend (Role)
 
-- **정기 트리거** — Cloud Scheduler 1잡 또는 GitHub Actions `schedule:` cron 중 하나.
-  Cloud Tasks 자체엔 반복 스케줄이 없으므로 이 정기 트리거가 반드시 별도로 필요.
-  GCS를 아예 안 쓰려면 이 항목을 Actions cron 으로.
+- **정기 트리거 — Cloud Scheduler 1잡** (확정 2026-08-31). Cloud Tasks 자체엔 반복 스케줄이 없으므로
+  이 정기 트리거가 반드시 별도로 필요(최초 시동·체인 단절 복구·idle 구간 예고 감지). Cloud Scheduler →
+  Cloud Run HTTP 엔드포인트 호출. GitHub Actions `schedule:` cron 은 탈락 — 1시간+ 지연이 실제로 관측됨.
   - **JST 06:00 1회** — 일일 baseline 동기화(RSS + reconcile + 아바타 갱신). 방송인 전원 idle 시간대라 부담 없음.
-  - **안전망** — 아래 Cloud Tasks 체인이 끊겨도(=다음 wake enqueue 실패) 이 정기 실행이 상태를 다시 굴려 복구. 06:00 1회만이면 복구까지 최대 ~24h stale (→ "미결" 참고).
-  - cron 정시성은 중요치 않음(baseline·안전망 용도, ±15분 지터 무방).
-- **Cloud Tasks** — 방송별 정밀 wake 큐. 백엔드가 매 실행 끝에 다음 필요 시각(예: `scheduled_start − 15분`)으로 태스크 1개를 `scheduleTime` 지정해 enqueue. 도달 시 백엔드 HTTP 엔드포인트를 1회 호출.
-  GCS cron과 달리 "특정 일시 1회"를 표현 가능.
-- **GitHub Actions (백엔드 로직)** — 트리거(정기 또는 Cloud Tasks)를 받아:
+  - **안전망 — 2~3h 간격 light sync 병행** (확정 2026-08-31). Cloud Tasks 체인이 끊겨도
+    (=다음 wake enqueue 실패) 이 주기 실행이 상태를 다시 굴려 복구. worst-case staleness ~2~3h,
+    쿼터 ~2유닛/회(RSS + `videos.list` 배치 1회). 06:00 baseline 만으로는 복구까지 ~24h stale 이라 병행.
+  - **정시성 SLA — 트리거 발화 후 5분 이내 실행** (v2.0 요구사항, v1 대비 강화). Cloud Scheduler(~수초)
+    + Cloud Run 콜드스타트(1~2초)로 충족.
+- **Cloud Tasks** — 방송별 정밀 wake 큐. 백엔드가 매 실행 끝에 다음 필요 시각(예: `scheduled_start − 15분`)으로
+  태스크 1개를 `scheduleTime` 지정해 enqueue. 도달 시 Cloud Run HTTP 엔드포인트를 1회 호출.
+  Cloud Scheduler(반복 cron)와 달리 "특정 일시 1회"를 표현 가능.
+- **Cloud Run (백엔드 로직, scale-to-zero)** — 트리거(Cloud Scheduler 또는 Cloud Tasks)를 HTTP로 받아:
   5채널 상태 확인 → `pending.json` · `schedule.json` 갱신 → 다음 wake를 Cloud Tasks에 enqueue → 종료.
   - 5명 임박·라이브 확인은 **배치 `videos.list` 1회**(id 최대 50개)로. 채널별 개별 호출 금지.
   - 시각 비교·저장은 전부 **UTC**.
-  - 관리자 인스턴스는 휘발성(Cloud Run scale-to-zero) — 진행 상태는 전부 `pending.json`에.
+  - 인스턴스는 휘발성(scale-to-zero) — 진행 상태는 전부 `pending.json`에.
+  - `data` 브랜치 쓰기 인증 = **fine-grained PAT** (Contents 쓰기 권한만, 해당 레포 한정) 를
+    Secret Manager 에 두고 **GitHub Contents API** (`PUT /repos/.../contents/{path}`) 로 upsert.
+    컨테이너에 git 바이너리·체크아웃 불필요. Actions 러너가 아니므로 `GITHUB_TOKEN` 자동 주입은 없음.
 
 ## Frontend (Role)
 
@@ -24,7 +31,8 @@
 
 ## ETC
 
-- **`data` 브랜치** — GitHub Actions가 변경 시에만 commit. `schedule.json` · `archive.json` · **`pending.json`**.
+- **`data` 브랜치** — Cloud Run 이 변경 시에만 commit (GitHub Contents API, fine-grained PAT).
+  `schedule.json` · `archive.json` · **`pending.json`**. 프론트 fetch 대상은 raw CDN 유지 (무료·공짜 캐시).
 - **외부 API** — YouTube Data API v3. 하루 10,000 유닛.
   - `videos.list` = **1유닛**(배치) — 상시 사용(상태 확인).
   - `search.list?eventType=upcoming` = **100유닛/채널** — 라우틴 아님. RSS가 예고를 놓친 게 확인될 때만 fallback (§upcoming 감지).
@@ -104,8 +112,16 @@
 
 ---
 
+# 확정 (2026-08-31)
+
+- **안전망 주기**: 2~3h 간격 light sync 병행. worst-case staleness ~2~3h, 쿼터 ~2유닛/회.
+- **정기 트리거 구현체**: Cloud Scheduler 1잡. (Actions `schedule:` cron 탈락 — 1시간+ 지연 관측)
+- **compute 위치**: Cloud Run (scale-to-zero). "live 이후" 3분 폴링 포함 전부 Cloud Run 이 담당.
+- **정시성**: 트리거 발화 후 5분 이내 실행 SLA.
+- **`data` 저장·인증**: `data` 브랜치 유지(GCS 이전 안 함 — egress 과금·CORS·CDN·프론트 변경·git 히스토리
+  상실 회피). Cloud Run 이 fine-grained PAT(Secret Manager) + GitHub Contents API 로 커밋.
+
 # 미결 / 참고
 
-- **안전망 주기**: 06:00 1회만이면 Cloud Tasks 체인 단절 시 복구까지 최대 ~24h. 정기 트리거를 2~3시간 간격 light sync 로 병행하면 worst-case staleness ~2~3h (쿼터 ~2유닛/회). → 채택 여부 미결.
-- **정기 트리거 구현체**: Cloud Scheduler 1잡 vs Actions cron — 확정 필요.
-- **compute 위치**: Actions 러너(~2~3분 준비 오버헤드, 굵은 주기엔 OK) vs Cloud Run(콜드스타트 1~2초, 촘촘한 3분 폴링까지 감당) — "live 이후" 3분 폴링을 실제 돌릴지에 따라 결정.
+- **아키텍처 다이어그램 갱신**: `v1_impro_architecture.png` 는 아직 "GitHub Actions(백엔드 로직)" 로
+  그려져 있음. "Cloud Run(백엔드 로직)" 으로 교체 반영 필요.
