@@ -9,13 +9,17 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+import requests
+
 from ..collector.config import load_channels
 from ..collector.reconcile import build_schedule
 from ..collector.rss import fetch_all_rss_video_ids
 from ..collector.store import default_schedule
 from ..collector.youtube import YouTubeClient
 from .config import load_config
+from .control import default_control, is_paused
 from .gh_store import GitHubStore
+from .notify import Telegram, diff_events, summary_text
 from .pending import default_pending
 from .statemachine import sync_pending
 
@@ -65,6 +69,16 @@ def _make_task_queue(cfg):
         return None
 
 
+def _ping_healthcheck(url: str) -> None:
+    """healthchecks.io dead-man's-switch 핑. 실패는 무시."""
+    if not url:
+        return
+    try:
+        requests.get(url, timeout=5)
+    except Exception as e:  # noqa: BLE001
+        log.warning("healthcheck 핑 실패: %s", e)
+
+
 def _run(mode: str, woken_video_id: str | None) -> dict:
     cfg = load_config()
     now_iso = _now_iso()
@@ -75,6 +89,15 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     channel_id_to_key = {v["channel_id"]: k for k, v in channels_cfg["channels"].items()}
 
     gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+
+    # ── 일시정지 가드 (v2.1) ──
+    control, _ = gh.read_json("control.json")
+    if is_paused(control or default_control()):
+        if not is_wake:
+            _ping_healthcheck(cfg.healthcheck_url)  # 다운 오탐 방지
+        log.info("paused — skip (mode=%s woken=%s)", mode, woken_video_id)
+        return {"paused": True, "mode": mode, "woken": woken_video_id}
+
     prev_schedule, sched_sha = gh.read_json("schedule.json")
     if prev_schedule is None:
         prev_schedule = default_schedule(channels_cfg)
@@ -138,7 +161,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                     enqueue_errors.append(f"{vid}: {e}")
                     log.error("enqueue 실패 %s @ %s: %s", vid, when, e)
 
-    return {
+    result = {
         "mode": mode,
         "woken": woken_video_id,
         "candidates": len(candidates),
@@ -155,6 +178,25 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         "quota_used": yt.quota_used,
         "log": decision.log,
     }
+
+    # ── Telegram 알림 (v2.1) — 실패해도 주 로직 무영향 ──
+    try:
+        tg = Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id)
+        for ev in diff_events(
+            prev_schedule, new_schedule, newly_ended,
+            decision.log, channels_cfg["channels"], now_iso,
+        ):
+            tg.send(ev.text)
+        if sched_changed or newly_ended or decision.dropped or enqueue_errors:
+            tg.send(summary_text(result, now_iso), silent=True)
+    except Exception as e:  # noqa: BLE001
+        log.warning("telegram 알림 실패: %s", e)
+
+    # ── dead-man's-switch (정기 tick 성공 시에만) ──
+    if not is_wake:
+        _ping_healthcheck(cfg.healthcheck_url)
+
+    return result
 
 
 def tick(mode: str) -> dict:

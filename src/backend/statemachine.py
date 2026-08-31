@@ -262,6 +262,7 @@ def sync_pending(
                 entry["attempts"] = entry.get("attempts", 0) + 1
                 attempts = entry["attempts"]
 
+                in_fallback = False
                 if now < ss:
                     # 시작 시각 아직 미래
                     next_time = ss
@@ -275,11 +276,17 @@ def sync_pending(
                     next_time = now + timedelta(
                         seconds=FALLBACK_RETRY_SEC
                     )
+                    in_fallback = True
 
                 entry["next_check_at"] = _to_iso(next_time)
                 entry["last_checked"] = now_iso
                 decision.enqueue.append((video_id, _to_iso(next_time)))
                 decision.log.append(f"pre-live wait {video_id} attempts={attempts}")
+                if in_fallback:
+                    # notify.diff_events 가 파싱하는 명시 토큰 (E: fallback 알림)
+                    decision.log.append(
+                        f"fallback {video_id} attempts={attempts} next={_to_iso(next_time)}"
+                    )
                 changed = True
 
         elif phase == PHASE_LIVEWATCH:
@@ -685,5 +692,41 @@ if __name__ == "__main__":
     print(f"✓ 재enqueue: {decision_8.enqueue}")
 
     print("\n" + "=" * 60)
-    print("SUCCESS: 모든 8개 시나리오 통과")
+    print("시나리오 9: 예정+60분 경과·미시작 → fallback 로그 토큰 방출 (E 알림용)")
+    print("=" * 60)
+
+    now_iso_9 = "2026-08-31T14:10:00Z"  # scheduled_start(13:00) + 70분
+    pending_9 = {
+        "updated_at": "2026-08-31T12:00:00Z",
+        "entries": {
+            "late_vid": {
+                "channel_key": "yuno",
+                "phase": PHASE_PRELIVE,
+                "scheduled_start": "2026-08-31T13:00:00Z",
+                "actual_start": None,
+                "next_check_at": now_iso_9,  # due
+                "attempts": 2,
+                "first_seen": "2026-08-31T12:00:00Z",
+                "last_checked": "2026-08-31T14:07:00Z",
+            }
+        },
+    }
+    video_9 = types.SimpleNamespace(
+        video_id="late_vid",
+        channel_id="UC99kOG6_9RD0mR3OG4EOfxw",  # yuno
+        live_state="upcoming",
+        scheduled_start="2026-08-31T13:00:00Z",
+        actual_start=None, actual_end=None, concurrent_viewers=None,
+        title="Test", thumbnail="http://test.jpg",
+    )
+    decision_9 = sync_pending(
+        pending_9, {"late_vid": video_9}, channel_id_to_key, now_iso_9, mode="sync"
+    )
+    fb = [t for t in decision_9.log if t.startswith("fallback late_vid ")]
+    assert fb, f"fallback 토큰 없음: {decision_9.log}"
+    assert "attempts=3" in fb[0] and "next=" in fb[0]
+    print(f"✓ fallback 토큰: {fb[0]}")
+
+    print("\n" + "=" * 60)
+    print("SUCCESS: 모든 9개 시나리오 통과")
     print("=" * 60)

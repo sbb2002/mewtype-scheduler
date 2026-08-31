@@ -12,7 +12,7 @@ from functools import lru_cache
 
 from flask import Flask, jsonify, request
 
-from . import handlers, oidc
+from . import handlers, notify, oidc
 from .config import load_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -36,6 +36,17 @@ def _authorize() -> None:
     )
 
 
+def _alert(where: str, exc: BaseException) -> None:
+    """서버 오류를 Telegram 으로. 실패해도 조용히."""
+    try:
+        cfg = _cfg()
+        notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id).send(
+            notify.error_text(where, exc)
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("오류 알림 전송 실패", exc_info=True)
+
+
 @app.post("/tick")
 def _tick():
     try:
@@ -47,6 +58,7 @@ def _tick():
         return jsonify(handlers.tick(mode))
     except Exception as e:  # noqa: BLE001
         log.exception("tick 실패")
+        _alert(f"/tick mode={mode}", e)
         return jsonify({"error": str(e)}), 500
 
 
@@ -63,6 +75,7 @@ def _wake():
         return jsonify(handlers.wake(video_id))
     except Exception as e:  # noqa: BLE001
         log.exception("wake 실패")
+        _alert(f"/wake video_id={video_id}", e)
         return jsonify({"error": str(e)}), 500
 
 

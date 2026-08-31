@@ -1,6 +1,56 @@
 # Cloud Run 배포 가이드
 
-## 배포 순서
+## v2.1 Telegram 모니터링 & 제어
+
+### 사전 작업 (운영자가 미리 준비)
+
+1. **@BotFather** 로 봇 생성 → `TELEGRAM_BOT_TOKEN` 취득
+   - `/setcommands` 로 `status,pause,resume` 등록(선택)
+2. 봇과 DM 시작 → `https://api.telegram.org/bot<token>/getUpdates` 로 자기 `chat.id` 확인 → `TELEGRAM_CHAT_ID`
+3. `TELEGRAM_WEBHOOK_SECRET` = 임의의 긴 랜덤 문자열 생성 (예: `openssl rand -hex 32`)
+4. **healthchecks.io** 무료 가입
+   - check 생성 (period 3h / grace 40m)
+   - ping URL → `HEALTHCHECK_URL`
+   - Integrations → Telegram 연결
+5. `.env` 에 추가:
+   ```
+   TELEGRAM_BOT_TOKEN=...
+   TELEGRAM_CHAT_ID=...
+   TELEGRAM_WEBHOOK_SECRET=...
+   HEALTHCHECK_URL=https://hc-ping.com/....
+   ```
+
+### 배포 순서 (v2.1)
+
+```bash
+bash deploy/setup.sh          # 새 시크릿 2개(TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET) 등록
+bash deploy/deploy.sh         # 메인 서비스 재배포 (Telegram 알림 기능 활성)
+bash deploy/deploy_telegram.sh   # 공개 webhook 서비스 신규 배포
+bash deploy/telegram_webhook.sh  # setWebhook 등록
+```
+
+배포 후:
+```bash
+# 봇에 /status 전송해서 응답 확인
+# 로그 확인: gcloud run services logs read mewtype-telegram --region asia-northeast1
+```
+
+### 롤백 (v2.1)
+
+```bash
+# webhook 해제
+bash deploy/telegram_webhook.sh delete
+
+# mewtype-telegram 서비스 삭제
+gcloud run services delete mewtype-telegram --region asia-northeast1
+
+# 메인 서비스: TELEGRAM_BOT_TOKEN env 제거 후 재배포 (알림 비활성, v2.0 동작 유지)
+# 또는 단순히 deploy.sh 재실행 (env 변수 제거된 상태의 .env 사용)
+```
+
+---
+
+## 배포 순서 (v2.0)
 
 ### 1. 셋업 (초회 1회)
 

@@ -100,5 +100,7 @@ create_secret () {
 
 create_secret YOUTUBE_API_KEY "YouTube API 키를 입력하세요" "${YOUTUBE_API_KEY:-}"
 create_secret GITHUB_TOKEN "GitHub fine-grained PAT를 입력하세요 (Contents R/W)" "${GITHUB_TOKEN:-}"
+create_secret TELEGRAM_BOT_TOKEN "BotFather 봇 토큰" "${TELEGRAM_BOT_TOKEN:-}"
+create_secret TELEGRAM_WEBHOOK_SECRET "webhook secret (임의 문자열)" "${TELEGRAM_WEBHOOK_SECRET:-}"
 
 echo "=== 셋업 완료 ==="
