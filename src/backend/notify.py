@@ -134,6 +134,22 @@ class Telegram:
             return False
 
 
+# 로그 레벨별 전송 허용 이벤트 종류 (control.json log_level)
+#   detail : 전부 + 매 실행 요약("summary")
+#   normal : 전이(A/B/C) + fallback + error, 요약 없음
+#   simple : fallback + error 만
+_LEVEL_KINDS = {
+    "detail": {"upcoming", "live_start", "live_end", "fallback", "error", "summary"},
+    "normal": {"upcoming", "live_start", "live_end", "fallback", "error"},
+    "simple": {"fallback", "error"},
+}
+
+
+def allows(level: str, kind: str) -> bool:
+    """log_level 에서 해당 이벤트 종류를 Telegram 으로 보낼지."""
+    return kind in _LEVEL_KINDS.get(level, _LEVEL_KINDS["normal"])
+
+
 @dataclass
 class Event:
     """상태 전이 이벤트."""

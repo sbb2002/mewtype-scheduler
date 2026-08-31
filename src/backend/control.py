@@ -1,74 +1,78 @@
 """
 control.json 스키마 및 헬퍼 함수.
-계약 F 참고: § IMPLEMENTATION_v2.1.md
+계약 F 참고: docs/IMPLEMENTATION_v2.1.md §3
+
+  {
+    "paused": false,
+    "since": null,               // paused=true 로 바뀐 시각 (ISO 'Z')
+    "by": null,                  // 마지막 변경 출처 메모
+    "log_level": "normal",       // "detail" | "normal" | "simple"
+    "updated_at": "..."
+  }
 """
+
+LOG_LEVELS = ("detail", "normal", "simple")
+DEFAULT_LOG_LEVEL = "normal"
 
 
 def default_control() -> dict:
-    """
-    기본 control.json 형태 반환.
-
-    Returns:
-        {"paused": False, "since": None, "by": None, "updated_at": None}
-    """
+    """기본 control.json 형태."""
     return {
         "paused": False,
         "since": None,
         "by": None,
+        "log_level": DEFAULT_LOG_LEVEL,
         "updated_at": None,
     }
 
 
-def is_paused(control: dict) -> bool:
-    """
-    control 상태가 paused 인지 판정.
+def _as_dict(control) -> dict:
+    """control 이 dict 아니면 기본형. (원본은 건드리지 않음)"""
+    return dict(control) if isinstance(control, dict) else default_control()
 
-    dict가 아니거나 paused 키가 없으면 False (안전 기본값).
 
-    Args:
-        control: control.json dict 또는 None/빈 dict
-
-    Returns:
-        bool: paused 상태 (기본값 False)
-    """
+def is_paused(control) -> bool:
+    """paused 상태 판정. dict 아니거나 키 없으면 False."""
     if not isinstance(control, dict):
         return False
-    return control.get("paused", False)
+    return bool(control.get("paused", False))
 
 
-def set_paused(
-    control: dict,
-    paused: bool,
-    *,
-    by: str,
-    now_iso: str,
-) -> dict:
-    """
-    paused 상태를 변경한 새로운 control dict 반환 (원본 불변).
-
-    Args:
-        control: 기존 control dict (기본값으로 빈 dict 가능)
-        paused: 새로운 paused 상태
-        by: 상태 변경 출처 메모 (예: "telegram:/pause")
-        now_iso: 현재 시각 (ISO 'Z' format)
-
-    Returns:
-        새로운 control dict:
-        - paused=True: since=now_iso
-        - paused=False: since=None
-        - by, updated_at는 항상 now_iso 로 갱신
-    """
-    # 기존 값 보존 (안전하게)
+def get_log_level(control) -> str:
+    """로그 레벨 반환. 값이 없거나 이상하면 'normal'."""
     if not isinstance(control, dict):
-        control = default_control()
+        return DEFAULT_LOG_LEVEL
+    lvl = control.get("log_level", DEFAULT_LOG_LEVEL)
+    return lvl if lvl in LOG_LEVELS else DEFAULT_LOG_LEVEL
 
-    # 새 dict 생성 (원본 불변)
-    result = {
-        "paused": paused,
-        "since": now_iso if paused else None,
-        "by": by,
-        "updated_at": now_iso,
-    }
+
+def set_paused(control, paused: bool, *, by: str, now_iso: str) -> dict:
+    """paused 상태만 바꾼 새 dict 반환 (log_level 등 다른 필드는 보존, 원본 불변).
+
+    paused=True → since=now_iso, paused=False → since=None. by/updated_at 갱신.
+    """
+    result = _as_dict(control)
+    result["paused"] = bool(paused)
+    result["since"] = now_iso if paused else None
+    result["by"] = by
+    result["updated_at"] = now_iso
+    result.setdefault("log_level", DEFAULT_LOG_LEVEL)
+    return result
+
+
+def set_log_level(control, level: str, *, by: str, now_iso: str) -> dict:
+    """log_level 만 바꾼 새 dict 반환 (paused 등 보존, 원본 불변).
+
+    level 이 LOG_LEVELS 밖이면 ValueError.
+    """
+    if level not in LOG_LEVELS:
+        raise ValueError(f"invalid log level: {level!r} (택: {', '.join(LOG_LEVELS)})")
+    result = _as_dict(control)
+    result["log_level"] = level
+    result["by"] = by
+    result["updated_at"] = now_iso
+    result.setdefault("paused", False)
+    result.setdefault("since", None)
     return result
 
 
@@ -76,71 +80,38 @@ if __name__ == "__main__":
     import sys
 
     try:
-        sys.stdout.reconfigure(encoding="utf-8")  # Windows cp949 콘솔 대비
+        sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
-    # smoke test
+    d = default_control()
+    assert d["paused"] is False and d["log_level"] == "normal"
+    assert is_paused(None) is False and is_paused({}) is False
+    assert get_log_level(None) == "normal"
+    assert get_log_level({"log_level": "bogus"}) == "normal"
+    assert get_log_level({"log_level": "simple"}) == "simple"
+    print("✓ defaults / getters")
 
-    # 1. default_control
-    default = default_control()
-    assert default == {
-        "paused": False,
-        "since": None,
-        "by": None,
-        "updated_at": None,
-    }, "default_control failed"
-    print("✓ default_control")
+    p = set_paused(d, True, by="telegram:/pause", now_iso="2026-08-31T12:00:00Z")
+    assert p["paused"] is True and p["since"] == "2026-08-31T12:00:00Z"
+    assert p["log_level"] == "normal", "log_level 보존"
+    r = set_paused(p, False, by="telegram:/resume", now_iso="2026-08-31T12:15:00Z")
+    assert r["paused"] is False and r["since"] is None
+    print("✓ set_paused round-trip (log_level 보존)")
 
-    # 2. is_paused(default) == False
-    assert is_paused(default) is False, "is_paused(default) should be False"
-    print("✓ is_paused(default)==False")
+    lv = set_log_level(p, "detail", by="telegram:/log", now_iso="2026-08-31T12:20:00Z")
+    assert lv["log_level"] == "detail" and lv["paused"] is True, "paused 보존"
+    try:
+        set_log_level(d, "verbose", by="x", now_iso="z")
+        assert False, "invalid level 은 ValueError"
+    except ValueError:
+        pass
+    print("✓ set_log_level (paused 보존, 검증)")
 
-    # 3. is_paused(None) == False
-    assert is_paused(None) is False, "is_paused(None) should be False"
-    print("✓ is_paused(None)==False")
-
-    # 4. is_paused({}) == False
-    assert is_paused({}) is False, "is_paused({}) should be False"
-    print("✓ is_paused({})==False")
-
-    # 5. set_paused round-trip: True → since 채워짐 → False → since None
-    control = default_control()
-    control_paused = set_paused(
-        control,
-        paused=True,
-        by="telegram:/pause",
-        now_iso="2026-08-31T12:00:00Z",
-    )
-    assert control_paused["paused"] is True, "should be paused"
-    assert control_paused["since"] == "2026-08-31T12:00:00Z", "since should be set"
-    assert control_paused["by"] == "telegram:/pause", "by should be set"
-    assert control_paused["updated_at"] == "2026-08-31T12:00:00Z", "updated_at should be set"
-    print("✓ set_paused(True) fills since")
-
-    # 6. set_paused(paused=False) → since=None
-    control_resumed = set_paused(
-        control_paused,
-        paused=False,
-        by="telegram:/resume",
-        now_iso="2026-08-31T12:15:00Z",
-    )
-    assert control_resumed["paused"] is False, "should be resumed"
-    assert control_resumed["since"] is None, "since should be None when paused=False"
-    assert control_resumed["by"] == "telegram:/resume", "by should be updated"
-    assert control_resumed["updated_at"] == "2026-08-31T12:15:00Z", "updated_at should be updated"
-    print("✓ set_paused(False) clears since")
-
-    # 7. 원본 불변 확인
-    original = default_control()
-    _modified = set_paused(
-        original,
-        paused=True,
-        by="test",
-        now_iso="2026-08-31T12:00:00Z",
-    )
-    assert original == default_control(), "original should not be modified"
-    assert original["paused"] is False, "original paused should still be False"
-    print("✓ original dict is immutable")
+    orig = default_control()
+    set_paused(orig, True, by="t", now_iso="z")
+    set_log_level(orig, "simple", by="t", now_iso="z")
+    assert orig == default_control(), "원본 불변"
+    print("✓ 원본 불변")
 
     print("\nSUCCESS: control.py smoke test passed")

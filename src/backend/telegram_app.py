@@ -40,7 +40,14 @@ try:
 except ImportError:
     Telegram = None
 
-from .control import default_control, is_paused, set_paused
+from .control import (
+    LOG_LEVELS,
+    default_control,
+    get_log_level,
+    is_paused,
+    set_log_level,
+    set_paused,
+)
 from .gh_store import GitHubStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -175,6 +182,7 @@ def _build_status_text(
         status_line = f"상태: ⏸ 일시정지{elapsed}"
     else:
         status_line = "상태: 🟢 정상"
+    status_line += f"  ·  로그 {get_log_level(control)}"
 
     # 3. 마지막 sync
     last_sync = ""
@@ -282,6 +290,42 @@ def _handle_status(gh: GitHubStore, channels_cfg: dict, now_iso: str) -> None:
     except Exception as e:
         log.exception("Error handling /status")
         _send_telegram(f"⚠️ 오류: /status 처리 실패\n{str(e)[:100]}")
+
+
+_LOG_LEVEL_DESC = {
+    "detail": "모든 알림 + 매 실행 sync 요약",
+    "normal": "전이(예정/시작/종료) + fallback/오류. sync 요약 없음",
+    "simple": "fallback/오류만",
+}
+
+
+def _handle_log(gh: GitHubStore, now_iso: str, arg: str) -> None:
+    """/log [detail|normal|simple] — 인자 없으면 현재 레벨 표시."""
+    try:
+        control, _ = gh.read_json("control.json")
+        if control is None:
+            control = default_control()
+
+        if not arg:
+            cur = get_log_level(control)
+            lines = [f"현재 로그 레벨: <b>{cur}</b> — {_LOG_LEVEL_DESC[cur]}", "", "변경: /log &lt;레벨&gt;"]
+            lines += [f"· {lv} — {_LOG_LEVEL_DESC[lv]}" for lv in LOG_LEVELS]
+            _send_telegram("\n".join(lines))
+            return
+
+        if arg not in LOG_LEVELS:
+            _send_telegram(f"⚠️ 알 수 없는 레벨: {arg}\n택: {', '.join(LOG_LEVELS)}")
+            return
+
+        control = set_log_level(control, arg, by="telegram:/log", now_iso=now_iso)
+        gh.write_json(
+            "control.json", control, prev_sha=None,
+            message=f"data: log_level={arg} via Telegram /log {now_iso}",
+        )
+        _send_telegram(f"🔧 로그 레벨 → <b>{arg}</b>\n{_LOG_LEVEL_DESC[arg]}")
+    except Exception as e:
+        log.exception("Error handling /log")
+        _send_telegram(f"⚠️ 오류: /log 처리 실패\n{str(e)[:100]}")
 
 
 def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
@@ -422,17 +466,21 @@ if _FLASK_AVAILABLE:
             gh = GitHubStore(gh_token, gh_repo, gh_branch)
             channels_cfg = _load_channels_config()
 
-            # 명령 디스패치
-            if text == "/status":
+            # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
+            cmd, _, arg = text.partition(" ")
+            arg = arg.strip()
+            if cmd == "/status":
                 _handle_status(gh, channels_cfg, now_utc)
-            elif text == "/pause":
+            elif cmd == "/pause":
                 _handle_pause(gh, now_utc)
-            elif text == "/resume":
+            elif cmd == "/resume":
                 main_service_url = os.environ.get("MAIN_SERVICE_URL", "").strip()
                 if not main_service_url:
                     _send_telegram("⚠️ MAIN_SERVICE_URL 미설정")
                 else:
                     _handle_resume(gh, now_utc, main_service_url)
+            elif cmd == "/log":
+                _handle_log(gh, now_utc, arg)
             else:
                 # 도움말
                 help_text = (
@@ -440,7 +488,8 @@ if _FLASK_AVAILABLE:
                     "명령:\n"
                     "/status — 현재 상태 조회\n"
                     "/pause — 수집 일시정지\n"
-                    "/resume — 수집 재개"
+                    "/resume — 수집 재개\n"
+                    "/log [detail|normal|simple] — 알림 상세도"
                 )
                 _send_telegram(help_text)
 

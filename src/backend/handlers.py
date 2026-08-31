@@ -17,9 +17,10 @@ from ..collector.rss import fetch_all_rss_video_ids
 from ..collector.store import default_schedule
 from ..collector.youtube import YouTubeClient
 from .config import load_config
-from .control import default_control, is_paused
+from .control import default_control, get_log_level, is_paused
 from .gh_store import GitHubStore
 from .notify import Telegram, diff_events, summary_text
+from .notify import allows as notify_allows
 from .pending import default_pending
 from .statemachine import sync_pending
 
@@ -211,17 +212,18 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     }
 
     # ── Telegram 알림 (v2.1) — 실패해도 주 로직 무영향 ──
-    # schedule_changed 는 generated_at 타임스탬프 때문에 매번 True 이므로 요약 트리거로 못 씀.
-    # 의미 있는 전이(diff_events 의 A/B/C/E) 또는 drop/enqueue 오류가 있을 때만 요약 전송.
+    # control.json log_level 로 게이팅: detail=전부+매실행 요약 / normal=전이+fallback / simple=fallback·error
     try:
+        level = get_log_level(control or default_control())
         tg = Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id)
         events = diff_events(
             prev_schedule, new_schedule, newly_ended,
             decision.log, channels_cfg["channels"], now_iso,
         )
         for ev in events:
-            tg.send(ev.text)
-        if events or decision.dropped or enqueue_errors:
+            if notify_allows(level, ev.kind):
+                tg.send(ev.text)
+        if notify_allows(level, "summary"):  # 사실상 detail 일 때만
             tg.send(summary_text(result, now_iso), silent=True)
     except Exception as e:  # noqa: BLE001
         log.warning("telegram 알림 실패: %s", e)

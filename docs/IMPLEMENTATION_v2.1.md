@@ -22,9 +22,10 @@ v2.0 백엔드(`docs/IMPLEMENTATION_v2.md`) 위에 **Telegram 봇 알림 + 원�
 
 | 명령 | 동작 |
 |------|------|
-| `/status` | 현재 라이브·예정·대기 wake·마지막 tick·일시정지 상태 요약 |
+| `/status` | 현재 라이브·예정·대기 wake·마지막 tick·일시정지·**로그 레벨** 요약 |
 | `/pause` | 수집·판정·enqueue·알림 전면 중단 (`control.json`) |
 | `/resume` | 재개 + 즉시 full sync 로 wake 체인 복구 |
+| `/log [detail\|normal\|simple]` | Telegram 알림 상세도 (`control.json.log_level`). 인자 없으면 현재값 표시 |
 
 ---
 
@@ -96,22 +97,36 @@ Dockerfile             # (변경 없음 — 엔트리포인트는 배포 시 --c
   "paused": false,
   "since": null,               // paused=true 로 바뀐 시각 (ISO 'Z'), 아니면 null
   "by": null,                  // "telegram:/pause" 등 출처 메모
+  "log_level": "normal",       // "detail" | "normal" | "simple"  — Telegram 알림 상세도
   "updated_at": "2026-08-31T12:00:00Z"
 }
 ```
-- 기본형(파일 없음): `{"paused": false, "since": null, "by": null, "updated_at": null}`.
+- 기본형(파일 없음): `{"paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": null}`.
 - 직렬화 규칙은 v2.0 §6 과 동일.
+- **log_level 별 전송 이벤트** (`notify.allows(level, kind)`):
+  | 종류 | detail | normal | simple |
+  |---|:-:|:-:|:-:|
+  | A upcoming / B live_start / C live_end | ✓ | ✓ | ✗ |
+  | D sync 요약 | **매 실행** | ✗ | ✗ |
+  | E fallback / F 오류 / 다운 알림 | ✓ | ✓ | ✓ |
+
+  `schedule.json` 은 `generated_at` 때문에 매번 다르게 직렬화되므로, handlers 가 volatile 필드
+  (`generated_at`/`last_updated`/`concurrent_viewers`)만 바뀐 경우 prev 값으로 되돌려 무의미한
+  커밋을 막는다 (`_stable_view` 비교).
 
 ### `control.py` API  [haiku #2]
 
 ```python
+LOG_LEVELS = ("detail", "normal", "simple")
 def default_control() -> dict: ...
-def is_paused(control: dict) -> bool: ...
-def set_paused(control: dict, paused: bool, *, by: str, now_iso: str) -> dict:
-    """새 dict 반환. paused=True 면 since=now_iso, False 면 since=None."""
+def is_paused(control) -> bool: ...
+def get_log_level(control) -> str:                                  # 이상값 → "normal"
+def set_paused(control, paused: bool, *, by: str, now_iso: str) -> dict:   # log_level 등 보존
+def set_log_level(control, level: str, *, by: str, now_iso: str) -> dict:  # 이상 level → ValueError
 ```
 - 로드/저장은 handlers·telegram_app 이 `GitHubStore.read_json("control.json")` /
   `write_json("control.json", ...)` 로 직접. `control.py` 는 순수 헬퍼만.
+- `set_*` 는 원본 dict 를 복사해 해당 키만 갱신 — 다른 필드 유실 금지.
 
 ---
 
