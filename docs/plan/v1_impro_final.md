@@ -121,7 +121,25 @@
 - **`data` 저장·인증**: `data` 브랜치 유지(GCS 이전 안 함 — egress 과금·CORS·CDN·프론트 변경·git 히스토리
   상실 회피). Cloud Run 이 fine-grained PAT(Secret Manager) + GitHub Contents API 로 커밋.
 
-# 미결 / 참고
+# 배포 (2026-08-31)
 
-- **아키텍처 다이어그램 갱신**: `v1_impro_architecture.png` 는 아직 "GitHub Actions(백엔드 로직)" 로
-  그려져 있음. "Cloud Run(백엔드 로직)" 으로 교체 반영 필요.
+- Cloud Run `mewtype-backend` (비공개·OIDC), Cloud Scheduler `mewtype-baseline`/`mewtype-light`,
+  Cloud Tasks 큐 `mewtype-wake`, Secret Manager(`YOUTUBE_API_KEY`/`GITHUB_TOKEN`) 배포·검증 완료.
+  프로젝트 `mewtype-scheduler`, 리전 `asia-northeast1`. 스크립트: `deploy/`.
+- 그림: `v1_impro_architecture.png` (생성기 `gen_architecture.py`) — Cloud Run 반영본.
+- 발견·수정: Cloud Tasks `scheduleTime` 720h 상한 → `statemachine` 이 `now+696h` 클램프 + 힐링.
+  `/healthz` 는 GFE 가 가로채므로 루트 `/` 로 헬스체크.
+
+---
+
+# v2.1 — Telegram 모니터링 & 원격 제어
+
+별도 명세 `docs/IMPLEMENTATION_v2.1.md`, 그림 `v2_1_telegram.png` (`gen_telegram.py`).
+
+- **아웃바운드 알림** (메인 서비스 → 운영자 DM): upcoming 발생 / live 시작(지각) / live 종료 /
+  tick 요약(변경 시만) / fallback / 서버 오류.
+- **다운 감지**: `/tick` 성공 끝에 healthchecks.io 핑 → 유실 시 Telegram 알림.
+- **인바운드** (`/status` `/pause` `/resume`): 공개 서비스 `mewtype-telegram` (같은 이미지,
+  엔트리포인트만 다름, INVOKER_SA 로 실행). `control.json`(data 브랜치)에 `paused` 플래그.
+  paused 면 `/tick`·`/wake` 는 no-op, `/resume` 이 full sync 로 wake 체인 복구.
+- 메인 서비스 보안 태세(`--no-allow-unauthenticated` + OIDC) 불변.

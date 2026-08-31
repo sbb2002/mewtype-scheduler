@@ -35,6 +35,13 @@ bash deploy/telegram_webhook.sh  # setWebhook 등록
 # 로그 확인: gcloud run services logs read mewtype-telegram --region asia-northeast1
 ```
 
+주의:
+- `mewtype-telegram` 은 **INVOKER_SA 로 실행**된다 (`deploy_telegram.sh`). `/resume` 이 메인 `/tick` 을
+  OIDC 로 호출할 때 메인이 caller email == INVOKER_SA 를 요구하기 때문. RUNTIME_SA 로 실행 시
+  `token email mismatch` 403 → "동기화 상태 확인 불가" 로 나타남.
+- `setup.sh` 가 INVOKER_SA 에 `secretmanager.secretAccessor` 를 부여한다 (webhook 서비스의 GITHUB_TOKEN
+  등 시크릿 접근용). 누락 시 `mewtype-telegram` 배포는 되나 런타임에 시크릿을 못 읽음.
+
 ### 롤백 (v2.1)
 
 ```bash
