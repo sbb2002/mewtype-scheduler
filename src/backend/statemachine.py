@@ -338,6 +338,25 @@ def sync_pending(
                 decision.log.append(f"live-watch→pre-live {video_id} (재예약)")
                 changed = True
 
+    # ─ 3.5 장기 예약 힐링 ─
+    # next_check_at 이 720h 상한을 넘는 엔트리(과거에 enqueue 400 으로 태스크가 안 걸렸거나,
+    # 상한 도입 전에 만들어진 것)를 상한으로 당기고 재enqueue 한다. sections 1~3 에서
+    # 이미 처리된 엔트리와는 겹치지 않는다(그쪽은 next_check_at <= now 또는 방금 갱신됨).
+    _horizon = now + timedelta(seconds=MAX_TASK_HORIZON_SEC)
+    _already = {vid for vid, _ in decision.enqueue}
+    for video_id, entry in entries.items():
+        if video_id in _already:
+            continue
+        try:
+            nca = _parse_iso(entry["next_check_at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if nca > _horizon:
+            entry["next_check_at"] = _to_iso(_horizon)
+            decision.enqueue.append((video_id, _to_iso(_horizon)))
+            decision.log.append(f"long-poll clamp {video_id}")
+            changed = True
+
     # ─ 4. 마무리 ─
     # enqueue 시각을 [now+60s, now+696h] 로 클램프하고, 살아있는 엔트리의
     # next_check_at 도 같은 값으로 맞춰 pending.json 과 실제 태스크를 일치시킨다.
@@ -639,5 +658,32 @@ if __name__ == "__main__":
     print(f"✓ enqueue 시각도 동일: {decision_7.enqueue}")
 
     print("\n" + "=" * 60)
-    print("SUCCESS: 모든 7개 시나리오 통과")
+    print("시나리오 8: 상한 초과 next_check_at 를 가진 기존 엔트리 힐링 + 재enqueue")
+    print("=" * 60)
+
+    pending_8 = {
+        "updated_at": "2026-08-31T11:00:00Z",
+        "entries": {
+            "stuck_vid": {
+                "channel_key": "arale",
+                "phase": PHASE_PRELIVE,
+                "scheduled_start": "2027-08-16T14:59:00Z",
+                "actual_start": None,
+                "next_check_at": "2027-08-16T14:44:00Z",  # 상한 훨씬 초과, due 아님
+                "attempts": 0,
+                "first_seen": "2026-08-31T11:00:00Z",
+                "last_checked": None,
+            }
+        },
+    }
+    # videos 에 없음(장기 예약이라 이번 배치에 안 들어옴) — 힐링은 videos 무관
+    decision_8 = sync_pending(pending_8, {}, channel_id_to_key, now_iso, mode="sync")
+    entry_8 = decision_8.new_pending["entries"]["stuck_vid"]
+    assert entry_8["next_check_at"] == horizon, f"got {entry_8['next_check_at']}"
+    assert ("stuck_vid", horizon) in decision_8.enqueue
+    print(f"✓ 힐링됨: {entry_8['next_check_at']}")
+    print(f"✓ 재enqueue: {decision_8.enqueue}")
+
+    print("\n" + "=" * 60)
+    print("SUCCESS: 모든 8개 시나리오 통과")
     print("=" * 60)
