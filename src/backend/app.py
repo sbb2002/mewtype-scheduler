@@ -3,7 +3,7 @@
 라우트:
   POST /tick    — Cloud Scheduler (body: {"mode": "baseline"|"light"})
   POST /wake    — Cloud Tasks     (body: {"video_id": "..."})
-  GET  /healthz — 무인증 헬스체크
+  GET  /        — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
 
@@ -66,6 +66,7 @@ def _wake():
         return jsonify({"error": str(e)}), 500
 
 
+@app.get("/")
 @app.get("/healthz")
 def _healthz():
     return "ok", 200

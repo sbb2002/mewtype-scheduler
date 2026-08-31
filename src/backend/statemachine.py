@@ -21,6 +21,11 @@ LIVEWATCH_EARLY_SEC = 30 * 60  # live 시작 ~ +60분: 30분 간격
 LIVEWATCH_EARLY_WINDOW_SEC = 60 * 60
 LIVEWATCH_TIGHT_SEC = 3 * 60  # +60분 이후: 3분 간격
 
+# Cloud Tasks 는 scheduleTime 을 최대 720h(30일) 뒤까지만 허용한다.
+# 그보다 먼 장기 예약(대기소/프리챗 프레임 등)은 이 상한으로 당겨서 "롱폴링"으로 처리 —
+# 상한 시각에 깨어나 여전히 먼 미래면 다시 상한으로 재예약한다.
+MAX_TASK_HORIZON_SEC = 29 * 24 * 60 * 60  # 696h. 720h 하드리밋보다 보수적
+
 PHASE_PRELIVE = "pre-live"
 PHASE_LIVEWATCH = "live-watch"
 
@@ -51,9 +56,11 @@ def _to_iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _clamp_to_future(schedule_time_iso: str, now_iso: str) -> str:
-    """
-    과거 시각이면 now + 60초로 클램프.
+def _bound_schedule_time(schedule_time_iso: str, now_iso: str) -> str:
+    """다음 wake 시각을 [now+60초, now+MAX_TASK_HORIZON] 범위로 클램프.
+
+    - 과거이거나 임박한 시각 → now+60초 (Cloud Tasks 즉시 실행 방지).
+    - Cloud Tasks 720h 상한을 넘는 먼 미래 → now+696시간 (롱폴링).
 
     Args:
         schedule_time_iso: 예정 시각 (ISO 'Z')
@@ -62,13 +69,15 @@ def _clamp_to_future(schedule_time_iso: str, now_iso: str) -> str:
     Returns:
         클램프된 시각 (ISO 'Z')
     """
-    scheduled = _parse_iso(schedule_time_iso)
+    t = _parse_iso(schedule_time_iso)
     now = _parse_iso(now_iso)
-
-    if scheduled < now:
-        scheduled = now + timedelta(seconds=60)
-
-    return _to_iso(scheduled)
+    lo = now + timedelta(seconds=60)
+    hi = now + timedelta(seconds=MAX_TASK_HORIZON_SEC)
+    if t < lo:
+        t = lo
+    elif t > hi:
+        t = hi
+    return _to_iso(t)
 
 
 @dataclass
@@ -330,13 +339,16 @@ def sync_pending(
                 changed = True
 
     # ─ 4. 마무리 ─
-    # enqueue 목록의 시각 클램프 (과거면 now + 60s)
-    clamped_enqueue = []
+    # enqueue 시각을 [now+60s, now+696h] 로 클램프하고, 살아있는 엔트리의
+    # next_check_at 도 같은 값으로 맞춰 pending.json 과 실제 태스크를 일치시킨다.
+    bounded_enqueue = []
     for video_id, schedule_time_iso in decision.enqueue:
-        clamped_time = _clamp_to_future(schedule_time_iso, now_iso)
-        clamped_enqueue.append((video_id, clamped_time))
+        bounded = _bound_schedule_time(schedule_time_iso, now_iso)
+        bounded_enqueue.append((video_id, bounded))
+        if video_id in entries:
+            entries[video_id]["next_check_at"] = bounded
 
-    decision.enqueue = clamped_enqueue
+    decision.enqueue = bounded_enqueue
 
     # 변경 있으면 updated_at 갱신, 없으면 유지
     if changed:
@@ -601,5 +613,31 @@ if __name__ == "__main__":
     print(f"✓ enqueue: {decision_6.enqueue}")
 
     print("\n" + "=" * 60)
-    print("SUCCESS: 모든 6개 시나리오 통과")
+    print("시나리오 7: 장기 예약(720h 초과) → next_check_at 이 696h 상한으로 클램프")
+    print("=" * 60)
+
+    pending_7 = {"updated_at": None, "entries": {}}
+    video_7 = types.SimpleNamespace(
+        video_id="farfuture_vid",
+        channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
+        live_state="upcoming",
+        scheduled_start="2028-01-01T14:30:00Z",  # 약 1년 4개월 뒤
+        actual_start=None,
+        actual_end=None,
+        concurrent_viewers=None,
+        title="Test",
+        thumbnail="http://test.jpg",
+    )
+    decision_7 = sync_pending(
+        pending_7, {"farfuture_vid": video_7}, channel_id_to_key, now_iso, mode="sync"
+    )
+    entry_7 = decision_7.new_pending["entries"]["farfuture_vid"]
+    horizon = _to_iso(_parse_iso(now_iso) + timedelta(seconds=MAX_TASK_HORIZON_SEC))
+    assert entry_7["next_check_at"] == horizon, f"got {entry_7['next_check_at']}, want {horizon}"
+    assert decision_7.enqueue[0][1] == horizon
+    print(f"✓ next_check_at 클램프: {entry_7['next_check_at']} (= now + 696h)")
+    print(f"✓ enqueue 시각도 동일: {decision_7.enqueue}")
+
+    print("\n" + "=" * 60)
+    print("SUCCESS: 모든 7개 시나리오 통과")
     print("=" * 60)
