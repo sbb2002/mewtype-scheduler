@@ -79,28 +79,26 @@ else
 fi
 
 echo "=== Secret Manager 시크릿 생성 ==="
-# YOUTUBE_API_KEY
-if gcloud secrets describe YOUTUBE_API_KEY &>/dev/null; then
-  echo "✓ YOUTUBE_API_KEY 이미 존재"
-else
-  echo "생성 중: YOUTUBE_API_KEY"
-  echo "YouTube API 키를 입력하세요 (에코 안 됨):"
-  read -rs YOUTUBE_API_KEY
-  echo "$YOUTUBE_API_KEY" | gcloud secrets create YOUTUBE_API_KEY \
-    --data-file=- \
-    --replication-policy=automatic
-fi
 
-# GITHUB_TOKEN
-if gcloud secrets describe GITHUB_TOKEN &>/dev/null; then
-  echo "✓ GITHUB_TOKEN 이미 존재"
-else
-  echo "생성 중: GITHUB_TOKEN"
-  echo "GitHub fine-grained PAT를 입력하세요 (에코 안 됨, Contents R/W 권한):"
-  read -rs GITHUB_TOKEN
-  echo "$GITHUB_TOKEN" | gcloud secrets create GITHUB_TOKEN \
-    --data-file=- \
-    --replication-policy=automatic
-fi
+# 시크릿 생성 헬퍼: env 에 값이 있으면 그대로 쓰고, 없으면 프롬프트.
+create_secret () {
+  local name="$1" prompt="$2" value="${3:-}"
+  if gcloud secrets describe "$name" &>/dev/null; then
+    echo "✓ $name 이미 존재 (갱신하려면 gcloud secrets versions add)"
+    return
+  fi
+  if [[ -z "$value" ]]; then
+    echo "$prompt (에코 안 됨):"
+    read -rs value
+    echo
+  else
+    echo "생성 중: $name (env 값 사용)"
+  fi
+  printf '%s' "$value" | gcloud secrets create "$name" \
+    --data-file=- --replication-policy=automatic
+}
+
+create_secret YOUTUBE_API_KEY "YouTube API 키를 입력하세요" "${YOUTUBE_API_KEY:-}"
+create_secret GITHUB_TOKEN "GitHub fine-grained PAT를 입력하세요 (Contents R/W)" "${GITHUB_TOKEN:-}"
 
 echo "=== 셋업 완료 ==="
