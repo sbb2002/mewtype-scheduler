@@ -72,12 +72,16 @@ for AGENT in \
     --quiet 2>/dev/null || true
 done
 
-echo "=== Cloud Tasks 큐 생성 ==="
+echo "=== Cloud Tasks 큐 생성/설정 ==="
+# max-concurrent-dispatches=1: wake 를 순차 발화(data 브랜치 쓰기 직렬화). 생성/기존 모두 강제.
 if gcloud tasks queues describe "$TASKS_QUEUE" --location="$GCP_LOCATION" &>/dev/null; then
-  echo "✓ $TASKS_QUEUE 큐 이미 존재"
+  echo "✓ $TASKS_QUEUE 큐 이미 존재 — 설정 갱신"
+  gcloud tasks queues update "$TASKS_QUEUE" --location="$GCP_LOCATION" \
+    --max-concurrent-dispatches=1
 else
   echo "생성 중: $TASKS_QUEUE"
-  gcloud tasks queues create "$TASKS_QUEUE" --location="$GCP_LOCATION"
+  gcloud tasks queues create "$TASKS_QUEUE" --location="$GCP_LOCATION" \
+    --max-concurrent-dispatches=1
 fi
 
 echo "=== Secret Manager 시크릿 생성 ==="
