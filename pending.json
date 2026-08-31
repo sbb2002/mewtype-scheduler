@@ -52,14 +52,14 @@
     },
     "rLfpBK5PUcU": {
       "actual_start": "2026-08-31T14:00:41Z",
-      "attempts": 1,
+      "attempts": 2,
       "channel_key": "miyako",
       "first_seen": "2026-08-31T11:22:33Z",
-      "last_checked": "2026-08-31T14:03:05Z",
-      "next_check_at": "2026-08-31T14:33:05Z",
+      "last_checked": "2026-08-31T14:33:00Z",
+      "next_check_at": "2026-08-31T15:03:00Z",
       "phase": "live-watch",
       "scheduled_start": "2026-08-31T14:00:00Z"
     }
   },
-  "updated_at": "2026-08-31T14:30:46Z"
+  "updated_at": "2026-08-31T14:33:00Z"
 }
