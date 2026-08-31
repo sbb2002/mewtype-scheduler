@@ -32,11 +32,11 @@
     },
     "SS04QWN1rrQ": {
       "actual_start": "2026-08-31T12:06:57Z",
-      "attempts": 33,
+      "attempts": 34,
       "channel_key": "nonoka",
       "first_seen": "2026-08-31T12:30:45Z",
-      "last_checked": "2026-08-31T15:03:46Z",
-      "next_check_at": "2026-08-31T15:06:46Z",
+      "last_checked": "2026-08-31T15:06:46Z",
+      "next_check_at": "2026-08-31T15:09:46Z",
       "phase": "live-watch",
       "scheduled_start": "2026-08-31T12:06:38Z"
     },
@@ -61,5 +61,5 @@
       "scheduled_start": "2026-12-24T14:59:00Z"
     }
   },
-  "updated_at": "2026-08-31T15:06:00Z"
+  "updated_at": "2026-08-31T15:06:46Z"
 }
