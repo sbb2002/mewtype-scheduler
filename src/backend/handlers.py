@@ -38,6 +38,25 @@ def _tracked_unresolved_ids(schedule: dict) -> list[str]:
     ]
 
 
+def _stable_view(schedule: dict) -> dict:
+    """schedule 에서 volatile 타임스탬프(generated_at, 각 broadcast 의 last_updated)를 뺀 비교용 뷰.
+
+    concurrent_viewers 도 라이브 중 계속 변하므로 제외 — 시청자 수 변동만으로는 커밋/알림 안 함.
+    """
+    schedule = schedule or {}
+    return {
+        "channel_order": schedule.get("channel_order"),
+        "channels": schedule.get("channels"),
+        "broadcasts": sorted(
+            (
+                {k: v for k, v in b.items() if k not in ("last_updated", "concurrent_viewers")}
+                for b in schedule.get("broadcasts", [])
+            ),
+            key=lambda b: b.get("video_id", ""),
+        ),
+    }
+
+
 def _merge_archive(prev_archive: dict, newly_ended: list[dict], now_iso: str) -> tuple[dict, bool]:
     """archive.json 에 newly_ended 를 video_id 기준 dedupe 하며 append. (new_archive, changed)."""
     prev_archive = prev_archive or {"updated_at": None, "broadcasts": []}
@@ -127,6 +146,18 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     new_schedule, newly_ended = build_schedule(
         channels_cfg, videos, prev_schedule, now_iso, avatars
     )
+    # generated_at / last_updated 타임스탬프만 바뀐 경우 커밋하지 않도록 volatile 필드를
+    # prev 값으로 되돌린다 (라이브 중 3분마다 무의미한 data 브랜치 커밋 방지).
+    if _stable_view(prev_schedule) == _stable_view(new_schedule):
+        new_schedule["generated_at"] = prev_schedule.get("generated_at")
+        _prev_bc = {b.get("video_id"): b for b in prev_schedule.get("broadcasts", [])}
+        for b in new_schedule.get("broadcasts", []):
+            pb = _prev_bc.get(b.get("video_id"))
+            if not pb:
+                continue
+            for f in ("last_updated", "concurrent_viewers"):
+                if f in pb:
+                    b[f] = pb[f]
     sched_changed, _ = gh.write_json(
         "schedule.json", new_schedule, prev_sha=sched_sha,
         message=f"data: schedule {now_iso}",
@@ -180,14 +211,17 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     }
 
     # ── Telegram 알림 (v2.1) — 실패해도 주 로직 무영향 ──
+    # schedule_changed 는 generated_at 타임스탬프 때문에 매번 True 이므로 요약 트리거로 못 씀.
+    # 의미 있는 전이(diff_events 의 A/B/C/E) 또는 drop/enqueue 오류가 있을 때만 요약 전송.
     try:
         tg = Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id)
-        for ev in diff_events(
+        events = diff_events(
             prev_schedule, new_schedule, newly_ended,
             decision.log, channels_cfg["channels"], now_iso,
-        ):
+        )
+        for ev in events:
             tg.send(ev.text)
-        if sched_changed or newly_ended or decision.dropped or enqueue_errors:
+        if events or decision.dropped or enqueue_errors:
             tg.send(summary_text(result, now_iso), silent=True)
     except Exception as e:  # noqa: BLE001
         log.warning("telegram 알림 실패: %s", e)

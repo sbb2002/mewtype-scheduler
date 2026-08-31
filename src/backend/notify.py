@@ -390,7 +390,9 @@ def summary_text(result: dict, now_iso: str) -> str:
     """
     kst = _to_kst(now_iso)
     mode = result.get("mode", "light")
-    mode_label = "light sync" if mode == "light" else "baseline sync"
+    mode_label = {"light": "light sync", "baseline": "baseline sync", "wake": "wake"}.get(
+        mode, mode
+    )
 
     candidates = result.get("candidates", 0)
     videos = result.get("videos", 0)
