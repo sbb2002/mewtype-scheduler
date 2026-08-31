@@ -1,0 +1,8 @@
+_data/
+.git/
+src/frontend/
+docs/
+fixtures/
+__pycache__/
+*.pyc
+.github/

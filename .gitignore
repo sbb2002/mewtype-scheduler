@@ -10,3 +10,4 @@ node_modules/
 .vercel/
 collector_state_local/
 *.log
+deploy/env.sh

@@ -1,8 +1,7 @@
 name: collect
 
+# v2.0: 정기 수집은 Cloud Run이 담당하며 이 워크플로우는 수동 break-glass 전용이고 pending.json은 갱신하지 않는다.
 on:
-  schedule:
-    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
       mode:
