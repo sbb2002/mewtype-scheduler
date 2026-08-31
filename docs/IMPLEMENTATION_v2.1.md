@@ -309,18 +309,20 @@ source deploy/env.sh
 MAIN_URL=$(gcloud run services describe "$SERVICE_NAME" --region "$GCP_LOCATION" --format='value(status.url)')
 # 같은 이미지, 다른 엔트리포인트. --source 재빌드 대신 메인이 만든 이미지를 재사용해도 되나
 # 간단히 --source . + --command 로.
+# INVOKER_SA 로 실행 — /resume 이 메인 /tick 을 호출할 때 메인의 oidc.verify_request 가
+# caller email == INVOKER_SA 를 요구하기 때문. INVOKER_SA 는 secretmanager.secretAccessor 필요(setup.sh).
 gcloud run deploy mewtype-telegram \
   --source . --region "$GCP_LOCATION" \
   --allow-unauthenticated \
-  --service-account "$RUNTIME_SA" \
-  --command "gunicorn" \
-  --args "--bind,:8080,--workers,1,--threads,4,--timeout,60,src.backend.telegram_app:app" \
+  --service-account "$INVOKER_SA" \
+  --command=gunicorn \
+  --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=60,src.backend.telegram_app:app" \
   --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,ALLOW_UNAUTH=1"
 # ALLOW_UNAUTH=1: telegram_app 은 OIDC 검증 안 함(자체 시크릿 인증). tick/wake 라우트가 없으므로 안전.
-# 런타임 SA 에 메인서비스 invoker 권한 (/resume heal 호출용)
+# INVOKER_SA 에 메인서비스 invoker 권한 (/resume heal 호출용). deploy.sh 가 이미 부여하지만 멱등 재확인.
 gcloud run services add-iam-policy-binding "$SERVICE_NAME" --region "$GCP_LOCATION" \
-  --member "serviceAccount:$RUNTIME_SA" --role roles/run.invoker
+  --member "serviceAccount:$INVOKER_SA" --role roles/run.invoker
 ```
 
 ### `deploy/telegram_webhook.sh` (신규)

@@ -49,12 +49,14 @@ gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
   --condition=None \
   --quiet 2>/dev/null || true
 
-# secretmanager.secretAccessor 역할
-gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
-  --member="serviceAccount:$RUNTIME_SA" \
-  --role="roles/secretmanager.secretAccessor" \
-  --condition=None \
-  --quiet 2>/dev/null || true
+# secretmanager.secretAccessor 역할 (RUNTIME_SA = 메인, INVOKER_SA = mewtype-telegram 실행 계정)
+for SA in "$RUNTIME_SA" "$INVOKER_SA"; do
+  gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+    --member="serviceAccount:$SA" \
+    --role="roles/secretmanager.secretAccessor" \
+    --condition=None \
+    --quiet 2>/dev/null || true
+done
 
 # Cloud Scheduler / Cloud Tasks 서비스 에이전트가 INVOKER_SA 로 OIDC 토큰을 발급하려면
 # 각 에이전트에 INVOKER_SA 에 대한 tokenCreator 권한이 필요하다 (신규 프로젝트는 자동 부여되기도 하나 명시).
