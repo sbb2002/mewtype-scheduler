@@ -280,13 +280,31 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
     return tg.send(text, parse_mode="HTML", silent=silent)
 
 
+# /status 두 번째 메시지 — 용어집. 사용자가 요청한 고정 안내문.
+_STATUS_GLOSSARY = (
+    "📖 <b>sync 요약 필드</b>\n"
+    "· <b>후보</b> — 상태 확인 대상 videoId 수 (RSS ∪ pending 추적 ∪ schedule 미해결)\n"
+    "· <b>조회</b> — videos.list 로 실제 정보 받은 수 (삭제·비공개면 조회&lt;후보)\n"
+    "· <b>쿼터</b> — 이번 실행이 쓴 YouTube API 유닛 (배치 1 / baseline 은 아바타 +1). 일 한도 10,000\n"
+    "· <b>schedule 변경 O/X</b> — data 브랜치에 실제 커밋됐는지 (타임스탬프만 바뀌면 X)\n"
+    "· <b>pending N건</b> — 추적 중인 방송 수 (pre-live + live-watch)\n"
+    "· <b>enqueue a/b</b> — Cloud Tasks 에 넣으려던 수 / 성공 수 (720h 초과 등으로 실패 가능)\n"
+    "· <b>전이</b> — new pre-live(신규 예정) · pre-live→live-watch(시작) · "
+    "live-watch→ended(종료) · reschedule(예정시각 변동) · long-poll clamp(장기예약 재예약)\n"
+    "\n"
+    "🔧 <b>로그 레벨</b> (/log 로 변경)\n"
+    "· <b>detail</b> — 전이 + fallback/오류 + 매 실행 sync 요약\n"
+    "· <b>normal</b> — 전이 + fallback/오류 (sync 요약 없음) · 기본값\n"
+    "· <b>simple</b> — fallback/오류만"
+)
+
+
 def _handle_status(gh: GitHubStore, channels_cfg: dict, now_iso: str) -> None:
-    """
-    /status 명령 처리.
-    """
+    """/status 명령 처리. 상태 요약 + 용어집 2개 메시지."""
     try:
         text = _build_status_text(now_iso, gh, channels_cfg)
         _send_telegram(text)
+        _send_telegram(_STATUS_GLOSSARY, silent=True)
     except Exception as e:
         log.exception("Error handling /status")
         _send_telegram(f"⚠️ 오류: /status 처리 실패\n{str(e)[:100]}")
