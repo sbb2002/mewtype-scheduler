@@ -3,9 +3,9 @@
     {
       "actual_start": "2026-08-31T12:06:57Z",
       "channel_key": "nonoka",
-      "concurrent_viewers": 611,
+      "concurrent_viewers": 584,
       "first_seen": "2026-08-31T12:30:45Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2026-08-31T12:06:38Z",
       "status": "live",
       "thumbnail": "https://i.ytimg.com/vi/SS04QWN1rrQ/maxresdefault_live.jpg",
@@ -16,9 +16,9 @@
     {
       "actual_start": "2026-08-31T13:14:39Z",
       "channel_key": "ritsu",
-      "concurrent_viewers": 737,
+      "concurrent_viewers": 718,
       "first_seen": "2026-08-30T14:32:35Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2026-08-31T13:00:00Z",
       "status": "live",
       "thumbnail": "https://i.ytimg.com/vi/zjSgepNhZQY/maxresdefault_live.jpg",
@@ -29,9 +29,9 @@
     {
       "actual_start": "2026-08-31T14:00:41Z",
       "channel_key": "miyako",
-      "concurrent_viewers": 340,
+      "concurrent_viewers": 372,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2026-08-31T14:00:00Z",
       "status": "live",
       "thumbnail": "https://i.ytimg.com/vi/rLfpBK5PUcU/maxresdefault_live.jpg",
@@ -44,7 +44,7 @@
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2026-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/maxresdefault_live.jpg",
@@ -57,7 +57,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -70,7 +70,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -83,7 +83,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-08-31T14:06:45Z",
+      "last_updated": "2026-08-31T14:09:45Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -141,5 +141,5 @@
       "name_ko": "센고쿠 유노"
     }
   },
-  "generated_at": "2026-08-31T14:06:45Z"
+  "generated_at": "2026-08-31T14:09:45Z"
 }
