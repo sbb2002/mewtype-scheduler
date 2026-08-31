@@ -1,6 +1,7 @@
 {
-  "by": "telegram:/resume",
+  "by": "telegram:/log",
+  "log_level": "detail",
   "paused": false,
   "since": null,
-  "updated_at": "2026-08-31T12:42:09Z"
+  "updated_at": "2026-08-31T14:29:34Z"
 }
