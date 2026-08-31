@@ -49,12 +49,14 @@ gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
   --condition=None \
   --quiet 2>/dev/null || true
 
-# secretmanager.secretAccessor 역할
-gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
-  --member="serviceAccount:$RUNTIME_SA" \
-  --role="roles/secretmanager.secretAccessor" \
-  --condition=None \
-  --quiet 2>/dev/null || true
+# secretmanager.secretAccessor 역할 (RUNTIME_SA = 메인, INVOKER_SA = mewtype-telegram 실행 계정)
+for SA in "$RUNTIME_SA" "$INVOKER_SA"; do
+  gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+    --member="serviceAccount:$SA" \
+    --role="roles/secretmanager.secretAccessor" \
+    --condition=None \
+    --quiet 2>/dev/null || true
+done
 
 # Cloud Scheduler / Cloud Tasks 서비스 에이전트가 INVOKER_SA 로 OIDC 토큰을 발급하려면
 # 각 에이전트에 INVOKER_SA 에 대한 tokenCreator 권한이 필요하다 (신규 프로젝트는 자동 부여되기도 하나 명시).
@@ -70,12 +72,16 @@ for AGENT in \
     --quiet 2>/dev/null || true
 done
 
-echo "=== Cloud Tasks 큐 생성 ==="
+echo "=== Cloud Tasks 큐 생성/설정 ==="
+# max-concurrent-dispatches=1: wake 를 순차 발화(data 브랜치 쓰기 직렬화). 생성/기존 모두 강제.
 if gcloud tasks queues describe "$TASKS_QUEUE" --location="$GCP_LOCATION" &>/dev/null; then
-  echo "✓ $TASKS_QUEUE 큐 이미 존재"
+  echo "✓ $TASKS_QUEUE 큐 이미 존재 — 설정 갱신"
+  gcloud tasks queues update "$TASKS_QUEUE" --location="$GCP_LOCATION" \
+    --max-concurrent-dispatches=1
 else
   echo "생성 중: $TASKS_QUEUE"
-  gcloud tasks queues create "$TASKS_QUEUE" --location="$GCP_LOCATION"
+  gcloud tasks queues create "$TASKS_QUEUE" --location="$GCP_LOCATION" \
+    --max-concurrent-dispatches=1
 fi
 
 echo "=== Secret Manager 시크릿 생성 ==="
@@ -100,5 +106,7 @@ create_secret () {
 
 create_secret YOUTUBE_API_KEY "YouTube API 키를 입력하세요" "${YOUTUBE_API_KEY:-}"
 create_secret GITHUB_TOKEN "GitHub fine-grained PAT를 입력하세요 (Contents R/W)" "${GITHUB_TOKEN:-}"
+create_secret TELEGRAM_BOT_TOKEN "BotFather 봇 토큰" "${TELEGRAM_BOT_TOKEN:-}"
+create_secret TELEGRAM_WEBHOOK_SECRET "webhook secret (임의 문자열)" "${TELEGRAM_WEBHOOK_SECRET:-}"
 
 echo "=== 셋업 완료 ==="

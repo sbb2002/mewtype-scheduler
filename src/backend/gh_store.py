@@ -5,6 +5,8 @@ GitHub Contents API 저장소 클라이언트. schedule.json/archive.json/pendin
 import base64
 import json
 import logging
+import random
+import time
 from typing import Optional
 
 import requests
@@ -177,77 +179,64 @@ class GitHubStore:
         # 3. PUT 수행
         return self._put_json_with_retry(path, serialized, current_sha, message)
 
+    # data 브랜치는 여러 Cloud Run 실행이 동시에 커밋을 시도할 수 있다(방송 시작 시간대에
+    # 여러 /wake 가 몰림). Contents API 는 sha 낙관적 동시성이므로 충돌 시 재조회 후 재시도한다.
+    _CONFLICT_RETRIES = 6
+    _CONFLICT_BACKOFF = 0.4  # 초. n번째 재시도는 n*backoff 만큼 대기(지터 포함)
+
     def _put_json_with_retry(
         self,
         path: str,
         serialized: str,
         current_sha: Optional[str],
         message: str,
-        retry_count: int = 0,
+        retry_count: int = 0,  # 하위호환용 인자. 사용 안 함
     ) -> tuple[bool, Optional[str]]:
-        """
-        PUT 요청을 수행하고, 422/409 충돌 시 1회 재시도.
+        """PUT 을 수행하고 409/422(sha 충돌) 시 재조회 후 재시도(_CONFLICT_RETRIES 회, 백오프).
 
-        Args:
-            path: 파일 경로.
-            serialized: 직렬화된 JSON 문자열.
-            current_sha: 현재 sha (있으면).
-            message: 커밋 메시지.
-            retry_count: 내부 재시도 카운터 (최대 1).
-
-        Returns:
-            (True, 새sha) if successful, or RuntimeError if failed after retry.
+        재조회 결과가 우리가 쓰려는 내용과 이미 동일하면(다른 실행이 같은 내용을 먼저 커밋)
+        (False, sha) 로 조용히 성공 처리한다.
         """
         url = f"{self.API}/repos/{self.repo}/contents/{path}"
-
-        # 베이스64 인코딩
         content_b64 = base64.b64encode(serialized.encode("utf-8")).decode("ascii")
+        sess = self.session or requests.Session()
 
-        body = {
-            "message": message,
-            "content": content_b64,
-            "branch": self.branch,
-        }
-        if current_sha:
-            body["sha"] = current_sha
+        for attempt in range(self._CONFLICT_RETRIES + 1):
+            body = {"message": message, "content": content_b64, "branch": self.branch}
+            if current_sha:
+                body["sha"] = current_sha
 
-        try:
-            sess = self.session or requests.Session()
-            resp = sess.put(
-                url,
-                json=body,
-                headers=self._headers(),
-                timeout=self.timeout,
-            )
+            try:
+                resp = sess.put(url, json=body, headers=self._headers(), timeout=self.timeout)
+            except requests.RequestException as e:
+                raise RuntimeError(f"GitHub API network error: {e}")
 
             if resp.status_code in (200, 201):
-                resp_json = resp.json()
-                new_sha = resp_json.get("content", {}).get("sha")
-                return True, new_sha
+                try:
+                    return True, resp.json().get("content", {}).get("sha")
+                except ValueError as e:
+                    raise RuntimeError(f"GitHub API response parsing error: {e}")
 
-            if resp.status_code in (422, 409):
-                # sha 충돌. 1회 재조회 후 재시도
-                if retry_count == 0:
-                    logger.warning(f"Write conflict on {path}, retrying...")
-                    _, new_current_sha = self.read_json(path)
-                    return self._put_json_with_retry(
-                        path, serialized, new_current_sha, message, retry_count=1
-                    )
-                else:
-                    raise RuntimeError(
-                        f"GitHub API write conflict on {path} (retry exhausted). "
-                        f"Response: {resp.text[:200]}"
-                    )
+            if resp.status_code not in (409, 422):
+                raise RuntimeError(
+                    f"GitHub API write failed: {resp.status_code} {resp.reason}. "
+                    f"Response: {resp.text[:200]}"
+                )
 
-            raise RuntimeError(
-                f"GitHub API write failed: {resp.status_code} {resp.reason}. "
-                f"Response: {resp.text[:200]}"
-            )
+            # ── sha 충돌 ──
+            if attempt >= self._CONFLICT_RETRIES:
+                raise RuntimeError(
+                    f"GitHub API write conflict on {path} (retry exhausted). "
+                    f"Response: {resp.text[:200]}"
+                )
+            time.sleep(self._CONFLICT_BACKOFF * (attempt + 1) + random.uniform(0, 0.2))
+            cur_data, current_sha = self.read_json(path)
+            if cur_data is not None and _serialize(cur_data) == serialized:
+                logger.info("write conflict on %s but content already current — skip", path)
+                return False, current_sha
+            logger.warning("write conflict on %s, retry %d/%d", path, attempt + 1, self._CONFLICT_RETRIES)
 
-        except requests.RequestException as e:
-            raise RuntimeError(f"GitHub API network error: {e}")
-        except (ValueError, KeyError) as e:
-            raise RuntimeError(f"GitHub API response parsing error: {e}")
+        raise RuntimeError(f"GitHub API write conflict on {path} (unreachable)")
 
 
 if __name__ == "__main__":
