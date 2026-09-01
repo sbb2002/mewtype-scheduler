@@ -280,17 +280,19 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
     return tg.send(text, parse_mode="HTML", silent=silent)
 
 
-# /status 두 번째 메시지 — 용어집. 사용자가 요청한 고정 안내문.
+# /status 두 번째 메시지 — 첫 메시지(_build_status_text)에 나오는 용어 풀이.
 _STATUS_GLOSSARY = (
-    "📖 <b>sync 요약 필드</b>\n"
-    "· <b>후보</b> — 상태 확인 대상 videoId 수 (RSS ∪ pending 추적 ∪ schedule 미해결)\n"
-    "· <b>조회</b> — videos.list 로 실제 정보 받은 수 (삭제·비공개면 조회&lt;후보)\n"
-    "· <b>쿼터</b> — 이번 실행이 쓴 YouTube API 유닛 (배치 1 / baseline 은 아바타 +1). 일 한도 10,000\n"
-    "· <b>schedule 변경 O/X</b> — data 브랜치에 실제 커밋됐는지 (타임스탬프만 바뀌면 X)\n"
-    "· <b>pending N건</b> — 추적 중인 방송 수 (pre-live + live-watch)\n"
-    "· <b>enqueue a/b</b> — Cloud Tasks 에 넣으려던 수 / 성공 수 (720h 초과 등으로 실패 가능)\n"
-    "· <b>전이</b> — new pre-live(신규 예정) · pre-live→live-watch(시작) · "
-    "live-watch→ended(종료) · reschedule(예정시각 변동) · long-poll clamp(장기예약 재예약)\n"
+    "📖 <b>/status 필드</b>\n"
+    "· <b>상태</b> — 🟢 정상 / ⏸ 일시정지 (/pause 로 멈춤, 괄호는 경과 시간). "
+    "정지 중엔 tick·wake 가 no-op\n"
+    "· <b>로그</b> — 현재 Telegram 알림 레벨 (/log 로 변경)\n"
+    "· <b>마지막 sync</b> — 백엔드가 schedule.json 을 마지막으로 재구성한 시각 "
+    "(schedule.generated_at). 괄호는 지금으로부터 경과\n"
+    "· <b>라이브</b> — 지금 방송 중인 항목. 「제목」 뒤 시각은 실제 시작 시각\n"
+    "· <b>예정</b> — upcoming 방송 수. <b>오늘</b>=KST 같은 날 · <b>이번주</b>=1~6일 뒤 · "
+    "<b>이후</b>=7일 이상 뒤\n"
+    "· <b>대기 wake</b> — Cloud Tasks 에 예약된 방송별 상태확인 건수 (pre-live + live-watch). "
+    "<b>다음</b>=가장 이른 재확인 시각\n"
     "\n"
     "🔧 <b>로그 레벨</b> (/log 로 변경)\n"
     "· <b>detail</b> — 전이 + fallback/오류 + 매 실행 sync 요약\n"
