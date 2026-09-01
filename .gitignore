@@ -11,3 +11,5 @@ node_modules/
 collector_state_local/
 *.log
 deploy/env.sh
+
+.secrets
