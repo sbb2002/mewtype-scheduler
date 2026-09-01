@@ -22,11 +22,11 @@
     },
     "G5KZVkFNJmE": {
       "actual_start": "2026-09-01T14:44:29Z",
-      "attempts": 2,
+      "attempts": 3,
       "channel_key": "ritsu",
       "first_seen": "2026-08-31T15:00:01Z",
-      "last_checked": "2026-09-01T15:45:03Z",
-      "next_check_at": "2026-09-01T15:48:03Z",
+      "last_checked": "2026-09-01T15:48:03Z",
+      "next_check_at": "2026-09-01T15:51:03Z",
       "phase": "live-watch",
       "scheduled_start": "2026-09-01T14:30:00Z"
     },
@@ -51,5 +51,5 @@
       "scheduled_start": "2026-12-24T14:59:00Z"
     }
   },
-  "updated_at": "2026-09-01T15:45:03Z"
+  "updated_at": "2026-09-01T15:48:03Z"
 }
