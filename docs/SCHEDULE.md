@@ -35,6 +35,16 @@ v2 백엔드는 Cloud Run **scale-to-zero** HTTP 서비스다. 요청이 올 때
 > GitHub Actions `.github/workflows/collect.yml` 은 cron이 제거됐고 `workflow_dispatch`
 > 수동 전용(break-glass)이다. 평소 스케줄에 관여하지 않는다.
 
+### 프론트 하단 "업데이트" 시각 = `schedule.json.generated_at`
+
+- 매 tick/wake 마다 `build_schedule` 이 `generated_at = 실행시각` 으로 세팅.
+- 방송 목록에 **실질 변화**(추가·삭제·status 전이·`scheduled_start`·제목·썸네일)가 있으면
+  그대로 커밋 → 시각 전진.
+- 실질 변화가 없어도 `generated_at` 은 **`_HEARTBEAT_MIN_SEC`(20분)** 간격으로 전진시켜
+  커밋한다 (`handlers._heartbeat_generated_at`). "스케줄대로 확인은 했다" 를 사용자가 알 수
+  있도록. 라이브 중 wake 3분 간격마다 커밋되는 것은 막는다.
+- 따라서 프론트 표시 지연 상한 ≈ 20분(heartbeat) + 75초(폴링) + ~5분(raw CDN 캐시).
+
 ---
 
 ## 2. 방송별 wake — 폴링 상태머신

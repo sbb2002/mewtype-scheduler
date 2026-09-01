@@ -31,6 +31,28 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# 실질 변화가 없어도 generated_at(= 프론트 하단 "업데이트" 시각)은 최소 이 간격으로
+# 전진시킨다 — 사용자가 "언제 마지막으로 확인됐나" 를 판단할 수 있도록. 라이브 중
+# wake 3분 간격마다 커밋되는 것은 막는다.
+# ponytail: 고정 임계값. 커밋 수가 문제되면 config 로 뺀다.
+_HEARTBEAT_MIN_SEC = 20 * 60
+
+
+def _heartbeat_generated_at(prev_gen, now_iso: str, min_sec: int = _HEARTBEAT_MIN_SEC) -> str:
+    """실질 변화가 없을 때 쓸 generated_at 값.
+
+    prev 로부터 min_sec 이상 지났으면 now 로 전진(→ 커밋 1회), 아니면 prev 유지(→ 커밋 스킵).
+    """
+    if not prev_gen:
+        return now_iso
+    try:
+        prev_dt = datetime.fromisoformat(prev_gen.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return now_iso
+    return now_iso if (now_dt - prev_dt).total_seconds() >= min_sec else prev_gen
+
+
 def _tracked_unresolved_ids(schedule: dict) -> list[str]:
     return [
         b["video_id"]
@@ -147,10 +169,13 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     new_schedule, newly_ended = build_schedule(
         channels_cfg, videos, prev_schedule, now_iso, avatars
     )
-    # generated_at / last_updated 타임스탬프만 바뀐 경우 커밋하지 않도록 volatile 필드를
-    # prev 값으로 되돌린다 (라이브 중 3분마다 무의미한 data 브랜치 커밋 방지).
+    # 실질 변화(_stable_view)가 없으면 broadcast 별 volatile 필드는 prev 로 동결하고,
+    # generated_at 은 heartbeat 간격(_HEARTBEAT_MIN_SEC)마다만 전진시킨다 → 프론트 "업데이트"
+    # 시각이 주기적으로 갱신되되 라이브 중 3분마다 커밋되지는 않는다.
     if _stable_view(prev_schedule) == _stable_view(new_schedule):
-        new_schedule["generated_at"] = prev_schedule.get("generated_at")
+        new_schedule["generated_at"] = _heartbeat_generated_at(
+            prev_schedule.get("generated_at"), now_iso
+        )
         _prev_bc = {b.get("video_id"): b for b in prev_schedule.get("broadcasts", [])}
         for b in new_schedule.get("broadcasts", []):
             pb = _prev_bc.get(b.get("video_id"))
@@ -250,3 +275,14 @@ def wake(video_id: str) -> dict:
     result = _run("wake", video_id)
     log.info("wake done: %s", result)
     return result
+
+
+if __name__ == "__main__":
+    # _heartbeat_generated_at 스모크 (네트워크 불필요)
+    _b = "2026-09-01T12:00:00Z"
+    assert _heartbeat_generated_at(None, _b) == _b
+    assert _heartbeat_generated_at(_b, "2026-09-01T12:05:00Z") == _b                        # 5분 < 20분 → 유지
+    assert _heartbeat_generated_at(_b, "2026-09-01T12:20:00Z") == "2026-09-01T12:20:00Z"    # 20분 == 임계 → 전진
+    assert _heartbeat_generated_at(_b, "2026-09-01T13:00:00Z") == "2026-09-01T13:00:00Z"
+    assert _heartbeat_generated_at("garbage", "2026-09-01T13:00:00Z") == "2026-09-01T13:00:00Z"
+    print("[OK] _heartbeat_generated_at")
