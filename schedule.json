@@ -1,24 +1,11 @@
 {
   "broadcasts": [
     {
-      "actual_start": "2026-09-01T14:44:29Z",
-      "channel_key": "ritsu",
-      "concurrent_viewers": 239,
-      "first_seen": "2026-08-31T15:00:01Z",
-      "last_updated": "2026-09-01T14:45:00Z",
-      "scheduled_start": "2026-09-01T14:30:00Z",
-      "status": "live",
-      "thumbnail": "https://i.ytimg.com/vi/G5KZVkFNJmE/maxresdefault_live.jpg",
-      "title": "【チラズアート新作「雪葬」】めちゃ怖いらしい・・・絶対に叫びませんよ【峰月律/ゆめみた】",
-      "url": "https://www.youtube.com/watch?v=G5KZVkFNJmE",
-      "video_id": "G5KZVkFNJmE"
-    },
-    {
       "actual_start": null,
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T14:45:00Z",
+      "last_updated": "2026-09-01T16:06:03Z",
       "scheduled_start": "2026-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
@@ -31,7 +18,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T14:45:00Z",
+      "last_updated": "2026-09-01T16:06:03Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -44,7 +31,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T14:45:00Z",
+      "last_updated": "2026-09-01T16:06:03Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -57,7 +44,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T14:45:00Z",
+      "last_updated": "2026-09-01T16:06:03Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -115,5 +102,5 @@
       "name_ko": "센고쿠 유노"
     }
   },
-  "generated_at": "2026-09-01T15:45:03Z"
+  "generated_at": "2026-09-01T16:06:03Z"
 }
