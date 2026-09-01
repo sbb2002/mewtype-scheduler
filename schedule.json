@@ -2,10 +2,23 @@
   "broadcasts": [
     {
       "actual_start": null,
+      "channel_key": "ritsu",
+      "concurrent_viewers": null,
+      "first_seen": "2026-09-01T18:00:06Z",
+      "last_updated": "2026-09-01T18:00:06Z",
+      "scheduled_start": "2026-09-02T14:45:00Z",
+      "status": "upcoming",
+      "thumbnail": "https://i.ytimg.com/vi/0o96ZlU8lKY/maxresdefault_live.jpg",
+      "title": "【English only】英語やめたら即終了!!!!優等生の英語力、見よ【峰月律/ゆめみた】",
+      "url": "https://www.youtube.com/watch?v=0o96ZlU8lKY",
+      "video_id": "0o96ZlU8lKY"
+    },
+    {
+      "actual_start": null,
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T16:06:03Z",
+      "last_updated": "2026-09-01T18:00:06Z",
       "scheduled_start": "2026-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
@@ -18,7 +31,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T16:06:03Z",
+      "last_updated": "2026-09-01T18:00:06Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -31,7 +44,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T16:06:03Z",
+      "last_updated": "2026-09-01T18:00:06Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -44,7 +57,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-01T16:06:03Z",
+      "last_updated": "2026-09-01T18:00:06Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -102,5 +115,5 @@
       "name_ko": "센고쿠 유노"
     }
   },
-  "generated_at": "2026-09-01T16:06:03Z"
+  "generated_at": "2026-09-01T18:00:06Z"
 }
