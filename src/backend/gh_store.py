@@ -5,13 +5,21 @@ GitHub Contents API 저장소 클라이언트. schedule.json/archive.json/pendin
 import base64
 import json
 import logging
-import random
 import time
 from typing import Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+class ConflictError(RuntimeError):
+    """다른 실행이 우리가 읽은 뒤 먼저 커밋해 base sha 가 어긋났다.
+
+    호출자는 최신 상태를 다시 읽어 재계산한 뒤 다시 write_json 해야 한다.
+    (예전엔 여기서 낡은 payload 를 새 sha 로 재-PUT 해 조용히 덮어썼는데,
+     그러면 방송 시작 시간대에 tick/wake 가 겹칠 때 pending 상태 전이가 유실됐다.)
+    """
 
 
 def _serialize(data: dict) -> str:
@@ -148,14 +156,16 @@ class GitHubStore:
         처리 흐름:
         1. read_json 으로 현재 내용과 sha 조회.
         2. 직렬화 문자열이 동일하면 (False, 현재sha) 반환 (PUT 안 함).
-        3. 다르면 PUT 수행.
-        4. 422/409 충돌 → read_json 재조회 후 1회 재시도.
-        5. 성공 → (True, 새sha).
+        3. prev_sha 가 주어졌는데 현재 sha 와 다르면 → 우리가 읽은 뒤 남이 다른 내용을
+           커밋한 것 → ConflictError (호출자가 재계산해야 함).
+        4. 아니면 PUT. 200/201 → (True, 새sha). 409/422 → ConflictError.
+        5. 네트워크 오류만 몇 번 재시도.
 
         Args:
             path: 저장소 내 파일 경로.
             data: 저장할 딕셔너리.
-            prev_sha: 힌트로만 받는 이전 sha (실제 충돌 해소는 재조회 기준).
+            prev_sha: 호출자가 계산을 시작할 때 읽은 sha. 낙관적 동시성 기준.
+                      None 이면 sha 검사 없이 현재 sha 로 그대로 씀(부트스트랩·단독 실행).
             message: 커밋 메시지 (예: "data: pending sync 2026-08-31T12:00:00Z").
 
         Returns:
@@ -164,52 +174,57 @@ class GitHubStore:
             - (True, 새sha): 파일이 업데이트됨.
 
         Raises:
-            RuntimeError: 422/409 충돌 1회 재시도 후에도 실패, 또는 그 외 오류.
+            ConflictError: base sha 가 어긋남 (호출자가 최신 상태로 재계산 후 재시도).
+            RuntimeError: 그 외 GitHub API 오류.
         """
         # 1. 현재 내용 조회
         current_data, current_sha = self.read_json(path)
         serialized = _serialize(data)
 
-        # 2. 내용 동일 확인
-        if current_data is not None:
-            current_serialized = _serialize(current_data)
-            if current_serialized == serialized:
-                return False, current_sha
+        # 2. 내용 동일 확인 (남이 같은 내용을 이미 커밋한 경우 포함)
+        if current_data is not None and _serialize(current_data) == serialized:
+            return False, current_sha
 
-        # 3. PUT 수행
-        return self._put_json_with_retry(path, serialized, current_sha, message)
+        # 3. base sha 어긋남 → 재계산 필요
+        if prev_sha is not None and current_sha is not None and current_sha != prev_sha:
+            raise ConflictError(
+                f"{path}: base sha {prev_sha[:8]} != current {current_sha[:8]} "
+                f"(다른 실행이 먼저 커밋함)"
+            )
 
-    # data 브랜치는 여러 Cloud Run 실행이 동시에 커밋을 시도할 수 있다(방송 시작 시간대에
-    # 여러 /wake 가 몰림). Contents API 는 sha 낙관적 동시성이므로 충돌 시 재조회 후 재시도한다.
-    _CONFLICT_RETRIES = 6
-    _CONFLICT_BACKOFF = 0.4  # 초. n번째 재시도는 n*backoff 만큼 대기(지터 포함)
+        # 4. PUT
+        return self._put_json(path, serialized, current_sha, message)
 
-    def _put_json_with_retry(
+    _NET_RETRIES = 3
+    _NET_BACKOFF = 0.5  # 초. n번째 재시도는 n*backoff 대기
+
+    def _put_json(
         self,
         path: str,
         serialized: str,
         current_sha: Optional[str],
         message: str,
-        retry_count: int = 0,  # 하위호환용 인자. 사용 안 함
     ) -> tuple[bool, Optional[str]]:
-        """PUT 을 수행하고 409/422(sha 충돌) 시 재조회 후 재시도(_CONFLICT_RETRIES 회, 백오프).
+        """PUT 1회 (네트워크 오류만 _NET_RETRIES 회 재시도).
 
-        재조회 결과가 우리가 쓰려는 내용과 이미 동일하면(다른 실행이 같은 내용을 먼저 커밋)
-        (False, sha) 로 조용히 성공 처리한다.
+        200/201 → (True, 새sha). 409/422(sha 충돌) → ConflictError.
+        그 외 상태코드 → RuntimeError.
         """
         url = f"{self.API}/repos/{self.repo}/contents/{path}"
         content_b64 = base64.b64encode(serialized.encode("utf-8")).decode("ascii")
         sess = self.session or requests.Session()
+        body = {"message": message, "content": content_b64, "branch": self.branch}
+        if current_sha:
+            body["sha"] = current_sha
 
-        for attempt in range(self._CONFLICT_RETRIES + 1):
-            body = {"message": message, "content": content_b64, "branch": self.branch}
-            if current_sha:
-                body["sha"] = current_sha
-
+        for attempt in range(self._NET_RETRIES + 1):
             try:
                 resp = sess.put(url, json=body, headers=self._headers(), timeout=self.timeout)
             except requests.RequestException as e:
-                raise RuntimeError(f"GitHub API network error: {e}")
+                if attempt >= self._NET_RETRIES:
+                    raise RuntimeError(f"GitHub API network error: {e}")
+                time.sleep(self._NET_BACKOFF * (attempt + 1))
+                continue
 
             if resp.status_code in (200, 201):
                 try:
@@ -217,26 +232,17 @@ class GitHubStore:
                 except ValueError as e:
                     raise RuntimeError(f"GitHub API response parsing error: {e}")
 
-            if resp.status_code not in (409, 422):
-                raise RuntimeError(
-                    f"GitHub API write failed: {resp.status_code} {resp.reason}. "
-                    f"Response: {resp.text[:200]}"
+            if resp.status_code in (409, 422):
+                raise ConflictError(
+                    f"{path}: PUT {resp.status_code} {resp.reason}. Response: {resp.text[:200]}"
                 )
 
-            # ── sha 충돌 ──
-            if attempt >= self._CONFLICT_RETRIES:
-                raise RuntimeError(
-                    f"GitHub API write conflict on {path} (retry exhausted). "
-                    f"Response: {resp.text[:200]}"
-                )
-            time.sleep(self._CONFLICT_BACKOFF * (attempt + 1) + random.uniform(0, 0.2))
-            cur_data, current_sha = self.read_json(path)
-            if cur_data is not None and _serialize(cur_data) == serialized:
-                logger.info("write conflict on %s but content already current — skip", path)
-                return False, current_sha
-            logger.warning("write conflict on %s, retry %d/%d", path, attempt + 1, self._CONFLICT_RETRIES)
+            raise RuntimeError(
+                f"GitHub API write failed: {resp.status_code} {resp.reason}. "
+                f"Response: {resp.text[:200]}"
+            )
 
-        raise RuntimeError(f"GitHub API write conflict on {path} (unreachable)")
+        raise RuntimeError(f"GitHub API write on {path} (unreachable)")
 
 
 if __name__ == "__main__":
@@ -290,6 +296,50 @@ if __name__ == "__main__":
     print("  - Trailing newline present")
     print("  - Non-ASCII (Korean) characters preserved")
     print("  - Round-trip parse successful")
+
+    # 검증 6: 낙관적 동시성 — base sha 어긋나면 ConflictError, 안 어긋나면 PUT (네트워크 mock)
+    class _Resp:
+        def __init__(self, code, payload=None):
+            self.status_code, self.reason, self.text = code, "", ""
+            self._payload = payload or {}
+        def json(self):
+            return self._payload
+
+    class _FakeSess:
+        """read=GET 는 항상 현재 원격(cur)을, write=PUT 는 성공 응답을 돌려준다."""
+        def __init__(self, cur_content: str, cur_sha: str):
+            self.cur_content, self.cur_sha, self.put_calls = cur_content, cur_sha, 0
+        def get(self, url, **kw):
+            enc = base64.b64encode(self.cur_content.encode()).decode()
+            return _Resp(200, {"content": enc, "sha": self.cur_sha})
+        def put(self, url, **kw):
+            self.put_calls += 1
+            return _Resp(201, {"content": {"sha": "newsha"}})
+
+    remote = _serialize({"n": 1})
+    # (a) prev_sha 가 현재와 같음 → PUT 됨
+    sess_a = _FakeSess(remote, "shaA")
+    gh_a = GitHubStore("tok", "o/r", "data", session=sess_a)
+    changed, new_sha = gh_a.write_json("pending.json", {"n": 2}, prev_sha="shaA", message="m")
+    assert changed and new_sha == "newsha" and sess_a.put_calls == 1
+
+    # (b) prev_sha 가 현재와 다름 → ConflictError, PUT 안 함
+    sess_b = _FakeSess(remote, "shaZ")
+    gh_b = GitHubStore("tok", "o/r", "data", session=sess_b)
+    try:
+        gh_b.write_json("pending.json", {"n": 2}, prev_sha="shaA", message="m")
+        assert False, "ConflictError 가 발생해야 함"
+    except ConflictError:
+        pass
+    assert sess_b.put_calls == 0
+
+    # (c) 남이 우리와 같은 내용을 이미 커밋 → PUT 없이 (False, sha)
+    sess_c = _FakeSess(_serialize({"n": 2}), "shaZ")
+    gh_c = GitHubStore("tok", "o/r", "data", session=sess_c)
+    changed, sha = gh_c.write_json("pending.json", {"n": 2}, prev_sha="shaA", message="m")
+    assert changed is False and sha == "shaZ" and sess_c.put_calls == 0
+
+    print("✓ Optimistic concurrency: ConflictError on stale base sha, no silent clobber")
 
     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
     import os

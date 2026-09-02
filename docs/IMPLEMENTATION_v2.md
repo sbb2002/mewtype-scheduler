@@ -24,6 +24,10 @@ v1 명세는 `docs/IMPLEMENTATION.md` (그대로 유효). 이 문서는 **v2.0�
 - `src/collector/rss.py` — `fetch_rss_video_ids`, `fetch_all_rss_video_ids`, `_parse_rss`
 - `src/collector/youtube.py` — `VideoInfo`(dataclass), `YouTubeClient`(`videos_list` / `search_upcoming` / `channels_list`), `_video_from_item`
 - `src/collector/reconcile.py` — `build_schedule(channels_cfg, videos, prev_schedule, now_iso, avatars=None) -> (new_schedule, newly_ended)`, `ended_record`
+  - v2 보정: `videos.list` 응답에서 추적 방송이 **통째로 빠졌을 때** 곧바로 `reason:"removed"`
+    archive 하지 않고, `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 이상 연속 누락일 때만 이관한다
+    (배치 일시 누락·"공개→회원전용" 전환 순간의 오탐 방지, SCHEDULE.md §5.2).
+    `liveBroadcastContent=="none"` 명시 신호(`ended`/`canceled`)는 유예 없이 즉시 이관 — 무변경.
 - `src/collector/config.py` — `load_channels()`, `channel_url(handle)`
 - `src/frontend/**` — v2.0에서 손대지 않음
 
@@ -241,12 +245,22 @@ class GitHubStore:
     def write_json(self, path: str, data: dict, *, prev_sha: str | None,
                    message: str) -> tuple[bool, str | None]:
         """직렬화: json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-           1) 현재 원격 내용을 read_json 으로 재조회. 문자열이 동일하면 (False, 현재 sha) — PUT 안 함.
-           2) 다르면 PUT /repos/{repo}/contents/{path}
+           1) 현재 원격 내용을 read_json 으로 재조회. 문자열이 동일하면 (False, 현재 sha) — PUT 안 함
+              (남이 우리와 같은 내용을 먼저 커밋한 경우 포함).
+           2) prev_sha 가 주어졌는데 현재 sha 와 다르면 → 우리가 읽은 뒤 남이 **다른 내용**을
+              커밋한 것 → `ConflictError` (호출자가 최신 상태로 재계산 후 재시도해야 함).
+           3) 아니면 PUT /repos/{repo}/contents/{path}
               body: {message, content: base64(직렬화), branch, sha: 현재 sha(있으면)}
-              201/200 → (True, resp["content"]["sha"])
-           3) 422/409 (sha 충돌) → read_json 재조회 후 1회 재시도. 그래도 실패 → RuntimeError.
-           prev_sha 는 힌트로만 받고, 실제 비교/충돌해소는 최신 재조회 기준."""
+              201/200 → (True, resp["content"]["sha"]).  409/422 → `ConflictError`.
+           4) 네트워크 오류만 몇 번 재시도. 그 외 상태코드 → RuntimeError.
+           prev_sha=None 이면 sha 검사 없이 현재 sha 로 그대로 씀(부트스트랩·단독 실행).
+
+        > 낙관적 동시성. 예전엔 충돌 시 낡은 payload 를 새 sha 로 재-PUT 해 조용히 덮어썼는데,
+        > 방송 시작 시간대에 tick/wake 가 겹치면 pending 상태 전이가 유실됐다. 이제 ConflictError
+        > 를 올리고 handlers 가 재계산한다 (§5 handlers 흐름, SCHEDULE.md §5.1)."""
+
+class ConflictError(RuntimeError):
+    """base sha 어긋남 — 호출자가 최신 상태를 다시 읽어 재계산 후 write_json 재시도."""
 ```
 
 - 커밋 author 는 PAT 소유자 계정으로 자동. `message` 예: `"data: pending sync 2026-08-31T12:00:00Z"`.
@@ -269,26 +283,29 @@ class TaskQueue:
            client 미지정 시 tasks_v2.CloudTasksClient()."""
 
     def enqueue_wake(self, video_id: str, schedule_time_iso: str) -> str:
-        """task = _build_task(video_id, schedule_time_iso)
-           self.client.create_task(parent=queue_path, task=task)
-           반환: 생성된 task.name.
-           google.api_core.exceptions.AlreadyExists → 무시하고 기존 name 유추값 반환 + logging.info
-           그 외 예외 → RuntimeError."""
+        """방송별 wake: path="/wake", body={"video_id": …}, name_key=f"wake-{video_id}".
+           create_task → 생성된 task.name 반환.
+           AlreadyExists → 무시하고 기존 name 유추값 반환 + logging.info. 그 외 → RuntimeError."""
 
-def _build_task(self_or_cfg, video_id: str, schedule_time_iso: str) -> dict:
+    def enqueue_tick(self, mode: str, schedule_time_iso: str) -> str:
+        """후속 tick: path="/tick", body={"mode": mode}, name_key=f"tick-{mode}".
+           handlers 가 "방송 방금 종료 → ~20분 뒤 재확인" 용으로 쓴다. 이름이 `tick-{mode}-{분버킷}`
+           이라 한 tick 에서 여러 방송이 끝나도 후속 tick 은 1개로 dedupe."""
+
+def _build_task(cfg, *, path: str, body: dict, name_key: str, schedule_time_iso: str) -> dict:
     """순수. tasks_v2 Task 메시지로 변환 가능한 dict 반환:
        {
-         "name": f"{queue_path}/tasks/wake-{video_id}-{bucket}",  # bucket = schedule_time epoch//60 (분 버킷)
-         "schedule_time": <Timestamp from parse(schedule_time_iso)>,
+         "name": f"{queue_path}/tasks/{name_key}-{bucket}",  # bucket = schedule_time epoch//60 (분 버킷)
+         "schedule_time": {"seconds": epoch},
          "http_request": {
            "http_method": "POST",
-           "url": f"{target_url}/wake",
+           "url": f"{target_url}{path}",
            "headers": {"Content-Type": "application/json"},
-           "body": json.dumps({"video_id": video_id}).encode(),
+           "body": json.dumps(body).encode(),
            "oidc_token": {"service_account_email": invoker_sa, "audience": target_url},
          },
        }
-       name 의 분 버킷 덕분에: 같은 시각 재시도는 dedupe(AlreadyExists), 재예약(다른 시각)은 새 태스크."""
+       name 의 분 버킷 덕분에: 같은 이름·같은 분 재시도는 dedupe(AlreadyExists), 다른 시각은 새 태스크."""
 ```
 
 - 의존성: `google-cloud-tasks>=2.16`.
@@ -428,14 +445,22 @@ def wake(video_id: str) -> dict
 4. `yt = YouTubeClient(youtube_api_key)`;
    `avatars = yt.channels_list(list(id_by_key.values()))` **오직 mode=="baseline"** 일 때만;
    `videos = yt.videos_list(sorted(후보))`.
-5. `new_schedule, newly_ended = build_schedule(cfg, videos, prev_schedule, now_iso, avatars)`.
-6. `decision = sync_pending(prev_pending, videos, channel_id_to_key, now_iso, mode=("wake" if wake else "sync"), woken_video_id=video_id_or_None)`.
-7. 쓰기 (변경 시에만 — write_json 내부에서 판단):
-   - `gh.write_json("schedule.json", new_schedule, prev_sha=sched_sha, message=f"data: schedule {now_iso}")`
-   - `newly_ended` 있으면 archive append (dedupe by video_id) → `gh.write_json("archive.json", ...)`
-   - `gh.write_json("pending.json", decision.new_pending, prev_sha=pend_sha, message=f"data: pending {now_iso}")`
-8. `tq = TaskQueue(...)`; `for vid, when in decision.enqueue: tq.enqueue_wake(vid, when)`.
-9. 반환 dict: `{"mode", "candidates": n, "videos": n, "schedule_changed": bool, "archived": [...], "pending_entries": n, "enqueued": n, "quota_used": yt.quota_used, "log": decision.log}`.
+5. **커밋 루프 (최대 2회, ConflictError 시 재시도)** — RSS/YouTube 는 위에서 한 번만, `videos` 재사용:
+   a. `prev_schedule/sched_sha`, `prev_pending/pend_sha`, `prev_archive/arch_sha` 를 **루프 안에서 새로** 읽는다.
+   b. `new_schedule, newly_ended = build_schedule(cfg, videos, prev_schedule, now_iso, avatars)`;
+      `_stable_view` 변화 없으면 volatile 필드 동결 + `generated_at` heartbeat.
+   c. `decision = sync_pending(prev_pending, videos, channel_id_to_key, now_iso, mode=("wake" if wake else "sync"), woken_video_id=…)`.
+   d. `gh.write_json` × 3 (schedule / archive(변경 시) / pending), 각각 위에서 읽은 `*_sha` 를 `prev_sha` 로.
+      → `ConflictError` 나면 1회에 한해 a 로 되돌아가 재계산. 2회째 실패 → 예외(스케줄러가 재시도).
+6. **Cloud Tasks enqueue** (`tq = _make_task_queue(cfg)` — 라이브러리/설정 없으면 None):
+   - `for vid, when in decision.enqueue: tq.enqueue_wake(vid, when)`.
+   - `newly_ended` 있으면 `tq.enqueue_tick("light", now + _POST_END_RECHECK_SEC(20분))` **1개** —
+     백투백 다음 방송을 3h 이내가 아니라 ~20분 이내에 줍는다. 이름 `tick-light-{분버킷}` 로 dedupe.
+7. **Telegram diff** 는 루프 진입 전 스냅샷(`_ps0`)과 `new_schedule` 을 비교 — 재시도로 루프 안
+   `prev_schedule` 이 첫 커밋 결과로 바뀌어도 전이 알림을 놓치지 않도록.
+8. 반환 dict: `{"mode","woken","candidates":n,"videos":n,"schedule_changed":bool,"archive_changed":bool,
+   "archived":[...],"pending_changed":bool,"pending_entries":n,"dropped":[...],"enqueue_planned":n,
+   "enqueued":n,"enqueue_errors":[...],"quota_used":yt.quota_used,"log":decision.log}`.
 
 ### `src/backend/app.py`
 ```python
@@ -483,3 +508,19 @@ def _healthz():
 
 각 haiku 산출물은 Sonnet 이 **계약 준수·엣지케이스·예외처리·시크릿 노출** 기준으로 검수 후 병합.
 haiku 는 자기 파일의 `if __name__ == "__main__":` 스모크 테스트가 통과하는 상태로 제출.
+
+---
+
+## 8. 사각지대 보정 (2026-09 패치)
+
+방송 패턴 실측(`ref/broadcast-patterns.md`)으로 드러난 스케줄 사각지대 3건을 보정. 상세 동작은
+`docs/SCHEDULE.md` §1.1 / §5.
+
+| # | 사각지대 | 보정 | 파일 |
+|---|---|---|---|
+| 1 | tick/wake 동시 실행 시 `write_json` 이 낡은 payload 로 조용히 덮어써 pending 전이 유실 | `ConflictError` + `handlers._run` 1회 재계산·재시도 (RSS/YT 재조회 없음) | `gh_store.py`, `handlers.py` |
+| 2 | `videos.list` 일시 누락·"공개→회원전용" 전환을 즉시 `removed` archive → 오탐 잔류 | `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 유예 후 이관 | `reconcile.py` |
+| 3 | 일반 방송 종료 직후 시작하는 짧은 다음 방송을 3h tick 간격에 통째로 놓침 | 종료 감지 시 `now+20분` 후속 `light` tick 1개 예약 (`enqueue_tick`, 분버킷 dedupe) | `tasks.py`, `handlers.py` |
+
+**커버 못 하는 것**: 회원 전용 방송은 RSS·`search.list` 어디에도 안 떠서 발견 자체가 불가 —
+#3 재확인으로도 못 잡는다. 공개 방송의 백투백/재시작만 커버. (구조적 한계, 별도 수집 경로 필요.)

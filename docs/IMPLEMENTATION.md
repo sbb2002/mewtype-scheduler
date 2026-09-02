@@ -111,6 +111,9 @@ mewtype-scheduler/
 }
 ```
 - append-only, `video_id` 기준 dedupe. v1 프론트는 읽지 않음.
+- `reason`: `ended`(정상 종료, `actual_end` 있음) / `canceled`(`liveBroadcastContent=="none"` 인데 `actual_end` 없음) /
+  `removed`(응답에서 통째로 사라짐). v2 는 `removed` 를 즉시 이관하지 않고 `last_updated` 기준
+  약 6.5h 연속 누락일 때만 이관한다 (일시 누락·비공개 전환 오탐 방지 — `IMPLEMENTATION_v2.md` §8).
 
 ## 3. 공용 계약 C — 프론트 DOM 구조 (동결)
 
