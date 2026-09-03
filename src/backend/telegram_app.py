@@ -569,18 +569,27 @@ if _FLASK_AVAILABLE:
         # (이 블록 자체를 지워도 무방 — 나머지 로직은 이 블록에 의존하지 않음.)
         if os.environ.get("INGEST_ECHO", "").strip() not in ("", "0", "false", "False", "no"):
             body_preview = request.get_data(as_text=True)[:1000]
+            # 잘림 판정용 계측 — DM 없이 Cloud Run 로그만으로도 확인 가능해야.
+            #   tail_ok = 트윗 말미 고정 문구가 왔는가 (오면 본문이 안 잘린 것)
+            tail_ok = "予告なく変更" in raw or "時刻は予告" in raw
+            log.warning(
+                "ingest ECHO: len=%d clen=%s tail_ok=%s ct=%r form_keys=%r "
+                "head=%r tail=%r",
+                len(raw), request.content_length, tail_ok, request.content_type,
+                list(request.form.keys()), raw[:120], raw[-120:],
+            )
             _send_telegram(
                 "📡 <b>ingest ECHO</b> — 백엔드 처리 안 함\n"
                 f"ct=<code>{html.escape(request.content_type or '-')}</code> · "
                 f"form_keys={list(request.form.keys())}\n"
                 f"title=<code>{html.escape(title) or '(없음)'}</code>\n"
-                f"len(text)={len(raw)}\n"
+                f"len(text)={len(raw)} · 말미문구 {'✅' if tail_ok else '❌'}\n"
                 "───── text ─────\n"
                 f"<code>{html.escape(raw) if raw else '(빈 text)'}</code>\n"
                 "───── raw body[:1000] ─────\n"
                 f"<code>{html.escape(body_preview)}</code>"
             )
-            return jsonify({"ok": True, "echo": True, "len": len(raw)}), 200
+            return jsonify({"ok": True, "echo": True, "len": len(raw), "tail_ok": tail_ok}), 200
         # ─────────────────────────────────────────────────────────────────────
 
         if not raw:
