@@ -460,6 +460,80 @@ def _make_gh() -> "GitHubStore | None":
     return GitHubStore(token, repo, branch)
 
 
+# ── ingest 대기열 (ECHO/DRY-RUN 중 받은 스케줄 트윗을 실배포 전환 시 반영) ──
+_INGEST_QUEUE_PATH = "ingest_queue.json"
+_INGEST_QUEUE_MAX = 30       # data 브랜치 파일 비대 방지 (일일 트윗이라 넉넉)
+_INGEST_RAW_CAP = 8000       # 저장 원문 상한
+
+
+def _merge_rows_into_schedule(gh, rows, now_iso, message) -> bool:
+    """rows 를 merge_scheduled 로 schedule.json 에 반영 (base-sha 충돌 시 1회 재시도)."""
+    changed = False
+    for attempt in (1, 2):
+        prev, sha = gh.read_json("schedule.json")
+        merged = xrelay.merge_scheduled(prev or {}, rows, now_iso)
+        try:
+            changed, _ = gh.write_json("schedule.json", merged, prev_sha=sha, message=message)
+            break
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("ingest: schedule.json 충돌 — 재계산 후 재시도")
+    return changed
+
+
+def _ingest_queue_push(gh, raw: str, title: str, now_iso: str) -> None:
+    """ECHO/DRY-RUN 중 받은 스케줄 트윗 원문을 data 브랜치 큐에 적재.
+
+    실배포(`INGEST_ECHO=0` + `INGEST_DRY_RUN=0`) 전환 후 첫 `/ingest` 에서
+    `_ingest_queue_drain` 이 순서대로 파싱·머지한다 → 테스트 기간에 온 트윗도 유실 없이 반영.
+    큐 실패는 ECHO/DRY-RUN 응답을 막지 않는다(best-effort).
+    """
+    try:
+        q, sha = gh.read_json(_INGEST_QUEUE_PATH)
+        pending = list((q or {}).get("pending", []))
+        clipped = raw[:_INGEST_RAW_CAP]
+        if pending and pending[-1].get("raw") == clipped:
+            return  # 폰 재시도 등 직전과 동일 원문 → 스킵
+        pending.append({"raw": clipped, "title": title, "received_at": now_iso})
+        gh.write_json(
+            _INGEST_QUEUE_PATH, {"pending": pending[-_INGEST_QUEUE_MAX:]},
+            prev_sha=sha, message=f"data: ingest queue += {now_iso}",
+        )
+    except Exception:
+        log.exception("ingest queue push 실패 (무시)")
+
+
+def _ingest_queue_drain(gh, now_iso: str) -> tuple[int, int]:
+    """큐의 원문을 순서대로 파싱·머지하고 큐를 비운다. (반영 건수, 총 파싱행수)."""
+    try:
+        q, sha = gh.read_json(_INGEST_QUEUE_PATH)
+    except Exception:
+        log.exception("ingest queue read 실패")
+        return 0, 0
+    items = (q or {}).get("pending", [])
+    if not items:
+        return 0, 0
+    applied = total_rows = 0
+    for it in items:
+        rows = xrelay.parse_bdp_schedule(it.get("raw", ""), it.get("received_at") or now_iso)
+        if not rows:
+            continue
+        _merge_rows_into_schedule(
+            gh, rows, now_iso, message=f"data: xrelay queued {it.get('received_at')}"
+        )
+        applied += 1
+        total_rows += len(rows)
+    try:
+        gh.write_json(
+            _INGEST_QUEUE_PATH, {"pending": []},
+            prev_sha=sha, message=f"data: ingest queue drained ({applied}) {now_iso}",
+        )
+    except Exception:
+        log.exception("ingest queue clear 실패 (다음 ingest 에서 재시도)")
+    return applied, total_rows
+
+
 # Flask 라우트 정의 (Flask 설치 시만)
 if _FLASK_AVAILABLE:
 
@@ -589,6 +663,11 @@ if _FLASK_AVAILABLE:
                 "───── raw body[:1000] ─────\n"
                 f"<code>{html.escape(body_preview)}</code>"
             )
+            # 스케줄 트윗이면 큐에 적재 — 실배포 전환 시 반영되도록 (유실 방지).
+            if raw and "配信スケジュール" in raw:
+                _gh = _make_gh()
+                if _gh is not None:
+                    _ingest_queue_push(_gh, raw, title, now_iso)
             return jsonify({"ok": True, "echo": True, "len": len(raw), "tail_ok": tail_ok}), 200
         # ─────────────────────────────────────────────────────────────────────
 
@@ -628,6 +707,10 @@ if _FLASK_AVAILABLE:
                     "─────\n"
                     f"<code>{html.escape(body)}</code>"
                 )
+                if "配信スケジュール" in raw:
+                    _gh = _make_gh()
+                    if _gh is not None:
+                        _ingest_queue_push(_gh, raw, title, now_iso)
                 return jsonify({"ok": True, "dry_run": True, "parsed": len(rows)}), 200
 
             gh = _make_gh()
@@ -641,29 +724,27 @@ if _FLASK_AVAILABLE:
                 _send_telegram("⏸ 일시정지 중 — ingest 무시", silent=True)
                 return jsonify({"ok": True, "paused": True}), 200
 
+            # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
+            drained, drained_rows = _ingest_queue_drain(gh, now_iso)
+
             if not rows:
-                _send_telegram(
-                    "ℹ️ ingest: 配信スケジュール 형식 아님 — 무시\n" + raw[:200], silent=True
-                )
-                return jsonify({"ok": True, "parsed": 0}), 200
+                msg = "ℹ️ ingest: 配信スケジュール 형식 아님 — 무시\n" + raw[:200]
+                if drained:
+                    msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
+                _send_telegram(msg, silent=not drained)
+                return jsonify({"ok": True, "parsed": 0, "drained": drained}), 200
 
-            changed = False
-            for attempt in (1, 2):
-                prev, sha = gh.read_json("schedule.json")
-                merged = xrelay.merge_scheduled(prev or {}, rows, now_iso)
-                try:
-                    changed, _ = gh.write_json(
-                        "schedule.json", merged, prev_sha=sha,
-                        message=f"data: xrelay scheduled {now_iso}",
-                    )
-                    break
-                except ConflictError:
-                    if attempt == 2:
-                        raise
-                    log.warning("ingest: schedule.json 충돌 — 재계산 후 재시도")
+            changed = _merge_rows_into_schedule(
+                gh, rows, now_iso, message=f"data: xrelay scheduled {now_iso}"
+            )
 
-            _send_telegram(xrelay.summary_text(rows, channels_cfg))
-            return jsonify({"ok": True, "parsed": len(rows), "changed": changed}), 200
+            summary = xrelay.summary_text(rows, channels_cfg)
+            if drained:
+                summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
+            _send_telegram(summary)
+            return jsonify(
+                {"ok": True, "parsed": len(rows), "changed": changed, "drained": drained}
+            ), 200
         except Exception as e:
             log.exception("ingest failed")
             _send_telegram(f"⚠️ ingest 오류: {str(e)[:200]}")
@@ -687,9 +768,42 @@ if __name__ == "__main__":
     print("telegram_app.py smoke test")
     print("=" * 60)
 
+    # ── ingest 대기열 (Flask 없이도 동작) ──────────────────────────────
+    print("\n[Queue] _ingest_queue_push / _drain")
+    if xrelay is not None:
+        class _FakeGH:
+            def __init__(self):
+                self.store = {}
+            def read_json(self, path):
+                return (self.store.get(path), "sha0" if path in self.store else None)
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                self.store[path] = data
+                return True, "sha1"
+
+        _S = (
+            "／\n🛸夢限大みゅーたいぷ\n9/3(木)の配信スケジュール🌟\n＼\n\n"
+            "📺24:00～ 仲町あられ×宮永ののか\nhttps://youtube.com/live/kx-nhmTj4Eg\n"
+            "※時刻は予告なく変更の場合がございます。"
+        )
+        g = _FakeGH()
+        _ingest_queue_push(g, _S, "t", "2026-09-03T13:00:00Z")
+        _ingest_queue_push(g, _S, "t", "2026-09-03T13:01:00Z")  # 직전과 동일 → 스킵
+        assert len(g.store[_INGEST_QUEUE_PATH]["pending"]) == 1, g.store[_INGEST_QUEUE_PATH]
+        _ingest_queue_push(g, _S + "\n#x", "t", "2026-09-03T13:02:00Z")  # 다르면 추가
+        assert len(g.store[_INGEST_QUEUE_PATH]["pending"]) == 2
+        applied, nrows = _ingest_queue_drain(g, "2026-09-04T00:00:00Z")
+        assert applied == 2 and nrows == 2, (applied, nrows)
+        assert g.store[_INGEST_QUEUE_PATH]["pending"] == []          # 비워짐
+        sched = g.store["schedule.json"]
+        assert any(b.get("host") == "group" for b in sched["broadcasts"]), sched
+        assert _ingest_queue_drain(g, "2026-09-04T00:00:00Z") == (0, 0)  # 빈 큐 no-op
+        print("  ✓ dedup · drain · merge · 큐 비우기")
+    else:
+        print("  (xrelay 미로드 — 스킵)")
+
     # Flask 미설치 확인
     if Flask is None or app is None:
-        print("\nFlask not installed. Skipping tests.")
+        print("\nFlask not installed. Skipping Flask route tests.")
         print("Install with: pip install flask google-auth requests")
         sys.exit(0)
 
