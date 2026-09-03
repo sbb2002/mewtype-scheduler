@@ -2,7 +2,9 @@
 
 작성 2026-09-03. v2.3(X 예고 릴레이) 위에 얹는다.
 
-- 현행 전체 흐름 그림: `docs/plan/v2_4_flow.png` (생성기 `gen_v2_4.py`)
+![v2.4 전체 흐름](v2_4_flow.png)
+
+- 생성기 `docs/plan/gen_v2_4.py`
 - 실배포 전환 절차: `docs/plan/v2_4_golive.md`
 - 프론트 배치 시안(3안 비교) 아티팩트: https://claude.ai/code/artifact/66a173f4-513d-4eae-b9f4-54251b50a957
 

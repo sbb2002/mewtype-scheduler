@@ -1,7 +1,54 @@
 # X 릴레이 실배포 전환 런북 (v2.4)
 
 다른 세션이 "이제 실제로 반영되게 켜자" 를 할 때 이 문서대로.
-현행 전체 흐름 그림: `docs/plan/v2_4_flow.png` (생성기 `gen_v2_4.py`).
+
+![v2.4 전체 흐름](v2_4_flow.png)
+
+*(생성기 `docs/plan/gen_v2_4.py` — `python docs/plan/gen_v2_4.py`)*
+
+---
+
+## 구성요소 (그림의 각 박스)
+
+### 외부 · 운영자 폰
+- **Android · Automate** — 운영자가 `@BDP_yumemita` 를 팔로우. 삼성 브라우저 웹푸시 알림이 뜨면
+  Automate 플로우가 `POST /ingest` (`X-Ingest-Secret` 헤더). body 식:
+  `urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})`
+  — Automate 문자열 연결은 `++`(‘+’는 산술), `urlEncode(딕셔너리)`가 `key=value` 로 만들어 줌.
+  `@BDP_yumemita` 알림엔 **본인 글 + 리트윗**(BanG Dream 홍보 계정)이 섞여 온다(본문이 `@원계정: …`).
+  테스트 기간엔 폰 필터 생략, **실배포 시 본문 마커 `配信スケジュール`/`出演情報` 로 필터 복원**(발신자 한정은 리트윗을 못 거름).
+- **운영자 Telegram DM** — ECHO 원문 + `tail_ok`(말미 고정문구 `※時刻は予告なく変更…` 도착 여부) /
+  반영 결과 / 대기열 N건을 회신.
+
+### 백엔드 · Cloud Run + GitHub
+- **mewtype-telegram · POST /ingest** (공개, `--allow-unauthenticated`, `X-Ingest-Secret` 검증)
+  - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신 +
+    `ingest ECHO: len=.. clen=.. tail_ok=..` 로그. 스케줄/출연 트윗(`xrelay.looks_relayable` —
+    본문에 `配信スケジュール` 또는 `出演情報` 계열 마커)만 `ingest_queue.json` 에 원문 적재.
+  - **실배포** (`INGEST_ECHO=0` · `INGEST_DRY_RUN=0`): `control.json` `paused` 확인 →
+    `_ingest_queue_drain` 이 큐 원문을 `received_at` 순서로 `xrelay.parse`(일일 스케줄 →
+    없으면 `parse_appearance`) → `merge_scheduled` → `schedule.json` 커밋, 큐 비움. 이번 요청 본문도 파싱·머지.
+- **GitHub `data` 브랜치** — `schedule.json`(`status:"scheduled"` 행 = `video_id` 없음,
+  `host:"group"` = 5인 공동명의 채널 방송) · `ingest_queue.json`(테스트 기간 버퍼).
+- **mewtype-backend · 정기 /tick** (비공개, OIDC) — `reconcile.build_schedule`:
+  scheduled 행 보존, 같은 채널 실물 `upcoming`/`live` 가 ±4h 안이면 supersede,
+  `expires_at`(start + 공개 3h / 회원전용 5h) 도달 시 제거, `scheduled_start` 지나면 `assumed_live`.
+  **`host:"group"` 행은 멤버 개인 채널 실물로 supersede 하지 않는다**(그룹 채널은 추적 5채널이
+  아님 → TTL 로만 소멸).
+
+### 프론트엔드
+- **프론트 (Vercel)** — `schedule.json` 75s 폴링. `.card--scheduled`(예고, 점선·감광),
+  `.card--collab`(합동 — `xrelay` 가 `kind=="collab"` 행에 `host="group"` + 영상 URL 을 채우고,
+  `render.js` 가 참여 멤버 전원 `channel_key ∪ collab_with` 레인에 같은 카드로 팬아웃).
+
+### 화살표
+| | |
+|---|---|
+| 알림 본문 | `text=` form 필드 (Automate → `/ingest`) |
+| ECHO / 결과 DM | Telegram `sendMessage` (mewtype-telegram → 운영자) |
+| 커밋 / 큐 | GitHub Contents API (schedule.json 커밋 / ingest_queue.json 적재·drain) |
+| reconcile | 정기 `/tick` 이 `data` 브랜치 읽기·쓰기 |
+| raw fetch | `raw.githubusercontent.com/.../data/schedule.json` (프론트 폴링) |
 
 ---
 
@@ -43,10 +90,13 @@
 - 아직 못 본 것: `@BDP_yumemita` 의 실제 「配信スケジュール」 / `出演情報` 트윗.
   오면 ECHO DM `말미문구 ✅/❌` + 아래 로그의 `tail_ok` 로 판정.
 - 테스트 기간엔 폰 `Expression true?` 필터를 **생략**하고 삼성 브라우저 알림을 전부
-  `/ingest` 로 보내는 중 → `@bang_dream_info` 등 무관한 BanG Dream 뉴스도 옴
-  (ECHO 라 무해, `looks_relayable` 이 큐를 막음).
-- **실배포 시 필터 복원**: 발신 `@BDP_yumemita` 로 한정하거나 `配信スケジュール`+`出演情報`
-  마커로. 안 그러면 `@bang_dream_info` 잡음이 `/ingest` 에 계속 들어온다.
+  `/ingest` 로 보내는 중. `@BDP_yumemita` 팔로우 알림에는 **본인 글뿐 아니라 리트윗**
+  (`@bang_dream_info`, `@bang_dream_on` 등 BanG Dream 홍보 계정)도 섞여 온다 —
+  알림 본문이 `@원계정: …` 로 시작. 전부 `/ingest` ECHO 로 왕복하지만
+  `looks_relayable`(본문에 `配信スケジュール`/`出演情報` 마커) 이 아니면 큐·파싱 안 탐. 확인됨:
+  182자·232자 리트윗 2건 → `form_keys=['text']`, 전문 관통, `ingest_queue.json` 그대로 `{"pending":[]}`.
+- **실배포 시 필터 복원**: 발신자 한정으로는 리트윗을 못 거른다 → 폰 필터도 백엔드와 같이
+  **본문 마커 `配信スケジュール` / `出演情報`** 로 걸 것. 안 그러면 홍보 리트윗이 계속 `/ingest` 로 온다.
 
 ```bash
 gcloud logging read \
