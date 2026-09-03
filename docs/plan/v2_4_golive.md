@@ -12,11 +12,21 @@
 
 ### 외부 · 운영자 폰
 - **Android · Automate** — 운영자가 `@BDP_yumemita` 를 팔로우. 삼성 브라우저 웹푸시 알림이 뜨면
-  Automate 플로우가 `POST /ingest` (`X-Ingest-Secret` 헤더). body 식:
-  `urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})`
-  — Automate 문자열 연결은 `++`(‘+’는 산술), `urlEncode(딕셔너리)`가 `key=value` 로 만들어 줌.
-  `@BDP_yumemita` 알림엔 **본인 글 + 리트윗**(BanG Dream 홍보 계정)이 섞여 온다(본문이 `@원계정: …`).
-  테스트 기간엔 폰 필터 생략, **실배포 시 본문 마커 `配信スケジュール`/`出演情報` 로 필터 복원**(발신자 한정은 리트윗을 못 거름).
+  "HTTP Request" 블록이 `POST /ingest` (`X-Ingest-Secret` 헤더). Content body 식:
+  ```
+  urlEncode({"text": coalesce(nx["android.bigText"], nmsg, nticker, ntitle, "")})
+  ```
+  - Automate 문자열 연결은 `++` (‘+’는 산술 → `NaN`). `urlEncode(딕셔너리)` 가 `key=value&key=value`
+    로 만들어 줌 → `text=` 접두어·URL 인코딩 자동.
+  - 이 기기(SM-S911N)에서 실측: 알림 내용은 **`nmsg`(= `android.text` extra)** 에 온다.
+    `nx["android.bigText"]` 는 항상 비어있음(보험으로 첫 순위 유지). `nmsg` 가 232자 여러 줄
+    전문도 그대로 담았다(잘림 없음). `nticker` 는 안 씀. `ntitle` = 다운로드면 파일명, X 면 계정명.
+    `Notification Posted` 트리거 출력: message→`nmsg`, title→`ntitle` (둘 다 유효 변수).
+  - `@BDP_yumemita` 알림엔 **본인 글 + 리트윗**(BanG Dream 홍보 계정)이 섞여 온다(본문이 `@원계정: …`).
+  - 내용 없는 알림(X 요약/미디어/갱신)은 coalesce 가 `""` → `text=` 빈값 → 백엔드가 `looks_relayable`
+    False 로 무시. 무해.
+  - 테스트 기간엔 폰 필터 생략, **실배포 시 본문 마커 `配信スケジュール`/`出演情報` 로 필터 복원**
+    (발신자 한정은 리트윗을 못 거름).
 - **운영자 Telegram DM** — ECHO 원문 + `tail_ok`(말미 고정문구 `※時刻は予告なく変更…` 도착 여부) /
   반영 결과 / 대기열 N건을 회신.
 
@@ -64,27 +74,30 @@
   단 `schedule.json` 에 그런 행이 없어 화면 변화는 아직 없음.
 - **아직 프로덕션 `schedule.json` 엔 X 릴레이 유래 행이 하나도 없다. 큐도 비어있다.**
 
-### 폰(Automate) 상태 — 2026-09-03 디버깅 완료
+### 폰(Automate) 상태 — 2026-09-03 밤 디버깅 완료
 
 - 테스트 기간 동안 **`Expression true?` 필터를 생략**하고 삼성 브라우저 알림을 전부
-  `/ingest` 로 보낸다 (다운로드 등 잡 알림도 옴 — ECHO 라 무해, `looks_relayable` 가 큐를 막음).
-- **HTTP Request 블록 body 식** (한동안 `NaN` 만 보내던 버그 → 수정됨):
+  `/ingest` 로 보낸다 (다운로드·리트윗 등 잡 알림도 옴 — ECHO 라 무해, `looks_relayable` 가 큐를 막음).
+- **HTTP Request 블록 Content body 식** (운영용, 확정):
   ```
-  urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})
+  urlEncode({"text": coalesce(nx["android.bigText"], nmsg, nticker, ntitle, "")})
   ```
-  - Automate 문자열 연결은 `+` 가 아니라 `++`. `+` 는 산술이라 `"text=" + x` → `NaN`.
-  - `urlEncode(딕셔너리)` 가 `key=value&key=value` 로 만들어줌 → `text=` 접두어·인코딩 자동.
-  - `nmsg` = Notification Posted 트리거의 "Message" 출력. 다운로드 알림으로 왕복 확인 완료.
-- **미확인**: 트윗의 여러 줄 전문이 `nx["android.bigText"]` 로 잡히는지 (트리거가 extras
-  딕셔너리 `nx` 를 출력하도록 설정돼 있어야 함). 안 잡히면 `coalesce` 가 `nmsg`(첫 줄)로
-  떨어져 "잘린 것처럼" 보인다 — 실물 트윗 오면 바로 드러남.
+  거쳐온 함정:
+  - `NaN` 만 보내던 버그: Automate 문자열 연결은 `+` 가 아니라 **`++`** (`+` 는 산술).
+  - `urlEncode(딕셔너리)` → `key=value&key=value` (`text=` 접두어·URL 인코딩 자동).
+- **필드 실측** (SM-S911N, ECHO 진단 body 로 확인):
+  - 알림 내용은 `nmsg` (= `android.text` extra) 에 온다. **`nx["android.bigText"]` 는 항상 비어있음.**
+  - `nmsg` 가 232자·12줄 트윗 전문을 그대로 담았다 → 이 길이까진 잘림 없음.
+  - `nticker` 안 씀. `ntitle` = 다운로드면 파일명 / X 면 계정명. `ntitle` 도 유효 변수.
+  - 내용 없는 알림(X 요약/미디어/갱신 이벤트): 전 필드 빈값 → `coalesce` → `""` → `text=` 빈값 전송
+    → 백엔드 `looks_relayable` False 로 무시. (로그: `ingest ECHO: len=0 clen=5`)
 
 ## 1. 전환 전 확인 — 웹푸시 잘림 (#1)
 
 폰(Automate)이 삼성 브라우저 웹푸시 알림을 relay 할 때 본문이 "Show more" 로
-잘리는지. **2026-09-03 저녁: `@bang_dream_info` 의 232자·12줄 트윗이 전문 그대로
-관통 확인** (`ingest ECHO: len=232 clen=1100`, head/tail 에 끝까지 다 옴).
-→ `nx["android.bigText"]` 가 잡히고 있고, 이 길이까진 잘림 없음. 다만 일일
+잘리는지. **2026-09-03 밤: `@bang_dream_info` 232자·12줄 / `@bang_dream_on` 182자
+트윗이 전문 그대로 관통 확인** (`ingest ECHO: len=232 clen=1100` 등, head/tail 에 끝까지).
+→ `nmsg`(android.text) 가 펼친 전문을 담고 있고 이 길이까진 잘림 없음. 다만 일일
 `配信スケジュール` 는 더 길 수 있으니(400~600자) 실물 스케줄 트윗으로 한 번 더 확인 권장.
 
 - 아직 못 본 것: `@BDP_yumemita` 의 실제 「配信スケジュール」 / `出演情報` 트윗.
