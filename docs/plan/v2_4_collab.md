@@ -83,6 +83,27 @@ https://youtube.com/live/kx-nhmTj4Eg
 - **그룹 채널 자체 메타**(handle/avatar/channel_id) 는 아직 없음. `url` 이 잡히면 링크는 정상.
   `url` 이 None(트윗 URL 잘림)이면 카드 링크가 `channel_url`(첫 참여자 채널) 로 폴백 — 부정확.
   → 그룹 채널 정보 확보되면 `config/channels.json` 에 `group` 항목 추가하고 폴백을 그쪽으로.
-- 외부 이벤트/합방 공지(예: `watch?v=PAfMVT3GTLg`)가 **일일 스케줄 트윗에** `×`+영상 URL 형태로
-  실리면 자동으로 같은 경로를 탄다. 별도 자유문 트윗이면 파서 B(v2.3 §3-2, 후속).
 - 전원(5명) 참여 방송이면 5개 레인에 같은 카드 5장. 그 케이스만 B안(풀블리드) 특례가 나을 수 있음 — 보류.
+
+## 7. `出演情報` 파서 (`parse_appearance`, 2026-09-03 추가)
+
+`@BDP_yumemita` 가 외부 이벤트/합방 출연을 알리는 트윗은 일일 스케줄과 서식이 다르다:
+
+```
+＼🛸出演情報📢／
+9/10(木) 22:00頃〜
+「#バンドリTVLIVE 2026」
+夢限大みゅーたいぷ 5名が出演🛸
+📺配信URLはこちら
+https://youtube.com/live/ri2_BimgJIA
+```
+
+- 트리거: `出演情報|出演決定|出演告知|出演のお知らせ` + `M/D(曜) HH:MM頃〜` 단일 시각.
+- 참여자: 이름이 직접 나오면(`_names`) 그것, 아니면 `N名が出演` 또는 `夢限大みゅーたいぷ`/`ゆめみた`
+  → `ALL_KEYS`(전원). `channel_key` = 첫 멤버, `collab_with` = 나머지.
+- `「이벤트명」` → `title` (선행 `#` 제거). `render.js` 는 collab 카드 라벨에 `title` 우선
+  (`합동 · {title}`), 없으면 참여자 4명 이상이면 `합동 · 전원`.
+- `host="group"`, `kind="collab"`, `icon="📺"`, `source="bdp_appearance"`, TTL 3h.
+- 통합 진입점 `xrelay.parse(text, now_iso)` = `parse_bdp_schedule` → 없으면 `parse_appearance`.
+  `xrelay.looks_relayable(text)` = 큐 적재 가드(`配信スケジュール` 또는 `出演情報` 계열).
+- 폰 Automate `Expression true?` 필터도 이 마커를 포함하도록 넓혀야 한다(테스트 기간엔 필터 생략).

@@ -125,7 +125,9 @@ mewtype-scheduler/
   섞어 그린다. `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 카운트다운 강조·
   "지각" 표시 없음, 링크는 `channel_url`. DOM 은 §3 참고. 구버전 프론트는 이 행을 무시(롤백 안전).
 - **(v2.4) 합동방송**: `kind=="collab"` 이면 `xrelay` 가 `host="group"` + `url`(트윗의 온전한
-  영상 URL, 잘린 `…` 은 무시) 을 채운다. `render.js` 는 이 행을 **참여 멤버 전원**(`channel_key`
+  영상 URL, 잘린 `…` 은 무시) 을 채운다. `@BDP_yumemita` 의 `出演情報` 계열(외부 이벤트 출연)
+  트윗은 `parse_appearance` 가 처리 — `source="bdp_appearance"`, `title`=「이벤트명」, 5인 전원.
+  통합 진입점 `xrelay.parse()`. `render.js` 는 이 행을 **참여 멤버 전원**(`channel_key`
   ∪ `collab_with`) 레인에 같은 카드로 팬아웃하고, `.card--collab`(바이올렛 `--color-collab`,
   "합동" 배지, "합동 · {그 레인 제외한 참여자}" 라벨, "공식 채널 합동방송" 줄) 로 그린다. 링크는
   `url`(그룹 영상). `reconcile` 은 `host` 있는 행을 멤버 개인 실물로 supersede 하지 않는다

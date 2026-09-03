@@ -28,6 +28,9 @@ NAME_TO_KEY: list[tuple[str, str]] = [
     ("都子", "miyako"),
 ]
 
+# 5인 전원 (config/channels.json channel_order 와 동일 — 순수 모듈이라 하드코딩)
+ALL_KEYS = ["arale", "yuno", "nonoka", "ritsu", "miyako"]
+
 # 트윗 앞머리 아이콘 → 방송 종류. 목록에 없는 이모지는 kind="unknown" + icon 보존.
 ICON_KIND: dict[str, str] = {
     "🎮": "game",
@@ -55,6 +58,15 @@ TIME_RE = re.compile(r"(\d{1,2}):(\d{2})(頃)?〜")
 YT_VIDEO_RE = re.compile(
     r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(?:live/|watch\?v=|shorts/)([\w-]{11})(?![\w-])"
 )
+
+# "出演情報" 계열 — @BDP_yumemita 가 외부 이벤트/합방 출연을 알릴 때 (일일 스케줄과 서식 다름).
+#   ＼出演情報／  9/10(木) 22:00頃〜  「이벤트명」  夢限大みゅーたいぷ 5名が出演  <영상 URL>
+APPEARANCE_MARK_RE = re.compile(r"出演情報|出演決定|出演告知|出演のお知らせ")
+APPEARANCE_DT_RE = re.compile(
+    r"(\d{1,2})/(\d{1,2})\([日月火水木金土]\)\s*(\d{1,2}):(\d{2})(頃)?\s*〜"
+)
+APPEARANCE_COUNT_RE = re.compile(r"(\d+)\s*名(?:が)?\s*(?:出演|参加|登場)")
+_TITLE_RE = re.compile(r"[「『]([^」』\n]{1,60})[」』]")
 
 _FW = str.maketrans("０１２３４５６７８９：", "0123456789:")
 
@@ -213,6 +225,90 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                 }
             )
     return rows
+
+
+def parse_appearance(text: str, now_iso: str) -> list[dict]:
+    """`出演情報` 계열 트윗 → scheduled(host="group") 행 1개. 형식 아니면 `[]`.
+
+    일일 스케줄과 서식이 다르다: `M/D(曜) HH:MM頃〜` 단일 시각 + `「이벤트명」`
+    + `N名が出演` + 영상 URL. 5인(또는 이름이 직접 나온 멤버) 전원 레인에 팬아웃되도록
+    `channel_key` + `collab_with` 로 나눠 담는다.
+    """
+    t = normalize(text)
+    if not APPEARANCE_MARK_RE.search(t):
+        return []
+    dt = APPEARANCE_DT_RE.search(t)
+    if not dt:
+        return []
+
+    try:
+        now_jst = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(JST)
+    except (ValueError, AttributeError):
+        now_jst = datetime.now(JST)
+
+    month, day = int(dt.group(1)), int(dt.group(2))
+    hh, mm = int(dt.group(3)), int(dt.group(4))
+    approx = bool(dt.group(5))
+    day_carry, hh = divmod(hh, 24)          # 심야표기 24:00〜
+    base = datetime(_infer_year(month, day, now_jst), month, day, tzinfo=JST)
+    start = (base + timedelta(days=day_carry)).replace(hour=hh, minute=mm)
+    start_z = _iso_z(start)
+
+    # 참여자: 이름이 직접 나오면 그것, 아니면 "N名"/"夢限大みゅーたいぷ" → 전원
+    key, collab = _names(t)
+    if key:
+        members = [key, *collab]
+    else:
+        cnt = APPEARANCE_COUNT_RE.search(t)
+        n = int(cnt.group(1)) if cnt else 0
+        whole = ("夢限大みゅーたいぷ" in t) or ("ゆめみた" in t)
+        members = list(ALL_KEYS) if (n >= len(ALL_KEYS) or (whole and n == 0)) else []
+    if not members:
+        return []
+
+    tm = _TITLE_RE.search(t)
+    title = tm.group(1).lstrip("#＃ ").strip() if tm else None
+    hit = YT_VIDEO_RE.search(t)
+    url = None
+    if hit:
+        u = hit.group(0)
+        url = u if u.startswith("http") else "https://" + u
+
+    return [
+        {
+            "status": "scheduled",
+            "channel_key": members[0],
+            "sched_id": f"sched:{members[0]}:{start_z}",
+            "video_id": None,
+            "title": title,
+            "url": url,
+            "host": "group",
+            "thumbnail": None,
+            "scheduled_start": start_z,
+            "start_approx": approx,
+            "kind": "collab",
+            "icon": "📺",
+            "members_only": False,
+            "collab_with": members[1:],
+            "source": "bdp_appearance",
+            "source_at": now_iso,
+            "first_seen": now_iso,
+            "last_updated": now_iso,
+            "assumed_live": False,
+            "expires_at": _iso_z(start.astimezone(UTC) + timedelta(hours=3)),
+        }
+    ]
+
+
+def parse(text: str, now_iso: str) -> list[dict]:
+    """트윗 → scheduled 행. 일일 스케줄 우선, 없으면 出演情報."""
+    return parse_bdp_schedule(text, now_iso) or parse_appearance(text, now_iso)
+
+
+def looks_relayable(text: str) -> bool:
+    """폰이 relay 할 가치가 있는(스케줄/출연) 트윗인지 — 큐 적재 가드용."""
+    t = text or ""
+    return "配信スケジュール" in t or bool(APPEARANCE_MARK_RE.search(normalize(t)))
 
 
 def _jst_date(iso: str) -> str:
@@ -434,8 +530,33 @@ if __name__ == "__main__":
     assert r6[0]["url"] == "https://www.youtube.com/watch?v=PAfMVT3GTLg", r6[0]["url"]
     print("[OK] S6  (watch?v= 온전 URL 캡처)")
 
+    # S7: 出演情報 — 실측 (@BDP_yumemita, 5인 외부 이벤트 출연)
+    S7 = (
+        "＼🛸出演情報📢／\n\n"
+        "9/10(木) 22:00頃〜\n"
+        "「#バンドリTVLIVE 2026」\n\n"
+        "夢限大みゅーたいぷ 5名が出演🛸\n\n"
+        "📺配信URLはこちら\nhttps://youtube.com/live/ri2_BimgJIA\n\n"
+        "お見逃しなく✨\n#ゆめみた"
+    )
+    assert parse_bdp_schedule(S7, NOW) == []            # 일일 스케줄 파서는 무시
+    r7 = parse_appearance(S7, NOW)
+    assert len(r7) == 1, r7
+    a = r7[0]
+    assert a["channel_key"] == "arale" and a["collab_with"] == ["yuno", "nonoka", "ritsu", "miyako"], a
+    assert a["host"] == "group" and a["kind"] == "collab", a
+    assert a["start_approx"] is True, a                 # 22:00頃
+    assert a["url"] == "https://youtube.com/live/ri2_BimgJIA", a["url"]
+    assert a["title"] == "バンドリTVLIVE 2026", a["title"]
+    assert _jst_hm(a["scheduled_start"]) == "22:00" and _jst_date(a["scheduled_start"]) == "2026-09-10", a
+    assert parse(S7, NOW) == r7                         # 통합 진입점
+    assert looks_relayable(S7) and looks_relayable("x 配信スケジュール y")
+    assert not looks_relayable("다운로드 완료")
+    print("[OK] S7  (出演情報 → host=group 전원, 頃/title/URL)")
+
     # 형식 아님 → []
     assert parse_bdp_schedule("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
+    assert parse_appearance("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
     print("[OK] 비스케줄 트윗 → []")
 
     # merge_scheduled: replace-by-date
