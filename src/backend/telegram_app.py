@@ -516,7 +516,7 @@ def _ingest_queue_drain(gh, now_iso: str) -> tuple[int, int]:
         return 0, 0
     applied = total_rows = 0
     for it in items:
-        rows = xrelay.parse_bdp_schedule(it.get("raw", ""), it.get("received_at") or now_iso)
+        rows = xrelay.parse(it.get("raw", ""), it.get("received_at") or now_iso)
         if not rows:
             continue
         _merge_rows_into_schedule(
@@ -664,7 +664,7 @@ if _FLASK_AVAILABLE:
                 f"<code>{html.escape(body_preview)}</code>"
             )
             # 스케줄 트윗이면 큐에 적재 — 실배포 전환 시 반영되도록 (유실 방지).
-            if raw and "配信スケジュール" in raw:
+            if raw and xrelay is not None and xrelay.looks_relayable(raw):
                 _gh = _make_gh()
                 if _gh is not None:
                     _ingest_queue_push(_gh, raw, title, now_iso)
@@ -689,7 +689,7 @@ if _FLASK_AVAILABLE:
 
         try:
             channels_cfg = _load_channels_config()
-            rows = xrelay.parse_bdp_schedule(raw, now_iso)
+            rows = xrelay.parse(raw, now_iso)
 
             if dry:
                 cut = 3500
@@ -707,7 +707,7 @@ if _FLASK_AVAILABLE:
                     "─────\n"
                     f"<code>{html.escape(body)}</code>"
                 )
-                if "配信スケジュール" in raw:
+                if xrelay is not None and xrelay.looks_relayable(raw):
                     _gh = _make_gh()
                     if _gh is not None:
                         _ingest_queue_push(_gh, raw, title, now_iso)
@@ -728,7 +728,7 @@ if _FLASK_AVAILABLE:
             drained, drained_rows = _ingest_queue_drain(gh, now_iso)
 
             if not rows:
-                msg = "ℹ️ ingest: 配信スケジュール 형식 아님 — 무시\n" + raw[:200]
+                msg = "ℹ️ ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
                 if drained:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 _send_telegram(msg, silent=not drained)

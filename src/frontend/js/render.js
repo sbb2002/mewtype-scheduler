@@ -102,11 +102,17 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
       // 참여자 = channel_key + collab_with, 이 레인 멤버는 빼고 나머지를 라벨에.
       const participants = [broadcast.channel_key, ...(Array.isArray(broadcast.collab_with) ? broadcast.collab_with : [])];
       const others = participants.filter((k) => k && k !== laneKey);
-      const names = others
-        .map((k) => (FALLBACK_CHANNELS[k] || {}).name_ko)
-        .filter(Boolean)
-        .join(", ");
-      label = names ? `합동 · ${names}` : "합동";
+      if (broadcast.title) {
+        label = `합동 · ${broadcast.title}`;              // 出演情報 등 — 이벤트명 우선
+      } else if (others.length >= 4) {
+        label = "합동 · 전원";                            // 5인 전원
+      } else {
+        const names = others
+          .map((k) => (FALLBACK_CHANNELS[k] || {}).name_ko)
+          .filter(Boolean)
+          .join(", ");
+        label = names ? `합동 · ${names}` : "합동";
+      }
     }
     if (label) {
       const title = document.createElement("p");
