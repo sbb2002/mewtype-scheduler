@@ -81,7 +81,8 @@ def _stable_view(schedule: dict) -> dict:
                 {k: v for k, v in b.items() if k not in ("last_updated", "concurrent_viewers")}
                 for b in schedule.get("broadcasts", [])
             ),
-            key=lambda b: b.get("video_id", ""),
+            # scheduled 행(X 릴레이)은 video_id 가 None → sched_id 로. 둘 다 없으면 "".
+            key=lambda b: b.get("video_id") or b.get("sched_id") or "",
         ),
     }
 

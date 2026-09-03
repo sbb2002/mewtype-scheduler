@@ -88,6 +88,36 @@ mewtype-scheduler/
 - 파일이 없을 때의 기본 형태: `{"generated_at": null, "channel_order": [...], "channels": {...}, "broadcasts": []}`.
 - 프론트는 `channel_order`/`channels`가 비면 `config.js`의 폴백을 쓴다.
 
+### 1-1. `status == "scheduled"` 행 (v2.3 — X 릴레이)
+
+`broadcasts[]` 에 `video_id` 없는 행이 섞일 수 있다. X(트위터) `@BDP_yumemita` 일일 스케줄
+트윗이 폰(Automate) → `mewtype-telegram` `POST /ingest` 로 릴레이돼 만들어진, **YouTube 영상이
+아직 없는 최하 단계**다. 설계·파서 규칙: `docs/plan/v2_3_x_relay.md`.
+
+```jsonc
+{
+  "status": "scheduled",
+  "channel_key": "nonoka",
+  "sched_id": "sched:nonoka:2026-08-30T02:00:00Z",  // video_id 대체 키
+  "video_id": null, "title": null, "url": null, "thumbnail": null,
+  "scheduled_start": "2026-08-30T02:00:00Z",         // JST→UTC. 파싱 실패 시 null
+  "start_approx": false,                              // 트윗에 "頃" 등
+  "kind": "game",                                     // game|talk|song|collab|morning|unknown
+  "icon": "🎮",                                        // 원본 이모지 (kind=unknown 이면 프론트가 이것만)
+  "members_only": false,
+  "collab_with": [],                                  // A×B 합방 시 상대 channel_key[]
+  "source": "bdp_schedule",
+  "source_at": "2026-09-03T01:05:00Z",
+  "first_seen": "...", "last_updated": "...",
+  "expires_at": "2026-08-30T05:00:00Z"               // scheduled_start+3h. null 이면 first_seen+18h
+}
+```
+
+- 정렬 확장: `live` → `upcoming` → `scheduled`, 그룹 내 `scheduled_start` asc(null 뒤).
+- `reconcile.build_schedule` 이 매 tick 보존한다. 같은 채널 실물 `upcoming`/`live` 가 ±4h 안에
+  뜨면 제거(supersede), `expires_at` 도달 시 제거. Cloud Tasks/`pending.json` 은 안 탄다.
+- **프론트 v1 은 이 행을 무시**한다(live/upcoming 필터 밖) — `.card--scheduled` 렌더는 후속.
+
 ## 2. 공용 계약 B — `archive.json` 스키마
 
 ```jsonc

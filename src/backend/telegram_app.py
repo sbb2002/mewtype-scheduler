@@ -40,6 +40,11 @@ try:
 except ImportError:
     Telegram = None
 
+try:
+    from . import xrelay
+except ImportError:
+    xrelay = None
+
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -48,7 +53,7 @@ from .control import (
     set_log_level,
     set_paused,
 )
-from .gh_store import GitHubStore
+from .gh_store import ConflictError, GitHubStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("telegram_app")
@@ -444,6 +449,16 @@ def _load_channels_config() -> dict:
         return {"channels": {}}
 
 
+def _make_gh() -> "GitHubStore | None":
+    """env 에서 GitHubStore 구성. 필수 값 없으면 None."""
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPO", "").strip()
+    branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
+    if not token or not repo:
+        return None
+    return GitHubStore(token, repo, branch)
+
+
 # Flask 라우트 정의 (Flask 설치 시만)
 if _FLASK_AVAILABLE:
 
@@ -519,6 +534,71 @@ if _FLASK_AVAILABLE:
 
         # 항상 200 반환 (Telegram 재시도 방지)
         return jsonify({"ok": True}), 200
+
+    @app.post("/ingest")
+    def _ingest():
+        """Automate(폰) → 삼성 브라우저 웹푸시 알림 텍스트 인입 (v2.3 X 릴레이).
+
+        인증: `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`.
+        본문: form 또는 JSON 의 `text`(필수) / `src`(선택).
+        `@BDP_yumemita` 일일 스케줄 트윗만 파싱 → `schedule.json` 의 `scheduled` 행으로 머지.
+        형식이 아니거나 일시정지 중이면 no-op. 결과는 운영자 DM 으로 회신(계약 G).
+        """
+        secret = os.environ.get("INGEST_SECRET", "").strip()
+        got = request.headers.get("X-Ingest-Secret", "").strip()
+        if not secret or got != secret:
+            log.warning("ingest: bad or missing secret")
+            return jsonify({"ok": False}), 403
+
+        payload = request.form if request.form else (request.get_json(silent=True) or {})
+        raw = (payload.get("text") or "").strip()
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if not raw:
+            return jsonify({"ok": False, "error": "empty text"}), 400
+        if xrelay is None:
+            return jsonify({"ok": False, "error": "xrelay unavailable"}), 500
+
+        try:
+            gh = _make_gh()
+            if gh is None:
+                _send_telegram("⚠️ ingest: GitHub 설정 누락")
+                return jsonify({"ok": False, "error": "gh config"}), 200
+            channels_cfg = _load_channels_config()
+
+            control, _ = gh.read_json("control.json")
+            if is_paused(control or default_control()):
+                log.info("ingest: paused — skip")
+                _send_telegram("⏸ 일시정지 중 — ingest 무시", silent=True)
+                return jsonify({"ok": True, "paused": True}), 200
+
+            rows = xrelay.parse_bdp_schedule(raw, now_iso)
+            if not rows:
+                _send_telegram(
+                    "ℹ️ ingest: 配信スケジュール 형식 아님 — 무시\n" + raw[:200], silent=True
+                )
+                return jsonify({"ok": True, "parsed": 0}), 200
+
+            changed = False
+            for attempt in (1, 2):
+                prev, sha = gh.read_json("schedule.json")
+                merged = xrelay.merge_scheduled(prev or {}, rows, now_iso)
+                try:
+                    changed, _ = gh.write_json(
+                        "schedule.json", merged, prev_sha=sha,
+                        message=f"data: xrelay scheduled {now_iso}",
+                    )
+                    break
+                except ConflictError:
+                    if attempt == 2:
+                        raise
+                    log.warning("ingest: schedule.json 충돌 — 재계산 후 재시도")
+
+            _send_telegram(xrelay.summary_text(rows, channels_cfg))
+            return jsonify({"ok": True, "parsed": len(rows), "changed": changed}), 200
+        except Exception as e:
+            log.exception("ingest failed")
+            _send_telegram(f"⚠️ ingest 오류: {str(e)[:200]}")
+            return jsonify({"ok": False, "error": str(e)}), 200
 
     @app.get("/")
     def _health():
@@ -658,6 +738,16 @@ if __name__ == "__main__":
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
         assert resp.data == b"ok", f"Expected b'ok', got {resp.data}"
         print("  ✓ 200 ok")
+
+    # Test 5: /ingest 인증·검증 (GitHub 미접촉 경로만)
+    print("\n[Test 5] POST /ingest secret/검증")
+    os.environ["INGEST_SECRET"] = "ing123"
+    with app.test_client() as client:
+        r = client.post("/ingest", data={"text": "x"}, headers={"X-Ingest-Secret": "nope"})
+        assert r.status_code == 403, f"Expected 403, got {r.status_code}"
+        r = client.post("/ingest", data={"text": "   "}, headers={"X-Ingest-Secret": "ing123"})
+        assert r.status_code == 400, f"Expected 400, got {r.status_code}"
+        print("  ✓ bad secret 403 · empty text 400")
 
     print("\n" + "=" * 60)
     print("✓ All smoke tests passed!")

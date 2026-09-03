@@ -55,7 +55,9 @@ src/
     config.py          # 환경변수 → Config
     notify.py          # (v2.1) Telegram 알림 + diff_events(A~F)
     control.py         # (v2.1) control.json 스키마 (paused)
-    telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app
+    telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
+                       #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
+    xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
@@ -78,6 +80,7 @@ python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 asse
 python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.statemachine   # 폴링 FSM 9 시나리오
+python -m src.backend.xrelay         # (v2.3) X 스케줄 트윗 파서 — 실측 4샘플 + merge
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
