@@ -113,6 +113,13 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 5. **(v2.1)** `/tick`·`/wake` 진입 시 `control.json` 확인 — `paused` 면 healthcheck 핑만 하고 no-op.
    상태 전이(upcoming/live 시작·종료, fallback, 오류)는 Telegram DM 으로 알림. `/status /pause /resume`
    명령은 공개 서비스 `mewtype-telegram` 이 처리. 상세는 `docs/IMPLEMENTATION_v2.1.md`.
+6. **(v2.3)** X 예고 릴레이 — 폰(Automate)이 `@BDP_yumemita` 일일 스케줄 트윗의 삼성 브라우저
+   웹푸시 알림 텍스트를 `mewtype-telegram` 공개 `POST /ingest`(`X-Ingest-Secret` 헤더)로 보낸다.
+   `xrelay.parse_bdp_schedule` → `schedule.json` 에 `status:"scheduled"` 행(YouTube 영상 아직
+   없는 최하 단계, `video_id` 없음). 정기 `/tick` 의 reconcile 이 보존하다가 실물 `upcoming`/`live`
+   가 같은 채널에 ±4h 안에 뜨면 supersede, `expires_at`(start+3h) 도달 시 제거. Cloud Tasks/
+   `pending.json` 은 안 탄다. `INGEST_DRY_RUN=1` 이면 저장 없이 DM 회신만. 상세는
+   `docs/plan/v2_3_x_relay.md`, 그림 `docs/plan/v2_3_x_relay.png`.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId

@@ -1,7 +1,11 @@
-# v2.3 구상 초안 — X 예고 릴레이 → `scheduled` 단계
+# v2.3 — X 예고 릴레이 → `scheduled` 단계
 
-작성 2026-09-03. **초안(미확정)** — §미해결 항목 결정 후 `docs/IMPLEMENTATION_v2.3.md` 로 승격.
-현행 = v2.1. PR3(v2.2)은 미머지. 이 문서는 그 다음 v2.3, PR3 브랜치 위에 구현.
+작성 2026-09-03. 초안에서 출발해 **백엔드 인입 경로는 구현 완료**(아래 §구현 반영).
+PR3(v2.2) 브랜치 위에 구현. 계약이 굳으면 `docs/IMPLEMENTATION_v2.3.md` 로 승격.
+
+![v2.3 X 릴레이](v2_3_x_relay.png)
+
+*(그림 생성기: `docs/plan/gen_x_relay.py` — `python docs/plan/gen_x_relay.py`)*
 
 ---
 
@@ -25,6 +29,40 @@
 **DRY-RUN**: `INGEST_DRY_RUN` env 가 참이면 `/ingest` 는 `schedule.json` 을 안 쓰고 받은 원문
 (`len`, 앞 3500자) + 파싱 결과만 DM 으로 회신한다. 미해결 #1(푸시 잘림) 검증용 —
 Automate 를 `/ingest` 로 붙인 채로 실물 알림이 완전히 오는지 확인하고, 되면 `0` 으로 되돌린다.
+
+### 폰(S23) Automate 플로우 — 실제 구성
+
+```
+Flow beginning
+  → Notification posted?   package = "com.sec.android.app.sbrowser"
+                           out: pkg, ntitle, nmsg, nticker, nx(=dictionary of extras)
+        (Y: 다음 / N: 자기 자신으로 루프백)
+  → Expression true?       matches(coalesce(nx["android.bigText"], nx["android.text"],
+                                            nmsg, nticker), "(?s).*配信スケジュール.*")
+        (Y: 다음 / N: Notification posted? 로 루프백)
+  → HTTP request           POST  <telegram URL>/ingest
+                           content-type: application/x-www-form-urlencoded
+                           headers (dict):  {"X-Ingest-Secret": "<INGEST_SECRET>"}
+                           body: "text=" + urlEncode(coalesce(nx["android.bigText"],
+                                   nx["android.text"], nmsg, nticker))
+                                 + "&title=" + urlEncode(coalesce(ntitle, ""))
+        → Notification posted? 로 루프백
+```
+
+- Automate 최신판에서 조건 분기 블록 이름은 **`Expression true`** (구 `Decision`). `find()` 없음 → `matches()`.
+- 헤더 딕셔너리 리터럴은 이 빌드에서 `{ }` 표기가 통했다(`[ ]` 는 저장 거부).
+- 다운로드 등 스케줄 아님 알림은 `Expression true?` 에서 걸러져 `/ingest` 안 감. 백엔드 파서 필터는 2중 안전장치.
+
+### 검증 상태 (2026-09-03)
+
+| 항목 | 상태 |
+|------|------|
+| 백엔드 `/ingest` 파싱 (실측 4샘플) | ✅ curl `{"ok":true,"dry_run":true,"parsed":3}` + DM 정상 |
+| `xrelay` / `reconcile` self-test | ✅ 통과 (supersede/TTL 포함) |
+| 폰 → `/ingest` 인증 | ✅ `X-Ingest-Secret` 정정 후 403→통과 (빈 다운로드 알림은 `400 empty text` — 정상) |
+| 폰 → 실물 `配信スケジュール` 트윗 왕복 + 잘림 여부(#1) | ⏳ 트윗 대기 중 |
+| `INGEST_DRY_RUN=0` 실사용 전환 | ⏳ #1 확인 후 |
+| 프론트 `.card--scheduled` | ⏳ 후속 |
 
 ---
 

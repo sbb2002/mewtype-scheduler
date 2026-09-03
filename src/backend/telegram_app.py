@@ -573,7 +573,7 @@ if _FLASK_AVAILABLE:
                 cut = 3500
                 body = raw if len(raw) <= cut else raw[:cut] + "\n…(len 초과 잘림)"
                 brief = " / ".join(
-                    f"{r['channel_key']} {r['scheduled_start'][11:16]}"
+                    f"{r['channel_key']} {xrelay._jst_hm(r['scheduled_start'])}(JST)"
                     f"{'🔒' if r['members_only'] else ''}"
                     for r in rows
                 ) or "(파싱 0건)"
