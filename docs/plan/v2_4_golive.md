@@ -5,24 +5,48 @@
 
 ---
 
-## 0. 지금 상태 (2026-09-03 기준)
+## 0. 지금 상태 (2026-09-03 저녁 기준)
 
-- `mewtype-telegram` = **테스트 모드**. env `INGEST_ECHO=1`, `INGEST_DRY_RUN=1`.
+- `mewtype-telegram` = `-00012` · **테스트 모드**. env `INGEST_ECHO=1`, `INGEST_DRY_RUN=1`.
+  `main`(PR #8 `parse_appearance` 포함)으로 재배포됨.
   - `/ingest` 는 파싱·저장을 안 한다. 받은 텍스트를 DM 으로 돌려주고(`말미문구 ✅/❌`),
-    `ingest ECHO: len=.. clen=.. tail_ok=..` 로그를 남기고, 스케줄 트윗이면
-    `data` 브랜치 `ingest_queue.json` 에 원문을 적재한다.
+    `ingest ECHO: len=.. clen=.. tail_ok=..` 로그를 남기고, 스케줄/출연 트윗이면
+    (`xrelay.looks_relayable`) `data` 브랜치 `ingest_queue.json` 에 원문을 적재한다.
 - `mewtype-backend` = `-00013` (v2.3+v2.4 `reconcile`). 정기 `/tick` 은 이미 v2.4 로직.
 - 프론트(Vercel) = `main` 자동배포됨. `.card--scheduled` / `.card--collab` 코드 있음.
   단 `schedule.json` 에 그런 행이 없어 화면 변화는 아직 없음.
-- **아직 프로덕션 `schedule.json` 엔 X 릴레이 유래 행이 하나도 없다.**
+- **아직 프로덕션 `schedule.json` 엔 X 릴레이 유래 행이 하나도 없다. 큐도 비어있다.**
+
+### 폰(Automate) 상태 — 2026-09-03 디버깅 완료
+
+- 테스트 기간 동안 **`Expression true?` 필터를 생략**하고 삼성 브라우저 알림을 전부
+  `/ingest` 로 보낸다 (다운로드 등 잡 알림도 옴 — ECHO 라 무해, `looks_relayable` 가 큐를 막음).
+- **HTTP Request 블록 body 식** (한동안 `NaN` 만 보내던 버그 → 수정됨):
+  ```
+  urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})
+  ```
+  - Automate 문자열 연결은 `+` 가 아니라 `++`. `+` 는 산술이라 `"text=" + x` → `NaN`.
+  - `urlEncode(딕셔너리)` 가 `key=value&key=value` 로 만들어줌 → `text=` 접두어·인코딩 자동.
+  - `nmsg` = Notification Posted 트리거의 "Message" 출력. 다운로드 알림으로 왕복 확인 완료.
+- **미확인**: 트윗의 여러 줄 전문이 `nx["android.bigText"]` 로 잡히는지 (트리거가 extras
+  딕셔너리 `nx` 를 출력하도록 설정돼 있어야 함). 안 잡히면 `coalesce` 가 `nmsg`(첫 줄)로
+  떨어져 "잘린 것처럼" 보인다 — 실물 트윗 오면 바로 드러남.
 
 ## 1. 전환 전 확인 — 웹푸시 잘림 (#1)
 
 폰(Automate)이 삼성 브라우저 웹푸시 알림을 relay 할 때 본문이 "Show more" 로
-잘리는지 미확인. 실물 `@BDP_yumemita` 트윗(「配信スケジュール」 또는 `出演情報` 계열)이
-한 번 와서 ECHO 를 타면 판정. (2026-09-03: 테스트 기간엔 폰 필터를 생략하고 삼성
-브라우저 알림을 전부 `/ingest` 로 보내는 중. 실배포 후엔 필터를 `配信スケジュール` +
-`出演情報` 마커로 되살릴 것.)
+잘리는지. **2026-09-03 저녁: `@bang_dream_info` 의 232자·12줄 트윗이 전문 그대로
+관통 확인** (`ingest ECHO: len=232 clen=1100`, head/tail 에 끝까지 다 옴).
+→ `nx["android.bigText"]` 가 잡히고 있고, 이 길이까진 잘림 없음. 다만 일일
+`配信スケジュール` 는 더 길 수 있으니(400~600자) 실물 스케줄 트윗으로 한 번 더 확인 권장.
+
+- 아직 못 본 것: `@BDP_yumemita` 의 실제 「配信スケジュール」 / `出演情報` 트윗.
+  오면 ECHO DM `말미문구 ✅/❌` + 아래 로그의 `tail_ok` 로 판정.
+- 테스트 기간엔 폰 `Expression true?` 필터를 **생략**하고 삼성 브라우저 알림을 전부
+  `/ingest` 로 보내는 중 → `@bang_dream_info` 등 무관한 BanG Dream 뉴스도 옴
+  (ECHO 라 무해, `looks_relayable` 이 큐를 막음).
+- **실배포 시 필터 복원**: 발신 `@BDP_yumemita` 로 한정하거나 `配信スケジュール`+`出演情報`
+  마커로. 안 그러면 `@bang_dream_info` 잡음이 `/ingest` 에 계속 들어온다.
 
 ```bash
 gcloud logging read \
