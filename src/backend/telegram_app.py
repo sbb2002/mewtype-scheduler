@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -540,9 +541,12 @@ if _FLASK_AVAILABLE:
         """Automate(폰) → 삼성 브라우저 웹푸시 알림 텍스트 인입 (v2.3 X 릴레이).
 
         인증: `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`.
-        본문: form 또는 JSON 의 `text`(필수) / `src`(선택).
+        본문: form 또는 JSON 의 `text`(필수) / `title`(선택, dry-run 에코용).
         `@BDP_yumemita` 일일 스케줄 트윗만 파싱 → `schedule.json` 의 `scheduled` 행으로 머지.
         형식이 아니거나 일시정지 중이면 no-op. 결과는 운영자 DM 으로 회신(계약 G).
+
+        `INGEST_DRY_RUN` env 가 참이면: **저장 안 하고** 받은 원문 + 파싱 결과만
+        DM 으로 회신 (푸시 알림이 "Show more" 로 잘리는지 확인용).
         """
         secret = os.environ.get("INGEST_SECRET", "").strip()
         got = request.headers.get("X-Ingest-Secret", "").strip()
@@ -552,18 +556,41 @@ if _FLASK_AVAILABLE:
 
         payload = request.form if request.form else (request.get_json(silent=True) or {})
         raw = (payload.get("text") or "").strip()
+        title = (payload.get("title") or "").strip()
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         if not raw:
             return jsonify({"ok": False, "error": "empty text"}), 400
         if xrelay is None:
             return jsonify({"ok": False, "error": "xrelay unavailable"}), 500
 
+        dry = os.environ.get("INGEST_DRY_RUN", "").strip() not in ("", "0", "false", "False", "no")
+
         try:
+            channels_cfg = _load_channels_config()
+            rows = xrelay.parse_bdp_schedule(raw, now_iso)
+
+            if dry:
+                cut = 3500
+                body = raw if len(raw) <= cut else raw[:cut] + "\n…(len 초과 잘림)"
+                brief = " / ".join(
+                    f"{r['channel_key']} {r['scheduled_start'][11:16]}"
+                    f"{'🔒' if r['members_only'] else ''}"
+                    for r in rows
+                ) or "(파싱 0건)"
+                _send_telegram(
+                    "🧪 <b>ingest DRY-RUN</b> — 저장 안 함\n"
+                    f"title: <code>{html.escape(title) or '(없음)'}</code>\n"
+                    f"len(text)={len(raw)} · 파싱 {len(rows)}건\n"
+                    f"{html.escape(brief)}\n"
+                    "─────\n"
+                    f"<code>{html.escape(body)}</code>"
+                )
+                return jsonify({"ok": True, "dry_run": True, "parsed": len(rows)}), 200
+
             gh = _make_gh()
             if gh is None:
                 _send_telegram("⚠️ ingest: GitHub 설정 누락")
                 return jsonify({"ok": False, "error": "gh config"}), 200
-            channels_cfg = _load_channels_config()
 
             control, _ = gh.read_json("control.json")
             if is_paused(control or default_control()):
@@ -571,7 +598,6 @@ if _FLASK_AVAILABLE:
                 _send_telegram("⏸ 일시정지 중 — ingest 무시", silent=True)
                 return jsonify({"ok": True, "paused": True}), 200
 
-            rows = xrelay.parse_bdp_schedule(raw, now_iso)
             if not rows:
                 _send_telegram(
                     "ℹ️ ingest: 配信スケジュール 형식 아님 — 무시\n" + raw[:200], silent=True

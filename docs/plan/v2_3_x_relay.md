@@ -22,6 +22,10 @@
 (`POST /ingest`), `src/collector/reconcile.py`(`build_schedule` 에 scheduled 보존/supersede/TTL),
 `deploy/setup.sh`·`deploy/deploy_telegram.sh`(`INGEST_SECRET`).
 
+**DRY-RUN**: `INGEST_DRY_RUN` env 가 참이면 `/ingest` 는 `schedule.json` 을 안 쓰고 받은 원문
+(`len`, 앞 3500자) + 파싱 결과만 DM 으로 회신한다. 미해결 #1(푸시 잘림) 검증용 —
+Automate 를 `/ingest` 로 붙인 채로 실물 알림이 완전히 오는지 확인하고, 되면 `0` 으로 되돌린다.
+
 ---
 
 ## 0. 목표

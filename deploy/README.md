@@ -34,6 +34,10 @@
   - Content-Type `application/x-www-form-urlencoded`
   - Body `text=` + urlEncode(알림 전체 본문)  (선택: `&src=<계정핸들>`)
 - 형식이 아니거나 `control.json.paused` 면 no-op. 결과·경고는 운영자 DM 으로 회신.
+- **먼저 DRY-RUN 으로 검증**: `INGEST_DRY_RUN=1` (env.sh 또는
+  `gcloud run services update mewtype-telegram --region asia-northeast1 --update-env-vars INGEST_DRY_RUN=1`)
+  → `/ingest` 가 저장 없이 받은 원문·파싱결과만 DM 회신. 푸시 알림이 잘리지 않고
+  엔트리 전부 오는지 확인되면 `INGEST_DRY_RUN=0` 으로 되돌리고 재배포.
 
 ### 배포 순서 (v2.1)
 
