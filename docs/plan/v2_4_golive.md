@@ -117,12 +117,46 @@ gcloud logging read \
   --limit 5 --format='value(timestamp,textPayload)'
 ```
 
-- `tail_ok=True` → 말미 고정문구(`※時刻は予告なく変更…`)까지 도착 = **안 잘림**. 전환 진행.
-- `tail_ok=False` → 잘림. 전환 전에 `xrelay.merge_scheduled` 에 부분 upsert 가드
-  추가 (그 함수 상단 `# ponytail:` 주석 위치). 안 그러면 잘린 트윗이 그 날짜의
-  온전한 기존 행을 덮어써서 엔트리가 사라진다.
-- 트윗이 안 와서 판정 못 해도 전환은 가능하다 — 큐/merge 가 replace-by-date 라
-  다음 온전한 트윗이 오면 자동 교체되고, 최악의 경우 하루치가 부분 노출될 뿐이다.
+### 실물 키워드 알림이 오면 — 판정
+
+DM 텍스트 원문을 확보하고 (또는 로그 head/tail), 잘림 여부를 이렇게 본다:
+
+- **日次 `配信スケジュール`**: 마지막 줄이 `※時刻は予告なく変更…` → `tail_ok=True` 면 안 잘림.
+- **`出演情報`**: `※時刻は…` 로 안 끝나므로 `tail_ok` 는 항상 False(오탐). 대신
+  `xrelay.parse_appearance(원문, now)` 를 돌려 `url`(`youtube.com/live/<11자>`)이 잡히면 온전,
+  `None`/`[]` 면 잘림 의심. 일반적으론 `xrelay.parse(원문, now)` 로 (a) 잘림 여부 (b) 파싱 결과
+  (채널·시각·`host`)를 함께 확인.
+- ECHO 모드여도 이 트윗은 `looks_relayable` 통과라 `ingest_queue.json` 에 원문이 **자동 적재**된다.
+
+### CASE A — 본문 전부 살아서 옴
+
+1. `xrelay.parse` 로 기대한 행이 나오는지 확인.
+2. **실배포 전환** (§2).
+3. 전환 후 첫 `/ingest` 가 큐 drain → 그동안 쌓인 트윗 반영. 즉시 반영하려면 원문을 curl 로 한 번 더
+   (§3 하단).
+4. **검증** (§4): `schedule.json` 에 `scheduled`/`collab` 행 + 프론트 카드.
+5. **폰 필터 복원**: `Expression true?` 를 본문에 `配信スケジュール` OR `出演情報` 포함으로 →
+   리트윗·잡음 차단.
+
+### CASE B — 본문이 잘려서 옴
+
+1. 정말 잘림인지 확인(짧지만 완결된 트윗과 구분 — 문장/엔트리 중간에서 끊겼나).
+2. **전문 회수** (택1):
+   - 폰에서 그 알림을 펼쳐(tap) Automate 가 `nx["android.bigText"]` 채운 채 재발화하는지
+     (bigText 는 펼친 뒤에만 생기기도 함).
+   - X 에서 트윗 열어 본문 복사 → curl 로 `/ingest`. 큐에 들어가며, 나중 온전본이 날짜 기준
+     `merge_scheduled` replace-by-date 로 잘린본을 교체.
+   - `cdn.syndication.twimg.com/tweet-result?id=<트윗ID>` (ID 있으면).
+3. **`xrelay.merge_scheduled` 에 잘림 가드 추가** (`# ponytail:` 주석 위치) — "그 날짜 새 엔트리 수
+   < 기존 수 → replace 대신 upsert". 잘린 트윗이 온전본이 만든 행을 지우지 않게. **코드 변경 → PR.**
+4. 가드 넣은 뒤 실배포 전환(§2~§4). 이후 잘린 트윗이 와도 데이터 안 깨지고 다음 온전본/수동 curl 이
+   마저 채운다.
+5. 폰 필터 복원.
+
+### 트윗이 안 와서 판정 못 해도
+
+전환은 가능하다 — 큐/merge 가 replace-by-date 라 다음 온전한 트윗이 오면 자동 교체되고, 최악의
+경우 하루치가 부분 노출될 뿐이다. (안전을 원하면 CASE B 3의 가드를 먼저 넣고 전환.)
 
 ## 2. 전환
 
