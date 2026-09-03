@@ -199,6 +199,18 @@
   font-weight: 400;
 }
 
+/* assumed_live — 예고 시각 지남, 실물 미확인(회원전용 방송 중으로 추정).
+   확정 아니므로 라이브 존 승격 없이 카드에서만 신호. 감광 해제 + 은은한 빨강 테두리. */
+.card--sched-live {
+  opacity: 1;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-live) 45%, var(--color-border));
+}
+.card--sched-live .card__rel {
+  color: color-mix(in srgb, var(--color-live) 65%, #fff);
+  font-weight: 600;
+}
+
 /* ── 모바일: 가로 카드 (작은 썸네일 좌 + 텍스트 우) ──────────────
    card.css 는 layout.css 뒤에 로드되므로 이 @media 를 여기 파일 끝에 둬야
    기본 .card 규칙을 확실히 덮는다. */

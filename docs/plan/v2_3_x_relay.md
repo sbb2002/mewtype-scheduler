@@ -168,7 +168,8 @@ scheduled  →  upcoming  →  live  →  ended
   "truncated": false,                                 // 푸시 본문이 잘린 것으로 판단되면 true
   "first_seen": "2026-08-30T01:06:00Z",
   "last_updated": "2026-08-30T01:06:00Z",
-  "expires_at": "2026-08-30T05:00:00Z"               // scheduled_start + 3h. null 이면 first_seen + 18h
+  "assumed_live": false,                              // reconcile 이 예고 시각 지나면 true (회원전용 "방송 중 추정")
+  "expires_at": "2026-08-30T05:00:00Z"               // scheduled_start + (회원전용 5h / 공개 3h). null 이면 first_seen + 18h
 }
 ```
 
@@ -294,7 +295,8 @@ docs/
 |------|------|
 | 푸시 본문 잘림 (`Show more`) | `※時刻は` 꼬리 없음 or 엔트리 수가 직전보다 감소 → `truncated=true`. **replace-by-date 대신 upsert**(기존 행 유지, 신규만 추가). 알림 G 에 경고. 운영자가 전체 복붙하면 그때 replace. |
 | 같은 날 재트윗 (아침→저녁) | replace-by-date 로 최신 트윗이 이김. 저녁판이 내일치 포함 시 그 날짜 버킷도 갱신. |
-| 회원전용 행 | 생성은 하되(🔒 노출) 절대 `upcoming` 승격 안 됨. TTL 로만 소멸. 프론트 info-only. |
+| 회원전용 행 | YouTube API/RSS 에 안 보임 → 실물 감지로는 승격 불가. **`expires_at` = start + 5h**(공개는 3h). 예고 시각 지나면 `assumed_live=true` → 프론트가 "방송 중 (추정)" (라이브 존 승격은 안 함). 실제 `live` 승격은 멤버가 URL 을 트윗해 파서 B 로 videoId 를 얻을 때만 (후속). |
+| 예고 시작 정시 확인 | `scheduled` 는 wake 태스크가 없다. reconcile 이 예고 시각을 지나면 `assumed_live` 를 켠다. 추가로 `handlers` 가 `scheduled_start`(지금~+3h)마다 `light /tick` 1개를 Cloud Tasks 에 예약(분버킷 dedupe) — **공개** 방송이 정시에 시작하면 3h light 주기를 안 기다리고 그 tick 의 RSS 로 줍는다. |
 | 연말 M/D 롤오버 | 12월에 `1/2` 트윗 = 내년. 연도 추론에서 `month < now.month - 6` 이면 +1년. |
 | 파서 오분류 (kind/시각) | 알림 G 에 원문 첨부. 운영자가 수정본 `/update` 재전송 → replace. |
 | `paused` 중 `/update` | ack 만, 폐기. (v2.1 규칙 재사용) |

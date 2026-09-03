@@ -201,7 +201,11 @@ def build_schedule(
             for r in _real
         ):
             continue
-        new_schedule["broadcasts"].append(dict(prev_entry))
+        carried = dict(prev_entry)
+        # 예고 시각 도달 → assumed_live. 회원전용은 API 로 실물을 못 보므로 이 플래그로만
+        # "방송 중(추정)" 을 프론트에 알린다. expires_at 되면 어차피 제거됨.
+        carried["assumed_live"] = bool(ss) and _reached(ss, now_iso)
+        new_schedule["broadcasts"].append(carried)
 
     # Sort: live → upcoming → scheduled, then scheduled_start asc (None last), then id.
     _rank = {"live": 0, "upcoming": 1, "scheduled": 2}
@@ -369,6 +373,13 @@ if __name__ == "__main__":
                 "first_seen": "2026-08-30T08:00:00Z",
                 "expires_at": "2026-08-30T11:00:00Z",
             },
+            {  # 회원전용, 시작(10:00) 지남·expires 미도달 → 보존 + assumed_live
+                "video_id": None, "sched_id": "sched:ritsu:2026-08-30T10:00:00Z",
+                "channel_key": "ritsu", "status": "scheduled", "members_only": True,
+                "scheduled_start": "2026-08-30T10:00:00Z", "source": "bdp_schedule",
+                "first_seen": "2026-08-30T08:00:00Z",
+                "expires_at": "2026-08-30T15:00:00Z",
+            },
         ],
     }
 
@@ -382,9 +393,10 @@ if __name__ == "__main__":
     print(f"Broadcast count: {broadcast_count}  ids={sorted(ids)}")
     print(f"Newly ended: {[(r['video_id'], r['reason']) for r in newly_ended]}")
 
-    # upcoming_vid, live_vid, 유예된 grace_vid + supersede/TTL 안 걸린 yuno scheduled 만 남는다
+    # upcoming_vid, live_vid, 유예된 grace_vid + 살아남은 scheduled 2건(ritsu 시작지남, yuno 미래)
     assert ids == {
-        "upcoming_vid", "live_vid", "grace_vid", "sched:yuno:2026-08-30T20:00:00Z"
+        "upcoming_vid", "live_vid", "grace_vid",
+        "sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
     }, ids
     # ended_vid(none+actual_end) → ended, removed_vid(오래 누락) → removed
     assert reasons == ["ended", "removed"], reasons
@@ -392,7 +404,10 @@ if __name__ == "__main__":
     assert "grace_vid" not in {r["video_id"] for r in newly_ended}
     g = next(b for b in new_schedule["broadcasts"] if b.get("video_id") == "grace_vid")
     assert g["last_updated"] == "2026-08-30T11:00:00Z", g["last_updated"]
-    # scheduled: arale 는 실물 ±4h → supersede, miyako 는 expires_at 경과 → 둘 다 빠짐
-    _sched = [b for b in new_schedule["broadcasts"] if b.get("status") == "scheduled"]
-    assert [b["sched_id"] for b in _sched] == ["sched:yuno:2026-08-30T20:00:00Z"], _sched
-    print("SUCCESS: reconcile self-test passed (removed 유예 + scheduled supersede/TTL)")
+    # scheduled: arale 는 실물 ±4h → supersede, miyako 는 expires_at 경과 → 둘 다 빠짐.
+    # ritsu 는 시작(10:00) 지남 → assumed_live, yuno 는 미래(20:00) → assumed_live False.
+    _sched = {b["sched_id"]: b for b in new_schedule["broadcasts"] if b.get("status") == "scheduled"}
+    assert set(_sched) == {"sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z"}, _sched
+    assert _sched["sched:ritsu:2026-08-30T10:00:00Z"]["assumed_live"] is True
+    assert _sched["sched:yuno:2026-08-30T20:00:00Z"]["assumed_live"] is False
+    print("SUCCESS: reconcile self-test passed (removed 유예 + scheduled supersede/TTL/assumed_live)")

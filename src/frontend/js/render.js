@@ -64,7 +64,10 @@ function createCard(broadcast, nowMs, channelData) {
 
   // ── scheduled (예고) — X 트윗만, YouTube 영상 없음 ──
   if (broadcast.status === "scheduled") {
-    a.className = "card card--scheduled";
+    // assumed_live: 예고 시각 지남 + 아직 실물 미확인(회원전용 추정). 확정 아님 → 라이브 존 승격 안 함.
+    a.className = broadcast.assumed_live
+      ? "card card--scheduled card--sched-live"
+      : "card card--scheduled";
     a.href = broadcast.url || (channelData && channelData.channel_url) || "#";
 
     const thumbWrap = document.createElement("div");
@@ -120,12 +123,14 @@ function createCard(broadcast, nowMs, channelData) {
       meta.appendChild(timeEl);
       const rel = document.createElement("span");
       rel.className = "card__rel";
-      rel.textContent = relativeLabel(broadcast.scheduled_start, nowMs);
+      rel.textContent = broadcast.assumed_live
+        ? "방송 중 (추정)"
+        : relativeLabel(broadcast.scheduled_start, nowMs);
       meta.appendChild(rel);
     } else {
       const rel = document.createElement("span");
       rel.className = "card__rel";
-      rel.textContent = "시간 미정";
+      rel.textContent = broadcast.assumed_live ? "방송 중 (추정)" : "시간 미정";
       meta.appendChild(rel);
     }
     body.appendChild(meta);
@@ -559,6 +564,8 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
     const relSpan = cardEl.querySelector(".card__rel");
     const timeEl = cardEl.querySelector(".card__time");
     if (!relSpan || !timeEl || !timeEl.dateTime) continue;
+    // assumed_live 예고 카드는 rel 이 "방송 중 (추정)" 고정 — 카운트다운으로 덮지 않음.
+    if (cardEl.classList.contains("card--sched-live")) continue;
     relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
     // 예고(scheduled)는 "지각" 개념 없음 — late 토글 스킵.
     if (!cardEl.classList.contains("card--scheduled")) {

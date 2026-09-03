@@ -109,13 +109,17 @@ mewtype-scheduler/
   "source": "bdp_schedule",
   "source_at": "2026-09-03T01:05:00Z",
   "first_seen": "...", "last_updated": "...",
-  "expires_at": "2026-08-30T05:00:00Z"               // scheduled_start+3h. null 이면 first_seen+18h
+  "assumed_live": false,                              // reconcile 이 scheduled_start 지나면 true
+  "expires_at": "2026-08-30T05:00:00Z"               // start + (회원전용 5h / 공개 3h). null 이면 first_seen+18h
 }
 ```
 
 - 정렬 확장: `live` → `upcoming` → `scheduled`, 그룹 내 `scheduled_start` asc(null 뒤).
 - `reconcile.build_schedule` 이 매 tick 보존한다. 같은 채널 실물 `upcoming`/`live` 가 ±4h 안에
-  뜨면 제거(supersede), `expires_at` 도달 시 제거. Cloud Tasks/`pending.json` 은 안 탄다.
+  뜨면 제거(supersede), `expires_at` 도달 시 제거. `scheduled_start` 지난 행은 `assumed_live=true`
+  (회원전용은 API 로 실물을 못 봄 → 이 플래그로만 "방송 중 추정"). Cloud Tasks/`pending.json` 은
+  안 타지만 `handlers` 가 `scheduled_start`(지금~+3h)마다 `light /tick` 1개를 예약 — 공개 방송의
+  정시 시작을 3h 주기 안 기다리고 RSS 로 줍는다.
 - **프론트 렌더**(v2.3): `render.js` 가 `upcoming` 과 함께 같은 버킷에 `scheduled_start` 순으로
   섞어 그린다. `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 카운트다운 강조·
   "지각" 표시 없음, 링크는 `channel_url`. DOM 은 §3 참고. 구버전 프론트는 이 행을 무시(롤백 안전).
@@ -221,6 +225,8 @@ mewtype-scheduler/
 
 ```html
 <a class="card card--scheduled" href="{channels[key].channel_url}" target="_blank" rel="noopener">
+  <!-- assumed_live 면 class="card card--scheduled card--sched-live", .card__rel = "방송 중 (추정)" (빨강), 테두리 실선·빨강기 -->
+
   <div class="card__thumb-wrap">
     <span class="card__icon">🎮</span>            <!-- icon 없으면 class="card__icon card__icon--empty" + "📺" -->
     <span class="card__badge card__badge--sched">예고</span>

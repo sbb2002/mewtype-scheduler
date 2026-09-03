@@ -153,6 +153,8 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
             start = (base + timedelta(days=1 if plus1 else 0)).replace(hour=hh, minute=mm)
             start_z = _iso_z(start)
             kind = "collab" if line_has_collab else ICON_KIND.get(icon, "unknown")
+            # 회원전용은 API 로 종료를 못 보므로 TTL 을 넉넉히(5h). 공개는 3h.
+            ttl_h = 5 if members_only else 3
             rows.append(
                 {
                     "status": "scheduled",
@@ -172,7 +174,8 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                     "source_at": now_iso,
                     "first_seen": now_iso,
                     "last_updated": now_iso,
-                    "expires_at": _iso_z(start.astimezone(UTC) + timedelta(hours=3)),
+                    "assumed_live": False,   # 예고 시각 도달 시 reconcile 이 True (회원전용 추정용)
+                    "expires_at": _iso_z(start.astimezone(UTC) + timedelta(hours=ttl_h)),
                 }
             )
     return rows
@@ -299,6 +302,16 @@ if __name__ == "__main__":
     assert by_key["arale"][0]["kind"] == "song"
     assert by_key["yuno"][0]["members_only"] is True
     assert by_key["yuno"][0]["kind"] == "unknown"
+    assert by_key["yuno"][0]["assumed_live"] is False
+    # 회원전용 → TTL 5h, 공개 → 3h
+    _y = by_key["yuno"][0]
+    assert _y["expires_at"] == _iso_z(
+        datetime.fromisoformat(_y["scheduled_start"].replace("Z", "+00:00")) + timedelta(hours=5)
+    ), _y["expires_at"]
+    _n = by_key["nonoka"][0]
+    assert _n["expires_at"] == _iso_z(
+        datetime.fromisoformat(_n["scheduled_start"].replace("Z", "+00:00")) + timedelta(hours=3)
+    ), _n["expires_at"]
     # 藤都子: 21:30 (당일) + 翌朝7:00 (다음날 = 8/31)
     miy = sorted(by_key["miyako"], key=lambda x: x["scheduled_start"])
     assert _jst_date(miy[0]["scheduled_start"]) == "2026-08-30"

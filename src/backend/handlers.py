@@ -43,6 +43,35 @@ _HEARTBEAT_MIN_SEC = 20 * 60
 # tick 이름이 분버킷이라 한 tick 에서 여러 방송이 끝나도 후속 tick 은 1개.
 _POST_END_RECHECK_SEC = 20 * 60
 
+# scheduled(X 예고, video_id 없음) 은 wake 태스크가 없다. 대신 예고 시각이 이 창 안이면
+# 그 시각으로 light tick 을 1개 예약해, 공개 방송이 정시에 시작하면 3h 를 안 기다리고 줍는다.
+# (회원전용은 RSS/API 에 안 보이므로 이 tick 도 못 잡지만 reconcile 이 assumed_live 로 표시.)
+# tick 이름 분버킷 dedupe 로 여러 예고가 몰려도 tick 은 겹치는 만큼만.
+_SCHED_WAKE_LOOKAHEAD_SEC = 3 * 3600
+
+
+def _scheduled_wake_times(schedule: dict, now_iso: str) -> list[str]:
+    """schedule 의 scheduled 행 중 '지금 ~ +lookahead' 에 시작하는 것들의 scheduled_start 목록."""
+    try:
+        now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return []
+    horizon = now + timedelta(seconds=_SCHED_WAKE_LOOKAHEAD_SEC)
+    out: set[str] = set()
+    for b in (schedule or {}).get("broadcasts", []):
+        if b.get("status") != "scheduled":
+            continue
+        ss = b.get("scheduled_start")
+        if not ss:
+            continue
+        try:
+            t = datetime.fromisoformat(ss.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if now < t <= horizon:
+            out.add(ss)
+    return sorted(out)
+
 
 def _heartbeat_generated_at(prev_gen, now_iso: str, min_sec: int = _HEARTBEAT_MIN_SEC) -> str:
     """실질 변화가 없을 때 쓸 generated_at 값.
@@ -227,7 +256,12 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
 
     # ── Cloud Tasks enqueue ──
     enqueued, enqueue_errors = 0, []
-    tq = _make_task_queue(cfg) if (decision.enqueue or newly_ended) else None
+    sched_wakes = _scheduled_wake_times(new_schedule, now_iso)
+    tq = (
+        _make_task_queue(cfg)
+        if (decision.enqueue or newly_ended or sched_wakes)
+        else None
+    )
     if tq is not None:
         for vid, when in decision.enqueue:
             try:
@@ -236,6 +270,15 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             except Exception as e:  # noqa: BLE001
                 enqueue_errors.append(f"{vid}: {e}")
                 log.error("enqueue 실패 %s @ %s: %s", vid, when, e)
+        # scheduled(X 예고) 시작 시각마다 light tick 1개 예약 — 공개 방송이 정시에 시작하면
+        # 3h light 주기를 안 기다리고 그 tick 의 RSS 로 줍는다. 분버킷 이름이라 몰려도 dedupe.
+        for when in sched_wakes:
+            try:
+                tq.enqueue_tick("light", when)
+                log.info("scheduled wake tick 예약 @ %s", when)
+            except Exception as e:  # noqa: BLE001
+                enqueue_errors.append(f"sched tick {when}: {e}")
+                log.error("scheduled wake tick enqueue 실패 @ %s: %s", when, e)
         # 방송이 방금 끝났으면 후속 light tick 1개 예약 — 백투백 다음 방송을 3h 이내가 아니라
         # ~20분 이내에 줍기 위함. tick 이름이 분버킷이라 여러 방송이 끝나도 후속 tick 은 1개.
         if newly_ended:
@@ -319,3 +362,15 @@ if __name__ == "__main__":
     assert _heartbeat_generated_at(_b, "2026-09-01T13:00:00Z") == "2026-09-01T13:00:00Z"
     assert _heartbeat_generated_at("garbage", "2026-09-01T13:00:00Z") == "2026-09-01T13:00:00Z"
     print("[OK] _heartbeat_generated_at")
+
+    # _scheduled_wake_times: now ~ +3h 안에 시작하는 scheduled 만
+    _now = "2026-09-01T12:00:00Z"
+    _sch = {"broadcasts": [
+        {"status": "scheduled", "scheduled_start": "2026-09-01T13:30:00Z"},   # 1.5h 후 → 포함
+        {"status": "scheduled", "scheduled_start": "2026-09-01T18:00:00Z"},   # 6h 후 → 제외
+        {"status": "scheduled", "scheduled_start": "2026-09-01T11:00:00Z"},   # 과거 → 제외
+        {"status": "scheduled", "scheduled_start": None},                     # 시각 없음 → 제외
+        {"status": "upcoming",  "scheduled_start": "2026-09-01T13:00:00Z"},   # scheduled 아님 → 제외
+    ]}
+    assert _scheduled_wake_times(_sch, _now) == ["2026-09-01T13:30:00Z"], _scheduled_wake_times(_sch, _now)
+    print("[OK] _scheduled_wake_times")
