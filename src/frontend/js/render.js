@@ -8,7 +8,7 @@ const KIND_LABEL = {
   game: "게임",
   talk: "잡담",
   song: "노래",
-  collab: "합방",
+  collab: "합동",
   morning: "아침",
   unknown: "",
 };
@@ -55,19 +55,24 @@ function sampleLaneColor(url, laneEl) {
  * @param {Object} broadcast
  * @param {number} nowMs
  * @param {Object} [channelData]  scheduled 카드의 채널 링크용 (url 없음)
+ * @param {string} [laneKey]      렌더 중인 레인의 channel_key (합동 카드의 상대 표기용)
  * @returns {HTMLAnchorElement}
  */
-function createCard(broadcast, nowMs, channelData) {
+function createCard(broadcast, nowMs, channelData, laneKey) {
   const a = document.createElement("a");
   a.target = "_blank";
   a.rel = "noopener";
 
   // ── scheduled (예고) — X 트윗만, YouTube 영상 없음 ──
   if (broadcast.status === "scheduled") {
+    // (v2.4) host="group": 5인 공동명의(公式) 채널 합동방송. 참여 멤버 전원 레인에
+    // 같은 카드가 뜬다(renderBoard 가 collab_with 로 팬아웃). 링크는 그룹 영상 URL.
+    const isCollab = broadcast.kind === "collab" || broadcast.host === "group";
     // assumed_live: 예고 시각 지남 + 아직 실물 미확인(회원전용 추정). 확정 아님 → 라이브 존 승격 안 함.
     a.className = broadcast.assumed_live
       ? "card card--scheduled card--sched-live"
       : "card card--scheduled";
+    if (isCollab) a.classList.add("card--collab");
     a.href = broadcast.url || (channelData && channelData.channel_url) || "#";
 
     const thumbWrap = document.createElement("div");
@@ -77,8 +82,8 @@ function createCard(broadcast, nowMs, channelData) {
     icon.textContent = broadcast.icon || "📺";
     thumbWrap.appendChild(icon);
     const badge = document.createElement("span");
-    badge.className = "card__badge card__badge--sched";
-    badge.textContent = "예고";
+    badge.className = isCollab ? "card__badge card__badge--collab" : "card__badge card__badge--sched";
+    badge.textContent = isCollab ? "합동" : "예고";
     thumbWrap.appendChild(badge);
     a.appendChild(thumbWrap);
 
@@ -93,18 +98,28 @@ function createCard(broadcast, nowMs, channelData) {
     }
 
     let label = KIND_LABEL[broadcast.kind] || "";
-    if (broadcast.kind === "collab" && Array.isArray(broadcast.collab_with) && broadcast.collab_with.length) {
-      const names = broadcast.collab_with
+    if (isCollab) {
+      // 참여자 = channel_key + collab_with, 이 레인 멤버는 빼고 나머지를 라벨에.
+      const participants = [broadcast.channel_key, ...(Array.isArray(broadcast.collab_with) ? broadcast.collab_with : [])];
+      const others = participants.filter((k) => k && k !== laneKey);
+      const names = others
         .map((k) => (FALLBACK_CHANNELS[k] || {}).name_ko)
         .filter(Boolean)
         .join(", ");
-      if (names) label = `합방 · ${names}`;
+      label = names ? `합동 · ${names}` : "합동";
     }
     if (label) {
       const title = document.createElement("p");
       title.className = "card__title card__title--label";
       title.textContent = label;
       body.appendChild(title);
+    }
+
+    if (broadcast.host === "group") {
+      const host = document.createElement("p");
+      host.className = "card__host";
+      host.textContent = "공식 채널 합동방송";
+      body.appendChild(host);
     }
 
     const meta = document.createElement("p");
@@ -249,12 +264,12 @@ function buildHeader(channelData) {
 }
 
 /* ── 라이브 영역 (빨간 테두리 존 · 비어있으면 OFF-AIR) ────────────── */
-function buildLive(liveBroadcasts, nowMs, channelData) {
+function buildLive(liveBroadcasts, nowMs, channelData, laneKey) {
   const el = document.createElement("div");
   el.className = "lane__live";
   if (liveBroadcasts.length) {
     el.dataset.state = "on";
-    for (const b of liveBroadcasts) el.appendChild(createCard(b, nowMs, channelData));
+    for (const b of liveBroadcasts) el.appendChild(createCard(b, nowMs, channelData, laneKey));
   } else {
     el.dataset.state = "off";
     const off = document.createElement("span");
@@ -282,7 +297,7 @@ function bucketKey(broadcast, nowMs) {
   return "later";
 }
 
-function buildBuckets(upcoming, nowMs, channelData) {
+function buildBuckets(upcoming, nowMs, channelData, laneKey) {
   const wrap = document.createElement("div");
   wrap.className = "lane__buckets";
 
@@ -311,7 +326,7 @@ function buildBuckets(upcoming, nowMs, channelData) {
       for (const b of groups[key]) {
         const li = document.createElement("li");
         li.className = "lane__item";
-        li.appendChild(createCard(b, nowMs, channelData));
+        li.appendChild(createCard(b, nowMs, channelData, laneKey));
         list.appendChild(li);
       }
     }
@@ -340,9 +355,11 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
   const channelOrder = schedule.channel_order || FALLBACK_CHANNEL_ORDER;
   const channels = schedule.channels || FALLBACK_CHANNELS;
 
+  // (v2.4) 합동방송은 참여 멤버 전원(channel_key + collab_with) 레인에 팬아웃.
   const byChannel = {};
   for (const b of schedule.broadcasts || []) {
-    (byChannel[b.channel_key] ||= []).push(b);
+    const keys = new Set([b.channel_key, ...(Array.isArray(b.collab_with) ? b.collab_with : [])]);
+    for (const k of keys) if (k) (byChannel[k] ||= []).push(b);
   }
 
   for (const key of channelOrder) {
@@ -363,8 +380,8 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
       .filter((b) => b.status === "upcoming" || b.status === "scheduled")
       .sort(byScheduledAsc);
 
-    lane.appendChild(buildLive(live, nowMs, channelData));
-    lane.appendChild(buildBuckets(pending, nowMs, channelData));
+    lane.appendChild(buildLive(live, nowMs, channelData, key));
+    lane.appendChild(buildBuckets(pending, nowMs, channelData, key));
 
     boardEl.appendChild(lane);
     sampleLaneColor(avatarSized(channelData.avatar, 88), lane);
