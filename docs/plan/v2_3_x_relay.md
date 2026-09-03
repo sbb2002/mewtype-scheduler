@@ -26,9 +26,11 @@ PR3(v2.2) 브랜치 위에 구현. 계약이 굳으면 `docs/IMPLEMENTATION_v2.3
 (`POST /ingest`), `src/collector/reconcile.py`(`build_schedule` 에 scheduled 보존/supersede/TTL),
 `deploy/setup.sh`·`deploy/deploy_telegram.sh`(`INGEST_SECRET`).
 
-**DRY-RUN**: `INGEST_DRY_RUN` env 가 참이면 `/ingest` 는 `schedule.json` 을 안 쓰고 받은 원문
-(`len`, 앞 3500자) + 파싱 결과만 DM 으로 회신한다. 미해결 #1(푸시 잘림) 검증용 —
-Automate 를 `/ingest` 로 붙인 채로 실물 알림이 완전히 오는지 확인하고, 되면 `0` 으로 되돌린다.
+**DRY-RUN / ECHO**: `INGEST_DRY_RUN` 이 참이면 `/ingest` 는 `schedule.json` 을 안 쓰고 원문 +
+파싱 결과만 DM 회신. `INGEST_ECHO` 가 참이면 파싱조차 안 하고 받은 텍스트만 DM 회신
+(+ `tail_ok` 잘림 계측 로그). 미해결 #1(푸시 잘림) 검증용. 두 모드 중 온 스케줄 트윗은
+`ingest_queue.json` 에 쌓였다가 실배포 전환 시 drain 된다. **전환 절차·판정은
+`docs/plan/v2_4_golive.md`.** 현행 전체 그림 `docs/plan/v2_4_flow.png`.
 
 ### 폰(S23) Automate 플로우 — 실제 구성
 
@@ -60,9 +62,11 @@ Flow beginning
 | 백엔드 `/ingest` 파싱 (실측 4샘플) | ✅ curl `{"ok":true,"dry_run":true,"parsed":3}` + DM 정상 |
 | `xrelay` / `reconcile` self-test | ✅ 통과 (supersede/TTL 포함) |
 | 폰 → `/ingest` 인증 | ✅ `X-Ingest-Secret` 정정 후 403→통과 (빈 다운로드 알림은 `400 empty text` — 정상) |
-| 폰 → 실물 `配信スケジュール` 트윗 왕복 + 잘림 여부(#1) | ⏳ 트윗 대기 중 |
-| `INGEST_DRY_RUN=0` 실사용 전환 | ⏳ #1 확인 후 |
-| 프론트 `.card--scheduled` 렌더 | ✅ 구현 + fixture 로컬 확인 (아이콘/예고 배지/회원전용 칩/합방 라벨/약 시각/시간 미정) |
+| 폰 → 실물 `配信スケジュール` 트윗 왕복 + 잘림 여부(#1) | ⏳ 트윗 대기 중 (ECHO 모드, `tail_ok` 로그로 판정 예정) |
+| 실사용 전환 (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) | ⏳ #1 확인 후 — 절차 `docs/plan/v2_4_golive.md` |
+| 프론트 `.card--scheduled` 렌더 | ✅ 구현 + fixture 로컬 확인 |
+| (v2.4) 합동방송 `host="group"` + `.card--collab` 팬아웃 | ✅ 구현·배포 (`mewtype-backend`/`-telegram`), fixture 로컬 확인 |
+| (v2.4) ingest 큐 (`ingest_queue.json` push/drain) | ✅ 구현·배포, curl 로 적재 확인 |
 
 ---
 

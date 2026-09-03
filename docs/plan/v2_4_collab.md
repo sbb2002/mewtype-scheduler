@@ -2,7 +2,9 @@
 
 작성 2026-09-03. v2.3(X 예고 릴레이) 위에 얹는다.
 
-프론트 배치 시안(3안 비교) 아티팩트: https://claude.ai/code/artifact/66a173f4-513d-4eae-b9f4-54251b50a957
+- 현행 전체 흐름 그림: `docs/plan/v2_4_flow.png` (생성기 `gen_v2_4.py`)
+- 실배포 전환 절차: `docs/plan/v2_4_golive.md`
+- 프론트 배치 시안(3안 비교) 아티팩트: https://claude.ai/code/artifact/66a173f4-513d-4eae-b9f4-54251b50a957
 
 ---
 
@@ -62,6 +64,19 @@ https://youtube.com/live/kx-nhmTj4Eg
 - `card.css` — `.card--collab`(실선·바이올렛 좌측 inset bar·감광 완화), `.card__badge--collab`,
   `.card__host`. `layout.css` — `--color-collab: #8b7cc9` (live/sched/late 와 안 겹침).
 - `fixtures/schedule.sample.json` — collab(arale×nonoka, host=group) + 일반 scheduled 행 추가.
+
+## 5-1. ingest 큐 (테스트 기간 유실 방지)
+
+테스트 모드(`INGEST_ECHO=1` / `INGEST_DRY_RUN=1`)에서는 `/ingest` 가 `schedule.json` 을
+안 건드린다 → 그 기간에 온 스케줄 트윗이 사라진다. 방지책:
+
+- ECHO/DRY-RUN 경로: 스케줄 트윗(`配信スケジュール` 포함) 원문을 `data` 브랜치
+  `ingest_queue.json` 에 적재 (`_ingest_queue_push` — 직전과 동일 원문 스킵, 최근 30건,
+  best-effort). ECHO 경로엔 `tail_ok`(말미 고정문구 도착 여부) 계측 로그도 남긴다.
+- 실배포 경로: `paused` 체크 후 `_ingest_queue_drain` 이 큐 원문을 `received_at` 순서로
+  `parse_bdp_schedule` → `merge_scheduled` 하고 큐를 비운다. 같은 날짜는 replace-by-date
+  라 나중에 온 온전한 트윗이 부분 트윗을 덮어쓴다. 결과 건수를 요약 DM 에 표기.
+- 전환 절차 전체: `docs/plan/v2_4_golive.md`.
 
 ## 6. 열린 것
 

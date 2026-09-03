@@ -130,6 +130,10 @@ mewtype-scheduler/
   "합동" 배지, "합동 · {그 레인 제외한 참여자}" 라벨, "공식 채널 합동방송" 줄) 로 그린다. 링크는
   `url`(그룹 영상). `reconcile` 은 `host` 있는 행을 멤버 개인 실물로 supersede 하지 않는다
   (그룹 채널은 추적 5채널이 아님 → TTL 로만 소멸). 설계: `docs/plan/v2_4_collab.md`.
+- **(v2.4) `ingest_queue.json`** (`data` 브랜치, `{"pending":[{raw,title,received_at}]}`):
+  테스트 모드(`INGEST_ECHO`/`INGEST_DRY_RUN`) 중 온 스케줄 트윗 원문 버퍼. 실배포 전환
+  (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 `telegram_app._ingest_queue_drain`
+  이 순서대로 파싱·머지하고 비운다. 전환 런북: `docs/plan/v2_4_golive.md`.
 
 ## 2. 공용 계약 B — `archive.json` 스키마
 
