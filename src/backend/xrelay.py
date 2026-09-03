@@ -139,6 +139,8 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
 
         for i, tm in enumerate(times):
             hh, mm = int(tm.group(1)), int(tm.group(2))
+            # 일본 심야 표기: 24:00〜29:59 = 다음날 00:00〜05:59
+            hour_carry, hh = divmod(hh, 24)
             approx = bool(tm.group(3))
             seg_start = times[i - 1].end() if i > 0 else 0
             seg = line[seg_start:tm.start()]
@@ -150,7 +152,9 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                     icon = lead[0]
             plus1 = "明日" in line[:tm.start()]
 
-            start = (base + timedelta(days=1 if plus1 else 0)).replace(hour=hh, minute=mm)
+            start = (base + timedelta(days=(1 if plus1 else 0) + hour_carry)).replace(
+                hour=hh, minute=mm
+            )
             start_z = _iso_z(start)
             kind = "collab" if line_has_collab else ICON_KIND.get(icon, "unknown")
             # 회원전용은 API 로 종료를 못 보므로 TTL 을 넉넉히(5h). 공개는 3h.
@@ -364,6 +368,22 @@ if __name__ == "__main__":
     assert len(r4) == 1 and r4[0]["start_approx"] is True, r4
     assert r4[0]["channel_key"] == "ritsu" and r4[0]["kind"] == "talk"
     print("[OK] S4  (頃 → start_approx)")
+
+    # S5: 실측 (2026-09-03 19:30 KST) — 심야표기 24:00, 📺 미지 아이콘, A×B 콜라보, ～(FW)
+    S5 = (
+        "／\n🛸夢限大みゅーたいぷ\n"
+        "9/3(木)の配信スケジュール🌟\n＼\n\n"
+        "📺24:00～ 仲町あられ×宮永ののか\n"
+        "https://youtube.com/live/kx-nhmTj4Eg\n\n"
+        "※時刻は予告なく変更の場合がございます。\n#バンドリ #ゆめみた"
+    )
+    r5 = parse_bdp_schedule(S5, NOW)
+    assert len(r5) == 1, r5
+    assert r5[0]["channel_key"] == "arale" and r5[0]["collab_with"] == ["nonoka"], r5
+    assert r5[0]["kind"] == "collab", r5
+    assert _jst_date(r5[0]["scheduled_start"]) == "2026-09-04", r5[0]["scheduled_start"]
+    assert _jst_hm(r5[0]["scheduled_start"]) == "00:00", r5[0]["scheduled_start"]
+    print("[OK] S5  (24:00 심야표기 → 익일 00:00, 📺 미지아이콘, A×B)")
 
     # 형식 아님 → []
     assert parse_bdp_schedule("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
