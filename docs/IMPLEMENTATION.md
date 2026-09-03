@@ -88,6 +88,42 @@ mewtype-scheduler/
 - 파일이 없을 때의 기본 형태: `{"generated_at": null, "channel_order": [...], "channels": {...}, "broadcasts": []}`.
 - 프론트는 `channel_order`/`channels`가 비면 `config.js`의 폴백을 쓴다.
 
+### 1-1. `status == "scheduled"` 행 (v2.3 — X 릴레이)
+
+`broadcasts[]` 에 `video_id` 없는 행이 섞일 수 있다. X(트위터) `@BDP_yumemita` 일일 스케줄
+트윗이 폰(Automate) → `mewtype-telegram` `POST /ingest` 로 릴레이돼 만들어진, **YouTube 영상이
+아직 없는 최하 단계**다. 설계·파서 규칙: `docs/plan/v2_3_x_relay.md`.
+
+```jsonc
+{
+  "status": "scheduled",
+  "channel_key": "nonoka",
+  "sched_id": "sched:nonoka:2026-08-30T02:00:00Z",  // video_id 대체 키
+  "video_id": null, "title": null, "url": null, "thumbnail": null,
+  "scheduled_start": "2026-08-30T02:00:00Z",         // JST→UTC. 파싱 실패 시 null
+  "start_approx": false,                              // 트윗에 "頃" 등
+  "kind": "game",                                     // game|talk|song|collab|morning|unknown
+  "icon": "🎮",                                        // 원본 이모지 (kind=unknown 이면 프론트가 이것만)
+  "members_only": false,
+  "collab_with": [],                                  // A×B 합방 시 상대 channel_key[]
+  "source": "bdp_schedule",
+  "source_at": "2026-09-03T01:05:00Z",
+  "first_seen": "...", "last_updated": "...",
+  "assumed_live": false,                              // reconcile 이 scheduled_start 지나면 true
+  "expires_at": "2026-08-30T05:00:00Z"               // start + (회원전용 5h / 공개 3h). null 이면 first_seen+18h
+}
+```
+
+- 정렬 확장: `live` → `upcoming` → `scheduled`, 그룹 내 `scheduled_start` asc(null 뒤).
+- `reconcile.build_schedule` 이 매 tick 보존한다. 같은 채널 실물 `upcoming`/`live` 가 ±4h 안에
+  뜨면 제거(supersede), `expires_at` 도달 시 제거. `scheduled_start` 지난 행은 `assumed_live=true`
+  (회원전용은 API 로 실물을 못 봄 → 이 플래그로만 "방송 중 추정"). Cloud Tasks/`pending.json` 은
+  안 타지만 `handlers` 가 `scheduled_start`(지금~+3h)마다 `light /tick` 1개를 예약 — 공개 방송의
+  정시 시작을 3h 주기 안 기다리고 RSS 로 줍는다.
+- **프론트 렌더**(v2.3): `render.js` 가 `upcoming` 과 함께 같은 버킷에 `scheduled_start` 순으로
+  섞어 그린다. `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 카운트다운 강조·
+  "지각" 표시 없음, 링크는 `channel_url`. DOM 은 §3 참고. 구버전 프론트는 이 행을 무시(롤백 안전).
+
 ## 2. 공용 계약 B — `archive.json` 스키마
 
 ```jsonc
@@ -180,6 +216,27 @@ mewtype-scheduler/
     <p class="card__meta">
       <time class="card__time" datetime="{scheduled_start ISO}">08/31 20:00</time>
       <span class="card__rel">3시간 후</span>   <!-- live면 "방송 중", 예정 시각 지남(live 미확인)이면 class="card__rel card__rel--late" + "n분 지각" -->
+    </p>
+  </div>
+</a>
+```
+
+예고 카드(`status=="scheduled"`, v2.3 — §1-1) — 썸네일 없음, 채널 링크만:
+
+```html
+<a class="card card--scheduled" href="{channels[key].channel_url}" target="_blank" rel="noopener">
+  <!-- assumed_live 면 class="card card--scheduled card--sched-live", .card__rel = "방송 중 (추정)" (빨강), 테두리 실선·빨강기 -->
+
+  <div class="card__thumb-wrap">
+    <span class="card__icon">🎮</span>            <!-- icon 없으면 class="card__icon card__icon--empty" + "📺" -->
+    <span class="card__badge card__badge--sched">예고</span>
+  </div>
+  <div class="card__body">
+    <span class="card__chip">🔒 회원 전용</span>     <!-- members_only 일 때만 -->
+    <p class="card__title card__title--label">게임</p>  <!-- KIND_LABEL[kind]. unknown 이면 이 <p> 생략. collab 이면 "합방 · {상대 name_ko}" -->
+    <p class="card__meta">
+      <time class="card__time" datetime="{scheduled_start ISO}"><span class="card__approx">약 </span>08/31 07:00</time>
+      <span class="card__rel">약 5시간 후</span>    <!-- scheduled 는 card__rel--late 안 붙임. scheduled_start 없으면 <time> 생략 + "시간 미정" -->
     </p>
   </div>
 </a>

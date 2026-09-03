@@ -18,12 +18,31 @@
    TELEGRAM_CHAT_ID=...
    TELEGRAM_WEBHOOK_SECRET=...
    HEALTHCHECK_URL=https://hc-ping.com/....
+   INGEST_SECRET=...        # v2.3 X 릴레이 — 임의 랜덤 문자열 (openssl rand -hex 24)
    ```
+
+### v2.3 — X 예고 릴레이 (`mewtype-telegram` `POST /ingest`)
+
+폰(Automate)이 삼성 브라우저 X 웹푸시 알림 텍스트를 이 엔드포인트로 직접 POST →
+`@BDP_yumemita` 일일 스케줄 트윗을 파싱해 `schedule.json` 의 `scheduled` 행으로 반영.
+설계: `docs/plan/v2_3_x_relay.md`.
+
+- `INGEST_SECRET` 을 Secret Manager 에 등록(`setup.sh` 가 처리) → `deploy_telegram.sh` 가 주입.
+- **폰 Automate** — HTTP request(POST):
+  - URL `https://<mewtype-telegram-url>/ingest`
+  - Header `X-Ingest-Secret: <INGEST_SECRET>`
+  - Content-Type `application/x-www-form-urlencoded`
+  - Body `text=` + urlEncode(알림 전체 본문)  (선택: `&src=<계정핸들>`)
+- 형식이 아니거나 `control.json.paused` 면 no-op. 결과·경고는 운영자 DM 으로 회신.
+- **먼저 DRY-RUN 으로 검증**: `INGEST_DRY_RUN=1` (env.sh 또는
+  `gcloud run services update mewtype-telegram --region asia-northeast1 --update-env-vars INGEST_DRY_RUN=1`)
+  → `/ingest` 가 저장 없이 받은 원문·파싱결과만 DM 회신. 푸시 알림이 잘리지 않고
+  엔트리 전부 오는지 확인되면 `INGEST_DRY_RUN=0` 으로 되돌리고 재배포.
 
 ### 배포 순서 (v2.1)
 
 ```bash
-bash deploy/setup.sh          # 새 시크릿 2개(TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET) 등록
+bash deploy/setup.sh          # 시크릿 등록 (TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, INGEST_SECRET)
 bash deploy/deploy.sh         # 메인 서비스 재배포 (Telegram 알림 기능 활성)
 bash deploy/deploy_telegram.sh   # 공개 webhook 서비스 신규 배포
 bash deploy/telegram_webhook.sh  # setWebhook 등록
