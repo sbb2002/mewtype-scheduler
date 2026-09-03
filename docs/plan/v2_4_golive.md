@@ -14,17 +14,18 @@
 - **Android · Automate** — 운영자가 `@BDP_yumemita` 를 팔로우. 삼성 브라우저 웹푸시 알림이 뜨면
   "HTTP Request" 블록이 `POST /ingest` (`X-Ingest-Secret` 헤더). Content body 식:
   ```
-  urlEncode({"text": (nx["android.bigText"] || nmsg || nticker || ntitle || "")})
+  urlEncode({"text": nmsg || nticker || ntitle || ""})
   ```
   - Automate 문자열 연결은 `++` (‘+’는 산술 → `NaN`). `urlEncode(딕셔너리)` 가 `key=value&key=value`
     로 만들어 줌 → `text=` 접두어·URL 인코딩 자동.
-  - **`||` 를 써야 함, `coalesce` 아님.** `coalesce` 는 `null` 만 건너뛰는데 `nx["android.bigText"]`
-    가 `null` 이 아니라 **빈 문자열 `""`** 로 오는 경우가 있어(있는 알림인데도) 거기서 멈춰 `nmsg`
-    를 못 봤다. `||` 는 null·빈 문자열 둘 다 건너뛰고 첫 truthy 반환 (LlamaLab 공식 문서에 명시).
-  - 이 기기(SM-S911N)에서 실측: 알림 내용은 **`nmsg`(= `android.text` extra)** 에 온다.
-    `nx["android.bigText"]` 는 (비거나 `""`) — 보험으로 첫 순위 유지하되 `||` 라 무해. `nmsg` 가
-    232자 여러 줄 전문도 그대로 담았다(잘림 없음). `nticker` 는 안 씀. `ntitle` = 다운로드면 파일명,
-    X 면 계정명. `Notification Posted` 트리거 출력: message→`nmsg`, title→`ntitle` (둘 다 유효 변수).
+  - **`||` 를 써야 함, `coalesce` 아님.** `coalesce` 는 `null` 만 건너뛰는데 필드가 `null` 이 아니라
+    **빈 문자열 `""`** 로 오는 경우가 있어(내용 있는 알림인데도) 거기서 멈춘다. `||` 는 null·빈 문자열
+    둘 다 건너뛰고 첫 truthy 반환 (LlamaLab 공식 문서: `null || 0 || "Hi"` → `"Hi"`).
+  - `nx["android.bigText"]` 는 뺐다 — 이 기기(SM-S911N)에서 매번 비어있었고(도움된 적 0),
+    `nx["..."]` 서브스크립트가 body 식 파스 에러(`Expected ')' but found NAME`)의 원인이기도 했다.
+  - 실측: 알림 내용은 **`nmsg`(= `android.text` extra)** 에 온다. `nmsg` 가 232자 여러 줄 전문도
+    그대로 담았다(잘림 없음). `nticker` 는 안 씀. `ntitle` = 다운로드면 파일명, X 면 계정명.
+    `Notification Posted` 트리거 출력: message→`nmsg`, title→`ntitle` (둘 다 유효 변수).
   - `@BDP_yumemita` 알림엔 **본인 글 + 리트윗**(BanG Dream 홍보 계정)이 섞여 온다(본문이 `@원계정: …`).
   - 내용 없는 알림(X 요약/미디어/갱신)은 `||` 가 `""` → `text=` 빈값 → 백엔드가 `looks_relayable`
     False 로 무시. 무해.
@@ -83,13 +84,15 @@
   `/ingest` 로 보낸다 (다운로드·리트윗 등 잡 알림도 옴 — ECHO 라 무해, `looks_relayable` 가 큐를 막음).
 - **HTTP Request 블록 Content body 식** (운영용, 확정):
   ```
-  urlEncode({"text": (nx["android.bigText"] || nmsg || nticker || ntitle || "")})
+  urlEncode({"text": nmsg || nticker || ntitle || ""})
   ```
-  거쳐온 함정:
-  - `NaN` 만 보내던 버그: Automate 문자열 연결은 `+` 가 아니라 **`++`** (`+` 는 산술).
+  거쳐온 함정 (전부 Automate 식 문법):
+  - `NaN` 만 보내던 버그: 문자열 연결은 `+` 가 아니라 **`++`** (`+` 는 산술).
+  - `coalesce` → `Expected ')' but found NAME` 파스 에러 + `""` 를 값으로 취급 → **`||`** 로.
+  - `nx["android.bigText"]` 는 제거 (항상 빔 + 서브스크립트가 파스 에러 요인).
   - `urlEncode(딕셔너리)` → `key=value&key=value` (`text=` 접두어·URL 인코딩 자동).
-- **필드 실측** (SM-S911N, ECHO 진단 body 로 확인):
-  - 알림 내용은 `nmsg` (= `android.text` extra) 에 온다. **`nx["android.bigText"]` 는 항상 비어있음.**
+- **필드 실측** (SM-S911N, ECHO 진단 body `T=[…]M=[…]` 로 확인):
+  - 알림 내용은 `nmsg` (= `android.text` extra) 에 온다. `nx["android.bigText"]` 는 비거나 `""`.
   - `nmsg` 가 232자·12줄 트윗 전문을 그대로 담았다 → 이 길이까진 잘림 없음.
   - `nticker` 안 씀. `ntitle` = 다운로드면 파일명 / X 면 계정명. `ntitle` 도 유효 변수.
   - 내용 없는 알림(X 요약/미디어/갱신 이벤트): 전 필드 빈값 → `||` → `""` → `text=` 빈값 전송
