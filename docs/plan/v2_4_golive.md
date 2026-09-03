@@ -222,11 +222,22 @@ gcloud run services update mewtype-telegram --region asia-northeast1 \
 - 잠깐 기다리면 `expires_at`(start+3~5h) 지나며 다음 `/tick` 이 제거, 또는
 - `data` 브랜치 `schedule.json` 에서 해당 `broadcasts[]` 항목 직접 삭제 커밋.
 
-## 6. 관련 파일
+## 6. 열린 것 / 후속
+
+- **`生配信中` (라이브 시작 알림) 미처리.** `@BDP_yumemita` 는 `配信スケジュール`·`出演情報` 외에
+  `＼生配信中📢／ … 同時視聴配信 #N … youtube.com/live/<id>` 형태 라이브 시작 트윗도 낸다
+  (arale×nonoka 그룹 채널 애니 동시시청, 정기 시리즈). 그룹 채널 라이브는 추적 5채널 RSS/API 로
+  안 잡히니 이 트윗이 유일한 라이브 시작 신호. **결정 대기**: `parse_live_now` 추가해 `host="group"`
+  collab 행 `assumed_live=true` 로 승격(같은 `url` 의 기존 scheduled 행이 있으면 그걸 승격, 중복 방지)
+  → `looks_relayable` 에 `生配信中` 마커 추가 → PR. 안 하면 그룹 합동은 예고 단계까지만 뜨고 조용히 만료.
+- **CASE B 잘림 가드** (`merge_scheduled` `# ponytail:`): 미구현. 실물 스케줄 트윗이 잘려 오면 그때.
+- **파서 B (멤버 개인 트윗)**: v2.3 §3-2, 후속.
+
+## 7. 관련 파일
 
 | | |
 |---|---|
-| 파서·머지 | `src/backend/xrelay.py` (`parse_bdp_schedule`, `merge_scheduled`) |
+| 파서·머지 | `src/backend/xrelay.py` (`parse` / `parse_bdp_schedule` / `parse_appearance`, `merge_scheduled`, `looks_relayable`) |
 | `/ingest`·큐 | `src/backend/telegram_app.py` (`_ingest_queue_push/_drain`, `_merge_rows_into_schedule`) |
 | 보존·정리 | `src/collector/reconcile.py` (`build_schedule` scheduled 블록) |
 | 프론트 | `src/frontend/js/render.js` (`createCard` scheduled/collab, `renderBoard` 팬아웃), `css/card.css` |
