@@ -116,7 +116,9 @@ mewtype-scheduler/
 - 정렬 확장: `live` → `upcoming` → `scheduled`, 그룹 내 `scheduled_start` asc(null 뒤).
 - `reconcile.build_schedule` 이 매 tick 보존한다. 같은 채널 실물 `upcoming`/`live` 가 ±4h 안에
   뜨면 제거(supersede), `expires_at` 도달 시 제거. Cloud Tasks/`pending.json` 은 안 탄다.
-- **프론트 v1 은 이 행을 무시**한다(live/upcoming 필터 밖) — `.card--scheduled` 렌더는 후속.
+- **프론트 렌더**(v2.3): `render.js` 가 `upcoming` 과 함께 같은 버킷에 `scheduled_start` 순으로
+  섞어 그린다. `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 카운트다운 강조·
+  "지각" 표시 없음, 링크는 `channel_url`. DOM 은 §3 참고. 구버전 프론트는 이 행을 무시(롤백 안전).
 
 ## 2. 공용 계약 B — `archive.json` 스키마
 
@@ -210,6 +212,25 @@ mewtype-scheduler/
     <p class="card__meta">
       <time class="card__time" datetime="{scheduled_start ISO}">08/31 20:00</time>
       <span class="card__rel">3시간 후</span>   <!-- live면 "방송 중", 예정 시각 지남(live 미확인)이면 class="card__rel card__rel--late" + "n분 지각" -->
+    </p>
+  </div>
+</a>
+```
+
+예고 카드(`status=="scheduled"`, v2.3 — §1-1) — 썸네일 없음, 채널 링크만:
+
+```html
+<a class="card card--scheduled" href="{channels[key].channel_url}" target="_blank" rel="noopener">
+  <div class="card__thumb-wrap">
+    <span class="card__icon">🎮</span>            <!-- icon 없으면 class="card__icon card__icon--empty" + "📺" -->
+    <span class="card__badge card__badge--sched">예고</span>
+  </div>
+  <div class="card__body">
+    <span class="card__chip">🔒 회원 전용</span>     <!-- members_only 일 때만 -->
+    <p class="card__title card__title--label">게임</p>  <!-- KIND_LABEL[kind]. unknown 이면 이 <p> 생략. collab 이면 "합방 · {상대 name_ko}" -->
+    <p class="card__meta">
+      <time class="card__time" datetime="{scheduled_start ISO}"><span class="card__approx">약 </span>08/31 07:00</time>
+      <span class="card__rel">약 5시간 후</span>    <!-- scheduled 는 card__rel--late 안 붙임. scheduled_start 없으면 <time> 생략 + "시간 미정" -->
     </p>
   </div>
 </a>

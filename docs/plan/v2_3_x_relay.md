@@ -18,7 +18,7 @@ PR3(v2.2) 브랜치 위에 구현. 계약이 굳으면 `docs/IMPLEMENTATION_v2.3
 | 인입 경로 | 폰 → 텔레그램 `/update` 명령 → 메인 `/ingest`(OIDC) | 봇은 자기 메시지를 webhook 으로 못 받음. → **폰(Automate) → `mewtype-telegram` 공개 `POST /ingest` 직접**. `X-Ingest-Secret` 헤더(=env `INGEST_SECRET`) 인증. form/JSON 의 `text` 필드 |
 | writer | 메인 서비스 단일 writer (telegram 은 schedule.json 안 씀) | `mewtype-telegram` 이 `schedule.json` 을 **직접** read-merge-write. `gh_store` 의 base-sha 검사 + 1회 재시도로 경합 방어. ingest 는 하루 수 건이라 tick 과 충돌 드묾. `# ponytail`: 충돌 잦아지면 OIDC 로 메인에 위임 |
 | 파서 B(멤버 개인 트윗) | 이번 범위 | **후속.** 파서 A(`@BDP_yumemita` 일일 스케줄)만 구현 |
-| 프론트 `.card--scheduled` | 이번 범위 | **후속.** `scheduled` 행은 `render.js` 의 live/upcoming 필터에 안 걸려 무시됨 → 프론트 무변경으로도 안전(롤백 특성) |
+| 프론트 `.card--scheduled` | 이번 범위 | **구현됨.** `render.js` 가 `upcoming` 과 같은 버킷에 시각순으로 섞어 그림. 점선·감광 카드, `icon`, "예고" 배지, 카운트다운 강조·지각표시 없음, `channel_url` 링크. 구버전 프론트는 무시(롤백 안전) |
 | `/tick` kick on ingest | fire /tick 1회 | **안 함.** 다음 light tick(≤3h)의 reconcile 이 실물 upcoming 을 supersede |
 | `source_tweet_at` / `truncated` 필드 | 스키마에 있음 | 필드명 `source_at` 로. `truncated` 는 미구현(§11 참고) |
 
@@ -62,7 +62,7 @@ Flow beginning
 | 폰 → `/ingest` 인증 | ✅ `X-Ingest-Secret` 정정 후 403→통과 (빈 다운로드 알림은 `400 empty text` — 정상) |
 | 폰 → 실물 `配信スケジュール` 트윗 왕복 + 잘림 여부(#1) | ⏳ 트윗 대기 중 |
 | `INGEST_DRY_RUN=0` 실사용 전환 | ⏳ #1 확인 후 |
-| 프론트 `.card--scheduled` | ⏳ 후속 |
+| 프론트 `.card--scheduled` 렌더 | ✅ 구현 + fixture 로컬 확인 (아이콘/예고 배지/회원전용 칩/합방 라벨/약 시각/시간 미정) |
 
 ---
 
