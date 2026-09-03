@@ -106,6 +106,7 @@ mewtype-scheduler/
   "icon": "🎮",                                        // 원본 이모지 (kind=unknown 이면 프론트가 이것만)
   "members_only": false,
   "collab_with": [],                                  // A×B 합방 시 상대 channel_key[]
+  "host": null,                                        // (v2.4) "group" = 5인 공동명의(公式) 채널 방송. 아니면 null
   "source": "bdp_schedule",
   "source_at": "2026-09-03T01:05:00Z",
   "first_seen": "...", "last_updated": "...",
@@ -123,6 +124,12 @@ mewtype-scheduler/
 - **프론트 렌더**(v2.3): `render.js` 가 `upcoming` 과 함께 같은 버킷에 `scheduled_start` 순으로
   섞어 그린다. `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 카운트다운 강조·
   "지각" 표시 없음, 링크는 `channel_url`. DOM 은 §3 참고. 구버전 프론트는 이 행을 무시(롤백 안전).
+- **(v2.4) 합동방송**: `kind=="collab"` 이면 `xrelay` 가 `host="group"` + `url`(트윗의 온전한
+  영상 URL, 잘린 `…` 은 무시) 을 채운다. `render.js` 는 이 행을 **참여 멤버 전원**(`channel_key`
+  ∪ `collab_with`) 레인에 같은 카드로 팬아웃하고, `.card--collab`(바이올렛 `--color-collab`,
+  "합동" 배지, "합동 · {그 레인 제외한 참여자}" 라벨, "공식 채널 합동방송" 줄) 로 그린다. 링크는
+  `url`(그룹 영상). `reconcile` 은 `host` 있는 행을 멤버 개인 실물로 supersede 하지 않는다
+  (그룹 채널은 추적 5채널이 아님 → TTL 로만 소멸). 설계: `docs/plan/v2_4_collab.md`.
 
 ## 2. 공용 계약 B — `archive.json` 스키마
 
@@ -226,14 +233,16 @@ mewtype-scheduler/
 ```html
 <a class="card card--scheduled" href="{channels[key].channel_url}" target="_blank" rel="noopener">
   <!-- assumed_live 면 class="card card--scheduled card--sched-live", .card__rel = "방송 중 (추정)" (빨강), 테두리 실선·빨강기 -->
+  <!-- (v2.4) kind=="collab" 이면 class 에 card--collab 추가, href={url}(그룹 영상), 배지 "합동" -->
 
   <div class="card__thumb-wrap">
     <span class="card__icon">🎮</span>            <!-- icon 없으면 class="card__icon card__icon--empty" + "📺" -->
-    <span class="card__badge card__badge--sched">예고</span>
+    <span class="card__badge card__badge--sched">예고</span>   <!-- collab: card__badge--collab "합동" -->
   </div>
   <div class="card__body">
     <span class="card__chip">🔒 회원 전용</span>     <!-- members_only 일 때만 -->
-    <p class="card__title card__title--label">게임</p>  <!-- KIND_LABEL[kind]. unknown 이면 이 <p> 생략. collab 이면 "합방 · {상대 name_ko}" -->
+    <p class="card__title card__title--label">게임</p>  <!-- KIND_LABEL[kind]. unknown 이면 이 <p> 생략. collab 이면 "합동 · {그 레인 제외한 참여자 name_ko}" -->
+    <p class="card__host">공식 채널 합동방송</p>       <!-- (v2.4) host=="group" 일 때만 -->
     <p class="card__meta">
       <time class="card__time" datetime="{scheduled_start ISO}"><span class="card__approx">약 </span>08/31 07:00</time>
       <span class="card__rel">약 5시간 후</span>    <!-- scheduled 는 card__rel--late 안 붙임. scheduled_start 없으면 <time> 생략 + "시간 미정" -->
