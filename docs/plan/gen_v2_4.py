@@ -65,13 +65,15 @@ box(5.5, 43, 29, 12,
 
 # ── 그룹 2: 백엔드 (Cloud Run + GitHub) ──────────────────
 group(41, 6, 55, 70, "백엔드  ·  Cloud Run + GitHub data 브랜치")
-box(43.5, 55, 50, 18,
+box(43.5, 54, 50, 19,
     "mewtype-telegram  (공개)\nPOST /ingest  ·  X-Ingest-Secret 검증\n"
     "─ 테스트 (INGEST_ECHO=1 또는 DRY_RUN=1)\n"
-    "    파싱 안 함 → DM(tail_ok 로그) + ingest_queue.json 적재\n"
+    "    파싱 안 함 → DM(tail_ok 로그)\n"
+    "    + ingest_queue.json 적재 (스케줄/출연 트윗만)\n"
     "─ 실배포 (ECHO=0 · DRY_RUN=0)\n"
-    "    큐 drain → xrelay.parse_bdp_schedule → merge_scheduled",
-    GREEN, GREEN_E, fs=7.6)
+    "    큐 drain → xrelay.parse (스케줄 → 出演情報)\n"
+    "    → merge_scheduled",
+    GREEN, GREEN_E, fs=7.4)
 box(43.5, 37, 50, 11,
     "GitHub  data 브랜치\nschedule.json   ·   ingest_queue.json\n"
     "(scheduled 행: video_id 없음 · host=group)",
