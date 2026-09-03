@@ -14,16 +14,19 @@
 - **Android · Automate** — 운영자가 `@BDP_yumemita` 를 팔로우. 삼성 브라우저 웹푸시 알림이 뜨면
   "HTTP Request" 블록이 `POST /ingest` (`X-Ingest-Secret` 헤더). Content body 식:
   ```
-  urlEncode({"text": coalesce(nx["android.bigText"], nmsg, nticker, ntitle, "")})
+  urlEncode({"text": (nx["android.bigText"] || nmsg || nticker || ntitle || "")})
   ```
   - Automate 문자열 연결은 `++` (‘+’는 산술 → `NaN`). `urlEncode(딕셔너리)` 가 `key=value&key=value`
     로 만들어 줌 → `text=` 접두어·URL 인코딩 자동.
+  - **`||` 를 써야 함, `coalesce` 아님.** `coalesce` 는 `null` 만 건너뛰는데 `nx["android.bigText"]`
+    가 `null` 이 아니라 **빈 문자열 `""`** 로 오는 경우가 있어(있는 알림인데도) 거기서 멈춰 `nmsg`
+    를 못 봤다. `||` 는 null·빈 문자열 둘 다 건너뛰고 첫 truthy 반환 (LlamaLab 공식 문서에 명시).
   - 이 기기(SM-S911N)에서 실측: 알림 내용은 **`nmsg`(= `android.text` extra)** 에 온다.
-    `nx["android.bigText"]` 는 항상 비어있음(보험으로 첫 순위 유지). `nmsg` 가 232자 여러 줄
-    전문도 그대로 담았다(잘림 없음). `nticker` 는 안 씀. `ntitle` = 다운로드면 파일명, X 면 계정명.
-    `Notification Posted` 트리거 출력: message→`nmsg`, title→`ntitle` (둘 다 유효 변수).
+    `nx["android.bigText"]` 는 (비거나 `""`) — 보험으로 첫 순위 유지하되 `||` 라 무해. `nmsg` 가
+    232자 여러 줄 전문도 그대로 담았다(잘림 없음). `nticker` 는 안 씀. `ntitle` = 다운로드면 파일명,
+    X 면 계정명. `Notification Posted` 트리거 출력: message→`nmsg`, title→`ntitle` (둘 다 유효 변수).
   - `@BDP_yumemita` 알림엔 **본인 글 + 리트윗**(BanG Dream 홍보 계정)이 섞여 온다(본문이 `@원계정: …`).
-  - 내용 없는 알림(X 요약/미디어/갱신)은 coalesce 가 `""` → `text=` 빈값 → 백엔드가 `looks_relayable`
+  - 내용 없는 알림(X 요약/미디어/갱신)은 `||` 가 `""` → `text=` 빈값 → 백엔드가 `looks_relayable`
     False 로 무시. 무해.
   - 테스트 기간엔 폰 필터 생략, **실배포 시 본문 마커 `配信スケジュール`/`出演情報` 로 필터 복원**
     (발신자 한정은 리트윗을 못 거름).
@@ -80,7 +83,7 @@
   `/ingest` 로 보낸다 (다운로드·리트윗 등 잡 알림도 옴 — ECHO 라 무해, `looks_relayable` 가 큐를 막음).
 - **HTTP Request 블록 Content body 식** (운영용, 확정):
   ```
-  urlEncode({"text": coalesce(nx["android.bigText"], nmsg, nticker, ntitle, "")})
+  urlEncode({"text": (nx["android.bigText"] || nmsg || nticker || ntitle || "")})
   ```
   거쳐온 함정:
   - `NaN` 만 보내던 버그: Automate 문자열 연결은 `+` 가 아니라 **`++`** (`+` 는 산술).
@@ -89,7 +92,7 @@
   - 알림 내용은 `nmsg` (= `android.text` extra) 에 온다. **`nx["android.bigText"]` 는 항상 비어있음.**
   - `nmsg` 가 232자·12줄 트윗 전문을 그대로 담았다 → 이 길이까진 잘림 없음.
   - `nticker` 안 씀. `ntitle` = 다운로드면 파일명 / X 면 계정명. `ntitle` 도 유효 변수.
-  - 내용 없는 알림(X 요약/미디어/갱신 이벤트): 전 필드 빈값 → `coalesce` → `""` → `text=` 빈값 전송
+  - 내용 없는 알림(X 요약/미디어/갱신 이벤트): 전 필드 빈값 → `||` → `""` → `text=` 빈값 전송
     → 백엔드 `looks_relayable` False 로 무시. (로그: `ingest ECHO: len=0 clen=5`)
 
 ## 1. 전환 전 확인 — 웹푸시 잘림 (#1)
