@@ -211,6 +211,37 @@
   font-weight: 600;
 }
 
+/* ── (v2.4) 합동방송 — 5인 공동명의(公式) 채널. renderBoard 가 참여 멤버
+   전원 레인에 같은 카드를 팬아웃한다. scheduled 카드의 변형:
+   점선→실선 + 바이올렛 좌측 바 + "합동" 배지, 감광 완화. 링크는 그룹 영상 URL. */
+.card--collab {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-collab, #8b7cc9) 55%, var(--color-border));
+  box-shadow: inset 3px 0 0 var(--color-collab, #8b7cc9);
+  opacity: 0.94;
+}
+.card--collab:hover {
+  transform: none;
+  box-shadow: inset 3px 0 0 var(--color-collab, #8b7cc9);
+  opacity: 1;
+}
+.card--collab .card__thumb-wrap {
+  background: color-mix(in srgb, var(--color-collab, #8b7cc9) 12%, var(--color-bg));
+}
+.card__badge--collab {
+  background: color-mix(in srgb, var(--color-collab, #8b7cc9) 28%, transparent);
+  color: color-mix(in srgb, var(--color-collab, #8b7cc9) 58%, #fff);
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 650;
+}
+.card__host {
+  margin: 0;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--color-collab, #8b7cc9) 72%, #fff);
+}
+
 /* ── 모바일: 가로 카드 (작은 썸네일 좌 + 텍스트 우) ──────────────
    card.css 는 layout.css 뒤에 로드되므로 이 @media 를 여기 파일 끝에 둬야
    기본 .card 규칙을 확실히 덮는다. */

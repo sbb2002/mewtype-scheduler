@@ -194,7 +194,10 @@ def build_schedule(
             if fs and _age_sec(fs, now_iso) >= SCHEDULED_NO_TIME_TTL_SEC:
                 continue
         ss = prev_entry.get("scheduled_start")
-        if ss and any(
+        # host="group"(공동명의 채널 합동방송)은 멤버 개인 채널 실물로 supersede 하지 않는다
+        # — 실물이 뜨더라도 추적 대상 5채널이 아니므로 애초에 _real 에 안 들어오고,
+        #   우연히 같은 시각 멤버 방송이 있어도 그건 별개 방송이다. TTL 로만 소멸.
+        if ss and not prev_entry.get("host") and any(
             r.get("channel_key") == prev_entry.get("channel_key")
             and r.get("scheduled_start")
             and abs(_age_sec(r["scheduled_start"], ss)) <= SCHEDULED_SUPERSEDE_SEC
@@ -380,6 +383,15 @@ if __name__ == "__main__":
                 "first_seen": "2026-08-30T08:00:00Z",
                 "expires_at": "2026-08-30T15:00:00Z",
             },
+            {  # host=group 합동방송 — arale 실물 upcoming_vid(13:00)와 30분 차지만
+               # host 가드로 supersede 안 됨 (別 채널). expires 미도달 → 보존.
+                "video_id": None, "sched_id": "sched:arale:2026-08-30T13:30:00Z",
+                "channel_key": "arale", "status": "scheduled", "host": "group",
+                "collab_with": ["nonoka"], "kind": "collab",
+                "scheduled_start": "2026-08-30T13:30:00Z", "source": "bdp_schedule",
+                "first_seen": "2026-08-30T08:00:00Z",
+                "expires_at": "2026-08-30T17:00:00Z",
+            },
         ],
     }
 
@@ -393,10 +405,12 @@ if __name__ == "__main__":
     print(f"Broadcast count: {broadcast_count}  ids={sorted(ids)}")
     print(f"Newly ended: {[(r['video_id'], r['reason']) for r in newly_ended]}")
 
-    # upcoming_vid, live_vid, 유예된 grace_vid + 살아남은 scheduled 2건(ritsu 시작지남, yuno 미래)
+    # upcoming_vid, live_vid, 유예된 grace_vid + 살아남은 scheduled 3건
+    # (ritsu 시작지남, yuno 미래, arale host=group 합동)
     assert ids == {
         "upcoming_vid", "live_vid", "grace_vid",
         "sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
+        "sched:arale:2026-08-30T13:30:00Z",
     }, ids
     # ended_vid(none+actual_end) → ended, removed_vid(오래 누락) → removed
     assert reasons == ["ended", "removed"], reasons
@@ -407,7 +421,12 @@ if __name__ == "__main__":
     # scheduled: arale 는 실물 ±4h → supersede, miyako 는 expires_at 경과 → 둘 다 빠짐.
     # ritsu 는 시작(10:00) 지남 → assumed_live, yuno 는 미래(20:00) → assumed_live False.
     _sched = {b["sched_id"]: b for b in new_schedule["broadcasts"] if b.get("status") == "scheduled"}
-    assert set(_sched) == {"sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z"}, _sched
+    assert set(_sched) == {
+        "sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
+        "sched:arale:2026-08-30T13:30:00Z",
+    }, _sched
     assert _sched["sched:ritsu:2026-08-30T10:00:00Z"]["assumed_live"] is True
     assert _sched["sched:yuno:2026-08-30T20:00:00Z"]["assumed_live"] is False
-    print("SUCCESS: reconcile self-test passed (removed 유예 + scheduled supersede/TTL/assumed_live)")
+    # host=group 합동은 멤버 실물 ±4h 여도 보존 (collab_with 도 그대로 이관)
+    assert _sched["sched:arale:2026-08-30T13:30:00Z"]["collab_with"] == ["nonoka"]
+    print("SUCCESS: reconcile self-test passed (removed 유예 + scheduled supersede/TTL/assumed_live + host=group)")

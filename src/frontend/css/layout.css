@@ -8,6 +8,7 @@
   --color-live-text: #ffffff;
   --color-late: #e0a030;         /* 예정 시각 지남(라이브 전환 미확인) 경고색 */
   --color-sched: #7c8aa0;        /* (v2.3) scheduled "예고" 표식 — 저채도 슬레이트, live·late 와 안 겹침 */
+  --color-collab: #8b7cc9;       /* (v2.4) 합동방송(공동명의 채널) 표식 — 바이올렛, live/sched/late 와 안 겹침 */
   --gap: 1rem;
   --lane-min-width: 240px;
   --lane-max-width: 280px;      /* PC에서 레인이 이 이상 넓어지지 않음 */

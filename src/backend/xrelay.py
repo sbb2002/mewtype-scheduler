@@ -50,6 +50,11 @@ KIND_KO = {
 HEADER_RE = re.compile(r"(\d{1,2})/(\d{1,2})\([日月火水木金土]\)\s*の?\s*配信スケジュール")
 # "11:00〜" / "23:30頃〜"
 TIME_RE = re.compile(r"(\d{1,2}):(\d{2})(頃)?〜")
+# 온전한 YouTube 영상 URL (id 11자 + 잘림표시 없음). watch/live/shorts 모두.
+# 트윗에서 "…" 로 잘린 URL 은 링크가 깨지므로 매치하지 않는다.
+YT_VIDEO_RE = re.compile(
+    r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(?:live/|watch\?v=|shorts/)([\w-]{11})(?![\w-])"
+)
 
 _FW = str.maketrans("０１２３４５６７８９：", "0123456789:")
 
@@ -105,6 +110,26 @@ def _iso_z(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _video_url_near(lines: list[str], idx: int) -> str | None:
+    """엔트리 줄(idx) 바로 뒤의 URL 줄에서 온전한 YouTube 영상 URL 을 찾는다.
+
+    트윗 서식은 `[아이콘]HH:MM〜 이름` 다음 줄에 URL 이 온다. 다음 엔트리(시각 줄)나
+    헤더를 만나면 중단. 잘린 URL(`…`)이나 `@handle` 채널 URL 은 대상 아님.
+    """
+    for k in range(idx + 1, min(idx + 3, len(lines))):
+        cand = lines[k].strip()
+        if not cand:
+            continue
+        if TIME_RE.search(cand) or HEADER_RE.search(cand):
+            break
+        hit = YT_VIDEO_RE.search(cand)
+        if hit:
+            u = hit.group(0)
+            return u if u.startswith("http") else "https://" + u
+        break  # 엔트리 직후 첫 비어있지 않은 줄이 URL 이 아니면 없음
+    return None
+
+
 def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
     """`@BDP_yumemita` 일일 스케줄 트윗 → scheduled 행 리스트.
 
@@ -126,7 +151,8 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
     base = datetime(_infer_year(month, day, now_jst), month, day, tzinfo=JST)
 
     rows: list[dict] = []
-    for raw_line in t.split("\n"):
+    lines = t.split("\n")
+    for idx, raw_line in enumerate(lines):
         line = raw_line.strip()
         times = list(TIME_RE.finditer(line))
         if not times:
@@ -136,6 +162,9 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
             continue
         members_only = "メン限" in line
         line_has_collab = bool(collab) or "×" in line
+        # 합동 방송은 5인 공동명의(公式) 채널에서 함 — 멤버 개인 채널이 아니다.
+        # 트윗의 영상 URL 을 그대로 링크로 쓰고, host="group" 으로 표시한다.
+        video_url = _video_url_near(lines, idx) if line_has_collab else None
 
         for i, tm in enumerate(times):
             hh, mm = int(tm.group(1)), int(tm.group(2))
@@ -166,7 +195,8 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                     "sched_id": f"sched:{key}:{start_z}",
                     "video_id": None,
                     "title": None,
-                    "url": None,
+                    "url": video_url,
+                    "host": "group" if line_has_collab else None,
                     "thumbnail": None,
                     "scheduled_start": start_z,
                     "start_approx": approx,
@@ -339,8 +369,11 @@ if __name__ == "__main__":
     assert len(r2) == 5, len(r2)
     col = next(x for x in r2 if x["kind"] == "collab")
     assert col["channel_key"] == "arale" and col["collab_with"] == ["miyako"], col
+    assert col["host"] == "group", col                 # 합동 → 公式 채널
+    assert col["url"] is None, col                     # URL 잘림(…) → 링크 안 잡음
+    assert all(x["host"] is None for x in r2 if x["kind"] != "collab")
     assert all(_jst_date(x["scheduled_start"]) == "2026-08-29" for x in r2)
-    print("[OK] S2  (콜라보 A×B → 주채널+collab_with)")
+    print("[OK] S2  (콜라보 A×B → host=group, 잘린 URL 무시)")
 
     S3 = (
         "／\n🛸夢限大みゅーたいぷ\n"
@@ -381,9 +414,25 @@ if __name__ == "__main__":
     assert len(r5) == 1, r5
     assert r5[0]["channel_key"] == "arale" and r5[0]["collab_with"] == ["nonoka"], r5
     assert r5[0]["kind"] == "collab", r5
+    assert r5[0]["host"] == "group", r5
+    assert r5[0]["url"] == "https://youtube.com/live/kx-nhmTj4Eg", r5[0]["url"]
     assert _jst_date(r5[0]["scheduled_start"]) == "2026-09-04", r5[0]["scheduled_start"]
     assert _jst_hm(r5[0]["scheduled_start"]) == "00:00", r5[0]["scheduled_start"]
-    print("[OK] S5  (24:00 심야표기 → 익일 00:00, 📺 미지아이콘, A×B)")
+    print("[OK] S5  (24:00 심야 + host=group + 영상 URL 캡처)")
+
+    # S6: watch?v= 형태 온전한 URL (외부 이벤트/합방 공지가 일일 스케줄에 실릴 때)
+    S6 = (
+        "／\n🛸夢限大みゅーたいぷ\n9/5(金)の配信スケジュール🌟\n＼\n\n"
+        "📺21:00〜 千石ユノ×峰月律\n"
+        "https://www.youtube.com/watch?v=PAfMVT3GTLg\n"
+        "※時刻は予告なく変更の場合がございます。"
+    )
+    r6 = parse_bdp_schedule(S6, NOW)
+    assert len(r6) == 1, r6
+    assert r6[0]["channel_key"] == "yuno" and r6[0]["collab_with"] == ["ritsu"], r6
+    assert r6[0]["host"] == "group", r6
+    assert r6[0]["url"] == "https://www.youtube.com/watch?v=PAfMVT3GTLg", r6[0]["url"]
+    print("[OK] S6  (watch?v= 온전 URL 캡처)")
 
     # 형식 아님 → []
     assert parse_bdp_schedule("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
