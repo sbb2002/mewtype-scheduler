@@ -108,5 +108,7 @@ create_secret YOUTUBE_API_KEY "YouTube API 키를 입력하세요" "${YOUTUBE_AP
 create_secret GITHUB_TOKEN "GitHub fine-grained PAT를 입력하세요 (Contents R/W)" "${GITHUB_TOKEN:-}"
 create_secret TELEGRAM_BOT_TOKEN "BotFather 봇 토큰" "${TELEGRAM_BOT_TOKEN:-}"
 create_secret TELEGRAM_WEBHOOK_SECRET "webhook secret (임의 문자열)" "${TELEGRAM_WEBHOOK_SECRET:-}"
+# v2.3 X 릴레이 — 폰(Automate)이 mewtype-telegram /ingest 에 붙이는 공유 시크릿.
+create_secret INGEST_SECRET "ingest secret (임의 문자열, 폰 Automate 에도 동일하게)" "${INGEST_SECRET:-}"
 
 echo "=== 셋업 완료 ==="

@@ -16,8 +16,14 @@ gcloud run deploy mewtype-telegram \
   --service-account "$INVOKER_SA" \
   --command=gunicorn \
   --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=60,src.backend.telegram_app:app" \
-  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest" \
-  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,ALLOW_UNAUTH=1"
+  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest" \
+  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0}"
+
+# INGEST_DRY_RUN=1 이면 /ingest 가 schedule.json 을 안 쓰고 받은 원문·파싱결과만 DM 회신
+# (푸시 알림 "Show more" 잘림 확인용). 확인 끝나면 env.sh 에서 0 으로 두고 재배포, 또는:
+#   gcloud run services update mewtype-telegram --region "$GCP_LOCATION" --update-env-vars INGEST_DRY_RUN=1
+# INGEST_ECHO=1 이면 파싱조차 안 하고 받은 텍스트 그대로만 DM 회신 (임시 테스트 훅).
+# 실제 로직으로 복귀: --update-env-vars INGEST_ECHO=0
 
 echo "=== 메인서비스 invoker 권한 부여 (telegram_app 의 /resume heal 호출용) ==="
 gcloud run services add-iam-policy-binding "$SERVICE_NAME" \

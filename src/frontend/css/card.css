@@ -146,6 +146,71 @@
   font-weight: 600;
 }
 
+/* ── scheduled (예고) — X 트윗만, YouTube 영상 아직 없음 ──────────
+   점선 테두리 + 감광 = "확정 아님". 썸네일 자리엔 방송종류 이모지.
+   "예고" 배지는 빨강 아님. 카운트다운 강조·지각 표시 없음.
+   링크는 채널 URL 뿐이라 hover 는 부양 없이 밝기만. */
+.card--scheduled {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-sched, #7c8aa0) 55%, var(--color-border));
+  opacity: 0.82;
+}
+.card--scheduled:hover {
+  transform: none;
+  box-shadow: none;
+  opacity: 1;
+}
+.card--scheduled .card__thumb-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-sched, #7c8aa0) 12%, var(--color-bg));
+}
+.card__icon {
+  font-size: 3rem;
+  line-height: 1;
+  filter: saturate(0.85);
+}
+.card__icon--empty {
+  font-size: 2.2rem;
+  opacity: 0.4;
+}
+.card__badge--sched {
+  background: color-mix(in srgb, var(--color-sched, #7c8aa0) 26%, transparent);
+  color: color-mix(in srgb, var(--color-sched, #7c8aa0) 72%, #fff);
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 650;
+}
+.card--scheduled .card__title { color: var(--color-text-muted); }
+.card--scheduled .card__title--label { color: var(--color-text); }
+.card__chip {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 650;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-late) 18%, transparent);
+  color: color-mix(in srgb, var(--color-late) 82%, #fff);
+}
+.card__approx {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* assumed_live — 예고 시각 지남, 실물 미확인(회원전용 방송 중으로 추정).
+   확정 아니므로 라이브 존 승격 없이 카드에서만 신호. 감광 해제 + 은은한 빨강 테두리. */
+.card--sched-live {
+  opacity: 1;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-live) 45%, var(--color-border));
+}
+.card--sched-live .card__rel {
+  color: color-mix(in srgb, var(--color-live) 65%, #fff);
+  font-weight: 600;
+}
+
 /* ── 모바일: 가로 카드 (작은 썸네일 좌 + 텍스트 우) ──────────────
    card.css 는 layout.css 뒤에 로드되므로 이 @media 를 여기 파일 끝에 둬야
    기본 .card 규칙을 확실히 덮는다. */
@@ -189,4 +254,6 @@
     padding: 0.1rem 0.4rem;
     font-size: 0.62rem;
   }
+  .card__icon { font-size: 2.2rem; }
+  .card__icon--empty { font-size: 1.8rem; }
 }

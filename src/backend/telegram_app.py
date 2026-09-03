@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -40,6 +41,11 @@ try:
 except ImportError:
     Telegram = None
 
+try:
+    from . import xrelay
+except ImportError:
+    xrelay = None
+
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -48,7 +54,7 @@ from .control import (
     set_log_level,
     set_paused,
 )
-from .gh_store import GitHubStore
+from .gh_store import ConflictError, GitHubStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("telegram_app")
@@ -444,6 +450,16 @@ def _load_channels_config() -> dict:
         return {"channels": {}}
 
 
+def _make_gh() -> "GitHubStore | None":
+    """env 에서 GitHubStore 구성. 필수 값 없으면 None."""
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPO", "").strip()
+    branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
+    if not token or not repo:
+        return None
+    return GitHubStore(token, repo, branch)
+
+
 # Flask 라우트 정의 (Flask 설치 시만)
 if _FLASK_AVAILABLE:
 
@@ -519,6 +535,130 @@ if _FLASK_AVAILABLE:
 
         # 항상 200 반환 (Telegram 재시도 방지)
         return jsonify({"ok": True}), 200
+
+    @app.post("/ingest")
+    def _ingest():
+        """Automate(폰) → 삼성 브라우저 웹푸시 알림 텍스트 인입 (v2.3 X 릴레이).
+
+        인증: `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`.
+        본문: form 또는 JSON 의 `text`(필수) / `title`(선택, dry-run 에코용).
+        `@BDP_yumemita` 일일 스케줄 트윗만 파싱 → `schedule.json` 의 `scheduled` 행으로 머지.
+        형식이 아니거나 일시정지 중이면 no-op. 결과는 운영자 DM 으로 회신(계약 G).
+
+        `INGEST_DRY_RUN` env 가 참이면: **저장 안 하고** 받은 원문 + 파싱 결과만
+        DM 으로 회신 (푸시 알림이 "Show more" 로 잘리는지 확인용).
+        `INGEST_ECHO` env 가 참이면: 파싱조차 안 하고 받은 텍스트 그대로만 DM 회신
+        (임시 테스트 훅 — 아래 해당 블록 주석 참고).
+        """
+        secret = os.environ.get("INGEST_SECRET", "").strip()
+        got = request.headers.get("X-Ingest-Secret", "").strip()
+        if not secret or got != secret:
+            log.warning("ingest: bad or missing secret")
+            return jsonify({"ok": False}), 403
+
+        payload = request.form if request.form else (request.get_json(silent=True) or {})
+        raw = (payload.get("text") or "").strip()
+        title = (payload.get("title") or "").strip()
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # ─── v2.3 임시 ECHO 테스트 훅 (INGEST_ECHO 가 참일 때만) ───────────────
+        # 폰 Automate 가 `@BDP_yumemita` 푸시알림을 키워드 필터 없이 그대로 relay 할 때,
+        # 백엔드 처리(파싱·저장) 전혀 없이 "들어온 텍스트 그대로"만 DM 으로 회신한다.
+        # 웹푸시 본문이 온전히/잘려서/비어서 오는지 확인용.
+        # 확인 끝나면 env 에서 INGEST_ECHO 만 내리면 아래 실제 로직으로 복귀.
+        # (이 블록 자체를 지워도 무방 — 나머지 로직은 이 블록에 의존하지 않음.)
+        if os.environ.get("INGEST_ECHO", "").strip() not in ("", "0", "false", "False", "no"):
+            body_preview = request.get_data(as_text=True)[:1000]
+            _send_telegram(
+                "📡 <b>ingest ECHO</b> — 백엔드 처리 안 함\n"
+                f"ct=<code>{html.escape(request.content_type or '-')}</code> · "
+                f"form_keys={list(request.form.keys())}\n"
+                f"title=<code>{html.escape(title) or '(없음)'}</code>\n"
+                f"len(text)={len(raw)}\n"
+                "───── text ─────\n"
+                f"<code>{html.escape(raw) if raw else '(빈 text)'}</code>\n"
+                "───── raw body[:1000] ─────\n"
+                f"<code>{html.escape(body_preview)}</code>"
+            )
+            return jsonify({"ok": True, "echo": True, "len": len(raw)}), 200
+        # ─────────────────────────────────────────────────────────────────────
+
+        if not raw:
+            # 폰(Automate)이 text 를 빈 값으로 보내는 원인 추적용 계측.
+            log.warning(
+                "ingest empty text: ct=%r len=%s form_keys=%r json=%r body[:800]=%r",
+                request.content_type,
+                request.content_length,
+                list(request.form.keys()),
+                request.get_json(silent=True),
+                request.get_data(as_text=True)[:800],
+            )
+            return jsonify({"ok": False, "error": "empty text"}), 400
+        if xrelay is None:
+            return jsonify({"ok": False, "error": "xrelay unavailable"}), 500
+
+        dry = os.environ.get("INGEST_DRY_RUN", "").strip() not in ("", "0", "false", "False", "no")
+
+        try:
+            channels_cfg = _load_channels_config()
+            rows = xrelay.parse_bdp_schedule(raw, now_iso)
+
+            if dry:
+                cut = 3500
+                body = raw if len(raw) <= cut else raw[:cut] + "\n…(len 초과 잘림)"
+                brief = " / ".join(
+                    f"{r['channel_key']} {xrelay._jst_hm(r['scheduled_start'])}(JST)"
+                    f"{'🔒' if r['members_only'] else ''}"
+                    for r in rows
+                ) or "(파싱 0건)"
+                _send_telegram(
+                    "🧪 <b>ingest DRY-RUN</b> — 저장 안 함\n"
+                    f"title: <code>{html.escape(title) or '(없음)'}</code>\n"
+                    f"len(text)={len(raw)} · 파싱 {len(rows)}건\n"
+                    f"{html.escape(brief)}\n"
+                    "─────\n"
+                    f"<code>{html.escape(body)}</code>"
+                )
+                return jsonify({"ok": True, "dry_run": True, "parsed": len(rows)}), 200
+
+            gh = _make_gh()
+            if gh is None:
+                _send_telegram("⚠️ ingest: GitHub 설정 누락")
+                return jsonify({"ok": False, "error": "gh config"}), 200
+
+            control, _ = gh.read_json("control.json")
+            if is_paused(control or default_control()):
+                log.info("ingest: paused — skip")
+                _send_telegram("⏸ 일시정지 중 — ingest 무시", silent=True)
+                return jsonify({"ok": True, "paused": True}), 200
+
+            if not rows:
+                _send_telegram(
+                    "ℹ️ ingest: 配信スケジュール 형식 아님 — 무시\n" + raw[:200], silent=True
+                )
+                return jsonify({"ok": True, "parsed": 0}), 200
+
+            changed = False
+            for attempt in (1, 2):
+                prev, sha = gh.read_json("schedule.json")
+                merged = xrelay.merge_scheduled(prev or {}, rows, now_iso)
+                try:
+                    changed, _ = gh.write_json(
+                        "schedule.json", merged, prev_sha=sha,
+                        message=f"data: xrelay scheduled {now_iso}",
+                    )
+                    break
+                except ConflictError:
+                    if attempt == 2:
+                        raise
+                    log.warning("ingest: schedule.json 충돌 — 재계산 후 재시도")
+
+            _send_telegram(xrelay.summary_text(rows, channels_cfg))
+            return jsonify({"ok": True, "parsed": len(rows), "changed": changed}), 200
+        except Exception as e:
+            log.exception("ingest failed")
+            _send_telegram(f"⚠️ ingest 오류: {str(e)[:200]}")
+            return jsonify({"ok": False, "error": str(e)}), 200
 
     @app.get("/")
     def _health():
@@ -658,6 +798,16 @@ if __name__ == "__main__":
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
         assert resp.data == b"ok", f"Expected b'ok', got {resp.data}"
         print("  ✓ 200 ok")
+
+    # Test 5: /ingest 인증·검증 (GitHub 미접촉 경로만)
+    print("\n[Test 5] POST /ingest secret/검증")
+    os.environ["INGEST_SECRET"] = "ing123"
+    with app.test_client() as client:
+        r = client.post("/ingest", data={"text": "x"}, headers={"X-Ingest-Secret": "nope"})
+        assert r.status_code == 403, f"Expected 403, got {r.status_code}"
+        r = client.post("/ingest", data={"text": "   "}, headers={"X-Ingest-Secret": "ing123"})
+        assert r.status_code == 400, f"Expected 400, got {r.status_code}"
+        print("  ✓ bad secret 403 · empty text 400")
 
     print("\n" + "=" * 60)
     print("✓ All smoke tests passed!")

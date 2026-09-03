@@ -55,7 +55,9 @@ src/
     config.py          # 환경변수 → Config
     notify.py          # (v2.1) Telegram 알림 + diff_events(A~F)
     control.py         # (v2.1) control.json 스키마 (paused)
-    telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app
+    telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
+                       #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
+    xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
@@ -78,6 +80,7 @@ python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 asse
 python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.statemachine   # 폴링 FSM 9 시나리오
+python -m src.backend.xrelay         # (v2.3) X 스케줄 트윗 파서 — 실측 4샘플 + merge
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
@@ -110,6 +113,13 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 5. **(v2.1)** `/tick`·`/wake` 진입 시 `control.json` 확인 — `paused` 면 healthcheck 핑만 하고 no-op.
    상태 전이(upcoming/live 시작·종료, fallback, 오류)는 Telegram DM 으로 알림. `/status /pause /resume`
    명령은 공개 서비스 `mewtype-telegram` 이 처리. 상세는 `docs/IMPLEMENTATION_v2.1.md`.
+6. **(v2.3)** X 예고 릴레이 — 폰(Automate)이 `@BDP_yumemita` 일일 스케줄 트윗의 삼성 브라우저
+   웹푸시 알림 텍스트를 `mewtype-telegram` 공개 `POST /ingest`(`X-Ingest-Secret` 헤더)로 보낸다.
+   `xrelay.parse_bdp_schedule` → `schedule.json` 에 `status:"scheduled"` 행(YouTube 영상 아직
+   없는 최하 단계, `video_id` 없음). 정기 `/tick` 의 reconcile 이 보존하다가 실물 `upcoming`/`live`
+   가 같은 채널에 ±4h 안에 뜨면 supersede, `expires_at`(start+3h) 도달 시 제거. Cloud Tasks/
+   `pending.json` 은 안 탄다. `INGEST_DRY_RUN=1` 이면 저장 없이 DM 회신만. 상세는
+   `docs/plan/v2_3_x_relay.md`, 그림 `docs/plan/v2_3_x_relay.png`.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId
