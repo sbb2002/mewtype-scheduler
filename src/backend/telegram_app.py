@@ -547,6 +547,8 @@ if _FLASK_AVAILABLE:
 
         `INGEST_DRY_RUN` env 가 참이면: **저장 안 하고** 받은 원문 + 파싱 결과만
         DM 으로 회신 (푸시 알림이 "Show more" 로 잘리는지 확인용).
+        `INGEST_ECHO` env 가 참이면: 파싱조차 안 하고 받은 텍스트 그대로만 DM 회신
+        (임시 테스트 훅 — 아래 해당 블록 주석 참고).
         """
         secret = os.environ.get("INGEST_SECRET", "").strip()
         got = request.headers.get("X-Ingest-Secret", "").strip()
@@ -558,7 +560,39 @@ if _FLASK_AVAILABLE:
         raw = (payload.get("text") or "").strip()
         title = (payload.get("title") or "").strip()
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # ─── v2.3 임시 ECHO 테스트 훅 (INGEST_ECHO 가 참일 때만) ───────────────
+        # 폰 Automate 가 `@BDP_yumemita` 푸시알림을 키워드 필터 없이 그대로 relay 할 때,
+        # 백엔드 처리(파싱·저장) 전혀 없이 "들어온 텍스트 그대로"만 DM 으로 회신한다.
+        # 웹푸시 본문이 온전히/잘려서/비어서 오는지 확인용.
+        # 확인 끝나면 env 에서 INGEST_ECHO 만 내리면 아래 실제 로직으로 복귀.
+        # (이 블록 자체를 지워도 무방 — 나머지 로직은 이 블록에 의존하지 않음.)
+        if os.environ.get("INGEST_ECHO", "").strip() not in ("", "0", "false", "False", "no"):
+            body_preview = request.get_data(as_text=True)[:1000]
+            _send_telegram(
+                "📡 <b>ingest ECHO</b> — 백엔드 처리 안 함\n"
+                f"ct=<code>{html.escape(request.content_type or '-')}</code> · "
+                f"form_keys={list(request.form.keys())}\n"
+                f"title=<code>{html.escape(title) or '(없음)'}</code>\n"
+                f"len(text)={len(raw)}\n"
+                "───── text ─────\n"
+                f"<code>{html.escape(raw) if raw else '(빈 text)'}</code>\n"
+                "───── raw body[:1000] ─────\n"
+                f"<code>{html.escape(body_preview)}</code>"
+            )
+            return jsonify({"ok": True, "echo": True, "len": len(raw)}), 200
+        # ─────────────────────────────────────────────────────────────────────
+
         if not raw:
+            # 폰(Automate)이 text 를 빈 값으로 보내는 원인 추적용 계측.
+            log.warning(
+                "ingest empty text: ct=%r len=%s form_keys=%r json=%r body[:800]=%r",
+                request.content_type,
+                request.content_length,
+                list(request.form.keys()),
+                request.get_json(silent=True),
+                request.get_data(as_text=True)[:800],
+            )
             return jsonify({"ok": False, "error": "empty text"}), 400
         if xrelay is None:
             return jsonify({"ok": False, "error": "xrelay unavailable"}), 500
