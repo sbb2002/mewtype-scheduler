@@ -67,7 +67,8 @@ deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매�
 config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko)
 fixtures/              # schedule.sample.json(프론트/로직 공용), rss_arale.xml(파싱 테스트)
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
-data 브랜치             # schedule.json + archive.json + pending.json + control.json(v2.1). 코드 없음
+data 브랜치             # schedule.json + archive.json + pending.json + control.json(v2.1)
+                       #   + ingest_queue.json(v2.4 — ECHO/DRY-RUN 중 받은 트윗, 실배포 전환 시 drain). 코드 없음
 ```
 
 ## 명령
@@ -122,7 +123,9 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    없는 최하 단계, `video_id` 없음). 정기 `/tick` 의 reconcile 이 보존하다가 실물 `upcoming`/`live`
    가 같은 채널에 ±4h 안에 뜨면 supersede, `expires_at`(start+3h) 도달 시 제거. Cloud Tasks/
    `pending.json` 은 안 탄다. `INGEST_DRY_RUN=1` 이면 저장 없이 DM 회신만. `INGEST_ECHO=1` 이면
-   파싱조차 안 하고 받은 텍스트만 DM 회신(임시 테스트 훅). 상세는 `docs/plan/v2_3_x_relay.md`.
+   파싱조차 안 하고 받은 텍스트만 DM 회신(임시 테스트 훅) + 로그에 잘림 계측(`tail_ok`).
+   ECHO/DRY-RUN 중 온 스케줄 트윗은 `ingest_queue.json` 에 적재됐다가 실배포 전환
+   (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 drain 돼 반영된다. 상세는 `docs/plan/v2_3_x_relay.md`.
 7. **(v2.4)** 합동방송(5인 공동명의 公式 채널) — `xrelay` 가 `kind=="collab"` 행에 `host="group"`
    + 트윗의 온전한 영상 URL 을 채운다. `render.js` 가 참여 멤버 전원(`channel_key` ∪ `collab_with`)
    레인에 같은 `.card--collab` 카드를 팬아웃(PC 5열 그리드·모바일 캐러셀 레이아웃 무변경).
