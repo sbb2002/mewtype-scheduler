@@ -5,10 +5,28 @@ Builds new schedule.json and identifies newly ended broadcasts for archive.json.
 
 import json
 import types
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .youtube import VideoInfo
+
+# videos.list 응답에서 추적 중이던 방송이 통째로 빠지면(= liveBroadcastContent 신호조차 없음)
+# 보통은 삭제/비공개다. 하지만 배치 응답 일시 누락이나 "공개 → 회원전용/비공개" 전환 순간에도
+# 똑같이 빠지므로, 곧바로 archive("removed") 하면 오탐이 남는다(archive 는 video_id dedupe 라
+# 되돌리기 지저분함). last_updated 기준 이 시간 이상 연속 누락일 때만 진짜 삭제로 본다.
+# light tick 3h 간격의 2회분 + 여유.
+STALE_REMOVE_SEC = 6 * 3600 + 1800  # 6.5h
+
+
+def _age_sec(iso_then: str, now_iso: str) -> float:
+    """now_iso - iso_then 을 초로. 파싱 실패 시 0 (= 유예 없이 즉시 처리)."""
+    try:
+        then = datetime.fromisoformat(iso_then.replace("Z", "+00:00"))
+        now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+        return (now - then).total_seconds()
+    except (ValueError, AttributeError):
+        return 0.0
 
 
 def build_schedule(
@@ -126,12 +144,17 @@ def build_schedule(
 
     # Check for videos that were in prev but are now entirely absent
     for prev_video_id, prev_entry in prev_broadcasts.items():
-        if prev_video_id not in videos:
-            if prev_entry["status"] in ("upcoming", "live"):
-                # Was tracking it, now completely gone
-                reason = "removed"
-                ended_rec = ended_record(prev_entry, None, reason, now_iso)
-                newly_ended.append(ended_rec)
+        if prev_video_id in videos:
+            continue
+        if prev_entry["status"] not in ("upcoming", "live"):
+            continue
+        # 통째로 사라짐. 마지막으로 본 지 얼마 안 됐으면 유예 — 마지막 상태 그대로 유지하고
+        # archive 하지 않는다. STALE_REMOVE_SEC 이상 연속 누락이면 진짜 삭제로 보고 archive.
+        last_seen = prev_entry.get("last_updated")
+        if last_seen and _age_sec(last_seen, now_iso) < STALE_REMOVE_SEC:
+            new_schedule["broadcasts"].append(dict(prev_entry))  # carry forward, no bump
+            continue
+        newly_ended.append(ended_record(prev_entry, None, "removed", now_iso))
 
     # Sort broadcasts: live first, then by scheduled_start asc (None last), then video_id
     def sort_key(bcast):
@@ -233,7 +256,7 @@ if __name__ == "__main__":
         ),
     }
 
-    # Previous schedule with one ongoing and one to be removed
+    # Previous schedule: 하나 진행중, 하나는 오래 사라짐(→removed), 하나는 방금 사라짐(→유예)
     prev_schedule = {
         "generated_at": "2026-08-30T11:00:00Z",
         "channel_order": channels_cfg["channel_order"],
@@ -263,7 +286,20 @@ if __name__ == "__main__":
                 "actual_start": "2026-08-30T10:02:00Z",
                 "concurrent_viewers": 5000,
                 "first_seen": "2026-08-30T09:00:00Z",
-                "last_updated": "2026-08-30T11:00:00Z",
+                "last_updated": "2026-08-30T02:00:00Z",  # 10h 전 — STALE_REMOVE_SEC 초과 → removed
+            },
+            {
+                "video_id": "grace_vid",
+                "channel_key": "miyako",
+                "title": "Grace Test",
+                "url": "https://www.youtube.com/watch?v=grace_vid",
+                "thumbnail": "https://i.ytimg.com/vi/grace_vid/hqdefault.jpg",
+                "status": "upcoming",
+                "scheduled_start": "2026-08-30T14:00:00Z",
+                "actual_start": None,
+                "concurrent_viewers": None,
+                "first_seen": "2026-08-30T09:00:00Z",
+                "last_updated": "2026-08-30T11:00:00Z",  # 1h 전 — 유예, archive 안 함
             },
         ],
     }
@@ -271,10 +307,19 @@ if __name__ == "__main__":
     # Run build_schedule
     new_schedule, newly_ended = build_schedule(channels_cfg, videos, prev_schedule, now_iso)
 
-    # Print results
     broadcast_count = len(new_schedule["broadcasts"])
-    reasons = [r["reason"] for r in newly_ended]
+    reasons = sorted(r["reason"] for r in newly_ended)
+    ids = {b["video_id"] for b in new_schedule["broadcasts"]}
 
-    print(f"Broadcast count: {broadcast_count}")
-    print(f"Newly ended reasons: {reasons}")
-    print(f"Expected: broadcast_count=2, reasons=['ended', 'removed']")
+    print(f"Broadcast count: {broadcast_count}  ids={sorted(ids)}")
+    print(f"Newly ended: {[(r['video_id'], r['reason']) for r in newly_ended]}")
+
+    # upcoming_vid, live_vid, 그리고 유예된 grace_vid 는 schedule 에 남는다
+    assert ids == {"upcoming_vid", "live_vid", "grace_vid"}, ids
+    # ended_vid(none+actual_end) → ended, removed_vid(오래 누락) → removed
+    assert reasons == ["ended", "removed"], reasons
+    # grace_vid 는 archive 되지 않음 + last_updated 안 건드림(볼라틸 비교에서 무시되도록)
+    assert "grace_vid" not in {r["video_id"] for r in newly_ended}
+    g = next(b for b in new_schedule["broadcasts"] if b["video_id"] == "grace_vid")
+    assert g["last_updated"] == "2026-08-30T11:00:00Z", g["last_updated"]
+    print("SUCCESS: reconcile self-test passed (removed 유예 포함)")

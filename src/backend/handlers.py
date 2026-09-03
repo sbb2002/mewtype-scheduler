@@ -7,7 +7,7 @@ v1 collector 의 순수 모듈(rss / youtube / reconcile)을 그대로 재사용
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -18,7 +18,7 @@ from ..collector.store import default_schedule
 from ..collector.youtube import YouTubeClient
 from .config import load_config
 from .control import default_control, get_log_level, is_paused
-from .gh_store import GitHubStore
+from .gh_store import ConflictError, GitHubStore
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .pending import default_pending
@@ -36,6 +36,12 @@ def _now_iso() -> str:
 # wake 3분 간격마다 커밋되는 것은 막는다.
 # ponytail: 고정 임계값. 커밋 수가 문제되면 config 로 뺀다.
 _HEARTBEAT_MIN_SEC = 20 * 60
+
+# 방송이 방금 끝났으면, 정기 light tick(3h) 을 기다리지 않고 이만큼 뒤에 후속 tick 을 한 번
+# Cloud Tasks 로 예약한다 — "일반 방송 끝나고 곧이어 다른 방송(회원전용 재시작 포함) 시작"
+# 같은 백투백 케이스에서 다음 방송을 3h 안이 아니라 ~20분 안에 줍기 위함. quota +1콜/end.
+# tick 이름이 분버킷이라 한 tick 에서 여러 방송이 끝나도 후속 tick 은 1개.
+_POST_END_RECHECK_SEC = 20 * 60
 
 
 def _heartbeat_generated_at(prev_gen, now_iso: str, min_sec: int = _HEARTBEAT_MIN_SEC) -> str:
@@ -140,17 +146,13 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         log.info("paused — skip (mode=%s woken=%s)", mode, woken_video_id)
         return {"paused": True, "mode": mode, "woken": woken_video_id}
 
-    prev_schedule, sched_sha = gh.read_json("schedule.json")
-    if prev_schedule is None:
-        prev_schedule = default_schedule(channels_cfg)
-    prev_pending, pend_sha = gh.read_json("pending.json")
-    if prev_pending is None:
-        prev_pending = default_pending()
-    prev_archive, arch_sha = gh.read_json("archive.json")
+    # 후보 집합 계산용 초기 읽기 (커밋용 재읽기는 아래 재시도 루프 안에서 다시 한다)
+    _pp0, _ = gh.read_json("pending.json")
+    _ps0, _ = gh.read_json("schedule.json")
 
     # ── 후보 video_id 집합 ──
-    candidates: set[str] = set(prev_pending.get("entries", {}).keys())
-    candidates.update(_tracked_unresolved_ids(prev_schedule))
+    candidates: set[str] = set((_pp0 or default_pending()).get("entries", {}).keys())
+    candidates.update(_tracked_unresolved_ids(_ps0 or {}))
     if woken_video_id:
         candidates.add(woken_video_id)
     if not is_wake:
@@ -165,58 +167,86 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
 
     videos = yt.videos_list(sorted(candidates)) if candidates else {}
 
-    # ── schedule.json / archive.json ──
-    new_schedule, newly_ended = build_schedule(
-        channels_cfg, videos, prev_schedule, now_iso, avatars
-    )
-    # 실질 변화(_stable_view)가 없으면 broadcast 별 volatile 필드는 prev 로 동결하고,
-    # generated_at 은 heartbeat 간격(_HEARTBEAT_MIN_SEC)마다만 전진시킨다 → 프론트 "업데이트"
-    # 시각이 주기적으로 갱신되되 라이브 중 3분마다 커밋되지는 않는다.
-    if _stable_view(prev_schedule) == _stable_view(new_schedule):
-        new_schedule["generated_at"] = _heartbeat_generated_at(
-            prev_schedule.get("generated_at"), now_iso
+    # ── 커밋: schedule/archive/pending. 다른 실행이 우리가 읽은 뒤 먼저 커밋해서 base sha 가
+    #    어긋나면(방송 시작 시간대에 tick/wake 가 겹침) 최신 상태를 다시 읽어 1회 재계산한다.
+    #    RSS/YouTube 조회는 위에서 한 번만 — videos 는 재사용한다. ──
+    for _attempt in (1, 2):
+        prev_schedule, sched_sha = gh.read_json("schedule.json")
+        if prev_schedule is None:
+            prev_schedule = default_schedule(channels_cfg)
+        prev_pending, pend_sha = gh.read_json("pending.json")
+        if prev_pending is None:
+            prev_pending = default_pending()
+        prev_archive, arch_sha = gh.read_json("archive.json")
+
+        new_schedule, newly_ended = build_schedule(
+            channels_cfg, videos, prev_schedule, now_iso, avatars
         )
-        _prev_bc = {b.get("video_id"): b for b in prev_schedule.get("broadcasts", [])}
-        for b in new_schedule.get("broadcasts", []):
-            pb = _prev_bc.get(b.get("video_id"))
-            if not pb:
-                continue
-            for f in ("last_updated", "concurrent_viewers"):
-                if f in pb:
-                    b[f] = pb[f]
-    sched_changed, _ = gh.write_json(
-        "schedule.json", new_schedule, prev_sha=sched_sha,
-        message=f"data: schedule {now_iso}",
-    )
-    new_archive, arch_changed = _merge_archive(prev_archive, newly_ended, now_iso)
-    if arch_changed:
-        gh.write_json(
-            "archive.json", new_archive, prev_sha=arch_sha,
-            message=f"data: archive {now_iso}",
+        # 실질 변화(_stable_view)가 없으면 broadcast 별 volatile 필드는 prev 로 동결하고,
+        # generated_at 은 heartbeat 간격(_HEARTBEAT_MIN_SEC)마다만 전진시킨다.
+        if _stable_view(prev_schedule) == _stable_view(new_schedule):
+            new_schedule["generated_at"] = _heartbeat_generated_at(
+                prev_schedule.get("generated_at"), now_iso
+            )
+            _prev_bc = {b.get("video_id"): b for b in prev_schedule.get("broadcasts", [])}
+            for b in new_schedule.get("broadcasts", []):
+                pb = _prev_bc.get(b.get("video_id"))
+                if not pb:
+                    continue
+                for f in ("last_updated", "concurrent_viewers"):
+                    if f in pb:
+                        b[f] = pb[f]
+
+        new_archive, arch_changed = _merge_archive(prev_archive, newly_ended, now_iso)
+        decision = sync_pending(
+            prev_pending, videos, channel_id_to_key, now_iso,
+            mode=("wake" if is_wake else "sync"),
+            woken_video_id=woken_video_id,
         )
 
-    # ── pending.json / Cloud Tasks ──
-    decision = sync_pending(
-        prev_pending, videos, channel_id_to_key, now_iso,
-        mode=("wake" if is_wake else "sync"),
-        woken_video_id=woken_video_id,
-    )
-    pend_changed, _ = gh.write_json(
-        "pending.json", decision.new_pending, prev_sha=pend_sha,
-        message=f"data: pending {now_iso}",
-    )
+        try:
+            sched_changed, _ = gh.write_json(
+                "schedule.json", new_schedule, prev_sha=sched_sha,
+                message=f"data: schedule {now_iso}",
+            )
+            if arch_changed:
+                gh.write_json(
+                    "archive.json", new_archive, prev_sha=arch_sha,
+                    message=f"data: archive {now_iso}",
+                )
+            pend_changed, _ = gh.write_json(
+                "pending.json", decision.new_pending, prev_sha=pend_sha,
+                message=f"data: pending {now_iso}",
+            )
+            break
+        except ConflictError as e:
+            if _attempt == 2:
+                raise
+            log.warning("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
 
+    # ── Cloud Tasks enqueue ──
     enqueued, enqueue_errors = 0, []
-    if decision.enqueue:
-        tq = _make_task_queue(cfg)
-        if tq is not None:
-            for vid, when in decision.enqueue:
-                try:
-                    tq.enqueue_wake(vid, when)
-                    enqueued += 1
-                except Exception as e:  # noqa: BLE001
-                    enqueue_errors.append(f"{vid}: {e}")
-                    log.error("enqueue 실패 %s @ %s: %s", vid, when, e)
+    tq = _make_task_queue(cfg) if (decision.enqueue or newly_ended) else None
+    if tq is not None:
+        for vid, when in decision.enqueue:
+            try:
+                tq.enqueue_wake(vid, when)
+                enqueued += 1
+            except Exception as e:  # noqa: BLE001
+                enqueue_errors.append(f"{vid}: {e}")
+                log.error("enqueue 실패 %s @ %s: %s", vid, when, e)
+        # 방송이 방금 끝났으면 후속 light tick 1개 예약 — 백투백 다음 방송을 3h 이내가 아니라
+        # ~20분 이내에 줍기 위함. tick 이름이 분버킷이라 여러 방송이 끝나도 후속 tick 은 1개.
+        if newly_ended:
+            recheck_at = (
+                datetime.now(timezone.utc) + timedelta(seconds=_POST_END_RECHECK_SEC)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            try:
+                tq.enqueue_tick("light", recheck_at)
+                log.info("post-end recheck tick 예약 @ %s", recheck_at)
+            except Exception as e:  # noqa: BLE001
+                enqueue_errors.append(f"post-end tick: {e}")
+                log.error("post-end tick enqueue 실패: %s", e)
 
     result = {
         "mode": mode,
@@ -241,8 +271,10 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     try:
         level = get_log_level(control or default_control())
         tg = Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id)
+        # 이 실행이 시작될 때의 스냅샷(_ps0)과 비교 — 재시도로 loop 안 prev_schedule 이
+        # 우리 첫 커밋 결과로 바뀌어도 전이 알림을 놓치지 않도록.
         events = diff_events(
-            prev_schedule, new_schedule, newly_ended,
+            _ps0 or default_schedule(channels_cfg), new_schedule, newly_ended,
             decision.log, channels_cfg["channels"], now_iso,
         )
         for ev in events:

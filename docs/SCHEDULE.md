@@ -7,6 +7,7 @@ v2 백엔드는 Cloud Run **scale-to-zero** HTTP 서비스다. 요청이 올 때
 |---|---|---|---|
 | 정기 tick | `POST /tick` | Cloud Scheduler | 아래 §1 고정 스케줄 |
 | 방송별 wake | `POST /wake` | Cloud Tasks | 아래 §2 상태머신이 방송마다 동적으로 예약 |
+| 종료후 재확인 tick | `POST /tick` (light) | Cloud Tasks | 방송이 방금 끝난 tick/wake 가 **now + 20분** 으로 1개 예약 (§1.1) |
 
 관련 코드: `deploy/scheduler.sh`(스케줄러 정의), `src/backend/handlers.py`(tick/wake 오케스트레이션),
 `src/backend/statemachine.py`(wake 타이밍 계산), `src/backend/tasks.py`(Cloud Tasks enqueue).
@@ -34,6 +35,20 @@ v2 백엔드는 Cloud Run **scale-to-zero** HTTP 서비스다. 요청이 올 때
 
 > GitHub Actions `.github/workflows/collect.yml` 은 cron이 제거됐고 `workflow_dispatch`
 > 수동 전용(break-glass)이다. 평소 스케줄에 관여하지 않는다.
+
+### 1.1 종료후 재확인 tick (백투백 방송 대비)
+
+일반 방송이 끝나고 **곧이어 다른 방송**(회원 전용 재시작 포함)이 시작되는 경우가 있다.
+정기 light tick 은 3시간 간격이라 그 사이에 시작·종료되는 짧은 다음 방송을 통째로 놓칠 수 있다.
+
+→ tick/wake 처리 중 `archive.json` 으로 넘어간 방송(`newly_ended`)이 하나라도 있으면,
+`handlers._run` 이 **`now + 20분`(`_POST_END_RECHECK_SEC`)** 시각으로 `POST /tick {"mode":"light"}`
+태스크를 Cloud Tasks 에 1개 예약한다. 그 tick 이 RSS + `videos.list` 로 새로 뜬 방송을 줍는다.
+
+- 태스크 이름 `tick-light-{분버킷}` → 한 tick 에서 여러 방송이 끝나도 후속 tick 은 **1개**로 dedupe.
+- 비용: 방송 종료당 `videos.list` 약 1콜(+RSS 0). 하루 몇 콜 수준.
+- 한계: **회원 전용** 다음 방송은 RSS·`search.list` 어디에도 안 떠서 이 재확인으로도 못 잡는다
+  (구조적 사각지대, `ref/broadcast-patterns.md` 참고). 공개 방송의 백투백/재시작만 커버.
 
 ### 프론트 하단 "업데이트" 시각 = `schedule.json.generated_at`
 
@@ -157,3 +172,36 @@ Cloud Tasks 720h 상한을 넘는다. → `next_check_at` 을 `now + 696시간` 
 
 정기 `light` tick(3시간 간격)은 이 흐름과 별개로 계속 돌면서 wake가 놓친 방송을
 주워담고 pending 을 정합화한다.
+
+---
+
+## 5. 정합성 보정 (사각지대 패치)
+
+### 5.1 동시 실행 충돌 — 낙관적 동시성 재시도
+
+방송 시작 시간대엔 정기 tick 과 여러 `/wake` 가 겹쳐 같은 `data` 브랜치 파일
+(`schedule.json` / `pending.json` / `archive.json`)을 동시에 고치려 한다.
+
+`gh_store.write_json` 은 **호출자가 계산을 시작할 때 읽은 sha**(`prev_sha`)를 PUT 에 실어
+낙관적 동시성을 건다. 그 사이 다른 실행이 다른 내용으로 먼저 커밋했으면 `ConflictError`.
+`handlers._run` 은 이때 **RSS/YouTube 재조회 없이**(이미 받은 `videos` 재사용) 최신
+`prev_*` 를 다시 읽어 `build_schedule` / `sync_pending` 을 1회 재계산하고 다시 쓴다.
+2회째도 충돌하면 예외를 올려 tick 을 실패시킨다(스케줄러/Cloud Tasks 가 재시도).
+
+> 예전 `write_json` 은 충돌 시 낡은 payload 를 새 sha 로 재-PUT 해 **조용히 덮어썼다**.
+> 그러면 겹친 실행의 pending 상태 전이가 유실돼 특정 방송의 wake 체인이 끊겼다(다음 3h
+> tick 이 "관측 누락 복구" 로 되살리긴 함). 이제 유실 없음.
+
+### 5.2 `videos.list` 일시 누락 유예 — `removed` 오탐 방지
+
+추적 중이던 방송이 `videos.list` 응답에서 **통째로 빠지면**(삭제/비공개, 또는 "공개→회원전용"
+전환 순간, 배치 응답 일시 누락) `reconcile.build_schedule` 이 `archive.json` 으로
+`reason:"removed"` 이관한다. archive 는 `video_id` dedupe 라 되돌리기가 지저분하므로,
+
+→ 마지막으로 본 지(`last_updated` 기준) **`STALE_REMOVE_SEC`(6.5시간, light tick 2회분+여유)**
+미만이면 **유예**: 마지막으로 알려진 상태 그대로 `schedule.json` 에 유지하고 archive 하지 않는다.
+그 시간 이상 연속으로 누락돼야 진짜 삭제로 보고 이관한다.
+
+- `liveBroadcastContent == "none"`(+`actualEndTime` → `ended`, 없으면 `canceled`)은 YouTube 의
+  명시 신호이므로 **유예 없이 즉시** archive. "응답에서 통째로 사라짐" 만 애매해서 유예 대상.
+- 유예 중엔 `last_updated` 를 갱신하지 않는다(`_stable_view` 가 무시하는 필드라 불필요 커밋 없음).

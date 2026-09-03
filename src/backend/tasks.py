@@ -31,30 +31,28 @@ def _to_iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _build_task(cfg, video_id: str, schedule_time_iso: str) -> dict:
+def _build_task(
+    cfg,
+    *,
+    path: str,
+    body: dict,
+    name_key: str,
+    schedule_time_iso: str,
+) -> dict:
     """순수 함수. Cloud Tasks task dict 생성.
 
     Args:
         cfg: 객체 또는 dict. .project, .location, .queue, .target_url, .invoker_sa 속성/키 필요.
              또는 self (TaskQueue 인스턴스) 전달 가능.
-        video_id: 방송 ID.
+        path: Cloud Run 라우트 ("/wake" 또는 "/tick").
+        body: JSON 직렬화할 요청 바디 (예: {"video_id": "..."} 또는 {"mode": "light"}).
+        name_key: 태스크 이름 접두 (예: "wake-<video_id>", "tick-light"). 뒤에 "-{분버킷}" 이 붙는다.
         schedule_time_iso: 태스크 실행 시각 (ISO 'Z' 형식).
 
     Returns:
-        tasks_v2.Task 로 변환 가능한 dict:
-        {
-          "name": f"{queue_path}/tasks/wake-{video_id}-{bucket}",
-          "schedule_time": {"seconds": ...},
-          "http_request": {
-            "http_method": "POST",
-            "url": f"{target_url}/wake",
-            "headers": {"Content-Type": "application/json"},
-            "body": ...,
-            "oidc_token": {"service_account_email": ..., "audience": ...},
-          },
-        }
+        tasks_v2.Task 로 변환 가능한 dict.
 
-    bucket = schedule_time epoch초 // 60 (분 버킷) — 같은 시각 재시도는 dedupe.
+    bucket = schedule_time epoch초 // 60 (분 버킷) — 같은 이름·같은 분 재시도는 dedupe(AlreadyExists).
     """
     # cfg 에서 필드 추출
     if isinstance(cfg, dict):
@@ -78,24 +76,16 @@ def _build_task(cfg, video_id: str, schedule_time_iso: str) -> dict:
     epoch_seconds = int(dt.timestamp())
     bucket = epoch_seconds // 60
 
-    # task name: wake-{video_id}-{bucket}
-    task_name = f"{queue_path}/tasks/wake-{video_id}-{bucket}"
-
-    # schedule_time protobuf Timestamp dict 형식
-    # (google-cloud-tasks 로드 시, 실제 Timestamp 객체로 변환되지만, dict로도 가능)
-    schedule_time_dict = {"seconds": epoch_seconds}
-
-    # http_request body
-    body_bytes = json.dumps({"video_id": video_id}).encode()
+    task_name = f"{queue_path}/tasks/{name_key}-{bucket}"
 
     task_dict = {
         "name": task_name,
-        "schedule_time": schedule_time_dict,
+        "schedule_time": {"seconds": epoch_seconds},
         "http_request": {
             "http_method": "POST",
-            "url": f"{target_url}/wake",
+            "url": f"{target_url}{path}",
             "headers": {"Content-Type": "application/json"},
-            "body": body_bytes,
+            "body": json.dumps(body).encode(),
             "oidc_token": {
                 "service_account_email": invoker_sa,
                 "audience": target_url,
@@ -145,36 +135,47 @@ class TaskQueue:
             self.client = client
 
     def enqueue_wake(self, video_id: str, schedule_time_iso: str) -> str:
-        """Cloud Tasks 큐에 wake 태스크 등록.
+        """Cloud Tasks 큐에 방송별 wake 태스크(`POST /wake {video_id}`) 등록.
 
-        Args:
-            video_id: 방송 ID.
-            schedule_time_iso: 태스크 실행 시각 (ISO 'Z' 형식).
-
-        Returns:
-            생성된 task.name (또는 AlreadyExists 시 유추 name).
-
-        Raises:
-            RuntimeError: 예외 발생 시.
+        Returns: 생성된 task.name (AlreadyExists 시 유추 name).
+        Raises: RuntimeError.
         """
+        return self._enqueue(
+            path="/wake",
+            body={"video_id": video_id},
+            name_key=f"wake-{video_id}",
+            schedule_time_iso=schedule_time_iso,
+        )
+
+    def enqueue_tick(self, mode: str, schedule_time_iso: str) -> str:
+        """Cloud Tasks 큐에 후속 tick 태스크(`POST /tick {mode}`) 등록.
+
+        방송이 방금 끝났을 때 handlers 가 "곧이어 다른 방송이 시작됐나" 를 3h light tick 을
+        기다리지 않고 ~20분 뒤에 한 번 더 훑도록 쓴다. 이름이 `tick-{mode}-{분버킷}` 이라
+        한 tick 에서 여러 방송이 끝나도 후속 tick 은 1개로 dedupe 된다.
+        """
+        return self._enqueue(
+            path="/tick",
+            body={"mode": mode},
+            name_key=f"tick-{mode}",
+            schedule_time_iso=schedule_time_iso,
+        )
+
+    def _enqueue(self, *, path: str, body: dict, name_key: str, schedule_time_iso: str) -> str:
         queue_path = self.client.queue_path(self.project, self.location, self.queue)
+        task_dict = _build_task(
+            self, path=path, body=body, name_key=name_key, schedule_time_iso=schedule_time_iso
+        )
 
-        # 순수 함수로 task dict 생성
-        task_dict = _build_task(self, video_id, schedule_time_iso)
-
-        # tasks_v2.Task 로 변환 (dict → proto)
         if tasks_v2 is None:
             raise RuntimeError("google-cloud-tasks not installed")
 
         task = tasks_v2.Task(task_dict)
-
         try:
             response = self.client.create_task(request={"parent": queue_path, "task": task})
-            task_name = response.name
-            logger.info(f"Enqueued task: {task_name}")
-            return task_name
+            logger.info(f"Enqueued task: {response.name}")
+            return response.name
         except ga_exceptions.AlreadyExists:
-            # 같은 시각, 같은 video_id → 유추된 name 반환 + 로그
             inferred_name = task_dict["name"]
             logger.info(f"Task already exists (dedupe): {inferred_name}")
             return inferred_name
@@ -203,10 +204,19 @@ if __name__ == "__main__":
         "invoker_sa": "invoker@test-project.iam.gserviceaccount.com",
     }
 
-    # Test 1: 기본 형식 검증
-    task = _build_task(mock_cfg, "video123", "2026-09-01T12:00:00Z")
-    assert task["name"] == "projects/test-project/locations/asia-northeast1/queues/test-queue/tasks/wake-video123-1725191040", \
-        f"Unexpected name: {task['name']}"
+    def wake_task(cfg, vid, when):
+        return _build_task(cfg, path="/wake", body={"video_id": vid},
+                           name_key=f"wake-{vid}", schedule_time_iso=when)
+
+    _WHEN = "2026-09-01T12:00:00Z"
+    _BUCKET = int(_parse_iso(_WHEN).timestamp()) // 60
+
+    # Test 1: wake 기본 형식 검증
+    task = wake_task(mock_cfg, "video123", _WHEN)
+    assert task["name"] == (
+        "projects/test-project/locations/asia-northeast1/queues/test-queue"
+        f"/tasks/wake-video123-{_BUCKET}"
+    ), f"Unexpected name: {task['name']}"
     assert task["http_request"]["http_method"] == "POST"
     assert task["http_request"]["url"] == "https://example.com/wake"
     assert task["http_request"]["headers"]["Content-Type"] == "application/json"
@@ -222,17 +232,29 @@ if __name__ == "__main__":
     print("[OK] schedule_time format check passed")
 
     # Test 3: 같은 시각, 다른 video_id → 다른 name (bucket은 같음)
-    task2 = _build_task(mock_cfg, "video456", "2026-09-01T12:00:00Z")
+    task2 = wake_task(mock_cfg, "video456", _WHEN)
     assert task2["name"] != task["name"], "Different video_id should produce different name"
     assert "wake-video456" in task2["name"]
     print("[OK] Different video_id produces different task name")
 
     # Test 4: 다른 시각 → 다른 bucket
-    task3 = _build_task(mock_cfg, "video123", "2026-09-01T12:01:00Z")
+    task3 = wake_task(mock_cfg, "video123", "2026-09-01T12:01:00Z")
     assert task3["name"] != task["name"], "Different schedule_time should produce different name"
     print("[OK] Different schedule_time produces different task name")
 
-    # Test 5: TaskQueue 인스턴스를 cfg로 전달
+    # Test 5: tick 태스크 — /tick 라우트, {mode} 바디, tick-{mode}-{bucket} 이름
+    tick = _build_task(mock_cfg, path="/tick", body={"mode": "light"},
+                       name_key="tick-light", schedule_time_iso=_WHEN)
+    assert tick["http_request"]["url"] == "https://example.com/tick"
+    assert json.loads(tick["http_request"]["body"].decode()) == {"mode": "light"}
+    assert tick["name"].endswith(f"/tasks/tick-light-{_BUCKET}"), tick["name"]
+    # 같은 분에 여러 번 → 같은 이름 → Cloud Tasks 가 dedupe
+    tick_again = _build_task(mock_cfg, path="/tick", body={"mode": "light"},
+                             name_key="tick-light", schedule_time_iso="2026-09-01T12:00:30Z")
+    assert tick_again["name"] == tick["name"], "같은 분 tick 은 이름이 같아야(dedupe)"
+    print("[OK] tick task format + minute-bucket dedupe")
+
+    # Test 6: TaskQueue 인스턴스를 cfg로 전달
     class MockClient:
         def queue_path(self, project, location, queue):
             return f"projects/{project}/locations/{location}/queues/{queue}"
@@ -245,8 +267,7 @@ if __name__ == "__main__":
         invoker_sa="invoker@test-project.iam.gserviceaccount.com",
         client=MockClient(),
     )
-
-    task4 = _build_task(tq, "video789", "2026-09-01T12:00:00Z")
+    task4 = wake_task(tq, "video789", "2026-09-01T12:00:00Z")
     assert "wake-video789" in task4["name"]
     print("[OK] TaskQueue instance as cfg works")
 
