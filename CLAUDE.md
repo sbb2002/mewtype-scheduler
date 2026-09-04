@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/plan/v2_3_x_relay.md`, 핸드오프 `docs/plan/v2_3_handoff.md`
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
   **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
+- **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/plan/v2_5_admin_commands.md`
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
@@ -62,6 +63,8 @@ src/
     control.py         # (v2.1) control.json 스키마 (paused)
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
+                       #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
+    admin.py           # (v2.5) admin_state.json 스키마 (pending_del/undo 슬롯) — 순수
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
                        #        (v2.4) 합동방송 host="group" + URL 캡처 · parse_appearance(出演情報 계열)
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
@@ -71,7 +74,8 @@ config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handl
 fixtures/              # schedule.sample.json(프론트/로직 공용), rss_arale.xml(파싱 테스트)
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
 data 브랜치             # schedule.json + archive.json + pending.json + control.json(v2.1)
-                       #   + ingest_queue.json(v2.4 — ECHO/DRY-RUN 중 받은 트윗, 실배포 전환 시 drain). 코드 없음
+                       #   + ingest_queue.json(v2.4 — ECHO/DRY-RUN 중 받은 트윗, 실배포 전환 시 drain)
+                       #   + admin_state.json(v2.5 — pending_del/undo 슬롯). 코드 없음
 ```
 
 ## 명령
@@ -91,6 +95,8 @@ python -m src.backend.xrelay         # (v2.3/2.4) X 스케줄 트윗 파서 — 
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
+python -m src.backend.admin          # (v2.5) admin_state.json 헬퍼 (pending_del/undo)
+python -m src.backend.telegram_app   # /list /del /undo 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
 
 # v2 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
