@@ -171,21 +171,30 @@ def _sorted_unit_broadcasts(schedule: dict, unit: str) -> list[dict]:
     )
 
 
-def _time_range_text(b: dict) -> str:
-    """방송 1건의 표시용 시간 범위. (v2.5)
+def _kst_to_md(dt: Optional[datetime]) -> Optional[str]:
+    """datetime(KST) → "M/D" 문자열. None이면 None."""
+    if dt is None:
+        return None
+    return f"{dt.month}/{dt.day}"
 
-    live = "HH:MM~ (진행중)", scheduled = "HH:MM~HH:MM(예상)"(expires_at 기준),
-    그 외(upcoming 등, 종료 미정) = "HH:MM~".
+
+def _time_range_text(b: dict) -> str:
+    """방송 1건의 표시용 날짜+시간 범위. (v2.5)
+
+    live = "M/D HH:MM~ (진행중)", scheduled = "M/D HH:MM~HH:MM(예상)"(expires_at 기준),
+    그 외(upcoming 등, 종료 미정) = "M/D HH:MM~". 날짜는 시작 시각(KST) 기준.
     """
-    start_hm = _kst_to_hm(_parse_iso_to_kst(b.get("scheduled_start"))) or "?"
+    start_kst = _parse_iso_to_kst(b.get("scheduled_start"))
+    start_md = _kst_to_md(start_kst) or "?"
+    start_hm = _kst_to_hm(start_kst) or "?"
     status = b.get("status")
     if status == "live":
-        return f"{start_hm}~ (진행중)"
+        return f"{start_md} {start_hm}~ (진행중)"
     if status == "scheduled":
         end_hm = _kst_to_hm(_parse_iso_to_kst(b.get("expires_at")))
         if end_hm:
-            return f"{start_hm}~{end_hm}(예상)"
-    return f"{start_hm}~"
+            return f"{start_md} {start_hm}~{end_hm}(예상)"
+    return f"{start_md} {start_hm}~"
 
 
 def _format_list_text(channels_cfg: dict, schedule: dict, unit: str = "") -> str:
