@@ -12,23 +12,30 @@
 
 ### 외부 · 운영자 폰
 - **Android · Automate** — 운영자가 `@BDP_yumemita` 를 팔로우. 삼성 브라우저 웹푸시 알림이 뜨면
-  "HTTP Request" 블록이 `POST /ingest` (`X-Ingest-Secret` 헤더). Content body 식:
+  "HTTP Request" 블록이 `POST /ingest` (`X-Ingest-Secret` 헤더). Content body 식
+  (**커밋 `1c21d9a` 기준 — 이걸 그대로 쓴다**):
   ```
-  urlEncode({"text": nmsg || nticker || ntitle || ""})
+  urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})
   ```
-  - Automate 문자열 연결은 `++` (‘+’는 산술 → `NaN`). `urlEncode(딕셔너리)` 가 `key=value&key=value`
-    로 만들어 줌 → `text=` 접두어·URL 인코딩 자동.
-  - **`||` 를 써야 함, `coalesce` 아님.** `coalesce` 는 `null` 만 건너뛰는데 필드가 `null` 이 아니라
-    **빈 문자열 `""`** 로 오는 경우가 있어(내용 있는 알림인데도) 거기서 멈춘다. `||` 는 null·빈 문자열
-    둘 다 건너뛰고 첫 truthy 반환 (LlamaLab 공식 문서: `null || 0 || "Hi"` → `"Hi"`).
-  - `nx["android.bigText"]` 는 뺐다 — 이 기기(SM-S911N)에서 매번 비어있었고(도움된 적 0),
-    `nx["..."]` 서브스크립트가 body 식 파스 에러(`Expected ')' but found NAME`)의 원인이기도 했다.
-  - 실측: 알림 내용은 **`nmsg`(= `android.text` extra)** 에 온다. `nmsg` 가 232자 여러 줄 전문도
-    그대로 담았다(잘림 없음). `nticker` 는 안 씀. `ntitle` = 다운로드면 파일명, X 면 계정명.
-    `Notification Posted` 트리거 출력: message→`nmsg`, title→`ntitle` (둘 다 유효 변수).
+  - **`coalesce` 를 쓴다, `||` 아님.** 이 폰 Automate 빌드에서 `||` 는 문자열 피연산자에
+    **매번 빈값**을 뱉는다. `coalesce` 는 `nx["android.bigText"]` → `nx["android.text"]` → …
+    순서로 물어 트윗 본문(여러 줄 전문 포함)을 그대로 가져온다. (2026-09-04 부계정 트윗으로 확정.)
+  - **⚠️ 이 빌드의 `urlEncode({"text": expr})` 버그**: 딕셔너리를 `key=value` 로 만들 때 `expr`
+    의 **값이 `text` 의 값이 아니라 키 자리로 샌다**. 즉 실제로 전송되는 body 는
+    `<URL인코딩된 트윗본문>=` (값은 빈 문자열, `text` 키는 없음).
+  - **백엔드 우회** (`telegram_app.py` `_ingest`, `# ponytail:` 표시): `text` 값이 비었고
+    (`text`/`title` 외) 정체불명 폼 키가 딱 하나, 그 값도 비어 있으면 → **그 키 이름을 원문으로
+    복구**한다. Flask 가 폼 키를 URL 디코드하므로 개행·일본어·`#`·`=`·`&` 다 관통. `xrelay.parse`
+    는 평소대로 동작. 폰에서 `"text=" ++ urlEncode(...)` 로 제대로 보낼 수 있게 되면 이 블록 삭제.
+  - `++` 는 이 빌드에서도 정상(문자열 연결). `+` 는 산술 → `NaN`. `arrayJoin`/`arrayLength` 등은
+    이 빌드에 없는 함수 (`join(c,delim)` + `#` 연산자가 정식이나 이 경로에선 안 씀).
+  - 실측: 트윗 본문은 `nx["android.bigText"]` / `nx["android.text"]` 에 온다. 232자 여러 줄 전문도
+    잘림 없이 담긴다. `nticker` 안 씀. `ntitle` = 다운로드면 파일명, X 면 계정명.
+    X **원글**(팔로우 계정 새 글) 알림은 `InboxStyle` 이고 트리거 발화 시점엔 `textLines` 가
+    빈 배열 → 본문 못 잡는 경우가 있다. **리트윗·인용 알림**은 본문이 extra 에 실려 관통.
   - `@BDP_yumemita` 알림엔 **본인 글 + 리트윗**(BanG Dream 홍보 계정)이 섞여 온다(본문이 `@원계정: …`).
-  - 내용 없는 알림(X 요약/미디어/갱신)은 `||` 가 `""` → `text=` 빈값 → 백엔드가 `looks_relayable`
-    False 로 무시. 무해.
+  - 내용 없는 알림(X 요약/미디어/갱신)은 body 가 빈 폼 키조차 안 만들거나 `text` 빈값 → 백엔드
+    `looks_relayable` False 로 무시. 무해.
   - 테스트 기간엔 폰 필터 생략, **실배포 시 본문 마커 `配信スケジュール`/`出演情報` 로 필터 복원**
     (발신자 한정은 리트윗을 못 거름).
 - **운영자 Telegram DM** — ECHO 원문 + `tail_ok`(말미 고정문구 `※時刻は予告なく変更…` 도착 여부) /
@@ -66,10 +73,11 @@
 
 ---
 
-## 0. 지금 상태 (2026-09-03 저녁 기준)
+## 0. 지금 상태 (2026-09-04 기준)
 
-- `mewtype-telegram` = `-00012` · **테스트 모드**. env `INGEST_ECHO=1`, `INGEST_DRY_RUN=1`.
-  `main`(PR #8 `parse_appearance` 포함)으로 재배포됨.
+- `mewtype-telegram` · **테스트 모드**. env `INGEST_ECHO=1`, `INGEST_DRY_RUN=1`.
+  **폼 키→원문 복구 우회 포함해 재배포됨** (2026-09-04). 부계정 트윗으로 ECHO DM `text` 영역에
+  본문 관통 확인.
   - `/ingest` 는 파싱·저장을 안 한다. 받은 텍스트를 DM 으로 돌려주고(`말미문구 ✅/❌`),
     `ingest ECHO: len=.. clen=.. tail_ok=..` 로그를 남기고, 스케줄/출연 트윗이면
     (`xrelay.looks_relayable`) `data` 브랜치 `ingest_queue.json` 에 원문을 적재한다.
@@ -78,25 +86,30 @@
   단 `schedule.json` 에 그런 행이 없어 화면 변화는 아직 없음.
 - **아직 프로덕션 `schedule.json` 엔 X 릴레이 유래 행이 하나도 없다. 큐도 비어있다.**
 
-### 폰(Automate) 상태 — 2026-09-03 밤 디버깅 완료
+### 폰(Automate) 상태 — 2026-09-04 body 식 확정 (커밋 `1c21d9a` 기준)
 
 - 테스트 기간 동안 **`Expression true?` 필터를 생략**하고 삼성 브라우저 알림을 전부
   `/ingest` 로 보낸다 (다운로드·리트윗 등 잡 알림도 옴 — ECHO 라 무해, `looks_relayable` 가 큐를 막음).
-- **HTTP Request 블록 Content body 식** (운영용, 확정):
+- **HTTP Request 블록 Content body 식** (운영용, 확정 — 커밋 `1c21d9a` 그대로):
   ```
-  urlEncode({"text": nmsg || nticker || ntitle || ""})
+  urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})
   ```
-  거쳐온 함정 (전부 Automate 식 문법):
+  거쳐온 함정 (전부 이 폰 Automate 빌드 특유):
   - `NaN` 만 보내던 버그: 문자열 연결은 `+` 가 아니라 **`++`** (`+` 는 산술).
-  - `coalesce` → `Expected ')' but found NAME` 파스 에러 + `""` 를 값으로 취급 → **`||`** 로.
-  - `nx["android.bigText"]` 는 제거 (항상 빔 + 서브스크립트가 파스 에러 요인).
-  - `urlEncode(딕셔너리)` → `key=value&key=value` (`text=` 접두어·URL 인코딩 자동).
-- **필드 실측** (SM-S911N, ECHO 진단 body `T=[…]M=[…]` 로 확인):
-  - 알림 내용은 `nmsg` (= `android.text` extra) 에 온다. `nx["android.bigText"]` 는 비거나 `""`.
-  - `nmsg` 가 232자·12줄 트윗 전문을 그대로 담았다 → 이 길이까진 잘림 없음.
-  - `nticker` 안 씀. `ntitle` = 다운로드면 파일명 / X 면 계정명. `ntitle` 도 유효 변수.
-  - 내용 없는 알림(X 요약/미디어/갱신 이벤트): 전 필드 빈값 → `||` → `""` → `text=` 빈값 전송
-    → 백엔드 `looks_relayable` False 로 무시. (로그: `ingest ECHO: len=0 clen=5`)
+  - **`||` 는 매번 빈값**을 뱉었다 → `coalesce` 로 전환. `coalesce` 는 정상 동작
+    (2026-09-04 부계정 트윗으로 확인 — text 영역에 본문 정확히 관통).
+  - **`urlEncode({"text": expr})` 의 값이 키 자리로 샌다**: 실제 전송 body 는
+    `<URL인코딩된 본문>=` (`text` 키 없음, 값 빔). → **백엔드가 폼 키에서 원문 복구**
+    (`telegram_app.py` `_ingest`, `# ponytail:`). `text` 값이 비고 정체불명 키 1개+그 값도
+    비면 키 이름을 `raw` 로. self-test `[Test 5] ✓ 폼 키로 온 원문 복구`.
+  - `arrayJoin`/`arrayLength` = 없는 함수. `join(c,delim)`+`#` 이 정식이나 이 경로에선 불필요.
+- **필드 실측** (ECHO 진단으로 확인):
+  - 트윗 본문은 `nx["android.bigText"]` / `nx["android.text"]` 에 온다. 232자·12줄 전문도 잘림 없음.
+  - `nticker` 안 씀. `ntitle` = 다운로드면 파일명 / X 면 계정명.
+  - **X 원글**(팔로우 계정 새 글) 알림 = `android.template` `InboxStyle`, 트리거 시점 `textLines`
+    빈 배열 → 본문 못 잡는 케이스 있음. **리트윗·인용**은 extra 에 실려 관통.
+  - 내용 없는 알림(X 요약/미디어/갱신): 폼 키조차 안 생기거나 `text` 빈값 → 백엔드
+    `looks_relayable` False 로 무시. (로그: `ingest ECHO: len=0`)
 
 ## 1. 전환 전 확인 — 웹푸시 잘림 (#1)
 
@@ -238,7 +251,7 @@ gcloud run services update mewtype-telegram --region asia-northeast1 \
 | | |
 |---|---|
 | 파서·머지 | `src/backend/xrelay.py` (`parse` / `parse_bdp_schedule` / `parse_appearance`, `merge_scheduled`, `looks_relayable`) |
-| `/ingest`·큐 | `src/backend/telegram_app.py` (`_ingest_queue_push/_drain`, `_merge_rows_into_schedule`) |
+| `/ingest`·큐 | `src/backend/telegram_app.py` (`_ingest` — 폼 키→원문 복구 `# ponytail:`, `_ingest_queue_push/_drain`, `_merge_rows_into_schedule`) |
 | 보존·정리 | `src/collector/reconcile.py` (`build_schedule` scheduled 블록) |
 | 프론트 | `src/frontend/js/render.js` (`createCard` scheduled/collab, `renderBoard` 팬아웃), `css/card.css` |
 | 계약 | `docs/IMPLEMENTATION.md` §1-1 (scheduled 행 스키마, `host` 필드) |

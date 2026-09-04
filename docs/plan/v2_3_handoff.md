@@ -50,13 +50,15 @@ node --check src/frontend/js/render.js
     → HTTP request           POST <telegram>/ingest
                              content-type: application/x-www-form-urlencoded
                              headers(dict, 이 빌드는 {} 표기): {"X-Ingest-Secret": "<INGEST_SECRET>"}
-                             body: "text=" + urlEncode(coalesce(nx["android.bigText"],
-                                     nx["android.text"], nmsg, nticker))
-                                   + "&title=" + urlEncode(coalesce(ntitle, ""))
+                             body: urlEncode({"text": coalesce(nx["android.bigText"],
+                                     nx["android.text"], nmsg, nticker, "")})
+                                   ── 커밋 1c21d9a 기준. 현행 상세는 v2_4_golive.md
     → (루프백) Notification posted?
   ```
-  - 검증됨: curl `/ingest` DRY-RUN `{"parsed":3}` + DM, 폰 인증 403→통과(빈 다운로드 알림 400 은 정상).
-  - **아직 안 됨**: 실물 `配信スケジュール` 트윗 왕복 (트윗 대기 중).
+  - **이 빌드 특성** (2026-09-04 확정): `||` 는 빈값만 뱉음 → `coalesce` 사용.
+    `urlEncode({"text": expr})` 가 값을 키 자리로 흘림 → 전송 body 는 `<본문>=` 꼴.
+    백엔드(`telegram_app.py` `_ingest`, `# ponytail:`)가 폼 키에서 원문 복구. 부계정 트윗으로 관통 확인.
+  - **아직 안 됨**: 실물 `配信スケジュール` 트윗 왕복 (잘림 여부 확인 → `INGEST_ECHO=0,INGEST_DRY_RUN=0`).
 
 ---
 
