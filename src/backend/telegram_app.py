@@ -172,10 +172,14 @@ def _sorted_unit_broadcasts(schedule: dict, unit: str) -> list[dict]:
 
 
 def _kst_to_md(dt: Optional[datetime]) -> Optional[str]:
-    """datetime(KST) → "M/D" 문자열. None이면 None."""
+    """datetime(KST) → "YYYY/M/D" 문자열. None이면 None.
+
+    준영구 "대기소" 프레임처럼 `scheduled_start` 가 1~2년 뒤인 항목도 섞여 들어오므로
+    (CLAUDE.md 주의점) 연도를 생략하지 않는다.
+    """
     if dt is None:
         return None
-    return f"{dt.month}/{dt.day}"
+    return f"{dt.year}/{dt.month}/{dt.day}"
 
 
 def _time_range_text(b: dict) -> str:
