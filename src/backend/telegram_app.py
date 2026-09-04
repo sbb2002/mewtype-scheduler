@@ -46,6 +46,11 @@ try:
 except ImportError:
     xrelay = None
 
+try:
+    from . import admin
+except ImportError:
+    admin = None
+
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -55,6 +60,12 @@ from .control import (
     set_paused,
 )
 from .gh_store import ConflictError, GitHubStore
+
+# admin_state.json 경로 (v2.5 — /list /del /ingest /undo 수동 관리 명령)
+_ADMIN_STATE_PATH = "admin_state.json"
+_UNIT_KEYS = ("arale", "yuno", "nonoka", "ritsu", "miyako")
+_STATUS_RANK = {"live": 0, "upcoming": 1, "scheduled": 2}
+_STATUS_BADGE = {"live": "🔴", "upcoming": "🟢", "scheduled": "🕊"}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("telegram_app")
@@ -144,6 +155,77 @@ def _parse_iso_to_kst(iso_str: Optional[str]) -> Optional[datetime]:
         return utc_dt.astimezone(KST)
     except Exception:
         return None
+
+
+def _sorted_unit_broadcasts(schedule: dict, unit: str) -> list[dict]:
+    """schedule['broadcasts'] 중 unit 이 당사자(본인 채널 또는 합동 참여)인 항목,
+    상태(live→upcoming→scheduled)·시각순 정렬. (v2.5 /list /del)"""
+    broadcasts = schedule.get("broadcasts", []) or []
+    items = [
+        b for b in broadcasts
+        if b.get("channel_key") == unit or unit in (b.get("collab_with") or [])
+    ]
+    return sorted(
+        items,
+        key=lambda b: (_STATUS_RANK.get(b.get("status"), 9), b.get("scheduled_start") or ""),
+    )
+
+
+def _time_range_text(b: dict) -> str:
+    """방송 1건의 표시용 시간 범위. (v2.5)
+
+    live = "HH:MM~ (진행중)", scheduled = "HH:MM~HH:MM(예상)"(expires_at 기준),
+    그 외(upcoming 등, 종료 미정) = "HH:MM~".
+    """
+    start_hm = _kst_to_hm(_parse_iso_to_kst(b.get("scheduled_start"))) or "?"
+    status = b.get("status")
+    if status == "live":
+        return f"{start_hm}~ (진행중)"
+    if status == "scheduled":
+        end_hm = _kst_to_hm(_parse_iso_to_kst(b.get("expires_at")))
+        if end_hm:
+            return f"{start_hm}~{end_hm}(예상)"
+    return f"{start_hm}~"
+
+
+def _format_list_text(channels_cfg: dict, schedule: dict, unit: str = "") -> str:
+    """/list 응답 본문. unit 비우면 5채널 전체. (v2.5)"""
+    chan = channels_cfg.get("channels", {})
+    units = [unit] if unit else list(_UNIT_KEYS)
+    blocks = []
+    for u in units:
+        name = chan.get(u, {}).get("name_ko", u)
+        lines = [f"<b>{name}</b> ({u})"]
+        items = _sorted_unit_broadcasts(schedule, u)
+        if not items:
+            lines.append("· (없음)")
+        else:
+            for i, b in enumerate(items, start=1):
+                badge = _STATUS_BADGE.get(b.get("status"), "❔")
+                title = (b.get("title") or xrelay.KIND_KO.get(b.get("kind"), "")) if xrelay else (b.get("title") or "")
+                title_part = f" 「{title[:20]}」" if title else ""
+                collab_part = " (합동)" if b.get("host") == "group" else ""
+                lines.append(f"#{i} {badge} {_time_range_text(b)}{title_part}{collab_part}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def _save_undo(gh: GitHubStore, *, action: str, prev_content: dict, new_sha, now_iso: str) -> None:
+    """schedule.json 을 바꾼 직후 admin_state.json 에 undo 스냅샷 기록. 실패해도 본 작업은 막지 않음."""
+    if admin is None:
+        return
+    try:
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = admin.set_undo(
+            state or admin.default_admin_state(),
+            action=action, prev_content=prev_content, new_sha=new_sha, now_iso=now_iso,
+        )
+        gh.write_json(
+            _ADMIN_STATE_PATH, state, prev_sha=sha,
+            message=f"data: undo snapshot ({action}) {now_iso}",
+        )
+    except Exception:
+        log.exception("undo 스냅샷 저장 실패 (무시 — /undo 만 이번 건 불가해짐)")
 
 
 def _build_status_text(
@@ -466,19 +548,55 @@ _INGEST_QUEUE_MAX = 30       # data 브랜치 파일 비대 방지 (일일 트�
 _INGEST_RAW_CAP = 8000       # 저장 원문 상한
 
 
-def _merge_rows_into_schedule(gh, rows, now_iso, message) -> bool:
-    """rows 를 merge_scheduled 로 schedule.json 에 반영 (base-sha 충돌 시 1회 재시도)."""
+def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = None) -> bool:
+    """rows 를 merge_scheduled 로 schedule.json 에 반영 (base-sha 충돌 시 1회 재시도).
+
+    실제로 변경됐으면 admin_state.json 에 undo 스냅샷을 남긴다(v2.5, `action` 없으면 `message` 사용).
+    """
     changed = False
+    prev = new_sha = None
     for attempt in (1, 2):
         prev, sha = gh.read_json("schedule.json")
         merged = xrelay.merge_scheduled(prev or {}, rows, now_iso)
         try:
-            changed, _ = gh.write_json("schedule.json", merged, prev_sha=sha, message=message)
+            changed, new_sha = gh.write_json("schedule.json", merged, prev_sha=sha, message=message)
             break
         except ConflictError:
             if attempt == 2:
                 raise
             log.warning("ingest: schedule.json 충돌 — 재계산 후 재시도")
+    if changed:
+        _save_undo(gh, action=action or message, prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
+    return changed
+
+
+def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
+    """snapshot 과 정확히 일치하는 broadcasts[] 항목 1개를 제거 (v2.5 /del).
+
+    그 사이 항목이 바뀌었거나 이미 없으면(다른 실행이 먼저 건드림) False — 아무것도 안 지운다.
+    base-sha 충돌 시 1회 재시도.
+    """
+    changed = False
+    prev = new_sha = None
+    for attempt in (1, 2):
+        prev, sha = gh.read_json("schedule.json")
+        prev = prev or {}
+        broadcasts = prev.get("broadcasts", []) or []
+        match_i = next((i for i, b in enumerate(broadcasts) if b == snapshot), None)
+        if match_i is None:
+            return False
+        new_sched = dict(prev)
+        new_sched["broadcasts"] = broadcasts[:match_i] + broadcasts[match_i + 1:]
+        new_sched["generated_at"] = now_iso
+        try:
+            changed, new_sha = gh.write_json("schedule.json", new_sched, prev_sha=sha, message=f"data: {action} {now_iso}")
+            break
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("del: schedule.json 충돌 — 재계산 후 재시도")
+    if changed:
+        _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
     return changed
 
 
@@ -534,6 +652,169 @@ def _ingest_queue_drain(gh, now_iso: str) -> tuple[int, int]:
     return applied, total_rows
 
 
+# ── v2.5 수동 관리 명령: /list /del /ingest(=/add) /undo ────────────────
+
+def _handle_list(gh, channels_cfg: dict, arg: str) -> None:
+    """/list [unit] — 현재 리스트업된 방송을 유닛별 idx 로 보여줌."""
+    try:
+        unit = arg.strip().lower()
+        if unit and unit not in _UNIT_KEYS:
+            _send_telegram(f"⚠️ 알 수 없는 유닛: {unit}\n택: {', '.join(_UNIT_KEYS)} (생략 시 전체)")
+            return
+        schedule = _load_config_dict(gh, "schedule.json")
+        text = _format_list_text(channels_cfg, schedule, unit)
+        _send_telegram(text or "(방송 없음)")
+    except Exception as e:
+        log.exception("Error handling /list")
+        _send_telegram(f"⚠️ 오류: /list 처리 실패\n{str(e)[:100]}")
+
+
+def _handle_del_request(gh, channels_cfg: dict, now_iso: str, unit_arg: str, idx_arg: str) -> None:
+    """/del <unit> <idx> — 삭제 확인 대기 상태로 등록 + 경고 DM(y/N 대기)."""
+    try:
+        unit = (unit_arg or "").strip().lower()
+        if unit not in _UNIT_KEYS:
+            _send_telegram(f"⚠️ 사용법: /del <유닛> <번호>\n유닛: {', '.join(_UNIT_KEYS)} (번호는 /list 로 확인)")
+            return
+        try:
+            idx = int((idx_arg or "").strip())
+        except ValueError:
+            _send_telegram("⚠️ 사용법: /del <유닛> <번호>  (번호는 /list 로 확인)")
+            return
+
+        schedule = _load_config_dict(gh, "schedule.json")
+        items = _sorted_unit_broadcasts(schedule, unit)
+        if idx < 1 or idx > len(items):
+            _send_telegram(f"⚠️ {unit} 에 #{idx} 항목이 없습니다. /list {unit} 로 확인하세요.")
+            return
+        b = items[idx - 1]
+        name = channels_cfg.get("channels", {}).get(unit, {}).get("name_ko", unit)
+
+        warn = f"#{idx} {name}의 {_time_range_text(b)} 방송예고를 내리시겠습니까?"  # warn_deltry
+        if b.get("status") in ("upcoming", "live"):
+            warn += "\n해당 예고는 감지기능으로 다시 되살아날 수 있습니다."          # warn_live
+        warn += "\n그래도 지우시겠습니까? (y/N)"
+
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = admin.set_pending_del(
+            state or admin.default_admin_state(),
+            unit=unit, idx=idx, snapshot=b, warn_text=warn, now_iso=now_iso,
+        )
+        gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: /del 확인대기 {unit}#{idx} {now_iso}")
+        _send_telegram(warn)
+    except Exception as e:
+        log.exception("Error handling /del")
+        _send_telegram(f"⚠️ 오류: /del 처리 실패\n{str(e)[:100]}")
+
+
+def _handle_del_confirm(gh, now_iso: str, yes: bool) -> None:
+    """대기 중인 /del 요청에 대한 (y/N) 답변 처리."""
+    try:
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = state or admin.default_admin_state()
+        pending = admin.get_pending_del(state)
+        if not pending or admin.pending_del_expired(pending, now_iso):
+            state = admin.clear_pending_del(state)
+            gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: /del 대기 정리(만료) {now_iso}")
+            _send_telegram("⌛ 대기 중인 삭제 요청이 없습니다(만료됨). /del 로 다시 시도하세요.")
+            return
+
+        if not yes:
+            state = admin.clear_pending_del(state)
+            gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: /del 취소 {now_iso}")
+            _send_telegram("↩️ 취소했습니다.")
+            return
+
+        unit, idx, snapshot = pending["unit"], pending["idx"], pending["snapshot"]
+        action = f"/del {unit}#{idx}"
+        removed = _remove_broadcast(gh, snapshot, now_iso, action)
+
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = admin.clear_pending_del(state or admin.default_admin_state())
+        gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: /del 완료 {now_iso}")
+
+        if removed:
+            _send_telegram(f"🗑 {action} 반영됨. /undo 로 되돌릴 수 있습니다.")
+        else:
+            _send_telegram(f"⚠️ {action} 실패 — 그 사이 항목이 바뀌거나 사라졌습니다. /list 로 확인하세요.")
+    except Exception as e:
+        log.exception("Error handling /del confirm")
+        _send_telegram(f"⚠️ 오류: /del 확인 처리 실패\n{str(e)[:100]}")
+
+
+def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> None:
+    """/ingest <트윗 원문>(=/add) — 폰 자동 릴레이와 동일 파싱·반영 경로를 수동으로 실행."""
+    try:
+        if xrelay is None:
+            _send_telegram("⚠️ xrelay 모듈을 불러올 수 없습니다.")
+            return
+        control, _ = gh.read_json("control.json")
+        if is_paused(control or default_control()):
+            _send_telegram("⏸ 일시정지 중 — /ingest 무시", silent=True)
+            return
+
+        drained, drained_rows = _ingest_queue_drain(gh, now_iso)
+        rows = xrelay.parse(raw, now_iso)
+        if not rows:
+            msg = "ℹ️ /ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
+            if drained:
+                msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
+            _send_telegram(msg, silent=not drained)
+            return
+
+        changed = _merge_rows_into_schedule(
+            gh, rows, now_iso,
+            message=f"data: telegram /ingest {now_iso}",
+            action=f"/ingest {raw[:40].strip()}",
+        )
+        channels_cfg = channels_cfg or _load_channels_config()
+        summary = xrelay.summary_text(rows, channels_cfg)
+        if drained:
+            summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
+        if changed:
+            summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
+        _send_telegram(summary)
+    except Exception as e:
+        log.exception("Error handling manual /ingest")
+        _send_telegram(f"⚠️ 오류: /ingest 처리 실패\n{str(e)[:100]}")
+
+
+def _handle_undo(gh, now_iso: str) -> None:
+    """/undo — 이 봇을 통해 방금 수행된 schedule.json 변경(ingest·/del) 1건을 되돌림.
+
+    그 사이 정기 `/tick` 등으로 schedule.json 이 또 바뀌었으면(SHA 불일치) 안전하게 거부.
+    """
+    try:
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = state or admin.default_admin_state()
+        undo = admin.get_undo(state)
+        if not undo:
+            _send_telegram("↩️ 되돌릴 작업이 없습니다.")
+            return
+
+        cur, cur_sha = gh.read_json("schedule.json")
+        if cur_sha != undo.get("new_sha"):
+            state = admin.clear_undo(state)
+            gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: undo 슬롯 정리(만료) {now_iso}")
+            _send_telegram(
+                "↩️ 되돌리기 불가 — 그 사이 스케줄이 갱신됐습니다(정기 동기화 등).\n"
+                "/list 로 현재 상태를 확인한 뒤 /del 로 수동 처리하세요."
+            )
+            return
+
+        gh.write_json(
+            "schedule.json", undo["prev_content"], prev_sha=cur_sha,
+            message=f"data: undo({undo.get('action')}) {now_iso}",
+        )
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = admin.clear_undo(state or admin.default_admin_state())
+        gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: undo 슬롯 정리 {now_iso}")
+        _send_telegram(f"↩️ 되돌림 — {undo.get('action')}")
+    except Exception as e:
+        log.exception("Error handling /undo")
+        _send_telegram(f"⚠️ 오류: /undo 처리 실패\n{str(e)[:100]}")
+
+
 # Flask 라우트 정의 (Flask 설치 시만)
 if _FLASK_AVAILABLE:
 
@@ -576,6 +857,20 @@ if _FLASK_AVAILABLE:
             gh = GitHubStore(gh_token, gh_repo, gh_branch)
             channels_cfg = _load_channels_config()
 
+            # v2.5: 대기 중인 /del 확인(y/N) 이 있으면 명령 디스패치보다 먼저 처리.
+            # admin_state.json 읽기 실패는 일반 명령 처리를 막지 않는다(무시하고 통과).
+            if admin is not None:
+                try:
+                    _admin_state, _ = gh.read_json(_ADMIN_STATE_PATH)
+                    _pending = admin.get_pending_del(_admin_state)
+                except Exception:
+                    log.warning("admin_state.json 조회 실패 — /del 확인 스킵하고 일반 명령으로 처리")
+                    _pending = None
+                _low = text.strip().lower()
+                if _pending and not admin.pending_del_expired(_pending, now_utc) and _low in ("y", "yes", "n", "no"):
+                    _handle_del_confirm(gh, now_utc, yes=_low in ("y", "yes"))
+                    return jsonify({"ok": True}), 200
+
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
@@ -591,6 +886,20 @@ if _FLASK_AVAILABLE:
                     _handle_resume(gh, now_utc, main_service_url)
             elif cmd == "/log":
                 _handle_log(gh, now_utc, arg)
+            elif cmd == "/list":
+                _handle_list(gh, channels_cfg, arg)
+            elif cmd == "/del":
+                parts = arg.split()
+                _unit = parts[0] if len(parts) >= 1 else ""
+                _idx = parts[1] if len(parts) >= 2 else ""
+                _handle_del_request(gh, channels_cfg, now_utc, _unit, _idx)
+            elif cmd in ("/ingest", "/add"):
+                if not arg:
+                    _send_telegram(f"⚠️ 사용법: {cmd} <트윗 원문>")
+                else:
+                    _handle_manual_ingest(gh, channels_cfg, now_utc, arg)
+            elif cmd == "/undo":
+                _handle_undo(gh, now_utc)
             else:
                 # 도움말
                 help_text = (
@@ -599,7 +908,11 @@ if _FLASK_AVAILABLE:
                     "/status — 현재 상태 조회\n"
                     "/pause — 수집 일시정지\n"
                     "/resume — 수집 재개\n"
-                    "/log [detail|normal|simple] — 알림 상세도"
+                    "/log [detail|normal|simple] — 알림 상세도\n"
+                    "/list [유닛] — 방송 목록 (유닛: arale/yuno/nonoka/ritsu/miyako, 생략 시 전체)\n"
+                    "/del &lt;유닛&gt; &lt;번호&gt; — 목록의 항목을 내림 (확인 y/N 필요)\n"
+                    "/ingest &lt;트윗 원문&gt; — 트윗 텍스트를 붙여넣어 수동 반영\n"
+                    "/undo — 방금 한 작업(/ingest, /del) 되돌리기"
                 )
                 _send_telegram(help_text)
 
@@ -746,12 +1059,15 @@ if _FLASK_AVAILABLE:
                 return jsonify({"ok": True, "parsed": 0, "drained": drained}), 200
 
             changed = _merge_rows_into_schedule(
-                gh, rows, now_iso, message=f"data: xrelay scheduled {now_iso}"
+                gh, rows, now_iso, message=f"data: xrelay scheduled {now_iso}",
+                action=f"ingest {title or raw[:40]}".strip(),
             )
 
             summary = xrelay.summary_text(rows, channels_cfg)
             if drained:
                 summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
+            if changed:
+                summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
             _send_telegram(summary)
             return jsonify(
                 {"ok": True, "parsed": len(rows), "changed": changed, "drained": drained}
@@ -811,6 +1127,133 @@ if __name__ == "__main__":
         print("  ✓ dedup · drain · merge · 큐 비우기")
     else:
         print("  (xrelay 미로드 — 스킵)")
+
+    # ── v2.5 admin 명령: /list /del /undo (Flask 없이도 동작) ──────────
+    print("\n[Admin v2.5] /list · /del · /undo")
+    if admin is not None:
+        class _FakeGH2:
+            """실제 gh_store 처럼 write 시 내용 동일하면 no-op, 다르면 sha 증가."""
+            def __init__(self):
+                self.store: dict[str, tuple] = {}
+                self._n = 0
+
+            def read_json(self, path):
+                item = self.store.get(path)
+                return (item[0], item[1]) if item else (None, None)
+
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                cur = self.store.get(path)
+                if cur is not None and cur[0] == data:
+                    return False, cur[1]
+                self._n += 1
+                new_sha = f"sha{self._n}"
+                self.store[path] = (data, new_sha)
+                return True, new_sha
+
+        _sent: list[str] = []
+        _orig_send = _send_telegram
+        globals()["_send_telegram"] = lambda text, silent=False: (_sent.append(text) or True)
+
+        try:
+            g2 = _FakeGH2()
+            g2.write_json(
+                "schedule.json",
+                {
+                    "broadcasts": [
+                        {"channel_key": "ritsu", "status": "live", "title": "ASMR",
+                         "scheduled_start": "2026-09-05T02:00:00Z"},
+                        {"channel_key": "arale", "status": "scheduled", "source": "bdp_schedule",
+                         "sched_id": "sched:arale:2026-09-05T11:00:00Z",
+                         "scheduled_start": "2026-09-05T11:00:00Z",
+                         "expires_at": "2026-09-05T14:00:00Z", "kind": "game", "title": None},
+                        {"channel_key": "yuno", "status": "upcoming", "video_id": "abc",
+                         "scheduled_start": "2026-09-06T03:00:00Z", "title": "가라오케"},
+                        {"channel_key": "arale", "collab_with": ["nonoka"], "status": "scheduled",
+                         "source": "bdp_schedule", "host": "group",
+                         "sched_id": "sched:arale:2026-09-05T15:00:00Z",
+                         "scheduled_start": "2026-09-05T15:00:00Z",
+                         "expires_at": "2026-09-05T18:00:00Z", "kind": "collab", "title": None},
+                    ]
+                },
+                prev_sha=None, message="seed",
+            )
+            _cfg = _load_channels_config()
+
+            # _sorted_unit_broadcasts: 상태순(live→upcoming→scheduled) + collab_with 로 다른 유닛에도 노출
+            arale_items = _sorted_unit_broadcasts(g2.read_json("schedule.json")[0], "arale")
+            assert len(arale_items) == 2, arale_items
+            nonoka_items = _sorted_unit_broadcasts(g2.read_json("schedule.json")[0], "nonoka")
+            assert len(nonoka_items) == 1 and nonoka_items[0]["host"] == "group", nonoka_items
+            ritsu_items = _sorted_unit_broadcasts(g2.read_json("schedule.json")[0], "ritsu")
+            assert ritsu_items[0]["status"] == "live"
+            print("  ✓ _sorted_unit_broadcasts (상태순 정렬 · collab_with 팬아웃)")
+
+            # _time_range_text
+            assert "진행중" in _time_range_text(ritsu_items[0])
+            assert "(예상)" in _time_range_text(arale_items[0])  # scheduled → expires_at 기준
+            print("  ✓ _time_range_text (live/scheduled 표기)")
+
+            # /del 요청 → 확인대기 등록 (arale #1 = scheduled 행)
+            _handle_del_request(g2, _cfg, "2026-09-05T01:00:00Z", "arale", "1")
+            assert "그래도 지우시겠습니까? (y/N)" in _sent[-1], _sent[-1]
+            assert "감지기능으로 다시 되살아날" not in _sent[-1], "scheduled 행엔 warn_live 없어야 함"
+            pend = admin.get_pending_del(g2.read_json(_ADMIN_STATE_PATH)[0])
+            assert pend is not None and pend["unit"] == "arale" and pend["idx"] == 1
+            print("  ✓ /del 확인대기 등록 (warn_deltry, scheduled → warn_live 없음)")
+
+            # upcoming 행 대상이면 warn_live 포함
+            _handle_del_request(g2, _cfg, "2026-09-05T01:00:01Z", "yuno", "1")
+            assert "감지기능으로 다시 되살아날 수 있습니다" in _sent[-1], _sent[-1]
+            # arale#1 확인대기가 yuno#1 로 덮어써짐(슬롯 1개)
+            pend2 = admin.get_pending_del(g2.read_json(_ADMIN_STATE_PATH)[0])
+            assert pend2["unit"] == "yuno"
+            print("  ✓ /del 확인대기 (upcoming → warn_live 포함, 슬롯 1개 덮어씀)")
+
+            # (y/N) = N → 취소, broadcasts 안 바뀜
+            n_before = len(g2.read_json("schedule.json")[0]["broadcasts"])
+            _handle_del_confirm(g2, "2026-09-05T01:00:02Z", yes=False)
+            assert "취소했습니다" in _sent[-1]
+            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before
+            assert admin.get_pending_del(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
+            print("  ✓ /del (N) → 취소, 변경 없음")
+
+            # 다시 요청 후 (y/N) = Y → 실제 삭제 + undo 스냅샷
+            _handle_del_request(g2, _cfg, "2026-09-05T01:00:03Z", "yuno", "1")
+            _handle_del_confirm(g2, "2026-09-05T01:00:04Z", yes=True)
+            assert "🗑" in _sent[-1] and "/undo" in _sent[-1], _sent[-1]
+            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before - 1
+            undo = admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0])
+            assert undo is not None and undo["action"] == "/del yuno#1"
+            print("  ✓ /del (Y) → 삭제 반영 + undo 스냅샷 기록")
+
+            # /undo → 원상복구, 슬롯 비움
+            _handle_undo(g2, "2026-09-05T01:00:05Z")
+            assert "↩️ 되돌림" in _sent[-1], _sent[-1]
+            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before
+            assert admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
+            print("  ✓ /undo → schedule.json 복원, undo 슬롯 비움")
+
+            # 다시 /undo → "되돌릴 작업 없음"
+            _handle_undo(g2, "2026-09-05T01:00:06Z")
+            assert "되돌릴 작업이 없습니다" in _sent[-1]
+            print("  ✓ /undo 재호출 → no-op 안내")
+
+            # SHA 가드: del 후 외부(예: /tick)가 schedule.json 을 또 바꾸면 undo 거부
+            _handle_del_request(g2, _cfg, "2026-09-05T01:00:07Z", "arale", "1")
+            _handle_del_confirm(g2, "2026-09-05T01:00:08Z", yes=True)
+            cur_sched, _ = g2.read_json("schedule.json")
+            cur_sched = dict(cur_sched)
+            cur_sched["broadcasts"] = cur_sched["broadcasts"] + [{"channel_key": "miyako", "status": "live"}]
+            g2.write_json("schedule.json", cur_sched, prev_sha=None, message="외부 변경(예: /tick)")
+            _handle_undo(g2, "2026-09-05T01:00:09Z")
+            assert "되돌리기 불가" in _sent[-1], _sent[-1]
+            assert any(b.get("channel_key") == "miyako" for b in g2.read_json("schedule.json")[0]["broadcasts"]), \
+                "거부됐으면 외부 변경이 살아있어야 함"
+            print("  ✓ /undo SHA 가드 — 그 사이 외부 변경 있으면 거부(외부 변경 보존)")
+        finally:
+            globals()["_send_telegram"] = _orig_send
+    else:
+        print("  (admin 미로드 — 스킵)")
 
     # Flask 미설치 확인
     if Flask is None or app is None:

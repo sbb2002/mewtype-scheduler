@@ -355,6 +355,42 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 
 ---
 
+## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트, v2.5)
+
+텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/undo`, `docs/plan/v2_5_admin_commands.md`)의
+상태. `pending_del`/`undo` 각각 슬롯 1개(새 값이 오면 이전 값을 덮어씀).
+
+```jsonc
+{
+  "pending_del": null | {
+    "unit": "arale",             // /del 대상 유닛
+    "idx": 2,                    // /list 당시 1-based 순번 (표시용 — 매칭은 snapshot 사용)
+    "snapshot": { /* ... */ },   // 지우려는 broadcasts[] 항목 원본 (확인 시 재대조)
+    "warn_text": "...",
+    "at": "2026-09-05T12:00:00Z" // 확인 대기 시작 (TTL 300s, admin.PENDING_DEL_TTL_SEC)
+  },
+  "undo": null | {
+    "action": "/del arale#2",    // 사람이 읽을 설명
+    "prev_content": { /* schedule.json 전체(변경 직전) */ },
+    "new_sha": "...",            // 변경 커밋 직후 schedule.json sha (undo 시 CAS 확인용)
+    "at": "2026-09-05T12:00:05Z"
+  }
+}
+```
+
+`src/backend/admin.py` (순수 헬퍼): `default_admin_state()`,
+`get_pending_del(s)`/`set_pending_del(s, *, unit, idx, snapshot, warn_text, now_iso)`/`clear_pending_del(s)`,
+`pending_del_expired(pending, now_iso, ttl_sec=300)`,
+`get_undo(s)`/`set_undo(s, *, action, prev_content, new_sha, now_iso)`/`clear_undo(s)`.
+`set_*`/`clear_*` 는 원본 복사 후 해당 슬롯만 갱신(다른 슬롯 보존).
+
+`/undo` 판정: 지금 `schedule.json` sha `==` 기록된 `new_sha` 일 때만 `prev_content` 로 복원.
+다르면(정기 `/tick` 이 그 사이 supersede/TTL 제거했거나 다른 명령이 또 건드림) 거부 —
+`prev_content` 로 무작정 덮으면 그 사이의 정당한 변경이 같이 날아가기 때문. 상세 근거는
+`docs/plan/v2_5_admin_commands.md` §4.
+
+---
+
 ## 7. 직렬화 / 시간 규칙 (전 모듈 공통)
 
 - JSON 저장: `json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"` (끝 개행 1개).
@@ -555,6 +591,11 @@ GET  /           # 200 헬스체크
 - `/resume` — `set_paused(False)` → write → 메인 `POST {MAIN_SERVICE_URL}/tick {"mode":"light"}` 를
   OIDC 발급해 호출(heal). 런타임 SA 가 메인서비스 `run.invoker` 필요.
 - `/log [detail|normal|simple]` — `control.json.log_level`. 인자 없으면 현재값.
+- **(v2.5)** `/list [유닛]` — `schedule.json` 방송을 유닛별 idx 로 나열(상태순→시각순).
+  `/del <유닛> <idx>` — 2단계 확인(y/N, 경고 DM) 후 삭제, 확인 대기는 `admin_state.json` `pending_del`
+  (슬롯 1개, TTL 300s). `/ingest <트윗 원문>`(별칭 `/add`) — `POST /ingest` 라우트와 별개 네임스페이스,
+  같은 파싱·반영 경로 재사용, ECHO/DRY-RUN 무관 항상 실제 반영. `/undo` — 이 봇으로 방금 반영된
+  변경 1건만 되돌림(`admin_state.json` `undo`, sha 불일치면 거부). 상세: §6-1, `docs/plan/v2_5_admin_commands.md`.
 
 **`/ingest`** (v2.3 X 릴레이): `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`. 본문 form/JSON 의
 `text`(필수)/`title`(선택).
