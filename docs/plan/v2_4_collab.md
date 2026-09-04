@@ -2,7 +2,7 @@
 
 작성 2026-09-03. v2.3(X 예고 릴레이) 위에 얹는다.
 
-![v2.4 전체 흐름](v2_4_flow.png)
+![v2.4 전체 흐름](../v2_4_flow.png)
 
 - 생성기 `docs/plan/gen_v2_4.py`
 - 실배포 전환 절차: `docs/plan/v2_4_golive.md`

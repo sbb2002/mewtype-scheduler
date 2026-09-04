@@ -92,6 +92,7 @@ arrow((B_R, 37), (C_L, 37))
 label((B_R + C_L) / 2, 39.5, "raw fetch")
 
 fig.tight_layout(pad=0.4)
-out = __file__.replace("\\", "/").rsplit("/", 1)[0] + "/v2_4_flow.png"
+# 현행 전체 흐름 그림이라 docs/ 루트에 둔다 (docs/plan/ 아님)
+out = __file__.replace("\\", "/").rsplit("/", 2)[0] + "/v2_4_flow.png"
 fig.savefig(out, dpi=170)
 print("wrote", out)

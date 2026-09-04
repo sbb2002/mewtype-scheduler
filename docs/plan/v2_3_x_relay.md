@@ -30,7 +30,7 @@ PR3(v2.2) 브랜치 위에 구현. 계약(scheduled 행·DOM)은 `docs/SPEC.md` 
 파싱 결과만 DM 회신. `INGEST_ECHO` 가 참이면 파싱조차 안 하고 받은 텍스트만 DM 회신
 (+ `tail_ok` 잘림 계측 로그). 미해결 #1(푸시 잘림) 검증용. 두 모드 중 온 스케줄 트윗은
 `ingest_queue.json` 에 쌓였다가 실배포 전환 시 drain 된다. **전환 절차·판정은
-`docs/plan/v2_4_golive.md`.** 현행 전체 그림 `docs/plan/v2_4_flow.png`.
+`docs/plan/v2_4_golive.md`.** 현행 전체 그림 `docs/v2_4_flow.png`, 흐름 문서 `docs/ARCHITECTURE.md`.
 
 ### 폰(Automate) 플로우 — 아래는 v2.3 설계 초안 (구버전)
 

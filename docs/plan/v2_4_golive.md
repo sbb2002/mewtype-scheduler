@@ -2,7 +2,7 @@
 
 다른 세션이 "이제 실제로 반영되게 켜자" 를 할 때 이 문서대로.
 
-![v2.4 전체 흐름](v2_4_flow.png)
+![v2.4 전체 흐름](../v2_4_flow.png)
 
 *(생성기 `docs/plan/gen_v2_4.py` — `python docs/plan/gen_v2_4.py`)*
 

@@ -11,11 +11,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md`
 - **현행 구현 명세 (계약 A~F, 백엔드·프론트 모듈): `docs/SPEC.md`** — v1/v2.0/v2.1 명세를 통합.
   원본 `docs/old/IMPLEMENTATION{,_v2,_v2.1}.md`
+- **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png`
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/plan/v1_impro_final.md`
-- 그림: `docs/plan/v2_1_telegram.png` (v2.1), `docs/plan/v2_4_flow.png` (현행 전체 흐름)
+- 그림: `docs/plan/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/plan/v2_3_x_relay.md`, 핸드오프 `docs/plan/v2_3_handoff.md`
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
-  전체 흐름 그림 `docs/plan/v2_4_flow.png`, **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
+  **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
