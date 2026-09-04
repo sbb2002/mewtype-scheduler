@@ -36,8 +36,10 @@ PR3(v2.2) 브랜치 위에 구현. 계약이 굳으면 `docs/IMPLEMENTATION_v2.3
 
 > **현행 구성·실측은 `docs/plan/v2_4_golive.md` "구성요소 · 외부 · 운영자 폰" 참고.**
 > 바뀐 것: 문자열 연결은 `+` 가 아니라 **`++`** (LlamaLab Automate) — 아래 `+` 는 `NaN` 이 된다.
-> body 는 `urlEncode({"text": nmsg || nticker || ntitle || ""})` (딕셔너리 →
-> `key=value` 자동). 이 기기에선 내용이 `nmsg`(=android.text)에 옴, `bigText` 는 비어있음.
+> body 는 `urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})`
+> (커밋 `1c21d9a` 기준, 2026-09-04 확정). `||` 는 이 폰 빌드에서 빈값만 보내 `coalesce` 로.
+> 이 빌드는 `urlEncode({"text": ...})` 의 값을 키 자리로 흘려서, 백엔드가 폼 키에서 원문을
+> 복구한다 (`telegram_app.py` `_ingest`, `# ponytail:`). 내용은 `bigText`/`android.text` 에 옴.
 > 테스트 기간엔 `Expression true?` 필터 생략(전부 relay), 실배포 시 `配信スケジュール`/`出演情報` 마커로 복원.
 
 ```

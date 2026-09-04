@@ -633,6 +633,17 @@ if _FLASK_AVAILABLE:
         payload = request.form if request.form else (request.get_json(silent=True) or {})
         raw = (payload.get("text") or "").strip()
         title = (payload.get("title") or "").strip()
+
+        # 폰 Automate 빌드가 `urlEncode({"text": expr})` 를 `<expr값>=` 로 만들어버린다
+        # (트윗 본문이 값이 아니라 폼 키 자리로 샌다). text 값이 비었는데 정체불명 키가
+        # 딱 하나 있고 그 값도 비어 있으면, 그 키 이름을 원문으로 간주한다.
+        # ponytail: Automate 빌드 특유의 urlEncode 딕셔너리 버그 우회. 폰에서 body 를
+        #           `"text=" ++ urlEncode(...)` 로 제대로 보낼 수 있게 되면 이 블록 삭제.
+        if not raw and request.form:
+            odd = [k for k in request.form.keys() if k not in ("text", "title")]
+            if len(odd) == 1 and not (request.form.get(odd[0]) or "").strip():
+                raw = odd[0].strip()
+
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # ─── v2.3 임시 ECHO 테스트 훅 (INGEST_ECHO 가 참일 때만) ───────────────
@@ -931,6 +942,28 @@ if __name__ == "__main__":
         r = client.post("/ingest", data={"text": "   "}, headers={"X-Ingest-Secret": "ing123"})
         assert r.status_code == 400, f"Expected 400, got {r.status_code}"
         print("  ✓ bad secret 403 · empty text 400")
+
+        # Automate urlEncode 버그 우회: 트윗 본문이 폼 키로 온 경우 (값은 빔)
+        os.environ["INGEST_ECHO"] = "1"
+        try:
+            body = "8/30(%E6%97%A5)%20%E9%85%8D%E4%BF%A1%E3%82%B9%E3%82%B1%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB="
+            r = client.post(
+                "/ingest", data=body,
+                content_type="application/x-www-form-urlencoded",
+                headers={"X-Ingest-Secret": "ing123"},
+            )
+            j = r.get_json()
+            assert r.status_code == 200 and j.get("len", 0) > 0, (r.status_code, j)
+            # text= 빈값 + 본문키 동시에 와도 본문키를 집는다
+            r = client.post(
+                "/ingest", data="text=&" + body,
+                content_type="application/x-www-form-urlencoded",
+                headers={"X-Ingest-Secret": "ing123"},
+            )
+            assert r.get_json().get("len", 0) > 0, r.get_json()
+        finally:
+            os.environ.pop("INGEST_ECHO", None)
+        print("  ✓ 폼 키로 온 원문 복구")
 
     print("\n" + "=" * 60)
     print("✓ All smoke tests passed!")
