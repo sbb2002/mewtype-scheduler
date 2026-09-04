@@ -1,7 +1,7 @@
 """
 폴링 상태머신: pending.json 상태 전이 및 Cloud Tasks enqueue 계산.
 
-계약: §4 [haiku #1] IMPLEMENTATION_v2.md 참고
+계약: docs/SPEC.md §8.1 (요약은 docs/SCHEDULE.md §2)
 순수 파이썬, 네트워크·파일·시계 접근 금지 (now_iso는 인자).
 """
 

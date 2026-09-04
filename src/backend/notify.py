@@ -1,7 +1,7 @@
 """
 Telegram 알림 모듈: 상태 전이 이벤트 감지 및 메시지 전송.
 
-계약: docs/IMPLEMENTATION_v2.1.md §4 [haiku #1]
+계약: docs/SPEC.md §8.6 (메시지 포맷 예시는 docs/old/IMPLEMENTATION_v2.1.md §4)
 """
 
 import html

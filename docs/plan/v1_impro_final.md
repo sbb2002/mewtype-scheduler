@@ -134,7 +134,7 @@
 
 # v2.1 — Telegram 모니터링 & 원격 제어
 
-별도 명세 `docs/IMPLEMENTATION_v2.1.md`, 그림 `v2_1_telegram.png` (`gen_telegram.py`).
+별도 명세 `docs/SPEC.md` §10 (원본 `docs/old/IMPLEMENTATION_v2.1.md`), 그림 `v2_1_telegram.png` (`gen_telegram.py`).
 
 - **아웃바운드 알림** (메인 서비스 → 운영자 DM): upcoming 발생 / live 시작(지각) / live 종료 /
   tick 요약(변경 시만) / fallback / 서버 오류.

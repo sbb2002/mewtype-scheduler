@@ -1,6 +1,6 @@
 """
 pending.json 스키마 및 헬퍼 함수.
-계약 E 참고: §3 IMPLEMENTATION_v2.md
+계약 E 참고: docs/SPEC.md §5
 """
 
 import logging

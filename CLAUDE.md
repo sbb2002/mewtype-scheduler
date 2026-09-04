@@ -9,12 +9,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 어느 주소로 가면 되는지 한눈에 확인한다.
 
 - 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md`
-- v1 모듈 계약: `docs/IMPLEMENTATION.md`
-- **v2.0 (현행 백엔드)**: `docs/plan/v1_impro_final.md` (아키텍처), `docs/IMPLEMENTATION_v2.md` (구현 명세)
-- **v2.1 (Telegram 모니터링/제어)**: `docs/IMPLEMENTATION_v2.1.md`, 그림 `docs/plan/v2_1_telegram.png`
+- **현행 구현 명세 (계약 A~F, 백엔드·프론트 모듈): `docs/SPEC.md`** — v1/v2.0/v2.1 명세를 통합.
+  원본 `docs/old/IMPLEMENTATION{,_v2,_v2.1}.md`
+- **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png`
+- 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/plan/v1_impro_final.md`
+- 그림: `docs/plan/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/plan/v2_3_x_relay.md`, 핸드오프 `docs/plan/v2_3_handoff.md`
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
-  전체 흐름 그림 `docs/plan/v2_4_flow.png`, **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
+  **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
@@ -106,7 +108,7 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 
 ## 아키텍처 핵심
 
-### 데이터 흐름 (v2 — 상세는 `docs/IMPLEMENTATION_v2.md`)
+### 데이터 흐름 (v2 — 상세는 `docs/SPEC.md` §8)
 1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 3h) 을 OIDC 로 호출.
    `/tick` = RSS + `videos.list` 배치 1회 → `schedule.json` 재구성 + `pending.json` 갱신.
 2. 각 예정 방송마다 **Cloud Tasks** 에 `scheduled_start − 15분` 시각으로 wake 태스크 1개 enqueue.
@@ -117,7 +119,7 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    raw CDN 캐시로 최대 ~5분 지연 — 3시간 단위 예고엔 문제 없음(의도된 트레이드오프).
 5. **(v2.1)** `/tick`·`/wake` 진입 시 `control.json` 확인 — `paused` 면 healthcheck 핑만 하고 no-op.
    상태 전이(upcoming/live 시작·종료, fallback, 오류)는 Telegram DM 으로 알림. `/status /pause /resume`
-   명령은 공개 서비스 `mewtype-telegram` 이 처리. 상세는 `docs/IMPLEMENTATION_v2.1.md`.
+   명령은 공개 서비스 `mewtype-telegram` 이 처리. 상세는 `docs/SPEC.md` §10.
 6. **(v2.3)** X 예고 릴레이 — 폰(Automate)이 `@BDP_yumemita` 일일 스케줄 트윗의 삼성 브라우저
    웹푸시 알림 텍스트를 `mewtype-telegram` 공개 `POST /ingest`(`X-Ingest-Secret` 헤더)로 보낸다.
    `xrelay.parse_bdp_schedule` → `schedule.json` 에 `status:"scheduled"` 행(YouTube 영상 아직
@@ -141,13 +143,13 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 - `schedule.json` 정렬: `live` 우선 → `scheduled_start` 오름차순.
 - 시각은 전부 UTC ISO(`Z`)로 저장, KST 변환은 **프론트 `time.js` 담당**.
 
-### 계약 (변경 시 해당 명세 문서 먼저 수정)
-- `schedule.json` / `archive.json` 스키마: `docs/IMPLEMENTATION.md` §1, §2.
-- `pending.json` 스키마 (계약 E): `docs/IMPLEMENTATION_v2.md` §3.
-- `control.json` 스키마 (계약 F): `docs/IMPLEMENTATION_v2.1.md` §3.
-- 프론트 DOM 구조·class 이름: IMPLEMENTATION §3. `render.js` 가 생성하고 `css/` 가 스타일링.
+### 계약 (변경 시 `docs/SPEC.md` 먼저 수정)
+- `schedule.json` / `archive.json` 스키마: `docs/SPEC.md` §1, §2. `scheduled` 행: §1-1.
+- `pending.json` 스키마 (계약 E): `docs/SPEC.md` §5.
+- `control.json` 스키마 (계약 F): `docs/SPEC.md` §6.
+- 프론트 DOM 구조·class 이름: `docs/SPEC.md` §3. `render.js` 가 생성하고 `css/` 가 스타일링.
   데이터는 `textContent`/`createElement` 로만 주입(XSS 방어), `innerHTML` 금지.
-- 시간 표기 규칙(`formatKST`, `relativeLabel`): IMPLEMENTATION §4.
+- 시간 표기 규칙(`formatKST`, `relativeLabel`): `docs/SPEC.md` §4.
 - JSON 직렬화는 전 모듈 공통: `json.dumps(sort_keys=True, indent=2, ensure_ascii=False)` + 끝 개행 1개
   (`store.save_json_if_changed` / `gh_store._serialize`). 어겨지면 불필요한 커밋 발생.
 

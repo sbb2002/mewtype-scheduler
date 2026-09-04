@@ -1,7 +1,7 @@
 # v2.3 — X 예고 릴레이 → `scheduled` 단계
 
 작성 2026-09-03. 초안에서 출발해 **백엔드 인입 경로는 구현 완료**(아래 §구현 반영).
-PR3(v2.2) 브랜치 위에 구현. 계약이 굳으면 `docs/IMPLEMENTATION_v2.3.md` 로 승격.
+PR3(v2.2) 브랜치 위에 구현. 계약(scheduled 행·DOM)은 `docs/SPEC.md` §1-1·§3 에 반영됨.
 
 ![v2.3 X 릴레이](v2_3_x_relay.png)
 
@@ -30,7 +30,7 @@ PR3(v2.2) 브랜치 위에 구현. 계약이 굳으면 `docs/IMPLEMENTATION_v2.3
 파싱 결과만 DM 회신. `INGEST_ECHO` 가 참이면 파싱조차 안 하고 받은 텍스트만 DM 회신
 (+ `tail_ok` 잘림 계측 로그). 미해결 #1(푸시 잘림) 검증용. 두 모드 중 온 스케줄 트윗은
 `ingest_queue.json` 에 쌓였다가 실배포 전환 시 drain 된다. **전환 절차·판정은
-`docs/plan/v2_4_golive.md`.** 현행 전체 그림 `docs/plan/v2_4_flow.png`.
+`docs/plan/v2_4_golive.md`.** 현행 전체 그림 `docs/v2_4_flow.png`, 흐름 문서 `docs/ARCHITECTURE.md`.
 
 ### 폰(Automate) 플로우 — 아래는 v2.3 설계 초안 (구버전)
 
@@ -283,8 +283,7 @@ src/frontend/
 config/channels.json # 변경 없음 — 이름↔key 매핑은 xrelay.py 상수.
                      #   (X 핸들이 YT 핸들과 다르면 그때 x_handle 필드 추가)
 docs/
-  IMPLEMENTATION.md      # §1 계약 A 에 scheduled 행 추가, §3 DOM 에 .card--scheduled
-  IMPLEMENTATION_v2.3.md # 이 초안 승격본
+  SPEC.md               # §1-1 계약 A 에 scheduled 행, §3 DOM 에 .card--scheduled (반영됨)
 ```
 
 ---

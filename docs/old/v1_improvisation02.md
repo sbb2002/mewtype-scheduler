@@ -5,7 +5,7 @@ docs\plan\v1_improvisation.md와 docs\plan\v1_improvisation_comment.md의 내용
 - render가 아닌 Google Cloud Scheduler + Github actions 조합을 고려중.
 
 # 관리자 인스턴스
-![image](lifespan_overall_clean.png)
+![image](../plan/lifespan_overall_clean.png)
 위 그림처럼 5명의 live 상태를 관리해야 하므로 백엔드가 필요 시에만 켜서 동작하고 그 외에는 유휴 또는 꺼짐 상태로 들어가기 위함임.
 
 # 의문
