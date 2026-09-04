@@ -45,7 +45,7 @@
 - **mewtype-telegram · POST /ingest** (공개, `--allow-unauthenticated`, `X-Ingest-Secret` 검증)
   - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신 +
     `ingest ECHO: len=.. clen=.. tail_ok=..` 로그. 스케줄/출연 트윗(`xrelay.looks_relayable` —
-    본문에 `配信スケジュール` 또는 `出演情報` 계열 마커)만 `ingest_queue.json` 에 원문 적재.
+    본문에 `配信スケジュール` 또는 `出演情報` 마커)만 `ingest_queue.json` 에 원문 적재.
   - **실배포** (`INGEST_ECHO=0` · `INGEST_DRY_RUN=0`): `control.json` `paused` 확인 →
     `_ingest_queue_drain` 이 큐 원문을 `received_at` 순서로 `xrelay.parse`(일일 스케줄 →
     없으면 `parse_appearance`) → `merge_scheduled` → `schedule.json` 커밋, 큐 비움. 이번 요청 본문도 파싱·머지.

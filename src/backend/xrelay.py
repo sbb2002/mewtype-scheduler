@@ -59,9 +59,10 @@ YT_VIDEO_RE = re.compile(
     r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(?:live/|watch\?v=|shorts/)([\w-]{11})(?![\w-])"
 )
 
-# "出演情報" 계열 — @BDP_yumemita 가 외부 이벤트/합방 출연을 알릴 때 (일일 스케줄과 서식 다름).
+# "出演情報" — @BDP_yumemita 가 외부 이벤트/합방 출연을 알릴 때 (일일 스케줄과 서식 다름).
 #   ＼出演情報／  9/10(木) 22:00頃〜  「이벤트명」  夢限大みゅーたいぷ 5名が出演  <영상 URL>
-APPEARANCE_MARK_RE = re.compile(r"出演情報|出演決定|出演告知|出演のお知らせ")
+# 실측 확인된 마커는 `出演情報` 하나뿐. 변형(出演決定 등)은 실물 트윗에서 본 뒤 추가.
+APPEARANCE_MARK_RE = re.compile(r"出演情報")
 APPEARANCE_DT_RE = re.compile(
     r"(\d{1,2})/(\d{1,2})\([日月火水木金土]\)\s*(\d{1,2}):(\d{2})(頃)?\s*〜"
 )

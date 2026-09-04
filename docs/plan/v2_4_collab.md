@@ -100,7 +100,7 @@ https://youtube.com/live/kx-nhmTj4Eg
 https://youtube.com/live/ri2_BimgJIA
 ```
 
-- 트리거: `出演情報|出演決定|出演告知|出演のお知らせ` + `M/D(曜) HH:MM頃〜` 단일 시각.
+- 트리거: `出演情報`(실측 확인된 유일 마커) + `M/D(曜) HH:MM頃〜` 단일 시각.
 - 참여자: 이름이 직접 나오면(`_names`) 그것, 아니면 `N名が出演` 또는 `夢限大みゅーたいぷ`/`ゆめみた`
   → `ALL_KEYS`(전원). `channel_key` = 첫 멤버, `collab_with` = 나머지.
 - `「이벤트명」` → `title` (선행 `#` 제거). `render.js` 는 collab 카드 라벨에 `title` 우선
