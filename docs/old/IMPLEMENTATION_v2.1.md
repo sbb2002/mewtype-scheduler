@@ -1,3 +1,6 @@
+> ⚠️ **아카이브.** 현행 통합본은 `docs/SPEC.md` §10. 이 문서는 v2.1 델타 원본 보존용
+> (메시지 포맷 예시 등 상세는 여기 유지).
+
 # 구현 명세 v2.1 (IMPLEMENTATION_v2.1) — Telegram 모니터링 & 제어
 
 v2.0 백엔드(`docs/IMPLEMENTATION_v2.md`) 위에 **Telegram 봇 알림 + 원격 제어**를 얹는다.

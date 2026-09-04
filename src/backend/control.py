@@ -1,6 +1,6 @@
 """
 control.json 스키마 및 헬퍼 함수.
-계약 F 참고: docs/IMPLEMENTATION_v2.1.md §3
+계약 F 참고: docs/SPEC.md §6
 
   {
     "paused": false,

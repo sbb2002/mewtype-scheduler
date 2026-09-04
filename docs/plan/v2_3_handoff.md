@@ -22,7 +22,7 @@
 | `src/frontend/js/render.js` | `scheduled` 행을 `upcoming` 과 같은 버킷에 `scheduled_start` 순으로. `KIND_LABEL`(게임/잡담/노래/합방/아침, unknown 생략). `updateCountdowns` 가 `.card--scheduled` 도 갱신하되 `late` 토글·`.card--sched-live` 는 스킵 |
 | `src/frontend/css/{card,layout}.css` | `.card--scheduled`(점선·`opacity .82`, `card__icon`/없으면 📺, slate `card__badge--sched` "예고", `card__chip` 🔒, `card__approx` "약"), `.card--sched-live`(실선·빨강기 테두리, rel "방송 중 (추정)" 빨강). `--color-sched: #7c8aa0` |
 | `deploy/` | `setup.sh`·`deploy_telegram.sh` — `INGEST_SECRET` 시크릿, `INGEST_DRY_RUN` env. `README.md` DRY-RUN·Automate 절차 |
-| `docs/` | `plan/v2_3_x_relay.md`(+`gen_x_relay.py`/`.png`), `IMPLEMENTATION.md §1-1`(계약 A 확장)·`§3`(DOM), `CLAUDE.md` |
+| `docs/` | `plan/v2_3_x_relay.md`(+`gen_x_relay.py`/`.png`), `SPEC.md §1-1`(계약 A 확장)·`§3`(DOM), `CLAUDE.md` |
 
 ### self-test
 ```

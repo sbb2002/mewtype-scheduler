@@ -1,3 +1,5 @@
+> ⚠️ **아카이브.** 현행 통합본은 `docs/SPEC.md`. 이 문서는 v2.0 델타 원본 보존용.
+
 # 구현 명세 v2.0 (IMPLEMENTATION_v2)
 
 `docs/plan/v1_impro_final.md` 의 확정 아키텍처를 구현 단위로 분해한 문서.

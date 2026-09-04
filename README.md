@@ -2,7 +2,7 @@
 
 > **프로젝트:** 夢限大みゅーたいぷ 5인 유튜브 방송인의 예약/라이브 방송을 한곳에서 시간순으로 보여주는 정적 웹사이트
 
-📋 [PRD](./docs/beta_version/PRD.md) | 📦 [구현 명세](./docs/IMPLEMENTATION.md)
+📋 [PRD](./docs/beta_version/PRD.md) | 📦 [구현 명세](./docs/SPEC.md)
 
 ---
 

@@ -254,6 +254,6 @@ gcloud run services update mewtype-telegram --region asia-northeast1 \
 | `/ingest`·큐 | `src/backend/telegram_app.py` (`_ingest` — 폼 키→원문 복구 `# ponytail:`, `_ingest_queue_push/_drain`, `_merge_rows_into_schedule`) |
 | 보존·정리 | `src/collector/reconcile.py` (`build_schedule` scheduled 블록) |
 | 프론트 | `src/frontend/js/render.js` (`createCard` scheduled/collab, `renderBoard` 팬아웃), `css/card.css` |
-| 계약 | `docs/IMPLEMENTATION.md` §1-1 (scheduled 행 스키마, `host` 필드) |
+| 계약 | `docs/SPEC.md` §1-1 (scheduled 행 스키마, `host` 필드) |
 | 설계 | `docs/plan/v2_3_x_relay.md` (X 릴레이), `docs/plan/v2_4_collab.md` (합동방송) |
 | env | `deploy/deploy_telegram.sh` (`INGEST_ECHO` / `INGEST_DRY_RUN` = `${...:-0}`) |
