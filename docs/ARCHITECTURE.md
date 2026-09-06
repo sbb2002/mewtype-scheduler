@@ -52,7 +52,10 @@
       (TTL 180s) + 안내문 → 이어 보낸 텍스트/첨부파일(`getFile`, UTF-8·256KB)을 원문으로 소진.
       `aNoneTokyo` 취소 · `/`명령이면 대기 접고 통과 · 180s 초과면 만료. (인라인 `/ingest <원문>` 제거)
     - **(v2.5.2)** `/undo` = 2단계. `/undo` → 복원/제거 요약 + 되돌아갈 KST 시각·커밋 sha +
-      `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체 + `schedule.json` sha 일치).
+      `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체 + 대상 파일 sha 일치).
+      **(v2.7)** `undo.path` 로 `schedule.json` ↔ `notices.json` 구분해 복원.
+    - **(v2.7)** `/notice` = 2단계(`/ingest` 와 동일) → `xnotice.parse` → `notices.merge_notice`.
+      `/notice-list` · `/notice-del <id|번호>`. 상세: `docs/plan/v2_7_notice_board.md`.
   - `POST /ingest` — 폰 릴레이 인입 (X 예고 릴레이).
     - form 필드: `text`(필수 본문) · `title`(`android.title` 게시자 표시 이름) · `template`
       (`android.template`) · `tag`(`pde_noti_tag`). `tag` → `x.com/i/status/<id>` 링크·중복제거 키.
@@ -78,7 +81,9 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 | `pending.json` | 계약 E. wake 폴링 FSM 상태 (pre-live / live-watch) |
 | `control.json` | 계약 F. `paused` / `log_level` |
 | `ingest_queue.json` | 테스트 모드(ECHO/DRY-RUN) 중 온 스케줄 트윗 원문 버퍼. 실배포 전환 후 첫 `/ingest` 에서 drain |
-| `admin_state.json` | 계약 G (v2.5). 텔레그램 명령 슬롯 각 1개 — `pending_del`(TTL 300s) · `pending_ingest`(180s) · `pending_undo`(60s) · `undo`(sha 판정) |
+| `admin_state.json` | 계약 G (v2.5). 텔레그램 명령 슬롯 각 1개 — `pending_del`(TTL 300s) · `pending_ingest`(180s) · `pending_notice`(180s) · `pending_undo`(60s) · `undo`(sha 판정, `path` 로 대상 파일 구분) |
+| `notices.json` | 계약 H (v2.7). 방송 외 소식(`live`/`release`/`platform`/`etc`). `xnotice.parse` → `notices.merge_notice` 로 중복제거·필드 병합. `expires_at` 지나면 sweep |
+| `notice_archive.json` | 계약 H. 만료된 소식 append-only. recap/공연 후 트윗이 과거 소식을 되살리지 않도록 `seen_ids` 대조에 사용 |
 
 ### 프론트엔드 · Vercel
 
@@ -91,6 +96,10 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 - `.card--collab` — 합동(`kind=="collab"`). `render.js` 가 참여 멤버 전원(`channel_key` ∪
   `collab_with`) 레인에 같은 카드로 팬아웃. 링크는 `url`(그룹 영상). PC 5열 그리드·모바일
   캐러셀 레이아웃 무변경.
+- **(v2.7)** `js/notices.js` + `css/notices.css` 가 예고판 상단 `#notice` 티커를 그린다.
+  `NOTICES_URL`(= `data/notices.json`) 을 `schedule.json` 과 같은 75초 주기로 폴링. 기본 1줄만
+  표시·5초 회전·무한 순환, `▾`/`▴` 로 전체 펼침. 당일(TODAY) 소식이 있으면 좌측 램프가 빨강
+  저속 점멸. 만료 소식은 프론트에서도 숨김(백엔드 sweep 지연 대비). 아래 방송 카드와 중복 없음.
 
 ---
 
@@ -105,7 +114,7 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 | heal | `mewtype-telegram` `/resume` → `mewtype-backend` `/tick` (OIDC) |
 | 커밋 / 큐 | Cloud Run → GitHub Contents API (`schedule.json` 등 커밋 / `ingest_queue.json` 적재·drain) |
 | reconcile | 정기 `/tick` 이 `data` 브랜치 읽기·쓰기 |
-| raw fetch | `raw.githubusercontent.com/.../data/schedule.json` (프론트 75초 폴링) |
+| raw fetch | `raw.githubusercontent.com/.../data/{schedule,notices}.json` (프론트 75초 폴링) |
 | 다운 감지 | `mewtype-backend` `/tick` 성공 → healthchecks.io GET → (grace 초과) Telegram |
 
 ---
