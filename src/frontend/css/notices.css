@@ -19,6 +19,7 @@
 }
 
 #notice.ntc {
+  position: relative;               /* 펼친 목록(.ntc__list)의 오버레이 기준 */
   max-width: var(--content-max);
   margin: var(--gap) auto 0;
   padding: 0 var(--page-pad);
@@ -34,7 +35,9 @@
   border: 1px solid var(--ntc-border-soft);
   border-radius: 6px;
 }
-.ntc.is-open .ntc__bar { height: auto; overflow: visible; border-bottom: 1px solid var(--ntc-border-soft); }
+/* 펼쳐도 막대 자체는 한 줄 그대로 — 아래 예고 영역을 밀지 않는다.
+   전체 목록은 .ntc__list 가 오버레이로 뜬다. */
+.ntc.is-open .ntc__bar { border-bottom: 1px solid var(--ntc-border-soft); border-radius: 6px 6px 0 0; }
 
 .ntc__tag {
   flex: none;
@@ -145,10 +148,16 @@
 .ntc__src:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: 2px; border-radius: 2px; }
 .ntc__src .nm { font-variant-numeric: tabular-nums; }
 
-/* ── 펼친 목록 ── */
-.ntc__list { list-style: none; margin: 0; padding: 0; display: none;
+/* ── 펼친 목록 — 오버레이. 아래 예고 영역 위에 떠서 레이아웃을 안 민다. ── */
+.ntc__list {
+  list-style: none; margin: 0; padding: 0; display: none;
+  position: absolute; top: 100%; left: var(--page-pad); right: var(--page-pad);
+  z-index: 30;
+  max-height: min(70vh, 32rem); overflow-y: auto;
   border: 1px solid var(--ntc-border-soft); border-top: none;
-  border-radius: 0 0 6px 6px; background: var(--color-bg-secondary); }
+  border-radius: 0 0 6px 6px; background: var(--color-bg-secondary);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
+}
 .ntc.is-open .ntc__list { display: block; }
 .ntc__list .ntc__item { position: relative; border-top: 1px solid var(--ntc-border-soft); padding-left: calc(0.8rem + 3px); }
 .ntc__list .ntc__item:hover { background: var(--ntc-hover); }
@@ -159,6 +168,7 @@
 /* ── 모바일: 소식 글자·날짜 컬럼 제거, 출처는 아이콘만 ── */
 @media (max-width: 767px) {
   #notice.ntc { padding: 0 var(--m-pad, 1rem); margin-top: var(--gap); }
+  .ntc__list { left: var(--m-pad, 1rem); right: var(--m-pad, 1rem); }
   .ntc__label { display: none; }
   .ntc__item {
     grid-template-columns: var(--ntc-col-badge) 60px minmax(0, 1fr) 24px;
