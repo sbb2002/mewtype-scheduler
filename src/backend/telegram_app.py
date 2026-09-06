@@ -14,6 +14,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import unquote_plus
 
 try:
     from flask import Flask, jsonify, request
@@ -1275,28 +1276,37 @@ if _FLASK_AVAILABLE:
                 len(raw), len(raw_body), request.content_length, tail_ok,
                 request.content_type, list(request.form.keys()), raw[:120], raw[-120:],
             )
+            # raw body 는 form-urlencoded 라 %XX 로 찍힌다 — 사람이 읽게 디코드해서 보여준다.
+            # (form 파싱 순서 문제로 raw_body 가 비어 오면 request.form 에서 재구성)
+            body_src = raw_body or "&".join(
+                f"{k}={v}" for k, v in request.form.items(multi=True)
+            )
+            try:
+                body_dec = unquote_plus(body_src)
+            except Exception:
+                body_dec = body_src
             _send_telegram(
                 "📡 <b>ingest ECHO</b> — 백엔드 처리 안 함\n"
                 f"ct=<code>{html.escape(request.content_type or '-')}</code> · "
                 f"form_keys={list(request.form.keys())}\n"
                 f"title=<code>{html.escape(title) or '(없음)'}</code>\n"
-                f"len(text)={len(raw)} · len(body)={len(raw_body)} · "
-                f"말미문구 {'✅' if tail_ok else '❌'}\n"
+                f"len(text)={len(raw)} · len(body)={len(raw_body)}(enc)/"
+                f"{len(body_dec)}(dec) · 말미문구 {'✅' if tail_ok else '❌'}\n"
                 "───── text ─────\n"
                 f"<code>{html.escape(raw) if raw else '(빈 text)'}</code>"
             )
-            # raw body 전문 — 길이 제한 없이 모두 회신한다. 단 Telegram sendMessage 는
-            # 4096자 상한이 있어 통째로 넣으면 DM 자체가 실패하므로 청크로 나눠 보낸다.
+            # raw body 디코드본 — 길이 제한 없이 모두 회신. Telegram sendMessage 4096자
+            # 상한 때문에 통째로 넣으면 DM 자체가 실패하므로 청크로 나눠 보낸다.
             _body_chunk = 3500
-            if not raw_body:
-                _send_telegram("───── raw body ─────\n<code>(빈 body)</code>")
+            if not body_dec:
+                _send_telegram("───── raw body(decoded) ─────\n<code>(빈 body)</code>")
             else:
-                _parts = [raw_body[i:i + _body_chunk]
-                          for i in range(0, len(raw_body), _body_chunk)]
+                _parts = [body_dec[i:i + _body_chunk]
+                          for i in range(0, len(body_dec), _body_chunk)]
                 for _idx, _part in enumerate(_parts, 1):
                     _tag = f" ({_idx}/{len(_parts)})" if len(_parts) > 1 else ""
                     _send_telegram(
-                        f"───── raw body{_tag} ─────\n"
+                        f"───── raw body(decoded){_tag} ─────\n"
                         f"<code>{html.escape(_part)}</code>"
                     )
             # 스케줄 트윗이면 큐에 적재 — 실배포 전환 시 반영되도록 (유실 방지).
