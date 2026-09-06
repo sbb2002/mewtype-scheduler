@@ -46,15 +46,22 @@
   - 성공 끝에 `HEALTHCHECK_URL`(healthchecks.io) GET 1발 → grace 초과 시 다운 알림.
 - **`mewtype-telegram`** (공개, `--allow-unauthenticated`, `ALLOW_UNAUTH=1`)
   - `POST /telegram` — Telegram webhook. `X-Telegram-Bot-Api-Secret-Token` + `chat.id`
-    허용목록. `/status`·`/pause`·`/resume`·`/log` 처리. `/resume` 은 메인 `/tick` 을 OIDC
-    발급해 호출(heal).
+    허용목록. `/status`·`/pause`·`/resume`·`/log`·`/list`·`/del`·`/ingest`·`/undo` 처리.
+    `/resume` 은 메인 `/tick` 을 OIDC 발급해 호출(heal).
+    - **(v2.5.1)** `/ingest` = 2단계. 무인자로 보내면 `admin_state.json` `pending_ingest` 슬롯
+      (TTL 180s) + 안내문 → 이어 보낸 텍스트/첨부파일(`getFile`, UTF-8·256KB)을 원문으로 소진.
+      `aNoneTokyo` 취소 · `/`명령이면 대기 접고 통과 · 180s 초과면 만료. (인라인 `/ingest <원문>` 제거)
+    - **(v2.5.2)** `/undo` = 2단계. `/undo` → 복원/제거 요약 + 되돌아갈 KST 시각·커밋 sha +
+      `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체 + `schedule.json` sha 일치).
   - `POST /ingest` — 폰 릴레이 인입 (X 예고 릴레이).
+    - 원본 바디는 `request.form` 접근 전에 `get_data(cache=True, parse_form_data=False)` 로 캐시
+      (Werkzeug form 파싱이 스트림을 소비 → 이후 `get_data()` 가 빈 문자열이 되던 버그).
     - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신
-      + `ingest ECHO: len=.. tail_ok=..` 로그. 스케줄/출연 트윗(`xrelay.looks_relayable`)만
-      `ingest_queue.json` 에 원문 적재.
+      (ECHO 는 raw body 전문, 4096자 초과 시 청크 분할) + `ingest ECHO: len=.. blen=.. tail_ok=..`
+      로그. 스케줄/출연 트윗(`xrelay.looks_relayable`)만 `ingest_queue.json` 에 원문 적재.
     - **실배포** (`INGEST_ECHO=0` · `INGEST_DRY_RUN=0`): `control.json` `paused` 확인 →
       `_ingest_queue_drain` 이 큐 원문을 `received_at` 순서로 `xrelay.parse` → `merge_scheduled`
-      → `schedule.json` 커밋, 큐 비움. 이번 요청 본문도 파싱·머지.
+      → `schedule.json` 커밋, 큐 비움. 이번 요청 본문도 파싱·머지. 결과 DM 에 인식 실패 줄 수 표기.
 
 ### 저장 · GitHub `data` 브랜치
 
@@ -67,6 +74,7 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 | `pending.json` | 계약 E. wake 폴링 FSM 상태 (pre-live / live-watch) |
 | `control.json` | 계약 F. `paused` / `log_level` |
 | `ingest_queue.json` | 테스트 모드(ECHO/DRY-RUN) 중 온 스케줄 트윗 원문 버퍼. 실배포 전환 후 첫 `/ingest` 에서 drain |
+| `admin_state.json` | 계약 G (v2.5). 텔레그램 명령 슬롯 각 1개 — `pending_del`(TTL 300s) · `pending_ingest`(180s) · `pending_undo`(60s) · `undo`(sha 판정) |
 
 ### 프론트엔드 · Vercel
 
