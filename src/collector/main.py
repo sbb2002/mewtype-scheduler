@@ -28,10 +28,12 @@ def _now_iso() -> str:
 
 
 def _tracked_unresolved_ids(schedule: dict) -> list[str]:
+    # (v2.6) scheduled 행이라도 트윗이 준 video_id 가 있으면 후보에 넣는다.
     return [
         b["video_id"]
         for b in schedule.get("broadcasts", [])
-        if b.get("status") in ("upcoming", "live")
+        if b.get("video_id")
+        and b.get("status") in ("upcoming", "live", "scheduled")
     ]
 
 
