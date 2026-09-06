@@ -53,6 +53,11 @@ try:
 except ImportError:
     admin = None
 
+try:
+    from . import xnotice, notices          # (v2.7) 소식 게시판
+except ImportError:
+    xnotice = notices = None
+
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -65,6 +70,8 @@ from .gh_store import ConflictError, GitHubStore
 
 # admin_state.json 경로 (v2.5 — /list /del /ingest /undo 수동 관리 명령)
 _ADMIN_STATE_PATH = "admin_state.json"
+_NOTICES_PATH = "notices.json"                 # (v2.7) 소식 게시판
+_NOTICE_ARCHIVE_PATH = "notice_archive.json"
 _UNIT_KEYS = ("arale", "yuno", "nonoka", "ritsu", "miyako")
 _STATUS_RANK = {"live": 0, "upcoming": 1, "scheduled": 2}
 _STATUS_BADGE = {"live": "🔴", "upcoming": "🟢", "scheduled": "🕊"}
@@ -225,15 +232,16 @@ def _format_list_text(channels_cfg: dict, schedule: dict, unit: str = "") -> str
     return "\n\n".join(blocks)
 
 
-def _save_undo(gh: GitHubStore, *, action: str, prev_content: dict, new_sha, now_iso: str) -> None:
-    """schedule.json 을 바꾼 직후 admin_state.json 에 undo 스냅샷 기록. 실패해도 본 작업은 막지 않음."""
+def _save_undo(gh: GitHubStore, *, action: str, prev_content: dict, new_sha, now_iso: str,
+               path: str = "schedule.json") -> None:
+    """`path` 파일을 바꾼 직후 admin_state.json 에 undo 스냅샷 기록. 실패해도 본 작업은 안 막음."""
     if admin is None:
         return
     try:
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
         state = admin.set_undo(
             state or admin.default_admin_state(),
-            action=action, prev_content=prev_content, new_sha=new_sha, now_iso=now_iso,
+            action=action, prev_content=prev_content, new_sha=new_sha, now_iso=now_iso, path=path,
         )
         gh.write_json(
             _ADMIN_STATE_PATH, state, prev_sha=sha,
@@ -953,6 +961,231 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
         _send_telegram(f"⚠️ 오류: /ingest 처리 실패\n{str(e)[:100]}")
 
 
+# ── (v2.7) 소식 게시판 — /notice /notice-del /notice-list + 자동 인입 ──────────
+_NOTICE_PROMPT = (
+    "📝 <b>/notice 대기 중</b> (3분)\n"
+    "소식으로 올릴 트윗 원문(또는 /ingest 릴레이 DM)을 붙여넣거나 텍스트 파일을 올려주세요.\n"
+    "취소: <code>aNoneTokyo</code>"
+)
+
+
+def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[str, dict | None]:
+    """원문 → xnotice.parse → notices.merge_notice → 커밋.
+
+    반환 (mode, parsed): mode ∈ none | added | updated | recap | dup | skip | error.
+    added/updated 면 notices.json 에 대한 /undo 스냅샷도 남긴다.
+    """
+    if xnotice is None or notices is None:
+        return "error", None
+    parsed = xnotice.parse(raw, now_iso, tag=tag, title=title)
+    if not parsed:
+        return "none", None
+    for _try in (1, 2):
+        prev, psha = gh.read_json(_NOTICES_PATH)
+        arch, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
+        prev = prev or notices.default_notices()
+        arch = arch or notices.default_archive()
+        new_n, new_a, changed, mode = notices.merge_notice(prev, parsed, now_iso, archive=arch)
+        if not changed:
+            return mode, parsed
+        try:
+            _, nsha = gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,
+                                    message=f"data: notice {mode} {now_iso}")
+            if new_a is not arch:
+                gh.write_json(_NOTICE_ARCHIVE_PATH, new_a, prev_sha=asha,
+                              message=f"data: notice archive {now_iso}")
+        except ConflictError:
+            if _try == 2:
+                raise
+            log.warning("notice: notices.json 충돌 — 재시도")
+            continue
+        if mode in ("added", "updated"):
+            _save_undo(gh, action=f"소식 {mode} ({(parsed.get('title') or '')[:30]})",
+                       prev_content=prev, new_sha=nsha, now_iso=now_iso, path=_NOTICES_PATH)
+        return mode, parsed
+    return "error", parsed
+
+
+def _notice_sweep(gh, now_iso: str) -> int:
+    """expires_at 지난 소식 → notice_archive.json. 반환: 이관 건수 (best-effort)."""
+    if notices is None:
+        return 0
+    try:
+        prev, psha = gh.read_json(_NOTICES_PATH)
+        if not prev or not prev.get("notices"):
+            return 0
+        arch, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
+        new_n, new_a, moved = notices.sweep_expired(
+            prev, arch or notices.default_archive(), now_iso)
+        if not moved:
+            return 0
+        gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,
+                      message=f"data: notice sweep ({len(moved)}) {now_iso}")
+        gh.write_json(_NOTICE_ARCHIVE_PATH, new_a, prev_sha=asha,
+                      message=f"data: notice archive sweep {now_iso}")
+        return len(moved)
+    except Exception:
+        log.exception("notice sweep 실패 (무시)")
+        return 0
+
+
+def _notice_result_dm(mode: str, parsed: dict | None, raw: str) -> None:
+    if mode == "none":
+        _send_telegram("ℹ️ 날짜/시각 없음 또는 스케줄 형식 — 소식 등록 안 함.\n" + raw[:200])
+    elif mode in ("dup", "skip"):
+        _send_telegram("ℹ️ 이미 있는 소식이거나 지난 이벤트 후기 — 등록 안 함.")
+    elif mode == "recap":
+        _send_telegram("📎 지난 이벤트 후속으로 기록(게시판 노출 없음).")
+    elif mode in ("added", "updated"):
+        act = "추가" if mode == "added" else "갱신"
+        _send_telegram(
+            f"🆕 소식 {act}됨\n{notices.summary_line(parsed)}\n\n↩️ /undo 로 되돌릴 수 있습니다."
+        )
+    else:
+        _send_telegram("⚠️ 소식 처리 실패.")
+
+
+def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
+    """pending_notice 슬롯이 살아있을 때 온 메시지를 소식 원문/파일/취소로 소비.
+
+    반환 True = 소진(웹훅 즉시 200). /ingest 후속과 같은 규칙.
+    """
+    if admin is None or notices is None:
+        return False
+    try:
+        state, _ = gh.read_json(_ADMIN_STATE_PATH)
+    except Exception:
+        log.warning("admin_state.json 조회 실패 — /notice 후속 스킵")
+        return False
+    pending = admin.get_pending_notice(state)
+    if not pending:
+        return False
+
+    def _clear() -> None:
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(_ADMIN_STATE_PATH,
+                          admin.clear_pending_notice(st or admin.default_admin_state()),
+                          prev_sha=sh, message=f"data: pending_notice 정리 {now_iso}")
+        except Exception:
+            log.exception("pending_notice 정리 실패")
+
+    if admin.pending_notice_expired(pending, now_iso):
+        _clear()
+        _send_telegram("⏱ 이전 /notice 요청이 만료되어 취소되었습니다.")
+        return False
+    if text.strip() == _INGEST_CANCEL_TOKEN:
+        _clear()
+        _send_telegram("🚫 /notice 가 취소되었습니다.")
+        return True
+    if text.startswith("/"):
+        _clear()
+        _send_telegram("ℹ️ /notice 대기를 취소하고 입력한 명령을 실행합니다.")
+        return False
+
+    doc = (message or {}).get("document") or {}
+    raw = ""
+    if doc.get("file_id"):
+        content = _download_telegram_file(doc["file_id"])
+        if content is None:
+            _send_telegram("⚠️ 파일을 읽지 못했습니다(256KB 이하 텍스트). 다시 보내주세요. (대기 유지)")
+            return True
+        raw = content.strip()
+    elif text.strip():
+        raw = text.strip()
+    else:
+        _send_telegram("⚠️ 트윗 원문 텍스트나 텍스트 파일을 보내주세요. (대기 유지)")
+        return True
+
+    _clear()
+    _send_telegram("📥 접수했습니다. 반영 중…")
+    try:
+        _notice_sweep(gh, now_iso)
+        mode, parsed = _apply_notice(gh, raw, now_iso)
+    except Exception as e:
+        log.exception("Error handling /notice")
+        _send_telegram(f"⚠️ 오류: /notice 처리 실패\n{str(e)[:100]}")
+        return True
+    _notice_result_dm(mode, parsed, raw)
+    return True
+
+
+def _handle_notice_del(gh, now_iso: str, arg: str) -> None:
+    """/notice-del <id | 번호> — 소식 1건 제거 (+ /undo 스냅샷)."""
+    if notices is None:
+        _send_telegram("⚠️ notices 모듈 없음")
+        return
+    nid = (arg or "").strip()
+    if not nid:
+        _send_telegram("사용법: /notice-del &lt;id | 번호&gt;  (/notice-list 로 확인)")
+        return
+    try:
+        prev, psha = gh.read_json(_NOTICES_PATH)
+        prev = prev or notices.default_notices()
+        lst = prev.get("notices", []) or []
+        if nid.isdigit() and 1 <= int(nid) <= len(lst):
+            nid = lst[int(nid) - 1].get("id")
+        new_n, removed = notices.remove_notice(prev, nid)
+        if not removed:
+            _send_telegram(f"해당 소식이 없습니다: {html.escape(nid)}")
+            return
+        _, nsha = gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,
+                                message=f"data: notice del {now_iso}")
+        _save_undo(gh, action=f"소식 삭제 ({nid})", prev_content=prev, new_sha=nsha,
+                   now_iso=now_iso, path=_NOTICES_PATH)
+        _send_telegram(f"🗑 소식 삭제됨 (<code>{html.escape(nid)}</code>). /undo 로 되돌릴 수 있습니다.")
+    except Exception as e:
+        log.exception("notice-del")
+        _send_telegram(f"⚠️ 오류: /notice-del 실패\n{str(e)[:100]}")
+
+
+def _handle_notice_list(gh, now_iso: str) -> None:
+    if notices is None:
+        _send_telegram("⚠️ notices 모듈 없음")
+        return
+    try:
+        _notice_sweep(gh, now_iso)
+        prev, _ = gh.read_json(_NOTICES_PATH)
+        lst = (prev or {}).get("notices", []) or []
+        if not lst:
+            _send_telegram("📋 소식 없음.")
+            return
+        lines = [f"📋 <b>소식 {len(lst)}건</b>"]
+        for i, n in enumerate(lst, 1):
+            lines.append(f"{i}. <code>{html.escape(n.get('id') or '')}</code> "
+                         f"{html.escape(notices.summary_line(n))}")
+        _send_telegram("\n".join(lines))
+    except Exception as e:
+        log.exception("notice-list")
+        _send_telegram(f"⚠️ 오류: /notice-list 실패\n{str(e)[:100]}")
+
+
+def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
+    """(v2.7) 소식 자동 인입 — INGEST_ECHO/DRY-RUN 과 **무관하게** 별개로 돈다.
+
+    파싱(순수)이 소식이 아니면 GitHub 은 아예 안 건드린다. 반환: mode 문자열(로그용).
+    added/updated 만 운영자 DM.
+    """
+    if not raw or xnotice is None or notices is None:
+        return "none"
+    if xnotice.parse(raw, now_iso, tag=tag, title=title) is None:
+        return "none"
+    gh = _make_gh()
+    if gh is None:
+        return "no-gh"
+    try:
+        _notice_sweep(gh, now_iso)
+        mode, parsed = _apply_notice(gh, raw, now_iso, tag=tag, title=title)
+    except Exception:
+        log.exception("auto notice 실패")
+        return "error"
+    if mode in ("added", "updated"):
+        _notice_result_dm(mode, parsed, raw)
+    else:
+        log.info("auto notice: %s (조용히)", mode)
+    return mode
+
+
 def _kst_dt(iso: str | None) -> str:
     """ISO 'Z' → 'YYYY-MM-DD HH:MM KST'. 파싱 실패 시 원문 그대로."""
     if not iso:
@@ -974,24 +1207,38 @@ def _undo_target_text(undo: dict) -> str:
     return f"⏱ 되돌리면 <b>{at} 직전</b> 상태가 됩니다{tail}."
 
 
-def _undo_diff_text(prev_content: dict, cur_content: dict, limit: int = 8) -> str:
-    """undo(=prev_content 로 복원) 시 복원될/사라질 broadcasts 요약."""
-    prev_bcs = (prev_content or {}).get("broadcasts", []) or []
-    cur_bcs = (cur_content or {}).get("broadcasts", []) or []
-    restored = [b for b in prev_bcs if b not in cur_bcs]   # 되살아남
-    removed = [b for b in cur_bcs if b not in prev_bcs]     # 없어짐
+def _undo_diff_text(prev_content: dict, cur_content: dict, limit: int = 8,
+                    path: str = "schedule.json") -> str:
+    """undo(=prev_content 로 복원) 시 복원될/사라질 항목 요약. path 따라 대상 배열이 다름."""
+    if path == "notices.json":
+        prev_l = (prev_content or {}).get("notices", []) or []
+        cur_l = (cur_content or {}).get("notices", []) or []
+        _ids_p = {n.get("id") for n in prev_l}
+        _ids_c = {n.get("id") for n in cur_l}
+        restored = [n for n in prev_l if n.get("id") not in _ids_c]
+        removed = [n for n in cur_l if n.get("id") not in _ids_p]
 
-    def _line(b: dict) -> str:
-        ck = b.get("channel_key", "?")
-        hm = ""
-        s = b.get("scheduled_start") or b.get("actual_start")
-        if s and xrelay is not None:
-            try:
-                hm = " " + xrelay._jst_hm(s) + "(JST)"
-            except Exception:
-                hm = ""
-        title = b.get("title") or b.get("status") or ""
-        return f"· {ck}{hm} {title}".rstrip()
+        def _line(n: dict) -> str:
+            if notices is not None:
+                return "· " + notices.summary_line(n)
+            return "· " + (n.get("title") or n.get("id") or "?")[:60]
+    else:
+        prev_bcs = (prev_content or {}).get("broadcasts", []) or []
+        cur_bcs = (cur_content or {}).get("broadcasts", []) or []
+        restored = [b for b in prev_bcs if b not in cur_bcs]
+        removed = [b for b in cur_bcs if b not in prev_bcs]
+
+        def _line(b: dict) -> str:
+            ck = b.get("channel_key", "?")
+            hm = ""
+            s = b.get("scheduled_start") or b.get("actual_start")
+            if s and xrelay is not None:
+                try:
+                    hm = " " + xrelay._jst_hm(s) + "(JST)"
+                except Exception:
+                    hm = ""
+            title = b.get("title") or b.get("status") or ""
+            return f"· {ck}{hm} {title}".rstrip()
 
     parts = [f"<b>+{len(restored)} 복원 / −{len(removed)} 제거</b>"]
     for tag, rows in (("복원", restored), ("제거", removed)):
@@ -1012,8 +1259,9 @@ def _handle_undo_request(gh, now_iso: str) -> None:
             _send_telegram("↩️ 되돌릴 작업이 없습니다.")
             return
 
-        cur, _ = gh.read_json("schedule.json")
-        diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {})
+        _path = undo.get("path") or "schedule.json"
+        cur, _ = gh.read_json(_path)
+        diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {}, path=_path)
         gh.write_json(
             _ADMIN_STATE_PATH,
             admin.set_pending_undo(
@@ -1056,21 +1304,21 @@ def _handle_undo_confirm(gh, now_iso: str, yes: bool) -> None:
             _send_telegram("↩️ 그 사이 다른 작업이 있었습니다 — /undo 를 다시 실행하세요.")
             return
 
-        cur, cur_sha = gh.read_json("schedule.json")
+        _path = undo.get("path") or "schedule.json"
+        cur, cur_sha = gh.read_json(_path)
         if cur_sha != undo.get("new_sha"):
             state = admin.clear_pending_undo(admin.clear_undo(state))
             gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha,
-                          message=f"data: undo 슬롯 정리(스케줄 갱신) {now_iso}")
-            _send_telegram(
-                "↩️ 되돌리기 불가 — 그 사이 스케줄이 갱신됐습니다(정기 동기화 등).\n"
-                "/list 로 현재 상태를 확인한 뒤 /del 로 수동 처리하세요."
-            )
+                          message=f"data: undo 슬롯 정리({_path} 갱신) {now_iso}")
+            _hint = ("/list 로 현재 상태를 확인한 뒤 /del 로 수동 처리하세요."
+                     if _path == "schedule.json" else "/notice-list 로 확인 후 /notice-del 하세요.")
+            _send_telegram(f"↩️ 되돌리기 불가 — 그 사이 {_path} 이 갱신됐습니다.\n{_hint}")
             return
 
-        diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {})
+        diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {}, path=_path)
         target = _undo_target_text(undo)
         gh.write_json(
-            "schedule.json", undo["prev_content"], prev_sha=cur_sha,
+            _path, undo["prev_content"], prev_sha=cur_sha,
             message=f"data: undo({undo.get('action')}) {now_iso}",
         )
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
@@ -1164,6 +1412,10 @@ if _FLASK_AVAILABLE:
             ):
                 return jsonify({"ok": True}), 200
 
+            # v2.7: /notice(무인자) 후 원문/파일 대기 중이면 그쪽이 소진.
+            if admin is not None and _handle_notice_followup(gh, now_utc, message, text):
+                return jsonify({"ok": True}), 200
+
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
@@ -1206,6 +1458,28 @@ if _FLASK_AVAILABLE:
                     except Exception:
                         log.exception("pending_ingest 세팅 실패")
                         _send_telegram("⚠️ /ingest 대기 상태 저장 실패 — 잠시 후 다시 시도하세요.")
+            elif cmd == "/notice":
+                # /ingest 와 같은 2단계 — 무인자로 대기 슬롯만 세팅.
+                if admin is None or notices is None:
+                    _send_telegram("⚠️ notice 모듈 없음 — /notice 사용 불가")
+                else:
+                    try:
+                        _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
+                        gh.write_json(
+                            _ADMIN_STATE_PATH,
+                            admin.set_pending_notice(
+                                _st or admin.default_admin_state(), now_iso=now_utc
+                            ),
+                            prev_sha=_sh, message=f"data: pending_notice 대기 시작 {now_utc}",
+                        )
+                        _send_telegram(_NOTICE_PROMPT)
+                    except Exception:
+                        log.exception("pending_notice 세팅 실패")
+                        _send_telegram("⚠️ /notice 대기 상태 저장 실패 — 잠시 후 다시 시도하세요.")
+            elif cmd in ("/notice-del", "/ndel"):
+                _handle_notice_del(gh, now_utc, arg)
+            elif cmd in ("/notice-list", "/notices"):
+                _handle_notice_list(gh, now_utc)
             elif cmd == "/undo":
                 _handle_undo_request(gh, now_utc)
             else:
@@ -1220,7 +1494,9 @@ if _FLASK_AVAILABLE:
                     "/list [유닛] — 방송 목록 (유닛: arale/yuno/nonoka/ritsu/miyako, 생략 시 전체)\n"
                     "/del &lt;유닛&gt; &lt;번호&gt; — 목록의 항목을 내림 (확인 y/N 필요)\n"
                     "/ingest — 보낸 뒤 3분 내에 예고트윗 원문(텍스트/파일)을 이어 보내 수동 반영\n"
-                    "/undo — 방금 한 작업(/ingest, /del) 되돌리기 (확인 y/N, 60초)"
+                    "/notice — 소식 게시판 수동 등록 (원문/파일 이어 보내기)\n"
+                    "/notice-list · /notice-del &lt;id|번호&gt; — 소식 조회 / 삭제\n"
+                    "/undo — 방금 한 작업(/ingest, /del, /notice) 되돌리기 (확인 y/N, 60초)"
                 )
                 _send_telegram(help_text)
 
@@ -1277,6 +1553,10 @@ if _FLASK_AVAILABLE:
                 raw = odd[0].strip()
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # (v2.7) 소식 게시판 — schedule.json 과 별개 파이프라인. INGEST_ECHO/DRY-RUN 과
+        # 무관하게 여기서 항상 시도한다(소식이 아니면 GitHub 도 안 건드림).
+        _maybe_auto_notice(raw, now_iso, tag=x_tag, title=title)
 
         # ─── v2.3 임시 ECHO 테스트 훅 (INGEST_ECHO 가 참일 때만) ───────────────
         # 폰 Automate 가 `@BDP_yumemita` 푸시알림을 키워드 필터 없이 그대로 relay 할 때,
@@ -1399,13 +1679,14 @@ if _FLASK_AVAILABLE:
             failed = xrelay.unparsed_lines(raw)
 
             if not rows:
+                # 소식 자동 인입은 라우트 상단 _maybe_auto_notice 에서 이미 처리됨(ECHO 무관).
                 if failed:
                     msg = (
                         f"⚠️ ingest: 스케줄 트윗이나 {len(failed)}줄 모두 인식 실패\n"
                         + _failed_lines_block(failed)
                     )
                 else:
-                    msg = "ℹ️ ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
+                    msg = "ℹ️ ingest: 스케줄·소식 형식 아님 — 무시\n" + raw[:200]
                 if drained:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 _send_telegram(msg, silent=not drained)
@@ -1715,6 +1996,61 @@ if __name__ == "__main__":
             globals()["_send_telegram"] = _orig3
     else:
         print("  (admin/xrelay 미로드 — 스킵)")
+
+    print("\n[Notice v2.7] /notice → notices.json + /undo(path)")
+    if admin is not None and xnotice is not None and notices is not None:
+        class _FGN:
+            def __init__(self): self.store = {}; self._n = 0
+            def read_json(self, path):
+                it = self.store.get(path); return (it[0], it[1]) if it else (None, None)
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                cur = self.store.get(path)
+                if cur is not None and cur[0] == data: return False, cur[1]
+                self._n += 1; self.store[path] = (data, f"s{self._n}"); return True, f"s{self._n}"
+
+        _sn: list[str] = []
+        _o = _send_telegram
+        globals()["_send_telegram"] = lambda text, silent=False: (_sn.append(text) or True)
+        try:
+            gN = _FGN()
+            NOW = "2026-09-10T00:00:00Z"
+            TW = ("＼事前登録150万人突破🎊／\n「アワーノーツ リリース日決定特番」\n"
+                  "9月13日(日)21:00より配信決定🎉\n公式XとYouTubeにて\n#バンドリ")
+            m, p = _apply_notice(gN, TW, NOW, tag="p#https://x.com/#1tweet-2096519341575721125")
+            assert m == "added" and p["category"] == "live", (m, p)
+            assert gN.read_json(_NOTICES_PATH)[0]["notices"][0]["date"] == "2026-09-13"
+            u = admin.get_undo(gN.read_json(_ADMIN_STATE_PATH)[0])
+            assert u and u["path"] == "notices.json", u
+            print("  ✓ _apply_notice → added + notices.json undo 스냅샷")
+
+            # 같은 트윗 재수신 → dup
+            m2, _ = _apply_notice(gN, TW, NOW, tag="p#https://x.com/#1tweet-2096519341575721125")
+            assert m2 == "dup", m2
+            # 스케줄 형식 → none
+            assert _apply_notice(gN, "8/30(日) 配信スケジュール\n🎮11:00〜 宮永ののか", NOW)[0] == "none"
+            print("  ✓ dup / 스케줄 → none")
+
+            # /undo (path=notices.json) — 요청 후 y → notices.json 복원(빈 상태로)
+            _handle_undo_request(gN, "2026-09-10T00:05:00Z")
+            assert "되돌립니다" in _sn[-1] and "소식" in _sn[-1], _sn[-1]
+            _handle_undo_confirm(gN, "2026-09-10T00:05:00Z", yes=True)
+            assert "되돌려졌습니다" in _sn[-1], _sn[-1]
+            assert gN.read_json(_NOTICES_PATH)[0]["notices"] == [], gN.read_json(_NOTICES_PATH)[0]
+            print("  ✓ /undo path=notices.json → 소식 복원(제거)")
+
+            # sweep — 만료 소식 이관
+            gN2 = _FGN()
+            gN2.store[_NOTICES_PATH] = ({"generated_at": None, "notices": [
+                {"id": "x", "title": "지난것", "date": "2026-09-01", "category": "etc",
+                 "expires_at": "2026-09-02T15:00:00Z", "seen_ids": ["x"]}]}, "s0")
+            moved = _notice_sweep(gN2, NOW)
+            assert moved == 1 and gN2.read_json(_NOTICES_PATH)[0]["notices"] == []
+            assert gN2.read_json(_NOTICE_ARCHIVE_PATH)[0]["notices"][0]["id"] == "x"
+            print("  ✓ _notice_sweep → 만료분 archive 이관")
+        finally:
+            globals()["_send_telegram"] = _o
+    else:
+        print("  (xnotice/notices 미로드 — 스킵)")
 
     # Flask 미설치 확인
     if Flask is None or app is None:

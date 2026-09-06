@@ -13,6 +13,9 @@
     "pending_ingest": null | {
       "at": "..."                  // /ingest(무인자) 입력 후 원문/파일 대기 시작 시각 (ISO 'Z')
     },
+    "pending_notice": null | {      // (v2.7) /notice(무인자) 후 원문/파일 대기
+      "at": "..."
+    },
     "pending_undo": null | {
       "at": "...",                 // /undo 입력 후 (y/N) 대기 시작 시각 (ISO 'Z')
       "target_sha": "...",         // 되돌릴 대상(undo 슬롯)의 new_sha — (y) 때 슬롯이 안 바뀐 것 확인
@@ -20,26 +23,32 @@
     },
     "undo": null | {
       "action": "...",             // 사람이 읽을 설명 ("/del arale#2", "ingest 2026-..." 등)
-      "prev_content": {...},       // 변경 직전 schedule.json 전체
-      "new_sha": "...",            // 변경 커밋 직후 schedule.json 의 sha (undo 시 CAS 확인용)
+      "path": "schedule.json",     // (v2.7) 되돌릴 대상 파일 — schedule.json | notices.json
+      "prev_content": {...},       // 변경 직전 그 파일 전체
+      "new_sha": "...",            // 변경 커밋 직후 그 파일의 sha (undo 시 CAS 확인용)
       "at": "..."
     }
   }
 
-`pending_del`/`pending_ingest`/`pending_undo`/`undo` 는 각각 슬롯 1개 — 새 요청이 오면 덮어쓴다.
+`pending_*`/`undo` 는 각각 슬롯 1개 — 새 요청이 오면 덮어쓴다.
+`/undo` 는 파일 무관 "마지막 mutating 명령 1건"을 되돌린다 (undo.path 로 대상 결정).
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 PENDING_DEL_TTL_SEC = 300     # /del 경고 후 (y/N) 대기 상한 — 지나면 만료 취급
+PENDING_NOTICE_TTL_SEC = 180  # /notice(무인자) 후 원문/파일 대기 상한
 PENDING_INGEST_TTL_SEC = 180  # /ingest(무인자) 후 원문/파일 대기 상한 — 지나면 취소
 PENDING_UNDO_TTL_SEC = 60     # /undo 후 (y/N) 대기 상한 — 지나면 자동 N(취소)
 
 
 def default_admin_state() -> dict:
     """기본 admin_state.json 형태."""
-    return {"pending_del": None, "pending_ingest": None, "pending_undo": None, "undo": None}
+    return {
+        "pending_del": None, "pending_ingest": None, "pending_notice": None,
+        "pending_undo": None, "undo": None,
+    }
 
 
 def _as_dict(state) -> dict:
@@ -125,6 +134,42 @@ def pending_ingest_expired(pending: dict | None, now_iso: str, ttl_sec: int = PE
     return (now_dt - at_dt).total_seconds() > ttl_sec
 
 
+def get_pending_notice(state) -> dict | None:
+    """대기 중인 /notice 원문 입력 슬롯 반환. 없으면 None."""
+    if not isinstance(state, dict):
+        return None
+    return state.get("pending_notice")
+
+
+def set_pending_notice(state, *, now_iso: str) -> dict:
+    """/notice 원문 대기 상태로 교체한 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_notice"] = {"at": now_iso}
+    return result
+
+
+def clear_pending_notice(state) -> dict:
+    """/notice 원문 대기 상태를 비운 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_notice"] = None
+    return result
+
+
+def pending_notice_expired(pending: dict | None, now_iso: str, ttl_sec: int = PENDING_NOTICE_TTL_SEC) -> bool:
+    """pending_notice 가 TTL 을 넘겼는지. pending 이 없으면(None) True 취급."""
+    if not pending:
+        return True
+    at = pending.get("at")
+    if not at:
+        return True
+    try:
+        at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
 def get_pending_undo(state) -> dict | None:
     """대기 중인 /undo 확인(y/N) 슬롯 반환. 없으면 None."""
     if not isinstance(state, dict):
@@ -168,11 +213,17 @@ def get_undo(state) -> dict | None:
     return state.get("undo")
 
 
-def set_undo(state, *, action: str, prev_content: dict, new_sha: str | None, now_iso: str) -> dict:
-    """새 undo 스냅샷으로 교체한 새 dict 반환 (원본 불변). pending_del 슬롯은 보존."""
+def set_undo(state, *, action: str, prev_content: dict, new_sha: str | None,
+             now_iso: str, path: str = "schedule.json") -> dict:
+    """새 undo 스냅샷으로 교체한 새 dict 반환 (원본 불변). 타 슬롯 보존.
+
+    `path` = 되돌릴 대상 파일 (schedule.json | notices.json). `/undo` 는 이걸 보고
+    그 파일을 `prev_content` 로 복원하고, 그 파일 sha 를 `new_sha` 와 대조한다.
+    """
     result = _as_dict(state)
     result["undo"] = {
         "action": action,
+        "path": path,
         "prev_content": prev_content,
         "new_sha": new_sha,
         "at": now_iso,
@@ -197,10 +248,11 @@ if __name__ == "__main__":
 
     d = default_admin_state()
     assert d["pending_del"] is None and d["undo"] is None
-    assert d["pending_ingest"] is None and d["pending_undo"] is None
+    assert d["pending_ingest"] is None and d["pending_undo"] is None and d["pending_notice"] is None
     assert get_pending_del(None) is None and get_undo({}) is None
     assert get_pending_ingest(None) is None and get_pending_ingest({}) is None
     assert get_pending_undo(None) is None and get_pending_undo({}) is None
+    assert get_pending_notice(None) is None and get_pending_notice({}) is None
     print("✓ defaults / getters")
 
     p = set_pending_del(
@@ -241,15 +293,28 @@ if __name__ == "__main__":
     assert get_pending_ingest(clear_pending_undo(pu)) is not None, "clear 시 타 슬롯 보존"
     print("✓ pending_undo 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
 
+    pn = set_pending_notice(pu, now_iso="2026-09-05T12:00:00Z")
+    assert get_pending_notice(pn) == {"at": "2026-09-05T12:00:00Z"}
+    assert get_pending_undo(pn) is not None, "타 슬롯 보존"
+    assert pending_notice_expired(None, "z") is True
+    assert pending_notice_expired(get_pending_notice(pn), "2026-09-05T12:02:00Z") is False
+    assert pending_notice_expired(get_pending_notice(pn), "2026-09-05T12:03:30Z") is True
+    assert get_pending_notice(clear_pending_notice(pn)) is None
+    print("✓ pending_notice 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
+
     u = set_undo(
         d, action="/del arale#2", prev_content={"broadcasts": []},
         new_sha="sha_after", now_iso="2026-09-05T12:01:00Z",
     )
     assert get_undo(u)["new_sha"] == "sha_after"
+    assert get_undo(u)["path"] == "schedule.json", "path 기본값"
+    un = set_undo(d, action="notice 추가", prev_content={"notices": []},
+                  new_sha="s2", now_iso="z", path="notices.json")
+    assert get_undo(un)["path"] == "notices.json"
     assert get_pending_del(u) is None, "pending_del 슬롯 안 건드림"
     u2 = clear_undo(u)
     assert get_undo(u2) is None
-    print("✓ undo 설정/해제 (원본 불변, pending_del 슬롯 보존)")
+    print("✓ undo 설정/해제 + path (원본 불변, 타 슬롯 보존)")
 
     orig = default_admin_state()
     set_pending_del(orig, unit="x", idx=1, snapshot={}, warn_text="", now_iso="z")

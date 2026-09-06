@@ -1,6 +1,7 @@
 # v2.7 — 소식 게시판 (방송 외 이벤트)
 
-작성 2026-09-07. v2.3(X 릴레이) 위에 얹는다. **아직 미구현 — 계획 + UI 시안만.**
+작성 2026-09-07. v2.3(X 릴레이) 위에 얹는다.
+**백엔드 구현 완료(§4~6). 프론트 티커(§7)는 미구현 — 목업만.**
 
 - UI 목업(확정): `docs/plan/v2_7_notice_board_mockup.html`
   (아티팩트: https://claude.ai/code/artifact/5ab98542-e5a2-4ec1-8a6e-dac81789a9d8)
@@ -45,59 +46,87 @@
 - `schedule.json`/`archive.json` 처럼, 사라진 소식도 **`notice_archive.json` 에 기록 보존**
   (되돌리기·집계·"지난 소식" 조회용).
 
-## 4. 데이터 계약 (초안)
+## 4. 데이터 계약 (구현 — `src/backend/notices.py`)
 
-### `notices.json` (data 브랜치 루트)
+### `notices.json` (data 브랜치 루트) — 정렬: date asc → time asc → id (undated 뒤)
 
 ```jsonc
 {
   "generated_at": "2026-09-07T...Z",
   "notices": [
     {
-      "id": "2096552878769152326",       // 트윗 ID (Snowflake) = 고유키·중복제거·시간정렬
+      "id": "2096552878769152326",       // 첫 트윗 ID(Snowflake). tag 없으면 "n"+sha1(cat+date+slug)[:15]
       "category": "live",                 // live | release | platform | etc
-      "title": "「アワーノーツ」リリース日決定特番",
-      "date": "2026-09-13",               // 기준 날짜 (JST). null 가능 → posted_at 로 대체
-      "time": "21:00",                    // JST HH:MM. null 가능
-      "deadline": false,                  // true 면 date 는 마감일("〜M/D")
-      "site": "youtube",                  // youtube | bilibili | x | store | music | ...
-      "url": "https://youtube.com/live/...",   // 이름 클릭 목적지. null 이면 tweet_url 사용
-      "tweet_url": "https://x.com/i/status/2096552878769152326",
-      "src_handle": "@BDP_yumemita",      // 출처 표시. 리포스트면 "RT @xxx"
-      "posted_at": "2026-09-07T11:00:00Z",
-      "expires_at": "2026-09-14T15:00:00Z"     // date/posted_at 의 JST 자정 → UTC
+      "title": "「アワーノーツ」リリース日決定特番",  // xnotice._headline (가장 눈에 띄는 줄)
+      "date": "2026-09-13",               // 이벤트 날짜 (JST). 시각만 있으면 오늘로 보정
+      "time": "21:00",                    // JST HH:MM (심야표기 24:xx 그대로). null 가능
+      "deadline": false,                  // true 면 date 는 "〜M/D" 마감일
+      "site": "youtube",                  // youtube | bilibili | store | music | web | x
+      "url": "https://youtube.com/live/...",   // 이름 클릭 목적지. null → tweet_url
+      "tweet_url": "https://x.com/i/status/2096552878769152326",  // 출처 클릭
+      "src_handle": "@BDP_yumemita",      // 리포스트면 "RT @xxx"
+      "anchor_a": "kx-nhmTj4Eg",          // 중복키 a — URL id (YT/bilibili/store tail)
+      "anchor_b": "アワーノーツリリース日決定特番",  // 중복키 b — 「」/『』 인용구
+      "title_slug": "アワーノーツリリース日決定特番",  // 합성 id 계산용
+      "seen_ids": ["2096552878769152326"], // 이 소식을 만든·강화한 트윗들
+      "first_seen": "...Z", "last_updated": "...Z",
+      "expires_at": "2026-09-14T15:00:00Z"     // 이벤트 '그 날' JST 자정 다음 → UTC. 24:xx면 +1일
     }
   ]
 }
 ```
 
-### `notice_archive.json` — 위 항목 + `archived_at`, append-only, `id` dedupe.
+### `notice_archive.json` — `{ "notices": [ <위 + archived_at> ] }`, append-only, `id` dedupe.
 
-## 5. 입력 경로 — `/notice` (수동 큐레이션 우선)
+### 중복 판정 (`notices.merge_notice`) — mode ∈ added|updated|recap|dup|skip
 
-`/ingest` 2단계 흐름과 동일한 패턴. **자동 분류는 "후보 제안"까지만**, 게시는 운영자 확인.
+1. `incoming.id` 가 어느 소식의 `id`/`seen_ids`(활성+아카이브)에 있음 → **dup** (no-op)
+2. **같은 `date`** 이고 · 둘 다 `anchor_a` 있으면 `a` 일치 · `a` 없으면 둘 다 `anchor_b` 있고 `b` 일치
+   → 같은 소식
+   - `is_recap` + 이벤트 날짜 지남 → `seen_ids` 만 append → **recap**
+   - 그 외 → 필드 갱신(title/time/url/site/anchor 은 나중 트윗 우선, date 유지) → **updated**
+3. 활성에 없고 아카이브에서 같은 그룹 → 아카이브 `seen_ids` append, **부활 안 함** → **recap**
+4. 아무 데도 없음: `is_recap` + 날짜 지남 → **skip** / 그 외 → **added**
 
-- `/notice` (무인자) → `admin_state.json` `pending_notice` 슬롯 + 안내. 이어서 트윗 원문
-  붙여넣기(또는 `/ingest` 릴레이 DM 을 그대로).
-- 백엔드가 파싱 → 카테고리 추정(§6) + 날짜/시각/사이트/URL 추출 → **미리보기 DM**
-  (`[카테고리] [D-DAY] 제목 / 사이트 / 링크`) + `y/N`.
-- `y` → `notices.json` 머지. `n`/타임아웃 → 취소.
-- `/notice-del <id|번호>` · `/notice-list` — `/del`·`/list` 재사용.
-- (선택) 정기 `/ingest` 에서 스케줄 형식이 아니고 `looks_noticeable` 이면 "소식 후보?"
-  DM 알림만 → 운영자가 `/notice` 로 승격.
+날짜 다르면 별도 소식 (DAY1/DAY2 자동 분리). 불완전 그룹핑이어도 `sweep_expired` 가 자정에
+아카이브로 치우므로 중복은 유한·자가치유.
 
-## 6. 카테고리 추정 휴리스틱 (자동은 제안용)
+## 5. 입력 경로 — 자동 + `/notice` 개입 (구현)
 
-`title`(=`android.title`, 게시자 표시 이름) + 본문 키워드:
+목표: **평소엔 무인. 문제 있을 때만 `/notice*`·`/undo` 로 손댐.**
 
-- **출처 필터**: `title == "夢限大みゅーたいぷ"` 아니고 본문이 `@handle:`·`pic.x.com/` 로
-  시작하면 리포스트 → `src_handle = "RT @..."`, 그래도 후보엔 올림.
-- `platform`: 본문에 `bilibili`/`space.bilibili.com`/`ニコ生`/`ツイキャス`, 또는 `全員【…】`.
-- `release`: `リリース`/`発売`/`配信開始`/`予約`/`受注`/`グッズ`/`CD`/`EP`.
-- `live`: `配信決定`/`特番`/`生放送`/`○月○日` + YouTube URL (스케줄 트윗 아님).
-- 그 외 → `etc`.
+- **자동**: 정기 `/ingest`(실배포, `INGEST_ECHO=0`) 에서 `xrelay.parse()` 가 행을 안 내면
+  → `xnotice.parse(text, tag, title)` → `notices.merge_notice` → 커밋.
+  - `added`/`updated` → 한 줄 DM (`🆕 소식 추가/갱신됨` + `↩️ /undo`).
+  - `recap`/`dup`/`skip`/`none` → **조용히**(로그만).
+  - 매 `/ingest` 진입 시 `_notice_sweep` 도 돌려 만료분을 아카이브로.
+- **`/notice`** (무인자) → `pending_notice` 슬롯 + 안내 → 트윗 원문/파일 이어 보내기
+  (`aNoneTokyo` 취소, `/`명령이면 대기 접고 통과, 180초 만료). `_apply_notice` 로 같은 경로.
+- **`/notice-list`** (별칭 `/notices`) — id + 요약 나열. **`/notice-del <id|번호>`**(별칭 `/ndel`)
+  — 1건 제거 + `/undo` 스냅샷.
+- **`/undo`** — `undo.path` 가 `notices.json` 이면 그 파일을 복원. y/N 2단계·SHA 가드 동일.
+  `_undo_diff_text` 가 path 따라 `broadcasts`↔`notices` 를 `id` 로 비교.
 
-`全員【bilibili】` 등 v2.6 에서 `xrelay._SKIP_LINE_RE` 로 스킵하던 라인이 여기로 흡수됨.
+## 6. 파서 · 분류 (`src/backend/xnotice.py`)
+
+`parse(text, now_iso, *, tag=None, title=None) -> dict | None`
+
+- **None 조건**: `配信スケジュール`/`出演情報` 포함 · 날짜·시각 **둘 다 없음**.
+- **이벤트 날짜**: `M/D(曜)` · `○月○日` · `〜M/D`(deadline). 여러 개면 `開催`/`発売`/`配信`/
+  `リリース`/`より`/`から` 동사 근처(뒤 40자) 우선, 아니면 미래 최근접. 시각만 있고 `本日`/
+  `今夜` 등이면 오늘로 보정, 아니어도 시각만이면 오늘.
+- **카테고리** (먼저 맞는 것): `platform`(`bilibili`/`ニコ生`/`ツイキャス`/`全員【`) →
+  `live`(`配信決定`/`特番`/`生配信`/`放送決定`/`プレミア公開`) →
+  `release`(`リリース`/`発売`/`受注`/`予約`/`グッズ`/`CD`/`EP`/`フェア`) → `etc`.
+- **사이트/URL/anchor_a**: 본문 온전 URL 하나 — `youtube.com/(watch?v=|live/)<11>` /
+  `*.bilibili.com/<id>`·`b23.tv/*` / music(`lnk.to`·`spotify`·`music.apple`) / store
+  (`bushiroad`·`booth.pm`·`/products/`) / 그 외 `web`. 없으면 `x`.
+- **anchor_b**: 첫 `「…」`/`『…』` 정규화.
+- **is_recap**: `ありがとうございました`/`御礼`/`無事終了`/`振り返り`/`感想は`/`ご来場` 등.
+- **src_handle**: 본문이 `@handle:` 로 시작하거나 `title`(android.title)이 공식 표시 이름이
+  아니면 `RT …`.
+
+`全員【bilibili】` 등 v2.6 에서 `xrelay._SKIP_LINE_RE` 로 스킵하던 라인이 여기로 흡수된다.
 
 ## 7. 프론트
 
@@ -106,10 +135,18 @@
 - CSS: 목업의 `.board` 계열을 `css/` 에 추가. 예고판 토큰 재사용, 다크 단일.
 - 만료(`expires_at` 지난 것)는 프론트에서도 숨김(백엔드 sweep 지연 대비).
 
-## 8. 관련 파일 (구현 시)
+## 8. 관련 파일
 
-- 백엔드: `src/backend/notices.py`(계약 헬퍼) · `xnotice.py`(파서/분류) ·
-  `telegram_app.py`(`/notice` 흐름) · `admin.py`(`pending_notice` 슬롯) ·
-  수명 sweep(정기 `/tick` 또는 telegram 서비스에서).
-- 프론트: `src/frontend/js/render.js` · `js/config.js` · `css/`.
+- 백엔드 (완료): `src/backend/xnotice.py`(파서/분류) · `notices.py`(계약·머지·sweep) ·
+  `admin.py`(`pending_notice` 슬롯 + `set_undo(path=)`) ·
+  `telegram_app.py`(`_apply_notice`/`_notice_sweep`/`_handle_notice_*`, `/ingest` 자동 인입,
+  `_handle_undo_*` path 대응). self-test: `python -m src.backend.{xnotice,notices,admin,telegram_app}`.
+- 프론트 (미구현): `src/frontend/js/render.js`(목업 티커 로직) · `js/config.js`(URL) · `css/`.
+  만료(`expires_at` 지남)는 프론트에서도 숨김(sweep 지연 대비).
 - data 브랜치: `notices.json` · `notice_archive.json`.
+
+## 9. 남은 것
+
+- **프론트 티커** — `docs/plan/v2_7_notice_board_mockup.html` 로직을 `render.js`/`css/` 로.
+- 자동 인입은 `INGEST_ECHO=0` 실배포 전환 후에야 동작 (지금은 `/notice` 수동만).
+- 다이제스트 DM(하루 1회 요약)은 아직 — 지금은 건별 한 줄 DM.

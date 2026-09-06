@@ -363,8 +363,8 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 
 ## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트, v2.5)
 
-텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/undo`, `docs/plan/v2_5_admin_commands.md`)의
-상태. `pending_del`/`pending_ingest`/`pending_undo`/`undo` 각각 슬롯 1개(새 값이 오면 이전 값을 덮어씀).
+텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/notice` `/undo`)의 상태.
+`pending_del`/`pending_ingest`/`pending_notice`/`pending_undo`/`undo` 각각 슬롯 1개.
 
 ```jsonc
 {
@@ -375,18 +375,22 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
     "warn_text": "...",
     "at": "2026-09-05T12:00:00Z" // 확인 대기 시작 (TTL 300s, admin.PENDING_DEL_TTL_SEC)
   },
-  "pending_ingest": null | {     // (v2.5.1) /ingest(무인자) 후 원문/파일 대기
-    "at": "2026-09-05T12:00:00Z" // TTL 180s (admin.PENDING_INGEST_TTL_SEC)
+  "pending_ingest": null | {     // (v2.5.1) /ingest(무인자) 후 원문/파일 대기 — TTL 180s
+    "at": "2026-09-05T12:00:00Z"
   },
-  "pending_undo": null | {       // (v2.5.2) /undo 후 (y/N) 확인 대기
-    "at": "2026-09-05T12:00:00Z",// TTL 60s (admin.PENDING_UNDO_TTL_SEC)
+  "pending_notice": null | {     // (v2.7) /notice(무인자) 후 원문/파일 대기 — TTL 180s
+    "at": "2026-09-05T12:00:00Z"
+  },
+  "pending_undo": null | {       // (v2.5.2) /undo 후 (y/N) 확인 대기 — TTL 60s
+    "at": "2026-09-05T12:00:00Z",
     "target_sha": "...",         // 되돌릴 undo 슬롯의 new_sha — (y) 때 슬롯 미교체 확인
-    "action": "..."              // 사람이 읽을 설명 (프롬프트/취소 안내용)
+    "action": "..."
   },
   "undo": null | {
-    "action": "/del arale#2",    // 사람이 읽을 설명
-    "prev_content": { /* schedule.json 전체(변경 직전) */ },
-    "new_sha": "...",            // 변경 커밋 직후 schedule.json sha (undo 시 CAS 확인용)
+    "action": "/del arale#2",
+    "path": "schedule.json",     // (v2.7) 되돌릴 대상 파일 — schedule.json | notices.json
+    "prev_content": { /* 그 파일 전체(변경 직전) */ },
+    "new_sha": "...",            // 변경 커밋 직후 그 파일 sha (undo 시 CAS 확인용)
     "at": "2026-09-05T12:00:05Z"
   }
 }
@@ -395,9 +399,10 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 `src/backend/admin.py` (순수 헬퍼): `default_admin_state()`, 그리고 각 슬롯마다
 `get_*` / `set_*` / `clear_*` / `*_expired(pending, now_iso, ttl_sec=…)`:
 - `pending_del` — `set_pending_del(s, *, unit, idx, snapshot, warn_text, now_iso)`, TTL 300s
-- `pending_ingest` — `set_pending_ingest(s, *, now_iso)`, TTL 180s
+- `pending_ingest` / `pending_notice` — `set_pending_*(s, *, now_iso)`, TTL 180s
 - `pending_undo` — `set_pending_undo(s, *, target_sha, action, now_iso)`, TTL 60s
-- `undo` — `set_undo(s, *, action, prev_content, new_sha, now_iso)` (TTL 없음, sha 로 판정)
+- `undo` — `set_undo(s, *, action, prev_content, new_sha, now_iso, path="schedule.json")`
+  (TTL 없음, sha 로 판정). `/undo` 는 `path` 를 보고 그 파일을 복원.
 
 `set_*`/`clear_*` 는 원본 복사 후 해당 슬롯만 갱신(다른 슬롯 보존).
 
@@ -419,7 +424,26 @@ KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 
 **쓰기 경합**: schedule.json 을 쓰는 모든 경로(봇 `/ingest`·`/undo`·`/del`, 메인 백엔드
 `/tick`·`/wake`)는 CAS(`prev_sha`) + 1회 재계산 재시도로 직렬화된다. 크로스 서비스 분산 락은
 두지 않음 — `/tick` 은 Cloud Scheduler 트리거라 락 대기를 못 하고, `/undo` 는 위 sha 가드가
-오작동을 원천 차단하므로 불필요.
+오작동을 원천 차단하므로 불필요. `notices.json` 도 동일(CAS+재시도).
+
+---
+
+## 6-2. 계약 H — `notices.json` / `notice_archive.json` (data 브랜치, v2.7)
+
+방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 티커. 전체 스키마·중복판정·파서는
+`docs/plan/v2_7_notice_board.md` §4~6.
+
+- `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
+  `title`·`date`·`time`·`deadline`·`site`·`url`·`tweet_url`·`src_handle`·`anchor_a`·`anchor_b`·
+  `title_slug`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
+- `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
+- `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·
+  `出演情報` 면 `None`. `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices,
+  new_archive, changed, mode∈added|updated|recap|dup|skip)`. 중복키: **같은 date** + (`anchor_a`
+  일치 ‖ a 없으면 `anchor_b` 일치). `notices.sweep_expired` → 만료분 아카이브.
+- 텔레그램: `/notice`(2단계) · `/notice-list` · `/notice-del`. 실배포 `/ingest` 에서
+  `xrelay` 가 행을 안 내면 자동으로 `_apply_notice`(added/updated 만 DM, 나머지 조용히).
+- `/undo` 는 `admin_state.undo.path == "notices.json"` 이면 이 파일을 복원.
 
 ---
 

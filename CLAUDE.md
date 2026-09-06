@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
   **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
 - **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/plan/v2_5_admin_commands.md`
-- **v2.7 (소식 게시판 — 방송 외 이벤트 티커, 미구현/계획)**: `docs/plan/v2_7_notice_board.md`
+- **v2.7 (소식 게시판 — 방송 외 이벤트 티커. 백엔드 완료·프론트 미구현)**: `docs/plan/v2_7_notice_board.md`
   + UI 목업 `docs/plan/v2_7_notice_board_mockup.html`
 
 서버 상시 가동 없음. 무료 인프라만 사용:
@@ -68,7 +68,9 @@ src/
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
-    admin.py           # (v2.5) admin_state.json 스키마 (pending_del/pending_ingest/pending_undo/undo 슬롯) — 순수
+    admin.py           # (v2.5) admin_state.json 스키마 (pending_del/ingest/notice/undo 슬롯, undo.path) — 순수
+    xnotice.py         # (v2.7) 방송 외 이벤트 트윗 → notices 항목 파서 + 카테고리/anchor — 순수
+    notices.py         # (v2.7) notices.json/notice_archive.json 계약 + 중복판정·머지·수명 sweep — 순수
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
                        #        (v2.4/2.6) 합동방송 kind="collab" + URL→video_id · parse_appearance(出演情報)
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
@@ -80,7 +82,7 @@ fixtures/              # schedule.sample.json(프론트/로직 공용), rss_aral
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
 data 브랜치             # schedule.json + archive.json + pending.json + control.json(v2.1)
                        #   + ingest_queue.json(v2.4 — ECHO/DRY-RUN 중 받은 트윗, 실배포 전환 시 drain)
-                       #   + admin_state.json(v2.5 — pending_del/pending_ingest/pending_undo/undo 슬롯). 코드 없음
+                       #   + admin_state.json(v2.5). + notices.json / notice_archive.json(v2.7 — 소식 티커). 코드 없음
 ```
 
 ## 명령
@@ -100,8 +102,10 @@ python -m src.backend.xrelay         # (v2.3~2.6) X 스케줄 파서 — S1~S9 +
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
-python -m src.backend.admin          # (v2.5) admin_state.json 헬퍼 (pending_del/pending_ingest/pending_undo/undo)
-python -m src.backend.telegram_app   # /list /del /undo 흐름 포함 (Flask 설치 시 라우트까지)
+python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/undo, undo.path)
+python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S8 (카테고리·날짜·anchor·recap)
+python -m src.backend.notices        # (v2.7) notices 머지·중복판정·sweep
+python -m src.backend.telegram_app   # /list /del /undo /notice 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
 
 # v2 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
@@ -148,6 +152,11 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    아무 채널에나 실물이 뜨면 supersede 하며 `_carry_collab` 로 실물 행에 `collab_with` 를 이관한다.
    `host="group"` 특례(supersede 안 함)는 `parse_appearance`(出演情報) 전용. `全員【bilibili】` 등
    비-YT 라인은 스킵. 상세는 `docs/plan/v2_4_collab.md` §8.
+8. **(v2.7)** 소식 게시판 — `xrelay` 가 행을 안 내는(스케줄 아님) 트윗은 `xnotice.parse` 로
+   방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 판별 → `notices.merge_notice` 로
+   `notices.json` 에 반영(중복키 = 같은 date + anchor_a/b). 자정 지난 소식은 `sweep_expired` 가
+   `notice_archive.json` 로. 텔레그램 `/notice`·`/notice-list`·`/notice-del`, `/undo` 는
+   `undo.path` 로 schedule/notices 구분. 프론트 티커는 미구현(`docs/plan/v2_7_notice_board.md`).
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId
