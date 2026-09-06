@@ -755,8 +755,142 @@ def _handle_del_confirm(gh, now_iso: str, yes: bool) -> None:
         _send_telegram(f"⚠️ 오류: /del 확인 처리 실패\n{str(e)[:100]}")
 
 
+def _failed_lines_block(failed: list, limit: int = 8) -> str:
+    """xrelay.unparsed_lines 결과 → DM 에 넣을 목록 문자열 (줄당 80자, 최대 limit 줄)."""
+    shown = [f"· {ln[:80]}" for ln in failed[:limit]]
+    if len(failed) > limit:
+        shown.append(f"…외 {len(failed) - limit}줄")
+    return "\n".join(shown)
+
+
+_INGEST_PROMPT = (
+    "📝 <b>/ingest 대기 중</b> (3분)\n"
+    "3분 내에 공식계정(@BDP_yumemita)의 예고트윗 텍스트를 입력하시거나 "
+    "텍스트 파일(txt, md 등)을 업로드해주세요.\n"
+    "취소하려면 <code>aNoneTokyo</code> 라고 입력하세요."
+)
+_INGEST_CANCEL_TOKEN = "aNoneTokyo"
+_INGEST_FILE_MAX_BYTES = 256 * 1024
+
+
+def _download_telegram_file(file_id: str) -> Optional[str]:
+    """Telegram 파일(file_id)을 내려받아 UTF-8 텍스트로 반환. 실패 시 None.
+
+    getFile → file_path → https://api.telegram.org/file/bot<token>/<file_path>.
+    256KB 초과 파일은 거부(None).
+    """
+    if requests is None:
+        return None
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token or not file_id:
+        return None
+    try:
+        r = requests.get(
+            f"https://api.telegram.org/bot{token}/getFile",
+            params={"file_id": file_id}, timeout=10,
+        )
+        r.raise_for_status()
+        info = (r.json() or {}).get("result") or {}
+        file_path = info.get("file_path")
+        if not file_path:
+            return None
+        if (info.get("file_size") or 0) > _INGEST_FILE_MAX_BYTES:
+            log.warning("ingest file too large: %s bytes", info.get("file_size"))
+            return None
+        fr = requests.get(
+            f"https://api.telegram.org/file/bot{token}/{file_path}", timeout=15
+        )
+        fr.raise_for_status()
+        if len(fr.content) > _INGEST_FILE_MAX_BYTES:
+            return None
+        return fr.content.decode("utf-8", "replace")
+    except Exception:
+        log.exception("Telegram 파일 다운로드 실패")
+        return None
+
+
+def _handle_ingest_followup(
+    gh, channels_cfg: dict, now_iso: str, message: dict, text: str
+) -> bool:
+    """`pending_ingest` 슬롯이 살아있을 때 들어온 메시지를 원문/파일/취소로 소비.
+
+    반환값:
+      True  — 이 메시지를 ingest 흐름이 소진함(웹훅은 즉시 200, 명령 디스패치 안 함)
+      False — 소진하지 않음(만료됐거나 다른 `/명령` — 정상 디스패치로 흘려보냄)
+    """
+    if admin is None:
+        return False
+    try:
+        state, _ = gh.read_json(_ADMIN_STATE_PATH)
+    except Exception:
+        log.warning("admin_state.json 조회 실패 — /ingest 후속 처리 스킵")
+        return False
+    pending = admin.get_pending_ingest(state)
+    if not pending:
+        return False
+
+    def _clear_slot() -> None:
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(
+                _ADMIN_STATE_PATH,
+                admin.clear_pending_ingest(st or admin.default_admin_state()),
+                prev_sha=sh, message=f"data: pending_ingest 슬롯 정리 {now_iso}",
+            )
+        except Exception:
+            log.exception("pending_ingest 슬롯 정리 실패")
+
+    # 1) 만료 — 취소 안내만 하고 이 메시지는 정상 디스패치로 흘려보낸다.
+    if admin.pending_ingest_expired(pending, now_iso):
+        _clear_slot()
+        _send_telegram("⏱ 이전 /ingest 요청이 만료되어 취소되었습니다.")
+        return False
+
+    # 2) 취소 토큰
+    if text.strip() == _INGEST_CANCEL_TOKEN:
+        _clear_slot()
+        _send_telegram("🚫 ingest가 취소되었습니다.")
+        return True
+
+    # 3) 다른 명령 — 대기를 접고 그 명령을 실행하게 둔다.
+    if text.startswith("/"):
+        _clear_slot()
+        _send_telegram("ℹ️ /ingest 대기를 취소하고 입력한 명령을 실행합니다.")
+        return False
+
+    # 4) 파일 업로드
+    doc = message.get("document") or {}
+    raw = ""
+    if doc.get("file_id"):
+        content = _download_telegram_file(doc["file_id"])
+        if content is None:
+            _send_telegram(
+                "⚠️ 파일을 읽지 못했습니다(형식/크기 확인, 256KB 이하 텍스트). "
+                "다시 보내주세요. (대기 유지)"
+            )
+            return True
+        raw = content.strip()
+    elif text.strip():
+        raw = text.strip()
+    else:
+        # 사진·스티커 등
+        _send_telegram("⚠️ 예고 원문 텍스트나 텍스트 파일을 보내주세요. (대기 유지)")
+        return True
+
+    # 5) 원문 확보 — 슬롯 비우고 접수 안내 후 반영
+    _clear_slot()
+    _send_telegram("📥 예고 원문 받았습니다. 반영될 때까지 기다려주세요.")
+    _handle_manual_ingest(gh, channels_cfg, now_iso, raw)
+    return True
+
+
 def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> None:
-    """/ingest <트윗 원문>(=/add) — 폰 자동 릴레이와 동일 파싱·반영 경로를 수동으로 실행."""
+    """예고 트윗 원문 → 폰 자동 릴레이와 동일 파싱·반영 경로를 수동으로 실행.
+
+    `/ingest`(무인자) 후 후속 메시지/파일로 받은 원문을 `_handle_ingest_followup`
+    이 넘겨준다. (인라인 `/ingest <원문>` 은 v2.5.1 에서 제거 — 텔레그램 클라이언트의
+    `||스포일러||` 마스킹이 명령행 텍스트를 변형시키던 문제 회피.)
+    """
     try:
         if xrelay is None:
             _send_telegram("⚠️ xrelay 모듈을 불러올 수 없습니다.")
@@ -768,8 +902,15 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
 
         drained, drained_rows = _ingest_queue_drain(gh, now_iso)
         rows = xrelay.parse(raw, now_iso)
+        failed = xrelay.unparsed_lines(raw)
         if not rows:
-            msg = "ℹ️ /ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
+            if failed:
+                msg = (
+                    f"⚠️ /ingest: 스케줄 트윗이나 {len(failed)}줄 모두 인식 실패\n"
+                    + _failed_lines_block(failed)
+                )
+            else:
+                msg = "ℹ️ /ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
             if drained:
                 msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
             _send_telegram(msg, silent=not drained)
@@ -782,6 +923,11 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
         )
         channels_cfg = channels_cfg or _load_channels_config()
         summary = xrelay.summary_text(rows, channels_cfg)
+        if failed:
+            summary += (
+                f"\n\n⚠️ 인식 실패 {len(failed)}줄 (반영 안 됨):\n"
+                + _failed_lines_block(failed)
+            )
         if drained:
             summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
         if changed:
@@ -884,6 +1030,13 @@ if _FLASK_AVAILABLE:
                     _handle_del_confirm(gh, now_utc, yes=_low in ("y", "yes"))
                     return jsonify({"ok": True}), 200
 
+            # v2.5.1: /ingest(무인자) 후 원문/파일 대기 중이면 이 메시지를 그쪽이 소진.
+            # (만료·타 명령이면 False → 아래 정상 디스패치로 흘러감)
+            if admin is not None and _handle_ingest_followup(
+                gh, channels_cfg, now_utc, message, text
+            ):
+                return jsonify({"ok": True}), 200
+
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
@@ -907,10 +1060,25 @@ if _FLASK_AVAILABLE:
                 _idx = parts[1] if len(parts) >= 2 else ""
                 _handle_del_request(gh, channels_cfg, now_utc, _unit, _idx)
             elif cmd in ("/ingest", "/add"):
-                if not arg:
-                    _send_telegram(f"⚠️ 사용법: {cmd} <트윗 원문>")
+                # 인라인 원문은 받지 않는다(텔레그램 ||스포일러|| 마스킹이 명령행을
+                # 변형시킴). 무인자로 대기 슬롯만 세팅하고 다음 메시지/파일을 받는다.
+                if admin is None:
+                    _send_telegram("⚠️ admin 모듈 없음 — /ingest 사용 불가")
                 else:
-                    _handle_manual_ingest(gh, channels_cfg, now_utc, arg)
+                    try:
+                        _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
+                        gh.write_json(
+                            _ADMIN_STATE_PATH,
+                            admin.set_pending_ingest(
+                                _st or admin.default_admin_state(), now_iso=now_utc
+                            ),
+                            prev_sha=_sh,
+                            message=f"data: pending_ingest 대기 시작 {now_utc}",
+                        )
+                        _send_telegram(_INGEST_PROMPT)
+                    except Exception:
+                        log.exception("pending_ingest 세팅 실패")
+                        _send_telegram("⚠️ /ingest 대기 상태 저장 실패 — 잠시 후 다시 시도하세요.")
             elif cmd == "/undo":
                 _handle_undo(gh, now_utc)
             else:
@@ -924,7 +1092,7 @@ if _FLASK_AVAILABLE:
                     "/log [detail|normal|simple] — 알림 상세도\n"
                     "/list [유닛] — 방송 목록 (유닛: arale/yuno/nonoka/ritsu/miyako, 생략 시 전체)\n"
                     "/del &lt;유닛&gt; &lt;번호&gt; — 목록의 항목을 내림 (확인 y/N 필요)\n"
-                    "/ingest &lt;트윗 원문&gt; — 트윗 텍스트를 붙여넣어 수동 반영\n"
+                    "/ingest — 보낸 뒤 3분 내에 예고트윗 원문(텍스트/파일)을 이어 보내 수동 반영\n"
                     "/undo — 방금 한 작업(/ingest, /del) 되돌리기"
                 )
                 _send_telegram(help_text)
@@ -1056,10 +1224,11 @@ if _FLASK_AVAILABLE:
                     f"{'🔒' if r['members_only'] else ''}"
                     for r in rows
                 ) or "(파싱 0건)"
+                _failed = xrelay.unparsed_lines(raw)
                 _send_telegram(
                     "🧪 <b>ingest DRY-RUN</b> — 저장 안 함\n"
                     f"title: <code>{html.escape(title) or '(없음)'}</code>\n"
-                    f"len(text)={len(raw)} · 파싱 {len(rows)}건\n"
+                    f"len(text)={len(raw)} · 파싱 {len(rows)}건 · 인식 실패 {len(_failed)}줄\n"
                     f"{html.escape(brief)}\n"
                     "─────\n"
                     f"<code>{html.escape(body)}</code>"
@@ -1083,13 +1252,22 @@ if _FLASK_AVAILABLE:
 
             # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
             drained, drained_rows = _ingest_queue_drain(gh, now_iso)
+            failed = xrelay.unparsed_lines(raw)
 
             if not rows:
-                msg = "ℹ️ ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
+                if failed:
+                    msg = (
+                        f"⚠️ ingest: 스케줄 트윗이나 {len(failed)}줄 모두 인식 실패\n"
+                        + _failed_lines_block(failed)
+                    )
+                else:
+                    msg = "ℹ️ ingest: 스케줄/출연 형식 아님 — 무시\n" + raw[:200]
                 if drained:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 _send_telegram(msg, silent=not drained)
-                return jsonify({"ok": True, "parsed": 0, "drained": drained}), 200
+                return jsonify(
+                    {"ok": True, "parsed": 0, "failed": len(failed), "drained": drained}
+                ), 200
 
             changed = _merge_rows_into_schedule(
                 gh, rows, now_iso, message=f"data: xrelay scheduled {now_iso}",
@@ -1097,6 +1275,11 @@ if _FLASK_AVAILABLE:
             )
 
             summary = xrelay.summary_text(rows, channels_cfg)
+            if failed:
+                summary += (
+                    f"\n\n⚠️ 인식 실패 {len(failed)}줄 (반영 안 됨):\n"
+                    + _failed_lines_block(failed)
+                )
             if drained:
                 summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
             if changed:
@@ -1287,6 +1470,82 @@ if __name__ == "__main__":
             globals()["_send_telegram"] = _orig_send
     else:
         print("  (admin 미로드 — 스킵)")
+
+    print("\n[Ingest 2단계] /ingest → 원문/파일 대기")
+    if admin is not None and xrelay is not None:
+        class _FakeGH3:
+            def __init__(self):
+                self.store: dict[str, tuple] = {}
+                self._n = 0
+
+            def read_json(self, path):
+                item = self.store.get(path)
+                return (item[0], item[1]) if item else (None, None)
+
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                cur = self.store.get(path)
+                if cur is not None and cur[0] == data:
+                    return False, cur[1]
+                self._n += 1
+                self.store[path] = (data, f"s{self._n}")
+                return True, f"s{self._n}"
+
+        _sent3: list[str] = []
+        _orig3 = _send_telegram
+        globals()["_send_telegram"] = lambda text, silent=False: (_sent3.append(text) or True)
+        try:
+            g3 = _FakeGH3()
+            _cfg3 = _load_channels_config()
+
+            # 슬롯 없음 → 소진 안 함
+            assert _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:00:00Z",
+                                           {"text": "hi"}, "hi") is False
+            print("  ✓ 대기 슬롯 없으면 통과(False)")
+
+            def _arm(now_iso="2026-09-06T00:00:00Z"):
+                st, sh = g3.read_json(_ADMIN_STATE_PATH)
+                g3.write_json(_ADMIN_STATE_PATH,
+                              admin.set_pending_ingest(st or admin.default_admin_state(), now_iso=now_iso),
+                              prev_sha=sh, message="arm")
+
+            # 취소 토큰
+            _arm()
+            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:01:00Z",
+                                        {"text": _INGEST_CANCEL_TOKEN}, _INGEST_CANCEL_TOKEN)
+            assert r is True and "취소" in _sent3[-1]
+            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
+            print("  ✓ aNoneTokyo → 취소 + 슬롯 비움")
+
+            # 대기 중 다른 명령 → 대기 접고 통과(False)
+            _arm()
+            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:01:00Z",
+                                        {"text": "/status"}, "/status")
+            assert r is False and "대기를 취소" in _sent3[-1]
+            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
+            print("  ✓ 대기 중 /명령 → 대기 취소하고 통과(False)")
+
+            # 만료 → 안내 + 통과(False), 슬롯 비움
+            _arm("2026-09-06T00:00:00Z")
+            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:05:00Z",
+                                        {"text": "뭐라도"}, "뭐라도")
+            assert r is False and "만료" in _sent3[-1]
+            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
+            print("  ✓ 3분 초과 → 만료 안내 + 통과(False)")
+
+            # 정상 원문 → 접수 안내 + 반영 + 슬롯 비움
+            _arm("2026-09-06T00:10:00Z")
+            tweet = "8/30(日) 配信スケジュール\n🎮11:00〜 宮永ののか\n"
+            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:10:30Z",
+                                        {"text": tweet}, tweet)
+            assert r is True, r
+            assert any("받았습니다" in s for s in _sent3[-3:]), _sent3[-3:]
+            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
+            assert g3.read_json("schedule.json")[0] is not None, "schedule.json 반영됨"
+            print("  ✓ 원문 수신 → 접수 안내 + 반영 + 슬롯 비움")
+        finally:
+            globals()["_send_telegram"] = _orig3
+    else:
+        print("  (admin/xrelay 미로드 — 스킵)")
 
     # Flask 미설치 확인
     if Flask is None or app is None:

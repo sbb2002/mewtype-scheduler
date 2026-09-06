@@ -64,7 +64,7 @@ src/
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
-    admin.py           # (v2.5) admin_state.json 스키마 (pending_del/undo 슬롯) — 순수
+    admin.py           # (v2.5) admin_state.json 스키마 (pending_del/pending_ingest/undo 슬롯) — 순수
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
                        #        (v2.4) 합동방송 host="group" + URL 캡처 · parse_appearance(出演情報 계열)
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
@@ -75,7 +75,7 @@ fixtures/              # schedule.sample.json(프론트/로직 공용), rss_aral
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
 data 브랜치             # schedule.json + archive.json + pending.json + control.json(v2.1)
                        #   + ingest_queue.json(v2.4 — ECHO/DRY-RUN 중 받은 트윗, 실배포 전환 시 drain)
-                       #   + admin_state.json(v2.5 — pending_del/undo 슬롯). 코드 없음
+                       #   + admin_state.json(v2.5 — pending_del/pending_ingest/undo 슬롯). 코드 없음
 ```
 
 ## 명령
@@ -95,7 +95,7 @@ python -m src.backend.xrelay         # (v2.3/2.4) X 스케줄 트윗 파서 — 
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
-python -m src.backend.admin          # (v2.5) admin_state.json 헬퍼 (pending_del/undo)
+python -m src.backend.admin          # (v2.5) admin_state.json 헬퍼 (pending_del/pending_ingest/undo)
 python -m src.backend.telegram_app   # /list /del /undo 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
 
