@@ -227,6 +227,7 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
         </ul>
       </section>
       <!-- week, month, later 섹션 동일 구조로 항상 4개 렌더 -->
+      <!-- (v2.7) 모바일 <768px: month+later 를 data-bucket="rest"("7일 이후") 하나로 통합 → 3개 렌더 -->
     </div>
   </section>
   <!-- channel_order 순서대로 lane 반복 -->
