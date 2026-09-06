@@ -1160,6 +1160,32 @@ def _handle_notice_list(gh, now_iso: str) -> None:
         _send_telegram(f"⚠️ 오류: /notice-list 실패\n{str(e)[:100]}")
 
 
+def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
+    """(v2.7) 소식 자동 인입 — INGEST_ECHO/DRY-RUN 과 **무관하게** 별개로 돈다.
+
+    파싱(순수)이 소식이 아니면 GitHub 은 아예 안 건드린다. 반환: mode 문자열(로그용).
+    added/updated 만 운영자 DM.
+    """
+    if not raw or xnotice is None or notices is None:
+        return "none"
+    if xnotice.parse(raw, now_iso, tag=tag, title=title) is None:
+        return "none"
+    gh = _make_gh()
+    if gh is None:
+        return "no-gh"
+    try:
+        _notice_sweep(gh, now_iso)
+        mode, parsed = _apply_notice(gh, raw, now_iso, tag=tag, title=title)
+    except Exception:
+        log.exception("auto notice 실패")
+        return "error"
+    if mode in ("added", "updated"):
+        _notice_result_dm(mode, parsed, raw)
+    else:
+        log.info("auto notice: %s (조용히)", mode)
+    return mode
+
+
 def _kst_dt(iso: str | None) -> str:
     """ISO 'Z' → 'YYYY-MM-DD HH:MM KST'. 파싱 실패 시 원문 그대로."""
     if not iso:
@@ -1528,6 +1554,10 @@ if _FLASK_AVAILABLE:
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+        # (v2.7) 소식 게시판 — schedule.json 과 별개 파이프라인. INGEST_ECHO/DRY-RUN 과
+        # 무관하게 여기서 항상 시도한다(소식이 아니면 GitHub 도 안 건드림).
+        _maybe_auto_notice(raw, now_iso, tag=x_tag, title=title)
+
         # ─── v2.3 임시 ECHO 테스트 훅 (INGEST_ECHO 가 참일 때만) ───────────────
         # 폰 Automate 가 `@BDP_yumemita` 푸시알림을 키워드 필터 없이 그대로 relay 할 때,
         # 백엔드 처리(파싱·저장) 전혀 없이 "들어온 텍스트 그대로"만 DM 으로 회신한다.
@@ -1649,22 +1679,7 @@ if _FLASK_AVAILABLE:
             failed = xrelay.unparsed_lines(raw)
 
             if not rows:
-                # (v2.7) 스케줄이 아니면 소식 후보로 자동 시도. 만료 소식도 여기서 sweep.
-                _nmode = "none"
-                if not failed and xnotice is not None:
-                    try:
-                        _notice_sweep(gh, now_iso)
-                        _nmode, _nparsed = _apply_notice(
-                            gh, raw, now_iso, tag=x_tag, title=title)
-                    except Exception:
-                        log.exception("auto notice 실패")
-                if _nmode in ("added", "updated"):
-                    _notice_result_dm(_nmode, _nparsed, raw)
-                    return jsonify({"ok": True, "parsed": 0, "notice": _nmode}), 200
-                if _nmode in ("recap", "dup", "skip"):
-                    log.info("ingest → notice %s (조용히)", _nmode)
-                    return jsonify({"ok": True, "parsed": 0, "notice": _nmode}), 200
-
+                # 소식 자동 인입은 라우트 상단 _maybe_auto_notice 에서 이미 처리됨(ECHO 무관).
                 if failed:
                     msg = (
                         f"⚠️ ingest: 스케줄 트윗이나 {len(failed)}줄 모두 인식 실패\n"
