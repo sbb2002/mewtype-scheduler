@@ -39,10 +39,26 @@ def _reached(iso_when: str, now_iso: str) -> bool:
         return False
 
 
-# scheduled 행(X 릴레이 유래, video_id 없음): 실물 upcoming/live 가 같은 채널에서
-# 이 시각 ±이만큼 안에 뜨면 그 예고가 실물로 확정된 것으로 보고 제거(supersede).
+# scheduled 행(X 릴레이 유래): 실물 upcoming/live 가 (참여) 채널에서 이 시각 ±이만큼
+# 안에 뜨면 그 예고가 실물로 확정된 것으로 보고 제거(supersede).
 # 한 멤버가 저녁+翌朝 2슬롯을 잡는 경우가 있어 날짜 통째가 아니라 시간 근접으로 본다.
 SCHEDULED_SUPERSEDE_SEC = 4 * 3600
+
+
+def _carry_collab(broadcast: dict, prev_entry: dict | None) -> None:
+    """(v2.6) 이전 scheduled 예고가 합동(collab_with 보유)이었으면, 실물로 확정된 행에도
+    참여자 + kind='collab' 를 얹어 render 팬아웃이 유지되게 한다.
+
+    실물 행의 channel_key(방송을 실제로 연 멤버)는 빼고 나머지를 collab_with 로 — 예고의
+    channel_key 와 실물의 channel_key 가 다를 수 있으므로(개인 채널 합동) 참여자 집합에서
+    실물 주체만 제외해 계산한다."""
+    if not prev_entry or not prev_entry.get("collab_with"):
+        return
+    chain = [prev_entry.get("channel_key"), *(prev_entry.get("collab_with") or [])]
+    others = [k for k in chain if k and k != broadcast.get("channel_key")]
+    if others and not broadcast.get("collab_with"):
+        broadcast["collab_with"] = others
+    broadcast["kind"] = "collab"
 # expires_at 이 없을 때(시각 파싱 실패) first_seen 으로부터의 TTL.
 SCHEDULED_NO_TIME_TTL_SEC = 18 * 3600
 
@@ -126,6 +142,7 @@ def build_schedule(
                 "first_seen": prev_broadcasts.get(video_id, {}).get("first_seen", now_iso),
                 "last_updated": now_iso,
             }
+            _carry_collab(broadcast, prev_broadcasts.get(video_id))
             new_schedule["broadcasts"].append(broadcast)
 
         elif video.live_state == "live":
@@ -143,6 +160,7 @@ def build_schedule(
                 "first_seen": prev_broadcasts.get(video_id, {}).get("first_seen", now_iso),
                 "last_updated": now_iso,
             }
+            _carry_collab(broadcast, prev_broadcasts.get(video_id))
             new_schedule["broadcasts"].append(broadcast)
 
         elif video.live_state == "none":
@@ -185,6 +203,10 @@ def build_schedule(
     for prev_entry in prev_broadcasts.values():
         if prev_entry.get("status") != "scheduled":
             continue
+        # (v2.6) 이 예고가 video_id 를 갖고 있었고 그게 이번 videos.list 로 확정됐으면
+        # 위 루프가 이미 실물 행(+ _carry_collab)을 만들었다 → 자리표시는 버린다.
+        if prev_entry.get("video_id") and prev_entry["video_id"] in videos:
+            continue
         exp = prev_entry.get("expires_at")
         if exp:
             if _reached(exp, now_iso):
@@ -194,15 +216,21 @@ def build_schedule(
             if fs and _age_sec(fs, now_iso) >= SCHEDULED_NO_TIME_TTL_SEC:
                 continue
         ss = prev_entry.get("scheduled_start")
-        # host="group"(공동명의 채널 합동방송)은 멤버 개인 채널 실물로 supersede 하지 않는다
-        # — 실물이 뜨더라도 추적 대상 5채널이 아니므로 애초에 _real 에 안 들어오고,
-        #   우연히 같은 시각 멤버 방송이 있어도 그건 별개 방송이다. TTL 로만 소멸.
-        if ss and not prev_entry.get("host") and any(
-            r.get("channel_key") == prev_entry.get("channel_key")
-            and r.get("scheduled_start")
-            and abs(_age_sec(r["scheduled_start"], ss)) <= SCHEDULED_SUPERSEDE_SEC
-            for r in _real
-        ):
+        # (v2.6) 참여자(channel_key ∪ collab_with) 중 아무 채널에나 실물 upcoming/live 가
+        # ±4h 안에 뜨면 supersede. 합동 예고였으면 그 실물 행에 collab_with 이관(팬아웃 유지).
+        # host="group"(parse_appearance, 외부 이벤트)은 예외 — 추적 5채널 밖이라 TTL 로만 소멸.
+        _chans = {prev_entry.get("channel_key"), *(prev_entry.get("collab_with") or [])}
+        _hit = None
+        if ss and not prev_entry.get("host"):
+            _hit = next(
+                (r for r in _real
+                 if r.get("channel_key") in _chans
+                 and r.get("scheduled_start")
+                 and abs(_age_sec(r["scheduled_start"], ss)) <= SCHEDULED_SUPERSEDE_SEC),
+                None,
+            )
+        if _hit is not None:
+            _carry_collab(_hit, prev_entry)
             continue
         carried = dict(prev_entry)
         # 예고 시각 도달 → assumed_live. 회원전용은 API 로 실물을 못 보므로 이 플래그로만
@@ -392,6 +420,25 @@ if __name__ == "__main__":
                 "first_seen": "2026-08-30T08:00:00Z",
                 "expires_at": "2026-08-30T17:00:00Z",
             },
+            {  # (v2.6) 개인 채널 합동(host 없음) — nonoka 명의 예고지만 실물은 arale 채널
+               # upcoming_vid(13:00). 참여자에 arale 포함 → supersede + upcoming_vid 에
+               # collab_with=[nonoka] 이관.
+                "video_id": None, "sched_id": "sched:nonoka:2026-08-30T13:10:00Z",
+                "channel_key": "nonoka", "status": "scheduled",
+                "collab_with": ["arale"], "kind": "collab",
+                "scheduled_start": "2026-08-30T13:10:00Z", "source": "bdp_schedule",
+                "first_seen": "2026-08-30T08:00:00Z",
+                "expires_at": "2026-08-30T16:00:00Z",
+            },
+            {  # (v2.6) 트윗이 video_id 를 준 합동 예고 — live_vid(yuno) 로 이번에 확정됨.
+               # 자리표시는 안 실리고 live_vid 행이 collab_with=[ritsu] 를 얻는다.
+                "video_id": "live_vid", "sched_id": "sched:yuno:2026-08-30T12:00:00Z",
+                "channel_key": "yuno", "status": "scheduled",
+                "collab_with": ["ritsu"], "kind": "collab",
+                "scheduled_start": "2026-08-30T12:00:00Z", "source": "bdp_schedule",
+                "first_seen": "2026-08-30T08:00:00Z",
+                "expires_at": "2026-08-30T15:00:00Z",
+            },
         ],
     }
 
@@ -429,4 +476,12 @@ if __name__ == "__main__":
     assert _sched["sched:yuno:2026-08-30T20:00:00Z"]["assumed_live"] is False
     # host=group 합동은 멤버 실물 ±4h 여도 보존 (collab_with 도 그대로 이관)
     assert _sched["sched:arale:2026-08-30T13:30:00Z"]["collab_with"] == ["nonoka"]
-    print("SUCCESS: reconcile self-test passed (removed 유예 + scheduled supersede/TTL/assumed_live + host=group)")
+    # (v2.6) 개인 채널 합동: nonoka 예고 자리표시는 사라지고 upcoming_vid 가 합동이 됨
+    assert "sched:nonoka:2026-08-30T13:10:00Z" not in _sched
+    _up = next(b for b in new_schedule["broadcasts"] if b.get("video_id") == "upcoming_vid")
+    assert _up["kind"] == "collab" and _up["collab_with"] == ["nonoka"], _up
+    # (v2.6) video_id 준 합동 예고: 자리표시 안 실리고 live_vid 가 합동이 됨
+    assert "sched:yuno:2026-08-30T12:00:00Z" not in _sched
+    _lv = next(b for b in new_schedule["broadcasts"] if b.get("video_id") == "live_vid")
+    assert _lv["kind"] == "collab" and _lv["collab_with"] == ["ritsu"], _lv
+    print("SUCCESS: reconcile self-test passed (supersede/TTL/assumed_live + host=group + v2.6 개인채널·video_id 합동)")

@@ -109,3 +109,46 @@ https://youtube.com/live/ri2_BimgJIA
 - 통합 진입점 `xrelay.parse(text, now_iso)` = `parse_bdp_schedule` → 없으면 `parse_appearance`.
   `xrelay.looks_relayable(text)` = 큐 적재 가드(`配信スケジュール` 또는 `出演情報` 계열).
 - 폰 Automate `Expression true?` 필터도 이 마커를 포함하도록 넓혀야 한다(테스트 기간엔 필터 생략).
+
+## 8. v2.6 — 개인 채널 합동 + 트윗 URL 우선 (2026-09-06)
+
+v2.4 는 "합동방송 = 5인 공동명의(公式) 채널" 로 가정하고 `host="group"` 를 붙여
+reconcile supersede 를 원천 차단했다. 실제로는 **참여 멤버 1명의 개인 채널에서** 하는
+합동이 잦고, 공식 트윗은 그럴 때도 영상 URL 을 함께 준다. 실측:
+
+```
+⭐22:00～ 仲町あられ×宮永ののか
+https://youtube.com/watch?v=SVRa_W82oAk      ← 이게 방송 위치의 정답
+⭐23:30～ 千石ユノ
+https://youtube.com/@yuno_yumemita           ← 영상 미공개, 채널 링크만 (솔로)
+```
+
+### 바뀐 것
+
+- **`xrelay.parse_bdp_schedule`**
+  - 합동 줄의 `watch?v=`/`live/` URL 에서 **`video_id` 추출**해 행에 넣는다. (`@handle`
+    채널 URL·잘린 URL 은 종전대로 `video_id=None`.)
+  - daily 합동 행에 **`host="group"` 를 안 붙인다** (그 특례는 `parse_appearance` 出演情報 전용).
+  - `全員【bilibili】` / `space.bilibili.com` 등 **비-YouTube·全員 라인은 조용히 스킵**
+    (`_SKIP_LINE_RE`). `unparsed_lines` "인식 실패" 목록에서도 제외. 필요해지면 全員→5인 +
+    비-YT URL 지원을 추가.
+- **`reconcile.build_schedule`**
+  - supersede 판정을 `channel_key` → **`channel_key ∪ collab_with`** 로 확장. 참여자 중
+    아무 채널에나 실물이 뜨면 예고를 확정으로 보고 자리표시 제거.
+  - `_carry_collab(real_row, prev_scheduled)` — 확정된 실물 행에 `kind="collab"` + (실물
+    주체를 제외한) 참여자를 `collab_with` 로 이관 → `render.js` 팬아웃 유지.
+  - `video_id` 가 이번 `videos.list` 로 확정된 scheduled 행은 자리표시로 안 싣는다.
+- **`handlers._tracked_unresolved_ids` / `main._tracked_unresolved_ids`**: `video_id` 가
+  있는 scheduled 행도 후보 집합에 포함 → 다음 tick 이 확정.
+- **`handlers._scheduled_wake_times`**: `video_id` 있는 scheduled 는 wake tick 예약에서
+  제외(이미 후보 집합에 있음).
+- **`xrelay.merge_scheduled`**: 이미 실물(upcoming/live)로 확정된 `video_id` 를 가진 새
+  scheduled 행은 버린다(reconcile 전 카드 중복 방지).
+- **`telegram_app` `/list`**: "(합동)" 표기 조건을 `host=="group"` → `collab_with` 존재로.
+
+### 안 바꾼 것 / 한계
+
+- **솔로 줄의 영상 URL 은 여전히 캡처 안 함** — 개인 채널 RSS 로 어차피 잡히므로.
+- `parse_appearance`(出演情報)는 그대로 `host="group"` + `video_id` 없음.
+- `全員` 비-YT 합동은 미지원(스킵). 아이디어 있으면 후속.
+- `⭐` 아이콘(최근 BDP 트윗 기본 불릿)은 `ICON_KIND` 에 없어 `kind="unknown"` — 별개 이슈.

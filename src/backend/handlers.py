@@ -59,8 +59,8 @@ def _scheduled_wake_times(schedule: dict, now_iso: str) -> list[str]:
     horizon = now + timedelta(seconds=_SCHED_WAKE_LOOKAHEAD_SEC)
     out: set[str] = set()
     for b in (schedule or {}).get("broadcasts", []):
-        if b.get("status") != "scheduled":
-            continue
+        if b.get("status") != "scheduled" or b.get("video_id"):
+            continue  # video_id 있는 scheduled 는 후보집합에 있으니 별도 wake tick 불필요
         ss = b.get("scheduled_start")
         if not ss:
             continue
@@ -89,10 +89,12 @@ def _heartbeat_generated_at(prev_gen, now_iso: str, min_sec: int = _HEARTBEAT_MI
 
 
 def _tracked_unresolved_ids(schedule: dict) -> list[str]:
+    # (v2.6) scheduled 행이라도 트윗이 준 video_id 가 있으면 후보에 넣어 다음 tick 이 확정한다.
     return [
         b["video_id"]
         for b in (schedule or {}).get("broadcasts", [])
-        if b.get("status") in ("upcoming", "live")
+        if b.get("video_id")
+        and b.get("status") in ("upcoming", "live", "scheduled")
     ]
 
 

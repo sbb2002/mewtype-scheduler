@@ -66,7 +66,8 @@ src/
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
     admin.py           # (v2.5) admin_state.json 스키마 (pending_del/pending_ingest/pending_undo/undo 슬롯) — 순수
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
-                       #        (v2.4) 합동방송 host="group" + URL 캡처 · parse_appearance(出演情報 계열)
+                       #        (v2.4/2.6) 합동방송 kind="collab" + URL→video_id · parse_appearance(出演情報)
+                       #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
@@ -91,7 +92,7 @@ python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 asse
 python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.statemachine   # 폴링 FSM 9 시나리오
-python -m src.backend.xrelay         # (v2.3/2.4) X 스케줄 트윗 파서 — S1~S6 + merge
+python -m src.backend.xrelay         # (v2.3~2.6) X 스케줄 파서 — S1~S9 + unparsed_lines + merge
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
@@ -135,10 +136,14 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    파싱조차 안 하고 받은 텍스트만 DM 회신(임시 테스트 훅) + 로그에 잘림 계측(`tail_ok`).
    ECHO/DRY-RUN 중 온 스케줄 트윗은 `ingest_queue.json` 에 적재됐다가 실배포 전환
    (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 drain 돼 반영된다. 상세는 `docs/plan/v2_3_x_relay.md`.
-7. **(v2.4)** 합동방송(5인 공동명의 公式 채널) — `xrelay` 가 `kind=="collab"` 행에 `host="group"`
-   + 트윗의 온전한 영상 URL 을 채운다. `render.js` 가 참여 멤버 전원(`channel_key` ∪ `collab_with`)
-   레인에 같은 `.card--collab` 카드를 팬아웃(PC 5열 그리드·모바일 캐러셀 레이아웃 무변경).
-   `reconcile` 은 `host` 있는 행을 멤버 개인 실물로 supersede 안 함. 상세는 `docs/plan/v2_4_collab.md`.
+7. **(v2.4/2.6)** 합동방송 — `xrelay` 가 `kind=="collab"` 행 + 트윗의 온전한 영상 URL 을 채우고,
+   `render.js` 가 참여 멤버 전원(`channel_key` ∪ `collab_with`) 레인에 같은 `.card--collab` 카드를
+   팬아웃(PC 5열 그리드·모바일 캐러셀 레이아웃 무변경). **(v2.6)** 합동이 공용 채널이 아니라 참여
+   멤버 개인 채널에서 열리는 경우가 잦다 → 합동 줄의 `watch?v=`/`live/` URL 에서 `video_id` 를
+   추출해 정규 파이프라인이 확정하고, `reconcile` 은 참여자(`channel_key` ∪ `collab_with`) 중
+   아무 채널에나 실물이 뜨면 supersede 하며 `_carry_collab` 로 실물 행에 `collab_with` 를 이관한다.
+   `host="group"` 특례(supersede 안 함)는 `parse_appearance`(出演情報) 전용. `全員【bilibili】` 등
+   비-YT 라인은 스킵. 상세는 `docs/plan/v2_4_collab.md` §8.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId

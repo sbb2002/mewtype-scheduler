@@ -58,6 +58,13 @@ TIME_RE = re.compile(r"(\d{1,2}):(\d{2})(頃)?〜")
 YT_VIDEO_RE = re.compile(
     r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(?:live/|watch\?v=|shorts/)([\w-]{11})(?![\w-])"
 )
+# (v2.6) 現在 미지원 라인 — YouTube 가 아닌 플랫폼(bilibili 등) 이나 "全員" 표기.
+#   "⭐22:00～ 全員【bilibili】" / "https://space.bilibili.com/..." 같은 줄은 조용히 스킵한다.
+#   나중에 지원하려면 全員→5인 전원 + 비-YT URL 처리를 추가.
+_SKIP_LINE_RE = re.compile(
+    r"全員|みんな|【\s*(?:bilibili|ビリビリ|ニコ生?|ニコニコ|ツイキャス|twitcast|mildom|twitch)\s*】",
+    re.IGNORECASE,
+)
 
 # "出演情報" — @BDP_yumemita 가 외부 이벤트/합방 출연을 알릴 때 (일일 스케줄과 서식 다름).
 #   ＼出演情報／  9/10(木) 22:00頃〜  「이벤트명」  夢限大みゅーたいぷ 5名が出演  <영상 URL>
@@ -170,14 +177,24 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
         times = list(TIME_RE.finditer(line))
         if not times:
             continue
+        if _SKIP_LINE_RE.search(line):
+            continue                         # (v2.6) 全員/비-YT 플랫폼 라인 — 미지원, 스킵
         key, collab = _names(line)
         if not key:
             continue
         members_only = "メン限" in line
         line_has_collab = bool(collab) or "×" in line
-        # 합동 방송은 5인 공동명의(公式) 채널에서 함 — 멤버 개인 채널이 아니다.
-        # 트윗의 영상 URL 을 그대로 링크로 쓰고, host="group" 으로 표시한다.
+        # (v2.6) 합동방송이라도 공용 채널이 아니라 참여 멤버 1명의 개인 채널에서 하는 경우가
+        # 잦다. 공식 트윗은 그럴 때도 영상/채널 URL 을 함께 준다 → 그걸 진실로 삼는다.
+        #   · watch?v=/live/ 온전 URL → video_id 추출(정규 파이프라인이 upcoming/live 로 확정)
+        #   · @handle 채널 URL / URL 없음 → video_id 없이 자리표시. reconcile 이 참여자 중
+        #     아무 채널에나 실물이 뜨면 supersede 하며 collab_with 를 실물 행에 이관.
+        # host="group" 특례(절대 supersede 안 함)는 여기서 안 붙인다 — parse_appearance 만 씀.
         video_url = _video_url_near(lines, idx) if line_has_collab else None
+        video_id = None
+        if video_url:
+            _vm = YT_VIDEO_RE.search(video_url)
+            video_id = _vm.group(1) if _vm else None
 
         for i, tm in enumerate(times):
             hh, mm = int(tm.group(1)), int(tm.group(2))
@@ -206,10 +223,9 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                     "status": "scheduled",
                     "channel_key": key,
                     "sched_id": f"sched:{key}:{start_z}",
-                    "video_id": None,
+                    "video_id": video_id,
                     "title": None,
                     "url": video_url,
-                    "host": "group" if line_has_collab else None,
                     "thumbnail": None,
                     "scheduled_start": start_z,
                     "start_approx": approx,
@@ -339,6 +355,8 @@ def unparsed_lines(text: str) -> list[str]:
         )
         if not looks_entry:
             continue
+        if _SKIP_LINE_RE.search(line):        # (v2.6) 全員/비-YT — 의도적 미지원, 실패 아님
+            continue
         key, _ = _names(line)
         if TIME_RE.search(line) and key:      # 정상 처리되는 줄
             continue
@@ -402,7 +420,13 @@ def merge_scheduled(prev_schedule: dict, rows: list[dict], now_iso: str) -> dict
             if d in new_dates:
                 continue  # 교체됨
         kept.append(b)
-    kept.extend(rows)
+    # (v2.6) 이미 실물(upcoming/live)로 확정된 video_id 를 가진 새 scheduled 행은 버린다
+    #        — reconcile 이 다음 tick 에 정리하지만 그 사이 카드가 겹쳐 보이는 걸 막는다.
+    _resolved = {
+        b.get("video_id") for b in kept
+        if b.get("video_id") and b.get("status") != "scheduled"
+    }
+    kept.extend(r for r in rows if not (r.get("video_id") and r["video_id"] in _resolved))
 
     out = dict(prev)
     out["broadcasts"] = _sort_broadcasts(kept)
@@ -500,11 +524,11 @@ if __name__ == "__main__":
     assert len(r2) == 5, len(r2)
     col = next(x for x in r2 if x["kind"] == "collab")
     assert col["channel_key"] == "arale" and col["collab_with"] == ["miyako"], col
-    assert col["host"] == "group", col                 # 합동 → 公式 채널
-    assert col["url"] is None, col                     # URL 잘림(…) → 링크 안 잡음
-    assert all(x["host"] is None for x in r2 if x["kind"] != "collab")
+    assert "host" not in col, col                      # (v2.6) daily 합동엔 host 안 붙임
+    assert col["url"] is None and col["video_id"] is None, col   # URL 잘림(…) → 링크·id 없음
+    assert all("host" not in x for x in r2)
     assert all(_jst_date(x["scheduled_start"]) == "2026-08-29" for x in r2)
-    print("[OK] S2  (콜라보 A×B → host=group, 잘린 URL 무시)")
+    print("[OK] S2  (콜라보 A×B → kind=collab, 잘린 URL → id/url 없음)")
 
     S3 = (
         "／\n🛸夢限大みゅーたいぷ\n"
@@ -545,11 +569,12 @@ if __name__ == "__main__":
     assert len(r5) == 1, r5
     assert r5[0]["channel_key"] == "arale" and r5[0]["collab_with"] == ["nonoka"], r5
     assert r5[0]["kind"] == "collab", r5
-    assert r5[0]["host"] == "group", r5
+    assert "host" not in r5[0], r5
     assert r5[0]["url"] == "https://youtube.com/live/kx-nhmTj4Eg", r5[0]["url"]
+    assert r5[0]["video_id"] == "kx-nhmTj4Eg", r5[0]           # (v2.6) live/ URL → video_id
     assert _jst_date(r5[0]["scheduled_start"]) == "2026-09-04", r5[0]["scheduled_start"]
     assert _jst_hm(r5[0]["scheduled_start"]) == "00:00", r5[0]["scheduled_start"]
-    print("[OK] S5  (24:00 심야 + host=group + 영상 URL 캡처)")
+    print("[OK] S5  (24:00 심야 + 합동 + 영상 URL→video_id)")
 
     # S6: watch?v= 형태 온전한 URL (외부 이벤트/합방 공지가 일일 스케줄에 실릴 때)
     S6 = (
@@ -561,9 +586,10 @@ if __name__ == "__main__":
     r6 = parse_bdp_schedule(S6, NOW)
     assert len(r6) == 1, r6
     assert r6[0]["channel_key"] == "yuno" and r6[0]["collab_with"] == ["ritsu"], r6
-    assert r6[0]["host"] == "group", r6
+    assert "host" not in r6[0], r6
     assert r6[0]["url"] == "https://www.youtube.com/watch?v=PAfMVT3GTLg", r6[0]["url"]
-    print("[OK] S6  (watch?v= 온전 URL 캡처)")
+    assert r6[0]["video_id"] == "PAfMVT3GTLg", r6[0]          # (v2.6) watch?v= → video_id
+    print("[OK] S6  (watch?v= 온전 URL → video_id)")
 
     # S7: 出演情報 — 실측 (@BDP_yumemita, 5인 외부 이벤트 출연)
     S7 = (
@@ -593,6 +619,39 @@ if __name__ == "__main__":
     assert parse_bdp_schedule("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
     assert parse_appearance("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
     print("[OK] 비스케줄 트윗 → []")
+
+    # S8: 실측 (7/12) — 합동 줄에 watch?v= URL, 솔로 줄엔 @handle 채널 URL
+    S8 = (
+        "／\n🛸夢限大みゅーたいぷ\n7/12(日)の配信スケジュール🌟\n＼\n\n"
+        "⭐21:30～ 藤都子\nhttps://youtube.com/watch?v=Ph7LqCpgyEc\n\n"
+        "⭐22:00～ 仲町あられ×宮永ののか\nhttps://youtube.com/watch?v=SVRa_W82oAk\n\n"
+        "⭐23:30～ 千石ユノ\nhttps://youtube.com/@yuno_yumemita\n\n"
+        "⭐明日朝7:00～ 藤都子\nhttps://youtube.com/@miyako_yumemita\n\n"
+        "#バンドリ #ゆめみた"
+    )
+    r8 = parse_bdp_schedule(S8, NOW)
+    assert len(r8) == 4, [x["channel_key"] for x in r8]
+    c8 = next(x for x in r8 if x["kind"] == "collab")
+    assert c8["channel_key"] == "arale" and c8["collab_with"] == ["nonoka"], c8
+    assert c8["video_id"] == "SVRa_W82oAk" and "host" not in c8, c8   # 합동 → 트윗 URL 우선
+    # 솔로 줄은 URL 캡처 안 함(개인 채널 RSS 로 잡힘). watch?v= 든 @handle 이든 video_id 없음.
+    for x in r8:
+        if x["kind"] != "collab":
+            assert x["video_id"] is None and x["url"] is None, x
+    print("[OK] S8  (7/12 — 합동만 watch?v=→video_id, 솔로 줄은 URL 무시)")
+
+    # S9: 실측 (6/23) — 全員【bilibili】 라인은 스킵, 솔로 @handle 줄만 반영
+    S9 = (
+        "／\n🛸夢限大みゅーたいぷ\n6/23(火)の配信スケジュール🌟\n＼\n\n"
+        "⭐22:00～ 全員【bilibili】\nhttps://space.bilibili.com/3546592848120041\n\n"
+        "⭐明日朝6:30～ 仲町あられ\nhttps://youtube.com/@arale_yumemita\n\n"
+        "※URLは本人のXで告知いたします。\n#バンドリ #ゆめみた"
+    )
+    r9 = parse_bdp_schedule(S9, NOW)
+    assert len(r9) == 1 and r9[0]["channel_key"] == "arale", r9   # 全員 줄은 스킵됨
+    assert r9[0]["video_id"] is None, r9[0]
+    assert unparsed_lines(S9) == [], unparsed_lines(S9)           # 全員 줄 → 실패 아님
+    print("[OK] S9  (全員【bilibili】 스킵 · unparsed 에서도 제외)")
 
     # unparsed_lines: 이름 누락 / 〜 없는 시각 / 정상 줄 구분
     S_BAD = (
@@ -629,5 +688,24 @@ if __name__ == "__main__":
     assert sum(1 for b in merged["broadcasts"] if b.get("status") == "scheduled") == 6
     assert merged["generated_at"] == "2026-09-03T01:00:00Z"
     print("[OK] merge_scheduled  (replace-by-date, upcoming 보존)")
+
+    # (v2.6) 이미 upcoming 으로 확정된 video_id 를 가진 새 scheduled 행은 버린다
+    prev2 = {"broadcasts": [
+        {"video_id": "RESOLVED0123", "channel_key": "yuno", "status": "upcoming",
+         "scheduled_start": "2026-09-10T12:00:00Z"},
+    ]}
+    rows2 = [
+        {"video_id": "RESOLVED0123", "sched_id": "sched:yuno:2026-09-10T12:00:00Z",
+         "channel_key": "yuno", "status": "scheduled", "source": "bdp_schedule",
+         "scheduled_start": "2026-09-10T12:00:00Z", "collab_with": ["ritsu"], "kind": "collab"},
+        {"video_id": None, "sched_id": "sched:arale:2026-09-10T13:00:00Z",
+         "channel_key": "arale", "status": "scheduled", "source": "bdp_schedule",
+         "scheduled_start": "2026-09-10T13:00:00Z"},
+    ]
+    m2 = merge_scheduled(prev2, rows2, "2026-09-10T00:00:00Z")
+    _sids = {b.get("sched_id") for b in m2["broadcasts"] if b.get("status") == "scheduled"}
+    assert _sids == {"sched:arale:2026-09-10T13:00:00Z"}, _sids   # 확정된 것은 안 들어옴
+    assert any(b.get("video_id") == "RESOLVED0123" and b["status"] == "upcoming" for b in m2["broadcasts"])
+    print("[OK] merge_scheduled  (확정 video_id 자리표시 드롭)")
 
     print("\nSUCCESS: xrelay self-test 통과")

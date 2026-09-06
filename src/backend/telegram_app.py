@@ -218,7 +218,7 @@ def _format_list_text(channels_cfg: dict, schedule: dict, unit: str = "") -> str
                 badge = _STATUS_BADGE.get(b.get("status"), "❔")
                 title = (b.get("title") or xrelay.KIND_KO.get(b.get("kind"), "")) if xrelay else (b.get("title") or "")
                 title_part = f" 「{title[:20]}」" if title else ""
-                collab_part = " (합동)" if b.get("host") == "group" else ""
+                collab_part = " (합동)" if (b.get("collab_with") or b.get("host") == "group") else ""
                 lines.append(f"#{i} {badge} {_time_range_text(b)}{title_part}{collab_part}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
@@ -1460,7 +1460,8 @@ if __name__ == "__main__":
         assert applied == 2 and nrows == 2, (applied, nrows)
         assert g.store[_INGEST_QUEUE_PATH]["pending"] == []          # 비워짐
         sched = g.store["schedule.json"]
-        assert any(b.get("host") == "group" for b in sched["broadcasts"]), sched
+        _c = next(b for b in sched["broadcasts"] if b.get("kind") == "collab")
+        assert _c["collab_with"] == ["nonoka"] and _c["video_id"] == "kx-nhmTj4Eg", _c
         assert _ingest_queue_drain(g, "2026-09-04T00:00:00Z") == (0, 0)  # 빈 큐 no-op
         print("  ✓ dedup · drain · merge · 큐 비우기")
     else:
