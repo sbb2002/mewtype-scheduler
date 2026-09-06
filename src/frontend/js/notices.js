@@ -140,8 +140,9 @@ export function renderNotices(section, data) {
   const track = section.querySelector(".ntc__track");
   const ticker = section.querySelector(".ntc__ticker");
   const tgl = section.querySelector(".ntc__tgl");
+  const listEl = section.querySelector(".ntc__list");
   _marquee(track);
-  _marquee(section.querySelector(".ntc__list"));
+  _marquee(listEl);
 
   const H = track.firstElementChild ? track.firstElementChild.getBoundingClientRect().height : 35;
   const N = list.length;
@@ -170,18 +171,41 @@ export function renderNotices(section, data) {
   ticker.addEventListener("focusin", () => { _st.paused = true; stop(); });
   ticker.addEventListener("focusout", () => { _st.paused = false; play(); });
 
-  tgl.addEventListener("click", () => {
-    _st.open = !_st.open;
-    section.classList.toggle("is-open", _st.open);
-    section.classList.toggle("is-collapsed", !_st.open);
-    tgl.setAttribute("aria-expanded", String(_st.open));
-    tgl.textContent = _st.open ? "▴" : "▾";
-    section.querySelector(".ntc__all").hidden = !_st.open;
-    if (_st.open) stop();
+  // 펼침 높이를 실측해서 넣어야 max-height 트랜지션이 딱 그 거리만큼 "스르륵".
+  const applyListHeight = () => {
+    if (!listEl) return;
+    if (_st.open) {
+      const h = Math.min(listEl.scrollHeight, Math.round(window.innerHeight * 0.7));
+      listEl.style.maxHeight = h + "px";
+    } else {
+      listEl.style.maxHeight = "0px";
+    }
+  };
+
+  const setOpen = (open) => {
+    _st.open = open;
+    section.classList.toggle("is-open", open);
+    section.classList.toggle("is-collapsed", !open);
+    tgl.setAttribute("aria-expanded", String(open));
+    tgl.textContent = open ? "▴" : "▾";
+    const all = section.querySelector(".ntc__all");
+    if (all) all.hidden = !open;
+    applyListHeight();
+    if (open) stop();
     else { show(_st.idx % N, false); play(); }
-  });
+  };
+  _st.setOpen = setOpen;
+
+  tgl.addEventListener("click", () => setOpen(!_st.open));
 
   show(_st.open ? 0 : _st.idx % N, false);
+  if (_st.open && listEl) {
+    // 이미 펼친 채로 재빌드된 경우: 슬라이드 없이 즉시 펼친 높이로
+    listEl.style.transition = "none";
+    applyListHeight();
+    void listEl.offsetHeight;
+    listEl.style.transition = "";
+  }
   play();
   _st.built = true;
 
@@ -191,5 +215,23 @@ export function renderNotices(section, data) {
       if (document.hidden) _st.stop && _st.stop();
       else if (!_st.open && !_st.paused && _st.play) _st.play();
     });
+  }
+
+  // 펼친 상태에서 영역 밖을 "탭"하면 닫힘. 드래그(모바일 목록 스크롤 등)는 무시 —
+  // pointerdown~up 이동량이 작을 때만 닫는다. (#notice 노드는 재빌드돼도 동일)
+  if (!_st._out) {
+    _st._out = true;
+    let down = null;
+    document.addEventListener("pointerdown", (e) => {
+      down = { x: e.clientX, y: e.clientY, outside: !section.contains(e.target) };
+    }, true);
+    document.addEventListener("pointerup", (e) => {
+      const d = down;
+      down = null;
+      if (!d || !_st.open || !d.outside) return;
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 10) return;   // 드래그
+      if (section.contains(e.target)) return;
+      _st.setOpen && _st.setOpen(false);
+    }, true);
   }
 }
