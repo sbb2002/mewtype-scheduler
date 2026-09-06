@@ -956,6 +956,13 @@ if _FLASK_AVAILABLE:
             log.warning("ingest: bad or missing secret")
             return jsonify({"ok": False}), 403
 
+        # 원본 바디를 form 파싱 전에 먼저 캐시한다. Werkzeug 는 request.form 을 건드리는
+        # 순간 입력 스트림을 소비하면서 get_data() 캐시를 안 채우므로, 그 뒤에 부르는
+        # request.get_data() 는 form-urlencoded 요청에서 항상 빈 문자열이 된다
+        # (그동안 ECHO DM 의 "raw body" 칸이 늘 비어 보이던 원인). cache=True 로 먼저
+        # 읽어두면 이후 request.form 은 캐시된 바디를 다시 파싱한다.
+        raw_body = request.get_data(cache=True, parse_form_data=False, as_text=True)
+
         payload = request.form if request.form else (request.get_json(silent=True) or {})
         raw = (payload.get("text") or "").strip()
         title = (payload.get("title") or "").strip()
@@ -979,27 +986,39 @@ if _FLASK_AVAILABLE:
         # 확인 끝나면 env 에서 INGEST_ECHO 만 내리면 아래 실제 로직으로 복귀.
         # (이 블록 자체를 지워도 무방 — 나머지 로직은 이 블록에 의존하지 않음.)
         if os.environ.get("INGEST_ECHO", "").strip() not in ("", "0", "false", "False", "no"):
-            body_preview = request.get_data(as_text=True)[:1000]
             # 잘림 판정용 계측 — DM 없이 Cloud Run 로그만으로도 확인 가능해야.
             #   tail_ok = 트윗 말미 고정 문구가 왔는가 (오면 본문이 안 잘린 것)
             tail_ok = "予告なく変更" in raw or "時刻は予告" in raw
             log.warning(
-                "ingest ECHO: len=%d clen=%s tail_ok=%s ct=%r form_keys=%r "
+                "ingest ECHO: len=%d blen=%d clen=%s tail_ok=%s ct=%r form_keys=%r "
                 "head=%r tail=%r",
-                len(raw), request.content_length, tail_ok, request.content_type,
-                list(request.form.keys()), raw[:120], raw[-120:],
+                len(raw), len(raw_body), request.content_length, tail_ok,
+                request.content_type, list(request.form.keys()), raw[:120], raw[-120:],
             )
             _send_telegram(
                 "📡 <b>ingest ECHO</b> — 백엔드 처리 안 함\n"
                 f"ct=<code>{html.escape(request.content_type or '-')}</code> · "
                 f"form_keys={list(request.form.keys())}\n"
                 f"title=<code>{html.escape(title) or '(없음)'}</code>\n"
-                f"len(text)={len(raw)} · 말미문구 {'✅' if tail_ok else '❌'}\n"
+                f"len(text)={len(raw)} · len(body)={len(raw_body)} · "
+                f"말미문구 {'✅' if tail_ok else '❌'}\n"
                 "───── text ─────\n"
-                f"<code>{html.escape(raw) if raw else '(빈 text)'}</code>\n"
-                "───── raw body[:1000] ─────\n"
-                f"<code>{html.escape(body_preview)}</code>"
+                f"<code>{html.escape(raw) if raw else '(빈 text)'}</code>"
             )
+            # raw body 전문 — 길이 제한 없이 모두 회신한다. 단 Telegram sendMessage 는
+            # 4096자 상한이 있어 통째로 넣으면 DM 자체가 실패하므로 청크로 나눠 보낸다.
+            _body_chunk = 3500
+            if not raw_body:
+                _send_telegram("───── raw body ─────\n<code>(빈 body)</code>")
+            else:
+                _parts = [raw_body[i:i + _body_chunk]
+                          for i in range(0, len(raw_body), _body_chunk)]
+                for _idx, _part in enumerate(_parts, 1):
+                    _tag = f" ({_idx}/{len(_parts)})" if len(_parts) > 1 else ""
+                    _send_telegram(
+                        f"───── raw body{_tag} ─────\n"
+                        f"<code>{html.escape(_part)}</code>"
+                    )
             # 스케줄 트윗이면 큐에 적재 — 실배포 전환 시 반영되도록 (유실 방지).
             if raw and xrelay is not None and xrelay.looks_relayable(raw):
                 _gh = _make_gh()
@@ -1010,13 +1029,14 @@ if _FLASK_AVAILABLE:
 
         if not raw:
             # 폰(Automate)이 text 를 빈 값으로 보내는 원인 추적용 계측.
+            # (로그는 무한정 길어지면 안 되므로 여기서는 raw_body 를 800자로 자른다.)
             log.warning(
                 "ingest empty text: ct=%r len=%s form_keys=%r json=%r body[:800]=%r",
                 request.content_type,
                 request.content_length,
                 list(request.form.keys()),
                 request.get_json(silent=True),
-                request.get_data(as_text=True)[:800],
+                raw_body[:800],
             )
             return jsonify({"ok": False, "error": "empty text"}), 400
         if xrelay is None:
