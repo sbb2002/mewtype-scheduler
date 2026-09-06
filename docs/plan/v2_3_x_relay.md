@@ -65,6 +65,8 @@ Flow beginning
 
 ### 폰 플로우 — 현행 (2026-09-06, 무료 티어 6블록)
 
+> **Automate Expression 작성 규칙·함정·`nx` 키는 `docs/AUTOMATE_MANUAL.md` 참고.**
+
 `ref/flow-7 (3).log` 실측으로 알림 유형별 필드가 확정됨:
 
 | 유형 | `android.title` | `android.template` | `pde_noti_tag` |
