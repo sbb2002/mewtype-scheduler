@@ -1,0 +1,31 @@
+09-06 18:24:01.995 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test01, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test01, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686639928, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096529833870479645
+09-06 18:24:01.997 I 49@2: Notification posted?
+09-06 18:24:20.114 I 49@12: Expression true?
+09-06 18:24:20.115 I 49@13: Variable set
+09-06 18:24:20.115 I 49@6: HTTP request
+09-06 18:24:22.125 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test02
+jsut newline text, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test02
+jsut newline text, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686660087, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096529921338495107
+09-06 18:24:22.126 I 49@2: Notification posted?
+09-06 18:24:28.219 I 49@12: Expression true?
+09-06 18:24:28.219 I 49@13: Variable set
+09-06 18:24:28.220 I 49@6: HTTP request
+09-06 18:24:31.264 U 49@11: android.title: null, android.reduced.images as Boolean: 1, android.subText as String: 100%, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text as String: 155.6KB/155.6KB, android.progress as Int: 100, android.progressMax as Int: 100, SBrowser.NotificationBundleIconIdExtra as Int: 2131231201, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788686668200, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 1000304, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: DownloadNotificationService
+09-06 18:24:31.265 I 49@2: Notification posted?
+09-06 18:24:59.826 I 49@12: Expression true?
+09-06 18:24:59.828 I 49@13: Variable set
+09-06 18:24:59.828 I 49@6: HTTP request
+09-06 18:25:12.235 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test03, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test03, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686699792, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096530085432225964
+09-06 18:25:12.238 I 49@2: Notification posted?
+09-06 18:25:20.469 I 49@12: Expression true?
+09-06 18:25:20.470 I 49@13: Variable set
+09-06 18:25:20.470 I 49@6: HTTP request
+09-06 18:25:22.481 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test05, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test05, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686720430, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096530173793570983
+09-06 18:25:22.482 I 49@2: Notification posted?
+09-06 18:25:48.123 I 49@12: Expression true?
+09-06 18:25:48.126 I 49@13: Variable set
+09-06 18:25:48.126 I 49@6: HTTP request
+09-06 18:25:50.220 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test06
+newline text w/ yunochiiiii, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test06
+newline text w/ yunochiiiii, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686748082, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096530287262159202
+09-06 18:25:50.221 I 49@2: Notification posted?

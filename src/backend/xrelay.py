@@ -312,6 +312,40 @@ def looks_relayable(text: str) -> bool:
     return "配信スケジュール" in t or bool(APPEARANCE_MARK_RE.search(normalize(t)))
 
 
+# `HH:MM` 처럼 보이지만 `〜` 가 없어 TIME_RE 로는 안 잡히는 느슨한 시각 패턴
+_LOOSE_TIME_RE = re.compile(r"\d{1,2}:\d{2}")
+
+
+def unparsed_lines(text: str) -> list[str]:
+    """스케줄 엔트리로 보이지만 행을 못 만든 줄 목록.
+
+    일일 스케줄 트윗(`配信スケジュール` 헤더 있음)에서, 시각/아이콘/`メン限` 이 있어
+    엔트리처럼 보이는데 `parse_bdp_schedule` 이 버린 줄(이름 누락·오타, `〜` 없는
+    시각, 시각 자체 누락 등)을 돌려준다. DM 에 "인식 실패 N줄" 을 표기하는 용도.
+    헤더가 없으면(=일일 스케줄 트윗이 아니면) 빈 리스트.
+    """
+    t = normalize(text)
+    if not HEADER_RE.search(t):
+        return []
+    bad: list[str] = []
+    for raw_line in t.split("\n"):
+        line = raw_line.strip()
+        if not line or HEADER_RE.search(line):
+            continue
+        looks_entry = (
+            bool(_LOOSE_TIME_RE.search(line))
+            or line[:1] in ICON_KIND
+            or "メン限" in line
+        )
+        if not looks_entry:
+            continue
+        key, _ = _names(line)
+        if TIME_RE.search(line) and key:      # 정상 처리되는 줄
+            continue
+        bad.append(line)
+    return bad
+
+
 def _jst_date(iso: str) -> str:
     try:
         return (
@@ -559,6 +593,22 @@ if __name__ == "__main__":
     assert parse_bdp_schedule("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
     assert parse_appearance("＼本日配信📢／\n⛱️ブシロードTCG戦略発表会2026 夏", NOW) == []
     print("[OK] 비스케줄 트윗 → []")
+
+    # unparsed_lines: 이름 누락 / 〜 없는 시각 / 정상 줄 구분
+    S_BAD = (
+        "8/30(日) 配信スケジュール\n"
+        "🎮11:00〜 宮永ののか\n"        # 정상
+        "💭21:00〜 だれか\n"           # 이름 인식 실패
+        "🎤21:30 藤都子\n"            # 〜 없음 → 시각 인식 실패
+        "【メン限】千石ユノ\n"          # 시각 없음
+        "※時刻は予告なく変更の場合がございます。\n#バンドリ"
+    )
+    bad = unparsed_lines(S_BAD)
+    assert len(bad) == 3, bad
+    assert len(parse_bdp_schedule(S_BAD, NOW)) == 1        # 정상 줄만 반영
+    assert unparsed_lines(S1) == []                        # 정상 트윗 → 실패 0
+    assert unparsed_lines("配信スケジュール 없음\n🎮11:00〜 だれか") == []  # 헤더 없으면 []
+    print("[OK] unparsed_lines  (이름·시각 누락 줄 계수)")
 
     # merge_scheduled: replace-by-date
     prev = {

@@ -10,6 +10,14 @@
       "warn_text": "...",          // /del 이 보낸 경고문 (로그용)
       "at": "..."                  // 확인 대기 시작 시각 (ISO 'Z')
     },
+    "pending_ingest": null | {
+      "at": "..."                  // /ingest(무인자) 입력 후 원문/파일 대기 시작 시각 (ISO 'Z')
+    },
+    "pending_undo": null | {
+      "at": "...",                 // /undo 입력 후 (y/N) 대기 시작 시각 (ISO 'Z')
+      "target_sha": "...",         // 되돌릴 대상(undo 슬롯)의 new_sha — (y) 때 슬롯이 안 바뀐 것 확인
+      "action": "..."              // 사람이 읽을 설명 (프롬프트/취소 안내용)
+    },
     "undo": null | {
       "action": "...",             // 사람이 읽을 설명 ("/del arale#2", "ingest 2026-..." 등)
       "prev_content": {...},       // 변경 직전 schedule.json 전체
@@ -18,18 +26,20 @@
     }
   }
 
-`pending_del`/`undo` 는 각각 슬롯 1개 — 새 요청이 오면 이전 슬롯을 덮어쓴다.
+`pending_del`/`pending_ingest`/`pending_undo`/`undo` 는 각각 슬롯 1개 — 새 요청이 오면 덮어쓴다.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-PENDING_DEL_TTL_SEC = 300  # /del 경고 후 (y/N) 대기 상한 — 지나면 만료 취급
+PENDING_DEL_TTL_SEC = 300     # /del 경고 후 (y/N) 대기 상한 — 지나면 만료 취급
+PENDING_INGEST_TTL_SEC = 180  # /ingest(무인자) 후 원문/파일 대기 상한 — 지나면 취소
+PENDING_UNDO_TTL_SEC = 60     # /undo 후 (y/N) 대기 상한 — 지나면 자동 N(취소)
 
 
 def default_admin_state() -> dict:
     """기본 admin_state.json 형태."""
-    return {"pending_del": None, "undo": None}
+    return {"pending_del": None, "pending_ingest": None, "pending_undo": None, "undo": None}
 
 
 def _as_dict(state) -> dict:
@@ -79,6 +89,78 @@ def pending_del_expired(pending: dict | None, now_iso: str, ttl_sec: int = PENDI
     return (now_dt - at_dt).total_seconds() > ttl_sec
 
 
+def get_pending_ingest(state) -> dict | None:
+    """대기 중인 /ingest 원문 입력 슬롯 반환. 없으면 None."""
+    if not isinstance(state, dict):
+        return None
+    return state.get("pending_ingest")
+
+
+def set_pending_ingest(state, *, now_iso: str) -> dict:
+    """/ingest 원문 대기 상태로 교체한 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_ingest"] = {"at": now_iso}
+    return result
+
+
+def clear_pending_ingest(state) -> dict:
+    """/ingest 원문 대기 상태를 비운 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_ingest"] = None
+    return result
+
+
+def pending_ingest_expired(pending: dict | None, now_iso: str, ttl_sec: int = PENDING_INGEST_TTL_SEC) -> bool:
+    """pending_ingest 가 TTL 을 넘겼는지. pending 이 없으면(None) True 취급."""
+    if not pending:
+        return True
+    at = pending.get("at")
+    if not at:
+        return True
+    try:
+        at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
+def get_pending_undo(state) -> dict | None:
+    """대기 중인 /undo 확인(y/N) 슬롯 반환. 없으면 None."""
+    if not isinstance(state, dict):
+        return None
+    return state.get("pending_undo")
+
+
+def set_pending_undo(state, *, target_sha: str | None, action: str, now_iso: str) -> dict:
+    """/undo 확인 대기 상태로 교체한 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_undo"] = {"at": now_iso, "target_sha": target_sha, "action": action}
+    return result
+
+
+def clear_pending_undo(state) -> dict:
+    """/undo 확인 대기 상태를 비운 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_undo"] = None
+    return result
+
+
+def pending_undo_expired(pending: dict | None, now_iso: str, ttl_sec: int = PENDING_UNDO_TTL_SEC) -> bool:
+    """pending_undo 가 TTL 을 넘겼는지. pending 이 없으면(None) True 취급."""
+    if not pending:
+        return True
+    at = pending.get("at")
+    if not at:
+        return True
+    try:
+        at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
 def get_undo(state) -> dict | None:
     """되돌리기 가능한 마지막 작업 반환. 없으면 None."""
     if not isinstance(state, dict):
@@ -115,7 +197,10 @@ if __name__ == "__main__":
 
     d = default_admin_state()
     assert d["pending_del"] is None and d["undo"] is None
+    assert d["pending_ingest"] is None and d["pending_undo"] is None
     assert get_pending_del(None) is None and get_undo({}) is None
+    assert get_pending_ingest(None) is None and get_pending_ingest({}) is None
+    assert get_pending_undo(None) is None and get_pending_undo({}) is None
     print("✓ defaults / getters")
 
     p = set_pending_del(
@@ -135,6 +220,26 @@ if __name__ == "__main__":
     assert pending_del_expired(fresh, "2026-09-05T12:04:00Z") is False   # 4분 후 — 아직 유효(TTL 5분)
     assert pending_del_expired(fresh, "2026-09-05T12:06:00Z") is True    # 6분 후 — 만료
     print("✓ pending_del_expired TTL")
+
+    pi = set_pending_ingest(p, now_iso="2026-09-05T12:00:00Z")
+    assert get_pending_ingest(pi) == {"at": "2026-09-05T12:00:00Z"}
+    assert get_pending_del(pi)["unit"] == "arale", "pending_del 슬롯 보존"
+    assert pending_ingest_expired(None, "2026-09-05T12:00:00Z") is True
+    assert pending_ingest_expired(get_pending_ingest(pi), "2026-09-05T12:02:00Z") is False  # 2분 < 3분
+    assert pending_ingest_expired(get_pending_ingest(pi), "2026-09-05T12:03:30Z") is True   # 3분30초 > 3분
+    assert get_pending_ingest(clear_pending_ingest(pi)) is None
+    assert get_pending_del(clear_pending_ingest(pi))["unit"] == "arale", "clear 시 타 슬롯 보존"
+    print("✓ pending_ingest 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
+
+    pu = set_pending_undo(pi, target_sha="sha_after", action="ingest 2026-09-05", now_iso="2026-09-05T12:00:00Z")
+    assert get_pending_undo(pu) == {"at": "2026-09-05T12:00:00Z", "target_sha": "sha_after", "action": "ingest 2026-09-05"}
+    assert get_pending_ingest(pu) == {"at": "2026-09-05T12:00:00Z"}, "타 슬롯 보존"
+    assert pending_undo_expired(None, "2026-09-05T12:00:00Z") is True
+    assert pending_undo_expired(get_pending_undo(pu), "2026-09-05T12:00:45Z") is False  # 45초 < 60초
+    assert pending_undo_expired(get_pending_undo(pu), "2026-09-05T12:01:10Z") is True   # 70초 > 60초
+    assert get_pending_undo(clear_pending_undo(pu)) is None
+    assert get_pending_ingest(clear_pending_undo(pu)) is not None, "clear 시 타 슬롯 보존"
+    print("✓ pending_undo 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
 
     u = set_undo(
         d, action="/del arale#2", prev_content={"broadcasts": []},

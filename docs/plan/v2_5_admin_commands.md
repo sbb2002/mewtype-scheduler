@@ -12,7 +12,7 @@
 |---|---|
 | `/list [유닛]` | 현재 `schedule.json` 방송을 유닛별 idx 로 나열. 유닛 생략 시 5채널 전체. |
 | `/del <유닛> <idx>` | 그 유닛의 idx번째 방송을 내림(삭제). **2단계 확인**(아래) 필요. |
-| `/ingest <트윗 원문>` (별칭 `/add`) | 폰 자동 릴레이(`POST /ingest`)와 동일한 파싱·반영을 텔레그램에서 수동 실행. `INGEST_ECHO`/`INGEST_DRY_RUN` 스위치와 무관하게 항상 실제 반영 — 테스트 기간에도 트윗을 손으로 붙여넣어 백필하는 용도로 쓸 수 있다. |
+| `/ingest` (별칭 `/add`) | 보낸 뒤 **3분 내에** 예고트윗 원문을 이어서 보내거나(텍스트) 텍스트 파일(txt/md 등)을 업로드하면 폰 자동 릴레이(`POST /ingest`)와 동일한 파싱·반영을 수동 실행. `INGEST_ECHO`/`INGEST_DRY_RUN` 스위치와 무관하게 항상 실제 반영. 취소 토큰 `aNoneTokyo`. (v2.5.1: 인라인 `/ingest <원문>` 은 제거 — 텔레그램 클라이언트의 `||스포일러||` 마스킹이 명령행 텍스트를 변형시켜서.) |
 | `/undo` | 이 봇을 통해 방금 반영된 변경(`/ingest` 또는 `/del`) **1건**을 되돌림. |
 
 유닛 키: `arale` `yuno` `nonoka` `ritsu` `miyako` (`config/channels.json` `channel_order` 와 동일).
@@ -43,23 +43,52 @@ idx 가 밀릴 수 있다 — **`/del` 직전에 `/list` 로 재확인 권장**.
 4. 성공하면 `admin_state.json` `undo` 슬롯에 스냅샷(변경 직전 `schedule.json` 전체 + 변경 직후
    `sha`)을 남긴다.
 
-## 3. `/ingest`(`/add`) — 폰 자동 경로 재사용
+## 3. `/ingest`(`/add`) — 2단계(대기 슬롯) + 폰 자동 경로 재사용
 
-텔레그램 `/ingest` 텍스트 명령은 `POST /ingest`(폰 전용, `X-Ingest-Secret` 인증) 라우트와
-**네임스페이스가 다르다**(하나는 URL 경로, 하나는 텔레그램 봇 채팅 명령) — 이름이 같아도 충돌
-없음. `xrelay.parse` → `_merge_rows_into_schedule` 를 그대로 재사용하고, 큐(`ingest_queue.json`)
-drain 도 동일하게 수행한다. 텔레그런 명령은 이미 `chat_id` 로 인증된 운영자 전용이라
-`INGEST_ECHO`/`INGEST_DRY_RUN` 테스트 스위치를 안 거친다 — 붙여넣은 즉시 반영.
+텔레그램 `/ingest` 채팅 명령은 `POST /ingest`(폰 전용, `X-Ingest-Secret` 인증) 라우트와
+**네임스페이스가 다르다** — 이름이 같아도 충돌 없음.
 
-## 4. `/undo` — 슬롯 1개, SHA 가드
+**2단계 흐름 (v2.5.1):**
+1. `/ingest`(무인자) → `admin_state.json` 의 `pending_ingest` 슬롯(`{"at": now}`)만 세팅하고
+   안내문 발신. 인자를 붙여도 무시한다(인라인 원문 경로 제거 — `||스포일러||` 마스킹 회피).
+2. 웹훅은 명령 디스패치 **전에** `_handle_ingest_followup` 를 호출. `pending_ingest` 가 살아
+   있으면 그 메시지를 소진:
+   - `aNoneTokyo` → 슬롯 비우고 "취소" (반환 `True` = 이 메시지 소진)
+   - `/`로 시작하는 다른 명령 → 슬롯 비우고 안내 후 **정상 디스패치로 통과**(`False`)
+   - 만료(180초 초과) → 슬롯 비우고 "만료" 안내 후 **통과**(`False`) — 메시지를 삼키지 않음
+   - `message.document` → Telegram `getFile`로 다운로드(UTF-8, 256KB 상한)
+   - 그 외 텍스트 → 그게 원문
+   - 원문 확보 시: 슬롯 비우고 "📥 예고 원문 받았습니다…" 발신 후
+     `_handle_manual_ingest` (아래) 실행
+3. `_handle_manual_ingest` 는 `xrelay.parse` → `_merge_rows_into_schedule` 재사용, 큐
+   (`ingest_queue.json`) drain 도 동일, `INGEST_ECHO`/`INGEST_DRY_RUN` 스위치는 안 거친다.
+   결과 DM 에 인식 실패 줄 수(`xrelay.unparsed_lines`)도 함께 표기.
+
+원문 수신 즉시 슬롯을 비우므로, 반영이 도는 동안 `/status` 등 다른 명령을 보내도 트랩되지
+않고 정상 처리된다(gunicorn `threads=4` 로 웹훅 요청은 별도 스레드).
+
+## 4. `/undo` — 2단계(y/N) + 슬롯 1개 + SHA 가드
 
 - `admin_state.json` `undo` 에는 **가장 최근 mutating 명령 1건**(`/ingest`, 폰 자동 `/ingest`,
   `/del`)의 정보만 있다. 그보다 오래된 건 `/undo` 로 못 돌아간다 — `/list`+`/del` 로 수동 처리.
-- 판정: 지금 `schedule.json` 의 sha 가 그 작업이 **막 만들어낸 sha** 와 같은지 확인.
-  - 같으면(그 사이 아무도 안 건드림) → 변경 직전 전체 내용(`prev_content`)으로 그대로 복원.
-  - 다르면(정기 `/tick` 이 실물로 supersede 했거나 TTL 로 지웠거나, 다른 명령이 또 건드림) →
-    **거부**. `prev_content` 로 무작정 되돌리면 그 사이의 정당한 변경까지 같이 날아가기 때문.
-    "그 사이 갱신됨 — `/list`/`/del` 로 수동 처리" 안내.
+- **2단계 (v2.5.2):**
+  1. `/undo` → `_handle_undo_request` 가 되돌릴 대상을 보여주고 `pending_undo` 슬롯(60초 TTL,
+     `target_sha` = 되돌릴 undo 슬롯의 `new_sha`)을 세팅. **아직 복원 안 함.**
+     프롬프트: `🔁 <action> 을(를) 되돌립니다` + `⏱ 되돌리면 <YYYY-MM-DD HH:MM KST> 직전
+     상태가 됩니다 · 커밋 <sha7> 취소` + `+N 복원 / −M 제거` broadcasts 요약 + `(y/N)`.
+  2. `y` → `_handle_undo_confirm(yes=True)`. `n` / 60초 경과(다음 메시지 때 자동 N) / y·n
+     아닌 입력 → 취소("undo가 취소되었습니다"). y/N 가로채기는 `/del` 과 같은 웹훅 지점에서
+     `pending_del` → `pending_undo` 순으로 분기.
+- **`y` 판정 (2중 가드):**
+  1. `undo` 슬롯이 그 사이 교체됐는지 — `undo["new_sha"] != pending_undo["target_sha"]` 면
+     거부("그 사이 다른 작업이 있었습니다 — /undo 를 다시"). 확인 대기 중 새 `/ingest` 등이
+     들어와 undo 대상이 바뀐 경우.
+  2. 지금 `schedule.json` 의 sha 가 그 작업이 **막 만들어낸 sha** 와 같은지 —
+     - 같으면 → 변경 직전 전체 내용(`prev_content`)으로 복원. 성공 DM 에도 `⏱ 되돌리면…` +
+       `+N/−M` 요약 재표기.
+     - 다르면(정기 `/tick` 이 supersede/TTL 삭제, 다른 명령이 또 건드림) → **거부**.
+       `prev_content` 로 무작정 되돌리면 그 사이의 정당한 변경까지 날아가기 때문.
+       "그 사이 갱신됨 — `/list`/`/del` 로 수동 처리" 안내.
 - 이 설계는 3개 이상 `ingest`된 행이 각각 `none`/`live`/`scheduled` 로 갈린 혼재 상황(운영 중
   논의된 케이스)에서도 안전하게 동작한다: 그중 하나라도 `/tick` 이 건드렸으면 sha 가 달라져
   `/undo` 전체가 거부되고, 그 시점부터는 `/list` 로 실제 상태를 보고 `/del` 로 원하는 것만
@@ -67,8 +96,10 @@ drain 도 동일하게 수행한다. 텔레그런 명령은 이미 `chat_id` 로
 
 ## 5. 관련 파일
 
-- `src/backend/admin.py` — `admin_state.json` 스키마 + `pending_del`/`undo` 헬퍼 (순수 함수).
-- `src/backend/telegram_app.py` — `/list` `/del` `/ingest` `/undo` 핸들러, y/N 가로채기,
-  `_merge_rows_into_schedule`/`_remove_broadcast` 의 undo 스냅샷 기록(`_save_undo`).
+- `src/backend/admin.py` — `admin_state.json` 스키마 + `pending_del`/`pending_ingest`/
+  `pending_undo`/`undo` 헬퍼 (순수 함수).
+- `src/backend/telegram_app.py` — `/list` `/del` `/ingest` `/undo` 핸들러, y/N 가로채기
+  (`pending_del`→`pending_undo`), `/ingest` 2단계(`_handle_ingest_followup`), `/undo` 2단계
+  (`_handle_undo_request`/`_handle_undo_confirm`), undo 스냅샷 기록(`_save_undo`).
 - 계약: `admin_state.json` 스키마는 `src/backend/admin.py` 모듈 docstring 참고
   (`docs/SPEC.md` 계약 목록에도 추가 예정).

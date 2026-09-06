@@ -358,7 +358,7 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 ## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트, v2.5)
 
 텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/undo`, `docs/plan/v2_5_admin_commands.md`)의
-상태. `pending_del`/`undo` 각각 슬롯 1개(새 값이 오면 이전 값을 덮어씀).
+상태. `pending_del`/`pending_ingest`/`pending_undo`/`undo` 각각 슬롯 1개(새 값이 오면 이전 값을 덮어씀).
 
 ```jsonc
 {
@@ -369,6 +369,14 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
     "warn_text": "...",
     "at": "2026-09-05T12:00:00Z" // 확인 대기 시작 (TTL 300s, admin.PENDING_DEL_TTL_SEC)
   },
+  "pending_ingest": null | {     // (v2.5.1) /ingest(무인자) 후 원문/파일 대기
+    "at": "2026-09-05T12:00:00Z" // TTL 180s (admin.PENDING_INGEST_TTL_SEC)
+  },
+  "pending_undo": null | {       // (v2.5.2) /undo 후 (y/N) 확인 대기
+    "at": "2026-09-05T12:00:00Z",// TTL 60s (admin.PENDING_UNDO_TTL_SEC)
+    "target_sha": "...",         // 되돌릴 undo 슬롯의 new_sha — (y) 때 슬롯 미교체 확인
+    "action": "..."              // 사람이 읽을 설명 (프롬프트/취소 안내용)
+  },
   "undo": null | {
     "action": "/del arale#2",    // 사람이 읽을 설명
     "prev_content": { /* schedule.json 전체(변경 직전) */ },
@@ -378,16 +386,34 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 }
 ```
 
-`src/backend/admin.py` (순수 헬퍼): `default_admin_state()`,
-`get_pending_del(s)`/`set_pending_del(s, *, unit, idx, snapshot, warn_text, now_iso)`/`clear_pending_del(s)`,
-`pending_del_expired(pending, now_iso, ttl_sec=300)`,
-`get_undo(s)`/`set_undo(s, *, action, prev_content, new_sha, now_iso)`/`clear_undo(s)`.
+`src/backend/admin.py` (순수 헬퍼): `default_admin_state()`, 그리고 각 슬롯마다
+`get_*` / `set_*` / `clear_*` / `*_expired(pending, now_iso, ttl_sec=…)`:
+- `pending_del` — `set_pending_del(s, *, unit, idx, snapshot, warn_text, now_iso)`, TTL 300s
+- `pending_ingest` — `set_pending_ingest(s, *, now_iso)`, TTL 180s
+- `pending_undo` — `set_pending_undo(s, *, target_sha, action, now_iso)`, TTL 60s
+- `undo` — `set_undo(s, *, action, prev_content, new_sha, now_iso)` (TTL 없음, sha 로 판정)
+
 `set_*`/`clear_*` 는 원본 복사 후 해당 슬롯만 갱신(다른 슬롯 보존).
 
-`/undo` 판정: 지금 `schedule.json` sha `==` 기록된 `new_sha` 일 때만 `prev_content` 로 복원.
-다르면(정기 `/tick` 이 그 사이 supersede/TTL 제거했거나 다른 명령이 또 건드림) 거부 —
-`prev_content` 로 무작정 덮으면 그 사이의 정당한 변경이 같이 날아가기 때문. 상세 근거는
-`docs/plan/v2_5_admin_commands.md` §4.
+**`/ingest` (v2.5.1 — 2단계)**: 인라인 `/ingest <원문>` 제거(텔레그램 `||스포일러||` 마스킹이
+명령행 텍스트를 변형시킴). `/ingest`(무인자) → `pending_ingest` 슬롯 + 안내문 → 웹훅이 명령
+디스패치 전에 다음 메시지를 소진: `aNoneTokyo` → 취소 · `/`로 시작 → 대기 접고 통과 · 180s
+초과 → 만료 안내 후 통과 · `document` → Telegram `getFile` 다운로드(UTF-8, 256KB) · 그 외
+텍스트 → 원문. 원문 확보 시 슬롯 비우고 접수 안내 후 기존 반영 로직. 결과 DM 에 인식 실패
+줄 수(`xrelay.unparsed_lines` — 헤더는 있는데 이름·시각 누락으로 버려진 줄) 표기.
+
+**`/undo` 판정 (v2.5.2 — 2단계)**: `/undo` → 되돌릴 대상 요약(복원/제거 broadcasts, 되돌아갈
+KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 2중 가드 —
+① `undo.new_sha != pending_undo.target_sha`(확인 대기 중 undo 대상 교체) → 거부
+② 지금 `schedule.json` sha `!=` 기록된 `new_sha`(정기 `/tick` 이 supersede/TTL 제거했거나
+다른 명령이 또 건드림) → 거부. 둘 다 통과 시에만 `prev_content` 로 복원 —
+무작정 덮으면 그 사이의 정당한 변경이 같이 날아가기 때문. `n`/60s 경과/y·n 아닌 입력 → 취소.
+상세 근거: `docs/plan/v2_5_admin_commands.md` §3~4.
+
+**쓰기 경합**: schedule.json 을 쓰는 모든 경로(봇 `/ingest`·`/undo`·`/del`, 메인 백엔드
+`/tick`·`/wake`)는 CAS(`prev_sha`) + 1회 재계산 재시도로 직렬화된다. 크로스 서비스 분산 락은
+두지 않음 — `/tick` 은 Cloud Scheduler 트리거라 락 대기를 못 하고, `/undo` 는 위 sha 가드가
+오작동을 원천 차단하므로 불필요.
 
 ---
 
@@ -593,23 +619,36 @@ GET  /           # 200 헬스체크
 - `/log [detail|normal|simple]` — `control.json.log_level`. 인자 없으면 현재값.
 - **(v2.5)** `/list [유닛]` — `schedule.json` 방송을 유닛별 idx 로 나열(상태순→시각순).
   `/del <유닛> <idx>` — 2단계 확인(y/N, 경고 DM) 후 삭제, 확인 대기는 `admin_state.json` `pending_del`
-  (슬롯 1개, TTL 300s). `/ingest <트윗 원문>`(별칭 `/add`) — `POST /ingest` 라우트와 별개 네임스페이스,
-  같은 파싱·반영 경로 재사용, ECHO/DRY-RUN 무관 항상 실제 반영. `/undo` — 이 봇으로 방금 반영된
-  변경 1건만 되돌림(`admin_state.json` `undo`, sha 불일치면 거부). 상세: §6-1, `docs/plan/v2_5_admin_commands.md`.
+  (슬롯 1개, TTL 300s).
+  - **(v2.5.1)** `/ingest`(별칭 `/add`) — **2단계**. 무인자로 보내면 `pending_ingest` 슬롯(TTL 180s)
+    + 안내문. 이어서 보낸 텍스트나 첨부 파일(`getFile` 다운로드, UTF-8 · 256KB)을 원문으로 소진 —
+    `aNoneTokyo` 로 취소, `/`명령이면 대기 접고 통과, 180s 초과면 만료 안내. 반영은 `POST /ingest`
+    라우트와 별개 네임스페이스로 같은 파싱·경로 재사용(ECHO/DRY-RUN 무관 항상 실제 반영). 결과 DM 에
+    인식 실패 줄 수(`xrelay.unparsed_lines`) 표기. (인라인 `/ingest <원문>` 은 제거 — `||스포일러||` 마스킹.)
+  - **(v2.5.2)** `/undo` — **2단계**. `/undo` → 되돌릴 대상 요약(복원/제거 broadcasts + 되돌아갈 KST
+    시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체
+    `target_sha` + `schedule.json` sha 일치) 통과해야 `prev_content` 로 복원. `n`/60s/기타입력 → 취소.
+  - y/N 가로채기는 `pending_del` → `pending_undo` 순으로 분기. 상세: §6-1, `docs/plan/v2_5_admin_commands.md`.
 
 **`/ingest`** (v2.3 X 릴레이): `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`. 본문 form/JSON 의
 `text`(필수)/`title`(선택).
 - 폰 Automate 빌드가 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘리므로 — `text` 값이
   비고 (`text`/`title` 외) 폼 키가 딱 하나 + 그 값도 비면 **그 키 이름을 원문으로 복구**한다
   (`# ponytail:` 표시. 폰에서 `"text=" ++ urlEncode(...)` 로 제대로 보낼 수 있게 되면 삭제).
-- `INGEST_ECHO=1`: 파싱·저장 안 함. 받은 텍스트 DM 회신 + `ingest ECHO: len=.. tail_ok=..` 로그.
+- 원본 바디는 `request.form` 접근 **전에** `request.get_data(cache=True, parse_form_data=False)`
+  로 캐시한다 — Werkzeug 는 form 파싱 시 입력 스트림을 소비하고 `get_data()` 캐시를 안 채우므로,
+  그 뒤에 부르면 form-urlencoded 요청에서 빈 문자열이 된다(ECHO DM 의 raw body 칸이 늘 비어 보이던 버그).
+- `INGEST_ECHO=1`: 파싱·저장 안 함. 받은 텍스트 DM 회신(raw body 전문 — 4096자 초과 시 3500자 청크
+  분할) + `ingest ECHO: len=.. blen=.. tail_ok=..` 로그.
   `xrelay.looks_relayable`(본문에 `配信スケジュール` 또는 `出演情報`) 이면 `ingest_queue.json` 에 적재.
-- `INGEST_DRY_RUN=1`: 파싱은 하고 저장 안 함. 원문 + 파싱 결과 DM.
+- `INGEST_DRY_RUN=1`: 파싱은 하고 저장 안 함. 원문 + 파싱 결과 + 인식 실패 줄 수 DM.
 - 실배포(`INGEST_ECHO=0`·`INGEST_DRY_RUN=0`): `control.json` `paused` 확인 → `_ingest_queue_drain`
   이 큐 원문을 `received_at` 순서로 `xrelay.parse` → `merge_scheduled` → `schedule.json` 커밋,
   큐 비움. 이번 요청 본문도 파싱·머지. 결과 DM(계약 G `xrelay.summary_text`).
 - `xrelay.py` (순수): `parse(text, now_iso)` — 일일 스케줄(`parse_bdp_schedule`) 우선, 없으면
-  `parse_appearance`(`出演情報`). `looks_relayable`, `merge_scheduled`(replace-by-date), `summary_text`.
+  `parse_appearance`(`出演情報`). `looks_relayable`, `merge_scheduled`(replace-by-date), `summary_text`,
+  `unparsed_lines(text)` — `配信スケジュール` 헤더가 있는 트윗에서 시각/아이콘/`メン限` 이 있어
+  엔트리처럼 보이는데 이름·시각 누락으로 행을 못 만든 줄 목록(DM "인식 실패 N줄" 표기용).
   `APPEARANCE_MARK_RE = re.compile(r"出演情報")` — 실측 확인된 유일 마커. 변형은 실물 트윗에서 본 뒤 추가.
 
 ### 8.8 `config.py` — 환경변수 → Config
