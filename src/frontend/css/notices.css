@@ -148,17 +148,27 @@
 .ntc__src:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: 2px; border-radius: 2px; }
 .ntc__src .nm { font-variant-numeric: tabular-nums; }
 
-/* ── 펼친 목록 — 오버레이. 아래 예고 영역 위에 떠서 레이아웃을 안 민다. ── */
+/* ── 펼친 목록 — 오버레이. 아래 예고 영역 위에 떠서 레이아웃을 안 민다.
+   max-height 는 JS(applyListHeight)가 실측 px 로 넣어 스르륵 슬라이드. ── */
 .ntc__list {
-  list-style: none; margin: 0; padding: 0; display: none;
+  list-style: none; margin: 0; padding: 0;
   position: absolute; top: 100%; left: var(--page-pad); right: var(--page-pad);
   z-index: 30;
-  max-height: min(70vh, 32rem); overflow-y: auto;
+  max-height: 0; overflow: hidden;
+  opacity: 0; visibility: hidden;
   border: 1px solid var(--ntc-border-soft); border-top: none;
   border-radius: 0 0 6px 6px; background: var(--color-bg-secondary);
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease,
+              visibility 0s linear 0.3s;
 }
-.ntc.is-open .ntc__list { display: block; }
+.ntc.is-open .ntc__list {
+  overflow-y: auto;
+  opacity: 1; visibility: visible;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease;
+}
 .ntc__list .ntc__item { position: relative; border-top: 1px solid var(--ntc-border-soft); padding-left: calc(0.8rem + 3px); }
 .ntc__list .ntc__item:hover { background: var(--ntc-hover); }
 .ntc__list .ntc__item::before {
@@ -182,4 +192,5 @@
   .ntc__track { transition: none; }
   .ntc__title.is-marquee .ntc__title-in { animation: none; }
   .ntc.has-today .ntc__lamp { animation: none; opacity: 1; }
+  .ntc__list, .ntc.is-open .ntc__list { transition: opacity 0.15s ease; }
 }
