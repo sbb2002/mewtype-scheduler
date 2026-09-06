@@ -59,8 +59,23 @@ _MUSIC_RE = re.compile(r"(lnk\.to|linkco\.re|spotify|music\.apple|apple\.co|/mus
 
 _TWEET_ID_RE = re.compile(r"tweet-(\d{6,25})")
 _QUOTE_RE = re.compile(r"[「『]([^」』\n]{1,80})[」』]")
-_LEAD_JUNK = re.compile(r"^[\s＼／｜|・･*※＊✳️✨🌟🌏🐔🛸🎊🎉🎁📢📣📺🎤🎮💭💪⭐#＃>＞\-–—]+")
+_LEAD_JUNK = re.compile(r"^[\s＼／｜|・･*※＊✳✨🌟🌏🐔🛸🎊🎉🎁📢📣📺🎤🎮💭💪⭐🔥💫#＃>＞\-–—▼▽▶➡→]+")
+_TRAIL_JUNK = re.compile(
+    r"[\s　！!？?。、,.\-–—＼／｜|・･*※＊✳✨🌟🌏🐔🛸🎊🎉🎁📢📣📺🎤🎮💭💪⭐❣❕‼🔥💫➡→↓]+$"
+)
 _HANDLE_HEAD_RE = re.compile(r"^\s*(?:RT\s+)?@(\w{1,15})\s*[:：]")
+_CONNECTIVE_RE = re.compile(r"^(?:さらに|そして|また|なお|加えて|そのほか|その他)\s*")
+#   과장·캠페인 문구 (제목으로 부적합)
+_HYPE_RE = re.compile(
+    r"\d+\s*万?\s*人?\s*(?:突破|達成|超え)|事前登録|達成報酬|プレゼント(?:が)?決定|"
+    r"フォロー\s*[&＆]|RT\s*[&＆]|抽選で|キャンペーン実施|フォロー&RT|いいね&"
+)
+#   「」 안이 이벤트/상품 이름일 때만 제목으로 승격
+_EVENTISH_RE = re.compile(
+    r"特番|生配信|ライブ|LIVE|フェス|FES|公演|イベント|リリース|発売|配信決定|決定|開催|"
+    r"スタート|第\s*\d+\s*弾|ツアー|TOUR"
+)
+_SENTENCE_RE = re.compile(r"[、。]|ので[、。\s]|です[。\s]|ます[。\s]|でした|ください")
 
 
 def _tweet_id(tag: str | None) -> str:
@@ -89,7 +104,8 @@ def _pick_event_date(t: str, now_jst: datetime) -> tuple[str | None, bool]:
                 continue
         except ValueError:
             continue
-        cands.append((mo, da, bool(m.group("dl")), m.start()))
+        dl = bool(m.group("dl")) or ("まで" in t[m.end():m.end() + 4] or "迄" in t[m.end():m.end() + 4])
+        cands.append((mo, da, dl, m.start()))
     if not cands:
         return None, False
 
@@ -150,26 +166,55 @@ def _url_tail(u: str) -> str:
 
 
 def _headline(t: str) -> str:
-    """가장 눈에 띄는 한 줄 → 제목. 장식·해시태그·정형구 줄 제외."""
+    """제목 뽑기 — 줄마다 점수 매겨 최고점. 「」 안이 이벤트/상품명이면 그걸 승격.
+
+    첫 줄이 `＼⏰9月27日まで⏰／` 나 `事前登録150万人突破` 같은 장식·홍보라도 진짜 제목을 찾는다.
+    """
+    quote = None
+    qm = _QUOTE_RE.search(t)
+    if qm:
+        quote = qm.group(1).strip().lstrip("#＃").strip()
+
+    best, best_score = None, -1e9
     for raw in t.split("\n"):
         line = raw.strip()
-        if not line:
-            continue
-        if HEADER_RE.search(line):
+        if not line or HEADER_RE.search(line):
             continue
         if re.fullmatch(r"[＼／\s｜|・･*　]*", line):
             continue
-        if line.startswith("#") or line.startswith("＃"):
+        if line[:1] in ("#", "＃", "※", "▼", "▽", "▶", "＞", ">", "☆", "★"):
             continue
-        if line.startswith("※"):
+        if line.startswith("http") or " http" in line:
             continue
         if re.fullmatch(r"🛸?\s*夢限大みゅーたいぷ", line):
             continue
-        cleaned = _LEAD_JUNK.sub("", line).strip(" 　")
-        if len(cleaned) >= 4:
-            return cleaned[:90]
+        cleaned = _TRAIL_JUNK.sub("", _LEAD_JUNK.sub("", line)).strip(" 　")
+        cleaned = _CONNECTIVE_RE.sub("", cleaned)
+        if len(cleaned) < 4:
+            continue
+        score = min(len(cleaned), 40) * 0.3
+        if _HYPE_RE.search(cleaned):
+            score -= 100
+        if _RE_LIVE.search(cleaned) or _RE_RELEASE.search(cleaned) or _RE_PLATFORM.search(cleaned):
+            score += 40
+        if "「" in cleaned or "『" in cleaned:
+            score += 20
+        if _SENTENCE_RE.search(cleaned):
+            score -= 25                       # 설명 문장은 제목 아님
+        if re.match(r"^(?:〜|\d{1,2}\s*[/月])", cleaned):
+            score -= 15                       # 날짜로 시작하는 조각
+        nonword = len(re.findall(r"[^0-9A-Za-z぀-ヿ一-鿿ー「」『』・]", cleaned))
+        if nonword / max(len(cleaned), 1) > 0.5:
+            score -= 30
+        if score > best_score:
+            best, best_score = cleaned, score
+
+    if quote and _EVENTISH_RE.search(quote) and (not best or f"「{quote}」" not in best):
+        return f"「{quote}」"[:90]
+    if best:
+        return best[:90]
     flat = re.sub(r"\s+", " ", t).strip()
-    return _LEAD_JUNK.sub("", flat)[:90] or "(제목 없음)"
+    return _TRAIL_JUNK.sub("", _LEAD_JUNK.sub("", flat))[:90] or "(제목 없음)"
 
 
 def _title_slug(title: str) -> str:
@@ -283,20 +328,21 @@ if __name__ == "__main__":
     assert r1 and r1["category"] == "live", r1
     assert r1["date"] == "2026-09-13" and r1["time"] == "21:00", r1
     assert r1["id"] == "2096519341575721125"
-    assert r1["tweet_url"] == "https://x.com/i/status/2096519341575721125"
+    assert r1["title"] == "「アワーノーツ リリース日決定特番」", r1["title"]   # 홍보 첫 줄 무시
     assert r1["anchor_b"] == "アワーノーツリリース日決定特番", r1["anchor_b"]
     assert r1["deadline"] is False
-    print("[OK] S1  라이브 예고 (特番 → live, 날짜·시각·인용구)")
+    print("[OK] S1  라이브 예고 (제목=「」, 홍보 첫 줄 무시)")
 
-    # S2: 굿즈 수주(마감형) — 〜9/27
-    S2 = ("🛸メモリアルグッズの第2弾が発売🌟\n受注受付は〜9/27まで❣\n"
-          "▼ご注文はコチラ\nhttps://bushiroad-store.com/pages/anime-yumemita_fair2\n#ゆめみた")
+    # S2: 굿즈 수주(마감형) — 첫 줄이 ＼⏰…まで⏰／ 장식, 진짜 제목은 셋째 줄
+    S2 = ("＼⏰9月27日まで受注受付！⏰／\n🛸TVアニメ「#バンドリ！ ゆめ∞みた」🛸\n"
+          "メモリアルグッズの第2弾が発売🌟\n今回は受注生産なので、期間中の売切れはナシ❣\n"
+          "▼ご注文はコチラ！\nhttps://bushiroad-store.com/pages/anime-yumemita_memorial-fair2\n#アニメゆめみた")
     r2 = parse(S2, NOW, tag="p#https://x.com/#1tweet-2096529833870479645")
     assert r2 and r2["category"] == "release", r2
-    assert r2["date"] == "2026-09-27" and r2["deadline"] is True, r2
-    assert r2["site"] == "store" and r2["url"].startswith("https://bushiroad-store.com"), r2
-    assert r2["anchor_a"] == "anime-yumemita_fair2", r2["anchor_a"]
-    print("[OK] S2  굿즈 수주 (release, deadline, store anchor_a)")
+    assert r2["date"] == "2026-09-27" and r2["deadline"] is True, r2   # "9月27日まで" → deadline
+    assert r2["title"] == "メモリアルグッズの第2弾が発売", r2["title"]   # 장식·프랜차이즈 「」 무시
+    assert r2["site"] == "store" and r2["anchor_a"] == "anime-yumemita_memorial-fair2", r2
+    print("[OK] S2  굿즈 수주 (まで→deadline, 제목=실질 줄)")
 
     # S3: bilibili 전원 방송
     S3 = ("／\n🛸夢限大みゅーたいぷ\n＼\n⭐9/23(火) 22:00〜 全員【bilibili】生配信\n"
