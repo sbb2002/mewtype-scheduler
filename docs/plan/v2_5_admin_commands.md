@@ -67,15 +67,28 @@ idx 가 밀릴 수 있다 — **`/del` 직전에 `/list` 로 재확인 권장**.
 원문 수신 즉시 슬롯을 비우므로, 반영이 도는 동안 `/status` 등 다른 명령을 보내도 트랩되지
 않고 정상 처리된다(gunicorn `threads=4` 로 웹훅 요청은 별도 스레드).
 
-## 4. `/undo` — 슬롯 1개, SHA 가드
+## 4. `/undo` — 2단계(y/N) + 슬롯 1개 + SHA 가드
 
 - `admin_state.json` `undo` 에는 **가장 최근 mutating 명령 1건**(`/ingest`, 폰 자동 `/ingest`,
   `/del`)의 정보만 있다. 그보다 오래된 건 `/undo` 로 못 돌아간다 — `/list`+`/del` 로 수동 처리.
-- 판정: 지금 `schedule.json` 의 sha 가 그 작업이 **막 만들어낸 sha** 와 같은지 확인.
-  - 같으면(그 사이 아무도 안 건드림) → 변경 직전 전체 내용(`prev_content`)으로 그대로 복원.
-  - 다르면(정기 `/tick` 이 실물로 supersede 했거나 TTL 로 지웠거나, 다른 명령이 또 건드림) →
-    **거부**. `prev_content` 로 무작정 되돌리면 그 사이의 정당한 변경까지 같이 날아가기 때문.
-    "그 사이 갱신됨 — `/list`/`/del` 로 수동 처리" 안내.
+- **2단계 (v2.5.2):**
+  1. `/undo` → `_handle_undo_request` 가 되돌릴 대상을 보여주고 `pending_undo` 슬롯(60초 TTL,
+     `target_sha` = 되돌릴 undo 슬롯의 `new_sha`)을 세팅. **아직 복원 안 함.**
+     프롬프트: `🔁 <action> 을(를) 되돌립니다` + `⏱ 되돌리면 <YYYY-MM-DD HH:MM KST> 직전
+     상태가 됩니다 · 커밋 <sha7> 취소` + `+N 복원 / −M 제거` broadcasts 요약 + `(y/N)`.
+  2. `y` → `_handle_undo_confirm(yes=True)`. `n` / 60초 경과(다음 메시지 때 자동 N) / y·n
+     아닌 입력 → 취소("undo가 취소되었습니다"). y/N 가로채기는 `/del` 과 같은 웹훅 지점에서
+     `pending_del` → `pending_undo` 순으로 분기.
+- **`y` 판정 (2중 가드):**
+  1. `undo` 슬롯이 그 사이 교체됐는지 — `undo["new_sha"] != pending_undo["target_sha"]` 면
+     거부("그 사이 다른 작업이 있었습니다 — /undo 를 다시"). 확인 대기 중 새 `/ingest` 등이
+     들어와 undo 대상이 바뀐 경우.
+  2. 지금 `schedule.json` 의 sha 가 그 작업이 **막 만들어낸 sha** 와 같은지 —
+     - 같으면 → 변경 직전 전체 내용(`prev_content`)으로 복원. 성공 DM 에도 `⏱ 되돌리면…` +
+       `+N/−M` 요약 재표기.
+     - 다르면(정기 `/tick` 이 supersede/TTL 삭제, 다른 명령이 또 건드림) → **거부**.
+       `prev_content` 로 무작정 되돌리면 그 사이의 정당한 변경까지 날아가기 때문.
+       "그 사이 갱신됨 — `/list`/`/del` 로 수동 처리" 안내.
 - 이 설계는 3개 이상 `ingest`된 행이 각각 `none`/`live`/`scheduled` 로 갈린 혼재 상황(운영 중
   논의된 케이스)에서도 안전하게 동작한다: 그중 하나라도 `/tick` 이 건드렸으면 sha 가 달라져
   `/undo` 전체가 거부되고, 그 시점부터는 `/list` 로 실제 상태를 보고 `/del` 로 원하는 것만
@@ -83,8 +96,10 @@ idx 가 밀릴 수 있다 — **`/del` 직전에 `/list` 로 재확인 권장**.
 
 ## 5. 관련 파일
 
-- `src/backend/admin.py` — `admin_state.json` 스키마 + `pending_del`/`undo` 헬퍼 (순수 함수).
-- `src/backend/telegram_app.py` — `/list` `/del` `/ingest` `/undo` 핸들러, y/N 가로채기,
-  `_merge_rows_into_schedule`/`_remove_broadcast` 의 undo 스냅샷 기록(`_save_undo`).
+- `src/backend/admin.py` — `admin_state.json` 스키마 + `pending_del`/`pending_ingest`/
+  `pending_undo`/`undo` 헬퍼 (순수 함수).
+- `src/backend/telegram_app.py` — `/list` `/del` `/ingest` `/undo` 핸들러, y/N 가로채기
+  (`pending_del`→`pending_undo`), `/ingest` 2단계(`_handle_ingest_followup`), `/undo` 2단계
+  (`_handle_undo_request`/`_handle_undo_confirm`), undo 스냅샷 기록(`_save_undo`).
 - 계약: `admin_state.json` 스키마는 `src/backend/admin.py` 모듈 docstring 참고
   (`docs/SPEC.md` 계약 목록에도 추가 예정).

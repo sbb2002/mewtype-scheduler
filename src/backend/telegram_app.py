@@ -938,11 +938,57 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
         _send_telegram(f"⚠️ 오류: /ingest 처리 실패\n{str(e)[:100]}")
 
 
-def _handle_undo(gh, now_iso: str) -> None:
-    """/undo — 이 봇을 통해 방금 수행된 schedule.json 변경(ingest·/del) 1건을 되돌림.
+def _kst_dt(iso: str | None) -> str:
+    """ISO 'Z' → 'YYYY-MM-DD HH:MM KST'. 파싱 실패 시 원문 그대로."""
+    if not iso:
+        return "?"
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(
+            timezone(timedelta(hours=9))
+        )
+        return dt.strftime("%Y-%m-%d %H:%M KST")
+    except Exception:
+        return iso
 
-    그 사이 정기 `/tick` 등으로 schedule.json 이 또 바뀌었으면(SHA 불일치) 안전하게 거부.
-    """
+
+def _undo_target_text(undo: dict) -> str:
+    """되돌리면 '어느 시점'으로 가는지 한 줄 안내."""
+    at = _kst_dt(undo.get("at"))
+    sha = (undo.get("new_sha") or "")[:7]
+    tail = f" · 커밋 <code>{sha}</code> 취소" if sha else ""
+    return f"⏱ 되돌리면 <b>{at} 직전</b> 상태가 됩니다{tail}."
+
+
+def _undo_diff_text(prev_content: dict, cur_content: dict, limit: int = 8) -> str:
+    """undo(=prev_content 로 복원) 시 복원될/사라질 broadcasts 요약."""
+    prev_bcs = (prev_content or {}).get("broadcasts", []) or []
+    cur_bcs = (cur_content or {}).get("broadcasts", []) or []
+    restored = [b for b in prev_bcs if b not in cur_bcs]   # 되살아남
+    removed = [b for b in cur_bcs if b not in prev_bcs]     # 없어짐
+
+    def _line(b: dict) -> str:
+        ck = b.get("channel_key", "?")
+        hm = ""
+        s = b.get("scheduled_start") or b.get("actual_start")
+        if s and xrelay is not None:
+            try:
+                hm = " " + xrelay._jst_hm(s) + "(JST)"
+            except Exception:
+                hm = ""
+        title = b.get("title") or b.get("status") or ""
+        return f"· {ck}{hm} {title}".rstrip()
+
+    parts = [f"<b>+{len(restored)} 복원 / −{len(removed)} 제거</b>"]
+    for tag, rows in (("복원", restored), ("제거", removed)):
+        for b in rows[:limit]:
+            parts.append(f"[{tag}] {html.escape(_line(b))}")
+        if len(rows) > limit:
+            parts.append(f"[{tag}] …외 {len(rows) - limit}건")
+    return "\n".join(parts)
+
+
+def _handle_undo_request(gh, now_iso: str) -> None:
+    """/undo 1단계 — 되돌릴 작업을 보여주고 (y/N) 확인을 요청. 실제 되돌리기는 안 함."""
     try:
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
         state = state or admin.default_admin_state()
@@ -951,27 +997,77 @@ def _handle_undo(gh, now_iso: str) -> None:
             _send_telegram("↩️ 되돌릴 작업이 없습니다.")
             return
 
+        cur, _ = gh.read_json("schedule.json")
+        diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {})
+        gh.write_json(
+            _ADMIN_STATE_PATH,
+            admin.set_pending_undo(
+                state, target_sha=undo.get("new_sha"),
+                action=undo.get("action") or "직전 작업", now_iso=now_iso,
+            ),
+            prev_sha=sha, message=f"data: /undo 확인대기 {now_iso}",
+        )
+        _send_telegram(
+            f"🔁 <b>{html.escape(undo.get('action') or '직전 작업')}</b> 을(를) 되돌립니다.\n"
+            f"{_undo_target_text(undo)}\n"
+            f"{diff}\n\n정말 되돌릴까요? (y/N — 60초 후 자동 취소)"
+        )
+    except Exception as e:
+        log.exception("Error handling /undo request")
+        _send_telegram(f"⚠️ 오류: /undo 처리 실패\n{str(e)[:100]}")
+
+
+def _handle_undo_confirm(gh, now_iso: str, yes: bool) -> None:
+    """/undo 2단계 — (y) 면 되돌리고, (n) 이면 취소. 슬롯은 어느 쪽이든 정리.
+
+    (y) 라도 ① undo 슬롯이 그 사이 교체됐거나(target_sha 불일치) ② schedule.json 이
+    또 바뀌었으면(SHA 불일치) 안전하게 거부한다.
+    """
+    try:
+        state, sha = gh.read_json(_ADMIN_STATE_PATH)
+        state = state or admin.default_admin_state()
+        pending = admin.get_pending_undo(state)
+
+        if not yes:
+            gh.write_json(_ADMIN_STATE_PATH, admin.clear_pending_undo(state),
+                          prev_sha=sha, message=f"data: /undo 취소 {now_iso}")
+            _send_telegram("🚫 undo가 취소되었습니다.")
+            return
+
+        undo = admin.get_undo(state)
+        if not pending or not undo or undo.get("new_sha") != pending.get("target_sha"):
+            gh.write_json(_ADMIN_STATE_PATH, admin.clear_pending_undo(state),
+                          prev_sha=sha, message=f"data: /undo 슬롯 정리(교체됨) {now_iso}")
+            _send_telegram("↩️ 그 사이 다른 작업이 있었습니다 — /undo 를 다시 실행하세요.")
+            return
+
         cur, cur_sha = gh.read_json("schedule.json")
         if cur_sha != undo.get("new_sha"):
-            state = admin.clear_undo(state)
-            gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: undo 슬롯 정리(만료) {now_iso}")
+            state = admin.clear_pending_undo(admin.clear_undo(state))
+            gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha,
+                          message=f"data: undo 슬롯 정리(스케줄 갱신) {now_iso}")
             _send_telegram(
                 "↩️ 되돌리기 불가 — 그 사이 스케줄이 갱신됐습니다(정기 동기화 등).\n"
                 "/list 로 현재 상태를 확인한 뒤 /del 로 수동 처리하세요."
             )
             return
 
+        diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {})
+        target = _undo_target_text(undo)
         gh.write_json(
             "schedule.json", undo["prev_content"], prev_sha=cur_sha,
             message=f"data: undo({undo.get('action')}) {now_iso}",
         )
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
-        state = admin.clear_undo(state or admin.default_admin_state())
+        state = admin.clear_pending_undo(admin.clear_undo(state or admin.default_admin_state()))
         gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: undo 슬롯 정리 {now_iso}")
-        _send_telegram(f"↩️ 되돌림 — {undo.get('action')}")
+        _send_telegram(
+            f"↩️ <b>{html.escape(undo.get('action') or '직전 작업')}</b> 되돌려졌습니다.\n"
+            f"{target}\n{diff}"
+        )
     except Exception as e:
-        log.exception("Error handling /undo")
-        _send_telegram(f"⚠️ 오류: /undo 처리 실패\n{str(e)[:100]}")
+        log.exception("Error handling /undo confirm")
+        _send_telegram(f"⚠️ 오류: /undo 확인 처리 실패\n{str(e)[:100]}")
 
 
 # Flask 라우트 정의 (Flask 설치 시만)
@@ -1022,13 +1118,29 @@ if _FLASK_AVAILABLE:
                 try:
                     _admin_state, _ = gh.read_json(_ADMIN_STATE_PATH)
                     _pending = admin.get_pending_del(_admin_state)
+                    _pending_undo = admin.get_pending_undo(_admin_state)
                 except Exception:
-                    log.warning("admin_state.json 조회 실패 — /del 확인 스킵하고 일반 명령으로 처리")
-                    _pending = None
+                    log.warning("admin_state.json 조회 실패 — /del·/undo 확인 스킵하고 일반 명령으로 처리")
+                    _pending = _pending_undo = None
                 _low = text.strip().lower()
-                if _pending and not admin.pending_del_expired(_pending, now_utc) and _low in ("y", "yes", "n", "no"):
+                _is_yn = _low in ("y", "yes", "n", "no")
+                if _pending and not admin.pending_del_expired(_pending, now_utc) and _is_yn:
                     _handle_del_confirm(gh, now_utc, yes=_low in ("y", "yes"))
                     return jsonify({"ok": True}), 200
+                if _pending_undo:
+                    if admin.pending_undo_expired(_pending_undo, now_utc):
+                        # 60초 자동 N — 안내만 하고 이 메시지는 정상 디스패치로 흘려보냄
+                        try:
+                            _st2, _sh2 = gh.read_json(_ADMIN_STATE_PATH)
+                            gh.write_json(_ADMIN_STATE_PATH,
+                                          admin.clear_pending_undo(_st2 or admin.default_admin_state()),
+                                          prev_sha=_sh2, message=f"data: /undo 확인 만료 {now_utc}")
+                        except Exception:
+                            log.exception("pending_undo 만료 정리 실패")
+                        _send_telegram("🚫 undo 확인 시간(60초)이 지나 자동 취소되었습니다.")
+                    elif _is_yn:
+                        _handle_undo_confirm(gh, now_utc, yes=_low in ("y", "yes"))
+                        return jsonify({"ok": True}), 200
 
             # v2.5.1: /ingest(무인자) 후 원문/파일 대기 중이면 이 메시지를 그쪽이 소진.
             # (만료·타 명령이면 False → 아래 정상 디스패치로 흘러감)
@@ -1080,7 +1192,7 @@ if _FLASK_AVAILABLE:
                         log.exception("pending_ingest 세팅 실패")
                         _send_telegram("⚠️ /ingest 대기 상태 저장 실패 — 잠시 후 다시 시도하세요.")
             elif cmd == "/undo":
-                _handle_undo(gh, now_utc)
+                _handle_undo_request(gh, now_utc)
             else:
                 # 도움말
                 help_text = (
@@ -1093,7 +1205,7 @@ if _FLASK_AVAILABLE:
                     "/list [유닛] — 방송 목록 (유닛: arale/yuno/nonoka/ritsu/miyako, 생략 시 전체)\n"
                     "/del &lt;유닛&gt; &lt;번호&gt; — 목록의 항목을 내림 (확인 y/N 필요)\n"
                     "/ingest — 보낸 뒤 3분 내에 예고트윗 원문(텍스트/파일)을 이어 보내 수동 반영\n"
-                    "/undo — 방금 한 작업(/ingest, /del) 되돌리기"
+                    "/undo — 방금 한 작업(/ingest, /del) 되돌리기 (확인 y/N, 60초)"
                 )
                 _send_telegram(help_text)
 
@@ -1442,30 +1554,45 @@ if __name__ == "__main__":
             assert undo is not None and undo["action"] == "/del yuno#1"
             print("  ✓ /del (Y) → 삭제 반영 + undo 스냅샷 기록")
 
-            # /undo → 원상복구, 슬롯 비움
-            _handle_undo(g2, "2026-09-05T01:00:05Z")
-            assert "↩️ 되돌림" in _sent[-1], _sent[-1]
+            # /undo 요청 → (y/N) 확인 프롬프트 (아직 복원 안 함)
+            _handle_undo_request(g2, "2026-09-05T01:00:05Z")
+            assert "되돌립니다" in _sent[-1] and "되돌리면" in _sent[-1], _sent[-1]
+            assert admin.get_pending_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is not None
+            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before - 1, "확인 전엔 안 바뀜"
+            # (N) → 취소
+            _handle_undo_confirm(g2, "2026-09-05T01:00:05Z", yes=False)
+            assert "undo가 취소" in _sent[-1]
+            assert admin.get_pending_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
+            assert admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is not None, "undo 슬롯은 살아있음"
+            print("  ✓ /undo (N) → 취소, 복원 안 함, undo 슬롯 유지")
+
+            # /undo 요청 → (Y) → 원상복구 + 두 슬롯 비움
+            _handle_undo_request(g2, "2026-09-05T01:00:06Z")
+            _handle_undo_confirm(g2, "2026-09-05T01:00:06Z", yes=True)
+            assert "되돌려졌습니다" in _sent[-1], _sent[-1]
             assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before
             assert admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
-            print("  ✓ /undo → schedule.json 복원, undo 슬롯 비움")
+            assert admin.get_pending_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
+            print("  ✓ /undo (Y) → schedule.json 복원, undo·pending_undo 슬롯 비움")
 
             # 다시 /undo → "되돌릴 작업 없음"
-            _handle_undo(g2, "2026-09-05T01:00:06Z")
+            _handle_undo_request(g2, "2026-09-05T01:00:07Z")
             assert "되돌릴 작업이 없습니다" in _sent[-1]
             print("  ✓ /undo 재호출 → no-op 안내")
 
-            # SHA 가드: del 후 외부(예: /tick)가 schedule.json 을 또 바꾸면 undo 거부
-            _handle_del_request(g2, _cfg, "2026-09-05T01:00:07Z", "arale", "1")
-            _handle_del_confirm(g2, "2026-09-05T01:00:08Z", yes=True)
+            # SHA 가드: 확인 대기 중 외부(예: /tick)가 schedule.json 을 또 바꾸면 (Y) 거부
+            _handle_del_request(g2, _cfg, "2026-09-05T01:00:08Z", "arale", "1")
+            _handle_del_confirm(g2, "2026-09-05T01:00:09Z", yes=True)
+            _handle_undo_request(g2, "2026-09-05T01:00:10Z")
             cur_sched, _ = g2.read_json("schedule.json")
             cur_sched = dict(cur_sched)
             cur_sched["broadcasts"] = cur_sched["broadcasts"] + [{"channel_key": "miyako", "status": "live"}]
             g2.write_json("schedule.json", cur_sched, prev_sha=None, message="외부 변경(예: /tick)")
-            _handle_undo(g2, "2026-09-05T01:00:09Z")
+            _handle_undo_confirm(g2, "2026-09-05T01:00:11Z", yes=True)
             assert "되돌리기 불가" in _sent[-1], _sent[-1]
             assert any(b.get("channel_key") == "miyako" for b in g2.read_json("schedule.json")[0]["broadcasts"]), \
                 "거부됐으면 외부 변경이 살아있어야 함"
-            print("  ✓ /undo SHA 가드 — 그 사이 외부 변경 있으면 거부(외부 변경 보존)")
+            print("  ✓ /undo SHA 가드 — 확인 중 외부 변경 있으면 (Y) 거부(외부 변경 보존)")
         finally:
             globals()["_send_telegram"] = _orig_send
     else:
