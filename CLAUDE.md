@@ -20,6 +20,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
   **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
 - **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/plan/v2_5_admin_commands.md`
+- **v2.7 (소식 게시판 — 방송 외 이벤트 티커, 미구현/계획)**: `docs/plan/v2_7_notice_board.md`
+  + UI 목업 `docs/plan/v2_7_notice_board_mockup.html`
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡

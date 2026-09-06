@@ -1,0 +1,567 @@
+<title>뮤타입 소식 티커</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  /* 예고판의 실제 토큰(src/frontend/css/layout.css) 사용. 다크 단일 테마 커밋. */
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface-2: #202225;
+    --row-hover: #202226;
+    --text: #e8e8e8;
+    --muted: #9a9a9a;
+    --faint: #6f6f6f;
+    --border: #333333;
+    --border-soft: #2a2a2a;
+    --live: #ff3b30;         /* 당일 이벤트 램프 */
+
+    --cat-live: #e0a030;      /* 라이브 예고 */
+    --cat-release: #8b7cc9;   /* 음반·굿즈 */
+    --cat-platform: #4fa89c;  /* 타 플랫폼 */
+    --cat-etc: #7c8aa0;       /* 기타 */
+
+    --font-jp: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN",
+               "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, "Apple SD Gothic Neo", sans-serif;
+
+    --radius: 8px;
+    --gap: 1rem;
+    --page-pad: clamp(1rem, 4vw, 3rem);
+    --content-max: calc(5 * 280px + 4 * var(--gap) + 6rem);
+    --item-h: 2.2rem;
+    --col-date: 62px;
+    --col-dday: 58px;
+    --col-time: 74px;
+    --col-src: 122px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--font-ui); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .wrap { max-width: var(--content-max); margin-inline: auto; padding: 1.4rem var(--page-pad) 5rem; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
+    padding-bottom: 1rem; border-bottom: 1px solid var(--border-soft);
+  }
+  .topbar h1 { font-family: var(--font-jp); font-weight: 700; font-size: 1.15rem; margin: 0; }
+  .topbar .sub { color: var(--muted); font-size: 0.8rem; }
+  .mock-tag {
+    margin-left: auto; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.14em;
+    color: var(--bg); background: var(--muted); padding: 0.2rem 0.5rem; border-radius: 4px;
+  }
+  .mock-btn {
+    font: inherit; font-size: 0.7rem; color: var(--muted);
+    background: transparent; border: 1px dashed var(--border);
+    border-radius: 5px; padding: 0.22rem 0.55rem; cursor: pointer;
+  }
+  .mock-btn:hover { color: var(--text); border-color: var(--faint); }
+
+  /* ══ 소식 — 접힘: 딱 한 줄. 제목탭도 이 줄 안에. ═══════════════ */
+  .board {
+    margin-top: 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  /* 접힘 = 딱 한 줄. 티커 안 아이템이 여러 개여도 이 높이로 잘려 1개만 보인다. */
+  .board__bar { display: flex; align-items: stretch; height: var(--item-h); overflow: hidden; }
+  .board.is-open .board__bar { height: auto; overflow: visible; }
+
+  .board__tag {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0 0.75rem;
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--muted);
+    border-right: 1px solid var(--border-soft);
+  }
+  /* 좌측 램프 — 당일 이벤트가 있으면 빨간색 느린 점멸, 없으면 소등 유지 */
+  .board__lamp {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #3a1414;                 /* 소등: 어두운 적색 */
+    flex: none;
+  }
+  .board.has-today .board__lamp {
+    background: var(--live);
+    animation: lamp 2.4s ease-in-out infinite;
+  }
+  @keyframes lamp {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 6px 1px color-mix(in srgb, var(--live) 65%, transparent); }
+    50%      { opacity: 0.22; box-shadow: 0 0 0 0 transparent; }
+  }
+  .board__label { display: inline; }
+  .board__all { display: none; font-weight: 400; color: var(--faint); }
+
+  .board__ticker { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+  .board__track { display: block; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+  .board.is-open .board__ticker { display: none; }
+
+  /* 펼치기/접기 — 큼직한 세모 화살표 */
+  .board__tgl {
+    flex: none; width: 2.9rem;
+    display: grid; place-items: center;
+    font: inherit; font-size: 1.35rem; line-height: 1;
+    color: var(--muted);
+    background: transparent; border: none; border-left: 1px solid var(--border-soft);
+    cursor: pointer;
+  }
+  .board__tgl:hover { color: var(--text); background: var(--surface-2); }
+  .board__tgl:focus-visible { outline: 2px solid var(--cat-platform); outline-offset: -2px; }
+
+  /* ── 소식 한 줄: [날짜/시간] [D-DAY] [이름] [출처] · 모든 컬럼 고정 폭 ── */
+  .item {
+    display: grid;
+    grid-template-columns: var(--col-date) var(--col-dday) var(--col-time) minmax(0, 1fr) var(--col-src);
+    align-items: center;
+    gap: 0.6rem;
+    height: var(--item-h);
+    padding: 0 0.8rem;
+  }
+  .item[data-cat="live"]     { --c: var(--cat-live); }
+  .item[data-cat="release"]  { --c: var(--cat-release); }
+  .item[data-cat="platform"] { --c: var(--cat-platform); }
+  .item[data-cat="etc"]      { --c: var(--cat-etc); }
+
+  /* 날짜/시간 — 앞에 링크 도착지(YouTube/bilibili 등) 아이콘 */
+  .item__date, .item__time {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.72rem; color: var(--muted);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .item__date { justify-self: end; }   /* PC: 날짜는 컬럼 안에서 오른쪽 정렬 */
+  .item__time .ic { flex: none; width: 13px; height: 13px; color: var(--faint); }
+  .item__date time, .item__time time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .item__date.is-none, .item__time.is-none { color: var(--border); }
+
+  /* D-DAY 배지 — 카테고리 칩처럼 네모칸. TODAY=빨강 / D-7이내=주황 / 그 외=무채색 */
+  .item__dday {
+    justify-self: center;
+    font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center;
+    color: var(--d, var(--faint));
+    border: 1px solid color-mix(in srgb, var(--d, var(--faint)) 45%, transparent);
+    background: color-mix(in srgb, var(--d, var(--faint)) 12%, transparent);
+    border-radius: 3px;
+    padding: 0.09rem 0.32rem;
+  }
+  .item__dday.d-today { --d: var(--live); }
+  .item__dday.d-soon  { --d: #e08a2e; }          /* 주황 — D-7 이내 */
+  .item__dday.d-far   { --d: var(--faint); }
+  .item__dday.d-none  { border-color: transparent; background: transparent; color: var(--border); }
+
+  .item__title { min-width: 0; overflow: hidden; display: block; text-decoration: none; }
+  .item__title:focus-visible { outline: 2px solid var(--cat-platform); outline-offset: 2px; border-radius: 2px; }
+  .item__title-in {
+    font-family: var(--font-jp); font-size: 0.83rem; white-space: nowrap; display: inline-flex;
+  }
+  .item__title:hover .item__title-in { text-decoration: underline; }
+  .item__title.is-marquee .item__title-in { animation: mq var(--dur, 14s) linear infinite; }
+  .item__title.is-marquee .item__title-in .seg { padding-right: 3rem; }
+  .item:hover .item__title.is-marquee .item__title-in,
+  .board__track:not(.is-live) .item__title.is-marquee .item__title-in { animation-play-state: paused; }
+  @keyframes mq { to { transform: translateX(-50%); } }
+
+  /* 출처 — 소식이 실려 온 곳(트윗 = X). PC: [아이콘][@ID] · 모바일: [아이콘]만 */
+  .item__src {
+    display: inline-flex; align-items: center; gap: 0.3rem; justify-self: end;
+    font-size: 0.7rem; color: var(--muted); text-decoration: none; white-space: nowrap;
+  }
+  .item__src:hover { color: var(--text); }
+  .item__src:focus-visible { outline: 2px solid var(--cat-platform); outline-offset: 2px; border-radius: 2px; }
+  .item__src .ic { flex: none; width: 14px; height: 14px; }
+  .item__src .nm { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── 펼친 목록 ── */
+  .board__list { list-style: none; margin: 0; padding: 0; display: none; }
+  .board.is-open .board__list { display: block; }
+  .board.is-open .board__bar { border-bottom: 1px solid var(--border-soft); }
+  .board.is-open .board__tag { color: var(--text); border-right: none; }
+  .board.is-open .board__all { display: inline; margin-left: 0.35rem; }
+  .board.is-open .board__tgl { margin-left: auto; }
+  .board__list .item { position: relative; border-top: 1px solid var(--border-soft); padding-left: calc(0.8rem + 3px); }
+  .board__list .item:hover { background: var(--row-hover); }
+  .board__list .item::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c);
+  }
+
+  /* ══ 아래: 5레인 예고판(축약) — 이 앱의 메인 ══ */
+  .lanes-label {
+    margin: 1.3rem 0 0.55rem; font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.12em; color: var(--faint);
+  }
+  .lanes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--gap); }
+  .lane { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .lane__hd {
+    display: flex; align-items: center; gap: 0.55rem; padding: 0.7rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(to right, color-mix(in srgb, var(--lc) 42%, transparent), transparent 74%);
+  }
+  .lane:nth-child(1) { --lc: #d98a86; } .lane:nth-child(2) { --lc: #86b7d9; }
+  .lane:nth-child(3) { --lc: #e0b46a; } .lane:nth-child(4) { --lc: #9c8fd6; }
+  .lane:nth-child(5) { --lc: #7fc3a9; }
+  .lane__av {
+    width: 34px; height: 34px; flex: none; border-radius: 50%; border: 2px solid var(--lc);
+    background: var(--bg); display: grid; place-items: center;
+    font-family: var(--font-jp); font-weight: 700; font-size: 0.9rem;
+  }
+  .lane__nm { display: flex; flex-direction: column; min-width: 0; }
+  .lane__ko { font-weight: 700; font-size: 0.82rem; white-space: nowrap; }
+  .lane__hnd { font-size: 0.66rem; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lane__live {
+    margin: 0.7rem; border-radius: 6px; padding: 0.7rem;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em;
+  }
+  .lane__live[data-on] { background: #a01f1a; color: #fff; }
+  .lane__live:not([data-on]) { background: #241214; text-align: center; color: color-mix(in srgb, #ff8a8a 55%, var(--muted)); }
+  .lcard {
+    margin: 0 0.7rem 0.7rem; border: 1px dashed var(--cat-etc); border-radius: 6px;
+    padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.2rem;
+  }
+  .lcard[data-collab] { border-style: solid; border-color: var(--cat-release); }
+  .lcard__tag { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; color: var(--cat-etc); }
+  .lcard[data-collab] .lcard__tag { color: var(--cat-release); }
+  .lcard__t {
+    font-family: var(--font-jp); font-size: 0.76rem; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .lcard__m { font-size: 0.68rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ══ 규칙 요약 ══ */
+  .note {
+    margin-top: 2rem; padding-top: 1.2rem; border-top: 1px solid var(--border-soft);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem 2rem;
+  }
+  .note h2 { font-family: var(--font-jp); font-size: 0.84rem; font-weight: 700; margin: 0 0 0.4rem; }
+  .note ul { margin: 0; padding-left: 1.05rem; }
+  .note li { margin: 0.25rem 0; font-size: 0.81rem; color: var(--muted); }
+  .note li b { color: var(--text); font-weight: 600; }
+  .note code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.78em;
+    color: var(--cat-platform); background: color-mix(in srgb, var(--cat-platform) 10%, transparent);
+    padding: 0.05rem 0.28rem; border-radius: 3px;
+  }
+
+  .phone-note { margin: 2rem 0 0.6rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; color: var(--faint); }
+  .phone { width: 380px; max-width: 100%; border: 1px solid var(--border); border-radius: 18px; background: var(--bg); padding: 0.8rem; }
+  .phone .topbar { padding-bottom: 0.6rem; }
+  .phone .topbar h1 { font-size: 0.95rem; }
+  .phone .topbar .sub, .phone .mock-btn { display: none; }
+  .phone .board { margin-top: 0.5rem; }
+  .phone .item { --col-dday: 50px; --col-time: 60px; --col-src: 22px; gap: 0.42rem;
+    grid-template-columns: var(--col-dday) var(--col-time) minmax(0, 1fr) var(--col-src); }
+  .phone .item__date, .phone .board__label { display: none; }
+  .phone .item__src .nm { display: none; }
+
+  @media (max-width: 900px) {
+    .lanes { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 78%; overflow-x: auto; padding-bottom: 0.5rem; }
+    .note { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .item { --col-dday: 50px; --col-time: 60px; --col-src: 22px; gap: 0.42rem;
+           grid-template-columns: var(--col-dday) var(--col-time) minmax(0, 1fr) var(--col-src); }
+    .item__date, .board__label { display: none; }
+    .item__src .nm { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .board__track { transition: none; }
+    .item__title.is-marquee .item__title-in { animation: none; }
+    .board.has-today .board__lamp { animation: none; opacity: 1; }
+    * { scroll-behavior: auto; }
+  }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-youtube" viewBox="0 0 24 24"><path fill="currentColor" d="M23 12s0-3.7-.5-5.5a3 3 0 0 0-2.1-2.1C18.6 3.9 12 3.9 12 3.9s-6.6 0-8.4.5A3 3 0 0 0 1.5 6.5C1 8.3 1 12 1 12s0 3.7.5 5.5a3 3 0 0 0 2.1 2.1c1.8.5 8.4.5 8.4.5s6.6 0 8.4-.5a3 3 0 0 0 2.1-2.1C23 15.7 23 12 23 12ZM9.8 15.4V8.6l6 3.4-6 3.4Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path fill="currentColor" d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></symbol>
+  <symbol id="i-bilibili" viewBox="0 0 24 24"><path fill="currentColor" d="M7.2 2.7 9.9 5.4h4.2l2.7-2.7 1.5 1.5-1.2 1.2H18a3 3 0 0 1 3 3v7.4a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8.4a3 3 0 0 1 3-3h1.9L6.7 4.2l1.5-1.5ZM6 7.4a1 1 0 0 0-1 1v7.4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8.4a1 1 0 0 0-1-1H6Zm2.6 2.3 1.7 1.7-1.7 1.7-1.7-1.7 1.7-1.7Zm6.8 0 1.7 1.7-1.7 1.7-1.7-1.7 1.7-1.7Z"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path fill="currentColor" d="M9 17.4a3 3 0 1 1-2-2.8V5.8l11-2.4v9.2a3 3 0 1 1-2-2.8V5.9L9 7.5v9.9Z"/></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><path fill="currentColor" d="M6 7.5V6a4 4 0 0 1 8 0v1.5h3.3l1 12.9H1.7l1-12.9H6Zm2 0h4V6a2 2 0 1 0-4 0v1.5Z"/></symbol>
+</svg>
+
+<div class="wrap">
+
+  <header class="topbar">
+    <h1>夢限大みゅーたいぷ 방송 예고판</h1>
+    <span class="sub">누가 · 언제 · 어디서 방송하는지 한눈에</span>
+    <button class="mock-btn" id="lampDemo" type="button">램프 시뮬 · 당일 이벤트 켜짐</button>
+    <span class="mock-tag">MOCKUP</span>
+  </header>
+
+  <!-- ══ 소식 — 접힘 기본, 한 줄이 5초마다 순환. 기준일 = 9/13 ══ -->
+  <section class="board is-collapsed has-today" id="board" aria-label="소식">
+    <div class="board__bar">
+      <span class="board__tag"><span class="board__lamp" aria-hidden="true"></span><span class="board__label">소식</span><span class="board__all" id="all"></span></span>
+      <div class="board__ticker" id="ticker">
+        <div class="board__track" id="track">
+
+          <div class="item" data-cat="live">
+            <span class="item__date"><time>9/13</time></span>
+            <span class="item__dday d-today">TODAY</span>
+            <span class="item__time"><svg class="ic"><use href="#i-youtube"/></svg><time>21:00</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">「アワーノーツ」リリース日決定特番 ── リリース日をついに解禁</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 RT @bang_dream_gbp (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">RT @bang_dream_gbp</span></a>
+          </div>
+
+          <div class="item" data-cat="live">
+            <span class="item__date"><time>9/13</time></span>
+            <span class="item__dday d-today">TODAY</span>
+            <span class="item__time"><svg class="ic"><use href="#i-youtube"/></svg><time>24:30</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">TVアニメ「ゆめ∞みた」最終回 放送＆振り返り生配信</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 @BDP_yumemita (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">@BDP_yumemita</span></a>
+          </div>
+
+          <div class="item" data-cat="release">
+            <span class="item__date"><time>9/17</time></span>
+            <span class="item__dday d-soon">D-4</span>
+            <span class="item__time"><svg class="ic"><use href="#i-music"/></svg><time>00:00</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">アニメEDテーマ「ゆびきり」配信リリース ── 各種音楽サービス</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 @BDP_yumemita (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">@BDP_yumemita</span></a>
+          </div>
+
+          <div class="item" data-cat="platform">
+            <span class="item__date"><time>9/23</time></span>
+            <span class="item__dday d-far">D-10</span>
+            <span class="item__time"><svg class="ic"><use href="#i-bilibili"/></svg><time>22:00</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">全員【bilibili】生配信 ── 中国語圏ファン向け特別枠</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 @BDP_yumemita (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">@BDP_yumemita</span></a>
+          </div>
+
+          <div class="item" data-cat="release">
+            <span class="item__date"><time>〜 9/27</time></span>
+            <span class="item__dday d-far">D-14</span>
+            <span class="item__time is-none"><svg class="ic"><use href="#i-store"/></svg><time>—</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">メモリアルグッズ 第2弾 受注受付 ── 期間中の売切なし・受注生産</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 RT @BushiM_info (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">RT @BushiM_info</span></a>
+          </div>
+
+          <div class="item" data-cat="etc">
+            <span class="item__date is-none"><time>—</time></span>
+            <span class="item__dday d-none">—</span>
+            <span class="item__time is-none"><svg class="ic"><use href="#i-x"/></svg><time>—</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">BM-ECHOES FESTIVAL 2026 DAY2 出演御礼 ── #BMFES_2026_DAY2 で感想募集</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 @BDP_yumemita (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">@BDP_yumemita</span></a>
+          </div>
+
+          <div class="item" data-cat="etc">
+            <span class="item__date is-none"><time>—</time></span>
+            <span class="item__dday d-none">—</span>
+            <span class="item__time is-none"><svg class="ic"><use href="#i-x"/></svg><time>—</time></span>
+            <a class="item__title" href="#url"><span class="item__title-in">公式ファンクラブ 会員特典コンテンツ 更新のお知らせ</span></a>
+            <a class="item__src" href="#tweet" aria-label="원문 트윗 @BDP_yumemita (X)"><svg class="ic"><use href="#i-x"/></svg><span class="nm">@BDP_yumemita</span></a>
+          </div>
+
+        </div>
+      </div>
+      <button class="board__tgl" id="tgl" aria-expanded="false" aria-label="소식 전체 보기">▾</button>
+    </div>
+
+    <ul class="board__list" id="list" aria-label="소식 전체"></ul>
+  </section>
+
+  <!-- ══ 이 앱의 메인: 5레인 예고판 (축약) ══ -->
+  <div class="lanes-label">↓ 5인 유닛 방송 스케줄 (메인 콘텐츠, 변경 없음)</div>
+  <div class="lanes">
+    <div class="lane">
+      <div class="lane__hd"><span class="lane__av">あ</span>
+        <span class="lane__nm"><span class="lane__ko">나카마치 아라레</span><span class="lane__hnd">@arale_yumemita</span></span></div>
+      <div class="lane__live" data-on>● 지금 방송 중</div>
+      <div class="lcard"><span class="lcard__tag">예고</span><span class="lcard__t">朝活あさごはん 雑談</span><span class="lcard__m">내일 07:00</span></div>
+    </div>
+    <div class="lane">
+      <div class="lane__hd"><span class="lane__av">ユ</span>
+        <span class="lane__nm"><span class="lane__ko">센고쿠 유노</span><span class="lane__hnd">@yuno_yumemita</span></span></div>
+      <div class="lane__live">OFF AIR</div>
+      <div class="lcard" data-collab><span class="lcard__tag">합동</span><span class="lcard__t">千石ユノ×峰月律 ゲーム</span><span class="lcard__m">오늘 21:00 · 유노 채널</span></div>
+    </div>
+    <div class="lane">
+      <div class="lane__hd"><span class="lane__av">の</span>
+        <span class="lane__nm"><span class="lane__ko">미야나가 노노카</span><span class="lane__hnd">@nonoka_yumemita</span></span></div>
+      <div class="lane__live">OFF AIR</div>
+      <div class="lcard" data-collab><span class="lcard__tag">합동</span><span class="lcard__t">仲町あられ×宮永ののか 深夜枠</span><span class="lcard__m">오늘 24:00</span></div>
+    </div>
+    <div class="lane">
+      <div class="lane__hd"><span class="lane__av">律</span>
+        <span class="lane__nm"><span class="lane__ko">미네츠키 리츠</span><span class="lane__hnd">@ritsu_yumemita</span></span></div>
+      <div class="lane__live">OFF AIR</div>
+      <div class="lcard"><span class="lcard__tag">예고 · 🔒멤버십</span><span class="lcard__t">ASMR 囁き雑談</span><span class="lcard__m">오늘 23:30</span></div>
+    </div>
+    <div class="lane">
+      <div class="lane__hd"><span class="lane__av">都</span>
+        <span class="lane__nm"><span class="lane__ko">후지 미야코</span><span class="lane__hnd">@miyako_yumemita</span></span></div>
+      <div class="lane__live">OFF AIR</div>
+      <div class="lcard"><span class="lcard__tag">예고</span><span class="lcard__t">歌枠 リクエスト回</span><span class="lcard__m">오늘 21:30</span></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <div>
+      <h2>동작</h2>
+      <ul>
+        <li><b>접힘(기본)</b> — 딱 한 줄. 5초마다 다음 소식으로 세로 슬라이드, 끝나면 처음부터 무한 순환. 진행바 없음.</li>
+        <li>마우스 올리면 정지(읽기·클릭), 벗어나면 재개. 펼치기(▾) → 전체, 접으면 마지막 보던 소식부터 재개.</li>
+        <li><b>좌측 램프</b> — <b>TODAY</b> 배지가 하나라도 있으면 빨간색 느린 점멸, 없으면 소등 유지. (상단 "램프 시뮬" 버튼으로 미리보기)</li>
+        <li>모바일 동일. 시간 칸 축소 + 출처는 아이콘만.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>내용 · 수명</h2>
+      <ul>
+        <li>한 줄 = <code>[날짜/시간] [TODAY/D-n] [이름·marquee] [출처]</code>. 모든 컬럼 고정 폭(이름만 가변). 시각은 KST 와 같아 변환 안 함.</li>
+        <li>이름 클릭 → 트윗이 준 URL(YouTube/bilibili/스토어…). 출처 = PC 는 <code>[아이콘] @ID</code>, 모바일은 <code>[아이콘]</code>만. 클릭 → 원문 트윗.</li>
+        <li>시간 앞 아이콘 = 이름 클릭 시 도착할 사이트. <b>임박순</b> 정렬, 카테고리 4개.</li>
+        <li><b>수명</b> — 각 소식은 그 날짜 <b>자정(JST=KST)까지</b> 표시 후 사라지고 <code>notice_archive.json</code> 에 보존. 아래 스케줄과 중복 제외.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phone-note">모바일 — 출처는 아이콘만, 이름이 영역을 더 차지</div>
+  <div class="phone" id="phone">
+    <header class="topbar"><h1>方송 예고판</h1><span class="mock-tag">MOCKUP</span></header>
+    <section class="board is-collapsed has-today" aria-label="소식 (모바일)">
+      <div class="board__bar">
+        <span class="board__tag"><span class="board__lamp" aria-hidden="true"></span><span class="board__label">소식</span><span class="board__all"></span></span>
+        <div class="board__ticker"><div class="board__track" id="mtrack"></div></div>
+        <button class="board__tgl" id="mtgl" aria-expanded="false" aria-label="소식 전체 보기">▾</button>
+      </div>
+      <ul class="board__list" id="mlist"></ul>
+    </section>
+  </div>
+
+</div>
+
+<script>
+  (function () {
+    function marquee(scope) {
+      scope.querySelectorAll(".item__title").forEach(function (vp) {
+        var inner = vp.querySelector(".item__title-in");
+        if (!inner || vp.classList.contains("is-marquee")) return;
+        if (inner.scrollWidth <= vp.clientWidth + 4) return;
+        var t = inner.textContent;
+        inner.textContent = "";
+        var a = document.createElement("span"); a.className = "seg"; a.textContent = t;
+        var b = a.cloneNode(true); b.setAttribute("aria-hidden", "true");
+        inner.append(a, b);
+        inner.style.setProperty("--dur", Math.max(9, t.length * 0.42).toFixed(1) + "s");
+        vp.classList.add("is-marquee");
+      });
+    }
+
+    function setup(cfg) {
+      var board = cfg.board, track = cfg.track, list = cfg.list, tgl = cfg.tgl, allLbl = cfg.all;
+      var items = Array.prototype.slice.call(track.children);
+      if (!items.length) { board.style.display = "none"; return; }
+
+      // 당일 이벤트 여부 → 램프
+      var hasToday = items.some(function (it) { return !!it.querySelector(".item__dday.d-today"); });
+      board.dataset.today = hasToday ? "1" : "0";
+      board.classList.toggle("has-today", hasToday);
+
+      items.forEach(function (it) {
+        var li = document.createElement("li");
+        li.className = it.className;
+        li.setAttribute("data-cat", it.getAttribute("data-cat"));
+        li.innerHTML = it.innerHTML;
+        list.appendChild(li);
+      });
+      var arch = document.createElement("li");
+      arch.style.cssText = "border-top:1px solid var(--border-soft);padding:0.45rem 0.8rem;" +
+        "font-size:0.72rem;color:var(--faint);text-align:right;";
+      arch.innerHTML = '<a href="#archive" style="color:inherit;text-decoration:none">지난 소식 · 아카이브 →</a>';
+      list.appendChild(arch);
+      if (allLbl) allLbl.textContent = "전체 " + items.length + "건";
+
+      var clone = items[0].cloneNode(true);
+      clone.setAttribute("aria-hidden", "true");
+      track.appendChild(clone);
+
+      marquee(track);
+      marquee(list);
+
+      var idx = 0, timer = null, paused = false, open = false;
+      var H = items[0].getBoundingClientRect().height;
+
+      function show(i, animate) {
+        track.style.transition = animate ? "" : "none";
+        track.style.transform = "translateY(" + (-i * H) + "px)";
+      }
+      function advance() {
+        idx++;
+        show(idx, true);
+        if (idx === items.length) {
+          window.setTimeout(function () { idx = 0; show(0, false); }, 520);
+        }
+      }
+      function clearTimer() { if (timer) { window.clearInterval(timer); timer = null; } }
+      function play() {
+        if (open || paused) return;
+        clearTimer();
+        track.classList.add("is-live");
+        timer = window.setInterval(advance, 5000);
+      }
+      function pause() { paused = true; clearTimer(); track.classList.remove("is-live"); }
+      function resume() { paused = false; play(); }
+      function stop() { clearTimer(); track.classList.remove("is-live"); }
+
+      cfg.ticker.addEventListener("mouseenter", pause);
+      cfg.ticker.addEventListener("mouseleave", resume);
+      cfg.ticker.addEventListener("focusin", pause);
+      cfg.ticker.addEventListener("focusout", resume);
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) stop(); else if (!open && !paused) play();
+      });
+
+      tgl.addEventListener("click", function () {
+        open = !open;
+        board.classList.toggle("is-open", open);
+        board.classList.toggle("is-collapsed", !open);
+        tgl.setAttribute("aria-expanded", String(open));
+        tgl.textContent = open ? "▴" : "▾";
+        if (open) stop();
+        else { show(idx % items.length, false); play(); }
+      });
+
+      show(0, false);
+      play();
+    }
+
+    var mtrack = document.getElementById("mtrack");
+    Array.prototype.slice.call(document.querySelectorAll("#track > .item")).forEach(function (it) {
+      mtrack.appendChild(it.cloneNode(true));
+    });
+
+    setup({
+      board: document.getElementById("board"),
+      ticker: document.getElementById("ticker"),
+      track: document.getElementById("track"),
+      list: document.getElementById("list"),
+      tgl: document.getElementById("tgl"),
+      all: document.getElementById("all")
+    });
+    setup({
+      board: document.querySelector("#phone .board"),
+      ticker: document.querySelector("#phone .board__ticker"),
+      track: mtrack,
+      list: document.getElementById("mlist"),
+      tgl: document.getElementById("mtgl"),
+      all: document.querySelector("#phone .board__all")
+    });
+
+    // MOCKUP 전용: 램프 상태 미리보기 토글
+    var btn = document.getElementById("lampDemo");
+    var forced = true;
+    btn.addEventListener("click", function () {
+      forced = !forced;
+      document.querySelectorAll(".board").forEach(function (b) {
+        b.classList.toggle("has-today", forced);
+      });
+      btn.textContent = "램프 시뮬 · 당일 이벤트 " + (forced ? "켜짐" : "꺼짐");
+    });
+  })();
+</script>
