@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
   **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
 - **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/plan/v2_5_admin_commands.md`
-- **v2.7 (소식 게시판 — 방송 외 이벤트 티커. 백엔드 완료·프론트 미구현)**: `docs/plan/v2_7_notice_board.md`
+- **v2.7 (소식 게시판 — 방송 외 이벤트 티커. 구현 완료)**: `docs/plan/v2_7_notice_board.md`
   + UI 목업 `docs/plan/v2_7_notice_board_mockup.html`
 
 서버 상시 가동 없음. 무료 인프라만 사용:
@@ -39,14 +39,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 src/
   frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
-    index.html         # 빈 #board + #foot 스켈레톤, <script type="module">
-    css/{reset,layout,card}.css
+    index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
+    css/{reset,layout,card,notices}.css
     js/                # ES 모듈, 상대 import
-      config.js        # 상수 (DATA_URL, 폴링 주기, 폴백 채널 메타)
+      config.js        # 상수 (DATA_URL, NOTICES_URL, 폴링 주기, 폴백 채널 메타)
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수
-      api.js           # fetchSchedule(): AbortController 타임아웃, {ok,data|error}
+      api.js           # fetchSchedule(url): AbortController 타임아웃, {ok,data|error} (notices 도 재사용)
       render.js        # renderBoard / renderFooter / updateCountdowns
-      main.js          # DOMContentLoaded → poll 루프 + 카운트다운 틱
+      notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
+      main.js          # DOMContentLoaded → poll(스케줄) + pollNotices + 카운트다운 틱
   collector/           # v1 순수 모듈 — v2 백엔드가 import 재사용. main.py 는 break-glass 전용
     main.py            # v1 오케스트레이션 (python -m src.collector.main [light|deep])
     config.py          # config/channels.json + YOUTUBE_API_KEY 로드
@@ -156,7 +157,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 판별 → `notices.merge_notice` 로
    `notices.json` 에 반영(중복키 = 같은 date + anchor_a/b). 자정 지난 소식은 `sweep_expired` 가
    `notice_archive.json` 로. 텔레그램 `/notice`·`/notice-list`·`/notice-del`, `/undo` 는
-   `undo.path` 로 schedule/notices 구분. 프론트 티커는 미구현(`docs/plan/v2_7_notice_board.md`).
+   `undo.path` 로 schedule/notices 구분. 프론트는 `js/notices.js`+`css/notices.css` 티커(`#notice`).
+   상세: `docs/plan/v2_7_notice_board.md`.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId

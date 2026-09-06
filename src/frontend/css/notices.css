@@ -1,0 +1,168 @@
+/* notices.css — 예고판 상단 "소식" 티커 (v2.7). layout.css 토큰 재사용, 다크 단일.
+   목업: docs/plan/v2_7_notice_board_mockup.html */
+
+:root {
+  --ntc-surface2: #202225;
+  --ntc-hover: #202226;
+  --ntc-faint: #6f6f6f;
+  --ntc-border-soft: #2a2a2a;
+  --ntc-cat-live: var(--color-late);      /* 라이브 예고 — 앰버 */
+  --ntc-cat-release: var(--color-collab);  /* 음반·굿즈 — 바이올렛 */
+  --ntc-cat-platform: #4fa89c;             /* 타 플랫폼 — teal */
+  --ntc-cat-etc: var(--color-sched);       /* 기타 — 슬레이트 */
+  --ntc-dsoon: #e08a2e;                    /* D-7 이내 — 주황 */
+  --ntc-item-h: 2.2rem;
+  --ntc-col-date: 62px;
+  --ntc-col-badge: 58px;
+  --ntc-col-time: 74px;
+  --ntc-col-src: 122px;
+}
+
+#notice.ntc {
+  max-width: var(--content-max);
+  margin: var(--gap) auto 0;
+  padding: 0 var(--page-pad);
+}
+#notice[hidden] { display: none; }
+
+.ntc__bar {
+  display: flex;
+  align-items: stretch;
+  height: var(--ntc-item-h);
+  overflow: hidden;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--ntc-border-soft);
+  border-radius: 6px;
+}
+.ntc.is-open .ntc__bar { height: auto; overflow: visible; border-bottom: 1px solid var(--ntc-border-soft); }
+
+.ntc__tag {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0 0.75rem;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  border-right: 1px solid var(--ntc-border-soft);
+}
+.ntc.is-open .ntc__tag { color: var(--color-text); border-right: none; }
+.ntc__lamp {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: #3a1414;
+}
+.ntc.has-today .ntc__lamp {
+  background: var(--color-live);
+  animation: ntc-lamp 2.4s ease-in-out infinite;
+}
+@keyframes ntc-lamp {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-live) 60%, transparent); }
+  50%      { opacity: 0.22; box-shadow: 0 0 0 0 transparent; }
+}
+.ntc__all { font-weight: 400; color: var(--ntc-faint); margin-left: 0.35rem; }
+.ntc__all[hidden] { display: none; }
+
+.ntc__ticker { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+.ntc__track { display: block; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+.ntc.is-open .ntc__ticker { display: none; }
+
+.ntc__tgl {
+  flex: none; width: 2.9rem;
+  display: grid; place-items: center;
+  font: inherit; font-size: 1.35rem; line-height: 1;
+  color: var(--color-text-muted);
+  background: transparent; border: none; border-left: 1px solid var(--ntc-border-soft);
+  cursor: pointer;
+}
+.ntc__tgl:hover { color: var(--color-text); background: var(--ntc-surface2); }
+.ntc__tgl:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: -2px; }
+.ntc.is-open .ntc__tgl { margin-left: auto; }
+
+/* ── 한 줄: [날짜] [D-DAY] [시각] [이름] [출처] ── */
+.ntc__item {
+  display: grid;
+  grid-template-columns: var(--ntc-col-date) var(--ntc-col-badge) var(--ntc-col-time) minmax(0, 1fr) var(--ntc-col-src);
+  align-items: center;
+  gap: 0.6rem;
+  height: var(--ntc-item-h);
+  padding: 0 0.8rem;
+}
+.ntc__item[data-cat="live"]     { --c: var(--ntc-cat-live); }
+.ntc__item[data-cat="release"]  { --c: var(--ntc-cat-release); }
+.ntc__item[data-cat="platform"] { --c: var(--ntc-cat-platform); }
+.ntc__item[data-cat="etc"]      { --c: var(--ntc-cat-etc); }
+
+.ntc__date, .ntc__time {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.72rem; color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.ntc__date { justify-self: end; }
+.ntc__ic { flex: none; width: 13px; height: 13px; color: var(--ntc-faint); }
+.ntc__src .ntc__ic { width: 14px; height: 14px; }
+.ntc__date time, .ntc__time time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ntc__date.is-none, .ntc__time.is-none { color: var(--color-border); }
+
+.ntc__badge {
+  justify-self: center;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center;
+  color: var(--d, var(--ntc-faint));
+  border: 1px solid color-mix(in srgb, var(--d, var(--ntc-faint)) 45%, transparent);
+  background: color-mix(in srgb, var(--d, var(--ntc-faint)) 12%, transparent);
+  border-radius: 3px;
+  padding: 0.09rem 0.32rem;
+}
+.ntc__badge.d-today { --d: var(--color-live); }
+.ntc__badge.d-soon  { --d: var(--ntc-dsoon); }
+.ntc__badge.d-far   { --d: var(--ntc-faint); }
+.ntc__badge.d-none  { border-color: transparent; background: transparent; color: var(--color-border); }
+
+.ntc__title { min-width: 0; overflow: hidden; display: block; text-decoration: none; color: inherit; }
+.ntc__title:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: 2px; border-radius: 2px; }
+.ntc__title-in {
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP",
+               -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 0.83rem; white-space: nowrap; display: inline-flex;
+}
+.ntc__title:hover .ntc__title-in { text-decoration: underline; }
+.ntc__title.is-marquee .ntc__title-in { animation: ntc-mq var(--dur, 14s) linear infinite; }
+.ntc__title.is-marquee .ntc__title-in .seg { padding-right: 3rem; }
+.ntc__item:hover .ntc__title.is-marquee .ntc__title-in,
+.ntc__track:not(.is-live) .ntc__title.is-marquee .ntc__title-in { animation-play-state: paused; }
+@keyframes ntc-mq { to { transform: translateX(-50%); } }
+
+.ntc__src {
+  display: inline-flex; align-items: center; gap: 0.3rem; justify-self: end;
+  font-size: 0.7rem; color: var(--color-text-muted); text-decoration: none; white-space: nowrap;
+}
+.ntc__src:hover { color: var(--color-text); }
+.ntc__src:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: 2px; border-radius: 2px; }
+.ntc__src .nm { font-variant-numeric: tabular-nums; }
+
+/* ── 펼친 목록 ── */
+.ntc__list { list-style: none; margin: 0; padding: 0; display: none;
+  border: 1px solid var(--ntc-border-soft); border-top: none;
+  border-radius: 0 0 6px 6px; background: var(--color-bg-secondary); }
+.ntc.is-open .ntc__list { display: block; }
+.ntc__list .ntc__item { position: relative; border-top: 1px solid var(--ntc-border-soft); padding-left: calc(0.8rem + 3px); }
+.ntc__list .ntc__item:hover { background: var(--ntc-hover); }
+.ntc__list .ntc__item::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c);
+}
+
+/* ── 모바일: 소식 글자·날짜 컬럼 제거, 출처는 아이콘만 ── */
+@media (max-width: 767px) {
+  #notice.ntc { padding: 0 var(--m-pad, 1rem); margin-top: var(--gap); }
+  .ntc__label { display: none; }
+  .ntc__item {
+    grid-template-columns: var(--ntc-col-badge) 60px minmax(0, 1fr) 24px;
+    gap: 0.42rem;
+  }
+  .ntc__date { display: none; }
+  .ntc__src .nm { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ntc__track { transition: none; }
+  .ntc__title.is-marquee .ntc__title-in { animation: none; }
+  .ntc.has-today .ntc__lamp { animation: none; opacity: 1; }
+}
