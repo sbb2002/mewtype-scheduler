@@ -286,19 +286,35 @@ function buildLive(liveBroadcasts, nowMs, channelData, laneKey) {
   return el;
 }
 
-/* ── 예고 시간대별 분할 (오늘 / 7일 이내 / 한 달 이내 / 그 이후) ── */
+/* ── 예고 시간대별 분할 (오늘 / 7일 이내 / 한 달 이내 / 그 이후).
+   모바일(<768px)은 화면이 좁아 "한 달 이내"+"그 이후"를 "7일 이후" 하나로 통합. ── */
 const BUCKET_DEFS = [
   ["today", "오늘"],
   ["week", "7일 이내"],
   ["month", "한 달 이내"],
   ["later", "그 이후"],
 ];
+const BUCKET_DEFS_MOBILE = [
+  ["today", "오늘"],
+  ["week", "7일 이내"],
+  ["rest", "7일 이후"],
+];
+const _mobileMQ =
+  typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(max-width: 767px)")
+    : { matches: false };
+
+function bucketDefs() {
+  return _mobileMQ.matches ? BUCKET_DEFS_MOBILE : BUCKET_DEFS;
+}
 
 function bucketKey(broadcast, nowMs) {
-  if (!broadcast.scheduled_start) return "later";
+  const mobile = _mobileMQ.matches;
+  if (!broadcast.scheduled_start) return mobile ? "rest" : "later";
   const delta = new Date(broadcast.scheduled_start).getTime() - nowMs;
   if (delta < DAY_MS) return "today";        // 24시간 이내
   if (delta < 7 * DAY_MS) return "week";
+  if (mobile) return "rest";                 // 모바일: 한 달 이내 + 그 이후 통합
   if (delta < 30 * DAY_MS) return "month";
   return "later";
 }
@@ -307,11 +323,13 @@ function buildBuckets(upcoming, nowMs, channelData, laneKey) {
   const wrap = document.createElement("div");
   wrap.className = "lane__buckets";
 
-  // 네 구간은 항상 렌더 — 레인끼리 높이가 가지런하도록. 빈 구간은 "예고 없음".
-  const groups = { today: [], week: [], month: [], later: [] };
-  for (const b of upcoming) groups[bucketKey(b, nowMs)].push(b);
+  // 각 구간 항상 렌더 — 레인끼리 높이가 가지런하도록. 빈 구간은 "예고 없음".
+  const defs = bucketDefs();
+  const groups = {};
+  for (const [key] of defs) groups[key] = [];
+  for (const b of upcoming) (groups[bucketKey(b, nowMs)] ||= []).push(b);
 
-  for (const [key, label] of BUCKET_DEFS) {
+  for (const [key, label] of defs) {
     const sec = document.createElement("section");
     sec.className = "lane__bucket";
     sec.dataset.bucket = key;

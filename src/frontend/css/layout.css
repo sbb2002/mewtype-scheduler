@@ -309,6 +309,7 @@ body {
     --m-peek: 26px;    /* 스냅된 상태에서 옆 유닛이 보이는 폭 */
     --m-foot: 45px;    /* 하단 고정 푸터 높이 */
     --m-dots: 44px;    /* 페이지 인디케이터 띠 — 콘텐츠 하단과 푸터 사이 여백 */
+    --m-notice: 3.4rem; /* 접힌 소식 막대(위 여백 1rem + 막대 2.2rem + 테두리)가 차지하는 높이 */
   }
 
   #board {
@@ -337,7 +338,8 @@ body {
     flex: 0 0 calc(100vw - 2 * var(--m-pad) - 2 * var(--m-peek));
     scroll-snap-align: start;
     scroll-snap-stop: always;                         /* 한 번에 한 유닛씩만 (통과 방지) */
-    height: calc(100dvh - var(--gap) - var(--m-dots) - var(--m-foot));
+    /* 접힌 소식 막대(--m-notice)가 위를 차지하므로 그만큼 빼야 도트 띠를 안 침범 */
+    height: calc(100dvh - var(--m-notice) - var(--gap) - var(--m-dots) - var(--m-foot));
     overflow-y: auto;
   }
   .lane__header { position: sticky; top: 0; }

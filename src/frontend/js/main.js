@@ -68,4 +68,11 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(() => {
     if (updateCountdowns(board) && lastSchedule) renderBoard(board, lastSchedule);
   }, COUNTDOWN_TICK_MS);
+
+  // 모바일↔PC 경계(767px)를 넘으면 예고 버킷 구성이 달라지므로 재렌더.
+  if (window.matchMedia) {
+    window.matchMedia("(max-width: 767px)").addEventListener("change", () => {
+      if (lastSchedule) renderBoard(board, lastSchedule);
+    });
+  }
 });
