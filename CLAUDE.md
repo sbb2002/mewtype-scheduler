@@ -15,6 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/plan/v1_impro_final.md`
 - 그림: `docs/plan/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/plan/v2_3_x_relay.md`, 핸드오프 `docs/plan/v2_3_handoff.md`
+- **운영자 폰(Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — X 알림 릴레이 플로우의
+  Expression 을 만들거나 고칠 때 먼저 볼 것 (`find` 없음·`contains` 사용·`++` 연결·`nx` 키 등)
 - **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
   **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
 - **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/plan/v2_5_admin_commands.md`

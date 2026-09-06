@@ -63,6 +63,51 @@ Flow beginning
 - 헤더 딕셔너리 리터럴은 이 빌드에서 `{ }` 표기가 통했다(`[ ]` 는 저장 거부).
 - 다운로드 등 스케줄 아님 알림은 `Expression true?` 에서 걸러져 `/ingest` 안 감. 백엔드 파서 필터는 2중 안전장치.
 
+### 폰 플로우 — 현행 (2026-09-06, 무료 티어 6블록)
+
+> **Automate Expression 작성 규칙·함정·`nx` 키는 `docs/AUTOMATE_MANUAL.md` 참고.**
+
+`ref/flow-7 (3).log` 실측으로 알림 유형별 필드가 확정됨:
+
+| 유형 | `android.title` | `android.template` | `pde_noti_tag` |
+|---|---|---|---|
+| X 원글/리포스트 | 계정 표시 이름(`夢限大みゅーたいぷ` 등) | `…$BigTextStyle` | `p#https://x.com/#1tweet-<id>` |
+| 그룹 요약 | (없음) | `…$InboxStyle` | `p#…#1tweet-<id>` (있음!) |
+| 미디어 재생 | `X` | `…$MediaStyle` | null |
+| 다운로드 | null | (진행바) | `DownloadNotificationService` |
+
+**블록 6개** (`@2` Notification posted → `@12` Expression true? → `@13` Variable set → `@6` HTTP request → `@11` Log, +1 여유):
+
+- **`@13` Variable set** `body` =
+  ```
+  trim(coalesce(nx["android.text"],"")) != "" ? nx["android.text"] :
+  trim(coalesce(nx["android.bigText"],"")) != "" ? nx["android.bigText"] :
+  trim(coalesce(nmsg,"")) != "" ? nmsg :
+  coalesce(nticker,"")
+  ```
+- **`@6` HTTP request** body = `urlEncode({...})` **다중 필드**:
+  ```
+  urlEncode({
+    "text": body,
+    "title": coalesce(nx["android.title"], ""),
+    "template": coalesce(nx["android.template"], ""),
+    "tag": coalesce(nx["pde_noti_tag"], "")
+  })
+  ```
+- **`@12` Expression true?** (`find` 없음 → `contains`; `matches` 는 전체일치라 부적합):
+  ```
+  contains(coalesce(nx["android.template"], ""), "BigTextStyle") != 0
+    && contains(coalesce(nx["pde_noti_tag"], ""), "#1tweet-") != 0
+    && trim(coalesce(nx["android.text"], nx["android.bigText"], "")) != ""
+  ```
+  `BigTextStyle` 검사 하나로 다운로드·그룹요약·미디어재생·이미지저장 전부 차단.
+
+**백엔드 (`telegram_app._ingest`)**: 폼 필드 `text`(필수)·`title`·`template`·`tag` 를 읽는다.
+`tag` → `_tweet_url_from_tag()` 가 `https://x.com/i/status/<id>` 로 변환(작성자 무관, 중복제거
+키로도 사용). ponytail 우회 제외 목록에 `template`,`tag` 추가. ECHO/DRY-RUN/성공 DM 에
+`title`·`template`·트윗 링크 표기. `title`(게시자 표시 이름)은 향후 출처 판별(공식 vs 리포스트)
+용 — 리포스트는 `text` 가 `@<handle>:` 시작 또는 `pic.x.com/` 포함으로 구분.
+
 ### 검증 상태 (2026-09-03)
 
 | 항목 | 상태 |

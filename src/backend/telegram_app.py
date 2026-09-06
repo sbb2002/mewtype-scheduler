@@ -11,6 +11,7 @@ import html
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -764,6 +765,19 @@ def _failed_lines_block(failed: list, limit: int = 8) -> str:
     return "\n".join(shown)
 
 
+_TWEET_ID_RE = re.compile(r"tweet-(\d{6,25})")
+
+
+def _tweet_url_from_tag(tag: str) -> str:
+    """삼성 인터넷 웹푸시 태그(`p#https://x.com/#1tweet-<id>`) → 트윗 링크. 못 뽑으면 "".
+
+    폰 Automate 가 `/ingest` 에 `tag` 필드로 `nx["pde_noti_tag"]` 를 넘겨준다(v2.3.x).
+    작성자 handle 은 태그에 없으므로 `x.com/i/status/<id>` 형태(작성자 무관, X 가 리다이렉트).
+    """
+    m = _TWEET_ID_RE.search(tag or "")
+    return f"https://x.com/i/status/{m.group(1)}" if m else ""
+
+
 _INGEST_PROMPT = (
     "📝 <b>/ingest 대기 중</b> (3분)\n"
     "3분 내에 공식계정(@BDP_yumemita)의 예고트윗 텍스트를 입력하시거나 "
@@ -1246,7 +1260,10 @@ if _FLASK_AVAILABLE:
 
         payload = request.form if request.form else (request.get_json(silent=True) or {})
         raw = (payload.get("text") or "").strip()
-        title = (payload.get("title") or "").strip()
+        title = (payload.get("title") or "").strip()      # (v2.3.x) nx["android.title"] — 게시자 표시 이름
+        tmpl = (payload.get("template") or "").strip()     # (v2.3.x) nx["android.template"] — BigTextStyle 등
+        x_tag = (payload.get("tag") or "").strip()         # (v2.3.x) nx["pde_noti_tag"] — 트윗 태그
+        tweet_url = _tweet_url_from_tag(x_tag)
 
         # 폰 Automate 빌드가 `urlEncode({"text": expr})` 를 `<expr값>=` 로 만들어버린다
         # (트윗 본문이 값이 아니라 폼 키 자리로 샌다). text 값이 비었는데 정체불명 키가
@@ -1254,7 +1271,8 @@ if _FLASK_AVAILABLE:
         # ponytail: Automate 빌드 특유의 urlEncode 딕셔너리 버그 우회. 폰에서 body 를
         #           `"text=" ++ urlEncode(...)` 로 제대로 보낼 수 있게 되면 이 블록 삭제.
         if not raw and request.form:
-            odd = [k for k in request.form.keys() if k not in ("text", "title")]
+            odd = [k for k in request.form.keys()
+                   if k not in ("text", "title", "template", "tag")]
             if len(odd) == 1 and not (request.form.get(odd[0]) or "").strip():
                 raw = odd[0].strip()
 
@@ -1289,7 +1307,9 @@ if _FLASK_AVAILABLE:
                 "📡 <b>ingest ECHO</b> — 백엔드 처리 안 함\n"
                 f"ct=<code>{html.escape(request.content_type or '-')}</code> · "
                 f"form_keys={list(request.form.keys())}\n"
-                f"title=<code>{html.escape(title) or '(없음)'}</code>\n"
+                f"title=<code>{html.escape(title) or '(없음)'}</code> · "
+                f"template=<code>{html.escape(tmpl) or '(없음)'}</code>\n"
+                f"tweet=<code>{html.escape(tweet_url) or '(태그 없음/파싱실패)'}</code>\n"
                 f"len(text)={len(raw)} · len(body)={len(raw_body)}(enc)/"
                 f"{len(body_dec)}(dec) · 말미문구 {'✅' if tail_ok else '❌'}\n"
                 "───── text ─────\n"
@@ -1349,7 +1369,9 @@ if _FLASK_AVAILABLE:
                 _failed = xrelay.unparsed_lines(raw)
                 _send_telegram(
                     "🧪 <b>ingest DRY-RUN</b> — 저장 안 함\n"
-                    f"title: <code>{html.escape(title) or '(없음)'}</code>\n"
+                    f"title: <code>{html.escape(title) or '(없음)'}</code> · "
+                    f"template: <code>{html.escape(tmpl) or '(없음)'}</code>\n"
+                    f"tweet: <code>{html.escape(tweet_url) or '(없음)'}</code>\n"
                     f"len(text)={len(raw)} · 파싱 {len(rows)}건 · 인식 실패 {len(_failed)}줄\n"
                     f"{html.escape(brief)}\n"
                     "─────\n"
@@ -1397,6 +1419,8 @@ if _FLASK_AVAILABLE:
             )
 
             summary = xrelay.summary_text(rows, channels_cfg)
+            if tweet_url:
+                summary += f"\n🔗 {tweet_url}"
             if failed:
                 summary += (
                     f"\n\n⚠️ 인식 실패 {len(failed)}줄 (반영 안 됨):\n"
@@ -1432,6 +1456,13 @@ if __name__ == "__main__":
     print("=" * 60)
     print("telegram_app.py smoke test")
     print("=" * 60)
+
+    # ── _tweet_url_from_tag (v2.3.x) ──────────────────────────────────
+    assert _tweet_url_from_tag("p#https://x.com/#1tweet-2096552878769152326") == \
+        "https://x.com/i/status/2096552878769152326"
+    assert _tweet_url_from_tag("DownloadNotificationService") == ""
+    assert _tweet_url_from_tag("") == "" and _tweet_url_from_tag(None) == ""
+    print("[tweet] _tweet_url_from_tag  ✓")
 
     # ── ingest 대기열 (Flask 없이도 동작) ──────────────────────────────
     print("\n[Queue] _ingest_queue_push / _drain")

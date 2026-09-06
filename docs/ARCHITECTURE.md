@@ -54,6 +54,10 @@
     - **(v2.5.2)** `/undo` = 2단계. `/undo` → 복원/제거 요약 + 되돌아갈 KST 시각·커밋 sha +
       `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체 + `schedule.json` sha 일치).
   - `POST /ingest` — 폰 릴레이 인입 (X 예고 릴레이).
+    - form 필드: `text`(필수 본문) · `title`(`android.title` 게시자 표시 이름) · `template`
+      (`android.template`) · `tag`(`pde_noti_tag`). `tag` → `x.com/i/status/<id>` 링크·중복제거 키.
+      폰 Automate `@12` 게이트가 `contains(template,"BigTextStyle")` 로 다운로드/그룹요약/미디어
+      재생 알림을 차단. 상세: `docs/plan/v2_3_x_relay.md`.
     - 원본 바디는 `request.form` 접근 전에 `get_data(cache=True, parse_form_data=False)` 로 캐시
       (Werkzeug form 파싱이 스트림을 소비 → 이후 `get_data()` 가 빈 문자열이 되던 버그).
     - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신
@@ -94,7 +98,7 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 
 | | |
 |---|---|
-| 알림 본문 | Automate → `mewtype-telegram` `POST /ingest` (`text=` form, 또는 폼 키로) |
+| 알림 본문 | Automate → `mewtype-telegram` `POST /ingest` — form `text`(본문) + `title`(게시자 이름) + `template` + `tag`(트윗 태그) |
 | ECHO / 결과 / 알림 DM | Telegram `sendMessage` (양 서비스 → 운영자) |
 | 정기 트리거 | Cloud Scheduler → `mewtype-backend` `POST /tick` (OIDC) |
 | 방송별 wake | Cloud Tasks → `mewtype-backend` `POST /wake` (OIDC) |

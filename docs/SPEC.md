@@ -636,11 +636,13 @@ GET  /           # 200 헬스체크
     `target_sha` + `schedule.json` sha 일치) 통과해야 `prev_content` 로 복원. `n`/60s/기타입력 → 취소.
   - y/N 가로채기는 `pending_del` → `pending_undo` 순으로 분기. 상세: §6-1, `docs/plan/v2_5_admin_commands.md`.
 
-**`/ingest`** (v2.3 X 릴레이): `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`. 본문 form/JSON 의
-`text`(필수)/`title`(선택).
+**`/ingest`** (v2.3 X 릴레이): `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`. 본문 form/JSON:
+`text`(필수), `title`(선택 — `nx["android.title"]` 게시자 표시 이름), `template`(선택 —
+`nx["android.template"]`), `tag`(선택 — `nx["pde_noti_tag"]`). `tag` → `_tweet_url_from_tag()`
+가 `https://x.com/i/status/<id>`(작성자 무관) 로 변환, DM 링크·중복제거 키로 사용.
 - 폰 Automate 빌드가 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘리므로 — `text` 값이
-  비고 (`text`/`title` 외) 폼 키가 딱 하나 + 그 값도 비면 **그 키 이름을 원문으로 복구**한다
-  (`# ponytail:` 표시. 폰에서 `"text=" ++ urlEncode(...)` 로 제대로 보낼 수 있게 되면 삭제).
+  비고 (`text`/`title`/`template`/`tag` 외) 폼 키가 딱 하나 + 그 값도 비면 **그 키 이름을 원문으로
+  복구**한다 (`# ponytail:` 표시. 현재 폰 빌드는 `text=<값>` 을 제대로 보내 사실상 dead code).
 - 원본 바디는 `request.form` 접근 **전에** `request.get_data(cache=True, parse_form_data=False)`
   로 캐시한다 — Werkzeug 는 form 파싱 시 입력 스트림을 소비하고 `get_data()` 캐시를 안 채우므로,
   그 뒤에 부르면 form-urlencoded 요청에서 빈 문자열이 된다(ECHO DM 의 raw body 칸이 늘 비어 보이던 버그).
