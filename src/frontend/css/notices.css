@@ -61,6 +61,13 @@
 .ntc__all[hidden] { display: none; }
 
 .ntc__ticker { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+.ntc__empty {
+  display: flex; align-items: center; height: 100%;
+  padding: 0 0.8rem;
+  font-size: 0.75rem; color: var(--ntc-faint);
+}
+.ntc.is-empty .ntc__tgl { color: var(--color-border); cursor: default; }
+.ntc.is-empty .ntc__tgl:hover { color: var(--color-border); background: transparent; }
 .ntc__track { display: block; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .ntc.is-open .ntc__ticker { display: none; }
 

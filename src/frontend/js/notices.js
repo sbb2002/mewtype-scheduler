@@ -97,12 +97,24 @@ export function renderNotices(section, data) {
   const list = _visible(data);
 
   if (!list.length) {
-    section.hidden = true;
-    section.innerHTML = "";
-    _st.built = false; _st.sig = "";
+    // 숨기지 않는다 — 빈 막대만 두고 펼치기는 비활성. (요청: 소식 0건이어도 자리 유지)
     if (_st.timer) { clearInterval(_st.timer); _st.timer = null; }
+    _st.built = false; _st.sig = ""; _st.open = false; _st.idx = 0;
+    if (section.dataset.empty !== "1") {
+      section.hidden = false;
+      section.className = "ntc is-empty is-collapsed";
+      section.innerHTML =
+        `<div class="ntc__bar">` +
+          `<span class="ntc__tag"><span class="ntc__lamp" aria-hidden="true"></span>` +
+            `<span class="ntc__label">소식</span></span>` +
+          `<div class="ntc__ticker"><span class="ntc__empty">새 소식이 없습니다</span></div>` +
+          `<button class="ntc__tgl" type="button" disabled aria-disabled="true" aria-label="소식 없음">▾</button>` +
+        `</div>`;
+      section.dataset.empty = "1";
+    }
     return;
   }
+  section.dataset.empty = "0";
 
   const sig = list.map((n) => n.id + ":" + (n.last_updated || "")).join("|");
   if (_st.built && sig === _st.sig) return;   // 변화 없음 → 계속 돌림
