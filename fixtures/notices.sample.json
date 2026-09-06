@@ -1,0 +1,62 @@
+{
+  "generated_at": "2099-01-01T00:00:00Z",
+  "notices": [
+    {
+      "id": "2096519341575721125",
+      "category": "live",
+      "title": "「アワーノーツ リリース日決定特番」",
+      "date": "2099-01-03",
+      "time": "21:00",
+      "deadline": false,
+      "site": "youtube",
+      "url": "https://youtube.com/live/abcdefghijk",
+      "tweet_url": "https://x.com/i/status/2096519341575721125",
+      "src_handle": "RT @bang_dream_gbp",
+      "anchor_a": "abcdefghijk",
+      "anchor_b": "アワーノーツリリース日決定特番",
+      "title_slug": "アワーノーツリリース日決定特番",
+      "seen_ids": ["2096519341575721125"],
+      "first_seen": "2099-01-01T00:00:00Z",
+      "last_updated": "2099-01-01T00:00:00Z",
+      "expires_at": "2099-01-04T15:00:00Z"
+    },
+    {
+      "id": "2096529833870479645",
+      "category": "release",
+      "title": "メモリアルグッズの第2弾が発売",
+      "date": "2099-01-10",
+      "time": null,
+      "deadline": true,
+      "site": "store",
+      "url": "https://bushiroad-store.com/pages/anime-yumemita_memorial-fair2",
+      "tweet_url": "https://x.com/i/status/2096529833870479645",
+      "src_handle": "RT @BushiM_info",
+      "anchor_a": "anime-yumemita_memorial-fair2",
+      "anchor_b": null,
+      "title_slug": "メモリアルグッズの第2弾が発売",
+      "seen_ids": ["2096529833870479645"],
+      "first_seen": "2099-01-01T00:00:00Z",
+      "last_updated": "2099-01-01T00:00:00Z",
+      "expires_at": "2099-01-11T15:00:00Z"
+    },
+    {
+      "id": "2096600000000000000",
+      "category": "platform",
+      "title": "全員【bilibili】生配信",
+      "date": "2099-01-20",
+      "time": "22:00",
+      "deadline": false,
+      "site": "bilibili",
+      "url": "https://space.bilibili.com/3546592848120041",
+      "tweet_url": "https://x.com/i/status/2096600000000000000",
+      "src_handle": "@BDP_yumemita",
+      "anchor_a": "3546592848120041",
+      "anchor_b": null,
+      "title_slug": "全員bilibili生配信",
+      "seen_ids": ["2096600000000000000"],
+      "first_seen": "2099-01-01T00:00:00Z",
+      "last_updated": "2099-01-01T00:00:00Z",
+      "expires_at": "2099-01-21T15:00:00Z"
+    }
+  ]
+}

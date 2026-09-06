@@ -1,7 +1,7 @@
 # v2.7 — 소식 게시판 (방송 외 이벤트)
 
 작성 2026-09-07. v2.3(X 릴레이) 위에 얹는다.
-**백엔드 구현 완료(§4~6). 프론트 티커(§7)는 미구현 — 목업만.**
+**백엔드·프론트 구현 완료.** UI 목업: `docs/plan/v2_7_notice_board_mockup.html`
 
 - UI 목업(확정): `docs/plan/v2_7_notice_board_mockup.html`
   (아티팩트: https://claude.ai/code/artifact/5ab98542-e5a2-4ec1-8a6e-dac81789a9d8)
@@ -128,25 +128,28 @@
 
 `全員【bilibili】` 등 v2.6 에서 `xrelay._SKIP_LINE_RE` 로 스킵하던 라인이 여기로 흡수된다.
 
-## 7. 프론트
+## 7. 프론트 (구현 — `src/frontend/js/notices.js` + `css/notices.css`)
 
-- `notices.json` 를 `schedule.json` 과 같은 주기로 fetch (`config.js` 에 URL 추가).
-- `render.js` 에 티커 컴포넌트(목업의 접힘/펼침/순환/램프/marquee 로직). `#board` 위에 삽입.
-- CSS: 목업의 `.board` 계열을 `css/` 에 추가. 예고판 토큰 재사용, 다크 단일.
-- 만료(`expires_at` 지난 것)는 프론트에서도 숨김(백엔드 sweep 지연 대비).
+- `main.js` 가 `NOTICES_URL`(`config.js`) 을 `POLL_MS` 주기로 fetch → `renderNotices(#notice, data)`.
+  404/오류면 `#notice` 는 `hidden` 유지(예고판엔 영향 없음).
+- `notices.js` = 목업 로직 이식: 접힘 = 한 줄, 5초마다 세로 슬라이드 무한 순환(첫 항목 클론으로
+  이음새 없음), hover/focus/탭숨김 정지, `▾` 펼치면 전체 목록 + 아래 예고판 밀려남.
+  좌측 램프(TODAY 있으면 빨강 점멸), D-DAY 배지(TODAY 빨강/D-7 주황), 제목 넘치면 marquee.
+- **만료(`expires_at` 지남)는 프론트에서도 필터**(백엔드 sweep 지연 대비). 정렬 date→time→id.
+- 클래스는 `.ntc*` 네임스페이스(`#board` 와 충돌 방지). JP 제목은 시스템 JP 폰트 스택(웹폰트 안 씀).
+- `poll` 마다 재호출되지만 `id+last_updated` 시그니처가 같으면 아무것도 안 하고 계속 돌린다.
+- 로컬 개발: `fixtures/notices.sample.json` (만료일 2099 로 항상 표시). `config.js` URL 교체.
 
 ## 8. 관련 파일
 
-- 백엔드 (완료): `src/backend/xnotice.py`(파서/분류) · `notices.py`(계약·머지·sweep) ·
-  `admin.py`(`pending_notice` 슬롯 + `set_undo(path=)`) ·
-  `telegram_app.py`(`_apply_notice`/`_notice_sweep`/`_handle_notice_*`, `/ingest` 자동 인입,
+- 백엔드: `src/backend/xnotice.py` · `notices.py` · `admin.py`(`pending_notice`, `set_undo(path=)`) ·
+  `telegram_app.py`(`_apply_notice`/`_notice_sweep`/`_maybe_auto_notice`/`_handle_notice_*`,
   `_handle_undo_*` path 대응). self-test: `python -m src.backend.{xnotice,notices,admin,telegram_app}`.
-- 프론트 (미구현): `src/frontend/js/render.js`(목업 티커 로직) · `js/config.js`(URL) · `css/`.
-  만료(`expires_at` 지남)는 프론트에서도 숨김(sweep 지연 대비).
+- 프론트: `src/frontend/js/notices.js` · `css/notices.css` · `js/config.js`(`NOTICES_URL`) ·
+  `js/main.js`(`pollNotices`) · `index.html`(`<section id="notice">`).
 - data 브랜치: `notices.json` · `notice_archive.json`.
 
 ## 9. 남은 것
 
-- **프론트 티커** — `docs/plan/v2_7_notice_board_mockup.html` 로직을 `render.js`/`css/` 로.
-- 자동 인입은 `INGEST_ECHO=0` 실배포 전환 후에야 동작 (지금은 `/notice` 수동만).
-- 다이제스트 DM(하루 1회 요약)은 아직 — 지금은 건별 한 줄 DM.
+- 다이제스트 DM(하루 1회 요약)은 아직 — 지금은 건별 한 줄 DM(`added`/`updated`).
+- 그룹 요약 알림·오분류 수정 명령(`/notice-edit`)은 필요해지면.

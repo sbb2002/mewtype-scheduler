@@ -2,6 +2,9 @@ export const DATA_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-sched
 // For local development, temporarily comment out the line above and uncomment:
 // export const DATA_URL = "../../fixtures/schedule.sample.json";
 
+// (v2.7) 소식 게시판. 없으면(404) 티커는 그냥 안 뜬다.
+export const NOTICES_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/notices.json";
+
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;
