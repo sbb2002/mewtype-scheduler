@@ -20,9 +20,11 @@ from datetime import datetime, timedelta, timezone
 from .xrelay import JST, UTC, HEADER_RE, YT_VIDEO_RE, _infer_year, normalize
 
 # ── 날짜 · 시각 ────────────────────────────────────────────────────────────
-#   "9/13" · "9月13日" · "9/13(日)" · "〜9/27" · "〜 9月27日"
+#   "9/13" · "9月13日" · "9/13(日)" · "〜9/27" · "〜 9月27日" · "2025年9月7日" · "2025/9/7"
+#   연도(20xx)가 본문에 명시돼 있으면 그걸 쓰고(회고글의 작년 날짜 등), 없으면 _infer_year.
 _DATE_RE = re.compile(
-    r"(?P<dl>〜\s*)?(?P<m>\d{1,2})\s*[/月]\s*(?P<d>\d{1,2})\s*日?"
+    r"(?P<dl>〜\s*)?(?:(?P<y>20\d{2})\s*[/年.]\s*)?"
+    r"(?P<m>\d{1,2})\s*[/月]\s*(?P<d>\d{1,2})\s*日?"
     r"(?:\s*[（(][日月火水木金土][）)])?"
 )
 #   "21:00" · "24:30" · "21時" · "21時30分"
@@ -38,7 +40,7 @@ _RE_PLATFORM = re.compile(
 )
 _RE_LIVE = re.compile(
     r"配信決定|特番|生配信|生放送|放送決定|放送日|プレミア公開|ライブ配信|同時配信|"
-    r"配信いたします|配信します|配信予定"
+    r"配信いたします|配信します|配信予定|最終回|最終話"
 )
 _RE_RELEASE = re.compile(
     r"リリース|発売|配信開始|予約(?:受付|開始)?|受注|グッズ|メモリアルグッズ|"
@@ -49,6 +51,12 @@ _RE_RELEASE = re.compile(
 _RE_RECAP = re.compile(
     r"ありがとうございました|御礼|お礼|お疲れ(?:様|さま)|無事終了|振り返り|"
     r"感想は|感想お待ち|ご来場|終演|閉幕"
+)
+# ── 회고·기념일 마커 (이벤트 아님. `今日は何の日？` / `N年前` / `去年` 등) ──────────
+#   is_recap 로 취급 → 지난 날짜면 merge_notice 가 skip. 미래 예고엔 안 붙는 표현만.
+_RE_RETRO = re.compile(
+    r"今日は何の日|何の日\s*[?？]|(?:[0-9０-９]+|一|二|三|四|五|六|七|八|九|十|数)\s*年前|"
+    r"去年の|昨年の|一昨年|懐かし|思い出|あの日"
 )
 
 # ── 사이트 판별 ────────────────────────────────────────────────────────
@@ -61,8 +69,11 @@ _TWEET_ID_RE = re.compile(r"tweet-(\d{6,25})")
 _QUOTE_RE = re.compile(r"[「『]([^」』\n]{1,80})[」』]")
 _LEAD_JUNK = re.compile(r"^[\s＼／｜|・･*※＊✳✨🌟🌏🐔🛸🎊🎉🎁📢📣📺🎤🎮💭💪⭐🔥💫#＃>＞\-–—▼▽▶➡→]+")
 _TRAIL_JUNK = re.compile(
-    r"[\s　！!？?。、,.\-–—＼／｜|・･*※＊✳✨🌟🌏🐔🛸🎊🎉🎁📢📣📺🎤🎮💭💪⭐❣❕‼🔥💫➡→↓]+$"
+    r"[\s　！!？?。、,.\-–—＼／｜|・･*※＊✳✨🌟🌏🐔🛸🎊🎉🎁📢📣📺🎤🎮💭💪⭐❣❕‼🔥💫💿📀🎬🎵🎶➡→↓]+$"
 )
+# 제목 중간에 박힌 순수 장식 문자 (반짝이·폭죽·알림 이모지) — 의미 없음, 통째로 제거.
+#   국기·🛸·・「」 등 의미를 가질 수 있는 건 제외.
+_MID_DECO_RE = re.compile(r"[\s]*[✨🌟⭐💫🎊🎉🎁🎀🔥💿📀💎📢📣❗‼❕⏰🙇☺️✅➡️]+[\s]*")
 _HANDLE_HEAD_RE = re.compile(r"^\s*(?:RT\s+)?@(\w{1,15})\s*[:：]")
 _CONNECTIVE_RE = re.compile(r"^(?:さらに|そして|また|なお|加えて|そのほか|その他)\s*")
 #   과장·캠페인 문구 (제목으로 부적합)
@@ -76,6 +87,19 @@ _EVENTISH_RE = re.compile(
     r"スタート|第\s*\d+\s*弾|ツアー|TOUR"
 )
 _SENTENCE_RE = re.compile(r"[、。]|ので[、。\s]|です[。\s]|ます[。\s]|でした|ください")
+#   방송 회차·형태를 가리키는 명사 — 이 줄이 곧 제목의 핵심(`最終回` 등). 후보에서 가점.
+_TITLE_NOUN_RE = re.compile(
+    r"最終(?:回|話)|初回放送|第\s*\d+\s*話|放送(?:開始|スタート|日)|オンエア|"
+    r"一挙放送|先行(?:放送|上映|配信)|特別(?:放送|編)|完結編|総集編"
+)
+#   스트리밍 서비스 나열 줄 (`ABEMA/Prime Video/…にて配信`) — 배포 채널 안내지 제목 아님.
+_STREAM_SVC = (
+    r"ABEMA|Prime\s*Video|Amazon\s*Prime|d\s*アニメ(?:ストア)?|Hulu|U-?NEXT|Lemino|"
+    r"Netflix|Disney\+?|バンダイチャンネル|dTV|TVer|GYAO|milplus"
+)
+_STREAM_LIST_RE = re.compile(
+    rf"(?:{_STREAM_SVC})\s*[/／・、]\s*(?:{_STREAM_SVC})", re.IGNORECASE
+)
 #   메타데이터 라벨 줄 (`日程：…` `会場：…`) — 제목이 아니라 부가정보. 후보에서 강제 감점.
 _LABEL_LINE_RE = re.compile(
     r"^(?:日程|日時|時間|開始時間?|開場|開演|会場|場所|開催地|受付|申込方法?|応募方法?|"
@@ -84,8 +108,8 @@ _LABEL_LINE_RE = re.compile(
 )
 #   외침형 제목 블록 — 같은 장식 문자로 앞뒤를 감싼 (여러 줄에 걸칠 수 있는) 제목.
 #   예) `💪集え！#ゆめみた筋トレ部` + `　〜輝け！上腕二頭筋〜💪`  →  한 줄로 이어붙임.
-_DECO_OPEN = "💪🔥✨🎊🎉⭐🌟💫🐔🛸🌏📢📣＼"
-_DECO_CLOSE = {"＼": "／"}
+_DECO_OPEN = "💪🔥✨🎊🎉⭐🌟💫🐔🛸🌏📢📣＼／"
+_DECO_CLOSE = {"＼": "／", "／": "＼"}     # `＼…／` · 역방향 `／…＼` 둘 다
 
 
 def _join_shout_titles(lines: list[str]) -> list[str]:
@@ -131,8 +155,12 @@ def _first_time(t: str) -> str | None:
 
 
 def _pick_event_date(t: str, now_jst: datetime) -> tuple[str | None, bool]:
-    """이벤트 날짜(ISO) + deadline 여부. 동사 근처 우선, 없으면 미래 최근접."""
-    cands: list[tuple[int, int, bool, int]] = []   # (month, day, deadline, pos)
+    """이벤트 날짜(ISO) + deadline 여부. 동사 근처 우선, 없으면 미래 최근접.
+
+    본문에 `20xx年`/`20xx/` 로 연도가 명시돼 있으면 그 연도를 쓴다 (회고글이 작년
+    날짜를 적는 경우 등). 없으면 `_infer_year` 로 now 에 가장 가까운 연도.
+    """
+    cands: list[tuple[int | None, int, int, bool, int]] = []   # (year|None, month, day, deadline, pos)
     for m in _DATE_RE.finditer(t):
         try:
             mo, da = int(m.group("m")), int(m.group("d"))
@@ -140,29 +168,31 @@ def _pick_event_date(t: str, now_jst: datetime) -> tuple[str | None, bool]:
                 continue
         except ValueError:
             continue
+        yr = int(m.group("y")) if m.group("y") else None
         dl = bool(m.group("dl")) or ("まで" in t[m.end():m.end() + 4] or "迄" in t[m.end():m.end() + 4])
-        cands.append((mo, da, dl, m.start()))
+        cands.append((yr, mo, da, dl, m.start()))
     if not cands:
         return None, False
 
-    def iso(mo: int, da: int) -> str | None:
+    def iso(yr: int | None, mo: int, da: int) -> str | None:
         try:
-            return datetime(_infer_year(mo, da, now_jst), mo, da, tzinfo=JST).strftime("%Y-%m-%d")
+            y = yr if yr else _infer_year(mo, da, now_jst)
+            return datetime(y, mo, da, tzinfo=JST).strftime("%Y-%m-%d")
         except ValueError:
             return None
 
-    # 1) 동사 근처(뒤 12자 안)에 오는 날짜 우선
-    for mo, da, dl, pos in cands:
+    # 1) 동사 근처(뒤 40자 안)에 오는 날짜 우선
+    for yr, mo, da, dl, pos in cands:
         after = t[pos:pos + 40]
         if any(v in after for v in _EVENT_VERB):
-            d = iso(mo, da)
+            d = iso(yr, mo, da)
             if d:
                 return d, dl
     # 2) 오늘 이후로 가장 가까운 날짜
     today = now_jst.date()
     best = None
-    for mo, da, dl, _ in cands:
-        d = iso(mo, da)
+    for yr, mo, da, dl, _ in cands:
+        d = iso(yr, mo, da)
         if not d:
             continue
         dt = datetime.fromisoformat(d).date()
@@ -171,8 +201,8 @@ def _pick_event_date(t: str, now_jst: datetime) -> tuple[str | None, bool]:
     if best:
         return best[1], best[2]
     # 3) 그냥 첫 번째
-    mo, da, dl, _ = cands[0]
-    return iso(mo, da), dl
+    yr, mo, da, dl, _ = cands[0]
+    return iso(yr, mo, da), dl
 
 
 def _site_url_anchor(t: str) -> tuple[str, str | None, str | None]:
@@ -227,6 +257,7 @@ def _headline(t: str) -> str:
         label_line = bool(_LABEL_LINE_RE.match(line))
         cleaned = _TRAIL_JUNK.sub("", _LEAD_JUNK.sub("", line)).strip(" 　")
         cleaned = _CONNECTIVE_RE.sub("", cleaned)
+        cleaned = _MID_DECO_RE.sub(" ", cleaned).strip(" 　")   # 중간 장식 이모지 제거
         if len(cleaned) < 4:
             continue
         score = min(len(cleaned), 40) * 0.3
@@ -236,12 +267,18 @@ def _headline(t: str) -> str:
             score -= 100
         if _RE_LIVE.search(cleaned) or _RE_RELEASE.search(cleaned) or _RE_PLATFORM.search(cleaned):
             score += 40
+        if _TITLE_NOUN_RE.search(cleaned):
+            score += 25                       # `最終回` `第N話` 등 — 이 줄이 곧 제목
+        if _STREAM_LIST_RE.search(cleaned):
+            score -= 35                       # `ABEMA/Prime Video/…にて配信` — 배포 채널 안내
         if "「" in cleaned or "『" in cleaned:
             score += 20
         if _SENTENCE_RE.search(cleaned):
             score -= 25                       # 설명 문장은 제목 아님
-        if re.match(r"^(?:〜|\d{1,2}\s*[/月])", cleaned):
-            score -= 15                       # 날짜로 시작하는 조각
+        if re.match(r"^(?:〜|\d{1,2}\s*[/月])", cleaned) and not (
+            _TITLE_NOUN_RE.search(cleaned) or _EVENTISH_RE.search(cleaned)
+        ):
+            score -= 15                       # 날짜로 시작하는 '조각' (이벤트 명사 없을 때만)
         nonword = len(re.findall(r"[^0-9A-Za-z぀-ヿ一-鿿ー「」『』・]", cleaned))
         if nonword / max(len(cleaned), 1) > 0.5:
             score -= 30
@@ -342,7 +379,7 @@ def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None 
         "url": url,
         "tweet_url": (f"https://x.com/i/status/{_tweet_id(tag)}" if _tweet_id(tag) else None),
         "src_handle": _src_handle(t, title),
-        "is_recap": bool(_RE_RECAP.search(t)),
+        "is_recap": bool(_RE_RECAP.search(t) or _RE_RETRO.search(t)),
         "anchor_a": anchor_a,
         "anchor_b": anchor_b,
         "title_slug": _title_slug(headline),
@@ -359,6 +396,9 @@ if __name__ == "__main__":
         pass
 
     NOW = "2026-09-10T00:00:00Z"          # JST 2026-09-10 09:00
+
+    def DT(y, mo, d):                     # _pick_event_date 용 now_jst 헬퍼
+        return datetime(y, mo, d, 12, 0, tzinfo=JST)
 
     # S1: 특번(라이브 예고) — リリース 단어 있지만 特番 → live 우선
     S1 = ("＼事前登録150万人突破🎊／\nさらに「アワーノーツ リリース日決定特番」\n"
@@ -434,5 +474,37 @@ if __name__ == "__main__":
     assert _join_shout_titles(["🛸夢限大みゅーたいぷ", "9/1", "본문"]) == \
         ["🛸夢限大みゅーたいぷ", "9/1", "본문"]           # 닫는 🛸 없음 → 병합 안 함
     print("[OK] _join_shout_titles")
+
+    # S10: 회고글 (`今日は何の日？` + `1年前の2025年9月7日` + `開催しました`)
+    #      → 명시 연도(2025) 사용 + is_recap → merge_notice 가 skip
+    S10 = ("【今日は何の日？】\n\n1年前の2025年9月7日\n"
+           "夢限大みゅーたいぷ 4th LIVE 「アンロック・ザ・フューチャー」（会場：TACHIKAWA "
+           "STAGE GARDEN）を開催しました。\n\n#バンドリ")
+    r10 = parse(S10, NOW, tag="p#x#1tweet-2096773253834723388")
+    assert r10 and r10["date"] == "2025-09-07", r10          # _infer_year 아님, 본문 연도
+    assert r10["is_recap"] is True, r10
+    from .notices import merge_notice as _mn, default_notices as _dn, default_archive as _da
+    _, _, _ch, _m = _mn(_dn(), r10, NOW, archive=_da())
+    assert not _ch and _m == "skip", (_ch, _m)               # 지난 날짜 → 예고판에 안 올림
+    print("[OK] S10  회고글 (명시 연도 2025 + is_recap → skip)")
+
+    # S11: 명시 연도 파싱 변형 — `2026/9/13` / `2026年9月13日`
+    assert _pick_event_date("2026/9/13 21:00〜 配信", DT(2026, 9, 1))[0] == "2026-09-13"
+    assert _pick_event_date("2027年1月3日に開催", DT(2026, 12, 20))[0] == "2027-01-03"
+    assert _pick_event_date("9/13 発売", DT(2026, 9, 1))[0] == "2026-09-13"   # 연도 없음 → infer
+    print("[OK] S11  _DATE_RE 연도 캡처")
+
+    # S12: 제목 추출 — 최종화(_TITLE_NOUN) / 플랫폼 나열(_STREAM_LIST) / 역방향 ／…＼ / 💿 꼬리
+    S12A = ("／\n9/10(木)23:00~ 最終回 放送💫\nTVアニメ「バンドリ！ ゆめ∞みた」\n＼\n\n"
+            "TOKYO MXほかにて放送＆\nABEMA/Prime Video/dアニメストア/Hulu/U-NEXTほかにて地上波同時配信✨\n"
+            "http://anime.bang-dream.com/yumemita/onair\n#バンドリ")
+    r12a = parse(S12A, NOW)
+    assert r12a and r12a["category"] == "live", r12a                 # 最終回 → live
+    assert "最終回" in r12a["title"] and "ABEMA" not in r12a["title"], r12a["title"]
+    assert "💫" not in r12a["title"], r12a["title"]                  # 중간 장식 제거
+    S12B = "／\n　会場でのCD販売スタート💿✨\n＼\n🌏BM-ECHOES FESTIVAL 2026🌏\n9/6(日)"
+    r12b = parse(S12B, NOW)
+    assert r12b and r12b["title"] == "会場でのCD販売スタート", r12b["title"]  # 역방향 ／…＼ 병합 + 💿 제거
+    print("[OK] S12  최종화 부스트 · 플랫폼 나열 감점 · 역방향 병합 · 꼬리 이모지")
 
     print("\nSUCCESS: xnotice self-test 통과")

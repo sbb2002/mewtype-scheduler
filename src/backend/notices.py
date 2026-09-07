@@ -144,8 +144,10 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
             return prev, arch, False, "dup"
 
     # 4) 신규
-    if incoming.get("is_recap") and past:
-        return prev, arch, False, "skip"          # 지난 이벤트 후기, 추적한 적 없음 → 버림
+    if past:
+        # 이미 지난 날짜의 새 소식(회고글·지각 후기 등)은 예고판에 안 올린다.
+        # 추적 중이던 이벤트의 후기는 위 2)·3) 에서 seen_ids 로 흡수됨.
+        return prev, arch, False, "skip"
     notices.append(_new_row(incoming, now_iso))
     out = dict(prev); out["notices"] = _sorted(notices); out["generated_at"] = now_iso
     return out, arch, True, "added"
@@ -268,7 +270,10 @@ if __name__ == "__main__":
     # 지난 이벤트 후기, 추적한 적 없음 → skip
     _, _, ch, m = merge_notice(default_notices(), inc(id="20", date="2026-09-06", is_recap=True), NOW, archive=default_archive())
     assert not ch and m == "skip", m
-    print("[OK] 지난 이벤트 후기(신규) → skip")
+    # 지난 날짜의 신규 소식(회고글 등)은 is_recap 아니어도 skip
+    _, _, ch, m = merge_notice(default_notices(), inc(id="20b", date="2025-09-07", is_recap=False), NOW, archive=default_archive())
+    assert not ch and m == "skip", m
+    print("[OK] 지난 날짜 신규 → skip (is_recap 무관)")
 
     # 아카이브된 그룹의 후속 → archive seen_ids append, 부활 안 함
     arch = {"notices": [inc(id="30", date="2026-09-06", anchor_b="fes", seen_ids=["30"], archived_at=NOW)]}

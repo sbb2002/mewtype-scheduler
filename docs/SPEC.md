@@ -485,13 +485,18 @@ KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 
   `title_slug`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
 - `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
 - `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·
-  `出演情報` 면 `None`. `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices,
-  new_archive, changed, mode∈added|updated|recap|dup|skip)`. 중복키: **같은 date** + (`anchor_a`
-  일치 ‖ a 없으면 `anchor_b` 일치). `notices.sweep_expired` → 만료분 아카이브.
+  `出演情報` 면 `None`. 날짜는 본문 `20xx年`/`20xx/` 명시 연도 우선(없으면 `_infer_year`).
+  회고·기념일 마커(`_RE_RETRO`: `今日は何の日`·`N年前` 등)면 `is_recap=True`.
+  `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed,
+  mode∈added|updated|recap|dup|skip)`. 중복키: **같은 date** + (`anchor_a` 일치 ‖ a 없으면
+  `anchor_b` 일치). **지난 날짜의 신규 소식은 `is_recap` 무관하게 `skip`**(예고판에 안 올림 —
+  추적 중이던 이벤트의 후기는 그 전에 2)·3) seen_ids 로 흡수). `notices.sweep_expired` → 만료분 아카이브.
   `notices.edit_notice(prev, nid, patch, now_iso)` → `(new, changed)` — `/notice-edit` 가 쓰는
   순수 필드 대입(`_EDITABLE` 키만, `id`/`seen_ids`/`first_seen` 보존).
-- `_headline` (제목 추출) — `_join_shout_titles` 로 같은 장식 문자(`💪…💪`, `＼…／`)로 감싼
-  여러 줄 제목을 한 줄로 합치고, `日程：`/`会場：`/`料金：` 등 **라벨 줄**(`_LABEL_LINE_RE`)은 강한 감점.
+- `_headline` (제목 추출) — `_join_shout_titles`(`💪…💪`·`＼…／`·역방향 `／…＼` 로 감싼 여러 줄 병합)
+  + 점수: `_LABEL_LINE_RE`(`日程：`/`会場：`) −40, `_TITLE_NOUN_RE`(`最終回`/`第N話`) +25,
+  `_STREAM_LIST_RE`(`ABEMA/Prime Video/…` 나열) −35, 날짜시작 −15(이벤트 명사 있으면 면제),
+  `_MID_DECO_RE` 로 중간 장식 이모지 제거. 그래도 부실하면 `/notice-edit`.
 - 텔레그램: `/notice`(2단계) · `/notice-list` · `/notice-del` · **`/notice-edit <id|번호>`**
   (제목→날짜→URL 순 되묻기, 각 필드 `aNoneTokyo` = 유지, 다른 `/명령` = 취소, `pending_notice_edit`
   슬롯 TTL 300s). 편집 시 `title_slug`·`expires_at`·`site`·`anchor_a` 는 자동 재계산. `/undo` 지원.
