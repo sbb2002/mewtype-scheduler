@@ -2,6 +2,12 @@
   "pending_del": null,
   "pending_ingest": null,
   "pending_notice": null,
+  "pending_notice_edit": {
+    "at": "2026-09-07T12:07:42Z",
+    "new": {},
+    "nid": "2096886188376273312",
+    "step": "title"
+  },
   "pending_undo": null,
   "undo": {
     "action": "소식 added (eplus.jp/yumemita_kinnt…)",
