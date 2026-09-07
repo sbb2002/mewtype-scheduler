@@ -2,7 +2,11 @@
   "pending_del": null,
   "pending_ingest": null,
   "pending_notice": null,
-  "pending_undo": null,
+  "pending_undo": {
+    "action": "소식 added (【歌枠】臨兵闘ｼｬ！皆陣烈在…… ＃アニメゆめみた)",
+    "at": "2026-09-07T03:58:16Z",
+    "target_sha": "e85a8dce5a2ecbebb2d4daff43ab7ac19a965493"
+  },
   "undo": {
     "action": "소식 added (【歌枠】臨兵闘ｼｬ！皆陣烈在…… ＃アニメゆめみた)",
     "at": "2026-09-07T03:01:05Z",
