@@ -1,6 +1,27 @@
 {
-  "generated_at": "2026-09-07T01:31:37Z",
+  "generated_at": "2026-09-07T03:01:05Z",
   "notices": [
+    {
+      "anchor_a": null,
+      "anchor_b": null,
+      "category": "etc",
+      "date": "2026-09-07",
+      "deadline": false,
+      "expires_at": "2026-09-07T15:00:00Z",
+      "first_seen": "2026-09-07T03:01:05Z",
+      "id": "2096795604856836521",
+      "last_updated": "2026-09-07T03:01:05Z",
+      "seen_ids": [
+        "2096795604856836521"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "20:00",
+      "title": "【歌枠】臨兵闘ｼｬ！皆陣烈在…… ＃アニメゆめみた",
+      "title_slug": "歌枠臨兵闘皆陣烈在",
+      "tweet_url": "https://x.com/i/status/2096795604856836521",
+      "url": null
+    },
     {
       "anchor_a": null,
       "anchor_b": "アンロック・ザ・フューチャー",
