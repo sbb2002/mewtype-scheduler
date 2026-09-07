@@ -3,12 +3,12 @@
   "pending_ingest": null,
   "pending_notice": null,
   "pending_notice_edit": {
-    "at": "2026-09-07T12:08:32Z",
+    "at": "2026-09-07T12:08:48Z",
     "new": {
       "title": "💪集え！#ゆめみた筋トレ部 \n　～輝け！上腕二頭筋～💪"
     },
     "nid": "2096886188376273312",
-    "step": "date"
+    "step": "url"
   },
   "pending_undo": null,
   "undo": {
