@@ -5,12 +5,12 @@
   "pending_notice_edit": null,
   "pending_undo": null,
   "undo": {
-    "action": "소식 added (eplus.jp/yumemita_kinnt…)",
-    "at": "2026-09-07T09:00:06Z",
-    "new_sha": "198d837c1a40ca11007b161c72c073e4dcf5ddc4",
+    "action": "소식 편집 (2096886188376273312)",
+    "at": "2026-09-07T12:09:18Z",
+    "new_sha": "1c122b20d7c67bb94c90e5be224a8c8b35c6e11c",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-07T08:03:56Z",
+      "generated_at": "2026-09-07T09:00:06Z",
       "notices": [
         {
           "anchor_a": null,
@@ -116,6 +116,27 @@
           "title_slug": "メモリアルグッズの第2弾が発売",
           "tweet_url": "https://x.com/i/status/2096529833870479645",
           "url": "https://bushiroad-store.com/pages/anime-yumemita_memorial-fair2"
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": null,
+          "category": "etc",
+          "date": "2026-11-21",
+          "deadline": false,
+          "expires_at": "2026-11-21T15:00:00Z",
+          "first_seen": "2026-09-07T09:00:06Z",
+          "id": "2096886188376273312",
+          "last_updated": "2026-09-07T09:00:06Z",
+          "seen_ids": [
+            "2096886188376273312"
+          ],
+          "site": "x",
+          "src_handle": "@BDP_yumemita",
+          "time": null,
+          "title": "eplus.jp/yumemita_kinnt…",
+          "title_slug": "eplusjpyumemitakinnt",
+          "tweet_url": "https://x.com/i/status/2096886188376273312",
+          "url": null
         }
       ]
     }
