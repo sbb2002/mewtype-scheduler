@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-09-07T12:03:11Z",
+  "tweets": {
+    "arale": {
+      "channel_key": "arale",
+      "id": "2096552878769152326",
+      "text": "おはよう！今日は22時から歌枠やります🎤 リクエストあったらリプで教えてね〜",
+      "url": "https://x.com/i/status/2096552878769152326",
+      "handle": "arale_yumemita",
+      "received_at": "2026-09-07T12:03:11Z",
+      "expires_at": "2099-01-01T00:00:00Z"
+    },
+    "yuno": {
+      "channel_key": "yuno",
+      "id": "2096560000000000000",
+      "text": "配信おつかれさまでした！来てくれてありがとう☕ 次の予定はまた告知します",
+      "url": "https://x.com/i/status/2096560000000000000",
+      "handle": "yuno_yumemita",
+      "received_at": "2026-09-07T09:20:00Z",
+      "expires_at": "2099-01-01T00:00:00Z"
+    },
+    "ritsu": {
+      "channel_key": "ritsu",
+      "id": "2096570000000000000",
+      "text": "ねむい",
+      "url": "https://x.com/i/status/2096570000000000000",
+      "handle": "ritsu_yumemita",
+      "received_at": "2026-09-07T11:55:00Z",
+      "expires_at": "2099-01-01T00:00:00Z"
+    },
+    "miyako": {
+      "channel_key": "miyako",
+      "id": "2096540000000000000",
+      "text": "みんなに大事なお知らせがあります。詳しくは公式からの発表を待っててね。いつも応援ありがとう、本当に励みになってます✨",
+      "url": "https://x.com/i/status/2096540000000000000",
+      "handle": "miyako_yumemita",
+      "received_at": "2026-09-07T01:10:00Z",
+      "expires_at": "2099-01-01T00:00:00Z"
+    }
+  }
+}

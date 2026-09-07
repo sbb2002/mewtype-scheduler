@@ -446,6 +446,25 @@ KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 
   `xrelay` 가 행을 안 내면 자동으로 `_apply_notice`(added/updated 만 DM, 나머지 조용히).
 - `/undo` 는 `admin_state.undo.path == "notices.json"` 이면 이 파일을 복원.
 
+## 6-3. 계약 I — `tweets.json` / `tweet_archive.json` (data 브랜치, v2.8)
+
+멤버 5인의 **개인 트윗** — 예고판 상단 편지 배지. 전체 설계·라우팅은 `docs/plan/v2_8_personal_tweets.md`.
+
+- `tweets.json` = `{ generated_at, tweets: { "<channel_key>": { channel_key, id, text, url,
+  handle, received_at, expires_at } } }`. **채널당 최대 1건** (맵, 정렬 없음). `id` = 트윗
+  Snowflake(태그에서) 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h.
+- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|replaced`,
+  append-only, `id` dedupe). 프론트는 안 읽음.
+- `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` |
+  `"test"`. `config/channels.json` 의 `x_names[]` 로 매칭(이모지·기호 무시).
+- `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.
+  `xtweet.merge_tweet(prev, inc, now_iso, *, archive)` → `(new_tweets, new_archive, changed,
+  mode∈added|replaced|dup|stale)` — 같은 채널 슬롯에 더 큰 Snowflake id 오면 교체(기존 건 아카이브).
+  `xtweet.sweep_expired` → 만료 슬롯 아카이브.
+- `/ingest` 3.5 라우팅: 개인 5인 → `_maybe_personal_tweet` 처리 후 즉시 200(4번 이하 안 탐).
+  테스트 부계정 → `force_echo` 로 5번에서 강제 ECHO(헬스체크). 공식·그 외 → 기존 경로.
+- 프론트 `js/tweets.js` + `css/tweets.css` — 만료·404 면 배지 안 뜸. `undo` 대상 아님(24h 휘발).
+
 ---
 
 ## 7. 직렬화 / 시간 규칙 (전 모듈 공통)
@@ -665,6 +684,12 @@ GET  /           # 200 헬스체크
 `text`(필수), `title`(선택 — `nx["android.title"]` 게시자 표시 이름), `template`(선택 —
 `nx["android.template"]`), `tag`(선택 — `nx["pde_noti_tag"]`). `tag` → `_tweet_url_from_tag()`
 가 `https://x.com/i/status/<id>`(작성자 무관) 로 변환, DM 링크·중복제거 키로 사용.
+- **(v2.8) `android.title` 라우팅** — 본문 파싱 직후, `_maybe_auto_notice` 앞에서
+  `xtweet.route_by_title(title, channels_cfg, test_titles=INGEST_TEST_TITLES)`. 개인 5인이면
+  `_maybe_personal_tweet`(→ `tweets.json`, 계약 I) 처리 후 즉시 200 — 이하 로직 안 탐. 테스트
+  부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)이면 `force_echo=True` 로 ECHO 게이트 강제 통과
+  (헬스체크 — 외부 백엔드 생존 확인용, 상시 유지). 공식·미매칭·빈 title 은 아래 기존 흐름 그대로.
+  전체 그림: `docs/INGEST_FLOW.md`.
 - 폰 Automate 빌드가 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘리므로 — `text` 값이
   비고 (`text`/`title`/`template`/`tag` 외) 폼 키가 딱 하나 + 그 값도 비면 **그 키 이름을 원문으로
   복구**한다 (`# ponytail:` 표시. 현재 폰 빌드는 `text=<값>` 을 제대로 보내 사실상 dead code).
@@ -692,7 +717,7 @@ GITHUB_TOKEN, GITHUB_REPO, DATA_BRANCH(기본 "data"), YOUTUBE_API_KEY,
 GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA, ALLOW_UNAUTH(기본 "")
 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET(telegram_app 만),
 HEALTHCHECK_URL(메인 tick 만), MAIN_SERVICE_URL(telegram_app /resume), INGEST_SECRET,
-INGEST_ECHO, INGEST_DRY_RUN
+INGEST_ECHO, INGEST_DRY_RUN, INGEST_TEST_TITLES(v2.8 — 기본 "jehy")
 ```
 
 ---
@@ -716,6 +741,11 @@ INGEST_ECHO, INGEST_DRY_RUN
 - **js/main.js** — `poll()`: `fetchSchedule` 성공 시 `renderBoard`+`renderFooter{stale:false}`,
   실패 시 마지막 데이터 유지 + `{stale:true}`. `DOMContentLoaded` → `poll()` + `setInterval(poll, POLL_MS)`
   + `setInterval(() => updateCountdowns(board), COUNTDOWN_TICK_MS)`.
+- **(v2.7) js/notices.js + css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 소식 티커.
+- **(v2.8) js/tweets.js + css/tweets.css** — `TWEETS_URL`(계약 I) 75초 폴링. 각 유닛 아바타
+  우상단에 편지 배지(`renderBoard` 직후 `reapplyTweets` 로 재적용 — 보드가 배지를 지우므로).
+  PC 호버=말풍선 펼침·클릭=고정, 모바일 탭=상단 토스트+백드롭. 배경색은 유닛 `--lane-color`
+  재사용, 글자색은 대비로 자동. 읽음 상태는 뷰어별 `localStorage`(`mew:twread`). 만료·404 면 안 뜸.
 
 ---
 

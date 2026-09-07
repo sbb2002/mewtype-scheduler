@@ -58,6 +58,11 @@ try:
 except ImportError:
     xnotice = notices = None
 
+try:
+    from . import xtweet                    # (v2.8) 멤버 개인 트윗
+except ImportError:
+    xtweet = None
+
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -72,6 +77,8 @@ from .gh_store import ConflictError, GitHubStore
 _ADMIN_STATE_PATH = "admin_state.json"
 _NOTICES_PATH = "notices.json"                 # (v2.7) 소식 게시판
 _NOTICE_ARCHIVE_PATH = "notice_archive.json"
+_TWEETS_PATH = "tweets.json"                   # (v2.8) 멤버 개인 트윗
+_TWEET_ARCHIVE_PATH = "tweet_archive.json"
 _UNIT_KEYS = ("arale", "yuno", "nonoka", "ritsu", "miyako")
 _STATUS_RANK = {"live": 0, "upcoming": 1, "scheduled": 2}
 _STATUS_BADGE = {"live": "🔴", "upcoming": "🟢", "scheduled": "🕊"}
@@ -1186,6 +1193,87 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
     return mode
 
 
+# ── (v2.8) 멤버 개인 트윗 — tweets.json 만 건드린다. notice/schedule 무관 ──────────
+
+def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
+                          channel_key: str, now_iso: str) -> str:
+    """개인 트윗 인입 — `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
+
+    ECHO/DRY-RUN/paused 와 무관하게 실행(이 갈래에 온 시점에서 이미 개인 트윗). 반환: mode(로그용).
+    파싱이 트윗이 아니면(본문 없음) GitHub 은 안 건드린다.
+    """
+    if xtweet is None:
+        return "no-xtweet"
+    channels_cfg = _load_channels_config()
+    handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
+    parsed = xtweet.parse(raw, title=title, tag=tag, channel_key=channel_key,
+                          now_iso=now_iso, handle=handle)
+    if not parsed:
+        return "none"
+    gh = _make_gh()
+    if gh is None:
+        return "no-gh"
+    mode = "error"
+    try:
+        for _try in (1, 2):
+            prev, psha = gh.read_json(_TWEETS_PATH)
+            arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
+            prev = prev or xtweet.default_tweets()
+            arch = arch or xtweet.default_archive()
+            new_t, new_a, changed, mode = xtweet.merge_tweet(prev, parsed, now_iso, archive=arch)
+            if not changed:
+                break
+            try:
+                gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
+                              message=f"data: tweet {mode} {channel_key} {now_iso}")
+                if new_a is not arch:
+                    gh.write_json(_TWEET_ARCHIVE_PATH, new_a, prev_sha=asha,
+                                  message=f"data: tweet archive {now_iso}")
+            except ConflictError:
+                if _try == 2:
+                    raise
+                log.warning("tweet: tweets.json 충돌 — 재시도")
+                continue
+            break
+        _tweet_sweep(gh, now_iso)      # 만료 슬롯 정리 (best-effort)
+    except Exception:
+        log.exception("personal tweet 반영 실패")
+        return "error"
+    if mode in ("added", "replaced"):
+        name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
+        _send_telegram(
+            f"🐦 <b>{html.escape(name)}</b> 새 트윗\n"
+            f"{html.escape(xtweet.summary_line(parsed))}",
+            silent=True,
+        )
+    else:
+        log.info("personal tweet: %s (%s)", mode, channel_key)
+    return mode
+
+
+def _tweet_sweep(gh, now_iso: str) -> int:
+    """expires_at 지난 개인 트윗 → tweet_archive.json. 반환: 이관 건수 (best-effort)."""
+    if xtweet is None:
+        return 0
+    try:
+        prev, psha = gh.read_json(_TWEETS_PATH)
+        if not prev or not prev.get("tweets"):
+            return 0
+        arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
+        new_t, new_a, removed = xtweet.sweep_expired(
+            prev, arch or xtweet.default_archive(), now_iso)
+        if not removed:
+            return 0
+        gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
+                      message=f"data: tweet sweep ({len(removed)}) {now_iso}")
+        gh.write_json(_TWEET_ARCHIVE_PATH, new_a, prev_sha=asha,
+                      message=f"data: tweet archive sweep {now_iso}")
+        return len(removed)
+    except Exception:
+        log.exception("tweet sweep 실패 (무시)")
+        return 0
+
+
 def _kst_dt(iso: str | None) -> str:
     """ISO 'Z' → 'YYYY-MM-DD HH:MM KST'. 파싱 실패 시 원문 그대로."""
     if not iso:
@@ -1554,6 +1642,31 @@ if _FLASK_AVAILABLE:
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+        # (v2.8) android.title 라우팅 (INGEST_FLOW 3↔4 노드 사이).
+        #   개인 5인      → tweets.json 파이프라인으로 빼고 즉시 종료 (4번 이하 안 탐)
+        #   테스트 부계정 → 4번은 거치되 force_echo (INGEST_ECHO env 무관, 헬스체크)
+        #   공식·그 외    → 기존 경로 그대로
+        force_echo = False
+        if xtweet is not None:
+            try:
+                _test_titles = tuple(
+                    s.strip() for s in os.environ.get("INGEST_TEST_TITLES", "jehy").split(",")
+                    if s.strip()
+                )
+                _route = xtweet.route_by_title(
+                    title, _load_channels_config(), test_titles=_test_titles
+                )
+            except Exception:
+                log.exception("route_by_title 실패 — official 로 폴백")
+                _route = "official"
+            if _route == "test":
+                force_echo = True
+            elif _route != "official":
+                mode = _maybe_personal_tweet(
+                    raw, title=title, tag=x_tag, channel_key=_route, now_iso=now_iso
+                )
+                return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
+
         # (v2.7) 소식 게시판 — schedule.json 과 별개 파이프라인. INGEST_ECHO/DRY-RUN 과
         # 무관하게 여기서 항상 시도한다(소식이 아니면 GitHub 도 안 건드림).
         _maybe_auto_notice(raw, now_iso, tag=x_tag, title=title)
@@ -1564,7 +1677,7 @@ if _FLASK_AVAILABLE:
         # 웹푸시 본문이 온전히/잘려서/비어서 오는지 확인용.
         # 확인 끝나면 env 에서 INGEST_ECHO 만 내리면 아래 실제 로직으로 복귀.
         # (이 블록 자체를 지워도 무방 — 나머지 로직은 이 블록에 의존하지 않음.)
-        if os.environ.get("INGEST_ECHO", "").strip() not in ("", "0", "false", "False", "no"):
+        if force_echo or os.environ.get("INGEST_ECHO", "").strip() not in ("", "0", "false", "False", "no"):
             # 잘림 판정용 계측 — DM 없이 Cloud Run 로그만으로도 확인 가능해야.
             #   tail_ok = 트윗 말미 고정 문구가 왔는가 (오면 본문이 안 잘린 것)
             tail_ok = "予告なく変更" in raw or "時刻は予告" in raw
