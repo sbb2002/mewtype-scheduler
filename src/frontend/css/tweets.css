@@ -1,0 +1,237 @@
+/* tweets.css — 멤버 개인 트윗 편지 배지 + PC 말풍선 + 모바일 토스트 (v2.8).
+   계약·목업: docs/plan/v2_8_personal_tweets.md
+   다크 단일 테마 (사이트 전체와 동일). 색은 명시적으로. */
+
+/* PC 말풍선을 #board 좌표계에 absolute 로 얹는다 (헤더 overflow:hidden 클리핑 회피). */
+#board {
+  position: relative;
+}
+
+/* ── 편지 배지 (아바타 우상단, 살짝 겹침) ─────────────────────────── */
+.lane__tw {
+  position: absolute;
+  left: 44px;
+  top: 8px;
+  z-index: 12;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: #ccfbfa;
+  line-height: 0;
+  display: block;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5));
+}
+.lane__tw svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+.lane__tw.is-read {
+  color: color-mix(in srgb, #ccfbfa 50%, var(--color-text-muted, #999));
+}
+.lane__tw:focus-visible {
+  outline: 2px solid #ccfbfa;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* 안 읽음: 글로우 펄스 + 아주 약간 콩콩 점프 (주기적) */
+.lane__tw.is-unread {
+  animation: tw-pulse 2.8s ease-in-out infinite, tw-hop 2.8s ease-in-out infinite;
+}
+@keyframes tw-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5))
+      drop-shadow(0 0 5px rgba(204, 251, 250, 0.8));
+  }
+}
+@keyframes tw-hop {
+  0%, 20%, 100% { transform: translateY(0); }
+  5%  { transform: translateY(-3px); }
+  10% { transform: translateY(0); }
+  14% { transform: translateY(-1.5px); }
+  18% { transform: translateY(0); }
+}
+
+/* ── PC 말풍선 ──────────────────────────────────────────────────── */
+.lane__bubble {
+  position: absolute;
+  z-index: 60;
+  width: 250px;
+  max-width: calc(100% - 16px);
+  background: var(--tw-bg, #3a3a3e);
+  color: var(--tw-ink, #fff);
+  border-radius: 12px;
+  padding: 12px 13px 10px;
+  box-shadow: 0 14px 32px -10px rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+  line-height: 1.6;
+  transform-origin: top left;
+  transform: translateY(-4px) scale(0.94);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.15s ease;
+}
+.lane__bubble.is-open {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.lane__bubble::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 20px;
+  width: 13px;
+  height: 13px;
+  background: var(--tw-bg, #3a3a3e);
+  transform: rotate(45deg);
+  border-radius: 3px;
+}
+.lane__bubble__text {
+  margin: 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.lane__bubble__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  font-size: 11px;
+  opacity: 0.82;
+}
+.lane__bubble__foot .src {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.lane__bubble__x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tw-ink, #fff) 20%, transparent);
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+  display: none;
+  place-items: center;
+}
+.lane__bubble.is-pinned .lane__bubble__x {
+  display: grid;
+}
+
+/* ── 모바일 토스트 (메신저 알림풍) ──────────────────────────────── */
+.tw-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s;
+}
+.tw-toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  z-index: 901;
+  background: var(--tw-bg, #3a3a3e);
+  color: var(--tw-ink, #fff);
+  border-radius: 14px;
+  padding: 12px 13px;
+  box-shadow: 0 20px 44px -12px rgba(0, 0, 0, 0.72);
+  transform: translateY(-140%);
+  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  font-size: 13px;
+  line-height: 1.6;
+}
+body.tw-modal-open {
+  overflow: hidden;
+}
+body.tw-modal-open .tw-backdrop {
+  opacity: 1;
+  pointer-events: auto;
+}
+body.tw-modal-open .tw-toast {
+  transform: translateY(0);
+}
+.tw-toast__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 9px;
+  align-items: center;
+}
+.tw-toast__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: center / cover no-repeat rgba(0, 0, 0, 0.2);
+  border: 1.5px solid color-mix(in srgb, var(--tw-ink, #fff) 35%, transparent);
+}
+.tw-toast__id {
+  min-width: 0;
+  line-height: 1.25;
+}
+.tw-toast__id .nm {
+  display: block;
+  font-size: 13px;
+}
+.tw-toast__id .hd {
+  display: block;
+  font-size: 10.5px;
+  opacity: 0.8;
+}
+.tw-toast__x {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tw-ink, #fff) 20%, transparent);
+  color: inherit;
+  cursor: pointer;
+  font-size: 11px;
+}
+.tw-toast__text {
+  margin: 9px 0 0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.tw-toast__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  font-size: 11px;
+  opacity: 0.82;
+}
+.tw-toast__foot .src {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lane__tw.is-unread {
+    animation: none;
+  }
+  .lane__bubble,
+  .tw-toast,
+  .tw-backdrop {
+    transition: none;
+  }
+}

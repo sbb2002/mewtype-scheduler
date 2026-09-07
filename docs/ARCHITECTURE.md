@@ -63,7 +63,11 @@
       재생 알림을 차단. 상세: `docs/plan/v2_3_x_relay.md`.
     - 원본 바디는 `request.form` 접근 전에 `get_data(cache=True, parse_form_data=False)` 로 캐시
       (Werkzeug form 파싱이 스트림을 소비 → 이후 `get_data()` 가 빈 문자열이 되던 버그).
-    - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신
+      - **(v2.8) `android.title` 라우팅** — 본문 파싱 직후 `xtweet.route_by_title`. 개인 5인 표시명이면
+      `_maybe_personal_tweet` → `tweets.json`(계약 I) 반영 후 즉시 200 (소식/스케줄 파이프라인 안 탐).
+      테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)이면 `force_echo` — 5번에서 무조건 ECHO(헬스체크).
+      공식(`夢限大みゅーたいぷ`)·미매칭은 기존 경로. 전체 그림: `docs/INGEST_FLOW.md`.
+  - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신
       (ECHO 는 raw body 전문, 4096자 초과 시 청크 분할) + `ingest ECHO: len=.. blen=.. tail_ok=..`
       로그. 스케줄/출연 트윗(`xrelay.looks_relayable`)만 `ingest_queue.json` 에 원문 적재.
     - **실배포** (`INGEST_ECHO=0` · `INGEST_DRY_RUN=0`): `control.json` `paused` 확인 →
@@ -84,6 +88,8 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 | `admin_state.json` | 계약 G (v2.5). 텔레그램 명령 슬롯 각 1개 — `pending_del`(TTL 300s) · `pending_ingest`(180s) · `pending_notice`(180s) · `pending_undo`(60s) · `undo`(sha 판정, `path` 로 대상 파일 구분) |
 | `notices.json` | 계약 H (v2.7). 방송 외 소식(`live`/`release`/`platform`/`etc`). `xnotice.parse` → `notices.merge_notice` 로 중복제거·필드 병합. `expires_at` 지나면 sweep |
 | `notice_archive.json` | 계약 H. 만료된 소식 append-only. recap/공연 후 트윗이 과거 소식을 되살리지 않도록 `seen_ids` 대조에 사용 |
+| `tweets.json` | 계약 I (v2.8). 멤버 5인 개인 트윗, 채널당 1건 맵. `xtweet.parse` → `merge_tweet`(더 최신 Snowflake id 면 교체). `expires_at`(=received_at+24h) 지나면 sweep. 프론트 편지 배지 |
+| `tweet_archive.json` | 계약 I. 만료·교체로 내려간 개인 트윗 로그 append-only (`archived_reason`). 프론트 안 읽음 |
 
 ### 프론트엔드 · Vercel
 
@@ -100,6 +106,11 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
   `NOTICES_URL`(= `data/notices.json`) 을 `schedule.json` 과 같은 75초 주기로 폴링. 기본 1줄만
   표시·5초 회전·무한 순환, `▾`/`▴` 로 전체 펼침. 당일(TODAY) 소식이 있으면 좌측 램프가 빨강
   저속 점멸. 만료 소식은 프론트에서도 숨김(백엔드 sweep 지연 대비). 아래 방송 카드와 중복 없음.
+- **(v2.8)** `js/tweets.js` + `css/tweets.css` — `TWEETS_URL`(= `data/tweets.json`, 계약 I) 을 75초
+  주기로 폴링. 트윗이 있는 유닛 아바타 우상단에 파란 편지 배지(안 읽음=꽉 참·콩콩 점프, 읽음=외곽선).
+  PC: 아바타/배지 호버=말풍선 펼침, 클릭=고정(X/Esc/바깥클릭 닫힘), 여러 유닛 동시 열림.
+  모바일: 배지 탭=상단 토스트(메신저 알림풍)+백드롭. 배경색은 유닛 `--lane-color` 재사용, 글자색은
+  대비로 자동. 읽음 상태는 뷰어별 `localStorage`. 만료·404 면 배지 안 뜸.
 
 ---
 

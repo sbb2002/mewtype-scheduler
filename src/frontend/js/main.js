@@ -1,7 +1,8 @@
 import { fetchSchedule } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
 import { renderNotices } from "./notices.js";
-import { DATA_URL, NOTICES_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
+import { renderTweets, reapplyTweets } from "./tweets.js";
+import { DATA_URL, NOTICES_URL, TWEETS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
 const foot = document.getElementById("foot");
@@ -10,11 +11,24 @@ const notice = document.getElementById("notice");
 let lastSchedule = null;
 let lastJSON = null;   // 내용이 안 바뀌면 renderBoard 생략 (모바일 캐러셀 위치 보존)
 
-/**
- * Poll for new schedule data and update UI
- */
+/** 보드 재구성 + 그 위에 개인 트윗 편지 배지 재적용 (renderBoard 가 배지를 지우므로). */
+function paintBoard() {
+  renderBoard(board, lastSchedule);
+  reapplyTweets(board);
+}
+
+/** (v2.8) 개인 트윗 폴링 — 스케줄과 독립. 404/오류면 배지 안 뜬다. */
+async function pollTweets() {
+  const r = await fetchSchedule(TWEETS_URL);
+  try {
+    renderTweets(board, r.ok ? r.data : null);
+  } catch (e) {
+    /* 배지 오류가 메인 보드를 막지 않게 */
+  }
+}
+
+/** 소식 티커 폴링 — 스케줄과 독립. 404/오류면 티커를 그냥 숨긴 채 둔다. */
 async function pollNotices() {
-  // 소식은 스케줄과 독립. 404/오류면 티커를 그냥 숨긴 채 둔다.
   const r = await fetchSchedule(NOTICES_URL);
   try {
     renderNotices(notice, r.ok ? r.data : null);
@@ -27,21 +41,17 @@ async function poll() {
   const result = await fetchSchedule(DATA_URL);
 
   if (result.ok) {
-    // Success: update with new data
     lastSchedule = result.data;
     const j = JSON.stringify(result.data);
     if (j !== lastJSON) {
       lastJSON = j;
-      renderBoard(board, lastSchedule);
+      paintBoard();
     }
     renderFooter(foot, lastSchedule, { stale: false });
   } else {
-    // Failure
     if (lastSchedule) {
-      // We have previous data: mark as stale
       renderFooter(foot, lastSchedule, { stale: true });
     } else {
-      // First load failure: show error in board
       board.innerHTML = "";
       const msg = document.createElement("p");
       msg.textContent = "불러오는 중 문제가 발생했어요";
@@ -53,26 +63,24 @@ async function poll() {
   }
 }
 
-// Initialize on DOMContentLoaded
 document.addEventListener("DOMContentLoaded", () => {
-  // Initial poll
   poll();
   pollNotices();
+  pollTweets();
 
-  // Set up recurring polls
   setInterval(poll, POLL_MS);
   setInterval(pollNotices, POLL_MS);
+  setInterval(pollTweets, POLL_MS);
 
-  // 1분마다 남은시간 텍스트 갱신 (사용자 장치 시계 기준).
-  // 시간이 흘러 카드가 다른 시간대 구간으로 넘어갔으면 보드 재렌더.
+  // 1분마다 남은시간 텍스트 갱신. 카드가 다른 시간대 구간으로 넘어갔으면 보드 재렌더.
   setInterval(() => {
-    if (updateCountdowns(board) && lastSchedule) renderBoard(board, lastSchedule);
+    if (updateCountdowns(board) && lastSchedule) paintBoard();
   }, COUNTDOWN_TICK_MS);
 
   // 모바일↔PC 경계(767px)를 넘으면 예고 버킷 구성이 달라지므로 재렌더.
   if (window.matchMedia) {
     window.matchMedia("(max-width: 767px)").addEventListener("change", () => {
-      if (lastSchedule) renderBoard(board, lastSchedule);
+      if (lastSchedule) paintBoard();
     });
   }
 });
