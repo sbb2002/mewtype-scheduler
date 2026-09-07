@@ -79,7 +79,7 @@ wake가 실행되면 해당 방송 하나만 조회하고 다시 다음 wake를 
 | `PRELIVE_FALLBACK_AFTER_SEC` | 60분 | `scheduled_start + 60분` 경과 시 fallback 진입 |
 | `FALLBACK_RETRY_SEC` | 60분 | fallback 재시도 간격 |
 | `FALLBACK_MAX_ATTEMPTS` | 6 | fallback 6회 연속 미확인 → canceled 로 간주, 엔트리 드롭 |
-| `LIVEWATCH_EARLY_SEC` | 30분 | 라이브 시작 후 초기 폴링 간격 |
+| `LIVEWATCH_EARLY_SEC` | 10분 | 라이브 시작 후 초기 폴링 간격 (구 30분) |
 | `LIVEWATCH_EARLY_WINDOW_SEC` | 60분 | "초기" 로 보는 구간 (시작 ~ +60분) |
 | `LIVEWATCH_TIGHT_SEC` | 3분 | 라이브 +60분 이후 폴링 간격 |
 | `MAX_TASK_HORIZON_SEC` | 696시간 (29일) | Cloud Tasks 720h 하드리밋보다 보수적인 롱폴링 상한 |
@@ -93,7 +93,7 @@ wake가 실행되면 해당 방송 하나만 조회하고 다시 다음 wake를 
 | wake 시점에 아직 `upcoming`, 시작 시각 미래 | `scheduled_start` 정각 |
 | wake 시점에 아직 `upcoming`, 시작 후 60분 이내 | `now + 3분` |
 | wake 시점에 아직 `upcoming`, 시작 후 60분 초과 | `now + 60분` (fallback) |
-| wake 시점에 `live` 로 바뀜 | → **live-watch 전이**, `now + 30분` |
+| wake 시점에 `live` 로 바뀜 | → **live-watch 전이**, `now + 10분` |
 | wake 시점에 `none`(영상 사라짐), `attempts < 6` | `now + 60분` 재시도 |
 | wake 시점에 `none`, `attempts >= 6` | **canceled** — 엔트리 드롭, 이후 wake 없음 |
 
@@ -101,8 +101,8 @@ wake가 실행되면 해당 방송 하나만 조회하고 다시 다음 wake를 
 
 | 상황 | 다음 wake |
 |---|---|
-| 신규 `live` 감지 (관측 누락 복구, tick에서) | `now + 30분` |
-| wake 시점에 `live`, 시작 후 60분 이내 | `now + 30분` |
+| 신규 `live` 감지 (관측 누락 복구, tick에서) | `now + 10분` |
+| wake 시점에 `live`, 시작 후 60분 이내 | `now + 10분` |
 | wake 시점에 `live`, 시작 후 60분 초과 | `now + 3분` |
 | wake 시점에 `none` | **ended** — 엔트리 드롭, 이후 wake 없음 (`archive.json` 이관은 reconcile 담당) |
 | wake 시점에 `upcoming` 으로 되돌아감 (드묾) | pre-live 로 되돌리고 `scheduled_start − 15분` 재예약 |
@@ -144,8 +144,8 @@ Cloud Tasks 720h 상한을 넘는다. → `next_check_at` 을 `now + 696시간` 
 커밋 사이 지연이 앞에 붙는다:
 
 - 예정 시작 직후 라이브 전환 감지: pre-live tight 폴링 → 최대 **~3분** (pre-live 단계),
-  이미 live-watch 면 초기 **30분** 간격
-- 방송 종료 감지: live-watch **3분**(시작 +60분 이후) 또는 **30분** 간격
+  이미 live-watch 면 초기 **10분** 간격
+- 방송 종료 감지: live-watch **10분**(시작 +60분 이내) 또는 **3분**(시작 +60분 이후) 간격
 
 즉 팬 입장 end-to-end "라이브 켜짐 → 사이트에 뜸" ≈ 감지 3분 + 전파 6분 = **최대 ~10분**,
 평상시 5분 안팎.
@@ -164,7 +164,7 @@ Cloud Tasks 720h 상한을 넘는다. → `next_check_at` 을 `now + 696시간` 
                           │  └ live 확인 → live-watch 전이
                           │
    actual_start ──────────┤ live-watch
-                          │  ├ <60m → 30분 간격
+                          │  ├ <60m → 10분 간격
    actual_start+60m ──────┤  └ >60m → 3분 간격
                           │
    방송 종료(none) ────────┘ 엔트리 드롭, wake 종료

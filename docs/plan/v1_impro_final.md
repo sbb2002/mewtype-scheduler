@@ -105,7 +105,7 @@
 3) 변동 X → 이후 1시간마다 1)부터 재시도. `live_state` 가 `none` 또는 `live` 로 확정될 때까지.
 
 ## live 이후
-1) live 시작 ~ `+60분` : **30분 간격**으로 `videos.list`의 `liveBroadcastContent` 확인 (60분 미만 방송도 놓치지 않기 위함).
+1) live 시작 ~ `+60분` : **10분 간격**(구 30분)으로 `videos.list`의 `liveBroadcastContent` 확인 (60분 미만 방송도 놓치지 않기 위함).
 2) `+60분` 이후 : **3분 간격** 확인.
 3) `live` → 다음 주기에 다시 확인.
 4) `none` → 종료(idle) 판정 : `schedule.json`에서 제거 + `archive.json` 이관, 프론트 업데이트, `pending.json` 엔트리 삭제, 로직 종료.

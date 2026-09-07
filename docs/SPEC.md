@@ -574,7 +574,7 @@ def validate(pending) -> dict                                    # 구조 방어
 | `PRELIVE_FALLBACK_AFTER_SEC` | 60분 | `scheduled_start + 60분` 경과 → fallback |
 | `FALLBACK_RETRY_SEC` | 60분 | fallback 재시도 간격 |
 | `FALLBACK_MAX_ATTEMPTS` | 6 | 6회 연속 미확인 → canceled, 엔트리 드롭 |
-| `LIVEWATCH_EARLY_SEC` | 30분 | 라이브 시작 후 초기 간격 |
+| `LIVEWATCH_EARLY_SEC` | 10분 | 라이브 시작 후 초기 간격 (구 30분 — 단시간 방송 종료 사각 축소) |
 | `LIVEWATCH_EARLY_WINDOW_SEC` | 60분 | "초기" 구간 (시작 ~ +60분) |
 | `LIVEWATCH_TIGHT_SEC` | 3분 | 라이브 +60분 이후 간격 |
 | `MAX_TASK_HORIZON_SEC` | 696시간 | Cloud Tasks 720h 하드리밋보다 보수적인 롱폴링 상한 |

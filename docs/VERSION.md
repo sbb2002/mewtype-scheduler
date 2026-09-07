@@ -3,6 +3,7 @@
 커밋 메시지의 `feat(vX)` 태그가 실제 릴리스 절차 없이 붙어 히스토리가 흩어져 있어,
 버전별 "무엇이 구현됐는지"를 이 파일에서 내림차순으로 관리한다. (git tag 는 `v1.0.0` 하나뿐)
 
+- **v2.8.4** — `LIVEWATCH_EARLY_SEC` 30분 → 10분: 라이브 시작 후 첫 60분 폴링 간격을 좁혀 55~90분짜리 단시간 방송의 종료 감지 사각(체크 사이 공백에 방송이 끝나 최대 ~30분 지연)을 축소. 60분 이후는 그대로 3분(`LIVEWATCH_TIGHT_SEC`)
 - **v2.8.3** — (1) 수동 `/ingest` 개인 예고 폴백: `@BDP` 형식이 아니면 `_try_personal_ingest` 가 본문 YouTube URL → `videos.list`(quota 1)로 5인 채널 판별 → `xtweet.parse_schedule`+`merge_personal_schedule`. URL 없음/판별 실패면 `pending_member` 슬롯 + `[1~5]` 유닛 되묻기(`_handle_member_followup`). `mewtype-telegram` 에 `YOUTUBE_API_KEY` Secret 추가. (2) `/notice-edit <id|번호>` — 제목→날짜→URL 순 되묻기 마법사(`pending_notice_edit` 슬롯, 유지=`aNoneTokyo`), `notices.edit_notice` 로 커밋(파생값 재계산·`/undo`). (3) `xnotice._headline` 개선 — `_join_shout_titles`(`💪…💪` 여러 줄 제목 병합) + `_LABEL_LINE_RE`(`日程：`/`会場：` 라벨 줄 감점)
 - **v2.8.2** — DM 로그 레벨 재정의: `notify.allows` 를 kind(scheduled/upcoming/live/notice/tweet/ingest) 기준으로 개편. `simple`=upcoming·live만 / `normal`=+scheduled·notice·tweet / `detail`=+ingest·fallback·요약. 자동 DM(소식·트윗·본인예고·ingest 결과)에 `_auto_dm` 게이팅 적용(운영자 명령 응답은 제외)
 - **v2.8.1** — 개인 트윗 예고 → `scheduled` 승격: `xtweet.parse_schedule`(`配信`+날짜[+시각]/URL 게이트) → `merge_personal_schedule`(같은 방송 upsert·붕괴), `time_tbd`(날짜만) 지원. `handlers.apply_overrides` 후처리로 최신 트윗 시각이 API 재구성을 override(`api_start_seen` 로 스트림 실수정 시만 API 승). 계약 A 에 `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen` 추가

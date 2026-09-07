@@ -146,7 +146,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 3h) 을 OIDC 로 호출.
    `/tick` = RSS + `videos.list` 배치 1회 → `schedule.json` 재구성 + `pending.json` 갱신.
 2. 각 예정 방송마다 **Cloud Tasks** 에 `scheduled_start − 15분` 시각으로 wake 태스크 1개 enqueue.
-   도달 시 `POST /wake {video_id}` → 라이브 여부 확인 → 다음 체크 재예약 (pre-live 3분 / live-watch 30분).
+   도달 시 `POST /wake {video_id}` → 라이브 여부 확인 → 다음 체크 재예약
+   (pre-live 3분 / live-watch 시작~+60분 10분 · +60분 이후 3분).
    Cloud Tasks 상한 720h — 장기 예약은 `now+696h` 로 클램프해 롱폴링.
 3. Cloud Run 이 변경분만 **GitHub Contents API**(fine-grained PAT, Secret Manager)로 `data` 브랜치 커밋.
 4. **프론트**는 `raw.githubusercontent.com/.../data/schedule.json` 을 75초마다 fetch (v1 과 동일, 무변경).
