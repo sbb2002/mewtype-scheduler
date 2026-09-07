@@ -88,3 +88,31 @@ unfurl 결과는 클라이언트에만 있어 **봇이 읽어올 수 없다.**
 
 **판단**: 확인 DM 목적이면 지금도 텔레그램 unfurl 로 충분 → 할 일 없음. 티커에 홍보 이미지를
 띄우는 게 목적일 때만 ① 신디케이션. 비공식이라 폴백 필수.
+
+---
+
+## 4) 리트윗은 개인 트윗 파이프라인에서 제외 (버그/하드닝)
+
+**문제**: 멤버가 남의 글을 **리트윗**한 것도 `xtweet.parse` 를 타면 그 멤버의 "개인 트윗
+배지"로 사이트에 뜬다. 본인이 쓴 글이 아니므로 배지·예고 승격 모두 대상에서 빼야 한다.
+
+**현행**:
+- `xtweet.parse_schedule`(v2.8.1 예고 승격)는 이미 `_HANDLE_HEAD_RE`(`^\s*(?:RT\s+)?@\w{1,15}\s*[:：]`)
+  로 `^@user:` 시작이면 `None` → 스킵.
+- `xtweet.parse`(v2.8 편지 배지)는 **이 검사가 없음** → 멤버의 RT 가 배지로 저장됨. ← 버그 지점
+- `xnotice.parse` 는 `RT @xxx` 를 `src_handle` 에 라벨만 하고 거르진 않음 (소식은 주로
+  `@BDP_yumemita` 공식이라 영향 적음. 개인 5인 파이프라인만 우선 대상).
+
+**해야 할 것**:
+- 폰 릴레이가 리트윗에 대해 실제로 뭘 보내는지 **특성 파악 필요** (미검증):
+  - `android.title` — 멤버 이름인가, 원저자 이름인가? ("○○ 님이 리포스트했습니다" 형태면?)
+  - `android.template` — 리포스트 표시가 있나 (BigTextStyle 등)
+  - 본문 prefix — `RT @user:` / `@user:` / 신형 리포스트(원저자명 + `@handle` 별도 줄) /
+    "리포스트했습니다"·"reposted" 마커
+  - 인용 리트윗(코멘트 있음) vs 순수 리트윗 구분
+- 파악 후 `xtweet.parse` + `_maybe_personal_tweet` 라우팅에 RT 가드 추가 → `None` 반환
+  (배지·예고 둘 다 스킵). `_HANDLE_HEAD_RE` 재사용/확장.
+- 보강: `android.title` = 멤버인데 본문 원저자 `@handle` ≠ 그 멤버의 `handle` 이면 RT 로 간주.
+
+**관련**: `src/backend/xtweet.py`(`parse`/`route_by_title`), `telegram_app._maybe_personal_tweet`,
+`docs/INGEST_FLOW.md`, `docs/AUTOMATE_MANUAL.md`.
