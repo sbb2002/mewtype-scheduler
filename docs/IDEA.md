@@ -57,3 +57,34 @@ YouTube Data API `videos.list` 는 video_id 만 알면 `liveBroadcastContent: "l
 
 **착수 조건**: 프로덕션에서 개선된 정규식(`v2.8.5`)으로 2주쯤 돌려보고 "얇은/틀린 제목" 빈도가
 여전히 거슬리면. 그전까진 `/notice-edit`(v2.8.3) 수동 교정으로 충분.
+
+---
+
+## 3) 트윗 첨부 이미지를 소식 티커 썸네일로
+
+**배경** (`ref/dm.png` 2026-09-07): 개인 트윗 배지 확인 DM 에 `pic.x.com/XXXX` 만 텍스트로
+보냈는데 **텔레그램 서버가 링크를 unfurl** 해서 카드+이미지를 렌더해줬다. 봇이 보낸 게 아니고
+unfurl 결과는 클라이언트에만 있어 **봇이 읽어올 수 없다.**
+
+**목표**: 방송 외 홍보 트윗(筋トレ部·Blu-ray·라이브 굿즈 등)의 첨부 이미지를 `notices[].thumbnail`
+(계약 H 에 필드 이미 있음)에 넣어 프론트 `notices.js` 티커 카드에 표시. 이미지가 있으면 훨씬 리치.
+
+**이미지 획득 경로 (X API 없이)**:
+- **① 신디케이션 엔드포인트** (가장 현실적) — `https://cdn.syndication.twimg.com/tweet-result?id=<트윗id>`
+  무인증 JSON, `mediaDetails[].media_url_https` = `pbs.twimg.com/media/...jpg` 직링크. 백엔드는
+  이미 `pde_noti_tag` → `_tweet_id` 로 트윗 id 를 가지고 있음 (`pic.x.com` 리졸브 불필요).
+  **비공식** — `token`/`features` 파라미터 요구가 수시로 바뀌고 간헐적으로 깨짐·레이트리밋.
+  폴백(이미지 없음) 필수. 삭제·연령제한 트윗은 빈 응답.
+- **② 폰(Automate) 가 이미지도 릴레이** — 웹푸시 알림에 이미 이미지가 붙어옴 → Automate 가
+  multipart 로 `/ingest` 에 텍스트+이미지 동봉. 가장 "무API" 지만 Automate 플로우 수정 필요 +
+  웹푸시가 이미지 바이트/URL 을 Automate 에 노출하는지 미검증.
+- ③ x.com 페이지 OG 스크랩 → **비추천**. non-browser UA·무로그인 차단, OG 태그 제거됨.
+
+**획득 후**:
+- 확인 DM: `sendMessage` → `sendPhoto`(URL) 로 이미지 첨부 (텔레그램 봇 API — X API 아님)
+- `notices[].thumbnail` 에 `pbs.twimg.com` URL 저장 → 프론트 카드에 표시
+- 프론트에서 `pbs.twimg.com` 핫링크는 대체로 되나 나중에 깨질 수 있음. 소식은 수명 짧아 핫링크로
+  감내 가능. 완전하려면 프록시/캐시 필요(저장소 부담).
+
+**판단**: 확인 DM 목적이면 지금도 텔레그램 unfurl 로 충분 → 할 일 없음. 티커에 홍보 이미지를
+띄우는 게 목적일 때만 ① 신디케이션. 비공식이라 폴백 필수.
