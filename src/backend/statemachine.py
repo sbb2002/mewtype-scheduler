@@ -17,7 +17,7 @@ PRELIVE_TIGHT_SEC = 3 * 60  # scheduled_start 지난 뒤 3분 간격
 PRELIVE_FALLBACK_AFTER_SEC = 60 * 60  # scheduled_start + 60분 경과 → fallback 진입
 FALLBACK_RETRY_SEC = 60 * 60  # fallback에서 변동 없을 때 1시간 간격
 FALLBACK_MAX_ATTEMPTS = 6  # fallback 6회 연속 실패 시 canceled로 간주
-LIVEWATCH_EARLY_SEC = 30 * 60  # live 시작 ~ +60분: 30분 간격
+LIVEWATCH_EARLY_SEC = 10 * 60  # live 시작 ~ +60분: 10분 간격 (66분 등 단시간 방송 종료 사각 축소)
 LIVEWATCH_EARLY_WINDOW_SEC = 60 * 60
 LIVEWATCH_TIGHT_SEC = 3 * 60  # +60분 이후: 3분 간격
 
@@ -478,7 +478,11 @@ if __name__ == "__main__":
 
     assert decision_2.new_pending["entries"]["vid2"]["phase"] == PHASE_LIVEWATCH
     assert decision_2.new_pending["entries"]["vid2"]["actual_start"] == "2026-08-31T12:10:00Z"
+    # live-watch 초기 간격 = LIVEWATCH_EARLY_SEC (10분). now(12:00) + 10분 = 12:10.
+    assert decision_2.new_pending["entries"]["vid2"]["next_check_at"] == "2026-08-31T12:10:00Z", \
+        decision_2.new_pending["entries"]["vid2"]["next_check_at"]
     print(f"✓ phase 전이: {decision_2.new_pending['entries']['vid2']['phase']}")
+    print(f"✓ next_check_at(+10분): {decision_2.new_pending['entries']['vid2']['next_check_at']}")
     print(f"✓ log: {decision_2.log}")
 
     print("\n" + "=" * 60)

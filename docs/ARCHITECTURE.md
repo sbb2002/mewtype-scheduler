@@ -39,8 +39,8 @@
     `videos.list` 배치 1회 → `reconcile.build_schedule` 로 `schedule.json` 재구성 +
     `statemachine.sync_pending` 으로 `pending.json` 갱신 + 필요한 wake 태스크 enqueue.
   - `POST /wake {video_id}` — Cloud Tasks 가 방송별로 도달시킴. 그 방송 하나만 조회 →
-    라이브 여부 확인 → 다음 체크 재예약(pre-live 3분 / live-watch 30분). 720h 상한 →
-    `now+696h` 클램프 롱폴링.
+    라이브 여부 확인 → 다음 체크 재예약(pre-live 3분 / live-watch 시작~+60분 10분 · 이후 3분).
+    720h 상한 → `now+696h` 클램프 롱폴링.
   - `paused`(control.json) 면 `/tick`·`/wake` 는 healthcheck 핑만 하고 no-op.
   - 상태 전이(upcoming/live 시작·종료, fallback, 오류)를 Telegram DM 으로 직접 알림.
   - 성공 끝에 `HEALTHCHECK_URL`(healthchecks.io) GET 1발 → grace 초과 시 다운 알림.
