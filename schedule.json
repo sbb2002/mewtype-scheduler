@@ -1,24 +1,11 @@
 {
   "broadcasts": [
     {
-      "actual_start": "2026-09-07T14:02:07Z",
-      "channel_key": "yuno",
-      "concurrent_viewers": null,
-      "first_seen": "2026-09-07T14:24:50Z",
-      "last_updated": "2026-09-07T14:26:16Z",
-      "scheduled_start": "2026-09-07T14:00:00Z",
-      "status": "live",
-      "thumbnail": "https://i.ytimg.com/vi/4SJPTPFKPB4/maxresdefault_live.jpg",
-      "title": "YUNO's+ 限定配信",
-      "url": "https://www.youtube.com/watch?v=4SJPTPFKPB4",
-      "video_id": "4SJPTPFKPB4"
-    },
-    {
       "actual_start": null,
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-07T14:26:16Z",
+      "last_updated": "2026-09-07T15:12:00Z",
       "scheduled_start": "2026-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
@@ -34,7 +21,7 @@
       "first_seen": "2026-09-07T14:26:16Z",
       "info_at": "2026-09-07T12:54:51Z",
       "info_source": "personal",
-      "last_updated": "2026-09-07T14:26:16Z",
+      "last_updated": "2026-09-07T15:12:00Z",
       "scheduled_start": "2026-09-08T12:00:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/maxresdefault_live.jpg",
@@ -47,7 +34,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-07T14:26:16Z",
+      "last_updated": "2026-09-07T15:12:00Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -60,7 +47,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-07T14:26:16Z",
+      "last_updated": "2026-09-07T15:12:00Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -73,7 +60,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-07T14:26:16Z",
+      "last_updated": "2026-09-07T15:12:00Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -146,5 +133,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-07T15:06:16Z"
+  "generated_at": "2026-09-07T15:12:00Z"
 }
