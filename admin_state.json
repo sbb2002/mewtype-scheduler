@@ -4,13 +4,34 @@
   "pending_notice": null,
   "pending_undo": null,
   "undo": {
-    "action": "소식 added (「DIMENSIONAL OVERLAP」)",
-    "at": "2026-09-07T08:03:56Z",
-    "new_sha": "6c3f19862a6f1c7f7696b3117433a3fcfb35e5b5",
+    "action": "소식 added (eplus.jp/yumemita_kinnt…)",
+    "at": "2026-09-07T09:00:06Z",
+    "new_sha": "198d837c1a40ca11007b161c72c073e4dcf5ddc4",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-07T06:03:02Z",
+      "generated_at": "2026-09-07T08:03:56Z",
       "notices": [
+        {
+          "anchor_a": null,
+          "anchor_b": "dimensionaloverlap",
+          "category": "etc",
+          "date": "2026-09-07",
+          "deadline": false,
+          "expires_at": "2026-09-07T15:00:00Z",
+          "first_seen": "2026-09-07T08:03:56Z",
+          "id": "2096871096783900855",
+          "last_updated": "2026-09-07T08:03:56Z",
+          "seen_ids": [
+            "2096871096783900855"
+          ],
+          "site": "x",
+          "src_handle": "@BDP_yumemita",
+          "time": "21:00",
+          "title": "「DIMENSIONAL OVERLAP」",
+          "title_slug": "dimensionaloverlap",
+          "tweet_url": "https://x.com/i/status/2096871096783900855",
+          "url": null
+        },
         {
           "anchor_a": null,
           "anchor_b": "アンロック・ザ・フューチャー",
