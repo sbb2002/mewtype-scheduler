@@ -5,9 +5,9 @@
   "pending_notice_edit": null,
   "pending_undo": null,
   "undo": {
-    "action": "본인 예고 미네츠키 리츠 (【配信予定】 \n🩵 ･･････････････････････ 🩵\n\n9/8()",
-    "at": "2026-09-07T12:54:53Z",
-    "new_sha": "541f6318770380c67b3dc7cf1636ccaf2b185bc2",
+    "action": "/ingest 개인예고 센고쿠 유노 (千石ユノ メン限 限定配信 本日9/7(月)\nhttps://www.youtu)",
+    "at": "2026-09-07T14:24:50Z",
+    "new_sha": "dab04c6f6a23549d01c6baa699496cb088f43c66",
     "path": "schedule.json",
     "prev_content": {
       "broadcasts": [
@@ -62,6 +62,31 @@
           "title": "🖤YUNO's free chat🩷",
           "url": "https://www.youtube.com/watch?v=ZZMwYj6PM9o",
           "video_id": "ZZMwYj6PM9o"
+        },
+        {
+          "api_start_seen": null,
+          "assumed_live": false,
+          "channel_key": "ritsu",
+          "collab_with": [],
+          "expires_at": "2026-09-08T15:00:00Z",
+          "first_seen": "2026-09-07T12:54:53Z",
+          "icon": null,
+          "info_at": "2026-09-07T12:54:51Z",
+          "info_source": "personal",
+          "kind": "unknown",
+          "last_updated": "2026-09-07T12:54:53Z",
+          "members_only": false,
+          "sched_id": "sched:ritsu:2026-09-08T12:00:00Z",
+          "scheduled_start": "2026-09-08T12:00:00Z",
+          "source": "personal",
+          "source_at": "2026-09-07T12:54:53Z",
+          "start_approx": false,
+          "status": "scheduled",
+          "thumbnail": null,
+          "time_tbd": false,
+          "title": null,
+          "url": "https://www.youtube.com/@ritsu_yumemita",
+          "video_id": null
         }
       ],
       "channel_order": [
@@ -128,7 +153,7 @@
           ]
         }
       },
-      "generated_at": "2026-09-07T12:43:23Z"
+      "generated_at": "2026-09-07T12:54:53Z"
     }
   }
 }
