@@ -55,6 +55,31 @@
     {
       "api_start_seen": null,
       "assumed_live": false,
+      "channel_key": "yuno",
+      "collab_with": [],
+      "expires_at": "2026-09-07T15:00:00Z",
+      "first_seen": "2026-09-07T14:24:50Z",
+      "icon": null,
+      "info_at": "2026-09-07T14:24:50Z",
+      "info_source": "personal",
+      "kind": "unknown",
+      "last_updated": "2026-09-07T14:24:50Z",
+      "members_only": true,
+      "sched_id": "sched:yuno:2026-09-07T00:00:00Z",
+      "scheduled_start": "2026-09-07T00:00:00Z",
+      "source": "personal",
+      "source_at": "2026-09-07T14:24:50Z",
+      "start_approx": false,
+      "status": "scheduled",
+      "thumbnail": null,
+      "time_tbd": true,
+      "title": null,
+      "url": "https://www.youtube.com/watch?v=4SJPTPFKPB4",
+      "video_id": "4SJPTPFKPB4"
+    },
+    {
+      "api_start_seen": null,
+      "assumed_live": false,
       "channel_key": "ritsu",
       "collab_with": [],
       "expires_at": "2026-09-08T15:00:00Z",
@@ -142,5 +167,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-07T12:54:53Z"
+  "generated_at": "2026-09-07T14:24:50Z"
 }
