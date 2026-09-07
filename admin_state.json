@@ -1,0 +1,59 @@
+{
+  "pending_del": null,
+  "pending_ingest": null,
+  "pending_notice": null,
+  "pending_undo": null,
+  "undo": {
+    "action": "소식 added (夢限大みゅーたいぷ 4th LIVE 「アンロック・ザ・フュ)",
+    "at": "2026-09-07T01:31:37Z",
+    "new_sha": "2e99911cbd11cd40c7fb0862311f384e77ae58f4",
+    "path": "notices.json",
+    "prev_content": {
+      "generated_at": "2026-09-06T16:41:44Z",
+      "notices": [
+        {
+          "anchor_a": "3546592848120041",
+          "anchor_b": null,
+          "category": "platform",
+          "date": "2026-09-23",
+          "deadline": false,
+          "expires_at": "2026-09-23T15:00:00Z",
+          "first_seen": "2026-09-06T16:41:44Z",
+          "id": "2096600000000000000",
+          "last_updated": "2026-09-06T16:41:44Z",
+          "seen_ids": [
+            "2096600000000000000"
+          ],
+          "site": "bilibili",
+          "src_handle": "@BDP_yumemita",
+          "time": "22:00",
+          "title": "9/23(火) 22:00〜 全員【bilibili】生配信",
+          "title_slug": "火全員bilibili生配信",
+          "tweet_url": "https://x.com/i/status/2096600000000000000",
+          "url": "https://space.bilibili.com/3546592848120041"
+        },
+        {
+          "anchor_a": "anime-yumemita_memorial-fair2",
+          "anchor_b": "#バンドリ！ゆめ∞みた",
+          "category": "release",
+          "date": "2026-09-27",
+          "deadline": true,
+          "expires_at": "2026-09-27T15:00:00Z",
+          "first_seen": "2026-09-06T16:41:44Z",
+          "id": "2096529833870479645",
+          "last_updated": "2026-09-06T16:41:44Z",
+          "seen_ids": [
+            "2096529833870479645"
+          ],
+          "site": "store",
+          "src_handle": "@BDP_yumemita",
+          "time": null,
+          "title": "メモリアルグッズの第2弾が発売",
+          "title_slug": "メモリアルグッズの第2弾が発売",
+          "tweet_url": "https://x.com/i/status/2096529833870479645",
+          "url": "https://bushiroad-store.com/pages/anime-yumemita_memorial-fair2"
+        }
+      ]
+    }
+  }
+}
