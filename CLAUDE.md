@@ -78,7 +78,9 @@ src/
                        #        (v2.7.x) pending_notice_edit 슬롯 — /notice-edit 마법사(title→date→url 단계·new 누적)
                        #        (v2.8.1+) pending_member 슬롯 — 수동 /ingest 개인 예고 채널 미상 시 유닛 되묻기(raw 저장)
     xnotice.py         # (v2.7) 방송 외 이벤트 트윗 → notices 항목 파서 + 카테고리/anchor — 순수
-                       #        (v2.7.x) _headline: _join_shout_titles(💪…💪 여러 줄 제목 병합) + _LABEL_LINE_RE(日程：/会場： 감점)
+                       #        (v2.7.x) _headline: _join_shout_titles(💪…💪·／…＼ 여러 줄 병합) + 라벨/스트리밍나열 감점
+                       #                 + _TITLE_NOUN(最終回) 가점 + _MID_DECO 이모지 제거. _DATE_RE 명시 연도 캡처.
+                       #                 _RE_RETRO(今日は何の日/N年前) → is_recap → 지난 날짜 소식 skip
     notices.py         # (v2.7) notices.json/notice_archive.json 계약 + 중복판정·머지·수명 sweep — 순수
                        #        (v2.7.x) edit_notice(prev,nid,patch,now) — /notice-edit 수동 필드 수정 (id/seen_ids 보존)
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
@@ -120,7 +122,7 @@ python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events + (v2.8.2) allows() 레벨 게이팅 10 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
 python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/notice_edit/undo/member, undo.path)
-python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S9 (카테고리·날짜·anchor·recap·외침형 제목/라벨 감점)
+python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S12 (카테고리·날짜·anchor·recap·제목 추출 규칙)
 python -m src.backend.notices        # (v2.7) notices 머지·중복판정·sweep·edit_notice
 python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_tweet + sweep
                                     #   (v2.8.1) parse_schedule + merge_personal_schedule + apply_overrides
