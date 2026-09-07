@@ -151,6 +151,38 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
     return out, arch, True, "added"
 
 
+_EDITABLE = ("title", "date", "time", "url", "site", "anchor_a", "category",
+             "deadline", "title_slug", "expires_at")
+
+
+def edit_notice(prev: dict, nid: str, patch: dict, now_iso: str) -> tuple[dict, bool]:
+    """소식 1건의 필드를 사람이 고친 값(`patch`)으로 덮어쓴다 (v2.7.x 수동 편집).
+
+    `patch` 에 온 `_EDITABLE` 키만 반영. 파생값(`title_slug`/`expires_at`/`site`/`anchor_a`)은
+    호출측이 미리 계산해 함께 넣는다 — 이 함수는 순수 대입. `id`/`seen_ids`/`first_seen`
+    은 절대 안 바꾼다. 반환 `(new, changed)`; 해당 id 없으면 `(prev, False)`.
+    """
+    prev = prev or default_notices()
+    lst = [dict(n) for n in prev.get("notices", [])]
+    idx = next((i for i, n in enumerate(lst) if n.get("id") == nid), None)
+    if idx is None:
+        return prev, False
+    row = dict(lst[idx])
+    touched = False
+    for k, v in (patch or {}).items():
+        if k in _EDITABLE and row.get(k) != v:
+            row[k] = v
+            touched = True
+    if not touched:
+        return prev, False
+    row["last_updated"] = now_iso
+    lst[idx] = row
+    out = dict(prev)
+    out["notices"] = _sorted(lst)
+    out["generated_at"] = now_iso
+    return out, True
+
+
 def remove_notice(prev: dict, nid: str) -> tuple[dict, bool]:
     prev = prev or default_notices()
     kept = [n for n in prev.get("notices", []) if n.get("id") != nid]
@@ -260,5 +292,27 @@ if __name__ == "__main__":
     assert ok and len(r_out["notices"]) == 0
     assert remove_notice(r_out, "nope")[1] is False
     print("[OK] remove_notice")
+
+    # edit_notice (v2.7.x 수동 편집)
+    E = {"generated_at": None, "notices": [
+        inc(id="50", title="会場:GARDEN", date="2026-11-21", url="https://eplus.jp/x",
+            anchor_a="x", seen_ids=["50"], first_seen="2026-09-01T00:00:00Z"),
+    ]}
+    E2, ch = edit_notice(E, "50", {
+        "title": "集え！筋トレ部", "title_slug": "集え筋トレ部",
+        "date": "2026-11-22", "expires_at": "2026-11-23T15:00:00Z",
+        "url": "https://eplus.jp/yumemita_kinntorebu2026/", "site": "web",
+        "anchor_a": "yumemita_kinntorebu2026",
+    }, "2026-09-10T05:00:00Z")
+    assert ch and E2["notices"][0]["title"] == "集え！筋トレ部"
+    assert E2["notices"][0]["date"] == "2026-11-22"
+    assert E2["notices"][0]["anchor_a"] == "yumemita_kinntorebu2026"
+    assert E2["notices"][0]["seen_ids"] == ["50"], "seen_ids 보존"
+    assert E2["notices"][0]["first_seen"] == "2026-09-01T00:00:00Z", "first_seen 보존"
+    assert E2["notices"][0]["last_updated"] == "2026-09-10T05:00:00Z"
+    assert edit_notice(E, "nope", {"title": "x"}, NOW)[1] is False
+    assert edit_notice(E, "50", {"title": "会場:GARDEN"}, NOW)[1] is False   # 동일값 → no-op
+    assert edit_notice(E, "50", {"id": "hax"}, NOW)[1] is False              # id 는 편집 불가
+    print("[OK] edit_notice (파생값 대입 · id/seen_ids/first_seen 보존 · no-op)")
 
     print("\nSUCCESS: notices.py smoke test 통과")

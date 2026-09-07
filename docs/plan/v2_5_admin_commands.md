@@ -63,6 +63,16 @@ idx 가 밀릴 수 있다 — **`/del` 직전에 `/list` 로 재확인 권장**.
 3. `_handle_manual_ingest` 는 `xrelay.parse` → `_merge_rows_into_schedule` 재사용, 큐
    (`ingest_queue.json`) drain 도 동일, `INGEST_ECHO`/`INGEST_DRY_RUN` 스위치는 안 거친다.
    결과 DM 에 인식 실패 줄 수(`xrelay.unparsed_lines`)도 함께 표기.
+4. **(v2.8.1+) 개인 예고 폴백** — `xrelay.parse` 가 행을 안 내고 인식 실패 줄도 없으면
+   `_try_personal_ingest`: 본문의 온전한 YouTube URL → `_channel_key_by_video`
+   (`videos.list` quota 1)로 5인 채널 판별 → `xtweet.parse_schedule` +
+   `merge_personal_schedule`(`source:"personal"` scheduled 행). URL 없음/판별 실패면
+   `admin_state.json` `pending_member` 슬롯(`{"raw": 원문, "at": now}`, TTL 300초)에 원문을
+   넣고 `_MEMBER_PROMPT`(`[1]아라레 … [5]미야코`, 취소 `aNoneTokyo`) 를 DM. 웹훅은 명령
+   디스패치 전에 `_handle_ingest_followup` 다음으로 `_handle_member_followup` 호출:
+   `1~5`/이름 → 그 `channel_key` 로 `_ingest_personal_row` 재처리(소진 `True`), `aNoneTokyo`
+   → 취소(`True`), `/`명령 → 슬롯 비우고 통과(`False`), 만료 → 통과(`False`), 그 외 → 재안내
+   + 슬롯 유지(`True`). `mewtype-telegram` 에 `YOUTUBE_API_KEY` Secret 필요.
 
 원문 수신 즉시 슬롯을 비우므로, 반영이 도는 동안 `/status` 등 다른 명령을 보내도 트랩되지
 않고 정상 처리된다(gunicorn `threads=4` 로 웹훅 요청은 별도 스레드).

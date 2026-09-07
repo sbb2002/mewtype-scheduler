@@ -388,8 +388,8 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 
 ## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트, v2.5)
 
-텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/notice` `/undo`)의 상태.
-`pending_del`/`pending_ingest`/`pending_notice`/`pending_undo`/`undo` 각각 슬롯 1개.
+텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/notice` `/notice-edit` `/undo`)의 상태.
+`pending_del`/`pending_ingest`/`pending_notice`/`pending_notice_edit`/`pending_undo`/`pending_member`/`undo` 각각 슬롯 1개.
 
 ```jsonc
 {
@@ -404,6 +404,16 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
     "at": "2026-09-05T12:00:00Z"
   },
   "pending_notice": null | {     // (v2.7) /notice(무인자) 후 원문/파일 대기 — TTL 180s
+    "at": "2026-09-05T12:00:00Z"
+  },
+  "pending_notice_edit": null | {  // (v2.7.x) /notice-edit <id> 마법사 — TTL 300s
+    "nid": "2099...",             // 편집 대상 소식 id
+    "step": "title",             // 지금 묻는 필드: title → date → url
+    "new": { "title": "..." },   // 지금까지 받은 새 값 (aNoneTokyo = 유지 → 키 없음)
+    "at": "2026-09-05T12:00:00Z"
+  },
+  "pending_member": null | {     // (v2.8.1+) 수동 /ingest 개인 예고 채널 미상 → 유닛 되묻기 — TTL 300s
+    "raw": "...",                // 1~5/이름 응답받으면 그 channel_key 로 재처리할 트윗 원문
     "at": "2026-09-05T12:00:00Z"
   },
   "pending_undo": null | {       // (v2.5.2) /undo 후 (y/N) 확인 대기 — TTL 60s
@@ -425,6 +435,8 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 `get_*` / `set_*` / `clear_*` / `*_expired(pending, now_iso, ttl_sec=…)`:
 - `pending_del` — `set_pending_del(s, *, unit, idx, snapshot, warn_text, now_iso)`, TTL 300s
 - `pending_ingest` / `pending_notice` — `set_pending_*(s, *, now_iso)`, TTL 180s
+- `pending_notice_edit` — `set_pending_notice_edit(s, *, nid, step, new, now_iso)`, TTL 300s (v2.7.x)
+- `pending_member` — `set_pending_member(s, *, raw, now_iso)`, TTL 300s (v2.8.1+)
 - `pending_undo` — `set_pending_undo(s, *, target_sha, action, now_iso)`, TTL 60s
 - `undo` — `set_undo(s, *, action, prev_content, new_sha, now_iso, path="schedule.json")`
   (TTL 없음, sha 로 판정). `/undo` 는 `path` 를 보고 그 파일을 복원.
@@ -437,6 +449,16 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 초과 → 만료 안내 후 통과 · `document` → Telegram `getFile` 다운로드(UTF-8, 256KB) · 그 외
 텍스트 → 원문. 원문 확보 시 슬롯 비우고 접수 안내 후 기존 반영 로직. 결과 DM 에 인식 실패
 줄 수(`xrelay.unparsed_lines` — 헤더는 있는데 이름·시각 누락으로 버려진 줄) 표기.
+
+**`/ingest` 개인 예고 폴백 (v2.8.1+)**: `xrelay.parse` 가 행을 안 내고 인식 실패 줄도 없으면
+`_try_personal_ingest` — 멤버 개인 예고 트윗으로 본다. 본문의 온전한 YouTube URL →
+`_channel_key_by_video`(`collector.youtube` `videos.list`, quota 1 unit) 로 5인 채널 판별 →
+`xtweet.parse_schedule`(게이트 = `配信` 계열 + 날짜/URL) + `merge_personal_schedule`
+(`source:"personal"` scheduled 행, undo 스냅샷). URL 없음/판별 실패면 `pending_member` 슬롯에
+원문을 넣고 `[1]아라레 … [5]미야코` 되묻기(취소 `aNoneTokyo`, TTL 300s) → 웹훅이 명령
+디스패치 전 `_handle_ingest_followup` 다음으로 `_handle_member_followup` 호출: `1~5`/이름 →
+그 `channel_key` 로 재처리 · `aNoneTokyo` → 취소 · `/`명령 → 통과 · 만료 → 통과 · 그 외 →
+재안내 + 슬롯 유지. `mewtype-telegram` 서비스에 `YOUTUBE_API_KEY` Secret 추가 필요.
 
 **`/undo` 판정 (v2.5.2 — 2단계)**: `/undo` → 되돌릴 대상 요약(복원/제거 broadcasts, 되돌아갈
 KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 2중 가드 —
@@ -466,9 +488,15 @@ KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 
   `出演情報` 면 `None`. `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices,
   new_archive, changed, mode∈added|updated|recap|dup|skip)`. 중복키: **같은 date** + (`anchor_a`
   일치 ‖ a 없으면 `anchor_b` 일치). `notices.sweep_expired` → 만료분 아카이브.
-- 텔레그램: `/notice`(2단계) · `/notice-list` · `/notice-del`. 실배포 `/ingest` 에서
-  `xrelay` 가 행을 안 내면 자동으로 `_apply_notice`(added/updated 만 DM, 나머지 조용히).
-- `/undo` 는 `admin_state.undo.path == "notices.json"` 이면 이 파일을 복원.
+  `notices.edit_notice(prev, nid, patch, now_iso)` → `(new, changed)` — `/notice-edit` 가 쓰는
+  순수 필드 대입(`_EDITABLE` 키만, `id`/`seen_ids`/`first_seen` 보존).
+- `_headline` (제목 추출) — `_join_shout_titles` 로 같은 장식 문자(`💪…💪`, `＼…／`)로 감싼
+  여러 줄 제목을 한 줄로 합치고, `日程：`/`会場：`/`料金：` 등 **라벨 줄**(`_LABEL_LINE_RE`)은 강한 감점.
+- 텔레그램: `/notice`(2단계) · `/notice-list` · `/notice-del` · **`/notice-edit <id|번호>`**
+  (제목→날짜→URL 순 되묻기, 각 필드 `aNoneTokyo` = 유지, 다른 `/명령` = 취소, `pending_notice_edit`
+  슬롯 TTL 300s). 편집 시 `title_slug`·`expires_at`·`site`·`anchor_a` 는 자동 재계산. `/undo` 지원.
+  실배포 `/ingest` 에서 `xrelay` 가 행을 안 내면 자동으로 `_apply_notice`(added/updated 만 DM).
+- `/undo` 는 `admin_state.undo.path == "notices.json"` 이면 이 파일을 복원(`소식 편집` 포함).
 
 ## 6-3. 계약 I — `tweets.json` / `tweet_archive.json` (data 브랜치, v2.8)
 
@@ -708,6 +736,16 @@ GET  /           # 200 헬스체크
     `aNoneTokyo` 로 취소, `/`명령이면 대기 접고 통과, 180s 초과면 만료 안내. 반영은 `POST /ingest`
     라우트와 별개 네임스페이스로 같은 파싱·경로 재사용(ECHO/DRY-RUN 무관 항상 실제 반영). 결과 DM 에
     인식 실패 줄 수(`xrelay.unparsed_lines`) 표기. (인라인 `/ingest <원문>` 은 제거 — `||스포일러||` 마스킹.)
+    - **(v2.8.1+)** @BDP 형식이 아니고 인식 실패 줄도 없으면 **개인 예고 폴백**(`_try_personal_ingest`):
+      본문 YT URL → `videos.list`(quota 1)로 채널 판별 → `xtweet.parse_schedule` +
+      `merge_personal_schedule`. URL 없음/판별 실패면 `pending_member` 슬롯 + `[1~5]` 유닛 되묻기
+      (`_handle_member_followup` 이 응답 소진). 상세 §6-1. `YOUTUBE_API_KEY` Secret 필요.
+  - **(v2.7)** `/notice`(2단계) · `/notice-list`(별칭 `/notices`) · `/notice-del <id|번호>`(별칭 `/ndel`).
+    - **(v2.7.x)** `/notice-edit <id|번호>`(별칭 `/nedit`) — 편집 마법사. `pending_notice_edit` 슬롯
+      (TTL 300s)에 `{nid, step, new}` 저장하고 **제목 → 날짜 → URL** 순으로 한 필드씩 되묻는다.
+      각 단계: 값 입력 → `new` 에 누적 · `aNoneTokyo` → 그 필드 유지 · 다른 `/명령` → 취소하고 통과 ·
+      만료 → 취소. 마지막 단계 후 `title_slug`(제목)·`expires_at`(날짜)·`site`+`anchor_a`(URL)를
+      재계산해 `notices.edit_notice` 로 커밋(+`/undo` 스냅샷 `path=notices.json`).
   - **(v2.5.2)** `/undo` — **2단계**. `/undo` → 되돌릴 대상 요약(복원/제거 broadcasts + 되돌아갈 KST
     시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체
     `target_sha` + `schedule.json` sha 일치) 통과해야 `prev_content` 로 복원. `n`/60s/기타입력 → 취소.

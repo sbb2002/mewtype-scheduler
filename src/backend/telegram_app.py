@@ -66,6 +66,12 @@ try:
 except ImportError:
     xtweet = None
 
+try:
+    # (v2.8.1+) 수동 /ingest 개인 예고: 본문 YT URL → 채널 판별 (videos.list 1 quota)
+    from ..collector.youtube import YouTubeClient
+except Exception:                           # pragma: no cover
+    YouTubeClient = None
+
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -941,12 +947,197 @@ def _handle_ingest_followup(
     return True
 
 
+def _channel_key_by_video(video_id: str) -> str | None:
+    """YouTube 영상 id → 5인 중 한 명의 channel_key. 못 정하면 None.
+
+    `videos.list` 1회(quota 1 unit)로 `snippet.channelId` 를 얻어
+    `config/channels.json` 의 `channel_id` 와 대조한다. YOUTUBE_API_KEY 가 없거나
+    영상이 비공개/미존재거나 5인 채널이 아니면 None.
+    """
+    if not video_id or YouTubeClient is None:
+        return None
+    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not api_key:
+        log.warning("YOUTUBE_API_KEY 없음 — 수동 /ingest 개인 예고 채널 판별 불가")
+        return None
+    try:
+        info = YouTubeClient(api_key).videos_list([video_id]).get(video_id)
+    except Exception:
+        log.exception("videos.list 실패 (수동 /ingest 채널 판별)")
+        return None
+    if not info or not info.channel_id:
+        return None
+    for ck, meta in _load_channels_config().get("channels", {}).items():
+        if meta.get("channel_id") == info.channel_id:
+            return ck
+    log.info("수동 /ingest 개인 예고 URL 채널 미매칭: channel_id=%s", info.channel_id)
+    return None
+
+
+_MEMBER_PROMPT = (
+    "ingest하려는 유메미타 멤버는 누구죠? 취소하시려면 aNoneTokyo라고 입력하세요.\n"
+    "[1]아라레 [2]유노 [3]노노카 [4]리츠 [5]미야코"
+)
+_MEMBER_CHOICE = {
+    "1": "arale", "2": "yuno", "3": "nonoka", "4": "ritsu", "5": "miyako",
+    "아라레": "arale", "유노": "yuno", "노노카": "nonoka", "리츠": "ritsu", "미야코": "miyako",
+    "arale": "arale", "yuno": "yuno", "nonoka": "nonoka", "ritsu": "ritsu", "miyako": "miyako",
+}
+
+
+def _ingest_personal_row(gh, channels_cfg: dict, raw: str, channel_key: str,
+                         now_iso: str) -> bool:
+    """주어진 `channel_key` 로 raw 를 개인 예고로 파싱·머지.
+
+    `xtweet.parse_schedule`(게이트 = `配信` 계열 + 날짜/URL) → `merge_personal_schedule`
+    로 `schedule.json` 의 scheduled(`source:"personal"`) 행 + undo 스냅샷 + DM.
+    폰 릴레이의 `_maybe_personal_schedule` 와 결과가 같다. 항상 True(요청 소진 —
+    예고 형식이 아니면 그 안내만 냄).
+    """
+    chans = (channels_cfg or {}).get("channels", {})
+    name = chans.get(channel_key, {}).get("name_ko", channel_key)
+    try:
+        row = xtweet.parse_schedule(
+            raw, channel_key=channel_key, tag=None, now_iso=now_iso,
+            handle=chans.get(channel_key, {}).get("handle", ""),
+        )
+    except Exception:
+        log.exception("parse_schedule 실패 (수동 /ingest 개인 예고)")
+        row = None
+    if not row:
+        _send_telegram(
+            f"ℹ️ /ingest: {html.escape(name)} 개인 예고로 봤지만 형식"
+            "(<code>配信</code> 계열 + 날짜/URL)이 아닙니다 — 무시\n"
+            f"<code>{html.escape(raw[:200])}</code>"
+        )
+        return True
+    changed = _merge_rows_into_schedule(
+        gh, [row], now_iso,
+        message=f"data: telegram /ingest personal {channel_key} {now_iso}",
+        action=f"/ingest 개인예고 {name} ({raw[:40].strip()})",
+        merge_fn=xtweet.merge_personal_schedule,
+    )
+    when = ("시간 미정" if row.get("time_tbd")
+            else xrelay._jst_hm(row.get("scheduled_start")) + " JST")
+    link = row.get("url") or ""
+    _send_telegram(
+        f"📅 <b>{html.escape(name)}</b> 개인 예고 반영 → {when}"
+        + (f"\n{html.escape(link)}" if link else "")
+        + ("\n\n↩️ /undo 로 되돌릴 수 있습니다." if changed
+           else "\n\n(이미 반영돼 있어 변경 없음)")
+    )
+    return True
+
+
+def _ask_member(gh, raw: str, now_iso: str) -> None:
+    """개인 예고인데 채널을 못 정함 → `pending_member` 슬롯에 raw 저장하고 유닛 되묻기."""
+    if admin is not None and gh is not None:
+        try:
+            _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(
+                _ADMIN_STATE_PATH,
+                admin.set_pending_member(_st or admin.default_admin_state(),
+                                         raw=raw[:_INGEST_RAW_CAP], now_iso=now_iso),
+                prev_sha=_sh, message=f"data: pending_member 대기 시작 {now_iso}",
+            )
+        except Exception:
+            log.exception("pending_member 세팅 실패")
+            _send_telegram("⚠️ 유닛 되묻기 상태 저장 실패 — 잠시 후 다시 시도하세요.")
+            return
+    _send_telegram(_MEMBER_PROMPT)
+
+
+def _try_personal_ingest(gh, channels_cfg: dict, raw: str, now_iso: str) -> bool:
+    """수동 /ingest 원문이 @BDP 스케줄/출연 형식이 아닐 때 — 멤버 개인 예고로 시도.
+
+    본문에 온전한 YouTube URL 이 있으면 `_channel_key_by_video`(videos.list 1 quota)
+    로 채널을 판별해 바로 반영한다. URL 이 없거나 채널을 못 정하면(영상 비공개 · 링크
+    잘림 · 키 미설정 · 5인 채널 아님) `pending_member` 슬롯에 원문을 넣고 유닛을 되묻는다.
+
+    반환: xtweet/xrelay 사용 가능하면 항상 True(이 경로가 요청을 맡음),
+          모듈이 없으면 False(호출측이 기존 안내를 냄).
+    """
+    if xtweet is None or xrelay is None:
+        return False
+    ck = None
+    m = xrelay.YT_VIDEO_RE.search(xrelay.normalize(raw))
+    if m:
+        ck = _channel_key_by_video(m.group(1))
+    if ck:
+        return _ingest_personal_row(gh, channels_cfg, raw, ck, now_iso)
+    _ask_member(gh, raw, now_iso)
+    return True
+
+
+def _handle_member_followup(gh, channels_cfg: dict, now_iso: str, text: str) -> bool:
+    """`pending_member` 슬롯이 살아있을 때 (1~5 / 이름 / 취소 / 다른 명령) 응답을 소비.
+
+    반환:
+      True  — 이 메시지를 유닛 되묻기가 소진함 (웹훅 즉시 200, 명령 디스패치 안 함)
+      False — 소진 안 함 (만료됐거나 다른 `/명령` — 정상 디스패치로 흘려보냄)
+    """
+    if admin is None:
+        return False
+    try:
+        state, _ = gh.read_json(_ADMIN_STATE_PATH)
+    except Exception:
+        log.warning("admin_state.json 조회 실패 — 유닛 되묻기 후속 스킵")
+        return False
+    pending = admin.get_pending_member(state)
+    if not pending:
+        return False
+
+    def _clear() -> None:
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(
+                _ADMIN_STATE_PATH,
+                admin.clear_pending_member(st or admin.default_admin_state()),
+                prev_sha=sh, message=f"data: pending_member 슬롯 정리 {now_iso}",
+            )
+        except Exception:
+            log.exception("pending_member 슬롯 정리 실패")
+
+    if admin.pending_member_expired(pending, now_iso):
+        _clear()
+        _send_telegram("⏱ 유닛 선택 시간(5분)이 지나 취소되었습니다.")
+        return False
+
+    t = (text or "").strip()
+    if t == _INGEST_CANCEL_TOKEN:
+        _clear()
+        _send_telegram("🚫 ingest가 취소되었습니다.")
+        return True
+    if t.startswith("/"):
+        _clear()
+        _send_telegram("ℹ️ 유닛 되묻기를 취소하고 입력한 명령을 실행합니다.")
+        return False
+    ck = _MEMBER_CHOICE.get(t) or _MEMBER_CHOICE.get(t.lower())
+    if not ck:
+        _send_telegram(
+            "⚠️ 1~5 숫자나 멤버 이름으로 답해주세요. (취소: <code>aNoneTokyo</code>)\n"
+            + _MEMBER_PROMPT
+        )
+        return True                        # 슬롯 유지 — 다시 입력받는다
+    raw = pending.get("raw") or ""
+    _clear()
+    if not raw:
+        _send_telegram("⚠️ 저장된 예고 원문이 없습니다 — /ingest 부터 다시 해주세요.")
+        return True
+    _send_telegram("📥 예고 원문 반영 중…")
+    _ingest_personal_row(gh, channels_cfg or _load_channels_config(), raw, ck, now_iso)
+    return True
+
+
 def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> None:
     """예고 트윗 원문 → 폰 자동 릴레이와 동일 파싱·반영 경로를 수동으로 실행.
 
     `/ingest`(무인자) 후 후속 메시지/파일로 받은 원문을 `_handle_ingest_followup`
     이 넘겨준다. (인라인 `/ingest <원문>` 은 v2.5.1 에서 제거 — 텔레그램 클라이언트의
     `||스포일러||` 마스킹이 명령행 텍스트를 변형시키던 문제 회피.)
+
+    @BDP 일일 스케줄/`出演情報` 형식이 아니면 멤버 개인 예고 트윗으로 보고
+    `_try_personal_ingest`(본문 YT URL → 채널 판별)로 한 번 더 시도한다.
     """
     try:
         if xrelay is None:
@@ -961,6 +1152,14 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
         rows = xrelay.parse(raw, now_iso)
         failed = xrelay.unparsed_lines(raw)
         if not rows:
+            # @BDP 형식이 아니고 인식 실패 줄도 없으면 멤버 개인 예고일 수 있다 —
+            # 본문 YT URL 로 채널 판별(못 정하면 유닛 되묻기) 후 xtweet.parse_schedule.
+            if not failed and _try_personal_ingest(gh, channels_cfg, raw, now_iso):
+                if drained:
+                    _send_telegram(
+                        f"📥 대기열 {drained}건({drained_rows}행)도 반영됨", silent=True
+                    )
+                return
             if failed:
                 msg = (
                     f"⚠️ /ingest: 스케줄 트윗이나 {len(failed)}줄 모두 인식 실패\n"
@@ -1192,6 +1391,219 @@ def _handle_notice_list(gh, now_iso: str) -> None:
     except Exception as e:
         log.exception("notice-list")
         _send_telegram(f"⚠️ 오류: /notice-list 실패\n{str(e)[:100]}")
+
+
+# ── (v2.7.x) /notice-edit — title→date→url 순 되묻기 마법사 ───────────────────
+_NOTICE_EDIT_STEPS = ("title", "date", "url")
+_NOTICE_EDIT_KEEP = _INGEST_CANCEL_TOKEN          # aNoneTokyo → 그 필드 유지
+_NOTICE_EDIT_LABEL = {"title": "제목", "date": "날짜 (YYYY-MM-DD 또는 11/21)", "url": "URL"}
+
+
+def _notice_edit_prompt(step: str, row: dict) -> str:
+    cur = {"title": row.get("title"), "date": row.get("date"), "url": row.get("url")}[step]
+    n = _NOTICE_EDIT_STEPS.index(step) + 1
+    return (f"{n}/3 새 {_NOTICE_EDIT_LABEL[step]} 를 입력하세요.\n"
+            f"현재: <code>{html.escape(str(cur) if cur else '(없음)')}</code>\n"
+            f"(유지하려면 <code>{_NOTICE_EDIT_KEEP}</code> · 취소하려면 다른 /명령)")
+
+
+def _notice_edit_apply_value(step: str, value: str, new: dict) -> tuple[bool, str]:
+    """단계 입력값 검증 후 `new[step]` 채움. (ok, err_msg)."""
+    v = (value or "").strip()
+    if step == "title":
+        if len(v) < 2:
+            return False, "제목이 너무 짧습니다."
+        new["title"] = v[:90]
+        return True, ""
+    if step == "date":
+        iso = None
+        m = re.match(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*$", v)
+        if m:
+            try:
+                iso = datetime(int(m[1]), int(m[2]), int(m[3])).strftime("%Y-%m-%d")
+            except ValueError:
+                iso = None
+        if not iso and xnotice is not None:
+            now_jst = datetime.now(timezone.utc).astimezone(xnotice.JST)
+            iso, _dl = xnotice._pick_event_date(xnotice.normalize(v), now_jst)
+        if not iso:
+            return False, "날짜를 못 읽었습니다 (YYYY-MM-DD 또는 11/21 형식)."
+        new["date"] = iso
+        return True, ""
+    if step == "url":
+        if not v.startswith("http"):
+            v = "https://" + v.lstrip("/")
+        new["url"] = v
+        return True, ""
+    return False, "알 수 없는 단계."
+
+
+def _notice_edit_finalize(new: dict, row: dict, now_iso: str) -> dict:
+    """마법사가 모은 값 → 실제 patch (바뀐 필드 + 파생값만)."""
+    patch: dict = {}
+    if new.get("title") and new["title"] != row.get("title"):
+        patch["title"] = new["title"]
+        if xnotice is not None:
+            patch["title_slug"] = xnotice._title_slug(new["title"])
+    if new.get("date") and new["date"] != row.get("date"):
+        patch["date"] = new["date"]
+        if xnotice is not None:
+            now_jst = datetime.now(timezone.utc).astimezone(xnotice.JST)
+            patch["expires_at"] = xnotice._expires_at(
+                new["date"], row.get("time"), now_iso, now_jst)
+    if new.get("url") and new["url"] != row.get("url"):
+        patch["url"] = new["url"]
+        if xnotice is not None:
+            site, u, anchor_a = xnotice._site_url_anchor(new["url"])
+            patch["url"] = u or new["url"]
+            patch["site"] = site
+            patch["anchor_a"] = anchor_a
+    return patch
+
+
+def _handle_notice_edit(gh, now_iso: str, arg: str) -> None:
+    """/notice-edit <id | 번호> — 편집 마법사 시작 (title → date → url 순 되묻기)."""
+    if notices is None or xnotice is None or admin is None:
+        _send_telegram("⚠️ notice/admin 모듈 없음 — /notice-edit 사용 불가")
+        return
+    key = (arg or "").strip().split()[0] if (arg or "").strip() else ""
+    if not key:
+        _send_telegram("사용법: /notice-edit &lt;id | 번호&gt;  (/notice-list 로 확인)")
+        return
+    try:
+        prev, _ = gh.read_json(_NOTICES_PATH)
+        lst = (prev or {}).get("notices", []) or []
+        if key.isdigit() and 1 <= int(key) <= len(lst):
+            row = lst[int(key) - 1]
+        else:
+            row = next((n for n in lst if n.get("id") == key), None)
+        if not row:
+            _send_telegram(f"해당 소식이 없습니다: {html.escape(key)}")
+            return
+        nid = row.get("id")
+        st, sh = gh.read_json(_ADMIN_STATE_PATH)
+        gh.write_json(
+            _ADMIN_STATE_PATH,
+            admin.set_pending_notice_edit(
+                st or admin.default_admin_state(), nid=nid, step="title", new={}, now_iso=now_iso),
+            prev_sha=sh, message=f"data: pending_notice_edit 시작 {now_iso}",
+        )
+        _send_telegram(
+            "✏️ <b>소식 편집</b> — " + html.escape(notices.summary_line(row)) + "\n\n"
+            + _notice_edit_prompt("title", row)
+        )
+    except Exception as e:
+        log.exception("notice-edit")
+        _send_telegram(f"⚠️ 오류: /notice-edit 실패\n{str(e)[:100]}")
+
+
+def _handle_notice_edit_followup(gh, now_iso: str, text: str) -> bool:
+    """`pending_notice_edit` 슬롯이 살아있을 때 각 단계 응답(값 / aNoneTokyo / /명령)을 소비.
+
+    반환: True = 소진(웹훅 즉시 200) · False = 만료/타 명령 → 정상 디스패치로 통과.
+    """
+    if admin is None or notices is None:
+        return False
+    try:
+        state, _ = gh.read_json(_ADMIN_STATE_PATH)
+    except Exception:
+        log.warning("admin_state.json 조회 실패 — /notice-edit 후속 스킵")
+        return False
+    pending = admin.get_pending_notice_edit(state)
+    if not pending:
+        return False
+
+    def _clear() -> None:
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(_ADMIN_STATE_PATH,
+                          admin.clear_pending_notice_edit(st or admin.default_admin_state()),
+                          prev_sha=sh, message=f"data: pending_notice_edit 정리 {now_iso}")
+        except Exception:
+            log.exception("pending_notice_edit 정리 실패")
+
+    if admin.pending_notice_edit_expired(pending, now_iso):
+        _clear()
+        _send_telegram("⏱ /notice-edit 시간(5분)이 지나 취소되었습니다.")
+        return False
+    t = (text or "").strip()
+    if t.startswith("/"):
+        _clear()
+        _send_telegram("ℹ️ /notice-edit 를 취소하고 입력한 명령을 실행합니다.")
+        return False
+
+    nid = pending.get("nid")
+    step = pending.get("step") or "title"
+    new = dict(pending.get("new") or {})
+    try:
+        prev, _ = gh.read_json(_NOTICES_PATH)
+    except Exception:
+        _clear()
+        _send_telegram("⚠️ notices.json 조회 실패 — /notice-edit 취소")
+        return True
+    row = next((n for n in (prev or {}).get("notices", []) or [] if n.get("id") == nid), None)
+    if not row:
+        _clear()
+        _send_telegram("⚠️ 편집하려던 소식이 사라졌습니다 — /notice-edit 취소")
+        return True
+
+    if t != _NOTICE_EDIT_KEEP:
+        ok, err = _notice_edit_apply_value(step, t, new)
+        if not ok:
+            _send_telegram(f"⚠️ {err} 다시 입력하세요. (유지: <code>{_NOTICE_EDIT_KEEP}</code>)")
+            return True
+
+    idx = _NOTICE_EDIT_STEPS.index(step)
+    if idx + 1 < len(_NOTICE_EDIT_STEPS):
+        nxt = _NOTICE_EDIT_STEPS[idx + 1]
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(
+                _ADMIN_STATE_PATH,
+                admin.set_pending_notice_edit(
+                    st or admin.default_admin_state(), nid=nid, step=nxt, new=new, now_iso=now_iso),
+                prev_sha=sh, message=f"data: pending_notice_edit {nxt} {now_iso}")
+        except Exception:
+            log.exception("pending_notice_edit 단계 저장 실패")
+            _clear()
+            _send_telegram("⚠️ 상태 저장 실패 — /notice-edit 를 다시 시작하세요.")
+            return True
+        _send_telegram(_notice_edit_prompt(nxt, row))
+        return True
+
+    # 마지막 단계 완료 → 파생값 계산 + 커밋
+    _clear()
+    patch = _notice_edit_finalize(new, row, now_iso)
+    if not patch:
+        _send_telegram("변경 사항이 없습니다 — 소식은 그대로입니다.")
+        return True
+    try:
+        new_n = None
+        for _try in (1, 2):
+            prevn, psha = gh.read_json(_NOTICES_PATH)
+            new_n, changed = notices.edit_notice(
+                prevn or notices.default_notices(), nid, patch, now_iso)
+            if not changed:
+                _send_telegram("변경 사항이 없습니다 — 소식은 그대로입니다.")
+                return True
+            try:
+                _, nsha = gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,
+                                        message=f"data: notice edit {nid} {now_iso}")
+            except ConflictError:
+                if _try == 2:
+                    raise
+                log.warning("notice-edit: notices.json 충돌 — 재시도")
+                continue
+            _save_undo(gh, action=f"소식 편집 ({nid})", prev_content=prevn or {},
+                       new_sha=nsha, now_iso=now_iso, path=_NOTICES_PATH)
+            break
+        row2 = next((n for n in (new_n or {}).get("notices", []) if n.get("id") == nid), row)
+        _send_telegram("✏️ 소식 수정됨 — " + html.escape(notices.summary_line(row2))
+                       + "\n↩️ /undo 로 되돌릴 수 있습니다.")
+    except Exception as e:
+        log.exception("notice-edit 커밋 실패")
+        _send_telegram(f"⚠️ 오류: /notice-edit 반영 실패\n{str(e)[:100]}")
+    return True
 
 
 def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
@@ -1573,8 +1985,18 @@ if _FLASK_AVAILABLE:
             ):
                 return jsonify({"ok": True}), 200
 
+            # v2.8.1+: 개인 예고 유닛 되묻기(1~5/이름) 응답 대기 중이면 그쪽이 소진.
+            if admin is not None and _handle_member_followup(
+                gh, channels_cfg, now_utc, text
+            ):
+                return jsonify({"ok": True}), 200
+
             # v2.7: /notice(무인자) 후 원문/파일 대기 중이면 그쪽이 소진.
             if admin is not None and _handle_notice_followup(gh, now_utc, message, text):
+                return jsonify({"ok": True}), 200
+
+            # v2.7.x: /notice-edit 마법사(title→date→url) 응답 대기 중이면 그쪽이 소진.
+            if admin is not None and _handle_notice_edit_followup(gh, now_utc, text):
                 return jsonify({"ok": True}), 200
 
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
@@ -1639,6 +2061,8 @@ if _FLASK_AVAILABLE:
                         _send_telegram("⚠️ /notice 대기 상태 저장 실패 — 잠시 후 다시 시도하세요.")
             elif cmd in ("/notice-del", "/ndel"):
                 _handle_notice_del(gh, now_utc, arg)
+            elif cmd in ("/notice-edit", "/nedit"):
+                _handle_notice_edit(gh, now_utc, arg)
             elif cmd in ("/notice-list", "/notices"):
                 _handle_notice_list(gh, now_utc)
             elif cmd == "/undo":
@@ -1657,6 +2081,7 @@ if _FLASK_AVAILABLE:
                     "/ingest — 보낸 뒤 3분 내에 예고트윗 원문(텍스트/파일)을 이어 보내 수동 반영\n"
                     "/notice — 소식 게시판 수동 등록 (원문/파일 이어 보내기)\n"
                     "/notice-list · /notice-del &lt;id|번호&gt; — 소식 조회 / 삭제\n"
+                    "/notice-edit &lt;id|번호&gt; — 소식 편집 (제목→날짜→URL 순 되묻기, 유지: aNoneTokyo)\n"
                     "/undo — 방금 한 작업(/ingest, /del, /notice) 되돌리기 (확인 y/N, 60초)"
                 )
                 _send_telegram(help_text)
@@ -2391,6 +2816,113 @@ if __name__ == "__main__":
         finally:
             os.environ.pop("INGEST_ECHO", None)
         print("  ✓ 폼 키로 온 원문 복구")
+
+    # Test 6: 수동 /ingest 개인 예고 폴백 + 유닛 되묻기 (네트워크 없는 분기)
+    print("\n[Test 6] _try_personal_ingest / _handle_member_followup")
+    _T6_NOW = "2026-09-07T11:05:00Z"
+    os.environ.pop("YOUTUBE_API_KEY", None)
+
+    class _FakeGH:
+        def __init__(self): self.store = {}; self._n = 0
+        def read_json(self, path):
+            v = self.store.get(path)
+            return (v[0], v[1]) if v else (None, None)
+        def write_json(self, path, data, prev_sha=None, message=""):
+            self._n += 1; self.store[path] = (data, f"s{self._n}")
+            return True, f"s{self._n}"
+
+    _sent: list[str] = []
+    _orig_send = _send_telegram
+    globals()["_send_telegram"] = lambda text, silent=False: _sent.append(text)
+    try:
+        # 6a) URL 없음 → 채널 못 정함 → pending_member 슬롯 + 되묻기 프롬프트, True
+        g6 = _FakeGH()
+        assert _try_personal_ingest(g6, {"channels": {}},
+                                    "今夜20時から歌枠やります 9/7", _T6_NOW) is True
+        assert admin.get_pending_member(g6.read_json(_ADMIN_STATE_PATH)[0]) is not None
+        assert any("유메미타 멤버는 누구죠" in s for s in _sent), _sent
+
+        # 6b) 되묻기에 "5" 응답 → miyako 로 재처리 → schedule.json 반영
+        _sent.clear()
+        assert _handle_member_followup(g6, None, _T6_NOW, "5") is True
+        _bc = g6.read_json("schedule.json")[0]["broadcasts"]
+        assert len(_bc) == 1 and _bc[0]["channel_key"] == "miyako", _bc
+        assert _bc[0]["source"] == "personal" and _bc[0]["kind"] == "song", _bc[0]
+        assert admin.get_pending_member(g6.read_json(_ADMIN_STATE_PATH)[0]) is None
+        assert admin.get_undo(g6.read_json(_ADMIN_STATE_PATH)[0]) is not None   # /undo 가능
+
+        # 6c) 슬롯 없을 때 아무 텍스트 → False (정상 디스패치로)
+        assert _handle_member_followup(g6, None, _T6_NOW, "5") is False
+
+        # 6d) 잘못된 응답 → 슬롯 유지 + 재안내
+        g6b = _FakeGH()
+        _try_personal_ingest(g6b, {"channels": {}}, "今夜20時 歌枠 9/7", _T6_NOW)
+        _sent.clear()
+        assert _handle_member_followup(g6b, None, _T6_NOW, "몰라") is True
+        assert admin.get_pending_member(g6b.read_json(_ADMIN_STATE_PATH)[0]) is not None
+
+        # 6e) 취소 토큰 → 슬롯 비우고 True
+        assert _handle_member_followup(g6b, None, _T6_NOW, _INGEST_CANCEL_TOKEN) is True
+        assert admin.get_pending_member(g6b.read_json(_ADMIN_STATE_PATH)[0]) is None
+    finally:
+        globals()["_send_telegram"] = _orig_send
+    print("  ✓ 채널 미상 → 되묻기 · '5' → miyako 반영 · 오답 유지 · 취소")
+
+    # Test 7: /notice-edit 마법사 (title→date→url)
+    print("\n[Test 7] /notice-edit 마법사")
+    if notices is not None and xnotice is not None:
+        _sent2: list[str] = []
+        _orig_send2 = _send_telegram
+        globals()["_send_telegram"] = lambda text, silent=False: _sent2.append(text)
+        try:
+            g7 = _FakeGH()
+            g7.store[_NOTICES_PATH] = ({"generated_at": None, "notices": [{
+                "id": "n700", "category": "etc", "title": "会場:GARDEN 新木場 FACTORY",
+                "date": "2026-11-21", "time": None, "deadline": False, "site": "web",
+                "url": "https://eplus.jp/x", "tweet_url": None, "src_handle": "@BDP_yumemita",
+                "anchor_a": "x", "anchor_b": None, "title_slug": "会場garden",
+                "seen_ids": ["n700"], "first_seen": "2026-09-01T00:00:00Z",
+                "last_updated": "2026-09-01T00:00:00Z", "expires_at": "2026-11-22T15:00:00Z",
+            }]}, "sN0")
+            NW = "2026-09-10T05:00:00Z"
+
+            _handle_notice_edit(g7, NW, "1")                       # 번호로 시작
+            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "title"
+
+            # title 입력 → date 단계
+            assert _handle_notice_edit_followup(g7, NW, "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜") is True
+            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "date"
+            # date 유지(aNoneTokyo) → url 단계
+            assert _handle_notice_edit_followup(g7, NW, _INGEST_CANCEL_TOKEN) is True
+            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "url"
+            # url 입력 → 커밋
+            assert _handle_notice_edit_followup(g7, NW, "https://eplus.jp/yumemita_kinntorebu2026/") is True
+
+            n = g7.read_json(_NOTICES_PATH)[0]["notices"][0]
+            assert n["title"] == "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜", n["title"]
+            assert n["date"] == "2026-11-21", n                      # 유지됨
+            assert n["url"] == "https://eplus.jp/yumemita_kinntorebu2026/"
+            assert n["anchor_a"] == "yumemita_kinntorebu2026", n     # URL 파생 재계산
+            assert n["seen_ids"] == ["n700"] and n["first_seen"] == "2026-09-01T00:00:00Z"
+            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0]) is None
+            assert admin.get_undo(g7.read_json(_ADMIN_STATE_PATH)[0])["path"] == _NOTICES_PATH
+
+            # 슬롯 없을 때 → False (정상 디스패치로)
+            assert _handle_notice_edit_followup(g7, NW, "aaa") is False
+            # /명령 → 취소하고 통과(False)
+            _handle_notice_edit(g7, NW, "n700")
+            assert _handle_notice_edit_followup(g7, NW, "/status") is False
+            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0]) is None
+            # 잘못된 날짜 → 슬롯 유지 + 재안내
+            _handle_notice_edit(g7, NW, "n700")
+            _handle_notice_edit_followup(g7, NW, _INGEST_CANCEL_TOKEN)   # title 유지 → date
+            assert _handle_notice_edit_followup(g7, NW, "언제였더라") is True
+            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "date"
+        finally:
+            globals()["_send_telegram"] = _orig_send2
+        print("  ✓ 번호 시작 · title 반영/유지 · URL 파생 재계산 · undo(notices) · 오입력 유지")
+    else:
+        print("  (notices/xnotice 미로드 — 스킵)")
 
     print("\n" + "=" * 60)
     print("✓ All smoke tests passed!")
