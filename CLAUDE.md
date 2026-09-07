@@ -75,8 +75,12 @@ src/
                        #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
     admin.py           # (v2.5) admin_state.json 스키마 (pending_del/ingest/notice/undo 슬롯, undo.path) — 순수
+                       #        (v2.7.x) pending_notice_edit 슬롯 — /notice-edit 마법사(title→date→url 단계·new 누적)
+                       #        (v2.8.1+) pending_member 슬롯 — 수동 /ingest 개인 예고 채널 미상 시 유닛 되묻기(raw 저장)
     xnotice.py         # (v2.7) 방송 외 이벤트 트윗 → notices 항목 파서 + 카테고리/anchor — 순수
+                       #        (v2.7.x) _headline: _join_shout_titles(💪…💪 여러 줄 제목 병합) + _LABEL_LINE_RE(日程：/会場： 감점)
     notices.py         # (v2.7) notices.json/notice_archive.json 계약 + 중복판정·머지·수명 sweep — 순수
+                       #        (v2.7.x) edit_notice(prev,nid,patch,now) — /notice-edit 수동 필드 수정 (id/seen_ids 보존)
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
                        #        (v2.4/2.6) 합동방송 kind="collab" + URL→video_id · parse_appearance(出演情報)
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
@@ -84,6 +88,8 @@ src/
                        #        계약(parse·merge_tweet·sweep_expired) — 순수. 개인 5인 트윗 전용 파이프라인
                        #        (v2.8.1) parse_schedule(예고 게이트) · merge_personal_schedule(같은 방송 upsert)
                        #        · apply_overrides(handlers 후처리 — 트윗 시각이 API 재구성을 override)
+                       #        (v2.8.1+) 수동 /ingest 도 개인 예고 폴백 — 본문 YT URL→videos.list(quota 1)로
+                       #        채널 판별, 실패 시 텔레그램에서 유닛 되묻기 (telegram_app._try_personal_ingest)
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
@@ -113,12 +119,12 @@ python -m src.backend.xrelay         # (v2.3~2.6) X 스케줄 파서 — S1~S9 +
 python -m src.backend.pending        # pending.json 헬퍼
 python -m src.backend.notify         # (v2.1) diff_events + (v2.8.2) allows() 레벨 게이팅 10 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
-python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/undo, undo.path)
-python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S8 (카테고리·날짜·anchor·recap)
-python -m src.backend.notices        # (v2.7) notices 머지·중복판정·sweep
+python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/notice_edit/undo/member, undo.path)
+python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S9 (카테고리·날짜·anchor·recap·외침형 제목/라벨 감점)
+python -m src.backend.notices        # (v2.7) notices 머지·중복판정·sweep·edit_notice
 python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_tweet + sweep
                                     #   (v2.8.1) parse_schedule + merge_personal_schedule + apply_overrides
-python -m src.backend.telegram_app   # /list /del /undo /notice 흐름 포함 (Flask 설치 시 라우트까지)
+python -m src.backend.telegram_app   # /list /del /undo /notice /notice-edit 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
 
 # v2 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
@@ -168,9 +174,11 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 8. **(v2.7)** 소식 게시판 — `xrelay` 가 행을 안 내는(스케줄 아님) 트윗은 `xnotice.parse` 로
    방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 판별 → `notices.merge_notice` 로
    `notices.json` 에 반영(중복키 = 같은 date + anchor_a/b). 자정 지난 소식은 `sweep_expired` 가
-   `notice_archive.json` 로. 텔레그램 `/notice`·`/notice-list`·`/notice-del`, `/undo` 는
+   `notice_archive.json` 로. 텔레그램 `/notice`·`/notice-list`·`/notice-del`·`/notice-edit`
+   (제목→날짜→URL 순 되묻기, 유지=`aNoneTokyo`, `pending_notice_edit` 슬롯), `/undo` 는
    `undo.path` 로 schedule/notices 구분. 프론트는 `js/notices.js`+`css/notices.css` 티커(`#notice`).
-   상세: `docs/plan/v2_7_notice_board.md`.
+   **(v2.7.x)** `_headline` 이 외침형 제목 블록(`💪…💪`)을 병합하고 `日程：`/`会場：` 라벨 줄을
+   감점 — 그래도 틀리면 `/notice-edit` 로 교정. 상세: `docs/plan/v2_7_notice_board.md`.
 9. **(v2.8)** 멤버 개인 트윗 — `/ingest` 가 본문 파싱 직후 `xtweet.route_by_title(android.title)` 로
    갈래를 나눈다. 개인 5인 표시명(`config/channels.json` `x_names`)이면 `_maybe_personal_tweet` →
    `xtweet.parse` → `merge_tweet`(더 최신 Snowflake id 면 교체, 기존 건 `tweet_archive.json`) →

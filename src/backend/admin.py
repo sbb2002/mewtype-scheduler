@@ -13,7 +13,17 @@
     "pending_ingest": null | {
       "at": "..."                  // /ingest(무인자) 입력 후 원문/파일 대기 시작 시각 (ISO 'Z')
     },
+    "pending_member": null | {      // (v2.8.1+) 수동 /ingest 개인 예고에서 채널을 못 정해
+      "raw": "...",                 //          유닛을 되물을 때 — 재처리할 트윗 원문
+      "at": "..."                  //          (1~5 / 이름 응답 대기 시작 시각, ISO 'Z')
+    },
     "pending_notice": null | {      // (v2.7) /notice(무인자) 후 원문/파일 대기
+      "at": "..."
+    },
+    "pending_notice_edit": null | { // (v2.7.x) /notice-edit <id> 마법사 — title→date→url 순 되묻기
+      "nid": "2099...",             //   편집 대상 소식 id
+      "step": "title",             //   현재 묻는 필드 (title | date | url)
+      "new": { "title": "..." },   //   지금까지 받은 새 값 (aNoneTokyo 는 유지 → 키 없음)
       "at": "..."
     },
     "pending_undo": null | {
@@ -41,13 +51,16 @@ PENDING_DEL_TTL_SEC = 300     # /del 경고 후 (y/N) 대기 상한 — 지나�
 PENDING_NOTICE_TTL_SEC = 180  # /notice(무인자) 후 원문/파일 대기 상한
 PENDING_INGEST_TTL_SEC = 180  # /ingest(무인자) 후 원문/파일 대기 상한 — 지나면 취소
 PENDING_UNDO_TTL_SEC = 60     # /undo 후 (y/N) 대기 상한 — 지나면 자동 N(취소)
+PENDING_MEMBER_TTL_SEC = 300  # 개인 예고 유닛 되묻기 후 (1~5/이름) 대기 상한
+PENDING_NOTICE_EDIT_TTL_SEC = 300  # /notice-edit 마법사 각 단계 응답 대기 상한
 
 
 def default_admin_state() -> dict:
     """기본 admin_state.json 형태."""
     return {
         "pending_del": None, "pending_ingest": None, "pending_notice": None,
-        "pending_undo": None, "undo": None,
+        "pending_notice_edit": None, "pending_undo": None, "pending_member": None,
+        "undo": None,
     }
 
 
@@ -121,6 +134,82 @@ def clear_pending_ingest(state) -> dict:
 
 def pending_ingest_expired(pending: dict | None, now_iso: str, ttl_sec: int = PENDING_INGEST_TTL_SEC) -> bool:
     """pending_ingest 가 TTL 을 넘겼는지. pending 이 없으면(None) True 취급."""
+    if not pending:
+        return True
+    at = pending.get("at")
+    if not at:
+        return True
+    try:
+        at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
+def get_pending_member(state) -> dict | None:
+    """대기 중인 개인 예고 유닛 되묻기 슬롯 반환. 없으면 None."""
+    if not isinstance(state, dict):
+        return None
+    return state.get("pending_member")
+
+
+def set_pending_member(state, *, raw: str, now_iso: str) -> dict:
+    """유닛 되묻기 대기 상태로 교체한 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_member"] = {"raw": raw, "at": now_iso}
+    return result
+
+
+def clear_pending_member(state) -> dict:
+    """유닛 되묻기 대기 상태를 비운 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_member"] = None
+    return result
+
+
+def pending_member_expired(pending: dict | None, now_iso: str,
+                           ttl_sec: int = PENDING_MEMBER_TTL_SEC) -> bool:
+    """pending_member 가 TTL 을 넘겼는지. pending 이 없으면(None) True 취급."""
+    if not pending:
+        return True
+    at = pending.get("at")
+    if not at:
+        return True
+    try:
+        at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
+def get_pending_notice_edit(state) -> dict | None:
+    """대기 중인 /notice-edit 마법사 슬롯 반환. 없으면 None."""
+    if not isinstance(state, dict):
+        return None
+    return state.get("pending_notice_edit")
+
+
+def set_pending_notice_edit(state, *, nid: str, step: str, new: dict, now_iso: str) -> dict:
+    """/notice-edit 마법사 상태로 교체한 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_notice_edit"] = {
+        "nid": nid, "step": step, "new": dict(new or {}), "at": now_iso,
+    }
+    return result
+
+
+def clear_pending_notice_edit(state) -> dict:
+    """/notice-edit 마법사 상태를 비운 새 dict 반환 (원본 불변). 타 슬롯 보존."""
+    result = _as_dict(state)
+    result["pending_notice_edit"] = None
+    return result
+
+
+def pending_notice_edit_expired(pending: dict | None, now_iso: str,
+                                ttl_sec: int = PENDING_NOTICE_EDIT_TTL_SEC) -> bool:
+    """pending_notice_edit 가 TTL 을 넘겼는지. pending 이 없으면(None) True 취급."""
     if not pending:
         return True
     at = pending.get("at")
@@ -249,7 +338,10 @@ if __name__ == "__main__":
     d = default_admin_state()
     assert d["pending_del"] is None and d["undo"] is None
     assert d["pending_ingest"] is None and d["pending_undo"] is None and d["pending_notice"] is None
+    assert d["pending_member"] is None and d["pending_notice_edit"] is None
     assert get_pending_del(None) is None and get_undo({}) is None
+    assert get_pending_member(None) is None and get_pending_member({}) is None
+    assert get_pending_notice_edit(None) is None and get_pending_notice_edit({}) is None
     assert get_pending_ingest(None) is None and get_pending_ingest({}) is None
     assert get_pending_undo(None) is None and get_pending_undo({}) is None
     assert get_pending_notice(None) is None and get_pending_notice({}) is None
@@ -283,6 +375,16 @@ if __name__ == "__main__":
     assert get_pending_del(clear_pending_ingest(pi))["unit"] == "arale", "clear 시 타 슬롯 보존"
     print("✓ pending_ingest 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
 
+    pm = set_pending_member(pi, raw="今夜20時から歌枠", now_iso="2026-09-05T12:00:00Z")
+    assert get_pending_member(pm) == {"raw": "今夜20時から歌枠", "at": "2026-09-05T12:00:00Z"}
+    assert get_pending_ingest(pm) == {"at": "2026-09-05T12:00:00Z"}, "타 슬롯 보존"
+    assert pending_member_expired(None, "2026-09-05T12:00:00Z") is True
+    assert pending_member_expired(get_pending_member(pm), "2026-09-05T12:04:00Z") is False  # 4분 < 5분
+    assert pending_member_expired(get_pending_member(pm), "2026-09-05T12:06:00Z") is True   # 6분 > 5분
+    assert get_pending_member(clear_pending_member(pm)) is None
+    assert get_pending_ingest(clear_pending_member(pm)) is not None, "clear 시 타 슬롯 보존"
+    print("✓ pending_member 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
+
     pu = set_pending_undo(pi, target_sha="sha_after", action="ingest 2026-09-05", now_iso="2026-09-05T12:00:00Z")
     assert get_pending_undo(pu) == {"at": "2026-09-05T12:00:00Z", "target_sha": "sha_after", "action": "ingest 2026-09-05"}
     assert get_pending_ingest(pu) == {"at": "2026-09-05T12:00:00Z"}, "타 슬롯 보존"
@@ -301,6 +403,18 @@ if __name__ == "__main__":
     assert pending_notice_expired(get_pending_notice(pn), "2026-09-05T12:03:30Z") is True
     assert get_pending_notice(clear_pending_notice(pn)) is None
     print("✓ pending_notice 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
+
+    pne = set_pending_notice_edit(pn, nid="2099", step="title", new={}, now_iso="2026-09-05T12:00:00Z")
+    assert get_pending_notice_edit(pne) == {"nid": "2099", "step": "title", "new": {}, "at": "2026-09-05T12:00:00Z"}
+    assert get_pending_notice(pne) is not None, "타 슬롯 보존"
+    pne = set_pending_notice_edit(pne, nid="2099", step="date", new={"title": "새 제목"}, now_iso="2026-09-05T12:01:00Z")
+    assert get_pending_notice_edit(pne)["step"] == "date" and get_pending_notice_edit(pne)["new"] == {"title": "새 제목"}
+    assert pending_notice_edit_expired(None, "z") is True
+    assert pending_notice_edit_expired(get_pending_notice_edit(pne), "2026-09-05T12:05:00Z") is False  # 4분 < 5분
+    assert pending_notice_edit_expired(get_pending_notice_edit(pne), "2026-09-05T12:07:00Z") is True   # 6분 > 5분
+    assert get_pending_notice_edit(clear_pending_notice_edit(pne)) is None
+    assert get_pending_notice(clear_pending_notice_edit(pne)) is not None, "clear 시 타 슬롯 보존"
+    print("✓ pending_notice_edit 설정/해제/만료 (원본 불변, 타 슬롯 보존)")
 
     u = set_undo(
         d, action="/del arale#2", prev_content={"broadcasts": []},

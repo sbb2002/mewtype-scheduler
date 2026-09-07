@@ -199,6 +199,13 @@ override 트윗이 붙는 행이 `upcoming` 이면: 그 행에 `date`+`time` 이
   행 나오면 `_merge_rows_into_schedule` 로 반영(`/undo` 스냅샷 자동). 그 후 `return`(notice 안 탐).
   - **관측 DM** (초반 튜닝용): 행 생성/갱신되면 `📅 <유닛> 본인 예고 감지 → <시각|미정> <url>` 한 줄.
     precision 안정되면 제거.
+- `telegram_app._handle_manual_ingest`(수동 `/ingest`): `xrelay.parse` 가 행을 안 내고
+  인식 실패 줄도 없으면 `_try_personal_ingest` 로 폴백. 본문 YouTube URL →
+  `_channel_key_by_video`(`collector.youtube.YouTubeClient.videos_list`, quota 1)로 채널
+  판별 → `_ingest_personal_row`(= `parse_schedule` + `merge_personal_schedule`). URL 없음/
+  판별 실패면 `admin.pending_member` 슬롯(raw 저장)으로 유닛 되묻기(`[1~5]`/이름, 취소
+  `aNoneTokyo`, TTL 5분) → `_handle_member_followup` 이 응답받아 재처리. `mewtype-telegram`
+  서비스에 `YOUTUBE_API_KEY` Secret 추가 필요(`deploy/deploy_telegram.sh`).
 - `handlers.tick()`: `reconcile.build_schedule` 직후 `xtweet.apply_overrides(new, prev, now_iso)`.
 - `handlers._scheduled_wake_times`: 개인 `personal` 시각 있는 행도 X릴레이 행과 같이 `light /tick`
   1개 예약. `time_tbd` 행은 정밀 시작 없음 → 예약 안 함(3h 주기에 의존).

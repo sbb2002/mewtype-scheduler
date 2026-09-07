@@ -87,6 +87,19 @@ flowchart TD
 ## 별개 경로
 
 - **`/telegram` 웹훅** — 운영자 명령(`/status /pause /resume /log /list /del /ingest /notice
-  /notice-del /notice-list /undo`)만 처리. 트윗 인입 경로가 아니다.
+  /notice-del /notice-list /undo`). 대부분 트윗 인입과 무관하지만 **`/ingest`(무인자 →
+  다음 메시지/파일로 원문)** 는 예외로 트윗을 받는다. `_handle_manual_ingest` 가
+  `xrelay.parse`(@BDP 일일 스케줄 / `出演情報`)를 먼저 시도하고, 행이 안 나오고 인식
+  실패 줄도 없으면 **`_try_personal_ingest`** 로 폴백한다 (멤버 개인 예고 트윗):
+  - 본문에 **온전한 YouTube URL 이 있으면** `videos.list`(quota 1) 로 `channelId`
+    → 5인 `channel_key` 판별.
+  - URL 이 없거나 채널을 못 정하면(영상 비공개 · 링크 잘림 · `YOUTUBE_API_KEY` 미설정
+    · 5인 채널 아님) `admin_state.pending_member` 슬롯에 원문을 넣고 **유닛을 되묻는다**
+    (`[1]아라레 … [5]미야코`, 취소 `aNoneTokyo`, TTL 5분). 운영자가 `1~5`/이름으로
+    답하면 `_handle_member_followup` 이 그 `channel_key` 로 재처리.
+  - 채널이 정해지면 `xtweet.parse_schedule`(게이트 = `配信` 계열 + 날짜/URL) →
+    `merge_personal_schedule` 로 `schedule.json` 의 `scheduled`(`source:"personal"`) 행
+    + undo 스냅샷 + DM. 폰 릴레이의 `_maybe_personal_schedule`(android.title 로 채널을
+    아는 경로)와 결과가 같다.
 - **현재 플래그 전제** — v2.7 소식 자동 인입이 운영 중이므로 `INGEST_ECHO=0` · `INGEST_DRY_RUN=0`
   (실배포) 상태. 즉 5·7번 게이트는 통과, 4번과 9~12번이 실제 경로.

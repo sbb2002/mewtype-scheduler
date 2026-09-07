@@ -76,6 +76,42 @@ _EVENTISH_RE = re.compile(
     r"スタート|第\s*\d+\s*弾|ツアー|TOUR"
 )
 _SENTENCE_RE = re.compile(r"[、。]|ので[、。\s]|です[。\s]|ます[。\s]|でした|ください")
+#   메타데이터 라벨 줄 (`日程：…` `会場：…`) — 제목이 아니라 부가정보. 후보에서 강제 감점.
+_LABEL_LINE_RE = re.compile(
+    r"^(?:日程|日時|時間|開始時間?|開場|開演|会場|場所|開催地|受付|申込方法?|応募方法?|"
+    r"参加方法?|料金|価格|チケット代?|前売り?|当日券?|定員|人数|出演者?|MC|司会|"
+    r"ゲスト|備考|注意事項?|概要|内容|視聴URL|配信URL|URL|リンク|詳細)\s*[:：]"
+)
+#   외침형 제목 블록 — 같은 장식 문자로 앞뒤를 감싼 (여러 줄에 걸칠 수 있는) 제목.
+#   예) `💪集え！#ゆめみた筋トレ部` + `　〜輝け！上腕二頭筋〜💪`  →  한 줄로 이어붙임.
+_DECO_OPEN = "💪🔥✨🎊🎉⭐🌟💫🐔🛸🌏📢📣＼"
+_DECO_CLOSE = {"＼": "／"}
+
+
+def _join_shout_titles(lines: list[str]) -> list[str]:
+    """장식 문자로 열린 줄을 그 닫는 문자가 나오는 줄까지(최대 3줄) 하나로 합친다."""
+    out: list[str] = []
+    i, n = 0, len(lines)
+    while i < n:
+        cur = lines[i]
+        opener = cur.lstrip()[:1]
+        end = None
+        if opener in _DECO_OPEN:
+            closer = _DECO_CLOSE.get(opener, opener)
+            if cur.rstrip()[-1:] != closer:                 # 같은 줄에서 이미 안 닫혔으면
+                for k in range(i + 1, min(i + 4, n)):
+                    if lines[k].strip() and lines[k].rstrip()[-1:] == closer:
+                        end = k
+                        break
+        if end is not None:
+            joined = " ".join(s.strip() for s in lines[i:end + 1] if s.strip())
+            if len(joined) <= 80:
+                out.append(joined)
+                i = end + 1
+                continue
+        out.append(cur)
+        i += 1
+    return out
 
 
 def _tweet_id(tag: str | None) -> str:
@@ -176,7 +212,7 @@ def _headline(t: str) -> str:
         quote = qm.group(1).strip().lstrip("#＃").strip()
 
     best, best_score = None, -1e9
-    for raw in t.split("\n"):
+    for raw in _join_shout_titles(t.split("\n")):
         line = raw.strip()
         if not line or HEADER_RE.search(line):
             continue
@@ -188,11 +224,14 @@ def _headline(t: str) -> str:
             continue
         if re.fullmatch(r"🛸?\s*夢限大みゅーたいぷ", line):
             continue
+        label_line = bool(_LABEL_LINE_RE.match(line))
         cleaned = _TRAIL_JUNK.sub("", _LEAD_JUNK.sub("", line)).strip(" 　")
         cleaned = _CONNECTIVE_RE.sub("", cleaned)
         if len(cleaned) < 4:
             continue
         score = min(len(cleaned), 40) * 0.3
+        if label_line or _LABEL_LINE_RE.match(cleaned):
+            score -= 40                       # `日程：` `会場：` 등 부가정보 줄 — 제목 아님
         if _HYPE_RE.search(cleaned):
             score -= 100
         if _RE_LIVE.search(cleaned) or _RE_RELEASE.search(cleaned) or _RE_PLATFORM.search(cleaned):
@@ -375,5 +414,25 @@ if __name__ == "__main__":
     assert r8 and r8["date"] == "2026-09-10" and r8["time"] == "22:00", r8
     assert r8["site"] == "youtube" and r8["anchor_a"] == "abcdef12345", r8
     print("[OK] S8  본일 시각만 → 오늘 날짜 보정")
+
+    # S9: 외침형 제목 블록(💪…💪 2줄) + 라벨 줄(日程：/会場：) 감점 → 진짜 제목 추출
+    S9 = ("＼チケットプレイガイド先行開始📢／\n\n"
+          "💪集え！#ゆめみた筋トレ部 \n　～輝け！上腕二頭筋～💪\n\n"
+          "日程：11月21日(土)\n会場：GARDEN 新木場 FACTORY\n\n"
+          "🎫お申し込みはこちら\nhttps://eplus.jp/yumemita_kinntorebu2026/\n\n"
+          "昼の部・夜の部\nどちらもお見逃しなく✨\n\n#バンドリ")
+    r9 = parse(S9, NOW, tag="p#x#1tweet-2099999999999999999")
+    assert r9 and r9["date"] == "2026-11-21", r9
+    assert r9["title"] == "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜", r9["title"]
+    assert "会場" not in r9["title"] and "eplus" not in r9["title"], r9["title"]
+    assert r9["url"] == "https://eplus.jp/yumemita_kinntorebu2026/", r9
+    print("[OK] S9  외침형 제목 블록 + 라벨 줄 감점")
+
+    # _join_shout_titles 단위 — 같은 줄에서 닫힌 경우엔 병합 안 함
+    assert _join_shout_titles(["＼abc／", "def"]) == ["＼abc／", "def"]
+    assert _join_shout_titles(["💪타이틀", "　서브〜💪", "다음"]) == ["💪타이틀 서브〜💪", "다음"]
+    assert _join_shout_titles(["🛸夢限大みゅーたいぷ", "9/1", "본문"]) == \
+        ["🛸夢限大みゅーたいぷ", "9/1", "본문"]           # 닫는 🛸 없음 → 병합 안 함
+    print("[OK] _join_shout_titles")
 
     print("\nSUCCESS: xnotice self-test 통과")

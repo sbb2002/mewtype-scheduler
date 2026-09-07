@@ -106,6 +106,14 @@
   (`aNoneTokyo` 취소, `/`명령이면 대기 접고 통과, 180초 만료). `_apply_notice` 로 같은 경로.
 - **`/notice-list`** (별칭 `/notices`) — id + 요약 나열. **`/notice-del <id|번호>`**(별칭 `/ndel`)
   — 1건 제거 + `/undo` 스냅샷.
+- **`/notice-edit <id|번호>`** (별칭 `/nedit`, v2.7.x) — 편집 마법사. `pending_notice_edit` 슬롯
+  (`{nid, step, new}`, TTL 300s)에 저장하고 **제목 → 날짜 → URL** 순으로 한 필드씩 되묻는다.
+  각 단계 응답: 새 값 → `new` 누적 · `aNoneTokyo` → 그 필드 유지 · 다른 `/명령` → 취소하고 통과 ·
+  5분 만료 → 취소. 마지막 단계 후 `_notice_edit_finalize` 가 바뀐 필드 + 파생값(`title_slug`·
+  `expires_at`·`site`·`anchor_a`)만 patch 로 만들어 `notices.edit_notice(prev, nid, patch, now)`
+  로 커밋(`id`/`seen_ids`/`first_seen` 보존) + `/undo` 스냅샷(`path=notices.json`).
+  날짜 입력은 `YYYY-MM-DD` 또는 `xnotice._pick_event_date`(예: `11/21`, `11月21日`) 로 파싱.
+  자동 감지가 잘린 폴백 알림 등으로 제목을 못 뽑았을 때의 유일한 교정 수단.
 - **`/undo`** — `undo.path` 가 `notices.json` 이면 그 파일을 복원. y/N 2단계·SHA 가드 동일.
   `_undo_diff_text` 가 path 따라 `broadcasts`↔`notices` 를 `id` 로 비교.
 
@@ -124,7 +132,12 @@
   `*.bilibili.com/<id>`·`b23.tv/*` / music(`lnk.to`·`spotify`·`music.apple`) / store
   (`bushiroad`·`booth.pm`·`/products/`) / 그 외 `web`. 없으면 `x`.
 - **anchor_b**: 첫 `「…」`/`『…』` 정규화.
-- **is_recap**: `ありがとうございました`/`御礼`/`無事終了`/`振り返り`/`感想は`/`ご来場` 등.
+- **제목(`_headline`)** (v2.7.x 개선):
+  - `_join_shout_titles` — 같은 장식 문자(`💪…💪` `🔥…🔥` `＼…／` 등)로 앞뒤를 감싼, 최대 3줄에
+    걸친 외침형 제목을 한 줄로 합침. (예: `💪集え！筋トレ部` + `　〜輝け！上腕二頭筋〜💪`)
+  - `_LABEL_LINE_RE` — `日程：`/`日時：`/`会場：`/`場所：`/`料金：`/`チケット：`/`受付：`/`出演：` 등
+    부가정보 라벨 줄은 제목 후보에서 −40점(제목이 아니라 메타데이터).
+  - 그래도 틀리면 `/notice-edit` 로 수동 교정.
 - **src_handle**: 본문이 `@handle:` 로 시작하거나 `title`(android.title)이 공식 표시 이름이
   아니면 `RT …`.
 
@@ -161,4 +174,4 @@
 ## 9. 남은 것
 
 - 다이제스트 DM(하루 1회 요약)은 아직 — 지금은 건별 한 줄 DM(`added`/`updated`).
-- 그룹 요약 알림·오분류 수정 명령(`/notice-edit`)은 필요해지면.
+- 그룹 요약 알림은 필요해지면. (수동 수정 명령 `/notice-edit` 은 v2.7.x 에서 구현됨 — §5.)
