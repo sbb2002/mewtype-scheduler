@@ -1,27 +1,6 @@
 {
-  "generated_at": "2026-09-07T12:09:18Z",
+  "generated_at": "2026-09-07T12:15:58Z",
   "notices": [
-    {
-      "anchor_a": null,
-      "anchor_b": "dimensionaloverlap",
-      "category": "etc",
-      "date": "2026-09-07",
-      "deadline": false,
-      "expires_at": "2026-09-07T15:00:00Z",
-      "first_seen": "2026-09-07T08:03:56Z",
-      "id": "2096871096783900855",
-      "last_updated": "2026-09-07T08:03:56Z",
-      "seen_ids": [
-        "2096871096783900855"
-      ],
-      "site": "x",
-      "src_handle": "@BDP_yumemita",
-      "time": "21:00",
-      "title": "「DIMENSIONAL OVERLAP」",
-      "title_slug": "dimensionaloverlap",
-      "tweet_url": "https://x.com/i/status/2096871096783900855",
-      "url": null
-    },
     {
       "anchor_a": null,
       "anchor_b": "アンロック・ザ・フューチャー",
@@ -105,6 +84,27 @@
       "title_slug": "メモリアルグッズの第2弾が発売",
       "tweet_url": "https://x.com/i/status/2096529833870479645",
       "url": "https://bushiroad-store.com/pages/anime-yumemita_memorial-fair2"
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "dimensionaloverlap",
+      "category": "etc",
+      "date": "2026-10-11",
+      "deadline": false,
+      "expires_at": "2026-10-11T15:00:00Z",
+      "first_seen": "2026-09-07T08:03:56Z",
+      "id": "2096871096783900855",
+      "last_updated": "2026-09-07T12:15:58Z",
+      "seen_ids": [
+        "2096871096783900855"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "21:00",
+      "title": "「DIMENSIONAL OVERLAP」",
+      "title_slug": "dimensionaloverlap",
+      "tweet_url": "https://x.com/i/status/2096871096783900855",
+      "url": null
     },
     {
       "anchor_a": "P6=001&P1=0402&P59=1",
