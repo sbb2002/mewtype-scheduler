@@ -142,7 +142,20 @@
       "title": "【歌枠】臨兵闘ｼｬ！皆陣烈在…… ＃アニメゆめみた【ゆめみた/藤都子】",
       "url": "https://www.youtube.com/watch?v=iWWGpoZfH5g",
       "video_id": "iWWGpoZfH5g"
+    },
+    {
+      "actual_end": "2026-09-07T15:10:37Z",
+      "actual_start": "2026-09-07T14:02:07Z",
+      "archived_at": "2026-09-07T15:12:00Z",
+      "channel_key": "yuno",
+      "reason": "ended",
+      "scheduled_start": "2026-09-07T14:00:00Z",
+      "status": "ended",
+      "thumbnail": "https://i.ytimg.com/vi/4SJPTPFKPB4/maxresdefault_live.jpg",
+      "title": "YUNO's+ 限定配信",
+      "url": "https://www.youtube.com/watch?v=4SJPTPFKPB4",
+      "video_id": "4SJPTPFKPB4"
     }
   ],
-  "updated_at": "2026-09-07T12:23:16Z"
+  "updated_at": "2026-09-07T15:12:00Z"
 }
