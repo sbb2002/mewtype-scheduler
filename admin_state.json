@@ -2,7 +2,12 @@
   "pending_del": null,
   "pending_ingest": null,
   "pending_notice": null,
-  "pending_notice_edit": null,
+  "pending_notice_edit": {
+    "at": "2026-09-07T12:15:20Z",
+    "new": {},
+    "nid": "2096871096783900855",
+    "step": "title"
+  },
   "pending_undo": null,
   "undo": {
     "action": "소식 편집 (2096886188376273312)",
