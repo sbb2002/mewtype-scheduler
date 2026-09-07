@@ -3,10 +3,10 @@
   "pending_ingest": null,
   "pending_notice": null,
   "pending_notice_edit": {
-    "at": "2026-09-07T12:15:20Z",
+    "at": "2026-09-07T12:15:31Z",
     "new": {},
     "nid": "2096871096783900855",
-    "step": "title"
+    "step": "date"
   },
   "pending_undo": null,
   "undo": {
