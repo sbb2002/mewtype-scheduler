@@ -2,11 +2,11 @@
   "entries": {
     "2Q5A9SWgHtA": {
       "actual_start": null,
-      "attempts": 17,
+      "attempts": 18,
       "channel_key": "nonoka",
       "first_seen": "2026-08-31T11:22:33Z",
-      "last_checked": "2026-09-07T15:30:00Z",
-      "next_check_at": "2026-09-07T15:33:00Z",
+      "last_checked": "2026-09-07T15:33:00Z",
+      "next_check_at": "2026-09-07T15:36:00Z",
       "phase": "pre-live",
       "scheduled_start": "2026-09-07T14:45:00Z"
     },
@@ -51,5 +51,5 @@
       "scheduled_start": "2026-12-24T14:59:00Z"
     }
   },
-  "updated_at": "2026-09-07T15:30:00Z"
+  "updated_at": "2026-09-07T15:33:00Z"
 }
