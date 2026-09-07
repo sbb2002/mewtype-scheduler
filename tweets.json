@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-07T08:40:41Z",
+  "generated_at": "2026-09-07T10:08:57Z",
   "tweets": {
     "arale": {
       "channel_key": "arale",
@@ -21,12 +21,12 @@
     },
     "ritsu": {
       "channel_key": "ritsu",
-      "expires_at": "2026-09-08T06:14:04Z",
+      "expires_at": "2026-09-08T10:08:57Z",
       "handle": "ritsu_yumemita",
-      "id": "2096844373338337435",
-      "received_at": "2026-09-07T06:14:04Z",
-      "text": "こっち見てきた",
-      "url": "https://x.com/i/status/2096844373338337435"
+      "id": "2096901511838371854",
+      "received_at": "2026-09-07T10:08:57Z",
+      "text": "配信はじめます！\nYouTubeは、ゲーミングサムネイルからちゃんとしたサムネイルにすり変わりました。",
+      "url": "https://x.com/i/status/2096901511838371854"
     }
   }
 }
