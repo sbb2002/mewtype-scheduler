@@ -4,12 +4,12 @@
   "pending_notice": null,
   "pending_undo": null,
   "undo": {
-    "action": "소식 added (ABEMA/Prime Video/dアニメストア/Hulu)",
-    "at": "2026-09-07T06:03:02Z",
-    "new_sha": "eab129eacfb6fa7b809d8e080f60ac9baad19f0c",
+    "action": "소식 added (「DIMENSIONAL OVERLAP」)",
+    "at": "2026-09-07T08:03:56Z",
+    "new_sha": "6c3f19862a6f1c7f7696b3117433a3fcfb35e5b5",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-07T01:31:37Z",
+      "generated_at": "2026-09-07T06:03:02Z",
       "notices": [
         {
           "anchor_a": null,
@@ -30,6 +30,27 @@
           "title": "夢限大みゅーたいぷ 4th LIVE 「アンロック・ザ・フューチャー」（会場:TACHIKAWA STAGE GARDEN）を開催しました",
           "title_slug": "夢限大みゅーたいぷ4thliveアンロック・ザ・",
           "tweet_url": "https://x.com/i/status/2096773253834723388",
+          "url": null
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": "バンドリ！ゆめ∞みた",
+          "category": "live",
+          "date": "2026-09-10",
+          "deadline": false,
+          "expires_at": "2026-09-10T15:00:00Z",
+          "first_seen": "2026-09-07T06:03:02Z",
+          "id": "2096841331595518017",
+          "last_updated": "2026-09-07T06:03:02Z",
+          "seen_ids": [
+            "2096841331595518017"
+          ],
+          "site": "x",
+          "src_handle": "RT @bang_dream_info",
+          "time": "23:00",
+          "title": "ABEMA/Prime Video/dアニメストア/Hulu/U-NEXTほかにて地上波同時配信",
+          "title_slug": "abemaprimevideodアニメストアhu",
+          "tweet_url": "https://x.com/i/status/2096841331595518017",
           "url": null
         },
         {
