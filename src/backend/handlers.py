@@ -23,6 +23,7 @@ from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .pending import default_pending
 from .statemachine import sync_pending
+from .xtweet import apply_overrides
 
 log = logging.getLogger("backend.handlers")
 
@@ -59,8 +60,8 @@ def _scheduled_wake_times(schedule: dict, now_iso: str) -> list[str]:
     horizon = now + timedelta(seconds=_SCHED_WAKE_LOOKAHEAD_SEC)
     out: set[str] = set()
     for b in (schedule or {}).get("broadcasts", []):
-        if b.get("status") != "scheduled" or b.get("video_id"):
-            continue  # video_id 있는 scheduled 는 후보집합에 있으니 별도 wake tick 불필요
+        if b.get("status") != "scheduled" or b.get("video_id") or b.get("time_tbd"):
+            continue  # video_id 있는 scheduled 는 후보집합에 · time_tbd 는 정밀 시작 없음 → wake 스킵
         ss = b.get("scheduled_start")
         if not ss:
             continue
@@ -214,6 +215,9 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         new_schedule, newly_ended = build_schedule(
             channels_cfg, videos, prev_schedule, now_iso, avatars
         )
+        # (v2.8.1) reconcile 이 API 로 재구성한 스케줄에 트윗 유래 시각 override 재적용.
+        # reconcile 은 수정 금지 모듈 → 여기서 후처리. 규칙: docs/plan/v2_8_1_personal_schedule.md §6
+        new_schedule = apply_overrides(new_schedule, prev_schedule, now_iso)
         # 실질 변화(_stable_view)가 없으면 broadcast 별 volatile 필드는 prev 로 동결하고,
         # generated_at 은 heartbeat 간격(_HEARTBEAT_MIN_SEC)마다만 전진시킨다.
         if _stable_view(prev_schedule) == _stable_view(new_schedule):

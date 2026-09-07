@@ -3,6 +3,7 @@
 커밋 메시지의 `feat(vX)` 태그가 실제 릴리스 절차 없이 붙어 히스토리가 흩어져 있어,
 버전별 "무엇이 구현됐는지"를 이 파일에서 내림차순으로 관리한다. (git tag 는 `v1.0.0` 하나뿐)
 
+- **v2.8.1** — 개인 트윗 예고 → `scheduled` 승격: `xtweet.parse_schedule`(`配信`+날짜[+시각]/URL 게이트) → `merge_personal_schedule`(같은 방송 upsert·붕괴), `time_tbd`(날짜만) 지원. `handlers.apply_overrides` 후처리로 최신 트윗 시각이 API 재구성을 override(`api_start_seen` 로 스트림 실수정 시만 API 승). 계약 A 에 `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen` 추가
 - **v2.8** — 멤버 5인 개인 트윗: `POST /ingest` 가 `android.title` 로 라우팅 → 개인 트윗은 `tweets.json` 파이프라인(24h 수명·최신 교체·`tweet_archive.json` 로깅), 예고판 상단 유닛 아바타에 파란 편지 배지(PC 호버·고정 말풍선 / 모바일 토스트, 퍼스널 컬러 배경). 테스트 부계정(`jehy`)은 강제 ECHO 헬스체크
 - **v2.7.1** — 소식 티커 마감: 0건도 빈 막대 유지, 펼침을 예고판 위 오버레이(밖 탭 닫힘·슬라이드)로, 모바일 버킷 통합·레이아웃 침범 수정
 - **v2.7** — 방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 자동 수집·중복제거·수명관리 + 예고판 상단 소식 티커

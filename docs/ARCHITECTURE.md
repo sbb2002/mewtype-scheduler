@@ -67,6 +67,10 @@
       `_maybe_personal_tweet` → `tweets.json`(계약 I) 반영 후 즉시 200 (소식/스케줄 파이프라인 안 탐).
       테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)이면 `force_echo` — 5번에서 무조건 ECHO(헬스체크).
       공식(`夢限大みゅーたいぷ`)·미매칭은 기존 경로. 전체 그림: `docs/INGEST_FLOW.md`.
+    - **(v2.8.1)** 개인 5인 분기는 배지 처리 후 `xtweet.parse_schedule` 도 돌린다 — 트윗이 방송
+      예고(`配信` 계열 + 날짜[+시각] 또는 온전한 YT URL)면 `merge_personal_schedule` 로
+      `schedule.json` 의 `status:"scheduled"`(`source:"personal"`) 행 승격. 정기 `/tick` 은
+      `reconcile` 직후 `xtweet.apply_overrides` 로 트윗이 정한 시각을 API 재구성이 안 덮게 한다.
   - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신
       (ECHO 는 raw body 전문, 4096자 초과 시 청크 분할) + `ingest ECHO: len=.. blen=.. tail_ok=..`
       로그. 스케줄/출연 트윗(`xrelay.looks_relayable`)만 `ingest_queue.json` 에 원문 적재.

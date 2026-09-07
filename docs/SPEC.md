@@ -107,11 +107,15 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 - `generated_at` heartbeat: 실질 변화가 없어도 `_HEARTBEAT_MIN_SEC`(20분) 간격으로 전진시켜
   커밋한다 (`handlers._heartbeat_generated_at`). 라이브 중 wake 3분마다 커밋되는 것은 막는다.
 
-### 1-1. `status == "scheduled"` 행 (v2.3 X 릴레이 / v2.4 합동)
+### 1-1. `status == "scheduled"` 행 (v2.3 X 릴레이 / v2.4 합동 / v2.8.1 개인 예고)
 
-`broadcasts[]` 에 `video_id` 없는 행이 섞일 수 있다. `@BDP_yumemita` 일일 스케줄 트윗이
-폰(Automate) → `mewtype-telegram` `POST /ingest` 로 릴레이돼 만들어진, **YouTube 영상이 아직
-없는 최하 단계**다. 파서 규칙: `docs/plan/v2_3_x_relay.md`.
+`broadcasts[]` 에 `video_id` 없는 행이 섞일 수 있다. `@BDP_yumemita` 일일 스케줄 트윗 또는
+**(v2.8.1) 개인 유닛 본인 예고 트윗**이 폰(Automate) → `mewtype-telegram` `POST /ingest` 로
+릴레이돼 만들어진, **YouTube 영상이 아직 없는 최하 단계**다.
+파서 규칙: `docs/plan/v2_3_x_relay.md`, `docs/plan/v2_8_1_personal_schedule.md`.
+
+**단계 필수 조건** (전이 규칙: 기존 행을 바꾸려면 그 행의 현재 단계 조건을 새 정보가 충족해야):
+`scheduled` ⇒ `date` / `upcoming` ⇒ `date`+`time`+`url`+`thumbnail`+`video_id` / `live` ⇒ +`actual_start`.
 
 ```jsonc
 {
@@ -127,11 +131,15 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
   "members_only": false,
   "collab_with": [],                                  // A×B 합방 시 상대 channel_key[]
   "host": null,                                        // "group"(=parse_appearance 出演情報 전용). daily 합동은 이제 안 붙임
-  "source": "bdp_schedule",                           // 또는 "bdp_appearance"(出演情報)
+  "source": "bdp_schedule",                           // "bdp_schedule" | "bdp_appearance" | "personal"(v2.8.1)
   "source_at": "2026-09-03T01:05:00Z",
+  "time_tbd": false,                                   // (v2.8.1) true = scheduled_start 가 "<date>T00:00:00Z" 자리표시자, 시각 미정
+  "info_source": "personal",                          // (v2.8.1) 현재 표시 중인 날짜·시각을 마지막으로 정한 출처: bdp_schedule|personal|appearance|api
+  "info_at": "2026-09-07T12:50:00Z",                  // (v2.8.1) 그 정보의 유효 시각. 트윗=Snowflake 작성 시각 / API=그 tick 실행 시각
+  "api_start_seen": null,                             // (v2.8.1) 트윗이 API-확정 행 시각을 override 한 시점의 API scheduled_start. 이 값이 바뀌면(스트림 실수정) API 승
   "first_seen": "...", "last_updated": "...",
   "assumed_live": false,                              // reconcile 이 scheduled_start 지나면 true
-  "expires_at": "2026-08-30T05:00:00Z"               // start + (회원전용 5h / 공개 3h). null 이면 first_seen+18h
+  "expires_at": "2026-08-30T05:00:00Z"               // start + (회원전용 5h / 공개 3h). time_tbd 면 그 날짜 JST 자정. null 이면 first_seen+18h
 }
 ```
 
@@ -152,6 +160,15 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
   `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 링크는 `channel_url`. DOM 은 §3.
   구버전 프론트는 이 행을 무시(롤백 안전). `kind=="collab"` 이면 `.card--collab` 추가 +
   **참여 멤버 전원**(`channel_key` ∪ `collab_with`) 레인에 같은 카드로 팬아웃, 링크는 `url`(그룹 영상).
+  `time_tbd` 면 시각 자리에 날짜(M/D)만 + "시간 미정", 카운트다운(`updateCountdowns`)은 스킵.
+- **(v2.8.1) 개인 예고 병합**: `xtweet.parse_schedule` → `xtweet.merge_personal_schedule` (replace-by-date
+  아님, "같은 방송" upsert). "같은 방송" 판정: 양쪽 `video_id`/스트림 URL 있고 같으면 동일(다르면
+  다른 방송), 아니면 같은 `channel_key` + (`scheduled_start` ±90분 / 한쪽 `time_tbd` 면 같은 JST 날짜).
+  붕괴 생존 우선순위: `video_id` > 상위 단계 > `info_at` 최신 > `bdp_schedule` > `personal`.
+- **(v2.8.1) 최신-정보-우선 override**: `handlers.tick()` 이 `reconcile.build_schedule` 직후
+  `xtweet.apply_overrides(new, prev, now_iso)` 로, 트윗이 정한 `scheduled_start` 를 API 가 덮지 않게
+  한다 — API `scheduledStartTime` 이 행의 `api_start_seen` 과 같으면(스트림 미수정) 트윗값 유지,
+  달라지면 API 승. 더 나중 트윗은 항상 재-override.
 - **`ingest_queue.json`** (`data` 브랜치, `{"pending":[{raw,title,received_at}]}`): 테스트 모드
   (`INGEST_ECHO`/`INGEST_DRY_RUN`) 중 온 스케줄 트윗 원문 버퍼. 실배포 전환
   (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 `telegram_app._ingest_queue_drain`
@@ -464,6 +481,12 @@ KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 
 - `/ingest` 3.5 라우팅: 개인 5인 → `_maybe_personal_tweet` 처리 후 즉시 200(4번 이하 안 탐).
   테스트 부계정 → `force_echo` 로 5번에서 강제 ECHO(헬스체크). 공식·그 외 → 기존 경로.
 - 프론트 `js/tweets.js` + `css/tweets.css` — 만료·404 면 배지 안 뜸. `undo` 대상 아님(24h 휘발).
+- **(v2.8.1)** `_maybe_personal_tweet` 이 배지 처리 후 `xtweet.parse_schedule` 도 호출 —
+  개인 트윗이 방송 예고(`配信` 계열 키워드 + 구체 미래 날짜[시각 옵션] 또는 온전한 YT URL)면
+  `xtweet.merge_personal_schedule` 로 `schedule.json` 의 `status:"scheduled"` 행(`source:"personal"`)
+  승격 + `/undo` 스냅샷 + 관측 DM(`📅 <유닛> 본인 예고 감지 …`). 게이트 미통과(후기·리트윗·패턴없음)면
+  배지만. `time_tbd`/`info_source`/`info_at`/`api_start_seen` 은 계약 §1-1.
+  상세: `docs/plan/v2_8_1_personal_schedule.md`.
 
 ---
 
@@ -597,6 +620,9 @@ def verify_request(headers, *, expected_audience, expected_sa=None) -> None
 5. **커밋 루프 (최대 2회, ConflictError 재시도)** — RSS/YouTube 는 한 번만, `videos` 재사용:
    a. `prev_*` / `*_sha` 를 루프 안에서 **새로** 읽는다.
    b. `new_schedule, newly_ended = build_schedule(cfg, videos, prev_schedule, now_iso, avatars)`;
+      **(v2.8.1)** `new_schedule = xtweet.apply_overrides(new_schedule, prev_schedule, now_iso)` —
+      트윗이 정한 `scheduled_start` 를 API 재구성이 덮지 않게 (§1-1 최신-정보-우선). reconcile 은
+      수정 금지 모듈이라 여기서 후처리.
       `_stable_view` 변화 없으면 volatile 필드(`generated_at`/`last_updated`/`concurrent_viewers`)
       동결 + `generated_at` heartbeat(20분).
    c. `decision = sync_pending(prev_pending, videos, channel_id_to_key, now_iso,

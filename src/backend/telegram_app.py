@@ -578,16 +578,19 @@ _INGEST_QUEUE_MAX = 30       # data 브랜치 파일 비대 방지 (일일 트�
 _INGEST_RAW_CAP = 8000       # 저장 원문 상한
 
 
-def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = None) -> bool:
-    """rows 를 merge_scheduled 로 schedule.json 에 반영 (base-sha 충돌 시 1회 재시도).
+def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = None,
+                              merge_fn=None) -> bool:
+    """rows 를 `merge_fn`(기본 `xrelay.merge_scheduled`) 로 schedule.json 에 반영
+    (base-sha 충돌 시 1회 재시도). v2.8.1 개인 예고는 `xtweet.merge_personal_schedule` 를 넘긴다.
 
     실제로 변경됐으면 admin_state.json 에 undo 스냅샷을 남긴다(v2.5, `action` 없으면 `message` 사용).
     """
+    merge_fn = merge_fn or xrelay.merge_scheduled
     changed = False
     prev = new_sha = None
     for attempt in (1, 2):
         prev, sha = gh.read_json("schedule.json")
-        merged = xrelay.merge_scheduled(prev or {}, rows, now_iso)
+        merged = merge_fn(prev or {}, rows, now_iso)
         try:
             changed, new_sha = gh.write_json("schedule.json", merged, prev_sha=sha, message=message)
             break
@@ -1239,8 +1242,9 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     except Exception:
         log.exception("personal tweet 반영 실패")
         return "error"
+
+    name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
     if mode in ("added", "replaced"):
-        name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
         _send_telegram(
             f"🐦 <b>{html.escape(name)}</b> 새 트윗\n"
             f"{html.escape(xtweet.summary_line(parsed))}",
@@ -1248,7 +1252,54 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         )
     else:
         log.info("personal tweet: %s (%s)", mode, channel_key)
+
+    # (v2.8.1) 예고글이면 schedule.json 의 scheduled 행으로도 승격
+    _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
+                             handle=handle, now_iso=now_iso)
     return mode
+
+
+def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
+                             name: str, handle: str, now_iso: str) -> None:
+    """(v2.8.1) 개인 트윗이 방송 예고면 `xtweet.merge_personal_schedule` 로 scheduled 행 반영.
+
+    `_maybe_personal_tweet` 이 배지 처리 후 호출. 게이트 미통과면 no-op(배지만).
+    관측 DM(초반 튜닝용) — precision 안정되면 제거.
+    """
+    if xtweet is None:
+        return
+    try:
+        row = xtweet.parse_schedule(raw, channel_key=channel_key, tag=tag,
+                                    now_iso=now_iso, handle=handle)
+    except Exception:
+        log.exception("parse_schedule 실패")
+        return
+    if not row:
+        return
+    gh = _make_gh()
+    if gh is None:
+        return
+    try:
+        control, _ = gh.read_json("control.json")
+        if is_paused(control or default_control()):
+            return
+        changed = _merge_rows_into_schedule(
+            gh, [row], now_iso,
+            message=f"data: personal schedule {channel_key} {now_iso}",
+            action=f"본인 예고 {name} ({(raw[:40] or '').strip()})",
+            merge_fn=xtweet.merge_personal_schedule,
+        )
+    except Exception:
+        log.exception("personal schedule 반영 실패")
+        return
+    when = "시간 미정" if row.get("time_tbd") else xrelay._jst_hm(row.get("scheduled_start")) + " JST"
+    link = row.get("url") or ""
+    _send_telegram(
+        f"📅 <b>{html.escape(name)}</b> 본인 예고 감지 → {when}"
+        + (f"\n{html.escape(link)}" if link else "")
+        + ("\n\n↩️ /undo 로 되돌릴 수 있습니다." if changed else ""),
+        silent=True,
+    )
 
 
 def _tweet_sweep(gh, now_iso: str) -> int:
