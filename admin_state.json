@@ -1,6 +1,8 @@
 {
   "pending_del": null,
-  "pending_ingest": null,
+  "pending_ingest": {
+    "at": "2026-09-07T11:10:11Z"
+  },
   "pending_notice": null,
   "pending_undo": null,
   "undo": {
