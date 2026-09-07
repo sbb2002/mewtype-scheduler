@@ -134,19 +134,31 @@ class Telegram:
             return False
 
 
-# 로그 레벨별 전송 허용 이벤트 종류 (control.json log_level)
-#   detail : 전부 + 매 실행 요약("summary")
-#   normal : 전이(A/B/C) + fallback + error, 요약 없음
-#   simple : fallback + error 만
+# 로그 레벨별 전송 허용 이벤트 종류 (control.json log_level). (v2.8.2)
+#   detail : scheduled·upcoming·live·notice·tweet·ingest 결과 전부 + fallback/error/summary
+#            (성공/실패 안 따지고 모두)
+#   normal : scheduled·upcoming·live·notice·tweet 만
+#   simple : upcoming·live 만
+#   ── kind 목록 ──
+#   scheduled : 개인 트윗 본인 예고 감지(_maybe_personal_schedule)
+#   upcoming  : diff_events "upcoming"
+#   live      : diff_events "live_start" / "live_end" (아래 _KIND_ALIAS 로 통합)
+#   notice    : 소식 자동 인입(_maybe_auto_notice)
+#   tweet     : 개인 트윗 배지 반영(_maybe_personal_tweet)
+#   ingest    : /ingest X 릴레이 반영 결과 DM
+#   fallback / error / summary : 운영 진단 — detail 에서만
 _LEVEL_KINDS = {
-    "detail": {"upcoming", "live_start", "live_end", "fallback", "error", "summary"},
-    "normal": {"upcoming", "live_start", "live_end", "fallback", "error"},
-    "simple": {"fallback", "error"},
+    "detail": {"scheduled", "upcoming", "live", "notice", "tweet", "ingest",
+               "fallback", "error", "summary"},
+    "normal": {"scheduled", "upcoming", "live", "notice", "tweet"},
+    "simple": {"upcoming", "live"},
 }
+_KIND_ALIAS = {"live_start": "live", "live_end": "live"}
 
 
 def allows(level: str, kind: str) -> bool:
     """log_level 에서 해당 이벤트 종류를 Telegram 으로 보낼지."""
+    kind = _KIND_ALIAS.get(kind, kind)
     return kind in _LEVEL_KINDS.get(level, _LEVEL_KINDS["normal"])
 
 
@@ -763,6 +775,18 @@ if __name__ == "__main__":
     assert "&lt;script&gt;" in upcoming.text
     print("✓ HTML escape 작동")
 
+    # 시나리오 10: allows() — (v2.8.2) 레벨별 kind 게이팅
+    print("\n[시나리오 10] allows() 레벨별 게이팅")
+    print("-" * 70)
+    assert allows("simple", "upcoming") and allows("simple", "live_start")
+    assert not allows("simple", "scheduled") and not allows("simple", "notice")
+    assert not allows("simple", "tweet") and not allows("simple", "ingest")
+    assert all(allows("normal", k) for k in ("scheduled", "upcoming", "live_end", "notice", "tweet"))
+    assert not allows("normal", "ingest") and not allows("normal", "fallback")
+    assert all(allows("detail", k) for k in
+               ("scheduled", "upcoming", "live_start", "notice", "tweet", "ingest", "fallback", "summary"))
+    print("✓ simple=upcoming/live · normal=+scheduled/notice/tweet · detail=+ingest/fallback/summary")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 9개 스모크 테스트 통과")
+    print("SUCCESS: 모든 10개 스모크 테스트 통과")
     print("=" * 70)

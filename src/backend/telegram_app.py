@@ -40,8 +40,11 @@ except ImportError:
 
 try:
     from .notify import Telegram
+    from .notify import allows as _notify_allows
 except ImportError:
     Telegram = None
+    def _notify_allows(level, kind):   # noqa: E306 - notify 미탑재 시 전부 통과
+        return True
 
 try:
     from . import xrelay
@@ -398,6 +401,27 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
     return tg.send(text, parse_mode="HTML", silent=silent)
 
 
+def _auto_dm_allows(gh, kind: str) -> bool:
+    """(v2.8.2) 자동 알림 `kind` 를 현재 control.json `log_level` 에서 보낼지.
+
+    운영자가 직접 친 명령의 응답에는 쓰지 않는다 — 자동으로 튀어나오는 알림
+    (소식/트윗/본인예고/ingest 결과)만 이 게이트를 통과해야 한다.
+    레벨 매핑: notify._LEVEL_KINDS — detail=전부 / normal=scheduled·upcoming·live·notice·tweet / simple=upcoming·live.
+    """
+    try:
+        control, _ = gh.read_json("control.json")
+        level = get_log_level(control or default_control())
+    except Exception:
+        level = "normal"
+    return _notify_allows(level, kind)
+
+
+def _auto_dm(gh, kind: str, text: str, *, silent: bool = True) -> None:
+    """`_auto_dm_allows` 통과하면 `_send_telegram`."""
+    if _auto_dm_allows(gh, kind):
+        _send_telegram(text, silent=silent)
+
+
 # /status 두 번째 메시지 — 첫 메시지(_build_status_text)에 나오는 용어 풀이.
 _STATUS_GLOSSARY = (
     "📖 <b>/status 필드</b>\n"
@@ -413,9 +437,9 @@ _STATUS_GLOSSARY = (
     "<b>다음</b>=가장 이른 재확인 시각\n"
     "\n"
     "🔧 <b>로그 레벨</b> (/log 로 변경)\n"
-    "· <b>detail</b> — 전이 + fallback/오류 + 매 실행 sync 요약\n"
-    "· <b>normal</b> — 전이 + fallback/오류 (sync 요약 없음) · 기본값\n"
-    "· <b>simple</b> — fallback/오류만"
+    "· <b>detail</b> — scheduled·upcoming·live·notice·tweet·ingest 전부 + fallback/오류/sync 요약 (성공·실패 무관)\n"
+    "· <b>normal</b> — scheduled·upcoming·live·notice·tweet 만 · 기본값\n"
+    "· <b>simple</b> — upcoming·live 만"
 )
 
 
@@ -431,9 +455,9 @@ def _handle_status(gh: GitHubStore, channels_cfg: dict, now_iso: str) -> None:
 
 
 _LOG_LEVEL_DESC = {
-    "detail": "모든 알림 + 매 실행 sync 요약",
-    "normal": "전이(예정/시작/종료) + fallback/오류. sync 요약 없음",
-    "simple": "fallback/오류만",
+    "detail": "scheduled·upcoming·live·notice·tweet·ingest 전부 + fallback/오류/sync 요약 (성공·실패 무관)",
+    "normal": "scheduled·upcoming·live·notice·tweet 만",
+    "simple": "upcoming·live 만",
 }
 
 
@@ -1189,10 +1213,10 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
     except Exception:
         log.exception("auto notice 실패")
         return "error"
-    if mode in ("added", "updated"):
+    if mode in ("added", "updated") and _auto_dm_allows(gh, "notice"):
         _notice_result_dm(mode, parsed, raw)
     else:
-        log.info("auto notice: %s (조용히)", mode)
+        log.info("auto notice: %s (조용히, mode=%s)", "gated" if mode in ("added", "updated") else "", mode)
     return mode
 
 
@@ -1245,11 +1269,9 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
 
     name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
     if mode in ("added", "replaced"):
-        _send_telegram(
-            f"🐦 <b>{html.escape(name)}</b> 새 트윗\n"
-            f"{html.escape(xtweet.summary_line(parsed))}",
-            silent=True,
-        )
+        _auto_dm(gh, "tweet",
+                 f"🐦 <b>{html.escape(name)}</b> 새 트윗\n"
+                 f"{html.escape(xtweet.summary_line(parsed))}")
     else:
         log.info("personal tweet: %s (%s)", mode, channel_key)
 
@@ -1294,11 +1316,11 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     when = "시간 미정" if row.get("time_tbd") else xrelay._jst_hm(row.get("scheduled_start")) + " JST"
     link = row.get("url") or ""
-    _send_telegram(
+    _auto_dm(
+        gh, "scheduled",
         f"📅 <b>{html.escape(name)}</b> 본인 예고 감지 → {when}"
         + (f"\n{html.escape(link)}" if link else "")
         + ("\n\n↩️ /undo 로 되돌릴 수 있습니다." if changed else ""),
-        silent=True,
     )
 
 
@@ -1835,7 +1857,7 @@ if _FLASK_AVAILABLE:
             control, _ = gh.read_json("control.json")
             if is_paused(control or default_control()):
                 log.info("ingest: paused — skip")
-                _send_telegram("⏸ 일시정지 중 — ingest 무시", silent=True)
+                _auto_dm(gh, "ingest", "⏸ 일시정지 중 — ingest 무시")
                 return jsonify({"ok": True, "paused": True}), 200
 
             # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
@@ -1853,7 +1875,8 @@ if _FLASK_AVAILABLE:
                     msg = "ℹ️ ingest: 스케줄·소식 형식 아님 — 무시\n" + raw[:200]
                 if drained:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
-                _send_telegram(msg, silent=not drained)
+                # 대기열 반영이 있었으면(=실제 scheduled 변경) scheduled, 아니면 잡음성 ingest.
+                _auto_dm(gh, "scheduled" if drained else "ingest", msg)
                 return jsonify(
                     {"ok": True, "parsed": 0, "failed": len(failed), "drained": drained}
                 ), 200
@@ -1875,7 +1898,7 @@ if _FLASK_AVAILABLE:
                 summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
             if changed:
                 summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
-            _send_telegram(summary)
+            _auto_dm(gh, "scheduled", summary)   # 공식 일일 스케줄 → scheduled 행 반영
             return jsonify(
                 {"ok": True, "parsed": len(rows), "changed": changed, "drained": drained}
             ), 200
