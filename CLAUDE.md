@@ -68,7 +68,8 @@ src/
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
     config.py          # 환경변수 → Config
-    notify.py          # (v2.1) Telegram 알림 + diff_events(A~F)
+    notify.py          # (v2.1) Telegram 알림 + diff_events(A~F). (v2.8.2) allows(level,kind) —
+                       #        simple=upcoming·live / normal=+scheduled·notice·tweet / detail=+ingest·fallback·요약
     control.py         # (v2.1) control.json 스키마 (paused)
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
@@ -110,7 +111,7 @@ python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, 
 python -m src.backend.statemachine   # 폴링 FSM 9 시나리오
 python -m src.backend.xrelay         # (v2.3~2.6) X 스케줄 파서 — S1~S9 + unparsed_lines + merge
 python -m src.backend.pending        # pending.json 헬퍼
-python -m src.backend.notify         # (v2.1) diff_events 9 시나리오
+python -m src.backend.notify         # (v2.1) diff_events + (v2.8.2) allows() 레벨 게이팅 10 시나리오
 python -m src.backend.control        # (v2.1) control.json 헬퍼
 python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/undo, undo.path)
 python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S8 (카테고리·날짜·anchor·recap)

@@ -365,12 +365,19 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 ```
 
 - 기본형(파일 없음): `{"paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": null}`.
-- **log_level 별 전송 이벤트** (`notify.allows(level, kind)`):
-  | 종류 | detail | normal | simple |
-  |---|:-:|:-:|:-:|
-  | A upcoming / B live_start / C live_end | ✓ | ✓ | ✗ |
-  | D sync 요약 | 매 실행 | ✗ | ✗ |
-  | E fallback / F 오류 / 다운 알림 | ✓ | ✓ | ✓ |
+- **log_level 별 전송 이벤트** (`notify.allows(level, kind)`, v2.8.2 개편):
+  | kind | 어디서 | detail | normal | simple |
+  |---|---|:-:|:-:|:-:|
+  | `upcoming` | diff_events A | ✓ | ✓ | ✓ |
+  | `live` (`live_start`/`live_end`) | diff_events B/C | ✓ | ✓ | ✓ |
+  | `scheduled` | 개인 본인예고 감지 · 공식 X 스케줄 반영 DM | ✓ | ✓ | ✗ |
+  | `notice` | `_maybe_auto_notice` 소식 추가/갱신 | ✓ | ✓ | ✗ |
+  | `tweet` | `_maybe_personal_tweet` 배지 반영 | ✓ | ✓ | ✗ |
+  | `ingest` | `/ingest` 잡음성 결과("형식 아님" 등) | ✓ | ✗ | ✗ |
+  | `fallback` / `error` / `summary` | 운영 진단 | ✓ | ✗ | ✗ |
+  - 다운 감지(healthchecks.io grace 초과)는 log_level 과 무관하게 항상 알림.
+  - 운영자가 직접 친 명령(`/list`·`/notice`·`/undo`·`/status` 등)의 응답은 게이팅 안 함
+    (`telegram_app._auto_dm` 은 자동 알림에만 씀).
 
 `control.py` (순수 헬퍼): `default_control()`, `is_paused(c)`, `get_log_level(c)`(이상값→"normal"),
 `set_paused(c, paused, *, by, now_iso)`, `set_log_level(c, level, *, by, now_iso)`(이상 level→ValueError).
