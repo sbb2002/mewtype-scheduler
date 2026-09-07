@@ -81,6 +81,8 @@ src/
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
     xtweet.py          # (v2.8) android.title 라우팅(route_by_title) + tweets.json/tweet_archive.json
                        #        계약(parse·merge_tweet·sweep_expired) — 순수. 개인 5인 트윗 전용 파이프라인
+                       #        (v2.8.1) parse_schedule(예고 게이트) · merge_personal_schedule(같은 방송 upsert)
+                       #        · apply_overrides(handlers 후처리 — 트윗 시각이 API 재구성을 override)
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
@@ -113,7 +115,8 @@ python -m src.backend.control        # (v2.1) control.json 헬퍼
 python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/undo, undo.path)
 python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S8 (카테고리·날짜·anchor·recap)
 python -m src.backend.notices        # (v2.7) notices 머지·중복판정·sweep
-python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_tweet(added/replaced/dup/stale) + sweep
+python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_tweet + sweep
+                                    #   (v2.8.1) parse_schedule + merge_personal_schedule + apply_overrides
 python -m src.backend.telegram_app   # /list /del /undo /notice 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
 
@@ -175,6 +178,11 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    백엔드 생존 확인용 헬스체크, 상시 유지). 공식·미매칭·빈 title 은 기존 경로. 프론트는
    `js/tweets.js`+`css/tweets.css` — 유닛 아바타 편지 배지, PC 호버·고정 말풍선 / 모바일 토스트,
    배경 = 유닛 `--lane-color` 재사용. 흐름도 `docs/INGEST_FLOW.md`, 상세 `docs/plan/v2_8_personal_tweets.md`.
+   **(v2.8.1)** 개인 5인 분기는 배지 + `xtweet.parse_schedule`(`配信`+날짜[+시각]/URL 게이트) 둘 다
+   수행 → 예고면 `merge_personal_schedule` 로 `schedule.json` `scheduled`(`source:"personal"`) 승격.
+   `time_tbd`(날짜만) 지원. `handlers.tick()` 이 `reconcile` 직후 `xtweet.apply_overrides` 로 트윗이
+   정한 `scheduled_start` 를 API 재구성이 안 덮게 함(스트림 실제 수정 시만 API 승 — `api_start_seen`).
+   계약 A 필드: `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen`. 상세 `docs/plan/v2_8_1_personal_schedule.md`.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId

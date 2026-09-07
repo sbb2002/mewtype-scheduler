@@ -130,7 +130,17 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
 
     const meta = document.createElement("p");
     meta.className = "card__meta";
-    if (broadcast.scheduled_start) {
+    if (broadcast.time_tbd && broadcast.scheduled_start) {
+      // (v2.8.1) 개인 예고 등 날짜만 확정 — 시각 자리에 날짜(M/D)만, 카운트다운 없음.
+      const dateEl = document.createElement("span");
+      dateEl.className = "card__time";
+      dateEl.textContent = broadcast.scheduled_start.slice(5, 10).replace("-", "/");
+      meta.appendChild(dateEl);
+      const rel = document.createElement("span");
+      rel.className = "card__rel";
+      rel.textContent = broadcast.assumed_live ? "방송 중 (추정)" : "시간 미정";
+      meta.appendChild(rel);
+    } else if (broadcast.scheduled_start) {
       const timeEl = document.createElement("time");
       timeEl.className = "card__time";
       timeEl.dateTime = broadcast.scheduled_start;
