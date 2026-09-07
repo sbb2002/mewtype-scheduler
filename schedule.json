@@ -51,6 +51,31 @@
       "title": "🖤YUNO's free chat🩷",
       "url": "https://www.youtube.com/watch?v=ZZMwYj6PM9o",
       "video_id": "ZZMwYj6PM9o"
+    },
+    {
+      "api_start_seen": null,
+      "assumed_live": false,
+      "channel_key": "ritsu",
+      "collab_with": [],
+      "expires_at": "2026-09-08T15:00:00Z",
+      "first_seen": "2026-09-07T12:54:53Z",
+      "icon": null,
+      "info_at": "2026-09-07T12:54:51Z",
+      "info_source": "personal",
+      "kind": "unknown",
+      "last_updated": "2026-09-07T12:54:53Z",
+      "members_only": false,
+      "sched_id": "sched:ritsu:2026-09-08T12:00:00Z",
+      "scheduled_start": "2026-09-08T12:00:00Z",
+      "source": "personal",
+      "source_at": "2026-09-07T12:54:53Z",
+      "start_approx": false,
+      "status": "scheduled",
+      "thumbnail": null,
+      "time_tbd": false,
+      "title": null,
+      "url": "https://www.youtube.com/@ritsu_yumemita",
+      "video_id": null
     }
   ],
   "channel_order": [
@@ -117,5 +142,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-07T12:43:23Z"
+  "generated_at": "2026-09-07T12:54:53Z"
 }
