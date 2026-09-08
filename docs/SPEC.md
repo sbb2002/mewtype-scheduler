@@ -764,7 +764,7 @@ GET  /           # 200 헬스체크
   `xtweet.route_by_title(title, channels_cfg, test_titles=INGEST_TEST_TITLES)`. 개인 5인이면
   `_maybe_personal_tweet`(→ `tweets.json`, 계약 I) 처리 후 즉시 200 — 이하 로직 안 탐. 테스트
   부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)이면 `force_echo=True` 로 ECHO 게이트 강제 통과
-  (헬스체크 — 외부 백엔드 생존 확인용, 상시 유지). 공식·미매칭·빈 title 은 아래 기존 흐름 그대로.
+  (헬스체크 — 업스트림 시스템 생존 확인용, 상시 유지). 공식·미매칭·빈 title 은 아래 기존 흐름 그대로.
   전체 그림: `docs/INGEST_FLOW.md`.
 - 폰 Automate 빌드가 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘리므로 — `text` 값이
   비고 (`text`/`title`/`template`/`tag` 외) 폼 키가 딱 하나 + 그 값도 비면 **그 키 이름을 원문으로
