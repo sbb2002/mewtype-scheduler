@@ -5,13 +5,34 @@
   "pending_notice_edit": null,
   "pending_undo": null,
   "undo": {
-    "action": "소식 added (TVアニメ「バンドリ！ ゆめ∞みた」)",
-    "at": "2026-09-08T03:04:26Z",
-    "new_sha": "c2bc4f58d0ef949edee74740bba43d780b08f44f",
+    "action": "소식 updated (最終回 「夢限大みゅーたいぷ」放送)",
+    "at": "2026-09-08T04:15:43Z",
+    "new_sha": "1d1cc78c9a806b43bf5dfd8dcb685bd6217cec3d",
     "path": "notices.json",
     "prev_content": {
       "generated_at": "2026-09-08T03:04:26Z",
       "notices": [
+        {
+          "anchor_a": null,
+          "anchor_b": "バンドリ！ゆめ∞みた",
+          "category": "etc",
+          "date": "2026-09-08",
+          "deadline": false,
+          "expires_at": "2026-09-08T15:00:00Z",
+          "first_seen": "2026-09-08T03:04:26Z",
+          "id": "2097158897920544777",
+          "last_updated": "2026-09-08T03:04:26Z",
+          "seen_ids": [
+            "2097158897920544777"
+          ],
+          "site": "x",
+          "src_handle": "RT @bang_dream_info",
+          "time": "23:00",
+          "title": "TVアニメ「バンドリ！ ゆめ∞みた」",
+          "title_slug": "tvアニメバンドリゆめみた",
+          "tweet_url": "https://x.com/i/status/2097158897920544777",
+          "url": null
+        },
         {
           "anchor_a": null,
           "anchor_b": "バンドリ！ゆめ∞みた",
