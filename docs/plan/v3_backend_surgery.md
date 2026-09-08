@@ -12,6 +12,12 @@
     * none : 기존의 none. 영상에 대한 아무 정보도 없으며 예고 아이템 실체도 없는 상태.
     * announced : 기존의 scheduled. 백엔드가 일정 주기로 감지하는 스케줄과 혼동될 여지가 있어 이름을 바꿈. 방송 예고가 감지되었으나 일부 정보만 파악된 상태를 말함. 최신 예고 정보가 이와 다르면 최신 예고 정보로 갱신. 프론트에는 현재 기준 scheduled가 표시하는 관례를 적용할 것.
     * upcoming : 기존의 upcoming. 방송 예고가 감지 + 정확한 날짜 + 시간 + 제목 + 썸네일 + url 모두를 파악한 경우 이 단계로 승격할 수 있음. 최신 예고 정보가 이와 다르면 최신 예고 정보로 갱신.
+        - **유튜브 앱 알림 경로**: `LIVESTREAM_TUNEIN`(예정−30분) 알림 한 건으로 5필드가 다 채워진다 —
+          `chime.slot_key`=video_id(온전한 11자) → url + 썸네일(`i.ytimg.com/vi/<id>/mqdefault.jpg`),
+          `android.text`=제목, 날짜=당일, 시간=**알림 도착 + 30분**(파생값. 정확 ISO 아님 →
+          provenance 를 남기고 이후 `REMINDER`/watching 이 정정). 즉 시작 전 승격 기회가 확정적으로 1회 온다.
+        - 트윗 경로 예고(`announced`)에 이미지가 딸려 있으면 vxtwitter unfurl 로 썸네일을 얻어
+          이 승격 조건의 "썸네일"을 만족시킨다(아래 업스트림 절 참조).
     * watching : 신설 단계. announced 또는 upcoming 상태에서 파악된 날짜/시간으로부터 3분 전 지금과 같이 모니터링하여 live 시작 시까지 관찰하는 단계. 
         지각(시작 시간 초과) 120분까지 아래와 같이 관찰.
             - 3분 단위로 live 상태인지 체크 
@@ -20,6 +26,11 @@
     * live : 실제 시작이 확인되면 첫 60분까지 10분마다 종료했는지 파악. 만약 시작 60분 경과 후 3분마다 종료 체크할 것. 종료가 확인되면 end 상태로 넘어감. '방송중(n분)'
     * end : 신설 단계. 종료 후 프론트 UI 상에서 ON-AIR이던 것을 OFF-AIR(빨간테두리 소등)으로 하고 '방송 종료'라고 표기하되 아직 영상 내리지말 것. 30분간 5분 간격으로 해당 유닛이 live아닌 상태(종료 상태)를 유지하면 none으로 이동하고 영상을 완전히 내림. 만약 다시 켠다면 live로 이동하고 바뀐 제목, 날짜/시각, url을 업데이트할 것. 마지막 30분째 이 아이템이 youtube 영상 형태가 아닌 예고 스트림으로 바뀌어졌다면 upcoming으로 다시 이동.
 - 방송에고 아이템의 생애주기 : none -> announced -> (upcoming) -> (watching) -> live <-> end -> none
+- **video_id 없는 assumed-live 폴백** (v2 핫픽스 → v3 계승): `announced`/`upcoming` 인데 `video_id` 를
+  끝내 못 얻어 `watching`/`live` 로 못 넘어간 채 예정 시각만 지난 행은 종료를 검사할 주체가 없다.
+  프론트엔 "방송 중(추정)" 으로 잠깐 뜨되 **예정 시각 + 90분**이면 자동으로 `none` 처리(영상/카드 제거).
+  1번(유튜브 알림)이 승격을 거의 확정화하면 이 경우는 드물어지지만 폴백은 남긴다.
+  v2 구현: `reconcile.ASSUMED_LIVE_MAX_SEC` — `assumed_live` + `video_id` 없음 + `scheduled_start+90분` → drop.
 - 기타사항
     * '오늘' 영역인 것에 대해서는 지금처럼 'n시간 m분 전'이라고 표시.
     * '7일 이내' 영역에 대해서는 'D-n %H:%M'이라고 표시.
@@ -38,9 +49,41 @@
 
 # v3에서의 업스트림 시스템 고찰
 - 현재는 내 폰에 뜨는 푸시알림을 통하여 트윗소식을 백엔드에 전달하고 있음.
-- 장점은 무료라는 점과 이미 사용하고 있을 정도로 검증되었음. 단점은 트윗에서 함께 제공되는 이미지, 비디오 등 미디어는 제공불가능.
+- 장점은 무료라는 점과 이미 사용하고 있을 정도로 검증되었음. 단점은 트윗에서 함께 제공되는 이미지, 비디오 등 미디어는 제공불가능. 또한 본문·URL이 알림에서 잘려서 온다(`youtube.com/live/HkjQ3HJau…` 처럼 → video_id 복원 불가).
 - X api나 vxtiwtter를 이용하면 단점 해소 가능. 만약 x api를 쓴다면 유료이지만 트윗관련해서 업스트림 시스템의 역할이 사라짐.
 - 그러나 회원전용 영상에 대해서는 감지가 여전히 불가능함. 아직 확인이 필요하지만, youtube 알림을 이용하여 이와 같이 해결할 수 있다고 사료됨.
+
+## 결정 (2026-09-08)
+
+### 1. 유튜브 앱 알림 중계 추가
+- 업스트림 폰 플로우에 유튜브 앱(`com.google.android.youtube`) 알림도 받는 플로우를 추가.
+  현재는 로깅만(HTTP 스텝 없음, `ref/flow-7 (4).log` 09-08 19:32~). 관찰 결과 payload 는 아래를 준다:
+    - `chime.slot_key` = **video_id (온전한 11자)** — 트윗 경로의 잘린 URL 문제를 우회. 이게 핵심.
+    - `pde_noti_tag` = `<video_id>::<uuid>` (SUMMARY 항목은 `<hash>::SUMMARY::<n>` → 버림)
+    - `android.text` = 방송 제목(풀텍스트). `android.title` 은 잘림("🔴 30분 후에 …") — 쓰지 말 것.
+    - `chime.thread_id` 접두어로 알림 종류: `NOTIFICATION_TYPE_LIVESTREAM_TUNEIN`(예정−30분),
+      `..._LIVESTREAM_REMINDER`(=예약분 시작), `..._SUBSCRIPTION_LIVESTREAM_START`(구독 채널 시작).
+    - `android.subText` = `null` (트윗 릴레이는 `x.com` → 라우팅 시 이걸로 X/YT 구분 가능).
+    - 이미지: `android.largeIcon`/`android.pictureIcon` 는 `null` (`android.reduced.images=1` 로 비트맵 제거됨).
+      썸네일은 video_id 로 조립 (`i.ytimg.com/vi/<id>/mqdefault.jpg` — 항상 존재·16:9·검은띠 없음).
+- 용도:
+    - **video_id 확보** → 공개 방송은 정규 파이프라인(videos.list/reconcile/watching)이 그대로 처리.
+    - `announced → upcoming` 승격(위 Preview board 절). `TUNEIN` 이 예정−30분이라 시작 전 승격이 확정적.
+    - 회원전용: videos.list 는 404 → API wake 사이클을 태우지 말고, 알림만으로 카드 구성 +
+      video_id 없는 assumed-live 90분 폴백에 의존. 프론트에 "회원전용" 배지.
+- **미확인 (모니터링 중)**: 회원전용 방송 알림이 실제로 오는지 + payload 가 위와 동일한지.
+  대상 채널(개인 5인) 알림 샘플도 아직 없음 — 로그 나오면 확인 후 확정.
+
+### 2. vxtwitter unfurl 도입
+- 업스트림이 트윗을 릴레이할 때 이미 `pde_noti_tag` 에서 트윗 Snowflake id 를 뽑고 있음
+  (`xtweet` 가 merge 정렬에 사용). 이 id 로 `https://api.vxtwitter.com/i/status/<id>` 조회 → JSON.
+- 해소되는 것: (a) 개인 트윗 배지의 첨부 **이미지**, (b) **잘리지 않은 본문 + 온전한 `youtube.com/live/…` URL**
+  → video_id → 썸네일 + 정규 live/end 추적(= 유노 유령 라이브 버그가 애초에 안 남), (c) 개인 트윗
+  예고가 이미지를 포함하면 그 이미지를 `announced` 아이템 썸네일로 → upcoming 승격 조건 충족에도 기여.
+- 텔레그램 링크프리뷰 이미지를 재활용하는 방안은 폐기: Bot API 가 프리뷰 이미지를 file_id/URL 로
+  안 돌려주고, X 가 프리뷰 크롤러를 막아 실패율이 높으며 비결정적. vxtwitter 가 결정적이고 상위호환.
+- 리스크: 서드파티 무료 서비스(가동률 보장 없음, ToS 회색지대). 트래픽 5계정·하루 몇 건 수준이라
+  감수. 불안정하면 fxtwitter 셀프호스팅으로 대체 가능. **계정 밴 위험 없음**(읽기 전용, 인증 불필요).
 
 
 # telegram 명령어 계통의 정리 필요
@@ -73,4 +116,6 @@
 
 # 기타
 - 방금 업스트림 시스템(폰)에서 Youtube 앱에서 푸시알림이 뜨는 것을 확인.
-- 그러나 개인 유닛 외의 다른 채널도 구독해놓았기 때문에 방금 온 것은 대상 채널이 아니었음. 그리고 이 푸시알림이 제공하는 nx는 어떤 키값들이 있는지 확인되지 않음.
+- 그러나 개인 유닛 외의 다른 채널도 구독해놓았기 때문에 방금 온 것은 대상 채널이 아니었음.
+  이 푸시알림의 키값은 `ref/flow-7 (4).log` 로 확인됨 → 위 "업스트림 시스템 고찰 §1" 에 정리.
+  요점: `chime.slot_key`=video_id, `android.text`=제목, `chime.thread_id`=알림종류, 이미지 비트맵은 제거됨(썸네일은 video_id 로 조립).
