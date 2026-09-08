@@ -109,6 +109,18 @@
 - notice에서의 활용 : 날짜/시간, url을 정규표현식을 이용하여 우선 파싱 -> 원문에서 날짜/시간, url 제거 후 제목을 파싱. 번역도 함께 제공 에정.
 - tweet에서의 활용 : 개인 유닛 5명의 트윗을 받았다면 이를 번역하도록 함. 사용자는 말풍선 또는 메시지 창에서 토글버튼을 통해 원문-번역으로 볼 수 있음.
 
+## 모델 선정 (2026-09-09)
+
+- **주 모델: `openai/gpt-oss-120b`** — 형제 프로젝트 bandori-playlist-maker 에서 쓰던 것 그대로.
+  프롬프트·클라이언트 코드 재활용 가능, JP 독해·KO 출력 품질 충분, 지시이행/구조화 출력 강함(~500 tok/s).
+- **폴백: `llama-3.3-70b-versatile`** — 다른 계열·프로덕션·JSON 모드 지원. 주 모델이 429/5xx 뱉을 때 스위치.
+- **preview 모델(qwen3-32b·kimi-k2 등) 금지** — Groq preview 는 예고 없이 내려가 파이프라인이 깨진다.
+  프로덕션 티어 모델만 사용(현재 채팅용 프로덕션 = gpt-oss-120b/20b, llama-3.3-70b, llama-3.1-8b).
+- **호출 형태**: notice 는 제목추출 + 번역을 **JSON 1회 호출**로 (`{"title_ja","title_ko",...}`).
+  구조화 출력은 gpt-oss 계열이 `response_format` 의 `json_schema` 까지, llama-3.3 은 `json_object` 지원.
+- gpt-oss 는 reasoning 모델 → 이 난이도엔 `reasoning_effort:"low"` 고정(지연·토큰 절감), 번역이 아쉬우면 `medium`.
+- **무료티어**: notice·개인트윗은 하루 수 건이라 RPM/RPD 한도에 근처도 안 감. 429 대비 지수백오프 재시도만.
+
 
 # 데이터 브랜치에 관하여
 - 기존 데이터들은 .old/ 폴더 안으로 이동.
