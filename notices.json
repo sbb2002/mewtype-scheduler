@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-08T03:04:26Z",
+  "generated_at": "2026-09-08T04:15:43Z",
   "notices": [
     {
       "anchor_a": null,
@@ -31,16 +31,17 @@
       "expires_at": "2026-09-10T15:00:00Z",
       "first_seen": "2026-09-07T06:03:02Z",
       "id": "2096841331595518017",
-      "last_updated": "2026-09-07T06:03:02Z",
+      "last_updated": "2026-09-08T04:15:43Z",
       "seen_ids": [
-        "2096841331595518017"
+        "2096841331595518017",
+        "2097176410188333150"
       ],
       "site": "x",
       "src_handle": "RT @bang_dream_info",
       "time": "23:00",
-      "title": "ABEMA/Prime Video/dアニメストア/Hulu/U-NEXTほかにて地上波同時配信",
-      "title_slug": "abemaprimevideodアニメストアhu",
-      "tweet_url": "https://x.com/i/status/2096841331595518017",
+      "title": "最終回 「夢限大みゅーたいぷ」放送",
+      "title_slug": "最終回夢限大みゅーたいぷ放送",
+      "tweet_url": "https://x.com/i/status/2097176410188333150",
       "url": null
     },
     {
