@@ -5,9 +5,9 @@
   "pending_notice_edit": null,
   "pending_undo": null,
   "undo": {
-    "action": "/del yuno#2",
-    "at": "2026-09-08T14:16:36Z",
-    "new_sha": "675ecffa38565c34245a2c55e5d5b290354cd67c",
+    "action": "/ingest 개인예고 후지 미야코 (💜配信よてい💜\n9/9(水)21:30~めんば～しっぷ限定🔒雑談\nみやこしっぷ開)",
+    "at": "2026-09-08T14:58:20Z",
+    "new_sha": "5322389da4feff8850265807e78c0f182c5fd9f1",
     "path": "schedule.json",
     "prev_content": {
       "broadcasts": [
@@ -15,11 +15,11 @@
           "actual_start": "2026-09-08T12:00:13Z",
           "api_start_seen": "2026-09-08T12:00:00Z",
           "channel_key": "ritsu",
-          "concurrent_viewers": 820,
+          "concurrent_viewers": 670,
           "first_seen": "2026-09-07T14:26:16Z",
           "info_at": "2026-09-07T12:54:51Z",
           "info_source": "personal",
-          "last_updated": "2026-09-08T13:00:00Z",
+          "last_updated": "2026-09-08T14:34:12Z",
           "scheduled_start": "2026-09-08T12:00:00Z",
           "status": "live",
           "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/maxresdefault_live.jpg",
@@ -28,11 +28,24 @@
           "video_id": "bgzve7Y7S50"
         },
         {
+          "actual_start": "2026-09-08T14:33:05Z",
+          "channel_key": "arale",
+          "concurrent_viewers": 233,
+          "first_seen": "2026-09-08T14:30:12Z",
+          "last_updated": "2026-09-08T14:34:12Z",
+          "scheduled_start": "2026-09-08T14:30:00Z",
+          "status": "live",
+          "thumbnail": "https://i.ytimg.com/vi/Pi7kwM-bS6w/maxresdefault_live.jpg",
+          "title": "【🟡すやバラ歌枠】ドヨドヨな夜をスヨスヨな夜に…アコギと共に【 仲町あられ / 夢限大みゅーたいぷ 】",
+          "url": "https://www.youtube.com/watch?v=Pi7kwM-bS6w",
+          "video_id": "Pi7kwM-bS6w"
+        },
+        {
           "actual_start": null,
           "channel_key": "arale",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T13:00:00Z",
+          "last_updated": "2026-09-08T14:34:12Z",
           "scheduled_start": "2026-12-24T14:59:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -45,7 +58,7 @@
           "channel_key": "arale",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T13:00:00Z",
+          "last_updated": "2026-09-08T14:34:12Z",
           "scheduled_start": "2027-08-16T14:59:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -58,7 +71,7 @@
           "channel_key": "yuno",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T13:00:00Z",
+          "last_updated": "2026-09-08T14:34:12Z",
           "scheduled_start": "2028-01-01T14:30:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -71,55 +84,13 @@
           "channel_key": "nonoka",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T13:00:00Z",
+          "last_updated": "2026-09-08T14:34:12Z",
           "scheduled_start": "2028-09-07T14:45:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
           "title": "※ののらーしゅうかいかいじょう",
           "url": "https://www.youtube.com/watch?v=2Q5A9SWgHtA",
           "video_id": "2Q5A9SWgHtA"
-        },
-        {
-          "assumed_live": true,
-          "channel_key": "yuno",
-          "collab_with": [],
-          "expires_at": "2026-09-08T16:00:00Z",
-          "first_seen": "2026-09-08T08:37:16Z",
-          "icon": "🎮",
-          "kind": "game",
-          "last_updated": "2026-09-08T08:37:16Z",
-          "members_only": false,
-          "sched_id": "sched:yuno:2026-09-08T13:00:00Z",
-          "scheduled_start": "2026-09-08T13:00:00Z",
-          "source": "bdp_schedule",
-          "source_at": "2026-09-08T08:37:16Z",
-          "start_approx": false,
-          "status": "scheduled",
-          "thumbnail": null,
-          "title": null,
-          "url": null,
-          "video_id": null
-        },
-        {
-          "assumed_live": false,
-          "channel_key": "arale",
-          "collab_with": [],
-          "expires_at": "2026-09-08T17:30:00Z",
-          "first_seen": "2026-09-08T08:37:16Z",
-          "icon": "🎤",
-          "kind": "song",
-          "last_updated": "2026-09-08T08:37:16Z",
-          "members_only": false,
-          "sched_id": "sched:arale:2026-09-08T14:30:00Z",
-          "scheduled_start": "2026-09-08T14:30:00Z",
-          "source": "bdp_schedule",
-          "source_at": "2026-09-08T08:37:16Z",
-          "start_approx": false,
-          "status": "scheduled",
-          "thumbnail": null,
-          "title": null,
-          "url": null,
-          "video_id": null
         },
         {
           "assumed_live": false,
@@ -207,7 +178,7 @@
           ]
         }
       },
-      "generated_at": "2026-09-08T14:03:00Z"
+      "generated_at": "2026-09-08T14:54:12Z"
     }
   }
 }
