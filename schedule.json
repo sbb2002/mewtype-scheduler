@@ -101,6 +101,31 @@
       "title": null,
       "url": null,
       "video_id": null
+    },
+    {
+      "api_start_seen": null,
+      "assumed_live": false,
+      "channel_key": "miyako",
+      "collab_with": [],
+      "expires_at": "2026-09-09T17:30:00Z",
+      "first_seen": "2026-09-08T14:58:20Z",
+      "icon": null,
+      "info_at": "2026-09-08T14:58:20Z",
+      "info_source": "personal",
+      "kind": "talk",
+      "last_updated": "2026-09-08T14:58:20Z",
+      "members_only": true,
+      "sched_id": "sched:miyako:2026-09-09T12:30:00Z",
+      "scheduled_start": "2026-09-09T12:30:00Z",
+      "source": "personal",
+      "source_at": "2026-09-08T14:58:20Z",
+      "start_approx": false,
+      "status": "scheduled",
+      "thumbnail": null,
+      "time_tbd": false,
+      "title": null,
+      "url": "https://youtube.com/live/0_e9LxlMYHU",
+      "video_id": "0_e9LxlMYHU"
     }
   ],
   "channel_order": [
@@ -167,5 +192,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-08T14:54:12Z"
+  "generated_at": "2026-09-08T14:58:20Z"
 }
