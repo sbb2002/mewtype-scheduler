@@ -4,6 +4,27 @@
     {
       "anchor_a": null,
       "anchor_b": "バンドリ！ゆめ∞みた",
+      "category": "etc",
+      "date": "2026-09-08",
+      "deadline": false,
+      "expires_at": "2026-09-08T15:00:00Z",
+      "first_seen": "2026-09-08T03:04:26Z",
+      "id": "2097158897920544777",
+      "last_updated": "2026-09-08T03:04:26Z",
+      "seen_ids": [
+        "2097158897920544777"
+      ],
+      "site": "x",
+      "src_handle": "RT @bang_dream_info",
+      "time": "23:00",
+      "title": "TVアニメ「バンドリ！ ゆめ∞みた」",
+      "title_slug": "tvアニメバンドリゆめみた",
+      "tweet_url": "https://x.com/i/status/2097158897920544777",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "バンドリ！ゆめ∞みた",
       "category": "live",
       "date": "2026-09-10",
       "deadline": false,
