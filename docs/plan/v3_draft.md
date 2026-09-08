@@ -73,17 +73,18 @@
 
 ## 미결 항목 (v3 착수 전 결정)
 
-- [ ] `pending.json`(계약 E) 을 `schedule.json` status 로 흡수할지 —
-      `watching`/`end` 를 프론트 노출 상태로 올리는 게 "백엔드 수술"의 핵심.
+- [x] `pending.json`(계약 E) 흡수 → **폐지 확정**. FSM 을 파생으로 돌리고 `watching`/`end`
+      상태를 `preview.json` 에 올림. 상세: `v3_backend_surgery.md` "v3 데이터 스키마".
 - [x] `scheduled` → `announced` 리네임 + `watching`/`end` 추가 시 data 처리 →
       콜드 스타트로 결정(마이그레이션 없음). 위 "확정된 결정 2" 참조.
 - [ ] 텔레그램 현행→v3 명령어 대응표 (`/notice-*` 4개, `/notice-edit` 마법사,
       `pending_*` 슬롯 5종 → `/list /ingest /edit /del /undo × contents` 로 어떻게 접히는지).
-- [ ] `/edit -i` 를 별 명령으로 둘지, `/edit` 안의 "원문 다시 붙이기" 옵션으로 흡수할지.
-- [ ] 외부LLM(Groq) 도입 여부. 도입 시 실패/타임아웃 폴백 = 정규식 결과 (LLM 은 보강,
-      정규식이 기준선).
-- [ ] `watching` 지각 120분 초과 시 강등 대상 = `announced` (url 은 살림 — 확정됨,
-      `v3_backend_surgery.md` line 19 참조).
+      **→ 다른 세션에서 작업 예정 (현행 기능과 거의 동일).**
+- [x] `/edit -i` → `/edit` 에 흡수 (별도 명령 아님). 상세는 텔레그램 대응표 작업 때.
+- [x] 외부LLM(Groq) 도입 **확정**. 모델 `openai/gpt-oss-120b`(폴백 llama-3.3-70b), 작업 큐.
+      번역 실패/환각 폴백은 모델별 실측 후 확정(기본선 = 원문 노출).
+      상세: `v3_backend_surgery.md` "모델 선정" / "LLM 작업 큐".
+- [x] `watching` 지각 120분 초과 시 강등 대상 = `announced` (url 은 살림).
 
 ---
 

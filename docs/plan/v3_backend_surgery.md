@@ -187,6 +187,81 @@
   동안 구 프론트가 v3 파일을 만나는 시간을 최소화. 필요하면 `/pause` 로 창을 닫고 전환.
 - 롤백: 코드는 이전 리비전으로, `data` 는 `.old/` 에서 복원. 절차는 golive 런북에 명시.
 
+# v3 데이터 스키마 — `preview.json` (계약 초안, 2026-09-09)
+
+v2 `schedule.json` 을 대체(파일명도 변경 — v3 용어 preview/notice/tweet 에 맞춤).
+`none` 상태 = 파일에 없음(삭제). `pending.json`(계약 E)은 **폐지** — FSM 을 파생으로 돌리고
+상태를 이 파일에 올려서 흡수. `control.json`(pause)은 유지.
+정렬: state 우선순위(live→watching→upcoming→announced) → `scheduled_start` asc(null 뒤) → `id`.
+
+```jsonc
+{
+  "generated_at": "2026-09-09T12:00:00Z",
+  "channel_order": ["yuno","arale","ritsu","nonoka","miyako"],
+  "channels": { "<key>": { "channel_id","handle","name","name_ko","channel_url","avatar" } },
+  "items": [
+    {
+      "id": "pv_a1b2c3d4",                  // 생성 시 부여, 생애주기(announced~end) 내내 고정
+      "state": "watching",                  // announced|upcoming|watching|live|end
+      "state_since": "2026-09-09T11:57:00Z",// 현재 state 진입 시각 (end 30분창·강등 판정 앵커)
+
+      "channel_key": "ritsu",               // 주 레인
+      "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인에 팬아웃
+      "host": null,                         // "group" = parse_appearance(出演情報) 외부이벤트 → supersede 면제
+      "kind": null,                         // "collab" | 카테고리(game/song/talk/watchalong) | null
+      "membership": false,                  // true = 회원전용. API 확인 스킵, watching 스킵, 시작 알림→live 직행
+
+      "title": "【チラズアート】…",            // JP 원문. announced 단계에선 null 가능. 번역 안 함(번역은 notice/tweet 만)
+      "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",  // 없으면 채널 URL
+      "video_id": "bgzve7Y7S50",            // null 가능(announced / 회원전용 slot_key 미상)
+      "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/mqdefault.jpg",  // video_id 유래 or vxtwitter 미디어. null 가능
+
+      "scheduled_start": "2026-09-09T12:00:00Z",  // JST→UTC. 파싱 실패 null. time_tbd 면 "<date>T00:00:00Z"
+      "time_tbd": false,                    // true = 날짜만, 시각 미정
+      "actual_start": null,                 // live 확정 시각. live-cadence(60분 분기) 앵커
+      "concurrent_viewers": null,           // live 한정. 변동 필드 → 커밋 diff 트리거에서 제외
+
+      "source": "personal",                 // x-relay | personal | yt-notif | api | manual
+      "info_source": "personal",            // 마지막으로 타이밍/정보를 갱신한 신호 종류
+      "info_at": "2026-09-08T09:00:00Z",    // 그 신호 시각(트윗 snowflake 유래 등)
+      "api_start_seen": null,               // 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정) 트윗값 대신 API 승
+
+      "assumed_live": false,                // video_id 없이 scheduled_start 지남 → 프론트 "방송 중(추정)"
+      "first_seen": "2026-09-08T09:00:00Z",
+      "last_updated": "2026-09-09T11:57:00Z",
+      "expires_at": "2026-09-09T15:00:00Z"  // 하드 TTL 안전망(진행 정체 시 소멸). 공개 start+3h / 회원전용 +5h / time_tbd 그날 JST 자정
+    }
+  ]
+}
+```
+
+## FSM 은 저장 타이머 없이 파생 (`state`, `scheduled_start`, `actual_start`, `state_since`, `now` 로)
+
+- pre-live watching : `scheduled_start − 3분`부터 3분 간격 체크
+- watching 지각 강등 : `now − scheduled_start ≥ 120분` → `announced` (url 살림)
+- assumed-live 폴백 : `assumed_live` && `video_id` 없음 && `now − scheduled_start ≥ 90분` → `none`
+- live cadence : `now − actual_start < 60분` → 10분 간격, 이후 3분 간격
+- end 창 : `state=="end"` && `now − state_since ≥ 30분` (그 사이 5분 간격 확인, 계속 live아님) → `none`.
+  마지막 확인에서 아이템이 예고 스트림으로 바뀌어 있으면 `upcoming` 복귀
+- `next_check_at` 등 타이머 필드는 두지 않는다
+
+## 아이템 매칭 (최신 예고 정보 → 기존 아이템)
+
+같은 `channel_key` + (`video_id` 일치 OR `url` 일치 OR `scheduled_start` 근접(±4h, v2 `SCHEDULED_SUPERSEDE_SEC`)).
+매칭되면 같은 `id` 유지·필드 갱신. 안 되면 새 `id`. `none` 으로 사라진 뒤 오는 예고는 무조건 새 아이템.
+
+## archive
+
+`end→none` 시 `preview_archive.json` 에 append (`video_id` dedupe, `archived_at` 추가).
+프론트는 안 읽음 — 디버그 + 회원전용 사후 확정(RSS 로 뒤늦게 뜨는 경우)용.
+
+## 미확정 (구현 시 판단)
+
+- `source` 값 집합 최종 확정 (`x-relay`/`personal`/`yt-notif`/`api`/`manual` 로 충분한지)
+- `expires_at` 하드 TTL 값 (start+3h/+5h 유지 여부)
+- `preview_archive.json` 을 실제로 둘지 (프론트 미사용이라 생략 가능)
+
+
 # 데이터 브랜치에 관하여
 - 기존 데이터들은 .old/ 폴더 안으로 이동.
 - v3 는 콜드 스타트 — v3 스키마 파일을 빈 상태에서 새로 쓴다(기존 행 마이그레이션 없음).
