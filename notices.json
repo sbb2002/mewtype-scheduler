@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-08T04:15:43Z",
+  "generated_at": "2026-09-08T09:00:07Z",
   "notices": [
     {
       "anchor_a": null,
@@ -89,22 +89,23 @@
     {
       "anchor_a": null,
       "anchor_b": "dimensionaloverlap",
-      "category": "etc",
+      "category": "release",
       "date": "2026-10-11",
       "deadline": false,
       "expires_at": "2026-10-11T15:00:00Z",
       "first_seen": "2026-09-07T08:03:56Z",
       "id": "2096871096783900855",
-      "last_updated": "2026-09-07T12:15:58Z",
+      "last_updated": "2026-09-08T09:00:07Z",
       "seen_ids": [
-        "2096871096783900855"
+        "2096871096783900855",
+        "2097248577848271016"
       ],
       "site": "x",
       "src_handle": "@BDP_yumemita",
-      "time": "21:00",
-      "title": "「DIMENSIONAL OVERLAP」",
-      "title_slug": "dimensionaloverlap",
-      "tweet_url": "https://x.com/i/status/2096871096783900855",
+      "time": "02:00",
+      "title": "チケット一般発売決定",
+      "title_slug": "チケット一般発売決定",
+      "tweet_url": "https://x.com/i/status/2097248577848271016",
       "url": null
     },
     {
