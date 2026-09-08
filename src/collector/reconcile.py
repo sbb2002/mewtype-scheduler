@@ -62,6 +62,13 @@ def _carry_collab(broadcast: dict, prev_entry: dict | None) -> None:
 # expires_at 이 없을 때(시각 파싱 실패) first_seen 으로부터의 TTL.
 SCHEDULED_NO_TIME_TTL_SEC = 18 * 3600
 
+# (핫픽스) assumed_live 인데 video_id 가 없어 실물 트래킹(wake/pending FSM)을 못 타는
+# scheduled 행 — 종료를 검사할 주체가 없어 expires_at(start+3~5h) 까지 "방송 중(추정)"
+# 으로 남는다. 개인 트윗/회원전용 예고에서 실제 방송이 이보다 일찍 끝나면 유령 라이브가
+# 오래 걸린다 → 예고 시각 +90분이면 종료된 것으로 보고 제거. video_id 가 (어떤 경로로든)
+# 채워지면 후보집합에 들어가 정규 로직이 처리하므로 이 클램프는 건너뛴다.
+ASSUMED_LIVE_MAX_SEC = 90 * 60
+
 
 def build_schedule(
     channels_cfg: dict,
@@ -236,6 +243,11 @@ def build_schedule(
         # 예고 시각 도달 → assumed_live. 회원전용은 API 로 실물을 못 보므로 이 플래그로만
         # "방송 중(추정)" 을 프론트에 알린다. expires_at 되면 어차피 제거됨.
         carried["assumed_live"] = bool(ss) and _reached(ss, now_iso)
+        # (핫픽스) video_id 없는 assumed_live 는 종료검사 주체가 없다 → 예고 시각 +90분이면
+        # 방송이 끝난 것으로 보고 제거(expires_at 을 기다리지 않는다).
+        if (carried["assumed_live"] and not carried.get("video_id")
+                and _age_sec(ss, now_iso) >= ASSUMED_LIVE_MAX_SEC):
+            continue
         new_schedule["broadcasts"].append(carried)
 
     # Sort: live → upcoming → scheduled, then scheduled_start asc (None last), then id.
@@ -404,10 +416,18 @@ if __name__ == "__main__":
                 "first_seen": "2026-08-30T08:00:00Z",
                 "expires_at": "2026-08-30T11:00:00Z",
             },
-            {  # 회원전용, 시작(10:00) 지남·expires 미도달 → 보존 + assumed_live
-                "video_id": None, "sched_id": "sched:ritsu:2026-08-30T10:00:00Z",
+            {  # (핫픽스) 개인 트윗 예고, video_id 없음, 시작(10:00)+2h > 90분 · expires 미도달
+               #  → assumed_live 클램프로 제거 (종료검사 주체가 없어 유령 라이브 방지)
+                "video_id": None, "sched_id": "sched:miyako:2026-08-30T10:00:00Z",
+                "channel_key": "miyako", "status": "scheduled", "source": "personal",
+                "scheduled_start": "2026-08-30T10:00:00Z",
+                "first_seen": "2026-08-30T08:00:00Z",
+                "expires_at": "2026-08-30T15:00:00Z",
+            },
+            {  # 회원전용, 시작(11:00)+1h < 90분·expires 미도달 → 보존 + assumed_live
+                "video_id": None, "sched_id": "sched:ritsu:2026-08-30T11:00:00Z",
                 "channel_key": "ritsu", "status": "scheduled", "members_only": True,
-                "scheduled_start": "2026-08-30T10:00:00Z", "source": "bdp_schedule",
+                "scheduled_start": "2026-08-30T11:00:00Z", "source": "bdp_schedule",
                 "first_seen": "2026-08-30T08:00:00Z",
                 "expires_at": "2026-08-30T15:00:00Z",
             },
@@ -456,7 +476,7 @@ if __name__ == "__main__":
     # (ritsu 시작지남, yuno 미래, arale host=group 합동)
     assert ids == {
         "upcoming_vid", "live_vid", "grace_vid",
-        "sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
+        "sched:ritsu:2026-08-30T11:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
         "sched:arale:2026-08-30T13:30:00Z",
     }, ids
     # ended_vid(none+actual_end) → ended, removed_vid(오래 누락) → removed
@@ -465,14 +485,16 @@ if __name__ == "__main__":
     assert "grace_vid" not in {r["video_id"] for r in newly_ended}
     g = next(b for b in new_schedule["broadcasts"] if b.get("video_id") == "grace_vid")
     assert g["last_updated"] == "2026-08-30T11:00:00Z", g["last_updated"]
-    # scheduled: arale 는 실물 ±4h → supersede, miyako 는 expires_at 경과 → 둘 다 빠짐.
-    # ritsu 는 시작(10:00) 지남 → assumed_live, yuno 는 미래(20:00) → assumed_live False.
+    # scheduled: arale 는 실물 ±4h → supersede, miyako(09:00) 는 expires_at 경과,
+    # miyako(10:00) 는 assumed_live +90분 클램프 → 셋 다 빠짐.
+    # ritsu 는 시작(11:00) 1h 지남 → assumed_live(90분 이내 보존), yuno 는 미래(20:00) → False.
     _sched = {b["sched_id"]: b for b in new_schedule["broadcasts"] if b.get("status") == "scheduled"}
     assert set(_sched) == {
-        "sched:ritsu:2026-08-30T10:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
+        "sched:ritsu:2026-08-30T11:00:00Z", "sched:yuno:2026-08-30T20:00:00Z",
         "sched:arale:2026-08-30T13:30:00Z",
     }, _sched
-    assert _sched["sched:ritsu:2026-08-30T10:00:00Z"]["assumed_live"] is True
+    assert "sched:miyako:2026-08-30T10:00:00Z" not in _sched  # (핫픽스) 90분 클램프
+    assert _sched["sched:ritsu:2026-08-30T11:00:00Z"]["assumed_live"] is True
     assert _sched["sched:yuno:2026-08-30T20:00:00Z"]["assumed_live"] is False
     # host=group 합동은 멤버 실물 ±4h 여도 보존 (collab_with 도 그대로 이관)
     assert _sched["sched:arale:2026-08-30T13:30:00Z"]["collab_with"] == ["nonoka"]

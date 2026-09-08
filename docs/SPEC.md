@@ -147,7 +147,11 @@ data 브랜치             # schedule.json + archive.json + pending.json + contr
 - `reconcile.build_schedule` 이 매 tick 보존한다. **참여자(`channel_key` ∪ `collab_with`) 중
   아무 채널**에 실물 `upcoming`/`live` 가 ±4h 안에 뜨면 제거(supersede) — (v2.6) 개인 채널 합동
   대응. `expires_at` 도달 시 제거, `scheduled_start` 지난 행은 `assumed_live=true`
-  (회원전용은 API 로 실물을 못 봄 → 이 플래그로만 "방송 중 추정"). Cloud Tasks/`pending.json` 은
+  (회원전용은 API 로 실물을 못 봄 → 이 플래그로만 "방송 중 추정"). **(핫픽스)** `assumed_live`
+  이고 `video_id` 가 없으면 종료를 검사할 주체가 없다 → `scheduled_start + 90분`
+  (`reconcile.ASSUMED_LIVE_MAX_SEC`) 이면 `expires_at` 을 안 기다리고 제거(유령 라이브 방지).
+  `video_id` 가 (어떤 경로로든) 채워지면 후보 집합에 들어가 정규 로직이 처리하므로 클램프 제외.
+  Cloud Tasks/`pending.json` 은
   안 타지만 `handlers._scheduled_wake_times` 가 `scheduled_start`(지금~+3h)마다 `light /tick` 1개를
   예약 — 공개 방송의 정시 시작을 3h 주기 안 기다리고 RSS 로 줍는다.
 - **(v2.6)** `video_id` 가 있는 scheduled 행(트윗이 준 합동 URL)은 `_tracked_unresolved_ids` 로
