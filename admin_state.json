@@ -1,5 +1,31 @@
 {
-  "pending_del": null,
+  "pending_del": {
+    "at": "2026-09-08T14:16:28Z",
+    "idx": 2,
+    "snapshot": {
+      "assumed_live": true,
+      "channel_key": "yuno",
+      "collab_with": [],
+      "expires_at": "2026-09-08T16:00:00Z",
+      "first_seen": "2026-09-08T08:37:16Z",
+      "icon": "🎮",
+      "kind": "game",
+      "last_updated": "2026-09-08T08:37:16Z",
+      "members_only": false,
+      "sched_id": "sched:yuno:2026-09-08T13:00:00Z",
+      "scheduled_start": "2026-09-08T13:00:00Z",
+      "source": "bdp_schedule",
+      "source_at": "2026-09-08T08:37:16Z",
+      "start_approx": false,
+      "status": "scheduled",
+      "thumbnail": null,
+      "title": null,
+      "url": null,
+      "video_id": null
+    },
+    "unit": "yuno",
+    "warn_text": "#2 센고쿠 유노의 2026/9/8 22:00~01:00(예상) 방송예고를 내리시겠습니까?\n그래도 지우시겠습니까? (y/N)"
+  },
   "pending_ingest": null,
   "pending_notice": null,
   "pending_notice_edit": null,
