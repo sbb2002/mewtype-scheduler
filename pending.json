@@ -50,16 +50,6 @@
       "phase": "pre-live",
       "scheduled_start": "2028-01-01T14:30:00Z"
     },
-    "bgzve7Y7S50": {
-      "actual_start": "2026-09-08T12:00:13Z",
-      "attempts": 50,
-      "channel_key": "ritsu",
-      "first_seen": "2026-09-07T14:26:16Z",
-      "last_checked": "2026-09-08T15:15:03Z",
-      "next_check_at": "2026-09-08T15:18:03Z",
-      "phase": "live-watch",
-      "scheduled_start": "2026-09-08T12:00:00Z"
-    },
     "h31Mi6AS7a0": {
       "actual_start": null,
       "attempts": 0,
@@ -71,5 +61,5 @@
       "scheduled_start": "2026-12-24T14:59:00Z"
     }
   },
-  "updated_at": "2026-09-08T15:15:03Z"
+  "updated_at": "2026-09-08T15:18:03Z"
 }
