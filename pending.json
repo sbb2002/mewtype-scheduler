@@ -52,14 +52,14 @@
     },
     "lquGqgRAX-E": {
       "actual_start": null,
-      "attempts": 1,
+      "attempts": 2,
       "channel_key": "ritsu",
       "first_seen": "2026-09-08T15:38:09Z",
-      "last_checked": "2026-09-08T21:45:01Z",
-      "next_check_at": "2026-09-08T22:00:00Z",
+      "last_checked": "2026-09-08T22:00:00Z",
+      "next_check_at": "2026-09-08T22:03:00Z",
       "phase": "pre-live",
       "scheduled_start": "2026-09-08T22:00:00Z"
     }
   },
-  "updated_at": "2026-09-08T21:45:01Z"
+  "updated_at": "2026-09-08T22:00:00Z"
 }
