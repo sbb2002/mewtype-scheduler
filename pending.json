@@ -32,11 +32,11 @@
     },
     "Pi7kwM-bS6w": {
       "actual_start": "2026-09-08T14:33:05Z",
-      "attempts": 16,
+      "attempts": 17,
       "channel_key": "arale",
       "first_seen": "2026-09-08T14:30:12Z",
-      "last_checked": "2026-09-08T16:04:12Z",
-      "next_check_at": "2026-09-08T16:07:12Z",
+      "last_checked": "2026-09-08T16:07:12Z",
+      "next_check_at": "2026-09-08T16:10:12Z",
       "phase": "live-watch",
       "scheduled_start": "2026-09-08T14:30:00Z"
     },
@@ -71,5 +71,5 @@
       "scheduled_start": "2026-09-08T22:00:00Z"
     }
   },
-  "updated_at": "2026-09-08T16:04:12Z"
+  "updated_at": "2026-09-08T16:07:12Z"
 }
