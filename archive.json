@@ -155,7 +155,20 @@
       "title": "YUNO's+ 限定配信",
       "url": "https://www.youtube.com/watch?v=4SJPTPFKPB4",
       "video_id": "4SJPTPFKPB4"
+    },
+    {
+      "actual_end": "2026-09-08T15:17:38Z",
+      "actual_start": "2026-09-08T12:00:13Z",
+      "archived_at": "2026-09-08T15:18:03Z",
+      "channel_key": "ritsu",
+      "reason": "ended",
+      "scheduled_start": "2026-09-08T12:00:00Z",
+      "status": "ended",
+      "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/maxresdefault_live.jpg",
+      "title": "【チラズアート新作「雪葬」＃2】雪かきだけで終わらせない【峰月律/ゆめみた】",
+      "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",
+      "video_id": "bgzve7Y7S50"
     }
   ],
-  "updated_at": "2026-09-07T15:12:00Z"
+  "updated_at": "2026-09-08T15:18:03Z"
 }
