@@ -9,22 +9,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 어느 주소로 가면 되는지 한눈에 확인한다.
 
 - 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md`
+- **용어 기준 (세션 간 표현 일관성): `docs/TERMINOLOGY.md`** — 프론트엔드/백엔드/업스트림 시스템/외부 LLM 등.
+  표현이 엇갈리면 여기에 추가.
 - **현행 구현 명세 (계약 A~F, 백엔드·프론트 모듈): `docs/SPEC.md`** — v1/v2.0/v2.1 명세를 통합.
-  원본 `docs/old/IMPLEMENTATION{,_v2,_v2.1}.md`
+  원본 `docs/old/v1/IMPLEMENTATION.md`, `docs/old/v2/IMPLEMENTATION_v2{,.1}.md`
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png`
-- 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/plan/v1_impro_final.md`
-- 그림: `docs/plan/v2_1_telegram.png` (v2.1)
-- **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/plan/v2_3_x_relay.md`, 핸드오프 `docs/plan/v2_3_handoff.md`
-- **운영자 폰(Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — X 알림 릴레이 플로우의
-  Expression 을 만들거나 고칠 때 먼저 볼 것 (`find` 없음·`contains` 사용·`++` 연결·`nx` 키 등)
-- **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/plan/v2_4_collab.md`,
-  **실배포 전환 런북 `docs/plan/v2_4_golive.md`**
-- **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/plan/v2_5_admin_commands.md`
-- **v2.7 (소식 게시판 — 방송 외 이벤트 티커. 구현 완료)**: `docs/plan/v2_7_notice_board.md`
-  + UI 목업 `docs/plan/v2_7_notice_board_mockup.html`
+- 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md`
+- **v3 (백엔드 수술 — 착수 보류 중): `docs/plan/v3_draft.md`(결정 로그·착수 트리거) +
+  `docs/plan/v3_backend_surgery.md`(기능 상세: 6상태 모델·전이표·텔레그램 명령 통합·외부 LLM)**
+- 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
+- **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
+- **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
+  플로우의 Expression 을 만들거나 고칠 때 먼저 볼 것 (`find` 없음·`contains` 사용·`++` 연결·`nx` 키 등)
+- **v2.4 (합동방송 → 참여 멤버 레인 중복 · ingest 큐)**: `docs/old/v2/v2_4_collab.md`,
+  **실배포 전환 런북 `docs/old/v2/v2_4_golive.md`**
+- **v2.5 (텔레그램 수동 관리 명령 `/list` `/del` `/ingest` `/undo`)**: `docs/old/v2/v2_5_admin_commands.md`
+- **v2.7 (소식 게시판 — 방송 외 이벤트 티커. 구현 완료)**: `docs/old/v2/v2_7_notice_board.md`
+  + UI 목업 `docs/old/v2/v2_7_notice_board_mockup.html`
 - **현행 ingest 신호 처리 흐름: `docs/INGEST_FLOW.md`** — `POST /ingest` 가 들어온 텍스트를
   소식·스케줄·개인트윗으로 분기하는 경로 (mermaid 흐름도)
-- **v2.8 (멤버 개인 트윗 — 예고판 상단 편지 배지)**: `docs/plan/v2_8_personal_tweets.md`
+- **v2.8 (멤버 개인 트윗 — 예고판 상단 편지 배지)**: `docs/old/v2/v2_8_personal_tweets.md`
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
@@ -72,7 +76,7 @@ src/
                        #        simple=upcoming·live / normal=+scheduled·notice·tweet / detail=+ingest·fallback·요약
     control.py         # (v2.1) control.json 스키마 (paused)
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
-                       #        (v2.3) POST /ingest — 폰 Automate 가 X 알림 텍스트를 릴레이
+                       #        (v2.3) POST /ingest — 업스트림 시스템(운영자 폰 Automate)이 X 알림 텍스트를 중계
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
     admin.py           # (v2.5) admin_state.json 스키마 (pending_del/ingest/notice/undo 슬롯, undo.path) — 순수
                        #        (v2.7.x) pending_notice_edit 슬롯 — /notice-edit 마법사(title→date→url 단계·new 누적)
@@ -157,15 +161,15 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 5. **(v2.1)** `/tick`·`/wake` 진입 시 `control.json` 확인 — `paused` 면 healthcheck 핑만 하고 no-op.
    상태 전이(upcoming/live 시작·종료, fallback, 오류)는 Telegram DM 으로 알림. `/status /pause /resume`
    명령은 공개 서비스 `mewtype-telegram` 이 처리. 상세는 `docs/SPEC.md` §10.
-6. **(v2.3)** X 예고 릴레이 — 폰(Automate)이 `@BDP_yumemita` 일일 스케줄 트윗의 삼성 브라우저
-   웹푸시 알림 텍스트를 `mewtype-telegram` 공개 `POST /ingest`(`X-Ingest-Secret` 헤더)로 보낸다.
+6. **(v2.3)** X 예고 릴레이 — 업스트림 시스템(운영자 폰 Automate)이 `@BDP_yumemita` 일일 스케줄
+   트윗의 삼성 브라우저 웹푸시 알림 텍스트를 `mewtype-telegram` 공개 `POST /ingest`(`X-Ingest-Secret` 헤더)로 보낸다.
    `xrelay.parse_bdp_schedule` → `schedule.json` 에 `status:"scheduled"` 행(YouTube 영상 아직
    없는 최하 단계, `video_id` 없음). 정기 `/tick` 의 reconcile 이 보존하다가 실물 `upcoming`/`live`
    가 같은 채널에 ±4h 안에 뜨면 supersede, `expires_at`(start+3h) 도달 시 제거. Cloud Tasks/
    `pending.json` 은 안 탄다. `INGEST_DRY_RUN=1` 이면 저장 없이 DM 회신만. `INGEST_ECHO=1` 이면
    파싱조차 안 하고 받은 텍스트만 DM 회신(임시 테스트 훅) + 로그에 잘림 계측(`tail_ok`).
    ECHO/DRY-RUN 중 온 스케줄 트윗은 `ingest_queue.json` 에 적재됐다가 실배포 전환
-   (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 drain 돼 반영된다. 상세는 `docs/plan/v2_3_x_relay.md`.
+   (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 drain 돼 반영된다. 상세는 `docs/old/v2/v2_3_x_relay.md`.
 7. **(v2.4/2.6)** 합동방송 — `xrelay` 가 `kind=="collab"` 행 + 트윗의 온전한 영상 URL 을 채우고,
    `render.js` 가 참여 멤버 전원(`channel_key` ∪ `collab_with`) 레인에 같은 `.card--collab` 카드를
    팬아웃(PC 5열 그리드·모바일 캐러셀 레이아웃 무변경). **(v2.6)** 합동이 공용 채널이 아니라 참여
@@ -173,7 +177,7 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    추출해 정규 파이프라인이 확정하고, `reconcile` 은 참여자(`channel_key` ∪ `collab_with`) 중
    아무 채널에나 실물이 뜨면 supersede 하며 `_carry_collab` 로 실물 행에 `collab_with` 를 이관한다.
    `host="group"` 특례(supersede 안 함)는 `parse_appearance`(出演情報) 전용. `全員【bilibili】` 등
-   비-YT 라인은 스킵. 상세는 `docs/plan/v2_4_collab.md` §8.
+   비-YT 라인은 스킵. 상세는 `docs/old/v2/v2_4_collab.md` §8.
 8. **(v2.7)** 소식 게시판 — `xrelay` 가 행을 안 내는(스케줄 아님) 트윗은 `xnotice.parse` 로
    방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 판별 → `notices.merge_notice` 로
    `notices.json` 에 반영(중복키 = 같은 date + anchor_a/b). 자정 지난 소식은 `sweep_expired` 가
@@ -181,20 +185,20 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    (제목→날짜→URL 순 되묻기, 유지=`aNoneTokyo`, `pending_notice_edit` 슬롯), `/undo` 는
    `undo.path` 로 schedule/notices 구분. 프론트는 `js/notices.js`+`css/notices.css` 티커(`#notice`).
    **(v2.7.x)** `_headline` 이 외침형 제목 블록(`💪…💪`)을 병합하고 `日程：`/`会場：` 라벨 줄을
-   감점 — 그래도 틀리면 `/notice-edit` 로 교정. 상세: `docs/plan/v2_7_notice_board.md`.
+   감점 — 그래도 틀리면 `/notice-edit` 로 교정. 상세: `docs/old/v2/v2_7_notice_board.md`.
 9. **(v2.8)** 멤버 개인 트윗 — `/ingest` 가 본문 파싱 직후 `xtweet.route_by_title(android.title)` 로
    갈래를 나눈다. 개인 5인 표시명(`config/channels.json` `x_names`)이면 `_maybe_personal_tweet` →
    `xtweet.parse` → `merge_tweet`(더 최신 Snowflake id 면 교체, 기존 건 `tweet_archive.json`) →
    `tweets.json` 커밋하고 **즉시 종료**(소식/스케줄 파이프라인 안 탐). 24h 지난 슬롯은 `sweep_expired`.
-   테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)은 4번 거치되 `force_echo` 로 무조건 ECHO(외부
-   백엔드 생존 확인용 헬스체크, 상시 유지). 공식·미매칭·빈 title 은 기존 경로. 프론트는
+   테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)은 4번 거치되 `force_echo` 로 무조건 ECHO(업스트림
+   시스템 생존 확인용 헬스체크, 상시 유지). 공식·미매칭·빈 title 은 기존 경로. 프론트는
    `js/tweets.js`+`css/tweets.css` — 유닛 아바타 편지 배지, PC 호버·고정 말풍선 / 모바일 토스트,
-   배경 = 유닛 `--lane-color` 재사용. 흐름도 `docs/INGEST_FLOW.md`, 상세 `docs/plan/v2_8_personal_tweets.md`.
+   배경 = 유닛 `--lane-color` 재사용. 흐름도 `docs/INGEST_FLOW.md`, 상세 `docs/old/v2/v2_8_personal_tweets.md`.
    **(v2.8.1)** 개인 5인 분기는 배지 + `xtweet.parse_schedule`(`配信`+날짜[+시각]/URL 게이트) 둘 다
    수행 → 예고면 `merge_personal_schedule` 로 `schedule.json` `scheduled`(`source:"personal"`) 승격.
    `time_tbd`(날짜만) 지원. `handlers.tick()` 이 `reconcile` 직후 `xtweet.apply_overrides` 로 트윗이
    정한 `scheduled_start` 를 API 재구성이 안 덮게 함(스트림 실제 수정 시만 API 승 — `api_start_seen`).
-   계약 A 필드: `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen`. 상세 `docs/plan/v2_8_1_personal_schedule.md`.
+   계약 A 필드: `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen`. 상세 `docs/old/v2/v2_8_1_personal_schedule.md`.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId

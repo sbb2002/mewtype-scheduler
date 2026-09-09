@@ -1,7 +1,7 @@
 # ingest 신호 처리 경로 (현행)
 
-외부 백엔드(폰 Automate)는 팔로우한 계정의 푸시 알림이 일정 양식(`android.bigText` 등)이면
-**무조건** `POST /ingest`(`mewtype-telegram` 공개 서비스)로 릴레이한다. 로직 수정이나 새 POST
+업스트림 시스템(운영자 폰의 Automate 플로우)은 팔로우한 계정의 푸시 알림이 일정 양식(`android.bigText` 등)이면
+**무조건** `POST /ingest`(`mewtype-telegram` 공개 서비스)로 중계한다. 로직 수정이나 새 POST
 신설은 없다. 그 뒤 `_ingest()`(`src/backend/telegram_app.py`)가 들어온 텍스트를 **소식**·**스케줄**·
 **버림**으로 분기한다.
 
@@ -21,7 +21,7 @@
 
 ```mermaid
 flowchart TD
-    N1["1 · POST /ingest — 외부 백엔드 릴레이 · X-Ingest-Secret"]
+    N1["1 · POST /ingest — 업스트림 시스템 중계 · X-Ingest-Secret"]
     D2{"2 · secret 검증"}
     N3["3 · 본문 파싱 (text · title · template · tag)"]
     N4["4 · _maybe_auto_notice — 항상 실행 · ECHO/DRY-RUN 무관"]
@@ -65,7 +65,7 @@ flowchart TD
 
 ## 단계 상세
 
-1. **`POST /ingest`** — 외부 백엔드가 팔로우 계정 푸시 알림을 양식만 맞으면 무조건 릴레이. 헤더 `X-Ingest-Secret`.
+1. **`POST /ingest`** — 업스트림 시스템이 팔로우 계정 푸시 알림을 양식만 맞으면 무조건 중계. 헤더 `X-Ingest-Secret`.
 2. **시크릿 검증** — `X-Ingest-Secret == INGEST_SECRET` 아니면 `403`, 그 외 통과.
 3. **본문 파싱** — raw body 를 form 파싱 전에 캐시 → `text/title/template/tag` 추출 + 폰 Automate 의
    `urlEncode` 딕셔너리 버그 우회(본문이 폼 키로 새는 경우 복구).
@@ -99,7 +99,7 @@ flowchart TD
     답하면 `_handle_member_followup` 이 그 `channel_key` 로 재처리.
   - 채널이 정해지면 `xtweet.parse_schedule`(게이트 = `配信` 계열 + 날짜/URL) →
     `merge_personal_schedule` 로 `schedule.json` 의 `scheduled`(`source:"personal"`) 행
-    + undo 스냅샷 + DM. 폰 릴레이의 `_maybe_personal_schedule`(android.title 로 채널을
+    + undo 스냅샷 + DM. 업스트림 시스템의 `_maybe_personal_schedule`(android.title 로 채널을
     아는 경로)와 결과가 같다.
 - **현재 플래그 전제** — v2.7 소식 자동 인입이 운영 중이므로 `INGEST_ECHO=0` · `INGEST_DRY_RUN=0`
   (실배포) 상태. 즉 5·7번 게이트는 통과, 4번과 9~12번이 실제 경로.

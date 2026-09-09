@@ -4,8 +4,13 @@ set -euo pipefail
 source deploy/env.sh
 
 echo "=== Cloud Run 배포 ==="
-# --concurrency=1 --max-instances=1: data 브랜치 쓰기를 직렬화(동시 실행 시 schedule.json
+# --concurrency=1 --max-instances=1: data 브랜치 쓰기를 직렬화(동시 실행 시 preview.json
 #   sha 충돌). 핸들러가 멱등이라 지연/429 재시도는 무해. Cloud Tasks 큐도 max-concurrent-dispatches=1.
+# (v3) GROQ_API_KEY: handlers 의 needs_tl 번역 재시도 sweep. Secret 있을 때만 붙인다.
+_GROQ_SECRET=""
+if gcloud secrets describe GROQ_API_KEY &>/dev/null; then
+  _GROQ_SECRET=",GROQ_API_KEY=GROQ_API_KEY:latest"
+fi
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$GCP_LOCATION" \
@@ -13,7 +18,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --service-account "$RUNTIME_SA" \
   --concurrency=1 \
   --max-instances=1 \
-  --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest" \
+  --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest${_GROQ_SECRET}" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid"
 # SERVICE_URL 은 배포 후 실제 URL 을 알 수 있으므로 일단 placeholder 로 부팅시키고 아래에서 교체한다.
 

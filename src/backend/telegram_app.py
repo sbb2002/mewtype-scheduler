@@ -89,8 +89,11 @@ _NOTICE_ARCHIVE_PATH = "notice_archive.json"
 _TWEETS_PATH = "tweets.json"                   # (v2.8) 멤버 개인 트윗
 _TWEET_ARCHIVE_PATH = "tweet_archive.json"
 _UNIT_KEYS = ("arale", "yuno", "nonoka", "ritsu", "miyako")
-_STATUS_RANK = {"live": 0, "upcoming": 1, "scheduled": 2}
-_STATUS_BADGE = {"live": "🔴", "upcoming": "🟢", "scheduled": "🕊"}
+_PREVIEW_PATH = "preview.json"                 # (v3) schedule.json 대체
+# (v3) 6상태 — none 은 파일에 없음
+_STATE_RANK = {"live": 0, "watching": 1, "upcoming": 2, "announced": 3, "end": 4}
+_STATE_BADGE = {"live": "🔴", "watching": "👀", "upcoming": "🟢",
+                "announced": "🕊", "end": "⚫"}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("telegram_app")
@@ -182,17 +185,17 @@ def _parse_iso_to_kst(iso_str: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def _sorted_unit_broadcasts(schedule: dict, unit: str) -> list[dict]:
-    """schedule['broadcasts'] 중 unit 이 당사자(본인 채널 또는 합동 참여)인 항목,
-    상태(live→upcoming→scheduled)·시각순 정렬. (v2.5 /list /del)"""
-    broadcasts = schedule.get("broadcasts", []) or []
+def _sorted_unit_broadcasts(preview: dict, unit: str) -> list[dict]:
+    """preview['items'] 중 unit 이 당사자(본인 채널 또는 합동 참여)인 항목,
+    state(live→watching→upcoming→announced→end)·시각순 정렬. (v3 /list /del)"""
+    rows = preview.get("items", []) or []
     items = [
-        b for b in broadcasts
+        b for b in rows
         if b.get("channel_key") == unit or unit in (b.get("collab_with") or [])
     ]
     return sorted(
         items,
-        key=lambda b: (_STATUS_RANK.get(b.get("status"), 9), b.get("scheduled_start") or ""),
+        key=lambda b: (_STATE_RANK.get(b.get("state"), 9), b.get("scheduled_start") or ""),
     )
 
 
@@ -216,31 +219,33 @@ def _time_range_text(b: dict) -> str:
     start_kst = _parse_iso_to_kst(b.get("scheduled_start"))
     start_md = _kst_to_md(start_kst) or "?"
     start_hm = _kst_to_hm(start_kst) or "?"
-    status = b.get("status")
-    if status == "live":
+    state = b.get("state")
+    if state == "live":
         return f"{start_md} {start_hm}~ (진행중)"
-    if status == "scheduled":
+    if state == "end":
+        return f"{start_md} {start_hm}~ (방송 종료)"
+    if state == "announced":
         end_hm = _kst_to_hm(_parse_iso_to_kst(b.get("expires_at")))
         if end_hm:
             return f"{start_md} {start_hm}~{end_hm}(예상)"
     return f"{start_md} {start_hm}~"
 
 
-def _format_list_text(channels_cfg: dict, schedule: dict, unit: str = "") -> str:
-    """/list 응답 본문. unit 비우면 5채널 전체. (v2.5)"""
+def _format_list_text(channels_cfg: dict, preview: dict, unit: str = "") -> str:
+    """/list 응답 본문. unit 비우면 5채널 전체. (v3)"""
     chan = channels_cfg.get("channels", {})
     units = [unit] if unit else list(_UNIT_KEYS)
     blocks = []
     for u in units:
         name = chan.get(u, {}).get("name_ko", u)
         lines = [f"<b>{name}</b> ({u})"]
-        items = _sorted_unit_broadcasts(schedule, u)
+        items = _sorted_unit_broadcasts(preview, u)
         if not items:
             lines.append("· (없음)")
         else:
             for i, b in enumerate(items, start=1):
-                badge = _STATUS_BADGE.get(b.get("status"), "❔")
-                title = (b.get("title") or xrelay.KIND_KO.get(b.get("kind"), "")) if xrelay else (b.get("title") or "")
+                badge = _STATE_BADGE.get(b.get("state"), "❔")
+                title = (b.get("title") or (xrelay.KIND_KO.get(b.get("kind"), "") if xrelay else "")) or ""
                 title_part = f" 「{title[:20]}」" if title else ""
                 collab_part = " (합동)" if (b.get("collab_with") or b.get("host") == "group") else ""
                 lines.append(f"#{i} {badge} {_time_range_text(b)}{title_part}{collab_part}")
@@ -249,7 +254,7 @@ def _format_list_text(channels_cfg: dict, schedule: dict, unit: str = "") -> str
 
 
 def _save_undo(gh: GitHubStore, *, action: str, prev_content: dict, new_sha, now_iso: str,
-               path: str = "schedule.json") -> None:
+               path: str = "preview.json") -> None:
     """`path` 파일을 바꾼 직후 admin_state.json 에 undo 스냅샷 기록. 실패해도 본 작업은 안 막음."""
     if admin is None:
         return
@@ -267,127 +272,61 @@ def _save_undo(gh: GitHubStore, *, action: str, prev_content: dict, new_sha, now
         log.exception("undo 스냅샷 저장 실패 (무시 — /undo 만 이번 건 불가해짐)")
 
 
-def _build_status_text(
-    now_iso: str,
-    gh: GitHubStore,
-    channels_cfg: dict,
-) -> str:
-    """
-    /status 명령 응답 본문 생성.
-
-    상태: 🟢 정상   (또는  ⏸ 일시정지 (12분째))
-    마지막 sync: 21:00 (12분 전)
-    라이브: 1 — 리츠 「ASMR…」 22:07~
-    예정: 오늘 2 · 이번주 1 · 이후 3
-    대기 wake: 6건 · 다음 22:45
-    """
+def _build_status_text(now_iso: str, gh: GitHubStore, channels_cfg: dict) -> str:
+    """/status 응답 본문 (v3). preview 6상태 카운트 + notice/tweet 요약 + 동기화 + LLM 큐."""
     now_kst = _get_kst_now()
     now_date = now_kst.date()
 
-    # 1. schedule.json, pending.json, control.json 로드
-    schedule = _load_config_dict(gh, "schedule.json")
-    pending = _load_config_dict(gh, "pending.json")
+    preview = _load_config_dict(gh, _PREVIEW_PATH)
+    notices_j = _load_config_dict(gh, _NOTICES_PATH)
+    tweets_j = _load_config_dict(gh, _TWEETS_PATH)
     control = _load_config_dict(gh, "control.json") or default_control()
 
-    broadcasts = schedule.get("broadcasts", [])
-    generated_at = schedule.get("generated_at")
-    entries = pending.get("entries", {}) or {}
+    items = preview.get("items", []) or []
+    generated_at = preview.get("generated_at")
 
-    # 2. 상태 라인
-    if is_paused(control):
-        since_iso = control.get("since")
-        since_kst = _parse_iso_to_kst(since_iso)
-        elapsed = ""
-        if since_kst:
-            delta = now_kst - since_kst
-            mins = int(delta.total_seconds() / 60)
-            if mins < 60:
-                elapsed = f" ({mins}분째)"
-            else:
-                hours = mins // 60
-                elapsed = f" ({hours}시간 {mins % 60}분째)"
-        status_line = f"상태: ⏸ 일시정지{elapsed}"
-    else:
-        status_line = "상태: 🟢 정상"
-    status_line += f"  ·  로그 {get_log_level(control)}"
+    paused = is_paused(control)
+    head = ("{icon} <b>mewtype v3</b>  |  paused: {p}  |  log: {lv}").format(
+        icon=("REDCIRCLE" if paused else "GREENCIRCLE"),
+        p=("yes" if paused else "no"), lv=get_log_level(control))
+    head = head.replace("REDCIRCLE", "🔴").replace("GREENCIRCLE", "🟢")
 
-    # 3. 마지막 sync
-    last_sync = ""
+    cnt = {k: 0 for k in ("announced", "upcoming", "watching", "live", "end")}
+    for b in items:
+        if b.get("state") in cnt:
+            cnt[b["state"]] += 1
+    preview_line = "preview  " + " . ".join(
+        f"{k} {cnt[k]}" for k in ("announced", "upcoming", "watching", "live", "end"))
+
+    nlist = notices_j.get("notices", []) or []
+    dmin = None
+    for n in nlist:
+        try:
+            d = datetime.strptime(n.get("date", ""), "%Y-%m-%d").date()
+            dd = (d - now_date).days
+            dmin = dd if dmin is None else min(dmin, dd)
+        except Exception:
+            pass
+    ntxt = f"notice   {len(nlist)}건" + (f" (가장 이른 D{dmin:+d})" if dmin is not None else "")
+
+    tw = tweets_j.get("tweets", {}) or {}
+    tw_units = [k for k in _UNIT_KEYS if k in tw]
+    ttxt = f"tweet    {', '.join(tw_units) or '없음'}  ({len(tw_units)}/5)"
+
+    sync = ["동기화"]
     if generated_at:
-        gen_kst = _parse_iso_to_kst(generated_at)
-        if gen_kst:
-            hm = _kst_to_hm(gen_kst)
-            rel = _relative_time(generated_at, now_iso)
-            last_sync = f"마지막 sync: {hm} ({rel})"
+        gk = _parse_iso_to_kst(generated_at)
+        if gk:
+            sync.append(f"  마지막 sync   {gk.strftime('%Y-%m-%d %H:%M')} JST "
+                        f"({_relative_time(generated_at, now_iso)})")
 
-    # 4. 라이브 (status=="live")
-    live_text = ""
-    live_broadcasts = [b for b in broadcasts if b.get("status") == "live"]
-    if live_broadcasts:
-        live_items = []
-        for b in live_broadcasts:
-            ch_key = b.get("channel_key")
-            ch_name = channels_cfg.get("channels", {}).get(ch_key, {}).get("name_ko", ch_key)
-            title = b.get("title", "제목 없음")[:20]  # 길이 제한
-            actual_start = b.get("actual_start")
-            if actual_start:
-                start_kst = _parse_iso_to_kst(actual_start)
-                if start_kst:
-                    start_hm = _kst_to_hm(start_kst)
-                    live_items.append(f"{ch_name} 「{title}…」 {start_hm}~")
-        if live_items:
-            live_text = "라이브: " + " · ".join(live_items)
+    q = (sum(1 for n in nlist if n.get("needs_tl"))
+         + sum(1 for t in tw.values() if t.get("needs_tl")))
+    qtxt = f"LLM 큐   {q}건 대기"
 
-    # 5. 예정 (status=="upcoming")
-    upcoming_broadcasts = [b for b in broadcasts if b.get("status") == "upcoming"]
-    today_count = 0
-    week_count = 0
-    later_count = 0
-    for b in upcoming_broadcasts:
-        ss_iso = b.get("scheduled_start")
-        if ss_iso:
-            ss_kst = _parse_iso_to_kst(ss_iso)
-            if ss_kst:
-                ss_date = ss_kst.date()
-                delta_days = (ss_date - now_date).days
-                if delta_days == 0:  # 오늘
-                    today_count += 1
-                elif 0 < delta_days < 7:  # 이번주
-                    week_count += 1
-                else:  # 이후
-                    later_count += 1
-
-    upcoming_text = f"예정: 오늘 {today_count} · 이번주 {week_count} · 이후 {later_count}"
-
-    # 6. 대기 wake (entries는 dict)
-    wake_text = ""
-    if entries:
-        next_check_times = []
-        for video_id, entry in entries.items():
-            nca = entry.get("next_check_at")
-            if nca:
-                nca_kst = _parse_iso_to_kst(nca)
-                if nca_kst:
-                    next_check_times.append(nca_kst)
-        if next_check_times:
-            next_check_times.sort()
-            next_hm = _kst_to_hm(next_check_times[0])
-            wake_text = f"대기 wake: {len(entries)}건 · 다음 {next_hm}"
-        else:
-            wake_text = f"대기 wake: {len(entries)}건"
-    else:
-        wake_text = "대기 wake: 없음"
-
-    # 7. 결합
-    lines = [status_line]
-    if last_sync:
-        lines.append(last_sync)
-    if live_text:
-        lines.append(live_text)
-    lines.append(upcoming_text)
-    lines.append(wake_text)
-
-    return "\n".join(lines)
+    nl = chr(10)
+    return nl.join([head, "", preview_line, ntxt, ttxt, "",
+                    nl.join(sync), "", qtxt])
 
 
 def _send_telegram(text: str, silent: bool = False) -> bool:
@@ -428,23 +367,20 @@ def _auto_dm(gh, kind: str, text: str, *, silent: bool = True) -> None:
         _send_telegram(text, silent=silent)
 
 
-# /status 두 번째 메시지 — 첫 메시지(_build_status_text)에 나오는 용어 풀이.
+# /status 두 번째 메시지 — 첫 메시지(_build_status_text)에 나오는 용어 풀이 (v3).
 _STATUS_GLOSSARY = (
-    "📖 <b>/status 필드</b>\n"
-    "· <b>상태</b> — 🟢 정상 / ⏸ 일시정지 (/pause 로 멈춤, 괄호는 경과 시간). "
-    "정지 중엔 tick·wake 가 no-op\n"
-    "· <b>로그</b> — 현재 Telegram 알림 레벨 (/log 로 변경)\n"
-    "· <b>마지막 sync</b> — 백엔드가 schedule.json 을 마지막으로 재구성한 시각 "
-    "(schedule.generated_at). 괄호는 지금으로부터 경과\n"
-    "· <b>라이브</b> — 지금 방송 중인 항목. 「제목」 뒤 시각은 실제 시작 시각\n"
-    "· <b>예정</b> — upcoming 방송 수. <b>오늘</b>=KST 같은 날 · <b>이번주</b>=1~6일 뒤 · "
-    "<b>이후</b>=7일 이상 뒤\n"
-    "· <b>대기 wake</b> — Cloud Tasks 에 예약된 방송별 상태확인 건수 (pre-live + live-watch). "
-    "<b>다음</b>=가장 이른 재확인 시각\n"
+    "📖 <b>/status 필드 (v3)</b>\n"
+    "· <b>paused</b> — /pause 로 멈춤. 정지 중엔 tick·wake·ingest 가 no-op\n"
+    "· <b>preview</b> — 살아있는 예고 아이템(announced~end)의 상태별 개수. "
+    "announced(정보 일부)→upcoming(전부)→watching(±3분 감시)→live→end(종료 유예)\n"
+    "· <b>notice</b> — 소식 게시판 건수 + 가장 이른 D-day\n"
+    "· <b>tweet</b> — 개인 트윗 배지가 떠 있는 유닛 (n/5)\n"
+    "· <b>마지막 sync</b> — 백엔드가 preview.json 을 마지막으로 재구성한 시각\n"
+    "· <b>LLM 큐</b> — 번역 대기(needs_tl) 행 수. /translate 로 즉시 처리 가능\n"
     "\n"
     "🔧 <b>로그 레벨</b> (/log 로 변경)\n"
-    "· <b>detail</b> — scheduled·upcoming·live·notice·tweet·ingest 전부 + fallback/오류/sync 요약 (성공·실패 무관)\n"
-    "· <b>normal</b> — scheduled·upcoming·live·notice·tweet 만 · 기본값\n"
+    "· <b>detail</b> — announced·upcoming·live·demote·notice·tweet·ingest + 오류/요약\n"
+    "· <b>normal</b> — announced·upcoming·live·notice·tweet (기본값)\n"
     "· <b>simple</b> — upcoming·live 만"
 )
 
@@ -610,54 +546,72 @@ _INGEST_RAW_CAP = 8000       # 저장 원문 상한
 
 def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = None,
                               merge_fn=None) -> bool:
-    """rows 를 `merge_fn`(기본 `xrelay.merge_scheduled`) 로 schedule.json 에 반영
-    (base-sha 충돌 시 1회 재시도). v2.8.1 개인 예고는 `xtweet.merge_personal_schedule` 를 넘긴다.
+    """rows 를 `merge_fn` 으로 preview.json 의 items 에 반영 (base-sha 충돌 시 1회 재시도).
 
-    실제로 변경됐으면 admin_state.json 에 undo 스냅샷을 남긴다(v2.5, `action` 없으면 `message` 사용).
+    (v3) merge_fn 계약: `xrelay.merge_announced(items, rows, now) -> (items, changed)` (rows 통째) /
+    `xtweet.merge_personal_schedule(items, row, now) -> (items, changed)` (단일 row). 기본은 전자.
+    변경됐으면 admin_state.json 에 undo 스냅샷(`path=preview.json`).
     """
-    merge_fn = merge_fn or xrelay.merge_scheduled
+    merge_fn = merge_fn or xrelay.merge_announced
+    per_row = merge_fn is not xrelay.merge_announced   # personal 은 row 하나씩
     changed = False
     prev = new_sha = None
     for attempt in (1, 2):
-        prev, sha = gh.read_json("schedule.json")
-        merged = merge_fn(prev or {}, rows, now_iso)
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {"items": []}
+        items = list(prev.get("items", []) or [])
+        any_ch = False
+        if per_row:
+            for r in rows:
+                items, c1 = merge_fn(items, r, now_iso)
+                any_ch = any_ch or c1
+        else:
+            items, any_ch = merge_fn(items, rows, now_iso)
+        merged = dict(prev)
+        merged["items"] = items
+        merged["generated_at"] = now_iso
         try:
-            changed, new_sha = gh.write_json("schedule.json", merged, prev_sha=sha, message=message)
+            changed, new_sha = gh.write_json(_PREVIEW_PATH, merged, prev_sha=sha, message=message)
             break
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("ingest: schedule.json 충돌 — 재계산 후 재시도")
+            log.warning("ingest: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action or message, prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
     return changed
 
 
 def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
-    """snapshot 과 정확히 일치하는 broadcasts[] 항목 1개를 제거 (v2.5 /del).
+    """snapshot 과 정확히 일치하는 preview.items[] 항목 1개를 제거 (v3 /del).
 
-    그 사이 항목이 바뀌었거나 이미 없으면(다른 실행이 먼저 건드림) False — 아무것도 안 지운다.
-    base-sha 충돌 시 1회 재시도.
+    그 사이 항목이 바뀌었거나 이미 없으면 False — 아무것도 안 지운다. base-sha 충돌 시 1회 재시도.
     """
     changed = False
     prev = new_sha = None
     for attempt in (1, 2):
-        prev, sha = gh.read_json("schedule.json")
+        prev, sha = gh.read_json(_PREVIEW_PATH)
         prev = prev or {}
-        broadcasts = prev.get("broadcasts", []) or []
-        match_i = next((i for i, b in enumerate(broadcasts) if b == snapshot), None)
+        items = prev.get("items", []) or []
+        # id 우선 매칭(스냅샷 이후 volatile 필드가 바뀌어도 동일 아이템으로 잡음), 없으면 완전일치
+        match_i = None
+        sid = snapshot.get("id")
+        if sid:
+            match_i = next((i for i, b in enumerate(items) if b.get("id") == sid), None)
+        if match_i is None:
+            match_i = next((i for i, b in enumerate(items) if b == snapshot), None)
         if match_i is None:
             return False
-        new_sched = dict(prev)
-        new_sched["broadcasts"] = broadcasts[:match_i] + broadcasts[match_i + 1:]
-        new_sched["generated_at"] = now_iso
+        new_pv = dict(prev)
+        new_pv["items"] = items[:match_i] + items[match_i + 1:]
+        new_pv["generated_at"] = now_iso
         try:
-            changed, new_sha = gh.write_json("schedule.json", new_sched, prev_sha=sha, message=f"data: {action} {now_iso}")
+            changed, new_sha = gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha, message=f"data: {action} {now_iso}")
             break
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("del: schedule.json 충돌 — 재계산 후 재시도")
+            log.warning("del: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
     return changed
@@ -724,7 +678,7 @@ def _handle_list(gh, channels_cfg: dict, arg: str) -> None:
         if unit and unit not in _UNIT_KEYS:
             _send_telegram(f"⚠️ 알 수 없는 유닛: {unit}\n택: {', '.join(_UNIT_KEYS)} (생략 시 전체)")
             return
-        schedule = _load_config_dict(gh, "schedule.json")
+        schedule = _load_config_dict(gh, _PREVIEW_PATH)
         text = _format_list_text(channels_cfg, schedule, unit)
         _send_telegram(text or "(방송 없음)")
     except Exception as e:
@@ -745,7 +699,7 @@ def _handle_del_request(gh, channels_cfg: dict, now_iso: str, unit_arg: str, idx
             _send_telegram("⚠️ 사용법: /del <유닛> <번호>  (번호는 /list 로 확인)")
             return
 
-        schedule = _load_config_dict(gh, "schedule.json")
+        schedule = _load_config_dict(gh, _PREVIEW_PATH)
         items = _sorted_unit_broadcasts(schedule, unit)
         if idx < 1 or idx > len(items):
             _send_telegram(f"⚠️ {unit} 에 #{idx} 항목이 없습니다. /list {unit} 로 확인하세요.")
@@ -754,9 +708,10 @@ def _handle_del_request(gh, channels_cfg: dict, now_iso: str, unit_arg: str, idx
         name = channels_cfg.get("channels", {}).get(unit, {}).get("name_ko", unit)
 
         warn = f"#{idx} {name}의 {_time_range_text(b)} 방송예고를 내리시겠습니까?"  # warn_deltry
-        if b.get("status") in ("upcoming", "live"):
+        if b.get("state") in ("announced", "upcoming", "watching", "live"):
             warn += "\n해당 예고는 감지기능으로 다시 되살아날 수 있습니다."          # warn_live
-        warn += "\n그래도 지우시겠습니까? (y/N)"
+        warn += ("\n(<code>y</code> = 삭제 · <code>terminate</code> = 삭제 + 그 URL 12h 재등록 차단 "
+                 "· <code>N</code>/무응답 = 취소)")
 
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
         state = admin.set_pending_del(
@@ -770,8 +725,13 @@ def _handle_del_request(gh, channels_cfg: dict, now_iso: str, unit_arg: str, idx
         _send_telegram(f"⚠️ 오류: /del 처리 실패\n{str(e)[:100]}")
 
 
-def _handle_del_confirm(gh, now_iso: str, yes: bool) -> None:
-    """대기 중인 /del 요청에 대한 (y/N) 답변 처리."""
+def _handle_del_confirm(gh, now_iso: str, answer: str) -> None:
+    """대기 중인 /del 요청에 대한 답변 처리. answer ∈ y | n | terminate.
+
+    (v3) `terminate` = 삭제 + 그 url 을 12h 재진입 차단(`admin.add_suppress`). url 이 없으면
+    `y` 와 동일 + 안내. `/tick` reconcile 이 suppress 목록을 대조해 재등록을 막는다.
+    """
+    ans = (answer or "").strip().lower()
     try:
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
         state = state or admin.default_admin_state()
@@ -782,7 +742,7 @@ def _handle_del_confirm(gh, now_iso: str, yes: bool) -> None:
             _send_telegram("⌛ 대기 중인 삭제 요청이 없습니다(만료됨). /del 로 다시 시도하세요.")
             return
 
-        if not yes:
+        if ans not in ("y", "yes", "terminate"):
             state = admin.clear_pending_del(state)
             gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: /del 취소 {now_iso}")
             _send_telegram("↩️ 취소했습니다.")
@@ -792,12 +752,31 @@ def _handle_del_confirm(gh, now_iso: str, yes: bool) -> None:
         action = f"/del {unit}#{idx}"
         removed = _remove_broadcast(gh, snapshot, now_iso, action)
 
+        note = ""
+        if ans == "terminate" and removed:
+            url = snapshot.get("url")
+            if url:
+                try:
+                    st2, sh2 = gh.read_json(_ADMIN_STATE_PATH)
+                    gh.write_json(
+                        _ADMIN_STATE_PATH,
+                        admin.add_suppress(st2 or admin.default_admin_state(),
+                                           url=url, now_iso=now_iso),
+                        prev_sha=sh2, message=f"data: suppress += {url} {now_iso}",
+                    )
+                    note = "\n🚫 이 URL 은 12시간 동안 재등록이 차단됩니다."
+                except Exception:
+                    log.exception("suppress 추가 실패")
+                    note = "\n⚠️ 재진입 차단 등록 실패 (삭제는 됨)."
+            else:
+                note = "\nℹ️ url 이 없어 재진입 차단은 생략했습니다(일반 삭제와 동일)."
+
         state, sha = gh.read_json(_ADMIN_STATE_PATH)
         state = admin.clear_pending_del(state or admin.default_admin_state())
         gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha, message=f"data: /del 완료 {now_iso}")
 
         if removed:
-            _send_telegram(f"🗑 {action} 반영됨. /undo 로 되돌릴 수 있습니다.")
+            _send_telegram(f"🗑 {action} 반영됨. /undo 로 되돌릴 수 있습니다.{note}")
         else:
             _send_telegram(f"⚠️ {action} 실패 — 그 사이 항목이 바뀌거나 사라졌습니다. /list 로 확인하세요.")
     except Exception as e:
@@ -1781,7 +1760,7 @@ def _undo_target_text(undo: dict) -> str:
 
 
 def _undo_diff_text(prev_content: dict, cur_content: dict, limit: int = 8,
-                    path: str = "schedule.json") -> str:
+                    path: str = "preview.json") -> str:
     """undo(=prev_content 로 복원) 시 복원될/사라질 항목 요약. path 따라 대상 배열이 다름."""
     if path == "notices.json":
         prev_l = (prev_content or {}).get("notices", []) or []
@@ -1796,8 +1775,8 @@ def _undo_diff_text(prev_content: dict, cur_content: dict, limit: int = 8,
                 return "· " + notices.summary_line(n)
             return "· " + (n.get("title") or n.get("id") or "?")[:60]
     else:
-        prev_bcs = (prev_content or {}).get("broadcasts", []) or []
-        cur_bcs = (cur_content or {}).get("broadcasts", []) or []
+        prev_bcs = (prev_content or {}).get("items", []) or []
+        cur_bcs = (cur_content or {}).get("items", []) or []
         restored = [b for b in prev_bcs if b not in cur_bcs]
         removed = [b for b in cur_bcs if b not in prev_bcs]
 
@@ -1810,7 +1789,7 @@ def _undo_diff_text(prev_content: dict, cur_content: dict, limit: int = 8,
                     hm = " " + xrelay._jst_hm(s) + "(JST)"
                 except Exception:
                     hm = ""
-            title = b.get("title") or b.get("status") or ""
+            title = b.get("title") or b.get("state") or ""
             return f"· {ck}{hm} {title}".rstrip()
 
     parts = [f"<b>+{len(restored)} 복원 / −{len(removed)} 제거</b>"]
@@ -1832,7 +1811,7 @@ def _handle_undo_request(gh, now_iso: str) -> None:
             _send_telegram("↩️ 되돌릴 작업이 없습니다.")
             return
 
-        _path = undo.get("path") or "schedule.json"
+        _path = undo.get("path") or _PREVIEW_PATH
         cur, _ = gh.read_json(_path)
         diff = _undo_diff_text(undo.get("prev_content") or {}, cur or {}, path=_path)
         gh.write_json(
@@ -1877,14 +1856,14 @@ def _handle_undo_confirm(gh, now_iso: str, yes: bool) -> None:
             _send_telegram("↩️ 그 사이 다른 작업이 있었습니다 — /undo 를 다시 실행하세요.")
             return
 
-        _path = undo.get("path") or "schedule.json"
+        _path = undo.get("path") or _PREVIEW_PATH
         cur, cur_sha = gh.read_json(_path)
         if cur_sha != undo.get("new_sha"):
             state = admin.clear_pending_undo(admin.clear_undo(state))
             gh.write_json(_ADMIN_STATE_PATH, state, prev_sha=sha,
                           message=f"data: undo 슬롯 정리({_path} 갱신) {now_iso}")
             _hint = ("/list 로 현재 상태를 확인한 뒤 /del 로 수동 처리하세요."
-                     if _path == "schedule.json" else "/notice-list 로 확인 후 /notice-del 하세요.")
+                     if _path == _PREVIEW_PATH else "/notice-list 로 확인 후 /notice-del 하세요.")
             _send_telegram(f"↩️ 되돌리기 불가 — 그 사이 {_path} 이 갱신됐습니다.\n{_hint}")
             return
 
@@ -1904,6 +1883,401 @@ def _handle_undo_confirm(gh, now_iso: str, yes: bool) -> None:
     except Exception as e:
         log.exception("Error handling /undo confirm")
         _send_telegram(f"⚠️ 오류: /undo 확인 처리 실패\n{str(e)[:100]}")
+
+
+# ── (v3) /translate — 수동 번역. 자동 파이프라인의 말단 번역과 별개. ─────────────
+def _make_llm_client():
+    """LLMClient. GROQ_API_KEY 없으면 None."""
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not key:
+        return None
+    try:
+        from .llm import LLMClient
+
+        return LLMClient(
+            key,
+            model=os.environ.get("GROQ_MODEL", "").strip() or "openai/gpt-oss-120b",
+            fallback=os.environ.get("GROQ_MODEL_FALLBACK", "").strip()
+            or "llama-3.3-70b-versatile",
+        )
+    except Exception:
+        log.exception("LLMClient 생성 실패")
+        return None
+
+
+def _handle_translate(gh, now_iso: str, contents: str) -> None:
+    """/translate <notice|tweet> — 미번역 행 전부에 `*_ko` 채운다(원문 보존).
+
+    (preview 제목 번역은 계획상 자동/수동 모두 안 함 — 여기서도 지원 안 함.)
+    """
+    c = (contents or "").strip().lower()
+    if c not in ("notice", "tweet"):
+        _send_telegram("사용법: /translate &lt;notice | tweet&gt;")
+        return
+    llm = _make_llm_client()
+    if llm is None:
+        _send_telegram("⚠️ GROQ_API_KEY 미설정 — 번역 불가")
+        return
+    try:
+        if c == "notice":
+            prev, sha = gh.read_json(_NOTICES_PATH)
+            lst = (prev or {}).get("notices", []) or []
+            n = 0
+            for row in lst:
+                if row.get("title_ko"):
+                    continue
+                res = llm.notice_title(row.get("body_for_llm") or row.get("title") or "")
+                if res and res.get("title_ko"):
+                    row["title_ko"] = res["title_ko"]
+                    row.pop("needs_tl", None)
+                    n += 1
+            if n:
+                prev["generated_at"] = now_iso
+                gh.write_json(_NOTICES_PATH, prev, prev_sha=sha,
+                              message=f"data: /translate notice ({n}) {now_iso}")
+            _send_telegram(f"🌐 소식 {n}건 번역 완료." if n else "번역할 소식이 없습니다.")
+        else:  # tweet
+            prev, sha = gh.read_json(_TWEETS_PATH)
+            tw = (prev or {}).get("tweets", {}) or {}
+            n = 0
+            for _k, row in tw.items():
+                if row.get("text_ko"):
+                    continue
+                ko = llm.translate(row.get("text") or "")
+                if ko:
+                    row["text_ko"] = ko
+                    row.pop("needs_tl", None)
+                    n += 1
+            if n:
+                prev["generated_at"] = now_iso
+                gh.write_json(_TWEETS_PATH, prev, prev_sha=sha,
+                              message=f"data: /translate tweet ({n}) {now_iso}")
+            _send_telegram(f"🌐 트윗 {n}건 번역 완료." if n else "번역할 트윗이 없습니다.")
+    except Exception as e:
+        log.exception("Error handling /translate")
+        _send_telegram(f"⚠️ 오류: /translate 처리 실패\n{str(e)[:100]}")
+
+
+# ── (v3) {cmd}×{contents} 격자 헬퍼 ─────────────────────────────────────────────
+_CONTENTS = ("preview", "notice", "tweet")
+
+
+def _split_contents(arg: str, default: str = "preview") -> tuple[str, str]:
+    """`arg` 의 첫 토큰이 preview|notice|tweet 면 (그것, 나머지). 아니면 (default, arg 전체).
+
+    `/list arale` 같은 v2 호출 하위호환 — arale 은 contents 가 아니므로 (preview, "arale").
+    """
+    parts = (arg or "").strip().split(None, 1)
+    if parts and parts[0].lower() in _CONTENTS:
+        return parts[0].lower(), (parts[1].strip() if len(parts) > 1 else "")
+    return default, (arg or "").strip()
+
+
+def _handle_tweet_list(gh, channels_cfg: dict) -> None:
+    """/list tweet — 현재 배지가 떠 있는 유닛의 트윗."""
+    if xtweet is None:
+        _send_telegram("⚠️ xtweet 모듈 없음")
+        return
+    prev, _ = gh.read_json(_TWEETS_PATH)
+    tw = (prev or {}).get("tweets", {}) or {}
+    if not tw:
+        _send_telegram("🐦 표시 중인 개인 트윗 없음.")
+        return
+    chans = channels_cfg.get("channels", {})
+    lines = ["🐦 <b>개인 트윗</b>"]
+    for k in _UNIT_KEYS:
+        row = tw.get(k)
+        if not row:
+            continue
+        name = chans.get(k, {}).get("name_ko", k)
+        body = (row.get("text_ko") or row.get("text") or "")[:80]
+        lines.append(f"<b>{html.escape(name)}</b> ({k})\n{html.escape(body)}\n{row.get('url') or ''}")
+    _send_telegram("\n\n".join(lines))
+
+
+def _handle_tweet_del(gh, channels_cfg: dict, now_iso: str, unit: str) -> None:
+    """/del tweet <유닛> — 그 유닛의 트윗 배지 슬롯을 즉시 제거(+undo)."""
+    u = (unit or "").strip().lower()
+    if u not in _UNIT_KEYS:
+        _send_telegram(f"사용법: /del tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
+        return
+    try:
+        prev, sha = gh.read_json(_TWEETS_PATH)
+        prev = prev or {}
+        tw = dict(prev.get("tweets", {}) or {})
+        if u not in tw:
+            _send_telegram(f"ℹ️ {u} 트윗이 없습니다.")
+            return
+        tw.pop(u)
+        new = dict(prev)
+        new["tweets"] = tw
+        new["generated_at"] = now_iso
+        _, nsha = gh.write_json(_TWEETS_PATH, new, prev_sha=sha,
+                                message=f"data: /del tweet {u} {now_iso}")
+        _save_undo(gh, action=f"/del tweet {u}", prev_content=prev, new_sha=nsha,
+                   now_iso=now_iso, path=_TWEETS_PATH)
+        _send_telegram(f"🗑 {u} 트윗 배지 제거됨. /undo 로 되돌릴 수 있습니다.")
+    except Exception as e:
+        log.exception("del tweet")
+        _send_telegram(f"⚠️ 오류: /del tweet 실패\n{str(e)[:100]}")
+
+
+# ── (v3) /edit — pending_op 슬롯 기반 마법사 ───────────────────────────────────
+_EDIT_FIELDS = ("title", "state", "date", "url")
+_OP_TTL_SEC = 60
+
+
+def _op_set(gh, now_iso, *, cmd, contents, step, ctx):
+    st, sh = gh.read_json(_ADMIN_STATE_PATH)
+    gh.write_json(_ADMIN_STATE_PATH,
+                  admin.set_pending_op(st or admin.default_admin_state(),
+                                       cmd=cmd, contents=contents, step=step, ctx=ctx,
+                                       now_iso=now_iso),
+                  prev_sha=sh, message=f"data: pending_op {cmd}/{contents}/{step} {now_iso}")
+
+
+def _op_clear(gh, now_iso, *, release_lock_id=None):
+    st, sh = gh.read_json(_ADMIN_STATE_PATH)
+    st = st or admin.default_admin_state()
+    st = admin.clear_pending_op(st)
+    if release_lock_id:
+        st = admin.clear_edit_lock(st)
+    gh.write_json(_ADMIN_STATE_PATH, st, prev_sha=sh,
+                  message=f"data: pending_op 정리 {now_iso}")
+
+
+def _edit_form_preview(name: str, idx: int, item: dict, patch: dict) -> str:
+    def _cur(f):
+        if f == "date":
+            k = _parse_iso_to_kst(item.get("scheduled_start"))
+            return k.strftime("%Y-%m-%d %H:%M") if k else "(없음)"
+        return str(item.get({"url": "url"}.get(f, f)) or "(없음)")
+    lines = [f"<b>{html.escape(name)}</b> #{idx}  <code>{item.get('id')}</code>"]
+    for f in _EDIT_FIELDS:
+        mark = " ✏️" if f in patch else ""
+        val = html.escape(str(patch[f])) if f in patch else html.escape(_cur(f))
+        lines.append(f"* {f:<6}: {val}{mark}")
+    lines.append("\n수정할 항목 이름(title/state/date/url)을 보내세요. 여러 개면 순서대로.")
+    lines.append("끝내려면 <code>done</code> · 원문으로 통째 교체는 <code>ingest</code> · 취소 <code>aNoneTokyo</code>")
+    return "\n".join(lines)
+
+
+def _handle_edit(gh, channels_cfg: dict, now_iso: str, contents: str, rest: str) -> None:
+    """/edit <preview|notice|tweet> — 편집 마법사 진입."""
+    if admin is None:
+        _send_telegram("⚠️ admin 모듈 없음 — /edit 사용 불가")
+        return
+    if contents == "notice":
+        _handle_notice_edit(gh, now_iso, rest)          # 기존 마법사 재사용
+        return
+    if contents == "tweet":
+        u = (rest or "").strip().lower()
+        if u not in _UNIT_KEYS:
+            _send_telegram(f"사용법: /edit tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
+            return
+        _op_set(gh, now_iso, cmd="edit", contents="tweet", step="await_raw", ctx={"unit": u})
+        _send_telegram(f"✏️ {u} 트윗을 교체할 새 원문을 보내세요. (취소 <code>aNoneTokyo</code>)")
+        return
+    # preview
+    _handle_list(gh, channels_cfg, rest)
+    _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_unit", ctx={})
+    _send_telegram("✏️ 어떤 유닛의 예고를 편집할까요? (유닛명 · 취소 <code>aNoneTokyo</code>)")
+
+
+def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, text: str) -> bool:
+    """pending_op(cmd=edit/ingest, contents=preview/tweet) 응답 소비. True=소진."""
+    if admin is None:
+        return False
+    try:
+        state, _ = gh.read_json(_ADMIN_STATE_PATH)
+    except Exception:
+        return False
+    op = admin.get_pending_op(state)
+    if not op:
+        return False
+    lock_id = (op.get("ctx") or {}).get("id")
+
+    if admin.pending_op_expired(op, now_iso, _OP_TTL_SEC):
+        _op_clear(gh, now_iso, release_lock_id=lock_id)
+        _send_telegram("⏱ 편집 대기(60초)가 지나 취소되었습니다.")
+        return False
+    t = (text or "").strip()
+    if t == _INGEST_CANCEL_TOKEN:
+        _op_clear(gh, now_iso, release_lock_id=lock_id)
+        _send_telegram("🚫 편집이 취소되었습니다.")
+        return True
+    if t.startswith("/"):
+        _op_clear(gh, now_iso, release_lock_id=lock_id)
+        _send_telegram("ℹ️ 편집을 취소하고 입력한 명령을 실행합니다.")
+        return False
+
+    cmd, contents, step = op.get("cmd"), op.get("contents"), op.get("step")
+    ctx = dict(op.get("ctx") or {})
+
+    # ── ingest tweet / edit tweet : 원문 한 방 ──
+    if step == "await_raw" and contents == "tweet":
+        raw = t
+        if not raw:
+            _send_telegram("⚠️ 원문 텍스트를 보내주세요. (대기 유지)")
+            return True
+        _op_clear(gh, now_iso)
+        u = ctx.get("unit")
+        _send_telegram("📥 반영 중…")
+        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso)
+        _send_telegram(f"🐦 {u} 트윗 {'교체됨' if mode in ('added','replaced') else mode}.")
+        return True
+
+    # ── edit preview 마법사 ──
+    if cmd != "edit" or contents != "preview":
+        return False
+
+    prev, _ = gh.read_json(_PREVIEW_PATH)
+    items = (prev or {}).get("items", []) or []
+
+    if step == "await_unit":
+        u = t.lower()
+        if u not in _UNIT_KEYS:
+            _send_telegram(f"⚠️ 유닛명을 보내주세요 ({', '.join(_UNIT_KEYS)}). 취소 aNoneTokyo")
+            return True
+        ctx["unit"] = u
+        _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_idx", ctx=ctx)
+        _send_telegram(f"{u} 의 몇 번 항목을 편집할까요? (번호 — /list {u} 로 확인)")
+        return True
+
+    if step == "await_idx":
+        u = ctx.get("unit")
+        try:
+            idx = int(t)
+        except ValueError:
+            _send_telegram("⚠️ 번호(숫자)를 보내주세요.")
+            return True
+        unit_items = _sorted_unit_broadcasts({"items": items}, u)
+        if idx < 1 or idx > len(unit_items):
+            _op_clear(gh, now_iso)
+            _send_telegram(f"⚠️ {u} #{idx} 없음. /edit 로 다시 시작하세요.")
+            return True
+        it = unit_items[idx - 1]
+        ctx.update({"id": it.get("id"), "idx": idx, "patch": {},
+                    "pre": {f: (it.get("scheduled_start") if f == "date" else it.get(f))
+                            for f in _EDIT_FIELDS}})
+        # 아이템 단위 편집 락
+        st, sh = gh.read_json(_ADMIN_STATE_PATH)
+        st = admin.set_pending_op(st or admin.default_admin_state(), cmd="edit",
+                                  contents="preview", step="await_field", ctx=ctx, now_iso=now_iso)
+        st = admin.set_edit_lock(st, id=it.get("id"), now_iso=now_iso, ttl_sec=_OP_TTL_SEC)
+        gh.write_json(_ADMIN_STATE_PATH, st, prev_sha=sh,
+                      message=f"data: /edit preview lock {it.get('id')} {now_iso}")
+        name = channels_cfg.get("channels", {}).get(u, {}).get("name_ko", u)
+        _send_telegram(_edit_form_preview(name, idx, it, {}))
+        return True
+
+    if step == "await_field":
+        f = t.lower()
+        if f == "done":
+            _apply_preview_edit(gh, now_iso, ctx)
+            return True
+        if f == "ingest":
+            _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_raw_pv", ctx=ctx)
+            _send_telegram("교체할 예고 원문을 보내세요. (취소 aNoneTokyo)")
+            return True
+        if f not in _EDIT_FIELDS:
+            _send_telegram(f"⚠️ title/state/date/url/done/ingest 중 하나. 지금 patch: {ctx.get('patch')}")
+            return True
+        ctx["_field"] = f
+        _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_value", ctx=ctx)
+        hint = {"date": " (YYYY-MM-DD HH:MM, KST)", "state": " (announced/upcoming/…)"}.get(f, "")
+        _send_telegram(f"새 {f} 값을 보내세요{hint}.")
+        return True
+
+    if step == "await_value":
+        f = ctx.get("_field")
+        patch = dict(ctx.get("patch") or {})
+        if f == "date":
+            m = re.match(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})\s*$", t)
+            if not m:
+                _send_telegram("⚠️ 형식: YYYY-MM-DD HH:MM (KST). 다시 보내세요.")
+                return True
+            kst = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]),
+                           tzinfo=timezone(timedelta(hours=9)))
+            patch["date"] = kst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        elif f == "url":
+            patch["url"] = t if t.startswith("http") else "https://" + t.lstrip("/")
+        else:
+            patch[f] = t
+        ctx["patch"] = patch
+        ctx.pop("_field", None)
+        _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_field", ctx=ctx)
+        u = ctx.get("unit")
+        name = channels_cfg.get("channels", {}).get(u, {}).get("name_ko", u)
+        it = next((x for x in items if x.get("id") == ctx.get("id")), {})
+        _send_telegram(_edit_form_preview(name, ctx.get("idx", 0), it, patch))
+        return True
+
+    if step == "await_raw_pv":
+        raw = t
+        _op_clear(gh, now_iso, release_lock_id=ctx.get("id"))
+        rows = xrelay.parse(raw, now_iso) if xrelay else []
+        if not rows:
+            _send_telegram("ℹ️ 예고 형식으로 파싱 못 함 — 편집 취소.")
+            return True
+        _merge_rows_into_schedule(gh, rows, now_iso, message=f"data: /edit preview ingest {now_iso}",
+                                  action="/edit preview ingest")
+        _send_telegram("✏️ 원문으로 교체 반영됨. /undo 로 되돌릴 수 있습니다.")
+        return True
+
+    return False
+
+
+def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
+    """답한 필드만 preview.json 아이템에 병합. edit_lock 해제. tick 충돌 필드 알림."""
+    patch = ctx.get("patch") or {}
+    pid = ctx.get("id")
+    pre = ctx.get("pre") or {}
+    if not patch:
+        _op_clear(gh, now_iso, release_lock_id=pid)
+        _send_telegram("변경 사항이 없습니다.")
+        return
+    field_map = {"title": "title", "state": "state", "date": "scheduled_start", "url": "url"}
+    conflicts = []
+    for _try in (1, 2):
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {"items": []}
+        items = list(prev.get("items", []) or [])
+        i = next((k for k, x in enumerate(items) if x.get("id") == pid), None)
+        if i is None:
+            _op_clear(gh, now_iso, release_lock_id=pid)
+            _send_telegram("⚠️ 편집하려던 아이템이 사라졌습니다 — 취소.")
+            return
+        it = dict(items[i])
+        for f, val in patch.items():
+            key = field_map[f]
+            cur = it.get(key)
+            want_pre = pre.get(f)
+            if cur != want_pre:
+                conflicts.append(f"{f}: 운영자값 유지 (그 사이 tick: {want_pre!r}→{cur!r})")
+            it[key] = val
+        it["last_updated"] = now_iso
+        items[i] = it
+        new = dict(prev)
+        new["items"] = items
+        new["generated_at"] = now_iso
+        try:
+            _, nsha = gh.write_json(_PREVIEW_PATH, new, prev_sha=sha,
+                                    message=f"data: /edit preview {pid} {now_iso}")
+            _save_undo(gh, action=f"/edit preview {pid}", prev_content=prev,
+                       new_sha=nsha, now_iso=now_iso, path=_PREVIEW_PATH)
+            break
+        except ConflictError:
+            if _try == 2:
+                raise
+            log.warning("/edit preview: 충돌 — 재시도")
+    _op_clear(gh, now_iso, release_lock_id=pid)
+    msg = f"✏️ 예고 편집 반영 ({', '.join(patch)}). /undo 로 되돌릴 수 있습니다."
+    if "state" in patch:
+        msg += "\n⚠️ state 는 FSM 파생값 — 다음 tick 이 덮을 수 있습니다."
+    if conflicts:
+        msg += "\n\n" + "\n".join(conflicts)
+    _send_telegram(msg)
 
 
 # Flask 라우트 정의 (Flask 설치 시만)
@@ -1960,8 +2334,9 @@ if _FLASK_AVAILABLE:
                     _pending = _pending_undo = None
                 _low = text.strip().lower()
                 _is_yn = _low in ("y", "yes", "n", "no")
-                if _pending and not admin.pending_del_expired(_pending, now_utc) and _is_yn:
-                    _handle_del_confirm(gh, now_utc, yes=_low in ("y", "yes"))
+                _is_del_ans = _is_yn or _low == "terminate"
+                if _pending and not admin.pending_del_expired(_pending, now_utc) and _is_del_ans:
+                    _handle_del_confirm(gh, now_utc, _low)
                     return jsonify({"ok": True}), 200
                 if _pending_undo:
                     if admin.pending_undo_expired(_pending_undo, now_utc):
@@ -1999,6 +2374,10 @@ if _FLASK_AVAILABLE:
             if admin is not None and _handle_notice_edit_followup(gh, now_utc, text):
                 return jsonify({"ok": True}), 200
 
+            # v3: /edit·/ingest tweet 마법사(pending_op) 응답 대기 중이면 그쪽이 소진.
+            if admin is not None and _handle_op_followup(gh, channels_cfg, now_utc, message, text):
+                return jsonify({"ok": True}), 200
+
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
@@ -2015,27 +2394,57 @@ if _FLASK_AVAILABLE:
             elif cmd == "/log":
                 _handle_log(gh, now_utc, arg)
             elif cmd == "/list":
-                _handle_list(gh, channels_cfg, arg)
+                _c, _rest = _split_contents(arg)
+                if _c == "notice":
+                    _handle_notice_list(gh, now_utc)
+                elif _c == "tweet":
+                    _handle_tweet_list(gh, channels_cfg)
+                else:
+                    _handle_list(gh, channels_cfg, _rest)   # preview (rest=유닛 필터)
+            elif cmd == "/edit":
+                _c, _rest = _split_contents(arg)
+                _handle_edit(gh, channels_cfg, now_utc, _c, _rest)
             elif cmd == "/del":
-                parts = arg.split()
-                _unit = parts[0] if len(parts) >= 1 else ""
-                _idx = parts[1] if len(parts) >= 2 else ""
-                _handle_del_request(gh, channels_cfg, now_utc, _unit, _idx)
+                _c, _rest = _split_contents(arg)
+                if _c == "notice":
+                    _handle_notice_del(gh, now_utc, _rest)
+                elif _c == "tweet":
+                    _handle_tweet_del(gh, channels_cfg, now_utc, _rest)
+                else:
+                    parts = _rest.split()
+                    _unit = parts[0] if len(parts) >= 1 else ""
+                    _idx = parts[1] if len(parts) >= 2 else ""
+                    _handle_del_request(gh, channels_cfg, now_utc, _unit, _idx)
             elif cmd in ("/ingest", "/add"):
-                # 인라인 원문은 받지 않는다(텔레그램 ||스포일러|| 마스킹이 명령행을
-                # 변형시킴). 무인자로 대기 슬롯만 세팅하고 다음 메시지/파일을 받는다.
+                _c, _rest = _split_contents(arg)
                 if admin is None:
                     _send_telegram("⚠️ admin 모듈 없음 — /ingest 사용 불가")
+                elif _c == "tweet":
+                    _u = _rest.strip().lower()
+                    if _u not in _UNIT_KEYS:
+                        _send_telegram(f"사용법: /ingest tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
+                    else:
+                        _op_set(gh, now_utc, cmd="ingest", contents="tweet",
+                                step="await_raw", ctx={"unit": _u})
+                        _send_telegram(f"✏️ {_u} 개인 트윗 원문을 보내세요. (취소 <code>aNoneTokyo</code>)")
+                elif _c == "notice":
+                    try:
+                        _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
+                        gh.write_json(_ADMIN_STATE_PATH,
+                                      admin.set_pending_notice(_st or admin.default_admin_state(), now_iso=now_utc),
+                                      prev_sha=_sh, message=f"data: pending_notice 대기 시작 {now_utc}")
+                        _send_telegram(_NOTICE_PROMPT)
+                    except Exception:
+                        log.exception("pending_notice 세팅 실패")
+                        _send_telegram("⚠️ /ingest notice 대기 저장 실패")
                 else:
+                    # preview — 인라인 원문 안 받음(||스포일러|| 마스킹). 무인자 대기 슬롯.
                     try:
                         _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
                         gh.write_json(
                             _ADMIN_STATE_PATH,
-                            admin.set_pending_ingest(
-                                _st or admin.default_admin_state(), now_iso=now_utc
-                            ),
-                            prev_sha=_sh,
-                            message=f"data: pending_ingest 대기 시작 {now_utc}",
+                            admin.set_pending_ingest(_st or admin.default_admin_state(), now_iso=now_utc),
+                            prev_sha=_sh, message=f"data: pending_ingest 대기 시작 {now_utc}",
                         )
                         _send_telegram(_INGEST_PROMPT)
                     except Exception:
@@ -2067,22 +2476,21 @@ if _FLASK_AVAILABLE:
                 _handle_notice_list(gh, now_utc)
             elif cmd == "/undo":
                 _handle_undo_request(gh, now_utc)
+            elif cmd == "/translate":
+                _handle_translate(gh, now_utc, arg)
             else:
                 # 도움말
                 help_text = (
-                    "<b>📱 mewtype 텔레그램 봇</b>\n\n"
-                    "명령:\n"
-                    "/status — 현재 상태 조회\n"
-                    "/pause — 수집 일시정지\n"
-                    "/resume — 수집 재개\n"
-                    "/log [detail|normal|simple] — 알림 상세도\n"
-                    "/list [유닛] — 방송 목록 (유닛: arale/yuno/nonoka/ritsu/miyako, 생략 시 전체)\n"
-                    "/del &lt;유닛&gt; &lt;번호&gt; — 목록의 항목을 내림 (확인 y/N 필요)\n"
-                    "/ingest — 보낸 뒤 3분 내에 예고트윗 원문(텍스트/파일)을 이어 보내 수동 반영\n"
-                    "/notice — 소식 게시판 수동 등록 (원문/파일 이어 보내기)\n"
-                    "/notice-list · /notice-del &lt;id|번호&gt; — 소식 조회 / 삭제\n"
-                    "/notice-edit &lt;id|번호&gt; — 소식 편집 (제목→날짜→URL 순 되묻기, 유지: aNoneTokyo)\n"
-                    "/undo — 방금 한 작업(/ingest, /del, /notice) 되돌리기 (확인 y/N, 60초)"
+                    "<b>📱 mewtype 텔레그램 봇 (v3)</b>\n\n"
+                    "일반: /status /pause /resume /log [detail|normal|simple]\n\n"
+                    "<b>콘텐츠</b> (c = preview | notice | tweet, 생략 시 preview):\n"
+                    "/list &lt;c&gt; [유닛] — 목록\n"
+                    "/ingest &lt;c&gt; — 원문 이어 보내 반영 (tweet 은 유닛 지정)\n"
+                    "/edit &lt;c&gt; — 편집 마법사 (preview: 필드 하나씩 · notice: 제목→날짜→URL)\n"
+                    "/del &lt;c&gt; … — 삭제 (preview: &lt;유닛&gt; &lt;번호&gt;, 확인 <code>y</code>/<code>terminate</code>/N)\n"
+                    "/translate &lt;notice|tweet&gt; — 미번역 행 번역 (원문 보존)\n"
+                    "/undo — 직전 mutating 명령 되돌리기 (y/N, 60초)\n\n"
+                    "별칭: /notice /notice-list /notice-del /notice-edit /add"
                 )
                 _send_telegram(help_text)
 
@@ -2340,590 +2748,143 @@ if _FLASK_AVAILABLE:
 
 if __name__ == "__main__":
     import sys
-
     try:
-        sys.stdout.reconfigure(encoding="utf-8")  # Windows cp949 콘솔 대비
+        sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
     print("=" * 60)
-    print("telegram_app.py smoke test")
+    print("telegram_app.py v3 smoke test")
     print("=" * 60)
 
-    # ── _tweet_url_from_tag (v2.3.x) ──────────────────────────────────
-    assert _tweet_url_from_tag("p#https://x.com/#1tweet-2096552878769152326") == \
-        "https://x.com/i/status/2096552878769152326"
+    # ── 순수 헬퍼 ──────────────────────────────────────────────
+    assert _tweet_url_from_tag("p#https://x.com/#1tweet-2096552878769152326") ==         "https://x.com/i/status/2096552878769152326"
     assert _tweet_url_from_tag("DownloadNotificationService") == ""
     assert _tweet_url_from_tag("") == "" and _tweet_url_from_tag(None) == ""
-    print("[tweet] _tweet_url_from_tag  ✓")
+    print("[OK] _tweet_url_from_tag")
 
-    # ── ingest 대기열 (Flask 없이도 동작) ──────────────────────────────
-    print("\n[Queue] _ingest_queue_push / _drain")
-    if xrelay is not None:
-        class _FakeGH:
-            def __init__(self):
-                self.store = {}
-            def read_json(self, path):
-                return (self.store.get(path), "sha0" if path in self.store else None)
-            def write_json(self, path, data, *, prev_sha=None, message=""):
-                self.store[path] = data
-                return True, "sha1"
+    # ── 6상태 정렬·표시 ───────────────────────────────────────
+    _pv = {"items": [
+        {"id": "pv_a", "channel_key": "arale", "state": "announced",
+         "scheduled_start": "2026-09-10T05:00:00Z", "title": "예고A"},
+        {"id": "pv_b", "channel_key": "arale", "state": "live",
+         "scheduled_start": "2026-09-09T12:00:00Z", "title": "라이브B"},
+        {"id": "pv_c", "channel_key": "nonoka", "state": "watching",
+         "collab_with": ["arale"], "scheduled_start": "2026-09-09T13:00:00Z"},
+    ]}
+    _s = _sorted_unit_broadcasts(_pv, "arale")
+    assert [b["id"] for b in _s] == ["pv_b", "pv_c", "pv_a"], [b["id"] for b in _s]
+    _cfg = {"channels": {"arale": {"name_ko": "아라레"}, "nonoka": {"name_ko": "노노카"}}}
+    _txt = _format_list_text(_cfg, _pv, "arale")
+    assert "아라레" in _txt and "#1" in _txt
+    print("[OK] _sorted_unit_broadcasts / _format_list_text (state 정렬)")
 
-        _S = (
-            "／\n🛸夢限大みゅーたいぷ\n9/3(木)の配信スケジュール🌟\n＼\n\n"
-            "📺24:00～ 仲町あられ×宮永ののか\nhttps://youtube.com/live/kx-nhmTj4Eg\n"
-            "※時刻は予告なく変更の場合がございます。"
-        )
-        g = _FakeGH()
-        _ingest_queue_push(g, _S, "t", "2026-09-03T13:00:00Z")
-        _ingest_queue_push(g, _S, "t", "2026-09-03T13:01:00Z")  # 직전과 동일 → 스킵
-        assert len(g.store[_INGEST_QUEUE_PATH]["pending"]) == 1, g.store[_INGEST_QUEUE_PATH]
-        _ingest_queue_push(g, _S + "\n#x", "t", "2026-09-03T13:02:00Z")  # 다르면 추가
-        assert len(g.store[_INGEST_QUEUE_PATH]["pending"]) == 2
-        applied, nrows = _ingest_queue_drain(g, "2026-09-04T00:00:00Z")
-        assert applied == 2 and nrows == 2, (applied, nrows)
-        assert g.store[_INGEST_QUEUE_PATH]["pending"] == []          # 비워짐
-        sched = g.store["schedule.json"]
-        _c = next(b for b in sched["broadcasts"] if b.get("kind") == "collab")
-        assert _c["collab_with"] == ["nonoka"] and _c["video_id"] == "kx-nhmTj4Eg", _c
-        assert _ingest_queue_drain(g, "2026-09-04T00:00:00Z") == (0, 0)  # 빈 큐 no-op
-        print("  ✓ dedup · drain · merge · 큐 비우기")
-    else:
-        print("  (xrelay 미로드 — 스킵)")
-
-    # ── v2.5 admin 명령: /list /del /undo (Flask 없이도 동작) ──────────
-    print("\n[Admin v2.5] /list · /del · /undo")
-    if admin is not None:
-        class _FakeGH2:
-            """실제 gh_store 처럼 write 시 내용 동일하면 no-op, 다르면 sha 증가."""
-            def __init__(self):
-                self.store: dict[str, tuple] = {}
-                self._n = 0
-
-            def read_json(self, path):
-                item = self.store.get(path)
-                return (item[0], item[1]) if item else (None, None)
-
-            def write_json(self, path, data, *, prev_sha=None, message=""):
-                cur = self.store.get(path)
-                if cur is not None and cur[0] == data:
-                    return False, cur[1]
-                self._n += 1
-                new_sha = f"sha{self._n}"
-                self.store[path] = (data, new_sha)
-                return True, new_sha
-
-        _sent: list[str] = []
-        _orig_send = _send_telegram
-        globals()["_send_telegram"] = lambda text, silent=False: (_sent.append(text) or True)
-
-        try:
-            g2 = _FakeGH2()
-            g2.write_json(
-                "schedule.json",
-                {
-                    "broadcasts": [
-                        {"channel_key": "ritsu", "status": "live", "title": "ASMR",
-                         "scheduled_start": "2026-09-05T02:00:00Z"},
-                        {"channel_key": "arale", "status": "scheduled", "source": "bdp_schedule",
-                         "sched_id": "sched:arale:2026-09-05T11:00:00Z",
-                         "scheduled_start": "2026-09-05T11:00:00Z",
-                         "expires_at": "2026-09-05T14:00:00Z", "kind": "game", "title": None},
-                        {"channel_key": "yuno", "status": "upcoming", "video_id": "abc",
-                         "scheduled_start": "2026-09-06T03:00:00Z", "title": "가라오케"},
-                        {"channel_key": "arale", "collab_with": ["nonoka"], "status": "scheduled",
-                         "source": "bdp_schedule", "host": "group",
-                         "sched_id": "sched:arale:2026-09-05T15:00:00Z",
-                         "scheduled_start": "2026-09-05T15:00:00Z",
-                         "expires_at": "2026-09-05T18:00:00Z", "kind": "collab", "title": None},
-                    ]
-                },
-                prev_sha=None, message="seed",
-            )
-            _cfg = _load_channels_config()
-
-            # _sorted_unit_broadcasts: 상태순(live→upcoming→scheduled) + collab_with 로 다른 유닛에도 노출
-            arale_items = _sorted_unit_broadcasts(g2.read_json("schedule.json")[0], "arale")
-            assert len(arale_items) == 2, arale_items
-            nonoka_items = _sorted_unit_broadcasts(g2.read_json("schedule.json")[0], "nonoka")
-            assert len(nonoka_items) == 1 and nonoka_items[0]["host"] == "group", nonoka_items
-            ritsu_items = _sorted_unit_broadcasts(g2.read_json("schedule.json")[0], "ritsu")
-            assert ritsu_items[0]["status"] == "live"
-            print("  ✓ _sorted_unit_broadcasts (상태순 정렬 · collab_with 팬아웃)")
-
-            # _time_range_text
-            assert "진행중" in _time_range_text(ritsu_items[0])
-            assert "(예상)" in _time_range_text(arale_items[0])  # scheduled → expires_at 기준
-            print("  ✓ _time_range_text (live/scheduled 표기)")
-
-            # /del 요청 → 확인대기 등록 (arale #1 = scheduled 행)
-            _handle_del_request(g2, _cfg, "2026-09-05T01:00:00Z", "arale", "1")
-            assert "그래도 지우시겠습니까? (y/N)" in _sent[-1], _sent[-1]
-            assert "감지기능으로 다시 되살아날" not in _sent[-1], "scheduled 행엔 warn_live 없어야 함"
-            pend = admin.get_pending_del(g2.read_json(_ADMIN_STATE_PATH)[0])
-            assert pend is not None and pend["unit"] == "arale" and pend["idx"] == 1
-            print("  ✓ /del 확인대기 등록 (warn_deltry, scheduled → warn_live 없음)")
-
-            # upcoming 행 대상이면 warn_live 포함
-            _handle_del_request(g2, _cfg, "2026-09-05T01:00:01Z", "yuno", "1")
-            assert "감지기능으로 다시 되살아날 수 있습니다" in _sent[-1], _sent[-1]
-            # arale#1 확인대기가 yuno#1 로 덮어써짐(슬롯 1개)
-            pend2 = admin.get_pending_del(g2.read_json(_ADMIN_STATE_PATH)[0])
-            assert pend2["unit"] == "yuno"
-            print("  ✓ /del 확인대기 (upcoming → warn_live 포함, 슬롯 1개 덮어씀)")
-
-            # (y/N) = N → 취소, broadcasts 안 바뀜
-            n_before = len(g2.read_json("schedule.json")[0]["broadcasts"])
-            _handle_del_confirm(g2, "2026-09-05T01:00:02Z", yes=False)
-            assert "취소했습니다" in _sent[-1]
-            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before
-            assert admin.get_pending_del(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
-            print("  ✓ /del (N) → 취소, 변경 없음")
-
-            # 다시 요청 후 (y/N) = Y → 실제 삭제 + undo 스냅샷
-            _handle_del_request(g2, _cfg, "2026-09-05T01:00:03Z", "yuno", "1")
-            _handle_del_confirm(g2, "2026-09-05T01:00:04Z", yes=True)
-            assert "🗑" in _sent[-1] and "/undo" in _sent[-1], _sent[-1]
-            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before - 1
-            undo = admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0])
-            assert undo is not None and undo["action"] == "/del yuno#1"
-            print("  ✓ /del (Y) → 삭제 반영 + undo 스냅샷 기록")
-
-            # /undo 요청 → (y/N) 확인 프롬프트 (아직 복원 안 함)
-            _handle_undo_request(g2, "2026-09-05T01:00:05Z")
-            assert "되돌립니다" in _sent[-1] and "되돌리면" in _sent[-1], _sent[-1]
-            assert admin.get_pending_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is not None
-            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before - 1, "확인 전엔 안 바뀜"
-            # (N) → 취소
-            _handle_undo_confirm(g2, "2026-09-05T01:00:05Z", yes=False)
-            assert "undo가 취소" in _sent[-1]
-            assert admin.get_pending_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
-            assert admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is not None, "undo 슬롯은 살아있음"
-            print("  ✓ /undo (N) → 취소, 복원 안 함, undo 슬롯 유지")
-
-            # /undo 요청 → (Y) → 원상복구 + 두 슬롯 비움
-            _handle_undo_request(g2, "2026-09-05T01:00:06Z")
-            _handle_undo_confirm(g2, "2026-09-05T01:00:06Z", yes=True)
-            assert "되돌려졌습니다" in _sent[-1], _sent[-1]
-            assert len(g2.read_json("schedule.json")[0]["broadcasts"]) == n_before
-            assert admin.get_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
-            assert admin.get_pending_undo(g2.read_json(_ADMIN_STATE_PATH)[0]) is None
-            print("  ✓ /undo (Y) → schedule.json 복원, undo·pending_undo 슬롯 비움")
-
-            # 다시 /undo → "되돌릴 작업 없음"
-            _handle_undo_request(g2, "2026-09-05T01:00:07Z")
-            assert "되돌릴 작업이 없습니다" in _sent[-1]
-            print("  ✓ /undo 재호출 → no-op 안내")
-
-            # SHA 가드: 확인 대기 중 외부(예: /tick)가 schedule.json 을 또 바꾸면 (Y) 거부
-            _handle_del_request(g2, _cfg, "2026-09-05T01:00:08Z", "arale", "1")
-            _handle_del_confirm(g2, "2026-09-05T01:00:09Z", yes=True)
-            _handle_undo_request(g2, "2026-09-05T01:00:10Z")
-            cur_sched, _ = g2.read_json("schedule.json")
-            cur_sched = dict(cur_sched)
-            cur_sched["broadcasts"] = cur_sched["broadcasts"] + [{"channel_key": "miyako", "status": "live"}]
-            g2.write_json("schedule.json", cur_sched, prev_sha=None, message="외부 변경(예: /tick)")
-            _handle_undo_confirm(g2, "2026-09-05T01:00:11Z", yes=True)
-            assert "되돌리기 불가" in _sent[-1], _sent[-1]
-            assert any(b.get("channel_key") == "miyako" for b in g2.read_json("schedule.json")[0]["broadcasts"]), \
-                "거부됐으면 외부 변경이 살아있어야 함"
-            print("  ✓ /undo SHA 가드 — 확인 중 외부 변경 있으면 (Y) 거부(외부 변경 보존)")
-        finally:
-            globals()["_send_telegram"] = _orig_send
-    else:
-        print("  (admin 미로드 — 스킵)")
-
-    print("\n[Ingest 2단계] /ingest → 원문/파일 대기")
-    if admin is not None and xrelay is not None:
-        class _FakeGH3:
-            def __init__(self):
-                self.store: dict[str, tuple] = {}
-                self._n = 0
-
-            def read_json(self, path):
-                item = self.store.get(path)
-                return (item[0], item[1]) if item else (None, None)
-
-            def write_json(self, path, data, *, prev_sha=None, message=""):
-                cur = self.store.get(path)
-                if cur is not None and cur[0] == data:
-                    return False, cur[1]
-                self._n += 1
-                self.store[path] = (data, f"s{self._n}")
-                return True, f"s{self._n}"
-
-        _sent3: list[str] = []
-        _orig3 = _send_telegram
-        globals()["_send_telegram"] = lambda text, silent=False: (_sent3.append(text) or True)
-        try:
-            g3 = _FakeGH3()
-            _cfg3 = _load_channels_config()
-
-            # 슬롯 없음 → 소진 안 함
-            assert _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:00:00Z",
-                                           {"text": "hi"}, "hi") is False
-            print("  ✓ 대기 슬롯 없으면 통과(False)")
-
-            def _arm(now_iso="2026-09-06T00:00:00Z"):
-                st, sh = g3.read_json(_ADMIN_STATE_PATH)
-                g3.write_json(_ADMIN_STATE_PATH,
-                              admin.set_pending_ingest(st or admin.default_admin_state(), now_iso=now_iso),
-                              prev_sha=sh, message="arm")
-
-            # 취소 토큰
-            _arm()
-            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:01:00Z",
-                                        {"text": _INGEST_CANCEL_TOKEN}, _INGEST_CANCEL_TOKEN)
-            assert r is True and "취소" in _sent3[-1]
-            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
-            print("  ✓ aNoneTokyo → 취소 + 슬롯 비움")
-
-            # 대기 중 다른 명령 → 대기 접고 통과(False)
-            _arm()
-            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:01:00Z",
-                                        {"text": "/status"}, "/status")
-            assert r is False and "대기를 취소" in _sent3[-1]
-            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
-            print("  ✓ 대기 중 /명령 → 대기 취소하고 통과(False)")
-
-            # 만료 → 안내 + 통과(False), 슬롯 비움
-            _arm("2026-09-06T00:00:00Z")
-            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:05:00Z",
-                                        {"text": "뭐라도"}, "뭐라도")
-            assert r is False and "만료" in _sent3[-1]
-            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
-            print("  ✓ 3분 초과 → 만료 안내 + 통과(False)")
-
-            # 정상 원문 → 접수 안내 + 반영 + 슬롯 비움
-            _arm("2026-09-06T00:10:00Z")
-            tweet = "8/30(日) 配信スケジュール\n🎮11:00〜 宮永ののか\n"
-            r = _handle_ingest_followup(g3, _cfg3, "2026-09-06T00:10:30Z",
-                                        {"text": tweet}, tweet)
-            assert r is True, r
-            assert any("받았습니다" in s for s in _sent3[-3:]), _sent3[-3:]
-            assert admin.get_pending_ingest(g3.read_json(_ADMIN_STATE_PATH)[0]) is None
-            assert g3.read_json("schedule.json")[0] is not None, "schedule.json 반영됨"
-            print("  ✓ 원문 수신 → 접수 안내 + 반영 + 슬롯 비움")
-        finally:
-            globals()["_send_telegram"] = _orig3
-    else:
-        print("  (admin/xrelay 미로드 — 스킵)")
-
-    print("\n[Notice v2.7] /notice → notices.json + /undo(path)")
-    if admin is not None and xnotice is not None and notices is not None:
-        class _FGN:
-            def __init__(self): self.store = {}; self._n = 0
-            def read_json(self, path):
-                it = self.store.get(path); return (it[0], it[1]) if it else (None, None)
-            def write_json(self, path, data, *, prev_sha=None, message=""):
-                cur = self.store.get(path)
-                if cur is not None and cur[0] == data: return False, cur[1]
-                self._n += 1; self.store[path] = (data, f"s{self._n}"); return True, f"s{self._n}"
-
-        _sn: list[str] = []
-        _o = _send_telegram
-        globals()["_send_telegram"] = lambda text, silent=False: (_sn.append(text) or True)
-        try:
-            gN = _FGN()
-            NOW = "2026-09-10T00:00:00Z"
-            TW = ("＼事前登録150万人突破🎊／\n「アワーノーツ リリース日決定特番」\n"
-                  "9月13日(日)21:00より配信決定🎉\n公式XとYouTubeにて\n#バンドリ")
-            m, p = _apply_notice(gN, TW, NOW, tag="p#https://x.com/#1tweet-2096519341575721125")
-            assert m == "added" and p["category"] == "live", (m, p)
-            assert gN.read_json(_NOTICES_PATH)[0]["notices"][0]["date"] == "2026-09-13"
-            u = admin.get_undo(gN.read_json(_ADMIN_STATE_PATH)[0])
-            assert u and u["path"] == "notices.json", u
-            print("  ✓ _apply_notice → added + notices.json undo 스냅샷")
-
-            # 같은 트윗 재수신 → dup
-            m2, _ = _apply_notice(gN, TW, NOW, tag="p#https://x.com/#1tweet-2096519341575721125")
-            assert m2 == "dup", m2
-            # 스케줄 형식 → none
-            assert _apply_notice(gN, "8/30(日) 配信スケジュール\n🎮11:00〜 宮永ののか", NOW)[0] == "none"
-            print("  ✓ dup / 스케줄 → none")
-
-            # /undo (path=notices.json) — 요청 후 y → notices.json 복원(빈 상태로)
-            _handle_undo_request(gN, "2026-09-10T00:05:00Z")
-            assert "되돌립니다" in _sn[-1] and "소식" in _sn[-1], _sn[-1]
-            _handle_undo_confirm(gN, "2026-09-10T00:05:00Z", yes=True)
-            assert "되돌려졌습니다" in _sn[-1], _sn[-1]
-            assert gN.read_json(_NOTICES_PATH)[0]["notices"] == [], gN.read_json(_NOTICES_PATH)[0]
-            print("  ✓ /undo path=notices.json → 소식 복원(제거)")
-
-            # sweep — 만료 소식 이관
-            gN2 = _FGN()
-            gN2.store[_NOTICES_PATH] = ({"generated_at": None, "notices": [
-                {"id": "x", "title": "지난것", "date": "2026-09-01", "category": "etc",
-                 "expires_at": "2026-09-02T15:00:00Z", "seen_ids": ["x"]}]}, "s0")
-            moved = _notice_sweep(gN2, NOW)
-            assert moved == 1 and gN2.read_json(_NOTICES_PATH)[0]["notices"] == []
-            assert gN2.read_json(_NOTICE_ARCHIVE_PATH)[0]["notices"][0]["id"] == "x"
-            print("  ✓ _notice_sweep → 만료분 archive 이관")
-        finally:
-            globals()["_send_telegram"] = _o
-    else:
-        print("  (xnotice/notices 미로드 — 스킵)")
-
-    # Flask 미설치 확인
-    if Flask is None or app is None:
-        print("\nFlask not installed. Skipping Flask route tests.")
-        print("Install with: pip install flask google-auth requests")
-        sys.exit(0)
-
-    # Test 1: webhook 시크릿 불일치 → 200 무시
-    print("\n[Test 1] webhook 시크릿 불일치")
-    os.environ["TELEGRAM_WEBHOOK_SECRET"] = "secret123"
-    os.environ["TELEGRAM_CHAT_ID"] = "123456"
-    with app.test_client() as client:
-        resp = client.post(
-            "/telegram",
-            json={"message": {"chat": {"id": "123456"}, "text": "/status"}},
-            headers={"X-Telegram-Bot-Api-Secret-Token": "wrong_secret"},
-        )
-        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-        print("  ✓ 200 무시")
-
-    # Test 2: chat_id 불일치 → 200 무시
-    print("\n[Test 2] chat_id 불일치")
-    with app.test_client() as client:
-        resp = client.post(
-            "/telegram",
-            json={"message": {"chat": {"id": "999999"}, "text": "/status"}},
-            headers={"X-Telegram-Bot-Api-Secret-Token": "secret123"},
-        )
-        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-        print("  ✓ 200 무시")
-
-    # Test 3: /status 요청 (mock gh_store)
-    print("\n[Test 3] /status 명령 처리 (mock)")
-    os.environ["GITHUB_TOKEN"] = "fake_token"
-    os.environ["GITHUB_REPO"] = "test/repo"
-    os.environ["DATA_BRANCH"] = "data"
-    # TELEGRAM_BOT_TOKEN 없으면 Telegram.send() no-op
-    os.environ["TELEGRAM_BOT_TOKEN"] = ""
-
-    # Mock GitHubStore를 만들기 위해 monkeypatch
-    original_gh_store = __import__("src.backend.gh_store", fromlist=["GitHubStore"]).GitHubStore
-
-    class MockGitHubStore:
-        def read_json(self, path):
-            if path == "schedule.json":
-                return (
-                    {
-                        "broadcasts": [
-                            {
-                                "status": "live",
-                                "channel_key": "arale",
-                                "title": "ASMR",
-                                "actual_start": "2026-08-31T12:00:00Z",
-                            },
-                            {
-                                "status": "upcoming",
-                                "channel_key": "ritsu",
-                                "title": "노래틀",
-                                "scheduled_start": "2026-08-31T22:00:00Z",
-                            },
-                        ],
-                        "generated_at": "2026-08-31T12:10:00Z",
-                    },
-                    "sha123",
-                )
-            elif path == "pending.json":
-                return (
-                    {
-                        "updated_at": "2026-08-31T12:10:00Z",
-                        "entries": {
-                            "vid1": {
-                                "channel_key": "arale",
-                                "phase": "pre-live",
-                                "scheduled_start": "2026-08-31T13:00:00Z",
-                                "actual_start": None,
-                                "next_check_at": "2026-08-31T12:45:00Z",
-                                "attempts": 0,
-                                "first_seen": "2026-08-31T09:00:00Z",
-                                "last_checked": None,
-                            }
-                        }
-                    },
-                    "sha456",
-                )
-            elif path == "control.json":
-                return (
-                    {
-                        "paused": False,
-                        "since": None,
-                        "by": None,
-                        "updated_at": None,
-                    },
-                    "sha789",
-                )
-            return None, None
-
-    import sys
-    import types
-
-    # gh_store 모듈 mock
-    gh_store_module = sys.modules.get("src.backend.gh_store")
-    if gh_store_module:
-        gh_store_module.GitHubStore = MockGitHubStore
-
-    # POST /telegram /status 요청 (TELEGRAM_BOT_TOKEN 없으므로 메시지 전송 안 됨)
-    with app.test_client() as client:
-        resp = client.post(
-            "/telegram",
-            json={"message": {"chat": {"id": "123456"}, "text": "/status"}},
-            headers={"X-Telegram-Bot-Api-Secret-Token": "secret123"},
-        )
-        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-        print("  ✓ /status 처리 (메시지 전송은 TELEGRAM_BOT_TOKEN 없으므로 skip)")
-
-    # Test 4: 헬스체크
-    print("\n[Test 4] GET / 헬스체크")
-    with app.test_client() as client:
-        resp = client.get("/")
-        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-        assert resp.data == b"ok", f"Expected b'ok', got {resp.data}"
-        print("  ✓ 200 ok")
-
-    # Test 5: /ingest 인증·검증 (GitHub 미접촉 경로만)
-    print("\n[Test 5] POST /ingest secret/검증")
-    os.environ["INGEST_SECRET"] = "ing123"
-    with app.test_client() as client:
-        r = client.post("/ingest", data={"text": "x"}, headers={"X-Ingest-Secret": "nope"})
-        assert r.status_code == 403, f"Expected 403, got {r.status_code}"
-        r = client.post("/ingest", data={"text": "   "}, headers={"X-Ingest-Secret": "ing123"})
-        assert r.status_code == 400, f"Expected 400, got {r.status_code}"
-        print("  ✓ bad secret 403 · empty text 400")
-
-        # Automate urlEncode 버그 우회: 트윗 본문이 폼 키로 온 경우 (값은 빔)
-        os.environ["INGEST_ECHO"] = "1"
-        try:
-            body = "8/30(%E6%97%A5)%20%E9%85%8D%E4%BF%A1%E3%82%B9%E3%82%B1%E3%82%B8%E3%83%A5%E3%83%BC%E3%83%AB="
-            r = client.post(
-                "/ingest", data=body,
-                content_type="application/x-www-form-urlencoded",
-                headers={"X-Ingest-Secret": "ing123"},
-            )
-            j = r.get_json()
-            assert r.status_code == 200 and j.get("len", 0) > 0, (r.status_code, j)
-            # text= 빈값 + 본문키 동시에 와도 본문키를 집는다
-            r = client.post(
-                "/ingest", data="text=&" + body,
-                content_type="application/x-www-form-urlencoded",
-                headers={"X-Ingest-Secret": "ing123"},
-            )
-            assert r.get_json().get("len", 0) > 0, r.get_json()
-        finally:
-            os.environ.pop("INGEST_ECHO", None)
-        print("  ✓ 폼 키로 온 원문 복구")
-
-    # Test 6: 수동 /ingest 개인 예고 폴백 + 유닛 되묻기 (네트워크 없는 분기)
-    print("\n[Test 6] _try_personal_ingest / _handle_member_followup")
-    _T6_NOW = "2026-09-07T11:05:00Z"
-    os.environ.pop("YOUTUBE_API_KEY", None)
-
+    # ── _merge_rows_into_schedule → preview.json items ────────
     class _FakeGH:
-        def __init__(self): self.store = {}; self._n = 0
+        def __init__(self):
+            self.store = {}
         def read_json(self, path):
-            v = self.store.get(path)
-            return (v[0], v[1]) if v else (None, None)
-        def write_json(self, path, data, prev_sha=None, message=""):
-            self._n += 1; self.store[path] = (data, f"s{self._n}")
-            return True, f"s{self._n}"
+            return (self.store.get(path), "sha0" if path in self.store else None)
+        def write_json(self, path, data, *, prev_sha=None, message=""):
+            before = self.store.get(path)
+            self.store[path] = data
+            return (before != data, "sha1")
 
-    _sent: list[str] = []
-    _orig_send = _send_telegram
-    globals()["_send_telegram"] = lambda text, silent=False: _sent.append(text)
-    try:
-        # 6a) URL 없음 → 채널 못 정함 → pending_member 슬롯 + 되묻기 프롬프트, True
-        g6 = _FakeGH()
-        assert _try_personal_ingest(g6, {"channels": {}},
-                                    "今夜20時から歌枠やります 9/7", _T6_NOW) is True
-        assert admin.get_pending_member(g6.read_json(_ADMIN_STATE_PATH)[0]) is not None
-        assert any("유메미타 멤버는 누구죠" in s for s in _sent), _sent
+    if xrelay is not None:
+        g = _FakeGH()
+        _nl = chr(10)
+        _sample = _nl.join([
+            "🛸#ゆめみた",
+            "9/10(水) 配信スケジュール",
+            "🎮21:00〜 峰月律",
+            "youtube.com/@ritsu_yumemita",
+            "※時刻は予告なく変更の場合がございます。",
+        ])
+        rows = xrelay.parse(_sample, "2026-09-09T00:00:00Z")
+        if rows:
+            ch = _merge_rows_into_schedule(g, rows, "2026-09-09T00:00:00Z",
+                                          message="test", action="test ingest")
+            pv = g.store.get(_PREVIEW_PATH) or {}
+            assert pv.get("items"), "preview.items 반영 안 됨"
+            assert all(it.get("state") == "announced" for it in pv["items"]), pv["items"]
+            # undo 스냅샷
+            adm = g.store.get(_ADMIN_STATE_PATH) or {}
+            assert adm.get("undo", {}).get("path") == "preview.json"
+            print(f"[OK] _merge_rows_into_schedule → preview.json ({len(pv['items'])} items, undo path 확인)")
 
-        # 6b) 되묻기에 "5" 응답 → miyako 로 재처리 → schedule.json 반영
-        _sent.clear()
-        assert _handle_member_followup(g6, None, _T6_NOW, "5") is True
-        _bc = g6.read_json("schedule.json")[0]["broadcasts"]
-        assert len(_bc) == 1 and _bc[0]["channel_key"] == "miyako", _bc
-        assert _bc[0]["source"] == "personal" and _bc[0]["kind"] == "song", _bc[0]
-        assert admin.get_pending_member(g6.read_json(_ADMIN_STATE_PATH)[0]) is None
-        assert admin.get_undo(g6.read_json(_ADMIN_STATE_PATH)[0]) is not None   # /undo 가능
+            # _remove_broadcast — id 매칭
+            snap = dict(pv["items"][0])
+            g.store[_PREVIEW_PATH]["items"][0]["last_updated"] = "changed"  # volatile 변화
+            removed = _remove_broadcast(g, snap, "2026-09-09T01:00:00Z", "test del")
+            assert removed and not g.store[_PREVIEW_PATH]["items"], "id 매칭 삭제 실패"
+            print("[OK] _remove_broadcast (id 매칭)")
+        else:
+            print("[skip] xrelay.parse 0행 — 파서 픽스처 확인")
 
-        # 6c) 슬롯 없을 때 아무 텍스트 → False (정상 디스패치로)
-        assert _handle_member_followup(g6, None, _T6_NOW, "5") is False
+    # ── _build_status_text ───────────────────────────────────
+    class _StatusGH:
+        def __init__(self, d):
+            self.d = d
+        def read_json(self, path):
+            return (self.d.get(path), None)
+    sg = _StatusGH({
+        _PREVIEW_PATH: {"generated_at": "2026-09-09T12:00:00Z", "items": [
+            {"state": "announced"}, {"state": "live"}, {"state": "live"}]},
+        _NOTICES_PATH: {"notices": [{"date": "2026-09-11"}, {"date": "2026-09-20", "needs_tl": True}]},
+        _TWEETS_PATH: {"tweets": {"arale": {}, "yuno": {"needs_tl": True}}},
+        "control.json": default_control(),
+    })
+    st = _build_status_text("2026-09-09T12:05:00Z", sg, _cfg)
+    assert "mewtype v3" in st and "announced 1" in st and "live 2" in st
+    assert "notice   2건" in st and "LLM 큐   2건" in st, st
+    print("[OK] _build_status_text (v3)")
 
-        # 6d) 잘못된 응답 → 슬롯 유지 + 재안내
-        g6b = _FakeGH()
-        _try_personal_ingest(g6b, {"channels": {}}, "今夜20時 歌枠 9/7", _T6_NOW)
-        _sent.clear()
-        assert _handle_member_followup(g6b, None, _T6_NOW, "몰라") is True
-        assert admin.get_pending_member(g6b.read_json(_ADMIN_STATE_PATH)[0]) is not None
+    # ── {cmd}×{contents} 격자 + /edit preview 마법사 ──────────
+    assert _split_contents("notice 3") == ("notice", "3")
+    assert _split_contents("arale") == ("preview", "arale")   # v2 하위호환
+    assert _split_contents("") == ("preview", "")
+    assert _split_contents("tweet") == ("tweet", "")
+    print("[OK] _split_contents")
 
-        # 6e) 취소 토큰 → 슬롯 비우고 True
-        assert _handle_member_followup(g6b, None, _T6_NOW, _INGEST_CANCEL_TOKEN) is True
-        assert admin.get_pending_member(g6b.read_json(_ADMIN_STATE_PATH)[0]) is None
-    finally:
-        globals()["_send_telegram"] = _orig_send
-    print("  ✓ 채널 미상 → 되묻기 · '5' → miyako 반영 · 오답 유지 · 취소")
+    class _GH:
+        def __init__(self):
+            self.store = {}
+        def read_json(self, path):
+            return (self.store.get(path), "s" if path in self.store else None)
+        def write_json(self, path, data, *, prev_sha=None, message=""):
+            ch = self.store.get(path) != data
+            import copy
+            self.store[path] = copy.deepcopy(data)
+            return (ch, "s2")
 
-    # Test 7: /notice-edit 마법사 (title→date→url)
-    print("\n[Test 7] /notice-edit 마법사")
-    if notices is not None and xnotice is not None:
-        _sent2: list[str] = []
-        _orig_send2 = _send_telegram
-        globals()["_send_telegram"] = lambda text, silent=False: _sent2.append(text)
-        try:
-            g7 = _FakeGH()
-            g7.store[_NOTICES_PATH] = ({"generated_at": None, "notices": [{
-                "id": "n700", "category": "etc", "title": "会場:GARDEN 新木場 FACTORY",
-                "date": "2026-11-21", "time": None, "deadline": False, "site": "web",
-                "url": "https://eplus.jp/x", "tweet_url": None, "src_handle": "@BDP_yumemita",
-                "anchor_a": "x", "anchor_b": None, "title_slug": "会場garden",
-                "seen_ids": ["n700"], "first_seen": "2026-09-01T00:00:00Z",
-                "last_updated": "2026-09-01T00:00:00Z", "expires_at": "2026-11-22T15:00:00Z",
-            }]}, "sN0")
-            NW = "2026-09-10T05:00:00Z"
+    if admin is not None:
+        g = _GH()
+        g.store[_PREVIEW_PATH] = {"items": [
+            {"id": "pv_x1", "channel_key": "arale", "state": "watching",
+             "scheduled_start": "2026-09-10T05:00:00Z", "title": "구제목",
+             "url": "https://youtube.com/watch?v=vvv"},
+        ]}
+        _cfg2 = {"channels": {"arale": {"name_ko": "아라레"}}}
+        NW = "2026-09-09T12:00:00Z"
+        _handle_edit(g, _cfg2, NW, "preview", "")
+        assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH])["cmd"] == "edit"
+        assert _handle_op_followup(g, _cfg2, NW, {}, "arale") is True     # await_unit
+        assert _handle_op_followup(g, _cfg2, NW, {}, "1") is True         # await_idx → lock
+        assert admin.get_edit_lock(g.store[_ADMIN_STATE_PATH])["id"] == "pv_x1"
+        assert _handle_op_followup(g, _cfg2, NW, {}, "title") is True     # await_field
+        assert _handle_op_followup(g, _cfg2, NW, {}, "새제목") is True     # await_value
+        assert _handle_op_followup(g, _cfg2, NW, {}, "done") is True      # 적용
+        _it = g.store[_PREVIEW_PATH]["items"][0]
+        assert _it["title"] == "새제목" and _it["state"] == "watching", _it
+        assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH]) is None
+        assert admin.get_edit_lock(g.store[_ADMIN_STATE_PATH]) is None
+        assert g.store[_ADMIN_STATE_PATH]["undo"]["path"] == "preview.json"
+        # 취소 토큰
+        _handle_edit(g, _cfg2, NW, "preview", "")
+        assert _handle_op_followup(g, _cfg2, NW, {}, _INGEST_CANCEL_TOKEN) is True
+        assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH]) is None
+        print("[OK] /edit preview 마법사 (unit→idx→field→value→done, 락·undo·취소)")
 
-            _handle_notice_edit(g7, NW, "1")                       # 번호로 시작
-            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "title"
-
-            # title 입력 → date 단계
-            assert _handle_notice_edit_followup(g7, NW, "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜") is True
-            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "date"
-            # date 유지(aNoneTokyo) → url 단계
-            assert _handle_notice_edit_followup(g7, NW, _INGEST_CANCEL_TOKEN) is True
-            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "url"
-            # url 입력 → 커밋
-            assert _handle_notice_edit_followup(g7, NW, "https://eplus.jp/yumemita_kinntorebu2026/") is True
-
-            n = g7.read_json(_NOTICES_PATH)[0]["notices"][0]
-            assert n["title"] == "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜", n["title"]
-            assert n["date"] == "2026-11-21", n                      # 유지됨
-            assert n["url"] == "https://eplus.jp/yumemita_kinntorebu2026/"
-            assert n["anchor_a"] == "yumemita_kinntorebu2026", n     # URL 파생 재계산
-            assert n["seen_ids"] == ["n700"] and n["first_seen"] == "2026-09-01T00:00:00Z"
-            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0]) is None
-            assert admin.get_undo(g7.read_json(_ADMIN_STATE_PATH)[0])["path"] == _NOTICES_PATH
-
-            # 슬롯 없을 때 → False (정상 디스패치로)
-            assert _handle_notice_edit_followup(g7, NW, "aaa") is False
-            # /명령 → 취소하고 통과(False)
-            _handle_notice_edit(g7, NW, "n700")
-            assert _handle_notice_edit_followup(g7, NW, "/status") is False
-            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0]) is None
-            # 잘못된 날짜 → 슬롯 유지 + 재안내
-            _handle_notice_edit(g7, NW, "n700")
-            _handle_notice_edit_followup(g7, NW, _INGEST_CANCEL_TOKEN)   # title 유지 → date
-            assert _handle_notice_edit_followup(g7, NW, "언제였더라") is True
-            assert admin.get_pending_notice_edit(g7.read_json(_ADMIN_STATE_PATH)[0])["step"] == "date"
-        finally:
-            globals()["_send_telegram"] = _orig_send2
-        print("  ✓ 번호 시작 · title 반영/유지 · URL 파생 재계산 · undo(notices) · 오입력 유지")
-    else:
-        print("  (notices/xnotice 미로드 — 스킵)")
-
-    print("\n" + "=" * 60)
-    print("✓ All smoke tests passed!")
+    print(chr(10) + "=" * 60)
+    print("SUCCESS: telegram_app v3 smoke test 통과")
     print("=" * 60)

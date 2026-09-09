@@ -1,73 +1,47 @@
 """
-폴링 상태머신: pending.json 상태 전이 및 Cloud Tasks enqueue 계산.
+상태머신: preview.json 아이템의 상태 전이 및 다음 폴링 시각 파생.
 
-계약: docs/SPEC.md §8.1 (요약은 docs/SCHEDULE.md §2)
-순수 파이썬, 네트워크·파일·시계 접근 금지 (now_iso는 인자).
+계약: docs/SPEC.md v3 (예정), v3_impl_spec.md §0.2 (FSM 규칙 + 상수).
+순수 파이썬, 네트워크·파일·시계 접근 금지 (now_iso 는 인자).
+
+v3: pending.json 저장 타이머 폐지 — FSM 은 상태 전이와 next_check_at 을 순수 파생하고,
+저장은 `handlers` 가 담당.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
-# 상수 — 문서 §백엔드 로직 그대로. config 아님, 여기 고정.
-PRELIVE_LEAD_SEC = 15 * 60  # 최초 wake: scheduled_start − 15분
-PRELIVE_TIGHT_SEC = 3 * 60  # scheduled_start 지난 뒤 3분 간격
-PRELIVE_FALLBACK_AFTER_SEC = 60 * 60  # scheduled_start + 60분 경과 → fallback 진입
-FALLBACK_RETRY_SEC = 60 * 60  # fallback에서 변동 없을 때 1시간 간격
-FALLBACK_MAX_ATTEMPTS = 6  # fallback 6회 연속 실패 시 canceled로 간주
-LIVEWATCH_EARLY_SEC = 10 * 60  # live 시작 ~ +60분: 10분 간격 (66분 등 단시간 방송 종료 사각 축소)
-LIVEWATCH_EARLY_WINDOW_SEC = 60 * 60
-LIVEWATCH_TIGHT_SEC = 3 * 60  # +60분 이후: 3분 간격
-
-# Cloud Tasks 는 scheduleTime 을 최대 720h(30일) 뒤까지만 허용한다.
-# 그보다 먼 장기 예약(대기소/프리챗 프레임 등)은 이 상한으로 당겨서 "롱폴링"으로 처리 —
-# 상한 시각에 깨어나 여전히 먼 미래면 다시 상한으로 재예약한다.
-MAX_TASK_HORIZON_SEC = 29 * 24 * 60 * 60  # 696h. 720h 하드리밋보다 보수적
-
-PHASE_PRELIVE = "pre-live"
-PHASE_LIVEWATCH = "live-watch"
+# 상수 — v3_impl_spec.md §0.2 그대로
+PRELIVE_LEAD_SEC = 3 * 60  # 180초 — scheduled_start 3분 전부터 watching 진입
+PRELIVE_TIGHT_SEC = 3 * 60  # 180초 — watching 체크 간격 (3분)
+WATCH_LATE_DEMOTE_SEC = 2 * 60 * 60  # 7200초 — watching 에서 announced 강등 경계 (2시간)
+ASSUMED_LIVE_MAX_SEC = 90 * 60  # 5400초 — assumed-live 폴백 경계 (90분)
+LIVE_EARLY_SEC = 10 * 60  # 600초 — live 초기 체크 간격 (10분, +60분 미만)
+LIVE_EARLY_WINDOW_SEC = 60 * 60  # 3600초 — live 초기/후기 경계 (60분)
+LIVE_TIGHT_SEC = 3 * 60  # 180초 — live 후기 체크 간격 (3분, +60분 이상)
+END_WINDOW_SEC = 30 * 60  # 1800초 — end 상태 창 (30분)
+END_TICK_SEC = 5 * 60  # 300초 — end 체크 간격 (5분)
+MAX_TASK_HORIZON_SEC = 696 * 3600  # 2505600초 — Cloud Tasks 상한 (696h, 29일)
 
 
 def _parse_iso(s: str) -> datetime:
-    """
-    ISO 문자열 파싱 (Z → +00:00, tz-aware UTC).
-
-    Args:
-        s: ISO 형식 문자열 (예: "2026-08-31T12:00:00Z")
-
-    Returns:
-        datetime (tz-aware UTC)
-    """
+    """ISO 문자열 파싱 (Z → +00:00, tz-aware UTC)."""
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
 def _to_iso(dt: datetime) -> str:
-    """
-    datetime을 ISO 문자열로 변환 (UTC, 'Z' suffix).
-
-    Args:
-        dt: datetime (timezone-aware 권장)
-
-    Returns:
-        ISO 형식 문자열 (예: "2026-08-31T12:00:00Z")
-    """
+    """datetime → ISO 문자열 (UTC, Z suffix)."""
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _bound_schedule_time(schedule_time_iso: str, now_iso: str) -> str:
     """다음 wake 시각을 [now+60초, now+MAX_TASK_HORIZON] 범위로 클램프.
 
-    - 과거이거나 임박한 시각 → now+60초 (Cloud Tasks 즉시 실행 방지).
-    - Cloud Tasks 720h 상한을 넘는 먼 미래 → now+696시간 (롱폴링).
-
-    Args:
-        schedule_time_iso: 예정 시각 (ISO 'Z')
-        now_iso: 현재 시각 (ISO 'Z')
-
-    Returns:
-        클램프된 시각 (ISO 'Z')
+    - 과거/임박 → now+60초 (즉시 실행 방지)
+    - MAX_TASK_HORIZON 초과 → now+MAX_TASK_HORIZON (롱폴링)
     """
     t = _parse_iso(schedule_time_iso)
     now = _parse_iso(now_iso)
@@ -81,656 +55,399 @@ def _bound_schedule_time(schedule_time_iso: str, now_iso: str) -> str:
 
 
 @dataclass
-class Decision:
+class Tick:
+    """FSM 파생 결과.
+
+    Attributes:
+        next_state: 새 상태. 입력 state 와 동일하면 전이 없음.
+        next_check_at: 다음 폴링 시각 (ISO Z). None = 더 이상 폴링 불필요.
+        log: 상태 전이 로그 (사람 가독·notify 토큰용).
     """
-    sync_pending 반환값: 새 pending.json과 enqueue 목록.
-    """
 
-    new_pending: dict  # 갱신된 pending.json (updated_at 포함)
-    enqueue: list[tuple[str, str]] = field(default_factory=list)  # [(video_id, schedule_time_iso)]
-    dropped: list[str] = field(default_factory=list)  # 이번에 pending에서 제거된 video_id
-    log: list[str] = field(default_factory=list)  # 사람이 읽을 전이 로그
+    next_state: str
+    next_check_at: str | None
+    log: list[str]
 
 
-def sync_pending(
-    prev_pending: dict,
-    videos: dict[str, "VideoInfo"],
-    channel_id_to_key: dict[str, str],
+def derive(
+    item: dict,
     now_iso: str,
     *,
-    mode: str,  # "wake" | "sync"
-    woken_video_id: str | None = None,
-) -> Decision:
-    """
-    pending.json과 Cloud Tasks enqueue 목록을 계산한다.
-
-    pending.json과 schedule.json / archive.json은 이 모듈의 책임이 아님
-    (reconcile.build_schedule 담당).
-
-    시간 파싱/산술: UTC 기준. 출력: "...Z"
-
-    전이 규칙: 명세 §4 참고
+    live_seen: bool | None = None,
+    preview_stream_seen: bool = False,
+) -> Tick:
+    """상태 전이 및 다음 폴링 시각을 파생한다.
 
     Args:
-        prev_pending: 이전 pending.json (dict)
-        videos: {video_id: VideoInfo} duck-typed (video_id, channel_id, live_state,
-                scheduled_start, actual_start, actual_end, concurrent_viewers, title, thumbnail)
-        channel_id_to_key: {channel_id: channel_key} 매핑
-        now_iso: 현재 시각 (ISO 'Z')
-        mode: "wake" 또는 "sync"
-        woken_video_id: mode=="wake"일 때 깨어난 video_id (선택사항)
+        item: preview.json 아이템 dict. 필드:
+            - state: str (announced | upcoming | watching | live | end | none)
+            - scheduled_start: str | None (ISO Z)
+            - actual_start: str | None (ISO Z)
+            - state_since: str | None (ISO Z, 현 상태 진입 시각)
+            - assumed_live: bool (v3 폴백, 기본값 False)
+            - membership: bool (회원전용, 기본값 False)
+            - video_id: str | None
+            - id: str (로깅용)
+        now_iso: 현재 시각 (ISO Z)
+        live_seen: API/알림이 이 video_id 를 live 로 확인했는지.
+                  None = 미확인 (아직 체크 안 함)
+        preview_stream_seen: 예고 스트림으로 재등장했는지 (end 상태에서 upcoming 복구용)
 
     Returns:
-        Decision 객체
+        Tick(next_state, next_check_at, log)
+
+    v3_impl_spec.md §0.2 FSM 규칙 표 구현:
+        1. pre-live 진입 (announced/upcoming + ss 3분 전)
+        2. watching 체크 (120분 미만)
+        3. watching 지각 강등 (120분 경과)
+        4. assumed-live 폴백 (90분 경과)
+        5. live 초기 cadence (+60분 미만, 10분 간격)
+        6. live 후기 cadence (+60분 이상, 3분 간격)
+        7. end 창 (30분 미만, 5분 간격)
+        8. end→none (30분 경과)
+        9. end→upcoming (예고 스트림 재등장)
+       10. membership 특례 (waiting 스킵, live_seen 시 직행)
     """
-    from .pending import PHASE_PRELIVE, PHASE_LIVEWATCH, validate, make_entry
-
     now = _parse_iso(now_iso)
+    state = item.get("state", "announced")
+    scheduled_start_iso = item.get("scheduled_start")
+    actual_start_iso = item.get("actual_start")
+    state_since_iso = item.get("state_since")
+    assumed_live = item.get("assumed_live", False)
+    membership = item.get("membership", False)
+    video_id = item.get("video_id")
+    item_id = item.get("id", "?")
 
-    # prev_pending 검증
-    pending = validate(prev_pending)
-    entries = pending["entries"].copy()
+    # 시각 파싱
+    ss = _parse_iso(scheduled_start_iso) if scheduled_start_iso else None
+    actual_start = _parse_iso(actual_start_iso) if actual_start_iso else None
+    state_since = _parse_iso(state_since_iso) if state_since_iso else now
 
-    decision = Decision(new_pending=pending)
-    changed = False
+    log = []
+    next_state = state
+    next_check_at = None
 
-    # ─ 1. 신규 엔트리 감지 (mode 무관) ─
-    for video_id, video in videos.items():
-        if video_id in entries:
-            continue  # 이미 pending에 있음
+    # ─ 규칙 1·3·4·10: announced / upcoming 상태 ─
+    if state in ("announced", "upcoming"):
+        # 규칙 4: assumed-live 폴백 (우선도 높음 — video_id 없고 90분 경과)
+        if (
+            assumed_live
+            and not video_id
+            and ss
+            and (now - ss).total_seconds() >= ASSUMED_LIVE_MAX_SEC
+        ):
+            next_state = "none"
+            next_check_at = None
+            log.append(f"assumed-live drop {item_id}")
 
-        if video.live_state == "upcoming" and video.scheduled_start:
-            # 신규 upcoming
-            scheduled = _parse_iso(video.scheduled_start)
-            next_time = scheduled - timedelta(seconds=PRELIVE_LEAD_SEC)
-            if next_time < now:
-                next_time = now + timedelta(seconds=60)
+        # 규칙 10: membership 특례 (live_seen 신호로 직행, API 체크 없음)
+        elif membership and live_seen:
+            next_state = "live"
+            next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
+            log.append(f"membership direct-to-live {item_id}")
 
-            entry = make_entry(
-                channel_key=channel_id_to_key.get(video.channel_id, "unknown"),
-                scheduled_start=video.scheduled_start,
-                next_check_at=_to_iso(next_time),
-                now_iso=now_iso,
-                phase=PHASE_PRELIVE,
-            )
-            entries[video_id] = entry
-            decision.enqueue.append((video_id, _to_iso(next_time)))
-            decision.log.append(f"new pre-live {video_id}")
-            changed = True
+        # 규칙 1: pre-live 진입 — scheduled_start 3분 전부터 watching 진입
+        elif ss and now >= ss - timedelta(seconds=PRELIVE_LEAD_SEC):
+            next_state = "watching"
+            next_check_at = _to_iso(now + timedelta(seconds=PRELIVE_TIGHT_SEC))
+            log.append(f"→watching {item_id}")
 
-        elif video.live_state == "live":
-            # 신규 live (관측 누락 복구)
-            next_time = now + timedelta(seconds=LIVEWATCH_EARLY_SEC)
-            entry = make_entry(
-                channel_key=channel_id_to_key.get(video.channel_id, "unknown"),
-                scheduled_start=video.scheduled_start,
-                next_check_at=_to_iso(next_time),
-                now_iso=now_iso,
-                phase=PHASE_LIVEWATCH,
-                actual_start=video.actual_start or now_iso,
-            )
-            entries[video_id] = entry
-            decision.enqueue.append((video_id, _to_iso(next_time)))
-            decision.log.append(f"new live-watch {video_id} (관측 누락 복구)")
-            changed = True
+        # 규칙 1 폴백: 아직 3분 전이 아니면, ss - 3분에 watching 진입하도록 예약
+        elif ss and now < ss - timedelta(seconds=PRELIVE_LEAD_SEC):
+            next_state = state  # announced/upcoming 유지
+            next_check_at = _to_iso(ss - timedelta(seconds=PRELIVE_LEAD_SEC))
+            log.append(f"waiting-for-precheck {item_id}")
 
-    # ─ 2. drift refresh (mode 무관) ─
-    for video_id, entry in list(entries.items()):
-        if entry.get("phase") != PHASE_PRELIVE:
-            continue
+    # ─ 규칙 2·3: watching 상태 ─
+    elif state == "watching":
+        # 규칙 3: 지각 강등 — scheduled_start 기준 120분 경과
+        if ss and (now - ss).total_seconds() >= WATCH_LATE_DEMOTE_SEC:
+            next_state = "announced"
+            next_check_at = None
+            log.append(f"watching-demote→announced {item_id}")
 
-        video = videos.get(video_id)
-        if not video or video.live_state != "upcoming":
-            continue
+        # live_seen=True → live 로 전이
+        elif live_seen:
+            next_state = "live"
+            next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
+            log.append(f"→live {item_id}")
 
-        old_scheduled = entry.get("scheduled_start")
-        if video.scheduled_start != old_scheduled and video.scheduled_start:
-            new_scheduled = _parse_iso(video.scheduled_start)
-            if new_scheduled > now:
-                # scheduled_start 변동 감지
-                entry["scheduled_start"] = video.scheduled_start
-                next_time = new_scheduled - timedelta(
-                    seconds=PRELIVE_LEAD_SEC
-                )
-                if next_time < now:
-                    next_time = now + timedelta(seconds=60)
+        # 규칙 2: watching 계속 — 3분 간격 폴링
+        else:
+            next_state = "watching"
+            next_check_at = _to_iso(now + timedelta(seconds=PRELIVE_TIGHT_SEC))
+            log.append(f"watching-check {item_id}")
 
-                entry["next_check_at"] = _to_iso(next_time)
-                entry["attempts"] = 0
-                decision.enqueue.append((video_id, _to_iso(next_time)))
-                decision.log.append(f"reschedule {video_id} → {_to_iso(next_time)}")
-                changed = True
+    # ─ 규칙 5·6: live 상태 ─
+    elif state == "live":
+        if live_seen is False:
+            # live_seen=False (명시적으로 live 아님 확인) → end 로 전이.
+            # live_seen=None(미확인)은 여기서 종료로 보지 않는다 — 계속 live 유지하고 재확인 예약.
+            next_state = "end"
+            next_check_at = _to_iso(now + timedelta(seconds=END_TICK_SEC))
+            log.append(f"→end {item_id}")
 
-    # ─ 3. due 처리 (phase FSM) ─
-    due_video_ids = []
-    for video_id, entry in entries.items():
-        next_check = _parse_iso(entry["next_check_at"])
-        if next_check <= now:
-            due_video_ids.append(video_id)
+        else:
+            # live_seen=True 또는 None → 계속 live
+            # 규칙 5·6: 시작 후 시간에 따라 폴링 간격 조정
+            elapsed_sec = (now - actual_start).total_seconds() if actual_start else 0
+            if elapsed_sec < LIVE_EARLY_WINDOW_SEC:
+                # 초기 (60분 미만): 10분 간격
+                next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
+            else:
+                # 후기 (60분 이상): 3분 간격
+                next_check_at = _to_iso(now + timedelta(seconds=LIVE_TIGHT_SEC))
+            log.append(f"live-check {item_id}")
 
-    # mode=="wake"이면 woken_video_id는 next_check_at 무관하게 포함
-    if mode == "wake" and woken_video_id:
-        if woken_video_id in entries and woken_video_id not in due_video_ids:
-            due_video_ids.append(woken_video_id)
+    # ─ 규칙 7·8·9: end 상태 ─
+    elif state == "end":
+        # 규칙 9: 예고 스트림 재등장 (preview_stream_seen=True)
+        if preview_stream_seen:
+            next_state = "upcoming"
+            next_check_at = _to_iso(now + timedelta(seconds=PRELIVE_TIGHT_SEC))
+            log.append(f"end-recover→upcoming {item_id}")
 
-    for video_id in due_video_ids:
-        entry = entries[video_id]
-        phase = entry.get("phase")
-        video = videos.get(video_id)
+        # 규칙 8: 30분 경과 → none (삭제)
+        elif state_since and (now - state_since).total_seconds() >= END_WINDOW_SEC:
+            next_state = "none"
+            next_check_at = None
+            log.append(f"end→none {item_id}")
 
-        if phase == PHASE_PRELIVE:
-            if video is None or video.live_state == "none":
-                # pre-live + none → fallback 시작 또는 canceled
-                entry["attempts"] = entry.get("attempts", 0) + 1
-                attempts = entry["attempts"]
+        # 규칙 7: end 창 (30분 미만) — 5분 간격
+        else:
+            next_state = "end"
+            next_check_at = _to_iso(now + timedelta(seconds=END_TICK_SEC))
+            log.append(f"end-check {item_id}")
 
-                if attempts >= FALLBACK_MAX_ATTEMPTS:
-                    # canceled로 간주, 엔트리 드롭
-                    del entries[video_id]
-                    decision.dropped.append(video_id)
-                    decision.log.append(f"canceled {video_id}")
-                    changed = True
-                else:
-                    # fallback 재시도
-                    next_time = now + timedelta(
-                        seconds=FALLBACK_RETRY_SEC
-                    )
-                    entry["next_check_at"] = _to_iso(next_time)
-                    entry["last_checked"] = now_iso
-                    decision.enqueue.append((video_id, _to_iso(next_time)))
-                    decision.log.append(f"pre-live none, retry {video_id}")
-                    changed = True
+    # ─ next_check_at 클램프 ─
+    if next_check_at:
+        next_check_at = _bound_schedule_time(next_check_at, now_iso)
 
-            elif video.live_state == "live":
-                # pre-live + live → live-watch 전이
-                entry["phase"] = PHASE_LIVEWATCH
-                entry["actual_start"] = video.actual_start or now_iso
-                entry["attempts"] = 0
-                next_time = now + timedelta(
-                    seconds=LIVEWATCH_EARLY_SEC
-                )
-                entry["next_check_at"] = _to_iso(next_time)
-                entry["last_checked"] = now_iso
-                decision.enqueue.append((video_id, _to_iso(next_time)))
-                decision.log.append(f"pre-live→live-watch {video_id}")
-                changed = True
-
-            elif video.live_state == "upcoming":
-                # pre-live + upcoming → 대기
-                ss_str = entry.get("scheduled_start")
-                ss = _parse_iso(ss_str) if ss_str else now
-                entry["attempts"] = entry.get("attempts", 0) + 1
-                attempts = entry["attempts"]
-
-                in_fallback = False
-                if now < ss:
-                    # 시작 시각 아직 미래
-                    next_time = ss
-                elif now < ss + timedelta(seconds=PRELIVE_FALLBACK_AFTER_SEC):
-                    # scheduled_start 지난 뒤 60분 이내
-                    next_time = now + timedelta(
-                        seconds=PRELIVE_TIGHT_SEC
-                    )
-                else:
-                    # fallback (60분 경과)
-                    next_time = now + timedelta(
-                        seconds=FALLBACK_RETRY_SEC
-                    )
-                    in_fallback = True
-
-                entry["next_check_at"] = _to_iso(next_time)
-                entry["last_checked"] = now_iso
-                decision.enqueue.append((video_id, _to_iso(next_time)))
-                decision.log.append(f"pre-live wait {video_id} attempts={attempts}")
-                if in_fallback:
-                    # notify.diff_events 가 파싱하는 명시 토큰 (E: fallback 알림)
-                    decision.log.append(
-                        f"fallback {video_id} attempts={attempts} next={_to_iso(next_time)}"
-                    )
-                changed = True
-
-        elif phase == PHASE_LIVEWATCH:
-            if video is None or video.live_state == "none":
-                # live-watch + none → ended, 엔트리 드롭, enqueue 없음
-                del entries[video_id]
-                decision.dropped.append(video_id)
-                decision.log.append(f"live-watch→ended {video_id}")
-                changed = True
-
-            elif video.live_state == "live":
-                # live-watch + live → 계속
-                entry["attempts"] = entry.get("attempts", 0) + 1
-                actual_start_str = entry.get("actual_start")
-                started = (
-                    _parse_iso(actual_start_str) if actual_start_str else now
-                )
-                elapsed = (now - started).total_seconds()
-
-                if elapsed < LIVEWATCH_EARLY_WINDOW_SEC:
-                    next_time = now + timedelta(
-                        seconds=LIVEWATCH_EARLY_SEC
-                    )
-                else:
-                    next_time = now + timedelta(
-                        seconds=LIVEWATCH_TIGHT_SEC
-                    )
-
-                entry["next_check_at"] = _to_iso(next_time)
-                entry["last_checked"] = now_iso
-                decision.enqueue.append((video_id, _to_iso(next_time)))
-                decision.log.append(f"live-watch continue {video_id}")
-                changed = True
-
-            elif video.live_state == "upcoming":
-                # live-watch + upcoming → 재예약 (드문 케이스)
-                entry["phase"] = PHASE_PRELIVE
-                entry["attempts"] = 0
-                entry["scheduled_start"] = video.scheduled_start
-
-                if video.scheduled_start:
-                    new_scheduled = _parse_iso(video.scheduled_start)
-                    next_time = new_scheduled - timedelta(
-                        seconds=PRELIVE_LEAD_SEC
-                    )
-                    if next_time < now:
-                        next_time = now + timedelta(seconds=60)
-                else:
-                    next_time = now + timedelta(
-                        seconds=FALLBACK_RETRY_SEC
-                    )
-
-                entry["next_check_at"] = _to_iso(next_time)
-                entry["last_checked"] = now_iso
-                decision.enqueue.append((video_id, _to_iso(next_time)))
-                decision.log.append(f"live-watch→pre-live {video_id} (재예약)")
-                changed = True
-
-    # ─ 3.5 장기 예약 힐링 ─
-    # next_check_at 이 720h 상한을 넘는 엔트리(과거에 enqueue 400 으로 태스크가 안 걸렸거나,
-    # 상한 도입 전에 만들어진 것)를 상한으로 당기고 재enqueue 한다. sections 1~3 에서
-    # 이미 처리된 엔트리와는 겹치지 않는다(그쪽은 next_check_at <= now 또는 방금 갱신됨).
-    _horizon = now + timedelta(seconds=MAX_TASK_HORIZON_SEC)
-    _already = {vid for vid, _ in decision.enqueue}
-    for video_id, entry in entries.items():
-        if video_id in _already:
-            continue
-        try:
-            nca = _parse_iso(entry["next_check_at"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if nca > _horizon:
-            entry["next_check_at"] = _to_iso(_horizon)
-            decision.enqueue.append((video_id, _to_iso(_horizon)))
-            decision.log.append(f"long-poll clamp {video_id}")
-            changed = True
-
-    # ─ 4. 마무리 ─
-    # enqueue 시각을 [now+60s, now+696h] 로 클램프하고, 살아있는 엔트리의
-    # next_check_at 도 같은 값으로 맞춰 pending.json 과 실제 태스크를 일치시킨다.
-    bounded_enqueue = []
-    for video_id, schedule_time_iso in decision.enqueue:
-        bounded = _bound_schedule_time(schedule_time_iso, now_iso)
-        bounded_enqueue.append((video_id, bounded))
-        if video_id in entries:
-            entries[video_id]["next_check_at"] = bounded
-
-    decision.enqueue = bounded_enqueue
-
-    # 변경 있으면 updated_at 갱신, 없으면 유지
-    if changed:
-        entries_copy = {}
-        for vid, entry in entries.items():
-            entries_copy[vid] = entry
-
-        decision.new_pending = {
-            "updated_at": now_iso,
-            "entries": entries_copy,
-        }
-    else:
-        decision.new_pending = {
-            "updated_at": pending.get("updated_at"),
-            "entries": entries,
-        }
-
-    return decision
+    return Tick(next_state=next_state, next_check_at=next_check_at, log=log)
 
 
 if __name__ == "__main__":
-    # Smoke test: 명세 §4의 6개 시나리오
+    # Smoke test: v3_impl_spec.md §0.2 표 각 행 시나리오 + membership + horizon
+    # 최소 11 assert
 
     import sys
-    import types
 
     try:
-        sys.stdout.reconfigure(encoding="utf-8")  # Windows cp949 콘솔 대비
+        sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
-    now_iso = "2026-08-31T12:00:00Z"
+    base_now = "2026-08-31T12:00:00Z"
+    base_ss = "2026-08-31T13:00:00Z"
 
-    # 채널 매핑
-    channel_id_to_key = {"UCWfF0DB6m_t2CE3KcOOOX7g": "arale"}
-
-    print("=" * 60)
-    print("시나리오 1: 신규 upcoming → pre-live 엔트리 + enqueue")
-    print("=" * 60)
-
-    pending_1 = {"updated_at": None, "entries": {}}
-    video_1 = types.SimpleNamespace(
-        video_id="upcoming_vid",
-        channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
-        live_state="upcoming",
-        scheduled_start="2026-08-31T13:00:00Z",
-        actual_start=None,
-        actual_end=None,
-        concurrent_viewers=None,
-        title="Test",
-        thumbnail="http://test.jpg",
-    )
-    videos_1 = {"upcoming_vid": video_1}
-
-    decision_1 = sync_pending(
-        pending_1, videos_1, channel_id_to_key, now_iso, mode="sync"
-    )
-
-    assert "upcoming_vid" in decision_1.new_pending["entries"]
-    assert decision_1.new_pending["entries"]["upcoming_vid"]["phase"] == PHASE_PRELIVE
-    assert len(decision_1.enqueue) == 1
-    print(f"✓ 엔트리 생성됨: {decision_1.new_pending['entries']['upcoming_vid']}")
-    print(f"✓ enqueue: {decision_1.enqueue}")
-
-    print("\n" + "=" * 60)
-    print("시나리오 2: pre-live + live 관측 → live-watch 전이")
-    print("=" * 60)
-
-    pending_2 = {
-        "updated_at": "2026-08-31T12:00:00Z",
-        "entries": {
-            "vid2": {
-                "channel_key": "arale",
-                "phase": PHASE_PRELIVE,
-                "scheduled_start": "2026-08-31T13:00:00Z",
-                "actual_start": None,
-                "next_check_at": "2026-08-31T12:00:00Z",  # 지금 처리 대상
-                "attempts": 0,
-                "first_seen": "2026-08-31T11:00:00Z",
-                "last_checked": None,
-            }
-        },
+    print("=" * 70)
+    print("✓ 규칙 1: announced, scheduled_start 3분 전 → watching")
+    print("=" * 70)
+    now_1 = "2026-08-31T12:57:00Z"  # ss - 3분
+    item_1 = {
+        "id": "pv_test1",
+        "state": "announced",
+        "scheduled_start": base_ss,
+        "actual_start": None,
+        "state_since": "2026-08-31T12:00:00Z",
     }
+    tick_1 = derive(item_1, now_1)
+    assert tick_1.next_state == "watching", f"expected watching, got {tick_1.next_state}"
+    assert tick_1.next_check_at is not None
+    assert "watching" in tick_1.log[0].lower()
+    print(f"  state: announced → {tick_1.next_state}, check in 3min")
+    print(f"  log: {tick_1.log}")
 
-    video_2 = types.SimpleNamespace(
-        video_id="vid2",
-        channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
-        live_state="live",
-        scheduled_start="2026-08-31T13:00:00Z",
-        actual_start="2026-08-31T12:10:00Z",
-        actual_end=None,
-        concurrent_viewers=100,
-        title="Test",
-        thumbnail="http://test.jpg",
-    )
-    videos_2 = {"vid2": video_2}
-
-    decision_2 = sync_pending(
-        pending_2, videos_2, channel_id_to_key, now_iso, mode="sync"
-    )
-
-    assert decision_2.new_pending["entries"]["vid2"]["phase"] == PHASE_LIVEWATCH
-    assert decision_2.new_pending["entries"]["vid2"]["actual_start"] == "2026-08-31T12:10:00Z"
-    # live-watch 초기 간격 = LIVEWATCH_EARLY_SEC (10분). now(12:00) + 10분 = 12:10.
-    assert decision_2.new_pending["entries"]["vid2"]["next_check_at"] == "2026-08-31T12:10:00Z", \
-        decision_2.new_pending["entries"]["vid2"]["next_check_at"]
-    print(f"✓ phase 전이: {decision_2.new_pending['entries']['vid2']['phase']}")
-    print(f"✓ next_check_at(+10분): {decision_2.new_pending['entries']['vid2']['next_check_at']}")
-    print(f"✓ log: {decision_2.log}")
-
-    print("\n" + "=" * 60)
-    print("시나리오 3: pre-live + upcoming, 시작 전 → next==scheduled_start")
-    print("=" * 60)
-
-    pending_3 = {
-        "updated_at": "2026-08-31T11:00:00Z",
-        "entries": {
-            "vid3": {
-                "channel_key": "arale",
-                "phase": PHASE_PRELIVE,
-                "scheduled_start": "2026-08-31T13:00:00Z",
-                "actual_start": None,
-                "next_check_at": "2026-08-31T12:00:00Z",  # 지금 처리
-                "attempts": 0,
-                "first_seen": "2026-08-31T11:00:00Z",
-                "last_checked": None,
-            }
-        },
+    print("\n" + "=" * 70)
+    print("✓ 규칙 2: watching, 120분 미만, live_seen=None → watching 계속")
+    print("=" * 70)
+    now_2 = base_now  # ss - 3분 후
+    item_2 = {
+        "id": "pv_test2",
+        "state": "watching",
+        "scheduled_start": base_ss,
+        "actual_start": None,
+        "state_since": "2026-08-31T12:00:00Z",
     }
+    tick_2 = derive(item_2, now_2)
+    assert tick_2.next_state == "watching"
+    assert tick_2.next_check_at is not None
+    print(f"  state: watching → {tick_2.next_state}, check in 3min")
 
-    video_3 = types.SimpleNamespace(
-        video_id="vid3",
-        channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
-        live_state="upcoming",
-        scheduled_start="2026-08-31T13:00:00Z",
-        actual_start=None,
-        actual_end=None,
-        concurrent_viewers=None,
-        title="Test",
-        thumbnail="http://test.jpg",
-    )
-    videos_3 = {"vid3": video_3}
-
-    decision_3 = sync_pending(
-        pending_3, videos_3, channel_id_to_key, now_iso, mode="sync"
-    )
-
-    entry_3 = decision_3.new_pending["entries"]["vid3"]
-    # now < ss이므로 next = ss (13:00:00Z)
-    assert entry_3["next_check_at"] == "2026-08-31T13:00:00Z", f"got {entry_3['next_check_at']}"
-    print(f"✓ next_check_at: {entry_3['next_check_at']}")
-    print(f"✓ enqueue: {decision_3.enqueue}")
-
-    print("\n" + "=" * 60)
-    print("시나리오 4: pre-live + 시작 60분 경과 none, attempts 누적 → canceled")
-    print("=" * 60)
-
-    now_iso_4 = "2026-08-31T13:05:00Z"  # scheduled_start(13:00) + 5분
-    pending_4 = {
-        "updated_at": "2026-08-31T12:00:00Z",
-        "entries": {
-            "vid4": {
-                "channel_key": "arale",
-                "phase": PHASE_PRELIVE,
-                "scheduled_start": "2026-08-31T13:00:00Z",
-                "actual_start": None,
-                "next_check_at": now_iso_4,  # 지금 처리
-                "attempts": 5,  # 5회 시도 후
-                "first_seen": "2026-08-31T11:00:00Z",
-                "last_checked": "2026-08-31T13:04:00Z",
-            }
-        },
+    print("\n" + "=" * 70)
+    print("✓ 규칙 3: watching, 120분 경과 → announced (지각 강등)")
+    print("=" * 70)
+    now_3 = "2026-08-31T15:00:00Z"  # ss + 2시간
+    item_3 = {
+        "id": "pv_test3",
+        "state": "watching",
+        "scheduled_start": base_ss,
+        "actual_start": None,
+        "state_since": "2026-08-31T12:00:00Z",
     }
+    tick_3 = derive(item_3, now_3)
+    assert tick_3.next_state == "announced", f"expected announced, got {tick_3.next_state}"
+    assert tick_3.next_check_at is None
+    print(f"  state: watching → {tick_3.next_state}, no more check")
 
-    # video 없음 (none과 동일)
-    videos_4 = {}
-
-    decision_4 = sync_pending(
-        pending_4, videos_4, channel_id_to_key, now_iso_4, mode="sync"
-    )
-
-    # attempts = 6이 되면서 MAX_ATTEMPTS(6)에 도달 → 드롭
-    assert "vid4" not in decision_4.new_pending["entries"]
-    assert "vid4" in decision_4.dropped
-    print(f"✓ 엔트리 드롭됨: {decision_4.dropped}")
-    print(f"✓ log: {decision_4.log}")
-
-    print("\n" + "=" * 60)
-    print("시나리오 5: live-watch + none → ended, enqueue 없음")
-    print("=" * 60)
-
-    pending_5 = {
-        "updated_at": "2026-08-31T12:00:00Z",
-        "entries": {
-            "vid5": {
-                "channel_key": "arale",
-                "phase": PHASE_LIVEWATCH,
-                "scheduled_start": "2026-08-31T13:00:00Z",
-                "actual_start": "2026-08-31T12:10:00Z",
-                "next_check_at": "2026-08-31T12:00:00Z",  # 지금 처리
-                "attempts": 1,
-                "first_seen": "2026-08-31T11:00:00Z",
-                "last_checked": "2026-08-31T11:59:00Z",
-            }
-        },
+    print("\n" + "=" * 70)
+    print("✓ 규칙 4: announced, assumed_live=True, video_id=None, 90분 경과 → none")
+    print("=" * 70)
+    now_4 = "2026-08-31T14:30:00Z"  # ss + 90분
+    item_4 = {
+        "id": "pv_test4",
+        "state": "announced",
+        "scheduled_start": base_ss,
+        "actual_start": None,
+        "state_since": "2026-08-31T12:00:00Z",
+        "assumed_live": True,
+        "video_id": None,
     }
+    tick_4 = derive(item_4, now_4)
+    assert tick_4.next_state == "none", f"expected none, got {tick_4.next_state}"
+    assert tick_4.next_check_at is None
+    print(f"  state: announced → {tick_4.next_state} (assumed-live drop)")
 
-    # video 없음
-    videos_5 = {}
-
-    decision_5 = sync_pending(
-        pending_5, videos_5, channel_id_to_key, now_iso, mode="sync"
-    )
-
-    assert "vid5" not in decision_5.new_pending["entries"]
-    assert "vid5" in decision_5.dropped
-    assert len(decision_5.enqueue) == 0, "live-watch→ended는 enqueue 없음"
-    print(f"✓ 엔트리 드롭됨: {decision_5.dropped}")
-    print(f"✓ enqueue: {decision_5.enqueue} (비어있음)")
-
-    print("\n" + "=" * 60)
-    print("시나리오 6: drift - scheduled_start 변동 → reschedule enqueue")
-    print("=" * 60)
-
-    pending_6 = {
-        "updated_at": "2026-08-31T11:00:00Z",
-        "entries": {
-            "vid6": {
-                "channel_key": "arale",
-                "phase": PHASE_PRELIVE,
-                "scheduled_start": "2026-08-31T13:00:00Z",
-                "actual_start": None,
-                "next_check_at": "2026-08-31T12:50:00Z",  # 미래, 아직 due 아님
-                "attempts": 0,
-                "first_seen": "2026-08-31T10:00:00Z",
-                "last_checked": None,
-            }
-        },
+    print("\n" + "=" * 70)
+    print("✓ 규칙 5: live, actual_start 60분 미만 → check in 10min")
+    print("=" * 70)
+    now_5 = "2026-08-31T13:30:00Z"  # actual_start + 30분
+    item_5 = {
+        "id": "pv_test5",
+        "state": "live",
+        "scheduled_start": base_ss,
+        "actual_start": "2026-08-31T13:00:00Z",
+        "state_since": "2026-08-31T13:00:00Z",
     }
+    tick_5 = derive(item_5, now_5, live_seen=True)
+    assert tick_5.next_state == "live"
+    assert tick_5.next_check_at is not None
+    check_5 = _parse_iso(tick_5.next_check_at)
+    now_5_dt = _parse_iso(now_5)
+    delta_5 = (check_5 - now_5_dt).total_seconds()
+    # 클램프 없으면 600초, 클램프 있으면 [60, MAX_TASK_HORIZON]
+    assert 600 <= delta_5 <= MAX_TASK_HORIZON_SEC, f"expected ~10min, got {delta_5}sec"
+    print(f"  state: live, elapsed=30min → check in {delta_5}sec (~10min)")
 
-    video_6 = types.SimpleNamespace(
-        video_id="vid6",
-        channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
-        live_state="upcoming",
-        scheduled_start="2026-08-31T13:30:00Z",  # 변경: 13:00 → 13:30
-        actual_start=None,
-        actual_end=None,
-        concurrent_viewers=None,
-        title="Test",
-        thumbnail="http://test.jpg",
-    )
-    videos_6 = {"vid6": video_6}
-
-    decision_6 = sync_pending(
-        pending_6, videos_6, channel_id_to_key, now_iso, mode="sync"
-    )
-
-    entry_6 = decision_6.new_pending["entries"]["vid6"]
-    assert entry_6["scheduled_start"] == "2026-08-31T13:30:00Z"
-    assert entry_6["attempts"] == 0  # attempts 리셋
-    # next_check_at = 13:30 - 15분 = 13:15
-    assert entry_6["next_check_at"] == "2026-08-31T13:15:00Z"
-    assert len(decision_6.enqueue) > 0
-    print(f"✓ scheduled_start 업데이트: {entry_6['scheduled_start']}")
-    print(f"✓ next_check_at 리셋: {entry_6['next_check_at']}")
-    print(f"✓ enqueue: {decision_6.enqueue}")
-
-    print("\n" + "=" * 60)
-    print("시나리오 7: 장기 예약(720h 초과) → next_check_at 이 696h 상한으로 클램프")
-    print("=" * 60)
-
-    pending_7 = {"updated_at": None, "entries": {}}
-    video_7 = types.SimpleNamespace(
-        video_id="farfuture_vid",
-        channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
-        live_state="upcoming",
-        scheduled_start="2028-01-01T14:30:00Z",  # 약 1년 4개월 뒤
-        actual_start=None,
-        actual_end=None,
-        concurrent_viewers=None,
-        title="Test",
-        thumbnail="http://test.jpg",
-    )
-    decision_7 = sync_pending(
-        pending_7, {"farfuture_vid": video_7}, channel_id_to_key, now_iso, mode="sync"
-    )
-    entry_7 = decision_7.new_pending["entries"]["farfuture_vid"]
-    horizon = _to_iso(_parse_iso(now_iso) + timedelta(seconds=MAX_TASK_HORIZON_SEC))
-    assert entry_7["next_check_at"] == horizon, f"got {entry_7['next_check_at']}, want {horizon}"
-    assert decision_7.enqueue[0][1] == horizon
-    print(f"✓ next_check_at 클램프: {entry_7['next_check_at']} (= now + 696h)")
-    print(f"✓ enqueue 시각도 동일: {decision_7.enqueue}")
-
-    print("\n" + "=" * 60)
-    print("시나리오 8: 상한 초과 next_check_at 를 가진 기존 엔트리 힐링 + 재enqueue")
-    print("=" * 60)
-
-    pending_8 = {
-        "updated_at": "2026-08-31T11:00:00Z",
-        "entries": {
-            "stuck_vid": {
-                "channel_key": "arale",
-                "phase": PHASE_PRELIVE,
-                "scheduled_start": "2027-08-16T14:59:00Z",
-                "actual_start": None,
-                "next_check_at": "2027-08-16T14:44:00Z",  # 상한 훨씬 초과, due 아님
-                "attempts": 0,
-                "first_seen": "2026-08-31T11:00:00Z",
-                "last_checked": None,
-            }
-        },
+    print("\n" + "=" * 70)
+    print("✓ 규칙 6: live, actual_start 60분 이상 → check in 3min")
+    print("=" * 70)
+    now_6 = "2026-08-31T14:00:00Z"  # actual_start + 60분
+    item_6 = {
+        "id": "pv_test6",
+        "state": "live",
+        "scheduled_start": base_ss,
+        "actual_start": "2026-08-31T13:00:00Z",
+        "state_since": "2026-08-31T13:00:00Z",
     }
-    # videos 에 없음(장기 예약이라 이번 배치에 안 들어옴) — 힐링은 videos 무관
-    decision_8 = sync_pending(pending_8, {}, channel_id_to_key, now_iso, mode="sync")
-    entry_8 = decision_8.new_pending["entries"]["stuck_vid"]
-    assert entry_8["next_check_at"] == horizon, f"got {entry_8['next_check_at']}"
-    assert ("stuck_vid", horizon) in decision_8.enqueue
-    print(f"✓ 힐링됨: {entry_8['next_check_at']}")
-    print(f"✓ 재enqueue: {decision_8.enqueue}")
+    tick_6 = derive(item_6, now_6, live_seen=True)
+    assert tick_6.next_state == "live"
+    check_6 = _parse_iso(tick_6.next_check_at)
+    now_6_dt = _parse_iso(now_6)
+    delta_6 = (check_6 - now_6_dt).total_seconds()
+    assert 180 <= delta_6 <= MAX_TASK_HORIZON_SEC, f"expected ~3min, got {delta_6}sec"
+    print(f"  state: live, elapsed=60min → check in {delta_6}sec (~3min)")
 
-    print("\n" + "=" * 60)
-    print("시나리오 9: 예정+60분 경과·미시작 → fallback 로그 토큰 방출 (E 알림용)")
-    print("=" * 60)
-
-    now_iso_9 = "2026-08-31T14:10:00Z"  # scheduled_start(13:00) + 70분
-    pending_9 = {
-        "updated_at": "2026-08-31T12:00:00Z",
-        "entries": {
-            "late_vid": {
-                "channel_key": "yuno",
-                "phase": PHASE_PRELIVE,
-                "scheduled_start": "2026-08-31T13:00:00Z",
-                "actual_start": None,
-                "next_check_at": now_iso_9,  # due
-                "attempts": 2,
-                "first_seen": "2026-08-31T12:00:00Z",
-                "last_checked": "2026-08-31T14:07:00Z",
-            }
-        },
+    print("\n" + "=" * 70)
+    print("✓ 규칙 7·8: end, 30분 미만 → check in 5min")
+    print("=" * 70)
+    now_7 = "2026-08-31T13:10:00Z"  # state_since + 10분
+    item_7 = {
+        "id": "pv_test7",
+        "state": "end",
+        "scheduled_start": base_ss,
+        "actual_start": "2026-08-31T13:00:00Z",
+        "state_since": "2026-08-31T13:00:00Z",
     }
-    video_9 = types.SimpleNamespace(
-        video_id="late_vid",
-        channel_id="UC99kOG6_9RD0mR3OG4EOfxw",  # yuno
-        live_state="upcoming",
-        scheduled_start="2026-08-31T13:00:00Z",
-        actual_start=None, actual_end=None, concurrent_viewers=None,
-        title="Test", thumbnail="http://test.jpg",
-    )
-    decision_9 = sync_pending(
-        pending_9, {"late_vid": video_9}, channel_id_to_key, now_iso_9, mode="sync"
-    )
-    fb = [t for t in decision_9.log if t.startswith("fallback late_vid ")]
-    assert fb, f"fallback 토큰 없음: {decision_9.log}"
-    assert "attempts=3" in fb[0] and "next=" in fb[0]
-    print(f"✓ fallback 토큰: {fb[0]}")
+    tick_7 = derive(item_7, now_7)
+    assert tick_7.next_state == "end"
+    assert tick_7.next_check_at is not None
+    print(f"  state: end, elapsed=10min → check in 5min")
 
-    print("\n" + "=" * 60)
-    print("SUCCESS: 모든 9개 시나리오 통과")
-    print("=" * 60)
+    print("\n" + "=" * 70)
+    print("✓ 규칙 8: end, 30분 경과 → none")
+    print("=" * 70)
+    now_8 = "2026-08-31T13:35:00Z"  # state_since + 35분
+    item_8 = {
+        "id": "pv_test8",
+        "state": "end",
+        "scheduled_start": base_ss,
+        "actual_start": "2026-08-31T13:00:00Z",
+        "state_since": "2026-08-31T13:00:00Z",
+    }
+    tick_8 = derive(item_8, now_8)
+    assert tick_8.next_state == "none", f"expected none, got {tick_8.next_state}"
+    assert tick_8.next_check_at is None
+    print(f"  state: end → {tick_8.next_state} (30min window expired)")
+
+    print("\n" + "=" * 70)
+    print("✓ 규칙 9: end, preview_stream_seen=True → upcoming")
+    print("=" * 70)
+    now_9 = "2026-08-31T13:10:00Z"
+    item_9 = {
+        "id": "pv_test9",
+        "state": "end",
+        "scheduled_start": base_ss,
+        "actual_start": "2026-08-31T13:00:00Z",
+        "state_since": "2026-08-31T13:00:00Z",
+    }
+    tick_9 = derive(item_9, now_9, preview_stream_seen=True)
+    assert tick_9.next_state == "upcoming", f"expected upcoming, got {tick_9.next_state}"
+    print(f"  state: end → {tick_9.next_state} (preview stream reappeared)")
+
+    print("\n" + "=" * 70)
+    print("✓ 규칙 10: membership=True, live_seen=True → live (skip watching)")
+    print("=" * 70)
+    now_10 = base_now
+    item_10 = {
+        "id": "pv_test10",
+        "state": "announced",
+        "scheduled_start": base_ss,
+        "actual_start": None,
+        "state_since": "2026-08-31T11:00:00Z",
+        "membership": True,
+    }
+    tick_10 = derive(item_10, now_10, live_seen=True)
+    assert tick_10.next_state == "live", f"expected live, got {tick_10.next_state}"
+    assert "membership" in tick_10.log[0].lower()
+    print(f"  membership + live_seen → {tick_10.next_state} (skip watching)")
+
+    print("\n" + "=" * 70)
+    print("✓ next_check_at 클램프: 먼 미래 → now + MAX_TASK_HORIZON")
+    print("=" * 70)
+    now_11 = "2026-08-31T12:00:00Z"
+    far_future = "2028-01-01T00:00:00Z"  # 1년 4개월 뒤
+    item_11 = {
+        "id": "pv_test11",
+        "state": "announced",
+        "scheduled_start": far_future,
+        "actual_start": None,
+        "state_since": now_11,
+    }
+    tick_11 = derive(item_11, now_11)
+    assert tick_11.next_state == "announced"
+    assert tick_11.next_check_at is not None
+    horizon = _to_iso(_parse_iso(now_11) + timedelta(seconds=MAX_TASK_HORIZON_SEC))
+    assert tick_11.next_check_at == horizon, (
+        f"expected {horizon}, got {tick_11.next_check_at}"
+    )
+    print(f"  far future (1.3 years) clamped to now + 696h")
+
+    print("\n" + "=" * 70)
+    print("✓ watching → live transition (live_seen=True)")
+    print("=" * 70)
+    now_12 = "2026-08-31T12:50:00Z"
+    item_12 = {
+        "id": "pv_test12",
+        "state": "watching",
+        "scheduled_start": base_ss,
+        "actual_start": "2026-08-31T12:45:00Z",
+        "state_since": "2026-08-31T12:57:00Z",
+    }
+    tick_12 = derive(item_12, now_12, live_seen=True)
+    assert tick_12.next_state == "live", f"expected live, got {tick_12.next_state}"
+    print(f"  watching + live_seen → {tick_12.next_state}")
+
+    print("\n" + "=" * 70)
+    print("SUCCESS: 모든 12개 시나리오 통과 ✓")
+    print("=" * 70)

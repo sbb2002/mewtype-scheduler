@@ -15,7 +15,8 @@ const ENV_CLOSED = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tr
 const ENV_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.75 10.5v8.25c0 1.1.9 2 2 2h14.5c1.1 0 2-.9 2-2V10.5"/><path d="M2.75 10.5 12 4l9.25 6.5"/><path d="m2.75 10.5 8.4 5.9c.51.36 1.19.36 1.7 0l8.4-5.9"/></svg>';
 
 const RKEY = "mew:twread";
-const _st = { data: null, board: null, wired: false, pinned: new Set(), peek: null, bubbles: new Map() };
+const TLANG_KEY = "mew:tllang";  // ponytail: 번역 토글 기억
+const _st = { data: null, board: null, wired: false, pinned: new Set(), peek: null, bubbles: new Map(), tlang: "orig" };
 let _toast = null, _backdrop = null;
 
 /* ── 읽음 상태 (뷰어별 localStorage) ─────────────────────────────── */
@@ -32,6 +33,15 @@ function _markRead(id) {
   o[id] = 1;
   _writeMap(o);
   if (_st.board) _apply();          // 배지를 '열린 편지'로
+}
+
+/* ── 번역 언어 토글 (뷰어별 localStorage) ──────────────────────────── */
+function _getTlang() {
+  try { return localStorage.getItem(TLANG_KEY) || "orig"; } catch { return "orig"; }
+}
+function _setTlang(lang) {
+  try { localStorage.setItem(TLANG_KEY, lang); } catch { /* private mode 등 */ }
+  _st.tlang = lang;
 }
 
 /* ── 유틸 ────────────────────────────────────────────────────────── */
@@ -160,9 +170,35 @@ function _fillBubble(ck, t) {
   const pal = _palette(lane);
   b.style.setProperty("--tw-bg", pal.bg);
   b.style.setProperty("--tw-ink", pal.ink);
-  b.querySelector(".lane__bubble__text").textContent = t.text;
+
+  const hasKo = !!t.text_ko;
+  const text = _st.tlang === "ko" && hasKo ? t.text_ko : t.text;
+  b.querySelector(".lane__bubble__text").textContent = text;
   b.querySelector(".ago").textContent = _ago(t.received_at);
   b.querySelector(".src").href = t.url || _channelUrl(ck);
+
+  // 번역 토글 버튼
+  let btn = b.querySelector(".lane__bubble__tl");
+  if (hasKo) {
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "lane__bubble__tl";
+      btn.setAttribute("aria-label", "원문/번역");
+      btn.onclick = () => { _toggleTlang(ck, b, t); return false; };
+      b.querySelector(".lane__bubble__foot").insertBefore(btn, b.querySelector(".src"));
+    }
+    btn.textContent = _st.tlang === "ko" ? "원문" : "번역";
+  } else if (btn) {
+    btn.remove();
+  }
+}
+
+function _toggleTlang(ck, b, t) {
+  _setTlang(_st.tlang === "ko" ? "orig" : "ko");
+  const text = _st.tlang === "ko" ? t.text_ko : t.text;
+  b.querySelector(".lane__bubble__text").textContent = text;
+  b.querySelector(".lane__bubble__tl").textContent = _st.tlang === "ko" ? "원문" : "번역";
 }
 function _positionBubble(ck) {
   const b = _st.bubbles.get(ck);
@@ -247,11 +283,39 @@ function _openToast(ck) {
   av.style.backgroundImage = meta.avatar ? `url("${meta.avatar}")` : "none";
   _toast.querySelector(".nm").textContent = meta.name_ko || ck;
   _toast.querySelector(".hd").textContent = t.handle ? "@" + t.handle : "";
-  _toast.querySelector(".tw-toast__text").textContent = t.text;
+
+  const hasKo = !!t.text_ko;
+  const text = _st.tlang === "ko" && hasKo ? t.text_ko : t.text;
+  _toast.querySelector(".tw-toast__text").textContent = text;
   _toast.querySelector(".ago").textContent = _ago(t.received_at);
   _toast.querySelector(".src").href = t.url || _channelUrl(ck);
+
+  // 번역 토글 버튼
+  let btn = _toast.querySelector(".tw-toast__tl");
+  if (hasKo) {
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tw-toast__tl";
+      btn.setAttribute("aria-label", "원문/번역");
+      btn.onclick = () => { _toggleToastTlang(t); return false; };
+      _toast.querySelector(".tw-toast__foot").insertBefore(btn, _toast.querySelector(".src"));
+    }
+    btn.textContent = _st.tlang === "ko" ? "원문" : "번역";
+  } else if (btn) {
+    btn.remove();
+  }
+
   document.body.classList.add("tw-modal-open");
   _markRead(t.id);
+}
+
+function _toggleToastTlang(t) {
+  _setTlang(_st.tlang === "ko" ? "orig" : "ko");
+  const text = _st.tlang === "ko" ? t.text_ko : t.text;
+  _toast.querySelector(".tw-toast__text").textContent = text;
+  const btn = _toast.querySelector(".tw-toast__tl");
+  if (btn) btn.textContent = _st.tlang === "ko" ? "원문" : "번역";
 }
 function _closeToast() {
   document.body.classList.remove("tw-modal-open");
@@ -311,10 +375,12 @@ function _wire() {
 /* ── public ─────────────────────────────────────────────────────── */
 export function renderTweets(boardEl, data) {
   _st.board = boardEl;
+  _st.tlang = _getTlang();
   if (data !== undefined) _st.data = data;
   _apply();
 }
 export function reapplyTweets(boardEl) {
   _st.board = boardEl;
+  _st.tlang = _getTlang();
   _apply();
 }

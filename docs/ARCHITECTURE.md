@@ -56,7 +56,7 @@
       **(v2.7)** `undo.path` 로 `schedule.json` ↔ `notices.json` 구분해 복원.
     - **(v2.7)** `/notice` = 2단계(`/ingest` 와 동일) → `xnotice.parse` → `notices.merge_notice`.
       `/notice-list` · `/notice-del <id|번호>`. 상세: `docs/plan/v2_7_notice_board.md`.
-  - `POST /ingest` — 폰 릴레이 인입 (X 예고 릴레이).
+  - `POST /ingest` — 업스트림 시스템 인입 (X 예고 릴레이).
     - form 필드: `text`(필수 본문) · `title`(`android.title` 게시자 표시 이름) · `template`
       (`android.template`) · `tag`(`pde_noti_tag`). `tag` → `x.com/i/status/<id>` 링크·중복제거 키.
       폰 Automate `@12` 게이트가 `contains(template,"BigTextStyle")` 로 다운로드/그룹요약/미디어

@@ -1,13 +1,12 @@
-# 구현 명세 (SPEC) — 현행 통합본
+# 구현 명세 (SPEC) — v3
 
-`IMPLEMENTATION.md`(v1) + `IMPLEMENTATION_v2.md`(v2.0) + `IMPLEMENTATION_v2.1.md`(v2.1) 에서
-**현행 유효분만** 합친 문서. 원본 3개는 `docs/old/` 로 이관됨. 빌드 당시의 병렬 작업 배정
-(`haiku #N` / `Sonnet 담당`), v1 GitHub Actions 정기 cron 등 **폐기된 내용은 제외**했다.
+`v3` 브랜치의 현행 구현 계약. v2 원문은 `docs/old/v2/`, v1 은 `docs/old/v1/`.
+설계 배경: `docs/plan/v3_backend_surgery.md`(기능 상세) · `docs/plan/v3_draft.md`(결정 로그) ·
+`docs/plan/v3_telegram_controller.md`(제어 채널) · `docs/plan/v3_impl_spec.md`(구현 명세·진행).
 
-- v2.3(X 예고 릴레이) · v2.4(합동방송) 상세 설계: `docs/plan/v2_3_x_relay.md`,
-  `docs/plan/v2_4_collab.md`, 전환 런북 `docs/plan/v2_4_golive.md`
-- 운영자 시점 스케줄 요약: `docs/SCHEDULE.md`
-- 요구사항 배경: `docs/beta_version/PRD.md`
+> **배포 상태**: v3 브랜치는 코드 구현 완료(전 백엔드 모듈 self-test 통과). **미배포** —
+> 실서비스는 아직 v2. 배포 시 `data` 브랜치를 `.old/` 로 치우고 v3 스키마 빈 파일로 콜드 스타트한다
+> (마이그레이션 스크립트 없음). 런북은 별도.
 
 **인터페이스 계약(§1~§7)을 벗어나는 변경은 이 문서를 먼저 고친다.**
 
@@ -21,523 +20,347 @@
 |---|---|
 | 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
 | 정기 트리거 | **Cloud Scheduler** 2잡 — baseline JST 06:00 / light 3h → `POST /tick` (OIDC) |
-| 방송별 정밀 wake | **Cloud Tasks** — 방송마다 1회성 `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
+| 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
 | 저장 | **GitHub `data` 브랜치** — Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋 |
-| 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/schedule.json` 75초 폴링 |
+| 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
 | 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` |
+| 외부 LLM | **Groq**(선택) — notice 제목 추출 + notice/개인트윗 번역. 키 없으면 원문 노출 폴백 |
+| 업스트림 시스템 | 운영자 폰 Automate — X·YouTube 푸시알림을 `POST /ingest` 로 중계(코드베이스 밖) |
 
 ```
 src/
   frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
-    index.html         # 빈 #board + #foot 스켈레톤, <script type="module">
-    css/{reset,layout,card}.css
-    js/{config,time,api,render,main}.js      # ES 모듈, 상대 import
-  collector/           # v1 순수 모듈 — v2 백엔드가 import 재사용. main.py 는 break-glass 전용
-    main.py config.py rss.py youtube.py reconcile.py store.py
-  backend/             # v2 Cloud Run 서비스
-    app.py             # /tick /wake /healthz
-    handlers.py        # tick/wake 오케스트레이션
-    statemachine.py    # pending.json 폴링 FSM (순수)
-    pending.py         # pending.json 스키마 헬퍼
-    gh_store.py        # GitHub Contents API read/write (낙관적 동시성)
+    index.html         # #notice + #board + #foot 스켈레톤, <script type="module">
+    css/{reset,layout,card,notices,tweets}.css
+    js/
+      config.js        # 상수 (PREVIEW_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널)
+      time.js          # UTC→KST 포맷 · 상대시간(D-n·절대표기) · elapsedLabel — 순수
+      api.js           # fetchPreview(url): AbortController 타임아웃, {ok,data|error}
+      render.js        # renderBoard / renderFooter / updateCountdowns — preview.items(state) 기반
+      notices.js       # 소식 티커 (+ title_ko 길게눌러 원문 토글)
+      tweets.js        # 유닛 아바타 편지 배지 (+ text_ko 원문↔번역 토글 버튼)
+      main.js          # DOMContentLoaded → poll(preview) + pollNotices + pollTweets + 카운트다운 틱
+  collector/           # v1 순수 모듈 — rss/youtube 는 v3 백엔드가 import 재사용.
+    rss.py youtube.py  #   (reconcile.py·store.py·main.py 는 v1 break-glass 전용, v3 무의존)
+    config.py reconcile.py store.py main.py
+  backend/             # v3 Cloud Run 서비스
+    app.py             # /tick(Scheduler) /wake(Cloud Tasks) /healthz
+    handlers.py        # tick/wake 오케스트레이션 — preview.json 1파일 커밋 + LLM 번역 sweep
+    preview.py         # (신규) preview.json 스키마 헬퍼 (id·매칭·정렬·승격·아카이브) — 순수
+    preview_build.py   # (신규) reconcile 포크 → build_preview(6상태 + FSM 파생 + ytnotif 머지) — 순수
+    statemachine.py    # (v3 재작성) derive(item, now) → 상태 전이·다음 wake 시각. 저장 타이머 없음 — 순수
+    llm.py             # (신규) Groq 클라이언트 — notice_title / translate, 백오프·환각가드 — 순수 로직
+    ytnotif.py         # (신규) YouTube 앱 푸시알림 payload 파서 (TUNEIN/REMINDER/SUB_START) — 순수
+    vxtwitter.py       # (신규) api.vxtwitter.com unfurl — 본문·미디어·YT video_id 추출
+    gh_store.py        # GitHub Contents API read/write (낙관적 동시성, ConflictError)
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 검증
     config.py          # 환경변수 → Config
-    notify.py          # (v2.1) Telegram 알림 + diff_events(A~F)
-    control.py         # (v2.1) control.json 스키마
-    telegram_app.py    # (v2.1) 공개 webhook /telegram · (v2.3) POST /ingest
-    xrelay.py          # (v2.3/2.4) X 예고 트윗 파서 + scheduled 행 머지 (순수)
+    notify.py          # Telegram sendMessage + diff_events(6상태 전이) + allows(레벨 게이팅)
+    control.py         # control.json 스키마 (paused / log_level)
+    admin.py           # admin_state.json 스키마 — v3 pending_op / edit_lock / suppress + v2 호환 슬롯
+    telegram_app.py    # 공개 webhook — {cmd}×{contents} 격자 + POST /ingest (X 릴레이)
+    xrelay.py          # @BDP 일일 스케줄 트윗 파서 → announced 아이템 (merge_announced) — 순수
+    xnotice.py         # 방송 외 이벤트 트윗 → notices 항목 파서 (+ body_for_llm) — 순수
+    notices.py         # notices.json 계약 + 중복판정(url∥title)·머지·sweep·edit — 순수
+    xtweet.py          # 개인 5인 트윗 — route_by_title / parse / merge_tweet / parse_schedule
+                       #   / merge_personal_schedule / apply_overrides. 리트윗(^@handle:) 필터 — 순수
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
-config/channels.json   # 5채널 단일 소스
-fixtures/              # schedule.sample.json, rss_arale.xml
-.github/workflows/collect.yml   # workflow_dispatch 전용 (정기 cron 제거됨 — break-glass)
-data 브랜치             # schedule.json + archive.json + pending.json + control.json + ingest_queue.json. 코드 없음
+config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko, x_names)
+data 브랜치             # preview.json + preview_archive.json + control.json + admin_state.json
+                       #   + notices.json / notice_archive.json + tweets.json / tweet_archive.json
+                       #   + ingest_queue.json (ECHO/DRY-RUN 버퍼). 코드 없음.
+                       #   ※ v2 의 schedule.json / archive.json / pending.json 은 폐지.
 ```
 
-- 프론트는 빌드 단계 없음. ES 모듈을 브라우저가 직접 로드.
-- 파이썬 3.12. 시각은 전부 UTC ISO(`Z`) 저장, KST 변환은 프론트 `time.js` 담당.
-- v1 대비 변경: 백엔드 compute 가 GitHub Actions 러너 → Cloud Run, 정기 cron → Cloud Scheduler
-  2잡, `data` 브랜치 쓰기가 git push → Contents API. 프론트는 무변경.
+- 파이썬 3.12. 시각은 전부 UTC ISO(`Z`) 저장, KST 변환은 프론트 `time.js` 전담.
+- v2→v3 핵심 변화: `schedule.json`→`preview.json`(6상태), `pending.json` 폐지(FSM 파생),
+  `reconcile.build_schedule`→`preview_build.build_preview`, 외부 LLM(번역) 도입.
 
 ---
 
-## 1. 계약 A — `schedule.json` 스키마 (동결)
+## 1. 계약 A — `preview.json` 스키마 (data 브랜치 루트)
 
-`data` 브랜치 루트. 프론트가 `raw.githubusercontent.com` 에서 직접 fetch.
+`schedule.json` 대체. 프론트가 `raw.githubusercontent.com` 에서 직접 fetch.
+`none` 상태 = 파일에 없음(삭제). 상세 배경: `docs/plan/v3_backend_surgery.md` "v3 데이터 스키마".
 
 ```jsonc
 {
-  "generated_at": "2026-08-30T12:00:00Z",          // ISO UTC, 'Z'. 매 tick/wake 실행시각
+  "generated_at": "2026-09-09T12:00:00Z",       // ISO UTC 'Z'. 매 tick/wake 실행시각
   "channel_order": ["arale","yuno","nonoka","ritsu","miyako"],
   "channels": {
-    "arale": {
-      "name": "仲町あられ -Nakamachi Arale-",
-      "name_ko": "나카마치 아라레",
-      "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g",
-      "handle": "arale_yumemita",
-      "channel_url": "https://www.youtube.com/@arale_yumemita",
-      "avatar": "https://yt3.googleusercontent.com/...=s176-c-k-c0x00ffffff-no-rj"
-      // baseline 스캔이 channels.list 로 취득. light 는 이전 값 유지. 없을 수도 있음(프론트가 원형 폴백)
-    }
-    // yuno / nonoka / ritsu / miyako 동일 구조
+    "arale": { "name","name_ko","channel_id","handle","channel_url","avatar" }
+    // channel_url = https://www.youtube.com/@{handle} (코드 파생). avatar 는 baseline 스캔이 취득
   },
-  "broadcasts": [
+  "items": [
     {
-      "video_id": "h31Mi6AS7a0",
-      "channel_key": "arale",
-      "title": "【歌枠】まったりお歌〜",
-      "url": "https://www.youtube.com/watch?v=h31Mi6AS7a0",
-      "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/hqdefault.jpg",
-      "status": "upcoming",                         // "upcoming" | "live"
-      "scheduled_start": "2026-08-31T11:00:00Z",     // ISO UTC. live 에서도 유지(있으면)
-      "actual_start": null,                          // live 면 ISO UTC
-      "concurrent_viewers": null,                    // live 면 정수 가능(없으면 null)
-      "first_seen": "2026-08-30T09:00:00Z",
-      "last_updated": "2026-08-30T12:00:00Z"
+      "id": "pv_a1b2c3d4",                  // "pv_" + sha1(f"{channel_key}|{first_seen}")[:8]. 생애주기 내내 고정
+      "state": "watching",                  // announced | upcoming | watching | live | end
+      "state_since": "2026-09-09T11:57:00Z",// 현재 state 진입 시각 (end 30분창·강등 판정 앵커)
+
+      "channel_key": "ritsu",               // 주 레인
+      "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인 팬아웃
+      "host": null,                         // "group" = parse_appearance(出演情報) 외부이벤트 → supersede 면제
+      "kind": null,                         // "collab" | 카테고리(game/song/talk/…) | null
+      "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
+
+      "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능. 번역 안 함(번역은 notice/tweet 만)
+      "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",   // 없으면 채널 URL
+      "video_id": "bgzve7Y7S50",            // null 가능 (announced / 회원전용)
+      "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/mqdefault.jpg",  // video_id 유래 or vxtwitter 미디어. null 가능
+
+      "scheduled_start": "2026-09-09T12:00:00Z",  // JST→UTC. 파싱 실패 null. time_tbd 면 "<date>T00:00:00Z"
+      "time_tbd": false,                    // true = 날짜만, 시각 미정
+      "actual_start": null,                 // live 확정 시각. live-cadence(60분 분기) 앵커
+      "concurrent_viewers": null,           // live 한정. 변동 필드 → 커밋 diff 트리거에서 제외
+
+      "source": "personal",                // x-relay | personal | yt-notif | api | manual
+      "info_source": "personal",           // 마지막으로 타이밍/정보를 갱신한 신호 종류
+      "info_at": "2026-09-08T09:00:00Z",   // 그 신호 시각(트윗 snowflake 유래 등)
+      "api_start_seen": null,              // 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정) 트윗값 대신 API 승
+
+      "assumed_live": false,               // video_id 없이 scheduled_start 지남 → 프론트 "방송 중(추정)"
+      "first_seen": "2026-09-08T09:00:00Z",
+      "last_updated": "2026-09-09T11:57:00Z",
+      "expires_at": "2026-09-09T15:00:00Z" // 하드 TTL 안전망. 공개 start+3h / membership +5h / time_tbd 예정일의 다음 JST 자정
     }
   ]
 }
 ```
 
 규칙:
-- `broadcasts` 정렬: `status=="live"` 먼저 → `scheduled_start` 오름차순(프론트도 재정렬하므로 방어적).
-- 파일 없을 때 기본형: `{"generated_at": null, "channel_order": [...], "channels": {...}, "broadcasts": []}`.
-- 프론트는 `channel_order`/`channels` 가 비면 `config.js` 폴백을 쓴다.
-- `generated_at` heartbeat: 실질 변화가 없어도 `_HEARTBEAT_MIN_SEC`(20분) 간격으로 전진시켜
-  커밋한다 (`handlers._heartbeat_generated_at`). 라이브 중 wake 3분마다 커밋되는 것은 막는다.
+- **정렬** (`preview.sort_items`): state 우선순위(`live` > `watching` > `upcoming` > `announced`) →
+  `scheduled_start` asc(null 뒤) → `id`. `end` 는 우선순위 밖(뒤).
+- 파일 없을 때 기본형(`preview.default_preview`): `{"generated_at": null, "channel_order": [], "channels": {}, "items": []}`.
+  프론트는 `channel_order`/`channels` 가 비면 `config.js` 폴백을 쓴다.
+- `generated_at` heartbeat: 실질 변화가 없어도 `_HEARTBEAT_MIN_SEC`(20분) 간격으로 전진 커밋
+  (`handlers._heartbeat_generated_at` + `_stable_view` 로 volatile 필드 `last_updated`/`concurrent_viewers` 동결).
 
-### 1-1. `status == "scheduled"` 행 (v2.3 X 릴레이 / v2.4 합동 / v2.8.1 개인 예고)
+### 1-1. 아이템 매칭 (`preview.match_item`)
 
-`broadcasts[]` 에 `video_id` 없는 행이 섞일 수 있다. `@BDP_yumemita` 일일 스케줄 트윗 또는
-**(v2.8.1) 개인 유닛 본인 예고 트윗**이 폰(Automate) → `mewtype-telegram` `POST /ingest` 로
-릴레이돼 만들어진, **YouTube 영상이 아직 없는 최하 단계**다.
-파서 규칙: `docs/plan/v2_3_x_relay.md`, `docs/plan/v2_8_1_personal_schedule.md`.
+같은 `channel_key` + (`video_id` 일치 ∥ `url` 일치 ∥ `scheduled_start` ±4h(`superscede_sec`)).
+매칭되면 같은 `id` 유지·필드 갱신. 안 되면 새 `id`. `none` 으로 사라진 뒤 오는 예고는 무조건 새 아이템.
 
-**단계 필수 조건** (전이 규칙: 기존 행을 바꾸려면 그 행의 현재 단계 조건을 새 정보가 충족해야):
-`scheduled` ⇒ `date` / `upcoming` ⇒ `date`+`time`+`url`+`thumbnail`+`video_id` / `live` ⇒ +`actual_start`.
+### 1-2. 상태 승격 (`preview.promote_state`)
 
-```jsonc
-{
-  "status": "scheduled",
-  "channel_key": "nonoka",
-  "sched_id": "sched:nonoka:2026-08-30T02:00:00Z",  // video_id 대체 키
-  "video_id": null,                                  // (v2.6) 합동 줄에 watch?v=/live/ URL 이 있으면 그 11자 id
-  "title": null, "url": null, "thumbnail": null,
-  "scheduled_start": "2026-08-30T02:00:00Z",         // JST→UTC. 파싱 실패 시 null
-  "start_approx": false,                              // 트윗에 "頃" 등
-  "kind": "game",                                     // game|talk|song|collab|morning|unknown
-  "icon": "🎮",                                        // 원본 이모지 (kind=unknown 이면 프론트가 이것만)
-  "members_only": false,
-  "collab_with": [],                                  // A×B 합방 시 상대 channel_key[]
-  "host": null,                                        // "group"(=parse_appearance 出演情報 전용). daily 합동은 이제 안 붙임
-  "source": "bdp_schedule",                           // "bdp_schedule" | "bdp_appearance" | "personal"(v2.8.1)
-  "source_at": "2026-09-03T01:05:00Z",
-  "time_tbd": false,                                   // (v2.8.1) true = scheduled_start 가 "<date>T00:00:00Z" 자리표시자, 시각 미정
-  "info_source": "personal",                          // (v2.8.1) 현재 표시 중인 날짜·시각을 마지막으로 정한 출처: bdp_schedule|personal|appearance|api
-  "info_at": "2026-09-07T12:50:00Z",                  // (v2.8.1) 그 정보의 유효 시각. 트윗=Snowflake 작성 시각 / API=그 tick 실행 시각
-  "api_start_seen": null,                             // (v2.8.1) 트윗이 API-확정 행 시각을 override 한 시점의 API scheduled_start. 이 값이 바뀌면(스트림 실수정) API 승
-  "first_seen": "...", "last_updated": "...",
-  "assumed_live": false,                              // reconcile 이 scheduled_start 지나면 true
-  "expires_at": "2026-08-30T05:00:00Z"               // start + (회원전용 5h / 공개 3h). time_tbd 면 그 날짜 JST 자정. null 이면 first_seen+18h
-}
-```
+`upcoming` = `scheduled_start` && !`time_tbd` && `title` && `thumbnail` && `url` && `video_id` 전부.
+아니면 `announced`. 승격 판정은 `preview_build` 가 매 tick 수행 (FSM 은 승격을 되돌리지 않음 — 지각 강등만).
 
-- 정렬 확장: `live` → `upcoming` → `scheduled`, 그룹 내 `scheduled_start` asc(null 뒤).
-- `reconcile.build_schedule` 이 매 tick 보존한다. **참여자(`channel_key` ∪ `collab_with`) 중
-  아무 채널**에 실물 `upcoming`/`live` 가 ±4h 안에 뜨면 제거(supersede) — (v2.6) 개인 채널 합동
-  대응. `expires_at` 도달 시 제거, `scheduled_start` 지난 행은 `assumed_live=true`
-  (회원전용은 API 로 실물을 못 봄 → 이 플래그로만 "방송 중 추정"). **(핫픽스)** `assumed_live`
-  이고 `video_id` 가 없으면 종료를 검사할 주체가 없다 → `scheduled_start + 90분`
-  (`reconcile.ASSUMED_LIVE_MAX_SEC`) 이면 `expires_at` 을 안 기다리고 제거(유령 라이브 방지).
-  `video_id` 가 (어떤 경로로든) 채워지면 후보 집합에 들어가 정규 로직이 처리하므로 클램프 제외.
-  Cloud Tasks/`pending.json` 은
-  안 타지만 `handlers._scheduled_wake_times` 가 `scheduled_start`(지금~+3h)마다 `light /tick` 1개를
-  예약 — 공개 방송의 정시 시작을 3h 주기 안 기다리고 RSS 로 줍는다.
-- **(v2.6)** `video_id` 가 있는 scheduled 행(트윗이 준 합동 URL)은 `_tracked_unresolved_ids` 로
-  다음 tick 후보 집합에 들어가 정규 파이프라인이 `upcoming`/`live` 로 확정한다(별도 wake tick 없음).
-  supersede/확정 시 `_carry_collab` 이 실물 행에 `kind="collab"` + 나머지 참여자를 `collab_with` 로
-  얹어 render 팬아웃을 유지한다.
-- `host=="group"` 행(`parse_appearance` 出演情報 — 외부 이벤트, 추적 5채널 밖)은 supersede 안
-  하고 TTL 로만 소멸. daily 스케줄 합동은 이제 `host` 를 안 붙이므로 위 supersede 규칙을 탄다.
-- **프론트 렌더**: `render.js` 가 `upcoming` 과 같은 버킷에 `scheduled_start` 순으로 섞어 그린다.
-  `.card--scheduled` = 점선·감광, 썸네일 대신 `icon`, "예고" 배지, 링크는 `channel_url`. DOM 은 §3.
-  구버전 프론트는 이 행을 무시(롤백 안전). `kind=="collab"` 이면 `.card--collab` 추가 +
-  **참여 멤버 전원**(`channel_key` ∪ `collab_with`) 레인에 같은 카드로 팬아웃, 링크는 `url`(그룹 영상).
-  `time_tbd` 면 시각 자리에 날짜(M/D)만 + "시간 미정", 카운트다운(`updateCountdowns`)은 스킵.
-- **(v2.8.1) 개인 예고 병합**: `xtweet.parse_schedule` → `xtweet.merge_personal_schedule` (replace-by-date
-  아님, "같은 방송" upsert). "같은 방송" 판정: 양쪽 `video_id`/스트림 URL 있고 같으면 동일(다르면
-  다른 방송), 아니면 같은 `channel_key` + (`scheduled_start` ±90분 / 한쪽 `time_tbd` 면 같은 JST 날짜).
-  붕괴 생존 우선순위: `video_id` > 상위 단계 > `info_at` 최신 > `bdp_schedule` > `personal`.
-- **(v2.8.1) 최신-정보-우선 override**: `handlers.tick()` 이 `reconcile.build_schedule` 직후
-  `xtweet.apply_overrides(new, prev, now_iso)` 로, 트윗이 정한 `scheduled_start` 를 API 가 덮지 않게
-  한다 — API `scheduledStartTime` 이 행의 `api_start_seen` 과 같으면(스트림 미수정) 트윗값 유지,
-  달라지면 API 승. 더 나중 트윗은 항상 재-override.
-- **`ingest_queue.json`** (`data` 브랜치, `{"pending":[{raw,title,received_at}]}`): 테스트 모드
-  (`INGEST_ECHO`/`INGEST_DRY_RUN`) 중 온 스케줄 트윗 원문 버퍼. 실배포 전환
-  (`INGEST_ECHO=0`+`INGEST_DRY_RUN=0`) 후 첫 `/ingest` 에서 `telegram_app._ingest_queue_drain`
-  이 순서대로 파싱·머지하고 비운다. 런북: `docs/plan/v2_4_golive.md`.
+### 1-3. 합동방송 (collab)
+
+`xrelay`/`xtweet` 가 `collab_with` 채운 `announced` 아이템을 참여 유닛 전부에 fan-out.
+url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레인이 아니라 url 추적. `preview_build` 가
+참여자(`channel_key` ∪ `collab_with`) 중 아무 채널에나 실물 ±4h 안에 뜨면 supersede 하고
+`_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관. `host=="group"` 은 supersede 면제.
+프론트 `render.js` 가 union 레인에 `.card--collab` 팬아웃. 상세: `docs/old/v2/v2_4_collab.md` §8.
 
 ---
 
-## 2. 계약 B — `archive.json` 스키마
+## 2. 계약 B — `preview_archive.json` 스키마
 
 ```jsonc
 {
-  "updated_at": "2026-08-30T12:00:00Z",
-  "broadcasts": [
-    {
-      "video_id": "MGVRS_MYXSw",
-      "channel_key": "arale",
-      "title": "…",
-      "url": "https://www.youtube.com/watch?v=MGVRS_MYXSw",
-      "thumbnail": "https://i.ytimg.com/vi/MGVRS_MYXSw/hqdefault.jpg",
-      "status": "ended",
-      "scheduled_start": "2026-08-29T15:00:00Z",
-      "actual_start": "2026-08-29T15:03:00Z",
-      "actual_end": "2026-08-29T17:20:00Z",
-      "archived_at": "2026-08-30T12:00:00Z",
-      "reason": "ended"                              // "ended" | "removed" | "canceled"
-    }
-  ]
+  "generated_at": "2026-09-09T12:00:00Z",
+  "items": [ { /* preview 아이템 원본 + "archived_at" */ } ]
 }
 ```
 
-- append-only, `video_id` 기준 dedupe. 프론트는 읽지 않음.
-- `reason`: `ended`(정상 종료, `actual_end` 있음) / `canceled`(`liveBroadcastContent=="none"` 인데
-  `actual_end` 없음) / `removed`(응답에서 통째로 사라짐).
-- `liveBroadcastContent=="none"` 명시 신호(`ended`/`canceled`)는 유예 없이 즉시 이관.
-- `removed` 는 **즉시 이관하지 않고** `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 이상 연속
-  누락일 때만 이관 (배치 일시 누락·"공개→회원전용" 전환 오탐 방지 — §11 / `SCHEDULE.md` §5.2).
+- `end→none` 또는 removed/expired 시 `build_archive_appends` 가 append. `(video_id, id)` 로 dedupe.
+- 프론트는 안 읽음 — 디버그 + 회원전용 사후확정(RSS 로 뒤늦게 뜨는 아카이브)용.
 
 ---
 
-## 3. 계약 C — 프론트 DOM 구조 (동결)
+## 3. 계약 C — 프론트 DOM 구조
 
-`render.js` 가 생성하고 `css/` 가 스타일링하는 정확한 구조. class 이름 변경은 이 문서 수정 후에만.
+`render.js` 가 생성하고 `css/` 가 스타일링. class 이름 변경은 이 문서 수정 후에만.
+`#board` 골격(`<section class="lane">` × `channel_order`, `lane__header`/`lane__live`/`lane__buckets`)은
+v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
 
-```html
-<main id="board">
-  <section class="lane" data-channel="arale" style="--lane-color: rgb(...)">
-    <!-- --lane-color: render.js 가 아바타 평균색을 canvas 샘플링해 인라인 설정. 실패 시 CSS 폴백 -->
-    <header class="lane__header">   <!-- ::before = 좌→우 캐릭터색 그라데이션 -->
-      <a class="lane__link" href="{channels[key].channel_url}" target="_blank" rel="noopener">
-        <span class="lane__avatar" style="background-image:url('{avatar =s176}')"></span>
-        <span class="lane__meta">
-          <span class="lane__name-line">
-            <span class="lane__name-ko">나카마치 아라레</span>
-            <span class="lane__name-orig">仲町あられ -Nakamachi Arale-</span>
-          </span>
-          <span class="lane__handle">@arale_yumemita</span>
-        </span>
-      </a>
-    </header>
+### 카드 클래스 매핑 (state → class)
 
-    <div class="lane__live" data-state="on">     <!-- 빨간 테두리 존. data-state: "on" | "off" -->
-      <!-- on: status=="live" 카드 1개 이상 -->
-      <!-- off: <span class="lane__live-off">OFF-AIR</span> (회색 중앙) -->
-    </div>
+| state | 최상위 class | 썸네일 자리 | `.card__rel` |
+|---|---|---|---|
+| `announced` | `card card--announced` | 아이콘 `📺` (`card__icon`) | `relativeLabel`, 배지 "예고"(`card__badge--announced`), href = 채널 URL |
+| `upcoming` | `card card--upcoming` | 썸네일 `<img>` | `relativeLabel` (+ `card__rel--late` 토글) |
+| `watching` | `card card--watching` | 썸네일 `<img>` | `relativeLabel` (+late), 배지 "대기 중"(`card__badge--watching`) |
+| `live` | `card card--live` | 썸네일 + `LIVE` 배지 | `elapsedLabel(actual_start)` = `"방송 중 (n분)"` |
+| `end` | `card card--end` | 썸네일 유지, 배지 없음 | `"방송 종료"`. 빨강 테두리 없음(OFF-AIR 소등) |
 
-    <!-- upcoming 0개면: <p class="lane__empty">예정된 방송이 없어요</p> -->
-    <div class="lane__buckets">
-      <section class="lane__bucket" data-bucket="today">  <!-- today(<24h) / week(24h~7일) / month(7~30일) / later(≥30일·null) -->
-        <h3 class="lane__bucket-label">오늘</h3>            <!-- week="7일 이내", month="한 달 이내", later="그 이후" -->
-        <ul class="lane__bucket-list">                    <!-- overflow-y:auto, 길면 개별 스크롤 -->
-          <li class="lane__item"><!-- upcoming 카드 --></li>
-          <!-- 비었으면: <li class="lane__bucket-none">예고 없음</li> -->
-        </ul>
-      </section>
-      <!-- week, month, later 섹션 동일 구조로 항상 4개 렌더 -->
-      <!-- (v2.7) 모바일 <768px: month+later 를 data-bucket="rest"("7일 이후") 하나로 통합 → 3개 렌더 -->
-    </div>
-  </section>
-  <!-- channel_order 순서대로 lane 반복 -->
-</main>
+- `membership` true → `card--membership` 추가. 썸네일 자리 자물쇠 `🔒`(`card__icon`), body 에 `card__chip` "🔒 회원 전용 방송".
+- `assumed_live` && state ∈ (announced, upcoming) → `card--sched-live` 추가, `.card__rel` = `"방송 중 (추정)"`(빨강), 테두리 실선.
+- `kind=="collab"` (또는 `collab_with` 존재) → `card--collab` 추가, 배지 "합동"(`card__badge--collab`), href = `url`.
+- `time_tbd` → `<time>` 자리에 `M/D` 만 + `.card__rel` = "시간 미정", 카운트다운 스킵.
 
-<footer id="foot">
-  <div class="foot__inner">
-    <span id="foot-updated">업데이트: 08/30 21:00</span>
-    <span id="foot-status" hidden>업데이트 지연</span>
-  </div>
-</footer>
-```
+### 라이브 존 (`lane__live`)
 
-카드(라이브/예정 공통, 최상위는 `<a>`):
+`buildLive(liveItems, endedItems, …)`: `data-state="on"` 은 **실제 `live` 아이템이 있을 때만**.
+`end` 아이템은 존에 남기되 소등(`data-state="off"`). 둘 다 없으면 `<span class="lane__live-off">OFF-AIR</span>`.
 
-```html
-<a class="card card--live" href="{url}" target="_blank" rel="noopener">
-  <!-- 예정: class="card card--upcoming" -->
-  <div class="card__thumb-wrap">
-    <img class="card__thumb" src="{thumbnail}" loading="lazy" alt=""
-         onerror="this.dataset.fallback ? this.classList.add('card__thumb--broken') : (this.dataset.fallback=1, this.src=this.src.replace('hqdefault','mqdefault'))">
-    <span class="card__badge card__badge--live">LIVE</span>
-    <!-- 예정 카드에는 badge 없음 -->
-  </div>
-  <div class="card__body">
-    <p class="card__title">{title}</p>
-    <p class="card__meta">
-      <time class="card__time" datetime="{scheduled_start ISO}">08/31 20:00</time>
-      <span class="card__rel">3시간 후</span>   <!-- live 면 "방송 중", 예정 시각 지남(live 미확인)이면 class="card__rel card__rel--late" + "n분 지각" -->
-    </p>
-  </div>
-</a>
-```
+### 버킷 분류 (`bucketKey`)
 
-예고 카드(`status=="scheduled"`, §1-1) — 썸네일 없음, 채널 링크만:
+`scheduled_start − now`: `<24h`=`today` / `<7일`=`week` / `<30일`=`month` / 그 외·null=`later`.
+모바일(<768px)은 `month`+`later` → `rest` 하나. 대상 = state ∈ (announced, upcoming, watching).
 
-```html
-<a class="card card--scheduled" href="{channels[key].channel_url}" target="_blank" rel="noopener">
-  <!-- assumed_live 면 class="card card--scheduled card--sched-live", .card__rel = "방송 중 (추정)"(빨강), 테두리 실선·빨강기 -->
-  <!-- (v2.4) kind=="collab" 이면 class 에 card--collab 추가, href={url}(그룹 영상), 배지 "합동" -->
-  <div class="card__thumb-wrap">
-    <span class="card__icon">🎮</span>            <!-- icon 없으면 class="card__icon card__icon--empty" + "📺" -->
-    <span class="card__badge card__badge--sched">예고</span>   <!-- collab: card__badge--collab "합동" -->
-  </div>
-  <div class="card__body">
-    <span class="card__chip">🔒 회원 전용</span>     <!-- members_only 일 때만 -->
-    <p class="card__title card__title--label">게임</p>  <!-- KIND_LABEL[kind]. unknown 이면 이 <p> 생략. collab 이면 "합동 · {그 레인 제외한 참여자 name_ko}" -->
-    <p class="card__host">공식 채널 합동방송</p>       <!-- (v2.4) host=="group" 일 때만 -->
-    <p class="card__meta">
-      <time class="card__time" datetime="{scheduled_start ISO}"><span class="card__approx">약 </span>08/31 07:00</time>
-      <span class="card__rel">약 5시간 후</span>    <!-- scheduled 는 card__rel--late 안 붙임. scheduled_start 없으면 <time> 생략 + "시간 미정" -->
-    </p>
-  </div>
-</a>
-```
+### 렌더 규칙
 
-- 라이브인데 `scheduled_start` 없으면 `<time>` 은 `actual_start` 사용, 없으면 `<time>` 생략하고 `card__rel` 만 "방송 중".
-- 전체 재렌더 방식 허용(폴링마다 `#board` 재구성). 단 `updateCountdowns()` 는 DOM 재구성 없이 `.card__rel` 텍스트만 갱신.
-- XSS 방지: 데이터는 `textContent`/`createElement` 로만 주입. `innerHTML` 금지(`onerror` 속성만 예외).
+- 전체 재렌더(폴링마다 `#board` 재구성). `updateCountdowns()` 는 DOM 재구성 없이 `.card__rel` 텍스트만
+  (`live`→`elapsedLabel`, `end`→고정, 나머지→`relativeLabel`). 구간 넘으면 `true` 반환 → `main.js` 재렌더.
+- **XSS**: 데이터는 `textContent`/`createElement` 로만 주입. `render.js` 는 `innerHTML` 금지(`img.onerror` 속성만 예외).
+  (`notices.js` 는 v2 부터 티커 marquee 구조상 템플릿+`_attr`/`_esc` 이스케이프 사용 — 새 필드도 이스케이프됨.)
 
 ---
 
 ## 4. 계약 D — 시간 표기 규칙 (`time.js`)
 
-- 저장은 UTC, 표시는 **KST(UTC+9)**. `Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul'})`.
-- `formatKST(iso)` → `"MM/DD HH:mm"` (24h, KST). 예: `"08/31 20:00"`.
+- 저장 UTC, 표시 **KST(UTC+9)**. `Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul'})`.
+- `formatKST(iso, opts={})` → `"MM/DD HH:mm"`. `opts.full===true` → `"YYYY-MM-DD HH:mm"`.
 - `relativeLabel(iso, nowMs)`:
   | 조건 (start − now) | 출력 |
   |---|---|
-  | < −5분 (예정 시각을 5분 넘게 지남, upcoming→live 전환 미확인) | `"{n}분 지각"` / `"{h}시간 {m}분 지각"` (최소 1분) |
+  | < −5분 (지각) | `"{n}분 지각"` / `"{h}시간 {m}분 지각"` (최소 1분) |
   | < 60초 | `"곧 시작"` |
-  | < 24시간 | `"{h}시간 {m}분 남음"` (h==0: `"{m}분 남음"`, m==0: `"{h}시간 남음"`) |
-  | < 7일 | `"{n}일 후"` (올림, 최소 1) |
-  | ≥ 7일 | `formatKST(iso)` 그대로 |
-- `LATE_GRACE_MS`(5분): 예정 시각을 막 지나도 곧바로 "지각" 판정 안 함.
-- `isLate(iso, nowMs)`: `scheduled_start` 를 5분 넘게 지났는지(boolean). `render.js` 가 `.card__rel--late` 토글에 사용.
-- 라이브 카드 상대 라벨은 `render.js` 가 `"방송 중"` 으로 고정(time.js 호출 안 함).
-- `.card__rel` 텍스트는 `updateCountdowns()` 가 **1분마다 사용자 장치 시계 기준**으로 갱신
-  (`main.js` `COUNTDOWN_TICK_MS`). 카드가 다른 시간대 구간으로 넘어가면 `true` 반환 → `main.js` 가 보드 재렌더(재분류).
+  | 오늘 (같은 KST 날짜) | `"{h}시간 {m}분 후"` (h·m 0 처리) |
+  | 7일 이내 (오늘 아님) | `"D-{n} {HH}:{mm}"` — `n` = KST 캘린더 자정 기준 일수차(올림, 최소 1) |
+  | 그 외 | `"{YYYY}-{MM}-{DD} {HH}:{mm}"` (KST) |
+- `elapsedLabel(actualStartIso, nowMs)` → `"방송 중 ({m}분)"`.
+- `isLate(iso, nowMs)`: `scheduled_start` 를 5분(`LATE_GRACE_MS`) 넘게 지났는지 boolean. `render.js` 가 `.card__rel--late` 토글에 사용.
+- `.card__rel` 은 `updateCountdowns()` 가 **1분마다 사용자 장치 시계 기준**으로 갱신 (`main.js` `COUNTDOWN_TICK_MS`).
 
 ---
 
-## 5. 계약 E — `pending.json` 스키마 (data 브랜치 루트)
+## 5. 계약 E — (폐지) `pending.json`
+
+v2 의 `pending.json`(폴링 FSM 상태 저장)은 **삭제**. `src/backend/pending.py` 없음.
+FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이머 없이 파생**:
+
+`derive(item, now_iso, *, live_seen=None, preview_stream_seen=False) -> Tick(next_state, next_check_at, log)`
+
+| 규칙 | 조건 | 결과 |
+|---|---|---|
+| pre-live 진입 | state ∈ (announced, upcoming) && `now ≥ ss − 3분` | `watching`, check `now+3분` |
+| pre-live 예약 | 위인데 아직 3분 전 아님 | state 유지, check `ss − 3분` |
+| watching 체크 | state==watching && `now − ss < 120분` && !live_seen | check `now+3분` |
+| watching → live | state==watching && `live_seen is True` | `live`, check `now+10분` |
+| watching 지각 강등 | state==watching && `now − ss ≥ 120분` | `announced` (url·video_id 살림), check 없음 |
+| assumed-live 폴백 | state ∈ (announced,upcoming) && `assumed_live` && no video_id && `now − ss ≥ 90분` | `none` |
+| membership 직행 | `membership` && `live_seen is True` | `live` (watching 스킵) |
+| live cadence | state==live && `live_seen != False` — `now − actual_start < 60분` → 10분 / 이상 → 3분 | 유지 |
+| live → end | state==live && `live_seen is False` (명시적 확인. None=미확인은 유지) | `end`, check `now+5분` |
+| end 창 | state==end && `now − state_since < 30분` | check `now+5분` |
+| end → none | state==end && `now − state_since ≥ 30분` && 계속 live 아님 | `none` |
+| end → upcoming | state==end && `preview_stream_seen` (예고 스트림 재등장) | `upcoming` |
+
+- 상수: `PRELIVE_LEAD_SEC=180`, `PRELIVE_TIGHT_SEC=180`, `WATCH_LATE_DEMOTE_SEC=7200`,
+  `ASSUMED_LIVE_MAX_SEC=5400`, `LIVE_EARLY_SEC=600`, `LIVE_EARLY_WINDOW_SEC=3600`, `LIVE_TIGHT_SEC=180`,
+  `END_WINDOW_SEC=1800`, `END_TICK_SEC=300`, `MAX_TASK_HORIZON_SEC=696*3600`.
+- `next_check_at` 은 반환 직전 `[now+60s, now+MAX_TASK_HORIZON_SEC]` 클램프. **저장 안 함** — `handlers` 가
+  video_id 있는 watching/live/end 아이템의 `next_check_at` 만 `wakes` 로 받아 Cloud Tasks `/wake` enqueue.
+
+---
+
+## 6. 계약 F — `control.json` (data 브랜치 루트)
 
 ```jsonc
-{
-  "updated_at": "2026-08-31T12:00:00Z",          // ISO UTC 'Z'. 엔트리 변경 시 갱신
-  "entries": {
-    "<video_id>": {
-      "channel_key": "arale",
-      "phase": "pre-live",                         // "pre-live" | "live-watch"
-      "scheduled_start": "2026-08-31T13:00:00Z",   // 최신 예정 시각. live-watch 에서 null 가능
-      "actual_start": null,                        // phase=="live-watch" 에서 채움
-      "next_check_at": "2026-08-31T12:45:00Z",     // 다음 Cloud Task 도달 예정
-      "attempts": 0,                               // 현재 phase 에서 처리된 횟수
-      "first_seen": "2026-08-31T09:00:00Z",
-      "last_checked": null
-    }
-  }
-}
+{ "paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": "..." }
 ```
 
-- 기본형(파일 없음): `{"updated_at": null, "entries": {}}`.
-- `entries` key = video_id. 직렬화 규칙은 §7.
+- 기본형: `{"paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": null}`.
+- `control.py` 순수 헬퍼: `default_control()`, `is_paused(c)`, `get_log_level(c)`(이상값→"normal"),
+  `set_paused(c, paused, *, by, now_iso)`, `set_log_level(c, level, *, by, now_iso)`. `set_*` 는 다른 필드 보존.
+- **log_level 별 전송 이벤트** (`notify.allows(level, kind)`):
+  | kind | detail | normal | simple |
+  |---|:-:|:-:|:-:|
+  | `announced` | ✓ | ✓ | ✗ |
+  | `upcoming` / `live_start` / `live_end` | ✓ | ✓ | ✓ |
+  | `demote` (watching→announced 지각 강등) | ✓ | ✗ | ✗ |
+  | `notice` / `tweet` | ✓ | ✓ | ✗ |
+  | `ingest` / `fallback` / `error` / `summary` | ✓ | ✗ | ✗ |
+  - 다운 감지(healthchecks.io grace 초과)는 log_level 무관 항상 알림.
+  - 운영자가 직접 친 명령의 응답은 게이팅 안 함.
 
 ---
 
-## 6. 계약 F — `control.json` (data 브랜치 루트, v2.1)
+## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트)
+
+텔레그램 제어 명령의 상태. `admin.py` 순수 헬퍼.
 
 ```jsonc
 {
-  "paused": false,
-  "since": null,               // paused=true 로 바뀐 시각 (ISO 'Z'), 아니면 null
-  "by": null,                  // "telegram:/pause" 등 출처 메모
-  "log_level": "normal",       // "detail" | "normal" | "simple"  — Telegram 알림 상세도
-  "updated_at": "2026-08-31T12:00:00Z"
-}
-```
-
-- 기본형(파일 없음): `{"paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": null}`.
-- **log_level 별 전송 이벤트** (`notify.allows(level, kind)`, v2.8.2 개편):
-  | kind | 어디서 | detail | normal | simple |
-  |---|---|:-:|:-:|:-:|
-  | `upcoming` | diff_events A | ✓ | ✓ | ✓ |
-  | `live` (`live_start`/`live_end`) | diff_events B/C | ✓ | ✓ | ✓ |
-  | `scheduled` | 개인 본인예고 감지 · 공식 X 스케줄 반영 DM | ✓ | ✓ | ✗ |
-  | `notice` | `_maybe_auto_notice` 소식 추가/갱신 | ✓ | ✓ | ✗ |
-  | `tweet` | `_maybe_personal_tweet` 배지 반영 | ✓ | ✓ | ✗ |
-  | `ingest` | `/ingest` 잡음성 결과("형식 아님" 등) | ✓ | ✗ | ✗ |
-  | `fallback` / `error` / `summary` | 운영 진단 | ✓ | ✗ | ✗ |
-  - 다운 감지(healthchecks.io grace 초과)는 log_level 과 무관하게 항상 알림.
-  - 운영자가 직접 친 명령(`/list`·`/notice`·`/undo`·`/status` 등)의 응답은 게이팅 안 함
-    (`telegram_app._auto_dm` 은 자동 알림에만 씀).
-
-`control.py` (순수 헬퍼): `default_control()`, `is_paused(c)`, `get_log_level(c)`(이상값→"normal"),
-`set_paused(c, paused, *, by, now_iso)`, `set_log_level(c, level, *, by, now_iso)`(이상 level→ValueError).
-`set_*` 는 원본 복사 후 해당 키만 갱신(다른 필드 유실 금지). 로드/저장은 호출부가
-`GitHubStore.read_json/write_json("control.json")` 로 직접.
-
----
-
-## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트, v2.5)
-
-텔레그램 수동 관리 명령(`/list` `/del` `/ingest` `/notice` `/notice-edit` `/undo`)의 상태.
-`pending_del`/`pending_ingest`/`pending_notice`/`pending_notice_edit`/`pending_undo`/`pending_member`/`undo` 각각 슬롯 1개.
-
-```jsonc
-{
-  "pending_del": null | {
-    "unit": "arale",             // /del 대상 유닛
-    "idx": 2,                    // /list 당시 1-based 순번 (표시용 — 매칭은 snapshot 사용)
-    "snapshot": { /* ... */ },   // 지우려는 broadcasts[] 항목 원본 (확인 시 재대조)
-    "warn_text": "...",
-    "at": "2026-09-05T12:00:00Z" // 확인 대기 시작 (TTL 300s, admin.PENDING_DEL_TTL_SEC)
+  "pending_op": null | {           // (v3) /edit·/ingest tweet 마법사 — cmd×contents×step
+    "cmd": "edit", "contents": "preview", "step": "await_field",
+    "ctx": { "unit","id","idx","patch","pre",... }, "at": "..."   // TTL 60s
   },
-  "pending_ingest": null | {     // (v2.5.1) /ingest(무인자) 후 원문/파일 대기 — TTL 180s
-    "at": "2026-09-05T12:00:00Z"
-  },
-  "pending_notice": null | {     // (v2.7) /notice(무인자) 후 원문/파일 대기 — TTL 180s
-    "at": "2026-09-05T12:00:00Z"
-  },
-  "pending_notice_edit": null | {  // (v2.7.x) /notice-edit <id> 마법사 — TTL 300s
-    "nid": "2099...",             // 편집 대상 소식 id
-    "step": "title",             // 지금 묻는 필드: title → date → url
-    "new": { "title": "..." },   // 지금까지 받은 새 값 (aNoneTokyo = 유지 → 키 없음)
-    "at": "2026-09-05T12:00:00Z"
-  },
-  "pending_member": null | {     // (v2.8.1+) 수동 /ingest 개인 예고 채널 미상 → 유닛 되묻기 — TTL 300s
-    "raw": "...",                // 1~5/이름 응답받으면 그 channel_key 로 재처리할 트윗 원문
-    "at": "2026-09-05T12:00:00Z"
-  },
-  "pending_undo": null | {       // (v2.5.2) /undo 후 (y/N) 확인 대기 — TTL 60s
-    "at": "2026-09-05T12:00:00Z",
-    "target_sha": "...",         // 되돌릴 undo 슬롯의 new_sha — (y) 때 슬롯 미교체 확인
-    "action": "..."
-  },
+  "edit_lock": null | { "id": "pv_ab12cd34", "until": "..." },     // 아이템 단위 편집 락 (TTL 60s)
+  "suppress": [ { "url": "...", "until": "..." } ],                // /del terminate — url 12h 재진입 차단
   "undo": null | {
-    "action": "/del arale#2",
-    "path": "schedule.json",     // (v2.7) 되돌릴 대상 파일 — schedule.json | notices.json
-    "prev_content": { /* 그 파일 전체(변경 직전) */ },
-    "new_sha": "...",            // 변경 커밋 직후 그 파일 sha (undo 시 CAS 확인용)
-    "at": "2026-09-05T12:00:05Z"
-  }
+    "cmd": "...", "contents": "...", "action": "/del arale#2",
+    "path": "preview.json",         // preview.json | notices.json | tweets.json
+    "prev_content": { /* 그 파일 전체(변경 직전) */ }, "new_sha": "...", "at": "..."
+  },
+  "pending_undo": null | { "at": "...", "target_sha": "...", "action": "..." },  // /undo (y/N) TTL 60s
+  // v2 호환 슬롯 (텔레그램 되묻기 플로우 — /notice-edit, /ingest·/notice·/del 무인자, 유닛 되묻기)
+  "pending_del": null | { "unit","idx","snapshot","warn_text","at" },     // TTL 300s
+  "pending_ingest": null | { "at" },                                      // TTL 180s
+  "pending_notice": null | { "at" },                                      // TTL 180s
+  "pending_notice_edit": null | { "nid","step","new","at" },              // TTL 300s
+  "pending_member": null | { "raw","at" }                                 // TTL 300s
 }
 ```
 
-`src/backend/admin.py` (순수 헬퍼): `default_admin_state()`, 그리고 각 슬롯마다
-`get_*` / `set_*` / `clear_*` / `*_expired(pending, now_iso, ttl_sec=…)`:
-- `pending_del` — `set_pending_del(s, *, unit, idx, snapshot, warn_text, now_iso)`, TTL 300s
-- `pending_ingest` / `pending_notice` — `set_pending_*(s, *, now_iso)`, TTL 180s
-- `pending_notice_edit` — `set_pending_notice_edit(s, *, nid, step, new, now_iso)`, TTL 300s (v2.7.x)
-- `pending_member` — `set_pending_member(s, *, raw, now_iso)`, TTL 300s (v2.8.1+)
-- `pending_undo` — `set_pending_undo(s, *, target_sha, action, now_iso)`, TTL 60s
-- `undo` — `set_undo(s, *, action, prev_content, new_sha, now_iso, path="schedule.json")`
-  (TTL 없음, sha 로 판정). `/undo` 는 `path` 를 보고 그 파일을 복원.
-
-`set_*`/`clear_*` 는 원본 복사 후 해당 슬롯만 갱신(다른 슬롯 보존).
-
-**`/ingest` (v2.5.1 — 2단계)**: 인라인 `/ingest <원문>` 제거(텔레그램 `||스포일러||` 마스킹이
-명령행 텍스트를 변형시킴). `/ingest`(무인자) → `pending_ingest` 슬롯 + 안내문 → 웹훅이 명령
-디스패치 전에 다음 메시지를 소진: `aNoneTokyo` → 취소 · `/`로 시작 → 대기 접고 통과 · 180s
-초과 → 만료 안내 후 통과 · `document` → Telegram `getFile` 다운로드(UTF-8, 256KB) · 그 외
-텍스트 → 원문. 원문 확보 시 슬롯 비우고 접수 안내 후 기존 반영 로직. 결과 DM 에 인식 실패
-줄 수(`xrelay.unparsed_lines` — 헤더는 있는데 이름·시각 누락으로 버려진 줄) 표기.
-
-**`/ingest` 개인 예고 폴백 (v2.8.1+)**: `xrelay.parse` 가 행을 안 내고 인식 실패 줄도 없으면
-`_try_personal_ingest` — 멤버 개인 예고 트윗으로 본다. 본문의 온전한 YouTube URL →
-`_channel_key_by_video`(`collector.youtube` `videos.list`, quota 1 unit) 로 5인 채널 판별 →
-`xtweet.parse_schedule`(게이트 = `配信` 계열 + 날짜/URL) + `merge_personal_schedule`
-(`source:"personal"` scheduled 행, undo 스냅샷). URL 없음/판별 실패면 `pending_member` 슬롯에
-원문을 넣고 `[1]아라레 … [5]미야코` 되묻기(취소 `aNoneTokyo`, TTL 300s) → 웹훅이 명령
-디스패치 전 `_handle_ingest_followup` 다음으로 `_handle_member_followup` 호출: `1~5`/이름 →
-그 `channel_key` 로 재처리 · `aNoneTokyo` → 취소 · `/`명령 → 통과 · 만료 → 통과 · 그 외 →
-재안내 + 슬롯 유지. `mewtype-telegram` 서비스에 `YOUTUBE_API_KEY` Secret 추가 필요.
-
-**`/undo` 판정 (v2.5.2 — 2단계)**: `/undo` → 되돌릴 대상 요약(복원/제거 broadcasts, 되돌아갈
-KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 2중 가드 —
-① `undo.new_sha != pending_undo.target_sha`(확인 대기 중 undo 대상 교체) → 거부
-② 지금 `schedule.json` sha `!=` 기록된 `new_sha`(정기 `/tick` 이 supersede/TTL 제거했거나
-다른 명령이 또 건드림) → 거부. 둘 다 통과 시에만 `prev_content` 로 복원 —
-무작정 덮으면 그 사이의 정당한 변경이 같이 날아가기 때문. `n`/60s 경과/y·n 아닌 입력 → 취소.
-상세 근거: `docs/plan/v2_5_admin_commands.md` §3~4.
-
-**쓰기 경합**: schedule.json 을 쓰는 모든 경로(봇 `/ingest`·`/undo`·`/del`, 메인 백엔드
-`/tick`·`/wake`)는 CAS(`prev_sha`) + 1회 재계산 재시도로 직렬화된다. 크로스 서비스 분산 락은
-두지 않음 — `/tick` 은 Cloud Scheduler 트리거라 락 대기를 못 하고, `/undo` 는 위 sha 가드가
-오작동을 원천 차단하므로 불필요. `notices.json` 도 동일(CAS+재시도).
+- `set_*`/`clear_*` 는 원본 복사 후 해당 슬롯만 갱신(타 슬롯 보존).
+- **취소 토큰** `aNoneTokyo` — 전 되묻기 단계 공통.
+- **edit_lock 반영**: `handlers._run` 이 커밋 직전 `admin.suppressed(url)`(차단 url 아이템 제외) +
+  `admin.edit_lock_active(id)`(락 걸린 id 는 prev 값 유지 — 이번 사이클 갱신 스킵)를 적용.
+- **쓰기 경합**: preview/notices/tweets 를 쓰는 모든 경로(봇 명령, 메인 `/tick`·`/wake`)는
+  CAS(`prev_sha`) + 1회 재계산 재시도로 직렬화. 크로스 서비스 분산 락 없음.
 
 ---
 
-## 6-2. 계약 H — `notices.json` / `notice_archive.json` (data 브랜치, v2.7)
+## 6-2. 계약 H — `notices.json` / `notice_archive.json` (data 브랜치)
 
-방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 티커. 전체 스키마·중복판정·파서는
-`docs/plan/v2_7_notice_board.md` §4~6.
+방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 티커. `notices.py`.
 
 - `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
-  `title`·`date`·`time`·`deadline`·`site`·`url`·`tweet_url`·`src_handle`·`anchor_a`·`anchor_b`·
-  `title_slug`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
+  `title`·`title_ko`·`date`·`time`·`deadline`·`site`·`url`·`tweet_url`·`src_handle`·`seen_ids[]`·
+  `first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
+- **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
 - `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
-- `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·
-  `出演情報` 면 `None`. 날짜는 본문 `20xx年`/`20xx/` 명시 연도 우선(없으면 `_infer_year`).
-  회고·기념일 마커(`_RE_RETRO`: `今日は何の日`·`N年前` 등)면 `is_recap=True`.
-  `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed,
-  mode∈added|updated|recap|dup|skip)`. 중복키: **같은 date** + (`anchor_a` 일치 ‖ a 없으면
-  `anchor_b` 일치). **지난 날짜의 신규 소식은 `is_recap` 무관하게 `skip`**(예고판에 안 올림 —
-  추적 중이던 이벤트의 후기는 그 전에 2)·3) seen_ids 로 흡수). `notices.sweep_expired` → 만료분 아카이브.
-  `notices.edit_notice(prev, nid, patch, now_iso)` → `(new, changed)` — `/notice-edit` 가 쓰는
-  순수 필드 대입(`_EDITABLE` 키만, `id`/`seen_ids`/`first_seen` 보존).
-- `_headline` (제목 추출) — `_join_shout_titles`(`💪…💪`·`＼…／`·역방향 `／…＼` 로 감싼 여러 줄 병합)
-  + 점수: `_LABEL_LINE_RE`(`日程：`/`会場：`) −40, `_TITLE_NOUN_RE`(`最終回`/`第N話`) +25,
-  `_STREAM_LIST_RE`(`ABEMA/Prime Video/…` 나열) −35, 날짜시작 −15(이벤트 명사 있으면 면제),
-  `_MID_DECO_RE` 로 중간 장식 이모지 제거. 그래도 부실하면 `/notice-edit`.
-- 텔레그램: `/notice`(2단계) · `/notice-list` · `/notice-del` · **`/notice-edit <id|번호>`**
-  (제목→날짜→URL 순 되묻기, 각 필드 `aNoneTokyo` = 유지, 다른 `/명령` = 취소, `pending_notice_edit`
-  슬롯 TTL 300s). 편집 시 `title_slug`·`expires_at`·`site`·`anchor_a` 는 자동 재계산. `/undo` 지원.
-  실배포 `/ingest` 에서 `xrelay` 가 행을 안 내면 자동으로 `_apply_notice`(added/updated 만 DM).
-- `/undo` 는 `admin_state.undo.path == "notices.json"` 이면 이 파일을 복원(`소식 편집` 포함).
+- `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
+  분류·날짜·URL 은 정규식 전담. 반환 dict 에 `title_raw`(정규식 제목) + `body_for_llm`(날짜/URL 제거 본문).
+  실제 `title` 확정은 `handlers`/`/translate` 가 `llm.notice_title(body_for_llm)` 로. LLM 미가동이면 `title_raw` 폴백.
+- `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed, mode∈added|updated|recap|dup|skip)`.
+  지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브. `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko`) 만 대입.
 
-## 6-3. 계약 I — `tweets.json` / `tweet_archive.json` (data 브랜치, v2.8)
+---
 
-멤버 5인의 **개인 트윗** — 예고판 상단 편지 배지. 전체 설계·라우팅은 `docs/plan/v2_8_personal_tweets.md`.
+## 6-3. 계약 I — `tweets.json` / `tweet_archive.json` (data 브랜치)
 
-- `tweets.json` = `{ generated_at, tweets: { "<channel_key>": { channel_key, id, text, url,
-  handle, received_at, expires_at } } }`. **채널당 최대 1건** (맵, 정렬 없음). `id` = 트윗
-  Snowflake(태그에서) 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h.
-- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|replaced`,
-  append-only, `id` dedupe). 프론트는 안 읽음.
-- `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` |
-  `"test"`. `config/channels.json` 의 `x_names[]` 로 매칭(이모지·기호 무시).
+멤버 5인의 **개인 트윗** — 예고판 상단 편지 배지. `xtweet.py`.
+
+- `tweets.json` = `{ generated_at, tweets: { "<channel_key>": { channel_key, id, text, text_ko,
+  url, handle, received_at, expires_at, needs_tl? } } }`. **채널당 최대 1건**. `id` = 트윗 Snowflake
+  또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h.
+- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|replaced`).
+- `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
+  (`config/channels.json` 의 `x_names[]` 매칭).
 - `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.
-  `xtweet.merge_tweet(prev, inc, now_iso, *, archive)` → `(new_tweets, new_archive, changed,
-  mode∈added|replaced|dup|stale)` — 같은 채널 슬롯에 더 큰 Snowflake id 오면 교체(기존 건 아카이브).
-  `xtweet.sweep_expired` → 만료 슬롯 아카이브.
-- `/ingest` 3.5 라우팅: 개인 5인 → `_maybe_personal_tweet` 처리 후 즉시 200(4번 이하 안 탐).
-  테스트 부계정 → `force_echo` 로 5번에서 강제 ECHO(헬스체크). 공식·그 외 → 기존 경로.
-- 프론트 `js/tweets.js` + `css/tweets.css` — 만료·404 면 배지 안 뜸. `undo` 대상 아님(24h 휘발).
-- **(v2.8.1)** `_maybe_personal_tweet` 이 배지 처리 후 `xtweet.parse_schedule` 도 호출 —
-  개인 트윗이 방송 예고(`配信` 계열 키워드 + 구체 미래 날짜[시각 옵션] 또는 온전한 YT URL)면
-  `xtweet.merge_personal_schedule` 로 `schedule.json` 의 `status:"scheduled"` 행(`source:"personal"`)
-  승격 + `/undo` 스냅샷 + 관측 DM(`📅 <유닛> 본인 예고 감지 …`). 게이트 미통과(후기·리트윗·패턴없음)면
-  배지만. `time_tbd`/`info_source`/`info_at`/`api_start_seen` 은 계약 §1-1.
-  상세: `docs/plan/v2_8_1_personal_schedule.md`.
+  **리트윗/타인글 필터**: 본문이 `^\s*@[\w]+\s*[:：]` 로 시작하면 `None`.
+- `xtweet.merge_tweet(prev, inc, now_iso, *, archive)` → `(new_tweets, new_archive, changed, mode∈added|replaced|dup|stale)`
+  — 더 큰 Snowflake id 오면 교체(기존 건 아카이브). `sweep_expired` → 만료 슬롯 아카이브.
+- **번역**: `text_ko`. `handlers` 가 파이프라인 말단에서 자동 번역, 실패 시 `needs_tl=true` 플래그 →
+  다음 `/tick` `_translate_sweep` 이 재시도. 운영자 `/translate tweet` 는 즉시.
+- **개인 예고 → preview 승격**: `xtweet.parse_schedule`(`配信` 계열 + 날짜/URL 게이트) →
+  `merge_personal_schedule(prev_items, inc, now_iso) -> (items, changed)` (같은 방송 upsert, `source:"personal"`).
+  `apply_overrides(new_items, prev_items, now_iso)` — 트윗이 정한 `scheduled_start` 를 API 재구성이
+  안 덮게 (API 값이 `api_start_seen` 과 ±60초면 트윗값 유지, 벗어나면 API 승). `handlers.tick` 이 `build_preview` 직후 호출.
 
 ---
 
 ## 7. 직렬화 / 시간 규칙 (전 모듈 공통)
 
 - JSON 저장: `json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"` (끝 개행 1개).
-  `store.save_json_if_changed` / `gh_store._serialize` 동일. 어기면 불필요한 커밋 발생.
+  `gh_store._serialize` / `store.save_json_if_changed` 동일. 어기면 불필요한 커밋 발생.
 - ISO 파싱: `datetime.fromisoformat(s.replace("Z", "+00:00"))`, 항상 tz-aware UTC.
 - ISO 출력: `dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`.
 - 시각 비교·산술은 전부 UTC. KST 변환은 프론트 `time.js` 전담.
@@ -546,354 +369,254 @@ KST 시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N 60s). `y` 시 
 
 ## 8. 백엔드 모듈 (`src/backend/`)
 
-### 8.0 재사용 (`src/collector/*` — 수정 금지, import)
+### 8.0 재사용 (`src/collector/` — 수정 금지, import)
 
-- `rss.py` — `fetch_rss_video_ids`, `fetch_all_rss_video_ids`, `_parse_rss` (쿼터 0).
-- `youtube.py` — `VideoInfo`(dataclass), `YouTubeClient`(`videos_list` / `search_upcoming` /
-  `channels_list`, `quota_used` 카운터), `_video_from_item`.
-  - `VideoInfo`: `video_id, channel_id, title, thumbnail, live_state("none"|"upcoming"|"live"),
-    scheduled_start, actual_start, actual_end, concurrent_viewers`.
-  - `videos_list`: `part=snippet,liveStreamingDetails`, 50개 청크, 호출당 `quota_used += 1`.
-  - `search_upcoming`: `quota_used += 100`. 오류 시 `[]` + warning.
-- `reconcile.py` — `build_schedule(channels_cfg, videos, prev_schedule, now_iso, avatars=None) ->
-  (new_schedule, newly_ended)`, `ended_record`. 순수 함수(네트워크/파일 금지).
-  - 후보 = RSS videoId ∪ 이전 schedule 의 미해결(upcoming/live) ∪ (deep) `search.list?eventType=upcoming`.
-  - `live_state` 분기: `upcoming`/`live` 유지, `none` 은 추적 중이었으면 `ended`/`canceled` 이관.
-  - `removed` 유예: `STALE_REMOVE_SEC`(6.5h) — §2, §11.
-  - `scheduled` 행 보존/supersede/만료/`assumed_live` — §1-1.
+- `rss.py` — `fetch_rss_video_ids`, `fetch_all_rss_video_ids` (쿼터 0).
+- `youtube.py` — `VideoInfo`(dataclass: `video_id, channel_id, title, thumbnail, live_state, scheduled_start,
+  actual_start, actual_end, concurrent_viewers`), `YouTubeClient`(`videos_list` / `search_upcoming` /
+  `channels_list`, `quota_used` 카운터).
 - `config.py` — `load_channels()`, `channel_url(handle)`.
-- `src/collector/main.py` (v1 오케스트레이터)는 Actions break-glass 경로용으로만 유지. v2 코드는 무의존.
+- `reconcile.py`/`store.py`/`main.py` — v1 GitHub Actions break-glass 전용. v3 무의존.
 
-### 8.1 `pending.py` + `statemachine.py` (순수 — 네트워크·파일·시계 금지, `now_iso` 인자)
+### 8.1 `preview.py` (순수 — 네트워크·파일·시계 금지, `now_iso` 인자)
 
-#### `pending.py`
 ```python
-PHASE_PRELIVE = "pre-live"; PHASE_LIVEWATCH = "live-watch"
-def default_pending() -> dict                                   # {"updated_at": None, "entries": {}}
-def make_entry(*, channel_key, scheduled_start, next_check_at, now_iso,
-               phase=PHASE_PRELIVE, actual_start=None) -> dict   # attempts=0, first_seen=now_iso, last_checked=None
-def validate(pending) -> dict                                    # 구조 방어. 이상 엔트리 제외한 새 dict(원본 불변) + warning
+def default_preview() -> dict
+def new_id(channel_key, first_seen_iso) -> str                    # "pv_" + sha1[:8]
+def make_item(*, channel_key, state, source, now_iso, **fields) -> dict   # 스키마 기본값 + expires_at 계산
+def match_item(items, inc, *, superscede_sec=4*3600) -> dict | None       # §1-1
+def sort_items(items) -> list                                     # 정렬 규칙
+def promote_state(item) -> str                                    # §1-2 → "announced" | "upcoming"
+def set_state(item, new_state, now_iso) -> dict                   # 사본 + state/state_since/last_updated
+def to_archive_record(item, now_iso) -> dict                      # + archived_at
 ```
 
-#### `statemachine.py` — FSM 상수 (config 아님, 코드 고정)
-| 상수 | 값 | 의미 |
-|---|---|---|
-| `PRELIVE_LEAD_SEC` | 15분 | 최초 wake = `scheduled_start − 15분` |
-| `PRELIVE_TIGHT_SEC` | 3분 | `scheduled_start` 지난 뒤 촘촘 간격 |
-| `PRELIVE_FALLBACK_AFTER_SEC` | 60분 | `scheduled_start + 60분` 경과 → fallback |
-| `FALLBACK_RETRY_SEC` | 60분 | fallback 재시도 간격 |
-| `FALLBACK_MAX_ATTEMPTS` | 6 | 6회 연속 미확인 → canceled, 엔트리 드롭 |
-| `LIVEWATCH_EARLY_SEC` | 10분 | 라이브 시작 후 초기 간격 (구 30분 — 단시간 방송 종료 사각 축소) |
-| `LIVEWATCH_EARLY_WINDOW_SEC` | 60분 | "초기" 구간 (시작 ~ +60분) |
-| `LIVEWATCH_TIGHT_SEC` | 3분 | 라이브 +60분 이후 간격 |
-| `MAX_TASK_HORIZON_SEC` | 696시간 | Cloud Tasks 720h 하드리밋보다 보수적인 롱폴링 상한 |
+### 8.2 `statemachine.py` (순수) — §5
+
+`Tick(next_state, next_check_at, log)` dataclass + `derive(...)`. FSM 규칙·상수는 §5.
+
+### 8.3 `preview_build.py` (순수)
 
 ```python
+def build_preview(channels_cfg, videos, prev_preview, now_iso, *, avatars=None, ytnotif_items=None)
+    -> (new_preview, transitions: list[str], wakes: dict[video_id→iso], gone_items: list[dict])
+def build_archive_appends(prev_archive, gone_items, now_iso) -> (new_archive, changed)
+```
+
+`reconcile.build_schedule` 포크. 흐름:
+1. **채널 블록** — avatar carry-over (baseline 만 `channels_list`, light 는 이전 값).
+2. **videos.list 결과** — video_id 로 prev 아이템 매칭 → 필드 갱신(`info_source` 가 personal/x-relay 면
+   `scheduled_start` 는 안 덮고 `api_start_seen` 만 기록). 신규는 `make_item(state="announced")` →
+   `promote_state`. `live_state=="live"` → state="live"+actual_start. `"none"` && state=="live" → `end`.
+   각 아이템 `statemachine.derive` 적용 → 전이 로그 + `next_state=="none"` 은 `gone_items` 로.
+3. **prev 아이템 중 이번 videos 에 없던 것** —
+   · video_id 有: removed 유예(`STALE_REMOVE_SEC` 6.5h). 유예 중 carry + FSM, 경과 시 removed.
+   · video_id 無 (announced 자리표시): 참여자 채널에 실물 ±4h → supersede + `_carry_collab`.
+     `expires_at` 도달 / `first_seen`+18h(시각 없음) → gone. 아니면 FSM(assumed-live·지각강등).
+4. **ytnotif 머지** — video_id 로 `items` 직접 스캔(ytnotif 는 channel_key 없음). `reminder`/`sub_start` →
+   매칭 아이템 live 승격, `tunein` → scheduled_start 보강. 미매칭+채널미상은 skip
+   (다음 tick 이 videos.list 후보로 흡수. 회원전용 자동카드는 `INGEST_YT_ENABLED` 뒤).
+5. 정렬 후 반환.
+
+### 8.4 `llm.py`
+
+```python
+DEFAULT_MODEL = "openai/gpt-oss-120b"; FALLBACK_MODEL = "llama-3.3-70b-versatile"
+class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, session=None, timeout=20.0):
+    def notice_title(body_no_date_url, *, lang_hint="ja") -> {"title_ja","title_ko"} | None
+    def translate(text_ja) -> str | None
+```
+
+- Groq REST (`https://api.groq.com/openai/v1/chat/completions`). `reasoning_effort="low"`, `temperature=0`.
+  `response_format` 모델별 분기(gpt-oss=json_schema, llama-3.3=json_object).
+- api_key 비면 disabled → 모든 호출 None. 429/5xx → 지수 백오프 3회 → 폴백 모델 1회 → None.
+- 환각 가드: 출력 비었거나 입력 길이 3배 초과 → None (기본선, 배포 후 실측 보강).
+
+### 8.5 `ytnotif.py` (순수)
+
+`parse_yt_notif(nx: dict, now_iso) -> dict | None`. `pde_noti_pkg != com.google.android.youtube` /
+`::SUMMARY::` 태그 / slot_key 11자 아님 / 빈 제목 → None. `chime.thread_id` 접두어로 종류 분기 후
+제목 필드 선택: `TUNEIN`→`android.text`, `REMINDER`→`android.title`, `SUBSCRIPTION_LIVESTREAM_START`→`android.text`.
+제목 앞 `🔴 ` 만 제거(`【…】` 는 유튜브 제목 관용 접두라 보존). `video_id`=slot_key, url/thumbnail 조립.
+`scheduled_start`: TUNEIN → `now+30분`+`time_approx=True`, 그 외 → `now`. 반환 dict: `{video_id, url,
+thumbnail, title, kind(tunein|reminder|sub_start), scheduled_start, time_approx, source:"yt-notif"}`.
+
+### 8.6 `vxtwitter.py`
+
+`fetch_tweet(tweet_id, *, session=None, timeout=8.0, base=cfg.vxtwitter_base) -> dict | None`
+(`GET {base}/i/status/{id}`. 비200·타임아웃·JSON 오류 → None + warning).
+`extract(j) -> {text, media: [url...], urls: [expanded...], yt_video_id: str|None}` —
+`youtube.com/(watch\?v=|live/)` · `youtu.be/` 뒤 11자 추출. 서드파티 무료 서비스 → 실패 시 조용히 skip.
+
+### 8.7 `gh_store.py` — GitHub Contents API
+
+`GitHubStore(token, repo, branch="data", *, session=None, timeout=15.0)`. `read_json(path) -> (data|None, sha|None)`.
+`write_json(path, data, *, prev_sha, message) -> (bool, sha|None)` — 현재 원격 재조회해 내용 동일이면 PUT 안 함;
+`prev_sha` 와 현재 sha 다르면 `ConflictError`(다른 내용 커밋됨). 409/422 → `ConflictError`. 네트워크만 재시도.
+
+### 8.8 `tasks.py` + `oidc.py`
+
+`TaskQueue(*, project, location, queue, target_url, invoker_sa)` — `enqueue_wake(video_id, iso)` (path `/wake`),
+`enqueue_tick(mode, iso)` (path `/tick`). 태스크 이름의 분버킷(epoch//60)으로 dedupe(`AlreadyExists` 무시).
+`oidc.verify_request(headers, *, expected_audience, expected_sa=None)` — Bearer JWT 검증. `ALLOW_UNAUTH=="1"` 이면 통과.
+
+### 8.9 `handlers.py` — `tick(mode)` / `wake(video_id)`
+
+`_run(mode, woken_video_id)` 흐름:
+1. **control 가드**: `is_paused` 면 healthcheck 핑만 + `{"paused": True}` 반환.
+2. `_pv0 = preview.json` 읽기 → 후보 video_id = `_tracked_unresolved_ids(_pv0)`(video_id 있고 state ∈
+   announced~end) ∪ woken ∪ (tick 이면) RSS 전부.
+3. `YouTubeClient` — `channels_list`(baseline 만), `videos_list(sorted(후보))`.
+4. **커밋 루프 (최대 2회, ConflictError 재계산)**:
+   a. `prev_preview` / `prev_archive` + sha 재읽기.
+   b. `new_preview, transitions, wakes, gone_items = build_preview(cfg, videos, prev_preview, now_iso, avatars=avatars)`.
+   c. `admin_state` 읽어 `suppress`/`edit_lock` 반영(차단 url 제외, 락 id prev 유지).
+   d. `_stable_view` 동일하면 volatile 동결 + `generated_at` heartbeat(20분).
+   e. `build_archive_appends` → `preview_archive.json`(변경 시).
+   f. `gh.write_json("preview.json", …, prev_sha=pv_sha)`. `ConflictError` → a 재시도, 2회째 실패 → 예외.
+5. **Cloud Tasks**: `wakes` → `enqueue_wake`. `transitions` 에 `"→end"` 있으면 `enqueue_tick("light", now+20분)`.
+   video_id 없는 announced 예고 시각(지금~+3h) → `_scheduled_wake_times` → `enqueue_tick("light", ss)`.
+6. **LLM 번역 sweep** (tick 만): `_translate_sweep` — `notices.json`/`tweets.json` 의 `needs_tl` 행 재번역.
+7. **Telegram diff**: `notify.diff_events(_pv0.items, new_preview.items, transitions, channels, now)` →
+   레벨 게이팅 후 개별 전송 + `summary`(detail).
+8. 성공 끝 healthcheck GET. 예외 → `notify.error_text` 후 re-raise.
+
+반환 dict: `{mode, woken, candidates, videos, preview_changed, archive_changed, archived,
+preview_items, state_counts, wakes, enqueued, enqueue_errors, translated, quota_used, log}`.
+
+### 8.10 `notify.py`
+
+```python
+class Telegram(token, chat_id, *, session=None, timeout=10.0)   # 비면 disabled
 @dataclass
-class Decision:
-    new_pending: dict
-    enqueue: list[tuple[str, str]]   # [(video_id, schedule_time_iso)]
-    dropped: list[str]
-    log: list[str]
-
-def sync_pending(prev_pending, videos, channel_id_to_key, now_iso, *,
-                 mode: str,                  # "wake" | "sync"
-                 woken_video_id: str | None = None) -> Decision
-```
-`pending.json` 과 Cloud Tasks enqueue 목록만 계산 (schedule/archive 는 `reconcile` 담당). 흐름:
-
-1. **신규 엔트리 감지** (mode 무관): `videos` 중 pending 에 없는 것 —
-   `upcoming`+`scheduled_start` → pre-live 엔트리, `next = max(ss − LEAD, now+60s)`, enqueue.
-   `live` → live-watch 엔트리(`actual_start` 채움), `next = now + EARLY`. 그 외 무시.
-2. **drift refresh**: pre-live 엔트리의 `v.scheduled_start` 가 바뀌고 미래면 → 갱신 + 재예약, `attempts=0`.
-3. **due 처리** (`next_check_at <= now`; `mode=="wake"` 면 `woken_video_id` 는 무조건 포함):
-   - **pre-live**: `none`/누락 → `attempts+=1`, ≥6 이면 drop("canceled"), 아니면 `now+RETRY`.
-     `live` → live-watch 전이, `now+EARLY`. `upcoming` → `now<ss`: `ss` / `<ss+FALLBACK_AFTER`: `now+TIGHT` /
-     그 이후: `now+RETRY`.
-   - **live-watch**: `none`/누락 → drop("ended"), enqueue 없음. `live` → `elapsed<EARLY_WINDOW`: `now+EARLY`,
-     아니면 `now+TIGHT`. `upcoming`(드묾) → pre-live 로 되돌림.
-4. **마무리**: 변경 있으면 `updated_at=now_iso`. enqueue 시각은 `[now+60s, now+696h]` 클램프,
-   살아있는 엔트리 `next_check_at` 도 그 값에 맞춤.
-
-### 8.2 `gh_store.py` — GitHub Contents API (`requests`)
-
-```python
-class GitHubStore:
-    API = "https://api.github.com"
-    def __init__(self, token, repo, branch="data", *, session=None, timeout=15.0)   # token 비면 ValueError
-    def read_json(self, path) -> tuple[dict | None, str | None]                       # 200→(data, sha) / 404→(None,None) / else→RuntimeError
-    def write_json(self, path, data, *, prev_sha, message) -> tuple[bool, str | None]
-class ConflictError(RuntimeError): ...
-```
-- `write_json` 직렬화 = §7. 절차: (1) 현재 원격 재조회, 내용 동일하면 `(False, sha)` — PUT 안 함.
-  (2) `prev_sha` 주어졌는데 현재 sha 와 다르면 → 남이 **다른 내용**을 커밋한 것 → `ConflictError`.
-  (3) 아니면 PUT. 409/422 → `ConflictError`. (4) 네트워크 오류만 재시도, 그 외 상태코드 → RuntimeError.
-  `prev_sha=None` 이면 sha 검사 없이 씀(부트스트랩).
-- **낙관적 동시성**: 예전엔 충돌 시 낡은 payload 를 새 sha 로 재-PUT 해 조용히 덮어써서, 방송 시작
-  시간대에 tick/wake 가 겹치면 pending 전이가 유실됐다. 이제 `ConflictError` → `handlers` 재계산.
-
-### 8.3 `tasks.py` (`google.cloud.tasks_v2`) + `oidc.py` (`google-auth`)
-
-```python
-class TaskQueue:
-    def __init__(self, *, project, location, queue, target_url, invoker_sa, client=None)
-    def enqueue_wake(self, video_id, schedule_time_iso) -> str   # path="/wake", body={"video_id":…}, name=f"wake-{vid}-{분버킷}"
-    def enqueue_tick(self, mode, schedule_time_iso) -> str       # path="/tick", body={"mode":…}, name=f"tick-{mode}-{분버킷}"
-def _build_task(cfg, *, path, body, name_key, schedule_time_iso) -> dict   # 순수. oidc_token: {service_account_email: invoker_sa, audience: target_url}
-```
-- 태스크 이름의 **분 버킷**(schedule_time epoch // 60)으로 dedupe: 같은 이름·같은 분 재시도는
-  `AlreadyExists` 무시, 다른 시각은 새 태스크. gcloud `--args` 값이 `-` 로 시작하면 `--args=...` 로 붙일 것.
-
-```python
-def verify_request(headers, *, expected_audience, expected_sa=None) -> None
-```
-- `Authorization: Bearer <JWT>` 파싱 → `verify_oauth2_token(..., audience=expected_audience)` →
-  `iss` 확인 → `expected_sa` 주어지면 `payload["email"]==expected_sa` 확인. 실패 시 `PermissionError`.
-  `ALLOW_UNAUTH == "1"` 이면 즉시 return(로컬).
-
-### 8.4 `handlers.py` — `tick(mode)` / `wake(video_id)`
-
-공통 흐름:
-1. **control 가드 (맨 앞)**: `control, _ = gh.read_json("control.json")`; `is_paused` 면 healthcheck
-   핑만 하고 `{"paused": True}` 반환. `/wake` 도 동일.
-2. `cfg = load_channels()`; `gh = GitHubStore(...)`; `prev_schedule/pending/archive` + 각 sha 읽기.
-3. 후보 video_id 집합 — `wake`: `{video_id} ∪ pending.keys() ∪ schedule 의 upcoming/live`.
-   `tick`: `∪ fetch_all_rss_video_ids` 전부.
-4. `yt = YouTubeClient(...)`; `avatars = yt.channels_list(...)` **`mode=="baseline"` 일 때만**;
-   `videos = yt.videos_list(sorted(후보))`.
-5. **커밋 루프 (최대 2회, ConflictError 재시도)** — RSS/YouTube 는 한 번만, `videos` 재사용:
-   a. `prev_*` / `*_sha` 를 루프 안에서 **새로** 읽는다.
-   b. `new_schedule, newly_ended = build_schedule(cfg, videos, prev_schedule, now_iso, avatars)`;
-      **(v2.8.1)** `new_schedule = xtweet.apply_overrides(new_schedule, prev_schedule, now_iso)` —
-      트윗이 정한 `scheduled_start` 를 API 재구성이 덮지 않게 (§1-1 최신-정보-우선). reconcile 은
-      수정 금지 모듈이라 여기서 후처리.
-      `_stable_view` 변화 없으면 volatile 필드(`generated_at`/`last_updated`/`concurrent_viewers`)
-      동결 + `generated_at` heartbeat(20분).
-   c. `decision = sync_pending(prev_pending, videos, channel_id_to_key, now_iso,
-      mode=("wake" if wake else "sync"), woken_video_id=…)`.
-   d. `gh.write_json` × 3 (schedule / archive(변경 시) / pending), 각각 위 `*_sha` 를 `prev_sha` 로.
-      `ConflictError` → 1회 a 로 되돌아가 재계산. 2회째 실패 → 예외(스케줄러 재시도).
-6. **Cloud Tasks enqueue**: `decision.enqueue` 전부 `enqueue_wake`. `newly_ended` 있으면
-   `enqueue_tick("light", now + _POST_END_RECHECK_SEC(20분))` **1개**(분버킷 dedupe) — 백투백 다음
-   방송을 ~20분 내에 줍는다. `scheduled` 행이 있으면 `_scheduled_wake_times` 가 `scheduled_start`
-   마다 `light /tick` 1개 예약(§1-1).
-7. **Telegram diff**: 루프 진입 전 스냅샷(`_ps0`)과 `new_schedule` 을 `diff_events` 로 비교(재시도로
-   루프 안 `prev_schedule` 이 바뀌어도 전이 알림 유지). 이벤트 개별 전송 + 조건 충족 시 요약(D).
-8. **성공 끝**: `HEALTHCHECK_URL` 있으면 GET 1발(실패 무시). **예외 경로**: `notify.error_text` 전송 후 re-raise.
-
-반환 dict: `{"mode","woken","candidates","videos","schedule_changed","archive_changed","archived",
-"pending_changed","pending_entries","dropped","enqueue_planned","enqueued","enqueue_errors",
-"quota_used","log"}`.
-
-### 8.5 `app.py` (비공개, OIDC)
-
-```python
-@app.post("/tick")   # oidc.verify_request → handlers.tick(mode="light" 기본)
-@app.post("/wake")   # oidc.verify_request → video_id 필수(없으면 400) → handlers.wake(vid)
-@app.get("/healthz") # "ok", 200
-```
-- 예외 → 500 + `{"error": str(e)}` 로깅. `PermissionError` → 403.
-- `videos.list` 쿼터 실패(RuntimeError)는 500 반환 → Cloud Tasks 큐 기본 재시도.
-
-### 8.6 `notify.py` (v2.1) — Telegram `sendMessage` (`requests`)
-
-```python
-class Telegram:
-    def __init__(self, token, chat_id, *, session=None, timeout=10.0)   # 비면 disabled → send() no-op + warning
-    def send(self, text, *, parse_mode="HTML", silent=False) -> bool     # 실패는 예외 없이 False + warning
-
-@dataclass
-class Event: kind; channel_ko; title; text   # kind: "upcoming"|"live_start"|"live_end"|"fallback"
-
-def diff_events(prev_schedule, new_schedule, newly_ended, sm_log, channels_cfg, now_iso) -> list[Event]
-def summary_text(result, now_iso) -> str    # D(요약) 본문
-def error_text(where, exc) -> str           # F(서버 오류) 본문
-```
-- `diff_events` 순수. **첫 실행 가드**: `prev_schedule.generated_at` 가 None 이거나 prev broadcasts
-  0개면 upcoming(A) 이벤트 생성 안 함(초기 스팸 방지).
-  - A upcoming: new 에 `status=="upcoming"` 인데 prev 에 없음.
-  - B live_start: `upcoming`→`live` 또는 new 에 `live` 로 등장. `lateness = actual_start − scheduled_start`.
-  - C live_end: `newly_ended` 각 레코드. `reason` → 사유 라벨. 길이 = `actual_end − actual_start`.
-  - E fallback: `sm_log` 중 `"fallback "` 로 시작하는 토큰(`statemachine` 이 fallback 진입 시 append).
-- 지각 라벨: `lateness_sec > 300` → `"{n}분 지각"`; `−300..300` → `"정시"`; `< −300` → `"{n}분 일찍"`.
-
-### 8.7 `telegram_app.py` (v2.1) — 공개 webhook 서비스
-
-Flask. 엔트리포인트 `src.backend.telegram_app:app`. 같은 이미지, 배포 시 `--command`/`--args` 로 지정.
-`ALLOW_UNAUTH=1` (OIDC 검증 안 함 — 자체 시크릿 인증. `/tick`·`/wake` 라우트 없음).
-
-```
-POST /telegram   # Telegram webhook
-POST /ingest     # (v2.3) 폰 Automate → X 알림 텍스트 릴레이
-GET  /           # 200 헬스체크
+class Event: kind; channel_ko; title; text   # kind: announced|upcoming|live_start|live_end|demote
+def diff_events(prev_items, new_items, transitions, channels_cfg, now_iso) -> list[Event]
+def allows(level, kind) -> bool                                  # §6 표
+def summary_text(result, now_iso) -> str                        # D(요약)
+def error_text(where, exc) -> str
 ```
 
-**`/telegram`**: (1) `X-Telegram-Bot-Api-Secret-Token == cfg.telegram_webhook_secret` 아니면 200
-무시. (2) `message.chat.id != cfg.telegram_chat_id` → 200 무시. (3) `text` 파싱. (4) 항상 **200**
-반환, 응답은 `sendMessage` 로 별도.
-- `/status` — 라이브·예정 버킷 카운트·대기 wake 수+가장 이른 `next_check_at`·마지막 tick
-  (`generated_at` 상대)·`paused` 상태·`log_level`.
-- `/pause` — `set_paused(True, by="telegram:/pause")` → `write_json`.
-- `/resume` — `set_paused(False)` → write → 메인 `POST {MAIN_SERVICE_URL}/tick {"mode":"light"}` 를
-  OIDC 발급해 호출(heal). 런타임 SA 가 메인서비스 `run.invoker` 필요.
-- `/log [detail|normal|simple]` — `control.json.log_level`. 인자 없으면 현재값.
-- **(v2.5)** `/list [유닛]` — `schedule.json` 방송을 유닛별 idx 로 나열(상태순→시각순).
-  `/del <유닛> <idx>` — 2단계 확인(y/N, 경고 DM) 후 삭제, 확인 대기는 `admin_state.json` `pending_del`
-  (슬롯 1개, TTL 300s).
-  - **(v2.5.1)** `/ingest`(별칭 `/add`) — **2단계**. 무인자로 보내면 `pending_ingest` 슬롯(TTL 180s)
-    + 안내문. 이어서 보낸 텍스트나 첨부 파일(`getFile` 다운로드, UTF-8 · 256KB)을 원문으로 소진 —
-    `aNoneTokyo` 로 취소, `/`명령이면 대기 접고 통과, 180s 초과면 만료 안내. 반영은 `POST /ingest`
-    라우트와 별개 네임스페이스로 같은 파싱·경로 재사용(ECHO/DRY-RUN 무관 항상 실제 반영). 결과 DM 에
-    인식 실패 줄 수(`xrelay.unparsed_lines`) 표기. (인라인 `/ingest <원문>` 은 제거 — `||스포일러||` 마스킹.)
-    - **(v2.8.1+)** @BDP 형식이 아니고 인식 실패 줄도 없으면 **개인 예고 폴백**(`_try_personal_ingest`):
-      본문 YT URL → `videos.list`(quota 1)로 채널 판별 → `xtweet.parse_schedule` +
-      `merge_personal_schedule`. URL 없음/판별 실패면 `pending_member` 슬롯 + `[1~5]` 유닛 되묻기
-      (`_handle_member_followup` 이 응답 소진). 상세 §6-1. `YOUTUBE_API_KEY` Secret 필요.
-  - **(v2.7)** `/notice`(2단계) · `/notice-list`(별칭 `/notices`) · `/notice-del <id|번호>`(별칭 `/ndel`).
-    - **(v2.7.x)** `/notice-edit <id|번호>`(별칭 `/nedit`) — 편집 마법사. `pending_notice_edit` 슬롯
-      (TTL 300s)에 `{nid, step, new}` 저장하고 **제목 → 날짜 → URL** 순으로 한 필드씩 되묻는다.
-      각 단계: 값 입력 → `new` 에 누적 · `aNoneTokyo` → 그 필드 유지 · 다른 `/명령` → 취소하고 통과 ·
-      만료 → 취소. 마지막 단계 후 `title_slug`(제목)·`expires_at`(날짜)·`site`+`anchor_a`(URL)를
-      재계산해 `notices.edit_notice` 로 커밋(+`/undo` 스냅샷 `path=notices.json`).
-  - **(v2.5.2)** `/undo` — **2단계**. `/undo` → 되돌릴 대상 요약(복원/제거 broadcasts + 되돌아갈 KST
-    시각 + 취소되는 커밋 sha) + `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체
-    `target_sha` + `schedule.json` sha 일치) 통과해야 `prev_content` 로 복원. `n`/60s/기타입력 → 취소.
-  - y/N 가로채기는 `pending_del` → `pending_undo` 순으로 분기. 상세: §6-1, `docs/plan/v2_5_admin_commands.md`.
+`diff_events` 순수. 첫실행 가드: `prev_items` None/빈 리스트면 `announced` 이벤트 생성 안 함. `id`(또는
+video_id)로 인덱싱. `announced`(new 등장) / `upcoming`(announced→upcoming) / `live_start`(*→live,
+lateness=actual_start−scheduled_start) / `live_end`(live→end) / `demote`(`transitions` 에 `watching-demote` 토큰).
 
-**`/ingest`** (v2.3 X 릴레이): `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`. 본문 form/JSON:
-`text`(필수), `title`(선택 — `nx["android.title"]` 게시자 표시 이름), `template`(선택 —
-`nx["android.template"]`), `tag`(선택 — `nx["pde_noti_tag"]`). `tag` → `_tweet_url_from_tag()`
-가 `https://x.com/i/status/<id>`(작성자 무관) 로 변환, DM 링크·중복제거 키로 사용.
-- **(v2.8) `android.title` 라우팅** — 본문 파싱 직후, `_maybe_auto_notice` 앞에서
-  `xtweet.route_by_title(title, channels_cfg, test_titles=INGEST_TEST_TITLES)`. 개인 5인이면
-  `_maybe_personal_tweet`(→ `tweets.json`, 계약 I) 처리 후 즉시 200 — 이하 로직 안 탐. 테스트
-  부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)이면 `force_echo=True` 로 ECHO 게이트 강제 통과
-  (헬스체크 — 외부 백엔드 생존 확인용, 상시 유지). 공식·미매칭·빈 title 은 아래 기존 흐름 그대로.
-  전체 그림: `docs/INGEST_FLOW.md`.
-- 폰 Automate 빌드가 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘리므로 — `text` 값이
-  비고 (`text`/`title`/`template`/`tag` 외) 폼 키가 딱 하나 + 그 값도 비면 **그 키 이름을 원문으로
-  복구**한다 (`# ponytail:` 표시. 현재 폰 빌드는 `text=<값>` 을 제대로 보내 사실상 dead code).
-- 원본 바디는 `request.form` 접근 **전에** `request.get_data(cache=True, parse_form_data=False)`
-  로 캐시한다 — Werkzeug 는 form 파싱 시 입력 스트림을 소비하고 `get_data()` 캐시를 안 채우므로,
-  그 뒤에 부르면 form-urlencoded 요청에서 빈 문자열이 된다(ECHO DM 의 raw body 칸이 늘 비어 보이던 버그).
-- `INGEST_ECHO=1`: 파싱·저장 안 함. 받은 텍스트 DM 회신(raw body 전문 — 4096자 초과 시 3500자 청크
-  분할) + `ingest ECHO: len=.. blen=.. tail_ok=..` 로그.
-  `xrelay.looks_relayable`(본문에 `配信スケジュール` 또는 `出演情報`) 이면 `ingest_queue.json` 에 적재.
-- `INGEST_DRY_RUN=1`: 파싱은 하고 저장 안 함. 원문 + 파싱 결과 + 인식 실패 줄 수 DM.
-- 실배포(`INGEST_ECHO=0`·`INGEST_DRY_RUN=0`): `control.json` `paused` 확인 → `_ingest_queue_drain`
-  이 큐 원문을 `received_at` 순서로 `xrelay.parse` → `merge_scheduled` → `schedule.json` 커밋,
-  큐 비움. 이번 요청 본문도 파싱·머지. 결과 DM(계약 G `xrelay.summary_text`).
-- `xrelay.py` (순수): `parse(text, now_iso)` — 일일 스케줄(`parse_bdp_schedule`) 우선, 없으면
-  `parse_appearance`(`出演情報`). `looks_relayable`, `merge_scheduled`(replace-by-date), `summary_text`,
-  `unparsed_lines(text)` — `配信スケジュール` 헤더가 있는 트윗에서 시각/아이콘/`メン限` 이 있어
-  엔트리처럼 보이는데 이름·시각 누락으로 행을 못 만든 줄 목록(DM "인식 실패 N줄" 표기용).
-  `APPEARANCE_MARK_RE = re.compile(r"出演情報")` — 실측 확인된 유일 마커. 변형은 실물 트윗에서 본 뒤 추가.
+### 8.11 `telegram_app.py` — 공개 webhook 서비스
 
-### 8.8 `config.py` — 환경변수 → Config
+Flask. 엔트리포인트 `src.backend.telegram_app:app`. `ALLOW_UNAUTH=1`. 라우트 `POST /telegram` · `POST /ingest` · `GET /`.
 
-`load_config()` 는 누락돼도 통과(기능만 off, 로컬 예외). 목록:
-```
-GITHUB_TOKEN, GITHUB_REPO, DATA_BRANCH(기본 "data"), YOUTUBE_API_KEY,
-GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA, ALLOW_UNAUTH(기본 "")
-TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET(telegram_app 만),
-HEALTHCHECK_URL(메인 tick 만), MAIN_SERVICE_URL(telegram_app /resume), INGEST_SECRET,
-INGEST_ECHO, INGEST_DRY_RUN, INGEST_TEST_TITLES(v2.8 — 기본 "jehy")
-```
+**`/telegram`**: `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 검증. 항상 **200**, 응답은 `sendMessage` 별도.
+followup 소진 순서: del/undo (y/N/terminate) → `_handle_ingest_followup` → `_handle_member_followup` →
+`_handle_notice_followup` → `_handle_notice_edit_followup` → `_handle_op_followup`(pending_op) → 명령 디스패치.
+
+**{cmd}×{contents} 격자** — `_split_contents(arg)`: 첫 토큰이 `preview|notice|tweet` 면 그것, 아니면
+`preview`(+ 전체를 sub-arg. `/list arale` 하위호환).
+
+| 명령 | preview | notice | tweet |
+|---|---|---|---|
+| `/list <c> [rest]` | 5인 살아있는 아이템(state announced~end) 유닛별 idx | `/notice-list` | 배지 떠 있는 유닛 트윗 |
+| `/ingest <c>` | `pending_ingest` 슬롯 → 원문/파일 → `xrelay.parse` → `merge_announced` | `pending_notice` → `xnotice`+`notices.merge_notice` | `pending_op` → 유닛→원문 → `_maybe_personal_tweet` |
+| `/edit <c>` | `pending_op` 마법사 (유닛→idx→필드/값 반복→`done`, `edit_lock`, 답한 필드만 patch, tick 충돌 알림) | `/notice-edit` 재사용 (제목→날짜→URL) | 유닛→원문 → `merge_tweet` 교체 |
+| `/del <c> …` | `<유닛> <idx>` → 확인 `(terminate/y/N)`. terminate = 삭제 + `add_suppress(url, 12h)` | `/notice-del <id\|번호>` | `<유닛>` → 슬롯 제거 |
+| `/undo` | 직전 mutating 명령 1건(계통 무관 단일 슬롯). 2단계 확인 + sha 2중 가드. `undo.path` 로 3파일 복원 |
+| `/translate <notice\|tweet>` | 미번역 행 전부 `*_ko` 채움(원문 보존). `GROQ_API_KEY` 필요. 수동 명령 — 자동 sweep 과 별개 |
+
+일반: `/status`(v3 양식 — preview 6상태 카운트·notice·tweet·마지막 sync·LLM 큐=`needs_tl` 행 수) ·
+`/pause` · `/resume`(paused=false + 메인 `/tick` OIDC 호출) · `/log [detail|normal|simple]`.
+별칭 유지: `/notice` `/notice-list`(`/notices`) `/notice-del`(`/ndel`) `/notice-edit`(`/nedit`) `/add`.
+
+**`/ingest`** (X 릴레이): `X-Ingest-Secret` 헤더. 본문 form/JSON `text`(필수)/`title`/`template`/`tag`.
+`xtweet.route_by_title(title)` → 개인 5인이면 `_maybe_personal_tweet`(→ `tweets.json` + 예고면 preview
+승격) 후 즉시 200. 테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)은 `force_echo`. 공식·미매칭은
+`_maybe_auto_notice` → `xrelay.parse` → `merge_announced` → `preview.json`. `INGEST_ECHO`/`INGEST_DRY_RUN`
+이면 저장 안 하고 회신 + 스케줄 트윗은 `ingest_queue.json` 버퍼(실배포 전환 시 첫 `/ingest` 에서 drain).
+
+### 8.12 `config.py`
+
+`load_config()` — `ALLOW_UNAUTH != "1"` 이면 `_REQUIRED`(GITHUB_TOKEN, GITHUB_REPO, YOUTUBE_API_KEY,
+GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
+`DATA_BRANCH`(기본 "data"), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`,
+`HEALTHCHECK_URL`, `MAIN_SERVICE_URL`, `INGEST_SECRET`, `INGEST_ECHO`, `INGEST_DRY_RUN`,
+`INGEST_TEST_TITLES`, **`GROQ_API_KEY`**, **`GROQ_MODEL`**(기본 `openai/gpt-oss-120b`),
+**`GROQ_MODEL_FALLBACK`**(기본 `llama-3.3-70b-versatile`), **`VXTWITTER_BASE`**(기본
+`https://api.vxtwitter.com`), **`INGEST_YT_ENABLED`**(기본 `""` — `"1"` 이어야 ytnotif 라우팅).
+
+### 8.13 `app.py` (비공개, OIDC)
+
+`@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
+`@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`. `@app.get("/","/healthz")` → "ok".
+예외 → 500 + `notify.error_text` DM. `PermissionError` → 403.
 
 ---
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 
-- **index.html**: `<head>` 에 3개 css, `<script type="module" src="js/main.js">`. body 는
-  `<main id="board">` + `<footer id="foot">` 빈 컨테이너. `lang="ko"`, viewport 메타.
-- **css/reset.css**: 최소 리셋. **css/layout.css**: `#board` 데스크톱(≥1100px)
-  `grid-template-columns:repeat(5,1fr)`, `<1100px` `grid-auto-flow:column` + `overflow-x:auto`(가로 스크롤).
-  **css/card.css**: mobile `@media` 는 파일 끝. PC 카드 고정 세로 `--card-h`(썸네일 132px),
-  모바일 가로 레이아웃. `.card__title` PC 1줄 넘치면 `applyMarquees()` 무한 흐름.
-- **js/config.js** — 상수만: `DATA_URL`(raw githubusercontent data/schedule.json), `POLL_MS=75000`,
-  `COUNTDOWN_TICK_MS=60000`, `FETCH_TIMEOUT_MS=8000`, `FALLBACK_CHANNEL_ORDER`, `FALLBACK_CHANNELS`.
-- **js/time.js** — 계약 D. `formatKST(iso)`, `relativeLabel(iso, nowMs=Date.now())`. 순수, DOM 접근 없음.
-- **js/api.js** — `fetchSchedule(url)`: AbortController + `FETCH_TIMEOUT_MS`, `cache:"no-store"`.
-  성공 `{ok:true, data}` / 실패 `{ok:false, error:Error}`.
-- **js/render.js** — `renderBoard(boardEl, schedule, nowMs)` (계약 C 전체 재구성),
-  `renderFooter(footEl, schedule, {stale})`, `updateCountdowns(boardEl, nowMs)` (`.card__rel` 텍스트만).
-  `channel_key` 로 broadcasts 그룹핑, 알 수 없는 key 무시.
-- **js/main.js** — `poll()`: `fetchSchedule` 성공 시 `renderBoard`+`renderFooter{stale:false}`,
-  실패 시 마지막 데이터 유지 + `{stale:true}`. `DOMContentLoaded` → `poll()` + `setInterval(poll, POLL_MS)`
-  + `setInterval(() => updateCountdowns(board), COUNTDOWN_TICK_MS)`.
-- **(v2.7) js/notices.js + css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 소식 티커.
-- **(v2.8) js/tweets.js + css/tweets.css** — `TWEETS_URL`(계약 I) 75초 폴링. 각 유닛 아바타
-  우상단에 편지 배지(`renderBoard` 직후 `reapplyTweets` 로 재적용 — 보드가 배지를 지우므로).
-  PC 호버=말풍선 펼침·클릭=고정, 모바일 탭=상단 토스트+백드롭. 배경색은 유닛 `--lane-color`
-  재사용, 글자색은 대비로 자동. 읽음 상태는 뷰어별 `localStorage`(`mew:twread`). 만료·404 면 안 뜸.
+- **index.html**: `<head>` 에 5개 css, `<script type="module" src="js/main.js">`. body 는 `#notice` + `#board` + `#foot`.
+- **css/**: `reset` · `layout`(`#board` ≥1100px `grid-template-columns:repeat(5,1fr)`, <1100px 가로 스크롤) ·
+  `card`(6상태 클래스 §3, mobile @media 파일 끝) · `notices` · `tweets`.
+- **js/config.js** — `PREVIEW_URL`(raw githubusercontent data/preview.json), `NOTICES_URL`, `TWEETS_URL`,
+  `POLL_MS=75000`, `COUNTDOWN_TICK_MS=60000`, `FETCH_TIMEOUT_MS=8000`, `FALLBACK_CHANNEL_ORDER`, `FALLBACK_CHANNELS`.
+- **js/time.js** — 계약 D. 순수, DOM 접근 없음. selfcheck: `time.selfcheck.mjs`.
+- **js/api.js** — `fetchPreview(url)`: AbortController + `FETCH_TIMEOUT_MS`, `cache:"no-store"`. `{ok,data|error}`.
+- **js/render.js** — `renderBoard(boardEl, preview, nowMs)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시),
+  `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
+- **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
+  마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+- **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 티커. `title_ko` 있으면
+  번역 표시, 제목 위 길게눌러(0.5s) 원문 토글(`localStorage` `mew:ntlang`).
+- **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 편지 배지. 말풍선(PC)·토스트
+  (모바일)에 `text_ko` 있으면 "원문"/"번역" 토글 버튼(`localStorage` `mew:tllang`). 만료·404 면 안 뜸.
 
 ---
 
-## 10. Telegram 모니터링·제어 (v2.1) — 결정 사항
+## 10. Telegram 모니터링·제어 — 결정 사항
 
-- **결정 1 — 인바운드는 별도 공개 서비스**: Telegram webhook 은 OIDC 를 못 붙이므로 공개
-  엔드포인트 필요. 메인 `mewtype-backend` 를 공개로 바꾸는 대신 같은 이미지를 다른 엔트리포인트로
-  띄운 `mewtype-telegram`(公開). 메인 보안 태세(`--no-allow-unauthenticated` + OIDC) 무변경.
-  인증 = `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 허용목록. 아웃바운드 알림(A~F)은 메인이 직접.
-- **결정 2 — pause = 완전 중단 + resume 시 full heal**: `paused` 동안 `/tick` 은 healthcheck 핑만,
-  `/wake` 는 200 즉시 반환(체인 휴면). `/resume` 은 `paused=false` 쓰고 곧바로 `tick("light")` 1회 —
-  밀린 `next_check_at <= now` 엔트리가 재처리·재enqueue 되어 체인 복구.
-- **결정 3 — tick 요약(D)은 변경 있을 때만**: `schedule_changed or newly_ended or dropped or
-  enqueue_errors` 중 하나라도. A/B/C/E 는 항상 개별 전송.
-- **결정 4 — 다운 감지 = healthchecks.io**: 메인 `/tick` 이 성공 끝에 `HEALTHCHECK_URL` GET 1발.
-  grace(예: 3h30m) 초과 시 Telegram 알림. 스케줄러 멈춤 / Cloud Run 사망 둘 다 포착.
-
-메시지 포맷은 한국어 HTML parse_mode (`docs/old/IMPLEMENTATION_v2.1.md` §4 예시 참고).
+- **인바운드는 별도 공개 서비스** `mewtype-telegram`(같은 이미지, 다른 엔트리포인트). 인증 =
+  `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 허용목록. 아웃바운드 알림은 메인이 직접.
+- **pause = 완전 중단 + resume 시 full heal**: `/resume` 이 `paused=false` 쓰고 곧바로 메인 `tick("light")` 1회.
+- **tick 요약(D)은 변경 있을 때만**. `announced/upcoming/live_start/live_end/demote` 는 항상 개별 전송(레벨 게이팅).
+- **다운 감지 = healthchecks.io**: 메인 `/tick` 성공 끝에 `HEALTHCHECK_URL` GET. grace 초과 시 알림.
+- 메시지 포맷은 한국어 HTML parse_mode. 명령 상세: `docs/plan/v3_telegram_controller.md`.
 
 ---
 
-## 11. 사각지대 보정 패치
+## 11. 사각지대 보정
 
-방송 패턴 실측(`ref/broadcast-patterns.md`)으로 드러난 3건. 상세: `docs/SCHEDULE.md` §1.1 / §5.
+방송 패턴 실측(`ref/broadcast-patterns.md`)으로 드러난 케이스. 상세: `docs/SCHEDULE.md`.
 
-| # | 사각지대 | 보정 | 파일 |
+| # | 사각지대 | 보정 | 위치 |
 |---|---|---|---|
-| 1 | tick/wake 동시 실행 시 `write_json` 이 낡은 payload 로 조용히 덮어써 pending 전이 유실 | `ConflictError` + `handlers._run` 1회 재계산·재시도 (RSS/YT 재조회 없음) | `gh_store.py`, `handlers.py` |
-| 2 | `videos.list` 일시 누락·"공개→회원전용" 전환을 즉시 `removed` archive → 오탐 잔류 | `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 유예 후 이관 | `reconcile.py` |
-| 3 | 일반 방송 종료 직후 시작하는 짧은 다음 방송을 3h tick 간격에 통째로 놓침 | 종료 감지 시 `now+20분` 후속 `light` tick 1개 예약(분버킷 dedupe) | `tasks.py`, `handlers.py` |
+| 1 | tick/wake 동시 실행 시 낡은 payload 로 덮어써 전이 유실 | `ConflictError` + 1회 재계산 재시도 | `gh_store.py`, `handlers.py` |
+| 2 | `videos.list` 일시 누락·"공개→회원전용" 전환을 즉시 removed 처리 | `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 유예 | `preview_build.py` |
+| 3 | 방송 종료 직후 시작하는 짧은 다음 방송을 3h tick 간격에 놓침 | `→end` 전이 시 `now+20분` 후속 `light` tick 1개(분버킷 dedupe) | `handlers.py` |
+| 4 | video_id 못 얻은 채 예정 시각 지난 announced/upcoming | `assumed_live` + `now − ss ≥ 90분` → `none` (FSM) | `statemachine.py` |
 
-**커버 못 하는 것**: 회원 전용 방송은 RSS·`search.list` 어디에도 안 떠서 발견 자체가 불가 —
-#3 재확인으로도 못 잡는다. 공개 방송의 백투백/재시작만 커버(구조적 한계, 별도 수집 경로 필요).
+**커버 못 하는 것**: 회원 전용 방송은 RSS·`search.list` 에 안 떠서 발견 불가 — `INGEST_YT_ENABLED` +
+업스트림 YouTube 알림 중계가 유일한 경로(트리거 조건 미충족 — `docs/plan/v3_draft.md`).
 
 ---
 
 ## 12. 인프라 / 배포
 
 `requirements.txt`: `requests>=2.31`, `flask>=3.0`, `gunicorn>=21`, `google-cloud-tasks>=2.16`,
-`google-auth>=2.28`.
+`google-auth>=2.28`. (Groq·vxtwitter 는 `requests` 재사용 — 추가 의존 없음.)
 
-`Dockerfile` (레포 루트): `python:3.12-slim` + `pip install -r src/backend/requirements.txt` +
-`COPY src config`. `CMD` 는 `gunicorn ... src.backend.app:app` (메인). `mewtype-telegram` 은 배포 시
-`--command=gunicorn --args=...,src.backend.telegram_app:app` 로 엔트리포인트만 교체.
+`Dockerfile` (레포 루트): `python:3.12-slim` + `pip install -r src/backend/requirements.txt` + `COPY src config`.
+`CMD` = `gunicorn ... src.backend.app:app`. `mewtype-telegram` 은 `--command=gunicorn
+--args=...,src.backend.telegram_app:app` 로 엔트리포인트만 교체.
 
-`deploy/` (모든 값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
-- `setup.sh` — API 활성화, SA 2개(`RUNTIME_SA`/`INVOKER_SA`), IAM(`cloudtasks.enqueuer`,
-  `serviceAccountUser` on INVOKER_SA, `secretmanager.secretAccessor`), Cloud Tasks 큐, 시크릿
-  (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`). 멱등.
-- `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated
-  --service-account RUNTIME_SA` + secrets/env. 배포 후 `SERVICE_URL` env 재설정, `INVOKER_SA` 에
-  `run.invoker` 부여.
-- `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo, `{"mode":"baseline"}`) /
-  `mewtype-light`(`0 */3 * * *` Etc/UTC, `{"mode":"light"}`). 둘 다 OIDC(`INVOKER_SA`, audience=URL).
-- `deploy_telegram.sh` — 같은 소스 + `--command=gunicorn --args=...,src.backend.telegram_app:app`
-  `--allow-unauthenticated --service-account INVOKER_SA` `ALLOW_UNAUTH=1`. `INVOKER_SA` 에 메인서비스
-  `run.invoker` 재확인(`/resume` heal 용).
-- `telegram_webhook.sh` — `setWebhook` (`url=.../telegram`, `secret_token`, `allowed_updates=["message"]`).
+`deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
+- `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**). 멱등.
+- `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
+  + secrets/env. `GROQ_API_KEY` 는 Secret 이 있을 때만 마운트. 배포 후 `SERVICE_URL` env 재설정.
+- `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`0 */3 * * *` Etc/UTC). OIDC.
+- `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
+  `ALLOW_UNAUTH=1`. `GROQ_API_KEY`(조건부) + `INGEST_YT_ENABLED` env.
+- `telegram_webhook.sh` — `setWebhook`.
 
-`.github/workflows/collect.yml` — `on.schedule` 삭제됨, `workflow_dispatch` 만. 수동 break-glass
-전용(pending.json 갱신 안 함). `date -u +%H` 산술 시 `$(( 10#$H ... ))` 필수(8진수 파싱 회피).
-
-**Cloud Run/Scheduler/Tasks 는 같은 리전**(`asia-northeast1`). OIDC audience = 서비스 `status.url`
-(배포마다 `SERVICE_URL` env 재설정). `mewtype-telegram` 은 `INVOKER_SA` 로 실행해야 `/resume` 의 메인
-`/tick` 호출이 통과(메인 `oidc.verify_request` 가 caller email 검사).
-
-healthchecks.io: 운영자가 project 1개 + check(period 3h, grace 40m) 생성 → ping URL 을
-`HEALTHCHECK_URL` 로. Integrations 에서 Telegram 연결.
+**Cloud Run/Scheduler/Tasks 는 같은 리전**(`asia-northeast1`). OIDC audience = 서비스 `status.url`.
+`mewtype-telegram` 은 `INVOKER_SA` 로 실행해야 `/resume` 의 메인 `/tick` 호출이 통과.
+`--concurrency=1 --max-instances=1` 로 `data` 브랜치 쓰기 직렬화.
 
 ---
 
@@ -911,4 +634,6 @@ healthchecks.io: 운영자가 project 1개 + check(period 3h, grace 40m) 생성 
   }
 }
 ```
-`channel_url` 은 코드에서 `https://www.youtube.com/@{handle}` 로 파생. **채널 추가/변경은 이 파일 한 곳만.**
+
++ 각 채널 `x_names[]` (트윗 표시명 매칭용, `xtweet.route_by_title`). `channel_url` 은
+`https://www.youtube.com/@{handle}` 로 코드 파생. **채널 추가/변경은 이 파일 한 곳만.**

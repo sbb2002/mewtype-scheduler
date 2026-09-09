@@ -1,8 +1,8 @@
-import { fetchSchedule } from "./api.js";
+import { fetchPreview } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
 import { renderNotices } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
-import { DATA_URL, NOTICES_URL, TWEETS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
+import { PREVIEW_URL, NOTICES_URL, TWEETS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
 const foot = document.getElementById("foot");
@@ -19,7 +19,7 @@ function paintBoard() {
 
 /** (v2.8) 개인 트윗 폴링 — 스케줄과 독립. 404/오류면 배지 안 뜬다. */
 async function pollTweets() {
-  const r = await fetchSchedule(TWEETS_URL);
+  const r = await fetchPreview(TWEETS_URL);
   try {
     renderTweets(board, r.ok ? r.data : null);
   } catch (e) {
@@ -29,7 +29,7 @@ async function pollTweets() {
 
 /** 소식 티커 폴링 — 스케줄과 독립. 404/오류면 티커를 그냥 숨긴 채 둔다. */
 async function pollNotices() {
-  const r = await fetchSchedule(NOTICES_URL);
+  const r = await fetchPreview(NOTICES_URL);
   try {
     renderNotices(notice, r.ok ? r.data : null);
   } catch (e) {
@@ -38,7 +38,7 @@ async function pollNotices() {
 }
 
 async function poll() {
-  const result = await fetchSchedule(DATA_URL);
+  const result = await fetchPreview(PREVIEW_URL);
 
   if (result.ok) {
     lastSchedule = result.data;
