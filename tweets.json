@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-09T16:04:07Z",
+  "generated_at": "2026-09-09T16:49:21Z",
   "tweets": {
     "arale": {
       "channel_key": "arale",
@@ -10,6 +10,16 @@
       "text": "明日は朝活6:30！☀🌱\n#アニメゆめみた 最終話の朝だ……。",
       "text_ko": "내일은 아침 활동 6시 30분! ☀🌱\n#아니메유메미타 마지막 회의 아침이다…….",
       "url": null
+    },
+    "nonoka": {
+      "channel_key": "nonoka",
+      "expires_at": "2026-09-10T16:49:21Z",
+      "handle": "nonoka_yumemita",
+      "id": "2097729065151263061",
+      "received_at": "2026-09-09T16:49:21Z",
+      "text": "おやつみ🥰",
+      "text_ko": null,
+      "url": "https://x.com/i/status/2097729065151263061"
     }
   }
 }
