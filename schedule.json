@@ -1,11 +1,24 @@
 {
   "broadcasts": [
     {
+      "actual_start": "2026-09-09T13:03:39Z",
+      "channel_key": "yuno",
+      "concurrent_viewers": 1366,
+      "first_seen": "2026-09-09T13:56:09Z",
+      "last_updated": "2026-09-09T13:56:09Z",
+      "scheduled_start": "2026-09-09T13:03:14Z",
+      "status": "live",
+      "thumbnail": "https://i.ytimg.com/vi/JT6pcfKMIfk/maxresdefault_live.jpg",
+      "title": "【 #歌枠 】こんにちは✋【 #千石ユノ / #バンドリ 】 #Shorts  #Vtuber",
+      "url": "https://www.youtube.com/watch?v=JT6pcfKMIfk",
+      "video_id": "JT6pcfKMIfk"
+    },
+    {
       "actual_start": null,
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:36:00Z",
+      "last_updated": "2026-09-09T13:56:09Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -18,7 +31,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:36:00Z",
+      "last_updated": "2026-09-09T13:56:09Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -31,7 +44,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:36:00Z",
+      "last_updated": "2026-09-09T13:56:09Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -44,34 +57,13 @@
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:36:00Z",
+      "last_updated": "2026-09-09T13:56:09Z",
       "scheduled_start": "2028-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
       "title": "※ののらーしゅうかいかいじょう",
       "url": "https://www.youtube.com/watch?v=2Q5A9SWgHtA",
       "video_id": "2Q5A9SWgHtA"
-    },
-    {
-      "assumed_live": true,
-      "channel_key": "yuno",
-      "collab_with": [],
-      "expires_at": "2026-09-09T16:00:00Z",
-      "first_seen": "2026-09-09T12:18:49Z",
-      "icon": "🎤",
-      "kind": "song",
-      "last_updated": "2026-09-09T12:18:49Z",
-      "members_only": false,
-      "sched_id": "sched:yuno:2026-09-09T13:00:00Z",
-      "scheduled_start": "2026-09-09T13:00:00Z",
-      "source": "bdp_schedule",
-      "source_at": "2026-09-09T12:18:49Z",
-      "start_approx": false,
-      "status": "scheduled",
-      "thumbnail": null,
-      "title": null,
-      "url": null,
-      "video_id": null
     },
     {
       "assumed_live": false,
@@ -180,5 +172,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-09T13:36:00Z"
+  "generated_at": "2026-09-09T13:56:09Z"
 }
