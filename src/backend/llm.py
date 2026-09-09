@@ -18,6 +18,24 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 FALLBACK_MODEL = "openai/gpt-oss-20b"
 
 
+# Groq structured outputs (strict) — gpt-oss-120b/20b·qwen3.8-27b 지원.
+# strict 규칙: 모든 필드 required, additionalProperties:false.
+# https://console.groq.com/docs/structured-outputs
+_NOTICE_TITLE_SCHEMA = {
+    "name": "notice_title",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title_ja": {"type": "string"},
+            "title_ko": {"type": "string"},
+        },
+        "required": ["title_ja", "title_ko"],
+        "additionalProperties": False,
+    },
+}
+
+
 def _strip_json_fence(text: str) -> str:
     """```json ... ``` 펜스나 앞뒤 잡텍스트를 벗겨 JSON 본체만 남긴다."""
     t = (text or "").strip()
@@ -83,12 +101,14 @@ class LLMClient:
             f'{{"title_ja": "<일본어>", "title_ko": "<한국어>"}}'
         )
 
-        response = self._call_groq(self.model, prompt)
+        response = self._call_groq(self.model, prompt, json_schema=_NOTICE_TITLE_SCHEMA)
         if response is None:
             logger.warning(
                 f"notice_title: 메인 모델 실패, fallback 시도"
             )
-            response = self._call_groq(self.fallback, prompt)
+            response = self._call_groq(
+                self.fallback, prompt, json_schema=_NOTICE_TITLE_SCHEMA
+            )
 
         if response is None:
             logger.warning("notice_title: 폴백도 실패")
@@ -151,7 +171,9 @@ class LLMClient:
 
         return response.strip()
 
-    def _call_groq(self, model: str, prompt: str) -> str | None:
+    def _call_groq(
+        self, model: str, prompt: str, *, json_schema: "dict | None" = None
+    ) -> str | None:
         """
         Groq API 호출 (지수 백오프 3회).
 
@@ -168,15 +190,19 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
-        # response_format 은 안 보낸다 — Groq gpt-oss 는 json_object 를 거부하고
-        # json_schema 는 스키마 객체를 요구한다. 프롬프트의 "JSON 만 출력" 지시 +
-        # notice_title 의 방어적 파싱(펜스 제거 후 json.loads)으로 충분.
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
             "reasoning_effort": "low",
         }
+        # 구조화 출력이 필요한 호출(notice_title)만 json_schema strict 를 붙인다.
+        # translate 는 자유텍스트라 안 붙임(json_object 는 gpt-oss 가 거부하므로 안 씀).
+        if json_schema is not None:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": json_schema,
+            }
 
         # ponytail: 지수 백오프 3회 (1s/2s/4s)
         delays = [1.0, 2.0, 4.0]
@@ -444,12 +470,16 @@ if __name__ == "__main__":
     assert result is None, "빈 응답 시 None 기대"
     print("✓ 환각 가드(빈 응답) 발동 → None 반환")
 
-    # ──── 시나리오 8: response_format 미전송 + 펜스 제거 파싱 ────
-    print("\n[시나리오 8] response_format 미전송 + JSON 펜스 제거")
+    # ──── 시나리오 8: json_schema strict 조건부 전송 + 펜스 제거 파싱 ────
+    print("\n[시나리오 8] json_schema strict (notice_title만) + JSON 펜스 제거")
     print("-" * 70)
     assert _strip_json_fence('```json\n{"a":1}\n```') == '{"a":1}'
     assert _strip_json_fence('설명\n{"title_ja":"あ","title_ko":"아"} 끝') == '{"title_ja":"あ","title_ko":"아"}'
     print("✓ _strip_json_fence: 펜스·잡텍스트 제거")
+    assert _NOTICE_TITLE_SCHEMA["strict"] is True
+    assert _NOTICE_TITLE_SCHEMA["schema"]["additionalProperties"] is False
+    assert set(_NOTICE_TITLE_SCHEMA["schema"]["required"]) == {"title_ja", "title_ko"}
+    print("✓ _NOTICE_TITLE_SCHEMA: strict 규칙 준수")
 
     class PayloadCapturingSession:
         def __init__(self):
@@ -478,10 +508,14 @@ if __name__ == "__main__":
 
     session_payload = PayloadCapturingSession()
     llm_payload = LLMClient("test-key", session=session_payload)
+    # translate 경로: json_schema 안 붙음
     llm_payload._call_groq(DEFAULT_MODEL, "test")
-    assert "response_format" not in session_payload.last_payload, "response_format 안 보내야 함"
-    assert session_payload.last_payload["model"] == DEFAULT_MODEL
-    print("✓ response_format 미전송")
+    assert "response_format" not in session_payload.last_payload, "translate 는 response_format 없음"
+    # notice_title 경로: json_schema strict 붙음
+    llm_payload._call_groq(DEFAULT_MODEL, "test", json_schema=_NOTICE_TITLE_SCHEMA)
+    rf = session_payload.last_payload["response_format"]
+    assert rf["type"] == "json_schema" and rf["json_schema"]["strict"] is True
+    print("✓ json_schema strict 는 notice_title 경로에만")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 8개 스모크 테스트 통과")

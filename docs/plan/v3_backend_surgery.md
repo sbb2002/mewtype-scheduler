@@ -142,10 +142,12 @@
   계정에서 404, 계정에 Llama 챗 모델 없음). 같은 계열이라 프롬프트·파싱 그대로, 작고 빠름.
   계정 가용 챗 모델: `gpt-oss-120b/20b`, `qwen3.6-27b`/`qwen3.8-27b`, `groq/compound(-mini)`, `allam-2-7b`.
 - **preview 모델 금지** — Groq preview 는 예고 없이 내려가 파이프라인이 깨진다. 위 목록만 사용.
-- **호출 형태**: notice 는 제목추출 + 번역을 **JSON 1회 호출**로 (`{"title_ja","title_ko",...}`).
-  **`response_format` 는 안 보낸다** (2026-09-10 정정 — Groq gpt-oss 가 `json_object` 를 거부,
-  `json_schema` 는 스키마 객체 요구). 프롬프트 "JSON 만 출력" + `_strip_json_fence` 후 `json.loads`
-  방어 파싱으로 처리. `translate()` 는 자유텍스트라 애초에 무관.
+- **호출 형태**: notice 는 제목추출 + 번역을 **JSON 1회 호출**로 (`{"title_ja","title_ko"}`).
+  `response_format` = **`json_schema` strict** (`_NOTICE_TITLE_SCHEMA`, 2026-09-10). gpt-oss-120b/20b·
+  qwen3.8-27b 가 constrained decoding 으로 스키마 준수 보장 → 파싱 실패 클래스 자체가 사라짐.
+  strict 규칙: 전 필드 `required` + `additionalProperties:false`. `_strip_json_fence` 는 방어용으로만 잔존.
+  (`json_object` 타입은 gpt-oss 가 거부하므로 안 씀.) `translate()` 는 자유텍스트라 `response_format` 없음.
+  참고: <https://console.groq.com/docs/structured-outputs>
 - gpt-oss 는 reasoning 모델 → 이 난이도엔 `reasoning_effort:"low"` 고정(지연·토큰 절감), 번역이 아쉬우면 `medium`.
 - **무료티어**: notice·개인트윗은 하루 수 건이라 RPM/RPD 한도에 근처도 안 감. 429 대비 지수백오프 재시도만.
 
