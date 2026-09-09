@@ -241,6 +241,17 @@
       "received_at": "2026-09-09T14:00:30Z",
       "text": "今日めっちゃ歌った\n楽しかった！\n✌",
       "url": "https://x.com/i/status/2097686585248800829"
+    },
+    {
+      "archived_at": "2026-09-09T14:27:27Z",
+      "archived_reason": "replaced",
+      "channel_key": "arale",
+      "expires_at": "2026-09-10T14:01:23Z",
+      "handle": "arale_yumemita",
+      "id": "2097686808549281977",
+      "received_at": "2026-09-09T14:01:23Z",
+      "text": "「ぼくは音楽好きじゃないのかもなぁ…」\n『やっぱ、好きだぁぁッッ！！』\n\n歌ってるとこの繰り返しだ",
+      "url": "https://x.com/i/status/2097686808549281977"
     }
   ]
 }
