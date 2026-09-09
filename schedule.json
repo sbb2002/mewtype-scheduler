@@ -1,11 +1,24 @@
 {
   "broadcasts": [
     {
+      "actual_start": "2026-09-09T14:34:34Z",
+      "channel_key": "nonoka",
+      "concurrent_viewers": 559,
+      "first_seen": "2026-09-09T15:00:03Z",
+      "last_updated": "2026-09-09T15:00:03Z",
+      "scheduled_start": "2026-09-09T14:34:16Z",
+      "status": "live",
+      "thumbnail": "https://i.ytimg.com/vi/ITHkg-79XRw/maxresdefault_live.jpg",
+      "title": "【弾き語り】アニメ最終回直前！ざつだんギター【ゆめみた/夢限大みゅーたいぷ】 #半分人間 #shorts",
+      "url": "https://www.youtube.com/watch?v=ITHkg-79XRw",
+      "video_id": "ITHkg-79XRw"
+    },
+    {
       "actual_start": null,
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T14:24:09Z",
+      "last_updated": "2026-09-09T15:00:03Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -18,7 +31,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T14:24:09Z",
+      "last_updated": "2026-09-09T15:00:03Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -31,7 +44,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T14:24:09Z",
+      "last_updated": "2026-09-09T15:00:03Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -44,34 +57,13 @@
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T14:24:09Z",
+      "last_updated": "2026-09-09T15:00:03Z",
       "scheduled_start": "2028-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
       "title": "※ののらーしゅうかいかいじょう",
       "url": "https://www.youtube.com/watch?v=2Q5A9SWgHtA",
       "video_id": "2Q5A9SWgHtA"
-    },
-    {
-      "assumed_live": true,
-      "channel_key": "nonoka",
-      "collab_with": [],
-      "expires_at": "2026-09-09T17:00:00Z",
-      "first_seen": "2026-09-09T12:18:49Z",
-      "icon": "",
-      "kind": "unknown",
-      "last_updated": "2026-09-09T12:18:49Z",
-      "members_only": false,
-      "sched_id": "sched:nonoka:2026-09-09T14:00:00Z",
-      "scheduled_start": "2026-09-09T14:00:00Z",
-      "source": "bdp_schedule",
-      "source_at": "2026-09-09T12:18:49Z",
-      "start_approx": false,
-      "status": "scheduled",
-      "thumbnail": null,
-      "title": null,
-      "url": null,
-      "video_id": null
     },
     {
       "assumed_live": false,
@@ -159,5 +151,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-09T14:44:17Z"
+  "generated_at": "2026-09-09T15:00:03Z"
 }
