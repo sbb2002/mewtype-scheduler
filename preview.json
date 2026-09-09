@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-09T16:47:43Z",
+  "generated_at": "2026-09-09T16:52:43Z",
   "items": [
     {
       "actual_start": null,
@@ -79,7 +79,7 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-09T16:47:43Z",
+      "last_updated": "2026-09-09T16:52:43Z",
       "membership": false,
       "scheduled_start": "2026-12-24T14:59:00Z",
       "source": "api",
@@ -105,13 +105,13 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-09T16:47:43Z",
+      "last_updated": "2026-09-09T16:52:43Z",
       "membership": false,
       "scheduled_start": "2026-09-09T14:34:16Z",
       "source": "api",
       "state": "end",
       "state_since": "2026-09-09T16:47:43Z",
-      "thumbnail": "https://i.ytimg.com/vi/ITHkg-79XRw/maxresdefault_live.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/ITHkg-79XRw/maxresdefault.jpg",
       "time_tbd": false,
       "title": "【弾き語り】アニメ最終回直前！ざつだんギター【ゆめみた/夢限大みゅーたいぷ】 #半分人間 #shorts",
       "url": "https://www.youtube.com/watch?v=ITHkg-79XRw",
