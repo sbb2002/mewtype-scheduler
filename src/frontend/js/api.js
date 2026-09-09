@@ -1,11 +1,11 @@
 import { FETCH_TIMEOUT_MS } from "./config.js";
 
 /**
- * Fetch schedule from remote URL with timeout and error handling
- * @param {string} url - URL to fetch schedule from
+ * Fetch preview from remote URL with timeout and error handling
+ * @param {string} url - URL to fetch preview from
  * @returns {Promise<{ok: boolean, data?: any, error?: Error}>}
  */
-export async function fetchSchedule(url) {
+export async function fetchPreview(url) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 

@@ -335,7 +335,11 @@ def _expires_at(date_iso: str | None, time_hm: str | None, posted_iso: str, now_
 
 
 def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None = None) -> dict | None:
-    """트윗 → 소식 dict. 소식이 아니면 None."""
+    """트윗 → 소식 dict. 소식이 아니면 None.
+
+    v3: `title_raw` (정규식 제목) + `body_for_llm` (LLM 입력용 본문) 추가.
+    호출부가 llm.notice_title(body_for_llm) 호출 시 제목·번역 확정.
+    """
     if not text or not text.strip():
         return None
     t = normalize(text)
@@ -368,10 +372,29 @@ def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None 
             (category + (date_iso or "") + _title_slug(headline)).encode("utf-8")
         ).hexdigest()[:15]
 
+    # body_for_llm: 본문에서 날짜/시각/URL 제거한 텍스트
+    # ponytail: 정규식으로 패턴 제거 (공백 정규화)
+    body_no_date = re.sub(
+        r"(?:\d{1,2}\s*[/月]\s*\d{1,2}\s*日?|〜\s*\d{1,2}\s*[/月]\s*\d{1,2})",
+        " ", t
+    )
+    body_no_time = re.sub(
+        r"(?:\d{1,2}\s*[:：時]\s*\d{0,2}\s*分?)",
+        " ", body_no_date
+    )
+    body_no_url = re.sub(
+        r"https?://[^\s　]+",
+        " ", body_no_time
+    )
+    body_for_llm = re.sub(r"\s+", " ", body_no_url).strip()
+
     return {
         "id": tid,
         "category": category,
-        "title": headline,
+        "title": headline,                # LLM 미가동 폴백
+        "title_raw": headline,            # v3: 정규식 결과
+        "title_ko": None,                 # v3: LLM 번역 결과 (호출부 채움)
+        "body_for_llm": body_for_llm,     # v3: LLM 입력용
         "date": date_iso,
         "time": time_hm,
         "deadline": deadline,

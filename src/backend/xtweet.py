@@ -1,6 +1,6 @@
-"""멤버 개인 트윗 — android.title 라우팅 + tweets.json 계약 + (v2.8.1) scheduled 승격 (순수 함수).
+"""멤버 개인 트윗 — android.title 라우팅 + tweets.json 계약 + (v3) preview 병합 (순수 함수).
 
-계약: docs/plan/v2_8_personal_tweets.md · docs/plan/v2_8_1_personal_schedule.md
+계약: docs/plan/v3_impl_spec.md §2 (WP-8) · docs/plan/v2_8_personal_tweets.md (v2 하위호환)
 현행 ingest 경로: docs/INGEST_FLOW.md
 
 외부 백엔드(폰 Automate)가 팔로우한 7계정(개인5 + 공식 + 테스트 부계정)의 푸시 알림이
@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 
 from .xrelay import JST, YT_VIDEO_RE, normalize
 from .xnotice import _first_time, _pick_event_date
+from . import preview  # ponytail: v3 preview 스키마 헬퍼
 
 UTC = timezone.utc
 
@@ -111,10 +112,12 @@ def _reached(iso_when: str | None, now_iso: str) -> bool:
 
 def parse(text: str, *, title: str, tag: str | None, channel_key: str,
           now_iso: str, handle: str = "") -> dict | None:
-    """개인 트윗 1건 dict. text 가 (장식 제거 후) 비면 None."""
+    """개인 트윗 1건 dict. text 가 (장식 제거 후) 비면 None. 리트윗/타인글은 필터."""
     body = _clean_text(text)
     if not body:
         return None
+    if _HANDLE_HEAD_RE.match(body):
+        return None                          # 리트윗/타인글(@핸들: 패턴) 필터
     tid = _tweet_id(tag)
     synthetic = not tid
     if synthetic:
@@ -127,6 +130,7 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
         "channel_key": channel_key,
         "id": tid,
         "text": body,
+        "text_ko": None,                     # handlers 가 llm.translate 로 채움 (v3)
         "url": None if synthetic else f"https://x.com/i/status/{tid}",
         "handle": handle or "",
         "received_at": now_iso,
@@ -144,7 +148,7 @@ def default_archive() -> dict:
     return {"tweets": []}
 
 
-_ROW_KEYS = ("channel_key", "id", "text", "url", "handle", "received_at", "expires_at")
+_ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "expires_at")
 
 
 def _newer(inc: dict, cur: dict) -> bool:
@@ -288,8 +292,9 @@ def _expires_at(start_jst: datetime, *, time_tbd: bool, members_only: bool) -> s
 
 def parse_schedule(text: str, *, channel_key: str, tag: str | None, now_iso: str,
                    handle: str = "") -> dict | None:
-    """개인 트윗이 방송 예고면 scheduled 행 dict, 아니면 None (배지만).
+    """개인 트윗이 방송 예고면 preview 아이템 (v3 schema), 아니면 None (배지만).
 
+    (v3) state="announced", source="personal" 로 설정.
     게이트: `配信` 계열 키워드 AND (구체 미래 날짜[시각 옵션] OR 온전한 YT URL).
     오탐 가드: 남의 리트윗 / 후기(과거 시각 + 미래마커 없음) / 날짜·URL 둘 다 없음.
     URL 만 있고 날짜 없음 → None (§3 특례 — RSS 가 그 영상을 잡는다).
@@ -331,175 +336,144 @@ def parse_schedule(text: str, *, channel_key: str, tag: str | None, now_iso: str
     # time_tbd 는 "그 날짜" 자리표시자 — <date>T00:00:00Z 리터럴로 저장(계약 §2).
     start_z = (f"{date_iso}T00:00:00Z" if time_tbd
                else start_jst.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
-    members_only = bool(_MEMBERS_ONLY_RE.search(t))
+    membership = bool(_MEMBERS_ONLY_RE.search(t))
     tid = _tweet_id(tag)
     info_at = snowflake_iso(tid) or now_iso
 
-    return {
-        "status": "scheduled",
-        "channel_key": channel_key,
-        "sched_id": f"sched:{channel_key}:{start_z}",
-        "video_id": video_id,
-        "title": None,
-        "url": url or (f"https://www.youtube.com/@{handle}" if handle else None),
-        "thumbnail": None,
-        "scheduled_start": start_z,
-        "time_tbd": time_tbd,
-        "start_approx": "頃" in t,
-        "kind": _kind_of(t),
-        "icon": None,
-        "members_only": members_only,
-        "collab_with": [],
-        "source": "personal",
-        "source_at": now_iso,
-        "info_source": "personal",
-        "info_at": info_at,
-        "api_start_seen": None,
-        "first_seen": now_iso,
-        "last_updated": now_iso,
-        "assumed_live": False,
-        "expires_at": _expires_at(start_jst, time_tbd=time_tbd, members_only=members_only),
-    }
+    # (v3) preview 아이템으로 반환 (make_item 이 id/state_since/expires_at 계산)
+    return preview.make_item(
+        channel_key=channel_key,
+        state="announced",
+        source="personal",
+        now_iso=now_iso,
+        video_id=video_id,
+        title=None,
+        url=url or (f"https://www.youtube.com/@{handle}" if handle else None),
+        thumbnail=None,
+        scheduled_start=start_z,
+        time_tbd=time_tbd,
+        kind=_kind_of(t),
+        membership=membership,
+        collab_with=[],
+        info_source="personal",
+        info_at=info_at,
+        api_start_seen=None,
+        first_seen=now_iso,
+        assumed_live=False,
+    )
 
 
-def _same_broadcast(a: dict, b: dict) -> bool:
-    """두 행이 같은 방송인가 (§4). URL/video_id 동일성 먼저, 아니면 채널+시각/날짜 폴백."""
-    if a.get("channel_key") != b.get("channel_key"):
-        return False
-    av, bv = a.get("video_id"), b.get("video_id")
-    if av and bv:
-        return av == bv                   # 다르면 다른 방송 (재시작 등)
-    as_, bs = a.get("scheduled_start"), b.get("scheduled_start")
-    if not as_ or not bs:
-        return False
-    if a.get("time_tbd") or b.get("time_tbd"):
-        return _jst_date(as_) == _jst_date(bs)     # 같은 JST 날짜
-    return abs(_epoch(as_) - _epoch(bs)) <= _SAME_BROADCAST_SEC
+# ═══ v3 — preview.json 아이템 머지 ═════════════════════════════════════
+#   개인 트윗 예고를 preview 아이템으로 변환·병합.
+#   계약: docs/plan/v3_impl_spec.md §2 (WP-8)
 
 
-def _incoming_wins(cur: dict, inc: dict) -> bool:
-    """붕괴 시 생존 우선순위: video_id > 상위 단계 > info_at 최신 > bdp_schedule > personal."""
-    if bool(inc.get("video_id")) != bool(cur.get("video_id")):
-        return bool(inc.get("video_id"))
-    cs, is_ = _STAGE.get(cur.get("status"), 0), _STAGE.get(inc.get("status"), 0)
-    if cs != is_:
-        return is_ > cs
-    ca, ia = cur.get("info_at") or "", inc.get("info_at") or ""
-    if ca != ia:
-        return ia > ca
-    return _SRC_RANK.get(inc.get("info_source"), 0) > _SRC_RANK.get(cur.get("info_source"), 0)
+def merge_personal_schedule(prev_items: list[dict], inc: dict, now_iso: str) -> tuple[list[dict], bool]:
+    """개인 트윗 예고 아이템을 preview.items 에 upsert.
 
+    Args:
+        prev_items: 이전 preview.json 의 items 배열 (또는 None)
+        inc: parse_schedule() 의 결과 (preview 아이템)
+        now_iso: 현재 시각 (UTC ISO)
 
-def _apply_tweet_time(cur: dict, inc: dict, now_iso: str) -> None:
-    """cur 가 생존한 행. inc(트윗)가 더 나중이고 cur 단계 필수조건을 충족하면 시각 override."""
-    if (inc.get("info_at") or "") <= (cur.get("info_at") or ""):
-        return
-    if cur.get("status") in ("upcoming", "live"):
-        if inc.get("time_tbd") or not inc.get("scheduled_start"):
-            return                        # upcoming 수정엔 date+time 필요
-        cur["api_start_seen"] = cur.get("scheduled_start")   # API 가 말하던 값 기억
-    cur["scheduled_start"] = inc["scheduled_start"]
-    cur["time_tbd"] = bool(inc.get("time_tbd"))
-    cur["start_approx"] = bool(inc.get("start_approx"))
-    cur["info_source"] = inc.get("info_source", "personal")
-    cur["info_at"] = inc["info_at"]
+    Returns:
+        (new_items, changed) — new_items 는 정렬되지 않음 (호출부 책임)
+    """
+    prev = prev_items or []
+    items = [dict(i) for i in prev]
+
+    # 같은 방송 찾기
+    matched = preview.match_item(items, inc)
+
+    if matched is None:
+        # 새로운 아이템
+        items.append(inc)
+        return items, True
+
+    # 기존 아이템과 merge
+    idx = items.index(matched)
+    cur = items[idx]
+    original = dict(cur)
+
+    # video_id 우선 (없으면 새 값)
+    if inc.get("video_id"):
+        cur["video_id"] = inc["video_id"]
+
+    # info_at 최신이면 시각 정보 업데이트
+    if (inc.get("info_at") or "") > (cur.get("info_at") or ""):
+        cur["scheduled_start"] = inc["scheduled_start"]
+        cur["time_tbd"] = inc.get("time_tbd", False)
+        cur["info_at"] = inc["info_at"]
+        cur["info_source"] = inc.get("info_source", "personal")
+
     cur["last_updated"] = now_iso
-    if cur.get("status") == "scheduled":
-        sj = _parse_iso(cur["scheduled_start"]).astimezone(JST)
-        cur["expires_at"] = _expires_at(
-            sj, time_tbd=cur["time_tbd"], members_only=bool(cur.get("members_only")))
+
+    changed = (cur != original)
+    return items, changed
 
 
-_INHERIT = ("video_id", "url", "thumbnail", "title", "kind", "icon", "collab_with", "first_seen")
-
-
-def merge_personal_schedule(prev_schedule: dict, rows: list[dict], now_iso: str) -> dict:
-    """개인 트윗 scheduled 행을 schedule.json 에 upsert (replace-by-date 아님)."""
-    prev = prev_schedule or {}
-    bcasts = [dict(b) for b in prev.get("broadcasts", [])]
-    for row in rows:
-        idx = next((i for i, b in enumerate(bcasts) if _same_broadcast(b, row)), None)
-        if idx is None:
-            bcasts.append(row)
-            continue
-        cur = bcasts[idx]
-        if _incoming_wins(cur, row):
-            merged = dict(row)
-            for k in _INHERIT:
-                if not merged.get(k) and cur.get(k):
-                    merged[k] = cur[k]
-            bcasts[idx] = merged
-        else:
-            _apply_tweet_time(cur, row, now_iso)
-            for k in ("url", "video_id", "kind"):
-                if not cur.get(k) and row.get(k):
-                    cur[k] = row[k]
-    # 실물로 확정된 video_id 를 가진 personal 자리표시는 버린다 (reconcile 이 정리하지만 겹침 방지)
-    resolved = {b.get("video_id") for b in bcasts
-                if b.get("video_id") and b.get("status") != "scheduled"}
-    bcasts = [b for b in bcasts if not (
-        b.get("source") == "personal" and b.get("status") == "scheduled"
-        and b.get("video_id") in resolved)]
-
-    out = dict(prev)
-    out["broadcasts"] = _sort_sched(bcasts)
-    out["generated_at"] = now_iso
-    return out
-
-
-def _sort_sched(bcasts: list[dict]) -> list[dict]:
-    rank = {"live": 0, "upcoming": 1, "scheduled": 2}
-    return sorted(bcasts, key=lambda b: (
-        rank.get(b.get("status"), 3),
-        b.get("scheduled_start") is None,
-        b.get("scheduled_start") or "",
-        b.get("video_id") or b.get("sched_id") or "",
-    ))
-
-
-def apply_overrides(new_schedule: dict, prev_schedule: dict, now_iso: str) -> dict:
-    """(handlers 후처리) reconcile 이 API 로 재구성한 schedule 에 트윗 유래 시각 override 재적용.
+def apply_overrides(new_items: list[dict], prev_items: list[dict], now_iso: str) -> list[dict]:
+    """(handlers 후처리) reconcile 의 API 재구성에 트윗 유래 시각 override 재적용.
 
     prev 행 info_source ∈ (personal|bdp_schedule|appearance) 이고 time_tbd 아님:
       · reconcile 이 이번 tick 에 API 로 scheduled_start 를 얻음
-        - api_now == prev.api_start_seen (override 없으면 prev.scheduled_start)  → 트윗값 유지
+        - api_now == prev.api_start_seen (override 없으면 prev.scheduled_start) → 트윗값 유지
         - 다름(스트림 실제 수정) → API 승 (info_source="api", api_start_seen=null)
-      · reconcile 미해결(scheduled 유지) → prev 시각·provenance 그대로
+      · reconcile 미해결(announced 유지) → prev 시각·provenance 그대로
+
+    Args:
+        new_items: reconcile 후 preview.json 의 items 배열
+        prev_items: 이전 preview.json 의 items 배열
+        now_iso: 현재 시각 (UTC ISO)
+
+    Returns:
+        override 적용된 new_items
     """
-    prev = prev_schedule or {}
-    new = new_schedule or {}
-    prev_rows = prev.get("broadcasts", []) or []
-    for b in new.get("broadcasts", []) or []:
-        pb = next((p for p in prev_rows if _same_broadcast(p, b)), None)
+    prev = prev_items or []
+    new = [dict(b) for b in (new_items or [])]
+
+    for b in new:
+        # 이전 아이템에서 같은 방송 찾기
+        pb = preview.match_item(prev, b)
         if pb is None:
             continue
+
         psrc = pb.get("info_source")
         if psrc not in ("personal", "bdp_schedule", "appearance"):
             continue
+
+        # time_tbd 아이템은 override 대상 아님
         if pb.get("time_tbd") or not pb.get("scheduled_start"):
-            # 시각 미정 트윗 → API 가 채우면 그대로 둔다 (override 아님)
             continue
-        api_resolved = b.get("status") in ("upcoming", "live") and bool(b.get("video_id"))
+
+        # API 로 upcoming/watching/live 해결된가? (video_id 필수)
+        api_resolved = b.get("state") in ("upcoming", "watching", "live") and bool(b.get("video_id"))
+
         if not api_resolved:
+            # API 미해결 (announced 유지) → 이전 정보 그대로
             b["scheduled_start"] = pb["scheduled_start"]
             b["time_tbd"] = bool(pb.get("time_tbd"))
             b["info_source"] = psrc
             b["info_at"] = pb.get("info_at")
             b["api_start_seen"] = pb.get("api_start_seen")
             continue
+
+        # API 해결 — baseline 대비 변경 여부 판정
         api_now = b.get("scheduled_start")
         baseline = pb.get("api_start_seen") or pb.get("scheduled_start")
+
         if api_now and baseline and abs(_epoch(api_now) - _epoch(baseline)) <= 60:
-            # API 값 안 바뀜 → 트윗값 유지
+            # API 값 안 바뀜 (60초 이내) → 트윗값 유지
             b["scheduled_start"] = pb["scheduled_start"]
             b["info_source"] = psrc
             b["info_at"] = pb.get("info_at")
             b["api_start_seen"] = pb.get("api_start_seen") or api_now
         else:
-            # 스트림 실제 수정 → API 승
+            # 스트림 실제 수정 (60초 이상 차이) → API 승
             b["info_source"] = "api"
             b["info_at"] = now_iso
             b["api_start_seen"] = None
+
     return new
 
 
@@ -543,11 +517,16 @@ if __name__ == "__main__":
     assert r["url"] == "https://x.com/i/status/2096552878769152326"
     assert r["handle"] == "arale_yumemita"
     assert r["expires_at"] == "2026-09-08T12:00:00Z"                 # +24h
+    assert r["text_ko"] is None                                       # (v3) text_ko 초기값
     assert parse("   \n＼／\n  ", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
     # 태그 없음 → 합성 id, url 없음
     r2 = parse("ねむい", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW)
     assert r2["id"].startswith("p") and r2["url"] is None, r2
-    print("[OK] parse")
+    # (v3) 리트윗/타인글 필터
+    assert parse("@arale: 今日の配信楽しみ〜", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
+    assert parse("@someone：話題です", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
+    assert parse("RT @janesmith: 配信時間変更", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
+    print("[OK] parse (+ v3 리트윗 필터)")
 
     # ── merge_tweet ─────────────────────────────────────────────────
     T, A = default_tweets(), default_archive()
@@ -588,23 +567,24 @@ if __name__ == "__main__":
     assert sweep_expired(s_out, s_arch, NOW)[2] == []            # 두 번째 sweep 은 no-op
     print("[OK] sweep_expired")
 
-    # ═══ v2.8.1 — parse_schedule / merge_personal_schedule / apply_overrides ═══
+    # ═══ v3 — parse_schedule / merge_personal_schedule / apply_overrides ═══
     SNOW = "2026-09-07T12:00:00Z"
 
-    # S-A: 날짜+시각+키워드 → scheduled 행
+    # S-A: 날짜+시각+키워드 → announced preview 아이템
     a = parse_schedule("今日22時から歌枠配信します！\nみんな来てね〜", channel_key="miyako",
                        tag="p#x#1tweet-2096795604856836521", now_iso=SNOW, handle="miyako_yumemita")
-    assert a and a["status"] == "scheduled" and a["source"] == "personal", a
+    assert a and a["state"] == "announced" and a["source"] == "personal", a
     assert a["scheduled_start"] == "2026-09-07T13:00:00Z" and a["time_tbd"] is False, a
-    assert a["kind"] == "song" and a["expires_at"] == "2026-09-07T16:00:00Z"
-    assert a["info_source"] == "personal" and a["info_at"] == snowflake_iso("2096795604856836521")
-    print("[OK] parse_schedule  (날짜+시각 → scheduled +3h TTL)")
+    assert a["kind"] == "song" and a["info_source"] == "personal"
+    assert a["id"].startswith("pv_") and a["first_seen"] == SNOW
+    assert a["info_at"] == snowflake_iso("2096795604856836521")
+    print("[OK] parse_schedule (v3)  (날짜+시각 → announced preview +3h TTL)")
 
     # S-B: 날짜만(시각 없음) → time_tbd, TTL 자정
     b1 = parse_schedule("9月13日に配信あります！詳細は後ほど", channel_key="yuno",
                         tag=None, now_iso=SNOW)
     assert b1 and b1["time_tbd"] is True and b1["scheduled_start"] == "2026-09-13T00:00:00Z", b1
-    assert b1["expires_at"] == "2026-09-13T15:00:00Z", b1   # 9/14 00:00 JST = 9/13 15:00Z
+    assert b1["state"] == "announced" and b1["expires_at"] == "2026-09-13T15:00:00Z"
     print("[OK] parse_schedule  (날짜만 → time_tbd, 자정 TTL)")
 
     # S-C: 게이트 미통과 / 오탐 가드
@@ -620,51 +600,57 @@ if __name__ == "__main__":
     # S-D: URL 있는 예고 → video_id 추출
     d = parse_schedule("本日21:00〜 生配信！\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ",
                        channel_key="arale", tag=None, now_iso=SNOW)
-    assert d and d["video_id"] == "dQw4w9WgXcQ", d
+    assert d and d["video_id"] == "dQw4w9WgXcQ" and d["state"] == "announced", d
     assert d["scheduled_start"] == "2026-09-07T12:00:00Z", d
     assert d["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     print("[OK] parse_schedule  (본문 YT URL → video_id)")
 
-    # S-E: merge_personal_schedule — 신규 append
-    sched = {"broadcasts": [], "generated_at": None}
-    sched = merge_personal_schedule(sched, [a], SNOW)
-    assert len(sched["broadcasts"]) == 1 and sched["broadcasts"][0]["channel_key"] == "miyako"
+    # S-E: merge_personal_schedule — 신규 append, changed=True
+    items, ch = merge_personal_schedule([], a, SNOW)
+    assert ch and len(items) == 1 and items[0]["channel_key"] == "miyako"
+    assert items[0]["id"] == a["id"]  # id 유지
 
-    # S-F: 같은 방송에 공식 bdp 행이 나중에 → 붕괴 (video_id 없으니 채널+±90분)
-    bdp = {"status": "scheduled", "channel_key": "miyako", "source": "bdp_schedule",
-           "sched_id": "sched:miyako:2026-09-07T13:15:00Z", "video_id": None,
-           "scheduled_start": "2026-09-07T13:15:00Z", "time_tbd": False,
-           "info_source": "bdp_schedule", "info_at": "2026-09-07T13:00:00Z",
-           "collab_with": [], "expires_at": "2026-09-07T16:15:00Z"}
-    sched2 = merge_personal_schedule(sched, [dict(bdp)], SNOW)
-    assert len(sched2["broadcasts"]) == 1, sched2   # 하나로 붕괴
-    surv = sched2["broadcasts"][0]
-    assert surv["info_source"] == "bdp_schedule", surv   # bdp info_at(13:00) > personal(트윗시각)
-    print("[OK] merge_personal_schedule  (append + 같은 방송 붕괴)")
+    # S-F: 같은 방송에 다른 source 예고 → upsert (info_at 최신 우선)
+    bdp = preview.make_item(
+        channel_key="miyako", state="announced", source="bdp_schedule", now_iso="2026-09-07T13:00:00Z",
+        scheduled_start="2026-09-07T13:15:00Z", time_tbd=False,
+        info_source="bdp_schedule", info_at="2026-09-07T13:00:00Z"
+    )
+    items2, ch2 = merge_personal_schedule(items, bdp, SNOW)
+    assert ch2 and len(items2) == 1, items2  # 하나로 merge
+    surv = items2[0]
+    # bdp info_at(13:00) > personal 트윗시각(SNOW 보다 먼저) → bdp 정보 우선
+    assert surv["info_source"] == "bdp_schedule"
+    print("[OK] merge_personal_schedule  (append + upsert)")
 
-    # S-G: apply_overrides — 트윗이 upcoming 시각을 당겨놨고 API 는 원래 값 유지 → 트윗값 유지
-    prev = {"broadcasts": [{
-        "video_id": "vidX", "channel_key": "arale", "status": "upcoming",
-        "scheduled_start": "2026-09-07T13:30:00Z",   # 트윗이 당겨놓음
-        "time_tbd": False, "info_source": "personal", "info_at": "2026-09-07T12:50:00Z",
-        "api_start_seen": "2026-09-07T13:00:00Z",     # API 는 원래 13:00
-    }]}
-    new = {"broadcasts": [{
-        "video_id": "vidX", "channel_key": "arale", "status": "upcoming",
-        "scheduled_start": "2026-09-07T13:00:00Z",    # reconcile 이 API 로 다시 채움
-        "thumbnail": "t.jpg",
-    }]}
-    out = apply_overrides(new, prev, "2026-09-07T15:00:00Z")
-    ob = out["broadcasts"][0]
+    # S-G: apply_overrides — 트윗이 시각 override, API 는 원래 값 유지 → 트윗값 유지
+    prev_item = preview.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso="2026-09-07T12:50:00Z",
+        video_id="vidX", scheduled_start="2026-09-07T13:30:00Z",  # 트윗이 당겨놓음
+        info_source="personal", info_at="2026-09-07T12:50:00Z",
+        api_start_seen="2026-09-07T13:00:00Z"  # API 는 원래 13:00
+    )
+    new_item = preview.make_item(
+        channel_key="arale", state="upcoming", source="api", now_iso=SNOW,
+        video_id="vidX", scheduled_start="2026-09-07T13:00:00Z",  # reconcile 이 API 로 재설정
+        thumbnail="t.jpg", info_source="api"
+    )
+    out = apply_overrides([new_item], [prev_item], SNOW)
+    ob = out[0]
     assert ob["scheduled_start"] == "2026-09-07T13:30:00Z", ob     # 트윗값 유지
     assert ob["info_source"] == "personal" and ob["thumbnail"] == "t.jpg"
+    print("[OK] apply_overrides  (API 불변→트윗 유지)")
 
     # S-H: 스트림이 실제 수정됨(API 값 변경) → API 승
-    new2 = {"broadcasts": [dict(new["broadcasts"][0], scheduled_start="2026-09-07T14:00:00Z")]}
-    out2 = apply_overrides(new2, prev, "2026-09-07T15:00:00Z")
-    ob2 = out2["broadcasts"][0]
+    new_item2 = preview.make_item(
+        channel_key="arale", state="upcoming", source="api", now_iso=SNOW,
+        video_id="vidX", scheduled_start="2026-09-07T14:00:00Z",  # API 실제 변경
+        thumbnail="t.jpg", info_source="api"
+    )
+    out2 = apply_overrides([new_item2], [prev_item], SNOW)
+    ob2 = out2[0]
     assert ob2["scheduled_start"] == "2026-09-07T14:00:00Z" and ob2["info_source"] == "api"
     assert ob2["api_start_seen"] is None
-    print("[OK] apply_overrides  (API 불변→트윗 유지 / API 변경→API 승)")
+    print("[OK] apply_overrides  (API 변경→API 승)")
 
     print("\nSUCCESS: xtweet self-test 통과")

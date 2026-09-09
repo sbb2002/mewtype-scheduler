@@ -108,11 +108,19 @@
   font-size: 11px;
   opacity: 0.82;
 }
-.lane__bubble__foot .src {
+.lane__bubble__foot .src,
+.lane__bubble__foot .lane__bubble__tl {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
   white-space: nowrap;
+}
+.lane__bubble__tl {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
 }
 .lane__bubble__x {
   position: absolute;
@@ -218,11 +226,19 @@ body.tw-modal-open .tw-toast {
   font-size: 11px;
   opacity: 0.82;
 }
-.tw-toast__foot .src {
+.tw-toast__foot .src,
+.tw-toast__foot .tw-toast__tl {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
   white-space: nowrap;
+}
+.tw-toast__tl {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,6 @@
-export const DATA_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/schedule.json";
+export const PREVIEW_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/preview.json";
 // For local development, temporarily comment out the line above and uncomment:
-// export const DATA_URL = "../../fixtures/schedule.sample.json";
+// export const PREVIEW_URL = "../../fixtures/preview.sample.json";
 
 // (v2.7) 소식 게시판. 없으면(404) 티커는 그냥 안 뜬다.
 export const NOTICES_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/notices.json";

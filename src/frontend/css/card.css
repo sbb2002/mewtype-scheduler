@@ -50,7 +50,7 @@
   background-color: #444444;
 }
 
-/* Badge - LIVE indicator */
+/* Badge - LIVE/announced/watching 배지 */
 .card__badge {
   position: absolute;
   top: 0.5rem;
@@ -68,6 +68,24 @@
 
 .card__badge--live {
   /* Inherits from .card__badge */
+}
+
+.card__badge--announced {
+  background: color-mix(in srgb, var(--color-sched, #7c8aa0) 26%, transparent);
+  color: color-mix(in srgb, var(--color-sched, #7c8aa0) 72%, #fff);
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 650;
+}
+
+.card__badge--watching {
+  background: color-mix(in srgb, var(--color-upcoming, #06b6d4) 26%, transparent);
+  color: color-mix(in srgb, var(--color-upcoming, #06b6d4) 72%, #fff);
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 650;
 }
 
 /* Body - title and meta */
@@ -199,7 +217,35 @@
   font-weight: 400;
 }
 
-/* assumed_live — 예고 시각 지남, 실물 미확인(회원전용 방송 중으로 추정).
+/* ── announced (v3 예고) — scheduled 와 동일 스타일 ──
+   점선 테두리 + 감광 = "확정 아님". 썸네일 자리엔 아이콘/자물쇠.
+   "예고" 배지는 빨강 아님. */
+.card--announced {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-sched, #7c8aa0) 55%, var(--color-border));
+  opacity: 0.82;
+}
+.card--announced:hover {
+  transform: none;
+  box-shadow: none;
+  opacity: 1;
+}
+.card--announced .card__thumb-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-sched, #7c8aa0) 12%, var(--color-bg));
+}
+.card--announced .card__title { color: var(--color-text-muted); }
+.card--announced .card__title--label { color: var(--color-text); }
+
+/* ── watching (대기 중) — upcoming 과 동일 스타일 ──
+   live 직전 상태, 실물 영상 있음. 대기 중 배지로 상태 표시. */
+.card--watching {
+  /* upcoming 과 동일 — 스타일 추가 없음 */
+}
+
+/* assumed_live — announced/upcoming 중 90분 지각, 실물 미확인(회원전용 추정).
    확정 아니므로 라이브 존 승격 없이 카드에서만 신호. 감광 해제 + 은은한 빨강 테두리. */
 .card--sched-live {
   opacity: 1;
@@ -209,6 +255,29 @@
 .card--sched-live .card__rel {
   color: color-mix(in srgb, var(--color-live) 65%, #fff);
   font-weight: 600;
+}
+
+/* ── end (방송 종료) — live 다음 상태, 영상 유지 ──
+   live 와 유사하지만 빨간 테두리 없음(OFF-AIR 소등). "방송 종료" 텍스트만. */
+.card--end {
+  border-color: var(--color-border);
+  border-width: 1px;
+}
+.card--end:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.card--end .card__rel {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* ── membership (회원 전용 방송) ──
+   watched/live/end 등 모든 상태에 추가. 썸네일 자리에 자물쇠. */
+.card--membership .card__thumb-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #8b7cc9 12%, var(--color-bg));
 }
 
 /* ── (v2.4) 합동방송 — 5인 공동명의(公式) 채널. renderBoard 가 참여 멤버
@@ -287,4 +356,21 @@
   }
   .card__icon { font-size: 2.2rem; }
   .card__icon--empty { font-size: 1.8rem; }
+
+  /* 모바일에서 announced/watching/end 클래스도 같은 가로 레이아웃 */
+  .card--announced,
+  .card--watching,
+  .card--end {
+    flex-direction: row;
+  }
+  .card--announced .card__thumb-wrap,
+  .card--watching .card__thumb-wrap,
+  .card--end .card__thumb-wrap {
+    width: 42%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

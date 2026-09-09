@@ -1,18 +1,17 @@
 """notices.json / notice_archive.json 스키마 + 머지·중복판정·수명 (순수 함수).
 
-계약: docs/plan/v2_7_notice_board.md
+계약: docs/plan/v3_impl_spec.md WP-7 (v3 개정)
 
 notices.json
   { "generated_at": "...Z",
-    "notices": [ { id, category, title, date, time, deadline, site, url, tweet_url,
-                   src_handle, anchor_a, anchor_b, title_slug, seen_ids[],
+    "notices": [ { id, category, title, title_ko, date, time, deadline, site, url, tweet_url,
+                   src_handle, anchor_a, anchor_b, title_slug, is_recap, seen_ids[],
                    first_seen, last_updated, expires_at } ] }
 notice_archive.json  { "notices": [ <notice + archived_at> ] }  (append-only, id dedupe)
 
-중복 판정 (merge_notice)
+중복 판정 (merge_notice) — v3: url ∥ title 기반
   1. incoming.id 가 어느 소식의 id/seen_ids 에 이미 있음        → "dup" (no-op)
-  2. **같은 날짜** 이고  (둘 다 anchor_a 있으면 a 일치)  또는
-     (a 가 없으면  둘 다 anchor_b 있고 b 일치)                  → 같은 소식
+  2. **URL 일치 OR 제목 일치** (공백 정규화)                    → 같은 소식
        - is_recap + 이벤트 날짜 지남   → seen_ids 만 append          "recap"
        - 그 외                          → 필드 갱신(newer 우선)        "updated"
   3. 활성에 없고 아카이브에서 같은 그룹 발견                       → 아카이브 seen_ids append "recap"
@@ -22,6 +21,7 @@ notice_archive.json  { "notices": [ <notice + archived_at> ] }  (append-only, id
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 _JST = timezone(timedelta(hours=9))
@@ -59,15 +59,20 @@ def _sorted(notices: list[dict]) -> list[dict]:
 
 
 def _same_group(a: dict, b: dict) -> bool:
-    """같은 이벤트인가 — 같은 날짜 + (a 일치 | a 없으면 b 일치)."""
-    if not a.get("date") or a.get("date") != b.get("date"):
-        return False
-    aa, ba = a.get("anchor_a"), b.get("anchor_a")
-    if aa and ba:
-        return aa == ba
-    ab, bb = a.get("anchor_b"), b.get("anchor_b")
-    if ab and bb:
-        return ab == bb
+    """같은 이벤트인가 — URL 일치 OR 제목 일치.
+
+    v3: anchor_a/b 기반 그룹핑에서 url|title 기반으로 변경.
+    """
+    # URL 일치 우선 (가장 확정적)
+    url_a, url_b = a.get("url"), b.get("url")
+    if url_a and url_b and url_a == url_b:
+        return True
+    # 제목 일치 (URL 없을 때)
+    # ponytail: 제목 비교는 공백 정규화 (오타/줄바꿈 용인)
+    title_a = re.sub(r"\s+", "", a.get("title") or "").lower()
+    title_b = re.sub(r"\s+", "", b.get("title") or "").lower()
+    if title_a and title_b and title_a == title_b:
+        return True
     return False
 
 
@@ -78,7 +83,7 @@ def _seen(notice: dict, tid: str) -> bool:
 def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
     """기존 소식에 새 트윗 정보 반영 — 나중 트윗이 더 확정적이라고 보고 덮음."""
     out = dict(cur)
-    for k in ("title", "time", "url", "site", "tweet_url", "src_handle", "category",
+    for k in ("title", "title_ko", "time", "url", "site", "tweet_url", "src_handle", "category",
               "anchor_a", "anchor_b", "title_slug", "expires_at"):
         v = inc.get(k)
         if v:
@@ -96,7 +101,7 @@ def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
 
 def _new_row(inc: dict, now_iso: str) -> dict:
     row = {k: inc.get(k) for k in (
-        "id", "category", "title", "date", "time", "deadline", "site", "url",
+        "id", "category", "title", "title_ko", "date", "time", "deadline", "site", "url",
         "tweet_url", "src_handle", "anchor_a", "anchor_b", "title_slug", "expires_at",
     )}
     row["deadline"] = bool(row.get("deadline"))
@@ -153,7 +158,7 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
     return out, arch, True, "added"
 
 
-_EDITABLE = ("title", "date", "time", "url", "site", "anchor_a", "category",
+_EDITABLE = ("title", "title_ko", "date", "time", "url", "site", "anchor_a", "category",
              "deadline", "title_slug", "expires_at")
 
 
@@ -243,29 +248,29 @@ if __name__ == "__main__":
 
     N, A = default_notices(), default_archive()
 
-    # added
-    N, A, ch, m = merge_notice(N, inc(id="1", anchor_a="vidAAA", title="특번", time="21:00"), NOW, archive=A)
+    # added (url 기반 추적)
+    N, A, ch, m = merge_notice(N, inc(id="1", url="https://eplus.jp/x", title="특번", time="21:00"), NOW, archive=A)
     assert ch and m == "added" and len(N["notices"]) == 1, m
     # dup (같은 트윗 id)
-    _, _, ch, m = merge_notice(N, inc(id="1", anchor_a="vidAAA"), NOW, archive=A)
+    _, _, ch, m = merge_notice(N, inc(id="1", url="https://eplus.jp/x"), NOW, archive=A)
     assert not ch and m == "dup", m
-    # updated (같은 날짜 + 같은 anchor_a, 다른 트윗 id) — 필드 갱신
-    N, A, ch, m = merge_notice(N, inc(id="2", anchor_a="vidAAA", title="특번(시간확정)", time="21:30"), NOW, archive=A)
+    # updated (같은 URL, 다른 트윗 id) — 필드 갱신
+    N, A, ch, m = merge_notice(N, inc(id="2", url="https://eplus.jp/x", title="특번(시간확정)", time="21:30"), NOW, archive=A)
     assert ch and m == "updated", m
     assert N["notices"][0]["time"] == "21:30" and N["notices"][0]["seen_ids"] == ["1", "2"]
     assert len(N["notices"]) == 1
-    print("[OK] added / dup / updated (같은 날짜+anchor_a)")
+    print("[OK] added / dup / updated (같은 URL 기반 중복)")
 
-    # anchor_a 없을 때 anchor_b 로 그룹
-    N2, A2, ch, m = merge_notice(default_notices(), inc(id="10", anchor_b="bmecho2026"), NOW, archive=default_archive())
-    N2, A2, ch, m = merge_notice(N2, inc(id="11", anchor_b="bmecho2026", title="갱신"), NOW, archive=A2)
+    # 제목 일치로 그룹 (URL 없을 때)
+    N2, A2, ch, m = merge_notice(default_notices(), inc(id="10", title="새음반발매", url=None), NOW, archive=default_archive())
+    N2, A2, ch, m = merge_notice(N2, inc(id="11", title="새음반발매", url=None), NOW, archive=A2)
     assert ch and m == "updated" and len(N2["notices"]) == 1, m
-    print("[OK] anchor_b 그룹 병합")
+    print("[OK] 제목 일치 그룹 병합")
 
-    # 다른 날짜면 별도 (DAY1/DAY2)
-    N2, A2, ch, m = merge_notice(N2, inc(id="12", anchor_b="bmecho2026", date="2026-09-14"), NOW, archive=A2)
+    # 다른 제목·다른 URL이면 별도 (DAY1/DAY2 별도 이벤트)
+    N2, A2, ch, m = merge_notice(N2, inc(id="12", title="추가이벤트", url="https://other.jp/y"), NOW, archive=A2)
     assert ch and m == "added" and len(N2["notices"]) == 2, m
-    print("[OK] 날짜 다르면 별도 소식")
+    print("[OK] URL/제목 다르면 별도 소식")
 
     # 지난 이벤트 후기, 추적한 적 없음 → skip
     _, _, ch, m = merge_notice(default_notices(), inc(id="20", date="2026-09-06", is_recap=True), NOW, archive=default_archive())
@@ -298,18 +303,19 @@ if __name__ == "__main__":
     assert remove_notice(r_out, "nope")[1] is False
     print("[OK] remove_notice")
 
-    # edit_notice (v2.7.x 수동 편집)
+    # edit_notice (v3: title_ko 지원)
     E = {"generated_at": None, "notices": [
-        inc(id="50", title="会場:GARDEN", date="2026-11-21", url="https://eplus.jp/x",
+        inc(id="50", title="会場:GARDEN", title_ko=None, date="2026-11-21", url="https://eplus.jp/x",
             anchor_a="x", seen_ids=["50"], first_seen="2026-09-01T00:00:00Z"),
     ]}
     E2, ch = edit_notice(E, "50", {
-        "title": "集え！筋トレ部", "title_slug": "集え筋トレ部",
+        "title": "集え！筋トレ部", "title_ko": "모여라! 근력 운동부", "title_slug": "集え筋トレ部",
         "date": "2026-11-22", "expires_at": "2026-11-23T15:00:00Z",
         "url": "https://eplus.jp/yumemita_kinntorebu2026/", "site": "web",
         "anchor_a": "yumemita_kinntorebu2026",
     }, "2026-09-10T05:00:00Z")
     assert ch and E2["notices"][0]["title"] == "集え！筋トレ部"
+    assert E2["notices"][0]["title_ko"] == "모여라! 근력 운동부"
     assert E2["notices"][0]["date"] == "2026-11-22"
     assert E2["notices"][0]["anchor_a"] == "yumemita_kinntorebu2026"
     assert E2["notices"][0]["seen_ids"] == ["50"], "seen_ids 보존"
@@ -318,6 +324,6 @@ if __name__ == "__main__":
     assert edit_notice(E, "nope", {"title": "x"}, NOW)[1] is False
     assert edit_notice(E, "50", {"title": "会場:GARDEN"}, NOW)[1] is False   # 동일값 → no-op
     assert edit_notice(E, "50", {"id": "hax"}, NOW)[1] is False              # id 는 편집 불가
-    print("[OK] edit_notice (파생값 대입 · id/seen_ids/first_seen 보존 · no-op)")
+    print("[OK] edit_notice (title_ko 지원 · id/seen_ids/first_seen 보존 · no-op)")
 
     print("\nSUCCESS: notices.py smoke test 통과")

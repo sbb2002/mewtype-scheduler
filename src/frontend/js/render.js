@@ -1,4 +1,4 @@
-import { formatKST, relativeLabel, isLate } from "./time.js";
+import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 
 const DAY_MS = 86400000;
@@ -51,38 +51,45 @@ function sampleLaneColor(url, laneEl) {
 }
 
 /**
- * Create a card element (live / upcoming / scheduled).
- * @param {Object} broadcast
+ * v3 아이템을 카드로 렌더. 6상태 + membership/collab/assumed_live 조합 지원.
+ * @param {Object} item
  * @param {number} nowMs
- * @param {Object} [channelData]  scheduled 카드의 채널 링크용 (url 없음)
- * @param {string} [laneKey]      렌더 중인 레인의 channel_key (합동 카드의 상대 표기용)
+ * @param {Object} [channelData]  announced 카드의 채널 링크용
+ * @param {string} [laneKey]      렌더 중인 레인의 channel_key (합동 카드 상대 표기용)
  * @returns {HTMLAnchorElement}
  */
-function createCard(broadcast, nowMs, channelData, laneKey) {
+function createCard(item, nowMs, channelData, laneKey) {
   const a = document.createElement("a");
   a.target = "_blank";
   a.rel = "noopener";
 
-  // ── scheduled (예고) — X 트윗만, YouTube 영상 없음 ──
-  if (broadcast.status === "scheduled") {
-    // (v2.4) host="group": 5인 공동명의(公式) 채널 합동방송. 참여 멤버 전원 레인에
-    // 같은 카드가 뜬다(renderBoard 가 collab_with 로 팬아웃). 링크는 그룹 영상 URL.
-    const isCollab = broadcast.kind === "collab" || broadcast.host === "group";
-    // assumed_live: 예고 시각 지남 + 아직 실물 미확인(회원전용 추정). 확정 아님 → 라이브 존 승격 안 함.
-    a.className = broadcast.assumed_live
-      ? "card card--scheduled card--sched-live"
-      : "card card--scheduled";
+  // ── announced (예고) — URL 있을 수도 없을 수도. 실물 영상 확정 아님 ──
+  if (item.state === "announced") {
+    // (v2.4~v3) kind=="collab" 또는 collab_with 존재 = 합동방송
+    const isCollab = item.kind === "collab" || (Array.isArray(item.collab_with) && item.collab_with.length > 0);
+    // ponytail: assumed_live 는 announced+upcoming 중 90분 지각 강등된 아이템 표시
+    a.className = item.assumed_live
+      ? "card card--announced card--sched-live"
+      : "card card--announced";
     if (isCollab) a.classList.add("card--collab");
-    a.href = broadcast.url || (channelData && channelData.channel_url) || "#";
+    a.href = item.url || (channelData && channelData.channel_url) || "#";
 
+    // 썸네일 자리 — membership 이면 자물쇠, 아니면 아이콘
     const thumbWrap = document.createElement("div");
     thumbWrap.className = "card__thumb-wrap";
-    const icon = document.createElement("span");
-    icon.className = broadcast.icon ? "card__icon" : "card__icon card__icon--empty";
-    icon.textContent = broadcast.icon || "📺";
-    thumbWrap.appendChild(icon);
+    if (item.membership) {
+      const lock = document.createElement("span");
+      lock.className = "card__icon";
+      lock.textContent = "🔒";
+      thumbWrap.appendChild(lock);
+    } else {
+      const icon = document.createElement("span");
+      icon.className = "card__icon";
+      icon.textContent = "📺";
+      thumbWrap.appendChild(icon);
+    }
     const badge = document.createElement("span");
-    badge.className = isCollab ? "card__badge card__badge--collab" : "card__badge card__badge--sched";
+    badge.className = isCollab ? "card__badge card__badge--collab" : "card__badge card__badge--announced";
     badge.textContent = isCollab ? "합동" : "예고";
     thumbWrap.appendChild(badge);
     a.appendChild(thumbWrap);
@@ -90,22 +97,21 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
     const body = document.createElement("div");
     body.className = "card__body";
 
-    if (broadcast.members_only) {
+    if (item.membership) {
       const chip = document.createElement("span");
       chip.className = "card__chip";
-      chip.textContent = "🔒 회원 전용";
+      chip.textContent = "🔒 회원 전용 방송";
       body.appendChild(chip);
     }
 
-    let label = KIND_LABEL[broadcast.kind] || "";
+    let label = KIND_LABEL[item.kind] || "";
     if (isCollab) {
-      // 참여자 = channel_key + collab_with, 이 레인 멤버는 빼고 나머지를 라벨에.
-      const participants = [broadcast.channel_key, ...(Array.isArray(broadcast.collab_with) ? broadcast.collab_with : [])];
+      const participants = [item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])];
       const others = participants.filter((k) => k && k !== laneKey);
-      if (broadcast.title) {
-        label = `합동 · ${broadcast.title}`;              // 出演情報 등 — 이벤트명 우선
+      if (item.title) {
+        label = `합동 · ${item.title}`;
       } else if (others.length >= 4) {
-        label = "합동 · 전원";                            // 5인 전원
+        label = "합동 · 전원";
       } else {
         const names = others
           .map((k) => (FALLBACK_CHANNELS[k] || {}).name_ko)
@@ -121,47 +127,33 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
       body.appendChild(title);
     }
 
-    if (broadcast.host === "group") {
-      const host = document.createElement("p");
-      host.className = "card__host";
-      host.textContent = "공식 채널 합동방송";
-      body.appendChild(host);
-    }
-
     const meta = document.createElement("p");
     meta.className = "card__meta";
-    if (broadcast.time_tbd && broadcast.scheduled_start) {
-      // (v2.8.1) 개인 예고 등 날짜만 확정 — 시각 자리에 날짜(M/D)만, 카운트다운 없음.
+    if (item.time_tbd && item.scheduled_start) {
       const dateEl = document.createElement("span");
       dateEl.className = "card__time";
-      dateEl.textContent = broadcast.scheduled_start.slice(5, 10).replace("-", "/");
+      dateEl.textContent = item.scheduled_start.slice(5, 10).replace("-", "/");
       meta.appendChild(dateEl);
       const rel = document.createElement("span");
       rel.className = "card__rel";
-      rel.textContent = broadcast.assumed_live ? "방송 중 (추정)" : "시간 미정";
+      rel.textContent = item.assumed_live ? "방송 중 (추정)" : "시간 미정";
       meta.appendChild(rel);
-    } else if (broadcast.scheduled_start) {
+    } else if (item.scheduled_start) {
       const timeEl = document.createElement("time");
       timeEl.className = "card__time";
-      timeEl.dateTime = broadcast.scheduled_start;
-      if (broadcast.start_approx) {
-        const ap = document.createElement("span");
-        ap.className = "card__approx";
-        ap.textContent = "약 ";
-        timeEl.appendChild(ap);
-      }
-      timeEl.appendChild(document.createTextNode(formatKST(broadcast.scheduled_start)));
+      timeEl.dateTime = item.scheduled_start;
+      timeEl.appendChild(document.createTextNode(formatKST(item.scheduled_start)));
       meta.appendChild(timeEl);
       const rel = document.createElement("span");
       rel.className = "card__rel";
-      rel.textContent = broadcast.assumed_live
+      rel.textContent = item.assumed_live
         ? "방송 중 (추정)"
-        : relativeLabel(broadcast.scheduled_start, nowMs);
+        : relativeLabel(item.scheduled_start, nowMs);
       meta.appendChild(rel);
     } else {
       const rel = document.createElement("span");
       rel.className = "card__rel";
-      rel.textContent = broadcast.assumed_live ? "방송 중 (추정)" : "시간 미정";
+      rel.textContent = "시간 미정";
       meta.appendChild(rel);
     }
     body.appendChild(meta);
@@ -169,33 +161,67 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
     return a;
   }
 
-  a.href = broadcast.url;
-  a.className = broadcast.status === "live" ? "card card--live" : "card card--upcoming";
+  // ── upcoming/watching (예정) / live (방송 중) / end (방송 종료) — 실물 영상 있음 ──
+  const isWatching = item.state === "watching";
+  const isLive = item.state === "live";
+  const isEnd = item.state === "end";
 
+  a.className = "card";
+  if (isLive) {
+    a.classList.add("card--live");
+  } else if (isEnd) {
+    a.classList.add("card--end");
+  } else if (isWatching) {
+    a.classList.add("card--watching");
+  } else {
+    a.classList.add("card--upcoming");
+  }
+
+  if (item.membership) a.classList.add("card--membership");
+
+  a.href = item.url;
+
+  // 썸네일 영역
   const thumbWrap = document.createElement("div");
   thumbWrap.className = "card__thumb-wrap";
 
-  const img = document.createElement("img");
-  img.className = "card__thumb";
-  img.src = broadcast.thumbnail;
-  img.loading = "lazy";
-  img.alt = "";
-  img.onerror = function () {
-    if (this.dataset.fallback) {
-      this.classList.add("card__thumb--broken");
-    } else {
-      this.dataset.fallback = "1";
-      this.src = this.src.replace("hqdefault", "mqdefault");
-    }
-  };
-  thumbWrap.appendChild(img);
+  if (item.membership) {
+    // membership 은 썸네일 자리에 자물쇠 + 배지
+    const lock = document.createElement("span");
+    lock.className = "card__icon";
+    lock.textContent = "🔒";
+    thumbWrap.appendChild(lock);
+  } else if (item.thumbnail) {
+    const img = document.createElement("img");
+    img.className = "card__thumb";
+    img.src = item.thumbnail;
+    img.loading = "lazy";
+    img.alt = "";
+    img.onerror = function () {
+      if (this.dataset.fallback) {
+        this.classList.add("card__thumb--broken");
+      } else {
+        this.dataset.fallback = "1";
+        this.src = this.src.replace("hqdefault", "mqdefault");
+      }
+    };
+    thumbWrap.appendChild(img);
+  }
 
-  if (broadcast.status === "live") {
+  if (isLive) {
     const badge = document.createElement("span");
     badge.className = "card__badge card__badge--live";
     badge.textContent = "LIVE";
     thumbWrap.appendChild(badge);
+  } else if (isWatching) {
+    const badge = document.createElement("span");
+    badge.className = "card__badge card__badge--watching";
+    badge.textContent = "대기 중";
+    thumbWrap.appendChild(badge);
+  } else if (isEnd) {
+    // end 상태는 배지 없음
   }
+
   a.appendChild(thumbWrap);
 
   const body = document.createElement("div");
@@ -203,15 +229,16 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
 
   const title = document.createElement("p");
   title.className = "card__title";
-  title.textContent = broadcast.title;
+  title.textContent = item.title;
   body.appendChild(title);
 
   const meta = document.createElement("p");
   meta.className = "card__meta";
 
-  const timeStr = broadcast.status === "live"
-    ? (broadcast.scheduled_start || broadcast.actual_start)
-    : broadcast.scheduled_start;
+  // 시각 표시: live/end 는 actual_start, 나머지는 scheduled_start
+  const timeStr = (isLive || isEnd)
+    ? (item.actual_start || item.scheduled_start)
+    : item.scheduled_start;
   if (timeStr) {
     const timeEl = document.createElement("time");
     timeEl.className = "card__time";
@@ -222,12 +249,21 @@ function createCard(broadcast, nowMs, channelData, laneKey) {
 
   const relSpan = document.createElement("span");
   relSpan.className = "card__rel";
-  if (broadcast.status === "live") {
-    relSpan.textContent = "방송 중";
-  } else if (broadcast.scheduled_start) {
-    relSpan.textContent = relativeLabel(broadcast.scheduled_start, nowMs);
-    // 예정 시각이 지났는데 아직 upcoming(=live 전환 미확인)이면 "지각" 스타일 표시
-    relSpan.classList.toggle("card__rel--late", isLate(broadcast.scheduled_start, nowMs));
+  if (isLive) {
+    // actual_start 가 있으면 경과 시간 표시
+    relSpan.textContent = item.actual_start ? elapsedLabel(item.actual_start, nowMs) : "방송 중";
+  } else if (isEnd) {
+    relSpan.textContent = "방송 종료";
+  } else if (isWatching) {
+    // watching 도 relativeLabel 사용 (대기 중 배지가 상태 표시)
+    relSpan.textContent = relativeLabel(item.scheduled_start, nowMs);
+    relSpan.classList.toggle("card__rel--late", isLate(item.scheduled_start, nowMs));
+  } else if (item.scheduled_start) {
+    // upcoming/announced
+    relSpan.textContent = relativeLabel(item.scheduled_start, nowMs);
+    if (item.state === "upcoming") {
+      relSpan.classList.toggle("card__rel--late", isLate(item.scheduled_start, nowMs));
+    }
   } else {
     relSpan.textContent = "곧 시작";
   }
@@ -280,14 +316,14 @@ function buildHeader(channelData) {
 }
 
 /* ── 라이브 영역 (빨간 테두리 존 · 비어있으면 OFF-AIR) ────────────── */
-function buildLive(liveBroadcasts, nowMs, channelData, laneKey) {
+function buildLive(liveItems, endedItems, nowMs, channelData, laneKey) {
   const el = document.createElement("div");
   el.className = "lane__live";
-  if (liveBroadcasts.length) {
-    el.dataset.state = "on";
-    for (const b of liveBroadcasts) el.appendChild(createCard(b, nowMs, channelData, laneKey));
-  } else {
-    el.dataset.state = "off";
+  // 빨간 테두리는 실제 live 가 있을 때만 켠다. end(방송 종료) 카드는 존에 남기되 소등.
+  el.dataset.state = liveItems.length ? "on" : "off";
+  for (const b of liveItems) el.appendChild(createCard(b, nowMs, channelData, laneKey));
+  for (const b of endedItems) el.appendChild(createCard(b, nowMs, channelData, laneKey));
+  if (!liveItems.length && !endedItems.length) {
     const off = document.createElement("span");
     off.className = "lane__live-off";
     off.textContent = "OFF-AIR";
@@ -318,26 +354,25 @@ function bucketDefs() {
   return _mobileMQ.matches ? BUCKET_DEFS_MOBILE : BUCKET_DEFS;
 }
 
-function bucketKey(broadcast, nowMs) {
+function bucketKey(item, nowMs) {
   const mobile = _mobileMQ.matches;
-  if (!broadcast.scheduled_start) return mobile ? "rest" : "later";
-  const delta = new Date(broadcast.scheduled_start).getTime() - nowMs;
-  if (delta < DAY_MS) return "today";        // 24시간 이내
+  if (!item.scheduled_start) return mobile ? "rest" : "later";
+  const delta = new Date(item.scheduled_start).getTime() - nowMs;
+  if (delta < DAY_MS) return "today";
   if (delta < 7 * DAY_MS) return "week";
-  if (mobile) return "rest";                 // 모바일: 한 달 이내 + 그 이후 통합
+  if (mobile) return "rest";
   if (delta < 30 * DAY_MS) return "month";
   return "later";
 }
 
-function buildBuckets(upcoming, nowMs, channelData, laneKey) {
+function buildBuckets(pending, nowMs, channelData, laneKey) {
   const wrap = document.createElement("div");
   wrap.className = "lane__buckets";
 
-  // 각 구간 항상 렌더 — 레인끼리 높이가 가지런하도록. 빈 구간은 "예고 없음".
   const defs = bucketDefs();
   const groups = {};
   for (const [key] of defs) groups[key] = [];
-  for (const b of upcoming) (groups[bucketKey(b, nowMs)] ||= []).push(b);
+  for (const i of pending) (groups[bucketKey(i, nowMs)] ||= []).push(i);
 
   for (const [key, label] of defs) {
     const sec = document.createElement("section");
@@ -357,10 +392,10 @@ function buildBuckets(upcoming, nowMs, channelData, laneKey) {
       none.textContent = "예고 없음";
       list.appendChild(none);
     } else {
-      for (const b of groups[key]) {
+      for (const i of groups[key]) {
         const li = document.createElement("li");
         li.className = "lane__item";
-        li.appendChild(createCard(b, nowMs, channelData, laneKey));
+        li.appendChild(createCard(i, nowMs, channelData, laneKey));
         list.appendChild(li);
       }
     }
@@ -377,27 +412,45 @@ function byScheduledAsc(a, b) {
   return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
 }
 
+// ponytail: bucketOf 순수 헬퍼. selfcheck 에서 테스트용.
+export function bucketOf(item, nowMs) {
+  return bucketKey(item, nowMs);
+}
+
+// ponytail: laneKeys 순수 헬퍼. selfcheck 에서 테스트용.
+export function laneKeys(items, channelOrder) {
+  const keys = new Set();
+  for (const item of items) {
+    if (item.channel_key) keys.add(item.channel_key);
+    if (Array.isArray(item.collab_with)) item.collab_with.forEach(k => keys.add(k));
+  }
+  return Array.from(keys).filter(k => channelOrder.includes(k)).sort();
+}
+
 /**
- * 보드 전체 재구성.
+ * 보드 전체 재구성 (v3).
  * @param {HTMLElement} boardEl
- * @param {Object} schedule
+ * @param {Object} preview - {channel_order, channels, items}
  * @param {number} nowMs
  */
-export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
+export function renderBoard(boardEl, preview, nowMs = Date.now()) {
   boardEl.innerHTML = "";
 
-  const channelOrder = schedule.channel_order || FALLBACK_CHANNEL_ORDER;
-  const channels = schedule.channels || FALLBACK_CHANNELS;
+  const channelOrder = preview.channel_order || FALLBACK_CHANNEL_ORDER;
+  const channels = preview.channels || FALLBACK_CHANNELS;
 
-  // (v2.4) 합동방송은 참여 멤버 전원(channel_key + collab_with) 레인에 팬아웃.
+  // v3: 합동방송은 참여 멤버 전원(channel_key + collab_with) 레인에 팬아웃.
+  // 모르는 channel_key 는 무시.
   const byChannel = {};
-  for (const b of schedule.broadcasts || []) {
-    const keys = new Set([b.channel_key, ...(Array.isArray(b.collab_with) ? b.collab_with : [])]);
-    for (const k of keys) if (k) (byChannel[k] ||= []).push(b);
+  for (const item of preview.items || []) {
+    if (!item.channel_key || !channelOrder.includes(item.channel_key)) continue;
+    const keys = new Set([item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])]);
+    for (const k of keys) {
+      if (k && channelOrder.includes(k)) (byChannel[k] ||= []).push(item);
+    }
   }
 
   for (const key of channelOrder) {
-    // schedule.json 에 빠진 필드(예: 아직 수집 안 된 avatar)는 폴백으로 필드 단위 보강
     const channelData = { ...(FALLBACK_CHANNELS[key] || {}), ...(channels[key] || {}) };
     if (!channelData.name && !channelData.name_ko) continue;
 
@@ -408,20 +461,22 @@ export function renderBoard(boardEl, schedule, nowMs = Date.now()) {
     lane.appendChild(buildHeader(channelData));
 
     const list = byChannel[key] || [];
-    const live = list.filter((b) => b.status === "live");
-    // upcoming + scheduled(예고, v2.3) 을 같은 버킷에 시각순으로 — 예고는 render 가 흐린 카드로.
+    const live = list.filter((i) => i.state === "live");
+    // announced/upcoming/watching 을 버킷으로 분류
     const pending = list
-      .filter((b) => b.status === "upcoming" || b.status === "scheduled")
+      .filter((i) => i.state === "announced" || i.state === "upcoming" || i.state === "watching")
       .sort(byScheduledAsc);
+    // end 상태는 별도 영역 없음(pending 에 섞이지 않음)
+    const ended = list.filter((i) => i.state === "end");
 
-    lane.appendChild(buildLive(live, nowMs, channelData, key));
+    lane.appendChild(buildLive(live, ended, nowMs, channelData, key));
     lane.appendChild(buildBuckets(pending, nowMs, channelData, key));
 
     boardEl.appendChild(lane);
     sampleLaneColor(avatarSized(channelData.avatar, 88), lane);
   }
 
-  applyMarquees(boardEl);          // 클론 전에 — 캐러셀 클론이 marquee 마크업까지 복제
+  applyMarquees(boardEl);
   carouselBoard = boardEl;
   initMobileCarousel(boardEl);
 }
@@ -605,24 +660,35 @@ export function renderFooter(footEl, schedule, { stale = false } = {}) {
 }
 
 /**
- * DOM 재구성 없이 .card--upcoming 의 .card__rel 텍스트만 갱신.
+ * v3 카운트다운 갱신 (재렌더 필요 시 true 반환).
  * @param {HTMLElement} boardEl
  * @param {number} nowMs
  */
 export function updateCountdowns(boardEl, nowMs = Date.now()) {
   let bucketChanged = false;
-  for (const cardEl of boardEl.querySelectorAll(".card--upcoming, .card--scheduled")) {
+  for (const cardEl of boardEl.querySelectorAll(".card")) {
     const relSpan = cardEl.querySelector(".card__rel");
     const timeEl = cardEl.querySelector(".card__time");
     if (!relSpan || !timeEl || !timeEl.dateTime) continue;
-    // assumed_live 예고 카드는 rel 이 "방송 중 (추정)" 고정 — 카운트다운으로 덮지 않음.
+
+    // assumed_live 는 "방송 중 (추정)" 고정
     if (cardEl.classList.contains("card--sched-live")) continue;
-    relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
-    // 예고(scheduled)는 "지각" 개념 없음 — late 토글 스킵.
-    if (!cardEl.classList.contains("card--scheduled")) {
-      relSpan.classList.toggle("card__rel--late", isLate(timeEl.dateTime, nowMs));
+
+    // live: elapsedLabel / 나머지: relativeLabel
+    if (cardEl.classList.contains("card--live")) {
+      relSpan.textContent = elapsedLabel(timeEl.dateTime, nowMs);
+    } else if (cardEl.classList.contains("card--end")) {
+      relSpan.textContent = "방송 종료";
+    } else {
+      // announced/upcoming/watching
+      relSpan.textContent = relativeLabel(timeEl.dateTime, nowMs);
+      // announced 는 late 토글 스킵, upcoming/watching 은 토글
+      if (!cardEl.classList.contains("card--announced")) {
+        relSpan.classList.toggle("card__rel--late", isLate(timeEl.dateTime, nowMs));
+      }
     }
-    // 시간이 흘러 다른 구간(예: 7일 이내 → 오늘)에 속하게 됐으면 재렌더 필요
+
+    // 구간 변화 감지
     const cur = cardEl.closest(".lane__bucket")?.dataset.bucket;
     if (cur && bucketKey({ scheduled_start: timeEl.dateTime }, nowMs) !== cur) {
       bucketChanged = true;
