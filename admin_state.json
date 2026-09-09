@@ -5,47 +5,34 @@
   "pending_notice_edit": null,
   "pending_undo": null,
   "undo": {
-    "action": "/ingest 개인예고 후지 미야코 (💜配信よてい💜\n9/9(水)21:30~めんば～しっぷ限定🔒雑談\nみやこしっぷ開)",
-    "at": "2026-09-08T14:58:20Z",
-    "new_sha": "5322389da4feff8850265807e78c0f182c5fd9f1",
+    "action": "/ingest ／\n🛸夢限大みゅーたいぷ\n9/9(水)の配信スケジュール🌟\n＼\n\n【メン限】21",
+    "at": "2026-09-09T12:18:49Z",
+    "new_sha": "ac816d5ec5a4cbb9853b70ff42f3c82df2ce51a4",
     "path": "schedule.json",
     "prev_content": {
       "broadcasts": [
         {
-          "actual_start": "2026-09-08T12:00:13Z",
-          "api_start_seen": "2026-09-08T12:00:00Z",
-          "channel_key": "ritsu",
-          "concurrent_viewers": 670,
-          "first_seen": "2026-09-07T14:26:16Z",
-          "info_at": "2026-09-07T12:54:51Z",
+          "actual_start": null,
+          "api_start_seen": "2026-09-09T12:30:00Z",
+          "channel_key": "miyako",
+          "concurrent_viewers": null,
+          "first_seen": "2026-09-08T14:58:20Z",
+          "info_at": "2026-09-08T14:58:20Z",
           "info_source": "personal",
-          "last_updated": "2026-09-08T14:34:12Z",
-          "scheduled_start": "2026-09-08T12:00:00Z",
-          "status": "live",
-          "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/maxresdefault_live.jpg",
-          "title": "【チラズアート新作「雪葬」＃2】雪かきだけで終わらせない【峰月律/ゆめみた】",
-          "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",
-          "video_id": "bgzve7Y7S50"
-        },
-        {
-          "actual_start": "2026-09-08T14:33:05Z",
-          "channel_key": "arale",
-          "concurrent_viewers": 233,
-          "first_seen": "2026-09-08T14:30:12Z",
-          "last_updated": "2026-09-08T14:34:12Z",
-          "scheduled_start": "2026-09-08T14:30:00Z",
-          "status": "live",
-          "thumbnail": "https://i.ytimg.com/vi/Pi7kwM-bS6w/maxresdefault_live.jpg",
-          "title": "【🟡すやバラ歌枠】ドヨドヨな夜をスヨスヨな夜に…アコギと共に【 仲町あられ / 夢限大みゅーたいぷ 】",
-          "url": "https://www.youtube.com/watch?v=Pi7kwM-bS6w",
-          "video_id": "Pi7kwM-bS6w"
+          "last_updated": "2026-09-08T22:33:00Z",
+          "scheduled_start": "2026-09-09T12:30:00Z",
+          "status": "upcoming",
+          "thumbnail": "https://i.ytimg.com/vi/0_e9LxlMYHU/maxresdefault_live.jpg",
+          "title": "💜メン限 雑談💜みやこシップ1周年直前❣みやこの部屋#11 【ゆめみた/藤都子】",
+          "url": "https://www.youtube.com/watch?v=0_e9LxlMYHU",
+          "video_id": "0_e9LxlMYHU"
         },
         {
           "actual_start": null,
           "channel_key": "arale",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T14:34:12Z",
+          "last_updated": "2026-09-08T22:33:00Z",
           "scheduled_start": "2026-12-24T14:59:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -58,7 +45,7 @@
           "channel_key": "arale",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T14:34:12Z",
+          "last_updated": "2026-09-08T22:33:00Z",
           "scheduled_start": "2027-08-16T14:59:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -71,7 +58,7 @@
           "channel_key": "yuno",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T14:34:12Z",
+          "last_updated": "2026-09-08T22:33:00Z",
           "scheduled_start": "2028-01-01T14:30:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -84,34 +71,13 @@
           "channel_key": "nonoka",
           "concurrent_viewers": null,
           "first_seen": "2026-08-30T07:21:11Z",
-          "last_updated": "2026-09-08T14:34:12Z",
+          "last_updated": "2026-09-08T22:33:00Z",
           "scheduled_start": "2028-09-07T14:45:00Z",
           "status": "upcoming",
           "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
           "title": "※ののらーしゅうかいかいじょう",
           "url": "https://www.youtube.com/watch?v=2Q5A9SWgHtA",
           "video_id": "2Q5A9SWgHtA"
-        },
-        {
-          "assumed_live": false,
-          "channel_key": "ritsu",
-          "collab_with": [],
-          "expires_at": "2026-09-09T01:00:00Z",
-          "first_seen": "2026-09-08T08:37:16Z",
-          "icon": "☀",
-          "kind": "morning",
-          "last_updated": "2026-09-08T08:37:16Z",
-          "members_only": false,
-          "sched_id": "sched:ritsu:2026-09-08T22:00:00Z",
-          "scheduled_start": "2026-09-08T22:00:00Z",
-          "source": "bdp_schedule",
-          "source_at": "2026-09-08T08:37:16Z",
-          "start_approx": false,
-          "status": "scheduled",
-          "thumbnail": null,
-          "title": null,
-          "url": null,
-          "video_id": null
         }
       ],
       "channel_order": [
@@ -178,7 +144,7 @@
           ]
         }
       },
-      "generated_at": "2026-09-08T14:54:12Z"
+      "generated_at": "2026-09-09T12:00:06Z"
     }
   }
 }
