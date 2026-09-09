@@ -449,39 +449,33 @@ def summary_text(result: dict, now_iso: str) -> str:
     candidates = result.get("candidates", 0)
     videos = result.get("videos", 0)
     quota = result.get("quota_used", 0)
-    schedule_changed = "O" if result.get("schedule_changed") else "X"
-    pending_count = result.get("pending_entries", 0)
+    preview_changed = "O" if result.get("preview_changed") else "X"
+    item_count = result.get("preview_items", 0)
     enqueue_errors = result.get("enqueue_errors", [])
     enqueue_ok = result.get("enqueued", 0)
     enqueue_total = enqueue_ok + len(enqueue_errors)
 
-    # 로그에서 전이 요약 추출
-    log = result.get("log", [])
-    transitions = {}
-    for log_token in log:
-        if "pre-live" in log_token:
-            key = "new pre-live" if "new pre-live" in log_token else "pre-live"
-            transitions[key] = transitions.get(key, 0) + 1
-        elif "live-watch" in log_token:
-            transitions["live-watch"] = transitions.get("live-watch", 0) + 1
-        elif "pre-live→live-watch" in log_token:
-            transitions["pre-live→live-watch"] = (
-                transitions.get("pre-live→live-watch", 0) + 1
-            )
+    # 로그(statemachine.derive 토큰)에서 전이 요약 추출
+    tallies: dict[str, int] = {}
+    for tok in result.get("log", []):
+        for mark in ("→watching", "→live", "→end", "end→none", "watching-demote", "assumed-live drop"):
+            if mark in tok:
+                tallies[mark] = tallies.get(mark, 0) + 1
+                break
+    transition_str = " · ".join(f"{k} ×{v}" for k, v in sorted(tallies.items()))
 
-    transition_str = " · ".join(
-        f"{k} ×{v}" for k, v in sorted(transitions.items())
-    )
-    transition_line = f"전이: {transition_str}" if transition_str else ""
+    tl = result.get("translated", {}) or {}
+    tl_n = tl.get("notice_tl", 0) + tl.get("tweet_tl", 0)
 
     text = (
         f"🔄 <b>{mode_label}</b> {kst}\n"
         f"후보 {candidates} · 조회 {videos} · 쿼터 {quota}\n"
-        f"schedule 변경 {schedule_changed} · pending {pending_count}건 · "
-        f"enqueue {enqueue_ok}/{enqueue_total}"
+        f"preview 변경 {preview_changed} · {item_count}건 · enqueue {enqueue_ok}/{enqueue_total}"
     )
-    if transition_line:
-        text += f"\n{transition_line}"
+    if tl_n:
+        text += f" · 번역 {tl_n}"
+    if transition_str:
+        text += f"\n전이: {transition_str}"
 
     return text
 
@@ -788,22 +782,24 @@ if __name__ == "__main__":
         "candidates": 78,
         "videos": 78,
         "quota_used": 2,
-        "schedule_changed": True,
-        "pending_entries": 6,
+        "preview_changed": True,
+        "preview_items": 6,
         "enqueued": 3,
         "enqueue_errors": [],
+        "translated": {"notice_tl": 1, "tweet_tl": 0},
         "log": [
-            "announced pv_abc123",
-            "upcoming pv_def456",
-            "live pv_ghi789",
+            "→watching pv_abc123",
+            "→live pv_def456",
+            "→end pv_ghi789",
         ],
     }
 
     summary = summary_text(result_dict, now_iso)
     assert "light sync" in summary
     assert "후보 78" in summary
-    assert "schedule 변경 O" in summary
+    assert "preview 변경 O" in summary
     assert "enqueue 3/3" in summary
+    assert "번역 1" in summary
     print("✓ summary_text 생성됨")
     print(f"  {summary[:80]}...")
 
