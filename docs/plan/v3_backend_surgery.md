@@ -75,7 +75,13 @@
     - 회원전용: videos.list 는 404 → API wake 사이클을 태우지 말고, 알림만으로 카드 구성 +
       video_id 없는 assumed-live 90분 폴백에 의존. 프론트에 "회원전용" 배지.
 - **미확인 (모니터링 중)**: 회원전용 방송 알림이 실제로 오는지 + payload 가 위와 동일한지.
-  대상 채널(개인 5인) 알림 샘플도 아직 없음 — 로그 나오면 확인 후 확정.
+  (개인 5인 채널 알림 자체는 `SUBSCRIPTION_LIVESTREAM_START` 로 도달 확인됨 —
+  `ref/flow-7 (4).log` 22:06 千石ユノ. 회원전용만 미확인.)
+- **플로우 블록 설계 — 폰 Automate 에 구성 완료 (2026-09-09)**: `docs/AUTOMATE_MANUAL.md §4b`.
+  9블록, Fork 로 리스너/처리 분리, YT(`chime.slot_key`+`LIVESTREAM`)·X(`#1tweet-`+BigTextStyle)
+  게이트, 페이로드에 `source:"yt"|"x"` 필드. 무료 티어 한도는 "플로우당 6블록" 이 아니라
+  "실행 중 블록 총 30개" 였음(§0 정정). **백엔드 `/ingest` 의 `source` 분기·`yt` 경로 처리는
+  v3 착수 시 구현** — 그 전까지 YT 페이로드는 들어와도 기존 X 파서가 무시(로그만).
 
 ### 2. vxtwitter unfurl 도입
 - 업스트림이 트윗을 릴레이할 때 이미 `pde_noti_tag` 에서 트윗 Snowflake id 를 뽑고 있음
