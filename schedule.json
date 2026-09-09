@@ -1,27 +1,11 @@
 {
   "broadcasts": [
     {
-      "actual_start": "2026-09-09T12:30:49Z",
-      "api_start_seen": "2026-09-09T12:30:00Z",
-      "channel_key": "miyako",
-      "concurrent_viewers": null,
-      "first_seen": "2026-09-08T14:58:20Z",
-      "info_at": "2026-09-08T14:58:20Z",
-      "info_source": "personal",
-      "last_updated": "2026-09-09T13:00:00Z",
-      "scheduled_start": "2026-09-09T12:30:00Z",
-      "status": "live",
-      "thumbnail": "https://i.ytimg.com/vi/0_e9LxlMYHU/maxresdefault_live.jpg",
-      "title": "💜メン限 雑談💜みやこシップ1周年直前❣みやこの部屋#11 【ゆめみた/藤都子】",
-      "url": "https://www.youtube.com/watch?v=0_e9LxlMYHU",
-      "video_id": "0_e9LxlMYHU"
-    },
-    {
       "actual_start": null,
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:00:00Z",
+      "last_updated": "2026-09-09T13:36:00Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -34,7 +18,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:00:00Z",
+      "last_updated": "2026-09-09T13:36:00Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -47,7 +31,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:00:00Z",
+      "last_updated": "2026-09-09T13:36:00Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -60,7 +44,7 @@
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-09T13:00:00Z",
+      "last_updated": "2026-09-09T13:36:00Z",
       "scheduled_start": "2028-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
@@ -196,5 +180,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-09T13:23:00Z"
+  "generated_at": "2026-09-09T13:36:00Z"
 }
