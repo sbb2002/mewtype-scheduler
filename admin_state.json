@@ -1,0 +1,20 @@
+{
+  "edit_lock": null,
+  "pending_del": null,
+  "pending_ingest": null,
+  "pending_member": null,
+  "pending_notice": null,
+  "pending_notice_edit": null,
+  "pending_op": {
+    "at": "2026-09-09T15:53:30Z",
+    "cmd": "ingest",
+    "contents": "tweet",
+    "ctx": {
+      "unit": "arale"
+    },
+    "step": "await_raw"
+  },
+  "pending_undo": null,
+  "suppress": [],
+  "undo": null
+}
