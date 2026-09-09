@@ -19,8 +19,11 @@
   카운트**. 정지된 플로우는 개수 제한 없음. 30 초과 시 추가 블록이 실행 안 됨(플로우 start 실패).
   출처: <https://llamalab.com/automate/doc/premium.html>.
   (구 메모의 "플로우당 6개" 는 오기 — 2026-09-09 정정. 실제로 10블록 넘겨도 돌아간다.)
-- 현행 X 릴레이는 ~6블록, v3 2소스 플로우도 ~10블록이라 30 한도에 여유가 크다. 다른 개인
+- 현행 X 릴레이는 6블록, v3 2소스 플로우는 12블록(§4b)이라 30 한도에 여유가 크다. 다른 개인
   자동화 플로우와 30을 공유한다는 점만 주의(실행 중 플로우에 스크래치 블록 남기지 말 것).
+- `Notification posted?` 의 `Package` 를 비우면 전체 앱 → `When transition` 이어도 계속
+  깨어나 worker·로그 폭주. 반드시 패키지 필터. glob(`*` `?` 만)이라 두 앱은 리스너 블록을
+  따로 둔다(§4b).
 - **`Notification posted?` 는 `proceed = When transition` 에서 알림 1건당 fiber 1개만
   통과시키고 스스로 재무장하지 않는다.** 반드시 마지막에 `@2` 로 되돌리는 arrow 가 있어야
   계속 듣는다 (NO=알림 제거 경로도 `@2` 로). 처리 중(HTTP ~2s) 도착분 유실을 막으려면
@@ -163,40 +166,51 @@ contains(coalesce(nx["android.template"], ""), "BigTextStyle") != 0
 
 ### 4b. X + YouTube 2소스 분기 (폰 Automate 에 구성 완료 — 2026-09-09)
 
-블록 수 걱정이 사라졌으니(§0), 단일 fiber 루프 대신 **Fork 로 리스너와 처리를 분리**한다.
-9블록, 30 한도 내. 폰 플로우에 아래대로 입력해 뒀다(백엔드 `/ingest` 의 `source` 분기
+블록 수 걱정이 사라졌으니(§0), **리스너 2개(패키지별) + Fork 로 리스너/처리 분리** 로 구성한다.
+12블록, 30 한도 내. 폰 플로우에 아래대로 입력해 뒀다(백엔드 `/ingest` 의 `source` 분기
 처리는 v3 착수 시 — 그 전까지는 기존 X 경로만 반응, YT 페이로드는 `source:"yt"` 로 와서
 미처리 로그만 남음).
 
+> **왜 리스너 2개인가** — `Notification posted?` 의 `Package` 를 비우면 = 전체 앱. 안드로이드는
+> 항상 어떤 앱이든 알림을 posted/updated 해서 `When transition` 이어도 `@2` 가 쉼 없이 깨어나
+> worker·로그가 폭주한다(실측). `Package` 필드는 glob(`*` `?` 만, `{a,b}` 미지원)이라 서로 다른
+> 두 패키지를 한 패턴으로 못 잡음 → 패키지별 리스너 블록을 따로 둔다.
+
 ```
-@1  Flow beginning
-@2  Notification posted?            proceed = When transition,  Package = any
-      ├ YES → @3
-      └ NO  → @2                    (알림 제거 이벤트 — 무시하고 재대기)
-@3  Fork                           "Stop with parent" = ON
-      ├ OK  → @2                    (부모 fiber = 리스너, 즉시 재무장 — 버스트 유실 방지)
-      └ new → @4                    (자식 fiber = 일회용 worker)
-@4  Expression true?  [YT 게이트]    ├ YES → @6   └ NO → @5
-@5  Expression true?  [X 게이트]     ├ YES → @7   └ NO → (미연결; worker fiber 종료)
-@6  Variable set  body = «YT 페이로드»   → @8
-@7  Variable set  body = «X 페이로드»    → @8
-@8  HTTP request  POST <telegram>/ingest  · Request content = body · out: status  ├ 응답 → @9   └ 실패 → @9
-@9  Log append   message = pkg ++ http=status ++ id ++ 본문80자   → (미연결; worker fiber 종료)
+@1   Flow beginning
+@2   Fork   "Stop with parent"=ON            OK → @3       new → @6     (리스너 2개 기동)
+
+── 리스너 A: 삼성 인터넷(X) ──
+@3   Notification posted?  Package = com.sec.android.app.sbrowser  · proceed = When transition
+       ├ YES → @4        └ NO → @3           (알림 제거 이벤트 — 무시, 재대기)
+@4   Fork   "Stop with parent"=ON            OK → @3       new → @10    (A 재무장 + worker 분기)
+
+── 리스너 B: YouTube ──
+@6   Notification posted?  Package = com.google.android.youtube    · proceed = When transition
+       ├ YES → @7        └ NO → @6
+@7   Fork   "Stop with parent"=ON            OK → @6       new → @10    (B 재무장 + worker 분기)
+
+── 공통 worker ──
+@10  Expression true?  [YT 게이트]            ├ YES → @12   └ NO → @11
+@11  Expression true?  [X 게이트]             ├ YES → @13   └ NO → (미연결; worker 종료)
+@12  Variable set  body = «YT 페이로드»   → @14
+@13  Variable set  body = «X 페이로드»    → @14
+@14  HTTP request  POST <telegram>/ingest  · Request content = body · out: status   → @15
+@15  Log append   message = pkg ++ http=status ++ id ++ 본문80자   → (미연결; worker 종료)
 ```
 
-- `Fork` 출력은 `OK`(원래=부모 fiber) + `new`(새 자식 fiber). 둘 다 즉시 병렬 진행하고
-  자식은 변수 상태를 복제한다(그 시점 `nx`·`Package` 가 worker 쪽에 고정 — 새 알림이 와도
-  안 덮임). `OK → @2` 로 리스너를 계속 살리고 `new → @4` 로 처리를 일회용 fiber 에 넘긴다.
-  `Stop with parent = ON` 이라야 플로우 정지 시 in-flight worker 도 정리된다.
-- `@2` 는 `When transition` — 알림 1건당 fiber 1개, 스스로 재무장 안 함. `OK → @2` 루프가
-  그 역할. Fork 가 없으면 `@8`(~2s) 도는 동안 온 알림을 놓친다.
-- `@4`/`@5` 의 NO, `@9` 뒤는 **연결 안 해도 됨** — 리스너는 `OK` 갈래로 이미 살아있고 worker
-  fiber 만 끝난다. `@2` 의 NO(알림 제거)만은 반드시 `@2` 로.
-- `Package` 는 `@2` 출력 변수. `nx["pde_noti_pkg"]` 와 동일.
-- 배열 리터럴(`contains([...], pkg)`)을 피하려고 게이트는 `Package == "..."` 등가비교를 쓴다
-  (§1 의 `[ ]` 저장 이슈 회피).
+- `@2` 시작 Fork 로 리스너 A·B 두 fiber 를 병렬 기동. 각 리스너는 **자기 패키지만** 듣는다
+  → 무관한 앱 알림엔 fiber 가 아예 안 깨어남(폭주 해결).
+- `Fork` 출력 = `OK`(원래 fiber) + `new`(새 자식). 리스너별 Fork(`@4`/`@7`)에서 `OK` 는
+  자기 `Notification posted?` 로 즉시 복귀(재무장), `new` 는 공용 worker `@10` 으로. 자식은
+  변수 상태를 복제하므로 그 시점 `nx`·`Package` 가 worker 에 고정된다.
+- `@10`/`@11` 의 NO, `@15` 뒤는 **연결 안 해도 됨** — 리스너는 각자의 Fork `OK` 로 살아있고
+  worker fiber 만 끝난다. `@3`/`@6` 의 NO(알림 제거)만은 각자 자신에게 되돌린다.
+- `Package` 는 `@3`/`@6` 출력 변수. `nx["pde_noti_pkg"]` 와 동일.
+- 게이트는 `Package == "..."` 등가비교(배열 리터럴 `contains([...], pkg)` 회피 — §1 의 `[ ]` 이슈).
+- `Stop with parent = ON` 이라야 플로우 정지 시 in-flight worker·리스너가 정리된다.
 
-#### `@4 Expression true?` — YouTube 게이트
+#### `@10 Expression true?` — YouTube 게이트
 
 ```
 Package == "com.google.android.youtube"
@@ -205,8 +219,9 @@ Package == "com.google.android.youtube"
 ```
 
 `chime.slot_key` 유무 하나로 SUMMARY 더미·댓글·업로드 알림이 전부 탈락한다.
+(리스너가 이미 패키지를 좁혔지만, worker 가 공용이라 `Package ==` 로 갈래를 가른다.)
 
-#### `@5 Expression true?` — X 게이트 (§4a 게이트에 Package 조건만 추가)
+#### `@11 Expression true?` — X 게이트 (§4a 게이트에 Package 조건만 추가)
 
 ```
 Package == "com.sec.android.app.sbrowser"
@@ -219,7 +234,7 @@ Package == "com.sec.android.app.sbrowser"
 > `：` `，` `"` 가 섞이면 `Expected ':' but found ','` 로 튕긴다. 반각으로만. 아래 두
 > 페이로드는 한 줄로 붙여넣는 형태로 적어 둔다.
 
-#### `@6 Variable set` — YT 페이로드
+#### `@12 Variable set` — YT 페이로드
 
 `chime.slot_key` 가 온전한 video_id 라 잘린 URL 복원이 불필요.
 
@@ -230,19 +245,19 @@ urlEncode({"source": "yt", "video_id": nx["chime.slot_key"], "title": nx["androi
 `kind` 예: `a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:536ba428…` → 백엔드가 가운데 토큰
 (`LIVESTREAM_TUNEIN` / `LIVESTREAM_REMINDER` / `SUBSCRIPTION_LIVESTREAM_START`)만 파싱.
 
-#### `@7 Variable set` — X 페이로드 (§4a 와 동일 + `source`)
+#### `@13 Variable set` — X 페이로드 (§4a 와 동일 + `source`)
 
 ```
 urlEncode({"source": "x", "text": coalesce(nx["android.text"], nx["android.bigText"], nmsg, nticker, ""), "title": coalesce(nx["android.title"], ""), "template": coalesce(nx["android.template"], ""), "tag": coalesce(nx["pde_noti_tag"], "")})
 ```
 
-`text` 는 §4a 의 3중 삼항 대신 `coalesce` 로 축약했다 — `@5` 게이트가 이미
+`text` 는 §4a 의 3중 삼항 대신 `coalesce` 로 축약했다 — `@11` 게이트가 이미
 `trim(coalesce(android.text, android.bigText, "")) != ""` 를 통과시키므로, 여기 도달 시
 `android.text` 는 비어 있지 않거나(대개) `null`+`bigText` 존재뿐이라 `coalesce` 로 충분.
 (`coalesce` 는 첫 non-null 반환이고 `""` 는 non-null 이지만, `android.text == ""` 케이스는
 게이트에서 걸러진다.)
 
-#### `@8 HTTP request` — 공통
+#### `@14 HTTP request` — 공통
 
 | 필드 | 값 |
 |---|---|
@@ -252,20 +267,20 @@ urlEncode({"source": "x", "text": coalesce(nx["android.text"], nx["android.bigTe
 | Request content type | `application/x-www-form-urlencoded` |
 | Request content | `body` |
 
-`@6`/`@7` 이 `body` 에 완성된 폼 문자열(`urlEncode` 결과 = `k=v&k=v`)을 넣어 놨으므로
+`@12`/`@13` 이 `body` 에 완성된 폼 문자열(`urlEncode` 결과 = `k=v&k=v`)을 넣어 놨으므로
 Request content 는 `body` 한 단어. 헤더에 `Content-Type` 을 또 넣지 않는다(전용 필드가 있음).
-출력(`Response status code` 등)은 `@9 Log append` 로.
+출력(`Response status code` → 변수 `status`)은 `@15 Log append` 로.
 
 백엔드 `_ingest` 는 `source` 로 먼저 갈래를 나눈다. `source` 없으면 `"x"` 로 간주(전환기
 호환). `yt` 면 `video_id` 로 정규 파이프라인(`videos.list`/reconcile) 진입.
 
-`@6`/`@7` 없이 `@8` 한 블록에 인라인하려면 Request content 에 직접 분기(길어서 비권장):
+`@12`/`@13` 없이 `@14` 한 블록에 인라인하려면 Request content 에 직접 분기(길어서 비권장):
 
 ```
 nx["pde_noti_pkg"] == "com.google.android.youtube" ? urlEncode({"source": "yt", "video_id": nx["chime.slot_key"], "title": nx["android.text"], "kind": nx["chime.thread_id"], "tag": coalesce(nx["pde_noti_tag"], "")}) : urlEncode({"source": "x", "text": coalesce(nx["android.text"], nx["android.bigText"], nmsg, nticker, ""), "title": coalesce(nx["android.title"], ""), "template": coalesce(nx["android.template"], ""), "tag": coalesce(nx["pde_noti_tag"], "")})
 ```
 
-#### `@9 Log append` — message
+#### `@15 Log append` — message
 
 Automate 가 앞에 `날짜 시각 블록id` 를 자동으로 붙이므로 message 는 소스·HTTP 결과·식별자·
 본문 앞부분만. 문자열 연결은 `++` (`+` 는 NaN).
@@ -274,8 +289,10 @@ Automate 가 앞에 `날짜 시각 블록id` 를 자동으로 붙이므로 messa
 coalesce(nx["pde_noti_pkg"], "?") ++ " http=" ++ coalesce(status, "?") ++ " id=" ++ coalesce(nx["chime.slot_key"], nx["pde_noti_tag"], "-") ++ " | " ++ substr(coalesce(nx["android.text"], nmsg, nticker, ""), 0, 80)
 ```
 
-`status` = `@8` 의 Response status code 출력 변수. 출력 예:
-`… U 68@9: com.google.android.youtube http=200 id=bgzve7Y7S50 | 【チラズアート…【峰月律/ゆめみた】`
+`status` = `@14` 의 Response status code 출력 변수. 출력 예:
+`… U 68@15: com.google.android.youtube http=200 id=bgzve7Y7S50 | 【チラズアート…【峰月律/ゆめみた】`
+
+worker 에만 있고 리스너엔 없으니 관심 앱 알림 1건당 1줄만 남는다(폭주 없음).
 
 #### 안 하는 것 / 폰 쪽 선행조건
 

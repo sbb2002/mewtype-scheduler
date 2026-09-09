@@ -78,10 +78,13 @@
   (개인 5인 채널 알림 자체는 `SUBSCRIPTION_LIVESTREAM_START` 로 도달 확인됨 —
   `ref/flow-7 (4).log` 22:06 千石ユノ. 회원전용만 미확인.)
 - **플로우 블록 설계 — 폰 Automate 에 구성 완료 (2026-09-09)**: `docs/AUTOMATE_MANUAL.md §4b`.
-  9블록, Fork 로 리스너/처리 분리, YT(`chime.slot_key`+`LIVESTREAM`)·X(`#1tweet-`+BigTextStyle)
-  게이트, 페이로드에 `source:"yt"|"x"` 필드. 무료 티어 한도는 "플로우당 6블록" 이 아니라
-  "실행 중 블록 총 30개" 였음(§0 정정). **백엔드 `/ingest` 의 `source` 분기·`yt` 경로 처리는
-  v3 착수 시 구현** — 그 전까지 YT 페이로드는 들어와도 기존 X 파서가 무시(로그만).
+  12블록. 패키지별 리스너 2개(삼성 인터넷 / YouTube) + 리스너별 Fork 로 재무장·worker 분리,
+  공용 worker 에서 YT(`chime.slot_key`+`LIVESTREAM`)·X(`#1tweet-`+BigTextStyle) 게이트,
+  페이로드에 `source:"yt"|"x"` 필드. (리스너 Package 를 비우면 전체 앱 알림에 깨어나
+  로그·worker 폭주 — 실측 후 리스너 2개로 확정. glob 은 `{a,b}` 미지원.)
+  무료 티어 한도는 "플로우당 6블록" 이 아니라 "실행 중 블록 총 30개" 였음(§0 정정).
+  **백엔드 `/ingest` 의 `source` 분기·`yt` 경로 처리는 v3 착수 시 구현** — 그 전까지 YT
+  페이로드는 들어와도 기존 X 파서가 무시(로그만).
 
 ### 2. vxtwitter unfurl 도입
 - 업스트림이 트윗을 릴레이할 때 이미 `pde_noti_tag` 에서 트윗 Snowflake id 를 뽑고 있음
