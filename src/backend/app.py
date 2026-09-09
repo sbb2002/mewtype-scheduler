@@ -80,8 +80,8 @@ def _wake():
 
 
 @app.get("/")
-@app.get("/healthz")
 def _healthz():
+    # "/healthz" 는 GFE 가 컨테이너 도달 전에 404 로 가로챈다 → 루트만 노출.
     return "ok", 200
 
 

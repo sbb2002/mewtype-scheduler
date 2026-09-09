@@ -16,6 +16,9 @@ upsert_job () {
   if gcloud scheduler jobs describe "$name" --location="$GCP_LOCATION" &>/dev/null; then
     verb=update
   fi
+  # gcloud 신버전: create 는 --headers=, update 는 --update-headers= (--headers 미지원).
+  local hdr_flag="--headers=Content-Type=application/json"
+  [ "$verb" = update ] && hdr_flag="--update-headers=Content-Type=application/json"
   echo "${verb}: $name"
   gcloud scheduler jobs "$verb" http "$name" \
     --location="$GCP_LOCATION" \
@@ -23,7 +26,7 @@ upsert_job () {
     --time-zone="$tz" \
     --uri="$URL/tick" \
     --http-method=POST \
-    --headers="Content-Type=application/json" \
+    "$hdr_flag" \
     --message-body="$body" \
     --oidc-service-account-email="$INVOKER_SA" \
     --oidc-token-audience="$URL" \

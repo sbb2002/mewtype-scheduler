@@ -177,13 +177,21 @@ class LLMClient:
         for attempt, delay in enumerate(delays):
             try:
                 # ponytail: requests.post의 json 인자와 호환, 테스트 mock도 지원
+                _t0 = time.monotonic()
                 resp = self.session.post(
                     url, json=payload, headers=headers, timeout=self.timeout
                 )
                 if resp.status_code == 200:
                     data = resp.json()
                     if "choices" in data and len(data["choices"]) > 0:
-                        return data["choices"][0]["message"]["content"]
+                        content = data["choices"][0]["message"]["content"]
+                        # 번역 품질 사후 검토용 — 모델·지연·입출력 미리보기를 남긴다.
+                        logger.info(
+                            "Groq ok model=%s %.1fs in=%d out=%r",
+                            model, time.monotonic() - _t0, len(prompt),
+                            (content or "")[:160],
+                        )
+                        return content
                     logger.warning(f"Groq: 예상 응답 구조 없음 {data}")
                     return None
                 elif resp.status_code in (429, 500, 502, 503, 504):
