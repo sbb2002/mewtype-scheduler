@@ -164,45 +164,13 @@
   font-weight: 600;
 }
 
-/* ── scheduled (예고) — X 트윗만, YouTube 영상 아직 없음 ──────────
-   점선 테두리 + 감광 = "확정 아님". 썸네일 자리엔 방송종류 이모지.
-   "예고" 배지는 빨강 아님. 카운트다운 강조·지각 표시 없음.
-   링크는 채널 URL 뿐이라 hover 는 부양 없이 밝기만. */
-.card--scheduled {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--color-sched, #7c8aa0) 55%, var(--color-border));
-  opacity: 0.82;
-}
-.card--scheduled:hover {
-  transform: none;
-  box-shadow: none;
-  opacity: 1;
-}
-.card--scheduled .card__thumb-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--color-sched, #7c8aa0) 12%, var(--color-bg));
-}
+/* 썸네일 자리 아이콘 (announced 📺 / membership 🔒) */
 .card__icon {
   font-size: 3rem;
   line-height: 1;
   filter: saturate(0.85);
 }
-.card__icon--empty {
-  font-size: 2.2rem;
-  opacity: 0.4;
-}
-.card__badge--sched {
-  background: color-mix(in srgb, var(--color-sched, #7c8aa0) 26%, transparent);
-  color: color-mix(in srgb, var(--color-sched, #7c8aa0) 72%, #fff);
-  box-shadow: none;
-  text-transform: none;
-  letter-spacing: 0.02em;
-  font-weight: 650;
-}
-.card--scheduled .card__title { color: var(--color-text-muted); }
-.card--scheduled .card__title--label { color: var(--color-text); }
+/* 회원 전용 배지 칩 ("🔒 회원 전용 방송") */
 .card__chip {
   align-self: flex-start;
   font-size: 0.68rem;
@@ -212,12 +180,8 @@
   background: color-mix(in srgb, var(--color-late) 18%, transparent);
   color: color-mix(in srgb, var(--color-late) 82%, #fff);
 }
-.card__approx {
-  color: var(--color-text-muted);
-  font-weight: 400;
-}
 
-/* ── announced (v3 예고) — scheduled 와 동일 스타일 ──
+/* ── announced (v3 예고) — 정보 일부만 확정 ──
    점선 테두리 + 감광 = "확정 아님". 썸네일 자리엔 아이콘/자물쇠.
    "예고" 배지는 빨강 아님. */
 .card--announced {
@@ -280,9 +244,8 @@
   background: color-mix(in srgb, #8b7cc9 12%, var(--color-bg));
 }
 
-/* ── (v2.4) 합동방송 — 5인 공동명의(公式) 채널. renderBoard 가 참여 멤버
-   전원 레인에 같은 카드를 팬아웃한다. scheduled 카드의 변형:
-   점선→실선 + 바이올렛 좌측 바 + "합동" 배지, 감광 완화. 링크는 그룹 영상 URL. */
+/* ── 합동방송 — renderBoard 가 참여 멤버 전원 레인에 같은 카드를 팬아웃.
+   실선 + 바이올렛 좌측 바 + "합동" 배지, 감광 완화. 링크는 그룹 영상 URL. */
 .card--collab {
   border-style: solid;
   border-color: color-mix(in srgb, var(--color-collab, #8b7cc9) 55%, var(--color-border));
@@ -304,11 +267,6 @@
   text-transform: none;
   letter-spacing: 0.02em;
   font-weight: 650;
-}
-.card__host {
-  margin: 0;
-  font-size: 0.7rem;
-  color: color-mix(in srgb, var(--color-collab, #8b7cc9) 72%, #fff);
 }
 
 /* ── 모바일: 가로 카드 (작은 썸네일 좌 + 텍스트 우) ──────────────
@@ -355,7 +313,6 @@
     font-size: 0.62rem;
   }
   .card__icon { font-size: 2.2rem; }
-  .card__icon--empty { font-size: 1.8rem; }
 
   /* 모바일에서 announced/watching/end 클래스도 같은 가로 레이아웃 */
   .card--announced,
