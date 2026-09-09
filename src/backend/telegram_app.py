@@ -1958,6 +1958,328 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
         _send_telegram(f"⚠️ 오류: /translate 처리 실패\n{str(e)[:100]}")
 
 
+# ── (v3) {cmd}×{contents} 격자 헬퍼 ─────────────────────────────────────────────
+_CONTENTS = ("preview", "notice", "tweet")
+
+
+def _split_contents(arg: str, default: str = "preview") -> tuple[str, str]:
+    """`arg` 의 첫 토큰이 preview|notice|tweet 면 (그것, 나머지). 아니면 (default, arg 전체).
+
+    `/list arale` 같은 v2 호출 하위호환 — arale 은 contents 가 아니므로 (preview, "arale").
+    """
+    parts = (arg or "").strip().split(None, 1)
+    if parts and parts[0].lower() in _CONTENTS:
+        return parts[0].lower(), (parts[1].strip() if len(parts) > 1 else "")
+    return default, (arg or "").strip()
+
+
+def _handle_tweet_list(gh, channels_cfg: dict) -> None:
+    """/list tweet — 현재 배지가 떠 있는 유닛의 트윗."""
+    if xtweet is None:
+        _send_telegram("⚠️ xtweet 모듈 없음")
+        return
+    prev, _ = gh.read_json(_TWEETS_PATH)
+    tw = (prev or {}).get("tweets", {}) or {}
+    if not tw:
+        _send_telegram("🐦 표시 중인 개인 트윗 없음.")
+        return
+    chans = channels_cfg.get("channels", {})
+    lines = ["🐦 <b>개인 트윗</b>"]
+    for k in _UNIT_KEYS:
+        row = tw.get(k)
+        if not row:
+            continue
+        name = chans.get(k, {}).get("name_ko", k)
+        body = (row.get("text_ko") or row.get("text") or "")[:80]
+        lines.append(f"<b>{html.escape(name)}</b> ({k})\n{html.escape(body)}\n{row.get('url') or ''}")
+    _send_telegram("\n\n".join(lines))
+
+
+def _handle_tweet_del(gh, channels_cfg: dict, now_iso: str, unit: str) -> None:
+    """/del tweet <유닛> — 그 유닛의 트윗 배지 슬롯을 즉시 제거(+undo)."""
+    u = (unit or "").strip().lower()
+    if u not in _UNIT_KEYS:
+        _send_telegram(f"사용법: /del tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
+        return
+    try:
+        prev, sha = gh.read_json(_TWEETS_PATH)
+        prev = prev or {}
+        tw = dict(prev.get("tweets", {}) or {})
+        if u not in tw:
+            _send_telegram(f"ℹ️ {u} 트윗이 없습니다.")
+            return
+        tw.pop(u)
+        new = dict(prev)
+        new["tweets"] = tw
+        new["generated_at"] = now_iso
+        _, nsha = gh.write_json(_TWEETS_PATH, new, prev_sha=sha,
+                                message=f"data: /del tweet {u} {now_iso}")
+        _save_undo(gh, action=f"/del tweet {u}", prev_content=prev, new_sha=nsha,
+                   now_iso=now_iso, path=_TWEETS_PATH)
+        _send_telegram(f"🗑 {u} 트윗 배지 제거됨. /undo 로 되돌릴 수 있습니다.")
+    except Exception as e:
+        log.exception("del tweet")
+        _send_telegram(f"⚠️ 오류: /del tweet 실패\n{str(e)[:100]}")
+
+
+# ── (v3) /edit — pending_op 슬롯 기반 마법사 ───────────────────────────────────
+_EDIT_FIELDS = ("title", "state", "date", "url")
+_OP_TTL_SEC = 60
+
+
+def _op_set(gh, now_iso, *, cmd, contents, step, ctx):
+    st, sh = gh.read_json(_ADMIN_STATE_PATH)
+    gh.write_json(_ADMIN_STATE_PATH,
+                  admin.set_pending_op(st or admin.default_admin_state(),
+                                       cmd=cmd, contents=contents, step=step, ctx=ctx,
+                                       now_iso=now_iso),
+                  prev_sha=sh, message=f"data: pending_op {cmd}/{contents}/{step} {now_iso}")
+
+
+def _op_clear(gh, now_iso, *, release_lock_id=None):
+    st, sh = gh.read_json(_ADMIN_STATE_PATH)
+    st = st or admin.default_admin_state()
+    st = admin.clear_pending_op(st)
+    if release_lock_id:
+        st = admin.clear_edit_lock(st)
+    gh.write_json(_ADMIN_STATE_PATH, st, prev_sha=sh,
+                  message=f"data: pending_op 정리 {now_iso}")
+
+
+def _edit_form_preview(name: str, idx: int, item: dict, patch: dict) -> str:
+    def _cur(f):
+        if f == "date":
+            k = _parse_iso_to_kst(item.get("scheduled_start"))
+            return k.strftime("%Y-%m-%d %H:%M") if k else "(없음)"
+        return str(item.get({"url": "url"}.get(f, f)) or "(없음)")
+    lines = [f"<b>{html.escape(name)}</b> #{idx}  <code>{item.get('id')}</code>"]
+    for f in _EDIT_FIELDS:
+        mark = " ✏️" if f in patch else ""
+        val = html.escape(str(patch[f])) if f in patch else html.escape(_cur(f))
+        lines.append(f"* {f:<6}: {val}{mark}")
+    lines.append("\n수정할 항목 이름(title/state/date/url)을 보내세요. 여러 개면 순서대로.")
+    lines.append("끝내려면 <code>done</code> · 원문으로 통째 교체는 <code>ingest</code> · 취소 <code>aNoneTokyo</code>")
+    return "\n".join(lines)
+
+
+def _handle_edit(gh, channels_cfg: dict, now_iso: str, contents: str, rest: str) -> None:
+    """/edit <preview|notice|tweet> — 편집 마법사 진입."""
+    if admin is None:
+        _send_telegram("⚠️ admin 모듈 없음 — /edit 사용 불가")
+        return
+    if contents == "notice":
+        _handle_notice_edit(gh, now_iso, rest)          # 기존 마법사 재사용
+        return
+    if contents == "tweet":
+        u = (rest or "").strip().lower()
+        if u not in _UNIT_KEYS:
+            _send_telegram(f"사용법: /edit tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
+            return
+        _op_set(gh, now_iso, cmd="edit", contents="tweet", step="await_raw", ctx={"unit": u})
+        _send_telegram(f"✏️ {u} 트윗을 교체할 새 원문을 보내세요. (취소 <code>aNoneTokyo</code>)")
+        return
+    # preview
+    _handle_list(gh, channels_cfg, rest)
+    _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_unit", ctx={})
+    _send_telegram("✏️ 어떤 유닛의 예고를 편집할까요? (유닛명 · 취소 <code>aNoneTokyo</code>)")
+
+
+def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, text: str) -> bool:
+    """pending_op(cmd=edit/ingest, contents=preview/tweet) 응답 소비. True=소진."""
+    if admin is None:
+        return False
+    try:
+        state, _ = gh.read_json(_ADMIN_STATE_PATH)
+    except Exception:
+        return False
+    op = admin.get_pending_op(state)
+    if not op:
+        return False
+    lock_id = (op.get("ctx") or {}).get("id")
+
+    if admin.pending_op_expired(op, now_iso, _OP_TTL_SEC):
+        _op_clear(gh, now_iso, release_lock_id=lock_id)
+        _send_telegram("⏱ 편집 대기(60초)가 지나 취소되었습니다.")
+        return False
+    t = (text or "").strip()
+    if t == _INGEST_CANCEL_TOKEN:
+        _op_clear(gh, now_iso, release_lock_id=lock_id)
+        _send_telegram("🚫 편집이 취소되었습니다.")
+        return True
+    if t.startswith("/"):
+        _op_clear(gh, now_iso, release_lock_id=lock_id)
+        _send_telegram("ℹ️ 편집을 취소하고 입력한 명령을 실행합니다.")
+        return False
+
+    cmd, contents, step = op.get("cmd"), op.get("contents"), op.get("step")
+    ctx = dict(op.get("ctx") or {})
+
+    # ── ingest tweet / edit tweet : 원문 한 방 ──
+    if step == "await_raw" and contents == "tweet":
+        raw = t
+        if not raw:
+            _send_telegram("⚠️ 원문 텍스트를 보내주세요. (대기 유지)")
+            return True
+        _op_clear(gh, now_iso)
+        u = ctx.get("unit")
+        _send_telegram("📥 반영 중…")
+        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso)
+        _send_telegram(f"🐦 {u} 트윗 {'교체됨' if mode in ('added','replaced') else mode}.")
+        return True
+
+    # ── edit preview 마법사 ──
+    if cmd != "edit" or contents != "preview":
+        return False
+
+    prev, _ = gh.read_json(_PREVIEW_PATH)
+    items = (prev or {}).get("items", []) or []
+
+    if step == "await_unit":
+        u = t.lower()
+        if u not in _UNIT_KEYS:
+            _send_telegram(f"⚠️ 유닛명을 보내주세요 ({', '.join(_UNIT_KEYS)}). 취소 aNoneTokyo")
+            return True
+        ctx["unit"] = u
+        _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_idx", ctx=ctx)
+        _send_telegram(f"{u} 의 몇 번 항목을 편집할까요? (번호 — /list {u} 로 확인)")
+        return True
+
+    if step == "await_idx":
+        u = ctx.get("unit")
+        try:
+            idx = int(t)
+        except ValueError:
+            _send_telegram("⚠️ 번호(숫자)를 보내주세요.")
+            return True
+        unit_items = _sorted_unit_broadcasts({"items": items}, u)
+        if idx < 1 or idx > len(unit_items):
+            _op_clear(gh, now_iso)
+            _send_telegram(f"⚠️ {u} #{idx} 없음. /edit 로 다시 시작하세요.")
+            return True
+        it = unit_items[idx - 1]
+        ctx.update({"id": it.get("id"), "idx": idx, "patch": {},
+                    "pre": {f: (it.get("scheduled_start") if f == "date" else it.get(f))
+                            for f in _EDIT_FIELDS}})
+        # 아이템 단위 편집 락
+        st, sh = gh.read_json(_ADMIN_STATE_PATH)
+        st = admin.set_pending_op(st or admin.default_admin_state(), cmd="edit",
+                                  contents="preview", step="await_field", ctx=ctx, now_iso=now_iso)
+        st = admin.set_edit_lock(st, id=it.get("id"), now_iso=now_iso, ttl_sec=_OP_TTL_SEC)
+        gh.write_json(_ADMIN_STATE_PATH, st, prev_sha=sh,
+                      message=f"data: /edit preview lock {it.get('id')} {now_iso}")
+        name = channels_cfg.get("channels", {}).get(u, {}).get("name_ko", u)
+        _send_telegram(_edit_form_preview(name, idx, it, {}))
+        return True
+
+    if step == "await_field":
+        f = t.lower()
+        if f == "done":
+            _apply_preview_edit(gh, now_iso, ctx)
+            return True
+        if f == "ingest":
+            _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_raw_pv", ctx=ctx)
+            _send_telegram("교체할 예고 원문을 보내세요. (취소 aNoneTokyo)")
+            return True
+        if f not in _EDIT_FIELDS:
+            _send_telegram(f"⚠️ title/state/date/url/done/ingest 중 하나. 지금 patch: {ctx.get('patch')}")
+            return True
+        ctx["_field"] = f
+        _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_value", ctx=ctx)
+        hint = {"date": " (YYYY-MM-DD HH:MM, KST)", "state": " (announced/upcoming/…)"}.get(f, "")
+        _send_telegram(f"새 {f} 값을 보내세요{hint}.")
+        return True
+
+    if step == "await_value":
+        f = ctx.get("_field")
+        patch = dict(ctx.get("patch") or {})
+        if f == "date":
+            m = re.match(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})\s*$", t)
+            if not m:
+                _send_telegram("⚠️ 형식: YYYY-MM-DD HH:MM (KST). 다시 보내세요.")
+                return True
+            kst = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]),
+                           tzinfo=timezone(timedelta(hours=9)))
+            patch["date"] = kst.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        elif f == "url":
+            patch["url"] = t if t.startswith("http") else "https://" + t.lstrip("/")
+        else:
+            patch[f] = t
+        ctx["patch"] = patch
+        ctx.pop("_field", None)
+        _op_set(gh, now_iso, cmd="edit", contents="preview", step="await_field", ctx=ctx)
+        u = ctx.get("unit")
+        name = channels_cfg.get("channels", {}).get(u, {}).get("name_ko", u)
+        it = next((x for x in items if x.get("id") == ctx.get("id")), {})
+        _send_telegram(_edit_form_preview(name, ctx.get("idx", 0), it, patch))
+        return True
+
+    if step == "await_raw_pv":
+        raw = t
+        _op_clear(gh, now_iso, release_lock_id=ctx.get("id"))
+        rows = xrelay.parse(raw, now_iso) if xrelay else []
+        if not rows:
+            _send_telegram("ℹ️ 예고 형식으로 파싱 못 함 — 편집 취소.")
+            return True
+        _merge_rows_into_schedule(gh, rows, now_iso, message=f"data: /edit preview ingest {now_iso}",
+                                  action="/edit preview ingest")
+        _send_telegram("✏️ 원문으로 교체 반영됨. /undo 로 되돌릴 수 있습니다.")
+        return True
+
+    return False
+
+
+def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
+    """답한 필드만 preview.json 아이템에 병합. edit_lock 해제. tick 충돌 필드 알림."""
+    patch = ctx.get("patch") or {}
+    pid = ctx.get("id")
+    pre = ctx.get("pre") or {}
+    if not patch:
+        _op_clear(gh, now_iso, release_lock_id=pid)
+        _send_telegram("변경 사항이 없습니다.")
+        return
+    field_map = {"title": "title", "state": "state", "date": "scheduled_start", "url": "url"}
+    conflicts = []
+    for _try in (1, 2):
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {"items": []}
+        items = list(prev.get("items", []) or [])
+        i = next((k for k, x in enumerate(items) if x.get("id") == pid), None)
+        if i is None:
+            _op_clear(gh, now_iso, release_lock_id=pid)
+            _send_telegram("⚠️ 편집하려던 아이템이 사라졌습니다 — 취소.")
+            return
+        it = dict(items[i])
+        for f, val in patch.items():
+            key = field_map[f]
+            cur = it.get(key)
+            want_pre = pre.get(f)
+            if cur != want_pre:
+                conflicts.append(f"{f}: 운영자값 유지 (그 사이 tick: {want_pre!r}→{cur!r})")
+            it[key] = val
+        it["last_updated"] = now_iso
+        items[i] = it
+        new = dict(prev)
+        new["items"] = items
+        new["generated_at"] = now_iso
+        try:
+            _, nsha = gh.write_json(_PREVIEW_PATH, new, prev_sha=sha,
+                                    message=f"data: /edit preview {pid} {now_iso}")
+            _save_undo(gh, action=f"/edit preview {pid}", prev_content=prev,
+                       new_sha=nsha, now_iso=now_iso, path=_PREVIEW_PATH)
+            break
+        except ConflictError:
+            if _try == 2:
+                raise
+            log.warning("/edit preview: 충돌 — 재시도")
+    _op_clear(gh, now_iso, release_lock_id=pid)
+    msg = f"✏️ 예고 편집 반영 ({', '.join(patch)}). /undo 로 되돌릴 수 있습니다."
+    if "state" in patch:
+        msg += "\n⚠️ state 는 FSM 파생값 — 다음 tick 이 덮을 수 있습니다."
+    if conflicts:
+        msg += "\n\n" + "\n".join(conflicts)
+    _send_telegram(msg)
+
+
 # Flask 라우트 정의 (Flask 설치 시만)
 if _FLASK_AVAILABLE:
 
@@ -2052,6 +2374,10 @@ if _FLASK_AVAILABLE:
             if admin is not None and _handle_notice_edit_followup(gh, now_utc, text):
                 return jsonify({"ok": True}), 200
 
+            # v3: /edit·/ingest tweet 마법사(pending_op) 응답 대기 중이면 그쪽이 소진.
+            if admin is not None and _handle_op_followup(gh, channels_cfg, now_utc, message, text):
+                return jsonify({"ok": True}), 200
+
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
@@ -2068,27 +2394,57 @@ if _FLASK_AVAILABLE:
             elif cmd == "/log":
                 _handle_log(gh, now_utc, arg)
             elif cmd == "/list":
-                _handle_list(gh, channels_cfg, arg)
+                _c, _rest = _split_contents(arg)
+                if _c == "notice":
+                    _handle_notice_list(gh, now_utc)
+                elif _c == "tweet":
+                    _handle_tweet_list(gh, channels_cfg)
+                else:
+                    _handle_list(gh, channels_cfg, _rest)   # preview (rest=유닛 필터)
+            elif cmd == "/edit":
+                _c, _rest = _split_contents(arg)
+                _handle_edit(gh, channels_cfg, now_utc, _c, _rest)
             elif cmd == "/del":
-                parts = arg.split()
-                _unit = parts[0] if len(parts) >= 1 else ""
-                _idx = parts[1] if len(parts) >= 2 else ""
-                _handle_del_request(gh, channels_cfg, now_utc, _unit, _idx)
+                _c, _rest = _split_contents(arg)
+                if _c == "notice":
+                    _handle_notice_del(gh, now_utc, _rest)
+                elif _c == "tweet":
+                    _handle_tweet_del(gh, channels_cfg, now_utc, _rest)
+                else:
+                    parts = _rest.split()
+                    _unit = parts[0] if len(parts) >= 1 else ""
+                    _idx = parts[1] if len(parts) >= 2 else ""
+                    _handle_del_request(gh, channels_cfg, now_utc, _unit, _idx)
             elif cmd in ("/ingest", "/add"):
-                # 인라인 원문은 받지 않는다(텔레그램 ||스포일러|| 마스킹이 명령행을
-                # 변형시킴). 무인자로 대기 슬롯만 세팅하고 다음 메시지/파일을 받는다.
+                _c, _rest = _split_contents(arg)
                 if admin is None:
                     _send_telegram("⚠️ admin 모듈 없음 — /ingest 사용 불가")
+                elif _c == "tweet":
+                    _u = _rest.strip().lower()
+                    if _u not in _UNIT_KEYS:
+                        _send_telegram(f"사용법: /ingest tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
+                    else:
+                        _op_set(gh, now_utc, cmd="ingest", contents="tweet",
+                                step="await_raw", ctx={"unit": _u})
+                        _send_telegram(f"✏️ {_u} 개인 트윗 원문을 보내세요. (취소 <code>aNoneTokyo</code>)")
+                elif _c == "notice":
+                    try:
+                        _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
+                        gh.write_json(_ADMIN_STATE_PATH,
+                                      admin.set_pending_notice(_st or admin.default_admin_state(), now_iso=now_utc),
+                                      prev_sha=_sh, message=f"data: pending_notice 대기 시작 {now_utc}")
+                        _send_telegram(_NOTICE_PROMPT)
+                    except Exception:
+                        log.exception("pending_notice 세팅 실패")
+                        _send_telegram("⚠️ /ingest notice 대기 저장 실패")
                 else:
+                    # preview — 인라인 원문 안 받음(||스포일러|| 마스킹). 무인자 대기 슬롯.
                     try:
                         _st, _sh = gh.read_json(_ADMIN_STATE_PATH)
                         gh.write_json(
                             _ADMIN_STATE_PATH,
-                            admin.set_pending_ingest(
-                                _st or admin.default_admin_state(), now_iso=now_utc
-                            ),
-                            prev_sha=_sh,
-                            message=f"data: pending_ingest 대기 시작 {now_utc}",
+                            admin.set_pending_ingest(_st or admin.default_admin_state(), now_iso=now_utc),
+                            prev_sha=_sh, message=f"data: pending_ingest 대기 시작 {now_utc}",
                         )
                         _send_telegram(_INGEST_PROMPT)
                     except Exception:
@@ -2126,19 +2482,15 @@ if _FLASK_AVAILABLE:
                 # 도움말
                 help_text = (
                     "<b>📱 mewtype 텔레그램 봇 (v3)</b>\n\n"
-                    "명령:\n"
-                    "/status — 현재 상태 조회 (preview 6상태 · notice · tweet · LLM 큐)\n"
-                    "/pause — 수집 일시정지\n"
-                    "/resume — 수집 재개\n"
-                    "/log [detail|normal|simple] — 알림 상세도\n"
-                    "/list [유닛] — 방송 목록 (유닛: arale/yuno/nonoka/ritsu/miyako, 생략 시 전체)\n"
-                    "/del &lt;유닛&gt; &lt;번호&gt; — 목록의 항목을 내림 (확인 <code>y</code>/<code>terminate</code>/N)\n"
+                    "일반: /status /pause /resume /log [detail|normal|simple]\n\n"
+                    "<b>콘텐츠</b> (c = preview | notice | tweet, 생략 시 preview):\n"
+                    "/list &lt;c&gt; [유닛] — 목록\n"
+                    "/ingest &lt;c&gt; — 원문 이어 보내 반영 (tweet 은 유닛 지정)\n"
+                    "/edit &lt;c&gt; — 편집 마법사 (preview: 필드 하나씩 · notice: 제목→날짜→URL)\n"
+                    "/del &lt;c&gt; … — 삭제 (preview: &lt;유닛&gt; &lt;번호&gt;, 확인 <code>y</code>/<code>terminate</code>/N)\n"
                     "/translate &lt;notice|tweet&gt; — 미번역 행 번역 (원문 보존)\n"
-                    "/ingest — 보낸 뒤 3분 내에 예고트윗 원문(텍스트/파일)을 이어 보내 수동 반영\n"
-                    "/notice — 소식 게시판 수동 등록 (원문/파일 이어 보내기)\n"
-                    "/notice-list · /notice-del &lt;id|번호&gt; — 소식 조회 / 삭제\n"
-                    "/notice-edit &lt;id|번호&gt; — 소식 편집 (제목→날짜→URL 순 되묻기, 유지: aNoneTokyo)\n"
-                    "/undo — 방금 한 작업(/ingest, /del, /notice) 되돌리기 (확인 y/N, 60초)"
+                    "/undo — 직전 mutating 명령 되돌리기 (y/N, 60초)\n\n"
+                    "별칭: /notice /notice-list /notice-del /notice-edit /add"
                 )
                 _send_telegram(help_text)
 
@@ -2486,6 +2838,52 @@ if __name__ == "__main__":
     assert "mewtype v3" in st and "announced 1" in st and "live 2" in st
     assert "notice   2건" in st and "LLM 큐   2건" in st, st
     print("[OK] _build_status_text (v3)")
+
+    # ── {cmd}×{contents} 격자 + /edit preview 마법사 ──────────
+    assert _split_contents("notice 3") == ("notice", "3")
+    assert _split_contents("arale") == ("preview", "arale")   # v2 하위호환
+    assert _split_contents("") == ("preview", "")
+    assert _split_contents("tweet") == ("tweet", "")
+    print("[OK] _split_contents")
+
+    class _GH:
+        def __init__(self):
+            self.store = {}
+        def read_json(self, path):
+            return (self.store.get(path), "s" if path in self.store else None)
+        def write_json(self, path, data, *, prev_sha=None, message=""):
+            ch = self.store.get(path) != data
+            import copy
+            self.store[path] = copy.deepcopy(data)
+            return (ch, "s2")
+
+    if admin is not None:
+        g = _GH()
+        g.store[_PREVIEW_PATH] = {"items": [
+            {"id": "pv_x1", "channel_key": "arale", "state": "watching",
+             "scheduled_start": "2026-09-10T05:00:00Z", "title": "구제목",
+             "url": "https://youtube.com/watch?v=vvv"},
+        ]}
+        _cfg2 = {"channels": {"arale": {"name_ko": "아라레"}}}
+        NW = "2026-09-09T12:00:00Z"
+        _handle_edit(g, _cfg2, NW, "preview", "")
+        assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH])["cmd"] == "edit"
+        assert _handle_op_followup(g, _cfg2, NW, {}, "arale") is True     # await_unit
+        assert _handle_op_followup(g, _cfg2, NW, {}, "1") is True         # await_idx → lock
+        assert admin.get_edit_lock(g.store[_ADMIN_STATE_PATH])["id"] == "pv_x1"
+        assert _handle_op_followup(g, _cfg2, NW, {}, "title") is True     # await_field
+        assert _handle_op_followup(g, _cfg2, NW, {}, "새제목") is True     # await_value
+        assert _handle_op_followup(g, _cfg2, NW, {}, "done") is True      # 적용
+        _it = g.store[_PREVIEW_PATH]["items"][0]
+        assert _it["title"] == "새제목" and _it["state"] == "watching", _it
+        assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH]) is None
+        assert admin.get_edit_lock(g.store[_ADMIN_STATE_PATH]) is None
+        assert g.store[_ADMIN_STATE_PATH]["undo"]["path"] == "preview.json"
+        # 취소 토큰
+        _handle_edit(g, _cfg2, NW, "preview", "")
+        assert _handle_op_followup(g, _cfg2, NW, {}, _INGEST_CANCEL_TOKEN) is True
+        assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH]) is None
+        print("[OK] /edit preview 마법사 (unit→idx→field→value→done, 락·undo·취소)")
 
     print(chr(10) + "=" * 60)
     print("SUCCESS: telegram_app v3 smoke test 통과")

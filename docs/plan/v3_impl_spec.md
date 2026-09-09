@@ -133,25 +133,31 @@ D1·D2·D3·D6 모두 아래 권장안대로 확정.
 | `e1de80e` | W0+W1 — preview·statemachine·llm·ytnotif·vxtwitter·admin·time.js |
 | `5923e4d` | W2 — xnotice·notices·notify·xrelay·xtweet·render.js·tweets/notices.js·config.js |
 | `84d8c3b` | W3 데이터 파이프라인 — preview_build·handlers·config.py |
-| `0cd80ed` | WP-16(범위조정) — telegram_app v3 데이터 이관 + /translate·/del terminate + suppress/edit_lock 훅 |
+| `0cd80ed` | WP-16(1차) — telegram_app v3 데이터 이관 + /translate·/del terminate + suppress/edit_lock 훅 |
 | `dc7877f` | WP-18 일부 — pending.py 삭제 |
+| `df49127` | WP-19 — SPEC 델타 노트 + deploy 스크립트 GROQ_API_KEY |
+| (다음) | WP-16 마무리 — `{cmd}×{contents}` 격자 + `/edit` 마법사 |
 
-**완료**: WP-0~15, WP-17. + WP-16 은 **범위 조정 완료**: `schedule.json`→`preview.json` 전면 이관,
-`status`→`state`, `merge_announced`, `/status` v3, `/del terminate`+suppress, `/translate` 신규,
-`handlers._run` 의 suppress·edit_lock 훅. admin.py 는 v2 개별 pending_* 슬롯 유지(재배선 대신).
-전 백엔드 15모듈 `python -m src.backend.<mod>` self-test 통과, 프론트 selfcheck 통과.
+**완료**: WP-0~19 전부. 세부:
+- **격자**: `/list` `/ingest` `/edit` `/del` 가 첫 인자 `preview|notice|tweet` 분기(생략=preview,
+  `/list arale` 등 v2 호출 하위호환). `/notice*`·`/add` 별칭 유지.
+- **`/edit`**: `preview` = `pending_op` 슬롯 마법사(유닛→idx→필드/값 반복→done, `admin.set_edit_lock`
+  세팅·해제, 적용 시 답한 필드만 patch + tick 충돌 필드 알림, `/undo` 스냅샷). `notice` = 기존
+  `/notice-edit` 재사용. `tweet` = 유닛→원문→`merge_tweet` 교체.
+- **`/del`/`/ingest`** 도 `tweet`/`notice` 분기 추가.
+- **edit_lock 훅**: `handlers._run` 커밋 직전 `admin.suppressed(url)`(차단 아이템 제외)·
+  `edit_lock_active(id)`(락 걸린 id 는 prev 값 유지).
+- 전 백엔드 15모듈 self-test + 프론트 selfcheck 통과.
 
 검수에서 수정한 것: time_tbd 만료(다음 JST 자정)·live_seen=None 오판정·D-n 캘린더 일수·
 ytnotif 제목 【…】 보존·render buildLive end-only 소등·preview_build ytnotif/supersede 4건·
 telegram_app `_merge_rows_into_schedule` v3 튜플 시그니처·`_remove_broadcast` id 매칭.
 
-**남은 작업 (별도 진행)**:
-- **WP-16 잔여** — `/edit <contents>` 마법사(edit form + edit_lock 세팅/해제 + tick 충돌 알림) 미구현.
-  `{cmd}×{contents}` 격자 완전 통합 안 함 — `/notice`·`/notice-list`·`/notice-del`·`/notice-edit`
-  는 v2 명령명 그대로 동작(내부는 v3 notices.json). `pending_op` 슬롯은 admin.py 에 있으나 미사용.
-- **WP-18 잔여** — 죽은 `.card--scheduled`/`card__badge--sched` CSS(inert, 위험도상 방치),
-  `fixtures/schedule.sample.json`(무해), `src/collector/*`(v1 break-glass — 그대로 둠).
-- **WP-19** — `docs/SPEC.md` 전면 v3 개정(현재는 헤더 노트만). `deploy/*.sh` GROQ_API_KEY secret.
+**남은 것 (배포 시 / 저위험 방치)**:
+- **data 브랜치** — `.old/` 이관 + v3 스키마 빈 파일 생성. **배포 시** 작업(golive 런북).
+- `docs/SPEC.md` 본문 전면 개정 — 상단 v3 델타 노트로 대체, v3 배포 시 재작성.
+- 죽은 `.card--scheduled`/`card__badge--sched` CSS(inert), `fixtures/schedule.sample.json`(무해),
+  `src/collector/*`(v1 break-glass) — 그대로 둠.
 
 ---
 

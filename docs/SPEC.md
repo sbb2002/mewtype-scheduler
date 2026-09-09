@@ -35,8 +35,11 @@
 > - **프론트**: `config.js` `PREVIEW_URL`, `render.js` `state` 기반 카드(`card--watching`/`--end`/
 >   `--membership`), `time.js` `D-n`·절대표기 추가·`elapsedLabel`, tweets/notices 원문↔번역 토글.
 > - **env**: `GROQ_API_KEY`/`GROQ_MODEL`/`GROQ_MODEL_FALLBACK`/`VXTWITTER_BASE`/`INGEST_YT_ENABLED`.
-> - **텔레그램**: `/status` v3 양식, `/del (terminate/y/N)`(terminate=url 12h suppress), `/translate
->   <notice|tweet>` 신규. `/edit` 마법사는 v3 미구현(잔여 작업).
+> - **텔레그램**: `{cmd}×{contents}` 격자 — `/list` `/ingest` `/edit` `/del` 가 첫 인자
+>   `preview|notice|tweet` 로 분기(생략 시 preview, `/list arale` 등 v2 호출 하위호환). `/notice*`·
+>   `/add` 는 별칭으로 유지. `/status` v3 양식, `/del (terminate/y/N)`(terminate=url 12h suppress),
+>   `/translate <notice|tweet>` 신규, `/edit preview` 마법사(pending_op 슬롯 + edit_lock + tick 충돌
+>   알림), `/edit notice` = 기존 `/notice-edit` 재사용.
 
 ---
 
