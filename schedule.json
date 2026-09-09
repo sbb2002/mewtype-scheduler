@@ -8,7 +8,7 @@
       "first_seen": "2026-09-08T14:58:20Z",
       "info_at": "2026-09-08T14:58:20Z",
       "info_source": "personal",
-      "last_updated": "2026-09-08T22:33:00Z",
+      "last_updated": "2026-09-09T12:30:00Z",
       "scheduled_start": "2026-09-09T12:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/0_e9LxlMYHU/maxresdefault_live.jpg",
@@ -21,7 +21,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-08T22:33:00Z",
+      "last_updated": "2026-09-09T12:30:00Z",
       "scheduled_start": "2026-12-24T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/h31Mi6AS7a0/maxresdefault_live.jpg",
@@ -34,7 +34,7 @@
       "channel_key": "arale",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-08T22:33:00Z",
+      "last_updated": "2026-09-09T12:30:00Z",
       "scheduled_start": "2027-08-16T14:59:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/3tQbs-OKrys/maxresdefault_live.jpg",
@@ -47,7 +47,7 @@
       "channel_key": "yuno",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-08T22:33:00Z",
+      "last_updated": "2026-09-09T12:30:00Z",
       "scheduled_start": "2028-01-01T14:30:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/ZZMwYj6PM9o/maxresdefault_live.jpg",
@@ -60,34 +60,13 @@
       "channel_key": "nonoka",
       "concurrent_viewers": null,
       "first_seen": "2026-08-30T07:21:11Z",
-      "last_updated": "2026-09-08T22:33:00Z",
+      "last_updated": "2026-09-09T12:30:00Z",
       "scheduled_start": "2028-09-07T14:45:00Z",
       "status": "upcoming",
       "thumbnail": "https://i.ytimg.com/vi/2Q5A9SWgHtA/sddefault_live.jpg",
       "title": "※ののらーしゅうかいかいじょう",
       "url": "https://www.youtube.com/watch?v=2Q5A9SWgHtA",
       "video_id": "2Q5A9SWgHtA"
-    },
-    {
-      "assumed_live": false,
-      "channel_key": "miyako",
-      "collab_with": [],
-      "expires_at": "2026-09-09T17:30:00Z",
-      "first_seen": "2026-09-09T12:18:49Z",
-      "icon": "",
-      "kind": "unknown",
-      "last_updated": "2026-09-09T12:18:49Z",
-      "members_only": true,
-      "sched_id": "sched:miyako:2026-09-09T12:30:00Z",
-      "scheduled_start": "2026-09-09T12:30:00Z",
-      "source": "bdp_schedule",
-      "source_at": "2026-09-09T12:18:49Z",
-      "start_approx": false,
-      "status": "scheduled",
-      "thumbnail": null,
-      "title": null,
-      "url": null,
-      "video_id": null
     },
     {
       "assumed_live": false,
@@ -217,5 +196,5 @@
       ]
     }
   },
-  "generated_at": "2026-09-09T12:18:49Z"
+  "generated_at": "2026-09-09T12:30:00Z"
 }
