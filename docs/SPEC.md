@@ -1,12 +1,12 @@
-# 구현 명세 (SPEC) — v3
+# 구현 명세 (SPEC) — v3.0
 
-`v3` 브랜치의 현행 구현 계약. v2 원문은 `docs/old/v2/`, v1 은 `docs/old/v1/`.
+현행 구현 계약. v2 원문은 `docs/old/v2/`, v1 은 `docs/old/v1/`.
 설계 배경: `docs/plan/v3_backend_surgery.md`(기능 상세) · `docs/plan/v3_draft.md`(결정 로그) ·
-`docs/plan/v3_telegram_controller.md`(제어 채널) · `docs/plan/v3_impl_spec.md`(구현 명세·진행).
+`docs/plan/v3_telegram_controller.md`(제어 채널) · `docs/plan/v3_impl_spec.md`(구현 명세·진행) ·
+`docs/plan/v3_golive.md`(전환·롤백 런북).
 
-> **배포 상태**: v3 브랜치는 코드 구현 완료(전 백엔드 모듈 self-test 통과). **미배포** —
-> 실서비스는 아직 v2. 배포 시 `data` 브랜치를 `.old/` 로 치우고 v3 스키마 빈 파일로 콜드 스타트한다
-> (마이그레이션 스크립트 없음). 런북은 별도.
+> **배포 상태**: **v3.0 배포됨 (2026-09-09)** — `main` 이 현행. `data` 브랜치는 콜드 스타트
+> (v2 파일은 `data:.old/`, 마이그레이션 스크립트 없음).
 
 **인터페이스 계약(§1~§7)을 벗어나는 변경은 이 문서를 먼저 고친다.**
 

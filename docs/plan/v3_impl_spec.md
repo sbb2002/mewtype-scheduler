@@ -1,10 +1,13 @@
-# v3 코드 구현 명세 (착수용)
+# v3 코드 구현 명세
 
 `v3_draft.md`(결정 로그) · `v3_backend_surgery.md`(기능 상세) · `v3_telegram_controller.md`(제어 채널)
-를 코드 작업 단위로 분해한 문서. **이 명세대로 v3 브랜치에 구현·푸시만 한다. 배포·머지·data
-브랜치 수정은 하지 않는다** (v2 가 실배포 중).
+를 코드 작업 단위로 분해한 문서.
 
-- 대상 브랜치: `v3`
+> **완료·배포됨 (v3.0, 2026-09-09)**. WP-0~19 전부 구현, `main` 머지·배포. 골라이브 후속
+> 수정(LLM response_format·폴백모델, 트윗 이모지 VS16, 원문 링크 X, 읽음 유지)은 그 이후
+> `main` 직커밋. 아래 WP 서술은 착수 당시 계획 기준(이력).
+
+- 대상 브랜치: `main` (구현 당시 `v3`)
 - 테스트 프레임워크 없음 — 각 모듈 `if __name__ == "__main__":` assert 스모크(현행 관례 유지).
 - 코드 주석·커밋 메시지 한국어. 직렬화·시간 규칙은 v2 그대로 (`SPEC.md` §7).
 
@@ -153,11 +156,13 @@ D1·D2·D3·D6 모두 아래 권장안대로 확정.
 ytnotif 제목 【…】 보존·render buildLive end-only 소등·preview_build ytnotif/supersede 4건·
 telegram_app `_merge_rows_into_schedule` v3 튜플 시그니처·`_remove_broadcast` id 매칭.
 
-**남은 것 (배포 시 / 저위험 방치)**:
-- **data 브랜치** — `.old/` 이관 + v3 스키마 빈 파일 생성. **배포 시** 작업(golive 런북).
-- `docs/SPEC.md` 본문 전면 개정 — 상단 v3 델타 노트로 대체, v3 배포 시 재작성.
-- 죽은 `.card--scheduled`/`card__badge--sched` CSS(inert), `fixtures/schedule.sample.json`(무해),
-  `src/collector/*`(v1 break-glass) — 그대로 둠.
+**배포 후 처리됨 / 남은 정리**:
+- ✅ data 브랜치 — `.old/` 이관 + `preview.json` 시드 (2026-09-09, `docs/plan/v3_golive.md`).
+- ✅ Groq secret 생성, 스케줄러 잡 URL 검증, LLM 실호출 검증.
+- 미결(저위험): `deploy/scheduler.sh` gcloud 신버전 `--update-headers` (이번엔 무해),
+  `docs/SPEC.md` 본문 전면 개정, 죽은 `.card--scheduled` CSS·`fixtures/schedule.sample.json`·
+  `src/collector/*` — 그대로 둠. 데드맨 스위치(`/ingest` 침묵 경보)는 `v3_draft.md` 미결 항목.
+- 텔레그램 현행→v3 명령어 대응표 문서화 — 다른 세션 예정.
 
 ---
 

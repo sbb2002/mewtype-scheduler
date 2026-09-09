@@ -11,12 +11,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md`
 - **용어 기준 (세션 간 표현 일관성): `docs/TERMINOLOGY.md`** — 프론트엔드/백엔드/업스트림 시스템/외부 LLM 등.
   표현이 엇갈리면 여기에 추가.
-- **현행 구현 명세 (계약 A~F, 백엔드·프론트 모듈): `docs/SPEC.md`** — v1/v2.0/v2.1 명세를 통합.
+- **현행 구현 명세 (계약 A~I, 백엔드·프론트 모듈): `docs/SPEC.md`** — v3 기준.
   원본 `docs/old/v1/IMPLEMENTATION.md`, `docs/old/v2/IMPLEMENTATION_v2{,.1}.md`
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png`
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md`
-- **v3 (백엔드 수술 — 착수 보류 중): `docs/plan/v3_draft.md`(결정 로그·착수 트리거) +
-  `docs/plan/v3_backend_surgery.md`(기능 상세: 6상태 모델·전이표·텔레그램 명령 통합·외부 LLM)**
+
+> **현행 = v3.0** (배포 2026-09-09). 아래 저장소 구조·데이터 흐름 서술은 v2 계보를 담고
+> 있고, v3 델타는 아래 상자 + `docs/plan/v3_*.md` 에 있다. 새 작업은 v3 기준으로.
+>
+> **v3.0 델타 (요약)** — 상세: `docs/plan/v3_backend_surgery.md`(기능), `docs/plan/v3_impl_spec.md`
+> (코드 WP), `docs/plan/v3_golive.md`(전환·롤백 런북), `docs/plan/v3_draft.md`(결정 로그):
+> - `schedule.json` → **`preview.json`** (계약 A′), `archive.json` → `preview_archive.json`.
+>   상태 `none|announced|upcoming|watching|live|end` **6상태** (기존 `scheduled`→`announced`).
+> - **`pending.json` 폐지** — FSM 은 preview 아이템에서 파생(`statemachine.py` 재작성, 저장 타이머 없음).
+> - 새 모듈: `preview.py`(계약)·`preview_build.py`(reconcile 포크)·`llm.py`(Groq 번역/제목추출)·
+>   `ytnotif.py`(YT 앱 알림 파서, `INGEST_YT_ENABLED` 뒤)·`vxtwitter.py`(트윗 unfurl).
+> - **외부 LLM(Groq `gpt-oss-120b`/폴백 `gpt-oss-20b`)**: 소식 제목추출(json_schema strict)·개인
+>   트윗 번역. 결과는 `notices.json` `title_ko` / `tweets.json` `text_ko` 에 원문과 함께 저장.
+>   실패 행은 `needs_tl:true` → 다음 tick 재시도. `GROQ_API_KEY` Secret.
+> - **예고 머지 모델** = 소스 신뢰도 티어(1 API / 2 명시값 / 3 파생값). 높은 티어 승, 동일 티어 안 최신순.
+> - 텔레그램 명령 `{cmd}×{contents}` 격자 (`/list /ingest /edit /del /undo /translate × preview|notice|tweet`).
+> - 업스트림 Automate 플로우 v3: 패키지별 리스너 2개(삼성 인터넷 + YouTube) + Fork. `docs/AUTOMATE_MANUAL.md §4b`.
+> - 데이터는 **콜드 스타트** — v2 파일은 `data:.old/`, 마이그레이션 스크립트 없음.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -63,11 +79,16 @@ src/
     youtube.py         # YouTube Data API v3 (videos.list / search.list), VideoInfo
     reconcile.py       # 상태 판정 + 이전 스냅샷 대비 diff — 순수 함수
     store.py           # schedule.json / archive.json 로드·저장 (변경 시에만 기록)
-  backend/             # v2 Cloud Run 서비스 (Flask + gunicorn)
-    app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) /healthz
-    handlers.py        # tick/wake 오케스트레이션 (rss/youtube/reconcile 재사용)
-    statemachine.py    # pending.json 폴링 FSM (pre-live / live-watch) — 순수
-    pending.py         # pending.json 스키마 헬퍼
+  backend/             # Cloud Run 서비스 (Flask + gunicorn). v3.0.
+    app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) · `/` 헬스체크(GFE 가 /healthz 가로챔)
+    handlers.py        # (v3) tick/wake → preview_build → preview.json 커밋 + LLM 말단 번역(needs_tl sweep)
+    preview.py         # (v3) preview.json 계약 A′ — make_item/match_item/sort/promote_state (순수)
+    preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수)
+    statemachine.py    # (v3) FSM 파생 — derive(item, now) → (next_state, next_check_at, log). 저장 안 함
+    llm.py             # (v3) Groq 클라이언트 — notice_title(json_schema strict) / translate. 실패 시 None
+    ytnotif.py         # (v3) YouTube 앱 푸시알림 파서 (`chime.*` 키). INGEST_YT_ENABLED 뒤
+    vxtwitter.py       # (v3) 트윗 unfurl — 잘린 URL·이미지 복원 (api.vxtwitter.com)
+    #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
@@ -102,10 +123,11 @@ deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매�
 config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko)
 fixtures/              # schedule.sample.json(프론트/로직 공용), rss_arale.xml(파싱 테스트)
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
-data 브랜치             # schedule.json + archive.json + pending.json + control.json(v2.1)
-                       #   + ingest_queue.json(v2.4 — ECHO/DRY-RUN 중 받은 트윗, 실배포 전환 시 drain)
-                       #   + admin_state.json(v2.5). + notices.json / notice_archive.json(v2.7 — 소식 티커)
-                       #   + tweets.json / tweet_archive.json(v2.8 — 멤버 개인 트윗, 계약 I). 코드 없음
+data 브랜치 (v3)        # preview.json + preview_archive.json + control.json
+                       #   + notices.json / notice_archive.json (소식, +title_ko)
+                       #   + tweets.json / tweet_archive.json (개인 트윗, +text_ko)
+                       #   + admin_state.json (계약 G′ — pending_op/edit_lock/suppress/undo 슬롯)
+                       #   .old/ = 전환 시 치워둔 v2 파일(schedule/pending/ingest_queue …). 롤백용. 코드 없음
 ```
 
 ## 명령
@@ -120,10 +142,14 @@ DATA_DIR=./_data YOUTUBE_API_KEY=xxxx python -m src.collector.main light   # 또
 python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 assert
 python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
-python -m src.backend.statemachine   # 폴링 FSM 9 시나리오
-python -m src.backend.xrelay         # (v2.3~2.6) X 스케줄 파서 — S1~S9 + unparsed_lines + merge
-python -m src.backend.pending        # pending.json 헬퍼
-python -m src.backend.notify         # (v2.1) diff_events + (v2.8.2) allows() 레벨 게이팅 10 시나리오
+python -m src.backend.preview        # (v3) preview.json 계약 — match_item/sort/promote_state
+python -m src.backend.statemachine   # (v3) FSM 파생 derive() — 0.2 전이표 시나리오
+python -m src.backend.preview_build  # (v3) 6상태 preview 재구성
+python -m src.backend.llm            # (v3) Groq 클라이언트 (실호출은 GROQ_API_KEY 있을 때 --live)
+python -m src.backend.ytnotif        # (v3) YT 앱 알림 파서
+python -m src.backend.vxtwitter      # (v3) 트윗 unfurl (fixtures/vxtwitter.sample.json)
+python -m src.backend.xrelay         # X 스케줄 파서 — S1~S9 + unparsed_lines + merge
+python -m src.backend.notify         # diff_events + allows() 레벨 게이팅
 python -m src.backend.control        # (v2.1) control.json 헬퍼
 python -m src.backend.admin          # (v2.5+) admin_state.json 헬퍼 (pending_del/ingest/notice/notice_edit/undo/member, undo.path)
 python -m src.backend.xnotice        # (v2.7) 소식 파서 — S1~S12 (카테고리·날짜·anchor·recap·제목 추출 규칙)
@@ -133,11 +159,12 @@ python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_twe
 python -m src.backend.telegram_app   # /list /del /undo /notice /notice-edit 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
 
-# v2 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
-bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등)
+# 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
+bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY 포함)
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
-bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline 스케줄러 잡
-bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # (v2.1) webhook 서비스
+bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline 스케줄러 잡 (URL 불변이면 생략 가능)
+bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스
+# 전체 전환(v→v) 절차·롤백: docs/plan/v3_golive.md
 
 # 프론트 로컬 (저장소 루트에서 — fixture 상대경로 유지 위해)
 python -m http.server 8099           # http://localhost:8099/src/frontend/
@@ -148,9 +175,10 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 
 ## 아키텍처 핵심
 
-### 데이터 흐름 (v2 — 상세는 `docs/SPEC.md` §8)
+### 데이터 흐름 (v2 계보 — v3 델타는 상단 상자, 상세 `docs/SPEC.md` §8 · `docs/plan/v3_backend_surgery.md`)
 1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 3h) 을 OIDC 로 호출.
-   `/tick` = RSS + `videos.list` 배치 1회 → `schedule.json` 재구성 + `pending.json` 갱신.
+   `/tick` = RSS + `videos.list` 배치 1회 → (v3) `preview_build` → `preview.json` 재구성.
+   FSM 은 저장 없이 파생 — `pending.json` 은 v3 에서 없다.
 2. 각 예정 방송마다 **Cloud Tasks** 에 `scheduled_start − 15분` 시각으로 wake 태스크 1개 enqueue.
    도달 시 `POST /wake {video_id}` → 라이브 여부 확인 → 다음 체크 재예약
    (pre-live 3분 / live-watch 시작~+60분 10분 · +60분 이후 3분).
@@ -210,8 +238,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 - 시각은 전부 UTC ISO(`Z`)로 저장, KST 변환은 **프론트 `time.js` 담당**.
 
 ### 계약 (변경 시 `docs/SPEC.md` 먼저 수정)
-- `schedule.json` / `archive.json` 스키마: `docs/SPEC.md` §1, §2. `scheduled` 행: §1-1.
-- `pending.json` 스키마 (계약 E): `docs/SPEC.md` §5.
+- (v3) `preview.json` / `preview_archive.json` 스키마 (계약 A′): `docs/SPEC.md` · `docs/plan/v3_backend_surgery.md` "v3 데이터 스키마".
+- `pending.json` (계약 E) — **v3 에서 폐지**.
 - `control.json` 스키마 (계약 F): `docs/SPEC.md` §6.
 - 프론트 DOM 구조·class 이름: `docs/SPEC.md` §3. `render.js` 가 생성하고 `css/` 가 스타일링.
   데이터는 `textContent`/`createElement` 로만 주입(XSS 방어), `innerHTML` 금지.
