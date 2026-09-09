@@ -99,16 +99,16 @@
 
 - 리포스트/인용 구분: `android.text` 가 `@<handle>:` 로 시작하거나 `pic.x.com/` 포함.
 
-## 3-1. YouTube 앱 알림 `nx` (`ref/flow-7 (4).log` 실측)
+## 3-1. YouTube 앱 알림 `nx` (`ref/flow-7 (4).log`·`(5).log` 실측)
 
 패키지 `com.google.android.youtube`. **삼성 웹푸시와 키 세트가 완전히 다르다** (`chime.*` 계열).
 SUMMARY 더미 + 실항목이 **쌍으로** 온다 — `chime.slot_key` 유무로 실항목만 통과시키면 됨.
 
 | 키 | 예시 | 비고 |
 |---|---|---|
-| `nx["chime.slot_key"]` | `bgzve7Y7S50` | **video_id 온전한 11자.** YT 알림을 쓰는 이유 전부. SUMMARY 더미엔 없음 |
-| `nx["chime.thread_id"]` | `a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:536ba428805e0000` | 종류. `LIVESTREAM_TUNEIN`(예정−30분) / `LIVESTREAM_REMINDER`(예약분 시작) / `SUBSCRIPTION_LIVESTREAM_START`(구독 채널 시작). 셋 다 `LIVESTREAM` 포함 |
-| `nx["android.text"]` | `【チラズアート新作「雪葬」＃2】…【峰月律/ゆめみた】` | **방송 제목 풀텍스트. 1순위** |
+| `nx["chime.slot_key"]` | 공개 `bgzve7Y7S50` / **회원전용 `default`** | **video_id 온전한 11자.** 회원전용은 `"default"` — video_id 안 줌. SUMMARY 더미엔 아예 없음 |
+| `nx["chime.thread_id"]` | `a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:536ba428805e0000` | 종류. 공개: `LIVESTREAM_TUNEIN`(−30분) / `LIVESTREAM_REMINDER` / `SUBSCRIPTION_LIVESTREAM_START`. **회원전용: `SPONSORSHIPS_LIVESTREAM_TUNEIN` / `..._START`**. 전부 `LIVESTREAM` 포함 |
+| `nx["android.text"]` | 공개 `【チラズアート…】…【峰月律/ゆめみた】` / 회원전용 `[30분 후 ]藤都子 -Fuji Miyako- / 夢限大みゅーたいぷ 실시간 스트리밍 시작: <제목>` | **제목(+회원전용은 채널명도) 1순위** |
 | `nx["android.title"]` | `🔴 30분 후에 峰月律… 실시간 스트림 시청하기` | **잘림·장식 — 쓰지 말 것** |
 | `nx["android.template"]` | `…$BigPictureStyle`(TUNEIN·START) / `…$BigTextStyle`(REMINDER) | 삼성과 달리 유형 판별엔 `chime.thread_id` 를 씀 |
 | `nx["pde_noti_tag"]` | 실항목 `bgzve7Y7S50::<uuid>` / 더미 `1611430723::SUMMARY::<n>` | `::SUMMARY::` 면 버림 |
@@ -220,6 +220,21 @@ Package == "com.google.android.youtube"
 
 `chime.slot_key` 유무 하나로 SUMMARY 더미·댓글·업로드 알림이 전부 탈락한다.
 (리스너가 이미 패키지를 좁혔지만, worker 가 공용이라 `Package ==` 로 갈래를 가른다.)
+
+**회원전용 갈래** — `chime.thread_id` 가 `SPONSORSHIPS_*` 이고 `chime.slot_key == "default"`
+(video_id 없음). 이건 통과시키되 `@12` 페이로드에서 `source:"yt-memberonly"` 로 보내고
+`video_id` 는 안 싣는다 (쓰레기값 `"default"` 방지). 백엔드가 `android.text` 로 채널·제목 파싱.
+일반 YT 갈래는 반대로 `nx["chime.slot_key"] != "default"` 를 요구:
+
+```
+Package == "com.google.android.youtube"
+  && contains(coalesce(nx["chime.thread_id"], ""), "LIVESTREAM") != 0
+  && ( nx["chime.slot_key"] != "default"                              // 일반: 온전한 video_id
+       || contains(coalesce(nx["chime.thread_id"], ""), "SPONSORSHIPS") != 0 )  // 회원전용: default 허용
+```
+
+`@12` 는 `chime.thread_id` 에 `SPONSORSHIPS` 포함 여부로 `source` 를 가른다
+(`"yt"` vs `"yt-memberonly"`, 후자는 `video_id` 생략, `title` = `nx["android.text"]` 원문).
 
 #### `@11 Expression true?` — X 게이트 (§4a 게이트에 Package 조건만 추가)
 

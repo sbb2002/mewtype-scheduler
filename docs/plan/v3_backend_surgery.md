@@ -72,11 +72,20 @@
 - 용도:
     - **video_id 확보** → 공개 방송은 정규 파이프라인(videos.list/reconcile/watching)이 그대로 처리.
     - `announced → upcoming` 승격(위 Preview board 절). `TUNEIN` 이 예정−30분이라 시작 전 승격이 확정적.
-    - 회원전용: videos.list 는 404 → API wake 사이클을 태우지 말고, 알림만으로 카드 구성 +
-      video_id 없는 assumed-live 90분 폴백에 의존. 프론트에 "회원전용" 배지.
-- **미확인 (모니터링 중)**: 회원전용 방송 알림이 실제로 오는지 + payload 가 위와 동일한지.
-  (개인 5인 채널 알림 자체는 `SUBSCRIPTION_LIVESTREAM_START` 로 도달 확인됨 —
-  `ref/flow-7 (4).log` 22:06 千石ユノ. 회원전용만 미확인.)
+- **회원전용 (2026-09-10 실측으로 정정)**: `ref/flow-7 (5).log` 라인 35·41 — 후지 미야코
+  `SPONSORSHIPS_LIVESTREAM_TUNEIN` / `..._START` 도달 확인.
+    - `chime.thread_id` 접두어가 일반(`SUBSCRIPTION_`)과 다름 → `SPONSORSHIPS_` 로 회원전용 판별.
+    - `chime.slot_key == "default"` — **video_id 를 안 준다** (일반은 온전한 11자).
+      `pde_noti_tag` 도 `default::<uuid>`.
+    - `android.text` = `[30분 후 ]<채널> -<로마자>- / 夢限大みゅーたいぷ 실시간 스트리밍 시작: <제목>` —
+      채널명·제목 파싱 가능.
+    - **`videos.list` 는 회원전용도 정상 응답** (실측 `0_e9LxlMYHU`: `items:1`, thumbnails·
+      `liveStreamingDetails`(scheduled/actual start·end) 다 옴, `privacyStatus:"public"`).
+      멤버십 게이트는 재생만 막지 Data API 메타데이터는 안 막는다. → "videos.list 404" 는 오판.
+    - 결론: **video_id 만 있으면 회원전용도 정규 처리** (썸네일 = `i.ytimg.com/vi/<id>/…`, live/end 추적 정상).
+      video_id 없는 열화 경로는 "YT 앱 푸시가 유일 신호(`slot_key=default`) + 트윗 매칭 실패" 일 때만.
+- **미확인 (착수 후 병행)**: 회원전용 샘플 1건뿐 — 다른 멤버·다음 회차. **upcoming 상태**
+  회원전용에서 `videos.list` 응답(오늘 테스트는 종료된 스트림).
 - **플로우 블록 설계 — 폰 Automate 에 구성 완료 (2026-09-09)**: `docs/AUTOMATE_MANUAL.md §4b`.
   12블록. 패키지별 리스너 2개(삼성 인터넷 / YouTube) + 리스너별 Fork 로 재무장·worker 분리,
   공용 worker 에서 YT(`chime.slot_key`+`LIVESTREAM`)·X(`#1tweet-`+BigTextStyle) 게이트,
@@ -86,9 +95,13 @@
   **백엔드 `/ingest` 의 `source` 분기·`yt` 경로 처리는 v3 착수 시 구현** — 그 전까지 YT
   페이로드는 들어와도 기존 X 파서가 무시(로그만).
 
-### 2. vxtwitter unfurl 도입
+### 2. vxtwitter unfurl 도입 (2026-09-10 실측 완료)
 - 업스트림이 트윗을 릴레이할 때 이미 `pde_noti_tag` 에서 트윗 Snowflake id 를 뽑고 있음
   (`xtweet` 가 merge 정렬에 사용). 이 id 로 `https://api.vxtwitter.com/i/status/<id>` 조회 → JSON.
+- **실측**: 트윗 `2096795604856836521`(藤都子 개인 예고) — 푸시 본문은 `youtube.com/live/iWWGpo…`(6자)
+  로 잘렸으나, vxtwitter `text` = `…youtube.com/live/iWWGpoZfH5g?feature=share`(11자 온전) +
+  `mediaURLs` 로 첨부 이미지. `vxtwitter.extract()` → `yt_video_id: "iWWGpoZfH5g"`,
+  `i.ytimg.com/vi/iWWGpoZfH5g/{hq,mq,maxres}default.jpg` 전부 200. `vxtwitter.py` 가 이미 처리 — `handlers` 연결만.
 - 해소되는 것: (a) 개인 트윗 배지의 첨부 **이미지**, (b) **잘리지 않은 본문 + 온전한 `youtube.com/live/…` URL**
   → video_id → 썸네일 + 정규 live/end 추적(= 유노 유령 라이브 버그가 애초에 안 남), (c) 개인 트윗
   예고가 이미지를 포함하면 그 이미지를 `announced` 아이템 썸네일로 → upcoming 승격 조건 충족에도 기여.
@@ -179,11 +192,35 @@
 - 커밋 빈도·`data` 브랜치 히스토리·raw CDN 영향도 배포 후 실측 (지금 속단 안 함).
 
 ## 예고 아이템 동일성
-- 살아있는 동안(`announced`~`end`)만 하나의 아이템. 최신 예고 정보 매칭 키 = 채널 +
+- 살아있는 동안(`announced`~`end`)만 하나의 아이템. 매칭 키 = 채널 +
   (`url` 일치 OR `scheduled_start` 근접). 한 멤버가 2슬롯을 잡아도 보통 url 이 다르거나
   시간대가 크게 벌어져 구분됨.
 - `end` → `none` 으로 완전히 사라지면 **종결**. 이후 같은 채널에 뜨는 예고는 별개의 새 아이템.
 - `end` 의 유예(30분/5분 규칙)가 곧 "이 방송이 되살아나는지" 관찰 창 — 되살아나면 `live` 복귀.
+
+## 예고 머지 모델
+
+- 한 아이템 = 하나의 방송. 소스 3종(**개인 트윗 알림 · YouTube 앱 알림 · 수동 ingest**)이
+  각자 아는 필드만 들고 온다: `{제목, 날짜/시각, url, 썸네일}`.
+- 아이템의 각 필드 = 들어온 값들의 **합집합**. 어느 소스든 그 필드를 채우면 아이템이 그 필드를 갖는다
+  (예: url 은 트윗, 정확 시각은 YouTube 알림, 제목은 둘 다).
+- 이미 채워진 필드에 새 값이 오면 **갱신 규칙**:
+
+  > **높은 신뢰도 티어가 이긴다. 같은 티어 안에서만 최신순(소스 이벤트 시각).**
+
+  | 티어 | 소스 | 예 |
+  |---|---|---|
+  | 1 authoritative | `videos.list` / YouTube Data API | `liveStreamingDetails.scheduledStartTime`(ISO), API 썸네일 |
+  | 2 명시값 | 트윗 본문 파싱, 수동 ingest, YouTube 알림 제목(`android.text`) | "9/7 20:00", watch URL |
+  | 3 파생값 | TUNEIN "알림 도착 + 30분" | 근사 시각 |
+
+- 저신뢰(파생) 값이 고신뢰(명시·API) 값을 최신이라는 이유로 덮는 일은 원천 차단.
+  리스케줄(스트리머가 YT Studio 에서 시각 변경)은 티어1 안에서 새 `videos.list` 값이 옛 값을 대체 → 자동.
+- **v2.8.1 `api_start_seen` 예외는 v3 에서 폐지.** 그건 "매 tick 마다 API 로 `scheduled_start`
+  재구성 + 티어 개념 없음" 이라는 v2 설계의 workaround 였다. v3 는 API 가 티어1 이라 그냥 이긴다.
+- provenance = 필드별 **현재 값이 어느 티어에서 왔는지** 마커 하나 (`title_tier`/`start_tier`/…).
+  전체 이력은 불필요.
+- `announced`/`upcoming` 의 "최신 예고 정보로 갱신" 은 전부 이 규칙을 따른다.
 
 ## 데이터 전환 — v3 는 콜드 스타트 (마이그레이션 스크립트 없음)
 - **`.old/` 재구성·이관 스크립트를 만들지 않는다.** v3 는 처음부터 시동했다고 간주하고 v3
@@ -218,11 +255,12 @@ v2 `schedule.json` 을 대체(파일명도 변경 — v3 용어 preview/notice/t
       "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인에 팬아웃
       "host": null,                         // "group" = parse_appearance(出演情報) 외부이벤트 → supersede 면제
       "kind": null,                         // "collab" | 카테고리(game/song/talk/watchalong) | null
-      "membership": false,                  // true = 회원전용. API 확인 스킵, watching 스킵, 시작 알림→live 직행
+      "membership": false,                  // true = 회원전용. video_id 있으면 정규 처리(+프론트 배지);
+                                            //   video_id 없을 때만 watching 스킵·시작 알림→live 직행·자물쇠 카드
 
       "title": "【チラズアート】…",            // JP 원문. announced 단계에선 null 가능. 번역 안 함(번역은 notice/tweet 만)
       "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",  // 없으면 채널 URL
-      "video_id": "bgzve7Y7S50",            // null 가능(announced / 회원전용 slot_key 미상)
+      "video_id": "bgzve7Y7S50",            // null 가능(announced / 회원전용 YT푸시만 → slot_key=="default")
       "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/mqdefault.jpg",  // video_id 유래 or vxtwitter 미디어. null 가능
 
       "scheduled_start": "2026-09-09T12:00:00Z",  // JST→UTC. 파싱 실패 null. time_tbd 면 "<date>T00:00:00Z"
@@ -230,10 +268,11 @@ v2 `schedule.json` 을 대체(파일명도 변경 — v3 용어 preview/notice/t
       "actual_start": null,                 // live 확정 시각. live-cadence(60분 분기) 앵커
       "concurrent_viewers": null,           // live 한정. 변동 필드 → 커밋 diff 트리거에서 제외
 
-      "source": "personal",                 // x-relay | personal | yt-notif | api | manual
+      "source": "personal",                 // x-relay | personal | yt-notif | yt-memberonly | api | manual
       "info_source": "personal",            // 마지막으로 타이밍/정보를 갱신한 신호 종류
       "info_at": "2026-09-08T09:00:00Z",    // 그 신호 시각(트윗 snowflake 유래 등)
-      "api_start_seen": null,               // 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정) 트윗값 대신 API 승
+      "start_tier": 2,                      // scheduled_start 현재 값의 신뢰도 티어(1 API / 2 명시 / 3 파생). "예고 머지 모델" 참조
+      "title_tier": 2,                      // title 현재 값의 티어 (동일 규칙)
 
       "assumed_live": false,                // video_id 없이 scheduled_start 지남 → 프론트 "방송 중(추정)"
       "first_seen": "2026-09-08T09:00:00Z",

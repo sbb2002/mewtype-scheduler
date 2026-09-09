@@ -1,21 +1,27 @@
-# v3 초안 — 착수 보류 상태
+# v3 초안 — 착수 트리거 충족 (2026-09-10)
 
 이 문서는 v3 "백엔드 수술"의 **결정 로그**다. 기능 상세는 `v3_backend_surgery.md`.
 
-## 상태: 착수 안 함 (의도적 보류)
-
-현재 v2 를 **일부러 그대로 유지**한다. 아래 조건이 충족되면 그때 v3 착수:
+## 상태: 착수 트리거 충족 → 배포 준비
 
 > **착수 트리거**: YouTube 회원전용 방송이 폰 푸시알림으로 도달하는 것이 확인되고,
 > 그 알림 텍스트로 회원전용 방송을 실사용 가능한 수준으로 표시할 수 있다고 판단될 때.
 
-트리거 전까지 v3 브랜치는 설계 문서만 쌓는다. 코드 변경 없음.
+**충족 근거 (2026-09-09~10)**:
+1. 회원전용 알림 폰 도달 확인 — `ref/flow-7 (5).log` 라인 35(`SPONSORSHIPS_LIVESTREAM_TUNEIN`,
+   예정−30분)·41(`..._START`). 후지 미야코 `💜メン限 雑談💜みやこの部屋#11`.
+2. `android.text` 에 채널명(`藤都子 -Fuji Miyako-`) + 제목 다 실림 → "회원전용 방송 중" 카드 구성 가능
+   (트리거가 요구한 최저선).
+3. 초과 달성: 트윗 경로로 video_id 확보 시 썸네일·상태추적까지 정규 처리 가능.
+   - `videos.list` 는 회원전용도 **정상 응답**(실측 `0_e9LxlMYHU`: `items:1`,
+     thumbnails·`liveStreamingDetails` 다 옴). "videos.list 404" 는 오판이었음.
+   - vxtwitter unfurl 로 잘린 URL 복원 확인(실측 트윗 `2096795604856836521` →
+     `iWWGpoZfH5g` → `i.ytimg.com` 썸네일 200). `vxtwitter.py` 는 브랜치에 있음.
 
-### 트리거 검증 방법 (선행 실험, v3 코드 아님)
-1. 폰 Automate `[notification posted?]` 필터에 YouTube 앱 추가.
-2. 회원전용 방송 시작 시 오는 알림 텍스트를 며칠간 로그로 수집 (한/일 문구 샘플).
-3. 확인할 것: 알림에 videoId / URL / 시각이 실리는가? 채널·제목만 오는가?
-4. 채널·제목만 와도 "회원전용 방송 중" 표시로 쓸만하면 → 트리거 충족.
+### 착수 후 병행 검증 (블로커 아님)
+- 회원전용 알림 샘플 1건뿐 — 다른 멤버·다음 회차 1~2건 더 (payload 형태 동일성).
+- **upcoming(예고) 상태** 회원전용에서 `videos.list` 응답 — 오늘 테스트는 종료된 스트림.
+- 업스트림 2소스 플로우는 폰에 구성 완료(`AUTOMATE_MANUAL §4b`), 실트래픽 관측 축적 중.
 
 ---
 
@@ -56,18 +62,21 @@
   치우고 v3 스키마 파일을 빈 상태에서 새로 쓴다(기존 행 일괄 치환/마이그레이션 스크립트 없음).
   안정화 확인 후 쓸만한 old 데이터 백필은 별건. 상세: `v3_backend_surgery.md` "데이터 전환".
 
-### 3. 회원전용 영상 = 업스트림 시스템으로 YouTube 알림 중계 (열화 표시)
+### 3. 회원전용 영상 (2026-09-10 정정 — "열화" 는 video_id 없을 때만)
 
-트리거 충족 시 구현. 정보가 열화된 상태로만 표시:
+실측 후 판정 수정: **회원전용도 video_id 만 있으면 정규 처리된다.**
+`videos.list` 는 회원전용 메타데이터를 정상 반환하고(멤버십 게이트는 재생만 막음),
+썸네일은 `i.ytimg.com/vi/<id>/…` 문자열 조립이라 API 조차 불필요.
 
-- `schedule.json` 행: `source: "yt-notif"`, `membership: true`, `video_id` 없음, `thumbnail` 없음.
-- 상태머신이 이 행은 **API 확인을 건너뜀** (`videos.list` 가 회원전용은 응답 안 줌).
-  `watching` 스킵, 알림 오면 바로 `live`.
-- **종료 판정 불가** → 시간 기반 폴백: 알림 후 N시간(예: 3h) 무신호면 `end` 강등,
-  이후 30분 규칙으로 `none`. 나중에 아카이브가 RSS 로 뜨면 확정.
-- 프론트: `.card--membership` — 썸네일 자리에 자물쇠 아이콘, 카운트다운 대신
-  "회원전용 방송 중" 표기.
-- 스키마엔 지금이라도 `membership` 플래그 **자리만 예약** 가능 (값은 미채움).
+| video_id 확보 경로 | 처리 |
+|---|---|
+| 트윗의 watch URL (X 릴레이 + vxtwitter 로 잘린 URL 복원) | **정규** — 썸네일·`liveStreamingDetails`·live/end 추적 전부 v2 와 동일. `membership:true` 는 프론트 배지용 플래그일 뿐 |
+| YouTube 앱 푸시만 (`chime.slot_key == "default"`) | **열화** — video_id 없음. 텍스트 카드 + 자물쇠 아이콘 + assumed-live 시간 폴백 |
+
+- 열화 경로 = `source:"yt-memberonly"`, `video_id` 없음, `thumbnail` 없음, `watching` 스킵,
+  알림(`SPONSORSHIPS_LIVESTREAM_START`) 오면 바로 `live`. 종료 판정 불가 → 예정+N시간 폴백 → `none`.
+- 프론트 `.card--membership` — 자물쇠 아이콘, "회원전용 방송 중" (열화 경로에만; 트윗 경로는 일반 카드 + 배지).
+- 상세·전이표: `v3_backend_surgery.md` §1.
 
 ---
 
@@ -85,6 +94,15 @@
       번역 실패/환각 폴백은 모델별 실측 후 확정(기본선 = 원문 노출).
       상세: `v3_backend_surgery.md` "모델 선정" / "LLM 작업 큐".
 - [x] `watching` 지각 120분 초과 시 강등 대상 = `announced` (url 은 살림).
+- [x] **예고 머지 모델 = 소스 신뢰도 티어**. 아이템 = `{제목, 날짜/시각, url, 썸네일}` 필드
+      합집합. 갱신 규칙: **높은 티어가 이김, 같은 티어 안에서만 최신순.**
+      티어1 `videos.list`/API · 티어2 명시값(트윗 파싱·수동 ingest·YT 알림 제목) ·
+      티어3 파생값(TUNEIN 도착+30분). v2.8.1 `api_start_seen` 예외는 v3 에선 불필요
+      (그건 "매 tick API 재구성 + 티어 없음" 의 workaround 였음). 필드별 `*_tier` 마커 1개면 충분.
+      상세: `v3_backend_surgery.md` "예고 머지 모델".
+- [ ] **데드맨 스위치** — `/ingest` 침묵 N시간(예: 6h) 초과 시 Telegram 경보.
+      2026-09-09 Automate 조용히 사망 계기. "v3 부터 운용" 합의. `/tick` 이 마지막 ingest
+      시각 확인(별도 `heartbeat.json` 또는 기존 파일 mtime) → `notify` 훅. 착수 시 구현.
 
 ---
 
