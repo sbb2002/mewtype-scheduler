@@ -126,6 +126,34 @@ D1·D2·D3·D6 모두 아래 권장안대로 확정.
 
 ---
 
+## 진행 상황 (2026-09-09, v3 브랜치 커밋)
+
+| 커밋 | 내용 |
+|---|---|
+| `e1de80e` | W0+W1 — preview·statemachine·llm·ytnotif·vxtwitter·admin·time.js (self-test 통과) |
+| `5923e4d` | W2 — xnotice·notices·notify·xrelay·xtweet·render.js·tweets/notices.js·config.js |
+| `84d8c3b` | W3 데이터 파이프라인 — preview_build·handlers·config.py (self-test 통과) |
+
+**완료**: WP-0~15, WP-17. 전 모듈 `python -m src.backend.<mod>` self-test 통과, 프론트 selfcheck 통과.
+검수에서 수정한 것: time_tbd 만료(다음 JST 자정)·live_seen=None 오판정·D-n 캘린더 일수·
+ytnotif 제목 【…】 보존·render buildLive end-only 소등·preview_build ytnotif/supersede 4건.
+
+**남은 작업 (이 세션에서 착수 안 함 — 규모/위험도상 별도 진행 권장)**:
+- **WP-16 `telegram_app.py` (2929줄) v3 이관** — 아직 v2. 필요한 변경:
+  · `schedule.json`→`preview.json` / `broadcasts`→`items` / `status`→`state` (표시·머지·`/status` 전부)
+  · `xrelay.merge_scheduled`→`merge_announced`
+  · admin 슬롯: v2 개별 6종(`pending_del/ingest/notice/notice_edit/member/undo`) 호출 →
+    v3 `pending_op` 1슬롯(`cmd`/`contents`/`step`/`ctx`)으로 재배선. `admin.set_undo` 새 시그니처(`cmd`/`contents`)
+  · `{cmd}×{contents}` 격자 + 신규 `/edit`(마법사)·`/translate` 구현, `/notice*`·`/add` 별칭 삭제
+  · `/status` v3 양식(`v3_telegram_controller.md`), `/del (terminate/y/N)` suppress
+  · **edit_lock 훅**: `admin.edit_lock_active(id)` 를 `preview_build.build_preview` 또는 `handlers._run`
+    커밋 직전에 확인 — 락 걸린 `id` 의 preview.json 쓰기만 이번 사이클 스킵 (현재 미구현)
+- **WP-18 정리** — `pending.py` 삭제, `reconcile.py`/`store.py`의 v2 잔존 참조 정리, 죽은
+  `.card--scheduled` CSS 제거, `fixtures/schedule.sample.json` 정리
+- **WP-19 문서** — `docs/SPEC.md` v3 개정, `deploy/*.sh` GROQ secret 추가(실행 안 함), CLAUDE.md 구조 절
+
+---
+
 ## 1. 작업 패키지 (WP) 개요
 
 담당: `haiku` = 병렬 에이전트 단독 + 최종 검수(사람/Sonnet). `me` = 통합 담당 직접.
