@@ -1923,36 +1923,54 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
             prev, sha = gh.read_json(_NOTICES_PATH)
             lst = (prev or {}).get("notices", []) or []
             n = 0
+            pending = 0
             for row in lst:
                 if row.get("title_ko"):
                     continue
+                pending += 1
                 res = llm.notice_title(row.get("body_for_llm") or row.get("title") or "")
                 if res and res.get("title_ko"):
                     row["title_ko"] = res["title_ko"]
                     row.pop("needs_tl", None)
                     n += 1
+                else:
+                    row["needs_tl"] = True
             if n:
                 prev["generated_at"] = now_iso
                 gh.write_json(_NOTICES_PATH, prev, prev_sha=sha,
                               message=f"data: /translate notice ({n}) {now_iso}")
-            _send_telegram(f"🌐 소식 {n}건 번역 완료." if n else "번역할 소식이 없습니다.")
+            if n:
+                _send_telegram(f"🌐 소식 {n}건 번역 완료." + (f" ({pending - n}건 LLM 실패)" if pending > n else ""))
+            elif pending:
+                _send_telegram(f"⚠️ 미번역 {pending}건 있으나 LLM 호출 전부 실패 — 로그 확인")
+            else:
+                _send_telegram("번역할 소식이 없습니다 (모두 번역됨).")
         else:  # tweet
             prev, sha = gh.read_json(_TWEETS_PATH)
             tw = (prev or {}).get("tweets", {}) or {}
             n = 0
+            pending = 0
             for _k, row in tw.items():
                 if row.get("text_ko"):
                     continue
+                pending += 1
                 ko = llm.translate(row.get("text") or "")
                 if ko:
                     row["text_ko"] = ko
                     row.pop("needs_tl", None)
                     n += 1
+                else:
+                    row["needs_tl"] = True
             if n:
                 prev["generated_at"] = now_iso
                 gh.write_json(_TWEETS_PATH, prev, prev_sha=sha,
                               message=f"data: /translate tweet ({n}) {now_iso}")
-            _send_telegram(f"🌐 트윗 {n}건 번역 완료." if n else "번역할 트윗이 없습니다.")
+            if n:
+                _send_telegram(f"🌐 트윗 {n}건 번역 완료." + (f" ({pending - n}건 LLM 실패)" if pending > n else ""))
+            elif pending:
+                _send_telegram(f"⚠️ 미번역 {pending}건 있으나 LLM 호출 전부 실패 — 로그 확인")
+            else:
+                _send_telegram("번역할 트윗이 없습니다 (모두 번역됨).")
     except Exception as e:
         log.exception("Error handling /translate")
         _send_telegram(f"⚠️ 오류: /translate 처리 실패\n{str(e)[:100]}")

@@ -138,11 +138,14 @@
 
 - **주 모델: `openai/gpt-oss-120b`** — 형제 프로젝트 bandori-playlist-maker 에서 쓰던 것 그대로.
   프롬프트·클라이언트 코드 재활용 가능, JP 독해·KO 출력 품질 충분, 지시이행/구조화 출력 강함(~500 tok/s).
-- **폴백: `llama-3.3-70b-versatile`** — 다른 계열·프로덕션·JSON 모드 지원. 주 모델이 429/5xx 뱉을 때 스위치.
-- **preview 모델(qwen3-32b·kimi-k2 등) 금지** — Groq preview 는 예고 없이 내려가 파이프라인이 깨진다.
-  프로덕션 티어 모델만 사용(현재 채팅용 프로덕션 = gpt-oss-120b/20b, llama-3.3-70b, llama-3.1-8b).
+- **폴백: `openai/gpt-oss-20b`** (2026-09-10 정정 — `llama-3.3-70b-versatile` 은 이 Groq
+  계정에서 404, 계정에 Llama 챗 모델 없음). 같은 계열이라 프롬프트·파싱 그대로, 작고 빠름.
+  계정 가용 챗 모델: `gpt-oss-120b/20b`, `qwen3.6-27b`/`qwen3.8-27b`, `groq/compound(-mini)`, `allam-2-7b`.
+- **preview 모델 금지** — Groq preview 는 예고 없이 내려가 파이프라인이 깨진다. 위 목록만 사용.
 - **호출 형태**: notice 는 제목추출 + 번역을 **JSON 1회 호출**로 (`{"title_ja","title_ko",...}`).
-  구조화 출력은 gpt-oss 계열이 `response_format` 의 `json_schema` 까지, llama-3.3 은 `json_object` 지원.
+  **`response_format` 는 안 보낸다** (2026-09-10 정정 — Groq gpt-oss 가 `json_object` 를 거부,
+  `json_schema` 는 스키마 객체 요구). 프롬프트 "JSON 만 출력" + `_strip_json_fence` 후 `json.loads`
+  방어 파싱으로 처리. `translate()` 는 자유텍스트라 애초에 무관.
 - gpt-oss 는 reasoning 모델 → 이 난이도엔 `reasoning_effort:"low"` 고정(지연·토큰 절감), 번역이 아쉬우면 `medium`.
 - **무료티어**: notice·개인트윗은 하루 수 건이라 RPM/RPD 한도에 근처도 안 감. 429 대비 지수백오프 재시도만.
 

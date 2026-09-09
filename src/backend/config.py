@@ -30,7 +30,7 @@ class Config:
     # v3 — 외부 LLM(Groq). 없으면 번역/제목추출 비활성 (원문 노출 폴백).
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
-    groq_model_fallback: str = "llama-3.3-70b-versatile"
+    groq_model_fallback: str = "openai/gpt-oss-20b"
     # v3 — vxtwitter unfurl. 서드파티 무료 서비스.
     vxtwitter_base: str = "https://api.vxtwitter.com"
     # v3 — 업스트림 YouTube 앱 알림 중계 라우팅. "1" 이어야 /ingest 가 ytnotif 를 탄다.
@@ -82,7 +82,7 @@ def load_config() -> Config:
         groq_api_key=os.environ.get("GROQ_API_KEY", "").strip(),
         groq_model=os.environ.get("GROQ_MODEL", "").strip() or "openai/gpt-oss-120b",
         groq_model_fallback=(
-            os.environ.get("GROQ_MODEL_FALLBACK", "").strip() or "llama-3.3-70b-versatile"
+            os.environ.get("GROQ_MODEL_FALLBACK", "").strip() or "openai/gpt-oss-20b"
         ),
         vxtwitter_base=(
             os.environ.get("VXTWITTER_BASE", "").strip().rstrip("/") or "https://api.vxtwitter.com"

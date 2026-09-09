@@ -13,13 +13,20 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "openai/gpt-oss-120b"
-FALLBACK_MODEL = "llama-3.3-70b-versatile"
+# llama-3.3-70b-versatile 는 이 Groq 계정에서 404 (2026-09 라인업 변경). 같은 계열
+# gpt-oss-20b 로 폴백 — 작고 빠르며 지시이행 동일.
+FALLBACK_MODEL = "openai/gpt-oss-20b"
 
-# ponytail: 모델별 response_format 분기 — 더 세련된 방식은 버전업 후 통합
-_RESPONSE_FORMAT_BY_MODEL = {
-    "openai/gpt-oss-120b": "json_schema",
-    "llama-3.3-70b-versatile": "json_object",
-}
+
+def _strip_json_fence(text: str) -> str:
+    """```json ... ``` 펜스나 앞뒤 잡텍스트를 벗겨 JSON 본체만 남긴다."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[-1] if "\n" in t else t[3:]
+        if t.rstrip().endswith("```"):
+            t = t.rstrip()[:-3]
+    i, j = t.find("{"), t.rfind("}")
+    return t[i:j + 1] if 0 <= i < j else t.strip()
 
 
 class LLMClient:
@@ -96,7 +103,7 @@ class LLMClient:
             return None
 
         try:
-            result = json.loads(response)
+            result = json.loads(_strip_json_fence(response))
             if isinstance(result, dict) and "title_ja" in result and "title_ko" in result:
                 return result
             else:
@@ -161,14 +168,14 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
-        response_format_type = _RESPONSE_FORMAT_BY_MODEL.get(model, "json_object")
-
+        # response_format 은 안 보낸다 — Groq gpt-oss 는 json_object 를 거부하고
+        # json_schema 는 스키마 객체를 요구한다. 프롬프트의 "JSON 만 출력" 지시 +
+        # notice_title 의 방어적 파싱(펜스 제거 후 json.loads)으로 충분.
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
             "reasoning_effort": "low",
-            "response_format": {"type": response_format_type},
         }
 
         # ponytail: 지수 백오프 3회 (1s/2s/4s)
@@ -437,9 +444,12 @@ if __name__ == "__main__":
     assert result is None, "빈 응답 시 None 기대"
     print("✓ 환각 가드(빈 응답) 발동 → None 반환")
 
-    # ──── 시나리오 8: response_format 모델별 분기 ────
-    print("\n[시나리오 8] response_format 모델별 분기")
+    # ──── 시나리오 8: response_format 미전송 + 펜스 제거 파싱 ────
+    print("\n[시나리오 8] response_format 미전송 + JSON 펜스 제거")
     print("-" * 70)
+    assert _strip_json_fence('```json\n{"a":1}\n```') == '{"a":1}'
+    assert _strip_json_fence('설명\n{"title_ja":"あ","title_ko":"아"} 끝') == '{"title_ja":"あ","title_ko":"아"}'
+    print("✓ _strip_json_fence: 펜스·잡텍스트 제거")
 
     class PayloadCapturingSession:
         def __init__(self):
@@ -468,16 +478,10 @@ if __name__ == "__main__":
 
     session_payload = PayloadCapturingSession()
     llm_payload = LLMClient("test-key", session=session_payload)
-
     llm_payload._call_groq(DEFAULT_MODEL, "test")
-    assert session_payload.last_payload["response_format"]["type"] == "json_schema"
-    print("✓ gpt-oss: response_format=json_schema")
-
-    session_payload = PayloadCapturingSession()
-    llm_payload = LLMClient("test-key", session=session_payload)
-    llm_payload._call_groq(FALLBACK_MODEL, "test")
-    assert session_payload.last_payload["response_format"]["type"] == "json_object"
-    print("✓ llama-3.3: response_format=json_object")
+    assert "response_format" not in session_payload.last_payload, "response_format 안 보내야 함"
+    assert session_payload.last_payload["model"] == DEFAULT_MODEL
+    print("✓ response_format 미전송")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 8개 스모크 테스트 통과")
