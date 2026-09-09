@@ -16,12 +16,27 @@ const ENV_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 
 const RKEY = "mew:twread";
 const TLANG_KEY = "mew:tllang";  // ponytail: 번역 토글 기억
-const _st = { data: null, board: null, wired: false, pinned: new Set(), peek: null, bubbles: new Map(), tlang: "orig" };
+const READ_TTL_MS = 4 * 24 * 3600 * 1000;   // 읽음 기록 보존 4일(트윗 TTL 24h 훨씬 넘김)
+const _st = { data: null, board: null, wired: false, pinned: new Set(), peek: null, bubbles: new Map(), tlang: "ko" };
 let _toast = null, _backdrop = null;
 
-/* ── 읽음 상태 (뷰어별 localStorage) ─────────────────────────────── */
+/* ── 읽음 상태 (뷰어별 localStorage) ─────────────────────────────────
+   { id: readAtEpochMs }. 시간 기반으로만 정리한다 — "지금 안 보이는 id" 를
+   즉시 지우면(v2 방식) 폴링이 잠깐 빈/오래된 tweets.json 을 물었을 때 읽음
+   기록이 통째로 날아간다. 오래된 항목만 자연 소멸시킨다. */
 function _readMap() {
-  try { return JSON.parse(localStorage.getItem(RKEY) || "{}") || {}; } catch { return {}; }
+  let o;
+  try { o = JSON.parse(localStorage.getItem(RKEY) || "{}") || {}; } catch { return {}; }
+  const now = Date.now();
+  const cut = now - READ_TTL_MS;
+  let changed = false;
+  for (const k of Object.keys(o)) {
+    const v = o[k];
+    if (typeof v !== "number" || v < 1e11) { o[k] = now; changed = true; }  // v2 형식(1) → 지금 읽은 것으로 승계
+    else if (v < cut) { delete o[k]; changed = true; }
+  }
+  if (changed) _writeMap(o);
+  return o;
 }
 function _writeMap(o) {
   try { localStorage.setItem(RKEY, JSON.stringify(o)); } catch { /* private mode 등 */ }
@@ -30,14 +45,14 @@ function _isRead(id) { return !!_readMap()[id]; }
 function _markRead(id) {
   const o = _readMap();
   if (o[id]) return;
-  o[id] = 1;
+  o[id] = Date.now();
   _writeMap(o);
   if (_st.board) _apply();          // 배지를 '열린 편지'로
 }
 
-/* ── 번역 언어 토글 (뷰어별 localStorage) ──────────────────────────── */
+/* ── 번역 언어 토글 (뷰어별 localStorage) — 디폴트 한글 ─────────────── */
 function _getTlang() {
-  try { return localStorage.getItem(TLANG_KEY) || "orig"; } catch { return "orig"; }
+  try { return localStorage.getItem(TLANG_KEY) === "orig" ? "orig" : "ko"; } catch { return "ko"; }
 }
 function _setTlang(lang) {
   try { localStorage.setItem(TLANG_KEY, lang); } catch { /* private mode 등 */ }
@@ -88,28 +103,37 @@ function _palette(laneEl) {
 function _lanes(ck) {
   return _st.board ? _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]`) : [];
 }
-function _channelUrl(ck) {
-  return (FALLBACK_CHANNELS[ck] || {}).channel_url || "#";
+// 원문 링크 아이콘 = X (notice 의 x path 재활용).
+const X_SVG = '<svg class="src__ic" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg>';
+
+// 원문 앵커 설정: 트윗 URL → 없으면 X 프로필(x.com/<handle>) → 둘 다 없으면 비활성.
+// 유튜브로는 절대 가지 않는다.
+function _setSrc(el, t) {
+  const u = t.url || (t.handle ? "https://x.com/" + t.handle : "");
+  if (u) {
+    el.href = u;
+    el.classList.remove("is-disabled");
+    el.removeAttribute("aria-disabled");
+    el.tabIndex = 0;
+  } else {
+    el.removeAttribute("href");
+    el.classList.add("is-disabled");
+    el.setAttribute("aria-disabled", "true");
+    el.tabIndex = -1;
+  }
 }
-// 원문 링크: 실제 트윗 URL → 없으면 X 프로필(수동 ingest 는 트윗 URL 이 없음) → 채널.
-function _srcUrl(t, ck) {
-  if (t.url) return t.url;
-  if (t.handle) return "https://x.com/" + t.handle;
-  return _channelUrl(ck);
-}
+
+// 번역 토글 = 타깃 언어 글리프(A안). 지금 한국어면 "日"(→원문), 원문이면 "한"(→번역).
+function _tlGlyph() { return _st.tlang === "ko" ? "日" : "한"; }
+function _tlAria() { return _st.tlang === "ko" ? "원문(일본어)으로 보기" : "한국어 번역으로 보기"; }
 
 /* ── 배지 적용 ───────────────────────────────────────────────────── */
 function _apply() {
   const board = _st.board;
   if (!board) return;
   const vis = _visible(_st.data);
-  const validIds = new Set(Object.values(vis).map((n) => n.id));
-
-  // 읽음맵 정리 (현재 안 보이는 트윗 id 제거)
-  const rm = _readMap();
-  let pruned = false;
-  for (const k of Object.keys(rm)) if (!validIds.has(k)) { delete rm[k]; pruned = true; }
-  if (pruned) _writeMap(rm);
+  // 읽음맵은 _readMap() 이 시간 기준으로만 정리한다(위 주석). 여기서 가시성 기반
+  // 삭제를 하지 않는다 — 빈/오래된 폴링 1회에 기록이 날아가는 v2 버그 방지.
 
   for (const ck of FALLBACK_CHANNEL_ORDER) {
     const t = vis[ck];
@@ -160,7 +184,7 @@ function _bubble(ck) {
     '<button class="lane__bubble__x" type="button" aria-label="닫기">✕</button>' +
     '<p class="lane__bubble__text"></p>' +
     '<div class="lane__bubble__foot"><span class="ago"></span>' +
-    '<a class="src" target="_blank" rel="noopener">원문 →</a></div>';
+    '<a class="src" target="_blank" rel="noopener">' + X_SVG + '<span class="lbl">원문</span></a></div>';
   b.querySelector(".lane__bubble__x").addEventListener("click", () => {
     _st.pinned.delete(ck);
     _closeBubble(ck);
@@ -181,20 +205,20 @@ function _fillBubble(ck, t) {
   const text = _st.tlang === "ko" && hasKo ? t.text_ko : t.text;
   b.querySelector(".lane__bubble__text").textContent = text;
   b.querySelector(".ago").textContent = _ago(t.received_at);
-  b.querySelector(".src").href = _srcUrl(t, ck);
+  _setSrc(b.querySelector(".src"), t);
 
-  // 번역 토글 버튼
+  // 번역 토글 버튼 (타깃 글리프)
   let btn = b.querySelector(".lane__bubble__tl");
   if (hasKo) {
     if (!btn) {
       btn = document.createElement("button");
       btn.type = "button";
       btn.className = "lane__bubble__tl";
-      btn.setAttribute("aria-label", "원문/번역");
       btn.onclick = () => { _toggleTlang(ck, b, t); return false; };
       b.querySelector(".lane__bubble__foot").insertBefore(btn, b.querySelector(".src"));
     }
-    btn.textContent = _st.tlang === "ko" ? "원문" : "번역";
+    btn.textContent = _tlGlyph();
+    btn.setAttribute("aria-label", _tlAria());
   } else if (btn) {
     btn.remove();
   }
@@ -204,7 +228,9 @@ function _toggleTlang(ck, b, t) {
   _setTlang(_st.tlang === "ko" ? "orig" : "ko");
   const text = _st.tlang === "ko" ? t.text_ko : t.text;
   b.querySelector(".lane__bubble__text").textContent = text;
-  b.querySelector(".lane__bubble__tl").textContent = _st.tlang === "ko" ? "원문" : "번역";
+  const btn = b.querySelector(".lane__bubble__tl");
+  btn.textContent = _tlGlyph();
+  btn.setAttribute("aria-label", _tlAria());
 }
 function _positionBubble(ck) {
   const b = _st.bubbles.get(ck);
@@ -272,7 +298,7 @@ function _ensureToast() {
     '</div>' +
     '<p class="tw-toast__text"></p>' +
     '<div class="tw-toast__foot"><span class="ago"></span>' +
-    '<a class="src" target="_blank" rel="noopener">원문 보기 →</a></div>';
+    '<a class="src" target="_blank" rel="noopener">' + X_SVG + '<span class="lbl">원문</span></a></div>';
   _toast.querySelector(".tw-toast__x").addEventListener("click", _closeToast);
   document.body.append(_backdrop, _toast);
 }
@@ -294,20 +320,20 @@ function _openToast(ck) {
   const text = _st.tlang === "ko" && hasKo ? t.text_ko : t.text;
   _toast.querySelector(".tw-toast__text").textContent = text;
   _toast.querySelector(".ago").textContent = _ago(t.received_at);
-  _toast.querySelector(".src").href = _srcUrl(t, ck);
+  _setSrc(_toast.querySelector(".src"), t);
 
-  // 번역 토글 버튼
+  // 번역 토글 버튼 (타깃 글리프)
   let btn = _toast.querySelector(".tw-toast__tl");
   if (hasKo) {
     if (!btn) {
       btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tw-toast__tl";
-      btn.setAttribute("aria-label", "원문/번역");
       btn.onclick = () => { _toggleToastTlang(t); return false; };
       _toast.querySelector(".tw-toast__foot").insertBefore(btn, _toast.querySelector(".src"));
     }
-    btn.textContent = _st.tlang === "ko" ? "원문" : "번역";
+    btn.textContent = _tlGlyph();
+    btn.setAttribute("aria-label", _tlAria());
   } else if (btn) {
     btn.remove();
   }
@@ -321,7 +347,7 @@ function _toggleToastTlang(t) {
   const text = _st.tlang === "ko" ? t.text_ko : t.text;
   _toast.querySelector(".tw-toast__text").textContent = text;
   const btn = _toast.querySelector(".tw-toast__tl");
-  if (btn) btn.textContent = _st.tlang === "ko" ? "원문" : "번역";
+  if (btn) { btn.textContent = _tlGlyph(); btn.setAttribute("aria-label", _tlAria()); }
 }
 function _closeToast() {
   document.body.classList.remove("tw-modal-open");
