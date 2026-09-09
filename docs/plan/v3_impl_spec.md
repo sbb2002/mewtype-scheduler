@@ -130,27 +130,28 @@ D1·D2·D3·D6 모두 아래 권장안대로 확정.
 
 | 커밋 | 내용 |
 |---|---|
-| `e1de80e` | W0+W1 — preview·statemachine·llm·ytnotif·vxtwitter·admin·time.js (self-test 통과) |
+| `e1de80e` | W0+W1 — preview·statemachine·llm·ytnotif·vxtwitter·admin·time.js |
 | `5923e4d` | W2 — xnotice·notices·notify·xrelay·xtweet·render.js·tweets/notices.js·config.js |
-| `84d8c3b` | W3 데이터 파이프라인 — preview_build·handlers·config.py (self-test 통과) |
+| `84d8c3b` | W3 데이터 파이프라인 — preview_build·handlers·config.py |
+| `0cd80ed` | WP-16(범위조정) — telegram_app v3 데이터 이관 + /translate·/del terminate + suppress/edit_lock 훅 |
+| `dc7877f` | WP-18 일부 — pending.py 삭제 |
 
-**완료**: WP-0~15, WP-17. 전 모듈 `python -m src.backend.<mod>` self-test 통과, 프론트 selfcheck 통과.
+**완료**: WP-0~15, WP-17. + WP-16 은 **범위 조정 완료**: `schedule.json`→`preview.json` 전면 이관,
+`status`→`state`, `merge_announced`, `/status` v3, `/del terminate`+suppress, `/translate` 신규,
+`handlers._run` 의 suppress·edit_lock 훅. admin.py 는 v2 개별 pending_* 슬롯 유지(재배선 대신).
+전 백엔드 15모듈 `python -m src.backend.<mod>` self-test 통과, 프론트 selfcheck 통과.
+
 검수에서 수정한 것: time_tbd 만료(다음 JST 자정)·live_seen=None 오판정·D-n 캘린더 일수·
-ytnotif 제목 【…】 보존·render buildLive end-only 소등·preview_build ytnotif/supersede 4건.
+ytnotif 제목 【…】 보존·render buildLive end-only 소등·preview_build ytnotif/supersede 4건·
+telegram_app `_merge_rows_into_schedule` v3 튜플 시그니처·`_remove_broadcast` id 매칭.
 
-**남은 작업 (이 세션에서 착수 안 함 — 규모/위험도상 별도 진행 권장)**:
-- **WP-16 `telegram_app.py` (2929줄) v3 이관** — 아직 v2. 필요한 변경:
-  · `schedule.json`→`preview.json` / `broadcasts`→`items` / `status`→`state` (표시·머지·`/status` 전부)
-  · `xrelay.merge_scheduled`→`merge_announced`
-  · admin 슬롯: v2 개별 6종(`pending_del/ingest/notice/notice_edit/member/undo`) 호출 →
-    v3 `pending_op` 1슬롯(`cmd`/`contents`/`step`/`ctx`)으로 재배선. `admin.set_undo` 새 시그니처(`cmd`/`contents`)
-  · `{cmd}×{contents}` 격자 + 신규 `/edit`(마법사)·`/translate` 구현, `/notice*`·`/add` 별칭 삭제
-  · `/status` v3 양식(`v3_telegram_controller.md`), `/del (terminate/y/N)` suppress
-  · **edit_lock 훅**: `admin.edit_lock_active(id)` 를 `preview_build.build_preview` 또는 `handlers._run`
-    커밋 직전에 확인 — 락 걸린 `id` 의 preview.json 쓰기만 이번 사이클 스킵 (현재 미구현)
-- **WP-18 정리** — `pending.py` 삭제, `reconcile.py`/`store.py`의 v2 잔존 참조 정리, 죽은
-  `.card--scheduled` CSS 제거, `fixtures/schedule.sample.json` 정리
-- **WP-19 문서** — `docs/SPEC.md` v3 개정, `deploy/*.sh` GROQ secret 추가(실행 안 함), CLAUDE.md 구조 절
+**남은 작업 (별도 진행)**:
+- **WP-16 잔여** — `/edit <contents>` 마법사(edit form + edit_lock 세팅/해제 + tick 충돌 알림) 미구현.
+  `{cmd}×{contents}` 격자 완전 통합 안 함 — `/notice`·`/notice-list`·`/notice-del`·`/notice-edit`
+  는 v2 명령명 그대로 동작(내부는 v3 notices.json). `pending_op` 슬롯은 admin.py 에 있으나 미사용.
+- **WP-18 잔여** — 죽은 `.card--scheduled`/`card__badge--sched` CSS(inert, 위험도상 방치),
+  `fixtures/schedule.sample.json`(무해), `src/collector/*`(v1 break-glass — 그대로 둠).
+- **WP-19** — `docs/SPEC.md` 전면 v3 개정(현재는 헤더 노트만). `deploy/*.sh` GROQ_API_KEY secret.
 
 ---
 

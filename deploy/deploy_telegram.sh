@@ -12,14 +12,19 @@ echo "=== mewtype-telegram 배포 (webhook 서비스) ==="
 # YOUTUBE_API_KEY: 수동 /ingest 개인 예고 트윗에서 본문 YouTube URL → 채널 판별
 #   (videos.list 1 quota). 메인 서비스와 같은 Secret 을 재사용한다.
 # --command/--args: 값이 '-' 로 시작하면 gcloud 가 다음 플래그로 오인하므로 '=' 로 붙인다.
+# (v3) GROQ_API_KEY: /translate + 자동 번역. setup.sh 가 만든 Secret 이 있을 때만 붙인다.
+_GROQ_SECRET=""
+if gcloud secrets describe GROQ_API_KEY &>/dev/null; then
+  _GROQ_SECRET=",GROQ_API_KEY=GROQ_API_KEY:latest"
+fi
 gcloud run deploy mewtype-telegram \
   --source . --region "$GCP_LOCATION" \
   --allow-unauthenticated \
   --service-account "$INVOKER_SA" \
   --command=gunicorn \
   --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=60,src.backend.telegram_app:app" \
-  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest" \
-  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0}"
+  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_GROQ_SECRET}" \
+  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}"
 
 # INGEST_DRY_RUN=1 이면 /ingest 가 schedule.json 을 안 쓰고 받은 원문·파싱결과만 DM 회신
 # (푸시 알림 "Show more" 잘림 확인용). 확인 끝나면 env.sh 에서 0 으로 두고 재배포, 또는:

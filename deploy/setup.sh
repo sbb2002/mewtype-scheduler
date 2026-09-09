@@ -110,5 +110,7 @@ create_secret TELEGRAM_BOT_TOKEN "BotFather 봇 토큰" "${TELEGRAM_BOT_TOKEN:-}
 create_secret TELEGRAM_WEBHOOK_SECRET "webhook secret (임의 문자열)" "${TELEGRAM_WEBHOOK_SECRET:-}"
 # v2.3 X 릴레이 — 폰(Automate)이 mewtype-telegram /ingest 에 붙이는 공유 시크릿.
 create_secret INGEST_SECRET "ingest secret (임의 문자열, 폰 Automate 에도 동일하게)" "${INGEST_SECRET:-}"
+# v3 외부 LLM(Groq) — notice 제목 추출 + notice/개인트윗 번역. 없으면 번역 비활성(원문 노출).
+create_secret GROQ_API_KEY "Groq API 키 (v3 번역/제목추출, 없으면 빈 값 Enter)" "${GROQ_API_KEY:-}"
 
 echo "=== 셋업 완료 ==="

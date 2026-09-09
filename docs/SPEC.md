@@ -11,6 +11,33 @@
 
 **인터페이스 계약(§1~§7)을 벗어나는 변경은 이 문서를 먼저 고친다.**
 
+> ⚠️ **v3 브랜치 진행 중 (미배포)**: `v3` 브랜치가 아래 v2 계약을 상당 부분 대체한다.
+> 이 문서 본문은 **실배포 중인 v2 기준**이며, v3 델타는 아래 요약 + `docs/plan/v3_impl_spec.md`
+> (구현 명세·진행 상황) + `docs/plan/v3_backend_surgery.md`(설계) + `docs/plan/v3_telegram_controller.md`
+> 를 본다. v3 배포 시 이 문서를 전면 개정한다.
+>
+> **v3 계약 델타 요약**
+> - **계약 A → A'**: `schedule.json` → **`preview.json`** (`broadcasts` → `items`). 3상태
+>   (`upcoming`/`live`/`scheduled`) → **6상태 `state`** (`announced`/`upcoming`/`watching`/`live`/`end`,
+>   none=파일에서 삭제). 스키마: `v3_backend_surgery.md` "v3 데이터 스키마". 아이템 id `pv_xxxx`,
+>   `state_since`·`source`(x-relay|personal|yt-notif|api|manual)·`membership`·`api_start_seen` 등.
+>   정렬 = state 우선순위(live>watching>upcoming>announced) → scheduled_start → id.
+> - **계약 E 폐지**: `pending.json` 없음. FSM(`statemachine.derive`)이 `preview.json` 아이템에서
+>   `state`·다음 wake 시각을 **저장 타이머 없이 파생**. `src/backend/pending.py` 삭제됨.
+> - **계약 B → `preview_archive.json`** (`items[]` + `archived_at`, video_id/id dedupe. 프론트 미사용).
+> - **계약 G (admin_state)**: v3 `pending_op`/`edit_lock`/`suppress` 슬롯 추가. `undo.path` 는
+>   `preview.json`/`notices.json`/`tweets.json`. v2 개별 `pending_*` 슬롯은 telegram 되묻기용으로 유지.
+> - **계약 H/I**: `notices.json` 중복키 = `url` ∥ `title` (v2 date+anchor 대체) + `title_ko`.
+>   `tweets.json` + `text_ko`(개인트윗 번역), 리트윗(`^@handle:`) 필터. 번역 실패 시 `needs_tl` 플래그.
+> - **모듈**: 신규 `preview.py`·`preview_build.py`·`llm.py`(Groq)·`ytnotif.py`·`vxtwitter.py`.
+>   `reconcile.build_schedule` → `preview_build.build_preview`(포크). `handlers` 는 `preview.json`
+>   1파일 커밋 + `needs_tl` 번역 재시도 sweep. `notify.diff_events` 는 6상태 전이 기반.
+> - **프론트**: `config.js` `PREVIEW_URL`, `render.js` `state` 기반 카드(`card--watching`/`--end`/
+>   `--membership`), `time.js` `D-n`·절대표기 추가·`elapsedLabel`, tweets/notices 원문↔번역 토글.
+> - **env**: `GROQ_API_KEY`/`GROQ_MODEL`/`GROQ_MODEL_FALLBACK`/`VXTWITTER_BASE`/`INGEST_YT_ENABLED`.
+> - **텔레그램**: `/status` v3 양식, `/del (terminate/y/N)`(terminate=url 12h suppress), `/translate
+>   <notice|tweet>` 신규. `/edit` 마법사는 v3 미구현(잔여 작업).
+
 ---
 
 ## 0. 아키텍처 / 저장소 구조
