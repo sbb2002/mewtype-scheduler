@@ -22,11 +22,11 @@
     },
     "JT6pcfKMIfk": {
       "actual_start": "2026-09-09T13:03:39Z",
-      "attempts": 0,
+      "attempts": 1,
       "channel_key": "yuno",
       "first_seen": "2026-09-09T13:56:09Z",
-      "last_checked": null,
-      "next_check_at": "2026-09-09T14:06:09Z",
+      "last_checked": "2026-09-09T14:06:09Z",
+      "next_check_at": "2026-09-09T14:09:09Z",
       "phase": "live-watch",
       "scheduled_start": "2026-09-09T13:03:14Z"
     },
@@ -51,5 +51,5 @@
       "scheduled_start": "2026-12-24T14:59:00Z"
     }
   },
-  "updated_at": "2026-09-09T13:56:09Z"
+  "updated_at": "2026-09-09T14:06:09Z"
 }
