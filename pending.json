@@ -1,13 +1,13 @@
 {
   "entries": {
     "0_e9LxlMYHU": {
-      "actual_start": null,
-      "attempts": 2,
+      "actual_start": "2026-09-09T12:30:49Z",
+      "attempts": 0,
       "channel_key": "miyako",
       "first_seen": "2026-09-08T15:00:03Z",
-      "last_checked": "2026-09-09T12:30:00Z",
-      "next_check_at": "2026-09-09T12:33:00Z",
-      "phase": "pre-live",
+      "last_checked": "2026-09-09T12:33:00Z",
+      "next_check_at": "2026-09-09T12:43:00Z",
+      "phase": "live-watch",
       "scheduled_start": "2026-09-09T12:30:00Z"
     },
     "2Q5A9SWgHtA": {
@@ -51,5 +51,5 @@
       "scheduled_start": "2026-12-24T14:59:00Z"
     }
   },
-  "updated_at": "2026-09-09T12:30:00Z"
+  "updated_at": "2026-09-09T12:33:00Z"
 }
