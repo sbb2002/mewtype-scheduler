@@ -252,6 +252,33 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             channels_cfg, videos, prev_preview, now_iso, avatars=avatars,
         )
 
+        # ── /del terminate 로 12h 차단된 url · 아이템 단위 편집 락 반영 ──
+        try:
+            adm, _ = gh.read_json("admin_state.json")
+        except Exception:  # noqa: BLE001
+            adm = None
+        if adm:
+            try:
+                from . import admin as _admin
+
+                kept = []
+                for it in new_preview.get("items", []):
+                    u = it.get("url")
+                    if u and _admin.suppressed(adm, u, now_iso):
+                        continue  # 재진입 차단 — 이 아이템은 안 싣는다
+                    lock = _admin.get_edit_lock(adm)
+                    if (lock and lock.get("id") == it.get("id")
+                            and _admin.edit_lock_active(adm, it.get("id"), now_iso)):
+                        # 락 걸린 아이템은 prev 값을 그대로 유지(이번 사이클 갱신 스킵)
+                        pv = next((p for p in prev_preview.get("items", [])
+                                   if p.get("id") == it.get("id")), None)
+                        kept.append(pv or it)
+                    else:
+                        kept.append(it)
+                new_preview["items"] = kept
+            except Exception:  # noqa: BLE001
+                log.warning("suppress/edit_lock 반영 실패 — 무시", exc_info=True)
+
         # 실질 변화 없으면 volatile 동결 + generated_at heartbeat.
         if _stable_view(prev_preview) == _stable_view(new_preview):
             new_preview["generated_at"] = _heartbeat_generated_at(

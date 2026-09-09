@@ -40,13 +40,23 @@ def _plus_seconds_iso(now_iso: str, sec: int) -> str:
 
 
 def default_admin_state() -> dict:
-    """기본 admin_state.json 형태."""
+    """기본 admin_state.json 형태.
+
+    `pending_op`/`edit_lock`/`suppress` = v3 신규. 개별 `pending_*` = v2 호환(telegram_app
+    의 되묻기 플로우가 아직 이걸 씀 — v3 `{cmd}×{contents}` 격자로 완전 이관되면 제거).
+    """
     return {
         "pending_op": None,
         "edit_lock": None,
         "suppress": [],
         "undo": None,
         "pending_undo": None,
+        # v2 호환 슬롯
+        "pending_del": None,
+        "pending_ingest": None,
+        "pending_notice": None,
+        "pending_notice_edit": None,
+        "pending_member": None,
     }
 
 
@@ -228,20 +238,21 @@ def suppressed(state, url: str, now_iso: str) -> bool:
 # undo: 마지막 mutating 명령 스냅샷
 # ============================================================================
 
-def set_undo(state, *, cmd: str, contents: str, path: str, prev_content: dict,
-             new_sha: str | None, now_iso: str) -> dict:
+def set_undo(state, *, path: str, prev_content: dict, new_sha: str | None, now_iso: str,
+             cmd: str | None = None, contents: str | None = None,
+             action: str | None = None) -> dict:
     """새 undo 스냅샷으로 교체한 새 dict 반환 (원본 불변, 타 슬롯 보존).
 
-    `cmd` ∈ ingest | edit | del | translate
-    `contents` ∈ preview | notice | tweet
     `path` ∈ preview.json | notices.json | tweets.json
     `prev_content` = 변경 직전 그 파일 전체
     `new_sha` = 변경 후 그 파일의 git sha (CAS 검증용)
+    `cmd`/`contents` = v3 격자 메타(선택). `action` = 사람이 읽는 설명(선택 — v2 호환).
     """
     result = _as_dict(state)
     result["undo"] = {
         "cmd": cmd,
         "contents": contents,
+        "action": action or (f"/{cmd} {contents}" if cmd else "직전 작업"),
         "path": path,
         "prev_content": dict(prev_content or {}),
         "new_sha": new_sha,
@@ -310,6 +321,126 @@ def pending_undo_expired(pending: dict | None, now_iso: str, ttl_sec: int = 60) 
     except Exception:
         return True
     return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
+# ============================================================================
+# v2 호환 개별 슬롯 (telegram_app 되묻기 플로우) — 순수, 타 슬롯 보존
+# ============================================================================
+
+PENDING_DEL_TTL_SEC = 300
+PENDING_INGEST_TTL_SEC = 180
+PENDING_NOTICE_TTL_SEC = 180
+PENDING_MEMBER_TTL_SEC = 300
+PENDING_NOTICE_EDIT_TTL_SEC = 300
+
+
+def _slot_get(state, key):
+    return state.get(key) if isinstance(state, dict) else None
+
+
+def _slot_set(state, key, value):
+    result = _as_dict(state)
+    result[key] = value
+    return result
+
+
+def _slot_expired(pending, now_iso, ttl_sec):
+    if not pending:
+        return True
+    at = pending.get("at")
+    if not at:
+        return True
+    try:
+        at_dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return (now_dt - at_dt).total_seconds() > ttl_sec
+
+
+def get_pending_del(state):
+    return _slot_get(state, "pending_del")
+
+
+def set_pending_del(state, *, unit, idx, snapshot, warn_text, now_iso):
+    return _slot_set(state, "pending_del", {
+        "unit": unit, "idx": idx, "snapshot": snapshot,
+        "warn_text": warn_text, "at": now_iso,
+    })
+
+
+def clear_pending_del(state):
+    return _slot_set(state, "pending_del", None)
+
+
+def pending_del_expired(pending, now_iso, ttl_sec=PENDING_DEL_TTL_SEC):
+    return _slot_expired(pending, now_iso, ttl_sec)
+
+
+def get_pending_ingest(state):
+    return _slot_get(state, "pending_ingest")
+
+
+def set_pending_ingest(state, *, now_iso):
+    return _slot_set(state, "pending_ingest", {"at": now_iso})
+
+
+def clear_pending_ingest(state):
+    return _slot_set(state, "pending_ingest", None)
+
+
+def pending_ingest_expired(pending, now_iso, ttl_sec=PENDING_INGEST_TTL_SEC):
+    return _slot_expired(pending, now_iso, ttl_sec)
+
+
+def get_pending_notice(state):
+    return _slot_get(state, "pending_notice")
+
+
+def set_pending_notice(state, *, now_iso):
+    return _slot_set(state, "pending_notice", {"at": now_iso})
+
+
+def clear_pending_notice(state):
+    return _slot_set(state, "pending_notice", None)
+
+
+def pending_notice_expired(pending, now_iso, ttl_sec=PENDING_NOTICE_TTL_SEC):
+    return _slot_expired(pending, now_iso, ttl_sec)
+
+
+def get_pending_member(state):
+    return _slot_get(state, "pending_member")
+
+
+def set_pending_member(state, *, raw, now_iso):
+    return _slot_set(state, "pending_member", {"raw": raw, "at": now_iso})
+
+
+def clear_pending_member(state):
+    return _slot_set(state, "pending_member", None)
+
+
+def pending_member_expired(pending, now_iso, ttl_sec=PENDING_MEMBER_TTL_SEC):
+    return _slot_expired(pending, now_iso, ttl_sec)
+
+
+def get_pending_notice_edit(state):
+    return _slot_get(state, "pending_notice_edit")
+
+
+def set_pending_notice_edit(state, *, nid, step, new, now_iso):
+    return _slot_set(state, "pending_notice_edit", {
+        "nid": nid, "step": step, "new": dict(new or {}), "at": now_iso,
+    })
+
+
+def clear_pending_notice_edit(state):
+    return _slot_set(state, "pending_notice_edit", None)
+
+
+def pending_notice_edit_expired(pending, now_iso, ttl_sec=PENDING_NOTICE_EDIT_TTL_SEC):
+    return _slot_expired(pending, now_iso, ttl_sec)
 
 
 # ============================================================================
