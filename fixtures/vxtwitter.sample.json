@@ -1,0 +1,42 @@
+[
+  {
+    "description": "이미지 첨부 트윗 — mediaURLs 포함",
+    "text": "新しい衣装でアート配信🎨\nhttps://www.youtube.com/watch?v=bgzve7Y7S50",
+    "mediaURLs": [
+      "https://pbs.twimg.com/media/abc123def456.jpg",
+      "https://pbs.twimg.com/media/xyz789ghi012.jpg"
+    ],
+    "media_extended": [
+      {
+        "url": "https://pbs.twimg.com/media/abc123def456.jpg",
+        "type": "photo"
+      },
+      {
+        "url": "https://pbs.twimg.com/media/xyz789ghi012.jpg",
+        "type": "photo"
+      }
+    ],
+    "urls": [
+      {
+        "url": "https://t.co/abc123xyz",
+        "expanded_url": "https://www.youtube.com/watch?v=bgzve7Y7S50"
+      }
+    ],
+    "qrtURL": null,
+    "article": null
+  },
+  {
+    "description": "본문에 youtube.com/live/ URL 포함 트윗 — 이미지 없음",
+    "text": "21時からゲーム配信スタート！\nhttps://www.youtube.com/live/2eigVMdk3Pg\n#みゅーたいぷ",
+    "mediaURLs": [],
+    "media_extended": [],
+    "urls": [
+      {
+        "url": "https://t.co/xyz789abc",
+        "expanded_url": "https://www.youtube.com/live/2eigVMdk3Pg"
+      }
+    ],
+    "qrtURL": null,
+    "article": null
+  }
+]
