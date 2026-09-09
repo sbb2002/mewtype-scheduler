@@ -91,6 +91,12 @@ function _lanes(ck) {
 function _channelUrl(ck) {
   return (FALLBACK_CHANNELS[ck] || {}).channel_url || "#";
 }
+// 원문 링크: 실제 트윗 URL → 없으면 X 프로필(수동 ingest 는 트윗 URL 이 없음) → 채널.
+function _srcUrl(t, ck) {
+  if (t.url) return t.url;
+  if (t.handle) return "https://x.com/" + t.handle;
+  return _channelUrl(ck);
+}
 
 /* ── 배지 적용 ───────────────────────────────────────────────────── */
 function _apply() {
@@ -175,7 +181,7 @@ function _fillBubble(ck, t) {
   const text = _st.tlang === "ko" && hasKo ? t.text_ko : t.text;
   b.querySelector(".lane__bubble__text").textContent = text;
   b.querySelector(".ago").textContent = _ago(t.received_at);
-  b.querySelector(".src").href = t.url || _channelUrl(ck);
+  b.querySelector(".src").href = _srcUrl(t, ck);
 
   // 번역 토글 버튼
   let btn = b.querySelector(".lane__bubble__tl");
@@ -288,7 +294,7 @@ function _openToast(ck) {
   const text = _st.tlang === "ko" && hasKo ? t.text_ko : t.text;
   _toast.querySelector(".tw-toast__text").textContent = text;
   _toast.querySelector(".ago").textContent = _ago(t.received_at);
-  _toast.querySelector(".src").href = t.url || _channelUrl(ck);
+  _toast.querySelector(".src").href = _srcUrl(t, ck);
 
   // 번역 토글 버튼
   let btn = _toast.querySelector(".tw-toast__tl");

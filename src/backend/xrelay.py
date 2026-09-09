@@ -84,14 +84,20 @@ _RANK = {"live": 0, "upcoming": 1, "scheduled": 2}
 _NO_TIME_TTL_SEC = 18 * 3600
 
 
-def normalize(text: str) -> str:
-    """개행·전각 문자·물결표 통일. VS16(️) 제거."""
+def normalize(text: str, *, strip_vs16: bool = True) -> str:
+    """개행·전각 문자·물결표 통일.
+
+    strip_vs16=True(기본): VS16(U+FE0F) 제거 — 파서 매칭용(이모지 장식이 노이즈).
+    strip_vs16=False: VS16 보존 — 트윗 본문처럼 그대로 표시할 텍스트용
+      (☀️ 등 text-default 이모지가 흑백 글리프로 깨지는 것 방지).
+    """
     if not text:
         return ""
     t = text.replace("\r\n", "\n").replace("\r", "\n")
     t = t.translate(_FW)
     t = t.replace("～", "〜").replace("~", "〜")
-    t = t.replace("️", "")
+    if strip_vs16:
+        t = t.replace("️", "")
     return t
 
 

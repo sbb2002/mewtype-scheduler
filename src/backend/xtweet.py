@@ -89,8 +89,8 @@ def _tweet_id(tag: str | None) -> str:
 
 
 def _clean_text(text: str) -> str:
-    """normalize + 앞뒤 장식/빈 줄 제거 + 길이 제한."""
-    lines = [ln.rstrip() for ln in normalize(text or "").split("\n")]
+    """normalize + 앞뒤 장식/빈 줄 제거 + 길이 제한. 표시용이라 VS16 은 보존."""
+    lines = [ln.rstrip() for ln in normalize(text or "", strip_vs16=False).split("\n")]
     while lines and (not lines[0] or _JUNK_LINE_RE.match(lines[0])):
         lines.pop(0)
     while lines and (not lines[-1] or _JUNK_LINE_RE.match(lines[-1])):
