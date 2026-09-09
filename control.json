@@ -1,7 +1,7 @@
 {
-  "by": "telegram:/log",
+  "by": "v3-golive",
   "log_level": "normal",
-  "paused": false,
-  "since": null,
-  "updated_at": "2026-09-08T14:56:21Z"
+  "paused": true,
+  "since": "2026-09-09T15:32:37Z",
+  "updated_at": "2026-09-09T15:32:37Z"
 }
