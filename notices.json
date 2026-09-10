@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T15:00:39Z",
+  "generated_at": "2026-09-10T15:00:53Z",
   "notices": [
     {
       "anchor_a": null,
@@ -175,6 +175,31 @@
       "title_slug": "集え輝け上腕二頭筋",
       "tweet_url": null,
       "url": "https://eplus.jp/yumemita_kinntorebu2026/"
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "バンドリ！ゆめ∞みた",
+      "body_for_llm": "@bang_dream_info: ＼🎊ジャケット公開🎊／ (水)発売 TVアニメ「バンドリ！ ゆめ∞みた」Blu-ray 下巻のジャケットデザインを公開🎉 💿収録内容の詳細はこちら bang-dream.com/discographies/… 収録内容も更新しておりますので、 ぜひチェックしてください✨ #アニメゆめみた #バンドリ pic.x.com/oXYNbGt76t",
+      "body_raw": "@bang_dream_info: ＼🎊ジャケット公開🎊／\n\n12/16(水)発売\nTVアニメ「バンドリ！ ゆめ∞みた」Blu-ray\n\n下巻のジャケットデザインを公開🎉\n\n💿収録内容の詳細はこちら\nbang-dream.com/discographies/…\n\n収録内容も更新しておりますので、\nぜひチェックしてください✨\n\n#アニメゆめみた #バンドリ pic.x.com/oXYNbGt76t",
+      "category": "release",
+      "date": "2026-12-16",
+      "deadline": false,
+      "expires_at": "2026-12-16T15:00:00Z",
+      "first_seen": "2026-09-10T15:00:53Z",
+      "id": "2098059091252047961",
+      "last_updated": "2026-09-10T15:00:53Z",
+      "seen_ids": [
+        "2098059091252047961"
+      ],
+      "site": "x",
+      "src_handle": "RT @bang_dream_info",
+      "time": null,
+      "title": "バンドリ！ ゆめ∞みた Blu-ray 下巻 ジャケット公開",
+      "title_ko": "밴드리! 유메∞미타 Blu-ray 하권 재킷 공개",
+      "title_raw": "12/16(水)発売",
+      "title_slug": "水発売",
+      "tweet_url": "https://x.com/i/status/2098059091252047961",
+      "url": null
     }
   ]
 }
