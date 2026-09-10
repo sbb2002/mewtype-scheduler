@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (チケット一般発売を開始しました💡)",
-    "at": "2026-09-10T12:18:02Z",
+    "action": "소식 added (「バンドリ！ ゆめ∞みた」最終回)",
+    "at": "2026-09-10T12:38:18Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "fffbff4db349d5185eda91a00f66ca883b10da33",
+    "new_sha": "0b4676b7a9f1c28f04a385251cba797339104399",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T09:52:26Z",
+      "generated_at": "2026-09-10T12:18:02Z",
       "notices": [
         {
           "anchor_a": null,
@@ -261,6 +261,31 @@
           "title_raw": "@bang_dream_info: ＼グッズ情報公開",
           "title_slug": "bangdreaminfoグッズ情報公開",
           "tweet_url": "https://x.com/i/status/2097960024417124657",
+          "url": null
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": "dimensionaloverlap",
+          "body_for_llm": "＼発売開始📢／ (日)開催 🛸#バンドリ13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」🛸 at 東京ガーデンシアター チケット一般発売を開始しました💡 🎫ご購入はこちら eplus.jp/13th-live-day2/ ※先着順・上限数に達し次第終了 お見逃しなく✨ #バンド",
+          "body_raw": "＼発売開始📢／\n\n10/11(日)開催\n🛸#バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n「DIMENSIONAL OVERLAP」🛸\nat 東京ガーデンシアター\n\nチケット一般発売を開始しました💡\n\n🎫ご購入はこちら\neplus.jp/13th-live-day2/\n※先着順・上限数に達し次第終了\n\nお見逃しなく✨\n\n#バンド",
+          "category": "release",
+          "date": "2026-10-11",
+          "deadline": false,
+          "expires_at": "2026-10-11T15:00:00Z",
+          "first_seen": "2026-09-10T12:18:02Z",
+          "id": "2098018660086657040",
+          "last_updated": "2026-09-10T12:18:02Z",
+          "seen_ids": [
+            "2098018660086657040"
+          ],
+          "site": "x",
+          "src_handle": "@BDP_yumemita",
+          "time": "02:00",
+          "title": "バンドリ13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」チケット一般発売開始",
+          "title_ko": "밴드리 13th 라이브 DAY 꿈한계뮤타입 ‘DIMENSIONAL OVERLAP’ 티켓 일반 판매 시작",
+          "title_raw": "チケット一般発売を開始しました💡",
+          "title_slug": "チケット一般発売を開始しました",
+          "tweet_url": "https://x.com/i/status/2098018660086657040",
           "url": null
         },
         {
