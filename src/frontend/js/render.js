@@ -332,44 +332,27 @@ function buildLive(liveItems, endedItems, nowMs, channelData, laneKey) {
   return el;
 }
 
-/* ── 예고 시간대별 분할 (오늘 / 7일 이내 / 한 달 이내 / 그 이후).
-   모바일(<768px)은 화면이 좁아 "한 달 이내"+"그 이후"를 "7일 이후" 하나로 통합. ── */
+/* ── 예고 시간대별 분할 (오늘 / 7일 이내 / 7일 이후). PC·모바일 동일.
+   v3.0.0 까진 PC 만 "한 달 이내"/"그 이후" 로 4분할했으나 통합(화면 규격 무관 3분할). ── */
 const BUCKET_DEFS = [
-  ["today", "오늘"],
-  ["week", "7일 이내"],
-  ["month", "한 달 이내"],
-  ["later", "그 이후"],
-];
-const BUCKET_DEFS_MOBILE = [
   ["today", "오늘"],
   ["week", "7일 이내"],
   ["rest", "7일 이후"],
 ];
-const _mobileMQ =
-  typeof window !== "undefined" && window.matchMedia
-    ? window.matchMedia("(max-width: 767px)")
-    : { matches: false };
-
-function bucketDefs() {
-  return _mobileMQ.matches ? BUCKET_DEFS_MOBILE : BUCKET_DEFS;
-}
 
 function bucketKey(item, nowMs) {
-  const mobile = _mobileMQ.matches;
-  if (!item.scheduled_start) return mobile ? "rest" : "later";
+  if (!item.scheduled_start) return "rest";
   const delta = new Date(item.scheduled_start).getTime() - nowMs;
   if (delta < DAY_MS) return "today";
   if (delta < 7 * DAY_MS) return "week";
-  if (mobile) return "rest";
-  if (delta < 30 * DAY_MS) return "month";
-  return "later";
+  return "rest";
 }
 
 function buildBuckets(pending, nowMs, channelData, laneKey) {
   const wrap = document.createElement("div");
   wrap.className = "lane__buckets";
 
-  const defs = bucketDefs();
+  const defs = BUCKET_DEFS;
   const groups = {};
   for (const [key] of defs) groups[key] = [];
   for (const i of pending) (groups[bucketKey(i, nowMs)] ||= []).push(i);

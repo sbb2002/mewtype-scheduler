@@ -199,8 +199,8 @@ v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
 
 ### 버킷 분류 (`bucketKey`)
 
-`scheduled_start − now`: `<24h`=`today` / `<7일`=`week` / `<30일`=`month` / 그 외·null=`later`.
-모바일(<768px)은 `month`+`later` → `rest` 하나. 대상 = state ∈ (announced, upcoming, watching).
+`scheduled_start − now`: `<24h`=`today` / `<7일`=`week` / 그 외·null=`rest`. PC·모바일 동일 3분할
+(v3.0.0 까진 PC 만 `<30일`=`month` / 그 외=`later` 4분할이었음). 대상 = state ∈ (announced, upcoming, watching).
 
 ### 렌더 규칙
 

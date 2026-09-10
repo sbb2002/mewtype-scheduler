@@ -9,12 +9,11 @@
 const DAY_MS = 86400000;
 
 function bucketKey(item, nowMs) {
-  if (!item.scheduled_start) return "later";
+  if (!item.scheduled_start) return "rest";
   const delta = new Date(item.scheduled_start).getTime() - nowMs;
   if (delta < DAY_MS) return "today";
   if (delta < 7 * DAY_MS) return "week";
-  if (delta < 30 * DAY_MS) return "month";
-  return "later";
+  return "rest";
 }
 
 function laneKeys(items, channelOrder) {
@@ -56,22 +55,22 @@ assert(
   "bucketKey: week (D+3)"
 );
 
-// 한 달 이내
+// 7일 이후 — D+11 (v3.0.0 PC 에선 "month" 였으나 통합)
 assert(
-  bucketKey({ scheduled_start: "2026-09-20T10:00:00Z" }, now) === "month",
-  "bucketKey: month (D+11)"
+  bucketKey({ scheduled_start: "2026-09-20T10:00:00Z" }, now) === "rest",
+  "bucketKey: rest (D+11)"
 );
 
-// 그 외 (30일 초과)
+// 7일 이후 — 30일 초과
 assert(
-  bucketKey({ scheduled_start: "2026-10-10T12:00:00Z" }, now) === "later",
-  "bucketKey: later (D+31)"
+  bucketKey({ scheduled_start: "2026-10-10T12:00:00Z" }, now) === "rest",
+  "bucketKey: rest (D+31)"
 );
 
 // scheduled_start 없음
 assert(
-  bucketKey({ scheduled_start: null }, now) === "later",
-  "bucketKey: later (scheduled_start 없음)"
+  bucketKey({ scheduled_start: null }, now) === "rest",
+  "bucketKey: rest (scheduled_start 없음)"
 );
 
 // ── 테스트 2: laneKeys collab 팬아웃
