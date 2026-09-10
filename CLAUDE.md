@@ -63,7 +63,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 src/
   frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
-    css/{reset,layout,card,notices,tweets}.css
+                       #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
+    css/{reset,layout,card,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수

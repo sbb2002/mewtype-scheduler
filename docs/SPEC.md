@@ -562,7 +562,11 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 
-- **index.html**: `<head>` 에 5개 css, `<script type="module" src="js/main.js">`. body 는 `#notice` + `#board` + `#foot`.
+- **index.html**: `<head>` 에 `<meta name="color-scheme" content="dark">` + 5개 css +
+  `<script type="module" src="js/main.js">`. body 는 `#notice` + `#board` + `#foot`.
+- **다크 전용 테마.** `reset.css :root { color-scheme: dark }` + 위 메타로 브라우저 자동
+  어둡게(삼성 인터넷·Chrome Android force-dark)를 끈다 — 선언이 없으면 기기 다크 모드에서
+  투명 섞기 색(헤더 그라데이션·트윗 말풍선)이 이중 처리돼 뭉개진다. 라이트/다크 분기 CSS 없음.
 - **css/**: `reset` · `layout`(`#board` ≥1100px `grid-template-columns:repeat(5,1fr)`, <1100px 가로 스크롤) ·
   `card`(6상태 클래스 §3, mobile @media 파일 끝) · `notices` · `tweets`.
 - **js/config.js** — `PREVIEW_URL`(raw githubusercontent data/preview.json), `NOTICES_URL`, `TWEETS_URL`,
