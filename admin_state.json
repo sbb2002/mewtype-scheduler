@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (「RESONEXT」)",
-    "at": "2026-09-10T07:22:36Z",
+    "action": "소식 added (仲町あられ バースデーグッズ2026 発売 🎂)",
+    "at": "2026-09-10T07:23:53Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "39fdbc9d5d2fd82ff8630dae10683a6cdfd2cb19",
+    "new_sha": "27af38cb190043db17e3ced6154c0a76aee6bb1b",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T07:19:28Z",
+      "generated_at": "2026-09-10T07:22:36Z",
       "notices": [
         {
           "anchor_a": null,
@@ -111,6 +111,31 @@
           "title_slug": "本日木発売様10月号にて",
           "tweet_url": "https://x.com/i/status/2097945192364167584",
           "url": null
+        },
+        {
+          "anchor_a": "yumemita-arale",
+          "anchor_b": "resonext",
+          "body_for_llm": "＼プレイガイド先行受付中📢／ 🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤 📅 (木) 📍大手町三井ホール ⏰受付期間: (月･祝) 🎫お申し込みはこちら お見逃しなく✨ #バンドリ #ゆめみた",
+          "body_raw": "＼プレイガイド先行受付中📢／\n\n🎤NAKAMACHI ARALE LIVE 2026\n「RESONEXT」🎤\n\n📅12月24日(木)\n📍大手町三井ホール\n\n⏰受付期間:〜9/21(月･祝) 23:59\n\n🎫お申し込みはこちら\nhttps://eplus.jp/yumemita-arale/\n\nお見逃しなく✨\n\n#バンドリ #ゆめみた",
+          "category": "etc",
+          "date": "2026-09-21",
+          "deadline": true,
+          "expires_at": "2026-09-21T15:00:00Z",
+          "first_seen": "2026-09-10T07:22:36Z",
+          "id": "nd9f0821858f4ac9",
+          "last_updated": "2026-09-10T07:22:36Z",
+          "seen_ids": [
+            "nd9f0821858f4ac9"
+          ],
+          "site": "web",
+          "src_handle": "@BDP_yumemita",
+          "time": "23:59",
+          "title": "NAKAMACHI ARALE LIVE 2026 「RESONEXT」",
+          "title_ko": "NAKAMACHI ARALE LIVE 2026 「RESONEXT」",
+          "title_raw": "「RESONEXT」",
+          "title_slug": "resonext",
+          "tweet_url": null,
+          "url": "https://eplus.jp/yumemita-arale/"
         },
         {
           "anchor_a": "yumemita_kinntorebu2026",
