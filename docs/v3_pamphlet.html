@@ -63,16 +63,16 @@
   svg .node.hot rect{stroke:var(--cyan);stroke-width:1.8}
   svg .node.hot text{fill:var(--ink)}
   svg .node.hot .ns{fill:var(--dim)}
-  svg .edge.hot{opacity:1;stroke:var(--cyan);stroke-width:2.4;
-    stroke-dasharray:7 6;animation:flow 1s linear infinite}
-  svg .edge.hot~.elabel{opacity:1}
-  @keyframes flow{to{stroke-dashoffset:-13}}
-  /* input → output 이동 패킷 */
-  svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.3;stroke-linecap:round;
-    stroke-dasharray:1 6;opacity:0;transition:opacity .25s}
-  svg.dimming .route-line{opacity:.42}
-  svg .packet-halo{fill:var(--cyan);opacity:.22}
-  svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.9))}
+  svg .edge.hot{opacity:.5;stroke:#4a525c}
+  svg .edge.hot~.elabel{opacity:.9}
+  @keyframes flow{to{stroke-dashoffset:-20}}
+  /* input → output 경로 = 직선 점선. 패킷이 이 선을 탄다. nodes 아래에 그려짐 */
+  svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+    stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
+  svg.dimming .route-line{opacity:.75}
+  svg .packet-halo{fill:var(--cyan);opacity:.2}
+  svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  @media (prefers-reduced-motion:reduce){svg .route-line{animation:none}}
   @media (prefers-reduced-motion:reduce){
     svg .edge.hot{animation:none}
     #packet{opacity:0!important}
@@ -200,31 +200,40 @@
         <rect class="boundary" x="206" y="150" width="716" height="368" rx="10"/>
         <text class="boundary-t" x="214" y="164">배포·운영 경계 — 우리 코드</text>
 
-        <!-- edges (draw first, under nodes) -->
+        <!-- edges — png 처럼 전부 직선. nodes 보다 먼저(아래에) 그린다 -->
         <path id="e_op_tg"   class="edge" d="M470,58 L470,72" marker-end="url(#ah)"/>
         <text class="elabel" x="476" y="68">명령</text>
-        <path id="e_tg_ctrl" class="edge" d="M436,118 C360,150 320,190 306,224" marker-end="url(#ah)"/>
-        <text class="elabel" x="330" y="150">webhook</text>
-        <path id="e_be_tg"   class="edge" d="M540,224 C556,180 540,140 510,120" marker-end="url(#ah)"/>
-        <text class="elabel" x="556" y="170">상태전이 DM</text>
+        <path id="e_tg_ctrl" class="edge" d="M440,118 L308,222" marker-end="url(#ah)"/>
+        <text class="elabel" x="336" y="150">webhook</text>
+        <path id="e_be_tg"   class="edge" d="M544,222 L502,118" marker-end="url(#ah)"/>
+        <text class="elabel" x="548" y="172">상태전이 DM</text>
         <path id="e_push_up" class="edge" d="M84,176 L84,222" marker-end="url(#ah)"/>
         <path id="e_up_ctrl" class="edge" d="M152,250 L226,250" marker-end="url(#ah)"/>
         <text class="elabel" x="150" y="243">POST /ingest</text>
         <path id="e_ctrl_be" class="edge" d="M376,244 L482,244" marker-end="url(#ah)"/>
         <text class="elabel" x="392" y="238">/resume→/tick</text>
-        <path id="e_sch_be" class="edge" d="M786,196 C700,214 660,226 636,236" marker-end="url(#ah)"/>
-        <text class="elabel" x="648" y="212">/tick /wake · OIDC</text>
-        <path id="e_yt_be" class="edge" d="M786,314 C700,296 660,282 636,268" marker-end="url(#ah)"/>
-        <text class="elabel" x="646" y="300">RSS · videos.list</text>
+        <path id="e_sch_be" class="edge" d="M786,190 L640,240" marker-end="url(#ah)"/>
+        <text class="elabel" x="650" y="210">/tick /wake · OIDC</text>
+        <path id="e_yt_be" class="edge" d="M786,304 L640,262" marker-end="url(#ah)"/>
+        <text class="elabel" x="648" y="300">RSS · videos.list</text>
         <path id="e_llm_ctrl" class="edge" d="M300,346 L300,278" marker-end="url(#ah)" stroke-dasharray="4 4"/>
         <text class="elabel" x="306" y="316">제목추출 · 번역</text>
-        <path id="e_ctrl_db" class="edge" d="M330,276 C400,320 460,340 498,352" marker-end="url(#ah)"/>
+        <path id="e_ctrl_db" class="edge" d="M334,276 L498,352" marker-end="url(#ah)"/>
         <path id="e_be_db"  class="edge" d="M560,276 L560,344" marker-end="url(#ah)"/>
         <text class="elabel" x="566" y="316">커밋 (write)</text>
         <path id="e_db_fe"  class="edge" d="M560,398 L560,436" marker-end="url(#ah)"/>
         <text class="elabel" x="566" y="422">raw JSON · 75초</text>
         <path id="e_fe_fan" class="edge" d="M560,486 L560,516" marker-end="url(#ah)"/>
         <text class="elabel" x="566" y="506">사이트 표시</text>
+
+        <!-- input(동그라미) 이동 경로(직선 점선) + 패킷 — nodes 보다 먼저 = 네모칸이 위를 덮음 -->
+        <path id="routeLine" class="route-line" d=""/>
+        <g id="packet" opacity="0">
+          <circle class="packet-halo" r="11"/>
+          <circle class="packet-dot" r="5"/>
+          <animateMotion id="pkMove" dur="3s" begin="indefinite" repeatCount="indefinite"
+            calcMode="linear" path="M0,0"/>
+        </g>
 
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -269,15 +278,6 @@
         <g class="node" id="n_fan" transform="translate(494,516)">
           <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">팬</text>
           <text class="ns" x="66" y="29" text-anchor="middle">사용자</text></g>
-
-        <!-- input(동그라미)이 output 까지 이동하는 경로 + 패킷 -->
-        <path id="routeLine" class="route-line" d=""/>
-        <g id="packet" opacity="0">
-          <circle class="packet-halo" r="12"/>
-          <circle class="packet-dot" r="5.5"/>
-          <animateMotion id="pkMove" dur="3s" begin="indefinite" repeatCount="indefinite"
-            calcMode="linear" path="M0,0"/>
-        </g>
       </svg>
     </div>
     <p class="scn-cap" id="scnCap"></p>
