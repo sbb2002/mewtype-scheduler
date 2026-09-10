@@ -67,6 +67,11 @@ except ImportError:
     xtweet = None
 
 try:
+    from . import vxtwitter                  # (v3) 트윗 unfurl — 잘린 URL 복원
+except ImportError:
+    vxtwitter = None
+
+try:
     # (v2.8.1+) 수동 /ingest 개인 예고: 본문 YT URL → 채널 판별 (videos.list 1 quota)
     from ..collector.youtube import YouTubeClient
 except Exception:                           # pragma: no cover
@@ -1613,6 +1618,49 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
 
 # ── (v2.8) 멤버 개인 트윗 — tweets.json 만 건드린다. notice/schedule 무관 ──────────
 
+def _inline_translate(text: str) -> Optional[str]:
+    """자동 인입 트윗 인라인 번역. 실패하면 None → 호출부가 `needs_tl` 로 큐잉해
+    다음 `/tick` 의 `handlers._translate_sweep` 가 재시도. (버그리포트 20260910 #4)"""
+    if not text or not text.strip():
+        return None
+    llm = _make_llm_client()
+    if llm is None:
+        return None
+    try:
+        return llm.translate(text) or None
+    except Exception:
+        log.exception("인라인 번역 실패")
+        return None
+
+
+# 웹푸시 알림이 긴 URL 을 …/... 로 잘라 보낸 흔적 — 11자 영상 ID 를 못 뽑는 경우.
+_TRUNC_YT_RE = re.compile(r"(?:youtube\.com|youtu\.be)/\S*?(?:…|\.\.\.)")
+
+
+def _expand_truncated_yt(raw: str, tag) -> str:
+    """본문의 YouTube URL 이 `…`/`...` 로 잘렸으면 트윗 id(tag)로 vxtwitter unfurl 해
+    온전한 watch URL 을 본문 끝에 덧붙인다. (버그리포트 20260910 #2)
+
+    온전한 YT URL 이미 있음 · 잘린 흔적 없음 · tweet id 없음 · vxtwitter 모듈/조회
+    실패 → raw 그대로(무회귀).
+    """
+    if not raw or vxtwitter is None or xrelay is None:
+        return raw
+    if xrelay.YT_VIDEO_RE.search(raw) or not _TRUNC_YT_RE.search(raw):
+        return raw
+    tid = xtweet._tweet_id(tag) if xtweet is not None else ""
+    if not tid or not tid.isdigit():
+        return raw
+    j = vxtwitter.fetch_tweet(tid)
+    vid = vxtwitter.extract(j).get("yt_video_id") if j else None
+    if not vid:
+        log.warning("잘린 YT URL 복원 실패 (tweet %s)", tid)
+        return raw
+    url = f"https://www.youtube.com/watch?v={vid}"
+    log.info("잘린 YT URL 복원: %s (tweet %s)", url, tid)
+    return raw.rstrip() + "\n" + url
+
+
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                           channel_key: str, now_iso: str) -> str:
     """개인 트윗 인입 — `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
@@ -1641,6 +1689,14 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
             new_t, new_a, changed, mode = xtweet.merge_tweet(prev, parsed, now_iso, archive=arch)
             if not changed:
                 break
+            row = new_t["tweets"].get(channel_key)
+            if row and not row.get("text_ko"):
+                ko = _inline_translate(row.get("text") or "")
+                if ko:
+                    row["text_ko"] = ko
+                    row.pop("needs_tl", None)
+                else:
+                    row["needs_tl"] = True
             try:
                 gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
                               message=f"data: tweet {mode} {channel_key} {now_iso}")
@@ -1681,6 +1737,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
     """
     if xtweet is None:
         return
+    raw = _expand_truncated_yt(raw, tag)
     try:
         row = xtweet.parse_schedule(raw, channel_key=channel_key, tag=tag,
                                     now_iso=now_iso, handle=handle)
@@ -2780,6 +2837,17 @@ if __name__ == "__main__":
     assert _tweet_url_from_tag("DownloadNotificationService") == ""
     assert _tweet_url_from_tag("") == "" and _tweet_url_from_tag(None) == ""
     print("[OK] _tweet_url_from_tag")
+
+    # ── _expand_truncated_yt (버그리포트 #2) — 네트워크 안 타는 조기반환만 ──
+    _TAG = "p#https://x.com/#1tweet-2096552878769152326"
+    assert _TRUNC_YT_RE.search("見てね youtube.com/watch?v=4yH9F6…")
+    assert not _TRUNC_YT_RE.search("youtube.com/watch?v=PAfMVT3GTLg")
+    _full = "本日21時 配信\nhttps://www.youtube.com/watch?v=PAfMVT3GTLg"
+    assert _expand_truncated_yt(_full, _TAG) == _full          # 온전한 URL 이미 있음
+    assert _expand_truncated_yt("今日は歌枠やります", _TAG) == "今日は歌枠やります"  # 잘린 흔적 없음
+    _tr = "配信 youtube.com/watch?v=4yH9F6…"
+    assert _expand_truncated_yt(_tr, None) == _tr              # tweet id 없음 → 네트워크 미시도
+    print("[OK] _expand_truncated_yt (조기반환)")
 
     # ── 6상태 정렬·표시 ───────────────────────────────────────
     _pv = {"items": [
