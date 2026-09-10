@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T07:11:02Z",
+  "generated_at": "2026-09-10T07:19:28Z",
   "notices": [
     {
       "anchor_a": null,
@@ -94,6 +94,31 @@
       "title_slug": "本日木発売様10月号にて",
       "tweet_url": "https://x.com/i/status/2097945192364167584",
       "url": null
+    },
+    {
+      "anchor_a": "yumemita_kinntorebu2026",
+      "anchor_b": null,
+      "body_for_llm": "＼プレイガイド先行受付中📢／ 💪集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜💪 日程: (土) 会場:GARDEN 新木場 FACTORY 🎫お申し込みはこちら 開催までお楽しみに🛸 #バンドリ",
+      "body_raw": "＼プレイガイド先行受付中📢／\n\n💪集え！#ゆめみた筋トレ部 \n　〜輝け！上腕二頭筋〜💪\n\n日程:11月21日(土)\n会場:GARDEN 新木場 FACTORY\n\n🎫お申し込みはこちら\nhttps://eplus.jp/yumemita_kinntorebu2026/\n\n開催までお楽しみに🛸\n\n#バンドリ",
+      "category": "etc",
+      "date": "2026-11-21",
+      "deadline": false,
+      "expires_at": "2026-11-21T15:00:00Z",
+      "first_seen": "2026-09-10T07:19:28Z",
+      "id": "n862390d67e958a4",
+      "last_updated": "2026-09-10T07:19:28Z",
+      "seen_ids": [
+        "n862390d67e958a4"
+      ],
+      "site": "web",
+      "src_handle": "@BDP_yumemita",
+      "time": null,
+      "title": "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜",
+      "title_ko": "모여라! #꿈꾸는근육부 ~빛나라! 상완이두근~",
+      "title_raw": "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜",
+      "title_slug": "集え輝け上腕二頭筋",
+      "tweet_url": null,
+      "url": "https://eplus.jp/yumemita_kinntorebu2026/"
     }
   ]
 }
