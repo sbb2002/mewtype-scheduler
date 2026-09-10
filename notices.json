@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T02:53:48Z",
+  "generated_at": "2026-09-10T03:49:00Z",
   "notices": [
     {
       "anchor_a": null,
@@ -21,6 +21,28 @@
       "title_ko": null,
       "title_slug": "グッズと一緒に盛り上げようpicxcombmkg",
       "tweet_url": "https://x.com/i/status/2097881189134803294",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "バンドリ！ゆめ∞みた",
+      "category": "live",
+      "date": "2026-09-10",
+      "deadline": false,
+      "expires_at": "2026-09-10T15:00:00Z",
+      "first_seen": "2026-09-10T03:49:00Z",
+      "id": "2097894490233344298",
+      "last_updated": "2026-09-10T03:49:00Z",
+      "seen_ids": [
+        "2097894490233344298"
+      ],
+      "site": "x",
+      "src_handle": "RT @bushi_PR",
+      "time": "23:00",
+      "title": "TVアニメ「バンドリ！ ゆめ∞みた」最終回放送に向けて",
+      "title_ko": null,
+      "title_slug": "tvアニメバンドリゆめみた最終回放送に向けて",
+      "tweet_url": "https://x.com/i/status/2097894490233344298",
       "url": null
     }
   ]
