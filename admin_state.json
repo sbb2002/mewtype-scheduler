@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (「バンドリ！ ゆめ∞みた」最終回)",
-    "at": "2026-09-10T12:38:18Z",
+    "action": "소식 added (「バンドリ！TV LIVE 2026」)",
+    "at": "2026-09-10T13:49:20Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "0b4676b7a9f1c28f04a385251cba797339104399",
+    "new_sha": "9e2991d2fbb452227389762343d10fbcdbc2a109",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T12:18:02Z",
+      "generated_at": "2026-09-10T12:38:18Z",
       "notices": [
         {
           "anchor_a": null,
@@ -111,6 +111,31 @@
           "title_ko": null,
           "title_slug": "tvアニメバンドリゆめみた最終回放送に向けて",
           "tweet_url": "https://x.com/i/status/2097894490233344298",
+          "url": null
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": "バンドリ！ゆめ∞みた",
+          "body_for_llm": "@hyakkano_anime: ／ #アニメゆめみた ❤まもなく放送開始‼❤ ＼ #アニメ100カノ❤×#アニメゆめみた🛸 コラボCMをお楽しみいただきありがとうございました✨ 「バンドリ！ ゆめ∞みた」最終回📢 本日 より放送・配信開始🌟 花園羽香里役 #本渡楓 さんコラボインタビュー公開中💞 natalie.mu/comic/pp/bangd… pic.x.com/NHlp19lmBy",
+          "body_raw": "@hyakkano_anime: ／\n　　#アニメゆめみた \n❤まもなく放送開始‼❤\n＼\n\n#アニメ100カノ❤×#アニメゆめみた🛸\nコラボCMをお楽しみいただきありがとうございました✨\n\n「バンドリ！ ゆめ∞みた」最終回📢\n本日23:00より放送・配信開始🌟\n\n花園羽香里役\n#本渡楓 さんコラボインタビュー公開中💞\nnatalie.mu/comic/pp/bangd… pic.x.com/NHlp19lmBy",
+          "category": "live",
+          "date": "2026-09-10",
+          "deadline": false,
+          "expires_at": "2026-09-10T15:00:00Z",
+          "first_seen": "2026-09-10T12:38:18Z",
+          "id": "2098026190376497465",
+          "last_updated": "2026-09-10T12:38:18Z",
+          "seen_ids": [
+            "2098026190376497465"
+          ],
+          "site": "x",
+          "src_handle": "RT @hyakkano_anime",
+          "time": "23:00",
+          "title": "『バンドリ！ ゆめ∞みた』最終回放送開始のお知らせ",
+          "title_ko": "‘밴드리! 유메∞미타’ 최종회 방송 시작 안내",
+          "title_raw": "「バンドリ！ ゆめ∞みた」最終回",
+          "title_slug": "バンドリゆめみた最終回",
+          "tweet_url": "https://x.com/i/status/2098026190376497465",
           "url": null
         },
         {
