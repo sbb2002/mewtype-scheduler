@@ -9,15 +9,38 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (グッズと一緒に盛り上げよう♪ pic.x.com/BmkG6)",
-    "at": "2026-09-10T02:53:48Z",
+    "action": "소식 added (TVアニメ「バンドリ！ ゆめ∞みた」最終回放送に向けて)",
+    "at": "2026-09-10T03:49:00Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "db3f9c1926c068b4b15d190687cea56108263073",
+    "new_sha": "77a1883f929c2911e04a5add1107fdc182a0524f",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": null,
-      "notices": []
+      "generated_at": "2026-09-10T02:53:48Z",
+      "notices": [
+        {
+          "anchor_a": null,
+          "anchor_b": "バンドリ！ゆめ∞みた",
+          "category": "live",
+          "date": "2026-09-10",
+          "deadline": false,
+          "expires_at": "2026-09-10T15:00:00Z",
+          "first_seen": "2026-09-10T02:53:48Z",
+          "id": "2097881189134803294",
+          "last_updated": "2026-09-10T02:53:48Z",
+          "seen_ids": [
+            "2097881189134803294"
+          ],
+          "site": "x",
+          "src_handle": "RT @BushiM_info",
+          "time": "23:00",
+          "title": "グッズと一緒に盛り上げよう♪ pic.x.com/BmkG63EzwW",
+          "title_ko": null,
+          "title_slug": "グッズと一緒に盛り上げようpicxcombmkg",
+          "tweet_url": "https://x.com/i/status/2097881189134803294",
+          "url": null
+        }
+      ]
     }
   }
 }
