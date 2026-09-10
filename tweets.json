@@ -1,17 +1,7 @@
 {
-  "generated_at": "2026-09-10T12:39:44Z",
+  "generated_at": "2026-09-10T13:49:20Z",
   "tweets": {
     "arale": [
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-11T04:43:14Z",
-        "handle": "arale_yumemita",
-        "id": "2097908716456870248",
-        "received_at": "2026-09-10T04:43:14Z",
-        "text": "髪がﾍﾆｮﾍﾆｮﾘﾝになっちゃう……",
-        "text_ko": "머리가 헝헝거린다……",
-        "url": "https://x.com/i/status/2097908716456870248"
-      },
       {
         "channel_key": "arale",
         "expires_at": "2026-09-11T04:45:26Z",
@@ -51,6 +41,16 @@
         "text": "本日！ #バンドリTVLIVE\n出演させていただきます！\nよろしくお願いいたします……！！！",
         "text_ko": "오늘! #밴드리TVLIVE에 출연하게 됩니다! 잘 부탁드립니다……!!!",
         "url": "https://x.com/i/status/2098026587736424642"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-11T13:49:20Z",
+        "handle": "arale_yumemita",
+        "id": "2098034027332784333",
+        "received_at": "2026-09-10T13:49:20Z",
+        "text": "このあと22:03から…！✨️\nよろしくお願いいたします！\n#バンドリTVLIVE",
+        "text_ko": "이후 22시 03분부터…!✨️  \n잘 부탁드립니다!  \n#バンドリTVLIVE",
+        "url": "https://x.com/i/status/2098034027332784333"
       }
     ],
     "miyako": [
