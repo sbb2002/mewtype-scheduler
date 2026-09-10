@@ -1,6 +1,31 @@
 {
-  "generated_at": "2026-09-10T15:00:00Z",
+  "generated_at": "2026-09-10T15:00:39Z",
   "notices": [
+    {
+      "anchor_a": null,
+      "anchor_b": "dimensionaloverlap",
+      "body_for_llm": "＼チケット一般発売中📢／ 🛸#バンドリ13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」🛸 🎫ご購入はこちら eplus.jp/13th-live-day2/ ※先着順・上限数に達し次第終了 スペシャルな告知CMも公開中ですので、 お見逃しなく✨ #バンド",
+      "body_raw": "＼チケット一般発売中📢／\n\n🛸#バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n「DIMENSIONAL OVERLAP」🛸\n\n🎫ご購入はこちら\neplus.jp/13th-live-day2/\n※先着順・上限数に達し次第終了\n\nスペシャルな告知CMも公開中ですので、\nお見逃しなく✨\n\n#バンド",
+      "category": "release",
+      "date": "2026-09-11",
+      "deadline": false,
+      "expires_at": "2026-09-11T15:00:00Z",
+      "first_seen": "2026-09-10T15:00:39Z",
+      "id": "2098057825541136762",
+      "last_updated": "2026-09-10T15:00:39Z",
+      "seen_ids": [
+        "2098057825541136762"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "02:00",
+      "title": "バンドリ13thライブ DAY 夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」チケット販売開始",
+      "title_ko": "밴드리 13th 라이브 DAY 꿈한계 뮤타입 ‘DIMENSIONAL OVERLAP’ 티켓 판매 시작",
+      "title_raw": "チケット一般発売中",
+      "title_slug": "チケット一般発売中",
+      "tweet_url": "https://x.com/i/status/2098057825541136762",
+      "url": null
+    },
     {
       "anchor_a": "arale-birthday2026",
       "anchor_b": null,
