@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T15:52:44Z",
+  "generated_at": "2026-09-10T16:00:00Z",
   "tweets": {
     "arale": [
       {
@@ -160,16 +160,6 @@
     "ritsu": [
       {
         "channel_key": "ritsu",
-        "expires_at": "2026-09-11T09:07:22Z",
-        "handle": "ritsu_yumemita",
-        "id": "2097975197047685527",
-        "received_at": "2026-09-10T09:07:22Z",
-        "text": "律のおにぎりを守る",
-        "text_ko": "律의 주먹밥을 지키다",
-        "url": "https://x.com/i/status/2097975197047685527"
-      },
-      {
-        "channel_key": "ritsu",
         "expires_at": "2026-09-11T14:59:58Z",
         "handle": "ritsu_yumemita",
         "id": "2098049662951567630",
@@ -207,6 +197,17 @@
         "text": "きっと待ってる\n\n#アニメゆめみた",
         "text_ko": "분명히 기다릴게.",
         "url": "https://x.com/i/status/2098053765786144884"
+      },
+      {
+        "channel_key": "ritsu",
+        "expires_at": "2026-09-11T16:00:00Z",
+        "handle": "ritsu_yumemita",
+        "id": "2098079030314758249",
+        "needs_tl": true,
+        "received_at": "2026-09-10T16:00:00Z",
+        "text": "もぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐ\n#アニメゆめみた",
+        "text_ko": null,
+        "url": "https://x.com/i/status/2098079030314758249"
       }
     ],
     "yuno": [
