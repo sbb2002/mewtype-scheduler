@@ -63,34 +63,8 @@
       ]
     }
   },
-  "generated_at": "2026-09-10T00:00:06Z",
+  "generated_at": "2026-09-10T01:13:30Z",
   "items": [
-    {
-      "actual_start": null,
-      "api_start_seen": null,
-      "assumed_live": false,
-      "channel_key": "arale",
-      "collab_with": [],
-      "concurrent_viewers": null,
-      "expires_at": "2026-09-10T00:30:00Z",
-      "first_seen": "2026-09-09T22:01:47Z",
-      "host": null,
-      "id": "pv_8efb0acd",
-      "info_at": "2026-09-09T21:47:09Z",
-      "info_source": "personal",
-      "kind": "morning",
-      "last_updated": "2026-09-10T00:00:06Z",
-      "membership": false,
-      "scheduled_start": "2026-09-09T21:30:00Z",
-      "source": "personal",
-      "state": "watching",
-      "state_since": "2026-09-10T00:00:06Z",
-      "thumbnail": null,
-      "time_tbd": false,
-      "title": null,
-      "url": "https://www.youtube.com/@arale_yumemita",
-      "video_id": null
-    },
     {
       "actual_start": null,
       "api_start_seen": "2026-12-24T14:59:00Z",
