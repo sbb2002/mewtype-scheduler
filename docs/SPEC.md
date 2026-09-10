@@ -177,6 +177,14 @@ url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레�
 `#board` 골격(`<section class="lane">` × `channel_order`, `lane__header`/`lane__live`/`lane__buckets`)은
 v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
 
+### 레인 헤더 (`lane__header`) — v3.0.2
+
+`<a class="lane__link">`(아바타 `lane__avatar` + `lane__meta`) **+** `<nav class="lane__nav">`
+(우측 세로 레일: `lane__nav-btn lane__nav-yt` = `channel_url`, `lane__nav-btn lane__nav-x` =
+`https://x.com/<handle>`). 헤더는 `display:flex` (tweets.css 가 layout.css override).
+아바타는 트윗 있으면 `tweets.js` 가 말풍선 토글로 가로채고, 없으면 `.lane__link` 대로 YouTube.
+이름 글자·레일은 항상 채널 이동. SVG 아이콘은 `render.js svgIcon()`(`createElementNS`).
+
 ### 카드 클래스 매핑 (state → class)
 
 | state | 최상위 class | 썸네일 자리 | `.card__rel` |
