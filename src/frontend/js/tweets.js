@@ -214,9 +214,10 @@ function _fillBubble(ck, t) {
       btn = document.createElement("button");
       btn.type = "button";
       btn.className = "lane__bubble__tl";
-      btn.onclick = () => { _toggleTlang(ck, b, t); return false; };
       b.querySelector(".lane__bubble__foot").insertBefore(btn, b.querySelector(".src"));
     }
+    // 매 렌더마다 최신 t 로 재바인딩 — 다른 유닛 트윗을 열면 핸들러가 옛 t 를 물어 오염되던 버그.
+    btn.onclick = () => { _toggleTlang(ck, b, t); return false; };
     btn.textContent = _tlGlyph();
     btn.setAttribute("aria-label", _tlAria());
   } else if (btn) {
@@ -329,9 +330,10 @@ function _openToast(ck) {
       btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tw-toast__tl";
-      btn.onclick = () => { _toggleToastTlang(t); return false; };
       _toast.querySelector(".tw-toast__foot").insertBefore(btn, _toast.querySelector(".src"));
     }
+    // 공유 토스트 노드 재사용 — 매 오픈마다 최신 t 로 재바인딩(다른 유닛 오염 방지).
+    btn.onclick = () => { _toggleToastTlang(t); return false; };
     btn.textContent = _tlGlyph();
     btn.setAttribute("aria-label", _tlAria());
   } else if (btn) {
