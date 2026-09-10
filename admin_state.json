@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (本日9/10(木)発売 #アニメージュ 様10月号にて)",
-    "at": "2026-09-10T07:11:02Z",
+    "action": "소식 added (集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜)",
+    "at": "2026-09-10T07:19:28Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "b56c30d2c74d9dc9c044128584e3d70b18d5fede",
+    "new_sha": "8dc1b55c13a9f0822ed904a58d8a284ca0e6c5d9",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T06:07:37Z",
+      "generated_at": "2026-09-10T07:11:02Z",
       "notices": [
         {
           "anchor_a": null,
@@ -85,6 +85,31 @@
           "title_ko": null,
           "title_slug": "tvアニメバンドリゆめみた最終回放送に向けて",
           "tweet_url": "https://x.com/i/status/2097894490233344298",
+          "url": null
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": "バンドリ！ゆめ∞みた",
+          "body_for_llm": "@bang_dream_info: ＼雑誌掲載情報🛸／ 本日 (木)発売 #アニメージュ 様10月号にて TVアニメ「バンドリ！ ゆめ∞みた」を取り上げていただきました✨ 宮永ののかさん×藤都子さん×千石ユノさん×佐内瑠奈さんの対談を掲載！ #アニメゆめみた をより深く楽しめるエピソードが満載です📚 ぜひチェックしてください🎶",
+          "body_raw": "@bang_dream_info: ＼雑誌掲載情報🛸／\n\n本日9/10(木)発売 #アニメージュ 様10月号にて\nTVアニメ「バンドリ！ ゆめ∞みた」を取り上げていただきました✨\n\n宮永ののかさん×藤都子さん×千石ユノさん×佐内瑠奈さんの対談を掲載！\n\n#アニメゆめみた をより深く楽しめるエピソードが満載です📚\n\nぜひチェックしてください🎶",
+          "category": "release",
+          "date": "2026-09-10",
+          "deadline": false,
+          "expires_at": "2026-09-10T15:00:00Z",
+          "first_seen": "2026-09-10T07:11:02Z",
+          "id": "2097945192364167584",
+          "last_updated": "2026-09-10T07:11:02Z",
+          "seen_ids": [
+            "2097945192364167584"
+          ],
+          "site": "x",
+          "src_handle": "RT @bang_dream_info",
+          "time": null,
+          "title": "『バンドリ！ ゆめ∞みた』が雑誌掲載！対談特集",
+          "title_ko": "‘밴드리! 유메∞미타’ 잡지 실림! 대담 특집",
+          "title_raw": "本日9/10(木)発売 #アニメージュ 様10月号にて",
+          "title_slug": "本日木発売様10月号にて",
+          "tweet_url": "https://x.com/i/status/2097945192364167584",
           "url": null
         }
       ]
