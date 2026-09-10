@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T01:26:59Z",
+  "generated_at": "2026-09-10T02:40:03Z",
   "tweets": {
     "arale": {
       "channel_key": "arale",
@@ -13,13 +13,13 @@
     },
     "nonoka": {
       "channel_key": "nonoka",
-      "expires_at": "2026-09-10T16:49:21Z",
+      "expires_at": "2026-09-11T02:40:03Z",
       "handle": "nonoka_yumemita",
-      "id": "2097729065151263061",
-      "received_at": "2026-09-09T16:49:21Z",
-      "text": "おやつみ🥰",
-      "text_ko": "간식 시간🥰",
-      "url": "https://x.com/i/status/2097729065151263061"
+      "id": "2097877713021444380",
+      "received_at": "2026-09-10T02:40:03Z",
+      "text": "こにちはー",
+      "text_ko": "안녕~",
+      "url": "https://x.com/i/status/2097877713021444380"
     }
   }
 }
