@@ -14,21 +14,10 @@ const SITE_ICON = {
   web: '<path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15 15 0 0 0-1.3-3.6A8 8 0 0 1 18.9 8ZM12 4c.8 1 1.5 2.4 1.9 4h-3.8C10.5 6.4 11.2 5 12 4ZM4.3 14a8 8 0 0 1 0-4h3.4a17 17 0 0 0 0 4H4.3Zm.8 2h3a15 15 0 0 0 1.3 3.6A8 8 0 0 1 5.1 16Zm3-8h-3a8 8 0 0 1 4.3-3.6A15 15 0 0 0 8.1 8ZM12 20c-.8-1-1.5-2.4-1.9-4h3.8c-.4 1.6-1.1 3-1.9 4Zm2.3-6H9.7a15 15 0 0 1 0-4h4.6a15 15 0 0 1 0 4Zm.3 5.6a15 15 0 0 0 1.3-3.6h3a8 8 0 0 1-4.3 3.6Zm1.7-5.6a17 17 0 0 0 0-4h3.4a8 8 0 0 1 0 4h-3.4Z"/>',
 };
 
-const _st = { built: false, sig: "", idx: 0, collapsed: true, open: false, timer: null, paused: false, tlang: "orig", longPressTimer: null, longPressItem: null };
-
-const NTLANG_KEY = "mew:ntlang";  // ponytail: 소식 번역 토글 기억
+const _st = { built: false, sig: "", idx: 0, collapsed: true, open: false, timer: null, paused: false };
 
 function _todayKST() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }); // YYYY-MM-DD
-}
-
-function _getNtlang() {
-  try { return localStorage.getItem(NTLANG_KEY) || "orig"; } catch { return "orig"; }
-}
-
-function _setNtlang(lang) {
-  try { localStorage.setItem(NTLANG_KEY, lang); } catch { /* private mode 등 */ }
-  _st.tlang = lang;
 }
 
 function _dday(dateIso) {
@@ -70,9 +59,12 @@ function _itemHTML(n) {
   const src = n.tweet_url || href;
   const handle = n.src_handle || "@BDP_yumemita";
   const site = SITE_ICON[n.site] ? n.site : "web";
-  const titleText = n.title_ko && _st.tlang === "ko" ? n.title_ko : (n.title || "(제목 없음)");
+  // [번역] [원문] 순. 번역 있으면 둘 다 흘린다(marquee 가 seg 로 복제해 순환).
+  const titleText = n.title_ko
+    ? `${n.title_ko}　—　${n.title || ""}`.trim()
+    : (n.title || "(제목 없음)");
   return (
-    `<div class="ntc__item" data-cat="${cat}" ${n.title_ko ? `data-id="${_attr(n.id)}" data-title-orig="${_attr(n.title || "(제목 없음)")}" data-title-ko="${_attr(n.title_ko)}"` : ""}>` +
+    `<div class="ntc__item" data-cat="${cat}">` +
       `<span class="ntc__date${n.date ? "" : " is-none"}"><time>${dateTxt}</time></span>` +
       `<span class="ntc__badge ${dd.cls}">${dd.text}</span>` +
       `<span class="ntc__time${n.time ? "" : " is-none"}">${_svg(site)}<time>${timeTxt}</time></span>` +
@@ -106,7 +98,6 @@ function _marquee(scope) {
 
 export function renderNotices(section, data) {
   if (!section) return;
-  _st.tlang = _getNtlang();
   const list = _visible(data);
 
   if (!list.length) {
@@ -221,28 +212,6 @@ export function renderNotices(section, data) {
   }
   play();
   _st.built = true;
-
-  // ponytail: 길게 누르기(0.5s) 로 제목 번역 토글
-  if (!_st._longPress) {
-    _st._longPress = true;
-    document.addEventListener("pointerdown", (e) => {
-      const item = e.target.closest(".ntc__item[data-title-ko]");
-      if (!item) return;
-      _st.longPressItem = item;
-      _st.longPressTimer = setTimeout(() => {
-        const orig = item.getAttribute("data-title-orig");
-        const ko = item.getAttribute("data-title-ko");
-        if (!orig || !ko) return;
-        _setNtlang(_st.tlang === "ko" ? "orig" : "ko");
-        const titleSpan = item.querySelector(".ntc__title-in");
-        if (titleSpan) titleSpan.textContent = _st.tlang === "ko" ? ko : orig;
-      }, 500);
-    });
-    document.addEventListener("pointerup", () => {
-      if (_st.longPressTimer) { clearTimeout(_st.longPressTimer); _st.longPressTimer = null; }
-      _st.longPressItem = null;
-    });
-  }
 
   if (!_st._vis) {
     _st._vis = true;

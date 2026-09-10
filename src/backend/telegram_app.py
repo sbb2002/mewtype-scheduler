@@ -2006,6 +2006,23 @@ def _make_llm_client():
         return None
 
 
+def _translate_report(label: str, total: int, tried: int, ok: int) -> str:
+    """/translate 결과 보고 — 총건수 / 시도 / 성공·실패 / 이미 번역됨."""
+    if total == 0:
+        return f"번역할 {label}이 없습니다."
+    if tried == 0:
+        return f"{label} {total}건 모두 번역돼 있습니다."
+    fail = tried - ok
+    msg = (f"🌐 {label} 번역: 총 {total}건 · 시도 {tried}건 → "
+           f"성공 {ok} / 실패 {fail}")
+    skipped = total - tried
+    if skipped:
+        msg += f" · 기존 {skipped}건 유지"
+    if fail:
+        msg += "\n실패분은 다음 정기 tick 에서 자동 재시도합니다 (needs_tl)."
+    return msg
+
+
 def _handle_translate(gh, now_iso: str, contents: str) -> None:
     """/translate <notice|tweet> — 미번역 행 전부에 `*_ko` 채운다(원문 보존).
 
@@ -2023,6 +2040,7 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
         if c == "notice":
             prev, sha = gh.read_json(_NOTICES_PATH)
             lst = (prev or {}).get("notices", []) or []
+            total = len(lst)
             n = 0
             pending = 0
             for row in lst:
@@ -2031,6 +2049,8 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
                 pending += 1
                 res = llm.notice_title(row.get("body_for_llm") or row.get("title") or "")
                 if res and res.get("title_ko"):
+                    # 자동 sweep(handlers._translate_sweep)과 동일하게 title 도 LLM 정제본으로.
+                    row["title"] = res.get("title_ja") or row.get("title")
                     row["title_ko"] = res["title_ko"]
                     row.pop("needs_tl", None)
                     n += 1
@@ -2040,21 +2060,18 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
                 prev["generated_at"] = now_iso
                 gh.write_json(_NOTICES_PATH, prev, prev_sha=sha,
                               message=f"data: /translate notice ({n}) {now_iso}")
-            if n:
-                _send_telegram(f"🌐 소식 {n}건 번역 완료." + (f" ({pending - n}건 LLM 실패)" if pending > n else ""))
-            elif pending:
-                _send_telegram(f"⚠️ 미번역 {pending}건 있으나 LLM 호출 전부 실패 — 로그 확인")
-            else:
-                _send_telegram("번역할 소식이 없습니다 (모두 번역됨).")
+            _send_telegram(_translate_report("소식", total, pending, n))
         else:  # tweet
             prev, sha = gh.read_json(_TWEETS_PATH)
             tw = (prev or {}).get("tweets", {}) or {}
+            total = 0
             n = 0
             pending = 0
             for _k, lst in list(tw.items()):
                 norm = _tw_list(lst)
                 tw[_k] = norm                       # v2.8 단건 → 배열로 승계
                 for row in norm:
+                    total += 1
                     if row.get("text_ko"):
                         continue
                     pending += 1
@@ -2069,12 +2086,7 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
                 prev["generated_at"] = now_iso
                 gh.write_json(_TWEETS_PATH, prev, prev_sha=sha,
                               message=f"data: /translate tweet ({n}) {now_iso}")
-            if n:
-                _send_telegram(f"🌐 트윗 {n}건 번역 완료." + (f" ({pending - n}건 LLM 실패)" if pending > n else ""))
-            elif pending:
-                _send_telegram(f"⚠️ 미번역 {pending}건 있으나 LLM 호출 전부 실패 — 로그 확인")
-            else:
-                _send_telegram("번역할 트윗이 없습니다 (모두 번역됨).")
+            _send_telegram(_translate_report("트윗", total, pending, n))
     except Exception as e:
         log.exception("Error handling /translate")
         _send_telegram(f"⚠️ 오류: /translate 처리 실패\n{str(e)[:100]}")
@@ -2988,6 +3000,15 @@ if __name__ == "__main__":
     assert _split_contents("") == ("preview", "")
     assert _split_contents("tweet") == ("tweet", "")
     print("[OK] _split_contents")
+
+    # ── /translate 결과 보고 ──────────
+    assert _translate_report("소식", 0, 0, 0) == "번역할 소식이 없습니다."
+    assert _translate_report("소식", 7, 0, 0) == "소식 7건 모두 번역돼 있습니다."
+    r = _translate_report("소식", 7, 2, 1)
+    assert "총 7건" in r and "시도 2건" in r and "성공 1 / 실패 1" in r and "기존 5건" in r, r
+    assert "needs_tl" in r, r
+    assert "재시도" not in _translate_report("트윗", 3, 3, 3)   # 전부 성공이면 재시도 문구 없음
+    print("[OK] _translate_report")
 
     class _GH:
         def __init__(self):

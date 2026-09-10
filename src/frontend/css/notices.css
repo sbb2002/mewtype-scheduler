@@ -135,8 +135,6 @@
   transition: opacity 0.15s;
 }
 .ntc__title:hover .ntc__title-in { text-decoration: underline; }
-/* ponytail: 길게 누르기 피드백 */
-.ntc__item[data-title-ko]:active .ntc__title-in { opacity: 0.7; }
 .ntc__title.is-marquee .ntc__title-in { animation: ntc-mq var(--dur, 14s) linear infinite; }
 .ntc__title.is-marquee .ntc__title-in .seg { padding-right: 3rem; }
 .ntc__item:hover .ntc__title.is-marquee .ntc__title-in,

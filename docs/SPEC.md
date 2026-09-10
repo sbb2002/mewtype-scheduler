@@ -37,7 +37,7 @@ src/
       time.js          # UTC→KST 포맷 · 상대시간(D-n·절대표기) · elapsedLabel — 순수
       api.js           # fetchPreview(url): AbortController 타임아웃, {ok,data|error}
       render.js        # renderBoard / renderFooter / updateCountdowns — preview.items(state) 기반
-      notices.js       # 소식 티커 (+ title_ko 길게눌러 원문 토글)
+      notices.js       # 소식 티커 (title_ko 있으면 [번역]—[원문] 순 marquee)
       tweets.js        # 유닛 아바타 편지 배지 (+ text_ko 원문↔번역 토글 버튼)
       main.js          # DOMContentLoaded → poll(preview) + pollNotices + pollTweets + 카운트다운 틱
   collector/           # v1 순수 모듈 — rss/youtube 는 v3 백엔드가 import 재사용.
@@ -581,7 +581,7 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
 - **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 티커. `title_ko` 있으면
-  번역 표시, 제목 위 길게눌러(0.5s) 원문 토글(`localStorage` `mew:ntlang`).
+  제목을 `[번역]　—　[원문]` 순으로 한 줄에 이어 marquee(길이 넘칠 때 순환). 없으면 원문만.
 - **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 편지 배지(안 읽은 메시지
   2건+ 이면 카운트 pill). 배지 클릭/호버 → **메신저형 스레드**: PC `.lane__bubble` 패널 / 모바일
   `.tw-toast` 시트에 최근 최대 5개 메시지를 최신이 아래로 스택, ~2분 내 연속은 시각 1개로 묶음
