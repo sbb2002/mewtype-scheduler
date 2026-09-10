@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (@bang_dream_info: ＼グッズ情報公開)",
-    "at": "2026-09-10T08:12:27Z",
+    "action": "소식 added (本日9/10(木)発売の #アニメディア 10月号にて)",
+    "at": "2026-09-10T08:17:48Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "b1c6cbe556bd6aaac79f04c512ad834591040716",
+    "new_sha": "be5a46b1a32afcccb085fdfb281bcaf0b8aa1d19",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T07:36:17Z",
+      "generated_at": "2026-09-10T08:12:27Z",
       "notices": [
         {
           "anchor_a": null,
@@ -162,6 +162,31 @@
           "title_slug": "resonext",
           "tweet_url": null,
           "url": "https://eplus.jp/yumemita-arale/"
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": null,
+          "body_for_llm": "@bang_dream_info: ＼グッズ情報公開📢／ (土)〜12(月･祝) ⭐BanG Dream! 13th☆LIVE⭐ at 東京ガーデンシアター グッズ・通販情報を公開🎉 新商品を事前にゲットできるチャンスをお見逃しなく！ 詳細は各公演ページをチェック👇 bang-dream.com/13th-live/ #バンドリ13thライブ #ポピパ #ゆめみた #RAS pic.x.com/voTyS9O10p",
+          "body_raw": "@bang_dream_info: ＼グッズ情報公開📢／\n\n10/10(土)〜12(月･祝)\n⭐BanG Dream! 13th☆LIVE⭐\nat 東京ガーデンシアター\n\nグッズ・通販情報を公開🎉\n新商品を事前にゲットできるチャンスをお見逃しなく！\n\n詳細は各公演ページをチェック👇\nbang-dream.com/13th-live/\n\n#バンドリ13thライブ\n#ポピパ #ゆめみた #RAS pic.x.com/voTyS9O10p",
+          "category": "release",
+          "date": "2026-10-10",
+          "deadline": false,
+          "expires_at": "2026-10-10T15:00:00Z",
+          "first_seen": "2026-09-10T08:12:27Z",
+          "id": "2097960024417124657",
+          "last_updated": "2026-09-10T08:12:27Z",
+          "seen_ids": [
+            "2097960024417124657"
+          ],
+          "site": "x",
+          "src_handle": "RT @bang_dream_info",
+          "time": null,
+          "title": "BanG Dream! 13th LIVE グッズ情報公開",
+          "title_ko": "BanG Dream! 13th LIVE 굿즈 정보 공개",
+          "title_raw": "@bang_dream_info: ＼グッズ情報公開",
+          "title_slug": "bangdreaminfoグッズ情報公開",
+          "tweet_url": "https://x.com/i/status/2097960024417124657",
+          "url": null
         },
         {
           "anchor_a": "yumemita_kinntorebu2026",
