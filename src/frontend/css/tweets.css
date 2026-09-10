@@ -7,6 +7,59 @@
   position: relative;
 }
 
+/* ── (v3.0.2) 헤더 우측 이동 레일 — YouTube · X ───────────────────────
+   layout.css 뒤에 로드되므로 여기서 .lane__header 를 3열(아바타+이름 / 레일)로 만든다.
+   render.js buildHeader 가 <a.lane__link> 다음에 <nav.lane__nav> 를 넣는다. */
+.lane__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.lane__link {
+  flex: 1;
+  min-width: 0;
+}
+.lane__nav {
+  position: relative;   /* 헤더 ::before 그라데이션 위로 */
+  z-index: 11;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border);
+}
+.lane__nav-btn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  border-radius: 5px;
+  transition: color 0.15s, background 0.15s;
+}
+.lane__nav-btn svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+.lane__nav-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.lane__nav-yt:hover {
+  color: #ff5a5a;   /* YouTube 이동 — LIVE 빨강(--color-live)과 구분되는 저채도 */
+}
+.lane__nav-x:hover {
+  color: var(--color-text);
+}
+.lane__nav-btn:focus-visible {
+  outline: 2px solid var(--color-text-muted);
+  outline-offset: 1px;
+}
+@media (max-width: 767px) {
+  .lane__nav-btn { width: 26px; height: 26px; }   /* 터치 타깃 */
+}
+
 /* ── 편지 배지 (아바타 우상단, 살짝 겹침) ─────────────────────────── */
 .lane__tw {
   position: absolute;

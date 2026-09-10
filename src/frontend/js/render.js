@@ -18,6 +18,24 @@ function avatarSized(url, size) {
   return typeof url === "string" ? url.replace(/=s\d+/, `=s${size}`) : url;
 }
 
+/* (v3.0.2) 레인 헤더 이동 레일 아이콘. innerHTML 금지 규칙 → createElementNS 로만. */
+const YT_ICON_D =
+  "M23 12s0-3.6-.46-5.3a2.78 2.78 0 0 0-1.95-1.96C18.9 4.28 12 4.28 12 4.28s-6.9 0-8.6.46A2.78 2.78 0 0 0 1.46 6.7C1 8.4 1 12 1 12s0 3.6.46 5.3a2.78 2.78 0 0 0 1.95 1.96c1.7.46 8.6.46 8.6.46s6.9 0 8.6-.46a2.78 2.78 0 0 0 1.95-1.96C23 15.6 23 12 23 12ZM9.75 15.5v-7l6 3.5-6 3.5Z";
+const X_ICON_D =
+  "M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z";
+
+function svgIcon(d) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(NS, "path");
+  path.setAttribute("fill", "currentColor");
+  path.setAttribute("d", d);
+  svg.appendChild(path);
+  return svg;
+}
+
 /**
  * 아바타 평균색을 뽑아 lane 요소의 --lane-color 로 설정 (live-translator 방식).
  * CORS 읽기 실패(canvas taint) 시 조용히 무시 → CSS 폴백색 사용.
@@ -274,11 +292,13 @@ function createCard(item, nowMs, channelData, laneKey) {
   return a;
 }
 
-/* ── 레인 헤더 (아바타 + 이름 + 핸들) ─────────────────────────────── */
+/* ── 레인 헤더 (아바타 + 이름 + 핸들 + 우측 이동 레일) ────────────── */
 function buildHeader(channelData) {
   const header = document.createElement("header");
   header.className = "lane__header";
 
+  // .lane__link = 아바타 + 이름 (YouTube 채널로 이동). 아바타는 tweets.js 가
+  // 트윗 있을 때 말풍선 토글로 가로챈다(없으면 이 앵커대로 YouTube).
   const link = document.createElement("a");
   link.className = "lane__link";
   link.href = channelData.channel_url || "#";
@@ -312,6 +332,32 @@ function buildHeader(channelData) {
   metaWrap.append(nameLine, handle);
   link.appendChild(metaWrap);
   header.appendChild(link);
+
+  // (v3.0.2) 우측 세로 이동 레일 — YouTube 채널 · X 계정. 별도 앵커라
+  // tweets.js 클릭 위임(.lane__tw/.lane__avatar 만 처리)은 그냥 통과한다.
+  const nav = document.createElement("nav");
+  nav.className = "lane__nav";
+  nav.setAttribute("aria-label", `${channelData.name_ko || "채널"} 바로가기`);
+
+  const ytLink = document.createElement("a");
+  ytLink.className = "lane__nav-btn lane__nav-yt";
+  ytLink.href = channelData.channel_url || "#";
+  ytLink.target = "_blank";
+  ytLink.rel = "noopener";
+  ytLink.setAttribute("aria-label", "YouTube 채널");
+  ytLink.appendChild(svgIcon(YT_ICON_D));
+
+  const xLink = document.createElement("a");
+  xLink.className = "lane__nav-btn lane__nav-x";
+  // X 핸들 필드가 따로 없어 YouTube 핸들(*_yumemita)을 재사용 — tweets.js _setSrc 와 동일 규칙.
+  xLink.href = channelData.handle ? `https://x.com/${channelData.handle}` : "#";
+  xLink.target = "_blank";
+  xLink.rel = "noopener";
+  xLink.setAttribute("aria-label", "X 계정");
+  xLink.appendChild(svgIcon(X_ICON_D));
+
+  nav.append(ytLink, xLink);
+  header.appendChild(nav);
   return header;
 }
 
