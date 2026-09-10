@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (仲町あられ バースデーグッズ2026 発売 🎂)",
-    "at": "2026-09-10T07:23:53Z",
+    "action": "소식 added (@bang_dream_info: ＼グッズ情報公開)",
+    "at": "2026-09-10T08:12:27Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "27af38cb190043db17e3ced6154c0a76aee6bb1b",
+    "new_sha": "b1c6cbe556bd6aaac79f04c512ad834591040716",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T07:22:36Z",
+      "generated_at": "2026-09-10T07:36:17Z",
       "notices": [
         {
           "anchor_a": null,
@@ -60,7 +60,7 @@
           "src_handle": "RT @BushiM_info",
           "time": "23:00",
           "title": "グッズと一緒に盛り上げよう♪ pic.x.com/BmkG63EzwW",
-          "title_ko": null,
+          "title_ko": "굿즈와 함께 신나게",
           "title_slug": "グッズと一緒に盛り上げようpicxcombmkg",
           "tweet_url": "https://x.com/i/status/2097881189134803294",
           "url": null
@@ -75,6 +75,7 @@
           "first_seen": "2026-09-10T03:49:00Z",
           "id": "2097894490233344298",
           "last_updated": "2026-09-10T03:49:00Z",
+          "needs_tl": true,
           "seen_ids": [
             "2097894490233344298"
           ],
@@ -111,6 +112,31 @@
           "title_slug": "本日木発売様10月号にて",
           "tweet_url": "https://x.com/i/status/2097945192364167584",
           "url": null
+        },
+        {
+          "anchor_a": "arale-birthday2026",
+          "anchor_b": null,
+          "body_for_llm": "＼バースデーグッズ発売中🎊／ 🛸夢限大みゅーたいぷ🛸 仲町あられ バースデーグッズ2026 発売🎉🎂 描き下ろしイラストを使用した特製グッズが ブシロード オンラインストアにて受注販売❣ ⏰受付期間: (火) 💛ご購入はこちら #バンドリ #ゆめみた",
+          "body_raw": "＼バースデーグッズ発売中🎊／\n\n🛸夢限大みゅーたいぷ🛸\n仲町あられ バースデーグッズ2026 発売🎉🎂\n\n描き下ろしイラストを使用した特製グッズが\nブシロード オンラインストアにて受注販売❣\n\n⏰受付期間:〜9/15(火) 23:59\n\n💛ご購入はこちら\nhttps://bushiroad-store.com/collections/arale-birthday2026\n\n#バンドリ #ゆめみた",
+          "category": "release",
+          "date": "2026-09-15",
+          "deadline": true,
+          "expires_at": "2026-09-15T15:00:00Z",
+          "first_seen": "2026-09-10T07:23:53Z",
+          "id": "nd798f1c0d764e4f",
+          "last_updated": "2026-09-10T07:23:53Z",
+          "seen_ids": [
+            "nd798f1c0d764e4f"
+          ],
+          "site": "store",
+          "src_handle": "@BDP_yumemita",
+          "time": "23:59",
+          "title": "仲町あられ バースデーグッズ2026 発売開始",
+          "title_ko": "나카마치 아라레 생일 굿즈 2026 출시",
+          "title_raw": "仲町あられ バースデーグッズ2026 発売 🎂",
+          "title_slug": "仲町あられバースデーグッズ2026発売",
+          "tweet_url": null,
+          "url": "https://bushiroad-store.com/collections/arale-birthday2026"
         },
         {
           "anchor_a": "yumemita-arale",
