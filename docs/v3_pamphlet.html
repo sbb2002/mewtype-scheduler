@@ -49,6 +49,12 @@
   .scn-tab:last-child{border-right:0}
   .scn-tab:hover{color:var(--ink)}
   .scn-tab[aria-selected="true"]{color:#0c1416;background:var(--cyan);font-weight:600}
+  .cmd-row{display:flex;flex-wrap:wrap;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line);background:#15161a}
+  .cmd-row[hidden]{display:none}
+  .cmd{font-family:var(--f-mono);font-size:.74rem;padding:4px 9px;border-radius:6px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);cursor:pointer;transition:.12s}
+  .cmd:hover{color:var(--ink)}
+  .cmd[aria-selected="true"]{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-soft)}
   .stage{padding:20px 18px 8px;background:#0d0e11}
   svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;transition:opacity .25s,stroke .25s}
   svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
@@ -193,6 +199,16 @@
       <button class="scn-tab" role="tab" aria-selected="false" data-scn="tweet">개인 트윗</button>
       <button class="scn-tab" role="tab" aria-selected="false" data-scn="notice">소식</button>
       <button class="scn-tab" role="tab" aria-selected="false" data-scn="ops">운영자 제어</button>
+    </div>
+    <div class="cmd-row" id="cmdRow" hidden aria-label="운영자 명령">
+      <button class="cmd" data-cmd="/status" aria-selected="true">/status</button>
+      <button class="cmd" data-cmd="/list">/list</button>
+      <button class="cmd" data-cmd="/pause">/pause</button>
+      <button class="cmd" data-cmd="/resume">/resume</button>
+      <button class="cmd" data-cmd="/ingest">/ingest</button>
+      <button class="cmd" data-cmd="/edit">/edit</button>
+      <button class="cmd" data-cmd="/del">/del</button>
+      <button class="cmd" data-cmd="/undo">/undo</button>
     </div>
     <div class="stage">
       <svg id="svg" viewBox="0 0 940 600" role="img" aria-label="아키텍처 흐름도">
@@ -422,11 +438,29 @@
              n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
              r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
              c:"<b>소식</b> — 방송 예고가 아닌 트윗(라이브 이벤트·음반·굿즈·타 플랫폼)은 LLM 이 제목만 뽑아 <code>notices.json</code> → 예고판 상단 티커에 노출."},
-    ops:    {e:["e_op_tg","e_tg_ctrl","e_ctrl_db"],
-             n:["n_op","n_tg","n_ctrl","n_db"],
-             r:["op","tg","ctrl","db"],
-             c:"<b>운영자 제어</b> — 텔레그램으로 <code>/status /pause /resume /list /ingest /edit /del /undo</code>. 일시정지·수동 등록·필드 편집·직전 작업 되돌리기까지 사이트를 직접 관리."}
+    ops:    {r:["op","tg","ctrl","db"]}
   };
+
+  /* 운영자 제어 — 명령어별 흐름. r = 노드 순서, 왕복이면 회신 경로까지 되짚는다. */
+  var OPS = {
+    "/status": {r:["op","tg","ctrl","db","ctrl","tg","op"],
+      c:"<b>/status</b> — 6상태 카운트 · 소식/트윗 수 · 마지막 동기화 · LLM 큐를 <b>읽어</b> DM 회신. 쓰기 없음."},
+    "/list":   {r:["op","tg","ctrl","db","ctrl","tg","op"],
+      c:"<b>/list &lt;preview|notice|tweet&gt;</b> — 유닛별 살아있는 항목 목록을 조회해 DM 회신."},
+    "/pause":  {r:["op","tg","ctrl","db"],
+      c:"<b>/pause</b> — <code>control.json</code> 에 정지 플래그 커밋. 이후 정기 수집·wake 는 핑만 하고 no-op."},
+    "/resume": {r:["op","tg","ctrl","db","ctrl","be"],
+      c:"<b>/resume</b> — 정지 해제 커밋 + 백엔드 정기 수집을 즉시 호출(heal)해 밀린 상태를 바로 재판정."},
+    "/ingest": {r:["op","tg","ctrl","db"],
+      c:"<b>/ingest &lt;preview|notice|tweet&gt;</b> — 2단계(원문/파일 첨부) → 해당 JSON 에 수동 등록 + 되돌리기 스냅샷."},
+    "/edit":   {r:["op","tg","ctrl","db"],
+      c:"<b>/edit</b> — 유닛→항목→필드 마법사로 값 수정 + 편집 락(다음 정기 수집이 그 항목을 안 덮음)."},
+    "/del":    {r:["op","tg","ctrl","db"],
+      c:"<b>/del</b> — 항목 삭제(2단계 확인). <code>terminate</code> 면 그 영상 URL 을 12시간 재진입 차단."},
+    "/undo":   {r:["op","tg","ctrl","db"],
+      c:"<b>/undo</b> — 직전에 값을 바꾼 명령 1건을 sha 2중 가드로 되돌림(2단계 y/N). 대상 파일만 복원."}
+  };
+
   var capEl   = document.getElementById("scnCap");
   var routeEl = document.getElementById("routeLine");
   var packet  = document.getElementById("packet");
@@ -447,21 +481,41 @@
     return L;
   }
 
-  function applyScn(key){
-    var s = SCN[key];
+  function uniq(a){ return a.filter(function(x,i){ return a.indexOf(x)===i; }); }
+
+  function paint(route, capHTML){
     SVG.classList.add("dimming");
     SVG.querySelectorAll(".hot").forEach(function(el){el.classList.remove("hot");});
-    s.e.forEach(function(id){var el=document.getElementById(id); if(el) el.classList.add("hot");});
-    s.n.forEach(function(id){var el=document.getElementById(id); if(el) el.classList.add("hot");});
-    capEl.innerHTML = s.c;
-
-    var d = routePath(s.r);
+    uniq(route).forEach(function(k){
+      var el = document.getElementById("n_" + k); if (el) el.classList.add("hot");
+    });
+    capEl.innerHTML = capHTML;
+    var d = routePath(route);
     routeEl.setAttribute("d", d);
     pkMove.setAttribute("path", d);
-    pkMove.setAttribute("dur", Math.max(2.4, Math.min(4.6, routeLen(s.r) / 300)).toFixed(1) + "s");
+    pkMove.setAttribute("dur", Math.max(2.4, Math.min(5.2, routeLen(route) / 300)).toFixed(1) + "s");
     if (reduceMotion){ packet.setAttribute("opacity", "0"); return; }
     packet.setAttribute("opacity", "1");
     try { pkMove.beginElement(); } catch(e){ /* SMIL 미지원 → route-line 만 */ }
+  }
+
+  var cmdRow = document.getElementById("cmdRow");
+  var curCmd = "/status";
+  function applyCmd(cmd){
+    curCmd = cmd;
+    document.querySelectorAll(".cmd").forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.cmd === cmd ? "true" : "false");
+    });
+    paint(OPS[cmd].r, OPS[cmd].c);
+  }
+  document.querySelectorAll(".cmd").forEach(function(b){
+    b.addEventListener("click", function(){ applyCmd(b.dataset.cmd); });
+  });
+
+  function applyScn(key){
+    if (key === "ops"){ cmdRow.hidden = false; applyCmd(curCmd); return; }
+    cmdRow.hidden = true;
+    paint(SCN[key].r, SCN[key].c);
   }
   document.querySelectorAll(".scn-tab").forEach(function(b){
     b.addEventListener("click", function(){
