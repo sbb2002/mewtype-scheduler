@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T07:23:53Z",
+  "generated_at": "2026-09-10T07:36:17Z",
   "notices": [
     {
       "anchor_a": null,
@@ -43,7 +43,7 @@
       "src_handle": "RT @BushiM_info",
       "time": "23:00",
       "title": "グッズと一緒に盛り上げよう♪ pic.x.com/BmkG63EzwW",
-      "title_ko": null,
+      "title_ko": "굿즈와 함께 신나게",
       "title_slug": "グッズと一緒に盛り上げようpicxcombmkg",
       "tweet_url": "https://x.com/i/status/2097881189134803294",
       "url": null
@@ -58,6 +58,7 @@
       "first_seen": "2026-09-10T03:49:00Z",
       "id": "2097894490233344298",
       "last_updated": "2026-09-10T03:49:00Z",
+      "needs_tl": true,
       "seen_ids": [
         "2097894490233344298"
       ],
