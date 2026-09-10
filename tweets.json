@@ -1,16 +1,28 @@
 {
-  "generated_at": "2026-09-10T04:14:36Z",
+  "generated_at": "2026-09-10T04:43:14Z",
   "tweets": {
-    "arale": {
-      "channel_key": "arale",
-      "expires_at": "2026-09-11T01:18:02Z",
-      "handle": "arale_yumemita",
-      "id": "2097856619665359022",
-      "received_at": "2026-09-10T01:18:02Z",
-      "text": "なんと涼しい…！",
-      "text_ko": "정말 시원하네…!",
-      "url": "https://x.com/i/status/2097856619665359022"
-    },
+    "arale": [
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-11T01:18:02Z",
+        "handle": "arale_yumemita",
+        "id": "2097856619665359022",
+        "received_at": "2026-09-10T01:18:02Z",
+        "text": "なんと涼しい…！",
+        "text_ko": "정말 시원하네…!",
+        "url": "https://x.com/i/status/2097856619665359022"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-11T04:43:14Z",
+        "handle": "arale_yumemita",
+        "id": "2097908716456870248",
+        "received_at": "2026-09-10T04:43:14Z",
+        "text": "髪がﾍﾆｮﾍﾆｮﾘﾝになっちゃう……",
+        "text_ko": "머리가 헝헝거린다……",
+        "url": "https://x.com/i/status/2097908716456870248"
+      }
+    ],
     "nonoka": {
       "channel_key": "nonoka",
       "expires_at": "2026-09-11T04:14:36Z",
