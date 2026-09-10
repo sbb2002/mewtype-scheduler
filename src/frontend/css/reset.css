@@ -1,4 +1,11 @@
 /* Minimal reset */
+
+/* 다크 전용 사이트 — 브라우저 자동 어둡게(force-dark) 이중 처리 방지.
+   선언이 없으면 기기 다크 모드에서 말풍선 대비·헤더 그라데이션이 뭉개진다. */
+:root {
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }
