@@ -1,17 +1,7 @@
 {
-  "generated_at": "2026-09-10T14:59:58Z",
+  "generated_at": "2026-09-10T15:00:03Z",
   "tweets": {
     "arale": [
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-11T04:47:03Z",
-        "handle": "arale_yumemita",
-        "id": "2097909692467224865",
-        "received_at": "2026-09-10T04:47:03Z",
-        "text": "猫吸いができる…ってコト！？",
-        "text_ko": "고양이 흡입이 가능…이라는 건가!?",
-        "url": "https://x.com/i/status/2097909692467224865"
-      },
       {
         "channel_key": "arale",
         "expires_at": "2026-09-11T12:38:18Z",
@@ -51,6 +41,16 @@
         "text": "おしゃべり、解ッッッ放！！！！！！！！\n#アニメゆめみた",
         "text_ko": "수다, 풀어버려!!!! #アニメゆめみた",
         "url": "https://x.com/i/status/2098050201814786547"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-11T15:00:03Z",
+        "handle": "arale_yumemita",
+        "id": "2098049924726431824",
+        "received_at": "2026-09-10T15:00:03Z",
+        "text": "最終回！実況！✨️\n#アニメゆめみた",
+        "text_ko": "최종회! 실황! ✨️ #アニメゆめみた",
+        "url": "https://x.com/i/status/2098049924726431824"
       }
     ],
     "miyako": [
