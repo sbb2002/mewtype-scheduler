@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>뮤타입 스케줄러 v3 — 한눈에</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --panel:#17181c; --panel2:#1e2024; --ink:#e9e9ea; --dim:#9a9ca2;
+    --faint:#6b6d73; --line:#2c2e33; --cyan:#cbf7f5; --cyan-soft:rgba(203,247,245,.13);
+    --rose:#a85f7d; --live:#ff4d4d; --sched:#8b9ab0; --collab:#8b7cc9;
+    --f-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:52px 24px 88px}
+  h2{margin:60px 0 6px;font-size:.8rem;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--cyan)}
+  h2+.sub{margin:0 0 22px;color:var(--dim);font-size:.9rem}
+  code{font-family:var(--f-mono);font-size:.86em}
+  .mono{font-family:var(--f-mono)}
+
+  /* hero */
+  .hero{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, rgba(203,247,245,.07), transparent 55%), var(--panel);
+    padding:34px 30px}
+  .hero .eyebrow{margin:0 0 12px;font-family:var(--f-mono);font-size:.72rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan)}
+  .hero h1{margin:0 0 12px;font-size:1.9rem;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+  .hero p{margin:0;max-width:56ch;color:var(--dim)}
+  .units{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .unit{font-family:var(--f-mono);font-size:.74rem;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim)}
+  .unit b{color:var(--ink);font-weight:500}
+
+  /* scenario diagram */
+  .diagram{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .scn-tabs{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .scn-tab{flex:1 1 auto;min-width:120px;padding:11px 12px;font:inherit;font-size:.82rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .scn-tab:last-child{border-right:0}
+  .scn-tab:hover{color:var(--ink)}
+  .scn-tab[aria-selected="true"]{color:#0c1416;background:var(--cyan);font-weight:600}
+  .stage{padding:20px 18px 8px;background:#0d0e11}
+  svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;transition:opacity .25s,stroke .25s}
+  svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg .node .nt{font-size:12px;font-weight:600;fill:var(--ink)}
+  svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg .edge{fill:none;stroke:#3a3d44;stroke-width:1.6;transition:opacity .25s,stroke .25s}
+  svg .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg.dimming .node{opacity:.28}
+  svg.dimming .edge{opacity:.14}
+  svg.dimming .elabel{opacity:0}
+  svg .node.hot{opacity:1}
+  svg .node.hot rect{stroke:var(--cyan);stroke-width:1.8}
+  svg .node.hot text{fill:var(--ink)}
+  svg .node.hot .ns{fill:var(--dim)}
+  svg .edge.hot{opacity:1;stroke:var(--cyan);stroke-width:2.4;
+    stroke-dasharray:7 6;animation:flow 1s linear infinite}
+  svg .edge.hot~.elabel{opacity:1}
+  @keyframes flow{to{stroke-dashoffset:-13}}
+  @media (prefers-reduced-motion:reduce){svg .edge.hot{animation:none}}
+  .scn-cap{padding:14px 20px 20px;color:var(--ink);font-size:.92rem}
+  .scn-cap b{color:var(--cyan);font-weight:600}
+  .boundary{fill:rgba(255,90,90,.05);stroke:#7a3b3b;stroke-width:1.3;stroke-dasharray:5 4}
+  .boundary-t{fill:#9b5b5b;font-family:var(--f-mono);font-size:9px}
+
+  /* states */
+  .states{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .st{font-family:var(--f-mono);font-size:.76rem;padding:6px 12px;border-radius:8px;
+    border:1px solid var(--line);color:var(--dim);background:var(--panel);cursor:pointer;transition:.15s}
+  .st:hover{color:var(--ink)}
+  .st[aria-selected="true"]{border-color:var(--cyan);color:var(--ink);background:var(--cyan-soft)}
+  .st-arrow{color:var(--faint);align-self:center;font-size:.8rem}
+  .st-detail{display:flex;gap:18px;align-items:center;border:1px solid var(--line);
+    border-radius:12px;background:var(--panel);padding:18px}
+  .st-detail .card{flex:none}
+  .st-detail p{margin:0;color:var(--dim);font-size:.92rem}
+  .st-detail p b{color:var(--ink);font-weight:600;display:block;margin-bottom:3px;font-size:.95rem}
+
+  /* feature grid */
+  .feats{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media (max-width:820px){.feats{grid-template-columns:1fr}}
+  .feat{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px;overflow:hidden}
+  .feat h3{margin:0 0 3px;font-size:.98rem}
+  .feat .fh{margin:0 0 14px;color:var(--dim);font-size:.84rem}
+  .feat .demo{background:#0d0e11;border:1px solid var(--line);border-radius:10px;padding:12px}
+
+  /* mini board */
+  .lane{max-width:260px;margin:0 auto;background:#161616;border:1px solid #333;border-radius:8px;overflow:hidden;font-size:13px}
+  .lane__hd{position:relative;display:flex;align-items:center;gap:8px;padding:10px;overflow:hidden}
+  .lane__hd::before{content:"";position:absolute;inset:0;background:linear-gradient(to right,rgba(168,95,125,.5),transparent 72%)}
+  .lane__av{position:relative;width:40px;height:40px;border-radius:50%;flex:none;border:2px solid var(--rose);
+    background:radial-gradient(circle at 33% 30%,#e7aec0,var(--rose) 74%)}
+  .lane__nm{position:relative;flex:1;min-width:0}
+  .lane__nm b{display:block;font-size:.82rem;color:#e8e8e8}
+  .lane__nm span{font-size:.64rem;color:#999}
+  .lane__rail{position:relative;flex:none;display:flex;flex-direction:column;gap:6px;padding-left:8px;border-left:1px solid #333}
+  .lane__rail i{width:16px;height:16px;color:#8b8d93}
+  .lane__live{margin:10px;height:70px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:#2a1416;transition:background .3s}
+  .lane__live[data-on="1"]{background:#a01f1a}
+  .lane__live .off{font-size:.72rem;font-weight:700;letter-spacing:.15em;color:#ff8a8a;opacity:.8}
+  .lane__live .lc{width:calc(100% - 16px);background:#161616;border:2px solid var(--live);border-radius:6px;padding:6px 8px}
+  .lane__live .lc b{color:#fff;font-size:.72rem}
+  .lane__live .lc span{display:block;color:var(--live);font-size:.68rem;font-weight:700}
+  .bkts{padding:0 10px 10px}
+  .bkt{padding-top:10px;border-top:1px solid #333}
+  .bkt:first-child{border-top:0}
+  .bkt h4{margin:0 0 5px;font-size:.66rem;font-weight:700;letter-spacing:.03em;color:#999}
+  .card{border:1px dashed color-mix(in srgb,var(--sched) 55%,#333);border-radius:8px;background:#161616;
+    opacity:.9;padding:6px 8px;display:flex;gap:7px;align-items:center;font-size:.72rem}
+  .card+.card{margin-top:6px}
+  .card .ico{font-size:1.1rem;filter:saturate(.85)}
+  .card b{color:#e8e8e8;font-weight:500}
+  .card span{color:#999}
+  .card--up{border-style:solid;border-color:#2f4f5a;opacity:1}
+  .card--collab{border-style:solid;border-color:color-mix(in srgb,var(--collab) 55%,#333);box-shadow:inset 3px 0 0 var(--collab);opacity:.95}
+  .toggle{margin-top:12px;font:inherit;font-size:.78rem;padding:6px 12px;border-radius:7px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+  .toggle:hover{border-color:var(--cyan)}
+
+  /* tweet thread */
+  .thread{max-width:250px;margin:0 auto;background:var(--rose);color:#fff;border-radius:12px;padding:4px 5px 6px}
+  .thread__hd{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;font-size:12px;font-weight:700}
+  .thread__hd button{font:inherit;font-weight:700;font-size:11px;padding:3px 7px;border-radius:6px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;cursor:pointer}
+  .thread__sc{display:flex;flex-direction:column;gap:10px;padding:3px 8px 5px;max-height:200px;overflow-y:auto}
+  .grp{display:flex;flex-direction:column;gap:3px}
+  .msg{align-self:flex-start;max-width:92%;background:rgba(255,255,255,.17);border-radius:11px;
+    border-top-left-radius:4px;padding:6px 10px;font-size:12px;line-height:1.45}
+  .grp .msg+.msg{border-top-left-radius:11px}
+  .gt{align-self:flex-end;font-size:10px;opacity:.72}
+
+  /* notice ticker */
+  .ticker{display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #333;border-radius:8px;padding:9px 12px;font-size:.8rem}
+  .ticker .lamp{width:8px;height:8px;border-radius:50%;background:var(--live);flex:none;animation:blink 1.4s steps(1) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .ticker .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ddd}
+  .ticker .tag{font-family:var(--f-mono);font-size:.64rem;color:var(--faint);flex:none}
+
+  /* badge on avatar */
+  .tw-badge{position:absolute;left:28px;top:-4px;width:15px;height:15px;color:var(--cyan)}
+  .tw-count{position:absolute;left:24px;top:-9px;min-width:14px;height:14px;padding:0 3px;display:grid;
+    place-items:center;font-size:9px;font-weight:700;color:#0c1a1a;background:var(--cyan);border-radius:999px;border:1.5px solid #161616}
+
+  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.8rem;font-family:var(--f-mono)}
+  .foot a{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section class="hero">
+    <p class="eyebrow">夢限大みゅーたいぷ · scheduler v3</p>
+    <h1>누가 · 언제 · 지금 라이브인지 · 어디로 가면 되는지</h1>
+    <p>유튜브 방송인 5명의 예약 방송·라이브 상태를 한 사이트에 모아 보여주는 반응형 정적 웹사이트.
+      서버 상시 가동 없음 — 무료 인프라(Cloud Run scale-to-zero · GitHub · Vercel)만.</p>
+    <div class="units">
+      <span class="unit"><b>아라레</b> 仲町あられ</span>
+      <span class="unit"><b>유노</b> 千石ユノ</span>
+      <span class="unit"><b>노노카</b> 宮永ののか</span>
+      <span class="unit"><b>리츠</b> 峰月律</span>
+      <span class="unit"><b>미야코</b> 藤都子</span>
+    </div>
+  </section>
+
+  <h2>시나리오별 흐름</h2>
+  <p class="sub">탭을 누르면 그 신호가 어디를 거쳐 사이트에 닿는지 표시됩니다.</p>
+  <div class="diagram">
+    <div class="scn-tabs" role="tablist">
+      <button class="scn-tab" role="tab" aria-selected="true"  data-scn="poll">정기 수집</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="wake">라이브 감지</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="relay">X 예고 릴레이</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="tweet">개인 트윗</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="notice">소식</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="ops">운영자 제어</button>
+    </div>
+    <div class="stage">
+      <svg id="svg" viewBox="0 0 940 600" role="img" aria-label="아키텍처 흐름도">
+        <!-- 배포·운영 경계 -->
+        <rect class="boundary" x="206" y="150" width="716" height="368" rx="10"/>
+        <text class="boundary-t" x="214" y="164">배포·운영 경계 — 우리 코드</text>
+
+        <!-- edges (draw first, under nodes) -->
+        <path id="e_op_tg"   class="edge" d="M470,58 L470,72" marker-end="url(#ah)"/>
+        <text class="elabel" x="476" y="68">명령</text>
+        <path id="e_tg_ctrl" class="edge" d="M436,118 C360,150 320,190 306,224" marker-end="url(#ah)"/>
+        <text class="elabel" x="330" y="150">webhook</text>
+        <path id="e_be_tg"   class="edge" d="M540,224 C556,180 540,140 510,120" marker-end="url(#ah)"/>
+        <text class="elabel" x="556" y="170">상태전이 DM</text>
+        <path id="e_push_up" class="edge" d="M84,176 L84,222" marker-end="url(#ah)"/>
+        <path id="e_up_ctrl" class="edge" d="M152,250 L226,250" marker-end="url(#ah)"/>
+        <text class="elabel" x="150" y="243">POST /ingest</text>
+        <path id="e_ctrl_be" class="edge" d="M376,244 L482,244" marker-end="url(#ah)"/>
+        <text class="elabel" x="392" y="238">/resume→/tick</text>
+        <path id="e_sch_be" class="edge" d="M786,196 C700,214 660,226 636,236" marker-end="url(#ah)"/>
+        <text class="elabel" x="648" y="212">/tick /wake · OIDC</text>
+        <path id="e_yt_be" class="edge" d="M786,314 C700,296 660,282 636,268" marker-end="url(#ah)"/>
+        <text class="elabel" x="646" y="300">RSS · videos.list</text>
+        <path id="e_llm_ctrl" class="edge" d="M300,346 L300,278" marker-end="url(#ah)" stroke-dasharray="4 4"/>
+        <text class="elabel" x="306" y="316">제목추출 · 번역</text>
+        <path id="e_ctrl_db" class="edge" d="M330,276 C400,320 460,340 498,352" marker-end="url(#ah)"/>
+        <path id="e_be_db"  class="edge" d="M560,276 L560,344" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="316">커밋 (write)</text>
+        <path id="e_db_fe"  class="edge" d="M560,398 L560,436" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="422">raw JSON · 75초</text>
+        <path id="e_fe_fan" class="edge" d="M560,486 L560,516" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="506">사이트 표시</text>
+
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+          </marker>
+        </defs>
+
+        <!-- nodes -->
+        <g class="node" id="n_op" transform="translate(404,20)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="18" text-anchor="middle">운영자</text>
+          <text class="ns" x="66" y="30" text-anchor="middle">사용자</text></g>
+        <g class="node" id="n_tg" transform="translate(378,78)">
+          <rect width="184" height="40" rx="8"/><text class="nt" x="92" y="18" text-anchor="middle">제어 채널 창구 · Telegram</text>
+          <text class="ns" x="92" y="31" text-anchor="middle">서드파티 · transport</text></g>
+        <g class="node" id="n_push" transform="translate(18,138)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">X·YouTube 푸시</text>
+          <text class="ns" x="66" y="29" text-anchor="middle">서드파티 알림</text></g>
+        <g class="node" id="n_up" transform="translate(18,224)">
+          <rect width="132" height="40" rx="8"/><text class="nt" x="66" y="17" text-anchor="middle">업스트림 시스템</text>
+          <text class="ns" x="66" y="30" text-anchor="middle">운영자 폰 · Automate</text></g>
+        <g class="node" id="n_ctrl" transform="translate(224,224)">
+          <rect width="152" height="52" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">제어 채널</text>
+          <text class="ns" x="76" y="36" text-anchor="middle">/ingest · 운영 명령</text></g>
+        <g class="node" id="n_be" transform="translate(484,222)">
+          <rect width="152" height="54" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">백엔드</text>
+          <text class="ns" x="76" y="36" text-anchor="middle">/tick /wake · 판정</text></g>
+        <g class="node" id="n_sch" transform="translate(786,158)">
+          <rect width="136" height="40" rx="8"/><text class="nt" x="68" y="17" text-anchor="middle">Scheduler / Tasks</text>
+          <text class="ns" x="68" y="30" text-anchor="middle">GCP · 트리거</text></g>
+        <g class="node" id="n_yt" transform="translate(786,296)">
+          <rect width="136" height="40" rx="8"/><text class="nt" x="68" y="17" text-anchor="middle">YouTube Data API</text>
+          <text class="ns" x="68" y="30" text-anchor="middle">RSS + videos.list</text></g>
+        <g class="node" id="n_llm" transform="translate(224,346)">
+          <rect width="152" height="40" rx="8" stroke-dasharray="4 4"/><text class="nt" x="76" y="17" text-anchor="middle">외부 LLM · Groq</text>
+          <text class="ns" x="76" y="30" text-anchor="middle">제목추출 · 번역</text></g>
+        <g class="node" id="n_db" transform="translate(484,346)">
+          <rect width="152" height="52" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">DB · GitHub data</text>
+          <text class="ns" x="76" y="36" text-anchor="middle">JSON · 커밋 = write</text></g>
+        <g class="node" id="n_fe" transform="translate(484,438)">
+          <rect width="152" height="48" rx="8"/><text class="nt" x="76" y="20" text-anchor="middle">프론트엔드 · Vercel</text>
+          <text class="ns" x="76" y="33" text-anchor="middle">정적 · 폴링 렌더</text></g>
+        <g class="node" id="n_fan" transform="translate(494,516)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">팬</text>
+          <text class="ns" x="66" y="29" text-anchor="middle">사용자</text></g>
+      </svg>
+    </div>
+    <p class="scn-cap" id="scnCap"></p>
+  </div>
+
+  <h2>6단계 상태 모델</h2>
+  <p class="sub">한 방송이 <code>preview.json</code> 안에서 지나는 생애. 클릭.</p>
+  <div class="states" id="states">
+    <button class="st" data-st="0" aria-selected="true">announced</button><span class="st-arrow">→</span>
+    <button class="st" data-st="1">upcoming</button><span class="st-arrow">→</span>
+    <button class="st" data-st="2">watching</button><span class="st-arrow">→</span>
+    <button class="st" data-st="3">live</button><span class="st-arrow">↔</span>
+    <button class="st" data-st="4">end</button><span class="st-arrow">→</span>
+    <button class="st" data-st="5">none</button>
+  </div>
+  <div class="st-detail" id="stDetail"></div>
+
+  <h2>메인 화면 · 이렇게 생겼다</h2>
+  <p class="sub">실제 사이트 요소를 그대로 축약. 버튼·토글은 눌러볼 수 있습니다.</p>
+  <div class="feats">
+
+    <div class="feat">
+      <h3>예고판 레인</h3>
+      <p class="fh">유닛 1명 = 세로 레인. PC 5열 · 모바일 1인 1화면 캐러셀. 헤더 + 라이브 존 + 예고 버킷.</p>
+      <div class="demo">
+        <div class="lane">
+          <div class="lane__hd">
+            <span class="lane__av">
+              <svg class="tw-badge" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4.75h18c1.24 0 2.25 1 2.25 2.25v.6l-11 6.9-11-6.9V7c0-1.25 1-2.25 2.25-2.25Z"/><path d="M23.25 9.75V17c0 1.25-1 2.25-2.25 2.25H3A2.25 2.25 0 0 1 .75 17V9.75l10.6 6.66a1.15 1.15 0 0 0 1.3 0Z"/></svg>
+              <span class="tw-count">3</span>
+            </span>
+            <span class="lane__nm"><b>나카마치 아라레</b><span>@arale_yumemita</span></span>
+            <span class="lane__rail">
+              <i><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23 12s0-3.6-.46-5.3a2.78 2.78 0 0 0-1.95-1.96C18.9 4.28 12 4.28 12 4.28s-6.9 0-8.6.46A2.78 2.78 0 0 0 1.46 6.7C1 8.4 1 12 1 12s0 3.6.46 5.3a2.78 2.78 0 0 0 1.95 1.96c1.7.46 8.6.46 8.6.46s6.9 0 8.6-.46a2.78 2.78 0 0 0 1.95-1.96C23 15.6 23 12 23 12ZM9.75 15.5v-7l6 3.5-6 3.5Z"/></svg></i>
+              <i><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg></i>
+            </span>
+          </div>
+          <div class="lane__live" id="liveZone" data-on="0">
+            <span class="off">OFF-AIR</span>
+          </div>
+          <div class="bkts">
+            <div class="bkt"><h4>오늘</h4>
+              <div class="card card--up"><span class="ico">🎬</span><span><b>【歌枠】夜ふかしカラオケ</b><br>21:00 · 3시간 후</span></div>
+            </div>
+            <div class="bkt"><h4>7일 이내</h4>
+              <div class="card"><span class="ico">📺</span><span><b>예고 · 노래</b> · 09/14 · D-3</span></div>
+              <div class="card card--collab"><span class="ico">📺</span><span><b>합동 · 유노, 리츠</b> · 09/15</span></div>
+            </div>
+            <div class="bkt"><h4>7일 이후</h4>
+              <div class="card"><span class="ico">📺</span><span><b>예고</b> · 시간 미정</span></div>
+            </div>
+          </div>
+        </div>
+        <button class="toggle" id="liveBtn">▶ 라이브 시작 시뮬레이트</button>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>편지 배지 → 트윗 스레드</h3>
+      <p class="fh">유닛당 최근 5개 트윗을 메신저처럼. 연속 메시지 묶음 · 안 읽은 수 배지 · 한/日 전역 토글.</p>
+      <div class="demo">
+        <div class="thread">
+          <div class="thread__hd"><span>나카마치 아라레</span><button id="tlBtn">日</button></div>
+          <div class="thread__sc" id="threadSc">
+            <div class="grp">
+              <div class="msg" data-ja="配信きたよ〜！みんな来てね" data-ko="방송 왔어~! 다들 와줘">방송 왔어~! 다들 와줘</div>
+              <div class="msg" data-ja="今日は歌枠です🎤" data-ko="오늘은 노래방이야 🎤">오늘은 노래방이야 🎤</div>
+              <div class="msg" data-ja="リクエストめっちゃ待ってる" data-ko="신청곡 엄청 기다리고 있어">신청곡 엄청 기다리고 있어</div>
+              <div class="gt">21:03</div>
+            </div>
+            <div class="grp">
+              <div class="msg" data-ja="サムネ直した！こっちが正しいやつ" data-ko="썸네일 고쳤어! 이게 맞는 거">썸네일 고쳤어! 이게 맞는 거</div>
+              <div class="gt">21:12 · 방금</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>소식 티커</h3>
+      <p class="fh">방송 외 이벤트(라이브·음반·굿즈·타 플랫폼). 상단에서 5초마다 회전, 당일 건은 빨간 램프.</p>
+      <div class="demo">
+        <div class="ticker">
+          <span class="lamp"></span>
+          <span class="txt" id="tkTxt">『無限大フェス 2026』 대형 합동 라이브 — 10/12 토쿄</span>
+          <span class="tag" id="tkTag">LIVE</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>카드 상태 · 색으로 구분</h3>
+      <p class="fh">점선·감광 = 미확정 예고 / 실선 = 실물 영상 / 빨강 = 라이브 / 보라 = 합동(참여 전원 레인에 팬아웃).</p>
+      <div class="demo" style="display:flex;flex-direction:column;gap:8px">
+        <div class="card"><span class="ico">📺</span><span><b>announced</b> — 예고, 링크는 채널</span></div>
+        <div class="card card--up"><span class="ico">🎬</span><span><b>upcoming / watching</b> — 썸네일·정시</span></div>
+        <div class="card" style="border-style:solid;border-color:#5a2020;opacity:1"><span class="ico">🔴</span><span><b>live</b> — 방송 중 (n분)</span></div>
+        <div class="card card--collab"><span class="ico">📺</span><span><b>collab</b> — 합동, 보라 바</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="foot">
+    출처: <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> · <a href="SPEC.md">SPEC.md</a> ·
+    <a href="VERSION.md">VERSION.md</a> · 도식 <a href="plan/v3_ARCH_DIAGRAM.png">plan/v3_ARCH_DIAGRAM.png</a>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var SVG = document.getElementById("svg");
+
+  /* ── 시나리오 ── */
+  var SCN = {
+    poll:   {e:["e_sch_be","e_yt_be","e_be_db","e_db_fe","e_fe_fan"],
+             n:["n_sch","n_be","n_yt","n_db","n_fe","n_fan"],
+             c:"<b>정기 수집</b> — 정해진 시각(기준 06:00 JST · 이후 3시간마다)에 Scheduler 가 백엔드를 깨운다. RSS + YouTube API 로 5채널 방송 상태를 다시 판정 → 바뀐 것만 커밋 → 사이트가 최대 몇 분 뒤 반영."},
+    wake:   {e:["e_sch_be","e_yt_be","e_be_db","e_db_fe","e_fe_fan"],
+             n:["n_sch","n_be","n_yt","n_db","n_fe","n_fan"],
+             c:"<b>라이브 감지</b> — 예정 방송마다 시작 15분 전에 Cloud Task 가 백엔드를 콕 찍어 깨운다. 시작 직전 3분 · 방송 중 3~10분 간격 정밀 폴링 → 라이브 켜짐·꺼짐을 빠르게 반영."},
+    relay:  {e:["e_push_up","e_up_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_db","n_fe","n_fan"],
+             c:"<b>X 예고 릴레이</b> — 공식 계정의 일일 스케줄 트윗 알림을 운영자 폰이 그대로 중계. YouTube 영상이 아직 없어도 <code>announced</code>(예고) 행으로 먼저 표시하고, 실물 방송이 뜨면 대체."},
+    tweet:  {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
+             c:"<b>개인 트윗</b> — 멤버 5인의 트윗을 게시자 이름으로 갈래 나눠, LLM 번역을 붙여 편지 배지 스레드(최근 5건)에 쌓는다. 방송 예고글이면 예고판에도 승격. 리트윗·타인 글은 제외."},
+    notice: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
+             c:"<b>소식</b> — 방송 예고가 아닌 트윗(라이브 이벤트·음반·굿즈·타 플랫폼)은 LLM 이 제목만 뽑아 <code>notices.json</code> → 예고판 상단 티커에 노출."},
+    ops:    {e:["e_op_tg","e_tg_ctrl","e_ctrl_db"],
+             n:["n_op","n_tg","n_ctrl","n_db"],
+             c:"<b>운영자 제어</b> — 텔레그램으로 <code>/status /pause /resume /list /ingest /edit /del /undo</code>. 일시정지·수동 등록·필드 편집·직전 작업 되돌리기까지 사이트를 직접 관리."}
+  };
+  var capEl = document.getElementById("scnCap");
+  function applyScn(key){
+    var s = SCN[key];
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(el){el.classList.remove("hot");});
+    s.e.forEach(function(id){var el=document.getElementById(id); if(el) el.classList.add("hot");});
+    s.n.forEach(function(id){var el=document.getElementById(id); if(el) el.classList.add("hot");});
+    capEl.innerHTML = s.c;
+  }
+  document.querySelectorAll(".scn-tab").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".scn-tab").forEach(function(x){x.setAttribute("aria-selected","false");});
+      b.setAttribute("aria-selected","true");
+      applyScn(b.dataset.scn);
+    });
+  });
+  applyScn("poll");
+
+  /* ── 상태 모델 ── */
+  var ST = [
+    ["announced","예고","정보 일부만 · 실물 영상 미확정. X 릴레이 · 개인 트윗 · 수동 등록에서 생성. 링크는 채널.","card"],
+    ["upcoming","예정","날짜+시각+제목+썸네일+영상 URL 이 다 모임. 정식 방송 카드로 승격.","card card--up"],
+    ["watching","대기","시작 3분 전 진입. 짧은 간격으로 라이브 여부만 확인.","card card--up"],
+    ["live","방송 중","실제 라이브. 경과 시간(n분) 표시, 레인 라이브 존이 빨갛게.","card"],
+    ["end","방송 종료","라이브가 내려감. 30분 관찰 창 — 되살아나면 live 로 복귀.","card"],
+    ["none","사라짐","파일에서 제거 = 종결. 이후 같은 채널의 예고는 별개의 새 방송.","card"]
+  ];
+  var stD = document.getElementById("stDetail");
+  function showSt(i){
+    var s = ST[i];
+    var live = i===3, endc = i===4;
+    stD.innerHTML =
+      '<div class="'+s[3]+'" style="min-width:150px;opacity:1;'+(live?'border-style:solid;border-color:#5a2020':'')+'">'+
+        '<span class="ico">'+(live?'🔴':endc?'⏹':i<2?'📺':'👀')+'</span>'+
+        '<span><b style="display:block;color:#e8e8e8">'+s[0]+'</b><span style="color:#999">'+s[1]+'</span></span>'+
+      '</div>'+
+      '<p><b>'+s[1]+' · '+s[0]+'</b>'+s[2]+'</p>';
+    document.querySelectorAll("#states .st").forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.st==String(i) ? "true":"false");
+    });
+  }
+  document.querySelectorAll("#states .st").forEach(function(b){
+    b.addEventListener("click", function(){ showSt(+b.dataset.st); });
+  });
+  showSt(0);
+
+  /* ── 라이브 토글 ── */
+  var zone = document.getElementById("liveZone"), lbtn = document.getElementById("liveBtn");
+  lbtn.addEventListener("click", function(){
+    var on = zone.dataset.on === "1";
+    zone.dataset.on = on ? "0" : "1";
+    zone.innerHTML = on
+      ? '<span class="off">OFF-AIR</span>'
+      : '<div class="lc"><b>【歌枠】夜ふかしカラオケ</b><span>방송 중 (12분)</span></div>';
+    lbtn.textContent = on ? "▶ 라이브 시작 시뮬레이트" : "■ 라이브 종료";
+  });
+
+  /* ── 트윗 번역 토글 ── */
+  var tl = document.getElementById("tlBtn"), ko = true;
+  tl.addEventListener("click", function(){
+    ko = !ko;
+    document.querySelectorAll("#threadSc .msg").forEach(function(m){
+      m.textContent = ko ? m.dataset.ko : m.dataset.ja;
+    });
+    tl.textContent = ko ? "日" : "한";
+  });
+
+  /* ── 소식 티커 회전 ── */
+  var TK = [
+    ["『無限大フェス 2026』 대형 합동 라이브 — 10/12 토쿄","LIVE"],
+    ["1st EP「ゆめのつづき」 발매 — 10/25","음반"],
+    ["아크릴 스탠드 4종 예약 개시 — BOOTH","굿즈"]
+  ];
+  var tkTxt = document.getElementById("tkTxt"), tkTag = document.getElementById("tkTag"), ti = 0;
+  setInterval(function(){
+    ti = (ti+1) % TK.length;
+    tkTxt.textContent = TK[ti][0]; tkTag.textContent = TK[ti][1];
+  }, 3200);
+})();
+</script>
+</body>
+</html>
