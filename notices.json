@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T12:38:18Z",
+  "generated_at": "2026-09-10T13:49:20Z",
   "notices": [
     {
       "anchor_a": null,
@@ -49,6 +49,31 @@
       "title_raw": "「バンドリ！TV LIVE 2026」＃331",
       "title_slug": "バンドリtvlive2026",
       "tweet_url": "https://x.com/i/status/2097973357287489685",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "バンドリ！tvlive2026",
+      "body_for_llm": "@bang_dream_info: このあと 頃〜生配信📺✨ 「バンドリ！TV LIVE 2026」＃331 出演者 仲町あられ 宮永ののか 峰月律 藤都子 千石ユノ YouTube で生配信📺✨ youtube.com/live/ri2_BimgJ… bang-dream.com/news/2392/ #バンドリ #バンドリTVLIVE x.com/bang_dream_inf…",
+      "body_raw": "@bang_dream_info: このあと22:03頃〜生配信📺✨\n「バンドリ！TV LIVE 2026」＃331\n\n出演者\n仲町あられ\n宮永ののか\n峰月律\n藤都子\n千石ユノ\n\nYouTube で生配信📺✨\nyoutube.com/live/ri2_BimgJ…\n\nbang-dream.com/news/2392/\n#バンドリ #バンドリTVLIVE x.com/bang_dream_inf…",
+      "category": "live",
+      "date": "2026-09-10",
+      "deadline": false,
+      "expires_at": "2026-09-10T15:00:00Z",
+      "first_seen": "2026-09-10T13:49:20Z",
+      "id": "2098033047874736148",
+      "last_updated": "2026-09-10T13:49:20Z",
+      "seen_ids": [
+        "2098033047874736148"
+      ],
+      "site": "x",
+      "src_handle": "RT @bang_dream_info",
+      "time": "22:03",
+      "title": "バンドリ！TV LIVE 2026 生配信のお知らせ",
+      "title_ko": "밴드리! TV LIVE 2026 생방송 안내",
+      "title_raw": "「バンドリ！TV LIVE 2026」",
+      "title_slug": "バンドリtvlive2026",
+      "tweet_url": "https://x.com/i/status/2098033047874736148",
       "url": null
     },
     {
