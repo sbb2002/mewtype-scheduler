@@ -330,13 +330,16 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 티커. `notices.py`.
 
 - `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
-  `title`·`title_ko`·`date`·`time`·`deadline`·`site`·`url`·`tweet_url`·`src_handle`·`seen_ids[]`·
-  `first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
+  `title`·`title_ko`·`title_raw`·`body_raw`·`body_for_llm`·`date`·`time`·`deadline`·`site`·`url`·
+  `tweet_url`·`src_handle`·`needs_tl?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
+  `title_raw`(정규식 제목)·`body_raw`(원문, 600자 컷)는 파싱·번역 품질 개선용 기록 — 프론트 안 읽음, 아카이브까지 이관.
 - **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
 - `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
 - `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
-  분류·날짜·URL 은 정규식 전담. 반환 dict 에 `title_raw`(정규식 제목) + `body_for_llm`(날짜/URL 제거 본문).
-  실제 `title` 확정은 `handlers`/`/translate` 가 `llm.notice_title(body_for_llm)` 로. LLM 미가동이면 `title_raw` 폴백.
+  분류·날짜·URL 은 정규식 전담. `title`/`title_raw` 는 정규식 헤드라인, `title_ko`=None.
+- **자동 인입 시 LLM 제목추출·번역** (v3.1.2): `_apply_notice` 가 병합 직후 `llm.notice_title(body_for_llm)` 을
+  1회 호출해 `title`(정제된 일본어)·`title_ko` 채움. 실패하면 `needs_tl=true` → 다음 `/tick` 의
+  `_translate_sweep` 가 재시도. 운영자 `/translate notice` 는 즉시. (트윗 v3.0.1 인라인 번역과 동일 구조)
 - `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed, mode∈added|updated|recap|dup|skip)`.
   지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브. `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko`) 만 대입.
 

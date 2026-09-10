@@ -4,10 +4,11 @@
 
 notices.json
   { "generated_at": "...Z",
-    "notices": [ { id, category, title, title_ko, date, time, deadline, site, url, tweet_url,
-                   src_handle, anchor_a, anchor_b, title_slug, is_recap, seen_ids[],
-                   first_seen, last_updated, expires_at } ] }
+    "notices": [ { id, category, title, title_ko, title_raw, body_raw, body_for_llm,
+                   date, time, deadline, site, url, tweet_url, src_handle, anchor_a, anchor_b,
+                   title_slug, is_recap, needs_tl?, seen_ids[], first_seen, last_updated, expires_at } ] }
 notice_archive.json  { "notices": [ <notice + archived_at> ] }  (append-only, id dedupe)
+  title_raw/body_raw 는 파싱·번역 품질 개선용 원문 기록 (프론트 안 읽음).
 
 중복 판정 (merge_notice) — v3: url ∥ title 기반
   1. incoming.id 가 어느 소식의 id/seen_ids 에 이미 있음        → "dup" (no-op)
@@ -83,7 +84,8 @@ def _seen(notice: dict, tid: str) -> bool:
 def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
     """기존 소식에 새 트윗 정보 반영 — 나중 트윗이 더 확정적이라고 보고 덮음."""
     out = dict(cur)
-    for k in ("title", "title_ko", "time", "url", "site", "tweet_url", "src_handle", "category",
+    for k in ("title", "title_ko", "title_raw", "body_raw", "body_for_llm", "time", "url",
+              "site", "tweet_url", "src_handle", "category",
               "anchor_a", "anchor_b", "title_slug", "expires_at"):
         v = inc.get(k)
         if v:
@@ -101,7 +103,8 @@ def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
 
 def _new_row(inc: dict, now_iso: str) -> dict:
     row = {k: inc.get(k) for k in (
-        "id", "category", "title", "title_ko", "date", "time", "deadline", "site", "url",
+        "id", "category", "title", "title_ko", "title_raw", "body_raw", "body_for_llm",
+        "date", "time", "deadline", "site", "url",
         "tweet_url", "src_handle", "anchor_a", "anchor_b", "title_slug", "expires_at",
     )}
     row["deadline"] = bool(row.get("deadline"))
@@ -239,7 +242,8 @@ if __name__ == "__main__":
     NOW = "2026-09-10T00:00:00Z"   # JST 09-10
 
     def inc(**kw):
-        base = dict(id="", category="etc", title="t", date="2026-09-13", time=None,
+        base = dict(id="", category="etc", title="t", title_raw="t raw", body_raw="원문 t 9月13日",
+                    body_for_llm="원문 t", date="2026-09-13", time=None,
                     deadline=False, site="x", url=None, tweet_url=None,
                     src_handle="@BDP_yumemita", anchor_a=None, anchor_b=None,
                     title_slug="t", is_recap=False, expires_at="2026-09-14T15:00:00Z")
@@ -251,6 +255,7 @@ if __name__ == "__main__":
     # added (url 기반 추적)
     N, A, ch, m = merge_notice(N, inc(id="1", url="https://eplus.jp/x", title="특번", time="21:00"), NOW, archive=A)
     assert ch and m == "added" and len(N["notices"]) == 1, m
+    assert N["notices"][0]["body_raw"] and N["notices"][0]["title_raw"], "원문 보존"
     # dup (같은 트윗 id)
     _, _, ch, m = merge_notice(N, inc(id="1", url="https://eplus.jp/x"), NOW, archive=A)
     assert not ch and m == "dup", m

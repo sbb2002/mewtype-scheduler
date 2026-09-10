@@ -392,9 +392,10 @@ def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None 
         "id": tid,
         "category": category,
         "title": headline,                # LLM 미가동 폴백
-        "title_raw": headline,            # v3: 정규식 결과
+        "title_raw": headline,            # v3: 정규식 결과 (LLM 이 title 을 덮어도 원본 보존)
         "title_ko": None,                 # v3: LLM 번역 결과 (호출부 채움)
-        "body_for_llm": body_for_llm,     # v3: LLM 입력용
+        "body_for_llm": body_for_llm,     # v3: LLM 입력용 (날짜/URL 제거)
+        "body_raw": t[:600],              # v3.1.2: 원문 보존 — 파싱/번역 품질 개선 코퍼스용
         "date": date_iso,
         "time": time_hm,
         "deadline": deadline,
@@ -433,7 +434,8 @@ if __name__ == "__main__":
     assert r1["title"] == "「アワーノーツ リリース日決定特番」", r1["title"]   # 홍보 첫 줄 무시
     assert r1["anchor_b"] == "アワーノーツリリース日決定特番", r1["anchor_b"]
     assert r1["deadline"] is False
-    print("[OK] S1  라이브 예고 (제목=「」, 홍보 첫 줄 무시)")
+    assert r1["title_raw"] == r1["title"] and "事前登録" in r1["body_raw"]   # 원문 보존
+    print("[OK] S1  라이브 예고 (제목=「」, 홍보 첫 줄 무시, body_raw 보존)")
 
     # S2: 굿즈 수주(마감형) — 첫 줄이 ＼⏰…まで⏰／ 장식, 진짜 제목은 셋째 줄
     S2 = ("＼⏰9月27日まで受注受付！⏰／\n🛸TVアニメ「#バンドリ！ ゆめ∞みた」🛸\n"

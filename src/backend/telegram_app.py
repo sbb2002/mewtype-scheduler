@@ -1207,6 +1207,11 @@ def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[
     parsed = xnotice.parse(raw, now_iso, tag=tag, title=title)
     if not parsed:
         return "none", None
+    # 파싱 직후 1회 LLM 제목추출·번역 (재시도와 무관하게 한 번만). (v3.1.2)
+    _tl = None
+    if not parsed.get("title_ko"):
+        _tl = _inline_notice_title(
+            parsed.get("body_for_llm") or parsed.get("body_raw") or parsed.get("title"))
     for _try in (1, 2):
         prev, psha = gh.read_json(_NOTICES_PATH)
         arch, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
@@ -1215,6 +1220,17 @@ def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[
         new_n, new_a, changed, mode = notices.merge_notice(prev, parsed, now_iso, archive=arch)
         if not changed:
             return mode, parsed
+        # 방금 병합된 소식 행에 번역 반영 (없으면 needs_tl 로 다음 tick sweep 에 넘김).
+        row = next((n for n in new_n.get("notices", [])
+                    if parsed.get("id") == n.get("id")
+                    or parsed.get("id") in (n.get("seen_ids") or [])), None)
+        if row and not row.get("title_ko"):
+            if _tl and _tl.get("title_ko"):
+                row["title"] = _tl.get("title_ja") or row.get("title")
+                row["title_ko"] = _tl["title_ko"]
+                row.pop("needs_tl", None)
+            else:
+                row["needs_tl"] = True
         try:
             _, nsha = gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,
                                     message=f"data: notice {mode} {now_iso}")
@@ -1640,6 +1656,21 @@ def _inline_translate(text: str) -> Optional[str]:
         return llm.translate(text) or None
     except Exception:
         log.exception("인라인 번역 실패")
+        return None
+
+
+def _inline_notice_title(body: str):
+    """자동 인입 소식 인라인 제목추출·번역 → {title_ja, title_ko} | None.
+    실패하면 None → 호출부가 `needs_tl` 로 큐잉, 다음 tick sweep 가 재시도. (v3.1.2)"""
+    if not body or not body.strip():
+        return None
+    llm = _make_llm_client()
+    if llm is None:
+        return None
+    try:
+        return llm.notice_title(body) or None
+    except Exception:
+        log.exception("인라인 소식 제목/번역 실패")
         return None
 
 
