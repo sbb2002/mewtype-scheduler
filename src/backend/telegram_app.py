@@ -94,6 +94,15 @@ _NOTICE_ARCHIVE_PATH = "notice_archive.json"
 _TWEETS_PATH = "tweets.json"                   # (v2.8) 멤버 개인 트윗
 _TWEET_ARCHIVE_PATH = "tweet_archive.json"
 _UNIT_KEYS = ("arale", "yuno", "nonoka", "ritsu", "miyako")
+
+
+def _tw_list(v):
+    """tweets[ck] → 메시지 list (계약 I v3.1). v2.8 단건 dict 는 [dict], xtweet 미탑재에도 안전."""
+    if isinstance(v, list):
+        return [m for m in v if isinstance(m, dict)]
+    if isinstance(v, dict):
+        return [v]
+    return []
 _PREVIEW_PATH = "preview.json"                 # (v3) schedule.json 대체
 # (v3) 6상태 — none 은 파일에 없음
 _STATE_RANK = {"live": 0, "watching": 1, "upcoming": 2, "announced": 3, "end": 4}
@@ -315,7 +324,8 @@ def _build_status_text(now_iso: str, gh: GitHubStore, channels_cfg: dict) -> str
     ntxt = f"notice   {len(nlist)}건" + (f" (가장 이른 D{dmin:+d})" if dmin is not None else "")
 
     tw = tweets_j.get("tweets", {}) or {}
-    tw_units = [k for k in _UNIT_KEYS if k in tw]
+    _tw_n = {k: len(_tw_list(tw.get(k))) for k in _UNIT_KEYS if k in tw}
+    tw_units = [f"{k}×{_tw_n[k]}" if _tw_n[k] > 1 else k for k in _tw_n]
     ttxt = f"tweet    {', '.join(tw_units) or '없음'}  ({len(tw_units)}/5)"
 
     sync = ["동기화"]
@@ -326,7 +336,7 @@ def _build_status_text(now_iso: str, gh: GitHubStore, channels_cfg: dict) -> str
                         f"({_relative_time(generated_at, now_iso)})")
 
     q = (sum(1 for n in nlist if n.get("needs_tl"))
-         + sum(1 for t in tw.values() if t.get("needs_tl")))
+         + sum(1 for lst in tw.values() for t in _tw_list(lst) if t.get("needs_tl")))
     qtxt = f"LLM 큐   {q}건 대기"
 
     nl = chr(10)
@@ -1686,10 +1696,12 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
             arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
             prev = prev or xtweet.default_tweets()
             arch = arch or xtweet.default_archive()
-            new_t, new_a, changed, mode = xtweet.merge_tweet(prev, parsed, now_iso, archive=arch)
+            new_t, new_a, changed, mode = xtweet.merge_thread(prev, parsed, now_iso, archive=arch)
             if not changed:
                 break
-            row = new_t["tweets"].get(channel_key)
+            # 방금 들어온 메시지만 인라인 번역 (나머지는 이미 채워져 있음). (계약 I — 스레드)
+            row = next((m for m in _tw_list(new_t["tweets"].get(channel_key))
+                        if str(m.get("id")) == str(parsed.get("id"))), None)
             if row and not row.get("text_ko"):
                 ko = _inline_translate(row.get("text") or "")
                 if ko:
@@ -1715,9 +1727,10 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         return "error"
 
     name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
-    if mode in ("added", "replaced"):
+    if mode in ("added", "rolled"):
+        n_thread = len(_tw_list((new_t or {}).get("tweets", {}).get(channel_key)))
         _auto_dm(gh, "tweet",
-                 f"🐦 <b>{html.escape(name)}</b> 새 트윗\n"
+                 f"🐦 <b>{html.escape(name)}</b> 새 트윗 (스레드 {n_thread}/{xtweet.MAX_THREAD})\n"
                  f"{html.escape(xtweet.summary_line(parsed))}")
     else:
         log.info("personal tweet: %s (%s)", mode, channel_key)
@@ -2007,17 +2020,20 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
             tw = (prev or {}).get("tweets", {}) or {}
             n = 0
             pending = 0
-            for _k, row in tw.items():
-                if row.get("text_ko"):
-                    continue
-                pending += 1
-                ko = llm.translate(row.get("text") or "")
-                if ko:
-                    row["text_ko"] = ko
-                    row.pop("needs_tl", None)
-                    n += 1
-                else:
-                    row["needs_tl"] = True
+            for _k, lst in list(tw.items()):
+                norm = _tw_list(lst)
+                tw[_k] = norm                       # v2.8 단건 → 배열로 승계
+                for row in norm:
+                    if row.get("text_ko"):
+                        continue
+                    pending += 1
+                    ko = llm.translate(row.get("text") or "")
+                    if ko:
+                        row["text_ko"] = ko
+                        row.pop("needs_tl", None)
+                        n += 1
+                    else:
+                        row["needs_tl"] = True
             if n:
                 prev["generated_at"] = now_iso
                 gh.write_json(_TWEETS_PATH, prev, prev_sha=sha,
@@ -2061,12 +2077,16 @@ def _handle_tweet_list(gh, channels_cfg: dict) -> None:
     chans = channels_cfg.get("channels", {})
     lines = ["🐦 <b>개인 트윗</b>"]
     for k in _UNIT_KEYS:
-        row = tw.get(k)
-        if not row:
+        thread = _tw_list(tw.get(k))
+        if not thread:
             continue
         name = chans.get(k, {}).get("name_ko", k)
-        body = (row.get("text_ko") or row.get("text") or "")[:80]
-        lines.append(f"<b>{html.escape(name)}</b> ({k})\n{html.escape(body)}\n{row.get('url') or ''}")
+        head = f"<b>{html.escape(name)}</b> ({k}) — {len(thread)}건"
+        msgs = []
+        for row in thread:                       # 오래된 → 최신
+            body = (row.get("text_ko") or row.get("text") or "").replace("\n", " ")[:80]
+            msgs.append(f"· {html.escape(body)}")
+        lines.append(head + "\n" + "\n".join(msgs) + f"\n{thread[-1].get('url') or ''}")
     _send_telegram("\n\n".join(lines))
 
 
@@ -2917,12 +2937,18 @@ if __name__ == "__main__":
         _PREVIEW_PATH: {"generated_at": "2026-09-09T12:00:00Z", "items": [
             {"state": "announced"}, {"state": "live"}, {"state": "live"}]},
         _NOTICES_PATH: {"notices": [{"date": "2026-09-11"}, {"date": "2026-09-20", "needs_tl": True}]},
-        _TWEETS_PATH: {"tweets": {"arale": {}, "yuno": {"needs_tl": True}}},
+        # 계약 I — tweets[ck] 는 배열. yuno 는 2건(둘 다 needs_tl), nonoka 는 v2.8 단건 dict 호환.
+        _TWEETS_PATH: {"tweets": {
+            "arale": [{"id": "a1"}],
+            "yuno": [{"id": "y1", "needs_tl": True}, {"id": "y2", "needs_tl": True}],
+            "nonoka": {"id": "n1"},
+        }},
         "control.json": default_control(),
     })
     st = _build_status_text("2026-09-09T12:05:00Z", sg, _cfg)
     assert "mewtype v3" in st and "announced 1" in st and "live 2" in st
-    assert "notice   2건" in st and "LLM 큐   2건" in st, st
+    assert "notice   2건" in st and "LLM 큐   3건" in st, st          # notice 1 + tweet 2
+    assert "yuno×2" in st, st
     print("[OK] _build_status_text (v3)")
 
     # ── {cmd}×{contents} 격자 + /edit preview 마법사 ──────────

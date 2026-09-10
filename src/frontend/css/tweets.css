@@ -90,6 +90,25 @@
   outline-offset: 2px;
   border-radius: 3px;
 }
+/* (v3.1) 안 읽은 메시지 2건+ → 배지 우상단 카운트 */
+.lane__tw-count {
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: #0c1a1a;
+  background: #ccfbfa;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-bg-secondary, #1a1a1a);
+  animation: none;
+}
 /* 안 읽음: 글로우 펄스 + 아주 약간 콩콩 점프 (주기적) */
 .lane__tw.is-unread {
   animation: tw-pulse 2.8s ease-in-out infinite, tw-hop 2.8s ease-in-out infinite;
@@ -112,19 +131,19 @@
   18% { transform: translateY(0); }
 }
 
-/* ── PC 말풍선 ──────────────────────────────────────────────────── */
+/* ── PC 스레드 패널 (= 확장된 말풍선, v3.1) ──────────────────────── */
 .lane__bubble {
   position: absolute;
   z-index: 60;
-  width: 250px;
+  width: 268px;
   max-width: calc(100% - 16px);
   background: var(--tw-bg, #3a3a3e);
   color: var(--tw-ink, #fff);
-  border-radius: 12px;
-  padding: 12px 13px 10px;
-  box-shadow: 0 14px 32px -10px rgba(0, 0, 0, 0.65);
+  border-radius: 13px;
+  padding: 4px 5px 6px;
+  box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.7);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.55;
   transform-origin: top left;
   transform: translateY(-4px) scale(0.94);
   opacity: 0;
@@ -140,61 +159,51 @@
   content: "";
   position: absolute;
   top: -6px;
-  left: 20px;
+  left: 22px;
   width: 13px;
   height: 13px;
   background: var(--tw-bg, #3a3a3e);
   transform: rotate(45deg);
   border-radius: 3px;
 }
-.lane__bubble__text {
-  margin: 0;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-.lane__bubble__foot {
+
+/* 패널·시트 공용 헤더 (유닛명 + 번역토글 + 닫기) */
+.lane__bubble__head,
+.tw-toast__head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-top: 9px;
-  font-size: 11px;
-  opacity: 0.82;
+  gap: 8px;
+  padding: 7px 8px 6px;
 }
-.lane__bubble__foot .src,
-.tw-toast__foot .src {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: inherit;
-  text-decoration: none;
+.lane__bubble__who {
+  font-size: 12px;
+  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lane__bubble__foot .src .lbl,
-.tw-toast__foot .src .lbl {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.lane__bubble__ctrl {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
 }
-.src__ic { width: 12px; height: 12px; display: block; flex: none; }
-.src.is-disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-.src.is-disabled .lbl { text-decoration: none; }
-
 .lane__bubble__tl,
 .tw-toast__tl {
-  background: none;
+  background: rgba(255, 255, 255, 0.16);
   color: inherit;
   cursor: pointer;
   font: inherit;
   font-weight: 700;
-  line-height: 1.35;
-  padding: 0 5px;
-  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
   border-radius: 6px;
 }
-.lane__bubble__x {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+.lane__bubble__x,
+.tw-toast__x {
   width: 20px;
   height: 20px;
   border: 0;
@@ -205,9 +214,73 @@
   font-size: 10px;
   display: none;
   place-items: center;
+  flex: none;
 }
-.lane__bubble.is-pinned .lane__bubble__x {
-  display: grid;
+.lane__bubble.is-pinned .lane__bubble__x,
+.tw-toast__x { display: grid; }
+
+/* 메시지 스택 (최신이 아래, 넘치면 스크롤) */
+.lane__bubble__scroll,
+.tw-toast__scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 3px 8px 5px;
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+}
+.lane__bubble__scroll::-webkit-scrollbar,
+.tw-toast__scroll::-webkit-scrollbar { width: 5px; }
+.lane__bubble__scroll::-webkit-scrollbar-thumb,
+.tw-toast__scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 3px;
+}
+.lane__thread__grp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lane__thread__msg {
+  position: relative;
+  align-self: flex-start;
+  max-width: 94%;
+  background: rgba(255, 255, 255, 0.17);
+  border-radius: 11px;
+  border-top-left-radius: 4px;
+  padding: 7px 24px 7px 10px;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.lane__thread__grp .lane__thread__msg + .lane__thread__msg { border-top-left-radius: 11px; }
+.lane__thread__msg .ori {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  width: 12px;
+  height: 12px;
+  color: inherit;
+  opacity: 0;                       /* 평소엔 숨김 — 스택이 지저분해지지 않게 */
+  transition: opacity 0.12s ease;
+}
+.lane__thread__msg:hover .ori,
+.lane__thread__msg .ori:focus-visible { opacity: 0.7; }
+@media (hover: none) {
+  .lane__thread__msg .ori { opacity: 0.38; }   /* 터치기기는 은은하게 상시 노출 */
+}
+.lane__thread__msg .ori.is-disabled { opacity: 0 !important; pointer-events: none; }
+.lane__thread__msg .ori .src__ic { width: 13px; height: 13px; display: block; }
+.lane__thread__t {
+  align-self: flex-end;
+  font-size: 10px;
+  opacity: 0.72;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── 모바일 토스트 (메신저 알림풍) ──────────────────────────────── */
@@ -229,12 +302,12 @@
   background: var(--tw-bg, #3a3a3e);
   color: var(--tw-ink, #fff);
   border-radius: 14px;
-  padding: 12px 13px;
+  padding: 4px 5px 7px;
   box-shadow: 0 20px 44px -12px rgba(0, 0, 0, 0.72);
   transform: translateY(-140%);
   transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.55;
 }
 body.tw-modal-open {
   overflow: hidden;
@@ -246,56 +319,35 @@ body.tw-modal-open .tw-backdrop {
 body.tw-modal-open .tw-toast {
   transform: translateY(0);
 }
-.tw-toast__head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 9px;
-  align-items: center;
-}
 .tw-toast__avatar {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
+  flex: none;
   border-radius: 50%;
   background: center / cover no-repeat rgba(0, 0, 0, 0.2);
   border: 1.5px solid color-mix(in srgb, var(--tw-ink, #fff) 35%, transparent);
 }
 .tw-toast__id {
+  flex: 1;
   min-width: 0;
-  line-height: 1.25;
+  line-height: 1.2;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
 }
 .tw-toast__id .nm {
-  display: block;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tw-toast__id .hd {
-  display: block;
-  font-size: 10.5px;
+  font-size: 10px;
   opacity: 0.8;
+  white-space: nowrap;
 }
-.tw-toast__x {
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--tw-ink, #fff) 20%, transparent);
-  color: inherit;
-  cursor: pointer;
-  font-size: 11px;
-}
-.tw-toast__text {
-  margin: 9px 0 0;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-.tw-toast__foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin-top: 9px;
-  font-size: 11px;
-  opacity: 0.82;
-}
+.tw-toast__scroll { max-height: 52vh; }
 
 @media (prefers-reduced-motion: reduce) {
   .lane__tw.is-unread {

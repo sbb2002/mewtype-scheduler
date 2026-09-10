@@ -7,6 +7,7 @@
 
 > v2.8(개인 트윗)에서 3↔4 노드 사이에 `android.title` 분기가 추가됨 → `docs/plan/v2_8_personal_tweets.md`.
 > v2.8.1: 개인 5인 분기가 배지(`tweets.json`) + **`parse_schedule` → `scheduled` 승격**(`schedule.json`) 둘 다 수행 → `docs/plan/v2_8_1_personal_schedule.md`.
+> v3.1: `tweets.json` `tweets[ck]` 가 **배열(스레드, 최신이 뒤, 최대 5)** — `xtweet.merge_thread` 가 append·id중복 dedup·정렬·5건 초과분 아카이브(`rolled`). 예고 여부와 무관하게 본인 글은 스레드에 실린다.
 
 ## 들어오는 것 — `request.form` (또는 JSON)
 

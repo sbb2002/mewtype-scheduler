@@ -184,15 +184,21 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
         tj, sha = gh.read_json("tweets.json")
         if tj and tj.get("tweets"):
             changed = False
-            for _k, t in tj["tweets"].items():
-                if not t.get("needs_tl"):
-                    continue
-                ko = llm.translate(t.get("text") or "")
-                if ko:
-                    t["text_ko"] = ko
-                    t.pop("needs_tl", None)
+            for _k, lst in list(tj["tweets"].items()):
+                # 계약 I — tweets[ck] 는 메시지 배열. v2.8 단건 dict 는 [dict] 로 승계.
+                norm = lst if isinstance(lst, list) else ([lst] if isinstance(lst, dict) else [])
+                if norm is not lst:
+                    tj["tweets"][_k] = norm
                     changed = True
-                    out["tweet_tl"] += 1
+                for t in norm:
+                    if not t.get("needs_tl"):
+                        continue
+                    ko = llm.translate(t.get("text") or "")
+                    if ko:
+                        t["text_ko"] = ko
+                        t.pop("needs_tl", None)
+                        changed = True
+                        out["tweet_tl"] += 1
             if changed:
                 tj["generated_at"] = now_iso
                 gh.write_json("tweets.json", tj, prev_sha=sha,
