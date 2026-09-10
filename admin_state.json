@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (📅放送日時)",
-    "at": "2026-09-10T15:00:50Z",
+    "action": "소식 added (12月16日(水) 発売)",
+    "at": "2026-09-10T15:00:59Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "89cc5c91aec4d29dc66f997ebcb545e22fcbfe0e",
+    "new_sha": "8f36185d2281a4eb556f787d83b0232745933e62",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T15:00:53Z",
+      "generated_at": "2026-09-10T15:00:50Z",
       "notices": [
         {
           "anchor_a": null,
@@ -67,6 +67,31 @@
           "title_slug": "仲町あられバースデーグッズ2026発売",
           "tweet_url": null,
           "url": "https://bushiroad-store.com/collections/arale-birthday2026"
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": "ぱーてぃーちゃんのアニメ女心研究所",
+          "body_for_llm": "@bang_dream_info: ＼速報📢／ TOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組 『ぱーてぃーちゃんのアニメ女心 研究所』の放送が決定✨ 📅放送日時 (木) 〜 🛸出演 ぱーてぃーちゃん（すがちゃん最高No.1、金子きょんちぃ） 本渡楓 夢限大みゅーたいぷ（藤都子、峰月律） 天津飯大郎 x.com/bang_dream_inf…",
+          "body_raw": "@bang_dream_info: ＼速報📢／\n\nTOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組\n『ぱーてぃーちゃんのアニメ女心 研究所』の放送が決定✨\n\n📅放送日時\n9/17(木)23:00〜\n\n🛸出演\nぱーてぃーちゃん（すがちゃん最高No.1、金子きょんちぃ）\n本渡楓\n夢限大みゅーたいぷ（藤都子、峰月律）\n天津飯大郎 x.com/bang_dream_inf…",
+          "category": "live",
+          "date": "2026-09-17",
+          "deadline": false,
+          "expires_at": "2026-09-17T15:00:00Z",
+          "first_seen": "2026-09-10T15:00:50Z",
+          "id": "2098058929989472631",
+          "last_updated": "2026-09-10T15:00:50Z",
+          "seen_ids": [
+            "2098058929989472631"
+          ],
+          "site": "x",
+          "src_handle": "RT @bang_dream_info",
+          "time": "23:00",
+          "title": "アニメ女心研究所特別放送決定！",
+          "title_ko": "애니메 여성심 연구소 특별 방송 결정!",
+          "title_raw": "📅放送日時",
+          "title_slug": "放送日時",
+          "tweet_url": "https://x.com/i/status/2098058929989472631",
+          "url": null
         },
         {
           "anchor_a": "yumemita-arale",
