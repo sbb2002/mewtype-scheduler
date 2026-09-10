@@ -1,17 +1,7 @@
 {
-  "generated_at": "2026-09-10T15:00:22Z",
+  "generated_at": "2026-09-10T15:00:38Z",
   "tweets": {
     "arale": [
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-11T12:38:18Z",
-        "handle": "arale_yumemita",
-        "id": "2098026198106526197",
-        "received_at": "2026-09-10T12:38:18Z",
-        "text": "本日、アニメ放送日！✨️\n最終回前に  #ゆめみたラジオ ぜひ聞いてねえ〜！✨️\n鍛わりました",
-        "text_ko": "오늘은 애니 방송일!✨️  \n최종회 전에 #ゆめみた라ジ오 꼭 들어줘~!✨️  \n단련했어요",
-        "url": "https://x.com/i/status/2098026198106526197"
-      },
       {
         "channel_key": "arale",
         "expires_at": "2026-09-11T12:38:18Z",
@@ -51,6 +41,16 @@
         "text": "最終回！実況！✨️\n#アニメゆめみた",
         "text_ko": "최종회! 실황! ✨️ #アニメゆめみた",
         "url": "https://x.com/i/status/2098049924726431824"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-11T15:00:38Z",
+        "handle": "arale_yumemita",
+        "id": "2098054881341014273",
+        "received_at": "2026-09-10T15:00:38Z",
+        "text": "ビオラちゃん、ぼくは好きだよ\n#アニメゆめみた",
+        "text_ko": "비올라야, 나는 너를 좋아해\n#アニメゆめみた",
+        "url": "https://x.com/i/status/2098054881341014273"
       }
     ],
     "miyako": [
