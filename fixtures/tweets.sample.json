@@ -1,26 +1,80 @@
 {
-  "generated_at": "2026-09-07T12:03:11Z",
+  "generated_at": "2026-09-07T12:12:40Z",
   "tweets": {
-    "arale": {
-      "channel_key": "arale",
-      "id": "2096552878769152326",
-      "text": "おはよう！今日は22時から歌枠やります🎤 リクエストあったらリプで教えてね〜",
-      "text_ko": "안녕하세요! 오늘 22시부터 노래 방송할 거예요🎤 리퀘스트 있으면 답글로 알려주세요~",
-      "url": "https://x.com/i/status/2096552878769152326",
-      "handle": "arale_yumemita",
-      "received_at": "2026-09-07T12:03:11Z",
-      "expires_at": "2099-01-01T00:00:00Z"
-    },
-    "yuno": {
-      "channel_key": "yuno",
-      "id": "2096560000000000000",
-      "text": "配信おつかれさまでした！来てくれてありがとう☕ 次の予定はまた告知します",
-      "text_ko": "방송 고생했어요! 와줘서 정말 감사해요☕ 다음 일정은 또 알려드릴게요",
-      "url": "https://x.com/i/status/2096560000000000000",
-      "handle": "yuno_yumemita",
-      "received_at": "2026-09-07T09:20:00Z",
-      "expires_at": "2099-01-01T00:00:00Z"
-    },
+    "arale": [
+      {
+        "channel_key": "arale",
+        "id": "2096552878769152326",
+        "text": "配信きたよ〜！みんな来てね",
+        "text_ko": "방송 왔어~! 다들 와줘",
+        "url": "https://x.com/i/status/2096552878769152326",
+        "handle": "arale_yumemita",
+        "received_at": "2026-09-07T12:03:00Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      },
+      {
+        "channel_key": "arale",
+        "id": "2096552878769152400",
+        "text": "今日は歌枠です🎤",
+        "text_ko": "오늘은 노래방이야 🎤",
+        "url": "https://x.com/i/status/2096552878769152400",
+        "handle": "arale_yumemita",
+        "received_at": "2026-09-07T12:03:40Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      },
+      {
+        "channel_key": "arale",
+        "id": "2096552878769152520",
+        "text": "リクエストめっちゃ待ってる",
+        "text_ko": "신청곡 엄청 기다리고 있어",
+        "url": "https://x.com/i/status/2096552878769152520",
+        "handle": "arale_yumemita",
+        "received_at": "2026-09-07T12:04:30Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      },
+      {
+        "channel_key": "arale",
+        "id": "2096552878769153000",
+        "text": "あ、サムネ間違えた…直します",
+        "text_ko": "앗 썸네일 잘못 올렸다… 고칠게",
+        "url": "https://x.com/i/status/2096552878769153000",
+        "handle": "arale_yumemita",
+        "received_at": "2026-09-07T12:11:00Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      },
+      {
+        "channel_key": "arale",
+        "id": "2096552878769153240",
+        "text": "直した！こっちが正しいやつ https://youtube.com/live/kx-nhmTj4Eg",
+        "text_ko": "고쳤어! 이게 맞는 거 https://youtube.com/live/kx-nhmTj4Eg",
+        "url": "https://x.com/i/status/2096552878769153240",
+        "handle": "arale_yumemita",
+        "received_at": "2026-09-07T12:12:40Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      }
+    ],
+    "yuno": [
+      {
+        "channel_key": "yuno",
+        "id": "2096560000000000000",
+        "text": "配信おつかれさまでした！来てくれてありがとう☕",
+        "text_ko": "방송 고생했어요! 와줘서 정말 감사해요☕",
+        "url": "https://x.com/i/status/2096560000000000000",
+        "handle": "yuno_yumemita",
+        "received_at": "2026-09-07T09:20:00Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      },
+      {
+        "channel_key": "yuno",
+        "id": "2096560000000000300",
+        "text": "次の予定はまた告知します〜 おやすみ",
+        "text_ko": "다음 일정은 또 공지할게요~ 잘 자요",
+        "url": "https://x.com/i/status/2096560000000000300",
+        "handle": "yuno_yumemita",
+        "received_at": "2026-09-07T09:24:00Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      }
+    ],
     "ritsu": {
       "channel_key": "ritsu",
       "id": "2096570000000000000",
@@ -30,15 +84,17 @@
       "received_at": "2026-09-07T11:55:00Z",
       "expires_at": "2099-01-01T00:00:00Z"
     },
-    "miyako": {
-      "channel_key": "miyako",
-      "id": "2096540000000000000",
-      "text": "みんなに大事なお知らせがあります。詳しくは公式からの発表を待っててね。いつも応援ありがとう、本当に励みになってます✨",
-      "text_ko": "모든 분들께 중요한 소식이 있어요. 자세한 건 공식 발표를 기다려주세요. 언제나 응원해줘서 정말 감사합니다, 진심으로 큰 힘이 됩니다✨",
-      "url": "https://x.com/i/status/2096540000000000000",
-      "handle": "miyako_yumemita",
-      "received_at": "2026-09-07T01:10:00Z",
-      "expires_at": "2099-01-01T00:00:00Z"
-    }
+    "miyako": [
+      {
+        "channel_key": "miyako",
+        "id": "2096540000000000000",
+        "text": "みんなに大事なお知らせがあります。詳しくは公式からの発表を待っててね。いつも応援ありがとう✨",
+        "text_ko": "모든 분들께 중요한 소식이 있어요. 자세한 건 공식 발표를 기다려주세요. 언제나 응원해줘서 감사합니다✨",
+        "url": "https://x.com/i/status/2096540000000000000",
+        "handle": "miyako_yumemita",
+        "received_at": "2026-09-07T01:10:00Z",
+        "expires_at": "2099-01-01T00:00:00Z"
+      }
+    ]
   }
 }

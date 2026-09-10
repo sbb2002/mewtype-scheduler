@@ -138,7 +138,12 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
     }
 
 
-# ── tweets.json 계약 ────────────────────────────────────────────────────
+# ── tweets.json 계약 I (v3.1 — 유닛당 스레드) ─────────────────────────────
+#   tweets[ck] = [ <메시지 dict> ]  최신이 뒤, 최대 MAX_THREAD 개.
+#   v2.8 단건(dict) 데이터는 _as_list 가 [dict] 로 감싸 하위호환.
+
+MAX_THREAD = 5   # 유닛당 최근 트윗 최대 개수
+
 
 def default_tweets() -> dict:
     return {"generated_at": None, "tweets": {}}
@@ -149,6 +154,21 @@ def default_archive() -> dict:
 
 
 _ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "expires_at")
+
+
+def _as_list(v) -> list:
+    """계약 I 하위호환: tweets[ck] 가 dict(v2.8 단건)면 [dict], list 면 dict 만 추림, 그 외 []."""
+    if isinstance(v, list):
+        return [m for m in v if isinstance(m, dict)]
+    if isinstance(v, dict):
+        return [v]
+    return []
+
+
+def _sort_key(m: dict):
+    """received_at 오름차순 + Snowflake id tiebreak (합성 id 는 0)."""
+    sid = str(m.get("id") or "")
+    return (m.get("received_at") or "", int(sid) if sid.isdigit() else 0)
 
 
 def _newer(inc: dict, cur: dict) -> bool:
@@ -168,9 +188,15 @@ def _archive_push(archive: dict, row: dict, now_iso: str, reason: str) -> dict:
     ]}
 
 
-def merge_tweet(prev: dict, incoming: dict, now_iso: str, *,
-                archive: dict | None = None) -> tuple[dict, dict, bool, str]:
-    """(new_tweets, new_archive, changed, mode). mode ∈ added|replaced|dup|stale."""
+def merge_thread(prev: dict, incoming: dict, now_iso: str, *,
+                 archive: dict | None = None) -> tuple[dict, dict, bool, str]:
+    """유닛 스레드에 incoming 1건 병합. (new_tweets, new_archive, changed, mode).
+
+    mode ∈ added | rolled | dup | stale.
+      dup    = 같은 id 이미 있음 (연타 중복 도착)
+      rolled = 병합 후 MAX_THREAD 초과 → 가장 오래된 것(들)을 archive("rolled") 로
+      stale  = incoming 이 이미 만료 / ck·id 없음
+    """
     prev = prev or default_tweets()
     arch = archive if archive is not None else default_archive()
     ck = incoming.get("channel_key")
@@ -178,40 +204,54 @@ def merge_tweet(prev: dict, incoming: dict, now_iso: str, *,
         return prev, arch, False, "stale"
 
     tweets = dict(prev.get("tweets", {}))
-    cur = tweets.get(ck)
-    if cur is not None:
-        if str(cur.get("id")) == str(incoming.get("id")) or not _newer(incoming, cur):
-            return prev, arch, False, "dup"
-        arch = _archive_push(arch, cur, now_iso, "replaced")
-        mode = "replaced"
-    else:
-        mode = "added"
+    lst = _as_list(tweets.get(ck))
+    if any(str(m.get("id")) == str(incoming.get("id")) for m in lst):
+        return prev, arch, False, "dup"
 
-    tweets[ck] = {k: incoming.get(k) for k in _ROW_KEYS}
+    row = {k: incoming.get(k) for k in _ROW_KEYS}
+    lst = sorted(lst + [row], key=_sort_key)          # 최신이 뒤
+
+    mode = "added"
+    while len(lst) > MAX_THREAD:
+        arch = _archive_push(arch, lst.pop(0), now_iso, "rolled")   # 오래된 것부터
+        mode = "rolled"
+
+    tweets[ck] = lst
     out = dict(prev)
     out["tweets"] = tweets
     out["generated_at"] = now_iso
     return out, arch, True, mode
 
 
+# v2.8 이름 하위호환 (단건 merge = 스레드 병합 1건).
+merge_tweet = merge_thread
+
+
 def sweep_expired(prev: dict, archive: dict, now_iso: str
                   ) -> tuple[dict, dict, list[str]]:
-    """expires_at 지난 슬롯 → tweet_archive.json. (new_tweets, new_archive, removed_keys)."""
+    """스레드 안 expires_at 지난 메시지 → tweet_archive.json.
+    (new_tweets, new_archive, touched_keys). 스레드가 비면 그 키도 제거된다."""
     prev = prev or default_tweets()
     archive = archive or default_archive()
-    kept, removed = {}, []
-    for ck, t in (prev.get("tweets") or {}).items():
-        if _reached(t.get("expires_at"), now_iso):
-            archive = _archive_push(archive, t, now_iso, "expired")
-            removed.append(ck)
-        else:
-            kept[ck] = t
-    if not removed:
+    out_tweets, touched = {}, []
+    for ck, v in (prev.get("tweets") or {}).items():
+        lst = _as_list(v)
+        kept = []
+        for m in lst:
+            if _reached(m.get("expires_at"), now_iso):
+                archive = _archive_push(archive, m, now_iso, "expired")
+            else:
+                kept.append(m)
+        if len(kept) != len(lst):
+            touched.append(ck)
+        if kept:
+            out_tweets[ck] = kept
+    if not touched:
         return prev, archive, []
     out = dict(prev)
-    out["tweets"] = kept
+    out["tweets"] = out_tweets
     out["generated_at"] = now_iso
-    return out, archive, removed
+    return out, archive, touched
 
 
 def summary_line(t: dict) -> str:
@@ -528,44 +568,67 @@ if __name__ == "__main__":
     assert parse("RT @janesmith: 配信時間変更", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
     print("[OK] parse (+ v3 리트윗 필터)")
 
-    # ── merge_tweet ─────────────────────────────────────────────────
+    # ── merge_thread (계약 I — 스레드) ─────────────────────────────
     T, A = default_tweets(), default_archive()
-    T, A, ch, m = merge_tweet(T, r, NOW, archive=A)
-    assert ch and m == "added" and T["tweets"]["arale"]["id"] == "2096552878769152326"
-    # 같은 트윗 재도착 → dup
-    _, _, ch, m = merge_tweet(T, r, NOW, archive=A)
+    T, A, ch, m = merge_thread(T, r, NOW, archive=A)
+    assert ch and m == "added" and _as_list(T["tweets"]["arale"])[-1]["id"] == "2096552878769152326"
+    # 같은 id 재도착 → dup
+    _, _, ch, m = merge_thread(T, r, NOW, archive=A)
     assert not ch and m == "dup", m
-    # 더 오래된 id → dup (교체 안 함)
-    older = dict(r, id="2096000000000000000", text="古い", received_at=NOW,
-                 expires_at="2026-09-08T12:00:00Z")
-    _, _, ch, m = merge_tweet(T, older, NOW, archive=A)
-    assert not ch and m == "dup", m
-    # 더 최신 id → replaced, 기존 건 아카이브로
-    newer = dict(r, id="2096999999999999999", text="新しい",
-                 url="https://x.com/i/status/2096999999999999999",
-                 received_at="2026-09-07T15:00:00Z", expires_at="2026-09-08T15:00:00Z")
-    T, A, ch, m = merge_tweet(T, newer, "2026-09-07T15:00:00Z", archive=A)
-    assert ch and m == "replaced" and T["tweets"]["arale"]["text"] == "新しい"
-    assert len(A["tweets"]) == 1 and A["tweets"][0]["id"] == "2096552878769152326"
-    assert A["tweets"][0]["archived_reason"] == "replaced"
+    # 다른 id 3건 연타 → 스레드에 최신이 뒤로 쌓임 (received_at 정렬)
+    for i, rid in enumerate(("2096600000000000000", "2096700000000000000", "2096800000000000000")):
+        msg = dict(r, id=rid, text=f"연타{i}",
+                   received_at=f"2026-09-07T12:0{i+1}:00Z",
+                   expires_at="2026-09-08T13:00:00Z")
+        T, A, ch, m = merge_thread(T, msg, "2026-09-07T12:05:00Z", archive=A)
+        assert ch and m == "added", m
+    thread = _as_list(T["tweets"]["arale"])
+    assert [x["id"] for x in thread] == ["2096552878769152326", "2096600000000000000",
+                                         "2096700000000000000", "2096800000000000000"], thread
+    # 5개째 → 아직 cap 안 넘음(added), 6개째 → rolled (가장 오래된 것 archive)
+    T, A, ch, m = merge_thread(T, dict(r, id="2096900000000000000", text="5번째",
+                                       received_at="2026-09-07T12:04:00Z",
+                                       expires_at="2026-09-08T13:00:00Z"),
+                               "2026-09-07T12:05:00Z", archive=A)
+    assert ch and m == "added" and len(_as_list(T["tweets"]["arale"])) == 5
+    T, A, ch, m = merge_thread(T, dict(r, id="2097100000000000000", text="6번째",
+                                       received_at="2026-09-07T12:06:00Z",
+                                       expires_at="2026-09-08T13:00:00Z"),
+                               "2026-09-07T12:06:00Z", archive=A)
+    assert ch and m == "rolled" and len(_as_list(T["tweets"]["arale"])) == 5
+    assert any(x["archived_reason"] == "rolled" and x["id"] == "2096552878769152326"
+               for x in A["tweets"]), A["tweets"]
     # 이미 만료된 트윗 인입 → stale
-    exp_in = dict(r, id="2097000000000000000", channel_key="yuno",
-                  expires_at="2026-09-06T00:00:00Z")
-    _, _, ch, m = merge_tweet(T, exp_in, NOW, archive=A)
+    _, _, ch, m = merge_thread(T, dict(r, id="2097200000000000000", channel_key="yuno",
+                                       expires_at="2026-09-06T00:00:00Z"), NOW, archive=A)
     assert not ch and m == "stale", m
-    print("[OK] merge_tweet (added/dup/replaced/stale)")
+    # v2.8 단건(dict) 데이터 위에 병합 → [dict] 로 승계 후 append
+    LEGACY = {"generated_at": None, "tweets": {"yuno": dict(r, channel_key="yuno",
+              id="2098000000000000000", expires_at="2099-01-01T00:00:00Z")}}
+    L2, _, ch, m = merge_thread(LEGACY, dict(r, channel_key="yuno", id="2098100000000000000",
+                                             received_at="2026-09-07T13:00:00Z",
+                                             expires_at="2099-01-01T00:00:00Z"),
+                                "2026-09-07T13:00:00Z")
+    assert ch and [x["id"] for x in _as_list(L2["tweets"]["yuno"])] == \
+        ["2098000000000000000", "2098100000000000000"], L2["tweets"]["yuno"]
+    print("[OK] merge_thread (added/dup/rolled/stale + 단건 하위호환)")
 
-    # ── sweep_expired ───────────────────────────────────────────────
+    # ── sweep_expired (메시지별) ───────────────────────────────────
     S = {"generated_at": None, "tweets": {
-        "arale": dict(r, expires_at="2026-09-06T00:00:00Z"),   # 지남
-        "yuno": dict(r, channel_key="yuno", id="2098000000000000000",
-                     expires_at="2099-01-01T00:00:00Z"),        # 미래
+        "arale": [
+            dict(r, id="a1", expires_at="2026-09-06T00:00:00Z"),   # 지남 → archive
+            dict(r, id="a2", expires_at="2099-01-01T00:00:00Z"),   # 미래 → 유지
+        ],
+        "yuno": dict(r, channel_key="yuno", id="y1",
+                     expires_at="2026-09-06T00:00:00Z"),           # 단건 dict + 지남 → 키 제거
     }}
-    s_out, s_arch, removed = sweep_expired(S, default_archive(), NOW)
-    assert removed == ["arale"] and "yuno" in s_out["tweets"] and "arale" not in s_out["tweets"]
-    assert s_arch["tweets"][0]["archived_reason"] == "expired"
-    assert sweep_expired(s_out, s_arch, NOW)[2] == []            # 두 번째 sweep 은 no-op
-    print("[OK] sweep_expired")
+    s_out, s_arch, touched = sweep_expired(S, default_archive(), NOW)
+    assert sorted(touched) == ["arale", "yuno"], touched
+    assert [x["id"] for x in _as_list(s_out["tweets"]["arale"])] == ["a2"]
+    assert "yuno" not in s_out["tweets"]
+    assert {x["archived_reason"] for x in s_arch["tweets"]} == {"expired"}
+    assert sweep_expired(s_out, s_arch, NOW)[2] == []              # 두 번째 sweep 은 no-op
+    print("[OK] sweep_expired (메시지별 · 빈 스레드 키 제거)")
 
     # ═══ v3 — parse_schedule / merge_personal_schedule / apply_overrides ═══
     SNOW = "2026-09-07T12:00:00Z"

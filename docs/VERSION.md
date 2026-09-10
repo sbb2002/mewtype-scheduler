@@ -2,8 +2,17 @@
 
 커밋 메시지의 `feat(vX)` 태그가 실제 릴리스 절차 없이 붙어 히스토리가 흩어져 있어,
 버전별 "무엇이 구현됐는지"를 이 파일에서 내림차순으로 관리한다.
-(git tag: `v1.0.0`, `v3.0.0`, `v3.0.1`)
+(git tag: `v1.0.0`, `v3.0.0`, `v3.0.1`, `v3.0.2`)
 
+- **v3.1.0** — 개인 트윗 스레드 (계약 I 변경): 유닛당 최근 트윗 1건 → **최대 5건**, 메신저 스타일.
+  `tweets.json` `tweets[ck]` 가 객체 → **메시지 배열**(최신이 뒤). `xtweet.merge_tweet` → `merge_thread`
+  (append·id중복 dedup·`received_at` 정렬·5건 초과분을 오래된 것부터 `tweet_archive.json`(`rolled`)),
+  `sweep_expired` 는 메시지별 만료·빈 스레드 키 제거. v2.8 단건 dict 는 `_as_list`/`_tw_list`/`_list`
+  shim 으로 하위호환(프론트·백엔드·handlers). 프론트: 배지에 안 읽은 카운트 pill(2건+), 펼치면
+  스크롤되는 메시지 스택(PC `.lane__bubble` 패널 / 모바일 `.tw-toast` 시트) — ~2분 내 연속은 시각
+  1개로 묶고, 열면 맨 아래로 스크롤 + 표시분 전부 읽음. `한/日` 토글은 전역 1개, 원문 링크는 메시지별.
+  **예고 트윗도 본인 글이면 스레드에 실린다**(예고는 preview 승격도 유지 — 이중 노출). RT/타인글만
+  `xtweet.parse` 가 제외. 프론트·백엔드 동시 배포 필요(구 프론트가 배열 못 읽음).
 - **v3.0.2** — 프론트 UI 정리: (1) 레인 헤더 우측에 세로 이동 레일(`.lane__nav`) 추가 — 이름카드 오른쪽에 YouTube 채널·X 계정 아이콘(X URL = `x.com/<handle>` 재사용, 별도 X 핸들 필드 없음). 아바타 전체가 트윗 말풍선 토글, 이름 글자·레일 아이콘은 채널 이동으로 역할 분리(편지 뱃지 19px 만 조준해야 하던 문제 해소). 헤더 `display:flex` 3열(`tweets.css` 가 `layout.css` override). SVG 아이콘은 `render.js svgIcon()`(`createElementNS`). (2) PC 예고 버킷도 모바일과 동일하게 3분할(`오늘`/`7일 이내`/`7일 이후`) — `한 달 이내`+`그 이후` 통합, `bucketKey` 의 `_mobileMQ` 분기 제거. 백엔드 배포 불필요(Vercel 정적)
 - **v3.0.1** — 개인 트윗 핫픽스 3건: (1) 번역 토글 버튼 `onclick` 을 매 렌더 재바인딩 — 다른 유닛 트윗을 열면 첫 유닛 본문으로 오염되던 것 차단. (2) `_expand_truncated_yt` — 웹푸시로 `…` 잘린 YouTube URL 을 `vxtwitter` unfurl 로 복원(만들어두고 미연결이던 모듈 연결), `video_id` 시드 실패로 `announced` 가 FSM 추정 승격되던 것 방지. (3) `_inline_translate` — 자동 인입 트윗을 merge 직후 인라인 번역(실패 시 `needs_tl` 큐잉) — 자동 경로에 번역 호출도 `needs_tl` 세팅도 없어 편지 배지 번역 토글이 영영 안 뜨던 것 수정. `mewtype-telegram` 재배포
 - **v3.0.0** — 백엔드 수술 (배포 2026-09-09): `schedule.json`→`preview.json`(계약 A′), 3상태→6상태(`none|announced|upcoming|watching|live|end`), `pending.json` 폐지(FSM 을 `preview` 아이템에서 파생, `statemachine.py` 재작성). 새 모듈 `preview.py`/`preview_build.py`/`llm.py`(Groq `gpt-oss-120b` 번역·소식 제목추출)/`ytnotif.py`/`vxtwitter.py`. 소스 신뢰도 티어 머지 모델(1 API / 2 명시값 / 3 파생값). 텔레그램 `{cmd}×{contents}` 격자(`/list /ingest /edit /del /undo /translate × preview|notice|tweet`). 데이터 콜드 스타트(v2 파일 `data:.old/`)

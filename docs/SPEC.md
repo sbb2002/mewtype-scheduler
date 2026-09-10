@@ -346,16 +346,20 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 
 멤버 5인의 **개인 트윗** — 예고판 상단 편지 배지. `xtweet.py`.
 
-- `tweets.json` = `{ generated_at, tweets: { "<channel_key>": { channel_key, id, text, text_ko,
-  url, handle, received_at, expires_at, needs_tl? } } }`. **채널당 최대 1건**. `id` = 트윗 Snowflake
-  또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h.
-- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|replaced`).
+- `tweets.json` = `{ generated_at, tweets: { "<channel_key>": [ { channel_key, id, text, text_ko,
+  url, handle, received_at, expires_at, needs_tl? }, … ] } }`. **채널당 스레드 = 메시지 배열, 최신이 뒤,
+  최대 `xtweet.MAX_THREAD`(=5)건** (v3.1). v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로 감싸 하위호환.
+  `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
+- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled`).
+  `rolled` = 스레드 5건 초과로 밀려난 것.
 - `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
   (`config/channels.json` 의 `x_names[]` 매칭).
 - `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.
-  **리트윗/타인글 필터**: 본문이 `^\s*@[\w]+\s*[:：]` 로 시작하면 `None`.
-- `xtweet.merge_tweet(prev, inc, now_iso, *, archive)` → `(new_tweets, new_archive, changed, mode∈added|replaced|dup|stale)`
-  — 더 큰 Snowflake id 오면 교체(기존 건 아카이브). `sweep_expired` → 만료 슬롯 아카이브.
+  **리트윗/타인글 필터**: 본문이 `^\s*(?:RT\s+)?@[\w]+\s*[:：]` 로 시작하면 `None`.
+  본인 글은 예고 여부와 무관하게 스레드에 실린다(예고는 preview 로도 승격 — 이중 노출 유지).
+- `xtweet.merge_thread(prev, inc, now_iso, *, archive)` → `(new_tweets, new_archive, changed, mode∈added|rolled|dup|stale)`
+  — id 중복이면 `dup`, 아니면 append 후 `received_at`↑ 정렬, 5건 초과분을 오래된 것부터 아카이브(`rolled`).
+  `merge_tweet` 은 하위호환 별칭. `sweep_expired` → **메시지별** 만료 아카이브, 스레드 비면 키 제거.
 - **번역**: `text_ko`. `handlers` 가 파이프라인 말단에서 자동 번역, 실패 시 `needs_tl=true` 플래그 →
   다음 `/tick` `_translate_sweep` 이 재시도. 운영자 `/translate tweet` 는 즉시.
 - **개인 예고 → preview 승격**: `xtweet.parse_schedule`(`配信` 계열 + 날짜/URL 게이트) →
@@ -571,8 +575,11 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
 - **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 티커. `title_ko` 있으면
   번역 표시, 제목 위 길게눌러(0.5s) 원문 토글(`localStorage` `mew:ntlang`).
-- **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 편지 배지. 말풍선(PC)·토스트
-  (모바일)에 `text_ko` 있으면 "원문"/"번역" 토글 버튼(`localStorage` `mew:tllang`). 만료·404 면 안 뜸.
+- **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 편지 배지(안 읽은 메시지
+  2건+ 이면 카운트 pill). 배지 클릭/호버 → **메신저형 스레드**: PC `.lane__bubble` 패널 / 모바일
+  `.tw-toast` 시트에 최근 최대 5개 메시지를 최신이 아래로 스택, ~2분 내 연속은 시각 1개로 묶음
+  (`.lane__thread__grp`/`__msg`/`__t`), 열면 맨 아래로 스크롤 + 표시분 전부 읽음. `한/日` 토글은
+  헤더에 1개(전역 `mew:tllang`), 원문(X) 링크는 메시지별(`.ori`). 만료·404 면 안 뜸.
 
 ---
 
