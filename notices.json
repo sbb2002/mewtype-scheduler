@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T08:17:48Z",
+  "generated_at": "2026-09-10T09:00:05Z",
   "notices": [
     {
       "anchor_a": null,
@@ -24,6 +24,31 @@
       "title_raw": "最終話放送記念リポストキャンペーン",
       "title_slug": "最終話放送記念リポストキャンペーン",
       "tweet_url": "https://x.com/i/status/2097929208765002012",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "バンドリ！tvlive2026",
+      "body_for_llm": "＼本日出演🎉／ 📺本日 頃〜 「バンドリ！TV LIVE 2026」＃331 夢限大みゅーたいぷ 5名が出演🛸 📺配信URLはこちら youtube.com/live/ri2_BimgJ… お見逃しなく✨ #バンドリTVLIVE #ゆめみた",
+      "body_raw": "＼本日出演🎉／\n\n📺本日22:03頃〜\n「バンドリ！TV LIVE 2026」＃331\n\n夢限大みゅーたいぷ 5名が出演🛸\n\n📺配信URLはこちら\nyoutube.com/live/ri2_BimgJ…\n\nお見逃しなく✨\n\n #バンドリTVLIVE #ゆめみた",
+      "category": "etc",
+      "date": "2026-09-10",
+      "deadline": false,
+      "expires_at": "2026-09-10T15:00:00Z",
+      "first_seen": "2026-09-10T09:00:05Z",
+      "id": "2097973357287489685",
+      "last_updated": "2026-09-10T09:00:05Z",
+      "seen_ids": [
+        "2097973357287489685"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "22:03",
+      "title": "バンドリ！TV LIVE 2026 #331 夢限大みゅーたいぷ 5名出演",
+      "title_ko": "밴드리! TV LIVE 2026 #331 꿈한계뮤타입 5명 출연",
+      "title_raw": "「バンドリ！TV LIVE 2026」＃331",
+      "title_slug": "バンドリtvlive2026",
+      "tweet_url": "https://x.com/i/status/2097973357287489685",
       "url": null
     },
     {
