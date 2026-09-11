@@ -1,17 +1,7 @@
 {
-  "generated_at": "2026-09-11T12:17:11Z",
+  "generated_at": "2026-09-11T13:57:08Z",
   "tweets": {
     "arale": [
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-11T15:00:38Z",
-        "handle": "arale_yumemita",
-        "id": "2098054881341014273",
-        "received_at": "2026-09-10T15:00:38Z",
-        "text": "ビオラちゃん、ぼくは好きだよ\n#アニメゆめみた",
-        "text_ko": "비올라야, 나는 너를 좋아해\n#アニメゆめみた",
-        "url": "https://x.com/i/status/2098054881341014273"
-      },
       {
         "channel_key": "arale",
         "expires_at": "2026-09-11T15:02:50Z",
@@ -51,6 +41,16 @@
         "text": "前髪、切りすぎちゃった…………",
         "text_ko": "앞머리를 너무 많이 잘라버렸어……",
         "url": "https://x.com/i/status/2098311535076745465"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-12T13:57:08Z",
+        "handle": "arale_yumemita",
+        "id": "2098410490313711959",
+        "received_at": "2026-09-11T13:57:08Z",
+        "text": "この後23:00〜！✨️\n同時視聴するよ！一緒に見よう〜〜🛸",
+        "text_ko": "23:00부터!✨️  \n동시 시청할게! 같이 보자~~🛸",
+        "url": "https://x.com/i/status/2098410490313711959"
       }
     ],
     "miyako": [
