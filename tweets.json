@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T08:47:16Z",
+  "generated_at": "2026-09-11T10:29:53Z",
   "tweets": {
     "arale": [
       {
@@ -150,16 +150,6 @@
     "ritsu": [
       {
         "channel_key": "ritsu",
-        "expires_at": "2026-09-11T15:00:17Z",
-        "handle": "ritsu_yumemita",
-        "id": "2098053113320218810",
-        "received_at": "2026-09-10T15:00:17Z",
-        "text": "あられちゃんのツインテールは、律がむすぶよ\n\n#アニメゆめみた",
-        "text_ko": "아라레쨩의 트윈테일은, 릿츠가 묶어줄게.",
-        "url": "https://x.com/i/status/2098053113320218810"
-      },
-      {
-        "channel_key": "ritsu",
         "expires_at": "2026-09-11T15:00:22Z",
         "handle": "ritsu_yumemita",
         "id": "2098053281650229464",
@@ -198,6 +188,16 @@
         "text": "峰月律太もも界隈ふたたび",
         "text_ko": "峰月律太, 허벅지 주변 다시.",
         "url": "https://x.com/i/status/2098326023087837325"
+      },
+      {
+        "channel_key": "ritsu",
+        "expires_at": "2026-09-12T10:29:53Z",
+        "handle": "ritsu_yumemita",
+        "id": "2098357154730406331",
+        "received_at": "2026-09-11T10:29:53Z",
+        "text": "わー わー",
+        "text_ko": "와- 와-",
+        "url": "https://x.com/i/status/2098357154730406331"
       }
     ],
     "yuno": [
