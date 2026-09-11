@@ -483,6 +483,16 @@ thumbnail, title, kind(tunein|reminder|sub_start), scheduled_start, time_approx,
 `extract(j) -> {text, media: [url...], urls: [expanded...], yt_video_id: str|None}` —
 `youtube.com/(watch\?v=|live/)` · `youtu.be/` 뒤 11자 추출. 서드파티 무료 서비스 → 실패 시 조용히 skip.
 
+**(v3.1.6) 원문 손상 복구** — `telegram_app._recover_raw_via_vxtwitter(raw, tag)`. 폰(Automate)이
+서로게이트쌍이 필요한 이모지(🛸📢💪 등 U+10000+)를 다루다 바이트를 깨뜨려 보내는 경우가
+있다(치환문자 U+FFFD 또는 짝 없는 서로게이트 혼입 — 한 번 이렇게 오면 서버에서 복구 불가,
+바이트 자체가 유실됨). `/ingest`가 `raw`에서 손상(`_MOJIBAKE_RE`: `[�\ud800-\udfff]`)
+또는 잘림(`_TRUNC_YT_RE`) 흔적을 감지하면, `tag`에서 뽑은 tweet id로 vxtwitter 를 다시 조회해
+`raw` 전체를 그 응답의 `text`로 교체한다. 소식(`xnotice`)·스케줄(`xrelay`)·개인트윗(`xtweet`)
+모든 하위 파이프라인 **이전**에 태워서 항상 정상 원문을 넘긴다. 실패(조회 안 됨·tweet id
+없음)면 `raw` 그대로(무회귀) — 기존 `_expand_truncated_yt`(URL만 복구, `_maybe_personal_schedule`
+직전 2차 안전망)와 별개 경로.
+
 ### 8.7 `gh_store.py` — GitHub Contents API
 
 `GitHubStore(token, repo, branch="data", *, session=None, timeout=15.0)`. `read_json(path) -> (data|None, sha|None)`.
