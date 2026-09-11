@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T10:45:11Z",
+  "generated_at": "2026-09-11T13:30:06Z",
   "notices": [
     {
       "anchor_a": null,
@@ -74,6 +74,31 @@
       "title_raw": "本日23時より生配信",
       "title_slug": "本日より生配信",
       "tweet_url": "https://x.com/i/status/2098260249425956865",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "バンドリ！ゆめ∞みた",
+      "body_for_llm": "／ ⏰このあと 〜 配信開始📢 ＼ 🛸TVアニメ「バンドリ！ ゆめ∞みた」 同時視聴配信 #13🛸 出演:夢限大みゅーたいぷ 📺配信URLはこちら youtube.com/live/2nZzqEspC… お楽しみに✨ #アニメゆめみた #",
+      "body_raw": "／\n⏰このあと23時〜\n　配信開始📢\n＼\n\n🛸TVアニメ「バンドリ！ ゆめ∞みた」\n　同時視聴配信 #13🛸\n\n出演:夢限大みゅーたいぷ\n\n📺配信URLはこちら\nyoutube.com/live/2nZzqEspC…\n\nお楽しみに✨\n\n#アニメゆめみた #",
+      "category": "release",
+      "date": "2026-09-11",
+      "deadline": false,
+      "expires_at": "2026-09-11T15:00:00Z",
+      "first_seen": "2026-09-11T13:30:06Z",
+      "id": "2098403691912954335",
+      "last_updated": "2026-09-11T13:30:06Z",
+      "seen_ids": [
+        "2098403691912954335"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "23:00",
+      "title": "TVアニメ「バンドリ！ ゆめ∞みた」 同時視聴配信 #13 開始",
+      "title_ko": "TV 애니메이션 ‘밴드리! 유메∞미타’ 동시 시청 스트리밍 #13 시작",
+      "title_raw": "このあと23時〜 配信開始",
+      "title_slug": "このあと配信開始",
+      "tweet_url": "https://x.com/i/status/2098403691912954335",
       "url": null
     },
     {
