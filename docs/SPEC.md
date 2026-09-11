@@ -600,6 +600,11 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+  **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어
+  (브라우저 스펙상 보장 안 됨) — `visibilitychange`(visible 전이) + `pageshow`(`persisted`,
+  bfcache 복원) 리스너로 포그라운드 복귀 시 `poll`+`pollNotices`+`pollTweets` 즉시 재실행.
+  없으면 복귀 직후 오래된 `lastSchedule` 로 카운트다운을 계산해 이미 끝난 방송이
+  "OOO시간 지각"처럼 잘못 보이다가 다음 정기 poll(최대 `POLL_MS`) 이 돼야 정정됐음.
 - **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 티커. `title_ko` 있으면
   제목을 `[번역]　—　[원문]` 순으로 한 줄에 이어 marquee(길이 넘칠 때 순환). 없으면 원문만.
 - **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 편지 배지(안 읽은 메시지
