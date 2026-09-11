@@ -83,4 +83,22 @@ document.addEventListener("DOMContentLoaded", () => {
       if (lastSchedule) paintBoard();
     });
   }
+
+  // 모바일에서 다른 앱/탭으로 갔다 오면 setInterval 이 백그라운드 중 멈추거나
+  // 크게 스로틀링돼(브라우저 스펙상 보장 안 됨), 복귀 직후엔 아주 오래된 lastSchedule
+  // 로 카운트다운을 계산해 "372시간 지각" 같은 값이 잠깐 보인다(다음 poll 까지, 최대
+  // POLL_MS 후 자연 복구 — 그 전엔 화면에 그대로 노출됨). 포그라운드 복귀를 감지해
+  // 즉시 재조회해서 그 창을 없앤다. bfcache 복원(iOS 뒤로가기 등)은 visibilitychange
+  // 가 안 뜰 수 있어 pageshow(persisted) 도 같이 건다.
+  const refetchAll = () => {
+    poll();
+    pollNotices();
+    pollTweets();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refetchAll();
+  });
+  window.addEventListener("pageshow", (e) => {
+    if (e.persisted) refetchAll();
+  });
 });
