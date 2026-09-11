@@ -285,6 +285,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
 }
 
 #foot-updated {
@@ -298,6 +299,13 @@ body {
 
 #foot-status[hidden] {
   display: none;
+}
+
+/* 이스터에그 — 오른쪽 끝 고정, 눈에 띄지 않게 업데이트 시각과 같은 톤 */
+#foot-version {
+  flex: none;
+  text-align: right;
+  white-space: nowrap;
 }
 
 #pager-dots[hidden] { display: none; }
