@@ -1,17 +1,7 @@
 {
-  "generated_at": "2026-09-11T01:24:03Z",
+  "generated_at": "2026-09-11T07:23:50Z",
   "tweets": {
     "arale": [
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-11T15:00:03Z",
-        "handle": "arale_yumemita",
-        "id": "2098049924726431824",
-        "received_at": "2026-09-10T15:00:03Z",
-        "text": "最終回！実況！✨️\n#アニメゆめみた",
-        "text_ko": "최종회! 실황! ✨️ #アニメゆめみた",
-        "url": "https://x.com/i/status/2098049924726431824"
-      },
       {
         "channel_key": "arale",
         "expires_at": "2026-09-11T15:00:38Z",
@@ -51,6 +41,16 @@
         "text": "おはようございます☀️\n#アニメゆめみた 最終回を迎えた朝",
         "text_ko": "좋은 아침입니다☀️\n#アニメゆめみた 최종 회를 맞이한 아침",
         "url": "https://x.com/i/status/2098218416587108783"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-12T07:23:50Z",
+        "handle": "arale_yumemita",
+        "id": "2098311535076745465",
+        "received_at": "2026-09-11T07:23:50Z",
+        "text": "前髪、切りすぎちゃった…………",
+        "text_ko": "앞머리를 너무 많이 잘라버렸어……",
+        "url": "https://x.com/i/status/2098311535076745465"
       }
     ],
     "miyako": [
