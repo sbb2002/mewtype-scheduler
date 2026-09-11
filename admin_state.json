@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (12月16日(水) 発売)",
-    "at": "2026-09-10T15:00:59Z",
+    "action": "소식 added (本日23時より生配信)",
+    "at": "2026-09-11T04:05:35Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "8f36185d2281a4eb556f787d83b0232745933e62",
+    "new_sha": "dbb2b2d8d7e777b053793acae86dd8454d7d4243",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-10T15:00:50Z",
+      "generated_at": "2026-09-10T15:00:59Z",
       "notices": [
         {
           "anchor_a": null,
@@ -241,6 +241,31 @@
           "title_raw": "12/16(水)発売",
           "title_slug": "水発売",
           "tweet_url": "https://x.com/i/status/2098059091252047961",
+          "url": null
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": "バンドリ！ゆめ∞みた",
+          "body_for_llm": "@bang_dream_info: ＼🎊15秒CM第3弾を公開🎊／ 🛸TVアニメ「バンドリ！ ゆめ∞みた」 Blu-ray 上巻・下巻🛸 (水) 発売✨ 藤都子描き下ろし収納BOXがもらえる キャンペーンも開催🎊 詳細はこちら bang-dream.com/news/2362/ #バンドリ #アニメゆめみた x.com/bang_dream_inf…",
+          "body_raw": "@bang_dream_info: ＼🎊15秒CM第3弾を公開🎊／\n\n🛸TVアニメ「バンドリ！ ゆめ∞みた」\n　Blu-ray 上巻・下巻🛸\n\n12月16日(水) 発売✨\n\n藤都子描き下ろし収納BOXがもらえる\nキャンペーンも開催🎊\n\n詳細はこちら\nbang-dream.com/news/2362/\n\n#バンドリ #アニメゆめみた x.com/bang_dream_inf…",
+          "category": "release",
+          "date": "2026-12-16",
+          "deadline": false,
+          "expires_at": "2026-12-16T15:00:00Z",
+          "first_seen": "2026-09-10T15:00:59Z",
+          "id": "2098059265680515490",
+          "last_updated": "2026-09-10T15:00:59Z",
+          "seen_ids": [
+            "2098059265680515490"
+          ],
+          "site": "x",
+          "src_handle": "RT @bang_dream_info",
+          "time": null,
+          "title": "バンドリ！ ゆめ∞みた Blu-ray発売と15秒CM公開",
+          "title_ko": "밴드리! 유메∞미타 Blu-ray 발매 및 15초 CM 공개",
+          "title_raw": "12月16日(水) 発売",
+          "title_slug": "水発売",
+          "tweet_url": "https://x.com/i/status/2098059265680515490",
           "url": null
         }
       ]
