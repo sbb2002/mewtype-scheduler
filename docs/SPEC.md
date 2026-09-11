@@ -467,6 +467,15 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 - api_key 비면 disabled → 모든 호출 None. 429/5xx → 지수 백오프 3회 → 폴백 모델 1회 → None.
 - 환각 가드: 출력 비었거나 입력 길이 3배 초과 → None (기본선, 배포 후 실측 보강).
 
+**(v3.1.8) `translate()` 반복 압축** — 짧은 단위(1~6자)가 8회 이상 연속 반복되는 입력
+(`_REPEAT_RE`, 예: "もぐもぐもぐ…" 의성어)은 그대로 보내면 LLM 이 반복 루프에 빠져 수백~
+수천자를 토해내고 환각 가드에 매번 걸린다(`temperature=0`이라 재시도해도 항상 같은 실패
+반복 — 버그리포트 20260913 #3). `_translate_repeated`가 반복을 감지하면 단위를
+`_translate_repeat_unit(unit, count)`로 번역(맨입으로 넘기면 문맥 없어 오역되기 쉬워
+"반복 횟수·의성어/의태어" 문맥을 프롬프트에 명시 — 실측: `もぐ` 단독 요청 시 "몰입"
+오역, 반복 문맥 제공 시 "우걱"으로 정확) 후 그 결과를 `count`번 반복, 나머지(`remainder`)는
+`_translate_once`로 따로 번역해 이어붙인다.
+
 ### 8.5 `ytnotif.py` (순수)
 
 `parse_yt_notif(nx: dict, now_iso) -> dict | None`. `pde_noti_pkg != com.google.android.youtube` /

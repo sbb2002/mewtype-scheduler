@@ -5,6 +5,7 @@
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -16,6 +17,10 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 # llama-3.3-70b-versatile 는 이 Groq 계정에서 404 (2026-09 라인업 변경). 같은 계열
 # gpt-oss-20b 로 폴백 — 작고 빠르며 지시이행 동일.
 FALLBACK_MODEL = "openai/gpt-oss-20b"
+
+# 짧은 단위(1~6자)가 8회 이상 연속 반복 — "もぐもぐもぐ…" 같은 의성어 트윗.
+# translate() 가 이 패턴이면 반복 그대로 LLM 에 보내지 않고 압축한다(§translate 참고).
+_REPEAT_RE = re.compile(r"^(.{1,6}?)\1{7,}")
 
 
 # Groq structured outputs (strict) — gpt-oss-120b/20b·qwen3.8-27b 지원.
@@ -137,6 +142,11 @@ class LLMClient:
         """
         일본어 트윗을 한국어로 번역.
 
+        (버그리포트 20260913 #3) "もぐもぐもぐ…"(의성어 8회+ 연속반복) 같은 입력은
+        LLM 이 반복 루프에 빠져 수백~수천자를 토해내고, 환각 가드에 매번 걸려
+        temperature=0 이라 재시도해도 항상 같은 실패를 반복한다. 반복 구간을 미리
+        압축해 단위만 번역시키고 다시 펼치면 이 루프를 원천 회피한다.
+
         Args:
             text_ja: 일본어 텍스트
 
@@ -147,6 +157,55 @@ class LLMClient:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
 
+        m = _REPEAT_RE.match(text_ja or "")
+        if m:
+            return self._translate_repeated(text_ja, m)
+        return self._translate_once(text_ja)
+
+    def _translate_repeated(self, text_ja: str, m: "re.Match[str]") -> str | None:
+        """짧은 단위(1~6자)가 8회 이상 연속 반복되는 구간을 압축 번역 후 재조립."""
+        unit = m.group(1)
+        count = len(m.group(0)) // len(unit)
+        remainder = text_ja[m.end():]
+
+        unit_ko = self._translate_repeat_unit(unit, count)
+        if unit_ko is None:
+            return None
+
+        rest_ko = ""
+        if remainder.strip():
+            rest_ko = self._translate_once(remainder)
+            if rest_ko is None:
+                rest_ko = remainder.strip()  # 나머지 번역 실패해도 통째 실패시키지 않음
+            if remainder.startswith("\n") and not rest_ko.startswith("\n"):
+                rest_ko = "\n" + rest_ko
+
+        logger.info(
+            "translate: 반복 압축 (unit=%r x%d, remainder_len=%d)",
+            unit, count, len(remainder),
+        )
+        return (unit_ko * count) + rest_ko
+
+    def _translate_repeat_unit(self, unit: str, count: int) -> str | None:
+        """반복 단위 하나만 번역. 단위를 맨입으로 넘기면 문맥이 없어 오역되기 쉬워서
+        ("もぐ" 단독 → "몰입" 오역, "もぐ"×40 문맥 제공 시 "우걱"으로 정확히 번역됨 —
+        실측 확인) 반복 횟수·의성어/의태어 문맥을 프롬프트에 명시한다."""
+        prompt = (
+            f"다음은 일본어 트윗에서 '{unit}'가 {count}번 연속 반복되는 의성어/의태어다. "
+            f"자연스러운 한국어 의성어/의태어를 딱 한 번만 출력하라(설명·반복 금지).\n\n"
+            f"일본어 반복 단위: {unit}"
+        )
+        response = self._call_groq(self.model, prompt)
+        if response is None:
+            response = self._call_groq(self.fallback, prompt)
+        if response is None:
+            return None
+        if self._is_hallucination(response, unit):
+            return None
+        return response.strip()
+
+    def _translate_once(self, text_ja: str) -> str | None:
+        """단발 번역 호출(메인→폴백 모델) + 환각 가드. 반복 압축 없이 그대로 1회 요청."""
         prompt = (
             f"다음 일본어 텍스트를 자연스러운 한국어로 번역하라. "
             f"고유명사는 보존. 번역문만 출력 (설명 제외).\n\n"
@@ -481,6 +540,40 @@ if __name__ == "__main__":
     assert set(_NOTICE_TITLE_SCHEMA["schema"]["required"]) == {"title_ja", "title_ko"}
     print("✓ _NOTICE_TITLE_SCHEMA: strict 규칙 준수")
 
+    # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
+    print("\n[시나리오 9] translate 반복 압축 (의성어 8회+ 연속반복)")
+    print("-" * 70)
+
+    assert _REPEAT_RE.match("もぐ" * 8)                       # 8회 = 경계값, 매치
+    assert not _REPEAT_RE.match("もぐ" * 7)                    # 7회는 미달, 비매치
+    assert not _REPEAT_RE.match("こんにちは、今日は良い天気です")  # 반복 아님, 비매치
+
+    class RepeatAwareSession:
+        """프롬프트 내용으로 "반복 단위" 호출과 "나머지" 호출을 구분해 각각 응답."""
+        def post(self, url, **kwargs):
+            content = kwargs["json"]["messages"][0]["content"]
+            if "번 연속 반복되는 의성어" in content:      # _translate_repeat_unit 전용 프롬프트
+                reply = "냠"
+            else:
+                reply = "#애니메유메미타"
+            class FakeResp:
+                status_code = 200
+                def json(self):
+                    return {"choices": [{"message": {"content": reply}}]}
+            return FakeResp()
+
+    llm_repeat = LLMClient("test-key", session=RepeatAwareSession())
+    repeated_input = "もぐ" * 40 + "\n#アニメゆめみた"
+    result = llm_repeat.translate(repeated_input)
+    assert result == "냠" * 40 + "\n#애니메유메미타", result
+    print(f"✓ 반복 압축: 단위만 문맥과 함께 번역 후 40회 재조립 (폭주 없이 {len(result)}자)")
+
+    # 반복 단위 뒤에 나머지가 없는 경우(순수 반복만)도 정상 조립.
+    llm_repeat2 = LLMClient("test-key", session=RepeatAwareSession())
+    result2 = llm_repeat2.translate("もぐ" * 10)
+    assert result2 == "냠" * 10, result2
+    print("✓ 반복 압축: 나머지 없이 단위만 반복되는 경우도 처리")
+
     class PayloadCapturingSession:
         def __init__(self):
             self.last_payload = None
@@ -518,5 +611,5 @@ if __name__ == "__main__":
     print("✓ json_schema strict 는 notice_title 경로에만")
 
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 8개 스모크 테스트 통과")
+    print("SUCCESS: 모든 9개 스모크 테스트 통과")
     print("=" * 70)
