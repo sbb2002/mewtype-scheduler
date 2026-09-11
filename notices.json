@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T08:18:23Z",
+  "generated_at": "2026-09-11T10:01:15Z",
   "notices": [
     {
       "anchor_a": null,
@@ -150,6 +150,31 @@
       "title_slug": "resonext",
       "tweet_url": null,
       "url": "https://eplus.jp/yumemita-arale/"
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "これはぼくたちの生存のあらすじ",
+      "body_for_llm": "＼試聴動画公開🎉／ (水)リリース #ゆめみた 5th Single 「これはぼくたちの生存のあらすじ」 楽曲の試聴動画が公開されました🛸🌟 📹ご視聴はこちら youtu.be/kUlEWpdDwIc #バンドリ",
+      "body_raw": "＼試聴動画公開🎉／\n\n9/30(水)リリース\n#ゆめみた 5th Single\n「これはぼくたちの生存のあらすじ」\n楽曲の試聴動画が公開されました🛸🌟\n\n📹ご視聴はこちら\nyoutu.be/kUlEWpdDwIc\n\n#バンドリ",
+      "category": "release",
+      "date": "2026-09-30",
+      "deadline": false,
+      "expires_at": "2026-09-30T15:00:00Z",
+      "first_seen": "2026-09-11T10:01:15Z",
+      "id": "2098351126504718514",
+      "last_updated": "2026-09-11T10:01:15Z",
+      "seen_ids": [
+        "2098351126504718514"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": null,
+      "title": "5thシングル「これはぼくたちの生存のあらすじ」試聴動画公開",
+      "title_ko": "5번째 싱글 \"これはぼくたちの生存のあらすじ\" 청취 영상 공개",
+      "title_raw": "9/30(水)リリース",
+      "title_slug": "水リリース",
+      "tweet_url": "https://x.com/i/status/2098351126504718514",
+      "url": null
     },
     {
       "anchor_a": null,
