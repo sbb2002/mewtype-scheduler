@@ -305,15 +305,83 @@ def parse_appearance(text: str, now_iso: str) -> list[dict]:
     return [item]
 
 
+# "配信開始📢/📡" · "同時視聴配信" · "配信中" 등 — 예고가 아니라 "지금 막 시작했다" 트윗.
+# 일일 스케줄(HEADER_RE)·出演情報(APPEARANCE_MARK_RE) 어느 쪽 서식도 아닌 공지문 (예: 그룹
+# 공식 채널의 동시시청 방송 개시 공지). video_id 없이는 노이즈가 크므로 온전한 URL 필수.
+LIVE_NOW_RE = re.compile(r"配信開始|同時視聴配信|生配信中|ただいま配信|配信中です")
+
+
+def parse_live_now(text: str, now_iso: str) -> list[dict]:
+    """"지금 막 시작" 계열 트윗 → announced(video_id 포함) 아이템 1개 (v3). 형식 아니면 `[]`.
+
+    일일 스케줄/出演情報 마커가 없고, 즉시개시 문구 + 온전한 YouTube 영상 URL 이 함께 있을 때만
+    반응한다. 개인 이름이 있으면 그 멤버(+동석자), 없고 그룹 명의(夢限大みゅーたいぷ/ゆめみた)면
+    5인 전원(host="group") — 그 외엔 채널을 특정 못 하므로 `[]`.
+    video_id 가 이미 있으므로 다음 videos.list 후보에 바로 잡혀 API 로 title/thumbnail 이 채워진다.
+    """
+    t = normalize(text)
+    if HEADER_RE.search(t) or APPEARANCE_MARK_RE.search(t):
+        return []                            # 스케줄/출연 서식은 각자 파서가 담당
+    if not LIVE_NOW_RE.search(t):
+        return []
+    hit = YT_VIDEO_RE.search(t)
+    if not hit:
+        return []                            # video_id 없는 "지금 시작" 공지는 노이즈 위험 → 무시
+    video_url = hit.group(0)
+    if not video_url.startswith("http"):
+        video_url = "https://" + video_url
+    video_id = hit.group(1)
+
+    key, collab = _names(t)
+    host = None
+    if not key:
+        if "夢限大みゅーたいぷ" in t or "ゆめみた" in t:
+            key, collab = ALL_KEYS[0], ALL_KEYS[1:]
+            host = "group"
+        else:
+            return []                        # 채널 특정 불가
+
+    tm = _TITLE_RE.search(t)
+    title = tm.group(1).lstrip("#＃ ").strip() if tm else None
+
+    item = preview.make_item(
+        channel_key=key,
+        state="announced",
+        source="x-relay",
+        now_iso=now_iso,
+        first_seen=now_iso,
+        title=title,
+        url=video_url,
+        video_id=video_id,
+        scheduled_start=now_iso,
+        kind="collab" if collab else None,
+        membership=False,
+        collab_with=collab or None,
+        host=host,
+        info_source="x-relay",
+        info_at=now_iso,
+    )
+    return [item]
+
+
 def parse(text: str, now_iso: str) -> list[dict]:
-    """트윗 → scheduled 행. 일일 스케줄 우선, 없으면 出演情報."""
-    return parse_bdp_schedule(text, now_iso) or parse_appearance(text, now_iso)
+    """트윗 → scheduled 행. 일일 스케줄 우선 → 出演情報 → 즉시개시 공지."""
+    return (
+        parse_bdp_schedule(text, now_iso)
+        or parse_appearance(text, now_iso)
+        or parse_live_now(text, now_iso)
+    )
 
 
 def looks_relayable(text: str) -> bool:
-    """폰이 relay 할 가치가 있는(스케줄/출연) 트윗인지 — 큐 적재 가드용."""
+    """폰이 relay 할 가치가 있는(스케줄/출연/즉시개시) 트윗인지 — 큐 적재 가드용."""
     t = text or ""
-    return "配信スケジュール" in t or bool(APPEARANCE_MARK_RE.search(normalize(t)))
+    tn = normalize(t)
+    return (
+        "配信スケジュール" in t
+        or bool(APPEARANCE_MARK_RE.search(tn))
+        or bool(LIVE_NOW_RE.search(tn) and YT_VIDEO_RE.search(tn))
+    )
 
 
 # `HH:MM` 처럼 보이지만 `〜` 가 없어 TIME_RE 로는 안 잡히는 느슨한 시각 패턴
@@ -628,6 +696,43 @@ if __name__ == "__main__":
     assert r9[0]["video_id"] is None, r9[0]
     assert unparsed_lines(S9) == [], unparsed_lines(S9)
     print("[OK] S9  (全員【bilibili】 스킵)")
+
+    # S10: 실측 — 그룹 공식(@BDP_yumemita) "配信開始" 즉시개시 공지 → parse_live_now
+    S10 = (
+        "＼配信開始📡／\n\n"
+        "🛸#アニメゆめみた 同時視聴配信 #13🛸\n\n"
+        "夢限大みゅーたいぷ 5名と\nアニメを同時視聴！\n\n"
+        "📺ご視聴はこちら\n"
+        "https://youtube.com/live/2nZzqEspCrU\n\n"
+        "場面写を使用した振り返りも\nぜひご覧ください🎶\n\n"
+        "#バンドリ"
+    )
+    assert parse_bdp_schedule(S10, NOW) == []
+    assert parse_appearance(S10, NOW) == []
+    r10 = parse_live_now(S10, NOW)
+    assert len(r10) == 1, r10
+    g10 = r10[0]
+    assert g10["state"] == "announced" and g10["source"] == "x-relay", g10
+    assert g10["channel_key"] == "arale" and g10["collab_with"] == ["yuno", "nonoka", "ritsu", "miyako"], g10
+    assert g10["host"] == "group" and g10["kind"] == "collab", g10
+    assert g10["video_id"] == "2nZzqEspCrU", g10
+    assert g10["url"] == "https://youtube.com/live/2nZzqEspCrU", g10["url"]
+    assert parse(S10, NOW) == r10
+    assert looks_relayable(S10)
+    print("[OK] S10  (즉시개시 공지 → host=group 5인 announced, video_id 확보)")
+
+    # S11: 잘린 URL(…) 이면 parse_live_now 도 무시 (노이즈 방지)
+    S11 = "＼配信開始📢／\n夢限大みゅーたいぷ\nhttps://youtube.com/live/2nZzqEspC…"
+    assert parse_live_now(S11, NOW) == [], parse_live_now(S11, NOW)
+    assert not looks_relayable(S11)
+    print("[OK] S11  (잘린 URL → parse_live_now 무시)")
+
+    # S12: 개인 계정의 즉시개시 공지 — 이름만 있고 그룹 명의 없음
+    S12 = "＼配信開始📢／\n仲町あられ\nhttps://youtube.com/watch?v=AAAAAAAAAAA"
+    r12 = parse_live_now(S12, NOW)
+    assert len(r12) == 1 and r12[0]["channel_key"] == "arale", r12
+    assert r12[0].get("host") is None and r12[0]["collab_with"] is None, r12[0]
+    print("[OK] S12  (개인 즉시개시 공지 → host 없이 단독)")
 
     # unparsed_lines
     S_BAD = (

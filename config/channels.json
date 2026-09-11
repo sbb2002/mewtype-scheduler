@@ -5,6 +5,7 @@
     "yuno":   { "name": "千石ユノ -Sengoku Yuno-",        "name_ko": "센고쿠 유노",     "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw", "handle": "yuno_yumemita",   "x_names": ["千石ユノ"] },
     "nonoka": { "name": "宮永ののか -Miyanaga Nonoka-",   "name_ko": "미야나가 노노카", "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A", "handle": "nonoka_yumemita", "x_names": ["宮永ののか"] },
     "ritsu":  { "name": "峰月律 -Minetsuki Ritsu-",        "name_ko": "미네츠키 리츠",   "channel_id": "UCxc0MrPoACKTFlV24GqX2sg", "handle": "ritsu_yumemita",  "x_names": ["峰月律"] },
-    "miyako": { "name": "藤都子 -Fuji Miyako-",            "name_ko": "후지 미야코",     "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita", "x_names": ["藤都子"] }
+    "miyako": { "name": "藤都子 -Fuji Miyako-",            "name_ko": "후지 미야코",     "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita", "x_names": ["藤都子"] },
+    "group":  { "name": "夢限大みゅーたいぷ(グループ公式)", "name_ko": "무겐다이 뮤타입 그룹 공식", "channel_id": "UCxL_Vlnhfo46sN6vPHR_4hA", "handle": "BDP_yumemita", "x_names": [], "is_group": true }
   }
 }
