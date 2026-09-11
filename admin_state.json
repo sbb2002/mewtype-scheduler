@@ -9,14 +9,14 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (bushiroad-store.com/pages/bd_1)",
-    "at": "2026-09-11T04:58:24Z",
+    "action": "소식 added (12/9(水)発売)",
+    "at": "2026-09-11T08:18:23Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "0a108b4971799a514392006b4a80bb955214e661",
+    "new_sha": "697e020c8102083ae417941690900cca60f83a9f",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-11T04:05:35Z",
+      "generated_at": "2026-09-11T04:58:24Z",
       "notices": [
         {
           "anchor_a": null,
@@ -41,6 +41,31 @@
           "title_raw": "チケット一般発売中",
           "title_slug": "チケット一般発売中",
           "tweet_url": "https://x.com/i/status/2098057825541136762",
+          "url": null
+        },
+        {
+          "anchor_a": null,
+          "anchor_b": null,
+          "body_for_llm": "@BushiM_info: ＼本日通販開始📢／ ⭐BanG Dream! 13th☆LIVE⭐ at 東京ガーデンシアター 先行通販がこのあと より開始です！ なお法被のみは より通販開始です。 他の商品と同梱できませんので 予めご了承ください。 #ポピパ bushiroad-store.com/pages/bd_13th-… #ゆめみた bushiroad-store.com/pages/bd_13th-… #RAS pic.x.com/64wBa8U6bW",
+          "body_raw": "@BushiM_info: ＼本日通販開始📢／\n\n⭐BanG Dream! 13th☆LIVE⭐\nat 東京ガーデンシアター\n\n先行通販がこのあと15時00分より開始です！\n\nなお法被のみは17時00分より通販開始です。\n他の商品と同梱できませんので\n予めご了承ください。\n\n#ポピパ\nbushiroad-store.com/pages/bd_13th-…\n\n#ゆめみた\nbushiroad-store.com/pages/bd_13th-…\n\n#RAS pic.x.com/64wBa8U6bW",
+          "category": "etc",
+          "date": "2026-09-11",
+          "deadline": false,
+          "expires_at": "2026-09-11T15:00:00Z",
+          "first_seen": "2026-09-11T04:58:24Z",
+          "id": "2098273982344769606",
+          "last_updated": "2026-09-11T04:58:24Z",
+          "seen_ids": [
+            "2098273982344769606"
+          ],
+          "site": "x",
+          "src_handle": "RT @BushiM_info",
+          "time": "15:00",
+          "title": "BanG Dream! 13th LIVE 先行通販開始",
+          "title_ko": "BanG Dream! 13th LIVE 선행 통신 판매 시작",
+          "title_raw": "bushiroad-store.com/pages/bd_13th-…",
+          "title_slug": "bushiroadstorecompagesbd",
+          "tweet_url": "https://x.com/i/status/2098273982344769606",
           "url": null
         },
         {
