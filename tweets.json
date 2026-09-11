@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T07:23:50Z",
+  "generated_at": "2026-09-11T08:24:53Z",
   "tweets": {
     "arale": [
       {
@@ -150,16 +150,6 @@
     "ritsu": [
       {
         "channel_key": "ritsu",
-        "expires_at": "2026-09-11T14:59:58Z",
-        "handle": "ritsu_yumemita",
-        "id": "2098049662951567630",
-        "received_at": "2026-09-10T14:59:58Z",
-        "text": "#アニメゆめみた\n最終回、はじまるはじまるはじまるはじまったはじまった",
-        "text_ko": "#アニメゆめみた  \n최종회, 시작한다 시작한다 시작한다 시작했어 시작했어",
-        "url": "https://x.com/i/status/2098049662951567630"
-      },
-      {
-        "channel_key": "ritsu",
         "expires_at": "2026-09-11T15:00:17Z",
         "handle": "ritsu_yumemita",
         "id": "2098053113320218810",
@@ -198,6 +188,16 @@
         "text": "もぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐもぐ\n#アニメゆめみた",
         "text_ko": null,
         "url": "https://x.com/i/status/2098079030314758249"
+      },
+      {
+        "channel_key": "ritsu",
+        "expires_at": "2026-09-12T08:24:53Z",
+        "handle": "ritsu_yumemita",
+        "id": "2098326023087837325",
+        "received_at": "2026-09-11T08:24:53Z",
+        "text": "峰月律太もも界隈ふたたび",
+        "text_ko": "峰月律太, 허벅지 주변 다시.",
+        "url": "https://x.com/i/status/2098326023087837325"
       }
     ],
     "yuno": [
