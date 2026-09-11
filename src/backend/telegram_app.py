@@ -1677,24 +1677,18 @@ def _inline_notice_title(body: str):
 # 웹푸시 알림이 긴 URL 을 …/... 로 잘라 보낸 흔적 — 11자 영상 ID 를 못 뽑는 경우.
 _TRUNC_YT_RE = re.compile(r"(?:youtube\.com|youtu\.be)/\S*?(?:…|\.\.\.)")
 
-# 폰(Automate) 이 이모지(서로게이트쌍 필요한 U+10000 이상, 🛸📢💪 등)를 다루다 바이트를
-# 깨뜨린 흔적 — U+FFFD(치환문자) 또는 짝 없는 서로게이트가 섞여 들어온다(버그리포트 20260913).
-# 한 번 이렇게 오면 그 바이트는 복구 불가 — 원문을 다시 구해와야 한다.
-_MOJIBAKE_RE = re.compile("[�\ud800-\udfff]")
-
-
 def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> str:
-    """raw 가 깨졌거나(치환문자/서로게이트) 잘렸으면 tweet id 로 vxtwitter 원문으로 통째 교체.
+    """tweet id 가 있으면 vxtwitter 원문을 raw 보다 우선한다 — 실패 시에만 raw 폴백.
 
-    폰이 보낸 텍스트에서 발생한 손상은 서버에서 복구 불가(바이트 자체가 유실) — 같은
-    트윗을 vxtwitter API 로 다시 조회해 원문을 통째로 갈아끼우는 것만이 유일한 복구 경로.
-    tweet id 없음 · vxtwitter 모듈/조회 실패 · 응답에 text 없음 → raw 그대로(무회귀).
+    (버그리포트 20260913 #2) 폰(Automate)이 안드로이드 알림의 "축약본"(contentText) 만
+    읽고 "전체본"(bigText)을 못 읽는 경우가 있다 — 이땐 말줄임표(…)도 손상 문자도 없이
+    완결된 문장처럼 보이는 상태로 조용히 잘려서 온다(예: 문단 3개짜리 트윗이 전체 9개
+    문단 중 앞 3개만 옴). 이런 "조용한 잘림"은 텍스트만 봐서는 감지할 방법이 없으므로,
+    감지 후 복구가 아니라 **tweet id 가 있으면 항상 vxtwitter 를 정본으로 우선** 조회한다.
+    tweet id 없음 · vxtwitter 모듈/조회 실패 · 응답에 text 없음 → raw 그대로(무회귀,
+    보정 전보다 나빠지지 않음).
     """
     if not raw or vxtwitter is None or xtweet is None:
-        return raw
-    corrupted = bool(_MOJIBAKE_RE.search(raw))
-    truncated = bool(_TRUNC_YT_RE.search(raw))
-    if not (corrupted or truncated):
         return raw
     tid = xtweet._tweet_id(tag) if tag else ""
     if not tid or not tid.isdigit():
@@ -1702,11 +1696,11 @@ def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> str:
     j = vxtwitter.fetch_tweet(tid)
     text = vxtwitter.extract(j).get("text") if j else None
     if not text:
-        log.warning("ingest: raw 손상 복구 실패 (tweet %s, corrupted=%s truncated=%s)",
-                    tid, corrupted, truncated)
+        log.warning("ingest: vxtwitter 원문 조회 실패 — raw 폴백 (tweet %s)", tid)
         return raw
-    log.info("ingest: raw 손상 복구(vxtwitter) tweet=%s corrupted=%s truncated=%s",
-              tid, corrupted, truncated)
+    if text != raw:
+        log.info("ingest: vxtwitter 원문으로 교체 (tweet %s, raw_len=%d vx_len=%d)",
+                  tid, len(raw), len(text))
     return text
 
 
@@ -2949,15 +2943,10 @@ if __name__ == "__main__":
     assert _expand_truncated_yt(_tr, None) == _tr              # tweet id 없음 → 네트워크 미시도
     print("[OK] _expand_truncated_yt (조기반환)")
 
-    # ── _recover_raw_via_vxtwitter (버그리포트 20260913) — 조기반환만 (네트워크 미시도) ──
-    assert _MOJIBAKE_RE.search("正常な文字列です") is None
-    assert _MOJIBAKE_RE.search("�깨짐") is not None          # 치환문자
-    assert _MOJIBAKE_RE.search("\udce3짝없는서로게이트") is not None  # 잘못된 서로게이트
-    assert _recover_raw_via_vxtwitter("", _TAG) == ""            # 빈 raw
+    # ── _recover_raw_via_vxtwitter (버그리포트 20260913, #2 조용한 잘림) — 조기반환만 ──
+    assert _recover_raw_via_vxtwitter("", _TAG) == ""            # 빈 raw → 네트워크 미시도
     _clean = "오늘 21시 방송해요"
-    assert _recover_raw_via_vxtwitter(_clean, _TAG) == _clean    # 손상·잘림 흔적 없음 → 그대로
-    _broken = "配信�開始\udce3"
-    assert _recover_raw_via_vxtwitter(_broken, None) == _broken  # 손상됐지만 tweet id 없음 → 무회귀
+    assert _recover_raw_via_vxtwitter(_clean, None) == _clean    # tweet id 없음 → 네트워크 미시도(무회귀)
     print("[OK] _recover_raw_via_vxtwitter (조기반환)")
 
     # ── 6상태 정렬·표시 ───────────────────────────────────────

@@ -483,15 +483,17 @@ thumbnail, title, kind(tunein|reminder|sub_start), scheduled_start, time_approx,
 `extract(j) -> {text, media: [url...], urls: [expanded...], yt_video_id: str|None}` —
 `youtube.com/(watch\?v=|live/)` · `youtu.be/` 뒤 11자 추출. 서드파티 무료 서비스 → 실패 시 조용히 skip.
 
-**(v3.1.6) 원문 손상 복구** — `telegram_app._recover_raw_via_vxtwitter(raw, tag)`. 폰(Automate)이
-서로게이트쌍이 필요한 이모지(🛸📢💪 등 U+10000+)를 다루다 바이트를 깨뜨려 보내는 경우가
-있다(치환문자 U+FFFD 또는 짝 없는 서로게이트 혼입 — 한 번 이렇게 오면 서버에서 복구 불가,
-바이트 자체가 유실됨). `/ingest`가 `raw`에서 손상(`_MOJIBAKE_RE`: `[�\ud800-\udfff]`)
-또는 잘림(`_TRUNC_YT_RE`) 흔적을 감지하면, `tag`에서 뽑은 tweet id로 vxtwitter 를 다시 조회해
-`raw` 전체를 그 응답의 `text`로 교체한다. 소식(`xnotice`)·스케줄(`xrelay`)·개인트윗(`xtweet`)
-모든 하위 파이프라인 **이전**에 태워서 항상 정상 원문을 넘긴다. 실패(조회 안 됨·tweet id
-없음)면 `raw` 그대로(무회귀) — 기존 `_expand_truncated_yt`(URL만 복구, `_maybe_personal_schedule`
-직전 2차 안전망)와 별개 경로.
+**(v3.1.7) 원문 우선순위 — vxtwitter 정본 우선, 폰 원문은 폴백** —
+`telegram_app._recover_raw_via_vxtwitter(raw, tag)`. 안드로이드 알림은 "축약본"(contentText)과
+"전체본"(bigText) 두 필드가 있는데, 폰(Automate)이 축약본만 읽어오면 말줄임표(…)도 깨진 문자도
+없이 **완결된 문장처럼 보이는 상태로 조용히 잘려서** 온다(실측: 문단 9개짜리 트윗이 앞 3개
+문단·125자만 옴 — 버그리포트 20260913 #2). 이런 "조용한 잘림"은 텍스트 패턴만으로는 감지가
+불가능하다 — 그래서 손상/잘림을 감지해 사후 복구하는 방식(v3.1.6, 폐기)이 아니라, **`tag`에서
+tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `text`를 정본으로 쓰고, 실패
+(조회 안 됨·id 없음·network/404)할 때만 폰이 보낸 `raw`로 폴백**한다. 소식(`xnotice`)·
+스케줄(`xrelay`)·개인트윗(`xtweet`) 모든 하위 파이프라인 **이전**에 태워서 항상 최선의 원문을
+넘긴다. 기존 `_expand_truncated_yt`(URL만 복구, `_maybe_personal_schedule` 직전 2차 안전망)와
+별개 경로 — 이쪽이 먼저 돌아 raw 를 이미 온전하게 만들어놓으므로 대개 no-op.
 
 ### 8.7 `gh_store.py` — GitHub Contents API
 

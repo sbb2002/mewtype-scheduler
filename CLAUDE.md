@@ -272,4 +272,15 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 - gcloud `--args` 는 값이 `-` 로 시작하면 `--args=...` 형태로 붙여야 함 (공백 쓰면 플래그로 오인).
 - (v1 break-glass) GitHub Actions cron 은 정각 보장 안 됨(3~15분, 드물게 1h 지연/누락).
   `date -u +%H` 는 `08`/`09` 를 8진수로 파싱하므로 산술 시 `$(( 10#$H ... ))` 필수.
+- **업스트림(운영자 폰 Automate) 구조적 한계 — 긴 트윗 원문 잘림.** 안드로이드 알림은
+  "축약본"(`contentText`)과 "전체본"(`bigText`) 두 필드가 있는데, Automate 의 알림 리스너가
+  다루는 값이 축약본으로 좁혀지는 경우가 있다. 이땐 말줄임표(…)도 인코딩 손상도 없이
+  **완결된 문장처럼 보이는 상태로 조용히 잘려서** `/ingest`에 도착한다(실측: 9문단짜리 트윗이
+  앞 3문단·125자만 옴 — 버그리포트 20260913 #2). 텍스트만 봐서는 절대 감지 불가능 — 그래서
+  근본 해결이 아니라 **우회**로 대응 중: `telegram_app._recover_raw_via_vxtwitter` 가 tweet id만
+  있으면 폰 원문을 아예 안 믿고 vxtwitter 조회 결과를 정본으로 우선 사용(`docs/SPEC.md` §8.6).
+  vxtwitter(서드파티 무료 API)가 죽어 있거나 tweet id 를 못 뽑는 극소수 경우에만 폰 원문으로
+  폴백 — 그 경우엔 이 잘림이 그대로 재발할 수 있다는 걸 기억할 것. Automate 쪽 알림 리스너
+  설정을 bigText 우선으로 고치는 게 진짜 근본 수정이지만 `docs/AUTOMATE_MANUAL.md` 상 아직
+  미확인 — 다음에 알림 리스너 Expression 을 만지게 되면 이 문서부터 먼저 볼 것.
 - 코드 주석·문서·커밋 메시지는 한국어.
