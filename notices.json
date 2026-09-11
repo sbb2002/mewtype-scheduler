@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-10T15:00:59Z",
+  "generated_at": "2026-09-11T04:05:35Z",
   "notices": [
     {
       "anchor_a": null,
@@ -24,6 +24,31 @@
       "title_raw": "チケット一般発売中",
       "title_slug": "チケット一般発売中",
       "tweet_url": "https://x.com/i/status/2098057825541136762",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": null,
+      "body_for_llm": "＼本日 より生配信📢／ 🛸#アニメゆめみた 同時視聴配信 #13🛸 夢限大みゅーたいぷ 5名と アニメを同時視聴！ ▼ご視聴はこちら youtube.com/live/2nZzqEspC… お見逃しなく✨ #",
+      "body_raw": "＼本日23時より生配信📢／\n\n🛸#アニメゆめみた 同時視聴配信 #13🛸\n\n夢限大みゅーたいぷ 5名と\nアニメを同時視聴！\n\n▼ご視聴はこちら\nyoutube.com/live/2nZzqEspC…\n\nお見逃しなく✨\n\n#",
+      "category": "live",
+      "date": "2026-09-11",
+      "deadline": false,
+      "expires_at": "2026-09-11T15:00:00Z",
+      "first_seen": "2026-09-11T04:05:35Z",
+      "id": "2098260249425956865",
+      "last_updated": "2026-09-11T04:05:35Z",
+      "seen_ids": [
+        "2098260249425956865"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "23:00",
+      "title": "本日生配信！アニメゆめみた 同時視聴 #13",
+      "title_ko": "오늘 생방송! 애니메이션 유메미타 동시 시청 #13",
+      "title_raw": "本日23時より生配信",
+      "title_slug": "本日より生配信",
+      "tweet_url": "https://x.com/i/status/2098260249425956865",
       "url": null
     },
     {
