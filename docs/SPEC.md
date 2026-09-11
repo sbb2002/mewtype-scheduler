@@ -101,7 +101,7 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
 
       "channel_key": "ritsu",               // 주 레인
       "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인 팬아웃
-      "host": null,                         // "group" = parse_appearance(出演情報) 외부이벤트 → supersede 면제
+      "host": null,                         // "group" = 5인 전원 합동(出演情報 텍스트 또는 그룹 채널 API 감지) → supersede 면제
       "kind": null,                         // "collab" | 카테고리(game/song/talk/…) | null
       "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
 
@@ -154,6 +154,26 @@ url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레�
 참여자(`channel_key` ∪ `collab_with`) 중 아무 채널에나 실물 ±4h 안에 뜨면 supersede 하고
 `_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관. `host=="group"` 은 supersede 면제.
 프론트 `render.js` 가 union 레인에 `.card--collab` 팬아웃. 상세: `docs/old/v2/v2_4_collab.md` §8.
+
+### 1-3-1. 그룹 공식 채널(`@BDP_yumemita`) 폴링 — v3.2
+
+`config/channels.json` `channels.group`(channel_order 밖, 전용 레인 없음)은 5인 합동 전용
+공식 채널. RSS/`videos.list` 로 이 채널에 영상이 뜨면 `preview_build.build_preview` 가
+`channel_key=channel_order[0]` + `collab_with=channel_order[1:]` + `host="group"` +
+`kind="collab"` 로 즉시 5인 레인에 팬아웃한다(`GROUP_CHANNEL_KEY`). `出演情報` 텍스트 유래
+`host="group"` 과 동일하게 취급되어 supersede 면제. 이 채널은 RSS 폴링 대상일 뿐 —
+5개 개인 레인과 달리 자체 카드/레인을 갖지 않는다.
+
+### 1-3-2. 즉시개시 트윗 릴레이 (`xrelay.parse_live_now`) — v3.2
+
+일일 스케줄(`配信スケジュール`)도 出演情報도 아닌, "지금 막 시작" 계열 공지
+(`配信開始`/`同時視聴配信`/`生配信中` 등 + **온전한** YouTube 영상 URL)를 감지해
+`video_id` 를 이미 채운 `announced` 아이템으로 즉시 반영한다. RSS/API 폴링(최대 light tick
+3h 간격)을 기다리지 않고 `/ingest` 시점에 바로 preview 에 올라가는 것이 목적 — 그룹 채널
+폴링(1-3-1)과 상호보완적 이중 경로(둘 중 먼저 도착하는 쪽이 반영, 이후 `video_id` 매칭으로
+합류). 텍스트에 개인 이름이 있으면 그 멤버(+동석자), 없고 그룹 명의(`夢限大みゅーたいぷ`/
+`ゆめみた`)만 있으면 5인 전원(`host="group"`). 둘 다 없으면 채널 특정 불가로 무시. 잘린 URL
+(`…`)은 `video_id` 를 못 얻으므로 노이즈 방지 차 무시.
 
 ---
 
@@ -652,10 +672,12 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
     "yuno":   { "name": "千石ユノ -Sengoku Yuno-",       "name_ko": "센고쿠 유노",   "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw", "handle": "yuno_yumemita" },
     "nonoka": { "name": "宮永ののか -Miyanaga Nonoka-",   "name_ko": "미야나가 노노카", "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A", "handle": "nonoka_yumemita" },
     "ritsu":  { "name": "峰月律 -Minetsuki Ritsu-",       "name_ko": "미네츠키 리츠",  "channel_id": "UCxc0MrPoACKTFlV24GqX2sg", "handle": "ritsu_yumemita" },
-    "miyako": { "name": "藤都子 -Fuji Miyako-",           "name_ko": "후지 미야코",   "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita" }
+    "miyako": { "name": "藤都子 -Fuji Miyako-",           "name_ko": "후지 미야코",   "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita" },
+    "group":  { "name": "夢限大みゅーたいぷ(グループ公式)", "name_ko": "무겐다이 뮤타입 그룹 공식", "channel_id": "UCxL_Vlnhfo46sN6vPHR_4hA", "handle": "BDP_yumemita", "is_group": true }
   }
 }
 ```
 
 + 각 채널 `x_names[]` (트윗 표시명 매칭용, `xtweet.route_by_title`). `channel_url` 은
 `https://www.youtube.com/@{handle}` 로 코드 파생. **채널 추가/변경은 이 파일 한 곳만.**
+`group` 은 `channel_order` 밖 — RSS/`videos.list` 폴링 대상이지만 전용 레인은 없다(§1-3-1).

@@ -33,6 +33,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > - 텔레그램 명령 `{cmd}×{contents}` 격자 (`/list /ingest /edit /del /undo /translate × preview|notice|tweet`).
 > - 업스트림 Automate 플로우 v3: 패키지별 리스너 2개(삼성 인터넷 + YouTube) + Fork. `docs/AUTOMATE_MANUAL.md §4b`.
 > - 데이터는 **콜드 스타트** — v2 파일은 `data:.old/`, 마이그레이션 스크립트 없음.
+> - **v3.2**: 5인 합동 전용 그룹 공식 채널(`@BDP_yumemita`, `config/channels.json` `channels.group`,
+>   `channel_order` 밖)을 RSS/API 폴링 대상에 추가 — `preview_build.build_preview` 가 이 채널
+>   영상을 `channel_key=channel_order[0]` + `collab_with=나머지 4인` + `host="group"` 로 5인
+>   레인에 자동 팬아웃(`GROUP_CHANNEL_KEY`). + `xrelay.parse_live_now` — 일일 스케줄/出演情報
+>   서식이 아닌 "지금 막 시작" 즉시개시 트윗(`配信開始`+온전한 영상 URL)을 감지해 `video_id`
+>   포함 `announced` 아이템으로 즉시 반영(폴링 지연 없이). 상세: `docs/SPEC.md` §1-3-1/§1-3-2.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -84,7 +90,8 @@ src/
     app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) · `/` 헬스체크(GFE 가 /healthz 가로챔)
     handlers.py        # (v3) tick/wake → preview_build → preview.json 커밋 + LLM 말단 번역(needs_tl sweep)
     preview.py         # (v3) preview.json 계약 A′ — make_item/match_item/sort/promote_state (순수)
-    preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수)
+    preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수). (v3.2) 그룹 공식 채널
+                       #      (@BDP_yumemita) 영상 → 5인 팬아웃(host="group")
     statemachine.py    # (v3) FSM 파생 — derive(item, now) → (next_state, next_check_at, log). 저장 안 함
     llm.py             # (v3) Groq 클라이언트 — notice_title(json_schema strict) / translate. 실패 시 None
     ytnotif.py         # (v3) YouTube 앱 푸시알림 파서 (`chime.*` 키). INGEST_YT_ENABLED 뒤
@@ -112,6 +119,8 @@ src/
     xrelay.py          # (v2.3) X 예고 트윗 파서(@BDP_yumemita 일일 스케줄) + scheduled 행 머지 — 순수
                        #        (v2.4/2.6) 합동방송 kind="collab" + URL→video_id · parse_appearance(出演情報)
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
+                       #        (v3.2) parse_live_now — 즉시개시 공지(配信開始+온전한 URL) → video_id
+                       #        포함 announced 즉시 반영. 그룹 명의만 있으면 host="group" 5인 팬아웃
     xtweet.py          # (v2.8) android.title 라우팅(route_by_title) + tweets.json/tweet_archive.json
                        #        계약(parse·merge_tweet·sweep_expired) — 순수. 개인 5인 트윗 전용 파이프라인
                        #        (v2.8.1) parse_schedule(예고 게이트) · merge_personal_schedule(같은 방송 upsert)
@@ -122,6 +131,8 @@ Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이�
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
 config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko)
+                       #   + (v3.2) channels.group — 5인 합동 전용 그룹 공식 채널(@BDP_yumemita),
+                       #   channel_order 밖(전용 레인 없음), RSS/API 폴링만
 fixtures/              # schedule.sample.json(프론트/로직 공용), rss_arale.xml(파싱 테스트)
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
 data 브랜치 (v3)        # preview.json + preview_archive.json + control.json

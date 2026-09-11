@@ -29,6 +29,10 @@ SCHEDULED_SUPERSEDE_SEC = 4 * 3600
 # announced 행(x-relay/personal 유래)이 expires_at 없을 때 first_seen 기준 TTL.
 ANNOUNCED_NO_TIME_TTL_SEC = 18 * 3600
 
+# config/channels.json 의 그룹 공식 채널(@BDP_yumemita) 키. channel_order 밖(전용 레인 없음) —
+# 이 채널에서 감지된 영상은 5인 합동(出演情報 과 동일하게 host="group")으로 팬아웃한다.
+GROUP_CHANNEL_KEY = "group"
+
 
 def _age_sec(iso_then: str, now_iso: str) -> float:
     """now_iso - iso_then 을 초로. 파싱 실패 시 0."""
@@ -140,6 +144,14 @@ def build_preview(
         channel_key = channel_id_to_key[video.channel_id]
         live_seen = video.live_state == "live"
 
+        # 그룹 공식 채널(@BDP_yumemita) 감지 — channel_order 밖이므로 전용 레인이 없다.
+        # 5인 전원 레인에 팬아웃되도록 주 레인 + collab_with 로 변환(신규 생성시에만 필요).
+        group_collab_with = None
+        if channel_key == GROUP_CHANNEL_KEY:
+            order = channels_cfg["channel_order"]
+            channel_key = order[0]
+            group_collab_with = order[1:] or None
+
         url = f"https://www.youtube.com/watch?v={video_id}"
         # video_id 는 고유하므로 이전 아이템은 video_id 로만 정확히 잡는다.
         # (in-progress items 대상 match_item 은 백투백 방송에서 오매칭 위험 → 안 씀)
@@ -173,6 +185,9 @@ def build_preview(
                     scheduled_start=video.scheduled_start,
                     api_start_seen=video.scheduled_start,
                     first_seen=now_iso,
+                    collab_with=group_collab_with,
+                    host="group" if group_collab_with else None,
+                    kind="collab" if group_collab_with else None,
                 )
             else:
                 continue  # live_state="none" 은 처리 안 함 (이미 archive 됨)
@@ -750,5 +765,52 @@ if __name__ == "__main__":
     print(f"  stale video (21h no update) → removed, archived")
 
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 12개 self-test scenarios passed ✓")
+    print("✓ Test 13: 그룹 공식 채널(@BDP_yumemita) 영상 → 5인 팬아웃 (host=group)")
+    print("=" * 70)
+    channels_cfg_g = {
+        "channel_order": ["arale", "yuno", "nonoka"],
+        "channels": {
+            "arale": {"channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g", "handle": "arale_ch"},
+            "yuno": {"channel_id": "UC99kOG6_9RD0mR3OG4EOfxw", "handle": "yuno_ch"},
+            "nonoka": {"channel_id": "UCGeCnpimiSN5rgiKbJzHd3A", "handle": "nonoka_ch"},
+            "group": {"channel_id": "UCxL_Vlnhfo46sN6vPHR_4hA", "handle": "BDP_yumemita"},
+        },
+    }
+    videos_group = {
+        "grp_vid": types.SimpleNamespace(
+            video_id="grp_vid",
+            channel_id="UCxL_Vlnhfo46sN6vPHR_4hA",
+            title="同時視聴配信 #13",
+            thumbnail="https://i.ytimg.com/vi/grp_vid/mqdefault.jpg",
+            live_state="live",
+            scheduled_start="2026-09-11T13:58:00Z",
+            actual_start="2026-09-11T13:58:00Z",
+            actual_end=None,
+            concurrent_viewers=1000,
+        ),
+    }
+    new_preview_13, trans_13, wakes_13, _g = build_preview(
+        channels_cfg_g, videos_group, preview.default_preview(), now_iso
+    )
+    assert len(new_preview_13["items"]) == 1, new_preview_13["items"]
+    grp_item = new_preview_13["items"][0]
+    assert grp_item["channel_key"] == "arale", grp_item  # channel_order[0] 이 주 레인
+    assert grp_item["collab_with"] == ["yuno", "nonoka"], grp_item
+    assert grp_item["host"] == "group", grp_item
+    assert grp_item["kind"] == "collab", grp_item
+    assert grp_item["video_id"] == "grp_vid", grp_item
+    assert grp_item["state"] == "live", grp_item
+    print(f"  group channel video → channel_key=arale, collab_with=[yuno,nonoka], host=group")
+
+    # 다음 tick 재매칭(video_id) — 기존 팬아웃 필드 유지 확인
+    new_preview_13b, *_r = build_preview(
+        channels_cfg_g, videos_group, new_preview_13, now_iso
+    )
+    grp_item_b = new_preview_13b["items"][0]
+    assert grp_item_b["collab_with"] == ["yuno", "nonoka"], grp_item_b
+    assert grp_item_b["host"] == "group", grp_item_b
+    print(f"  재매칭(video_id)에도 팬아웃 필드 유지")
+
+    print("\n" + "=" * 70)
+    print("SUCCESS: 모든 13개 self-test scenarios passed ✓")
     print("=" * 70)
