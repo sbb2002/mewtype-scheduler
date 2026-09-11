@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-11T10:01:15Z",
+  "generated_at": "2026-09-11T10:45:11Z",
   "notices": [
     {
       "anchor_a": null,
@@ -74,6 +74,31 @@
       "title_raw": "本日23時より生配信",
       "title_slug": "本日より生配信",
       "tweet_url": "https://x.com/i/status/2098260249425956865",
+      "url": null
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "これはぼくたちの生存のあらすじ",
+      "body_for_llm": "＼イベント情報📢／ 🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念 インターネットサイン会🖋 オリジナル特典をゲットできるのは、本日 まで📢 💿受付はこちら limista.com/projects/7712 ぜひチェックしてくださいね✨ #リミスタ #バン",
+      "body_raw": "＼イベント情報📢／\n\n🛸夢限大みゅーたいぷ 5th Single\n「これはぼくたちの生存のあらすじ」\nリリース記念 インターネットサイン会🖋\n\nオリジナル特典をゲットできるのは、本日23:59まで📢\n\n💿受付はこちら\nlimista.com/projects/7712\n\nぜひチェックしてくださいね✨\n\n#リミスタ #バン",
+      "category": "release",
+      "date": "2026-09-11",
+      "deadline": false,
+      "expires_at": "2026-09-11T15:00:00Z",
+      "first_seen": "2026-09-11T10:45:11Z",
+      "id": "2098358390607200349",
+      "last_updated": "2026-09-11T10:45:11Z",
+      "seen_ids": [
+        "2098358390607200349"
+      ],
+      "site": "x",
+      "src_handle": "@BDP_yumemita",
+      "time": "23:59",
+      "title": "夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会",
+      "title_ko": "꿈한계대 뮤타입 5번째 싱글 출시 기념 인터넷 사인회",
+      "title_raw": "リリース記念 インターネットサイン会🖋",
+      "title_slug": "リリース記念インターネットサイン会",
+      "tweet_url": "https://x.com/i/status/2098358390607200349",
       "url": null
     },
     {
