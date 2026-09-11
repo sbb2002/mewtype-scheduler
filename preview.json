@@ -63,8 +63,34 @@
       ]
     }
   },
-  "generated_at": "2026-09-11T15:24:34Z",
+  "generated_at": "2026-09-11T18:00:05Z",
   "items": [
+    {
+      "actual_start": null,
+      "api_start_seen": "2026-09-12T11:00:00Z",
+      "assumed_live": false,
+      "channel_key": "ritsu",
+      "collab_with": [],
+      "concurrent_viewers": null,
+      "expires_at": "2026-09-12T14:00:00Z",
+      "first_seen": "2026-09-11T15:24:34Z",
+      "host": null,
+      "id": "pv_5d24fd1a",
+      "info_at": "2026-09-11T15:24:28Z",
+      "info_source": "personal",
+      "kind": "unknown",
+      "last_updated": "2026-09-11T18:00:05Z",
+      "membership": false,
+      "scheduled_start": "2026-09-12T11:00:00Z",
+      "source": "personal",
+      "state": "upcoming",
+      "state_since": "2026-09-11T18:00:05Z",
+      "thumbnail": "https://i.ytimg.com/vi/3AOEBFQRQx4/maxresdefault_live.jpg",
+      "time_tbd": false,
+      "title": "【#アニメゆめみた 】ついに最終回！ありがとうございました。【峰月律/ゆめみた】",
+      "url": "https://www.youtube.com/watch?v=3AOEBFQRQx4",
+      "video_id": "3AOEBFQRQx4"
+    },
     {
       "actual_start": null,
       "api_start_seen": "2026-12-24T14:59:00Z",
@@ -79,7 +105,7 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-10T00:00:06Z",
+      "last_updated": "2026-09-11T18:00:05Z",
       "membership": false,
       "scheduled_start": "2026-12-24T14:59:00Z",
       "source": "api",
@@ -90,32 +116,6 @@
       "title": "🌟ライブ開催🌟NAKAMACHI ARALE LIVE 2026「RESONEXT」 2026年12月24日(木)　@大手町三井ホール",
       "url": "https://www.youtube.com/watch?v=h31Mi6AS7a0",
       "video_id": "h31Mi6AS7a0"
-    },
-    {
-      "actual_start": null,
-      "api_start_seen": null,
-      "assumed_live": false,
-      "channel_key": "ritsu",
-      "collab_with": [],
-      "concurrent_viewers": null,
-      "expires_at": "2026-09-12T14:00:00Z",
-      "first_seen": "2026-09-11T15:24:34Z",
-      "host": null,
-      "id": "pv_5d24fd1a",
-      "info_at": "2026-09-11T15:24:28Z",
-      "info_source": "personal",
-      "kind": "unknown",
-      "last_updated": "2026-09-11T15:24:34Z",
-      "membership": false,
-      "scheduled_start": "2026-09-12T11:00:00Z",
-      "source": "personal",
-      "state": "announced",
-      "state_since": "2026-09-11T15:24:34Z",
-      "thumbnail": null,
-      "time_tbd": false,
-      "title": null,
-      "url": "https://www.youtube.com/watch?v=3AOEBFQRQx4",
-      "video_id": "3AOEBFQRQx4"
     }
   ]
 }
