@@ -1677,6 +1677,38 @@ def _inline_notice_title(body: str):
 # 웹푸시 알림이 긴 URL 을 …/... 로 잘라 보낸 흔적 — 11자 영상 ID 를 못 뽑는 경우.
 _TRUNC_YT_RE = re.compile(r"(?:youtube\.com|youtu\.be)/\S*?(?:…|\.\.\.)")
 
+# 폰(Automate) 이 이모지(서로게이트쌍 필요한 U+10000 이상, 🛸📢💪 등)를 다루다 바이트를
+# 깨뜨린 흔적 — U+FFFD(치환문자) 또는 짝 없는 서로게이트가 섞여 들어온다(버그리포트 20260913).
+# 한 번 이렇게 오면 그 바이트는 복구 불가 — 원문을 다시 구해와야 한다.
+_MOJIBAKE_RE = re.compile("[�\ud800-\udfff]")
+
+
+def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> str:
+    """raw 가 깨졌거나(치환문자/서로게이트) 잘렸으면 tweet id 로 vxtwitter 원문으로 통째 교체.
+
+    폰이 보낸 텍스트에서 발생한 손상은 서버에서 복구 불가(바이트 자체가 유실) — 같은
+    트윗을 vxtwitter API 로 다시 조회해 원문을 통째로 갈아끼우는 것만이 유일한 복구 경로.
+    tweet id 없음 · vxtwitter 모듈/조회 실패 · 응답에 text 없음 → raw 그대로(무회귀).
+    """
+    if not raw or vxtwitter is None or xtweet is None:
+        return raw
+    corrupted = bool(_MOJIBAKE_RE.search(raw))
+    truncated = bool(_TRUNC_YT_RE.search(raw))
+    if not (corrupted or truncated):
+        return raw
+    tid = xtweet._tweet_id(tag) if tag else ""
+    if not tid or not tid.isdigit():
+        return raw
+    j = vxtwitter.fetch_tweet(tid)
+    text = vxtwitter.extract(j).get("text") if j else None
+    if not text:
+        log.warning("ingest: raw 손상 복구 실패 (tweet %s, corrupted=%s truncated=%s)",
+                    tid, corrupted, truncated)
+        return raw
+    log.info("ingest: raw 손상 복구(vxtwitter) tweet=%s corrupted=%s truncated=%s",
+              tid, corrupted, truncated)
+    return text
+
 
 def _expand_truncated_yt(raw: str, tag) -> str:
     """본문의 YouTube URL 이 `…`/`...` 로 잘렸으면 트윗 id(tag)로 vxtwitter unfurl 해
@@ -2684,6 +2716,11 @@ if _FLASK_AVAILABLE:
             if len(odd) == 1 and not (request.form.get(odd[0]) or "").strip():
                 raw = odd[0].strip()
 
+        # 폰이 보낸 본문이 깨졌거나(이모지 서로게이트쌍 처리 오류) 잘렸으면, 같은 트윗을
+        # vxtwitter 로 다시 조회해 원문을 통째로 교체한다 — 원문 없이는 파싱도 번역도
+        # "제대로 ingest" 한 게 아니므로 아래 모든 파이프라인(소식/스케줄/개인트윗) 전에 선행.
+        raw = _recover_raw_via_vxtwitter(raw, x_tag)
+
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # (v2.8) android.title 라우팅 (INGEST_FLOW 3↔4 노드 사이).
@@ -2911,6 +2948,17 @@ if __name__ == "__main__":
     _tr = "配信 youtube.com/watch?v=4yH9F6…"
     assert _expand_truncated_yt(_tr, None) == _tr              # tweet id 없음 → 네트워크 미시도
     print("[OK] _expand_truncated_yt (조기반환)")
+
+    # ── _recover_raw_via_vxtwitter (버그리포트 20260913) — 조기반환만 (네트워크 미시도) ──
+    assert _MOJIBAKE_RE.search("正常な文字列です") is None
+    assert _MOJIBAKE_RE.search("�깨짐") is not None          # 치환문자
+    assert _MOJIBAKE_RE.search("\udce3짝없는서로게이트") is not None  # 잘못된 서로게이트
+    assert _recover_raw_via_vxtwitter("", _TAG) == ""            # 빈 raw
+    _clean = "오늘 21시 방송해요"
+    assert _recover_raw_via_vxtwitter(_clean, _TAG) == _clean    # 손상·잘림 흔적 없음 → 그대로
+    _broken = "配信�開始\udce3"
+    assert _recover_raw_via_vxtwitter(_broken, None) == _broken  # 손상됐지만 tweet id 없음 → 무회귀
+    print("[OK] _recover_raw_via_vxtwitter (조기반환)")
 
     # ── 6상태 정렬·표시 ───────────────────────────────────────
     _pv = {"items": [
