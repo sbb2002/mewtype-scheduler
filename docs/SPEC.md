@@ -155,7 +155,7 @@ url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레�
 `_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관. `host=="group"` 은 supersede 면제.
 프론트 `render.js` 가 union 레인에 `.card--collab` 팬아웃. 상세: `docs/old/v2/v2_4_collab.md` §8.
 
-### 1-3-1. 그룹 공식 채널(`@BDP_yumemita`) 폴링 — v3.2
+### 1-3-1. 그룹 공식 채널(`@BDP_yumemita`) 폴링 — v3.1.4
 
 `config/channels.json` `channels.group`(channel_order 밖, 전용 레인 없음)은 5인 합동 전용
 공식 채널. RSS/`videos.list` 로 이 채널에 영상이 뜨면 `preview_build.build_preview` 가
@@ -164,7 +164,7 @@ url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레�
 `host="group"` 과 동일하게 취급되어 supersede 면제. 이 채널은 RSS 폴링 대상일 뿐 —
 5개 개인 레인과 달리 자체 카드/레인을 갖지 않는다.
 
-### 1-3-2. 즉시개시 트윗 릴레이 (`xrelay.parse_live_now`) — v3.2
+### 1-3-2. 즉시개시 트윗 릴레이 (`xrelay.parse_live_now`) — v3.1.4
 
 일일 스케줄(`配信スケジュール`)도 出演情報도 아닌, "지금 막 시작" 계열 공지
 (`配信開始`/`同時視聴配信`/`生配信中` 등 + **온전한** YouTube 영상 URL)를 감지해
