@@ -4,26 +4,6 @@
     "arale": [
       {
         "channel_key": "arale",
-        "expires_at": "2026-09-11T15:02:50Z",
-        "handle": "arale_yumemita",
-        "id": "2098064657101812036",
-        "received_at": "2026-09-10T15:02:50Z",
-        "text": "TVアニメ「バンドリ！ ゆめ∞みた」\n最終回、ありがとうございました…！✨️\n\nTVLIVEからTOKYO MXｻﾝでの生中継まで\n本当に本当に最高の日です。\nみんなのおかげです、ありがとう…！\n\nこれからも“ぼく達”の音楽は続きます。\n一緒に歩み続けていこうね\n\n夢限大みゅーたいぷ Vo.仲町あられ",
-        "text_ko": "TV 애니메이션 「밴드리! 꿈∞미타」  \n최종회, 감사합니다…! ✨️  \n\nTVLIVE부터 TOKYO MX에서의 생중계까지  \n정말 정말 최고의 날이에요.  \n모두 덕분이에요, 고마워요…!  \n\n앞으로도 “우리”의 음악은 계속될 거예요.  \n함께 걸어가자, 알겠지?  \n\n꿈한계대 뮤타입 Vo. 나카마치 아라레",
-        "url": "https://x.com/i/status/2098064657101812036"
-      },
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-11T15:11:15Z",
-        "handle": "arale_yumemita",
-        "id": "2098066772117303679",
-        "received_at": "2026-09-10T15:11:15Z",
-        "text": "いっぱい、おしゃべりしようね",
-        "text_ko": "많이, 수다 떨자.",
-        "url": "https://x.com/i/status/2098066772117303679"
-      },
-      {
-        "channel_key": "arale",
         "expires_at": "2026-09-12T01:13:52Z",
         "handle": "arale_yumemita",
         "id": "2098218416587108783",
@@ -108,36 +88,6 @@
     "nonoka": [
       {
         "channel_key": "nonoka",
-        "expires_at": "2026-09-11T15:00:07Z",
-        "handle": "nonoka_yumemita",
-        "id": "2098049845168889946",
-        "received_at": "2026-09-10T15:00:07Z",
-        "text": "#アニメゆめみた\n\n最終回‼️‼️‼️‼️‼️",
-        "text_ko": "#アニメゆ메미타\n최종회‼️‼️‼️‼️‼️",
-        "url": "https://x.com/i/status/2098049845168889946"
-      },
-      {
-        "channel_key": "nonoka",
-        "expires_at": "2026-09-11T15:22:01Z",
-        "handle": "nonoka_yumemita",
-        "id": "2098069482296242209",
-        "received_at": "2026-09-10T15:22:01Z",
-        "text": "#バンドリTVLIVE\nありがとうございました✨\n\n#アニメゆめみた 最終回も、いかがでしたかな❓☺️\n\n夢限大みゅーたいぷと、ゆめみた先へ‼️\nゆめみた、れっつごーーー‼️‼️‼️❤️‍🔥",
-        "text_ko": "#バンドリTVLIVE\n감사했습니다✨\n\n#アニメゆめみた 최종회는 어떠셨나요❓☺️\n\n꿈이 무한한 뮤타입과, 유메미타 앞으로‼️\n유메미타, 레츠고ーーー‼️‼️‼️❤️‍🔥",
-        "url": "https://x.com/i/status/2098069482296242209"
-      },
-      {
-        "channel_key": "nonoka",
-        "expires_at": "2026-09-11T15:24:05Z",
-        "handle": "nonoka_yumemita",
-        "id": "2098070005321757153",
-        "received_at": "2026-09-10T15:24:05Z",
-        "text": "#アニメゆめみた #バンドリTVLIVE\n\nいっしょにたべよう🎶\nもっと、おいしいよ🎶",
-        "text_ko": "#アニメゆめみた #バンドリTVLIVE\n\n함께 먹자🎶\n더 맛있어🎶",
-        "url": "https://x.com/i/status/2098070005321757153"
-      },
-      {
-        "channel_key": "nonoka",
         "expires_at": "2026-09-11T15:29:27Z",
         "handle": "nonoka_yumemita",
         "id": "2098071354562244814",
@@ -158,16 +108,6 @@
       }
     ],
     "ritsu": [
-      {
-        "channel_key": "ritsu",
-        "expires_at": "2026-09-11T15:00:22Z",
-        "handle": "ritsu_yumemita",
-        "id": "2098053765786144884",
-        "received_at": "2026-09-10T15:00:22Z",
-        "text": "きっと待ってる\n\n#アニメゆめみた",
-        "text_ko": "분명히 기다릴게.",
-        "url": "https://x.com/i/status/2098053765786144884"
-      },
       {
         "channel_key": "ritsu",
         "expires_at": "2026-09-11T16:00:00Z",
@@ -211,26 +151,6 @@
       }
     ],
     "yuno": [
-      {
-        "channel_key": "yuno",
-        "expires_at": "2026-09-11T15:00:08Z",
-        "handle": "yuno_yumemita",
-        "id": "2098051159768605044",
-        "received_at": "2026-09-10T15:00:08Z",
-        "text": "#アニメゆめみた ついに最終回！！\n\n今しかないこの瞬間、一緒に楽しもうね！",
-        "text_ko": "#アニメゆめみた つい에 최종 회!!  \n\n지금 이 순간, 함께 즐기자!",
-        "url": "https://x.com/i/status/2098051159768605044"
-      },
-      {
-        "channel_key": "yuno",
-        "expires_at": "2026-09-11T15:01:03Z",
-        "handle": "yuno_yumemita",
-        "id": "2098059532715036904",
-        "received_at": "2026-09-10T15:01:03Z",
-        "text": "TVアニメ「バンドリ！ ゆめ∞みた」 最終回を迎えました！\nありがとうございました！\n\nバンドリTV LIVEからゆめみた尽くし！\n幸せな時間でした…！\n\n#アニメゆめみた ここまで駆け抜けて来られたのはみんなのおかげです！\n\n一緒に見届けてくれてありがとう！\nこれからもずっとずっとよろしくね！",
-        "text_ko": "TV 애니메이션 「BanG Dream! 유메∞미타」가 최종 회를 맞이했습니다!  \n감사합니다!  \n\nBanG Dream! TV LIVE에서 유메미타만 가득!  \n행복한 시간이었어요…!  \n\n#애니유메미타 여기까지 달려올 수 있었던 건 모두 여러분 덕분입니다!  \n\n함께 지켜줘서 고마워요!  \n앞으로도 계속, 계속 잘 부탁해요!",
-        "url": "https://x.com/i/status/2098059532715036904"
-      },
       {
         "channel_key": "yuno",
         "expires_at": "2026-09-12T01:24:03Z",
