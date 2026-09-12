@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T11:12:08Z",
+  "generated_at": "2026-09-12T12:50:50Z",
   "tweets": {
     "arale": [
       {
@@ -41,6 +41,16 @@
         "text": "仲町あられ(本物)です",
         "text_ko": "나카마치 아라레(본물)입니다.",
         "url": "https://x.com/i/status/2098658175222497679"
+      },
+      {
+        "channel_key": "arale",
+        "expires_at": "2026-09-13T12:50:50Z",
+        "handle": "arale_yumemita",
+        "id": "2098746179597316248",
+        "received_at": "2026-09-12T12:50:50Z",
+        "text": "📢◦° ラジオ出演✨️\n\n9/12(土)25時〜です！\nFM802『802 Palette』さんありがとうございます！✨️聴いてねぇ〜！✨️",
+        "text_ko": "📢◦° 라디오 출연✨️\n\n9/12(토) 25시~입니다!\nFM802『802 Palette』님 감사합니다!✨️ 들어 주세요~!✨️",
+        "url": "https://x.com/i/status/2098746179597316248"
       }
     ],
     "miyako": [
