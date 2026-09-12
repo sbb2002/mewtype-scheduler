@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-12T06:16:02Z",
+  "generated_at": "2026-09-12T06:36:02Z",
   "items": [
     {
       "actual_start": null,
@@ -79,7 +79,7 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-12T06:16:02Z",
+      "last_updated": "2026-09-12T06:36:02Z",
       "membership": false,
       "scheduled_start": "2026-09-13T11:00:00Z",
       "source": "api",
@@ -105,7 +105,7 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-12T06:16:02Z",
+      "last_updated": "2026-09-12T06:36:02Z",
       "membership": false,
       "scheduled_start": "2026-12-24T14:59:00Z",
       "source": "api",
@@ -220,32 +220,6 @@
       "title": null,
       "url": null,
       "video_id": null
-    },
-    {
-      "actual_start": "2026-09-12T03:02:52Z",
-      "api_start_seen": "2026-09-12T02:55:00Z",
-      "assumed_live": false,
-      "channel_key": "nonoka",
-      "collab_with": null,
-      "concurrent_viewers": 456,
-      "expires_at": "2026-09-12T05:55:00Z",
-      "first_seen": "2026-09-12T03:00:05Z",
-      "host": null,
-      "id": "pv_0194e566",
-      "info_at": null,
-      "info_source": "api",
-      "kind": null,
-      "last_updated": "2026-09-12T06:16:02Z",
-      "membership": false,
-      "scheduled_start": "2026-09-12T02:55:00Z",
-      "source": "api",
-      "state": "end",
-      "state_since": "2026-09-12T06:06:02Z",
-      "thumbnail": "https://i.ytimg.com/vi/4YHGjqizdeY/maxresdefault.jpg",
-      "time_tbd": false,
-      "title": "# 7【魔法少女ノ魔女裁判】四話とつにゅー！かわいい魔法少女ゲームをあそぶ【宮永ののか】【ゆめみた/夢限大みゅーたいぷ】#まのさば実況 #まのさばネタバレ",
-      "url": "https://www.youtube.com/watch?v=4YHGjqizdeY",
-      "video_id": "4YHGjqizdeY"
     }
   ]
 }
