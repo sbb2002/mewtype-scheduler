@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T12:58:04Z",
+  "generated_at": "2026-09-12T13:54:00Z",
   "items": [
     {
       "actual_start": "2026-09-09T14:34:34Z",
@@ -81,6 +81,33 @@
       "title": "【#アニメゆめみた 】ついに最終回！ありがとうございました。【峰月律/ゆめみた】",
       "url": "https://www.youtube.com/watch?v=3AOEBFQRQx4",
       "video_id": "3AOEBFQRQx4"
+    },
+    {
+      "actual_start": "2026-09-12T11:59:56Z",
+      "api_start_seen": "2026-09-12T11:59:32Z",
+      "archived_at": "2026-09-12T13:54:00Z",
+      "assumed_live": false,
+      "channel_key": "yuno",
+      "collab_with": null,
+      "concurrent_viewers": 988,
+      "expires_at": "2026-09-12T14:59:32Z",
+      "first_seen": "2026-09-12T12:30:00Z",
+      "host": null,
+      "id": "pv_e88ddca8",
+      "info_at": null,
+      "info_source": "api",
+      "kind": null,
+      "last_updated": "2026-09-12T13:54:00Z",
+      "membership": false,
+      "scheduled_start": "2026-09-12T11:59:32Z",
+      "source": "api",
+      "state": "none",
+      "state_since": "2026-09-12T13:54:00Z",
+      "thumbnail": "https://i.ytimg.com/vi/XY9oTxy1XC0/maxresdefault.jpg",
+      "time_tbd": false,
+      "title": "【 #歌枠 】あたしの大好きな曲を歌います！【 #千石ユノ / #バンドリ 】 #Shorts  #Vtuber",
+      "url": "https://www.youtube.com/watch?v=XY9oTxy1XC0",
+      "video_id": "XY9oTxy1XC0"
     }
   ]
 }
