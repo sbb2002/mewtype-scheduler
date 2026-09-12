@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T10:10:52Z",
+  "generated_at": "2026-09-12T14:52:56Z",
   "notices": [
     {
       "anchor_a": "22689",
@@ -75,6 +75,31 @@
       "title_slug": "fm802802palette",
       "tweet_url": "https://x.com/i/status/2098715953857221074",
       "url": null
+    },
+    {
+      "anchor_a": "20260913010000",
+      "anchor_b": "802palette",
+      "body_for_llm": "＼📻このあと出演📻／ 🎨FM802「802 Palette」 夢限大みゅーたいぷ全員で出演いたします🌟 ⏰: (土) 〜 🔗: 260913010000 TVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮 放送をおたのしみに🎧 #FM802 #ハチパレ",
+      "body_raw": "＼📻このあと出演📻／\n\n🎨FM802「802 Palette」\n夢限大みゅーたいぷ全員で出演いたします🌟\n\n⏰:9/12(土) 25時〜\n🔗:https://radiko.jp/#!/ts/802/20260913010000\n\nTVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮\n放送をおたのしみに🎧\n\n#FM802 #ハチパレ",
+      "category": "etc",
+      "date": "2026-09-12",
+      "deadline": false,
+      "expires_at": "2026-09-13T15:00:00Z",
+      "first_seen": "2026-09-12T14:52:56Z",
+      "id": "2098773628385136878",
+      "last_updated": "2026-09-12T14:52:56Z",
+      "seen_ids": [
+        "2098773628385136878"
+      ],
+      "site": "web",
+      "src_handle": "@BDP_yumemita",
+      "time": "25:00",
+      "title": "FM802「802 Palette」夢限大みゅーたいぷ全員出演！",
+      "title_ko": "FM802 \"802 Palette\" 꿈한대 뮤타입 전원 출연!",
+      "title_raw": "TVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮",
+      "title_slug": "tvアニメバンドリゆめみた感想会をお届け",
+      "tweet_url": "https://x.com/i/status/2098773628385136878",
+      "url": "https://radiko.jp/#!/ts/802/20260913010000"
     },
     {
       "anchor_a": "arale-birthday2026",
