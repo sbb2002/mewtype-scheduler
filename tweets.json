@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T08:02:20Z",
+  "generated_at": "2026-09-12T09:20:40Z",
   "tweets": {
     "arale": [
       {
@@ -177,6 +177,18 @@
         "text": "【配信予定】 \n🩵 ･･････････････････････ 🩵\n今夜20:00-\n\n【#アニメゆめみた 】ついに最終回！ありがとうございました。\n\nhttps://youtube.com/live/3AOEBFQRQx4?feature=share\n\n🩵 ･･････････････････････ 🩵",
         "text_ko": "【방송 예정】 \n🩵 ･･････････････････････ 🩵\n오늘 밤 20:00-\n\n【#アニメゆめみた】 드디어 최종회! 감사합니다.\n\nhttps://youtube.com/live/3AOEBFQRQx4?feature=share\n\n🩵 ･･････････････････････ 🩵",
         "url": "https://x.com/i/status/2098432496262349149"
+      }
+    ],
+    "yuno": [
+      {
+        "channel_key": "yuno",
+        "expires_at": "2026-09-13T09:20:40Z",
+        "handle": "yuno_yumemita",
+        "id": "2098703316708716965",
+        "received_at": "2026-09-12T09:20:40Z",
+        "text": "〈配信のおしらせ〉\n9/12 21:00〜 #歌枠\n\n好きな曲を歌います\n文字通り好きな曲を",
+        "text_ko": "〈배송 안내〉\n9/12 21:00〜 #노래 시간\n\n좋아하는 곡을 부릅니다\n말 그대로 좋아하는 곡을",
+        "url": "https://x.com/i/status/2098703316708716965"
       }
     ]
   }
