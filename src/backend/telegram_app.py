@@ -2152,9 +2152,9 @@ def _handle_tweet_list(gh, channels_cfg: dict) -> None:
         name = chans.get(k, {}).get("name_ko", k)
         head = f"<b>{html.escape(name)}</b> ({k}) — {len(thread)}건"
         msgs = []
-        for row in thread:                       # 오래된 → 최신
+        for i, row in enumerate(thread, 1):      # 오래된 → 최신
             body = (row.get("text_ko") or row.get("text") or "").replace("\n", " ")[:80]
-            msgs.append(f"· {html.escape(body)}")
+            msgs.append(f"#{i} {html.escape(body)}")
         lines.append(head + "\n" + "\n".join(msgs) + f"\n{thread[-1].get('url') or ''}")
     _send_telegram("\n\n".join(lines))
 
