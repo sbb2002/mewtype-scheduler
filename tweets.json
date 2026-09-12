@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T09:20:40Z",
+  "generated_at": "2026-09-12T10:06:52Z",
   "tweets": {
     "arale": [
       {
@@ -46,16 +46,6 @@
     "miyako": [
       {
         "channel_key": "miyako",
-        "expires_at": "2026-09-13T03:20:39Z",
-        "handle": "miyako_yumemita",
-        "id": "2098612716458164321",
-        "received_at": "2026-09-12T03:20:39Z",
-        "text": "あしたはアワーノーツ リリース日決定特番✨\nどんな情報が発表されるのでしょうか🐶ﾄﾞｷﾄﾞｷ",
-        "text_ko": "내일은 아워노트 릴리즈일 결정 특집✨\n어떤 정보가 발표될까요🐶두근두근",
-        "url": "https://x.com/i/status/2098612716458164321"
-      },
-      {
-        "channel_key": "miyako",
         "expires_at": "2026-09-13T05:39:11Z",
         "handle": "miyako_yumemita",
         "id": "2098647581618565454",
@@ -93,6 +83,16 @@
         "text": "🐶週間予定🐶\n来週のミヤコさんは〜？\n\n9月19日は〜♪ みやこ〜の〜ﾀﾝｼﾞｮｳﾋﾞ♪\n9月19日は〜♪ 16歳の〜〜〜\nﾀﾝｼﾞｮｳﾋﾞ〜〜〜〜〜〜〜〜〜♪\n\n💜総合 #みるみやこ #藤都子\n🎨FA #かくみやこ\n✂切り抜きなど #オキニみやこ",
         "text_ko": "🐶주간 일정🐶\n다음 주 미야코 씨는~?\n\n9월 19일은~♪ 미야코~의~탄지오비♪\n9월 19일은~♪ 16살의~ 탄지오비~♪\n\n💜종합 #미루미야코 #후지츠코\n🎨FA #카쿠미야코\n✂컷아웃 등 #오키니미야코",
         "url": "https://x.com/i/status/2098683602016034933"
+      },
+      {
+        "channel_key": "miyako",
+        "expires_at": "2026-09-13T10:06:52Z",
+        "handle": "miyako_yumemita",
+        "id": "2098714942254064071",
+        "received_at": "2026-09-12T10:06:52Z",
+        "text": "✨FA 全59枚 まとめログ公開✨\n⠀\n＃アニメゆめみた 放送期間中に\nわたくし藤都子が描いた\nファンアートイラスト（全59枚）まとめログをnoteに公開いたしました♪\n⠀\n🔗https://note.com/miyako_yumemita/n/n2d51fb7eba6c?sub_rt=share_pb",
+        "text_ko": "✨FA 전 59장 요약 로그 공개✨\n\n#아니메유메미타 방송 기간 중에\n제가(藤都子) 그린\n팬아트 일러스트(전 59장) 요약 로그를 note에 공개했습니다♪\n\n🔗https://note.com/miyako_yumemita/n/n2d51fb7eba6c?sub_rt=share_pb",
+        "url": "https://x.com/i/status/2098714942254064071"
       }
     ],
     "nonoka": [
