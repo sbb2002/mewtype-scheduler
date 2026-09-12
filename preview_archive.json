@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T15:04:00Z",
+  "generated_at": "2026-09-12T16:37:00Z",
   "items": [
     {
       "actual_start": "2026-09-09T14:34:34Z",
@@ -135,6 +135,33 @@
       "title": "【お絵描き】ミスド🍩いもド全種たべたべ＆擬人化おえかきの会♪【夢限大みゅーたいぷ/藤都子】#shorts #縦型配信 #vtuber",
       "url": "https://www.youtube.com/watch?v=EnySBdFB_C0",
       "video_id": "EnySBdFB_C0"
+    },
+    {
+      "actual_start": "2026-09-12T13:03:10Z",
+      "api_start_seen": "2026-09-12T13:00:00Z",
+      "archived_at": "2026-09-12T16:37:00Z",
+      "assumed_live": false,
+      "channel_key": "arale",
+      "collab_with": null,
+      "concurrent_viewers": 1496,
+      "expires_at": "2026-09-12T16:00:00Z",
+      "first_seen": "2026-09-12T12:00:04Z",
+      "host": null,
+      "id": "pv_de98352d",
+      "info_at": "2026-09-12T12:26:31Z",
+      "info_source": "personal",
+      "kind": null,
+      "last_updated": "2026-09-12T16:37:00Z",
+      "membership": false,
+      "scheduled_start": "2026-09-12T13:00:00Z",
+      "source": "api",
+      "state": "none",
+      "state_since": "2026-09-12T16:37:00Z",
+      "thumbnail": "https://i.ytimg.com/vi/KMI4yzroWmk/maxresdefault.jpg",
+      "time_tbd": false,
+      "title": "【🟡歌枠】#アニメゆめみた 最終話を迎えてのお話と、やっぱり歌いたいぼく【 仲町あられ / 夢限大みゅーたいぷ 】",
+      "url": "https://www.youtube.com/watch?v=KMI4yzroWmk",
+      "video_id": "KMI4yzroWmk"
     }
   ]
 }
