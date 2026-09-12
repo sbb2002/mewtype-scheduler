@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-12T03:03:05Z",
+  "generated_at": "2026-09-12T03:05:01Z",
   "items": [
     {
       "actual_start": "2026-09-12T03:02:52Z",
@@ -180,10 +180,10 @@
       "first_seen": "2026-09-12T00:30:05Z",
       "host": null,
       "id": "pv_76b16150",
-      "info_at": "2026-09-12T00:30:05Z",
-      "info_source": "x-relay",
+      "info_at": "2026-09-12T03:05:00Z",
+      "info_source": "personal",
       "kind": "unknown",
-      "last_updated": "2026-09-12T00:30:05Z",
+      "last_updated": "2026-09-12T03:05:01Z",
       "membership": false,
       "scheduled_start": "2026-09-12T12:30:00Z",
       "source": "x-relay",
