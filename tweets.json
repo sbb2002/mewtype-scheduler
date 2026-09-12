@@ -150,16 +150,6 @@
     "ritsu": [
       {
         "channel_key": "ritsu",
-        "expires_at": "2026-09-12T10:29:53Z",
-        "handle": "ritsu_yumemita",
-        "id": "2098357154730406331",
-        "received_at": "2026-09-11T10:29:53Z",
-        "text": "わー わー",
-        "text_ko": "와- 와-",
-        "url": "https://x.com/i/status/2098357154730406331"
-      },
-      {
-        "channel_key": "ritsu",
         "expires_at": "2026-09-12T15:24:34Z",
         "handle": "ritsu_yumemita",
         "id": "2098432496262349149",
