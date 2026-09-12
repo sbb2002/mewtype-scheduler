@@ -9,65 +9,15 @@
   "pending_undo": null,
   "suppress": [],
   "undo": {
-    "action": "소식 added (TVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮)",
-    "at": "2026-09-12T14:52:56Z",
+    "action": "소식 updated (FM802「802 Palette」に)",
+    "at": "2026-09-12T19:40:43Z",
     "cmd": null,
     "contents": null,
-    "new_sha": "f66a7124c2be99242a75b7e9f77791161c6abda2",
+    "new_sha": "70cfe97a9ee59b67ee7c83ba462798780691748a",
     "path": "notices.json",
     "prev_content": {
-      "generated_at": "2026-09-12T10:10:52Z",
+      "generated_at": "2026-09-12T19:40:43Z",
       "notices": [
-        {
-          "anchor_a": "22689",
-          "anchor_b": "これはぼくたちの生存のあらすじ",
-          "body_for_llm": "＼明日開催📢／ 🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念 インターネットサイン会🖋 明日 より、 サイン会の様子を生配信！ 詳細はこちら ダブルチャンス抽選の発表もお楽しみに✨ #リミスタ #バンドリ",
-          "body_raw": "＼明日開催📢／\n\n🛸夢限大みゅーたいぷ 5th Single\n「これはぼくたちの生存のあらすじ」\nリリース記念 インターネットサイン会🖋\n\n明日12時より、\nサイン会の様子を生配信！\n\n詳細はこちら\nhttps://bushiroad-music.com/topics/22689/\n\nダブルチャンス抽選の発表もお楽しみに✨\n\n#リミスタ #バンドリ",
-          "category": "live",
-          "date": "2026-09-12",
-          "deadline": false,
-          "expires_at": "2026-09-12T15:00:00Z",
-          "first_seen": "2026-09-12T09:00:10Z",
-          "id": "2098698129444921743",
-          "last_updated": "2026-09-12T09:00:10Z",
-          "seen_ids": [
-            "2098698129444921743"
-          ],
-          "site": "store",
-          "src_handle": "@BDP_yumemita",
-          "time": "12:00",
-          "title": "夢限大みゅーたいぷ 5th Single リリース記念サイン会開催！",
-          "title_ko": "꿈한계대뮤타입 5th 싱글 발매 기념 사인회 개최!",
-          "title_raw": "リリース記念 インターネットサイン会🖋",
-          "title_slug": "リリース記念インターネットサイン会",
-          "tweet_url": "https://x.com/i/status/2098698129444921743",
-          "url": "https://bushiroad-music.com/topics/22689/"
-        },
-        {
-          "anchor_a": "V2AJBNJGR8E",
-          "anchor_b": "これはぼくたちの生存のあらすじ",
-          "body_for_llm": "＼明日開催📢／ 🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念 インターネットサイン会🖋 明日 より、 サイン会の様子を生配信！ 📺配信URLはこちら ダブルチャンス抽選の発表もお楽しみに✨ #リミスタ #バンドリ",
-          "body_raw": "＼明日開催📢／\n\n🛸夢限大みゅーたいぷ 5th Single\n「これはぼくたちの生存のあらすじ」\nリリース記念 インターネットサイン会🖋\n\n明日12時より、\nサイン会の様子を生配信！\n\n📺配信URLはこちら\nhttps://www.youtube.com/live/V2AJBNJGR8E\n\nダブルチャンス抽選の発表もお楽しみに✨\n\n#リミスタ #バンドリ",
-          "category": "live",
-          "date": "2026-09-12",
-          "deadline": false,
-          "expires_at": "2026-09-12T15:00:00Z",
-          "first_seen": "2026-09-12T09:00:10Z",
-          "id": "2098698140819857544",
-          "last_updated": "2026-09-12T09:00:10Z",
-          "seen_ids": [
-            "2098698140819857544"
-          ],
-          "site": "youtube",
-          "src_handle": "@BDP_yumemita",
-          "time": "12:00",
-          "title": "夢限大みゅーたいぷ 5th Single リリース記念サイン会開催！",
-          "title_ko": "꿈한계대뮤타입 5th 싱글 발매 기념 사인회 개최!",
-          "title_raw": "リリース記念 インターネットサイン会🖋",
-          "title_slug": "リリース記念インターネットサイン会",
-          "tweet_url": "https://x.com/i/status/2098698140819857544",
-          "url": "https://www.youtube.com/live/V2AJBNJGR8E"
-        },
         {
           "anchor_a": null,
           "anchor_b": "802palette",
@@ -92,6 +42,31 @@
           "title_slug": "fm802802palette",
           "tweet_url": "https://x.com/i/status/2098715953857221074",
           "url": null
+        },
+        {
+          "anchor_a": "20260913010000",
+          "anchor_b": "802palette",
+          "body_for_llm": "＼📻このあと出演📻／ 🎨FM802「802 Palette」 夢限大みゅーたいぷ全員で出演いたします🌟 ⏰: (土) 〜 🔗: 260913010000 TVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮 放送をおたのしみに🎧 #FM802 #ハチパレ",
+          "body_raw": "＼📻このあと出演📻／\n\n🎨FM802「802 Palette」\n夢限大みゅーたいぷ全員で出演いたします🌟\n\n⏰:9/12(土) 25時〜\n🔗:https://radiko.jp/#!/ts/802/20260913010000\n\nTVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮\n放送をおたのしみに🎧\n\n#FM802 #ハチパレ",
+          "category": "etc",
+          "date": "2026-09-12",
+          "deadline": false,
+          "expires_at": "2026-09-13T15:00:00Z",
+          "first_seen": "2026-09-12T14:52:56Z",
+          "id": "2098773628385136878",
+          "last_updated": "2026-09-12T14:52:56Z",
+          "seen_ids": [
+            "2098773628385136878"
+          ],
+          "site": "web",
+          "src_handle": "@BDP_yumemita",
+          "time": "25:00",
+          "title": "FM802「802 Palette」夢限大みゅーたいぷ全員出演！",
+          "title_ko": "FM802 \"802 Palette\" 꿈한대 뮤타입 전원 출연!",
+          "title_raw": "TVアニメ「バンドリ！ ゆめ∞みた」感想会をお届け📮",
+          "title_slug": "tvアニメバンドリゆめみた感想会をお届け",
+          "tweet_url": "https://x.com/i/status/2098773628385136878",
+          "url": "https://radiko.jp/#!/ts/802/20260913010000"
         },
         {
           "anchor_a": "arale-birthday2026",
