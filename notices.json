@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T09:00:10Z",
+  "generated_at": "2026-09-12T10:10:52Z",
   "notices": [
     {
       "anchor_a": "22689",
@@ -50,6 +50,31 @@
       "title_slug": "リリース記念インターネットサイン会",
       "tweet_url": "https://x.com/i/status/2098698140819857544",
       "url": "https://www.youtube.com/live/V2AJBNJGR8E"
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": "802palette",
+      "body_for_llm": "RT @802Palette: 🗓 (土) 〜📡 FM802『802 Palette』🎨 ━━━━━━━━━━━━ ✧ ゲストは #夢限大みゅーたいぷ🛸 メンバー5人揃ってお迎えします！ #アニメゆめみた 感想会をお届け🌟 ✧ ━━━━━━━━━━━━ 🔻#ハチ…",
+      "body_raw": "RT @802Palette: 🗓9/12(土)25時〜📡\nFM802『802 Palette』🎨\n━━━━━━━━━━━━ ✧\n\nゲストは #夢限大みゅーたいぷ🛸\nメンバー5人揃ってお迎えします！\n#アニメゆめみた 感想会をお届け🌟\n\n✧ ━━━━━━━━━━━━\n🔻#ハチ…",
+      "category": "etc",
+      "date": "2026-09-12",
+      "deadline": false,
+      "expires_at": "2026-09-13T15:00:00Z",
+      "first_seen": "2026-09-12T10:10:52Z",
+      "id": "2098715953857221074",
+      "last_updated": "2026-09-12T10:10:52Z",
+      "seen_ids": [
+        "2098715953857221074"
+      ],
+      "site": "x",
+      "src_handle": "RT @802Palette",
+      "time": "25:00",
+      "title": "FM802『802 Palette』で夢限大みゅーたいぷアニメ感想会開催",
+      "title_ko": "FM802『802 Palette』에서 꿈한계뮤타입 애니 감상회 개최",
+      "title_raw": "FM802『802 Palette』🎨",
+      "title_slug": "fm802802palette",
+      "tweet_url": "https://x.com/i/status/2098715953857221074",
+      "url": null
     },
     {
       "anchor_a": "arale-birthday2026",
