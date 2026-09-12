@@ -22,6 +22,11 @@ FALLBACK_MODEL = "openai/gpt-oss-20b"
 # translate() 가 이 패턴이면 반복 그대로 LLM 에 보내지 않고 압축한다(§translate 참고).
 _REPEAT_RE = re.compile(r"^(.{1,6}?)\1{7,}")
 
+# 장음부호류(ー ｰ 〜 ～)가 2회 이상 연속 — 일본어 트윗 특유의 "글자 늘려쓰기" 강조 표기
+# (예: "おーまーーたーーせー…" = 「お待たせ」를 늘려 쓴 것). _REPEAT_RE 와 달리 문자열
+# 어디서든, 여러 군데 흩어져 나타나도 전부 잡는다(§translate 참고).
+_STRETCH_RE = re.compile(r"[ーｰ〜～]{2,}")
+
 
 # Groq structured outputs (strict) — gpt-oss-120b/20b·qwen3.8-27b 지원.
 # strict 규칙: 모든 필드 required, additionalProperties:false.
@@ -50,6 +55,20 @@ def _strip_json_fence(text: str) -> str:
             t = t.rstrip()[:-3]
     i, j = t.find("{"), t.rfind("}")
     return t[i:j + 1] if 0 <= i < j else t.strip()
+
+
+def _normalize_stretch(text: str) -> str:
+    """장음부호류 연속(2회+)을 1회로 접는다 — 의미는 그대로 두고 문체적 강조만 정규화.
+
+    (버그리포트 20260913 #4) "おーまーーたーーせー…"처럼 글자마다 다른 길이로 장음부호가
+    끼어드는 늘려쓰기는 `_REPEAT_RE`(맨 앞·단일 유닛 8회+ 반복) 로는 못 잡는다. 그대로
+    보내면 v3.1.8 이 대응한 것과 같은 LLM 반복 루프에 빠져 환각 가드에 매번 걸린다
+    (실측: 204자 입력 → 2035자 응답, `temperature=0`이라 재시도해도 항상 동일 실패).
+    표적을 장음부호류로 한정한 이유: 아무 문자나 2연속을 접으면 "宮永ののか"(멤버명 자체의
+    반복 글자) → "宮永のか", "かわいい" → "かわい", "https://www." → "htps:/w." 처럼 정상
+    단어·고유명사·URL 이 깨진다(실측 확인 후 표적 축소).
+    """
+    return _STRETCH_RE.sub(lambda m: m.group(0)[0], text)
 
 
 class LLMClient:
@@ -157,7 +176,8 @@ class LLMClient:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
 
-        m = _REPEAT_RE.match(text_ja or "")
+        text_ja = _normalize_stretch(text_ja or "")
+        m = _REPEAT_RE.match(text_ja)
         if m:
             return self._translate_repeated(text_ja, m)
         return self._translate_once(text_ja)
@@ -254,6 +274,9 @@ class LLMClient:
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0,
             "reasoning_effort": "low",
+            # 반복 루프 방어 2중선(1중선은 translate() 의 _normalize_stretch/_REPEAT_RE
+            # 전처리) — 미지 패턴이 전처리를 뚫고 들어와도 폭주를 API 단에서 조기 절단.
+            "max_tokens": max(200, len(prompt) // 2),
         }
         # 구조화 출력이 필요한 호출(notice_title)만 json_schema strict 를 붙인다.
         # translate 는 자유텍스트라 안 붙임(json_object 는 gpt-oss 가 거부하므로 안 씀).
@@ -604,12 +627,41 @@ if __name__ == "__main__":
     # translate 경로: json_schema 안 붙음
     llm_payload._call_groq(DEFAULT_MODEL, "test")
     assert "response_format" not in session_payload.last_payload, "translate 는 response_format 없음"
+    assert session_payload.last_payload["max_tokens"] == 200, "짧은 prompt 는 max_tokens 하한(200)"
     # notice_title 경로: json_schema strict 붙음
     llm_payload._call_groq(DEFAULT_MODEL, "test", json_schema=_NOTICE_TITLE_SCHEMA)
     rf = session_payload.last_payload["response_format"]
     assert rf["type"] == "json_schema" and rf["json_schema"]["strict"] is True
-    print("✓ json_schema strict 는 notice_title 경로에만")
+    print("✓ json_schema strict 는 notice_title 경로에만, max_tokens 상한 동봉")
+
+    # ──── 시나리오 10: 장음부호 늘려쓰기 정규화 (버그리포트 20260913 #4) ────
+    print("\n[시나리오 10] 장음부호 늘려쓰기 정규화 (もぐもぐ 반복과는 다른 케이스)")
+    print("-" * 70)
+
+    assert _normalize_stretch("おーまーーたーーせーーーしーーーーました") == "おーまーたーせーしーました"
+    # 멤버명·단어의 정상적인 글자 반복(장음부호가 아님)은 안 건드림.
+    assert _normalize_stretch("宮永ののか") == "宮永ののか"
+    assert _normalize_stretch("かわいい") == "かわいい"
+    assert _normalize_stretch("https://www.youtube.com") == "https://www.youtube.com"
+    print("✓ _normalize_stretch: 장음부호만 표적, 멤버명·단어·URL 은 보존")
+
+    class StretchLoopSession:
+        """정규화 안 된 원문(장음부호 다량)이 오면 반복 루프를 흉내(과길이 응답)."""
+        def post(self, url, **kwargs):
+            content = kwargs["json"]["messages"][0]["content"]
+            reply = "정상 번역" if "ーーー" not in content else "폭주" * 500
+            class FakeResp:
+                status_code = 200
+                def json(self):
+                    return {"choices": [{"message": {"content": reply}}]}
+            return FakeResp()
+
+    llm_stretch = LLMClient("test-key", session=StretchLoopSession())
+    stretched = "おーまーーたーーせーーーしーーーーました🙇‍♀️"
+    result = llm_stretch.translate(stretched)
+    assert result == "정상 번역", result  # 정규화 안 됐으면 "폭주"*500 이 나와 환각 가드에 걸림
+    print("✓ translate(): 정규화 후 전송 — 반복 루프 회피, 정상 응답 통과")
 
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 9개 스모크 테스트 통과")
+    print("SUCCESS: 모든 10개 스모크 테스트 통과")
     print("=" * 70)

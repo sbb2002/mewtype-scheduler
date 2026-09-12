@@ -476,6 +476,16 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 오역, 반복 문맥 제공 시 "우걱"으로 정확) 후 그 결과를 `count`번 반복, 나머지(`remainder`)는
 `_translate_once`로 따로 번역해 이어붙인다.
 
+**(v3.1.9) 장음부호 늘려쓰기 정규화 + `max_tokens` 상한** — `_REPEAT_RE`는 문자열 맨 앞의
+**단일 유닛** 반복만 잡아서, "おーまーーたーーせーーーしーーーーました"처럼 글자마다
+다른 길이로 장음부호(ー/ｰ/〜/～)가 흩어져 끼어드는 늘려쓰기 강조체는 못 잡는다(버그리포트
+20260913 #4, 실측: 204자 입력 → 2035자 응답, 환각 가드에 매번 걸림). `translate()` 진입 시
+`_normalize_stretch()`로 장음부호류 연속 2회+ 를 1회로 접은 뒤 `_REPEAT_RE`/`_translate_once`
+로 넘긴다. 표적을 장음부호류로 좁힌 이유 — 아무 문자나 2연속 접으면 "宮永ののか"(멤버명
+자체의 반복 글자) → "宮永のか", "かわいい" → "かわい", URL(`https://www.`→`htps:/w.`)까지
+깨진다(실측 후 표적 축소). 추가로 `_call_groq` payload에 `max_tokens = max(200, len(prompt)//2)`
+를 상한선으로 걸어, 정규화를 뚫는 미지 패턴이 또 나와도 API 단에서 조기 절단되게 함(2중 방어).
+
 ### 8.5 `ytnotif.py` (순수)
 
 `parse_yt_notif(nx: dict, now_iso) -> dict | None`. `pde_noti_pkg != com.google.android.youtube` /
