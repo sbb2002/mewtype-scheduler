@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T06:22:48Z",
+  "generated_at": "2026-09-12T07:16:05Z",
   "tweets": {
     "arale": [
       {
@@ -56,16 +56,6 @@
     "miyako": [
       {
         "channel_key": "miyako",
-        "expires_at": "2026-09-13T01:41:43Z",
-        "handle": "miyako_yumemita",
-        "id": "2098587810852901043",
-        "received_at": "2026-09-12T01:41:43Z",
-        "text": "みやこのゆ！\n🐶かﾎﾟ〜ん",
-        "text_ko": "미야코의 유! 🐶카포~",
-        "url": "https://x.com/i/status/2098587810852901043"
-      },
-      {
-        "channel_key": "miyako",
         "expires_at": "2026-09-13T03:00:03Z",
         "handle": "miyako_yumemita",
         "id": "2098607533510590673",
@@ -103,6 +93,16 @@
         "text": "すしろぅ♪\n\n🦆⁉️",
         "text_ko": "스시로우♪ 🦆⁉️",
         "url": "https://x.com/i/status/2098647581618565454"
+      },
+      {
+        "channel_key": "miyako",
+        "expires_at": "2026-09-13T07:16:05Z",
+        "handle": "miyako_yumemita",
+        "id": "2098671955255927214",
+        "received_at": "2026-09-12T07:16:05Z",
+        "text": "#藤都子16歳",
+        "text_ko": "#藤都子 16세",
+        "url": "https://x.com/i/status/2098671955255927214"
       }
     ],
     "nonoka": [
