@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T14:52:51Z",
+  "generated_at": "2026-09-12T14:52:53Z",
   "tweets": {
     "arale": [
       {
@@ -56,16 +56,6 @@
     "miyako": [
       {
         "channel_key": "miyako",
-        "expires_at": "2026-09-13T07:16:05Z",
-        "handle": "miyako_yumemita",
-        "id": "2098671955255927214",
-        "received_at": "2026-09-12T07:16:05Z",
-        "text": "#藤都子16歳",
-        "text_ko": "#藤都子 16세",
-        "url": "https://x.com/i/status/2098671955255927214"
-      },
-      {
-        "channel_key": "miyako",
         "expires_at": "2026-09-13T07:55:23Z",
         "handle": "miyako_yumemita",
         "id": "2098681851003236647",
@@ -103,6 +93,16 @@
         "text": "💜配信よてい💜\n9/13(日)20:00〜21:00\n＃アニメゆめみた 最終回ありゃとうすぺしゃる🌟\n\n🔗https://www.youtube.com/live/7Q2gPHbBrdw?si=t9pGUwRVM3gbFBaU\n\nふりかえるぞ❣\n＃みるみやこ",
         "text_ko": "💜방송 일정💜\n9/13(일) 20:00~21:00\n#아니메유메미타 최종회 스페셜🌟\n\n🔗https://www.youtube.com/live/7Q2gPHbBrdw?si=t9pGUwRVM3gbFBaU\n\n돌아볼게요❣\n#미루미야코",
         "url": "https://x.com/i/status/2098728332523430069"
+      },
+      {
+        "channel_key": "miyako",
+        "expires_at": "2026-09-13T14:52:53Z",
+        "handle": "miyako_yumemita",
+        "id": "2098783796632195525",
+        "received_at": "2026-09-12T14:52:53Z",
+        "text": "🎈",
+        "text_ko": "🎈",
+        "url": "https://x.com/i/status/2098783796632195525"
       }
     ],
     "nonoka": [
