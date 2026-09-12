@@ -1,6 +1,31 @@
 {
-  "generated_at": "2026-09-12T01:00:42Z",
+  "generated_at": "2026-09-12T09:00:10Z",
   "notices": [
+    {
+      "anchor_a": "V2AJBNJGR8E",
+      "anchor_b": "これはぼくたちの生存のあらすじ",
+      "body_for_llm": "＼明日開催📢／ 🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念 インターネットサイン会🖋 明日 より、 サイン会の様子を生配信！ 📺配信URLはこちら ダブルチャンス抽選の発表もお楽しみに✨ #リミスタ #バンドリ",
+      "body_raw": "＼明日開催📢／\n\n🛸夢限大みゅーたいぷ 5th Single\n「これはぼくたちの生存のあらすじ」\nリリース記念 インターネットサイン会🖋\n\n明日12時より、\nサイン会の様子を生配信！\n\n📺配信URLはこちら\nhttps://www.youtube.com/live/V2AJBNJGR8E\n\nダブルチャンス抽選の発表もお楽しみに✨\n\n#リミスタ #バンドリ",
+      "category": "live",
+      "date": "2026-09-12",
+      "deadline": false,
+      "expires_at": "2026-09-12T15:00:00Z",
+      "first_seen": "2026-09-12T09:00:10Z",
+      "id": "2098698140819857544",
+      "last_updated": "2026-09-12T09:00:10Z",
+      "seen_ids": [
+        "2098698140819857544"
+      ],
+      "site": "youtube",
+      "src_handle": "@BDP_yumemita",
+      "time": "12:00",
+      "title": "夢限大みゅーたいぷ 5th Single リリース記念サイン会開催！",
+      "title_ko": "꿈한계대뮤타입 5th 싱글 발매 기념 사인회 개최!",
+      "title_raw": "リリース記念 インターネットサイン会🖋",
+      "title_slug": "リリース記念インターネットサイン会",
+      "tweet_url": "https://x.com/i/status/2098698140819857544",
+      "url": "https://www.youtube.com/live/V2AJBNJGR8E"
+    },
     {
       "anchor_a": "arale-birthday2026",
       "anchor_b": null,
