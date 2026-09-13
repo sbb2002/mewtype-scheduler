@@ -72,6 +72,11 @@ except ImportError:
     vxtwitter = None
 
 try:
+    from . import vision                     # (v3.2) 비전 OCR — 크로스오버 공지 이미지 출연진
+except ImportError:
+    vision = None
+
+try:
     # (v2.8.1+) 수동 /ingest 개인 예고: 본문 YT URL → 채널 판별 (videos.list 1 quota)
     from ..collector.youtube import YouTubeClient
 except Exception:                           # pragma: no cover
@@ -96,6 +101,11 @@ _NOTICE_ARCHIVE_PATH = "notice_archive.json"
 _TWEETS_PATH = "tweets.json"                   # (v2.8) 멤버 개인 트윗
 _TWEET_ARCHIVE_PATH = "tweet_archive.json"
 _UNIT_KEYS = ("arale", "yuno", "nonoka", "ritsu", "miyako")
+
+# (v3.2) 출연진 이미지 그래픽을 쓰는 걸로 확인된 크로스오버 공식 계정.
+# 이 handle 이 src_handle 에 포함된 소식만 비전 OCR 을 태운다 — 매번 모든 소식에
+# 이미지가 있는지 찔러보면 낭비이자 오탐 확률만 늘어난다.
+_CAST_LOOKUP_HANDLES = ("bang_dream_on",)
 
 
 def _tw_list(v):
@@ -1210,6 +1220,7 @@ def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[
     parsed = xnotice.parse(raw, now_iso, tag=tag, title=title)
     if not parsed:
         return "none", None
+    _maybe_tag_cast_participants(parsed, tag)  # (v3.2) 크로스오버 출연진 비전 OCR
     # 파싱 직후 1회 LLM 제목추출·번역 (재시도와 무관하게 한 번만). (v3.1.2)
     _tl = None
     if not parsed.get("title_ko"):
@@ -2033,6 +2044,63 @@ def _make_llm_client():
     except Exception:
         log.exception("LLMClient 생성 실패")
         return None
+
+
+def _make_vision_client():
+    """VisionClient. GROQ_API_KEY 없거나 vision 모듈 미탑재면 None. (v3.2)"""
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not key or vision is None:
+        return None
+    try:
+        return vision.VisionClient(
+            key,
+            model=os.environ.get("GROQ_VISION_MODEL", "").strip()
+            or vision.DEFAULT_VISION_MODEL,
+            fallback=os.environ.get("GROQ_VISION_MODEL_FALLBACK", "").strip()
+            or vision.FALLBACK_VISION_MODEL,
+        )
+    except Exception:
+        log.exception("VisionClient 생성 실패")
+        return None
+
+
+def _maybe_tag_cast_participants(parsed: dict, tag: str | None) -> None:
+    """(v3.2) 크로스오버 공식 계정 소식이면 첨부 이미지를 비전 OCR 로 읽어
+    5인 중 누가 출연하는지 `parsed["participants"]` 에 채운다 (제자리 수정).
+
+    조건이 하나라도 안 맞으면(계정 미대상·tweet id 없음·이미지 없음·OCR 실패·
+    매칭되는 멤버 없음) 아무것도 안 하고 조용히 넘어간다 — 이 소식은 여전히
+    일반 소식으로 정상 표시된다(무회귀).
+    """
+    src_handle = (parsed or {}).get("src_handle") or ""
+    if not any(h in src_handle for h in _CAST_LOOKUP_HANDLES):
+        return
+    if vxtwitter is None or xtweet is None or xrelay is None:
+        return
+    tid = xtweet._tweet_id(tag) if tag else ""
+    if not tid or not tid.isdigit():
+        return
+    j = vxtwitter.fetch_tweet(tid)
+    media = vxtwitter.extract(j).get("media") if j else []
+    if not media:
+        return
+    vc = _make_vision_client()
+    if vc is None:
+        return
+    names = vc.cast_names(image_url=media[0])
+    if not names:
+        log.info("cast OCR: 이름 판독 실패 (tweet %s)", tid)
+        return
+    matched: list[str] = []
+    for name in names:
+        for token, key in xrelay.NAME_TO_KEY:
+            if token in name and key not in matched:
+                matched.append(key)
+    if matched:
+        parsed["participants"] = matched
+        log.info("cast OCR: %s → 참여 채널 %s (tweet %s)", names, matched, tid)
+    else:
+        log.info("cast OCR: 판독된 이름 %s 중 5인 매칭 없음 (tweet %s)", names, tid)
 
 
 def _translate_report(label: str, total: int, tried: int, ok: int) -> str:
@@ -3068,6 +3136,54 @@ if __name__ == "__main__":
     _clean = "오늘 21시 방송해요"
     assert _recover_raw_via_vxtwitter(_clean, None) == _clean    # tweet id 없음 → 네트워크 미시도(무회귀)
     print("[OK] _recover_raw_via_vxtwitter (조기반환)")
+
+    # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
+    _p1 = {"src_handle": "@BDP_yumemita"}
+    _maybe_tag_cast_participants(_p1, _TAG)
+    assert "participants" not in _p1, "대상 계정 아니면 손 안 댐"
+
+    _p2 = {"src_handle": "RT @bang_dream_on"}
+    _maybe_tag_cast_participants(_p2, None)  # tweet id 없음 → 네트워크 미시도
+    assert "participants" not in _p2, "tweet id 없으면 손 안 댐"
+
+    class _FakeVX:
+        @staticmethod
+        def fetch_tweet(tid):
+            return {"id": tid}
+
+        @staticmethod
+        def extract(j):
+            return {"media": ["https://pbs.twimg.com/media/fake.jpg"]}
+
+    class _FakeVisionClient:
+        def __init__(self, *a, **kw):
+            pass
+
+        def cast_names(self, *, image_url=None, image_bytes=None):
+            return ["羊宮 妃那", "宮永 ののか", "?"]
+
+    class _FakeVisionModule:
+        VisionClient = _FakeVisionClient
+        DEFAULT_VISION_MODEL = "fake-main"
+        FALLBACK_VISION_MODEL = "fake-fallback"
+
+    _orig_vxtwitter, _orig_vision = vxtwitter, vision
+    _orig_groq_key = os.environ.get("GROQ_API_KEY")
+    try:
+        globals()["vxtwitter"] = _FakeVX
+        globals()["vision"] = _FakeVisionModule
+        os.environ["GROQ_API_KEY"] = "test-key"
+        _p3 = {"src_handle": "RT @bang_dream_on"}
+        _maybe_tag_cast_participants(_p3, _TAG)
+        assert _p3["participants"] == ["nonoka"], _p3
+    finally:
+        globals()["vxtwitter"] = _orig_vxtwitter
+        globals()["vision"] = _orig_vision
+        if _orig_groq_key is None:
+            os.environ.pop("GROQ_API_KEY", None)
+        else:
+            os.environ["GROQ_API_KEY"] = _orig_groq_key
+    print("[OK] _maybe_tag_cast_participants (대상 계정 필터 · 매칭 · 무회귀)")
 
     # ── 6상태 정렬·표시 ───────────────────────────────────────
     _pv = {"items": [

@@ -375,8 +375,15 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 
 - `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
   `title`·`title_ko`·`title_raw`·`body_raw`·`body_for_llm`·`date`·`time`·`deadline`·`site`·`url`·
-  `tweet_url`·`src_handle`·`needs_tl?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`. 정렬 date→time→id.
+  `tweet_url`·`src_handle`·`needs_tl?`·`participants?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`.
+  정렬 date→time→id.
   `title_raw`(정규식 제목)·`body_raw`(원문, 600자 컷)는 파싱·번역 품질 개선용 기록 — 프론트 안 읽음, 아카이브까지 이관.
+- **`participants`** (v3.2, 선택 필드): 크로스오버 공식 계정(`_CAST_LOOKUP_HANDLES`, 현재
+  `bang_dream_on`) 소식만 대상 — 첨부 이미지를 `vision.py`(Groq 비전 OCR, `qwen/qwen3.8-27b`
+  주+`qwen/qwen3.6-27b` 폴백)로 읽어 5인 중 출연이 확인된 `channel_key` 배열. `telegram_app
+  ._maybe_tag_cast_participants`가 `_apply_notice` 파싱 직후 채운다(tweet id 없음·이미지
+  없음·OCR 실패·매칭 없음이면 그냥 비워둠 — 일반 소식으로 정상 표시, 무회귀). 프론트는 아직
+  이 필드를 읽지 않음(추후 UI 확장 여지).
 - **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
 - `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
 - `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
