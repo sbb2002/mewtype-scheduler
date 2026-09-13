@@ -86,7 +86,7 @@ def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
     out = dict(cur)
     for k in ("title", "title_ko", "title_raw", "body_raw", "body_for_llm", "time", "url",
               "site", "tweet_url", "src_handle", "category",
-              "anchor_a", "anchor_b", "title_slug", "expires_at"):
+              "anchor_a", "anchor_b", "title_slug", "expires_at", "participants"):
         v = inc.get(k)
         if v:
             out[k] = v
@@ -106,6 +106,7 @@ def _new_row(inc: dict, now_iso: str) -> dict:
         "id", "category", "title", "title_ko", "title_raw", "body_raw", "body_for_llm",
         "date", "time", "deadline", "site", "url",
         "tweet_url", "src_handle", "anchor_a", "anchor_b", "title_slug", "expires_at",
+        "participants",
     )}
     row["deadline"] = bool(row.get("deadline"))
     row["seen_ids"] = [inc["id"]] if inc.get("id") else []
@@ -330,5 +331,21 @@ if __name__ == "__main__":
     assert edit_notice(E, "50", {"title": "会場:GARDEN"}, NOW)[1] is False   # 동일값 → no-op
     assert edit_notice(E, "50", {"id": "hax"}, NOW)[1] is False              # id 는 편집 불가
     print("[OK] edit_notice (title_ko 지원 · id/seen_ids/first_seen 보존 · no-op)")
+
+    # v3.2 — participants (비전 OCR 로 판별된 출연 채널) 필드가 신규/갱신 모두 보존되는지
+    NP, AP = default_notices(), default_archive()
+    NP, AP, ch, m = merge_notice(
+        NP, inc(id="60", url="https://youtube.com/live/x", title="크로스오버 특번",
+                participants=["nonoka"]),
+        NOW, archive=AP,
+    )
+    assert ch and m == "added" and NP["notices"][0]["participants"] == ["nonoka"], NP["notices"][0]
+    NP, AP, ch, m = merge_notice(
+        NP, inc(id="61", url="https://youtube.com/live/x", title="크로스오버 특번(정정)",
+                participants=["nonoka"]),
+        NOW, archive=AP,
+    )
+    assert ch and m == "updated" and NP["notices"][0]["participants"] == ["nonoka"], NP["notices"][0]
+    print("[OK] participants 필드 신규/갱신 보존 (비전 OCR 출연 채널)")
 
     print("\nSUCCESS: notices.py smoke test 통과")

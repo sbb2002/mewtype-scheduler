@@ -13,3 +13,6 @@ collector_state_local/
 deploy/env.sh
 
 .secrets
+
+# 저작권 있는 실사용 이미지 fixture(비전 OCR 로컬 --live 테스트용) — 커밋 금지
+fixtures/awarnoutz_cast.jpg

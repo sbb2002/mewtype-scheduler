@@ -31,6 +31,9 @@ class Config:
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_model_fallback: str = "openai/gpt-oss-20b"
+    # v3.2 — 비전(OCR). 크로스오버 공지 이미지 속 출연진 이름 판독. groq_api_key 공유.
+    groq_vision_model: str = "qwen/qwen3.8-27b"
+    groq_vision_model_fallback: str = "qwen/qwen3.6-27b"
     # v3 — vxtwitter unfurl. 서드파티 무료 서비스.
     vxtwitter_base: str = "https://api.vxtwitter.com"
     # v3 — 업스트림 YouTube 앱 알림 중계 라우팅. "1" 이어야 /ingest 가 ytnotif 를 탄다.
@@ -83,6 +86,12 @@ def load_config() -> Config:
         groq_model=os.environ.get("GROQ_MODEL", "").strip() or "openai/gpt-oss-120b",
         groq_model_fallback=(
             os.environ.get("GROQ_MODEL_FALLBACK", "").strip() or "openai/gpt-oss-20b"
+        ),
+        groq_vision_model=(
+            os.environ.get("GROQ_VISION_MODEL", "").strip() or "qwen/qwen3.8-27b"
+        ),
+        groq_vision_model_fallback=(
+            os.environ.get("GROQ_VISION_MODEL_FALLBACK", "").strip() or "qwen/qwen3.6-27b"
         ),
         vxtwitter_base=(
             os.environ.get("VXTWITTER_BASE", "").strip().rstrip("/") or "https://api.vxtwitter.com"
