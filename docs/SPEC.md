@@ -137,7 +137,10 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
   `scheduled_start` asc(null 뒤) → `id`. `end` 는 우선순위 밖(뒤).
 - 파일 없을 때 기본형(`preview.default_preview`): `{"generated_at": null, "channel_order": [], "channels": {}, "items": []}`.
   프론트는 `channel_order`/`channels` 가 비면 `config.js` 폴백을 쓴다.
-- `generated_at` heartbeat: 실질 변화가 없어도 `_HEARTBEAT_MIN_SEC`(20분) 간격으로 전진 커밋
+- `generated_at` heartbeat: 실질 변화가 없어도 전진 커밋. `/tick`(정기)은 `_HEARTBEAT_MIN_SEC`
+  (20분) 스로틀, **`/wake`(방송별 정밀 체크)는 스로틀 없이 매번 즉시 now 로 갱신**(v3.1.17 —
+  전엔 tick/wake 구분 없이 20분 스로틀이라, live/end 를 몇 분 간격으로 계속 확인 중이어도
+  프론트 하단 업데이트 시각이 tick 주기로만 움직이는 것처럼 보였다)
   (`handlers._heartbeat_generated_at` + `_stable_view` 로 volatile 필드 `last_updated`/`concurrent_viewers` 동결).
 
 ### 1-1. 아이템 매칭 (`preview.match_item`)
@@ -465,6 +468,11 @@ def build_archive_appends(prev_archive, gone_items, now_iso) -> (new_archive, ch
    `scheduled_start` 는 안 덮고 `api_start_seen` 만 기록). 신규는 `make_item(state="announced")` →
    `promote_state`. `live_state=="live"` → state="live"+actual_start. `"none"` && state=="live" → `end`.
    각 아이템 `statemachine.derive` 적용 → 전이 로그 + `next_state=="none"` 은 `gone_items` 로.
+   채널이 `config/channels.json` 미등록이어도(예: 외부 굿즈 판매사 채널) **이미 추적 중이던
+   아이템**(video_id 매칭)이면 enrich 를 계속한다(v3.1.17) — 신규 발견인데 채널 미상인 것만
+   스킵. 예전엔 채널 미상이면 무조건 스킵해서, 이미 반영해둔 외부 채널 합동방송이 다음
+   tick 에 이 video_id 를 후보로 다시 잡자마자 섹션 2 도 "이미 처리됨"으로 오판해 통째로
+   사라지는(archive 도 안 되는) 버그가 있었다(실측: 리미스타 채널 합동 생중계).
 3. **prev 아이템 중 이번 videos 에 없던 것** —
    · video_id 有: removed 유예(`STALE_REMOVE_SEC` 6.5h). 유예 중 carry + FSM, 경과 시 removed.
    · video_id 無 (announced 자리표시): 참여자 채널에 실물 ±4h → supersede + `_carry_collab`.
@@ -616,6 +624,19 @@ followup 소진 순서: del/undo (y/N/terminate) → `_handle_ingest_followup` �
 | `/list <c> [rest]` | 5인 살아있는 아이템(state announced~end) 유닛별 idx | `/notice-list` | 배지 떠 있는 유닛 트윗 |
 | `/ingest <c>` | `pending_ingest` 슬롯 → 원문/파일 → `xrelay.parse` → `merge_announced` | `pending_notice` → `xnotice`+`notices.merge_notice` | `pending_op` → 유닛→원문 → `_maybe_personal_tweet` |
 | `/edit <c>` | `pending_op` 마법사 (유닛→idx→필드/값 반복→`done`, `edit_lock`, 답한 필드만 patch, tick 충돌 알림) | `/notice-edit` 재사용 (제목→날짜→URL) | 유닛→원문 → `merge_tweet` 교체 |
+
+`/edit preview` 로 `state` 를 바꾸면(예: 긴급 종료 처리) 라벨만 바뀌는 게 아니라
+`_activate_state_edit`(v3.1.17)이 그 상태에 맞는 실제 로직을 마저 이행한다 — 안 하면
+FSM 파생·Cloud Tasks wake 재예약·archive 반영이 전혀 안 일어나 다음 tick(최대 3h)까지
+방치되는 문제가 있었다. `state_since` 도 이 시점으로 리셋한다(안 하면 오래된 state_since
+때문에 end→none 30분 판정이 리셋 없이 즉시 발동할 수 있음). 목표 상태별 동작:
+- `"none"` — preview.json 에서 즉시 제거 + `preview_archive.json` 에 기록(FSM 의
+  end→none 전이와 동일 취급).
+- `video_id` 있음(live/end/watching/upcoming — API 로 실물 검증 가능) — 메인 서비스
+  `/wake` 를 OIDC 로 호출해 실제 상태로 재확인 + Cloud Tasks wake 재예약까지 그쪽에
+  맡긴다(운영자가 잘못 짚었어도 API 확인 결과가 우선하므로 안전).
+- `video_id` 없음(announced 자리표시) — API 로 검증할 게 없으므로 로컬에서
+  `statemachine.derive()` 1회만 돌려 리셋된 `state_since` 기준으로 다음 체크를 재계산.
 | `/del <c> …` | `<유닛> <idx>` → 확인 `(terminate/y/N)`. terminate = 삭제 + `add_suppress(url, 12h)` | `/notice-del <id\|번호>` | `<유닛>` → 슬롯 제거 |
 | `/undo` | 직전 mutating 명령 1건(계통 무관 단일 슬롯). 2단계 확인 + sha 2중 가드. `undo.path` 로 3파일 복원 |
 | `/translate <notice\|tweet>` | 미번역 행 전부 `*_ko` 채움(원문 보존). `GROQ_API_KEY` 필요. 수동 명령 — 자동 sweep 과 별개 |

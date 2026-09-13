@@ -138,24 +138,33 @@ def build_preview(
 
     # ─ 1. videos.list 결과 처리 (API 확정 영상) ─
     for video_id, video in videos.items():
-        if video.channel_id not in channel_id_to_key:
-            continue
-
-        channel_key = channel_id_to_key[video.channel_id]
-        live_seen = video.live_state == "live"
-
-        # 그룹 공식 채널(@BDP_yumemita) 감지 — channel_order 밖이므로 전용 레인이 없다.
-        # 5인 전원 레인에 팬아웃되도록 주 레인 + collab_with 로 변환(신규 생성시에만 필요).
-        group_collab_with = None
-        if channel_key == GROUP_CHANNEL_KEY:
-            order = channels_cfg["channel_order"]
-            channel_key = order[0]
-            group_collab_with = order[1:] or None
-
-        url = f"https://www.youtube.com/watch?v={video_id}"
         # video_id 는 고유하므로 이전 아이템은 video_id 로만 정확히 잡는다.
         # (in-progress items 대상 match_item 은 백투백 방송에서 오매칭 위험 → 안 씀)
         matched = prev_by_video_id.get(video_id)
+
+        if video.channel_id not in channel_id_to_key:
+            if not matched:
+                continue  # 신규 발견인데 채널 미상 — 배정할 레인을 모르므로 스킵
+            # 이미 추적 중이던 아이템(예: 외부 채널에서 열린 합동방송)은 채널이 미등록이어도
+            # enrich 를 계속한다 — channel_key/collab_with/host 는 기존 값을 그대로 쓴다.
+            # (v3.1.17 — 예전엔 여기서 무조건 continue 해서, 다음 tick 에 이 video_id 가
+            # videos.list 후보로 다시 잡히자마자 섹션 1·2 양쪽에서 스킵되며 아카이브도
+            # 안 되고 통째로 사라지는 버그가 있었다. 실측: 굿즈사 채널 합동 생중계.)
+            channel_key = matched.get("channel_key")
+            group_collab_with = None
+        else:
+            channel_key = channel_id_to_key[video.channel_id]
+
+            # 그룹 공식 채널(@BDP_yumemita) 감지 — channel_order 밖이므로 전용 레인이 없다.
+            # 5인 전원 레인에 팬아웃되도록 주 레인 + collab_with 로 변환(신규 생성시에만 필요).
+            group_collab_with = None
+            if channel_key == GROUP_CHANNEL_KEY:
+                order = channels_cfg["channel_order"]
+                channel_key = order[0]
+                group_collab_with = order[1:] or None
+
+        live_seen = video.live_state == "live"
+        url = f"https://www.youtube.com/watch?v={video_id}"
 
         if matched:
             # 기존 아이템 업데이트
@@ -839,6 +848,50 @@ if __name__ == "__main__":
     assert grp_item_14["title_ko"] is None and grp_item_14["needs_tl"] is True, grp_item_14
     print("  title_ko/needs_tl: 신규=True, 제목 불변=유지, 제목 변경=재설정")
 
+    # Test 15: 외부(미등록) 채널 소유 video_id 도 기존 아이템이면 enrich 계속 (v3.1.17)
+    # 실측 버그: config/channels.json 미등록 채널(굿즈 판매사 등)에서 열린 합동방송을
+    # 수동으로 반영해두면, 다음 tick 에 그 video_id 가 videos.list 후보로 다시 잡히자마자
+    # "채널 미상 → continue" 로 섹션 1 을 통째로 건너뛰고, 섹션 2 도 "vid in videos → continue"
+    # 로 건너뛰어(이미 섹션 1 이 처리했다고 착각) 그 아이템이 archive 도 안 되고 그냥
+    # 사라졌다. 채널이 미상이어도 "이미 추적 중이던 아이템"이면 enrich 를 계속해야 한다.
+    prev_ext = [
+        preview.make_item(
+            channel_key="arale", state="live", source="manual", now_iso=now_iso,
+            title="외부 채널 합동 생중계", url="https://www.youtube.com/watch?v=ext_vid1",
+            video_id="ext_vid1", scheduled_start=now_iso, actual_start=now_iso,
+            collab_with=["yuno", "nonoka"], host="group", kind="collab",
+        ),
+    ]
+    videos_ext_live = {
+        "ext_vid1": types.SimpleNamespace(
+            video_id="ext_vid1", channel_id="UC_UNTRACKED_EXTERNAL",
+            title="외부 채널 합동 생중계(갱신)", thumbnail="https://i.ytimg.com/vi/ext_vid1/mqdefault.jpg",
+            live_state="live", scheduled_start=now_iso, actual_start=now_iso,
+            actual_end=None, concurrent_viewers=500,
+        ),
+    }
+    new_preview_15a, *_r = build_preview(channels_cfg_g, videos_ext_live, {"items": prev_ext}, now_iso)
+    assert len(new_preview_15a["items"]) == 1, new_preview_15a["items"]
+    ext_item = new_preview_15a["items"][0]
+    assert ext_item["video_id"] == "ext_vid1" and ext_item["state"] == "live", ext_item
+    assert ext_item["channel_key"] == "arale" and ext_item["collab_with"] == ["yuno", "nonoka"], ext_item
+    assert ext_item["title"] == "외부 채널 합동 생중계(갱신)", ext_item  # enrich 계속됨
+    print("  미등록 채널이라도 기존 아이템이면 title/thumbnail enrich 계속")
+
+    # 그 방송이 끝나면(live→none) 통째로 사라지지 않고 end 로 정상 전이해야 한다.
+    videos_ext_ended = {
+        "ext_vid1": types.SimpleNamespace(
+            video_id="ext_vid1", channel_id="UC_UNTRACKED_EXTERNAL",
+            title="외부 채널 합동 생중계(갱신)", thumbnail="https://i.ytimg.com/vi/ext_vid1/mqdefault.jpg",
+            live_state="none", scheduled_start=now_iso, actual_start=now_iso,
+            actual_end=now_iso, concurrent_viewers=None,
+        ),
+    }
+    new_preview_15b, *_r = build_preview(channels_cfg_g, videos_ext_ended, new_preview_15a, now_iso)
+    assert len(new_preview_15b["items"]) == 1, new_preview_15b["items"]
+    assert new_preview_15b["items"][0]["state"] == "end", new_preview_15b["items"][0]
+    print("  방송 종료(live→none) 시에도 사라지지 않고 end 로 정상 전이")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 14개 self-test scenarios passed ✓")
+    print("SUCCESS: 모든 15개 self-test scenarios passed ✓")
     print("=" * 70)
