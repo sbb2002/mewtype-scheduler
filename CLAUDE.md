@@ -267,6 +267,19 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 
 ## 주의점
 
+- **`vercel.json` 은 반드시 `src/frontend/vercel.json`에 있어야 한다** (Vercel 프로젝트 Root
+  Directory = `src/frontend`). 저장소 루트에 두면 Vercel 이 이 파일을 아예 못 읽는다 — CLI 가
+  `vercel deploy` 시 "The vercel.json file should be inside of the provided root directory"로
+  경고해준다. (버그리포트 20260913 #5) 이 설정이 루트에 잘못 있던 탓에 `git.deploymentEnabled.data:
+  false`(data 브랜치 배포 제외)가 **한 번도 적용된 적이 없었다** — data 브랜치는 봇이 몇 분 간격으로
+  커밋하는데, 매 커밋마다 Vercel 이 무시하지 않고 실제 배포 시도를 만들어 즉시 ERROR 처리했고, 이게
+  전부 Hobby 플랜 "하루 100회 배포" 한도에 그대로 카운트됐다. 결국 한도를 넘겨 `main` 브랜치의 정상
+  배포까지 전부 막히고(웹훅 트리거 자체가 조용히 실패), 프로덕션이 옛 커밋에 몇 시간이고 고정되는
+  사고로 이어졌다. 위치를 옮긴 뒤에도 이미 초과된 하루 한도는 24시간 롤링 윈도우로 풀리므로 즉시
+  재배포는 안 될 수 있다 — `vercel ls --token=$VERCEL_TOKEN` 으로 최근 배포 상태를, REST
+  `GET /v9/projects/{id}` 의 `targets.production.meta.githubCommitSha` 로 실제 라이브 커밋을
+  확인할 것(CLI `whoami`/`teams`/`inspect`/`logs` 는 이 토큰에서 "User not found" 로 죽는 별개
+  버그가 있으니 `ls`·REST API 직접 호출로 우회).
 - **채널 추가/변경은 `config/channels.json` 한 곳만** 고치면 된다. `channel_url` 은 `@{handle}` 로 코드에서 파생.
 - 준영구 "대기소/프리챗/굿즈안내" 프레임(예: `liveBroadcastContent=upcoming` 인데 `scheduled_start` 가
   1~2년 뒤)이 `schedule.json` 에 섞여 들어온다. 현재는 필터 없이 노출(보류 결정). 거를 거면 reconcile 단계에서.
