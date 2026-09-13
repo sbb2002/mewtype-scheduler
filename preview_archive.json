@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T12:40:05Z",
+  "generated_at": "2026-09-13T14:09:05Z",
   "items": [
     {
       "actual_start": "2026-09-09T14:34:34Z",
@@ -190,6 +190,35 @@
       "title_ko": "【＃アニメゆめみた】최종회 고마워❣ 전 13화 되돌아보자🦆【ゆめみた/藤都子】",
       "url": "https://www.youtube.com/watch?v=7Q2gPHbBrdw",
       "video_id": "7Q2gPHbBrdw"
+    },
+    {
+      "actual_start": "2026-09-13T11:55:46Z",
+      "api_start_seen": "2026-09-13T12:00:00Z",
+      "archived_at": "2026-09-13T14:09:05Z",
+      "assumed_live": false,
+      "channel_key": "nonoka",
+      "collab_with": null,
+      "concurrent_viewers": 1816,
+      "expires_at": "2026-09-13T15:00:00Z",
+      "first_seen": "2026-09-13T12:22:00Z",
+      "host": null,
+      "id": "pv_20250d18",
+      "info_at": "2026-09-13T09:37:51Z",
+      "info_source": "notice",
+      "kind": null,
+      "last_updated": "2026-09-13T14:09:05Z",
+      "membership": false,
+      "needs_tl": true,
+      "scheduled_start": "2026-09-13T12:00:00Z",
+      "source": "manual",
+      "state": "none",
+      "state_since": "2026-09-13T14:09:05Z",
+      "thumbnail": "https://i.ytimg.com/vi/RVxASRpEMQU/maxresdefault_live.jpg",
+      "time_tbd": false,
+      "title": "アワーノーツ リリース日決定特番",
+      "title_ko": null,
+      "url": "https://www.youtube.com/watch?v=RVxASRpEMQU",
+      "video_id": "RVxASRpEMQU"
     }
   ]
 }
