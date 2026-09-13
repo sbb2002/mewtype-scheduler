@@ -232,7 +232,7 @@ v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
 | `upcoming` | `card card--upcoming` | 썸네일 `<img>` | `relativeLabel` (+ `card__rel--late` 토글) |
 | `watching` | `card card--watching` | 썸네일 `<img>` | `relativeLabel` (+late), 배지 "대기 중"(`card__badge--watching`) |
 | `live` | `card card--live` | 썸네일 + `LIVE` 배지 | `elapsedLabel(actual_start)` = `"방송 중 (n분)"` |
-| `end` | `card card--end` | 썸네일 유지, 배지 없음 | `"방송 종료"`. 빨강 테두리 없음(OFF-AIR 소등) |
+| `end` | `card card--end` | 썸네일 유지, 배지 "종료"(`card__badge--end`) | `"방송 종료"`. 빨강 테두리 없음(OFF-AIR 소등) |
 
 - `membership` true → `card--membership` 추가. 썸네일 자리 자물쇠 `🔒`(`card__icon`), body 에 `card__chip` "🔒 회원 전용 방송".
 - `assumed_live` && state ∈ (announced, upcoming) → `card--sched-live` 추가, `.card__rel` = `"방송 중 (추정)"`(빨강), 테두리 실선.

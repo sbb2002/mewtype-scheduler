@@ -88,6 +88,15 @@
   font-weight: 650;
 }
 
+.card__badge--end {
+  background: color-mix(in srgb, var(--color-text-muted, #8a8f98) 26%, transparent);
+  color: color-mix(in srgb, var(--color-text-muted, #8a8f98) 85%, #fff);
+  box-shadow: none;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 650;
+}
+
 /* Body - title and meta */
 .card__body {
   display: flex;

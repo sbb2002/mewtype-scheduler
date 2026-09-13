@@ -247,7 +247,10 @@ function createCard(item, nowMs, channelData, laneKey) {
     badge.textContent = "대기 중";
     thumbWrap.appendChild(badge);
   } else if (isEnd) {
-    // end 상태는 배지 없음
+    const badge = document.createElement("span");
+    badge.className = "card__badge card__badge--end";
+    badge.textContent = "종료";
+    thumbWrap.appendChild(badge);
   }
 
   // (v3.1.10) 합동 배지 — card__body 는 title+meta 2줄 높이로 고정돼 있어 거기에 3번째
