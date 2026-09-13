@@ -33,13 +33,24 @@ _STRETCH_RE = re.compile(r"[ーｰ〜～]{2,}")
 # 감싸 LLM 이 못 건드리게 막고(플레이스홀더는 일반 텍스트와 절대 안 겹치는 ASCII 토큰),
 # 응답에서 다시 고정값으로 되돌린다. LLM 프롬프트 지시만으로는 100% 보장이 안 되므로
 # (지시를 무시하고 여전히 의역하는 사례 실측) 이 기계적 치환이 최종 보증선이다.
+#   순서 중요 — 긴/구체적 패턴을 먼저 둬야 짧은 패턴이 그 일부를 먼저 먹어 이중 처리
+#   (예: "バンドリ！"를 통째로 안 잡고 "バンドリ"만 먼저 잡으면 뒤의 "！"가 따로 남아
+#   "뱅드림!!"처럼 느낌표가 겹친다) 되는 걸 막는다.
 GLOSSARY: dict[str, str] = {
     "夢限大みゅーたいぷ": "무겐다이 뮤타입",
+    "バンドリ！": "뱅드림!",   # 全角 느낌표 포함형 먼저
+    "バンドリ!": "뱅드림!",    # 半角 느낌표 포함형
+    "バンドリ": "뱅드림!",     # 느낌표 없는 단독형(공식 타이틀 "BanG Dream!"의 한국어 표기 자체가 "!" 포함)
 }
 
 
 def _mask_glossary(text: str) -> tuple[str, list[tuple[str, str, str]]]:
     """용어집 항목을 LLM 이 건드리지 않을 자리표시자로 치환.
+
+    토큰이 영숫자에 바로 들러붙으면(예: "バンドリ13thライブ" → "@@GLOSSARY@@13th")
+    LLM 이 그 뒤 문장을 통째로 못 알아보고 미번역으로 남기는 사례가 실측됐다 — 그
+    경우에만 한 칸 띄운다. 이미 공백·구두점과 붙어 있으면 그대로 둬(예: 「바로 뒤)
+    불필요한 공백이 안 생기게.
 
     Returns:
         (치환된 텍스트, [(토큰, 일본어원문, 고정한국어역), ...])
@@ -50,6 +61,8 @@ def _mask_glossary(text: str) -> tuple[str, list[tuple[str, str, str]]]:
         if ja in masked:
             token = f"@@GLOSSARY{i}@@"
             masked = masked.replace(ja, token)
+            masked = re.sub(rf"(?<=[0-9A-Za-z]){re.escape(token)}", f" {token}", masked)
+            masked = re.sub(rf"{re.escape(token)}(?=[0-9A-Za-z])", f"{token} ", masked)
             mapping.append((token, ja, ko))
     return masked, mapping
 
@@ -728,6 +741,28 @@ if __name__ == "__main__":
     assert result == "무겐다이 뮤타입 5th 싱글 발매 기념 사인회입니다.", result
     print("✓ translate(): 그룹명이 매번 '무겐다이 뮤타입'으로 고정됨")
 
+    # ──── 시나리오 12: バンドリ 고정 번역 + 토큰-영숫자 들러붙음 방지 (2026-09-13) ────
+    print("\n[시나리오 12] バンドリ → '뱅드림!' 고정 + 토큰 뒤 영숫자 들러붙음 방지")
+    print("-" * 70)
+
+    # 全角 느낌표 포함형 — 원문에 이미 붙은 "！" 때문에 "뱅드림!!" 로 안 겹치는지.
+    masked, mapping = _mask_glossary("「バンドリ！ ゆめ∞みた」×極楽湯 RAKU SPAコラボ")
+    assert masked == "「@@GLOSSARY1@@ ゆめ∞みた」×極楽湯 RAKU SPAコラボ", masked
+    assert _unmask_glossary(masked, mapping, to="ko") == "「뱅드림! ゆめ∞みた」×極楽湯 RAKU SPAコラボ"
+    print("✓ 全角 느낌표 포함형(バンドリ！) — 느낌표 중복 없음")
+
+    # 느낌표 없는 단독형 + 뒤에 바로 영숫자("13th")가 붙은 경우 — 예전엔 토큰이 그대로
+    # 들러붙어 LLM 이 그 뒤 문장을 통째로 미번역으로 남기던 버그(실측). 공백 삽입으로 방지.
+    masked2, mapping2 = _mask_glossary("バンドリ13thライブ DAY")
+    assert masked2 == "@@GLOSSARY3@@ 13thライブ DAY", masked2
+    assert _unmask_glossary(masked2, mapping2, to="ko") == "뱅드림! 13thライブ DAY"
+    print("✓ バンドリ13th… 처럼 영숫자가 바로 붙은 경우 → 토큰 뒤에 공백 삽입")
+
+    # 이미 공백/구두점과 붙어 있으면 불필요한 공백을 추가하지 않는다(「바로 뒤 등).
+    masked3, _m3 = _mask_glossary("バンドリ 13th")
+    assert masked3 == "@@GLOSSARY3@@ 13th", masked3  # 원래 있던 공백 그대로, 중복 안 됨
+    print("✓ 이미 공백 있는 경우엔 추가 공백 안 생김")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 11개 스모크 테스트 통과")
+    print("SUCCESS: 모든 12개 스모크 테스트 통과")
     print("=" * 70)
