@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-13T16:01:05Z",
+  "generated_at": "2026-09-13T18:00:01Z",
   "items": [
     {
       "actual_start": null,
@@ -81,7 +81,6 @@
       "kind": "unknown",
       "last_updated": "2026-09-13T16:01:05Z",
       "membership": false,
-      "needs_tl": true,
       "scheduled_start": "2026-09-14T14:30:00Z",
       "source": "personal",
       "state": "upcoming",
@@ -89,7 +88,7 @@
       "thumbnail": "https://i.ytimg.com/vi/ANoN-maKbTE/maxresdefault_live.jpg",
       "time_tbd": false,
       "title": "【狂気実写劇団】りつぬいちゃんとあそぼ！２【峰月律/ゆめみた】",
-      "title_ko": null,
+      "title_ko": "【광기 실사극단】리츠누이짱과 놀자! 2【미네츠키 리츠/유메미타】",
       "url": "https://www.youtube.com/watch?v=ANoN-maKbTE",
       "video_id": "ANoN-maKbTE"
     },
