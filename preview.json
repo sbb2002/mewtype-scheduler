@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-13T09:30:18Z",
+  "generated_at": "2026-09-13T11:50:29Z",
   "items": [
     {
       "actual_start": null,
@@ -132,10 +132,10 @@
       "first_seen": "2026-09-13T09:30:18Z",
       "host": null,
       "id": "pv_49ae3882",
-      "info_at": "2026-09-13T09:30:18Z",
-      "info_source": "x-relay",
+      "info_at": "2026-09-13T11:43:23Z",
+      "info_source": "personal",
       "kind": "song",
-      "last_updated": "2026-09-13T09:30:18Z",
+      "last_updated": "2026-09-13T11:50:29Z",
       "membership": false,
       "needs_tl": false,
       "scheduled_start": "2026-09-13T13:30:00Z",
@@ -147,7 +147,7 @@
       "title": null,
       "title_ko": null,
       "url": null,
-      "video_id": null
+      "video_id": "EoU743whcB0"
     },
     {
       "actual_start": null,
