@@ -27,6 +27,41 @@ _REPEAT_RE = re.compile(r"^(.{1,6}?)\1{7,}")
 # 어디서든, 여러 군데 흩어져 나타나도 전부 잡는다(§translate 참고).
 _STRETCH_RE = re.compile(r"[ーｰ〜～]{2,}")
 
+# 고정 번역 용어집 — LLM 이 호출마다 다르게 옮기는 고유명사를 여기 등록하면 항상 이 값으로
+# 고정된다(2026-09-13, 그룹명이 "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 매번 달라지던
+# 문제). preview/notice/tweet 번역 전부 이 용어집을 거친다 — 입력에서 원문을 자리표시자로
+# 감싸 LLM 이 못 건드리게 막고(플레이스홀더는 일반 텍스트와 절대 안 겹치는 ASCII 토큰),
+# 응답에서 다시 고정값으로 되돌린다. LLM 프롬프트 지시만으로는 100% 보장이 안 되므로
+# (지시를 무시하고 여전히 의역하는 사례 실측) 이 기계적 치환이 최종 보증선이다.
+GLOSSARY: dict[str, str] = {
+    "夢限大みゅーたいぷ": "무겐다이 뮤타입",
+}
+
+
+def _mask_glossary(text: str) -> tuple[str, list[tuple[str, str, str]]]:
+    """용어집 항목을 LLM 이 건드리지 않을 자리표시자로 치환.
+
+    Returns:
+        (치환된 텍스트, [(토큰, 일본어원문, 고정한국어역), ...])
+    """
+    masked = text or ""
+    mapping: list[tuple[str, str, str]] = []
+    for i, (ja, ko) in enumerate(GLOSSARY.items()):
+        if ja in masked:
+            token = f"@@GLOSSARY{i}@@"
+            masked = masked.replace(ja, token)
+            mapping.append((token, ja, ko))
+    return masked, mapping
+
+
+def _unmask_glossary(text: str, mapping: list[tuple[str, str, str]], *, to: str) -> str:
+    """자리표시자를 복원. to='ja' 면 일본어 원문으로, to='ko' 면 고정 한국어역으로."""
+    if not text:
+        return text
+    for token, ja, ko in mapping:
+        text = text.replace(token, ja if to == "ja" else ko)
+    return text
+
 
 # Groq structured outputs (strict) — gpt-oss-120b/20b·qwen3.8-27b 지원.
 # strict 규칙: 모든 필드 required, additionalProperties:false.
@@ -117,10 +152,12 @@ class LLMClient:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
 
+        masked_body, mapping = _mask_glossary(body_no_date_url)
         prompt = (
             f"다음 이벤트 공지 본문에서 자연스러운 제목 1줄을 뽑아내고 일본어와 한국어로 제시하라. "
-            f"JSON 포맷만 출력 (다른 텍스트 제외). 고유명사 보존.\n\n"
-            f"본문:\n{body_no_date_url}\n\n"
+            f"JSON 포맷만 출력 (다른 텍스트 제외). 고유명사 보존. "
+            f"@@GLOSSARY0@@ 같은 토큰은 절대 번역·수정하지 말고 그대로 출력에 남겨라.\n\n"
+            f"본문:\n{masked_body}\n\n"
             f"출력:\n"
             f'{{"title_ja": "<일본어>", "title_ko": "<한국어>"}}'
         )
@@ -139,7 +176,7 @@ class LLMClient:
             return None
 
         # 환각 가드: 출력 비었거나 입력 길이 3배 초과
-        if self._is_hallucination(response, body_no_date_url):
+        if self._is_hallucination(response, masked_body):
             logger.warning(
                 f"notice_title: 환각 가드 발동 (input={len(body_no_date_url)}, "
                 f"output={len(response)})"
@@ -149,6 +186,8 @@ class LLMClient:
         try:
             result = json.loads(_strip_json_fence(response))
             if isinstance(result, dict) and "title_ja" in result and "title_ko" in result:
+                result["title_ja"] = _unmask_glossary(result["title_ja"], mapping, to="ja")
+                result["title_ko"] = _unmask_glossary(result["title_ko"], mapping, to="ko")
                 return result
             else:
                 logger.warning(f"notice_title: 예상 필드 부재 {result}")
@@ -226,10 +265,12 @@ class LLMClient:
 
     def _translate_once(self, text_ja: str) -> str | None:
         """단발 번역 호출(메인→폴백 모델) + 환각 가드. 반복 압축 없이 그대로 1회 요청."""
+        masked_text, mapping = _mask_glossary(text_ja)
         prompt = (
             f"다음 일본어 텍스트를 자연스러운 한국어로 번역하라. "
-            f"고유명사는 보존. 번역문만 출력 (설명 제외).\n\n"
-            f"일본어:\n{text_ja}"
+            f"고유명사는 보존. 번역문만 출력 (설명 제외). "
+            f"@@GLOSSARY0@@ 같은 토큰은 절대 번역·수정하지 말고 그대로 출력에 남겨라.\n\n"
+            f"일본어:\n{masked_text}"
         )
 
         response = self._call_groq(self.model, prompt)
@@ -242,13 +283,13 @@ class LLMClient:
             return None
 
         # 환각 가드
-        if self._is_hallucination(response, text_ja):
+        if self._is_hallucination(response, masked_text):
             logger.warning(
                 f"translate: 환각 가드 발동 (input={len(text_ja)}, output={len(response)})"
             )
             return None
 
-        return response.strip()
+        return _unmask_glossary(response.strip(), mapping, to="ko")
 
     def _call_groq(
         self, model: str, prompt: str, *, json_schema: "dict | None" = None
@@ -662,6 +703,31 @@ if __name__ == "__main__":
     assert result == "정상 번역", result  # 정규화 안 됐으면 "폭주"*500 이 나와 환각 가드에 걸림
     print("✓ translate(): 정규화 후 전송 — 반복 루프 회피, 정상 응답 통과")
 
+    # ──── 시나리오 11: 용어집 고정 번역 (2026-09-13) ────
+    print("\n[시나리오 11] 용어집(GLOSSARY) — 그룹명 고정 번역")
+    print("-" * 70)
+
+    masked, mapping = _mask_glossary("夢限大みゅーたいぷ 5th Single 発売記念")
+    assert masked == "@@GLOSSARY0@@ 5th Single 発売記念", masked
+    assert mapping == [("@@GLOSSARY0@@", "夢限大みゅーたいぷ", "무겐다이 뮤타입")], mapping
+    assert _unmask_glossary(masked, mapping, to="ko") == "무겐다이 뮤타입 5th Single 発売記念"
+    assert _unmask_glossary(masked, mapping, to="ja") == "夢限大みゅーたいぷ 5th Single 発売記念"
+    print("✓ _mask_glossary/_unmask_glossary: 왕복 변환 정확")
+
+    # LLM 이 프롬프트 지시대로 플레이스홀더를 그대로 남겨 응답했다고 가정 — 그래도 다른
+    # 호출마다 그룹명을 다르게 옮기던 문제(꿈한계대 뮤타입/꿈꾸다/유메미타 등)가
+    # _unmask_glossary 로 항상 "무겐다이 뮤타입" 하나로 고정되는지 확인.
+    session_glossary = FakeSession(
+        status_code=200,
+        body={"choices": [{"message": {
+            "content": "@@GLOSSARY0@@ 5th 싱글 발매 기념 사인회입니다."
+        }}]},
+    )
+    llm_glossary = LLMClient("test-key", session=session_glossary)
+    result = llm_glossary.translate("夢限大みゅーたいぷ 5th Single リリース記念サイン会です。")
+    assert result == "무겐다이 뮤타입 5th 싱글 발매 기념 사인회입니다.", result
+    print("✓ translate(): 그룹명이 매번 '무겐다이 뮤타입'으로 고정됨")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 10개 스모크 테스트 통과")
+    print("SUCCESS: 모든 11개 스모크 테스트 통과")
     print("=" * 70)

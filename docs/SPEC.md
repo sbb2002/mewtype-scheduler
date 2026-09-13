@@ -487,6 +487,14 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
   `response_format` 모델별 분기(gpt-oss=json_schema, llama-3.3=json_object).
 - api_key 비면 disabled → 모든 호출 None. 429/5xx → 지수 백오프 3회 → 폴백 모델 1회 → None.
 - 환각 가드: 출력 비었거나 입력 길이 3배 초과 → None (기본선, 배포 후 실측 보강).
+- **용어집(`GLOSSARY`, v3.1.14)**: 고유명사가 호출마다 다르게 번역되는 문제(실측: 그룹명
+  "夢限大みゅーたいぷ"가 "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 매번 달라짐) 대응.
+  프롬프트 지시만으론 불충분(실측상 무시하고 의역하는 사례 있음) → `_mask_glossary`가
+  입력 중 등록된 원문을 `@@GLOSSARYn@@` 토큰으로 바꿔 LLM 이 못 건드리게 막고,
+  `_unmask_glossary`가 응답에서 그 토큰을 고정값으로 복원(`notice_title`은 `title_ja`→원문,
+  `title_ko`→고정 한국어역 각각 복원; `translate`는 한국어역만). preview/notice/tweet
+  번역 전부 이 경로를 거치므로 용어집 항목은 어디서든 동일하게 고정된다. 현재 등록:
+  `{"夢限大みゅーたいぷ": "무겐다이 뮤타입"}`.
 
 **(v3.1.8) `translate()` 반복 압축** — 짧은 단위(1~6자)가 8회 이상 연속 반복되는 입력
 (`_REPEAT_RE`, 예: "もぐもぐもぐ…" 의성어)은 그대로 보내면 LLM 이 반복 루프에 빠져 수백~
