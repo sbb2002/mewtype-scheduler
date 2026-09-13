@@ -911,6 +911,18 @@
       "text": "配信はじめます！語るるる",
       "text_ko": "방송 시작합니다! 이야기할게요.",
       "url": "https://x.com/i/status/2098728438618337367"
+    },
+    {
+      "archived_at": "2026-09-13T12:10:41Z",
+      "archived_reason": "rolled",
+      "channel_key": "miyako",
+      "expires_at": "2026-09-14T02:00:41Z",
+      "handle": "miyako_yumemita",
+      "id": "2098954191771414817",
+      "received_at": "2026-09-13T02:00:41Z",
+      "text": "身長180cm\n肩幅210cm",
+      "text_ko": "키 180cm  \n어깨너비 210cm",
+      "url": "https://x.com/i/status/2098954191771414817"
     }
   ]
 }
