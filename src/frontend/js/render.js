@@ -409,11 +409,29 @@ const BUCKET_DEFS = [
   ["rest", "7일 이후"],
 ];
 
+// KST 캘린더 날짜 문자열("YYYY-MM-DD") — bucketKey 가 "24시간 이내"가 아니라
+// "오늘(KST 날짜 일치)"로 정확히 판정하도록. (v3.2 버그: 자정 근처 방송이 24시간
+// 이내라는 이유로 다음날 새벽 예정인데도 "오늘"에 잡히던 문제 수정)
+function kstDateStr(ms) {
+  const f = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const p = f.formatToParts(new Date(ms));
+  const g = (t) => p.find((x) => x.type === t).value;
+  return `${g("year")}-${g("month")}-${g("day")}`;
+}
+
 function bucketKey(item, nowMs) {
   if (!item.scheduled_start) return "rest";
-  const delta = new Date(item.scheduled_start).getTime() - nowMs;
-  if (delta < DAY_MS) return "today";
-  if (delta < 7 * DAY_MS) return "week";
+  const nowDateStr = kstDateStr(nowMs);
+  const startDateStr = kstDateStr(new Date(item.scheduled_start).getTime());
+  if (nowDateStr === startDateStr) return "today";
+  // 날짜 경계 기준 일수 차 — "Z" 고정 앵커는 두 날짜 모두 동일하게 적용되므로
+  // 실제 타임존과 무관하게 캘린더 날짜 차이만 정확히 나온다(time.js relativeLabel 과 동일 기법).
+  const nowMidMs = Date.parse(`${nowDateStr}T00:00:00Z`);
+  const startMidMs = Date.parse(`${startDateStr}T00:00:00Z`);
+  const daysDiff = Math.round((startMidMs - nowMidMs) / DAY_MS);
+  if (daysDiff >= 1 && daysDiff <= 7) return "week";
   return "rest";
 }
 
