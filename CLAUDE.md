@@ -8,13 +8,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-- 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md`
+> **문서 위치 (2026-09-14 정리)**: `docs/` 아래 이 파일에서부터 가리키는 경로들 중
+> `SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md` 넷만 `main`에 있다. 그 외
+> (`beta_version/`·`old/`·`plan/`·`ARCHITECTURE.md`·`SCHEDULE.md`·`AUTOMATE_MANUAL.md`·
+> `IDEA.md`·`SECURITY.md`·`bug_report/`·`v2_4_flow.png`·`v3_pamphlet.html` 등, 개발 중
+> 상시 참조하기보다 배경자료·구버전 기록·운영자용 설명자료에 가까운 것들)는 전부
+> **`devpapers` 브랜치**로 옮겨졌다 — `data` 브랜치와 같은 이유(자동 생성되는
+> `PUSH_MONITOR.html` 시간별 갱신 커밋이 Vercel 배포 트리거에 안 걸리게, `vercel.json`
+> 참고). 아래 경로 표기(`docs/xxx`)는 어느 브랜치 것이든 그대로 유효 — `git show
+> origin/devpapers:docs/ARCHITECTURE.md` 식으로 조회. 용어는 `docs/TERMINOLOGY.md`
+> "`devpapers` 브랜치" 항목 참고.
+
+- 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md` (devpapers)
 - **용어 기준 (세션 간 표현 일관성): `docs/TERMINOLOGY.md`** — 프론트엔드/백엔드/업스트림 시스템/외부 LLM 등.
   표현이 엇갈리면 여기에 추가.
 - **현행 구현 명세 (계약 A~I, 백엔드·프론트 모듈): `docs/SPEC.md`** — v3 기준.
-  원본 `docs/old/v1/IMPLEMENTATION.md`, `docs/old/v2/IMPLEMENTATION_v2{,.1}.md`
-- **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png`
-- 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md`
+  원본 `docs/old/v1/IMPLEMENTATION.md`, `docs/old/v2/IMPLEMENTATION_v2{,.1}.md` (devpapers)
+- **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
+- 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
 > **현행 = v3.0** (배포 2026-09-09). 아래 저장소 구조·데이터 흐름 서술은 v2 계보를 담고
 > 있고, v3 델타는 아래 상자 + `docs/plan/v3_*.md` 에 있다. 새 작업은 v3 기준으로.
