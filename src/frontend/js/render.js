@@ -183,6 +183,10 @@ function createCard(item, nowMs, channelData, laneKey) {
   const isWatching = item.state === "watching";
   const isLive = item.state === "live";
   const isEnd = item.state === "end";
+  // (v2.4~v3) kind=="collab" 또는 collab_with 존재 = 합동방송 — announced 분기와 동일 판정.
+  // v3.0(6상태) 리팩터링 때 이 분기엔 안 옮겨져 실물 확정 이후엔 합동 표시가 사라지던 회귀를
+  // v3.1.10 에서 수정.
+  const isCollab = item.kind === "collab" || (Array.isArray(item.collab_with) && item.collab_with.length > 0);
 
   a.className = "card";
   if (isLive) {
@@ -194,6 +198,7 @@ function createCard(item, nowMs, channelData, laneKey) {
   } else {
     a.classList.add("card--upcoming");
   }
+  if (isCollab) a.classList.add("card--collab");
 
   if (item.membership) a.classList.add("card--membership");
 
@@ -244,6 +249,20 @@ function createCard(item, nowMs, channelData, laneKey) {
 
   const body = document.createElement("div");
   body.className = "card__body";
+
+  if (isCollab) {
+    const participants = [item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])];
+    const others = participants.filter((k) => k && k !== laneKey);
+    const names = others
+      .map((k) => (FALLBACK_CHANNELS[k] || {}).name_ko)
+      .filter(Boolean)
+      .join(", ");
+    const collabLabel = others.length >= 4 ? "합동 · 전원" : (names ? `합동 · ${names}` : "합동");
+    const label = document.createElement("p");
+    label.className = "card__title card__title--label";
+    label.textContent = collabLabel;
+    body.appendChild(label);
+  }
 
   const title = document.createElement("p");
   title.className = "card__title";
