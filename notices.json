@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-12T19:40:43Z",
+  "generated_at": "2026-09-13T09:37:51Z",
   "notices": [
     {
       "anchor_a": null,
@@ -51,6 +51,31 @@
       "title_slug": "fm802802paletteに",
       "tweet_url": "https://x.com/i/status/2098849126125535314",
       "url": "https://radiko.jp/#!/ts/802/20260913010000"
+    },
+    {
+      "anchor_a": "…",
+      "anchor_b": "アワーノーツリリース日決定特番",
+      "body_for_llm": "RT @bang_dream_on: 本日 より「アワーノーツ リリース日決定特番」を生配信📺 配信ではついに #アワーノーツ のリリース日を発表🎉 その他にも最新情報を盛りだくさんでお届けいたします！ぜひご覧ください💫 ▼YouTube Live",
+      "body_raw": "RT @bang_dream_on: 本日21:00より「アワーノーツ リリース日決定特番」を生配信📺\n\n配信ではついに #アワーノーツ のリリース日を発表🎉\nその他にも最新情報を盛りだくさんでお届けいたします！ぜひご覧ください💫\n\n▼YouTube Live\nhttps://…",
+      "category": "live",
+      "date": "2026-09-13",
+      "deadline": false,
+      "expires_at": "2026-09-13T15:00:00Z",
+      "first_seen": "2026-09-13T09:37:51Z",
+      "id": "2099069766875136210",
+      "last_updated": "2026-09-13T09:37:51Z",
+      "seen_ids": [
+        "2099069766875136210"
+      ],
+      "site": "web",
+      "src_handle": "RT @bang_dream_on",
+      "time": "21:00",
+      "title": "アワーノーツ リリース日決定特番 生配信開始",
+      "title_ko": "아워노트 출시일 결정 특집 생방송",
+      "title_raw": "RT @bang_dream_on: 本日21:00より「アワーノーツ リリース日決定特番」を生配信",
+      "title_slug": "rtbangdreamon本日よりアワーノーツリ",
+      "tweet_url": "https://x.com/i/status/2099069766875136210",
+      "url": "https://…"
     },
     {
       "anchor_a": "arale-birthday2026",
