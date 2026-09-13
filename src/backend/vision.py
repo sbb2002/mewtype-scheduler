@@ -37,8 +37,14 @@ FALLBACK_VISION_MODEL = "qwen/qwen3.6-27b"
 # "N. <이름>" 형식 한 줄씩 — 프롬프트가 강제하는 출력 포맷.
 _NAME_LINE_RE = re.compile(r"^\s*\d+\.\s*(.+?)\s*$", re.MULTILINE)
 
+_NONE_MARKER = "NONE"
+
 _CAST_PROMPT = (
-    "이미지 속 인물 사진 아래에 적힌 일본어 이름(한자/가나)만 옮겨 적어라.\n"
+    "이 이미지가 여러 인물 사진이 나란히 배치되고 그 아래마다 이름이 적힌 "
+    "'출연진 소개' 패널인지 먼저 판단하라.\n\n"
+    "그런 패널이 **아니면**(게임 화면, 단일 인물 일러스트, 로고, 텍스트만 있는 이미지 등) "
+    f"다른 말 없이 정확히 `{_NONE_MARKER}` 한 단어만 출력하고 끝내라. 절대 지어내지 마라.\n\n"
+    "출연진 소개 패널이 **맞으면**, 각 인물 사진 아래에 적힌 일본어 이름(한자/가나)만 옮겨 적어라.\n"
     "규칙:\n"
     "1. 실제로 보이는 글자만 그대로 옮겨 적는다. 요미가나(발음)나 한국어 번역을 절대 추가하지 않는다.\n"
     "2. 확실하지 않은 글자는 지어내지 말고 ? 로 표시한다.\n"
@@ -108,7 +114,12 @@ class VisionClient:
         for model in (self.model, self.fallback):
             text = self._call(model, image_content)
             if text is None:
-                continue
+                continue  # 호출 실패(429/5xx/네트워크) — 다음 모델로
+            if text.strip().upper() == _NONE_MARKER:
+                # 출연진 패널이 아니라고 모델이 확신 — 이건 애매한 실패가 아니라
+                # 명확한 답이므로 다른 모델로 재질문하지 않는다(낭비이자 오탐 유발).
+                logger.info("vision: %s → 출연진 패널 아님(NONE)", model)
+                return None
             names = _parse_names(text)
             if names:
                 return names
@@ -235,6 +246,23 @@ if __name__ == "__main__":
     result = vc4.cast_names(image_bytes=b"\xff\xd8\xff")  # 가짜 JPEG 헤더
     assert result == ["宮永 ののか"], result
     print("[OK] image_bytes → data URI 인코딩 경로 정상")
+
+    # ── 시나리오 8: NONE 마커 — 출연진 패널이 아니면 다른 모델로 재시도 안 함 ──
+    # 실측(2026-09-13): 캐스트 패널이 아닌 게임/일러스트 썸네일에 옛 프롬프트를 던지면
+    # 두 모델 다 장식 텍스트("歌枠")를 형식만 맞춰 "1. 歌枠"로 지어냈다 — NONE 탈출구를
+    # 추가해 이런 이미지에서는 확실하게 "없음"을 답하도록 프롬프트를 강화했다.
+    sess_none = FakeSession({DEFAULT_VISION_MODEL: (200, "NONE")})
+    vc_none = VisionClient("test-key", session=sess_none)
+    result_none = vc_none.cast_names(image_url="https://example.com/screenshot.jpg")
+    assert result_none is None, result_none
+    assert sess_none.calls == [DEFAULT_VISION_MODEL], sess_none.calls  # 폴백 호출 안 함
+    print("[OK] NONE 응답 → 확정 실패로 취급, 폴백 재시도 안 함(낭비 방지)")
+
+    # 소문자·공백 섞여도 NONE 판정.
+    sess_none2 = FakeSession({DEFAULT_VISION_MODEL: (200, "  none  ")})
+    vc_none2 = VisionClient("test-key", session=sess_none2)
+    assert vc_none2.cast_names(image_url="https://example.com/x.jpg") is None
+    print("[OK] NONE 판정: 대소문자·공백 무시")
 
     print("\nSUCCESS: vision.py self-test 통과 (mock)")
 
