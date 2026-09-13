@@ -27,7 +27,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > - 새 모듈: `preview.py`(계약)·`preview_build.py`(reconcile 포크)·`llm.py`(Groq 번역/제목추출)·
 >   `ytnotif.py`(YT 앱 알림 파서, `INGEST_YT_ENABLED` 뒤)·`vxtwitter.py`(트윗 unfurl).
 > - **외부 LLM(Groq `gpt-oss-120b`/폴백 `gpt-oss-20b`)**: 소식 제목추출(json_schema strict)·개인
->   트윗 번역. 결과는 `notices.json` `title_ko` / `tweets.json` `text_ko` 에 원문과 함께 저장.
+>   트윗 번역·(v3.1.13) 방송 제목 번역. 결과는 `notices.json` `title_ko` / `tweets.json` `text_ko`
+>   / `preview.json` `title_ko` 에 원문과 함께 저장.
 >   실패 행은 `needs_tl:true` → 다음 tick 재시도. `GROQ_API_KEY` Secret.
 > - **예고 머지 모델** = 소스 신뢰도 티어(1 API / 2 명시값 / 3 파생값). 높은 티어 승, 동일 티어 안 최신순.
 > - 텔레그램 명령 `{cmd}×{contents}` 격자 (`/list /ingest /edit /del /undo /translate × preview|notice|tweet`).
