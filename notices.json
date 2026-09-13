@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T12:34:42Z",
+  "generated_at": "2026-09-13T12:45:00Z",
   "notices": [
     {
       "anchor_a": null,
@@ -53,7 +53,7 @@
       "url": "https://radiko.jp/#!/ts/802/20260913010000"
     },
     {
-      "anchor_a": "…",
+      "anchor_a": null,
       "anchor_b": "アワーノーツリリース日決定特番",
       "body_for_llm": "RT @bang_dream_on: 本日 より「アワーノーツ リリース日決定特番」を生配信📺 配信ではついに #アワーノーツ のリリース日を発表🎉 その他にも最新情報を盛りだくさんでお届けいたします！ぜひご覧ください💫 ▼YouTube Live",
       "body_raw": "RT @bang_dream_on: 本日21:00より「アワーノーツ リリース日決定特番」を生配信📺\n\n配信ではついに #アワーノーツ のリリース日を発表🎉\nその他にも最新情報を盛りだくさんでお届けいたします！ぜひご覧ください💫\n\n▼YouTube Live\nhttps://…",
@@ -63,11 +63,11 @@
       "expires_at": "2026-09-13T15:00:00Z",
       "first_seen": "2026-09-13T09:37:51Z",
       "id": "2099069766875136210",
-      "last_updated": "2026-09-13T09:37:51Z",
+      "last_updated": "2026-09-13T12:45:00Z",
       "seen_ids": [
         "2099069766875136210"
       ],
-      "site": "web",
+      "site": "x",
       "src_handle": "RT @bang_dream_on",
       "time": "21:00",
       "title": "アワーノーツ リリース日決定特番 生配信開始",
@@ -75,7 +75,7 @@
       "title_raw": "RT @bang_dream_on: 本日21:00より「アワーノーツ リリース日決定特番」を生配信",
       "title_slug": "rtbangdreamon本日よりアワーノーツリ",
       "tweet_url": "https://x.com/i/status/2099069766875136210",
-      "url": "https://…"
+      "url": null
     },
     {
       "anchor_a": "arale-birthday2026",
