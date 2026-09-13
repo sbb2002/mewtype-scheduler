@@ -2,6 +2,12 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.1.13** — preview(방송 예고) 제목도 notice/tweet 처럼 LLM 한국어 번역. 계약 A′ 에
+  `title_ko`/`needs_tl` 추가 — `preview_build.build_preview` 가 제목 신규·변경 시
+  `needs_tl=true` 로 표시하고, `handlers._translate_sweep` 이 (tick 마다) `notices.json`/
+  `tweets.json` 과 같은 방식으로 `llm.translate()` 재시도. 프론트 `render.js` 는
+  `title_ko` 있으면 `[번역]　—　[원문]` 한 줄(marquee)로 표시(없으면 원문만) — notices.js 와
+  동일 포맷. 배포 시점에 이미 떠 있던 preview 4건 제목도 번역해 `data` 브랜치에 소급 반영.
 - **v3.1.12** (핫픽스) — v3.1.11 로 배지는 옮겼지만 PC 카드 제목이 여전히 살짝 잘렸던 것
   마저 수정: `card__body`(title+meta 고정 높이)의 padding/gap 이 살짝 커서 두 자연 높이
   합이 가용 공간을 초과 → flexbox 가 근소하게 눌러 글자 아랫부분이 잘렸다. padding/gap

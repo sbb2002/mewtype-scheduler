@@ -149,7 +149,7 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
     자동 파이프라인(`/ingest`)이 인라인 번역에 실패하면 그 행에 `needs_tl=True` 를 남긴다.
     "행 자체가 큐" — 여기서 재시도하고 성공하면 플래그를 지운다. LLM disabled 면 no-op.
     """
-    out = {"notice_tl": 0, "tweet_tl": 0}
+    out = {"notice_tl": 0, "tweet_tl": 0, "preview_tl": 0}
     if not cfg.groq_api_key:
         return out
     llm = _make_llm(cfg)
@@ -205,6 +205,27 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
                               message=f"data: tweets tl {now_iso}")
     except Exception as e:  # noqa: BLE001
         log.warning("tweet 번역 sweep 실패: %s", e)
+
+    # preview.json — 방송 제목 번역
+    try:
+        pj, sha = gh.read_json("preview.json")
+        if pj and pj.get("items"):
+            changed = False
+            for it in pj["items"]:
+                if not it.get("needs_tl") or not it.get("title"):
+                    continue
+                ko = llm.translate(it["title"])
+                if ko:
+                    it["title_ko"] = ko
+                    it.pop("needs_tl", None)
+                    changed = True
+                    out["preview_tl"] += 1
+            if changed:
+                pj["generated_at"] = now_iso
+                gh.write_json("preview.json", pj, prev_sha=sha,
+                              message=f"data: preview tl {now_iso}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("preview 번역 sweep 실패: %s", e)
 
     return out
 
@@ -350,7 +371,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 log.error("post-end tick enqueue 실패: %s", e)
 
     # ── LLM 번역 재시도 sweep (needs_tl 행) — 정기 tick 에서만 ──
-    tl = {"notice_tl": 0, "tweet_tl": 0}
+    tl = {"notice_tl": 0, "tweet_tl": 0, "preview_tl": 0}
     if not is_wake:
         tl = _translate_sweep(gh, cfg, now_iso)
 

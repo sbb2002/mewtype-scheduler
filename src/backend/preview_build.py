@@ -160,6 +160,10 @@ def build_preview(
         if matched:
             # 기존 아이템 업데이트
             item = dict(matched)
+            if video.title != matched.get("title"):
+                # 제목이 바뀌면(신규 확정·API 재구성 등) 번역이 stale 해지므로 재번역 대상으로.
+                item["title_ko"] = None
+                item["needs_tl"] = bool(video.title)
             item["title"] = video.title
             item["thumbnail"] = video.thumbnail
             item["url"] = url
@@ -811,6 +815,30 @@ if __name__ == "__main__":
     assert grp_item_b["host"] == "group", grp_item_b
     print(f"  재매칭(video_id)에도 팬아웃 필드 유지")
 
+    # Test 14: title_ko/needs_tl (v3.1.13) — 신규 아이템은 needs_tl=True, 제목 불변이면
+    # 유지, 제목이 바뀌면(예: API 재구성) title_ko 초기화 + needs_tl 재설정.
+    assert grp_item["needs_tl"] is True and grp_item["title_ko"] is None, grp_item
+    grp_item_translated = dict(grp_item)
+    grp_item_translated["title_ko"] = "동시시청 방송 #13"
+    grp_item_translated["needs_tl"] = False
+    preview_with_tl = {**new_preview_13, "items": [grp_item_translated]}
+    videos_group_retitled = {
+        "grp_vid": types.SimpleNamespace(
+            video_id="grp_vid", channel_id="UCxL_Vlnhfo46sN6vPHR_4hA",
+            title="同時視聴配信 #13(タイトル変更)",
+            thumbnail="https://i.ytimg.com/vi/grp_vid/mqdefault.jpg",
+            live_state="live", scheduled_start="2026-09-11T13:58:00Z",
+            actual_start="2026-09-11T13:58:00Z", actual_end=None, concurrent_viewers=1000,
+        ),
+    }
+    new_preview_14, *_r = build_preview(
+        channels_cfg_g, videos_group_retitled, preview_with_tl, now_iso
+    )
+    grp_item_14 = new_preview_14["items"][0]
+    assert grp_item_14["title"] == "同時視聴配信 #13(タイトル変更)", grp_item_14
+    assert grp_item_14["title_ko"] is None and grp_item_14["needs_tl"] is True, grp_item_14
+    print("  title_ko/needs_tl: 신규=True, 제목 불변=유지, 제목 변경=재설정")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 13개 self-test scenarios passed ✓")
+    print("SUCCESS: 모든 14개 self-test scenarios passed ✓")
     print("=" * 70)

@@ -82,6 +82,8 @@ def make_item(
     item["kind"] = fields.get("kind")
     item["membership"] = fields.get("membership", False)
     item["title"] = fields.get("title")
+    item["title_ko"] = fields.get("title_ko")
+    item["needs_tl"] = fields.get("needs_tl", bool(fields.get("title")) and not fields.get("title_ko"))
     item["url"] = fields.get("url")
     item["video_id"] = fields.get("video_id")
     item["thumbnail"] = fields.get("thumbnail")
@@ -493,4 +495,19 @@ if __name__ == "__main__":
     )
     print(f"✓ expires_at (회원전용 5h): {item_membership['expires_at']}")
 
-    print("\n✓ All 13 self-test assertions passed")
+    # Test 14: title_ko/needs_tl 기본값 (v3.1.13) — 제목 있는데 번역 없으면 needs_tl=True
+    item_titled = make_item(
+        channel_key="arale", state="upcoming", source="api", now_iso=now,
+        title="タイトル",
+    )
+    assert item_titled["title_ko"] is None and item_titled["needs_tl"] is True, item_titled
+    item_no_title = make_item(channel_key="arale", state="announced", source="x-relay", now_iso=now)
+    assert item_no_title["needs_tl"] is False, item_no_title
+    item_pre_tl = make_item(
+        channel_key="arale", state="upcoming", source="api", now_iso=now,
+        title="タイトル", title_ko="제목",
+    )
+    assert item_pre_tl["needs_tl"] is False, item_pre_tl
+    print("✓ title_ko/needs_tl 기본값 (제목 있음+미번역 → True, 제목 없음/이미 번역 → False)")
+
+    print("\n✓ All 14 self-test assertions passed")

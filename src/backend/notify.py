@@ -465,7 +465,7 @@ def summary_text(result: dict, now_iso: str) -> str:
     transition_str = " · ".join(f"{k} ×{v}" for k, v in sorted(tallies.items()))
 
     tl = result.get("translated", {}) or {}
-    tl_n = tl.get("notice_tl", 0) + tl.get("tweet_tl", 0)
+    tl_n = tl.get("notice_tl", 0) + tl.get("tweet_tl", 0) + tl.get("preview_tl", 0)
 
     text = (
         f"🔄 <b>{mode_label}</b> {kst}\n"

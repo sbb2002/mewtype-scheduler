@@ -105,7 +105,10 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
       "kind": null,                         // "collab" | 카테고리(game/song/talk/…) | null
       "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
 
-      "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능. 번역 안 함(번역은 notice/tweet 만)
+      "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능
+      "title_ko": null,                     // (v3.1.13) LLM 번역. 없으면 프론트가 원문만 표시
+      "needs_tl": false,                    // (v3.1.13) true → 다음 tick 의 _translate_sweep 재시도 대상.
+                                             //   title 이 새로 생기거나 바뀌면(API 재구성 등) title_ko 를 비우고 다시 true 로
       "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",   // 없으면 채널 URL
       "video_id": "bgzve7Y7S50",            // null 가능 (announced / 회원전용)
       "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/mqdefault.jpg",  // video_id 유래 or vxtwitter 미디어. null 가능
@@ -560,7 +563,8 @@ tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `
    f. `gh.write_json("preview.json", …, prev_sha=pv_sha)`. `ConflictError` → a 재시도, 2회째 실패 → 예외.
 5. **Cloud Tasks**: `wakes` → `enqueue_wake`. `transitions` 에 `"→end"` 있으면 `enqueue_tick("light", now+20분)`.
    video_id 없는 announced 예고 시각(지금~+3h) → `_scheduled_wake_times` → `enqueue_tick("light", ss)`.
-6. **LLM 번역 sweep** (tick 만): `_translate_sweep` — `notices.json`/`tweets.json` 의 `needs_tl` 행 재번역.
+6. **LLM 번역 sweep** (tick 만): `_translate_sweep` — `notices.json`/`tweets.json`/`preview.json`(v3.1.13,
+   방송 제목 `title`→`title_ko`) 의 `needs_tl` 행 재번역.
 7. **Telegram diff**: `notify.diff_events(_pv0.items, new_preview.items, transitions, channels, now)` →
    레벨 게이팅 후 개별 전송 + `summary`(detail).
 8. 성공 끝 healthcheck GET. 예외 → `notify.error_text` 후 re-raise.

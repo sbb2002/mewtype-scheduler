@@ -18,6 +18,11 @@ function avatarSized(url, size) {
   return typeof url === "string" ? url.replace(/=s\d+/, `=s${size}`) : url;
 }
 
+/* (v3.1.13) 방송 제목 — notices.js 와 동일하게 "[번역]　—　[원문]" 순. 번역 없으면 원문만. */
+function titleWithTranslation(item) {
+  return item.title_ko ? `${item.title_ko}　—　${item.title || ""}`.trim() : item.title;
+}
+
 /* (v3.0.2) 레인 헤더 이동 레일 아이콘. innerHTML 금지 규칙 → createElementNS 로만. */
 const YT_ICON_D =
   "M23 12s0-3.6-.46-5.3a2.78 2.78 0 0 0-1.95-1.96C18.9 4.28 12 4.28 12 4.28s-6.9 0-8.6.46A2.78 2.78 0 0 0 1.46 6.7C1 8.4 1 12 1 12s0 3.6.46 5.3a2.78 2.78 0 0 0 1.95 1.96c1.7.46 8.6.46 8.6.46s6.9 0 8.6-.46a2.78 2.78 0 0 0 1.95-1.96C23 15.6 23 12 23 12ZM9.75 15.5v-7l6 3.5-6 3.5Z";
@@ -127,7 +132,7 @@ function createCard(item, nowMs, channelData, laneKey) {
       const participants = [item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])];
       const others = participants.filter((k) => k && k !== laneKey);
       if (item.title) {
-        label = `합동 · ${item.title}`;
+        label = `합동 · ${titleWithTranslation(item)}`;
       } else if (others.length >= 4) {
         label = "합동 · 전원";
       } else {
@@ -262,7 +267,7 @@ function createCard(item, nowMs, channelData, laneKey) {
 
   const title = document.createElement("p");
   title.className = "card__title";
-  title.textContent = item.title;
+  title.textContent = titleWithTranslation(item);
   body.appendChild(title);
 
   const meta = document.createElement("p");
