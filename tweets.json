@@ -152,16 +152,6 @@
     "yuno": [
       {
         "channel_key": "yuno",
-        "expires_at": "2026-09-13T09:20:40Z",
-        "handle": "yuno_yumemita",
-        "id": "2098703316708716965",
-        "received_at": "2026-09-12T09:20:40Z",
-        "text": "〈配信のおしらせ〉\n9/12 21:00〜 #歌枠\n\n好きな曲を歌います\n文字通り好きな曲を",
-        "text_ko": "〈배송 안내〉\n9/12 21:00〜 #노래 시간\n\n좋아하는 곡을 부릅니다\n말 그대로 좋아하는 곡을",
-        "url": "https://x.com/i/status/2098703316708716965"
-      },
-      {
-        "channel_key": "yuno",
         "expires_at": "2026-09-14T02:19:51Z",
         "handle": "yuno_yumemita",
         "id": "2098959386479837537",
