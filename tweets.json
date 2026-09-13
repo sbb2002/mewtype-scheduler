@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T07:16:05Z",
+  "generated_at": "2026-09-13T07:26:25Z",
   "tweets": {
     "arale": [
       {
@@ -127,6 +127,16 @@
         "text": "配信はじめます！語るるる",
         "text_ko": "방송 시작합니다! 이야기할게요.",
         "url": "https://x.com/i/status/2098728438618337367"
+      },
+      {
+        "channel_key": "ritsu",
+        "expires_at": "2026-09-14T07:26:25Z",
+        "handle": "ritsu_yumemita",
+        "id": "2099036954755285217",
+        "received_at": "2026-09-13T07:26:25Z",
+        "text": "届け〜〜🍀🍀📸リミスタでした！",
+        "text_ko": "전달합니다~ 🍀🍀📸 리미스타였습니다!",
+        "url": "https://x.com/i/status/2099036954755285217"
       }
     ],
     "yuno": [
