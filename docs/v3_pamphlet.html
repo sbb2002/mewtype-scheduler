@@ -216,7 +216,7 @@
       <button class="cmd" data-relay="bangdreamon">bang_dream_on</button>
     </div>
     <div class="stage">
-      <svg id="svg" viewBox="0 0 940 600" role="img" aria-label="아키텍처 흐름도">
+      <svg id="svg" viewBox="0 0 940 630" role="img" aria-label="아키텍처 흐름도">
         <!-- 배포·운영 경계 -->
         <rect class="boundary" x="206" y="150" width="466" height="368" rx="10"/>
         <text class="boundary-t" x="214" y="164">배포·운영 경계 — 우리 코드</text>
@@ -244,8 +244,8 @@
         <text class="elabel" x="566" y="316">커밋 (write)</text>
         <path id="e_db_fe"  class="edge" d="M560,398 L560,436" marker-end="url(#ah)"/>
         <text class="elabel" x="566" y="422">raw JSON · 75초</text>
-        <path id="e_fe_fan" class="edge" d="M560,486 L560,516" marker-end="url(#ah)"/>
-        <text class="elabel" x="566" y="506">사이트 표시</text>
+        <path id="e_fe_fan" class="edge" d="M560,486 L560,552" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="519">사이트 표시</text>
 
         <!-- input(동그라미) 이동 경로(직선 점선) + 패킷 — nodes 보다 먼저 = 네모칸이 위를 덮음 -->
         <path id="routeLine" class="route-line" d=""/>
@@ -297,7 +297,7 @@
         <g class="node" id="n_fe" transform="translate(484,438)">
           <rect width="152" height="48" rx="8"/><text class="nt" x="76" y="20" text-anchor="middle">프론트엔드 · Vercel</text>
           <text class="ns" x="76" y="33" text-anchor="middle">정적 · 폴링 렌더</text></g>
-        <g class="node" id="n_fan" transform="translate(494,516)">
+        <g class="node" id="n_fan" transform="translate(494,554)">
           <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">팬</text>
           <text class="ns" x="66" y="29" text-anchor="middle">사용자</text></g>
       </svg>
@@ -419,7 +419,7 @@
   var NC = {
     op:[470,39], tg:[470,98], push:[84,157], up:[84,244], ctrl:[300,250],
     be:[560,249], sch:[854,178], yt:[854,316], llm:[84,313], db:[560,372],
-    fe:[560,462], fan:[560,535]
+    fe:[560,462], fan:[560,573]
   };
 
   /* ── 시나리오 ──  r = 패킷이 지나는 노드 순서 (input → output) */
