@@ -29,10 +29,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-# 실질 변화가 없어도 generated_at 은 최소 이 간격으로 전진시킨다 (프론트 "업데이트" 시각).
-# ponytail: 고정 임계값. 커밋 수가 문제되면 config 로 뺀다.
-_HEARTBEAT_MIN_SEC = 20 * 60
-
 # 방송이 방금 end 로 전이했으면 정기 light tick(3h)을 안 기다리고 이만큼 뒤 후속 tick 1개.
 _POST_END_RECHECK_SEC = 20 * 60
 
@@ -62,18 +58,6 @@ def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
         if now < t <= horizon:
             out.add(ss)
     return sorted(out)
-
-
-def _heartbeat_generated_at(prev_gen, now_iso: str, min_sec: int = _HEARTBEAT_MIN_SEC) -> str:
-    """실질 변화가 없을 때 쓸 generated_at 값 — min_sec 지났으면 now, 아니면 prev 유지."""
-    if not prev_gen:
-        return now_iso
-    try:
-        prev_dt = datetime.fromisoformat(prev_gen.replace("Z", "+00:00"))
-        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
-    except ValueError:
-        return now_iso
-    return now_iso if (now_dt - prev_dt).total_seconds() >= min_sec else prev_gen
 
 
 def _tracked_unresolved_ids(preview: dict) -> list[str]:
@@ -306,16 +290,20 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             except Exception:  # noqa: BLE001
                 log.warning("suppress/edit_lock 반영 실패 — 무시", exc_info=True)
 
-        # 실질 변화 없으면 volatile 동결 + generated_at heartbeat.
-        # wake(is_wake) 는 방송별 정밀 체크라 매번 즉시 갱신 — "확인은 계속 하고 있다"를
-        # 프론트 하단 업데이트 시각에 그대로 반영한다(v3.1.17). 20분 스로틀은 정기 tick 에만
-        # 적용해 무의미한 커밋 스팸을 막는다. 예전엔 tick/wake 구분 없이 20분 스로틀을 걸어서
-        # live/end 를 몇 분 간격으로 계속 확인 중이어도 업데이트 시각이 tick 주기로만 움직이는
-        # 것처럼 보였다(실측 피드백).
+        # 실질 변화 없으면 generated_at 도 건드리지 않는다 — volatile 필드까지 동결해서
+        # gh.write_json 이 완전한 무변화로 보고 커밋 자체를 건너뛰게 한다(v3.2.2).
+        # v3.1.17 은 wake 때마다 generated_at 을 무조건 지금 시각으로 갱신해 "계속 확인
+        # 중"이라는 걸 보여줬는데, 방송이 여러 건 겹치면 각자 3~10분 간격인 wake 들이
+        # 서로 어긋나며 겹쳐서 상태 변화가 전혀 없어도 1~3분마다(심지어 수 초 간격도
+        # 실측) 커밋이 발생했다. 실측(2026-09-13): 24시간 preview.json 커밋 118건 중
+        # 92건(78%)이 generated_at 한 줄만 바뀐 순수 하트비트 — data 브랜치 커밋이
+        # Vercel 배포 시도로도 잡히는 구조라, 이 하트비트 커밋 폭증이 Vercel Hobby
+        # 플랜의 "하루 100회 배포" 한도를 소진시켜 실제 배포가 막히는 사고로 번졌다.
+        # "마지막 확인 시각"이 필요하면 커밋과 무관한 별도 채널(로그 등)로 뺄 것 —
+        # 이 필드를 프론트 "업데이트" 표시에 다시 쓰려면 이 트레이드오프를 재검토해야 한다.
         if _stable_view(prev_preview) == _stable_view(new_preview):
-            new_preview["generated_at"] = _heartbeat_generated_at(
-                prev_preview.get("generated_at"), now_iso,
-                min_sec=(0 if is_wake else _HEARTBEAT_MIN_SEC),
+            new_preview["generated_at"] = prev_preview.get(
+                "generated_at", new_preview["generated_at"]
             )
             _prev_by = {it.get("id"): it for it in prev_preview.get("items", [])}
             for it in new_preview.get("items", []):
@@ -451,15 +439,6 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    _b = "2026-09-01T12:00:00Z"
-    assert _heartbeat_generated_at(None, _b) == _b
-    assert _heartbeat_generated_at(_b, "2026-09-01T12:05:00Z") == _b
-    assert _heartbeat_generated_at(_b, "2026-09-01T12:20:00Z") == "2026-09-01T12:20:00Z"
-    assert _heartbeat_generated_at("garbage", "2026-09-01T13:00:00Z") == "2026-09-01T13:00:00Z"
-    # v3.1.17 — wake 는 min_sec=0 으로 호출돼 스로틀 없이 즉시 now 로 갱신돼야 한다.
-    assert _heartbeat_generated_at(_b, "2026-09-01T12:00:30Z", min_sec=0) == "2026-09-01T12:00:30Z"
-    print("[OK] _heartbeat_generated_at")
-
     _now = "2026-09-01T12:00:00Z"
     _pv = {"items": [
         {"state": "announced", "scheduled_start": "2026-09-01T13:30:00Z"},   # 1.5h 후 → 포함
@@ -480,5 +459,18 @@ if __name__ == "__main__":
 
     assert _tracked_unresolved_ids(_a) == ["v1"]
     print("[OK] _tracked_unresolved_ids")
+
+    # v3.2.2 회귀 테스트 — 실질 변화 없으면(stable_view 동일) generated_at 을 prev 로
+    # 되돌려 gh.write_json 이 완전 무변화로 보고 커밋을 건너뛰게 해야 한다. v3.1.17 은
+    # wake 때 무조건 now 로 갱신해서, 방송이 여러 건 겹치면 상태 변화 없이도 몇 분마다
+    # 커밋이 발생했다(실측: 24h preview 커밋 118건 중 92건이 generated_at 만 다름).
+    _prev_pv = {"generated_at": "2026-09-01T12:00:00Z",
+                "items": [{"state": "live", "id": "pv_1", "video_id": "v1"}]}
+    _new_pv = {"generated_at": "2026-09-01T12:03:00Z",  # build_preview 가 항상 now 로 채움
+               "items": [{"state": "live", "id": "pv_1", "video_id": "v1"}]}
+    assert _stable_view(_prev_pv) == _stable_view(_new_pv), "이 시나리오는 실질 변화 없음 전제"
+    _new_pv["generated_at"] = _prev_pv.get("generated_at", _new_pv["generated_at"])
+    assert _new_pv["generated_at"] == "2026-09-01T12:00:00Z", "무변화면 generated_at 도 prev 유지"
+    print("[OK] 무변화 시 generated_at 동결 (하트비트 커밋 폭증 방지)")
 
     print("SUCCESS: handlers self-test 통과")
