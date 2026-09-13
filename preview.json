@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-13T22:40:03Z",
+  "generated_at": "2026-09-13T22:45:03Z",
   "items": [
     {
       "actual_start": null,
@@ -79,7 +79,7 @@
       "info_at": "2026-09-13T15:42:11Z",
       "info_source": "personal",
       "kind": "unknown",
-      "last_updated": "2026-09-13T22:40:03Z",
+      "last_updated": "2026-09-13T22:45:03Z",
       "membership": false,
       "scheduled_start": "2026-09-14T14:30:00Z",
       "source": "personal",
@@ -106,7 +106,7 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-13T22:40:03Z",
+      "last_updated": "2026-09-13T22:45:03Z",
       "membership": false,
       "needs_tl": false,
       "scheduled_start": "2026-12-24T14:59:00Z",
@@ -134,13 +134,13 @@
       "info_at": null,
       "info_source": "api",
       "kind": null,
-      "last_updated": "2026-09-13T22:40:03Z",
+      "last_updated": "2026-09-13T22:45:03Z",
       "membership": false,
       "scheduled_start": "2026-09-13T21:59:09Z",
       "source": "api",
       "state": "end",
       "state_since": "2026-09-13T22:40:03Z",
-      "thumbnail": "https://i.ytimg.com/vi/sgekM503qlI/maxresdefault_live.jpg",
+      "thumbnail": "https://i.ytimg.com/vi/sgekM503qlI/maxresdefault.jpg",
       "time_tbd": false,
       "title": "【朝活】☀ ☀ ☀GOOD　MORNING☀ ☀ 【夢限大みゅーたいぷ/藤都子】 #shorts #縦型配信 #vtuber",
       "title_ko": "【아침활동】☀ ☀ ☀GOOD MORNING☀ ☀ 【무겐다이 뮤타입/藤都子】 #shorts #세로형방송 #vtuber",
