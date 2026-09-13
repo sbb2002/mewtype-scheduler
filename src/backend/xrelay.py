@@ -498,22 +498,52 @@ def merge_announced(prev_items: list[dict], inc_list: list[dict], now_iso: str) 
     """announced 아이템 upsert (v3).
 
     각 inc 아이템에 대해 preview.match_item으로 prev_items에서 매칭.
-    찾으면 replace, 아니면 append. 정렬 후 반환.
+    찾으면 upsert, 아니면 append. 정렬 후 반환.
     host="group" 특례는 없음 (preview_build 에서 처리).
+
+    v3.1.18 — 매칭된 기존 항목이 이미 announced 보다 상위 티어(video_id 확보
+    = upcoming/watching/live/end, 또는 state 가 announced 가 아님)면 통째로
+    덮어쓰지 않는다. 그룹 공식 채널 일일 스케줄 공지는 "오늘 누가 몇 시에
+    한다"는 재확인일 뿐 — 이미 API/개인트윗으로 video_id·제목·썸네일까지
+    확보된 실물 항목을 매일 재게시되는 요약 트윗이 지워버리면 안 된다.
+    이 경우 kind/membership/collab_with 등 비어있는 보조 필드만 채우고
+    핵심 식별 필드(video_id/url/title/thumbnail/state/scheduled_start 등)는
+    기존 값을 유지한다.
+    실측 버그: 2026-09-13 미야코·리츠의 API 확정 upcoming(video_id 有)이
+    같은 날 그룹 스케줄 재공지에 덮어써져 video_id 를 잃고 announced 로
+    되돌아가, 이후 watching/live 전이가 전혀 일어나지 못했다.
     """
     items = [dict(i) for i in prev_items or []]
-    changed = bool(inc_list)  # ponytail: inc_list 가 비어있으면 false
+    changed = False
 
     for inc in inc_list:
         matched = preview.match_item(items, inc)
-        if matched:
-            # replace (like upsert)
-            idx = items.index(matched)
+        if matched is None:
+            items.append(dict(inc))
+            changed = True
+            continue
+
+        idx = items.index(matched)
+        cur = items[idx]
+        original = dict(cur)
+        is_higher_tier = bool(cur.get("video_id")) or cur.get("state") != "announced"
+
+        if is_higher_tier:
+            # 보조 필드만 보강 — 핵심 필드(state/video_id/url/title/thumbnail/
+            # scheduled_start 등)는 이미 상위 티어가 확정한 값을 유지.
+            if not cur.get("kind") and inc.get("kind"):
+                cur["kind"] = inc["kind"]
+            if not cur.get("membership") and inc.get("membership"):
+                cur["membership"] = inc["membership"]
+            if not cur.get("collab_with") and inc.get("collab_with"):
+                cur["collab_with"] = inc["collab_with"]
+            cur["last_updated"] = now_iso
+        else:
             items[idx] = dict(inc)
             items[idx]["last_updated"] = now_iso
-        else:
-            # append (new)
-            items.append(dict(inc))
+
+        if items[idx] != original:
+            changed = True
 
     return preview.sort_items(items), changed
 
@@ -857,18 +887,51 @@ if __name__ == "__main__":
     assert new_announced is not None, "새 announced 추가"
     print("[OK] merge_announced  (announced 추가, upcoming 보존)")
 
-    # merge_announced: replace by match
-    r_replay = [
+    # merge_announced: replace by match (둘 다 announced — 시각 갱신된 재공지)
+    prev_stale = [
         preview.make_item(
             channel_key="arale", state="announced", source="x-relay", now_iso=NOW,
             scheduled_start="2026-08-30T13:00:00Z"
         ),
     ]
-    prev2 = [r_replay[0]]  # 첫 번째와 동일 아이템
-    merged2, changed2 = merge_announced(prev2, r_replay, NOW)
+    r_replay = [
+        preview.make_item(
+            channel_key="arale", state="announced", source="x-relay", now_iso=NOW,
+            scheduled_start="2026-08-30T13:30:00Z"  # 30분 정정
+        ),
+    ]
+    merged2, changed2 = merge_announced(prev_stale, r_replay, NOW)
     assert changed2 is True
-    assert len(merged2) == 1, "기존과 동일 시각 → replace 되므로 1개 유지"
+    assert len(merged2) == 1, "기존과 근접 시각 → replace 되므로 1개 유지"
+    assert merged2[0]["scheduled_start"] == "2026-08-30T13:30:00Z", "정정된 시각 반영"
     print("[OK] merge_announced  (replace by match)")
+
+    # merge_announced: 상위 티어(video_id 확보) 항목은 재공지에 덮어써지지 않음
+    # 실측 버그(2026-09-13): API 로 확정된 upcoming(video_id 有)이 같은 날 그룹
+    # 공식 채널 일일 스케줄 재공지에 매칭돼 video_id 없는 announced 로 되돌아갔다.
+    prev_confirmed = [
+        preview.make_item(
+            channel_key="miyako", state="upcoming", source="api", now_iso=NOW,
+            id="pv_confirmed1", scheduled_start="2026-09-13T11:00:00Z",
+            video_id="7Q2gPHbBrdw", title="최종회 스페셜",
+            thumbnail="https://i.ytimg.com/vi/7Q2gPHbBrdw/maxresdefault_live.jpg",
+            url="https://www.youtube.com/watch?v=7Q2gPHbBrdw",
+        ),
+    ]
+    daily_reannounce = [
+        preview.make_item(
+            channel_key="miyako", state="announced", source="x-relay", now_iso=NOW,
+            scheduled_start="2026-09-13T11:00:00Z", kind="talk",
+        ),
+    ]
+    merged_hi, changed_hi = merge_announced(prev_confirmed, daily_reannounce, NOW)
+    assert len(merged_hi) == 1, "동일 방송 재공지는 1개로 유지"
+    kept = merged_hi[0]
+    assert kept["video_id"] == "7Q2gPHbBrdw", f"video_id 유지 실패: {kept}"
+    assert kept["state"] == "upcoming", f"state 유지 실패: {kept}"
+    assert kept["title"] == "최종회 스페셜", "title 유지 실패"
+    assert kept["kind"] == "talk", "빈 보조 필드(kind)는 보강되어야 함"
+    print("[OK] merge_announced  (상위 티어 항목 보존 — 보조 필드만 보강)")
 
     # merge_announced: empty
     merged3, changed3 = merge_announced(prev, [], NOW)
