@@ -268,6 +268,14 @@
   letter-spacing: 0.02em;
   font-weight: 650;
 }
+/* (v3.1.10) 실물 확정 카드(upcoming/watching/live/end)는 우측 상단에 이미 상태 배지
+   (LIVE/대기 중)가 있어 "합동" 배지를 좌측 상단에 따로 띄운다. card__body 의 title+meta
+   2줄 높이 예산에 3번째 줄을 보태면 flexbox 가 다 눌러버리는 회귀가 있어 body 밖(썸네일
+   위)에 얹는 쪽으로 뺐다. */
+.card__badge--corner-left {
+  left: 0.5rem;
+  right: auto;
+}
 
 /* ── 모바일: 가로 카드 (작은 썸네일 좌 + 텍스트 우) ──────────────
    card.css 는 layout.css 뒤에 로드되므로 이 @media 를 여기 파일 끝에 둬야
