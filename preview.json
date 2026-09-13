@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-13T15:31:05Z",
+  "generated_at": "2026-09-13T15:47:27Z",
   "items": [
     {
       "actual_start": null,
@@ -147,6 +147,34 @@
       "title_ko": "【#노래시간】나는 노래를 다 부를 거야――！！！！！【峰月律/ゆめみた】",
       "url": "https://www.youtube.com/watch?v=EoU743whcB0",
       "video_id": "EoU743whcB0"
+    },
+    {
+      "actual_start": null,
+      "api_start_seen": null,
+      "assumed_live": false,
+      "channel_key": "ritsu",
+      "collab_with": [],
+      "concurrent_viewers": null,
+      "expires_at": "2026-09-14T17:30:00Z",
+      "first_seen": "2026-09-13T15:47:27Z",
+      "host": null,
+      "id": "pv_b6ba40fa",
+      "info_at": "2026-09-13T15:42:11Z",
+      "info_source": "personal",
+      "kind": "unknown",
+      "last_updated": "2026-09-13T15:47:27Z",
+      "membership": false,
+      "needs_tl": false,
+      "scheduled_start": "2026-09-14T14:30:00Z",
+      "source": "personal",
+      "state": "announced",
+      "state_since": "2026-09-13T15:47:27Z",
+      "thumbnail": null,
+      "time_tbd": false,
+      "title": null,
+      "title_ko": null,
+      "url": "https://youtube.com/live/ANoN-maKbTE",
+      "video_id": "ANoN-maKbTE"
     }
   ]
 }
