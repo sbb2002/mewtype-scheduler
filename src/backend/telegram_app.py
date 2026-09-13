@@ -77,6 +77,8 @@ try:
 except Exception:                           # pragma: no cover
     YouTubeClient = None
 
+from . import preview as preview_mod
+from . import statemachine
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -104,6 +106,7 @@ def _tw_list(v):
         return [v]
     return []
 _PREVIEW_PATH = "preview.json"                 # (v3) schedule.json 대체
+_PREVIEW_ARCHIVE_PATH = "preview_archive.json"
 # (v3) 6상태 — none 은 파일에 없음
 _STATE_RANK = {"live": 0, "watching": 1, "upcoming": 2, "announced": 3, "end": 4}
 _STATE_BADGE = {"live": "🔴", "watching": "👀", "upcoming": "🟢",
@@ -2420,6 +2423,11 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
             if cur != want_pre:
                 conflicts.append(f"{f}: 운영자값 유지 (그 사이 tick: {want_pre!r}→{cur!r})")
             it[key] = val
+        if "state" in patch:
+            # FSM 판정 기준(state_since) 을 리셋 — "방금 이 상태로 막 진입"한 것으로 취급.
+            # 안 하면 예전 state_since 가 그대로 남아 end→none(30분 경과) 같은 판정이
+            # 리셋 없이 즉시 발동해버릴 수 있다(실측 버그).
+            it["state_since"] = now_iso
         it["last_updated"] = now_iso
         items[i] = it
         new = dict(prev)
@@ -2438,10 +2446,122 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
     _op_clear(gh, now_iso, release_lock_id=pid)
     msg = f"✏️ 예고 편집 반영 ({', '.join(patch)}). /undo 로 되돌릴 수 있습니다."
     if "state" in patch:
-        msg += "\n⚠️ state 는 FSM 파생값 — 다음 tick 이 덮을 수 있습니다."
+        msg += "\n" + _activate_state_edit(gh, it, now_iso)
     if conflicts:
         msg += "\n\n" + "\n".join(conflicts)
     _send_telegram(msg)
+
+
+def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
+    """`/edit preview` 로 state 를 바꾼 직후, 그 상태에 맞는 실제 로직을 마저 이행.
+
+    라벨만 바꾸고 끝내면(v3.1.16 까지의 동작) FSM 파생·Cloud Tasks wake 재예약·
+    archive 반영이 전혀 안 일어나 다음 tick(최대 3h) 까지 방치되는 문제가 있었다
+    (실측: 외부 채널 합동방송이 그 사이 아예 사라진 사례).
+
+    - "none" → preview.json 에서 즉시 제거 + preview_archive.json 에 기록
+      (FSM 의 end→none 전이와 동일하게 취급).
+    - video_id 있음(live/end/watching/upcoming — API 로 실물 검증 가능) → 메인 서비스
+      `/wake` 를 OIDC 로 호출해 실제 상태로 재확인 + Cloud Tasks wake 재예약까지 그쪽에
+      맡긴다. 운영자가 잘못 짚었어도 API 확인 결과가 우선하므로 안전하다.
+    - video_id 없음(announced 자리표시) → API 로 확인할 게 없으므로 로컬에서
+      statemachine.derive() 1회만 돌려 state_since 리셋 기준으로 다음 체크를 재계산.
+    """
+    pid = item.get("id")
+    state = item.get("state")
+    video_id = item.get("video_id")
+
+    if state == "none":
+        for attempt in (1, 2):
+            prev, sha = gh.read_json(_PREVIEW_PATH)
+            prev = prev or {"items": []}
+            items = list(prev.get("items", []) or [])
+            idx = next((k for k, x in enumerate(items) if x.get("id") == pid), None)
+            if idx is None:
+                return "(이미 다른 경로로 제거됨)"
+            gone = items.pop(idx)
+            new_pv = dict(prev)
+            new_pv["items"] = items
+            new_pv["generated_at"] = now_iso
+            try:
+                gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha,
+                               message=f"data: /edit preview→none {pid} {now_iso}")
+                break
+            except ConflictError:
+                if attempt == 2:
+                    raise
+                log.warning("/edit preview→none: 충돌 — 재시도")
+        try:
+            arch, arch_sha = gh.read_json(_PREVIEW_ARCHIVE_PATH)
+            arch = dict(arch or {"items": []})
+            arch["items"] = list(arch.get("items", []) or []) + [
+                preview_mod.to_archive_record(gone, now_iso)
+            ]
+            arch["generated_at"] = now_iso
+            gh.write_json(_PREVIEW_ARCHIVE_PATH, arch, prev_sha=arch_sha,
+                           message=f"data: preview_archive += {pid} {now_iso}")
+        except Exception:  # noqa: BLE001
+            log.warning("preview_archive 반영 실패 — preview.json 제거는 유지", exc_info=True)
+        return "🗑 즉시 제거 + 아카이브 반영 완료."
+
+    if video_id:
+        main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
+        if not (fetch_id_token and Request and requests and main_url):
+            return "⚠️ 메인 서비스 호출 불가(설정 없음) — 다음 정기 tick 이 처리합니다."
+        try:
+            tok = fetch_id_token(Request(), main_url)
+            resp = requests.post(
+                f"{main_url}/wake", json={"video_id": video_id},
+                headers={"Authorization": f"Bearer {tok}"}, timeout=30,
+            )
+            if resp.status_code == 200:
+                return "✅ 메인 서비스 /wake 로 실물 재확인 + 다음 체크 재예약 완료."
+            return f"⚠️ /wake 호출 실패(HTTP {resp.status_code}) — 다음 정기 tick 이 처리합니다."
+        except Exception as e:  # noqa: BLE001
+            return f"⚠️ /wake 호출 실패({e}) — 다음 정기 tick 이 처리합니다."
+
+    # video_id 없는 announced 자리표시 — API 검증 대상 아님, FSM 1회만 로컬 파생.
+    tick = statemachine.derive(item, now_iso, live_seen=None)
+    if tick.next_state == item.get("state"):
+        return f"FSM 재판정: 변화 없음(다음 체크 {tick.next_check_at or '다음 tick'})."
+    for attempt in (1, 2):
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {"items": []}
+        items = list(prev.get("items", []) or [])
+        idx = next((k for k, x in enumerate(items) if x.get("id") == pid), None)
+        if idx is None:
+            return "(이미 다른 경로로 제거됨)"
+        it2 = preview_mod.set_state(items[idx], tick.next_state, now_iso)
+        gone2 = None
+        if tick.next_state == "none":
+            items.pop(idx)
+            gone2 = it2
+        else:
+            items[idx] = it2
+        new_pv = dict(prev)
+        new_pv["items"] = items
+        new_pv["generated_at"] = now_iso
+        try:
+            gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha,
+                           message=f"data: /edit preview FSM 재판정 {pid} {now_iso}")
+            break
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("/edit preview FSM 재판정: 충돌 — 재시도")
+    if gone2 is not None:
+        try:
+            arch, arch_sha = gh.read_json(_PREVIEW_ARCHIVE_PATH)
+            arch = dict(arch or {"items": []})
+            arch["items"] = list(arch.get("items", []) or []) + [
+                preview_mod.to_archive_record(gone2, now_iso)
+            ]
+            arch["generated_at"] = now_iso
+            gh.write_json(_PREVIEW_ARCHIVE_PATH, arch, prev_sha=arch_sha,
+                           message=f"data: preview_archive += {pid} {now_iso}")
+        except Exception:  # noqa: BLE001
+            log.warning("preview_archive 반영 실패", exc_info=True)
+    return f"FSM 재판정: {tick.next_state}(다음 체크 {tick.next_check_at or '없음'})."
 
 
 # Flask 라우트 정의 (Flask 설치 시만)
@@ -3085,6 +3205,45 @@ if __name__ == "__main__":
         assert _handle_op_followup(g, _cfg2, NW, {}, _INGEST_CANCEL_TOKEN) is True
         assert admin.get_pending_op(g.store[_ADMIN_STATE_PATH]) is None
         print("[OK] /edit preview 마법사 (unit→idx→field→value→done, 락·undo·취소)")
+
+        # (v3.1.17) state 를 직접 바꾸면 라벨만 안 바뀌고 그 상태에 맞는 로직이 실제로
+        # 이행되는지 — _activate_state_edit 경로.
+        os.environ.pop("MAIN_SERVICE_URL", None)  # 메인 서비스 미설정 상태로 고정
+
+        # (a) video_id 없는 announced 자리표시 → state="none" 직접 지정 시 즉시 제거+아카이브.
+        g2 = _GH()
+        g2.store[_PREVIEW_PATH] = {"items": [
+            {"id": "pv_none1", "channel_key": "arale", "state": "announced",
+             "scheduled_start": "2026-09-10T05:00:00Z", "title": "제거될 예고",
+             "video_id": None},
+        ]}
+        r_none = _activate_state_edit(
+            g2, {"id": "pv_none1", "state": "none", "channel_key": "arale", "video_id": None}, NW,
+        )
+        assert "아카이브" in r_none, r_none
+        assert g2.store[_PREVIEW_PATH]["items"] == [], g2.store[_PREVIEW_PATH]
+        assert g2.store[_PREVIEW_ARCHIVE_PATH]["items"][0]["id"] == "pv_none1", g2.store[_PREVIEW_ARCHIVE_PATH]
+        print("[OK] _activate_state_edit: state→none 즉시 제거+아카이브")
+
+        # (b) video_id 있는 아이템 → MAIN_SERVICE_URL 미설정이면 안 죽고 안내만.
+        item_b = {"id": "pv_x1", "state": "live", "video_id": "vvv", "channel_key": "arale"}
+        r_video = _activate_state_edit(g2, item_b, NW)
+        assert "다음 정기 tick" in r_video, r_video
+        print("[OK] _activate_state_edit: video_id 있음 + 메인서비스 미설정 → 경고만(안 죽음)")
+
+        # (c) video_id 없는 announced, 아직 30분 안 지난 상태로 state="end" 강제 지정
+        #     → FSM 재판정 결과 그대로(end 창 유지, none 으로 안 건너뜀).
+        g3 = _GH()
+        g3.store[_PREVIEW_PATH] = {"items": [
+            {"id": "pv_end1", "channel_key": "arale", "state": "end", "state_since": NW,
+             "scheduled_start": "2026-09-09T11:00:00Z", "video_id": None},
+        ]}
+        item_c = {"id": "pv_end1", "channel_key": "arale", "state": "end", "state_since": NW,
+                  "scheduled_start": "2026-09-09T11:00:00Z", "video_id": None}
+        r_end = _activate_state_edit(g3, item_c, NW)
+        assert "변화 없음" in r_end, r_end
+        assert g3.store[_PREVIEW_PATH]["items"][0]["state"] == "end", g3.store[_PREVIEW_PATH]
+        print("[OK] _activate_state_edit: video_id 없음 → FSM 1회 파생(state_since 리셋 기준)")
 
     print(chr(10) + "=" * 60)
     print("SUCCESS: telegram_app v3 smoke test 통과")

@@ -307,9 +307,15 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 log.warning("suppress/edit_lock 반영 실패 — 무시", exc_info=True)
 
         # 실질 변화 없으면 volatile 동결 + generated_at heartbeat.
+        # wake(is_wake) 는 방송별 정밀 체크라 매번 즉시 갱신 — "확인은 계속 하고 있다"를
+        # 프론트 하단 업데이트 시각에 그대로 반영한다(v3.1.17). 20분 스로틀은 정기 tick 에만
+        # 적용해 무의미한 커밋 스팸을 막는다. 예전엔 tick/wake 구분 없이 20분 스로틀을 걸어서
+        # live/end 를 몇 분 간격으로 계속 확인 중이어도 업데이트 시각이 tick 주기로만 움직이는
+        # 것처럼 보였다(실측 피드백).
         if _stable_view(prev_preview) == _stable_view(new_preview):
             new_preview["generated_at"] = _heartbeat_generated_at(
-                prev_preview.get("generated_at"), now_iso
+                prev_preview.get("generated_at"), now_iso,
+                min_sec=(0 if is_wake else _HEARTBEAT_MIN_SEC),
             )
             _prev_by = {it.get("id"): it for it in prev_preview.get("items", [])}
             for it in new_preview.get("items", []):
@@ -450,6 +456,8 @@ if __name__ == "__main__":
     assert _heartbeat_generated_at(_b, "2026-09-01T12:05:00Z") == _b
     assert _heartbeat_generated_at(_b, "2026-09-01T12:20:00Z") == "2026-09-01T12:20:00Z"
     assert _heartbeat_generated_at("garbage", "2026-09-01T13:00:00Z") == "2026-09-01T13:00:00Z"
+    # v3.1.17 — wake 는 min_sec=0 으로 호출돼 스로틀 없이 즉시 now 로 갱신돼야 한다.
+    assert _heartbeat_generated_at(_b, "2026-09-01T12:00:30Z", min_sec=0) == "2026-09-01T12:00:30Z"
     print("[OK] _heartbeat_generated_at")
 
     _now = "2026-09-01T12:00:00Z"
