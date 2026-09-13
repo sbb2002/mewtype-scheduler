@@ -210,6 +210,11 @@
       <button class="cmd" data-cmd="/del">/del</button>
       <button class="cmd" data-cmd="/undo">/undo</button>
     </div>
+    <div class="cmd-row" id="relayRow" hidden aria-label="X 예고 릴레이 세부">
+      <button class="cmd" data-relay="personal" aria-selected="true">개인채널 알림</button>
+      <button class="cmd" data-relay="bdp">BDP_yumemita</button>
+      <button class="cmd" data-relay="bangdreamon">bang_dream_on</button>
+    </div>
     <div class="stage">
       <svg id="svg" viewBox="0 0 940 600" role="img" aria-label="아키텍처 흐름도">
         <!-- 배포·운영 경계 -->
@@ -284,7 +289,7 @@
           <text class="ns" x="68" y="30" text-anchor="middle">RSS + videos.list</text></g>
         <g class="node" id="n_llm" transform="translate(224,346)">
           <rect width="152" height="40" rx="8" stroke-dasharray="4 4"/><text class="nt" x="76" y="17" text-anchor="middle">외부 LLM · Groq</text>
-          <text class="ns" x="76" y="30" text-anchor="middle">제목추출 · 번역</text></g>
+          <text class="ns" x="76" y="30" text-anchor="middle">제목추출 · 번역 · 비전 OCR</text></g>
         <g class="node" id="n_db" transform="translate(484,346)">
           <rect width="152" height="52" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">DB · GitHub data</text>
           <text class="ns" x="76" y="36" text-anchor="middle">JSON · 커밋 = write</text></g>
@@ -426,10 +431,7 @@
              n:["n_sch","n_be","n_yt","n_db","n_fe","n_fan"],
              r:["sch","be","yt","be","db","fe","fan"],
              c:"<b>라이브 감지</b> — 예정 방송마다 시작 15분 전에 Cloud Task 가 백엔드를 콕 찍어 깨운다. 시작 직전 3분 · 방송 중 3~10분 간격 정밀 폴링 → 라이브 켜짐·꺼짐을 빠르게 반영."},
-    relay:  {e:["e_push_up","e_up_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
-             n:["n_push","n_up","n_ctrl","n_db","n_fe","n_fan"],
-             r:["push","up","ctrl","db","fe","fan"],
-             c:"<b>X 예고 릴레이</b> — 공식 계정의 일일 스케줄 트윗 알림을 운영자 폰이 그대로 중계. YouTube 영상이 아직 없어도 <code>announced</code>(예고) 행으로 먼저 표시하고, 실물 방송이 뜨면 대체."},
+    // relay: 세부는 relayRow 하위 3탭(RELAY, 아래) 이 담당 — applyScn 에서 특수 처리
     tweet:  {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
              n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
              r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
@@ -439,6 +441,24 @@
              r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
              c:"<b>소식</b> — 방송 예고가 아닌 트윗(라이브 이벤트·음반·굿즈·타 플랫폼)은 LLM 이 제목만 뽑아 <code>notices.json</code> → 예고판 상단 티커에 노출."},
     ops:    {r:["op","tg","ctrl","db"]}
+  };
+
+  /* X 예고 릴레이 세부 — 같은 "업스트림 폰 중계" 라도 발신 계정에 따라 실제로
+     타는 코드 경로(그리고 LLM/비전 통과 여부)가 서로 다르다. 헷갈리기 쉬워서
+     운영자 제어처럼 하위 탭으로 쪼갬(2026-09-13 실사용 중 발견된 오해 지점). */
+  var RELAY = {
+    personal: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
+      c:"<b>개인채널 알림</b> — 멤버 개인 계정의 트윗(예: \"지금부터 방송 시작\"). <code>xtweet.py</code> 가 게시자로 채널을 확정하고 LLM 번역을 붙여 편지 배지 스레드에 쌓는다. 예고 형식(配信+날짜·시각/URL)이 갖춰지면 <code>preview.json</code> 에도 <code>announced</code>/<code>upcoming</code> 로 승격."},
+    bdp: {e:["e_push_up","e_up_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","db","fe","fan"],
+      c:"<b>BDP_yumemita 공식 일정</b> — 5인 합동 공식 계정의 하루 스케줄 통보. <code>xrelay.py</code> 가 정규식만으로 파싱해 <code>preview.json</code> 에 바로 반영 — LLM·비전 어느 쪽도 거치지 않는다. YouTube 영상이 아직 없어도 <code>announced</code> 행으로 먼저 표시, 실물 방송이 뜨면 대체."},
+    bangdreamon: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
+      c:"<b>bang_dream_on 등 크로스오버 계정</b> — 우리 5인 형식이 아닌 외부 프랜차이즈 공식 계정 소식. <code>xnotice.py</code> 가 <code>notices.json</code> 소식으로 반영하며 LLM 이 제목 추출·번역을 한다(v3.2). 첨부 이미지에 출연진 소개 패널이 있으면 같은 Groq 로 비전 OCR(<code>qwen/qwen3.8-27b</code>+폴백 <code>qwen/qwen3.6-27b</code>) 을 돌려 5인 중 누가 나오는지 <code>participants</code> 필드에 태그."}
   };
 
   /* 운영자 제어 — 명령어별 흐름. r = 노드 순서, 왕복이면 회신 경로까지 되짚는다. */
@@ -503,18 +523,33 @@
   var curCmd = "/status";
   function applyCmd(cmd){
     curCmd = cmd;
-    document.querySelectorAll(".cmd").forEach(function(b){
+    cmdRow.querySelectorAll(".cmd").forEach(function(b){
       b.setAttribute("aria-selected", b.dataset.cmd === cmd ? "true" : "false");
     });
     paint(OPS[cmd].r, OPS[cmd].c);
   }
-  document.querySelectorAll(".cmd").forEach(function(b){
+  cmdRow.querySelectorAll(".cmd").forEach(function(b){
     b.addEventListener("click", function(){ applyCmd(b.dataset.cmd); });
   });
 
+  var relayRow = document.getElementById("relayRow");
+  var curRelay = "personal";
+  function applyRelay(key){
+    curRelay = key;
+    relayRow.querySelectorAll(".cmd").forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.relay === key ? "true" : "false");
+    });
+    paint(RELAY[key].r, RELAY[key].c);
+  }
+  relayRow.querySelectorAll(".cmd").forEach(function(b){
+    b.addEventListener("click", function(){ applyRelay(b.dataset.relay); });
+  });
+
   function applyScn(key){
-    if (key === "ops"){ cmdRow.hidden = false; applyCmd(curCmd); return; }
     cmdRow.hidden = true;
+    relayRow.hidden = true;
+    if (key === "ops"){ cmdRow.hidden = false; applyCmd(curCmd); return; }
+    if (key === "relay"){ relayRow.hidden = false; applyRelay(curRelay); return; }
     paint(SCN[key].r, SCN[key].c);
   }
   document.querySelectorAll(".scn-tab").forEach(function(b){
