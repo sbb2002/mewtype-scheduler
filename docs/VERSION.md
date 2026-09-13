@@ -2,6 +2,13 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.1.14** — `llm.py`에 용어집(`GLOSSARY`) 도입: 그룹명 "夢限大みゅーたいぷ"가 호출마다
+  "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 제각각 번역되던 것을 "무겐다이 뮤타입"으로
+  고정. 프롬프트 지시만으론 불충분해(실측상 무시하고 의역) 입력에서 원문을 자리표시자로
+  가려 LLM 이 못 건드리게 하고 응답에서 고정값으로 복원하는 마스킹 방식 채택 — preview
+  제목·notice 제목·tweet 번역 전부 이 경로(`translate`/`notice_title`)를 거치므로 세
+  파이프라인 어디서든 동일하게 적용됨. 이미 커밋돼 있던 preview·notice·tweet 데이터의
+  기존 변형 표기도 소급 정정.
 - **v3.1.13** — preview(방송 예고) 제목도 notice/tweet 처럼 LLM 한국어 번역. 계약 A′ 에
   `title_ko`/`needs_tl` 추가 — `preview_build.build_preview` 가 제목 신규·변경 시
   `needs_tl=true` 로 표시하고, `handlers._translate_sweep` 이 (tick 마다) `notices.json`/
