@@ -305,10 +305,49 @@ def parse_appearance(text: str, now_iso: str) -> list[dict]:
     return [item]
 
 
-# "配信開始📢/📡" · "同時視聴配信" · "配信中" 등 — 예고가 아니라 "지금 막 시작했다" 트윗.
-# 일일 스케줄(HEADER_RE)·出演情報(APPEARANCE_MARK_RE) 어느 쪽 서식도 아닌 공지문 (예: 그룹
-# 공식 채널의 동시시청 방송 개시 공지). video_id 없이는 노이즈가 크므로 온전한 URL 필수.
-LIVE_NOW_RE = re.compile(r"配信開始|同時視聴配信|生配信中|ただいま配信|配信中です")
+# "配信開始📢/📡" · "同時視聴配信" · "生配信"(単独でも「今まさに」のニュアンス) 등 —
+# 예고가 아니라 "지금 막 시작했다/한다" 트윗. 일일 스케줄(HEADER_RE)·出演情報(APPEARANCE_MARK_RE)
+# 어느 쪽 서식도 아닌 공지문(예: 그룹 공식 채널의 동시시청 방송 개시 공지, 외부 채널 콜라보 생중계
+# 공지). video_id 없이는 노이즈가 크므로 온전한 URL 필수(YT_VIDEO_RE 게이트).
+LIVE_NOW_RE = re.compile(r"配信開始|同時視聴配信|生配信|ただいま配信|配信中です")
+
+# "本日12時〜"/"明日20:00〜" 류 상대날짜 + 시각 표기 — xnotice.py _TODAY_WORD 와 동일
+# 어휘(순환 import 피하려 여기 별도 정의) + "明日" 계열("明日"/"明日朝"/"明晩"/"明朝"/"あす",
+# parse_bdp_schedule 의 "明日" +1일 관례와 동일). 시각 뒤 〜/~/～(…부터) 가 붙어야 매치 —
+# "24時間耐久" 같은 소요시간 표기 오인식 방지. 시각 앞 마커와 숫자 사이엔 "朝"/"夜" 같은
+# 시간대어가 낄 수 있어(예: "明日朝7:00") 최대 3자 필러를 허용한다.
+# 이 시각이 있으면 scheduled_start 를 ingest 시각 대신 이걸로 잡는다(v3.1.10 — 릴레이가
+# 실제 시작보다 먼저 도착한 경우 대비. 예: 아침에 릴레이된 "本日12時〜").
+_TODAY_WORD = ("本日", "今夜", "今晩", "まもなく", "これから", "ただいま")
+_TOMORROW_WORD = ("明日", "明晩", "明朝", "あす")
+_DAY_TIME_RE = re.compile(
+    r"(?P<day>" + "|".join(_TOMORROW_WORD + _TODAY_WORD) + r")"
+    r"[^\d\n]{0,3}(?P<h>\d{1,2})\s*(?::|：|時)\s*(?P<mi>\d{2})?\s*分?\s*[〜~～]"
+)
+
+
+def _relative_day_time_jst(t: str, now_iso: str) -> str | None:
+    """`本日12時〜`/`明日20:00〜` 에서 상대날짜+시각을 뽑아 UTC ISO 로.
+
+    못 뽑으면 None(호출부가 now_iso 대체).
+    """
+    m = _DAY_TIME_RE.search(t)
+    if not m:
+        return None
+    h = int(m.group("h"))
+    if h > 29:
+        return None
+    mi = int(m.group("mi")) if m.group("mi") else 0
+    try:
+        now_jst = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(JST)
+    except (ValueError, AttributeError):
+        now_jst = datetime.now(JST)
+    day_carry, hh = divmod(h, 24)          # 심야표기 24:00〜29:59 = 다음날 00:00〜05:59
+    if m.group("day") in _TOMORROW_WORD:
+        day_carry += 1
+    base = datetime(now_jst.year, now_jst.month, now_jst.day, tzinfo=JST)
+    dt_jst = base + timedelta(days=day_carry, hours=hh, minutes=mi)
+    return dt_jst.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_live_now(text: str, now_iso: str) -> list[dict]:
@@ -343,6 +382,7 @@ def parse_live_now(text: str, now_iso: str) -> list[dict]:
 
     tm = _TITLE_RE.search(t)
     title = tm.group(1).lstrip("#＃ ").strip() if tm else None
+    scheduled_start = _relative_day_time_jst(t, now_iso) or now_iso
 
     item = preview.make_item(
         channel_key=key,
@@ -353,7 +393,7 @@ def parse_live_now(text: str, now_iso: str) -> list[dict]:
         title=title,
         url=video_url,
         video_id=video_id,
-        scheduled_start=now_iso,
+        scheduled_start=scheduled_start,
         kind="collab" if collab else None,
         membership=False,
         collab_with=collab or None,
@@ -733,6 +773,56 @@ if __name__ == "__main__":
     assert len(r12) == 1 and r12[0]["channel_key"] == "arale", r12
     assert r12[0].get("host") is None and r12[0]["collab_with"] is None, r12[0]
     print("[OK] S12  (개인 즉시개시 공지 → host 없이 단독)")
+
+    # S13: 실측 — 외부(굿즈사) 채널 콜라보 생중계 공지. "生配信中" 이 아니라 "生配信！" 뿐이고
+    # video_id 는 config/channels.json 미등록 채널(굿즈사) 소유지만, videos.list 는 채널 제한
+    # 없이 video_id 로 조회하므로 channel_key 미등록 여부와 무관하게 반영돼야 한다(2026-09-13).
+    S13 = (
+        "＼本日開催📢／\n\n"
+        "🛸夢限大みゅーたいぷ 5th Single\n"
+        "「これはぼくたちの生存のあらすじ」\n"
+        "リリース記念 インターネットサイン会🖋\n\n"
+        "⏰本日12時～\n"
+        "サイン会の様子を生配信！\n\n"
+        "📺ご視聴はこちら\n"
+        "https://youtube.com/live/V2AJBNJGR8E\n\n"
+        "ダブルチャンス抽選の発表もお見逃しなく✨\n\n"
+        "#リミスタ #バンドリ"
+    )
+    assert parse_bdp_schedule(S13, NOW) == []
+    assert parse_appearance(S13, NOW) == []
+    r13 = parse_live_now(S13, NOW)
+    assert len(r13) == 1, r13
+    g13 = r13[0]
+    assert g13["channel_key"] == "arale" and g13["collab_with"] == ["yuno", "nonoka", "ritsu", "miyako"], g13
+    assert g13["host"] == "group" and g13["kind"] == "collab", g13
+    assert g13["video_id"] == "V2AJBNJGR8E", g13
+    # NOW = 2026-09-03T00:00:00Z(09:00 JST) → "本日12時〜" = 같은 날 12:00 JST = 03:00 UTC
+    assert g13["scheduled_start"] == "2026-09-03T03:00:00Z", g13["scheduled_start"]
+    assert parse(S13, NOW) == r13
+    assert looks_relayable(S13)
+    print("[OK] S13  (生配信 단독 + 외부 채널 URL + 本日HH時〜 → host=group, 당일 시각 반영)")
+
+    # S14: 시각 표기가 없으면(예: "配信開始" 만) 종전대로 ingest 시각(now_iso)을 씀
+    S14 = "＼配信開始📢／\n夢限大みゅーたいぷ\nhttps://youtube.com/live/aBcDeFgHiJk"
+    r14 = parse_live_now(S14, NOW)
+    assert len(r14) == 1 and r14[0]["scheduled_start"] == NOW, r14
+    print("[OK] S14  (당일 시각 표기 없음 → scheduled_start=ingest 시각 그대로)")
+
+    # S15: "明日" 계열 — +1일 반영 (parse_bdp_schedule 의 明日 관례와 동일)
+    S15 = "＼本日開催📢／\n夢限大みゅーたいぷ\n明日20時〜生配信！\nhttps://youtube.com/live/tmrwVideoI1"
+    r15 = parse_live_now(S15, NOW)
+    assert len(r15) == 1, r15
+    # NOW = 2026-09-03T00:00:00Z(09:00 JST) → 明日20:00 = 2026-09-04 20:00 JST = 11:00 UTC
+    assert r15[0]["scheduled_start"] == "2026-09-04T11:00:00Z", r15[0]["scheduled_start"]
+    print("[OK] S15  (明日HH時〜 → +1일 반영)")
+
+    # S16: "明日朝" 복합형(明日 + 시간대어 필러) — parse_bdp_schedule 의 明日朝 표기와 동일
+    S16 = "＼本日開催📢／\n夢限大みゅーたいぷ\n明日朝7:00〜生配信！\nhttps://youtube.com/live/tmrwVideoI2"
+    r16 = parse_live_now(S16, NOW)
+    assert len(r16) == 1, r16
+    assert r16[0]["scheduled_start"] == "2026-09-03T22:00:00Z", r16[0]["scheduled_start"]  # 익일 07:00 JST
+    print("[OK] S16  (明日朝HH:MM〜 → 필러 건너뛰고 +1일 반영)")
 
     # unparsed_lines
     S_BAD = (
