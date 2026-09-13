@@ -1,9 +1,10 @@
 """Flask 앱: Cloud Run HTTP 진입점.
 
 라우트:
-  POST /tick    — Cloud Scheduler (body: {"mode": "baseline"|"light"})
-  POST /wake    — Cloud Tasks     (body: {"video_id": "..."})
-  GET  /        — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
+  POST /tick          — Cloud Scheduler (body: {"mode": "baseline"|"light"})
+  POST /wake          — Cloud Tasks     (body: {"video_id": "..."})
+  POST /push-monitor  — Cloud Scheduler (1시간 주기, body 없음) — docs/PUSH_MONITOR.html 갱신
+  GET  /              — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from functools import lru_cache
 
 from flask import Flask, jsonify, request
 
-from . import handlers, notify, oidc
+from . import handlers, notify, oidc, push_monitor
 from .config import load_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -76,6 +77,20 @@ def _wake():
     except Exception as e:  # noqa: BLE001
         log.exception("wake 실패")
         _alert(f"/wake video_id={video_id}", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/push-monitor")
+def _push_monitor():
+    try:
+        _authorize()
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    try:
+        return jsonify(push_monitor.run(_cfg()))
+    except Exception as e:  # noqa: BLE001
+        log.exception("push-monitor 실패")
+        _alert("/push-monitor", e)
         return jsonify({"error": str(e)}), 500
 
 

@@ -193,12 +193,54 @@ class GitHubStore:
             )
 
         # 4. PUT
-        return self._put_json(path, serialized, current_sha, message)
+        return self._put_content(path, serialized, current_sha, message)
+
+    def read_text(self, path: str) -> tuple[Optional[str], Optional[str]]:
+        """GitHub 저장소에서 일반 텍스트 파일(HTML 등)을 읽음. read_json 과 동일하되 JSON 파싱 안 함.
+
+        Returns:
+            (content_str, sha) 또는 404 면 (None, None).
+        """
+        url = f"{self.API}/repos/{self.repo}/contents/{path}"
+        params = {"ref": self.branch}
+        try:
+            sess = self.session or requests.Session()
+            resp = sess.get(url, params=params, headers=self._headers(), timeout=self.timeout)
+            if resp.status_code == 404:
+                return None, None
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"GitHub API read failed: {resp.status_code} {resp.reason}. "
+                    f"Response: {resp.text[:200]}"
+                )
+            resp_json = resp.json()
+            content_b64 = resp_json.get("content", "")
+            sha = resp_json.get("sha")
+            if not content_b64:
+                raise RuntimeError(f"No content in response for {path}")
+            return base64.b64decode(content_b64).decode("utf-8"), sha
+        except requests.RequestException as e:
+            raise RuntimeError(f"GitHub API network error: {e}")
+
+    def write_text(
+        self, path: str, text: str, *, prev_sha: Optional[str] = None, message: str,
+    ) -> tuple[bool, Optional[str]]:
+        """일반 텍스트 파일(HTML 등)을 씀. write_json 과 동일한 무변화 스킵·낙관적 동시성
+        규칙을 따르되, JSON 직렬화는 하지 않고 text 를 그대로 쓴다."""
+        current_text, current_sha = self.read_text(path)
+        if current_text is not None and current_text == text:
+            return False, current_sha
+        if prev_sha is not None and current_sha is not None and current_sha != prev_sha:
+            raise ConflictError(
+                f"{path}: base sha {prev_sha[:8]} != current {current_sha[:8]} "
+                f"(다른 실행이 먼저 커밋함)"
+            )
+        return self._put_content(path, text, current_sha, message)
 
     _NET_RETRIES = 3
     _NET_BACKOFF = 0.5  # 초. n번째 재시도는 n*backoff 대기
 
-    def _put_json(
+    def _put_content(
         self,
         path: str,
         serialized: str,
@@ -340,6 +382,19 @@ if __name__ == "__main__":
     assert changed is False and sha == "shaZ" and sess_c.put_calls == 0
 
     print("✓ Optimistic concurrency: ConflictError on stale base sha, no silent clobber")
+
+    # write_text / read_text (v3.2.3 — PUSH_MONITOR.html 같은 비-JSON 텍스트 파일용)
+    sess_d = _FakeSess("<html>old</html>", "shaD")
+    gh_d = GitHubStore("tok", "o/r", "devpapers", session=sess_d)
+    changed_d, sha_d = gh_d.write_text("docs/x.html", "<html>new</html>", message="m")
+    assert changed_d and sha_d == "newsha" and sess_d.put_calls == 1
+    print("✓ write_text: 변경 있으면 PUT")
+
+    sess_e = _FakeSess("<html>same</html>", "shaE")
+    gh_e = GitHubStore("tok", "o/r", "devpapers", session=sess_e)
+    changed_e, sha_e = gh_e.write_text("docs/x.html", "<html>same</html>", message="m")
+    assert changed_e is False and sha_e == "shaE" and sess_e.put_calls == 0
+    print("✓ write_text: 내용 동일하면 PUT 생략")
 
     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
     import os

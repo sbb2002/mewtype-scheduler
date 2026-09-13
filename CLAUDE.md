@@ -115,6 +115,12 @@ src/
                        #        (qwen/qwen3.8-27b 주 + qwen/qwen3.6-27b 폴백). 실패 시 None
     #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)
+                       #        (v3.3) read_text/write_text — HTML 등 비-JSON 파일용
+    push_monitor.py    # (v3.3) Push Monitor 대시보드 — data/main 브랜치 커밋 이력을 GitHub
+                       #        REST API 로 읽어 카테고리별 10분 단위 누적 막대 + 날짜 히트맵
+                       #        인터랙티브 HTML 생성, devpapers 브랜치 docs/PUSH_MONITOR.html
+                       #        로 커밋(POST /push-monitor, 1시간 주기). Vercel quota 재소진
+                       #        조기 감지용(v3.2.2 사고 참고)
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
     config.py          # 환경변수 → Config
@@ -157,6 +163,11 @@ data 브랜치 (v3)        # preview.json + preview_archive.json + control.json
                        #   + tweets.json / tweet_archive.json (개인 트윗, +text_ko)
                        #   + admin_state.json (계약 G′ — pending_op/edit_lock/suppress/undo 슬롯)
                        #   .old/ = 전환 시 치워둔 v2 파일(schedule/pending/ingest_queue …). 롤백용. 코드 없음
+devpapers 브랜치 (v3.3)  # docs/ 중 개발 시 상시 참조 안 하는 문서 전부(배경자료·구버전 기록·
+                       #   운영자용 설명자료 등) + docs/PUSH_MONITOR.html(1시간마다 자동 커밋).
+                       #   코드 없음. data 브랜치와 같은 이유로 Vercel 배포 트리거 밖
+                       #   (vercel.json). 용어는 docs/TERMINOLOGY.md 참고, "docs 브랜치"라
+                       #   부르지 말 것(docs/ 폴더명과 헷갈림)
 ```
 
 ## 명령
@@ -186,12 +197,14 @@ python -m src.backend.notices        # (v2.7) notices 머지·중복판정·swee
 python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_tweet + sweep
                                     #   (v2.8.1) parse_schedule + merge_personal_schedule + apply_overrides
 python -m src.backend.telegram_app   # /list /del /undo /notice /notice-edit 흐름 포함 (Flask 설치 시 라우트까지)
-python -m src.backend.gh_store       # 직렬화 규칙 (실제 호출은 GH_TOKEN_TEST 있을 때만)
+python -m src.backend.gh_store       # 직렬화 규칙 + read_text/write_text (실제 호출은 GH_TOKEN_TEST 있을 때만)
+python -m src.backend.push_monitor   # (v3.3) 카테고리 분류·집계·HTML 렌더 (실호출은 GITHUB_FINEGRAINED_PAT 있을 때 --live)
+python -m src.backend.vision         # (v3.2) 비전 OCR (실호출은 GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때 --live)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY 포함)
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
-bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline 스케줄러 잡 (URL 불변이면 생략 가능)
+bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-push-monitor 스케줄러 잡 (URL 불변이면 생략 가능)
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스
 # 전체 전환(v→v) 절차·롤백: docs/plan/v3_golive.md
 

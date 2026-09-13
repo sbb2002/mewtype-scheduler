@@ -2,6 +2,19 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.3.0** (기능 추가) — Push Monitor 대시보드(`docs/PUSH_MONITOR.html`, `devpapers`
+  브랜치) + 문서 브랜치 분리. 새 모듈 `src/backend/push_monitor.py` — GitHub REST API
+  로 `data`/`main` 브랜치 최근 7일 커밋 이력을 읽어 카테고리별(preview/tweet/notice/
+  undo_snapshot/personal_schedule/xrelay/manual/기타/코드) 10분 단위 누적 막대로
+  집계, 날짜별 히트맵(총 push 건수, 클릭 시 그 날 상세로 드릴다운) + 인터랙티브 SVG
+  차트(호버 시 시간대·카테고리별 건수 툴팁)로 렌더링해 1시간마다 `POST /push-monitor`
+  (Cloud Scheduler `mewtype-push-monitor`)가 자동 커밋. Vercel 배포 quota 재소진
+  조기 감지용(v3.2.2 사고 재발 방지). `gh_store.py` 에 `read_text`/`write_text`
+  추가(HTML 등 비-JSON 파일용, PUT 로직은 `write_json` 과 공유).
+  겸사겸사 `docs/` 를 정리 — 개발 중 상시 참조하는 4개(SPEC.md·TERMINOLOGY.md·
+  VERSION.md·INGEST_FLOW.md)만 `main`에 남기고, 나머지(배경자료·구버전 기록·
+  운영자용 설명자료 등)를 새 `devpapers` 브랜치로 이전. `data` 브랜치와 같은 이유로
+  Vercel 배포 트리거 밖(`vercel.json`)에 둔다.
 - **v3.2.2** (핫픽스) — `handlers.py` 의 v3.1.17 "wake 하트비트"(상태 변화가 없어도
   `/wake` 마다 `generated_at` 을 무조건 지금 시각으로 갱신)를 완전히 제거. 방송이
   여러 건 겹치면 각자 3~10분 간격인 wake 들이 서로 어긋나며 겹쳐서, 상태 변화가

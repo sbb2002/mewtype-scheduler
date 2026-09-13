@@ -9,10 +9,10 @@ URL=$(gcloud run services describe "$SERVICE_NAME" \
   --format='value(status.url)')
 
 # 스케줄러 잡 생성/갱신 헬퍼.
-#   $1 = 잡 이름, $2 = cron, $3 = time-zone, $4 = message-body(JSON)
+#   $1 = 잡 이름, $2 = cron, $3 = time-zone, $4 = message-body(JSON), $5 = 엔드포인트 경로(기본 /tick)
 # --max-retry-attempts: Cloud Run concurrency=1 이라 다른 요청 처리 중이면 429 가능 → 재시도.
 upsert_job () {
-  local name="$1" cron="$2" tz="$3" body="$4" verb=create
+  local name="$1" cron="$2" tz="$3" body="$4" path="${5:-/tick}" verb=create
   if gcloud scheduler jobs describe "$name" --location="$GCP_LOCATION" &>/dev/null; then
     verb=update
   fi
@@ -24,7 +24,7 @@ upsert_job () {
     --location="$GCP_LOCATION" \
     --schedule="$cron" \
     --time-zone="$tz" \
-    --uri="$URL/tick" \
+    --uri="$URL$path" \
     --http-method=POST \
     "$hdr_flag" \
     --message-body="$body" \
@@ -40,5 +40,8 @@ upsert_job mewtype-baseline "0 6 * * *" "Asia/Tokyo" '{"mode":"baseline"}'
 
 echo "=== Light 안전망 (3시간 간격 UTC) ==="
 upsert_job mewtype-light "0 */3 * * *" "Etc/UTC" '{"mode":"light"}'
+
+echo "=== Push Monitor (1시간 간격 UTC) — docs/PUSH_MONITOR.html 갱신, devpapers 브랜치 ==="
+upsert_job mewtype-push-monitor "0 * * * *" "Etc/UTC" '{}' "/push-monitor"
 
 echo "=== 스케줄러 설정 완료 ==="
