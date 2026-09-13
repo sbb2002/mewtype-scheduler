@@ -205,9 +205,23 @@ def _pick_event_date(t: str, now_jst: datetime) -> tuple[str | None, bool]:
     return iso(yr, mo, da), dl
 
 
+def _looks_truncated_url(u: str) -> bool:
+    """업스트림 Automate 알림 축약본 잘림 특유 패턴(`https://…`)인지.
+
+    긴 트윗은 원문이 잘려서 오는데, 마지막 줄의 링크가 완결된 URL처럼 안 보이고
+    "https://…" 처럼 말줄임표만 남기도 한다. `_URL_RE`(줄바꿈 없는 URL 매치)는
+    "…" 도 non-whitespace 라 그대로 URL 로 잡아버려서, 클릭해도 아무 데도
+    못 가는 깨진 링크가 그대로 notices.json 에 저장되던 버그가 있었다.
+    이런 URL 은 아예 버리고 `site="x"`(원문 트윗 링크로 폴백)로 처리한다 —
+    원문 트윗은 `tweet_url`(tweet id 로 구성, 항상 온전함)로 접속 가능하고,
+    거기서 사용자가 실제 링크를 확인할 수 있으므로 억지로 복구할 필요 없다.
+    """
+    return "…" in u or "..." in u
+
+
 def _site_url_anchor(t: str) -> tuple[str, str | None, str | None]:
     """(site, url, anchor_a). 본문의 온전한 URL 하나를 골라 판별."""
-    urls = _URL_RE.findall(t)
+    urls = [u for u in _URL_RE.findall(t) if not _looks_truncated_url(u)]
     for u in urls:
         u = u.rstrip("）)。、,")
         ym = YT_VIDEO_RE.search(u)
@@ -531,5 +545,18 @@ if __name__ == "__main__":
     r12b = parse(S12B, NOW)
     assert r12b and r12b["title"] == "会場でのCD販売スタート", r12b["title"]  # 역방향 ／…＼ 병합 + 💿 제거
     print("[OK] S12  최종화 부스트 · 플랫폼 나열 감점 · 역방향 병합 · 꼬리 이모지")
+
+    # S13: 업스트림 잘림으로 URL 이 "https://…" 로 끊긴 경우 → url=None, site="x" 폴백
+    # 실측(2026-09-13): @bang_dream_on 리트윗의 "▼YouTube Live\nhttps://…" 가 그대로
+    # notices.json 에 저장돼, 클릭해도 아무 데도 못 가는 깨진 링크가 남았다.
+    S13 = ("RT @bang_dream_on: 本日21:00より「アワーノーツ リリース日決定特番」を生配信📺\n\n"
+           "配信ではついに #アワーノーツ のリリース日を発表🎉\n"
+           "その他にも最新情報を盛りだくさんでお届けいたします！ぜひご覧ください💫\n\n"
+           "▼YouTube Live\nhttps://…")
+    r13 = parse(S13, NOW, tag="p#https://x.com/#1tweet-2099069766875136210")
+    assert r13 and r13["url"] is None, r13
+    assert r13["site"] == "x", r13
+    assert r13["tweet_url"] == "https://x.com/i/status/2099069766875136210", r13
+    print("[OK] S13  잘린 URL(https://…) → url=None, site=x, tweet_url 로 폴백")
 
     print("\nSUCCESS: xnotice self-test 통과")
