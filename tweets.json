@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T11:50:29Z",
+  "generated_at": "2026-09-13T12:10:41Z",
   "tweets": {
     "arale": [
       {
@@ -56,16 +56,6 @@
     "miyako": [
       {
         "channel_key": "miyako",
-        "expires_at": "2026-09-14T02:00:41Z",
-        "handle": "miyako_yumemita",
-        "id": "2098954191771414817",
-        "received_at": "2026-09-13T02:00:41Z",
-        "text": "身長180cm\n肩幅210cm",
-        "text_ko": "키 180cm  \n어깨너비 210cm",
-        "url": "https://x.com/i/status/2098954191771414817"
-      },
-      {
-        "channel_key": "miyako",
         "expires_at": "2026-09-14T05:20:39Z",
         "handle": "miyako_yumemita",
         "id": "2099005292327715298",
@@ -103,6 +93,16 @@
         "text": "このあと20:00から\n配信はじまる❣",
         "text_ko": "이후 20:00부터\n방송이 시작됩니다❣",
         "url": "https://x.com/i/status/2099088768330518844"
+      },
+      {
+        "channel_key": "miyako",
+        "expires_at": "2026-09-14T12:10:41Z",
+        "handle": "miyako_yumemita",
+        "id": "2099108431533900108",
+        "received_at": "2026-09-13T12:10:41Z",
+        "text": "＃アニメゆめみた\n13話までまるっと！ฅ∬꒰ ◠ ᴥ ◠꙳꒱\n振り返り配信ありゃとうとざいました❣\n\n夢追い人みやこ。\n＃みるみやこ",
+        "text_ko": "# 애니메 꿈꾼 사람\n13화까지 한 번에! ฅ∬꒰ ◠ ᴥ ◠꙳꒱\n회고 방송 있었습니다❣\n\n꿈을 쫓는 사람 미야코.\n# 미루미야코",
+        "url": "https://x.com/i/status/2099108431533900108"
       }
     ],
     "nonoka": [
