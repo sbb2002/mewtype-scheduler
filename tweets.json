@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T13:48:23Z",
+  "generated_at": "2026-09-13T14:13:20Z",
   "tweets": {
     "arale": [
       {
@@ -56,16 +56,6 @@
     "miyako": [
       {
         "channel_key": "miyako",
-        "expires_at": "2026-09-14T11:10:41Z",
-        "handle": "miyako_yumemita",
-        "id": "2099088768330518844",
-        "received_at": "2026-09-13T11:10:41Z",
-        "text": "このあと20:00から\n配信はじまる❣",
-        "text_ko": "이후 20:00부터\n방송이 시작됩니다❣",
-        "url": "https://x.com/i/status/2099088768330518844"
-      },
-      {
-        "channel_key": "miyako",
         "expires_at": "2026-09-14T12:10:41Z",
         "handle": "miyako_yumemita",
         "id": "2099108431533900108",
@@ -103,6 +93,16 @@
         "text": "ｶﾜｲｲﾈ❣❄🐧💨",
         "text_ko": "귀여워❣❄🐧💨",
         "url": "https://x.com/i/status/2099132780802392566"
+      },
+      {
+        "channel_key": "miyako",
+        "expires_at": "2026-09-14T14:13:20Z",
+        "handle": "miyako_yumemita",
+        "id": "2099139354660851771",
+        "received_at": "2026-09-13T14:13:20Z",
+        "text": "アトレ秋葉原ですぞ❣️\n🐶ｱｷﾊﾊﾞﾗﾊﾞﾗ♪\n\nちょうど同じ時期•同じ秋葉原にて藤都子展〜16歳〜も開催しております♪\n秋葉原をまんきつしなさい✨",
+        "text_ko": "아트레 아키하바라입니다❣️\n🐶아키하바라바라♪\n\n같은 시기·같은 아키하바라에서 후지츠코 전시─16세─도 개최하고 있습니다♪\n아키하바라를 만끽하세요✨",
+        "url": "https://x.com/i/status/2099139354660851771"
       }
     ],
     "nonoka": [
