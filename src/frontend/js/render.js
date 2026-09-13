@@ -245,24 +245,20 @@ function createCard(item, nowMs, channelData, laneKey) {
     // end 상태는 배지 없음
   }
 
+  // (v3.1.10) 합동 배지 — card__body 는 title+meta 2줄 높이로 고정돼 있어 거기에 3번째
+  // 줄을 보태면 flexbox 가 전부 짓눌러 글자가 점처럼 뭉개진다(회귀 재발). 그래서 body
+  // 플로우에 넣지 않고, 상태 배지(우측 상단)와 겹치지 않게 썸네일 좌측 상단에 별도 배지로.
+  if (isCollab) {
+    const collabBadge = document.createElement("span");
+    collabBadge.className = "card__badge card__badge--collab card__badge--corner-left";
+    collabBadge.textContent = "합동";
+    thumbWrap.appendChild(collabBadge);
+  }
+
   a.appendChild(thumbWrap);
 
   const body = document.createElement("div");
   body.className = "card__body";
-
-  if (isCollab) {
-    const participants = [item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])];
-    const others = participants.filter((k) => k && k !== laneKey);
-    const names = others
-      .map((k) => (FALLBACK_CHANNELS[k] || {}).name_ko)
-      .filter(Boolean)
-      .join(", ");
-    const collabLabel = others.length >= 4 ? "합동 · 전원" : (names ? `합동 · ${names}` : "합동");
-    const label = document.createElement("p");
-    label.className = "card__title card__title--label";
-    label.textContent = collabLabel;
-    body.appendChild(label);
-  }
 
   const title = document.createElement("p");
   title.className = "card__title";

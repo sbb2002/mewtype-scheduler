@@ -56,7 +56,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
   (baseline JST 06:00 / light 3h) + 방송별 정밀 wake **Cloud Tasks**. 리전 `asia-northeast1`.
 - **저장** = **GitHub `data` 브랜치** — Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
-- **프론트** = **Vercel** 정적 호스팅. (v1 의 GitHub Actions 수집기는 `src/collector/` + `collect.yml`
+- **프론트** = **Vercel** 정적 호스팅. 배포 주소 `https://mewtype-schduler.vercel.app/`
+  (레포명은 `mewtype-scheduler` 로 고쳤지만 Vercel 프로젝트/도메인은 옛 오타 `mewtype-schduler`
+  그대로 — 헷갈리지 말 것). `main` 브랜치 푸시 시 자동 배포(`vercel.json` 은 `data` 브랜치만
+  배포 제외). (v1 의 GitHub Actions 수집기는 `src/collector/` + `collect.yml`
   `workflow_dispatch` 로 남아 있음 — 비상 수동 경로. 정기 cron 은 제거됨.)
 
 ## 저장소 구조

@@ -231,6 +231,11 @@ v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
 - `membership` true → `card--membership` 추가. 썸네일 자리 자물쇠 `🔒`(`card__icon`), body 에 `card__chip` "🔒 회원 전용 방송".
 - `assumed_live` && state ∈ (announced, upcoming) → `card--sched-live` 추가, `.card__rel` = `"방송 중 (추정)"`(빨강), 테두리 실선.
 - `kind=="collab"` (또는 `collab_with` 존재) → `card--collab` 추가, 배지 "합동"(`card__badge--collab`), href = `url`.
+  `announced` 는 우측 상단 배지 자리를 "합동"이 대신 차지(예고/합동 상호 배타). `upcoming`/
+  `watching`/`live`/`end` 는 그 자리를 상태 배지(LIVE/대기 중)가 이미 쓰므로 좌측 상단에
+  별도로 띄운다(`card__badge--corner-left`, v3.1.11) — `card__body`는 title+meta 2줄
+  높이로 고정돼 있어, 참여자 라벨을 거기 3번째 줄로 보태면 flexbox 가 전부 짓눌러 글자가
+  점처럼 뭉개지는 회귀가 났었다(v3.1.10 배포 직후 발견, body 밖 배지로 수정).
 - `time_tbd` → `<time>` 자리에 `M/D` 만 + `.card__rel` = "시간 미정", 카운트다운 스킵.
 
 ### 라이브 존 (`lane__live`)
