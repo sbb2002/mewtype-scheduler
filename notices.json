@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T09:37:51Z",
+  "generated_at": "2026-09-13T12:14:09Z",
   "notices": [
     {
       "anchor_a": null,
@@ -151,6 +151,31 @@
       "title_slug": "resonext",
       "tweet_url": null,
       "url": "https://eplus.jp/yumemita-arale/"
+    },
+    {
+      "anchor_a": null,
+      "anchor_b": null,
+      "body_for_llm": "RT @bang_dream_on: ┎┈┈┈┈┈┈┈┈┈┈┈┒ 2026年 (木) アワーノーツ 正式リリース決定！ ┖┈┈┈┈┈┈┈┈┈┈┈┚ ついに正式リリース日が決定！ (火･祝)より事前ダウンロードが順次開始となります💫… http…",
+      "body_raw": "RT @bang_dream_on: ┎┈┈┈┈┈┈┈┈┈┈┈┒\n　　2026年9月24日(木)\n 　　　アワーノーツ\n　　正式リリース決定！\n┖┈┈┈┈┈┈┈┈┈┈┈┚ \n\nついに正式リリース日が決定！9月22日(火･祝)より事前ダウンロードが順次開始となります💫… http…",
+      "category": "release",
+      "date": "2026-09-24",
+      "deadline": false,
+      "expires_at": "2026-09-24T15:00:00Z",
+      "first_seen": "2026-09-13T12:14:09Z",
+      "id": "2099109296038699236",
+      "last_updated": "2026-09-13T12:14:09Z",
+      "seen_ids": [
+        "2099109296038699236"
+      ],
+      "site": "x",
+      "src_handle": "RT @bang_dream_on",
+      "time": null,
+      "title": "アワーノーツ正式リリース決定！",
+      "title_ko": "아워노트 정식 출시 결정!",
+      "title_raw": "正式リリース決定",
+      "title_slug": "正式リリース決定",
+      "tweet_url": "https://x.com/i/status/2099109296038699236",
+      "url": null
     },
     {
       "anchor_a": "XpYUyjhJ1A",
