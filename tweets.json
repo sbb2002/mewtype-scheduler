@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-13T13:44:05Z",
+  "generated_at": "2026-09-13T13:48:23Z",
   "tweets": {
     "arale": [
       {
@@ -56,16 +56,6 @@
     "miyako": [
       {
         "channel_key": "miyako",
-        "expires_at": "2026-09-14T07:16:05Z",
-        "handle": "miyako_yumemita",
-        "id": "2099034343129981296",
-        "received_at": "2026-09-13T07:16:05Z",
-        "text": "#藤都子16歳",
-        "text_ko": "#藤都子16세",
-        "url": "https://x.com/i/status/2099034343129981296"
-      },
-      {
-        "channel_key": "miyako",
         "expires_at": "2026-09-14T11:10:41Z",
         "handle": "miyako_yumemita",
         "id": "2099088768330518844",
@@ -103,6 +93,16 @@
         "text": "9/24(木)  アワーノーツ\n正式リリースです✨\n\nなんともう来週ですぞ❣\n今日の特番でもわくわく情報たくさんでしたね♪\nリリース日をどきどきそわそわ待ち構えなさい✨",
         "text_ko": "9/24(목)  아워노트\n정식 출시입니다✨\n\n무려 다음 주에요❣\n오늘 특집에서도 설레는 정보가 많이 나왔죠♪\n출시일을 두근두근 설레며 기다리세요✨",
         "url": "https://x.com/i/status/2099131568929522032"
+      },
+      {
+        "channel_key": "miyako",
+        "expires_at": "2026-09-14T13:48:23Z",
+        "handle": "miyako_yumemita",
+        "id": "2099132780802392566",
+        "received_at": "2026-09-13T13:48:23Z",
+        "text": "ｶﾜｲｲﾈ❣❄🐧💨",
+        "text_ko": "귀여워❣❄🐧💨",
+        "url": "https://x.com/i/status/2099132780802392566"
       }
     ],
     "nonoka": [
