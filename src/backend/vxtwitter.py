@@ -26,6 +26,10 @@ _YT_VIDEO_RE = re.compile(
     r")([a-zA-Z0-9_-]{11})"
 )
 
+# 인용(QRT)한 트윗의 id — vxtwitter 응답의 qrtURL(".../status/<id>") 에서 추출.
+# 인용된 트윗 본문·미디어는 qrtURL 자체엔 안 실려 있어 별도 fetch_tweet 이 필요.
+_STATUS_ID_RE = re.compile(r"/status/(\d+)")
+
 # ponytail: vxtwitter 서드파티 무료 서비스 → 가동률 미보장, 실패 시 조용히 None 반환
 
 
@@ -99,12 +103,21 @@ def extract(j: dict) -> dict:
     if m:
         yt_video_id = m.group(1)
 
+    qrt_url = j.get("qrtURL") or None
+
     return {
         "text": text,
         "media": media_urls,
         "urls": urls,
         "yt_video_id": yt_video_id,
+        "qrt_url": qrt_url,
     }
+
+
+def qrt_id(qrt_url: str | None) -> str | None:
+    """extract() 의 qrt_url(".../status/<id>") → 인용된 트윗 id. 없으면 None."""
+    m = _STATUS_ID_RE.search(qrt_url or "")
+    return m.group(1) if m else None
 
 
 if __name__ == "__main__":
@@ -154,4 +167,16 @@ if __name__ == "__main__":
     result4 = extract(fixture_no_yt)
     assert result4["yt_video_id"] is None
 
-    print("✓ vxtwitter.extract self-test 통과 (4/4)")
+    # (7) extract/qrt_id 테스트 - 인용(QRT) 트윗
+    fixture_qrt_tweet = {
+        "text": "音楽配信サービスでも聴いてもらえるの嬉しいなっ",
+        "mediaURLs": [],
+        "qrtURL": "https://twitter.com/i/status/1518309187515781125",
+    }
+    result5 = extract(fixture_qrt_tweet)
+    assert result5["qrt_url"] == "https://twitter.com/i/status/1518309187515781125"
+    assert qrt_id(result5["qrt_url"]) == "1518309187515781125"
+    assert qrt_id(None) is None
+    assert extract(fixture_no_yt)["qrt_url"] is None
+
+    print("✓ vxtwitter.extract self-test 통과 (7/7)")

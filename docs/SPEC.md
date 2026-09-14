@@ -401,9 +401,13 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 멤버 5인의 **개인 트윗** — 예고판 상단 편지 배지. `xtweet.py`.
 
 - `tweets.json` = `{ generated_at, tweets: { "<channel_key>": [ { channel_key, id, text, text_ko,
-  url, handle, received_at, expires_at, needs_tl? }, … ] } }`. **채널당 스레드 = 메시지 배열, 최신이 뒤,
-  최대 `xtweet.MAX_THREAD`(=5)건** (v3.1). v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로 감싸 하위호환.
-  `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
+  url, handle, received_at, expires_at, needs_tl?, media, quote }, … ] } }`. **채널당 스레드 = 메시지
+  배열, 최신이 뒤, 최대 `xtweet.MAX_THREAD`(=5)건** (v3.1). v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로
+  감싸 하위호환. `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
+  `media`(=`[url,...]`, 본인 트윗 첨부 이미지) / `quote`(=`{text,media}` | `null`, 인용(QRT)한 남의
+  트윗 — **표시만**, 예고 파싱 등 ingest 대상 아님)는 (v3.4.5) `telegram_app._enrich_personal_media` 가
+  tweet id 로 vxtwitter 를 재조회해 채운다(실패·미첨부·id 없음 → `[]`/`null`, 무회귀). 프론트
+  `tweets.js`(`_mediaGrid`/`_quoteCard`) 가 말풍선 안에 썸네일/인용카드로 렌더.
 - `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled`).
   `rolled` = 스레드 5건 초과로 밀려난 것.
 - `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
@@ -418,6 +422,9 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   다음 `/tick` `_translate_sweep` 이 재시도. 운영자 `/translate tweet` 는 즉시.
 - **개인 예고 → preview 승격**: `xtweet.parse_schedule`(`配信` 계열 + 날짜/URL 게이트) →
   `merge_personal_schedule(prev_items, inc, now_iso) -> (items, changed)` (같은 방송 upsert, `source:"personal"`).
+  날짜가 명시 안 돼 있어도 `今日`류(당일) + `明日`류(`xrelay._TOMORROW_WORD` 재사용, +1일)
+  키워드 + 시각이 함께 있으면 그 날짜로 게이트 통과 (v3.4.5 핫픽스 — "明日22:00" 형태가
+  날짜 없음으로 걸러지던 것).
   `apply_overrides(new_items, prev_items, now_iso)` — 트윗이 정한 `scheduled_start` 를 API 재구성이
   안 덮게 (API 값이 `api_start_seen` 과 ±60초면 트윗값 유지, 벗어나면 API 승). `handlers.tick` 이 `build_preview` 직후 호출.
 

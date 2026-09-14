@@ -1756,7 +1756,7 @@ def _inline_notice_title(body: str):
 # 웹푸시 알림이 긴 URL 을 …/... 로 잘라 보낸 흔적 — 11자 영상 ID 를 못 뽑는 경우.
 _TRUNC_YT_RE = re.compile(r"(?:youtube\.com|youtu\.be)/\S*?(?:…|\.\.\.)")
 
-def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> str:
+def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> tuple[str, dict | None]:
     """tweet id 가 있으면 vxtwitter 원문을 raw 보다 우선한다 — 실패 시에만 raw 폴백.
 
     (버그리포트 20260913 #2) 폰(Automate)이 안드로이드 알림의 "축약본"(contentText) 만
@@ -1766,21 +1766,26 @@ def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> str:
     감지 후 복구가 아니라 **tweet id 가 있으면 항상 vxtwitter 를 정본으로 우선** 조회한다.
     tweet id 없음 · vxtwitter 모듈/조회 실패 · 응답에 text 없음 → raw 그대로(무회귀,
     보정 전보다 나빠지지 않음).
+
+    반환: (text, extract_dict|None) — extract_dict 는 이미 조회한 vxtwitter JSON 을
+    `vxtwitter.extract()` 한 결과(media/qrt_url 포함)라 (v3.4.5) `_enrich_personal_media` 가
+    개인 트윗에서 **재조회 없이** 재사용한다(같은 tweet id 를 이 요청 안에서 두 번 안 때림).
     """
     if not raw or vxtwitter is None or xtweet is None:
-        return raw
+        return raw, None
     tid = xtweet._tweet_id(tag) if tag else ""
     if not tid or not tid.isdigit():
-        return raw
+        return raw, None
     j = vxtwitter.fetch_tweet(tid)
-    text = vxtwitter.extract(j).get("text") if j else None
+    ex = vxtwitter.extract(j) if j else None
+    text = ex.get("text") if ex else None
     if not text:
         log.warning("ingest: vxtwitter 원문 조회 실패 — raw 폴백 (tweet %s)", tid)
-        return raw
+        return raw, None
     if text != raw:
         log.info("ingest: vxtwitter 원문으로 교체 (tweet %s, raw_len=%d vx_len=%d)",
                   tid, len(raw), len(text))
-    return text
+    return text, ex
 
 
 def _expand_truncated_yt(raw: str, tag) -> str:
@@ -1807,19 +1812,57 @@ def _expand_truncated_yt(raw: str, tag) -> str:
     return raw.rstrip() + "\n" + url
 
 
+def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
+                           ) -> tuple[list[str], dict | None]:
+    """개인 트윗 id 로 vxtwitter 조회 — 본인 첨부 미디어 + 인용(QRT)한 남의 트윗 {text,media}.
+
+    인용 트윗은 **표시만** 하고(말풍선에 카드로 실음) 예고 파싱 등 ingest 대상엔 안 넣는다.
+    tweet id 없음·vxtwitter 모듈/조회 실패·인용 없음 → ([], None) 무회귀(배지·본문 표시는 그대로).
+
+    `prefetched`: `_recover_raw_via_vxtwitter` 가 같은 tweet id 로 이미 받아온
+    `vxtwitter.extract()` 결과 — 있으면 본인 트윗 재조회를 건너뛴다(같은 id 중복 fetch 방지).
+    """
+    if vxtwitter is None or xtweet is None or not tag:
+        return [], None
+    tid = xtweet._tweet_id(tag)
+    if not tid or not tid.isdigit():
+        return [], None
+    if prefetched is not None:
+        ex = prefetched
+    else:
+        j = vxtwitter.fetch_tweet(tid)
+        if not j:
+            return [], None
+        ex = vxtwitter.extract(j)
+    media = ex.get("media") or []
+    quote = None
+    qid = vxtwitter.qrt_id(ex.get("qrt_url"))
+    if qid:
+        qj = vxtwitter.fetch_tweet(qid)
+        qex = vxtwitter.extract(qj) if qj else {}
+        if qex.get("text") or qex.get("media"):
+            quote = {"text": qex.get("text") or "", "media": qex.get("media") or []}
+    return media, quote
+
+
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
-                          channel_key: str, now_iso: str) -> str:
+                          channel_key: str, now_iso: str,
+                          vx_extract: dict | None = None) -> str:
     """개인 트윗 인입 — `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
 
     ECHO/DRY-RUN/paused 와 무관하게 실행(이 갈래에 온 시점에서 이미 개인 트윗). 반환: mode(로그용).
     파싱이 트윗이 아니면(본문 없음) GitHub 은 안 건드린다.
+
+    `vx_extract`: `_ingest` 가 `_recover_raw_via_vxtwitter` 로 이미 조회해 둔 같은 tweet 의
+    vxtwitter 결과 — 있으면 `_enrich_personal_media` 가 재조회 없이 재사용.
     """
     if xtweet is None:
         return "no-xtweet"
     channels_cfg = _load_channels_config()
     handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
+    media, quote = _enrich_personal_media(tag, prefetched=vx_extract)
     parsed = xtweet.parse(raw, title=title, tag=tag, channel_key=channel_key,
-                          now_iso=now_iso, handle=handle)
+                          now_iso=now_iso, handle=handle, media=media, quote=quote)
     if not parsed:
         return "none"
     gh = _make_gh()
@@ -2970,7 +3013,7 @@ if _FLASK_AVAILABLE:
         # 폰이 보낸 본문이 깨졌거나(이모지 서로게이트쌍 처리 오류) 잘렸으면, 같은 트윗을
         # vxtwitter 로 다시 조회해 원문을 통째로 교체한다 — 원문 없이는 파싱도 번역도
         # "제대로 ingest" 한 게 아니므로 아래 모든 파이프라인(소식/스케줄/개인트윗) 전에 선행.
-        raw = _recover_raw_via_vxtwitter(raw, x_tag)
+        raw, _vx_ex = _recover_raw_via_vxtwitter(raw, x_tag)
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -2995,7 +3038,8 @@ if _FLASK_AVAILABLE:
                 force_echo = True
             elif _route != "official":
                 mode = _maybe_personal_tweet(
-                    raw, title=title, tag=x_tag, channel_key=_route, now_iso=now_iso
+                    raw, title=title, tag=x_tag, channel_key=_route, now_iso=now_iso,
+                    vx_extract=_vx_ex,
                 )
                 return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
 
@@ -3201,9 +3245,9 @@ if __name__ == "__main__":
     print("[OK] _expand_truncated_yt (조기반환)")
 
     # ── _recover_raw_via_vxtwitter (버그리포트 20260913, #2 조용한 잘림) — 조기반환만 ──
-    assert _recover_raw_via_vxtwitter("", _TAG) == ""            # 빈 raw → 네트워크 미시도
+    assert _recover_raw_via_vxtwitter("", _TAG) == ("", None)      # 빈 raw → 네트워크 미시도
     _clean = "오늘 21시 방송해요"
-    assert _recover_raw_via_vxtwitter(_clean, None) == _clean    # tweet id 없음 → 네트워크 미시도(무회귀)
+    assert _recover_raw_via_vxtwitter(_clean, None) == (_clean, None)  # tweet id 없음 → 무회귀
     print("[OK] _recover_raw_via_vxtwitter (조기반환)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
@@ -3253,6 +3297,63 @@ if __name__ == "__main__":
         else:
             os.environ["GROQ_API_KEY"] = _orig_groq_key
     print("[OK] _maybe_tag_cast_participants (대상 계정 필터 · 매칭 · 무회귀)")
+
+    # ── _enrich_personal_media (v3.4.5 — 개인 트윗 미디어 + 인용 카드) ──
+    assert _enrich_personal_media(None) == ([], None)          # tweet id 없음 → 무회귀
+    assert _enrich_personal_media("DownloadNotificationService") == ([], None)
+
+    _orig_vxtwitter = vxtwitter
+
+    class _FakeVXQuote:
+        @staticmethod
+        def fetch_tweet(tid):
+            if tid == "2096552878769152326":
+                return {"id": tid, "qrtURL": "https://twitter.com/i/status/999"}
+            if tid == "999":
+                return {"id": tid, "text": "🎶楽曲情報🎶",
+                        "mediaURLs": ["https://pbs.twimg.com/media/cover.jpg"]}
+            return None
+
+        @staticmethod
+        def extract(j):
+            return _orig_vxtwitter.extract(j) if j else {}
+
+        qrt_id = staticmethod(lambda u: _orig_vxtwitter.qrt_id(u))
+
+    try:
+        globals()["vxtwitter"] = _FakeVXQuote
+        media, quote = _enrich_personal_media(_TAG)
+        assert media == [], media                    # 본인 트윗 자체엔 미디어 없음(인용만 있음)
+        assert quote == {"text": "🎶楽曲情報🎶",
+                          "media": ["https://pbs.twimg.com/media/cover.jpg"]}, quote
+    finally:
+        globals()["vxtwitter"] = _orig_vxtwitter
+    print("[OK] _enrich_personal_media (인용 트윗 텍스트+이미지 · 무회귀)")
+
+    # ── _enrich_personal_media: prefetched 로 본인 트윗 재조회 생략 (중복 fetch 방지) ──
+    class _FakeVXNoRefetch:
+        @staticmethod
+        def fetch_tweet(tid):
+            if tid == "2096552878769152326":
+                raise AssertionError("본인 트윗은 prefetched 로 넘겼으니 재조회하면 안 됨")
+            if tid == "999":
+                return {"id": tid, "text": "🎶楽曲情報🎶", "mediaURLs": []}
+            return None
+
+        @staticmethod
+        def extract(j):
+            return _orig_vxtwitter.extract(j) if j else {}
+
+        qrt_id = staticmethod(lambda u: _orig_vxtwitter.qrt_id(u))
+
+    try:
+        globals()["vxtwitter"] = _FakeVXNoRefetch
+        prefetched = {"media": [], "qrt_url": "https://twitter.com/i/status/999"}
+        media, quote = _enrich_personal_media(_TAG, prefetched=prefetched)
+        assert media == [] and quote == {"text": "🎶楽曲情報🎶", "media": []}, (media, quote)
+    finally:
+        globals()["vxtwitter"] = _orig_vxtwitter
+    print("[OK] _enrich_personal_media (prefetched 재사용 — 본인 트윗 중복 fetch 없음)")
 
     # ── 6상태 정렬·표시 ───────────────────────────────────────
     _pv = {"items": [
