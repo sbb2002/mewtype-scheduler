@@ -1,7 +1,8 @@
 {
-  "by": "v3-golive",
+  "by": "telegram:/push-monitor --auto",
   "log_level": "normal",
   "paused": false,
+  "push_monitor_auto": true,
   "since": null,
-  "updated_at": "2026-09-09T15:38:37Z"
+  "updated_at": "2026-09-14T06:46:11Z"
 }
