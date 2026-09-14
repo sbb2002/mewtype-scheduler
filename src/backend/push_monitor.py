@@ -52,15 +52,16 @@ CATEGORY_ORDER = [
     "xrelay", "manual", "other_data", "code_main",
 ]
 CATEGORY_COLORS = {
-    "preview": "#4C78A8",
-    "tweet": "#F58518",
-    "notice": "#54A24B",
-    "undo_snapshot": "#E45756",
-    "personal_schedule": "#72B7B2",
-    "xrelay": "#B279A2",
-    "manual": "#FF9DA6",
-    "other_data": "#BAB0AC",
-    "code_main": "#D8DCE0",
+    # 자동화(녹색계) / 수동제어(노란계) / 코드 push(회색) / 기타·예외(빨강)
+    "preview": "#7CB342",
+    "tweet": "#43A047",
+    "notice": "#2E9E5C",
+    "personal_schedule": "#26A69A",
+    "xrelay": "#9CCC65",
+    "undo_snapshot": "#FDD835",
+    "manual": "#FFB300",
+    "code_main": "#AEB4BB",
+    "other_data": "#E5484D",
 }
 
 
