@@ -133,6 +133,47 @@ class Telegram:
             logger.warning(f"Telegram send failed: {exc}")
             return False
 
+    def send_document(
+        self,
+        filename: str,
+        content: bytes,
+        *,
+        caption: str = "",
+        parse_mode: str = "HTML",
+    ) -> bool:
+        """
+        파일 전송 (Push Monitor html 등). token/chat_id 비면 no-op(True).
+
+        Args:
+            filename: Telegram에 표시될 파일명
+            content: 파일 바이트
+            caption: 선택적 설명(파일 위에 붙는 메시지)
+            parse_mode: caption 서식. "HTML" 또는 "Markdown"
+
+        Returns:
+            성공하면 True, 실패하면 False
+        """
+        if self.disabled:
+            logger.warning("Telegram disabled (token or chat_id missing)")
+            return True
+
+        url = f"https://api.telegram.org/bot{self.token}/sendDocument"
+        data = {"chat_id": self.chat_id}
+        if caption:
+            data["caption"] = caption
+            data["parse_mode"] = parse_mode
+        files = {"document": (filename, content)}
+
+        try:
+            resp = self.session.post(
+                url, data=data, files=files, timeout=max(self.timeout, 30.0)
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as exc:
+            logger.warning(f"Telegram send_document failed: {exc}")
+            return False
+
 
 # 로그 레벨별 전송 허용 이벤트 종류 (control.json log_level). (v3)
 #   detail : announced·upcoming·live_start·live_end·demote·notice·tweet·ingest + error/summary
@@ -772,6 +813,10 @@ if __name__ == "__main__":
     result = tg.send("Test message")
     assert result is True, "disabled 상태에서 True 반환해야 함"
     print("✓ Telegram send no-op: True 반환")
+
+    doc_result = tg.send_document("push_monitor.html", b"<html></html>")
+    assert doc_result is True, "disabled 상태에서 send_document 도 True 반환해야 함"
+    print("✓ Telegram send_document no-op: True 반환")
 
     # 시나리오 8: summary_text
     print("\n[시나리오 8] summary_text()")

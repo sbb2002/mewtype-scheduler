@@ -83,14 +83,17 @@ except Exception:                           # pragma: no cover
     YouTubeClient = None
 
 from . import preview as preview_mod
+from . import push_monitor
 from . import statemachine
 from .control import (
     LOG_LEVELS,
     default_control,
     get_log_level,
+    get_push_monitor_auto,
     is_paused,
     set_log_level,
     set_paused,
+    set_push_monitor_auto,
 )
 from .gh_store import ConflictError, GitHubStore
 
@@ -374,6 +377,23 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
     return tg.send(text, parse_mode="HTML", silent=silent)
 
 
+def _send_telegram_document(filename: str, content: bytes, *, caption: str = "") -> bool:
+    """Telegram으로 파일 전송 (Push Monitor html 등)."""
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+    if not bot_token or not chat_id:
+        log.warning("Telegram not configured (BOT_TOKEN or CHAT_ID missing)")
+        return False
+
+    if Telegram is None:
+        log.warning("Telegram class not available")
+        return False
+
+    tg = Telegram(bot_token, chat_id)
+    return tg.send_document(filename, content, caption=caption)
+
+
 def _auto_dm_allows(gh, kind: str) -> bool:
     """(v2.8.2) 자동 알림 `kind` 를 현재 control.json `log_level` 에서 보낼지.
 
@@ -458,6 +478,51 @@ def _handle_log(gh: GitHubStore, now_iso: str, arg: str) -> None:
     except Exception as e:
         log.exception("Error handling /log")
         _send_telegram(f"⚠️ 오류: /log 처리 실패\n{str(e)[:100]}")
+
+
+def _handle_push_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
+    """/push-monitor [--auto|--off] — Push Monitor 대시보드.
+
+    인자 없음: 즉시 1회 tick 실행 + 결과 html을 DM으로 전송.
+    --auto: Cloud Scheduler(KST 06:00) 자동 tick+DM 켬.
+    --off: 자동 tick 끔 (수동 /push-monitor 는 계속 가능).
+    """
+    if arg in ("--auto", "--off"):
+        try:
+            control, _ = gh.read_json("control.json")
+            if control is None:
+                control = default_control()
+            enabled = arg == "--auto"
+            control = set_push_monitor_auto(
+                control, enabled, by=f"telegram:/push-monitor {arg}", now_iso=now_iso,
+            )
+            gh.write_json(
+                "control.json", control, prev_sha=None,
+                message=f"data: push_monitor_auto={enabled} via Telegram {arg} {now_iso}",
+            )
+            if enabled:
+                _send_telegram("🟢 Push Monitor 자동 실행 켬 — 매일 KST 06:00에 tick 후 DM으로 전송합니다.")
+            else:
+                _send_telegram("⚪ Push Monitor 자동 실행 끔 — /push-monitor 로 수동 실행은 계속 가능합니다.")
+        except Exception as e:
+            log.exception("Error handling /push-monitor %s", arg)
+            _send_telegram(f"⚠️ 오류: /push-monitor {arg} 처리 실패\n{str(e)[:100]}")
+        return
+
+    try:
+        _send_telegram("⏳ Push Monitor tick 실행 중...", silent=True)
+        result = push_monitor.run(gh.token, gh.repo)
+        html = result.pop("html")
+        ok = _send_telegram_document(
+            "push_monitor.html",
+            html.encode("utf-8"),
+            caption=f"📊 Push Monitor — 최근 {result['days']}일치 {result['records']}건",
+        )
+        if not ok:
+            _send_telegram("⚠️ tick은 성공했지만 DM 전송에 실패했습니다.")
+    except Exception as e:
+        log.exception("Error handling /push-monitor")
+        _send_telegram(f"⚠️ 오류: /push-monitor 처리 실패\n{str(e)[:100]}")
 
 
 def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
@@ -2830,11 +2895,15 @@ if _FLASK_AVAILABLE:
                 _handle_undo_request(gh, now_utc)
             elif cmd == "/translate":
                 _handle_translate(gh, now_utc, arg)
+            elif cmd == "/push-monitor":
+                _handle_push_monitor(gh, now_utc, arg)
             else:
                 # 도움말
                 help_text = (
                     "<b>📱 mewtype 텔레그램 봇 (v3)</b>\n\n"
-                    "일반: /status /pause /resume /log [detail|normal|simple]\n\n"
+                    "일반: /status /pause /resume /log [detail|normal|simple]\n"
+                    "/push-monitor [--auto|--off] — 배포 활동 대시보드 즉시 DM "
+                    "(--auto: 매일 KST 06:00 자동, --off: 자동 끔)\n\n"
                     "<b>콘텐츠</b> (c = preview | notice | tweet, 생략 시 preview):\n"
                     "/list &lt;c&gt; [유닛] — 목록\n"
                     "/ingest &lt;c&gt; — 원문 이어 보내 반영 (tweet 은 유닛 지정)\n"

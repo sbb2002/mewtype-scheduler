@@ -3,9 +3,16 @@
 배경: 2026-09-13 Vercel Hobby 플랜 "하루 100회 배포" 한도 초과 사고(VERSION.md
 v3.2.2 참고) — `vercel.json` 위치 버그로 `data` 브랜치의 봇 커밋이 전부 배포
 시도로 잡혀 소진됐다. 재발 조기 감지용으로 최근 N일 커밋 활동을 카테고리별
-누적 막대(10분 단위)로 보여주는 정적 대시보드를 매시간 생성해 `devpapers`
-브랜치(`docs/PUSH_MONITOR.html`)에 커밋한다 — `data` 브랜치와 같은 이유로
-Vercel 배포 트리거 밖에 둔다.
+누적 막대(10분 단위)로 보여주는 대시보드를 생성한다.
+
+(v3.4) html은 더 이상 GitHub에 커밋하지 않는다 — 매번 렌더링만 해서 텔레그램
+DM으로 보낸다. 집계 수치(`docs/push_monitor_history.json`)만 `devpapers`에
+계속 누적 커밋(분기 비교 등 장기 추이용, 원본 커밋 메시지는 저장 안 함).
+실행 트리거는 텔레그램 `/push-monitor`(즉시 1회) 또는 `/push-monitor --auto`로
+켠 상태에서 Cloud Scheduler가 매일 KST 06:00에 호출(`control.json`
+`push_monitor_auto`가 꺼져 있으면 조회 없이 즉시 종료). `--auto` 꺼둔 기간이
+길었으면 history의 마지막 기록일과 오늘 사이 간격만큼 조회 기간을 자동으로
+넓혀 누락 없이 백필한다.
 
 순수 함수(categorize/build_dashboard_data/render_html)와 네트워크 I/O
 (fetch_commits/run)를 분리. self-test: python -m src.backend.push_monitor
@@ -803,34 +810,55 @@ def fetch_commits(
     return out
 
 
-def run(cfg, *, days: int = 3) -> dict:
-    """data+main 브랜치 최근 커밋만 조회해 대시보드를 렌더링하고 devpapers 에 커밋.
+def _backfill_days(history: dict, now_kst: datetime, min_days: int) -> int:
+    """history 마지막 기록일과 오늘 사이 간격(+1일 여유)만큼 조회 기간을 넓힌다.
 
-    매번 커밋 원본을 넓게 재조회하지 않는다 — `days`(기본 3일, 스케줄러 1시간 주기 대비
-    안전 여유분)만큼만 GitHub API 로 가져와 그날 집계를 내고, 그 수치만
-    `docs/push_monitor_history.json` 에 누적 병합해 장기 이력(분기 비교 등)을 쌓는다.
-    10분 단위 상세(detail/events)는 이 최근 창(window) 안에서만 유지한다.
+    history 비어있거나 파싱 실패 시 min_days. 매일 정상 실행 중이면 간격이
+    1일뿐이라 min_days 그대로 유지된다.
+    """
+    if not history:
+        return min_days
+    try:
+        last_date = datetime.strptime(max(history), "%Y-%m-%d").date()
+    except ValueError:
+        return min_days
+    gap = (now_kst.date() - last_date).days
+    return max(min_days, gap + 1)
+
+
+def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
+    """data+main 브랜치 커밋을 조회해 대시보드를 렌더링, html 문자열을 반환.
+
+    (v3.4) html은 GitHub에 커밋하지 않는다 — 호출자(텔레그램 명령/자동 tick)가
+    반환된 "html"을 DM으로 직접 전송한다. `docs/push_monitor_history.json`
+    (집계 수치만, 원본 커밋 메시지 아님)만 devpapers에 계속 누적 커밋한다.
+
+    조회 기간은 `min_days` 고정이 아니라 `_backfill_days()`로 history의 마지막
+    기록일 대비 자동으로 넓어진다 — 자동 실행을 며칠~몇 달 꺼뒀다 켜도 그 사이
+    날짜가 누락되지 않는다.
     """
     from .gh_store import ConflictError, GitHubStore
 
     now_kst = datetime.now(KST)
-    since = (now_kst - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
     session = requests.Session()
+    gh = GitHubStore(github_token, github_repo, "devpapers", session=session)
+
+    raw_history, hist_sha = gh.read_json(_HISTORY_PATH)
+    raw_history = raw_history or {}
+    days = _backfill_days(raw_history, now_kst, min_days)
+
+    since = (now_kst - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     records: list[dict] = []
     for branch in ("data", "main"):
         try:
-            records.extend(fetch_commits(cfg.github_token, cfg.github_repo, branch, since, session=session))
+            records.extend(fetch_commits(github_token, github_repo, branch, since, session=session))
         except requests.RequestException as e:
             logger.warning("push_monitor: %s 브랜치 조회 실패 — %s", branch, e)
 
     recent = build_dashboard_data(records, now_kst=now_kst, days=days)
+    history = merge_history(raw_history, recent["days"])
 
-    gh = GitHubStore(cfg.github_token, cfg.github_repo, "devpapers", session=session)
-    history: dict = {}
     for attempt in range(2):
-        raw_history, hist_sha = gh.read_json(_HISTORY_PATH)
-        history = merge_history(raw_history or {}, recent["days"])
         try:
             gh.write_json(
                 _HISTORY_PATH, history, prev_sha=hist_sha,
@@ -840,14 +868,14 @@ def run(cfg, *, days: int = 3) -> dict:
         except ConflictError:
             if attempt == 1:
                 raise
+            raw_history, hist_sha = gh.read_json(_HISTORY_PATH)
+            history = merge_history(raw_history or {}, recent["days"])
 
     data = dict(recent)
     data["days"] = history_to_days_list(history)
     html = render_html(data)
 
-    # HTML 은 JSON 이 아니므로 Contents API 직접 사용(gh_store 의 write_json 은 JSON 전용).
-    changed, _ = gh.write_text("docs/PUSH_MONITOR.html", html, message=f"docs: push monitor {now_kst.isoformat()}")
-    return {"records": len(records), "days": days, "changed": changed}
+    return {"records": len(records), "days": days, "html": html}
 
 
 if __name__ == "__main__":
@@ -923,6 +951,12 @@ if __name__ == "__main__":
     assert [x["date"] for x in dl] == ["2026-01-01", "2026-09-13", "2026-09-14"]  # 날짜 오름차순
     assert dl[0]["total"] == 5
     print("[OK] merge_history/history_to_days_list: 장기 이력 누적 병합(수치만, 원본 아님)")
+
+    # ── _backfill_days ──
+    assert _backfill_days({}, now, min_days=3) == 3, "history 없으면 min_days"
+    assert _backfill_days({"2026-09-13": {}}, now, min_days=3) == 3, "간격 1일 → min_days 그대로"
+    assert _backfill_days({"2026-06-01": {}}, now, min_days=3) == 106, "몇 달 방치 → 간격+1일로 백필"
+    print("[OK] _backfill_days: 자동 실행 꺼둔 기간만큼 조회 창 자동 확장")
 
     print("\nSUCCESS: push_monitor.py self-test 통과 (mock)")
 

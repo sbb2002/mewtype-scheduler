@@ -116,20 +116,25 @@ src/
     #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)
                        #        (v3.3) read_text/write_text — HTML 등 비-JSON 파일용
-    push_monitor.py    # (v3.3) Push Monitor 대시보드 — data/main 브랜치 커밋 이력을 GitHub
+    push_monitor.py    # (v3.4) Push Monitor 대시보드 — data/main 브랜치 커밋 이력을 GitHub
                        #        REST API 로 읽어 카테고리별 10분 단위 누적 막대 + 날짜 히트맵
-                       #        인터랙티브 HTML 생성, devpapers 브랜치 docs/PUSH_MONITOR.html
-                       #        로 커밋(POST /push-monitor, 1시간 주기). Vercel quota 재소진
-                       #        조기 감지용(v3.2.2 사고 참고)
+                       #        인터랙티브 HTML 생성. html은 GitHub에 커밋하지 않고 텔레그램
+                       #        DM으로만 전송(수동 /push-monitor 즉시 1회, 또는 --auto 켠
+                       #        상태에서 POST /push-monitor 가 매일 KST 06:00에 실행).
+                       #        devpapers 브랜치 docs/push_monitor_history.json 에는 집계
+                       #        수치만(원본 커밋 메시지 아님) 계속 누적 커밋. Vercel quota
+                       #        재소진 조기 감지용(v3.2.2 사고 참고)
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
     config.py          # 환경변수 → Config
     notify.py          # (v2.1) Telegram 알림 + diff_events(A~F). (v2.8.2) allows(level,kind) —
                        #        simple=upcoming·live / normal=+scheduled·notice·tweet / detail=+ingest·fallback·요약
-    control.py         # (v2.1) control.json 스키마 (paused)
+    control.py         # (v2.1) control.json 스키마 (paused). (v3.4) push_monitor_auto 추가
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 업스트림 시스템(운영자 폰 Automate)이 X 알림 텍스트를 중계
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
+                       #        (v3.4) /push-monitor [--auto|--off] — Push Monitor 즉시 DM /
+                       #        자동 실행 on-off
     admin.py           # (v2.5) admin_state.json 스키마 (pending_del/ingest/notice/undo 슬롯, undo.path) — 순수
                        #        (v2.7.x) pending_notice_edit 슬롯 — /notice-edit 마법사(title→date→url 단계·new 누적)
                        #        (v2.8.1+) pending_member 슬롯 — 수동 /ingest 개인 예고 채널 미상 시 유닛 되묻기(raw 저장)
@@ -198,7 +203,7 @@ python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_twe
                                     #   (v2.8.1) parse_schedule + merge_personal_schedule + apply_overrides
 python -m src.backend.telegram_app   # /list /del /undo /notice /notice-edit 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 + read_text/write_text (실제 호출은 GH_TOKEN_TEST 있을 때만)
-python -m src.backend.push_monitor   # (v3.3) 카테고리 분류·집계·HTML 렌더 (실호출은 GITHUB_FINEGRAINED_PAT 있을 때 --live)
+python -m src.backend.push_monitor   # (v3.4) 카테고리 분류·집계·HTML 렌더·자동 백필 창 계산 (실호출은 GITHUB_FINEGRAINED_PAT 있을 때 --live)
 python -m src.backend.vision         # (v3.2) 비전 OCR (실호출은 GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때 --live)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)

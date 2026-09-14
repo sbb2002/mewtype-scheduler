@@ -3,7 +3,10 @@
 라우트:
   POST /tick          — Cloud Scheduler (body: {"mode": "baseline"|"light"})
   POST /wake          — Cloud Tasks     (body: {"video_id": "..."})
-  POST /push-monitor  — Cloud Scheduler (1시간 주기, body 없음) — docs/PUSH_MONITOR.html 갱신
+  POST /push-monitor  — Cloud Scheduler (1일 1회 KST 06:00, body 없음). control.json
+                        의 push_monitor_auto 가 꺼져 있으면 조회 없이 즉시 종료,
+                        켜져 있으면 tick 실행 후 결과 html 을 텔레그램 DM 으로 전송
+                        (v3.4 — 더 이상 GitHub 에 html 을 커밋하지 않음)
   GET  /              — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
@@ -15,6 +18,8 @@ from flask import Flask, jsonify, request
 
 from . import handlers, notify, oidc, push_monitor
 from .config import load_config
+from .control import default_control, get_push_monitor_auto
+from .gh_store import GitHubStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("backend.app")
@@ -87,7 +92,20 @@ def _push_monitor():
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
     try:
-        return jsonify(push_monitor.run(_cfg()))
+        cfg = _cfg()
+        gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+        control, _ = gh.read_json("control.json")
+        if not get_push_monitor_auto(control or default_control()):
+            return jsonify({"skipped": True, "reason": "push_monitor_auto off"})
+
+        result = push_monitor.run(cfg.github_token, cfg.github_repo)
+        html = result.pop("html")
+        notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id).send_document(
+            "push_monitor.html",
+            html.encode("utf-8"),
+            caption=f"📊 Push Monitor 자동 리포트 — 최근 {result['days']}일치 {result['records']}건",
+        )
+        return jsonify(result)
     except Exception as e:  # noqa: BLE001
         log.exception("push-monitor 실패")
         _alert("/push-monitor", e)
