@@ -21,6 +21,7 @@ from .gh_store import ConflictError, GitHubStore
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
+from . import xtweet
 
 log = logging.getLogger("backend.handlers")
 
@@ -141,6 +142,7 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
         return out
 
     # notices.json
+    nj = None
     try:
         nj, sha = gh.read_json("notices.json")
         if nj and nj.get("notices"):
@@ -175,6 +177,15 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
                     tj["tweets"][_k] = norm
                     changed = True
                 for t in norm:
+                    q = t.get("quote")
+                    if q and q.get("needs_tl") and q.get("text") and not q.get("text_ko"):
+                        ko = (xtweet.find_reused_ko(q["text"], tweets_data=tj, notices_data=nj)
+                              or llm.translate(q["text"]))
+                        if ko:
+                            q["text_ko"] = ko
+                            q.pop("needs_tl", None)
+                            changed = True
+                            out["tweet_tl"] += 1
                     if not t.get("needs_tl"):
                         continue
                     ko = llm.translate(t.get("text") or "")

@@ -141,8 +141,45 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
         "received_at": now_iso,
         "expires_at": exp,
         "media": list(media) if media else [],
-        "quote": quote or None,
+        "quote": ({"text": quote.get("text") or "", "media": list(quote.get("media") or []),
+                    "text_ko": None} if quote else None),
     }
+
+
+def find_reused_ko(text: str, *, tweets_data: dict | None = None,
+                    archive_data: dict | None = None,
+                    notices_data: dict | None = None) -> str | None:
+    """`text` 가 tweets/tweet_archive/notices 어디에서든 이미 번역된 적 있으면 그 번역을
+    재사용 — 같은 인용(QRT) 원본이 여러 트윗에 반복 등장할 때 LLM 재호출을 피한다
+    (v3.4.6). 못 찾으면 None → 호출부가 새로 번역."""
+    if not text:
+        return None
+
+    def _scan_msgs(msgs):
+        for m in msgs or []:
+            if not isinstance(m, dict):
+                continue
+            if m.get("text") == text and m.get("text_ko"):
+                return m["text_ko"]
+            q = m.get("quote")
+            if isinstance(q, dict) and q.get("text") == text and q.get("text_ko"):
+                return q["text_ko"]
+        return None
+
+    if tweets_data:
+        for lst in (tweets_data.get("tweets") or {}).values():
+            hit = _scan_msgs(_as_list(lst))
+            if hit:
+                return hit
+    if archive_data:
+        hit = _scan_msgs(archive_data.get("tweets"))
+        if hit:
+            return hit
+    if notices_data:
+        for n in notices_data.get("notices") or []:
+            if isinstance(n, dict) and n.get("title") == text and n.get("title_ko"):
+                return n["title_ko"]
+    return None
 
 
 # ── tweets.json 계약 I (v3.1 — 유닛당 스레드) ─────────────────────────────

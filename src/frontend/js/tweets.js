@@ -170,13 +170,14 @@ function _mediaGrid(urls) {
   }
   return wrap;
 }
-function _quoteCard(q) {
+function _quoteCard(q, ko) {
   const card = document.createElement("div");
   card.className = "lane__thread__quote";
-  if (q.text) {
+  const qtxt = (ko && q.text_ko) ? q.text_ko : q.text;
+  if (qtxt) {
     const t = document.createElement("div");
     t.className = "lane__thread__quote-txt";
-    t.textContent = q.text;
+    t.textContent = qtxt;
     card.appendChild(t);
   }
   if (q.media && q.media.length) {
@@ -217,7 +218,7 @@ function _renderThread(scrollEl, list) {
       tx.textContent = (ko && m.text_ko) ? m.text_ko : m.text;
       row.appendChild(tx);
       if (m.quote && (m.quote.text || (m.quote.media && m.quote.media.length))) {
-        row.appendChild(_quoteCard(m.quote));
+        row.appendChild(_quoteCard(m.quote, ko));
       }
       if (m.media && m.media.length) {
         row.appendChild(_mediaGrid(m.media));

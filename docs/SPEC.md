@@ -404,10 +404,15 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   url, handle, received_at, expires_at, needs_tl?, media, quote }, … ] } }`. **채널당 스레드 = 메시지
   배열, 최신이 뒤, 최대 `xtweet.MAX_THREAD`(=5)건** (v3.1). v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로
   감싸 하위호환. `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
-  `media`(=`[url,...]`, 본인 트윗 첨부 이미지) / `quote`(=`{text,media}` | `null`, 인용(QRT)한 남의
-  트윗 — **표시만**, 예고 파싱 등 ingest 대상 아님)는 (v3.4.5) `telegram_app._enrich_personal_media` 가
-  tweet id 로 vxtwitter 를 재조회해 채운다(실패·미첨부·id 없음 → `[]`/`null`, 무회귀). 프론트
-  `tweets.js`(`_mediaGrid`/`_quoteCard`) 가 말풍선 안에 썸네일/인용카드로 렌더.
+  `media`(=`[url,...]`, 본인 트윗 첨부 이미지) / `quote`(=`{text,media,text_ko,needs_tl?}` | `null`,
+  인용(QRT)한 남의 트윗 — **표시만**, 예고 파싱 등 ingest 대상 아님)는 (v3.4.5) `telegram_app.
+  _enrich_personal_media` 가 tweet id 로 vxtwitter 를 재조회해 채운다(실패·미첨부·id 없음 →
+  `[]`/`null`, 무회귀). 프론트 `tweets.js`(`_mediaGrid`/`_quoteCard`) 가 말풍선 안에 썸네일/인용카드로
+  렌더 — 번역 토글이 한국어면 `quote.text_ko` 를 쓴다. (v3.4.6) `quote.text_ko` 는 `xtweet.
+  find_reused_ko(text, tweets_data, archive_data, notices_data)` 로 **같은 원문이 tweets/
+  tweet_archive/notices 어디서든 이미 번역된 적 있으면 그 번역을 재사용**하고, 없을 때만
+  LLM 을 새로 호출한다(인라인 실패 시 `quote.needs_tl=True` → `handlers._translate_sweep` 가
+  같은 순서로 재시도) — 같은 인용 원본이 여러 멤버·트윗에 반복 등장할 때 중복 번역 호출을 줄인다.
 - `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled`).
   `rolled` = 스레드 5건 초과로 밀려난 것.
 - `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`

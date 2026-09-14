@@ -1888,6 +1888,24 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                     row.pop("needs_tl", None)
                 else:
                     row["needs_tl"] = True
+            # 인용(QRT) 카드 번역 — 같은 원문이 이미 한 번이라도 번역됐으면(다른 트윗의
+            # 본문/인용, 또는 소식 제목) 재사용하고, 없을 때만 새로 번역한다. (v3.4.6)
+            qtext = (row.get("quote") or {}).get("text") if row else None
+            if row and qtext and not row["quote"].get("text_ko"):
+                ko = xtweet.find_reused_ko(qtext, tweets_data=new_t, archive_data=new_a)
+                if not ko:
+                    try:
+                        nj, _nsha = gh.read_json(_NOTICES_PATH)
+                    except Exception:
+                        nj = None
+                    ko = xtweet.find_reused_ko(qtext, notices_data=nj)
+                if not ko:
+                    ko = _inline_translate(qtext)
+                if ko:
+                    row["quote"]["text_ko"] = ko
+                    row["quote"].pop("needs_tl", None)
+                else:
+                    row["quote"]["needs_tl"] = True
             try:
                 gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
                               message=f"data: tweet {mode} {channel_key} {now_iso}")
