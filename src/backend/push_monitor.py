@@ -194,7 +194,11 @@ _TEMPLATE = r"""<!doctype html>
   .legend-group h4{font-size:.62rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
                     color:var(--muted);margin:0 0 6px;opacity:.75}
   .legend-chips{display:flex;flex-wrap:wrap;gap:5px 12px}
-  .legend-chips span{display:inline-flex;align-items:center;font-size:.78rem;color:var(--muted);white-space:nowrap}
+  .legend-chips button{display:inline-flex;align-items:center;font:inherit;font-size:.78rem;color:var(--ink);
+                        white-space:nowrap;background:none;border:1px solid transparent;border-radius:5px;
+                        padding:2px 6px;margin:-2px -6px;cursor:pointer;transition:opacity .15s ease,border-color .15s ease}
+  .legend-chips button:hover{border-color:var(--line)}
+  .legend-chips button.off{opacity:.4;color:var(--muted)}
   .legend-chips i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;flex:none}
   .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
   .stat-tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 10px;min-width:0}
@@ -387,6 +391,22 @@ const LEGEND_GROUPS = [
 ];
 const catByKey = Object.fromEntries(DATA.categories.map(c => [c.key, c]));
 const legend = document.getElementById("legend");
+
+// 범례를 토글 버튼으로 — 클릭한 카테고리만 ON(위 상세 차트에 표시), 전부 끄면
+// 자동으로 전부 ON 으로 되돌린다(빈 차트 방지).
+const activeCats = new Set(DATA.categories.map(c => c.key));
+const legendButtons = [];
+function refreshLegendButtons() {
+  legendButtons.forEach(({ key, btn }) => btn.classList.toggle("off", !activeCats.has(key)));
+}
+function toggleCategory(key) {
+  if (activeCats.has(key)) activeCats.delete(key);
+  else activeCats.add(key);
+  if (activeCats.size === 0) DATA.categories.forEach(c => activeCats.add(c.key));
+  refreshLegendButtons();
+  renderDetail();
+}
+
 LEGEND_GROUPS.forEach(g => {
   const present = g.keys.map(k => catByKey[k]).filter(Boolean);
   if (!present.length) return;
@@ -395,9 +415,12 @@ LEGEND_GROUPS.forEach(g => {
   const h4 = document.createElement("h4"); h4.textContent = g.label;
   const chips = document.createElement("div"); chips.className = "legend-chips";
   present.forEach(c => {
-    const span = document.createElement("span");
-    span.innerHTML = `<i style="background:${c.color}"></i>${c.label}`;
-    chips.appendChild(span);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.innerHTML = `<i style="background:${c.color}"></i>${c.label}`;
+    btn.addEventListener("click", () => toggleCategory(c.key));
+    chips.appendChild(btn);
+    legendButtons.push({ key: c.key, btn });
   });
   wrap.appendChild(h4); wrap.appendChild(chips);
   legend.appendChild(wrap);
@@ -644,7 +667,9 @@ function renderDetail() {
     svg.appendChild(t);
     return;
   }
-  const totals = bins.map(b => DATA.categories.reduce((s,c) => s + (b[c.key]||0), 0));
+  // 범례에서 끈 카테고리는 0건으로 취급 — 막대 높이(y축 스케일)도 켜진
+  // 카테고리 합계 기준으로 다시 잡아서, 일부만 켰을 때 차트가 비어 보이지 않게 한다.
+  const totals = bins.map(b => DATA.categories.reduce((s,c) => activeCats.has(c.key) ? s + (b[c.key]||0) : s, 0));
   const maxY = Math.max(1, ...totals);
   const barW = plotW / bins.length;
 
@@ -653,6 +678,7 @@ function renderDetail() {
   bins.forEach((b, i) => {
     let y0 = 0;
     DATA.categories.forEach(c => {
+      if (!activeCats.has(c.key)) return;
       const v = b[c.key] || 0;
       if (v === 0) return;
       const h = (v / maxY) * plotH;
@@ -717,6 +743,7 @@ function showTip(ev, binIdx, bin, total) {
   const mm = String((binIdx % 6) * 10).padStart(2, "0");
   let rows = "";
   DATA.categories.forEach(c => {
+    if (!activeCats.has(c.key)) return;
     const v = bin[c.key] || 0;
     if (v > 0) rows += `<div class="t-row"><span><i class="swatch" style="background:${c.color}"></i>${c.label}</span><b>${v}</b></div>`;
   });
