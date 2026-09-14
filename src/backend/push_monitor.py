@@ -60,9 +60,11 @@ CATEGORY_ORDER = [
 ]
 CATEGORY_COLORS = {
     # 자동화(녹색계) / 수동제어(노란계) / 코드 push(회색) / 기타·예외(빨강)
+    # notice는 원래 #2E9E5C였으나 tweet(#43A047)과 육안 구분이 거의 안 돼(델타E 2.8)
+    # 청록 쪽으로 이동(#00806B) — 델타E 16.5로 개선, 다른 자동화색과도 더 멀어짐
     "preview": "#7CB342",
     "tweet": "#43A047",
-    "notice": "#2E9E5C",
+    "notice": "#00806B",
     "personal_schedule": "#26A69A",
     "xrelay": "#9CCC65",
     "undo_snapshot": "#FDD835",
@@ -187,8 +189,21 @@ _TEMPLATE = r"""<!doctype html>
   h1{font-size:1.3rem;margin:0 0 4px}
   .sub{color:var(--muted);font-size:.85rem;margin:0 0 22px}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:20px}
-  .legend{display:flex;flex-wrap:wrap;gap:10px 16px;font-size:.78rem;color:var(--muted);margin-top:14px}
-  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .legend{display:flex;flex-wrap:wrap;gap:14px 22px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .legend-group{min-width:0}
+  .legend-group h4{font-size:.62rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+                    color:var(--muted);margin:0 0 6px;opacity:.75}
+  .legend-chips{display:flex;flex-wrap:wrap;gap:5px 12px}
+  .legend-chips span{display:inline-flex;align-items:center;font-size:.78rem;color:var(--muted);white-space:nowrap}
+  .legend-chips i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;flex:none}
+  .stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .stat-tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 10px;min-width:0}
+  .stat-tile b{display:block;font-size:1.4rem;font-weight:700;line-height:1.15;margin-bottom:2px;
+               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stat-tile span{color:var(--muted);font-size:.7rem;display:block}
+  .stat-tile.warn b{color:#e5484d}
+  @media (max-width:520px){.stats-row{grid-template-columns:repeat(3,1fr);gap:6px}
+    .stat-tile{padding:9px 7px}.stat-tile b{font-size:1.1rem}.stat-tile span{font-size:.62rem}}
   .year-nav{display:flex;align-items:center;gap:10px;margin-bottom:10px}
   .year-label{font-weight:600;font-size:.95rem}
   .year-btn{background:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;
@@ -209,6 +224,7 @@ _TEMPLATE = r"""<!doctype html>
   .detail-sub{color:var(--muted);font-size:.8rem;margin:0 0 14px}
   .chart-wrap{position:relative;overflow-x:auto}
   svg{display:block}
+  #chart{width:100%;height:auto}
   .bar{cursor:pointer;transition:height .3s ease,y .3s ease,width .3s ease}
   .xaxis text{fill:var(--muted);font-size:11px}
   .tooltip{position:fixed;background:#1c1e24;border:1px solid var(--line);border-radius:8px;
@@ -244,6 +260,39 @@ _TEMPLATE = r"""<!doctype html>
   .summary-table th,.summary-table td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
   .summary-table th{color:var(--muted);font-weight:normal}
   .summary-table td.num{text-align:right}
+
+  /* ── 년·월 선택 버튼 + 다이얼 팝업 ── */
+  .ym-btn{background:none;border:1px solid transparent;border-radius:6px;cursor:pointer;
+          padding:2px 10px;font:inherit;color:inherit;transition:border-color .15s ease}
+  .ym-btn:hover{border-color:var(--accent)}
+  .ym-modal{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center}
+  .ym-modal[hidden]{display:none}
+  .ym-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+  .ym-sheet{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+            padding:16px;width:220px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .ym-picker{position:relative;display:flex;gap:8px;height:180px}
+  .ym-col{flex:1;overflow-y:auto;scroll-snap-type:y mandatory;-webkit-overflow-scrolling:touch;
+          padding:72px 0;text-align:center;scrollbar-width:none}
+  .ym-col::-webkit-scrollbar{display:none}
+  .ym-col .opt{height:36px;line-height:36px;scroll-snap-align:center;color:var(--muted);
+               font-size:.95rem;cursor:pointer;user-select:none}
+  .ym-col .opt.mid{color:var(--ink);font-weight:600}
+  .ym-band{position:absolute;left:0;right:0;top:72px;height:36px;
+            border-top:1px solid var(--line);border-bottom:1px solid var(--line);pointer-events:none}
+  .ym-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+
+  /* ── 모바일: 터치 타깃 확대 + 이벤트 표를 카드형으로 ── */
+  @media (max-width:640px){
+    body{padding:16px 14px 48px}
+    .year-btn{width:36px;height:36px;font-size:.85rem}
+    .today-btn{width:auto;padding:0 14px}
+    .month-row .cell{width:18px;height:18px}
+    .events-table thead{display:none}
+    .events-table, .events-table tbody, .events-table tr, .events-table td{display:block;width:100%}
+    .events-table tr{margin-bottom:8px;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+    .events-table tr:last-child{margin-bottom:0}
+    .events-table td{border-bottom:none;white-space:normal;padding:3px 0}
+  }
 </style>
 </head>
 <body>
@@ -251,14 +300,20 @@ _TEMPLATE = r"""<!doctype html>
 <p class="sub">data/main 브랜치 커밋(=Vercel 배포 시도) 활동 — Hobby 플랜 하루 100건 한도 재소진 조기 감지용.
 날짜 칸을 클릭하면 그 날의 10분 단위 상세를 아래에서 봅니다.</p>
 
+<div class="stats-row" id="statsRow">
+  <div class="stat-tile"><b id="statToday">—</b><span>오늘 총 커밋</span></div>
+  <div class="stat-tile"><b id="statTopCat">—</b><span id="statTopCatSub">최다 카테고리</span></div>
+  <div class="stat-tile" id="statLimitTile"><b id="statLimit">—</b><span>마지막 한도초과 이후</span></div>
+</div>
+
 <div class="layout">
 <div class="col-left">
 
 <div class="panel">
   <div class="year-nav">
-    <button class="year-btn" id="yearPrev" aria-label="이전 연도">◀</button>
-    <span class="year-label" id="yearLabel"></span>
-    <button class="year-btn" id="yearNext" aria-label="다음 연도">▶</button>
+    <button class="year-btn" id="monthPrev" aria-label="이전 달">◀</button>
+    <button class="year-label ym-btn" id="ymBtn" type="button" aria-haspopup="dialog"></button>
+    <button class="year-btn" id="monthNext" aria-label="다음 달">▶</button>
     <button class="year-btn today-btn" id="todayBtn">TODAY</button>
   </div>
   <h3 class="chart-mini-title" id="summaryTitle">—</h3>
@@ -274,7 +329,7 @@ _TEMPLATE = r"""<!doctype html>
 <div class="panel">
   <h2 class="detail-title" id="detailTitle">—</h2>
   <p class="detail-sub" id="detailSub"></p>
-  <div class="chart-wrap"><svg id="chart" width="1040" height="320"></svg></div>
+  <div class="chart-wrap"><svg id="chart" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet"></svg></div>
   <div class="legend" id="legend"></div>
   <div id="detailEvents" class="events-collapse"></div>
 </div>
@@ -290,7 +345,7 @@ _TEMPLATE = r"""<!doctype html>
   </div>
   <div class="section-h">카테고리별 건수</div>
   <table class="summary-table" id="catSummaryTable"></table>
-  <div class="section-h">Vercel 배포 한도(200/일) 초과일</div>
+  <div class="section-h">일일 push 100건 초과일</div>
   <table class="summary-table" id="overLimitTable"></table>
 </div>
 
@@ -300,22 +355,82 @@ _TEMPLATE = r"""<!doctype html>
 <footer id="footer"></footer>
 <div class="tooltip" id="tooltip"></div>
 
+<div class="ym-modal" id="ymModal" hidden>
+  <div class="ym-backdrop" id="ymBackdrop"></div>
+  <div class="ym-sheet" role="dialog" aria-label="연·월 선택">
+    <div class="ym-picker">
+      <div class="ym-col" id="ymYearCol"></div>
+      <div class="ym-col" id="ymMonthCol"></div>
+      <div class="ym-band"></div>
+    </div>
+    <div class="ym-actions">
+      <button class="year-btn today-btn" id="ymCancel">취소</button>
+      <button class="year-btn today-btn" id="ymApply">적용</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const DATA = __DATA_JSON__;
 
+// 범례를 성격별 4그룹(자동화/수동제어/코드/기타)으로 묶어 표시.
+const LEGEND_GROUPS = [
+  { label: "자동화", keys: ["preview", "tweet", "notice", "personal_schedule", "xrelay"] },
+  { label: "수동제어", keys: ["undo_snapshot", "manual"] },
+  { label: "코드", keys: ["code_main"] },
+  { label: "기타", keys: ["other_data"] },
+];
+const catByKey = Object.fromEntries(DATA.categories.map(c => [c.key, c]));
 const legend = document.getElementById("legend");
-DATA.categories.forEach(c => {
-  const span = document.createElement("span");
-  span.innerHTML = `<i style="background:${c.color}"></i>${c.label}`;
-  legend.appendChild(span);
+LEGEND_GROUPS.forEach(g => {
+  const present = g.keys.map(k => catByKey[k]).filter(Boolean);
+  if (!present.length) return;
+  const wrap = document.createElement("div");
+  wrap.className = "legend-group";
+  const h4 = document.createElement("h4"); h4.textContent = g.label;
+  const chips = document.createElement("div"); chips.className = "legend-chips";
+  present.forEach(c => {
+    const span = document.createElement("span");
+    span.innerHTML = `<i style="background:${c.color}"></i>${c.label}`;
+    chips.appendChild(span);
+  });
+  wrap.appendChild(h4); wrap.appendChild(chips);
+  legend.appendChild(wrap);
 });
 
 document.getElementById("footer").textContent = "마지막 갱신: " + DATA.generated_at.replace("T"," ").slice(0,16) + " KST (1시간 주기 자동 갱신)";
 
 // ── 잔디(연간 월별 그리드) ──
-const VERCEL_LIMIT = 200;
+const VERCEL_LIMIT = 100;
 const byDateRec = {};
 DATA.days.forEach(d => { byDateRec[d.date] = d; });
+
+// ── 상단 통계 카드 (오늘 데이터 기준) ──
+(function renderStatsRow() {
+  const todayDay = DATA.days.length ? DATA.days[DATA.days.length - 1] : null;
+  if (!todayDay) return;
+  document.getElementById("statToday").textContent = todayDay.total;
+
+  const top = DATA.categories.slice()
+    .sort((a, b) => (todayDay.by_cat[b.key] || 0) - (todayDay.by_cat[a.key] || 0))[0];
+  if (top && todayDay.by_cat[top.key]) {
+    document.getElementById("statTopCat").textContent = top.label.split(" ")[0];
+    document.getElementById("statTopCatSub").textContent = `최다 카테고리 · ${todayDay.by_cat[top.key]}건`;
+  }
+
+  let lastOver = null;
+  for (let i = DATA.days.length - 1; i >= 0; i--) {
+    if (DATA.days[i].total > VERCEL_LIMIT) { lastOver = DATA.days[i]; break; }
+  }
+  const limitTile = document.getElementById("statLimitTile");
+  if (!lastOver) {
+    document.getElementById("statLimit").textContent = "없음";
+  } else {
+    const diffDays = Math.round((new Date(todayDay.date) - new Date(lastOver.date)) / 86400000);
+    document.getElementById("statLimit").textContent = diffDays + "일";
+    if (diffDays <= 1) limitTile.classList.add("warn");
+  }
+})();
 
 const yearGrid = document.getElementById("yearGrid");
 const dayTotals = {};
@@ -327,58 +442,114 @@ function heatColor(dateStr) {
   if (total === 0) return "#1c1e24";
   const t = Math.min(1, total / maxTotal);
   const light = 18 + t * 42; // 18% ~ 60%
-  if ((rec.by_cat.code_main || 0) > VERCEL_LIMIT) return `hsl(355, 70%, ${light}%)`; // 한도 초과 → 빨간 계통
+  if (total > VERCEL_LIMIT) return `hsl(355, 70%, ${light}%)`; // 하루 push 100건 초과 → 빨간 계통
   return `hsl(175, 55%, ${light}%)`; // 단일 색상(teal) 명도만 증가 — 값이 클수록 밝게, GitHub 잔디 스타일.
 }
 let selectedDate = DATA.days.length ? DATA.days[DATA.days.length - 1].date : null;
 let currentYear = DATA.year;
+let currentMonth = Number(DATA.generated_at.slice(5, 7)); // 1~12, 초기값 = 오늘 달
 
-function buildYearGrid() {
+// 잔디 그리드는 한 달만 보여준다(◀ YYYY-MM ▶). 옆 월별 추이 차트·분기 비교·요약 표는
+// 계속 currentYear(연 단위)로 동작 — 달만 넘겨도 그대로, 연이 바뀔 때만 같이 갱신.
+function buildMonthGrid() {
   yearGrid.innerHTML = "";
-  document.getElementById("yearLabel").textContent = currentYear + "년";
-  const year = currentYear;
-  for (let m = 1; m <= 12; m++) {
-    const daysInMonth = new Date(year, m, 0).getDate();
-    const row = document.createElement("div");
-    row.className = "month-row";
-    const label = document.createElement("span");
-    label.className = "m-label";
-    label.textContent = m + "월";
-    row.appendChild(label);
-    const daysWrap = document.createElement("div");
-    daysWrap.className = "days";
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const total = dayTotals[dateStr] || 0;
-      const cell = document.createElement("div");
-      cell.className = "cell" + (dateStr === selectedDate ? " sel" : "");
-      cell.style.background = heatColor(dateStr);
-      cell.addEventListener("mousemove", (ev) => showTipHTML(ev,
-        `<div class="t-time">${dateStr}</div><div class="t-row"><span>커밋</span><b>${total}건</b></div>`));
-      cell.addEventListener("mouseleave", hideTip);
-      cell.addEventListener("click", () => {
-        selectedDate = dateStr;
-        buildYearGrid();
-        renderDetail();
-        updateRightPanels();
-      });
-      daysWrap.appendChild(cell);
-    }
-    row.appendChild(daysWrap);
-    yearGrid.appendChild(row);
+  document.getElementById("ymBtn").textContent = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
+  const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+  const row = document.createElement("div");
+  row.className = "month-row";
+  const daysWrap = document.createElement("div");
+  daysWrap.className = "days";
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const total = dayTotals[dateStr] || 0;
+    const cell = document.createElement("div");
+    cell.className = "cell" + (dateStr === selectedDate ? " sel" : "");
+    cell.style.background = heatColor(dateStr);
+    cell.addEventListener("mousemove", (ev) => showTipHTML(ev,
+      `<div class="t-time">${dateStr}</div><div class="t-row"><span>커밋</span><b>${total}건</b></div>`));
+    cell.addEventListener("mouseleave", hideTip);
+    cell.addEventListener("click", () => {
+      selectedDate = dateStr;
+      buildMonthGrid();
+      renderDetail();
+      updateRightPanels();
+    });
+    daysWrap.appendChild(cell);
   }
+  row.appendChild(daysWrap);
+  yearGrid.appendChild(row);
 }
-document.getElementById("yearPrev").addEventListener("click", () => { currentYear -= 1; buildYearGrid(); updateRightPanels(); });
-document.getElementById("yearNext").addEventListener("click", () => { currentYear += 1; buildYearGrid(); updateRightPanels(); });
+
+function goToMonth(y, m) {
+  while (m < 1) { m += 12; y -= 1; }
+  while (m > 12) { m -= 12; y += 1; }
+  currentYear = y; currentMonth = m;
+  buildMonthGrid();
+  updateRightPanels();
+}
+document.getElementById("monthPrev").addEventListener("click", () => goToMonth(currentYear, currentMonth - 1));
+document.getElementById("monthNext").addEventListener("click", () => goToMonth(currentYear, currentMonth + 1));
 document.getElementById("todayBtn").addEventListener("click", () => {
   const todayStr = DATA.generated_at.slice(0, 10);
-  currentYear = Number(todayStr.slice(0, 4));
   selectedDate = todayStr;
-  buildYearGrid();
+  goToMonth(Number(todayStr.slice(0, 4)), Number(todayStr.slice(5, 7)));
   renderDetail();
-  updateRightPanels();
 });
-buildYearGrid();
+buildMonthGrid();
+
+// ── 년·월 다이얼 팝업 (스크롤 스냅 기반 — 네이티브 휠 피커 느낌, 별도 라이브러리 없음) ──
+(function setupYmPicker() {
+  const OPT_H = 36;
+  const modal = document.getElementById("ymModal");
+  const yearCol = document.getElementById("ymYearCol");
+  const monthCol = document.getElementById("ymMonthCol");
+
+  function buildCols() {
+    const years = [];
+    for (let y = DATA.year - 5; y <= DATA.year + 1; y++) years.push(y);
+    yearCol.innerHTML = years.map(y => `<div class="opt" data-v="${y}">${y}</div>`).join("");
+    monthCol.innerHTML = Array.from({ length: 12 }, (_, i) => i + 1)
+      .map(m => `<div class="opt" data-v="${m}">${m}월</div>`).join("");
+    return { years, months: Array.from({ length: 12 }, (_, i) => i + 1) };
+  }
+  function scrollColTo(col, value, list) {
+    const idx = list.indexOf(value);
+    if (idx >= 0) col.scrollTop = idx * OPT_H;
+  }
+  function centeredValue(col, list) {
+    const idx = Math.min(Math.max(Math.round(col.scrollTop / OPT_H), 0), list.length - 1);
+    return list[idx];
+  }
+  function attachMidHighlight(col) {
+    function update() {
+      const idx = Math.round(col.scrollTop / OPT_H);
+      Array.from(col.children).forEach((el, i) => el.classList.toggle("mid", i === idx));
+    }
+    col.addEventListener("scroll", () => requestAnimationFrame(update));
+    update();
+  }
+
+  document.getElementById("ymBtn").addEventListener("click", () => {
+    const { years, months } = buildCols();
+    modal.hidden = false;
+    requestAnimationFrame(() => {
+      scrollColTo(yearCol, currentYear, years);
+      scrollColTo(monthCol, currentMonth, months);
+      attachMidHighlight(yearCol);
+      attachMidHighlight(monthCol);
+    });
+  });
+  document.getElementById("ymCancel").addEventListener("click", () => { modal.hidden = true; });
+  document.getElementById("ymBackdrop").addEventListener("click", () => { modal.hidden = true; });
+  document.getElementById("ymApply").addEventListener("click", () => {
+    const years = Array.from(yearCol.children).map(el => Number(el.dataset.v));
+    const months = Array.from(monthCol.children).map(el => Number(el.dataset.v));
+    const y = centeredValue(yearCol, years);
+    const m = centeredValue(monthCol, months);
+    modal.hidden = true;
+    goToMonth(y, m);
+  });
+})();
 
 // ── 상세 차트 ──
 const svg = document.getElementById("chart");
@@ -711,8 +882,7 @@ function renderSummaryTables() {
     const rec = byDateRec[ds];
     if (!rec) return;
     DATA.categories.forEach(c => { sums[c.key] += rec.by_cat[c.key] || 0; });
-    const deployCount = rec.by_cat.code_main || 0;
-    if (deployCount > VERCEL_LIMIT) overLimit.push({ date: ds, count: deployCount });
+    if (rec.total > VERCEL_LIMIT) overLimit.push({ date: ds, count: rec.total });
   });
   const total = Object.values(sums).reduce((a, b) => a + b, 0);
 
