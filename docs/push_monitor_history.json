@@ -1,0 +1,79 @@
+{
+  "2026-09-08": {
+    "code_main": 11,
+    "manual": 0,
+    "notice": 5,
+    "other_data": 105,
+    "personal_schedule": 0,
+    "preview": 0,
+    "tweet": 4,
+    "undo_snapshot": 6,
+    "xrelay": 1
+  },
+  "2026-09-09": {
+    "code_main": 16,
+    "manual": 0,
+    "notice": 0,
+    "other_data": 85,
+    "personal_schedule": 0,
+    "preview": 0,
+    "tweet": 12,
+    "undo_snapshot": 1,
+    "xrelay": 0
+  },
+  "2026-09-10": {
+    "code_main": 26,
+    "manual": 0,
+    "notice": 14,
+    "other_data": 25,
+    "personal_schedule": 1,
+    "preview": 16,
+    "tweet": 33,
+    "undo_snapshot": 16,
+    "xrelay": 0
+  },
+  "2026-09-11": {
+    "code_main": 2,
+    "manual": 0,
+    "notice": 13,
+    "other_data": 0,
+    "personal_schedule": 0,
+    "preview": 8,
+    "tweet": 57,
+    "undo_snapshot": 10,
+    "xrelay": 0
+  },
+  "2026-09-12": {
+    "code_main": 15,
+    "manual": 0,
+    "notice": 7,
+    "other_data": 5,
+    "personal_schedule": 5,
+    "preview": 36,
+    "tweet": 55,
+    "undo_snapshot": 11,
+    "xrelay": 1
+  },
+  "2026-09-13": {
+    "code_main": 30,
+    "manual": 4,
+    "notice": 10,
+    "other_data": 0,
+    "personal_schedule": 3,
+    "preview": 136,
+    "tweet": 49,
+    "undo_snapshot": 9,
+    "xrelay": 2
+  },
+  "2026-09-14": {
+    "code_main": 3,
+    "manual": 0,
+    "notice": 0,
+    "other_data": 0,
+    "personal_schedule": 1,
+    "preview": 11,
+    "tweet": 3,
+    "undo_snapshot": 1,
+    "xrelay": 0
+  }
+}
