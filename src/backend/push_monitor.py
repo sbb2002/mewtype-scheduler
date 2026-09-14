@@ -1089,6 +1089,30 @@ def fetch_commits(
     return out
 
 
+def list_branches(
+    token: str, repo: str, *, session: "requests.Session | None" = None, per_page: int = 100,
+) -> list[str]:
+    """저장소의 전체 브랜치 이름 목록 (핫픽스/피처용 임시 브랜치 탐지용, v3.4.8+)."""
+    session = session or requests.Session()
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    out: list[str] = []
+    page = 1
+    while True:
+        resp = session.get(
+            f"https://api.github.com/repos/{repo}/branches",
+            headers=headers, params={"per_page": per_page, "page": page}, timeout=20,
+        )
+        resp.raise_for_status()
+        items = resp.json()
+        if not items:
+            break
+        out.extend(b["name"] for b in items)
+        if len(items) < per_page:
+            break
+        page += 1
+    return out
+
+
 def _backfill_days(history: dict, now_kst: datetime, min_days: int) -> int:
     """history 마지막 기록일과 오늘 사이 간격(+1일 여유)만큼 조회 기간을 넓힌다.
 
@@ -1127,12 +1151,34 @@ def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
     days = _backfill_days(raw_history, now_kst, min_days)
 
     since = (now_kst - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    known_branches = ("data", "main", "devpapers")
     records: list[dict] = []
-    for branch in ("data", "main", "devpapers"):
+    for branch in known_branches:
         try:
             records.extend(fetch_commits(github_token, github_repo, branch, since, session=session))
         except requests.RequestException as e:
             logger.warning("push_monitor: %s 브랜치 조회 실패 — %s", branch, e)
+
+    # 핫픽스/피처용 임시 브랜치(fix/*, feat/* 등) — 이름을 미리 알 수 없어 전체
+    # 브랜치 목록에서 알려진 3개를 뺀 나머지를 조회한다. main/devpapers 와 공유하는
+    # (이미 머지된) 커밋은 sha 로 걸러 중복 집계하지 않는다 — 순수 브랜치 고유 분만
+    # code_other("기타 브랜치")로 잡힌다. (v3.4.9)
+    seen_shas = {r["sha"] for r in records}
+    try:
+        other_branches = [b for b in list_branches(github_token, github_repo, session=session)
+                           if b not in known_branches]
+    except requests.RequestException as e:
+        logger.warning("push_monitor: 브랜치 목록 조회 실패 — %s", e)
+        other_branches = []
+    for branch in other_branches:
+        try:
+            for r in fetch_commits(github_token, github_repo, branch, since, session=session):
+                if r["sha"] in seen_shas:
+                    continue
+                seen_shas.add(r["sha"])
+                records.append(r)
+        except requests.RequestException as e:
+            logger.warning("push_monitor: %s 브랜치(기타) 조회 실패 — %s", branch, e)
 
     recent = build_dashboard_data(records, now_kst=now_kst, days=days)
     history = merge_history(raw_history, recent["days"])
