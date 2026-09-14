@@ -119,16 +119,6 @@
     "ritsu": [
       {
         "channel_key": "ritsu",
-        "expires_at": "2026-09-14T13:38:14Z",
-        "handle": "ritsu_yumemita",
-        "id": "2099130254241693729",
-        "received_at": "2026-09-13T13:38:14Z",
-        "text": "配信をはじめます🐕 ͗ ͗",
-        "text_ko": "방송을 시작합니다🐕 ͗ ͗",
-        "url": "https://x.com/i/status/2099130254241693729"
-      },
-      {
-        "channel_key": "ritsu",
         "expires_at": "2026-09-14T15:47:27Z",
         "handle": "ritsu_yumemita",
         "id": "2099161728806477972",
