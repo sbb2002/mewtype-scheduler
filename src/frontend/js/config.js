@@ -1,13 +1,15 @@
-export const PREVIEW_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/preview.json";
+// (v3.4.9+) data 브랜치를 Vercel과 연결 안 된 별도 저장소로 분리 —
+// mewtype-scheduler-data (docs/plan/data_repo_migration.md 참고).
+export const PREVIEW_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/preview.json";
 // For local development, temporarily comment out the line above and uncomment:
 // export const PREVIEW_URL = "../../fixtures/preview.sample.json";
 
 // (v2.7) 소식 게시판. 없으면(404) 티커는 그냥 안 뜬다.
-export const NOTICES_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/notices.json";
+export const NOTICES_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/notices.json";
 
 // (v2.8) 멤버 개인 트윗. 없으면(404) 편지 배지는 그냥 안 뜬다.
 // 로컬 개발: "../../fixtures/tweets.sample.json"
-export const TWEETS_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/tweets.json";
+export const TWEETS_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/tweets.json";
 
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;

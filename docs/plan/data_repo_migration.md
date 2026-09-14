@@ -32,41 +32,40 @@
 3. 기존 fine-grained PAT(`GITHUB_TOKEN` Secret)의 repo 권한 범위에
    `mewtype-scheduler-data` 추가 완료(사용자 작업, 2026-09-14)
 
-## 남은 작업 — Vercel 배포 막힘 풀리면 진행
+## 완료 (2026-09-14, 계속)
 
-### 막힘 여부 확인
-```bash
-curl -s "https://api.vercel.com/v13/deployments?teamId=team_13wMbRg9gpyOZm4v2xj8skq1" \
-  -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
-  -X POST -d '{"name":"mewtype-scheduler","project":"mewtype-scheduler","target":"production","gitSource":{"type":"github","repoId":1351113978,"ref":"main"}}'
-```
-`payment_required` / `api-deployments-free-per-day` 응답이면 아직 막힘. (`VERCEL_TOKEN` 은
-저장소 루트 `.env` 에 있음 — `set -a; source .env; set +a` 로 로드.) 실제 배포가 시작되면
-(`READY`/`BUILDING` 등 정상 state) 풀린 것.
+Vercel 막힘이 안 풀린 상태에서도 2·3단계를 바로 진행하기로 결정 — 이유: 2단계(Cloud Run
+env 전환) 자체가 Vercel과 무관해서 언제든 실행 가능하고, 이걸 먼저 하면 `data` 브랜치가
+`mewtype-scheduler`(Vercel 연결 repo)에 더는 커밋을 안 하게 되어 24h 롤링 카운트가
+새로 채워지지 않고 자연히 빠지기 시작하므로 오히려 3단계(프론트 배포)가 더 빨리 풀릴
+가능성이 큼. git push 자체(3단계 커밋)는 Vercel 한도와 무관하게 항상 성공하고, 그 push에
+딸린 "배포 시도"만 큐에 쌓여 있다가 슬롯이 열리는 순간 자동으로 반영된다.
 
-**중요: 아래 2번과 3번은 반드시 한 번에(같은 세션에서 연속으로) 처리한다.** 백엔드가 새
-저장소에 쓰기 시작하는 시점과 프론트가 새 저장소를 읽기 시작하는 시점 사이에 공백이 있으면,
-그 사이 라이브 사이트가 옛 저장소의(더는 갱신 안 되는) 데이터를 계속 보여주게 된다.
+4. Cloud Run 환경변수 전환 완료 — `mewtype-backend`(revision `mewtype-backend-00066-677`),
+   `mewtype-telegram`(revision `mewtype-telegram-00061-j98`) 둘 다 `GITHUB_REPO=
+   sbb2002/mewtype-scheduler-data`로 전환. `deploy/env.sh`도 같이 갱신(다음 재배포 시
+   되돌아가지 않게, 이 파일은 gitignore 대상이라 커밋 불필요).
+5. 프론트 설정 전환 완료 — `src/frontend/js/config.js`의 `PREVIEW_URL`/`NOTICES_URL`/
+   `TWEETS_URL`을 `raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/...`로
+   변경, main에 커밋·푸시. **Vercel 배포 슬롯이 열리는 순간 자동 반영됨** — 별도 작업 불필요.
 
-### 2. Cloud Run 환경변수 전환
-```bash
-gcloud run services update mewtype-backend --region asia-northeast1 \
-  --update-env-vars GITHUB_REPO=sbb2002/mewtype-scheduler-data
-gcloud run services update mewtype-telegram --region asia-northeast1 \
-  --update-env-vars GITHUB_REPO=sbb2002/mewtype-scheduler-data
-```
-`DATA_BRANCH`는 그대로 `data` 유지 — 새 저장소도 기본 브랜치명을 `data`로 맞춰뒀으므로
-변경 불필요. (`deploy/env.sh`에도 `GITHUB_REPO` 기본값이 있으면 같이 갱신해둘 것 — 다음
-`deploy.sh`/`deploy_telegram.sh` 재배포 시 되돌아가지 않게.)
-
-전환 확인: `/tick` 한 번 트리거되길 기다리거나(baseline/light 스케줄러, 또는 텔레그램에서
-수동 유발) → `https://github.com/sbb2002/mewtype-scheduler-data` 에 새 커밋이 뜨는지 확인.
-
-### 3. 프론트 설정 전환
-`src/frontend/js/config.js` 의 `DATA_URL`/`NOTICES_URL`/`TWEETS_URL` 를
-`raw.githubusercontent.com/sbb2002/mewtype-scheduler/data/...` →
-`raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/...` 로 변경,
-커밋 + `main` 푸시(자동 배포 트리거).
+### 확인 방법 (다른 세션에서 이어볼 때)
+- 백엔드가 새 저장소에 쓰고 있는지: `https://github.com/sbb2002/mewtype-scheduler-data`
+  commits 탭에서 최근 커밋 시각 확인, 또는
+  `curl -s https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/preview.json`
+  의 `generated_at`이 최근인지 확인.
+- 프론트 배포가 실제로 반영됐는지: 라이브 사이트(`https://mewtype-schduler.vercel.app/`)에서
+  개발자도구 Network 탭으로 `config.js` 요청 확인, 또는 그냥 `curl -s
+  https://mewtype-schduler.vercel.app/js/config.js | grep PREVIEW_URL` 로 어느 저장소를
+  가리키는지 확인.
+- Vercel 막힘 여부 재확인:
+  ```bash
+  curl -s "https://api.vercel.com/v13/deployments?teamId=team_13wMbRg9gpyOZm4v2xj8skq1" \
+    -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+    -X POST -d '{"name":"mewtype-scheduler","project":"mewtype-scheduler","target":"production","gitSource":{"type":"github","repoId":1351113978,"ref":"main"}}'
+  ```
+  `payment_required` / `api-deployments-free-per-day` 응답이면 아직 막힘. (`VERCEL_TOKEN`은
+  저장소 루트 `.env`에 있음 — `set -a; source .env; set +a`로 로드.)
 
 ## 이후 정리 (선택, 급하지 않음)
 
