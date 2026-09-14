@@ -2287,6 +2287,8 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
         else:  # tweet
             prev, sha = gh.read_json(_TWEETS_PATH)
             tw = (prev or {}).get("tweets", {}) or {}
+            arch, _asha = gh.read_json(_TWEET_ARCHIVE_PATH)
+            nj, _nsha = gh.read_json(_NOTICES_PATH)
             total = 0
             n = 0
             pending = 0
@@ -2296,15 +2298,33 @@ def _handle_translate(gh, now_iso: str, contents: str) -> None:
                 for row in norm:
                     total += 1
                     if row.get("text_ko"):
-                        continue
-                    pending += 1
-                    ko = llm.translate(row.get("text") or "")
-                    if ko:
-                        row["text_ko"] = ko
-                        row.pop("needs_tl", None)
-                        n += 1
+                        pass
                     else:
-                        row["needs_tl"] = True
+                        pending += 1
+                        ko = llm.translate(row.get("text") or "")
+                        if ko:
+                            row["text_ko"] = ko
+                            row.pop("needs_tl", None)
+                            n += 1
+                        else:
+                            row["needs_tl"] = True
+                    # 인용(QRT) 카드 번역 — 같은 원문이 이미 한 번이라도 번역됐으면
+                    # (다른 트윗의 본문/인용, 또는 소식 제목) 재사용. (v3.4.6)
+                    q = row.get("quote")
+                    if q and q.get("text"):
+                        total += 1
+                        if q.get("text_ko"):
+                            continue
+                        pending += 1
+                        ko = (xtweet.find_reused_ko(q["text"], tweets_data=prev,
+                                                     archive_data=arch, notices_data=nj)
+                              or llm.translate(q["text"]))
+                        if ko:
+                            q["text_ko"] = ko
+                            q.pop("needs_tl", None)
+                            n += 1
+                        else:
+                            q["needs_tl"] = True
             if n:
                 prev["generated_at"] = now_iso
                 gh.write_json(_TWEETS_PATH, prev, prev_sha=sha,
