@@ -309,8 +309,9 @@ body {
   white-space: nowrap;
 }
 
-/* 하단 디스클레이머 — 기본 문구(비공식 팬메이드)는 항상 노출, 나머지 4건은
-   notice 티커처럼 1개씩 순환 표시하다가 호버/포커스 시 전체가 펼쳐진다. */
+/* 하단 디스클레이머 — 5건(비공식 팬메이드 명시 포함)을 notice 티커처럼 1개씩
+   순환 표시하다가 호버/포커스 시 전체가 펼쳐진다. 순환 문구 하나만 노출(중복 표시
+   없음) — 넘치면 마퀴로, 절대 2줄로 안 꺾인다. */
 .fdisc {
   position: relative;
   flex: 1 1 auto;
@@ -321,14 +322,6 @@ body {
   outline: none;
   cursor: default;
 }
-.fdisc__base {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.fdisc__short { display: none; white-space: nowrap; }
 .fdisc__cur {
   overflow: hidden;
   display: block;
@@ -390,12 +383,10 @@ body {
 }
 
 @media (max-width: 767px) {
-  /* 좁은 화면 — 순환 문구는 숨기고 기본 문구도 짧은 버전으로 (탭하면 목록은 그대로 펼쳐짐) */
-  .fdisc__cur { display: none; }
-  .fdisc__base { display: none; }
-  .fdisc__short { display: inline; }
-  /* 트리거가 좁아 자기 위치 기준 앵커로는 화면 밖으로 튀어나가기 쉬워 — 화면 중앙
-     고정폭으로 띄운다(트리거 위치 무관). */
+  /* 순환 문구는 그대로 쓴다(마퀴가 이미 2줄 안 꺾이게 보장) — 좁은 화면에서는
+     최소폭만 살짝 줄임. 트리거가 좁아 자기 위치 기준 앵커로는 화면 밖으로
+     튀어나가기 쉬워 — 화면 중앙 고정폭으로 띄운다(트리거 위치 무관). */
+  .fdisc__cur { min-width: 20px; }
   .fdisc__list {
     position: fixed;
     left: 50%;
