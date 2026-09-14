@@ -24,7 +24,7 @@ import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 
-from .xrelay import JST, YT_VIDEO_RE, normalize
+from .xrelay import JST, YT_VIDEO_RE, normalize, _TOMORROW_WORD
 from .xnotice import _first_time, _pick_event_date
 from . import preview  # ponytail: v3 preview 스키마 헬퍼
 
@@ -111,8 +111,13 @@ def _reached(iso_when: str | None, now_iso: str) -> bool:
 
 
 def parse(text: str, *, title: str, tag: str | None, channel_key: str,
-          now_iso: str, handle: str = "") -> dict | None:
-    """개인 트윗 1건 dict. text 가 (장식 제거 후) 비면 None. 리트윗/타인글은 필터."""
+          now_iso: str, handle: str = "",
+          media: list[str] | None = None, quote: dict | None = None) -> dict | None:
+    """개인 트윗 1건 dict. text 가 (장식 제거 후) 비면 None. 리트윗/타인글은 필터.
+
+    media: 본인 트윗에 첨부된 이미지 URL 목록(표시용, 파싱엔 안 씀).
+    quote: 인용(QRT)한 남의 트윗 {"text","media"} — 표시만 하고 ingest(파싱)는 안 함.
+    """
     body = _clean_text(text)
     if not body:
         return None
@@ -135,6 +140,8 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
         "handle": handle or "",
         "received_at": now_iso,
         "expires_at": exp,
+        "media": list(media) if media else [],
+        "quote": quote or None,
     }
 
 
@@ -153,7 +160,8 @@ def default_archive() -> dict:
     return {"tweets": []}
 
 
-_ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "expires_at")
+_ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "expires_at",
+             "media", "quote")
 
 
 def _as_list(v) -> list:
@@ -353,8 +361,12 @@ def parse_schedule(text: str, *, channel_key: str, tag: str | None, now_iso: str
     date_iso, _dl = _pick_event_date(t, now_jst)
     time_hm = _first_time(t)
     has_future = any(w in t for w in _FUTURE_WORD)
-    if not date_iso and time_hm and has_future:
-        date_iso = now_jst.strftime("%Y-%m-%d")
+    has_tomorrow = any(w in t for w in _TOMORROW_WORD)
+    if not date_iso and time_hm:
+        if has_future:
+            date_iso = now_jst.strftime("%Y-%m-%d")
+        elif has_tomorrow:
+            date_iso = (now_jst + timedelta(days=1)).strftime("%Y-%m-%d")
 
     m = YT_VIDEO_RE.search(t)
     video_id = m.group(1) if m else None
@@ -642,6 +654,14 @@ if __name__ == "__main__":
     assert a["id"].startswith("pv_") and a["first_seen"] == SNOW
     assert a["info_at"] == snowflake_iso("2096795604856836521")
     print("[OK] parse_schedule (v3)  (날짜+시각 → announced preview +3h TTL)")
+
+    # S-A2: (v3.4.5 핫픽스) "明日" 계열 상대날짜 + 시각 → +1일 반영
+    #   버그리포트: 19:43 JST 트윗 "次回の配信予定は明日22:00！" 이 게이트 통과 못 하던 것.
+    a2 = parse_schedule("次回の配信予定は明日22:00！✨\nよろしくねぇ〜",
+                        channel_key="arale", tag=None, now_iso=SNOW)
+    assert a2 and a2["time_tbd"] is False, a2
+    assert a2["scheduled_start"] == "2026-09-08T13:00:00Z", a2   # 明日(9/8) 22:00 JST = 9/8 13:00Z
+    print("[OK] parse_schedule  (明日HH:MM → +1일 반영)")
 
     # S-B: 날짜만(시각 없음) → time_tbd, TTL 자정
     b1 = parse_schedule("9月13日に配信あります！詳細は後ほど", channel_key="yuno",

@@ -154,6 +154,42 @@ function _setSrc(el, m) {
   }
 }
 
+/* ── 본인 미디어 / 인용(QRT) 카드 — (v3.4.5) ──────────────────────
+   media: 본인 트윗 첨부 이미지 URL 배열. quote: {text, media} 인용한 남의 트윗
+   (표시만 — ingest 파싱 대상 아님). 둘 다 vxtwitter unfurl 로 채워짐(백엔드). */
+function _mediaGrid(urls) {
+  const wrap = document.createElement("div");
+  wrap.className = "lane__thread__media";
+  for (const u of urls.slice(0, 4)) {
+    const img = document.createElement("img");
+    img.className = "lane__thread__media-img";
+    img.src = u;
+    img.loading = "lazy";
+    img.alt = "";
+    wrap.appendChild(img);
+  }
+  return wrap;
+}
+function _quoteCard(q) {
+  const card = document.createElement("div");
+  card.className = "lane__thread__quote";
+  if (q.text) {
+    const t = document.createElement("div");
+    t.className = "lane__thread__quote-txt";
+    t.textContent = q.text;
+    card.appendChild(t);
+  }
+  if (q.media && q.media.length) {
+    const img = document.createElement("img");
+    img.className = "lane__thread__quote-img";
+    img.src = q.media[0];
+    img.loading = "lazy";
+    img.alt = "";
+    card.appendChild(img);
+  }
+  return card;
+}
+
 /* ── 스레드 렌더 (말풍선·시트 공용) ──────────────────────────────── */
 function _groupMsgs(list) {
   const out = [];
@@ -180,6 +216,12 @@ function _renderThread(scrollEl, list) {
       tx.className = "txt";
       tx.textContent = (ko && m.text_ko) ? m.text_ko : m.text;
       row.appendChild(tx);
+      if (m.quote && (m.quote.text || (m.quote.media && m.quote.media.length))) {
+        row.appendChild(_quoteCard(m.quote));
+      }
+      if (m.media && m.media.length) {
+        row.appendChild(_mediaGrid(m.media));
+      }
       const a = document.createElement("a");
       a.className = "ori";
       a.target = "_blank";

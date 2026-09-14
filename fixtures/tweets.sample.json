@@ -51,6 +51,21 @@
         "handle": "arale_yumemita",
         "received_at": "2026-09-07T12:12:40Z",
         "expires_at": "2099-01-01T00:00:00Z"
+      },
+      {
+        "channel_key": "arale",
+        "id": "2096552878769153500",
+        "text": "音楽配信サービスでも聴いてもらえるの嬉しいなっ🎵\n\n激しく唱えたよ〜🐾✨",
+        "text_ko": "음악 스트리밍 서비스로도 들을 수 있어서 기뻐🎵\n\n힘차게 불렀어~🐾✨",
+        "url": "https://x.com/i/status/2096552878769153500",
+        "handle": "arale_yumemita",
+        "received_at": "2026-09-14T09:44:00Z",
+        "expires_at": "2099-01-01T00:00:00Z",
+        "media": [],
+        "quote": {
+          "text": "♪楽曲情報♪\n\n夢限大みゅーたいぷ\n「唱(Cover)」",
+          "media": ["https://pbs.twimg.com/media/sample-cover.jpg"]
+        }
       }
     ],
     "yuno": [

@@ -283,6 +283,47 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── 본인 첨부 미디어 (v3.4.5) — 말풍선 안 썸네일 그리드 ─────────── */
+.lane__thread__media {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  margin-top: 6px;
+}
+.lane__thread__media-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ── 인용(QRT)한 남의 트윗 카드 — 표시만, ingest 대상 아님 ────────── */
+.lane__thread__quote {
+  margin-top: 6px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.12);
+}
+.lane__thread__quote-txt {
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.88;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lane__thread__quote-img {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
 /* ── 모바일 토스트 (메신저 알림풍) ──────────────────────────────── */
 .tw-backdrop {
   position: fixed;
