@@ -4,36 +4,6 @@
     "arale": [
       {
         "channel_key": "arale",
-        "expires_at": "2026-09-14T02:47:48Z",
-        "handle": "arale_yumemita",
-        "id": "2098966159064535371",
-        "received_at": "2026-09-13T02:47:48Z",
-        "text": "本日！\n12:00〜インターネットサイン会✨️\n\n生配信だよ〜！よろしくねぇ⸜🌷︎⸝‍",
-        "text_ko": "오늘!\n12:00부터 인터넷 사인회✨️\n\n생방송이야~! 잘 부탁해⸜🌷︎⸝‍",
-        "url": "https://x.com/i/status/2098966159064535371"
-      },
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-14T05:39:08Z",
-        "handle": "arale_yumemita",
-        "id": "2099009879646367922",
-        "received_at": "2026-09-13T05:39:08Z",
-        "text": "#リミスタ ありがとうございました✨️\n\n5thSGもリリースさせていただけて、\n本当に嬉しいです！\n\n『これはぼくたちの生存のあらすじ』\nいっぱい聴いてね〜！！✨️",
-        "text_ko": "#리미스타 감사합니다✨️\n\n5thSG도 출시하게 되어,\n정말 기쁩니다!\n\n‘이것은 우리들의 생존 이야기’\n많이 들어 주세요~!!✨️",
-        "url": "https://x.com/i/status/2099009879646367922"
-      },
-      {
-        "channel_key": "arale",
-        "expires_at": "2026-09-14T05:39:33Z",
-        "handle": "arale_yumemita",
-        "id": "2099010064569016470",
-        "received_at": "2026-09-13T05:39:33Z",
-        "text": "大事にしてねぇ〜🍀*゜",
-        "text_ko": "소중히 해줘~🍀*゜",
-        "url": "https://x.com/i/status/2099010064569016470"
-      },
-      {
-        "channel_key": "arale",
         "expires_at": "2026-09-14T13:02:37Z",
         "handle": "arale_yumemita",
         "id": "2099120185836015969",
@@ -98,16 +68,6 @@
     "nonoka": [
       {
         "channel_key": "nonoka",
-        "expires_at": "2026-09-14T02:33:35Z",
-        "handle": "nonoka_yumemita",
-        "id": "2098961905608208609",
-        "received_at": "2026-09-13T02:33:35Z",
-        "text": "おはよー！\nきょう、このあと12:00からはリミスタさんでインターネットサイン会🎶\n\nダブル抽選の発表もございますよ....🥹\nおたのしみに🎶😍",
-        "text_ko": "좋은 아침!  \n오늘, 이 뒤 12시부터 리미스타님과 인터넷 사인회 🎶  \n\n이중 추첨 발표도 있습니다.... 🥹  \n많이 기대해 주세요 🎶😍",
-        "url": "https://x.com/i/status/2098961905608208609"
-      },
-      {
-        "channel_key": "nonoka",
         "expires_at": "2026-09-14T10:13:26Z",
         "handle": "nonoka_yumemita",
         "id": "2099078609898246292",
@@ -170,16 +130,6 @@
       }
     ],
     "yuno": [
-      {
-        "channel_key": "yuno",
-        "expires_at": "2026-09-14T02:19:51Z",
-        "handle": "yuno_yumemita",
-        "id": "2098959386479837537",
-        "received_at": "2026-09-13T02:19:51Z",
-        "text": "おはよー✌️\nこのあと12時からインターネットサイン会です！\n\nダブルチャンス抽選もあるみたいだから、楽しみにしててね🙌",
-        "text_ko": "좋은 아침✌️  \n이후 12시부터 인터넷 사인회가 있어요!  \n\n더블 찬스 추첨도 있는 것 같으니, 기대해 주세요🙌",
-        "url": "https://x.com/i/status/2098959386479837537"
-      },
       {
         "channel_key": "yuno",
         "expires_at": "2026-09-15T06:41:17Z",
