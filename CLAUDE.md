@@ -121,7 +121,7 @@ src/
                        #        인터랙티브 HTML 생성. html은 GitHub에 커밋하지 않고 텔레그램
                        #        DM으로만 전송(수동 /push-monitor 즉시 1회, 또는 --auto 켠
                        #        상태에서 POST /push-monitor 가 매일 KST 06:00에 실행).
-                       #        devpapers 브랜치 docs/push_monitor_history.json 에는 집계
+                       #        devpapers 브랜치 monitoring/push_monitor_history.json 에는 집계
                        #        수치만(원본 커밋 메시지 아님) 계속 누적 커밋. Vercel quota
                        #        재소진 조기 감지용(v3.2.2 사고 참고)
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)

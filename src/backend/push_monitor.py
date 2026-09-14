@@ -6,7 +6,7 @@ v3.2.2 참고) — `vercel.json` 위치 버그로 `data` 브랜치의 봇 커밋
 누적 막대(10분 단위)로 보여주는 대시보드를 생성한다.
 
 (v3.4) html은 더 이상 GitHub에 커밋하지 않는다 — 매번 렌더링만 해서 텔레그램
-DM으로 보낸다. 집계 수치(`docs/push_monitor_history.json`)만 `devpapers`에
+DM으로 보낸다. 집계 수치(`monitoring/push_monitor_history.json`)만 `devpapers`에
 계속 누적 커밋(분기 비교 등 장기 추이용, 원본 커밋 메시지는 저장 안 함).
 실행 트리거는 텔레그램 `/push-monitor`(즉시 1회) 또는 `/push-monitor --auto`로
 켠 상태에서 Cloud Scheduler가 매일 KST 06:00에 호출(`control.json`
@@ -150,7 +150,7 @@ def build_dashboard_data(records: list[dict], *, now_kst: datetime, days: int) -
 
 
 # ── 장기 이력(수치 집계만 누적, 원본 커밋은 저장 안 함) ──────────────────────
-_HISTORY_PATH = "docs/push_monitor_history.json"
+_HISTORY_PATH = "monitoring/push_monitor_history.json"
 
 
 def merge_history(history: dict, days_list: list[dict]) -> dict:
@@ -830,7 +830,7 @@ def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
     """data+main 브랜치 커밋을 조회해 대시보드를 렌더링, html 문자열을 반환.
 
     (v3.4) html은 GitHub에 커밋하지 않는다 — 호출자(텔레그램 명령/자동 tick)가
-    반환된 "html"을 DM으로 직접 전송한다. `docs/push_monitor_history.json`
+    반환된 "html"을 DM으로 직접 전송한다. `monitoring/push_monitor_history.json`
     (집계 수치만, 원본 커밋 메시지 아님)만 devpapers에 계속 누적 커밋한다.
 
     조회 기간은 `min_days` 고정이 아니라 `_backfill_days()`로 history의 마지막
