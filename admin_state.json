@@ -5,7 +5,15 @@
   "pending_member": null,
   "pending_notice": null,
   "pending_notice_edit": null,
-  "pending_op": null,
+  "pending_op": {
+    "at": "2026-09-14T06:40:58Z",
+    "cmd": "ingest",
+    "contents": "tweet",
+    "ctx": {
+      "unit": "yuno"
+    },
+    "step": "await_raw"
+  },
   "pending_undo": null,
   "suppress": [],
   "undo": {
