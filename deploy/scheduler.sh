@@ -41,7 +41,7 @@ upsert_job mewtype-baseline "0 6 * * *" "Asia/Tokyo" '{"mode":"baseline"}'
 echo "=== Light 안전망 (3시간 간격 UTC) ==="
 upsert_job mewtype-light "0 */3 * * *" "Etc/UTC" '{"mode":"light"}'
 
-echo "=== Push Monitor (1시간 간격 UTC) — docs/PUSH_MONITOR.html 갱신, devpapers 브랜치 ==="
-upsert_job mewtype-push-monitor "0 * * * *" "Etc/UTC" '{}' "/push-monitor"
+echo "=== Push Monitor (1일 1회 KST 06:00) — control.json push_monitor_auto 켜져 있을 때만 실제 tick+DM ==="
+upsert_job mewtype-push-monitor "0 6 * * *" "Asia/Seoul" '{}' "/push-monitor"
 
 echo "=== 스케줄러 설정 완료 ==="

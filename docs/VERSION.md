@@ -2,6 +2,17 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.4.0** (변경) — Push Monitor 범례 색을 작업 성격별로 재배정(자동화=녹색계 /
+  수동제어=노란계 / 코드 push=회색 / 기타·예외=빨강, 배경 대비 시인성 확보) +
+  실행 방식 전면 개편: html을 더 이상 GitHub에 커밋하지 않고 텔레그램 DM으로만
+  전송(`Telegram.send_document()` 신설). 매시간 자동 커밋(Cloud Scheduler
+  `mewtype-push-monitor`)을 없애고, 텔레그램 `/push-monitor` 명령으로 대체 —
+  인자 없이 치면 즉시 1회 tick+DM, `--auto`면 매일 KST 06:00 자동 tick+DM 켬,
+  `--off`면 끔(`control.json` `push_monitor_auto` 플래그, Cloud Scheduler는
+  1일 1회 가볍게 깨워 플래그만 확인). `monitoring/push_monitor_history.json`(집계
+  수치만) 은 계속 devpapers에 누적 커밋하되, 조회 기간을 고정값 대신
+  `_backfill_days()`로 history 마지막 기록일 대비 자동 확장 — `--auto`를
+  며칠~몇 달 꺼뒀다 켜도 그 사이 날짜가 누락되지 않는다.
 - **v3.3.0** (기능 추가) — Push Monitor 대시보드(`docs/PUSH_MONITOR.html`, `devpapers`
   브랜치) + 문서 브랜치 분리. 새 모듈 `src/backend/push_monitor.py` — GitHub REST API
   로 `data`/`main` 브랜치 최근 7일 커밋 이력을 읽어 카테고리별(preview/tweet/notice/
