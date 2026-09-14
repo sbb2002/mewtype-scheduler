@@ -63,7 +63,7 @@
       ]
     }
   },
-  "generated_at": "2026-09-13T23:10:10Z",
+  "generated_at": "2026-09-14T10:00:14Z",
   "items": [
     {
       "actual_start": null,
@@ -79,7 +79,7 @@
       "info_at": "2026-09-13T15:42:11Z",
       "info_source": "personal",
       "kind": "unknown",
-      "last_updated": "2026-09-13T23:10:10Z",
+      "last_updated": "2026-09-14T10:00:14Z",
       "membership": false,
       "scheduled_start": "2026-09-14T14:30:00Z",
       "source": "personal",
