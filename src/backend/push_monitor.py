@@ -224,7 +224,7 @@ _TEMPLATE = r"""<!doctype html>
   .detail-sub{color:var(--muted);font-size:.8rem;margin:0 0 14px}
   .chart-wrap{position:relative;overflow-x:auto}
   svg{display:block}
-  #chart{width:100%;height:auto}
+  #chart{width:100%;min-width:760px;height:auto}
   .bar{cursor:pointer;transition:height .3s ease,y .3s ease,width .3s ease}
   .xaxis text{fill:var(--muted);font-size:11px}
   .tooltip{position:fixed;background:#1c1e24;border:1px solid var(--line);border-radius:8px;
@@ -303,7 +303,7 @@ _TEMPLATE = r"""<!doctype html>
 <div class="stats-row" id="statsRow">
   <div class="stat-tile"><b id="statToday">—</b><span>오늘 총 커밋</span></div>
   <div class="stat-tile"><b id="statTopCat">—</b><span id="statTopCatSub">최다 카테고리</span></div>
-  <div class="stat-tile" id="statLimitTile"><b id="statLimit">—</b><span>마지막 한도초과 이후</span></div>
+  <div class="stat-tile" id="statLimitTile"><b id="statLimit">—</b><span>이번달 한도초과 일수</span></div>
 </div>
 
 <div class="layout">
@@ -345,7 +345,7 @@ _TEMPLATE = r"""<!doctype html>
   </div>
   <div class="section-h">카테고리별 건수</div>
   <table class="summary-table" id="catSummaryTable"></table>
-  <div class="section-h">일일 push 100건 초과일</div>
+  <div class="section-h">Vercel 배포 한도(100/일) 초과일</div>
   <table class="summary-table" id="overLimitTable"></table>
 </div>
 
@@ -418,18 +418,13 @@ DATA.days.forEach(d => { byDateRec[d.date] = d; });
     document.getElementById("statTopCatSub").textContent = `최다 카테고리 · ${todayDay.by_cat[top.key]}건`;
   }
 
-  let lastOver = null;
-  for (let i = DATA.days.length - 1; i >= 0; i--) {
-    if (DATA.days[i].total > VERCEL_LIMIT) { lastOver = DATA.days[i]; break; }
-  }
+  const thisMonthPrefix = todayDay.date.slice(0, 7); // "YYYY-MM"
+  const overThisMonth = DATA.days.filter(d =>
+    d.date.startsWith(thisMonthPrefix) && (d.by_cat.code_main || 0) > VERCEL_LIMIT
+  ).length;
   const limitTile = document.getElementById("statLimitTile");
-  if (!lastOver) {
-    document.getElementById("statLimit").textContent = "없음";
-  } else {
-    const diffDays = Math.round((new Date(todayDay.date) - new Date(lastOver.date)) / 86400000);
-    document.getElementById("statLimit").textContent = diffDays + "일";
-    if (diffDays <= 1) limitTile.classList.add("warn");
-  }
+  document.getElementById("statLimit").textContent = overThisMonth + "일";
+  if (overThisMonth > 0) limitTile.classList.add("warn");
 })();
 
 const yearGrid = document.getElementById("yearGrid");
@@ -442,7 +437,11 @@ function heatColor(dateStr) {
   if (total === 0) return "#1c1e24";
   const t = Math.min(1, total / maxTotal);
   const light = 18 + t * 42; // 18% ~ 60%
-  if (total > VERCEL_LIMIT) return `hsl(355, 70%, ${light}%)`; // 하루 push 100건 초과 → 빨간 계통
+  // vercel.json 이 data/devpapers 브랜치를 배포 트리거에서 뺐으므로, 실제 Vercel
+  // 배포 시도는 code_main(main 브랜치 push)만 카운트된다. total 은 봇 데이터 커밋까지
+  // 섞여 있어 한도와 무관 — code_main 기준으로만 초과 판정해야 한다(실측: 2026-09-08~13
+  // total 100+인 날에도 code_main 은 최대 30, 실제로 배포는 멀쩡히 됐음).
+  if ((rec.by_cat.code_main || 0) > VERCEL_LIMIT) return `hsl(355, 70%, ${light}%)`; // 배포 시도 100건 초과 → 빨간 계통
   return `hsl(175, 55%, ${light}%)`; // 단일 색상(teal) 명도만 증가 — 값이 클수록 밝게, GitHub 잔디 스타일.
 }
 let selectedDate = DATA.days.length ? DATA.days[DATA.days.length - 1].date : null;
@@ -882,7 +881,8 @@ function renderSummaryTables() {
     const rec = byDateRec[ds];
     if (!rec) return;
     DATA.categories.forEach(c => { sums[c.key] += rec.by_cat[c.key] || 0; });
-    if (rec.total > VERCEL_LIMIT) overLimit.push({ date: ds, count: rec.total });
+    const deployCount = rec.by_cat.code_main || 0;
+    if (deployCount > VERCEL_LIMIT) overLimit.push({ date: ds, count: deployCount });
   });
   const total = Object.values(sums).reduce((a, b) => a + b, 0);
 
