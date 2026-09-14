@@ -63,10 +63,51 @@ async function poll() {
   }
 }
 
+/** 하단 디스클레이머 — 고정 문구 옆의 나머지 항목을 4초 간격으로 1개씩 순환 표시.
+ * 한 줄 폭을 넘치면(2줄로 꺾이는 대신) notice 티커와 같은 방식의 무한 marquee 로.
+ * 정적 콘텐츠(폴링 대상 아님) — 한 번만 초기화. */
+function initDisclaimerRotator() {
+  const cur = document.querySelector(".fdisc__cur");
+  const items = document.querySelectorAll(".fdisc__list li");
+  if (!cur || !items.length) return;
+  let inner = cur.querySelector(".fdisc__cur-in");
+  if (!inner) {
+    inner = document.createElement("span");
+    inner.className = "fdisc__cur-in";
+    cur.appendChild(inner);
+  }
+  let i = 0;
+  const show = () => {
+    const text = "· " + items[i].textContent;
+    i = (i + 1) % items.length;
+    cur.classList.remove("is-marquee");
+    inner.style.animation = "none";
+    inner.textContent = "";
+    const a = document.createElement("span");
+    a.className = "seg";
+    a.textContent = text;
+    inner.appendChild(a);
+    // 한 프레임 뒤 측정 — 애니메이션 none 해제도 여기서 (레이아웃 확정 후).
+    requestAnimationFrame(() => {
+      inner.style.animation = "";
+      if (inner.scrollWidth > cur.clientWidth + 4) {
+        const b = a.cloneNode(true);
+        b.setAttribute("aria-hidden", "true");
+        inner.appendChild(b);
+        inner.style.setProperty("--dur", Math.max(9, text.length * 0.42).toFixed(1) + "s");
+        cur.classList.add("is-marquee");
+      }
+    });
+  };
+  show();
+  setInterval(show, 4000);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   poll();
   pollNotices();
   pollTweets();
+  initDisclaimerRotator();
 
   setInterval(poll, POLL_MS);
   setInterval(pollNotices, POLL_MS);

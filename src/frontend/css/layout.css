@@ -289,7 +289,8 @@ body {
 }
 
 #foot-updated {
-  flex: 1;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 #foot-status {
@@ -306,6 +307,110 @@ body {
   flex: none;
   text-align: right;
   white-space: nowrap;
+}
+
+/* 하단 디스클레이머 — 기본 문구(비공식 팬메이드)는 항상 노출, 나머지 4건은
+   notice 티커처럼 1개씩 순환 표시하다가 호버/포커스 시 전체가 펼쳐진다. */
+.fdisc {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  outline: none;
+  cursor: default;
+}
+.fdisc__base {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.fdisc__short { display: none; white-space: nowrap; }
+.fdisc__cur {
+  overflow: hidden;
+  display: block;
+  opacity: 0.75;
+  min-width: 30px;
+  flex: 1 1 auto;
+  transition: opacity 0.15s;
+}
+.fdisc__cur:empty { display: none; }
+.fdisc__cur-in {
+  display: inline-flex;
+  white-space: nowrap;
+}
+/* 안 넘칠 땐 그냥 한 줄 — 넘칠 때만(.is-marquee) 세그먼트 2개를 이어붙여 무한 스크롤 */
+.fdisc__cur.is-marquee .fdisc__cur-in { animation: fdisc-mq var(--dur, 14s) linear infinite; }
+.fdisc__cur.is-marquee .fdisc__cur-in .seg { padding-right: 3rem; }
+.fdisc:hover .fdisc__cur.is-marquee .fdisc__cur-in,
+.fdisc:focus .fdisc__cur.is-marquee .fdisc__cur-in,
+.fdisc:focus-within .fdisc__cur.is-marquee .fdisc__cur-in { animation-play-state: paused; }
+@keyframes fdisc-mq { to { transform: translateX(-50%); } }
+.fdisc__list {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin: 0 0 0.6rem;
+  padding: 0.65rem 0.85rem;
+  list-style: none;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  min-width: 320px;
+  width: max-content;
+  max-width: min(720px, calc(100vw - 2 * var(--page-pad)));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  z-index: 30;
+}
+.fdisc__list li {
+  padding: 0.3rem 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+.fdisc__list li + li { border-top: 1px solid var(--color-border); }
+.fdisc:hover .fdisc__list,
+.fdisc:focus .fdisc__list,
+.fdisc:focus-within .fdisc__list {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.fdisc:hover .fdisc__cur,
+.fdisc:focus .fdisc__cur,
+.fdisc:focus-within .fdisc__cur {
+  opacity: 0.25;   /* 펼쳐지면 순환 문구는 흐리게 — 시선이 목록 쪽으로 */
+}
+
+@media (max-width: 767px) {
+  /* 좁은 화면 — 순환 문구는 숨기고 기본 문구도 짧은 버전으로 (탭하면 목록은 그대로 펼쳐짐) */
+  .fdisc__cur { display: none; }
+  .fdisc__base { display: none; }
+  .fdisc__short { display: inline; }
+  /* 트리거가 좁아 자기 위치 기준 앵커로는 화면 밖으로 튀어나가기 쉬워 — 화면 중앙
+     고정폭으로 띄운다(트리거 위치 무관). */
+  .fdisc__list {
+    position: fixed;
+    left: 50%;
+    right: auto;
+    bottom: calc(var(--m-foot) + 8px);
+    margin: 0;
+    transform: translateX(-50%) translateY(4px);
+    width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+  }
+  .fdisc:hover .fdisc__list,
+  .fdisc:focus .fdisc__list,
+  .fdisc:focus-within .fdisc__list {
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 #pager-dots[hidden] { display: none; }
