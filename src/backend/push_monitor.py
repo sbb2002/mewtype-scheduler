@@ -212,7 +212,7 @@ _TEMPLATE = r"""<!doctype html>
   .year-btn:hover{border-color:var(--accent)}
   .year-btn:active{transform:scale(.9)}
   .today-btn{width:auto;padding:0 10px}
-  .year-grid{display:flex;flex-direction:column;gap:3px}
+  .year-grid{display:flex;flex-direction:column;gap:3px;flex:none}
   .month-row{display:flex;align-items:center;gap:8px}
   .month-row .m-label{width:30px;flex:none;text-align:right;color:var(--muted);font-size:.72rem}
   .month-row .days{display:flex;gap:3px;flex-wrap:wrap}
@@ -244,10 +244,15 @@ _TEMPLATE = r"""<!doctype html>
   .events-table col.c-target{width:auto}
   .empty{color:var(--muted);text-align:center;padding:30px 0}
   footer{color:var(--muted);font-size:.75rem;margin-top:30px;text-align:center}
-  .layout{display:grid;grid-template-columns:6fr 4fr;gap:20px;align-items:start}
+  /* 좌측(잔디+월별 막대)은 고정 폭 콘텐츠(잔디 624px)가 있어 가변폭으로 두고,
+     우측(도넛+표)은 내용물이 딱 도넛+좁은 표라 240~320px면 충분 — 6:4 비례로
+     나누면 우측이 남는 여백만 넓어지고 좌측 막대가 눌린다. 좌측 트랙은
+     minmax(0,1fr)로 최소폭을 0 취급해야 화면이 좁아져도 grid 트랙 자체가
+     넘치지 않고, 안쪽 .year-panel-body 의 overflow-x:auto 로만 흡수된다. */
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,320px);gap:20px;align-items:start}
   @media (max-width:900px){.layout{grid-template-columns:1fr}}
-  .year-panel-body{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap}
-  .month-chart-col{flex:1 1 200px;min-width:180px}
+  .year-panel-body{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;overflow-x:auto}
+  .month-chart-col{flex:1 1 200px;min-width:120px}
   .chart-mini-title{font-size:.82rem;margin:0 0 8px;color:var(--muted);font-weight:600}
   .events-collapse{overflow:hidden;max-height:0;transition:max-height .35s ease}
   .summary-legend{display:flex;flex-direction:column;gap:3px;font-size:.68rem;color:var(--muted);margin-top:8px}
@@ -448,8 +453,54 @@ let selectedDate = DATA.days.length ? DATA.days[DATA.days.length - 1].date : nul
 let currentYear = DATA.year;
 let currentMonth = Number(DATA.generated_at.slice(5, 7)); // 1~12, 초기값 = 오늘 달
 
-// 잔디 그리드는 한 달만 보여준다(◀ YYYY-MM ▶). 옆 월별 추이 차트·분기 비교·요약 표는
-// 계속 currentYear(연 단위)로 동작 — 달만 넘겨도 그대로, 연이 바뀔 때만 같이 갱신.
+// PC(넓은 화면)에서는 연간(1~12월) 잔디를, 모바일(좁은 화면)에서는 한 달만
+// (◀ YYYY-MM ▶) 보여준다 — CSS 모바일 브레이크포인트(640px)와 동일한 기준.
+const MOBILE_MQ = window.matchMedia("(max-width:640px)");
+function isMobileView() { return MOBILE_MQ.matches; }
+
+function makeCell(dateStr) {
+  const total = dayTotals[dateStr] || 0;
+  const cell = document.createElement("div");
+  cell.className = "cell" + (dateStr === selectedDate ? " sel" : "");
+  cell.style.background = heatColor(dateStr);
+  cell.addEventListener("mousemove", (ev) => showTipHTML(ev,
+    `<div class="t-time">${dateStr}</div><div class="t-row"><span>커밋</span><b>${total}건</b></div>`));
+  cell.addEventListener("mouseleave", hideTip);
+  cell.addEventListener("click", () => {
+    selectedDate = dateStr;
+    buildGrid();
+    renderDetail();
+    updateRightPanels();
+  });
+  return cell;
+}
+
+// PC: 1년치(1~12월) 잔디 — 오른쪽 월별 추이 막대와 행(월) 피치를 맞춰야 하므로
+// 반드시 12개의 .month-row 를 렌더링한다(renderSummaryChart 가 이 높이를 12로 나눠 씀).
+function buildYearGrid() {
+  yearGrid.innerHTML = "";
+  document.getElementById("ymBtn").textContent = `${currentYear}년`;
+  const year = currentYear;
+  for (let m = 1; m <= 12; m++) {
+    const daysInMonth = new Date(year, m, 0).getDate();
+    const row = document.createElement("div");
+    row.className = "month-row";
+    const label = document.createElement("span");
+    label.className = "m-label";
+    label.textContent = m + "월";
+    row.appendChild(label);
+    const daysWrap = document.createElement("div");
+    daysWrap.className = "days";
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      daysWrap.appendChild(makeCell(dateStr));
+    }
+    row.appendChild(daysWrap);
+    yearGrid.appendChild(row);
+  }
+}
+
+// 모바일: 한 달만 보여준다(◀ YYYY-MM ▶).
 function buildMonthGrid() {
   yearGrid.innerHTML = "";
   document.getElementById("ymBtn").textContent = `${currentYear}-${String(currentMonth).padStart(2, "0")}`;
@@ -460,41 +511,42 @@ function buildMonthGrid() {
   daysWrap.className = "days";
   for (let day = 1; day <= daysInMonth; day++) {
     const dateStr = `${currentYear}-${String(currentMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const total = dayTotals[dateStr] || 0;
-    const cell = document.createElement("div");
-    cell.className = "cell" + (dateStr === selectedDate ? " sel" : "");
-    cell.style.background = heatColor(dateStr);
-    cell.addEventListener("mousemove", (ev) => showTipHTML(ev,
-      `<div class="t-time">${dateStr}</div><div class="t-row"><span>커밋</span><b>${total}건</b></div>`));
-    cell.addEventListener("mouseleave", hideTip);
-    cell.addEventListener("click", () => {
-      selectedDate = dateStr;
-      buildMonthGrid();
-      renderDetail();
-      updateRightPanels();
-    });
-    daysWrap.appendChild(cell);
+    daysWrap.appendChild(makeCell(dateStr));
   }
   row.appendChild(daysWrap);
   yearGrid.appendChild(row);
+}
+
+function buildGrid() {
+  if (isMobileView()) buildMonthGrid();
+  else buildYearGrid();
 }
 
 function goToMonth(y, m) {
   while (m < 1) { m += 12; y -= 1; }
   while (m > 12) { m -= 12; y += 1; }
   currentYear = y; currentMonth = m;
-  buildMonthGrid();
+  buildGrid();
   updateRightPanels();
 }
-document.getElementById("monthPrev").addEventListener("click", () => goToMonth(currentYear, currentMonth - 1));
-document.getElementById("monthNext").addEventListener("click", () => goToMonth(currentYear, currentMonth + 1));
+function goToYear(y) {
+  currentYear = y;
+  buildGrid();
+  updateRightPanels();
+}
+document.getElementById("monthPrev").addEventListener("click", () =>
+  isMobileView() ? goToMonth(currentYear, currentMonth - 1) : goToYear(currentYear - 1));
+document.getElementById("monthNext").addEventListener("click", () =>
+  isMobileView() ? goToMonth(currentYear, currentMonth + 1) : goToYear(currentYear + 1));
 document.getElementById("todayBtn").addEventListener("click", () => {
   const todayStr = DATA.generated_at.slice(0, 10);
   selectedDate = todayStr;
   goToMonth(Number(todayStr.slice(0, 4)), Number(todayStr.slice(5, 7)));
   renderDetail();
 });
-buildMonthGrid();
+// 브라우저 창 크기가 모바일 브레이크포인트를 넘나들 때(반응형 리사이즈) 즉시 전환.
+MOBILE_MQ.addEventListener("change", () => { buildGrid(); updateRightPanels(); });
+buildGrid();
 
 // ── 년·월 다이얼 팝업 (스크롤 스냅 기반 — 네이티브 휠 피커 느낌, 별도 라이브러리 없음) ──
 (function setupYmPicker() {
@@ -734,7 +786,24 @@ function quarterMonthlyAvg(year, q) {
 }
 
 function updateRightPanels() {
-  renderSummaryChart();
+  // 월별 추이 막대는 잔디의 1~12월 행과 y축을 맞춰 그리는 차트라 연간 잔디
+  // (PC)에서만 의미가 있다 — 모바일(한 달 잔디)에서는 맞출 행이 없으므로 제목과
+  // 함께 숨긴다(제목만 남으면 아래 아무것도 없는 채로 붕 뜬다).
+  const chartCol = document.querySelector(".month-chart-col");
+  const summaryTitle = document.getElementById("summaryTitle");
+  const panelBody = document.querySelector(".year-panel-body");
+  if (isMobileView()) {
+    chartCol.hidden = true;
+    summaryTitle.hidden = true;
+    panelBody.style.flexWrap = "wrap";
+  } else {
+    chartCol.hidden = false;
+    summaryTitle.hidden = false;
+    // 컨테이너 폭이 부족해도 옆 칼럼이 아래로 줄바꿈되지 않게 강제 — 잔디(12행)와
+    // 막대의 y축 정렬은 같은 줄(row)에 나란히 있을 때만 성립한다.
+    panelBody.style.flexWrap = "nowrap";
+    renderSummaryChart();
+  }
   renderSummaryTables();
 }
 
