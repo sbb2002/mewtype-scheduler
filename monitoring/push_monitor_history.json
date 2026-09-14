@@ -66,13 +66,13 @@
     "xrelay": 2
   },
   "2026-09-14": {
-    "code_main": 8,
+    "code_main": 10,
     "manual": 0,
     "notice": 0,
-    "other_data": 0,
+    "other_data": 5,
     "personal_schedule": 1,
     "preview": 11,
-    "tweet": 3,
+    "tweet": 6,
     "undo_snapshot": 1,
     "xrelay": 0
   }
