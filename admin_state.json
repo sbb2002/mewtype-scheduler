@@ -1,7 +1,9 @@
 {
   "edit_lock": null,
   "pending_del": null,
-  "pending_ingest": null,
+  "pending_ingest": {
+    "at": "2026-09-14T06:40:02Z"
+  },
   "pending_member": null,
   "pending_notice": null,
   "pending_notice_edit": null,
