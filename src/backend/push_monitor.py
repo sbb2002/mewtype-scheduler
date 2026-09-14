@@ -1,4 +1,4 @@
-"""push 모니터 대시보드 — data/main 브랜치 커밋(=Vercel 배포 시도) 활동 시각화.
+"""push 모니터 대시보드 — data/main/devpapers 브랜치 커밋(=Vercel 배포 시도) 활동 시각화.
 
 배경: 2026-09-13 Vercel Hobby 플랜 "하루 100회 배포" 한도 초과 사고(VERSION.md
 v3.2.2 참고) — `vercel.json` 위치 버그로 `data` 브랜치의 봇 커밋이 전부 배포
@@ -53,13 +53,16 @@ CATEGORY_LABELS = {
     "manual": "수동 패치",
     "other_data": "기타(data)",
     "code_main": "코드(main)",
+    "code_devpapers": "코드(devpapers)",
+    "code_other": "코드(기타 브랜치)",
 }
 CATEGORY_ORDER = [
     "preview", "tweet", "notice", "undo_snapshot", "personal_schedule",
-    "xrelay", "manual", "other_data", "code_main",
+    "xrelay", "manual", "other_data", "code_main", "code_devpapers", "code_other",
 ]
 CATEGORY_COLORS = {
-    # 자동화(녹색계) / 수동제어(노란계) / 코드 push(회색) / 기타·예외(빨강)
+    # 자동화(녹색계) / 수동제어(노란계) / 코드 push(회색계, main→devpapers→기타 순으로
+    # 어둡게) / 기타·예외(빨강)
     # notice는 원래 #2E9E5C였으나 tweet(#43A047)과 육안 구분이 거의 안 돼(델타E 2.8)
     # 청록 쪽으로 이동(#00806B) — 델타E 16.5로 개선, 다른 자동화색과도 더 멀어짐
     "preview": "#7CB342",
@@ -70,14 +73,24 @@ CATEGORY_COLORS = {
     "undo_snapshot": "#FDD835",
     "manual": "#FFB300",
     "code_main": "#AEB4BB",
+    "code_devpapers": "#8B92A8",
+    "code_other": "#6B7280",
     "other_data": "#E5484D",
 }
 
 
 def categorize(branch: str, message: str) -> str:
-    """(branch, 커밋 메시지 첫 줄) → 카테고리 키."""
+    """(branch, 커밋 메시지 첫 줄) → 카테고리 키.
+
+    data 브랜치가 아니면 브랜치 이름 자체로 구분(main/devpapers/그 외) — 어느
+    브랜치가 Vercel 배포 시도(=100/day 한도 소진)를 만들고 있는지 한눈에 보이게. (v3.4.8)
+    """
     if branch != "data":
-        return "code_main"
+        if branch == "main":
+            return "code_main"
+        if branch == "devpapers":
+            return "code_devpapers"
+        return "code_other"
     if any(k in message for k in _MANUAL_MARKERS):
         return "manual"
     for cat, prefix in _DATA_PREFIXES:
@@ -1093,7 +1106,7 @@ def _backfill_days(history: dict, now_kst: datetime, min_days: int) -> int:
 
 
 def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
-    """data+main 브랜치 커밋을 조회해 대시보드를 렌더링, html 문자열을 반환.
+    """data+main+devpapers 브랜치 커밋을 조회해 대시보드를 렌더링, html 문자열을 반환.
 
     (v3.4) html은 GitHub에 커밋하지 않는다 — 호출자(텔레그램 명령/자동 tick)가
     반환된 "html"을 DM으로 직접 전송한다. `monitoring/push_monitor_history.json`
@@ -1115,7 +1128,7 @@ def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
 
     since = (now_kst - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     records: list[dict] = []
-    for branch in ("data", "main"):
+    for branch in ("data", "main", "devpapers"):
         try:
             records.extend(fetch_commits(github_token, github_repo, branch, since, session=session))
         except requests.RequestException as e:
@@ -1167,7 +1180,9 @@ if __name__ == "__main__":
     assert categorize("data", "data: 기존 preview 4건 제목 번역(title_ko) 소급 반영") == "manual"
     assert categorize("data", "data: 뭔가 새로운 패턴") == "other_data"
     assert categorize("main", "fix(v3.2.2): ...") == "code_main"
-    print("[OK] categorize: 9개 카테고리 분류")
+    assert categorize("devpapers", "docs: 문서 정리") == "code_devpapers"
+    assert categorize("feat/x", "wip") == "code_other"
+    print("[OK] categorize: 11개 카테고리 분류 (main/devpapers/기타 브랜치 구분 포함)")
 
     # ── build_dashboard_data ──
     now = datetime(2026, 9, 14, 10, 0, 0, tzinfo=KST)
