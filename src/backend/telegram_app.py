@@ -488,10 +488,11 @@ def _healthchecks_uuid() -> str:
 
 
 def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
-    """/monitor [--auto|--off|YYYY-MM-DD] — Ops Monitor 대시보드(v3.5, 구 Push Monitor 대체).
+    """/monitor [--auto|--off|--full|YYYY-MM-DD] — Ops Monitor 대시보드(v3.5, 구 Push Monitor 대체).
 
-    인자 없음: 오늘자 리포트를 즉시 생성해 DM 전송.
+    인자 없음: 오늘자(06:00 KST~익일 06:00 KST) 리포트를 즉시 생성해 DM 전송.
     YYYY-MM-DD: 그 날짜의 리포트 생성(다른 날짜는 이 방식으로 요청).
+    --full: 이번 달 1일~오늘 전부를 담아 생성 — 리포트 안 "월간 추이" 그리드에서 날짜 전환 가능.
     --auto: Cloud Scheduler(KST 06:00) 자동 생성+DM 켬.
     --off: 자동 생성 끔 (수동 /monitor 는 계속 가능).
     """
@@ -517,15 +518,19 @@ def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
             _send_telegram(f"⚠️ 오류: /monitor {arg} 처리 실패\n{str(e)[:100]}")
         return
 
-    date_kst = arg.strip() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", arg.strip()) else None
-    if arg.strip() and date_kst is None:
-        _send_telegram("사용법: /monitor [--auto|--off|YYYY-MM-DD]")
+    full = arg.strip() == "--full"
+    date_kst = None if full else (arg.strip() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", arg.strip()) else None)
+    if arg.strip() and not full and date_kst is None:
+        _send_telegram("사용법: /monitor [--auto|--off|--full|YYYY-MM-DD]")
         return
 
     try:
-        _send_telegram("⏳ Monitor 리포트 생성 중...", silent=True)
+        _send_telegram(
+            "⏳ Monitor 리포트 생성 중..." + (" (이번 달 전체 — 시간이 더 걸릴 수 있습니다)" if full else ""),
+            silent=True,
+        )
         result = monitor_report.run(
-            gh, date_kst=date_kst,
+            gh, date_kst=date_kst, full=full,
             healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
             healthchecks_uuid=_healthchecks_uuid(),
             github_token_for_commits=gh.token,
@@ -534,7 +539,7 @@ def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
         ok = _send_telegram_document(
             "monitor.html",
             html.encode("utf-8"),
-            caption=f"📊 Monitor — {result['date']} · {result['events']}건",
+            caption=f"📊 Monitor — {result['date']} · {result['events']}건" + (" (이번 달 전체)" if full else ""),
         )
         if not ok:
             _send_telegram("⚠️ 생성은 성공했지만 DM 전송에 실패했습니다.")
@@ -3048,8 +3053,8 @@ if _FLASK_AVAILABLE:
                 help_text = (
                     "<b>📱 mewtype 텔레그램 봇 (v3)</b>\n\n"
                     "일반: /status /pause /resume /log [detail|normal|simple]\n"
-                    "/monitor [--auto|--off|YYYY-MM-DD] — 운영 모니터링 리포트 즉시 DM "
-                    "(--auto: 매일 KST 06:00 자동, --off: 자동 끔, 날짜: 그날 리포트)\n\n"
+                    "/monitor [--auto|--off|--full|YYYY-MM-DD] — 운영 모니터링 리포트 즉시 DM "
+                    "(--auto: 매일 KST 06:00 자동, --off: 자동 끔, --full: 이번 달 전체(월간 추이 그리드), 날짜: 그날 리포트)\n\n"
                     "<b>콘텐츠</b> (c = preview | notice | tweet, 생략 시 preview):\n"
                     "/list &lt;c&gt; [유닛] — 목록\n"
                     "/ingest &lt;c&gt; — 원문 이어 보내 반영 (tweet 은 유닛 지정)\n"

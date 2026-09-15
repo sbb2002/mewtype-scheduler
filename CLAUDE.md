@@ -116,25 +116,39 @@ src/
     #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)
                        #        (v3.3) read_text/write_text — HTML 등 비-JSON 파일용
-    push_monitor.py    # (v3.4) Push Monitor 대시보드 — data/main 브랜치 커밋 이력을 GitHub
-                       #        REST API 로 읽어 카테고리별 10분 단위 누적 막대 + 날짜 히트맵
-                       #        인터랙티브 HTML 생성. html은 GitHub에 커밋하지 않고 텔레그램
-                       #        DM으로만 전송(수동 /push-monitor 즉시 1회, 또는 --auto 켠
-                       #        상태에서 POST /push-monitor 가 매일 KST 06:00에 실행).
-                       #        devpapers 브랜치 monitoring/push_monitor_history.json 에는 집계
-                       #        수치만(원본 커밋 메시지 아님) 계속 누적 커밋. Vercel quota
-                       #        재소진 조기 감지용(v3.2.2 사고 참고)
+    push_monitor.py    # (v3.5, 구 v3.4 대시보드에서 축소) `_CODE_REPO`(main/devpapers 등
+                       #        코드 브랜치 고정 저장소) + fetch_commits/list_branches만
+                       #        남음 — monitor_report.py 의 Vercel push count 계산용.
+                       #        옛 대시보드(카테고리별 누적 막대+날짜 히트맵) 코드는
+                       #        git 이력(v3.4.14 이전)에만 남아있음.
+    monitor_log.py     # (v3.5) 모니터링 이벤트 로그 — tick/wake/preview 전이/notice/tweet/
+                       #        relay/운영자 `/pause`·`/resume` 마다 `monitoring/events-
+                       #        YYYY-MM-DD.jsonl`(data 저장소)에 한 줄 append. 공통 필드
+                       #        `ts/flow/result/who/detail` + 흐름별 추가 필드, `result`는
+                       #        `ok`/`degraded`/`err`(성공/실패로 미리 안 뭉침). tweet/relay는
+                       #        `via`(`ingest`|`ops`)로 자동/수동 구분. (v3.5.1) 하루 경계
+                       #        `DAY_START_HOUR=6`(KST 06:00~익일 06:00) — 자정 넘겨 방송하는
+                       #        멤버가 흔해서 00:00 경계 대신 씀. `bucket_date_kst()` 참고.
+    monitor_report.py  # (v3.5) `/monitor` — 위 이벤트 로그 + healthchecks.io(백엔드 상태) +
+                       #        push_monitor.fetch_commits(Vercel push 요약)을 모아 트리거→
+                       #        preview/릴레이/소식/개인트윗 Ops Timeline HTML 생성(html은
+                       #        커밋 안 하고 텔레그램 DM 으로만). (v3.5.1) `full=True`
+                       #        (`/monitor --full`)면 이번 달 1일~오늘 전부를 `REPORT.days`에
+                       #        담아 리포트 안 "월간 추이" 그리드(잔디)로 날짜 전환(재요청 없이
+                       #        클라이언트 쪽 전환) 가능. 기본(`/monitor`, `--auto`)은 하루치만.
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
     config.py          # 환경변수 → Config
     notify.py          # (v2.1) Telegram 알림 + diff_events(A~F). (v2.8.2) allows(level,kind) —
                        #        simple=upcoming·live / normal=+scheduled·notice·tweet / detail=+ingest·fallback·요약
-    control.py         # (v2.1) control.json 스키마 (paused). (v3.4) push_monitor_auto 추가
+    control.py         # (v2.1) control.json 스키마 (paused). (v3.5, 구 push_monitor_auto)
+                       #        monitor_auto 추가
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 업스트림 시스템(운영자 폰 Automate)이 X 알림 텍스트를 중계
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
-                       #        (v3.4) /push-monitor [--auto|--off] — Push Monitor 즉시 DM /
-                       #        자동 실행 on-off
+                       #        (v3.5, 구 /push-monitor) /monitor [--auto|--off|--full|
+                       #        YYYY-MM-DD] — Ops Monitor 리포트 즉시 DM / 자동 실행 on-off /
+                       #        이번 달 전체(월간 그리드) / 특정 날짜
     admin.py           # (v2.5) admin_state.json 스키마 (pending_del/ingest/notice/undo 슬롯, undo.path) — 순수
                        #        (v2.7.x) pending_notice_edit 슬롯 — /notice-edit 마법사(title→date→url 단계·new 누적)
                        #        (v2.8.1+) pending_member 슬롯 — 수동 /ingest 개인 예고 채널 미상 시 유닛 되묻기(raw 저장)
@@ -203,13 +217,15 @@ python -m src.backend.xtweet         # (v2.8) route_by_title + parse + merge_twe
                                     #   (v2.8.1) parse_schedule + merge_personal_schedule + apply_overrides
 python -m src.backend.telegram_app   # /list /del /undo /notice /notice-edit 흐름 포함 (Flask 설치 시 라우트까지)
 python -m src.backend.gh_store       # 직렬화 규칙 + read_text/write_text (실제 호출은 GH_TOKEN_TEST 있을 때만)
-python -m src.backend.push_monitor   # (v3.4) 카테고리 분류·집계·HTML 렌더·자동 백필 창 계산 (실호출은 GITHUB_FINEGRAINED_PAT 있을 때 --live)
+python -m src.backend.push_monitor   # (v3.5, 축소됨) fetch_commits/list_branches 필드 매핑만 (mock)
 python -m src.backend.vision         # (v3.2) 비전 OCR (실호출은 GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때 --live)
+python -m src.backend.monitor_log    # (v3.5) event_path(06:00 KST 경계)·log_event append/충돌 재시도 (mock)
+python -m src.backend.monitor_report # (v3.5) parse_events/그룹핑/preview 세그먼트·render_html·(v3.5.1) full=True 월간 조회 (mock)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY 포함)
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
-bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-push-monitor 스케줄러 잡 (URL 불변이면 생략 가능)
+bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor 스케줄러 잡 (URL 불변이면 생략 가능)
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스
 # 전체 전환(v→v) 절차·롤백: docs/plan/v3_golive.md
 

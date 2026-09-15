@@ -1,11 +1,15 @@
-"""`/monitor` — 실제 모니터링 이벤트 로그(monitor_log.py가 append한 JSONL)를 하루치 모아
-Ops Timeline 대시보드 html로 렌더링. push_monitor.py(git 커밋 기반 Vercel 한도 감시)를
-대체한다(v3.5, 2026-09-16 세션에서 확정한 1~3단계 스키마 그대로 소비).
+"""`/monitor` — 실제 모니터링 이벤트 로그(monitor_log.py가 append한 JSONL)를 하루치(또는
+`--full`로 이번 달 전체) 모아 Ops Timeline 대시보드 html로 렌더링. push_monitor.py(git
+커밋 기반 Vercel 한도 감시)를 대체한다(v3.5, 2026-09-16 세션에서 확정한 1~3단계 스키마
+그대로 소비). 하루 경계는 KST 00:00 이 아니라 **06:00~익일 06:00**(v3.5.1) — 자정 넘겨
+방송하는 멤버가 흔해서.
+
+여러 날짜 브라우징(잔디 클릭, v3.5.1)은 `full=True`(`/monitor --full`)일 때만 — 이번 달
+1일~오늘 전부를 한 리포트에 담아 클라이언트 쪽 전환만으로 날짜를 바꾼다(재요청 없음).
+인자 없는 `/monitor`·`--auto` 자동 실행은 계속 하루치만(가벼움 유지).
 
 이 리포트는 실데이터만 다루므로, 같은 세션에서 만든 Artifact 목업에 있던 아래 기능은
 뺐다 — 전부 "재현 근거 데이터가 없어서" 뺀 것이지 귀찮아서가 아니다:
-  - 여러 날짜 브라우징(잔디 클릭) — 하루치 이벤트만 담는다. 다른 날짜는
-    `/monitor YYYY-MM-DD`로 그날짜를 다시 요청.
   - 트리거→결과 인과관계 점선 — "이 tick이 이 전이를 일으켰다"를 실제로 연결할
     근거가 로그에 없다(추론하면 틀릴 수 있음).
   - 트윗 말풍선/영상 썸네일 미리보기 — 로그에 원문 텍스트·썸네일 URL을 안 남겼다
@@ -21,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from .monitor_log import DAY_START_HOUR, bucket_date_kst
+
 logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
@@ -35,7 +41,7 @@ def _kst_hm(iso: str) -> str:
 
 def _add_minutes(hm: str, minutes: int) -> str:
     h, m = map(int, hm.split(":"))
-    total = min(h * 60 + m + minutes, 24 * 60)
+    total = (h * 60 + m + minutes) % (24 * 60)
     return f"{total // 60:02d}:{total % 60:02d}"
 
 
@@ -110,7 +116,9 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
         segs: list[dict] = []
         title = None
         if evs and evs[0].get("from_state"):
-            segs.append({"s": evs[0]["from_state"], "from": "00:00", "to": _kst_hm(evs[0]["ts"])})
+            # "06:00" = 이 리포트가 다루는 하루의 시작(DAY_START_HOUR) — 그 전이가 관측되기
+            # 전부터 이미 이 상태였다고 가정.
+            segs.append({"s": evs[0]["from_state"], "from": "06:00", "to": _kst_hm(evs[0]["ts"])})
         for i, e in enumerate(evs):
             to_state = e.get("to_state")
             title = e.get("title") or title
@@ -120,7 +128,9 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             elif to_state == "none":
                 seg_to = _add_minutes(seg_from, 3)  # 사라짐은 짧게 표시(실제로 관찰 구간이 없으므로)
             else:
-                seg_to = now_hm or "24:00"
+                # "30:00" = 이 하루의 끝(다음날 06:00) — 프론트 minutesOf()가 이 가상 시각을
+                # 앵커 변환 없이 그대로 받아들여 차트 맨 끝에 고정한다.
+                seg_to = now_hm or "30:00"
             seg = {"s": to_state, "from": seg_from, "to": seg_to}
             if e.get("result") and e["result"] != "ok":
                 seg["q"] = e["result"]
@@ -130,13 +140,18 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
     return out
 
 
+def _day_bounds(date_kst: str) -> tuple[datetime, datetime]:
+    """date_kst(YYYY-MM-DD) → 이 리포트가 다루는 "하루"의 [시작,끝) — 06:00 KST~익일 06:00 KST."""
+    start = datetime.strptime(date_kst, "%Y-%m-%d").replace(tzinfo=KST) + timedelta(hours=DAY_START_HOUR)
+    return start, start + timedelta(days=1)
+
+
 def _fetch_health_down_ranges(api_key: str, uuid: str, date_kst: str) -> list[dict]:
-    """healthchecks.io flips(up/down 이력)에서 이 날짜(KST)의 다운 구간만 HH:MM 범위로 변환.
-    키/uuid 없거나 조회 실패하면 빈 리스트(=하루 종일 정상으로 렌더) — 조용히 성능저하."""
+    """healthchecks.io flips(up/down 이력)에서 이 날짜(06:00 KST~익일 06:00 KST)의 다운 구간만
+    HH:MM 범위로 변환. 키/uuid 없거나 조회 실패하면 빈 리스트(=하루 종일 정상으로 렌더) — 조용히 성능저하."""
     if not api_key or not uuid:
         return []
-    day_start = datetime.strptime(date_kst, "%Y-%m-%d").replace(tzinfo=KST)
-    day_end = day_start + timedelta(days=1)
+    day_start, day_end = _day_bounds(date_kst)
     try:
         resp = requests.get(
             f"https://healthchecks.io/api/v3/checks/{uuid}/flips/",
@@ -164,18 +179,18 @@ def _fetch_health_down_ranges(api_key: str, uuid: str, date_kst: str) -> list[di
             ranges.append({"from": down_since, "to": hm})
             down_since = None
     if down_since is not None:
-        ranges.append({"from": down_since, "to": "24:00"})
+        ranges.append({"from": down_since, "to": "30:00"})  # 프론트 anchor 기준 "하루의 끝"
     return ranges
 
 
 def _vercel_push_count(github_token: str, date_kst: str) -> int:
-    """그날 main 브랜치 push 횟수 — push_monitor.py의 fetch_commits(이미 검증된 코드) 재사용."""
+    """그날(06:00 KST~익일 06:00 KST) main 브랜치 push 횟수 — push_monitor.py의
+    fetch_commits(이미 검증된 코드) 재사용."""
     if not github_token:
         return 0
     from .push_monitor import _CODE_REPO, fetch_commits
 
-    day_start = datetime.strptime(date_kst, "%Y-%m-%d").replace(tzinfo=KST)
-    day_end = day_start + timedelta(days=1)
+    day_start, day_end = _day_bounds(date_kst)
     since = day_start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         commits = fetch_commits(github_token, _CODE_REPO, "main", since)
@@ -193,23 +208,26 @@ def _vercel_push_count(github_token: str, date_kst: str) -> int:
     return cnt
 
 
-def build_report(
-    gh, *, date_kst: str | None = None,
-    healthchecks_api_key: str = "", healthchecks_uuid: str = "",
-    github_token_for_commits: str = "",
-) -> dict:
-    """오늘(또는 date_kst)치 이벤트 로그 + healthchecks.io + (있으면) 코드 저장소 커밋 수를
-    모아 REPORT dict로. gh는 data 저장소용 GitHubStore(text 읽기)."""
-    now_kst = datetime.now(KST)
-    date_kst = date_kst or now_kst.strftime("%Y-%m-%d")
-    now_hm = now_kst.strftime("%H:%M") if date_kst == now_kst.strftime("%Y-%m-%d") else None
+def _month_dates(end_date_kst: str) -> list[str]:
+    """end_date_kst가 속한 달의 1일부터 end_date_kst까지 날짜 문자열 목록(오름차순)."""
+    end = datetime.strptime(end_date_kst, "%Y-%m-%d")
+    d = end.replace(day=1)
+    out = []
+    while d <= end:
+        out.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return out
 
+
+def _build_day(
+    gh, date_kst: str, *, now_hm: str | None,
+    healthchecks_api_key: str, healthchecks_uuid: str, github_token_for_commits: str,
+) -> dict:
+    """하루치(06:00 KST~익일 06:00 KST) 이벤트 로그 + healthchecks.io + 커밋 수를 모은다."""
     text, _sha = gh.read_text(f"monitoring/events-{date_kst}.jsonl")
     events = parse_events(text)
     grouped = _group(events)
-
     return {
-        "date": date_kst,
         "ticks": _ticks_json(grouped["tick"]),
         "ops": _ops_json(grouped["ops"]),
         "notice": _tone_json(grouped["notice"]),
@@ -222,14 +240,45 @@ def build_report(
     }
 
 
+def build_report(
+    gh, *, date_kst: str | None = None, full: bool = False,
+    healthchecks_api_key: str = "", healthchecks_uuid: str = "",
+    github_token_for_commits: str = "",
+) -> dict:
+    """오늘(또는 date_kst)치, `full=True`면 이번 달 1일~오늘치 전부를 모아 REPORT dict로.
+    gh는 data 저장소용 GitHubStore(text 읽기). 하루 경계는 06:00 KST~익일 06:00 KST."""
+    now_kst = datetime.now(KST)
+    today_bucket = bucket_date_kst(now_kst)
+    date_kst = date_kst or today_bucket
+    dates = _month_dates(today_bucket) if full else [date_kst]
+
+    days = {
+        d: _build_day(
+            gh, d, now_hm=(now_kst.strftime("%H:%M") if d == today_bucket else None),
+            healthchecks_api_key=healthchecks_api_key, healthchecks_uuid=healthchecks_uuid,
+            github_token_for_commits=github_token_for_commits,
+        )
+        for d in dates
+    }
+    selected = date_kst if date_kst in days else today_bucket
+
+    return {
+        "date": selected,
+        "full": full,
+        "month": dates,
+        "days": days,
+        "eventCount": days[selected]["eventCount"],
+    }
+
+
 def run(
-    gh, *, date_kst: str | None = None,
+    gh, *, date_kst: str | None = None, full: bool = False,
     healthchecks_api_key: str = "", healthchecks_uuid: str = "",
     github_token_for_commits: str = "",
 ) -> dict:
     """`_handle_monitor`/`/monitor` Flask 라우트 진입점. {"html", "date", "events"} 반환."""
     report = build_report(
-        gh, date_kst=date_kst, healthchecks_api_key=healthchecks_api_key,
+        gh, date_kst=date_kst, full=full, healthchecks_api_key=healthchecks_api_key,
         healthchecks_uuid=healthchecks_uuid, github_token_for_commits=github_token_for_commits,
     )
     return {"html": render_html(report), "date": report["date"], "events": report["eventCount"]}
@@ -287,6 +336,13 @@ _TEMPLATE = r"""<!doctype html>
   .stat-tile.error b{color:var(--err)}
   @media (max-width:720px){.stats-row{grid-template-columns:repeat(2,1fr)}}
 
+  .grass{display:flex; flex-wrap:wrap; gap:5px}
+  .grass button{width:26px; height:26px; border-radius:6px; border:2px solid transparent; padding:0;
+    font:600 11px var(--mono); cursor:pointer; font-variant-numeric:tabular-nums}
+  .grass button.sel{border-color:var(--ink)}
+  .grass button:hover{filter:brightness(1.2)}
+  .grass button.future{cursor:default; opacity:.35}
+
   .legend{display:flex; flex-wrap:wrap; gap:6px}
   .legend button{display:inline-flex; align-items:center; gap:6px; font:500 .74rem var(--sans); color:var(--ink);
     background:var(--panel-2); border:1px solid var(--line); border-radius:7px; padding:4px 9px 4px 8px; cursor:pointer}
@@ -303,11 +359,11 @@ _TEMPLATE = r"""<!doctype html>
   .tl-zoom span{font:600 11px var(--mono); color:var(--muted); width:38px; text-align:center; font-variant-numeric:tabular-nums}
   .tl-hint{color:var(--muted-2); font-size:.72rem}
   .tl-body{display:flex; align-items:stretch}
-  .tl-labels{position:relative; flex:0 0 168px; border-right:1px solid var(--line); padding-right:2px}
-  .tl-labels .grp{position:absolute; left:0; width:168px; transform:translateY(-50%); font:600 11.5px/1.25 var(--sans);
-    color:var(--ink); cursor:pointer; border-bottom:1px dashed transparent}
-  .tl-labels .grp:hover{border-color:var(--accent)}
-  .tl-labels .row{position:absolute; right:10px; transform:translateY(-50%); font:11px var(--sans); color:var(--muted); white-space:nowrap}
+  .tl-labels{position:relative; flex:0 0 46px; border-right:1px solid var(--line); padding-right:2px}
+  .tl-labels .grp{position:absolute; left:0; width:100%; text-align:center; transform:translateY(-50%);
+    font-size:21px; line-height:1; cursor:pointer; opacity:.9}
+  .tl-labels .grp:hover{opacity:1; filter:brightness(1.25)}
+  .tl-labels .row{position:absolute; right:8px; transform:translateY(-50%); font:11px var(--sans); color:var(--muted); white-space:nowrap}
   .tl-scroll{position:relative; overflow-x:auto; overflow-y:hidden; border-radius:0 8px 8px 0; flex:1; min-width:0}
   .tl-scroll.locked{overflow:hidden; touch-action:none}
   #tlSvg{display:block}
@@ -358,6 +414,13 @@ _TEMPLATE = r"""<!doctype html>
 <body>
 <h1>Monitor</h1>
 <p class="lede" id="lede">불러오는 중…</p>
+
+<section class="panel" id="grassPanel" hidden>
+  <h2>월간 추이</h2>
+  <p class="panel-sub">날짜 칸을 누르면 아래 전체가 그 날짜로 바뀝니다. 하루 기준은 06:00~익일 06:00(KST) —
+    자정 넘겨 이어지는 방송을 하루로 묶기 위함.</p>
+  <div class="grass" id="grass"></div>
+</section>
 
 <div class="tabs" role="tablist">
   <button class="tab-btn active" id="tabBtnApp" role="tab" aria-selected="true">APP</button>
@@ -439,8 +502,9 @@ const TONE_COLOR = { ok:OK, degraded:DEGRADED, err:ERR };
 const TONE_LABEL = { ok:"정상", degraded:"부분 실패", err:"에러" };
 const MEMBER_KO = { arale:"아라레", yuno:"유노", nonoka:"노노카", ritsu:"리츠", miyako:"미야코" };
 
-const PREVIEW = REPORT.preview, TICKS = REPORT.ticks, OPS = REPORT.ops,
-      NOTICE = REPORT.notice, TWEET = REPORT.tweet, RELAY = REPORT.relay;
+// REPORT.days[날짜] 하나를 골라 아래 day-scope 변수들을 채운다(loadDay 참고) — 처음엔
+// 미할당이었다가 스크립트 맨 끝의 loadDay(REPORT.date) 호출로 채워진다.
+let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_OFFSET_BY_KEY, BACKEND_SEGS, CURRENT_DAY;
 
 function computeIngest(relay, notice, tweet){
   return [
@@ -449,8 +513,6 @@ function computeIngest(relay, notice, tweet){
     ...tweet.map(e => ({ t:e.t, source:(MEMBER_KO[e.member]||e.member)+" 개인", ok:e.tone!=="err", target:{lane:"tweet", row:e.member} })),
   ];
 }
-const INGEST = computeIngest(RELAY, NOTICE, TWEET);
-
 const TRIGGER_PRIORITY = { ops:0, ingest:1, tick:2, wake:2 };
 const TRIGGER_RADIUS_BASE = 7;
 const TRIGGER_RADIUS = 15;
@@ -473,7 +535,6 @@ function computeTriggerOffsets(ops, ticks, ingest){
   });
   return byKey;
 }
-const TRIGGER_OFFSET_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST);
 
 const HEALTH_COLOR = { up:"#7CB342", busy:"#f5c344", down:"#e5484d", paused:"#4da3ff" };
 const HEALTH_LABEL = { up:"정상 · 트리거 대기", busy:"트리거 처리 중", down:"다운 · 트리거 대기 불가", paused:"일시정지 · 트리거 대기 불가" };
@@ -505,7 +566,7 @@ function pausedRanges(ops){
     if (e.cmd === "/pause") openPause = e.t;
     else if (e.cmd === "/resume" && openPause) { ranges.push({from:openPause, to:e.t}); openPause = null; }
   });
-  if (openPause) ranges.push({from:openPause, to:"24:00"});
+  if (openPause) ranges.push({from:openPause, to:"30:00"});
   return ranges;
 }
 function computeBackendSegs(ticks, ops, downRanges){
@@ -515,7 +576,6 @@ function computeBackendSegs(ticks, ops, downRanges){
     { state:"down",   ranges: downRanges || [] },
   ]);
 }
-const BACKEND_SEGS = computeBackendSegs(TICKS, OPS, REPORT.downRanges);
 
 function renderStats(){
   const boolPoint = [...TICKS, ...OPS, ...INGEST];
@@ -585,15 +645,19 @@ function laneLegendHtml(key){
 }
 
 const ROWS_MEMBERS = ["arale","yuno","nonoka","ritsu","miyako"];
-const ROW_H_POINT = 24, ROW_H_BAR = 28, GROUP_GAP = 16, PAD_R = 24, PAD_T = 10, PAD_B = 26;
+// 모바일(폭 640px 이하)은 라벨을 아이콘으로 줄여 확보한 공간을 활용해 세로로 좀 더
+// 밀집시킨다 — trigger 레인만은 옵셋 겹침 방지 계산(TRIGGER_OFFSET_STEP)에 걸려 있어 고정.
+const IS_NARROW = window.matchMedia("(max-width:640px)").matches;
+const ROW_H_POINT = IS_NARROW ? 18 : 24, ROW_H_BAR = IS_NARROW ? 22 : 28, GROUP_GAP = IS_NARROW ? 9 : 16;
+const PAD_R = 24, PAD_T = 10, PAD_B = 26;
 const BASE_W = 900;
 const LANES = [
-  { key:"trigger", label:"🎯 트리거", type:"point", rows:["all"], rowH:110 },
-  { key:"health",  label:"🖥️ 백엔드 상태", type:"bar", rows:["backend"] },
-  { key:"preview", label:"preview (영상 생애주기)", type:"bar",   rows: ROWS_MEMBERS },
-  { key:"relay",   label:"X 예고 릴레이",          type:"point", rows:["account"] },
-  { key:"notice",  label:"소식",                   type:"point", rows:["notice"] },
-  { key:"tweet",   label:"개인 트윗",               type:"point", rows: ROWS_MEMBERS },
+  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH:110 },
+  { key:"health",  label:"백엔드 상태", icon:"🖥️", type:"bar",   rows:["backend"] },
+  { key:"preview", label:"preview",     icon:"🎬", type:"bar",   rows: ROWS_MEMBERS },
+  { key:"relay",   label:"X 예고 릴레이", icon:"📣", type:"point", rows:["account"] },
+  { key:"notice",  label:"소식",        icon:"📰", type:"point", rows:["notice"] },
+  { key:"tweet",   label:"개인 트윗",   icon:"💌", type:"point", rows: ROWS_MEMBERS },
 ];
 const TRIGGER_GLYPH = { ops:"🎛️", tick:"🕒", wake:"📡", ingest:"📥" };
 
@@ -608,7 +672,16 @@ let rowY = {};
   });
   window._TL_H = y - GROUP_GAP + PAD_B;
 })();
-function minutesOf(hhmm){ const [h,m] = hhmm.split(":").map(Number); return h*60+m; }
+// 하루 경계가 00:00 이 아니라 06:00 KST(DAY_START_MIN)이라 — 자정 넘겨 방송하는 멤버가
+// 흔해서 방송일 하나를 안 쪼개려는 목적. minutesOf 는 실제 시각을 이 앵커 기준으로
+// 회전시켜 0~1439 로 만든다. "30:00" 처럼 24시간을 넘는 표기는 "이 하루의 끝"을 뜻하는
+// 가상 시각(파이썬 쪽 now_hm/다운구간 fallback)이라 회전 없이 그대로(1440 근방) 통과시킨다.
+const DAY_START_MIN = 60 * 6;
+function minutesOf(hhmm){
+  const [h,m] = hhmm.split(":").map(Number);
+  if (h >= 24) return h*60 + m - DAY_START_MIN;
+  return ((h*60+m) - DAY_START_MIN + 1440) % 1440;
+}
 function minutesToX(min, plotW){ return (min/1440) * plotW; }
 function timeToX(hhmm, plotW){ return minutesToX(minutesOf(hhmm), plotW); }
 const NICE_STEPS_MIN = [1,2,5,10,15,30,60,120,180,240,360,720,1440];
@@ -619,7 +692,8 @@ function pickHourStepMin(plotW){
   return 1440;
 }
 function fmtHM(min){
-  const h = Math.floor(min/60) % 24, m = min % 60;
+  const real = ((min + DAY_START_MIN) % 1440 + 1440) % 1440;
+  const h = Math.floor(real/60), m = real % 60;
   return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
 }
 
@@ -629,7 +703,7 @@ function renderLabels(){
   wrap.innerHTML = "";
   LANES.forEach(g => {
     const grp = document.createElement("div");
-    grp.className = "grp"; grp.style.top = g._labelY + "px"; grp.textContent = g.label;
+    grp.className = "grp"; grp.style.top = g._labelY + "px"; grp.textContent = g.icon; grp.title = g.label;
     wireLegend(grp, () => laneLegendHtml(g.key));
     wrap.appendChild(grp);
     g.rows.forEach(r => {
@@ -753,7 +827,7 @@ function renderTimeline(){
       const q = sg.q || "ok";
       wireTip(rect, { t:sg.from+"–"+sg.to, title:v.title, raw:(STATE[sg.s]||{label:sg.s}).label, tone:"ok", d:sg.qd || ("video: "+(v.title||"—")) });
       svg.appendChild(rect);
-      if (!(i === 0 && sg.from === "00:00")) {
+      if (!(i === 0 && sg.from === "06:00")) {
         const dot = document.createElementNS(ns,"circle");
         dot.setAttribute("cx", x1); dot.setAttribute("cy", ry);
         dot.setAttribute("r", 3); dot.setAttribute("fill", TONE_COLOR[q]);
@@ -901,7 +975,7 @@ function buildRows(){
   TWEET.forEach((e,i) => rows.push({ t:e.t, lane:"개인 트윗", who:MEMBER_KO[e.member]||e.member, raw:TONE_LABEL[e.tone], d:e.d, tone:e.tone, idx:"tweet"+i }));
   PREVIEW.forEach(v => {
     v.segs.forEach((sg,i) => {
-      const skip = i === 0 && sg.from === "00:00";
+      const skip = i === 0 && sg.from === "06:00";
       rows.push({ t:sg.from, lane:"preview", who:(MEMBER_KO[v.member]||v.member)+(v.title?" · "+v.title:""),
         raw:(STATE[sg.s]||{label:sg.s}).label + (skip ? "" : " · "+TONE_LABEL[sg.q||"ok"]), d:sg.qd||"", tone:skip?"ok":(sg.q||"ok"), idx:null, isState:true });
     });
@@ -922,16 +996,69 @@ function renderTable(){
   }).join("");
 }
 
-document.getElementById("lede").innerHTML =
-  `<b>${REPORT.date}</b> 하루치 — 운영자 제어·정기수집 틱·X 웹훅 인입(트리거) → preview·릴레이·소식·개인 트윗(결과)을 같은 시간축에서 대조합니다. ` +
-  `다른 날짜는 <code>/monitor YYYY-MM-DD</code>로 요청하세요.`;
-document.getElementById("tlTitle").textContent = REPORT.date + " · 24시간 타임라인";
-renderStats();
+function grassTone(dateStr){
+  const day = REPORT.days[dateStr];
+  if (!day) return null; // 아직 안 온 날짜(이번 달의 남은 날) — 데이터 없음
+  const previewSegs = day.preview.flatMap(v => v.segs);
+  const hasErr = day.ticks.some(e => !e.ok) || day.ops.some(e => !e.ok) ||
+    day.relay.some(e => e.tone === "err") || day.notice.some(e => e.tone === "err") ||
+    day.tweet.some(e => e.tone === "err") || previewSegs.some(sg => sg.q === "err");
+  if (hasErr) return "err";
+  const hasDeg = day.relay.some(e => e.tone === "degraded") || day.notice.some(e => e.tone === "degraded") ||
+    day.tweet.some(e => e.tone === "degraded") || previewSegs.some(sg => sg.q === "degraded");
+  if (hasDeg) return "degraded";
+  return day.eventCount > 0 ? "ok" : "none";
+}
+const GRASS_COLOR = { ok:OK, degraded:DEGRADED, err:ERR, none:"#21232a" };
+function renderGrass(){
+  const panel = document.getElementById("grassPanel");
+  if (!REPORT.full || REPORT.month.length <= 1) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const wrap = document.getElementById("grass");
+  wrap.innerHTML = "";
+  REPORT.month.forEach(d => {
+    const tone = grassTone(d);
+    const btn = document.createElement("button");
+    const known = tone !== null;
+    btn.textContent = String(parseInt(d.slice(8,10), 10));
+    btn.style.background = known ? GRASS_COLOR[tone] : GRASS_COLOR.none;
+    btn.style.color = known && tone !== "none" ? "#0d0e12" : "var(--muted-2)";
+    btn.title = d + (known ? ` · 이벤트 ${REPORT.days[d].eventCount}건` : " · 데이터 없음");
+    btn.classList.toggle("sel", d === currentDate);
+    if (!known) { btn.classList.add("future"); }
+    else btn.addEventListener("click", () => loadDay(d));
+    wrap.appendChild(btn);
+  });
+}
+
+let currentDate = null;
+function loadDay(dateStr){
+  const day = REPORT.days[dateStr];
+  if (!day) return;
+  currentDate = dateStr;
+  CURRENT_DAY = day;
+  PREVIEW = day.preview; TICKS = day.ticks; OPS = day.ops;
+  NOTICE = day.notice; TWEET = day.tweet; RELAY = day.relay;
+  INGEST = computeIngest(RELAY, NOTICE, TWEET);
+  TRIGGER_OFFSET_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST);
+  BACKEND_SEGS = computeBackendSegs(TICKS, OPS, day.downRanges);
+
+  document.getElementById("lede").innerHTML =
+    `<b>${dateStr}</b> 하루치(06:00~익일 06:00 KST 기준) — 운영자 제어·정기수집 틱·X 웹훅 인입(트리거) → ` +
+    `preview·릴레이·소식·개인 트윗(결과)을 같은 시간축에서 대조합니다. ` +
+    (REPORT.full ? "위 월간 그리드에서 다른 날짜를 고를 수 있습니다." : `다른 날짜는 <code>/monitor YYYY-MM-DD</code>, 이번 달 전체는 <code>/monitor --full</code>로 요청하세요.`);
+  document.getElementById("tlTitle").textContent = dateStr + " · 24시간 타임라인 (06:00~익일 06:00 KST)";
+  renderStats();
+  renderTimeline();
+  renderTable();
+  renderExtYoutube();
+  renderExtVercel();
+  document.getElementById("footer").textContent =
+    `생성 기준: ${dateStr}(06:00~익일 06:00 KST) · 총 ${day.eventCount || 0}건 기록 · Ops Monitor(구 Push Monitor)`;
+  renderGrass();
+}
 renderLabels();
-renderTimeline();
-renderTable();
-document.getElementById("footer").textContent =
-  `생성 기준: ${REPORT.date} · 총 ${REPORT.eventCount || 0}건 기록 · Ops Monitor(구 Push Monitor)`;
+loadDay(REPORT.date);
 
 (function setupCrosshair(){
   const scrollEl = document.getElementById("tlScroll");
@@ -983,27 +1110,25 @@ function renderExtYoutube(){
   const cap = document.createElementNS(ns,"text");
   cap.setAttribute("x", PADL); cap.setAttribute("y", PADT+4);
   cap.setAttribute("fill","#8a8f98"); cap.setAttribute("font-size","10");
-  cap.textContent = `누적 ${cum} units (${REPORT.date})`;
+  cap.textContent = `누적 ${cum} units (${currentDate})`;
   svg.appendChild(cap);
-  [0,6,12,18,24].forEach(h => {
+  [0,360,720,1080,1440].forEach(m => {
     const t = document.createElementNS(ns,"text");
-    t.setAttribute("x", px(h*60)); t.setAttribute("y", H-4);
+    t.setAttribute("x", px(m)); t.setAttribute("y", H-4);
     t.setAttribute("fill","#5f6570"); t.setAttribute("font-size","10");
-    t.setAttribute("text-anchor", h===0?"start":h===24?"end":"middle");
-    t.textContent = String(h).padStart(2,"0")+":00";
+    t.setAttribute("text-anchor", m===0?"start":m===1440?"end":"middle");
+    t.textContent = fmtHM(m);
     svg.appendChild(t);
   });
 }
-renderExtYoutube();
 
 function renderExtVercel(){
-  const push = REPORT.vercelPush || 0;
+  const push = CURRENT_DAY.vercelPush || 0;
   const overLimit = push > 100;
   document.getElementById("extVercelUsed").textContent = push + " / 100";
   document.getElementById("extVercelStatus").textContent = overLimit ? "한도 초과 위험" : "정상";
   document.getElementById("extVercelTile").classList.toggle("error", overLimit);
 }
-renderExtVercel();
 </script>
 </body>
 </html>
@@ -1050,23 +1175,51 @@ if __name__ == "__main__":
     assert notice[0]["tone"] == "degraded"
     print("[OK] _tone_json")
 
-    # ── _preview_json: from_state 있는 첫 이벤트 → 선행 세그먼트, 없으면 생략 ──
+    # ── _preview_json: from_state 있는 첫 이벤트 → 선행 세그먼트("06:00"=하루 시작), 없으면 생략 ──
     preview = _preview_json(grouped["preview"], now_hm="12:00")
     arale = next(v for v in preview if v["member"] == "arale")
-    assert arale["segs"][0]["s"] == "upcoming" and arale["segs"][0]["from"] == "00:00", arale
+    assert arale["segs"][0]["s"] == "upcoming" and arale["segs"][0]["from"] == "06:00", arale
     assert arale["segs"][1]["s"] == "watching" and arale["segs"][1]["to"] == "12:00", arale
     ritsu = next(v for v in preview if v["member"] == "ritsu")
     assert ritsu["segs"] == [], "이벤트 없는 멤버는 빈 세그먼트"
-    print("[OK] _preview_json: 선행 세그먼트(from_state) + 마지막 세그먼트는 now_hm까지")
+    print("[OK] _preview_json: 선행 세그먼트(from_state, 06:00 시작) + 마지막 세그먼트는 now_hm까지")
 
-    # ── render_html: 플레이스홀더 치환, 유효 JSON 임베드 ──
-    report = {
-        "date": "2026-09-15", "ticks": ticks, "ops": ops, "notice": notice, "relay": [],
-        "tweet": [], "preview": preview, "downRanges": [], "vercelPush": 3, "eventCount": len(events),
+    # ── _add_minutes: 자정 넘김은 실제 시각으로 wrap(30:00 같은 가짜 시각 아님) ──
+    assert _add_minutes("23:59", 3) == "00:02"
+    print("[OK] _add_minutes: 자정 넘김 wrap")
+
+    # ── _month_dates: 이번 달 1일~end 날짜까지 오름차순 ──
+    assert _month_dates("2026-09-03") == ["2026-09-01", "2026-09-02", "2026-09-03"]
+    print("[OK] _month_dates")
+
+    # ── render_html: 플레이스홀더 치환, 유효 JSON 임베드 (days/month/full 구조) ──
+    day = {
+        "ticks": ticks, "ops": ops, "notice": notice, "relay": [], "tweet": [],
+        "preview": preview, "downRanges": [], "vercelPush": 3, "eventCount": len(events),
     }
+    report = {"date": "2026-09-15", "full": False, "month": ["2026-09-15"], "days": {"2026-09-15": day}}
     html = render_html(report)
     assert "__REPORT_JSON__" not in html
     assert '"date": "2026-09-15"' in html or '"date":"2026-09-15"' in html
     print("[OK] render_html: 플레이스홀더 치환 완료")
+
+    # ── build_report(full=True): gh mock으로 이번 달 날짜 수만큼 read_text 호출 확인 ──
+    class _FullGh:
+        def __init__(self):
+            self.calls = []
+        def read_text(self, path):
+            self.calls.append(path)
+            return (None, None)  # 아직 로그 없는 날짜(404) — 전부 빈 이벤트로 처리돼야 함
+
+    gh = _FullGh()
+    today = datetime.now(KST).strftime("%Y-%m-%d")
+    report_full = build_report(gh, full=True)
+    expected_days = int(today[8:10])
+    assert len(gh.calls) == expected_days, (len(gh.calls), expected_days)
+    assert report_full["full"] is True
+    assert len(report_full["month"]) == expected_days
+    assert report_full["date"] in report_full["days"]
+    assert all(report_full["days"][d]["eventCount"] == 0 for d in report_full["month"])
+    print("[OK] build_report(full=True): 이번 달 1일~오늘 전부 조회, 없는 날짜는 빈 리포트")
 
     print("\nSUCCESS: monitor_report.py self-test 통과 (mock)")

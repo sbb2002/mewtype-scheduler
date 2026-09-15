@@ -22,16 +22,26 @@ logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
 
+# 2026-09-16 세션 핫픽스: 멤버들이 자정을 넘겨 방송하는 경우가 흔해서, "하루" 경계를
+# KST 00:00 이 아니라 06:00(마지막 baseline tick 시각과 동일)으로 옮긴다 — 00:00~05:59
+# 사이 이벤트는 전날 파일에 묶인다. monitor_report.py 도 이 경계로 리포트를 자른다.
+DAY_START_HOUR = 6
+
 RESULT_OK = "ok"
 RESULT_DEGRADED = "degraded"
 RESULT_ERR = "err"
 _VALID_RESULTS = {RESULT_OK, RESULT_DEGRADED, RESULT_ERR}
 
 
+def bucket_date_kst(now: "str | datetime") -> str:
+    """now(ISO 'Z' 문자열 또는 tz-aware datetime) → 06:00 KST 경계 기준 날짜(YYYY-MM-DD)."""
+    dt = datetime.fromisoformat(now.replace("Z", "+00:00")) if isinstance(now, str) else now
+    return (dt.astimezone(KST) - timedelta(hours=DAY_START_HOUR)).strftime("%Y-%m-%d")
+
+
 def event_path(now_iso: str) -> str:
-    """now_iso(UTC 'Z') → 오늘자 이벤트 로그 경로. 날짜는 KST 기준(대시보드 "하루"와 일치)."""
-    dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(KST)
-    return f"monitoring/events-{dt.strftime('%Y-%m-%d')}.jsonl"
+    """now_iso(UTC 'Z') → 오늘자 이벤트 로그 경로. 날짜는 06:00 KST 경계 기준(대시보드 "하루"와 일치)."""
+    return f"monitoring/events-{bucket_date_kst(now_iso)}.jsonl"
 
 
 def log_event(
@@ -104,11 +114,16 @@ if __name__ == "__main__":
 
     from .gh_store import GitHubStore
 
-    # 검증 1: 경로가 KST 날짜 기준으로 계산되는지 (UTC 23:xx → KST 다음날)
-    assert event_path("2026-09-15T15:30:00Z") == "monitoring/events-2026-09-16.jsonl", \
-        "UTC 15:30 == KST 00:30(다음날)"
-    assert event_path("2026-09-16T00:00:00Z") == "monitoring/events-2026-09-16.jsonl"
-    print("✓ event_path: KST 날짜 경계 계산 정확")
+    # 검증 1: 경로가 06:00 KST 경계 기준으로 계산되는지
+    # UTC 15:30 == KST 00:30(다음날) — 06:00 이전이라 "전날" 파일로 묶인다
+    assert event_path("2026-09-15T15:30:00Z") == "monitoring/events-2026-09-15.jsonl", \
+        "KST 00:30 은 06:00 경계 이전 — 09-15 파일에 남아야 함"
+    assert event_path("2026-09-16T00:00:00Z") == "monitoring/events-2026-09-16.jsonl", \
+        "KST 09:00(06:00 이후) — 그날 파일"
+    # 자정을 넘겨 방송하는 실제 사례: KST 09-16 23:30(=UTC 09-16 14:30)은 06:00 경계 기준
+    # 09-17 05:30 이 아니라 여전히 09-16 방송일
+    assert event_path("2026-09-16T14:30:00Z") == "monitoring/events-2026-09-16.jsonl"
+    print("✓ event_path: 06:00 KST 경계 계산 정확 (자정 넘긴 방송도 전날로 묶임)")
 
     # 검증 2: 빈 파일(404)에 첫 줄 append
     sess = _FakeSess()
