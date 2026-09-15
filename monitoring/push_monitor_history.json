@@ -55,7 +55,9 @@
     "xrelay": 1
   },
   "2026-09-13": {
+    "code_devpapers": 0,
     "code_main": 30,
+    "code_other": 0,
     "manual": 4,
     "notice": 10,
     "other_data": 0,
@@ -66,7 +68,9 @@
     "xrelay": 2
   },
   "2026-09-14": {
+    "code_devpapers": 26,
     "code_main": 19,
+    "code_other": 0,
     "manual": 0,
     "notice": 0,
     "other_data": 6,
@@ -77,13 +81,15 @@
     "xrelay": 1
   },
   "2026-09-15": {
-    "code_main": 1,
+    "code_devpapers": 1,
+    "code_main": 7,
+    "code_other": 0,
     "manual": 0,
     "notice": 0,
-    "other_data": 0,
+    "other_data": 3,
     "personal_schedule": 0,
-    "preview": 1,
-    "tweet": 1,
+    "preview": 3,
+    "tweet": 0,
     "undo_snapshot": 0,
     "xrelay": 0
   }
