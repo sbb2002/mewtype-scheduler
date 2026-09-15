@@ -814,7 +814,7 @@ if __name__ == "__main__":
     assert result is True, "disabled 상태에서 True 반환해야 함"
     print("✓ Telegram send no-op: True 반환")
 
-    doc_result = tg.send_document("push_monitor.html", b"<html></html>")
+    doc_result = tg.send_document("monitor.html", b"<html></html>")
     assert doc_result is True, "disabled 상태에서 send_document 도 True 반환해야 함"
     print("✓ Telegram send_document no-op: True 반환")
 

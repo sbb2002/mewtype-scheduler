@@ -7,7 +7,8 @@ control.json 스키마 및 헬퍼 함수.
     "since": null,               // paused=true 로 바뀐 시각 (ISO 'Z')
     "by": null,                  // 마지막 변경 출처 메모
     "log_level": "normal",       // "detail" | "normal" | "simple"
-    "push_monitor_auto": false,  // true면 /push-monitor 스케줄러(KST 06:00)가 실제 tick+DM
+    "monitor_auto": false,       // true면 /monitor 스케줄러(KST 06:00)가 실제 리포트 생성+DM
+                                 // (v3.5 이전 이름: push_monitor_auto — /push-monitor 대체하며 개명)
     "updated_at": "..."
   }
 """
@@ -23,7 +24,7 @@ def default_control() -> dict:
         "since": None,
         "by": None,
         "log_level": DEFAULT_LOG_LEVEL,
-        "push_monitor_auto": False,
+        "monitor_auto": False,
         "updated_at": None,
     }
 
@@ -78,17 +79,17 @@ def set_log_level(control, level: str, *, by: str, now_iso: str) -> dict:
     return result
 
 
-def get_push_monitor_auto(control) -> bool:
-    """push monitor 자동 실행(KST 06:00) 켜짐 여부. dict 아니거나 키 없으면 False."""
+def get_monitor_auto(control) -> bool:
+    """/monitor 자동 실행(KST 06:00) 켜짐 여부. dict 아니거나 키 없으면 False."""
     if not isinstance(control, dict):
         return False
-    return bool(control.get("push_monitor_auto", False))
+    return bool(control.get("monitor_auto", False))
 
 
-def set_push_monitor_auto(control, enabled: bool, *, by: str, now_iso: str) -> dict:
-    """push_monitor_auto 만 바꾼 새 dict 반환 (다른 필드 보존, 원본 불변)."""
+def set_monitor_auto(control, enabled: bool, *, by: str, now_iso: str) -> dict:
+    """monitor_auto 만 바꾼 새 dict 반환 (다른 필드 보존, 원본 불변)."""
     result = _as_dict(control)
-    result["push_monitor_auto"] = bool(enabled)
+    result["monitor_auto"] = bool(enabled)
     result["by"] = by
     result["updated_at"] = now_iso
     return result
@@ -129,15 +130,15 @@ if __name__ == "__main__":
     orig = default_control()
     set_paused(orig, True, by="t", now_iso="z")
     set_log_level(orig, "simple", by="t", now_iso="z")
-    set_push_monitor_auto(orig, True, by="t", now_iso="z")
+    set_monitor_auto(orig, True, by="t", now_iso="z")
     assert orig == default_control(), "원본 불변"
     print("✓ 원본 불변")
 
-    assert get_push_monitor_auto(None) is False and get_push_monitor_auto({}) is False
-    on = set_push_monitor_auto(d, True, by="telegram:/push-monitor --auto", now_iso="2026-09-14T12:00:00Z")
-    assert get_push_monitor_auto(on) is True and on["log_level"] == "normal", "log_level 보존"
-    off = set_push_monitor_auto(on, False, by="telegram:/push-monitor --off", now_iso="2026-09-14T13:00:00Z")
-    assert get_push_monitor_auto(off) is False
-    print("✓ push_monitor_auto on/off (다른 필드 보존)")
+    assert get_monitor_auto(None) is False and get_monitor_auto({}) is False
+    on = set_monitor_auto(d, True, by="telegram:/monitor --auto", now_iso="2026-09-16T12:00:00Z")
+    assert get_monitor_auto(on) is True and on["log_level"] == "normal", "log_level 보존"
+    off = set_monitor_auto(on, False, by="telegram:/monitor --off", now_iso="2026-09-16T13:00:00Z")
+    assert get_monitor_auto(off) is False
+    print("✓ monitor_auto on/off (다른 필드 보존)")
 
     print("\nSUCCESS: control.py smoke test passed")

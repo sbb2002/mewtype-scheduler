@@ -1,13 +1,13 @@
 """Flask 앱: Cloud Run HTTP 진입점.
 
 라우트:
-  POST /tick          — Cloud Scheduler (body: {"mode": "baseline"|"light"})
-  POST /wake          — Cloud Tasks     (body: {"video_id": "..."})
-  POST /push-monitor  — Cloud Scheduler (1일 1회 KST 06:00, body 없음). control.json
-                        의 push_monitor_auto 가 꺼져 있으면 조회 없이 즉시 종료,
-                        켜져 있으면 tick 실행 후 결과 html 을 텔레그램 DM 으로 전송
-                        (v3.4 — 더 이상 GitHub 에 html 을 커밋하지 않음)
-  GET  /              — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
+  POST /tick      — Cloud Scheduler (body: {"mode": "baseline"|"light"})
+  POST /wake      — Cloud Tasks     (body: {"video_id": "..."})
+  POST /monitor   — Cloud Scheduler (1일 1회 KST 06:00, body 없음). control.json
+                    의 monitor_auto 가 꺼져 있으면 조회 없이 즉시 종료,
+                    켜져 있으면 오늘자 리포트 생성 후 텔레그램 DM 으로 전송.
+                    (v3.5 — push_monitor/push-monitor 를 대체. 구 이름은 devpapers 참고)
+  GET  /          — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ from functools import lru_cache
 
 from flask import Flask, jsonify, request
 
-from . import handlers, notify, oidc, push_monitor
+from . import handlers, monitor_report, notify, oidc
 from .config import load_config
-from .control import default_control, get_push_monitor_auto
+from .control import default_control, get_monitor_auto
 from .gh_store import GitHubStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -85,8 +85,8 @@ def _wake():
         return jsonify({"error": str(e)}), 500
 
 
-@app.post("/push-monitor")
-def _push_monitor():
+@app.post("/monitor")
+def _monitor():
     try:
         _authorize()
     except PermissionError as e:
@@ -95,20 +95,25 @@ def _push_monitor():
         cfg = _cfg()
         gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
         control, _ = gh.read_json("control.json")
-        if not get_push_monitor_auto(control or default_control()):
-            return jsonify({"skipped": True, "reason": "push_monitor_auto off"})
+        if not get_monitor_auto(control or default_control()):
+            return jsonify({"skipped": True, "reason": "monitor_auto off"})
 
-        result = push_monitor.run(cfg.github_token, cfg.github_repo)
+        result = monitor_report.run(
+            gh,
+            healthchecks_api_key=cfg.healthchecks_api_key,
+            healthchecks_uuid=(cfg.healthcheck_url.rsplit("/", 1)[-1] if cfg.healthcheck_url else ""),
+            github_token_for_commits=cfg.github_token,
+        )
         html = result.pop("html")
         notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id).send_document(
-            "push_monitor.html",
+            "monitor.html",
             html.encode("utf-8"),
-            caption=f"📊 Push Monitor 자동 리포트 — 최근 {result['days']}일치 {result['records']}건",
+            caption=f"📊 Monitor 자동 리포트 — {result['date']} · {result['events']}건",
         )
         return jsonify(result)
     except Exception as e:  # noqa: BLE001
-        log.exception("push-monitor 실패")
-        _alert("/push-monitor", e)
+        log.exception("monitor 실패")
+        _alert("/monitor", e)
         return jsonify({"error": str(e)}), 500
 
 
