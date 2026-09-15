@@ -142,7 +142,7 @@ def build_dashboard_data(records: list[dict], *, now_kst: datetime, days: int) -
         detail[d_str][bin_idx][cat] += 1
         events[d_str].append({
             "bin": bin_idx, "time": ts.strftime("%H:%M:%S"), "cat": cat,
-            "message": r.get("message", ""),
+            "branch": r.get("branch", ""), "message": r.get("message", ""),
         })
 
     days_list = []
@@ -263,6 +263,7 @@ _TEMPLATE = r"""<!doctype html>
   .events-table col.c-swatch{width:26px}
   .events-table col.c-time{width:78px}
   .events-table col.c-cat{width:170px}
+  .events-table col.c-branch{width:150px}
   .events-table col.c-target{width:auto}
   .empty{color:var(--muted);text-align:center;padding:30px 0}
   footer{color:var(--muted);font-size:.75rem;margin-top:30px;text-align:center}
@@ -279,6 +280,8 @@ _TEMPLATE = r"""<!doctype html>
   .events-collapse{overflow:hidden;max-height:0;transition:max-height .35s ease}
   .summary-legend{display:flex;flex-direction:column;gap:3px;font-size:.68rem;color:var(--muted);margin-top:8px}
   .summary-legend .empty-inline{color:var(--muted)}
+  .daily-breakdown{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 14px;font-size:.75rem;color:var(--muted)}
+  .daily-breakdown i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
   .donut-wrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
   .donut-total{font-size:.78rem;color:var(--muted);text-align:center}
   .donut-total b{display:block;font-size:1.3rem;color:var(--ink)}
@@ -324,7 +327,8 @@ _TEMPLATE = r"""<!doctype html>
 </head>
 <body>
 <h1>Push Monitor</h1>
-<p class="sub">data/main 브랜치 커밋(=Vercel 배포 시도) 활동 — Hobby 플랜 하루 100건 한도 재소진 조기 감지용.
+<p class="sub">main/devpapers/기타 브랜치 커밋(=Vercel 배포 시도) 활동 — Hobby 플랜 하루 100건 한도 재소진 조기 감지용.
+data 브랜치는 2026-09-15부터 별도 저장소로 분리되어 그 이후엔 한도 계산에서 제외되고 참고용으로만 표시됩니다.
 날짜 칸을 클릭하면 그 날의 10분 단위 상세를 아래에서 봅니다.</p>
 
 <div class="stats-row" id="statsRow">
@@ -356,6 +360,7 @@ _TEMPLATE = r"""<!doctype html>
 <div class="panel">
   <h2 class="detail-title" id="detailTitle">—</h2>
   <p class="detail-sub" id="detailSub"></p>
+  <div class="daily-breakdown" id="dailyBreakdown"></div>
   <div class="chart-wrap"><svg id="chart" viewBox="0 0 1040 320" preserveAspectRatio="xMidYMid meet"></svg></div>
   <div class="legend" id="legend"></div>
   <div id="detailEvents" class="events-collapse"></div>
@@ -404,7 +409,7 @@ const DATA = __DATA_JSON__;
 const LEGEND_GROUPS = [
   { label: "자동화", keys: ["preview", "tweet", "notice", "personal_schedule", "xrelay"] },
   { label: "수동제어", keys: ["undo_snapshot", "manual"] },
-  { label: "코드", keys: ["code_main"] },
+  { label: "코드", keys: ["code_main", "code_devpapers", "code_other"] },
   { label: "기타", keys: ["other_data"] },
 ];
 const catByKey = Object.fromEntries(DATA.categories.map(c => [c.key, c]));
@@ -451,6 +456,19 @@ const VERCEL_LIMIT = 100;
 const byDateRec = {};
 DATA.days.forEach(d => { byDateRec[d.date] = d; });
 
+// data 브랜치는 2026-09-15에 별도 저장소(mewtype-scheduler-data)로 분리되어 그 뒤로는
+// Vercel 웹훅과 무관해졌다 — 그 전 날짜는 data 카테고리 커밋도 같은(Vercel 연결) 저장소에
+// 있었으므로 배포 시도로 카운트됐다. 실측(2026-09-13/14 초과 사고)도 당시 code_main이 아니라
+// data 브랜치 자동 커밋 volume이 원인이었음 — code_main만 보던 예전 로직은 이 사고를 놓쳤다.
+const DATA_REPO_SPLIT_DATE = "2026-09-15";
+const _DATA_CATS = ["preview", "tweet", "notice", "undo_snapshot", "personal_schedule", "xrelay", "manual", "other_data"];
+function vercelAttempts(dateStr, rec) {
+  if (!rec) return 0;
+  const codeSum = (rec.by_cat.code_main || 0) + (rec.by_cat.code_devpapers || 0) + (rec.by_cat.code_other || 0);
+  if (dateStr >= DATA_REPO_SPLIT_DATE) return codeSum;
+  return codeSum + _DATA_CATS.reduce((s, k) => s + (rec.by_cat[k] || 0), 0);
+}
+
 // ── 상단 통계 카드 (오늘 데이터 기준) ──
 (function renderStatsRow() {
   const todayDay = DATA.days.length ? DATA.days[DATA.days.length - 1] : null;
@@ -466,7 +484,7 @@ DATA.days.forEach(d => { byDateRec[d.date] = d; });
 
   const thisMonthPrefix = todayDay.date.slice(0, 7); // "YYYY-MM"
   const overThisMonth = DATA.days.filter(d =>
-    d.date.startsWith(thisMonthPrefix) && (d.by_cat.code_main || 0) > VERCEL_LIMIT
+    d.date.startsWith(thisMonthPrefix) && vercelAttempts(d.date, d) > VERCEL_LIMIT
   ).length;
   const limitTile = document.getElementById("statLimitTile");
   document.getElementById("statLimit").textContent = overThisMonth + "일";
@@ -483,11 +501,7 @@ function heatColor(dateStr) {
   if (total === 0) return "#1c1e24";
   const t = Math.min(1, total / maxTotal);
   const light = 18 + t * 42; // 18% ~ 60%
-  // vercel.json 이 data/devpapers 브랜치를 배포 트리거에서 뺐으므로, 실제 Vercel
-  // 배포 시도는 code_main(main 브랜치 push)만 카운트된다. total 은 봇 데이터 커밋까지
-  // 섞여 있어 한도와 무관 — code_main 기준으로만 초과 판정해야 한다(실측: 2026-09-08~13
-  // total 100+인 날에도 code_main 은 최대 30, 실제로 배포는 멀쩡히 됐음).
-  if ((rec.by_cat.code_main || 0) > VERCEL_LIMIT) return `hsl(355, 70%, ${light}%)`; // 배포 시도 100건 초과 → 빨간 계통
+  if (vercelAttempts(dateStr, rec) > VERCEL_LIMIT) return `hsl(355, 70%, ${light}%)`; // 배포 시도 100건 초과 → 빨간 계통
   return `hsl(175, 55%, ${light}%)`; // 단일 색상(teal) 명도만 증가 — 값이 클수록 밝게, GitHub 잔디 스타일.
 }
 let selectedDate = DATA.days.length ? DATA.days[DATA.days.length - 1].date : null;
@@ -674,10 +688,11 @@ function renderDetail() {
   const day = DATA.days.find(d => d.date === selectedDate);
   const bins = DATA.detail[selectedDate] || [];
   document.getElementById("detailTitle").textContent = selectedDate || "—";
-  document.getElementById("detailSub").textContent = day ? `총 ${day.total}건` : "데이터 없음";
+  document.getElementById("dailyBreakdown").innerHTML = "";
   svg.innerHTML = "";
   document.getElementById("detailEvents").innerHTML = "";
   if (!bins.length || !day || day.total === 0) {
+    document.getElementById("detailSub").textContent = day ? "이 날짜엔 커밋이 없습니다" : "데이터 없음";
     const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
     t.setAttribute("x", W/2); t.setAttribute("y", H/2);
     t.setAttribute("text-anchor", "middle"); t.setAttribute("fill", "#8a8f98");
@@ -688,6 +703,17 @@ function renderDetail() {
   // 범례에서 끈 카테고리는 0건으로 취급 — 막대 높이(y축 스케일)도 켜진
   // 카테고리 합계 기준으로 다시 잡아서, 일부만 켰을 때 차트가 비어 보이지 않게 한다.
   const totals = bins.map(b => DATA.categories.reduce((s,c) => activeCats.has(c.key) ? s + (b[c.key]||0) : s, 0));
+  const filteredTotal = totals.reduce((a, b) => a + b, 0);
+  const catCounts = {};
+  DATA.categories.forEach(c => catCounts[c.key] = 0);
+  bins.forEach(b => DATA.categories.forEach(c => { if (activeCats.has(c.key)) catCounts[c.key] += b[c.key] || 0; }));
+  document.getElementById("detailSub").textContent =
+    `총 ${filteredTotal}건` + (filteredTotal !== day.total ? ` (전체 ${day.total}건 중 선택된 항목만 표시)` : "");
+  document.getElementById("dailyBreakdown").innerHTML = DATA.categories
+    .filter(c => catCounts[c.key] > 0)
+    .sort((a, b) => catCounts[b.key] - catCounts[a.key])
+    .map(c => `<span><i style="background:${c.color}"></i>${c.label} ${catCounts[c.key]}건</span>`)
+    .join("");
   const maxY = Math.max(1, ...totals);
   const barW = plotW / bins.length;
 
@@ -784,11 +810,11 @@ function renderEventsTable(binIdx) {
     const rows = evs.map(e => {
       const c = DATA.categories.find(x => x.key === e.cat) || { label: e.cat, color: "#888" };
       const target = (e.message || "").replace(/^data:\s*/, "").trim();
-      return `<tr><td><i class="swatch" style="background:${c.color}"></i></td><td>${e.time}</td><td>${c.label}</td><td title="${target.replace(/"/g,"&quot;")}">${target}</td></tr>`;
+      return `<tr><td><i class="swatch" style="background:${c.color}"></i></td><td>${e.time}</td><td>${c.label}</td><td>${e.branch || "—"}</td><td title="${target.replace(/"/g,"&quot;")}">${target}</td></tr>`;
     }).join("");
     wrap.innerHTML = `<table class="events-table">` +
-      `<colgroup><col class="c-swatch"><col class="c-time"><col class="c-cat"><col class="c-target"></colgroup>` +
-      `<thead><tr><th></th><th>시각</th><th>항목</th><th>대상</th></tr></thead>` +
+      `<colgroup><col class="c-swatch"><col class="c-time"><col class="c-cat"><col class="c-branch"><col class="c-target"></colgroup>` +
+      `<thead><tr><th></th><th>시각</th><th>항목</th><th>브랜치</th><th>대상</th></tr></thead>` +
       `<tbody>${rows}</tbody></table>`;
   }
   // 펼치기 애니메이션: 0 → 실제 콘텐츠 높이
@@ -995,7 +1021,7 @@ function renderSummaryTables() {
     const rec = byDateRec[ds];
     if (!rec) return;
     DATA.categories.forEach(c => { sums[c.key] += rec.by_cat[c.key] || 0; });
-    const deployCount = rec.by_cat.code_main || 0;
+    const deployCount = vercelAttempts(ds, rec);
     if (deployCount > VERCEL_LIMIT) overLimit.push({ date: ds, count: deployCount });
   });
   const total = Object.values(sums).reduce((a, b) => a + b, 0);
