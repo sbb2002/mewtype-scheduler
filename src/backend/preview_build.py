@@ -235,8 +235,11 @@ def build_preview(
             gone_items.append(preview.to_archive_record(item, now_iso))
         else:
             items.append(item)
-            # 다음 체크 시각 기록 (watching/live/end 만)
-            if tick.next_check_at and tick.next_state in ("watching", "live", "end"):
+            # 다음 체크 시각 기록 — video_id 보유 아이템은 announced/upcoming 의
+            # precheck 대기(scheduled_start-3분)도 포함해야 실제 시작을 놓치지 않는다.
+            # (버그리포트 20260915: watching/live/end 로 좁혀놨더니 waiting-for-precheck
+            # 상태로 몇 시간이고 wake 가 하나도 안 잡혀 정시 live 전환을 놓쳤다)
+            if tick.next_check_at:
                 wakes[video_id] = tick.next_check_at
 
     # ─ 2. 이전 prev_items 중 이번 videos 에 없던 것 처리 ─
@@ -262,7 +265,7 @@ def build_preview(
             if tick.next_state == "none":
                 gone_items.append(preview.to_archive_record(item, now_iso))
                 continue
-            if tick.next_check_at and tick.next_state in ("watching", "live", "end"):
+            if tick.next_check_at:
                 wakes[vid] = tick.next_check_at
             items.append(item)
             continue
