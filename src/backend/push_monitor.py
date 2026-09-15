@@ -31,6 +31,11 @@ KST = timezone(timedelta(hours=9))
 _BIN_MINUTES = 10
 _BINS_PER_DAY = 24 * 60 // _BIN_MINUTES
 
+# main/devpapers/기타 코드 브랜치가 사는 저장소. v3.4.11에서 `data` 브랜치만
+# 별도 저장소(mewtype-scheduler-data, run()의 github_repo 인자)로 옮겨졌고
+# 이쪽은 옮겨지지 않았으므로 고정값으로 둔다.
+_CODE_REPO = "sbb2002/mewtype-scheduler"
+
 # ── 카테고리 정의 ──────────────────────────────────────────────────────
 _MANUAL_MARKERS = ("manual add", "잘린 URL 정리", "제목 번역(title_ko) 소급", "수동 보정")
 
@@ -1136,6 +1141,9 @@ def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
     반환된 "html"을 DM으로 직접 전송한다. `monitoring/push_monitor_history.json`
     (집계 수치만, 원본 커밋 메시지 아님)만 devpapers에 계속 누적 커밋한다.
 
+    `github_repo`는 (v3.4.11부터) `data` 브랜치만 사는 분리된 저장소다 — main/
+    devpapers/기타 코드 브랜치는 옮겨지지 않았으므로 항상 `_CODE_REPO`를 본다.
+
     조회 기간은 `min_days` 고정이 아니라 `_backfill_days()`로 history의 마지막
     기록일 대비 자동으로 넓어진다 — 자동 실행을 며칠~몇 달 꺼뒀다 켜도 그 사이
     날짜가 누락되지 않는다.
@@ -1144,35 +1152,40 @@ def run(github_token: str, github_repo: str, *, min_days: int = 3) -> dict:
 
     now_kst = datetime.now(KST)
     session = requests.Session()
-    gh = GitHubStore(github_token, github_repo, "devpapers", session=session)
+    gh = GitHubStore(github_token, _CODE_REPO, "devpapers", session=session)
 
     raw_history, hist_sha = gh.read_json(_HISTORY_PATH)
     raw_history = raw_history or {}
     days = _backfill_days(raw_history, now_kst, min_days)
 
     since = (now_kst - timedelta(days=days)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    known_branches = ("data", "main", "devpapers")
+    known_branches = ("main", "devpapers")
     records: list[dict] = []
     for branch in known_branches:
         try:
-            records.extend(fetch_commits(github_token, github_repo, branch, since, session=session))
+            records.extend(fetch_commits(github_token, _CODE_REPO, branch, since, session=session))
         except requests.RequestException as e:
             logger.warning("push_monitor: %s 브랜치 조회 실패 — %s", branch, e)
+    try:
+        records.extend(fetch_commits(github_token, github_repo, "data", since, session=session))
+    except requests.RequestException as e:
+        logger.warning("push_monitor: data 브랜치(분리 저장소) 조회 실패 — %s", e)
 
-    # 핫픽스/피처용 임시 브랜치(fix/*, feat/* 등) — 이름을 미리 알 수 없어 전체
-    # 브랜치 목록에서 알려진 3개를 뺀 나머지를 조회한다. main/devpapers 와 공유하는
+    # 핫픽스/피처용 임시 브랜치(fix/*, feat/* 등) — 이름을 미리 알 수 없어 _CODE_REPO
+    # 전체 브랜치 목록에서 알려진 것들을 뺀 나머지를 조회한다("data"는 옛 저장소에
+    # 남은 정지된 브랜치라 함께 제외 — 더는 갱신 안 됨). main/devpapers 와 공유하는
     # (이미 머지된) 커밋은 sha 로 걸러 중복 집계하지 않는다 — 순수 브랜치 고유 분만
     # code_other("기타 브랜치")로 잡힌다. (v3.4.9)
     seen_shas = {r["sha"] for r in records}
     try:
-        other_branches = [b for b in list_branches(github_token, github_repo, session=session)
-                           if b not in known_branches]
+        other_branches = [b for b in list_branches(github_token, _CODE_REPO, session=session)
+                           if b not in known_branches and b != "data"]
     except requests.RequestException as e:
         logger.warning("push_monitor: 브랜치 목록 조회 실패 — %s", e)
         other_branches = []
     for branch in other_branches:
         try:
-            for r in fetch_commits(github_token, github_repo, branch, since, session=session):
+            for r in fetch_commits(github_token, _CODE_REPO, branch, since, session=session):
                 if r["sha"] in seen_shas:
                     continue
                 seen_shas.add(r["sha"])
