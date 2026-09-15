@@ -309,9 +309,8 @@ body {
   white-space: nowrap;
 }
 
-/* 하단 디스클레이머 — 5건(비공식 팬메이드 명시 포함)을 notice 티커처럼 1개씩
-   순환 표시하다가 호버/포커스 시 전체가 펼쳐진다. 순환 문구 하나만 노출(중복 표시
-   없음) — 넘치면 마퀴로, 절대 2줄로 안 꺾인다. */
+/* 하단 디스클레이머 — 5건(비공식 팬메이드 명시 포함)을 이어붙여 끊김 없이 천천히
+   흘리는 연속 marquee. 호버/포커스(클릭) 시 전체 목록이 펼쳐진다. */
 .fdisc {
   position: relative;
   flex: 1 1 auto;
@@ -344,7 +343,10 @@ body {
 @keyframes fdisc-mq { to { transform: translateX(-50%); } }
 .fdisc__list {
   position: absolute;
-  left: 0;
+  /* 업데이트 시각 오른쪽 끝 ~ 버전(♾️) 왼쪽 끝 폭에 정확히 맞춤 — JS(main.js
+     positionDisclaimerPopup)가 매번 --fdisc-list-left/--fdisc-list-width 갱신 */
+  left: var(--fdisc-list-left, 0);
+  width: var(--fdisc-list-width, max-content);
   bottom: 100%;
   margin: 0 0 0.6rem;
   padding: 0.65rem 0.85rem;
@@ -352,9 +354,7 @@ body {
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  min-width: 320px;
-  width: max-content;
-  max-width: min(720px, calc(100vw - 2 * var(--page-pad)));
+  box-sizing: border-box;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   opacity: 0;
   visibility: hidden;

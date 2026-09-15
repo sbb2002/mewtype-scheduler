@@ -48,9 +48,11 @@ async function poll() {
       paintBoard();
     }
     renderFooter(foot, lastSchedule, { stale: false });
+    positionDisclaimerPopup();
   } else {
     if (lastSchedule) {
       renderFooter(foot, lastSchedule, { stale: true });
+      positionDisclaimerPopup();
     } else {
       board.innerHTML = "";
       const msg = document.createElement("p");
@@ -63,9 +65,8 @@ async function poll() {
   }
 }
 
-/** 하단 디스클레이머 — 고정 문구 옆의 나머지 항목을 4초 간격으로 1개씩 순환 표시.
- * 한 줄 폭을 넘치면(2줄로 꺾이는 대신) notice 티커와 같은 방식의 무한 marquee 로.
- * 정적 콘텐츠(폴링 대상 아님) — 한 번만 초기화. */
+/** 하단 디스클레이머 — 5개 항목을 끊김(개별 전환) 없이 하나로 이어붙여 천천히
+ * 연속 marquee 로 흘린다. 정적 콘텐츠(폴링 대상 아님) — 한 번만 초기화. */
 function initDisclaimerRotator() {
   const cur = document.querySelector(".fdisc__cur");
   const items = document.querySelectorAll(".fdisc__list li");
@@ -76,31 +77,36 @@ function initDisclaimerRotator() {
     inner.className = "fdisc__cur-in";
     cur.appendChild(inner);
   }
-  let i = 0;
-  const show = () => {
-    const text = "· " + items[i].textContent;
-    i = (i + 1) % items.length;
-    cur.classList.remove("is-marquee");
-    inner.style.animation = "none";
-    inner.textContent = "";
-    const a = document.createElement("span");
-    a.className = "seg";
-    a.textContent = text;
-    inner.appendChild(a);
-    // 한 프레임 뒤 측정 — 애니메이션 none 해제도 여기서 (레이아웃 확정 후).
-    requestAnimationFrame(() => {
-      inner.style.animation = "";
-      if (inner.scrollWidth > cur.clientWidth + 4) {
-        const b = a.cloneNode(true);
-        b.setAttribute("aria-hidden", "true");
-        inner.appendChild(b);
-        inner.style.setProperty("--dur", Math.max(9, text.length * 0.42).toFixed(1) + "s");
-        cur.classList.add("is-marquee");
-      }
-    });
-  };
-  show();
-  setInterval(show, 4000);
+  // 일반 스페이스는 CSS 상 연속 공백이 1칸으로 붕괴되므로(nowrap 도 collapse 는 적용됨)
+  // 줄바꿈 없는 고정폭 공백(NBSP)으로 문구 사이 여백을 확보한다.
+  const GAP = " ".repeat(10);
+  const text = Array.from(items).map((li) => "· " + li.textContent).join(GAP);
+  inner.textContent = "";
+  const a = document.createElement("span");
+  a.className = "seg";
+  a.textContent = text;
+  inner.appendChild(a);
+  const b = a.cloneNode(true);
+  b.setAttribute("aria-hidden", "true");
+  inner.appendChild(b);
+  inner.style.setProperty("--dur", Math.max(30, text.length * 0.6).toFixed(1) + "s");
+  cur.classList.add("is-marquee");
+}
+
+/** 팝업(.fdisc__list) 가로 폭을 "업데이트 시각 오른쪽 끝 ~ 버전(♾️) 왼쪽 끝"에 맞춤.
+ * PC 레이아웃 전용(모바일은 화면 중앙 고정폭 — css 미디어쿼리가 따로 덮어씀). */
+function positionDisclaimerPopup() {
+  const fdisc = document.querySelector(".fdisc");
+  const updated = document.getElementById("foot-updated");
+  const version = document.getElementById("foot-version");
+  if (!fdisc || !updated || !version) return;
+  if (window.matchMedia && window.matchMedia("(max-width: 767px)").matches) return;
+
+  const fRect = fdisc.getBoundingClientRect();
+  const uRect = updated.getBoundingClientRect();
+  const vRect = version.getBoundingClientRect();
+  fdisc.style.setProperty("--fdisc-list-left", `${uRect.right - fRect.left}px`);
+  fdisc.style.setProperty("--fdisc-list-width", `${Math.max(0, vRect.left - uRect.right)}px`);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -108,6 +114,13 @@ document.addEventListener("DOMContentLoaded", () => {
   pollNotices();
   pollTweets();
   initDisclaimerRotator();
+  positionDisclaimerPopup();
+  window.addEventListener("resize", positionDisclaimerPopup);
+  const fdiscEl = document.querySelector(".fdisc");
+  if (fdiscEl) {
+    fdiscEl.addEventListener("mouseenter", positionDisclaimerPopup);
+    fdiscEl.addEventListener("focusin", positionDisclaimerPopup);
+  }
 
   setInterval(poll, POLL_MS);
   setInterval(pollNotices, POLL_MS);

@@ -365,6 +365,8 @@ function _showBubble(ck) {
   _fillBubble(ck, vis[ck]);
   b.classList.toggle("is-pinned", _st.pinned.has(ck));
   requestAnimationFrame(() => {
+    // 이 프레임이 오기 전에 닫힘 요청(빠른 호버-이탈 등)이 있었으면 다시 열지 않는다.
+    if (!_st.pinned.has(ck) && _st.peek !== ck) return;
     _positionBubble(ck);
     b.classList.add("is-open");
     const s = b.querySelector(".lane__bubble__scroll");
@@ -376,7 +378,13 @@ function _closeBubble(ck) {
   const b = _st.bubbles.get(ck);
   if (!b) return;
   b.classList.remove("is-open");
-  const done = () => { b.remove(); _st.bubbles.delete(ck); b.removeEventListener("transitionend", done); };
+  const done = () => {
+    b.removeEventListener("transitionend", done);
+    // 예약 후 다시 열렸으면(재호버/재클릭) 취소 — 지금 보이는 말풍선을 잘못 지우지 않게.
+    if (_st.pinned.has(ck) || _st.peek === ck) return;
+    b.remove();
+    _st.bubbles.delete(ck);
+  };
   b.addEventListener("transitionend", done);
   setTimeout(done, 260);
 }
@@ -456,26 +464,40 @@ function _wire() {
     if (!e.target.closest(".lane__tw, .lane__avatar")) return;  // 이름·레일 등 → 그대로
     e.preventDefault();
     e.stopPropagation();
-    if (_mobile()) _openToast(ck);
-    else _togglePin(ck);
+    if (_mobile()) { _openToast(ck); return; }
+    // 호버로 열려 있던/열리던 중이었어도 클릭은 항상 고정(pinned) 패널로 넘긴다 —
+    // 같은 노드를 그대로 재사용(_bubble)하므로 끊김 없이 이어짐.
+    if (_st.peek === ck) _st.peek = null;
+    _togglePin(ck);
   }, true);
 
-  // PC 호버 — 있는 동안 펼침
+  // PC 호버 — 있는 동안 펼침. 이미 열려있거나(peek) 고정돼(pinned) 있으면 재진입 무시
+  // (열리는 애니메이션 도중 재호버/재클릭으로 상태가 꼬이는 걸 막음 — 애초에 트리거를 잠근다).
   board.addEventListener("pointerover", (e) => {
     if (_mobile()) return;
     const lane = e.target.closest(".lane");
     if (!lane || !e.target.closest(".lane__tw, .lane__avatar")) return;
     const ck = lane.dataset.channel;
     if (!_visible(_st.data)[ck]) return;
+    if (_st.pinned.has(ck) || _st.peek === ck) return;
     _st.peek = ck;
     _showBubble(ck);
   });
+  // 레인 밖으로 나가도 그 채널의 말풍선 패널(.lane__bubble, #board 의 형제 노드라
+  // lane.contains() 로는 못 잡음)로 이동한 거면 유지 — 패널 위에서 스크롤·번역 버튼
+  // 클릭이 가능해야 하므로. 패널에서 레인으로 되돌아가는 경우도 동일하게 유지.
   board.addEventListener("pointerout", (e) => {
     const lane = e.target.closest(".lane");
-    if (!lane) return;
-    if (e.relatedTarget && lane.contains(e.relatedTarget)) return;  // 레인 안 이동
-    const ck = lane.dataset.channel;
-    if (_st.peek === ck) { _st.peek = null; _closeBubble(ck); }
+    const bubbleEl = e.target.closest(".lane__bubble");
+    if (!lane && !bubbleEl) return;
+    const ck = lane ? lane.dataset.channel : bubbleEl.dataset.ck;
+    if (_st.peek !== ck) return;   // 이 채널이 호버로 열린 상태가 아니면(핀 등) 상관 안 함
+    const rt = e.relatedTarget;
+    const laneEl = lane || _lanes(ck)[0];
+    const b = _st.bubbles.get(ck);
+    if (rt && ((laneEl && laneEl.contains(rt)) || (b && b.contains(rt)))) return;
+    _st.peek = null;
+    _closeBubble(ck);
   });
 
   document.addEventListener("keydown", (e) => {
