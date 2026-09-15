@@ -18,6 +18,7 @@ from . import preview as preview_mod
 from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
+from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_event
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
@@ -59,6 +60,47 @@ def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
         if now < t <= horizon:
             out.add(ss)
     return sorted(out)
+
+
+def _preview_log_events(
+    prev_items: list[dict] | None, new_items: list[dict], gone_items: list[dict]
+) -> list[dict]:
+    """new_items(상태 유지) + gone_items(→none으로 archive된 것)를 prev_items 와 비교해,
+    상태가 실제로 바뀐 아이템만 모니터링 로그용 이벤트로 뽑는다(순수 함수).
+
+    notify.diff_events 는 사람이 읽을 텔레그램 알림용이라 kind 5종류만 다루고
+    channel_key/video_id 같은 원본 필드도 안 남긴다 — 여긴 감사 로그용이라 전부 남긴다.
+    """
+    prev_by_key: dict[str, dict] = {}
+    for it in prev_items or []:
+        key = it.get("id") or it.get("video_id")
+        if key:
+            prev_by_key[key] = it
+
+    events: list[dict] = []
+
+    def _emit(item: dict, to_state: str | None) -> None:
+        key = item.get("id") or item.get("video_id")
+        if not key:
+            return
+        prev_item = prev_by_key.get(key)
+        from_state = prev_item.get("state") if prev_item else None
+        if from_state == to_state:
+            return
+        events.append({
+            "channel_key": item.get("channel_key", ""),
+            "video_id": item.get("video_id"),
+            "id": item.get("id"),
+            "from_state": from_state,
+            "to_state": to_state,
+            "title": item.get("title"),
+        })
+
+    for it in new_items:
+        _emit(it, it.get("state"))
+    for it in gone_items:
+        _emit(it, "none")
+    return events
 
 
 def _tracked_unresolved_ids(preview: dict) -> list[str]:
@@ -419,6 +461,26 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning("telegram 알림 실패: %s", e)
 
+    # ── 모니터링 이벤트 로그 — 실패해도 주 로직 무영향(1~3단계 합의 스키마) ──
+    try:
+        enqueue_error_vids = {vid for vid in wakes if any(e.startswith(f"{vid}:") for e in enqueue_errors)}
+        log_event(
+            gh, now_iso, "wake" if is_wake else "tick",
+            RESULT_ERR if enqueue_errors else RESULT_OK,
+            who=woken_video_id or "",
+            detail=f"candidates={len(candidates)} preview_changed={pv_changed}",
+            mode=mode, quota=yt.quota_used, candidates=len(candidates), preview_changed=pv_changed,
+        )
+        for ev in _preview_log_events(_pv0.get("items"), new_preview.get("items", []), gone_items):
+            quality = RESULT_DEGRADED if ev.get("video_id") in enqueue_error_vids else RESULT_OK
+            log_event(
+                gh, now_iso, "preview", quality,
+                who=ev.get("channel_key", ""), detail=f"{ev.get('from_state')}→{ev.get('to_state')}",
+                video_id=ev.get("video_id"), item_id=ev.get("id"), title=ev.get("title"),
+            )
+    except Exception as e:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패: %s", e)
+
     if not is_wake:
         _ping_healthcheck(cfg.healthcheck_url)
 
@@ -483,5 +545,26 @@ if __name__ == "__main__":
     _new_pv["generated_at"] = _prev_pv.get("generated_at", _new_pv["generated_at"])
     assert _new_pv["generated_at"] == "2026-09-01T12:00:00Z", "무변화면 generated_at 도 prev 유지"
     print("[OK] 무변화 시 generated_at 동결 (하트비트 커밋 폭증 방지)")
+
+    # 모니터링 로그용 preview 전이 추출 — 상태 유지, 신규, 삭제(→none) 셋 다 커버.
+    _prev_items = [
+        {"id": "pv_1", "video_id": "v1", "channel_key": "arale", "state": "upcoming", "title": "A"},
+        {"id": "pv_2", "video_id": "v2", "channel_key": "yuno", "state": "live", "title": "B"},
+        {"id": "pv_3", "video_id": "v3", "channel_key": "nonoka", "state": "end", "title": "C"},
+    ]
+    _new_items = [
+        {"id": "pv_1", "video_id": "v1", "channel_key": "arale", "state": "watching", "title": "A"},  # 전이
+        {"id": "pv_2", "video_id": "v2", "channel_key": "yuno", "state": "live", "title": "B"},  # 유지 → 제외
+        {"id": "pv_4", "video_id": "v4", "channel_key": "miyako", "state": "announced", "title": "D"},  # 신규
+    ]
+    _gone_items = [{"id": "pv_3", "video_id": "v3", "channel_key": "nonoka", "state": "none", "title": "C"}]
+    _evs = _preview_log_events(_prev_items, _new_items, _gone_items)
+    _by_id = {e["id"]: e for e in _evs}
+    assert len(_evs) == 3, _evs
+    assert _by_id["pv_1"]["from_state"] == "upcoming" and _by_id["pv_1"]["to_state"] == "watching"
+    assert _by_id["pv_4"]["from_state"] is None and _by_id["pv_4"]["to_state"] == "announced"
+    assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "none"
+    assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
+    print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
 
     print("SUCCESS: handlers self-test 통과")

@@ -2,6 +2,26 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.5.0** (기능 교체) — `/push-monitor`(git 커밋 기반 Vercel 배포 한도 감시)를
+  `/monitor`(실제 파이프라인 이벤트 기반 운영 모니터링)로 완전 교체.
+  1) `src/backend/monitor_log.py` 신규 — tick/wake/preview 전이/notice/tweet/relay/
+     운영자 `/pause`·`/resume` 마다 `monitoring/events-YYYY-MM-DD.jsonl`(data 저장소,
+     KST 날짜)에 한 줄씩 append. 공통 필드 `ts/flow/result/who/detail` + 흐름별 추가
+     필드, `result`는 `ok`/`degraded`/`err` 3톤(성공/실패로 미리 뭉치지 않음). tweet/relay는
+     `via`(`ingest`|`ops`)로 X 웹훅 자동 인입과 `/edit` 수동 교체를 구분해서 남긴다.
+  2) `src/backend/monitor_report.py` 신규 — 하루치 이벤트 로그 + healthchecks.io
+     읽기 전용 API(백엔드 상태 4색) + 코드 저장소 커밋 수(Vercel push 요약)를 모아
+     대시보드 html 생성. 트리거(운영자 제어/정기수집·라이브감지/X 웹훅 인입) → preview
+     생애주기·릴레이·소식·개인 트윗을 한 시간축에 그린다(2026-09-16 세션에서 Artifact
+     목업으로 먼저 검증한 UI). 실데이터라 목업에 있던 여러 날짜 브라우징(잔디)·인과관계
+     점선·트윗 말풍선/썸네일은 뺐다 — 재현 근거 데이터가 없어서. 다른 날짜는
+     `/monitor YYYY-MM-DD`로 재요청.
+  3) `control.json`의 `push_monitor_auto` → `monitor_auto`로 개명(기존 값은 리셋되니
+     배포 후 `/monitor --auto` 재실행 필요). Cloud Scheduler 잡도
+     `mewtype-push-monitor`(`/push-monitor`) → `mewtype-monitor`(`/monitor`)로 교체.
+  4) `src/backend/push_monitor.py`는 대시보드 코드를 걷어내고 `fetch_commits`/
+     `list_branches`(Vercel push 요약이 재사용)만 남김 — 옛 대시보드 배경(2026-09-13
+     Vercel 100/일 한도 사고)은 이 문서의 v3.2.2~v3.4.x 항목 참고.
 - **v3.4.7** (기능 추가) — 하단 푸터에 비공식 팬 메이드 프로젝트 안내 문구.
   구글 검색 노출을 검토하다 "커뮤니티 공개 수준을 유지하되, 비공식·비영리임은 명시해두자"로
   결론 — `#foot-updated` 옆에 `#foot-disclaimer`(`.fdisc`) 추가. 기본 문구(비공식 팬 메이드

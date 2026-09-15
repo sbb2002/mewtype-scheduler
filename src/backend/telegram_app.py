@@ -83,19 +83,20 @@ except Exception:                           # pragma: no cover
     YouTubeClient = None
 
 from . import preview as preview_mod
-from . import push_monitor
+from . import monitor_report
 from . import statemachine
 from .control import (
     LOG_LEVELS,
     default_control,
     get_log_level,
-    get_push_monitor_auto,
+    get_monitor_auto,
     is_paused,
     set_log_level,
     set_paused,
-    set_push_monitor_auto,
+    set_monitor_auto,
 )
 from .gh_store import ConflictError, GitHubStore
+from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_event
 
 # admin_state.json 경로 (v2.5 — /list /del /ingest /undo 수동 관리 명령)
 _ADMIN_STATE_PATH = "admin_state.json"
@@ -480,12 +481,19 @@ def _handle_log(gh: GitHubStore, now_iso: str, arg: str) -> None:
         _send_telegram(f"⚠️ 오류: /log 처리 실패\n{str(e)[:100]}")
 
 
-def _handle_push_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
-    """/push-monitor [--auto|--off] — Push Monitor 대시보드.
+def _healthchecks_uuid() -> str:
+    """HEALTHCHECK_URL(https://hc-ping.com/<uuid>)에서 uuid만 뽑는다 — 별도 env 불필요."""
+    url = os.environ.get("HEALTHCHECK_URL", "").strip()
+    return url.rsplit("/", 1)[-1] if url else ""
 
-    인자 없음: 즉시 1회 tick 실행 + 결과 html을 DM으로 전송.
-    --auto: Cloud Scheduler(KST 06:00) 자동 tick+DM 켬.
-    --off: 자동 tick 끔 (수동 /push-monitor 는 계속 가능).
+
+def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
+    """/monitor [--auto|--off|YYYY-MM-DD] — Ops Monitor 대시보드(v3.5, 구 Push Monitor 대체).
+
+    인자 없음: 오늘자 리포트를 즉시 생성해 DM 전송.
+    YYYY-MM-DD: 그 날짜의 리포트 생성(다른 날짜는 이 방식으로 요청).
+    --auto: Cloud Scheduler(KST 06:00) 자동 생성+DM 켬.
+    --off: 자동 생성 끔 (수동 /monitor 는 계속 가능).
     """
     if arg in ("--auto", "--off"):
         try:
@@ -493,36 +501,46 @@ def _handle_push_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
             if control is None:
                 control = default_control()
             enabled = arg == "--auto"
-            control = set_push_monitor_auto(
-                control, enabled, by=f"telegram:/push-monitor {arg}", now_iso=now_iso,
+            control = set_monitor_auto(
+                control, enabled, by=f"telegram:/monitor {arg}", now_iso=now_iso,
             )
             gh.write_json(
                 "control.json", control, prev_sha=None,
-                message=f"data: push_monitor_auto={enabled} via Telegram {arg} {now_iso}",
+                message=f"data: monitor_auto={enabled} via Telegram {arg} {now_iso}",
             )
             if enabled:
-                _send_telegram("🟢 Push Monitor 자동 실행 켬 — 매일 KST 06:00에 tick 후 DM으로 전송합니다.")
+                _send_telegram("🟢 Monitor 자동 실행 켬 — 매일 KST 06:00에 리포트 생성 후 DM으로 전송합니다.")
             else:
-                _send_telegram("⚪ Push Monitor 자동 실행 끔 — /push-monitor 로 수동 실행은 계속 가능합니다.")
+                _send_telegram("⚪ Monitor 자동 실행 끔 — /monitor 로 수동 실행은 계속 가능합니다.")
         except Exception as e:
-            log.exception("Error handling /push-monitor %s", arg)
-            _send_telegram(f"⚠️ 오류: /push-monitor {arg} 처리 실패\n{str(e)[:100]}")
+            log.exception("Error handling /monitor %s", arg)
+            _send_telegram(f"⚠️ 오류: /monitor {arg} 처리 실패\n{str(e)[:100]}")
+        return
+
+    date_kst = arg.strip() if re.fullmatch(r"\d{4}-\d{2}-\d{2}", arg.strip()) else None
+    if arg.strip() and date_kst is None:
+        _send_telegram("사용법: /monitor [--auto|--off|YYYY-MM-DD]")
         return
 
     try:
-        _send_telegram("⏳ Push Monitor tick 실행 중...", silent=True)
-        result = push_monitor.run(gh.token, gh.repo)
+        _send_telegram("⏳ Monitor 리포트 생성 중...", silent=True)
+        result = monitor_report.run(
+            gh, date_kst=date_kst,
+            healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
+            healthchecks_uuid=_healthchecks_uuid(),
+            github_token_for_commits=gh.token,
+        )
         html = result.pop("html")
         ok = _send_telegram_document(
-            "push_monitor.html",
+            "monitor.html",
             html.encode("utf-8"),
-            caption=f"📊 Push Monitor — 최근 {result['days']}일치 {result['records']}건",
+            caption=f"📊 Monitor — {result['date']} · {result['events']}건",
         )
         if not ok:
-            _send_telegram("⚠️ tick은 성공했지만 DM 전송에 실패했습니다.")
+            _send_telegram("⚠️ 생성은 성공했지만 DM 전송에 실패했습니다.")
     except Exception as e:
-        log.exception("Error handling /push-monitor")
-        _send_telegram(f"⚠️ 오류: /push-monitor 처리 실패\n{str(e)[:100]}")
+        log.exception("Error handling /monitor")
+        _send_telegram(f"⚠️ 오류: /monitor 처리 실패\n{str(e)[:100]}")
 
 
 def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
@@ -547,9 +565,18 @@ def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
         else:
             log.info("Control not changed (already paused?)")
             _send_telegram("⏸ 이미 일시정지 상태입니다.")
+        try:
+            log_event(gh, now_iso, "ops", RESULT_OK, who="/pause",
+                      detail="control.json 커밋" if changed else "이미 일시정지 상태(무변화)")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /pause)")
     except Exception as e:
         log.exception("Error handling /pause")
         _send_telegram(f"⚠️ 오류: /pause 처리 실패\n{str(e)[:100]}")
+        try:
+            log_event(gh, now_iso, "ops", RESULT_ERR, who="/pause", detail=str(e)[:150])
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /pause)")
 
 
 def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None:
@@ -606,9 +633,18 @@ def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None
         else:
             _send_telegram("▶️ 재개 완료 (동기화 상태 확인 불가).")
 
+        try:
+            log_event(gh, now_iso, "ops", RESULT_OK if tick_result else RESULT_DEGRADED, who="/resume",
+                      detail="control.json 커밋 + heal 즉시 호출" + ("" if tick_result else " (heal 호출 응답 확인 불가)"))
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /resume)")
     except Exception as e:
         log.exception("Error handling /resume")
         _send_telegram(f"⚠️ 오류: /resume 처리 실패\n{str(e)[:100]}")
+        try:
+            log_event(gh, now_iso, "ops", RESULT_ERR, who="/resume", detail=str(e)[:150])
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /resume)")
 
 
 def _load_channels_config() -> dict:
@@ -1713,7 +1749,15 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         mode, parsed = _apply_notice(gh, raw, now_iso, tag=tag, title=title)
     except Exception:
         log.exception("auto notice 실패")
+        try:
+            log_event(gh, now_iso, "notice", RESULT_ERR, detail="mode: error (exception)", via="ingest")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(notice)")
         return "error"
+    try:
+        log_event(gh, now_iso, "notice", RESULT_OK, detail=f"mode: {mode}", via="ingest")
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(notice)")
     if mode in ("added", "updated") and _auto_dm_allows(gh, "notice"):
         _notice_result_dm(mode, parsed, raw)
     else:
@@ -1847,14 +1891,17 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
 
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                           channel_key: str, now_iso: str,
-                          vx_extract: dict | None = None) -> str:
+                          vx_extract: dict | None = None, via: str = "ingest") -> str:
     """개인 트윗 인입 — `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
+    `/edit → tweet` 마법사(운영자가 원문을 직접 붙여넣는 수동 교체)도 같은 함수를 탄다.
 
     ECHO/DRY-RUN/paused 와 무관하게 실행(이 갈래에 온 시점에서 이미 개인 트윗). 반환: mode(로그용).
     파싱이 트윗이 아니면(본문 없음) GitHub 은 안 건드린다.
 
     `vx_extract`: `_ingest` 가 `_recover_raw_via_vxtwitter` 로 이미 조회해 둔 같은 tweet 의
     vxtwitter 결과 — 있으면 `_enrich_personal_media` 가 재조회 없이 재사용.
+    `via`: 모니터링 로그용 트리거 구분 — "ingest"(X 웹훅 자동 인입, 기본값) | "ops"(운영자
+    수동 편집). 자동/수동을 구분해서 보고 싶다는 요청(2026-09-16)으로 추가.
     """
     if xtweet is None:
         return "no-xtweet"
@@ -1869,6 +1916,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     if gh is None:
         return "no-gh"
     mode = "error"
+    row = None
     try:
         for _try in (1, 2):
             prev, psha = gh.read_json(_TWEETS_PATH)
@@ -1921,7 +1969,20 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         _tweet_sweep(gh, now_iso)      # 만료 슬롯 정리 (best-effort)
     except Exception:
         log.exception("personal tweet 반영 실패")
+        try:
+            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)", via=via)
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(tweet)")
         return "error"
+
+    needs_tl = bool(row and (row.get("needs_tl") or (row.get("quote") or {}).get("needs_tl")))
+    try:
+        log_event(
+            gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
+            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(tweet)")
 
     name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
     if mode in ("added", "rolled"):
@@ -2504,7 +2565,7 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
         _op_clear(gh, now_iso)
         u = ctx.get("unit")
         _send_telegram("📥 반영 중…")
-        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso)
+        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso, via="ops")
         _send_telegram(f"🐦 {u} 트윗 {'교체됨' if mode in ('added','replaced') else mode}.")
         return True
 
@@ -2603,6 +2664,10 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
             return True
         _merge_rows_into_schedule(gh, rows, now_iso, message=f"data: /edit preview ingest {now_iso}",
                                   action="/edit preview ingest")
+        try:
+            log_event(gh, now_iso, "relay", RESULT_OK, detail=f"mode: added · 파싱 {len(rows)}건(수동 교체)", via="ops")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(relay via ops)")
         _send_telegram("✏️ 원문으로 교체 반영됨. /undo 로 되돌릴 수 있습니다.")
         return True
 
@@ -2976,15 +3041,15 @@ if _FLASK_AVAILABLE:
                 _handle_undo_request(gh, now_utc)
             elif cmd == "/translate":
                 _handle_translate(gh, now_utc, arg)
-            elif cmd == "/push-monitor":
-                _handle_push_monitor(gh, now_utc, arg)
+            elif cmd == "/monitor":
+                _handle_monitor(gh, now_utc, arg)
             else:
                 # 도움말
                 help_text = (
                     "<b>📱 mewtype 텔레그램 봇 (v3)</b>\n\n"
                     "일반: /status /pause /resume /log [detail|normal|simple]\n"
-                    "/push-monitor [--auto|--off] — 배포 활동 대시보드 즉시 DM "
-                    "(--auto: 매일 KST 06:00 자동, --off: 자동 끔)\n\n"
+                    "/monitor [--auto|--off|YYYY-MM-DD] — 운영 모니터링 리포트 즉시 DM "
+                    "(--auto: 매일 KST 06:00 자동, --off: 자동 끔, 날짜: 그날 리포트)\n\n"
                     "<b>콘텐츠</b> (c = preview | notice | tweet, 생략 시 preview):\n"
                     "/list &lt;c&gt; [유닛] — 목록\n"
                     "/ingest &lt;c&gt; — 원문 이어 보내 반영 (tweet 은 유닛 지정)\n"
@@ -3161,6 +3226,7 @@ if _FLASK_AVAILABLE:
 
         dry = os.environ.get("INGEST_DRY_RUN", "").strip() not in ("", "0", "false", "False", "no")
 
+        gh = None
         try:
             channels_cfg = _load_channels_config()
             rows = xrelay.parse(raw, now_iso)
@@ -3218,6 +3284,11 @@ if _FLASK_AVAILABLE:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 # 대기열 반영이 있었으면(=실제 scheduled 변경) scheduled, 아니면 잡음성 ingest.
                 _auto_dm(gh, "scheduled" if drained else "ingest", msg)
+                try:
+                    log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
+                              detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none", via="ingest")
+                except Exception:  # noqa: BLE001
+                    log.warning("monitor_log 기록 실패(relay)")
                 return jsonify(
                     {"ok": True, "parsed": 0, "failed": len(failed), "drained": drained}
                 ), 200
@@ -3240,12 +3311,22 @@ if _FLASK_AVAILABLE:
             if changed:
                 summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
             _auto_dm(gh, "scheduled", summary)   # 공식 일일 스케줄 → scheduled 행 반영
+            try:
+                log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
+                          detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""), via="ingest")
+            except Exception:  # noqa: BLE001
+                log.warning("monitor_log 기록 실패(relay)")
             return jsonify(
                 {"ok": True, "parsed": len(rows), "changed": changed, "drained": drained}
             ), 200
         except Exception as e:
             log.exception("ingest failed")
             _send_telegram(f"⚠️ ingest 오류: {str(e)[:200]}")
+            if gh is not None:
+                try:
+                    log_event(gh, now_iso, "relay", RESULT_ERR, detail=f"mode: error · {str(e)[:100]}", via="ingest")
+                except Exception:  # noqa: BLE001
+                    log.warning("monitor_log 기록 실패(relay)")
             return jsonify({"ok": False, "error": str(e)}), 200
 
     @app.get("/")
