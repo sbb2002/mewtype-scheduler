@@ -15,6 +15,7 @@ const SITE_ICON = {
 };
 
 const _st = { built: false, sig: "", idx: 0, collapsed: true, open: false, timer: null, paused: false };
+const NTC_VISIBLE_ROWS = 7; // 펼친 목록 최대 노출 행 수 — 넘으면 스크롤 (PC/모바일 공통)
 
 function _todayKST() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }); // YYYY-MM-DD
@@ -176,10 +177,16 @@ export function renderNotices(section, data) {
   ticker.addEventListener("focusout", () => { _st.paused = false; play(); });
 
   // 펼침 높이를 실측해서 넣어야 max-height 트랜지션이 딱 그 거리만큼 "스르륵".
+  // 7건 넘으면 그 이상은 안 늘리고 목록 내부 스크롤로 — 화면을 뒤덮지 않게.
   const applyListHeight = () => {
     if (!listEl) return;
     if (_st.open) {
-      const h = Math.min(listEl.scrollHeight, Math.round(window.innerHeight * 0.7));
+      const itemH = listEl.firstElementChild
+        ? listEl.firstElementChild.getBoundingClientRect().height
+        : 35;
+      const capByCount = Math.round(itemH * NTC_VISIBLE_ROWS);
+      const capByViewport = Math.round(window.innerHeight * 0.7);
+      const h = Math.min(listEl.scrollHeight, capByCount, capByViewport);
       listEl.style.maxHeight = h + "px";
     } else {
       listEl.style.maxHeight = "0px";
