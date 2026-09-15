@@ -64,12 +64,26 @@ def _mask_glossary(text: str) -> tuple[str, list[tuple[str, str, str]]]:
     return masked, mapping
 
 
+_GLOSSARY_LEAK_RE = re.compile(r"@+\s*GLOSSARY\s*\d*\s*@+")
+
+
 def _unmask_glossary(text: str, mapping: list[tuple[str, str, str]], *, to: str) -> str:
-    """자리표시자를 복원. to='ja' 면 일본어 원문으로, to='ko' 면 고정 한국어역으로."""
+    """자리표시자를 복원. to='ja' 면 일본어 원문으로, to='ko' 면 고정 한국어역으로.
+
+    (버그리포트 20260916) LLM 이 토큰을 정확히 그대로 안 남기고 공백을 끼워 넣는 등
+    변형하면(예: "@@ GLOSSARY0 @@") 아래 정확 일치 replace 가 못 잡아 원본 지시
+    토큰이 번역 결과에 그대로 노출된 채 트윗/소식으로 게시되는 사고가 났다(아라레
+    트윗 실사례). 정확 치환 후에도 남은 GLOSSARY 형태 잔재는 전부 지운다 — 이 함수가
+    translate()/notice_title() 의 유일한 언마스크 경로라 여기서 한 번만 막으면 된다.
+    """
     if not text:
         return text
     for token, ja, ko in mapping:
         text = text.replace(token, ja if to == "ja" else ko)
+    cleaned, n = _GLOSSARY_LEAK_RE.subn("", text)
+    if n:
+        logger.warning("unmask_glossary: 잔여 GLOSSARY 토큰 %d개 제거 — %r", n, text)
+        text = re.sub(r"\s{2,}", " ", cleaned).strip()
     return text
 
 
@@ -760,6 +774,15 @@ if __name__ == "__main__":
     assert masked3 == "@@GLOSSARY1@@ 13th", masked3  # 원래 있던 공백 그대로, 중복 안 됨
     print("✓ 이미 공백 있는 경우엔 추가 공백 안 생김")
 
+    # ──── 시나리오 13: LLM 이 토큰을 변형해 남겨도 잔재가 새지 않음 (버그리포트 20260916) ────
+    print("\n[시나리오 13] 변형된 GLOSSARY 토큰 잔재 — 최종 출력에 새지 않음")
+    print("-" * 70)
+
+    assert _unmask_glossary("@@ GLOSSARY0 @@ 5th 싱글 발매", [], to="ko") == "5th 싱글 발매", \
+        _unmask_glossary("@@ GLOSSARY0 @@ 5th 싱글 발매", [], to="ko")
+    assert _unmask_glossary("사인회 @@GLOSSARY0@@ 입니다", [], to="ko") == "사인회 입니다"
+    print("✓ _unmask_glossary: mapping 에 없는(=치환 실패한) GLOSSARY 잔재도 최종 텍스트에서 제거됨")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 12개 스모크 테스트 통과")
+    print("SUCCESS: 모든 13개 스모크 테스트 통과")
     print("=" * 70)
