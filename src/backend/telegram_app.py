@@ -1733,12 +1733,12 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
     except Exception:
         log.exception("auto notice 실패")
         try:
-            log_event(gh, now_iso, "notice", RESULT_ERR, detail="mode: error (exception)")
+            log_event(gh, now_iso, "notice", RESULT_ERR, detail="mode: error (exception)", via="ingest")
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(notice)")
         return "error"
     try:
-        log_event(gh, now_iso, "notice", RESULT_OK, detail=f"mode: {mode}")
+        log_event(gh, now_iso, "notice", RESULT_OK, detail=f"mode: {mode}", via="ingest")
     except Exception:  # noqa: BLE001
         log.warning("monitor_log 기록 실패(notice)")
     if mode in ("added", "updated") and _auto_dm_allows(gh, "notice"):
@@ -1874,14 +1874,17 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
 
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                           channel_key: str, now_iso: str,
-                          vx_extract: dict | None = None) -> str:
+                          vx_extract: dict | None = None, via: str = "ingest") -> str:
     """개인 트윗 인입 — `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
+    `/edit → tweet` 마법사(운영자가 원문을 직접 붙여넣는 수동 교체)도 같은 함수를 탄다.
 
     ECHO/DRY-RUN/paused 와 무관하게 실행(이 갈래에 온 시점에서 이미 개인 트윗). 반환: mode(로그용).
     파싱이 트윗이 아니면(본문 없음) GitHub 은 안 건드린다.
 
     `vx_extract`: `_ingest` 가 `_recover_raw_via_vxtwitter` 로 이미 조회해 둔 같은 tweet 의
     vxtwitter 결과 — 있으면 `_enrich_personal_media` 가 재조회 없이 재사용.
+    `via`: 모니터링 로그용 트리거 구분 — "ingest"(X 웹훅 자동 인입, 기본값) | "ops"(운영자
+    수동 편집). 자동/수동을 구분해서 보고 싶다는 요청(2026-09-16)으로 추가.
     """
     if xtweet is None:
         return "no-xtweet"
@@ -1950,7 +1953,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     except Exception:
         log.exception("personal tweet 반영 실패")
         try:
-            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)")
+            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
         return "error"
@@ -1959,7 +1962,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     try:
         log_event(
             gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
-            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""),
+            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
         )
     except Exception:  # noqa: BLE001
         log.warning("monitor_log 기록 실패(tweet)")
@@ -2545,7 +2548,7 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
         _op_clear(gh, now_iso)
         u = ctx.get("unit")
         _send_telegram("📥 반영 중…")
-        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso)
+        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso, via="ops")
         _send_telegram(f"🐦 {u} 트윗 {'교체됨' if mode in ('added','replaced') else mode}.")
         return True
 
@@ -2644,6 +2647,10 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
             return True
         _merge_rows_into_schedule(gh, rows, now_iso, message=f"data: /edit preview ingest {now_iso}",
                                   action="/edit preview ingest")
+        try:
+            log_event(gh, now_iso, "relay", RESULT_OK, detail=f"mode: added · 파싱 {len(rows)}건(수동 교체)", via="ops")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(relay via ops)")
         _send_telegram("✏️ 원문으로 교체 반영됨. /undo 로 되돌릴 수 있습니다.")
         return True
 
@@ -3262,7 +3269,7 @@ if _FLASK_AVAILABLE:
                 _auto_dm(gh, "scheduled" if drained else "ingest", msg)
                 try:
                     log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
-                              detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none")
+                              detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none", via="ingest")
                 except Exception:  # noqa: BLE001
                     log.warning("monitor_log 기록 실패(relay)")
                 return jsonify(
@@ -3289,7 +3296,7 @@ if _FLASK_AVAILABLE:
             _auto_dm(gh, "scheduled", summary)   # 공식 일일 스케줄 → scheduled 행 반영
             try:
                 log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
-                          detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""))
+                          detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""), via="ingest")
             except Exception:  # noqa: BLE001
                 log.warning("monitor_log 기록 실패(relay)")
             return jsonify(
@@ -3300,7 +3307,7 @@ if _FLASK_AVAILABLE:
             _send_telegram(f"⚠️ ingest 오류: {str(e)[:200]}")
             if gh is not None:
                 try:
-                    log_event(gh, now_iso, "relay", RESULT_ERR, detail=f"mode: error · {str(e)[:100]}")
+                    log_event(gh, now_iso, "relay", RESULT_ERR, detail=f"mode: error · {str(e)[:100]}", via="ingest")
                 except Exception:  # noqa: BLE001
                     log.warning("monitor_log 기록 실패(relay)")
             return jsonify({"ok": False, "error": str(e)}), 200
