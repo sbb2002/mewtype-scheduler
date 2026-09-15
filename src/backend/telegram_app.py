@@ -96,6 +96,7 @@ from .control import (
     set_push_monitor_auto,
 )
 from .gh_store import ConflictError, GitHubStore
+from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_event
 
 # admin_state.json 경로 (v2.5 — /list /del /ingest /undo 수동 관리 명령)
 _ADMIN_STATE_PATH = "admin_state.json"
@@ -547,9 +548,18 @@ def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
         else:
             log.info("Control not changed (already paused?)")
             _send_telegram("⏸ 이미 일시정지 상태입니다.")
+        try:
+            log_event(gh, now_iso, "ops", RESULT_OK, who="/pause",
+                      detail="control.json 커밋" if changed else "이미 일시정지 상태(무변화)")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /pause)")
     except Exception as e:
         log.exception("Error handling /pause")
         _send_telegram(f"⚠️ 오류: /pause 처리 실패\n{str(e)[:100]}")
+        try:
+            log_event(gh, now_iso, "ops", RESULT_ERR, who="/pause", detail=str(e)[:150])
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /pause)")
 
 
 def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None:
@@ -606,9 +616,18 @@ def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None
         else:
             _send_telegram("▶️ 재개 완료 (동기화 상태 확인 불가).")
 
+        try:
+            log_event(gh, now_iso, "ops", RESULT_OK if tick_result else RESULT_DEGRADED, who="/resume",
+                      detail="control.json 커밋 + heal 즉시 호출" + ("" if tick_result else " (heal 호출 응답 확인 불가)"))
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /resume)")
     except Exception as e:
         log.exception("Error handling /resume")
         _send_telegram(f"⚠️ 오류: /resume 처리 실패\n{str(e)[:100]}")
+        try:
+            log_event(gh, now_iso, "ops", RESULT_ERR, who="/resume", detail=str(e)[:150])
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(ops /resume)")
 
 
 def _load_channels_config() -> dict:
@@ -1713,7 +1732,15 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         mode, parsed = _apply_notice(gh, raw, now_iso, tag=tag, title=title)
     except Exception:
         log.exception("auto notice 실패")
+        try:
+            log_event(gh, now_iso, "notice", RESULT_ERR, detail="mode: error (exception)")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(notice)")
         return "error"
+    try:
+        log_event(gh, now_iso, "notice", RESULT_OK, detail=f"mode: {mode}")
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(notice)")
     if mode in ("added", "updated") and _auto_dm_allows(gh, "notice"):
         _notice_result_dm(mode, parsed, raw)
     else:
@@ -1869,6 +1896,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     if gh is None:
         return "no-gh"
     mode = "error"
+    row = None
     try:
         for _try in (1, 2):
             prev, psha = gh.read_json(_TWEETS_PATH)
@@ -1921,7 +1949,20 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         _tweet_sweep(gh, now_iso)      # 만료 슬롯 정리 (best-effort)
     except Exception:
         log.exception("personal tweet 반영 실패")
+        try:
+            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(tweet)")
         return "error"
+
+    needs_tl = bool(row and (row.get("needs_tl") or (row.get("quote") or {}).get("needs_tl")))
+    try:
+        log_event(
+            gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
+            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""),
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(tweet)")
 
     name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
     if mode in ("added", "rolled"):
@@ -3161,6 +3202,7 @@ if _FLASK_AVAILABLE:
 
         dry = os.environ.get("INGEST_DRY_RUN", "").strip() not in ("", "0", "false", "False", "no")
 
+        gh = None
         try:
             channels_cfg = _load_channels_config()
             rows = xrelay.parse(raw, now_iso)
@@ -3218,6 +3260,11 @@ if _FLASK_AVAILABLE:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 # 대기열 반영이 있었으면(=실제 scheduled 변경) scheduled, 아니면 잡음성 ingest.
                 _auto_dm(gh, "scheduled" if drained else "ingest", msg)
+                try:
+                    log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
+                              detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none")
+                except Exception:  # noqa: BLE001
+                    log.warning("monitor_log 기록 실패(relay)")
                 return jsonify(
                     {"ok": True, "parsed": 0, "failed": len(failed), "drained": drained}
                 ), 200
@@ -3240,12 +3287,22 @@ if _FLASK_AVAILABLE:
             if changed:
                 summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
             _auto_dm(gh, "scheduled", summary)   # 공식 일일 스케줄 → scheduled 행 반영
+            try:
+                log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
+                          detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""))
+            except Exception:  # noqa: BLE001
+                log.warning("monitor_log 기록 실패(relay)")
             return jsonify(
                 {"ok": True, "parsed": len(rows), "changed": changed, "drained": drained}
             ), 200
         except Exception as e:
             log.exception("ingest failed")
             _send_telegram(f"⚠️ ingest 오류: {str(e)[:200]}")
+            if gh is not None:
+                try:
+                    log_event(gh, now_iso, "relay", RESULT_ERR, detail=f"mode: error · {str(e)[:100]}")
+                except Exception:  # noqa: BLE001
+                    log.warning("monitor_log 기록 실패(relay)")
             return jsonify({"ok": False, "error": str(e)}), 200
 
     @app.get("/")
