@@ -170,6 +170,77 @@
   .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);
     font-size:.8rem;font-family:var(--f-mono)}
   .foot a{color:var(--dim)}
+
+  /* ── (v3.6) 개인 트윗 예고 판정 트리 — 설계 검토용 서브다이어그램 ── */
+  :root{
+    --reg:#8fe3ae; --reg-soft:rgba(143,227,174,.12);
+    --skip:#8a7a7f; --notice:#e6bd72; --notice-soft:rgba(230,189,114,.13);
+  }
+  .before-after{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 22px}
+  .ba{flex:1 1 260px;border:1px solid var(--line);border-radius:10px;padding:13px 15px;background:var(--panel)}
+  .ba .k{font-family:var(--f-mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;display:block}
+  .ba.before .k{color:var(--skip)}
+  .ba.after .k{color:var(--reg)}
+  .ba p{color:var(--dim);font-size:.87rem;margin:0}
+  .ba b{color:var(--ink);font-weight:500}
+  .tabs2{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .tab2{flex:1 1 auto;min-width:112px;padding:10px 9px;font:inherit;font-size:.77rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .tab2:last-child{border-right:0}
+  .tab2:hover{color:var(--ink)}
+  .tab2[aria-selected="true"]{color:#0c1614;background:var(--cyan);font-weight:600}
+  .tab2 .n{display:block;font-family:var(--f-mono);font-size:.6rem;opacity:.7;margin-bottom:1px}
+  .stage2-scroll{overflow-x:auto;background:#0d0e11}
+  .stage2{padding:22px 18px 6px;min-width:900px}
+  #svg2{width:100%;height:auto;display:block}
+  svg#svg2 .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.3;transition:opacity .25s,stroke .25s,fill .25s}
+  svg#svg2 .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg#svg2 .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  svg#svg2 .node .ns{font-size:9px;fill:var(--faint)}
+  svg#svg2 .edge{fill:none;stroke:#3a3d44;stroke-width:1.5;transition:opacity .25s,stroke .25s}
+  svg#svg2 .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg#svg2.dimming .node{opacity:.26}
+  svg#svg2.dimming .edge{opacity:.13}
+  svg#svg2.dimming .elabel{opacity:0}
+  svg#svg2 .node.hot{opacity:1}
+  svg#svg2 .node.hot rect{stroke:var(--cyan);stroke-width:1.9}
+  svg#svg2 .node.hot text{fill:var(--ink)}
+  svg#svg2 .node.hot .ns{fill:var(--dim)}
+  svg#svg2 .edge.hot{opacity:.55;stroke:#4a525c}
+  svg#svg2 .edge.hot ~ .elabel{opacity:.95}
+  svg#svg2 .node.k-reg rect{stroke:color-mix(in srgb,var(--reg) 55%,var(--line))}
+  svg#svg2 .node.k-reg.hot rect{fill:var(--reg-soft);stroke:var(--reg)}
+  svg#svg2 .node.k-reg .nt{fill:color-mix(in srgb,var(--reg) 70%,var(--ink))}
+  svg#svg2 .node.k-skip rect{stroke-dasharray:3 3}
+  svg#svg2 .node.k-skip.hot rect{stroke:var(--skip)}
+  svg#svg2 .node.k-notice.hot rect{fill:var(--notice-soft);stroke:var(--notice)}
+  svg#svg2 .node.k-notice .nt{fill:color-mix(in srgb,var(--notice) 75%,var(--ink))}
+  svg#svg2 .node.k-ext rect{stroke-dasharray:4 3}
+  svg#svg2 .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+    stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
+  svg#svg2.dimming .route-line{opacity:.8}
+  svg#svg2 .packet-halo{fill:var(--cyan);opacity:.22}
+  svg#svg2 .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  @media (prefers-reduced-motion:reduce){
+    svg#svg2 .route-line{animation:none}
+    #packet2{opacity:0!important}
+  }
+  .cap2{padding:14px 20px 8px;color:var(--ink);font-size:.92rem;border-top:1px solid var(--line)}
+  .cap2 b{color:var(--cyan);font-weight:600}
+  .example2{margin:10px 20px 18px;padding:10px 13px;border-left:2px solid var(--line);
+    background:var(--panel2);border-radius:0 8px 8px 0}
+  .example2 .tag{display:block;font-family:var(--f-mono);font-size:.64rem;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .example2 p{color:var(--dim);font-size:.83rem;white-space:pre-wrap;line-height:1.55;margin:0}
+  .legend2{display:flex;flex-wrap:wrap;gap:16px;padding:13px 20px 18px;border-top:1px solid var(--line);
+    font-size:.76rem;color:var(--dim)}
+  .legend2 span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:13px;height:13px;border-radius:4px;border:1.4px solid var(--line);flex:none}
+  .sw.reg{border-color:var(--reg);background:var(--reg-soft)}
+  .sw.skip{border-color:var(--skip);border-style:dashed}
+  .sw.notice{border-color:var(--notice);background:var(--notice-soft)}
+  .sw.ext{border-color:var(--dim);border-style:dashed}
 </style>
 </head>
 <body>
@@ -303,6 +374,62 @@
       </svg>
     </div>
     <p class="scn-cap" id="scnCap"></p>
+  </div>
+
+  <h2>개인 트윗 예고 판정 (v3.6)</h2>
+  <p class="sub">위 "개인 트윗" 탭의 상세 — 업스트림이 중계한 원문 한 장이 <code>preview.json</code>에
+    반영되거나, 소식(notice)으로 새거나, 조용히 버려지는 전체 판정 경로. 2026-09-16 설계 검토 산출물,
+    8개 탭 = 8가지 트윗 유형.</p>
+
+  <div class="before-after">
+    <div class="ba before"><span class="k">이전 (텍스트 정규식 전용)</span>
+      <p>키워드 정규식 <code>配信</code> 등 + 날짜/시각 정규식만으로 등록 여부를 결정.
+        후기 트윗 속 무관한 숫자(<b>9/24</b> 출시일, <b>2時間</b> 플레이시간)가 날짜·시각으로
+        오합성돼도 못 걸러냄 — 아라레 오탐 실사례.</p></div>
+    <div class="ba after"><span class="k">이후</span>
+      <p>URL이 있으면 YouTube API로 먼저 사실관계를 확정. 유튜브 아닌 URL은 추적 불가능하므로
+        소식으로 이관. URL이 없을 때만 정규식으로 후보를 뽑고, <b>등록 직전 LLM에게
+        "이게 진짜 예고냐"고 마지막으로 되묻는다</b>.</p></div>
+  </div>
+
+  <div class="diagram">
+    <div class="tabs2" role="tablist" id="tabs2">
+      <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>본인 라이브 시작</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>타 멤버 콜라보</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>외부 협업 · 참여확인</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="3"><span class="n">04</span>무관한 영상 링크</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="4"><span class="n">05</span>비유튜브 URL</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="5"><span class="n">06</span>텍스트 예고</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="6"><span class="n">07</span>후기 오탐 방지</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="7"><span class="n">08</span>게이트 미통과</button>
+    </div>
+    <div class="stage2-scroll">
+      <div class="stage2">
+        <svg id="svg2" viewBox="0 0 1160 646" role="img" aria-label="개인 트윗 예고 판정 흐름도">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+            </marker>
+          </defs>
+          <g id="edges2"></g>
+          <path id="routeLine2" class="route-line" d=""/>
+          <g id="packet2" opacity="0">
+            <circle class="packet-halo" r="10"/>
+            <circle class="packet-dot" r="4.5"/>
+            <animateMotion id="pkMove2" dur="3s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0"/>
+          </g>
+          <g id="nodes2"></g>
+        </svg>
+      </div>
+    </div>
+    <p class="cap2" id="cap2"></p>
+    <div class="example2" id="example2"><span class="tag" id="exTag2">예시 트윗</span><p id="exText2"></p></div>
+    <div class="legend2">
+      <span><i class="sw reg"></i>등록됨 (preview.json)</span>
+      <span><i class="sw skip"></i>미등록 · 조용히 종료</span>
+      <span><i class="sw notice"></i>소식으로 이관 (notices.json)</span>
+      <span><i class="sw ext"></i>외부 API/LLM 호출 (점선)</span>
+    </div>
   </div>
 
   <h2>6단계 상태 모델</h2>
@@ -622,6 +749,188 @@
     ti = (ti+1) % TK.length;
     tkTxt.textContent = TK[ti][0]; tkTag.textContent = TK[ti][1];
   }, 3200);
+})();
+</script>
+
+<script>
+/* (v3.6) 개인 트윗 예고 판정 트리 — 독립 IIFE, 위 스크립트와 변수 스코프 안 겹침.
+   설계 검토 아티팩트(2026-09-16)를 그대로 이식. */
+(function(){
+  "use strict";
+
+  var W = 170, WW = 200, H = 50, HS = 46;
+  var NODES = [
+    {id:"start", cx:600, cy:39,  w:W,  h:HS, t:"업스트림 감지",     s:"개인 트윗 원문 도착", k:"start"},
+    {id:"q1",    cx:600, cy:127, w:WW, h:HS, t:"유튜브 URL?",       s:"완결된 형식만 인정",  k:"dec"},
+
+    {id:"ytmeta",cx:290, cy:219, w:WW, h:HS, t:"videos.list 조회",  s:"제목·시각·실제상태 확정", k:"ext"},
+    {id:"q4",    cx:910, cy:219, w:WW, h:HS, t:"비유튜브 URL?",     s:"bilibili 등 완결 링크",   k:"dec"},
+
+    {id:"q2",    cx:290, cy:309, w:W,  h:H,  t:"본인 채널?",        s:"작성자 = 영상 소유",  k:"dec"},
+    {id:"notice",cx:1050,cy:309, w:W,  h:H,  t:"소식으로 이관",     s:"notices.json · 추적 불가", k:"notice"},
+    {id:"gate",  cx:800, cy:309, w:WW, h:H,  t:"정규식 게이트",     s:"配信 키워드 + 날짜/시각", k:"dec"},
+
+    {id:"reg1",  cx:110, cy:399, w:W,  h:H,  t:"등록",              s:"state = API 실제값",  k:"reg"},
+    {id:"q3",    cx:440, cy:399, w:WW, h:H,  t:"5인/공식 채널?",    s:"다른 멤버 or 그룹",   k:"dec"},
+    {id:"skip2", cx:705, cy:399, w:W,  h:H,  t:"미등록",            s:"게이트·날짜 없음",    k:"skip"},
+    {id:"llmann",cx:920, cy:399, w:WW, h:H,  t:"LLM 예고 판정",     s:"“본인 방송을 예고하나?”", k:"ext"},
+
+    {id:"reg2",  cx:350, cy:489, w:W,  h:H,  t:"등록",              s:"host=그 채널·합동 병합", k:"reg"},
+    {id:"llmpt", cx:560, cy:489, w:WW, h:H,  t:"LLM 참여 판정",     s:"“이 멤버가 참여하나?”", k:"ext"},
+    {id:"reg4",  cx:800, cy:489, w:W,  h:H,  t:"등록",              s:"announced · 날짜/시각",  k:"reg"},
+    {id:"skip3", cx:1000,cy:489, w:W,  h:H,  t:"미등록",            s:"후기·잡담으로 판정",   k:"skip"},
+
+    {id:"reg3",  cx:450, cy:579, w:W,  h:H,  t:"등록",              s:"host=작성자·외부 콜라보", k:"reg"},
+    {id:"skip1", cx:630, cy:579, w:W,  h:H,  t:"미등록",            s:"무관한 영상으로 판정", k:"skip"}
+  ];
+
+  var EDGES = [
+    ["start","q1",null],
+    ["q1","ytmeta","예"], ["q1","q4","아니오"],
+    ["ytmeta","q2",null], ["q4","notice","예"], ["q4","gate","아니오"],
+    ["q2","reg1","예"], ["q2","q3","아니오"],
+    ["gate","skip2","실패"], ["gate","llmann","통과"],
+    ["q3","reg2","예"], ["q3","llmpt","아니오"],
+    ["llmann","reg4","예"], ["llmann","skip3","아니오"],
+    ["llmpt","reg3","예"], ["llmpt","skip1","아니오"]
+  ];
+
+  var byId = {};
+  NODES.forEach(function(n){ byId[n.id] = n; });
+
+  var NS = "http://www.w3.org/2000/svg";
+  function el2(tag, attrs){
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  var edgesG2 = document.getElementById("edges2");
+  var nodesG2 = document.getElementById("nodes2");
+
+  EDGES.forEach(function(edge){
+    var a = byId[edge[0]], b = byId[edge[1]], label = edge[2];
+    var x1 = a.cx, y1 = a.cy + a.h/2;
+    var x2 = b.cx, y2 = b.cy - b.h/2;
+    var p = el2("path", {
+      id: "e2_"+edge[0]+"_"+edge[1], class:"edge",
+      d: "M"+x1+","+y1+" L"+x2+","+y2, "marker-end":"url(#ah2)"
+    });
+    edgesG2.appendChild(p);
+    if (label){
+      var mx = (x1+x2)/2, my = (y1+y2)/2;
+      var t = el2("text", {class:"elabel", x:mx+5, y:my-3});
+      t.textContent = label;
+      edgesG2.appendChild(t);
+    }
+  });
+
+  NODES.forEach(function(n){
+    var g = el2("g", {class:"node k-"+n.k, id:"n2_"+n.id, transform:"translate("+(n.cx-n.w/2)+","+(n.cy-n.h/2)+")"});
+    g.appendChild(el2("rect", {width:n.w, height:n.h, rx:8}));
+    var tt = el2("text", {class:"nt", x:n.w/2, y:n.h/2 - (n.s?4:-4), "text-anchor":"middle"});
+    tt.textContent = n.t;
+    g.appendChild(tt);
+    if (n.s){
+      var st = el2("text", {class:"ns", x:n.w/2, y:n.h/2 + 12, "text-anchor":"middle"});
+      st.textContent = n.s;
+      g.appendChild(st);
+    }
+    nodesG2.appendChild(g);
+  });
+
+  var TABS2 = [
+    { route:["start","q1","ytmeta","q2","reg1"],
+      cap:"<b>본인 라이브 시작</b> — 트윗 안 완결된 유튜브 URL이 발견되면 곧장 <code>videos.list</code>로 실제 상태를 확정한다. <code>配信</code> 같은 키워드가 전혀 없어도, 게이트를 안 거치고 URL만으로 등록된다 — 2026-09-16 발견된 “쇼츠 라이브 50분 지연” 버그가 바로 이 경로 부재 때문이었다.",
+      exTag:"실사례 · nonoka_yumemita",
+      exText:"お待たせしました！はじまりますたー\n\n【弾き語り】㊗アニメ最終回！…\nhttps://www.youtube.com/live/9Di14qEQJH8" },
+    { route:["start","q1","ytmeta","q2","q3","reg2"],
+      cap:"<b>타 멤버 채널 콜라보</b> — URL이 작성자 본인 채널이 아니라 우리 5인 중 다른 멤버(또는 그룹 공식 채널)면, 영상이 실제로 올라간 그 채널을 host로 등록하고 작성자를 <code>collab_with</code>에 붙인다. 이미 등록돼 있으면 새로 안 만들고 대조만.",
+      exTag:"가상 예시 · nonoka_yumemita",
+      exText:"りっちゃんと一緒に配信するよ！\nhttps://www.youtube.com/watch?v=RitsuChannelID" },
+    { route:["start","q1","ytmeta","q2","q3","llmpt","reg3"],
+      cap:"<b>외부 협업, 참여 확인됨</b> — URL의 채널이 우리 5인도 공식도 아니면, LLM에게 “이 작성자가 참여하는 콘텐츠인가”를 묻는다. 확인되면 작성자 자신의 레인에 외부 콜라보로 등록.",
+      exTag:"가상 예시 · miyako_yumemita",
+      exText:"○○さんとのコラボ配信、アーカイブ上がったよ！\nhttps://www.youtube.com/watch?v=SomeoneElseChan" },
+    { route:["start","q1","ytmeta","q2","q3","llmpt","skip1"],
+      cap:"<b>무관한 영상 링크</b> — 같은 질문에 LLM이 “관련 없음”이라 답하면 등록하지 않는다. 멤버가 친구 영상·트레일러·광고 링크를 공유했을 때 예고판에 잘못 올라가는 걸 막는 안전장치.",
+      exTag:"가상 예시 · yuno_yumemita",
+      exText:"このMV超好き…\nhttps://www.youtube.com/watch?v=RandomMV12345" },
+    { route:["start","q1","q4","notice"],
+      cap:"<b>비유튜브 URL</b> — bilibili·니코니코 등 완결 링크는 라이브 상태를 API로 확인할 방법이 없다. “등록은 되는데 절대 종료 못 잡는” 반쪽짜리 preview 카드를 만드는 대신, preview 밖으로 빼서 소식(notice)으로 처리한다.",
+      exTag:"가상 예시 · arale_yumemita",
+      exText:"今日はbilibiliでも同時配信するよ〜\nhttps://live.bilibili.com/12345678" },
+    { route:["start","q1","q4","gate","llmann","reg4"],
+      cap:"<b>텍스트 예고</b> — URL이 전혀 없어도, 키워드 게이트를 통과하고 날짜/시각이 정규식으로 뽑히면 LLM에게 “본인이 진행할 방송을 예고하는 글이냐”고 마지막으로 확인한다. 그렇다고 하면 <code>announced</code>로 등록.",
+      exTag:"가상 예시 · ritsu_yumemita",
+      exText:"明日22時から歌枠やります🎤\nリクエスト待ってるね！" },
+    { route:["start","q1","q4","gate","llmann","skip3"],
+      cap:"<b>후기 오탐 방지</b> — 정규식은 문맥을 모른다. “2時間プレイ”의 “2時”를 시각으로, “9/24”(게임 출시일)를 날짜로 각각 따로 캐치해 예고 후보를 만들어버린다. 등록 직전 LLM에게 물으면 “이건 방송 후기지 예고가 아니다”라고 문맥으로 정확히 걸러낸다 — 실제 Groq 호출로 검증됨.",
+      exTag:"실사례 · arale_yumemita",
+      exText:"#アワーノーツ 先行プレイ配信\nありがとうございました！✨️\n\nガッツリ2時間プレイ！！\n\n9/24まで待ち遠しい〜〜〜！！！" },
+    { route:["start","q1","q4","gate","skip2"],
+      cap:"<b>게이트조차 안 걸림</b> — 방송 관련 키워드도 날짜도 없는 일상 트윗은 정규식 단계에서 즉시 걸러진다. 이 경우엔 LLM을 아예 호출하지 않는다 — 후보가 될 여지가 있는 것만 LLM까지 올려 비용을 아낀다.",
+      exTag:"가상 예시 · miyako_yumemita",
+      exText:"今日は天気がいいね〜\nお布団から出たくない…" }
+  ];
+
+  var NC2 = {}; NODES.forEach(function(n){ NC2[n.id] = [n.cx, n.cy]; });
+
+  var SVG2 = document.getElementById("svg2");
+  var capEl2 = document.getElementById("cap2");
+  var exTagEl2 = document.getElementById("exTag2");
+  var exTextEl2 = document.getElementById("exText2");
+  var routeEl2 = document.getElementById("routeLine2");
+  var packet2 = document.getElementById("packet2");
+  var pkMove2 = document.getElementById("pkMove2");
+  var reduceMotion2 = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function routePath2(ids){
+    var p = ids.map(function(id){ return NC2[id]; });
+    return "M"+p[0][0]+","+p[0][1]+p.slice(1).map(function(q){return " L"+q[0]+","+q[1];}).join("");
+  }
+  function routeLen2(ids){
+    var L = 0;
+    for (var i=1;i<ids.length;i++){
+      var a = NC2[ids[i-1]], b = NC2[ids[i]];
+      L += Math.hypot(b[0]-a[0], b[1]-a[1]);
+    }
+    return L;
+  }
+
+  function applyTab2(i){
+    var t = TABS2[i];
+    SVG2.classList.add("dimming");
+    SVG2.querySelectorAll(".hot").forEach(function(x){ x.classList.remove("hot"); });
+    t.route.forEach(function(id){
+      var n = document.getElementById("n2_"+id); if (n) n.classList.add("hot");
+    });
+    for (var i2=1;i2<t.route.length;i2++){
+      var e = document.getElementById("e2_"+t.route[i2-1]+"_"+t.route[i2]);
+      if (e) e.classList.add("hot");
+    }
+    capEl2.innerHTML = t.cap;
+    exTagEl2.textContent = t.exTag;
+    exTextEl2.textContent = t.exText;
+
+    var d = routePath2(t.route);
+    routeEl2.setAttribute("d", d);
+    pkMove2.setAttribute("path", d);
+    pkMove2.setAttribute("dur", Math.max(2.2, Math.min(5, routeLen2(t.route)/260)).toFixed(1)+"s");
+    if (reduceMotion2){ packet2.setAttribute("opacity","0"); return; }
+    packet2.setAttribute("opacity","1");
+    try { pkMove2.beginElement(); } catch(e3){ /* SMIL 미지원 시 route-line 만 */ }
+  }
+
+  document.querySelectorAll(".tab2").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".tab2").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true");
+      applyTab2(+b.dataset.t);
+    });
+  });
+
+  applyTab2(0);
 })();
 </script>
 </body>
