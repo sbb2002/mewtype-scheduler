@@ -187,15 +187,15 @@ class LLMClient:
         )
 
         response = self._call_groq(self.model, prompt, json_schema=_NOTICE_TITLE_SCHEMA)
-        if response is None:
+        if not response:
             logger.warning(
-                f"notice_title: 메인 모델 실패, fallback 시도"
+                f"notice_title: 메인 모델 실패/빈 응답, fallback 시도"
             )
             response = self._call_groq(
                 self.fallback, prompt, json_schema=_NOTICE_TITLE_SCHEMA
             )
 
-        if response is None:
+        if not response:
             logger.warning("notice_title: 폴백도 실패")
             return None
 
@@ -279,9 +279,9 @@ class LLMClient:
             f"일본어 반복 단위: {unit}"
         )
         response = self._call_groq(self.model, prompt)
-        if response is None:
+        if not response:
             response = self._call_groq(self.fallback, prompt)
-        if response is None:
+        if not response:
             return None
         if self._is_hallucination(response, unit):
             return None
@@ -298,11 +298,11 @@ class LLMClient:
         )
 
         response = self._call_groq(self.model, prompt)
-        if response is None:
-            logger.warning("translate: 메인 모델 실패, fallback 시도")
+        if not response:
+            logger.warning("translate: 메인 모델 실패/빈 응답, fallback 시도")
             response = self._call_groq(self.fallback, prompt)
 
-        if response is None:
+        if not response:
             logger.warning("translate: 폴백도 실패")
             return None
 
@@ -341,7 +341,11 @@ class LLMClient:
             "reasoning_effort": "low",
             # 반복 루프 방어 2중선(1중선은 translate() 의 _normalize_stretch/_REPEAT_RE
             # 전처리) — 미지 패턴이 전처리를 뚫고 들어와도 폭주를 API 단에서 조기 절단.
-            "max_tokens": max(200, len(prompt) // 2),
+            # 하한 500 (구 200) — reasoning_effort="low" 도 내부 추론에 토큰을 쓰는데,
+            # 프롬프트가 짧으면 하한이 낮아 추론만으로 예산을 다 써 content가 빈 문자열로
+            # 돌아오는 사례 실측(버그리포트 20260916 #2, in=155/out='' 4회 재현·모두 동일
+            # 입력에서 결정적으로 실패 — temperature=0 이라 재시도해도 같은 결과).
+            "max_tokens": max(500, len(prompt) // 2),
         }
         # 구조화 출력이 필요한 호출(notice_title)만 json_schema strict 를 붙인다.
         # translate 는 자유텍스트라 안 붙임(json_object 는 gpt-oss 가 거부하므로 안 씀).
@@ -692,7 +696,7 @@ if __name__ == "__main__":
     # translate 경로: json_schema 안 붙음
     llm_payload._call_groq(DEFAULT_MODEL, "test")
     assert "response_format" not in session_payload.last_payload, "translate 는 response_format 없음"
-    assert session_payload.last_payload["max_tokens"] == 200, "짧은 prompt 는 max_tokens 하한(200)"
+    assert session_payload.last_payload["max_tokens"] == 500, "짧은 prompt 는 max_tokens 하한(500)"
     # notice_title 경로: json_schema strict 붙음
     llm_payload._call_groq(DEFAULT_MODEL, "test", json_schema=_NOTICE_TITLE_SCHEMA)
     rf = session_payload.last_payload["response_format"]
@@ -783,6 +787,30 @@ if __name__ == "__main__":
     assert _unmask_glossary("사인회 @@GLOSSARY0@@ 입니다", [], to="ko") == "사인회 입니다"
     print("✓ _unmask_glossary: mapping 에 없는(=치환 실패한) GLOSSARY 잔재도 최종 텍스트에서 제거됨")
 
+    # ──── 시나리오 14: 메인 모델이 200+빈 content 로 응답해도 fallback 시도 (버그리포트 20260916 #2) ────
+    print("\n[시나리오 14] 메인 모델 200 + content='' → fallback 모델로 넘어감")
+    print("-" * 70)
+
+    class EmptyThenOkSession:
+        """메인 모델(첫 호출)은 200에 content='' (reasoning이 max_tokens 다 씀 재현),
+        폴백 모델(둘째 호출)은 정상 응답."""
+        def __init__(self):
+            self.call_count = 0
+        def post(self, url, **kwargs):
+            self.call_count += 1
+            cc = self.call_count
+            class FakeResp:
+                status_code = 200
+                def json(self):
+                    return {"choices": [{"message": {"content": "" if cc == 1 else "정상 번역"}}]}
+            return FakeResp()
+
+    llm_empty_ok = LLMClient("test-key", session=EmptyThenOkSession())
+    result = llm_empty_ok.translate("こんにちは")
+    assert result == "정상 번역", result
+    print("✓ translate(): content='' (빈 문자열, None 아님) 도 fallback 트리거 — 이전엔 `is None`만"
+          " 검사해 곧장 환각 가드로 떨어져 폴백을 건너뛰었음(실측: 같은 입력 4회 모두 in=155/out='')")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 13개 스모크 테스트 통과")
+    print("SUCCESS: 모든 14개 스모크 테스트 통과")
     print("=" * 70)

@@ -41,7 +41,14 @@ upsert_job mewtype-baseline "0 6 * * *" "Asia/Tokyo" '{"mode":"baseline"}'
 echo "=== Light 안전망 (3시간 간격 UTC) ==="
 upsert_job mewtype-light "0 */3 * * *" "Etc/UTC" '{"mode":"light"}'
 
-echo "=== Monitor (1일 1회 KST 06:00) — control.json monitor_auto 켜져 있을 때만 실제 리포트 생성+DM ==="
-upsert_job mewtype-monitor "0 6 * * *" "Asia/Seoul" '{}' "/monitor"
+# baseline(mewtype-baseline)과 같은 "0 6 * * *"였다가, 두 Scheduler 잡이 완전히 동시에
+# 발사되면서 Cloud Run(concurrency=1·max-instances=1, 직렬화)에 어느 쪽이 먼저 들어갈지가
+# 요청 도착 순서에 달린 레이스가 됐다 — /monitor가 /tick보다 먼저 처리된 날은 baseline
+# tick이 아직 monitor_log에 그날 첫 이벤트를 쓰기 전이라 리포트가 완전히 빈 채로 DM 발송됨
+# (실측 2026-09-16: mewtype-backend 로그상 인스턴스 콜드스타트 후 tick 처리가 6초 지연 시작
+# — 그 사이 /monitor가 먼저 끝났다고 볼 수 있음). 06:10으로 늦춰 baseline tick(보통 20초
+# 안팎 소요)이 이벤트를 다 쓴 뒤 monitor가 그 날짜 파일을 읽도록 순서를 강제한다.
+echo "=== Monitor (1일 1회 KST 06:10 — baseline tick 완료 후) — control.json monitor_auto 켜져 있을 때만 실제 리포트 생성+DM ==="
+upsert_job mewtype-monitor "10 6 * * *" "Asia/Seoul" '{}' "/monitor"
 
 echo "=== 스케줄러 설정 완료 ==="
