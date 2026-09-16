@@ -336,6 +336,52 @@ _TEMPLATE = r"""<!doctype html>
   .stat-tile.error b{color:var(--err)}
   @media (max-width:720px){.stats-row{grid-template-columns:repeat(2,1fr)}}
 
+  /* (v3.5.5) 오늘의 멤버 현황 — 왼쪽(멤버 5행) + 오른쪽(기존 4항목 세로 목록)을
+     하나의 직사각형 패널로. */
+  .combo{background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    display:grid; grid-template-columns:1fr 176px; overflow:hidden}
+  .combo h2{font-size:.86rem; margin:0 0 3px}
+  .combo-left{padding:16px 18px}
+  .combo-right{padding:16px 16px; border-left:1px solid var(--line); display:flex; flex-direction:column}
+  .combo .panel-sub{font-size:.7rem; margin:0 0 12px}
+
+  .member-grid{display:flex; flex-direction:column}
+  .m-row{display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line-soft)}
+  .m-row:first-child{border-top:none}
+  .m-who{display:flex; align-items:center; gap:7px; min-width:0; flex:none}
+  .m-who img{width:22px; height:22px; border-radius:6px; background:var(--panel-2); flex:none}
+  .m-who span{font-size:.76rem; color:var(--ink); font-weight:500; white-space:nowrap}
+  .m-tweet{font-size:.72rem; color:var(--muted); font-family:var(--mono); white-space:nowrap; margin-left:auto; padding-left:8px}
+  .m-tweet b{font:600 .78rem var(--mono); color:var(--ink); margin-right:4px}
+  .m-tweet .ok{color:var(--ok)}
+  .m-tweet .err{color:var(--err)}
+  .live-dot{width:7px; height:7px; border-radius:50%; margin-left:8px; flex:none}
+  .live-dot.on{background:var(--st-live); box-shadow:0 0 0 3px color-mix(in srgb, var(--st-live) 20%, transparent)}
+  .live-dot.off{background:var(--line); border:1px solid var(--muted-2)}
+
+  .notice-line{display:flex; align-items:center; justify-content:space-between; margin-top:12px;
+    padding-top:11px; border-top:1px solid var(--line-soft)}
+  .notice-line .label{font-size:.76rem; color:var(--ink); font-weight:500}
+  .notice-line .figures{font:500 .72rem var(--sans); color:var(--muted); display:flex; gap:10px}
+  .notice-line .figures b{font:600 .82rem var(--mono); color:var(--ink); font-variant-numeric:tabular-nums; margin-right:2px}
+  .notice-line .figures .ok b{color:var(--ok)}
+  .notice-line .figures .err b{color:var(--err)}
+
+  .stat-list{display:flex; flex-direction:column; flex:1; justify-content:space-between}
+  .stat-item + .stat-item{border-top:1px solid var(--line-soft)}
+  .stat-item{padding:9px 0}
+  .stat-item b{display:block; font:600 1.15rem/1.2 var(--mono); font-variant-numeric:tabular-nums; margin-bottom:2px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .stat-item span{color:var(--muted); font-size:.66rem; line-height:1.3; display:block}
+  .stat-item.error b{color:var(--err)}
+
+  @media (max-width:640px){
+    .combo{grid-template-columns:1fr}
+    .combo-right{border-left:none; border-top:1px solid var(--line)}
+    .stat-list{flex-direction:row; flex-wrap:wrap; gap:0 18px}
+    .stat-item{flex:1 1 40%; border-top:none !important}
+  }
+
   .grass{display:flex; flex-wrap:wrap; gap:5px}
   .grass button{width:26px; height:26px; border-radius:6px; border:2px solid transparent; padding:0;
     font:600 11px var(--mono); cursor:pointer; font-variant-numeric:tabular-nums}
@@ -431,7 +477,18 @@ _TEMPLATE = r"""<!doctype html>
 </div>
 
 <div id="tabApp">
-<section class="stats-row" id="statsRow"></section>
+<section class="combo" id="combo">
+  <div class="combo-left">
+    <h2>오늘의 멤버 현황</h2>
+    <p class="panel-sub">개인 트윗 수집 결과 · 이 날짜 안 라이브 진입 여부</p>
+    <div class="member-grid" id="memberGrid"></div>
+    <div class="notice-line" id="noticeLine"></div>
+  </div>
+  <div class="combo-right">
+    <h2>요약</h2>
+    <div class="stat-list" id="statList"></div>
+  </div>
+</section>
 
 <section class="panel">
   <h2 id="tlTitle">—</h2>
@@ -598,9 +655,31 @@ function renderStats(){
     { v: degraded, s: "부분 실패(degraded)" },
     { v: `${ytUsed} / 10,000`, s: "YouTube quota 사용(누적)" },
   ];
-  document.getElementById("statsRow").innerHTML = tiles.map(t =>
-    `<div class="stat-tile${t.err?' error':''}"><b>${t.v}</b><span>${t.s}</span></div>`
+  document.getElementById("statList").innerHTML = tiles.map(t =>
+    `<div class="stat-item${t.err?' error':''}"><b>${t.v}</b><span>${t.s}</span></div>`
   ).join("");
+
+  document.getElementById("memberGrid").innerHTML = ROWS_MEMBERS.map(m => {
+    const tw = TWEET.filter(e => e.member === m);
+    const ok = tw.filter(e => e.tone !== "err").length;
+    const err = tw.filter(e => e.tone === "err").length;
+    const live = (PREVIEW.find(v => v.member === m)?.segs || []).some(sg => sg.s === "live");
+    const breakdown = tw.length
+      ? `<span class="ok">✓${ok}</span>${err ? ` <span class="err">✕${err}</span>` : ""}`
+      : "";
+    return `<div class="m-row">
+      <div class="m-who"><img src="${MEMBER_ICON[m]}" alt="${MEMBER_KO[m]}"><span>${MEMBER_KO[m]}</span></div>
+      <div class="m-tweet"><b>${tw.length}건</b>${breakdown}</div>
+      <div class="live-dot ${live ? "on" : "off"}" title="${live ? "라이브 감지됨" : "라이브 없음"}"></div>
+    </div>`;
+  }).join("");
+
+  const noticeOk = NOTICE.filter(e => e.tone !== "err").length;
+  const noticeErr = NOTICE.filter(e => e.tone === "err").length;
+  document.getElementById("noticeLine").innerHTML = `
+    <span class="label">소식 등록</span>
+    <span class="figures"><span class="ok"><b>${noticeOk}</b>성공</span><span class="err"><b>${noticeErr}</b>실패</span><span><b>${NOTICE.length}</b>건 총계</span></span>
+  `;
 }
 
 const activeTones = new Set(["ok","degraded","err"]);
