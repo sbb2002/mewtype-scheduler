@@ -364,17 +364,19 @@ _TEMPLATE = r"""<!doctype html>
     font-size:21px; line-height:1; cursor:pointer; opacity:.9}
   .tl-labels .grp:hover{opacity:1; filter:brightness(1.25)}
   .tl-labels .row{position:absolute; right:8px; transform:translateY(-50%); font:11px var(--sans); color:var(--muted); white-space:nowrap}
-  .tl-scroll{position:relative; overflow-x:auto; overflow-y:hidden; border-radius:0 8px 8px 0; flex:1; min-width:0}
-  .tl-scroll.locked{overflow:hidden; touch-action:none}
+  .tl-scroll{position:relative; overflow-x:auto; overflow-y:hidden; border-radius:0 8px 8px 0; flex:1; min-width:0;
+    touch-action:none; cursor:grab}
+  .tl-scroll.dragging{cursor:grabbing}
+  .tl-scroll.locked{overflow:hidden; cursor:default}
   #tlSvg{display:block}
   .tl-crosshair{position:absolute; top:0; width:1px; background:rgba(255,255,255,.35); pointer-events:none; display:none; z-index:5}
   .tl-lane{stroke:var(--line); stroke-width:1}
   .tl-hour{stroke:var(--line-soft); stroke-width:1}
   .tl-hour-label{fill:var(--muted-2); font:10px var(--mono)}
-  .tl-dot{cursor:pointer; stroke:var(--bg); stroke-width:1.5}
+  .tl-dot{cursor:pointer; stroke:var(--bg); stroke-width:1.5; transition:r .16s ease, cy .16s ease}
   .tl-dot:hover{stroke:var(--ink)}
   .tl-dot.dim{opacity:.15}
-  .tl-trigger-glyph{font-size:18px; pointer-events:none}
+  .tl-trigger-glyph{font-size:18px; pointer-events:none; transition:font-size .16s ease, y .16s ease}
   .tl-trigger-glyph.dim{opacity:.15}
   .tl-seg{cursor:pointer}
   .tl-seg:hover{filter:brightness(1.25)}
@@ -504,7 +506,7 @@ const MEMBER_KO = { arale:"아라레", yuno:"유노", nonoka:"노노카", ritsu:
 
 // REPORT.days[날짜] 하나를 골라 아래 day-scope 변수들을 채운다(loadDay 참고) — 처음엔
 // 미할당이었다가 스크립트 맨 끝의 loadDay(REPORT.date) 호출로 채워진다.
-let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_OFFSET_BY_KEY, BACKEND_SEGS, CURRENT_DAY;
+let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_OFFSET_BASE_BY_KEY, TRIGGER_OFFSET_ACTIVE_BY_KEY, BACKEND_SEGS, CURRENT_DAY;
 
 function computeIngest(relay, notice, tweet){
   return [
@@ -514,12 +516,15 @@ function computeIngest(relay, notice, tweet){
   ];
 }
 const TRIGGER_PRIORITY = { ops:0, ingest:1, tick:2, wake:2 };
-const TRIGGER_RADIUS_BASE = 7;
+const TRIGGER_RADIUS_BASE = 9;      // 기존 7 — 쉬는 상태에서도 눈에 띄도록 살짝 키움
 const TRIGGER_RADIUS = 15;
-const TRIGGER_FONT_BASE = "12px";
+const TRIGGER_FONT_BASE = "13px";   // 기존 12px
 const TRIGGER_FONT_ACTIVE = "18px";
-const TRIGGER_OFFSET_STEP = TRIGGER_RADIUS * 2 + 4;
-function computeTriggerOffsets(ops, ticks, ingest){
+// 쉬는 상태(BASE)는 오밀조밀하게, 마우스가 근처에 온 시간대(ACTIVE)만 넓게 퍼지도록
+// 두 간격을 따로 계산해 애니메이션으로 전환한다(.tl-dot/.tl-trigger-glyph 의 CSS transition).
+const TRIGGER_OFFSET_STEP_BASE = TRIGGER_RADIUS_BASE * 2 + 2;
+const TRIGGER_OFFSET_STEP_ACTIVE = TRIGGER_RADIUS * 2 + 4;
+function computeTriggerOffsets(ops, ticks, ingest, step){
   const byKey = {};
   const points = [
     ...ops.map((e,i) => ({ key:"ops_"+i, t:e.t, kind:"ops" })),
@@ -531,7 +536,7 @@ function computeTriggerOffsets(ops, ticks, ingest){
   Object.values(groups).forEach(list => {
     list.sort((a,b) => TRIGGER_PRIORITY[a.kind] - TRIGGER_PRIORITY[b.kind]);
     const n = list.length;
-    list.forEach((p,i) => { byKey[p.key] = (i - (n-1)/2) * TRIGGER_OFFSET_STEP; });
+    list.forEach((p,i) => { byKey[p.key] = (i - (n-1)/2) * step; });
   });
   return byKey;
 }
@@ -666,7 +671,14 @@ let rowY = {};
   let y = PAD_T;
   LANES.forEach(g => {
     const rh = g.rowH || (g.type === "bar" ? ROW_H_BAR : ROW_H_POINT);
-    g._labelY = y + (g.rows.length * rh) / 2;
+    const groupTop = y;
+    const centerY = y + (g.rows.length * rh) / 2;
+    // 그룹 아이콘이 행 개수가 홀수일 때 정중앙 행(예: preview/tweet 의 "노노카")과 같은
+    // y에 겹치는 문제 — 반 행만 내리면 아이콘 크기(21px) 대비 다음 행과도 폭 좁게 겹친다
+    // (실측). 아예 그룹 바로 위 여백(GROUP_GAP)으로 옮겨 행 라벨과 다른 영역에 둔다 —
+    // LANES 순서상 preview/tweet 바로 위는 항상 멤버 라벨이 없는 단일 행(health/notice)
+    // 이라 안전하다.
+    g._labelY = (g.rows.length > 1 && g.rows.length % 2 === 1) ? groupTop - 14 : centerY;
     g.rows.forEach(r => { rowY[g.key+"|"+r] = y + rh/2; y += rh; });
     y += GROUP_GAP;
   });
@@ -682,12 +694,17 @@ function minutesOf(hhmm){
   if (h >= 24) return h*60 + m - DAY_START_MIN;
   return ((h*60+m) - DAY_START_MIN + 1440) % 1440;
 }
-function minutesToX(min, plotW){ return (min/1440) * plotW; }
+// 06:00(하루 시작) 라인이 컨테이너 왼쪽 가장자리에 딱 붙어 잘려 보이는 문제 — 왼쪽에
+// 실데이터 없는 여유 공백(05:30~06:00) 30분을 얹어 플롯 범위를 넓힌다.
+const AXIS_LEAD_MIN = 30;
+const AXIS_TOTAL_MIN = 1440 + AXIS_LEAD_MIN;
+function minutesToX(min, plotW){ return ((min + AXIS_LEAD_MIN) / AXIS_TOTAL_MIN) * plotW; }
 function timeToX(hhmm, plotW){ return minutesToX(minutesOf(hhmm), plotW); }
+function xToMinutes(x, plotW){ return (x / plotW) * AXIS_TOTAL_MIN - AXIS_LEAD_MIN; }
 const NICE_STEPS_MIN = [1,2,5,10,15,30,60,120,180,240,360,720,1440];
 const MIN_TICK_PX = 56;
 function pickHourStepMin(plotW){
-  const pxPerMin = plotW / 1440;
+  const pxPerMin = plotW / AXIS_TOTAL_MIN;
   for (const step of NICE_STEPS_MIN) if (step * pxPerMin >= MIN_TICK_PX) return step;
   return 1440;
 }
@@ -718,31 +735,31 @@ function renderLabels(){
 const ZOOM_LEVELS = [1, 1.5, 2, 3, 4, 6, 8];
 let zoomIdx = 0;
 let triggerMarks = [];
-function setZoom(idx, clientX){
-  const newIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx));
+let crosshairMinutes = null; // 크로스헤어가 가리키는 "시각"(분) — 줌해도 화면상 같은 시각에 고정하는 기준
+function currentPlotW(){ return BASE_W * ZOOM_LEVELS[zoomIdx]; }
+function viewportCenterMinutes(){
   const scrollEl = document.getElementById("tlScroll");
-  const rect = scrollEl.getBoundingClientRect();
-  const anchorClientX = clientX != null ? clientX : (rect.left + scrollEl.clientWidth / 2);
-  const offsetInView = anchorClientX - rect.left;
-  const contentX = scrollEl.scrollLeft + offsetInView;
-  const oldPlotW = BASE_W * ZOOM_LEVELS[zoomIdx];
-  const minutesAtAnchor = (contentX / oldPlotW) * 1440;
+  return xToMinutes(scrollEl.scrollLeft + scrollEl.clientWidth / 2, currentPlotW());
+}
+// anchorMinutes 를 화면상 같은 위치에 고정한 채 줌 레벨만 바꾼다. 버튼 클릭은 크로스헤어가
+// 있으면 그 시각, 없으면 뷰포트 중앙을 기준으로 삼는다(휠·핀치는 호출부에서 직접 넘김).
+function setZoom(idx, anchorMinutes){
+  const newIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx));
+  if (newIdx === zoomIdx) return;
+  const scrollEl = document.getElementById("tlScroll");
+  const anchorMin = anchorMinutes != null ? anchorMinutes : viewportCenterMinutes();
+  const oldPlotW = currentPlotW();
+  const offsetInView = minutesToX(anchorMin, oldPlotW) - scrollEl.scrollLeft;
   zoomIdx = newIdx;
   document.getElementById("zoomLabel").textContent = Math.round(ZOOM_LEVELS[zoomIdx]*100) + "%";
   renderTimeline();
-  const newPlotW = BASE_W * ZOOM_LEVELS[zoomIdx];
-  const newContentX = minutesToX(minutesAtAnchor, newPlotW);
-  scrollEl.scrollLeft = Math.max(0, newContentX - offsetInView);
+  const newPlotW = currentPlotW();
+  scrollEl.scrollLeft = Math.max(0, minutesToX(anchorMin, newPlotW) - offsetInView);
+  if (crosshairMinutes != null) placeCrosshair(crosshairMinutes);
 }
-document.getElementById("zoomIn").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx+1); });
-document.getElementById("zoomOut").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx-1); });
-document.getElementById("zoomReset").addEventListener("click", () => { if (!isPinned()) setZoom(0); });
-document.getElementById("tlScroll").addEventListener("wheel", (ev) => {
-  if (Math.abs(ev.deltaY) < 2) return;
-  ev.preventDefault();
-  if (isPinned()) return;
-  setZoom(zoomIdx + (ev.deltaY < 0 ? 1 : -1), ev.clientX);
-}, { passive:false });
+document.getElementById("zoomIn").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx+1, crosshairMinutes); });
+document.getElementById("zoomOut").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx-1, crosshairMinutes); });
+document.getElementById("zoomReset").addEventListener("click", () => { if (!isPinned()) setZoom(0, crosshairMinutes); });
 
 function renderTimeline(){
   const svg = document.getElementById("tlSvg");
@@ -847,33 +864,34 @@ function renderTimeline(){
     wireTip(el, tipData);
     svg.appendChild(el);
   }
-  function drawTriggerDot(t, kind, ok, tipData, offset){
+  function drawTriggerDot(t, kind, ok, tipData, key){
     const x = timeToX(t, plotW);
-    const ry = rowY["trigger|all"] + offset;
+    const cyBase = rowY["trigger|all"] + TRIGGER_OFFSET_BASE_BY_KEY[key];
+    const cyActive = rowY["trigger|all"] + TRIGGER_OFFSET_ACTIVE_BY_KEY[key];
     const dimmed = !activeTones.has(ok ? "ok" : "err");
     const c = document.createElementNS(ns,"circle");
-    c.setAttribute("cx", x); c.setAttribute("cy", ry); c.setAttribute("r", TRIGGER_RADIUS_BASE);
+    c.setAttribute("cx", x); c.setAttribute("cy", cyBase); c.setAttribute("r", TRIGGER_RADIUS_BASE);
     c.setAttribute("fill", ok ? OK : ERR);
     c.setAttribute("class", "tl-dot" + (dimmed ? " dim" : ""));
     wireTip(c, tipData);
     svg.appendChild(c);
     const txt = document.createElementNS(ns,"text");
-    txt.setAttribute("x", x); txt.setAttribute("y", ry);
+    txt.setAttribute("x", x); txt.setAttribute("y", cyBase);
     txt.setAttribute("text-anchor", "middle"); txt.setAttribute("dominant-baseline", "central");
     txt.setAttribute("class", "tl-trigger-glyph" + (dimmed ? " dim" : ""));
     txt.style.fontSize = TRIGGER_FONT_BASE;
     txt.textContent = TRIGGER_GLYPH[kind];
     wireTip(txt, tipData);
-    triggerMarks.push({ x, circle:c, text:txt });
+    triggerMarks.push({ x, circle:c, text:txt, cyBase, cyActive });
     svg.appendChild(txt);
   }
 
   OPS.forEach((e, i) => drawTriggerDot(e.t, "ops", e.ok,
-    { t:e.t, title:"🎛️ "+e.cmd, raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:e.d, _idx:"ops"+i }, TRIGGER_OFFSET_BY_KEY["ops_"+i]));
+    { t:e.t, title:"🎛️ "+e.cmd, raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:e.d, _idx:"ops"+i }, "ops_"+i));
   TICKS.forEach((e, i) => drawTriggerDot(e.t, e.kind, e.ok,
-    { t:e.t, title:(TRIGGER_GLYPH[e.kind]+" ")+(e.mode==="baseline"?"baseline tick":e.mode==="light"?"light tick":"wake"), raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:e.d, _idx:"tick"+i }, TRIGGER_OFFSET_BY_KEY["tick_"+i]));
+    { t:e.t, title:(TRIGGER_GLYPH[e.kind]+" ")+(e.mode==="baseline"?"baseline tick":e.mode==="light"?"light tick":"wake"), raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:e.d, _idx:"tick"+i }, "tick_"+i));
   INGEST.forEach((e, i) => drawTriggerDot(e.t, "ingest", e.ok,
-    { t:e.t, title:"📥 "+e.source, raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:"→ "+e.target.lane, _idx:"ingest"+i }, TRIGGER_OFFSET_BY_KEY["ingest_"+i]));
+    { t:e.t, title:"📥 "+e.source, raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:"→ "+e.target.lane, _idx:"ingest"+i }, "ingest_"+i));
   RELAY.forEach((e, i) => drawDot(e.t, rowY["relay|account"], e.tone,
     { t:e.t, title:"BDP_yumemita", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"relay"+i }));
   NOTICE.forEach((e, i) => drawDot(e.t, rowY["notice|notice"], e.tone,
@@ -931,7 +949,9 @@ function wireTip(el, tipData){
 }
 document.addEventListener("click", (ev) => {
   if (!pinned) return;
-  if (!document.getElementById("tooltip").contains(ev.target)) unpinTip();
+  if (document.getElementById("tooltip").contains(ev.target)) return;
+  if (document.getElementById("tlScroll").contains(ev.target)) return; // 그 안의 클릭은 자체 토글 핸들러가 처리
+  unpinTip();
 });
 function showLegendHtml(ev, html){
   const tt = document.getElementById("tooltip");
@@ -960,7 +980,10 @@ function setTriggerActiveNear(x){
   const snap = x != null && bestDist <= TRIGGER_HOVER_SNAP_PX;
   triggerMarks.forEach(m => {
     const active = snap && m.x === bestX;
+    const cy = active ? m.cyActive : m.cyBase;
     m.circle.setAttribute("r", active ? TRIGGER_RADIUS : TRIGGER_RADIUS_BASE);
+    m.circle.setAttribute("cy", cy);
+    m.text.setAttribute("y", cy);
     m.text.style.fontSize = active ? TRIGGER_FONT_ACTIVE : TRIGGER_FONT_BASE;
   });
 }
@@ -1040,7 +1063,8 @@ function loadDay(dateStr){
   PREVIEW = day.preview; TICKS = day.ticks; OPS = day.ops;
   NOTICE = day.notice; TWEET = day.tweet; RELAY = day.relay;
   INGEST = computeIngest(RELAY, NOTICE, TWEET);
-  TRIGGER_OFFSET_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST);
+  TRIGGER_OFFSET_BASE_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST, TRIGGER_OFFSET_STEP_BASE);
+  TRIGGER_OFFSET_ACTIVE_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST, TRIGGER_OFFSET_STEP_ACTIVE);
   BACKEND_SEGS = computeBackendSegs(TICKS, OPS, day.downRanges);
 
   document.getElementById("lede").innerHTML =
@@ -1060,20 +1084,108 @@ function loadDay(dateStr){
 renderLabels();
 loadDay(REPORT.date);
 
-(function setupCrosshair(){
+// ── 타임라인 인터랙션 (PC/모바일 공통, Pointer Events) ──────────────────────────
+// PC(모바일): 드래그(pan)=좌우 이동 · ctrl+휠(pinch)=현재 크로스헤어 기준 확대/축소 ·
+// 클릭(터치)=크로스헤어 고정/풀기.
+function clientXToMinutes(clientX){
   const scrollEl = document.getElementById("tlScroll");
+  const rect = scrollEl.getBoundingClientRect();
+  return xToMinutes(clientX - rect.left + scrollEl.scrollLeft, currentPlotW());
+}
+function placeCrosshair(minutes){
+  crosshairMinutes = minutes;
   const crosshair = document.getElementById("tlCrosshair");
-  function moveTo(clientX){
-    const rect = scrollEl.getBoundingClientRect();
-    const x = clientX - rect.left + scrollEl.scrollLeft;
-    crosshair.style.left = x + "px";
-    crosshair.style.height = (document.getElementById("tlSvg").getAttribute("height") || 0) + "px";
-    crosshair.style.display = "block";
-    setTriggerActiveNear(x);
+  crosshair.style.left = minutesToX(minutes, currentPlotW()) + "px";
+  crosshair.style.height = (document.getElementById("tlSvg").getAttribute("height") || 0) + "px";
+  crosshair.style.display = "block";
+  setTriggerActiveNear(minutesToX(minutes, currentPlotW()));
+}
+function hideCrosshair(){
+  document.getElementById("tlCrosshair").style.display = "none";
+  crosshairMinutes = null;
+  setTriggerActiveNear(null);
+}
+
+(function setupInteraction(){
+  const scrollEl = document.getElementById("tlScroll");
+  const pointers = new Map(); // pointerId → clientX (핀치 거리 계산용)
+  let dragging = false, dragMoved = false, dragStartX = 0, dragStartScroll = 0;
+  let pinchStartDist = null, pinchStartZoomIdx = 0, pinchAnchorMin = null;
+  const DRAG_THRESHOLD = 4; // 이 이상 움직이면 드래그로 간주 — 뒤이은 click(탭)의 고정 토글을 막음
+
+  function pinchDist(){
+    const xs = [...pointers.values()];
+    return Math.abs(xs[0] - xs[1]);
   }
-  scrollEl.addEventListener("mousemove", (ev) => moveTo(ev.clientX));
-  scrollEl.addEventListener("mouseleave", () => { crosshair.style.display = "none"; setTriggerActiveNear(null); });
-  scrollEl.addEventListener("click", (ev) => { if (!isPinned()) moveTo(ev.clientX); });
+
+  scrollEl.addEventListener("pointerdown", (ev) => {
+    pointers.set(ev.pointerId, ev.clientX);
+    scrollEl.setPointerCapture(ev.pointerId);
+    if (pointers.size === 2) {
+      dragging = false;
+      scrollEl.classList.remove("dragging");
+      pinchStartDist = pinchDist();
+      pinchStartZoomIdx = zoomIdx;
+      const [x1, x2] = [...pointers.values()];
+      pinchAnchorMin = crosshairMinutes != null ? crosshairMinutes : clientXToMinutes((x1 + x2) / 2);
+    } else if (pointers.size === 1 && !isPinned()) {
+      dragging = true; dragMoved = false;
+      dragStartX = ev.clientX; dragStartScroll = scrollEl.scrollLeft;
+      scrollEl.classList.add("dragging");
+    }
+  });
+
+  scrollEl.addEventListener("pointermove", (ev) => {
+    if (!pointers.has(ev.pointerId)) {
+      // 버튼 안 누른 호버 — 크로스헤어 미리보기만(고정 중엔 건드리지 않음)
+      if (!isPinned() && pointers.size === 0) placeCrosshair(clientXToMinutes(ev.clientX));
+      return;
+    }
+    pointers.set(ev.pointerId, ev.clientX);
+    if (pointers.size === 2 && pinchStartDist) {
+      const scale = pinchDist() / Math.max(1, pinchStartDist);
+      const targetZoom = ZOOM_LEVELS[pinchStartZoomIdx] * scale;
+      let bi = 0, bd = Infinity;
+      ZOOM_LEVELS.forEach((z, i) => { const d = Math.abs(z - targetZoom); if (d < bd) { bd = d; bi = i; } });
+      if (bi !== zoomIdx) setZoom(bi, pinchAnchorMin);
+      return;
+    }
+    if (dragging) {
+      const dx = ev.clientX - dragStartX;
+      if (Math.abs(dx) > DRAG_THRESHOLD) dragMoved = true;
+      scrollEl.scrollLeft = dragStartScroll - dx;
+      if (!isPinned()) placeCrosshair(clientXToMinutes(ev.clientX));
+    }
+  });
+
+  function endPointer(ev){
+    pointers.delete(ev.pointerId);
+    try { scrollEl.releasePointerCapture(ev.pointerId); } catch (e) {}
+    if (pointers.size < 2) pinchStartDist = null;
+    if (pointers.size === 0) { dragging = false; scrollEl.classList.remove("dragging"); }
+  }
+  scrollEl.addEventListener("pointerup", endPointer);
+  scrollEl.addEventListener("pointercancel", endPointer);
+
+  scrollEl.addEventListener("mouseleave", () => { if (!isPinned() && pointers.size === 0) hideCrosshair(); });
+
+  scrollEl.addEventListener("click", (ev) => {
+    if (dragMoved) { dragMoved = false; return; } // 드래그 끝의 관성 클릭 무시
+    if (isPinned()) { unpinTip(); return; }
+    placeCrosshair(clientXToMinutes(ev.clientX));
+    pinned = true;
+    scrollEl.classList.add("locked");
+  });
+
+  // ctrl+휠(macOS 트랙패드 핀치도 브라우저가 ctrlKey:true 휠 이벤트로 보냄) = 현재
+  // 크로스헤어 기준 확대/축소. ctrl 없는 일반 휠은 가로채지 않고 브라우저 기본 동작에 맡긴다.
+  scrollEl.addEventListener("wheel", (ev) => {
+    if (!ev.ctrlKey) return;
+    ev.preventDefault();
+    if (isPinned()) return;
+    const anchor = crosshairMinutes != null ? crosshairMinutes : clientXToMinutes(ev.clientX);
+    setZoom(zoomIdx + (ev.deltaY < 0 ? 1 : -1), anchor);
+  }, { passive:false });
 })();
 
 function switchTab(which){

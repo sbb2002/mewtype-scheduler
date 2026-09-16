@@ -1,5 +1,7 @@
 // tweets.js — 예고판 상단 멤버 개인 트윗 "편지 배지" + 메신저형 스레드 (v3.1).
-// tweets.json (계약 I): tweets[ck] = [ <메시지>, … ] 최신이 뒤, 유닛당 최대 5개.
+// tweets.json (계약 I): tweets[ck] = [ <메시지>, … ] 최신이 뒤, 유닛당 저장 상한 xtweet.MAX_THREAD.
+//   화면에는 그중 최근 12시간 이내 것만 노출(VISIBLE_WINDOW_MS) — 안 읽은 메시지 폭주 방지는
+//   말풍선 스크롤(css: 2/3 뷰포트 높이 초과 시 스크롤)이 맡는다.
 //   v2.8 단건(dict)도 _list() 가 [dict] 로 감싸 하위호환.
 // 계약·목업: docs/plan/v2_8_personal_tweets.md · docs/SPEC.md §계약 I
 //
@@ -20,7 +22,8 @@ const X_SVG = '<svg class="src__ic" viewBox="0 0 24 24" aria-hidden="true"><path
 const RKEY = "mew:twread";
 const TLANG_KEY = "mew:tllang";  // ponytail: 번역 토글 기억
 const READ_TTL_MS = 4 * 24 * 3600 * 1000;   // 읽음 기록 보존 4일(트윗 TTL 24h 훨씬 넘김)
-const MAX_THREAD = 5;                        // 유닛당 표시 메시지 상한 (백엔드 계약 I 와 동일)
+const VISIBLE_WINDOW_MS = 12 * 3600 * 1000;  // 노출 범위 — 지금으로부터 최근 12시간
+const MAX_THREAD = 50;                       // 안전 상한(백엔드 xtweet.MAX_THREAD 와 동일) — 정상 동작 시 12시간 창이 먼저 걸림
 const GROUP_GAP_MS = 2 * 60 * 1000;         // 연속 메시지 묶음 간격
 const _st = { data: null, board: null, wired: false, pinned: new Set(), peek: null, bubbles: new Map(), tlang: "ko" };
 let _toast = null, _backdrop = null;
@@ -92,14 +95,17 @@ function _flipLang() {
 function _mobile() {
   return window.matchMedia && window.matchMedia("(max-width: 767px)").matches;
 }
-/** data → { ck: [메시지…] }. 메시지별 expires_at 필터 + received_at 오름차순 + 최대 5개. */
+/** data → { ck: [메시지…] }. 메시지별 expires_at 필터 + 최근 12시간(VISIBLE_WINDOW_MS) 필터 +
+ * received_at 오름차순 + 안전 상한(MAX_THREAD, 정상 동작 시 걸릴 일 없음). */
 function _visible(data) {
   const now = Date.now();
+  const cutoff = now - VISIBLE_WINDOW_MS;
   const out = {};
   const t = (data && data.tweets) || {};
   for (const ck of Object.keys(t)) {
     const msgs = _list(t[ck])
       .filter((m) => { const e = Date.parse(m.expires_at); return isNaN(e) || e > now; })
+      .filter((m) => { const r = Date.parse(m.received_at); return isNaN(r) || r >= cutoff; })
       .sort((a, b) => (a.received_at || "").localeCompare(b.received_at || ""))
       .slice(-MAX_THREAD);
     if (msgs.length) out[ck] = msgs;

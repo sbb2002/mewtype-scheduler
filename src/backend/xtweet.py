@@ -186,7 +186,10 @@ def find_reused_ko(text: str, *, tweets_data: dict | None = None,
 #   tweets[ck] = [ <메시지 dict> ]  최신이 뒤, 최대 MAX_THREAD 개.
 #   v2.8 단건(dict) 데이터는 _as_list 가 [dict] 로 감싸 하위호환.
 
-MAX_THREAD = 5   # 유닛당 최근 트윗 최대 개수
+# ponytail: 유닛당 저장 개수의 안전 상한(폭주 방지용 그릇 크기) — 실제 노출 범위는
+# 프론트(tweets.js)가 12시간 창으로 별도 제한한다. 5였을 때는 활발한 멤버가 12시간
+# 안에 5건을 넘기면 더 오래된 트윗이 이미 사라져 있었다(버그리포트 20260916 #3).
+MAX_THREAD = 50
 
 
 def default_tweets() -> dict:
@@ -625,26 +628,30 @@ if __name__ == "__main__":
     _, _, ch, m = merge_thread(T, r, NOW, archive=A)
     assert not ch and m == "dup", m
     # 다른 id 3건 연타 → 스레드에 최신이 뒤로 쌓임 (received_at 정렬)
+    base = datetime(2026, 9, 7, 12, 1, tzinfo=timezone.utc)
     for i, rid in enumerate(("2096600000000000000", "2096700000000000000", "2096800000000000000")):
         msg = dict(r, id=rid, text=f"연타{i}",
-                   received_at=f"2026-09-07T12:0{i+1}:00Z",
+                   received_at=(base + timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:00Z"),
                    expires_at="2026-09-08T13:00:00Z")
         T, A, ch, m = merge_thread(T, msg, "2026-09-07T12:05:00Z", archive=A)
         assert ch and m == "added", m
     thread = _as_list(T["tweets"]["arale"])
     assert [x["id"] for x in thread] == ["2096552878769152326", "2096600000000000000",
                                          "2096700000000000000", "2096800000000000000"], thread
-    # 5개째 → 아직 cap 안 넘음(added), 6개째 → rolled (가장 오래된 것 archive)
-    T, A, ch, m = merge_thread(T, dict(r, id="2096900000000000000", text="5번째",
-                                       received_at="2026-09-07T12:04:00Z",
+    # cap(MAX_THREAD) 직전까지 채워도 added, cap 을 넘는 한 건이 와야 rolled(가장 오래된 것 archive)
+    next_id = 2096900000000000000
+    for i in range(MAX_THREAD - len(thread)):
+        T, A, ch, m = merge_thread(T, dict(r, id=str(next_id + i), text=f"채움{i}",
+                                           received_at=(base + timedelta(minutes=4 + i)).strftime("%Y-%m-%dT%H:%M:00Z"),
+                                           expires_at="2026-09-08T13:00:00Z"),
+                                   "2026-09-07T12:05:00Z", archive=A)
+        assert ch and m == "added", m
+    assert len(_as_list(T["tweets"]["arale"])) == MAX_THREAD
+    T, A, ch, m = merge_thread(T, dict(r, id=str(next_id + MAX_THREAD), text="cap+1",
+                                       received_at=(base + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:00Z"),
                                        expires_at="2026-09-08T13:00:00Z"),
-                               "2026-09-07T12:05:00Z", archive=A)
-    assert ch and m == "added" and len(_as_list(T["tweets"]["arale"])) == 5
-    T, A, ch, m = merge_thread(T, dict(r, id="2097100000000000000", text="6번째",
-                                       received_at="2026-09-07T12:06:00Z",
-                                       expires_at="2026-09-08T13:00:00Z"),
-                               "2026-09-07T12:06:00Z", archive=A)
-    assert ch and m == "rolled" and len(_as_list(T["tweets"]["arale"])) == 5
+                               "2026-09-07T13:06:00Z", archive=A)
+    assert ch and m == "rolled" and len(_as_list(T["tweets"]["arale"])) == MAX_THREAD
     assert any(x["archived_reason"] == "rolled" and x["id"] == "2096552878769152326"
                for x in A["tweets"]), A["tweets"]
     # 이미 만료된 트윗 인입 → stale
