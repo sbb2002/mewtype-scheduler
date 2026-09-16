@@ -38,8 +38,8 @@ upsert_job () {
 echo "=== Baseline 스케줄러 (JST 06:00) ==="
 upsert_job mewtype-baseline "0 6 * * *" "Asia/Tokyo" '{"mode":"baseline"}'
 
-echo "=== Light 안전망 (3시간 간격 UTC) ==="
-upsert_job mewtype-light "0 */3 * * *" "Etc/UTC" '{"mode":"light"}'
+echo "=== Light 안전망 (10분 간격 UTC) ==="
+upsert_job mewtype-light "*/10 * * * *" "Etc/UTC" '{"mode":"light"}'
 
 # baseline(mewtype-baseline)과 같은 "0 6 * * *"였다가, 두 Scheduler 잡이 완전히 동시에
 # 발사되면서 Cloud Run(concurrency=1·max-instances=1, 직렬화)에 어느 쪽이 먼저 들어갈지가

@@ -102,5 +102,10 @@ flowchart TD
     `merge_personal_schedule` 로 `schedule.json` 의 `scheduled`(`source:"personal"`) 행
     + undo 스냅샷 + DM. 업스트림 시스템의 `_maybe_personal_schedule`(android.title 로 채널을
     아는 경로)와 결과가 같다.
+  - **(v3.6)** `_maybe_personal_schedule` 자체가 3단 분기로 재설계됨 — 유튜브 URL 있으면
+    `videos.list` 로 즉시 확정(API 실패 시만 이 텍스트 파싱으로 폴백), 비유튜브 URL 있으면
+    소식(`notices.json`)으로 이관, 어느 쪽도 아니면 위 텍스트 게이트를 타되 등록 직전
+    LLM(`announces_own_broadcast`) 최종 확인을 한 번 더 거친다. 상세 흐름도:
+    `docs/v3_pamphlet.html`(devpapers) "개인 트윗 예고 판정" 섹션, 요약: `docs/VERSION.md` v3.6.
 - **현재 플래그 전제** — v2.7 소식 자동 인입이 운영 중이므로 `INGEST_ECHO=0` · `INGEST_DRY_RUN=0`
   (실배포) 상태. 즉 5·7번 게이트는 통과, 4번과 9~12번이 실제 경로.

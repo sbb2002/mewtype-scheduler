@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import contextvars
 import html
 import json
 import logging
@@ -361,8 +362,18 @@ def _build_status_text(now_iso: str, gh: GitHubStore, channels_cfg: dict) -> str
                     nl.join(sync), "", qtxt])
 
 
+# (v3.6) 명령 하나를 처리하는 동안 `_send_telegram` 이 한 번이라도 불렸는지 추적.
+# 버그리포트 20260916 #4: `/del preview`(유닛/번호 누락)처럼 인식은 되지만 처리할 수
+# 없는 명령이 응답 DM 없이 조용히 끝나면, 운영자는 명령이 씹혔는지 처리 중인지 구분할
+# 방법이 없다 — 개별 핸들러마다 "이 경로는 DM을 보내는가"를 일일이 감사하는 대신,
+# 웹훅 처리 마지막에 이 플래그로 "정말 아무 응답도 안 나갔는지"를 한 번에 확인해
+# 안전망 DM을 보낸다. ContextVar 라 요청(스레드)마다 독립 — 동시 요청이 서로 안 건드림.
+_dm_sent_ctx: "contextvars.ContextVar[bool]" = contextvars.ContextVar("_dm_sent", default=False)
+
+
 def _send_telegram(text: str, silent: bool = False) -> bool:
     """Telegram으로 메시지 전송."""
+    _dm_sent_ctx.set(True)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
@@ -380,6 +391,7 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
 
 def _send_telegram_document(filename: str, content: bytes, *, caption: str = "") -> bool:
     """Telegram으로 파일 전송 (Push Monitor html 등)."""
+    _dm_sent_ctx.set(True)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
@@ -2000,20 +2012,220 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
 
     # (v2.8.1) 예고글이면 schedule.json 의 scheduled 행으로도 승격
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
-                             handle=handle, now_iso=now_iso)
+                             handle=handle, now_iso=now_iso, via=via)
     return mode
 
 
-def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
-                             name: str, handle: str, now_iso: str) -> None:
-    """(v2.8.1) 개인 트윗이 방송 예고면 `xtweet.merge_personal_schedule` 로 scheduled 행 반영.
+def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
+    """(v3.6) URL 확정 예고 반영 직후 Cloud Tasks wake 즉시 등록.
 
-    `_maybe_personal_tweet` 이 배지 처리 후 호출. 게이트 미통과면 no-op(배지만).
-    관측 DM(초반 튜닝용) — precision 안정되면 제거.
+    light tick(10분 간격, 2026-09-16 3h→10분 단축)을 안 기다리고 live/watching 전이를
+    바로 예약 — 버그리포트 20260916 #1(미예고 방송 발견까지 tick 텀만큼 지연)의 근본 대응.
+    실패해도 non-fatal(다음 light tick 이 안전망으로 회수).
+    """
+    try:
+        from .tasks import TaskQueue
+        tq = TaskQueue(
+            project=os.environ.get("GCP_PROJECT", "").strip(),
+            location=os.environ.get("GCP_LOCATION", "").strip(),
+            queue=os.environ.get("TASKS_QUEUE", "").strip(),
+            target_url=os.environ.get("SERVICE_URL", "").strip().rstrip("/"),
+            invoker_sa=os.environ.get("INVOKER_SA", "").strip(),
+        )
+        tq.enqueue_wake(video_id, schedule_time_iso)
+    except Exception:
+        log.exception("URL 확정 예고: wake enqueue 실패 (다음 light tick 에서 회수)")
+
+
+def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
+    """(v3.6) `log_event` 를 try/except 로 감싼 버전 — 모니터링 기록 실패가 주 로직(이미
+    실패했거나 폴백 중인 경로일 수 있음)을 새로 죽이지 않게 한다(기존 `_maybe_personal_tweet`
+    의 관례와 동일)."""
+    try:
+        log_event(gh, now_iso, flow, result, **kw)
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(%s)", flow)
+
+
+def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
+                                  channels_cfg: dict, *, via: str = "ingest") -> bool:
+    """(v3.6) 원문에 유튜브 URL 이 있으면 `videos.list` 로 즉시 메타 확정해 반영.
+
+    설계(2026-09-16 대화):
+      1. 원문에서 유튜브 URL 추출 — 없으면 False(호출부가 기존 텍스트 파싱으로).
+      2. `videos.list` 로 title/시각/실제 라이브 상태 확정.
+      3. 채널이 우리 5인 개인 채널/그룹 공식 채널이면 그 레인(+콜라보 상대)에 바로 등록.
+      4. 아니면(외부 채널) LLM 에게 "이 트윗 작성자가 참여하는 콘텐츠인가" 확인 후
+         yes 일 때만 작성자 레인에 등록, no/판정불가면 스킵.
+      5. 등록되면 Cloud Tasks wake 즉시 enqueue(light tick 을 안 기다림).
+
+    반환: True == 이 경로가 등록/명시적 스킵까지 확정적으로 처리함(호출부는 텍스트
+    파싱으로 넘어가지 않는다). False == 유튜브 URL 자체가 없거나(비유튜브 URL 포함),
+    있긴 한데 API 로 사실관계를 확정 못 해서(키 미설정·videos.list 장애·영상 조회
+    실패) 판단을 못 내린 경우 — 이때는 구버전처럼 텍스트 파싱이 최소한의 안전망
+    역할을 하도록 호출부에 넘긴다(v3.6 도입 전 신뢰도 밑으로는 절대 안 떨어지게).
+    """
+    if xtweet is None or xrelay is None or YouTubeClient is None:
+        return False
+    m = xrelay.YT_VIDEO_RE.search(xrelay.normalize(raw))
+    if not m:
+        return False
+    video_id = m.group(1)
+
+    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not api_key:
+        log.warning("YOUTUBE_API_KEY 없음 — URL 확정 예고 스킵, 텍스트 파싱으로 폴백")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                  detail="url-schedule skip: YOUTUBE_API_KEY 미설정 — 텍스트 파싱 폴백", via=via)
+        return False
+    try:
+        info = YouTubeClient(api_key).videos_list([video_id]).get(video_id)
+    except Exception:
+        log.exception("videos.list 실패 (URL 확정 예고) — 텍스트 파싱으로 폴백")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                  detail="url-schedule skip: videos.list 실패 — 텍스트 파싱 폴백", via=via)
+        return False
+    if info is None or not info.channel_id:
+        # 비공개/삭제된 영상 등 API 로 확정 불가 — 텍스트에 날짜/시각이 있으면
+        # 그거라도 건지도록 폴백(v3.6 이전과 동일한 최소 보장). 이건 흔한 정상
+        # 케이스(회원전용·삭제 등)라 monitor 에는 안 남긴다.
+        return False
+
+    host_key, host, collab_with = xtweet.resolve_url_host(info.channel_id, channel_key, channels_cfg)
+
+    if host_key is None:
+        groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+        if not groq_key:
+            log.warning("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                      detail="url-schedule skip: GROQ_API_KEY 미설정 — 참여판정 불가, 미등록", via=via)
+            return True
+        author_name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
+        from .llm import LLMClient
+        ok = LLMClient(groq_key).participation(raw, member_name=author_name)
+        if ok is None:
+            # LLM 5회 재시도 모두 실패(infra) — "무관하다고 확인됨"과는 다르다, monitor 에 남긴다.
+            log.warning("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                      detail="url-schedule skip: participation() 5회 모두 실패 — 미등록", via=via)
+            return True
+        if ok is not True:
+            log.info("URL 확정 예고: 외부 채널 + LLM 미확인(%s) — 스킵", ok)
+            return True
+        host_key, host, collab_with = channel_key, None, None
+
+    new_item, next_check_at = xtweet.build_item_from_video(
+        info, channel_key=host_key, host=host, collab_with=collab_with, now_iso=now_iso,
+    )
+
+    changed = False
+    try:
+        for attempt in (1, 2):
+            prev, sha = gh.read_json(_PREVIEW_PATH)
+            prev = prev or {"items": []}
+            items, changed = xtweet.merge_video_confirmed(
+                prev.get("items", []) or [], video_id, new_item, now_iso,
+            )
+            merged = dict(prev)
+            merged["items"] = items
+            merged["generated_at"] = now_iso
+            try:
+                _, new_sha = gh.write_json(
+                    _PREVIEW_PATH, merged, prev_sha=sha,
+                    message=f"data: personal url-schedule {host_key} {now_iso}",
+                )
+                break
+            except ConflictError:
+                if attempt == 2:
+                    raise
+                log.warning("URL 확정 예고: preview.json 충돌 — 재시도")
+    except Exception:
+        log.exception("URL 확정 예고 반영 실패")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                  detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
+        return True
+
+    if changed:
+        _save_undo(gh, action=f"URL 확정 예고 {host_key} ({video_id})",
+                   prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
+        if next_check_at:
+            _enqueue_wake_now(video_id, next_check_at)
+        name = channels_cfg.get("channels", {}).get(host_key, {}).get("name_ko", host_key)
+        state_label = {"live": "🔴 라이브 중", "watching": "⏳ 시작 임박",
+                       "upcoming": "📅 예정"}.get(new_item.get("state"), new_item.get("state"))
+        _auto_dm(
+            gh, "scheduled",
+            f"📅 <b>{html.escape(name)}</b> URL 확정 예고 반영 → {state_label}"
+            f"\n{html.escape(new_item.get('url') or '')}",
+        )
+    return True
+
+
+def _maybe_nonyt_url_notice(gh, raw: str, tag: str | None, now_iso: str) -> bool:
+    """(v3.6) 유튜브 URL은 없지만 다른 완결 URL(bilibili 등)이 있으면 소식(notice)으로 이관.
+
+    이런 URL은 `videos.list` 로 라이브/종료를 확인할 방법이 없어 preview 로 추적 못
+    한다 — 등록은 되는데 영원히 안 끝나는 반쪽 카드를 만드는 대신 preview 파이프라인
+    밖(소식)으로 돌린다. 공식 계정 소식과 완전히 같은 경로(`_apply_notice`)를 재사용 —
+    번역·undo 스냅샷 전부 그대로 딸려온다. 날짜/시각을 텍스트에서 못 뽑으면
+    (`xnotice.parse` 자체 게이트) 소식도 안 됨 — 조용히 스킵.
+
+    반환: True == 유튜브 아닌 완결 URL 이 있어서 이 경로가 처리를 맡음(등록/스킵 모두
+    포함 — 호출부는 텍스트 예고 경로로 넘어가지 않는다). False == URL 자체가 없거나,
+    있는 URL 이 유튜브 형식인 경우 — 후자는 `_maybe_url_confirmed_schedule` 가
+    API 로 확정을 못 해 폴백해온 것일 수 있으므로(키 미설정·API 장애 등), 유튜브
+    URL 을 "비유튜브"로 오분류해 소식으로 잘못 보내지 않는다.
+    """
+    if xnotice is None or xrelay is None:
+        return False
+    t = xrelay.normalize(raw)
+    if xrelay.YT_VIDEO_RE.search(t):
+        return False   # 유튜브 URL — 소식이 아니라 텍스트 예고 경로가 최소 안전망 역할
+    if not xnotice._URL_RE.search(t):
+        return False
+    try:
+        mode, _parsed = _apply_notice(gh, raw, now_iso, tag=tag)
+    except Exception:
+        log.exception("비유튜브 URL 소식 이관 실패")
+        return True
+    log.info("비유튜브 URL → 소식 경로: %s", mode)
+    return True
+
+
+def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
+                             name: str, handle: str, now_iso: str, via: str = "ingest") -> None:
+    """(v2.8.1) 개인 트윗이 방송 예고면 preview 행으로 승격.
+
+    (v3.6) 3단 분기:
+      1. 유튜브 URL 있음 → `_maybe_url_confirmed_schedule` 로 `videos.list` 확정 정보 사용.
+      2. 유튜브 아닌 다른 완결 URL 있음 → `_maybe_nonyt_url_notice` 로 소식(notice)에 이관
+         (preview 로는 라이브/종료 추적이 안 되므로 스코프 아웃).
+      3. URL 자체 없음 → 기존 텍스트 파싱(`xtweet.parse_schedule`)으로 후보를 뽑되,
+         등록 직전 `LLMClient.announces_own_broadcast` 로 "진짜 본인 예고인가" 최종
+         확인한다 — 정규식은 문맥을 모르므로(예: 후기 트윗 속 우연한 날짜/시각 오합성,
+         버그리포트 20260916 #2) LLM 이 마지막 관문.
+    `_maybe_personal_tweet` 이 배지 처리 후 호출. 어느 단계든 게이트 미통과면 no-op(배지만).
     """
     if xtweet is None:
         return
     raw = _expand_truncated_yt(raw, tag)
+    gh = _make_gh()
+    if gh is None:
+        return
+    try:
+        control, _ = gh.read_json("control.json")
+        if is_paused(control or default_control()):
+            return
+    except Exception:
+        log.exception("control.json 조회 실패 — personal schedule 스킵")
+        return
+
+    channels_cfg = _load_channels_config()
+    if _maybe_url_confirmed_schedule(gh, raw, channel_key, now_iso, channels_cfg, via=via):
+        return   # 유튜브 URL 이 있었음 — 반영/스킵 여부와 무관하게 아래로 안 넘어감
+    if _maybe_nonyt_url_notice(gh, raw, tag, now_iso):
+        return   # 비유튜브 URL 이 있었음 — 소식 경로가 처리(등록/스킵 모두 포함)
+
     try:
         row = xtweet.parse_schedule(raw, channel_key=channel_key, tag=tag,
                                     now_iso=now_iso, handle=handle)
@@ -2022,13 +2234,26 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     if not row:
         return
-    gh = _make_gh()
-    if gh is None:
+
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        log.warning("GROQ_API_KEY 없음 — 텍스트 예고 최종 확인 불가, 미등록(안전한 실패)")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                        detail="text-schedule skip: GROQ_API_KEY 미설정 — 최종확인 불가, 미등록", via=via)
         return
+    from .llm import LLMClient
+    confirmed = LLMClient(groq_key).announces_own_broadcast(raw)
+    if confirmed is None:
+        # LLM 5회 재시도 모두 실패(infra) — "예고 아님"으로 확인된 것과는 다르다, monitor 에 남긴다.
+        log.warning("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                        detail="text-schedule skip: announces_own_broadcast() 5회 모두 실패 — 미등록", via=via)
+        return
+    if confirmed is not True:
+        log.info("텍스트 예고 후보 — LLM 최종 확인 미통과(%s) → 미등록", confirmed)
+        return
+
     try:
-        control, _ = gh.read_json("control.json")
-        if is_paused(control or default_control()):
-            return
         changed = _merge_rows_into_schedule(
             gh, [row], now_iso,
             message=f"data: personal schedule {channel_key} {now_iso}",
@@ -2875,6 +3100,26 @@ if _FLASK_AVAILABLE:
         # 3. 명령 파싱
         text = (message.get("text") or "").strip()
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        _dm_sent_ctx.set(False)   # (v3.6) 안전망 — 아래 어느 return 이든 이 값을 거쳐 나간다
+
+        def _done(ok: bool = True):
+            """(v3.6) 이 웹훅의 모든 return 지점을 통과시키는 안전망.
+
+            버그리포트 20260916 #4: `/del preview`(유닛/번호 누락)처럼 인식은 되지만
+            처리할 수 없는 명령이 응답 DM 없이 조용히 끝나면, 운영자는 명령이 씹혔는지
+            처리 중인지 구분할 방법이 없다. 개별 핸들러(또는 대기 중인 마법사 후속
+            처리)마다 "이 경로는 DM을 보내는가"를 하나하나 감사하는 대신, 실제로
+            반환되는 모든 지점을 여기 하나로 모아 `_dm_sent_ctx` 가 여전히 False 면
+            대신 안내 DM 을 보낸다 — 새 명령/새 return 경로가 추가돼도 자동으로 커버됨.
+            """
+            if text and not _dm_sent_ctx.get():
+                log.warning("명령 처리 후 DM 미발송 — 안전망 발동: %r", text[:200])
+                _send_telegram(
+                    f"⚠️ <code>{html.escape(text[:200])}</code> 처리 결과를 알려드리지 못했습니다"
+                    "(응답 누락 — 코드 버그일 수 있습니다). 형식을 확인해 다시 시도하거나 "
+                    "개발자에게 이 메시지를 공유해 주세요."
+                )
+            return jsonify({"ok": ok}), 200
 
         try:
             # GitHub 저장소 초기화
@@ -2885,7 +3130,7 @@ if _FLASK_AVAILABLE:
             if not gh_token or not gh_repo:
                 log.warning("GitHub config missing")
                 _send_telegram("⚠️ GitHub 설정 누락")
-                return jsonify({"ok": False}), 200
+                return _done(False)
 
             gh = GitHubStore(gh_token, gh_repo, gh_branch)
             channels_cfg = _load_channels_config()
@@ -2905,7 +3150,7 @@ if _FLASK_AVAILABLE:
                 _is_del_ans = _is_yn or _low == "terminate"
                 if _pending and not admin.pending_del_expired(_pending, now_utc) and _is_del_ans:
                     _handle_del_confirm(gh, now_utc, _low)
-                    return jsonify({"ok": True}), 200
+                    return _done()
                 if _pending_undo:
                     if admin.pending_undo_expired(_pending_undo, now_utc):
                         # 60초 자동 N — 안내만 하고 이 메시지는 정상 디스패치로 흘려보냄
@@ -2919,32 +3164,32 @@ if _FLASK_AVAILABLE:
                         _send_telegram("🚫 undo 확인 시간(60초)이 지나 자동 취소되었습니다.")
                     elif _is_yn:
                         _handle_undo_confirm(gh, now_utc, yes=_low in ("y", "yes"))
-                        return jsonify({"ok": True}), 200
+                        return _done()
 
             # v2.5.1: /ingest(무인자) 후 원문/파일 대기 중이면 이 메시지를 그쪽이 소진.
             # (만료·타 명령이면 False → 아래 정상 디스패치로 흘러감)
             if admin is not None and _handle_ingest_followup(
                 gh, channels_cfg, now_utc, message, text
             ):
-                return jsonify({"ok": True}), 200
+                return _done()
 
             # v2.8.1+: 개인 예고 유닛 되묻기(1~5/이름) 응답 대기 중이면 그쪽이 소진.
             if admin is not None and _handle_member_followup(
                 gh, channels_cfg, now_utc, text
             ):
-                return jsonify({"ok": True}), 200
+                return _done()
 
             # v2.7: /notice(무인자) 후 원문/파일 대기 중이면 그쪽이 소진.
             if admin is not None and _handle_notice_followup(gh, now_utc, message, text):
-                return jsonify({"ok": True}), 200
+                return _done()
 
             # v2.7.x: /notice-edit 마법사(title→date→url) 응답 대기 중이면 그쪽이 소진.
             if admin is not None and _handle_notice_edit_followup(gh, now_utc, text):
-                return jsonify({"ok": True}), 200
+                return _done()
 
             # v3: /edit·/ingest tweet 마법사(pending_op) 응답 대기 중이면 그쪽이 소진.
             if admin is not None and _handle_op_followup(gh, channels_cfg, now_utc, message, text):
-                return jsonify({"ok": True}), 200
+                return _done()
 
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
@@ -3070,8 +3315,8 @@ if _FLASK_AVAILABLE:
             log.exception("Webhook processing error")
             _send_telegram(f"⚠️ 처리 오류: {str(e)[:100]}")
 
-        # 항상 200 반환 (Telegram 재시도 방지)
-        return jsonify({"ok": True}), 200
+        # 항상 200 반환 (Telegram 재시도 방지) — _done() 이 DM 미발송 안전망까지 처리
+        return _done()
 
     @app.post("/ingest")
     def _ingest():
@@ -3505,6 +3750,12 @@ if __name__ == "__main__":
             before = self.store.get(path)
             self.store[path] = data
             return (before != data, "sha1")
+        def read_text(self, path):
+            return (self.store.get(path), "sha0" if path in self.store else None)
+        def write_text(self, path, text, *, prev_sha=None, message=""):
+            before = self.store.get(path)
+            self.store[path] = text
+            return (before != text, "sha1")
 
     if xrelay is not None:
         g = _FakeGH()
@@ -3536,6 +3787,207 @@ if __name__ == "__main__":
             print("[OK] _remove_broadcast (id 매칭)")
         else:
             print("[skip] xrelay.parse 0행 — 파서 픽스처 확인")
+
+    # ── (v3.6) _maybe_url_confirmed_schedule — URL 우선 ingest ────
+    _CFG6 = {
+        "channel_order": ["arale", "yuno", "nonoka", "ritsu", "miyako"],
+        "channels": {
+            "arale": {"channel_id": "UC_arale", "name_ko": "아라레"},
+            "yuno": {"channel_id": "UC_yuno", "name_ko": "유노"},
+            "nonoka": {"channel_id": "UC_nonoka", "name_ko": "노노카"},
+            "ritsu": {"channel_id": "UC_ritsu", "name_ko": "리츠"},
+            "miyako": {"channel_id": "UC_miyako", "name_ko": "미야코"},
+            "group": {"channel_id": "UC_group", "name_ko": "그룹"},
+        },
+    }
+
+    class _FakeVideoInfo:
+        def __init__(self, video_id, channel_id, title, live_state,
+                     scheduled_start=None, actual_start=None, concurrent_viewers=None):
+            self.video_id = video_id
+            self.channel_id = channel_id
+            self.title = title
+            self.thumbnail = "thumb.jpg"
+            self.live_state = live_state
+            self.scheduled_start = scheduled_start
+            self.actual_start = actual_start
+            self.concurrent_viewers = concurrent_viewers
+
+    class _FakeYouTubeClient:
+        _RESP = {}
+        def __init__(self, api_key):
+            pass
+        def videos_list(self, ids):
+            return {vid: self._RESP[vid] for vid in ids if vid in self._RESP}
+
+    _orig_YTC = YouTubeClient
+    _orig_env = dict(os.environ)
+    _orig_enqueue = _enqueue_wake_now
+    try:
+        globals()["YouTubeClient"] = _FakeYouTubeClient
+        globals()["_enqueue_wake_now"] = lambda video_id, when: None  # 실제 Cloud Tasks 호출 스킵
+        os.environ["YOUTUBE_API_KEY"] = "test-key"
+
+        # URL 없음 → False(호출부가 기존 텍스트 파싱 경로로)
+        g6 = _FakeGH()
+        assert _maybe_url_confirmed_schedule(
+            g6, "配信するよ〜 詳細は後で", "nonoka", "2026-09-16T12:00:05Z", _CFG6
+        ) is False
+        print("[OK] _maybe_url_confirmed_schedule (유튜브 URL 없음 → False, 텍스트 파싱에 위임)")
+
+        # 유튜브 URL은 있는데 API로 확정을 못함(videos.list 예외) → False 로 폴백
+        # (구버전 최소 신뢰도 보장 — 조용히 드롭하면 안 됨)
+        class _FailingYouTubeClient:
+            def __init__(self, api_key):
+                pass
+            def videos_list(self, ids):
+                raise RuntimeError("network down")
+        globals()["YouTubeClient"] = _FailingYouTubeClient
+        g6b = _FakeGH()
+        assert _maybe_url_confirmed_schedule(
+            g6b, "配信するよ https://www.youtube.com/watch?v=abcdEFGH123",
+            "nonoka", "2026-09-16T12:00:05Z", _CFG6,
+        ) is False
+        globals()["YouTubeClient"] = _FakeYouTubeClient
+        print("[OK] _maybe_url_confirmed_schedule (videos.list 예외 → False, 텍스트 파싱 폴백)")
+
+        # (v3.6) 조용히 스킵하지 않고 monitor 이벤트 로그에 degraded 로 남기는지 확인
+        _ev_log = next((v for k, v in g6b.store.items() if k.startswith("monitoring/events-")), "")
+        assert '"result": "degraded"' in _ev_log and "videos.list" in _ev_log, _ev_log
+        print("[OK] _maybe_url_confirmed_schedule (폴백 사유를 monitor 이벤트 로그에 degraded 로 기록)")
+
+        # 같은 상황을 _maybe_nonyt_url_notice 로 잘못 흘려보내 소식으로 오분류하지 않는지 확인
+        assert _maybe_nonyt_url_notice(
+            g6b, "配信するよ https://www.youtube.com/watch?v=abcdEFGH123",
+            None, "2026-09-16T12:00:05Z",
+        ) is False
+        print("[OK] _maybe_nonyt_url_notice (유튜브 URL 은 비유튜브로 오분류 안 함)")
+
+        # 본인 채널의 라이브 시작 트윗 — 버그리포트 20260916 #1 재현 (配信 키워드 없어도 잡힘)
+        _FakeYouTubeClient._RESP = {
+            "9Di14qEQJH8": _FakeVideoInfo(
+                "9Di14qEQJH8", "UC_nonoka", "방송 시작!", "live",
+                scheduled_start="2026-09-16T11:06:58Z",
+                actual_start="2026-09-16T11:07:20Z", concurrent_viewers=627,
+            )
+        }
+        g7 = _FakeGH()
+        ok = _maybe_url_confirmed_schedule(
+            g7,
+            "お待たせしました！はじまりますたー https://www.youtube.com/live/9Di14qEQJH8?si=xxx",
+            "nonoka", "2026-09-16T12:00:05Z", _CFG6,
+        )
+        assert ok is True
+        pv7 = g7.store.get(_PREVIEW_PATH) or {}
+        items7 = pv7.get("items") or []
+        assert len(items7) == 1 and items7[0]["state"] == "live", items7
+        assert items7[0]["channel_key"] == "nonoka"
+        print("[OK] _maybe_url_confirmed_schedule (配信 키워드 없는 트윗도 URL 로 잡아 live 로 즉시 등록)")
+
+        # undo 스냅샷 — /undo 로 되돌릴 수 있어야 함(LLM/videos.list 오판 대비 안전장치)
+        adm7 = g7.store.get(_ADMIN_STATE_PATH) or {}
+        assert adm7.get("undo", {}).get("path") == _PREVIEW_PATH, adm7
+        print("[OK] _maybe_url_confirmed_schedule (undo 스냅샷 기록 — /undo 가능)")
+
+        # 다른 멤버 채널에서 열린 콜라보 — host=그 채널, collab_with=작성자
+        g8 = _FakeGH()
+        _FakeYouTubeClient._RESP = {
+            "collabVid12": _FakeVideoInfo("collabVid12", "UC_ritsu", "합동 방송", "upcoming",
+                                        scheduled_start="2026-09-20T10:00:00Z")
+        }
+        _maybe_url_confirmed_schedule(
+            g8, "りっちゃんと一緒に配信するよ https://www.youtube.com/watch?v=collabVid12",
+            "nonoka", "2026-09-16T12:00:05Z", _CFG6,
+        )
+        pv8 = (g8.store.get(_PREVIEW_PATH) or {}).get("items") or []
+        assert pv8 and pv8[0]["channel_key"] == "ritsu" and pv8[0]["collab_with"] == ["nonoka"], pv8
+        print("[OK] _maybe_url_confirmed_schedule (타 멤버 채널 콜라보 → host=그 채널, collab_with=작성자)")
+    finally:
+        globals()["YouTubeClient"] = _orig_YTC
+        globals()["_enqueue_wake_now"] = _orig_enqueue
+        os.environ.clear()
+        os.environ.update(_orig_env)
+
+    # ── (v3.6) 비유튜브 URL → 소식(notice) 이관 ──────────────
+    if xnotice is not None:
+        g9 = _FakeGH()
+        handled = _maybe_nonyt_url_notice(
+            g9, "9/20 bilibiliでも同時配信するよ〜 https://live.bilibili.com/12345678",
+            None, "2026-09-16T12:00:00Z",
+        )
+        assert handled is True
+        nj9 = g9.store.get(_NOTICES_PATH) or {}
+        assert (nj9.get("notices") or []), "비유튜브 URL 이 notices.json 에 안 실림"
+        pv9 = g9.store.get(_PREVIEW_PATH)
+        assert not pv9, "비유튜브 URL 이 preview.json 에 잘못 등록됨"
+        print("[OK] _maybe_nonyt_url_notice (bilibili 링크 → notices.json 이관, preview 는 안 건드림)")
+
+        g10 = _FakeGH()
+        assert _maybe_nonyt_url_notice(g10, "配信するよ〜 詳細は後で", None, "2026-09-16T12:00:00Z") is False
+        print("[OK] _maybe_nonyt_url_notice (URL 자체 없음 → False, 텍스트 경로에 위임)")
+
+    # ── (v3.6) URL 없는 텍스트 예고 — LLM 최종 확인 게이트 ────
+    if xtweet is not None:
+        import src.backend.llm as _llm_mod
+
+        class _FakeAnnounceLLM:
+            _ANSWER = True
+            def __init__(self, api_key):
+                pass
+            def announces_own_broadcast(self, text):
+                return self._ANSWER
+
+        _orig_llm_cls = _llm_mod.LLMClient
+        _orig_make_gh = _make_gh
+        _orig_env2 = dict(os.environ)
+        try:
+            os.environ["GROQ_API_KEY"] = "test-key"
+            _llm_mod.LLMClient = _FakeAnnounceLLM
+
+            # 진짜 예고 + LLM "yes" → preview.json 에 등록됨
+            _FakeAnnounceLLM._ANSWER = True
+            g11 = _FakeGH()
+            globals()["_make_gh"] = lambda: g11
+            _maybe_personal_schedule(
+                "明日22時から歌枠やります🎤", tag=None, channel_key="ritsu",
+                name="리츠", handle="ritsu_yumemita", now_iso="2026-09-16T12:00:00Z",
+            )
+            pv11 = (g11.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert pv11 and pv11[0]["channel_key"] == "ritsu", pv11
+            print("[OK] _maybe_personal_schedule (텍스트 예고 + LLM yes → 등록됨)")
+
+            # 아라레 후기 실사례 — 정규식은 후보를 뽑지만 LLM "no" → 미등록
+            _FakeAnnounceLLM._ANSWER = False
+            g12 = _FakeGH()
+            globals()["_make_gh"] = lambda: g12
+            _maybe_personal_schedule(
+                "#アワーノーツ 先行プレイ配信\nありがとうございました！"
+                "ガッツリ2時間プレイ！！\n9/24まで待ち遠しい〜〜〜！！！",
+                tag=None, channel_key="arale", name="아라레", handle="arale_yumemita",
+                now_iso="2026-09-16T12:00:00Z",
+            )
+            pv12 = (g12.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert not pv12, pv12
+            print("[OK] _maybe_personal_schedule (아라레 후기 실사례 + LLM no → 미등록, 오탐 방지)")
+
+            # GROQ_API_KEY 없으면 LLM 호출 자체가 불가 → 안전한 실패(미등록)
+            del os.environ["GROQ_API_KEY"]
+            g13 = _FakeGH()
+            globals()["_make_gh"] = lambda: g13
+            _maybe_personal_schedule(
+                "明日22時から歌枠やります🎤", tag=None, channel_key="ritsu",
+                name="리츠", handle="ritsu_yumemita", now_iso="2026-09-16T12:00:00Z",
+            )
+            assert not (g13.store.get(_PREVIEW_PATH) or {}).get("items")
+            print("[OK] _maybe_personal_schedule (GROQ_API_KEY 없음 → 미등록, 안전한 실패)")
+            _ev13 = next((v for k, v in g13.store.items() if k.startswith("monitoring/events-")), "")
+            assert '"result": "degraded"' in _ev13 and "GROQ_API_KEY" in _ev13, _ev13
+            print("[OK] _maybe_personal_schedule (GROQ_API_KEY 없음도 monitor 이벤트 로그에 degraded 로 기록)")
+        finally:
+            _llm_mod.LLMClient = _orig_llm_cls
+            globals()["_make_gh"] = _orig_make_gh
+            os.environ.clear()
+            os.environ.update(_orig_env2)
 
     # ── _build_status_text ───────────────────────────────────
     class _StatusGH:
@@ -3654,6 +4106,63 @@ if __name__ == "__main__":
         assert "변화 없음" in r_end, r_end
         assert g3.store[_PREVIEW_PATH]["items"][0]["state"] == "end", g3.store[_PREVIEW_PATH]
         print("[OK] _activate_state_edit: video_id 없음 → FSM 1회 파생(state_since 리셋 기준)")
+
+    # ── (v3.6) 웹훅 DM 미발송 안전망 — 버그리포트 20260916 #4 ────────────
+    if _FLASK_AVAILABLE:
+        class _FakeGHStore:
+            _store: dict = {}
+            def __init__(self, *a, **kw):
+                pass
+            def read_json(self, path):
+                return (self._store.get(path), "sha0" if path in self._store else None)
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                before = self._store.get(path)
+                self._store[path] = data
+                return (before != data, "sha1")
+
+        _sent_msgs: list = []
+        def _fake_send_telegram(text, silent=False):
+            _dm_sent_ctx.set(True)
+            _sent_msgs.append(text)
+            return True
+
+        _orig_send_tg = globals()["_send_telegram"]
+        _orig_gh_store = globals()["GitHubStore"]
+        _orig_del_req = globals()["_handle_del_request"]
+        _orig_env4 = dict(os.environ)
+        try:
+            os.environ["GITHUB_TOKEN"] = "test-token"
+            os.environ["GITHUB_REPO"] = "test/repo"
+            globals()["_send_telegram"] = _fake_send_telegram
+            globals()["GitHubStore"] = _FakeGHStore
+            _FakeGHStore._store = {}
+            client = app.test_client()
+
+            # 실사례 재현: /del preview (유닛/번호 누락) — 현재 코드는 이미 사용법
+            # 안내를 보낸다(버그리포트 당시엔 조용히 끝났다는 보고 — 재현 안 됨은
+            # 배포 지연/환경차 가능성. 그래도 이 경로가 DM 을 보낸다는 걸 고정한다).
+            _sent_msgs.clear()
+            resp = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/del preview"}})
+            assert resp.status_code == 200
+            assert len(_sent_msgs) == 1, _sent_msgs
+            assert "사용법" in _sent_msgs[0], _sent_msgs
+            print("[OK] 안전망: /del preview(유닛·번호 누락) → 사용법 안내 DM 정상 발송")
+
+            # 안전망 자체 검증: 핸들러가 DM 없이 끝나는 상황을 인위로 만들어도
+            # _done() 이 대신 알린다.
+            _sent_msgs.clear()
+            globals()["_handle_del_request"] = lambda *a, **kw: None
+            resp2 = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/del arale 1"}})
+            assert resp2.status_code == 200
+            assert len(_sent_msgs) == 1, _sent_msgs
+            assert "결과를 알려드리지 못했습니다" in _sent_msgs[0], _sent_msgs
+            print("[OK] 안전망: 핸들러가 DM 없이 끝나는 경로 → _done() 이 대신 안내 DM 발송")
+        finally:
+            globals()["_send_telegram"] = _orig_send_tg
+            globals()["GitHubStore"] = _orig_gh_store
+            globals()["_handle_del_request"] = _orig_del_req
+            os.environ.clear()
+            os.environ.update(_orig_env4)
 
     print(chr(10) + "=" * 60)
     print("SUCCESS: telegram_app v3 smoke test 통과")

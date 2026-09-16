@@ -104,6 +104,38 @@ _NOTICE_TITLE_SCHEMA = {
     },
 }
 
+# (v3.6) URL 우선 ingest — 트윗에 걸린 유튜브 URL 이 우리 5인/공식 채널이 아닐 때,
+# 그 트윗 작성자가 실제로 참여하는 콘텐츠인지 LLM 에게 확인(외부 콜라보 오탐 방지 게이트).
+_PARTICIPATION_SCHEMA = {
+    "name": "participation",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "participates": {"type": "boolean"},
+        },
+        "required": ["participates"],
+        "additionalProperties": False,
+    },
+}
+
+# (v3.6) URL 없는 개인 트윗 — 정규식 게이트(`配信` 키워드 + 날짜/시각)를 통과한 "후보"를
+# 실제로 등록하기 전 마지막으로 묻는 확인. 실측(2026-09-16, 아라레 후기 트윗): 정규식은
+# "配信"·"2時間"·"9/24" 를 각각 문맥 없이 따로 캐치해 오탐 후보를 만들지만, 이 질문을
+# 그대로 던지면 LLM 은 "이건 후기지 예고가 아니다"라고 정확히 답한다.
+_ANNOUNCE_SCHEMA = {
+    "name": "announces_own_broadcast",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "announces": {"type": "boolean"},
+        },
+        "required": ["announces"],
+        "additionalProperties": False,
+    },
+}
+
 
 def _strip_json_fence(text: str) -> str:
     """```json ... ``` 펜스나 앞뒤 잡텍스트를 벗겨 JSON 본체만 남긴다."""
@@ -219,6 +251,98 @@ class LLMClient:
         except json.JSONDecodeError as e:
             logger.warning(f"notice_title: JSON 파싱 실패 — {e}")
             return None
+
+    def participation(self, text_ja: str, *, member_name: str) -> bool | None:
+        """
+        (v3.6) 트윗 원문이 `member_name` 이 직접 출연·참여하는 콘텐츠를 가리키는지 판정.
+
+        URL 우선 ingest 경로에서, 걸려있는 유튜브 URL 의 채널이 우리 5인/공식 채널이
+        아닐 때만 호출된다(외부 채널 콜라보 오탐 방지 게이트). 제대로 된 JSON 응답을
+        받을 때까지 최대 5회 시도(모델별 429/5xx 백오프는 `_call_groq` 담당) — 5회 모두
+        실패하면 None 을 반환하고, 호출부는 등록하지 않는 쪽(안전한 실패)으로 처리한다.
+
+        Args:
+            text_ja: 트윗 원문(원어 그대로 — 마스킹만 적용, 번역은 안 함)
+            member_name: 참여 여부를 판정할 멤버 이름(한국어 표기)
+
+        Returns:
+            True/False 또는 5회 모두 실패 시 None
+        """
+        if self.disabled:
+            logger.warning("LLMClient disabled (api_key missing)")
+            return None
+
+        masked_text, _mapping = _mask_glossary(text_ja or "")
+        prompt = (
+            f"다음은 X(트위터) 게시물 원문이다. 이 글이 '{member_name}'이(가) 직접 "
+            f"출연·참여하는 영상/콘텐츠를 홍보 또는 언급하는 글인지 판단하라. "
+            f"단순 감상·잡담·무관한 리트윗이면 false. JSON 포맷만 출력.\n\n"
+            f"원문:\n{masked_text}\n\n출력:\n"
+            f'{{"participates": <true 또는 false>}}'
+        )
+
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=_PARTICIPATION_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=_PARTICIPATION_SCHEMA)
+            if not response:
+                continue
+            try:
+                result = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"participation: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if isinstance(result, dict) and isinstance(result.get("participates"), bool):
+                return result["participates"]
+            logger.warning(f"participation: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+
+        logger.warning("participation: 5회 모두 실패 — None (호출부 미등록 처리)")
+        return None
+
+    def announces_own_broadcast(self, text_ja: str) -> bool | None:
+        """
+        (v3.6) 트윗 원문이 작성자 본인이 추후 진행할 방송을 예고하는 글인지 최종 확인.
+
+        URL 없는 개인 트윗 경로(3-2)의 마지막 관문 — 정규식 게이트+날짜/시각 추출까지
+        통과한 후보에 대해서만 호출된다(비용 절감). "作成者는 추후 진행할 방송을 예고하는
+        글을 썼니?"를 그대로 물어 문맥으로 판정 — 후기·잡담 속 우연한 날짜/시각 오합성을
+        정규식 대신 여기서 걸러낸다. 최대 5회 시도, 5회 모두 실패하면 None(안전한 실패 —
+        호출부는 미등록 처리).
+
+        Args:
+            text_ja: 트윗 원문(원어 그대로)
+
+        Returns:
+            True/False 또는 5회 모두 실패 시 None
+        """
+        if self.disabled:
+            logger.warning("LLMClient disabled (api_key missing)")
+            return None
+
+        masked_text, _mapping = _mask_glossary(text_ja or "")
+        prompt = (
+            f"다음은 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
+            f"질문: 작성자는 추후 진행할 방송을 예고하는 글을 썼니? JSON 포맷만 출력.\n\n"
+            f'{{"announces": <true 또는 false>}}'
+        )
+
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=_ANNOUNCE_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=_ANNOUNCE_SCHEMA)
+            if not response:
+                continue
+            try:
+                result = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"announces_own_broadcast: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if isinstance(result, dict) and isinstance(result.get("announces"), bool):
+                return result["announces"]
+            logger.warning(f"announces_own_broadcast: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+
+        logger.warning("announces_own_broadcast: 5회 모두 실패 — None (호출부 미등록 처리)")
+        return None
 
     def translate(self, text_ja: str) -> str | None:
         """
@@ -631,6 +755,84 @@ if __name__ == "__main__":
     assert _NOTICE_TITLE_SCHEMA["schema"]["additionalProperties"] is False
     assert set(_NOTICE_TITLE_SCHEMA["schema"]["required"]) == {"title_ja", "title_ko"}
     print("✓ _NOTICE_TITLE_SCHEMA: strict 규칙 준수")
+
+    # ──── 시나리오 8b: participation (URL 우선 ingest 콜라보 판별) ────
+    print("\n[시나리오 8b] participation — 5회 재시도 + 성공/실패 경로")
+    print("-" * 70)
+    assert _PARTICIPATION_SCHEMA["strict"] is True
+    assert _PARTICIPATION_SCHEMA["schema"]["additionalProperties"] is False
+
+    class ParticipationSession:
+        """처음 N회는 깨진 응답, 그 뒤엔 정상 JSON — 재시도 횟수를 셈."""
+        def __init__(self, fail_times: int, final: str):
+            self.fail_times = fail_times
+            self.final = final
+            self.call_count = 0
+
+        def post(self, url, **kwargs):
+            self.call_count += 1
+            class FakeResp:
+                status_code = 200
+                def __init__(self, text):
+                    self.text = text
+                def json(self):
+                    return {"choices": [{"message": {"content": self.text}}]}
+            # _call_groq 가 model→fallback 순으로 한 번씩 부르므로, 실패 횟수는
+            # "호출 횟수"가 아니라 "완전한 시도 라운드" 기준으로 2배.
+            if self.call_count <= self.fail_times * 2:
+                return FakeResp("이건 JSON 이 아님")
+            return FakeResp(self.final)
+
+    llm_participation_ok = LLMClient(
+        "test-key", session=ParticipationSession(2, '{"participates": true}')
+    )
+    result = llm_participation_ok.participation("어떤 트윗 원문", member_name="노노카")
+    assert result is True, result
+    print("✓ participation: 2회 실패 후 3회차 성공 → True")
+
+    llm_participation_no = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"participates": false}')
+    )
+    result = llm_participation_no.participation("무관한 트윗", member_name="아라레")
+    assert result is False, result
+    print("✓ participation: 정상 false 응답 파싱")
+
+    llm_participation_fail = LLMClient(
+        "test-key", session=ParticipationSession(99, '{"participates": true}')
+    )
+    result = llm_participation_fail.participation("계속 깨진 응답", member_name="유노")
+    assert result is None, result
+    print("✓ participation: 5회 모두 실패 → None (호출부 미등록 처리)")
+
+    # ──── 시나리오 8c: announces_own_broadcast (아라레 후기 실사례 재현) ────
+    print("\n[시나리오 8c] announces_own_broadcast — 후기 오탐 방지 실사례")
+    print("-" * 70)
+    assert _ANNOUNCE_SCHEMA["strict"] is True
+    assert _ANNOUNCE_SCHEMA["schema"]["additionalProperties"] is False
+
+    llm_announce_yes = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"announces": true}')
+    )
+    result = llm_announce_yes.announces_own_broadcast("明日22時から歌枠やります🎤")
+    assert result is True, result
+    print("✓ announces_own_broadcast: 진짜 예고 → True")
+
+    llm_announce_recap = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"announces": false}')
+    )
+    result = llm_announce_recap.announces_own_broadcast(
+        "#アワーノーツ 先行プレイ配信\nありがとうございました！"
+        "ガッツリ2時間プレイ！！\n9/24まで待ち遠しい〜〜〜！！！"
+    )
+    assert result is False, result
+    print("✓ announces_own_broadcast: 아라레 후기 실사례 → False (오탐 방지)")
+
+    llm_announce_fail = LLMClient(
+        "test-key", session=ParticipationSession(99, '{"announces": true}')
+    )
+    result = llm_announce_fail.announces_own_broadcast("계속 깨진 응답")
+    assert result is None, result
+    print("✓ announces_own_broadcast: 5회 모두 실패 → None")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
     print("\n[시나리오 9] translate 반복 압축 (의성어 8회+ 연속반복)")

@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from .xrelay import JST, YT_VIDEO_RE, normalize, _TOMORROW_WORD
 from .xnotice import _first_time, _pick_event_date
 from . import preview  # ponytail: v3 preview 스키마 헬퍼
+from . import statemachine  # v3.6 URL 우선 ingest — build_item_from_video 의 wake 시각 파생
 
 UTC = timezone.utc
 
@@ -421,8 +422,16 @@ def parse_schedule(text: str, *, channel_key: str, tag: str | None, now_iso: str
     time_tbd = time_hm is None
     start_jst = _start_from(date_iso, time_hm)
 
-    if (_RECAP_RE.search(t) and not has_future
-            and start_jst < now_jst - timedelta(minutes=30)):
+    # (버그리포트 20260916 #2) 예전엔 여기에 `start_jst < now_jst - 30분` 조건이 더
+    # 있었다 — "추출된 날짜가 과거일 때만" 후기로 인정. 그런데 후기 트윗 본문에 우연히
+    # 무관한 미래 숫자(예: "9/24까지 기다려지네요" — 게임 출시일 카운트다운)가 있으면
+    # _DATE_RE/_TIME_RE 가 그걸 날짜/시각으로 잘못 뽑아 start_jst 가 미래가 돼버리고,
+    # ありがとうございました 가 명백히 있는데도 이 조건에 막혀 통과해 버렸다(아라레
+    # 실사례: "2時間プレイ…9/24まで待ち遠しい" → "2時間"의 "2時"를 시각으로, "9/24"를
+    # 날짜로 오합성해 9/24 02:00 예고로 둔갑). 날짜 추출이 맞다는 전제 위에서만 도는
+    # 재검증이라 추출 자체가 틀리면 무력화되는 구조라, 이 시각 비교를 없애고
+    # _RECAP_RE + not has_future 만으로 판정한다.
+    if _RECAP_RE.search(t) and not has_future:
         return None                       # 후기
 
     # time_tbd 는 "그 날짜" 자리표시자 — <date>T00:00:00Z 리터럴로 저장(계약 §2).
@@ -499,6 +508,140 @@ def merge_personal_schedule(prev_items: list[dict], inc: dict, now_iso: str) -> 
         cur["info_source"] = inc.get("info_source", "personal")
 
     cur["last_updated"] = now_iso
+
+    changed = (cur != original)
+    return items, changed
+
+
+# ═══ v3.6 — URL 우선 ingest ═══════════════════════════════════════════
+#   개인 트윗 원문에 유튜브 URL 이 있으면 텍스트 정규식(날짜/시각) 대신 그 영상을
+#   `videos.list` 로 직접 조회해 메타(제목/시각/실제 상태)를 확정하는 경로.
+#   버그리포트 20260916: 아라레 9/24 오탐(후기 트윗의 "9/24"·"2時間"이 날짜/시각으로
+#   오합성됨), 노노카 50분 지연(라이브 시작을 알리는 트윗에 `配信` 계열 키워드가 없어
+#   게이트 자체를 못 넘음)이 계기. 네트워크 I/O(videos.list·LLM)는 telegram_app.py 가
+#   담당 — 이 섹션은 그 결과를 preview 아이템으로 조립하는 순수 함수만 둔다.
+#   계약: 대화 내 설계(2026-09-16), 문서화는 추후 docs/SPEC.md 반영 예정.
+
+_STATE_ORDER = {"announced": 0, "upcoming": 1, "watching": 2, "live": 3, "end": 4}
+
+
+def resolve_url_host(video_channel_id: str, author_channel_key: str, channels_cfg: dict
+                      ) -> tuple[str | None, str | None, list[str] | None]:
+    """유튜브 영상의 channel_id 로 등록할 레인(host)을 정한다.
+
+    Returns:
+        (channel_key, host, collab_with)
+        - 우리 5인 개인 채널   → (그 채널 key, None, [author] 또는 None(본인 채널이면))
+        - 그룹 공식 채널       → (channel_order[0], "group", channel_order[1:]) — v3.1.4 팬아웃과 동일.
+        - 우리 채널 아님       → (None, None, None) — 호출부가 LLM 참여 확인 후 author 레인에 등록.
+    """
+    channel_id_to_key = {
+        meta.get("channel_id"): key
+        for key, meta in (channels_cfg.get("channels") or {}).items()
+    }
+    key = channel_id_to_key.get(video_channel_id)
+    if key is None:
+        return None, None, None
+    if key == "group":
+        order = list(channels_cfg.get("channel_order") or [])
+        if not order:
+            return None, None, None
+        return order[0], "group", (order[1:] or None)
+    collab = [author_channel_key] if author_channel_key and author_channel_key != key else None
+    return key, None, collab
+
+
+def build_item_from_video(info, *, channel_key: str, host: str | None,
+                          collab_with: list[str] | None, now_iso: str) -> tuple[dict, str | None]:
+    """`videos.list` 로 확정된 영상(`info` — collector.youtube.VideoInfo)을 preview 아이템으로.
+
+    build_preview 섹션 1(신규 아이템: 승격→live 반영→FSM derive)을 단일 영상에 그대로
+    재현한다 — 나중에 정기 tick 이 같은 video_id 를 발견해도 동일한 결과가 나오도록
+    일관성을 맞추기 위함. state 는 announced 로 시작해 API 가 알려주는 실제 상태
+    (upcoming/watching/live)로 곧장 승격된다(고정값 아님 — 버그리포트 20260916 #1).
+
+    Returns:
+        (item, next_check_at) — next_check_at 은 Cloud Tasks 즉시 enqueue 용(None 이면 불필요).
+    """
+    url = f"https://www.youtube.com/watch?v={info.video_id}"
+    item = preview.make_item(
+        channel_key=channel_key,
+        state="announced",
+        source="personal",
+        now_iso=now_iso,
+        title=info.title,
+        thumbnail=info.thumbnail,
+        url=url,
+        video_id=info.video_id,
+        scheduled_start=info.scheduled_start,
+        api_start_seen=info.scheduled_start,
+        first_seen=now_iso,
+        collab_with=collab_with,
+        host=host,
+        kind="collab" if (collab_with or host == "group") else None,
+        info_source="personal",
+        info_at=now_iso,
+    )
+
+    if item["state"] == "announced":
+        promoted = preview.promote_state(item)
+        if promoted != item["state"]:
+            item = preview.set_state(item, promoted, now_iso)
+
+    if info.live_state == "live":
+        if item["state"] not in ("watching", "live", "end"):
+            item = preview.set_state(item, "live", now_iso)
+        item["actual_start"] = info.actual_start
+        item["concurrent_viewers"] = info.concurrent_viewers
+
+    tick = statemachine.derive(item, now_iso, live_seen=(info.live_state == "live"))
+    if tick.next_state != item["state"]:
+        item = preview.set_state(item, tick.next_state, now_iso)
+
+    return item, tick.next_check_at
+
+
+def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict, now_iso: str
+                          ) -> tuple[list[dict], bool]:
+    """video_id 로 기존 아이템을 찾아 API 확정 값으로 갱신(없으면 append).
+
+    channel_key/host/collab_with 는 처음 만들어질 때 값을 그대로 유지 — 이미 추적 중인
+    아이템이면 `new_item` 계산 시점에 넘겨준 host/collab_with 를 신뢰하지 않고 기존 값을
+    보존한다(다른 경로가 이미 정확히 배정해 둔 레인을 이 경로가 실수로 바꾸지 않도록).
+    상태는 뒷걸음치지 않는다 — 이미 live/watching 인데 지연 도착한 트윗이 announced/
+    upcoming 판정을 들고 와도 강등되지 않는다(`_STATE_ORDER`).
+    """
+    items = [dict(i) for i in (prev_items or [])]
+    idx = next((i for i, it in enumerate(items) if it.get("video_id") == video_id), None)
+    if idx is None:
+        items.append(new_item)
+        return items, True
+
+    cur = items[idx]
+    original = dict(cur)
+
+    if new_item.get("title") != cur.get("title"):
+        cur["title"] = new_item.get("title")
+        cur["title_ko"] = None
+        cur["needs_tl"] = bool(new_item.get("title"))
+    cur["thumbnail"] = new_item.get("thumbnail") or cur.get("thumbnail")
+    cur["url"] = new_item.get("url") or cur.get("url")
+    cur["api_start_seen"] = new_item.get("api_start_seen")
+    if cur.get("info_source") not in ("x-relay",):
+        cur["scheduled_start"] = new_item.get("scheduled_start") or cur.get("scheduled_start")
+    if new_item.get("actual_start"):
+        cur["actual_start"] = new_item["actual_start"]
+    if new_item.get("concurrent_viewers") is not None:
+        cur["concurrent_viewers"] = new_item["concurrent_viewers"]
+
+    new_state = new_item.get("state")
+    cur_state = cur.get("state", "announced")
+    if new_state and _STATE_ORDER.get(new_state, 0) > _STATE_ORDER.get(cur_state, 0):
+        cur["state"] = new_state
+        cur["state_since"] = now_iso
+
+    cur["last_updated"] = now_iso
+    items[idx] = cur
 
     changed = (cur != original)
     return items, changed
@@ -724,6 +867,15 @@ if __name__ == "__main__":
                           channel_key="ritsu", tag=None, now_iso=SNOW) is None  # URL만 → None
     print("[OK] parse_schedule  (키워드 없음 / RT / 후기 / URL만 → None)")
 
+    # S-C2: (버그리포트 20260916 #2) 후기 트윗 속 무관한 미래 숫자가 날짜/시각으로
+    # 오합성돼도 ありがとうございました 가 있으면 후기로 걸러짐(아라레 실사례 재현)
+    assert parse_schedule(
+        "#アワーノーツ 先行プレイ配信\nありがとうございました！\n\n"
+        "ガッツリ2時間プレイ！！\n9/24まで待ち遠しい〜〜〜！！！",
+        channel_key="arale", tag=None, now_iso=SNOW,
+    ) is None
+    print("[OK] parse_schedule  (후기 속 무관한 미래 날짜/시각 오합성 → 후기로 걸러짐)")
+
     # S-D: URL 있는 예고 → video_id 추출
     d = parse_schedule("本日21:00〜 生配信！\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ",
                        channel_key="arale", tag=None, now_iso=SNOW)
@@ -779,5 +931,101 @@ if __name__ == "__main__":
     assert ob2["scheduled_start"] == "2026-09-07T14:00:00Z" and ob2["info_source"] == "api"
     assert ob2["api_start_seen"] is None
     print("[OK] apply_overrides  (API 변경→API 승)")
+
+    # ── v3.6 URL 우선 ingest — resolve_url_host / build_item_from_video / merge_video_confirmed ──
+    class _FakeVideo:
+        def __init__(self, video_id, channel_id, title, live_state,
+                     scheduled_start=None, actual_start=None, concurrent_viewers=None,
+                     thumbnail="thumb.jpg"):
+            self.video_id = video_id
+            self.channel_id = channel_id
+            self.title = title
+            self.thumbnail = thumbnail
+            self.live_state = live_state
+            self.scheduled_start = scheduled_start
+            self.actual_start = actual_start
+            self.concurrent_viewers = concurrent_viewers
+
+    CFG2 = {
+        "channel_order": ["arale", "yuno", "nonoka", "ritsu", "miyako"],
+        "channels": {
+            "arale": {"channel_id": "UC_arale"},
+            "yuno": {"channel_id": "UC_yuno"},
+            "nonoka": {"channel_id": "UC_nonoka"},
+            "ritsu": {"channel_id": "UC_ritsu"},
+            "miyako": {"channel_id": "UC_miyako"},
+            "group": {"channel_id": "UC_group"},
+        },
+    }
+
+    # 본인 채널 — collab_with 없음
+    assert resolve_url_host("UC_nonoka", "nonoka", CFG2) == ("nonoka", None, None)
+    # 다른 멤버 채널에서 열린 콜라보 — 그 채널이 host, 작성자가 collab_with
+    assert resolve_url_host("UC_nonoka", "arale", CFG2) == ("nonoka", None, ["arale"])
+    # 그룹 공식 채널 — v3.1.4 팬아웃과 동일 (channel_order[0] + 나머지 4인)
+    assert resolve_url_host("UC_group", "arale", CFG2) == (
+        "arale", "group", ["yuno", "nonoka", "ritsu", "miyako"]
+    )
+    # 우리 채널 아님
+    assert resolve_url_host("UC_someone_else", "arale", CFG2) == (None, None, None)
+    print("[OK] resolve_url_host  (본인/타 멤버/그룹/외부 4갈래)")
+
+    NOW6 = "2026-09-16T12:00:05Z"
+
+    # 이미 라이브 중인 영상 — state 가 "upcoming" 으로 고정되지 않고 "live" 로 직행
+    v_live = _FakeVideo("vidLive", "UC_nonoka", "방송중", "live",
+                        scheduled_start="2026-09-16T11:06:58Z",
+                        actual_start="2026-09-16T11:07:20Z", concurrent_viewers=627)
+    item_live, wake_live = build_item_from_video(
+        v_live, channel_key="nonoka", host=None, collab_with=None, now_iso=NOW6
+    )
+    assert item_live["state"] == "live", item_live
+    assert item_live["actual_start"] == "2026-09-16T11:07:20Z"
+    assert item_live["concurrent_viewers"] == 627
+    assert wake_live is not None                                   # live cadence 재확인 예약됨
+    print("[OK] build_item_from_video  (버그리포트 20260916 #1: live 로 직행, upcoming 고정 아님)")
+
+    # 아직 시작 전 — upcoming 유지, precheck 시각으로 wake 예약
+    v_future = _FakeVideo("vidFuture", "UC_arale", "다음주 방송", "upcoming",
+                          scheduled_start="2026-09-23T05:00:00Z")
+    item_future, wake_future = build_item_from_video(
+        v_future, channel_key="arale", host=None, collab_with=None, now_iso=NOW6
+    )
+    assert item_future["state"] == "upcoming", item_future
+    assert wake_future is not None
+    print("[OK] build_item_from_video  (미래 예정 → upcoming + precheck wake)")
+
+    # scheduled_start 는 지났는데 API 가 아직 upcoming(약간의 랙) → watching 으로 승격
+    v_due = _FakeVideo("vidDue", "UC_yuno", "곧 시작", "upcoming",
+                       scheduled_start="2026-09-16T11:58:00Z")   # NOW6 보다 2분 전
+    item_due, wake_due = build_item_from_video(
+        v_due, channel_key="yuno", host=None, collab_with=None, now_iso=NOW6
+    )
+    assert item_due["state"] == "watching", item_due
+    print("[OK] build_item_from_video  (시작시각 도래+API 랙 → watching)")
+
+    # merge_video_confirmed — 신규 append
+    items_m, ch_m = merge_video_confirmed([], "vidLive", item_live, NOW6)
+    assert ch_m and len(items_m) == 1
+    print("[OK] merge_video_confirmed  (신규 append)")
+
+    # merge_video_confirmed — 이미 watching 인 아이템에 뒤늦게 도착한 upcoming 판정은 강등 안 함
+    watching_item = dict(item_due)
+    stale_upcoming = dict(item_future)
+    stale_upcoming["video_id"] = "vidDue"   # 같은 영상, 지연 도착한 재계산이라 가정
+    items_m2, ch_m2 = merge_video_confirmed([watching_item], "vidDue", stale_upcoming, NOW6)
+    assert items_m2[0]["state"] == "watching", items_m2[0]   # 강등되지 않음
+    print("[OK] merge_video_confirmed  (상태 역행 방지)")
+
+    # merge_video_confirmed — 제목 변경 시 title_ko/needs_tl 리셋
+    tracked = dict(item_future)
+    tracked["title_ko"] = "번역된 제목"
+    tracked["needs_tl"] = False
+    retitled = dict(item_future)
+    retitled["title"] = "제목이 바뀜"
+    items_m3, ch_m3 = merge_video_confirmed([tracked], "vidFuture", retitled, NOW6)
+    assert items_m3[0]["title"] == "제목이 바뀜"
+    assert items_m3[0]["title_ko"] is None and items_m3[0]["needs_tl"] is True
+    print("[OK] merge_video_confirmed  (제목 변경 → 재번역 대상)")
 
     print("\nSUCCESS: xtweet self-test 통과")

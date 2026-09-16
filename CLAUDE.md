@@ -51,6 +51,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 >   레인에 자동 팬아웃(`GROUP_CHANNEL_KEY`). + `xrelay.parse_live_now` — 일일 스케줄/出演情報
 >   서식이 아닌 "지금 막 시작" 즉시개시 트윗(`配信開始`+온전한 영상 URL)을 감지해 `video_id`
 >   포함 `announced` 아이템으로 즉시 반영(폴링 지연 없이). 상세: `docs/SPEC.md` §1-3-1/§1-3-2.
+> - **v3.6** (2026-09-16~17, 설계 검토→구현): 개인 5인 트윗 예고 판정을 URL 우선으로 재설계.
+>   실사례 2건이 계기 — 노노카 쇼츠 라이브가 `配信` 키워드 없이 시작해 light tick(3h) 텀만큼
+>   감지가 늦었던 것, 아라레 후기 트윗(`2時間プレイ…9/24まで`)의 무관한 숫자가 정규식에 날짜/
+>   시각으로 오합성됐던 것. 대응:
+>   - **light tick 3h → 10분** (`deploy/scheduler.sh`) — 자원 소모 재확인 결과 YouTube 쿼터
+>     (10분×144회/일=288 units, 무료 한도 1만의 3%)·GitHub API·Cloud Run 무료 티어 전부 여유.
+>   - **URL 우선 ingest** — 유튜브 URL 있으면 `videos.list` 로 즉시 사실 확정(본인/타멤버/그룹
+>     채널은 바로 등록, 외부 채널은 LLM 참여판정 후 등록) → API 실패 시 텍스트 파싱으로 자동
+>     폴백(v3.6 이전 신뢰도 밑으로 안 떨어짐). 비유튜브 URL(bilibili 등)은 라이브/종료 추적이
+>     안 돼 `notices.json` 으로 이관(preview 스코프 아웃).
+>   - **LLM 최종 확인** — URL 없는 텍스트 예고 후보도 등록 직전 `announces_own_broadcast()` 로
+>     "진짜 본인 예고인가" 재확인(정규식 게이트+날짜추출만으론 후기 오탐을 못 막음).
+>   - Cloud Tasks wake 즉시 enqueue(등록과 동시에, light tick 안 기다림) + undo 스냅샷(LLM
+>     오판 대비) + monitor 이벤트 로그(`flow="tweet"`, `result="degraded"` — LLM/API 인프라
+>     문제로 스킵한 경우만, 정상 "아니오" 판정은 노이즈라 제외).
+>   - `/telegram` 웹훅 안전망: 모든 반환 지점을 `_done()` 으로 통일해, 명령 처리 후 DM 이
+>     한 건도 안 나가면 자동으로 안내 DM(버그리포트 `/del preview` 무응답 — 재현은 안 됐지만
+>     일반화된 안전망으로 대응).
+>   - `xtweet.parse_schedule` 후기가드(`_RECAP_RE`) 도 별도로 고침 — "추출된 날짜가 과거일
+>     때만 후기로 인정"하던 조건이 오합성된 미래 날짜엔 무력화되던 버그.
+>   상세 설계 대화/흐름도: `docs/v3_pamphlet.html`(devpapers) "개인 트윗 예고 판정" 섹션.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -66,7 +87,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
-  (baseline JST 06:00 / light 3h) + 방송별 정밀 wake **Cloud Tasks**. 리전 `asia-northeast1`.
+  (baseline JST 06:00 / light 10분(v3.6, 구 3h)) + 방송별 정밀 wake **Cloud Tasks**. 리전 `asia-northeast1`.
 - **저장** = **GitHub `data` 브랜치** — Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
 - **프론트** = **Vercel** 정적 호스팅. 배포 주소 `https://mewtype-schduler.vercel.app/`
   (레포명은 `mewtype-scheduler` 로 고쳤지만 Vercel 프로젝트/도메인은 옛 오타 `mewtype-schduler`
@@ -109,6 +130,9 @@ src/
                        #      (@BDP_yumemita) 영상 → 5인 팬아웃(host="group")
     statemachine.py    # (v3) FSM 파생 — derive(item, now) → (next_state, next_check_at, log). 저장 안 함
     llm.py             # (v3) Groq 클라이언트 — notice_title(json_schema strict) / translate. 실패 시 None
+                       #        (v3.6) participation(외부 채널 콜라보 참여판정) /
+                       #        announces_own_broadcast(텍스트 예고 최종확인) 추가 — 둘 다 최대
+                       #        5회 재시도, 5회 모두 실패 시 None(호출부 미등록 처리)
     ytnotif.py         # (v3) YouTube 앱 푸시알림 파서 (`chime.*` 키). INGEST_YT_ENABLED 뒤
     vxtwitter.py       # (v3) 트윗 unfurl — 잘린 URL·이미지 복원 (api.vxtwitter.com)
     vision.py          # (v3.2) Groq 비전 OCR — 크로스오버 공지 이미지 속 출연진 이름 판독
@@ -149,6 +173,17 @@ src/
                        #        (v3.5, 구 /push-monitor) /monitor [--auto|--off|--full|
                        #        YYYY-MM-DD] — Ops Monitor 리포트 즉시 DM / 자동 실행 on-off /
                        #        이번 달 전체(월간 그리드) / 특정 날짜
+                       #        (v3.6) 개인 트윗 예고 판정 3단 분기(_maybe_personal_schedule):
+                       #        ①유튜브 URL→_maybe_url_confirmed_schedule(videos.list 확정,
+                       #        API 실패 시 텍스트 파싱 폴백) ②비유튜브 URL→_maybe_nonyt_url_notice
+                       #        (notices.json 이관, preview 는 라이브/종료 추적 불가라 스코프
+                       #        아웃) ③URL 없음→parse_schedule 후보 + LLM announces_own_broadcast
+                       #        최종확인(정규식이 못 잡는 후기 오탐 방지, 버그리포트 20260916 #2).
+                       #        LLM/API 인프라 문제로 스킵한 경우만(정상 "아니오" 판정은 제외)
+                       #        monitor 이벤트 로그에 degraded 로 기록(_log_event_safe) — 조용히
+                       #        방치되지 않게. /telegram 웹훅은 모든 반환 지점을 _done() 으로
+                       #        통일 — 명령 처리 후 DM 이 한 건도 안 나가면 안전망 DM 자동 발송
+                       #        (버그리포트 20260916 #4, ContextVar 로 요청별 격리)
     admin.py           # (v2.5) admin_state.json 스키마 (pending_del/ingest/notice/undo 슬롯, undo.path) — 순수
                        #        (v2.7.x) pending_notice_edit 슬롯 — /notice-edit 마법사(title→date→url 단계·new 누적)
                        #        (v2.8.1+) pending_member 슬롯 — 수동 /ingest 개인 예고 채널 미상 시 유닛 되묻기(raw 저장)
@@ -169,6 +204,10 @@ src/
                        #        · apply_overrides(handlers 후처리 — 트윗 시각이 API 재구성을 override)
                        #        (v2.8.1+) 수동 /ingest 도 개인 예고 폴백 — 본문 YT URL→videos.list(quota 1)로
                        #        채널 판별, 실패 시 텔레그램에서 유닛 되묻기 (telegram_app._try_personal_ingest)
+                       #        (v3.6) resolve_url_host(본인/타멤버/그룹/외부 채널 4갈래) ·
+                       #        build_item_from_video(videos.list 결과를 state 로 직결 — 고정값
+                       #        아님) · merge_video_confirmed(video_id 기준 upsert, 상태 역행 방지)
+                       #        — URL 우선 ingest(telegram_app._maybe_url_confirmed_schedule) 용
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
   setup.sh deploy.sh scheduler.sh deploy_telegram.sh telegram_webhook.sh README.md
@@ -239,7 +278,7 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 ## 아키텍처 핵심
 
 ### 데이터 흐름 (v2 계보 — v3 델타는 상단 상자, 상세 `docs/SPEC.md` §8 · `docs/plan/v3_backend_surgery.md`)
-1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 3h) 을 OIDC 로 호출.
+1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 10분(v3.6, 구 3h)) 을 OIDC 로 호출.
    `/tick` = RSS + `videos.list` 배치 1회 → (v3) `preview_build` → `preview.json` 재구성.
    FSM 은 저장 없이 파생 — `pending.json` 은 v3 에서 없다.
 2. 각 예정 방송마다 **Cloud Tasks** 에 `scheduled_start − 15분` 시각으로 wake 태스크 1개 enqueue.
@@ -290,6 +329,10 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    `time_tbd`(날짜만) 지원. `handlers.tick()` 이 `reconcile` 직후 `xtweet.apply_overrides` 로 트윗이
    정한 `scheduled_start` 를 API 재구성이 안 덮게 함(스트림 실제 수정 시만 API 승 — `api_start_seen`).
    계약 A 필드: `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen`. 상세 `docs/old/v2/v2_8_1_personal_schedule.md`.
+   **(v3.6)** `parse_schedule` 게이트는 **URL 없을 때만** 최종 경로 — 유튜브 URL 있으면
+   `_maybe_url_confirmed_schedule`(videos.list 확정, 실패 시 여기로 폴백), 비유튜브 URL 있으면
+   `_maybe_nonyt_url_notice`(소식 이관)가 먼저 가로챈다. 이 경로까지 온 후보도 등록 직전
+   `LLMClient.announces_own_broadcast()` 최종 확인을 거친다. 상세: 위 v3.6 델타 상자.
 
 ### 수집 로직 (`main.py` → `reconcile.build_schedule`)
 - **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId

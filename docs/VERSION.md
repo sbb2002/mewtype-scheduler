@@ -2,6 +2,55 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.6** — 개인 5인 트윗 예고 판정 URL 우선 재설계 + `/telegram` 웹훅 DM 안전망 + light tick
+  3h→10분. 실사례 2건이 계기: (1) 노노카 쇼츠 라이브가 `配信` 키워드 없이 시작해 light tick
+  텀(당시 3h)만큼 감지가 늦었던 버그, (2) 아라레 후기 트윗("先行プレイ配信 ありがとうございました
+  …ガッツリ**2時間**プレイ…**9/24**まで待ち遠しい")의 "2時間"(플레이 시간)·"9/24"(게임
+  출시일)가 정규식에 각각 시각·날짜로 오합성돼 9/24 02:00 방송 예고로 둔갑한 오탐.
+  1. **light tick 3h → 10분** (`deploy/scheduler.sh` `mewtype-light` cron). 자원 재확인: YouTube
+     쿼터 10분×144회/일=288 units(무료 한도 1만의 3%), GitHub API·Cloud Run 무료 티어 전부 여유
+     — 실질적으로 소모되는 유상 자원 없음.
+  2. **URL 우선 ingest** (`telegram_app._maybe_url_confirmed_schedule`, `xtweet.resolve_url_host`/
+     `build_item_from_video`/`merge_video_confirmed`) — 개인 트윗 원문에 완결된 유튜브 URL이
+     있으면 `配信` 키워드 유무와 무관하게 `videos.list` 로 즉시 사실관계(제목·실제 상태
+     live/watching/upcoming·시각) 확정. 채널별 분기:
+     - 본인 채널 → 바로 등록, state 는 API 실제값으로 직결(고정값 아님 — 이미 라이브 중이면
+       곧장 `live`).
+     - 5인 중 다른 멤버/그룹 공식 채널(`@BDP_yumemita`) → 그 채널이 host, 작성자는
+       `collab_with`(그룹 채널이면 v3.1.4 팬아웃과 동일하게 5인 전원).
+     - 외부 채널(우리 5인도 공식도 아님) → `LLMClient.participation()` 으로 "이 멤버가
+       참여하는 콘텐츠인가" 확인 후에만 작성자 레인에 등록.
+     - **API 로 확정 실패**(`YOUTUBE_API_KEY` 미설정·`videos.list` 예외·영상 조회 실패)는
+       조용히 드롭하지 않고 **텍스트 파싱(3번)으로 폴백** — v3.6 이전 신뢰도 밑으로는 안
+       떨어짐(`_maybe_nonyt_url_notice` 도 유튜브 URL 을 비유튜브로 오분류하지 않도록 가드).
+     - 등록되면 Cloud Tasks wake 를 그 자리에서 즉시 enqueue(`_enqueue_wake_now`) — light
+       tick 을 안 기다리고 live/watching 전이를 실시간에 가깝게 반영. undo 스냅샷도 기록
+       (LLM 오판 시 `/undo` 로 되돌릴 수 있게).
+  3. **비유튜브 URL → 소식 이관** (`telegram_app._maybe_nonyt_url_notice`) — bilibili 등은
+     라이브/종료를 API 로 확인할 방법이 없어 "등록은 되는데 절대 안 끝나는" 반쪽 preview
+     카드를 만드는 대신, 기존 공식 계정 소식 경로(`_apply_notice`)를 그대로 재사용해
+     `notices.json` 으로 보낸다(번역·undo 전부 그대로 딸려옴).
+  4. **URL 없는 텍스트 예고 — LLM 최종 확인** (`xtweet.parse_schedule` 후보 + `llm.
+     announces_own_broadcast()`) — 정규식 게이트(`配信` 키워드)+날짜/시각 추출까지 통과한
+     후보도, 등록 직전 "작성자는 추후 진행할 방송을 예고하는 글을 썼니?"를 LLM 에게 물어
+     최종 확인한다. 아라레 실사례로 실제 Groq 호출 검증 — 정규식은 "配信"·"2時間"·"9/24"를
+     문맥 없이 각각 캐치하지만 LLM 은 "이건 후기지 예고가 아니다"를 정확히 판정. 동시에
+     `xtweet._RECAP_RE` 가드 자체도 고침 — "추출된 날짜가 과거일 때만 후기로 인정"하던
+     조건이 오합성된 미래 날짜엔 무력화되던 버그를 없애고 `_RECAP_RE`+"오늘 마커 없음"만으로
+     판정하도록 단순화.
+  5. **모니터링 — 조용한 폴백 근절.** LLM/API 인프라 문제로 등록을 못 한 경우(키 미설정·
+     API/LLM 호출 실패·5회 재시도 소진)만 `monitor_log.log_event(flow="tweet",
+     result="degraded")` 로 기록(`_log_event_safe` — 기록 실패가 원 로직을 안 죽임). LLM 이
+     명확히 "아니오"라고 판정한 정상 케이스는 노이즈라 기록 안 함 — "판단 자체를 못 내린 것"과
+     "판단해서 아니라고 한 것"을 구분. 기존 `/monitor` 개인 트윗 레인에 그대로 잡힘, UI 변경 없음.
+  6. **`/telegram` 웹훅 DM 안전망** (`_dm_sent_ctx` `ContextVar` + `_done()`) — 버그리포트:
+     `/del preview`(유닛/번호 누락) 명령이 응답 DM 없이 조용히 끝났다는 보고(코드 추적으론
+     재현 안 됨 — 배포 지연 가능성). 개별 핸들러를 하나하나 감사하는 대신, 웹훅의 모든 반환
+     지점을 `_done()` 하나로 통일해 명령 처리 후 DM 이 한 건도 안 나가면 자동으로 안내 DM을
+     보내도록 일반화 — 앞으로 어떤 새 명령/경로에 이런 누락이 생겨도 자동으로 잡힌다.
+  상세 설계 대화·흐름도: `docs/v3_pamphlet.html`(devpapers) "개인 트윗 예고 판정" 섹션(8개
+  트윗 유형별 애니메이션 경로).
+
 - **v3.5.5** (핫픽스) — `/monitor` 상단 요약에 "오늘의 멤버 현황" 패널 추가.
   기존 4개 요약 카드(총 이벤트/에러/부분 실패/quota)만 있던 자리에, 멤버별 개인 트윗
   수집 결과(건수 · ✓성공/✕실패)와 이 날짜 안 라이브(live) 진입 여부를 함께 보여준다.
