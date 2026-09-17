@@ -194,36 +194,36 @@
   .stage2-scroll{overflow-x:auto;background:#0d0e11}
   .stage2{padding:22px 18px 6px;min-width:900px}
   #svg2{width:100%;height:auto;display:block}
-  svg#svg2 .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.3;transition:opacity .25s,stroke .25s,fill .25s}
-  svg#svg2 .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
-  svg#svg2 .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
-  svg#svg2 .node .ns{font-size:9px;fill:var(--faint)}
-  svg#svg2 .edge{fill:none;stroke:#3a3d44;stroke-width:1.5;transition:opacity .25s,stroke .25s}
-  svg#svg2 .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
-  svg#svg2.dimming .node{opacity:.26}
-  svg#svg2.dimming .edge{opacity:.13}
-  svg#svg2.dimming .elabel{opacity:0}
-  svg#svg2 .node.hot{opacity:1}
-  svg#svg2 .node.hot rect{stroke:var(--cyan);stroke-width:1.9}
-  svg#svg2 .node.hot text{fill:var(--ink)}
-  svg#svg2 .node.hot .ns{fill:var(--dim)}
-  svg#svg2 .edge.hot{opacity:.55;stroke:#4a525c}
-  svg#svg2 .edge.hot ~ .elabel{opacity:.95}
-  svg#svg2 .node.k-reg rect{stroke:color-mix(in srgb,var(--reg) 55%,var(--line))}
-  svg#svg2 .node.k-reg.hot rect{fill:var(--reg-soft);stroke:var(--reg)}
-  svg#svg2 .node.k-reg .nt{fill:color-mix(in srgb,var(--reg) 70%,var(--ink))}
-  svg#svg2 .node.k-skip rect{stroke-dasharray:3 3}
-  svg#svg2 .node.k-skip.hot rect{stroke:var(--skip)}
-  svg#svg2 .node.k-notice.hot rect{fill:var(--notice-soft);stroke:var(--notice)}
-  svg#svg2 .node.k-notice .nt{fill:color-mix(in srgb,var(--notice) 75%,var(--ink))}
-  svg#svg2 .node.k-ext rect{stroke-dasharray:4 3}
-  svg#svg2 .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+  svg#svg2, svg.tree-svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.3;transition:opacity .25s,stroke .25s,fill .25s}
+  svg#svg2, svg.tree-svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg#svg2, svg.tree-svg .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  svg#svg2, svg.tree-svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg#svg2, svg.tree-svg .edge{fill:none;stroke:#3a3d44;stroke-width:1.5;transition:opacity .25s,stroke .25s}
+  svg#svg2, svg.tree-svg .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg#svg2, svg.tree-svg.dimming .node{opacity:.26}
+  svg#svg2, svg.tree-svg.dimming .edge{opacity:.13}
+  svg#svg2, svg.tree-svg.dimming .elabel{opacity:0}
+  svg#svg2, svg.tree-svg .node.hot{opacity:1}
+  svg#svg2, svg.tree-svg .node.hot rect{stroke:var(--cyan);stroke-width:1.9}
+  svg#svg2, svg.tree-svg .node.hot text{fill:var(--ink)}
+  svg#svg2, svg.tree-svg .node.hot .ns{fill:var(--dim)}
+  svg#svg2, svg.tree-svg .edge.hot{opacity:.55;stroke:#4a525c}
+  svg#svg2, svg.tree-svg .edge.hot ~ .elabel{opacity:.95}
+  svg#svg2, svg.tree-svg .node.k-reg rect{stroke:color-mix(in srgb,var(--reg) 55%,var(--line))}
+  svg#svg2, svg.tree-svg .node.k-reg.hot rect{fill:var(--reg-soft);stroke:var(--reg)}
+  svg#svg2, svg.tree-svg .node.k-reg .nt{fill:color-mix(in srgb,var(--reg) 70%,var(--ink))}
+  svg#svg2, svg.tree-svg .node.k-skip rect{stroke-dasharray:3 3}
+  svg#svg2, svg.tree-svg .node.k-skip.hot rect{stroke:var(--skip)}
+  svg#svg2, svg.tree-svg .node.k-notice.hot rect{fill:var(--notice-soft);stroke:var(--notice)}
+  svg#svg2, svg.tree-svg .node.k-notice .nt{fill:color-mix(in srgb,var(--notice) 75%,var(--ink))}
+  svg#svg2, svg.tree-svg .node.k-ext rect{stroke-dasharray:4 3}
+  svg#svg2, svg.tree-svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
     stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
-  svg#svg2.dimming .route-line{opacity:.8}
-  svg#svg2 .packet-halo{fill:var(--cyan);opacity:.22}
-  svg#svg2 .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  svg#svg2, svg.tree-svg.dimming .route-line{opacity:.8}
+  svg#svg2, svg.tree-svg .packet-halo{fill:var(--cyan);opacity:.22}
+  svg#svg2, svg.tree-svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
   @media (prefers-reduced-motion:reduce){
-    svg#svg2 .route-line{animation:none}
+    svg#svg2, svg.tree-svg .route-line{animation:none}
     #packet2{opacity:0!important}
   }
   .cap2{padding:14px 20px 8px;color:var(--ink);font-size:.92rem;border-top:1px solid var(--line)}
@@ -405,7 +405,7 @@
     </div>
     <div class="stage2-scroll">
       <div class="stage2">
-        <svg id="svg2" viewBox="0 0 1160 646" role="img" aria-label="개인 트윗 예고 판정 흐름도">
+        <svg id="svg2" class="tree-svg" viewBox="0 0 1160 646" role="img" aria-label="개인 트윗 예고 판정 흐름도">
           <defs>
             <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
@@ -429,6 +429,88 @@
       <span><i class="sw skip"></i>미등록 · 조용히 종료</span>
       <span><i class="sw notice"></i>소식으로 이관 (notices.json)</span>
       <span><i class="sw ext"></i>외부 API/LLM 호출 (점선)</span>
+    </div>
+  </div>
+
+
+  <h2>소식(notice) 판정 (v3 · v3.7 의미 중복 게이트)</h2>
+  <p class="sub">자동 인입(<code>/ingest</code> 웹훅 → <code>_maybe_auto_notice</code>)과 수동
+    <code>/notice</code> 마법사 둘 다 이 경로로 모인다. url/title 정확일치로 걸러진 뒤에도
+    "문구만 다른 진짜 중복"이 남는 문제를 2026-09-17 LLM 게이트로 보강 — 탭 5·6이 그 부분.</p>
+
+  <div class="diagram">
+    <div class="tabs2" role="tablist" id="tabs3">
+      <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>정확일치 갱신</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>지난 이벤트 후기</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>지난 날짜 신규</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="3"><span class="n">04</span>소식 형식 아님</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="4"><span class="n">05</span>의미 중복 · 병합</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="5"><span class="n">06</span>같은 날 다른 행사</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="6"><span class="n">07</span>중복 후보 없음</button>
+    </div>
+    <div class="stage2-scroll">
+      <div class="stage2" style="min-width:1560px">
+        <svg id="svg3" class="tree-svg" viewBox="0 0 1560 680" role="img" aria-label="소식 판정 흐름도">
+          <defs>
+            <marker id="ah3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+            </marker>
+          </defs>
+          <g id="edges3"></g>
+          <path id="routeLine3" class="route-line"/>
+          <g id="packet3" opacity="0">
+            <circle class="packet-halo" r="10"/>
+            <circle class="packet-dot" r="4.5"/>
+            <animateMotion id="pkMove3" dur="3s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0"/>
+          </g>
+          <g id="nodes3"></g>
+        </svg>
+      </div>
+    </div>
+    <p class="cap2" id="cap3"></p>
+    <div class="example2" id="example3"><span class="tag" id="exTag3">예시</span><p id="exText3"></p></div>
+    <div class="legend2">
+      <span><i class="sw reg"></i>notices.json 반영 (added/updated/recap)</span>
+      <span><i class="sw skip"></i>미반영 · dup/skip/형식아님</span>
+      <span><i class="sw ext"></i>외부 LLM 호출 (점선, v3.7 duplicate_notice)</span>
+    </div>
+  </div>
+
+  <h2>개인 트윗 인입 경로</h2>
+  <p class="sub"><code>/ingest</code> 웹훅이 도착했을 때 제목(<code>android.title</code>)으로 먼저
+    갈래를 나누는 바깥쪽 흐름 — 예고 판정 자체의 상세(URL 유무 3갈래)는 위
+    "개인 트윗 예고 판정" 섹션을 그대로 가리킨다(중복 구현 안 함).</p>
+
+  <div class="diagram">
+    <div class="tabs2" role="tablist" id="tabs4">
+      <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>개인 멤버 트윗</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>테스트 부계정</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>공식·불일치</button>
+    </div>
+    <div class="stage2-scroll">
+      <div class="stage2" style="min-width:900px">
+        <svg id="svg4" class="tree-svg" viewBox="0 0 900 500" role="img" aria-label="트윗 인입 경로 흐름도">
+          <defs>
+            <marker id="ah4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+            </marker>
+          </defs>
+          <g id="edges4"></g>
+          <path id="routeLine4" class="route-line"/>
+          <g id="packet4" opacity="0">
+            <circle class="packet-halo" r="10"/>
+            <circle class="packet-dot" r="4.5"/>
+            <animateMotion id="pkMove4" dur="3s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0"/>
+          </g>
+          <g id="nodes4"></g>
+        </svg>
+      </div>
+    </div>
+    <p class="cap2" id="cap4"></p>
+    <div class="example2" id="example4"><span class="tag" id="exTag4">예시</span><p id="exText4"></p></div>
+    <div class="legend2">
+      <span><i class="sw reg"></i>tweets.json 스레드 저장</span>
+      <span><i class="sw skip"></i>저장 없이 종료(ECHO) 또는 다른 트리로 위임</span>
     </div>
   </div>
 
@@ -931,6 +1013,210 @@
   });
 
   applyTab2(0);
+})();
+</script>
+
+<script>
+/* (v3.7) 소식(notice) 판정 트리 — merge_notice 1~6단계 + LLM 의미 중복 게이트(신규).
+   실제 코드: src/backend/xnotice.py parse(), src/backend/notices.py merge_notice()/merge_into(),
+   src/backend/telegram_app.py _apply_notice()/_inline_notice_dup_check(), src/backend/llm.py duplicate_notice(). */
+(function(){
+  "use strict";
+  var W = 170, WW = 230, H = 50, HS = 46;
+  var NODES = [
+    {id:"start", cx:620, cy:39,  w:W,  h:HS, t:"소식 원문 도착",      s:"자동 /ingest 또는 /notice 마법사", k:"start"},
+    {id:"q1",    cx:620, cy:120, w:WW, h:HS, t:"xnotice.parse 성공?", s:"방송 외 이벤트 형식인가",  k:"dec"},
+
+    {id:"skipParse", cx:300, cy:201, w:W, h:H, t:"무시",             s:"소식 형식 아님",       k:"skip"},
+    {id:"q2",    cx:780, cy:201, w:WW, h:H,  t:"이미 본 트윗?",       s:"id/seen_ids 일치",     k:"dec"},
+
+    {id:"dup1",  cx:560, cy:282, w:W,  h:H,  t:"dup",                s:"no-op",               k:"skip"},
+    {id:"q3",    cx:1000,cy:282, w:280,h:H,  t:"기존 소식과 일치?",   s:"URL/제목 · 활성+아카이브", k:"dec"},
+
+    {id:"recapOrUpd", cx:820, cy:363, w:WW, h:H, t:"지난 이벤트 후기?", s:"is_recap && 날짜 지남", k:"dec"},
+    {id:"q5",    cx:1180,cy:363, w:W,  h:H,  t:"지난 날짜?",          s:"과거 이벤트 새 소식",  k:"dec"},
+
+    {id:"recap1",  cx:700, cy:444, w:W, h:H, t:"recap",              s:"seen_ids만 추가",      k:"reg"},
+    {id:"updated1",cx:920, cy:444, w:W, h:H, t:"updated",            s:"필드 갱신(최신 우선)", k:"reg"},
+    {id:"skip2",   cx:1060,cy:444, w:W, h:H, t:"skip",               s:"과거 소식은 버림",     k:"skip"},
+    {id:"q6",      cx:1300,cy:444, w:290,h:H,t:"같은 날짜 기존 소식?", s:"threshold=0일 (v3.7)", k:"dec"},
+
+    {id:"added1", cx:1160,cy:525, w:W,  h:H,  t:"added",             s:"같은 날짜 후보 없음",   k:"reg"},
+    {id:"q7",     cx:1420,cy:525, w:260,h:H,  t:"LLM: 같은 행사?",    s:"duplicate_notice (v3.7)", k:"ext"},
+
+    {id:"mergeLLM", cx:1320,cy:606, w:230,h:H, t:"updated (LLM 병합)", s:"merge_into — 문구 달라도 반영", k:"reg"},
+    {id:"added2",   cx:1500,cy:606, w:W,   h:H, t:"added",            s:"판정없음/실패 → 안전한 기본값", k:"reg"}
+  ];
+  var EDGES = [
+    ["start","q1",null],
+    ["q1","skipParse","아니오"], ["q1","q2","예"],
+    ["q2","dup1","예"], ["q2","q3","아니오"],
+    ["q3","recapOrUpd","예"], ["q3","q5","아니오"],
+    ["recapOrUpd","recap1","예(후기+지남)"], ["recapOrUpd","updated1","아니오"],
+    ["q5","skip2","예"], ["q5","q6","아니오"],
+    ["q6","added1","아니오"], ["q6","q7","예"],
+    ["q7","mergeLLM","예"], ["q7","added2","아니오/실패"]
+  ];
+  var byId = {}; NODES.forEach(function(n){ byId[n.id] = n; });
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  var edgesG = document.getElementById("edges3"), nodesG = document.getElementById("nodes3");
+  EDGES.forEach(function(edge){
+    var a = byId[edge[0]], b = byId[edge[1]], label = edge[2];
+    var x1=a.cx, y1=a.cy+a.h/2, x2=b.cx, y2=b.cy-b.h/2;
+    var p = el("path", {id:"e3_"+edge[0]+"_"+edge[1], class:"edge", d:"M"+x1+","+y1+" L"+x2+","+y2, "marker-end":"url(#ah3)"});
+    edgesG.appendChild(p);
+    if (label){
+      var mx=(x1+x2)/2, my=(y1+y2)/2;
+      var t = el("text", {class:"elabel", x:mx+5, y:my-3}); t.textContent = label; edgesG.appendChild(t);
+    }
+  });
+  NODES.forEach(function(n){
+    var g = el("g", {class:"node k-"+n.k, id:"n3_"+n.id, transform:"translate("+(n.cx-n.w/2)+","+(n.cy-n.h/2)+")"});
+    g.appendChild(el("rect", {width:n.w, height:n.h, rx:8}));
+    var tt = el("text", {class:"nt", x:n.w/2, y:n.h/2-(n.s?4:-4), "text-anchor":"middle"}); tt.textContent = n.t; g.appendChild(tt);
+    if (n.s){ var st = el("text", {class:"ns", x:n.w/2, y:n.h/2+12, "text-anchor":"middle"}); st.textContent = n.s; g.appendChild(st); }
+    nodesG.appendChild(g);
+  });
+
+  var TABS = [
+    { route:["start","q1","q2","q3","recapOrUpd","updated1"],
+      cap:"<b>정확일치 갱신</b> — 같은 URL 또는 제목의 소식이 이미 있고, 지난 이벤트 후기가 아니면 필드를 최신 값으로 덮어쓴다(시간 확정, 장소 변경 등). id는 <code>seen_ids</code>에 누적.",
+      exTag:"가상 예시", exText:"특번 시간 확정! 21시부터 진행합니다\nhttps://eplus.jp/xxxx" },
+    { route:["start","q1","q2","q3","recapOrUpd","recap1"],
+      cap:"<b>지난 이벤트 후기</b> — URL/제목이 일치하는데 그 이벤트 날짜가 이미 지났고 이 트윗이 후기(is_recap)로 분류되면, 필드는 안 건드리고 <code>seen_ids</code>만 추가한다 — 예고판을 후기 트윗으로 되살리지 않기 위함.",
+      exTag:"가상 예시", exText:"어제 행사 즐거운 시간이었어요! 참석해주셔서 감사해요 💕" },
+    { route:["start","q1","q2","q3","q5","skip2"],
+      cap:"<b>지난 날짜 신규</b> — URL/제목도 안 겹치고 아카이브에도 없는데 이벤트 날짜가 이미 지난 완전히 새로운 소식(뒤늦은 회고글 등)이면 예고판엔 안 올리고 버린다.",
+      exTag:"가상 예시", exText:"3개월 전 이벤트 회고입니다…" },
+    { route:["start","q1","skipParse"],
+      cap:"<b>소식 형식 아님</b> — <code>xnotice.parse</code>가 카테고리·날짜 등 소식으로 분류할 단서를 못 찾으면 <code>None</code>을 반환하고, 이 트윗은 아예 소식 파이프라인에서 조용히 빠진다.",
+      exTag:"가상 예시", exText:"오늘은 날씨가 좋네요ㅠ" },
+    { route:["start","q1","q2","q3","q5","q6","q7","mergeLLM"],
+      cap:"<b>(v3.7) 의미 중복 · 병합</b> — url/title이 정확히 안 겹쳐 <code>merge_notice</code>는 “added”로 판단했지만, <b>같은 날짜</b>(threshold=0일)의 기존 소식이 있으면 등록 직전 LLM에게 “같은 행사냐”고 마지막으로 묻는다. 문구가 완전히 달라도 같은 행사로 판정되면 새 항목 대신 기존 항목에 <code>merge_into</code>로 필드만 병합 — 제목 문자열 일치는 요구하지 않는다.",
+      exTag:"가상 예시 · 동일 행사, 다른 표현", exText:"[기존] 오늘은 유노 생일! 모두 축하해줘🎂\n\n[신규, 다른 문구] 유노쿤링 생일 축하해!! 다들 축하해줘 — 문구가 달라도 같은 날짜면 LLM이 같은 행사로 묶는다" },
+    { route:["start","q1","q2","q3","q5","q6","q7","added2"],
+      cap:"<b>(v3.7) 같은 날 다른 행사</b> — 같은 날짜에 기존 소식이 있어 LLM에게 묻긴 했지만, “다른 행사”로 판정되면(예: 3일 연속 페스티벌의 서로 다른 일차) 병합하지 않고 별도 소식으로 그대로 등록한다. 이름이 같아도 threshold=0일이라 날짜가 다르면 애초에 비교 대상에도 안 들어간다.",
+      exTag:"가상 예시 · 같은 이름, 다른 일차", exText:"무한대페스 2026 2일차! 오늘도 달아오른다🔥" },
+    { route:["start","q1","q2","q3","q5","q6","added1"],
+      cap:"<b>중복 후보 없음</b> — 같은 날짜에 등록된 다른 소식이 아예 없으면 LLM을 부를 필요도 없이(비용 절감) 바로 새 소식으로 등록한다. LLM 실패·<code>GROQ_API_KEY</code> 미설정일 때도 이 결과와 동일하게 안전히 진행된다.",
+      exTag:"가상 예시", exText:"아크릴 스탠드 4종 예약 개시 — BOOTH" }
+  ];
+
+  var NC = {}; NODES.forEach(function(n){ NC[n.id] = [n.cx, n.cy]; });
+  var SVG = document.getElementById("svg3"), capEl = document.getElementById("cap3");
+  var exTagEl = document.getElementById("exTag3"), exTextEl = document.getElementById("exText3");
+  var routeEl = document.getElementById("routeLine3"), packet = document.getElementById("packet3"), pkMove = document.getElementById("pkMove3");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function routePath(ids){ var p = ids.map(function(id){return NC[id];}); return "M"+p[0][0]+","+p[0][1]+p.slice(1).map(function(q){return " L"+q[0]+","+q[1];}).join(""); }
+  function routeLen(ids){ var L=0; for (var i=1;i<ids.length;i++){ var a=NC[ids[i-1]], b=NC[ids[i]]; L+=Math.hypot(b[0]-a[0], b[1]-a[1]); } return L; }
+  function applyTab(i){
+    var t = TABS[i];
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(x){ x.classList.remove("hot"); });
+    t.route.forEach(function(id){ var n = document.getElementById("n3_"+id); if (n) n.classList.add("hot"); });
+    for (var i2=1;i2<t.route.length;i2++){ var e = document.getElementById("e3_"+t.route[i2-1]+"_"+t.route[i2]); if (e) e.classList.add("hot"); }
+    capEl.innerHTML = t.cap; exTagEl.textContent = t.exTag; exTextEl.textContent = t.exText;
+    var d = routePath(t.route); routeEl.setAttribute("d", d); pkMove.setAttribute("path", d);
+    pkMove.setAttribute("dur", Math.max(2.2, Math.min(5.5, routeLen(t.route)/260)).toFixed(1)+"s");
+    if (reduceMotion){ packet.setAttribute("opacity","0"); return; }
+    packet.setAttribute("opacity","1");
+    try { pkMove.beginElement(); } catch(e3){ /* SMIL fallback */ }
+  }
+  document.querySelectorAll("#tabs3 .tab2").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll("#tabs3 .tab2").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true"); applyTab(+b.dataset.t);
+    });
+  });
+  applyTab(0);
+})();
+</script>
+
+<script>
+/* 개인 트윗 인입 경로 — /ingest 웹훅 진입점에서 title 기준 갈래.
+   실제 코드: telegram_app.py _ingest()(route_by_title 호출 부분), xtweet.py route_by_title(),
+   _maybe_personal_tweet(), _maybe_personal_schedule() (상세는 위 개인 트윗 예고 판정 트리 참고). */
+(function(){
+  "use strict";
+  var W = 170, WW = 230, H = 50, HS = 46;
+  var NODES = [
+    {id:"start",   cx:460, cy:39,  w:WW, h:HS, t:"/ingest 웹훅 도착",  s:"업스트림(운영자 폰 Automate)", k:"start"},
+    {id:"q1",      cx:460, cy:120, w:WW, h:HS, t:"route_by_title",     s:"android.title → 채널 분류", k:"dec"},
+
+    {id:"official",cx:150, cy:201, w:WW, h:H,  t:"공식·불일치 경로", s:"→ 소식/스케줄 파이프라인(위 트리)", k:"notice"},
+    {id:"test1",   cx:460, cy:201, w:W,  h:H,  t:"테스트 부계정",       s:"INGEST_TEST_TITLES",  k:"dec"},
+    {id:"personal",cx:760, cy:201, w:WW, h:H,  t:"개인 5인 확정",       s:"channel_key 매칭",     k:"dec"},
+
+    {id:"echoTest",cx:460, cy:282, w:W,  h:H,  t:"강제 ECHO",          s:"헬스체크 — 회신만, 저장 안 함", k:"skip"},
+    {id:"thread",  cx:760, cy:282, w:280,h:H,  t:"_maybe_personal_tweet", s:"parse+merge_thread → tweets.json", k:"reg"},
+    {id:"sched",   cx:760, cy:363, w:280,h:H,  t:"_maybe_personal_schedule", s:"예고 형식이면 판정 시작",  k:"dec"},
+    {id:"detail",  cx:760, cy:444, w:300,h:H,  t:"위 '개인 트윗 예고 판정' 트리로", s:"URL 유무 3갈래 — 상세는 그 섹션", k:"ext"}
+  ];
+  var EDGES = [
+    ["start","q1",null],
+    ["q1","official","불일치"], ["q1","test1","테스트 표시명"], ["q1","personal","5인 표시명 일치"],
+    ["test1","echoTest",null],
+    ["personal","thread",null], ["thread","sched",null], ["sched","detail",null]
+  ];
+  var byId = {}; NODES.forEach(function(n){ byId[n.id] = n; });
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  var edgesG = document.getElementById("edges4"), nodesG = document.getElementById("nodes4");
+  EDGES.forEach(function(edge){
+    var a = byId[edge[0]], b = byId[edge[1]], label = edge[2];
+    var x1=a.cx, y1=a.cy+a.h/2, x2=b.cx, y2=b.cy-b.h/2;
+    var p = el("path", {id:"e4_"+edge[0]+"_"+edge[1], class:"edge", d:"M"+x1+","+y1+" L"+x2+","+y2, "marker-end":"url(#ah4)"});
+    edgesG.appendChild(p);
+    if (label){ var mx=(x1+x2)/2, my=(y1+y2)/2; var t = el("text", {class:"elabel", x:mx+5, y:my-3}); t.textContent = label; edgesG.appendChild(t); }
+  });
+  NODES.forEach(function(n){
+    var g = el("g", {class:"node k-"+n.k, id:"n4_"+n.id, transform:"translate("+(n.cx-n.w/2)+","+(n.cy-n.h/2)+")"});
+    g.appendChild(el("rect", {width:n.w, height:n.h, rx:8}));
+    var tt = el("text", {class:"nt", x:n.w/2, y:n.h/2-(n.s?4:-4), "text-anchor":"middle"}); tt.textContent = n.t; g.appendChild(tt);
+    if (n.s){ var st = el("text", {class:"ns", x:n.w/2, y:n.h/2+12, "text-anchor":"middle"}); st.textContent = n.s; g.appendChild(st); }
+    nodesG.appendChild(g);
+  });
+
+  var TABS = [
+    { route:["start","q1","personal","thread","sched","detail"],
+      cap:"<b>개인 멤버 트윗</b> — <code>android.title</code>이 5인 중 한 명의 표시명과 일치하면 그 채널로 확정. 원문은 <code>xtweet.parse</code>+<code>merge_thread</code>로 <code>tweets.json</code> 스레드(최대 5건)에 저장되고 인라인 번역이 붙는다. 이어서 예고 형식인지 <code>_maybe_personal_schedule</code>이 이어받는다(상세는 위 트리).",
+      exTag:"가상 예시 · nonoka_yumemita", exText:"오늘은 노래방 날이야 🎤 신청곡 기다린다~" },
+    { route:["start","q1","test1","echoTest"],
+      cap:"<b>테스트 부계정</b> — <code>INGEST_TEST_TITLES</code>(기본 <code>jehy</code>)로 지정된 표시명이면 어떤 내용이든 파싱·저장 없이 그대로 회신만(강제 ECHO) — 업스트림 중계 경로가 살아있는지 상시 확인하는 헬스체크 계정.",
+      exTag:"가상 예시 · jehy(테스트)", exText:"(테스트 계정 원문 — 저장 안 됨, DM 회신만)" },
+    { route:["start","q1","official"],
+      cap:"<b>공식·불일치</b> — title이 비어있거나 5인 표시명과 안 겹치면 기존 경로(공식 계정 소식/BDP_yumemita 스케줄 등) 그대로 — 위 '소식' 트리 또는 X 예고 릴레이가 이어받는다.",
+      exTag:"가상 예시", exText:"(공식 계정 또는 미매칭 title — 기존 파이프라인 그대로)" }
+  ];
+
+  var NC = {}; NODES.forEach(function(n){ NC[n.id] = [n.cx, n.cy]; });
+  var SVG = document.getElementById("svg4"), capEl = document.getElementById("cap4");
+  var exTagEl = document.getElementById("exTag4"), exTextEl = document.getElementById("exText4");
+  var routeEl = document.getElementById("routeLine4"), packet = document.getElementById("packet4"), pkMove = document.getElementById("pkMove4");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function routePath(ids){ var p = ids.map(function(id){return NC[id];}); return "M"+p[0][0]+","+p[0][1]+p.slice(1).map(function(q){return " L"+q[0]+","+q[1];}).join(""); }
+  function routeLen(ids){ var L=0; for (var i=1;i<ids.length;i++){ var a=NC[ids[i-1]], b=NC[ids[i]]; L+=Math.hypot(b[0]-a[0], b[1]-a[1]); } return L; }
+  function applyTab(i){
+    var t = TABS[i];
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(x){ x.classList.remove("hot"); });
+    t.route.forEach(function(id){ var n = document.getElementById("n4_"+id); if (n) n.classList.add("hot"); });
+    for (var i2=1;i2<t.route.length;i2++){ var e = document.getElementById("e4_"+t.route[i2-1]+"_"+t.route[i2]); if (e) e.classList.add("hot"); }
+    capEl.innerHTML = t.cap; exTagEl.textContent = t.exTag; exTextEl.textContent = t.exText;
+    var d = routePath(t.route); routeEl.setAttribute("d", d); pkMove.setAttribute("path", d);
+    pkMove.setAttribute("dur", Math.max(2.2, Math.min(5.5, routeLen(t.route)/260)).toFixed(1)+"s");
+    if (reduceMotion){ packet.setAttribute("opacity","0"); return; }
+    packet.setAttribute("opacity","1");
+    try { pkMove.beginElement(); } catch(e3){ /* SMIL fallback */ }
+  }
+  document.querySelectorAll("#tabs4 .tab2").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll("#tabs4 .tab2").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true"); applyTab(+b.dataset.t);
+    });
+  });
+  applyTab(0);
 })();
 </script>
 </body>
