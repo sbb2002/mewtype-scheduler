@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <title>운영 모니터</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0d0e12; }
+    #f { width: 100%; height: 100%; border: 0; display: block; }
+    #msg { color: #8a8f98; font-family: -apple-system, "Segoe UI", sans-serif;
+           padding: 2rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <iframe id="f" title="운영 모니터 리포트" hidden></iframe>
+  <p id="msg">불러오는 중…</p>
+  <script>
+    var MONITOR_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/monitoring/latest.html";
+    fetch(MONITOR_URL, { cache: "no-store" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (html) {
+        var f = document.getElementById("f");
+        f.srcdoc = html;
+        f.hidden = false;
+        document.getElementById("msg").hidden = true;
+      })
+      .catch(function () {
+        document.getElementById("msg").textContent = "리포트를 불러올 수 없습니다.";
+      });
+  </script>
+</body>
+</html>

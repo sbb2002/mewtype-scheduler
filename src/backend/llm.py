@@ -344,6 +344,72 @@ class LLMClient:
         logger.warning("announces_own_broadcast: 5회 모두 실패 — None (호출부 미등록 처리)")
         return None
 
+    def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
+        """
+        (v3.7) 신규 소식이 `candidates`(같은 날짜의 기존 소식들) 중 하나와 같은 행사를
+        가리키는지 의미로 판정 — 문구가 달라도 같은 행사를 다른 말로 쓴 것이면 중복.
+
+        threshold=0일: 호출부가 이미 "같은 date" 인 후보만 추려서 넘긴다 — 같은 이름의
+        행사가 여러 날에 걸쳐 진행되는 경우(예: 3일 연속 페스티벌) 일차마다 별개 소식이라
+        날짜가 다르면 애초에 후보에 안 들어온다. 제목 문자열 일치는 요구하지 않는다
+        (요구하면 문구만 다른 진짜 중복을 못 잡음 — 애초에 이 게이트를 만든 이유).
+
+        candidates: [{"id": str, "text": str}, ...] — text 는 원문(body_raw) 비교용.
+
+        Returns:
+            같은 행사로 판정된 후보의 id, 없거나 5회 모두 실패하면 None(신규로 등록 —
+            정보 손실 방지가 우선인 안전한 기본값. 잘못 병합해 소식을 잃는 것보다
+            중복이 잠깐 남는 쪽이 낫다).
+        """
+        if self.disabled or not candidates:
+            return None
+
+        ids = [c["id"] for c in candidates]
+        masked_new, _m1 = _mask_glossary(new_text or "")
+        cand_lines = "\n".join(
+            f'- id="{c["id"]}": {_mask_glossary(c.get("text") or "")[0]}' for c in candidates
+        )
+        prompt = (
+            "다음은 오늘 새로 들어온 소식 원문과, 같은 날짜에 이미 등록된 기존 소식 "
+            "후보 목록이다. 새 소식이 후보 중 하나와 같은 행사(사건)를 가리키면 그 id를, "
+            "아니면 null을 출력하라. 제목 문구가 다르더라도 같은 행사를 다른 말로 표현한 "
+            "것이면 같은 것으로 본다. 이름이 같아도 명백히 다른 회차/일차의 행사라면 "
+            "다른 것으로 본다. JSON 포맷만 출력.\n\n"
+            f"새 소식:\n{masked_new}\n\n기존 후보:\n{cand_lines}\n\n출력:\n"
+            '{"duplicate_of": <후보 id 문자열 또는 null>}'
+        )
+        schema = {
+            "name": "duplicate_notice",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "duplicate_of": {"type": ["string", "null"], "enum": [*ids, None]},
+                },
+                "required": ["duplicate_of"],
+                "additionalProperties": False,
+            },
+        }
+
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=schema)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=schema)
+            if not response:
+                continue
+            try:
+                result = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"duplicate_notice: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if isinstance(result, dict) and "duplicate_of" in result:
+                dup = result["duplicate_of"]
+                return dup if dup in ids else None
+            logger.warning(f"duplicate_notice: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+
+        logger.warning("duplicate_notice: 5회 모두 실패 — None (신규로 등록)")
+        return None
+
     def translate(self, text_ja: str) -> str | None:
         """
         일본어 트윗을 한국어로 번역.

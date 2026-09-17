@@ -162,6 +162,28 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
     return out, arch, True, "added"
 
 
+def merge_into(prev: dict, target_id: str, incoming: dict, now_iso: str) -> tuple[dict, bool]:
+    """(v3.7) LLM 이 같은 행사로 판정한 기존 소식(`target_id`)에 `incoming` 필드를 병합.
+
+    `merge_notice`의 2번 분기(url/title 일치)와 갱신 규칙(`_merge_fields`)은 동일 —
+    다만 "같은 행사"라는 판정 자체를 URL/제목 일치 대신 호출측(LLM 의미 비교, 같은
+    날짜 후보로 이미 좁혀진 상태)이 내렸다는 점만 다르다. 호출측 게이트는
+    `telegram_app._inline_notice_dup_check` 참고.
+
+    반환 (new_prev, found) — target_id 가 없으면 (prev, False) 로 아무것도 안 바꾼다.
+    """
+    prev = prev or default_notices()
+    lst = [dict(n) for n in prev.get("notices", [])]
+    idx = next((i for i, n in enumerate(lst) if n.get("id") == target_id), None)
+    if idx is None:
+        return prev, False
+    lst[idx] = _merge_fields(lst[idx], incoming, now_iso)
+    out = dict(prev)
+    out["notices"] = _sorted(lst)
+    out["generated_at"] = now_iso
+    return out, True
+
+
 _EDITABLE = ("title", "title_ko", "date", "time", "url", "site", "anchor_a", "category",
              "deadline", "title_slug", "expires_at")
 
@@ -266,6 +288,16 @@ if __name__ == "__main__":
     assert N["notices"][0]["time"] == "21:30" and N["notices"][0]["seen_ids"] == ["1", "2"]
     assert len(N["notices"]) == 1
     print("[OK] added / dup / updated (같은 URL 기반 중복)")
+
+    # merge_into (v3.7 LLM 의미 중복 게이트가 호출하는 병합 — url/title 안 다르게 만든 케이스)
+    N3, A3, ch, m = merge_notice(default_notices(), inc(id="20", title="다른표현A", url=None), NOW, archive=default_archive())
+    assert ch and m == "added"
+    merged, found = merge_into(N3, "20", inc(id="21", title="다른표현B", time="19:00", url=None), NOW)
+    assert found and merged["notices"][0]["title"] == "다른표현B" and merged["notices"][0]["time"] == "19:00"
+    assert merged["notices"][0]["seen_ids"] == ["20", "21"], merged["notices"][0]["seen_ids"]
+    _, found2 = merge_into(N3, "no-such-id", inc(id="22"), NOW)
+    assert not found2
+    print("[OK] merge_into (LLM 의미 중복 병합 — url/title 달라도 지정 대상에 필드 갱신)")
 
     # 제목 일치로 그룹 (URL 없을 때)
     N2, A2, ch, m = merge_notice(default_notices(), inc(id="10", title="새음반발매", url=None), NOW, archive=default_archive())

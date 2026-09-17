@@ -484,3 +484,18 @@ body {
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--lane-color, #fff) 35%, transparent);
   }
 }
+
+/* 이스터에그: 풋터 버전 표시 클릭 시 풍선처럼 떠오르며 사라지는 멤버 아이콘 */
+.balloon-icon {
+  position: fixed;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.95;
+  animation: balloon-rise 1.1s ease-out forwards;
+}
+@keyframes balloon-rise {
+  0%   { transform: translate(-50%, -50%) scale(0.7); opacity: 0.95; }
+  100% { transform: translate(-50%, -180px) scale(1.15); opacity: 0; }
+}

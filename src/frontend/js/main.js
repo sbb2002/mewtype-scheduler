@@ -109,7 +109,78 @@ function positionDisclaimerPopup() {
   fdisc.style.setProperty("--fdisc-list-width", `${Math.max(0, vRect.left - uRect.right)}px`);
 }
 
+// 이스터에그: "y" 입력 후 10초 안에 "umewapower"를 입력하면 모니터 페이지가 새 탭으로 열린다.
+// 메인 예고판과 링크로 안 이어진 페이지라 이 트리거를 아는 사람만 접근 가능.
+function initMonitorEasterEgg() {
+  const PHRASE = "umewapower";
+  const WINDOW_MS = 10000;
+  let buf = "";
+  let timer = null;
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (e.key.length !== 1) return; // 화살표/Shift 등 특수키 무시
+    const ch = e.key.toLowerCase();
+    if (timer === null && ch === "y") {
+      buf = "y";
+      timer = setTimeout(() => { buf = ""; timer = null; }, WINDOW_MS);
+      return;
+    }
+    if (timer === null) return; // 캡처 윈도우 밖 — 무시
+    buf += ch;
+    if (buf.length > PHRASE.length) buf = buf.slice(-PHRASE.length);
+    if (buf === PHRASE) {
+      clearTimeout(timer);
+      timer = null;
+      buf = "";
+      window.open("monitor.html", "_blank", "noopener");
+    }
+  });
+}
+
+// 이스터에그(모바일용): 풋터 버전 표시(ver. ♾️)를 5초 안에 15번 탭 — 탭마다 랜덤 멤버
+// 아이콘이 풍선처럼 떠오르며 사라진다(순수 시각 피드백, 카운트 자체는 안 보여줌).
+function initMonitorTapEasterEgg() {
+  const TAP_GOAL = 15;
+  const WINDOW_MS = 5000;
+  const ICONS = ["arale", "yuno", "nonoka", "ritsu", "miyako"];
+  const versionEl = document.getElementById("foot-version");
+  if (!versionEl) return;
+
+  let count = 0;
+  let windowTimer = null;
+
+  function spawnBalloon(x, y) {
+    const img = document.createElement("img");
+    img.className = "balloon-icon";
+    img.src = `assets/member_icons/${ICONS[Math.floor(Math.random() * ICONS.length)]}.png`;
+    img.alt = "";
+    img.style.left = `${x}px`;
+    img.style.top = `${y}px`;
+    document.body.appendChild(img);
+    img.addEventListener("animationend", () => img.remove());
+  }
+
+  versionEl.addEventListener("click", (e) => {
+    const rect = versionEl.getBoundingClientRect();
+    spawnBalloon(rect.left + rect.width / 2, rect.top);
+
+    if (count === 0) {
+      windowTimer = setTimeout(() => { count = 0; windowTimer = null; }, WINDOW_MS);
+    }
+    count += 1;
+    if (count >= TAP_GOAL) {
+      clearTimeout(windowTimer);
+      windowTimer = null;
+      count = 0;
+      window.open("monitor.html", "_blank", "noopener");
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  initMonitorEasterEgg();
+  initMonitorTapEasterEgg();
   poll();
   pollNotices();
   pollTweets();
