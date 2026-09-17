@@ -1,4 +1,4 @@
-# 구현 명세 (SPEC) — v3.0
+# 구현 명세 (SPEC) — v3.0 (현행 v3.7.1 반영)
 
 현행 구현 계약. v2 원문은 `docs/old/v2/`, v1 은 `docs/old/v1/`.
 설계 배경: `docs/plan/v3_backend_surgery.md`(기능 상세) · `docs/plan/v3_draft.md`(결정 로그) ·
@@ -19,12 +19,12 @@
 | 역할 | 수단 |
 |---|---|
 | 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
-| 정기 트리거 | **Cloud Scheduler** 2잡 — baseline JST 06:00 / light 3h → `POST /tick` (OIDC) |
+| 정기 트리거 | **Cloud Scheduler** 3잡 — baseline JST 06:00 / light 10분(v3.6, 구 3h) → `POST /tick`, monitor KST 06:10 → `POST /monitor` (OIDC) |
 | 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
-| 저장 | **GitHub `data` 브랜치** — Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋 |
+| 저장 | **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`(Vercel 비연결). Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋 |
 | 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
 | 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` |
-| 외부 LLM | **Groq**(선택) — notice 제목 추출 + notice/개인트윗 번역. 키 없으면 원문 노출 폴백 |
+| 외부 LLM | **Groq**(선택) — notice 제목 추출·의미 중복판정 + notice/개인트윗/방송 제목 번역 + 개인 예고 판정(참여·예고확인). 키 없으면 원문 노출 폴백 |
 | 업스트림 시스템 | 운영자 폰 Automate — X·YouTube 푸시알림을 `POST /ingest` 로 중계(코드베이스 밖) |
 
 ```
@@ -44,12 +44,17 @@ src/
     rss.py youtube.py  #   (reconcile.py·store.py·main.py 는 v1 break-glass 전용, v3 무의존)
     config.py reconcile.py store.py main.py
   backend/             # v3 Cloud Run 서비스
-    app.py             # /tick(Scheduler) /wake(Cloud Tasks) /healthz
-    handlers.py        # tick/wake 오케스트레이션 — preview.json 1파일 커밋 + LLM 번역 sweep
+    app.py             # /tick(Scheduler) /wake(Cloud Tasks) /write(제어 채널) /monitor(Scheduler) · `/` 헬스체크
+    handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 + LLM 번역 sweep + 모니터 로그(실행당 최대 1커밋)
+    writers.py         # (v3.7) write-queue — /write 잡 kind → telegram_app 커밋 함수 매핑 (§8.14)
+    writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출 (OIDC). MAIN_SERVICE_URL 없으면 로컬 디스패치
+    monitor_log.py     # (v3.5) monitoring/events-YYYY-MM-DD.jsonl append (log_event / log_events 배치)
+    monitor_report.py  # (v3.5) /monitor Ops Timeline HTML 생성
     preview.py         # (신규) preview.json 스키마 헬퍼 (id·매칭·정렬·승격·아카이브) — 순수
     preview_build.py   # (신규) reconcile 포크 → build_preview(6상태 + FSM 파생 + ytnotif 머지) — 순수
     statemachine.py    # (v3 재작성) derive(item, now) → 상태 전이·다음 wake 시각. 저장 타이머 없음 — 순수
-    llm.py             # (신규) Groq 클라이언트 — notice_title / translate, 백오프·환각가드 — 순수 로직
+    llm.py             # (신규) Groq 클라이언트 — notice_title / translate / participation / announces_own_broadcast
+                       #   / duplicate_notice, 백오프·환각가드 — 순수 로직
     ytnotif.py         # (신규) YouTube 앱 푸시알림 payload 파서 (TUNEIN/REMINDER/SUB_START) — 순수
     vxtwitter.py       # (신규) api.vxtwitter.com unfurl — 본문·미디어·YT video_id 추출
     gh_store.py        # GitHub Contents API read/write (낙관적 동시성, ConflictError)
@@ -64,13 +69,15 @@ src/
     xnotice.py         # 방송 외 이벤트 트윗 → notices 항목 파서 (+ body_for_llm) — 순수
     notices.py         # notices.json 계약 + 중복판정(url∥title)·머지·sweep·edit — 순수
     xtweet.py          # 개인 5인 트윗 — route_by_title / parse / merge_tweet / parse_schedule
-                       #   / merge_personal_schedule / apply_overrides. 리트윗(^@handle:) 필터 — 순수
+                       #   / merge_personal_schedule / apply_overrides(v3.7.1 handlers 연결). 리트윗(^@handle:) 필터 — 순수
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
 config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko, x_names)
 data 브랜치             # preview.json + preview_archive.json + control.json + admin_state.json
                        #   + notices.json / notice_archive.json + tweets.json / tweet_archive.json
-                       #   + ingest_queue.json (ECHO/DRY-RUN 버퍼). 코드 없음.
+                       #   + ingest_queue.json (ECHO/DRY-RUN 버퍼)
+                       #   + monitoring/events-YYYY-MM-DD.jsonl (이벤트 로그) + monitoring/latest.html
+                       #     (/monitor 리포트 — 공개 저장소라 raw URL 로 누구나 열람 가능). 코드 없음.
                        #   ※ v2 의 schedule.json / archive.json / pending.json 은 폐지.
 ```
 
@@ -297,14 +304,14 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 | watching 지각 강등 | state==watching && `now − ss ≥ 120분` | `announced` (url·video_id 살림), check 없음 |
 | assumed-live 폴백 | state ∈ (announced,upcoming) && `assumed_live` && no video_id && `now − ss ≥ 90분` | `none` |
 | membership 직행 | `membership` && `live_seen is True` | `live` (watching 스킵) |
-| live cadence | state==live && `live_seen != False` — `now − actual_start < 60분` → 10분 / 이상 → 3분 | 유지 |
+| live cadence | state==live && `live_seen != False` — `now − actual_start < 60분` → 10분 / 이상 → 5분(v3.7.1, 구 3분) | 유지 |
 | live → end | state==live && `live_seen is False` (명시적 확인. None=미확인은 유지) | `end`, check `now+5분` |
 | end 창 | state==end && `now − state_since < 30분` | check `now+5분` |
 | end → none | state==end && `now − state_since ≥ 30분` && 계속 live 아님 | `none` |
 | end → upcoming | state==end && `preview_stream_seen` (예고 스트림 재등장) | `upcoming` |
 
 - 상수: `PRELIVE_LEAD_SEC=180`, `PRELIVE_TIGHT_SEC=180`, `WATCH_LATE_DEMOTE_SEC=7200`,
-  `ASSUMED_LIVE_MAX_SEC=5400`, `LIVE_EARLY_SEC=600`, `LIVE_EARLY_WINDOW_SEC=3600`, `LIVE_TIGHT_SEC=180`,
+  `ASSUMED_LIVE_MAX_SEC=5400`, `LIVE_EARLY_SEC=600`, `LIVE_EARLY_WINDOW_SEC=3600`, `LIVE_TIGHT_SEC=300`(v3.7.1 — 프론트가 읽는 raw CDN 캐시가 `max-age=300` 이라 3분은 화면에 반영 안 됨),
   `END_WINDOW_SEC=1800`, `END_TICK_SEC=300`, `MAX_TASK_HORIZON_SEC=696*3600`.
 - `next_check_at` 은 반환 직전 `[now+60s, now+MAX_TASK_HORIZON_SEC]` 클램프. **저장 안 함** — `handlers` 가
   video_id 있는 watching/live/end 아이템의 `next_check_at` 만 `wakes` 로 받아 Cloud Tasks `/wake` enqueue.
@@ -432,8 +439,14 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   날짜가 명시 안 돼 있어도 `今日`류(당일) + `明日`류(`xrelay._TOMORROW_WORD` 재사용, +1일)
   키워드 + 시각이 함께 있으면 그 날짜로 게이트 통과 (v3.4.5 핫픽스 — "明日22:00" 형태가
   날짜 없음으로 걸러지던 것).
-  `apply_overrides(new_items, prev_items, now_iso)` — 트윗이 정한 `scheduled_start` 를 API 재구성이
-  안 덮게 (API 값이 `api_start_seen` 과 ±60초면 트윗값 유지, 벗어나면 API 승). `handlers.tick` 이 `build_preview` 직후 호출.
+  `apply_overrides(new_items, prev_items, now_iso)` — (v3.7.1 재작성·연결) `handlers._run` 이 커밋 루프에서
+  `build_preview` 직후(suppress/edit_lock 반영 전) 호출. `build_preview` 는 `info_source ∈ (personal, x-relay)`
+  아이템의 `scheduled_start` 를 안 덮고 `api_start_seen` 만 매 tick API 값으로 갱신하므로, 아이템 `b` 와
+  이전 아이템 `pb` 를 비교해: `info_source ∉ (personal, x-relay)` · `time_tbd` · 둘 중 하나의
+  `api_start_seen` 없음(처음 관측) → 그대로 / `|b.api_start_seen − pb.api_start_seen| ≤ 60초` → 트윗값 유지 /
+  60초 초과(스트림 예약 실제 수정) → `scheduled_start = api_start_seen`, `info_source="api"`, `info_at=now`
+  (이후 tick 은 API 값으로 계속 갱신). 이 tick 의 wake 예약은 override 전 시각 기준 — 다음 light tick(≤10분)에 재계산.
+  (v3.7.1 이전에는 정의만 있고 어디서도 호출되지 않았다.)
 
 ---
 
@@ -506,15 +519,22 @@ def build_archive_appends(prev_archive, gone_items, now_iso) -> (new_archive, ch
 ### 8.4 `llm.py`
 
 ```python
-DEFAULT_MODEL = "openai/gpt-oss-120b"; FALLBACK_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"; FALLBACK_MODEL = "openai/gpt-oss-20b"   # llama-3.3-70b-versatile 은 이 계정에서 404
 class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, session=None, timeout=20.0):
     def notice_title(body_no_date_url, *, lang_hint="ja") -> {"title_ja","title_ko"} | None
     def translate(text_ja) -> str | None
+    def participation(text_ja, *, member_name) -> bool | None          # (v3.6) 외부 채널 URL 참여판정
+    def announces_own_broadcast(text_ja) -> bool | None                # (v3.6) 텍스트 예고 최종확인
+    def duplicate_notice(new_text, candidates) -> str | None           # (v3.7) 같은 날짜 소식 의미 중복판정
 ```
 
 - Groq REST (`https://api.groq.com/openai/v1/chat/completions`). `reasoning_effort="low"`, `temperature=0`.
-  `response_format` 모델별 분기(gpt-oss=json_schema, llama-3.3=json_object).
-- api_key 비면 disabled → 모든 호출 None. 429/5xx → 지수 백오프 3회 → 폴백 모델 1회 → None.
+  구조화 출력이 필요한 호출만 `response_format: json_schema`(strict), `translate` 는 자유 텍스트.
+- api_key 비면 disabled → 모든 호출 None. `_call_groq`: 429/5xx·타임아웃(20초) → 1초·2초 대기하며 최대 3회 시도,
+  그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. `participation`·`announces_own_broadcast`·
+  `duplicate_notice` 는 유효한 JSON 을 받을 때까지 (메인→폴백) 쌍을 최대 5회 반복.
+- (v3.7.1) 제어 채널의 `telegram_app._make_llm_client()` 도 기본값을 이 두 상수로 쓴다(환경변수
+  `GROQ_MODEL`/`GROQ_MODEL_FALLBACK` 이 있으면 우선). 이전엔 폴백 기본값이 404 모델이었다.
 - 환각 가드: 출력 비었거나 입력 길이 3배 초과 → None (기본선, 배포 후 실측 보강).
 - **용어집(`GLOSSARY`, v3.1.14)**: 고유명사가 호출마다 다르게 번역되는 문제(실측: 그룹명
   "夢限大みゅーたいぷ"가 "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 매번 달라짐) 대응.
@@ -599,16 +619,21 @@ tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `
    a. `prev_preview` / `prev_archive` + sha 재읽기.
    b. `new_preview, transitions, wakes, gone_items = build_preview(cfg, videos, prev_preview, now_iso, avatars=avatars)`.
    c. `admin_state` 읽어 `suppress`/`edit_lock` 반영(차단 url 제외, 락 id prev 유지).
-   d. `_stable_view` 동일하면 volatile 동결 + `generated_at` heartbeat(20분).
+   b′. (v3.7.1) `xtweet.apply_overrides(new.items, prev.items, now)` (§6-3). 실패 시 경고 후 원래 items.
+   d. `_stable_view` 동일하면 volatile 필드와 `generated_at` 을 이전 값으로 동결 → 커밋 안 함(v3.2.2, heartbeat 없음).
    e. `build_archive_appends` → `preview_archive.json`(변경 시).
    f. `gh.write_json("preview.json", …, prev_sha=pv_sha)`. `ConflictError` → a 재시도, 2회째 실패 → 예외.
 5. **Cloud Tasks**: `wakes` → `enqueue_wake`. `transitions` 에 `"→end"` 있으면 `enqueue_tick("light", now+20분)`.
    video_id 없는 announced 예고 시각(지금~+3h) → `_scheduled_wake_times` → `enqueue_tick("light", ss)`.
+   (뒤 두 개는 light tick 3h 시절 도입한 보정 — 10분 tick 과 겹치지만 무해해 유지.)
 6. **LLM 번역 sweep** (tick 만): `_translate_sweep` — `notices.json`/`tweets.json`/`preview.json`(v3.1.13,
    방송 제목 `title`→`title_ko`) 의 `needs_tl` 행 재번역.
 7. **Telegram diff**: `notify.diff_events(_pv0.items, new_preview.items, transitions, channels, now)` →
    레벨 게이팅 후 개별 전송 + `summary`(detail).
-8. 성공 끝 healthcheck GET. 예외 → `notify.error_text` 후 re-raise.
+8. **모니터 로그** (v3.7.1): preview 전이 이벤트 + tick/wake 이벤트를 모아 `monitor_log.log_events` **1회**(커밋 최대 1개).
+   tick/wake 이벤트는 `_should_log_run` — preview/archive 변경 · enqueue 오류 · 전이 이벤트 ≥1 · 번역 반영 ≥1 중
+   하나라도 참일 때만 싣는다(변화 없는 실행은 기록 안 함 → `/monitor` 의 quota·호출 수는 "기록된 실행" 기준).
+9. 성공 끝 healthcheck GET. 예외 → `notify.error_text` 후 re-raise.
 
 반환 dict: `{mode, woken, candidates, videos, preview_changed, archive_changed, archived,
 preview_items, state_counts, wakes, enqueued, enqueue_errors, translated, quota_used, log}`.
@@ -648,7 +673,7 @@ followup 소진 순서: del/undo (y/N/terminate) → `_handle_ingest_followup` �
 
 `/edit preview` 로 `state` 를 바꾸면(예: 긴급 종료 처리) 라벨만 바뀌는 게 아니라
 `_activate_state_edit`(v3.1.17)이 그 상태에 맞는 실제 로직을 마저 이행한다 — 안 하면
-FSM 파생·Cloud Tasks wake 재예약·archive 반영이 전혀 안 일어나 다음 tick(최대 3h)까지
+FSM 파생·Cloud Tasks wake 재예약·archive 반영이 전혀 안 일어나 다음 tick(당시 최대 3h)까지
 방치되는 문제가 있었다. `state_since` 도 이 시점으로 리셋한다(안 하면 오래된 state_since
 때문에 end→none 30분 판정이 리셋 없이 즉시 발동할 수 있음). 목표 상태별 동작:
 - `"none"` — preview.json 에서 즉시 제거 + `preview_archive.json` 에 기록(FSM 의
@@ -668,7 +693,7 @@ FSM 파생·Cloud Tasks wake 재예약·archive 반영이 전혀 안 일어나 �
 
 **`/ingest`** (X 릴레이): `X-Ingest-Secret` 헤더. 본문 form/JSON `text`(필수)/`title`/`template`/`tag`.
 `xtweet.route_by_title(title)` → 개인 5인이면 `_maybe_personal_tweet`(→ `tweets.json` + 예고면 preview
-승격) 후 즉시 200. 테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)은 `force_echo`. 공식·미매칭은
+승격 — 준비/커밋 분리는 §8.14) 후 즉시 200. 테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)은 `force_echo`. 공식·미매칭은
 `_maybe_auto_notice` → `xrelay.parse` → `merge_announced` → `preview.json`. `INGEST_ECHO`/`INGEST_DRY_RUN`
 이면 저장 안 하고 회신 + 스케줄 트윗은 `ingest_queue.json` 버퍼(실배포 전환 시 첫 `/ingest` 에서 drain).
 
@@ -679,14 +704,49 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 `DATA_BRANCH`(기본 "data"), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`,
 `HEALTHCHECK_URL`, `MAIN_SERVICE_URL`, `INGEST_SECRET`, `INGEST_ECHO`, `INGEST_DRY_RUN`,
 `INGEST_TEST_TITLES`, **`GROQ_API_KEY`**, **`GROQ_MODEL`**(기본 `openai/gpt-oss-120b`),
-**`GROQ_MODEL_FALLBACK`**(기본 `llama-3.3-70b-versatile`), **`VXTWITTER_BASE`**(기본
-`https://api.vxtwitter.com`), **`INGEST_YT_ENABLED`**(기본 `""` — `"1"` 이어야 ytnotif 라우팅).
+**`GROQ_MODEL_FALLBACK`**(기본 `openai/gpt-oss-20b`), **`VXTWITTER_BASE`**(기본
+`https://api.vxtwitter.com`), **`INGEST_YT_ENABLED`**(기본 `""` — `"1"` 이어야 ytnotif 라우팅),
+`HEALTHCHECKS_IO_READONLEY_TOKEN`(`/monitor` 백엔드 상태 조회용 healthchecks.io read-only 키 — 이름의
+`READONLEY` 는 오타지만 운영 Secret 이름이라 유지. 비면 해당 패널만 비활성).
 
 ### 8.13 `app.py` (비공개, OIDC)
 
 `@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
-`@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`. `@app.get("/","/healthz")` → "ok".
+`@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
+`@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
+`@app.post("/monitor")` (v3.5) → `control.json monitor_auto` 켜져 있으면 전일(06:00 KST 경계) 리포트 생성 →
+`monitoring/latest.html` 커밋 + 텔레그램 DM. `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
 예외 → 500 + `notify.error_text` DM. `PermissionError` → 403.
+
+### 8.14 write-queue — `writers.py` / `writeclient.py` (v3.7, v3.7.1 A-1)
+
+GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로 충돌한다(다른 파일이라도 읽은 뒤
+다른 커밋이 끼면 409). 제어 채널(`mewtype-telegram`, 동시 처리 80)의 콘텐츠 쓰기를 백엔드
+(`--concurrency=1 --max-instances=1`)의 `POST /write` 로 보내 한 줄로 세운다.
+
+- `writeclient.call_write(kind, *, gh=None, **args) -> dict` — `MAIN_SERVICE_URL` 이 있으면 OIDC id token 으로
+  `POST {MAIN_SERVICE_URL}/write` 동기 호출(타임아웃 60초, 2초 넘으면 "⏳ 처리 대기 중" DM 1회), 없으면
+  같은 프로세스에서 `writers.dispatch` (로컬 개발·self-test). 비200 → `WriteError`.
+- `writers.dispatch(kind, gh, args)` — kind → `telegram_app` 의 커밋 함수(지연 import). 등록 kind:
+  `merge_rows` `remove_broadcast` `apply_notice` `notice_sweep` `notice_del_commit` `notice_edit_commit`
+  `personal_tweet` `tweet_sweep` `tweet_del_commit` `url_confirmed_commit` `undo_restore` `apply_preview_edit`
+  `ingest_queue_push` `ingest_queue_drain`.
+- **(v3.7.1) A-1 — 외부 호출은 제어 채널, `/write` 잡은 커밋만.** 잡 함수는 GitHub 읽기·쓰기(+ undo 스냅샷,
+  모니터 로그, 텔레그램 DM, Cloud Tasks enqueue)만 하고 외부 LLM·`videos.list`·vxtwitter·비전 OCR 은 부르지
+  않는다. 제어 채널이 먼저 준비해 결과를 JSON 인자로 넘긴다:
+
+  | 경로 | 제어 채널(준비) | `/write` 잡(커밋) |
+  |---|---|---|
+  | 소식 | `_prepare_notice` — `xnotice.parse`, 비전 OCR, 제목추출 LLM, `notices.json` 읽어 사본으로 `merge_notice` → `added` 면 중복판정 LLM → `{parsed, tl, dup_id}` | `apply_notice` → `_commit_notice` — merge, `dup_id` 있으면 `merge_into`(→updated), 번역 반영 또는 `needs_tl`, undo |
+  | 개인 트윗 | `_prepare_personal_tweet` — vxtwitter 미디어, `xtweet.parse`, 스냅샷으로 `merge_thread` → 변화 있을 때만 본문·인용 번역 → `{parsed, text_src, text_ko, quote_src, quote_ko}` | `personal_tweet` → `_commit_personal_tweet` — merge, `row.text == text_src` 일 때만 `text_ko` 반영(아니면 `needs_tl`), sweep, 모니터 로그 → `{mode, n_thread, needs_tl}` |
+  | 개인 예고(URL) | `_maybe_url_confirmed_schedule` — `videos.list`, 외부 채널이면 참여판정 LLM, `build_item_from_video` | `url_confirmed_commit` → `_url_confirmed_commit` — `merge_video_confirmed`, undo, **`_enqueue_wake_now`**(제어 채널 서비스엔 Cloud Tasks env 가 없어 반드시 백엔드) |
+  | 개인 예고(텍스트) | `parse_schedule` + `announces_own_broadcast` LLM | `merge_rows`(`merge_fn="personal_schedule"`) |
+
+  `_maybe_personal_tweet` 는 제어 채널 오케스트레이터(준비 → `personal_tweet` 잡 → DM → `_maybe_personal_schedule`).
+  준비 시점 스냅샷 기준이라, 준비~커밋 사이 같은 날짜 소식이 새로 들어오면 중복판정에서 빠져 새 소식으로
+  등록될 수 있다(LLM 실패 시와 같은 안전한 기본값).
+- **남는 한계**: 모니터 로그(notice/relay/ops)·`admin_state.json` 마법사 단계·`control.json`·`/translate`·
+  `/monitor` 의 `latest.html` 은 여전히 제어 채널이 직접 커밋 → 큐 잡과 409 가능(잡은 최신 재조회 후 1회 재시도).
 
 ---
 
@@ -744,7 +804,7 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 |---|---|---|---|
 | 1 | tick/wake 동시 실행 시 낡은 payload 로 덮어써 전이 유실 | `ConflictError` + 1회 재계산 재시도 | `gh_store.py`, `handlers.py` |
 | 2 | `videos.list` 일시 누락·"공개→회원전용" 전환을 즉시 removed 처리 | `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 유예 | `preview_build.py` |
-| 3 | 방송 종료 직후 시작하는 짧은 다음 방송을 3h tick 간격에 놓침 | `→end` 전이 시 `now+20분` 후속 `light` tick 1개(분버킷 dedupe) | `handlers.py` |
+| 3 | 방송 종료 직후 시작하는 짧은 다음 방송을 (당시) 3h tick 간격에 놓침 | `→end` 전이 시 `now+20분` 후속 `light` tick 1개(분버킷 dedupe). v3.6 light 10분 이후엔 겹치지만 유지 | `handlers.py` |
 | 4 | video_id 못 얻은 채 예정 시각 지난 announced/upcoming | `assumed_live` + `now − ss ≥ 90분` → `none` (FSM) | `statemachine.py` |
 
 **커버 못 하는 것**: 회원 전용 방송은 RSS·`search.list` 에 안 떠서 발견 불가 — `INGEST_YT_ENABLED` +
@@ -763,12 +823,16 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 
 `deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
 - `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
-  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**). 멱등.
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**,
+  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가)). 멱등.
 - `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
-  + secrets/env. `GROQ_API_KEY` 는 Secret 이 있을 때만 마운트. 배포 후 `SERVICE_URL` env 재설정.
-- `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`0 */3 * * *` Etc/UTC). OIDC.
+  + secrets/env. `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN` 은 Secret 이 있을 때만 마운트(v3.7.1 — 전엔
+  healthchecks Secret 을 무조건 마운트해 새 프로젝트에서 첫 배포가 실패). 배포 후 `SERVICE_URL` env 재설정.
+- `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`*/10 * * * *` Etc/UTC, v3.6) /
+  `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`). OIDC.
 - `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
-  `ALLOW_UNAUTH=1`. `GROQ_API_KEY`(조건부) + `INGEST_YT_ENABLED` env.
+  `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
+  (조건부) + `INGEST_YT_ENABLED` env. **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
 - `telegram_webhook.sh` — `setWebhook`.
 
 **Cloud Run/Scheduler/Tasks 는 같은 리전**(`asia-northeast1`). OIDC audience = 서비스 `status.url`.

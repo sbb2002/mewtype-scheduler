@@ -11,6 +11,12 @@ _GROQ_SECRET=""
 if gcloud secrets describe GROQ_API_KEY &>/dev/null; then
   _GROQ_SECRET=",GROQ_API_KEY=GROQ_API_KEY:latest"
 fi
+# (v3.5) HEALTHCHECKS_IO_READONLEY_TOKEN: monitor_report 의 백엔드 상태(4색) 조회용.
+# 오타지만 운영 Secret 이름 — 바꾸려면 Secret 재생성 + 두 서비스 재배포. Secret 있을 때만 붙인다.
+_HC_SECRET=""
+if gcloud secrets describe HEALTHCHECKS_IO_READONLEY_TOKEN &>/dev/null; then
+  _HC_SECRET=",HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest"
+fi
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$GCP_LOCATION" \
@@ -18,7 +24,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --service-account "$RUNTIME_SA" \
   --concurrency=1 \
   --max-instances=1 \
-  --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest${_GROQ_SECRET}" \
+  --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest${_HC_SECRET}${_GROQ_SECRET}" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid"
 # SERVICE_URL 은 배포 후 실제 URL 을 알 수 있으므로 일단 placeholder 로 부팅시키고 아래에서 교체한다.
 

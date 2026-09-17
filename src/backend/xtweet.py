@@ -648,66 +648,65 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
 
 
 def apply_overrides(new_items: list[dict], prev_items: list[dict], now_iso: str) -> list[dict]:
-    """(handlers 후처리) reconcile 의 API 재구성에 트윗 유래 시각 override 재적용.
+    """(handlers 후처리) reconcile 의 API 재구성에 트윗·릴레이 유래 시각 override 재적용.
 
-    prev 행 info_source ∈ (personal|bdp_schedule|appearance) 이고 time_tbd 아님:
-      · reconcile 이 이번 tick 에 API 로 scheduled_start 를 얻음
-        - api_now == prev.api_start_seen (override 없으면 prev.scheduled_start) → 트윗값 유지
-        - 다름(스트림 실제 수정) → API 승 (info_source="api", api_start_seen=null)
-      · reconcile 미해결(announced 유지) → prev 시각·provenance 그대로
+    v3 계약: `api_start_seen` 은 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정)
+    트윗값 대신 API 승.
+
+    규칙 각 b 에 대해 pb = match_item(prev_items, b):
+    1. pb 없음 → 그대로.
+    2. b.info_source ∉ ("personal", "x-relay") → 그대로.
+    3. b.time_tbd 또는 b.scheduled_start 없음 → 그대로.
+    4. api_now = b.api_start_seen, api_prev = pb.api_start_seen.
+       둘 중 하나라도 없음 → 그대로(처음 API 관측).
+    5. abs(epoch(api_now) − epoch(api_prev)) <= 60 → 그대로(트윗 시각 유지).
+    6. 60초 초과(스트림 실제 수정) → scheduled_start=api_now, info_source="api",
+       info_at=now_iso (api_start_seen 은 api_now 유지).
 
     Args:
-        new_items: reconcile 후 preview.json 의 items 배열
+        new_items: build_preview 후 preview.json 의 items 배열
         prev_items: 이전 preview.json 의 items 배열
         now_iso: 현재 시각 (UTC ISO)
 
     Returns:
-        override 적용된 new_items
+        override 적용된 new_items 사본 (입력 변형 없음)
     """
     prev = prev_items or []
     new = [dict(b) for b in (new_items or [])]
 
     for b in new:
-        # 이전 아이템에서 같은 방송 찾기
+        # 규칙 1: 이전 아이템에서 같은 방송 찾기
         pb = preview.match_item(prev, b)
         if pb is None:
             continue
 
-        psrc = pb.get("info_source")
-        if psrc not in ("personal", "bdp_schedule", "appearance"):
+        # 규칙 2: 원래 info_source가 personal 또는 x-relay만
+        if b.get("info_source") not in ("personal", "x-relay"):
             continue
 
-        # time_tbd 아이템은 override 대상 아님
-        if pb.get("time_tbd") or not pb.get("scheduled_start"):
+        # 규칙 3: time_tbd 또는 scheduled_start 없으면 패스
+        if b.get("time_tbd") or not b.get("scheduled_start"):
             continue
 
-        # API 로 upcoming/watching/live 해결된가? (video_id 필수)
-        api_resolved = b.get("state") in ("upcoming", "watching", "live") and bool(b.get("video_id"))
+        # 규칙 4: 양쪽 api_start_seen 비교 준비
+        api_now = b.get("api_start_seen")
+        api_prev = pb.get("api_start_seen")
 
-        if not api_resolved:
-            # API 미해결 (announced 유지) → 이전 정보 그대로
-            b["scheduled_start"] = pb["scheduled_start"]
-            b["time_tbd"] = bool(pb.get("time_tbd"))
-            b["info_source"] = psrc
-            b["info_at"] = pb.get("info_at")
-            b["api_start_seen"] = pb.get("api_start_seen")
+        # 규칙 4: 둘 중 하나라도 없으면 그대로
+        if api_now is None or api_prev is None:
             continue
 
-        # API 해결 — baseline 대비 변경 여부 판정
-        api_now = b.get("scheduled_start")
-        baseline = pb.get("api_start_seen") or pb.get("scheduled_start")
-
-        if api_now and baseline and abs(_epoch(api_now) - _epoch(baseline)) <= 60:
-            # API 값 안 바뀜 (60초 이내) → 트윗값 유지
-            b["scheduled_start"] = pb["scheduled_start"]
-            b["info_source"] = psrc
-            b["info_at"] = pb.get("info_at")
-            b["api_start_seen"] = pb.get("api_start_seen") or api_now
+        # 규칙 5~6: 60초 임계값으로 판정
+        delta_sec = abs(_epoch(api_now) - _epoch(api_prev))
+        if delta_sec <= 60:
+            # 규칙 5: API 값 불변 → 트윗 시각 유지
+            # (이미 b["scheduled_start"] 는 트윗값이므로 유지)
+            pass
         else:
-            # 스트림 실제 수정 (60초 이상 차이) → API 승
+            # 규칙 6: API 값 변경 → API 승
+            b["scheduled_start"] = api_now
             b["info_source"] = "api"
             b["info_at"] = now_iso
-            b["api_start_seen"] = None
 
     return new
 
@@ -902,35 +901,96 @@ if __name__ == "__main__":
     assert surv["info_source"] == "bdp_schedule"
     print("[OK] merge_personal_schedule  (append + upsert)")
 
-    # S-G: apply_overrides — 트윗이 시각 override, API 는 원래 값 유지 → 트윗값 유지
+    # S-G: apply_overrides — API 불변(60초 이내) → 트윗 값 유지
+    # build_preview 가 personal/x-relay 정보원의 scheduled_start 를 갱신하지 않으므로
+    # new_item 도 prev 값 13:30Z 유지 (API 값 13:00Z가 아님)
     prev_item = preview.make_item(
         channel_key="arale", state="upcoming", source="personal", now_iso="2026-09-07T12:50:00Z",
         video_id="vidX", scheduled_start="2026-09-07T13:30:00Z",  # 트윗이 당겨놓음
         info_source="personal", info_at="2026-09-07T12:50:00Z",
         api_start_seen="2026-09-07T13:00:00Z"  # API 는 원래 13:00
     )
-    new_item = preview.make_item(
-        channel_key="arale", state="upcoming", source="api", now_iso=SNOW,
-        video_id="vidX", scheduled_start="2026-09-07T13:00:00Z",  # reconcile 이 API 로 재설정
-        thumbnail="t.jpg", info_source="api"
+    new_item_g = preview.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso=SNOW,
+        video_id="vidX", scheduled_start="2026-09-07T13:30:00Z",  # build_preview 가 안 건드림
+        api_start_seen="2026-09-07T13:00:00Z",  # API 값이 이전 tick 과 같아 api_start_seen 이 그대로
+        info_source="personal", info_at="2026-09-07T12:50:00Z"
     )
-    out = apply_overrides([new_item], [prev_item], SNOW)
-    ob = out[0]
-    assert ob["scheduled_start"] == "2026-09-07T13:30:00Z", ob     # 트윗값 유지
-    assert ob["info_source"] == "personal" and ob["thumbnail"] == "t.jpg"
-    print("[OK] apply_overrides  (API 불변→트윗 유지)")
+    out_g = apply_overrides([new_item_g], [prev_item], SNOW)
+    # 규칙 5: api_start_seen 이 같으면 (60초 이내) 그대로 → scheduled_start 변경 없음
+    assert out_g[0]["scheduled_start"] == "2026-09-07T13:30:00Z", out_g[0]
+    assert out_g[0]["info_source"] == "personal"
+    print("[OK] apply_overrides  (G: API 불변 60초 이내→트윗값 유지)")
 
-    # S-H: 스트림이 실제 수정됨(API 값 변경) → API 승
-    new_item2 = preview.make_item(
-        channel_key="arale", state="upcoming", source="api", now_iso=SNOW,
-        video_id="vidX", scheduled_start="2026-09-07T14:00:00Z",  # API 실제 변경
-        thumbnail="t.jpg", info_source="api"
+    # S-H: API 값 변경(60초 초과) → API 승
+    # build_preview 가 personal 정보원의 scheduled_start 를 갱신하지 않으므로
+    # new_item 도 prev 값 13:30Z 유지. 하지만 api_start_seen 은 갱신된다.
+    new_item_h = preview.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso=SNOW,
+        video_id="vidX", scheduled_start="2026-09-07T13:30:00Z",  # build_preview 가 안 건드림
+        api_start_seen="2026-09-07T14:00:00Z",  # api_start_seen 갱신됨 (60초 이상 차이)
+        info_source="personal", info_at="2026-09-07T12:50:00Z"
     )
-    out2 = apply_overrides([new_item2], [prev_item], SNOW)
-    ob2 = out2[0]
-    assert ob2["scheduled_start"] == "2026-09-07T14:00:00Z" and ob2["info_source"] == "api"
-    assert ob2["api_start_seen"] is None
-    print("[OK] apply_overrides  (API 변경→API 승)")
+    out_h = apply_overrides([new_item_h], [prev_item], SNOW)
+    # 규칙 6: api_start_seen 이 60초 이상 차이나면 API 승 → scheduled_start 를 api_start_seen 으로
+    assert out_h[0]["scheduled_start"] == "2026-09-07T14:00:00Z", out_h[0]
+    assert out_h[0]["info_source"] == "api" and out_h[0]["info_at"] == SNOW  # API 승
+    print("[OK] apply_overrides  (H: API 변경 60초 초과→API승)")
+
+    # S-I: 이전 api_start_seen 이 None → 처음 관측, override 작동 안 함
+    prev_item_i = preview.make_item(
+        channel_key="arale", state="announced", source="personal", now_iso="2026-09-07T12:50:00Z",
+        video_id="vidY", scheduled_start="2026-09-07T13:30:00Z",
+        info_source="personal", info_at="2026-09-07T12:50:00Z",
+        api_start_seen=None  # 처음엔 API 관측 전
+    )
+    new_item_i = preview.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso=SNOW,
+        video_id="vidY", scheduled_start="2026-09-07T13:30:00Z",  # build_preview 가 안 건드림
+        api_start_seen="2026-09-07T13:00:00Z",  # 처음 관측됨
+        info_source="personal", info_at="2026-09-07T12:50:00Z"
+    )
+    out_i = apply_overrides([new_item_i], [prev_item_i], SNOW)
+    # 규칙 4: api_prev 가 None 이면 그대로 → override 작동 안 함
+    assert out_i[0]["scheduled_start"] == "2026-09-07T13:30:00Z", out_i[0]
+    assert out_i[0]["info_source"] == "personal"  # info_source 변경 없음
+    print("[OK] apply_overrides  (I: 이전 api_start_seen=None→처음관측,override안함)")
+
+    # S-J: info_source=x-relay 도 동일하게 동작 (H 와 같음)
+    prev_item_j = preview.make_item(
+        channel_key="yuno", state="upcoming", source="x-relay", now_iso="2026-09-07T12:50:00Z",
+        video_id="vidZ", scheduled_start="2026-09-07T13:30:00Z",
+        info_source="x-relay", info_at="2026-09-07T12:50:00Z",
+        api_start_seen="2026-09-07T13:00:00Z"
+    )
+    new_item_j = preview.make_item(
+        channel_key="yuno", state="upcoming", source="x-relay", now_iso=SNOW,
+        video_id="vidZ", scheduled_start="2026-09-07T13:30:00Z",  # build_preview 가 안 건드림
+        api_start_seen="2026-09-07T14:00:00Z",  # API 변경(60초 이상)
+        info_source="x-relay", info_at="2026-09-07T12:50:00Z"
+    )
+    out_j = apply_overrides([new_item_j], [prev_item_j], SNOW)
+    assert out_j[0]["scheduled_start"] == "2026-09-07T14:00:00Z", out_j[0]  # API 값
+    assert out_j[0]["info_source"] == "api" and out_j[0]["info_at"] == SNOW  # API 승
+    print("[OK] apply_overrides  (J: x-relay도동일(H처럼)→API승)")
+
+    # S-K: info_source=api 아이템은 규칙 2 에서 패스, 손대지 않음
+    prev_item_k = preview.make_item(
+        channel_key="nonoka", state="upcoming", source="api", now_iso="2026-09-07T12:50:00Z",
+        video_id="vidK", scheduled_start="2026-09-07T14:00:00Z",
+        info_source="api", info_at="2026-09-07T12:50:00Z",
+        api_start_seen="2026-09-07T14:00:00Z"
+    )
+    new_item_k = preview.make_item(
+        channel_key="nonoka", state="upcoming", source="api", now_iso=SNOW,
+        video_id="vidK", scheduled_start="2026-09-07T15:00:00Z",
+        api_start_seen="2026-09-07T15:00:00Z",  # API 변경
+        info_source="api", info_at=SNOW
+    )
+    out_k = apply_overrides([new_item_k], [prev_item_k], SNOW)
+    assert out_k[0]["scheduled_start"] == "2026-09-07T15:00:00Z", out_k[0]  # 그대로 유지
+    assert out_k[0]["info_source"] == "api"  # info_source 변경 없음
+    print("[OK] apply_overrides  (K: info_source=api→규칙2패스,손대지않음)")
 
     # ── v3.6 URL 우선 ingest — resolve_url_host / build_item_from_video / merge_video_confirmed ──
     class _FakeVideo:

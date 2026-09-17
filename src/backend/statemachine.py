@@ -21,7 +21,7 @@ WATCH_LATE_DEMOTE_SEC = 2 * 60 * 60  # 7200초 — watching 에서 announced 강
 ASSUMED_LIVE_MAX_SEC = 90 * 60  # 5400초 — assumed-live 폴백 경계 (90분)
 LIVE_EARLY_SEC = 10 * 60  # 600초 — live 초기 체크 간격 (10분, +60분 미만)
 LIVE_EARLY_WINDOW_SEC = 60 * 60  # 3600초 — live 초기/후기 경계 (60분)
-LIVE_TIGHT_SEC = 3 * 60  # 180초 — live 후기 체크 간격 (3분, +60분 이상)
+LIVE_TIGHT_SEC = 5 * 60  # 300초 — live 후기 체크 간격 (5분, +60분 이상). 프론트엔드가 읽는 raw CDN 캐시가 max-age=300 이라 3분은 화면에 반영되지 않음 (v3 개선 WP-5)
 END_WINDOW_SEC = 30 * 60  # 1800초 — end 상태 창 (30분)
 END_TICK_SEC = 5 * 60  # 300초 — end 체크 간격 (5분)
 MAX_TASK_HORIZON_SEC = 696 * 3600  # 2505600초 — Cloud Tasks 상한 (696h, 29일)
@@ -102,7 +102,7 @@ def derive(
         3. watching 지각 강등 (120분 경과)
         4. assumed-live 폴백 (90분 경과)
         5. live 초기 cadence (+60분 미만, 10분 간격)
-        6. live 후기 cadence (+60분 이상, 3분 간격)
+        6. live 후기 cadence (+60분 이상, 5분 간격)
         7. end 창 (30분 미만, 5분 간격)
         8. end→none (30분 경과)
         9. end→upcoming (예고 스트림 재등장)
@@ -195,7 +195,7 @@ def derive(
                 # 초기 (60분 미만): 10분 간격
                 next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
             else:
-                # 후기 (60분 이상): 3분 간격
+                # 후기 (60분 이상): 5분 간격
                 next_check_at = _to_iso(now + timedelta(seconds=LIVE_TIGHT_SEC))
             log.append(f"live-check {item_id}")
 
@@ -330,7 +330,7 @@ if __name__ == "__main__":
     print(f"  state: live, elapsed=30min → check in {delta_5}sec (~10min)")
 
     print("\n" + "=" * 70)
-    print("✓ 규칙 6: live, actual_start 60분 이상 → check in 3min")
+    print("✓ 규칙 6: live, actual_start 60분 이상 → check in 5min")
     print("=" * 70)
     now_6 = "2026-08-31T14:00:00Z"  # actual_start + 60분
     item_6 = {
@@ -345,8 +345,9 @@ if __name__ == "__main__":
     check_6 = _parse_iso(tick_6.next_check_at)
     now_6_dt = _parse_iso(now_6)
     delta_6 = (check_6 - now_6_dt).total_seconds()
-    assert 180 <= delta_6 <= MAX_TASK_HORIZON_SEC, f"expected ~3min, got {delta_6}sec"
-    print(f"  state: live, elapsed=60min → check in {delta_6}sec (~3min)")
+    assert 300 <= delta_6 <= MAX_TASK_HORIZON_SEC, f"expected ~5min, got {delta_6}sec"
+    assert delta_6 == LIVE_TIGHT_SEC, f"expected LIVE_TIGHT_SEC ({LIVE_TIGHT_SEC}), got {delta_6}sec"
+    print(f"  state: live, elapsed=60min → check in {delta_6}sec (~5min)")
 
     print("\n" + "=" * 70)
     print("✓ 규칙 7·8: end, 30분 미만 → check in 5min")

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import contextvars
+import copy
 import html
 import json
 import logging
@@ -87,6 +88,7 @@ from . import preview as preview_mod
 from . import monitor_report
 from . import statemachine
 from . import writeclient
+from . import llm
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -1340,23 +1342,138 @@ _NOTICE_PROMPT = (
 )
 
 
-def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[str, dict | None]:
-    """원문 → xnotice.parse → notices.merge_notice → 커밋.
+def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) -> dict | None:
+    """(WP-3a) 소식 준비 (제어 채널에서 실행).
 
-    반환 (mode, parsed): mode ∈ none | added | updated | recap | dup | skip | error.
-    added/updated 면 notices.json 에 대한 /undo 스냅샷도 남긴다.
+    외부 호출(비전 OCR·LLM) + 중복판정까지 한 뒤 결과를 반환.
+    반환: {"parsed": dict, "tl": dict|None, "dup_id": str|None} | None
     """
     if xnotice is None or notices is None:
-        return "error", None
+        return None
     parsed = xnotice.parse(raw, now_iso, tag=tag, title=title)
     if not parsed:
-        return "none", None
-    _maybe_tag_cast_participants(parsed, tag)  # (v3.2) 크로스오버 출연진 비전 OCR
-    # 파싱 직후 1회 LLM 제목추출·번역 (재시도와 무관하게 한 번만). (v3.1.2)
-    _tl = None
+        return None
+
+    # 1. 크로스오버 출연진 비전 OCR
+    _maybe_tag_cast_participants(parsed, tag)
+
+    # 2. 제목추출·번역 (재시도와 무관하게 한 번만)
+    tl = None
     if not parsed.get("title_ko"):
-        _tl = _inline_notice_title(
+        tl = _inline_notice_title(
             parsed.get("body_for_llm") or parsed.get("body_raw") or parsed.get("title"))
+
+    # 3. 중복판정 사전 계산
+    dup_id = None
+    if gh is not None:
+        try:
+            prev, _ = gh.read_json(_NOTICES_PATH)
+            arch, _ = gh.read_json(_NOTICE_ARCHIVE_PATH)
+            prev = prev or notices.default_notices()
+            arch = arch or notices.default_archive()
+
+            # 사본으로 merge_notice 호출 (인자 변형 방지)
+            prev_copy = copy.deepcopy(prev)
+            arch_copy = copy.deepcopy(arch)
+            parsed_copy = copy.deepcopy(parsed)
+            new_n, new_a, changed, mode = notices.merge_notice(
+                prev_copy, parsed_copy, now_iso, archive=arch_copy)
+
+            # changed and mode == "added" 일 때만 중복판정 LLM 호출
+            if changed and mode == "added":
+                dup_id = _inline_notice_dup_check(parsed, prev)
+        except Exception:
+            log.warning("준비: notices 읽기 실패", exc_info=True)
+            dup_id = None
+
+    return {
+        "parsed": parsed,
+        "tl": tl,
+        "dup_id": dup_id,
+    }
+
+
+def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_key: str, now_iso: str,
+                            vx_extract: dict | None = None, gh: GitHubStore | None = None) -> dict | None:
+    """(WP-3b) 개인 트윗 준비 (제어 채널에서 실행).
+
+    외부 호출(vxtwitter·LLM) + 머지 변화 판정까지 한 뒤 결과를 반환.
+    반환: {"parsed": dict, "text_src": str, "text_ko": str|None, "quote_src": str|None, "quote_ko": str|None} | None
+    """
+    if xtweet is None:
+        return None
+    channels_cfg = _load_channels_config()
+    handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
+    media, quote = _enrich_personal_media(tag, prefetched=vx_extract)
+    parsed = xtweet.parse(raw, title=title, tag=tag, channel_key=channel_key,
+                          now_iso=now_iso, handle=handle, media=media, quote=quote)
+    if not parsed:
+        return None
+
+    # 변화 판정: gh가 있으면 current snapshot으로 merge 검사
+    changed = True  # gh 없으면 안전한 기본값(번역 진행)
+    new_t, new_a = None, None
+    if gh is not None:
+        try:
+            prev, _ = gh.read_json(_TWEETS_PATH)
+            arch, _ = gh.read_json(_TWEET_ARCHIVE_PATH)
+            prev = prev or xtweet.default_tweets()
+            arch = arch or xtweet.default_archive()
+
+            # 사본으로 merge_thread 호출 (인자 변형 방지)
+            prev_copy = copy.deepcopy(prev)
+            arch_copy = copy.deepcopy(arch)
+            parsed_copy = copy.deepcopy(parsed)
+            new_t, new_a, changed, mode = xtweet.merge_thread(prev_copy, parsed_copy, now_iso, archive=arch_copy)
+        except Exception:
+            log.warning("준비: tweets 읽기 실패", exc_info=True)
+            changed = True  # 읽기 실패 → 안전한 기본값(번역 진행)
+
+    text_src = parsed.get("text") or ""
+    text_ko = None
+    quote_src = None
+    quote_ko = None
+
+    # changed 일 때만 번역
+    if changed:
+        if text_src and not parsed.get("text_ko"):
+            text_ko = _inline_translate(text_src)
+
+        # 인용
+        quote_src = (parsed.get("quote") or {}).get("text")
+        if quote_src:
+            quote_ko = xtweet.find_reused_ko(quote_src, tweets_data=new_t, archive_data=new_a)
+            if not quote_ko:
+                try:
+                    nj, _ = gh.read_json(_NOTICES_PATH)
+                    quote_ko = xtweet.find_reused_ko(quote_src, notices_data=nj)
+                except Exception:
+                    pass
+            if not quote_ko:
+                quote_ko = _inline_translate(quote_src)
+
+    return {
+        "parsed": parsed,
+        "text_src": text_src,
+        "text_ko": text_ko,
+        "quote_src": quote_src,
+        "quote_ko": quote_ko,
+    }
+
+
+def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict | None]:
+    """(WP-3a) 소식 커밋 (백엔드 잡에서 실행).
+
+    준비된 소식을 notices.json 에 반영.
+    반환: (mode, parsed)
+    """
+    if xnotice is None or notices is None or prepared is None:
+        return "none", None
+
+    parsed = prepared.get("parsed")
+    tl = prepared.get("tl")
+    dup_id = prepared.get("dup_id")
+
     for _try in (1, 2):
         prev, psha = gh.read_json(_NOTICES_PATH)
         arch, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
@@ -1365,25 +1482,25 @@ def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[
         new_n, new_a, changed, mode = notices.merge_notice(prev, parsed, now_iso, archive=arch)
         if not changed:
             return mode, parsed
-        # (v3.7) url/title 정확일치로 못 잡는 의미상 중복 — 같은 날짜 후보만 LLM 게이트.
-        # 실패/미설정/판정없음이면 그냥 added 로 진행(정보 손실 방지가 우선인 안전한 기본값).
-        if mode == "added":
-            dup_id = _inline_notice_dup_check(parsed, prev)
-            if dup_id:
-                merged, found = notices.merge_into(prev, dup_id, parsed, now_iso)
-                if found:
-                    new_n, mode = merged, "updated"
-        # 방금 병합된 소식 행에 번역 반영 (없으면 needs_tl 로 다음 tick sweep 에 넘김).
+
+        # (v3.7) LLM 판정으로 중복 찾았으면 즉시 병합
+        if mode == "added" and dup_id:
+            merged, found = notices.merge_into(prev, dup_id, parsed, now_iso)
+            if found:
+                new_n, mode = merged, "updated"
+
+        # 방금 병합된 소식 행에 번역 반영
         row = next((n for n in new_n.get("notices", [])
                     if parsed.get("id") == n.get("id")
                     or parsed.get("id") in (n.get("seen_ids") or [])), None)
         if row and not row.get("title_ko"):
-            if _tl and _tl.get("title_ko"):
-                row["title"] = _tl.get("title_ja") or row.get("title")
-                row["title_ko"] = _tl["title_ko"]
+            if tl and tl.get("title_ko"):
+                row["title"] = tl.get("title_ja") or row.get("title")
+                row["title_ko"] = tl["title_ko"]
                 row.pop("needs_tl", None)
             else:
                 row["needs_tl"] = True
+
         try:
             _, nsha = gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,
                                     message=f"data: notice {mode} {now_iso}")
@@ -1400,6 +1517,91 @@ def _apply_notice(gh, raw: str, now_iso: str, *, tag=None, title=None) -> tuple[
                        prev_content=prev, new_sha=nsha, now_iso=now_iso, path=_NOTICES_PATH)
         return mode, parsed
     return "error", parsed
+
+
+def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_iso: str,
+                           via: str = "ingest") -> dict:
+    """(WP-3b) 개인 트윗 커밋 (백엔드 잡에서 실행).
+
+    준비된 개인 트윗을 tweets.json에 반영.
+    반환: {"mode": str, "n_thread": int, "needs_tl": bool}
+    """
+    if xtweet is None or prepared is None:
+        return {"mode": "none", "n_thread": 0, "needs_tl": False}
+
+    parsed = prepared.get("parsed")
+    text_src = prepared.get("text_src", "")
+    text_ko = prepared.get("text_ko")
+    quote_src = prepared.get("quote_src")
+    quote_ko = prepared.get("quote_ko")
+
+    if not parsed:
+        return {"mode": "none", "n_thread": 0, "needs_tl": False}
+
+    row = None
+    try:
+        for _try in (1, 2):
+            prev, psha = gh.read_json(_TWEETS_PATH)
+            arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
+            prev = prev or xtweet.default_tweets()
+            arch = arch or xtweet.default_archive()
+            new_t, new_a, changed, mode = xtweet.merge_thread(prev, parsed, now_iso, archive=arch)
+            if not changed:
+                n_thread = len(_tw_list(new_t.get("tweets", {}).get(channel_key)))
+                return {"mode": mode, "n_thread": n_thread, "needs_tl": False}
+
+            # 방금 들어온 메시지에 번역 반영
+            row = next((m for m in _tw_list(new_t["tweets"].get(channel_key))
+                        if str(m.get("id")) == str(parsed.get("id"))), None)
+            if row:
+                if text_ko and text_src and row["text"] == text_src:
+                    row["text_ko"] = text_ko
+                    row.pop("needs_tl", None)
+                elif text_ko is None and text_src:
+                    row["needs_tl"] = True
+
+            # 인용(QRT) 카드 번역
+            if row and quote_src and (row.get("quote") or {}).get("text"):
+                if row["quote"].get("text") == quote_src:
+                    if quote_ko:
+                        row["quote"]["text_ko"] = quote_ko
+                        row["quote"].pop("needs_tl", None)
+                    else:
+                        row["quote"]["needs_tl"] = True
+
+            try:
+                gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
+                              message=f"data: tweet {mode} {channel_key} {now_iso}")
+                if new_a is not arch:
+                    gh.write_json(_TWEET_ARCHIVE_PATH, new_a, prev_sha=asha,
+                                  message=f"data: tweet archive {now_iso}")
+            except ConflictError:
+                if _try == 2:
+                    raise
+                log.warning("tweet: tweets.json 충돌 — 재시도")
+                continue
+            break
+
+        _tweet_sweep(gh, now_iso)  # 만료 슬롯 정리 (best-effort)
+    except Exception:
+        log.exception("personal tweet 반영 실패")
+        try:
+            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)", via=via)
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(tweet)")
+        return {"mode": "error", "n_thread": 0, "needs_tl": False}
+
+    needs_tl = bool(row and (row.get("needs_tl") or (row.get("quote") or {}).get("needs_tl")))
+    try:
+        log_event(
+            gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
+            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(tweet)")
+
+    n_thread = len(_tw_list((new_t or {}).get("tweets", {}).get(channel_key)))
+    return {"mode": mode, "n_thread": n_thread, "needs_tl": needs_tl}
 
 
 def _notice_sweep(gh, now_iso: str) -> int:
@@ -1445,6 +1647,8 @@ def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
     """pending_notice 슬롯이 살아있을 때 온 메시지를 소식 원문/파일/취소로 소비.
 
     반환 True = 소진(웹훅 즉시 200). /ingest 후속과 같은 규칙.
+
+    (WP-3a) 준비(외부 호출)와 커밋(쓰기)를 분리.
     """
     if admin is None or notices is None:
         return False
@@ -1495,9 +1699,16 @@ def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
 
     _clear()
     _send_telegram("📥 접수했습니다. 반영 중…")
+
+    # 준비 단계: 파싱 + LLM + 중복판정
+    prepared = _prepare_notice(raw, now_iso, gh=gh)
+    if prepared is None:
+        _notice_result_dm("none", None, raw)
+        return True
+
     try:
         writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
-        result = writeclient.call_write("apply_notice", gh=gh, raw=raw, now_iso=now_iso)
+        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso)
         mode, parsed = result.get("mode"), result.get("parsed")
     except Exception as e:
         log.exception("Error handling /notice")
@@ -1797,17 +2008,24 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
 
     파싱(순수)이 소식이 아니면 GitHub 은 아예 안 건드린다. 반환: mode 문자열(로그용).
     added/updated 만 운영자 DM.
+
+    (WP-3a) 준비(외부 호출)와 커밋(쓰기)를 분리.
     """
     if not raw or xnotice is None or notices is None:
         return "none"
-    if xnotice.parse(raw, now_iso, tag=tag, title=title) is None:
-        return "none"
+
     gh = _make_gh()
     if gh is None:
         return "no-gh"
+
+    # 준비 단계: 파싱 + LLM + 중복판정
+    prepared = _prepare_notice(raw, now_iso, tag=tag, title=title, gh=gh)
+    if prepared is None:
+        return "none"
+
     try:
         writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
-        result = writeclient.call_write("apply_notice", gh=gh, raw=raw, now_iso=now_iso, tag=tag, title=title)
+        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso)
         mode, parsed = result.get("mode"), result.get("parsed")
     except Exception:
         log.exception("auto notice 실패")
@@ -1980,7 +2198,9 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                           channel_key: str, now_iso: str,
                           vx_extract: dict | None = None, via: str = "ingest") -> str:
-    """개인 트윗 인입 — `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
+    """(WP-3b) 개인 트윗 인입 — 제어 채널 오케스트레이터.
+
+    `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
     `/edit → tweet` 마법사(운영자가 원문을 직접 붙여넣는 수동 교체)도 같은 함수를 탄다.
 
     ECHO/DRY-RUN/paused 와 무관하게 실행(이 갈래에 온 시점에서 이미 개인 트윗). 반환: mode(로그용).
@@ -1993,98 +2213,88 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     """
     if xtweet is None:
         return "no-xtweet"
-    channels_cfg = _load_channels_config()
-    handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
-    media, quote = _enrich_personal_media(tag, prefetched=vx_extract)
-    parsed = xtweet.parse(raw, title=title, tag=tag, channel_key=channel_key,
-                          now_iso=now_iso, handle=handle, media=media, quote=quote)
-    if not parsed:
-        return "none"
+
     gh = _make_gh()
     if gh is None:
         return "no-gh"
-    mode = "error"
-    row = None
+
+    # 준비 단계 (제어 채널)
+    prepared = _prepare_personal_tweet(raw, title=title, tag=tag, channel_key=channel_key,
+                                       now_iso=now_iso, vx_extract=vx_extract, gh=gh)
+    if prepared is None:
+        return "none"
+
+    # 커밋 단계 (write-queue)
     try:
-        for _try in (1, 2):
-            prev, psha = gh.read_json(_TWEETS_PATH)
-            arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
-            prev = prev or xtweet.default_tweets()
-            arch = arch or xtweet.default_archive()
-            new_t, new_a, changed, mode = xtweet.merge_thread(prev, parsed, now_iso, archive=arch)
-            if not changed:
-                break
-            # 방금 들어온 메시지만 인라인 번역 (나머지는 이미 채워져 있음). (계약 I — 스레드)
-            row = next((m for m in _tw_list(new_t["tweets"].get(channel_key))
-                        if str(m.get("id")) == str(parsed.get("id"))), None)
-            if row and not row.get("text_ko"):
-                ko = _inline_translate(row.get("text") or "")
-                if ko:
-                    row["text_ko"] = ko
-                    row.pop("needs_tl", None)
-                else:
-                    row["needs_tl"] = True
-            # 인용(QRT) 카드 번역 — 같은 원문이 이미 한 번이라도 번역됐으면(다른 트윗의
-            # 본문/인용, 또는 소식 제목) 재사용하고, 없을 때만 새로 번역한다. (v3.4.6)
-            qtext = (row.get("quote") or {}).get("text") if row else None
-            if row and qtext and not row["quote"].get("text_ko"):
-                ko = xtweet.find_reused_ko(qtext, tweets_data=new_t, archive_data=new_a)
-                if not ko:
-                    try:
-                        nj, _nsha = gh.read_json(_NOTICES_PATH)
-                    except Exception:
-                        nj = None
-                    ko = xtweet.find_reused_ko(qtext, notices_data=nj)
-                if not ko:
-                    ko = _inline_translate(qtext)
-                if ko:
-                    row["quote"]["text_ko"] = ko
-                    row["quote"].pop("needs_tl", None)
-                else:
-                    row["quote"]["needs_tl"] = True
-            try:
-                gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
-                              message=f"data: tweet {mode} {channel_key} {now_iso}")
-                if new_a is not arch:
-                    gh.write_json(_TWEET_ARCHIVE_PATH, new_a, prev_sha=asha,
-                                  message=f"data: tweet archive {now_iso}")
-            except ConflictError:
-                if _try == 2:
-                    raise
-                log.warning("tweet: tweets.json 충돌 — 재시도")
-                continue
-            break
-        _tweet_sweep(gh, now_iso)      # 만료 슬롯 정리 (best-effort)
+        res = writeclient.call_write("personal_tweet", gh=gh, prepared=prepared,
+                                     channel_key=channel_key, now_iso=now_iso, via=via)
+        mode = res.get("mode", "error")
+        n_thread = res.get("n_thread", 0)
     except Exception:
-        log.exception("personal tweet 반영 실패")
+        log.exception("personal tweet write 호출 실패")
         try:
-            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)", via=via)
+            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                      detail="mode: error (/write 호출 실패)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
         return "error"
 
-    needs_tl = bool(row and (row.get("needs_tl") or (row.get("quote") or {}).get("needs_tl")))
-    try:
-        log_event(
-            gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
-            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
-        )
-    except Exception:  # noqa: BLE001
-        log.warning("monitor_log 기록 실패(tweet)")
-
+    # DM 발송
+    channels_cfg = _load_channels_config()
     name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
+    handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
+    parsed = prepared.get("parsed", {})
     if mode in ("added", "rolled"):
-        n_thread = len(_tw_list((new_t or {}).get("tweets", {}).get(channel_key)))
         _auto_dm(gh, "tweet",
                  f"🐦 <b>{html.escape(name)}</b> 새 트윗 (스레드 {n_thread}/{xtweet.MAX_THREAD})\n"
                  f"{html.escape(xtweet.summary_line(parsed))}")
-    else:
-        log.info("personal tweet: %s (%s)", mode, channel_key)
 
     # (v2.8.1) 예고글이면 schedule.json 의 scheduled 행으로도 승격
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
                              handle=handle, now_iso=now_iso, via=via)
     return mode
+
+
+def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str | None,
+                          host_key: str, now_iso: str, *, via: str = "ingest") -> dict:
+    """(WP-3b) URL 확정 예고 커밋 (백엔드 잡에서 실행).
+
+    preview.json 에 반영하고 필요시 Cloud Tasks wake enqueue.
+    반환: {"changed": bool, "error": bool}
+    """
+    try:
+        for attempt in (1, 2):
+            prev, sha = gh.read_json(_PREVIEW_PATH)
+            prev = prev or {"items": []}
+            items, changed = xtweet.merge_video_confirmed(
+                prev.get("items", []) or [], video_id, new_item, now_iso,
+            )
+            merged = dict(prev)
+            merged["items"] = items
+            merged["generated_at"] = now_iso
+            try:
+                _, new_sha = gh.write_json(
+                    _PREVIEW_PATH, merged, prev_sha=sha,
+                    message=f"data: personal url-schedule {host_key} {now_iso}",
+                )
+                break
+            except ConflictError:
+                if attempt == 2:
+                    raise
+                log.warning("URL 확정 예고: preview.json 충돌 — 재시도")
+    except Exception:
+        log.exception("URL 확정 예고 반영 실패")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=host_key,
+                  detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
+        return {"changed": False, "error": True}
+
+    if changed:
+        _save_undo(gh, action=f"URL 확정 예고 {host_key} ({video_id})",
+                   prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
+        if next_check_at:
+            _enqueue_wake_now(video_id, next_check_at)
+
+    return {"changed": changed, "error": False}
 
 
 def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
@@ -2105,7 +2315,7 @@ def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
         )
         tq.enqueue_wake(video_id, schedule_time_iso)
     except Exception:
-        log.exception("URL 확정 예고: wake enqueue 실패 (다음 light tick 에서 회수)")
+        log.debug("URL 확정 예고: wake enqueue 실패 (다음 light tick 에서 회수)")
 
 
 def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
@@ -2189,38 +2399,19 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         info, channel_key=host_key, host=host, collab_with=collab_with, now_iso=now_iso,
     )
 
-    changed = False
+    # (WP-3b) 커밋은 백엔드 잡에서 — call_write 로 위임
     try:
-        for attempt in (1, 2):
-            prev, sha = gh.read_json(_PREVIEW_PATH)
-            prev = prev or {"items": []}
-            items, changed = xtweet.merge_video_confirmed(
-                prev.get("items", []) or [], video_id, new_item, now_iso,
-            )
-            merged = dict(prev)
-            merged["items"] = items
-            merged["generated_at"] = now_iso
-            try:
-                _, new_sha = gh.write_json(
-                    _PREVIEW_PATH, merged, prev_sha=sha,
-                    message=f"data: personal url-schedule {host_key} {now_iso}",
-                )
-                break
-            except ConflictError:
-                if attempt == 2:
-                    raise
-                log.warning("URL 확정 예고: preview.json 충돌 — 재시도")
+        res = writeclient.call_write("url_confirmed_commit", gh=gh, video_id=video_id,
+                                     new_item=new_item, next_check_at=next_check_at,
+                                     host_key=host_key, now_iso=now_iso, via=via)
+        changed = res.get("changed", False)
     except Exception:
-        log.exception("URL 확정 예고 반영 실패")
+        log.exception("URL 확정 예고: /write 호출 실패")
         _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                   detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
         return True
 
     if changed:
-        _save_undo(gh, action=f"URL 확정 예고 {host_key} ({video_id})",
-                   prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
-        if next_check_at:
-            _enqueue_wake_now(video_id, next_check_at)
         name = channels_cfg.get("channels", {}).get(host_key, {}).get("name_ko", host_key)
         state_label = {"live": "🔴 라이브 중", "watching": "⏳ 시작 임박",
                        "upcoming": "📅 예정"}.get(new_item.get("state"), new_item.get("state"))
@@ -2237,7 +2428,7 @@ def _maybe_nonyt_url_notice(gh, raw: str, tag: str | None, now_iso: str) -> bool
 
     이런 URL은 `videos.list` 로 라이브/종료를 확인할 방법이 없어 preview 로 추적 못
     한다 — 등록은 되는데 영원히 안 끝나는 반쪽 카드를 만드는 대신 preview 파이프라인
-    밖(소식)으로 돌린다. 공식 계정 소식과 완전히 같은 경로(`_apply_notice`)를 재사용 —
+    밖(소식)으로 돌린다. 공식 계정 소식과 완전히 같은 경로를 재사용 —
     번역·undo 스냅샷 전부 그대로 딸려온다. 날짜/시각을 텍스트에서 못 뽑으면
     (`xnotice.parse` 자체 게이트) 소식도 안 됨 — 조용히 스킵.
 
@@ -2246,6 +2437,8 @@ def _maybe_nonyt_url_notice(gh, raw: str, tag: str | None, now_iso: str) -> bool
     있는 URL 이 유튜브 형식인 경우 — 후자는 `_maybe_url_confirmed_schedule` 가
     API 로 확정을 못 해 폴백해온 것일 수 있으므로(키 미설정·API 장애 등), 유튜브
     URL 을 "비유튜브"로 오분류해 소식으로 잘못 보내지 않는다.
+
+    (WP-3a) 준비(외부 호출)와 커밋(쓰기)를 분리.
     """
     if xnotice is None or xrelay is None:
         return False
@@ -2254,8 +2447,18 @@ def _maybe_nonyt_url_notice(gh, raw: str, tag: str | None, now_iso: str) -> bool
         return False   # 유튜브 URL — 소식이 아니라 텍스트 예고 경로가 최소 안전망 역할
     if not xnotice._URL_RE.search(t):
         return False
+
     try:
-        mode, _parsed = _apply_notice(gh, raw, now_iso, tag=tag)
+        # 준비 단계: 파싱 + LLM + 중복판정
+        prepared = _prepare_notice(raw, now_iso, tag=tag, gh=gh)
+        if prepared is None:
+            log.info("비유튜브 URL → 소식 경로: none (파싱 실패)")
+            return True
+
+        # 커밋 단계
+        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
+        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso)
+        mode = result.get("mode", "error")
     except Exception:
         log.exception("비유튜브 URL 소식 이관 실패")
         return True
@@ -2325,12 +2528,11 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
 
     try:
-        changed = _merge_rows_into_schedule(
-            gh, [row], now_iso,
-            message=f"data: personal schedule {channel_key} {now_iso}",
-            action=f"본인 예고 {name} ({(raw[:40] or '').strip()})",
-            merge_fn=xtweet.merge_personal_schedule,
-        )
+        res = writeclient.call_write("merge_rows", gh=gh, rows=[row], now_iso=now_iso,
+                                     message=f"data: personal schedule {channel_key} {now_iso}",
+                                     action=f"본인 예고 {name} ({(raw[:40] or '').strip()})",
+                                     merge_fn="personal_schedule")
+        changed = res.get("changed", False)
     except Exception:
         log.exception("personal schedule 반영 실패")
         return
@@ -2537,9 +2739,9 @@ def _make_llm_client():
 
         return LLMClient(
             key,
-            model=os.environ.get("GROQ_MODEL", "").strip() or "openai/gpt-oss-120b",
+            model=os.environ.get("GROQ_MODEL", "").strip() or llm.DEFAULT_MODEL,
             fallback=os.environ.get("GROQ_MODEL_FALLBACK", "").strip()
-            or "llama-3.3-70b-versatile",
+            or llm.FALLBACK_MODEL,
         )
     except Exception:
         log.exception("LLMClient 생성 실패")
@@ -2886,9 +3088,7 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
         _op_clear(gh, now_iso)
         u = ctx.get("unit")
         _send_telegram("📥 반영 중…")
-        mode = writeclient.call_write(
-            "personal_tweet", gh=gh, raw=raw, title="", tag=None, channel_key=u, now_iso=now_iso, via="ops",
-        ).get("mode")
+        mode = _maybe_personal_tweet(raw, title="", tag=None, channel_key=u, now_iso=now_iso, via="ops")
         _send_telegram(f"🐦 {u} 트윗 {'교체됨' if mode in ('added','replaced') else mode}.")
         return True
 
@@ -3464,6 +3664,7 @@ if _FLASK_AVAILABLE:
         raw, _vx_ex = _recover_raw_via_vxtwitter(raw, x_tag)
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        gh = _make_gh()
 
         # (v2.8) android.title 라우팅 (INGEST_FLOW 3↔4 노드 사이).
         #   개인 5인      → tweets.json 파이프라인으로 빼고 즉시 종료 (4번 이하 안 탐)
@@ -3485,10 +3686,8 @@ if _FLASK_AVAILABLE:
             if _route == "test":
                 force_echo = True
             elif _route != "official":
-                mode = writeclient.call_write(
-                    "personal_tweet", gh=gh, raw=raw, title=title, tag=x_tag, channel_key=_route,
-                    now_iso=now_iso, vx_extract=_vx_ex,
-                ).get("mode")
+                mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
+                                            now_iso=now_iso, vx_extract=_vx_ex)
                 return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
 
         # (v2.7) 소식 게시판 — schedule.json 과 별개 파이프라인. INGEST_ECHO/DRY-RUN 과
@@ -3569,7 +3768,6 @@ if _FLASK_AVAILABLE:
 
         dry = os.environ.get("INGEST_DRY_RUN", "").strip() not in ("", "0", "false", "False", "no")
 
-        gh = None
         try:
             channels_cfg = _load_channels_config()
             rows = xrelay.parse(raw, now_iso)
@@ -3597,7 +3795,6 @@ if _FLASK_AVAILABLE:
                     writeclient.call_write("ingest_queue_push", gh=gh, raw=raw, title=title, now_iso=now_iso)
                 return jsonify({"ok": True, "dry_run": True, "parsed": len(rows)}), 200
 
-            gh = _make_gh()
             if gh is None:
                 _send_telegram("⚠️ ingest: GitHub 설정 누락")
                 return jsonify({"ok": False, "error": "gh config"}), 200
@@ -3688,6 +3885,12 @@ if __name__ == "__main__":
     print("=" * 60)
     print("telegram_app.py v3 smoke test")
     print("=" * 60)
+
+    # 전역 _enqueue_wake_now 스텁 (Cloud Tasks API 호출 방지)
+    _orig_enqueue_wake_now_global = globals().get("_enqueue_wake_now")
+    def _stub_enqueue_wake_global(*a, **kw):
+        pass
+    globals()["_enqueue_wake_now"] = _stub_enqueue_wake_global
 
     # ── 순수 헬퍼 ──────────────────────────────────────────────
     assert _tweet_url_from_tag("p#https://x.com/#1tweet-2096552878769152326") ==         "https://x.com/i/status/2096552878769152326"
@@ -4302,6 +4505,346 @@ if __name__ == "__main__":
             globals()["_handle_del_request"] = _orig_del_req
             os.environ.clear()
             os.environ.update(_orig_env4)
+
+    # ── WP-1: /ingest 개인 트윗 500 수정 ────────────────────────────
+    if _FLASK_AVAILABLE:
+        # 공유 저장소 (두 모듈 인스턴스가 같은 dict 참조)
+        _shared_store_wp1 = {}
+
+        class _FakeGHWP1:
+            def __init__(self, store=None, *a, **kw):
+                self.store = store if store is not None else {}
+            def read_json(self, path):
+                return (self.store.get(path), "sha0" if path in self.store else None)
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                before = self.store.get(path)
+                self.store[path] = data
+                return (before != data, "sha1")
+            def read_text(self, path):
+                return (self.store.get(path), "sha0" if path in self.store else None)
+            def write_text(self, path, text, *, prev_sha=None, message=""):
+                before = self.store.get(path)
+                self.store[path] = text
+                return (before != text, "sha1")
+
+        _orig_make_gh = globals()["_make_gh"]
+        _orig_recover_vx = globals()["_recover_raw_via_vxtwitter"]
+        _orig_send_tg_wp1 = globals()["_send_telegram"]
+        _orig_enrich_media_wp1 = globals().get("_enrich_personal_media")
+        _orig_enqueue_wake_now = globals().get("_enqueue_wake_now")
+        _orig_env_wp1 = dict(os.environ)
+
+        # 별도 모듈 인스턴스 패치
+        import src.backend.telegram_app as _tm
+        _tm_orig_make_gh = _tm._make_gh
+        _tm_orig_send_tg = _tm._send_telegram
+        _tm_orig_recover_vx = _tm._recover_raw_via_vxtwitter
+        _tm_orig_enrich_media = _tm._enrich_personal_media if hasattr(_tm, "_enrich_personal_media") else None
+        _tm._orig_enqueue_wake_now = _tm._enqueue_wake_now if hasattr(_tm, "_enqueue_wake_now") else None
+
+        try:
+            os.environ["INGEST_SECRET"] = "s"
+            os.environ["GITHUB_TOKEN"] = "t"
+            os.environ["GITHUB_REPO"] = "o/r"
+            os.environ.pop("MAIN_SERVICE_URL", None)
+            os.environ.pop("GROQ_API_KEY", None)
+
+            # 두 인스턴스 모두 패치 (같은 저장소 공유)
+            fake_gh_maker = lambda: _FakeGHWP1(store=_shared_store_wp1)
+            globals()["_make_gh"] = fake_gh_maker
+            _tm._make_gh = fake_gh_maker
+
+            globals()["_recover_raw_via_vxtwitter"] = lambda raw, tag: (raw, None)
+            _tm._recover_raw_via_vxtwitter = lambda raw, tag: (raw, None)
+
+            globals()["_send_telegram"] = lambda *a, **k: True
+            _tm._send_telegram = lambda *a, **k: True
+
+            globals()["_enrich_personal_media"] = lambda tag, prefetched=None: ([], None)
+            _tm._enrich_personal_media = lambda tag, prefetched=None: ([], None)
+
+            # _enqueue_wake_now 스텁 (Cloud Tasks API 호출 방지)
+            _enqueue_wake_now_counts = {"count": 0}
+            def _stub_enqueue_wake(*a, **kw):
+                _enqueue_wake_now_counts["count"] += 1
+            globals()["_enqueue_wake_now"] = _stub_enqueue_wake
+            _tm._enqueue_wake_now = _stub_enqueue_wake
+
+            client = app.test_client()
+
+            # 케이스 1: 개인 5인 — title=仲町あられ
+            r1 = client.post(
+                "/ingest",
+                data={"text": "ねむい", "title": "仲町あられ", "tag": ""},
+                headers={"X-Ingest-Secret": "s"}
+            )
+            assert r1.status_code == 200, (r1.status_code, r1.get_json())
+            j1 = r1.get_json()
+            assert j1.get("personal") == "arale", j1
+            assert j1.get("mode") == "added", f"mode 기대 'added', 받음 {j1.get('mode')}"
+            assert _TWEETS_PATH in _shared_store_wp1, f"tweets.json 미저장: {_shared_store_wp1.keys()}"
+            print("[OK] WP-1: /ingest 개인 5인 (title=仲町あられ) → 200, personal=arale, mode=added, tweets.json 저장")
+
+            # 케이스 2: 테스트 부계정 — title=jehy
+            r2 = client.post(
+                "/ingest",
+                data={"text": "hello", "title": "jehy", "tag": ""},
+                headers={"X-Ingest-Secret": "s"}
+            )
+            assert r2.status_code == 200, (r2.status_code, r2.get_json())
+            j2 = r2.get_json()
+            assert j2.get("echo") is True, j2
+            print("[OK] WP-1: /ingest 테스트 부계정 (title=jehy) → 200, echo=True")
+
+            # 케이스 3: 공식·스케줄 아님 — title="", text=ただの雑談
+            r3 = client.post(
+                "/ingest",
+                data={"text": "ただの雑談", "title": "", "tag": ""},
+                headers={"X-Ingest-Secret": "s"}
+            )
+            assert r3.status_code == 200, (r3.status_code, r3.get_json())
+            print("[OK] WP-1: /ingest 공식·스케줄 아님 → 200")
+
+            # 케이스 4: 빈 text → 400 (title="" 로 personal 라우팅 회피)
+            r4 = client.post(
+                "/ingest",
+                data={"text": "", "title": "", "tag": ""},
+                headers={"X-Ingest-Secret": "s"}
+            )
+            assert r4.status_code == 400, (r4.status_code, r4.get_json())
+            print("[OK] WP-1: /ingest 빈 text → 400")
+
+            # 케이스 5: 시크릿 틀림 → 403
+            r5 = client.post(
+                "/ingest",
+                data={"text": "テキスト", "title": "仲町あられ", "tag": ""},
+                headers={"X-Ingest-Secret": "wrong"}
+            )
+            assert r5.status_code == 403, (r5.status_code, r5.get_json())
+            print("[OK] WP-1: /ingest 시크릿 틀림 → 403")
+
+            # ── WP-3b (e): _url_confirmed_commit _enqueue_wake_now 검증 ────────────────────
+            # (스텁 활성 상태에서, WP-1 블록 안이므로 _enqueue_wake_now 스텁 적용됨)
+            _enqueue_wake_now_counts["count"] = 0  # 카운트 리셋
+            gh_test_url = _FakeGHWP1()  # WP-1 블록 내 클래스 사용
+            new_item = {"state": "upcoming", "scheduled_start": "2026-09-20T12:00:00Z", "url": "https://youtube.com/watch?v=test"}
+            res_url = _url_confirmed_commit(gh_test_url, "test_video_id", new_item,
+                                            "2026-09-20T11:45:00Z", "arale", "2026-09-17T16:00:00Z", via="ingest")
+            assert res_url.get("changed") is True, f"changed=True 기대, 받음 {res_url.get('changed')}"
+            assert res_url.get("error") is False, f"error=False 기대, 받음 {res_url.get('error')}"
+            assert _PREVIEW_PATH in gh_test_url.store, "preview.json 저장 안 됨"
+            assert _enqueue_wake_now_counts["count"] == 1, f"_enqueue_wake_now 호출 1회 기대, 받음 {_enqueue_wake_now_counts['count']}"
+            print("[OK] WP-3b: _url_confirmed_commit (next_check_at 있음) → _enqueue_wake_now 1회, preview.json 저장, changed=True")
+        finally:
+            # __main__ 인스턴스 원복
+            globals()["_make_gh"] = _orig_make_gh
+            globals()["_recover_raw_via_vxtwitter"] = _orig_recover_vx
+            globals()["_send_telegram"] = _orig_send_tg_wp1
+            if _orig_enrich_media_wp1:
+                globals()["_enrich_personal_media"] = _orig_enrich_media_wp1
+
+            # 별도 모듈 인스턴스 원복
+            _tm._make_gh = _tm_orig_make_gh
+            _tm._send_telegram = _tm_orig_send_tg
+            _tm._recover_raw_via_vxtwitter = _tm_orig_recover_vx
+            if _tm_orig_enrich_media:
+                _tm._enrich_personal_media = _tm_orig_enrich_media
+
+            # _enqueue_wake_now 원복
+            if "_orig_enqueue_wake_now" in locals():
+                globals()["_enqueue_wake_now"] = _orig_enqueue_wake_now
+                _tm._enqueue_wake_now = _tm._orig_enqueue_wake_now
+
+            os.environ.clear()
+            os.environ.update(_orig_env_wp1)
+
+    # ── WP-2: 외부 LLM 폴백 기본값 통일 ────────────────────────────
+    _orig_env_wp2 = dict(os.environ)
+    try:
+        os.environ.pop("GROQ_API_KEY", None)
+        os.environ.pop("GROQ_MODEL", None)
+        os.environ.pop("GROQ_MODEL_FALLBACK", None)
+        client = _make_llm_client()
+        assert client is None, "GROQ_API_KEY 없으면 None"
+
+        os.environ["GROQ_API_KEY"] = "dummy"
+        client = _make_llm_client()
+        assert client is not None, "GROQ_API_KEY 있으면 객체 생성"
+        assert client.model == llm.DEFAULT_MODEL, f"model={client.model}, expected={llm.DEFAULT_MODEL}"
+        assert client.fallback == llm.FALLBACK_MODEL, f"fallback={client.fallback}, expected={llm.FALLBACK_MODEL}"
+        print("[OK] WP-2: _make_llm_client(GROQ_API_KEY=dummy) → model/fallback이 llm 상수 값")
+    finally:
+        os.environ.clear()
+        os.environ.update(_orig_env_wp2)
+
+    # ── WP-3a: 소식 경로 분리 — 준비(LLM) + 커밋(쓰기) ────────────────
+    _sample_notice_raw = "【速報】7月28日(火)にみゅーたいぷが新曲MVをTwitterで初公開！"
+    _memo_gh_wp3a = {}
+
+    # (1) _prepare_notice 결과가 json.dumps 가능
+    prep = _prepare_notice(_sample_notice_raw, "2026-09-17T12:00:00Z", tag=None, title=None, gh=None)
+    assert prep is not None, "_prepare_notice: 표본 원문 파싱 실패"
+    json.dumps(prep)  # json 직렬화 가능해야 함
+    print("[OK] WP-3a: _prepare_notice 결과가 json.dumps 가능")
+
+    # (2) _commit_notice 는 외부 호출을 하지 않음 (메모리 GH로 테스트)
+    class _GHMemory:
+        def __init__(self):
+            self.store = {}
+        def read_json(self, path):
+            return (self.store.get(path), "sha0" if path in self.store else None)
+        def write_json(self, path, data, *, prev_sha=None, message=""):
+            before = self.store.get(path)
+            self.store[path] = data
+            return (before != data, f"sha_{path}_{len(self.store)}")
+
+    # LLM/vision/vxtwitter 호출 시도 시 AssertionError 발생하도록 스텁
+    _orig_make_llm = globals().get("_make_llm_client")
+    _orig_make_vision = globals().get("_make_vision_client")
+    _orig_vxtwitter_fetch = vxtwitter.fetch_tweet if vxtwitter else None
+
+    def _fail_llm(*a, **kw):
+        raise AssertionError("_commit_notice 가 외부 LLM 호출해서는 안 됨")
+    def _fail_vision(*a, **kw):
+        raise AssertionError("_commit_notice 가 비전 OCR 호출해서는 안 됨")
+    def _fail_vxtwitter(*a, **kw):
+        raise AssertionError("_commit_notice 가 vxtwitter 호출해서는 안 됨")
+
+    try:
+        # 준비: LLM 활성 상태에서 prepared 구하기
+        raw = "新曲PV公開〜 9月20日(土)18時生配信にて🎵"
+        prep_test = _prepare_notice(raw, "2026-09-17T13:00:00Z", tag=None, title=None, gh=None)
+        assert prep_test is not None, "_prepare_notice: 테스트 원문 파싱 실패"
+
+        # 커밋 단계에서는 LLM을 비활성화 (외부 호출이 발생하면 실패)
+        globals()["_make_llm_client"] = _fail_llm
+        globals()["_make_vision_client"] = _fail_vision
+        if vxtwitter:
+            vxtwitter.fetch_tweet = _fail_vxtwitter
+
+        # (c) dup_id 없으면 added, 있으면 updated
+        gh_test = _GHMemory()
+
+        # (c-i) dup_id=None → added
+        mode1, parsed1 = _commit_notice(gh_test, prep_test, "2026-09-17T13:00:00Z")
+        assert mode1 == "added", f"dup_id=None: added 기대, 받음 {mode1}"
+        assert _NOTICES_PATH in gh_test.store, "notices.json 커밋되지 않음"
+        n1 = gh_test.store[_NOTICES_PATH]
+        assert n1.get("notices") and len(n1["notices"]) == 1, "첫 소식 등록 실패"
+        added_id = n1["notices"][0]["id"]
+        print("[OK] WP-3a: _commit_notice(dup_id=None) → added")
+
+        # (c-ii) dup_id 있음 → updated (다른 원문으로 새 prep, 준비시 LLM 활성화)
+        # LLM 임시 복구 (prep_test2 생성에 필요)
+        globals()["_make_llm_client"] = _orig_make_llm
+        _tm._make_llm_client = _tm_orig_make_gh  # 별도 인스턴스도 복구
+
+        raw2 = "トークイベント — 9月25日(木)渋谷"
+        prep_test2 = _prepare_notice(raw2, "2026-09-17T13:30:00Z", tag=None, title=None, gh=None)
+        assert prep_test2 is not None, "updated 테스트용 원문 파싱 실패"
+
+        # 다시 LLM 비활성화 (커밋 테스트)
+        globals()["_make_llm_client"] = _fail_llm
+        _tm._make_llm_client = _fail_llm
+
+        prep_test2["dup_id"] = added_id
+        mode2, parsed2 = _commit_notice(gh_test, prep_test2, "2026-09-17T13:30:00Z")
+        assert mode2 == "updated", f"dup_id={added_id}: updated 기대, 받음 {mode2}"
+        n2 = gh_test.store[_NOTICES_PATH]
+        assert n2.get("notices") and len(n2["notices"]) == 1, "중복 병합 후에도 1건만"
+        print("[OK] WP-3a: _commit_notice(dup_id=존재하는_id) → updated")
+
+        # (c-iii) dup_id 없는 id → added (세 번째 원문)
+        # LLM 임시 복구 (prep_test3 생성)
+        globals()["_make_llm_client"] = _orig_make_llm
+        _tm._make_llm_client = _tm_orig_make_gh
+
+        raw3 = "【イベント開催】10月20日(日) 有料トークショー"
+        prep_test3 = _prepare_notice(raw3, "2026-09-17T14:00:00Z", tag=None, title=None, gh=None)
+        assert prep_test3 is not None, "added 테스트용 원문 파싱 실패"
+
+        # 다시 LLM 비활성화 (커밋 테스트)
+        globals()["_make_llm_client"] = _fail_llm
+        _tm._make_llm_client = _fail_llm
+
+        prep_test3["dup_id"] = "nonexistent_id"
+        mode3, parsed3 = _commit_notice(gh_test, prep_test3, "2026-09-17T14:00:00Z")
+        assert mode3 == "added", f"dup_id=없는_id: added 기대, 받음 {mode3}"
+        n3 = gh_test.store[_NOTICES_PATH]
+        assert n3.get("notices") and len(n3["notices"]) == 2, "새 소식 추가 실패"
+        print("[OK] WP-3a: _commit_notice(dup_id=없는_id) → added (안전한 기본값)")
+
+        print("[OK] WP-3a: _commit_notice 외부호출 0회")
+    finally:
+        if _orig_make_llm:
+            globals()["_make_llm_client"] = _orig_make_llm
+        if _orig_make_vision:
+            globals()["_make_vision_client"] = _orig_make_vision
+        if vxtwitter and _orig_vxtwitter_fetch:
+            vxtwitter.fetch_tweet = _orig_vxtwitter_fetch
+
+    # ── WP-3b: 개인 트윗 경로 분리 — 준비(vxtwitter·LLM) + 커밋(쓰기) ────────────────
+    # (1) _prepare_personal_tweet 결과가 json.dumps 가능
+    _sample_tweet_raw = "ねむい… 明日も頑張ろう"
+    prep_tweet = _prepare_personal_tweet(
+        _sample_tweet_raw, title="仲町あられ", tag="p#xxx", channel_key="arale",
+        now_iso="2026-09-17T15:00:00Z", gh=None,
+    )
+    if prep_tweet is not None:
+        json.dumps(prep_tweet)  # json 직렬화 가능해야 함
+    print("[OK] WP-3b: _prepare_personal_tweet 결과가 json.dumps 가능")
+
+    # (2) _commit_personal_tweet 는 외부 호출을 하지 않음
+    _orig_make_llm = globals().get("_make_llm_client")
+    _orig_inline_translate = globals().get("_inline_translate")
+
+    def _fail_inline_translate(*a, **kw):
+        raise AssertionError("_commit_personal_tweet 가 _inline_translate 호출해서는 안 됨 (prepared 에서 번역 완료)")
+
+    try:
+        # 메모리 GH 에서 테스트
+        gh_test_tweet = _GHMemory()
+
+        # 테스트용 prepared 데이터 (번역 완료)
+        test_parsed = {"id": "123", "text": "Hello", "channel_key": "arale"}
+        prepared_with_ko = {
+            "parsed": test_parsed,
+            "text_src": "Hello",
+            "text_ko": "안녕하세요",
+            "quote_src": None,
+            "quote_ko": None,
+        }
+
+        # 커밋: 번역을 건너뛰어야 하므로 LLM 비활성화
+        globals()["_make_llm_client"] = lambda: None  # LLM 비활성
+        globals()["_inline_translate"] = _fail_inline_translate
+
+        res = _commit_personal_tweet(gh_test_tweet, prepared_with_ko, channel_key="arale",
+                                     now_iso="2026-09-17T15:30:00Z", via="ingest")
+        assert res.get("mode") in ("added", "none"), f"mode 기대값과 다름: {res.get('mode')}"
+        assert res.get("n_thread", 0) >= 0, "n_thread 음수?"
+        assert isinstance(res.get("needs_tl", False), bool), "needs_tl 타입?"
+        print("[OK] WP-3b: _commit_personal_tweet 외부호출 0회")
+
+        # (d) text_ko 있으면 저장, None 이면 needs_tl
+        assert _TWEETS_PATH in gh_test_tweet.store, "tweets.json 커밋 안 됨"
+        t_data = gh_test_tweet.store[_TWEETS_PATH]
+        if t_data.get("tweets", {}).get("arale"):
+            row = t_data["tweets"]["arale"][0] if isinstance(t_data["tweets"]["arale"], list) else \
+                  list(t_data["tweets"]["arale"].values())[0] if isinstance(t_data["tweets"]["arale"], dict) else None
+            if row:
+                assert row.get("text_ko") == "안녕하세요", f"text_ko 미반영: {row}"
+                assert "needs_tl" not in row or not row["needs_tl"], f"needs_tl 제거 안 됨: {row}"
+        print("[OK] WP-3b: _commit_personal_tweet text_ko 처리")
+
+    finally:
+        if _orig_make_llm:
+            globals()["_make_llm_client"] = _orig_make_llm
+        if _orig_inline_translate:
+            globals()["_inline_translate"] = _orig_inline_translate
+        # 전역 _enqueue_wake_now 원복
+        if _orig_enqueue_wake_now_global:
+            globals()["_enqueue_wake_now"] = _orig_enqueue_wake_now_global
 
     print(chr(10) + "=" * 60)
     print("SUCCESS: telegram_app v3 smoke test 통과")

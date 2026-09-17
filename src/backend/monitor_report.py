@@ -526,10 +526,10 @@ _TEMPLATE = r"""<!doctype html>
 <div id="tabExt" hidden>
   <section class="panel">
     <h2>YouTube Data API quota</h2>
-    <p class="panel-sub">정기수집·라이브감지 트리거(🕒/📡)가 소모한 quota 누적.</p>
+    <p class="panel-sub">정기수집·라이브감지 트리거(🕒/📡) 중 변화가 있어 기록된 실행의 quota 누적 — 변화 없는 실행은 기록하지 않으므로 실제 사용량은 GCP 콘솔 기준.</p>
     <div class="ext-gauge-row">
       <div class="stat-tile"><b id="extYtUsed">—</b><span>누적 사용량 / 10,000</span></div>
-      <div class="stat-tile"><b id="extYtCalls">—</b><span>API 호출 수(tick+wake)</span></div>
+      <div class="stat-tile"><b id="extYtCalls">—</b><span>API 호출 수(기록된 실행)</span></div>
     </div>
     <div class="tl-scroll"><svg id="extYtChart" viewBox="0 0 900 120"></svg></div>
   </section>
@@ -653,7 +653,7 @@ function renderStats(){
     { v: boolPoint.length + tonePoint.length + previewSegs.length, s: "총 이벤트" },
     { v: errors + previewFails, s: "에러 발생", err: true },
     { v: degraded, s: "부분 실패(degraded)" },
-    { v: `${ytUsed} / 10,000`, s: "YouTube quota 사용(누적)" },
+    { v: `${ytUsed} / 10,000`, s: "YouTube quota(기록된 실행)" },
   ];
   document.getElementById("statList").innerHTML = tiles.map(t =>
     `<div class="stat-item${t.err?' error':''}"><b>${t.v}</b><span>${t.s}</span></div>`

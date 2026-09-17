@@ -180,7 +180,7 @@ class LLMClient:
         Args:
             api_key: Groq API 키. 비어있으면 disabled.
             model: 메인 모델 (기본 gpt-oss-120b)
-            fallback: 폴백 모델 (기본 llama-3.3-70b-versatile)
+            fallback: 폴백 모델 (기본 openai/gpt-oss-20b)
             session: 선택사항 requests.Session (테스트 mock 용)
             timeout: API 호출 타임아웃 (초)
         """
@@ -1079,6 +1079,15 @@ if __name__ == "__main__":
     print("✓ translate(): content='' (빈 문자열, None 아님) 도 fallback 트리거 — 이전엔 `is None`만"
           " 검사해 곧장 환각 가드로 떨어져 폴백을 건너뛰었음(실측: 같은 입력 4회 모두 in=155/out='')")
 
+    # ──── WP-2: 외부 LLM 폴백 기본값 통일 ────
+    print("\n[WP-2] LLMClient 기본값이 상수 DEFAULT_MODEL/FALLBACK_MODEL 을 사용")
+    print("-" * 70)
+
+    test_client = LLMClient("dummy-key")
+    assert test_client.model == DEFAULT_MODEL, f"model should be {DEFAULT_MODEL}, got {test_client.model}"
+    assert test_client.fallback == FALLBACK_MODEL, f"fallback should be {FALLBACK_MODEL}, got {test_client.fallback}"
+    print(f"✓ LLMClient(api_key): model={DEFAULT_MODEL}, fallback={FALLBACK_MODEL}")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 14개 스모크 테스트 통과")
+    print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")
     print("=" * 70)
