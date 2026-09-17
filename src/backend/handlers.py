@@ -18,7 +18,7 @@ from . import preview as preview_mod
 from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
-from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_event
+from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_events
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
@@ -31,16 +31,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-# 방송이 방금 end 로 전이했으면 정기 light tick(3h)을 안 기다리고 이만큼 뒤 후속 tick 1개.
+# 방송이 방금 end 로 전이했으면 정기 light tick 을 안 기다리고 이만큼 뒤 후속 tick 1개.
+# (3h 시절 도입한 보정 — 현재는 10분 tick 과 겹치지만 무해해 유지, 제거 여부는 후속 결정)
 _POST_END_RECHECK_SEC = 20 * 60
 
 # video_id 없는 announced 예고는 wake 태스크가 없다. 대신 예고 시각이 이 창 안이면
-# 그 시각으로 light tick 1개 예약 — 공개 방송 정시 시작을 3h 안 기다리고 RSS 로 줍는다.
+# 그 시각으로 light tick 1개 예약.
+# (3h 시절 도입한 보정 — 현재는 10분 tick 과 겹치지만 무해해 유지, 제거 여부는 후속 결정)
 _SCHED_WAKE_LOOKAHEAD_SEC = 3 * 3600
 
 
 def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
-    """announced(자리표시) 아이템 중 '지금 ~ +3h' 에 시작하는 것들의 scheduled_start 목록."""
+    """announced(자리표시) 아이템 중 '지금 ~ +_SCHED_WAKE_LOOKAHEAD_SEC' 에 시작하는 것들의 scheduled_start 목록."""
     try:
         now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
     except ValueError:
@@ -267,6 +269,27 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
     return out
 
 
+def _should_log_run(
+    pv_changed: bool, arch_changed: bool, enqueue_errors: list,
+    preview_event_count: int, translated_total: int
+) -> bool:
+    """tick/wake 이벤트를 모니터링 로그에 기록할지 여부(변화가 있을 때만).
+
+    다음 중 하나라도 참이면 기록한다:
+    - preview 또는 archive 변화
+    - enqueue 오류
+    - preview 전이 이벤트 1건 이상
+    - 번역 sweep 반영(needs_tl 행 해결)
+    """
+    return (
+        pv_changed
+        or arch_changed
+        or bool(enqueue_errors)
+        or preview_event_count > 0
+        or translated_total > 0
+    )
+
+
 def _run(mode: str, woken_video_id: str | None) -> dict:
     cfg = load_config()
     now_iso = _now_iso()
@@ -315,6 +338,13 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         new_preview, transitions, wakes, gone_items = build_preview(
             channels_cfg, videos, prev_preview, now_iso, avatars=avatars,
         )
+
+        # ── 트윗·릴레이 예고 시각 override 재적용 (알려진 지연: wakes 는 override 전 시각 기준) ──
+        try:
+            new_preview["items"] = xtweet.apply_overrides(
+                new_preview.get("items", []), prev_preview.get("items", []), now_iso)
+        except Exception:  # noqa: BLE001
+            log.warning("apply_overrides 실패 — override 없이 진행", exc_info=True)
 
         # ── /del terminate 로 12h 차단된 url · 아이템 단위 편집 락 반영 ──
         try:
@@ -461,23 +491,43 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning("telegram 알림 실패: %s", e)
 
-    # ── 모니터링 이벤트 로그 — 실패해도 주 로직 무영향(1~3단계 합의 스키마) ──
+    # ── 모니터링 이벤트 로그 — 실패해도 주 로직 무영향(배치 처리, 변화 없는 실행 스킵) ──
     try:
+        events = []
+
+        # preview 전이 이벤트 수집
+        preview_events = _preview_log_events(_pv0.get("items"), new_preview.get("items", []), gone_items)
         enqueue_error_vids = {vid for vid in wakes if any(e.startswith(f"{vid}:") for e in enqueue_errors)}
-        log_event(
-            gh, now_iso, "wake" if is_wake else "tick",
-            RESULT_ERR if enqueue_errors else RESULT_OK,
-            who=woken_video_id or "",
-            detail=f"candidates={len(candidates)} preview_changed={pv_changed}",
-            mode=mode, quota=yt.quota_used, candidates=len(candidates), preview_changed=pv_changed,
-        )
-        for ev in _preview_log_events(_pv0.get("items"), new_preview.get("items", []), gone_items):
+        for ev in preview_events:
             quality = RESULT_DEGRADED if ev.get("video_id") in enqueue_error_vids else RESULT_OK
-            log_event(
-                gh, now_iso, "preview", quality,
-                who=ev.get("channel_key", ""), detail=f"{ev.get('from_state')}→{ev.get('to_state')}",
-                video_id=ev.get("video_id"), item_id=ev.get("id"), title=ev.get("title"),
-            )
+            events.append({
+                "ts": now_iso,
+                "flow": "preview",
+                "result": quality,
+                "who": ev.get("channel_key", ""),
+                "detail": f"{ev.get('from_state')}→{ev.get('to_state')}",
+                "video_id": ev.get("video_id"),
+                "item_id": ev.get("id"),
+                "title": ev.get("title"),
+            })
+
+        # tick/wake 이벤트는 변화가 있을 때만 포함
+        translated_total = sum(tl.values())
+        if _should_log_run(pv_changed, arch_changed, enqueue_errors, len(preview_events), translated_total):
+            run_event = {
+                "ts": now_iso,
+                "flow": "wake" if is_wake else "tick",
+                "result": RESULT_ERR if enqueue_errors else RESULT_OK,
+                "who": woken_video_id or "",
+                "detail": f"candidates={len(candidates)} preview_changed={pv_changed}",
+                "mode": mode,
+                "quota": yt.quota_used,
+                "candidates": len(candidates),
+                "preview_changed": pv_changed,
+            }
+            events.insert(0, run_event)  # tick/wake을 맨 앞에
+
+        log_events(gh, now_iso, events)
     except Exception as e:  # noqa: BLE001
         log.warning("monitor_log 기록 실패: %s", e)
 
@@ -566,5 +616,79 @@ if __name__ == "__main__":
     assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "none"
     assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
     print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
+
+    # _should_log_run 헬퍼 함수 테스트
+    # 무변화 → False
+    assert not _should_log_run(False, False, [], 0, 0), "모두 거짓이면 로그 안 함"
+    print("[OK] _should_log_run: 무변화 → False")
+
+    # pv_changed → True
+    assert _should_log_run(True, False, [], 0, 0), "pv_changed 이면 로그"
+    print("[OK] _should_log_run: pv_changed → True")
+
+    # enqueue_errors → True
+    assert _should_log_run(False, False, ["error"], 0, 0), "enqueue_errors 이면 로그"
+    print("[OK] _should_log_run: enqueue_errors → True")
+
+    # preview 전이 이벤트 → True
+    assert _should_log_run(False, False, [], 1, 0), "preview 전이 이벤트 1건 이상이면 로그"
+    print("[OK] _should_log_run: preview 전이 이벤트 → True")
+
+    # 번역 1건 → True
+    assert _should_log_run(False, False, [], 0, 1), "translated_total > 0 이면 로그"
+    print("[OK] _should_log_run: 번역 → True")
+
+    # arch_changed → True
+    assert _should_log_run(False, True, [], 0, 0), "arch_changed 이면 로그"
+    print("[OK] _should_log_run: arch_changed → True")
+
+    # apply_overrides 연결 확인: _run 함수 소스에서 apply_overrides 가 build_preview 뒤에 있는지
+    import inspect
+    _run_src = inspect.getsource(_run)
+    _build_pos = _run_src.find("build_preview(")
+    _override_pos = _run_src.find("apply_overrides(")
+    assert _build_pos > 0 and _override_pos > _build_pos, \
+        f"apply_overrides 는 build_preview 뒤에 나와야 함 (pos: build={_build_pos}, override={_override_pos})"
+    print("[OK] apply_overrides 연결 확인: build_preview → apply_overrides 순서 OK")
+
+    # xtweet.apply_overrides 직접 테스트: 트윗 유지 + API 승
+    from . import xtweet, preview as preview_mod
+    _snow = "2026-09-01T12:00:00Z"
+    # 트윗 유지 케이스 (API 불변, 60초 이내)
+    # build_preview 가 personal 정보원의 scheduled_start 를 갱신하지 않으므로
+    # new_item 도 prev 값 12:30Z 유지
+    _prev_item = preview_mod.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso="2026-09-01T11:50:00Z",
+        video_id="vid1", scheduled_start="2026-09-01T12:30:00Z",  # 트윗이 당겨놓음
+        info_source="personal", info_at="2026-09-01T11:50:00Z",
+        api_start_seen="2026-09-01T12:00:00Z"  # API 는 원래 12:00
+    )
+    _new_item = preview_mod.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso=_snow,
+        video_id="vid1", scheduled_start="2026-09-01T12:30:00Z",  # build_preview 가 안 건드림
+        api_start_seen="2026-09-01T12:00:00Z",  # api_start_seen 변경 없음 (personal 소스라 갱신 안 함)
+        info_source="personal", info_at="2026-09-01T11:50:00Z"
+    )
+    _out = xtweet.apply_overrides([_new_item], [_prev_item], _snow)
+    # 규칙 5: api_start_seen 이 같으면 (60초 이내) 그대로 → scheduled_start 변경 없음
+    assert _out[0]["scheduled_start"] == "2026-09-01T12:30:00Z", "트윗값 복원 실패"
+    assert _out[0]["info_source"] == "personal", "info_source 변경 실패"
+    print("[OK] xtweet.apply_overrides: 트윗 유지 (API 불변 60초 이내)")
+
+    # API 승 케이스 (API 변경, 60초 초과)
+    # build_preview 가 personal 정보원의 scheduled_start 를 갱신하지 않으므로
+    # new_item 도 prev 값 12:30Z 유지. 하지만 api_start_seen 은 갱신된다.
+    _new_item2 = preview_mod.make_item(
+        channel_key="arale", state="upcoming", source="personal", now_iso=_snow,
+        video_id="vid1", scheduled_start="2026-09-01T12:30:00Z",  # build_preview 가 안 건드림
+        api_start_seen="2026-09-01T13:00:00Z",  # api_start_seen 갱신됨 (60초 이상 차이)
+        info_source="personal", info_at="2026-09-01T11:50:00Z"
+    )
+    _out2 = xtweet.apply_overrides([_new_item2], [_prev_item], _snow)
+    # 규칙 6: api_start_seen 이 60초 이상 차이나면 API 승 → scheduled_start 를 api_start_seen 으로
+    assert _out2[0]["scheduled_start"] == "2026-09-01T13:00:00Z", "API 값 미적용"
+    assert _out2[0]["info_source"] == "api", "info_source 변경 실패"
+    assert _out2[0]["info_at"] == _snow, "info_at 미갱신"
+    print("[OK] xtweet.apply_overrides: API 승 (API 변경 60초 초과)")
 
     print("SUCCESS: handlers self-test 통과")

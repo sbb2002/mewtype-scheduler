@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from ..collector.youtube import VideoInfo
 
 # videos.list 응답에서 추적 중이던 방송이 통째로 빠지면 "removed" 으로 보기 전
-# 최소 유예 시간 (light tick 3h 간격 2회 + 여유). reconcile 과 동일.
+# 최소 유예 시간. (3h 시절 도입한 보정 — light tick 간격 2회 + 여유 기준, 현재도 값 유지)
 STALE_REMOVE_SEC = 6 * 3600 + 1800  # 6.5h
 
 # announced/upcoming 예고가 실물 upcoming/live 로 확정되는 시간 범위.

@@ -44,6 +44,63 @@ def event_path(now_iso: str) -> str:
     return f"monitoring/events-{bucket_date_kst(now_iso)}.jsonl"
 
 
+def log_events(gh, now_iso: str, events: list[dict]) -> None:
+    """gh(GitHubStore, data 저장소용)로 오늘자 이벤트 로그에 여러 줄 append(배치).
+
+    빈 리스트면 GitHub을 건드리지 않고 반환.
+    각 원소는 {"flow", "result", "who"?, "detail"?, ...추가필드}.
+    result는 ok/degraded/err 검증. ConflictError는 기존과 같은 2회 재시도.
+    커밋 메시지: n==1 이면 "data: monitor {flow} {now_iso}",
+                n>1 이면 "data: monitor {첫 flow}(+{n-1}) {now_iso}"
+    """
+    from .gh_store import ConflictError
+
+    if not events:
+        return
+
+    # 모든 이벤트의 result 검증
+    for ev in events:
+        result = ev.get("result")
+        if result not in _VALID_RESULTS:
+            raise ValueError(f"result must be one of {_VALID_RESULTS}, got {result!r}")
+
+    # 줄 생성 — 각 줄을 {"ts": now_iso, "who": "", "detail": "", **ev} 로 만들어
+    # 기존 log_event 줄 형식(ts/who/detail 항상 존재)과 같게 한다.
+    # 원소에 ts가 있으면 그 값이 우선(현재 동작 유지).
+    path = event_path(now_iso)
+    lines = []
+    for ev in events:
+        ts = ev.get("ts") or now_iso
+        who = ev.get("who", "")
+        detail = ev.get("detail", "")
+        # ts/who/detail 제외한 나머지 필드들
+        extra = {k: v for k, v in ev.items() if k not in ("ts", "who", "detail")}
+        line = json.dumps(
+            {"ts": ts, "who": who, "detail": detail, **extra},
+            ensure_ascii=False, sort_keys=True,
+        )
+        lines.append(line)
+
+    # 커밋 메시지 생성
+    first_flow = events[0].get("flow", "unknown")
+    if len(events) == 1:
+        message = f"data: monitor {first_flow} {now_iso}"
+    else:
+        message = f"data: monitor {first_flow}(+{len(events) - 1}) {now_iso}"
+
+    # 한 번 읽고 모든 줄을 이어붙여 한 번 쓰기, 충돌 시 2회 재시도
+    for attempt in range(2):
+        text, sha = gh.read_text(path)
+        new_text = (text or "") + "\n".join(lines) + "\n"
+        try:
+            gh.write_text(path, new_text, prev_sha=sha, message=message)
+            return
+        except ConflictError as e:
+            if attempt == 1:
+                raise
+            logger.warning("monitor_log: 배치 충돌 — 재시도: %s", e)
+
+
 def log_event(
     gh, now_iso: str, flow: str, result: str, *, who: str = "", detail: str = "", **extra
 ) -> None:
@@ -53,27 +110,9 @@ def log_event(
     주 로직과 분리해뒀으므로(예: telegram 알림 실패가 tick을 막지 않듯) 그 관례를 따른다.
     ConflictError(다른 실행이 같은 파일에 동시에 append)는 최신 내용을 다시 읽어 2회까지 재시도.
     """
-    from .gh_store import ConflictError
-
-    if result not in _VALID_RESULTS:
-        raise ValueError(f"result must be one of {_VALID_RESULTS}, got {result!r}")
-
-    path = event_path(now_iso)
-    line = json.dumps(
-        {"ts": now_iso, "flow": flow, "result": result, "who": who, "detail": detail, **extra},
-        ensure_ascii=False, sort_keys=True,
-    )
-
-    for attempt in range(2):
-        text, sha = gh.read_text(path)
-        new_text = (text or "") + line + "\n"
-        try:
-            gh.write_text(path, new_text, prev_sha=sha, message=f"data: monitor {flow} {now_iso}")
-            return
-        except ConflictError as e:
-            if attempt == 1:
-                raise
-            logger.warning("monitor_log: 충돌 — 재시도: %s", e)
+    log_events(gh, now_iso, [
+        {"ts": now_iso, "flow": flow, "result": result, "who": who, "detail": detail, **extra}
+    ])
 
 
 if __name__ == "__main__":
@@ -99,6 +138,7 @@ if __name__ == "__main__":
             self.content = initial
             self.sha = "sha0"
             self.put_calls = 0
+            self.last_message = None  # 마지막 PUT 의 message 저장
         def get(self, url, **kw):
             if self.content == "" and self.sha == "sha0" and self.put_calls == 0:
                 return _Resp(404)
@@ -107,6 +147,7 @@ if __name__ == "__main__":
         def put(self, url, **kw):
             self.put_calls += 1
             body = kw["json"]
+            self.last_message = body.get("message")  # 커밋 메시지 저장
             decoded = base64.b64decode(body["content"]).decode()
             self.content = decoded
             self.sha = f"sha{self.put_calls}"
@@ -151,5 +192,59 @@ if __name__ == "__main__":
     except ValueError:
         pass
     print("✓ log_event: result는 ok/degraded/err 만 허용")
+
+    # 검증 5: log_events 배치 — 3건 → PUT 1회, 3줄 누적
+    sess2 = _FakeSess()
+    gh2 = GitHubStore("tok", "o/r", "data", session=sess2)
+    events = [
+        {"flow": "tick", "result": RESULT_OK, "ts": "2026-09-16T00:05:00Z", "quota": 10},
+        {"flow": "preview", "result": RESULT_OK, "ts": "2026-09-16T00:05:10Z", "video_id": "v1"},
+        {"flow": "preview", "result": RESULT_DEGRADED, "ts": "2026-09-16T00:05:20Z", "video_id": "v2"},
+    ]
+    log_events(gh2, "2026-09-16T00:05:00Z", events)
+    assert sess2.put_calls == 1, f"PUT은 정확히 1회여야 함, 실제 {sess2.put_calls}회"
+    lines = [ln for ln in sess2.content.strip().split("\n") if ln]
+    assert len(lines) == 3, f"3줄 누적 예상, 실제 {len(lines)}줄"
+    print("✓ log_events: 3건 → PUT 1회, 3줄 누적")
+
+    # 검증 6: log_events 빈 리스트 → PUT 0회
+    sess3 = _FakeSess()
+    gh3 = GitHubStore("tok", "o/r", "data", session=sess3)
+    log_events(gh3, "2026-09-16T00:06:00Z", [])
+    assert sess3.put_calls == 0, f"빈 리스트는 PUT 0회여야 함, 실제 {sess3.put_calls}회"
+    print("✓ log_events: 빈 리스트 → PUT 0회")
+
+    # 검증 7: log_events 잘못된 result 값은 거부
+    try:
+        log_events(gh, "2026-09-16T00:07:00Z", [
+            {"flow": "tick", "result": "invalid"}
+        ])
+        assert False, "잘못된 result 는 ValueError 여야 함"
+    except ValueError:
+        pass
+    print("✓ log_events: result 검증")
+
+    # 검증 8: log_events 커밋 메시지 — n==1 일 때 기존 형식, n>1 일 때 확장 형식
+    # n==1: "data: monitor tick 2026-..."
+    sess4 = _FakeSess()
+    gh4 = GitHubStore("tok", "o/r", "data", session=sess4)
+    log_events(gh4, "2026-09-16T00:08:00Z", [
+        {"flow": "tick", "result": RESULT_OK, "ts": "2026-09-16T00:08:00Z"}
+    ])
+    assert sess4.last_message == "data: monitor tick 2026-09-16T00:08:00Z", \
+        f"n==1 메시지 형식 오류: {sess4.last_message!r}"
+    print("✓ log_events: n==1 커밋 메시지 형식 (data: monitor tick 2026-...)")
+
+    # n==3: "data: monitor tick(+2) 2026-..."
+    sess5 = _FakeSess()
+    gh5 = GitHubStore("tok", "o/r", "data", session=sess5)
+    log_events(gh5, "2026-09-16T00:09:00Z", [
+        {"flow": "tick", "result": RESULT_OK},
+        {"flow": "preview", "result": RESULT_OK},
+        {"flow": "preview", "result": RESULT_DEGRADED},
+    ])
+    assert sess5.last_message == "data: monitor tick(+2) 2026-09-16T00:09:00Z", \
+        f"n==3 메시지 형식 오류: {sess5.last_message!r}"
+    print("✓ log_events: n==3 커밋 메시지 형식 (data: monitor tick(+2) 2026-...)")
 
     print("\nSUCCESS: monitor_log.py self-test 통과 (mock)")

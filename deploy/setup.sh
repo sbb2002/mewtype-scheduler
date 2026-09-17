@@ -112,5 +112,7 @@ create_secret TELEGRAM_WEBHOOK_SECRET "webhook secret (임의 문자열)" "${TEL
 create_secret INGEST_SECRET "ingest secret (임의 문자열, 폰 Automate 에도 동일하게)" "${INGEST_SECRET:-}"
 # v3 외부 LLM(Groq) — notice 제목 추출 + notice/개인트윗 번역. 없으면 번역 비활성(원문 노출).
 create_secret GROQ_API_KEY "Groq API 키 (v3 번역/제목추출, 없으면 빈 값 Enter)" "${GROQ_API_KEY:-}"
+# v3.5 healthchecks.io — /monitor 백엔드 상태 조회용 read-only API 키. 없으면 기능 비활성.
+create_secret HEALTHCHECKS_IO_READONLEY_TOKEN "healthchecks.io read-only API 키 (/monitor 백엔드 상태 조회용, 없으면 빈 값 Enter)" "${HEALTHCHECKS_IO_READONLEY_TOKEN:-}"
 
 echo "=== 셋업 완료 ==="

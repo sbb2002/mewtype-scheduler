@@ -44,26 +44,21 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         },
         "apply_notice": lambda gh, a: dict(zip(
             ("mode", "parsed"),
-            t._apply_notice(gh, a["raw"], a["now_iso"], tag=a.get("tag"), title=a.get("title")),
+            t._commit_notice(gh, a.get("prepared"), a["now_iso"]),
         )),
         "notice_sweep": lambda gh, a: {"moved": t._notice_sweep(gh, a["now_iso"])},
         "notice_del_commit": lambda gh, a: t._notice_del_commit(gh, a["nid"], a["now_iso"]),
         "notice_edit_commit": lambda gh, a: t._notice_edit_commit(gh, a["nid"], a["patch"], a["now_iso"]),
-        "personal_tweet": lambda gh, a: {
-            "mode": t._maybe_personal_tweet(
-                a["raw"], title=a.get("title", ""), tag=a.get("tag"),
-                channel_key=a["channel_key"], now_iso=a["now_iso"],
-                vx_extract=a.get("vx_extract"), via=a.get("via", "ingest"),
-            )
-        },
+        "personal_tweet": lambda gh, a: t._commit_personal_tweet(
+            gh, a["prepared"], channel_key=a["channel_key"], now_iso=a["now_iso"],
+            via=a.get("via", "ingest"),
+        ),
         "tweet_sweep": lambda gh, a: {"moved": t._tweet_sweep(gh, a["now_iso"])},
         "tweet_del_commit": lambda gh, a: t._tweet_del_commit(gh, a["unit"], a["now_iso"]),
-        "url_confirmed_schedule": lambda gh, a: {
-            "handled": t._maybe_url_confirmed_schedule(
-                gh, a["raw"], a["channel_key"], a["now_iso"],
-                t._load_channels_config(), via=a.get("via", "ingest"),
-            )
-        },
+        "url_confirmed_commit": lambda gh, a: t._url_confirmed_commit(
+            gh, a["video_id"], a["new_item"], a.get("next_check_at"), a["host_key"],
+            a["now_iso"], via=a.get("via", "ingest"),
+        ),
         "undo_restore": lambda gh, a: t._undo_restore_commit(
             gh, a["path"], a["prev_content"], a["expected_sha"], a["action"], a["now_iso"],
         ),
@@ -99,7 +94,7 @@ if __name__ == "__main__":
     expected = {
         "merge_rows", "remove_broadcast", "apply_notice", "notice_sweep",
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
-        "tweet_del_commit", "url_confirmed_schedule", "undo_restore",
+        "tweet_del_commit", "url_confirmed_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain",
     }
     missing = expected - set(reg)
@@ -109,4 +104,4 @@ if __name__ == "__main__":
         raise AssertionError("dispatch should raise on unknown kind")
     except ValueError:
         pass
-    print("[PASS] writers registry self-test")
+    print("[PASS] writers registry self-test (WP-3a: apply_notice → _commit_notice)")

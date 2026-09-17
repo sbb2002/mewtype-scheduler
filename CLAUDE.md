@@ -92,6 +92,21 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   - `xtweet.parse_schedule` 후기가드(`_RECAP_RE`) 도 별도로 고침 — "추출된 날짜가 과거일
 >     때만 후기로 인정"하던 조건이 오합성된 미래 날짜엔 무력화되던 버그.
 >   상세 설계 대화/흐름도: `docs/v3_pamphlet.html`(devpapers) "개인 트윗 예고 판정" 섹션.
+> - **v3.7** (2026-09-17, `b07d7b5`): **write-queue** — 제어 채널(`mewtype-telegram`)의 `data` 콘텐츠
+>   쓰기를 백엔드 `POST /write`(`concurrency=1`)로 보내 직렬화(`writers.py`/`writeclient.py`). GitHub
+>   Contents API PUT 이 브랜치 HEAD 단위로 충돌해, 같은 초에 들어온 `/ingest` 요청끼리 409 를 내 트윗이
+>   유실된 사고(2026-09-16) 대응. + 소식 LLM 의미 중복판정(같은 날짜만, `llm.duplicate_notice`) +
+>   상시 모니터 페이지(`monitor.html` ← `monitoring/latest.html`, 이스터에그 진입).
+> - **v3.7.1** (2026-09-17): v3.7 점검 후속. 명세 `docs/plan/v3_improvisation.md`, 요약 `docs/VERSION.md`.
+>   - `/ingest` 개인 트윗 500(P0, `gh` 대입 전 사용) 수정 + `/ingest` 라우트 self-test.
+>   - **write-queue A-1**: 외부 LLM·`videos.list`·vxtwitter·비전 OCR 은 **제어 채널에서 준비**
+>     (`_prepare_notice`/`_prepare_personal_tweet`/`_maybe_url_confirmed_schedule`), `/write` 잡은
+>     **커밋만**(`_commit_notice`/`_commit_personal_tweet`/`_url_confirmed_commit`). 외부 장애가 백엔드
+>     `/tick`·`/wake` 를 같이 막지 않게. Cloud Tasks 즉시 wake 등록은 백엔드 잡 안(제어 채널엔 Tasks env 없음).
+>     모니터 로그·`admin_state` 마법사·`control.json` 은 여전히 제어 채널 직접 커밋(A-2 미채택). `docs/SPEC.md` §8.14.
+>   - 백엔드 모니터 로그: 실행당 커밋 최대 1개(`monitor_log.log_events`), 변화 없는 tick/wake 미기록.
+>   - 라이브 후기 wake 3분→5분, 외부 LLM 폴백 기본값 404 모델 제거, `apply_overrides` v3 재작성·연결,
+>     healthchecks Secret 조건부 마운트.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -106,14 +121,18 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **v2.8 (멤버 개인 트윗 — 예고판 상단 편지 배지)**: `docs/old/v2/v2_8_personal_tweets.md`
 
 서버 상시 가동 없음. 무료 인프라만 사용:
-- **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) — 정기 트리거 **Cloud Scheduler** 2잡
-  (baseline JST 06:00 / light 10분(v3.6, 구 3h)) + 방송별 정밀 wake **Cloud Tasks**. 리전 `asia-northeast1`.
-- **저장** = **GitHub `data` 브랜치** — Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
+- **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) 2서비스 — 메인 `mewtype-backend`
+  (`concurrency=1 · max-instances=1`) + 제어 채널 `mewtype-telegram`(텔레그램 웹훅·`/ingest`). 정기 트리거
+  **Cloud Scheduler** 3잡(baseline JST 06:00 / light 10분(v3.6, 구 3h) / monitor KST 06:10) + 방송별 정밀
+  wake **Cloud Tasks**. 리전 `asia-northeast1`.
+- **저장** = **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`
+  (`docs/plan/data_repo_migration.md`). Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
 - **프론트** = **Vercel** 정적 호스팅. 배포 주소 `https://mewtype-schduler.vercel.app/`
   (레포명은 `mewtype-scheduler` 로 고쳤지만 Vercel 프로젝트/도메인은 옛 오타 `mewtype-schduler`
   그대로 — 헷갈리지 말 것). `main` 브랜치 푸시 시 자동 배포(`vercel.json` 은 `data` 브랜치만
   배포 제외). (v1 의 GitHub Actions 수집기는 `src/collector/` + `collect.yml`
-  `workflow_dispatch` 로 남아 있음 — 비상 수동 경로. 정기 cron 은 제거됨.)
+  `workflow_dispatch` 로 남아 있지만 **실행해도 현행 사이트엔 반영 안 됨** — v1 `schedule.json` 을 코드
+  저장소의 `data` 브랜치에 push 하는데, 프론트는 데이터 저장소의 `preview.json` 을 읽는다.)
 
 ## 저장소 구조
 
@@ -135,6 +154,8 @@ src/
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
       main.js          # DOMContentLoaded → poll(스케줄) + pollNotices + pollTweets + 카운트다운 틱
+                       #   (v3.7) 모니터 페이지 이스터에그 진입(PC 키 입력 / 모바일 풋터 버전 15탭)
+    monitor.html       # (v3.7) monitoring/latest.html(데이터 저장소 raw URL)을 iframe 으로 표시. noindex
   collector/           # v1 순수 모듈 — v2 백엔드가 import 재사용. main.py 는 break-glass 전용
     main.py            # v1 오케스트레이션 (python -m src.collector.main [light|deep])
     config.py          # config/channels.json + YOUTUBE_API_KEY 로드
@@ -143,8 +164,13 @@ src/
     reconcile.py       # 상태 판정 + 이전 스냅샷 대비 diff — 순수 함수
     store.py           # schedule.json / archive.json 로드·저장 (변경 시에만 기록)
   backend/             # Cloud Run 서비스 (Flask + gunicorn). v3.0.
-    app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) · `/` 헬스체크(GFE 가 /healthz 가로챔)
-    handlers.py        # (v3) tick/wake → preview_build → preview.json 커밋 + LLM 말단 번역(needs_tl sweep)
+    app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) /write(v3.7, 제어 채널 쓰기 큐)
+                       #   /monitor(Scheduler) · `/` 헬스체크(GFE 가 /healthz 가로챔)
+    handlers.py        # (v3) tick/wake → preview_build → (v3.7.1) apply_overrides → preview.json 커밋
+                       #   + LLM 말단 번역(needs_tl sweep) + (v3.7.1) 모니터 로그 실행당 1커밋·무변화 스킵
+    writers.py         # (v3.7) /write 잡 kind → telegram_app 커밋 함수 매핑(지연 import).
+                       #   (v3.7.1 A-1) 잡은 커밋 전용 — 외부 호출은 제어 채널에서 준비해 인자로 넘김
+    writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출(OIDC, 60초). MAIN_SERVICE_URL 없으면 로컬 디스패치
     preview.py         # (v3) preview.json 계약 A′ — make_item/match_item/sort/promote_state (순수)
     preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수). (v3.1.4) 그룹 공식 채널
                        #      (@BDP_yumemita) 영상 → 5인 팬아웃(host="group")
@@ -153,6 +179,8 @@ src/
                        #        (v3.6) participation(외부 채널 콜라보 참여판정) /
                        #        announces_own_broadcast(텍스트 예고 최종확인) 추가 — 둘 다 최대
                        #        5회 재시도, 5회 모두 실패 시 None(호출부 미등록 처리)
+                       #        (v3.7) duplicate_notice(같은 날짜 소식 의미 중복판정)
+                       #        폴백 기본값 FALLBACK_MODEL=openai/gpt-oss-20b (llama-3.3 은 이 계정에서 404)
     ytnotif.py         # (v3) YouTube 앱 푸시알림 파서 (`chime.*` 키). INGEST_YT_ENABLED 뒤
     vxtwitter.py       # (v3) 트윗 unfurl — 잘린 URL·이미지 복원 (api.vxtwitter.com)
     vision.py          # (v3.2) Groq 비전 OCR — 크로스오버 공지 이미지 속 출연진 이름 판독
@@ -221,7 +249,9 @@ src/
     xtweet.py          # (v2.8) android.title 라우팅(route_by_title) + tweets.json/tweet_archive.json
                        #        계약(parse·merge_tweet·sweep_expired) — 순수. 개인 5인 트윗 전용 파이프라인
                        #        (v2.8.1) parse_schedule(예고 게이트) · merge_personal_schedule(같은 방송 upsert)
-                       #        · apply_overrides(handlers 후처리 — 트윗 시각이 API 재구성을 override)
+                       #        · apply_overrides(handlers 후처리 — 트윗 시각이 API 재구성을 override.
+                       #          v3.7.1 에 v3 형태로 재작성·연결: api_start_seen 이 직전 tick 대비 60초
+                       #          넘게 바뀌면 API 승. 그 전엔 어디서도 호출 안 됐음)
                        #        (v2.8.1+) 수동 /ingest 도 개인 예고 폴백 — 본문 YT URL→videos.list(quota 1)로
                        #        채널 판별, 실패 시 텔레그램에서 유닛 되묻기 (telegram_app._try_personal_ingest)
                        #        (v3.6) resolve_url_host(본인/타멤버/그룹/외부 채널 4갈래) ·
@@ -234,7 +264,8 @@ deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매�
 config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko)
                        #   + (v3.1.4) channels.group — 5인 합동 전용 그룹 공식 채널(@BDP_yumemita),
                        #   channel_order 밖(전용 레인 없음), RSS/API 폴링만
-fixtures/              # schedule.sample.json(프론트/로직 공용), rss_arale.xml(파싱 테스트)
+fixtures/              # preview/notices/tweets.sample.json(프론트), rss_arale.xml(파싱 테스트),
+                       #   vxtwitter.sample.json. schedule.sample.json 은 v1/v2 잔재
 .github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
 data 브랜치 (v3)        # preview.json + preview_archive.json + control.json
                        #   + notices.json / notice_archive.json (소식, +title_ko)
@@ -260,6 +291,9 @@ DATA_DIR=./_data YOUTUBE_API_KEY=xxxx python -m src.collector.main light   # 또
 python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 assert
 python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
+python -m src.backend.writers        # (v3.7) /write 잡 kind 레지스트리
+python -m src.backend.writeclient    # (v3.7) MAIN_SERVICE_URL 없을 때 로컬 디스패치
+python -m src.backend.handlers       # _scheduled_wake_times·_preview_log_events·(v3.7.1) _should_log_run·apply_overrides 연결
 python -m src.backend.preview        # (v3) preview.json 계약 — match_item/sort/promote_state
 python -m src.backend.statemachine   # (v3) FSM 파생 derive() — 0.2 전이표 시나리오
 python -m src.backend.preview_build  # (v3) 6상태 preview 재구성
@@ -286,11 +320,12 @@ bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. G
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
 bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor 스케줄러 잡 (URL 불변이면 생략 가능)
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스
+# writers.py·telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 # 전체 전환(v→v) 절차·롤백: docs/plan/v3_golive.md
 
 # 프론트 로컬 (저장소 루트에서 — fixture 상대경로 유지 위해)
 python -m http.server 8099           # http://localhost:8099/src/frontend/
-# 개발 중엔 src/frontend/js/config.js 의 DATA_URL 을 ../../fixtures/schedule.sample.json 으로 교체
+# 개발 중엔 src/frontend/js/config.js 의 PREVIEW_URL 을 ../../fixtures/preview.sample.json 으로 교체(주석 처리된 줄 있음)
 ```
 
 테스트 프레임워크 없음. 각 collector 모듈의 `if __name__ == "__main__":` 블록이 스모크 테스트.
@@ -301,13 +336,14 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 10분(v3.6, 구 3h)) 을 OIDC 로 호출.
    `/tick` = RSS + `videos.list` 배치 1회 → (v3) `preview_build` → `preview.json` 재구성.
    FSM 은 저장 없이 파생 — `pending.json` 은 v3 에서 없다.
-2. 각 예정 방송마다 **Cloud Tasks** 에 `scheduled_start − 15분` 시각으로 wake 태스크 1개 enqueue.
+2. video_id 있는 예정 방송마다 **Cloud Tasks** 에 wake 태스크 enqueue (v3 FSM: `scheduled_start − 3분`).
    도달 시 `POST /wake {video_id}` → 라이브 여부 확인 → 다음 체크 재예약
-   (pre-live 3분 / live-watch 시작~+60분 10분 · +60분 이후 3분).
+   (watching 3분 / live 시작~+60분 10분 · +60분 이후 5분(v3.7.1, 구 3분) / end 창 5분).
    Cloud Tasks 상한 720h — 장기 예약은 `now+696h` 로 클램프해 롱폴링.
 3. Cloud Run 이 변경분만 **GitHub Contents API**(fine-grained PAT, Secret Manager)로 `data` 브랜치 커밋.
-4. **프론트**는 `raw.githubusercontent.com/.../data/schedule.json` 을 75초마다 fetch (v1 과 동일, 무변경).
-   raw CDN 캐시로 최대 ~5분 지연 — 3시간 단위 예고엔 문제 없음(의도된 트레이드오프).
+4. **프론트**는 데이터 저장소 `raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/preview.json`
+   (+ notices/tweets) 을 75초마다 fetch. raw CDN 캐시(`max-age=300`)로 최대 ~5분 지연 — 의도된 트레이드오프
+   (그래서 v3.7.1 에서 live 후기 wake 도 5분으로 맞춤).
 5. **(v2.1)** `/tick`·`/wake` 진입 시 `control.json` 확인 — `paused` 면 healthcheck 핑만 하고 no-op.
    상태 전이(upcoming/live 시작·종료, fallback, 오류)는 Telegram DM 으로 알림. `/status /pause /resume`
    명령은 공개 서비스 `mewtype-telegram` 이 처리. 상세는 `docs/SPEC.md` §10.
@@ -346,8 +382,9 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    배경 = 유닛 `--lane-color` 재사용. 흐름도 `docs/INGEST_FLOW.md`, 상세 `docs/old/v2/v2_8_personal_tweets.md`.
    **(v2.8.1)** 개인 5인 분기는 배지 + `xtweet.parse_schedule`(`配信`+날짜[+시각]/URL 게이트) 둘 다
    수행 → 예고면 `merge_personal_schedule` 로 `schedule.json` `scheduled`(`source:"personal"`) 승격.
-   `time_tbd`(날짜만) 지원. `handlers.tick()` 이 `reconcile` 직후 `xtweet.apply_overrides` 로 트윗이
-   정한 `scheduled_start` 를 API 재구성이 안 덮게 함(스트림 실제 수정 시만 API 승 — `api_start_seen`).
+   `time_tbd`(날짜만) 지원. (v3) `preview_build` 가 personal/x-relay 아이템의 `scheduled_start` 를 안 덮고
+   `api_start_seen` 만 갱신하며, (v3.7.1) `handlers._run` 이 `build_preview` 직후 `xtweet.apply_overrides` 로
+   `api_start_seen` 이 직전 tick 대비 60초 넘게 바뀐 경우(스트림 실제 수정)에만 API 시각을 적용한다.
    계약 A 필드: `source`/`time_tbd`/`info_source`/`info_at`/`api_start_seen`. 상세 `docs/old/v2/v2_8_1_personal_schedule.md`.
    **(v3.6)** `parse_schedule` 게이트는 **URL 없을 때만** 최종 경로 — 유튜브 URL 있으면
    `_maybe_url_confirmed_schedule`(videos.list 확정, 실패 시 여기로 폴백), 비유튜브 URL 있으면

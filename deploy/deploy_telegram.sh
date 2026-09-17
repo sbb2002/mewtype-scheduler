@@ -17,13 +17,19 @@ _GROQ_SECRET=""
 if gcloud secrets describe GROQ_API_KEY &>/dev/null; then
   _GROQ_SECRET=",GROQ_API_KEY=GROQ_API_KEY:latest"
 fi
+# (v3.5) HEALTHCHECKS_IO_READONLEY_TOKEN: monitor_report 의 백엔드 상태(4색) 조회용.
+# 오타지만 운영 Secret 이름 — 바꾸려면 Secret 재생성 + 두 서비스 재배포. Secret 있을 때만 붙인다.
+_HC_SECRET=""
+if gcloud secrets describe HEALTHCHECKS_IO_READONLEY_TOKEN &>/dev/null; then
+  _HC_SECRET=",HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest"
+fi
 gcloud run deploy mewtype-telegram \
   --source . --region "$GCP_LOCATION" \
   --allow-unauthenticated \
   --service-account "$INVOKER_SA" \
   --command=gunicorn \
   --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=60,src.backend.telegram_app:app" \
-  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest${_GROQ_SECRET}" \
+  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}"
 
 # INGEST_DRY_RUN=1 이면 /ingest 가 schedule.json 을 안 쓰고 받은 원문·파싱결과만 DM 회신

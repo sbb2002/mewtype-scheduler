@@ -2,6 +2,53 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.7.1** (2026-09-17) — v3.7 운영 점검(`ref/v3_improvisation.md`) 후속 개선. 구현 명세:
+  `docs/plan/v3_improvisation.md`. 결정 근거·사고 재현 애니메이션은 명세 §0 참고.
+  1. **[P0] `/ingest` 개인 트윗 500 수정** — v3.7 배포(2026-09-17 11:29 KST)부터 `_ingest` 가 지역변수
+     `gh` 를 대입 전에 써서 `UnboundLocalError` → 멤버 5인 트윗이 전부 500 으로 유실되던 버그.
+     `gh = _make_gh()` 를 라우팅 전으로 옮기고, `/ingest` 라우트를 실제로 치는 self-test 5케이스 추가
+     (기존 self-test 는 라우트 함수를 안 불러서 못 잡았다).
+  2. **write-queue A-1 — 외부 호출은 제어 채널, `/write` 잡은 커밋만.** v3.7 은 외부 LLM·`videos.list`·
+     vxtwitter·비전 OCR 까지 백엔드(`concurrency=1`) 잡 안에서 돌려, 외부 장애 때 `/tick`·`/wake` 가 뒤에서
+     같이 막히는 구조였다(최악 수백 초). 소식(`_prepare_notice`/`_commit_notice`)·개인 트윗
+     (`_prepare_personal_tweet`/`_commit_personal_tweet`)·URL 확정 예고(`_url_confirmed_commit`, kind
+     `url_confirmed_schedule` → `url_confirmed_commit`)를 준비/커밋으로 분리. Cloud Tasks 즉시 wake 등록은
+     제어 채널에 env 가 없어 백엔드 잡 안에 남김. 상세: `docs/SPEC.md` §8.14.
+     - 큐 폐기안(B안)은 기각 — 2026-09-16 노노카 트윗 유실의 충돌 상대가 백엔드가 아니라 같은 초에
+       들어온 다른 `/ingest` 요청들의 커밋이었음을 커밋 이력·Cloud Logging 으로 확인.
+     - 남는 한계: 모니터 로그·`admin_state.json` 마법사·`control.json` 은 여전히 제어 채널 직접 커밋.
+  3. **모니터 로그 커밋 축소** — `data` 저장소 커밋의 약 95% 가 `data: monitor` 였다. 백엔드 실행 1회당
+     이벤트를 모아 `monitor_log.log_events` 로 커밋 최대 1개, 변화 없는 tick/wake 는 기록 안 함
+     (`handlers._should_log_run`). `/monitor` 의 quota·호출 수 표기를 "기록된 실행" 기준으로 변경.
+  4. **외부 LLM 폴백 기본값 통일** — 제어 채널 `_make_llm_client()` 의 폴백 기본값이 이 계정에서 404 나는
+     `llama-3.3-70b-versatile` 이었다 → `llm.FALLBACK_MODEL`(`openai/gpt-oss-20b`).
+  5. **라이브 후기 wake 3분 → 5분** (`LIVE_TIGHT_SEC=300`) — 프론트가 읽는 raw CDN 캐시가 `max-age=300` 이라
+     3분 간격은 화면에 반영되지 않았다.
+  6. **`xtweet.apply_overrides` v3 재작성 + 연결** — 문서엔 "tick 이 호출"로 적혀 있었지만 실제로는
+     어디서도 호출되지 않았고, 로직도 v2 형태(`info_source="bdp_schedule"` 등)를 가정해 그대로 연결하면
+     오작동. `api_start_seen` 이 직전 tick 대비 60초 넘게 바뀌면(스트림 예약 실제 수정) API 시각이
+     트윗/릴레이 시각을 이기도록 고쳐 `handlers._run` 의 `build_preview` 직후에 연결.
+  7. **배포 재현성** — `deploy.sh`·`deploy_telegram.sh` 가 `HEALTHCHECKS_IO_READONLEY_TOKEN` Secret 을
+     무조건 마운트해 `setup.sh` 로 새로 세운 프로젝트에선 첫 배포가 실패 → Secret 있을 때만 마운트 +
+     `setup.sh` 생성 목록에 추가, `env.example.sh` 갱신(데이터 저장소 `GITHUB_REPO` 등).
+  8. 3h tick 시절 주석 정정(`handlers.py`·`preview_build.py`, 동작 변경 없음) + `SPEC.md`·`CLAUDE.md`·
+     `INGEST_FLOW.md` 현행화.
+
+- **v3.7** (2026-09-17, 커밋 `b07d7b5` — 기록 누락분 소급) — 세 기능이 한 커밋에 들어갔다.
+  1. **write-queue** (`POST /write`, `writers.py`, `writeclient.py`) — GitHub Contents API PUT 이 브랜치 HEAD
+     단위로 충돌하는 탓에 제어 채널의 동시 처리 요청끼리 409 를 내 트윗이 유실된 사고(2026-09-16 20:12 KST
+     노노카 트윗) 대응. 제어 채널의 콘텐츠 쓰기 14종을 `concurrency=1 · max-instances=1` 인 백엔드의
+     `/write` 로 동기 호출해 직렬화. 마법사형 명령(`/del` `/undo` `/notice-edit` `/edit preview`)은 처음 캡처한
+     스냅샷/sha 만 근거로 커밋. (이 배포에 v3.7.1 의 P0 버그가 포함돼 있었다.)
+  2. **소식 LLM 의미 중복판정** (`llm.duplicate_notice`, `notices.merge_into`) — url/title 정확 일치로 못 잡는
+     같은 행사를, **같은 날짜**(threshold=0일) 기존 소식이 있을 때만 등록 직전 LLM 에 물어 병합. 날짜가 다른
+     연속 행사는 비교 대상에서 제외, 실패·미설정이면 새 소식으로 등록(정보 손실 방지 우선).
+  3. **상시 모니터 페이지** — `/monitor` 리포트를 `monitoring/latest.html` 로도 커밋하고
+     `src/frontend/monitor.html` 이 raw URL 로 불러와 표시. 메인 예고판과 링크 없이 이스터에그로 진입:
+     PC 는 `y` 입력 후 10초 안에 `umewapower`, 모바일은 풋터 버전 표시를 5초 안에 15번 탭(탭마다 멤버
+     아이콘 풍선). 데이터 저장소가 public 이라 raw URL 을 알면 누구나 열람 가능하다.
+  4. 자동 리포트(`mewtype-monitor`, KST 06:10)가 막 시작된 당일 대신 **전일** 버킷을 보도록 수정.
+
 - **v3.6** — 개인 5인 트윗 예고 판정 URL 우선 재설계 + `/telegram` 웹훅 DM 안전망 + light tick
   3h→10분. 실사례 2건이 계기: (1) 노노카 쇼츠 라이브가 `配信` 키워드 없이 시작해 light tick
   텀(당시 3h)만큼 감지가 늦었던 버그, (2) 아라레 후기 트윗("先行プレイ配信 ありがとうございました
