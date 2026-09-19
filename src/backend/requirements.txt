@@ -3,3 +3,4 @@ flask>=3.0
 gunicorn>=21
 google-cloud-tasks>=2.16
 google-auth>=2.28
+yt-dlp>=2026.8.19

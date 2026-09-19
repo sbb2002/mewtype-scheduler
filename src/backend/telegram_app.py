@@ -72,6 +72,11 @@ except ImportError:
     xtweet = None
 
 try:
+    from . import ytnotif, ytdlp_probe       # (v3.7.3) 유튜브 앱 회원 전용 라이브 알림 + yt-dlp 조회
+except ImportError:
+    ytnotif = ytdlp_probe = None
+
+try:
     from . import vxtwitter                  # (v3) 트윗 unfurl — 잘린 URL 복원
 except ImportError:
     vxtwitter = None
@@ -2189,12 +2194,18 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
         ex = vxtwitter.extract(j)
     media = ex.get("media") or []
     quote = None
-    qid = vxtwitter.qrt_id(ex.get("qrt_url"))
-    if qid:
-        qj = vxtwitter.fetch_tweet(qid)
-        qex = vxtwitter.extract(qj) if qj else {}
-        if qex.get("text") or qex.get("media"):
-            quote = {"text": qex.get("text") or "", "media": qex.get("media") or []}
+    # (v3.7.3) 응답에 인용 트윗 본문이 이미 실려 있으면 그것을 쓴다. 참조 트윗을 id 로 다시 조회하는 것은
+    # 실려 있지 않을 때만 — vxtwitter 가 특정 참조 트윗을 영구 500 으로 못 주는 경우가 있다(2026-09-18 아라레).
+    emb = ex.get("qrt")
+    if emb:
+        quote = {"text": emb.get("text") or "", "media": emb.get("media") or []}
+    else:
+        qid = vxtwitter.qrt_id(ex.get("qrt_url"))
+        if qid:
+            qj = vxtwitter.fetch_tweet(qid)
+            qex = vxtwitter.extract(qj) if qj else {}
+            if qex.get("text") or qex.get("media"):
+                quote = {"text": qex.get("text") or "", "media": qex.get("media") or []}
     return media, quote
 
 
@@ -2298,6 +2309,99 @@ def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str 
             _enqueue_wake_now(video_id, next_check_at)
 
     return {"changed": changed, "error": False}
+
+
+def _commit_yt_member_live(gh, live: dict, now_iso: str, *, via: str = "ingest") -> dict:
+    """(v3.7.3) 회원 전용 라이브 시작 알림 커밋 (백엔드 잡에서 실행).
+
+    preview.json 에 반영(`xtweet.merge_member_live`) — 자리표시 승격 / 신규 생성 / 중복 no-op.
+    반환: {"changed": bool, "mode": str, "error": bool}
+    """
+    ck = live.get("channel_key")
+    try:
+        for attempt in (1, 2):
+            prev, sha = gh.read_json(_PREVIEW_PATH)
+            prev = prev or {"items": []}
+            items, changed, mode = xtweet.merge_member_live(prev.get("items", []) or [], live, now_iso)
+            if not changed:
+                return {"changed": False, "mode": mode, "error": False}
+            merged = dict(prev)
+            merged["items"] = items
+            merged["generated_at"] = now_iso
+            try:
+                _, new_sha = gh.write_json(
+                    _PREVIEW_PATH, merged, prev_sha=sha,
+                    message=f"data: member live {ck} {mode} {now_iso}",
+                )
+                break
+            except ConflictError:
+                if attempt == 2:
+                    raise
+                log.warning("회원 전용 라이브: preview.json 충돌 — 재시도")
+    except Exception:
+        log.exception("회원 전용 라이브 반영 실패")
+        _log_event_safe(gh, now_iso, "relay", RESULT_ERR, who=ck,
+                        detail="mode: yt-member-live write 실패", via=via)
+        return {"changed": False, "mode": "error", "error": True}
+
+    _save_undo(gh, action=f"회원 전용 라이브 {ck} ({mode})", prev_content=prev or {},
+               new_sha=new_sha, now_iso=now_iso)
+    _log_event_safe(gh, now_iso, "relay", RESULT_OK, who=ck,
+                    detail=f"mode: yt-member-live {mode}", via=via)
+    return {"changed": True, "mode": mode, "error": False}
+
+
+def _handle_yt_relay(payload) -> tuple[dict, int]:
+    """(v3.7.3) `source=yt` 중계 처리. 회원 전용 라이브 시작(5인)만 반영하고 나머지는 200 무시.
+
+    업스트림 Automate 의 HTTP 타임아웃(약 10초) 안에 끝나야 해서 외부 호출은 yt-dlp 조회 1개
+    (상한 6초)뿐이고 LLM·vxtwitter 는 쓰지 않는다. 조회에 실패해도 채널 링크로 live 처리하고
+    운영자에게 알린다(방송이 live 로 안 뜨는 것보다 낫다). 항상 200 — 업스트림 재시도 불필요.
+    """
+    if ytnotif is None or xtweet is None:
+        return {"ok": True, "ignored": "unavailable"}, 200
+    channels_cfg = _load_channels_config()
+    parsed = ytnotif.parse_member_live_relay(payload, channels_cfg)
+    if parsed is None:
+        return {"ok": True, "ignored": True}, 200
+
+    ck = parsed["channel_key"]
+    ch = (channels_cfg.get("channels") or {}).get(ck, {})
+    name = ch.get("name_ko") or ck
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    found = None
+    if ytdlp_probe is not None and ch.get("channel_id"):
+        try:
+            found = ytdlp_probe.find_member_live(ch["channel_id"], parsed["title"])
+        except Exception:  # noqa: BLE001
+            log.exception("회원 전용 라이브 yt-dlp 조회 예외")
+    live = {
+        "channel_key": ck,
+        "title": (found or {}).get("title") or parsed["title"],
+        "video_id": (found or {}).get("video_id"),
+        "url": (found or {}).get("url") or f"https://www.youtube.com/channel/{ch.get('channel_id')}/streams",
+    }
+
+    try:
+        res = writeclient.call_write("yt_member_live_commit", gh=_make_gh(), live=live,
+                                     now_iso=now_iso, via="ingest")
+    except Exception as e:  # noqa: BLE001
+        log.exception("회원 전용 라이브 /write 실패")
+        _send_telegram(f"⚠️ 🔒 {html.escape(name)} 회원 전용 방송 시작 감지 — 반영 실패\n{html.escape(str(e)[:150])}")
+        return {"ok": False, "error": str(e)[:200]}, 200
+
+    mode = res.get("mode")
+    if res.get("error"):
+        _send_telegram(f"⚠️ 🔒 {html.escape(name)} 회원 전용 방송 시작 감지 — preview.json 쓰기 실패")
+    elif mode in ("created", "upgraded", "updated"):
+        title_h = html.escape(live["title"] or "(제목 미상)")
+        if live["video_id"]:
+            _send_telegram(f"🔒 <b>{html.escape(name)}</b> 회원 전용 방송 시작 → live 반영\n{title_h}\n{live['url']}")
+        else:
+            _send_telegram(f"⚠️ 🔒 <b>{html.escape(name)}</b> 회원 전용 방송 시작 감지 — yt-dlp 로 영상 URL 을 "
+                           f"못 찾아 채널 링크로 live 처리했습니다.\n{title_h}")
+    return {"ok": True, "member_live": ck, "mode": mode, "video_id": live["video_id"]}, 200
 
 
 def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
@@ -3672,6 +3776,10 @@ if _FLASK_AVAILABLE:
         raw_body = request.get_data(cache=True, parse_form_data=False, as_text=True)
 
         payload = request.form if request.form else (request.get_json(silent=True) or {})
+        # (v3.7.3) 유튜브 앱 알림 중계(`source=yt`)는 트윗 파이프라인이 아니라 별도 처리.
+        if (payload.get("source") or "").strip() == "yt":
+            body, code = _handle_yt_relay(payload)
+            return jsonify(body), code
         raw = (payload.get("text") or "").strip()
         title = (payload.get("title") or "").strip()      # (v2.3.x) nx["android.title"] — 게시자 표시 이름
         tmpl = (payload.get("template") or "").strip()     # (v2.3.x) nx["android.template"] — BigTextStyle 등
@@ -4679,6 +4787,85 @@ if __name__ == "__main__":
             assert _PREVIEW_PATH in gh_test_url.store, "preview.json 저장 안 됨"
             assert _enqueue_wake_now_counts["count"] == 1, f"_enqueue_wake_now 호출 1회 기대, 받음 {_enqueue_wake_now_counts['count']}"
             print("[OK] WP-3b: _url_confirmed_commit (next_check_at 있음) → _enqueue_wake_now 1회, preview.json 저장, changed=True")
+
+            # ── v3.7.3: 유튜브 앱 회원 전용 라이브 알림 (source=yt) ─────────────────────
+            # 실측 폼(Cloud Run 로그 2026-09-18 12:12Z) 그대로. yt-dlp 는 스텁(네트워크 없음).
+            _MT = "【🟡メン限】今の鼻事情いつもの気ままあーんど作業？？【 仲町あられ / 夢限大みゅーたいぷ 】"
+            _yt_form = {
+                "source": "yt", "video_id": "default",
+                "title": f"仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ 실시간 스트리밍 시작: {_MT}",
+                "kind": "a:NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START:946ff57868de0000",
+                "tag": "default::514a3c5a-fa4e-42f4-8b2b-d61ecc567b66",
+            }
+            _yt_hdr = {"X-Ingest-Secret": "s"}
+            _probe_calls = []
+            _orig_find = ytdlp_probe.find_member_live
+
+            def _seed_holder():
+                holder = preview_mod.make_item(
+                    channel_key="arale", state="announced", source="x-relay",
+                    now_iso=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    scheduled_start=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                )
+                _shared_store_wp1[_PREVIEW_PATH] = {"items": [holder]}
+                return holder
+
+            try:
+                ytdlp_probe.find_member_live = lambda cid, title, **kw: (
+                    _probe_calls.append((cid, title)) or
+                    {"video_id": "HN2xeIVMqWI", "url": "https://www.youtube.com/watch?v=HN2xeIVMqWI",
+                     "title": title, "live_status": "is_live", "via_cookie": False})
+
+                holder = _seed_holder()
+                ry1 = client.post("/ingest", data=_yt_form, headers=_yt_hdr)
+                jy1 = ry1.get_json()
+                assert ry1.status_code == 200 and jy1["ok"] and jy1["mode"] == "upgraded", (ry1.status_code, jy1)
+                assert jy1["video_id"] == "HN2xeIVMqWI" and jy1["member_live"] == "arale"
+                assert _probe_calls == [("UCWfF0DB6m_t2CE3KcOOOX7g", _MT)], _probe_calls
+                it = _shared_store_wp1[_PREVIEW_PATH]["items"]
+                assert len(it) == 1 and it[0]["id"] == holder["id"] and it[0]["state"] == "live"
+                assert it[0]["membership"] is True and it[0]["url"].endswith("v=HN2xeIVMqWI")
+                print("[OK] v3.7.3: /ingest source=yt 회원 전용 시작 → yt-dlp 조회 → 자리표시 live 승격 (200)")
+
+                ry2 = client.post("/ingest", data=_yt_form, headers=_yt_hdr)
+                assert ry2.status_code == 200 and ry2.get_json()["mode"] == "noop", ry2.get_json()
+                assert len(_shared_store_wp1[_PREVIEW_PATH]["items"]) == 1
+                print("[OK] v3.7.3: 같은 알림 재도착 → noop (중복 항목 없음)")
+
+                before = json.dumps(_shared_store_wp1[_PREVIEW_PATH], sort_keys=True)
+                for bad in (
+                    dict(_yt_form, kind="a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:abc", video_id="bgzve7Y7S50"),
+                    dict(_yt_form, title="조코딩 JoCoding 실시간 스트리밍 시작: 무관"),
+                    {"source": "yt", "video_id": "x", "title": "", "kind": "", "tag": ""},
+                ):
+                    rb = client.post("/ingest", data=bad, headers=_yt_hdr)
+                    assert rb.status_code == 200 and rb.get_json().get("ignored"), (rb.status_code, rb.get_json())
+                assert json.dumps(_shared_store_wp1[_PREVIEW_PATH], sort_keys=True) == before
+                print("[OK] v3.7.3: 회원 전용 아님/5인 아님/빈 알림 → 200 무시 (400 아님, 상태 불변)")
+
+                # 조회 실패 폴백: video_id 없이 채널 링크로 live
+                ytdlp_probe.find_member_live = lambda cid, title, **kw: None
+                holder = _seed_holder()
+                ry3 = client.post("/ingest", data=_yt_form, headers=_yt_hdr)
+                jy3 = ry3.get_json()
+                assert ry3.status_code == 200 and jy3["mode"] == "upgraded" and jy3["video_id"] is None, jy3
+                it = _shared_store_wp1[_PREVIEW_PATH]["items"][0]
+                assert it["state"] == "live" and it["video_id"] is None and "/channel/UCWfF0DB6m" in it["url"]
+                print("[OK] v3.7.3: yt-dlp 조회 실패 → 채널 링크로 live 처리 (폴백)")
+
+                # 조회 예외도 삼키고 200
+                def _boom(*a, **k): raise RuntimeError("yt-dlp down")
+                ytdlp_probe.find_member_live = _boom
+                _seed_holder()
+                ry4 = client.post("/ingest", data=_yt_form, headers=_yt_hdr)
+                assert ry4.status_code == 200 and ry4.get_json()["mode"] == "upgraded", ry4.get_json()
+                print("[OK] v3.7.3: yt-dlp 예외 → 200 유지, 폴백 live")
+
+                ry5 = client.post("/ingest", data=_yt_form, headers={"X-Ingest-Secret": "wrong"})
+                assert ry5.status_code == 403
+                print("[OK] v3.7.3: source=yt 도 시크릿 검증 통과해야 처리 (틀리면 403)")
+            finally:
+                ytdlp_probe.find_member_live = _orig_find
         finally:
             # __main__ 인스턴스 원복
             globals()["_make_gh"] = _orig_make_gh

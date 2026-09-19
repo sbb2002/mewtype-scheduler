@@ -2,6 +2,54 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.7.3** (핫픽스) — 유튜브 앱 "회원 전용 실시간 스트림" 알림으로 회원 전용 방송을 live 로 전환.
+  1. **업스트림 유튜브 알림이 전부 400 이던 문제** — 업스트림이 유튜브 알림을 `source=yt&video_id&title&kind&tag`
+     폼으로 `/ingest` 에 중계하는데 `/ingest` 는 `text` 만 읽어 5ms 만에 `400 empty text` 를 반환했다
+     (Cloud Run 로그 2026-09-09~18, 32건 전부. 타임아웃이 아니었다 — flow-11 로그에서 유튜브 알림 HTTP 31건은
+     모두 0.2~4.2초에 응답을 받았고 HTTP 실패 148건은 전부 X 트윗 중계). `source=yt` 를 별도 분기로 빼
+     항상 200 으로 응답하고, 회원 전용 시작(`SPONSORSHIPS_LIVESTREAM_START`)+5인만 처리, 나머지는 무시.
+  2. **회원 전용 방송 live 전환** — 알림의 `video_id` 는 `default` 라 영상을 알 수 없다. 알림 즉시 그 멤버
+     채널 streams 탭을 yt-dlp 로 읽어(`ytdlp_probe.py`, `--flat-playlist`) `subscriber_only` 라이브의
+     video_id/URL 을 얻는다(제목 일치 → 없으면 is_live 1건). 쿠키 없이 Cloud Run(데이터센터 IP)에서 동작함을
+     임시 Job 으로 실측(2026-09-19). 쿠키(`YT_COOKIES_FILE`, Secret `YT_COOKIES`)가 있으면 먼저 쿠키로 시도하고
+     실패하면 쿠키 없이 재시도. 상한 6초(Automate HTTP 타임아웃 약 10초 대응) + 목록 반영 지연 대비 1회 재시도.
+  3. **반영** — 커밋은 `/write` 잡 `yt_member_live_commit` → `xtweet.merge_member_live`(순수): 같은 채널의
+     video_id 없는 예고 자리표시(±3h)를 제자리 live 로 승격(membership=True, video_id/url/title 채움) /
+     없으면 새 live 항목 생성 / 같은 알림 재도착은 noop. 조회 실패 시 채널 링크로 live 처리하고 운영자 DM.
+     video_id 가 없는 자리표시는 API 가 조회할 방법이 없어 live 로 확정되지 못했다(9/18 아라레). video_id 를
+     알게 되면 이후 live→end 는 기존 API 경로(`videos.list`, 회원 전용 영상도 조회됨을 2026-09-19 실측 —
+     종료된 영상 기준)가 처리한다. 9/18 의 `watching↔announced` 왕복은 별개 문제로 이번에 안 고침.
+  4. **보정** — `render.js`: live 카드 링크 폴백(`channel_url`).
+  5. **예고 자리표시 왕복 차단** (`statemachine`) — 규칙 3(예정 후 120분 뒤 `watching→announced`)과 규칙 1
+     (예정 시각이 지났으면 `announced→watching`)이 실행마다 서로를 되돌려 TTL 까지 왕복했다(9/18 아라레 자리표시
+     `pv_c181ee4c`: 22:57 KST `watching` 진입 → 2시간 조용 → 23:00~00:00 KST 140회 왕복, 분당 평균 2.3회·최대 5회 →
+     00:00 KST TTL 로 소멸). 예정 후 120분이 지난 예고는 `announced` 로 두고(`late-hold`) 재진입시키지 않는다.
+  6. **웨이크 체인 증식 차단** — 상대 체크 시각(`now + 3분/5분/10분`)이 실행 시각마다 달라, 정기 tick·다른
+     방송의 wake 가 돌 때마다 위상이 다른 체인이 하나씩 추가됐다(wake 태스크 이름은 (영상, 분)이라 dedupe 안 됨).
+     `DWMQTpDQ1fc` 3분 주기가 위상 3개로 분당 1회가 되어 9/17 17:13 KST~ 48시간 3,331회. `statemachine._after` 가
+     상대 시각을 주기 격자의 다음 눈금으로 맞춰(지연 [주기/2, 1.5×주기)) 같은 구간의 모든 실행이 같은 시각·같은
+     이름으로 dedupe 되게 했다. 절대 시각(예정 3분 전 예약)은 대상 아님.
+  7. **먼 미래 웨이크 미등록** (`handlers._wakes_within_horizon`) — 시작이 24시간 넘게 남은 방송의 wake 는 등록하지
+     않는다(창 안으로 들어오면 다음 light tick 이 등록). 29일 상한으로 잘린 시각("지금+29일")이 실행마다 새 이름으로
+     쌓여 12/24 라이브(`h31Mi6AS7a0`) wake 가 큐에 3,319건 누적됐다(기존 누적분은 별도 정리).
+  8. **미래로 밀린 `watching` 되돌림** (`statemachine`) — 예정 시각이 3분보다 미래로 정정된 `watching` 항목은
+     `upcoming`(video_id 있음)/`announced` 로 되돌리고 예정 3분 전 재진입을 예약한다. 9/17 17:03 KST 에 예정 시각이
+     수신 시각으로 잡혀 `watching` 이 된 항목이 9/25 로 정정된 뒤에도 유지돼 위 3,331회의 원인이 됐다. 규칙 2 테스트의
+     시각(주석 의도는 "ss-3분 이후"인데 실제 값은 ss-60분)을 의도대로 수정.
+  9. **`vxtwitter` → `fxtwitter` 폴백** (`vxtwitter.py`) — vxtwitter 가 특정 트윗을 HTTP 500 으로 영구히 못 줘(9/14~19
+     고유 트윗 12건이 며칠 뒤에도 500) 첨부 이미지·참조 트윗(QRT)이 유실됐다(9/18 19:32 KST 아라레 "2年半前…💛💙":
+     참조 트윗 단독 조회도 500). 실패(HTTP 오류·예외·JSON 오류) 시 fxtwitter 로 폴백해 vxtwitter 형식으로 변환
+     (영상·GIF 는 썸네일). 응답에 실린 참조 트윗을 그대로 쓰고(`extract()["qrt"]`), 없을 때만 id 로 재조회.
+     타임아웃 8초→vx 5초/fx 4초(순차로 돌아도 업스트림 HTTP 타임아웃 약 10초 안).
+  10. **배포·운영 조치 (2026-09-19 KST)** — `mewtype-backend` 리비전 `00094-vdp`, `mewtype-telegram` `00073-chr` 배포
+     (17:40~18:15 KST). 유튜브 멤버십 쿠키를 Secret `YT_COOKIES` 로 올려 `/secrets/yt-cookies.txt` 마운트
+     (`YT_COOKIES_FILE`). 첫 쿠키(01:08 KST 내보냄)는 서버 쪽에서 이미 무효(로그인 필요 페이지 접근 불가)라 올리지
+     않았고, 새 쿠키(18:07 KST)는 로그인·회원 영상 접근을 확인해 올렸다. 쿠키는 저장소 밖(`~/.secrets/`)에 보관하고
+     `.gitignore` 에 패턴을 넣었다. 쿠키 없이도 streams 탭 조회 결과는 같았다(실익 미확인). Cloud Tasks 큐에 쌓인
+     `h31Mi6AS7a0` 웨이크 3,345건을 삭제(정상 웨이크 5건 유지)했고, 17:50 KST 정기 tick 이 전체를 재계산한 뒤에도
+     재적재가 없음을 확인했다.
+  - 배포 주의: `writers.py` 를 건드렸으므로 `mewtype-telegram`·`mewtype-backend` 둘 다 재배포. `.gitignore` 에
+    쿠키 파일 패턴 추가(자격증명).
 - **v3.7.2** (핫픽스) — 트윗 24시간 노출 복구 + 웹 monitor 접속 시각 기준 리포트.
   1. **개인 트윗이 다음날 전부 사라지던 버그** — v3.5.3 이 프론트 `tweets.js`(`_visible`)에 얹은
      `VISIBLE_WINDOW_MS=12h` 필터가 원인. 백엔드(`tweets.json`, 메시지별 `expires_at`=+24h, sweep)는 정상이라

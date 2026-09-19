@@ -207,7 +207,8 @@ function createCard(item, nowMs, channelData, laneKey) {
 
   if (item.membership) a.classList.add("card--membership");
 
-  a.href = item.url;
+  // 회원 전용 live 는 영상 URL 조회에 실패하면 url 이 채널 링크이거나 비어 있을 수 있다.
+  a.href = item.url || (channelData && channelData.channel_url) || "#";
 
   // 썸네일 영역
   const thumbWrap = document.createElement("div");

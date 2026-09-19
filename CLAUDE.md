@@ -110,6 +110,11 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > - **v3.7.2** (핫픽스): 개인 트윗이 다음날 전부 사라지던 버그(프론트 `VISIBLE_WINDOW_MS=12h` 필터 제거 →
 >   `expires_at` 24h + 상한 50건) + 웹 monitor 가 06:00 스냅샷을 보여주던 버그(제어 채널 `GET /monitor-live` 로
 >   접속 시각 기준 즉석 생성, `latest.html` 은 폴백). 요약 `docs/VERSION.md`.
+> - **v3.7.3** (핫픽스): 업스트림 유튜브 알림(`source=yt`)이 400 이던 것 수정 + 회원 전용 방송 시작 알림 →
+>   yt-dlp(`ytdlp_probe.py`)로 video_id/URL 조회 → `yt_member_live_commit` 로 live 전환(`xtweet.merge_member_live`).
+>   쿠키는 선택(`YT_COOKIES_FILE`) — 없어도 동작. 같은 버전: 예고 자리표시 왕복 차단(`late-hold`)·웨이크 체인 증식
+>   차단(`statemachine._after` 격자)·먼 미래(24h+) 웨이크 미등록(`handlers._wakes_within_horizon`)·미래로 밀린
+>   `watching` 되돌림, `vxtwitter` HTTP 500 시 `fxtwitter` 폴백(참조 트윗 유실). 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -185,6 +190,8 @@ src/
                        #        (v3.7) duplicate_notice(같은 날짜 소식 의미 중복판정)
                        #        폴백 기본값 FALLBACK_MODEL=openai/gpt-oss-20b (llama-3.3 은 이 계정에서 404)
     ytnotif.py         # (v3) YouTube 앱 푸시알림 파서 (`chime.*` 키). INGEST_YT_ENABLED 뒤
+                       #   + (v3.7.3) `parse_member_live_relay` — 실제 중계 폼(`source=yt`)의 회원 전용 시작 알림
+    ytdlp_probe.py     # (v3.7.3) 회원 전용 라이브 video_id/URL — yt-dlp 로 채널 streams 탭 조회(쿠키 선택)
     vxtwitter.py       # (v3) 트윗 unfurl — 잘린 URL·이미지 복원 (api.vxtwitter.com)
     vision.py          # (v3.2) Groq 비전 OCR — 크로스오버 공지 이미지 속 출연진 이름 판독
                        #        (qwen/qwen3.8-27b 주 + qwen/qwen3.6-27b 폴백). 실패 시 None

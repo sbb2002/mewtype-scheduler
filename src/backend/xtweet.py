@@ -647,6 +647,114 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
     return items, changed
 
 
+MEMBER_LIVE_MATCH_SEC = 3 * 3600       # 알림 시각 ↔ 자리표시 scheduled_start 허용 오차
+MEMBER_LIVE_TTL_HOURS = 5              # 회원 전용 하드 TTL (preview.make_item 규칙과 동일)
+
+
+def merge_member_live(prev_items: list[dict], live: dict, now_iso: str
+                      ) -> tuple[list[dict], bool, str]:
+    """(v3.7.3) 회원 전용 라이브 시작 알림 → preview items 반영 (순수).
+
+    live = {"channel_key", "title", "video_id"|None, "url"}  (video_id 는 yt-dlp 조회 성공 시만)
+    반환 (items, changed, mode), mode ∈ updated | noop | upgraded | created.
+
+    1) 같은 video_id 이미 있음(중복 알림)   → 상태만 live 로 끌어올림(뒷걸음 없음)
+    2) 조회 실패 폴백으로 만든 live 항목이 있음 → 중복 흡수, video_id 를 이제 알면 채움
+    3) 같은 채널의 video_id 없는 예고 자리표시(announced/upcoming/watching, ±3h) → 제자리 승격
+       (API 가 회원 전용 영상을 못 봐서 이 자리표시가 영영 live 가 못 되던 것을 알림으로 해결)
+    4) 없으면 새 live 항목 생성(예고 없이 시작한 방송)
+    """
+    items = [dict(i) for i in (prev_items or [])]
+    ck = live["channel_key"]
+    vid = live.get("video_id")
+    title = live.get("title")
+    url = live.get("url")
+    now = _parse_iso(now_iso)
+
+    def _iso(dt: datetime) -> str:
+        return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _set_title(it: dict) -> None:
+        if title and title != it.get("title"):
+            it["title"] = title
+            it["title_ko"] = None
+            it["needs_tl"] = True
+
+    # 1) 같은 video_id
+    if vid:
+        idx = next((i for i, it in enumerate(items) if it.get("video_id") == vid), None)
+        if idx is not None:
+            cur = items[idx]
+            before = dict(cur)
+            cur["membership"] = True
+            if _STATE_ORDER.get(cur.get("state", "announced"), 0) < _STATE_ORDER["live"]:
+                cur["state"] = "live"
+                cur["state_since"] = now_iso
+                cur["actual_start"] = cur.get("actual_start") or now_iso
+            changed = cur != before
+            if changed:
+                cur["last_updated"] = now_iso
+            items[idx] = cur
+            return items, changed, "updated" if changed else "noop"
+
+    # 2) 조회 실패 폴백으로 이미 만든 live 항목 (video_id 없음)
+    for idx, it in enumerate(items):
+        if (it.get("channel_key") == ck and it.get("state") == "live" and it.get("membership")
+                and not it.get("video_id")):
+            at = _parse_iso(it.get("actual_start"))
+            if at and now and abs((now - at).total_seconds()) <= MEMBER_LIVE_MATCH_SEC:
+                if not vid:
+                    return items, False, "noop"
+                cur = dict(it)
+                cur["video_id"] = vid
+                cur["url"] = url or cur.get("url")
+                _set_title(cur)
+                cur["last_updated"] = now_iso
+                items[idx] = cur
+                return items, True, "updated"
+
+    # 3) 예고 자리표시 제자리 승격 — 알림 시각과 가장 가까운 것
+    best = None
+    for idx, it in enumerate(items):
+        if (it.get("channel_key") != ck or it.get("video_id")
+                or it.get("state") not in ("announced", "upcoming", "watching")):
+            continue
+        ss = _parse_iso(it.get("scheduled_start"))
+        if not (ss and now):
+            continue
+        d = abs((now - ss).total_seconds())
+        if d <= MEMBER_LIVE_MATCH_SEC and (best is None or d < best[0]):
+            best = (d, idx)
+    if best is not None:
+        cur = dict(items[best[1]])
+        ss = _parse_iso(cur.get("scheduled_start")) or now
+        cur["membership"] = True
+        cur["state"] = "live"
+        cur["state_since"] = now_iso
+        cur["actual_start"] = now_iso
+        cur["assumed_live"] = False
+        cur["info_source"] = "yt-notif"
+        if vid:
+            cur["video_id"] = vid
+        cur["url"] = url or cur.get("url")
+        _set_title(cur)
+        # 예고 시각 기준 +5h 이되, 늦게 시작한 방송이 곧바로 만료되지 않게 알림 시각 +3h 를 하한으로.
+        cur["expires_at"] = _iso(max(ss + timedelta(hours=MEMBER_LIVE_TTL_HOURS), now + timedelta(hours=3)))
+        cur["last_updated"] = now_iso
+        items[best[1]] = cur
+        return items, True, "upgraded"
+
+    # 4) 새 항목 — 예고 없이 시작한 회원 전용 방송
+    new_item = preview.make_item(
+        channel_key=ck, state="live", source="yt-notif", now_iso=now_iso,
+        membership=True, title=title, url=url, video_id=vid,
+        scheduled_start=now_iso, actual_start=now_iso, info_source="yt-notif",
+        expires_at=_iso(now + timedelta(hours=MEMBER_LIVE_TTL_HOURS)),
+    )
+    items.append(new_item)
+    return items, True, "created"
+
+
 def apply_overrides(new_items: list[dict], prev_items: list[dict], now_iso: str) -> list[dict]:
     """(handlers 후처리) reconcile 의 API 재구성에 트윗·릴레이 유래 시각 override 재적용.
 
@@ -1087,5 +1195,67 @@ if __name__ == "__main__":
     assert items_m3[0]["title"] == "제목이 바뀜"
     assert items_m3[0]["title_ko"] is None and items_m3[0]["needs_tl"] is True
     print("[OK] merge_video_confirmed  (제목 변경 → 재번역 대상)")
+
+    # ── merge_member_live (v3.7.3) — 실측 2026-09-18: arale x-relay 자리표시(12:00Z, video_id 없음,
+    #    membership=False)가 있는 채로 12:12:01Z 에 회원 전용 시작 알림이 왔다 ──
+    MT = "【🟡メン限】今の鼻事情いつもの気ままあーんど作業？？【 仲町あられ / 夢限大みゅーたいぷ 】"
+    NOW_M = "2026-09-18T12:12:01Z"
+    holder = preview.make_item(
+        channel_key="arale", state="watching", source="x-relay", now_iso="2026-09-18T11:57:15Z",
+        scheduled_start="2026-09-18T12:00:00Z", kind="unknown",
+    )
+    other = preview.make_item(  # 다른 채널·다른 방송 — 건드리면 안 됨
+        channel_key="miyako", state="upcoming", source="personal", now_iso="2026-09-18T10:00:00Z",
+        scheduled_start="2026-09-19T12:30:00Z", video_id="MNocXlK5P8s", title="생일 배신",
+    )
+    live_ok = {"channel_key": "arale", "title": MT, "video_id": "HN2xeIVMqWI",
+               "url": "https://www.youtube.com/watch?v=HN2xeIVMqWI"}
+
+    it_m, ch_m, md_m = merge_member_live([holder, other], live_ok, NOW_M)
+    up = next(i for i in it_m if i["channel_key"] == "arale")
+    assert (ch_m, md_m) == (True, "upgraded") and len(it_m) == 2
+    assert up["id"] == holder["id"], "자리표시를 제자리 승격(새 항목 안 만듦)"
+    assert up["state"] == "live" and up["membership"] is True and up["video_id"] == "HN2xeIVMqWI"
+    assert up["url"].endswith("v=HN2xeIVMqWI") and up["title"] == MT and up["needs_tl"] is True
+    assert up["actual_start"] == NOW_M and up["expires_at"] == "2026-09-18T17:00:00Z"  # ss+5h
+    assert next(i for i in it_m if i["channel_key"] == "miyako") == other
+    print("[OK] merge_member_live  (자리표시 제자리 승격 → live·membership·video_id·url, 타 채널 불변)")
+
+    it_m2, ch_m2, md_m2 = merge_member_live(it_m, live_ok, "2026-09-18T12:12:09Z")
+    assert (ch_m2, md_m2) == (False, "noop") and it_m2 == it_m
+    print("[OK] merge_member_live  (같은 알림 재도착 → noop, 멱등)")
+
+    it_m3, ch_m3, md_m3 = merge_member_live([other], live_ok, NOW_M)
+    new = next(i for i in it_m3 if i["channel_key"] == "arale")
+    assert (ch_m3, md_m3) == (True, "created") and len(it_m3) == 2
+    assert new["state"] == "live" and new["membership"] and new["source"] == "yt-notif"
+    assert new["expires_at"] == "2026-09-18T17:12:01Z" and new["video_id"] == "HN2xeIVMqWI"
+    print("[OK] merge_member_live  (자리표시 없음 → 새 live 항목 생성, +5h TTL)")
+
+    far = preview.make_item(  # 시각이 ±3h 밖(다른 방송의 자리표시) → 승격 대상 아님
+        channel_key="arale", state="announced", source="x-relay", now_iso="2026-09-18T01:00:00Z",
+        scheduled_start="2026-09-18T20:00:00Z",
+    )
+    it_m4, _, md_m4 = merge_member_live([far], live_ok, NOW_M)
+    assert md_m4 == "created" and any(i["id"] == far["id"] and i["state"] == "announced" for i in it_m4)
+    print("[OK] merge_member_live  (±3h 밖 자리표시는 그대로 두고 새로 생성)")
+
+    fallback = {"channel_key": "arale", "title": MT, "video_id": None,
+                "url": "https://www.youtube.com/channel/UCWfF0DB6m_t2CE3KcOOOX7g/streams"}
+    it_f, _, md_f = merge_member_live([holder], fallback, NOW_M)
+    fb = next(i for i in it_f if i["channel_key"] == "arale")
+    assert md_f == "upgraded" and fb["state"] == "live" and fb["video_id"] is None and fb["membership"]
+    it_f2, ch_f2, md_f2 = merge_member_live(it_f, fallback, "2026-09-18T12:12:30Z")
+    assert (ch_f2, md_f2) == (False, "noop")
+    it_f3, ch_f3, md_f3 = merge_member_live(it_f, live_ok, "2026-09-18T12:13:00Z")
+    fb3 = next(i for i in it_f3 if i["channel_key"] == "arale")
+    assert md_f3 == "updated" and fb3["video_id"] == "HN2xeIVMqWI" and len(it_f3) == 1
+    print("[OK] merge_member_live  (조회 실패 폴백: video_id 없이 live → 중복 noop → 이후 video_id 채움)")
+
+    it_v, ch_v, md_v = merge_member_live([dict(up, state="watching", actual_start=None)], live_ok, NOW_M)
+    assert md_v == "updated" and it_v[0]["state"] == "live"
+    it_e, ch_e, md_e = merge_member_live([dict(up, state="end")], live_ok, NOW_M)
+    assert md_e == "noop" and it_e[0]["state"] == "end", "end 는 되돌리지 않음"
+    print("[OK] merge_member_live  (같은 video_id: watching→live, end 는 뒷걸음 없음)")
 
     print("\nSUCCESS: xtweet self-test 통과")
