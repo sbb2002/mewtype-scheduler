@@ -135,7 +135,7 @@
 .lane__bubble {
   position: absolute;
   z-index: 60;
-  width: 268px;
+  width: 320px;                     /* v3.8.0b: X 카드가 폭 250px 이상을 요구 — 안쪽 폭 ≈294px */
   max-width: calc(100% - 16px);
   background: var(--tw-bg, #3a3a3e);
   color: var(--tw-ink, #fff);
@@ -285,112 +285,101 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 본인 첨부 미디어 (v3.4.5) — 말풍선 안 썸네일 그리드 ─────────── */
-.lane__thread__media {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 3px;
-  margin-top: 6px;
+/* ── 트윗 = 번역 말풍선 + X 공식 카드 (v3.8.0b) ─────────────────────────────────────────
+   원문 텍스트·이미지·영상 등은 우리가 그리지 않는다(법률 자문). 번역 말풍선이 먼저 보이고, 그 아래에 X 공식 카드가
+   화면에 들어올 때 로드된다. 카드 높이는 X 임베드가 알려주는 값을 JS 가 wrap 에 적용한다(iframe 은 wrap 을 꽉 채움). */
+.lane__thread__unit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-.lane__thread__media-img {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
-  border-radius: 8px;
+.lane__thread__msg .lab {
   display: block;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-/* ── 본인 트윗 영상·GIF — X 공식 임베드 (v3.8.0b) ─────────────────────────────────────────
-   평소엔 썸네일 + "X에서 재생" 버튼만. 누르면 X 공식 임베드 iframe 이 그 자리에 뜬다(트윗 전체가 그려져 길다 — 높이는
-   임베드가 알려주는 값을 JS 가 상한(520px)까지만 적용하고 나머지는 iframe 안쪽 스크롤). */
-.lane__thread__player {
-  position: relative;
-  margin-top: 6px;
-  width: 100%;
-  max-width: 100%;
-  border-radius: 9px;
-  overflow: hidden;
-  background: #000;
-}
-.lane__thread__player.is-portrait { width: 172px; }        /* 세로 영상 썸네일은 너무 길어지지 않게 폭을 줄인다 */
-.lane__thread__player.is-embedded { display: none; }       /* 임베드가 뜨면 썸네일 카드는 숨긴다 */
-.lane__thread__poster {
-  display: block;
-  width: 100%;
-  aspect-ratio: var(--ar, 16 / 9);
-  object-fit: contain;                                        /* 자르지 않고 원본 비율 그대로 */
-  background: #000;
-}
-.lane__thread__embedwrap {
-  align-self: stretch;                                        /* 말풍선 밖 — 스레드 스크롤 영역 전체 폭 */
-  width: 100%;
-  min-width: 250px;                                           /* X 임베드 최소 폭 — 이보다 좁으면 자동 높이(resize) 메시지가 안 온다(실측) */
-  margin-top: 2px;
-}
-.lane__bubble.has-embed { width: 296px; }                     /* 임베드가 떠 있는 동안 PC 말풍선을 넓힌다(스레드 영역 ≈276px) */
-.lane__thread__embed {
-  display: block;
-  width: 100%;
-  border: 0;
-  border-radius: 9px;
-  background: #000;
-  color-scheme: dark;
-}
-.lane__thread__play {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 52px;
-  height: 52px;
-  border: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-}
-.lane__thread__play svg { width: 22px; height: 22px; margin-left: 3px; }
-.lane__thread__play:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.lane__thread__dur {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  padding: 1px 6px;
-  border-radius: 5px;
   font-size: 10px;
   font-weight: 700;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.62);
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin-bottom: 1px;
 }
-
-/* ── 인용(QRT)한 남의 트윗 카드 — 표시만, ingest 대상 아님 ────────── */
+.tl-off .lane__thread__msg { display: none; }               /* 번역 OFF — 카드만 남는다 */
+/* 참조 트윗은 번역 텍스트만 안쪽 말풍선으로 — 이미지 등 미디어는 X 카드에서 확인 */
 .lane__thread__quote {
   margin-top: 6px;
   padding: 7px 8px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
   border-radius: 9px;
   background: rgba(0, 0, 0, 0.12);
-}
-.lane__thread__quote-txt {
   font-size: 12px;
   line-height: 1.4;
-  opacity: 0.88;
+  opacity: 0.9;
   white-space: pre-wrap;
   word-break: break-word;
 }
-.lane__thread__quote-img {
-  display: block;
+.lane__thread__xcard {
+  position: relative;
+  align-self: stretch;
   width: 100%;
-  max-height: 140px;
-  object-fit: cover;
-  border-radius: 6px;
-  margin-top: 6px;
-  background: rgba(0, 0, 0, 0.2);
+  min-width: 250px;                                          /* X 임베드 최소 폭 — 이보다 좁으면 렌더링이 안 된다(실측) */
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
 }
+.lane__thread__xcard.is-plain { height: auto; background: transparent; overflow: visible; }
+.lane__thread__xskel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: #71767b;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%) 0 0 / 200% 100%;
+  animation: tw-shim 1.6s linear infinite;
+}
+@keyframes tw-shim { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .lane__thread__xskel { animation: none; } }
+.lane__thread__embed {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  color-scheme: dark;
+  background: transparent;
+}
+.lane__thread__xlink {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  text-align: center;
+  color: #fff;
+  text-decoration: none;
+  background: rgba(0, 0, 0, 0.75);
+}
+.lane__thread__xcard.is-plain .lane__thread__xlink {
+  position: static;
+  display: block;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.17);
+}
+.lane__thread__xlink.is-disabled { pointer-events: none; opacity: 0.6; }
+
+/* 디스클레이머 — 패널·시트 하단 (비공식 팬 번역 / 비영리 / 삭제 요청 시 중단 / 문의 창구) */
+.lane__bubble__foot,
+.tw-toast__foot {
+  margin: 6px 8px 0;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-size: 10.5px;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+.lane__bubble__foot a,
+.tw-toast__foot a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── 모바일 토스트 (메신저 알림풍) ──────────────────────────────── */
 .tw-backdrop {
