@@ -301,7 +301,9 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-/* ── 본인 트윗 영상·GIF (v3.8.0) — X 서버 mp4 를 방문자 브라우저가 직접 재생 ──────────── */
+/* ── 본인 트윗 영상·GIF — X 공식 임베드 (v3.8.0b) ─────────────────────────────────────────
+   평소엔 썸네일 + "X에서 재생" 버튼만. 누르면 X 공식 임베드 iframe 이 그 자리에 뜬다(트윗 전체가 그려져 길다 — 높이는
+   임베드가 알려주는 값을 JS 가 상한(520px)까지만 적용하고 나머지는 iframe 안쪽 스크롤). */
 .lane__thread__player {
   position: relative;
   margin-top: 6px;
@@ -311,13 +313,29 @@
   overflow: hidden;
   background: #000;
 }
-.lane__thread__player.is-portrait { width: 172px; }        /* 세로 영상은 너무 길어지지 않게 폭을 줄인다 */
-.lane__thread__player video {
+.lane__thread__player.is-portrait { width: 172px; }        /* 세로 영상 썸네일은 너무 길어지지 않게 폭을 줄인다 */
+.lane__thread__player.is-embedded { display: none; }       /* 임베드가 뜨면 썸네일 카드는 숨긴다 */
+.lane__thread__poster {
   display: block;
   width: 100%;
   aspect-ratio: var(--ar, 16 / 9);
   object-fit: contain;                                        /* 자르지 않고 원본 비율 그대로 */
   background: #000;
+}
+.lane__thread__embedwrap {
+  align-self: stretch;                                        /* 말풍선 밖 — 스레드 스크롤 영역 전체 폭 */
+  width: 100%;
+  min-width: 250px;                                           /* X 임베드 최소 폭 — 이보다 좁으면 자동 높이(resize) 메시지가 안 온다(실측) */
+  margin-top: 2px;
+}
+.lane__bubble.has-embed { width: 296px; }                     /* 임베드가 떠 있는 동안 PC 말풍선을 넓힌다(스레드 영역 ≈276px) */
+.lane__thread__embed {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  background: #000;
+  color-scheme: dark;
 }
 .lane__thread__play {
   position: absolute;
@@ -348,22 +366,6 @@
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-.lane__thread__player.is-playing .lane__thread__play,
-.lane__thread__player.is-playing .lane__thread__dur { display: none; }
-.lane__thread__player.is-failed .lane__thread__play,
-.lane__thread__player.is-failed .lane__thread__dur { display: none; }
-.lane__thread__vfail {
-  position: absolute;
-  inset: auto 6px 6px 6px;
-  padding: 6px 8px;
-  border-radius: 7px;
-  font-size: 11px;
-  text-align: center;
-  color: #fff;
-  text-decoration: none;
-  background: rgba(0, 0, 0, 0.72);
-}
-.lane__thread__vfail.is-disabled { pointer-events: none; }
 
 /* ── 인용(QRT)한 남의 트윗 카드 — 표시만, ingest 대상 아님 ────────── */
 .lane__thread__quote {

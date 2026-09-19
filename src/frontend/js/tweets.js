@@ -172,85 +172,105 @@ function _mediaGrid(urls) {
   }
   return wrap;
 }
-/* ── 본인 트윗 영상·GIF (v3.8.0) ─────────────────────────────────────
-   m.video = { url(mp4, X 서버), poster, w, h, sec, kind: "video"|"gif" }.
-   우리 서버는 파일을 받지 않는다 — 방문자 브라우저가 재생을 누르는 순간 X 서버(video.twimg.com)에서 직접 받는다.
-   video.twimg.com 은 다른 사이트의 Referer 를 403 으로 막으므로 index.html 에 no-referrer 메타가 필요하다.
-   X 쪽 정책이 바뀌어 재생이 안 되면(error) 포스터 위에 "원문에서 보기" 링크를 띄운다. */
+/* ── 본인 트윗 영상·GIF — X 공식 임베드 (v3.8.0b) ─────────────────────────────
+   m.video = { poster, kind, w, h, sec, url? } — b 방식은 poster·kind·w·h·sec 만 쓴다(영상 파일 주소는 쓰지 않는다).
+   평소엔 썸네일 + "X에서 재생" 버튼만 보이고, 누를 때에만 X 공식 임베드 iframe(platform.twitter.com/embed)을 만든다 —
+   X 스크립트·쿠키를 방문자 전체에게 로드하지 않기 위해서다. iframe 은 twttr.private.resize 메시지로 자기가 필요한 높이를
+   알려주므로(실측: 폭 250px 에서 1036px — 프로필·본문·영상·참조 트윗 전체가 그려진다) 그 값을 EMBED_MAX_H 까지만 적용하고
+   나머지는 iframe 안쪽 스크롤로 둔다. Referer 우회가 없어 index.html 에 no-referrer 메타가 필요 없다. */
 const PLAY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>';
+const EMBED_ORIGINS = ["https://platform.twitter.com", "https://platform.x.com"];
+const EMBED_MAX_H = 520;
+let _embedWired = false;
 
-function _pauseVideos(root, except, keepGif) {
+function _wireEmbedResize() {
+  if (_embedWired) return;
+  _embedWired = true;
+  window.addEventListener("message", (e) => {
+    if (!EMBED_ORIGINS.includes(e.origin)) return;
+    let d = e.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
+    const p = d && d["twttr.embed"];
+    if (!p || p.method !== "twttr.private.resize") return;
+    const h = p.params && p.params[0] && p.params[0].height;
+    if (!h) return;
+    for (const f of document.querySelectorAll("iframe.lane__thread__embed")) {
+      if (f.contentWindow === e.source) f.style.height = Math.min(h, EMBED_MAX_H) + "px";
+    }
+  });
+}
+function _isNumId(id) { return /^[0-9]{5,25}$/.test(String(id || "")); }
+function _embedSrc(id) {
+  return "https://platform.twitter.com/embed/Tweet.html?id=" + id + "&theme=dark&dnt=true&lang=ko&hideThread=true&frame=false";
+}
+function _resetEmbeds(root) {
+  // 패널·시트를 닫으면 임베드를 지워 재생을 멈춘다(다시 열면 "X에서 재생" 썸네일 상태로 돌아간다).
   if (!root) return;
-  for (const v of root.querySelectorAll("video")) {
-    if (v === except || v.paused) continue;
-    if (keepGif && v.closest(".is-gif")) continue;   // 소리 없는 GIF 는 다른 영상을 재생해도 계속 돈다
-    try { v.pause(); } catch { /* 무시 */ }
+  for (const w of root.querySelectorAll(".lane__thread__embedwrap")) {
+    if (w.__box) w.__box.classList.remove("is-embedded");
+    w.remove();
   }
+  if (root.classList) root.classList.remove("has-embed");
 }
 function _fmtDur(sec) {
   const s = Math.round(Number(sec));
   if (!isFinite(s) || s <= 0) return "";
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
-function _videoPlayer(m) {
+function _embedPlayer(m) {
+  _wireEmbedResize();
   const v = m.video;
-  const isGif = v.kind === "gif";
   const box = document.createElement("div");
-  box.className = "lane__thread__player" + (isGif ? " is-gif" : "");
+  box.className = "lane__thread__player is-embed";
   if (v.w && v.h) {
     box.style.setProperty("--ar", v.w + " / " + v.h);
     if (v.h > v.w) box.classList.add("is-portrait");
   }
-  const vid = document.createElement("video");
-  vid.src = v.url;
-  vid.poster = v.poster;
-  vid.setAttribute("playsinline", "");
-  vid.setAttribute("aria-label", isGif ? "움직이는 이미지" : "트윗 영상");
-  if (isGif) {
-    vid.muted = true;
-    vid.loop = true;
-    vid.autoplay = true;
-    vid.preload = "auto";
-  } else {
-    vid.controls = true;
-    vid.preload = "none";          // 누르기 전에는 아무것도 받지 않는다
-  }
-  box.appendChild(vid);
+  const img = document.createElement("img");
+  img.className = "lane__thread__poster";
+  img.src = v.poster;
+  img.alt = "";
+  img.loading = "lazy";
+  box.appendChild(img);
 
-  if (!isGif) {
-    const play = document.createElement("button");
-    play.type = "button";
-    play.className = "lane__thread__play";
-    play.setAttribute("aria-label", "영상 재생");
-    play.innerHTML = PLAY_SVG;
-    play.addEventListener("click", () => { vid.play().catch(() => {}); });
-    box.appendChild(play);
-    const d = _fmtDur(v.sec);
-    if (d) {
-      const dur = document.createElement("span");
-      dur.className = "lane__thread__dur";
-      dur.textContent = d;
-      box.appendChild(dur);
+  const embeddable = _isNumId(m.id);
+  const play = document.createElement("button");
+  play.type = "button";
+  play.className = "lane__thread__play";
+  play.setAttribute("aria-label", embeddable ? "X에서 영상 재생" : "원문에서 보기");
+  play.innerHTML = PLAY_SVG;
+  box.appendChild(play);
+  const cap = document.createElement("span");
+  cap.className = "lane__thread__dur";
+  cap.textContent = v.kind === "gif" ? "GIF · X" : ((_fmtDur(v.sec) + " · X").replace(/^ · /, ""));
+  box.appendChild(cap);
+
+  play.addEventListener("click", () => {
+    if (!embeddable) {                                  // 합성 id(숫자 아님)는 임베드할 수 없다 → 원문으로
+      const u = m.url || (m.handle ? "https://x.com/" + m.handle : "");
+      if (u) window.open(u, "_blank", "noopener");
+      return;
     }
-    vid.addEventListener("play", () => {
-      box.classList.add("is-playing");
-      _pauseVideos(box.closest(".lane__bubble__scroll, .tw-toast__scroll"), vid, true);   // 소리 나는 영상은 한 번에 하나만
-    });
-    vid.addEventListener("ended", () => box.classList.remove("is-playing"));
-  }
-
-  vid.addEventListener("error", () => {
-    if (box.classList.contains("is-failed")) return;
-    box.classList.add("is-failed");
-    box.classList.remove("is-playing");
-    vid.controls = false;
-    const a = document.createElement("a");
-    a.className = "lane__thread__vfail";
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = "재생할 수 없어요 · 원문에서 보기";
-    _setSrc(a, m);
-    box.appendChild(a);
+    // X 임베드는 폭 250px 이상이 필요하다(실측: 폭 184px 에서는 렌더링 자체를 못 해 resize 메시지가 오지 않음).
+    // 메시지 말풍선(안쪽 폭 ≈218px) 안이 아니라 스레드 스크롤 영역 전체 폭(≈248px)을 쓰도록 말풍선 밖(같은 묶음의
+    // 다음 자리)에 붙이고, 썸네일 카드는 숨긴다.
+    const wrap = document.createElement("div");
+    wrap.className = "lane__thread__embedwrap";
+    wrap.__box = box;
+    const f = document.createElement("iframe");
+    f.className = "lane__thread__embed";
+    f.src = _embedSrc(m.id);
+    f.title = "X 트윗 (영상)";
+    f.setAttribute("allow", "autoplay; fullscreen");
+    f.setAttribute("allowfullscreen", "");
+    f.style.height = "320px";                           // 임베드가 실제 높이를 알려주기 전 임시값
+    wrap.appendChild(f);
+    const msgEl = box.closest(".lane__thread__msg");
+    (msgEl.parentNode || box.parentNode).insertBefore(wrap, msgEl.nextSibling);
+    box.classList.add("is-embedded");
+    // PC 말풍선의 스레드 영역(≈248px)은 임베드 최소 폭(250px)보다 좁다 — 임베드가 떠 있는 동안만 말풍선을 넓힌다.
+    const bub = box.closest(".lane__bubble");
+    if (bub) { bub.classList.add("has-embed"); _repositionAll(); }
   });
   return box;
 }
@@ -305,7 +325,7 @@ function _renderThread(scrollEl, list) {
         row.appendChild(_quoteCard(m.quote, ko));
       }
       if (m.video && m.video.url && m.video.poster) {
-        row.appendChild(_videoPlayer(m));
+        row.appendChild(_embedPlayer(m));
       }
       if (m.media && m.media.length) {
         row.appendChild(_mediaGrid(m.media));
@@ -464,7 +484,7 @@ function _closeBubble(ck) {
   if (_st.pinned.has(ck) || _st.peek === ck) return;   // 아직 열려 있어야 함
   const b = _st.bubbles.get(ck);
   if (!b) return;
-  _pauseVideos(b);                       // 패널을 닫으면 재생 중인 영상도 멈춘다
+  _resetEmbeds(b);                       // 패널을 닫으면 임베드(재생 중인 영상)도 지운다
   b.classList.remove("is-open");
   const done = () => {
     b.removeEventListener("transitionend", done);
@@ -535,7 +555,7 @@ function _openToast(ck) {
   _markReadAll(list);
 }
 function _closeToast() {
-  _pauseVideos(_toast);
+  _resetEmbeds(_toast);
   document.body.classList.remove("tw-modal-open");
 }
 
