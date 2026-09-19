@@ -37,6 +37,21 @@ def _to_iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _after(now: datetime, sec: int) -> str:
+    """"지금부터 약 sec 초 뒤" 체크 시각 — sec 주기 격자(epoch 기준)의 다음 눈금으로 맞춘다.
+
+    `now + sec` 그대로 쓰면 실행 시각이 다른 실행(정기 tick·다른 방송의 wake)마다 서로 다른 시각의
+    태스크를 등록하고, wake 태스크는 이름이 (영상, 분)이라 dedupe 가 안 되어 실행 하나마다 체인이 하나씩
+    늘어난다(2026-09-17 DWMQTpDQ1fc: 3분 주기가 위상 3개로 분당 1회, 48시간 3,331회). 눈금에 맞추면 같은
+    구간의 모든 실행이 같은 시각을 계산해 같은 이름으로 dedupe 된다. 지연은 [sec/2, 1.5*sec) 로 평균이
+    sec 이고 최소 sec/2 ≥ 90초라 `_bound_schedule_time` 의 60초 하한에 걸려 위상이 깨지지 않는다.
+    절대 시각(ss-3분 예약 등)은 원래 실행마다 같은 값이라 대상이 아니다.
+    """
+    import math
+    t = math.ceil((now.timestamp() + sec / 2) / sec) * sec
+    return _to_iso(datetime.fromtimestamp(t, timezone.utc))
+
+
 def _bound_schedule_time(schedule_time_iso: str, now_iso: str) -> str:
     """다음 wake 시각을 [now+60초, now+MAX_TASK_HORIZON] 범위로 클램프.
 
@@ -143,13 +158,22 @@ def derive(
         # 규칙 10: membership 특례 (live_seen 신호로 직행, API 체크 없음)
         elif membership and live_seen:
             next_state = "live"
-            next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
+            next_check_at = _after(now, LIVE_EARLY_SEC)
             log.append(f"membership direct-to-live {item_id}")
+
+        # 규칙 3 이후 재진입 차단 (v3.7.3): scheduled_start 로부터 120분 넘게 지난 예고는 다시
+        # watching 에 안 넣는다. 안 막으면 규칙 3(watching→announced) 과 아래 규칙 1(announced→
+        # watching) 이 매 실행마다 서로를 되돌려 TTL 까지 왕복한다(2026-09-18 아라레 자리표시
+        # pv_c181ee4c: 23:00~24:00 KST 140회). 시간이 지난 예고는 announced 로 두고 TTL 이 지운다.
+        elif ss and (now - ss).total_seconds() >= WATCH_LATE_DEMOTE_SEC:
+            next_state = state
+            next_check_at = None
+            log.append(f"late-hold {item_id}")
 
         # 규칙 1: pre-live 진입 — scheduled_start 3분 전부터 watching 진입
         elif ss and now >= ss - timedelta(seconds=PRELIVE_LEAD_SEC):
             next_state = "watching"
-            next_check_at = _to_iso(now + timedelta(seconds=PRELIVE_TIGHT_SEC))
+            next_check_at = _after(now, PRELIVE_TIGHT_SEC)
             log.append(f"→watching {item_id}")
 
         # 규칙 1 폴백: 아직 3분 전이 아니면, ss - 3분에 watching 진입하도록 예약
@@ -169,13 +193,22 @@ def derive(
         # live_seen=True → live 로 전이
         elif live_seen:
             next_state = "live"
-            next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
+            next_check_at = _after(now, LIVE_EARLY_SEC)
             log.append(f"→live {item_id}")
+
+        # 규칙 2 예외 (v3.7.3): 예정 시각이 3분보다 더 미래로 밀렸으면(수신 시각으로 잘못 잡혔다가
+        # API 시작 시각으로 정정된 경우 등) watching 을 유지할 이유가 없다 — 대기 상태로 되돌리고
+        # ss-3분에 재진입 예약. 안 되돌리면 시작이 며칠 뒤여도 watching 3분 폴링이 계속된다
+        # (2026-09-17 17:03 KST 이후 DWMQTpDQ1fc: ss 는 9/25 인데 48시간 동안 /wake 3,331회).
+        elif ss and now < ss - timedelta(seconds=PRELIVE_LEAD_SEC):
+            next_state = "upcoming" if video_id else "announced"
+            next_check_at = _to_iso(ss - timedelta(seconds=PRELIVE_LEAD_SEC))
+            log.append(f"watching-regress→{next_state} {item_id}")
 
         # 규칙 2: watching 계속 — 3분 간격 폴링
         else:
             next_state = "watching"
-            next_check_at = _to_iso(now + timedelta(seconds=PRELIVE_TIGHT_SEC))
+            next_check_at = _after(now, PRELIVE_TIGHT_SEC)
             log.append(f"watching-check {item_id}")
 
     # ─ 규칙 5·6: live 상태 ─
@@ -184,7 +217,7 @@ def derive(
             # live_seen=False (명시적으로 live 아님 확인) → end 로 전이.
             # live_seen=None(미확인)은 여기서 종료로 보지 않는다 — 계속 live 유지하고 재확인 예약.
             next_state = "end"
-            next_check_at = _to_iso(now + timedelta(seconds=END_TICK_SEC))
+            next_check_at = _after(now, END_TICK_SEC)
             log.append(f"→end {item_id}")
 
         else:
@@ -193,10 +226,10 @@ def derive(
             elapsed_sec = (now - actual_start).total_seconds() if actual_start else 0
             if elapsed_sec < LIVE_EARLY_WINDOW_SEC:
                 # 초기 (60분 미만): 10분 간격
-                next_check_at = _to_iso(now + timedelta(seconds=LIVE_EARLY_SEC))
+                next_check_at = _after(now, LIVE_EARLY_SEC)
             else:
                 # 후기 (60분 이상): 5분 간격
-                next_check_at = _to_iso(now + timedelta(seconds=LIVE_TIGHT_SEC))
+                next_check_at = _after(now, LIVE_TIGHT_SEC)
             log.append(f"live-check {item_id}")
 
     # ─ 규칙 7·8·9: end 상태 ─
@@ -204,7 +237,7 @@ def derive(
         # 규칙 9: 예고 스트림 재등장 (preview_stream_seen=True)
         if preview_stream_seen:
             next_state = "upcoming"
-            next_check_at = _to_iso(now + timedelta(seconds=PRELIVE_TIGHT_SEC))
+            next_check_at = _after(now, PRELIVE_TIGHT_SEC)
             log.append(f"end-recover→upcoming {item_id}")
 
         # 규칙 8: 30분 경과 → none (삭제)
@@ -216,7 +249,7 @@ def derive(
         # 규칙 7: end 창 (30분 미만) — 5분 간격
         else:
             next_state = "end"
-            next_check_at = _to_iso(now + timedelta(seconds=END_TICK_SEC))
+            next_check_at = _after(now, END_TICK_SEC)
             log.append(f"end-check {item_id}")
 
     # ─ next_check_at 클램프 ─
@@ -261,7 +294,9 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("✓ 규칙 2: watching, 120분 미만, live_seen=None → watching 계속")
     print("=" * 70)
-    now_2 = base_now  # ss - 3분 후
+    # 주석의 의도("ss - 3분 후" = watching 진입 뒤)에 맞게 ss-2분. 이전 값(base_now=ss-60분)은 정상 경로에선 나올 수 없는
+    # 상태(watching 은 ss-3분에야 진입)라 v3.7.3 규칙 14(미래로 밀린 watching 되돌림)와 충돌해 수정.
+    now_2 = "2026-08-31T12:58:00Z"
     item_2 = {
         "id": "pv_test2",
         "state": "watching",
@@ -449,6 +484,87 @@ if __name__ == "__main__":
     assert tick_12.next_state == "live", f"expected live, got {tick_12.next_state}"
     print(f"  watching + live_seen → {tick_12.next_state}")
 
+    # ── v3.7.3: 왕복 차단 / 미래로 밀린 watching 되돌림 / 체크 시각 격자 ──
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 12개 시나리오 통과 ✓")
+    print("✓ 규칙 13: 강등된 예고(ss+120분 초과)는 watching 으로 재진입하지 않음 (왕복 차단)")
+    print("=" * 70)
+    # 실측 2026-09-18: arale 자리표시 ss=21:00 KST(12:00Z), video_id 없음. 23:00:00 KST 에 규칙 3 강등 → 다음 실행에서
+    # 규칙 1 이 즉시 되돌리던 것을, 실행마다 상태를 이어받아 반복 시뮬레이션(분당 여러 번 실행)
+    ph = {"id": "pv_c181ee4c", "state": "watching", "scheduled_start": "2026-09-18T12:00:00Z",
+          "video_id": None, "membership": False, "state_since": "2026-09-18T11:57:15Z"}
+    flips = 0
+    cur = dict(ph)
+    for now_x in ("2026-09-18T13:59:00Z", "2026-09-18T14:00:00Z", "2026-09-18T14:00:05Z",
+                  "2026-09-18T14:00:13Z", "2026-09-18T14:01:00Z", "2026-09-18T14:30:00Z",
+                  "2026-09-18T14:59:59Z"):
+        t = derive(cur, now_x)
+        if t.next_state != cur["state"]:
+            flips += 1
+            cur = dict(cur, state=t.next_state)
+    assert cur["state"] == "announced" and flips == 1, (cur["state"], flips)
+    print("  watching→announced 딱 1번(23:00:00 KST), 이후 실행 6회 동안 announced 유지 (수정 전: 매 실행 왕복)")
+
+    up = {"id": "pv_x", "state": "upcoming", "scheduled_start": "2026-09-18T12:00:00Z", "video_id": "vid",
+          "state_since": "2026-09-18T11:00:00Z"}
+    t = derive(up, "2026-09-18T15:00:00Z")
+    assert t.next_state == "upcoming" and t.next_check_at is None and any("late-hold" in l for l in t.log), t
+    assert derive(up, "2026-09-18T13:59:00Z").next_state == "watching", "ss+120분 이내는 종전대로 watching 진입"
+    print("  ss+120분 이내는 종전대로 watching 진입, 초과면 late-hold(다음 체크 없음)")
+
+    print("\n" + "=" * 70)
+    print("✓ 규칙 14: ss 가 3분보다 미래로 밀린 watching → 대기 상태로 되돌림")
+    print("=" * 70)
+    # 실측 2026-09-17: DWMQTpDQ1fc 는 수신 시각(17:03 KST)을 ss 로 잡아 watching 이 된 뒤 API 시작 시각(9/25)으로
+    # 정정됐는데 watching 이 유지돼 48시간 동안 wake 가 이어졌다.
+    w = {"id": "pv_f4f2157c", "state": "watching", "scheduled_start": "2026-09-25T10:30:00Z",
+         "video_id": "DWMQTpDQ1fc", "state_since": "2026-09-17T08:10:02Z"}
+    t = derive(w, "2026-09-19T08:00:00Z")
+    assert t.next_state == "upcoming" and t.next_check_at == "2026-09-25T10:27:00Z", (t.next_state, t.next_check_at)
+    t = derive(dict(w, video_id=None), "2026-09-19T08:00:00Z")
+    assert t.next_state == "announced" and t.next_check_at == "2026-09-25T10:27:00Z", (t.next_state, t.next_check_at)
+    near = dict(w, scheduled_start="2026-09-19T08:05:00Z")
+    assert derive(near, "2026-09-19T08:00:00Z").next_state == "upcoming"
+    assert derive(dict(near, state="upcoming"), "2026-09-19T08:02:30Z").next_state == "watching"
+    assert derive(w, "2026-09-19T08:00:00Z", live_seen=True).next_state == "live", "시작 신호가 예정 시각보다 우선"
+    assert derive(dict(w, scheduled_start="2026-09-19T08:02:00Z"), "2026-09-19T08:00:00Z").next_state == "watching"
+    print("  미래로 밀린 watching → upcoming(video_id 있음)/announced(없음) + ss-3분 예약, live_seen 우선, 정상 watching 유지")
+
+    print("\n" + "=" * 70)
+    print("✓ 규칙 15: 상대 체크 시각은 주기 격자에 맞춰져 실행 위상이 달라도 같은 시각으로 수렴 (체인 증식 차단)")
+    print("=" * 70)
+    from datetime import datetime as _dt, timezone as _tz
+    for state, kw, sec in (("watching", {}, PRELIVE_TIGHT_SEC), ("live", {"actual_start": "2026-09-19T08:00:00Z"}, LIVE_EARLY_SEC),
+                           ("live", {"actual_start": "2026-09-19T05:00:00Z"}, LIVE_TIGHT_SEC)):
+        base = {"id": "pv_g", "state": state, "scheduled_start": "2026-09-19T08:00:00Z", "video_id": "v", **kw}
+        # 같은 sec 구간 안에서 서로 다른 실행 시각(초 단위 위상 차이)이 같은 next_check_at 으로 모이는지
+        seen = {}
+        for off in range(0, sec, 7):
+            n = _dt(2026, 9, 19, 8, 30, 0, tzinfo=_tz.utc).timestamp() // sec * sec + off
+            now_i = _dt.fromtimestamp(n, _tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            tk = derive(base, now_i)
+            d = (_dt.fromisoformat(tk.next_check_at.replace("Z", "+00:00")) - _dt.fromisoformat(now_i.replace("Z", "+00:00"))).total_seconds()
+            assert sec / 2 <= d < 1.5 * sec, (state, sec, off, d)
+            seen[tk.next_check_at] = seen.get(tk.next_check_at, 0) + 1
+        assert len(seen) <= 2, f"한 주기 안의 실행이 {len(seen)}개 시각으로 흩어짐: {list(seen)}"
+    print("  watching(180s)/live 초기(600s)/live 후기(300s): 한 주기 안 어느 위상에서 실행해도 다음 체크는 ≤2개 격자 시각")
+
+    # 위상이 다른 3개 체인이 하나로 합쳐지는지 시뮬레이션 — 수정 전(now+180s)은 3개 유지, 수정 후 1개로 수렴
+    def chains(step_fn, starts):
+        # 체인 수 = 서로 다른 위상(t mod 주기)의 개수. 같은 위상의 체인은 정확히 주기의 배수만큼 어긋난
+        # 같은 시퀀스라 태스크 이름((영상, 분))이 겹쳐 하나로 dedupe 된다.
+        ts = list(starts)
+        for _ in range(12):
+            ts = sorted({step_fn(t) for t in ts})
+        return len({round(t) % PRELIVE_TIGHT_SEC for t in ts})
+    def _iso(t): return _dt.fromtimestamp(t, _tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    w3 = {"id": "pv_w", "state": "watching", "scheduled_start": "2026-09-19T08:00:00Z", "video_id": "v"}
+    def fixed(t): return t + PRELIVE_TIGHT_SEC
+    def snapped(t): return _dt.fromisoformat(derive(w3, _iso(t)).next_check_at.replace("Z", "+00:00")).timestamp()
+    t0 = _dt(2026, 9, 19, 8, 33, 0, tzinfo=_tz.utc).timestamp()
+    starts = [t0, t0 + 60, t0 + 121]           # 위상이 다른 체인 3개
+    assert chains(fixed, starts) == 3 and chains(snapped, starts) == 1
+    print("  위상 다른 3개 체인: 수정 전 방식(now+180s)은 3개 유지, 격자 방식은 1개로 수렴")
+
+    print("\n" + "=" * 70)
+    print("SUCCESS: 모든 15개 시나리오 통과 ✓")
     print("=" * 70)

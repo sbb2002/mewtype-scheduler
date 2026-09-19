@@ -16,3 +16,7 @@ deploy/env.sh
 
 # 저작권 있는 실사용 이미지 fixture(비전 OCR 로컬 --live 테스트용) — 커밋 금지
 fixtures/awarnoutz_cast.jpg
+
+# 유튜브 멤버십 쿠키 — 자격증명, 절대 커밋 금지
+*cookies*.txt
+ref/www.youtube.com_cookies.txt

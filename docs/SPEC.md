@@ -577,6 +577,16 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 `scheduled_start`: TUNEIN → `now+30분`+`time_approx=True`, 그 외 → `now`. 반환 dict: `{video_id, url,
 thumbnail, title, kind(tunein|reminder|sub_start), scheduled_start, time_approx, source:"yt-notif"}`.
 
+**(v3.7.3) 회원 전용 라이브** — 위 `parse_yt_notif` 은 `chime.*` dict 입력용이고 `/ingest` 에 연결돼 있지 않다.
+실제 업스트림은 유튜브 알림을 폼 `source=yt&video_id&title&kind&tag` 로 중계한다. `parse_member_live_relay(form,
+channels_cfg)` 는 `kind` 에 `NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START` 가 있고 `title`
+(`"<채널 표시명> / <그룹명> 실시간 스트리밍 시작: <영상 제목>"`) 앞부분이 5인 `channels.json` `name` 과 일치할 때만
+`{channel_key, title, tag}` 를 반환(`video_id` 는 `default` 라 무시). `ytdlp_probe.find_member_live(channel_id, title)`
+이 streams 탭(`--flat-playlist`)에서 `subscriber_only` + (`is_live`|`is_upcoming`) 를 제목 일치→is_live 1건 순으로
+골라 `{video_id, url}` (상한 6초, 쿠키 있으면 쿠키→쿠키 없이 폴백). `telegram_app._handle_yt_relay` 가 조립해
+`/write` 잡 `yt_member_live_commit`(`_commit_yt_member_live` → 순수 `xtweet.merge_member_live`: 자리표시 승격 /
+신규 생성 / noop)로 반영. 항상 200.
+
 ### 8.6 `vxtwitter.py`
 
 `fetch_tweet(tweet_id, *, session=None, timeout=8.0, base=cfg.vxtwitter_base) -> dict | None`
@@ -834,7 +844,8 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`). OIDC.
 - `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
   `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
-  (조건부) + `INGEST_YT_ENABLED` env. **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
+  (조건부) + `INGEST_YT_ENABLED` env. (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
+  `YT_COOKIES_FILE` env(회원 전용 라이브 yt-dlp 조회용, 없어도 동작). **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
 - `telegram_webhook.sh` — `setWebhook`.
 
 **Cloud Run/Scheduler/Tasks 는 같은 리전**(`asia-northeast1`). OIDC audience = 서비스 `status.url`.

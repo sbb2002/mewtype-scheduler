@@ -114,6 +114,46 @@ def parse_yt_notif(nx: dict, now_iso: str) -> dict | None:
     }
 
 
+_MEMBER_START = "NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START"
+
+
+def _nfkc(s: str | None) -> str:
+    import unicodedata
+    return " ".join(unicodedata.normalize("NFKC", s or "").split())
+
+
+def parse_member_live_relay(form, channels_cfg: dict) -> dict | None:
+    """(v3.7.3) 업스트림 중계 폼(`source=yt&video_id&title&kind&tag`) → 회원 전용 라이브 시작 알림.
+
+    실측(2026-09-18, Cloud Run 로그): 회원 전용 시작 알림은 `kind` 가
+    `a:NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START:…`, `video_id` 는 영상 ID 가 아니라
+    `default`, `title` 은 `"<채널 표시명> / <그룹명> 실시간 스트리밍 시작: <영상 제목>"`.
+    5인 채널 표시명(`channels.json` `name`)으로 멤버를 판별한다. 5인이 아니거나 회원 전용
+    시작 알림이 아니면 None (호출부가 200 무시).
+
+    반환: {"channel_key", "title"(영상 제목, 없으면 None), "tag"}
+    """
+    if (form.get("source") or "").strip() != "yt":
+        return None
+    if _MEMBER_START not in (form.get("kind") or ""):
+        return None
+    raw_text = (form.get("title") or "").strip()
+    text = _nfkc(raw_text)   # 채널 판별용 — 제목 자체는 원문 그대로 보존(전각 기호 등)
+    if not text:
+        return None
+    channel_key = None
+    for ck, ch in ((channels_cfg or {}).get("channels") or {}).items():
+        name = _nfkc(ch.get("name"))
+        if ck != "group" and name and text.startswith(name):
+            channel_key = ck
+            break
+    if channel_key is None:
+        return None
+    head, sep, video_title = raw_text.partition(": ")
+    title = video_title.strip() if sep and video_title.strip() else None
+    return {"channel_key": channel_key, "title": title, "tag": (form.get("tag") or "").strip()}
+
+
 if __name__ == "__main__":
     # Self-test: 실측 payload 3건 + 노이즈 필터 3건
 
@@ -226,4 +266,35 @@ if __name__ == "__main__":
     assert result is None, "Empty title should be filtered"
     print("✓ NOISE: Empty title filtered")
 
-    print("\n✅ All 6 assertions passed")
+    # ── (v3.7.3) 회원 전용 시작 알림 — 실측 Cloud Run 로그(2026-09-18 12:12Z) 폼 ──
+    import json, os
+    _cfg = json.load(open(os.path.join(os.path.dirname(__file__), "..", "..", "config", "channels.json"), encoding="utf-8"))
+    member_form = {
+        "source": "yt", "video_id": "default",
+        "title": "仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ 실시간 스트리밍 시작: 【🟡メン限】今の鼻事情いつもの気ままあーんど作業？？【 仲町あられ / 夢限大みゅーたいぷ 】",
+        "kind": "a:NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START:946ff57868de0000",
+        "tag": "default::514a3c5a-fa4e-42f4-8b2b-d61ecc567b66",
+    }
+    r = parse_member_live_relay(member_form, _cfg)
+    assert r and r["channel_key"] == "arale", r
+    assert r["title"] == "【🟡メン限】今の鼻事情いつもの気ままあーんど作業？？【 仲町あられ / 夢限大みゅーたいぷ 】", r["title"]
+    print("✓ MEMBER_START (arale, video_id=default → 채널·제목 추출)")
+
+    r = parse_member_live_relay(dict(member_form, title="仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ 실시간 스트리밍 시작"), _cfg)
+    assert r and r["channel_key"] == "arale" and r["title"] is None
+    print("✓ MEMBER_START (제목 콜론 없음 → title None)")
+
+    assert parse_member_live_relay(dict(member_form, title="조코딩 JoCoding 실시간 스트리밍 시작: x"), _cfg) is None
+    assert parse_member_live_relay(dict(member_form, kind="a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:abc"), _cfg) is None
+    assert parse_member_live_relay(dict(member_form, source="x"), _cfg) is None
+    assert parse_member_live_relay(dict(member_form, title=""), _cfg) is None
+    print("✓ MEMBER_START 필터 (타 채널·타 kind·타 source·빈 제목 → None)")
+
+    for ck, ch in _cfg["channels"].items():
+        if ck == "group":
+            continue
+        rr = parse_member_live_relay(dict(member_form, title=f"{ch['name']} / 夢限大みゅーたいぷ 실시간 스트리밍 시작: t"), _cfg)
+        assert rr and rr["channel_key"] == ck, (ck, rr)
+    print("✓ MEMBER_START 5인 전원 판별")
+
+    print("\n✅ All assertions passed")

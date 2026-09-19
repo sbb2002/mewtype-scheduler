@@ -9,6 +9,7 @@ self-test: python -m src.backend.vxtwitter
 """
 from __future__ import annotations
 
+import logging
 import re
 import warnings
 from typing import Any
@@ -32,42 +33,126 @@ _STATUS_ID_RE = re.compile(r"/status/(\d+)")
 
 # ponytail: vxtwitter 서드파티 무료 서비스 → 가동률 미보장, 실패 시 조용히 None 반환
 
+# (v3.7.3) vxtwitter 는 특정 트윗에서 HTTP 500 을 "영구적으로" 낸다(2026-09-14~19 로그 고유 트윗 12건이 며칠 뒤에도
+# 500, 참조 트윗 단독 조회도 500). 같은 성격의 fxtwitter 로 폴백해 본문·첨부·참조 트윗(QRT)을 살린다.
+# 두 호출을 순차로 돌아도 업스트림(Automate) HTTP 타임아웃(약 10초) 안에 들어오도록 타임아웃을 낮춘다.
+FX_BASE = "https://api.fxtwitter.com"
+VX_TIMEOUT_SEC = 5.0
+FX_TIMEOUT_SEC = 4.0
 
-def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = 8.0,
-                base: str = "https://api.vxtwitter.com") -> dict | None:
-    """vxtwitter API 조회. tweet_id(Snowflake) → JSON dict | None.
+_log = logging.getLogger(__name__)
 
-    Args:
-        tweet_id: X 트윗 Snowflake id (숫자 문자열)
-        session: requests.Session (None이면 새로 생성)
-        timeout: 초 (기본 8.0)
-        base: API 베이스 URL
 
-    Returns:
-        {"text": str, "mediaURLs": [...], "media_extended": [...], ...} or None
+def _strip_orig(url: str) -> str:
+    """fxtwitter 사진 URL 의 `?name=orig` 제거 — vxtwitter 의 mediaURLs 형식과 맞춘다."""
+    return url[: -len("?name=orig")] if url.endswith("?name=orig") else url
+
+
+def _fx_media(media: dict | None) -> tuple[list[str], list[dict]]:
+    """fxtwitter `media.all` → (vx mediaURLs 형식, media_extended 형식).
+
+    프론트가 모든 미디어를 <img> 로만 그리므로 영상·GIF 는 썸네일 이미지 URL 을 쓴다.
     """
-    if not tweet_id or not str(tweet_id).isdigit():
-        warnings.warn(f"vxtwitter: 유효하지 않은 tweet_id={tweet_id}", stacklevel=2)
-        return None
+    urls: list[str] = []
+    ext: list[dict] = []
+    for m in (media or {}).get("all") or []:
+        if not isinstance(m, dict):
+            continue
+        kind = m.get("type")
+        u = m.get("url") if kind == "photo" else m.get("thumbnail_url")
+        if u:
+            u = _strip_orig(str(u))
+            urls.append(u)
+            ext.append({"url": u, "type": kind})
+    return urls, ext
 
-    url = f"{base}/i/status/{tweet_id}"
+
+def _fx_to_vx(fx: dict) -> dict | None:
+    """fxtwitter 응답(`{"tweet": {...}}`) → vxtwitter 응답 형식 dict. 내용이 하나도 없으면 None."""
+    t = (fx or {}).get("tweet")
+    if not isinstance(t, dict) or not (t.get("text") or t.get("media") or t.get("quote")):
+        return None
+    urls, ext = _fx_media(t.get("media"))
+    out: dict = {"text": t.get("text") or "", "mediaURLs": urls, "media_extended": ext,
+                 "tweetID": t.get("id")}
+    q = t.get("quote")
+    if isinstance(q, dict):
+        qurls, qext = _fx_media(q.get("media"))
+        out["qrtURL"] = q.get("url") or (
+            f"https://twitter.com/i/status/{q['id']}" if q.get("id") else None)
+        out["qrt"] = {"text": q.get("text") or "", "mediaURLs": qurls, "media_extended": qext,
+                      "tweetID": q.get("id")}
+    return out
+
+
+def _get_json(url: str, session: Any, timeout: float, tag: str) -> dict | None:
+    """GET → JSON dict. 비200·타임아웃·JSON 오류 전부 경고 + None (서드파티라 조용히)."""
     try:
         if session:
             resp = session.get(url, timeout=timeout)
         else:
             if not requests:
-                warnings.warn("vxtwitter: requests 미설치", stacklevel=2)
+                warnings.warn(f"{tag}: requests 미설치", stacklevel=3)
                 return None
             resp = requests.get(url, timeout=timeout)
 
         if resp.status_code != 200:
-            warnings.warn(f"vxtwitter: {resp.status_code} {url}", stacklevel=2)
+            warnings.warn(f"{tag}: {resp.status_code} {url}", stacklevel=3)
             return None
 
         return resp.json()
-    except Exception as e:  # 네트워크·타임아웃·JSON 오류 전부 — 서드파티라 조용히 None
-        warnings.warn(f"vxtwitter: {type(e).__name__} {url}", stacklevel=2)
+    except Exception as e:  # 네트워크·타임아웃·JSON 오류 전부
+        warnings.warn(f"{tag}: {type(e).__name__} {url}", stacklevel=3)
         return None
+
+
+def fetch_tweet_fx(tweet_id: str, *, session: Any = None, timeout: float = FX_TIMEOUT_SEC,
+                   base: str = FX_BASE) -> dict | None:
+    """fxtwitter API 조회 → vxtwitter 응답 형식으로 변환한 dict | None."""
+    if not tweet_id or not str(tweet_id).isdigit():
+        return None
+    j = _get_json(f"{base}/i/status/{tweet_id}", session, timeout, "fxtwitter")
+    return _fx_to_vx(j) if j else None
+
+
+def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = VX_TIMEOUT_SEC,
+                base: str = "https://api.vxtwitter.com", fx_base: str = FX_BASE,
+                fallback: bool = True) -> dict | None:
+    """vxtwitter API 조회(실패 시 fxtwitter 폴백). tweet_id(Snowflake) → JSON dict | None.
+
+    Args:
+        tweet_id: X 트윗 Snowflake id (숫자 문자열)
+        session: requests.Session (None이면 새로 생성)
+        timeout: vxtwitter 초 (기본 5.0)
+        base: vxtwitter API 베이스 URL
+        fx_base: fxtwitter API 베이스 URL
+        fallback: False 면 vxtwitter 만
+
+    Returns:
+        {"text": str, "mediaURLs": [...], "media_extended": [...], ...} or None
+        (fxtwitter 폴백 결과도 같은 형식)
+    """
+    if not tweet_id or not str(tweet_id).isdigit():
+        warnings.warn(f"vxtwitter: 유효하지 않은 tweet_id={tweet_id}", stacklevel=2)
+        return None
+
+    j = _get_json(f"{base}/i/status/{tweet_id}", session, timeout, "vxtwitter")
+    if j is not None or not fallback:
+        return j
+
+    j = fetch_tweet_fx(tweet_id, session=session, base=fx_base)
+    if j is not None:
+        _log.warning("vxtwitter 실패 → fxtwitter 폴백 성공 tweet=%s", tweet_id)
+    return j
+
+
+def _media_urls(j: dict) -> list[str]:
+    """vxtwitter JSON(또는 그 안의 qrt) → 미디어 URL 목록. media_extended 가 있으면 그것을 우선."""
+    media_urls = list(j.get("mediaURLs") or [])
+    media_ext = j.get("media_extended") or []
+    if media_ext and isinstance(media_ext, list):
+        media_urls = [m.get("url") for m in media_ext if isinstance(m, dict) and m.get("url")]
+    return [u for u in media_urls if u]  # None 필터
 
 
 def extract(j: dict) -> dict:
@@ -80,16 +165,7 @@ def extract(j: dict) -> dict:
         {"text": str, "media": [url,...], "urls": [...], "yt_video_id": str|None}
     """
     text = str(j.get("text") or "")
-
-    # mediaURLs: [url, ...] 리스트
-    media_urls = list(j.get("mediaURLs") or [])
-
-    # media_extended: [{url, type}, ...] 리스트 (없으면 mediaURLs 사용)
-    media_ext = j.get("media_extended") or []
-    if media_ext and isinstance(media_ext, list):
-        media_urls = [m.get("url") for m in media_ext if isinstance(m, dict) and m.get("url")]
-
-    media_urls = [u for u in media_urls if u]  # None 필터
+    media_urls = _media_urls(j)
 
     # 확장 URL: 트윗 본문 내 URL들 (들어있으면 사용)
     urls = []
@@ -105,12 +181,22 @@ def extract(j: dict) -> dict:
 
     qrt_url = j.get("qrtURL") or None
 
+    # (v3.7.3) 응답에 인용 트윗 본문이 실려 오면 그대로 쓴다 — 별도 fetch_tweet(qrt_id) 는 vxtwitter 가
+    # 그 참조 트윗을 500 으로 못 주는 경우(2026-09-18 아라레 "2年半前…")에 유실되므로 최후 수단으로만.
+    qrt = None
+    q = j.get("qrt")
+    if isinstance(q, dict):
+        q_text, q_media = str(q.get("text") or ""), _media_urls(q)
+        if q_text or q_media:
+            qrt = {"text": q_text, "media": q_media}
+
     return {
         "text": text,
         "media": media_urls,
         "urls": urls,
         "yt_video_id": yt_video_id,
         "qrt_url": qrt_url,
+        "qrt": qrt,
     }
 
 
@@ -179,4 +265,90 @@ if __name__ == "__main__":
     assert qrt_id(None) is None
     assert extract(fixture_no_yt)["qrt_url"] is None
 
-    print("✓ vxtwitter.extract self-test 통과 (7/7)")
+    # ── (v3.7.3) fxtwitter 폴백 + 임베드 참조 트윗 ─────────────────────────────────────
+    # 실측 2026-09-18 19:32 KST 아라레 "2年半前…💛💙"(2100895649764192693): vxtwitter 는 이 트윗과
+    # 참조 트윗(1776172940654219620) 모두 HTTP 500, fxtwitter 는 200 + 참조 트윗 전문/사진 반환.
+    QUOTE_TEXT = (
+        "＼💛歌ってみた動画公開💙／\n\n#夢限大みゅーたいぷ\n"
+        "仲町あられ・峰月律の歌ってみた動画をプレミア公開🎤✨️\n\n唱 / Ado\n"
+        "【 covered by 仲町あられ・峰月律 】\n\nぜひたくさん聴いてくださいね🥰🎶\n\n"
+        "ご視聴はこちらから👇\nhttps://www.youtube.com/watch?v=zVdR0urFjnc\n\n#バンドリ #ゆめみた"
+    )
+    fx_real = {
+        "code": 200, "message": "OK",
+        "tweet": {
+            "id": "2100895649764192693", "text": "2年半前…💛💙", "media": None,
+            "url": "https://x.com/arale_yumemita/status/2100895649764192693",
+            "quote": {
+                "id": "1776172940654219620", "text": QUOTE_TEXT,
+                "url": "https://x.com/BDP_yumemita/status/1776172940654219620",
+                "media": {"all": [{"type": "photo", "id": "1775814052524232705",
+                                   "url": "https://pbs.twimg.com/media/GKT1eNvakAEbC3Q.png?name=orig"}]},
+            },
+        },
+    }
+
+    class _Resp:
+        def __init__(self, status, body=None):
+            self.status_code, self._body = status, body
+        def json(self):
+            if self._body is None:
+                raise ValueError("no json")
+            return self._body
+
+    class _Sess:
+        def __init__(self, vx, fx):
+            self.vx, self.fx, self.calls = vx, fx, []
+        def get(self, url, timeout=None):
+            self.calls.append(url)
+            r = self.fx if "fxtwitter" in url else self.vx
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+    TID = "2100895649764192693"
+
+    # (8) vx 500 → fx 폴백: 본문·참조 트윗 전문·사진(`?name=orig` 제거)
+    s = _Sess(_Resp(500), _Resp(200, fx_real))
+    j = fetch_tweet(TID, session=s)
+    assert j and j["text"] == "2年半前…💛💙" and j["qrtURL"].endswith("/status/1776172940654219620"), j
+    ex = extract(j)
+    assert ex["qrt"] == {"text": QUOTE_TEXT, "media": ["https://pbs.twimg.com/media/GKT1eNvakAEbC3Q.png"]}, ex["qrt"]
+    assert qrt_id(ex["qrt_url"]) == "1776172940654219620"
+    assert len(s.calls) == 2 and "vxtwitter" in s.calls[0] and "fxtwitter" in s.calls[1], s.calls
+    print("  vx 500 → fx 폴백 → 참조 트윗 전문·사진 복원")
+
+    # (9) vx 정상이면 fx 는 부르지 않는다 (무회귀)
+    s = _Sess(_Resp(200, {"text": "본문", "mediaURLs": [], "qrtURL": None}), _Resp(200, fx_real))
+    assert fetch_tweet(TID, session=s)["text"] == "본문" and len(s.calls) == 1
+    print("  vx 정상 → fx 미호출")
+
+    # (10) 예외(타임아웃)·JSON 오류도 폴백, 둘 다 실패면 None (종전 동작)
+    assert fetch_tweet(TID, session=_Sess(TimeoutError("t"), _Resp(200, fx_real)))["text"] == "2年半前…💛💙"
+    assert fetch_tweet(TID, session=_Sess(_Resp(200, None), _Resp(200, fx_real)))["text"] == "2年半前…💛💙"
+    assert fetch_tweet(TID, session=_Sess(_Resp(500), _Resp(404))) is None
+    assert fetch_tweet(TID, session=_Sess(_Resp(500), _Resp(200, {"code": 404, "tweet": None}))) is None
+    assert fetch_tweet(TID, session=_Sess(_Resp(500), _Resp(200, fx_real)), fallback=False) is None
+    assert fetch_tweet("abc") is None
+    print("  타임아웃·JSON 오류 폴백 / 둘 다 실패·fallback=False → None")
+
+    # (11) 응답에 실린 vx `qrt` 도 임베드로 추출 (별도 조회 불필요)
+    ex = extract({"text": "인용함", "mediaURLs": [], "qrtURL": "https://twitter.com/i/status/9",
+                  "qrt": {"text": "원문", "mediaURLs": ["https://pbs.twimg.com/media/a.jpg"]}})
+    assert ex["qrt"] == {"text": "원문", "media": ["https://pbs.twimg.com/media/a.jpg"]}
+    assert extract({"text": "인용 없음"})["qrt"] is None
+    assert extract({"text": "x", "qrt": {"text": "", "mediaURLs": []}})["qrt"] is None
+    print("  vx 임베드 qrt 추출 / 없으면 None")
+
+    # (12) 영상·GIF 는 썸네일, 사진은 원본, 사진+영상 혼합
+    fx_media = {"tweet": {"id": "1", "text": "t", "media": {"all": [
+        {"type": "photo", "url": "https://pbs.twimg.com/media/p.jpg?name=orig"},
+        {"type": "video", "url": "https://video.twimg.com/v.mp4", "thumbnail_url": "https://pbs.twimg.com/v_thumb.jpg"},
+        {"type": "gif", "url": "https://video.twimg.com/g.mp4", "thumbnail_url": "https://pbs.twimg.com/g_thumb.jpg"},
+    ]}, "quote": None}}
+    assert extract(_fx_to_vx(fx_media))["media"] == [
+        "https://pbs.twimg.com/media/p.jpg", "https://pbs.twimg.com/v_thumb.jpg", "https://pbs.twimg.com/g_thumb.jpg"]
+    assert _fx_to_vx({"tweet": {"id": "1"}}) is None and _fx_to_vx({}) is None
+    print("  fx 미디어: 사진 원본 / 영상·GIF 썸네일, 빈 응답 None")
+
+    print("✓ vxtwitter.extract self-test 통과 (12/12)")

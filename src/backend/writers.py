@@ -59,6 +59,9 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             gh, a["video_id"], a["new_item"], a.get("next_check_at"), a["host_key"],
             a["now_iso"], via=a.get("via", "ingest"),
         ),
+        "yt_member_live_commit": lambda gh, a: t._commit_yt_member_live(
+            gh, a["live"], a["now_iso"], via=a.get("via", "ingest"),
+        ),
         "undo_restore": lambda gh, a: t._undo_restore_commit(
             gh, a["path"], a["prev_content"], a["expected_sha"], a["action"], a["now_iso"],
         ),
@@ -94,7 +97,7 @@ if __name__ == "__main__":
     expected = {
         "merge_rows", "remove_broadcast", "apply_notice", "notice_sweep",
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
-        "tweet_del_commit", "url_confirmed_commit", "undo_restore",
+        "tweet_del_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain",
     }
     missing = expected - set(reg)

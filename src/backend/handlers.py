@@ -40,6 +40,28 @@ _POST_END_RECHECK_SEC = 20 * 60
 # (3h 시절 도입한 보정 — 현재는 10분 tick 과 겹치지만 무해해 유지, 제거 여부는 후속 결정)
 _SCHED_WAKE_LOOKAHEAD_SEC = 3 * 3600
 
+# (v3.7.3) 이보다 먼 미래의 wake 는 등록하지 않는다. 정기 light tick(10분)·baseline(매일 06:00 JST)이 매번
+# 전체를 다시 계산하므로, 시각이 이 창 안으로 들어오는 순간 다음 실행이 등록한다(절대 시각이라 이름이 같아
+# dedupe). 예전엔 시작이 29일 넘게 남은 방송(예: 12/24 라이브 h31Mi6AS7a0)의 wake 가 Cloud Tasks 상한
+# (29일)으로 잘려 "지금+29일" 이라는 실행마다 다른 시각·다른 이름으로 계속 쌓였다(2026-09-19 큐 3,319건).
+_WAKE_ENQUEUE_HORIZON_SEC = 24 * 3600
+
+
+def _wakes_within_horizon(wakes: dict[str, str], now_iso: str) -> dict[str, str]:
+    """{video_id: when_iso} 중 `now + _WAKE_ENQUEUE_HORIZON_SEC` 이내인 것만 (순수)."""
+    try:
+        limit = datetime.fromisoformat(now_iso.replace("Z", "+00:00")) + timedelta(seconds=_WAKE_ENQUEUE_HORIZON_SEC)
+    except ValueError:
+        return dict(wakes or {})
+    out: dict[str, str] = {}
+    for vid, when in (wakes or {}).items():
+        try:
+            if datetime.fromisoformat(when.replace("Z", "+00:00")) <= limit:
+                out[vid] = when
+        except (ValueError, AttributeError):
+            out[vid] = when  # 파싱 불가는 종전대로 등록(막지 않음)
+    return out
+
 
 def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
     """announced(자리표시) 아이템 중 '지금 ~ +_SCHED_WAKE_LOOKAHEAD_SEC' 에 시작하는 것들의 scheduled_start 목록."""
@@ -419,6 +441,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
 
     # ── Cloud Tasks enqueue ──
     enqueued, enqueue_errors = 0, []
+    wakes = _wakes_within_horizon(wakes, now_iso)
     sched_wakes = _scheduled_wake_times(new_preview, now_iso)
     newly_ended = any("→end" in t for t in transitions)
     need_tq = bool(wakes or sched_wakes or newly_ended)
@@ -616,6 +639,22 @@ if __name__ == "__main__":
     assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "none"
     assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
     print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
+
+    # _wakes_within_horizon (v3.7.3) — 실측 2026-09-19 17:00 KST(08:00Z) 큐 상태 기준
+    _now_h = "2026-09-19T08:00:00Z"
+    _w = {
+        "DWMQTpDQ1fc": "2026-09-19T08:03:00Z",     # 3분 뒤 — 등록
+        "MNocXlK5P8s": "2026-09-19T12:27:00Z",     # 같은 날 21:27 KST — 등록
+        "JsvLrSmgSz8": "2026-09-20T11:57:00Z",     # 28시간 뒤 — 이번엔 보류(다음 날 light tick 이 등록)
+        "h31Mi6AS7a0": "2026-10-18T08:01:00Z",     # 12/24 라이브: 29일로 잘린 시각 — 등록 안 함
+    }
+    _kept = _wakes_within_horizon(_w, _now_h)
+    assert set(_kept) == {"DWMQTpDQ1fc", "MNocXlK5P8s"}, _kept
+    assert _wakes_within_horizon(_w, "2026-09-20T08:00:00Z").keys() >= {"JsvLrSmgSz8"}, "하루 뒤 창 안으로 들어오면 등록"
+    assert _wakes_within_horizon({"a": "2026-09-19T08:00:00Z"}, _now_h) == {"a": "2026-09-19T08:00:00Z"}, "경계(정확히 24h)는 포함"
+    assert _wakes_within_horizon({"a": "2026-09-20T08:00:01Z"}, _now_h) == {}, "24h 를 1초라도 넘으면 제외"
+    assert _wakes_within_horizon({}, _now_h) == {} and _wakes_within_horizon({"a": "??"}, _now_h) == {"a": "??"}
+    print("[OK] _wakes_within_horizon: 24시간 넘는 wake(29일로 잘린 것 포함) 미등록, 창 진입 시 등록, 파싱불가는 종전대로")
 
     # _should_log_run 헬퍼 함수 테스트
     # 무변화 → False
