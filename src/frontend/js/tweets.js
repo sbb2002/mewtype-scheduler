@@ -83,6 +83,8 @@ function _flipLang() {
   const vis = _visible(_st.data);
   for (const [ck, b] of _st.bubbles) _syncTl(b, vis[ck]);
   if (_toast) { const ck = _toast.dataset.ck; if (ck) _syncTl(_toast, vis[ck]); }
+  _repositionAll();                       // 번역 ON/OFF 로 패널 폭이 바뀐다
+  setTimeout(_repositionAll, 520);          // 폭 애니메이션이 끝난 뒤 화면 가장자리 보정을 다시
 }
 
 /* ── 유틸 ────────────────────────────────────────────────────────── */
@@ -153,14 +155,11 @@ function _setSrc(el, m) {
 
 /* ── 트윗 = 번역 말풍선 + X 공식 카드 (v3.8.0b) ─────────────────────────────
    법률 자문에 따라 트윗의 요소(원문 텍스트·이미지·영상·참조 트윗의 미디어)를 우리가 다시 조립해 그리지 않는다.
-   화면에는 ① 원문 트윗에 대한 번역(참조 트윗은 번역만, 안쪽 말풍선) ② X 공식 임베드 카드 ③ 디스클레이머만 나온다.
+   화면에는 ① 원문 트윗에 대한 번역(참조 트윗은 번역만, 안쪽 말풍선) ② X 공식 임베드 카드 ③ 디스클레이머(사이트 하단)만 나온다.
    원문·미디어는 X 카드가 보여 준다. 저장 데이터(tweets.json 의 text/media/quote/video)는 유지보수용으로 그대로 두되 화면에는 쓰지 않는다.
    X 카드는 iframe 이 필요한 높이를 twttr.private.resize 메시지로 알려주므로 그 값을 그대로 쓰고(상한 없음 - 패널 스크롤에 맡김),
    폭 250px 미만이면 렌더링 자체를 못 하므로(실측) PC 패널 폭을 320px 로 한다. 영상이 든 카드 여러 개를 한꺼번에 띄우면
    브라우저가 멈춰(실측) 화면에 들어올 때만(IntersectionObserver) 불러온다. */
-const ISSUES_URL = "https://github.com/sbb2002/mewtype-scheduler/issues";
-const FOOT_HTML = '비공식 팬 번역 · 비영리 운영 · 삭제 요청 시 예고 없이 서비스가 중단될 수 있습니다 · ' +
-  '<a href="' + ISSUES_URL + '" target="_blank" rel="noopener">문의·삭제 요청 (GitHub Issues)</a>';
 const EMBED_ORIGINS = ["https://platform.twitter.com", "https://platform.x.com"];
 const CARD_EST_H = 230;          // 카드가 실제 높이를 알려주기 전 자리표시 높이(짧은 텍스트 트윗 실측)
 const CARD_TIMEOUT_MS = 15000;   // 이 안에 렌더링 신호가 없으면 "X에서 보기" 링크를 띄운다
@@ -185,7 +184,7 @@ function _wireEmbedResize() {
       const wrap = f.parentElement;
       const sc = wrap.closest(".lane__bubble__scroll, .tw-toast__scroll");
       const atBottom = sc && (sc.scrollHeight - sc.clientHeight - sc.scrollTop) < 8;
-      wrap.style.height = h + "px";
+      wrap.style.minHeight = h + "px";
       wrap.dataset.ready = "1";
       const fb = wrap.querySelector(".lane__thread__xlink");
       if (fb) fb.remove();
@@ -206,6 +205,7 @@ function _loadCard(wrap) {
   f.title = "X 트윗";
   f.setAttribute("allow", "autoplay; fullscreen");
   f.setAttribute("allowfullscreen", "");
+  f.setAttribute("scrolling", "no");
   f.addEventListener("load", () => { wrap.dataset.loaded = "1"; });   // 문서는 열렸다 — 높이 신호만 늦을 뿐 실패가 아니다
   wrap.appendChild(f);
   setTimeout(() => {
@@ -229,7 +229,7 @@ function _watchCards(scrollEl) {
       io.unobserve(en.target);
       _loadCard(en.target);
     }
-  }, { root: scrollEl, rootMargin: "300px 0px" });
+  }, { root: getComputedStyle(scrollEl).overflowY === "visible" ? null : scrollEl, rootMargin: "300px 0px" });
   scrollEl.__io = io;
   cards.forEach((c) => io.observe(c));
 }
@@ -273,7 +273,7 @@ function _xCard(m) {
   if (_isNumId(m.id)) {
     wrap.dataset.id = m.id;
     if (href) wrap.dataset.href = href;
-    wrap.style.height = CARD_EST_H + "px";
+    wrap.style.minHeight = CARD_EST_H + "px";
     const sk = document.createElement("div");
     sk.className = "lane__thread__xskel";
     sk.textContent = "X 카드 불러오는 중…";
@@ -406,8 +406,7 @@ function _bubble(ck) {
         '<button class="lane__bubble__x" type="button" aria-label="닫기">✕</button>' +
       '</span>' +
     '</div>' +
-    '<div class="lane__bubble__scroll"></div>' +
-    '<div class="lane__bubble__foot">' + FOOT_HTML + '</div>';
+    '<div class="lane__bubble__scroll"></div>';
   b.querySelector(".lane__bubble__x").addEventListener("click", () => {
     _st.pinned.delete(ck);
     _closeBubble(ck);
@@ -442,12 +441,15 @@ function _positionBubble(ck) {
   const badge = lane.querySelector(".lane__tw") || lane.querySelector(".lane__avatar");
   const header = lane.querySelector(".lane__header");
   const rr = _st.board.getBoundingClientRect();
-  let left = badge.getBoundingClientRect().left - rr.left + _st.board.scrollLeft;
+  const br = (lane.querySelector(".lane__avatar") || badge).getBoundingClientRect();
+  const cx = br.left + br.width / 2 - rr.left + _st.board.scrollLeft;   // 캐릭터 아바타(동그라미) 중심 - 꼬리가 바로 아래로 오게
+  let left = cx - 24;
   const top = header.getBoundingClientRect().bottom - rr.top + _st.board.scrollTop + 6;
   const maxLeft = _st.board.clientWidth - b.offsetWidth - 8;
   if (left > maxLeft) left = Math.max(4, maxLeft);
   b.style.left = left + "px";
   b.style.top = top + "px";
+  b.style.setProperty("--tail-x", Math.max(10, cx - left - 6.5) + "px");
 }
 function _repositionAll() {
   for (const ck of _st.bubbles.keys()) _positionBubble(ck);
@@ -465,6 +467,7 @@ function _showBubble(ck) {
     b.classList.add("is-open");
     const s = b.querySelector(".lane__bubble__scroll");
     if (s) s.scrollTop = s.scrollHeight;          // 레이아웃 후 맨 아래 보정
+    setTimeout(() => { if (b.classList.contains("is-open")) _positionBubble(ck); }, 300);   // 아바타 이미지 등 늦은 레이아웃 뒤 꼬리를 다시 뱃지 중심에
   });
 }
 function _closeBubble(ck) {
@@ -514,8 +517,7 @@ function _ensureToast() {
       '<button class="tw-toast__tl" type="button" hidden></button>' +
       '<button class="tw-toast__x" type="button" aria-label="닫기">✕</button>' +
     '</div>' +
-    '<div class="tw-toast__scroll"></div>' +
-    '<div class="tw-toast__foot">' + FOOT_HTML + '</div>';
+    '<div class="tw-toast__scroll"></div>';
   _toast.querySelector(".tw-toast__x").addEventListener("click", _closeToast);
   _toast.querySelector(".tw-toast__tl").addEventListener("click", () => { _flipLang(); return false; });
   document.body.append(_backdrop, _toast);

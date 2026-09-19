@@ -135,7 +135,7 @@
 .lane__bubble {
   position: absolute;
   z-index: 60;
-  width: 320px;                     /* v3.8.0b: X 카드가 폭 250px 이상을 요구 — 안쪽 폭 ≈294px */
+  width: 540px;                     /* v3.8.1: 좌 카드(300px) + 우 번역(≈200px). X 카드는 폭 250px 이상 필요 */
   max-width: calc(100% - 16px);
   background: var(--tw-bg, #3a3a3e);
   color: var(--tw-ink, #fff);
@@ -150,6 +150,7 @@
   pointer-events: none;
   transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.15s ease;
 }
+.lane__bubble.tl-off { width: 330px; }                      /* 번역 OFF — 우측 열을 접어 카드만 */
 .lane__bubble.is-open {
   transform: translateY(0) scale(1);
   opacity: 1;
@@ -159,7 +160,7 @@
   content: "";
   position: absolute;
   top: -6px;
-  left: 22px;
+  left: var(--tail-x, 18px);        /* JS 가 뱃지 중심 바로 아래로 맞춘다 */
   width: 13px;
   height: 13px;
   background: var(--tw-bg, #3a3a3e);
@@ -301,7 +302,6 @@
   opacity: 0.7;
   margin-bottom: 1px;
 }
-.tl-off .lane__thread__msg { display: none; }               /* 번역 OFF — 카드만 남는다 */
 /* 참조 트윗은 번역 텍스트만 안쪽 말풍선으로 — 이미지 등 미디어는 X 카드에서 확인 */
 .lane__thread__quote {
   margin-top: 6px;
@@ -368,18 +368,6 @@
 }
 .lane__thread__xlink.is-disabled { pointer-events: none; opacity: 0.6; }
 
-/* 디스클레이머 — 패널·시트 하단 (비공식 팬 번역 / 비영리 / 삭제 요청 시 중단 / 문의 창구) */
-.lane__bubble__foot,
-.tw-toast__foot {
-  margin: 6px 8px 0;
-  padding-top: 6px;
-  border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  font-size: 10.5px;
-  line-height: 1.5;
-  opacity: 0.85;
-}
-.lane__bubble__foot a,
-.tw-toast__foot a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── 모바일 토스트 (메신저 알림풍) ──────────────────────────────── */
 .tw-backdrop {
@@ -454,4 +442,66 @@ body.tw-modal-open .tw-toast {
   .tw-backdrop {
     transition: none;
   }
+}
+
+/* ── v3.8.1 트윗 = 좌 X 카드 / 우 번역 말풍선 (PC 패널·모바일 토스트 공통). 한 트윗의 두 열은 더 긴 쪽 높이로 같다.
+   카드 자체엔 스크롤이 없고(전체 높이로 펼침), PC 말풍선은 화면 높이 1/2 를 넘으면 말풍선이 스크롤된다.
+   번역 ON/OFF 는 애니메이션: OFF = 번역이 먼저 페이드아웃(.18s) -> 열이 접히고 카드가 채워진다(.25s),
+   ON = 열이 먼저 펼쳐지고(.25s) -> 번역이 페이드인. 번역이 보이지 않는 동안엔 높이 0 으로 접어 줄바꿈 깜빡임이 행 높이에 안 새게 한다. ── */
+.lane__bubble .lane__bubble__scroll {
+  max-height: calc(50vh - 60px);
+  min-height: 120px;
+  overflow-y: auto;
+}
+.lane__bubble,
+.lane__bubble.tl-off {
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.15s ease, width 0.25s ease;
+}
+.lane__bubble.tl-off { transition-delay: 0s, 0s, 0.18s; }
+
+.lane__thread__grp { gap: 8px; }
+.lane__thread__unit {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+}
+.lane__thread__xcard {
+  order: 1;                          /* DOM 은 번역이 먼저 - 화면은 좌 카드 / 우 번역 */
+  flex: 0 0 300px;
+  min-width: 0;
+  transition: flex-grow 0.01s linear;   /* 크기 변화는 번역 열 애니메이션이 끝난 시점에 한 번에(카드 iframe 이 매 프레임 다시 그려지지 않게) */
+}
+.lane__thread__msg {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+  max-width: none;
+  margin-left: 8px;
+  overflow: hidden;
+  max-height: 4000px;
+  border-top-left-radius: 11px;
+  opacity: 1;
+  transition: opacity 0.18s ease 0.25s, max-height 0s 0.25s, flex-grow 0.25s ease, margin-left 0.25s ease, padding 0.25s ease, min-width 0.25s ease;
+}
+.tl-off .lane__thread__msg {
+  flex-grow: 0;
+  margin-left: 0;
+  padding: 0;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, max-height 0s 0.18s, flex-grow 0.25s ease 0.18s, margin-left 0.25s ease 0.18s, padding 0.25s ease 0.18s, min-width 0.25s ease 0.18s;
+}
+
+/* 모바일 토스트: 카드 250px(= X 카드 최소 폭) + 번역(최소 110px, 모자라면 목록이 가로로 밀린다). OFF 면 카드가 가득 채운다. */
+.tw-toast { left: 6px; right: 6px; padding: 3px 3px 7px; }
+.tw-toast .tw-toast__scroll { padding: 3px 4px 5px; overflow-x: auto; }
+.tw-toast .lane__thread__xcard { flex: 0 0 250px; }
+.tw-toast.tl-off .lane__thread__xcard { flex: 1 0 250px; transition-delay: 0.43s; }   /* OFF: 번역이 접힌 뒤(0.18+0.25s) 카드가 한 번에 넓어진다. ON 은 즉시 250px 로 돌아가 번역 열이 펼쳐질 자리를 준다 */
+.tw-toast .lane__thread__msg { min-width: 110px; margin-left: 6px; font-size: 12px; }
+.tw-toast.tl-off .lane__thread__msg { min-width: 0; margin-left: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .lane__thread__xcard, .lane__thread__msg, .lane__bubble, .lane__bubble.tl-off { transition: none !important; }
 }
