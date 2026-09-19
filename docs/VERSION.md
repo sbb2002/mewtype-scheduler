@@ -2,6 +2,16 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.7.4** (핫픽스) — 영상 첨부 트윗의 말풍선 미디어가 깨지던 버그.
+  1. **원인** — 프론트(`tweets.js` `_mediaGrid`)는 `media` 의 모든 URL 을 `<img src>` 로 그리는데(v2.8 설계: 본인 트윗
+     첨부 "이미지"), `vxtwitter` 응답은 영상 트윗의 `mediaURLs`/`media_extended[].url` 이 mp4 이고 썸네일은
+     `thumbnail_url` 에 따로 있다. `extract()` 가 mp4 를 그대로 `media` 에 넣어 깨진 이미지로 표시됐다(2026-09-19 18:07 KST
+     아라레: 약 85MB mp4). v3.7.3 의 폴백과 무관한 기존 문제. 저장된 트윗 187건 중 영상 URL 포함 3건이었다(9/17 21:34 KST 미야코
+     참조 미디어, 9/19 00:08 KST 미야코, 9/19 18:07 KST 아라레).
+  2. **수정** (`vxtwitter._media_urls`) — 영상·GIF(`video`/`gif`/`animated_gif`)는 `thumbnail_url` 을 쓰고 썸네일이 없으면 넣지
+     않는다. `media_extended` 없이 `mediaURLs` 만 있을 때도 mp4/m3u8/`video.twimg.com` 은 거른다. 참조 트윗(`qrt`) 미디어에도 같이
+     적용. `fxtwitter` 변환도 `vxtwitter` 와 같은 형식(`url`=원본, `thumbnail_url`)으로 맞춰 두 경로가 같은 썸네일을 낸다.
+  3. **복구** — 저장된 3건(9/19 18:07 KST 아라레, 00:08·18:19 KST 미야코[아라레 영상 참조])의 `media` 를 썸네일로 교체(본문·번역 유지).
 - **v3.7.3** (핫픽스) — 유튜브 앱 "회원 전용 실시간 스트림" 알림으로 회원 전용 방송을 live 로 전환.
   1. **업스트림 유튜브 알림이 전부 400 이던 문제** — 업스트림이 유튜브 알림을 `source=yt&video_id&title&kind&tag`
      폼으로 `/ingest` 에 중계하는데 `/ingest` 는 `text` 만 읽어 5ms 만에 `400 empty text` 를 반환했다

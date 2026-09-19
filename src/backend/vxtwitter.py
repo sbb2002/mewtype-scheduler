@@ -59,11 +59,15 @@ def _fx_media(media: dict | None) -> tuple[list[str], list[dict]]:
         if not isinstance(m, dict):
             continue
         kind = m.get("type")
-        u = m.get("url") if kind == "photo" else m.get("thumbnail_url")
-        if u:
-            u = _strip_orig(str(u))
-            urls.append(u)
-            ext.append({"url": u, "type": kind})
+        if kind == "photo":
+            if m.get("url"):
+                u = _strip_orig(str(m["url"]))
+                urls.append(u)
+                ext.append({"url": u, "type": kind})
+        elif m.get("thumbnail_url"):
+            # vx 형식과 동일: url=원본(mp4), thumbnail_url=썸네일 — 어느 쪽을 그릴지는 _media_urls 가 정한다
+            urls.append(str(m["thumbnail_url"]))
+            ext.append({"url": m.get("url"), "type": kind, "thumbnail_url": str(m["thumbnail_url"])})
     return urls, ext
 
 
@@ -146,13 +150,33 @@ def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = VX_TIMEO
     return j
 
 
+_VIDEO_TYPES = ("video", "gif", "animated_gif")
+
+
+def _is_video_url(u: str) -> bool:
+    """영상 파일 URL 인지 — 프론트가 미디어를 <img> 로만 그려서 mp4 를 넣으면 깨진다."""
+    base = str(u).split("?")[0].lower()
+    return "video.twimg.com" in base or base.endswith((".mp4", ".m3u8"))
+
+
 def _media_urls(j: dict) -> list[str]:
-    """vxtwitter JSON(또는 그 안의 qrt) → 미디어 URL 목록. media_extended 가 있으면 그것을 우선."""
-    media_urls = list(j.get("mediaURLs") or [])
+    """vxtwitter JSON(또는 그 안의 qrt) → 이미지 URL 목록. media_extended 가 있으면 그것을 우선.
+
+    프론트(`tweets.js` `_mediaGrid`)는 모든 URL 을 `<img src>` 로 그린다. 영상·GIF 는 `url` 이 mp4 라
+    (2026-09-19 18:07 KST 아라레: 약 85MB mp4 가 깨진 이미지로 표시) 썸네일(`thumbnail_url`)을 쓰고,
+    썸네일이 없으면 넣지 않는다. media_extended 가 없어 mediaURLs 만 있을 때도 mp4 는 거른다.
+    """
     media_ext = j.get("media_extended") or []
     if media_ext and isinstance(media_ext, list):
-        media_urls = [m.get("url") for m in media_ext if isinstance(m, dict) and m.get("url")]
-    return [u for u in media_urls if u]  # None 필터
+        urls = []
+        for m in media_ext:
+            if not isinstance(m, dict):
+                continue
+            u = m.get("thumbnail_url") if m.get("type") in _VIDEO_TYPES else m.get("url")
+            if u and not _is_video_url(u):
+                urls.append(u)
+        return urls
+    return [u for u in (j.get("mediaURLs") or []) if u and not _is_video_url(u)]  # None·영상 URL 거름
 
 
 def extract(j: dict) -> dict:
@@ -351,4 +375,39 @@ if __name__ == "__main__":
     assert _fx_to_vx({"tweet": {"id": "1"}}) is None and _fx_to_vx({}) is None
     print("  fx 미디어: 사진 원본 / 영상·GIF 썸네일, 빈 응답 None")
 
-    print("✓ vxtwitter.extract self-test 통과 (12/12)")
+    # ── (v3.7.4) 영상·GIF 는 썸네일 — 실측 2026-09-19 18:07 KST 아라레(2101235831302431170) 응답 ──
+    VID = "https://video.twimg.com/amplify_video/2101235386622337024/vid/avc1/2048x3640/iJ5bUEboPJurhJ1-.mp4"
+    THUMB = "https://pbs.twimg.com/amplify_video_thumb/2101235386622337024/img/n0IZViYALnC2NzA-.jpg"
+    vx_video = {
+        "text": "今日はみゃーちゃんのお誕生日〜🎂✨️", "mediaURLs": [VID],
+        "media_extended": [{"type": "video", "url": VID, "thumbnail_url": THUMB}],
+        "qrtURL": "https://twitter.com/i/status/1",
+        "qrt": {"text": "／\nHappy Birthday🎂", "mediaURLs": ["https://pbs.twimg.com/media/HSimxbEbMAAZAKH.jpg"],
+                "media_extended": [{"type": "image", "url": "https://pbs.twimg.com/media/HSimxbEbMAAZAKH.jpg",
+                                    "thumbnail_url": "https://pbs.twimg.com/media/HSimxbEbMAAZAKH.jpg"}]},
+    }
+    ex = extract(vx_video)
+    assert ex["media"] == [THUMB], ex["media"]                      # mp4 → 썸네일 (수정 전: [VID] → 깨진 <img>)
+    assert ex["qrt"]["media"] == ["https://pbs.twimg.com/media/HSimxbEbMAAZAKH.jpg"], ex["qrt"]  # 이미지는 종전대로
+    print("  vx 영상: mp4 대신 썸네일, 참조 트윗의 이미지는 그대로")
+
+    # 이미지+영상 혼합 / GIF / 썸네일 없는 영상(넣지 않음) / media_extended 없이 mediaURLs 에 mp4 만
+    mixed = {"text": "t", "media_extended": [
+        {"type": "image", "url": "https://pbs.twimg.com/media/a.jpg", "thumbnail_url": "https://pbs.twimg.com/media/a.jpg"},
+        {"type": "video", "url": VID, "thumbnail_url": THUMB},
+        {"type": "gif", "url": "https://video.twimg.com/tweet_video/g.mp4", "thumbnail_url": "https://pbs.twimg.com/tweet_video_thumb/g.jpg"},
+        {"type": "video", "url": "https://video.twimg.com/x.mp4"},
+    ]}
+    assert extract(mixed)["media"] == ["https://pbs.twimg.com/media/a.jpg", THUMB, "https://pbs.twimg.com/tweet_video_thumb/g.jpg"]
+    assert extract({"text": "t", "mediaURLs": [VID, "https://pbs.twimg.com/media/b.jpg?name=orig"]})["media"] == \
+        ["https://pbs.twimg.com/media/b.jpg?name=orig"]
+    assert extract({"text": "t", "mediaURLs": ["https://x/y.m3u8", "https://video.twimg.com/z"]})["media"] == []
+    print("  혼합·GIF·썸네일 없는 영상(제외)·mediaURLs 만 있는 mp4(제외)")
+
+    # fx 경로와 결과가 같은 형태 — 영상 트윗을 fx 로 받아도 vx 와 같은 썸네일
+    fx_vid = {"tweet": {"id": "2101235831302431170", "text": "t", "media": {"all": [
+        {"type": "video", "url": VID, "thumbnail_url": THUMB}]}, "quote": None}}
+    assert extract(_fx_to_vx(fx_vid))["media"] == extract(vx_video)["media"] == [THUMB]
+    print("  vx·fx 경로가 같은 썸네일을 낸다")
+
+    print("✓ vxtwitter.extract self-test 통과 (15/15)")
