@@ -17,9 +17,17 @@
   <iframe id="f" title="운영 모니터 리포트" hidden></iframe>
   <p id="msg">불러오는 중…</p>
   <script>
-    var MONITOR_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/monitoring/latest.html";
-    fetch(MONITOR_URL, { cache: "no-store" })
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+    var LIVE_URL = "https://mewtype-telegram-lk3cg7l7ka-an.a.run.app/monitor-live";
+    var SNAPSHOT_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/monitoring/latest.html";
+    function load(url) {
+      return fetch(url, { cache: "no-store" }).then(function (r) {
+        if (!r.ok) throw new Error(r.status);
+        return r.text();
+      });
+    }
+    // 접속 시각 기준 리포트(가장 최근 06:00 KST~지금)를 우선, 서버가 죽었으면 마지막 스냅샷으로 폴백.
+    load(LIVE_URL)
+      .catch(function () { return load(SNAPSHOT_URL); })
       .then(function (html) {
         var f = document.getElementById("f");
         f.srcdoc = html;
