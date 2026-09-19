@@ -410,7 +410,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - `tweets.json` = `{ generated_at, tweets: { "<channel_key>": [ { channel_key, id, text, text_ko,
   url, handle, received_at, expires_at, needs_tl?, media, quote }, … ] } }`. **채널당 스레드 = 메시지
   배열, 최신이 뒤, 저장 안전 상한 `xtweet.MAX_THREAD`(=50, v3.5.3)** — 실제 화면 노출은 프론트
-  `tweets.js` 가 최근 12시간(`VISIBLE_WINDOW_MS`)으로 별도 제한(§`js/tweets.js` 항목 참고).
+  `tweets.js` 가 메시지별 `expires_at`(24h)이 안 지난 것만 최대 `MAX_THREAD`(=50)건까지 보여줌(v3.7.2 — 그 전엔 12시간 창이 따로 있었음, 아래 참고).
   v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로
   감싸 하위호환. `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
   `media`(=`[url,...]`, 본인 트윗 첨부 이미지) / `quote`(=`{text,media,text_ko,needs_tl?}` | `null`,
@@ -715,7 +715,9 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 `@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
 `@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
 `@app.post("/monitor")` (v3.5) → `control.json monitor_auto` 켜져 있으면 전일(06:00 KST 경계) 리포트 생성 →
-`monitoring/latest.html` 커밋 + 텔레그램 DM. `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
+`monitoring/latest.html` 커밋 + 텔레그램 DM. 제어 채널(`telegram_app`)의 `@app.get("/monitor-live")` (v3.7.2) →
+웹 `monitor.html` 이 부르는 읽기 전용 공개 라우트, 가장 최근 06:00 KST~지금 리포트를 즉석 생성(60초 캐시·CORS `*`,
+실패 시 500 — `monitor.html` 이 `latest.html` 로 폴백). `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
 예외 → 500 + `notify.error_text` DM. `PermissionError` → 403.
 
 ### 8.14 write-queue — `writers.py` / `writeclient.py` (v3.7, v3.7.1 A-1)
@@ -776,8 +778,8 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   제목을 `[번역]　—　[원문]` 순으로 한 줄에 이어 marquee(길이 넘칠 때 순환). 없으면 원문만.
 - **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 편지 배지(안 읽은 메시지
   2건+ 이면 카운트 pill). 배지 클릭/호버 → **메신저형 스레드**: PC `.lane__bubble` 패널 / 모바일
-  `.tw-toast` 시트에 **최근 12시간(`VISIBLE_WINDOW_MS`) 이내 메시지 전부**를 최신이 아래로 스택
-  (v3.5.3 — 이전엔 유닛당 최근 5개 고정, 활발한 멤버는 12시간 안에 더 오래된 트윗이 이미 안 보였음),
+  `.tw-toast` 시트에 **`expires_at`(24h)이 안 지난 메시지 최대 50건**을 최신이 아래로 스택
+  (v3.5.3 — 이전엔 유닛당 최근 5개 고정. v3.5.3~v3.7.1 은 12시간 창을 따로 걸어 밤에 온 트윗이 다음날 낮에 전부 사라졌음 → v3.7.2 에서 제거),
   ~2분 내 연속은 시각 1개로 묶음(`.lane__thread__grp`/`__msg`/`__t`), 열면 맨 아래로 스크롤 + 표시분
   전부 읽음. 메시지가 많아도 말풍선(헤더 포함)이 화면 세로 2/3을 넘지 않도록 내부 스크롤 영역
   높이를 `calc(66.6vh - 44px)` 로 고정(css). `한/日` 토글은 헤더에 1개(전역 `mew:tllang`), 원문(X)

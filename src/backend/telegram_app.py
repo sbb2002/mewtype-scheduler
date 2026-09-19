@@ -15,16 +15,19 @@ import logging
 import os
 import re
 import sys
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import unquote_plus
 
 try:
-    from flask import Flask, jsonify, request
+    from flask import Flask, Response, jsonify, request
     _FLASK_AVAILABLE = True
 except ImportError:
     _FLASK_AVAILABLE = False
     Flask = None
+    Response = None
     jsonify = None
     request = None
 
@@ -3368,6 +3371,34 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
     return f"FSM 재판정: {tick.next_state}(다음 체크 {tick.next_check_at or '없음'})."
 
 
+_MONITOR_LIVE_TTL_SEC = 60
+_monitor_live_cache: dict = {"at": 0.0, "html": ""}
+_monitor_live_lock = threading.Lock()
+
+
+def _monitor_live_html() -> str:
+    """웹 monitor 페이지용: 가장 최근 06:00 KST 경계부터 지금까지의 리포트 HTML.
+
+    락을 잡은 채 생성해 동시 접속이 GitHub/healthchecks 를 중복 호출하지 않게 하고,
+    TTL 안의 재요청은 캐시를 돌려준다.
+    """
+    with _monitor_live_lock:
+        if _monitor_live_cache["html"] and time.monotonic() - _monitor_live_cache["at"] < _MONITOR_LIVE_TTL_SEC:
+            return _monitor_live_cache["html"]
+        gh = _make_gh()
+        if gh is None:
+            raise RuntimeError("GitHub 설정 없음")
+        result = monitor_report.run(
+            gh, date_kst=None,
+            healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
+            healthchecks_uuid=_healthchecks_uuid(),
+            github_token_for_commits=gh.token,
+        )
+        _monitor_live_cache["html"] = result["html"]
+        _monitor_live_cache["at"] = time.monotonic()
+        return result["html"]
+
+
 # Flask 라우트 정의 (Flask 설치 시만)
 if _FLASK_AVAILABLE:
 
@@ -3868,6 +3899,19 @@ if _FLASK_AVAILABLE:
                 except Exception:  # noqa: BLE001
                     log.warning("monitor_log 기록 실패(relay)")
             return jsonify({"ok": False, "error": str(e)}), 200
+
+    @app.get("/monitor-live")
+    def _monitor_live():
+        """웹 monitor 페이지(이스터에그) 전용 — 접속 시각 기준 리포트. 읽기 전용·공개(latest.html 과 동일 정보)."""
+        try:
+            body = _monitor_live_html()
+        except Exception:
+            log.exception("monitor-live 생성 실패")
+            return Response("error", status=500, headers={"Access-Control-Allow-Origin": "*"})
+        return Response(body, mimetype="text/html", headers={
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store",
+        })
 
     @app.get("/")
     def _health():

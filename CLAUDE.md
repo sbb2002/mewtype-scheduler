@@ -107,6 +107,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   - 백엔드 모니터 로그: 실행당 커밋 최대 1개(`monitor_log.log_events`), 변화 없는 tick/wake 미기록.
 >   - 라이브 후기 wake 3분→5분, 외부 LLM 폴백 기본값 404 모델 제거, `apply_overrides` v3 재작성·연결,
 >     healthchecks Secret 조건부 마운트.
+> - **v3.7.2** (핫픽스): 개인 트윗이 다음날 전부 사라지던 버그(프론트 `VISIBLE_WINDOW_MS=12h` 필터 제거 →
+>   `expires_at` 24h + 상한 50건) + 웹 monitor 가 06:00 스냅샷을 보여주던 버그(제어 채널 `GET /monitor-live` 로
+>   접속 시각 기준 즉석 생성, `latest.html` 은 폴백). 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
