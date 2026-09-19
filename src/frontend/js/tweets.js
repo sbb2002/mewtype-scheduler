@@ -73,21 +73,16 @@ function _setTlang(lang) {
   try { localStorage.setItem(TLANG_KEY, lang); } catch { /* private mode 등 */ }
   _st.tlang = lang;
 }
-function _tlGlyph() { return _st.tlang === "ko" ? "日" : "한"; }
-function _tlAria() { return _st.tlang === "ko" ? "원문(일본어)으로 보기" : "한국어 번역으로 보기"; }
+function _tlOn() { return _st.tlang === "ko"; }
+function _tlGlyph() { return _tlOn() ? "번역 ON" : "번역 OFF"; }
+function _tlAria() { return _tlOn() ? "번역 끄기" : "번역 켜기"; }
 
-/** 전역 언어 플립 — 열려 있는 모든 패널·시트를 다시 렌더. 버튼마다 클로저를 안 물어 오염 없음. */
+/** 번역 ON/OFF 전환 - 열려 있는 모든 패널·시트에 반영. 재렌더하지 않는다(X 카드가 다시 로드되지 않게). */
 function _flipLang() {
-  _setTlang(_st.tlang === "ko" ? "orig" : "ko");
+  _setTlang(_tlOn() ? "orig" : "ko");
   const vis = _visible(_st.data);
-  for (const [ck, b] of _st.bubbles) {
-    if (vis[ck]) _renderThread(b.querySelector(".lane__bubble__scroll"), vis[ck]);
-    _syncTl(b, vis[ck]);
-  }
-  if (_toast && document.body.classList.contains("tw-modal-open")) {
-    const ck = _toast.dataset.ck;
-    if (ck && vis[ck]) { _renderThread(_toast.querySelector(".tw-toast__scroll"), vis[ck]); _syncTl(_toast, vis[ck]); }
-  }
+  for (const [ck, b] of _st.bubbles) _syncTl(b, vis[ck]);
+  if (_toast) { const ck = _toast.dataset.ck; if (ck) _syncTl(_toast, vis[ck]); }
 }
 
 /* ── 유틸 ────────────────────────────────────────────────────────── */
@@ -156,41 +151,144 @@ function _setSrc(el, m) {
   }
 }
 
-/* ── 본인 미디어 / 인용(QRT) 카드 — (v3.4.5) ──────────────────────
-   media: 본인 트윗 첨부 이미지 URL 배열. quote: {text, media} 인용한 남의 트윗
-   (표시만 — ingest 파싱 대상 아님). 둘 다 vxtwitter unfurl 로 채워짐(백엔드). */
-function _mediaGrid(urls) {
+/* ── 트윗 = 번역 말풍선 + X 공식 카드 (v3.8.0b) ─────────────────────────────
+   법률 자문에 따라 트윗의 요소(원문 텍스트·이미지·영상·참조 트윗의 미디어)를 우리가 다시 조립해 그리지 않는다.
+   화면에는 ① 원문 트윗에 대한 번역(참조 트윗은 번역만, 안쪽 말풍선) ② X 공식 임베드 카드 ③ 디스클레이머만 나온다.
+   원문·미디어는 X 카드가 보여 준다. 저장 데이터(tweets.json 의 text/media/quote/video)는 유지보수용으로 그대로 두되 화면에는 쓰지 않는다.
+   X 카드는 iframe 이 필요한 높이를 twttr.private.resize 메시지로 알려주므로 그 값을 그대로 쓰고(상한 없음 - 패널 스크롤에 맡김),
+   폭 250px 미만이면 렌더링 자체를 못 하므로(실측) PC 패널 폭을 320px 로 한다. 영상이 든 카드 여러 개를 한꺼번에 띄우면
+   브라우저가 멈춰(실측) 화면에 들어올 때만(IntersectionObserver) 불러온다. */
+const ISSUES_URL = "https://github.com/sbb2002/mewtype-scheduler/issues";
+const FOOT_HTML = '비공식 팬 번역 · 비영리 운영 · 삭제 요청 시 예고 없이 서비스가 중단될 수 있습니다 · ' +
+  '<a href="' + ISSUES_URL + '" target="_blank" rel="noopener">문의·삭제 요청 (GitHub Issues)</a>';
+const EMBED_ORIGINS = ["https://platform.twitter.com", "https://platform.x.com"];
+const CARD_EST_H = 230;          // 카드가 실제 높이를 알려주기 전 자리표시 높이(짧은 텍스트 트윗 실측)
+const CARD_TIMEOUT_MS = 15000;   // 이 안에 렌더링 신호가 없으면 "X에서 보기" 링크를 띄운다
+let _embedWired = false;
+
+function _srcUrl(m) {
+  return m.url || (m.handle ? "https://x.com/" + m.handle : "");
+}
+function _wireEmbedResize() {
+  if (_embedWired) return;
+  _embedWired = true;
+  window.addEventListener("message", (e) => {
+    if (!EMBED_ORIGINS.includes(e.origin)) return;
+    let d = e.data;
+    if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
+    const p = d && d["twttr.embed"];
+    if (!p || p.method !== "twttr.private.resize") return;
+    const h = p.params && p.params[0] && p.params[0].height;
+    if (!h) return;
+    for (const f of document.querySelectorAll("iframe.lane__thread__embed")) {
+      if (f.contentWindow !== e.source) continue;
+      const wrap = f.parentElement;
+      const sc = wrap.closest(".lane__bubble__scroll, .tw-toast__scroll");
+      const atBottom = sc && (sc.scrollHeight - sc.clientHeight - sc.scrollTop) < 8;
+      wrap.style.height = h + "px";
+      wrap.dataset.ready = "1";
+      const fb = wrap.querySelector(".lane__thread__xlink");
+      if (fb) fb.remove();
+      if (atBottom) sc.scrollTop = sc.scrollHeight;    // 늦게 로드된 카드 때문에 맨 아래 고정이 풀리지 않게
+    }
+  });
+}
+function _isNumId(id) { return /^[0-9]{5,25}$/.test(String(id || "")); }
+function _embedSrc(id) {
+  return "https://platform.twitter.com/embed/Tweet.html?id=" + id + "&theme=dark&dnt=true&lang=ko&hideThread=true&frame=false";
+}
+function _loadCard(wrap) {
+  if (wrap.querySelector("iframe")) return;
+  _wireEmbedResize();
+  const f = document.createElement("iframe");
+  f.className = "lane__thread__embed";
+  f.src = _embedSrc(wrap.dataset.id);
+  f.title = "X 트윗";
+  f.setAttribute("allow", "autoplay; fullscreen");
+  f.setAttribute("allowfullscreen", "");
+  f.addEventListener("load", () => { wrap.dataset.loaded = "1"; });   // 문서는 열렸다 — 높이 신호만 늦을 뿐 실패가 아니다
+  wrap.appendChild(f);
+  setTimeout(() => {
+    if (wrap.dataset.ready || wrap.dataset.loaded || !wrap.isConnected || wrap.querySelector(".lane__thread__xlink")) return;
+    const a = document.createElement("a");
+    a.className = "lane__thread__xlink";
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "카드가 열리지 않아요 · X에서 보기";
+    if (wrap.dataset.href) a.href = wrap.dataset.href;
+    wrap.appendChild(a);
+  }, CARD_TIMEOUT_MS);
+}
+function _watchCards(scrollEl) {
+  const cards = scrollEl.querySelectorAll(".lane__thread__xcard[data-id]");
+  if (!cards.length) return;
+  if (typeof IntersectionObserver === "undefined") { cards.forEach(_loadCard); return; }
+  const io = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      io.unobserve(en.target);
+      _loadCard(en.target);
+    }
+  }, { root: scrollEl, rootMargin: "300px 0px" });
+  scrollEl.__io = io;
+  cards.forEach((c) => io.observe(c));
+}
+function _stopCards(root) {
+  if (!root) return;
+  const scrolls = root.querySelectorAll(".lane__bubble__scroll, .tw-toast__scroll");
+  for (const sc of scrolls) { if (sc.__io) { sc.__io.disconnect(); sc.__io = null; } }
+  for (const f of root.querySelectorAll("iframe.lane__thread__embed")) f.remove();
+}
+function _tlBubble(m) {
+  const row = document.createElement("div");
+  row.className = "lane__thread__msg";
+  const lab = document.createElement("span");
+  lab.className = "lab";
+  lab.textContent = "번역";
+  row.appendChild(lab);
+  const tx = document.createElement("span");
+  tx.className = "txt";
+  tx.textContent = m.text_ko || "번역 준비 중…";      // 번역이 없으면 원문을 대신 보여 주지 않는다(재조립 금지)
+  row.appendChild(tx);
+  if (m.quote && m.quote.text) {                      // 참조 트윗은 번역 텍스트만 안쪽 말풍선으로 - 이미지 등 미디어는 X 카드에서
+    const q = document.createElement("div");
+    q.className = "lane__thread__quote";
+    q.textContent = m.quote.text_ko || "번역 준비 중…";
+    row.appendChild(q);
+  }
+  const a = document.createElement("a");
+  a.className = "ori";
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.setAttribute("aria-label", "원문");
+  a.innerHTML = X_SVG;
+  _setSrc(a, m);
+  row.appendChild(a);
+  return row;
+}
+function _xCard(m) {
   const wrap = document.createElement("div");
-  wrap.className = "lane__thread__media";
-  for (const u of urls.slice(0, 4)) {
-    const img = document.createElement("img");
-    img.className = "lane__thread__media-img";
-    img.src = u;
-    img.loading = "lazy";
-    img.alt = "";
-    wrap.appendChild(img);
+  wrap.className = "lane__thread__xcard";
+  const href = _srcUrl(m);
+  if (_isNumId(m.id)) {
+    wrap.dataset.id = m.id;
+    if (href) wrap.dataset.href = href;
+    wrap.style.height = CARD_EST_H + "px";
+    const sk = document.createElement("div");
+    sk.className = "lane__thread__xskel";
+    sk.textContent = "X 카드 불러오는 중…";
+    wrap.appendChild(sk);
+  } else {                                            // 합성 id(숫자 아님)는 임베드할 수 없다 -> 링크만
+    wrap.classList.add("is-plain");
+    const a = document.createElement("a");
+    a.className = "lane__thread__xlink";
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "X에서 원문 보기 ↗";
+    _setSrc(a, m);
+    wrap.appendChild(a);
   }
   return wrap;
-}
-function _quoteCard(q, ko) {
-  const card = document.createElement("div");
-  card.className = "lane__thread__quote";
-  const qtxt = (ko && q.text_ko) ? q.text_ko : q.text;
-  if (qtxt) {
-    const t = document.createElement("div");
-    t.className = "lane__thread__quote-txt";
-    t.textContent = qtxt;
-    card.appendChild(t);
-  }
-  if (q.media && q.media.length) {
-    const img = document.createElement("img");
-    img.className = "lane__thread__quote-img";
-    img.src = q.media[0];
-    img.loading = "lazy";
-    img.alt = "";
-    card.appendChild(img);
-  }
-  return card;
 }
 
 /* ── 스레드 렌더 (말풍선·시트 공용) ──────────────────────────────── */
@@ -206,34 +304,18 @@ function _groupMsgs(list) {
 }
 function _renderThread(scrollEl, list) {
   if (!scrollEl) return;
+  if (scrollEl.__io) { scrollEl.__io.disconnect(); scrollEl.__io = null; }
   scrollEl.textContent = "";
-  const ko = _st.tlang === "ko";
   const groups = _groupMsgs(list);
   groups.forEach((g, gi) => {
     const gw = document.createElement("div");
     gw.className = "lane__thread__grp";
     for (const m of g) {
-      const row = document.createElement("div");
-      row.className = "lane__thread__msg";
-      const tx = document.createElement("span");
-      tx.className = "txt";
-      tx.textContent = (ko && m.text_ko) ? m.text_ko : m.text;
-      row.appendChild(tx);
-      if (m.quote && (m.quote.text || (m.quote.media && m.quote.media.length))) {
-        row.appendChild(_quoteCard(m.quote, ko));
-      }
-      if (m.media && m.media.length) {
-        row.appendChild(_mediaGrid(m.media));
-      }
-      const a = document.createElement("a");
-      a.className = "ori";
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.setAttribute("aria-label", "원문");
-      a.innerHTML = X_SVG;
-      _setSrc(a, m);
-      row.appendChild(a);
-      gw.appendChild(row);
+      const unit = document.createElement("div");
+      unit.className = "lane__thread__unit";
+      unit.appendChild(_tlBubble(m));                 // 번역이 먼저(즉시 보임)
+      unit.appendChild(_xCard(m));                    // X 공식 카드는 그 아래에서 뒤늦게 붙는다
+      gw.appendChild(unit);
     }
     const last = g[g.length - 1];
     const tm = document.createElement("time");
@@ -243,7 +325,8 @@ function _renderThread(scrollEl, list) {
     gw.appendChild(tm);
     scrollEl.appendChild(gw);
   });
-  scrollEl.scrollTop = scrollEl.scrollHeight;   // 최신이 아래 → 열면 맨 아래
+  scrollEl.scrollTop = scrollEl.scrollHeight;   // 최신이 아래 -> 열면 맨 아래
+  _watchCards(scrollEl);
 }
 function _syncTl(container, list) {
   const btn = container.querySelector(".lane__bubble__tl, .tw-toast__tl");
@@ -251,6 +334,7 @@ function _syncTl(container, list) {
   btn.hidden = !(list && list.some((m) => m.text_ko));
   btn.textContent = _tlGlyph();
   btn.setAttribute("aria-label", _tlAria());
+  container.classList.toggle("tl-off", !_tlOn());     // CSS 가 번역 말풍선을 숨긴다
 }
 
 /* ── 배지 적용 ───────────────────────────────────────────────────── */
@@ -322,7 +406,8 @@ function _bubble(ck) {
         '<button class="lane__bubble__x" type="button" aria-label="닫기">✕</button>' +
       '</span>' +
     '</div>' +
-    '<div class="lane__bubble__scroll"></div>';
+    '<div class="lane__bubble__scroll"></div>' +
+    '<div class="lane__bubble__foot">' + FOOT_HTML + '</div>';
   b.querySelector(".lane__bubble__x").addEventListener("click", () => {
     _st.pinned.delete(ck);
     _closeBubble(ck);
@@ -340,7 +425,14 @@ function _fillBubble(ck, list) {
   b.style.setProperty("--tw-bg", pal.bg);
   b.style.setProperty("--tw-ink", pal.ink);
   b.querySelector(".lane__bubble__who").textContent = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
-  _renderThread(b.querySelector(".lane__bubble__scroll"), list);
+  // 75초 폴링마다 열린 패널이 다시 채워진다 — 그때마다 다시 그리면 X 카드가 계속 재로드되므로(무겁고 깜빡임)
+  // 표시 내용(id·번역)이 바뀐 경우에만 스레드를 다시 그린다.
+  const sc = b.querySelector(".lane__bubble__scroll");
+  const sig = list.map((m) => [m.id, m.text_ko || "", (m.quote && m.quote.text_ko) || ""].join("|")).join("~");
+  if (b.__sig !== sig || !sc.firstChild) {
+    _renderThread(sc, list);
+    b.__sig = sig;
+  }
   _syncTl(b, list);
 }
 function _positionBubble(ck) {
@@ -379,6 +471,7 @@ function _closeBubble(ck) {
   if (_st.pinned.has(ck) || _st.peek === ck) return;   // 아직 열려 있어야 함
   const b = _st.bubbles.get(ck);
   if (!b) return;
+  _stopCards(b);                         // 패널을 닫으면 X 카드(재생 중인 영상 포함)도 지운다
   b.classList.remove("is-open");
   const done = () => {
     b.removeEventListener("transitionend", done);
@@ -421,7 +514,8 @@ function _ensureToast() {
       '<button class="tw-toast__tl" type="button" hidden></button>' +
       '<button class="tw-toast__x" type="button" aria-label="닫기">✕</button>' +
     '</div>' +
-    '<div class="tw-toast__scroll"></div>';
+    '<div class="tw-toast__scroll"></div>' +
+    '<div class="tw-toast__foot">' + FOOT_HTML + '</div>';
   _toast.querySelector(".tw-toast__x").addEventListener("click", _closeToast);
   _toast.querySelector(".tw-toast__tl").addEventListener("click", () => { _flipLang(); return false; });
   document.body.append(_backdrop, _toast);
@@ -449,6 +543,7 @@ function _openToast(ck) {
   _markReadAll(list);
 }
 function _closeToast() {
+  _stopCards(_toast);
   document.body.classList.remove("tw-modal-open");
 }
 

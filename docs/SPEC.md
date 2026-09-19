@@ -413,7 +413,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   `tweets.js` 가 메시지별 `expires_at`(24h)이 안 지난 것만 최대 `MAX_THREAD`(=50)건까지 보여줌(v3.7.2 — 그 전엔 12시간 창이 따로 있었음, 아래 참고).
   v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로
   감싸 하위호환. `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
-  `media`(=`[url,...]`, 본인 트윗 첨부 이미지 — 영상·GIF 는 썸네일 이미지 URL, v3.7.4; 프론트가 `<img>` 로만 그림) / `quote`(=`{text,media,text_ko,needs_tl?}` | `null`,
+  `media`(=`[url,...]`, 본인 트윗 첨부 이미지 — 영상·GIF 는 썸네일 이미지 URL, v3.7.4. v3.8.0 부터 화면은 media·quote 의 원문/미디어를 쓰지 않고 `id`·`text_ko`·`quote.text_ko` 와 X 카드로 대체 - 데이터는 유지보수용으로 보존) / `quote`(=`{text,media,text_ko,needs_tl?}` | `null`,
   인용(QRT)한 남의 트윗 — **표시만**, 예고 파싱 등 ingest 대상 아님)는 (v3.4.5) `telegram_app.
   _enrich_personal_media` 가 tweet id 로 vxtwitter 를 재조회해 채운다(실패·미첨부·id 없음 →
   `[]`/`null`, 무회귀). 프론트 `tweets.js`(`_mediaGrid`/`_quoteCard`) 가 말풍선 안에 썸네일/인용카드로

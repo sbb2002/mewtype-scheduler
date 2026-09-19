@@ -117,6 +117,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   `watching` 되돌림, `vxtwitter` HTTP 500 시 `fxtwitter` 폴백(참조 트윗 유실). 요약 `docs/VERSION.md`.
 > - **v3.7.4** (핫픽스): 영상 첨부 트윗의 미디어가 깨지던 것 수정(`vxtwitter._media_urls`: 영상·GIF 는 썸네일 URL, 프론트가 `<img>` 로만
 >   그림). 요약 `docs/VERSION.md`.
+> - **v3.8.0** (기능): 말풍선 트윗 = 번역 말풍선 + X 공식 트윗 카드만(원문 텍스트·이미지·영상 재조립 제거, 법률 자문), 디스클레이머 + GitHub Issues
+>   창구. 프론트만 변경(`tweets.js`·`tweets.css`·`index.html`), 저장 데이터는 유지. 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
