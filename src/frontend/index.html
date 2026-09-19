@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- v3.8.0: 말풍선 영상은 X 서버(video.twimg.com)에서 직접 재생하는데, 그 서버는 다른 사이트의 Referer 가 붙으면 403 으로
+       막는다(실측). Referer 를 보내지 않게 해야 재생된다. 이미지·API·유튜브 썸네일은 Referer 없이도 동작한다. -->
+  <meta name="referrer" content="no-referrer">
   <!-- 이미 다크 전용 테마 — 기기 다크 모드의 브라우저 자동 어둡게(force-dark) 처리를 끈다 -->
   <meta name="color-scheme" content="dark">
   <title>夢限大みゅーたいぷ 방송 예고</title>

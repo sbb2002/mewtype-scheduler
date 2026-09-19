@@ -2,6 +2,25 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.0a** (기능, 배포 후보) — 말풍선에서 트윗 영상·GIF 를 재생. **`<video src>` 로 X 서버 mp4 를 직접 재생**하는 방식
+  (대안: 공식 임베드 방식 `v3.8.0b`, 별도 브랜치 `feat/v3.8.0b-tweet-embed` — 미배포).
+  1. **동작** — 우리 서버는 영상 파일을 받거나 저장하지 않는다. `tweets.json` 에는 X 서버(`video.twimg.com`) mp4 **주소**와 썸네일
+     주소만 저장하고, 방문자 브라우저가 재생을 누르는 순간(`preload="none"`) X 서버에서 직접 받아 재생한다. 자문 결과 다운로드·호스팅을
+     하지 않아 저작권 위험은 낮다고 하나, X 쪽 정책(주소 형식·Referer 차단 등)이 바뀌면 재생이 멈출 수 있는 위험은 있다.
+  2. **저장 스키마** (계약 I 확장) — 트윗 행에 `video: {url, poster, w, h, sec, kind:"video"|"gif"} | null`. `media` 에는 그 영상의
+     썸네일을 넣지 않는다(같은 그림 2번 방지). 영상 트윗이 아니면 `null`.
+  3. **화질 선택** (`vxtwitter._pick_video`, `fetch_video`) — vxtwitter 는 최고화질 mp4 하나뿐(예: 2048×3640, 85MB)이라 영상 트윗에만
+     fxtwitter 를 추가 1회(4초 타임아웃) 호출해 화질 변형 중 1Mbps 이하에서 가장 높은 것(≈480p, 3.1MB)을 고른다. GIF 는 `url`(작은 mp4)
+     그대로. 변형 조회에 실패하면 `video=None` 으로 v3.7.4 동작(썸네일 이미지)으로 폴백.
+  4. **프론트** (`tweets.js` `_videoPlayer`, `tweets.css`) — 세로 영상은 폭 172px, 가로는 100%, 자르지 않고 원본 비율(`object-fit: contain`).
+     재생 오버레이·길이 표시, 소리 나는 영상은 한 번에 하나만 재생(GIF 는 예외), 말풍선·시트를 닫으면 정지. 재생 오류 시 포스터 위에
+     "재생할 수 없어요 · 원문에서 보기" 링크. GIF 는 음소거 자동재생·반복.
+  5. **필수 설정** — `index.html` 에 `<meta name="referrer" content="no-referrer">`. `video.twimg.com` 은 다른 사이트의 Referer 가 붙으면
+     403 으로 막는다(실측: Referer 만 붙이면 403, 없거나 비어 있으면 206; 이미지 서버는 무관). 실제 Chrome 에서 기본 정책 페이지는 재생 오류,
+     `no-referrer` 페이지는 재생됨을 확인.
+  6. **검증** — 백엔드 self-test(변형 선택 5종·`has_video`·`parse(video=)`·병합/아카이브 유지·`_enrich_personal_media` 영상 경로), 로컬 프론트 +
+     실제 저장 데이터 픽스처로 Chrome 에서 재생 확인(480×852, 오류 없음). 화면 검증 중 "영상 재생 시 같은 말풍선의 GIF 가 멈추는" 버그를 발견해 수정.
+     미확인: 실제 GIF 트윗, 모바일·Safari 재생.
 - **v3.7.4** (핫픽스) — 영상 첨부 트윗의 말풍선 미디어가 깨지던 버그.
   1. **원인** — 프론트(`tweets.js` `_mediaGrid`)는 `media` 의 모든 URL 을 `<img src>` 로 그리는데(v2.8 설계: 본인 트윗
      첨부 "이미지"), `vxtwitter` 응답은 영상 트윗의 `mediaURLs`/`media_extended[].url` 이 mp4 이고 썸네일은

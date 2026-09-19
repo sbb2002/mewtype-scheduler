@@ -301,6 +301,70 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
+/* ── 본인 트윗 영상·GIF (v3.8.0) — X 서버 mp4 를 방문자 브라우저가 직접 재생 ──────────── */
+.lane__thread__player {
+  position: relative;
+  margin-top: 6px;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #000;
+}
+.lane__thread__player.is-portrait { width: 172px; }        /* 세로 영상은 너무 길어지지 않게 폭을 줄인다 */
+.lane__thread__player video {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--ar, 16 / 9);
+  object-fit: contain;                                        /* 자르지 않고 원본 비율 그대로 */
+  background: #000;
+}
+.lane__thread__play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+.lane__thread__play svg { width: 22px; height: 22px; margin-left: 3px; }
+.lane__thread__play:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.lane__thread__dur {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.lane__thread__player.is-playing .lane__thread__play,
+.lane__thread__player.is-playing .lane__thread__dur { display: none; }
+.lane__thread__player.is-failed .lane__thread__play,
+.lane__thread__player.is-failed .lane__thread__dur { display: none; }
+.lane__thread__vfail {
+  position: absolute;
+  inset: auto 6px 6px 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  text-align: center;
+  color: #fff;
+  text-decoration: none;
+  background: rgba(0, 0, 0, 0.72);
+}
+.lane__thread__vfail.is-disabled { pointer-events: none; }
+
 /* ── 인용(QRT)한 남의 트윗 카드 — 표시만, ingest 대상 아님 ────────── */
 .lane__thread__quote {
   margin-top: 6px;

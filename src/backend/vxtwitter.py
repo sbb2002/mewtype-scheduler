@@ -89,6 +89,55 @@ def _fx_to_vx(fx: dict) -> dict | None:
     return out
 
 
+FX_VIDEO_TARGET_BPS = 1_000_000          # 말풍선 재생용 화질 상한(≈480p, 950kbps). 원본은 25Mbps(2048×3640)로 85MB
+_VIDEO_SIZE_RE = re.compile(r"/(\d{2,5})x(\d{2,5})/")
+
+
+def _pick_video(m: dict) -> dict | None:
+    """fxtwitter media 항목(video/gif) → 말풍선 재생용 dict (순수).
+
+    video: mp4 변형 중 `FX_VIDEO_TARGET_BPS` 이하에서 가장 높은 화질(없으면 가장 낮은 것).
+    gif: X 의 GIF 는 작은 mp4 라 `url` 그대로. 반환 `{url, poster, w, h, sec, kind}` — 재생 가능한 mp4 가
+    없거나 poster(썸네일)가 없으면 None(호출부가 썸네일 이미지로 폴백).
+    """
+    kind = m.get("type")
+    if kind not in ("video", "gif") or not m.get("thumbnail_url"):
+        return None
+    if kind == "gif":
+        url = m.get("url")
+        w, h = m.get("width"), m.get("height")
+    else:
+        mp4 = [v for v in (m.get("variants") or [])
+               if v.get("content_type") == "video/mp4" and v.get("url") and v.get("bitrate")]
+        if not mp4:
+            return None
+        under = [v for v in mp4 if v["bitrate"] <= FX_VIDEO_TARGET_BPS]
+        pick = max(under, key=lambda v: v["bitrate"]) if under else min(mp4, key=lambda v: v["bitrate"])
+        url = pick["url"]
+        sm = _VIDEO_SIZE_RE.search(url)
+        w, h = (int(sm.group(1)), int(sm.group(2))) if sm else (m.get("width"), m.get("height"))
+    if not url or not str(url).split("?")[0].lower().endswith(".mp4"):
+        return None
+    return {"url": str(url), "poster": str(m["thumbnail_url"]), "w": w, "h": h,
+            "sec": m.get("duration"), "kind": kind}
+
+
+def fetch_video(tweet_id: str, *, session: Any = None, timeout: float = FX_TIMEOUT_SEC,
+                base: str = FX_BASE) -> dict | None:
+    """트윗의 첫 영상·GIF → 말풍선 재생용 `{url, poster, w, h, sec, kind}` | None.
+
+    화질 변형은 fxtwitter 만 준다(vxtwitter 는 최고화질 mp4 하나뿐) — 영상 트윗에만 추가로 1회 호출.
+    """
+    if not tweet_id or not str(tweet_id).isdigit():
+        return None
+    j = _get_json(f"{base}/i/status/{tweet_id}", session, timeout, "fxtwitter")
+    media = (((j or {}).get("tweet") or {}).get("media") or {}).get("all") or []
+    for m in media:
+        if isinstance(m, dict) and m.get("type") in ("video", "gif"):
+            return _pick_video(m)
+    return None
+
+
 def _get_json(url: str, session: Any, timeout: float, tag: str) -> dict | None:
     """GET → JSON dict. 비200·타임아웃·JSON 오류 전부 경고 + None (서드파티라 조용히)."""
     try:
@@ -179,6 +228,14 @@ def _media_urls(j: dict) -> list[str]:
     return [u for u in (j.get("mediaURLs") or []) if u and not _is_video_url(u)]  # None·영상 URL 거름
 
 
+def _has_video(j: dict) -> bool:
+    """본인 트윗 첨부에 영상·GIF 가 있는지(참조 트윗 `qrt` 는 보지 않음)."""
+    for m in j.get("media_extended") or []:
+        if isinstance(m, dict) and m.get("type") in _VIDEO_TYPES:
+            return True
+    return any(_is_video_url(u) for u in (j.get("mediaURLs") or []) if u)
+
+
 def extract(j: dict) -> dict:
     """vxtwitter JSON → {text, media: [url,...], urls: [expanded,...], yt_video_id: str|None}.
 
@@ -221,6 +278,7 @@ def extract(j: dict) -> dict:
         "yt_video_id": yt_video_id,
         "qrt_url": qrt_url,
         "qrt": qrt,
+        "has_video": _has_video(j),
     }
 
 
@@ -410,4 +468,49 @@ if __name__ == "__main__":
     assert extract(_fx_to_vx(fx_vid))["media"] == extract(vx_video)["media"] == [THUMB]
     print("  vx·fx 경로가 같은 썸네일을 낸다")
 
-    print("✓ vxtwitter.extract self-test 통과 (15/15)")
+    # ── (v3.8.0) 말풍선 재생용 영상 변형 선택 — 실측 2026-09-19 18:07 KST 아라레 fxtwitter 변형 목록 ──
+    B = "https://video.twimg.com/amplify_video/2101235386622337024/vid/avc1/"
+    fx_variants = [
+        {"bitrate": 0, "content_type": "application/x-mpegURL", "url": "https://video.twimg.com/amplify_video/2101235386622337024/pl/kg.m3u8?tag=29"},
+        {"bitrate": 632000, "content_type": "video/mp4", "url": B + "320x568/dnX6.mp4?tag=29"},
+        {"bitrate": 950000, "content_type": "video/mp4", "url": B + "480x852/64BM.mp4?tag=29"},
+        {"bitrate": 2176000, "content_type": "video/mp4", "url": B + "720x1278/tziaL.mp4?tag=29"},
+        {"bitrate": 10368000, "content_type": "video/mp4", "url": B + "1080x1918/IXHq.mp4?tag=29"},
+        {"bitrate": 25128000, "content_type": "video/mp4", "url": B + "2048x3640/iJ5b.mp4?tag=29"},
+    ]
+    fx_video_media = {"type": "video", "url": B + "2048x3640/iJ5b.mp4?tag=29", "thumbnail_url": THUMB,
+                      "width": 2048, "height": 3640, "duration": 35.68, "variants": fx_variants}
+    pv = _pick_video(fx_video_media)
+    assert pv == {"url": B + "480x852/64BM.mp4?tag=29", "poster": THUMB, "w": 480, "h": 852, "sec": 35.68, "kind": "video"}, pv
+    print("  영상: 950kbps(480×852) 선택 — 원본 25Mbps·m3u8 제외, w/h 는 URL 에서")
+
+    only_big = dict(fx_video_media, variants=[v for v in fx_variants if v["bitrate"] >= 2000000])
+    assert "720x1278" in _pick_video(only_big)["url"], "상한 이하가 없으면 가장 낮은 mp4"
+    assert _pick_video(dict(fx_video_media, variants=[fx_variants[0]])) is None, "mp4 변형이 없으면 None(썸네일 폴백)"
+    assert _pick_video(dict(fx_video_media, thumbnail_url=None)) is None, "poster 없으면 None"
+    print("  상한 이하 없음→최저 mp4 / mp4 없음·poster 없음→None")
+
+    gif = {"type": "gif", "url": "https://video.twimg.com/tweet_video/G1.mp4", "thumbnail_url": "https://pbs.twimg.com/tweet_video_thumb/G1.jpg",
+           "width": 400, "height": 300, "duration": 3.2}
+    assert _pick_video(gif) == {"url": "https://video.twimg.com/tweet_video/G1.mp4", "poster": "https://pbs.twimg.com/tweet_video_thumb/G1.jpg",
+                                "w": 400, "h": 300, "sec": 3.2, "kind": "gif"}
+    assert _pick_video({"type": "photo", "url": "https://pbs.twimg.com/media/a.jpg"}) is None
+    print("  GIF: url(mp4) 그대로 / 사진은 None")
+
+    # fetch_video: fx 응답에서 첫 영상 선택, 사진만 있으면 None, 실패하면 None
+    fx_tweet = {"tweet": {"id": TID, "text": "t", "media": {"all": [
+        {"type": "photo", "url": "https://pbs.twimg.com/media/p.jpg?name=orig"}, fx_video_media]}}}
+    s = _Sess(_Resp(500), _Resp(200, fx_tweet))
+    assert fetch_video(TID, session=s)["w"] == 480 and len(s.calls) == 1 and "fxtwitter" in s.calls[0]
+    assert fetch_video(TID, session=_Sess(_Resp(500), _Resp(200, {"tweet": {"media": {"all": [{"type": "photo", "url": "u"}]}}}))) is None
+    assert fetch_video(TID, session=_Sess(_Resp(500), _Resp(404))) is None and fetch_video("abc") is None
+    print("  fetch_video: 혼합 미디어에서 영상만 / 사진만·실패 → None")
+
+    # extract().has_video — 영상 트윗만 True (참조 트윗의 영상은 보지 않음)
+    assert extract(vx_video)["has_video"] is True
+    assert extract({"text": "t", "mediaURLs": ["https://pbs.twimg.com/media/a.jpg"]})["has_video"] is False
+    assert extract({"text": "t", "mediaURLs": [VID]})["has_video"] is True
+    assert extract({"text": "t", "qrt": {"text": "q", "media_extended": [{"type": "video", "url": VID, "thumbnail_url": THUMB}]}})["has_video"] is False
+    print("  extract.has_video: 본인 영상만 True")
+
+    print("✓ vxtwitter.extract self-test 통과 (20/20)")

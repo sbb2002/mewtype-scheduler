@@ -1412,9 +1412,9 @@ def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_ke
         return None
     channels_cfg = _load_channels_config()
     handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
-    media, quote = _enrich_personal_media(tag, prefetched=vx_extract)
+    media, quote, video = _enrich_personal_media(tag, prefetched=vx_extract)
     parsed = xtweet.parse(raw, title=title, tag=tag, channel_key=channel_key,
-                          now_iso=now_iso, handle=handle, media=media, quote=quote)
+                          now_iso=now_iso, handle=handle, media=media, quote=quote, video=video)
     if not parsed:
         return None
 
@@ -2171,28 +2171,37 @@ def _expand_truncated_yt(raw: str, tag) -> str:
 
 
 def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
-                           ) -> tuple[list[str], dict | None]:
+                           ) -> tuple[list[str], dict | None, dict | None]:
     """개인 트윗 id 로 vxtwitter 조회 — 본인 첨부 미디어 + 인용(QRT)한 남의 트윗 {text,media}.
 
     인용 트윗은 **표시만** 하고(말풍선에 카드로 실음) 예고 파싱 등 ingest 대상엔 안 넣는다.
-    tweet id 없음·vxtwitter 모듈/조회 실패·인용 없음 → ([], None) 무회귀(배지·본문 표시는 그대로).
+    tweet id 없음·vxtwitter 모듈/조회 실패·인용 없음 → ([], None, None) 무회귀(배지·본문 표시는 그대로).
+
+    (v3.8.0) 반환 3번째 = 본인 트윗의 영상·GIF `{url, poster, w, h, sec, kind}`(말풍선에서 X 서버 mp4 직접 재생) | None.
+    영상 트윗이면 fxtwitter 로 480p 급 변형을 골라 오고(vxtwitter 는 최고화질 하나뿐), 그 썸네일은 이미지 목록
+    (media)에서 뺀다(같은 그림이 두 번 나오지 않게). 변형 조회에 실패하면 video=None 으로 종전(썸네일 이미지)대로.
 
     `prefetched`: `_recover_raw_via_vxtwitter` 가 같은 tweet id 로 이미 받아온
     `vxtwitter.extract()` 결과 — 있으면 본인 트윗 재조회를 건너뛴다(같은 id 중복 fetch 방지).
     """
     if vxtwitter is None or xtweet is None or not tag:
-        return [], None
+        return [], None, None
     tid = xtweet._tweet_id(tag)
     if not tid or not tid.isdigit():
-        return [], None
+        return [], None, None
     if prefetched is not None:
         ex = prefetched
     else:
         j = vxtwitter.fetch_tweet(tid)
         if not j:
-            return [], None
+            return [], None, None
         ex = vxtwitter.extract(j)
     media = ex.get("media") or []
+    video = None
+    if ex.get("has_video"):
+        video = vxtwitter.fetch_video(tid)
+        if video:
+            media = [u for u in media if u != video["poster"]]
     quote = None
     # (v3.7.3) 응답에 인용 트윗 본문이 이미 실려 있으면 그것을 쓴다. 참조 트윗을 id 로 다시 조회하는 것은
     # 실려 있지 않을 때만 — vxtwitter 가 특정 참조 트윗을 영구 500 으로 못 주는 경우가 있다(2026-09-18 아라레).
@@ -2206,7 +2215,7 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
             qex = vxtwitter.extract(qj) if qj else {}
             if qex.get("text") or qex.get("media"):
                 quote = {"text": qex.get("text") or "", "media": qex.get("media") or []}
-    return media, quote
+    return media, quote, video
 
 
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
@@ -4116,8 +4125,8 @@ if __name__ == "__main__":
     print("[OK] _maybe_tag_cast_participants (대상 계정 필터 · 매칭 · 무회귀)")
 
     # ── _enrich_personal_media (v3.4.5 — 개인 트윗 미디어 + 인용 카드) ──
-    assert _enrich_personal_media(None) == ([], None)          # tweet id 없음 → 무회귀
-    assert _enrich_personal_media("DownloadNotificationService") == ([], None)
+    assert _enrich_personal_media(None) == ([], None, None)    # tweet id 없음 → 무회귀
+    assert _enrich_personal_media("DownloadNotificationService") == ([], None, None)
 
     _orig_vxtwitter = vxtwitter
 
@@ -4139,7 +4148,7 @@ if __name__ == "__main__":
 
     try:
         globals()["vxtwitter"] = _FakeVXQuote
-        media, quote = _enrich_personal_media(_TAG)
+        media, quote, _video = _enrich_personal_media(_TAG)
         assert media == [], media                    # 본인 트윗 자체엔 미디어 없음(인용만 있음)
         assert quote == {"text": "🎶楽曲情報🎶",
                           "media": ["https://pbs.twimg.com/media/cover.jpg"]}, quote
@@ -4166,11 +4175,57 @@ if __name__ == "__main__":
     try:
         globals()["vxtwitter"] = _FakeVXNoRefetch
         prefetched = {"media": [], "qrt_url": "https://twitter.com/i/status/999"}
-        media, quote = _enrich_personal_media(_TAG, prefetched=prefetched)
+        media, quote, _video = _enrich_personal_media(_TAG, prefetched=prefetched)
         assert media == [] and quote == {"text": "🎶楽曲情報🎶", "media": []}, (media, quote)
     finally:
         globals()["vxtwitter"] = _orig_vxtwitter
     print("[OK] _enrich_personal_media (prefetched 재사용 — 본인 트윗 중복 fetch 없음)")
+
+    # ── _enrich_personal_media: 영상 트윗 (v3.8.0) — 480p 급 변형 재생 / 조회 실패 시 썸네일 폴백 ──
+    _VID_TID = "2101235831302431170"
+    _VID_TAG = "p#https://x.com/#1tweet-" + _VID_TID
+    _POSTER = "https://pbs.twimg.com/amplify_video_thumb/2101235386622337024/img/n0IZViYALnC2NzA-.jpg"
+    _VID_JSON = {
+        "text": "生日", "mediaURLs": ["https://video.twimg.com/x/2048x3640/o.mp4"],
+        "media_extended": [{"type": "video", "url": "https://video.twimg.com/x/2048x3640/o.mp4", "thumbnail_url": _POSTER}],
+        "qrtURL": "https://twitter.com/i/status/1",
+        "qrt": {"text": "참조", "mediaURLs": ["https://pbs.twimg.com/media/q.jpg"]},
+    }
+    _PICK = {"url": "https://video.twimg.com/x/480x852/s.mp4?tag=29", "poster": _POSTER, "w": 480, "h": 852,
+             "sec": 35.68, "kind": "video"}
+
+    class _FakeVXVideo:
+        variants_ok = True
+        calls = []
+
+        @staticmethod
+        def fetch_tweet(tid):
+            return _VID_JSON if tid == _VID_TID else None
+
+        @staticmethod
+        def fetch_video(tid):
+            _FakeVXVideo.calls.append(tid)
+            return dict(_PICK) if _FakeVXVideo.variants_ok else None
+
+        @staticmethod
+        def extract(j):
+            return _orig_vxtwitter.extract(j) if j else {}
+
+        qrt_id = staticmethod(lambda u: _orig_vxtwitter.qrt_id(u))
+
+    try:
+        globals()["vxtwitter"] = _FakeVXVideo
+        media, quote, video = _enrich_personal_media(_VID_TAG)
+        assert video == _PICK, video
+        assert media == [], "video 가 있으면 그 썸네일을 이미지 목록에서 뺀다(같은 그림 2번 방지)"
+        assert quote == {"text": "참조", "media": ["https://pbs.twimg.com/media/q.jpg"]}, quote
+        assert _FakeVXVideo.calls == [_VID_TID]
+        _FakeVXVideo.variants_ok = False
+        media, quote, video = _enrich_personal_media(_VID_TAG)
+        assert video is None and media == [_POSTER], (video, media)    # 변형 조회 실패 → v3.7.4 동작(썸네일 이미지)
+    finally:
+        globals()["vxtwitter"] = _orig_vxtwitter
+    print("[OK] _enrich_personal_media (영상: 재생용 변형 + 썸네일 중복 제거 / 변형 실패 → 썸네일 폴백)")
 
     # ── 6상태 정렬·표시 ───────────────────────────────────────
     _pv = {"items": [
@@ -4712,8 +4767,8 @@ if __name__ == "__main__":
             globals()["_send_telegram"] = lambda *a, **k: True
             _tm._send_telegram = lambda *a, **k: True
 
-            globals()["_enrich_personal_media"] = lambda tag, prefetched=None: ([], None)
-            _tm._enrich_personal_media = lambda tag, prefetched=None: ([], None)
+            globals()["_enrich_personal_media"] = lambda tag, prefetched=None: ([], None, None)
+            _tm._enrich_personal_media = lambda tag, prefetched=None: ([], None, None)
 
             # _enqueue_wake_now 스텁 (Cloud Tasks API 호출 방지)
             _enqueue_wake_now_counts = {"count": 0}

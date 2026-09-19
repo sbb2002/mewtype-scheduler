@@ -172,6 +172,88 @@ function _mediaGrid(urls) {
   }
   return wrap;
 }
+/* ── 본인 트윗 영상·GIF (v3.8.0) ─────────────────────────────────────
+   m.video = { url(mp4, X 서버), poster, w, h, sec, kind: "video"|"gif" }.
+   우리 서버는 파일을 받지 않는다 — 방문자 브라우저가 재생을 누르는 순간 X 서버(video.twimg.com)에서 직접 받는다.
+   video.twimg.com 은 다른 사이트의 Referer 를 403 으로 막으므로 index.html 에 no-referrer 메타가 필요하다.
+   X 쪽 정책이 바뀌어 재생이 안 되면(error) 포스터 위에 "원문에서 보기" 링크를 띄운다. */
+const PLAY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>';
+
+function _pauseVideos(root, except, keepGif) {
+  if (!root) return;
+  for (const v of root.querySelectorAll("video")) {
+    if (v === except || v.paused) continue;
+    if (keepGif && v.closest(".is-gif")) continue;   // 소리 없는 GIF 는 다른 영상을 재생해도 계속 돈다
+    try { v.pause(); } catch { /* 무시 */ }
+  }
+}
+function _fmtDur(sec) {
+  const s = Math.round(Number(sec));
+  if (!isFinite(s) || s <= 0) return "";
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+function _videoPlayer(m) {
+  const v = m.video;
+  const isGif = v.kind === "gif";
+  const box = document.createElement("div");
+  box.className = "lane__thread__player" + (isGif ? " is-gif" : "");
+  if (v.w && v.h) {
+    box.style.setProperty("--ar", v.w + " / " + v.h);
+    if (v.h > v.w) box.classList.add("is-portrait");
+  }
+  const vid = document.createElement("video");
+  vid.src = v.url;
+  vid.poster = v.poster;
+  vid.setAttribute("playsinline", "");
+  vid.setAttribute("aria-label", isGif ? "움직이는 이미지" : "트윗 영상");
+  if (isGif) {
+    vid.muted = true;
+    vid.loop = true;
+    vid.autoplay = true;
+    vid.preload = "auto";
+  } else {
+    vid.controls = true;
+    vid.preload = "none";          // 누르기 전에는 아무것도 받지 않는다
+  }
+  box.appendChild(vid);
+
+  if (!isGif) {
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "lane__thread__play";
+    play.setAttribute("aria-label", "영상 재생");
+    play.innerHTML = PLAY_SVG;
+    play.addEventListener("click", () => { vid.play().catch(() => {}); });
+    box.appendChild(play);
+    const d = _fmtDur(v.sec);
+    if (d) {
+      const dur = document.createElement("span");
+      dur.className = "lane__thread__dur";
+      dur.textContent = d;
+      box.appendChild(dur);
+    }
+    vid.addEventListener("play", () => {
+      box.classList.add("is-playing");
+      _pauseVideos(box.closest(".lane__bubble__scroll, .tw-toast__scroll"), vid, true);   // 소리 나는 영상은 한 번에 하나만
+    });
+    vid.addEventListener("ended", () => box.classList.remove("is-playing"));
+  }
+
+  vid.addEventListener("error", () => {
+    if (box.classList.contains("is-failed")) return;
+    box.classList.add("is-failed");
+    box.classList.remove("is-playing");
+    vid.controls = false;
+    const a = document.createElement("a");
+    a.className = "lane__thread__vfail";
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "재생할 수 없어요 · 원문에서 보기";
+    _setSrc(a, m);
+    box.appendChild(a);
+  });
+  return box;
+}
 function _quoteCard(q, ko) {
   const card = document.createElement("div");
   card.className = "lane__thread__quote";
@@ -221,6 +303,9 @@ function _renderThread(scrollEl, list) {
       row.appendChild(tx);
       if (m.quote && (m.quote.text || (m.quote.media && m.quote.media.length))) {
         row.appendChild(_quoteCard(m.quote, ko));
+      }
+      if (m.video && m.video.url && m.video.poster) {
+        row.appendChild(_videoPlayer(m));
       }
       if (m.media && m.media.length) {
         row.appendChild(_mediaGrid(m.media));
@@ -379,6 +464,7 @@ function _closeBubble(ck) {
   if (_st.pinned.has(ck) || _st.peek === ck) return;   // 아직 열려 있어야 함
   const b = _st.bubbles.get(ck);
   if (!b) return;
+  _pauseVideos(b);                       // 패널을 닫으면 재생 중인 영상도 멈춘다
   b.classList.remove("is-open");
   const done = () => {
     b.removeEventListener("transitionend", done);
@@ -449,6 +535,7 @@ function _openToast(ck) {
   _markReadAll(list);
 }
 function _closeToast() {
+  _pauseVideos(_toast);
   document.body.classList.remove("tw-modal-open");
 }
 

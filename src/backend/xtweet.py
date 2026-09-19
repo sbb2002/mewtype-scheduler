@@ -113,10 +113,13 @@ def _reached(iso_when: str | None, now_iso: str) -> bool:
 
 def parse(text: str, *, title: str, tag: str | None, channel_key: str,
           now_iso: str, handle: str = "",
-          media: list[str] | None = None, quote: dict | None = None) -> dict | None:
+          media: list[str] | None = None, quote: dict | None = None,
+          video: dict | None = None) -> dict | None:
     """개인 트윗 1건 dict. text 가 (장식 제거 후) 비면 None. 리트윗/타인글은 필터.
 
     media: 본인 트윗에 첨부된 이미지 URL 목록(표시용, 파싱엔 안 씀).
+    video: 본인 트윗의 영상·GIF `{url, poster, w, h, sec, kind}` — 말풍선에서 X 서버 mp4 를 직접 재생(v3.8.0).
+        우리는 파일을 받지 않고 주소만 저장한다. 없으면 None.
     quote: 인용(QRT)한 남의 트윗 {"text","media"} — 표시만 하고 ingest(파싱)는 안 함.
     """
     body = _clean_text(text)
@@ -144,6 +147,8 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
         "media": list(media) if media else [],
         "quote": ({"text": quote.get("text") or "", "media": list(quote.get("media") or []),
                     "text_ko": None} if quote else None),
+        "video": ({k: video.get(k) for k in ("url", "poster", "w", "h", "sec", "kind")}
+                  if video and video.get("url") and video.get("poster") else None),
     }
 
 
@@ -202,7 +207,7 @@ def default_archive() -> dict:
 
 
 _ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "expires_at",
-             "media", "quote")
+             "media", "quote", "video")
 
 
 def _as_list(v) -> list:
@@ -1257,5 +1262,24 @@ if __name__ == "__main__":
     it_e, ch_e, md_e = merge_member_live([dict(up, state="end")], live_ok, NOW_M)
     assert md_e == "noop" and it_e[0]["state"] == "end", "end 는 되돌리지 않음"
     print("[OK] merge_member_live  (같은 video_id: watching→live, end 는 뒷걸음 없음)")
+
+    # ── parse(video=) / 병합·아카이브에서 video 유지 (v3.8.0) ──
+    VD = {"url": "https://video.twimg.com/amplify_video/2101235386622337024/vid/avc1/480x852/64BM.mp4?tag=29",
+          "poster": "https://pbs.twimg.com/amplify_video_thumb/2101235386622337024/img/n0IZViYALnC2NzA-.jpg",
+          "w": 480, "h": 852, "sec": 35.68, "kind": "video", "junk": "버림"}
+    row_v = parse("今日はみゃーちゃんのお誕生日〜🎂✨️", title="仲町あられ", tag="p#https://x.com/#1tweet-2101235831302431170",
+                  channel_key="arale", now_iso="2026-09-19T09:07:15Z", handle="arale_yumemita", media=[], video=VD)
+    assert row_v and row_v["video"] == {k: VD[k] for k in ("url", "poster", "w", "h", "sec", "kind")}, row_v
+    assert "junk" not in row_v["video"]
+    assert parse("일반 트윗", title="仲町あられ", tag="p#https://x.com/#1tweet-2101235831302431171", channel_key="arale",
+                 now_iso="2026-09-19T09:07:15Z")["video"] is None
+    assert parse("영상 없음", title="仲町あられ", tag="p#https://x.com/#1tweet-2101235831302431172", channel_key="arale",
+                 now_iso="2026-09-19T09:07:15Z", video={"url": "https://x/y.mp4"})["video"] is None, "poster 없으면 저장 안 함"
+    t_v, a_v, ch_v, md_v = merge_thread(default_tweets(), row_v, "2026-09-19T09:07:16Z")
+    assert md_v == "added" and t_v["tweets"]["arale"][0]["video"]["kind"] == "video"
+    t_x, a_x, _, _ = merge_thread(t_v, dict(row_v, id="9", expires_at="2099-01-01T00:00:00Z"), "2026-09-21T00:00:00Z")
+    s_t, s_a, _ = sweep_expired(t_x, default_archive(), "2026-09-21T00:00:00Z")
+    assert s_a["tweets"][0]["video"]["poster"] == VD["poster"], "만료돼 아카이브로 가도 video 유지"
+    print("[OK] parse(video=) · merge_thread · sweep_expired  (video 필드 저장·유지, poster 없으면 None)")
 
     print("\nSUCCESS: xtweet self-test 통과")
