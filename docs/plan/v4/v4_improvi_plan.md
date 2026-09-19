@@ -6,6 +6,11 @@
 ## 파이프라인 구조
 ![image](v4_architecture.png)
 
+수신부(Receiver)를 업스트림 성격별로 어떻게 다르게 처리할지는
+[`v4_receiver_design.md`](./v4_receiver_design.md) 에 구체화함 — UP1 버퍼 큐 ·
+UP2 비-큐화(파생 트리거) · UP3 우선순위 레인 · LLM 호출 동시성상한+rate limiter ·
+DB 쓰기만 FIFO.
+
 * 역할 설명
     
     <외부 업스트림>
