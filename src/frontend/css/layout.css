@@ -368,6 +368,7 @@ body {
   line-height: 1.45;
   color: var(--color-text);
 }
+.fdisc__list a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }   /* 링크임을 알린다 */
 .fdisc__list li + li { border-top: 1px solid var(--color-border); }
 .fdisc:hover .fdisc__list,
 .fdisc:focus .fdisc__list,

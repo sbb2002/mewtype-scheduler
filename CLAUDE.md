@@ -119,6 +119,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   그림). 요약 `docs/VERSION.md`.
 > - **v3.8.0** (기능): 말풍선 트윗 = 번역 말풍선 + X 공식 트윗 카드만(원문 텍스트·이미지·영상 재조립 제거, 법률 자문), 디스클레이머 + GitHub Issues
 >   창구. 프론트만 변경(`tweets.js`·`tweets.css`·`index.html`), 저장 데이터는 유지. 요약 `docs/VERSION.md`.
+> - **v3.8.1** (핫픽스): 트윗 말풍선 좌 X 카드 / 우 번역 2열 + 번역 ON/OFF 애니메이션 + 꼬리를 아바타 중앙으로 + 말풍선 디스클레이머 제거(하단만).
+>   프론트만 변경. 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
