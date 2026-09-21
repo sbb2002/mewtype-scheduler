@@ -551,6 +551,29 @@ def resolve_url_host(video_channel_id: str, author_channel_key: str, channels_cf
     return key, None, collab
 
 
+def find_guest_members(channels_cfg: dict, host_key: str, *texts: str | None) -> list[str]:
+    """(v3.8.3) 본인 채널에서 열린 합동방송의 게스트를 텍스트에서 찾는다.
+
+    `resolve_url_host` 는 영상 채널 ≠ 작성자일 때만 합동으로 본다 — 리츠 채널에서
+    유노가 게스트로 나오는 방송(제목 `【峰月律/千石ユノ】`)은 놓친다. 영상 제목·트윗
+    원문에 다른 개인 멤버의 정식 표기(`x_names`/`name_ko`)가 그대로 나오면 게스트로 본다.
+    호스트 본인·그룹 채널은 제외, channel_order 순서로 반환. 별칭(`ユノ` 단독 등)은 오탐
+    위험(1~2자)이라 일부러 안 본다 — 정식 표기만.
+    """
+    hay = normalize(" ".join(t for t in texts if t))
+    order = list(channels_cfg.get("channel_order") or [])
+    chans = channels_cfg.get("channels") or {}
+    found = []
+    for key in order:
+        if key == host_key:
+            continue
+        meta = chans.get(key) or {}
+        names = [*(meta.get("x_names") or []), meta.get("name_ko") or ""]
+        if any(n and normalize(n) in hay for n in names):
+            found.append(key)
+    return found
+
+
 def build_item_from_video(info, *, channel_key: str, host: str | None,
                           collab_with: list[str] | None, now_iso: str) -> tuple[dict, str | None]:
     """`videos.list` 로 확정된 영상(`info` — collector.youtube.VideoInfo)을 preview 아이템으로.
@@ -639,6 +662,13 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
     if new_state and _STATE_ORDER.get(new_state, 0) > _STATE_ORDER.get(cur_state, 0):
         cur["state"] = new_state
         cur["state_since"] = now_iso
+
+    # (v3.8.3) 게스트 감지는 추가만 — 기존 collab_with 는 절대 안 줄인다(재-ingest 로 보정 가능)
+    added = [k for k in (new_item.get("collab_with") or []) if k not in (cur.get("collab_with") or [])
+             and k != cur.get("channel_key")]
+    if added:
+        cur["collab_with"] = [*(cur.get("collab_with") or []), *added]
+        cur["kind"] = "collab"
 
     cur["last_updated"] = now_iso
     items[idx] = cur
@@ -1257,5 +1287,25 @@ if __name__ == "__main__":
     it_e, ch_e, md_e = merge_member_live([dict(up, state="end")], live_ok, NOW_M)
     assert md_e == "noop" and it_e[0]["state"] == "end", "end 는 되돌리지 않음"
     print("[OK] merge_member_live  (같은 video_id: watching→live, end 는 뒷걸음 없음)")
+
+    # ── v3.8.3 본인 채널 합동 게스트 감지 ──
+    import json as _json
+    from pathlib import Path as _P
+    _cfg = _json.loads((_P(__file__).resolve().parents[2] / "config" / "channels.json").read_text(encoding="utf-8"))
+    _t = "【#ぷりはとDay1】💖ユノ＆律こらぼ💙アイドル歌枠💙【峰月律/千石ユノ】"
+    assert find_guest_members(_cfg, "ritsu", _t) == ["yuno"]                      # 실제 사례
+    assert find_guest_members(_cfg, "ritsu", "【雑談】峰月律の朝活") == []          # 본인만 → 없음
+    assert find_guest_members(_cfg, "arale", "仲町あられ×千石ユノ×宮永ののか") == ["yuno", "nonoka"]
+    assert find_guest_members(_cfg, "ritsu", "ユノ＆律こらぼ") == []                # 별칭 단독은 안 봄(오탐 방지)
+    print("[OK] find_guest_members  (정식 표기만, 호스트 제외, channel_order 순)")
+
+    _prev = [{"id": "pv1", "channel_key": "ritsu", "video_id": "V1", "state": "live",
+              "collab_with": None, "kind": None, "title": "t", "thumbnail": None, "url": "u"}]
+    _new = dict(_prev[0], collab_with=["yuno"], kind="collab", state="upcoming")
+    _out, _ch = merge_video_confirmed(_prev, "V1", _new, "2026-09-21T13:00:00Z")
+    assert _ch and _out[0]["collab_with"] == ["yuno"] and _out[0]["kind"] == "collab" and _out[0]["state"] == "live"
+    _out2, _ = merge_video_confirmed(_out, "V1", dict(_new, collab_with=None), "2026-09-21T13:01:00Z")
+    assert _out2[0]["collab_with"] == ["yuno"], "재-ingest 가 기존 collab_with 를 지우면 안 됨"
+    print("[OK] merge_video_confirmed  (collab_with 추가만, 기존 값 보존)")
 
     print("\nSUCCESS: xtweet self-test 통과")

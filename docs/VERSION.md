@@ -2,6 +2,14 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.3** (핫픽스) - 본인 채널에서 열린 합동방송(예: 리츠 채널에 유노 게스트)이 합동으로 감지되지 않던 것 수정. 2026-09-21 리츠×유노 `#ぷりはとDay1` 이 계기.
+  1. **원인** - URL 우선 ingest(v3.6)의 `xtweet.resolve_url_host` 는 영상 채널 ≠ 트윗 작성자일 때만 `collab_with` 를 채웠다. 본인 채널 영상이면 게스트가
+     제목(`【峰月律/千石ユノ】`)·본문(`ユノ＆律こらぼ`)에 있어도 `collab_with=null` 이었고, 이후 `merge_video_confirmed`·`preview_build` 가 최초 값을 보존해 유노 레인에 안 떴다.
+  2. **수정** - `xtweet.find_guest_members`(신규): 영상 제목·트윗 원문에서 다른 개인 멤버의 **정식 표기**(`x_names`·`name_ko`)를 찾아 `collab_with` 에 합친다
+     (호스트 본인·그룹 제외, `channel_order` 순). `_maybe_url_confirmed_schedule` 이 본인/타멤버 채널(host 없음) 경로에서 호출. 별칭(`ユノ` 단독 등)은 오탐 위험이라 안 본다.
+     `merge_video_confirmed` 는 `collab_with` 를 **추가만** 한다(기존 값 삭제 없음) - 같은 트윗 재-`/ingest` 로 이미 등록된 아이템도 보정된다.
+  3. **한계** - 제목·본문에 정식 이름이 없고 별칭만 있는 합동은 못 잡는다. 유튜브 URL 없는 텍스트 예고 경로는 영상 제목이 없어 미적용.
+  4. **검증** - `python -m src.backend.xtweet`·`telegram_app` self-test 통과(신규 케이스 포함). 실제 config·트윗·제목으로 재현: 수정 전 운영 리츠 아이템 `collab_with=null` -> 재-ingest 머지 후 `["yuno"]`, `kind=collab`.
 - **v3.8.1** (핫픽스) - v3.8.0 배포본 확인 후 트윗 말풍선 UI 수정. 프론트만(`tweets.css`·`tweets.js`·`layout.css`), 백엔드·데이터 변경 없음.
   1. **2열 배치** - 좌 = X 카드, 우 = 번역 말풍선(PC 패널 540px = 카드 300 + 번역, 모바일 토스트 = 카드 250(X 카드 최소 폭) + 번역 최소 110px,
      모자라면 목록이 가로로 밀림). 한 트윗의 두 열은 더 긴 쪽 높이로 같다. 번역 OFF 면 번역 열이 접혀 카드만(PC 패널 330px, 모바일은 카드가 가득 참).

@@ -2481,6 +2481,12 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
 
     host_key, host, collab_with = xtweet.resolve_url_host(info.channel_id, channel_key, channels_cfg)
 
+    if host_key is not None and host is None:
+        # (v3.8.3) 본인 채널 합동 — 제목/원문에 다른 멤버 정식 표기가 있으면 게스트로 추가
+        guests = xtweet.find_guest_members(channels_cfg, host_key, info.title, raw)
+        merged = [*(collab_with or []), *[g for g in guests if g not in (collab_with or [])]]
+        collab_with = merged or None
+
     if host_key is None:
         groq_key = os.environ.get("GROQ_API_KEY", "").strip()
         if not groq_key:
@@ -4350,6 +4356,24 @@ if __name__ == "__main__":
         pv8 = (g8.store.get(_PREVIEW_PATH) or {}).get("items") or []
         assert pv8 and pv8[0]["channel_key"] == "ritsu" and pv8[0]["collab_with"] == ["nonoka"], pv8
         print("[OK] _maybe_url_confirmed_schedule (타 멤버 채널 콜라보 → host=그 채널, collab_with=작성자)")
+
+        # (v3.8.3) 본인 채널 합동 — 리츠 채널 영상 제목에 千石ユノ → collab_with=[yuno]
+        _CFG8 = {**_CFG6, "channels": {**_CFG6["channels"],
+                 "yuno": {**_CFG6["channels"]["yuno"], "x_names": ["千石ユノ"]},
+                 "ritsu": {**_CFG6["channels"]["ritsu"], "x_names": ["峰月律"]}}}
+        g9 = _FakeGH()
+        _FakeYouTubeClient._RESP = {
+            "Fd47-ZE1GVs": _FakeVideoInfo("Fd47-ZE1GVs", "UC_ritsu",
+                                          "【#ぷりはとDay1】ユノ＆律こらぼ【峰月律/千石ユノ】", "upcoming",
+                                          scheduled_start="2026-09-21T12:00:00Z")
+        }
+        _maybe_url_confirmed_schedule(
+            g9, "配信予定 9/21 21:00 ユノ＆律こらぼ https://www.youtube.com/live/Fd47-ZE1GVs",
+            "ritsu", "2026-09-21T04:34:41Z", _CFG8,
+        )
+        pv9 = (g9.store.get(_PREVIEW_PATH) or {}).get("items") or []
+        assert pv9 and pv9[0]["channel_key"] == "ritsu" and pv9[0]["collab_with"] == ["yuno"]             and pv9[0]["kind"] == "collab", pv9
+        print("[OK] _maybe_url_confirmed_schedule (본인 채널 합동 → 제목의 千石ユノ 로 collab_with=[yuno])")
     finally:
         globals()["YouTubeClient"] = _orig_YTC
         globals()["_enqueue_wake_now"] = _orig_enqueue
