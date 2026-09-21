@@ -1,15 +1,51 @@
-# 현행 아키텍처 — 전체 흐름
+# 현행 아키텍처 — 전체 흐름 (v3)
 
-현재 배포돼 있는 시스템의 구성요소와 데이터 흐름. 그림의 각 박스를 그대로 설명한다.
+현재 배포돼 있는 시스템(v3.x)의 구성요소와 데이터 흐름.
 
-![현행 전체 흐름](v2_4_flow.png)
+> 🔜 **v3.8.2(미배포) 판**: `data` 저장소 접근을 DB 관제소(`mewtype-db-tower`) 하나로 모으는 변경 — [`ARCHITECTURE_v3.8.2.md`](ARCHITECTURE_v3.8.2.md) · [`v3_pamphlet_v3.8.2.html`](v3_pamphlet_v3.8.2.html). 배포되면 이 문서를 그 내용으로 교체한다.
 
-*(생성기 `docs/plan/gen_v2_4.py` — `python docs/plan/gen_v2_4.py`)*
+> **인터랙티브 도식은 [`v3_pamphlet.html`](v3_pamphlet.html)** — 시나리오별로 신호가 어디를 거치는지 애니메이션으로 본다.
+> 이 문서는 그 텍스트 설명이다. 구조가 바뀌면 **팜플렛과 이 문서를 같이 갱신**한다.
+> (v2.4 시절 PNG `v2_4_flow.png` 는 v3 구조와 달라 더는 쓰지 않는다.)
 
-- 인터페이스 계약·모듈 명세: `docs/SPEC.md`
+- 인터페이스 계약·모듈 명세: `docs/SPEC.md` (main 브랜치) — 특히 §8.14 write-queue
+- 인입(`/ingest`) 전체 흐름·서비스별 실행 위치: `docs/INGEST_FLOW.md` (main 브랜치)
+- 버전별 변경: `docs/VERSION.md` (main 브랜치)
 - 스케줄 타이밍(운영자 시점): `docs/SCHEDULE.md`
-- 세부 설계: `docs/plan/v2_3_x_relay.md`(X 릴레이), `docs/plan/v2_4_collab.md`(합동방송),
-  실배포 전환 런북 `docs/plan/v2_4_golive.md`
+
+```mermaid
+flowchart LR
+  OP([운영자]) -->|명령| TG[Telegram]
+  TG -->|webhook| CTRL
+  PUSH[X·YouTube 푸시] --> UP[업스트림<br/>폰 Automate] -->|POST /ingest| CTRL
+  subgraph GCP[Cloud Run · asia-northeast1 · 같은 이미지]
+    CTRL[mewtype-telegram<br/>제어 채널 · 판단/외부호출 준비]
+    BE[mewtype-backend<br/>/tick /wake /write · concurrency=1]
+  end
+  SCH[Cloud Scheduler] -->|/tick · OIDC| BE
+  TASKS[Cloud Tasks] -->|/wake · OIDC| BE
+  BE --> TASKS
+  CTRL -->|/write · OIDC| BE
+  BE -->|RSS · videos.list| YT[YouTube]
+  CTRL -.->|LLM·OCR·vxtwitter·yt-dlp| EXT[외부 API]
+  BE ==>|커밋 = 유일한 쓰기 경로| DB[(GitHub data 저장소)]
+  CTRL -.->|읽기| DB
+  DB -->|raw JSON · 75초 폴링| FE[Vercel 프론트]
+  BE -->|상태전이 DM| TG
+```
+
+---
+
+## 핵심 원칙: 쓰기 경로는 하나 (v3.7 · v3.7.1)
+
+GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로 충돌한다(다른 파일이어도 읽은 뒤 다른 커밋이 끼면 409).
+그래서 `data` 저장소에 대한 **콘텐츠 커밋은 전부 백엔드 `POST /write`**(`--concurrency=1 --max-instances=1`)로 모아 한 줄로 세운다.
+
+- **제어 채널(`mewtype-telegram`, 동시 처리 80)** — 읽기는 GitHub 를 직접 하고, 외부 호출(외부 LLM·`videos.list`·vxtwitter·비전 OCR·yt-dlp)과 판단을 **먼저 준비**한 뒤 결과를 JSON 인자로 `/write` 에 넘긴다(OIDC, `writeclient.call_write`, 타임아웃 60초, 2초 넘으면 "처리 대기 중" DM).
+- **백엔드 `/write` 잡** — GitHub 읽기·쓰기(+ undo 스냅샷, 모니터 로그, DM, Cloud Tasks enqueue)만 한다. 외부 장애가 `/tick`·`/wake` 를 같이 막지 않게 하려는 분리(A-1).
+  등록 kind: `merge_rows` `remove_broadcast` `apply_notice` `notice_sweep` `notice_del_commit` `notice_edit_commit` `personal_tweet` `tweet_sweep` `tweet_del_commit` `url_confirmed_commit` `yt_member_live_commit`(v3.7.3) `undo_restore` `apply_preview_edit` `ingest_queue_push` `ingest_queue_drain`.
+- **큐를 우회하는 예외(409 가능, 잡은 최신 재조회 후 1회 재시도)** — `control.json`(/pause·/resume), `admin_state.json` 마법사 슬롯, 모니터 로그(notice/relay/ops), `/translate`, `/monitor` 의 `latest.html`.
+- `/tick`·`/wake` 도 백엔드 안에서 같은 GitHub 커밋을 하며 서로·`/write` 와는 `ConflictError` + 1회 재계산으로 충돌을 처리한다.
 
 ---
 
@@ -17,104 +53,74 @@
 
 ### 외부 · 운영자 폰
 
-- **Android · Automate** — 운영자가 `@BDP_yumemita` 를 팔로우. 삼성 브라우저 웹푸시 알림이 뜨면
-  "HTTP Request" 블록이 `POST /ingest` (`X-Ingest-Secret` 헤더). 폰이 릴레이하는 건 **신호+본문**
-  뿐이고, 판정·저장은 전부 백엔드가 한다.
-  - Content body 식(이 폰 Automate 빌드 기준, 커밋 `1c21d9a`):
-    `urlEncode({"text": coalesce(nx["android.bigText"], nx["android.text"], nmsg, nticker, "")})`
-  - 이 빌드는 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘린다 → 백엔드 `_ingest` 가
-    폼 키에서 원문을 복구한다(`# ponytail:`). 상세: `docs/plan/v2_4_golive.md`.
-  - `Expression true?` 필터: 본문에 `配信スケジュール` 또는 `出演情報` 포함 (백엔드
-    `xrelay.looks_relayable` 과 동일). 테스트 기간엔 생략하고 전부 relay.
-  - X **원글**(팔로우 계정 새 글) 알림은 `InboxStyle` 이라 트리거 시점 본문이 비는 경우가 있다.
-    **리트윗·인용** 알림은 본문이 extra 에 실려 관통.
-- **운영자 Telegram DM** — 아웃바운드 알림(A~F) 수신처. `/status /pause /resume /log` 명령 발신.
+- **Android · Automate (업스트림)** — 운영자 폰이 X·YouTube 푸시 알림을 받아 `POST /ingest` (`X-Ingest-Secret`)로 중계. 폰은 **신호+본문만** 릴레이하고 판정·저장은 전부 백엔드가 한다. 코드베이스 밖.
+  - X 알림: form `text`(본문) + `title`(`android.title`, 게시자 표시 이름) + `template` + `tag`(트윗 태그).
+    `template` 이 `BigTextStyle` 이 아니면(다운로드·그룹요약·미디어재생) 폰 게이트가 차단.
+  - **(v3.7.3) YouTube 알림**: 폼 `source=yt&video_id&title&kind&tag`. 유튜브 앱의 "회원 전용 실시간 스트림" 알림이 대상.
+  - 이 폰 빌드는 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘려, 백엔드 `_ingest` 가 폼 키에서 원문을 복구한다.
+  - 업스트림 배선 상세: `docs/plan/` 의 Automate 배선도.
+- **운영자 Telegram DM** — 아웃바운드 알림 수신처이자 명령(`/status /list /pause /resume /ingest /edit /del /undo /notice …`) 발신처.
 
 ### 백엔드 · Cloud Run (`asia-northeast1`)
 
-두 서비스가 **같은 컨테이너 이미지**를 공유하고 엔트리포인트만 다르다.
+두 서비스가 **같은 컨테이너 이미지**를 공유하고 엔트리포인트만 다르다. **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
 
-- **`mewtype-backend`** (비공개, `--no-allow-unauthenticated` + OIDC)
-  - `POST /tick` — Cloud Scheduler 2잡(baseline JST 06:00 / light 3h)이 호출. RSS +
-    `videos.list` 배치 1회 → `reconcile.build_schedule` 로 `schedule.json` 재구성 +
-    `statemachine.sync_pending` 으로 `pending.json` 갱신 + 필요한 wake 태스크 enqueue.
-  - `POST /wake {video_id}` — Cloud Tasks 가 방송별로 도달시킴. 그 방송 하나만 조회 →
-    라이브 여부 확인 → 다음 체크 재예약(pre-live 3분 / live-watch 시작~+60분 10분 · 이후 3분).
-    720h 상한 → `now+696h` 클램프 롱폴링.
+- **`mewtype-backend`** (비공개, `--no-allow-unauthenticated` + OIDC, `--concurrency=1 --max-instances=1`)
+  - `POST /tick` — Cloud Scheduler 가 호출(baseline JST 06:00 / light 10분, v3.6). RSS + `videos.list` 배치 1회 →
+    `preview_build.build_preview` 로 `preview.json` 재구성(6상태, FSM 파생) + 필요한 wake 태스크 enqueue + LLM 번역 sweep.
+    `xtweet.apply_overrides` 로 개인 트윗이 정한 시각을 API 재구성이 안 덮게 한다.
+  - `POST /wake {video_id}` — Cloud Tasks 가 방송별로 도달시킴. 그 방송 하나만 조회 → 상태 전이 → 다음 체크 재예약
+    (pre-live 3분 / 시작~+60분 10분 · 이후 5분, `LIVE_TIGHT_SEC=300`). 시작이 24시간 넘게 남은 방송은 wake 미등록(v3.7.3),
+    주기 격자에 맞춘 같은 이름으로 dedupe 해 체인 증식 방지.
+  - `POST /write {kind, args}` — 제어 채널의 콘텐츠 커밋 잡(위 "쓰기 경로는 하나").
+  - `POST /monitor` — Cloud Scheduler KST 06:10, Ops 리포트(`monitoring/latest.html`) 커밋 + DM.
   - `paused`(control.json) 면 `/tick`·`/wake` 는 healthcheck 핑만 하고 no-op.
-  - 상태 전이(upcoming/live 시작·종료, fallback, 오류)를 Telegram DM 으로 직접 알림.
-  - 성공 끝에 `HEALTHCHECK_URL`(healthchecks.io) GET 1발 → grace 초과 시 다운 알림.
-- **`mewtype-telegram`** (공개, `--allow-unauthenticated`, `ALLOW_UNAUTH=1`)
-  - `POST /telegram` — Telegram webhook. `X-Telegram-Bot-Api-Secret-Token` + `chat.id`
-    허용목록. `/status`·`/pause`·`/resume`·`/log`·`/list`·`/del`·`/ingest`·`/undo` 처리.
-    `/resume` 은 메인 `/tick` 을 OIDC 발급해 호출(heal).
-    - **(v2.5.1)** `/ingest` = 2단계. 무인자로 보내면 `admin_state.json` `pending_ingest` 슬롯
-      (TTL 180s) + 안내문 → 이어 보낸 텍스트/첨부파일(`getFile`, UTF-8·256KB)을 원문으로 소진.
-      `aNoneTokyo` 취소 · `/`명령이면 대기 접고 통과 · 180s 초과면 만료. (인라인 `/ingest <원문>` 제거)
-    - **(v2.5.2)** `/undo` = 2단계. `/undo` → 복원/제거 요약 + 되돌아갈 KST 시각·커밋 sha +
-      `pending_undo` 슬롯(y/N, TTL 60s). `y` 시 2중 가드(undo 슬롯 미교체 + 대상 파일 sha 일치).
-      **(v2.7)** `undo.path` 로 `schedule.json` ↔ `notices.json` 구분해 복원.
-    - **(v2.7)** `/notice` = 2단계(`/ingest` 와 동일) → `xnotice.parse` → `notices.merge_notice`.
-      `/notice-list` · `/notice-del <id|번호>`. 상세: `docs/plan/v2_7_notice_board.md`.
-  - `POST /ingest` — 업스트림 시스템 인입 (X 예고 릴레이).
-    - form 필드: `text`(필수 본문) · `title`(`android.title` 게시자 표시 이름) · `template`
-      (`android.template`) · `tag`(`pde_noti_tag`). `tag` → `x.com/i/status/<id>` 링크·중복제거 키.
-      폰 Automate `@12` 게이트가 `contains(template,"BigTextStyle")` 로 다운로드/그룹요약/미디어
-      재생 알림을 차단. 상세: `docs/plan/v2_3_x_relay.md`.
-    - 원본 바디는 `request.form` 접근 전에 `get_data(cache=True, parse_form_data=False)` 로 캐시
-      (Werkzeug form 파싱이 스트림을 소비 → 이후 `get_data()` 가 빈 문자열이 되던 버그).
-      - **(v2.8) `android.title` 라우팅** — 본문 파싱 직후 `xtweet.route_by_title`. 개인 5인 표시명이면
-      `_maybe_personal_tweet` → `tweets.json`(계약 I) 반영 후 즉시 200 (소식/스케줄 파이프라인 안 탐).
-      테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)이면 `force_echo` — 5번에서 무조건 ECHO(헬스체크).
-      공식(`夢限大みゅーたいぷ`)·미매칭은 기존 경로. 전체 그림: `docs/INGEST_FLOW.md`.
-    - **(v2.8.1)** 개인 5인 분기는 배지 처리 후 `xtweet.parse_schedule` 도 돌린다 — 트윗이 방송
-      예고(`配信` 계열 + 날짜[+시각] 또는 온전한 YT URL)면 `merge_personal_schedule` 로
-      `schedule.json` 의 `status:"scheduled"`(`source:"personal"`) 행 승격. 정기 `/tick` 은
-      `reconcile` 직후 `xtweet.apply_overrides` 로 트윗이 정한 시각을 API 재구성이 안 덮게 한다.
-  - **테스트** (`INGEST_ECHO=1` 또는 `INGEST_DRY_RUN=1`): 파싱·저장 안 함. 받은 텍스트 DM 회신
-      (ECHO 는 raw body 전문, 4096자 초과 시 청크 분할) + `ingest ECHO: len=.. blen=.. tail_ok=..`
-      로그. 스케줄/출연 트윗(`xrelay.looks_relayable`)만 `ingest_queue.json` 에 원문 적재.
-    - **실배포** (`INGEST_ECHO=0` · `INGEST_DRY_RUN=0`): `control.json` `paused` 확인 →
-      `_ingest_queue_drain` 이 큐 원문을 `received_at` 순서로 `xrelay.parse` → `merge_scheduled`
-      → `schedule.json` 커밋, 큐 비움. 이번 요청 본문도 파싱·머지. 결과 DM 에 인식 실패 줄 수 표기.
+  - 상태 전이(upcoming/live 시작·종료 등)를 Telegram DM 으로 직접 알림. 성공 끝에 `HEALTHCHECK_URL`(healthchecks.io) GET 1발.
+  - 모니터 로그는 실행당 커밋 최대 1개, 변화 없는 tick/wake 는 기록 안 함.
+- **`mewtype-telegram`** (공개, `--allow-unauthenticated`, `ALLOW_UNAUTH=1`) — 제어 채널
+  - `POST /telegram` — Telegram webhook. `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 허용목록. 명령 처리.
+    `/resume` 은 메인 `/tick` 을 OIDC 로 호출(heal). `/ingest`·`/notice`·`/undo` 는 2단계(슬롯 TTL) 마법사.
+    값을 바꾸는 명령의 커밋은 `/write`(`remove_broadcast`·`apply_preview_edit`·`undo_restore`·`apply_notice` …).
+  - `POST /ingest` — 업스트림 인입.
+    - **분기 순서**: `source=yt` 면 YouTube 알림 경로 → 아니면 `android.title` 라우팅(`xtweet.route_by_title`).
+    - **개인 5인 표시명** → `_maybe_personal_tweet`(준비: vxtwitter 미디어·파싱·번역 LLM → `/write personal_tweet` → DM) → 예고 형식이면 `_maybe_personal_schedule`
+      (유튜브 URL 이면 `videos.list` 사실 확정 → `url_confirmed_commit`, 텍스트면 정규식 후보 + 최종 LLM 확인 → `merge_rows`). 소식/스케줄 파이프라인은 안 탐.
+    - **테스트 부계정**(`INGEST_TEST_TITLES`, 기본 `jehy`) → `force_echo` (헬스체크, 저장 안 함).
+    - **공식·미매칭** → 스케줄(`xrelay`, BDP_yumemita 일일 스케줄 → `announced`) 또는 소식(`_maybe_auto_notice` → `xnotice.parse` → 의미 중복 게이트 LLM → `apply_notice`).
+    - **(v3.7.3) `source=yt`** — `kind` 가 회원 전용 라이브 시작이고 제목 앞부분이 5인 채널명일 때만 처리(그 외 무시, 항상 200).
+      알림 `video_id` 가 `default` 라 `ytdlp_probe`(yt-dlp, 상한 6초)로 channel streams 탭에서 회원 전용 라이브를 찾아 `/write yt_member_live_commit` 으로 live 승격.
+    - 원본 바디는 `request.form` 접근 전에 `get_data(cache=True, parse_form_data=False)` 로 캐시(Werkzeug 스트림 소비 버그).
+    - 테스트 모드(`INGEST_ECHO=1`/`INGEST_DRY_RUN=1`): 파싱·저장 안 하고 회신, 스케줄 트윗은 `ingest_queue.json` 적재 → 실배포 전환 후 첫 `/ingest` 에서 drain.
+    - 상세 흐름: `docs/INGEST_FLOW.md`, 판정 트리: `v3_pamphlet.html`.
+  - `GET /monitor-live` (v3.7.2) — 웹 `monitor.html` 이 부르는 읽기 전용 공개 라우트, 접속 시각 기준(가장 최근 06:00 KST~지금) 리포트 즉석 생성(60초 캐시).
 
-### 저장 · GitHub `data` 브랜치
+### 저장 · GitHub `data` 저장소
 
-Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분만 커밋. 코드 없음.
+2026-09-14 부터 코드 저장소와 분리된 별도 저장소(`mewtype-scheduler-data`, Vercel 비연결). Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분만 커밋. 코드 없음.
+(v2 의 `schedule.json` / `archive.json` / `pending.json` 은 폐지 — v3 는 아래로 대체.)
 
 | 파일 | 내용 |
 |---|---|
-| `schedule.json` | 계약 A. `status:"upcoming"/"live"` 실물 + `status:"scheduled"`(video_id 없음, X 릴레이 유래) + `host:"group"`(5인 공동명의 채널) |
-| `archive.json` | 계약 B. 종료·취소·삭제된 방송 append-only |
-| `pending.json` | 계약 E. wake 폴링 FSM 상태 (pre-live / live-watch) |
+| `preview.json` | 계약 A. 6상태(`announced → upcoming → watching → live ↔ end → none`) 아이템. 예고(announced)·실물·합동(`kind=="collab"`)·회원 전용(`membership`) 모두 여기 |
+| `preview_archive.json` | 계약 B. 종료·삭제된 방송 append-only |
 | `control.json` | 계약 F. `paused` / `log_level` |
-| `ingest_queue.json` | 테스트 모드(ECHO/DRY-RUN) 중 온 스케줄 트윗 원문 버퍼. 실배포 전환 후 첫 `/ingest` 에서 drain |
-| `admin_state.json` | 계약 G (v2.5). 텔레그램 명령 슬롯 각 1개 — `pending_del`(TTL 300s) · `pending_ingest`(180s) · `pending_notice`(180s) · `pending_undo`(60s) · `undo`(sha 판정, `path` 로 대상 파일 구분) |
-| `notices.json` | 계약 H (v2.7). 방송 외 소식(`live`/`release`/`platform`/`etc`). `xnotice.parse` → `notices.merge_notice` 로 중복제거·필드 병합. `expires_at` 지나면 sweep |
-| `notice_archive.json` | 계약 H. 만료된 소식 append-only. recap/공연 후 트윗이 과거 소식을 되살리지 않도록 `seen_ids` 대조에 사용 |
-| `tweets.json` | 계약 I (v2.8). 멤버 5인 개인 트윗, 채널당 1건 맵. `xtweet.parse` → `merge_tweet`(더 최신 Snowflake id 면 교체). `expires_at`(=received_at+24h) 지나면 sweep. 프론트 편지 배지 |
-| `tweet_archive.json` | 계약 I. 만료·교체로 내려간 개인 트윗 로그 append-only (`archived_reason`). 프론트 안 읽음 |
+| `admin_state.json` | 계약 G. 텔레그램 명령 슬롯(`pending_*`·`edit_lock`·`suppress`·`undo`) |
+| `notices.json` · `notice_archive.json` | 계약 H. 방송 외 소식. 중복제거·병합·`expires_at` sweep, 만료분은 archive |
+| `tweets.json` · `tweet_archive.json` | 계약 I. 개인 5인 트윗 스레드(메시지별 `expires_at`=+24h, 상한 50건 표시). 만료·교체분은 archive |
+| `ingest_queue.json` | 테스트 모드 중 온 스케줄 트윗 원문 버퍼 |
+| `monitoring/events-YYYY-MM-DD.jsonl` · `latest.html` | 파이프라인 이벤트 로그 · `/monitor` 리포트 |
 
 ### 프론트엔드 · Vercel
 
-`schedule.json` 을 `raw.githubusercontent.com/.../data/schedule.json` 에서 75초마다 fetch.
-빌드 없음, ES 모듈 직접 로드.
+`preview.json`(예고판) · `notices.json`(티커) · `tweets.json`(배지)을 `raw.githubusercontent.com/.../data/` 에서 **75초**마다 fetch. 빌드 없음, ES 모듈 직접 로드.
+모바일 백그라운드 복귀(`visibilitychange`/`pageshow`) 시 즉시 재폴링.
 
-- `.card--live` / `.card--upcoming` — 실물 방송 카드.
-- `.card--scheduled` — 예고(점선·감광), 썸네일 대신 `icon`, "예고" 배지, 링크는 채널 URL.
-  `assumed_live` 면 `.card--sched-live`(실선·빨강기, "방송 중 (추정)").
-- `.card--collab` — 합동(`kind=="collab"`). `render.js` 가 참여 멤버 전원(`channel_key` ∪
-  `collab_with`) 레인에 같은 카드로 팬아웃. 링크는 `url`(그룹 영상). PC 5열 그리드·모바일
-  캐러셀 레이아웃 무변경.
-- **(v2.7)** `js/notices.js` + `css/notices.css` 가 예고판 상단 `#notice` 티커를 그린다.
-  `NOTICES_URL`(= `data/notices.json`) 을 `schedule.json` 과 같은 75초 주기로 폴링. 기본 1줄만
-  표시·5초 회전·무한 순환, `▾`/`▴` 로 전체 펼침. 당일(TODAY) 소식이 있으면 좌측 램프가 빨강
-  저속 점멸. 만료 소식은 프론트에서도 숨김(백엔드 sweep 지연 대비). 아래 방송 카드와 중복 없음.
-- **(v2.8)** `js/tweets.js` + `css/tweets.css` — `TWEETS_URL`(= `data/tweets.json`, 계약 I) 을 75초
-  주기로 폴링. 트윗이 있는 유닛 아바타 우상단에 파란 편지 배지(안 읽음=꽉 참·콩콩 점프, 읽음=외곽선).
-  PC: 아바타/배지 호버=말풍선 펼침, 클릭=고정(X/Esc/바깥클릭 닫힘), 여러 유닛 동시 열림.
-  모바일: 배지 탭=상단 토스트(메신저 알림풍)+백드롭. 배경색은 유닛 `--lane-color` 재사용, 글자색은
-  대비로 자동. 읽음 상태는 뷰어별 `localStorage`. 만료·404 면 배지 안 뜸.
+- 레인 = 유닛 1명(PC 5열 · 모바일 1인 1화면 캐러셀). 카드 클래스는 상태별(announced 점선·감광 / upcoming·watching 썸네일 / live 빨강 / collab 보라 — 참여 멤버 전원 레인에 팬아웃).
+- `js/notices.js` — 상단 `#notice` 티커(5초 회전, 당일 소식은 빨간 램프, 만료분은 프론트에서도 숨김).
+- `js/tweets.js` — 유닛 아바타 편지 배지. **(v3.8)** 트윗 하나 = **번역 말풍선(`text_ko`) + X 공식 카드(iframe)** 2열.
+  원문·이미지·영상을 우리가 다시 조립해 그리지 않는다(2026-09-19 법률 자문). 카드는 화면에 들어올 때만 로드, 번역 ON/OFF 토글은 카드 재로드 없이 CSS 로.
+  24시간·최대 50건, 읽음 상태는 뷰어별 `localStorage`. 하단 디스클레이머(비공식 팬 번역·비영리·삭제 요청 창구).
+- `monitor.html` — 웹 모니터(제어 채널 `/monitor-live`, 실패 시 `latest.html` 폴백).
 
 ---
 
@@ -122,32 +128,36 @@ Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 변경분
 
 | | |
 |---|---|
-| 알림 본문 | Automate → `mewtype-telegram` `POST /ingest` — form `text`(본문) + `title`(게시자 이름) + `template` + `tag`(트윗 태그) |
+| 알림 본문 | Automate → `mewtype-telegram` `POST /ingest` — X: form `text`+`title`+`template`+`tag` / YouTube: `source=yt&video_id&title&kind&tag` |
+| 운영 명령 · webhook | 운영자 → Telegram → `mewtype-telegram` `POST /telegram` |
 | ECHO / 결과 / 알림 DM | Telegram `sendMessage` (양 서비스 → 운영자) |
-| 정기 트리거 | Cloud Scheduler → `mewtype-backend` `POST /tick` (OIDC) |
-| 방송별 wake | Cloud Tasks → `mewtype-backend` `POST /wake` (OIDC) |
+| 정기 트리거 | Cloud Scheduler → `mewtype-backend` `POST /tick` · `POST /monitor` (OIDC) |
+| 방송별 wake | Cloud Tasks → `mewtype-backend` `POST /wake` (OIDC) · 백엔드가 다음 wake 를 Cloud Tasks 에 enqueue |
+| **콘텐츠 쓰기** | `mewtype-telegram` → `mewtype-backend` `POST /write` (OIDC) → GitHub Contents API 커밋 |
+| 읽기 | `mewtype-telegram` → GitHub Contents API 직접(`/status` `/list` 등) |
+| tick/wake 커밋 | `mewtype-backend` → GitHub Contents API (`preview.json` 등, 충돌 시 재계산 1회) |
 | heal | `mewtype-telegram` `/resume` → `mewtype-backend` `/tick` (OIDC) |
-| 커밋 / 큐 | Cloud Run → GitHub Contents API (`schedule.json` 등 커밋 / `ingest_queue.json` 적재·drain) |
-| reconcile | 정기 `/tick` 이 `data` 브랜치 읽기·쓰기 |
-| raw fetch | `raw.githubusercontent.com/.../data/{schedule,notices}.json` (프론트 75초 폴링) |
+| 외부 호출 | 제어 채널 → 외부 LLM(Groq)·vxtwitter/fxtwitter·yt-dlp·비전 OCR / 백엔드 → YouTube RSS·`videos.list` |
+| raw fetch | `raw.githubusercontent.com/.../data/{preview,notices,tweets}.json` (프론트 75초 폴링) |
 | 다운 감지 | `mewtype-backend` `/tick` 성공 → healthchecks.io GET → (grace 초과) Telegram |
 
 ---
 
-## `scheduled` 행의 일생 (X 릴레이 유래)
+## `announced` 행의 일생 (예고 · X 릴레이/개인 트윗 유래)
 
 ```
-@BDP_yumemita 일일 스케줄/出演情報 트윗
-        │  폰 Automate → POST /ingest
+@BDP_yumemita 일일 스케줄 / 개인 트윗 예고 / /ingest 수동
+        │  폰 Automate → POST /ingest  (→ 제어 채널 준비 → 백엔드 /write merge_rows)
         ▼
-xrelay.parse → merge_scheduled → schedule.json 에 status:"scheduled" 행 (video_id 없음)
+preview.json 에 status "announced" 행 (video_id 없음, 링크는 채널)
         │
-        ├─ 정기 /tick 의 reconcile 이 매번 보존
-        ├─ 같은 채널 실물 upcoming/live 가 ±4h 안에 뜸 → supersede(제거)
-        ├─ scheduled_start 경과 → assumed_live=true (회원전용은 API 로 실물 못 봄)
-        ├─ host:"group" 행은 멤버 개인 실물로 supersede 안 함 (그룹 채널은 추적 5채널 아님)
-        └─ expires_at (start + 공개 3h / 회원전용 5h) 도달 → 제거
+        ├─ 정기 /tick 의 build_preview 가 매번 보존
+        ├─ 같은 채널 실물(upcoming/live)이 근처에 뜸 → 실물이 대체
+        ├─ 예정 시각 경과 → assumed_live (회원 전용은 API 로 실물 못 봄)
+        │     ├─ 120분 넘게 조용 → announced 로 late-hold (watching 왕복 금지, v3.7.3)
+        │     └─ 회원 전용 라이브 알림(source=yt) 도착 → live 로 직접 승격 (v3.7.3)
+        └─ expires_at 도달 → 제거
 ```
 
-Cloud Tasks/`pending.json` 은 안 탄다. 대신 `handlers._scheduled_wake_times` 가
-`scheduled_start`(지금~+3h)마다 `light /tick` 1개를 예약해 공개 방송의 정시 시작을 RSS 로 줍는다.
+`watching` 진입(시작 3분 전)부터는 Cloud Tasks wake 가 정밀 폴링한다. `announced` 는 wake 를 안 타고,
+정기 light `/tick`(10분)과 `_scheduled_wake_times` 가 예정 시각 근처를 줍는다.

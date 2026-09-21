@@ -285,6 +285,7 @@
       <button class="cmd" data-relay="personal" aria-selected="true">개인채널 알림</button>
       <button class="cmd" data-relay="bdp">BDP_yumemita</button>
       <button class="cmd" data-relay="bangdreamon">bang_dream_on</button>
+      <button class="cmd" data-relay="ytmember">YouTube 회원 알림</button>
     </div>
     <div class="stage">
       <svg id="svg" viewBox="0 0 940 630" role="img" aria-label="아키텍처 흐름도">
@@ -303,14 +304,16 @@
         <path id="e_up_ctrl" class="edge" d="M152,250 L226,250" marker-end="url(#ah)"/>
         <text class="elabel" x="150" y="243">POST /ingest</text>
         <path id="e_ctrl_be" class="edge" d="M376,244 L482,244" marker-end="url(#ah)"/>
-        <text class="elabel" x="392" y="238">/resume→/tick</text>
+        <text class="elabel" x="386" y="236">/write · OIDC</text>
+        <text class="elabel" x="386" y="258">/resume→/tick</text>
         <path id="e_sch_be" class="edge" d="M786,190 L640,240" marker-end="url(#ah)"/>
         <text class="elabel" x="650" y="210">/tick /wake · OIDC</text>
         <path id="e_yt_be" class="edge" d="M786,304 L640,262" marker-end="url(#ah)"/>
         <text class="elabel" x="648" y="300">RSS · videos.list</text>
         <path id="e_llm_ctrl" class="edge" d="M162,313 L228,272" marker-end="url(#ah)" stroke-dasharray="4 4"/>
         <text class="elabel" x="150" y="298">경계 밖 → 안</text>
-        <path id="e_ctrl_db" class="edge" d="M334,276 L498,352" marker-end="url(#ah)"/>
+        <path id="e_ctrl_db" class="edge" d="M334,276 L498,352" marker-end="url(#ah)" stroke-dasharray="4 4"/>
+        <text class="elabel" x="372" y="332">읽기 (read)</text>
         <path id="e_be_db"  class="edge" d="M560,276 L560,344" marker-end="url(#ah)"/>
         <text class="elabel" x="566" y="316">커밋 (write)</text>
         <path id="e_db_fe"  class="edge" d="M560,398 L560,436" marker-end="url(#ah)"/>
@@ -374,6 +377,7 @@
       </svg>
     </div>
     <p class="scn-cap" id="scnCap"></p>
+    <p class="scn-cap" style="opacity:.85"><b>쓰기 경로는 하나</b> — <code>data</code> 저장소(GitHub)는 브랜치 HEAD 단위로 충돌(409)하므로, 제어 채널의 콘텐츠 커밋은 전부 백엔드 <code>POST /write</code>(<code>--concurrency=1</code>, OIDC)로 보내 한 줄로 세운다(v3.7 · v3.7.1). 제어 채널은 <b>읽기(점선)</b>와 외부 호출 준비(LLM·<code>videos.list</code>·vxtwitter·OCR)만 직접 하고 커밋은 하지 않는다. 예외(큐 우회, 충돌 가능): <code>control.json</code>(/pause·/resume), <code>admin_state.json</code> 마법사 슬롯, 모니터 로그, <code>/translate</code>. 상세: <a href="INGEST_FLOW.md">INGEST_FLOW.md</a> · <a href="SPEC.md">SPEC.md</a> §8.14.</p>
   </div>
 
   <h2>개인 트윗 예고 판정 (v3.6)</h2>
@@ -486,10 +490,11 @@
       <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>개인 멤버 트윗</button>
       <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>테스트 부계정</button>
       <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>공식·불일치</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="3"><span class="n">04</span>유튜브 회원 알림</button>
     </div>
     <div class="stage2-scroll">
-      <div class="stage2" style="min-width:900px">
-        <svg id="svg4" class="tree-svg" viewBox="0 0 900 500" role="img" aria-label="트윗 인입 경로 흐름도">
+      <div class="stage2" style="min-width:1250px">
+        <svg id="svg4" class="tree-svg" viewBox="0 0 1250 540" role="img" aria-label="트윗 인입 경로 흐름도">
           <defs>
             <marker id="ah4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
@@ -509,7 +514,7 @@
     <p class="cap2" id="cap4"></p>
     <div class="example2" id="example4"><span class="tag" id="exTag4">예시</span><p id="exText4"></p></div>
     <div class="legend2">
-      <span><i class="sw reg"></i>tweets.json 스레드 저장</span>
+      <span><i class="sw reg"></i>tweets.json 스레드 저장 · /write 커밋</span>
       <span><i class="sw skip"></i>저장 없이 종료(ECHO) 또는 다른 트리로 위임</span>
     </div>
   </div>
@@ -568,15 +573,16 @@
 
     <div class="feat">
       <h3>편지 배지 → 트윗 스레드</h3>
-      <p class="fh">유닛당 최근 5개 트윗을 메신저처럼. 연속 메시지 묶음 · 안 읽은 수 배지 · 한/日 전역 토글.</p>
+      <p class="fh">유닛의 24시간 이내 트윗(최대 50건)을 말풍선 스레드로. 트윗 하나 = <b>번역 말풍선 + X 공식 카드</b>(v3.8) — 원문·이미지는 우리가 다시 그리지 않고 X 카드(iframe)가 보여준다. 카드는 화면에 들어올 때만 로드, 번역 ON/OFF 토글(카드는 재로드 안 함).</p>
       <div class="demo">
         <div class="thread">
-          <div class="thread__hd"><span>나카마치 아라레</span><button id="tlBtn">日</button></div>
+          <div class="thread__hd"><span>나카마치 아라레</span><button id="tlBtn">번역 ON</button></div>
           <div class="thread__sc" id="threadSc">
             <div class="grp">
               <div class="msg" data-ja="配信きたよ〜！みんな来てね" data-ko="방송 왔어~! 다들 와줘">방송 왔어~! 다들 와줘</div>
               <div class="msg" data-ja="今日は歌枠です🎤" data-ko="오늘은 노래방이야 🎤">오늘은 노래방이야 🎤</div>
               <div class="msg" data-ja="リクエストめっちゃ待ってる" data-ko="신청곡 엄청 기다리고 있어">신청곡 엄청 기다리고 있어</div>
+              <div class="xcard" style="align-self:stretch;border:1px solid #3a3d44;border-radius:10px;padding:7px 9px;font-size:11px;color:#9aa0a6;background:rgba(0,0,0,.25)">𝕏 공식 트윗 카드 (iframe · 화면에 들어올 때 로드)</div>
               <div class="gt">21:03</div>
             </div>
             <div class="grp">
@@ -614,6 +620,7 @@
   </div>
 
   <footer class="foot">
+    미배포 v3.8.2 판: <a href="v3_pamphlet_v3.8.2.html">v3_pamphlet_v3.8.2.html</a> · <a href="ARCHITECTURE_v3.8.2.md">ARCHITECTURE_v3.8.2.md</a><br>
     출처: <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> · <a href="SPEC.md">SPEC.md</a> ·
     <a href="VERSION.md">VERSION.md</a> · 도식 <a href="plan/v3_ARCH_DIAGRAM.png">plan/v3_ARCH_DIAGRAM.png</a>
   </footer>
@@ -640,16 +647,16 @@
     wake:   {e:["e_sch_be","e_yt_be","e_be_db","e_db_fe","e_fe_fan"],
              n:["n_sch","n_be","n_yt","n_db","n_fe","n_fan"],
              r:["sch","be","yt","be","db","fe","fan"],
-             c:"<b>라이브 감지</b> — 예정 방송마다 시작 15분 전에 Cloud Task 가 백엔드를 콕 찍어 깨운다. 시작 직전 3분 · 방송 중 3~10분 간격 정밀 폴링 → 라이브 켜짐·꺼짐을 빠르게 반영."},
+             c:"<b>라이브 감지</b> — 예정 방송마다 시작 3분 전에 Cloud Task 가 백엔드를 콕 찍어 깨운다. 시작 직전 3분 간격 · 방송 시작~60분은 10분 · 이후 5분 간격(v3.7.1, 프론트가 읽는 raw CDN 캐시가 5분이라 그 이하는 화면에 안 보인다) 폴링 → 라이브 켜짐·꺼짐 반영. 시작이 24시간 넘게 남은 방송은 wake 를 아직 등록하지 않고, 같은 구간의 wake 는 주기 격자에 맞춰 같은 이름으로 합쳐(v3.7.3) 중복 체인이 안 생긴다."},
     // relay: 세부는 relayRow 하위 3탭(RELAY, 아래) 이 담당 — applyScn 에서 특수 처리
-    tweet:  {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
-             n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
-             r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
-             c:"<b>개인 트윗</b> — 멤버 5인의 트윗을 게시자 이름으로 갈래 나눠, LLM 번역을 붙여 편지 배지 스레드(최근 5건)에 쌓는다. 방송 예고글이면 예고판에도 승격. 리트윗·타인 글은 제외."},
-    notice: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
-             n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
-             r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
-             c:"<b>소식</b> — 방송 예고가 아닌 트윗(라이브 이벤트·음반·굿즈·타 플랫폼)은 LLM 이 제목만 뽑아 <code>notices.json</code> → 예고판 상단 티커에 노출."},
+    tweet:  {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_llm","n_be","n_db","n_fe","n_fan"],
+             r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
+             c:"<b>개인 트윗</b> — 멤버 5인의 트윗을 게시자 이름으로 갈래 나눠, LLM 번역을 붙여 편지 배지 스레드(24시간 · 최대 50건)에 쌓는다. 외부 호출(vxtwitter·번역 LLM)은 제어 채널이 먼저 하고, 백엔드 <code>/write</code> 가 <code>tweets.json</code> 커밋만 한다(v3.7.1). 방송 예고글이면 예고판에도 승격. 리트윗·타인 글은 제외."},
+    notice: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_llm","n_be","n_db","n_fe","n_fan"],
+             r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
+             c:"<b>소식</b> — 방송 예고가 아닌 트윗(라이브 이벤트·음반·굿즈·타 플랫폼)은 LLM 이 제목만 뽑고(제어 채널), 백엔드 <code>/write</code> 가 <code>notices.json</code> 에 커밋 → 예고판 상단 티커에 노출."},
     ops:    {r:["op","tg","ctrl","db"]}
   };
 
@@ -657,17 +664,21 @@
      타는 코드 경로(그리고 LLM/비전 통과 여부)가 서로 다르다. 헷갈리기 쉬워서
      운영자 제어처럼 하위 탭으로 쪼갬(2026-09-13 실사용 중 발견된 오해 지점). */
   var RELAY = {
-    personal: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
-      n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
-      r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
-      c:"<b>개인채널 알림</b> — 멤버 개인 계정의 트윗(예: \"지금부터 방송 시작\"). <code>xtweet.py</code> 가 게시자로 채널을 확정하고 LLM 번역을 붙여 편지 배지 스레드에 쌓는다. 예고 형식(配信+날짜·시각/URL)이 갖춰지면 <code>preview.json</code> 에도 <code>announced</code>/<code>upcoming</code> 로 승격."},
-    bdp: {e:["e_push_up","e_up_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
-      n:["n_push","n_up","n_ctrl","n_db","n_fe","n_fan"],
-      r:["push","up","ctrl","db","fe","fan"],
+    personal: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_llm","n_be","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
+      c:"<b>개인채널 알림</b> — 멤버 개인 계정의 트윗(예: \"지금부터 방송 시작\"). <code>xtweet.py</code> 가 게시자로 채널을 확정하고 LLM 번역을 붙여 편지 배지 스레드에 쌓는다(저장은 <code>/write personal_tweet</code>). 예고 형식(配信+날짜·시각/URL)이 갖춰지면 <code>preview.json</code> 에도 <code>announced</code>/<code>upcoming</code> 로 승격."},
+    bdp: {e:["e_push_up","e_up_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_be","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","be","db","fe","fan"],
       c:"<b>BDP_yumemita 공식 일정</b> — 5인 합동 공식 계정의 하루 스케줄 통보. <code>xrelay.py</code> 가 정규식만으로 파싱해 <code>preview.json</code> 에 바로 반영 — LLM·비전 어느 쪽도 거치지 않는다. YouTube 영상이 아직 없어도 <code>announced</code> 행으로 먼저 표시, 실물 방송이 뜨면 대체."},
-    bangdreamon: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_db","e_db_fe","e_fe_fan"],
-      n:["n_push","n_up","n_ctrl","n_llm","n_db","n_fe","n_fan"],
-      r:["push","up","ctrl","llm","ctrl","db","fe","fan"],
+    ytmember: {e:["e_push_up","e_up_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_be","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","be","db","fe","fan"],
+      c:"<b>YouTube 회원 전용 라이브 알림 (v3.7.3)</b> — 업스트림이 유튜브 앱 알림을 <code>source=yt</code> 폼으로 중계한다(그 전엔 <code>text</code> 가 없어 400 이었음). <code>kind</code> 가 회원 전용 라이브 시작이고 제목 앞부분이 5인 채널명과 일치할 때만 처리, 나머지는 무시하고 항상 200. 알림의 <code>video_id</code> 는 <code>default</code> 라 쓸 수 없어, 제어 채널이 <code>yt-dlp</code>(<code>ytdlp_probe.py</code>, 상한 6초)로 그 채널 streams 탭에서 회원 전용 라이브를 찾아 video_id/URL 을 얻는다. 백엔드 <code>/write yt_member_live_commit</code> 이 예고 자리표시를 <code>live</code> 로 승격(없으면 신규 생성)."},
+    bangdreamon: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_llm","n_be","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
       c:"<b>bang_dream_on 등 크로스오버 계정</b> — 우리 5인 형식이 아닌 외부 프랜차이즈 공식 계정 소식. <code>xnotice.py</code> 가 <code>notices.json</code> 소식으로 반영하며 LLM 이 제목 추출·번역을 한다(v3.2). 첨부 이미지에 출연진 소개 패널이 있으면 같은 Groq 로 비전 OCR(<code>qwen/qwen3.8-27b</code>+폴백 <code>qwen/qwen3.6-27b</code>) 을 돌려 5인 중 누가 나오는지 <code>participants</code> 필드에 태그."}
   };
 
@@ -678,17 +689,17 @@
     "/list":   {r:["op","tg","ctrl","db","ctrl","tg","op"],
       c:"<b>/list &lt;preview|notice|tweet&gt;</b> — 유닛별 살아있는 항목 목록을 조회해 DM 회신."},
     "/pause":  {r:["op","tg","ctrl","db"],
-      c:"<b>/pause</b> — <code>control.json</code> 에 정지 플래그 커밋. 이후 정기 수집·wake 는 핑만 하고 no-op."},
+      c:"<b>/pause</b> — <code>control.json</code> 에 정지 플래그 커밋(제어 채널이 <b>직접</b> 커밋 — <code>/write</code> 큐를 거치지 않는 예외). 이후 정기 수집·wake 는 핑만 하고 no-op."},
     "/resume": {r:["op","tg","ctrl","db","ctrl","be"],
       c:"<b>/resume</b> — 정지 해제 커밋 + 백엔드 정기 수집을 즉시 호출(heal)해 밀린 상태를 바로 재판정."},
-    "/ingest": {r:["op","tg","ctrl","db"],
-      c:"<b>/ingest &lt;preview|notice|tweet&gt;</b> — 2단계(원문/파일 첨부) → 해당 JSON 에 수동 등록 + 되돌리기 스냅샷."},
-    "/edit":   {r:["op","tg","ctrl","db"],
-      c:"<b>/edit</b> — 유닛→항목→필드 마법사로 값 수정 + 편집 락(다음 정기 수집이 그 항목을 안 덮음)."},
-    "/del":    {r:["op","tg","ctrl","db"],
-      c:"<b>/del</b> — 항목 삭제(2단계 확인). <code>terminate</code> 면 그 영상 URL 을 12시간 재진입 차단."},
-    "/undo":   {r:["op","tg","ctrl","db"],
-      c:"<b>/undo</b> — 직전에 값을 바꾼 명령 1건을 sha 2중 가드로 되돌림(2단계 y/N). 대상 파일만 복원."}
+    "/ingest": {r:["op","tg","ctrl","be","db"],
+      c:"<b>/ingest &lt;preview|notice|tweet&gt;</b> — 2단계(원문/파일 첨부) → 해당 JSON 에 수동 등록 + 되돌리기 스냅샷. 커밋은 백엔드 <code>/write</code> 경유."},
+    "/edit":   {r:["op","tg","ctrl","be","db"],
+      c:"<b>/edit</b> — 유닛→항목→필드 마법사로 값 수정 + 편집 락(다음 정기 수집이 그 항목을 안 덮음). 커밋은 <code>/write apply_preview_edit</code>, 마법사 단계 슬롯(<code>admin_state.json</code>)만 제어 채널이 직접 기록."},
+    "/del":    {r:["op","tg","ctrl","be","db"],
+      c:"<b>/del</b> — 항목 삭제(2단계 확인). <code>terminate</code> 면 그 영상 URL 을 12시간 재진입 차단. 커밋은 <code>/write remove_broadcast</code>."},
+    "/undo":   {r:["op","tg","ctrl","be","db"],
+      c:"<b>/undo</b> — 직전에 값을 바꾼 명령 1건을 sha 2중 가드로 되돌림(2단계 y/N). 대상 파일만 복원. 커밋은 <code>/write undo_restore</code>."}
   };
 
   var capEl   = document.getElementById("scnCap");
@@ -773,10 +784,10 @@
 
   /* ── 상태 모델 ── */
   var ST = [
-    ["announced","예고","정보 일부만 · 실물 영상 미확정. X 릴레이 · 개인 트윗 · 수동 등록에서 생성. 링크는 채널.","card"],
+    ["announced","예고","정보 일부만 · 실물 영상 미확정. X 릴레이 · 개인 트윗 · 수동 등록에서 생성. 링크는 채널. 예정 시각이 지나 120분 넘게 조용하면 대기(watching)로 안 돌아가고 여기 머문다(late-hold, v3.7.3 — 예전엔 둘이 서로 되돌려 왕복했다).","card"],
     ["upcoming","예정","날짜+시각+제목+썸네일+영상 URL 이 다 모임. 정식 방송 카드로 승격.","card card--up"],
-    ["watching","대기","시작 3분 전 진입. 짧은 간격으로 라이브 여부만 확인.","card card--up"],
-    ["live","방송 중","실제 라이브. 경과 시간(n분) 표시, 레인 라이브 존이 빨갛게.","card"],
+    ["watching","대기","시작 3분 전 진입. 짧은 간격으로 라이브 여부만 확인. 예정이 미래로 정정되면 upcoming/announced 로 되돌린다.","card card--up"],
+    ["live","방송 중","실제 라이브. 경과 시간(n분) 표시, 레인 라이브 존이 빨갛게. 회원 전용 방송은 API 로 못 찾아 유튜브 회원 알림(source=yt)이 도착하면 여기로 직접 승격된다(v3.7.3).","card"],
     ["end","방송 종료","라이브가 내려감. 30분 관찰 창 — 되살아나면 live 로 복귀.","card"],
     ["none","사라짐","파일에서 제거 = 종결. 이후 같은 채널의 예고는 별개의 새 방송.","card"]
   ];
@@ -815,9 +826,9 @@
   tl.addEventListener("click", function(){
     ko = !ko;
     document.querySelectorAll("#threadSc .msg").forEach(function(m){
-      m.textContent = ko ? m.dataset.ko : m.dataset.ja;
+      m.style.display = ko ? "" : "none";
     });
-    tl.textContent = ko ? "日" : "한";
+    tl.textContent = ko ? "번역 ON" : "번역 OFF";
   });
 
   /* ── 소식 티커 회전 ── */
@@ -1149,15 +1160,22 @@
     {id:"personal",cx:760, cy:201, w:WW, h:H,  t:"개인 5인 확정",       s:"channel_key 매칭",     k:"dec"},
 
     {id:"echoTest",cx:460, cy:282, w:W,  h:H,  t:"강제 ECHO",          s:"헬스체크 — 회신만, 저장 안 함", k:"skip"},
-    {id:"thread",  cx:760, cy:282, w:280,h:H,  t:"_maybe_personal_tweet", s:"parse+merge_thread → tweets.json", k:"reg"},
+    {id:"thread",  cx:760, cy:282, w:280,h:H,  t:"_maybe_personal_tweet", s:"parse+merge_thread → /write → tweets.json", k:"reg"},
     {id:"sched",   cx:760, cy:363, w:280,h:H,  t:"_maybe_personal_schedule", s:"예고 형식이면 판정 시작",  k:"dec"},
-    {id:"detail",  cx:760, cy:444, w:300,h:H,  t:"위 '개인 트윗 예고 판정' 트리로", s:"URL 유무 3갈래 — 상세는 그 섹션", k:"ext"}
+    {id:"detail",  cx:760, cy:444, w:300,h:H,  t:"위 '개인 트윗 예고 판정' 트리로", s:"URL 유무 3갈래 — 상세는 그 섹션", k:"ext"},
+
+    {id:"ytsrc",   cx:1080,cy:120, w:WW, h:HS, t:"source=yt 폼",         s:"유튜브 앱 알림 중계 (v3.7.3)", k:"dec"},
+    {id:"ytgate",  cx:1080,cy:201, w:WW, h:H,  t:"회원 전용 라이브 시작?", s:"kind + 제목 앞부분 = 5인 채널명", k:"dec"},
+    {id:"ytprobe", cx:1080,cy:282, w:WW, h:H,  t:"yt-dlp 조회 (≤6초)",    s:"streams 탭 → video_id·URL", k:"ext"},
+    {id:"ytcommit",cx:1080,cy:363, w:WW, h:H,  t:"/write yt_member_live_commit", s:"자리표시 → live 승격 · 신규 · noop", k:"reg"},
+    {id:"ytignore",cx:1080,cy:444, w:WW, h:H,  t:"무시 (항상 200)",        s:"다른 종류 알림 · 5인 아님", k:"skip"}
   ];
   var EDGES = [
     ["start","q1",null],
     ["q1","official","불일치"], ["q1","test1","테스트 표시명"], ["q1","personal","5인 표시명 일치"],
     ["test1","echoTest",null],
-    ["personal","thread",null], ["thread","sched",null], ["sched","detail",null]
+    ["personal","thread",null], ["thread","sched",null], ["sched","detail",null],
+    ["start","ytsrc","source=yt"], ["ytsrc","ytgate",null], ["ytgate","ytprobe","일치"], ["ytprobe","ytcommit",null], ["ytgate","ytignore","불일치"]
   ];
   var byId = {}; NODES.forEach(function(n){ byId[n.id] = n; });
   var NS = "http://www.w3.org/2000/svg";
@@ -1180,14 +1198,17 @@
 
   var TABS = [
     { route:["start","q1","personal","thread","sched","detail"],
-      cap:"<b>개인 멤버 트윗</b> — <code>android.title</code>이 5인 중 한 명의 표시명과 일치하면 그 채널로 확정. 원문은 <code>xtweet.parse</code>+<code>merge_thread</code>로 <code>tweets.json</code> 스레드(최대 5건)에 저장되고 인라인 번역이 붙는다. 이어서 예고 형식인지 <code>_maybe_personal_schedule</code>이 이어받는다(상세는 위 트리).",
+      cap:"<b>개인 멤버 트윗</b> — <code>android.title</code>이 5인 중 한 명의 표시명과 일치하면 그 채널로 확정. 원문은 <code>xtweet.parse</code>+<code>merge_thread</code>로 <code>tweets.json</code> 스레드(24시간 · 최대 50건)에 저장되고 번역이 붙는다 — 외부 호출은 제어 채널이 준비하고 커밋만 백엔드 <code>/write personal_tweet</code> 이 한다(v3.7.1). 이어서 예고 형식인지 <code>_maybe_personal_schedule</code>이 이어받는다(상세는 위 트리).",
       exTag:"가상 예시 · nonoka_yumemita", exText:"오늘은 노래방 날이야 🎤 신청곡 기다린다~" },
     { route:["start","q1","test1","echoTest"],
       cap:"<b>테스트 부계정</b> — <code>INGEST_TEST_TITLES</code>(기본 <code>jehy</code>)로 지정된 표시명이면 어떤 내용이든 파싱·저장 없이 그대로 회신만(강제 ECHO) — 업스트림 중계 경로가 살아있는지 상시 확인하는 헬스체크 계정.",
       exTag:"가상 예시 · jehy(테스트)", exText:"(테스트 계정 원문 — 저장 안 됨, DM 회신만)" },
     { route:["start","q1","official"],
       cap:"<b>공식·불일치</b> — title이 비어있거나 5인 표시명과 안 겹치면 기존 경로(공식 계정 소식/BDP_yumemita 스케줄 등) 그대로 — 위 '소식' 트리 또는 X 예고 릴레이가 이어받는다.",
-      exTag:"가상 예시", exText:"(공식 계정 또는 미매칭 title — 기존 파이프라인 그대로)" }
+      exTag:"가상 예시", exText:"(공식 계정 또는 미매칭 title — 기존 파이프라인 그대로)" },
+    { route:["start","ytsrc","ytgate","ytprobe","ytcommit"],
+      cap:"<b>유튜브 회원 알림</b> — X 트윗이 아니라 유튜브 앱 알림이다. 폼 <code>source=yt&amp;video_id&amp;title&amp;kind&amp;tag</code> 로 들어오면 <code>title</code> 기반 분기(왼쪽 3갈래)를 타기 전에 별도 분기로 빠진다. 회원 전용 라이브 시작 + 5인 채널명 일치일 때만 처리하고 그 외는 무시(항상 200). 알림의 <code>video_id</code> 는 <code>default</code> 라서 <code>yt-dlp</code> 로 그 채널 streams 탭에서 회원 전용 라이브를 찾은 뒤(쿠키가 있으면 쿠키 우선, 실패 시 쿠키 없이), 백엔드 <code>/write yt_member_live_commit</code> 이 <code>preview.json</code> 에 live 로 반영한다. 조회에 실패하면 채널 링크로 live 처리하고 운영자에게 DM.",
+      exTag:"가상 예시 · 회원 전용 라이브 알림", exText:"NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START · 「仲町あられ / 夢限大みゅーたいぷ 실시간 스트리밍 시작: 【歌枠】…」" }
   ];
 
   var NC = {}; NODES.forEach(function(n){ NC[n.id] = [n.cx, n.cy]; });
