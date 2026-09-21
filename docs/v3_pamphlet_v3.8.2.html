@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>뮤타입 스케줄러 v3.8.2 (미배포) — 한눈에</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --panel:#17181c; --panel2:#1e2024; --ink:#e9e9ea; --dim:#9a9ca2;
+    --faint:#6b6d73; --line:#2c2e33; --cyan:#cbf7f5; --cyan-soft:rgba(203,247,245,.13);
+    --rose:#a85f7d; --live:#ff4d4d; --sched:#8b9ab0; --collab:#8b7cc9;
+    --f-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:52px 24px 88px}
+  h2{margin:60px 0 6px;font-size:.8rem;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--cyan)}
+  h2+.sub{margin:0 0 22px;color:var(--dim);font-size:.9rem}
+  code{font-family:var(--f-mono);font-size:.86em}
+  .mono{font-family:var(--f-mono)}
+
+  /* hero */
+  .hero{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, rgba(203,247,245,.07), transparent 55%), var(--panel);
+    padding:34px 30px}
+  .hero .eyebrow{margin:0 0 12px;font-family:var(--f-mono);font-size:.72rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan)}
+  .hero h1{margin:0 0 12px;font-size:1.9rem;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+  .hero p{margin:0;max-width:56ch;color:var(--dim)}
+  .units{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .unit{font-family:var(--f-mono);font-size:.74rem;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim)}
+  .unit b{color:var(--ink);font-weight:500}
+
+  /* scenario diagram */
+  .diagram{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .scn-tabs{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .scn-tab{flex:1 1 auto;min-width:120px;padding:11px 12px;font:inherit;font-size:.82rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .scn-tab:last-child{border-right:0}
+  .scn-tab:hover{color:var(--ink)}
+  .scn-tab[aria-selected="true"]{color:#0c1416;background:var(--cyan);font-weight:600}
+  .cmd-row{display:flex;flex-wrap:wrap;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line);background:#15161a}
+  .cmd-row[hidden]{display:none}
+  .cmd{font-family:var(--f-mono);font-size:.74rem;padding:4px 9px;border-radius:6px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);cursor:pointer;transition:.12s}
+  .cmd:hover{color:var(--ink)}
+  .cmd[aria-selected="true"]{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-soft)}
+  .stage{padding:20px 18px 8px;background:#0d0e11}
+  svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;transition:opacity .25s,stroke .25s}
+  svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg .node .nt{font-size:12px;font-weight:600;fill:var(--ink)}
+  svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg .edge{fill:none;stroke:#3a3d44;stroke-width:1.6;transition:opacity .25s,stroke .25s}
+  svg .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg.dimming .node{opacity:.28}
+  svg.dimming .edge{opacity:.14}
+  svg.dimming .elabel{opacity:0}
+  svg .node.hot{opacity:1}
+  svg .node.hot rect{stroke:var(--cyan);stroke-width:1.8}
+  svg .node.hot text{fill:var(--ink)}
+  svg .node.hot .ns{fill:var(--dim)}
+  svg .edge.hot{opacity:.5;stroke:#4a525c}
+  svg .edge.hot~.elabel{opacity:.9}
+  @keyframes flow{to{stroke-dashoffset:-20}}
+  /* input → output 경로 = 직선 점선. 패킷이 이 선을 탄다. nodes 아래에 그려짐 */
+  svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+    stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
+  svg.dimming .route-line{opacity:.75}
+  svg .packet-halo{fill:var(--cyan);opacity:.2}
+  svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  @media (prefers-reduced-motion:reduce){svg .route-line{animation:none}}
+  @media (prefers-reduced-motion:reduce){
+    svg .edge.hot{animation:none}
+    #packet{opacity:0!important}
+  }
+  .scn-cap{padding:14px 20px 20px;color:var(--ink);font-size:.92rem}
+  .scn-cap b{color:var(--cyan);font-weight:600}
+  .boundary{fill:rgba(255,90,90,.05);stroke:#7a3b3b;stroke-width:1.3;stroke-dasharray:5 4}
+  .boundary-t{fill:#9b5b5b;font-family:var(--f-mono);font-size:9px}
+
+  /* states */
+  .states{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .st{font-family:var(--f-mono);font-size:.76rem;padding:6px 12px;border-radius:8px;
+    border:1px solid var(--line);color:var(--dim);background:var(--panel);cursor:pointer;transition:.15s}
+  .st:hover{color:var(--ink)}
+  .st[aria-selected="true"]{border-color:var(--cyan);color:var(--ink);background:var(--cyan-soft)}
+  .st-arrow{color:var(--faint);align-self:center;font-size:.8rem}
+  .st-detail{display:flex;gap:18px;align-items:center;border:1px solid var(--line);
+    border-radius:12px;background:var(--panel);padding:18px}
+  .st-detail .card{flex:none}
+  .st-detail p{margin:0;color:var(--dim);font-size:.92rem}
+  .st-detail p b{color:var(--ink);font-weight:600;display:block;margin-bottom:3px;font-size:.95rem}
+
+  /* feature grid */
+  .feats{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media (max-width:820px){.feats{grid-template-columns:1fr}}
+  .feat{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px;overflow:hidden}
+  .feat h3{margin:0 0 3px;font-size:.98rem}
+  .feat .fh{margin:0 0 14px;color:var(--dim);font-size:.84rem}
+  .feat .demo{background:#0d0e11;border:1px solid var(--line);border-radius:10px;padding:12px}
+
+  /* mini board */
+  .lane{max-width:260px;margin:0 auto;background:#161616;border:1px solid #333;border-radius:8px;overflow:hidden;font-size:13px}
+  .lane__hd{position:relative;display:flex;align-items:center;gap:8px;padding:10px;overflow:hidden}
+  .lane__hd::before{content:"";position:absolute;inset:0;background:linear-gradient(to right,rgba(168,95,125,.5),transparent 72%)}
+  .lane__av{position:relative;width:40px;height:40px;border-radius:50%;flex:none;border:2px solid var(--rose);
+    background:radial-gradient(circle at 33% 30%,#e7aec0,var(--rose) 74%)}
+  .lane__nm{position:relative;flex:1;min-width:0}
+  .lane__nm b{display:block;font-size:.82rem;color:#e8e8e8}
+  .lane__nm span{font-size:.64rem;color:#999}
+  .lane__rail{position:relative;flex:none;display:flex;flex-direction:column;gap:6px;padding-left:8px;border-left:1px solid #333}
+  .lane__rail i{width:16px;height:16px;color:#8b8d93}
+  .lane__live{margin:10px;height:70px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:#2a1416;transition:background .3s}
+  .lane__live[data-on="1"]{background:#a01f1a}
+  .lane__live .off{font-size:.72rem;font-weight:700;letter-spacing:.15em;color:#ff8a8a;opacity:.8}
+  .lane__live .lc{width:calc(100% - 16px);background:#161616;border:2px solid var(--live);border-radius:6px;padding:6px 8px}
+  .lane__live .lc b{color:#fff;font-size:.72rem}
+  .lane__live .lc span{display:block;color:var(--live);font-size:.68rem;font-weight:700}
+  .bkts{padding:0 10px 10px}
+  .bkt{padding-top:10px;border-top:1px solid #333}
+  .bkt:first-child{border-top:0}
+  .bkt h4{margin:0 0 5px;font-size:.66rem;font-weight:700;letter-spacing:.03em;color:#999}
+  .card{border:1px dashed color-mix(in srgb,var(--sched) 55%,#333);border-radius:8px;background:#161616;
+    opacity:.9;padding:6px 8px;display:flex;gap:7px;align-items:center;font-size:.72rem}
+  .card+.card{margin-top:6px}
+  .card .ico{font-size:1.1rem;filter:saturate(.85)}
+  .card b{color:#e8e8e8;font-weight:500}
+  .card span{color:#999}
+  .card--up{border-style:solid;border-color:#2f4f5a;opacity:1}
+  .card--collab{border-style:solid;border-color:color-mix(in srgb,var(--collab) 55%,#333);box-shadow:inset 3px 0 0 var(--collab);opacity:.95}
+  .toggle{margin-top:12px;font:inherit;font-size:.78rem;padding:6px 12px;border-radius:7px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+  .toggle:hover{border-color:var(--cyan)}
+
+  /* tweet thread */
+  .thread{max-width:250px;margin:0 auto;background:var(--rose);color:#fff;border-radius:12px;padding:4px 5px 6px}
+  .thread__hd{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;font-size:12px;font-weight:700}
+  .thread__hd button{font:inherit;font-weight:700;font-size:11px;padding:3px 7px;border-radius:6px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;cursor:pointer}
+  .thread__sc{display:flex;flex-direction:column;gap:10px;padding:3px 8px 5px;max-height:200px;overflow-y:auto}
+  .grp{display:flex;flex-direction:column;gap:3px}
+  .msg{align-self:flex-start;max-width:92%;background:rgba(255,255,255,.17);border-radius:11px;
+    border-top-left-radius:4px;padding:6px 10px;font-size:12px;line-height:1.45}
+  .grp .msg+.msg{border-top-left-radius:11px}
+  .gt{align-self:flex-end;font-size:10px;opacity:.72}
+
+  /* notice ticker */
+  .ticker{display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #333;border-radius:8px;padding:9px 12px;font-size:.8rem}
+  .ticker .lamp{width:8px;height:8px;border-radius:50%;background:var(--live);flex:none;animation:blink 1.4s steps(1) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .ticker .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ddd}
+  .ticker .tag{font-family:var(--f-mono);font-size:.64rem;color:var(--faint);flex:none}
+
+  /* badge on avatar */
+  .tw-badge{position:absolute;left:28px;top:-4px;width:15px;height:15px;color:var(--cyan)}
+  .tw-count{position:absolute;left:24px;top:-9px;min-width:14px;height:14px;padding:0 3px;display:grid;
+    place-items:center;font-size:9px;font-weight:700;color:#0c1a1a;background:var(--cyan);border-radius:999px;border:1.5px solid #161616}
+
+  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.8rem;font-family:var(--f-mono)}
+  .foot a{color:var(--dim)}
+
+  /* ── (v3.6) 개인 트윗 예고 판정 트리 — 설계 검토용 서브다이어그램 ── */
+  :root{
+    --reg:#8fe3ae; --reg-soft:rgba(143,227,174,.12);
+    --skip:#8a7a7f; --notice:#e6bd72; --notice-soft:rgba(230,189,114,.13);
+  }
+  .before-after{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 22px}
+  .ba{flex:1 1 260px;border:1px solid var(--line);border-radius:10px;padding:13px 15px;background:var(--panel)}
+  .ba .k{font-family:var(--f-mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;display:block}
+  .ba.before .k{color:var(--skip)}
+  .ba.after .k{color:var(--reg)}
+  .ba p{color:var(--dim);font-size:.87rem;margin:0}
+  .ba b{color:var(--ink);font-weight:500}
+  .tabs2{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .tab2{flex:1 1 auto;min-width:112px;padding:10px 9px;font:inherit;font-size:.77rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .tab2:last-child{border-right:0}
+  .tab2:hover{color:var(--ink)}
+  .tab2[aria-selected="true"]{color:#0c1614;background:var(--cyan);font-weight:600}
+  .tab2 .n{display:block;font-family:var(--f-mono);font-size:.6rem;opacity:.7;margin-bottom:1px}
+  .stage2-scroll{overflow-x:auto;background:#0d0e11}
+  .stage2{padding:22px 18px 6px;min-width:900px}
+  #svg2{width:100%;height:auto;display:block}
+  svg#svg2, svg.tree-svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.3;transition:opacity .25s,stroke .25s,fill .25s}
+  svg#svg2, svg.tree-svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg#svg2, svg.tree-svg .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  svg#svg2, svg.tree-svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg#svg2, svg.tree-svg .edge{fill:none;stroke:#3a3d44;stroke-width:1.5;transition:opacity .25s,stroke .25s}
+  svg#svg2, svg.tree-svg .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg#svg2, svg.tree-svg.dimming .node{opacity:.26}
+  svg#svg2, svg.tree-svg.dimming .edge{opacity:.13}
+  svg#svg2, svg.tree-svg.dimming .elabel{opacity:0}
+  svg#svg2, svg.tree-svg .node.hot{opacity:1}
+  svg#svg2, svg.tree-svg .node.hot rect{stroke:var(--cyan);stroke-width:1.9}
+  svg#svg2, svg.tree-svg .node.hot text{fill:var(--ink)}
+  svg#svg2, svg.tree-svg .node.hot .ns{fill:var(--dim)}
+  svg#svg2, svg.tree-svg .edge.hot{opacity:.55;stroke:#4a525c}
+  svg#svg2, svg.tree-svg .edge.hot ~ .elabel{opacity:.95}
+  svg#svg2, svg.tree-svg .node.k-reg rect{stroke:color-mix(in srgb,var(--reg) 55%,var(--line))}
+  svg#svg2, svg.tree-svg .node.k-reg.hot rect{fill:var(--reg-soft);stroke:var(--reg)}
+  svg#svg2, svg.tree-svg .node.k-reg .nt{fill:color-mix(in srgb,var(--reg) 70%,var(--ink))}
+  svg#svg2, svg.tree-svg .node.k-skip rect{stroke-dasharray:3 3}
+  svg#svg2, svg.tree-svg .node.k-skip.hot rect{stroke:var(--skip)}
+  svg#svg2, svg.tree-svg .node.k-notice.hot rect{fill:var(--notice-soft);stroke:var(--notice)}
+  svg#svg2, svg.tree-svg .node.k-notice .nt{fill:color-mix(in srgb,var(--notice) 75%,var(--ink))}
+  svg#svg2, svg.tree-svg .node.k-ext rect{stroke-dasharray:4 3}
+  svg#svg2, svg.tree-svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+    stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
+  svg#svg2, svg.tree-svg.dimming .route-line{opacity:.8}
+  svg#svg2, svg.tree-svg .packet-halo{fill:var(--cyan);opacity:.22}
+  svg#svg2, svg.tree-svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  @media (prefers-reduced-motion:reduce){
+    svg#svg2, svg.tree-svg .route-line{animation:none}
+    #packet2{opacity:0!important}
+  }
+  .cap2{padding:14px 20px 8px;color:var(--ink);font-size:.92rem;border-top:1px solid var(--line)}
+  .cap2 b{color:var(--cyan);font-weight:600}
+  .example2{margin:10px 20px 18px;padding:10px 13px;border-left:2px solid var(--line);
+    background:var(--panel2);border-radius:0 8px 8px 0}
+  .example2 .tag{display:block;font-family:var(--f-mono);font-size:.64rem;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .example2 p{color:var(--dim);font-size:.83rem;white-space:pre-wrap;line-height:1.55;margin:0}
+  .legend2{display:flex;flex-wrap:wrap;gap:16px;padding:13px 20px 18px;border-top:1px solid var(--line);
+    font-size:.76rem;color:var(--dim)}
+  .legend2 span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:13px;height:13px;border-radius:4px;border:1.4px solid var(--line);flex:none}
+  .sw.reg{border-color:var(--reg);background:var(--reg-soft)}
+  .sw.skip{border-color:var(--skip);border-style:dashed}
+  .sw.notice{border-color:var(--notice);background:var(--notice-soft)}
+  .sw.ext{border-color:var(--dim);border-style:dashed}
+  /* v3.8.2 (미배포) 표시 · 관제소 */
+  .unreleased{margin:16px 0 0;padding:14px 18px;border:1px solid #f2c46d;border-radius:12px;background:rgba(242,196,109,.09);color:var(--ink);font-size:.88rem}
+  .unreleased b{color:#f2c46d}
+  .unreleased a{color:var(--cyan)}
+  svg .node.tower rect{fill:rgba(242,196,109,.12);stroke:#f2c46d;stroke-width:1.6}
+  svg .node.tower .nt{fill:#f2c46d}
+  svg.dimming .node.tower.hot rect{stroke:#f2c46d}
+  svg.dimming .node.tower.hot .nt{fill:#f2c46d}
+  .tq-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:0 0 18px}
+  .tq-card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 15px}
+  .tq-card h3{margin:0 0 6px;font-size:.86rem;color:#f2c46d}
+  .tq-card p{margin:0;font-size:.82rem;color:var(--dim)}
+  .tq-sim{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:16px 16px 14px}
+  .tq-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .tq-btn{font:inherit;font-size:.78rem;padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+  .tq-btn:hover{border-color:var(--cyan)}
+  .tq-btn.warn{border-color:#ff8a5c;color:#ff8a5c}
+  .tq-lane{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch}
+  .tq-q{flex:1 1 300px;min-height:70px;border:1px dashed var(--line);border-radius:10px;padding:9px;display:flex;flex-wrap:wrap;gap:7px;align-content:flex-start;background:#0d0e11}
+  .tq-run{flex:0 0 250px;border:1px solid #f2c46d;border-radius:10px;background:rgba(242,196,109,.1);padding:9px 11px;min-height:70px}
+  .tq-run h4{margin:0 0 4px;font-family:var(--f-mono);font-size:.7rem;letter-spacing:.08em;color:#f2c46d;text-transform:uppercase}
+  .tq-st{font-size:.82rem;color:var(--ink)}
+  .tq-st.wait{color:#ff8a5c}
+  .tq-tok{display:inline-block;font-family:var(--f-mono);font-size:.7rem;padding:4px 8px;margin:2px 4px 2px 0;border-radius:8px;border:1px solid var(--line);border-left-width:4px;background:var(--panel2);white-space:nowrap}
+  .tq-tok small{color:var(--faint);margin-left:5px}
+  .tq-tok.read{border-left-color:#8fd3ee}.tq-tok.write{border-left-color:#c4a7f2}.tq-tok.job{border-left-color:#f2c46d}.tq-tok.tick{border-left-color:#7fd6a3}
+  .tq-empty{color:var(--faint);font-size:.78rem;align-self:center}
+  .tq-log{margin:12px 0 0;padding:0;list-style:none;font-family:var(--f-mono);font-size:.72rem;color:var(--dim);display:grid;gap:3px;min-height:7em}
+  .tq-log li{display:flex;gap:8px}.tq-log b{font-weight:500;color:var(--faint);flex:none}
+  .tq-log .bad{color:#ff5d5d}.tq-log .warn{color:#ff8a5c}.tq-log .ok{color:#7fd6a3}
+  .tq-note{margin:10px 0 0;font-size:.76rem;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section class="hero">
+    <p class="eyebrow">夢限大みゅーたいぷ · scheduler v3.8.2 · 미배포</p>
+    <h1>누가 · 언제 · 지금 라이브인지 · 어디로 가면 되는지</h1>
+    <p>유튜브 방송인 5명의 예약 방송·라이브 상태를 한 사이트에 모아 보여주는 반응형 정적 웹사이트.
+      서버 상시 가동 없음 — 무료 인프라(Cloud Run scale-to-zero · GitHub · Vercel)만.</p>
+    <div class="units">
+      <span class="unit"><b>아라레</b> 仲町あられ</span>
+      <span class="unit"><b>유노</b> 千石ユノ</span>
+      <span class="unit"><b>노노카</b> 宮永ののか</span>
+      <span class="unit"><b>리츠</b> 峰月律</span>
+      <span class="unit"><b>미야코</b> 藤都子</span>
+    </div>
+  </section>
+
+  <div class="unreleased">
+    <b>이 문서는 v3.8.2(미배포) 기준입니다.</b> 현재 배포된 시스템(v3.8.1)은 <a href="v3_pamphlet.html">v3_pamphlet.html</a> 이 설명합니다.
+    v3.8.2 는 <code>data</code> 저장소(GitHub) 접근을 <b>DB 관제소</b>(신규 서비스 <code>mewtype-db-tower</code>) 하나로 모으는 변경이고, 코드는 브랜치
+    <code>v3.8.2-db-control-tower</code>(main 미병합)에 있습니다. 배포가 끝나면 이 내용으로 <code>v3_pamphlet.html</code> 을 교체하고 이 파일은 지웁니다.
+    텍스트 설명: <a href="ARCHITECTURE_v3.8.2.md">ARCHITECTURE_v3.8.2.md</a>.
+  </div>
+
+  <h2>시나리오별 흐름</h2>
+  <p class="sub">탭을 누르면 그 신호가 어디를 거쳐 사이트에 닿는지 표시됩니다.</p>
+  <div class="diagram">
+    <div class="scn-tabs" role="tablist">
+      <button class="scn-tab" role="tab" aria-selected="true"  data-scn="poll">정기 수집</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="wake">라이브 감지</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="relay">X 예고 릴레이</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="tweet">개인 트윗</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="notice">소식</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="ops">운영자 제어</button>
+    </div>
+    <div class="cmd-row" id="cmdRow" hidden aria-label="운영자 명령">
+      <button class="cmd" data-cmd="/status" aria-selected="true">/status</button>
+      <button class="cmd" data-cmd="/list">/list</button>
+      <button class="cmd" data-cmd="/pause">/pause</button>
+      <button class="cmd" data-cmd="/resume">/resume</button>
+      <button class="cmd" data-cmd="/ingest">/ingest</button>
+      <button class="cmd" data-cmd="/edit">/edit</button>
+      <button class="cmd" data-cmd="/del">/del</button>
+      <button class="cmd" data-cmd="/undo">/undo</button>
+    </div>
+    <div class="cmd-row" id="relayRow" hidden aria-label="X 예고 릴레이 세부">
+      <button class="cmd" data-relay="personal" aria-selected="true">개인채널 알림</button>
+      <button class="cmd" data-relay="bdp">BDP_yumemita</button>
+      <button class="cmd" data-relay="bangdreamon">bang_dream_on</button>
+      <button class="cmd" data-relay="ytmember">YouTube 회원 알림</button>
+    </div>
+    <div class="stage">
+      <svg id="svg" viewBox="0 0 940 690" role="img" aria-label="아키텍처 흐름도">
+        <!-- 배포·운영 경계 -->
+        <rect class="boundary" x="206" y="150" width="466" height="424" rx="10"/>
+        <text class="boundary-t" x="214" y="164">배포·운영 경계 — 우리 코드</text>
+
+        <!-- edges — png 처럼 전부 직선. nodes 보다 먼저(아래에) 그린다 -->
+        <path id="e_op_tg"   class="edge" d="M470,58 L470,72" marker-end="url(#ah)"/>
+        <text class="elabel" x="476" y="68">명령</text>
+        <path id="e_tg_ctrl" class="edge" d="M440,118 L308,222" marker-end="url(#ah)"/>
+        <text class="elabel" x="336" y="150">webhook</text>
+        <path id="e_be_tg"   class="edge" d="M544,222 L502,118" marker-end="url(#ah)"/>
+        <text class="elabel" x="548" y="172">상태전이 DM</text>
+        <path id="e_push_up" class="edge" d="M84,176 L84,222" marker-end="url(#ah)"/>
+        <path id="e_up_ctrl" class="edge" d="M152,250 L226,250" marker-end="url(#ah)"/>
+        <text class="elabel" x="150" y="243">POST /ingest</text>
+        <path id="e_ctrl_be" class="edge" d="M376,244 L482,244" marker-end="url(#ah)"/>
+        <text class="elabel" x="386" y="236">/write · OIDC</text>
+        <text class="elabel" x="386" y="258">/resume→/tick</text>
+        <path id="e_sch_be" class="edge" d="M786,190 L640,240" marker-end="url(#ah)"/>
+        <text class="elabel" x="650" y="210">/tick /wake · OIDC</text>
+        <path id="e_yt_be" class="edge" d="M786,304 L640,262" marker-end="url(#ah)"/>
+        <text class="elabel" x="648" y="300">RSS · videos.list</text>
+        <path id="e_llm_ctrl" class="edge" d="M162,313 L228,272" marker-end="url(#ah)" stroke-dasharray="4 4"/>
+        <text class="elabel" x="150" y="298">경계 밖 → 안</text>
+        <path id="e_ctrl_tw" class="edge" d="M290,276 L420,338" marker-end="url(#ah)"/>
+        <text class="elabel" x="226" y="318">읽기 · 단순 쓰기</text>
+        <path id="e_be_tw"  class="edge" d="M560,276 L560,338" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="312">잡·tick·wake 의 읽기/쓰기</text>
+        <path id="e_tw_db"  class="edge" d="M560,396 L560,430" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="418">한 줄로 (쓰기 방벽)</text>
+        <path id="e_db_fe"  class="edge" d="M560,482 L560,514" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="504">raw JSON · 75초</text>
+        <path id="e_fe_fan" class="edge" d="M560,562 L560,610" marker-end="url(#ah)"/>
+        <text class="elabel" x="566" y="590">사이트 표시</text>
+
+        <!-- input(동그라미) 이동 경로(직선 점선) + 패킷 — nodes 보다 먼저 = 네모칸이 위를 덮음 -->
+        <path id="routeLine" class="route-line" d=""/>
+        <g id="packet" opacity="0">
+          <circle class="packet-halo" r="11"/>
+          <circle class="packet-dot" r="5"/>
+          <animateMotion id="pkMove" dur="3s" begin="indefinite" repeatCount="indefinite"
+            calcMode="linear" path="M0,0"/>
+        </g>
+
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+          </marker>
+        </defs>
+
+        <!-- nodes -->
+        <g class="node" id="n_op" transform="translate(404,20)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="18" text-anchor="middle">운영자</text>
+          <text class="ns" x="66" y="30" text-anchor="middle">사용자</text></g>
+        <g class="node" id="n_tg" transform="translate(378,78)">
+          <rect width="184" height="40" rx="8"/><text class="nt" x="92" y="18" text-anchor="middle">제어 채널 창구 · Telegram</text>
+          <text class="ns" x="92" y="31" text-anchor="middle">서드파티 · transport</text></g>
+        <g class="node" id="n_push" transform="translate(18,138)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">X·YouTube 푸시</text>
+          <text class="ns" x="66" y="29" text-anchor="middle">서드파티 알림</text></g>
+        <g class="node" id="n_up" transform="translate(18,224)">
+          <rect width="132" height="40" rx="8"/><text class="nt" x="66" y="17" text-anchor="middle">업스트림 시스템</text>
+          <text class="ns" x="66" y="30" text-anchor="middle">운영자 폰 · Automate</text></g>
+        <g class="node" id="n_ctrl" transform="translate(224,224)">
+          <rect width="152" height="52" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">제어 채널</text>
+          <text class="ns" x="76" y="36" text-anchor="middle">/ingest · 운영 명령</text></g>
+        <g class="node" id="n_be" transform="translate(484,222)">
+          <rect width="152" height="54" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">백엔드</text>
+          <text class="ns" x="76" y="36" text-anchor="middle">/tick /wake · 판정</text></g>
+        <g class="node" id="n_sch" transform="translate(786,158)">
+          <rect width="136" height="40" rx="8"/><text class="nt" x="68" y="17" text-anchor="middle">Scheduler / Tasks</text>
+          <text class="ns" x="68" y="30" text-anchor="middle">GCP · 트리거</text></g>
+        <g class="node" id="n_yt" transform="translate(786,296)">
+          <rect width="136" height="40" rx="8"/><text class="nt" x="68" y="17" text-anchor="middle">YouTube Data API</text>
+          <text class="ns" x="68" y="30" text-anchor="middle">RSS + videos.list</text></g>
+        <g class="node" id="n_llm" transform="translate(8,290)">
+          <rect width="152" height="46" rx="8" stroke-dasharray="4 4"/><text class="nt" x="76" y="18" text-anchor="middle">외부 LLM · Groq</text>
+          <text class="ns" x="76" y="31" text-anchor="middle">제목추출·번역·비전 OCR</text>
+          <text class="ns" x="76" y="42" text-anchor="middle" style="opacity:.7">서드파티</text></g>
+        <g class="node tower" id="n_tw" transform="translate(384,338)">
+          <rect class="base" width="252" height="58" rx="10" style="fill:var(--panel2);stroke:none"/><rect width="252" height="58" rx="10"/><text class="nt" x="126" y="21" text-anchor="middle">DB 관제소 · v3.8.2 신규</text>
+          <text class="ns" x="126" y="36" text-anchor="middle">FIFO + 쓰기 방벽 · 쓰기 간 ≥0.3초</text>
+          <text class="ns" x="126" y="49" text-anchor="middle">429 대기 · 읽기 ETag 캐시 · 503 상한</text></g>
+        <g class="node" id="n_db" transform="translate(484,430)">
+          <rect width="152" height="52" rx="8"/><text class="nt" x="76" y="22" text-anchor="middle">DB · GitHub data</text>
+          <text class="ns" x="76" y="36" text-anchor="middle">JSON · 커밋 = write</text></g>
+        <g class="node" id="n_fe" transform="translate(484,514)">
+          <rect width="152" height="48" rx="8"/><text class="nt" x="76" y="20" text-anchor="middle">프론트엔드 · Vercel</text>
+          <text class="ns" x="76" y="33" text-anchor="middle">정적 · 폴링 렌더</text></g>
+        <g class="node" id="n_fan" transform="translate(494,610)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">팬</text>
+          <text class="ns" x="66" y="29" text-anchor="middle">사용자</text></g>
+      </svg>
+    </div>
+    <p class="scn-cap" id="scnCap"></p>
+    <p class="scn-cap" style="opacity:.85"><b>GitHub 로 가는 길은 관제소 하나 (v3.8.2 · 미배포)</b> — 실제 GitHub 는 같은 브랜치에 동시에 PUT 하면 하나만 성공하고 나머지는 409 다(3·5·8개 모두 1개만 성공, 2026-09-21 실측).
+      그래서 제어 채널(<code>mewtype-telegram</code>)과 백엔드 모두 <code>data</code> 저장소를 직접 부르지 않고 관제소(<code>/fetch</code> · <code>/put</code>)로 보낸다. 관제소는 도착 순서를 지키며 한 줄로 세우고(읽기끼리만 병렬, 쓰기는 방벽), 속도 제한(403/429)이 걸리면 <code>retry-after</code> 만큼 기다렸다 재시도한다.
+      읽기→병합→쓰기 한 덩어리(트랜잭션)의 직렬화는 여전히 백엔드 <code>/write</code> 잡(<code>--concurrency=1</code>)이 맡고, 잡 안의 GitHub 접근이 관제소를 거친다. 남는 예외: 코드 저장소 커밋 수 조회(<code>/monitor</code>)는 관제소를 거치지 않는다.
+      현재 배포본(v3.8.1)은 제어 채널이 읽기와 <code>control.json</code>·<code>admin_state.json</code>·모니터 로그 쓰기를 직접 한다 — <a href="v3_pamphlet.html">v3_pamphlet.html</a>.</p>
+  </div>
+
+  <h2>DB 관제소 — 큐가 하는 일 (v3.8.2 · 미배포)</h2>
+  <p class="sub">누가 보냈든 도착한 순서를 지키며 처리합니다. 읽기끼리는 함께(동시 최대 6), 쓰기는 앞선 읽기가 끝난 뒤 혼자 실행됩니다. 속도 제한이 걸리면 큐 전체가 멈추고, 기다림이 상한을 넘은 요청은 호출자에게 503 으로 돌려보냅니다.
+    숫자는 설명용 예시입니다.</p>
+  <div class="tq-cards">
+    <div class="tq-card"><h3>왜 필요한가</h3><p>실제 GitHub 에 같은 브랜치로 동시에 PUT 하면 <b>하나만 성공, 나머지는 409</b>(3·5·8개 모두). v3.7 이 콘텐츠 커밋 일부를 <code>/write</code> 로 모았지만 제어 채널의 읽기와 나머지 쓰기는 각자 GitHub 를 두드렸습니다.</p></div>
+    <div class="tq-card"><h3>FIFO + 쓰기 방벽</h3><p>도착 순서 유지. 읽기는 병렬, 쓰기는 앞선 읽기가 끝나야 진입하고 진행 중엔 아무도 앞지르지 못합니다 — 읽기 도중 값이 바뀌지 않고 결과가 도착 순서를 따릅니다.</p></div>
+    <div class="tq-card"><h3>속도 제한 대기</h3><p>403/429 → <code>retry-after</code> 만큼 큐 전체 정지(없으면 1분부터 지수). 재시도 3회 초과·대기 상한(호출자 타임아웃 안쪽) 초과면 503 + <code>Retry-After</code>.</p></div>
+    <div class="tq-card"><h3>읽기 ETag 캐시</h3><p>안 바뀐 파일은 조건부 요청 304 — 실측으로 <b>한도에 안 세어짐</b>. 쓰기 간격은 0.3초(GitHub 권고 1초는 쓰기가 많을 때 기준, 버스트 지연 때문에 낮춤).</p></div>
+  </div>
+  <div class="tq-sim">
+    <div class="tq-bar">
+      <button class="tq-btn" id="tqRead">읽기 넣기 <span style="color:#8fd3ee">●</span></button>
+      <button class="tq-btn" id="tqWrite">단순 쓰기 넣기 <span style="color:#c4a7f2">●</span></button>
+      <button class="tq-btn" id="tqJob">/write 잡 넣기 <span style="color:#f2c46d">●</span></button>
+      <button class="tq-btn" id="tqTick">/tick 넣기 <span style="color:#7fd6a3">●</span></button>
+      <button class="tq-btn warn" id="tqLimit">429 발생 (retry-after 8초)</button>
+      <button class="tq-btn" id="tqReset">비우기</button>
+    </div>
+    <div class="tq-lane">
+      <div class="tq-q" id="tqQ" aria-live="polite"></div>
+      <div class="tq-run"><h4>진행 중</h4><div class="tq-st" id="tqSt">대기 중</div><div id="tqRun"></div></div>
+    </div>
+    <ul class="tq-log" id="tqLog"></ul>
+    <p class="tq-note">예시 규칙: 읽기 0.5초(절반은 304 캐시 적중 0.15초)·동시 최대 6, 쓰기 0.8초 + 간격 0.3초·단독, 대기 상한 12초 초과는 503. 실제 GitHub 지연은 GET≈0.23초·PUT≈0.8초.</p>
+  </div>
+
+  <p class="sub" style="margin-top:22px"><b>배포 전 검증 현황</b> — 실제 GitHub: 동시 PUT 409 · 304 한도 미집계 · 읽기 일관성(찢어진 읽기 0) · 0.3초 간격 순차 PUT 성공 / 버스트 시뮬레이션(5·8·12, 실측 지연): 트윗 유실 0, 관제소 오버헤드 2~3% ·
+    속도 제한 가정 시 관제소 없는 경로는 <code>/ingest</code> 200 인데 트윗 0/8 저장 / Cloud Run: 서비스계정·동시성 가정과 일치, cold start 평균 ≈0.5초·p95 ≈1초 / OIDC: 실제 Google 토큰으로 검증.
+    <b>업스트림 Automate HTTP 타임아웃은 60초로 상향</b>(타임아웃 시 재시도 없음 — 버스트 12 최대 지연 ≈41초). 미확인(배포 후): 관제소 서비스 자체의 기동·IAM 조합, 타임아웃 뒤 서버 처리 지속, 실제 <code>retry-after</code> 헤더.</p>
+
+  <h2>개인 트윗 예고 판정 (v3.6)</h2>
+  <p class="sub">위 "개인 트윗" 탭의 상세 — 업스트림이 중계한 원문 한 장이 <code>preview.json</code>에
+    반영되거나, 소식(notice)으로 새거나, 조용히 버려지는 전체 판정 경로. 2026-09-16 설계 검토 산출물,
+    8개 탭 = 8가지 트윗 유형.</p>
+
+  <div class="before-after">
+    <div class="ba before"><span class="k">이전 (텍스트 정규식 전용)</span>
+      <p>키워드 정규식 <code>配信</code> 등 + 날짜/시각 정규식만으로 등록 여부를 결정.
+        후기 트윗 속 무관한 숫자(<b>9/24</b> 출시일, <b>2時間</b> 플레이시간)가 날짜·시각으로
+        오합성돼도 못 걸러냄 — 아라레 오탐 실사례.</p></div>
+    <div class="ba after"><span class="k">이후</span>
+      <p>URL이 있으면 YouTube API로 먼저 사실관계를 확정. 유튜브 아닌 URL은 추적 불가능하므로
+        소식으로 이관. URL이 없을 때만 정규식으로 후보를 뽑고, <b>등록 직전 LLM에게
+        "이게 진짜 예고냐"고 마지막으로 되묻는다</b>.</p></div>
+  </div>
+
+  <div class="diagram">
+    <div class="tabs2" role="tablist" id="tabs2">
+      <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>본인 라이브 시작</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>타 멤버 콜라보</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>외부 협업 · 참여확인</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="3"><span class="n">04</span>무관한 영상 링크</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="4"><span class="n">05</span>비유튜브 URL</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="5"><span class="n">06</span>텍스트 예고</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="6"><span class="n">07</span>후기 오탐 방지</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="7"><span class="n">08</span>게이트 미통과</button>
+    </div>
+    <div class="stage2-scroll">
+      <div class="stage2">
+        <svg id="svg2" class="tree-svg" viewBox="0 0 1160 646" role="img" aria-label="개인 트윗 예고 판정 흐름도">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+            </marker>
+          </defs>
+          <g id="edges2"></g>
+          <path id="routeLine2" class="route-line" d=""/>
+          <g id="packet2" opacity="0">
+            <circle class="packet-halo" r="10"/>
+            <circle class="packet-dot" r="4.5"/>
+            <animateMotion id="pkMove2" dur="3s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0"/>
+          </g>
+          <g id="nodes2"></g>
+        </svg>
+      </div>
+    </div>
+    <p class="cap2" id="cap2"></p>
+    <div class="example2" id="example2"><span class="tag" id="exTag2">예시 트윗</span><p id="exText2"></p></div>
+    <div class="legend2">
+      <span><i class="sw reg"></i>등록됨 (preview.json)</span>
+      <span><i class="sw skip"></i>미등록 · 조용히 종료</span>
+      <span><i class="sw notice"></i>소식으로 이관 (notices.json)</span>
+      <span><i class="sw ext"></i>외부 API/LLM 호출 (점선)</span>
+    </div>
+  </div>
+
+
+  <h2>소식(notice) 판정 (v3 · v3.7 의미 중복 게이트)</h2>
+  <p class="sub">자동 인입(<code>/ingest</code> 웹훅 → <code>_maybe_auto_notice</code>)과 수동
+    <code>/notice</code> 마법사 둘 다 이 경로로 모인다. url/title 정확일치로 걸러진 뒤에도
+    "문구만 다른 진짜 중복"이 남는 문제를 2026-09-17 LLM 게이트로 보강 — 탭 5·6이 그 부분.</p>
+
+  <div class="diagram">
+    <div class="tabs2" role="tablist" id="tabs3">
+      <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>정확일치 갱신</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>지난 이벤트 후기</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>지난 날짜 신규</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="3"><span class="n">04</span>소식 형식 아님</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="4"><span class="n">05</span>의미 중복 · 병합</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="5"><span class="n">06</span>같은 날 다른 행사</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="6"><span class="n">07</span>중복 후보 없음</button>
+    </div>
+    <div class="stage2-scroll">
+      <div class="stage2" style="min-width:1560px">
+        <svg id="svg3" class="tree-svg" viewBox="0 0 1560 680" role="img" aria-label="소식 판정 흐름도">
+          <defs>
+            <marker id="ah3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+            </marker>
+          </defs>
+          <g id="edges3"></g>
+          <path id="routeLine3" class="route-line"/>
+          <g id="packet3" opacity="0">
+            <circle class="packet-halo" r="10"/>
+            <circle class="packet-dot" r="4.5"/>
+            <animateMotion id="pkMove3" dur="3s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0"/>
+          </g>
+          <g id="nodes3"></g>
+        </svg>
+      </div>
+    </div>
+    <p class="cap2" id="cap3"></p>
+    <div class="example2" id="example3"><span class="tag" id="exTag3">예시</span><p id="exText3"></p></div>
+    <div class="legend2">
+      <span><i class="sw reg"></i>notices.json 반영 (added/updated/recap)</span>
+      <span><i class="sw skip"></i>미반영 · dup/skip/형식아님</span>
+      <span><i class="sw ext"></i>외부 LLM 호출 (점선, v3.7 duplicate_notice)</span>
+    </div>
+  </div>
+
+  <h2>개인 트윗 인입 경로</h2>
+  <p class="sub"><code>/ingest</code> 웹훅이 도착했을 때 제목(<code>android.title</code>)으로 먼저
+    갈래를 나누는 바깥쪽 흐름 — 예고 판정 자체의 상세(URL 유무 3갈래)는 위
+    "개인 트윗 예고 판정" 섹션을 그대로 가리킨다(중복 구현 안 함).</p>
+
+  <div class="diagram">
+    <div class="tabs2" role="tablist" id="tabs4">
+      <button class="tab2" role="tab" aria-selected="true"  data-t="0"><span class="n">01</span>개인 멤버 트윗</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="1"><span class="n">02</span>테스트 부계정</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="2"><span class="n">03</span>공식·불일치</button>
+      <button class="tab2" role="tab" aria-selected="false" data-t="3"><span class="n">04</span>유튜브 회원 알림</button>
+    </div>
+    <div class="stage2-scroll">
+      <div class="stage2" style="min-width:1250px">
+        <svg id="svg4" class="tree-svg" viewBox="0 0 1250 540" role="img" aria-label="트윗 인입 경로 흐름도">
+          <defs>
+            <marker id="ah4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+            </marker>
+          </defs>
+          <g id="edges4"></g>
+          <path id="routeLine4" class="route-line"/>
+          <g id="packet4" opacity="0">
+            <circle class="packet-halo" r="10"/>
+            <circle class="packet-dot" r="4.5"/>
+            <animateMotion id="pkMove4" dur="3s" begin="indefinite" repeatCount="indefinite" calcMode="linear" path="M0,0"/>
+          </g>
+          <g id="nodes4"></g>
+        </svg>
+      </div>
+    </div>
+    <p class="cap2" id="cap4"></p>
+    <div class="example2" id="example4"><span class="tag" id="exTag4">예시</span><p id="exText4"></p></div>
+    <div class="legend2">
+      <span><i class="sw reg"></i>tweets.json 스레드 저장 · /write 커밋</span>
+      <span><i class="sw skip"></i>저장 없이 종료(ECHO) 또는 다른 트리로 위임</span>
+    </div>
+  </div>
+
+  <h2>6단계 상태 모델</h2>
+  <p class="sub">한 방송이 <code>preview.json</code> 안에서 지나는 생애. 클릭.</p>
+  <div class="states" id="states">
+    <button class="st" data-st="0" aria-selected="true">announced</button><span class="st-arrow">→</span>
+    <button class="st" data-st="1">upcoming</button><span class="st-arrow">→</span>
+    <button class="st" data-st="2">watching</button><span class="st-arrow">→</span>
+    <button class="st" data-st="3">live</button><span class="st-arrow">↔</span>
+    <button class="st" data-st="4">end</button><span class="st-arrow">→</span>
+    <button class="st" data-st="5">none</button>
+  </div>
+  <div class="st-detail" id="stDetail"></div>
+
+  <h2>메인 화면 · 이렇게 생겼다</h2>
+  <p class="sub">실제 사이트 요소를 그대로 축약. 버튼·토글은 눌러볼 수 있습니다.</p>
+  <div class="feats">
+
+    <div class="feat">
+      <h3>예고판 레인</h3>
+      <p class="fh">유닛 1명 = 세로 레인. PC 5열 · 모바일 1인 1화면 캐러셀. 헤더 + 라이브 존 + 예고 버킷.</p>
+      <div class="demo">
+        <div class="lane">
+          <div class="lane__hd">
+            <span class="lane__av">
+              <svg class="tw-badge" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4.75h18c1.24 0 2.25 1 2.25 2.25v.6l-11 6.9-11-6.9V7c0-1.25 1-2.25 2.25-2.25Z"/><path d="M23.25 9.75V17c0 1.25-1 2.25-2.25 2.25H3A2.25 2.25 0 0 1 .75 17V9.75l10.6 6.66a1.15 1.15 0 0 0 1.3 0Z"/></svg>
+              <span class="tw-count">3</span>
+            </span>
+            <span class="lane__nm"><b>나카마치 아라레</b><span>@arale_yumemita</span></span>
+            <span class="lane__rail">
+              <i><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23 12s0-3.6-.46-5.3a2.78 2.78 0 0 0-1.95-1.96C18.9 4.28 12 4.28 12 4.28s-6.9 0-8.6.46A2.78 2.78 0 0 0 1.46 6.7C1 8.4 1 12 1 12s0 3.6.46 5.3a2.78 2.78 0 0 0 1.95 1.96c1.7.46 8.6.46 8.6.46s6.9 0 8.6-.46a2.78 2.78 0 0 0 1.95-1.96C23 15.6 23 12 23 12ZM9.75 15.5v-7l6 3.5-6 3.5Z"/></svg></i>
+              <i><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg></i>
+            </span>
+          </div>
+          <div class="lane__live" id="liveZone" data-on="0">
+            <span class="off">OFF-AIR</span>
+          </div>
+          <div class="bkts">
+            <div class="bkt"><h4>오늘</h4>
+              <div class="card card--up"><span class="ico">🎬</span><span><b>【歌枠】夜ふかしカラオケ</b><br>21:00 · 3시간 후</span></div>
+            </div>
+            <div class="bkt"><h4>7일 이내</h4>
+              <div class="card"><span class="ico">📺</span><span><b>예고 · 노래</b> · 09/14 · D-3</span></div>
+              <div class="card card--collab"><span class="ico">📺</span><span><b>합동 · 유노, 리츠</b> · 09/15</span></div>
+            </div>
+            <div class="bkt"><h4>7일 이후</h4>
+              <div class="card"><span class="ico">📺</span><span><b>예고</b> · 시간 미정</span></div>
+            </div>
+          </div>
+        </div>
+        <button class="toggle" id="liveBtn">▶ 라이브 시작 시뮬레이트</button>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>편지 배지 → 트윗 스레드</h3>
+      <p class="fh">유닛의 24시간 이내 트윗(최대 50건)을 말풍선 스레드로. 트윗 하나 = <b>번역 말풍선 + X 공식 카드</b>(v3.8) — 원문·이미지는 우리가 다시 그리지 않고 X 카드(iframe)가 보여준다. 카드는 화면에 들어올 때만 로드, 번역 ON/OFF 토글(카드는 재로드 안 함).</p>
+      <div class="demo">
+        <div class="thread">
+          <div class="thread__hd"><span>나카마치 아라레</span><button id="tlBtn">번역 ON</button></div>
+          <div class="thread__sc" id="threadSc">
+            <div class="grp">
+              <div class="msg" data-ja="配信きたよ〜！みんな来てね" data-ko="방송 왔어~! 다들 와줘">방송 왔어~! 다들 와줘</div>
+              <div class="msg" data-ja="今日は歌枠です🎤" data-ko="오늘은 노래방이야 🎤">오늘은 노래방이야 🎤</div>
+              <div class="msg" data-ja="リクエストめっちゃ待ってる" data-ko="신청곡 엄청 기다리고 있어">신청곡 엄청 기다리고 있어</div>
+              <div class="xcard" style="align-self:stretch;border:1px solid #3a3d44;border-radius:10px;padding:7px 9px;font-size:11px;color:#9aa0a6;background:rgba(0,0,0,.25)">𝕏 공식 트윗 카드 (iframe · 화면에 들어올 때 로드)</div>
+              <div class="gt">21:03</div>
+            </div>
+            <div class="grp">
+              <div class="msg" data-ja="サムネ直した！こっちが正しいやつ" data-ko="썸네일 고쳤어! 이게 맞는 거">썸네일 고쳤어! 이게 맞는 거</div>
+              <div class="gt">21:12 · 방금</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>소식 티커</h3>
+      <p class="fh">방송 외 이벤트(라이브·음반·굿즈·타 플랫폼). 상단에서 5초마다 회전, 당일 건은 빨간 램프.</p>
+      <div class="demo">
+        <div class="ticker">
+          <span class="lamp"></span>
+          <span class="txt" id="tkTxt">『無限大フェス 2026』 대형 합동 라이브 — 10/12 토쿄</span>
+          <span class="tag" id="tkTag">LIVE</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>카드 상태 · 색으로 구분</h3>
+      <p class="fh">점선·감광 = 미확정 예고 / 실선 = 실물 영상 / 빨강 = 라이브 / 보라 = 합동(참여 전원 레인에 팬아웃).</p>
+      <div class="demo" style="display:flex;flex-direction:column;gap:8px">
+        <div class="card"><span class="ico">📺</span><span><b>announced</b> — 예고, 링크는 채널</span></div>
+        <div class="card card--up"><span class="ico">🎬</span><span><b>upcoming / watching</b> — 썸네일·정시</span></div>
+        <div class="card" style="border-style:solid;border-color:#5a2020;opacity:1"><span class="ico">🔴</span><span><b>live</b> — 방송 중 (n분)</span></div>
+        <div class="card card--collab"><span class="ico">📺</span><span><b>collab</b> — 합동, 보라 바</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="foot">
+    출처: <a href="ARCHITECTURE_v3.8.2.md">ARCHITECTURE_v3.8.2.md</a>(미배포) · <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>(현행) · <a href="SPEC.md">SPEC.md</a> ·
+    <a href="VERSION.md">VERSION.md</a> · 도식 <a href="plan/v3_ARCH_DIAGRAM.png">plan/v3_ARCH_DIAGRAM.png</a>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var SVG = document.getElementById("svg");
+
+  /* 노드 중심 좌표 (viewBox 기준) — input→output 패킷 경로용 */
+  var NC = {
+    op:[470,39], tg:[470,98], push:[84,157], up:[84,244], ctrl:[300,250],
+    be:[560,249], sch:[854,178], yt:[854,316], llm:[84,313], tw:[510,367], db:[560,456],
+    fe:[560,538], fan:[560,629]
+  };
+
+  /* ── 시나리오 ──  r = 패킷이 지나는 노드 순서 (input → output) */
+  var SCN = {
+    poll:   {e:["e_sch_be","e_yt_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+             n:["n_sch","n_be","n_yt","n_tw","n_db","n_fe","n_fan"],
+             r:["sch","be","yt","be","tw","db","fe","fan"],
+             c:"<b>정기 수집</b> — 정해진 시각(기준 06:00 JST · 이후 10분마다 light)에 Scheduler 가 백엔드를 깨운다. RSS + YouTube API 로 5채널 방송 상태를 다시 판정 → 바뀐 것만 <b>관제소를 거쳐</b> 커밋(v3.8.2) → 사이트가 최대 몇 분 뒤 반영."},
+    wake:   {e:["e_sch_be","e_yt_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+             n:["n_sch","n_be","n_yt","n_tw","n_db","n_fe","n_fan"],
+             r:["sch","be","yt","be","tw","db","fe","fan"],
+             c:"<b>라이브 감지</b> — 예정 방송마다 시작 3분 전에 Cloud Task 가 백엔드를 콕 찍어 깨운다. 시작 직전 3분 간격 · 방송 시작~60분은 10분 · 이후 5분 간격(v3.7.1, 프론트가 읽는 raw CDN 캐시가 5분이라 그 이하는 화면에 안 보인다) 폴링 → 라이브 켜짐·꺼짐 반영. 시작이 24시간 넘게 남은 방송은 wake 를 아직 등록하지 않고, 같은 구간의 wake 는 주기 격자에 맞춰 같은 이름으로 합쳐(v3.7.3) 중복 체인이 안 생긴다."},
+    // relay: 세부는 relayRow 하위 3탭(RELAY, 아래) 이 담당 — applyScn 에서 특수 처리
+    tweet:  {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_llm","n_be","n_tw","n_db","n_fe","n_fan"],
+             r:["push","up","ctrl","llm","ctrl","be","tw","db","fe","fan"],
+             c:"<b>개인 트윗</b> — 멤버 5인의 트윗을 게시자 이름으로 갈래 나눠, LLM 번역을 붙여 편지 배지 스레드(24시간 · 최대 50건)에 쌓는다. 외부 호출(vxtwitter·번역 LLM)은 제어 채널이 먼저 하고, 백엔드 <code>/write</code> 가 <code>tweets.json</code> 커밋만 한다(v3.7.1). 방송 예고글이면 예고판에도 승격. 리트윗·타인 글은 제외."},
+    notice: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+             n:["n_push","n_up","n_ctrl","n_llm","n_be","n_tw","n_db","n_fe","n_fan"],
+             r:["push","up","ctrl","llm","ctrl","be","tw","db","fe","fan"],
+             c:"<b>소식</b> — 방송 예고가 아닌 트윗(라이브 이벤트·음반·굿즈·타 플랫폼)은 LLM 이 제목만 뽑고(제어 채널), 백엔드 <code>/write</code> 가 <code>notices.json</code> 에 커밋 → 예고판 상단 티커에 노출."},
+    ops:    {r:["op","tg","ctrl","db"]}
+  };
+
+  /* X 예고 릴레이 세부 — 같은 "업스트림 폰 중계" 라도 발신 계정에 따라 실제로
+     타는 코드 경로(그리고 LLM/비전 통과 여부)가 서로 다르다. 헷갈리기 쉬워서
+     운영자 제어처럼 하위 탭으로 쪼갬(2026-09-13 실사용 중 발견된 오해 지점). */
+  var RELAY = {
+    personal: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_llm","n_be","n_tw","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","tw","db","fe","fan"],
+      c:"<b>개인채널 알림</b> — 멤버 개인 계정의 트윗(예: \"지금부터 방송 시작\"). <code>xtweet.py</code> 가 게시자로 채널을 확정하고 LLM 번역을 붙여 편지 배지 스레드에 쌓는다(저장은 <code>/write personal_tweet</code>). 예고 형식(配信+날짜·시각/URL)이 갖춰지면 <code>preview.json</code> 에도 <code>announced</code>/<code>upcoming</code> 로 승격."},
+    bdp: {e:["e_push_up","e_up_ctrl","e_ctrl_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_be","n_tw","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","be","tw","db","fe","fan"],
+      c:"<b>BDP_yumemita 공식 일정</b> — 5인 합동 공식 계정의 하루 스케줄 통보. <code>xrelay.py</code> 가 정규식만으로 파싱해 <code>preview.json</code> 에 바로 반영 — LLM·비전 어느 쪽도 거치지 않는다. YouTube 영상이 아직 없어도 <code>announced</code> 행으로 먼저 표시, 실물 방송이 뜨면 대체."},
+    ytmember: {e:["e_push_up","e_up_ctrl","e_ctrl_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_be","n_tw","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","be","tw","db","fe","fan"],
+      c:"<b>YouTube 회원 전용 라이브 알림 (v3.7.3)</b> — 업스트림이 유튜브 앱 알림을 <code>source=yt</code> 폼으로 중계한다(그 전엔 <code>text</code> 가 없어 400 이었음). <code>kind</code> 가 회원 전용 라이브 시작이고 제목 앞부분이 5인 채널명과 일치할 때만 처리, 나머지는 무시하고 항상 200. 알림의 <code>video_id</code> 는 <code>default</code> 라 쓸 수 없어, 제어 채널이 <code>yt-dlp</code>(<code>ytdlp_probe.py</code>, 상한 6초)로 그 채널 streams 탭에서 회원 전용 라이브를 찾아 video_id/URL 을 얻는다. 백엔드 <code>/write yt_member_live_commit</code> 이 예고 자리표시를 <code>live</code> 로 승격(없으면 신규 생성)."},
+    bangdreamon: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_tw","e_tw_db","e_db_fe","e_fe_fan"],
+      n:["n_push","n_up","n_ctrl","n_llm","n_be","n_tw","n_db","n_fe","n_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","tw","db","fe","fan"],
+      c:"<b>bang_dream_on 등 크로스오버 계정</b> — 우리 5인 형식이 아닌 외부 프랜차이즈 공식 계정 소식. <code>xnotice.py</code> 가 <code>notices.json</code> 소식으로 반영하며 LLM 이 제목 추출·번역을 한다(v3.2). 첨부 이미지에 출연진 소개 패널이 있으면 같은 Groq 로 비전 OCR(<code>qwen/qwen3.8-27b</code>+폴백 <code>qwen/qwen3.6-27b</code>) 을 돌려 5인 중 누가 나오는지 <code>participants</code> 필드에 태그."}
+  };
+
+  /* 운영자 제어 — 명령어별 흐름. r = 노드 순서, 왕복이면 회신 경로까지 되짚는다. */
+  var OPS = {
+    "/status": {r:["op","tg","ctrl","tw","db","tw","ctrl","tg","op"],
+      c:"<b>/status</b> — 6상태 카운트 · 소식/트윗 수 · 마지막 동기화 · LLM 큐를 관제소 <code>/fetch</code> 로 <b>읽어</b> DM 회신(파일 4개, 조건부 요청이면 304). 쓰기 없음."},
+    "/list":   {r:["op","tg","ctrl","tw","db","tw","ctrl","tg","op"],
+      c:"<b>/list &lt;preview|notice|tweet&gt;</b> — 유닛별 살아있는 항목 목록을 조회해 DM 회신."},
+    "/pause":  {r:["op","tg","ctrl","tw","db"],
+      c:"<b>/pause</b> — <code>control.json</code> 에 정지 플래그를 관제소 <code>/put</code> 으로 커밋(v3.8.2 — v3.8.1 까지는 제어 채널이 직접 커밋하던 큐 우회 예외). 이후 정기 수집·wake 는 핑만 하고 no-op."},
+    "/resume": {r:["op","tg","ctrl","tw","db","tw","ctrl","be"],
+      c:"<b>/resume</b> — 정지 해제 커밋 + 백엔드 정기 수집을 즉시 호출(heal)해 밀린 상태를 바로 재판정."},
+    "/ingest": {r:["op","tg","ctrl","be","tw","db"],
+      c:"<b>/ingest &lt;preview|notice|tweet&gt;</b> — 2단계(원문/파일 첨부) → 해당 JSON 에 수동 등록 + 되돌리기 스냅샷. 커밋은 백엔드 <code>/write</code> 경유."},
+    "/edit":   {r:["op","tg","ctrl","be","tw","db"],
+      c:"<b>/edit</b> — 유닛→항목→필드 마법사로 값 수정 + 편집 락(다음 정기 수집이 그 항목을 안 덮음). 커밋은 <code>/write apply_preview_edit</code>, 마법사 단계 슬롯(<code>admin_state.json</code>)만 제어 채널이 직접 기록."},
+    "/del":    {r:["op","tg","ctrl","be","tw","db"],
+      c:"<b>/del</b> — 항목 삭제(2단계 확인). <code>terminate</code> 면 그 영상 URL 을 12시간 재진입 차단. 커밋은 <code>/write remove_broadcast</code>."},
+    "/undo":   {r:["op","tg","ctrl","be","tw","db"],
+      c:"<b>/undo</b> — 직전에 값을 바꾼 명령 1건을 sha 2중 가드로 되돌림(2단계 y/N). 대상 파일만 복원. 커밋은 <code>/write undo_restore</code>."}
+  };
+
+  var capEl   = document.getElementById("scnCap");
+  var routeEl = document.getElementById("routeLine");
+  var packet  = document.getElementById("packet");
+  var pkMove  = document.getElementById("pkMove");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function routePath(keys){
+    var p = keys.map(function(k){ return NC[k]; });
+    return "M" + p[0][0] + "," + p[0][1] +
+      p.slice(1).map(function(q){ return " L" + q[0] + "," + q[1]; }).join("");
+  }
+  function routeLen(keys){
+    var L = 0;
+    for (var i = 1; i < keys.length; i++){
+      var a = NC[keys[i-1]], b = NC[keys[i]];
+      L += Math.hypot(b[0]-a[0], b[1]-a[1]);
+    }
+    return L;
+  }
+
+  function uniq(a){ return a.filter(function(x,i){ return a.indexOf(x)===i; }); }
+
+  function paint(route, capHTML){
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(el){el.classList.remove("hot");});
+    uniq(route).forEach(function(k){
+      var el = document.getElementById("n_" + k); if (el) el.classList.add("hot");
+    });
+    capEl.innerHTML = capHTML;
+    var d = routePath(route);
+    routeEl.setAttribute("d", d);
+    pkMove.setAttribute("path", d);
+    pkMove.setAttribute("dur", Math.max(2.4, Math.min(5.2, routeLen(route) / 300)).toFixed(1) + "s");
+    if (reduceMotion){ packet.setAttribute("opacity", "0"); return; }
+    packet.setAttribute("opacity", "1");
+    try { pkMove.beginElement(); } catch(e){ /* SMIL 미지원 → route-line 만 */ }
+  }
+
+  var cmdRow = document.getElementById("cmdRow");
+  var curCmd = "/status";
+  function applyCmd(cmd){
+    curCmd = cmd;
+    cmdRow.querySelectorAll(".cmd").forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.cmd === cmd ? "true" : "false");
+    });
+    paint(OPS[cmd].r, OPS[cmd].c);
+  }
+  cmdRow.querySelectorAll(".cmd").forEach(function(b){
+    b.addEventListener("click", function(){ applyCmd(b.dataset.cmd); });
+  });
+
+  var relayRow = document.getElementById("relayRow");
+  var curRelay = "personal";
+  function applyRelay(key){
+    curRelay = key;
+    relayRow.querySelectorAll(".cmd").forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.relay === key ? "true" : "false");
+    });
+    paint(RELAY[key].r, RELAY[key].c);
+  }
+  relayRow.querySelectorAll(".cmd").forEach(function(b){
+    b.addEventListener("click", function(){ applyRelay(b.dataset.relay); });
+  });
+
+  function applyScn(key){
+    cmdRow.hidden = true;
+    relayRow.hidden = true;
+    if (key === "ops"){ cmdRow.hidden = false; applyCmd(curCmd); return; }
+    if (key === "relay"){ relayRow.hidden = false; applyRelay(curRelay); return; }
+    paint(SCN[key].r, SCN[key].c);
+  }
+  document.querySelectorAll(".scn-tab").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".scn-tab").forEach(function(x){x.setAttribute("aria-selected","false");});
+      b.setAttribute("aria-selected","true");
+      applyScn(b.dataset.scn);
+    });
+  });
+  applyScn("poll");
+
+  /* ── 상태 모델 ── */
+  var ST = [
+    ["announced","예고","정보 일부만 · 실물 영상 미확정. X 릴레이 · 개인 트윗 · 수동 등록에서 생성. 링크는 채널. 예정 시각이 지나 120분 넘게 조용하면 대기(watching)로 안 돌아가고 여기 머문다(late-hold, v3.7.3 — 예전엔 둘이 서로 되돌려 왕복했다).","card"],
+    ["upcoming","예정","날짜+시각+제목+썸네일+영상 URL 이 다 모임. 정식 방송 카드로 승격.","card card--up"],
+    ["watching","대기","시작 3분 전 진입. 짧은 간격으로 라이브 여부만 확인. 예정이 미래로 정정되면 upcoming/announced 로 되돌린다.","card card--up"],
+    ["live","방송 중","실제 라이브. 경과 시간(n분) 표시, 레인 라이브 존이 빨갛게. 회원 전용 방송은 API 로 못 찾아 유튜브 회원 알림(source=yt)이 도착하면 여기로 직접 승격된다(v3.7.3).","card"],
+    ["end","방송 종료","라이브가 내려감. 30분 관찰 창 — 되살아나면 live 로 복귀.","card"],
+    ["none","사라짐","파일에서 제거 = 종결. 이후 같은 채널의 예고는 별개의 새 방송.","card"]
+  ];
+  var stD = document.getElementById("stDetail");
+  function showSt(i){
+    var s = ST[i];
+    var live = i===3, endc = i===4;
+    stD.innerHTML =
+      '<div class="'+s[3]+'" style="min-width:150px;opacity:1;'+(live?'border-style:solid;border-color:#5a2020':'')+'">'+
+        '<span class="ico">'+(live?'🔴':endc?'⏹':i<2?'📺':'👀')+'</span>'+
+        '<span><b style="display:block;color:#e8e8e8">'+s[0]+'</b><span style="color:#999">'+s[1]+'</span></span>'+
+      '</div>'+
+      '<p><b>'+s[1]+' · '+s[0]+'</b>'+s[2]+'</p>';
+    document.querySelectorAll("#states .st").forEach(function(b){
+      b.setAttribute("aria-selected", b.dataset.st==String(i) ? "true":"false");
+    });
+  }
+  document.querySelectorAll("#states .st").forEach(function(b){
+    b.addEventListener("click", function(){ showSt(+b.dataset.st); });
+  });
+  showSt(0);
+
+  /* ── 라이브 토글 ── */
+  var zone = document.getElementById("liveZone"), lbtn = document.getElementById("liveBtn");
+  lbtn.addEventListener("click", function(){
+    var on = zone.dataset.on === "1";
+    zone.dataset.on = on ? "0" : "1";
+    zone.innerHTML = on
+      ? '<span class="off">OFF-AIR</span>'
+      : '<div class="lc"><b>【歌枠】夜ふかしカラオケ</b><span>방송 중 (12분)</span></div>';
+    lbtn.textContent = on ? "▶ 라이브 시작 시뮬레이트" : "■ 라이브 종료";
+  });
+
+  /* ── 트윗 번역 토글 ── */
+  var tl = document.getElementById("tlBtn"), ko = true;
+  tl.addEventListener("click", function(){
+    ko = !ko;
+    document.querySelectorAll("#threadSc .msg").forEach(function(m){
+      m.style.display = ko ? "" : "none";
+    });
+    tl.textContent = ko ? "번역 ON" : "번역 OFF";
+  });
+
+  /* ── 소식 티커 회전 ── */
+  var TK = [
+    ["『無限大フェス 2026』 대형 합동 라이브 — 10/12 토쿄","LIVE"],
+    ["1st EP「ゆめのつづき」 발매 — 10/25","음반"],
+    ["아크릴 스탠드 4종 예약 개시 — BOOTH","굿즈"]
+  ];
+  var tkTxt = document.getElementById("tkTxt"), tkTag = document.getElementById("tkTag"), ti = 0;
+  setInterval(function(){
+    ti = (ti+1) % TK.length;
+    tkTxt.textContent = TK[ti][0]; tkTag.textContent = TK[ti][1];
+  }, 3200);
+})();
+</script>
+
+<script>
+/* (v3.6) 개인 트윗 예고 판정 트리 — 독립 IIFE, 위 스크립트와 변수 스코프 안 겹침.
+   설계 검토 아티팩트(2026-09-16)를 그대로 이식. */
+(function(){
+  "use strict";
+
+  var W = 170, WW = 200, H = 50, HS = 46;
+  var NODES = [
+    {id:"start", cx:600, cy:39,  w:W,  h:HS, t:"업스트림 감지",     s:"개인 트윗 원문 도착", k:"start"},
+    {id:"q1",    cx:600, cy:127, w:WW, h:HS, t:"유튜브 URL?",       s:"완결된 형식만 인정",  k:"dec"},
+
+    {id:"ytmeta",cx:290, cy:219, w:WW, h:HS, t:"videos.list 조회",  s:"제목·시각·실제상태 확정", k:"ext"},
+    {id:"q4",    cx:910, cy:219, w:WW, h:HS, t:"비유튜브 URL?",     s:"bilibili 등 완결 링크",   k:"dec"},
+
+    {id:"q2",    cx:290, cy:309, w:W,  h:H,  t:"본인 채널?",        s:"작성자 = 영상 소유",  k:"dec"},
+    {id:"notice",cx:1050,cy:309, w:W,  h:H,  t:"소식으로 이관",     s:"notices.json · 추적 불가", k:"notice"},
+    {id:"gate",  cx:800, cy:309, w:WW, h:H,  t:"정규식 게이트",     s:"配信 키워드 + 날짜/시각", k:"dec"},
+
+    {id:"reg1",  cx:110, cy:399, w:W,  h:H,  t:"등록",              s:"state = API 실제값",  k:"reg"},
+    {id:"q3",    cx:440, cy:399, w:WW, h:H,  t:"5인/공식 채널?",    s:"다른 멤버 or 그룹",   k:"dec"},
+    {id:"skip2", cx:705, cy:399, w:W,  h:H,  t:"미등록",            s:"게이트·날짜 없음",    k:"skip"},
+    {id:"llmann",cx:920, cy:399, w:WW, h:H,  t:"LLM 예고 판정",     s:"“본인 방송을 예고하나?”", k:"ext"},
+
+    {id:"reg2",  cx:350, cy:489, w:W,  h:H,  t:"등록",              s:"host=그 채널·합동 병합", k:"reg"},
+    {id:"llmpt", cx:560, cy:489, w:WW, h:H,  t:"LLM 참여 판정",     s:"“이 멤버가 참여하나?”", k:"ext"},
+    {id:"reg4",  cx:800, cy:489, w:W,  h:H,  t:"등록",              s:"announced · 날짜/시각",  k:"reg"},
+    {id:"skip3", cx:1000,cy:489, w:W,  h:H,  t:"미등록",            s:"후기·잡담으로 판정",   k:"skip"},
+
+    {id:"reg3",  cx:450, cy:579, w:W,  h:H,  t:"등록",              s:"host=작성자·외부 콜라보", k:"reg"},
+    {id:"skip1", cx:630, cy:579, w:W,  h:H,  t:"미등록",            s:"무관한 영상으로 판정", k:"skip"}
+  ];
+
+  var EDGES = [
+    ["start","q1",null],
+    ["q1","ytmeta","예"], ["q1","q4","아니오"],
+    ["ytmeta","q2",null], ["q4","notice","예"], ["q4","gate","아니오"],
+    ["q2","reg1","예"], ["q2","q3","아니오"],
+    ["gate","skip2","실패"], ["gate","llmann","통과"],
+    ["q3","reg2","예"], ["q3","llmpt","아니오"],
+    ["llmann","reg4","예"], ["llmann","skip3","아니오"],
+    ["llmpt","reg3","예"], ["llmpt","skip1","아니오"]
+  ];
+
+  var byId = {};
+  NODES.forEach(function(n){ byId[n.id] = n; });
+
+  var NS = "http://www.w3.org/2000/svg";
+  function el2(tag, attrs){
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  var edgesG2 = document.getElementById("edges2");
+  var nodesG2 = document.getElementById("nodes2");
+
+  EDGES.forEach(function(edge){
+    var a = byId[edge[0]], b = byId[edge[1]], label = edge[2];
+    var x1 = a.cx, y1 = a.cy + a.h/2;
+    var x2 = b.cx, y2 = b.cy - b.h/2;
+    var p = el2("path", {
+      id: "e2_"+edge[0]+"_"+edge[1], class:"edge",
+      d: "M"+x1+","+y1+" L"+x2+","+y2, "marker-end":"url(#ah2)"
+    });
+    edgesG2.appendChild(p);
+    if (label){
+      var mx = (x1+x2)/2, my = (y1+y2)/2;
+      var t = el2("text", {class:"elabel", x:mx+5, y:my-3});
+      t.textContent = label;
+      edgesG2.appendChild(t);
+    }
+  });
+
+  NODES.forEach(function(n){
+    var g = el2("g", {class:"node k-"+n.k, id:"n2_"+n.id, transform:"translate("+(n.cx-n.w/2)+","+(n.cy-n.h/2)+")"});
+    g.appendChild(el2("rect", {width:n.w, height:n.h, rx:8}));
+    var tt = el2("text", {class:"nt", x:n.w/2, y:n.h/2 - (n.s?4:-4), "text-anchor":"middle"});
+    tt.textContent = n.t;
+    g.appendChild(tt);
+    if (n.s){
+      var st = el2("text", {class:"ns", x:n.w/2, y:n.h/2 + 12, "text-anchor":"middle"});
+      st.textContent = n.s;
+      g.appendChild(st);
+    }
+    nodesG2.appendChild(g);
+  });
+
+  var TABS2 = [
+    { route:["start","q1","ytmeta","q2","reg1"],
+      cap:"<b>본인 라이브 시작</b> — 트윗 안 완결된 유튜브 URL이 발견되면 곧장 <code>videos.list</code>로 실제 상태를 확정한다. <code>配信</code> 같은 키워드가 전혀 없어도, 게이트를 안 거치고 URL만으로 등록된다 — 2026-09-16 발견된 “쇼츠 라이브 50분 지연” 버그가 바로 이 경로 부재 때문이었다.",
+      exTag:"실사례 · nonoka_yumemita",
+      exText:"お待たせしました！はじまりますたー\n\n【弾き語り】㊗アニメ最終回！…\nhttps://www.youtube.com/live/9Di14qEQJH8" },
+    { route:["start","q1","ytmeta","q2","q3","reg2"],
+      cap:"<b>타 멤버 채널 콜라보</b> — URL이 작성자 본인 채널이 아니라 우리 5인 중 다른 멤버(또는 그룹 공식 채널)면, 영상이 실제로 올라간 그 채널을 host로 등록하고 작성자를 <code>collab_with</code>에 붙인다. 이미 등록돼 있으면 새로 안 만들고 대조만.",
+      exTag:"가상 예시 · nonoka_yumemita",
+      exText:"りっちゃんと一緒に配信するよ！\nhttps://www.youtube.com/watch?v=RitsuChannelID" },
+    { route:["start","q1","ytmeta","q2","q3","llmpt","reg3"],
+      cap:"<b>외부 협업, 참여 확인됨</b> — URL의 채널이 우리 5인도 공식도 아니면, LLM에게 “이 작성자가 참여하는 콘텐츠인가”를 묻는다. 확인되면 작성자 자신의 레인에 외부 콜라보로 등록.",
+      exTag:"가상 예시 · miyako_yumemita",
+      exText:"○○さんとのコラボ配信、アーカイブ上がったよ！\nhttps://www.youtube.com/watch?v=SomeoneElseChan" },
+    { route:["start","q1","ytmeta","q2","q3","llmpt","skip1"],
+      cap:"<b>무관한 영상 링크</b> — 같은 질문에 LLM이 “관련 없음”이라 답하면 등록하지 않는다. 멤버가 친구 영상·트레일러·광고 링크를 공유했을 때 예고판에 잘못 올라가는 걸 막는 안전장치.",
+      exTag:"가상 예시 · yuno_yumemita",
+      exText:"このMV超好き…\nhttps://www.youtube.com/watch?v=RandomMV12345" },
+    { route:["start","q1","q4","notice"],
+      cap:"<b>비유튜브 URL</b> — bilibili·니코니코 등 완결 링크는 라이브 상태를 API로 확인할 방법이 없다. “등록은 되는데 절대 종료 못 잡는” 반쪽짜리 preview 카드를 만드는 대신, preview 밖으로 빼서 소식(notice)으로 처리한다.",
+      exTag:"가상 예시 · arale_yumemita",
+      exText:"今日はbilibiliでも同時配信するよ〜\nhttps://live.bilibili.com/12345678" },
+    { route:["start","q1","q4","gate","llmann","reg4"],
+      cap:"<b>텍스트 예고</b> — URL이 전혀 없어도, 키워드 게이트를 통과하고 날짜/시각이 정규식으로 뽑히면 LLM에게 “본인이 진행할 방송을 예고하는 글이냐”고 마지막으로 확인한다. 그렇다고 하면 <code>announced</code>로 등록.",
+      exTag:"가상 예시 · ritsu_yumemita",
+      exText:"明日22時から歌枠やります🎤\nリクエスト待ってるね！" },
+    { route:["start","q1","q4","gate","llmann","skip3"],
+      cap:"<b>후기 오탐 방지</b> — 정규식은 문맥을 모른다. “2時間プレイ”의 “2時”를 시각으로, “9/24”(게임 출시일)를 날짜로 각각 따로 캐치해 예고 후보를 만들어버린다. 등록 직전 LLM에게 물으면 “이건 방송 후기지 예고가 아니다”라고 문맥으로 정확히 걸러낸다 — 실제 Groq 호출로 검증됨.",
+      exTag:"실사례 · arale_yumemita",
+      exText:"#アワーノーツ 先行プレイ配信\nありがとうございました！✨️\n\nガッツリ2時間プレイ！！\n\n9/24まで待ち遠しい〜〜〜！！！" },
+    { route:["start","q1","q4","gate","skip2"],
+      cap:"<b>게이트조차 안 걸림</b> — 방송 관련 키워드도 날짜도 없는 일상 트윗은 정규식 단계에서 즉시 걸러진다. 이 경우엔 LLM을 아예 호출하지 않는다 — 후보가 될 여지가 있는 것만 LLM까지 올려 비용을 아낀다.",
+      exTag:"가상 예시 · miyako_yumemita",
+      exText:"今日は天気がいいね〜\nお布団から出たくない…" }
+  ];
+
+  var NC2 = {}; NODES.forEach(function(n){ NC2[n.id] = [n.cx, n.cy]; });
+
+  var SVG2 = document.getElementById("svg2");
+  var capEl2 = document.getElementById("cap2");
+  var exTagEl2 = document.getElementById("exTag2");
+  var exTextEl2 = document.getElementById("exText2");
+  var routeEl2 = document.getElementById("routeLine2");
+  var packet2 = document.getElementById("packet2");
+  var pkMove2 = document.getElementById("pkMove2");
+  var reduceMotion2 = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function routePath2(ids){
+    var p = ids.map(function(id){ return NC2[id]; });
+    return "M"+p[0][0]+","+p[0][1]+p.slice(1).map(function(q){return " L"+q[0]+","+q[1];}).join("");
+  }
+  function routeLen2(ids){
+    var L = 0;
+    for (var i=1;i<ids.length;i++){
+      var a = NC2[ids[i-1]], b = NC2[ids[i]];
+      L += Math.hypot(b[0]-a[0], b[1]-a[1]);
+    }
+    return L;
+  }
+
+  function applyTab2(i){
+    var t = TABS2[i];
+    SVG2.classList.add("dimming");
+    SVG2.querySelectorAll(".hot").forEach(function(x){ x.classList.remove("hot"); });
+    t.route.forEach(function(id){
+      var n = document.getElementById("n2_"+id); if (n) n.classList.add("hot");
+    });
+    for (var i2=1;i2<t.route.length;i2++){
+      var e = document.getElementById("e2_"+t.route[i2-1]+"_"+t.route[i2]);
+      if (e) e.classList.add("hot");
+    }
+    capEl2.innerHTML = t.cap;
+    exTagEl2.textContent = t.exTag;
+    exTextEl2.textContent = t.exText;
+
+    var d = routePath2(t.route);
+    routeEl2.setAttribute("d", d);
+    pkMove2.setAttribute("path", d);
+    pkMove2.setAttribute("dur", Math.max(2.2, Math.min(5, routeLen2(t.route)/260)).toFixed(1)+"s");
+    if (reduceMotion2){ packet2.setAttribute("opacity","0"); return; }
+    packet2.setAttribute("opacity","1");
+    try { pkMove2.beginElement(); } catch(e3){ /* SMIL 미지원 시 route-line 만 */ }
+  }
+
+  document.querySelectorAll(".tab2").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".tab2").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true");
+      applyTab2(+b.dataset.t);
+    });
+  });
+
+  applyTab2(0);
+})();
+</script>
+
+<script>
+/* (v3.7) 소식(notice) 판정 트리 — merge_notice 1~6단계 + LLM 의미 중복 게이트(신규).
+   실제 코드: src/backend/xnotice.py parse(), src/backend/notices.py merge_notice()/merge_into(),
+   src/backend/telegram_app.py _apply_notice()/_inline_notice_dup_check(), src/backend/llm.py duplicate_notice(). */
+(function(){
+  "use strict";
+  var W = 170, WW = 230, H = 50, HS = 46;
+  var NODES = [
+    {id:"start", cx:620, cy:39,  w:W,  h:HS, t:"소식 원문 도착",      s:"자동 /ingest 또는 /notice 마법사", k:"start"},
+    {id:"q1",    cx:620, cy:120, w:WW, h:HS, t:"xnotice.parse 성공?", s:"방송 외 이벤트 형식인가",  k:"dec"},
+
+    {id:"skipParse", cx:300, cy:201, w:W, h:H, t:"무시",             s:"소식 형식 아님",       k:"skip"},
+    {id:"q2",    cx:780, cy:201, w:WW, h:H,  t:"이미 본 트윗?",       s:"id/seen_ids 일치",     k:"dec"},
+
+    {id:"dup1",  cx:560, cy:282, w:W,  h:H,  t:"dup",                s:"no-op",               k:"skip"},
+    {id:"q3",    cx:1000,cy:282, w:280,h:H,  t:"기존 소식과 일치?",   s:"URL/제목 · 활성+아카이브", k:"dec"},
+
+    {id:"recapOrUpd", cx:820, cy:363, w:WW, h:H, t:"지난 이벤트 후기?", s:"is_recap && 날짜 지남", k:"dec"},
+    {id:"q5",    cx:1180,cy:363, w:W,  h:H,  t:"지난 날짜?",          s:"과거 이벤트 새 소식",  k:"dec"},
+
+    {id:"recap1",  cx:700, cy:444, w:W, h:H, t:"recap",              s:"seen_ids만 추가",      k:"reg"},
+    {id:"updated1",cx:920, cy:444, w:W, h:H, t:"updated",            s:"필드 갱신(최신 우선)", k:"reg"},
+    {id:"skip2",   cx:1060,cy:444, w:W, h:H, t:"skip",               s:"과거 소식은 버림",     k:"skip"},
+    {id:"q6",      cx:1300,cy:444, w:290,h:H,t:"같은 날짜 기존 소식?", s:"threshold=0일 (v3.7)", k:"dec"},
+
+    {id:"added1", cx:1160,cy:525, w:W,  h:H,  t:"added",             s:"같은 날짜 후보 없음",   k:"reg"},
+    {id:"q7",     cx:1420,cy:525, w:260,h:H,  t:"LLM: 같은 행사?",    s:"duplicate_notice (v3.7)", k:"ext"},
+
+    {id:"mergeLLM", cx:1320,cy:606, w:230,h:H, t:"updated (LLM 병합)", s:"merge_into — 문구 달라도 반영", k:"reg"},
+    {id:"added2",   cx:1500,cy:606, w:W,   h:H, t:"added",            s:"판정없음/실패 → 안전한 기본값", k:"reg"}
+  ];
+  var EDGES = [
+    ["start","q1",null],
+    ["q1","skipParse","아니오"], ["q1","q2","예"],
+    ["q2","dup1","예"], ["q2","q3","아니오"],
+    ["q3","recapOrUpd","예"], ["q3","q5","아니오"],
+    ["recapOrUpd","recap1","예(후기+지남)"], ["recapOrUpd","updated1","아니오"],
+    ["q5","skip2","예"], ["q5","q6","아니오"],
+    ["q6","added1","아니오"], ["q6","q7","예"],
+    ["q7","mergeLLM","예"], ["q7","added2","아니오/실패"]
+  ];
+  var byId = {}; NODES.forEach(function(n){ byId[n.id] = n; });
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  var edgesG = document.getElementById("edges3"), nodesG = document.getElementById("nodes3");
+  EDGES.forEach(function(edge){
+    var a = byId[edge[0]], b = byId[edge[1]], label = edge[2];
+    var x1=a.cx, y1=a.cy+a.h/2, x2=b.cx, y2=b.cy-b.h/2;
+    var p = el("path", {id:"e3_"+edge[0]+"_"+edge[1], class:"edge", d:"M"+x1+","+y1+" L"+x2+","+y2, "marker-end":"url(#ah3)"});
+    edgesG.appendChild(p);
+    if (label){
+      var mx=(x1+x2)/2, my=(y1+y2)/2;
+      var t = el("text", {class:"elabel", x:mx+5, y:my-3}); t.textContent = label; edgesG.appendChild(t);
+    }
+  });
+  NODES.forEach(function(n){
+    var g = el("g", {class:"node k-"+n.k, id:"n3_"+n.id, transform:"translate("+(n.cx-n.w/2)+","+(n.cy-n.h/2)+")"});
+    g.appendChild(el("rect", {width:n.w, height:n.h, rx:8}));
+    var tt = el("text", {class:"nt", x:n.w/2, y:n.h/2-(n.s?4:-4), "text-anchor":"middle"}); tt.textContent = n.t; g.appendChild(tt);
+    if (n.s){ var st = el("text", {class:"ns", x:n.w/2, y:n.h/2+12, "text-anchor":"middle"}); st.textContent = n.s; g.appendChild(st); }
+    nodesG.appendChild(g);
+  });
+
+  var TABS = [
+    { route:["start","q1","q2","q3","recapOrUpd","updated1"],
+      cap:"<b>정확일치 갱신</b> — 같은 URL 또는 제목의 소식이 이미 있고, 지난 이벤트 후기가 아니면 필드를 최신 값으로 덮어쓴다(시간 확정, 장소 변경 등). id는 <code>seen_ids</code>에 누적.",
+      exTag:"가상 예시", exText:"특번 시간 확정! 21시부터 진행합니다\nhttps://eplus.jp/xxxx" },
+    { route:["start","q1","q2","q3","recapOrUpd","recap1"],
+      cap:"<b>지난 이벤트 후기</b> — URL/제목이 일치하는데 그 이벤트 날짜가 이미 지났고 이 트윗이 후기(is_recap)로 분류되면, 필드는 안 건드리고 <code>seen_ids</code>만 추가한다 — 예고판을 후기 트윗으로 되살리지 않기 위함.",
+      exTag:"가상 예시", exText:"어제 행사 즐거운 시간이었어요! 참석해주셔서 감사해요 💕" },
+    { route:["start","q1","q2","q3","q5","skip2"],
+      cap:"<b>지난 날짜 신규</b> — URL/제목도 안 겹치고 아카이브에도 없는데 이벤트 날짜가 이미 지난 완전히 새로운 소식(뒤늦은 회고글 등)이면 예고판엔 안 올리고 버린다.",
+      exTag:"가상 예시", exText:"3개월 전 이벤트 회고입니다…" },
+    { route:["start","q1","skipParse"],
+      cap:"<b>소식 형식 아님</b> — <code>xnotice.parse</code>가 카테고리·날짜 등 소식으로 분류할 단서를 못 찾으면 <code>None</code>을 반환하고, 이 트윗은 아예 소식 파이프라인에서 조용히 빠진다.",
+      exTag:"가상 예시", exText:"오늘은 날씨가 좋네요ㅠ" },
+    { route:["start","q1","q2","q3","q5","q6","q7","mergeLLM"],
+      cap:"<b>(v3.7) 의미 중복 · 병합</b> — url/title이 정확히 안 겹쳐 <code>merge_notice</code>는 “added”로 판단했지만, <b>같은 날짜</b>(threshold=0일)의 기존 소식이 있으면 등록 직전 LLM에게 “같은 행사냐”고 마지막으로 묻는다. 문구가 완전히 달라도 같은 행사로 판정되면 새 항목 대신 기존 항목에 <code>merge_into</code>로 필드만 병합 — 제목 문자열 일치는 요구하지 않는다.",
+      exTag:"가상 예시 · 동일 행사, 다른 표현", exText:"[기존] 오늘은 유노 생일! 모두 축하해줘🎂\n\n[신규, 다른 문구] 유노쿤링 생일 축하해!! 다들 축하해줘 — 문구가 달라도 같은 날짜면 LLM이 같은 행사로 묶는다" },
+    { route:["start","q1","q2","q3","q5","q6","q7","added2"],
+      cap:"<b>(v3.7) 같은 날 다른 행사</b> — 같은 날짜에 기존 소식이 있어 LLM에게 묻긴 했지만, “다른 행사”로 판정되면(예: 3일 연속 페스티벌의 서로 다른 일차) 병합하지 않고 별도 소식으로 그대로 등록한다. 이름이 같아도 threshold=0일이라 날짜가 다르면 애초에 비교 대상에도 안 들어간다.",
+      exTag:"가상 예시 · 같은 이름, 다른 일차", exText:"무한대페스 2026 2일차! 오늘도 달아오른다🔥" },
+    { route:["start","q1","q2","q3","q5","q6","added1"],
+      cap:"<b>중복 후보 없음</b> — 같은 날짜에 등록된 다른 소식이 아예 없으면 LLM을 부를 필요도 없이(비용 절감) 바로 새 소식으로 등록한다. LLM 실패·<code>GROQ_API_KEY</code> 미설정일 때도 이 결과와 동일하게 안전히 진행된다.",
+      exTag:"가상 예시", exText:"아크릴 스탠드 4종 예약 개시 — BOOTH" }
+  ];
+
+  var NC = {}; NODES.forEach(function(n){ NC[n.id] = [n.cx, n.cy]; });
+  var SVG = document.getElementById("svg3"), capEl = document.getElementById("cap3");
+  var exTagEl = document.getElementById("exTag3"), exTextEl = document.getElementById("exText3");
+  var routeEl = document.getElementById("routeLine3"), packet = document.getElementById("packet3"), pkMove = document.getElementById("pkMove3");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function routePath(ids){ var p = ids.map(function(id){return NC[id];}); return "M"+p[0][0]+","+p[0][1]+p.slice(1).map(function(q){return " L"+q[0]+","+q[1];}).join(""); }
+  function routeLen(ids){ var L=0; for (var i=1;i<ids.length;i++){ var a=NC[ids[i-1]], b=NC[ids[i]]; L+=Math.hypot(b[0]-a[0], b[1]-a[1]); } return L; }
+  function applyTab(i){
+    var t = TABS[i];
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(x){ x.classList.remove("hot"); });
+    t.route.forEach(function(id){ var n = document.getElementById("n3_"+id); if (n) n.classList.add("hot"); });
+    for (var i2=1;i2<t.route.length;i2++){ var e = document.getElementById("e3_"+t.route[i2-1]+"_"+t.route[i2]); if (e) e.classList.add("hot"); }
+    capEl.innerHTML = t.cap; exTagEl.textContent = t.exTag; exTextEl.textContent = t.exText;
+    var d = routePath(t.route); routeEl.setAttribute("d", d); pkMove.setAttribute("path", d);
+    pkMove.setAttribute("dur", Math.max(2.2, Math.min(5.5, routeLen(t.route)/260)).toFixed(1)+"s");
+    if (reduceMotion){ packet.setAttribute("opacity","0"); return; }
+    packet.setAttribute("opacity","1");
+    try { pkMove.beginElement(); } catch(e3){ /* SMIL fallback */ }
+  }
+  document.querySelectorAll("#tabs3 .tab2").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll("#tabs3 .tab2").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true"); applyTab(+b.dataset.t);
+    });
+  });
+  applyTab(0);
+})();
+</script>
+
+<script>
+/* 개인 트윗 인입 경로 — /ingest 웹훅 진입점에서 title 기준 갈래.
+   실제 코드: telegram_app.py _ingest()(route_by_title 호출 부분), xtweet.py route_by_title(),
+   _maybe_personal_tweet(), _maybe_personal_schedule() (상세는 위 개인 트윗 예고 판정 트리 참고). */
+(function(){
+  "use strict";
+  var W = 170, WW = 230, H = 50, HS = 46;
+  var NODES = [
+    {id:"start",   cx:460, cy:39,  w:WW, h:HS, t:"/ingest 웹훅 도착",  s:"업스트림(운영자 폰 Automate)", k:"start"},
+    {id:"q1",      cx:460, cy:120, w:WW, h:HS, t:"route_by_title",     s:"android.title → 채널 분류", k:"dec"},
+
+    {id:"official",cx:150, cy:201, w:WW, h:H,  t:"공식·불일치 경로", s:"→ 소식/스케줄 파이프라인(위 트리)", k:"notice"},
+    {id:"test1",   cx:460, cy:201, w:W,  h:H,  t:"테스트 부계정",       s:"INGEST_TEST_TITLES",  k:"dec"},
+    {id:"personal",cx:760, cy:201, w:WW, h:H,  t:"개인 5인 확정",       s:"channel_key 매칭",     k:"dec"},
+
+    {id:"echoTest",cx:460, cy:282, w:W,  h:H,  t:"강제 ECHO",          s:"헬스체크 — 회신만, 저장 안 함", k:"skip"},
+    {id:"thread",  cx:760, cy:282, w:280,h:H,  t:"_maybe_personal_tweet", s:"parse+merge_thread → /write → tweets.json", k:"reg"},
+    {id:"sched",   cx:760, cy:363, w:280,h:H,  t:"_maybe_personal_schedule", s:"예고 형식이면 판정 시작",  k:"dec"},
+    {id:"detail",  cx:760, cy:444, w:300,h:H,  t:"위 '개인 트윗 예고 판정' 트리로", s:"URL 유무 3갈래 — 상세는 그 섹션", k:"ext"},
+
+    {id:"ytsrc",   cx:1080,cy:120, w:WW, h:HS, t:"source=yt 폼",         s:"유튜브 앱 알림 중계 (v3.7.3)", k:"dec"},
+    {id:"ytgate",  cx:1080,cy:201, w:WW, h:H,  t:"회원 전용 라이브 시작?", s:"kind + 제목 앞부분 = 5인 채널명", k:"dec"},
+    {id:"ytprobe", cx:1080,cy:282, w:WW, h:H,  t:"yt-dlp 조회 (≤6초)",    s:"streams 탭 → video_id·URL", k:"ext"},
+    {id:"ytcommit",cx:1080,cy:363, w:WW, h:H,  t:"/write yt_member_live_commit", s:"자리표시 → live 승격 · 신규 · noop", k:"reg"},
+    {id:"ytignore",cx:1080,cy:444, w:WW, h:H,  t:"무시 (항상 200)",        s:"다른 종류 알림 · 5인 아님", k:"skip"}
+  ];
+  var EDGES = [
+    ["start","q1",null],
+    ["q1","official","불일치"], ["q1","test1","테스트 표시명"], ["q1","personal","5인 표시명 일치"],
+    ["test1","echoTest",null],
+    ["personal","thread",null], ["thread","sched",null], ["sched","detail",null],
+    ["start","ytsrc","source=yt"], ["ytsrc","ytgate",null], ["ytgate","ytprobe","일치"], ["ytprobe","ytcommit",null], ["ytgate","ytignore","불일치"]
+  ];
+  var byId = {}; NODES.forEach(function(n){ byId[n.id] = n; });
+  var NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  var edgesG = document.getElementById("edges4"), nodesG = document.getElementById("nodes4");
+  EDGES.forEach(function(edge){
+    var a = byId[edge[0]], b = byId[edge[1]], label = edge[2];
+    var x1=a.cx, y1=a.cy+a.h/2, x2=b.cx, y2=b.cy-b.h/2;
+    var p = el("path", {id:"e4_"+edge[0]+"_"+edge[1], class:"edge", d:"M"+x1+","+y1+" L"+x2+","+y2, "marker-end":"url(#ah4)"});
+    edgesG.appendChild(p);
+    if (label){ var mx=(x1+x2)/2, my=(y1+y2)/2; var t = el("text", {class:"elabel", x:mx+5, y:my-3}); t.textContent = label; edgesG.appendChild(t); }
+  });
+  NODES.forEach(function(n){
+    var g = el("g", {class:"node k-"+n.k, id:"n4_"+n.id, transform:"translate("+(n.cx-n.w/2)+","+(n.cy-n.h/2)+")"});
+    g.appendChild(el("rect", {width:n.w, height:n.h, rx:8}));
+    var tt = el("text", {class:"nt", x:n.w/2, y:n.h/2-(n.s?4:-4), "text-anchor":"middle"}); tt.textContent = n.t; g.appendChild(tt);
+    if (n.s){ var st = el("text", {class:"ns", x:n.w/2, y:n.h/2+12, "text-anchor":"middle"}); st.textContent = n.s; g.appendChild(st); }
+    nodesG.appendChild(g);
+  });
+
+  var TABS = [
+    { route:["start","q1","personal","thread","sched","detail"],
+      cap:"<b>개인 멤버 트윗</b> — <code>android.title</code>이 5인 중 한 명의 표시명과 일치하면 그 채널로 확정. 원문은 <code>xtweet.parse</code>+<code>merge_thread</code>로 <code>tweets.json</code> 스레드(24시간 · 최대 50건)에 저장되고 번역이 붙는다 — 외부 호출은 제어 채널이 준비하고 커밋만 백엔드 <code>/write personal_tweet</code> 이 한다(v3.7.1). 이어서 예고 형식인지 <code>_maybe_personal_schedule</code>이 이어받는다(상세는 위 트리).",
+      exTag:"가상 예시 · nonoka_yumemita", exText:"오늘은 노래방 날이야 🎤 신청곡 기다린다~" },
+    { route:["start","q1","test1","echoTest"],
+      cap:"<b>테스트 부계정</b> — <code>INGEST_TEST_TITLES</code>(기본 <code>jehy</code>)로 지정된 표시명이면 어떤 내용이든 파싱·저장 없이 그대로 회신만(강제 ECHO) — 업스트림 중계 경로가 살아있는지 상시 확인하는 헬스체크 계정.",
+      exTag:"가상 예시 · jehy(테스트)", exText:"(테스트 계정 원문 — 저장 안 됨, DM 회신만)" },
+    { route:["start","q1","official"],
+      cap:"<b>공식·불일치</b> — title이 비어있거나 5인 표시명과 안 겹치면 기존 경로(공식 계정 소식/BDP_yumemita 스케줄 등) 그대로 — 위 '소식' 트리 또는 X 예고 릴레이가 이어받는다.",
+      exTag:"가상 예시", exText:"(공식 계정 또는 미매칭 title — 기존 파이프라인 그대로)" },
+    { route:["start","ytsrc","ytgate","ytprobe","ytcommit"],
+      cap:"<b>유튜브 회원 알림</b> — X 트윗이 아니라 유튜브 앱 알림이다. 폼 <code>source=yt&amp;video_id&amp;title&amp;kind&amp;tag</code> 로 들어오면 <code>title</code> 기반 분기(왼쪽 3갈래)를 타기 전에 별도 분기로 빠진다. 회원 전용 라이브 시작 + 5인 채널명 일치일 때만 처리하고 그 외는 무시(항상 200). 알림의 <code>video_id</code> 는 <code>default</code> 라서 <code>yt-dlp</code> 로 그 채널 streams 탭에서 회원 전용 라이브를 찾은 뒤(쿠키가 있으면 쿠키 우선, 실패 시 쿠키 없이), 백엔드 <code>/write yt_member_live_commit</code> 이 <code>preview.json</code> 에 live 로 반영한다. 조회에 실패하면 채널 링크로 live 처리하고 운영자에게 DM.",
+      exTag:"가상 예시 · 회원 전용 라이브 알림", exText:"NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START · 「仲町あられ / 夢限大みゅーたいぷ 실시간 스트리밍 시작: 【歌枠】…」" }
+  ];
+
+  var NC = {}; NODES.forEach(function(n){ NC[n.id] = [n.cx, n.cy]; });
+  var SVG = document.getElementById("svg4"), capEl = document.getElementById("cap4");
+  var exTagEl = document.getElementById("exTag4"), exTextEl = document.getElementById("exText4");
+  var routeEl = document.getElementById("routeLine4"), packet = document.getElementById("packet4"), pkMove = document.getElementById("pkMove4");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function routePath(ids){ var p = ids.map(function(id){return NC[id];}); return "M"+p[0][0]+","+p[0][1]+p.slice(1).map(function(q){return " L"+q[0]+","+q[1];}).join(""); }
+  function routeLen(ids){ var L=0; for (var i=1;i<ids.length;i++){ var a=NC[ids[i-1]], b=NC[ids[i]]; L+=Math.hypot(b[0]-a[0], b[1]-a[1]); } return L; }
+  function applyTab(i){
+    var t = TABS[i];
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(x){ x.classList.remove("hot"); });
+    t.route.forEach(function(id){ var n = document.getElementById("n4_"+id); if (n) n.classList.add("hot"); });
+    for (var i2=1;i2<t.route.length;i2++){ var e = document.getElementById("e4_"+t.route[i2-1]+"_"+t.route[i2]); if (e) e.classList.add("hot"); }
+    capEl.innerHTML = t.cap; exTagEl.textContent = t.exTag; exTextEl.textContent = t.exText;
+    var d = routePath(t.route); routeEl.setAttribute("d", d); pkMove.setAttribute("path", d);
+    pkMove.setAttribute("dur", Math.max(2.2, Math.min(5.5, routeLen(t.route)/260)).toFixed(1)+"s");
+    if (reduceMotion){ packet.setAttribute("opacity","0"); return; }
+    packet.setAttribute("opacity","1");
+    try { pkMove.beginElement(); } catch(e3){ /* SMIL fallback */ }
+  }
+  document.querySelectorAll("#tabs4 .tab2").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll("#tabs4 .tab2").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true"); applyTab(+b.dataset.t);
+    });
+  });
+  applyTab(0);
+})();
+</script>
+<script>
+/* DB 관제소 큐 시뮬레이터 — 읽기 병렬(≤6)·쓰기 방벽·FIFO·429 대기·대기 상한. 설명용. */
+(function(){
+  "use strict";
+  var KIND = {read:{l:"제어채널 읽기",c:"read"}, write:{l:"제어채널 쓰기",c:"write"}, job:{l:"백엔드 /write",c:"job"}, tick:{l:"백엔드 /tick",c:"tick"}};
+  var MAXR = 6, CAP = 12000, LIMIT = 8000, GAP = 300;
+  var qEl = document.getElementById("tqQ"), stEl = document.getElementById("tqSt"), runEl = document.getElementById("tqRun"), logEl = document.getElementById("tqLog");
+  var queue = [], active = [], seq = 0, pausedUntil = 0, lastWriteEnd = 0, logs = [];
+  function now(){ return Date.now(); }
+  function say(cls, t){
+    logs.unshift({c:cls, t:new Date().toLocaleTimeString("ko-KR",{hour12:false}), x:t}); logs = logs.slice(0,7);
+    logEl.innerHTML = logs.map(function(l){ return '<li class="'+l.c+'"><b>'+l.t+'</b><span>'+l.x+'</span></li>'; }).join("");
+  }
+  function isW(it){ return it.k !== "read"; }
+  function tok(it){ return '<span class="tq-tok '+KIND[it.k].c+'">#'+it.id+' '+KIND[it.k].l+(it.s?'<small>'+it.s+'</small>':'')+'</span>'; }
+  function render(){
+    qEl.innerHTML = queue.length ? queue.map(function(it){ it.s = Math.round((now()-it.t0)/1000)+"초"; return tok(it); }).join("") : '<span class="tq-empty">큐가 비어 있음 — 위 버튼으로 요청을 넣어 보세요</span>';
+    runEl.innerHTML = active.map(tok).join("");
+    if (pausedUntil > now()){ stEl.className = "tq-st wait"; stEl.textContent = "속도 제한 대기 — "+Math.ceil((pausedUntil-now())/1000)+"초 남음"; }
+    else if (active.length){ stEl.className = "tq-st"; stEl.textContent = isW(active[0]) ? "쓰기 진행 중 (단독)" : "읽기 "+active.length+"건 병렬 진행 중"; }
+    else { stEl.className = "tq-st"; stEl.textContent = "대기 중"; }
+  }
+  function add(k){ var it = {id:++seq, k:k, t0:now()}; queue.push(it); say("", "#"+it.id+" "+KIND[k].l+" 도착 → 큐 맨 뒤 (앞에 "+(queue.length-1+active.length)+"건)"); render(); }
+  function step(){
+    var t = now();
+    for (var i = queue.length-1; i >= 0; i--){
+      if (t - queue[i].t0 > CAP){ var d = queue.splice(i,1)[0]; say("bad", "#"+d.id+" "+KIND[d.k].l+" — 대기 "+Math.round((t-d.t0)/1000)+"초 > 상한 12초 → 호출자에게 503 + retry-after"); }
+    }
+    active = active.filter(function(it){
+      if (t >= it.done){ if (isW(it)) lastWriteEnd = t; say("ok", "#"+it.id+" "+KIND[it.k].l+" 완료"+(it.hit?" (304 · 한도 미집계)":"")); return false; }
+      return true;
+    });
+    // 큐 맨 앞만 진입 가능 (FIFO): 읽기는 쓰기 없고 6 미만일 때 연속 진입, 쓰기는 진행 중 작업이 없을 때
+    while (queue.length && t >= pausedUntil){
+      var h = queue[0];
+      if (isW(h)){
+        if (active.length) break;
+        if (t - lastWriteEnd < GAP) break;
+        queue.shift(); h.done = t + 800;
+      } else {
+        if (active.some(isW) || active.length >= MAXR) break;
+        queue.shift(); h.hit = Math.random() < 0.5; h.done = t + (h.hit ? 150 : 500);
+      }
+      active.push(h);
+      say("", "#"+h.id+" 진입 ("+(isW(h)?"쓰기 — 방벽":"읽기 — 병렬")+")");
+    }
+    render();
+  }
+  setInterval(step, 150);
+  var B = function(id, f){ document.getElementById(id).addEventListener("click", f); };
+  B("tqRead", function(){ add("read"); }); B("tqWrite", function(){ add("write"); }); B("tqJob", function(){ add("job"); }); B("tqTick", function(){ add("tick"); });
+  B("tqLimit", function(){ pausedUntil = now() + LIMIT; active.forEach(function(it){ it.done += LIMIT; }); say("warn", "GitHub 429 (retry-after 8초) — 큐 전체 정지, 8초 뒤 재개"); render(); });
+  B("tqReset", function(){ queue = []; active = []; pausedUntil = 0; logs = []; seq = 0; logEl.innerHTML = ""; render(); });
+  ["read","job","read","read","write","read"].forEach(function(k, i){ queue.push({id:++seq, k:k, t0:now()-i*300}); });
+  say("", "예시 요청 6건이 미리 들어 있습니다 — 읽기는 함께, 쓰기는 혼자 진입하는 것을 보세요");
+  render();
+})();
+</script>
+</body>
+</html>
