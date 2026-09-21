@@ -121,6 +121,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   창구. 프론트만 변경(`tweets.js`·`tweets.css`·`index.html`), 저장 데이터는 유지. 요약 `docs/VERSION.md`.
 > - **v3.8.1** (핫픽스): 트윗 말풍선 좌 X 카드 / 우 번역 2열 + 번역 ON/OFF 애니메이션 + 꼬리를 아바타 중앙으로 + 말풍선 디스클레이머 제거(하단만).
 >   프론트만 변경. 요약 `docs/VERSION.md`.
+> - **v3.8.2** (핫픽스): `data` 저장소 **읽기**도 백엔드로 — 제어 채널이 GitHub 를 직접 읽지 않고 백엔드
+>   `POST /fetch`(`readclient.BackendReadStore`, `make_store`)를 거친다. GitHub 호출(읽기+쓰기)을 `concurrency=1`
+>   백엔드 한 곳으로 모아 버스트 시 secondary rate limit(403/429)·409 위험을 줄임. 제어 채널의 직접 쓰기
+>   (`control.json`·`admin_state.json`·모니터 로그·`/translate`)는 그대로. 배포 순서: 백엔드 먼저. 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -178,13 +182,14 @@ src/
     reconcile.py       # 상태 판정 + 이전 스냅샷 대비 diff — 순수 함수
     store.py           # schedule.json / archive.json 로드·저장 (변경 시에만 기록)
   backend/             # Cloud Run 서비스 (Flask + gunicorn). v3.0.
-    app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) /write(v3.7, 제어 채널 쓰기 큐)
+    app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) /write(v3.7, 제어 채널 쓰기 큐) /fetch(v3.8.2, 제어 채널 읽기)
                        #   /monitor(Scheduler) · `/` 헬스체크(GFE 가 /healthz 가로챔)
     handlers.py        # (v3) tick/wake → preview_build → (v3.7.1) apply_overrides → preview.json 커밋
                        #   + LLM 말단 번역(needs_tl sweep) + (v3.7.1) 모니터 로그 실행당 1커밋·무변화 스킵
     writers.py         # (v3.7) /write 잡 kind → telegram_app 커밋 함수 매핑(지연 import).
                        #   (v3.7.1 A-1) 잡은 커밋 전용 — 외부 호출은 제어 채널에서 준비해 인자로 넘김
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출(OIDC, 60초). MAIN_SERVICE_URL 없으면 로컬 디스패치
+    readclient.py      # (v3.8.2) 제어 채널 → 백엔드 /fetch 읽기(OIDC, 60초). BackendReadStore(GitHubStore)·make_store — 없으면 직접 읽기
     preview.py         # (v3) preview.json 계약 A′ — make_item/match_item/sort/promote_state (순수)
     preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수). (v3.1.4) 그룹 공식 채널
                        #      (@BDP_yumemita) 영상 → 5인 팬아웃(host="group")
@@ -309,6 +314,7 @@ python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.writers        # (v3.7) /write 잡 kind 레지스트리
 python -m src.backend.writeclient    # (v3.7) MAIN_SERVICE_URL 없을 때 로컬 디스패치
+python -m src.backend.readclient     # (v3.8.2) /fetch 왕복·404·오류·make_store 분기 (가짜 세션)
 python -m src.backend.handlers       # _scheduled_wake_times·_preview_log_events·(v3.7.1) _should_log_run·apply_overrides 연결
 python -m src.backend.preview        # (v3) preview.json 계약 — match_item/sort/promote_state
 python -m src.backend.statemachine   # (v3) FSM 파생 derive() — 0.2 전이표 시나리오

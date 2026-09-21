@@ -7,6 +7,10 @@
                     브랜치 콘텐츠 쓰기 전담 — 이 서비스가 `--concurrency=1
                     --max-instances=1` 이라 여기로 들어오는 모든 요청(이 라우트 포함)이
                     자동으로 직렬화된다. 실제 job 은 `writers.dispatch()`.
+  POST /fetch     — mewtype-telegram (body: {"path": "preview.json", "as": "json"|"text"}).
+                    GitHub data 브랜치 **읽기** 전담(v3.8.2) — 제어 채널이 GitHub 를 직접 읽지 않고
+                    이 라우트로 보내, GitHub 호출이 이 서비스(concurrency=1) 한 곳으로 모인다.
+                    응답 {"found": bool, "data"|"text": ..., "sha": ...}. 없으면 found=false(200).
   POST /monitor   — Cloud Scheduler (1일 1회 KST 06:10, body 없음). control.json
                     의 monitor_auto 가 꺼져 있으면 조회 없이 즉시 종료,
                     켜져 있으면 전일자(06:00 KST 경계 기준, 방금 끝난 하루) 리포트 생성 후
@@ -113,6 +117,38 @@ def _write():
     except Exception as e:  # noqa: BLE001
         log.exception("write 실패 kind=%s", kind)
         _alert(f"/write kind={kind}", e)
+        return jsonify({"error": str(e)}), 500
+
+
+def _safe_data_path(path) -> bool:
+    """data 저장소 안의 상대 경로만 허용 (빈 값·절대경로·`..`·역슬래시 거부)."""
+    return (isinstance(path, str) and bool(path) and len(path) <= 200
+            and not path.startswith("/") and "\\" not in path
+            and ".." not in path.split("/"))
+
+
+@app.post("/fetch")
+def _fetch():
+    try:
+        _authorize()
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    body = request.get_json(silent=True) or {}
+    path = body.get("path")
+    kind = body.get("as", "json")
+    if not _safe_data_path(path) or kind not in ("json", "text"):
+        return jsonify({"error": "path(str, data 저장소 상대경로) / as(json|text) 필요"}), 400
+    try:
+        cfg = _cfg()
+        gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+        if kind == "json":
+            data, sha = gh.read_json(path)
+            return jsonify({"found": data is not None, "data": data, "sha": sha})
+        text, sha = gh.read_text(path)
+        return jsonify({"found": text is not None, "text": text, "sha": sha})
+    except Exception as e:  # noqa: BLE001
+        # /write 와 달리 DM 알림은 안 보낸다 — 읽기는 호출량이 많아 버스트 시 알림 폭주. 호출한 쪽이 DM 으로 알린다.
+        log.exception("fetch 실패 path=%s", path)
         return jsonify({"error": str(e)}), 500
 
 

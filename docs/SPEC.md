@@ -48,6 +48,7 @@ src/
     handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 + LLM 번역 sweep + 모니터 로그(실행당 최대 1커밋)
     writers.py         # (v3.7) write-queue — /write 잡 kind → telegram_app 커밋 함수 매핑 (§8.14)
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출 (OIDC). MAIN_SERVICE_URL 없으면 로컬 디스패치
+    readclient.py      # (v3.8.2) 제어 채널 → 백엔드 /fetch 읽기 — BackendReadStore(GitHubStore) + make_store (§8.14)
     monitor_log.py     # (v3.5) monitoring/events-YYYY-MM-DD.jsonl append (log_event / log_events 배치)
     monitor_report.py  # (v3.5) /monitor Ops Timeline HTML 생성
     preview.py         # (신규) preview.json 스키마 헬퍼 (id·매칭·정렬·승격·아카이브) — 순수
@@ -730,11 +731,17 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 실패 시 500 — `monitor.html` 이 `latest.html` 로 폴백). `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
 예외 → 500 + `notify.error_text` DM. `PermissionError` → 403.
 
-### 8.14 write-queue — `writers.py` / `writeclient.py` (v3.7, v3.7.1 A-1)
+### 8.14 write-queue — `writers.py` / `writeclient.py` / `readclient.py` (v3.7, v3.7.1 A-1, v3.8.2 read)
 
 GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로 충돌한다(다른 파일이라도 읽은 뒤
 다른 커밋이 끼면 409). 제어 채널(`mewtype-telegram`, 동시 처리 80)의 콘텐츠 쓰기를 백엔드
 (`--concurrency=1 --max-instances=1`)의 `POST /write` 로 보내 한 줄로 세운다.
+
+- **(v3.8.2) 읽기도 백엔드로** — `POST /fetch` `{"path","as":"json"|"text"}` → `{"found","data"|"text","sha"}`(OIDC, `/write` 와 동일 인증).
+  제어 채널은 GitHub 를 직접 읽지 않는다: `readclient.make_store()` 가 `MAIN_SERVICE_URL` 이 있으면 `BackendReadStore`(`read_json`/`read_text` 를 `/fetch` 로 보내는
+  `GitHubStore` 서브클래스, 타임아웃 60초), 없으면 일반 `GitHubStore`(로컬·self-test)를 돌려준다. 호출부 계약 `(data, sha)`·404→`(None, None)`·그 외 `RuntimeError` 는 그대로.
+  `path` 는 data 저장소 상대경로만(빈 값·절대경로·`..`·역슬래시 → 400). 목적: 버스트 때 GitHub secondary rate limit(동시 요청·분당 포인트, 초과 시 403/429)의 호출 주체를 백엔드 한 곳으로.
+  제어 채널의 **직접 쓰기**(아래 "남는 한계")는 그대로이며, 그 쓰기 안의 "현재 sha 읽기"는 `/fetch` 를 탄다.
 
 - `writeclient.call_write(kind, *, gh=None, **args) -> dict` — `MAIN_SERVICE_URL` 이 있으면 OIDC id token 으로
   `POST {MAIN_SERVICE_URL}/write` 동기 호출(타임아웃 60초, 2초 넘으면 "⏳ 처리 대기 중" DM 1회), 없으면

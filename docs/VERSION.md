@@ -2,6 +2,26 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.2** (핫픽스) - `data` 저장소 **읽기**도 백엔드로 모은다(`POST /fetch`). 기능 변화 없음 — 운영 안정성·유지보수 목적.
+  1. **배경** - v3.7 write-queue 는 콘텐츠 **쓰기**만 백엔드 `/write`(`concurrency=1`)로 모았고, 읽기(`gh.read_json`/`read_text`)는
+     제어 채널(`mewtype-telegram`, 동시 처리 80)이 GitHub Contents API 를 직접 호출했다. 한 요청이 여러 파일을 읽고(`/status` 4회 등) 명령이 아닌 일반
+     메시지도 `admin_state.json` 을 매번 읽는다 — 버스트·동시 요청 때 GitHub secondary rate limit(동시 요청·분당 포인트, 초과 시 403/429)의
+     호출 주체가 두 서비스로 갈라져 있었다. 읽기 실패에는 재시도가 없어 한 번의 403/429 가 곧 명령 실패였다.
+  2. **`POST /fetch`** (`app.py`) - body `{"path", "as":"json"|"text"}` → `{"found", "data"|"text", "sha"}`(없으면 `found:false` 200). OIDC 인증은 `/write` 와
+     동일. `path` 는 data 저장소 상대경로만(빈 값·절대경로·`..`·역슬래시 → 400). 실패는 500 + 로그(`/write` 와 달리 DM 알림 없음 — 읽기는 호출량이 많아
+     버스트 시 알림 폭주). 백엔드가 `--concurrency=1 --max-instances=1` 이라 `/tick`·`/wake`·`/write`·`/fetch` 의 GitHub 호출이 한 줄로 직렬화된다.
+  3. **`readclient.py` (신규)** - `BackendReadStore(GitHubStore)` 가 `read_json`/`read_text` 만 `/fetch` 로 보낸다(반환 계약 `(data, sha)`·404→`(None, None)`·
+     그 외 `RuntimeError` 동일). 호출부 82곳 무변경. 쓰기(`write_json` 등)는 상속 — 그 안의 "현재 sha 읽기"도 자동으로 `/fetch` 를 탄다.
+     `make_store(token, repo, branch)` — `MAIN_SERVICE_URL` 있으면 `BackendReadStore`, 없으면(로컬·self-test) 일반 `GitHubStore`.
+     `telegram_app._make_gh`·`/telegram` webhook 의 `gh` 생성이 `make_store` 로 바뀜.
+  4. **바뀌지 않은 것** - 제어 채널의 **직접 쓰기**(`/pause`·`/resume` 의 `control.json`, `admin_state.json` 슬롯, 모니터 로그, `/translate`)는 그대로 직접 커밋(SPEC §8.14
+     "남는 한계"). 백엔드 자신의 GitHub 접근(`/tick`·`/wake`·`/monitor`·`/write` 잡)과 `push_monitor` 의 커밋 조회도 그대로. 읽기 재시도·`retry-after` 처리는 추가하지 않았다.
+  5. **트레이드오프** - 제어 채널의 읽기가 백엔드 뒤에 줄을 선다(`concurrency=1`) — `/tick`·`/write` 처리 중이면 그 시간만큼 명령 응답이 늦어진다(요청당 타임아웃 60초,
+     `/write` 와 같은 값). 읽기당 홉이 하나 늘어 수백 ms 가 더 든다.
+  6. **검증** - `python -m src.backend.readclient`(가짜 세션: json/text 왕복·404·403/429/500→RuntimeError·`make_store` 분기), Flask test client 로 `/fetch`(정상·미존재·
+     GitHub 오류 500·잘못된 path/as 400) 확인, 기존 self-test(`writeclient`·`gh_store`·`writers`·`handlers`·`telegram_app`·`admin`) 통과. **미확인(배포 후 확인)**: 실제 Cloud Run 두 서비스 간
+     OIDC 호출·지연, `/tick` 실행 중 `/status` 응답 시간.
+  - 배포 주의: 두 서비스가 같은 이미지라 `mewtype-backend`(`/fetch` 추가) 를 **먼저** 배포한 뒤 `mewtype-telegram` 을 배포한다(순서가 반대면 그 사이 제어 채널의 읽기가 404 로 실패). 새 env·Secret 없음.
 - **v3.8.1** (핫픽스) - v3.8.0 배포본 확인 후 트윗 말풍선 UI 수정. 프론트만(`tweets.css`·`tweets.js`·`layout.css`), 백엔드·데이터 변경 없음.
   1. **2열 배치** - 좌 = X 카드, 우 = 번역 말풍선(PC 패널 540px = 카드 300 + 번역, 모바일 토스트 = 카드 250(X 카드 최소 폭) + 번역 최소 110px,
      모자라면 목록이 가로로 밀림). 한 트윗의 두 열은 더 긴 쪽 높이로 같다. 번역 OFF 면 번역 열이 접혀 카드만(PC 패널 330px, 모바일은 카드가 가득 참).
