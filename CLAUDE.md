@@ -121,6 +121,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   창구. 프론트만 변경(`tweets.js`·`tweets.css`·`index.html`), 저장 데이터는 유지. 요약 `docs/VERSION.md`.
 > - **v3.8.1** (핫픽스): 트윗 말풍선 좌 X 카드 / 우 번역 2열 + 번역 ON/OFF 애니메이션 + 꼬리를 아바타 중앙으로 + 말풍선 디스클레이머 제거(하단만).
 >   프론트만 변경. 요약 `docs/VERSION.md`.
+> - ⚠ **[보류 2026-09-21 — 배포·머지 금지] 아래 v3.8.2(DB 관제소)는 보류 중. 사유·재검토 조건: `docs/HOLD_v3.8.2_db_control_tower.md`.**
 > - **v3.8.2** (핫픽스): **DB 관제소** `mewtype-db-tower`(`tower.py`·`tower_app.py`·`towerclient.py`) — 제어 채널·백엔드의 `data` 저장소(GitHub) 읽기·쓰기를
 >   전부 한 서비스의 FIFO 큐로 모은다(`POST /fetch`·`/put`). FIFO + 쓰기 방벽(읽기끼리 병렬 ≤6, 쓰기는 앞선 읽기 종료 후·단독), 쓰기 간 ≥`TOWER_WRITE_GAP_SEC`(기본 0.3초), 403/429(`RateLimitError`) 시 `retry-after` 만큼 큐 전체 정지, 대기 상한 초과 503, 읽기 ETag 캐시(304). 배포 전 검증: `python scripts/sim_burst.py`.
 >   `TowerStore(GitHubStore)` 가 4개 메서드만 교체 — 호출부 무변경, `make_store`(`TOWER_URL` 없으면 직접). 트랜잭션 직렬화는 여전히 백엔드 `/write` 잡. scale-to-zero(상시 ON 아님),

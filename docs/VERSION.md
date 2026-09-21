@@ -2,7 +2,7 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
-- **v3.8.2** (핫픽스) - **DB 관제소(`mewtype-db-tower`)** 신설 — `data` 저장소(GitHub Contents API)에 대한 모든 접근(제어 채널·백엔드 양쪽)을 한 서비스의 FIFO 큐로 모은다. 기능 변화 없음 — 운영 안정성·유지보수 목적.
+- **v3.8.2** (핫픽스) - ⚠ **보류(2026-09-21, 배포·머지 금지 — 사유 `docs/HOLD_v3.8.2_db_control_tower.md`)** **DB 관제소(`mewtype-db-tower`)** 신설 — `data` 저장소(GitHub Contents API)에 대한 모든 접근(제어 채널·백엔드 양쪽)을 한 서비스의 FIFO 큐로 모은다. 기능 변화 없음 — 운영 안정성·유지보수 목적.
   1. **배경** - v3.7 write-queue 는 콘텐츠 커밋 일부(`/write` 잡 15개 kind)만 백엔드 `concurrency=1` 로 모았다. 나머지 모든 읽기(`gh.read_json`/`read_text`)와 직접 쓰기(`control.json`·`admin_state.json`·모니터 로그·`/translate`·`latest.html`),
      그리고 백엔드 `/tick`·`/wake` 의 GitHub 호출은 각자 GitHub 를 직접 두드렸다. GitHub 문서: secondary rate limit(동시 100 · 분당 900점 · 쓰기 5점 · 콘텐츠 생성 80/분, 초과 시 403/429)을 피하려면 요청을 **직렬**로 보내고 큐를 두며 쓰기 사이 ≥1초, `retry-after` 를 지키라고 한다.
      읽기 실패에는 재시도가 없어 한 번의 403/429 가 곧 명령 실패였다. 실제로 기록된 사고는 429 가 아니라 409(2026-09-16)였다 — 관제소의 속도 제한 대응은 **예방** 이다.
