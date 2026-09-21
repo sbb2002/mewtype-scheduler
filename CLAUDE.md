@@ -122,7 +122,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > - **v3.8.1** (핫픽스): 트윗 말풍선 좌 X 카드 / 우 번역 2열 + 번역 ON/OFF 애니메이션 + 꼬리를 아바타 중앙으로 + 말풍선 디스클레이머 제거(하단만).
 >   프론트만 변경. 요약 `docs/VERSION.md`.
 > - **v3.8.2** (핫픽스): **DB 관제소** `mewtype-db-tower`(`tower.py`·`tower_app.py`·`towerclient.py`) — 제어 채널·백엔드의 `data` 저장소(GitHub) 읽기·쓰기를
->   전부 한 서비스의 FIFO 큐로 모은다(`POST /fetch`·`/put`). 쓰기 간 ≥1초, 403/429(`RateLimitError`) 시 `retry-after` 만큼 큐 전체 정지, 대기 상한 초과 503, 읽기 ETag 캐시(304).
+>   전부 한 서비스의 FIFO 큐로 모은다(`POST /fetch`·`/put`). FIFO + 쓰기 방벽(읽기끼리 병렬 ≤6, 쓰기는 앞선 읽기 종료 후·단독), 쓰기 간 ≥`TOWER_WRITE_GAP_SEC`(기본 0.3초), 403/429(`RateLimitError`) 시 `retry-after` 만큼 큐 전체 정지, 대기 상한 초과 503, 읽기 ETag 캐시(304). 배포 전 검증: `python scripts/sim_burst.py`.
 >   `TowerStore(GitHubStore)` 가 4개 메서드만 교체 — 호출부 무변경, `make_store`(`TOWER_URL` 없으면 직접). 트랜잭션 직렬화는 여전히 백엔드 `/write` 잡. scale-to-zero(상시 ON 아님),
 >   `--concurrency=64 --max-instances=1`(백엔드와 다름). 배포 순서: 관제소 → 백엔드 → 제어 채널. 요약 `docs/VERSION.md`, 명세 `docs/SPEC.md` §8.15.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
@@ -318,6 +318,8 @@ python -m src.backend.writers        # (v3.7) /write 잡 kind 레지스트리
 python -m src.backend.writeclient    # (v3.7) MAIN_SERVICE_URL 없을 때 로컬 디스패치
 python -m src.backend.tower          # (v3.8.2) 관제소 코어 — FIFO·간격·429 대기·상한·ETag (가짜 GitHub)
 python -m src.backend.towerclient    # (v3.8.2) /fetch·/put 왕복·409·503·make_store 분기 (가짜 세션)
+python scripts/sim_burst.py --burst 8 [--strict-limit] [--write-gap 0.3]   # (v3.8.2) 업스트림 /ingest 버스트 시뮬레이터 — 관제소 없음↔있음 비교 (모형)
+python scripts/probe_github.py [owner/repo]                         # (v3.8.2) 실제 GitHub 동작 확인(임시 브랜치, `gh auth token` 필요) — 동시 PUT 409·304 한도·읽기 일관성
 python -m src.backend.handlers       # _scheduled_wake_times·_preview_log_events·(v3.7.1) _should_log_run·apply_overrides 연결
 python -m src.backend.preview        # (v3) preview.json 계약 — match_item/sort/promote_state
 python -m src.backend.statemachine   # (v3) FSM 파생 derive() — 0.2 전이표 시나리오

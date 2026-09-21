@@ -774,7 +774,8 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   오류: **409** sha 충돌(`{"conflict":true}`) · **503** 대기 상한 초과/속도 제한 지속(`Retry-After` 헤더, `{"busy":true,"retry_after"}`) · 400 잘못된 입력 · 403 인증 실패 · 502 그 외 GitHub 오류.
   `path`: data 저장소 상대경로만(`tower.safe_data_path` — 빈 값·절대경로·`..`·역슬래시·200자 초과 거부).
 - **인증** — OIDC. 서비스는 `--no-allow-unauthenticated`, 호출자 서비스계정 두 개(백엔드 `RUNTIME_SA`·제어 채널 `INVOKER_SA`)를 `CALLER_SAS`(쉼표 목록)로 허용, audience 는 `SERVICE_URL`.
-- **`tower.Tower(gh)`** — ① `_Fifo`: 도착 순서 티켓 큐(한 번에 하나) ② 쓰기 간 ≥`WRITE_GAP_SEC`(1.0초) ③ `RateLimitError`(403/429) → `retry_after`(없으면 `BACKOFF_BASE_SEC`=60초부터 지수)만큼 **큐 전체 정지**(`_cooldown_until`),
+- **`tower.Tower(gh)`** — ① `_RwGate`: 도착 순서 티켓 큐 + **쓰기 방벽** — 읽기끼리는 함께 통과(최대 `MAX_READERS`=6), 쓰기는 앞선 읽기가 모두 끝나야 진입하고 진행 중엔 뒤에 온 요청이 (읽기라도) 앞지르지 못한다.
+  → 읽기 도중 데이터가 바뀌지 않고 결과가 도착 순서를 반영, 쓰기끼리는 항상 한 번에 하나 ② 쓰기 간 ≥`WRITE_GAP_SEC`(기본 0.3초, 환경변수 `TOWER_WRITE_GAP_SEC`) ③ `RateLimitError`(403/429) → `retry_after`(없으면 `BACKOFF_BASE_SEC`=60초부터 지수)만큼 **큐 전체 정지**(`_cooldown_until`),
   `MAX_RETRIES`(3) 초과 시 503 ④ 요청별 `budget`(기본 25초, 서비스 상한 85초) 안에서 줄서기+대기가 끝나지 않으면 `TowerBusy(retry_after)` ⑤ 읽기는 `GitHubStore(etag_cache={})` 의 조건부 요청. `ConflictError` 는 그대로 전달(재시도 안 함).
   상태는 프로세스 메모리(scale-to-zero 로 꺼지면 사라짐 — 재시작 후 첫 429 로 `retry-after` 재학습).
 - **`gh_store.RateLimitError`** — 403/429 중 `retry-after` · `x-ratelimit-remaining: 0`(→ `x-ratelimit-reset`) · 본문 "rate limit" 신호가 있을 때만(권한 403 은 `RuntimeError`).
@@ -783,10 +784,12 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   적용 지점: `telegram_app._make_gh`·webhook `gh`, `app.py`(`/write`·`/monitor`), `handlers._run`(tick/wake). 관제소 자신은 `GitHubStore` 를 직접 쓴다(재귀 방지).
 - **역할 분담** — 관제소는 **개별 GitHub 호출**의 순서·속도만 다룬다. 읽기→병합→쓰기 한 덩어리(트랜잭션)의 직렬화는 §8.14 백엔드 `/write` 잡(`--concurrency=1`)이 그대로 맡는다.
   잡 밖의 단순 쓰기가 잡의 읽기~쓰기 사이에 끼어들 수 있으나, 같은 파일이면 `prev_sha` 검사로 `ConflictError`(전과 같은 종류의 경합).
+- **조정 값(환경변수, 재배포 없이 `gcloud run services update`)** — `TOWER_WRITE_GAP_SEC`(쓰기 간 최소 간격, 기본 **0.3**) · `TOWER_MAX_READERS`(동시 읽기 상한, 기본 6). GitHub 문서의 "쓰기가 많으면 ≥1초" 는 큰 배치 기준이라, 짧은 버스트에선 지연 비용이 크다 — 로컬 시뮬레이션(`scripts/sim_burst.py`)에서 0.3초일 때 관제소 없는 경로와 거의 같은 속도(+10% 안팎), 1.0초일 때 약 2배였다. 0.3초를 분당 80회 넘게 유지하면 콘텐츠 생성 한도(80/분)를 넘을 수 있으나 그땐 관제소가 403/429 를 받고 `retry-after` 로 대기한다(안전망).
 - **배포 형태** — `--concurrency=64 --max-instances=1 --min-instances=0`, gunicorn `--workers=1 --threads=64 --timeout=90`. 백엔드(`--concurrency=1`)와 다른 이유: 요청이 프로세스 안에서 줄을 서야 대기 상한(503)을 통제할 수 있고,
   FIFO 가 서비스 전체에서 성립하려면 인스턴스가 하나여야 한다. scale-to-zero(상시 ON 아님) — 꺼진 뒤 첫 요청은 cold start 로 수 초 늦을 수 있다.
 - **남는 직접 GitHub 호출(data 저장소 아님)** — 제어 채널 `/monitor`·`/monitor-live` 의 코드 저장소 커밋 수 조회(`push_monitor.fetch_commits` → `api.github.com/.../commits`).
 - **한계** — 관제소 장애 시 제어 채널 읽기(`/status`·`/list`)와 `/tick`·`/wake` 의 GitHub 접근이 함께 멈춘다. 모든 접근에 홉이 하나 붙는다.
+- **실측 근거(2026-09-21, `scripts/probe_github.py`)** — 같은 브랜치에 동시 PUT 하면 하나만 성공하고 나머지는 409(3→1성공, 5→1성공, 8→1성공), 조건부 GET(304)은 한도 미집계, 0.3초 간격 순차 PUT 10회 전부 성공, 쓰기 직후 읽기·쓰기 도중 읽기에서 내용↔sha 불일치 0건, 지연 GET≈230ms·PUT≈800ms. cold start(같은 이미지 서비스): 평균 ≈0.5초·p95 ≈1초.
 
 ---
 

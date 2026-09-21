@@ -9,7 +9,7 @@
   2. **관제소 서비스** (`tower_app.py`, 신규) - `POST /fetch {path, as:json|text, budget?}` → `{found, data|text, sha}`, `POST /put {path, as, data|text, prev_sha?, message, budget?}` → `{changed, sha}`, `GET /` 헬스(+대기열 `depth`·`cooldown_sec`).
      오류: sha 충돌 **409** · 대기 상한 초과/속도 제한 지속 **503** + `Retry-After`(`{busy, retry_after}`) · 잘못된 입력 400 · 인증 실패 403 · 그 외 GitHub 오류 502. `path` 는 data 저장소 상대경로만(빈 값·절대경로·`..`·역슬래시 → 400).
      인증은 OIDC(`--no-allow-unauthenticated`), 호출자 두 서비스계정(백엔드 `RUNTIME_SA`·제어 채널 `INVOKER_SA`)을 `CALLER_SAS` 로 허용(`oidc.verify_request` 가 쉼표 목록 지원).
-  3. **핵심 로직** (`tower.py`, 신규) - ① **FIFO** 도착 순서대로 한 번에 하나(`threading.Lock` 은 순서 미보장이라 티켓 큐 `_Fifo`) ② **쓰기 간격** ≥`WRITE_GAP_SEC`(1초) ③ **속도 제한 대기** 403/429 → `retry-after` 만큼 **큐 전체 정지**(없으면 1·2·4분 지수), `MAX_RETRIES`(3) 초과 시 503
+  3. **핵심 로직** (`tower.py`, 신규) - ① **FIFO + 쓰기 방벽** 도착 순서를 지키되 읽기끼리는 함께(최대 6) 통과하고 쓰기는 앞선 읽기가 끝나야 진입·진행 중엔 아무도 앞지르지 못함(`threading.Lock` 은 순서 미보장이라 티켓 큐 `_RwGate`) — 읽기 도중 데이터가 바뀌지 않고 결과가 도착 순서를 반영 ② **쓰기 간격** ≥`WRITE_GAP_SEC`(기본 **0.3초**, `TOWER_WRITE_GAP_SEC` 로 조정. GitHub 문서 권고는 쓰기가 많을 때 ≥1초 — 버스트 지연 때문에 낮춤, 아래 시뮬레이션 참고) ③ **속도 제한 대기** 403/429 → `retry-after` 만큼 **큐 전체 정지**(없으면 1·2·4분 지수), `MAX_RETRIES`(3) 초과 시 503
      ④ **대기 상한** 요청이 넘긴 `budget`(호출자 타임아웃−8초, 기본 25초, 최대 85초) 안에서 줄서기+대기가 끝나지 않으면 `TowerBusy(retry_after)` → 503 ⑤ **읽기 ETag 캐시** 조건부 요청(304 는 primary 한도 미집계). 상태(큐·쿨다운·ETag)는 프로세스 메모리 — 꺼지면 사라지지만 재시작 후 첫 429 로 `retry-after` 를 다시 배운다(정확성 영향 없음).
   4. **`gh_store.py` 확장** - `RateLimitError(status, retry_after)`(403/429 중 `retry-after`·`x-ratelimit-remaining: 0`·본문 "rate limit" 신호가 있을 때만 — 권한 403 은 그대로 `RuntimeError`), 읽기 공통 `_get_contents`, 선택적 `etag_cache`(If-None-Match → 304).
   5. **클라이언트** (`towerclient.py`, 신규) - `TowerStore(GitHubStore)` 가 `read_json`/`read_text`/`write_json`/`write_text` 4개만 관제소 호출로 교체(반환 계약 `(data, sha)`·404→`(None, None)`·`(changed, sha)`·`ConflictError` 동일, 호출부 수십 곳 무변경). 503 → `TowerBusyError(RuntimeError)`(`retry_after`).
@@ -21,7 +21,22 @@
   8. **트레이드오프** - 서비스가 하나 늘고(3개), 모든 GitHub 접근에 홉이 하나 붙는다(수십~수백 ms + cold start). 관제소 장애 시 제어 채널의 읽기 명령(`/status`·`/list`)과 `/tick`·`/wake` 의 GitHub 접근이 함께 멈춘다 — 관제소를 단순·저빈도 배포로 유지해야 하는 이유. 대기 상한(기본 25초)을 넘기는 요청은 503 이라 Telegram webhook 등 호출자의 타임아웃 안에서 실패가 정리된다.
   9. **검증** - self-test: `python -m src.backend.tower`(FIFO 순서·GitHub 동시 호출 0·쓰기 간격·429 대기·쿨다운 중 큐 정지·상한 초과 503·재시도 초과·ETag 304·409 전달), `towerclient`(읽기/쓰기 왕복·404·409·503·오분류 방지·`make_store`), `gh_store`(ETag·`RateLimitError` 분류·권한 403 비오분류), `oidc`. 종단(임시 스크립트, 저장소 미포함):
      가짜 GitHub ↔ `tower_app` ↔ `TowerStore` — 실제 `_handle_pause`·`writers.dispatch("merge_rows")` 가 전부 관제소 경유, **24 스레드 폭주에서 오류 0·GitHub 동시 호출 max=1·쓰기 최소 간격 유지**, 429(retry-after) 후 정상 응답, 60초 대기>상한 → 503 → `TowerBusyError`, 낡은 sha → 409 → `ConflictError`, 잘못된 입력 400.
-     **미확인(배포 후 확인)**: 실제 Cloud Run 3개 서비스 간 OIDC 호출·`CALLER_SAS` 허용, cold start 지연이 명령 응답(특히 Telegram webhook 재전송)에 미치는 영향, GitHub 실제 헤더(`retry-after`·`x-ratelimit-*`) 동작, `--concurrency=64` + gunicorn 스레드 64 에서의 메모리·동시 대기.
+     **① 실제 GitHub 확인**(`scripts/probe_github.py`, 임시 브랜치·운영 `data` 미접촉, 2026-09-21): **같은 브랜치에 동시 PUT 하면 하나만 성공하고 나머지는 409** — 3개→성공 1·실패 2, 5개→1·4(2회 모두), 8개→1·7
+     (서로 다른 파일이어도 `"is at <sha> but expected <sha>"`, 실패 응답도 1.4~1.9초 걸림). 즉 동시 쓰기는 사실상 실패한다 — 관제소 없는 현재 경로가 버스트에서 안전한 것은 **백엔드 `/write`(concurrency=1)가 쓰기를 직렬화하기 때문**이며,
+     큐를 우회하는 제어 채널 직접 쓰기(`/pause`·모니터 로그 등)가 백엔드 `/tick` 커밋과 겹치면 409 가 난다(관제소가 막는 것). 그 외: 0.3초 간격 순차 PUT 10회 전부 201 · 쓰기 직후 즉시 읽기 12회 중 옛 값 0회 · 쓰기 6회 도중 읽기에서 서로 다른 버전 7종 관측·**내용↔sha 불일치(찢어진 읽기) 0건** ·
+     `x-ratelimit-*`·`etag` 헤더 확인 · **조건부 GET(304)은 한도에 집계되지 않음**(304 4번 동안 `x-ratelimit-used` 불변, 일반 GET 은 +1) · 지연 GET 중앙 ≈230ms·PUT ≈800ms(첫 PUT 1.0초).
+     속도 제한(403/429)과 `retry-after` 헤더 자체는 운영 토큰 한도를 건드릴 수 있어 일부러 유발하지 않았다 — 공식 문서(`retry-after` 준수, 없으면 1분+지수)를 따르며 실제 헤더는 첫 발생 시 확인 필요.
+     **② 버스트 시뮬레이션**(`scripts/sim_burst.py` — 실제 HTTP 서버 4개[가짜 GitHub·관제소·백엔드 concurrency=1 흉내·제어 채널]에서 업스트림 `/ingest` 를 동시 N 개, 관제소 없음↔있음 비교. 가짜 GitHub 는 모형이고 지연은 ①의 실측값 GET 0.23·PUT 0.80초):
+     · 버스트 5·8·12 모두 트윗 유실 0. **관제소 유무에 지연 차이가 거의 없다**(최대 지연 버스트 5: 17.3→17.6초, 8: 27.2→27.9초, 12: 40.3→41.5초 — 관제소 오버헤드 2~3%). 쓰기 간격은 1.0초면 버스트 8 최대 33.4초, 0.3초면 27.7초라 0.3초를 기본값으로 함.
+     · **속도 제한이 걸린다고 가정**(`--strict-limit`, 동시 6·3초당 쓰기 5)하면 관제소 없는 경로는 `/ingest` 는 200 인데 트윗 **0/8 저장(조용한 유실)**, 관제소는 8/8 (임계값은 가정치).
+     · **업스트림 타임아웃**: 관제소와 무관하게 현재 구조에서도 `/ingest` 는 트윗당 최소 2번의 직렬 PUT(≈0.8초씩)이라 버스트 5 부터 10초를 넘는 요청이 생긴다(5→3건, 8→6건, 12→10건). 업스트림 Automate 는 타임아웃 시 **재시도하지 않으므로**(운영자 확인)
+     10초 초과 요청은 폰 쪽에서 실패로 끝난다 — 서버가 그 뒤에도 끝까지 처리하는지(Cloud Run 이 클라이언트 종료 후 CPU 를 조절할 수 있음)는 미확인이므로 **Automate HTTP 타임아웃을 60초 이상으로 올릴 것을 권장**(버스트 12 최대 ≈41초; 서비스 요청 타임아웃은 300초).
+     **③ Cloud Run 확인**(조회 전용): 구성 — 백엔드 SA `mewtype-backend`·concurrency 1·max 1 / 제어 채널 SA `mewtype-invoker`·concurrency 80·max 20 (관제소 `CALLER_SAS` 가정과 일치, 두 SA 모두 백엔드 invoker 보유). **cold start**(같은 이미지, Cloud Monitoring `container/startup_latencies` 7일): 백엔드 61회 평균 532ms·p95≈0.97초·p99≈1.2초,
+     제어 채널 162회 평균 465ms·p95≈0.8초 — "수 초" 가 아니라 약 0.5~1초. **OIDC**: 실제 Google 서명 토큰으로 `oidc.verify_request` 의 쉼표 목록 허용(단일·목록·공백 섞임 통과, 목록에 없음·잘못된 audience·서명 변조 거부) 확인. 서비스 간 토큰 발급(`fetch_id_token`)은 현재 운영 중인 제어 채널→백엔드 `/write` 와 같은 메커니즘.
+     **④ 테스트 견고성**: `python -m src.backend.tower` 가 CPU 경합 상태(바쁜 루프 16개+8개 병렬)에서 간헐 실패 — 원인은 대기열이 아니라 테스트 결함 2곳(도착 순서를 `sleep` 으로만 맞춰 CPU 가 바쁘면 뒤바뀜 / 동시 읽기 계측이 지연 구간의 일부만 셈). 도착 동기화(`_RwGate.arrivals`)·진입 추적(`trace`)·겹침 계수로 바꾸고
+     시간 단언 대신 **불변식**(쓰기 단독·읽기 상한·진입 순서=도착 순서·전부 완료)을 무작위 부하 200건으로 검증하는 테스트를 추가 → 같은 부하에서 24/24 통과.
+     **미확인(배포 후 확인)**: 관제소 서비스 자체의 Cloud Run 기동·`CALLER_SAS`+Cloud Run IAM 조합, 10초 초과 요청 이후 서버 처리 지속 여부, 실제 `retry-after` 헤더 형식,
+     `--concurrency=64` + gunicorn 스레드 64 에서의 메모리·동시 대기.
   - 배포 순서: **`deploy_tower.sh` → `deploy.sh`(백엔드) → `deploy_telegram.sh`(제어 채널)**. 관제소 배포 전에는 두 서비스가 `TOWER_URL` 없이 종전처럼 직접 접근하므로 순서를 지키면 무중단. 새 Secret 없음(`GITHUB_TOKEN` 재사용), 새 서비스계정 없음.
 - **v3.8.1** (핫픽스) - v3.8.0 배포본 확인 후 트윗 말풍선 UI 수정. 프론트만(`tweets.css`·`tweets.js`·`layout.css`), 백엔드·데이터 변경 없음.
   1. **2열 배치** - 좌 = X 카드, 우 = 번역 말풍선(PC 패널 540px = 카드 300 + 번역, 모바일 토스트 = 카드 250(X 카드 최소 폭) + 번역 최소 110px,

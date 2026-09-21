@@ -10,7 +10,7 @@
 > v3.1: `tweets.json` `tweets[ck]` 가 **배열(스레드, 최신이 뒤)** — `xtweet.merge_thread` 가 append·id중복 dedup·정렬·상한 초과분 아카이브(`rolled`). 예고 여부와 무관하게 본인 글은 스레드에 실린다. (상한은 v3.5.3 부터 `MAX_THREAD`=50.)
 > v3.7.1: 아래 흐름의 **판단·외부 호출(외부 LLM·`videos.list`·vxtwitter·비전 OCR)은 전부 이 서비스(제어 채널)에서**,
 > `data` 저장소 **콘텐츠 커밋만** 백엔드 `POST /write`(한 번에 1건) 에서 실행된다 — 아래 "어디서 실행되나" 참고.
-> v3.8.2: 이 서비스(제어 채널)와 백엔드 모두 `data` 저장소를 GitHub 로 직접 읽지도 쓰지도 않는다 — 전부 **DB 관제소**(`mewtype-db-tower`, FIFO·속도 제한 대기)를 거친다(`towerclient.TowerStore`). 아래 `/write` 잡 자체(트랜잭션 직렬화)는 그대로.
+> v3.8.2: 이 서비스(제어 채널)와 백엔드 모두 `data` 저장소를 GitHub 로 직접 읽지도 쓰지도 않는다 — 전부 **DB 관제소**(`mewtype-db-tower`, FIFO + 쓰기 방벽·속도 제한 대기)를 거친다(`towerclient.TowerStore`). 아래 `/write` 잡 자체(트랜잭션 직렬화)는 그대로.
 
 ## 들어오는 것 — `request.form` (또는 JSON)
 

@@ -11,6 +11,7 @@ source deploy/env.sh
 #     통제할 수 있으므로 여러 요청이 동시에 들어와 있어야 한다(순서·직렬화는 tower.Tower 가 보장).
 #   · max-instances=1: FIFO 가 서비스 전체에서 성립하려면 인스턴스가 하나여야 한다.
 #   · min-instances=0: 상시 ON 아님(scale-to-zero). 꺼지면 큐·쿨다운·ETag 캐시가 사라지지만 정확성엔 영향 없음.
+# 튜닝(선택): 재배포 없이 gcloud run services update mewtype-db-tower --update-env-vars TOWER_WRITE_GAP_SEC=0.3,TOWER_MAX_READERS=6
 # --threads=64: 줄서기 중인 요청도 스레드를 하나씩 쥔다 → concurrency 와 같거나 크게.
 # CALLER_SAS: 백엔드(RUNTIME_SA)·제어 채널(INVOKER_SA) 두 서비스계정을 모두 허용 (oidc.verify_request 가 쉼표 목록 지원).
 #   값에 쉼표가 있어 gcloud 대체 구분자(^@^)를 쓴다.

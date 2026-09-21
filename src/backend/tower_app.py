@@ -9,6 +9,8 @@
 오류: sha 충돌 409 · 대기 상한 초과/속도 제한 지속 503(+`Retry-After`, {"busy",true,"retry_after"}) ·
 잘못된 입력 400 · 인증 실패 403 · 그 외 GitHub 오류 502.
 
+조정(환경변수): `TOWER_WRITE_GAP_SEC`(쓰기 간 최소 간격, 기본 0.3) · `TOWER_MAX_READERS`(동시 읽기 상한, 기본 6).
+
 배포 (deploy/deploy_tower.sh): `--concurrency=64 --max-instances=1`(scale-to-zero, min 0), gunicorn
 `--workers=1 --threads=64`. 백엔드의 `--concurrency=1` 과 다르다 — 관제소는 요청이 프로세스 안에서
 FIFO 로 줄을 서야 대기 상한(503)을 통제할 수 있으므로 여러 요청이 동시에 들어와 있어야 한다. 순서·직렬화는
@@ -24,7 +26,7 @@ from flask import Flask, jsonify, request
 
 from . import oidc
 from .gh_store import ConflictError, GitHubStore
-from .tower import DEFAULT_BUDGET_SEC, Tower, TowerBusy, safe_data_path
+from .tower import DEFAULT_BUDGET_SEC, MAX_READERS, WRITE_GAP_SEC, Tower, TowerBusy, safe_data_path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("backend.tower_app")
@@ -44,7 +46,11 @@ def _get_tower() -> Tower:
             repo = os.environ.get("GITHUB_REPO", "").strip()
             branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
             gh = GitHubStore(token, repo, branch, etag_cache={})
-            _tower = Tower(gh)
+            _tower = Tower(
+                gh,
+                write_gap=float(os.environ.get("TOWER_WRITE_GAP_SEC", WRITE_GAP_SEC)),
+                max_readers=int(os.environ.get("TOWER_MAX_READERS", MAX_READERS)),
+            )
         return _tower
 
 
