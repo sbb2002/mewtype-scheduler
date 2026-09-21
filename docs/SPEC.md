@@ -751,7 +751,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   |---|---|---|
   | 소식 | `_prepare_notice` — `xnotice.parse`, 비전 OCR, 제목추출 LLM, `notices.json` 읽어 사본으로 `merge_notice` → `added` 면 중복판정 LLM → `{parsed, tl, dup_id}` | `apply_notice` → `_commit_notice` — merge, `dup_id` 있으면 `merge_into`(→updated), 번역 반영 또는 `needs_tl`, undo |
   | 개인 트윗 | `_prepare_personal_tweet` — vxtwitter 미디어, `xtweet.parse`, 스냅샷으로 `merge_thread` → 변화 있을 때만 본문·인용 번역 → `{parsed, text_src, text_ko, quote_src, quote_ko}` | `personal_tweet` → `_commit_personal_tweet` — merge, `row.text == text_src` 일 때만 `text_ko` 반영(아니면 `needs_tl`), sweep, 모니터 로그 → `{mode, n_thread, needs_tl}` |
-  | 개인 예고(URL) | `_maybe_url_confirmed_schedule` — `videos.list`, 외부 채널이면 참여판정 LLM, `build_item_from_video` | `url_confirmed_commit` → `_url_confirmed_commit` — `merge_video_confirmed`, undo, **`_enqueue_wake_now`**(제어 채널 서비스엔 Cloud Tasks env 가 없어 반드시 백엔드) |
+  | 개인 예고(URL) | `_maybe_url_confirmed_schedule` — `videos.list`, 본인/타멤버 채널이면 `find_guest_members`(v3.8.3, 제목·원문의 다른 멤버 정식 표기 → `collab_with`), 외부 채널이면 참여판정 LLM, `build_item_from_video` | `url_confirmed_commit` → `_url_confirmed_commit` — `merge_video_confirmed`(v3.8.3: `collab_with` 추가만), undo, **`_enqueue_wake_now`**(제어 채널 서비스엔 Cloud Tasks env 가 없어 반드시 백엔드) |
   | 개인 예고(텍스트) | `parse_schedule` + `announces_own_broadcast` LLM | `merge_rows`(`merge_fn="personal_schedule"`) |
 
   `_maybe_personal_tweet` 는 제어 채널 오케스트레이터(준비 → `personal_tweet` 잡 → DM → `_maybe_personal_schedule`).

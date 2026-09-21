@@ -121,6 +121,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   창구. 프론트만 변경(`tweets.js`·`tweets.css`·`index.html`), 저장 데이터는 유지. 요약 `docs/VERSION.md`.
 > - **v3.8.1** (핫픽스): 트윗 말풍선 좌 X 카드 / 우 번역 2열 + 번역 ON/OFF 애니메이션 + 꼬리를 아바타 중앙으로 + 말풍선 디스클레이머 제거(하단만).
 >   프론트만 변경. 요약 `docs/VERSION.md`.
+> - **v3.8.3** (핫픽스): 본인 채널 합동방송 감지 — `xtweet.find_guest_members` 가 영상 제목·트윗 원문의 다른 멤버 정식 표기(`x_names`/`name_ko`)를
+>   `collab_with` 에 추가(`_maybe_url_confirmed_schedule`), `merge_video_confirmed` 는 `collab_with` 추가만. 별칭 단독은 미감지. 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
