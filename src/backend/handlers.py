@@ -18,6 +18,7 @@ from . import preview as preview_mod
 from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
+from .towerclient import make_store
 from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_events
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
@@ -320,7 +321,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     channels_cfg = load_channels()
     id_by_key = {k: v["channel_id"] for k, v in channels_cfg["channels"].items()}
 
-    gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+    gh = make_store(cfg.github_token, cfg.github_repo, cfg.data_branch)  # v3.8.2: 관제소 경유(TOWER_URL 없으면 직접)
 
     # ── 일시정지 가드 ──
     control, _ = gh.read_json("control.json")

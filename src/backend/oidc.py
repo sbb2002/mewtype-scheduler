@@ -29,6 +29,7 @@ def verify_request(
         headers: dict-like (Flask request.headers).
         expected_audience: OIDC 토큰의 audience 클레임 (Cloud Run 서비스 URL).
         expected_sa: 토큰 발급자 (서비스계정 email). 미지정 시 검증 스킵.
+            (v3.8.2) 쉼표로 여러 개 허용 — DB 관제소는 백엔드·제어 채널(서비스계정이 서로 다름)을 모두 받는다.
 
     Raises:
         PermissionError: 검증 실패 시. 이유는 메시지에 포함.
@@ -72,7 +73,8 @@ def verify_request(
     # expected_sa 검증 (옵션)
     if expected_sa:
         email = payload.get("email")
-        if email != expected_sa:
+        allowed = [e.strip() for e in expected_sa.split(",") if e.strip()]
+        if email not in allowed:
             raise PermissionError(
                 f"token email mismatch: expected {expected_sa}, got {email}"
             )

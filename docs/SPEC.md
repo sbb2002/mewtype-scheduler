@@ -47,6 +47,9 @@ src/
     app.py             # /tick(Scheduler) /wake(Cloud Tasks) /write(제어 채널) /monitor(Scheduler) · `/` 헬스체크
     handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 + LLM 번역 sweep + 모니터 로그(실행당 최대 1커밋)
     writers.py         # (v3.7) write-queue — /write 잡 kind → telegram_app 커밋 함수 매핑 (§8.14)
+    tower.py           # (v3.8.2) DB 관제소 코어 — FIFO 큐·쓰기 간격·속도 제한 대기·대기 상한·읽기 ETag 캐시 (§8.15)
+    tower_app.py       # (v3.8.2) DB 관제소 Flask 앱(mewtype-db-tower) — /fetch /put
+    towerclient.py     # (v3.8.2) 제어 채널·백엔드 → 관제소 클라이언트 TowerStore(GitHubStore) + make_store
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출 (OIDC). MAIN_SERVICE_URL 없으면 로컬 디스패치
     monitor_log.py     # (v3.5) monitoring/events-YYYY-MM-DD.jsonl append (log_event / log_events 배치)
     monitor_report.py  # (v3.5) /monitor Ops Timeline HTML 생성
@@ -759,6 +762,31 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   등록될 수 있다(LLM 실패 시와 같은 안전한 기본값).
 - **남는 한계**: 모니터 로그(notice/relay/ops)·`admin_state.json` 마법사 단계·`control.json`·`/translate`·
   `/monitor` 의 `latest.html` 은 여전히 제어 채널이 직접 커밋 → 큐 잡과 409 가능(잡은 최신 재조회 후 1회 재시도).
+
+### 8.15 DB 관제소 — `tower.py` / `tower_app.py` / `towerclient.py` (v3.8.2)
+
+`data` 저장소(GitHub Contents API)에 대한 **모든** 접근(제어 채널·백엔드의 읽기·쓰기)이 지나가는 문. 서비스 `mewtype-db-tower`
+(같은 이미지, 엔트리포인트 `src.backend.tower_app:app`). 목적: GitHub secondary rate limit(동시 100 · 분당 900점 · 쓰기 5점 · 콘텐츠 생성 80/분, 초과 시 403/429)과 브랜치 HEAD 충돌(409)의 호출 주체를 한 곳으로 모아
+직렬화·속도 조절·재시도를 중앙에서 한다. GitHub 문서 근거: 요청을 직렬로 보내고 큐를 둘 것 / 쓰기 사이 ≥1초 / `retry-after` 준수 / 조건부 요청(304)은 primary 한도 미집계.
+
+- **라우트** — `POST /fetch {"path","as":"json"|"text","budget"?}` → `{"found","data"|"text","sha"}` (없으면 `found:false`, 200).
+  `POST /put {"path","as":"json"|"text","data"|"text","prev_sha"?,"message","budget"?}` → `{"changed","sha"}`. `GET /` → `{"ok","depth","cooldown_sec"}`.
+  오류: **409** sha 충돌(`{"conflict":true}`) · **503** 대기 상한 초과/속도 제한 지속(`Retry-After` 헤더, `{"busy":true,"retry_after"}`) · 400 잘못된 입력 · 403 인증 실패 · 502 그 외 GitHub 오류.
+  `path`: data 저장소 상대경로만(`tower.safe_data_path` — 빈 값·절대경로·`..`·역슬래시·200자 초과 거부).
+- **인증** — OIDC. 서비스는 `--no-allow-unauthenticated`, 호출자 서비스계정 두 개(백엔드 `RUNTIME_SA`·제어 채널 `INVOKER_SA`)를 `CALLER_SAS`(쉼표 목록)로 허용, audience 는 `SERVICE_URL`.
+- **`tower.Tower(gh)`** — ① `_Fifo`: 도착 순서 티켓 큐(한 번에 하나) ② 쓰기 간 ≥`WRITE_GAP_SEC`(1.0초) ③ `RateLimitError`(403/429) → `retry_after`(없으면 `BACKOFF_BASE_SEC`=60초부터 지수)만큼 **큐 전체 정지**(`_cooldown_until`),
+  `MAX_RETRIES`(3) 초과 시 503 ④ 요청별 `budget`(기본 25초, 서비스 상한 85초) 안에서 줄서기+대기가 끝나지 않으면 `TowerBusy(retry_after)` ⑤ 읽기는 `GitHubStore(etag_cache={})` 의 조건부 요청. `ConflictError` 는 그대로 전달(재시도 안 함).
+  상태는 프로세스 메모리(scale-to-zero 로 꺼지면 사라짐 — 재시작 후 첫 429 로 `retry-after` 재학습).
+- **`gh_store.RateLimitError`** — 403/429 중 `retry-after` · `x-ratelimit-remaining: 0`(→ `x-ratelimit-reset`) · 본문 "rate limit" 신호가 있을 때만(권한 403 은 `RuntimeError`).
+- **`towerclient.TowerStore(GitHubStore)`** — `read_json`/`read_text` → `/fetch`, `write_json`/`write_text` → `/put`. 반환 계약 `(data, sha)`·404→`(None, None)`·`(changed, sha)`·409→`ConflictError`·503→`TowerBusyError`(RuntimeError 서브클래스, `retry_after`)·그 외 `RuntimeError`.
+  요청마다 `budget = 클라이언트 타임아웃(60초) − 8초`. `make_store(token, repo, branch)`: `TOWER_URL` 이 있으면 `TowerStore`, 없으면 일반 `GitHubStore`(로컬·self-test·관제소 미배포).
+  적용 지점: `telegram_app._make_gh`·webhook `gh`, `app.py`(`/write`·`/monitor`), `handlers._run`(tick/wake). 관제소 자신은 `GitHubStore` 를 직접 쓴다(재귀 방지).
+- **역할 분담** — 관제소는 **개별 GitHub 호출**의 순서·속도만 다룬다. 읽기→병합→쓰기 한 덩어리(트랜잭션)의 직렬화는 §8.14 백엔드 `/write` 잡(`--concurrency=1`)이 그대로 맡는다.
+  잡 밖의 단순 쓰기가 잡의 읽기~쓰기 사이에 끼어들 수 있으나, 같은 파일이면 `prev_sha` 검사로 `ConflictError`(전과 같은 종류의 경합).
+- **배포 형태** — `--concurrency=64 --max-instances=1 --min-instances=0`, gunicorn `--workers=1 --threads=64 --timeout=90`. 백엔드(`--concurrency=1`)와 다른 이유: 요청이 프로세스 안에서 줄을 서야 대기 상한(503)을 통제할 수 있고,
+  FIFO 가 서비스 전체에서 성립하려면 인스턴스가 하나여야 한다. scale-to-zero(상시 ON 아님) — 꺼진 뒤 첫 요청은 cold start 로 수 초 늦을 수 있다.
+- **남는 직접 GitHub 호출(data 저장소 아님)** — 제어 채널 `/monitor`·`/monitor-live` 의 코드 저장소 커밋 수 조회(`push_monitor.fetch_commits` → `api.github.com/.../commits`).
+- **한계** — 관제소 장애 시 제어 채널 읽기(`/status`·`/list`)와 `/tick`·`/wake` 의 GitHub 접근이 함께 멈춘다. 모든 접근에 홉이 하나 붙는다.
 
 ---
 

@@ -95,6 +95,7 @@ except Exception:                           # pragma: no cover
 from . import preview as preview_mod
 from . import monitor_report
 from . import statemachine
+from . import towerclient
 from . import writeclient
 from . import llm
 from .control import (
@@ -700,7 +701,7 @@ def _make_gh() -> "GitHubStore | None":
     branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
     if not token or not repo:
         return None
-    return GitHubStore(token, repo, branch)
+    return towerclient.make_store(token, repo, branch)  # v3.8.2: 관제소 경유
 
 
 # ── ingest 대기열 (ECHO/DRY-RUN 중 받은 스케줄 트윗을 실배포 전환 시 반영) ──
@@ -3562,7 +3563,7 @@ if _FLASK_AVAILABLE:
                 _send_telegram("⚠️ GitHub 설정 누락")
                 return _done(False)
 
-            gh = GitHubStore(gh_token, gh_repo, gh_branch)
+            gh = towerclient.make_store(gh_token, gh_repo, gh_branch)  # v3.8.2: 관제소 경유
             channels_cfg = _load_channels_config()
 
             # v2.5: 대기 중인 /del 확인(y/N) 이 있으면 명령 디스패치보다 먼저 처리.

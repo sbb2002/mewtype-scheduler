@@ -17,6 +17,13 @@ _HC_SECRET=""
 if gcloud secrets describe HEALTHCHECKS_IO_READONLEY_TOKEN &>/dev/null; then
   _HC_SECRET=",HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest"
 fi
+# (v3.8.2) DB 관제소 URL — 배포돼 있으면 TOWER_URL 을 주입해 data 저장소 접근이 관제소를 거치게 한다.
+# 관제소가 없으면(아직 미배포) 비워 두어 종전처럼 직접 접근한다. 관제소를 **먼저** 배포할 것(deploy_tower.sh).
+TOWER_URL=$(gcloud run services describe mewtype-db-tower --region "$GCP_LOCATION" --format='value(status.url)' 2>/dev/null || true)
+_TOWER_ENV=""
+if [ -n "$TOWER_URL" ]; then
+  _TOWER_ENV=",TOWER_URL=$TOWER_URL"
+fi
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$GCP_LOCATION" \
@@ -25,7 +32,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --concurrency=1 \
   --max-instances=1 \
   --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest${_HC_SECRET}${_GROQ_SECRET}" \
-  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid"
+  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid${_TOWER_ENV}"
 # SERVICE_URL 은 배포 후 실제 URL 을 알 수 있으므로 일단 placeholder 로 부팅시키고 아래에서 교체한다.
 
 echo "=== 서비스 URL 조회 ==="

@@ -22,6 +22,48 @@ class ConflictError(RuntimeError):
     """
 
 
+class RateLimitError(RuntimeError):
+    """GitHub 가 속도 제한(primary/secondary)을 알렸다 — 403 또는 429.
+
+    `retry_after` 는 `retry-after` 헤더(초). 없으면 `x-ratelimit-reset`(에포크) 로 계산하고, 그것도
+    없으면 None(호출자가 백오프 — GitHub 문서: 1분 이상 기다린 뒤 지수적으로 늘림).
+    DB 관제소(`tower.py`)가 이 예외를 받아 큐를 멈추고 기다린다.
+    """
+
+    def __init__(self, message: str, *, status: int = 429, retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def _rate_limit_from(resp) -> Optional["RateLimitError"]:
+    """비정상 응답이 속도 제한이면 RateLimitError, 아니면 None (권한 403 등은 None)."""
+    status = getattr(resp, "status_code", 0)
+    if status not in (403, 429):
+        return None
+    headers = getattr(resp, "headers", None) or {}
+    get = (lambda k: headers.get(k)) if hasattr(headers, "get") else (lambda k: None)
+    retry = get("retry-after") or get("Retry-After")
+    remaining = get("x-ratelimit-remaining") or get("X-RateLimit-Remaining")
+    reset = get("x-ratelimit-reset") or get("X-RateLimit-Reset")
+    body = (getattr(resp, "text", "") or "").lower()
+    limited = status == 429 or retry is not None or str(remaining) == "0" or "rate limit" in body
+    if not limited:
+        return None
+    wait: Optional[float] = None
+    try:
+        if retry is not None:
+            wait = float(retry)
+        elif str(remaining) == "0" and reset is not None:
+            wait = max(0.0, float(reset) - time.time())
+    except (TypeError, ValueError):
+        wait = None
+    return RateLimitError(
+        f"GitHub rate limit: {status}. Response: {(getattr(resp, 'text', '') or '')[:200]}",
+        status=status, retry_after=wait,
+    )
+
+
 def _serialize(data: dict) -> str:
     """
     JSON 직렬화. v1 store.save_json_if_changed 와 100% 동일.
@@ -48,6 +90,7 @@ class GitHubStore:
         *,
         session: Optional[requests.Session] = None,
         timeout: float = 15.0,
+        etag_cache: Optional[dict] = None,
     ):
         """
         GitHub 저장소 클라이언트 초기화.
@@ -58,6 +101,8 @@ class GitHubStore:
             branch: 작업할 브랜치 (기본 "data").
             session: requests.Session 객체. 미지정 시 각 요청마다 새로 생성.
             timeout: 요청 타임아웃 (초). 기본 15.0.
+            etag_cache: dict 를 주면 읽기에 조건부 요청(If-None-Match)을 쓰고 304 면 캐시를 돌려준다
+                        (304 는 primary rate limit 에 집계되지 않는다 — GitHub 문서). None 이면 사용 안 함.
 
         Raises:
             ValueError: token 이 비어있을 때.
@@ -70,6 +115,7 @@ class GitHubStore:
         self.branch = branch
         self.session = session
         self.timeout = timeout
+        self.etag_cache = etag_cache
 
     def _headers(self) -> dict:
         """API 요청에 필요한 헤더 반환."""
@@ -79,6 +125,52 @@ class GitHubStore:
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "mewtype-scheduler-backend",
         }
+
+    def _get_contents(self, path: str):
+        """Contents API GET 1회. 반환: 404 면 None, 아니면 (content_b64, sha).
+
+        etag_cache 가 있으면 If-None-Match 를 보내고 304 는 캐시 사용. 속도 제한(403/429) 은
+        RateLimitError, 그 외 비정상 상태는 RuntimeError.
+        """
+        url = f"{self.API}/repos/{self.repo}/contents/{path}"
+        params = {"ref": self.branch}
+        headers = self._headers()
+        cached = self.etag_cache.get((self.branch, path)) if self.etag_cache is not None else None
+        if cached:
+            headers["If-None-Match"] = cached[0]
+        try:
+            sess = self.session or requests.Session()
+            resp = sess.get(url, params=params, headers=headers, timeout=self.timeout)
+        except requests.RequestException as e:
+            raise RuntimeError(f"GitHub API network error: {e}")
+
+        if resp.status_code == 304 and cached:
+            return cached[1], cached[2]
+        if resp.status_code == 404:
+            if self.etag_cache is not None:
+                self.etag_cache.pop((self.branch, path), None)
+            return None
+        if resp.status_code != 200:
+            rl = _rate_limit_from(resp)
+            if rl is not None:
+                raise rl
+            raise RuntimeError(
+                f"GitHub API read failed: {resp.status_code} {resp.reason}. "
+                f"Response: {resp.text[:200]}"
+            )
+        try:
+            resp_json = resp.json()
+        except ValueError as e:
+            raise RuntimeError(f"GitHub API response parsing error: {e}")
+        content_b64 = resp_json.get("content", "")
+        sha = resp_json.get("sha")
+        if not content_b64:
+            raise RuntimeError(f"No content in response for {path}")
+        if self.etag_cache is not None:
+            etag = (getattr(resp, "headers", None) or {}).get("etag") if hasattr(getattr(resp, "headers", None), "get") else None
+            if etag:
+                self.etag_cache[(self.branch, path)] = (etag, content_b64, sha)
+        return content_b64, sha
 
     def read_json(self, path: str) -> tuple[Optional[dict], Optional[str]]:
         """
@@ -98,45 +190,13 @@ class GitHubStore:
         Raises:
             RuntimeError: 네트워크 오류, 예상 외 HTTP 상태코드, 베이스64 디코딩 오류, JSON 파싱 오류.
         """
-        url = f"{self.API}/repos/{self.repo}/contents/{path}"
-        params = {"ref": self.branch}
-
+        got = self._get_contents(path)
+        if got is None:
+            return None, None
+        content_b64, sha = got
         try:
-            sess = self.session or requests.Session()
-            resp = sess.get(
-                url,
-                params=params,
-                headers=self._headers(),
-                timeout=self.timeout,
-            )
-
-            if resp.status_code == 404:
-                return None, None
-
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"GitHub API read failed: {resp.status_code} {resp.reason}. "
-                    f"Response: {resp.text[:200]}"
-                )
-
-            resp_json = resp.json()
-            content_b64 = resp_json.get("content", "")
-            sha = resp_json.get("sha")
-
-            if not content_b64:
-                raise RuntimeError(f"No content in response for {path}")
-
-            # 베이스64 디코딩
-            content_bytes = base64.b64decode(content_b64)
-            content_str = content_bytes.decode("utf-8")
-
-            # JSON 파싱
-            data = json.loads(content_str)
-
-            return data, sha
-
-        except requests.RequestException as e:
-            raise RuntimeError(f"GitHub API network error: {e}")
+            content_str = base64.b64decode(content_b64).decode("utf-8")
+            return json.loads(content_str), sha
         except (ValueError, KeyError) as e:
             raise RuntimeError(f"GitHub API response parsing error: {e}")
 
@@ -201,26 +261,11 @@ class GitHubStore:
         Returns:
             (content_str, sha) 또는 404 면 (None, None).
         """
-        url = f"{self.API}/repos/{self.repo}/contents/{path}"
-        params = {"ref": self.branch}
-        try:
-            sess = self.session or requests.Session()
-            resp = sess.get(url, params=params, headers=self._headers(), timeout=self.timeout)
-            if resp.status_code == 404:
-                return None, None
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"GitHub API read failed: {resp.status_code} {resp.reason}. "
-                    f"Response: {resp.text[:200]}"
-                )
-            resp_json = resp.json()
-            content_b64 = resp_json.get("content", "")
-            sha = resp_json.get("sha")
-            if not content_b64:
-                raise RuntimeError(f"No content in response for {path}")
-            return base64.b64decode(content_b64).decode("utf-8"), sha
-        except requests.RequestException as e:
-            raise RuntimeError(f"GitHub API network error: {e}")
+        got = self._get_contents(path)
+        if got is None:
+            return None, None
+        content_b64, sha = got
+        return base64.b64decode(content_b64).decode("utf-8"), sha
 
     def write_text(
         self, path: str, text: str, *, prev_sha: Optional[str] = None, message: str,
@@ -273,6 +318,10 @@ class GitHubStore:
                     return True, resp.json().get("content", {}).get("sha")
                 except ValueError as e:
                     raise RuntimeError(f"GitHub API response parsing error: {e}")
+
+            rl = _rate_limit_from(resp)
+            if rl is not None:
+                raise rl
 
             if resp.status_code in (409, 422):
                 raise ConflictError(
@@ -395,6 +444,67 @@ if __name__ == "__main__":
     changed_e, sha_e = gh_e.write_text("docs/x.html", "<html>same</html>", message="m")
     assert changed_e is False and sha_e == "shaE" and sess_e.put_calls == 0
     print("✓ write_text: 내용 동일하면 PUT 생략")
+
+    # (v3.8.2 관제소) 속도 제한 예외 + ETag 조건부 요청
+    class _RResp:
+        def __init__(self, code, payload=None, headers=None, text=""):
+            self.status_code, self.reason, self.text = code, "x", text
+            self._payload, self.headers = payload or {}, headers or {}
+        def json(self):
+            return self._payload
+
+    enc = base64.b64encode(_serialize({"n": 1}).encode()).decode()
+
+    class _EtagSess:
+        def __init__(self):
+            self.sent = []
+        def get(self, url, **kw):
+            inm = kw["headers"].get("If-None-Match")
+            self.sent.append(inm)
+            if inm == "E1":
+                return _RResp(304)
+            return _RResp(200, {"content": enc, "sha": "s1"}, {"etag": "E1"})
+
+    es = _EtagSess()
+    gh_et = GitHubStore("tok", "o/r", "data", session=es, etag_cache={})
+    assert gh_et.read_json("a.json") == ({"n": 1}, "s1")      # 200 → 캐시 저장
+    assert gh_et.read_json("a.json") == ({"n": 1}, "s1")      # 304 → 캐시 사용
+    assert es.sent == [None, "E1"], es.sent
+    print("✓ ETag: 두 번째 읽기는 If-None-Match 로 304 → 캐시 사용")
+
+    class _LimSess:
+        def __init__(self, resp):
+            self.resp = resp
+        def get(self, url, **kw):
+            return self.resp
+        def put(self, url, **kw):
+            return self.resp
+
+    for resp, want in [
+        (_RResp(429, headers={"retry-after": "7"}, text="slow down"), 7.0),
+        (_RResp(403, headers={"retry-after": "3"}, text="secondary rate limit"), 3.0),
+        (_RResp(403, headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": str(int(time.time()) + 30)}), None),
+        (_RResp(403, text="You have exceeded a secondary rate limit."), None),
+    ]:
+        g = GitHubStore("tok", "o/r", "data", session=_LimSess(resp))
+        try:
+            g.read_json("p.json")
+            assert False, "RateLimitError 여야 함"
+        except RateLimitError as e:
+            if want is not None:
+                assert e.retry_after == want, (e.retry_after, want)
+            else:
+                assert e.retry_after is None or 0 <= e.retry_after <= 31
+    # 권한 403(속도 제한 신호 없음)은 RateLimitError 가 아니라 RuntimeError
+    g = GitHubStore("tok", "o/r", "data", session=_LimSess(_RResp(403, text="Resource not accessible")))
+    try:
+        g.read_json("p.json")
+        assert False
+    except RateLimitError:
+        assert False, "권한 403 을 속도 제한으로 오분류"
+    except RuntimeError:
+        pass
+    print("✓ 403/429: 속도 제한 신호가 있으면 RateLimitError(retry_after), 권한 403 은 RuntimeError")
 
     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
     import os

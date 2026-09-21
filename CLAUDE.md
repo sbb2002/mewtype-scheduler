@@ -121,6 +121,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   창구. 프론트만 변경(`tweets.js`·`tweets.css`·`index.html`), 저장 데이터는 유지. 요약 `docs/VERSION.md`.
 > - **v3.8.1** (핫픽스): 트윗 말풍선 좌 X 카드 / 우 번역 2열 + 번역 ON/OFF 애니메이션 + 꼬리를 아바타 중앙으로 + 말풍선 디스클레이머 제거(하단만).
 >   프론트만 변경. 요약 `docs/VERSION.md`.
+> - **v3.8.2** (핫픽스): **DB 관제소** `mewtype-db-tower`(`tower.py`·`tower_app.py`·`towerclient.py`) — 제어 채널·백엔드의 `data` 저장소(GitHub) 읽기·쓰기를
+>   전부 한 서비스의 FIFO 큐로 모은다(`POST /fetch`·`/put`). 쓰기 간 ≥1초, 403/429(`RateLimitError`) 시 `retry-after` 만큼 큐 전체 정지, 대기 상한 초과 503, 읽기 ETag 캐시(304).
+>   `TowerStore(GitHubStore)` 가 4개 메서드만 교체 — 호출부 무변경, `make_store`(`TOWER_URL` 없으면 직접). 트랜잭션 직렬화는 여전히 백엔드 `/write` 잡. scale-to-zero(상시 ON 아님),
+>   `--concurrency=64 --max-instances=1`(백엔드와 다름). 배포 순서: 관제소 → 백엔드 → 제어 채널. 요약 `docs/VERSION.md`, 명세 `docs/SPEC.md` §8.15.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -184,6 +188,9 @@ src/
                        #   + LLM 말단 번역(needs_tl sweep) + (v3.7.1) 모니터 로그 실행당 1커밋·무변화 스킵
     writers.py         # (v3.7) /write 잡 kind → telegram_app 커밋 함수 매핑(지연 import).
                        #   (v3.7.1 A-1) 잡은 커밋 전용 — 외부 호출은 제어 채널에서 준비해 인자로 넘김
+    tower.py           # (v3.8.2) DB 관제소 코어 — FIFO·쓰기 간격·속도 제한 대기·대기 상한·ETag 캐시
+    tower_app.py       # (v3.8.2) DB 관제소 Flask 앱(mewtype-db-tower): /fetch /put · `/` 헬스
+    towerclient.py     # (v3.8.2) 제어 채널·백엔드 → 관제소. TowerStore(GitHubStore)·make_store — TOWER_URL 없으면 직접
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출(OIDC, 60초). MAIN_SERVICE_URL 없으면 로컬 디스패치
     preview.py         # (v3) preview.json 계약 A′ — make_item/match_item/sort/promote_state (순수)
     preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수). (v3.1.4) 그룹 공식 채널
@@ -309,6 +316,8 @@ python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.writers        # (v3.7) /write 잡 kind 레지스트리
 python -m src.backend.writeclient    # (v3.7) MAIN_SERVICE_URL 없을 때 로컬 디스패치
+python -m src.backend.tower          # (v3.8.2) 관제소 코어 — FIFO·간격·429 대기·상한·ETag (가짜 GitHub)
+python -m src.backend.towerclient    # (v3.8.2) /fetch·/put 왕복·409·503·make_store 분기 (가짜 세션)
 python -m src.backend.handlers       # _scheduled_wake_times·_preview_log_events·(v3.7.1) _should_log_run·apply_overrides 연결
 python -m src.backend.preview        # (v3) preview.json 계약 — match_item/sort/promote_state
 python -m src.backend.statemachine   # (v3) FSM 파생 derive() — 0.2 전이표 시나리오

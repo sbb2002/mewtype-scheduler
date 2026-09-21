@@ -24,3 +24,4 @@ export INGEST_DRY_RUN="0"                       # 1: /ingest 가 preview.json �
 export INGEST_ECHO="0"                          # 1: /ingest 가 파싱 안 하고 받은 텍스트만 DM 회신
 export INGEST_YT_ENABLED="0"                    # 1: /ingest 가 YouTube 앱 푸시알림도 처리
 # SERVICE_URL 은 deploy.sh 가 배포 후 채워서 재설정
+# (v3.8.2) DB 관제소(mewtype-db-tower) 는 deploy_tower.sh 로 먼저 배포. 백엔드·제어 채널 배포 스크립트가 그 URL 을 TOWER_URL 로 자동 주입

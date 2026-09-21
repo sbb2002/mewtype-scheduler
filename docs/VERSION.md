@@ -2,6 +2,27 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.2** (핫픽스) - **DB 관제소(`mewtype-db-tower`)** 신설 — `data` 저장소(GitHub Contents API)에 대한 모든 접근(제어 채널·백엔드 양쪽)을 한 서비스의 FIFO 큐로 모은다. 기능 변화 없음 — 운영 안정성·유지보수 목적.
+  1. **배경** - v3.7 write-queue 는 콘텐츠 커밋 일부(`/write` 잡 15개 kind)만 백엔드 `concurrency=1` 로 모았다. 나머지 모든 읽기(`gh.read_json`/`read_text`)와 직접 쓰기(`control.json`·`admin_state.json`·모니터 로그·`/translate`·`latest.html`),
+     그리고 백엔드 `/tick`·`/wake` 의 GitHub 호출은 각자 GitHub 를 직접 두드렸다. GitHub 문서: secondary rate limit(동시 100 · 분당 900점 · 쓰기 5점 · 콘텐츠 생성 80/분, 초과 시 403/429)을 피하려면 요청을 **직렬**로 보내고 큐를 두며 쓰기 사이 ≥1초, `retry-after` 를 지키라고 한다.
+     읽기 실패에는 재시도가 없어 한 번의 403/429 가 곧 명령 실패였다. 실제로 기록된 사고는 429 가 아니라 409(2026-09-16)였다 — 관제소의 속도 제한 대응은 **예방** 이다.
+  2. **관제소 서비스** (`tower_app.py`, 신규) - `POST /fetch {path, as:json|text, budget?}` → `{found, data|text, sha}`, `POST /put {path, as, data|text, prev_sha?, message, budget?}` → `{changed, sha}`, `GET /` 헬스(+대기열 `depth`·`cooldown_sec`).
+     오류: sha 충돌 **409** · 대기 상한 초과/속도 제한 지속 **503** + `Retry-After`(`{busy, retry_after}`) · 잘못된 입력 400 · 인증 실패 403 · 그 외 GitHub 오류 502. `path` 는 data 저장소 상대경로만(빈 값·절대경로·`..`·역슬래시 → 400).
+     인증은 OIDC(`--no-allow-unauthenticated`), 호출자 두 서비스계정(백엔드 `RUNTIME_SA`·제어 채널 `INVOKER_SA`)을 `CALLER_SAS` 로 허용(`oidc.verify_request` 가 쉼표 목록 지원).
+  3. **핵심 로직** (`tower.py`, 신규) - ① **FIFO** 도착 순서대로 한 번에 하나(`threading.Lock` 은 순서 미보장이라 티켓 큐 `_Fifo`) ② **쓰기 간격** ≥`WRITE_GAP_SEC`(1초) ③ **속도 제한 대기** 403/429 → `retry-after` 만큼 **큐 전체 정지**(없으면 1·2·4분 지수), `MAX_RETRIES`(3) 초과 시 503
+     ④ **대기 상한** 요청이 넘긴 `budget`(호출자 타임아웃−8초, 기본 25초, 최대 85초) 안에서 줄서기+대기가 끝나지 않으면 `TowerBusy(retry_after)` → 503 ⑤ **읽기 ETag 캐시** 조건부 요청(304 는 primary 한도 미집계). 상태(큐·쿨다운·ETag)는 프로세스 메모리 — 꺼지면 사라지지만 재시작 후 첫 429 로 `retry-after` 를 다시 배운다(정확성 영향 없음).
+  4. **`gh_store.py` 확장** - `RateLimitError(status, retry_after)`(403/429 중 `retry-after`·`x-ratelimit-remaining: 0`·본문 "rate limit" 신호가 있을 때만 — 권한 403 은 그대로 `RuntimeError`), 읽기 공통 `_get_contents`, 선택적 `etag_cache`(If-None-Match → 304).
+  5. **클라이언트** (`towerclient.py`, 신규) - `TowerStore(GitHubStore)` 가 `read_json`/`read_text`/`write_json`/`write_text` 4개만 관제소 호출로 교체(반환 계약 `(data, sha)`·404→`(None, None)`·`(changed, sha)`·`ConflictError` 동일, 호출부 수십 곳 무변경). 503 → `TowerBusyError(RuntimeError)`(`retry_after`).
+     `make_store(token, repo, branch)` — `TOWER_URL` 있으면 `TowerStore`, 없으면(로컬·미배포) 일반 `GitHubStore`. 적용: `telegram_app._make_gh`·webhook `gh`, `app.py` `/write`·`/monitor`, `handlers._run`(tick/wake). 관제소 자신은 `GitHubStore` 직접(재귀 방지).
+  6. **바뀌지 않은 것** - 트랜잭션(읽기→병합→쓰기 한 덩어리)의 직렬화는 여전히 백엔드 `/write` 잡(`--concurrency=1`)이 맡는다 — 관제소는 **개별 GitHub 호출**의 순서·속도만 다루므로, 잡 밖의 단순 쓰기가 잡의 읽기~쓰기 사이에 끼어들 수 있다(같은 파일이면 `prev_sha` → `ConflictError`, 전과 동일한 종류의 경합).
+     콘텐츠 잡의 "처리 대기 중" DM(2초)은 그대로. 제어 채널의 코드 저장소 커밋 수 조회(`/monitor`·`/monitor-live` → `push_monitor.fetch_commits`, `api.github.com/.../commits`)는 data 저장소가 아니라 관제소 대상이 아니다(제어 채널이 `GITHUB_TOKEN` 을 아직 들고 있는 이유).
+  7. **배포 형태** (`deploy/deploy_tower.sh`, 신규) - `--concurrency=64 --max-instances=1 --min-instances=0 --timeout=90`, gunicorn `--workers=1 --threads=64`. **백엔드(`--concurrency=1`)와 다르다**: 관제소는 요청이 프로세스 안에서 줄을 서야 대기 상한(503)을 통제할 수 있어 여러 요청이 동시에 들어와 있어야 하고,
+     FIFO 가 서비스 전체에서 성립하도록 인스턴스는 하나. **상시 ON 아님**(scale-to-zero) — 꺼진 뒤 첫 요청은 cold start 로 수 초 늦을 수 있다. `deploy.sh`·`deploy_telegram.sh` 는 배포된 관제소 URL 을 `TOWER_URL` 로 자동 주입(관제소가 없으면 미주입 → 종전처럼 직접 접근).
+  8. **트레이드오프** - 서비스가 하나 늘고(3개), 모든 GitHub 접근에 홉이 하나 붙는다(수십~수백 ms + cold start). 관제소 장애 시 제어 채널의 읽기 명령(`/status`·`/list`)과 `/tick`·`/wake` 의 GitHub 접근이 함께 멈춘다 — 관제소를 단순·저빈도 배포로 유지해야 하는 이유. 대기 상한(기본 25초)을 넘기는 요청은 503 이라 Telegram webhook 등 호출자의 타임아웃 안에서 실패가 정리된다.
+  9. **검증** - self-test: `python -m src.backend.tower`(FIFO 순서·GitHub 동시 호출 0·쓰기 간격·429 대기·쿨다운 중 큐 정지·상한 초과 503·재시도 초과·ETag 304·409 전달), `towerclient`(읽기/쓰기 왕복·404·409·503·오분류 방지·`make_store`), `gh_store`(ETag·`RateLimitError` 분류·권한 403 비오분류), `oidc`. 종단(임시 스크립트, 저장소 미포함):
+     가짜 GitHub ↔ `tower_app` ↔ `TowerStore` — 실제 `_handle_pause`·`writers.dispatch("merge_rows")` 가 전부 관제소 경유, **24 스레드 폭주에서 오류 0·GitHub 동시 호출 max=1·쓰기 최소 간격 유지**, 429(retry-after) 후 정상 응답, 60초 대기>상한 → 503 → `TowerBusyError`, 낡은 sha → 409 → `ConflictError`, 잘못된 입력 400.
+     **미확인(배포 후 확인)**: 실제 Cloud Run 3개 서비스 간 OIDC 호출·`CALLER_SAS` 허용, cold start 지연이 명령 응답(특히 Telegram webhook 재전송)에 미치는 영향, GitHub 실제 헤더(`retry-after`·`x-ratelimit-*`) 동작, `--concurrency=64` + gunicorn 스레드 64 에서의 메모리·동시 대기.
+  - 배포 순서: **`deploy_tower.sh` → `deploy.sh`(백엔드) → `deploy_telegram.sh`(제어 채널)**. 관제소 배포 전에는 두 서비스가 `TOWER_URL` 없이 종전처럼 직접 접근하므로 순서를 지키면 무중단. 새 Secret 없음(`GITHUB_TOKEN` 재사용), 새 서비스계정 없음.
 - **v3.8.1** (핫픽스) - v3.8.0 배포본 확인 후 트윗 말풍선 UI 수정. 프론트만(`tweets.css`·`tweets.js`·`layout.css`), 백엔드·데이터 변경 없음.
   1. **2열 배치** - 좌 = X 카드, 우 = 번역 말풍선(PC 패널 540px = 카드 300 + 번역, 모바일 토스트 = 카드 250(X 카드 최소 폭) + 번역 최소 110px,
      모자라면 목록이 가로로 밀림). 한 트윗의 두 열은 더 긴 쪽 높이로 같다. 번역 OFF 면 번역 열이 접혀 카드만(PC 패널 330px, 모바일은 카드가 가득 참).

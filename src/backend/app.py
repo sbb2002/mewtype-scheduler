@@ -27,6 +27,7 @@ from . import handlers, monitor_report, notify, oidc, writers
 from .config import load_config
 from .control import default_control, get_monitor_auto
 from .gh_store import GitHubStore
+from .towerclient import make_store
 from .monitor_log import KST, bucket_date_kst
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -106,7 +107,7 @@ def _write():
         return jsonify({"error": "kind required"}), 400
     try:
         cfg = _cfg()
-        gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+        gh = make_store(cfg.github_token, cfg.github_repo, cfg.data_branch)  # v3.8.2: 관제소 경유
         return jsonify(writers.dispatch(kind, gh, args))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -124,7 +125,7 @@ def _monitor():
         return jsonify({"error": str(e)}), 403
     try:
         cfg = _cfg()
-        gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+        gh = make_store(cfg.github_token, cfg.github_repo, cfg.data_branch)  # v3.8.2: 관제소 경유
         control, _ = gh.read_json("control.json")
         if not get_monitor_auto(control or default_control()):
             return jsonify({"skipped": True, "reason": "monitor_auto off"})

@@ -32,6 +32,13 @@ if gcloud secrets describe YT_COOKIES &>/dev/null; then
   _YTC_SECRET=",/secrets/yt-cookies.txt=YT_COOKIES:latest"
   _YTC_ENV=",YT_COOKIES_FILE=/secrets/yt-cookies.txt"
 fi
+# (v3.8.2) DB 관제소 URL — 배포돼 있으면 TOWER_URL 을 주입해 data 저장소 접근이 관제소를 거치게 한다.
+# 관제소가 없으면(아직 미배포) 비워 두어 종전처럼 직접 접근한다. 관제소를 **먼저** 배포할 것(deploy_tower.sh).
+TOWER_URL=$(gcloud run services describe mewtype-db-tower --region "$GCP_LOCATION" --format='value(status.url)' 2>/dev/null || true)
+_TOWER_ENV=""
+if [ -n "$TOWER_URL" ]; then
+  _TOWER_ENV=",TOWER_URL=$TOWER_URL"
+fi
 gcloud run deploy mewtype-telegram \
   --source . --region "$GCP_LOCATION" \
   --allow-unauthenticated \
@@ -39,7 +46,7 @@ gcloud run deploy mewtype-telegram \
   --command=gunicorn \
   --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=60,src.backend.telegram_app:app" \
   --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}${_YTC_SECRET}" \
-  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}${_YTC_ENV}"
+  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}${_YTC_ENV}${_TOWER_ENV}"
 
 # INGEST_DRY_RUN=1 이면 /ingest 가 schedule.json 을 안 쓰고 받은 원문·파싱결과만 DM 회신
 # (푸시 알림 "Show more" 잘림 확인용). 확인 끝나면 env.sh 에서 0 으로 두고 재배포, 또는:
