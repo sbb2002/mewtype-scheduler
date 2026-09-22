@@ -344,6 +344,144 @@ class LLMClient:
         logger.warning("announces_own_broadcast: 5회 모두 실패 — None (호출부 미등록 처리)")
         return None
 
+    def collab_partners(self, text_ja: str, *, host_name: str,
+                        candidate_names: list[str]) -> list[str] | None:
+        """
+        (v3.8.6) 호스트 멤버의 트윗에 다른 멤버 이름이 하나 이상 언급됐을 때, 그 방송이
+        언급된 멤버(들)와 실제로 합동하는 방송인지 판정.
+
+        발동 조건은 호출부(`_maybe_url_confirmed_schedule`)가 `xtweet.find_guest_members`로
+        이미 걸러둔다 — 여기서는 "언급됐다"를 "실제로 같이 나온다"로 그대로 승격하지
+        않고 문맥으로 재확인만 한다(실측: 이름 언급이 안부 인사·잡담·과거 회상일 수도
+        있음). `candidate_names`에 없는 멤버는 애초에 텍스트에 언급이 없었던 것이므로
+        판정 대상이 아니다 — 언급된 멤버만 카운팅.
+
+        Args:
+            text_ja: 트윗 원문(+인용 트윗 있으면 합본, 원어 그대로)
+            host_name: 이 방송을 진행하는 호스트 멤버 이름(한국어 표기)
+            candidate_names: 텍스트에서 정식 표기로 발견된 다른 멤버 이름(한국어 표기) 후보 목록
+
+        Returns:
+            candidate_names 의 부분집합(실제 합동으로 확인된 멤버만) 또는 5회 모두
+            실패 시 None(호출부는 안전하게 "게스트 미추가"로 처리).
+        """
+        if not candidate_names:
+            return []
+        if self.disabled:
+            logger.warning("LLMClient disabled (api_key missing)")
+            return None
+
+        masked_text, _mapping = _mask_glossary(text_ja or "")
+        cand_list = "、".join(candidate_names)
+        prompt = (
+            f"다음은 '{host_name}'이(가) 작성한 X(트위터) 게시물 원문이다. 이 글에는 "
+            f"다른 멤버 이름이 언급되어 있다: {cand_list}.\n"
+            f"이 게시물이 예고/설명하는 방송이 언급된 멤버와 실제로 함께 진행하는 "
+            f"합동(콜라보) 방송인지 판단하라. 이름이 언급됐다고 항상 합동은 아니다 — "
+            f"안부 인사·잡담·과거 회상처럼 이번 방송과 무관하게 언급된 경우는 포함하지 "
+            f"마라. 실제로 이번 방송에 함께 출연/참가하는 멤버만 후보 중에서 골라라. "
+            f"아무도 해당 없으면 빈 배열. JSON 포맷만 출력.\n\n"
+            f"원문:\n{masked_text}\n\n출력:\n"
+            f'{{"collab_with": [<후보 중 실제 합동 멤버 이름들>]}}'
+        )
+        schema = {
+            "name": "collab_partners",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "collab_with": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": candidate_names},
+                    },
+                },
+                "required": ["collab_with"],
+                "additionalProperties": False,
+            },
+        }
+
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=schema)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=schema)
+            if not response:
+                continue
+            try:
+                result = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"collab_partners: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if isinstance(result, dict) and isinstance(result.get("collab_with"), list):
+                return [n for n in result["collab_with"] if n in candidate_names]
+            logger.warning(f"collab_partners: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+
+        logger.warning("collab_partners: 5회 모두 실패 — None (호출부 미추가 처리)")
+        return None
+
+    def broadcast_change(self, text_ja: str) -> dict | None:
+        """
+        (v3.8.7) 개인 트윗이 기존에 예고한 방송을 취소하거나 일정을 변경하는 글인지 판정.
+
+        발동 조건은 호출부(`_maybe_broadcast_change`)가 담당 — 원문에 `配信` 키워드가
+        있고, 그 멤버 소유의 미종료 예고가 실제로 있을 때만 호출한다. 실측 계기
+        (2026-09-22): 멤버가 당일 방송 취소를 공지했는데, 아무 로직도 기존 예고를
+        내리지 않아 나중에 옛 공지가 재-ingest 되며 이미 취소된 방송이 되살아났다.
+
+        Args:
+            text_ja: 트윗 원문(원어 그대로)
+
+        Returns:
+            {"action": "del"|"edit"|"none", "when": "MM/DD HH:MM"(KST, edit일 때만)|None}
+            또는 5회 모두 실패 시 None(호출부는 아무것도 바꾸지 않는다 — 안전한 실패).
+        """
+        if self.disabled:
+            logger.warning("LLMClient disabled (api_key missing)")
+            return None
+
+        masked_text, _mapping = _mask_glossary(text_ja or "")
+        prompt = (
+            f"다음은 유메미타 멤버가 올린 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
+            f"질문: 이 글이 이전에 예고한 자신의 방송을 취소하거나 일정을 변경한다고 "
+            f"알리는 글인가?\n"
+            f"- 취소라면 action=\"del\", when=null\n"
+            f"- 새 날짜/시각으로 변경(연기)이라면 action=\"edit\", when 에 KST 기준 "
+            f"새 일정을 \"MM/DD HH:MM\" 형식으로 채워라(예: \"09/23 23:00\")\n"
+            f"- 취소도 변경도 아니면(평소 방송 예고·잡담·후기 등) action=\"none\", when=null\n"
+            f"JSON 포맷만 출력.\n\n출력:\n"
+            f'{{"action": "del" 또는 "edit" 또는 "none", "when": "MM/DD HH:MM" 또는 null}}'
+        )
+        schema = {
+            "name": "broadcast_change",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["del", "edit", "none"]},
+                    "when": {"type": ["string", "null"]},
+                },
+                "required": ["action", "when"],
+                "additionalProperties": False,
+            },
+        }
+
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=schema)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=schema)
+            if not response:
+                continue
+            try:
+                result = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"broadcast_change: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if isinstance(result, dict) and result.get("action") in ("del", "edit", "none"):
+                return {"action": result["action"], "when": result.get("when")}
+            logger.warning(f"broadcast_change: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+
+        logger.warning("broadcast_change: 5회 모두 실패 — None (호출부 미반영 처리)")
+        return None
+
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
         """
         (v3.7) 신규 소식이 `candidates`(같은 날짜의 기존 소식들) 중 하나와 같은 행사를
@@ -899,6 +1037,86 @@ if __name__ == "__main__":
     result = llm_announce_fail.announces_own_broadcast("계속 깨진 응답")
     assert result is None, result
     print("✓ announces_own_broadcast: 5회 모두 실패 → None")
+
+    # ──── 시나리오 8d: collab_partners — 이름 언급 → LLM 최종 확인 (v3.8.6) ────
+    print("\n[시나리오 8d] collab_partners — 언급된 이름이 실제 합동인지 재확인")
+    print("-" * 70)
+
+    llm_collab_yes = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"collab_with": ["유노"]}')
+    )
+    result = llm_collab_yes.collab_partners(
+        "配信予定 9/21 21:00 ユノ＆律こらぼ", host_name="리츠", candidate_names=["유노"],
+    )
+    assert result == ["유노"], result
+    print("✓ collab_partners: 실제 합동 → 후보 그대로 확인")
+
+    llm_collab_no = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"collab_with": []}')
+    )
+    result = llm_collab_no.collab_partners(
+        "유노 잘 지내? 오랜만이다ㅋㅋ 오늘은 혼자 노래방 콜라보 방송할게요",
+        host_name="리츠", candidate_names=["유노"],
+    )
+    assert result == [], result
+    print("✓ collab_partners: 안부 인사 등 무관한 언급 → 빈 배열 (오탐 방지)")
+
+    # 후보 여럿 중 일부만 확인되는 경우
+    llm_collab_partial = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"collab_with": ["아라레"]}')
+    )
+    result = llm_collab_partial.collab_partners(
+        "아라레랑 같이 방송해요! 노노카는 다음에 놀러온대~",
+        host_name="유노", candidate_names=["아라레", "노노카"],
+    )
+    assert result == ["아라레"], result
+    print("✓ collab_partners: 여러 후보 중 실제 합동만 부분 확인")
+
+    llm_collab_fail = LLMClient(
+        "test-key", session=ParticipationSession(99, '{"collab_with": ["유노"]}')
+    )
+    result = llm_collab_fail.collab_partners(
+        "계속 깨진 응답", host_name="리츠", candidate_names=["유노"],
+    )
+    assert result is None, result
+    print("✓ collab_partners: 5회 모두 실패 → None (호출부 미추가 처리)")
+
+    assert LLMClient("test-key").collab_partners("아무 글", host_name="유노", candidate_names=[]) == []
+    print("✓ collab_partners: 후보 없음 → API 호출 없이 빈 배열")
+
+    # ──── 시나리오 8e: broadcast_change — 취소/변경/무관 3분기 (v3.8.7) ────
+    print("\n[시나리오 8e] broadcast_change — 기존 예고 취소/변경 판정")
+    print("-" * 70)
+
+    llm_bc_del = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"action": "del", "when": null}')
+    )
+    result = llm_bc_del.broadcast_change(
+        "죄송합니다 여러분! 오늘 이 방송 없이, 오늘은 쉬어요!"
+    )
+    assert result == {"action": "del", "when": None}, result
+    print("✓ broadcast_change: 취소 공지 → action=del")
+
+    llm_bc_edit = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"action": "edit", "when": "09/23 23:00"}')
+    )
+    result = llm_bc_edit.broadcast_change("오늘 방송 못하고 내일 23시로 미룰게요ㅠㅠ")
+    assert result == {"action": "edit", "when": "09/23 23:00"}, result
+    print("✓ broadcast_change: 일정 변경 공지 → action=edit + when")
+
+    llm_bc_none = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"action": "none", "when": null}')
+    )
+    result = llm_bc_none.broadcast_change("오늘 방송 너무 재밌었다ㅎㅎ 다들 고마워")
+    assert result == {"action": "none", "when": None}, result
+    print("✓ broadcast_change: 평소 후기/잡담 → action=none (오탐 방지)")
+
+    llm_bc_fail = LLMClient(
+        "test-key", session=ParticipationSession(99, '{"action": "del", "when": null}')
+    )
+    result = llm_bc_fail.broadcast_change("계속 깨진 응답")
+    assert result is None, result
+    print("✓ broadcast_change: 5회 모두 실패 → None (호출부 미반영 처리)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
     print("\n[시나리오 9] translate 반복 압축 (의성어 8회+ 연속반복)")

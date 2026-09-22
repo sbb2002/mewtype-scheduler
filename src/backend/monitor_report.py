@@ -146,6 +146,9 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             # 관측 전 06:00부터 있었다고 가정하는 구간)는 근거 이벤트가 없어 대상에서 뺀다.
             if e.get("assumed_live"):
                 seg["assumed_live"] = True
+            # (v3.8.5 후속) 합동 live 막대 위 참여 멤버 아이콘용 — 전이 시점 값 그대로.
+            if e.get("collab_with"):
+                seg["collab_with"] = e["collab_with"]
             segs.append(seg)
         out.append({"member": member, "title": title, "segs": segs})
     return out
@@ -407,19 +410,29 @@ _TEMPLATE = r"""<!doctype html>
   .combo-right{padding:16px 16px; border-left:1px solid var(--line); display:flex; flex-direction:column}
   .combo .panel-sub{font-size:.7rem; margin:0 0 12px}
 
-  .member-grid{display:flex; flex-direction:column}
-  .m-row{display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line-soft)}
-  .m-row:first-child{border-top:none}
-  .m-who{display:flex; align-items:center; gap:7px; min-width:0; flex:none}
+  /* (v3.8.7) 멤버 현황 — 세로 리스트 대신 표(멤버×tweet×preview)로. preview 열은
+     그날 있었던 live 구간을 전부 "HH:MM ~ HH:MM (N분)" 줄로 나열(하루 2번 이상도
+     자연스럽게 여러 줄) — 진행 중인 마지막 구간은 색으로 강조해 "지금 라이브"를
+     대신 표시(예전 별도 live-dot 은 "오늘 한 번이라도 live 였나"만 봐서 이미 끝난
+     방송도 계속 켜져 있던 버그가 있어 제거). */
+  .member-table{width:100%; border-collapse:collapse; font-size:.76rem}
+  .member-table th{text-align:left; color:var(--muted); font-weight:500; font-size:.68rem;
+    text-transform:uppercase; letter-spacing:.03em; padding:0 0 6px}
+  .member-table td{padding:7px 0; border-top:1px solid var(--line-soft); vertical-align:top}
+  .member-table tr:first-child td{border-top:none}
+  .member-table th:not(:first-child), .member-table td:not(:first-child){padding-left:10px}
+  .m-who{display:flex; align-items:center; gap:7px; min-width:0; white-space:nowrap}
   .m-who img{width:22px; height:22px; border-radius:6px; background:var(--panel-2); flex:none}
-  .m-who span{font-size:.76rem; color:var(--ink); font-weight:500; white-space:nowrap}
-  .m-tweet{font-size:.72rem; color:var(--muted); font-family:var(--mono); white-space:nowrap; margin-left:auto; padding-left:8px}
-  .m-tweet b{font:600 .78rem var(--mono); color:var(--ink); margin-right:4px}
+  .m-who span{color:var(--ink); font-weight:500}
+  .m-tweet{font-family:var(--mono); white-space:nowrap}
+  .m-tweet b{font:600 .78rem var(--mono); color:var(--ink); margin-right:2px}
   .m-tweet .ok{color:var(--ok)}
   .m-tweet .err{color:var(--err)}
-  .live-dot{width:7px; height:7px; border-radius:50%; margin-left:8px; flex:none}
-  .live-dot.on{background:var(--st-live); box-shadow:0 0 0 3px color-mix(in srgb, var(--st-live) 20%, transparent)}
-  .live-dot.off{background:var(--line); border:1px solid var(--muted-2)}
+  .pv-range{font-family:var(--mono); white-space:nowrap; color:var(--ink)}
+  .pv-range + .pv-range{margin-top:2px}
+  .pv-range .dur{color:var(--muted); margin-left:4px}
+  .pv-range.live{color:var(--st-live); font-weight:600}
+  .pv-none{color:var(--muted-2)}
 
   .notice-line{display:flex; align-items:center; justify-content:space-between; margin-top:12px;
     padding-top:11px; border-top:1px solid var(--line-soft)}
@@ -501,6 +514,18 @@ _TEMPLATE = r"""<!doctype html>
   .tl-right{position:relative; flex:0 0 auto; border-left:1px solid var(--line); border-radius:0 8px 8px 0;
     background:var(--panel-2)}
   #tlRightSvg{display:block}
+  /* (v3.8.5 핫픽스) 모바일 — .tl-labels(64px 고정)+.tl-right(234px 고정) 를 빼면 24시간
+     플롯에 남는 폭이 30~40px 뿐이라 육안으로 안 보임(실측 2026-09-22). 좁은 화면에선
+     둘 중 하나만 풀폭으로 보여주는 토글로 전환 — PC(640px 초과)는 기존 동작 그대로. */
+  .tl-right-toggle{display:none}
+  @media (max-width:640px){
+    .tl-right-toggle{display:inline-flex; align-items:center; gap:4px; font:600 .72rem var(--mono);
+      color:var(--ink); background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+      padding:0 10px; height:26px; cursor:pointer}
+    .tl-right-toggle:hover{border-color:var(--muted)}
+    .tl-body.tl-right-open .tl-scroll{display:none}
+    .tl-body:not(.tl-right-open) .tl-right{display:none}
+  }
   .tl-crosshair{position:absolute; top:0; width:1px; background:rgba(255,255,255,.35); pointer-events:none; display:none; z-index:5}
   .tl-lane{stroke:var(--line); stroke-width:1}
   .tl-hour{stroke:var(--line-soft); stroke-width:1}
@@ -536,6 +561,11 @@ _TEMPLATE = r"""<!doctype html>
   .tooltip .tt-raw{font-family:var(--mono); font-size:.76rem; margin-bottom:3px}
   .tooltip .tt-raw.ok{color:var(--ok)} .tooltip .tt-raw.err{color:var(--err)} .tooltip .tt-raw.degraded{color:#f5c344}
   .tooltip .tt-d{color:var(--muted)}
+  /* (v3.8.5 후속) 합동 live 구간 — 막대 위 아이콘 + 팝업 안 참여 멤버 목록 */
+  .tl-collab-icon{border-radius:3px}
+  .tt-collab{margin-top:4px; color:var(--ink); font-size:.74rem}
+  .tt-collab img{width:14px; height:14px; border-radius:3px; vertical-align:-3px; margin:0 3px 0 6px}
+  .tt-collab img:first-child{margin-left:4px}
   .lg-title{font-size:.85rem; font-weight:600; color:var(--ink); margin-bottom:4px}
   .lg-sub{color:var(--muted); font-size:.74rem; margin-bottom:8px; line-height:1.4}
   .lg-chips{display:flex; flex-wrap:wrap; gap:6px 12px; margin-bottom:8px}
@@ -582,8 +612,11 @@ _TEMPLATE = r"""<!doctype html>
 <section class="combo" id="combo">
   <div class="combo-left">
     <h2>오늘의 멤버 현황</h2>
-    <p class="panel-sub">개인 트윗 수집 결과 · 이 날짜 안 라이브 진입 여부</p>
-    <div class="member-grid" id="memberGrid"></div>
+    <p class="panel-sub">개인 트윗 수집 결과(성공/실패) · 이 날짜 라이브 구간(진행 중이면 강조)</p>
+    <table class="member-table">
+      <thead><tr><th></th><th>tweet</th><th>preview</th></tr></thead>
+      <tbody id="memberGrid"></tbody>
+    </table>
     <div class="notice-line" id="noticeLine"></div>
   </div>
   <div class="combo-right">
@@ -602,10 +635,11 @@ _TEMPLATE = r"""<!doctype html>
       <button id="zoomIn" aria-label="확대">＋</button>
     </div>
     <button class="tl-zoom" id="zoomReset" style="padding:0 10px; height:26px; font-size:.72rem; color:var(--muted)">리셋</button>
+    <button class="tl-right-toggle" id="tlRightToggle" type="button">📊 요약 보기</button>
     <div class="legend" id="legend"></div>
     <span class="tl-hint">왼쪽 줄 이름을 누르면(PC는 호버) 그 줄 범례 · 차트 위 휠로 확대·축소</span>
   </div>
-  <div class="tl-body">
+  <div class="tl-body" id="tlBody">
     <div class="tl-labels" id="tlLabels"></div>
     <div class="tl-scroll" id="tlScroll"><svg id="tlSvg"></svg><div class="tl-crosshair" id="tlCrosshair"></div></div>
     <div class="tl-right"><svg id="tlRightSvg"></svg></div>
@@ -763,6 +797,35 @@ function computeBackendSegs(ticks, ops, downRanges){
   ]);
 }
 
+// (v3.8.7) "HH:MM" 문자열(가상 심야 24:00~29:59대 포함) → 그날 06:00 기준 경과분.
+function hmToMin(hm){
+  const [h, m] = hm.split(":").map(Number);
+  return h * 60 + m;
+}
+function fmtClock(min){
+  const h = Math.floor(min / 60) % 24, day = Math.floor(min / 60) >= 24;
+  const mm = String(min % 60).padStart(2, "0");
+  return (day ? "익일 " : "") + String(h).padStart(2, "0") + ":" + mm;
+}
+// 그날 live 세그먼트 전부를 "HH:MM ~ HH:MM (N분)" 줄로 — 하루 2번 이상도 줄마다 표시.
+// 마지막 세그먼트가 live 이고 to 가 "30:00"(과거 날짜의 가상 하루끝) 이 아니면 아직 관측
+// 시점(리포트 생성 시각) 기준 진행 중이라는 뜻 — "~ 진행중"으로 강조(과거 폴백 없이 실시간
+// 폴링(pollLiveStatus)이 이 표시를 계속 새로고침).
+function fmtLiveRanges(segs){
+  const lives = segs.filter(sg => sg.s === "live");
+  if (!lives.length) return `<span class="pv-none">—</span>`;
+  return lives.map(sg => {
+    const isLast = sg === segs[segs.length - 1];
+    const ongoing = isLast && sg.to !== "30:00";
+    const fromMin = hmToMin(sg.from), toMin = hmToMin(sg.to);
+    const dur = Math.max(0, toMin - fromMin);
+    const toLabel = ongoing ? "진행중" : fmtClock(toMin);
+    const durLabel = ongoing ? `${dur}분+` : `${dur}분`;
+    return `<div class="pv-range${ongoing ? " live" : ""}">`
+      + `${fmtClock(fromMin)} ~ ${toLabel}<span class="dur">(${durLabel})</span></div>`;
+  }).join("");
+}
+
 function renderStats(){
   const boolPoint = [...TICKS, ...OPS, ...INGEST];
   const tonePoint = [...RELAY, ...NOTICE, ...TWEET];
@@ -785,15 +848,16 @@ function renderStats(){
     const tw = TWEET.filter(e => e.member === m);
     const ok = tw.filter(e => e.tone !== "err").length;
     const err = tw.filter(e => e.tone === "err").length;
-    const live = (PREVIEW.find(v => v.member === m)?.segs || []).some(sg => sg.s === "live");
     const breakdown = tw.length
-      ? `<span class="ok">✓${ok}</span>${err ? ` <span class="err">✕${err}</span>` : ""}`
+      ? `<span class="ok">✓${ok}</span>${err ? `<span class="err">✕${err}</span>` : ""}`
       : "";
-    return `<div class="m-row">
-      <div class="m-who"><img src="${MEMBER_ICON[m]}" alt="${MEMBER_KO[m]}"><span>${MEMBER_KO[m]}</span></div>
-      <div class="m-tweet"><b>${tw.length}건</b>${breakdown}</div>
-      <div class="live-dot ${live ? "on" : "off"}" title="${live ? "라이브 감지됨" : "라이브 없음"}"></div>
-    </div>`;
+    const segs = PREVIEW.find(v => v.member === m)?.segs || [];
+    const preview = fmtLiveRanges(segs);
+    return `<tr>
+      <td><div class="m-who"><img src="${MEMBER_ICON[m]}" alt="${MEMBER_KO[m]}"><span>${MEMBER_KO[m]}</span></div></td>
+      <td><span class="m-tweet"><b>${tw.length}건</b>${breakdown}</span></td>
+      <td>${preview}</td>
+    </tr>`;
   }).join("");
 
   const noticeOk = NOTICE.filter(e => e.tone !== "err").length;
@@ -994,6 +1058,18 @@ document.getElementById("zoomIn").addEventListener("click", () => { if (!isPinne
 document.getElementById("zoomOut").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx-1, crosshairMinutes); });
 document.getElementById("zoomReset").addEventListener("click", () => { if (!isPinned()) setZoom(0, crosshairMinutes); });
 
+// (v3.8.5 핫픽스) 모바일 전용 — 24시간 플롯 ↔ 우측 요약(트리거/소식/트윗/백엔드 상태) 토글.
+// SVG는 이미 그려져 있어 클래스만 바꾸고 재렌더는 안 함(renderRightPanel()은 loadDay()에서만 실행).
+(function initRightToggle(){
+  const btn = document.getElementById("tlRightToggle");
+  const body = document.getElementById("tlBody");
+  if (!btn || !body) return;
+  btn.addEventListener("click", () => {
+    const open = body.classList.toggle("tl-right-open");
+    btn.textContent = open ? "📈 타임라인 보기" : "📊 요약 보기";
+  });
+})();
+
 // (사용자 요청) x축 오른쪽 여백을 소식·개인 트윗(멤버별) 당일 건수 + 백엔드 상태 누계로 활용.
 // ref/monitor-timeline-trigger-rightpad.png 도안. (후속: 줌/스크롤에도 안 움직여야 한다는
 // 요청으로 #tlSvg 안이 아니라 완전히 별도인 #tlRightSvg 에 그린다 — renderRightPanel().)
@@ -1088,10 +1164,11 @@ function renderTimeline(){
     BACKEND_SEGS.forEach(sg => {
       const x1 = timeToX(sg.from, plotW), x2 = timeToX(sg.to, plotW);
       const rect = document.createElementNS(ns,"rect");
-      // (v3.8.4-후속) 세로 두께 2배(12→24) — HEALTH 레인(health|backend)도 rowH 를 따로
-      // 키워뒀다(LANES 정의) 그 안에서만 커지므로 다른 레인 침범 없음.
-      rect.setAttribute("x", x1); rect.setAttribute("y", ry - 12);
-      rect.setAttribute("width", Math.max(x2-x1, 1)); rect.setAttribute("height", 24);
+      // (v3.8.5 후속) 정상(up)일 땐 평소 눈에 안 띄어도 되니 두께를 1/3(24→8)로 줄이고,
+      // 처리 중(busy)·다운(down)처럼 눈에 띄어야 하는 상태는 기존 두께(24) 유지.
+      const h = sg.s === "up" ? 8 : 24;
+      rect.setAttribute("x", x1); rect.setAttribute("y", ry - h/2);
+      rect.setAttribute("width", Math.max(x2-x1, 1)); rect.setAttribute("height", h);
       rect.setAttribute("rx", 5);
       rect.setAttribute("fill", HEALTH_COLOR[sg.s]);
       rect.setAttribute("class","tl-seg");
@@ -1117,8 +1194,29 @@ function renderTimeline(){
       rect.setAttribute("class","tl-seg");
       const q = sg.q || "ok";
       const label = stateLabel(sg.s) + (sg.assumed_live ? " · 추정" : "");
-      wireTip(rect, { t:sg.from+"–"+sg.to, title:v.title, raw:label, tone:"ok", d:sg.qd || ("video: "+(v.title||"—")) });
+      // (v3.8.5 후속) 합동 live 구간 — 막대 위에 참여 멤버 아이콘 + 팝업에도 같은 목록.
+      const isCollabLive = sg.s === "live" && sg.collab_with && sg.collab_with.length;
+      const collabTip = isCollabLive
+        ? `<div class="tt-collab">함께: ${sg.collab_with.map(ck =>
+            `<img src="${MEMBER_ICON[ck]}" alt="${MEMBER_KO[ck]||ck}">${MEMBER_KO[ck]||ck}`).join(" ")}</div>`
+        : "";
+      wireTip(rect, { t:sg.from+"–"+sg.to, title:v.title, raw:label, tone:"ok",
+        d:(sg.qd || ("video: "+(v.title||"—"))) + collabTip });
       svg.appendChild(rect);
+      if (isCollabLive) {
+        const iconSize = 12, gap = 2;
+        sg.collab_with.forEach((ck, ci) => {
+          const icon = document.createElementNS(ns, "image");
+          icon.setAttribute("href", MEMBER_ICON[ck] || "");
+          icon.setAttribute("x", x1 + ci * (iconSize + gap));
+          icon.setAttribute("y", ry - 6 - iconSize - 2);
+          icon.setAttribute("width", iconSize); icon.setAttribute("height", iconSize);
+          icon.setAttribute("class", "tl-collab-icon");
+          wireTip(icon, { t:sg.from+"–"+sg.to, title:v.title, raw:label, tone:"ok",
+            d:(sg.qd || ("video: "+(v.title||"—"))) + collabTip });
+          svg.appendChild(icon);
+        });
+      }
       if (!(i === 0 && sg.from === "06:00")) {
         const dot = document.createElementNS(ns,"circle");
         dot.setAttribute("cx", x1); dot.setAttribute("cy", ry);
@@ -1159,6 +1257,14 @@ function renderTimeline(){
   // 그 안을 정상 건수 : 에러 건수 비율로 초록/빨강 두 구간으로 나눠 쌓는다(에러가 하나라도
   // 있으면 통째로 빨개지던 이전 방식 대신 실제 구성비가 보이게). 에러 구간을 위쪽에 쌓아
   // "얼마나 섞였는지" 가 기준선에서 먼 쪽(눈에 먼저 띄는 쪽)에 오도록.
+  // (v3.8.5 후속) 막대 폭 고정(TRIGGER_BAR_W)이면 줌아웃 시 인접 그룹끼리 겹친다 —
+  // 실제 화면상 최소 간격을 보고 그보다 넓어지지 않게 매번(줌마다) 다시 계산.
+  const sortedTriggerX = triggerMarks.map(m => m.x).sort((a, b) => a - b);
+  let minTriggerGapPx = Infinity;
+  for (let i = 1; i < sortedTriggerX.length; i++) {
+    minTriggerGapPx = Math.min(minTriggerGapPx, sortedTriggerX[i] - sortedTriggerX[i-1]);
+  }
+  const triggerBarW = Math.max(2, Math.min(TRIGGER_BAR_W, minTriggerGapPx - 2));
   triggerMarks.forEach(m => {
     const count = m.events.length;
     const h = triggerBarHeight(count);
@@ -1171,8 +1277,8 @@ function renderTimeline(){
     const bars = [];
     if (okCount > 0) {
       const okBar = document.createElementNS(ns,"rect");
-      okBar.setAttribute("x", m.x - TRIGGER_BAR_W/2); okBar.setAttribute("y", TRIGGER_BASELINE_Y - okH);
-      okBar.setAttribute("width", TRIGGER_BAR_W); okBar.setAttribute("height", okH);
+      okBar.setAttribute("x", m.x - triggerBarW/2); okBar.setAttribute("y", TRIGGER_BASELINE_Y - okH);
+      okBar.setAttribute("width", triggerBarW); okBar.setAttribute("height", okH);
       okBar.setAttribute("fill", OK);
       okBar.setAttribute("class", "tl-trigger-bar" + (okDim ? " dim" : ""));
       svg.appendChild(okBar);
@@ -1181,8 +1287,8 @@ function renderTimeline(){
     }
     if (errCount > 0) {
       const errBar = document.createElementNS(ns,"rect");
-      errBar.setAttribute("x", m.x - TRIGGER_BAR_W/2); errBar.setAttribute("y", TRIGGER_BASELINE_Y - h);
-      errBar.setAttribute("width", TRIGGER_BAR_W); errBar.setAttribute("height", errH);
+      errBar.setAttribute("x", m.x - triggerBarW/2); errBar.setAttribute("y", TRIGGER_BASELINE_Y - h);
+      errBar.setAttribute("width", triggerBarW); errBar.setAttribute("height", errH);
       errBar.setAttribute("fill", ERR);
       errBar.setAttribute("class", "tl-trigger-bar" + (errDim ? " dim" : ""));
       svg.appendChild(errBar);
@@ -1248,6 +1354,21 @@ function renderRightPanel(){
       wireTip(txt, { t:"오늘 누계", title:HEALTH_LABEL[k], raw:`${fmtHHMMSS(durSec[k])} (${pct}%)`, tone:k==="down"?"err":"ok", d:"" });
       svg.appendChild(txt);
     });
+  })();
+
+  // (v3.8.5 후속) 트리거 레인 옆에 그날 총량(성공/실패 포함) — health 누계와 같은 텍스트 줄 스타일.
+  (function drawTriggerSummary(){
+    const total = TRIGGER_GROUPS.reduce((s, g) => s + g.events.length, 0);
+    const errTotal = TRIGGER_GROUPS.reduce((s, g) => s + g.events.filter(e => !e.ok).length, 0);
+    const ry = rowY["trigger|all"];
+    const txt = document.createElementNS(ns,"text");
+    txt.setAttribute("x", barsStartX); txt.setAttribute("y", ry);
+    txt.setAttribute("dominant-baseline", "central");
+    txt.setAttribute("class", "tl-right-health-label");
+    txt.textContent = `트리거 ${total}건` + (errTotal ? ` (실패 ${errTotal})` : "");
+    wireTip(txt, { t:"오늘 누계", title:"트리거", raw:`${total}건`+(errTotal?` · 실패 ${errTotal}건`:""),
+      tone: errTotal ? "err" : "ok", d:"" });
+    svg.appendChild(txt);
   })();
 
   // 소식(당일 총 건수) + 개인 트윗(멤버별 당일 건수) 가로 막대 — 가장 큰 값이 RIGHT_PANEL_W
@@ -1325,6 +1446,9 @@ function unpinTip(){
   pinned = false;
   hideTip();
   document.getElementById("tlScroll").classList.remove("locked");
+  // (v3.8.5 후속) 팝업을 닫을 때 트리거 히스토그램의 흰 실선(고정 선택)도 같이 꺼야
+  // 한다 — 예전엔 안 꺼져서 팝업 닫힌 뒤에도 실선이 그 자리에 남아 있었다.
+  setTriggerActiveNear(null);
 }
 function wireTip(el, tipData){
   el.addEventListener("mousemove", (ev) => { if (!isPinned()) showTip(ev, tipData); });
@@ -1605,18 +1729,26 @@ function clientXToMinutes(clientX){
   const rect = scrollEl.getBoundingClientRect();
   return xToMinutes(clientX - rect.left + scrollEl.scrollLeft, currentPlotW());
 }
-function placeCrosshair(minutes){
+// (v3.8.5 후속) 마우스를 계속 따라다녀야 하는 "얇은 크로스헤어"(moveCrosshair)와, 클릭으로
+// 고정한 뒤엔 마우스가 움직여도 안 바뀌어야 하는 "트리거 히스토그램 흰 실선/발광"
+// (setTriggerActiveNear, 팝업이 pinned 인 동안엔 여기서 건드리지 않음)을 분리했다 —
+// 예전엔 같은 placeCrosshair() 하나가 pinned 여부로 통째로 막혀서, 클릭 후 얇은 선까지
+// 마우스를 안 따라다니는 버그가 있었다.
+function moveCrosshair(minutes){
   crosshairMinutes = minutes;
   const crosshair = document.getElementById("tlCrosshair");
   crosshair.style.left = minutesToX(minutes, currentPlotW()) + "px";
   crosshair.style.height = (document.getElementById("tlSvg").getAttribute("height") || 0) + "px";
   crosshair.style.display = "block";
-  setTriggerActiveNear(minutesToX(minutes, currentPlotW()));
+}
+function placeCrosshair(minutes){
+  moveCrosshair(minutes);
+  if (!isPinned()) setTriggerActiveNear(minutesToX(minutes, currentPlotW()));
 }
 function hideCrosshair(){
   document.getElementById("tlCrosshair").style.display = "none";
   crosshairMinutes = null;
-  setTriggerActiveNear(null);
+  if (!isPinned()) setTriggerActiveNear(null);
 }
 
 (function setupInteraction(){
@@ -1650,8 +1782,10 @@ function hideCrosshair(){
 
   scrollEl.addEventListener("pointermove", (ev) => {
     if (!pointers.has(ev.pointerId)) {
-      // 버튼 안 누른 호버 — 크로스헤어 미리보기만(고정 중엔 건드리지 않음)
-      if (!isPinned() && pointers.size === 0) placeCrosshair(clientXToMinutes(ev.clientX));
+      // 버튼 안 누른 호버 — 얇은 크로스헤어는 pinned 여부와 무관하게 항상 마우스를
+      // 따라간다(v3.8.5 후속 버그 수정). 트리거 히스토그램 미리보기(발광/흰 실선)만
+      // placeCrosshair 내부에서 pinned 면 건드리지 않는다.
+      if (pointers.size === 0) placeCrosshair(clientXToMinutes(ev.clientX));
       return;
     }
     pointers.set(ev.pointerId, ev.clientX);
@@ -1680,11 +1814,39 @@ function hideCrosshair(){
   scrollEl.addEventListener("pointerup", endPointer);
   scrollEl.addEventListener("pointercancel", endPointer);
 
-  scrollEl.addEventListener("mouseleave", () => { if (!isPinned() && pointers.size === 0) hideCrosshair(); });
+  // 마우스가 영역을 떠나면 얇은 크로스헤어는 항상 사라진다(pinned 여부 무관) — 팝업이
+  // 고정한 흰 실선/발광은 hideCrosshair() 내부에서 pinned 면 안 건드리므로 그대로 남는다.
+  scrollEl.addEventListener("mouseleave", () => { if (pointers.size === 0) hideCrosshair(); });
+
+  const TRIGGER_TOUCH_SNAP_PX = 70; // 모바일 등 터치 좌표 부정확 환경 — 데스크톱(40px)보다 넉넉히
+  function findNearestTriggerMark(xInPlot, touchy){
+    if (!triggerMarks.length) return null;
+    let best = null, bestDist = Infinity;
+    triggerMarks.forEach(m => { const d = Math.abs(m.x - xInPlot); if (d < bestDist) { bestDist = d; best = m; } });
+    const snapPx = touchy ? TRIGGER_TOUCH_SNAP_PX : TRIGGER_HOVER_SNAP_PX;
+    return (best && bestDist <= snapPx) ? best : null;
+  }
 
   scrollEl.addEventListener("click", (ev) => {
     if (dragMoved) { dragMoved = false; return; } // 드래그 끝의 관성 클릭 무시
     if (isPinned()) { unpinTip(); return; }
+    // (v3.8.5 후속) 트리거 히스토그램 레인 밴드 안에서 클릭하면 — 정확히 막대를 못
+    // 맞혀도(특히 모바일) 가장 가까운 막대를 클릭한 것으로 보고 그 시간대 이벤트
+    // 팝업을 바로 띄운다. Y 좌표로 밴드를 제한해 notice/preview 등 다른 레인의
+    // 빈 공간 클릭까지 트리거로 대체되지 않게 한다.
+    const scrollRect = scrollEl.getBoundingClientRect();
+    const xInPlot = ev.clientX - scrollRect.left + scrollEl.scrollLeft;
+    const y = ev.clientY - scrollRect.top;
+    const triggerRowH = (LANES.find(g => g.key === "trigger") || {}).rowH || (IS_NARROW ? 88 : 96);
+    const inTriggerBand = Math.abs(y - rowY["trigger|all"]) <= triggerRowH / 2;
+    const mark = inTriggerBand ? findNearestTriggerMark(xInPlot, IS_NARROW) : null;
+    if (mark) {
+      pinned = true;
+      setTriggerActiveNear(mark.x);
+      showLegendHtml(ev, triggerGroupDetailHtml(mark.t, mark.events));
+      scrollEl.classList.add("locked");
+      return;
+    }
     placeCrosshair(clientXToMinutes(ev.clientX));
     pinned = true;
     scrollEl.classList.add("locked");
@@ -1814,6 +1976,15 @@ if __name__ == "__main__":
     assert arale["segs"][1].get("assumed_live") is True, arale
     assert "assumed_live" not in arale["segs"][0], arale
     print("[OK] _preview_json: assumed_live 플래그가 세그먼트로 전파됨(선행 세그먼트는 제외)")
+
+    # (v3.8.5 후속) collab_with 도 assumed_live 와 같은 방식으로 세그먼트에 전파 —
+    # 프론트가 합동 live 막대 위에 참여 멤버 아이콘을 얹는 데 쓴다.
+    collab_ev = [{"who": "yuno", "ts": "2026-09-01T05:00:00Z", "from_state": "watching",
+                  "to_state": "live", "title": "합동", "collab_with": ["ritsu"]}]
+    collab_preview = _preview_json(collab_ev, now_hm="14:10")
+    yuno_collab = next(v for v in collab_preview if v["member"] == "yuno")
+    assert yuno_collab["segs"][-1]["collab_with"] == ["ritsu"], yuno_collab
+    print("[OK] _preview_json: collab_with 가 세그먼트로 전파됨")
 
     # ── _add_minutes: 자정 넘김은 실제 시각으로 wrap(30:00 같은 가짜 시각 아님) ──
     assert _add_minutes("23:59", 3) == "00:02"
