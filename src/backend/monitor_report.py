@@ -1699,7 +1699,12 @@ function renderGrass(){
 }
 
 let currentDate = null;
-function loadDay(dateStr){
+// (v3.8.8) skipTimeline: 자동 갱신 tick 이 고정(pinned) 상태로 들어왔을 때 타임라인만
+// 건너뛴다 — renderTimeline() 은 svg.innerHTML="" 로 통째로 새로 그려서 방금 고정해둔
+// 팝업/흰 실선(triggerMarks 기준 위치)을 갱신 중 지워버리기 때문. 그 외 패널은 고정
+// 여부와 무관하게 항상 최신화(아래 setInterval 참고).
+function loadDay(dateStr, opts){
+  const skipTimeline = !!(opts && opts.skipTimeline);
   const day = REPORT.days[dateStr];
   if (!day) return;
   currentDate = dateStr;
@@ -1717,7 +1722,7 @@ function loadDay(dateStr){
       `다른 날짜는 <code>/monitor YYYY-MM-DD</code>, 이번 달 전체는 <code>/monitor --monthly</code>, 올해 전체는 <code>/monitor --yearly</code>로 요청하세요.`);
   document.getElementById("tlTitle").textContent = dateStr + " · 24시간 타임라인 (06:00~익일 06:00 KST)";
   renderStats();
-  renderTimeline();
+  if (!skipTimeline) renderTimeline();
   // (사용자 요청) 줌/스크롤과 무관하게 고정 — renderTimeline() 처럼 setZoom 마다 다시 안 부른다.
   renderRightPanel();
   renderTable();
@@ -1730,16 +1735,19 @@ function loadDay(dateStr){
 renderLabels();
 loadDay(REPORT.date);
 
-// (v3.8.7 후속) 웹 monitor(/monitor-live)에서만 SELF_ORIGIN 이 채워진다 — 자기 자신을
-// 주기적으로 다시 불러와 "진행중" 표시를 실시간에 가깝게 유지한다. loadDay() 는 같은
-// 문서 안에서 DOM 만 갱신하므로(페이지/iframe 리로드 없음) 스크롤·줌 위치가 안 튄다
-// (예전엔 부모 페이지가 iframe.srcdoc 을 통째로 교체해서 스크롤이 항상 맨 위로 리셋됐다).
+// (v3.8.7 후속, v3.8.8 로 고정 상태 처리 분리) 웹 monitor(/monitor-live)에서만
+// SELF_ORIGIN 이 채워진다 — 자기 자신을 주기적으로 다시 불러와 "진행중" 표시를 실시간에
+// 가깝게 유지한다. loadDay() 는 같은 문서 안에서 DOM 만 갱신하므로(페이지/iframe 리로드
+// 없음) 스크롤·줌 위치가 안 튄다(예전엔 부모 페이지가 iframe.srcdoc 을 통째로 교체해서
+// 스크롤이 항상 맨 위로 리셋됐다). (v3.8.8) 예전엔 isPinned() 면 tick 자체를 건너뛰어
+// 타임라인 팝업을 고정해둔 것만으로 오늘의 멤버 현황·우측 요약 등 페이지 전체가 같이
+// 멎어 보이는 부작용이 있었다 — 이제 데이터는 계속 갱신하고 타임라인 렌더만 건너뛴다.
 if (SELF_ORIGIN) {
   setInterval(function(){
-    if (document.visibilityState !== "visible" || isPinned()) return;
+    if (document.visibilityState !== "visible") return;
     fetch(SELF_ORIGIN + "/monitor-live.json", { cache:"no-store" })
       .then(r => r.ok ? r.json() : null)
-      .then(fresh => { if (fresh) { REPORT = fresh; loadDay(currentDate); } })
+      .then(fresh => { if (fresh) { REPORT = fresh; loadDay(currentDate, { skipTimeline: isPinned() }); } })
       .catch(() => {});
   }, 60000);
 }
