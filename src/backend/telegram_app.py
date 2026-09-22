@@ -828,10 +828,13 @@ def _ingest_queue_drain(gh, now_iso: str) -> tuple[int, int]:
     if not items:
         return 0, 0
     applied = total_rows = 0
+    channels_cfg = _load_channels_config()
     for it in items:
-        rows = xrelay.parse(it.get("raw", ""), it.get("received_at") or now_iso)
+        raw = it.get("raw", "")
+        rows = xrelay.parse(raw, it.get("received_at") or now_iso)
         if not rows:
             continue
+        rows = _confirm_relay_rows_collab(gh, raw, rows, channels_cfg, now_iso, via="ingest")
         _merge_rows_into_schedule(
             gh, rows, now_iso, message=f"data: xrelay queued {it.get('received_at')}"
         )
@@ -1311,6 +1314,7 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
         _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영")
         drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
         rows = xrelay.parse(raw, now_iso)
+        rows = _confirm_relay_rows_collab(gh, raw, rows, channels_cfg, now_iso, via="ops")
         failed = xrelay.unparsed_lines(raw)
         if not rows:
             # @BDP 형식이 아니고 인식 실패 줄도 없으면 멤버 개인 예고일 수 있다 —
@@ -2297,6 +2301,8 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     quote_src = (parsed.get("quote") or {}).get("text")
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
                              handle=handle, now_iso=now_iso, via=via, quote=quote_src)
+    # (v3.8.7) 기존 예고 취소/변경 여부는 새 예고 생성과 별개로 항상 확인
+    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via)
     return mode
 
 
@@ -2539,25 +2545,29 @@ def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
 
 
 def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list[str],
-                               channels_cfg: dict, now_iso: str, via: str) -> list[str]:
-    """(v3.8.6) 호스트 멤버 트윗에 이름이 언급된 게스트 후보를 LLM으로 최종 확인.
+                               channels_cfg: dict, now_iso: str, via: str,
+                               flow: str = "tweet") -> list[str]:
+    """(v3.8.6) 트윗/릴레이 텍스트에 이름이 언급된 게스트 후보를 LLM으로 최종 확인.
 
-    발동시점: 호스트 멤버의 트윗(+인용)에 자신이 아닌 다른 멤버 이름이 하나 이상
-    들어간 경우(`find_guest_members`가 이미 걸러 `guest_keys`로 넘겨준다). 판단 대상:
-    "이 방송이 언급된 멤버와 실제로 합동하는 방송인가?" — 이름이 나왔다고 무조건
-    합동은 아니다(안부 인사·잡담 등). 합동 멤버는 여럿일 수 있으나, 애초에 텍스트에
-    언급된 멤버만 후보로 카운팅한다(언급 안 된 멤버를 LLM 이 임의로 추가하진 않음 —
-    schema enum이 candidate_names로 고정).
+    발동시점(2026-09-22 확정) — 아래 **둘 중 하나라도** 해당하면 무조건 호출:
+      1. `멤버1×멤버2` 류 정규식(× 구분자)이 매치된 경우
+      2. 호스트가 아닌 다른 멤버의 정식 표기 이름이 텍스트에 그냥 나온 경우
+    (`find_guest_members`/`xrelay._names()`가 이미 이 두 조건으로 걸러 `guest_keys`로
+    넘겨준다.) 판단 대상: "이 방송이 언급된 멤버와 실제로 합동하는 방송인가?" —
+    이름이 나왔다고/×로 묶였다고 무조건 합동은 아니다(안부 인사·잡담 등). 합동
+    멤버는 여럿일 수 있으나, 애초에 텍스트에 언급된 멤버만 후보로 카운팅한다
+    (언급 안 된 멤버를 LLM 이 임의로 추가하진 않음 — schema enum이 candidate_names로 고정).
 
     GROQ_API_KEY 없거나 LLM 5회 모두 실패하면 안전한 기본값(게스트 미추가) — 등록
     자체(호스트 채널·author 콜라보)는 이 판정과 무관하게 이미 확정돼 있으므로 막지 않는다.
+    `flow`: 모니터 이벤트 로그 분류용("tweet" 개인트윗 경로 | "relay" 공식 계정 릴레이 경로).
     """
     if not guest_keys:
         return []
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not groq_key:
         log.warning("GROQ_API_KEY 없음 — 게스트 언급 콜라보 판정 스킵, 미추가")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=host_key,
+        _log_event_safe(gh, now_iso, flow, RESULT_DEGRADED, who=host_key,
                   detail="collab-guest skip: GROQ_API_KEY 미설정 — 게스트 미추가", via=via)
         return []
 
@@ -2571,10 +2581,128 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
         text, host_name=host_name, candidate_names=candidate_names)
     if confirmed is None:
         log.warning("게스트 언급 콜라보 판정: LLM 5회 모두 실패 — 미추가")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=host_key,
+        _log_event_safe(gh, now_iso, flow, RESULT_DEGRADED, who=host_key,
                   detail="collab-guest skip: collab_partners() 5회 모두 실패 — 미추가", via=via)
         return []
     return [name_to_key[n] for n in confirmed if n in name_to_key]
+
+
+def _confirm_relay_rows_collab(gh, raw: str, rows: list[dict], channels_cfg: dict,
+                               now_iso: str, *, via: str) -> list[dict]:
+    """(v3.8.6) `xrelay.parse` 가 뽑은 행 중 특정 멤버 이름으로 collab_with 가 채워진
+    것만 LLM 로 재확인 — 무조건(언급/× 매치가 곧 확정이던 것을 대체).
+
+    `host="group"` (전원 팬아웃, `夢限大みゅーたいぷ`/인원수 표기 기반)은 대상이 아니다 —
+    특정 멤버 이름을 지목한 게 아니라 "5명 다"라는 서로 다른 신호라 이름언급 오탐과는
+    무관하다. 판정 후 아무도 확인 안 되면 collab_with=None, kind(=="collab")도
+    되돌린다(원래 아이콘 기반 kind 는 이 시점엔 복원 불가 — None 으로 단순화).
+    """
+    for row in rows:
+        if row.get("host") == "group" or not row.get("collab_with"):
+            continue
+        confirmed = _confirm_llm_collab_guests(
+            gh, raw, host_key=row["channel_key"], guest_keys=list(row["collab_with"]),
+            channels_cfg=channels_cfg, now_iso=now_iso, via=via, flow="relay",
+        )
+        row["collab_with"] = confirmed or None
+        if not confirmed and row.get("kind") == "collab":
+            row["kind"] = None
+    return rows
+
+
+_BROADCAST_KEYWORD = "配信"
+_MMDD_HHMM_RE = re.compile(r"(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})")
+
+
+def _parse_kst_mmdd_hhmm(text: str | None, now_iso: str) -> str | None:
+    """(v3.8.7) LLM 이 준 "MM/DD HH:MM"(KST) 를 UTC ISO 로. 파싱 실패 시 None.
+
+    연도는 xrelay._infer_year 와 동일하게 now 와 가장 가까운 연도로 추정(연말 롤오버).
+    """
+    if xrelay is None:
+        return None
+    m = _MMDD_HHMM_RE.search(text or "")
+    if not m:
+        return None
+    mo, d, hh, mm = (int(x) for x in m.groups())
+    if not (1 <= mo <= 12 and 1 <= d <= 31 and 0 <= hh <= 29 and 0 <= mm <= 59):
+        return None
+    try:
+        now_jst = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(xrelay.JST)
+    except (ValueError, AttributeError):
+        now_jst = datetime.now(xrelay.JST)
+    day_carry, hh = divmod(hh, 24)          # 심야표기 24:00〜29:59
+    try:
+        base = datetime(xrelay._infer_year(mo, d, now_jst), mo, d, tzinfo=xrelay.JST)
+    except ValueError:
+        return None
+    dt = base + timedelta(days=day_carry, hours=hh, minutes=mm)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
+                            channels_cfg: dict, *, via: str = "ingest") -> None:
+    """(v3.8.7) 개인 트윗에 `配信` 키워드가 있으면, 그 멤버가 **호스트**인 기존 예고를
+    취소·변경하는 글인지 LLM 으로 판정해 반영한다.
+
+    실측 계기(2026-09-22): 노노카가 당일 방송 취소를 공지했는데, 어떤 로직도 기존
+    예고를 내리지 않았다 — 그 뒤 그 날의 옛 공식 그룹 공지가 재-ingest 되면서 이미
+    취소된 방송이 되살아나는 사고로 이어졌다. 게스트(collab_with)로만 엮인 예고는
+    대상 아님(2026-09-22 확정 — 호스트 본인 트윗만, 게스트 취소는 추후 과제).
+
+    반영은 `/edit preview` 마법사와 동일한 커밋 함수(`apply_preview_edit`)를 그대로
+    재사용 — state="none" 패치는 그 안에서 `_activate_state_edit`(즉시 제거+아카이브)
+    까지 자동으로 이어진다.
+    """
+    if _BROADCAST_KEYWORD not in (raw or "") or xtweet is None:
+        return
+    try:
+        prev, _ = gh.read_json(_PREVIEW_PATH)
+    except Exception:
+        log.exception("방송 취소/변경 판정: preview.json 조회 실패")
+        return
+    target = xtweet.find_active_item((prev or {}).get("items", []) or [], channel_key)
+    if target is None:
+        return   # 취소/변경할 활성 예고 자체가 없음 — LLM 호출 비용 절감
+
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        log.warning("GROQ_API_KEY 없음 — 방송 취소/변경 판정 스킵")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                  detail="broadcast-change skip: GROQ_API_KEY 미설정", via=via)
+        return
+
+    from .llm import LLMClient
+    result = LLMClient(groq_key).broadcast_change(raw)
+    if result is None:
+        log.warning("방송 취소/변경 판정: LLM 5회 모두 실패 — 미반영")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+                  detail="broadcast-change skip: broadcast_change() 5회 모두 실패", via=via)
+        return
+
+    action = result.get("action")
+    if action == "del":
+        patch = {"state": "none"}
+        pre = {"state": target.get("state")}
+        label = f"{channel_key} 방송 취소(LLM)"
+    elif action == "edit":
+        new_iso = _parse_kst_mmdd_hhmm(result.get("when"), now_iso)
+        if not new_iso:
+            log.warning("방송 취소/변경 판정: edit 인데 when 파싱 실패 — 미반영 (%r)", result.get("when"))
+            return
+        patch = {"date": new_iso}
+        pre = {"date": target.get("scheduled_start")}
+        label = f"{channel_key} 방송 일정변경(LLM)"
+    else:
+        return   # action == "none" — 취소/변경 아님
+
+    ctx = {"id": target["id"], "patch": patch, "pre": pre}
+    try:
+        writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx, label=label)
+    except Exception:
+        log.exception("방송 취소/변경 반영 실패")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                  detail="broadcast-change write 실패 — 취소/변경 유실", via=via)
 
 
 def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
@@ -3470,6 +3598,7 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
         if not rows:
             _send_telegram("ℹ️ 예고 형식으로 파싱 못 함 — 편집 취소.")
             return True
+        rows = _confirm_relay_rows_collab(gh, raw, rows, channels_cfg, now_iso, via="ops")
         writeclient.call_write("merge_rows", gh=gh, rows=rows, now_iso=now_iso,
                                message=f"data: /edit preview ingest {now_iso}",
                                action="/edit preview ingest")
@@ -4089,6 +4218,7 @@ if _FLASK_AVAILABLE:
         try:
             channels_cfg = _load_channels_config()
             rows = xrelay.parse(raw, now_iso)
+            rows = _confirm_relay_rows_collab(gh, raw, rows, channels_cfg, now_iso, via="ingest")
 
             if dry:
                 cut = 3500
@@ -4625,6 +4755,77 @@ if __name__ == "__main__":
         pv11c = (g11c.store.get(_PREVIEW_PATH) or {}).get("items") or []
         assert pv11c and pv11c[0]["channel_key"] == "yuno" and pv11c[0]["collab_with"] == ["ritsu"], pv11c
         print("[OK] _maybe_url_confirmed_schedule (URL이 quote에만 있어도 raw+quote 합본으로 등록, collab_with=[ritsu])")
+
+        # (v3.8.6) _confirm_relay_rows_collab — 공식 계정 일일 스케줄(× 콜라보)도
+        # 이름 매치만으론 확정 안 하고 무조건 LLM 재확인
+        import src.backend.llm as _llm_mod4
+
+        class _FakeRelayLLM:
+            _CONFIRMED: list[str] = []
+            def __init__(self, api_key):
+                pass
+            def collab_partners(self, text, *, host_name, candidate_names):
+                return self._CONFIRMED
+
+        _orig_llm_cls4 = _llm_mod4.LLMClient
+        try:
+            _llm_mod4.LLMClient = _FakeRelayLLM
+            _RAW_COLLAB = (
+                "／\n🛸夢限大みゅーたいぷ\n8/29(土) 配信スケジュール🌟\n＼\n\n"
+                "💪12:00〜 仲町あられ×藤都子\n"
+            )
+            rows_src = xrelay.parse(_RAW_COLLAB, "2026-09-03T00:00:00Z")
+            col_row = next(r for r in rows_src if r.get("kind") == "collab")
+            assert col_row["channel_key"] == "arale" and col_row["collab_with"] == ["miyako"], col_row
+
+            # GROQ_API_KEY 없음 → × 매치돼도 게스트 미추가(kind 도 되돌림)
+            os.environ.pop("GROQ_API_KEY", None)
+            g14 = _FakeGH()
+            out14 = _confirm_relay_rows_collab(
+                g14, _RAW_COLLAB, [dict(r) for r in rows_src], _CFG6,
+                "2026-09-03T00:00:05Z", via="ingest")
+            c14 = next(r for r in out14 if r["channel_key"] == "arale")
+            assert c14["collab_with"] is None and c14["kind"] is None, c14
+            print("[OK] _confirm_relay_rows_collab (GROQ_API_KEY 없음 → × 콜라보도 게스트 미추가)")
+
+            os.environ["GROQ_API_KEY"] = "test-key"
+
+            # LLM "합동 아님" → × 매치돼도 collab_with 제거
+            _FakeRelayLLM._CONFIRMED = []
+            g15 = _FakeGH()
+            out15 = _confirm_relay_rows_collab(
+                g15, _RAW_COLLAB, [dict(r) for r in rows_src], _CFG6,
+                "2026-09-03T00:00:05Z", via="ingest")
+            c15 = next(r for r in out15 if r["channel_key"] == "arale")
+            assert c15["collab_with"] is None and c15["kind"] is None, c15
+            print("[OK] _confirm_relay_rows_collab (LLM 미확인 → × 매치돼도 collab_with 제거, 오탐 방지)")
+
+            # LLM "실제 합동" 확인 → 그대로 유지
+            _FakeRelayLLM._CONFIRMED = ["미야코"]
+            g16 = _FakeGH()
+            out16 = _confirm_relay_rows_collab(
+                g16, _RAW_COLLAB, [dict(r) for r in rows_src], _CFG6,
+                "2026-09-03T00:00:05Z", via="ingest")
+            c16 = next(r for r in out16 if r["channel_key"] == "arale")
+            assert c16["collab_with"] == ["miyako"] and c16["kind"] == "collab", c16
+            print("[OK] _confirm_relay_rows_collab (LLM 이 합동으로 확인 → × 콜라보 유지)")
+
+            # host="group"(전원 팬아웃)은 이름 언급이 아니라 인원수/전체 표기 신호라 게이트 제외
+            _RAW_GROUP = (
+                "＼🛸出演情報📢／\n\n9/10(木) 22:00頃〜\n「이벤트」\n\n"
+                "夢限大みゅーたいぷ 5名が出演🛸\n\nhttps://youtube.com/live/ri2_BimgJIA"
+            )
+            rows_group = xrelay.parse(_RAW_GROUP, "2026-09-03T00:00:00Z")
+            g17 = _FakeGH()
+            out17 = _confirm_relay_rows_collab(
+                g17, _RAW_GROUP, [dict(r) for r in rows_group], _CFG6,
+                "2026-09-03T00:00:05Z", via="ingest")
+            assert out17[0]["host"] == "group" and out17[0]["collab_with"] == [
+                "yuno", "nonoka", "ritsu", "miyako"], out17
+            print("[OK] _confirm_relay_rows_collab (host=group 전원 팬아웃은 게이트 제외)")
+        finally:
+            _llm_mod4.LLMClient = _orig_llm_cls4
+            os.environ.pop("GROQ_API_KEY", None)
     finally:
         globals()["YouTubeClient"] = _orig_YTC
         globals()["_enqueue_wake_now"] = _orig_enqueue
@@ -4711,6 +4912,98 @@ if __name__ == "__main__":
             globals()["_make_gh"] = _orig_make_gh
             os.environ.clear()
             os.environ.update(_orig_env2)
+
+    # ── (v3.8.7) _maybe_broadcast_change — 기존 예고 취소/변경 LLM 판정 ────
+    if xtweet is not None:
+        assert _parse_kst_mmdd_hhmm("09/23 23:00", "2026-09-22T12:00:00Z") == "2026-09-23T14:00:00Z", \
+            _parse_kst_mmdd_hhmm("09/23 23:00", "2026-09-22T12:00:00Z")
+        assert _parse_kst_mmdd_hhmm("헛소리", "2026-09-22T12:00:00Z") is None
+        print("[OK] _parse_kst_mmdd_hhmm (KST MM/DD HH:MM → UTC ISO, 파싱 실패 → None)")
+
+        _CFG_BC = {"channels": {"nonoka": {"name_ko": "노노카"}}}
+        _NONOKA_ITEM = {
+            "id": "pv_nonoka1", "channel_key": "nonoka", "state": "watching",
+            "scheduled_start": "2026-09-22T11:30:00Z", "collab_with": None,
+        }
+
+        import src.backend.llm as _llm_mod5
+
+        class _FakeChangeLLM:
+            _RESULT = None
+            def __init__(self, api_key):
+                pass
+            def broadcast_change(self, text):
+                return self._RESULT
+
+        _orig_llm_cls5 = _llm_mod5.LLMClient
+        _orig_env5 = dict(os.environ)
+        try:
+            _llm_mod5.LLMClient = _FakeChangeLLM
+            os.environ["GROQ_API_KEY"] = "test-key"
+
+            # del → state=none 패치 + _activate_state_edit 로 즉시 제거·아카이브
+            _FakeChangeLLM._RESULT = {"action": "del", "when": None}
+            gbc1 = _FakeGH()
+            gbc1.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
+            _maybe_broadcast_change(gbc1, "本日こちらの配信なしで、今日おやすみです！",
+                                    "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
+            pv_bc1 = (gbc1.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert not pv_bc1, pv_bc1
+            arch_bc1 = (gbc1.store.get(_PREVIEW_ARCHIVE_PATH) or {}).get("items") or []
+            assert any(a.get("id") == "pv_nonoka1" for a in arch_bc1), arch_bc1
+            print("[OK] _maybe_broadcast_change (LLM del → 기존 예고 즉시 제거+아카이브)")
+
+            # edit → scheduled_start 갱신, 항목은 유지
+            _FakeChangeLLM._RESULT = {"action": "edit", "when": "09/23 23:00"}
+            gbc2 = _FakeGH()
+            gbc2.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
+            _maybe_broadcast_change(gbc2, "오늘 配信 못하고 내일 23시로 미룰게요",
+                                    "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
+            pv_bc2 = (gbc2.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert pv_bc2 and pv_bc2[0]["scheduled_start"] == "2026-09-23T14:00:00Z", pv_bc2
+            print("[OK] _maybe_broadcast_change (LLM edit → scheduled_start 갱신, 항목 유지)")
+
+            # none → 아무 변화 없음
+            _FakeChangeLLM._RESULT = {"action": "none", "when": None}
+            gbc3 = _FakeGH()
+            gbc3.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
+            _maybe_broadcast_change(gbc3, "오늘 방송 완전 재밌었다ㅎㅎ 配信 최고",
+                                    "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
+            pv_bc3 = (gbc3.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert pv_bc3 == [_NONOKA_ITEM], pv_bc3
+            print("[OK] _maybe_broadcast_change (LLM none → 무변화, 평소 후기 오탐 방지)")
+
+            # 대상 예고 자체가 없으면 LLM 호출 없이 스킵(호출됐으면 위 _RESULT=none 이라 통과했을 것이므로,
+            # 여기선 store 자체가 안 변하는지만 확인 — 활성 아이템 없는 상태)
+            gbc4 = _FakeGH()
+            gbc4.store[_PREVIEW_PATH] = {"items": []}
+            _maybe_broadcast_change(gbc4, "配信します!", "nonoka",
+                                    "2026-09-22T12:30:00Z", _CFG_BC)
+            assert not (gbc4.store.get(_PREVIEW_PATH) or {}).get("items")
+            print("[OK] _maybe_broadcast_change (대상 활성 예고 없음 → 스킵)")
+
+            # 配信 키워드 자체가 없으면 스킵(대상이 있어도)
+            gbc5 = _FakeGH()
+            gbc5.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
+            _maybe_broadcast_change(gbc5, "오늘 날씨 좋다", "nonoka",
+                                    "2026-09-22T12:30:00Z", _CFG_BC)
+            assert gbc5.store[_PREVIEW_PATH]["items"] == [_NONOKA_ITEM]
+            print("[OK] _maybe_broadcast_change (配信 키워드 없음 → 스킵)")
+
+            # GROQ_API_KEY 없음 → 안전한 실패(미반영) + degraded 로그
+            del os.environ["GROQ_API_KEY"]
+            gbc6 = _FakeGH()
+            gbc6.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
+            _maybe_broadcast_change(gbc6, "本日こちらの配信なしで、今日おやすみです！",
+                                    "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
+            assert gbc6.store[_PREVIEW_PATH]["items"] == [_NONOKA_ITEM]
+            _ev_bc6 = next((v for k, v in gbc6.store.items() if k.startswith("monitoring/events-")), "")
+            assert '"result": "degraded"' in _ev_bc6 and "GROQ_API_KEY" in _ev_bc6, _ev_bc6
+            print("[OK] _maybe_broadcast_change (GROQ_API_KEY 없음 → 미반영, degraded 로그)")
+        finally:
+            _llm_mod5.LLMClient = _orig_llm_cls5
+            os.environ.clear()
+            os.environ.update(_orig_env5)
 
     # ── (v3.7) notice 의미 중복 게이트 — 같은 날짜만 후보(threshold=0일), LLM 판정 ──
     if notices is not None:

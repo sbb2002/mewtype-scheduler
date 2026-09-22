@@ -26,17 +26,24 @@
       });
     }
     // 접속 시각 기준 리포트(가장 최근 06:00 KST~지금)를 우선, 서버가 죽었으면 마지막 스냅샷으로 폴백.
-    load(LIVE_URL)
-      .catch(function () { return load(SNAPSHOT_URL); })
-      .then(function (html) {
-        var f = document.getElementById("f");
-        f.srcdoc = html;
-        f.hidden = false;
-        document.getElementById("msg").hidden = true;
-      })
-      .catch(function () {
-        document.getElementById("msg").textContent = "리포트를 불러올 수 없습니다.";
-      });
+    function refresh() {
+      return load(LIVE_URL)
+        .catch(function () { return load(SNAPSHOT_URL); })
+        .then(function (html) {
+          var f = document.getElementById("f");
+          f.srcdoc = html;
+          f.hidden = false;
+          document.getElementById("msg").hidden = true;
+        });
+    }
+    refresh().catch(function () {
+      document.getElementById("msg").textContent = "리포트를 불러올 수 없습니다.";
+    });
+    // (v3.8.7) "오늘의 멤버 현황"(트윗 건수·live 진행중 여부)이 실시간에 가깝게 보이도록
+    // 탭이 보이는 동안 60초마다 전체를 다시 불러온다 — 실패해도 화면은 직전 값 그대로 유지.
+    setInterval(function () {
+      if (document.visibilityState === "visible") refresh().catch(function () {});
+    }, 60000);
   </script>
 </body>
 </html>

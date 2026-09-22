@@ -677,6 +677,25 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
     return items, changed
 
 
+_ACTIVE_STATES = {"announced", "upcoming", "watching", "live"}
+
+
+def find_active_item(items: list[dict], channel_key: str) -> dict | None:
+    """(v3.8.7) 방송 취소/변경 LLM 판정 대상 찾기 — channel_key 가 **호스트**인
+    미종료(end/none 아님) 항목 중 scheduled_start 가장 이른 것.
+
+    호스트 본인 트윗만 다룬다(2026-09-22 확정) — collab_with 로만 엮인(게스트) 항목은
+    대상 아님. 그 멤버 소유 활성 항목이 여럿이면 가장 이른 것 하나만 고른다(LLM 에겐
+    트윗 텍스트만 주고 "어떤 방송인지" 특정은 안 시키므로, 여러 후보 중 애매하게
+    고르게 하는 대신 결정적 규칙 하나로 고정).
+    """
+    candidates = [it for it in (items or [])
+                  if it.get("channel_key") == channel_key and it.get("state") in _ACTIVE_STATES]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda x: x.get("scheduled_start") or "9999-99-99T99:99:99Z")
+
+
 MEMBER_LIVE_MATCH_SEC = 3 * 3600       # 알림 시각 ↔ 자리표시 scheduled_start 허용 오차
 MEMBER_LIVE_TTL_HOURS = 5              # 회원 전용 하드 TTL (preview.make_item 규칙과 동일)
 
@@ -1307,5 +1326,22 @@ if __name__ == "__main__":
     _out2, _ = merge_video_confirmed(_out, "V1", dict(_new, collab_with=None), "2026-09-21T13:01:00Z")
     assert _out2[0]["collab_with"] == ["yuno"], "재-ingest 가 기존 collab_with 를 지우면 안 됨"
     print("[OK] merge_video_confirmed  (collab_with 추가만, 기존 값 보존)")
+
+    # find_active_item (v3.8.7) — 방송 취소/변경 LLM 판정 대상 찾기
+    _items_fa = [
+        {"id": "a1", "channel_key": "nonoka", "state": "watching",
+         "scheduled_start": "2026-09-22T11:30:00Z"},
+        {"id": "a2", "channel_key": "nonoka", "state": "announced",
+         "scheduled_start": "2026-09-23T14:00:00Z"},
+        {"id": "a3", "channel_key": "nonoka", "state": "end",
+         "scheduled_start": "2026-09-21T10:00:00Z"},
+        {"id": "a4", "channel_key": "yuno", "state": "upcoming",
+         "collab_with": ["nonoka"], "scheduled_start": "2026-09-22T05:00:00Z"},
+    ]
+    assert find_active_item(_items_fa, "nonoka")["id"] == "a1", "가장 이른 활성 항목 선택(게스트인 a4·end인 a3 제외)"
+    assert find_active_item(_items_fa, "yuno")["id"] == "a4", "본인이 호스트인 항목은 정상 매칭"
+    assert find_active_item(_items_fa, "ritsu") is None, "channel_key 일치 없으면 None"
+    assert find_active_item([], "nonoka") is None
+    print("[OK] find_active_item  (호스트 소유 미종료 항목 중 가장 이른 것, 게스트/end 제외)")
 
     print("\nSUCCESS: xtweet self-test 통과")
