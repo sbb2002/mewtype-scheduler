@@ -135,6 +135,11 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             if e.get("result") and e["result"] != "ok":
                 seg["q"] = e["result"]
                 seg["qd"] = e.get("detail", "")
+            # (v3.8.4 item 10) "방송 중 추정"(assumed_live) — announced/upcoming 상태값과
+            # 별개로 프론트가 빨강 빗금으로 덮어 그리는 데 쓴다. 선행 세그먼트(위 121번 줄,
+            # 관측 전 06:00부터 있었다고 가정하는 구간)는 근거 이벤트가 없어 대상에서 뺀다.
+            if e.get("assumed_live"):
+                seg["assumed_live"] = True
             segs.append(seg)
         out.append({"member": member, "title": title, "segs": segs})
     return out
@@ -302,8 +307,10 @@ _TEMPLATE = r"""<!doctype html>
     --bg:#0d0e12; --panel:#15161a; --panel-2:#1a1c22; --line:#2a2c33; --line-soft:#21232a;
     --ink:#e8e8e8; --muted:#8a8f98; --muted-2:#5f6570; --accent:#7dd3c0;
     --ok:#7CB342; --err:#e5484d;
-    --st-announced:#949494; --st-upcoming:#ffffff; --st-watching:#ffffff;
-    --st-live:#ff5470; --st-end:#575757; --st-none:#424242;
+    /* (v3.8.4 item 10) live 미만 등급은 노랑 계열 그라데이션 — 낮은 확신도일수록 어둡게.
+       watching 은 upcoming 과 같은 노랑 바탕에 빗금(패턴)으로 구분. */
+    --st-announced:#8a6d1a; --st-upcoming:#f5c344; --st-watching:#f5c344;
+    --st-live:#ff5470; --st-live-assumed:#ff5470; --st-end:#575757; --st-none:#424242;
     --mono:"JetBrains Mono",ui-monospace,"SF Mono",Consolas,monospace;
     --sans:-apple-system,"Segoe UI",Inter,sans-serif;
   }
@@ -557,6 +564,10 @@ const STATE = {
   end:      { label:"방송 종료(end)",   color:"var(--st-end)" },
   none:     { label:"사라짐(none)",     color:"var(--st-none)" },
 };
+// (v3.8.4 item 9) sg.s 가 비어 있으면(과거 데이터 — from_state/to_state 필드 누락 버그가
+// 고쳐지기 전에 기록된 이벤트) 'null' 문자열이 그대로 노출되던 것 방지. 새로 기록되는
+// 이벤트는 항상 값이 있다(handlers.py/telegram_app.py 쪽 수정).
+function stateLabel(s){ return (STATE[s] || {}).label || "상태 미상"; }
 const OK = "#7CB342", ERR = "#e5484d", DEGRADED = "#f5c344";
 const TONE_COLOR = { ok:OK, degraded:DEGRADED, err:ERR };
 const TONE_LABEL = { ok:"정상", degraded:"부분 실패", err:"에러" };
@@ -565,7 +576,7 @@ const MEMBER_KO = { arale:"아라레", yuno:"유노", nonoka:"노노카", ritsu:
 // 40x40 PNG, base64). 텍스트보다 폭이 좁아 라벨 칸 전체 폭을 줄일 수 있다.
 const MEMBER_ICON = { ritsu:"data:image/png;base64,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", yuno:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAALKElEQVR42q1Ye1BTVxr/fTc3wQA2UIQIAga3k0YtI5aHA6w6pvHRylRUsF1lK4qgy7h221W3U1/Uqm1Xdt12u86qRVu7sqJu1S62VSkWKj6C1gdqs2kVLFqIRSOKxIQkZ//Qc3sTgtjtfjNncs+953zf73zvEwhEwv9zeN2eEK/bE2I/a81hK5gwZ1aB7ufwg3zCAJLP58wq0O3csjXe6/aEBNrsv14gEgqyp82bOmCYZ0vuAg/fx8DI/xAPC1wC+M+iouCH2cBWrBDmzCrQ9SSgnyb89y8OGecpzs69W5yde5eD4WB7OixXSDeAXrcnZOeWrfGBQNbt3DvTftaa03SwrvjrPXv6+jMIJGz14ldzt+Qu8PBRmP3cdoFIGBoT7+Zy5DIfBM5Hg/az1pzi7Ny7Q2Pi3fKxc907Xqf1vJcztJ+15tTv/nTdjq3bCt9bumaH//qpA4Z5/pYwyXtz5ibv1AHDPIXZz22XH8Tr9oS0fnO5LNC+poN1xf5gyev2hLRfuPj0kuVL/lFjPi4iAM154YX3X1z12otFhUWRpuT0pa+vWZkPAKYwA42bMFrYXLHDa2F2Zgoz0GupuQQA22orsd55ygsAhvDo93dfMBddP/OfKd9evJj55vxXFliYnfnLGZ02wj1jRt7ckdOyP3R3udWiUnSQ/aw1p+rzz3aUrC29x4zCCQD8GSzMzKbSuj3SOw7GBwiF0ypVGvE11bgGALCqHazqpoWVLFoocDkPorkz54753ZtL6wBAcaGhYdnuffuGcAHpDrUwL+RJ9BMfodteJ9pwFwBwpNkiMTBQOK0bOYt2dzawtxu/kEDnZ06g1MeepI7LVxE9Kg0XI51sf9MZpLBI+ouxkLb+ew+7dLdN4jEtaLDwB3EY+cs6eeZkflvHrdcBQJAjT3eohYmaRAYARkTBqNJRoBOWmeYTAFQeqfF5f/r8vUNEj0oDAEwOTqQy03yqdjWxbbWVeC01l+rGLhO4IoyIQiBZHV1dW/izoLI77gQCUY1rkunkZAozEADURVyjQH4UiLIyRoOD5Ac8qnZ497U3UG97BVe4OoRPjqod3kDguF8aKFwKgs0VO7qB1zvUAQVODk4kDnJ3ZwMDgKWJz/iAdLTbAu4VovpFSXayMDtb6jKzalcTk4PTpuq7uOYeRMEpA3vU6OTgRB+3SNAOglGlo6Nqh3epy8y29Pnew9eOyxzVFwBm58+OF7bs3blxel7er+QguelMYQbSpuq7AOBKu62bUAOFEx8A0HniMvVmagDgWpwxKguxGq1PxshIS9+1YVd5AQBs3LTxBwEAlq19418Zaem7/BkmDTVAaW1X1piPixZmZ/5Bk+5QC+kOtWBU6SSQjsZWHx4q02CSazFWo5WCCQC4y3DasKu8QFSKDp4HBc/y5XB3udVPmcZ2cCHyYJBrTm5Co0pHao2WqTVaxucAoE7o7wPKVfV1N7P7W4PLLVm0UAAAd5dbTa8LDgAQ2LLlalEpOqb/trCIm9NA4ZQ01IDT5y2S+hdmZtPIKWOktGRVO1i1q8lnnB+mcqlMg4mDaqk1dzNz4oLBgoXZ2cEkB+SHNYUZ6NmJT0FUio6iwqJIxcp7okRRKToAYNak3KIa8zERALSp+q7JwYmqen2LC2aIpjCDDzgesXqVTpo72m2kPuNSuTS+GmupNUt5EQBujwvFnHG/VrQfuAjgCckXC6rexUuLS1z3TfudZGK+saruy2T+nKqMVu7ubGC2eqsSAH5ZmEVxyXofwRmPD4FcezxF9UbfvGx1bl2xo9v7WI0WgXoBCeAd112L/0du3uH94wgA4pL1UrJN0A6SIp6P9c5TXv69J7LVW5Wuz52eT1//wutvkUCpTAIYoupjeBDjqr/vofIlG3x8qzhouNCtAslyqNy0PR2+10rS24KFmdkUl6xnpnnZbOSUMcL4NfnEu5QZo7IeRka31PNTqFeAoRmPSWqPS9azuGQ9G78mn7gp/bVoYXbJDRptlwAAHzWfwLbaSmkuTy29kSj3wVCl8qE2cpAtr37CZozKQnDnQJ9esdrVxGYANOSdPDSftNL4++9j3JHAK5/0aNpA1UrkiTEhOrZHH1yc/RKrumnxqc/lh8rhWRlJFR/v8EbFaYW9f3rbZ486Wc9eWlziChSZJYsWCoc3VbKH1qCoFB0Fk6b1vVFvkbRX39XSBUAsWVvqlXcz/Pv0MdPZW6UlNH31XALQTVj5kg2sxnxclHfoUsWQ8ezNRwUAqNj8QWxrm81HyNAzLhV/fqu0RCgOGi68VVoiGFU64mXtzxXlzkBMm09aqfJIDRZmZlOZaT7xWj37uWkCbxjk9FHzCSkX7irfPl3+TUFEdLzu2Nq424o8o0pHjZ6b0MfpMO2xkXSksQFJYTrKeXkGLJZvmeXDGhgRhQSEwNFxQ1hesU4RCKAmJgLPXI2mus8qhWibGwkIARRKGvHCWLrb4SB25Q4e6ROKMQOGSneaVDGaItxKqjywL+vcjaulvMKJUpJWBVbxLwuzpFZKnlbUtdce6EO7OxvYRE2ilAuN93OnaV4264zrS9tLy5j8wiXPAhycZOLRsfrB8laKN5VGlY6Cm28TAOgmpxFPE422Sw9sTgFg5JQxAs+XAHAsRS2t315aJlUe/6xhCjPQrEm5RZKJIzThL+u8IYsLFHpqxB0kKMKo0XMTX12/jDOdV/H8rFzSxERgUIoBBw8fZZaua2gN6sL94OiRNDERiBwSR/vPHmeWrmsYOWWMwOu585s23Lhio6QwHY1KTsGNKzZKUISREVG45XbR7u9OPP1sTs4Hp06faqehMfFuA4WTUaWjaleT1JTykpWVMRrTV8+l5pPWbg1DILrVaqNH+mtZoMCJcUcCACo+vnef6Txx2Ucmpz92mMua21rnAoAi+6kJQ9LbQp/ggBIUYcR/ExRhtL/pDA5faOhKfyJR1MREoKeovdVynW61XCfnbSf8191qtVGUfiCrrtxP5nqz9/R5C1p/aEPFnXMsKUxHEW4lAZCCJVLz6HDNwGj7pZZmsyJBETqh8U5bkoXZ2bSgwYIRUWjEjzfRBEUYnWu+KDTYv3cNfTQmIEhNTARutVyXOh7/70Ghofh43+dYsvGv3iPNFgzq04+utNvQj9SUwiJ/zL2eVlbvaWUTWJxAoPGJmSmD6b2la3Z8de7UszXm4+KuoPGC/C8L3jnLy5A2Vd+VqoxW9uaDnD6s3khfffa9k1cUHhSxGq3PNdWIKCx1mZmF2VlGWvquG/WWXAAQs2bOuK2pDFXZ6q2MgwvkF7EaLa6022CrtyorYUX94hbXwwC83/QqDRTuA8oKh0/tNqqiyKjSkcVpZyw89JWaju/q3129djAJREJcv/4bUlRRs1ep0ijHud/Lg8ZfixJztYMFKuyByAeU+kdQ8ndVNy2Md0Xrnae8X7c0S1lZHJucOT+05fbsVao0kpu2p38MrGoH87+PPLgZ9OXD9wdqdMtM8wm1EM5PGtG5euXqvIhhj38kxscOyAjutONufD9UN5jZ6LQRbgCorrcq5SknVqPt5pc/lfQONV1pt+EKwHhag+ted1OyttS7rbZSAq4Z8otPAUAcN2ni4gN792FV/Se5FmZnz48eqTpU86XLwuwMrnulJyMtfRes9lx5y/W/UBXAShYtFA7VfOmqrrcqedvvUQZvAZC/3nnKawoz0JhJU/WiUnTMzp8dTwKRULH5g1imUIwHgLFJqfaqk8fM+2trpE5546aNPxQVFkXiZ1JCpDa1OC+fOdVBT9cePXwMAA4cqj54dP/Bb1e8+cZv+LrnZ+aV8U3/BW+PmiaV9A/MAAAAAElFTkSuQmCC", arale:"data:image/png;base64,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", miyako:"data:image/png;base64,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", nonoka:"data:image/png;base64,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" };
 
-let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_OFFSET_BASE_BY_KEY, TRIGGER_OFFSET_ACTIVE_BY_KEY, BACKEND_SEGS, CURRENT_DAY;
+let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_GROUPS, BACKEND_SEGS, CURRENT_DAY;
 
 function computeIngest(relay, notice, tweet){
   return [
@@ -575,29 +586,37 @@ function computeIngest(relay, notice, tweet){
   ];
 }
 const TRIGGER_PRIORITY = { ops:0, ingest:1, tick:2, wake:2 };
-const TRIGGER_RADIUS_BASE = 9;      // 기존 7 — 쉬는 상태에서도 눈에 띄도록 살짝 키움
-const TRIGGER_RADIUS = 15;
-const TRIGGER_FONT_BASE = "13px";   // 기존 12px
+// (v3.8.4 item 8) 같은 시각(t)의 트리거 이벤트는 개수와 무관하게 점 하나로 합쳐서 그린다
+// (예전엔 종류별로 세로로 늘어놓아 몰리면 겹쳐 보였다). 대신 그 시각에 몇 건이 뭉쳤는지를
+// 점 "크기"로 나타내고, 실제 목록은 호버/클릭 상세에서 보여준다. 5건 이상은 크기를 고정해
+// 무한정 커지지 않게 한다 — trigger 레인(rowH=110, 중심 기준 ±55px) 안에 호버 확대(active)
+// 상태까지 포함해 항상 들어가야 하므로 반지름 상한을 넉넉히 여유 있게 잡음(최대 35 < 55).
+const TRIGGER_RADIUS_STEPS = [9, 12, 15, 18, 21];  // count 1·2·3·4·5+ (쉬는 상태)
+const TRIGGER_RADIUS_BASE = TRIGGER_RADIUS_STEPS[0];
+const TRIGGER_RADIUS = 15;                          // count=1 호버 확대 반지름(기존 값 유지)
+const TRIGGER_ACTIVE_RATIO = TRIGGER_RADIUS / TRIGGER_RADIUS_BASE;
+const TRIGGER_FONT_BASE = "13px";
 const TRIGGER_FONT_ACTIVE = "18px";
-// 쉬는 상태(BASE)는 오밀조밀하게, 마우스가 근처에 온 시간대(ACTIVE)만 넓게 퍼지도록
-// 두 간격을 따로 계산해 애니메이션으로 전환한다(.tl-dot/.tl-trigger-glyph 의 CSS transition).
-const TRIGGER_OFFSET_STEP_BASE = TRIGGER_RADIUS_BASE * 2 + 2;
-const TRIGGER_OFFSET_STEP_ACTIVE = TRIGGER_RADIUS * 2 + 4;
-function computeTriggerOffsets(ops, ticks, ingest, step){
-  const byKey = {};
+function triggerRadiusBase(count){ return TRIGGER_RADIUS_STEPS[Math.min(Math.max(count,1),5) - 1]; }
+function triggerRadiusActive(count){ return Math.round(triggerRadiusBase(count) * TRIGGER_ACTIVE_RATIO); }
+// 같은 t(정확히 같은 분)의 ops/tick·wake/ingest 이벤트를 한 그룹으로 묶는다. 그룹 내에서는
+// TRIGGER_PRIORITY 순으로 정렬해 대표 아이콘(맨 앞)을 정한다.
+function groupTriggerEvents(ops, ticks, ingest){
   const points = [
-    ...ops.map((e,i) => ({ key:"ops_"+i, t:e.t, kind:"ops" })),
-    ...ticks.map((e,i) => ({ key:"tick_"+i, t:e.t, kind:e.kind })),
-    ...ingest.map((e,i) => ({ key:"ingest_"+i, t:e.t, kind:"ingest" })),
+    ...ops.map((e,i) => ({ t:e.t, kind:"ops", ok:e.ok,
+      title:"🎛️ "+e.cmd, d:e.d, idx:"ops"+i })),
+    ...ticks.map((e,i) => ({ t:e.t, kind:e.kind, ok:e.ok,
+      title:(TRIGGER_GLYPH[e.kind]+" ")+(e.mode==="baseline"?"baseline tick":e.mode==="light"?"light tick":"wake"),
+      d:e.d, idx:"tick"+i })),
+    ...ingest.map((e,i) => ({ t:e.t, kind:"ingest", ok:e.ok,
+      title:"📥 "+e.source, d:"→ "+e.target.lane, idx:"ingest"+i })),
   ];
   const groups = {};
   points.forEach(p => { (groups[p.t] = groups[p.t] || []).push(p); });
-  Object.values(groups).forEach(list => {
-    list.sort((a,b) => TRIGGER_PRIORITY[a.kind] - TRIGGER_PRIORITY[b.kind]);
-    const n = list.length;
-    list.forEach((p,i) => { byKey[p.key] = (i - (n-1)/2) * step; });
+  return Object.keys(groups).map(t => {
+    const events = groups[t].sort((a,b) => TRIGGER_PRIORITY[a.kind] - TRIGGER_PRIORITY[b.kind]);
+    return { t, events };
   });
-  return byKey;
 }
 
 const HEALTH_COLOR = { up:"#7CB342", busy:"#f5c344", down:"#e5484d", paused:"#4da3ff" };
@@ -696,10 +715,15 @@ const legendEl = document.getElementById("legend");
   legendEl.appendChild(btn);
 });
 function stateChipsHtml(){
-  return `<div class="lg-chips">` + Object.entries(STATE).map(([k,v]) => {
-    const bg = k === "watching" ? "repeating-linear-gradient(45deg, #ffffff 0 3px, #9aa0a8 3px 6px)" : v.color;
+  const chips = Object.entries(STATE).map(([k,v]) => {
+    const bg = k === "watching"
+      ? "repeating-linear-gradient(45deg, #f5c344 0 3px, #9aa0a8 3px 6px)" : v.color;
     return `<span class="lg-chip"><i style="background:${bg}"></i>${v.label}</span>`;
-  }).join("") + `</div>`;
+  });
+  // (v3.8.4 item 10) live 미만 확신도 추정("assumed_live") — 실제로는 announced/upcoming
+  // 상태값 위에 덧씌워지는 표시라 STATE 열거에는 없어 따로 추가.
+  chips.push(`<span class="lg-chip"><i style="background:repeating-linear-gradient(45deg, #ff5470 0 3px, #9aa0a8 3px 6px)"></i>방송 중 추정(live·assumed)</span>`);
+  return `<div class="lg-chips">` + chips.join("") + `</div>`;
 }
 function resultChipsHtml(keys){
   return `<div class="lg-chips">` + keys.map(k =>
@@ -709,7 +733,9 @@ function resultChipsHtml(keys){
 function toneChipsHtml(){ return resultChipsHtml(["ok","degraded","err"]); }
 function laneLegendHtml(key){
   if (key === "trigger") return `<div class="lg-title">🎯 트리거</div>` +
-    `<div class="lg-sub">4가지 트리거를 이모지로 구분, 원 색은 결과.</div>` +
+    `<div class="lg-sub">4가지 트리거를 이모지로 구분, 원 색은 결과(하나라도 실패면 빨강). ` +
+    `같은 시각에 여러 건이 뭉치면 점 하나로 합쳐지고 크기로 개수를 나타낸다(5건↑는 크기 고정) ` +
+    `— 호버/클릭으로 목록 확인.</div>` +
     resultChipsHtml(["ok","err"]) +
     `<div class="lg-chips">` +
       `<span class="lg-chip">🎛️ 운영자 제어</span><span class="lg-chip">🕒 정기수집 tick</span>` +
@@ -721,7 +747,9 @@ function laneLegendHtml(key){
       `<span class="lg-chip"><i style="background:${HEALTH_COLOR[k]}"></i>${label}</span>`
     ).join("") + `</div>`;
   if (key === "preview") return `<div class="lg-title">preview 상태</div>` +
-    `<div class="lg-sub">굵은 줄 색 = 그 순간 상태(6단계). watching은 upcoming과 같은 흰색이라 빗금으로 구분.</div>` +
+    `<div class="lg-sub">굵은 줄 색 = 그 순간 상태(6단계). live 미만은 확신도가 낮을수록 어두운 노랑` +
+    `(announced &lt; upcoming = watching, watching은 같은 노랑에 빗금). 아직 미확인인데 방송 중으로` +
+    ` 추정되는 구간(assumed_live)은 빨강 빗금으로 덮어 표시.</div>` +
     stateChipsHtml() +
     `<div class="lg-sub" style="margin-top:2px">줄 위 작은 점 = 그 전이 자체의 품질</div>` + toneChipsHtml();
   if (key === "relay") return `<div class="lg-title">X 예고 릴레이</div><div class="lg-sub">공식 계정 게시물 파싱 결과.</div>` + toneChipsHtml();
@@ -732,7 +760,7 @@ function laneLegendHtml(key){
 
 const ROWS_MEMBERS = ["arale","yuno","nonoka","ritsu","miyako"];
 // 모바일(폭 640px 이하)은 라벨을 아이콘으로 줄여 확보한 공간을 활용해 세로로 좀 더
-// 밀집시킨다 — trigger 레인만은 옵셋 겹침 방지 계산(TRIGGER_OFFSET_STEP)에 걸려 있어 고정.
+// 밀집시킨다 — trigger 레인은 rowH=110 고정(점 하나 최대 반지름 기준 여유 폭 계산, item 8).
 const IS_NARROW = window.matchMedia("(max-width:640px)").matches;
 const ROW_H_POINT = IS_NARROW ? 18 : 24, ROW_H_BAR = IS_NARROW ? 22 : 28, GROUP_GAP = IS_NARROW ? 9 : 16;
 const PAD_R = 24, PAD_T = 10, PAD_B = 26;
@@ -856,18 +884,24 @@ function renderTimeline(){
   triggerMarks = [];
 
   const defs = document.createElementNS(ns, "defs");
-  const hatch = document.createElementNS(ns, "pattern");
-  hatch.setAttribute("id", "watchHatch");
-  hatch.setAttribute("width", "6"); hatch.setAttribute("height", "6");
-  hatch.setAttribute("patternTransform", "rotate(45)");
-  hatch.setAttribute("patternUnits", "userSpaceOnUse");
-  const hatchBg = document.createElementNS(ns, "rect");
-  hatchBg.setAttribute("width", "6"); hatchBg.setAttribute("height", "6"); hatchBg.setAttribute("fill", "#ffffff");
-  hatch.appendChild(hatchBg);
-  const hatchStripe = document.createElementNS(ns, "rect");
-  hatchStripe.setAttribute("width", "3"); hatchStripe.setAttribute("height", "6"); hatchStripe.setAttribute("fill", "#9aa0a8");
-  hatch.appendChild(hatchStripe);
-  defs.appendChild(hatch);
+  // (v3.8.4 item 10) 패턴 2종 — 둘 다 같은 모양(6x6, 45도, 절반 줄무늬), 바탕색만 다르다.
+  // watchHatch = watching(노랑 바탕), liveAssumedHatch = assumed_live 덮어쓰기(빨강 바탕).
+  function makeHatch(id, bg){
+    const hatch = document.createElementNS(ns, "pattern");
+    hatch.setAttribute("id", id);
+    hatch.setAttribute("width", "6"); hatch.setAttribute("height", "6");
+    hatch.setAttribute("patternTransform", "rotate(45)");
+    hatch.setAttribute("patternUnits", "userSpaceOnUse");
+    const hatchBg = document.createElementNS(ns, "rect");
+    hatchBg.setAttribute("width", "6"); hatchBg.setAttribute("height", "6"); hatchBg.setAttribute("fill", bg);
+    hatch.appendChild(hatchBg);
+    const hatchStripe = document.createElementNS(ns, "rect");
+    hatchStripe.setAttribute("width", "3"); hatchStripe.setAttribute("height", "6"); hatchStripe.setAttribute("fill", "#9aa0a8");
+    hatch.appendChild(hatchStripe);
+    return hatch;
+  }
+  defs.appendChild(makeHatch("watchHatch", "#f5c344"));
+  defs.appendChild(makeHatch("liveAssumedHatch", "#ff5470"));
   svg.appendChild(defs);
 
   LANES.forEach(g => {
@@ -919,17 +953,23 @@ function renderTimeline(){
       rect.setAttribute("x", x1); rect.setAttribute("y", ry - 6);
       rect.setAttribute("width", Math.max(x2-x1, 1)); rect.setAttribute("height", 12);
       rect.setAttribute("rx", 3);
-      rect.setAttribute("fill", sg.s === "watching" ? "url(#watchHatch)" : (STATE_HEX[sg.s] || "#888"));
+      // (v3.8.4 item 10) assumed_live 는 상태(announced/upcoming)와 별개의 "확신도 낮음" 덮어쓰기 —
+      // 어떤 상태든 빨강 빗금이 상태색보다 우선.
+      const fill = sg.assumed_live ? "url(#liveAssumedHatch)"
+                 : sg.s === "watching" ? "url(#watchHatch)"
+                 : (STATE_HEX[sg.s] || "#888");
+      rect.setAttribute("fill", fill);
       rect.setAttribute("class","tl-seg");
       const q = sg.q || "ok";
-      wireTip(rect, { t:sg.from+"–"+sg.to, title:v.title, raw:(STATE[sg.s]||{label:sg.s}).label, tone:"ok", d:sg.qd || ("video: "+(v.title||"—")) });
+      const label = stateLabel(sg.s) + (sg.assumed_live ? " · 추정" : "");
+      wireTip(rect, { t:sg.from+"–"+sg.to, title:v.title, raw:label, tone:"ok", d:sg.qd || ("video: "+(v.title||"—")) });
       svg.appendChild(rect);
       if (!(i === 0 && sg.from === "06:00")) {
         const dot = document.createElementNS(ns,"circle");
         dot.setAttribute("cx", x1); dot.setAttribute("cy", ry);
         dot.setAttribute("r", 3); dot.setAttribute("fill", TONE_COLOR[q]);
         dot.setAttribute("class", "tl-dot" + (activeTones.has(q) ? "" : " dim"));
-        wireTip(dot, { t:sg.from, title:v.title, raw:(STATE[sg.s]||{label:sg.s}).label+" 전이 · "+TONE_LABEL[q], tone:q, d:sg.qd || "" });
+        wireTip(dot, { t:sg.from, title:v.title, raw:label+" 전이 · "+TONE_LABEL[q], tone:q, d:sg.qd || "" });
         svg.appendChild(dot);
       }
     });
@@ -944,34 +984,43 @@ function renderTimeline(){
     wireTip(el, tipData);
     svg.appendChild(el);
   }
-  function drawTriggerDot(t, kind, ok, tipData, key){
+  // (v3.8.4 item 8) 같은 시각의 트리거 이벤트 그룹 하나 = 점 하나. 대표 아이콘은
+  // TRIGGER_PRIORITY 순 맨 앞(ops>ingest>tick/wake), 반지름은 개수로, 색은 그룹 안에
+  // 실패가 하나라도 있으면 err. 상세 목록은 호버/클릭(wireLegend, 기존 범례와 같은
+  // pin-on-click 메커니즘 재사용)으로.
+  function triggerGroupDetailHtml(t, events){
+    const rows = events.map(e =>
+      `<div class="lg-chip"><i style="background:${e.ok?OK:ERR}"></i>${e.title}</div>` +
+      (e.d ? `<div class="lg-note" style="border-top:none;padding-top:0;margin:-2px 0 6px 16px">${e.d}</div>` : "")
+    ).join("");
+    return `<div class="lg-title">${t} · 트리거 ${events.length}건</div>` + rows;
+  }
+  function drawTriggerGroup(t, events){
     const x = timeToX(t, plotW);
-    const cyBase = rowY["trigger|all"] + TRIGGER_OFFSET_BASE_BY_KEY[key];
-    const cyActive = rowY["trigger|all"] + TRIGGER_OFFSET_ACTIVE_BY_KEY[key];
-    const dimmed = !activeTones.has(ok ? "ok" : "err");
+    const cy = rowY["trigger|all"];
+    const count = events.length;
+    const rBase = triggerRadiusBase(count), rActive = triggerRadiusActive(count);
+    const anyErr = events.some(e => !e.ok);
+    const dimmed = !activeTones.has(anyErr ? "err" : "ok");
     const c = document.createElementNS(ns,"circle");
-    c.setAttribute("cx", x); c.setAttribute("cy", cyBase); c.setAttribute("r", TRIGGER_RADIUS_BASE);
-    c.setAttribute("fill", ok ? OK : ERR);
+    c.setAttribute("cx", x); c.setAttribute("cy", cy); c.setAttribute("r", rBase);
+    c.setAttribute("fill", anyErr ? ERR : OK);
     c.setAttribute("class", "tl-dot" + (dimmed ? " dim" : ""));
-    wireTip(c, tipData);
     svg.appendChild(c);
     const txt = document.createElementNS(ns,"text");
-    txt.setAttribute("x", x); txt.setAttribute("y", cyBase);
+    txt.setAttribute("x", x); txt.setAttribute("y", cy);
     txt.setAttribute("text-anchor", "middle"); txt.setAttribute("dominant-baseline", "central");
     txt.setAttribute("class", "tl-trigger-glyph" + (dimmed ? " dim" : ""));
     txt.style.fontSize = TRIGGER_FONT_BASE;
-    txt.textContent = TRIGGER_GLYPH[kind];
-    wireTip(txt, tipData);
-    triggerMarks.push({ x, circle:c, text:txt, cyBase, cyActive });
+    txt.textContent = TRIGGER_GLYPH[events[0].kind];
     svg.appendChild(txt);
+    const htmlFn = () => triggerGroupDetailHtml(t, events);
+    wireLegend(c, htmlFn);
+    wireLegend(txt, htmlFn);
+    triggerMarks.push({ x, circle:c, text:txt, rBase, rActive });
   }
 
-  OPS.forEach((e, i) => drawTriggerDot(e.t, "ops", e.ok,
-    { t:e.t, title:"🎛️ "+e.cmd, raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:e.d, _idx:"ops"+i }, "ops_"+i));
-  TICKS.forEach((e, i) => drawTriggerDot(e.t, e.kind, e.ok,
-    { t:e.t, title:(TRIGGER_GLYPH[e.kind]+" ")+(e.mode==="baseline"?"baseline tick":e.mode==="light"?"light tick":"wake"), raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:e.d, _idx:"tick"+i }, "tick_"+i));
-  INGEST.forEach((e, i) => drawTriggerDot(e.t, "ingest", e.ok,
-    { t:e.t, title:"📥 "+e.source, raw:e.ok?"ok":"error", tone:e.ok?"ok":"err", d:"→ "+e.target.lane, _idx:"ingest"+i }, "ingest_"+i));
+  TRIGGER_GROUPS.forEach(g => drawTriggerGroup(g.t, g.events));
   RELAY.forEach((e, i) => drawDot(e.t, rowY["relay|account"], e.tone,
     { t:e.t, title:"BDP_yumemita", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"relay"+i }));
   NOTICE.forEach((e, i) => drawDot(e.t, rowY["notice|notice"], e.tone,
@@ -980,10 +1029,10 @@ function renderTimeline(){
     { t:e.t, title:(MEMBER_KO[e.member]||e.member)+" 개인 트윗", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"tweet"+i }));
 
   document.getElementById("tlSub").textContent =
-    "점/막대 위에 마우스를 올리면 시간·제목·결과가 보이고, 클릭하면 아래 표의 해당 행으로 이동합니다.";
+    "점/막대 위에 마우스를 올리면 시간·제목·결과가 보이고, 클릭하면 상세(트리거는 목록, 그 외는 아래 표의 해당 행)가 열립니다.";
 }
 
-const STATE_HEX = { announced:"#949494", upcoming:"#ffffff", watching:"#ffffff", live:"#ff5470", end:"#575757", none:"#424242" };
+const STATE_HEX = { announced:"#8a6d1a", upcoming:"#f5c344", watching:"#f5c344", live:"#ff5470", end:"#575757", none:"#424242" };
 
 function showTip(ev, data){
   const tt = document.getElementById("tooltip");
@@ -1060,10 +1109,9 @@ function setTriggerActiveNear(x){
   const snap = x != null && bestDist <= TRIGGER_HOVER_SNAP_PX;
   triggerMarks.forEach(m => {
     const active = snap && m.x === bestX;
-    const cy = active ? m.cyActive : m.cyBase;
-    m.circle.setAttribute("r", active ? TRIGGER_RADIUS : TRIGGER_RADIUS_BASE);
-    m.circle.setAttribute("cy", cy);
-    m.text.setAttribute("y", cy);
+    // (v3.8.4 item 8) y는 더 이상 안 바뀐다 — 그룹당 점 하나라 세로로 퍼질 필요가 없어짐.
+    // 반지름만 그 점의 개수 기준값(rBase/rActive)으로 커진다.
+    m.circle.setAttribute("r", active ? m.rActive : m.rBase);
     m.text.style.fontSize = active ? TRIGGER_FONT_ACTIVE : TRIGGER_FONT_BASE;
   });
 }
@@ -1143,8 +1191,7 @@ function loadDay(dateStr){
   PREVIEW = day.preview; TICKS = day.ticks; OPS = day.ops;
   NOTICE = day.notice; TWEET = day.tweet; RELAY = day.relay;
   INGEST = computeIngest(RELAY, NOTICE, TWEET);
-  TRIGGER_OFFSET_BASE_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST, TRIGGER_OFFSET_STEP_BASE);
-  TRIGGER_OFFSET_ACTIVE_BY_KEY = computeTriggerOffsets(OPS, TICKS, INGEST, TRIGGER_OFFSET_STEP_ACTIVE);
+  TRIGGER_GROUPS = groupTriggerEvents(OPS, TICKS, INGEST);
   BACKEND_SEGS = computeBackendSegs(TICKS, OPS, day.downRanges);
 
   document.getElementById("lede").innerHTML =
@@ -1346,7 +1393,7 @@ if __name__ == "__main__":
         '{"ts":"2026-09-15T21:20:00Z","flow":"relay","result":"ok","who":"","detail":"mode: added"}\n'
         '{"ts":"2026-09-15T21:30:00Z","flow":"tweet","result":"ok","who":"arale","detail":"mode: added"}\n'
         '{"ts":"2026-09-15T09:00:00Z","flow":"preview","result":"ok","who":"arale","detail":"upcoming→watching",'
-        '"from_state":"upcoming","to_state":"watching","title":"통상방송"}\n'
+        '"from_state":"upcoming","to_state":"watching","title":"통상방송","assumed_live":true}\n'
     )
     events = parse_events(text)
     assert len(events) == 8, len(events)  # 손상된 줄 1개 제외
@@ -1375,6 +1422,12 @@ if __name__ == "__main__":
     ritsu = next(v for v in preview if v["member"] == "ritsu")
     assert ritsu["segs"] == [], "이벤트 없는 멤버는 빈 세그먼트"
     print("[OK] _preview_json: 선행 세그먼트(from_state, 06:00 시작) + 마지막 세그먼트는 now_hm까지")
+
+    # (v3.8.4 item 10) assumed_live 가 이벤트에 있으면 세그먼트에도 실려야 프론트가 빨강
+    # 빗금으로 덮어 그릴 수 있다. 선행 세그먼트(근거 이벤트 없음)는 대상 아님.
+    assert arale["segs"][1].get("assumed_live") is True, arale
+    assert "assumed_live" not in arale["segs"][0], arale
+    print("[OK] _preview_json: assumed_live 플래그가 세그먼트로 전파됨(선행 세그먼트는 제외)")
 
     # ── _add_minutes: 자정 넘김은 실제 시각으로 wrap(30:00 같은 가짜 시각 아님) ──
     assert _add_minutes("23:59", 3) == "00:02"

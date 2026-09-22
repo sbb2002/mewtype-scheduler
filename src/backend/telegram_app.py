@@ -1295,7 +1295,7 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
             _send_telegram("⏸ 일시정지 중 — /ingest 무시", silent=True)
             return
 
-        _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso)
+        _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영")
         drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
         rows = xrelay.parse(raw, now_iso)
         failed = xrelay.unparsed_lines(raw)
@@ -1343,6 +1343,17 @@ def _handle_manual_ingest(gh, channels_cfg: dict, now_iso: str, raw: str) -> Non
 
 
 # ── (v2.7) 소식 게시판 — /notice /notice-del /notice-list + 자동 인입 ──────────
+
+
+def _notice_label(prepared: dict | None) -> str:
+    """(v3.8.4) `apply_notice` 대기/완료 DM 태그용 — 제목이 있으면 그걸로, 없으면 빈 문자열
+    (call_write 가 빈 label 은 태그를 안 붙임)."""
+    prepared = prepared or {}
+    title = ((prepared.get("tl") or {}).get("title_ko")
+             or (prepared.get("parsed") or {}).get("title") or "")
+    return f"소식 {title}".strip()[:40]
+
+
 _NOTICE_PROMPT = (
     "📝 <b>/notice 대기 중</b> (3분)\n"
     "소식으로 올릴 트윗 원문(또는 /ingest 릴레이 DM)을 붙여넣거나 텍스트 파일을 올려주세요.\n"
@@ -1715,8 +1726,9 @@ def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
         return True
 
     try:
-        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
-        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso)
+        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso, label="소식정리")
+        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso,
+                                        label=_notice_label(prepared))
         mode, parsed = result.get("mode"), result.get("parsed")
     except Exception as e:
         log.exception("Error handling /notice")
@@ -1758,7 +1770,8 @@ def _handle_notice_del(gh, now_iso: str, arg: str) -> None:
         _send_telegram("사용법: /notice-del &lt;id | 번호&gt;  (/notice-list 로 확인)")
         return
     try:
-        result = writeclient.call_write("notice_del_commit", gh=gh, nid=nid_arg, now_iso=now_iso)
+        result = writeclient.call_write("notice_del_commit", gh=gh, nid=nid_arg, now_iso=now_iso,
+                                        label=f"소식삭제 {nid_arg}")
         if not result.get("removed"):
             _send_telegram(f"해당 소식이 없습니다: {html.escape(result.get('nid') or nid_arg)}")
             return
@@ -1773,7 +1786,7 @@ def _handle_notice_list(gh, now_iso: str) -> None:
         _send_telegram("⚠️ notices 모듈 없음")
         return
     try:
-        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
+        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso, label="소식정리")
         prev, _ = gh.read_json(_NOTICES_PATH)
         lst = (prev or {}).get("notices", []) or []
         if not lst:
@@ -1998,7 +2011,8 @@ def _handle_notice_edit_followup(gh, now_iso: str, text: str) -> bool:
         _send_telegram("변경 사항이 없습니다 — 소식은 그대로입니다.")
         return True
     try:
-        result = writeclient.call_write("notice_edit_commit", gh=gh, nid=nid, patch=patch, now_iso=now_iso)
+        result = writeclient.call_write("notice_edit_commit", gh=gh, nid=nid, patch=patch, now_iso=now_iso,
+                                        label=f"소식수정 {nid}")
         if not result.get("changed"):
             _send_telegram("변경 사항이 없습니다 — 소식은 그대로입니다.")
             return True
@@ -2032,8 +2046,9 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         return "none"
 
     try:
-        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
-        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso)
+        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso, label="소식정리")
+        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso,
+                                        label=_notice_label(prepared))
         mode, parsed = result.get("mode"), result.get("parsed")
     except Exception:
         log.exception("auto notice 실패")
@@ -2241,7 +2256,8 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     # 커밋 단계 (write-queue)
     try:
         res = writeclient.call_write("personal_tweet", gh=gh, prepared=prepared,
-                                     channel_key=channel_key, now_iso=now_iso, via=via)
+                                     channel_key=channel_key, now_iso=now_iso, via=via,
+                                     label=f"{channel_key} 트윗")
         mode = res.get("mode", "error")
         n_thread = res.get("n_thread", 0)
     except Exception:
@@ -2322,7 +2338,8 @@ def _commit_yt_member_live(gh, live: dict, now_iso: str, *, via: str = "ingest")
         for attempt in (1, 2):
             prev, sha = gh.read_json(_PREVIEW_PATH)
             prev = prev or {"items": []}
-            items, changed, mode = xtweet.merge_member_live(prev.get("items", []) or [], live, now_iso)
+            prev_items = prev.get("items", []) or []
+            items, changed, mode = xtweet.merge_member_live(prev_items, live, now_iso)
             if not changed:
                 return {"changed": False, "mode": mode, "error": False}
             merged = dict(prev)
@@ -2348,27 +2365,41 @@ def _commit_yt_member_live(gh, live: dict, now_iso: str, *, via: str = "ingest")
                new_sha=new_sha, now_iso=now_iso)
     _log_event_safe(gh, now_iso, "relay", RESULT_OK, who=ck,
                     detail=f"mode: yt-member-live {mode}", via=via)
+
+    # (v3.8.4) item 7 핫픽스 — 위 "relay" 로그와 별개로, /monitor 타임라인(간트)이 그리는
+    # flow="preview" 상태전이 로그를 여기서도 남긴다. 이 커밋은 handlers._run(/tick·/wake)
+    # 을 안 거치고 여기서 직접 preview.json 을 쓰기 때문에, 지금까지는 회원전용 방송이
+    # 알림으로 live 전환되는 순간이 간트에서 통째로 빠지고(다음 정기 tick 이 나중에 잡는
+    # "→end" 로 바로 건너뜀) "live(빨강)로 안 뜨고 announced/upcoming/end 만 보인다"는
+    # 증상으로 나타났다. handlers._preview_log_events 와 같은 (순수) diff 로직을 그대로
+    # 재사용해 전이만 뽑는다.
+    try:
+        from .handlers import _preview_log_events
+        for ev in _preview_log_events(prev_items, items, []):
+            _log_event_safe(
+                gh, now_iso, "preview", RESULT_OK,
+                who=ev.get("channel_key", ""),
+                detail=f"{ev.get('from_state')}→{ev.get('to_state')}",
+                from_state=ev.get("from_state"), to_state=ev.get("to_state"),
+                video_id=ev.get("video_id"), item_id=ev.get("id"), title=ev.get("title"),
+                assumed_live=ev.get("assumed_live", False),
+            )
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(preview, member-live)")
+
     return {"changed": True, "mode": mode, "error": False}
 
 
-def _handle_yt_relay(payload) -> tuple[dict, int]:
-    """(v3.7.3) `source=yt` 중계 처리. 회원 전용 라이브 시작(5인)만 반영하고 나머지는 200 무시.
+def _handle_member_live_start(parsed: dict, channels_cfg: dict, now_iso: str) -> tuple[dict, int]:
+    """(v3.7.3, v3.8.4 에서 `_handle_yt_relay` 에서 분리) 회원전용 라이브 "시작" 알림 반영.
 
-    업스트림 Automate 의 HTTP 타임아웃(약 10초) 안에 끝나야 해서 외부 호출은 yt-dlp 조회 1개
-    (상한 6초)뿐이고 LLM·vxtwitter 는 쓰지 않는다. 조회에 실패해도 채널 링크로 live 처리하고
-    운영자에게 알린다(방송이 live 로 안 뜨는 것보다 낫다). 항상 200 — 업스트림 재시도 불필요.
+    `parsed` = {"channel_key", "title", "tag"} — `ytnotif.parse_member_live_relay` 또는
+    (v3.8.4) `parse_public_live_relay` 가 REMINDER/SUBSCRIPTION_LIVESTREAM_START 를 video_id
+    미상(회원전용 추정)으로 판별한 경우 동일한 모양으로 넘겨준다.
     """
-    if ytnotif is None or xtweet is None:
-        return {"ok": True, "ignored": "unavailable"}, 200
-    channels_cfg = _load_channels_config()
-    parsed = ytnotif.parse_member_live_relay(payload, channels_cfg)
-    if parsed is None:
-        return {"ok": True, "ignored": True}, 200
-
     ck = parsed["channel_key"]
     ch = (channels_cfg.get("channels") or {}).get(ck, {})
     name = ch.get("name_ko") or ck
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     found = None
     if ytdlp_probe is not None and ch.get("channel_id"):
@@ -2385,7 +2416,7 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
 
     try:
         res = writeclient.call_write("yt_member_live_commit", gh=_make_gh(), live=live,
-                                     now_iso=now_iso, via="ingest")
+                                     now_iso=now_iso, via="ingest", label=f"{name} 회원라이브")
     except Exception as e:  # noqa: BLE001
         log.exception("회원 전용 라이브 /write 실패")
         _send_telegram(f"⚠️ 🔒 {html.escape(name)} 회원 전용 방송 시작 감지 — 반영 실패\n{html.escape(str(e)[:150])}")
@@ -2402,6 +2433,63 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
             _send_telegram(f"⚠️ 🔒 <b>{html.escape(name)}</b> 회원 전용 방송 시작 감지 — yt-dlp 로 영상 URL 을 "
                            f"못 찾아 채널 링크로 live 처리했습니다.\n{title_h}")
     return {"ok": True, "member_live": ck, "mode": mode, "video_id": live["video_id"]}, 200
+
+
+def _handle_yt_relay(payload) -> tuple[dict, int]:
+    """(v3.7.3, v3.8.4 확장) `source=yt` 중계 처리.
+
+    v3.7.3: 회원 전용 라이브 시작(5인, `SPONSORSHIPS_LIVESTREAM_START`)만 반영하고 나머지는 200 무시.
+    v3.8.4: 09-22 09:33 千石ユノ TUNEIN(30분전) 알림이 이 "나머지"에 걸려 조용히 버려진 게 발단 —
+    TUNEIN·REMINDER·SUBSCRIPTION_LIVESTREAM_START(일반 채널) 도 반영한다.
+
+    업스트림 Automate 의 HTTP 타임아웃(약 10초) 안에 끝나야 해서 외부 호출은 yt-dlp 조회 1개
+    (상한 6초, 회원전용 추정 케이스만) 뿐이고 LLM·vxtwitter 는 쓰지 않는다. 항상 200(업스트림
+    재시도 불필요).
+    """
+    if ytnotif is None or xtweet is None:
+        return {"ok": True, "ignored": "unavailable"}, 200
+    channels_cfg = _load_channels_config()
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # 회원전용 시작 — 기존 경로 그대로(우선순위 유지: parse_public_live_relay 는 이 kind 를 걸러낸다).
+    parsed = ytnotif.parse_member_live_relay(payload, channels_cfg)
+    if parsed is not None:
+        return _handle_member_live_start(parsed, channels_cfg, now_iso)
+
+    # (v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START — 이전엔 여기서 전부 무시됐다.
+    public = ytnotif.parse_public_live_relay(payload, channels_cfg)
+    if public is None:
+        return {"ok": True, "ignored": True}, 200
+
+    if public["resolved"]:
+        # 실제 video_id 확보 — 새 GitHub 쓰기 없이 즉시 wake 하나만 예약한다. 승격
+        # (announced/upcoming 자동 판정, live_state 가 이미 live 면 곧장 live)·DM·모니터
+        # 로그·다음 wake 예약은 기존 handlers._run(/wake) 파이프라인이 전부 처리한다 —
+        # 여기서 preview.json 을 직접 건드리지 않는다(레이스는 기존 낙관적 동시성 재시도 +
+        # Cloud Tasks 태스크명 dedupe 로 이미 방어됨).
+        _enqueue_wake_now(public["video_id"], now_iso)
+        log.info("public yt relay → 즉시 wake: kind=%s video_id=%s", public["relay_kind"], public["video_id"])
+        return {"ok": True, "public_relay": public["relay_kind"], "video_id": public["video_id"],
+                "woken": True}, 200
+
+    # video_id 미상("default") — 회원전용으로 추정.
+    if public["relay_kind"] == "tunein":
+        # 회원전용 "30분전" 알림이 이 폼으로 오는지 실측 확인이 안 됐고, videos.list 도 회원전용
+        # 영상은 못 봐서 "upcoming" 여부를 API 로 확정할 수도 없다 — 잘못 승격(아직 방송 전인데
+        # live 로 표시 등)하는 위험이 더 크므로 이번 핫픽스에서는 승격을 시도하지 않고 기존처럼
+        # 무시한다(정기 light tick 안전망에 맡김).
+        log.info("회원전용 추정 TUNEIN(video_id=default) — 미확인 포맷, 승격 스킵: ck=%s",
+                  public.get("channel_key"))
+        return {"ok": True, "ignored": "member-tunein-unresolved"}, 200
+
+    # reminder/sub_start + video_id 미상 → 이미 검증된 회원전용 라이브 시작 경로 그대로 재사용.
+    ck = public.get("channel_key")
+    if ck is None:
+        return {"ok": True, "ignored": True}, 200
+    return _handle_member_live_start(
+        {"channel_key": ck, "title": public.get("title"), "tag": public.get("tag")},
+        channels_cfg, now_iso,
+    )
 
 
 def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
@@ -2516,7 +2604,8 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
     try:
         res = writeclient.call_write("url_confirmed_commit", gh=gh, video_id=video_id,
                                      new_item=new_item, next_check_at=next_check_at,
-                                     host_key=host_key, now_iso=now_iso, via=via)
+                                     host_key=host_key, now_iso=now_iso, via=via,
+                                     label=f"{host_key} 예고확정")
         changed = res.get("changed", False)
     except Exception:
         log.exception("URL 확정 예고: /write 호출 실패")
@@ -2569,8 +2658,9 @@ def _maybe_nonyt_url_notice(gh, raw: str, tag: str | None, now_iso: str) -> bool
             return True
 
         # 커밋 단계
-        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso)
-        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso)
+        writeclient.call_write("notice_sweep", gh=gh, now_iso=now_iso, label="소식정리")
+        result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso,
+                                        label=_notice_label(prepared))
         mode = result.get("mode", "error")
     except Exception:
         log.exception("비유튜브 URL 소식 이관 실패")
@@ -3090,7 +3180,8 @@ def _handle_tweet_del(gh, channels_cfg: dict, now_iso: str, unit: str) -> None:
         _send_telegram(f"사용법: /del tweet &lt;유닛&gt;  ({', '.join(_UNIT_KEYS)})")
         return
     try:
-        result = writeclient.call_write("tweet_del_commit", gh=gh, unit=u, now_iso=now_iso)
+        result = writeclient.call_write("tweet_del_commit", gh=gh, unit=u, now_iso=now_iso,
+                                        label=f"{u} 트윗삭제")
         if not result.get("found"):
             _send_telegram(f"ℹ️ {u} 트윗이 없습니다.")
             return
@@ -3252,7 +3343,8 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
     if step == "await_field":
         f = t.lower()
         if f == "done":
-            writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx)
+            writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx,
+                                   label="예고편집")
             _dm_sent_ctx.set(True)  # DM 은 apply_preview_edit 내부(원격)에서 이미 보냄
             return True
         if f == "ingest":
@@ -3892,7 +3984,8 @@ if _FLASK_AVAILABLE:
                     )
             # 스케줄 트윗이면 큐에 적재 — 실배포 전환 시 반영되도록 (유실 방지).
             if raw and xrelay is not None and xrelay.looks_relayable(raw):
-                writeclient.call_write("ingest_queue_push", gh=gh, raw=raw, title=title, now_iso=now_iso)
+                writeclient.call_write("ingest_queue_push", gh=gh, raw=raw, title=title, now_iso=now_iso,
+                                       label="큐 적재")
             return jsonify({"ok": True, "echo": True, "len": len(raw), "tail_ok": tail_ok}), 200
         # ─────────────────────────────────────────────────────────────────────
 
@@ -3937,7 +4030,8 @@ if _FLASK_AVAILABLE:
                     f"<code>{html.escape(body)}</code>"
                 )
                 if xrelay is not None and xrelay.looks_relayable(raw):
-                    writeclient.call_write("ingest_queue_push", gh=gh, raw=raw, title=title, now_iso=now_iso)
+                    writeclient.call_write("ingest_queue_push", gh=gh, raw=raw, title=title, now_iso=now_iso,
+                                           label="큐 적재")
                 return jsonify({"ok": True, "dry_run": True, "parsed": len(rows)}), 200
 
             if gh is None:
@@ -3951,7 +4045,7 @@ if _FLASK_AVAILABLE:
                 return jsonify({"ok": True, "paused": True}), 200
 
             # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
-            _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso)
+            _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영")
             drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
             failed = xrelay.unparsed_lines(raw)
 
@@ -4858,14 +4952,16 @@ if __name__ == "__main__":
 
                 before = json.dumps(_shared_store_wp1[_PREVIEW_PATH], sort_keys=True)
                 for bad in (
-                    dict(_yt_form, kind="a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:abc", video_id="bgzve7Y7S50"),
+                    # (v3.8.4) TUNEIN 은 더 이상 여기 안 걸림 — 실물 video_id 면 wake 대상이라
+                    # 아래 별도 블록에서 검증. 여기는 알려진 LIVESTREAM 종류가 아예 아닌 kind.
+                    dict(_yt_form, kind="a:NOTIFICATION_TYPE_UPLOADED:abc", video_id="bgzve7Y7S50"),
                     dict(_yt_form, title="조코딩 JoCoding 실시간 스트리밍 시작: 무관"),
                     {"source": "yt", "video_id": "x", "title": "", "kind": "", "tag": ""},
                 ):
                     rb = client.post("/ingest", data=bad, headers=_yt_hdr)
                     assert rb.status_code == 200 and rb.get_json().get("ignored"), (rb.status_code, rb.get_json())
                 assert json.dumps(_shared_store_wp1[_PREVIEW_PATH], sort_keys=True) == before
-                print("[OK] v3.7.3: 회원 전용 아님/5인 아님/빈 알림 → 200 무시 (400 아님, 상태 불변)")
+                print("[OK] v3.7.3: 회원 전용 아님/5인 아님/미지 kind/빈 알림 → 200 무시 (400 아님, 상태 불변)")
 
                 # 조회 실패 폴백: video_id 없이 채널 링크로 live
                 ytdlp_probe.find_member_live = lambda cid, title, **kw: None
@@ -4888,6 +4984,91 @@ if __name__ == "__main__":
                 ry5 = client.post("/ingest", data=_yt_form, headers={"X-Ingest-Secret": "wrong"})
                 assert ry5.status_code == 403
                 print("[OK] v3.7.3: source=yt 도 시크릿 검증 통과해야 처리 (틀리면 403)")
+
+                # ── (v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START 일반 중계 ──────
+                # 09-22 09:33 千石ユノ TUNEIN 실측 재현 — video_id 실물 확보 → 즉시 wake.
+                _enqueue_wake_now_counts["count"] = 0
+                _woken_ids: list[str] = []
+
+                def _stub_enqueue_wake2(video_id, *a, **kw):
+                    _enqueue_wake_now_counts["count"] += 1
+                    _woken_ids.append(video_id)
+
+                globals()["_enqueue_wake_now"] = _stub_enqueue_wake2
+                _tm._enqueue_wake_now = _stub_enqueue_wake2
+
+                _tunein_form = {
+                    "source": "yt", "video_id": "mn4Jjd7KdXY",
+                    "title": "【 #アワーノーツ 】バンドリ！新作リズムゲームを先行プレイ！【 #千石ユノ / #バンドリ 】",
+                    "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:fa7ca7b21bde0000",
+                    "tag": "mn4Jjd7KdXY::199826f2-810d-4770-a851-c23591a45b10",
+                }
+                rt1 = client.post("/ingest", data=_tunein_form, headers=_yt_hdr)
+                jt1 = rt1.get_json()
+                assert rt1.status_code == 200 and jt1.get("woken") is True, (rt1.status_code, jt1)
+                assert jt1["public_relay"] == "tunein" and jt1["video_id"] == "mn4Jjd7KdXY", jt1
+                assert _enqueue_wake_now_counts["count"] == 1 and _woken_ids == ["mn4Jjd7KdXY"]
+                print("[OK] v3.8.4: /ingest source=yt TUNEIN(실물 video_id) → 즉시 _enqueue_wake_now 1회"
+                      " (09-22 09:33 千石ユノ 실측 회귀 테스트 — 예전엔 조용히 ignored 였음)")
+
+                # REMINDER(일반 채널 라이브 시작)도 동일 — video_id 실물 확보 케이스.
+                _enqueue_wake_now_counts["count"] = 0
+                _woken_ids.clear()
+                _reminder_form = {
+                    "source": "yt", "video_id": "bgzve7Y7S50",
+                    "title": "峰月律-Minetsuki Ritsu- / 夢限大みゅーたいぷ 실시간 스트리밍 시작",
+                    "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_REMINDER:14e3012e805e0000",
+                    "tag": "bgzve7Y7S50::12f0bd2b-1837-4b1f-9e79-6a4b50244186",
+                }
+                rt2 = client.post("/ingest", data=_reminder_form, headers=_yt_hdr)
+                jt2 = rt2.get_json()
+                assert rt2.status_code == 200 and jt2.get("woken") is True and jt2["public_relay"] == "reminder", jt2
+                assert _enqueue_wake_now_counts["count"] == 1 and _woken_ids == ["bgzve7Y7S50"]
+                print("[OK] v3.8.4: /ingest source=yt REMINDER(실물 video_id) → 즉시 _enqueue_wake_now 1회")
+
+                # 회원전용 추정 TUNEIN(video_id=default) — 실측 미확인 포맷이라 승격 스킵(무시 유지).
+                _enqueue_wake_now_counts["count"] = 0
+                _member_tunein = dict(
+                    _tunein_form, video_id="default",
+                    kind="a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:xxx",
+                    title=f"仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ 30분 후에 실시간 스트림 시청하기: {_MT}",
+                )
+                rt3 = client.post("/ingest", data=_member_tunein, headers=_yt_hdr)
+                jt3 = rt3.get_json()
+                assert rt3.status_code == 200 and jt3.get("ignored") == "member-tunein-unresolved", jt3
+                assert _enqueue_wake_now_counts["count"] == 0, "미확인 포맷은 wake 도 승격도 안 해야 함"
+                print("[OK] v3.8.4: 회원전용 추정 TUNEIN(video_id=default, 미확인 포맷) → 승격 스킵, 무시 유지")
+
+                # 회원전용 추정 REMINDER(video_id=default) → 기존 검증된 회원-라이브 경로로 위임돼야
+                # 함 + item 7 핫픽스: 이번엔 flow="preview" 모니터 로그도 같이 남아야 한다.
+                holder2 = _seed_holder()
+                _member_reminder = {
+                    "source": "yt", "video_id": "default",
+                    "title": f"仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ 실시간 스트리밍 시작: {_MT}",
+                    "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_REMINDER:zzzz0000",
+                    "tag": "default::synthetic-reminder",
+                }
+                ytdlp_probe.find_member_live = lambda cid, title, **kw: (
+                    {"video_id": "REMINDERvid", "url": "https://www.youtube.com/watch?v=REMINDERvid",
+                     "title": title, "live_status": "is_live", "via_cookie": False})
+                _now_iso_test = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                rt4 = client.post("/ingest", data=_member_reminder, headers=_yt_hdr)
+                jt4 = rt4.get_json()
+                assert rt4.status_code == 200 and jt4.get("member_live") == "arale" and jt4["mode"] == "upgraded", jt4
+                it4 = _shared_store_wp1[_PREVIEW_PATH]["items"]
+                assert len(it4) == 1 and it4[0]["id"] == holder2["id"] and it4[0]["state"] == "live", it4
+                print("[OK] v3.8.4: 회원전용 추정 REMINDER(video_id=default) → 기존 회원-라이브 경로로 위임(live 승격)")
+
+                from src.backend import monitor_log as _monlog
+                _ev_path = _monlog.event_path(_now_iso_test)
+                _ev_text = _shared_store_wp1.get(_ev_path, "")
+                _ev_lines = [json.loads(l) for l in _ev_text.strip().split("\n") if l.strip()]
+                _preview_lines = [l for l in _ev_lines if l.get("flow") == "preview"]
+                assert any(l.get("to_state") == "live" and l.get("video_id") == "REMINDERvid"
+                           for l in _preview_lines), (
+                    f"item 7 핫픽스: 회원전용 live 전이의 flow=preview 모니터로그가 안 남음: {_preview_lines}")
+                print("[OK] v3.8.4 (item 7): 회원전용 live 커밋이 flow=preview 모니터 로그도 같이 남김"
+                      " — 이전엔 /monitor 간트에서 이 전이가 안 보였음(announced/upcoming/end 만 보이던 버그)")
             finally:
                 ytdlp_probe.find_member_live = _orig_find
         finally:
