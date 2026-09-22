@@ -4348,7 +4348,12 @@ if _FLASK_AVAILABLE:
         "진행중" 표시를 실시간에 가깝게 유지한다(전체 리로드로 인한 스크롤 튐 방지).
         """
         try:
-            body = _monitor_live_html(self_origin=request.host_url)
+            # Cloud Run 은 TLS 를 프론트 로드밸런서에서 종료하고 컨테이너엔 평문 HTTP 로
+            # 전달한다 — request.host_url 을 그대로 쓰면 "http://" 가 나와, HTTPS 로 로드된
+            # srcdoc 문서에서 이 절대 URL로 자가갱신 폴링을 걸 때 mixed content 로 조용히
+            # 막힌다(실측 2026-09-22, 배포 후 확인). 이 서비스는 항상 HTTPS 로만 접근되므로
+            # 스킴을 강제로 고정한다.
+            body = _monitor_live_html(self_origin=f"https://{request.host}")
         except Exception:
             log.exception("monitor-live 생성 실패")
             return Response("error", status=500, headers={"Access-Control-Allow-Origin": "*"})
