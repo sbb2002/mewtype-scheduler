@@ -222,10 +222,18 @@ src/
     monitor_report.py  # (v3.5) `/monitor` — 위 이벤트 로그 + healthchecks.io(백엔드 상태) +
                        #        push_monitor.fetch_commits(Vercel push 요약)을 모아 트리거→
                        #        preview/릴레이/소식/개인트윗 Ops Timeline HTML 생성(html은
-                       #        커밋 안 하고 텔레그램 DM 으로만). (v3.5.1) `full=True`
-                       #        (`/monitor --full`)면 이번 달 1일~오늘 전부를 `REPORT.days`에
-                       #        담아 리포트 안 "월간 추이" 그리드(잔디)로 날짜 전환(재요청 없이
-                       #        클라이언트 쪽 전환) 가능. 기본(`/monitor`, `--auto`)은 하루치만.
+                       #        커밋 안 하고 텔레그램 DM 으로만). (v3.5.1) `monthly=True`
+                       #        (`/monitor --monthly`, v3.8.5 이전 이름 `--full`)면 이번 달
+                       #        1일~오늘 전부를 `REPORT.days`에 담아 리포트 안 "월간 추이"
+                       #        그리드(잔디)로 날짜 전환(재요청 없이 클라이언트 쪽 전환) 가능.
+                       #        (v3.8.5 핫픽스) `yearly=True`(`/monitor --yearly`)는 같은
+                       #        방식으로 올해 1월 1일~오늘(또는 `date_kst` 기준 그 해) 전부를
+                       #        "연간 추이" 그리드로 담는다 — 날짜당 최대 366회라 `date_kst`로
+                       #        지정한 날 외엔 healthchecks.io/Vercel 조회를 건너뛴다
+                       #        (`_build_day(fetch_external=False)`). 기본(`/monitor`,
+                       #        `--auto`)은 하루치만 — 단 매월 1일 자동 실행은 전월
+                       #        `--monthly`로, 1월 1일은 전년 `--yearly`로 대체(`app.py`
+                       #        `_monitor()`).
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
     config.py          # 환경변수 → Config
@@ -236,9 +244,11 @@ src/
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 업스트림 시스템(운영자 폰 Automate)이 X 알림 텍스트를 중계
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
-                       #        (v3.5, 구 /push-monitor) /monitor [--auto|--off|--full|
-                       #        YYYY-MM-DD] — Ops Monitor 리포트 즉시 DM / 자동 실행 on-off /
-                       #        이번 달 전체(월간 그리드) / 특정 날짜
+                       #        (v3.5, 구 /push-monitor) /monitor [--auto|--off|--monthly|
+                       #        --yearly|YYYY-MM-DD] — Ops Monitor 리포트 즉시 DM / 자동
+                       #        실행 on-off / 이번 달 전체(월간 그리드) / 올해 전체(연간
+                       #        그리드, v3.8.5) / 특정 날짜. `--monthly`는 v3.8.5 이전엔
+                       #        `--full`이었음(이름만 변경).
                        #        (v3.6) 개인 트윗 예고 판정 3단 분기(_maybe_personal_schedule):
                        #        ①유튜브 URL→_maybe_url_confirmed_schedule(videos.list 확정,
                        #        API 실패 시 텍스트 파싱 폴백) ②비유튜브 URL→_maybe_nonyt_url_notice
