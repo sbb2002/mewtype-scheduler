@@ -413,11 +413,16 @@ _TEMPLATE = r"""<!doctype html>
   .tl-hint{color:var(--muted-2); font-size:.72rem}
   .tl-body{display:flex; align-items:stretch}
   .tl-labels{position:relative; flex:0 0 50px; border-right:1px solid var(--line); padding-right:2px}
-  .tl-labels .grp{position:absolute; left:0; width:28px; text-align:center; transform:translateY(-50%);
-    font-size:19px; line-height:1; cursor:pointer; opacity:.9}
-  .tl-labels .grp:hover{opacity:1; filter:brightness(1.25)}
-  .tl-labels .row{position:absolute; left:28px; right:2px; transform:translateY(-50%); text-align:center}
-  .tl-labels .row img{width:16px; height:16px; border-radius:3px; vertical-align:middle}
+  /* (v3.8.4-후속, item 3) 그룹 아이콘을 뱃지(배경·테두리 박스)로 — 아래 스파인(grp-spine)이
+     이 뱃지에서 뻗어나와 하위 멤버 뱃지(.row img)들을 관통하며 "이 그룹 소속" 임을 보여준다. */
+  .tl-labels .grp{position:absolute; left:2px; width:24px; height:24px; transform:translateY(-50%);
+    display:flex; align-items:center; justify-content:center; font-size:15px; line-height:1; cursor:pointer;
+    opacity:.92; background:var(--panel-2); border:1px solid var(--line); border-radius:7px; z-index:2}
+  .tl-labels .grp:hover{opacity:1; filter:brightness(1.25); border-color:var(--muted)}
+  .tl-labels .grp-spine{position:absolute; left:12px; width:3px; background:var(--line); border-radius:2px; z-index:0}
+  .tl-labels .row{position:absolute; left:28px; right:2px; transform:translateY(-50%); text-align:center; z-index:1}
+  .tl-labels .row img{width:16px; height:16px; border-radius:4px; vertical-align:middle; background:var(--panel-2);
+    border:1px solid var(--line-soft); padding:1.5px}
   .tl-scroll{position:relative; overflow-x:auto; overflow-y:hidden; border-radius:0 8px 8px 0; flex:1; min-width:0;
     touch-action:none; cursor:grab}
   .tl-scroll.dragging{cursor:grabbing}
@@ -430,8 +435,10 @@ _TEMPLATE = r"""<!doctype html>
   .tl-dot{cursor:pointer; stroke:var(--bg); stroke-width:1.5; transition:r .16s ease, cy .16s ease}
   .tl-dot:hover{stroke:var(--ink)}
   .tl-dot.dim{opacity:.15}
-  .tl-trigger-glyph{font-size:18px; pointer-events:none; transition:font-size .16s ease, y .16s ease}
-  .tl-trigger-glyph.dim{opacity:.15}
+  /* (후속) 트리거 = 짧은 세로 히스토그램 막대 (점 대체) */
+  .tl-trigger-bar{cursor:pointer; transition:height .16s ease, y .16s ease}
+  .tl-trigger-bar:hover{filter:brightness(1.25)}
+  .tl-trigger-bar.dim{opacity:.15}
   .tl-seg{cursor:pointer}
   .tl-seg:hover{filter:brightness(1.25)}
 
@@ -591,16 +598,17 @@ const TRIGGER_PRIORITY = { ops:0, ingest:1, tick:2, wake:2 };
 // 점 "크기"로 나타내고, 실제 목록은 호버/클릭 상세에서 보여준다. 5건 이상은 크기를 고정해
 // 무한정 커지지 않게 한다 — trigger 레인(rowH=110, 중심 기준 ±55px) 안에 호버 확대(active)
 // 상태까지 포함해 항상 들어가야 하므로 반지름 상한을 넉넉히 여유 있게 잡음(최대 35 < 55).
-const TRIGGER_RADIUS_STEPS = [9, 12, 15, 18, 21];  // count 1·2·3·4·5+ (쉬는 상태)
-const TRIGGER_RADIUS_BASE = TRIGGER_RADIUS_STEPS[0];
-const TRIGGER_RADIUS = 15;                          // count=1 호버 확대 반지름(기존 값 유지)
-const TRIGGER_ACTIVE_RATIO = TRIGGER_RADIUS / TRIGGER_RADIUS_BASE;
-const TRIGGER_FONT_BASE = "13px";
-const TRIGGER_FONT_ACTIVE = "18px";
-function triggerRadiusBase(count){ return TRIGGER_RADIUS_STEPS[Math.min(Math.max(count,1),5) - 1]; }
-function triggerRadiusActive(count){ return Math.round(triggerRadiusBase(count) * TRIGGER_ACTIVE_RATIO); }
+// (후속) 점 대신 아주 짧은 세로 히스토그램 막대 — 길이(높이) 비교가 원 면적/반지름 비교보다
+// 지각적으로 더 정확하다(데이터비주얼라이제이션 정석: length > area encoding). 폭은 고정,
+// 높이만 개수로 스케일. rowH 도 이에 맞춰 더 짧게 줄였다(item 4, 아래 LANES).
+const TRIGGER_BAR_W = 8;
+const TRIGGER_BAR_H_STEPS = [10, 16, 22, 28, 34];  // count 1·2·3·4·5+ (쉬는 상태)
+const TRIGGER_BAR_ACTIVE_RATIO = 1.4;               // 호버 시 살짝만 더 키움(과하게 안 자라게)
+function triggerBarHeightBase(count){ return TRIGGER_BAR_H_STEPS[Math.min(Math.max(count,1),5) - 1]; }
+function triggerBarHeightActive(count){ return Math.round(triggerBarHeightBase(count) * TRIGGER_BAR_ACTIVE_RATIO); }
 // 같은 t(정확히 같은 분)의 ops/tick·wake/ingest 이벤트를 한 그룹으로 묶는다. 그룹 내에서는
-// TRIGGER_PRIORITY 순으로 정렬해 대표 아이콘(맨 앞)을 정한다.
+// TRIGGER_PRIORITY 순으로 정렬해 대표 아이콘(맨 앞, 팝업 표시용)을 정한다 — 점 자체엔 더
+// 이상 아이콘을 안 그린다(후속 수정: 팝업에 이미 다 나오므로 중복).
 function groupTriggerEvents(ops, ticks, ingest){
   const points = [
     ...ops.map((e,i) => ({ t:e.t, kind:"ops", ok:e.ok,
@@ -733,9 +741,9 @@ function resultChipsHtml(keys){
 function toneChipsHtml(){ return resultChipsHtml(["ok","degraded","err"]); }
 function laneLegendHtml(key){
   if (key === "trigger") return `<div class="lg-title">🎯 트리거</div>` +
-    `<div class="lg-sub">4가지 트리거를 이모지로 구분, 원 색은 결과(하나라도 실패면 빨강). ` +
-    `같은 시각에 여러 건이 뭉치면 점 하나로 합쳐지고 크기로 개수를 나타낸다(5건↑는 크기 고정) ` +
-    `— 호버/클릭으로 목록 확인.</div>` +
+    `<div class="lg-sub">4가지 트리거(🎛️ 운영자 제어·🕒 정기수집·📡 라이브 감지·📥 X 웹훅) 를 짧은 세로` +
+    ` 막대 하나로 표시, 막대 색은 결과(하나라도 실패면 빨강). 같은 시각에 여러 건이 뭉치면 막대 높이로` +
+    ` 개수를 나타낸다(5건↑는 고정) — 어떤 종류인지·상세 내역은 막대 위 호버/클릭으로.</div>` +
     resultChipsHtml(["ok","err"]) +
     `<div class="lg-chips">` +
       `<span class="lg-chip">🎛️ 운영자 제어</span><span class="lg-chip">🕒 정기수집 tick</span>` +
@@ -759,15 +767,21 @@ function laneLegendHtml(key){
 }
 
 const ROWS_MEMBERS = ["arale","yuno","nonoka","ritsu","miyako"];
-// 모바일(폭 640px 이하)은 라벨을 아이콘으로 줄여 확보한 공간을 활용해 세로로 좀 더
-// 밀집시킨다 — trigger 레인은 rowH=110 고정(점 하나 최대 반지름 기준 여유 폭 계산, item 8).
+// 모바일(폭 640px 이하)은 라벨을 아이콘으로 줄여 확보한 공간을 활용해 세로로 좀 더 밀집시킨다.
+// (v3.8.4-후속, item 4) 레인 간 간격(GROUP_GAP) 을 조금 넓혀 그룹 아이콘 뱃지(item 3)가 위아래
+// 그룹과 시각적으로 안 붙어 보이게 함. trigger 레인은 rowH=110→64 — 점을 짧은 세로 막대로
+// 바꾸면서(사용자 제안: 원 면적보다 막대 높이가 개수 비교에 더 정확) 세로 여유가 훨씬 덜
+// 필요해짐(막대 최대 높이 48 기준 ±24 로 충분히 안전, ±32 확보).
 const IS_NARROW = window.matchMedia("(max-width:640px)").matches;
-const ROW_H_POINT = IS_NARROW ? 18 : 24, ROW_H_BAR = IS_NARROW ? 22 : 28, GROUP_GAP = IS_NARROW ? 9 : 16;
+const ROW_H_POINT = IS_NARROW ? 18 : 24, ROW_H_BAR = IS_NARROW ? 22 : 28, GROUP_GAP = IS_NARROW ? 12 : 20;
 const PAD_R = 24, PAD_T = 10, PAD_B = 26;
 const BASE_W = 900;
 const LANES = [
-  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH:110 },
-  { key:"health",  label:"백엔드 상태", icon:"🖥️", type:"bar",   rows:["backend"] },
+  // (후속) 막대 최대 높이(호버 확대 포함) 48px — rowH 절반(desktop 32) 안에 여유 있게 들어감.
+  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH: IS_NARROW ? 56 : 64 },
+  // (item 2) 백엔드 상태 막대 두께 2배(12→24px) — rowH 도 그만큼 여유 있게 별도 지정
+  // (preview 와 같은 ROW_H_BAR 를 공유하지 않게 분리).
+  { key:"health",  label:"백엔드 상태", icon:"🖥️", type:"bar",   rows:["backend"], rowH: IS_NARROW ? 32 : 40 },
   { key:"preview", label:"preview",     icon:"🎬", type:"bar",   rows: ROWS_MEMBERS },
   { key:"relay",   label:"X 예고 릴레이", icon:"📣", type:"point", rows:["account"] },
   { key:"notice",  label:"소식",        icon:"📰", type:"point", rows:["notice"] },
@@ -780,11 +794,15 @@ let rowY = {};
   let y = PAD_T;
   LANES.forEach(g => {
     const rh = g.rowH || (g.type === "bar" ? ROW_H_BAR : ROW_H_POINT);
+    const blockTop = y;
     const centerY = y + (g.rows.length * rh) / 2;
     // 그룹 아이콘(왼쪽 28px 칸)과 행 라벨(오른쪽, right-align)을 좌우로 분리해뒀으므로
     // 세로 위치는 그냥 그룹 정중앙이면 된다 — 더 이상 서로 겹칠 일이 없다.
     g._labelY = centerY;
     g.rows.forEach(r => { rowY[g.key+"|"+r] = y + rh/2; y += rh; });
+    // (item 3) 그룹의 행 블록 전체 범위 — renderLabels 가 스파인(연결선) 그릴 때 씀.
+    g._blockTop = blockTop;
+    g._blockHeight = y - blockTop;
     y += GROUP_GAP;
   });
   window._TL_H = y - GROUP_GAP + PAD_B;
@@ -824,6 +842,16 @@ function renderLabels(){
   wrap.style.height = window._TL_H + "px";
   wrap.innerHTML = "";
   LANES.forEach(g => {
+    const hasSubRows = g.rows.some(r => MEMBER_KO[r]);
+    // (item 3) 하위 멤버 뱃지가 있는 그룹(preview·tweet)만 세로 스파인을 그려 "이 그룹 아이콘에
+    // 딸린 행들" 임을 보여준다. 그룹 아이콘 뱃지 중심부터 마지막 행까지 관통.
+    if (hasSubRows) {
+      const spine = document.createElement("div");
+      spine.className = "grp-spine";
+      spine.style.top = g._blockTop + "px";
+      spine.style.height = g._blockHeight + "px";
+      wrap.appendChild(spine);
+    }
     const grp = document.createElement("div");
     grp.className = "grp"; grp.style.top = g._labelY + "px"; grp.textContent = g.icon; grp.title = g.label;
     wireLegend(grp, () => laneLegendHtml(g.key));
@@ -935,9 +963,11 @@ function renderTimeline(){
     BACKEND_SEGS.forEach(sg => {
       const x1 = timeToX(sg.from, plotW), x2 = timeToX(sg.to, plotW);
       const rect = document.createElementNS(ns,"rect");
-      rect.setAttribute("x", x1); rect.setAttribute("y", ry - 6);
-      rect.setAttribute("width", Math.max(x2-x1, 1)); rect.setAttribute("height", 12);
-      rect.setAttribute("rx", 3);
+      // (v3.8.4-후속) 세로 두께 2배(12→24) — HEALTH 레인(health|backend)도 rowH 를 따로
+      // 키워뒀다(LANES 정의) 그 안에서만 커지므로 다른 레인 침범 없음.
+      rect.setAttribute("x", x1); rect.setAttribute("y", ry - 12);
+      rect.setAttribute("width", Math.max(x2-x1, 1)); rect.setAttribute("height", 24);
+      rect.setAttribute("rx", 5);
       rect.setAttribute("fill", HEALTH_COLOR[sg.s]);
       rect.setAttribute("class","tl-seg");
       wireTip(rect, { t:sg.from+"–"+sg.to, title:HEALTH_LABEL[sg.s], raw:sg.s, tone:sg.s==="down"?"err":"ok", d:"healthchecks.io status/flips 기준" });
@@ -995,29 +1025,25 @@ function renderTimeline(){
     ).join("");
     return `<div class="lg-title">${t} · 트리거 ${events.length}건</div>` + rows;
   }
+  // (v3.8.4-후속) 점 위 아이콘 글리프 제거 — 호버/클릭 팝업(triggerGroupDetailHtml)에 종류별
+  // 아이콘·이름·결과가 전부 뜨므로 점 위에 또 아이콘을 얹을 필요가 없다. 순수하게 점 하나 +
+  // 크기(개수)·색(결과)만으로 표시.
   function drawTriggerGroup(t, events){
     const x = timeToX(t, plotW);
     const cy = rowY["trigger|all"];
     const count = events.length;
-    const rBase = triggerRadiusBase(count), rActive = triggerRadiusActive(count);
+    const hBase = triggerBarHeightBase(count), hActive = triggerBarHeightActive(count);
     const anyErr = events.some(e => !e.ok);
     const dimmed = !activeTones.has(anyErr ? "err" : "ok");
-    const c = document.createElementNS(ns,"circle");
-    c.setAttribute("cx", x); c.setAttribute("cy", cy); c.setAttribute("r", rBase);
-    c.setAttribute("fill", anyErr ? ERR : OK);
-    c.setAttribute("class", "tl-dot" + (dimmed ? " dim" : ""));
-    svg.appendChild(c);
-    const txt = document.createElementNS(ns,"text");
-    txt.setAttribute("x", x); txt.setAttribute("y", cy);
-    txt.setAttribute("text-anchor", "middle"); txt.setAttribute("dominant-baseline", "central");
-    txt.setAttribute("class", "tl-trigger-glyph" + (dimmed ? " dim" : ""));
-    txt.style.fontSize = TRIGGER_FONT_BASE;
-    txt.textContent = TRIGGER_GLYPH[events[0].kind];
-    svg.appendChild(txt);
-    const htmlFn = () => triggerGroupDetailHtml(t, events);
-    wireLegend(c, htmlFn);
-    wireLegend(txt, htmlFn);
-    triggerMarks.push({ x, circle:c, text:txt, rBase, rActive });
+    const bar = document.createElementNS(ns,"rect");
+    bar.setAttribute("x", x - TRIGGER_BAR_W/2); bar.setAttribute("y", cy - hBase/2);
+    bar.setAttribute("width", TRIGGER_BAR_W); bar.setAttribute("height", hBase);
+    bar.setAttribute("rx", 2);
+    bar.setAttribute("fill", anyErr ? ERR : OK);
+    bar.setAttribute("class", "tl-trigger-bar" + (dimmed ? " dim" : ""));
+    svg.appendChild(bar);
+    wireLegend(bar, () => triggerGroupDetailHtml(t, events));
+    triggerMarks.push({ x, cy, bar, hBase, hActive });
   }
 
   TRIGGER_GROUPS.forEach(g => drawTriggerGroup(g.t, g.events));
@@ -1109,10 +1135,11 @@ function setTriggerActiveNear(x){
   const snap = x != null && bestDist <= TRIGGER_HOVER_SNAP_PX;
   triggerMarks.forEach(m => {
     const active = snap && m.x === bestX;
-    // (v3.8.4 item 8) y는 더 이상 안 바뀐다 — 그룹당 점 하나라 세로로 퍼질 필요가 없어짐.
-    // 반지름만 그 점의 개수 기준값(rBase/rActive)으로 커진다.
-    m.circle.setAttribute("r", active ? m.rActive : m.rBase);
-    m.text.style.fontSize = active ? TRIGGER_FONT_ACTIVE : TRIGGER_FONT_BASE;
+    // (후속) 점 → 막대로 바뀌면서 반지름 대신 높이(그리고 그에 맞춘 y)를 조정한다.
+    // 중심(cy)을 기준으로 위아래 대칭 확장 — 다른 값은 그대로 두고 크기만 커 보이게.
+    const h = active ? m.hActive : m.hBase;
+    m.bar.setAttribute("height", h);
+    m.bar.setAttribute("y", m.cy - h/2);
   });
 }
 
