@@ -436,9 +436,16 @@ _TEMPLATE = r"""<!doctype html>
   .tl-dot:hover{stroke:var(--ink)}
   .tl-dot.dim{opacity:.15}
   /* (후속) 트리거 = 짧은 세로 히스토그램 막대 (점 대체) */
-  .tl-trigger-bar{cursor:pointer; transition:height .16s ease, y .16s ease}
+  .tl-trigger-baseline{stroke:#ffffff; stroke-width:1; opacity:.55}
+  .tl-trigger-bar{cursor:pointer; transition:filter .16s ease}
   .tl-trigger-bar:hover{filter:brightness(1.25)}
   .tl-trigger-bar.dim{opacity:.15}
+  /* (후속2) 호버/클릭 시 크기는 고정, 발광만 — "왜곡되게 커지는" 느낌 없이 눈에 띄게 */
+  .tl-trigger-bar.active{filter:drop-shadow(0 0 4px rgba(255,255,255,.9)) brightness(1.2)}
+  /* (사용자 도안) 트리거 시각을 관통하는 세로 가이드선 — 평소 희미한 점선, active 는 흰 실선 */
+  .tl-trigger-line{pointer-events:none; transition:opacity .16s ease}
+  .tl-trigger-line.idle{stroke:var(--line); stroke-width:1; stroke-dasharray:2 3; opacity:.55}
+  .tl-trigger-line.active{stroke:#ffffff; stroke-width:1.5; stroke-dasharray:none; opacity:.95}
   .tl-seg{cursor:pointer}
   .tl-seg:hover{filter:brightness(1.25)}
 
@@ -593,19 +600,18 @@ function computeIngest(relay, notice, tweet){
   ];
 }
 const TRIGGER_PRIORITY = { ops:0, ingest:1, tick:2, wake:2 };
-// (v3.8.4 item 8) 같은 시각(t)의 트리거 이벤트는 개수와 무관하게 점 하나로 합쳐서 그린다
-// (예전엔 종류별로 세로로 늘어놓아 몰리면 겹쳐 보였다). 대신 그 시각에 몇 건이 뭉쳤는지를
-// 점 "크기"로 나타내고, 실제 목록은 호버/클릭 상세에서 보여준다. 5건 이상은 크기를 고정해
-// 무한정 커지지 않게 한다 — trigger 레인(rowH=110, 중심 기준 ±55px) 안에 호버 확대(active)
-// 상태까지 포함해 항상 들어가야 하므로 반지름 상한을 넉넉히 여유 있게 잡음(최대 35 < 55).
-// (후속) 점 대신 아주 짧은 세로 히스토그램 막대 — 길이(높이) 비교가 원 면적/반지름 비교보다
-// 지각적으로 더 정확하다(데이터비주얼라이제이션 정석: length > area encoding). 폭은 고정,
-// 높이만 개수로 스케일. rowH 도 이에 맞춰 더 짧게 줄였다(item 4, 아래 LANES).
+// (v3.8.4 item 8) 같은 시각(t)의 트리거 이벤트는 개수와 무관하게 막대 하나로 합쳐서 그린다
+// (예전엔 종류별로 세로로 늘어놓아 몰리면 겹쳐 보였다). 몇 건이 뭉쳤는지는 막대 "높이"로
+// 나타내고(길이 비교가 원 면적/반지름 비교보다 지각적으로 정확 — length > area encoding),
+// 실제 목록은 호버/클릭 상세에서. 5건 이상은 높이를 고정해 무한정 커지지 않게 한다.
+// (사용자 도안, ref/monitor-timeline-trigger.png) 막대는 중심 대칭이 아니라 기준선에서
+// **위로만** 스택 — 기준선(TRIGGER_BASELINE_Y, 흰 가로선)을 트리거 레인 바닥에 둔다.
+// 호버/클릭(active) 시 크기 자체는 안 바꾸고(요청: "왜곡되게 커지는 효과는 없애") 발광
+// (drop-shadow) 만 준다 — 그리고 그 시각에서 레인 전체를 관통하는 세로 가이드선이
+// 평소엔 희미한 회색 점선, active 일 때만 흰 실선으로 바뀐다(어떤 콘텐츠에 영향줬는지 추적용).
 const TRIGGER_BAR_W = 8;
-const TRIGGER_BAR_H_STEPS = [10, 16, 22, 28, 34];  // count 1·2·3·4·5+ (쉬는 상태)
-const TRIGGER_BAR_ACTIVE_RATIO = 1.4;               // 호버 시 살짝만 더 키움(과하게 안 자라게)
-function triggerBarHeightBase(count){ return TRIGGER_BAR_H_STEPS[Math.min(Math.max(count,1),5) - 1]; }
-function triggerBarHeightActive(count){ return Math.round(triggerBarHeightBase(count) * TRIGGER_BAR_ACTIVE_RATIO); }
+const TRIGGER_BAR_H_STEPS = [10, 16, 22, 28, 34];  // count 1·2·3·4·5+
+function triggerBarHeight(count){ return TRIGGER_BAR_H_STEPS[Math.min(Math.max(count,1),5) - 1]; }
 // 같은 t(정확히 같은 분)의 ops/tick·wake/ingest 이벤트를 한 그룹으로 묶는다. 그룹 내에서는
 // TRIGGER_PRIORITY 순으로 정렬해 대표 아이콘(맨 앞, 팝업 표시용)을 정한다 — 점 자체엔 더
 // 이상 아이콘을 안 그린다(후속 수정: 팝업에 이미 다 나오므로 중복).
@@ -778,7 +784,9 @@ const PAD_R = 24, PAD_T = 10, PAD_B = 26;
 const BASE_W = 900;
 const LANES = [
   // (후속) 막대 최대 높이(호버 확대 포함) 48px — rowH 절반(desktop 32) 안에 여유 있게 들어감.
-  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH: IS_NARROW ? 56 : 64 },
+  // (사용자 도안) 막대가 기준선(행 중심)에서 위로만 자란다 — 최대 높이 34 + 발광 여유 ~8px 를
+  // 위쪽 절반(rowH/2) 안에 담아야 해서 대칭 시절보다 rowH 가 더 필요하다.
+  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH: IS_NARROW ? 88 : 96 },
   // (item 2) 백엔드 상태 막대 두께 2배(12→24px) — rowH 도 그만큼 여유 있게 별도 지정
   // (preview 와 같은 ROW_H_BAR 를 공유하지 않게 분리).
   { key:"health",  label:"백엔드 상태", icon:"🖥️", type:"bar",   rows:["backend"], rowH: IS_NARROW ? 32 : 40 },
@@ -1025,25 +1033,33 @@ function renderTimeline(){
     ).join("");
     return `<div class="lg-title">${t} · 트리거 ${events.length}건</div>` + rows;
   }
+  // (사용자 도안) 트리거 레인 기준선 — 막대가 이 선에서 위로만 자란다. 아이콘 중심(rowY)과
+  // 같은 y 를 써서 라벨과 시각적으로 맞춘다.
+  const TRIGGER_BASELINE_Y = rowY["trigger|all"];
+  const baseline = document.createElementNS(ns,"line");
+  baseline.setAttribute("x1", 0); baseline.setAttribute("x2", plotW);
+  baseline.setAttribute("y1", TRIGGER_BASELINE_Y); baseline.setAttribute("y2", TRIGGER_BASELINE_Y);
+  baseline.setAttribute("class", "tl-trigger-baseline");
+  svg.appendChild(baseline);
+
   // (v3.8.4-후속) 점 위 아이콘 글리프 제거 — 호버/클릭 팝업(triggerGroupDetailHtml)에 종류별
-  // 아이콘·이름·결과가 전부 뜨므로 점 위에 또 아이콘을 얹을 필요가 없다. 순수하게 점 하나 +
-  // 크기(개수)·색(결과)만으로 표시.
+  // 아이콘·이름·결과가 전부 뜨므로 점 위에 또 아이콘을 얹을 필요가 없다. 순수하게 막대 +
+  // 높이(개수)·색(결과)만으로 표시. (후속2) active 시 크기는 안 바뀌고(왜곡 방지) 발광만.
   function drawTriggerGroup(t, events){
     const x = timeToX(t, plotW);
-    const cy = rowY["trigger|all"];
     const count = events.length;
-    const hBase = triggerBarHeightBase(count), hActive = triggerBarHeightActive(count);
+    const h = triggerBarHeight(count);
     const anyErr = events.some(e => !e.ok);
     const dimmed = !activeTones.has(anyErr ? "err" : "ok");
     const bar = document.createElementNS(ns,"rect");
-    bar.setAttribute("x", x - TRIGGER_BAR_W/2); bar.setAttribute("y", cy - hBase/2);
-    bar.setAttribute("width", TRIGGER_BAR_W); bar.setAttribute("height", hBase);
+    bar.setAttribute("x", x - TRIGGER_BAR_W/2); bar.setAttribute("y", TRIGGER_BASELINE_Y - h);
+    bar.setAttribute("width", TRIGGER_BAR_W); bar.setAttribute("height", h);
     bar.setAttribute("rx", 2);
     bar.setAttribute("fill", anyErr ? ERR : OK);
     bar.setAttribute("class", "tl-trigger-bar" + (dimmed ? " dim" : ""));
     svg.appendChild(bar);
     wireLegend(bar, () => triggerGroupDetailHtml(t, events));
-    triggerMarks.push({ x, cy, bar, hBase, hActive });
+    triggerMarks.push({ x, bar });
   }
 
   TRIGGER_GROUPS.forEach(g => drawTriggerGroup(g.t, g.events));
@@ -1053,6 +1069,20 @@ function renderTimeline(){
     { t:e.t, title:"소식", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"notice"+i }));
   TWEET.forEach((e, i) => drawDot(e.t, rowY["tweet|"+e.member], e.tone,
     { t:e.t, title:(MEMBER_KO[e.member]||e.member)+" 개인 트윗", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"tweet"+i }));
+
+  // (사용자 도안) 트리거마다 기준선에서 차트 바닥까지 내려가는 세로 가이드선 — 그 시각에
+  // 어떤 콘텐츠(어느 레인)에 영향을 줬는지 한눈에 훑을 수 있게. 평소엔 희미한 회색 점선,
+  // 호버/클릭(active) 인 트리거만 흰 실선으로(setTriggerActiveNear 가 토글). 맨 마지막에
+  // 그려서 다른 막대·점 위로 그대로 드러나 보인다(사용자 도안과 동일한 레이어 순서).
+  const plotBottom = window._TL_H - PAD_B;
+  triggerMarks.forEach(m => {
+    const line = document.createElementNS(ns,"line");
+    line.setAttribute("x1", m.x); line.setAttribute("x2", m.x);
+    line.setAttribute("y1", TRIGGER_BASELINE_Y); line.setAttribute("y2", plotBottom);
+    line.setAttribute("class", "tl-trigger-line idle");
+    svg.appendChild(line);
+    m.line = line;
+  });
 
   document.getElementById("tlSub").textContent =
     "점/막대 위에 마우스를 올리면 시간·제목·결과가 보이고, 클릭하면 상세(트리거는 목록, 그 외는 아래 표의 해당 행)가 열립니다.";
@@ -1135,11 +1165,11 @@ function setTriggerActiveNear(x){
   const snap = x != null && bestDist <= TRIGGER_HOVER_SNAP_PX;
   triggerMarks.forEach(m => {
     const active = snap && m.x === bestX;
-    // (후속) 점 → 막대로 바뀌면서 반지름 대신 높이(그리고 그에 맞춘 y)를 조정한다.
-    // 중심(cy)을 기준으로 위아래 대칭 확장 — 다른 값은 그대로 두고 크기만 커 보이게.
-    const h = active ? m.hActive : m.hBase;
-    m.bar.setAttribute("height", h);
-    m.bar.setAttribute("y", m.cy - h/2);
+    // (후속2) 크기(높이)는 절대 안 바뀐다(사용자 요청: "왜곡되게 커지는 효과는 없애") — 대신
+    // 막대는 발광(glow) 클래스만, 그 시각의 세로 가이드선은 점선→흰 실선으로 토글.
+    m.bar.classList.toggle("active", active);
+    m.line.classList.toggle("active", active);
+    m.line.classList.toggle("idle", !active);
   });
 }
 
