@@ -332,23 +332,31 @@ def report_filename(report: dict) -> str:
 def run(
     gh, *, date_kst: str | None = None, monthly: bool = False, yearly: bool = False,
     healthchecks_api_key: str = "", healthchecks_uuid: str = "",
-    github_token_for_commits: str = "",
+    github_token_for_commits: str = "", self_origin: str = "",
 ) -> dict:
     """`_handle_monitor`/`/monitor` Flask 라우트 진입점. {"html", "date", "events",
-    "filename"} 반환."""
+    "filename"} 반환.
+
+    `self_origin`: (v3.8.7 후속) 웹 monitor(`/monitor-live`) 전용 — 이 리포트를 생성한
+    서비스 자신의 절대 URL. 비어있지 않으면 리포트가 자기 자신을 주기적으로 다시
+    불러와(같은 문서 안에서 갱신, 페이지 리로드 없음) "진행중" 표시가 실시간에
+    가깝게 유지된다. `/monitor` DM(정적 스냅샷)은 빈 문자열 그대로 — 자가갱신 불필요.
+    """
     report = build_report(
         gh, date_kst=date_kst, monthly=monthly, yearly=yearly,
         healthchecks_api_key=healthchecks_api_key,
         healthchecks_uuid=healthchecks_uuid, github_token_for_commits=github_token_for_commits,
     )
     return {
-        "html": render_html(report), "date": report["date"], "events": report["eventCount"],
-        "filename": report_filename(report),
+        "html": render_html(report, self_origin=self_origin), "date": report["date"],
+        "events": report["eventCount"], "filename": report_filename(report),
     }
 
 
-def render_html(report: dict) -> str:
-    return _TEMPLATE.replace("__REPORT_JSON__", json.dumps(report, ensure_ascii=False))
+def render_html(report: dict, *, self_origin: str = "") -> str:
+    return (_TEMPLATE
+            .replace("__REPORT_JSON__", json.dumps(report, ensure_ascii=False))
+            .replace("__SELF_ORIGIN__", self_origin.rstrip("/")))
 
 
 _TEMPLATE = r"""<!doctype html>
@@ -684,7 +692,8 @@ _TEMPLATE = r"""<!doctype html>
 <div class="tooltip" id="tooltip"></div>
 
 <script>
-const REPORT = __REPORT_JSON__;
+let REPORT = __REPORT_JSON__;
+const SELF_ORIGIN = "__SELF_ORIGIN__";
 
 const STATE = {
   announced:{ label:"예고(announced)",  color:"var(--st-announced)" },
@@ -1721,6 +1730,20 @@ function loadDay(dateStr){
 renderLabels();
 loadDay(REPORT.date);
 
+// (v3.8.7 후속) 웹 monitor(/monitor-live)에서만 SELF_ORIGIN 이 채워진다 — 자기 자신을
+// 주기적으로 다시 불러와 "진행중" 표시를 실시간에 가깝게 유지한다. loadDay() 는 같은
+// 문서 안에서 DOM 만 갱신하므로(페이지/iframe 리로드 없음) 스크롤·줌 위치가 안 튄다
+// (예전엔 부모 페이지가 iframe.srcdoc 을 통째로 교체해서 스크롤이 항상 맨 위로 리셋됐다).
+if (SELF_ORIGIN) {
+  setInterval(function(){
+    if (document.visibilityState !== "visible" || isPinned()) return;
+    fetch(SELF_ORIGIN + "/monitor-live.json", { cache:"no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(fresh => { if (fresh) { REPORT = fresh; loadDay(currentDate); } })
+      .catch(() => {});
+  }, 60000);
+}
+
 // ── 타임라인 인터랙션 (PC/모바일 공통, Pointer Events) ──────────────────────────
 // PC(모바일): 드래그(pan)=좌우 이동 · ctrl+휠(pinch)=현재 크로스헤어 기준 확대/축소 ·
 // 클릭(터치)=크로스헤어 고정/풀기.
@@ -2017,7 +2040,14 @@ if __name__ == "__main__":
     html = render_html(report)
     assert "__REPORT_JSON__" not in html
     assert '"date": "2026-09-15"' in html or '"date":"2026-09-15"' in html
+    assert "__SELF_ORIGIN__" not in html
+    assert 'const SELF_ORIGIN = "";' in html, "self_origin 생략 시 빈 문자열(자가갱신 비활성)"
     print("[OK] render_html: 플레이스홀더 치환 완료")
+
+    # (v3.8.7 후속) self_origin 지정 시 그대로 심어져 웹 monitor 자가갱신 폴링이 켜짐
+    html_live = render_html(report, self_origin="https://mewtype-telegram-xxx.run.app/")
+    assert 'const SELF_ORIGIN = "https://mewtype-telegram-xxx.run.app";' in html_live, html_live[:200]
+    print("[OK] render_html: self_origin 지정 시 끝 슬래시 제거하고 삽입")
 
     # ── build_report(monthly=True): gh mock으로 이번 달 날짜 수만큼 read_text 호출 확인 ──
     class _RangeGh:

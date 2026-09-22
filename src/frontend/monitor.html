@@ -26,11 +26,21 @@
       });
     }
     // 접속 시각 기준 리포트(가장 최근 06:00 KST~지금)를 우선, 서버가 죽었으면 마지막 스냅샷으로 폴백.
+    // (v3.8.7 후속) 예전엔 여기서 60초마다 iframe.srcdoc 을 통째로 교체했는데, 그건 문서를
+    // 새로 만드는 거라 스크롤이 항상 맨 위로 튀고 화면이 깜빡였다. 이제 "실시간 갱신"은
+    // 리포트 문서 자신이(monitor_report.py 안, self_origin 폴링) DOM 만 다시 그려서
+    // 처리하므로, 여기서는 최초 1회 + 아주 드문 안전망 재시도만 한다.
     function refresh() {
       return load(LIVE_URL)
         .catch(function () { return load(SNAPSHOT_URL); })
         .then(function (html) {
           var f = document.getElementById("f");
+          var savedScroll = 0;
+          try { savedScroll = f.contentWindow ? f.contentWindow.scrollY : 0; } catch (e) {}
+          f.onload = function () {
+            if (!savedScroll) return;
+            try { f.contentWindow.scrollTo(0, savedScroll); } catch (e) {}
+          };
           f.srcdoc = html;
           f.hidden = false;
           document.getElementById("msg").hidden = true;
@@ -39,11 +49,11 @@
     refresh().catch(function () {
       document.getElementById("msg").textContent = "리포트를 불러올 수 없습니다.";
     });
-    // (v3.8.7) "오늘의 멤버 현황"(트윗 건수·live 진행중 여부)이 실시간에 가깝게 보이도록
-    // 탭이 보이는 동안 60초마다 전체를 다시 불러온다 — 실패해도 화면은 직전 값 그대로 유지.
+    // 안전망 — 리포트 내부 자가갱신이 어떤 이유로든(스크립트 오류·CORS 차단 등) 멈춰도
+    // 30분에 한 번은 전체를 다시 불러와 오래 방치돼도 완전히 멈춰있진 않게 한다.
     setInterval(function () {
       if (document.visibilityState === "visible") refresh().catch(function () {});
-    }, 60000);
+    }, 30 * 60000);
   </script>
 </body>
 </html>
