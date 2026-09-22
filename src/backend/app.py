@@ -13,6 +13,9 @@
                     텔레그램 DM 으로 전송 — 발사 시각이 새 하루 경계 바로 다음이라 "오늘"
                     버킷은 아직 거의 비어 있으므로 명시적으로 전날을 지정한다.
                     (v3.5 — push_monitor/push-monitor 를 대체. 구 이름은 devpapers 참고)
+                    (v3.8.5 핫픽스) 그날이 매월 1일이면 일간 대신 **전월** `--monthly`
+                    리포트로, 1월 1일이면 일간 대신 **전년** `--yearly` 리포트로 대체한다 —
+                    /monitor 명령의 `--monthly`(구 `--full`)/`--yearly` 참고.
   GET  /          — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
@@ -130,15 +133,31 @@ def _monitor():
             return jsonify({"skipped": True, "reason": "monitor_auto off"})
 
         today_bucket = bucket_date_kst(datetime.now(KST))
-        prev_day_kst = (datetime.strptime(today_bucket, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        today_date = datetime.strptime(today_bucket, "%Y-%m-%d")
+        prev_day_kst = (today_date - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # (v3.8.5 핫픽스) 매월 1일 = 전월 --monthly, 1월 1일 = 전년 --yearly 로 일간을 대체.
+        # anchor를 "그 기간의 마지막 날"로 주면 monitor_report._month_dates/_year_dates가
+        # 각각 그 달/그 해 전체를 계산한다(build_report 참고).
+        if today_date.month == 1 and today_date.day == 1:
+            run_kwargs = {"date_kst": f"{today_date.year - 1}-12-31", "yearly": True}
+            label = "연간"
+        elif today_date.day == 1:
+            run_kwargs = {"date_kst": prev_day_kst, "monthly": True}
+            label = "월간"
+        else:
+            run_kwargs = {"date_kst": prev_day_kst}
+            label = "일간"
+
         result = monitor_report.run(
             gh,
-            date_kst=prev_day_kst,
+            **run_kwargs,
             healthchecks_api_key=cfg.healthchecks_api_key,
             healthchecks_uuid=(cfg.healthcheck_url.rsplit("/", 1)[-1] if cfg.healthcheck_url else ""),
             github_token_for_commits=cfg.github_token,
         )
         html = result.pop("html")
+        filename = result["filename"]
         try:
             gh.write_text(
                 "monitoring/latest.html", html, prev_sha=None,
@@ -147,9 +166,9 @@ def _monitor():
         except Exception:
             log.exception("monitor: latest.html 커밋 실패 (DM은 계속 진행)")
         notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id).send_document(
-            "monitor.html",
+            filename,
             html.encode("utf-8"),
-            caption=f"📊 Monitor 자동 리포트 — {result['date']} · {result['events']}건",
+            caption=f"📊 Monitor 자동 리포트({label}) — {result['date']} · {result['events']}건",
         )
         return jsonify(result)
     except Exception as e:  # noqa: BLE001

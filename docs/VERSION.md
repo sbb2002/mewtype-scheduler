@@ -2,6 +2,44 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.5** (핫픽스, v3.8.4 후속) - `/monitor --full` → `--monthly`로 개명 + `--yearly`
+  (연간보고서) 신규 + 자동 실행(KST 06:00) 월간/연간 자동 대체.
+  1. **개명(`monitor_report.py`, `telegram_app.py`)** - `--full`은 "이번 달 전체"라는 의미가
+     이름에서 드러나지 않아 `--monthly`로 바꿨다(하위호환 없음 - 명시적 개명 요청). 내부
+     `build_report(full=..., ...)`/`REPORT.full`/`REPORT.month`도 각각 `monthly`/`REPORT.
+     monthly`/`REPORT.dates`로 맞춰 바꿨다(프론트 JS 포함).
+  2. **`--yearly` 신규** (`_year_dates`, `build_report(yearly=True)`) - 올해(또는 `date_kst`가
+     속한 해) 1월 1일~해당 날짜 전부를 "연간 추이" 그리드(월간의 잔디 그리드와 같은 구조,
+     최대 366칸)로 담는다. 날짜당 healthchecks.io/Vercel 조회까지 366번 부르면 부하가 커
+     `_build_day(fetch_external=False)`를 추가해 `date_kst`로 지정한 날짜 외엔 그 두 외부
+     API를 건너뛴다(잔디 색은 이벤트 로그만으로 계산되므로 영향 없음 - 다른 날짜를 클릭해
+     열면 그 날의 downRanges/vercelPush만 비어 보이는 게 알려진 한계).
+  3. **자동 실행 월간/연간 대체** (`app.py` `_monitor()`) - 기존엔 매일 KST 06:10에 전일자
+     하루치만 보냈다. 이제 그날이 **매월 1일**이면 하루치 대신 **전월** `--monthly`(anchor를
+     전날=전월 마지막 날로 줘서 `_month_dates`가 그 달 전체를 계산), **1월 1일**이면 하루치
+     대신 **전년** `--yearly`(anchor를 `전년-12-31`로 줘서 `_year_dates`가 그 해 전체를
+     계산)를 대신 보낸다. DM 캡션에 `(월간)`/`(연간)`/`(일간)` 라벨을 붙여 구분.
+  4. **타임아웃 상향** (`Dockerfile`, `deploy/deploy_telegram.sh`) - 자동 `/monitor`가 붙는
+     백엔드(`mewtype-scheduler`) gunicorn `--timeout`을 120→300s로, 수동 `/monitor --yearly`
+     명령을 받는 `mewtype-telegram`은 60→240s로 올렸다 - 날짜당 GitHub 읽기가 최대 366회로
+     늘어 기존 값으로는 리포트 생성 도중 워커가 죽을 위험이 있어서(기존 `--monthly`도 최대
+     31회라 60s에 근접하던 걸 이번에 같이 여유를 뒀다).
+  5. **첨부 파일명** (`monitor_report.report_filename`) - 텔레그램 DM 첨부 파일명이 항상
+     `monitor.html`로 고정이라 여러 건을 받으면 구분이 안 됐다. `monitor_YYYYMMDD.html`
+     (daily) / `monitor_YYYYMM.html`(monthly) / `monitor_YYYY.html`(yearly)로 기간에 맞는
+     자릿수만 남기도록 바꿨다. `run()`이 `{"html","date","events","filename"}`을 반환하도록
+     확장(`telegram_app._handle_monitor`/`app.py _monitor()` 둘 다 이 filename으로 전송).
+     `monitoring/latest.html`(내부 커밋 경로)·프론트 `monitor.html`(이스터에그 정적 페이지,
+     `src/frontend/monitor.html`)은 별개라 안 건드림.
+  6. **검증** - `python -m src.backend.monitor_report`(`_year_dates`/`build_report(yearly=True)`/
+     `_build_day(fetch_external=False)`/`report_filename` 신규 케이스 포함)·`telegram_app`
+     self-test 전부 통과. `bash -n deploy/deploy_telegram.sh`·`deploy/deploy.sh` 문법 확인.
+     날짜/네트워크를 동결·모킹한 스크립트로 `/monitor`(무인자)·`--monthly`·`--yearly`·특정
+     날짜·`--auto`/`--off`·잘못된 인자를 `telegram_app._handle_monitor`에 직접 통과시켜
+     `monitor_report.run`에 넘어가는 kwargs·DM 캡션·첨부 파일명을 실측 확인, `app.py
+     _monitor()`도 평일/매월1일/1월1일 세 날짜를 얼려 같은 방식으로 확인(모두 기대값과
+     일치: 매월1일→전월 `--monthly`, 1월1일→전년 `--yearly`, 나머지→일간). 실배포 후 확인
+     필요: 1월 1일/매월 1일 실제 자동 발사(다음 기회는 2026-10-01), `--yearly` 실측 소요 시간.
 - **v3.8.4** (핫픽스) - 유튜브 앱 푸시(30분전·라이브 시작)가 `/ingest`에서 조용히 무시되던 문제 수정 +
   DM 가독성 + `/monitor` 타임라인 버그 2건. 2026-09-22 09:33 千石ユノ TUNEIN(30분전) 알림에 처리
   DM 이 안 왔고, 09:40 정기 tick 이 대신 주운 것이 계기.

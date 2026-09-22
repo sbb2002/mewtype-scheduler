@@ -1,12 +1,18 @@
 """`/monitor` — 실제 모니터링 이벤트 로그(monitor_log.py가 append한 JSONL)를 하루치(또는
-`--full`로 이번 달 전체) 모아 Ops Timeline 대시보드 html로 렌더링. push_monitor.py(git
-커밋 기반 Vercel 한도 감시)를 대체한다(v3.5, 2026-09-16 세션에서 확정한 1~3단계 스키마
-그대로 소비). 하루 경계는 KST 00:00 이 아니라 **06:00~익일 06:00**(v3.5.1) — 자정 넘겨
-방송하는 멤버가 흔해서.
+`--monthly`로 이번 달 전체, `--yearly`로 연간 전체) 모아 Ops Timeline 대시보드 html로
+렌더링. push_monitor.py(git 커밋 기반 Vercel 한도 감시)를 대체한다(v3.5, 2026-09-16
+세션에서 확정한 1~3단계 스키마 그대로 소비). 하루 경계는 KST 00:00 이 아니라
+**06:00~익일 06:00**(v3.5.1) — 자정 넘겨 방송하는 멤버가 흔해서.
 
-여러 날짜 브라우징(잔디 클릭, v3.5.1)은 `full=True`(`/monitor --full`)일 때만 — 이번 달
-1일~오늘 전부를 한 리포트에 담아 클라이언트 쪽 전환만으로 날짜를 바꾼다(재요청 없음).
-인자 없는 `/monitor`·`--auto` 자동 실행은 계속 하루치만(가벼움 유지).
+여러 날짜 브라우징(잔디 클릭, v3.5.1)은 `monthly=True`(`/monitor --monthly`, 구
+`--full`)일 때만 — 이번 달 1일~오늘 전부를 한 리포트에 담아 클라이언트 쪽 전환만으로
+날짜를 바꾼다(재요청 없음). `yearly=True`(`/monitor --yearly`, v3.8.5 핫픽스)는 같은
+방식으로 1월 1일~오늘(또는 `date_kst`가 속한 해의 1월 1일~`date_kst`) 전부를 담는다 —
+날짜 수가 많아(최대 366일) `date_kst`로 지정한 날 외에는 healthchecks.io/Vercel 조회를
+건너뛴다(그 날짜들의 downRanges/vercelPush는 표시 안 됨, eventCount 기반 잔디 색은 정상).
+인자 없는 `/monitor`·`--auto` 자동 실행은 계속 하루치만(가벼움 유지) — 단, 매월 1일
+06:00 KST 자동 실행은 전월 `--monthly`로, 1월 1일은 전년 `--yearly`로 대체된다(app.py
+`_monitor()` 참고).
 
 이 리포트는 실데이터만 다루므로, 같은 세션에서 만든 Artifact 목업에 있던 아래 기능은
 뺐다 — 전부 "재현 근거 데이터가 없어서" 뺀 것이지 귀찮아서가 아니다:
@@ -224,11 +230,29 @@ def _month_dates(end_date_kst: str) -> list[str]:
     return out
 
 
+def _year_dates(end_date_kst: str) -> list[str]:
+    """end_date_kst가 속한 해의 1월 1일부터 end_date_kst까지 날짜 문자열 목록(오름차순).
+    `end_date_kst`가 12월 31일이면 그 해 전체(최대 366일)가 된다(v3.8.5, `--yearly`)."""
+    end = datetime.strptime(end_date_kst, "%Y-%m-%d")
+    d = end.replace(month=1, day=1)
+    out = []
+    while d <= end:
+        out.append(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    return out
+
+
 def _build_day(
     gh, date_kst: str, *, now_hm: str | None,
     healthchecks_api_key: str, healthchecks_uuid: str, github_token_for_commits: str,
+    fetch_external: bool = True,
 ) -> dict:
-    """하루치(06:00 KST~익일 06:00 KST) 이벤트 로그 + healthchecks.io + 커밋 수를 모은다."""
+    """하루치(06:00 KST~익일 06:00 KST) 이벤트 로그 + healthchecks.io + 커밋 수를 모은다.
+
+    `fetch_external=False`면 healthchecks.io/Vercel 조회를 건너뛰고 downRanges=[]/
+    vercelPush=0 으로 채운다(v3.8.5, `--yearly`가 날짜당 최대 366회 외부 API를 부르지
+    않도록 — 선택된 날짜에만 True로 준다. 잔디 색(그룹의 정상/degraded/err 판정)은
+    이벤트 로그만으로 계산돼 영향 없다)."""
     text, _sha = gh.read_text(f"monitoring/events-{date_kst}.jsonl")
     events = parse_events(text)
     grouped = _group(events)
@@ -239,29 +263,42 @@ def _build_day(
         "relay": _tone_json(grouped["relay"]),
         "tweet": _tweet_json(grouped["tweet"]),
         "preview": _preview_json(grouped["preview"], now_hm),
-        "downRanges": _fetch_health_down_ranges(healthchecks_api_key, healthchecks_uuid, date_kst),
-        "vercelPush": _vercel_push_count(github_token_for_commits, date_kst),
+        "downRanges": (
+            _fetch_health_down_ranges(healthchecks_api_key, healthchecks_uuid, date_kst)
+            if fetch_external else []
+        ),
+        "vercelPush": _vercel_push_count(github_token_for_commits, date_kst) if fetch_external else 0,
         "eventCount": len(events),
     }
 
 
 def build_report(
-    gh, *, date_kst: str | None = None, full: bool = False,
+    gh, *, date_kst: str | None = None, monthly: bool = False, yearly: bool = False,
     healthchecks_api_key: str = "", healthchecks_uuid: str = "",
     github_token_for_commits: str = "",
 ) -> dict:
-    """오늘(또는 date_kst)치, `full=True`면 이번 달 1일~오늘치 전부를 모아 REPORT dict로.
-    gh는 data 저장소용 GitHubStore(text 읽기). 하루 경계는 06:00 KST~익일 06:00 KST."""
+    """오늘(또는 date_kst)치, `monthly=True`면 date_kst가 속한 달의 1일~date_kst,
+    `yearly=True`면 date_kst가 속한 해의 1월 1일~date_kst 전부를 모아 REPORT dict로.
+    gh는 data 저장소용 GitHubStore(text 읽기). 하루 경계는 06:00 KST~익일 06:00 KST.
+    (v3.8.5) 인자 없는 date_kst는 오늘 — monthly는 "이번 달 1일~오늘", yearly는
+    "올해 1월 1일~오늘"이 된다. 지난달/작년 전체를 원하면 date_kst를 그 기간의 마지막
+    날짜로 명시한다(app.py `_monitor()`의 자동 실행이 이렇게 호출)."""
     now_kst = datetime.now(KST)
     today_bucket = bucket_date_kst(now_kst)
     date_kst = date_kst or today_bucket
-    dates = _month_dates(today_bucket) if full else [date_kst]
+    if yearly:
+        dates = _year_dates(date_kst)
+    elif monthly:
+        dates = _month_dates(date_kst)
+    else:
+        dates = [date_kst]
 
     days = {
         d: _build_day(
             gh, d, now_hm=(now_kst.strftime("%H:%M") if d == today_bucket else None),
             healthchecks_api_key=healthchecks_api_key, healthchecks_uuid=healthchecks_uuid,
             github_token_for_commits=github_token_for_commits,
+            fetch_external=(not yearly) or d == date_kst,
         )
         for d in dates
     }
@@ -269,24 +306,42 @@ def build_report(
 
     return {
         "date": selected,
-        "full": full,
-        "month": dates,
+        "monthly": monthly,
+        "yearly": yearly,
+        "dates": dates,
         "days": days,
         "eventCount": days[selected]["eventCount"],
     }
 
 
+def report_filename(report: dict) -> str:
+    """`monitor_YYYYMMDD.html` — yearly면 `monitor_YYYY.html`, monthly면
+    `monitor_YYYYMM.html`, daily면 `monitor_YYYYMMDD.html`(v3.8.5). report["date"]는
+    항상 그 기간의 마지막 날(anchor)이라 연/월 앞자리를 그대로 잘라 쓰면 된다."""
+    ymd = report["date"].replace("-", "")
+    if report.get("yearly"):
+        return f"monitor_{ymd[:4]}.html"
+    if report.get("monthly"):
+        return f"monitor_{ymd[:6]}.html"
+    return f"monitor_{ymd}.html"
+
+
 def run(
-    gh, *, date_kst: str | None = None, full: bool = False,
+    gh, *, date_kst: str | None = None, monthly: bool = False, yearly: bool = False,
     healthchecks_api_key: str = "", healthchecks_uuid: str = "",
     github_token_for_commits: str = "",
 ) -> dict:
-    """`_handle_monitor`/`/monitor` Flask 라우트 진입점. {"html", "date", "events"} 반환."""
+    """`_handle_monitor`/`/monitor` Flask 라우트 진입점. {"html", "date", "events",
+    "filename"} 반환."""
     report = build_report(
-        gh, date_kst=date_kst, full=full, healthchecks_api_key=healthchecks_api_key,
+        gh, date_kst=date_kst, monthly=monthly, yearly=yearly,
+        healthchecks_api_key=healthchecks_api_key,
         healthchecks_uuid=healthchecks_uuid, github_token_for_commits=github_token_for_commits,
     )
-    return {"html": render_html(report), "date": report["date"], "events": report["eventCount"]}
+    return {
+        "html": render_html(report), "date": report["date"], "events": report["eventCount"],
+        "filename": report_filename(report),
+    }
 
 
 def render_html(report: dict) -> str:
@@ -389,12 +444,25 @@ _TEMPLATE = r"""<!doctype html>
     .stat-item{flex:1 1 40%; border-top:none !important}
   }
 
-  .grass{display:flex; flex-wrap:wrap; gap:5px}
-  .grass button{width:26px; height:26px; border-radius:6px; border:2px solid transparent; padding:0;
-    font:600 11px var(--mono); cursor:pointer; font-variant-numeric:tabular-nums}
-  .grass button.sel{border-color:var(--ink)}
-  .grass button:hover{filter:brightness(1.2)}
-  .grass button.future{cursor:default; opacity:.35}
+  /* (v3.8.5) 잔디 그리드 — 옛 push_monitor 대시보드(v3.4.13 이전)의 단일 색상(teal) 명도
+     스케일(hsl(175,55%,18~60%), 값이 클수록 밝게)은 그대로 쓰되, 배치는 요일(일~토)을
+     가로(열)로 — 한 행이 한 주. 우측엔 timeline-preview 우측 가로막대와 같은 스타일로
+     그 주 트리거 총량 막대를 붙인다(renderRightPanel의 bar() 참고). */
+  .grass-tabs{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px}
+  .grass-tabs button{font:600 .72rem var(--mono); color:var(--muted); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer}
+  .grass-tabs button:hover{color:var(--ink); border-color:var(--muted)}
+  .grass-tabs button.active{color:var(--ink); background:var(--line); border-color:var(--accent)}
+  .grass-cal{overflow-x:auto}
+  #grassCalSvg{display:block}
+  .grass-col-label{font:10px var(--mono); fill:var(--muted-2); text-anchor:middle}
+  .grass-cell-rect{cursor:pointer; stroke:transparent; stroke-width:2}
+  .grass-cell-rect.sel{stroke:var(--ink)}
+  .grass-cell-rect:not(.future):hover{filter:brightness(1.3)}
+  .grass-cell-rect.future{cursor:default; opacity:.5}
+  .grass-cell-text{font:600 12px var(--mono); fill:var(--ink); text-anchor:middle;
+    font-variant-numeric:tabular-nums}
+  .grass-week-total{font:11px var(--mono); fill:var(--muted); font-variant-numeric:tabular-nums}
 
   .legend{display:flex; flex-wrap:wrap; gap:6px}
   .legend button{display:inline-flex; align-items:center; gap:6px; font:500 .74rem var(--sans); color:var(--ink);
@@ -497,10 +565,12 @@ _TEMPLATE = r"""<!doctype html>
 <p class="lede" id="lede">불러오는 중…</p>
 
 <section class="panel" id="grassPanel" hidden>
-  <h2>월간 추이</h2>
-  <p class="panel-sub">날짜 칸을 누르면 아래 전체가 그 날짜로 바뀝니다. 하루 기준은 06:00~익일 06:00(KST) —
-    자정 넘겨 이어지는 방송을 하루로 묶기 위함.</p>
-  <div class="grass" id="grass"></div>
+  <h2 id="grassTitle">월간 추이</h2>
+  <p class="panel-sub">날짜 칸을 누르면 아래 전체가 그 날짜로 바뀝니다. 색은 트리거(🎛️🕒📡📥) 발생
+    건수가 많을수록 진한 녹색입니다. 하루 기준은 06:00~익일 06:00(KST) — 자정 넘겨 이어지는 방송을
+    하루로 묶기 위함.</p>
+  <div class="grass-tabs" id="grassTabs" hidden></div>
+  <div class="grass-cal"><svg id="grassCalSvg"></svg></div>
 </section>
 
 <div class="tabs" role="tablist">
@@ -1339,39 +1409,160 @@ function renderTable(){
   }).join("");
 }
 
-function grassTone(dateStr){
+// (v3.8.5) 잔디 색 = 트리거(운영자 제어 ops·정기수집 tick/wake·X/공식 인입 ingest) 건수.
+// 옛 push_monitor 대시보드(v3.4.13 이전)의 heatColor 공식을 그대로 복원 — 단일 색상(teal)
+// 명도만 값이 클수록 밝게(hsl(175,55%,18~60%), "GitHub 잔디 스타일").
+function triggerCount(dateStr){
   const day = REPORT.days[dateStr];
-  if (!day) return null; // 아직 안 온 날짜(이번 달의 남은 날) — 데이터 없음
-  const previewSegs = day.preview.flatMap(v => v.segs);
-  const hasErr = day.ticks.some(e => !e.ok) || day.ops.some(e => !e.ok) ||
-    day.relay.some(e => e.tone === "err") || day.notice.some(e => e.tone === "err") ||
-    day.tweet.some(e => e.tone === "err") || previewSegs.some(sg => sg.q === "err");
-  if (hasErr) return "err";
-  const hasDeg = day.relay.some(e => e.tone === "degraded") || day.notice.some(e => e.tone === "degraded") ||
-    day.tweet.some(e => e.tone === "degraded") || previewSegs.some(sg => sg.q === "degraded");
-  if (hasDeg) return "degraded";
-  return day.eventCount > 0 ? "ok" : "none";
+  if (!day) return null;
+  const ingest = computeIngest(day.relay, day.notice, day.tweet);
+  return day.ops.length + day.ticks.length + ingest.length;
 }
-const GRASS_COLOR = { ok:OK, degraded:DEGRADED, err:ERR, none:"#21232a" };
+let grassMaxTrigger = 1;
+function computeGrassMax(){
+  grassMaxTrigger = Math.max(1, ...REPORT.dates.map(d => triggerCount(d) || 0));
+}
+function triggerColor(count){
+  if (!count) return "#1c1e24";
+  const t = Math.min(1, count / grassMaxTrigger);
+  const light = 18 + t * 42; // 18%~60%, 옛 대시보드와 동일 스케일
+  return `hsl(175, 55%, ${light}%)`;
+}
+
+// (사용자 요청) 요일은 가로(열)로 일~토 순서 — 한 행이 한 주, 위에서 아래로 주가 흐른다.
+// 첫 주 앞/마지막 주 뒤의 이번 달 아닌 칸은 그리지 않는다.
+function _pad2(n){ return String(n).padStart(2, "0"); }
+function monthCalendarWeeks(year, month){
+  const first = new Date(year, month - 1, 1);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstSunIdx = first.getDay(); // getDay(): 0=일~6=토 — 그대로 열 인덱스로 씀
+  const cells = [];
+  for (let i = 0; i < firstSunIdx; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(`${year}-${_pad2(month)}-${_pad2(d)}`);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+// (사용자 요청) 각 칸에 트리거 숫자 표시 + 칸 크기 확대 + 우측에 timeline-preview 우측
+// 가로막대(renderRightPanel의 bar())와 같은 스타일로 그 주 트리거 총량 막대를 붙인다.
+// DOM 버튼 그리드 대신 하나의 SVG로 그려야 칸-막대 행이 픽셀 단위로 맞는다.
+const GRASS_CELL = 34, GRASS_GAP = 4, GRASS_HEADER_H = 20;
+const GRASS_BAR_GAP = 18, GRASS_BAR_MAXW = 160, GRASS_BAR_H = 14;
+let grassActiveMonth = null; // 1~12, yearly 탭에서만 씀
+function buildGrassCalendar(year, month){
+  const svg = document.getElementById("grassCalSvg");
+  const ns = "http://www.w3.org/2000/svg";
+  svg.innerHTML = "";
+  const weeks = monthCalendarWeeks(year, month);
+  const DOW = ["일","월","화","수","목","금","토"];
+  const colX = i => i * (GRASS_CELL + GRASS_GAP);
+  const gridW = 7 * (GRASS_CELL + GRASS_GAP) - GRASS_GAP;
+  const barX = gridW + GRASS_BAR_GAP;
+  const totalW = barX + GRASS_BAR_MAXW + 50;
+  const totalH = GRASS_HEADER_H + weeks.length * (GRASS_CELL + GRASS_GAP) - GRASS_GAP;
+  svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
+  svg.setAttribute("width", totalW); svg.setAttribute("height", totalH);
+  svg.style.width = totalW + "px"; svg.style.height = totalH + "px";
+
+  DOW.forEach((label, i) => {
+    const t = document.createElementNS(ns, "text");
+    t.setAttribute("x", colX(i) + GRASS_CELL / 2);
+    t.setAttribute("y", GRASS_HEADER_H - 6);
+    t.setAttribute("class", "grass-col-label");
+    t.textContent = label;
+    svg.appendChild(t);
+  });
+
+  // 막대 스케일 기준 = 이 달(그리드) 안 주간 트리거 합계 최대값.
+  const weekTotals = weeks.map(week =>
+    week.reduce((sum, d) => sum + ((d && d in REPORT.days) ? (triggerCount(d) || 0) : 0), 0));
+  const maxWeekTotal = Math.max(1, ...weekTotals);
+  const barUnit = GRASS_BAR_MAXW / maxWeekTotal;
+
+  weeks.forEach((week, w) => {
+    const rowY = GRASS_HEADER_H + w * (GRASS_CELL + GRASS_GAP);
+    week.forEach((d, i) => {
+      if (!d) return; // 이번 달 아닌 칸 — 안 그림
+      const known = d in REPORT.days;
+      const count = known ? triggerCount(d) : null;
+      const rect = document.createElementNS(ns, "rect");
+      rect.setAttribute("x", colX(i)); rect.setAttribute("y", rowY);
+      rect.setAttribute("width", GRASS_CELL); rect.setAttribute("height", GRASS_CELL);
+      rect.setAttribute("rx", 7);
+      rect.setAttribute("fill", known ? triggerColor(count) : "#1c1e24");
+      rect.setAttribute("class", "grass-cell-rect" + (d === currentDate ? " sel" : "") + (known ? "" : " future"));
+      const rectTip = document.createElementNS(ns, "title");
+      rectTip.textContent = d + (known ? ` · 트리거 ${count}건` : " · 데이터 없음(아직 지나지 않은 날짜)");
+      rect.appendChild(rectTip);
+      if (known) rect.addEventListener("click", () => loadDay(d));
+      svg.appendChild(rect);
+      if (known) {
+        const txt = document.createElementNS(ns, "text");
+        txt.setAttribute("x", colX(i) + GRASS_CELL / 2);
+        txt.setAttribute("y", rowY + GRASS_CELL / 2);
+        txt.setAttribute("dominant-baseline", "central");
+        txt.setAttribute("class", "grass-cell-text");
+        txt.style.pointerEvents = "none";
+        txt.textContent = String(count);
+        svg.appendChild(txt);
+      }
+    });
+
+    // 주간 트리거 총량 — timeline-preview 우측 가로막대와 동일 스타일(OK 색, RIGHT_BAR_H급).
+    const total = weekTotals[w];
+    const barY = rowY + GRASS_CELL / 2 - GRASS_BAR_H / 2;
+    if (total > 0) {
+      const bar = document.createElementNS(ns, "rect");
+      bar.setAttribute("x", barX); bar.setAttribute("y", barY);
+      bar.setAttribute("width", Math.max(2, total * barUnit)); bar.setAttribute("height", GRASS_BAR_H);
+      bar.setAttribute("rx", 3);
+      bar.setAttribute("fill", OK);
+      bar.setAttribute("class", "grass-week-bar");
+      const barTip = document.createElementNS(ns, "title");
+      barTip.textContent = `이 주 트리거 합계 ${total}건`;
+      bar.appendChild(barTip);
+      svg.appendChild(bar);
+    }
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", barX + Math.max(0, total * barUnit) + 8);
+    label.setAttribute("y", rowY + GRASS_CELL / 2);
+    label.setAttribute("dominant-baseline", "central");
+    label.setAttribute("class", "grass-week-total");
+    label.textContent = total + "건";
+    svg.appendChild(label);
+  });
+}
+
+function renderGrassTabs(year){
+  const tabs = document.getElementById("grassTabs");
+  if (!REPORT.yearly) { tabs.hidden = true; return; }
+  tabs.hidden = false;
+  tabs.innerHTML = "";
+  for (let m = 1; m <= 12; m++) {
+    const btn = document.createElement("button");
+    btn.textContent = m + "월";
+    btn.classList.toggle("active", m === grassActiveMonth);
+    btn.addEventListener("click", () => {
+      grassActiveMonth = m;
+      buildGrassCalendar(year, m);
+      renderGrassTabs(year);
+    });
+    tabs.appendChild(btn);
+  }
+}
+
 function renderGrass(){
   const panel = document.getElementById("grassPanel");
-  if (!REPORT.full || REPORT.month.length <= 1) { panel.hidden = true; return; }
+  if ((!REPORT.monthly && !REPORT.yearly) || REPORT.dates.length <= 1) { panel.hidden = true; return; }
   panel.hidden = false;
-  const wrap = document.getElementById("grass");
-  wrap.innerHTML = "";
-  REPORT.month.forEach(d => {
-    const tone = grassTone(d);
-    const btn = document.createElement("button");
-    const known = tone !== null;
-    btn.textContent = String(parseInt(d.slice(8,10), 10));
-    btn.style.background = known ? GRASS_COLOR[tone] : GRASS_COLOR.none;
-    btn.style.color = known && tone !== "none" ? "#0d0e12" : "var(--muted-2)";
-    btn.title = d + (known ? ` · 이벤트 ${REPORT.days[d].eventCount}건` : " · 데이터 없음");
-    btn.classList.toggle("sel", d === currentDate);
-    if (!known) { btn.classList.add("future"); }
-    else btn.addEventListener("click", () => loadDay(d));
-    wrap.appendChild(btn);
-  });
+  document.getElementById("grassTitle").textContent = REPORT.yearly ? "연간 추이" : "월간 추이";
+  computeGrassMax();
+  const [selYear, selMonth] = (currentDate || REPORT.date).split("-").map(Number);
+  grassActiveMonth = selMonth;
+  renderGrassTabs(selYear);
+  buildGrassCalendar(selYear, selMonth);
 }
 
 let currentDate = null;
@@ -1389,7 +1580,8 @@ function loadDay(dateStr){
   document.getElementById("lede").innerHTML =
     `<b>${dateStr}</b> 하루치(06:00~익일 06:00 KST 기준) — 운영자 제어·정기수집 틱·X 웹훅 인입(트리거) → ` +
     `preview·릴레이·소식·개인 트윗(결과)을 같은 시간축에서 대조합니다. ` +
-    (REPORT.full ? "위 월간 그리드에서 다른 날짜를 고를 수 있습니다." : `다른 날짜는 <code>/monitor YYYY-MM-DD</code>, 이번 달 전체는 <code>/monitor --full</code>로 요청하세요.`);
+    ((REPORT.monthly || REPORT.yearly) ? "위 그리드에서 다른 날짜를 고를 수 있습니다." :
+      `다른 날짜는 <code>/monitor YYYY-MM-DD</code>, 이번 달 전체는 <code>/monitor --monthly</code>, 올해 전체는 <code>/monitor --yearly</code>로 요청하세요.`);
   document.getElementById("tlTitle").textContent = dateStr + " · 24시간 타임라인 (06:00~익일 06:00 KST)";
   renderStats();
   renderTimeline();
@@ -1631,34 +1823,72 @@ if __name__ == "__main__":
     assert _month_dates("2026-09-03") == ["2026-09-01", "2026-09-02", "2026-09-03"]
     print("[OK] _month_dates")
 
-    # ── render_html: 플레이스홀더 치환, 유효 JSON 임베드 (days/month/full 구조) ──
+    # ── _year_dates: 그 해 1월 1일~end 날짜까지 오름차순(v3.8.5, --yearly) ──
+    assert _year_dates("2026-02-02") == [
+        "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06",
+        "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-10", "2026-01-11", "2026-01-12",
+        "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-17", "2026-01-18",
+        "2026-01-19", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-24",
+        "2026-01-25", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30",
+        "2026-01-31", "2026-02-01", "2026-02-02",
+    ]
+    print("[OK] _year_dates")
+
+    # ── render_html: 플레이스홀더 치환, 유효 JSON 임베드 (days/dates/monthly/yearly 구조) ──
     day = {
         "ticks": ticks, "ops": ops, "notice": notice, "relay": [], "tweet": [],
         "preview": preview, "downRanges": [], "vercelPush": 3, "eventCount": len(events),
     }
-    report = {"date": "2026-09-15", "full": False, "month": ["2026-09-15"], "days": {"2026-09-15": day}}
+    report = {
+        "date": "2026-09-15", "monthly": False, "yearly": False,
+        "dates": ["2026-09-15"], "days": {"2026-09-15": day},
+    }
     html = render_html(report)
     assert "__REPORT_JSON__" not in html
     assert '"date": "2026-09-15"' in html or '"date":"2026-09-15"' in html
     print("[OK] render_html: 플레이스홀더 치환 완료")
 
-    # ── build_report(full=True): gh mock으로 이번 달 날짜 수만큼 read_text 호출 확인 ──
-    class _FullGh:
+    # ── build_report(monthly=True): gh mock으로 이번 달 날짜 수만큼 read_text 호출 확인 ──
+    class _RangeGh:
         def __init__(self):
             self.calls = []
         def read_text(self, path):
             self.calls.append(path)
             return (None, None)  # 아직 로그 없는 날짜(404) — 전부 빈 이벤트로 처리돼야 함
 
-    gh = _FullGh()
+    gh = _RangeGh()
     today = datetime.now(KST).strftime("%Y-%m-%d")
-    report_full = build_report(gh, full=True)
+    report_monthly = build_report(gh, monthly=True)
     expected_days = int(today[8:10])
     assert len(gh.calls) == expected_days, (len(gh.calls), expected_days)
-    assert report_full["full"] is True
-    assert len(report_full["month"]) == expected_days
-    assert report_full["date"] in report_full["days"]
-    assert all(report_full["days"][d]["eventCount"] == 0 for d in report_full["month"])
-    print("[OK] build_report(full=True): 이번 달 1일~오늘 전부 조회, 없는 날짜는 빈 리포트")
+    assert report_monthly["monthly"] is True and report_monthly["yearly"] is False
+    assert len(report_monthly["dates"]) == expected_days
+    assert report_monthly["date"] in report_monthly["days"]
+    assert all(report_monthly["days"][d]["eventCount"] == 0 for d in report_monthly["dates"])
+    print("[OK] build_report(monthly=True, 구 full=True): 이번 달 1일~오늘 전부 조회, 없는 날짜는 빈 리포트")
+
+    # ── build_report(yearly=True): 올해 1월 1일~오늘치 날짜 수만큼 조회(v3.8.5) ──
+    gh2 = _RangeGh()
+    report_yearly = build_report(gh2, yearly=True)
+    expected_year_days = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(today[:4] + "-01-01", "%Y-%m-%d")).days + 1
+    assert len(gh2.calls) == expected_year_days, (len(gh2.calls), expected_year_days)
+    assert report_yearly["yearly"] is True and report_yearly["monthly"] is False
+    assert len(report_yearly["dates"]) == expected_year_days
+    print("[OK] build_report(yearly=True): 올해 1월 1일~오늘 전부 조회")
+
+    # ── _build_day(fetch_external=False): 키가 있어도 외부 API를 안 불러 downRanges=[]/vercelPush=0 ──
+    d0 = _build_day(
+        _RangeGh(), "2026-09-01", now_hm=None,
+        healthchecks_api_key="fake", healthchecks_uuid="fake",
+        github_token_for_commits="fake", fetch_external=False,
+    )
+    assert d0["downRanges"] == [] and d0["vercelPush"] == 0
+    print("[OK] _build_day(fetch_external=False): 외부 API 스킵 — yearly 비선택일의 부하 절감")
+
+    # ── report_filename: yearly=YYYY, monthly=YYYYMM, daily=YYYYMMDD (v3.8.5) ──
+    assert report_filename({"date": "2026-09-22", "monthly": False, "yearly": False}) == "monitor_20260922.html"
+    assert report_filename({"date": "2026-09-30", "monthly": True, "yearly": False}) == "monitor_202609.html"
+    assert report_filename({"date": "2026-12-31", "monthly": False, "yearly": True}) == "monitor_2026.html"
+    print("[OK] report_filename: daily/monthly/yearly 파일명 자릿수")
 
     print("\nSUCCESS: monitor_report.py self-test 통과 (mock)")

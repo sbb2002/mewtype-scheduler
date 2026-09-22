@@ -32,12 +32,14 @@ if gcloud secrets describe YT_COOKIES &>/dev/null; then
   _YTC_SECRET=",/secrets/yt-cookies.txt=YT_COOKIES:latest"
   _YTC_ENV=",YT_COOKIES_FILE=/secrets/yt-cookies.txt"
 fi
+# --timeout=240: (v3.8.5 핫픽스) 수동 `/monitor --yearly`(최대 366일 조회)가 기존 60s로는
+# 끝나기 전에 워커가 죽을 수 있어 상향(Cloud Run 기본 요청 타임아웃 300s 안쪽으로 유지).
 gcloud run deploy mewtype-telegram \
   --source . --region "$GCP_LOCATION" \
   --allow-unauthenticated \
   --service-account "$INVOKER_SA" \
   --command=gunicorn \
-  --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=60,src.backend.telegram_app:app" \
+  --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=240,src.backend.telegram_app:app" \
   --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}${_YTC_SECRET}" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}${_YTC_ENV}"
 
