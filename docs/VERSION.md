@@ -2,6 +2,24 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.8** (핫픽스) — 웹 monitor(`/monitor-live`)에서 타임라인을 클릭해 팝업을 고정(pin)하면
+  60초 self-refresh 자체가 통째로 건너뛰어져, 오늘의 멤버 현황·우측 요약·표 등 타임라인과 무관한
+  패널까지 같이 멎어 보이던 문제 수정. 사용자가 실배포판을 버전태그 이스터에그로 열어보다가
+  발견("타임플롯 우측 요약이나 오늘의 멤버 현황이 업데이트 안되는 것 같다").
+  1. **원인** (`monitor_report.py`) — self-refresh `setInterval`이 `if (... || isPinned()) return;`로
+     tick 자체를 건너뛰었다. `isPinned()`는 타임라인 아무 곳이나 한 번 클릭하면 true가 되므로(팝업/
+     흰 실선을 고정해서 찬찬히 보라는 의도), 그 순간부터 고정 해제 전까지 `loadDay()`가 아예 안 불려
+     페이지 전체가 멈춰 보였다.
+  2. **수정** — `loadDay(dateStr, opts)`에 `skipTimeline` 옵션 추가. self-refresh tick은 고정 여부와
+     무관하게 항상 `REPORT`를 새로 받아 `loadDay(currentDate, { skipTimeline: isPinned() })`를 호출 —
+     고정 중엔 `renderTimeline()`(SVG를 `innerHTML=""`로 통째로 새로 그려 고정해둔 팝업 위치가
+     어긋나는 원인)만 건너뛰고, `renderStats()`/`renderRightPanel()`/`renderTable()`/`renderGrass()`
+     등 나머지는 계속 최신화. 타임라인 그림 자체는 고정 해제할 때까지 그 시점 스냅샷으로 유지.
+  3. **검증** — `python -m src.backend.monitor_report` 정상 실행(기존에도 있던 날짜 의존 assert
+     실패 1건은 이 변경과 무관 — 변경 전 커밋으로 stash 대조해 동일 재현 확인). `render_html()`을
+     최소 REPORT로 직접 호출해 HTML 생성 확인 후 내장 `<script>`를 `node --check`로 문법 검증.
+     **미확인**: 브라우저 확장 미연결로 실제 클릭→고정→60초 대기→갱신 흐름은 직접 못 봄 — 배포 후
+     실물 확인 필요.
 - **v3.8.5** (핫픽스, v3.8.4 후속) - `/monitor --full` → `--monthly`로 개명 + `--yearly`
   (연간보고서) 신규 + 자동 실행(KST 06:00) 월간/연간 자동 대체.
   1. **개명(`monitor_report.py`, `telegram_app.py`)** - `--full`은 "이번 달 전체"라는 의미가

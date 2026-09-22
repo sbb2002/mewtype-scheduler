@@ -123,6 +123,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   프론트만 변경. 요약 `docs/VERSION.md`.
 > - **v3.8.3** (핫픽스): 본인 채널 합동방송 감지 — `xtweet.find_guest_members` 가 영상 제목·트윗 원문의 다른 멤버 정식 표기(`x_names`/`name_ko`)를
 >   `collab_with` 에 추가(`_maybe_url_confirmed_schedule`), `merge_video_confirmed` 는 `collab_with` 추가만. 별칭 단독은 미감지. 요약 `docs/VERSION.md`.
+> - **v3.8.6~v3.8.7** (핫픽스, 세부 미반영): 콜라보 LLM 게이트 확장·방송 취소/변경 판정·모니터 타임플롯 개선(v3.8.6) +
+>   `/del`·`/edit` 상태변경 모니터로그 누락·웹 monitor 자가갱신 깜빡임 제거·self_origin http→https mixed content 수정(v3.8.7).
+>   이 상자엔 아직 요약 미기록 — 커밋 `12dd80e`·`0007d29`·`a557918` 참고, 다음 세션에서 채울 것.
+> - **v3.8.8** (핫픽스): 웹 monitor(`/monitor-live`) 타임라인 클릭(팝업 고정)이 60초 self-refresh 전체를
+>   막아 오늘의 멤버 현황·우측 요약 등 무관한 패널까지 같이 멎어 보이던 문제 — `loadDay()` 에 `skipTimeline`
+>   옵션을 추가해 고정 중엔 타임라인 렌더만 건너뛰고 나머지는 계속 최신화하도록 분리
+>   (`monitor_report.py`). 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
