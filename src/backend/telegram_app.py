@@ -792,6 +792,14 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
             log.warning("del: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
+        # (v3.8.7 후속) /del(terminate 포함)이 preview.json 은 지우면서도 모니터 이벤트
+        # 로그엔 남기지 않아, monitor 타임플롯이 이 삭제를 몰라 마지막으로 알려진 상태
+        # (예: watching)를 지금까지 계속 진행 중인 것처럼 그렸다(실측 2026-09-22).
+        _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=snapshot.get("channel_key", ""),
+                  detail=f"{action} · {snapshot.get('state')}→none",
+                  id=snapshot.get("id"), video_id=snapshot.get("video_id"),
+                  from_state=snapshot.get("state"), to_state="none",
+                  title=snapshot.get("title"), collab_with=snapshot.get("collab_with"))
     return changed
 
 
@@ -3633,6 +3641,7 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
             _send_telegram("⚠️ 편집하려던 아이템이 사라졌습니다 — 취소.")
             return
         it = dict(items[i])
+        orig_state = it.get("state")
         for f, val in patch.items():
             key = field_map[f]
             cur = it.get(key)
@@ -3663,6 +3672,13 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
     _op_clear(gh, now_iso, release_lock_id=pid)
     msg = f"✏️ 예고 편집 반영 ({', '.join(patch)}). /undo 로 되돌릴 수 있습니다."
     if "state" in patch:
+        # (v3.8.7 후속) /edit preview 로 state 를 바꿔도 모니터 이벤트 로그엔 안 남아
+        # 타임플롯이 이 전이를 몰랐다 — /del 과 같은 이유로 추가.
+        _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=it.get("channel_key", ""),
+                  detail=f"/edit preview {orig_state}→{it.get('state')}",
+                  id=it.get("id"), video_id=it.get("video_id"),
+                  from_state=orig_state, to_state=it.get("state"),
+                  title=it.get("title"), collab_with=it.get("collab_with"))
         msg += "\n" + _activate_state_edit(gh, it, now_iso)
     if conflicts:
         msg += "\n\n" + "\n".join(conflicts)
@@ -3782,31 +3798,36 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
 
 
 _MONITOR_LIVE_TTL_SEC = 60
-_monitor_live_cache: dict = {"at": 0.0, "html": ""}
+_monitor_live_cache: dict = {"at": 0.0, "report": None}
 _monitor_live_lock = threading.Lock()
 
 
-def _monitor_live_html() -> str:
-    """웹 monitor 페이지용: 가장 최근 06:00 KST 경계부터 지금까지의 리포트 HTML.
+def _monitor_live_report() -> dict:
+    """웹 monitor 페이지용 REPORT dict — 가장 최근 06:00 KST 경계부터 지금까지.
 
     락을 잡은 채 생성해 동시 접속이 GitHub/healthchecks 를 중복 호출하지 않게 하고,
-    TTL 안의 재요청은 캐시를 돌려준다.
+    TTL 안의 재요청은 캐시를 돌려준다. (v3.8.7 후속) HTML/JSON 두 라우트가 이 캐시를
+    공유 — self_origin 삽입 같은 요청별 포맷팅만 각 라우트에서 따로 한다.
     """
     with _monitor_live_lock:
-        if _monitor_live_cache["html"] and time.monotonic() - _monitor_live_cache["at"] < _MONITOR_LIVE_TTL_SEC:
-            return _monitor_live_cache["html"]
+        if _monitor_live_cache["report"] is not None and time.monotonic() - _monitor_live_cache["at"] < _MONITOR_LIVE_TTL_SEC:
+            return _monitor_live_cache["report"]
         gh = _make_gh()
         if gh is None:
             raise RuntimeError("GitHub 설정 없음")
-        result = monitor_report.run(
+        report = monitor_report.build_report(
             gh, date_kst=None,
             healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
             healthchecks_uuid=_healthchecks_uuid(),
             github_token_for_commits=gh.token,
         )
-        _monitor_live_cache["html"] = result["html"]
+        _monitor_live_cache["report"] = report
         _monitor_live_cache["at"] = time.monotonic()
-        return result["html"]
+        return report
+
+
+def _monitor_live_html(self_origin: str = "") -> str:
+    return monitor_report.render_html(_monitor_live_report(), self_origin=self_origin)
 
 
 # Flask 라우트 정의 (Flask 설치 시만)
@@ -4320,9 +4341,19 @@ if _FLASK_AVAILABLE:
 
     @app.get("/monitor-live")
     def _monitor_live():
-        """웹 monitor 페이지(이스터에그) 전용 — 접속 시각 기준 리포트. 읽기 전용·공개(latest.html 과 동일 정보)."""
+        """웹 monitor 페이지(이스터에그) 전용 — 접속 시각 기준 리포트. 읽기 전용·공개(latest.html 과 동일 정보).
+
+        (v3.8.7 후속) 리포트 자신의 절대 URL(self_origin)을 심어 보낸다 — 페이지가
+        이후 /monitor-live.json 을 스스로 다시 불러와(같은 문서 안에서 DOM 만 갱신)
+        "진행중" 표시를 실시간에 가깝게 유지한다(전체 리로드로 인한 스크롤 튐 방지).
+        """
         try:
-            body = _monitor_live_html()
+            # Cloud Run 은 TLS 를 프론트 로드밸런서에서 종료하고 컨테이너엔 평문 HTTP 로
+            # 전달한다 — request.host_url 을 그대로 쓰면 "http://" 가 나와, HTTPS 로 로드된
+            # srcdoc 문서에서 이 절대 URL로 자가갱신 폴링을 걸 때 mixed content 로 조용히
+            # 막힌다(실측 2026-09-22, 배포 후 확인). 이 서비스는 항상 HTTPS 로만 접근되므로
+            # 스킴을 강제로 고정한다.
+            body = _monitor_live_html(self_origin=f"https://{request.host}")
         except Exception:
             log.exception("monitor-live 생성 실패")
             return Response("error", status=500, headers={"Access-Control-Allow-Origin": "*"})
@@ -4330,6 +4361,21 @@ if _FLASK_AVAILABLE:
             "Access-Control-Allow-Origin": "*",
             "Cache-Control": "no-store",
         })
+
+    @app.get("/monitor-live.json")
+    def _monitor_live_json():
+        """(v3.8.7 후속) /monitor-live 리포트와 같은 데이터를 JSON으로 — 위 페이지의
+        자가 갱신 폴링 전용. srcdoc 로 로드된 문서는 origin 이 없어(about:srcdoc) 상대
+        경로 fetch 가 부모 페이지로 잘못 나가므로, 페이지가 이 절대 URL을 직접 부른다."""
+        try:
+            report = _monitor_live_report()
+        except Exception:
+            log.exception("monitor-live.json 생성 실패")
+            return jsonify({"error": "internal"}), 500, {"Access-Control-Allow-Origin": "*"}
+        return jsonify(report), 200, {
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store",
+        }
 
     @app.get("/")
     def _health():
@@ -4543,6 +4589,12 @@ if __name__ == "__main__":
             removed = _remove_broadcast(g, snap, "2026-09-09T01:00:00Z", "test del")
             assert removed and not g.store[_PREVIEW_PATH]["items"], "id 매칭 삭제 실패"
             print("[OK] _remove_broadcast (id 매칭)")
+
+            # (v3.8.7 후속) /del 이 모니터 이벤트 로그에도 남는지 — 실측 버그(2026-09-22):
+            # /del(terminate) 로 지운 방송이 모니터 타임플롯엔 계속 watching 으로 남아있었음.
+            _ev_del = next((v for k, v in g.store.items() if k.startswith("monitoring/events-")), "")
+            assert '"flow": "preview"' in _ev_del and '"to_state": "none"' in _ev_del, _ev_del
+            print("[OK] _remove_broadcast: 모니터 이벤트 로그에 상태 전이(→none) 기록됨")
         else:
             print("[skip] xrelay.parse 0행 — 파서 픽스처 확인")
 
@@ -5101,6 +5153,12 @@ if __name__ == "__main__":
             import copy
             self.store[path] = copy.deepcopy(data)
             return (ch, "s2")
+        def read_text(self, path):
+            return (self.store.get(path), "s" if path in self.store else None)
+        def write_text(self, path, text, *, prev_sha=None, message=""):
+            ch = self.store.get(path) != text
+            self.store[path] = text
+            return (ch, "s2")
 
     if admin is not None:
         g = _GH()
@@ -5148,6 +5206,20 @@ if __name__ == "__main__":
         assert g2.store[_PREVIEW_PATH]["items"] == [], g2.store[_PREVIEW_PATH]
         assert g2.store[_PREVIEW_ARCHIVE_PATH]["items"][0]["id"] == "pv_none1", g2.store[_PREVIEW_ARCHIVE_PATH]
         print("[OK] _activate_state_edit: state→none 즉시 제거+아카이브")
+
+        # (v3.8.7 후속) /edit preview 로 state 를 바꾸면(_apply_preview_edit 경유) 모니터
+        # 이벤트 로그에도 남는지 — 실측 버그(2026-09-22)와 동일 계기(del 뿐 아니라 edit 도).
+        g2b = _GH()
+        g2b.store[_PREVIEW_PATH] = {"items": [
+            {"id": "pv_none2", "channel_key": "nonoka", "state": "watching",
+             "scheduled_start": "2026-09-10T05:00:00Z", "title": "취소될 방송", "video_id": None},
+        ]}
+        _apply_preview_edit(g2b, NW, {"id": "pv_none2", "patch": {"state": "none"},
+                                      "pre": {"state": "watching"}})
+        assert g2b.store[_PREVIEW_PATH]["items"] == [], g2b.store[_PREVIEW_PATH]
+        _ev_edit = next((v for k, v in g2b.store.items() if k.startswith("monitoring/events-")), "")
+        assert '"flow": "preview"' in _ev_edit and '"to_state": "none"' in _ev_edit             and '"from_state": "watching"' in _ev_edit, _ev_edit
+        print("[OK] _apply_preview_edit: state 변경(→none)이 모니터 이벤트 로그에도 기록됨")
 
         # (b) video_id 있는 아이템 → MAIN_SERVICE_URL 미설정이면 안 죽고 안내만.
         item_b = {"id": "pv_x1", "state": "live", "video_id": "vvv", "channel_key": "arale"}
