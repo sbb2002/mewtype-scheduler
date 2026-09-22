@@ -2293,8 +2293,10 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                  f"{html.escape(xtweet.summary_line(parsed))}")
 
     # (v2.8.1) 예고글이면 schedule.json 의 scheduled 행으로도 승격
+    # (v3.8.5) 인용(QRT)한 트윗 본문도 같이 넘긴다 — URL이 인용 쪽에만 있는 경우 대응
+    quote_src = (parsed.get("quote") or {}).get("text")
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
-                             handle=handle, now_iso=now_iso, via=via)
+                             handle=handle, now_iso=now_iso, via=via, quote=quote_src)
     return mode
 
 
@@ -2536,8 +2538,48 @@ def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
         log.warning("monitor_log 기록 실패(%s)", flow)
 
 
+def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list[str],
+                               channels_cfg: dict, now_iso: str, via: str) -> list[str]:
+    """(v3.8.6) 호스트 멤버 트윗에 이름이 언급된 게스트 후보를 LLM으로 최종 확인.
+
+    발동시점: 호스트 멤버의 트윗(+인용)에 자신이 아닌 다른 멤버 이름이 하나 이상
+    들어간 경우(`find_guest_members`가 이미 걸러 `guest_keys`로 넘겨준다). 판단 대상:
+    "이 방송이 언급된 멤버와 실제로 합동하는 방송인가?" — 이름이 나왔다고 무조건
+    합동은 아니다(안부 인사·잡담 등). 합동 멤버는 여럿일 수 있으나, 애초에 텍스트에
+    언급된 멤버만 후보로 카운팅한다(언급 안 된 멤버를 LLM 이 임의로 추가하진 않음 —
+    schema enum이 candidate_names로 고정).
+
+    GROQ_API_KEY 없거나 LLM 5회 모두 실패하면 안전한 기본값(게스트 미추가) — 등록
+    자체(호스트 채널·author 콜라보)는 이 판정과 무관하게 이미 확정돼 있으므로 막지 않는다.
+    """
+    if not guest_keys:
+        return []
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        log.warning("GROQ_API_KEY 없음 — 게스트 언급 콜라보 판정 스킵, 미추가")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=host_key,
+                  detail="collab-guest skip: GROQ_API_KEY 미설정 — 게스트 미추가", via=via)
+        return []
+
+    channels_map = channels_cfg.get("channels", {})
+    host_name = channels_map.get(host_key, {}).get("name_ko", host_key)
+    candidate_names = [channels_map.get(k, {}).get("name_ko", k) for k in guest_keys]
+    name_to_key = dict(zip(candidate_names, guest_keys))
+
+    from .llm import LLMClient
+    confirmed = LLMClient(groq_key).collab_partners(
+        text, host_name=host_name, candidate_names=candidate_names)
+    if confirmed is None:
+        log.warning("게스트 언급 콜라보 판정: LLM 5회 모두 실패 — 미추가")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=host_key,
+                  detail="collab-guest skip: collab_partners() 5회 모두 실패 — 미추가", via=via)
+        return []
+    return [name_to_key[n] for n in confirmed if n in name_to_key]
+
+
 def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
-                                  channels_cfg: dict, *, via: str = "ingest") -> bool:
+                                  channels_cfg: dict, *, via: str = "ingest",
+                                  quote: str | None = None) -> bool:
     """(v3.6) 원문에 유튜브 URL 이 있으면 `videos.list` 로 즉시 메타 확정해 반영.
 
     설계(2026-09-16 대화):
@@ -2553,10 +2595,19 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
     있긴 한데 API 로 사실관계를 확정 못 해서(키 미설정·videos.list 장애·영상 조회
     실패) 판단을 못 내린 경우 — 이때는 구버전처럼 텍스트 파싱이 최소한의 안전망
     역할을 하도록 호출부에 넘긴다(v3.6 도입 전 신뢰도 밑으로는 절대 안 떨어지게).
+
+    `quote`: (v3.8.5 핫픽스) 인용(QRT)한 트윗의 본문. 실측 버그(2026-09-22) — 리츠가
+    유노의 예고 트윗을 QRT 하며 "肉、食べます\nユノちゃんちに来ました"만 덧붙였는데,
+    영상 URL 은 인용된 유노 원문에만 있어 `raw` 단독 검색으로는 못 찾고 예고 승격이
+    통째로 스킵됐다. URL 탐색·게스트 이름 탐색 모두 `raw`+`quote` 합본에서 본다 —
+    영상 채널이 우리 5인/그룹 채널이 아니면 여전히 LLM 참여판정을 거치므로(host_key
+    분기), 무관한 인용(다른 사람 영상에 대한 감상 등)이 오탐 등록될 위험은 기존
+    v3.6 설계 수준 그대로다.
     """
     if xtweet is None or xrelay is None or YouTubeClient is None:
         return False
-    m = xrelay.YT_VIDEO_RE.search(xrelay.normalize(raw))
+    search_text = raw + ("\n" + quote if quote else "")
+    m = xrelay.YT_VIDEO_RE.search(xrelay.normalize(search_text))
     if not m:
         return False
     video_id = m.group(1)
@@ -2583,8 +2634,15 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
     host_key, host, collab_with = xtweet.resolve_url_host(info.channel_id, channel_key, channels_cfg)
 
     if host_key is not None and host is None:
-        # (v3.8.3) 본인 채널 합동 — 제목/원문에 다른 멤버 정식 표기가 있으면 게스트로 추가
-        guests = xtweet.find_guest_members(channels_cfg, host_key, info.title, raw)
+        # (v3.8.3) 본인 채널 합동 — 제목/원문에 다른 멤버 정식 표기가 있으면 게스트 후보.
+        # (v3.8.6) 언급됐다고 곧장 확정하지 않고 LLM 으로 "실제로 같이 나오는 방송인가"
+        # 재확인한다 — 이름 언급이 안부 인사·잡담일 수도 있어 오탐 위험(find_guest_members
+        # 는 "정식 표기가 나온다"만 볼 뿐 문맥은 모른다).
+        guests = xtweet.find_guest_members(channels_cfg, host_key, info.title, search_text)
+        guests = _confirm_llm_collab_guests(
+            gh, search_text, host_key=host_key, guest_keys=guests,
+            channels_cfg=channels_cfg, now_iso=now_iso, via=via,
+        )
         merged = [*(collab_with or []), *[g for g in guests if g not in (collab_with or [])]]
         collab_with = merged or None
 
@@ -2683,7 +2741,8 @@ def _maybe_nonyt_url_notice(gh, raw: str, tag: str | None, now_iso: str) -> bool
 
 
 def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
-                             name: str, handle: str, now_iso: str, via: str = "ingest") -> None:
+                             name: str, handle: str, now_iso: str, via: str = "ingest",
+                             quote: str | None = None) -> None:
     """(v2.8.1) 개인 트윗이 방송 예고면 preview 행으로 승격.
 
     (v3.6) 3단 분기:
@@ -2695,6 +2754,12 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
          확인한다 — 정규식은 문맥을 모르므로(예: 후기 트윗 속 우연한 날짜/시각 오합성,
          버그리포트 20260916 #2) LLM 이 마지막 관문.
     `_maybe_personal_tweet` 이 배지 처리 후 호출. 어느 단계든 게이트 미통과면 no-op(배지만).
+
+    `quote`: (v3.8.5 핫픽스) 인용(QRT)한 트윗의 본문 — 1·2단계(URL 탐색)에서 `raw`와
+    합쳐 함께 본다. 실측 버그(2026-09-22): 리츠가 유노의 예고 트윗을 QRT 하며 자기
+    코멘트만 달았고 영상 URL 은 인용문 쪽에만 있어, `raw` 단독 검색으론 URL을 못 찾고
+    승격 자체가 스킵됐다(합동 레인 누락). 3단계(텍스트만 파싱)는 인용문이 본인 말이
+    아니므로 여전히 raw만 본다.
     """
     if xtweet is None:
         return
@@ -2711,8 +2776,9 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
 
     channels_cfg = _load_channels_config()
-    if _maybe_url_confirmed_schedule(gh, raw, channel_key, now_iso, channels_cfg, via=via):
-        return   # 유튜브 URL 이 있었음 — 반영/스킵 여부와 무관하게 아래로 안 넘어감
+    if _maybe_url_confirmed_schedule(gh, raw, channel_key, now_iso, channels_cfg, via=via,
+                                     quote=quote):
+        return   # 유튜브 URL 이 있었음(raw 또는 quote) — 반영/스킵 여부와 무관하게 아래로 안 넘어감
     if _maybe_nonyt_url_notice(gh, raw, tag, now_iso):
         return   # 비유튜브 URL 이 있었음 — 소식 경로가 처리(등록/스킵 모두 포함)
 
@@ -4465,23 +4531,100 @@ if __name__ == "__main__":
         assert pv8 and pv8[0]["channel_key"] == "ritsu" and pv8[0]["collab_with"] == ["nonoka"], pv8
         print("[OK] _maybe_url_confirmed_schedule (타 멤버 채널 콜라보 → host=그 채널, collab_with=작성자)")
 
-        # (v3.8.3) 본인 채널 합동 — 리츠 채널 영상 제목에 千石ユノ → collab_with=[yuno]
+        # (v3.8.3) 본인 채널 합동 — 리츠 채널 영상 제목에 千石ユノ → 게스트 후보.
+        # (v3.8.6) 언급만으론 확정 안 함 — LLM collab_partners() 로 재확인해야 collab_with 반영.
         _CFG8 = {**_CFG6, "channels": {**_CFG6["channels"],
                  "yuno": {**_CFG6["channels"]["yuno"], "x_names": ["千石ユノ"]},
                  "ritsu": {**_CFG6["channels"]["ritsu"], "x_names": ["峰月律"]}}}
-        g9 = _FakeGH()
+
+        import src.backend.llm as _llm_mod2
+
+        class _FakeCollabLLM:
+            _CONFIRMED = []
+            def __init__(self, api_key):
+                pass
+            def collab_partners(self, text, *, host_name, candidate_names):
+                return self._CONFIRMED
+
+        _orig_llm_cls2 = _llm_mod2.LLMClient
+        try:
+            _llm_mod2.LLMClient = _FakeCollabLLM
+
+            # GROQ_API_KEY 없음 → LLM 호출 자체가 불가 → 게스트 미추가(안전한 실패)
+            g9a = _FakeGH()
+            _FakeYouTubeClient._RESP = {
+                "Fd47-ZE1GVs": _FakeVideoInfo("Fd47-ZE1GVs", "UC_ritsu",
+                                              "【#ぷりはとDay1】ユノ＆律こらぼ【峰月律/千石ユノ】", "upcoming",
+                                              scheduled_start="2026-09-21T12:00:00Z")
+            }
+            _maybe_url_confirmed_schedule(
+                g9a, "配信予定 9/21 21:00 ユノ＆律こらぼ https://www.youtube.com/live/Fd47-ZE1GVs",
+                "ritsu", "2026-09-21T04:34:41Z", _CFG8,
+            )
+            pv9a = (g9a.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert pv9a and pv9a[0]["collab_with"] is None, pv9a
+            print("[OK] _maybe_url_confirmed_schedule (이름 언급 + GROQ_API_KEY 없음 → 게스트 미추가, 안전한 실패)")
+
+            os.environ["GROQ_API_KEY"] = "test-key"
+
+            # LLM "합동 아님"(안부/오탐 등) → 이름이 나와도 collab_with 미추가
+            _FakeCollabLLM._CONFIRMED = []
+            g9b = _FakeGH()
+            _FakeYouTubeClient._RESP = {
+                "Fd47-ZE1GVs": _FakeVideoInfo("Fd47-ZE1GVs", "UC_ritsu",
+                                              "【#ぷりはとDay1】ユノ＆律こらぼ【峰月律/千石ユノ】", "upcoming",
+                                              scheduled_start="2026-09-21T12:00:00Z")
+            }
+            _maybe_url_confirmed_schedule(
+                g9b, "配信予定 9/21 21:00 ユノ＆律こらぼ https://www.youtube.com/live/Fd47-ZE1GVs",
+                "ritsu", "2026-09-21T04:34:41Z", _CFG8,
+            )
+            pv9b = (g9b.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert pv9b and pv9b[0]["collab_with"] is None, pv9b
+            print("[OK] _maybe_url_confirmed_schedule (이름 언급 + LLM 미확인 → collab_with 미추가, 오탐 방지)")
+
+            # LLM "실제 합동" 확인 → collab_with=[yuno] 반영
+            _FakeCollabLLM._CONFIRMED = ["유노"]
+            g9 = _FakeGH()
+            _FakeYouTubeClient._RESP = {
+                "Fd47-ZE1GVs": _FakeVideoInfo("Fd47-ZE1GVs", "UC_ritsu",
+                                              "【#ぷりはとDay1】ユノ＆律こらぼ【峰月律/千石ユノ】", "upcoming",
+                                              scheduled_start="2026-09-21T12:00:00Z")
+            }
+            _maybe_url_confirmed_schedule(
+                g9, "配信予定 9/21 21:00 ユノ＆律こらぼ https://www.youtube.com/live/Fd47-ZE1GVs",
+                "ritsu", "2026-09-21T04:34:41Z", _CFG8,
+            )
+            pv9 = (g9.store.get(_PREVIEW_PATH) or {}).get("items") or []
+            assert pv9 and pv9[0]["channel_key"] == "ritsu" and pv9[0]["collab_with"] == ["yuno"]                 and pv9[0]["kind"] == "collab", pv9
+            print("[OK] _maybe_url_confirmed_schedule (LLM 이 합동으로 확인 → collab_with=[yuno])")
+        finally:
+            _llm_mod2.LLMClient = _orig_llm_cls2
+            os.environ.pop("GROQ_API_KEY", None)
+
+        # (v3.8.5 핫픽스) 실측 버그(2026-09-22) — 리츠가 유노의 예고를 QRT, 자기 코멘트엔
+        # URL 이 없고 인용문에만 있음. raw 단독으론 등록 안 되던 것 → quote 합본으로 등록.
+        g10 = _FakeGH()
         _FakeYouTubeClient._RESP = {
-            "Fd47-ZE1GVs": _FakeVideoInfo("Fd47-ZE1GVs", "UC_ritsu",
-                                          "【#ぷりはとDay1】ユノ＆律こらぼ【峰月律/千石ユノ】", "upcoming",
-                                          scheduled_start="2026-09-21T12:00:00Z")
+            "nC4Bkg96ujM": _FakeVideoInfo("nC4Bkg96ujM", "UC_yuno", "お食べ。", "upcoming",
+                                          scheduled_start="2026-09-22T13:00:00Z")
         }
+        assert _maybe_url_confirmed_schedule(
+            g10, "肉、食べます\nユノちゃんちに来ました", "ritsu", "2026-09-22T11:35:37Z", _CFG6,
+        ) is False, "quote 미지정 + raw 에 URL 없음 → False (기존 동작 보존)"
+        pv10 = (g10.store.get(_PREVIEW_PATH) or {}).get("items") or []
+        assert not pv10
+        print("[OK] _maybe_url_confirmed_schedule (quote 미지정시 raw 만 검색 — 기존 동작 보존)")
+
+        g11c = _FakeGH()
         _maybe_url_confirmed_schedule(
-            g9, "配信予定 9/21 21:00 ユノ＆律こらぼ https://www.youtube.com/live/Fd47-ZE1GVs",
-            "ritsu", "2026-09-21T04:34:41Z", _CFG8,
+            g11c, "肉、食べます\nユノちゃんちに来ました", "ritsu", "2026-09-22T11:35:37Z", _CFG6,
+            quote="〈配信のおしらせ〉\n9/22 22:00～ #ぷりはとDay2\n\n肉を食べます\n\n"
+                  "https://www.youtube.com/live/nC4Bkg96ujM",
         )
-        pv9 = (g9.store.get(_PREVIEW_PATH) or {}).get("items") or []
-        assert pv9 and pv9[0]["channel_key"] == "ritsu" and pv9[0]["collab_with"] == ["yuno"]             and pv9[0]["kind"] == "collab", pv9
-        print("[OK] _maybe_url_confirmed_schedule (본인 채널 합동 → 제목의 千石ユノ 로 collab_with=[yuno])")
+        pv11c = (g11c.store.get(_PREVIEW_PATH) or {}).get("items") or []
+        assert pv11c and pv11c[0]["channel_key"] == "yuno" and pv11c[0]["collab_with"] == ["ritsu"], pv11c
+        print("[OK] _maybe_url_confirmed_schedule (URL이 quote에만 있어도 raw+quote 합본으로 등록, collab_with=[ritsu])")
     finally:
         globals()["YouTubeClient"] = _orig_YTC
         globals()["_enqueue_wake_now"] = _orig_enqueue

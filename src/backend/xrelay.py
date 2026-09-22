@@ -49,8 +49,11 @@ KIND_KO = {
     "unknown": "",
 }
 
-# "8/30(日) 配信スケジュール" / "8/17(月)の配信スケジュール🌟"
-HEADER_RE = re.compile(r"(\d{1,2})/(\d{1,2})\([日月火水木金土]\)\s*の?\s*配信スケジュール")
+# "8/30(日) 配信スケジュール" / "8/17(月)の配信スケジュール🌟" / "9/22(火・祝)の配信スケジュール🌟"
+#   (v3.8.5 핫픽스) 공휴일이면 요일 글자 뒤에 "・祝" 등이 붙는다(실측 20260922) —
+#   요일 한 글자만 허용하던 구버전은 이 형태를 통째로 놓쳐(헤더 자체를 못 찾음) 트윗
+#   전체(그날 전원 예고)가 조용히 유실됐다. 괄호 안 나머지는 내용 불문하고 허용.
+HEADER_RE = re.compile(r"(\d{1,2})/(\d{1,2})\([日月火水木金土][^)]*\)\s*の?\s*配信スケジュール")
 # "11:00〜" / "23:30頃〜"
 TIME_RE = re.compile(r"(\d{1,2}):(\d{2})(頃)?〜")
 # 온전한 YouTube 영상 URL (id 11자 + 잘림표시 없음). watch/live/shorts 모두.
@@ -70,8 +73,9 @@ _SKIP_LINE_RE = re.compile(
 #   ＼出演情報／  9/10(木) 22:00頃〜  「이벤트명」  夢限大みゅーたいぷ 5名が出演  <영상 URL>
 # 실측 확인된 마커는 `出演情報` 하나뿐. 변형(出演決定 등)은 실물 트윗에서 본 뒤 추가.
 APPEARANCE_MARK_RE = re.compile(r"出演情報")
+# (v3.8.5 핫픽스) HEADER_RE 와 동일 이유로 괄호 안 요일 뒤 접미사(・祝 등) 허용.
 APPEARANCE_DT_RE = re.compile(
-    r"(\d{1,2})/(\d{1,2})\([日月火水木金土]\)\s*(\d{1,2}):(\d{2})(頃)?\s*〜"
+    r"(\d{1,2})/(\d{1,2})\([日月火水木金土][^)]*\)\s*(\d{1,2}):(\d{2})(頃)?\s*〜"
 )
 APPEARANCE_COUNT_RE = re.compile(r"(\d+)\s*名(?:が)?\s*(?:出演|参加|登場)")
 _TITLE_RE = re.compile(r"[「『]([^」』\n]{1,60})[」』]")
@@ -853,6 +857,23 @@ if __name__ == "__main__":
     assert len(r16) == 1, r16
     assert r16[0]["scheduled_start"] == "2026-09-03T22:00:00Z", r16[0]["scheduled_start"]  # 익일 07:00 JST
     print("[OK] S16  (明日朝HH:MM〜 → 필러 건너뛰고 +1일 반영)")
+
+    # S17: 실측 버그(2026-09-22, v3.8.5 핫픽스) — 공휴일 헤더 "(火・祝)"를 요일 한 글자
+    # 헤더 정규식이 놓쳐 트윗 전체(4명 스케줄 + 22:00 유노×리츠 합동)가 유실됐다.
+    S17 = (
+        "／\n🛸#ゆめみた\n9/22(火・祝)の配信スケジュール🌟\n＼\n\n"
+        "🎮10:00～ 千石ユノ\nhttps://www.youtube.com/@yuno_yumemita\n\n"
+        "✨20:30～ 宮永ののか\nhttps://www.youtube.com/@nonoka_yumemita\n\n"
+        "✨22:00～ 峰月律×千石ユノ\nhttps://www.youtube.com/@yuno_yumemita\n\n"
+        "✨23:30～ 仲町あられ\nhttps://www.youtube.com/@arale_yumemita\n\n"
+        "#バンドリ"
+    )
+    r17 = parse_bdp_schedule(S17, NOW)
+    assert len(r17) == 4, [(x["channel_key"], x["scheduled_start"]) for x in r17]
+    col17 = next(x for x in r17 if x["kind"] == "collab")
+    assert col17["channel_key"] == "ritsu" and col17["collab_with"] == ["yuno"], col17
+    assert looks_relayable(S17)
+    print("[OK] S17  (공휴일 헤더 '(火・祝)' → 4행 정상 파싱, 회귀 방지)")
 
     # unparsed_lines
     S_BAD = (

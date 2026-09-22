@@ -501,6 +501,18 @@ _TEMPLATE = r"""<!doctype html>
   .tl-right{position:relative; flex:0 0 auto; border-left:1px solid var(--line); border-radius:0 8px 8px 0;
     background:var(--panel-2)}
   #tlRightSvg{display:block}
+  /* (v3.8.5 핫픽스) 모바일 — .tl-labels(64px 고정)+.tl-right(234px 고정) 를 빼면 24시간
+     플롯에 남는 폭이 30~40px 뿐이라 육안으로 안 보임(실측 2026-09-22). 좁은 화면에선
+     둘 중 하나만 풀폭으로 보여주는 토글로 전환 — PC(640px 초과)는 기존 동작 그대로. */
+  .tl-right-toggle{display:none}
+  @media (max-width:640px){
+    .tl-right-toggle{display:inline-flex; align-items:center; gap:4px; font:600 .72rem var(--mono);
+      color:var(--ink); background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+      padding:0 10px; height:26px; cursor:pointer}
+    .tl-right-toggle:hover{border-color:var(--muted)}
+    .tl-body.tl-right-open .tl-scroll{display:none}
+    .tl-body:not(.tl-right-open) .tl-right{display:none}
+  }
   .tl-crosshair{position:absolute; top:0; width:1px; background:rgba(255,255,255,.35); pointer-events:none; display:none; z-index:5}
   .tl-lane{stroke:var(--line); stroke-width:1}
   .tl-hour{stroke:var(--line-soft); stroke-width:1}
@@ -602,10 +614,11 @@ _TEMPLATE = r"""<!doctype html>
       <button id="zoomIn" aria-label="확대">＋</button>
     </div>
     <button class="tl-zoom" id="zoomReset" style="padding:0 10px; height:26px; font-size:.72rem; color:var(--muted)">리셋</button>
+    <button class="tl-right-toggle" id="tlRightToggle" type="button">📊 요약 보기</button>
     <div class="legend" id="legend"></div>
     <span class="tl-hint">왼쪽 줄 이름을 누르면(PC는 호버) 그 줄 범례 · 차트 위 휠로 확대·축소</span>
   </div>
-  <div class="tl-body">
+  <div class="tl-body" id="tlBody">
     <div class="tl-labels" id="tlLabels"></div>
     <div class="tl-scroll" id="tlScroll"><svg id="tlSvg"></svg><div class="tl-crosshair" id="tlCrosshair"></div></div>
     <div class="tl-right"><svg id="tlRightSvg"></svg></div>
@@ -993,6 +1006,18 @@ function setZoom(idx, anchorMinutes){
 document.getElementById("zoomIn").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx+1, crosshairMinutes); });
 document.getElementById("zoomOut").addEventListener("click", () => { if (!isPinned()) setZoom(zoomIdx-1, crosshairMinutes); });
 document.getElementById("zoomReset").addEventListener("click", () => { if (!isPinned()) setZoom(0, crosshairMinutes); });
+
+// (v3.8.5 핫픽스) 모바일 전용 — 24시간 플롯 ↔ 우측 요약(트리거/소식/트윗/백엔드 상태) 토글.
+// SVG는 이미 그려져 있어 클래스만 바꾸고 재렌더는 안 함(renderRightPanel()은 loadDay()에서만 실행).
+(function initRightToggle(){
+  const btn = document.getElementById("tlRightToggle");
+  const body = document.getElementById("tlBody");
+  if (!btn || !body) return;
+  btn.addEventListener("click", () => {
+    const open = body.classList.toggle("tl-right-open");
+    btn.textContent = open ? "📈 타임라인 보기" : "📊 요약 보기";
+  });
+})();
 
 // (사용자 요청) x축 오른쪽 여백을 소식·개인 트윗(멤버별) 당일 건수 + 백엔드 상태 누계로 활용.
 // ref/monitor-timeline-trigger-rightpad.png 도안. (후속: 줌/스크롤에도 안 움직여야 한다는
