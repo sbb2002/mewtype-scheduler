@@ -115,6 +115,9 @@ def _preview_log_events(
             "channel_key": item.get("channel_key", ""),
             "video_id": item.get("video_id"),
             "id": item.get("id"),
+            # (v3.8.4 item 10) monitor 간트에서 "방송 중 추정"(assumed_live) 을 실제 상태와
+            # 별개로 빨강 빗금 덮어쓰기로 표시하기 위해 실어 보낸다.
+            "assumed_live": bool(item.get("assumed_live", False)),
             "from_state": from_state,
             "to_state": to_state,
             "title": item.get("title"),
@@ -529,9 +532,16 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 "result": quality,
                 "who": ev.get("channel_key", ""),
                 "detail": f"{ev.get('from_state')}→{ev.get('to_state')}",
+                # (v3.8.4) item 5·6·7 조사 중 발견 — 아래 두 필드가 빠져 있어서
+                # monitor_report._preview_json(간트 세그먼트 생성기)이 이 이벤트에서
+                # to_state 를 못 읽었다(그 함수와 자기 self-test 픽스처는 top-level
+                # from_state/to_state 를 전제로 함). detail 문자열에만 있고 여기 없었음.
+                "from_state": ev.get("from_state"),
+                "to_state": ev.get("to_state"),
                 "video_id": ev.get("video_id"),
                 "item_id": ev.get("id"),
                 "title": ev.get("title"),
+                "assumed_live": ev.get("assumed_live", False),
             })
 
         # tick/wake 이벤트는 변화가 있을 때만 포함
@@ -639,6 +649,38 @@ if __name__ == "__main__":
     assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "none"
     assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
     print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
+
+    # (v3.8.4) item 5·6·7 회귀 테스트 — _run 안에서 실제로 log_events 에 넘기는 dict 를
+    # 그대로 재현해 from_state/to_state 가 top-level 로 실려 있는지 확인한다. 이 필드가
+    # 빠지면 monitor_report._preview_json(간트 세그먼트 생성기)이 모든 전이의 상태를
+    # 못 읽는다(그쪽 self-test 픽스처는 이 필드가 있다고 전제) — 지금까지는 detail
+    # 문자열에만 녹아 있고 top-level 엔 없어서 실제로 빠져 있었다.
+    _sample_ev = _evs[0]
+    _built = {
+        "ts": "2026-01-01T00:00:00Z",
+        "flow": "preview",
+        "result": RESULT_OK,
+        "who": _sample_ev.get("channel_key", ""),
+        "detail": f"{_sample_ev.get('from_state')}→{_sample_ev.get('to_state')}",
+        "from_state": _sample_ev.get("from_state"),
+        "to_state": _sample_ev.get("to_state"),
+        "video_id": _sample_ev.get("video_id"),
+        "item_id": _sample_ev.get("id"),
+        "title": _sample_ev.get("title"),
+    }
+    assert _built["to_state"] is not None, "to_state 가 top-level 에 실려야 monitor 간트가 그린다"
+    assert _built["to_state"] == _sample_ev["to_state"] and _built["from_state"] == _sample_ev["from_state"]
+    print("[OK] preview 모니터 로그 이벤트에 from_state/to_state top-level 로 포함됨")
+
+    # (v3.8.4) item 10 — assumed_live 플래그도 같이 실려야 monitor 간트가 "방송 중 추정"을
+    # 빨강 빗금으로 덮어 그릴 수 있다.
+    _assumed_evs = _preview_log_events(
+        [{"id": "pv_a", "channel_key": "arale", "state": "announced"}],
+        [{"id": "pv_a", "channel_key": "arale", "state": "upcoming", "assumed_live": True}],
+        [],
+    )
+    assert len(_assumed_evs) == 1 and _assumed_evs[0]["assumed_live"] is True, _assumed_evs
+    print("[OK] _preview_log_events: assumed_live 플래그 전파")
 
     # _wakes_within_horizon (v3.7.3) — 실측 2026-09-19 17:00 KST(08:00Z) 큐 상태 기준
     _now_h = "2026-09-19T08:00:00Z"

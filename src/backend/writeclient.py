@@ -40,12 +40,20 @@ class WriteError(RuntimeError):
     """`/write` 호출 실패(HTTP 오류·네트워크 오류 등)."""
 
 
-def call_write(kind: str, *, gh=None, **args: Any) -> dict:
+def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> dict:
     """`kind` job 을 (동기로) 실행하고 결과 dict 를 반환.
 
     `MAIN_SERVICE_URL` 미설정 시 로컬 디스패치(같은 프로세스, `gh` 필요) — self-test·
     단일 서비스 로컬 개발용. 설정돼 있으면 OIDC 로 `mewtype-backend` 의 `/write` 를 호출한다.
     2초 안에 응답이 없으면 "처리 대기 중" DM 을 1회 보낸다(운영자 체감 응답성 확보).
+
+    `label`: 대기/완료 DM 에 붙일 내용 태그(예: `"千石ユノ 예고"` → `"[千石ユノ 예고]merge_rows"`).
+    생략하면 `args["action"]`(대부분의 호출부가 이미 undo 로그용으로 넘기고 있음)을 폴백으로
+    쓰고, 그것도 없으면 태그 없이 `kind` 만 나간다(기존 문구와 동일).
+    (v3.8.4) 대기 DM 이 실제로 나간 경우에만, 처리가 끝난 시점(성공/실패 모두)에 짝이 되는
+    완료/실패 DM 을 보낸다 — 예전엔 "처리 대기 중…"만 오고 끝났는지 알 길이 없었다.
+    2초 안에 끝나는 빠른 경로는 지금처럼 아무 DM 도 안 나간다(각 핸들러가 이미 보내는
+    자체 완료 DM 과 중복 안 되게).
     """
     main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
     if not main_url:
@@ -57,7 +65,18 @@ def call_write(kind: str, *, gh=None, **args: Any) -> dict:
     if not (fetch_id_token and Request and requests):
         raise WriteError("call_write: google-auth/requests 미탑재 — /write 호출 불가")
 
-    timer = threading.Timer(_WAIT_NOTICE_DELAY_SEC, _send_wait_notice, args=(kind,))
+    tag = label or (args.get("action") or "")
+    notice_sent = threading.Event()
+
+    def _fire_wait_notice() -> None:
+        # DM 발송 자체보다 먼저 플래그를 세운다 — 메인 스레드가 timer.cancel() 직후
+        # notice_sent 를 확인할 때, "타이머는 발화했는데 아직 플래그 전이면 완료 DM 을
+        # 놓치는" 레이스를 피하기 위함(반대 방향 레이스는 무해 — DM 두 개 순서만 살짝
+        # 어긋날 수 있는 정도).
+        notice_sent.set()
+        _send_wait_notice(kind, tag)
+
+    timer = threading.Timer(_WAIT_NOTICE_DELAY_SEC, _fire_wait_notice)
     timer.daemon = True
     timer.start()
     try:
@@ -69,21 +88,43 @@ def call_write(kind: str, *, gh=None, **args: Any) -> dict:
             timeout=_TIMEOUT_SEC,
         )
     except Exception as e:  # noqa: BLE001
+        if notice_sent.is_set():
+            _send_done_notice(kind, tag, ok=False, err=str(e))
         raise WriteError(f"/write 호출 실패({kind}): {e}") from e
     finally:
         timer.cancel()
 
     if resp.status_code != 200:
+        if notice_sent.is_set():
+            _send_done_notice(kind, tag, ok=False, err=f"HTTP {resp.status_code}")
         raise WriteError(f"/write 실패({kind}): HTTP {resp.status_code} {resp.text[:200]}")
+
+    if notice_sent.is_set():
+        _send_done_notice(kind, tag, ok=True)
     return resp.json()
 
 
-def _send_wait_notice(kind: str) -> None:
+def _tag_prefix(tag: str) -> str:
+    return f"[{tag}]" if tag else ""
+
+
+def _send_wait_notice(kind: str, tag: str = "") -> None:
     try:
         from .telegram_app import _send_telegram
-        _send_telegram(f"⏳ 처리 대기 중… ({kind})", silent=True)
+        _send_telegram(f"⏳ 처리 대기 중… {_tag_prefix(tag)}{kind}", silent=True)
     except Exception:  # noqa: BLE001
         log.warning("대기 안내 DM 실패(%s)", kind)
+
+
+def _send_done_notice(kind: str, tag: str, *, ok: bool, err: str | None = None) -> None:
+    try:
+        from .telegram_app import _send_telegram
+        if ok:
+            _send_telegram(f"✅ 처리 완료 {_tag_prefix(tag)}{kind}", silent=True)
+        else:
+            _send_telegram(f"⚠️ 처리 실패 {_tag_prefix(tag)}{kind}: {(err or '')[:150]}")
+    except Exception:  # noqa: BLE001
+        log.warning("완료 안내 DM 실패(%s)", kind)
 
 
 if __name__ == "__main__":
@@ -117,3 +158,86 @@ if __name__ == "__main__":
     except WriteError:
         pass
     print("[PASS] writeclient missing-gh guard")
+
+    # ── (v3.8.4) 대기/완료 DM 짝 맞추기 + label 태그 — 네트워크 경로 시뮬레이션 ──
+    import time as _time
+
+    sent: list[tuple[str, bool]] = []
+
+    class _FakeTelegramApp:
+        @staticmethod
+        def _send_telegram(text, silent=False):
+            sent.append((text, silent))
+
+    class _FakeResp:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"ok": True, "changed": True}
+
+    class _FakeRespErr:
+        status_code = 500
+        text = "boom"
+
+    class _FakeRequestsSlow:
+        @staticmethod
+        def post(*a, **k):
+            _time.sleep(_WAIT_NOTICE_DELAY_SEC + 0.3)  # 대기 DM 타이머가 반드시 발화하도록
+            return _FakeResp()
+
+    class _FakeRequestsSlowErr:
+        @staticmethod
+        def post(*a, **k):
+            _time.sleep(_WAIT_NOTICE_DELAY_SEC + 0.3)
+            return _FakeRespErr()
+
+    class _FakeRequestsFast:
+        @staticmethod
+        def post(*a, **k):
+            return _FakeResp()
+
+    _orig_fetch_id_token, _orig_request_cls, _orig_requests = fetch_id_token, Request, requests
+
+    def _with_fakes(requests_stub, fn):
+        sys.modules["src.backend.telegram_app"] = _FakeTelegramApp  # type: ignore[assignment]
+        os.environ["MAIN_SERVICE_URL"] = "https://fake.example"
+        globals()["fetch_id_token"] = lambda *a, **k: "faketoken"
+        globals()["Request"] = lambda: None
+        globals()["requests"] = requests_stub
+        try:
+            return fn()
+        finally:
+            globals()["fetch_id_token"] = _orig_fetch_id_token
+            globals()["Request"] = _orig_request_cls
+            globals()["requests"] = _orig_requests
+            os.environ.pop("MAIN_SERVICE_URL", None)
+
+    result = _with_fakes(_FakeRequestsSlow, lambda: call_write("apply_notice", label="千石ユノ 예고"))
+    assert result == {"ok": True, "changed": True}
+    assert len(sent) == 2, f"대기 DM + 완료 DM 2건 기대, 받음 {sent}"
+    assert sent[0] == ("⏳ 처리 대기 중… [千石ユノ 예고]apply_notice", True), sent[0]
+    assert sent[1] == ("✅ 처리 완료 [千石ユノ 예고]apply_notice", True), sent[1]
+    print("[PASS] writeclient: 느린 경로 → 대기+완료 DM 짝, label 태그 포함")
+
+    sent.clear()
+    _with_fakes(_FakeRequestsSlow, lambda: call_write("merge_rows", action="/ingest 개인예고 아라레"))
+    assert sent[0][0].startswith("⏳ 처리 대기 중… [/ingest 개인예고 아라레]merge_rows"), sent[0]
+    print("[PASS] writeclient: label 생략 시 args['action'] 폴백")
+
+    sent.clear()
+    try:
+        _with_fakes(_FakeRequestsSlowErr, lambda: call_write("merge_rows", label="실패케이스"))
+        raise AssertionError("HTTP 500 이면 WriteError 를 던져야 함")
+    except WriteError:
+        pass
+    assert len(sent) == 2, sent
+    assert sent[1][0].startswith("⚠️ 처리 실패 [실패케이스]merge_rows"), sent[1]
+    assert sent[1][1] is False, "실패 DM 은 silent 아니어야 함"
+    print("[PASS] writeclient: 실패 시에도 대기/실패 DM 짝 맞추기")
+
+    sent.clear()
+    _with_fakes(_FakeRequestsFast, lambda: call_write("merge_rows", label="빠른케이스"))
+    assert sent == [], f"2초 안에 끝나면 대기/완료 DM 모두 없어야 함(기존 동작 유지), 받음 {sent}"
+    print("[PASS] writeclient: 빠른 경로는 DM 없음(기존 동작 유지)")

@@ -2,6 +2,60 @@
 
 버전별로 무엇이 추가·변경·제거됐는지 내림차순으로 요약한다.
 
+- **v3.8.4** (핫픽스) - 유튜브 앱 푸시(30분전·라이브 시작)가 `/ingest`에서 조용히 무시되던 문제 수정 +
+  DM 가독성 + `/monitor` 타임라인 버그 2건. 2026-09-22 09:33 千石ユノ TUNEIN(30분전) 알림에 처리
+  DM 이 안 왔고, 09:40 정기 tick 이 대신 주운 것이 계기.
+  1. **원인** - `_handle_yt_relay`(`source=yt` 중계)가 `ytnotif.parse_member_live_relay` 한 함수만
+     썼고, 이건 회원전용 라이브 시작(`SPONSORSHIPS_LIVESTREAM_START`) kind 만 처리한다. TUNEIN(30분
+     전)·REMINDER·SUBSCRIPTION_LIVESTREAM_START(일반 채널 시작) 는 전부 `parsed is None` →
+     `{"ok": True, "ignored": True}` 로 버려졌다 - DM 도, preview.json 반영도, 예약도 없이. 결과만
+     10분 간격 `mewtype-light` tick 이 뒤늦게 주워담아 "이유 없이 늦게 반영"된 것처럼 보였다.
+  2. **수정(1·2)** - `ytnotif.parse_public_live_relay`(신규): TUNEIN/REMINDER/SUBSCRIPTION_
+     LIVESTREAM_START 를 폰이 이미 보내오던 폼(`source=yt&video_id&title&kind&tag`, 폰 쪽 변경
+     없음)에서 파싱. `video_id` 가 실제 11자 ID 면(공개 채널 - 실측상 전부 해당) 새 GitHub 쓰기 없이
+     `_enqueue_wake_now(video_id, now)` 하나만 호출 - 승격(announced/upcoming 자동 판정, live_state
+     가 이미 live 면 곧장 live)·DM·모니터로그·다음 wake 예약은 기존 `/wake`(`handlers._run`) 파이프
+     라인이 그대로 처리한다(새 병합 로직 없음). `video_id="default"`(회원전용 추정, 미확인 포맷)면
+     TUNEIN 은 오판 위험이 커서 승격을 보류(기존처럼 무시, 정기 tick 안전망에 맡김)하고, REMINDER/
+     SUB_START 는 기존에 검증된 회원-라이브(`SPONSORSHIPS_LIVESTREAM_START`) 경로로 위임한다.
+     레이스(즉시-wake 대 정기 tick/wake)는 기존 `gh.write_json` 낙관적 동시성 재시도 + Cloud Tasks
+     `wake-{video_id}-{분버킷}` dedupe + `build_preview`/FSM 의 멱등성으로 이미 방어돼 새 코드 없음.
+  3. **수정(3·4)** - `writeclient.call_write(kind, *, label=None, ...)`: 대기 DM 에 내용 태그를 붙인다
+     (`"⏳ 처리 대기 중… [千石ユノ 예고]merge_rows"`, `label` 생략 시 기존 `action=` 인자를 폴백으로
+     재사용). 대기 DM 이 실제로 나간 경우에만 처리 종료 시 짝이 되는 완료(`✅`)/실패(`⚠️`) DM 을
+     보낸다 - 예전엔 "처리 대기 중…"만 오고 끝났는지 알 길이 없었다. 2초 안에 끝나는 빠른 경로는
+     기존과 동일(DM 없음, 각 핸들러의 자체 완료 DM 그대로).
+  4. **수정(5·6·7, `/monitor`)** - 조사 중 원인 2건을 코드로 확정: (A) `handlers.py` 가 모니터 로그에
+     `flow:"preview"` 이벤트를 쓸 때 `from_state`/`to_state` 를 `detail` 문자열에만 담고 top-level
+     키로는 안 넣던 버그(간트 생성기 `monitor_report._preview_json` 은 top-level 키를 전제) - 추가.
+     (B) 회원전용 라이브 커밋(`_commit_yt_member_live`)이 `flow:"relay"` 로그만 남기고 `flow:"preview"`
+     전이 로그를 아예 안 남겨서, 알림으로 live 전환되는 순간이 간트에서 통째로 빠지고 다음 정기
+     tick 이 잡는 "→end" 로 바로 건너뛰던 것(item 7: "announced/upcoming/end 만 보이고 live 안 보임"
+     과 일치) - `handlers._preview_log_events` 를 재사용해 같은 모양의 `flow:"preview"` 이벤트를
+     추가로 남기도록 수정. "end 가 무한정 유지되는 것처럼 보임"(item 5)·"줌에 따라 상태가 달라
+     보임"(item 6)은 정적 리뷰로는 FSM 버그를 못 찾았고(위 두 로그 버그의 표시 부작용일 가능성이
+     높음), 실배포 로그로 확정 필요 - 후속 확인 과제로 남김.
+  5. **추가(8·9·10, `/monitor` 타임라인 UI)** - 같은 세션에서 추가 요청.
+     - **item 8** - 트리거 레인(🎛️🕒📡📥)이 같은 시각에 여러 건 겹치면 종류별로 세로로 늘어놓아
+       겹쳐 보이던 것 → 같은 시각(t)은 무조건 점 하나로 합치고 반지름을 건수(1~4단계, 5건↑는
+       고정)로 표현. 대표 아이콘은 `TRIGGER_PRIORITY`(ops>ingest>tick/wake) 상 1순위. 상세 목록은
+       호버/클릭(`wireLegend` 재사용 - 범례와 같은 pin 메커니즘). 반지름 상한(호버 확대 포함 최대
+       35px)이 트리거 레인 높이(rowH=110, 중심 기준 ±55px) 안에 항상 들어가도록 계산해 다른 레인을
+       침범하지 않는다.
+     - **item 9** - preview 막대 클릭 시 상태 라벨이 `null` 로 뜨던 것 - item 5·6·7(A)에서 고친
+       `from_state`/`to_state` 누락 버그와 동일 원인. 이번 배포 이후 새로 쌓이는 이벤트는 정상
+       표시되고, 그 버그가 고쳐지기 전에 쌓인 과거 날짜 데이터는 여전히 `null` 일 수 있어
+       `stateLabel()` 헬퍼로 방어적 기본 표시("상태 미상")를 추가.
+     - **item 10** - live 미만 등급 색을 노랑 계열로: `announced`=어두운 노랑(`#8a6d1a`),
+       `upcoming`=노랑(`#f5c344`), `watching`=같은 노랑 바탕에 빗금(패턴 배경색만 흰색→노랑으로
+       교체). 신규: `assumed_live`(FSM 의 "확신도 낮은 추정 live" 플래그, 기존엔 간트에 전혀 안
+       실리던 값) 가 true 인 구간은 상태색과 무관하게 빨강 빗금(`liveAssumedHatch`)으로 덮어
+       그린다 - `handlers._preview_log_events`/`_commit_yt_member_live`/`monitor_report._preview_json`
+       세 곳에 필드를 새로 실어 보냄.
+  6. **검증** - `python -m src.backend.ytnotif`·`writeclient`·`handlers`·`telegram_app`·`monitor_report`
+     self-test 전부 통과(신규 케이스 포함, 09-22 09:33 실측 payload 회귀 테스트 포함). 모니터
+     타임라인 JS 는 `node --check` 로 문법 검증(브라우저 실제 렌더링 확인은 배포 후 별도 필요).
+     item 5·6 은 코드 리뷰만으로 최종 검증 불가 - 배포 후 `monitoring/events-*.jsonl` 실측 확인 필요.
 - **v3.8.3** (핫픽스) - 본인 채널에서 열린 합동방송(예: 리츠 채널에 유노 게스트)이 합동으로 감지되지 않던 것 수정. 2026-09-21 리츠×유노 `#ぷりはとDay1` 이 계기.
   1. **원인** - URL 우선 ingest(v3.6)의 `xtweet.resolve_url_host` 는 영상 채널 ≠ 트윗 작성자일 때만 `collab_with` 를 채웠다. 본인 채널 영상이면 게스트가
      제목(`【峰月律/千石ユノ】`)·본문(`ユノ＆律こらぼ`)에 있어도 `collab_with=null` 이었고, 이후 `merge_video_confirmed`·`preview_build` 가 최초 값을 보존해 유노 레인에 안 떴다.

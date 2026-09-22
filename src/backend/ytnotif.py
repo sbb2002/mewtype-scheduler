@@ -116,10 +116,36 @@ def parse_yt_notif(nx: dict, now_iso: str) -> dict | None:
 
 _MEMBER_START = "NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START"
 
+# 실제 유튜브 video_id 형태(11자, URL-safe base64 문자셋). 회원전용 알림처럼 실물 ID 대신
+# "default" 같은 placeholder 가 오는 경우와 구분하는 데 쓴다.
+_REAL_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
 
 def _nfkc(s: str | None) -> str:
     import unicodedata
     return " ".join(unicodedata.normalize("NFKC", s or "").split())
+
+
+def _match_channel_key(raw_text: str, channels_cfg: dict) -> tuple[str | None, str | None]:
+    """제목 표시명으로 5인 채널 판별 + 콜론 뒤 영상 제목 분리.
+
+    `parse_member_live_relay`/`parse_public_live_relay`(video_id 미상 분기)가 공유.
+    반환: (channel_key|None, video_title|None)
+    """
+    text = _nfkc(raw_text)
+    if not text:
+        return None, None
+    channel_key = None
+    for ck, ch in ((channels_cfg or {}).get("channels") or {}).items():
+        name = _nfkc(ch.get("name"))
+        if ck != "group" and name and text.startswith(name):
+            channel_key = ck
+            break
+    if channel_key is None:
+        return None, None
+    _head, sep, video_title = raw_text.partition(": ")
+    title = video_title.strip() if sep and video_title.strip() else None
+    return channel_key, title
 
 
 def parse_member_live_relay(form, channels_cfg: dict) -> dict | None:
@@ -138,20 +164,61 @@ def parse_member_live_relay(form, channels_cfg: dict) -> dict | None:
     if _MEMBER_START not in (form.get("kind") or ""):
         return None
     raw_text = (form.get("title") or "").strip()
-    text = _nfkc(raw_text)   # 채널 판별용 — 제목 자체는 원문 그대로 보존(전각 기호 등)
-    if not text:
+    if not raw_text:
         return None
-    channel_key = None
-    for ck, ch in ((channels_cfg or {}).get("channels") or {}).items():
-        name = _nfkc(ch.get("name"))
-        if ck != "group" and name and text.startswith(name):
-            channel_key = ck
-            break
+    channel_key, title = _match_channel_key(raw_text, channels_cfg)
     if channel_key is None:
         return None
-    head, sep, video_title = raw_text.partition(": ")
-    title = video_title.strip() if sep and video_title.strip() else None
     return {"channel_key": channel_key, "title": title, "tag": (form.get("tag") or "").strip()}
+
+
+def parse_public_live_relay(form, channels_cfg: dict | None = None) -> dict | None:
+    """(v3.8.4) 업스트림 중계 폼 → TUNEIN(30분전)/REMINDER/SUBSCRIPTION_LIVESTREAM_START 알림.
+
+    `parse_member_live_relay` 와 같은 폼(`source=yt&video_id&title&kind&tag`)을 쓰지만 회원전용
+    시작(`SPONSORSHIPS_LIVESTREAM_START`)이 아닌 나머지 LIVESTREAM 계열을 다룬다.
+    `ref/v3_automate_wire.md` 배선상 업스트림은 `chime.thread_id` 에 "LIVESTREAM" 이 있으면 전부
+    이 폼으로 중계하므로(실측 2026-09-22 09:33 千石ユノ TUNEIN), 폰 쪽 변경 없이 바로 들어온다.
+
+    `video_id` 는 보통 `chime.slot_key` 그대로(실제 11자 ID)지만, 회원전용 알림에서 관측된 것처럼
+    `"default"` 같은 placeholder 일 수도 있어 `resolved=False` 로 표시한다(회원전용 TUNEIN 이 실제로
+    이 포맷으로 오는지는 미확인 — 확인 전까지는 방어적 best-effort). `resolved=False` 이고
+    `channels_cfg` 가 주어지면 `title` 표시명으로 채널까지 판별해본다.
+
+    반환: {"relay_kind": "tunein"|"reminder"|"sub_start", "video_id": str, "resolved": bool,
+           "channel_key": str|None, "title": str|None, "tag": str} 또는 형식 밖이면 None.
+    """
+    if (form.get("source") or "").strip() != "yt":
+        return None
+    kind_raw = form.get("kind") or ""
+    if _MEMBER_START in kind_raw:
+        return None  # 회원전용 시작은 parse_member_live_relay 전담
+    relay_kind = None
+    for prefix, (k, _tf) in _THREAD_KINDS.items():
+        if prefix in kind_raw:
+            relay_kind = k
+            break
+    if relay_kind is None:
+        return None
+    video_id = (form.get("video_id") or "").strip()
+    if not video_id:
+        return None
+    resolved = bool(_REAL_VIDEO_ID_RE.match(video_id))
+    raw_title = (form.get("title") or "").strip()
+    channel_key = None
+    title = raw_title or None
+    if not resolved and channels_cfg is not None and raw_title:
+        channel_key, matched_title = _match_channel_key(raw_title, channels_cfg)
+        if matched_title:
+            title = matched_title
+    return {
+        "relay_kind": relay_kind,
+        "video_id": video_id,
+        "resolved": resolved,
+        "channel_key": channel_key,
+        "title": title,
+        "tag": (form.get("tag") or "").strip(),
+    }
 
 
 if __name__ == "__main__":
@@ -296,5 +363,67 @@ if __name__ == "__main__":
         rr = parse_member_live_relay(dict(member_form, title=f"{ch['name']} / 夢限大みゅーたいぷ 실시간 스트리밍 시작: t"), _cfg)
         assert rr and rr["channel_key"] == ck, (ck, rr)
     print("✓ MEMBER_START 5인 전원 판별")
+
+    # ── (v3.8.4) parse_public_live_relay — TUNEIN/REMINDER/SUB_START 중계 폼 ──
+    # 실측(2026-09-22 09:33:23 KST, ref/flow-11-20260922.log:7731-7735) 千石ユノ TUNEIN.
+    yuno_tunein_relay = {
+        "source": "yt", "video_id": "mn4Jjd7KdXY",
+        "title": "【 #アワーノーツ 】バンドリ！新作リズムゲームを先行プレイ！【 #千石ユノ / #バンドリ 】",
+        "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:fa7ca7b21bde0000",
+        "tag": "mn4Jjd7KdXY::199826f2-810d-4770-a851-c23591a45b10",
+    }
+    r = parse_public_live_relay(yuno_tunein_relay)
+    assert r is not None, "TUNEIN relay parse failed"
+    assert r["relay_kind"] == "tunein", r
+    assert r["video_id"] == "mn4Jjd7KdXY" and r["resolved"] is True, r
+    assert r["channel_key"] is None, "resolved=True 면 채널 판별 안 함(호출부가 videos.list 로 확정)"
+    print("✓ PUBLIC_RELAY: TUNEIN (yuno, 09-22 09:33 실측 재현) → resolved video_id")
+
+    reminder_relay = {
+        "source": "yt", "video_id": "bgzve7Y7S50",
+        "title": "峰月律-Minetsuki Ritsu- / 夢限大みゅーたいぷ 실시간 스트리밍 시작",
+        "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_REMINDER:14e3012e805e0000",
+        "tag": "bgzve7Y7S50::12f0bd2b-1837-4b1f-9e79-6a4b50244186",
+    }
+    r = parse_public_live_relay(reminder_relay)
+    assert r and r["relay_kind"] == "reminder" and r["resolved"] is True, r
+    print("✓ PUBLIC_RELAY: REMINDER (ritsu) → resolved")
+
+    sub_start_relay = {
+        "source": "yt", "video_id": "2eigVMdk3Pg",
+        "title": "【 #バイオ7 】3回目のバイオ7！怖さマシマシ【 #千石ユノ / #バンドリ 】",
+        "kind": "a:NOTIFICATION_TYPE_SUBSCRIPTION_LIVESTREAM_START:04971ca8205e0000",
+        "tag": "2eigVMdk3Pg::44e5e067-a823-4e7b-a1f6-4e6ecf6b9532",
+    }
+    r = parse_public_live_relay(sub_start_relay)
+    assert r and r["relay_kind"] == "sub_start" and r["resolved"] is True, r
+    print("✓ PUBLIC_RELAY: SUBSCRIPTION_LIVESTREAM_START (yuno) → resolved")
+
+    # 회원전용 TUNEIN(미확인 포맷) — SPONSORSHIPS_LIVESTREAM_START 와 동일하게 video_id="default"
+    # 로 온다고 가정한 방어적 케이스. 실측 로그 없음 — 합성 데이터.
+    member_tunein_synth = {
+        "source": "yt", "video_id": "default",
+        "title": "仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ 30분 후에 실시간 스트림 시청하기: 제목",
+        "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:aaaa0000",
+        "tag": "default::synthetic",
+    }
+    r = parse_public_live_relay(member_tunein_synth, _cfg)
+    assert r and r["relay_kind"] == "tunein" and r["resolved"] is False, r
+    assert r["channel_key"] == "arale", r
+    assert r["title"] == "제목", r
+    print("✓ PUBLIC_RELAY: 회원전용 TUNEIN(합성, video_id=default) → 미확정 + 채널 판별")
+
+    # channels_cfg 안 주면 채널 판별 스킵(호출부가 원하면 나중에 다시 판별)
+    r2 = parse_public_live_relay(member_tunein_synth)  # channels_cfg 생략
+    assert r2 and r2["channel_key"] is None, r2
+    print("✓ PUBLIC_RELAY: channels_cfg 생략 시 채널 판별 스킵")
+
+    # 노이즈: 회원전용 시작(SPONSORSHIPS_LIVESTREAM_START)은 parse_member_live_relay 전담 → None
+    assert parse_public_live_relay(member_form) is None, "회원전용 시작은 public_relay 가 안 먹어야 함"
+    # 노이즈: source 틀림 / 알려지지 않은 kind / video_id 없음
+    assert parse_public_live_relay(dict(yuno_tunein_relay, source="x")) is None
+    assert parse_public_live_relay(dict(yuno_tunein_relay, kind="a:NOTIFICATION_TYPE_UPLOAD:xxx")) is None
+    assert parse_public_live_relay(dict(yuno_tunein_relay, video_id="")) is None
+    print("✓ PUBLIC_RELAY 필터 (회원전용 시작·source 틀림·미지 kind·video_id 없음 → None)")
 
     print("\n✅ All assertions passed")

@@ -577,15 +577,30 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 `scheduled_start`: TUNEIN → `now+30분`+`time_approx=True`, 그 외 → `now`. 반환 dict: `{video_id, url,
 thumbnail, title, kind(tunein|reminder|sub_start), scheduled_start, time_approx, source:"yt-notif"}`.
 
-**(v3.7.3) 회원 전용 라이브** — 위 `parse_yt_notif` 은 `chime.*` dict 입력용이고 `/ingest` 에 연결돼 있지 않다.
-실제 업스트림은 유튜브 알림을 폼 `source=yt&video_id&title&kind&tag` 로 중계한다. `parse_member_live_relay(form,
+**(v3.7.3) 회원 전용 라이브** — 위 `parse_yt_notif` 은 `chime.*` dict 입력용이고 `/ingest` 에 연결돼 있지 않다
+(v3.8.4 이후도 그대로 — 이 함수 자체는 안 쓰이는 self-test 전용, 아래 `parse_public_live_relay` 가 실전 파서).
+실제 업스트림은 유튜브 알림을 폼 `source=yt&video_id&title&kind&tag` 로 중계한다(`ref/v3_automate_wire.md` —
+`chime.thread_id` 에 "LIVESTREAM" 이 있으면 종류 불문 전부 이 폼으로 옴). `parse_member_live_relay(form,
 channels_cfg)` 는 `kind` 에 `NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START` 가 있고 `title`
 (`"<채널 표시명> / <그룹명> 실시간 스트리밍 시작: <영상 제목>"`) 앞부분이 5인 `channels.json` `name` 과 일치할 때만
 `{channel_key, title, tag}` 를 반환(`video_id` 는 `default` 라 무시). `ytdlp_probe.find_member_live(channel_id, title)`
 이 streams 탭(`--flat-playlist`)에서 `subscriber_only` + (`is_live`|`is_upcoming`) 를 제목 일치→is_live 1건 순으로
-골라 `{video_id, url}` (상한 6초, 쿠키 있으면 쿠키→쿠키 없이 폴백). `telegram_app._handle_yt_relay` 가 조립해
-`/write` 잡 `yt_member_live_commit`(`_commit_yt_member_live` → 순수 `xtweet.merge_member_live`: 자리표시 승격 /
-신규 생성 / noop)로 반영. 항상 200.
+골라 `{video_id, url}` (상한 6초, 쿠키 있으면 쿠키→쿠키 없이 폴백). `telegram_app._handle_member_live_start` 가
+조립해 `/write` 잡 `yt_member_live_commit`(`_commit_yt_member_live` → 순수 `xtweet.merge_member_live`: 자리표시
+승격 / 신규 생성 / noop)로 반영. 항상 200.
+
+**(v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START(일반 채널)** — 09-22 09:33 千石ユノ TUNEIN 알림이
+`parse_member_live_relay` 의 kind 필터에 안 걸려 조용히 무시된 게 발단. `parse_public_live_relay(form,
+channels_cfg=None) -> dict | None` 이 같은 폼에서 이 세 kind 를 파싱한다: `video_id`(=`chime.slot_key`,
+공개 채널이면 실측상 항상 실제 11자 ID)가 유효하면 `resolved=True` — `_handle_yt_relay` 는 이때 preview.json
+을 직접 안 건드리고 `_enqueue_wake_now(video_id, now)` 만 호출한다. 나머지(승격 판정·DM·모니터로그·다음
+wake 예약)는 전부 기존 `/wake`(`handlers._run`) 파이프라인이 처리 — `build_preview` 섹션 1 이 신규
+video_id 도 그대로 `videos.list` 후보에 넣고, 없던 아이템이면 `make_item(state="announced")` →
+`promote_state` 가 필드(scheduled_start·title·thumbnail·url·video_id)가 다 갖춰진 즉시 upcoming 으로
+승격한다(announced 단계를 거칠 필요 없음). `video_id` 가 `"default"`(회원전용 추정, placeholder — 실물
+ID 미상)면 `resolved=False`: TUNEIN 은 이 포맷이 실제로 오는지 미확인이고 videos.list 로도 확정 불가해
+오판 위험이 커서 승격 보류(무시, 기존 10분 light tick 안전망에 맡김), REMINDER/SUB_START 는 회원전용
+라이브 시작과 같은 포맷으로 보고 `_handle_member_live_start`(위 문단) 로 위임한다.
 
 ### 8.6 `vxtwitter.py`
 
@@ -736,13 +751,18 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 다른 커밋이 끼면 409). 제어 채널(`mewtype-telegram`, 동시 처리 80)의 콘텐츠 쓰기를 백엔드
 (`--concurrency=1 --max-instances=1`)의 `POST /write` 로 보내 한 줄로 세운다.
 
-- `writeclient.call_write(kind, *, gh=None, **args) -> dict` — `MAIN_SERVICE_URL` 이 있으면 OIDC id token 으로
-  `POST {MAIN_SERVICE_URL}/write` 동기 호출(타임아웃 60초, 2초 넘으면 "⏳ 처리 대기 중" DM 1회), 없으면
-  같은 프로세스에서 `writers.dispatch` (로컬 개발·self-test). 비200 → `WriteError`.
+- `writeclient.call_write(kind, *, gh=None, label=None, **args) -> dict` — `MAIN_SERVICE_URL` 이 있으면 OIDC
+  id token 으로 `POST {MAIN_SERVICE_URL}/write` 동기 호출(타임아웃 60초, 2초 넘으면 `"⏳ 처리 대기 중…
+  [{label}]{kind}"` DM 1회 — `label` 생략 시 `args["action"]` 폴백), 없으면 같은 프로세스에서
+  `writers.dispatch`(로컬 개발·self-test). (v3.8.4) 대기 DM 이 나갔으면 종료 시 짝이 되는 완료(`✅`)/
+  실패(`⚠️`) DM 도 보낸다 — 2초 안에 끝나면(대기 DM 자체가 없으면) 지금처럼 아무 것도 안 보냄. 비200 →
+  `WriteError`.
 - `writers.dispatch(kind, gh, args)` — kind → `telegram_app` 의 커밋 함수(지연 import). 등록 kind:
   `merge_rows` `remove_broadcast` `apply_notice` `notice_sweep` `notice_del_commit` `notice_edit_commit`
-  `personal_tweet` `tweet_sweep` `tweet_del_commit` `url_confirmed_commit` `undo_restore` `apply_preview_edit`
-  `ingest_queue_push` `ingest_queue_drain`.
+  `personal_tweet` `tweet_sweep` `tweet_del_commit` `url_confirmed_commit` `yt_member_live_commit`(v3.7.3)
+  `undo_restore` `apply_preview_edit` `ingest_queue_push` `ingest_queue_drain`.
+  (v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START(video_id 실물 확보) 경로는 이 큐를 안 탄다 —
+  `/write` 커밋이 아니라 `_enqueue_wake_now` 로 기존 `/wake` 를 깨우는 신호만 보낸다(§8.5 참고).
 - **(v3.7.1) A-1 — 외부 호출은 제어 채널, `/write` 잡은 커밋만.** 잡 함수는 GitHub 읽기·쓰기(+ undo 스냅샷,
   모니터 로그, 텔레그램 DM, Cloud Tasks enqueue)만 하고 외부 LLM·`videos.list`·vxtwitter·비전 OCR 은 부르지
   않는다. 제어 채널이 먼저 준비해 결과를 JSON 인자로 넘긴다:
