@@ -41,7 +41,7 @@ flowchart LR
 GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로 충돌한다(다른 파일이어도 읽은 뒤 다른 커밋이 끼면 409).
 그래서 `data` 저장소에 대한 **콘텐츠 커밋은 전부 백엔드 `POST /write`**(`--concurrency=1 --max-instances=1`)로 모아 한 줄로 세운다.
 
-- **제어 채널(`mewtype-telegram`, 동시 처리 80)** — 읽기는 GitHub 를 직접 하고, 외부 호출(외부 LLM·`videos.list`·vxtwitter·비전 OCR·yt-dlp)과 판단을 **먼저 준비**한 뒤 결과를 JSON 인자로 `/write` 에 넘긴다(OIDC, `writeclient.call_write`, 타임아웃 60초, 2초 넘으면 "처리 대기 중" DM).
+- **제어 채널(`mewtype-telegram`, 동시 처리 80)** — 읽기는 GitHub 를 직접 하고, 외부 호출(외부 LLM·`videos.list`·vxtwitter·비전 OCR·yt-dlp)과 판단을 **먼저 준비**한 뒤 결과를 JSON 인자로 `/write` 에 넘긴다(OIDC, `writeclient.call_write`, 타임아웃 60초, 2초 넘으면 `"⏳ 처리 대기 중… [내용]kind"` DM — **(v3.8.4)** `label` 로 내용 태그를 붙이고, 그 대기 DM 이 실제로 나간 경우엔 종료 시 짝이 되는 완료(✅)/실패(⚠️) DM 도 보낸다).
 - **백엔드 `/write` 잡** — GitHub 읽기·쓰기(+ undo 스냅샷, 모니터 로그, DM, Cloud Tasks enqueue)만 한다. 외부 장애가 `/tick`·`/wake` 를 같이 막지 않게 하려는 분리(A-1).
   등록 kind: `merge_rows` `remove_broadcast` `apply_notice` `notice_sweep` `notice_del_commit` `notice_edit_commit` `personal_tweet` `tweet_sweep` `tweet_del_commit` `url_confirmed_commit` `yt_member_live_commit`(v3.7.3) `undo_restore` `apply_preview_edit` `ingest_queue_push` `ingest_queue_drain`.
 - **큐를 우회하는 예외(409 가능, 잡은 최신 재조회 후 1회 재시도)** — `control.json`(/pause·/resume), `admin_state.json` 마법사 슬롯, 모니터 로그(notice/relay/ops), `/translate`, `/monitor` 의 `latest.html`.
@@ -56,7 +56,8 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **Android · Automate (업스트림)** — 운영자 폰이 X·YouTube 푸시 알림을 받아 `POST /ingest` (`X-Ingest-Secret`)로 중계. 폰은 **신호+본문만** 릴레이하고 판정·저장은 전부 백엔드가 한다. 코드베이스 밖.
   - X 알림: form `text`(본문) + `title`(`android.title`, 게시자 표시 이름) + `template` + `tag`(트윗 태그).
     `template` 이 `BigTextStyle` 이 아니면(다운로드·그룹요약·미디어재생) 폰 게이트가 차단.
-  - **(v3.7.3) YouTube 알림**: 폼 `source=yt&video_id&title&kind&tag`. 유튜브 앱의 "회원 전용 실시간 스트림" 알림이 대상.
+  - **(v3.7.3) YouTube 알림**: 폼 `source=yt&video_id&title&kind&tag`. `chime.thread_id` 에 "LIVESTREAM" 이 있으면
+    종류(회원전용 시작·일반 30분전·일반 시작) 불문 전부 이 폼으로 옴(폰 쪽은 v3.8.4 에서도 변경 없음).
   - 이 폰 빌드는 `urlEncode({"text": expr})` 의 값을 폼 **키** 자리로 흘려, 백엔드 `_ingest` 가 폼 키에서 원문을 복구한다.
   - 업스트림 배선 상세: `docs/plan/` 의 Automate 배선도.
 - **운영자 Telegram DM** — 아웃바운드 알림 수신처이자 명령(`/status /list /pause /resume /ingest /edit /del /undo /notice …`) 발신처.
@@ -87,8 +88,15 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
       (유튜브 URL 이면 `videos.list` 사실 확정 → `url_confirmed_commit`, 텍스트면 정규식 후보 + 최종 LLM 확인 → `merge_rows`). 소식/스케줄 파이프라인은 안 탐.
     - **테스트 부계정**(`INGEST_TEST_TITLES`, 기본 `jehy`) → `force_echo` (헬스체크, 저장 안 함).
     - **공식·미매칭** → 스케줄(`xrelay`, BDP_yumemita 일일 스케줄 → `announced`) 또는 소식(`_maybe_auto_notice` → `xnotice.parse` → 의미 중복 게이트 LLM → `apply_notice`).
-    - **(v3.7.3) `source=yt`** — `kind` 가 회원 전용 라이브 시작이고 제목 앞부분이 5인 채널명일 때만 처리(그 외 무시, 항상 200).
-      알림 `video_id` 가 `default` 라 `ytdlp_probe`(yt-dlp, 상한 6초)로 channel streams 탭에서 회원 전용 라이브를 찾아 `/write yt_member_live_commit` 으로 live 승격.
+    - **`source=yt`** — (v3.7.3) `kind` 가 회원 전용 라이브 시작(`SPONSORSHIPS_LIVESTREAM_START`)이고 제목 앞부분이
+      5인 채널명일 때 `ytdlp_probe`(yt-dlp, 상한 6초, `video_id` 가 `default` 라 channel streams 탭에서 찾음)로
+      회원 전용 라이브를 찾아 `/write yt_member_live_commit` 으로 live 승격.
+      **(v3.8.4)** 그 외 LIVESTREAM 계열(TUNEIN 30분전·REMINDER·SUBSCRIPTION_LIVESTREAM_START, 대부분 일반 채널)은
+      예전엔 전부 무시됐다(09-22 09:33 千石ユノ TUNEIN 알림이 조용히 버려진 게 발단) — 이제
+      `parse_public_live_relay` 가 처리: `video_id` 실물 확보 시 새 GitHub 쓰기 없이 `_enqueue_wake_now` 로
+      `/wake` 만 즉시 트리거(승격·DM·모니터로그는 그 파이프라인이 담당). `video_id="default"`(회원전용 추정)면
+      TUNEIN 은 미확인 포맷이라 승격 보류, REMINDER/SUB_START 는 위 회원-라이브 경로로 위임. 그 외(미지 kind·
+      5인 아님)는 그대로 무시, 항상 200.
     - 원본 바디는 `request.form` 접근 전에 `get_data(cache=True, parse_form_data=False)` 로 캐시(Werkzeug 스트림 소비 버그).
     - 테스트 모드(`INGEST_ECHO=1`/`INGEST_DRY_RUN=1`): 파싱·저장 안 하고 회신, 스케줄 트윗은 `ingest_queue.json` 적재 → 실배포 전환 후 첫 `/ingest` 에서 drain.
     - 상세 흐름: `docs/INGEST_FLOW.md`, 판정 트리: `v3_pamphlet.html`.
@@ -161,3 +169,9 @@ preview.json 에 status "announced" 행 (video_id 없음, 링크는 채널)
 
 `watching` 진입(시작 3분 전)부터는 Cloud Tasks wake 가 정밀 폴링한다. `announced` 는 wake 를 안 타고,
 정기 light `/tick`(10분)과 `_scheduled_wake_times` 가 예정 시각 근처를 줍는다.
+
+**(v3.8.4) 별도 경로 — 유튜브 앱 푸시가 `announced` 단계를 건너뛴다.** 위 다이어그램은 `announced` 행이
+이미 있다고 전제하지만, 유튜브 앱의 30분전/시작 알림(`source=yt`, video_id 실물 확보)은 `preview.json`
+에 아무 행이 없어도 `/wake` 를 바로 트리거한다 — `handlers.wake` 의 후보 집합이 "추적 중인 것 ∪ 지금
+깨운 video_id" 라 신규 video_id 도 그대로 `videos.list` 후보가 되고, `promote_state` 가 그 자리에서
+announced 를 거치지 않고 곧장 upcoming(또는 이미 live 면 live)으로 판정한다.

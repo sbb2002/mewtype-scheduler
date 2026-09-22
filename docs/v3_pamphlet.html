@@ -675,7 +675,7 @@
     ytmember: {e:["e_push_up","e_up_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
       n:["n_push","n_up","n_ctrl","n_be","n_db","n_fe","n_fan"],
       r:["push","up","ctrl","be","db","fe","fan"],
-      c:"<b>YouTube 회원 전용 라이브 알림 (v3.7.3)</b> — 업스트림이 유튜브 앱 알림을 <code>source=yt</code> 폼으로 중계한다(그 전엔 <code>text</code> 가 없어 400 이었음). <code>kind</code> 가 회원 전용 라이브 시작이고 제목 앞부분이 5인 채널명과 일치할 때만 처리, 나머지는 무시하고 항상 200. 알림의 <code>video_id</code> 는 <code>default</code> 라 쓸 수 없어, 제어 채널이 <code>yt-dlp</code>(<code>ytdlp_probe.py</code>, 상한 6초)로 그 채널 streams 탭에서 회원 전용 라이브를 찾아 video_id/URL 을 얻는다. 백엔드 <code>/write yt_member_live_commit</code> 이 예고 자리표시를 <code>live</code> 로 승격(없으면 신규 생성)."},
+      c:"<b>YouTube 회원 전용 라이브 알림 (v3.7.3)</b> — 업스트림이 유튜브 앱 알림을 <code>source=yt</code> 폼으로 중계한다(그 전엔 <code>text</code> 가 없어 400 이었음). <code>kind</code> 가 회원 전용 라이브 시작이고 제목 앞부분이 5인 채널명과 일치할 때만 처리. 알림의 <code>video_id</code> 는 <code>default</code> 라 쓸 수 없어, 제어 채널이 <code>yt-dlp</code>(<code>ytdlp_probe.py</code>, 상한 6초)로 그 채널 streams 탭에서 회원 전용 라이브를 찾아 video_id/URL 을 얻는다. 백엔드 <code>/write yt_member_live_commit</code> 이 예고 자리표시를 <code>live</code> 로 승격(없으면 신규 생성). <b>(v3.8.4)</b> 이 kind 가 아닌 나머지 유튜브 LIVESTREAM 알림(30분전 TUNEIN·일반 채널 REMINDER/SUBSCRIPTION_LIVESTREAM_START)은 예전엔 전부 무시됐다 — 이제 video_id 가 실물이면 <code>/write</code> 도 안 거치고 곧장 <code>/wake</code> 만 즉시 트리거해서(기존 정기 폴링 파이프라인 재사용) 승격시킨다. video_id 가 <code>default</code>(회원전용 추정)면 TUNEIN 만 미확인 포맷이라 보류하고 나머지는 이 회원-라이브 경로로 합류."},
     bangdreamon: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
       n:["n_push","n_up","n_ctrl","n_llm","n_be","n_db","n_fe","n_fan"],
       r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
@@ -787,7 +787,7 @@
     ["announced","예고","정보 일부만 · 실물 영상 미확정. X 릴레이 · 개인 트윗 · 수동 등록에서 생성. 링크는 채널. 예정 시각이 지나 120분 넘게 조용하면 대기(watching)로 안 돌아가고 여기 머문다(late-hold, v3.7.3 — 예전엔 둘이 서로 되돌려 왕복했다).","card"],
     ["upcoming","예정","날짜+시각+제목+썸네일+영상 URL 이 다 모임. 정식 방송 카드로 승격.","card card--up"],
     ["watching","대기","시작 3분 전 진입. 짧은 간격으로 라이브 여부만 확인. 예정이 미래로 정정되면 upcoming/announced 로 되돌린다.","card card--up"],
-    ["live","방송 중","실제 라이브. 경과 시간(n분) 표시, 레인 라이브 존이 빨갛게. 회원 전용 방송은 API 로 못 찾아 유튜브 회원 알림(source=yt)이 도착하면 여기로 직접 승격된다(v3.7.3).","card"],
+    ["live","방송 중","실제 라이브. 경과 시간(n분) 표시, 레인 라이브 존이 빨갛게. 회원 전용 방송은 API 로 못 찾아 유튜브 회원 알림(source=yt)이 도착하면 여기로 직접 승격된다(v3.7.3). 일반 채널은 (v3.8.4) 같은 알림이 오면 /wake 를 즉시 트리거해 videos.list 로 실물 확인 후 승격.","card"],
     ["end","방송 종료","라이브가 내려감. 30분 관찰 창 — 되살아나면 live 로 복귀.","card"],
     ["none","사라짐","파일에서 제거 = 종결. 이후 같은 채널의 예고는 별개의 새 방송.","card"]
   ];
@@ -1168,7 +1168,7 @@
     {id:"ytgate",  cx:1080,cy:201, w:WW, h:H,  t:"회원 전용 라이브 시작?", s:"kind + 제목 앞부분 = 5인 채널명", k:"dec"},
     {id:"ytprobe", cx:1080,cy:282, w:WW, h:H,  t:"yt-dlp 조회 (≤6초)",    s:"streams 탭 → video_id·URL", k:"ext"},
     {id:"ytcommit",cx:1080,cy:363, w:WW, h:H,  t:"/write yt_member_live_commit", s:"자리표시 → live 승격 · 신규 · noop", k:"reg"},
-    {id:"ytignore",cx:1080,cy:444, w:WW, h:H,  t:"무시 (항상 200)",        s:"다른 종류 알림 · 5인 아님", k:"skip"}
+    {id:"ytignore",cx:1080,cy:444, w:WW, h:H,  t:"무시 · 또는 즉시 wake",  s:"미지 kind→무시(200) · 실물 video_id→/wake 트리거(v3.8.4)", k:"skip"}
   ];
   var EDGES = [
     ["start","q1",null],
@@ -1207,8 +1207,11 @@
       cap:"<b>공식·불일치</b> — title이 비어있거나 5인 표시명과 안 겹치면 기존 경로(공식 계정 소식/BDP_yumemita 스케줄 등) 그대로 — 위 '소식' 트리 또는 X 예고 릴레이가 이어받는다.",
       exTag:"가상 예시", exText:"(공식 계정 또는 미매칭 title — 기존 파이프라인 그대로)" },
     { route:["start","ytsrc","ytgate","ytprobe","ytcommit"],
-      cap:"<b>유튜브 회원 알림</b> — X 트윗이 아니라 유튜브 앱 알림이다. 폼 <code>source=yt&amp;video_id&amp;title&amp;kind&amp;tag</code> 로 들어오면 <code>title</code> 기반 분기(왼쪽 3갈래)를 타기 전에 별도 분기로 빠진다. 회원 전용 라이브 시작 + 5인 채널명 일치일 때만 처리하고 그 외는 무시(항상 200). 알림의 <code>video_id</code> 는 <code>default</code> 라서 <code>yt-dlp</code> 로 그 채널 streams 탭에서 회원 전용 라이브를 찾은 뒤(쿠키가 있으면 쿠키 우선, 실패 시 쿠키 없이), 백엔드 <code>/write yt_member_live_commit</code> 이 <code>preview.json</code> 에 live 로 반영한다. 조회에 실패하면 채널 링크로 live 처리하고 운영자에게 DM.",
-      exTag:"가상 예시 · 회원 전용 라이브 알림", exText:"NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START · 「仲町あられ / 夢限大みゅーたいぷ 실시간 스트리밍 시작: 【歌枠】…」" }
+      cap:"<b>유튜브 회원 알림</b> — X 트윗이 아니라 유튜브 앱 알림이다. 폼 <code>source=yt&amp;video_id&amp;title&amp;kind&amp;tag</code> 로 들어오면 <code>title</code> 기반 분기(왼쪽 3갈래)를 타기 전에 별도 분기로 빠진다. 회원 전용 라이브 시작 + 5인 채널명 일치일 때만 이 경로. 알림의 <code>video_id</code> 는 <code>default</code> 라서 <code>yt-dlp</code> 로 그 채널 streams 탭에서 회원 전용 라이브를 찾은 뒤(쿠키가 있으면 쿠키 우선, 실패 시 쿠키 없이), 백엔드 <code>/write yt_member_live_commit</code> 이 <code>preview.json</code> 에 live 로 반영한다. 조회에 실패하면 채널 링크로 live 처리하고 운영자에게 DM.",
+      exTag:"가상 예시 · 회원 전용 라이브 알림", exText:"NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START · 「仲町あられ / 夢限大みゅーたいぷ 실시간 스트리밍 시작: 【歌枠】…」" },
+    { route:["start","ytsrc","ytgate","ytignore"],
+      cap:"<b>(v3.8.4) 일반 채널 30분전/시작 알림</b> — 회원 전용 라이브 시작이 아닌 나머지 LIVESTREAM 알림(TUNEIN 30분전·REMINDER·SUBSCRIPTION_LIVESTREAM_START, 대부분 공개 채널)은 이 '불일치' 갈래로 빠진다. 예전엔(v3.7.3) 여기서 그냥 200 무시하고 끝 — DM 도, 반영도 없이 다음 10분 정기 tick 이 뒤늦게 주워담았다(09-22 09:33 千石ユノ TUNEIN 알림이 실측 사례). v3.8.4 부터는 알림의 <code>video_id</code> 가 실물(공개 채널은 실측상 항상 그렇다)이면 새 GitHub 쓰기 없이 <code>/wake</code> 만 즉시 트리거 — 승격·DM·모니터로그는 그 기존 파이프라인이 그대로 처리한다. <code>video_id</code> 가 <code>default</code>(회원전용 추정)면 TUNEIN 은 미확인 포맷이라 여전히 무시, REMINDER/SUB_START 는 위 회원-라이브 경로로 합류.",
+      exTag:"실측 · 千石ユノ TUNEIN (2026-09-22 09:33 KST)", exText:"NOTIFICATION_TYPE_LIVESTREAM_TUNEIN · 「🔴 30분 후에 千石ユノ … 실시간 스트림 시청하기」 · video_id=mn4Jjd7KdXY → /wake 즉시 트리거" }
   ];
 
   var NC = {}; NODES.forEach(function(n){ NC[n.id] = [n.cx, n.cy]; });
