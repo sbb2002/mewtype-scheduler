@@ -74,7 +74,9 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
     (pre-live 3분 / 시작~+60분 10분 · 이후 5분, `LIVE_TIGHT_SEC=300`). 시작이 24시간 넘게 남은 방송은 wake 미등록(v3.7.3),
     주기 격자에 맞춘 같은 이름으로 dedupe 해 체인 증식 방지.
   - `POST /write {kind, args}` — 제어 채널의 콘텐츠 커밋 잡(위 "쓰기 경로는 하나").
-  - `POST /monitor` — Cloud Scheduler KST 06:10, Ops 리포트(`monitoring/latest.html`) 커밋 + DM.
+  - `POST /monitor` — Cloud Scheduler KST 06:10(크론은 그대로, 날짜 분기는 백엔드), Ops 리포트(`monitoring/latest.html`)
+    커밋 + DM. **(v3.8.5)** 전일자 하루치가 기본이지만, 그날이 매월 1일이면 전월 `--monthly`, 1월 1일이면
+    전년 `--yearly`로 대신 생성 — DM 캡션에 (일간)/(월간)/(연간) 라벨.
   - `paused`(control.json) 면 `/tick`·`/wake` 는 healthcheck 핑만 하고 no-op.
   - 상태 전이(upcoming/live 시작·종료 등)를 Telegram DM 으로 직접 알림. 성공 끝에 `HEALTHCHECK_URL`(healthchecks.io) GET 1발.
   - 모니터 로그는 실행당 커밋 최대 1개, 변화 없는 tick/wake 는 기록 안 함.
