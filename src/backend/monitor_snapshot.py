@@ -53,6 +53,8 @@ def summary_entry(day: dict) -> dict:
     """하루치 dict → 잔디용 요약. 로그 파일이 없던 날은 숫자 대신 no_log."""
     if not day.get("hasLog"):
         return {"no_log": True}
+    if day.get("backfillOnly"):  # 사후 복원 기록뿐 — 트리거 수를 단정하지 않는다
+        return {"backfill_only": True, "events": day["eventCount"]}
     return {"triggers": monitor_report.day_trigger_count(day), "events": day["eventCount"]}
 
 
@@ -259,6 +261,7 @@ if __name__ == "__main__":
 
     # ── summary_entry ──
     assert summary_entry({"hasLog": False}) == {"no_log": True}
+    assert summary_entry({"hasLog": True, "backfillOnly": True, "eventCount": 4}) == {"backfill_only": True, "events": 4}
     d = {"hasLog": True, "ops": [{}], "ticks": [{}, {}], "relay": [], "notice": [{}],
          "tweet": [{"via": "ingest"}, {"via": "ops"}], "eventCount": 9}
     assert summary_entry(d) == {"triggers": 5, "events": 9}, "via=ops(수동)는 인입 트리거에서 제외"

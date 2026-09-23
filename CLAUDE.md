@@ -139,6 +139,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   (제어 채널 명령마다 `flow="cmd"` 로그 — 결과는 응답 DM 문구 기반 근사) + "X 예고 릴레이" 행 → "🛰️ 업스트림
 >   감지" 행(`/ingest` 알림마다 `flow="upstream"`, X/YouTube 로고, 트리거 📥 기준) + EXT YouTube quota 한도 10,000 점선.
 >   요약 `docs/VERSION.md`.
+> - **v3.8.9 후속** (같은 핫픽스의 후속 패치): 웹 monitor 모바일 전체 추이 가로 스크롤 제거("📊 주간요약 보기" 토글) + 데이터 없는 월 탭
+>   비활성 + 업스트림 아이콘을 메인 화면 네임플레이트 X·YouTube 아이콘으로(결과색 둥근 네모 테두리) + 업스트림·운영자 명령을
+>   기존 로그에서 소급 복원(`_derive_upstream`/`_derive_cmd`, 복원 불가분 생략) + 09-09~09-14(전부 `[백필]`)는
+>   트리거 수 `?`. 요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
