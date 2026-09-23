@@ -130,6 +130,15 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   막아 오늘의 멤버 현황·우측 요약 등 무관한 패널까지 같이 멎어 보이던 문제 — `loadDay()` 에 `skipTimeline`
 >   옵션을 추가해 고정 중엔 타임라인 렌더만 건너뛰고 나머지는 계속 최신화하도록 분리
 >   (`monitor_report.py`). 요약 `docs/VERSION.md`.
+> - **v3.8.9** (핫픽스): 웹 monitor(이스터에그)를 **전 기간 리포트**로 — 매일 KST 06:10 `/monitor` 가 전일 모니터링 스냅샷
+>   (`monitoring/days/`)·요약(`monitoring/summary.json`)을 **monitor_auto 와 무관하게** 찍고(`monitor_snapshot.py`,
+>   기존 이벤트 로그로 과거 백필), monitor_auto 켜져 있으면 "오늘의 멤버 현황" **텍스트 DM** 만 보낸다(일간/월간/연간
+>   HTML 자동 DM 폐지, 수동 `/monitor` 명령은 그대로). 페이지는 오늘만 실시간 계산, 지난 날짜는 칸 클릭 시
+>   `/monitor-live/day.json`. 외부 조회 실패는 `None` 으로 저장. Vercel 한도 수치는 `main` 커밋 수 근사 →
+>   Vercel REST API 실제 배포 시도 수(새 Secret `VERCEL_TOKEN`, 등록 완료). 타임라인에 "💬 운영자 명령" 행
+>   (제어 채널 명령마다 `flow="cmd"` 로그 — 결과는 응답 DM 문구 기반 근사) + "X 예고 릴레이" 행 → "🛰️ 업스트림
+>   감지" 행(`/ingest` 알림마다 `flow="upstream"`, X/YouTube 로고, 트리거 📥 기준) + EXT YouTube quota 한도 10,000 점선.
+>   요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -188,7 +197,7 @@ src/
     store.py           # schedule.json / archive.json 로드·저장 (변경 시에만 기록)
   backend/             # Cloud Run 서비스 (Flask + gunicorn). v3.0.
     app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) /write(v3.7, 제어 채널 쓰기 큐)
-                       #   /monitor(Scheduler) · `/` 헬스체크(GFE 가 /healthz 가로챔)
+                       #   /monitor(Scheduler, v3.8.9: 모니터링 스냅샷 + 멤버 현황 텍스트 DM) · `/` 헬스체크(GFE 가 /healthz 가로챔)
     handlers.py        # (v3) tick/wake → preview_build → (v3.7.1) apply_overrides → preview.json 커밋
                        #   + LLM 말단 번역(needs_tl sweep) + (v3.7.1) 모니터 로그 실행당 1커밋·무변화 스킵
     writers.py         # (v3.7) /write 잡 kind → telegram_app 커밋 함수 매핑(지연 import).
@@ -213,9 +222,10 @@ src/
     #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)
                        #        (v3.3) read_text/write_text — HTML 등 비-JSON 파일용
-    push_monitor.py    # (v3.5, 구 v3.4 대시보드에서 축소) `_CODE_REPO`(main/devpapers 등
+    push_monitor.py    # (v3.8.9 부터 미사용 — 삭제 후보) (v3.5, 구 v3.4 대시보드에서 축소) `_CODE_REPO`(main/devpapers 등
                        #        코드 브랜치 고정 저장소) + fetch_commits/list_branches만
-                       #        남음 — monitor_report.py 의 Vercel push count 계산용.
+                       #        남음 — v3.8.8 까지 monitor_report.py 의 Vercel push count 계산용.
+                       #        v3.8.9 에 Vercel REST API 배포 시도 수(`_vercel_deploys`)로 대체돼 안 쓰임.
                        #        옛 대시보드(카테고리별 누적 막대+날짜 히트맵) 코드는
                        #        git 이력(v3.4.14 이전)에만 남아있음.
     monitor_log.py     # (v3.5) 모니터링 이벤트 로그 — tick/wake/preview 전이/notice/tweet/
@@ -223,11 +233,18 @@ src/
                        #        YYYY-MM-DD.jsonl`(data 저장소)에 한 줄 append. 공통 필드
                        #        `ts/flow/result/who/detail` + 흐름별 추가 필드, `result`는
                        #        `ok`/`degraded`/`err`(성공/실패로 미리 안 뭉침). tweet/relay는
-                       #        `via`(`ingest`|`ops`)로 자동/수동 구분. (v3.5.1) 하루 경계
+                       #        `via`(`ingest`|`ops`)로 자동/수동 구분. (v3.8.9) `flow="cmd"` —
+                       #        제어 채널 명령 1건마다(telegram_app `_done()`). `flow="upstream"` —
+                       #        업스트림 알림 1건마다(`/ingest` → `_ingest_impl` 래퍼). (v3.5.1) 하루 경계
                        #        `DAY_START_HOUR=6`(KST 06:00~익일 06:00) — 자정 넘겨 방송하는
                        #        멤버가 흔해서 00:00 경계 대신 씀. `bucket_date_kst()` 참고.
+    monitor_snapshot.py # (v3.8.9) 모니터링 스냅샷 — 일별 `monitoring/days/YYYY-MM-DD.json` + 전 기간 요약
+                       #        `monitoring/summary.json`(잔디) + 멤버 현황 DM 텍스트. `run_daily` 는
+                       #        app.py `/monitor`(KST 06:10)가 monitor_auto 와 무관하게 매일 호출.
+                       #        외부 조회 실패는 None(확인 불가), 로그 파일 없는 날은 no_log.
     monitor_report.py  # (v3.5) `/monitor` — 위 이벤트 로그 + healthchecks.io(백엔드 상태) +
-                       #        push_monitor.fetch_commits(Vercel push 요약)을 모아 트리거→
+                       #        Vercel 배포 시도 수(v3.8.9, Vercel REST API · Secret VERCEL_TOKEN.
+                       #        구 push_monitor.fetch_commits 커밋 수 근사 대체)를 모아 트리거→
                        #        preview/릴레이/소식/개인트윗 Ops Timeline HTML 생성(html은
                        #        커밋 안 하고 텔레그램 DM 으로만). (v3.5.1) `monthly=True`
                        #        (`/monitor --monthly`, v3.8.5 이전 이름 `--full`)면 이번 달
@@ -238,9 +255,9 @@ src/
                        #        "연간 추이" 그리드로 담는다 — 날짜당 최대 366회라 `date_kst`로
                        #        지정한 날 외엔 healthchecks.io/Vercel 조회를 건너뛴다
                        #        (`_build_day(fetch_external=False)`). 기본(`/monitor`,
-                       #        `--auto`)은 하루치만 — 단 매월 1일 자동 실행은 전월
-                       #        `--monthly`로, 1월 1일은 전년 `--yearly`로 대체(`app.py`
-                       #        `_monitor()`).
+                       #        `--auto`)은 하루치만. (v3.8.9) 자동 실행(KST 06:10)은 더 이상
+                       #        HTML 을 안 보낸다 — 모니터링 스냅샷 + 멤버 현황 텍스트 DM(`monitor_snapshot`).
+                       #        웹 monitor(`/monitor-live`)는 `snapshot_report()` 전 기간(all) 형식.
     tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 상한 클램프)
     oidc.py            # Scheduler/Tasks OIDC bearer 토큰 검증
     config.py          # 환경변수 → Config
@@ -349,6 +366,7 @@ python -m src.backend.push_monitor   # (v3.5, 축소됨) fetch_commits/list_bran
 python -m src.backend.vision         # (v3.2) 비전 OCR (실호출은 GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때 --live)
 python -m src.backend.monitor_log    # (v3.5) event_path(06:00 KST 경계)·log_event append/충돌 재시도 (mock)
 python -m src.backend.monitor_report # (v3.5) parse_events/그룹핑/preview 세그먼트·render_html·(v3.5.1) full=True 월간 조회 (mock)
+python -m src.backend.monitor_snapshot # (v3.8.9) 백필 날짜 선정·요약·멤버 현황 DM 텍스트·run_daily 멱등 (mock)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY 포함)

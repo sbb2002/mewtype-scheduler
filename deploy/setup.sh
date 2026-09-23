@@ -114,5 +114,7 @@ create_secret INGEST_SECRET "ingest secret (임의 문자열, 폰 Automate 에�
 create_secret GROQ_API_KEY "Groq API 키 (v3 번역/제목추출, 없으면 빈 값 Enter)" "${GROQ_API_KEY:-}"
 # v3.5 healthchecks.io — /monitor 백엔드 상태 조회용 read-only API 키. 없으면 기능 비활성.
 create_secret HEALTHCHECKS_IO_READONLEY_TOKEN "healthchecks.io read-only API 키 (/monitor 백엔드 상태 조회용, 없으면 빈 값 Enter)" "${HEALTHCHECKS_IO_READONLEY_TOKEN:-}"
+# v3.8.9 Vercel REST API 토큰 — /monitor 의 배포 시도 수(Hobby 하루 100회 한도) 조회용. 없으면 "확인 불가".
+create_secret VERCEL_TOKEN "Vercel API 토큰 (/monitor 배포 시도 수 조회용, 없으면 빈 값 Enter)" "${VERCEL_TOKEN:-}"
 
 echo "=== 셋업 완료 ==="

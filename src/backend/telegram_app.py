@@ -94,6 +94,7 @@ except Exception:                           # pragma: no cover
 
 from . import preview as preview_mod
 from . import monitor_report
+from . import monitor_snapshot
 from . import statemachine
 from . import writeclient
 from . import llm
@@ -108,7 +109,7 @@ from .control import (
     set_monitor_auto,
 )
 from .gh_store import ConflictError, GitHubStore
-from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_event
+from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, bucket_date_kst, log_event
 
 # admin_state.json 경로 (v2.5 — /list /del /ingest /undo 수동 관리 명령)
 _ADMIN_STATE_PATH = "admin_state.json"
@@ -380,11 +381,21 @@ def _build_status_text(now_iso: str, gh: GitHubStore, channels_cfg: dict) -> str
 # 웹훅 처리 마지막에 이 플래그로 "정말 아무 응답도 안 나갔는지"를 한 번에 확인해
 # 안전망 DM을 보낸다. ContextVar 라 요청(스레드)마다 독립 — 동시 요청이 서로 안 건드림.
 _dm_sent_ctx: "contextvars.ContextVar[bool]" = contextvars.ContextVar("_dm_sent", default=False)
+# (v3.8.9) 명령 하나를 처리하는 동안 나간 DM 본문들 — 웹 monitor "운영자 명령" 행의 결과 판정·
+# 요약에 쓴다(`_log_cmd_event`). None 이면 수집 안 함(웹훅 밖의 호출).
+_dm_texts_ctx: "contextvars.ContextVar[list | None]" = contextvars.ContextVar("_dm_texts", default=None)
+
+
+def _note_dm(text: str) -> None:
+    _dm_sent_ctx.set(True)
+    texts = _dm_texts_ctx.get()
+    if texts is not None:
+        texts.append(text or "")
 
 
 def _send_telegram(text: str, silent: bool = False) -> bool:
     """Telegram으로 메시지 전송."""
-    _dm_sent_ctx.set(True)
+    _note_dm(text)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
@@ -402,7 +413,7 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
 
 def _send_telegram_document(filename: str, content: bytes, *, caption: str = "") -> bool:
     """Telegram으로 파일 전송 (Push Monitor html 등)."""
-    _dm_sent_ctx.set(True)
+    _note_dm(caption or f"📎 {filename}")
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
@@ -519,9 +530,10 @@ def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
     --monthly (구 --full): 이번 달 1일~오늘 전부를 담아 생성 — 리포트 안 "월간 추이"
       그리드에서 날짜 전환 가능.
     --yearly (v3.8.5): 올해 1월 1일~오늘 전부를 "연간 추이" 그리드로 담아 생성.
-    --auto: Cloud Scheduler(KST 06:00) 자동 생성+DM 켬 — 매월 1일은 전월 --monthly로,
-      1월 1일은 전년 --yearly로 자동 대체된다(app.py `_monitor()`).
-    --off: 자동 생성 끔 (수동 /monitor 는 계속 가능).
+    --auto: (v3.8.9) 매일 KST 06:10 전날 "멤버 현황" 텍스트 DM 켬(app.py `_monitor()`).
+      v3.8.8 까지는 HTML 리포트(1일=전월, 1월 1일=전년)였으나 폐지 — 전 기간은 웹 monitor.
+    --off: 자동 DM 끔 (수동 /monitor 는 계속 가능). 웹 monitor 용 일별 스냅샷은
+      이 설정과 무관하게 매일 계속 찍힌다.
     """
     if arg in ("--auto", "--off"):
         try:
@@ -537,9 +549,9 @@ def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
                 message=f"data: monitor_auto={enabled} via Telegram {arg} {now_iso}",
             )
             if enabled:
-                _send_telegram("🟢 Monitor 자동 실행 켬 — 매일 KST 06:00에 리포트 생성 후 DM으로 전송합니다.")
+                _send_telegram("🟢 Monitor 자동 DM 켬 — 매일 KST 06:10에 전날 멤버 현황을 텍스트 DM으로 보냅니다. 전 기간 리포트는 웹 monitor 에서 보세요.")
             else:
-                _send_telegram("⚪ Monitor 자동 실행 끔 — /monitor 로 수동 실행은 계속 가능합니다.")
+                _send_telegram("⚪ Monitor 자동 DM 끔 — 웹 monitor 용 일별 스냅샷은 계속 찍히고, /monitor 로 수동 리포트도 계속 가능합니다.")
         except Exception as e:
             log.exception("Error handling /monitor %s", arg)
             _send_telegram(f"⚠️ 오류: /monitor {arg} 처리 실패\n{str(e)[:100]}")
@@ -566,7 +578,7 @@ def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
             gh, date_kst=date_kst, monthly=monthly, yearly=yearly,
             healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
             healthchecks_uuid=_healthchecks_uuid(),
-            github_token_for_commits=gh.token,
+            vercel_token=os.environ.get("VERCEL_TOKEN", "").strip(),
         )
         html = result.pop("html")
         filename = result.pop("filename")
@@ -704,6 +716,94 @@ def _load_channels_config() -> dict:
     except Exception as e:
         log.warning(f"Failed to load config/channels.json: {e}")
         return {"channels": {}}
+
+
+_CMD_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _cmd_event_fields(text: str, has_file: bool, replies: list, raised: bool, safety_net: bool) -> dict:
+    """(v3.8.9) 제어 채널 명령 1건 → 모니터 로그 `flow="cmd"` 이벤트 필드. 순수 함수.
+
+    - who: 명령어(`/del` 등). `/` 로 시작 안 하면 대화형 후속 입력(`/del` 확인 y/N, 마법사 응답,
+      원문 붙여넣기) → "(후속 입력)". 원문은 공개 data 저장소에 남으므로 **후속 입력 내용은 저장
+      안 함** — 짧은 확인 응답(y/N 등, 12자 이하 한 줄)만 남기고 나머지는 글자 수만.
+    - result: 처리 중 예외 또는 응답 DM 이 ⚠️/❌ 로 시작 → err. 안전망 발동(응답 누락) 또는
+      "사용법" 안내 → degraded. 그 외 ok. **응답 DM 문구로 판정하는 근사**다 — 핸들러가 결과를
+      반환하지 않아서(DM 으로만 알림) 이 방법을 쓴다. 판정 근거가 된 응답 요약을 reply 에 같이 둔다.
+    - reply: 마지막 응답 DM 의 첫 줄(태그 제거, 100자). 진행 중 안내("⏳ …") 뒤 최종 결과가
+      마지막에 오는 흐름이 많아 마지막 것을 쓴다.
+    """
+    if text.startswith("/"):
+        who = text.split()[0][:40]
+        detail = text[:120]
+    else:
+        who = "(후속 입력)"
+        if not text and has_file:
+            detail = "(파일 첨부)"
+        elif len(text) <= 12 and "\n" not in text:
+            detail = text
+        else:
+            detail = f"({len(text)}자 — 내용은 기록 안 함)"
+    firsts = [html.unescape(_CMD_TAG_RE.sub("", r)).strip().split("\n", 1)[0] for r in replies]
+    if raised or any(f.startswith(("⚠️", "❌")) for f in firsts):
+        result = RESULT_ERR
+    elif safety_net or any(f.startswith("사용법") for f in firsts):
+        result = RESULT_DEGRADED
+    else:
+        result = RESULT_OK
+    reply = firsts[-1][:100] if firsts else ""
+    if safety_net:
+        reply = "(응답 누락 — 안전망 안내 DM 발송)"
+    return {"who": who, "detail": detail, "result": result, "reply": reply}
+
+
+def _upstream_event_fields(source: str, sender: str, body: dict, code: int) -> dict:
+    """(v3.8.9) 업스트림(`POST /ingest`) 알림 1건 → 모니터 로그 `flow="upstream"` 필드. 순수 함수.
+
+    "알림을 받았다"는 사실 + 어느 갈래로 보냈는지만 남긴다 — 그 결과 콘텐츠가 어떻게 바뀌었는지는
+    preview·소식·개인 트윗 행에서 같은 시각을 보고 판단한다(요청 단위로 묶지 않음, 사용자 합의
+    2026-09-23). 갈래(route)는 기존 핸들러가 돌려준 응답 본문에서 읽는다(핸들러 무변경).
+    result: HTTP 4xx/5xx 또는 응답 ok=false → err, 그 외 ok(무시·일시정지도 "정상 수신").
+    """
+    b = body if isinstance(body, dict) else {}
+    if code >= 400 or b.get("ok") is False:
+        route = f"처리 실패 · {str(b.get('error') or code)[:80]}"
+    elif b.get("personal"):
+        route = f"개인 트윗 · {b['personal']}"
+    elif b.get("echo"):
+        route = "ECHO(테스트·점검 — 처리 안 함)"
+    elif b.get("paused"):
+        route = "일시정지 중 — 무시"
+    elif b.get("dry_run"):
+        route = "DRY-RUN(저장 안 함)"
+    elif "parsed" in b:
+        route = f"공식 스케줄 · 예고 {b['parsed']}건" if b["parsed"] else "공식 · 스케줄 아님(소식 등은 각 행 참고)"
+    elif b.get("member_live"):
+        route = f"회원 방송 시작 · {b['member_live']} ({b.get('mode', '')})"
+    elif b.get("public_relay"):
+        route = f"유튜브 {b['public_relay']}" + (" → 즉시 확인 예약" if b.get("woken") else "")
+    elif b.get("ignored"):
+        route = "무시(반영 대상 아님)" + (f" · {b['ignored']}" if isinstance(b["ignored"], str) else "")
+    else:
+        route = "처리됨"
+    return {
+        "source": "yt" if source == "yt" else "x",
+        "who": (sender or "")[:60],
+        "detail": route,
+        "result": RESULT_ERR if (code >= 400 or b.get("ok") is False) else RESULT_OK,
+    }
+
+
+def _log_cmd_event(now_iso: str, fields: dict) -> None:
+    """모니터 로그에 명령 1건 기록. 실패해도 웹훅 응답에 영향 없게 삼킨다."""
+    try:
+        gh = _make_gh()
+        if gh is None:
+            return
+        log_event(gh, now_iso, "cmd", fields["result"], who=fields["who"],
+                  detail=fields["detail"], reply=fields["reply"])
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(cmd)", exc_info=True)
 
 
 def _make_gh() -> "GitHubStore | None":
@@ -3802,8 +3902,35 @@ _monitor_live_cache: dict = {"at": 0.0, "report": None}
 _monitor_live_lock = threading.Lock()
 
 
+# (v3.8.9) 전 기간 잔디용 요약(monitoring/summary.json)은 하루 한 번(KST 06:10 스냅샷)만
+# 바뀌므로 오늘치 60초 캐시와 분리해 길게 캐시한다.
+_MONITOR_SUMMARY_TTL_SEC = 600
+_monitor_summary_cache: dict = {"at": 0.0, "days": None}
+# 지난 날짜 상세 — 스냅샷 파일에서 읽은 건 불변이라 TTL 없이, 스냅샷이 아직 없어 이벤트
+# 로그에서 즉석 계산한 건(저장 안 함) 10분만. 인스턴스 메모리 보호용으로 개수 상한.
+_MONITOR_DAY_CACHE_MAX = 64
+_MONITOR_DAY_ONDEMAND_TTL_SEC = 600
+_monitor_day_cache: dict = {}
+_monitor_day_lock = threading.Lock()
+
+
+def _monitor_summary_days(gh) -> dict:
+    """호출자가 _monitor_live_lock 을 잡은 상태에서 부른다."""
+    c = _monitor_summary_cache
+    if c["days"] is not None and time.monotonic() - c["at"] < _MONITOR_SUMMARY_TTL_SEC:
+        return c["days"]
+    days, _complete = monitor_snapshot.read_summary(gh)
+    c["days"], c["at"] = days, time.monotonic()
+    return days
+
+
 def _monitor_live_report() -> dict:
-    """웹 monitor 페이지용 REPORT dict — 가장 최근 06:00 KST 경계부터 지금까지.
+    """웹 monitor 페이지용 REPORT dict — (v3.8.9) 전 기간(all) 리포트.
+
+    상세는 "오늘"(가장 최근 06:00 KST 경계부터 지금까지)만 실시간 계산하고, 지난 날짜는
+    `monitoring/summary.json`(잔디)만 싣는다 — 지난 날짜 상세는 페이지가 칸을 누를 때
+    `/monitor-live/day.json` 으로 따로 불러온다. 60초마다 오는 자가갱신 폴링이 지난
+    날짜 파일 수백 개를 다시 읽지 않게 하려는 분리.
 
     락을 잡은 채 생성해 동시 접속이 GitHub/healthchecks 를 중복 호출하지 않게 하고,
     TTL 안의 재요청은 캐시를 돌려준다. (v3.8.7 후속) HTML/JSON 두 라우트가 이 캐시를
@@ -3815,15 +3942,49 @@ def _monitor_live_report() -> dict:
         gh = _make_gh()
         if gh is None:
             raise RuntimeError("GitHub 설정 없음")
-        report = monitor_report.build_report(
+        today = monitor_report.build_report(
             gh, date_kst=None,
             healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
             healthchecks_uuid=_healthchecks_uuid(),
-            github_token_for_commits=gh.token,
+            vercel_token=os.environ.get("VERCEL_TOKEN", "").strip(),
         )
+        date_kst = today["date"]
+        day = today["days"][date_kst]
+        summary = dict(_monitor_summary_days(gh))
+        summary[date_kst] = monitor_snapshot.summary_entry(day)  # 오늘 칸은 실시간 값
+        report = monitor_report.snapshot_report(day, date_kst, summary)
         _monitor_live_cache["report"] = report
         _monitor_live_cache["at"] = time.monotonic()
         return report
+
+
+def _monitor_past_day(date_kst: str) -> dict:
+    """(v3.8.9) 지난 날짜 하루치 상세 — 스냅샷(monitoring/days/)이 있으면 그대로, 없으면
+    (스케줄러가 아직 안 돌았거나 최초 백필 전) 이벤트 로그에서 즉석 계산한다. 즉석 계산분은
+    저장하지 않는다(쓰기는 백엔드 스케줄러 잡만 — 제어 채널에서 data 커밋을 늘리지 않음)."""
+    now = time.monotonic()
+    with _monitor_day_lock:
+        hit = _monitor_day_cache.get(date_kst)
+        if hit and (hit["snapshot"] or now - hit["at"] < _MONITOR_DAY_ONDEMAND_TTL_SEC):
+            return hit["day"]
+        gh = _make_gh()
+        if gh is None:
+            raise RuntimeError("GitHub 설정 없음")
+        day = monitor_snapshot.read_day(gh, date_kst)
+        is_snapshot = day is not None
+        if day is None:
+            day = monitor_report._build_day(
+                gh, date_kst, now_hm=None,
+                healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
+                healthchecks_uuid=_healthchecks_uuid(),
+                vercel_token=os.environ.get("VERCEL_TOKEN", "").strip(),
+            )
+            day["date"] = date_kst
+            day["snapshotAt"] = None  # 즉석 계산 — 페이지가 "스냅샷 아님"으로 표시
+        if len(_monitor_day_cache) >= _MONITOR_DAY_CACHE_MAX:
+            _monitor_day_cache.pop(next(iter(_monitor_day_cache)))
+        _monitor_day_cache[date_kst] = {"day": day, "snapshot": is_snapshot, "at": now}
+        return day
 
 
 def _monitor_live_html(self_origin: str = "") -> str:
@@ -3858,6 +4019,8 @@ if _FLASK_AVAILABLE:
         text = (message.get("text") or "").strip()
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         _dm_sent_ctx.set(False)   # (v3.6) 안전망 — 아래 어느 return 이든 이 값을 거쳐 나간다
+        _dm_texts_ctx.set([])     # (v3.8.9) 이 요청에서 나간 DM — 운영자 명령 모니터 로그용
+        _raised = [False]
 
         def _done(ok: bool = True):
             """(v3.6) 이 웹훅의 모든 return 지점을 통과시키는 안전망.
@@ -3869,13 +4032,20 @@ if _FLASK_AVAILABLE:
             반환되는 모든 지점을 여기 하나로 모아 `_dm_sent_ctx` 가 여전히 False 면
             대신 안내 DM 을 보낸다 — 새 명령/새 return 경로가 추가돼도 자동으로 커버됨.
             """
-            if text and not _dm_sent_ctx.get():
+            safety_net = bool(text) and not _dm_sent_ctx.get()
+            replies = list(_dm_texts_ctx.get() or [])
+            if safety_net:
                 log.warning("명령 처리 후 DM 미발송 — 안전망 발동: %r", text[:200])
                 _send_telegram(
                     f"⚠️ <code>{html.escape(text[:200])}</code> 처리 결과를 알려드리지 못했습니다"
                     "(응답 누락 — 코드 버그일 수 있습니다). 형식을 확인해 다시 시도하거나 "
                     "개발자에게 이 메시지를 공유해 주세요."
                 )
+            # (v3.8.9) 웹 monitor "운영자 명령" 행 — 텍스트/파일이 온 요청만(빈 업데이트 제외).
+            has_file = bool(message.get("document") or message.get("photo"))
+            if text or has_file:
+                _log_cmd_event(now_utc, _cmd_event_fields(text, has_file, replies, _raised[0], safety_net))
+            _dm_texts_ctx.set(None)
             return jsonify({"ok": ok}), 200
 
         try:
@@ -4056,7 +4226,7 @@ if _FLASK_AVAILABLE:
                     "<b>📱 mewtype 텔레그램 봇 (v3)</b>\n\n"
                     "일반: /status /pause /resume /log [detail|normal|simple]\n"
                     "/monitor [--auto|--off|--monthly|--yearly|YYYY-MM-DD] — 운영 모니터링 리포트 즉시 DM "
-                    "(--auto: 매일 KST 06:00 자동, --off: 자동 끔, --monthly: 이번 달 전체(월간 추이 그리드), "
+                    "(--auto: 매일 KST 06:10 전날 멤버 현황 텍스트 DM, --off: 자동 DM 끔, --monthly: 이번 달 전체(월간 추이 그리드), "
                     "--yearly: 올해 전체(연간 추이 그리드), 날짜: 그날 리포트)\n\n"
                     "<b>콘텐츠</b> (c = preview | notice | tweet, 생략 시 preview):\n"
                     "/list &lt;c&gt; [유닛] — 목록\n"
@@ -4071,6 +4241,7 @@ if _FLASK_AVAILABLE:
 
         except Exception as e:
             log.exception("Webhook processing error")
+            _raised[0] = True
             _send_telegram(f"⚠️ 처리 오류: {str(e)[:100]}")
 
         # 항상 200 반환 (Telegram 재시도 방지) — _done() 이 DM 미발송 안전망까지 처리
@@ -4078,6 +4249,31 @@ if _FLASK_AVAILABLE:
 
     @app.post("/ingest")
     def _ingest():
+        """(v3.8.9) 아래 `_ingest_impl` 을 감싸 알림 1건마다 모니터 로그 `flow="upstream"` 을 남긴다
+        (웹 monitor "업스트림 감지" 행). 인증 실패(403)는 업스트림 알림이 아니므로 기록 안 함.
+        기록 실패는 응답에 영향 없음."""
+        try:
+            resp = _ingest_impl()
+        except Exception as e:  # noqa: BLE001 — 원래도 Flask 가 500 으로 냈을 경우
+            log.exception("ingest 처리 중 예외")
+            resp = (jsonify({"ok": False, "error": str(e)[:200]}), 500)
+        body, code = (resp[0], resp[1]) if isinstance(resp, tuple) else (resp, 200)
+        if code != 403:
+            try:
+                payload = request.form if request.form else (request.get_json(silent=True) or {})
+                source = (payload.get("source") or "").strip()
+                fields = _upstream_event_fields(source, (payload.get("title") or "").strip(),
+                                                body.get_json(silent=True) or {}, code)
+                gh_up = _make_gh()
+                if gh_up is not None:
+                    now_up = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    log_event(gh_up, now_up, "upstream", fields["result"], who=fields["who"],
+                              detail=fields["detail"], source=fields["source"])
+            except Exception:  # noqa: BLE001
+                log.warning("monitor_log 기록 실패(upstream)", exc_info=True)
+        return resp
+
+    def _ingest_impl():
         """Automate(폰) → 삼성 브라우저 웹푸시 알림 텍스트 인입 (v2.3 X 릴레이).
 
         인증: `X-Ingest-Secret` 헤더 == env `INGEST_SECRET`.
@@ -4377,6 +4573,27 @@ if _FLASK_AVAILABLE:
             "Cache-Control": "no-store",
         }
 
+    @app.get("/monitor-live/day.json")
+    def _monitor_live_day_json():
+        """(v3.8.9) 웹 monitor 잔디 칸 클릭 — 지난 날짜 하루치 상세. `?date=YYYY-MM-DD`
+        (오늘 이전만; 오늘은 /monitor-live.json 에 이미 들어 있다)."""
+        cors = {"Access-Control-Allow-Origin": "*"}
+        date_kst = (request.args.get("date") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_kst):
+            return jsonify({"error": "date=YYYY-MM-DD 필요"}), 400, cors
+        try:
+            datetime.strptime(date_kst, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "잘못된 날짜"}), 400, cors
+        if date_kst >= bucket_date_kst(datetime.now(timezone.utc)):
+            return jsonify({"error": "오늘 이후 날짜는 /monitor-live.json 참고"}), 400, cors
+        try:
+            day = _monitor_past_day(date_kst)
+        except Exception:
+            log.exception("monitor-live/day.json 생성 실패 date=%s", date_kst)
+            return jsonify({"error": "internal"}), 500, cors
+        return jsonify(day), 200, {**cors, "Cache-Control": "no-store"}
+
     @app.get("/")
     def _health():
         """헬스체크."""
@@ -4393,6 +4610,32 @@ if __name__ == "__main__":
     print("=" * 60)
     print("telegram_app.py v3 smoke test")
     print("=" * 60)
+
+    # (v3.8.9) 운영자 명령 모니터 로그 — 결과 판정·후속 입력 비기록
+    _f = _cmd_event_fields("/del preview arale 2", False, ["🗑️ <b>삭제 확인</b>\n1) …"], False, False)
+    assert _f == {"who": "/del", "detail": "/del preview arale 2", "result": "ok", "reply": "🗑️ 삭제 확인"}, _f
+    assert _cmd_event_fields("/list", False, ["⏳ 조회 중", "⚠️ 오류: x"], False, False)["result"] == "err"
+    assert _cmd_event_fields("/list", False, ["📋 목록"], True, False)["result"] == "err", "예외 → err"
+    _u = _cmd_event_fields("/ingest tweet", False, ["사용법: /ingest tweet &lt;유닛&gt;"], False, False)
+    assert _u["result"] == "degraded" and _u["reply"] == "사용법: /ingest tweet <유닛>", _u
+    _s = _cmd_event_fields("/del preview", False, [], False, True)
+    assert _s["result"] == "degraded" and "응답 누락" in _s["reply"]
+    assert _cmd_event_fields("y", False, ["✅ 삭제됨"], False, False)["detail"] == "y"
+    _long = _cmd_event_fields("긴 원문 트윗 내용입니다 " * 5, False, ["✅"], False, False)
+    assert _long["who"] == "(후속 입력)" and "기록 안 함" in _long["detail"] and "트윗" not in _long["detail"], _long
+    assert _cmd_event_fields("", True, ["✅"], False, False)["detail"] == "(파일 첨부)"
+    print("[OK] _cmd_event_fields: ok/err/degraded 판정 · 응답 요약 · 후속 입력 내용 비기록")
+
+    # (v3.8.9) 업스트림 감지 — 응답 본문으로 갈래·결과 판정
+    _U = _upstream_event_fields
+    assert _U("", "夢限大みゅーたいぷ", {"ok": True, "parsed": 3}, 200) == {
+        "source": "x", "who": "夢限大みゅーたいぷ", "detail": "공식 스케줄 · 예고 3건", "result": "ok"}
+    assert _U("", "x", {"ok": True, "personal": "arale", "mode": "added"}, 200)["detail"] == "개인 트윗 · arale"
+    assert _U("yt", "y", {"ok": True, "member_live": "yuno", "mode": "live"}, 200)["source"] == "yt"
+    assert _U("yt", "y", {"ok": True, "ignored": True}, 200)["result"] == "ok"
+    assert _U("", "x", {"ok": False, "error": "empty text"}, 400)["result"] == "err"
+    assert _U("", "x", {"ok": False, "error": "boom"}, 200)["result"] == "err", "200 이라도 ok=false 면 에러"
+    print("[OK] _upstream_event_fields: 출처(x/yt)·갈래·결과")
 
     # 전역 _enqueue_wake_now 스텁 (Cloud Tasks API 호출 방지)
     _orig_enqueue_wake_now_global = globals().get("_enqueue_wake_now")

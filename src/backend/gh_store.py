@@ -222,6 +222,28 @@ class GitHubStore:
         except requests.RequestException as e:
             raise RuntimeError(f"GitHub API network error: {e}")
 
+    def list_dir(self, path: str) -> list[str]:
+        """(v3.8.9) 디렉터리의 파일 이름 목록(파일만, 하위 디렉터리 제외). 404 면 [].
+        Contents API 디렉터리 조회는 최대 1,000개까지만 돌려준다 — 호출자가 그보다 많은
+        파일이 쌓이는 디렉터리에 쓰면 안 된다."""
+        url = f"{self.API}/repos/{self.repo}/contents/{path}"
+        try:
+            sess = self.session or requests.Session()
+            resp = sess.get(url, params={"ref": self.branch}, headers=self._headers(), timeout=self.timeout)
+            if resp.status_code == 404:
+                return []
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"GitHub API list failed: {resp.status_code} {resp.reason}. "
+                    f"Response: {resp.text[:200]}"
+                )
+            items = resp.json()
+            if not isinstance(items, list):
+                raise RuntimeError(f"{path} 는 디렉터리가 아님")
+            return [it["name"] for it in items if it.get("type") == "file"]
+        except requests.RequestException as e:
+            raise RuntimeError(f"GitHub API network error: {e}")
+
     def write_text(
         self, path: str, text: str, *, prev_sha: Optional[str] = None, message: str,
     ) -> tuple[bool, Optional[str]]:

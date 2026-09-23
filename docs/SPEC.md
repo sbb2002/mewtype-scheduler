@@ -49,7 +49,8 @@ src/
     writers.py         # (v3.7) write-queue — /write 잡 kind → telegram_app 커밋 함수 매핑 (§8.14)
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출 (OIDC). MAIN_SERVICE_URL 없으면 로컬 디스패치
     monitor_log.py     # (v3.5) monitoring/events-YYYY-MM-DD.jsonl append (log_event / log_events 배치)
-    monitor_report.py  # (v3.5) /monitor Ops Timeline HTML 생성
+    monitor_report.py  # (v3.5) /monitor Ops Timeline HTML 생성. (v3.8.9) 웹 monitor 는 전 기간(all) 리포트
+    monitor_snapshot.py # (v3.8.9) 모니터링 스냅샷 — 일별(monitoring/days/)·전 기간 요약(summary.json)·멤버 현황 DM 텍스트
     preview.py         # (신규) preview.json 스키마 헬퍼 (id·매칭·정렬·승격·아카이브) — 순수
     preview_build.py   # (신규) reconcile 포크 → build_preview(6상태 + FSM 파생 + ytnotif 머지) — 순수
     statemachine.py    # (v3 재작성) derive(item, now) → 상태 전이·다음 wake 시각. 저장 타이머 없음 — 순수
@@ -78,6 +79,8 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
                        #   + ingest_queue.json (ECHO/DRY-RUN 버퍼)
                        #   + monitoring/events-YYYY-MM-DD.jsonl (이벤트 로그) + monitoring/latest.html
                        #     (/monitor 리포트 — 공개 저장소라 raw URL 로 누구나 열람 가능). 코드 없음.
+                       #   + (v3.8.9) monitoring/days/YYYY-MM-DD.json (하루치 스냅샷) +
+                       #     monitoring/summary.json ({"days": {날짜: 요약}, "backfill_complete"})
                        #   ※ v2 의 schedule.json / archive.json / pending.json 은 폐지.
 ```
 
@@ -739,10 +742,34 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 `@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
 `@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
 `@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
-`@app.post("/monitor")` (v3.5) → `control.json monitor_auto` 켜져 있으면 전일(06:00 KST 경계) 리포트 생성 →
-`monitoring/latest.html` 커밋 + 텔레그램 DM. 제어 채널(`telegram_app`)의 `@app.get("/monitor-live")` (v3.7.2) →
-웹 `monitor.html` 이 부르는 읽기 전용 공개 라우트, 가장 최근 06:00 KST~지금 리포트를 즉석 생성(60초 캐시·CORS `*`,
-실패 시 500 — `monitor.html` 이 `latest.html` 로 폴백). `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
+`@app.post("/monitor")` (v3.5, v3.8.9 개편) → **매일**(monitor_auto 와 무관) `monitor_snapshot.run_daily`:
+전일(06:00 KST 경계) 하루치를 `monitoring/days/{날짜}.json` 에 굳히고 `monitoring/summary.json` 에 요약 한 줄을
+추가(요약 = `{"triggers","events"}`, 그날 이벤트 로그 파일이 없으면 숫자 대신 `{"no_log": true}`). 백필:
+`backfill_complete` 가 false 면 `monitoring/` 의 `events-*.jsonl` 목록으로 로그 파일이 있는 과거 날짜만 채우고,
+이후엔 마지막 요약 날짜 다음 날~전날 누락분을 채운다(실행당 최대 10일, 남으면 다음 실행이 이어서).
+외부 조회(healthchecks.io 다운 구간·Vercel 배포 시도 수) 실패/키 없음은 `null` 로 저장(조회 여부를 데이터에 남김).
+Vercel 수치(`vercelDeploys = {total, production, preview, error}`)는 Vercel REST API `/v6/deployments`
+(Secret `VERCEL_TOKEN`)로 그날 06:00~익일 06:00 KST 배포 시도를 센다 — Hobby 하루 100회 한도엔 브랜치·성공
+여부 무관하게 다 잡히므로 total 기준.
+표시: Vercel 은 "확인 불가", 백엔드 상태는 기존 합의대로 다운 없음=정상으로 그리고 툴팁에 "미조회"만 밝힌다
+(healthchecks.io 를 날짜마다 몰아 부르지 않기 위한 근사). 스냅샷엔 `snapshotAt`(조회 시각)·`hasLog` 동봉. 이어서 `monitoring/latest.html`(전날 상세 +
+전 기간 잔디)을 커밋하고, `monitor_auto` 가 켜져 있을 때만 "오늘의 멤버 현황"(멤버별 트윗 수집 ✓/✕ · 라이브 구간 ·
+소식 등록 성공/실패) **텍스트 DM**. v3.8.8 까지의 일간/월간(매월 1일)/연간(1월 1일) HTML 자동 DM 은 폐지(수동
+`/monitor [--monthly|--yearly|날짜]` 는 그대로 HTML).
+제어 채널(`telegram_app`)의 `@app.get("/monitor-live")` (v3.7.2) → 웹 `monitor.html` 이 부르는 읽기 전용 공개
+라우트. (v3.8.9) **전 기간(all) 리포트** — 상세는 "오늘"(가장 최근 06:00 KST~지금)만 즉석 생성(60초 캐시), 지난
+날짜는 `summary.json`(10분 캐시)로 잔디만 그린다(오늘 칸은 실시간 값). `@app.get("/monitor-live.json")` 은 같은
+데이터(60초 자가갱신 폴링용). `@app.get("/monitor-live/day.json?date=YYYY-MM-DD")` (v3.8.9) → 잔디 칸 클릭 시 지난
+날짜 상세: 스냅샷이 있으면 그대로(메모리 캐시, 불변), 없으면 이벤트 로그에서 즉석 계산(저장 안 함, `snapshotAt:
+null`, 10분 캐시). 오늘 이후 날짜는 400. 모두 CORS `*`, 실패 시 500 — `monitor.html` 이 `latest.html` 로 폴백.
+`@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
+(v3.8.9) 제어 채널 웹훅 `/telegram` 은 요청마다 모니터 로그 `flow="cmd"` 1줄(`who`=명령어, `detail`=원문 120자 —
+`/` 로 시작 안 하는 후속 입력은 12자 이하 한 줄만, 그 외 글자 수만, `reply`=마지막 응답 DM 첫 줄, `result`=응답
+DM 문구 기반 근사: 예외·⚠️/❌ → err, "사용법"·응답 누락 → degraded, 그 외 ok) → 웹 monitor 타임라인 "💬 운영자
+명령" 행(트리거와 백엔드 상태 사이).
+(v3.8.9) `POST /ingest` 는 알림 1건마다(403 제외) 모니터 로그 `flow="upstream"` 1줄(`source`=x|yt, `who`=
+`android.title`, `detail`=응답 본문에서 읽은 갈래, `result`=HTTP 4xx/5xx 또는 ok=false → err, 그 외 ok) → 웹 monitor
+"🛰️ 업스트림 감지" 행(백엔드 상태 바로 위, 구 "X 예고 릴레이" 행 대체)과 트리거 📥 의 기준.
 예외 → 500 + `notify.error_text` DM. `PermissionError` → 403.
 
 ### 8.14 write-queue — `writers.py` / `writeclient.py` (v3.7, v3.7.1 A-1)
