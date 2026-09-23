@@ -761,7 +761,7 @@ _TEMPLATE = r"""<!doctype html>
      글자색, 호버 시 흰색. */
   .tl-up-icon{color:var(--ink)}
   .tl-up-box{fill:var(--panel)}
-  #tlRightSvg .tl-right-health-label.zero{fill:var(--muted-2)}  /* (v3.8.9 후속) 소식·트윗 0건 */
+  #tlRightSvg .tl-right-health-label.zero{fill:var(--muted-2)}  /* (v3.8.9a) 소식·트윗 0건 */
   .tl-up-icon:hover{color:#fff}
   /* (후속) 트리거 = 짧은 세로 히스토그램 막대 (점 대체) */
   .tl-trigger-baseline{stroke:#ffffff; stroke-width:1; opacity:.55}
@@ -1398,7 +1398,7 @@ function renderTimeline(){
     });
   });
 
-  // (v3.8.9 후속, 사용자 요청) 시간 틱마다 그리던 세로 그리드선(.tl-hour)은 없앴다 — 라벨만 남긴다.
+  // (v3.8.9a, 사용자 요청) 시간 틱마다 그리던 세로 그리드선(.tl-hour)은 없앴다 — 라벨만 남긴다.
   const stepMin = pickHourStepMin(plotW);
   for (let m = 0; m <= 1440; m += stepMin) {
     const x = minutesToX(m, plotW);
@@ -1616,7 +1616,7 @@ function renderTimeline(){
 function renderRightPanel(){
   const svg = document.getElementById("tlRightSvg");
   const H = window._TL_H;
-  // (v3.8.9 후속) 모바일("요약 보기" 켠 상태)에선 왼쪽 행 라벨 옆 남은 폭에 맞춘다 — 고정 234px 이면
+  // (v3.8.9a) 모바일("요약 보기" 켠 상태)에선 왼쪽 행 라벨 옆 남은 폭에 맞춘다 — 고정 234px 이면
   // 390px 폰에서 라벨(64)+패널(235)=299 > 289 로 10px 가로 넘침이 있었다. PC 는 그대로(220).
   let panelW = RIGHT_PANEL_W;
   if (IS_NARROW) {
@@ -1667,7 +1667,7 @@ function renderRightPanel(){
   (function drawTriggerSummary(){
     const total = TRIGGER_GROUPS.reduce((s, g) => s + g.events.length, 0);
     const errTotal = TRIGGER_GROUPS.reduce((s, g) => s + g.events.filter(e => !e.ok).length, 0);
-    // (v3.8.9 후속) 백엔드 상태 요약과 같은 줄 스타일로 두 줄 — "[초록 네모] 정상 n건" / "[빨강 네모] 실패 m건"
+    // (v3.8.9a) 백엔드 상태 요약과 같은 줄 스타일로 두 줄 — "[초록 네모] 정상 n건" / "[빨강 네모] 실패 m건"
     // (실패 0건이어도 표시). 트리거 막대는 기준선(rowY, 행 높이의 80%) 위로 자라므로 두 줄 모두 기준선
     // 바로 위(막대와 같은 쪽)에 둔다.
     const ry = rowY["trigger|all"], lineH = 12;
@@ -1694,7 +1694,7 @@ function renderRightPanel(){
   const noticeCount = NOTICE.length;
   const tweetCounts = ROWS_MEMBERS.map(m => TWEET.filter(e => e.member === m).length);
   const maxCount = Math.max(1, noticeCount, ...tweetCounts);
-  // (v3.8.9 후속) 막대 오른쪽에 "N건" 라벨 — 패널 폭(W)은 그대로 두고 막대 최대 길이에서 라벨 자리
+  // (v3.8.9a) 막대 오른쪽에 "N건" 라벨 — 패널 폭(W)은 그대로 두고 막대 최대 길이에서 라벨 자리
   // (COUNT_LABEL_W)를 빼서, 가장 긴 막대 + 라벨도 패널 안에 들어가게(가로 스크롤·잘림 없음).
   const COUNT_LABEL_W = 46;
   const unitPx = Math.max(0, panelW - RIGHT_PAD - COUNT_LABEL_W) / maxCount;
