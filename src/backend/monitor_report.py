@@ -275,7 +275,7 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             # 관측 전 06:00부터 있었다고 가정하는 구간)는 근거 이벤트가 없어 대상에서 뺀다.
             if e.get("assumed_live"):
                 seg["assumed_live"] = True
-            # (v3.8.5 후속) 합동 live 막대 위 참여 멤버 아이콘용 — 전이 시점 값 그대로.
+            # (v3.8.5a) 합동 live 막대 위 참여 멤버 아이콘용 — 전이 시점 값 그대로.
             if e.get("collab_with"):
                 seg["collab_with"] = e["collab_with"]
             segs.append(seg)
@@ -761,7 +761,7 @@ _TEMPLATE = r"""<!doctype html>
      글자색, 호버 시 흰색. */
   .tl-up-icon{color:var(--ink)}
   .tl-up-box{fill:var(--panel)}
-  #tlRightSvg .tl-right-health-label.zero{fill:var(--muted-2)}  /* (v3.8.9 후속) 소식·트윗 0건 */
+  #tlRightSvg .tl-right-health-label.zero{fill:var(--muted-2)}  /* (v3.8.9a) 소식·트윗 0건 */
   .tl-up-icon:hover{color:#fff}
   /* (후속) 트리거 = 짧은 세로 히스토그램 막대 (점 대체) */
   .tl-trigger-baseline{stroke:#ffffff; stroke-width:1; opacity:.55}
@@ -785,7 +785,7 @@ _TEMPLATE = r"""<!doctype html>
   .tooltip .tt-raw{font-family:var(--mono); font-size:.76rem; margin-bottom:3px}
   .tooltip .tt-raw.ok{color:var(--ok)} .tooltip .tt-raw.err{color:var(--err)} .tooltip .tt-raw.degraded{color:#f5c344}
   .tooltip .tt-d{color:var(--muted)}
-  /* (v3.8.5 후속) 합동 live 구간 — 막대 위 아이콘 + 팝업 안 참여 멤버 목록 */
+  /* (v3.8.5a) 합동 live 구간 — 막대 위 아이콘 + 팝업 안 참여 멤버 목록 */
   .tl-collab-icon{border-radius:3px}
   .tt-collab{margin-top:4px; color:var(--ink); font-size:.74rem}
   .tt-collab img{width:14px; height:14px; border-radius:3px; vertical-align:-3px; margin:0 3px 0 6px}
@@ -1398,7 +1398,7 @@ function renderTimeline(){
     });
   });
 
-  // (v3.8.9 후속, 사용자 요청) 시간 틱마다 그리던 세로 그리드선(.tl-hour)은 없앴다 — 라벨만 남긴다.
+  // (v3.8.9a, 사용자 요청) 시간 틱마다 그리던 세로 그리드선(.tl-hour)은 없앴다 — 라벨만 남긴다.
   const stepMin = pickHourStepMin(plotW);
   for (let m = 0; m <= 1440; m += stepMin) {
     const x = minutesToX(m, plotW);
@@ -1435,7 +1435,7 @@ function renderTimeline(){
     BACKEND_SEGS.forEach(sg => {
       const x1 = timeToX(sg.from, plotW), x2 = timeToX(sg.to, plotW);
       const rect = document.createElementNS(ns,"rect");
-      // (v3.8.5 후속) 정상(up)일 땐 평소 눈에 안 띄어도 되니 두께를 1/3(24→8)로 줄이고,
+      // (v3.8.5a) 정상(up)일 땐 평소 눈에 안 띄어도 되니 두께를 1/3(24→8)로 줄이고,
       // 처리 중(busy)·다운(down)처럼 눈에 띄어야 하는 상태는 기존 두께(24) 유지.
       const h = sg.s === "up" ? 8 : 24;
       rect.setAttribute("x", x1); rect.setAttribute("y", ry - h/2);
@@ -1466,7 +1466,7 @@ function renderTimeline(){
       rect.setAttribute("class","tl-seg");
       const q = sg.q || "ok";
       const label = stateLabel(sg.s) + (sg.assumed_live ? " · 추정" : "");
-      // (v3.8.5 후속) 합동 live 구간 — 막대 위에 참여 멤버 아이콘 + 팝업에도 같은 목록.
+      // (v3.8.5a) 합동 live 구간 — 막대 위에 참여 멤버 아이콘 + 팝업에도 같은 목록.
       const isCollabLive = sg.s === "live" && sg.collab_with && sg.collab_with.length;
       const collabTip = isCollabLive
         ? `<div class="tt-collab">함께: ${sg.collab_with.map(ck =>
@@ -1529,7 +1529,7 @@ function renderTimeline(){
   // 그 안을 정상 건수 : 에러 건수 비율로 초록/빨강 두 구간으로 나눠 쌓는다(에러가 하나라도
   // 있으면 통째로 빨개지던 이전 방식 대신 실제 구성비가 보이게). 에러 구간을 위쪽에 쌓아
   // "얼마나 섞였는지" 가 기준선에서 먼 쪽(눈에 먼저 띄는 쪽)에 오도록.
-  // (v3.8.5 후속) 막대 폭 고정(TRIGGER_BAR_W)이면 줌아웃 시 인접 그룹끼리 겹친다 —
+  // (v3.8.5a) 막대 폭 고정(TRIGGER_BAR_W)이면 줌아웃 시 인접 그룹끼리 겹친다 —
   // 실제 화면상 최소 간격을 보고 그보다 넓어지지 않게 매번(줌마다) 다시 계산.
   const sortedTriggerX = triggerMarks.map(m => m.x).sort((a, b) => a - b);
   let minTriggerGapPx = Infinity;
@@ -1616,7 +1616,7 @@ function renderTimeline(){
 function renderRightPanel(){
   const svg = document.getElementById("tlRightSvg");
   const H = window._TL_H;
-  // (v3.8.9 후속) 모바일("요약 보기" 켠 상태)에선 왼쪽 행 라벨 옆 남은 폭에 맞춘다 — 고정 234px 이면
+  // (v3.8.9a) 모바일("요약 보기" 켠 상태)에선 왼쪽 행 라벨 옆 남은 폭에 맞춘다 — 고정 234px 이면
   // 390px 폰에서 라벨(64)+패널(235)=299 > 289 로 10px 가로 넘침이 있었다. PC 는 그대로(220).
   let panelW = RIGHT_PANEL_W;
   if (IS_NARROW) {
@@ -1663,11 +1663,11 @@ function renderRightPanel(){
     });
   })();
 
-  // (v3.8.5 후속) 트리거 레인 옆에 그날 총량(성공/실패 포함) — health 누계와 같은 텍스트 줄 스타일.
+  // (v3.8.5a) 트리거 레인 옆에 그날 총량(성공/실패 포함) — health 누계와 같은 텍스트 줄 스타일.
   (function drawTriggerSummary(){
     const total = TRIGGER_GROUPS.reduce((s, g) => s + g.events.length, 0);
     const errTotal = TRIGGER_GROUPS.reduce((s, g) => s + g.events.filter(e => !e.ok).length, 0);
-    // (v3.8.9 후속) 백엔드 상태 요약과 같은 줄 스타일로 두 줄 — "[초록 네모] 정상 n건" / "[빨강 네모] 실패 m건"
+    // (v3.8.9a) 백엔드 상태 요약과 같은 줄 스타일로 두 줄 — "[초록 네모] 정상 n건" / "[빨강 네모] 실패 m건"
     // (실패 0건이어도 표시). 트리거 막대는 기준선(rowY, 행 높이의 80%) 위로 자라므로 두 줄 모두 기준선
     // 바로 위(막대와 같은 쪽)에 둔다.
     const ry = rowY["trigger|all"], lineH = 12;
@@ -1694,7 +1694,7 @@ function renderRightPanel(){
   const noticeCount = NOTICE.length;
   const tweetCounts = ROWS_MEMBERS.map(m => TWEET.filter(e => e.member === m).length);
   const maxCount = Math.max(1, noticeCount, ...tweetCounts);
-  // (v3.8.9 후속) 막대 오른쪽에 "N건" 라벨 — 패널 폭(W)은 그대로 두고 막대 최대 길이에서 라벨 자리
+  // (v3.8.9a) 막대 오른쪽에 "N건" 라벨 — 패널 폭(W)은 그대로 두고 막대 최대 길이에서 라벨 자리
   // (COUNT_LABEL_W)를 빼서, 가장 긴 막대 + 라벨도 패널 안에 들어가게(가로 스크롤·잘림 없음).
   const COUNT_LABEL_W = 46;
   const unitPx = Math.max(0, panelW - RIGHT_PAD - COUNT_LABEL_W) / maxCount;
@@ -1775,7 +1775,7 @@ function unpinTip(){
   pinned = false;
   hideTip();
   document.getElementById("tlScroll").classList.remove("locked");
-  // (v3.8.5 후속) 팝업을 닫을 때 트리거 히스토그램의 흰 실선(고정 선택)도 같이 꺼야
+  // (v3.8.5a) 팝업을 닫을 때 트리거 히스토그램의 흰 실선(고정 선택)도 같이 꺼야
   // 한다 — 예전엔 안 꺼져서 팝업 닫힌 뒤에도 실선이 그 자리에 남아 있었다.
   setTriggerActiveNear(null);
 }
@@ -2234,7 +2234,7 @@ function clientXToMinutes(clientX){
   const rect = scrollEl.getBoundingClientRect();
   return xToMinutes(clientX - rect.left + scrollEl.scrollLeft, currentPlotW());
 }
-// (v3.8.5 후속) 마우스를 계속 따라다녀야 하는 "얇은 크로스헤어"(moveCrosshair)와, 클릭으로
+// (v3.8.5a) 마우스를 계속 따라다녀야 하는 "얇은 크로스헤어"(moveCrosshair)와, 클릭으로
 // 고정한 뒤엔 마우스가 움직여도 안 바뀌어야 하는 "트리거 히스토그램 흰 실선/발광"
 // (setTriggerActiveNear, 팝업이 pinned 인 동안엔 여기서 건드리지 않음)을 분리했다 —
 // 예전엔 같은 placeCrosshair() 하나가 pinned 여부로 통째로 막혀서, 클릭 후 얇은 선까지
@@ -2288,7 +2288,7 @@ function hideCrosshair(){
   scrollEl.addEventListener("pointermove", (ev) => {
     if (!pointers.has(ev.pointerId)) {
       // 버튼 안 누른 호버 — 얇은 크로스헤어는 pinned 여부와 무관하게 항상 마우스를
-      // 따라간다(v3.8.5 후속 버그 수정). 트리거 히스토그램 미리보기(발광/흰 실선)만
+      // 따라간다(v3.8.5a 버그 수정). 트리거 히스토그램 미리보기(발광/흰 실선)만
       // placeCrosshair 내부에서 pinned 면 건드리지 않는다.
       if (pointers.size === 0) placeCrosshair(clientXToMinutes(ev.clientX));
       return;
@@ -2335,7 +2335,7 @@ function hideCrosshair(){
   scrollEl.addEventListener("click", (ev) => {
     if (dragMoved) { dragMoved = false; return; } // 드래그 끝의 관성 클릭 무시
     if (isPinned()) { unpinTip(); return; }
-    // (v3.8.5 후속) 트리거 히스토그램 레인 밴드 안에서 클릭하면 — 정확히 막대를 못
+    // (v3.8.5a) 트리거 히스토그램 레인 밴드 안에서 클릭하면 — 정확히 막대를 못
     // 맞혀도(특히 모바일) 가장 가까운 막대를 클릭한 것으로 보고 그 시간대 이벤트
     // 팝업을 바로 띄운다. Y 좌표로 밴드를 제한해 notice/preview 등 다른 레인의
     // 빈 공간 클릭까지 트리거로 대체되지 않게 한다.
@@ -2508,7 +2508,7 @@ if __name__ == "__main__":
     assert "assumed_live" not in arale["segs"][0], arale
     print("[OK] _preview_json: assumed_live 플래그가 세그먼트로 전파됨(선행 세그먼트는 제외)")
 
-    # (v3.8.5 후속) collab_with 도 assumed_live 와 같은 방식으로 세그먼트에 전파 —
+    # (v3.8.5a) collab_with 도 assumed_live 와 같은 방식으로 세그먼트에 전파 —
     # 프론트가 합동 live 막대 위에 참여 멤버 아이콘을 얹는 데 쓴다.
     collab_ev = [{"who": "yuno", "ts": "2026-09-01T05:00:00Z", "from_state": "watching",
                   "to_state": "live", "title": "합동", "collab_with": ["ritsu"]}]

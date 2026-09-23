@@ -121,7 +121,7 @@ def _preview_log_events(
             "from_state": from_state,
             "to_state": to_state,
             "title": item.get("title"),
-            # (v3.8.5 후속) monitor 타임플롯이 합동 live 막대 위에 참여 멤버 아이콘을
+            # (v3.8.5a) monitor 타임플롯이 합동 live 막대 위에 참여 멤버 아이콘을
             # 얹기 위해 필요 — 전이 시점 값 그대로(이후 별도 write로 늦게 추가된
             # collab_with 는 다음 상태전이 로그부터 반영).
             "collab_with": item.get("collab_with"),
@@ -654,7 +654,7 @@ if __name__ == "__main__":
     assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
     print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
 
-    # (v3.8.5 후속) collab_with 전파 — monitor 타임플롯의 합동 live 막대 아이콘용
+    # (v3.8.5a) collab_with 전파 — monitor 타임플롯의 합동 live 막대 아이콘용
     _collab_new = [
         {"id": "pv_9", "video_id": "v9", "channel_key": "yuno", "state": "live",
          "collab_with": ["ritsu"], "title": "합동"},

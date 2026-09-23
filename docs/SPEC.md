@@ -770,7 +770,7 @@ DM 문구 기반 근사: 예외·⚠️/❌ → err, "사용법"·응답 누락 
 (v3.8.9) `POST /ingest` 는 알림 1건마다(403 제외) 모니터 로그 `flow="upstream"` 1줄(`source`=x|yt, `who`=
 `android.title`, `detail`=응답 본문에서 읽은 갈래, `result`=HTTP 4xx/5xx 또는 ok=false → err, 그 외 ok) → 웹 monitor
 "🛰️ 업스트림 감지" 행(백엔드 상태 바로 위, 구 "X 예고 릴레이" 행 대체)과 트리거 📥 의 기준.
-(v3.8.9 후속) 하루치 상세의 `upstream`·`cmd` 는 실제 기록 + 그날 첫 실제 기록 이전 시각의 **복원분**(`derived: true`,
+(v3.8.9a) 하루치 상세의 `upstream`·`cmd` 는 실제 기록 + 그날 첫 실제 기록 이전 시각의 **복원분**(`derived: true`,
 `monitor_report._derive_upstream`/`_derive_cmd`)을 합친 것 — 업스트림은 `/ingest` 한 요청의 기록 규칙대로(개인 트윗 =
 (ts, 멤버) 1건, 공식 = 최종 relay `mode: …` 1줄 1건 + 같은 초 소식 부착, `mode: yt-member-live` = YouTube 1건), 명령은
 ops·`/del`·`/edit` preview 기록·via=ops 인입에서. via 없는 옛 기록·`[백필]` 기록·로그 없는 요청은 복원하지 않는다.
