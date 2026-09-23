@@ -541,7 +541,7 @@ def run(
     """`_handle_monitor`/`/monitor` Flask 라우트 진입점. {"html", "date", "events",
     "filename"} 반환.
 
-    `self_origin`: (v3.8.7 후속) 웹 monitor(`/monitor-live`) 전용 — 이 리포트를 생성한
+    `self_origin`: (v3.8.7) 웹 monitor(`/monitor-live`) 전용 — 이 리포트를 생성한
     서비스 자신의 절대 URL. 비어있지 않으면 리포트가 자기 자신을 주기적으로 다시
     불러와(같은 문서 안에서 갱신, 페이지 리로드 없음) "진행중" 표시가 실시간에
     가깝게 유지된다. `/monitor` DM(정적 스냅샷)은 빈 문자열 그대로 — 자가갱신 불필요.
@@ -2197,7 +2197,7 @@ function loadDay(dateStr, opts){
 renderLabels();
 loadDay(REPORT.date);
 
-// (v3.8.7 후속, v3.8.8 로 고정 상태 처리 분리) 웹 monitor(/monitor-live)에서만
+// (v3.8.7, v3.8.8 로 고정 상태 처리 분리) 웹 monitor(/monitor-live)에서만
 // SELF_ORIGIN 이 채워진다 — 자기 자신을 주기적으로 다시 불러와 "진행중" 표시를 실시간에
 // 가깝게 유지한다. loadDay() 는 같은 문서 안에서 DOM 만 갱신하므로(페이지/iframe 리로드
 // 없음) 스크롤·줌 위치가 안 튄다(예전엔 부모 페이지가 iframe.srcdoc 을 통째로 교체해서
@@ -2552,7 +2552,7 @@ if __name__ == "__main__":
     assert 'const SELF_ORIGIN = "";' in html, "self_origin 생략 시 빈 문자열(자가갱신 비활성)"
     print("[OK] render_html: 플레이스홀더 치환 완료")
 
-    # (v3.8.7 후속) self_origin 지정 시 그대로 심어져 웹 monitor 자가갱신 폴링이 켜짐
+    # (v3.8.7) self_origin 지정 시 그대로 심어져 웹 monitor 자가갱신 폴링이 켜짐
     html_live = render_html(report, self_origin="https://mewtype-telegram-xxx.run.app/")
     assert 'const SELF_ORIGIN = "https://mewtype-telegram-xxx.run.app";' in html_live, html_live[:200]
     print("[OK] render_html: self_origin 지정 시 끝 슬래시 제거하고 삽입")
