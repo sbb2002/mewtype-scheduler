@@ -7,7 +7,8 @@ control.json 스키마 및 헬퍼 함수.
     "since": null,               // paused=true 로 바뀐 시각 (ISO 'Z')
     "by": null,                  // 마지막 변경 출처 메모
     "log_level": "normal",       // "detail" | "normal" | "simple"
-    "monitor_auto": false,       // true면 /monitor 스케줄러(KST 06:00)가 실제 리포트 생성+DM
+    "monitor_auto": false,       // true면 /monitor 스케줄러(KST 06:10)가 전날 멤버 현황 텍스트 DM (v3.8.9;
+                                 //   스냅샷 자체는 이 값과 무관하게 매일)
                                  // (v3.5 이전 이름: push_monitor_auto — /push-monitor 대체하며 개명)
     "updated_at": "..."
   }

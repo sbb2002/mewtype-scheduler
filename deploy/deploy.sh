@@ -17,6 +17,13 @@ _HC_SECRET=""
 if gcloud secrets describe HEALTHCHECKS_IO_READONLEY_TOKEN &>/dev/null; then
   _HC_SECRET=",HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest"
 fi
+# (v3.8.9) VERCEL_TOKEN: monitor_report 의 Vercel 배포 시도 수(Hobby 하루 100회 한도) 조회용.
+# Secret 있을 때만 붙인다(없으면 웹 monitor EXT 탭에 "확인 불가"). 만들기:
+#   printf '%s' "<토큰>" | gcloud secrets create VERCEL_TOKEN --data-file=- --replication-policy=automatic
+_VC_SECRET=""
+if gcloud secrets describe VERCEL_TOKEN &>/dev/null; then
+  _VC_SECRET=",VERCEL_TOKEN=VERCEL_TOKEN:latest"
+fi
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$GCP_LOCATION" \
@@ -24,7 +31,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --service-account "$RUNTIME_SA" \
   --concurrency=1 \
   --max-instances=1 \
-  --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest${_HC_SECRET}${_GROQ_SECRET}" \
+  --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest${_HC_SECRET}${_GROQ_SECRET}${_VC_SECRET}" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid"
 # SERVICE_URL 은 배포 후 실제 URL 을 알 수 있으므로 일단 placeholder 로 부팅시키고 아래에서 교체한다.
 

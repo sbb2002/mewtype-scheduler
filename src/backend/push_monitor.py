@@ -2,7 +2,8 @@
 담고 있었으나, v3.5에서 `/monitor`(monitor_report.py)로 완전히 대체되면서 그
 대시보드 코드(categorize/build_dashboard_data/render_html/run 등)는 지웠다.
 `_CODE_REPO`/`fetch_commits`/`list_branches`만 monitor_report.py의 Vercel
-push count 계산용으로 계속 쓰여서 남겨둔다.
+push count 계산용으로 남겨뒀었다. (v3.8.9) 그 계산이 Vercel REST API 실제 배포 시도 수
+(`monitor_report._vercel_deploys`)로 바뀌어 지금은 어디서도 import 하지 않는다 — 삭제 후보.
 
 옛 Push Monitor 대시보드 자체의 배경(Vercel Hobby "하루 100회 배포" 한도 사고 등)은
 docs/VERSION.md v3.2.2~v3.4.x 항목 참고. 코드는 git 이력(v3.4.14 이전)에 남아있다.

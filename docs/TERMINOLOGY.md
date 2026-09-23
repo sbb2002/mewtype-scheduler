@@ -21,3 +21,9 @@
   `data` 브랜치와 같은 이유로 Vercel 배포 트리거에서 제외돼 있다(`vercel.json`). **"docs
   브랜치"라고 부르지 말 것** — `docs/` 폴더명과 헷갈린다.
 - **메인 콘텐츠** — preview(방송예고) · tweet(개인 트윗) · notice(공식 소식) 3종.
+- **모니터링 스냅샷** — (v3.8.9) 매일 KST 06:10 백엔드 `/monitor` 가 방금 끝난 하루(06:00~익일
+  06:00 KST)의 모니터 리포트 데이터를 계산해 굳혀 둔 것. `monitoring/days/YYYY-MM-DD.json`
+  (하루치 상세) + `monitoring/summary.json`(전 기간 잔디용 요약), `monitor_snapshot.py`.
+  웹 monitor 는 오늘치만 실시간으로 계산하고 지난 날짜는 이것을 읽는다. 외부 조회값
+  (healthchecks.io·Vercel)은 찍은 시각(`snapshotAt`) 기준. **"스냅샷"만 단독으로 쓰지 말 것** —
+  undo 스냅샷(`/undo` 되돌리기용), reconcile 의 "이전 스냅샷 대비 diff" 와 헷갈린다.

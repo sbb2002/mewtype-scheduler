@@ -27,6 +27,7 @@ class Config:
     telegram_webhook_secret: str = ""  # telegram_app 의 webhook 검증용
     healthcheck_url: str = ""       # healthchecks.io ping URL. 메인 tick 성공 끝에 GET
     healthchecks_api_key: str = ""  # healthchecks.io 읽기 전용 API 키. /monitor 의 백엔드 상태(4색)용
+    vercel_token: str = ""          # (v3.8.9) Vercel REST API 토큰. /monitor 의 배포 시도 수(Hobby 100회/일)용
     main_service_url: str = ""      # telegram_app 의 /resume 이 호출할 메인 서비스 URL
     # v3 — 외부 LLM(Groq). 없으면 번역/제목추출 비활성 (원문 노출 폴백).
     groq_api_key: str = ""
@@ -83,6 +84,7 @@ def load_config() -> Config:
         telegram_webhook_secret=os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip(),
         healthcheck_url=os.environ.get("HEALTHCHECK_URL", "").strip(),
         healthchecks_api_key=os.environ.get("HEALTHCHECKS_IO_READONLEY_TOKEN", "").strip(),
+        vercel_token=os.environ.get("VERCEL_TOKEN", "").strip(),
         main_service_url=os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/"),
         groq_api_key=os.environ.get("GROQ_API_KEY", "").strip(),
         groq_model=os.environ.get("GROQ_MODEL", "").strip() or "openai/gpt-oss-120b",
