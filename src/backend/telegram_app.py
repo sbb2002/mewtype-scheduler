@@ -892,7 +892,7 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
             log.warning("del: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
-        # (v3.8.7 후속) /del(terminate 포함)이 preview.json 은 지우면서도 모니터 이벤트
+        # (v3.8.7) /del(terminate 포함)이 preview.json 은 지우면서도 모니터 이벤트
         # 로그엔 남기지 않아, monitor 타임플롯이 이 삭제를 몰라 마지막으로 알려진 상태
         # (예: watching)를 지금까지 계속 진행 중인 것처럼 그렸다(실측 2026-09-22).
         _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=snapshot.get("channel_key", ""),
@@ -3772,7 +3772,7 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
     _op_clear(gh, now_iso, release_lock_id=pid)
     msg = f"✏️ 예고 편집 반영 ({', '.join(patch)}). /undo 로 되돌릴 수 있습니다."
     if "state" in patch:
-        # (v3.8.7 후속) /edit preview 로 state 를 바꿔도 모니터 이벤트 로그엔 안 남아
+        # (v3.8.7) /edit preview 로 state 를 바꿔도 모니터 이벤트 로그엔 안 남아
         # 타임플롯이 이 전이를 몰랐다 — /del 과 같은 이유로 추가.
         _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=it.get("channel_key", ""),
                   detail=f"/edit preview {orig_state}→{it.get('state')}",
@@ -3933,7 +3933,7 @@ def _monitor_live_report() -> dict:
     날짜 파일 수백 개를 다시 읽지 않게 하려는 분리.
 
     락을 잡은 채 생성해 동시 접속이 GitHub/healthchecks 를 중복 호출하지 않게 하고,
-    TTL 안의 재요청은 캐시를 돌려준다. (v3.8.7 후속) HTML/JSON 두 라우트가 이 캐시를
+    TTL 안의 재요청은 캐시를 돌려준다. (v3.8.7) HTML/JSON 두 라우트가 이 캐시를
     공유 — self_origin 삽입 같은 요청별 포맷팅만 각 라우트에서 따로 한다.
     """
     with _monitor_live_lock:
@@ -4539,7 +4539,7 @@ if _FLASK_AVAILABLE:
     def _monitor_live():
         """웹 monitor 페이지(이스터에그) 전용 — 접속 시각 기준 리포트. 읽기 전용·공개(latest.html 과 동일 정보).
 
-        (v3.8.7 후속) 리포트 자신의 절대 URL(self_origin)을 심어 보낸다 — 페이지가
+        (v3.8.7) 리포트 자신의 절대 URL(self_origin)을 심어 보낸다 — 페이지가
         이후 /monitor-live.json 을 스스로 다시 불러와(같은 문서 안에서 DOM 만 갱신)
         "진행중" 표시를 실시간에 가깝게 유지한다(전체 리로드로 인한 스크롤 튐 방지).
         """
@@ -4560,7 +4560,7 @@ if _FLASK_AVAILABLE:
 
     @app.get("/monitor-live.json")
     def _monitor_live_json():
-        """(v3.8.7 후속) /monitor-live 리포트와 같은 데이터를 JSON으로 — 위 페이지의
+        """(v3.8.7) /monitor-live 리포트와 같은 데이터를 JSON으로 — 위 페이지의
         자가 갱신 폴링 전용. srcdoc 로 로드된 문서는 origin 이 없어(about:srcdoc) 상대
         경로 fetch 가 부모 페이지로 잘못 나가므로, 페이지가 이 절대 URL을 직접 부른다."""
         try:
@@ -4833,7 +4833,7 @@ if __name__ == "__main__":
             assert removed and not g.store[_PREVIEW_PATH]["items"], "id 매칭 삭제 실패"
             print("[OK] _remove_broadcast (id 매칭)")
 
-            # (v3.8.7 후속) /del 이 모니터 이벤트 로그에도 남는지 — 실측 버그(2026-09-22):
+            # (v3.8.7) /del 이 모니터 이벤트 로그에도 남는지 — 실측 버그(2026-09-22):
             # /del(terminate) 로 지운 방송이 모니터 타임플롯엔 계속 watching 으로 남아있었음.
             _ev_del = next((v for k, v in g.store.items() if k.startswith("monitoring/events-")), "")
             assert '"flow": "preview"' in _ev_del and '"to_state": "none"' in _ev_del, _ev_del
@@ -5450,7 +5450,7 @@ if __name__ == "__main__":
         assert g2.store[_PREVIEW_ARCHIVE_PATH]["items"][0]["id"] == "pv_none1", g2.store[_PREVIEW_ARCHIVE_PATH]
         print("[OK] _activate_state_edit: state→none 즉시 제거+아카이브")
 
-        # (v3.8.7 후속) /edit preview 로 state 를 바꾸면(_apply_preview_edit 경유) 모니터
+        # (v3.8.7) /edit preview 로 state 를 바꾸면(_apply_preview_edit 경유) 모니터
         # 이벤트 로그에도 남는지 — 실측 버그(2026-09-22)와 동일 계기(del 뿐 아니라 edit 도).
         g2b = _GH()
         g2b.store[_PREVIEW_PATH] = {"items": [
