@@ -23,6 +23,13 @@ _HC_SECRET=""
 if gcloud secrets describe HEALTHCHECKS_IO_READONLEY_TOKEN &>/dev/null; then
   _HC_SECRET=",HEALTHCHECKS_IO_READONLEY_TOKEN=HEALTHCHECKS_IO_READONLEY_TOKEN:latest"
 fi
+# (v3.8.9) VERCEL_TOKEN: monitor_report 의 Vercel 배포 시도 수(Hobby 하루 100회 한도) 조회용.
+# Secret 있을 때만 붙인다(없으면 웹 monitor EXT 탭에 "확인 불가"). 만들기:
+#   printf '%s' "<토큰>" | gcloud secrets create VERCEL_TOKEN --data-file=- --replication-policy=automatic
+_VC_SECRET=""
+if gcloud secrets describe VERCEL_TOKEN &>/dev/null; then
+  _VC_SECRET=",VERCEL_TOKEN=VERCEL_TOKEN:latest"
+fi
 # (v3.7.3) YT_COOKIES: 회원 전용 라이브 조회(yt-dlp)에 쓰는 유튜브 멤버십 쿠키. Secret 이 있으면 파일로
 # 마운트하고(YT_COOKIES_FILE), 없으면 쿠키 없이 동작한다(쿠키 없이도 streams 탭 조회는 됨 — 2026-09-19
 # Cloud Run 실측). 만들기: gcloud secrets create YT_COOKIES --data-file=<쿠키파일(Netscape 형식)>
@@ -40,7 +47,7 @@ gcloud run deploy mewtype-telegram \
   --service-account "$INVOKER_SA" \
   --command=gunicorn \
   --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=240,src.backend.telegram_app:app" \
-  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}${_YTC_SECRET}" \
+  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}${_YTC_SECRET}${_VC_SECRET}" \
   --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,MONITOR_BRANCH=${MONITOR_BRANCH:-monitoring},TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}${_YTC_ENV}"
 
 # INGEST_DRY_RUN=1 이면 /ingest 가 schedule.json 을 안 쓰고 받은 원문·파싱결과만 DM 회신

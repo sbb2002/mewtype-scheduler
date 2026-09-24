@@ -9,7 +9,7 @@
 날짜를 바꾼다(재요청 없음). `yearly=True`(`/monitor --yearly`, v3.8.5 핫픽스)는 같은
 방식으로 1월 1일~오늘(또는 `date_kst`가 속한 해의 1월 1일~`date_kst`) 전부를 담는다 —
 날짜 수가 많아(최대 366일) `date_kst`로 지정한 날 외에는 healthchecks.io/Vercel 조회를
-건너뛴다(그 날짜들의 downRanges/vercelPush는 표시 안 됨, eventCount 기반 잔디 색은 정상).
+건너뛴다(그 날짜들의 downRanges/vercelDeploys는 표시 안 됨, eventCount 기반 잔디 색은 정상).
 인자 없는 `/monitor`·`--auto` 자동 실행은 계속 하루치만(가벼움 유지) — 단, 매월 1일
 06:00 KST 자동 실행은 전월 `--monthly`로, 1월 1일은 전년 `--yearly`로 대체된다(app.py
 `_monitor()` 참고).
@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from .monitor_log import DAY_START_HOUR, bucket_date_kst
+from .monitor_log import DAY_START_HOUR, _monitor_gh, bucket_date_kst
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,12 @@ MEMBER_KO = {"arale": "아라레", "yuno": "유노", "nonoka": "노노카", "rit
 def _kst_hm(iso: str) -> str:
     dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(KST)
     return dt.strftime("%H:%M")
+
+
+def _min_of_day(hm: str) -> int:
+    """"HH:MM" → 그날 06:00 기준 경과분(정렬용, 자정 넘김 포함)."""
+    h, m = map(int, hm.split(":"))
+    return (h * 60 + m - DAY_START_HOUR * 60) % 1440
 
 
 def _add_minutes(hm: str, minutes: int) -> str:
@@ -66,7 +72,8 @@ def parse_events(text: str) -> list[dict]:
 
 
 def _group(events: list[dict]) -> dict[str, list[dict]]:
-    out: dict[str, list[dict]] = {"tick": [], "ops": [], "notice": [], "tweet": [], "relay": [], "preview": []}
+    out: dict[str, list[dict]] = {"tick": [], "ops": [], "notice": [], "tweet": [], "relay": [], "preview": [],
+                                  "cmd": [], "upstream": []}
     for e in events:
         flow = e.get("flow")
         key = "tick" if flow in ("tick", "wake") else flow
@@ -94,16 +101,135 @@ def _ops_json(events: list[dict]) -> list[dict]:
 
 
 def _tone_json(events: list[dict]) -> list[dict]:
-    """notice/relay 공용 — 헤드라인을 안 남겨서 tone/detail만."""
+    """notice/relay 공용 — 헤드라인을 안 남겨서 tone/detail만. (v3.8.9) via(ingest|ops) 동봉 —
+    업스트림 이벤트가 없는 옛 날짜의 트리거 📥 를 자동 인입(via=ingest)만으로 세기 위해."""
     return [
-        {"t": _kst_hm(e["ts"]), "tone": e.get("result", "ok"), "d": e.get("detail", "")}
+        {"t": _kst_hm(e["ts"]), "tone": e.get("result", "ok"), "d": e.get("detail", ""), "via": e.get("via")}
+        for e in sorted(events, key=lambda x: x["ts"])
+    ]
+
+
+_ROUTE_LABEL = {"relay": "공식 스케줄", "notice": "소식", "tweet": "개인 트윗"}
+
+
+def _cutoff(real: list[dict]) -> str | None:
+    """실제 기록(v3.8.9 이후)의 첫 시각 — 이보다 앞선 이벤트만 복원 대상(같은 날 중복 방지)."""
+    return min((e["ts"] for e in real), default=None)
+
+
+def _derive_upstream(grouped: dict) -> list[dict]:
+    """(v3.8.9) 업스트림 기록(`flow="upstream"`)이 없던 시기의 알림을 기존 로그에서 복원.
+
+    `/ingest` 한 요청이 남기는 기록 규칙(telegram_app 코드 기준)으로 알림 1건을 센다 — 같은 초에
+    여러 알림이 몰리는 일이 실제로 있어(2026-09-20 01:29:53Z 에 멤버 4명 트윗 + 공식 1건) "같은 ts =
+    한 요청"으로는 묶을 수 없다:
+      - 개인 트윗: 요청 하나가 tweet 기록을 여러 줄(부가 degraded + 최종) 남기지만 모두 같은 ts·같은
+        멤버 → (ts, who) 하나 = 알림 1건.
+      - 공식(X): 요청마다 최종 relay 기록(`mode: none|added…|error…`)이 정확히 1줄 → 1건. 같은 ts 의
+        소식(notice) 기록은 그 알림에 붙인다(공식이 없으면 소식만으로 1건 — 점검(ECHO) 중 요청 등).
+        합동 LLM 확인 같은 부가 relay 기록(`collab-guest …`)은 세지 않는다.
+      - YouTube: `mode: yt-member-live` relay 1줄 = 1건.
+    via="ingest" 만 대상. via 없는 옛 기록(자동/수동 구분 불가), `[백필]` 기록(실제 알림 아님),
+    로그를 안 남긴 요청(무시 등)은 복원 못 해 생략.
+    """
+    cut = _cutoff(grouped["upstream"])
+
+    def ok_ev(e: dict) -> bool:
+        return (e.get("via") == "ingest" and (cut is None or e["ts"] < cut)
+                and "[백필]" not in str(e.get("detail", "")))
+
+    def tone(evs: list[dict]) -> str:
+        return "err" if any(e.get("result") == "err" for e in evs) else "ok"
+
+    out = []
+    tweets: dict[tuple, list[dict]] = {}
+    for e in filter(ok_ev, grouped["tweet"]):
+        tweets.setdefault((e["ts"], e.get("who", "")), []).append(e)
+    for (ts, who), evs in tweets.items():
+        final = next((e for e in evs if str(e.get("detail", "")).startswith("mode:")), evs[-1])
+        out.append({"ts": ts, "src": "x", "who": who, "tone": tone(evs),
+                    "d": f"개인 트윗 · {final.get('detail', '')}"})
+    notices: dict[str, list[dict]] = {}
+    for e in filter(ok_ev, grouped["notice"]):
+        notices.setdefault(e["ts"], []).append(e)
+    used_notice_ts = set()
+    for e in filter(ok_ev, grouped["relay"]):
+        d = str(e.get("detail", ""))
+        if not d.startswith("mode:"):
+            continue  # 부가 기록(collab-guest skip 등)
+        if d.startswith("mode: yt-member-live"):
+            out.append({"ts": e["ts"], "src": "yt", "who": e.get("who", ""), "tone": tone([e]),
+                        "d": f"회원 방송 · {d}"})
+            continue
+        attached = notices.get(e["ts"], []) if e["ts"] not in used_notice_ts else []
+        used_notice_ts.add(e["ts"])
+        parts = [f"공식 스케줄 · {d}"] + [f"소식 · {n.get('detail', '')}" for n in attached]
+        out.append({"ts": e["ts"], "src": "x", "who": "", "tone": tone([e] + attached), "d": " / ".join(parts)})
+    for ts, evs in notices.items():
+        if ts not in used_notice_ts:
+            out.append({"ts": ts, "src": "x", "who": "", "tone": tone(evs),
+                        "d": " / ".join(f"소식 · {n.get('detail', '')}" for n in evs)})
+    out.sort(key=lambda x: x["ts"])
+    return [{"t": _kst_hm(o["ts"]), "src": o["src"], "who": o["who"], "tone": o["tone"],
+             "d": o["d"][:200], "derived": True} for o in out]
+
+
+def _derive_cmd(grouped: dict) -> list[dict]:
+    """(v3.8.9) 운영자 명령 기록(`flow="cmd"`)이 없던 시기의 명령을 기존 로그에서 복원:
+    `/pause`·`/resume`(ops), `/del`·`/edit` 로 생긴 preview 기록(detail 이 "/" 로 시작),
+    수동 `/ingest`(via="ops" 인 relay·notice·tweet). 같은 ts 는 한 명령으로 묶는다. 응답 DM 은
+    기록이 없어 비운다. 조회성 명령(`/list` `/status` …)은 로그가 없어 복원 불가 — 생략."""
+    cut = _cutoff(grouped["cmd"])
+    by_ts: dict[str, list[tuple[str, dict]]] = {}
+
+    def add(cmd: str, e: dict) -> None:
+        if (cut is None or e["ts"] < cut) and "[백필]" not in str(e.get("detail", "")):
+            by_ts.setdefault(e["ts"], []).append((cmd, e))
+
+    for e in grouped["ops"]:
+        add(e.get("who") or "(운영자 제어)", e)
+    for e in grouped["preview"]:
+        d = str(e.get("detail", ""))
+        if d.startswith("/"):
+            add(d.split()[0], e)
+    for flow in ("relay", "notice", "tweet"):
+        for e in grouped[flow]:
+            if e.get("via") == "ops":
+                add("/ingest", e)
+    out = []
+    for ts, items in sorted(by_ts.items()):
+        cmd = items[0][0]
+        tones = [e.get("result", "ok") for _, e in items]
+        tone = "err" if "err" in tones else "degraded" if "degraded" in tones else "ok"
+        detail = " / ".join(filter(None, (str(e.get("detail", "")) for _, e in items))) or cmd
+        out.append({"t": _kst_hm(ts), "cmd": cmd, "tone": tone, "d": detail[:200], "reply": "", "derived": True})
+    return out
+
+
+def _upstream_json(events: list[dict]) -> list[dict]:
+    """(v3.8.9) 업스트림(`POST /ingest`) 알림 수신 — src(x|yt)·발신자·보낸 갈래·결과.
+    콘텐츠 변화는 담지 않는다(각 콘텐츠 행에서 같은 시각을 보고 판단)."""
+    return [
+        {"t": _kst_hm(e["ts"]), "src": e.get("source", "x"), "who": e.get("who", ""),
+         "tone": e.get("result", "ok"), "d": e.get("detail", "")}
+        for e in sorted(events, key=lambda x: x["ts"])
+    ]
+
+
+def _cmd_json(events: list[dict]) -> list[dict]:
+    """(v3.8.9) 제어 채널(텔레그램) 운영자 명령 — 명령 원문(detail)·결과 tone·응답 DM 요약(reply).
+    결과 판정 근거는 telegram_app._cmd_event_fields 참고(응답 DM 문구 기반 근사)."""
+    return [
+        {"t": _kst_hm(e["ts"]), "cmd": e.get("who", ""), "tone": e.get("result", "ok"),
+         "d": e.get("detail", ""), "reply": e.get("reply", "")}
         for e in sorted(events, key=lambda x: x["ts"])
     ]
 
 
 def _tweet_json(events: list[dict]) -> list[dict]:
     return [
-        {"t": _kst_hm(e["ts"]), "member": e.get("who", ""), "tone": e.get("result", "ok"), "d": e.get("detail", "")}
+        {"t": _kst_hm(e["ts"]), "member": e.get("who", ""), "tone": e.get("result", "ok"), "d": e.get("detail", ""),
+         "via": e.get("via")}
         for e in sorted(events, key=lambda x: x["ts"])
     ]
 
@@ -124,7 +250,10 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
         if evs and evs[0].get("from_state"):
             # "06:00" = 이 리포트가 다루는 하루의 시작(DAY_START_HOUR) — 그 전이가 관측되기
             # 전부터 이미 이 상태였다고 가정.
-            segs.append({"s": evs[0]["from_state"], "from": "06:00", "to": _kst_hm(evs[0]["ts"])})
+            # (v3.8.9) carried=True — 관측된 전이가 아니라 "하루 시작 전부터 이 상태"를
+            # 표시하는 선행 구간임을 남긴다(DM 멤버 현황이 시작 시각을 단정하지 않도록).
+            segs.append({"s": evs[0]["from_state"], "from": "06:00", "to": _kst_hm(evs[0]["ts"]),
+                         "carried": True})
         for i, e in enumerate(evs):
             to_state = e.get("to_state")
             title = e.get("title") or title
@@ -146,7 +275,7 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             # 관측 전 06:00부터 있었다고 가정하는 구간)는 근거 이벤트가 없어 대상에서 뺀다.
             if e.get("assumed_live"):
                 seg["assumed_live"] = True
-            # (v3.8.5 후속) 합동 live 막대 위 참여 멤버 아이콘용 — 전이 시점 값 그대로.
+            # (v3.8.5a) 합동 live 막대 위 참여 멤버 아이콘용 — 전이 시점 값 그대로.
             if e.get("collab_with"):
                 seg["collab_with"] = e["collab_with"]
             segs.append(seg)
@@ -160,11 +289,14 @@ def _day_bounds(date_kst: str) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def _fetch_health_down_ranges(api_key: str, uuid: str, date_kst: str) -> list[dict]:
+def _fetch_health_down_ranges(api_key: str, uuid: str, date_kst: str) -> list[dict] | None:
     """healthchecks.io flips(up/down 이력)에서 이 날짜(06:00 KST~익일 06:00 KST)의 다운 구간만
-    HH:MM 범위로 변환. 키/uuid 없거나 조회 실패하면 빈 리스트(=하루 종일 정상으로 렌더) — 조용히 성능저하."""
+    HH:MM 범위로 변환. (v3.8.9) 키/uuid 없거나 조회 실패하면 None(= "확인 불가") — 예전엔 빈
+    리스트를 돌려 조회 여부가 데이터에 안 남았다. 이제 저장값은 None 으로 구분해 두되, 프론트는
+    기존 합의대로(healthchecks.io 를 날짜마다 몰아 부르지 않기 위한 근사) 다운 없음=정상으로
+    그리고 막대 툴팁에만 "미조회"를 밝힌다."""
     if not api_key or not uuid:
-        return []
+        return None
     day_start, day_end = _day_bounds(date_kst)
     try:
         resp = requests.get(
@@ -180,7 +312,7 @@ def _fetch_health_down_ranges(api_key: str, uuid: str, date_kst: str) -> list[di
         flips = resp.json().get("flips", [])
     except Exception as e:  # noqa: BLE001
         logger.warning("monitor_report: healthchecks.io flips 조회 실패: %s", e)
-        return []
+        return None
 
     flips.sort(key=lambda f: f["timestamp"])
     ranges: list[dict] = []
@@ -197,29 +329,53 @@ def _fetch_health_down_ranges(api_key: str, uuid: str, date_kst: str) -> list[di
     return ranges
 
 
-def _vercel_push_count(github_token: str, date_kst: str) -> int:
-    """그날(06:00 KST~익일 06:00 KST) main 브랜치 push 횟수 — push_monitor.py의
-    fetch_commits(이미 검증된 코드) 재사용."""
-    if not github_token:
-        return 0
-    from .push_monitor import _CODE_REPO, fetch_commits
+# (v3.8.9) Vercel 프로젝트 식별자 — 비밀값 아님(REST API 조회로 확인, 2026-09-23). 토큰만
+# Secret(VERCEL_TOKEN). 프로젝트/팀 이름은 레포명 오타 정정과 무관하게 이 ID 로 고정된다.
+VERCEL_PROJECT_ID = "prj_3CjMc3VJmYbQUqMNtJqDKSnyqWAB"
+VERCEL_TEAM_ID = "team_13wMbRg9gpyOZm4v2xj8skq1"
 
+
+def _vercel_deploys(vercel_token: str, date_kst: str) -> dict | None:
+    """(v3.8.9) 그날(06:00 KST~익일 06:00 KST) Vercel 배포 시도 건수 — Vercel REST API
+    `/v6/deployments` 의 실제 배포 목록을 센다. Hobby "하루 100회 배포" 한도에는 브랜치·
+    성공 여부와 무관하게 배포 시도 전부가 잡히므로(2026-09-13 사고: ERROR 배포도 소진)
+    전체(total)를 기준으로 하고, production(main)/preview(그 외 브랜치)/error 를 같이 남긴다.
+
+    v3.8.8 까지는 GitHub `main` 커밋 수로 근사했는데, push 1회에 커밋 여러 개면 부풀고
+    다른 브랜치 배포·실패 배포는 못 셌다(2026-09-22 실측: 커밋 16 / 실제 배포 18).
+    토큰 없음·조회 실패는 None(확인 불가)."""
+    if not vercel_token:
+        return None
     day_start, day_end = _day_bounds(date_kst)
-    since = day_start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    params = {
+        "projectId": VERCEL_PROJECT_ID, "teamId": VERCEL_TEAM_ID, "limit": 100,
+        "since": int(day_start.timestamp() * 1000), "until": int(day_end.timestamp() * 1000),
+    }
+    deps: list[dict] = []
     try:
-        commits = fetch_commits(github_token, _CODE_REPO, "main", since)
+        for _ in range(20):  # 하루 100회 한도 기준 페이지 2개면 충분 — 무한루프 방지 상한
+            resp = requests.get(
+                "https://api.vercel.com/v6/deployments",
+                headers={"Authorization": f"Bearer {vercel_token}"}, params=params, timeout=15,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            deps.extend(body.get("deployments", []))
+            nxt = (body.get("pagination") or {}).get("next")
+            if not nxt:
+                break
+            params["until"] = nxt  # 최신→과거 순 페이지네이션: 다음 페이지는 이 시각 이전
     except Exception as e:  # noqa: BLE001
-        logger.warning("monitor_report: vercel push count 조회 실패: %s", e)
-        return 0
-    cnt = 0
-    for c in commits:
-        try:
-            ts = datetime.fromisoformat((c.get("date") or "").replace("Z", "+00:00")).astimezone(KST)
-        except ValueError:
-            continue
-        if ts < day_end:
-            cnt += 1
-    return cnt
+        logger.warning("monitor_report: vercel 배포 목록 조회 실패: %s", e)
+        return None
+    start_ms, end_ms = int(day_start.timestamp() * 1000), int(day_end.timestamp() * 1000)
+    deps = [d for d in deps if start_ms <= d.get("created", 0) < end_ms]
+    return {
+        "total": len(deps),
+        "production": sum(1 for d in deps if d.get("target") == "production"),
+        "preview": sum(1 for d in deps if d.get("target") != "production"),
+        "error": sum(1 for d in deps if (d.get("state") or d.get("readyState")) == "ERROR"),
+    }
 
 
 def _month_dates(end_date_kst: str) -> list[str]:
@@ -247,31 +403,38 @@ def _year_dates(end_date_kst: str) -> list[str]:
 
 def _build_day(
     gh, date_kst: str, *, now_hm: str | None,
-    healthchecks_api_key: str, healthchecks_uuid: str, github_token_for_commits: str,
+    healthchecks_api_key: str, healthchecks_uuid: str, vercel_token: str,
     fetch_external: bool = True,
 ) -> dict:
     """하루치(06:00 KST~익일 06:00 KST) 이벤트 로그 + healthchecks.io + 커밋 수를 모은다.
 
-    `fetch_external=False`면 healthchecks.io/Vercel 조회를 건너뛰고 downRanges=[]/
-    vercelPush=0 으로 채운다(v3.8.5, `--yearly`가 날짜당 최대 366회 외부 API를 부르지
-    않도록 — 선택된 날짜에만 True로 준다. 잔디 색(그룹의 정상/degraded/err 판정)은
-    이벤트 로그만으로 계산돼 영향 없다).
+    `fetch_external=False`면 healthchecks.io/Vercel 조회를 건너뛴다(v3.8.5, `--yearly`가
+    날짜당 최대 366회 외부 API를 부르지 않도록 — 선택된 날짜에만 True로 준다. 잔디 색은
+    이벤트 로그만으로 계산돼 영향 없다). (v3.8.9) 건너뛴 값은 []/0 이 아니라 None(확인 불가).
 
-    (v3.9) 이벤트 로그는 monitoring 브랜치에 있다."""
-    import os
-    from .gh_store import GitHubStore
+    (v3.8.9) `hasLog` — 그날 이벤트 로그 파일(`events-YYYY-MM-DD.jsonl`)이 저장소에
+    있었는지. 파일이 없으면 "이벤트 0건"인지 "기록 누락"인지 구분할 수 없으므로 잔디/DM 이
+    0건으로 단정하지 않도록 따로 남긴다(monitor_log 는 변화 없는 tick 을 안 쓰므로 조용한
+    날엔 실제로 파일이 없을 수 있다)."""
+    # (v3.9) 이벤트 로그는 monitoring 브랜치에 있다 — monitor_log 의 헬퍼로 브랜치만 바꾼
+    # 복제본을 얻는다(mock store 는 그대로 통과하므로 self-test 영향 없음).
+    text, _sha = _monitor_gh(gh).read_text(f"monitoring/events-{date_kst}.jsonl")
+    return build_day_from_text(
+        date_kst, text, now_hm=now_hm,
+        down_ranges=(
+            _fetch_health_down_ranges(healthchecks_api_key, healthchecks_uuid, date_kst)
+            if fetch_external else None
+        ),
+        vercel_deploys=_vercel_deploys(vercel_token, date_kst) if fetch_external else None,
+    )
 
-    # monitoring 브랜치에서 읽기 — 실제 GitHubStore만 브랜치 교체
-    # (self-test 의 _RangeGh 같은 mock은 속성이 없어도 .read_text 만 있으면 됨)
-    monitor_branch = os.environ.get("MONITOR_BRANCH", "monitoring").strip() or "monitoring"
-    if hasattr(gh, "token") and monitor_branch != getattr(gh, "branch", None):
-        # 실제 GitHubStore — 브랜치만 교체한 복제본
-        gh_monitor = GitHubStore(gh.token, gh.repo, monitor_branch, session=gh.session, timeout=gh.timeout)
-    else:
-        # mock 또는 이미 monitoring 브랜치 — 그대로 쓰기
-        gh_monitor = gh
 
-    text, _sha = gh_monitor.read_text(f"monitoring/events-{date_kst}.jsonl")
+def build_day_from_text(
+    date_kst: str, text: str | None, *, now_hm: str | None,
+    down_ranges: list[dict] | None, vercel_deploys: dict | None,
+) -> dict:
+    """(v3.8.9) `_build_day` 의 순수 부분 — 이미 읽어온 이벤트 로그 텍스트(없으면 None)와
+    외부 조회 결과로 하루치 dict 를 만든다. 스냅샷(`monitor_snapshot`)이 재사용."""
     events = parse_events(text)
     grouped = _group(events)
     return {
@@ -280,20 +443,36 @@ def _build_day(
         "notice": _tone_json(grouped["notice"]),
         "relay": _tone_json(grouped["relay"]),
         "tweet": _tweet_json(grouped["tweet"]),
+        # (v3.8.9) 실제 기록 + 그 이전 시각의 복원분(derived)을 합쳐 시간순으로
+        "cmd": sorted(_cmd_json(grouped["cmd"]) + _derive_cmd(grouped), key=lambda x: _min_of_day(x["t"])),
+        "upstream": sorted(_upstream_json(grouped["upstream"]) + _derive_upstream(grouped),
+                           key=lambda x: _min_of_day(x["t"])),
         "preview": _preview_json(grouped["preview"], now_hm),
-        "downRanges": (
-            _fetch_health_down_ranges(healthchecks_api_key, healthchecks_uuid, date_kst)
-            if fetch_external else []
-        ),
-        "vercelPush": _vercel_push_count(github_token_for_commits, date_kst) if fetch_external else 0,
+        "downRanges": down_ranges,
+        "vercelDeploys": vercel_deploys,
         "eventCount": len(events),
+        "hasLog": text is not None,
+        # (v3.8.9) 실시간 모니터링(2026-09-15~) 이전 날짜는 아카이브에서 사후 복원한 `[백필]` 기록뿐이다
+        # — 그날 트리거가 실제로 몇 건이었는지는 알 수 없으므로 잔디 숫자를 만들지 않는다.
+        "backfillOnly": bool(events) and all("[백필]" in str(e.get("detail", "")) for e in events),
     }
+
+
+def day_trigger_count(day: dict) -> int:
+    """잔디 칸 숫자 = 그날 트리거 건수. 프론트 `triggerCount()`/`computeIngest` 와 같은 정의:
+    ops + tick/wake + ingest. (v3.8.9) ingest = 업스트림 알림 수(`upstream`)가 있으면 그것,
+    없으면(옛 날짜) relay·notice·tweet 중 via 가 ingest(또는 via 기록 이전)인 것."""
+    if "upstream" in day:  # (v3.8.9) 실제 기록 + 옛 로그 복원분 — 복원 못 한 건 세지 않는다
+        ingest = len(day["upstream"])
+    else:
+        ingest = sum(1 for k in ("relay", "notice", "tweet") for e in day[k] if e.get("via") in (None, "ingest"))
+    return len(day["ops"]) + len(day["ticks"]) + ingest
 
 
 def build_report(
     gh, *, date_kst: str | None = None, monthly: bool = False, yearly: bool = False,
     healthchecks_api_key: str = "", healthchecks_uuid: str = "",
-    github_token_for_commits: str = "",
+    vercel_token: str = "",
 ) -> dict:
     """오늘(또는 date_kst)치, `monthly=True`면 date_kst가 속한 달의 1일~date_kst,
     `yearly=True`면 date_kst가 속한 해의 1월 1일~date_kst 전부를 모아 REPORT dict로.
@@ -315,7 +494,7 @@ def build_report(
         d: _build_day(
             gh, d, now_hm=(now_kst.strftime("%H:%M") if d == today_bucket else None),
             healthchecks_api_key=healthchecks_api_key, healthchecks_uuid=healthchecks_uuid,
-            github_token_for_commits=github_token_for_commits,
+            vercel_token=vercel_token,
             fetch_external=(not yearly) or d == date_kst,
         )
         for d in dates
@@ -329,6 +508,18 @@ def build_report(
         "dates": dates,
         "days": days,
         "eventCount": days[selected]["eventCount"],
+    }
+
+
+def snapshot_report(day: dict, date_kst: str, summary_days: dict) -> dict:
+    """(v3.8.9) 전 기간(all) 리포트 — 상세는 date_kst 하루치만 싣고, 나머지 날짜는
+    `summary`(monitor_snapshot 의 summary.json days)로 잔디만 그린다. 다른 날짜 상세는
+    페이지가 필요할 때 `/monitor-live/day.json` 으로 불러온다(SELF_ORIGIN 있을 때만).
+    웹 monitor(/monitor-live, date_kst=오늘)와 폴백 latest.html(date_kst=전날) 공용."""
+    return {
+        "date": date_kst, "monthly": False, "yearly": False, "all": True,
+        "dates": [date_kst], "days": {date_kst: day}, "summary": summary_days,
+        "eventCount": day.get("eventCount", 0),
     }
 
 
@@ -347,12 +538,12 @@ def report_filename(report: dict) -> str:
 def run(
     gh, *, date_kst: str | None = None, monthly: bool = False, yearly: bool = False,
     healthchecks_api_key: str = "", healthchecks_uuid: str = "",
-    github_token_for_commits: str = "", self_origin: str = "",
+    vercel_token: str = "", self_origin: str = "",
 ) -> dict:
     """`_handle_monitor`/`/monitor` Flask 라우트 진입점. {"html", "date", "events",
     "filename"} 반환.
 
-    `self_origin`: (v3.8.7 후속) 웹 monitor(`/monitor-live`) 전용 — 이 리포트를 생성한
+    `self_origin`: (v3.8.7) 웹 monitor(`/monitor-live`) 전용 — 이 리포트를 생성한
     서비스 자신의 절대 URL. 비어있지 않으면 리포트가 자기 자신을 주기적으로 다시
     불러와(같은 문서 안에서 갱신, 페이지 리로드 없음) "진행중" 표시가 실시간에
     가깝게 유지된다. `/monitor` DM(정적 스냅샷)은 빈 문자열 그대로 — 자가갱신 불필요.
@@ -360,7 +551,7 @@ def run(
     report = build_report(
         gh, date_kst=date_kst, monthly=monthly, yearly=yearly,
         healthchecks_api_key=healthchecks_api_key,
-        healthchecks_uuid=healthchecks_uuid, github_token_for_commits=github_token_for_commits,
+        healthchecks_uuid=healthchecks_uuid, vercel_token=vercel_token,
     )
     return {
         "html": render_html(report, self_origin=self_origin), "date": report["date"],
@@ -489,6 +680,12 @@ _TEMPLATE = r"""<!doctype html>
     border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer}
   .grass-tabs button:hover{color:var(--ink); border-color:var(--muted)}
   .grass-tabs button.active{color:var(--ink); background:var(--line); border-color:var(--accent)}
+  /* (v3.8.9) 데이터가 없는 달 — 눌러도 빈 달력만 나오므로 비활성 */
+  .grass-tabs button:disabled{opacity:.35; cursor:default}
+  .grass-tabs button:disabled:hover{color:var(--muted); border-color:var(--line)}
+  /* (v3.8.9) 모바일 전용 "주간요약 보기" — 타임라인 "요약 보기"(.tl-right-toggle)와 같은 모양·같은
+     노출 규칙(640px 이하에서만). 버튼 줄은 PC 에선 비어 있으므로 여백도 모바일에서만. */
+  @media (max-width:640px){ .grass-toolbar{margin-bottom:10px} }
   .grass-cal{overflow-x:auto}
   #grassCalSvg{display:block}
   .grass-col-label{font:10px var(--mono); fill:var(--muted-2); text-anchor:middle}
@@ -551,7 +748,6 @@ _TEMPLATE = r"""<!doctype html>
   }
   .tl-crosshair{position:absolute; top:0; width:1px; background:rgba(255,255,255,.35); pointer-events:none; display:none; z-index:5}
   .tl-lane{stroke:var(--line); stroke-width:1}
-  .tl-hour{stroke:var(--line-soft); stroke-width:1}
   .tl-hour-label{fill:var(--muted-2); font:10px var(--mono)}
   /* (사용자 요청) preview 행은 건수 막대 대신 방송함/안함 체크·X 텍스트(memberGrid 라이브
      판정 재사용) — off 는 live-dot.off 와 같은 중립 회색(에러 아님, 그냥 "오늘은 없었음") */
@@ -562,6 +758,13 @@ _TEMPLATE = r"""<!doctype html>
   .tl-dot{cursor:pointer; stroke:var(--bg); stroke-width:1.5; transition:r .16s ease, cy .16s ease}
   .tl-dot:hover{stroke:var(--ink)}
   .tl-dot.dim{opacity:.15}
+  /* (v3.8.9) 업스트림 감지 아이콘 — 메인 화면 네임플레이트 X·YouTube 아이콘을 결과색 둥근 네모 테두리
+     안에(테두리 색은 JS 가 rect 에 직접 지정 — .tl-dot 의 공통 stroke 는 덮지 않음). 아이콘은 밝은
+     글자색, 호버 시 흰색. */
+  .tl-up-icon{color:var(--ink)}
+  .tl-up-box{fill:var(--panel)}
+  #tlRightSvg .tl-right-health-label.zero{fill:var(--muted-2)}  /* (v3.8.9a) 소식·트윗 0건 */
+  .tl-up-icon:hover{color:#fff}
   /* (후속) 트리거 = 짧은 세로 히스토그램 막대 (점 대체) */
   .tl-trigger-baseline{stroke:#ffffff; stroke-width:1; opacity:.55}
   .tl-trigger-bar{cursor:pointer; transition:filter .16s ease}
@@ -584,7 +787,7 @@ _TEMPLATE = r"""<!doctype html>
   .tooltip .tt-raw{font-family:var(--mono); font-size:.76rem; margin-bottom:3px}
   .tooltip .tt-raw.ok{color:var(--ok)} .tooltip .tt-raw.err{color:var(--err)} .tooltip .tt-raw.degraded{color:#f5c344}
   .tooltip .tt-d{color:var(--muted)}
-  /* (v3.8.5 후속) 합동 live 구간 — 막대 위 아이콘 + 팝업 안 참여 멤버 목록 */
+  /* (v3.8.5a) 합동 live 구간 — 막대 위 아이콘 + 팝업 안 참여 멤버 목록 */
   .tl-collab-icon{border-radius:3px}
   .tt-collab{margin-top:4px; color:var(--ink); font-size:.74rem}
   .tt-collab img{width:14px; height:14px; border-radius:3px; vertical-align:-3px; margin:0 3px 0 6px}
@@ -623,7 +826,8 @@ _TEMPLATE = r"""<!doctype html>
     건수가 많을수록 진한 녹색입니다. 하루 기준은 06:00~익일 06:00(KST) — 자정 넘겨 이어지는 방송을
     하루로 묶기 위함.</p>
   <div class="grass-tabs" id="grassTabs" hidden></div>
-  <div class="grass-cal"><svg id="grassCalSvg"></svg></div>
+  <div class="grass-toolbar"><button class="tl-right-toggle" id="grassWeekToggle" type="button">📊 주간요약 보기</button></div>
+  <div class="grass-cal" id="grassCal"><svg id="grassCalSvg"></svg></div>
 </section>
 
 <div class="tabs" role="tablist">
@@ -696,9 +900,9 @@ _TEMPLATE = r"""<!doctype html>
 
   <section class="panel">
     <h2>Vercel Hobby 배포 한도</h2>
-    <p class="panel-sub">data 브랜치 분리(v3.4.11) 이후엔 main/devpapers/기타 브랜치 push만 카운트됨.</p>
+    <p class="panel-sub">Vercel API 실제 배포 시도 수(06:00~익일 06:00 KST) — 한도엔 브랜치·성공 여부와 무관하게 다 잡힙니다. 숫자 위에 마우스를 올리면 production/preview/실패 내역.</p>
     <div class="ext-gauge-row">
-      <div class="stat-tile" id="extVercelTile"><b id="extVercelUsed">—</b><span>push 횟수 / 100</span></div>
+      <div class="stat-tile" id="extVercelTile"><b id="extVercelUsed">—</b><span>배포 시도 / 100</span></div>
       <div class="stat-tile"><b id="extVercelStatus">—</b><span>상태</span></div>
     </div>
   </section>
@@ -730,9 +934,24 @@ const MEMBER_KO = { arale:"아라레", yuno:"유노", nonoka:"노노카", ritsu:
 // 40x40 PNG, base64). 텍스트보다 폭이 좁아 라벨 칸 전체 폭을 줄일 수 있다.
 const MEMBER_ICON = { ritsu:"data:image/png;base64,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", yuno:"data:image/png;base64,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", arale:"data:image/png;base64,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", miyako:"data:image/png;base64,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", nonoka:"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAKgElEQVR42q1Ye1BTVxr/3eReAmhVLC2BSAwICwp2UIZHffCIEUXa2lasdVxLt+rqaNdqtWK7La6VsbvWTp1OpduWboXqIK1i3yndGEMoCtgobhWi8ghhY1DQUMWE5F6S/cOeuzchgI79Zu4k597vnPs73+P3ffdQ+E08AEUBHgBYnb+iRFurl0ZHyn4FgLiYPxzff7j8IATCsVwAzdAujCLbtmxlAGDPO3tZMm/ho3M+bO+yjAeA6EjZr/7WH1ZyElO2J0RNvZ0QNfV2bkLaYG5C2mBC1NTbG5597o+4T7l24XL+6vwVJWRt4e+eTYXLOJYL8J1DCS2ybnnBPktL61pfJfHYsZ7B/n4qf83znxRsWPOiuHgX93mYfOWbb+8tGQnQZFmE7usT1U+R8Zrlq/u7W1rEZD1y32y/OSAPHhcYPT2uYP/h8oPbtmxliMUp4YLRYZFVcaERiwFg146/UgBw/LiOrW06Jx7s76fM9psDRDc1OY3JylDSkgAJnC4nfH8BQKfXco2GBlYePC6QzI16OEICAHlZC0QpyfE4flzH6n6qo832mwNZaSlr9x8uP5gRm0HrL+s5AKB9d012w4wNAwAsXLyMAcDqfqqjhcAAQJWjBAAwbjsAgBUFe/3PVaXTak09LQmQ4OCnH0k6rl1xDvb3U088toSalZmJcEUIxhmMjNl+0zGcF+jhHpysqcGszEwAgPH6DcpsvznwRuHfguZmzeZ1GLcdVpMN4YoQsKJgHlhvuwWADaHRMn4Tc7Nmi15//XWm0dAwACAoXBECq8mGxrZmTmhhXxGRwORYLmDtk0vzyIPGtmaO7b+KH76qZAHgxHdfBSkzZnhNZkXBCI2W8eCIhEbLEBotG/Ky4uJietvmV4Ma25o5taYeJ2tq0NPVJSLgJkvDWQB4/vHUEK8kEWbPuuUF+04ZzhTIg8cFAoB06tTBf7z5Gu0L4n5E86MWe959yyF8x0Ll3DXL1q8q2zFth3hn885Bv1lMM7SLZPMpw5kCYjlhbBHL3YswbvuQ+CQgAaDola3rl6wpqPDHqyI+GBnatW3LVoZmaFfpkUPrAWDb5leD/IERgr1XkESSYuKQmpzGOOz91cvWryobjvRFvjcqyysiKks+KfCnbDXZ7hos47bzF7Ga8VI7JYzT1CnTaOK9jNgMvwkrFg7qTp10Hzl29NYDQRNPr3j2OUmuKh1uirlTBTqu8dlK7gGA2MP6vXyTiXHbcebMecRGT4KbYsC47ejs7QNAxWxYt+a/F64Yfx7RgqRm/uvlrQ/1dHWJhLHGuO1eVMK47ajV1Y3qVq3+rBdIVY4SVpONd3euKv0O185/vOT8iRNS34T1AkhKS/Ghyg+XrigQkckjuZe82N81nDS1XvQaE9Kf/2T+YwCgnKZ0jxiDw0m4ImRUsL7idDmh1tR73UuKifPanK8hRk0SXyoh1YLEUW+7BSdrahAzMWhUgJIAyZ0N/ecMnyzhihAv148md2XBptaLPNCm1otISY7nCdc3W4VWjpkYhATpBLTecAyx7N2K39S2W7q9xpMUCgqAh+2/6uWS1htn4UvixOotZhNIaZT/ljC+pfJ3s2DPFatHramHPDHe6/5UuQKaH7V8xt5pEvzHqDJjBrT6s7CabLzr7xlgZXlFBAAEy6RerrJ1dCJBOgGFRbu57LzFjuy8xY7Cot1cuCIECdIJfCKQUCDWU2vqQfSz8xY7nC4nWsymIS4mtOavo/YCuOy55VdIo0nc1tR6EY1tzVxBYaGj0dDAM3CjoYEtLNrNyRPjkSCdAKfLiQTpBN5aak09X2t5Knv3LUe1Rs2R9Rm3HVr9WXRcu+Ik5dZvDBLkL6184Rldw+kFxHLhiv+DSU1OY4S8BQAfHzwAtaYeuap0yBO9F9bptRxpbi+bOmAxd3AyeRR97Nhhhzx4XCCJXWLNhNjY2fs2vv9989+NV9O3pPItv5h0MUVFReKqL75psFgt7t2bNkoudfdiUtQUxEWFwdP7KxJTHmXiYuNFt8wWMOPGAgCSH0kalsfmZ88VaU7Uuh+mg0TzUqeDGqBEf3phKR7ggpgZ2UoqLioMVpMN0omhCB8bwmh/ro+jHPYLb59475y4lxZ13uh0D5sk8sR4OF1OvpzNm5fFECCzMjORq0r3Ilx/Yj5vRFaGkl5S8CTkifF8XAfLpF6bYvuv4mZfN3vXWZyanMYQt5FKQLJXmTEDLWYTtPqzaGq9OCJIMkerPwut/iwfn0JpMZtw2mDkx1Xq7wJH5UESY4VFu7meri7RQ5GR7lxVOk31milPqNyjzJgB83kj5Imjc1quKh3m80YesPm8EbmqdJ47qzVqDgA2PPM0Y7x+g/rh39/cHQ/mqtKR0tTHLLr+gJiA9YTKPb7WEbqTACG/Ql2iTyoK47bDfN6IlKY+JnXKNNp3vWE7an8KC1S5vEVHc+f3Rz6jJkuDqeFiUsh/F7r7MGCzYVqfmNfPm79w5pB267Xt2z1CkiYsP2bj054xG5/2OF1OL5BqTf0QKxGQi/JXeoSWJqLW1GP/51WcsAnR6bXcgztWeawzJvH6sQ+GrTJr6qP0l/WcZ8cOkddHU3RYZFXm3HmPFRcX08ZL7VTPFatHuGNJgATVGjV/UpA1ZzYnTUhiRorB7gtNrPH6DYrwaFaGklblKFGrq0O1Rs2RkwlSo7PzFjsudLSM8TqbIZ95q/NXlKhUT6ybmzUbtbq6IccYQqBOlxNfHCpz+wPV5/GIbD1Wh+8Rid3SjVmZmWgxm3hwwmZkeozU815pBer16rKZmXP+vOedvSzHcgEUIepP9n3w0eM581ZbTTa/9XK4Xu9uxNbRiZCoyXC6nLhs6kCsImrIWkIrnrv0Swj5yqQ4lgsoL9w+Xqx45KoqRwnNj1q/lvs9xG7p9mpEfDvtcEUIjpZ9ica2Zu7TIwcCAEBEM7RrTFIyk6tKH/F7914sNpwEy6SQBEiGXYsVBSNYJoWwKREBwJLlS3t9lXV6LecP2Ghj3/u+gJwuJx/fdks3dHotJ3z+W3PszYNHK74IJWWJKAt34duu+77wXoV/R1szR9YgvWQoLfEMOd0ynDP0AEC1Rs3ZOjq9DiDv173+WEDYU5L4I61bi9nEH3LyFtzzzl72g9ID3zYaGtj3P//Uq8ms1qg54hadXsvp9FpOuAHiIuGl02s5UmcJyI8PHvBysfB5i9kEW4/VQea9sm3Lao7lAjiWCxBT+hqqprPT/VT2PEVPe1dO3CNJlKmzw22xWtzLnlnymdlsSTJ1drhNnR0875FxT1eXaMz48Z629la38Go0NLCyiElionf6Jz0i5fJBMjZ1drgV8ogfFizIOWWoq59pvX5t0GK1uGURk8RbN6x9KWWRslRx2z4xedHCW5Tw2O3ox2XLszMzbu/ctSvQyQ3OKj1yaH1leUXEpr+8uAgAjlVWTS8t/YgxmdqCFIopjkfnzKFjIieffPaFlXTe/IUztbV6qXJuRjcAbN7w4i8vvbI59cLly3UAoPnyW6bkww9uVam/C8ybv3DmPyvKNtEM7dr58mtfx8dMOarX1wzueOONAQA4Yfj55JLlS3tphnb9D3snqlVmw93zAAAAAElFTkSuQmCC" };
 
-let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_GROUPS, BACKEND_SEGS, CURRENT_DAY;
+let PREVIEW, TICKS, OPS, NOTICE, TWEET, RELAY, INGEST, TRIGGER_GROUPS, BACKEND_SEGS, CURRENT_DAY, CMD, UPSTREAM;
+const UPSTREAM_SRC = { x:"X 알림", yt:"YouTube 알림" };
+// (v3.8.9) 메인 화면 preview 네임플레이트의 이동 버튼 아이콘과 같은 경로(src/frontend/js/render.js).
+const YT_ICON_D =
+  "M23 12s0-3.6-.46-5.3a2.78 2.78 0 0 0-1.95-1.96C18.9 4.28 12 4.28 12 4.28s-6.9 0-8.6.46A2.78 2.78 0 0 0 1.46 6.7C1 8.4 1 12 1 12s0 3.6.46 5.3a2.78 2.78 0 0 0 1.95 1.96c1.7.46 8.6.46 8.6.46s6.9 0 8.6-.46a2.78 2.78 0 0 0 1.95-1.96C23 15.6 23 12 23 12ZM9.75 15.5v-7l6 3.5-6 3.5Z";
+const X_ICON_D =
+  "M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z";
+// (v3.8.9) 운영자 명령 원문·응답 요약은 사람이 입력한 텍스트라 툴팁/표(innerHTML)에 넣기 전에 escape.
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-function computeIngest(relay, notice, tweet){
+// (v3.8.9) 📥 트리거 = 업스트림 알림 수신(upstream 이벤트). 그 기록이 없는 옛 날짜만 예전처럼
+// relay·notice·tweet 결과에서 역산하되, 운영자 수동 /ingest(via=ops)는 빼고 센다.
+function computeIngest(relay, notice, tweet, upstream){
+  if (Array.isArray(upstream)) return upstream.map(e => ({
+    t:e.t, source:(UPSTREAM_SRC[e.src] || e.src) + (e.who ? " · " + e.who : ""), ok:e.tone!=="err",
+    target:{lane:"upstream", row:"all"}, detail:e.d + (e.derived ? " · (이전 로그에서 복원)" : "") }));
+  const auto = e => e.via == null || e.via === "ingest";
+  relay = relay.filter(auto); notice = notice.filter(auto); tweet = tweet.filter(auto);
   return [
     ...relay.map(e => ({ t:e.t, source:"공식(BDP_yumemita)", ok:e.tone!=="err", target:{lane:"relay", row:"account"} })),
     ...notice.map(e => ({ t:e.t, source:"공식(BDP_yumemita)", ok:e.tone!=="err", target:{lane:"notice", row:"notice"} })),
@@ -763,7 +982,7 @@ function groupTriggerEvents(ops, ticks, ingest){
       title:(TRIGGER_GLYPH[e.kind]+" ")+(e.mode==="baseline"?"baseline tick":e.mode==="light"?"light tick":"wake"),
       d:e.d, idx:"tick"+i })),
     ...ingest.map((e,i) => ({ t:e.t, kind:"ingest", ok:e.ok,
-      title:"📥 "+e.source, d:"→ "+e.target.lane, idx:"ingest"+i })),
+      title:"📥 "+esc(e.source), d:e.detail ? esc(e.detail) : "→ "+e.target.lane, idx:"ingest"+i })),
   ];
   const groups = {};
   points.forEach(p => { (groups[p.t] = groups[p.t] || []).push(p); });
@@ -817,15 +1036,13 @@ function computeBackendSegs(ticks, ops, downRanges){
   return buildLayeredSegs([
     { state:"busy",   ranges: ticks.map(e => ({ from:e.t, to:addMinutes(e.t, BACKEND_BUSY_MIN) })) },
     { state:"paused", ranges: pausedRanges(ops) },
+    // downRanges == null(healthchecks.io 미조회·조회 실패)은 "다운 없음"으로 그린다 — healthchecks.io
+    // 호출을 날짜마다 몰아서 하지 않기 위해 합의한 근사(v3.5 설계, v3.8.5 연간 리포트). 대신
+    // 막대 툴팁에 미조회임을 밝힌다(drawHealthBar).
     { state:"down",   ranges: downRanges || [] },
   ]);
 }
 
-// (v3.8.7) "HH:MM" 문자열(가상 심야 24:00~29:59대 포함) → 그날 06:00 기준 경과분.
-function hmToMin(hm){
-  const [h, m] = hm.split(":").map(Number);
-  return h * 60 + m;
-}
 function fmtClock(min){
   const h = Math.floor(min / 60) % 24, day = Math.floor(min / 60) >= 24;
   const mm = String(min % 60).padStart(2, "0");
@@ -841,7 +1058,9 @@ function fmtLiveRanges(segs){
   return lives.map(sg => {
     const isLast = sg === segs[segs.length - 1];
     const ongoing = isLast && sg.to !== "30:00";
-    const fromMin = hmToMin(sg.from), toMin = hmToMin(sg.to);
+    // (v3.8.9) 06:00 기준 경과분(minutesOf)으로 계산 — 예전 hmToMin 은 실제 시각 "00:40"을
+    // 그대로 40분으로 봐서 자정 넘긴 방송이 0분·"익일" 표기 없이 나왔다.
+    const fromMin = minutesOf(sg.from) + DAY_START_MIN, toMin = minutesOf(sg.to) + DAY_START_MIN;
     const dur = Math.max(0, toMin - fromMin);
     const toLabel = ongoing ? "진행중" : fmtClock(toMin);
     const durLabel = ongoing ? `${dur}분+` : `${dur}분`;
@@ -924,13 +1143,13 @@ function resultChipsHtml(keys){
 function toneChipsHtml(){ return resultChipsHtml(["ok","degraded","err"]); }
 function laneLegendHtml(key){
   if (key === "trigger") return `<div class="lg-title">🎯 트리거</div>` +
-    `<div class="lg-sub">4가지 트리거(🎛️ 운영자 제어·🕒 정기수집·📡 라이브 감지·📥 X 웹훅) 를 짧은 세로` +
+    `<div class="lg-sub">4가지 트리거(🎛️ 운영자 제어·🕒 정기수집·📡 라이브 감지·📥 업스트림 알림) 를 짧은 세로` +
     ` 막대 하나로 표시, 막대 색은 결과(하나라도 실패면 빨강). 같은 시각에 여러 건이 뭉치면 막대 높이로` +
     ` 개수를 나타낸다(5건↑는 고정) — 어떤 종류인지·상세 내역은 막대 위 호버/클릭으로.</div>` +
     resultChipsHtml(["ok","err"]) +
     `<div class="lg-chips">` +
       `<span class="lg-chip">🎛️ 운영자 제어</span><span class="lg-chip">🕒 정기수집 tick</span>` +
-      `<span class="lg-chip">📡 라이브 감지(wake)</span><span class="lg-chip">📥 X 웹훅 인입</span>` +
+      `<span class="lg-chip">📡 라이브 감지(wake)</span><span class="lg-chip">📥 업스트림 알림(X·YouTube)</span>` +
     `</div>`;
   if (key === "health") return `<div class="lg-title">🖥️ 백엔드 상태</div>` +
     `<div class="lg-sub">healthchecks.io status/flips + tick·wake·pause 로그로 재구성.</div>` +
@@ -943,9 +1162,20 @@ function laneLegendHtml(key){
     ` 추정되는 구간(assumed_live)은 빨강 빗금으로 덮어 표시.</div>` +
     stateChipsHtml() +
     `<div class="lg-sub" style="margin-top:2px">줄 위 작은 점 = 그 전이 자체의 품질</div>` + toneChipsHtml();
-  if (key === "relay") return `<div class="lg-title">X 예고 릴레이</div><div class="lg-sub">공식 계정 게시물 파싱 결과.</div>` + toneChipsHtml();
+  if (key === "upstream") return `<div class="lg-title">🛰️ 업스트림 감지</div>` +
+    `<div class="lg-sub">업스트림 시스템(운영자 폰 Automate)이 중계한 알림 1건 = 아이콘 1개(메인 화면` +
+    ` 네임플레이트와 같은 X·YouTube 아이콘). 둥근 네모 테두리 색 = 수신 처리 결과(빈 본문·처리 중 예외면 에러,` +
+    ` 무시·일시정지는 정상 수신).` +
+    ` 팝업: 발신자·보낸 갈래·결과. 그 결과 콘텐츠가 어떻게 바뀌었는지는 같은 시각의 preview·소식·개인 트윗` +
+    ` 행을 함께 본다. v3.8.9 이전은 기존 로그(자동 인입 기록)에서 복원 — 무시·점검(ECHO)처럼 로그가 없던` +
+    ` 알림과 자동/수동 구분이 안 되는 옛 소식 기록은 생략.</div>` + resultChipsHtml(["ok","err"]);
   if (key === "notice") return `<div class="lg-title">소식</div><div class="lg-sub">공식 계정의 방송 외 이벤트 게시물 처리 결과.</div>` + toneChipsHtml();
   if (key === "tweet") return `<div class="lg-title">개인 트윗</div><div class="lg-sub">멤버 개인 트윗 처리 결과.</div>` + toneChipsHtml();
+  if (key === "cmd") return `<div class="lg-title">💬 운영자 명령</div>` +
+    `<div class="lg-sub">제어 채널(텔레그램 DM)로 보낸 명령 1건 = 점 1개. 점 위 호버/클릭으로 명령 원문과` +
+    ` 봇의 응답(처리 결과)을 본다. 결과 색은 응답 DM 문구로 판정한 근사 — ⚠️/❌ 응답·처리 중 예외는 에러,` +
+    ` "사용법" 안내·응답 누락은 부분 실패. y/N·마법사 답 같은 후속 입력은 내용 대신 글자 수만 기록(공개 저장소).</div>` +
+    toneChipsHtml();
   return "";
 }
 
@@ -963,12 +1193,20 @@ const LANES = [
   // (후속) 막대 최대 높이(호버 확대 포함) 48px — rowH 절반(desktop 32) 안에 여유 있게 들어감.
   // (사용자 도안) 막대가 기준선(행 중심)에서 위로만 자란다 — 최대 높이 34 + 발광 여유 ~8px 를
   // 위쪽 절반(rowH/2) 안에 담아야 해서 대칭 시절보다 rowH 가 더 필요하다.
-  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH: IS_NARROW ? 88 : 96 },
+  // (v3.8.9) baseFrac — 기준선(rowY)을 행 높이의 몇 % 지점에 둘지(기본 0.5 = 한가운데). 막대가
+  // 위로만 자라서 기준선 아래 절반은 늘 비어 있었다 → 기준선을 아래쪽(0.8)으로 내리고 rowH 를
+  // 줄여, 막대가 쓰는 위쪽 높이(96/2=48 → 60*0.8=48, 좁은 화면 44 → 56*0.8≈45)는 그대로 두고
+  // 빈 아래 공간만 없앤다. 그 자리에 운영자 명령 행이 들어간다.
+  { key:"trigger", label:"트리거",      icon:"🎯", type:"point", rows:["all"], rowH: IS_NARROW ? 56 : 60, baseFrac: 0.8 },
+  // (v3.8.9) 제어 채널(텔레그램 DM)로 들어온 운영자 명령 — 점 색 = 처리 결과. 트리거와 백엔드 상태 사이.
+  { key:"cmd",     label:"운영자 명령",  icon:"💬", type:"point", rows:["cmd"] },
+  // (v3.8.9) 업스트림 알림 수신(구 "X 예고 릴레이" 행 대체 — relay 는 preview·소식·개인 트윗과
+  // 역할이 겹쳐 애매했다). 백엔드 상태 바로 위.
+  { key:"upstream", label:"업스트림 감지", icon:"🛰️", type:"point", rows:["all"] },
   // (item 2) 백엔드 상태 막대 두께 2배(12→24px) — rowH 도 그만큼 여유 있게 별도 지정
   // (preview 와 같은 ROW_H_BAR 를 공유하지 않게 분리).
   { key:"health",  label:"백엔드 상태", icon:"🖥️", type:"bar",   rows:["backend"], rowH: IS_NARROW ? 32 : 40 },
   { key:"preview", label:"preview",     icon:"🎬", type:"bar",   rows: ROWS_MEMBERS },
-  { key:"relay",   label:"X 예고 릴레이", icon:"📣", type:"point", rows:["account"] },
   { key:"notice",  label:"소식",        icon:"📰", type:"point", rows:["notice"] },
   { key:"tweet",   label:"개인 트윗",   icon:"💌", type:"point", rows: ROWS_MEMBERS },
 ];
@@ -984,7 +1222,10 @@ let rowY = {};
     // 그룹 아이콘(왼쪽 28px 칸)과 행 라벨(오른쪽, right-align)을 좌우로 분리해뒀으므로
     // 세로 위치는 그냥 그룹 정중앙이면 된다 — 더 이상 서로 겹칠 일이 없다.
     g._labelY = centerY;
-    g.rows.forEach(r => { rowY[g.key+"|"+r] = y + rh/2; y += rh; });
+    const frac = g.baseFrac || 0.5;
+    g.rows.forEach(r => { rowY[g.key+"|"+r] = y + rh*frac; y += rh; });
+    // 기준선을 옮긴 레인은 그룹 아이콘도 기준선 높이에 맞춘다(한 행짜리 레인만 씀).
+    if (g.baseFrac) g._labelY = rowY[g.key+"|"+g.rows[0]];
     // (item 3) 그룹의 행 블록 전체 범위 — renderLabels 가 스파인(연결선) 그릴 때 씀.
     g._blockTop = blockTop;
     g._blockHeight = y - blockTop;
@@ -1094,6 +1335,18 @@ document.getElementById("zoomReset").addEventListener("click", () => { if (!isPi
   });
 })();
 
+// (v3.8.9) 모바일 전용 — 전체 추이 잔디 ↔ 주간 막대 토글. 상태(grassWeekView)는 전역이라 60초 자가
+// 갱신·월 탭 전환 뒤에도 유지된다(buildGrassCalendar 가 매번 이 값을 본다).
+(function initGrassWeekToggle(){
+  const btn = document.getElementById("grassWeekToggle");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    grassWeekView = !grassWeekView;
+    btn.textContent = grassWeekView ? "🗓 잔디 보기" : "📊 주간요약 보기";
+    if (grassActiveYear != null && grassActiveMonth != null) buildGrassCalendar(grassActiveYear, grassActiveMonth);
+  });
+})();
+
 // (사용자 요청) x축 오른쪽 여백을 소식·개인 트윗(멤버별) 당일 건수 + 백엔드 상태 누계로 활용.
 // ref/monitor-timeline-trigger-rightpad.png 도안. (후속: 줌/스크롤에도 안 움직여야 한다는
 // 요청으로 #tlSvg 안이 아니라 완전히 별도인 #tlRightSvg 에 그린다 — renderRightPanel().)
@@ -1147,14 +1400,10 @@ function renderTimeline(){
     });
   });
 
+  // (v3.8.9a, 사용자 요청) 시간 틱마다 그리던 세로 그리드선(.tl-hour)은 없앴다 — 라벨만 남긴다.
   const stepMin = pickHourStepMin(plotW);
   for (let m = 0; m <= 1440; m += stepMin) {
     const x = minutesToX(m, plotW);
-    const tick = document.createElementNS(ns,"line");
-    tick.setAttribute("x1", x); tick.setAttribute("x2", x);
-    tick.setAttribute("y1", PAD_T - 2); tick.setAttribute("y2", H - PAD_B + 2);
-    tick.setAttribute("class","tl-hour");
-    svg.appendChild(tick);
     const lbl = document.createElementNS(ns,"text");
     lbl.setAttribute("x", x); lbl.setAttribute("y", H - 8);
     lbl.setAttribute("text-anchor","middle"); lbl.setAttribute("class","tl-hour-label");
@@ -1188,7 +1437,7 @@ function renderTimeline(){
     BACKEND_SEGS.forEach(sg => {
       const x1 = timeToX(sg.from, plotW), x2 = timeToX(sg.to, plotW);
       const rect = document.createElementNS(ns,"rect");
-      // (v3.8.5 후속) 정상(up)일 땐 평소 눈에 안 띄어도 되니 두께를 1/3(24→8)로 줄이고,
+      // (v3.8.5a) 정상(up)일 땐 평소 눈에 안 띄어도 되니 두께를 1/3(24→8)로 줄이고,
       // 처리 중(busy)·다운(down)처럼 눈에 띄어야 하는 상태는 기존 두께(24) 유지.
       const h = sg.s === "up" ? 8 : 24;
       rect.setAttribute("x", x1); rect.setAttribute("y", ry - h/2);
@@ -1196,7 +1445,8 @@ function renderTimeline(){
       rect.setAttribute("rx", 5);
       rect.setAttribute("fill", HEALTH_COLOR[sg.s]);
       rect.setAttribute("class","tl-seg");
-      wireTip(rect, { t:sg.from+"–"+sg.to, title:HEALTH_LABEL[sg.s], raw:sg.s, tone:sg.s==="down"?"err":"ok", d:"healthchecks.io status/flips 기준" });
+      wireTip(rect, { t:sg.from+"–"+sg.to, title:HEALTH_LABEL[sg.s], raw:sg.s, tone:sg.s==="down"?"err":"ok",
+        d: CURRENT_DAY.downRanges == null ? "healthchecks.io 미조회 — 다운 없음으로 간주(트리거·일시정지는 로그 기준)" : "healthchecks.io status/flips 기준" });
       svg.appendChild(rect);
     });
   })();
@@ -1218,7 +1468,7 @@ function renderTimeline(){
       rect.setAttribute("class","tl-seg");
       const q = sg.q || "ok";
       const label = stateLabel(sg.s) + (sg.assumed_live ? " · 추정" : "");
-      // (v3.8.5 후속) 합동 live 구간 — 막대 위에 참여 멤버 아이콘 + 팝업에도 같은 목록.
+      // (v3.8.5a) 합동 live 구간 — 막대 위에 참여 멤버 아이콘 + 팝업에도 같은 목록.
       const isCollabLive = sg.s === "live" && sg.collab_with && sg.collab_with.length;
       const collabTip = isCollabLive
         ? `<div class="tt-collab">함께: ${sg.collab_with.map(ck =>
@@ -1281,7 +1531,7 @@ function renderTimeline(){
   // 그 안을 정상 건수 : 에러 건수 비율로 초록/빨강 두 구간으로 나눠 쌓는다(에러가 하나라도
   // 있으면 통째로 빨개지던 이전 방식 대신 실제 구성비가 보이게). 에러 구간을 위쪽에 쌓아
   // "얼마나 섞였는지" 가 기준선에서 먼 쪽(눈에 먼저 띄는 쪽)에 오도록.
-  // (v3.8.5 후속) 막대 폭 고정(TRIGGER_BAR_W)이면 줌아웃 시 인접 그룹끼리 겹친다 —
+  // (v3.8.5a) 막대 폭 고정(TRIGGER_BAR_W)이면 줌아웃 시 인접 그룹끼리 겹친다 —
   // 실제 화면상 최소 간격을 보고 그보다 넓어지지 않게 매번(줌마다) 다시 계산.
   const sortedTriggerX = triggerMarks.map(m => m.x).sort((a, b) => a - b);
   let minTriggerGapPx = Infinity;
@@ -1321,12 +1571,40 @@ function renderTimeline(){
     }
     m.bars = bars;
   });
-  RELAY.forEach((e, i) => drawDot(e.t, rowY["relay|account"], e.tone,
-    { t:e.t, title:"BDP_yumemita", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"relay"+i }));
+  // (v3.8.9) 업스트림 감지 — 메인 화면 preview 네임플레이트 오른쪽의 X·YouTube 아이콘(src/frontend/
+  // js/render.js X_ICON_D·YT_ICON_D, 24×24 기준)을 그대로 쓴다. 결과(정상/에러)는 아이콘을 두른 둥근
+  // 네모 테두리 색으로(배경색 없음, 사용자 결정). 테두리 안은 투명 채움이라 호버/클릭 영역이 네모 전체.
+  UPSTREAM.forEach((e, i) => {
+    const x = timeToX(e.t, plotW), ry = rowY["upstream|all"], B = 20, S = 13;
+    const g = document.createElementNS(ns, "g");
+    g.setAttribute("class", "tl-dot tl-up-icon" + (activeTones.has(e.tone) ? "" : " dim"));
+    const box = document.createElementNS(ns, "rect");
+    box.setAttribute("x", x - B/2); box.setAttribute("y", ry - B/2);
+    box.setAttribute("width", B); box.setAttribute("height", B); box.setAttribute("rx", 5);
+    // 안쪽은 타임라인 바탕색으로 채운다(CSS .tl-up-box) — 투명이면 먼저 깔린 트리거 세로선·행 가로선이
+    // 네모 안으로 비쳐 아이콘 위에 선이 올라간 것처럼 보였다(사용자 지적). 결과색 채움은 여전히 없음.
+    box.setAttribute("class", "tl-up-box");
+    box.setAttribute("stroke", TONE_COLOR[e.tone] || OK); box.setAttribute("stroke-width", "1.6");
+    g.appendChild(box);
+    const icon = document.createElementNS(ns, "path");
+    icon.setAttribute("d", e.src === "yt" ? YT_ICON_D : X_ICON_D);
+    icon.setAttribute("transform", `translate(${x - S/2},${ry - S/2}) scale(${S/24})`);
+    icon.setAttribute("fill", "currentColor");
+    icon.setAttribute("stroke", "none");
+    g.appendChild(icon);
+    wireTip(g, { t:e.t, title:(UPSTREAM_SRC[e.src] || esc(e.src)) + (e.who ? " · " + esc(e.who) : ""),
+      raw:TONE_LABEL[e.tone] || esc(e.tone), tone:e.tone,
+      d:esc(e.d) + (e.derived ? " · (이전 로그에서 복원)" : ""), _idx:"upstream"+i });
+    svg.appendChild(g);
+  });
   NOTICE.forEach((e, i) => drawDot(e.t, rowY["notice|notice"], e.tone,
     { t:e.t, title:"소식", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"notice"+i }));
   TWEET.forEach((e, i) => drawDot(e.t, rowY["tweet|"+e.member], e.tone,
     { t:e.t, title:(MEMBER_KO[e.member]||e.member)+" 개인 트윗", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"tweet"+i }));
+  CMD.forEach((e, i) => drawDot(e.t, rowY["cmd|cmd"], e.tone,
+    { t:e.t, title:"💬 " + esc(e.derived ? e.cmd : (e.d || e.cmd)), raw:TONE_LABEL[e.tone] || esc(e.tone), tone:e.tone,
+      d: e.derived ? esc(e.d) + " · (이전 로그에서 복원 — 응답 기록 없음)" : (e.reply ? "응답: " + esc(e.reply) : ""),
+      _idx:"cmd"+i }));
 
   document.getElementById("tlSub").textContent =
     "점/막대 위에 마우스를 올리면 시간·제목·결과가 보이고, 클릭하면 상세(트리거는 목록, 그 외는 아래 표의 해당 행)가 열립니다.";
@@ -1340,7 +1618,14 @@ function renderTimeline(){
 function renderRightPanel(){
   const svg = document.getElementById("tlRightSvg");
   const H = window._TL_H;
-  const W = RIGHT_PAD + RIGHT_PANEL_W + 4;
+  // (v3.8.9a) 모바일("요약 보기" 켠 상태)에선 왼쪽 행 라벨 옆 남은 폭에 맞춘다 — 고정 234px 이면
+  // 390px 폰에서 라벨(64)+패널(235)=299 > 289 로 10px 가로 넘침이 있었다. PC 는 그대로(220).
+  let panelW = RIGHT_PANEL_W;
+  if (IS_NARROW) {
+    const avail = document.getElementById("tlBody").clientWidth - document.getElementById("tlLabels").offsetWidth - 2;
+    if (avail > 0) panelW = Math.min(RIGHT_PANEL_W, avail - RIGHT_PAD - 4);
+  }
+  const W = RIGHT_PAD + panelW + 4;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("width", W); svg.setAttribute("height", H);
   svg.style.width = W + "px"; svg.style.height = H + "px";
@@ -1380,19 +1665,30 @@ function renderRightPanel(){
     });
   })();
 
-  // (v3.8.5 후속) 트리거 레인 옆에 그날 총량(성공/실패 포함) — health 누계와 같은 텍스트 줄 스타일.
+  // (v3.8.5a) 트리거 레인 옆에 그날 총량(성공/실패 포함) — health 누계와 같은 텍스트 줄 스타일.
   (function drawTriggerSummary(){
     const total = TRIGGER_GROUPS.reduce((s, g) => s + g.events.length, 0);
     const errTotal = TRIGGER_GROUPS.reduce((s, g) => s + g.events.filter(e => !e.ok).length, 0);
-    const ry = rowY["trigger|all"];
-    const txt = document.createElementNS(ns,"text");
-    txt.setAttribute("x", barsStartX); txt.setAttribute("y", ry);
-    txt.setAttribute("dominant-baseline", "central");
-    txt.setAttribute("class", "tl-right-health-label");
-    txt.textContent = `트리거 ${total}건` + (errTotal ? ` (실패 ${errTotal})` : "");
-    wireTip(txt, { t:"오늘 누계", title:"트리거", raw:`${total}건`+(errTotal?` · 실패 ${errTotal}건`:""),
-      tone: errTotal ? "err" : "ok", d:"" });
-    svg.appendChild(txt);
+    // (v3.8.9a) 백엔드 상태 요약과 같은 줄 스타일로 두 줄 — "[초록 네모] 정상 n건" / "[빨강 네모] 실패 m건"
+    // (실패 0건이어도 표시). 트리거 막대는 기준선(rowY, 행 높이의 80%) 위로 자라므로 두 줄 모두 기준선
+    // 바로 위(막대와 같은 쪽)에 둔다.
+    const ry = rowY["trigger|all"], lineH = 12;
+    [[OK, total - errTotal, "정상"], [ERR, errTotal, "실패"]].forEach(([color, n, label], i) => {
+      const y = ry - 4 - (1 - i) * lineH;
+      const sw = document.createElementNS(ns,"rect");
+      sw.setAttribute("x", barsStartX); sw.setAttribute("y", y - 4);
+      sw.setAttribute("width", 8); sw.setAttribute("height", 8); sw.setAttribute("rx", 2);
+      sw.setAttribute("fill", color);
+      svg.appendChild(sw);
+      const txt = document.createElementNS(ns,"text");
+      txt.setAttribute("x", barsStartX + 13); txt.setAttribute("y", y);
+      txt.setAttribute("dominant-baseline", "central");
+      txt.setAttribute("class", "tl-right-health-label");
+      txt.textContent = `${n}건`;
+      wireTip(txt, { t:"오늘 누계", title:`트리거 ${label}`, raw:`${n}건 (전체 ${total}건)`,
+        tone: i ? "err" : "ok", d:"" });
+      svg.appendChild(txt);
+    });
   })();
 
   // 소식(당일 총 건수) + 개인 트윗(멤버별 당일 건수) 가로 막대 — 가장 큰 값이 RIGHT_PANEL_W
@@ -1400,17 +1696,28 @@ function renderRightPanel(){
   const noticeCount = NOTICE.length;
   const tweetCounts = ROWS_MEMBERS.map(m => TWEET.filter(e => e.member === m).length);
   const maxCount = Math.max(1, noticeCount, ...tweetCounts);
-  const unitPx = (RIGHT_PANEL_W - RIGHT_PAD) / maxCount;
+  // (v3.8.9a) 막대 오른쪽에 "N건" 라벨 — 패널 폭(W)은 그대로 두고 막대 최대 길이에서 라벨 자리
+  // (COUNT_LABEL_W)를 빼서, 가장 긴 막대 + 라벨도 패널 안에 들어가게(가로 스크롤·잘림 없음).
+  const COUNT_LABEL_W = 46;
+  const unitPx = Math.max(0, panelW - RIGHT_PAD - COUNT_LABEL_W) / maxCount;
   function bar(ry, count, tipData){
-    if (!count) return; // 0건은 안 그림
-    const rect = document.createElementNS(ns,"rect");
-    rect.setAttribute("x", barsStartX); rect.setAttribute("y", ry - RIGHT_BAR_H/2);
-    rect.setAttribute("width", count * unitPx); rect.setAttribute("height", RIGHT_BAR_H);
-    rect.setAttribute("rx", 3);
-    rect.setAttribute("fill", OK);
-    rect.setAttribute("class", "tl-seg");
-    wireTip(rect, tipData);
-    svg.appendChild(rect);
+    const w = count * unitPx;
+    if (count) {
+      const rect = document.createElementNS(ns,"rect");
+      rect.setAttribute("x", barsStartX); rect.setAttribute("y", ry - RIGHT_BAR_H/2);
+      rect.setAttribute("width", w); rect.setAttribute("height", RIGHT_BAR_H);
+      rect.setAttribute("rx", 3);
+      rect.setAttribute("fill", OK);
+      rect.setAttribute("class", "tl-seg");
+      wireTip(rect, tipData);
+      svg.appendChild(rect);
+    }
+    const lab = document.createElementNS(ns,"text");
+    lab.setAttribute("x", barsStartX + w + (count ? 6 : 0)); lab.setAttribute("y", ry);
+    lab.setAttribute("dominant-baseline", "central");
+    lab.setAttribute("class", "tl-right-health-label" + (count ? "" : " zero"));
+    lab.textContent = `${count}건`;
+    svg.appendChild(lab);
   }
   bar(rowY["notice|notice"], noticeCount,
     { t:"오늘 누계", title:"소식", raw:`${noticeCount}건`, tone:"ok", d:"" });
@@ -1470,7 +1777,7 @@ function unpinTip(){
   pinned = false;
   hideTip();
   document.getElementById("tlScroll").classList.remove("locked");
-  // (v3.8.5 후속) 팝업을 닫을 때 트리거 히스토그램의 흰 실선(고정 선택)도 같이 꺼야
+  // (v3.8.5a) 팝업을 닫을 때 트리거 히스토그램의 흰 실선(고정 선택)도 같이 꺼야
   // 한다 — 예전엔 안 꺼져서 팝업 닫힌 뒤에도 실선이 그 자리에 남아 있었다.
   setTriggerActiveNear(null);
 }
@@ -1530,10 +1837,16 @@ function buildRows(){
   const rows = [];
   OPS.forEach((e,i) => rows.push({ t:e.t, lane:"운영자 제어", who:e.cmd, raw:e.ok?"ok":"error", d:e.d, tone:e.ok?"ok":"err", idx:"ops"+i }));
   TICKS.forEach((e,i) => rows.push({ t:e.t, lane:"정기수집·라이브감지", who:e.mode, raw:e.ok?"ok":"error", d:e.d, tone:e.ok?"ok":"err", idx:"tick"+i }));
-  INGEST.forEach((e,i) => rows.push({ t:e.t, lane:"X 웹훅 인입", who:e.source, raw:e.ok?"ok":"error", d:"→ "+e.target.lane, tone:e.ok?"ok":"err", idx:"ingest"+i }));
+  // (v3.8.9) 업스트림 이벤트가 있으면 그 행이 인입을 대신한다(중복 방지) — 옛 날짜만 역산 행.
+  if (Array.isArray(CURRENT_DAY.upstream)) UPSTREAM.forEach((e,i) => rows.push({ t:e.t, lane:"업스트림 감지",
+    who:(UPSTREAM_SRC[e.src] || esc(e.src)) + (e.who ? " · " + esc(e.who) : ""), raw:TONE_LABEL[e.tone] || esc(e.tone),
+    d:esc(e.d) + (e.derived ? " · (복원)" : ""), tone:e.tone, idx:"upstream"+i }));
+  else INGEST.forEach((e,i) => rows.push({ t:e.t, lane:"X 웹훅 인입(역산)", who:e.source, raw:e.ok?"ok":"error", d:"→ "+e.target.lane, tone:e.ok?"ok":"err", idx:"ingest"+i }));
   RELAY.forEach((e,i) => rows.push({ t:e.t, lane:"X 예고 릴레이", who:"BDP_yumemita", raw:TONE_LABEL[e.tone], d:e.d, tone:e.tone, idx:"relay"+i }));
   NOTICE.forEach((e,i) => rows.push({ t:e.t, lane:"소식", who:"", raw:TONE_LABEL[e.tone], d:e.d, tone:e.tone, idx:"notice"+i }));
   TWEET.forEach((e,i) => rows.push({ t:e.t, lane:"개인 트윗", who:MEMBER_KO[e.member]||e.member, raw:TONE_LABEL[e.tone], d:e.d, tone:e.tone, idx:"tweet"+i }));
+  CMD.forEach((e,i) => rows.push({ t:e.t, lane:"운영자 명령", who:esc(e.derived ? e.cmd : (e.d || e.cmd)), raw:TONE_LABEL[e.tone] || esc(e.tone),
+    d: e.derived ? esc(e.d) + " · (복원)" : (e.reply ? "응답: " + esc(e.reply) : ""), tone:e.tone, idx:"cmd"+i }));
   PREVIEW.forEach(v => {
     v.segs.forEach((sg,i) => {
       const skip = i === 0 && sg.from === "06:00";
@@ -1560,16 +1873,49 @@ function renderTable(){
 // (v3.8.5) 잔디 색 = 트리거(운영자 제어 ops·정기수집 tick/wake·X/공식 인입 ingest) 건수.
 // 옛 push_monitor 대시보드(v3.4.13 이전)의 heatColor 공식을 그대로 복원 — 단일 색상(teal)
 // 명도만 값이 클수록 밝게(hsl(175,55%,18~60%), "GitHub 잔디 스타일").
+// (v3.8.9) 전 기간(REPORT.all) 리포트는 상세(REPORT.days)가 오늘(또는 폴백 페이지면
+// 전날) 하루치뿐이라, 잔디 숫자는 REPORT.summary(서버의 일별 스냅샷 요약)에서 읽는다.
+// summary 항목이 {no_log:true} 면 그날 이벤트 로그 파일이 없었다는 뜻 — 0건인지 기록
+// 누락인지 모르므로 숫자를 만들지 않고 null.
 function triggerCount(dateStr){
+  if (REPORT.summary && dateStr !== REPORT.date) {
+    const e = REPORT.summary[dateStr];
+    return (e && typeof e.triggers === "number") ? e.triggers : null;
+  }
   const day = REPORT.days[dateStr];
-  if (!day) return null;
-  const ingest = computeIngest(day.relay, day.notice, day.tweet);
+  if (!day || day.hasLog === false || day.backfillOnly) return null;
+  const ingest = computeIngest(day.relay, day.notice, day.tweet, day.upstream);
   return day.ops.length + day.ticks.length + ingest.length;
+}
+// 잔디 칸 상태: "data"(숫자 있음) · "nolog"(로그 파일 없음) · "missing"(지난 날짜인데 요약
+// 없음 — 스냅샷 전이거나 로그 시작 이전) · "future"(리포트 기준일 이후).
+function grassKind(dateStr){
+  if (dateStr > REPORT.date) return "future";
+  if (triggerCount(dateStr) != null) return "data";
+  const e = REPORT.summary && REPORT.summary[dateStr];
+  if (e && e.no_log) return "nolog";
+  if ((e && e.backfill_only) || (REPORT.days[dateStr] && REPORT.days[dateStr].backfillOnly)) return "backfill";
+  return "missing";
+}
+function grassDates(){
+  return REPORT.summary ? Array.from(new Set([...Object.keys(REPORT.summary), REPORT.date])).sort() : REPORT.dates;
 }
 let grassMaxTrigger = 1;
 function computeGrassMax(){
-  grassMaxTrigger = Math.max(1, ...REPORT.dates.map(d => triggerCount(d) || 0));
+  grassMaxTrigger = Math.max(1, ...grassDates().map(d => triggerCount(d) || 0));
 }
+// 칸을 눌러 상세를 볼 수 있는가 — 이미 받아둔 날짜이거나, 자가갱신 서버(SELF_ORIGIN)가
+// 있어 /monitor-live/day.json 으로 불러올 수 있는 지난 날짜.
+function grassClickable(dateStr){
+  if (dateStr in REPORT.days) return true;
+  return !!(REPORT.all && SELF_ORIGIN && dateStr < REPORT.date);
+}
+const GRASS_TIP = {
+  nolog: "이벤트 로그 파일 없음 — 0건인지 기록 누락인지 구분 불가",
+  backfill: "실시간 기록 이전(사후 복원 기록만) — 트리거 수 알 수 없음",
+  missing: "요약 없음(모니터링 스냅샷 전 또는 로그 시작 이전)",
+  future: "이 리포트 기준일 이후",
+};
 function triggerColor(count){
   if (!count) return "#1c1e24";
   const t = Math.min(1, count / grassMaxTrigger);
@@ -1599,24 +1945,41 @@ function monthCalendarWeeks(year, month){
 const GRASS_CELL = 34, GRASS_GAP = 4, GRASS_HEADER_H = 20;
 const GRASS_BAR_GAP = 18, GRASS_BAR_MAXW = 160, GRASS_BAR_H = 14;
 let grassActiveMonth = null; // 1~12, yearly 탭에서만 씀
+// (v3.8.9) 모바일(IS_NARROW) — 잔디(달력)와 주간 막대를 한 줄에 그리면 폭이 약 490px 라 가로 스크롤이
+// 생겼다. 모바일에선 둘 중 하나만 그린다: 기본은 잔디(칸 크기를 화면 폭에 맞춰 줄임), "주간요약 보기"
+// 토글 시 주간 막대만 전체 폭으로(막대 앞에 주 날짜 범위). PC 는 기존대로 나란히.
+let grassWeekView = false;
+function weekRangeLabel(week){
+  const ds = week.filter(Boolean);
+  const md = d => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  return ds.length ? md(ds[0]) + "~" + md(ds[ds.length - 1]) : "";
+}
 function buildGrassCalendar(year, month){
   const svg = document.getElementById("grassCalSvg");
   const ns = "http://www.w3.org/2000/svg";
   svg.innerHTML = "";
   const weeks = monthCalendarWeeks(year, month);
   const DOW = ["일","월","화","수","목","금","토"];
-  const colX = i => i * (GRASS_CELL + GRASS_GAP);
-  const gridW = 7 * (GRASS_CELL + GRASS_GAP) - GRASS_GAP;
-  const barX = gridW + GRASS_BAR_GAP;
-  const totalW = barX + GRASS_BAR_MAXW + 50;
-  const totalH = GRASS_HEADER_H + weeks.length * (GRASS_CELL + GRASS_GAP) - GRASS_GAP;
+  const availW = Math.max(200, document.getElementById("grassCal").clientWidth || 320);
+  const cell = IS_NARROW ? Math.min(GRASS_CELL, Math.floor((availW + GRASS_GAP) / 7) - GRASS_GAP) : GRASS_CELL;
+  const showGrid = !IS_NARROW || !grassWeekView;
+  const showBars = !IS_NARROW || grassWeekView;
+  const colX = i => i * (cell + GRASS_GAP);
+  const gridW = showGrid ? 7 * (cell + GRASS_GAP) - GRASS_GAP : 0;
+  // 모바일 막대 전용 화면: 왼쪽 주 날짜 범위 칸(WEEK_LABEL_W) + 막대 + 건수 라벨(50px)
+  const WEEK_LABEL_W = 76;
+  const barX = showGrid ? gridW + GRASS_BAR_GAP : WEEK_LABEL_W;
+  const barMaxW = showGrid ? GRASS_BAR_MAXW : Math.max(60, availW - WEEK_LABEL_W - 50);
+  const totalW = showBars ? barX + barMaxW + 50 : gridW;
+  const headerH = showGrid ? GRASS_HEADER_H : 4;  // 막대 전용 화면엔 요일 머리줄이 없다
+  const totalH = headerH + weeks.length * (cell + GRASS_GAP) - GRASS_GAP;
   svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
   svg.setAttribute("width", totalW); svg.setAttribute("height", totalH);
   svg.style.width = totalW + "px"; svg.style.height = totalH + "px";
 
-  DOW.forEach((label, i) => {
+  if (showGrid) DOW.forEach((label, i) => {
     const t = document.createElementNS(ns, "text");
-    t.setAttribute("x", colX(i) + GRASS_CELL / 2);
+    t.setAttribute("x", colX(i) + cell / 2);
     t.setAttribute("y", GRASS_HEADER_H - 6);
     t.setAttribute("class", "grass-col-label");
     t.textContent = label;
@@ -1625,31 +1988,43 @@ function buildGrassCalendar(year, month){
 
   // 막대 스케일 기준 = 이 달(그리드) 안 주간 트리거 합계 최대값.
   const weekTotals = weeks.map(week =>
-    week.reduce((sum, d) => sum + ((d && d in REPORT.days) ? (triggerCount(d) || 0) : 0), 0));
+    week.reduce((sum, d) => sum + (d ? (triggerCount(d) || 0) : 0), 0));
   const maxWeekTotal = Math.max(1, ...weekTotals);
-  const barUnit = GRASS_BAR_MAXW / maxWeekTotal;
+  const barUnit = barMaxW / maxWeekTotal;
 
   weeks.forEach((week, w) => {
-    const rowY = GRASS_HEADER_H + w * (GRASS_CELL + GRASS_GAP);
-    week.forEach((d, i) => {
+    const rowY = headerH + w * (cell + GRASS_GAP);
+    if (showGrid) week.forEach((d, i) => {
       if (!d) return; // 이번 달 아닌 칸 — 안 그림
-      const known = d in REPORT.days;
+      const kind = grassKind(d);
+      const known = kind === "data";
       const count = known ? triggerCount(d) : null;
+      const clickable = kind !== "future" && grassClickable(d);
       const rect = document.createElementNS(ns, "rect");
       rect.setAttribute("x", colX(i)); rect.setAttribute("y", rowY);
-      rect.setAttribute("width", GRASS_CELL); rect.setAttribute("height", GRASS_CELL);
+      rect.setAttribute("width", cell); rect.setAttribute("height", cell);
       rect.setAttribute("rx", 7);
       rect.setAttribute("fill", known ? triggerColor(count) : "#1c1e24");
-      rect.setAttribute("class", "grass-cell-rect" + (d === currentDate ? " sel" : "") + (known ? "" : " future"));
+      rect.setAttribute("class", "grass-cell-rect" + (d === currentDate ? " sel" : "") + (clickable ? "" : " future"));
       const rectTip = document.createElementNS(ns, "title");
-      rectTip.textContent = d + (known ? ` · 트리거 ${count}건` : " · 데이터 없음(아직 지나지 않은 날짜)");
+      rectTip.textContent = d + (known ? ` · 트리거 ${count}건` : ` · ${GRASS_TIP[kind]}`);
       rect.appendChild(rectTip);
-      if (known) rect.addEventListener("click", () => loadDay(d));
+      if (clickable) rect.addEventListener("click", () => loadDay(d));
       svg.appendChild(rect);
+      if (kind === "nolog" || kind === "backfill") {
+        const q = document.createElementNS(ns, "text");
+        q.setAttribute("x", colX(i) + cell / 2);
+        q.setAttribute("y", rowY + cell / 2);
+        q.setAttribute("dominant-baseline", "central");
+        q.setAttribute("class", "grass-cell-text");
+        q.style.pointerEvents = "none";
+        q.textContent = "?";
+        svg.appendChild(q);
+      }
       if (known) {
         const txt = document.createElementNS(ns, "text");
-        txt.setAttribute("x", colX(i) + GRASS_CELL / 2);
-        txt.setAttribute("y", rowY + GRASS_CELL / 2);
+        txt.setAttribute("x", colX(i) + cell / 2);
+        txt.setAttribute("y", rowY + cell / 2);
         txt.setAttribute("dominant-baseline", "central");
         txt.setAttribute("class", "grass-cell-text");
         txt.style.pointerEvents = "none";
@@ -1658,15 +2033,27 @@ function buildGrassCalendar(year, month){
       }
     });
 
-    // 주간 트리거 총량 — timeline-preview 우측 가로막대와 동일 스타일(OK 색, RIGHT_BAR_H급).
+    // 주간 트리거 총량 — timeline-preview 우측 가로막대와 동일 스타일(RIGHT_BAR_H급), 색은 v3.8.9 부터 잔디와 같은 청록 계통.
+    if (!showBars) return;
     const total = weekTotals[w];
-    const barY = rowY + GRASS_CELL / 2 - GRASS_BAR_H / 2;
+    const barY = rowY + cell / 2 - GRASS_BAR_H / 2;
+    if (!showGrid) {  // 막대 전용 화면 — 달력 없이도 어느 주인지 알 수 있게
+      const wl = document.createElementNS(ns, "text");
+      wl.setAttribute("x", 0); wl.setAttribute("y", rowY + cell / 2);
+      wl.setAttribute("dominant-baseline", "central");
+      wl.setAttribute("class", "grass-week-total");
+      wl.textContent = weekRangeLabel(week);
+      svg.appendChild(wl);
+    }
     if (total > 0) {
       const bar = document.createElementNS(ns, "rect");
       bar.setAttribute("x", barX); bar.setAttribute("y", barY);
       bar.setAttribute("width", Math.max(2, total * barUnit)); bar.setAttribute("height", GRASS_BAR_H);
       bar.setAttribute("rx", 3);
-      bar.setAttribute("fill", OK);
+      // (v3.8.9, 사용자 요청) 잔디 칸과 같은 청록(hsl 175) 계통 — 명도는 이 달 주간 합계
+      // 최대값 대비 비율로(칸의 triggerColor 와 같은 방식). 어두운 끝은 배경에 묻히지
+      // 않게 칸보다 조금 밝게(30%~60%) 잡는다.
+      bar.setAttribute("fill", `hsl(175, 55%, ${30 + Math.min(1, total / maxWeekTotal) * 30}%)`);
       bar.setAttribute("class", "grass-week-bar");
       const barTip = document.createElementNS(ns, "title");
       barTip.textContent = `이 주 트리거 합계 ${total}건`;
@@ -1675,7 +2062,7 @@ function buildGrassCalendar(year, month){
     }
     const label = document.createElementNS(ns, "text");
     label.setAttribute("x", barX + Math.max(0, total * barUnit) + 8);
-    label.setAttribute("y", rowY + GRASS_CELL / 2);
+    label.setAttribute("y", rowY + cell / 2);
     label.setAttribute("dominant-baseline", "central");
     label.setAttribute("class", "grass-week-total");
     label.textContent = total + "건";
@@ -1683,17 +2070,44 @@ function buildGrassCalendar(year, month){
   });
 }
 
+let grassActiveYear = null;
+function grassYears(){
+  return Array.from(new Set(grassDates().map(d => Number(d.slice(0, 4))))).sort();
+}
 function renderGrassTabs(year){
   const tabs = document.getElementById("grassTabs");
-  if (!REPORT.yearly) { tabs.hidden = true; return; }
+  if (!REPORT.yearly && !REPORT.all) { tabs.hidden = true; return; }
   tabs.hidden = false;
   tabs.innerHTML = "";
+  // (v3.8.9) 전 기간(all) 리포트에서 연도가 2개 이상이면 연도 버튼을 앞에 붙인다.
+  const years = REPORT.all ? grassYears() : [];
+  if (years.length > 1) {
+    years.forEach(y => {
+      const btn = document.createElement("button");
+      btn.textContent = y + "년";
+      btn.classList.toggle("active", y === year);
+      btn.addEventListener("click", () => {
+        grassActiveYear = y;
+        grassActiveMonth = 1;
+        buildGrassCalendar(y, 1);
+        renderGrassTabs(y);
+      });
+      tabs.appendChild(btn);
+    });
+  }
+  // (v3.8.9) 그 달 날짜가 요약/상세 어디에도 없으면(데이터 0건) 비활성 — 지금 보고 있는 달은 예외.
+  const withData = new Set(grassDates().filter(d => Number(d.slice(0, 4)) === year).map(d => Number(d.slice(5, 7))));
   for (let m = 1; m <= 12; m++) {
     const btn = document.createElement("button");
     btn.textContent = m + "월";
     btn.classList.toggle("active", m === grassActiveMonth);
+    if (!withData.has(m) && m !== grassActiveMonth) {
+      btn.disabled = true;
+      btn.title = "이 달은 데이터가 없습니다";
+    }
     btn.addEventListener("click", () => {
       grassActiveMonth = m;
+      grassActiveYear = year;
       buildGrassCalendar(year, m);
       renderGrassTabs(year);
     });
@@ -1701,16 +2115,21 @@ function renderGrassTabs(year){
   }
 }
 
-function renderGrass(){
+// keepView: 자가갱신 tick 에서 부를 때 — 사용자가 보고 있던 연/월 탭을 유지한다.
+function renderGrass(keepView){
   const panel = document.getElementById("grassPanel");
-  if ((!REPORT.monthly && !REPORT.yearly) || REPORT.dates.length <= 1) { panel.hidden = true; return; }
+  if (!REPORT.all && ((!REPORT.monthly && !REPORT.yearly) || REPORT.dates.length <= 1)) { panel.hidden = true; return; }
   panel.hidden = false;
-  document.getElementById("grassTitle").textContent = REPORT.yearly ? "연간 추이" : "월간 추이";
+  document.getElementById("grassTitle").textContent =
+    REPORT.all ? "전체 추이" : REPORT.yearly ? "연간 추이" : "월간 추이";
   computeGrassMax();
-  const [selYear, selMonth] = (currentDate || REPORT.date).split("-").map(Number);
-  grassActiveMonth = selMonth;
-  renderGrassTabs(selYear);
-  buildGrassCalendar(selYear, selMonth);
+  if (!keepView || grassActiveMonth == null || grassActiveYear == null) {
+    const [selYear, selMonth] = (currentDate || REPORT.date).split("-").map(Number);
+    grassActiveYear = selYear;
+    grassActiveMonth = selMonth;
+  }
+  renderGrassTabs(grassActiveYear);
+  buildGrassCalendar(grassActiveYear, grassActiveMonth);
 }
 
 let currentDate = null;
@@ -1718,23 +2137,53 @@ let currentDate = null;
 // 건너뛴다 — renderTimeline() 은 svg.innerHTML="" 로 통째로 새로 그려서 방금 고정해둔
 // 팝업/흰 실선(triggerMarks 기준 위치)을 갱신 중 지워버리기 때문. 그 외 패널은 고정
 // 여부와 무관하게 항상 최신화(아래 setInterval 참고).
+// (v3.8.9) 전 기간 리포트에서 아직 안 받은 지난 날짜는 서버에서 불러온 뒤 그린다.
+// 받아온 날짜는 REPORT.days 에 쌓아 두고, 자가갱신 tick 이 REPORT 를 교체할 때도 옮겨
+// 담는다(지난 날짜는 바뀌지 않으므로 다시 받을 필요 없음).
+let dayLoading = null;
+function fetchDay(dateStr){
+  dayLoading = dateStr;
+  document.getElementById("lede").textContent = dateStr + " 불러오는 중…";
+  fetch(SELF_ORIGIN + "/monitor-live/day.json?date=" + encodeURIComponent(dateStr), { cache:"no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(day => {
+      REPORT.days[dateStr] = day;
+      if (dayLoading === dateStr) { dayLoading = null; loadDay(dateStr); }
+    })
+    .catch(() => {
+      if (dayLoading !== dateStr) return;
+      dayLoading = null;
+      document.getElementById("lede").textContent = dateStr + " 상세를 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.";
+    });
+}
 function loadDay(dateStr, opts){
   const skipTimeline = !!(opts && opts.skipTimeline);
   const day = REPORT.days[dateStr];
-  if (!day) return;
+  if (!day) { if (grassClickable(dateStr)) fetchDay(dateStr); return; }
+  dayLoading = null;
   currentDate = dateStr;
   CURRENT_DAY = day;
   PREVIEW = day.preview; TICKS = day.ticks; OPS = day.ops;
+  CMD = day.cmd || [];  // (v3.8.9) 그 전 스냅샷·리포트엔 없음
   NOTICE = day.notice; TWEET = day.tweet; RELAY = day.relay;
-  INGEST = computeIngest(RELAY, NOTICE, TWEET);
+  UPSTREAM = day.upstream || [];  // (v3.8.9) 옛 스냅샷/리포트엔 키가 없을 수 있음
+  INGEST = computeIngest(RELAY, NOTICE, TWEET, day.upstream);
   TRIGGER_GROUPS = groupTriggerEvents(OPS, TICKS, INGEST);
   BACKEND_SEGS = computeBackendSegs(TICKS, OPS, day.downRanges);
 
+  // (v3.8.9) 지난 날짜 상세의 출처 — 스냅샷(매일 06:10 에 굳힌 것) / 즉석 계산(스냅샷 전).
+  const provenance = day.snapshotAt ? ` (모니터링 스냅샷 ${day.snapshotAt.replace("T", " ").replace("Z", " UTC")})` :
+    day.snapshotAt === null ? " (모니터링 스냅샷 전 — 이벤트 로그에서 즉석 계산)" : "";
+  const noLog = day.hasLog === false
+    ? (dateStr === REPORT.date && SELF_ORIGIN
+        ? " <b>오늘 이벤트 로그 파일이 아직 없습니다(오늘 기록된 이벤트가 아직 없거나 기록 누락).</b>"
+        : " <b>이 날짜 이벤트 로그 파일이 없습니다 — 0건인지 기록 누락인지 구분할 수 없습니다.</b>") : "";
   document.getElementById("lede").innerHTML =
-    `<b>${dateStr}</b> 하루치(06:00~익일 06:00 KST 기준) — 운영자 제어·정기수집 틱·X 웹훅 인입(트리거) → ` +
+    `<b>${dateStr}</b>${provenance} 하루치(06:00~익일 06:00 KST 기준) — 운영자 제어·정기수집 틱·업스트림 알림(트리거) → ` +
     `preview·릴레이·소식·개인 트윗(결과)을 같은 시간축에서 대조합니다. ` +
-    ((REPORT.monthly || REPORT.yearly) ? "위 그리드에서 다른 날짜를 고를 수 있습니다." :
-      `다른 날짜는 <code>/monitor YYYY-MM-DD</code>, 이번 달 전체는 <code>/monitor --monthly</code>, 올해 전체는 <code>/monitor --yearly</code>로 요청하세요.`);
+    (REPORT.all ? (SELF_ORIGIN ? "위 그리드에서 지난 날짜를 고를 수 있습니다." : "") :
+     (REPORT.monthly || REPORT.yearly) ? "위 그리드에서 다른 날짜를 고를 수 있습니다." :
+      `다른 날짜는 <code>/monitor YYYY-MM-DD</code>, 이번 달 전체는 <code>/monitor --monthly</code>, 올해 전체는 <code>/monitor --yearly</code>로 요청하세요.`) + noLog;
   document.getElementById("tlTitle").textContent = dateStr + " · 24시간 타임라인 (06:00~익일 06:00 KST)";
   renderStats();
   if (!skipTimeline) renderTimeline();
@@ -1750,7 +2199,7 @@ function loadDay(dateStr, opts){
 renderLabels();
 loadDay(REPORT.date);
 
-// (v3.8.7 후속, v3.8.8 로 고정 상태 처리 분리) 웹 monitor(/monitor-live)에서만
+// (v3.8.7, v3.8.8 로 고정 상태 처리 분리) 웹 monitor(/monitor-live)에서만
 // SELF_ORIGIN 이 채워진다 — 자기 자신을 주기적으로 다시 불러와 "진행중" 표시를 실시간에
 // 가깝게 유지한다. loadDay() 는 같은 문서 안에서 DOM 만 갱신하므로(페이지/iframe 리로드
 // 없음) 스크롤·줌 위치가 안 튄다(예전엔 부모 페이지가 iframe.srcdoc 을 통째로 교체해서
@@ -1762,7 +2211,19 @@ if (SELF_ORIGIN) {
     if (document.visibilityState !== "visible") return;
     fetch(SELF_ORIGIN + "/monitor-live.json", { cache:"no-store" })
       .then(r => r.ok ? r.json() : null)
-      .then(fresh => { if (fresh) { REPORT = fresh; loadDay(currentDate, { skipTimeline: isPinned() }); } })
+      .then(fresh => {
+        if (!fresh) return;
+        // (v3.8.9) 이미 받아둔 지난 날짜 상세는 옮겨 담는다. 06:00 경계를 넘었으면 옛
+        // "오늘"(진행 중이던 하루치)은 옮기지 않는다 — 다시 누르면 확정본을 받는다.
+        const prevToday = REPORT.date;
+        Object.keys(REPORT.days).forEach(d => {
+          if (d !== prevToday && !(d in fresh.days)) fresh.days[d] = REPORT.days[d];
+        });
+        REPORT = fresh;
+        if (currentDate === REPORT.date) loadDay(currentDate, { skipTimeline: isPinned() });
+        else if (currentDate === prevToday) loadDay(REPORT.date);  // 경계 넘김 — 새 "오늘"로
+        else renderGrass(true);  // 지난 날짜를 보는 중 — 상세는 불변, 잔디(오늘 칸)만 갱신
+      })
       .catch(() => {});
   }, 60000);
 }
@@ -1775,7 +2236,7 @@ function clientXToMinutes(clientX){
   const rect = scrollEl.getBoundingClientRect();
   return xToMinutes(clientX - rect.left + scrollEl.scrollLeft, currentPlotW());
 }
-// (v3.8.5 후속) 마우스를 계속 따라다녀야 하는 "얇은 크로스헤어"(moveCrosshair)와, 클릭으로
+// (v3.8.5a) 마우스를 계속 따라다녀야 하는 "얇은 크로스헤어"(moveCrosshair)와, 클릭으로
 // 고정한 뒤엔 마우스가 움직여도 안 바뀌어야 하는 "트리거 히스토그램 흰 실선/발광"
 // (setTriggerActiveNear, 팝업이 pinned 인 동안엔 여기서 건드리지 않음)을 분리했다 —
 // 예전엔 같은 placeCrosshair() 하나가 pinned 여부로 통째로 막혀서, 클릭 후 얇은 선까지
@@ -1829,7 +2290,7 @@ function hideCrosshair(){
   scrollEl.addEventListener("pointermove", (ev) => {
     if (!pointers.has(ev.pointerId)) {
       // 버튼 안 누른 호버 — 얇은 크로스헤어는 pinned 여부와 무관하게 항상 마우스를
-      // 따라간다(v3.8.5 후속 버그 수정). 트리거 히스토그램 미리보기(발광/흰 실선)만
+      // 따라간다(v3.8.5a 버그 수정). 트리거 히스토그램 미리보기(발광/흰 실선)만
       // placeCrosshair 내부에서 pinned 면 건드리지 않는다.
       if (pointers.size === 0) placeCrosshair(clientXToMinutes(ev.clientX));
       return;
@@ -1876,7 +2337,7 @@ function hideCrosshair(){
   scrollEl.addEventListener("click", (ev) => {
     if (dragMoved) { dragMoved = false; return; } // 드래그 끝의 관성 클릭 무시
     if (isPinned()) { unpinTip(); return; }
-    // (v3.8.5 후속) 트리거 히스토그램 레인 밴드 안에서 클릭하면 — 정확히 막대를 못
+    // (v3.8.5a) 트리거 히스토그램 레인 밴드 안에서 클릭하면 — 정확히 막대를 못
     // 맞혀도(특히 모바일) 가장 가까운 막대를 클릭한 것으로 보고 그 시간대 이벤트
     // 팝업을 바로 띄운다. Y 좌표로 밴드를 제한해 notice/preview 등 다른 레인의
     // 빈 공간 클릭까지 트리거로 대체되지 않게 한다.
@@ -1933,15 +2394,30 @@ function renderExtYoutube(){
   const pts = [[0,0]];
   sorted.forEach(e => { cum += e.quota||0; pts.push([minutesOf(e.t), cum]); });
   pts.push([1440, cum]);
-  const maxY = Math.max(1, cum);
+  // (v3.8.9) 일일 quota 한도(10,000) 빨간 점선 — 한도선이 항상 보이도록 y 축 상한을
+  // max(누적, 한도)보다 조금 위로 잡는다(누적이 한도보다 훨씬 작으면 곡선은 바닥 쪽에 붙는다).
+  const YT_QUOTA_LIMIT = 10000;
+  const maxY = Math.max(cum, YT_QUOTA_LIMIT) * 1.08;
   const px = m => PADL + (m/1440)*pw, py = v => PADT + ph - (v/maxY)*ph;
   svg.innerHTML = "";
   const path = document.createElementNS(ns,"path");
   path.setAttribute("d", pts.map(([m,v],i) => (i===0?"M":"L")+px(m)+","+py(v)).join(" "));
   path.setAttribute("fill","none"); path.setAttribute("stroke","#4da3ff"); path.setAttribute("stroke-width","2");
   svg.appendChild(path);
+  const limY = py(YT_QUOTA_LIMIT);
+  const lim = document.createElementNS(ns,"line");
+  lim.setAttribute("x1", PADL); lim.setAttribute("x2", W-10);
+  lim.setAttribute("y1", limY); lim.setAttribute("y2", limY);
+  lim.setAttribute("stroke", ERR); lim.setAttribute("stroke-width", "1.5");
+  lim.setAttribute("stroke-dasharray", "6 4");
+  svg.appendChild(lim);
+  const limT = document.createElementNS(ns,"text");
+  limT.setAttribute("x", W-10); limT.setAttribute("y", limY-4);
+  limT.setAttribute("fill", ERR); limT.setAttribute("font-size","10"); limT.setAttribute("text-anchor","end");
+  limT.textContent = "일일 한도 10,000";
+  svg.appendChild(limT);
   const cap = document.createElementNS(ns,"text");
-  cap.setAttribute("x", PADL); cap.setAttribute("y", PADT+4);
+  cap.setAttribute("x", PADL); cap.setAttribute("y", limY + 14);  // 한도선 바로 아래(겹침 방지)
   cap.setAttribute("fill","#8a8f98"); cap.setAttribute("font-size","10");
   cap.textContent = `누적 ${cum} units (${currentDate})`;
   svg.appendChild(cap);
@@ -1956,8 +2432,19 @@ function renderExtYoutube(){
 }
 
 function renderExtVercel(){
-  const push = CURRENT_DAY.vercelPush || 0;
+  // (v3.8.9) Vercel REST API 실제 배포 시도 수(브랜치·성공 여부 무관 — 한도에 다 잡힌다).
+  const vd = CURRENT_DAY.vercelDeploys;
+  const tile = document.getElementById("extVercelTile");
+  if (vd == null) {  // 조회 실패/미조회 — 0건으로 단정하지 않는다
+    document.getElementById("extVercelUsed").textContent = "? / 100";
+    document.getElementById("extVercelStatus").textContent = "확인 불가";
+    tile.classList.remove("error");
+    tile.title = "Vercel API 조회 안 됨(토큰 없음·조회 실패)";
+    return;
+  }
+  const push = vd.total;
   const overLimit = push > 100;
+  tile.title = `production(main) ${vd.production} · preview ${vd.preview} · 실패(ERROR) ${vd.error}`;
   document.getElementById("extVercelUsed").textContent = push + " / 100";
   document.getElementById("extVercelStatus").textContent = overLimit ? "한도 초과 위험" : "정상";
   document.getElementById("extVercelTile").classList.toggle("error", overLimit);
@@ -2023,7 +2510,7 @@ if __name__ == "__main__":
     assert "assumed_live" not in arale["segs"][0], arale
     print("[OK] _preview_json: assumed_live 플래그가 세그먼트로 전파됨(선행 세그먼트는 제외)")
 
-    # (v3.8.5 후속) collab_with 도 assumed_live 와 같은 방식으로 세그먼트에 전파 —
+    # (v3.8.5a) collab_with 도 assumed_live 와 같은 방식으로 세그먼트에 전파 —
     # 프론트가 합동 live 막대 위에 참여 멤버 아이콘을 얹는 데 쓴다.
     collab_ev = [{"who": "yuno", "ts": "2026-09-01T05:00:00Z", "from_state": "watching",
                   "to_state": "live", "title": "합동", "collab_with": ["ritsu"]}]
@@ -2054,7 +2541,7 @@ if __name__ == "__main__":
     # ── render_html: 플레이스홀더 치환, 유효 JSON 임베드 (days/dates/monthly/yearly 구조) ──
     day = {
         "ticks": ticks, "ops": ops, "notice": notice, "relay": [], "tweet": [],
-        "preview": preview, "downRanges": [], "vercelPush": 3, "eventCount": len(events),
+        "preview": preview, "downRanges": [], "vercelDeploys": {"total": 3, "production": 3, "preview": 0, "error": 0}, "eventCount": len(events),
     }
     report = {
         "date": "2026-09-15", "monthly": False, "yearly": False,
@@ -2067,7 +2554,7 @@ if __name__ == "__main__":
     assert 'const SELF_ORIGIN = "";' in html, "self_origin 생략 시 빈 문자열(자가갱신 비활성)"
     print("[OK] render_html: 플레이스홀더 치환 완료")
 
-    # (v3.8.7 후속) self_origin 지정 시 그대로 심어져 웹 monitor 자가갱신 폴링이 켜짐
+    # (v3.8.7) self_origin 지정 시 그대로 심어져 웹 monitor 자가갱신 폴링이 켜짐
     html_live = render_html(report, self_origin="https://mewtype-telegram-xxx.run.app/")
     assert 'const SELF_ORIGIN = "https://mewtype-telegram-xxx.run.app";' in html_live, html_live[:200]
     print("[OK] render_html: self_origin 지정 시 끝 슬래시 제거하고 삽입")
@@ -2104,14 +2591,100 @@ if __name__ == "__main__":
     assert len(report_yearly["dates"]) == expected_year_days
     print("[OK] build_report(yearly=True): 올해 1월 1일~오늘 전부 조회")
 
-    # ── _build_day(fetch_external=False): 키가 있어도 외부 API를 안 불러 downRanges=[]/vercelPush=0 ──
+    # ── _build_day(fetch_external=False): 키가 있어도 외부 API를 안 불러 downRanges/vercelDeploys=None ──
+    # (v3.8.9) 조회 안 한 값은 []/0(=정상으로 단정)이 아니라 None(확인 불가)
     d0 = _build_day(
         _RangeGh(), "2026-09-01", now_hm=None,
         healthchecks_api_key="fake", healthchecks_uuid="fake",
-        github_token_for_commits="fake", fetch_external=False,
+        vercel_token="fake", fetch_external=False,
     )
-    assert d0["downRanges"] == [] and d0["vercelPush"] == 0
-    print("[OK] _build_day(fetch_external=False): 외부 API 스킵 — yearly 비선택일의 부하 절감")
+    assert d0["downRanges"] is None and d0["vercelDeploys"] is None
+    assert d0["hasLog"] is False, "로그 파일 404 → hasLog False (0건으로 단정하지 않음)"
+    print("[OK] _build_day(fetch_external=False): 외부 API 스킵 → None, 로그 없음 → hasLog False")
+
+    # (v3.8.9) 키 없음 → 조회 불가 → None
+    assert _fetch_health_down_ranges("", "", "2026-09-01") is None
+    assert _vercel_deploys("", "2026-09-01") is None
+
+    # (v3.8.9) _vercel_deploys: 페이지네이션(최신→과거) + 하루 범위 필터 + target/state 분류
+    class _VResp:
+        def __init__(self, body): self._b = body
+        def raise_for_status(self): pass
+        def json(self): return self._b
+    s0, _e0 = _day_bounds("2026-09-22")
+    ms = lambda h: int((s0 + timedelta(hours=h)).timestamp() * 1000)
+    pages = [
+        {"deployments": [{"created": ms(20), "target": "production", "state": "READY"},
+                         {"created": ms(10), "target": None, "state": "ERROR"}], "pagination": {"next": ms(10)}},
+        {"deployments": [{"created": ms(2), "target": None, "state": "READY"},
+                         {"created": ms(-1), "target": "production", "state": "READY"}], "pagination": {"next": None}},
+    ]
+    calls = []
+    _orig_get = requests.get
+    requests.get = lambda url, **kw: (calls.append(kw["params"].copy()), _VResp(pages[len(calls) - 1]))[1]
+    try:
+        vd = _vercel_deploys("tok", "2026-09-22")
+    finally:
+        requests.get = _orig_get
+    assert vd == {"total": 3, "production": 1, "preview": 2, "error": 1}, vd
+    assert calls[1]["until"] == ms(10), "다음 페이지는 pagination.next 이전"
+    print("[OK] _vercel_deploys: 페이지네이션·하루 범위 밖 제외·production/preview/error 분류")
+    print("[OK] 외부 조회 키 없음 → None(확인 불가)")
+
+    # (v3.8.9) build_day_from_text + day_trigger_count — 프론트 triggerCount 와 같은 정의
+    dtext = "\n".join(json.dumps(e) for e in events)
+    dd = build_day_from_text("2026-09-15", dtext, now_hm=None, down_ranges=[], vercel_deploys=None)
+    assert dd["hasLog"] is True and dd["eventCount"] == len(events)
+    # (v3.8.9) 인입 = 업스트림(실제 기록 + 옛 로그 복원분) 건수
+    assert day_trigger_count(dd) == len(dd["ops"]) + len(dd["ticks"]) + len(dd["upstream"])
+    empty_file = build_day_from_text("2026-09-15", "", now_hm=None, down_ranges=None, vercel_deploys=None)
+    assert empty_file["hasLog"] is True and day_trigger_count(empty_file) == 0, "빈 파일은 '있음 + 0건'"
+    print("[OK] build_day_from_text/day_trigger_count")
+
+    # (v3.8.9) 운영자 명령(cmd) 이벤트 → day["cmd"]
+    cmd_text = json.dumps({"ts": "2026-09-15T01:00:00Z", "flow": "cmd", "result": "err", "who": "/del",
+                           "detail": "/del preview arale 9", "reply": "⚠️ 번호 없음"})
+    dc = build_day_from_text("2026-09-15", cmd_text, now_hm=None, down_ranges=None, vercel_deploys=None)
+    assert dc["cmd"] == [{"t": "10:00", "cmd": "/del", "tone": "err", "d": "/del preview arale 9", "reply": "⚠️ 번호 없음"}], dc["cmd"]
+    assert day_trigger_count(dc) == 0, "운영자 명령은 트리거 수에 안 넣음(ops 는 그대로)"
+    print("[OK] _cmd_json: 운영자 명령 행 데이터")
+
+    # (v3.8.9) 업스트림 감지 + 📥 트리거 = 업스트림 건수(있을 때)
+    up_text = "\n".join(json.dumps(e) for e in [
+        {"ts": "2026-09-15T01:00:00Z", "flow": "upstream", "result": "ok", "who": "夢限大", "detail": "공식 스케줄 · 예고 2건", "source": "x"},
+        {"ts": "2026-09-15T01:00:05Z", "flow": "relay", "result": "ok", "detail": "mode: added", "via": "ingest"},
+        {"ts": "2026-09-15T02:00:00Z", "flow": "upstream", "result": "err", "who": "千石ユノ", "detail": "처리 실패 · x", "source": "yt"},
+    ])
+    du = build_day_from_text("2026-09-15", up_text, now_hm=None, down_ranges=None, vercel_deploys=None)
+    assert [e["src"] for e in du["upstream"]] == ["x", "yt"] and du["upstream"][1]["tone"] == "err", du["upstream"]
+    assert day_trigger_count(du) == 2, "relay 는 업스트림과 중복이라 안 셈"
+    print("[OK] _upstream_json + day_trigger_count(업스트림 기준)")
+
+    # (v3.8.9) 옛 로그 복원 — 같은 초에 몰린 알림 분리 · 부가/백필 기록 제외 · 실제 기록 이후는 복원 안 함
+    old = [
+        {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "degraded", "who": "miyako", "detail": "llm skip", "via": "ingest"},
+        {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "ok", "who": "miyako", "detail": "mode: added", "via": "ingest"},
+        {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "ok", "who": "ritsu", "detail": "mode: added", "via": "ingest"},
+        {"ts": "2026-09-20T01:29:53Z", "flow": "relay", "result": "ok", "detail": "mode: none", "via": "ingest"},
+        {"ts": "2026-09-20T01:29:53Z", "flow": "relay", "result": "degraded", "detail": "collab-guest skip: x", "via": "ingest"},
+        {"ts": "2026-09-20T02:00:00Z", "flow": "notice", "result": "ok", "detail": "mode: added", "via": "ingest"},
+        {"ts": "2026-09-20T02:00:00Z", "flow": "relay", "result": "ok", "detail": "mode: none", "via": "ingest"},
+        {"ts": "2026-09-20T03:00:00Z", "flow": "relay", "result": "ok", "who": "yuno", "detail": "mode: yt-member-live live", "via": "ingest"},
+        {"ts": "2026-09-20T03:30:00Z", "flow": "tweet", "result": "ok", "who": "arale", "detail": "[백필] mode: backfill", "via": "ingest"},
+        {"ts": "2026-09-20T03:40:00Z", "flow": "tweet", "result": "ok", "who": "arale", "detail": "mode: added", "via": "ops"},
+        {"ts": "2026-09-20T03:50:00Z", "flow": "ops", "result": "ok", "who": "/pause", "detail": "paused"},
+        {"ts": "2026-09-20T04:00:00Z", "flow": "upstream", "result": "ok", "who": "x", "detail": "공식", "source": "x"},
+        {"ts": "2026-09-20T05:00:00Z", "flow": "tweet", "result": "ok", "who": "nonoka", "detail": "mode: added", "via": "ingest"},
+    ]
+    dv = build_day_from_text("2026-09-20", "\n".join(json.dumps(e) for e in old), now_hm=None,
+                             down_ranges=None, vercel_deploys=None)
+    der = [u for u in dv["upstream"] if u.get("derived")]
+    assert [(u["t"], u["src"], u["who"]) for u in der] == [
+        ("10:29", "x", "miyako"), ("10:29", "x", "ritsu"), ("10:29", "x", ""), ("11:00", "x", ""), ("12:00", "yt", "yuno")], der
+    assert "소식 · mode: added" in der[3]["d"], "같은 초 소식은 공식 알림에 붙음"
+    assert len(dv["upstream"]) == 6, "실제 기록 1 + 복원 5 (백필·수동·실제 기록 이후 시각은 제외)"
+    assert [c["cmd"] for c in dv["cmd"]] == ["/ingest", "/pause"] and all(c["derived"] for c in dv["cmd"])
+    print("[OK] _derive_upstream/_derive_cmd: 같은 초 분리·부가/백필 제외·실제 기록 이후 미복원")
 
     # ── report_filename: yearly=YYYY, monthly=YYYYMM, daily=YYYYMMDD (v3.8.5) ──
     assert report_filename({"date": "2026-09-22", "monthly": False, "yearly": False}) == "monitor_20260922.html"
