@@ -18,7 +18,7 @@
   <p id="msg">불러오는 중…</p>
   <script>
     var LIVE_URL = "https://mewtype-telegram-lk3cg7l7ka-an.a.run.app/monitor-live";
-    var SNAPSHOT_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/monitoring/latest.html";
+    var SNAPSHOT_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/monitoring/monitoring/latest.html";
     function load(url) {
       return fetch(url, { cache: "no-store" }).then(function (r) {
         if (!r.ok) throw new Error(r.status);

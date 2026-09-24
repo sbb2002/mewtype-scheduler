@@ -14,6 +14,7 @@ class Config:
     github_token: str
     github_repo: str          # "owner/name"
     data_branch: str          # 기본 "data"
+    monitor_branch: str       # 모니터링 로그 브랜치 (기본 "monitoring"). v3.9 이후.
     youtube_api_key: str
     gcp_project: str
     gcp_location: str          # Cloud Run / Tasks / Scheduler 공통 리전
@@ -71,6 +72,7 @@ def load_config() -> Config:
         github_token=os.environ.get("GITHUB_TOKEN", "").strip(),
         github_repo=os.environ.get("GITHUB_REPO", "").strip(),
         data_branch=os.environ.get("DATA_BRANCH", "data").strip() or "data",
+        monitor_branch=os.environ.get("MONITOR_BRANCH", "monitoring").strip() or "monitoring",
         youtube_api_key=os.environ.get("YOUTUBE_API_KEY", "").strip(),
         gcp_project=os.environ.get("GCP_PROJECT", "").strip(),
         gcp_location=os.environ.get("GCP_LOCATION", "").strip(),
@@ -106,5 +108,6 @@ if __name__ == "__main__":
     os.environ["ALLOW_UNAUTH"] = "1"
     cfg = load_config()
     assert cfg.data_branch == "data"
+    assert cfg.monitor_branch == "monitoring"
     assert cfg.allow_unauth is True
     print("config self-test ok:", cfg)

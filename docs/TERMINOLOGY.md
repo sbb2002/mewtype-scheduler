@@ -14,6 +14,14 @@
 
 - **`POST /ingest`** — 업스트림 시스템이 중계한 푸시알림 텍스트를 백엔드가 받는 공개 엔드포인트. transport 추상화 경계 — 입력 소스가 바뀌어도 이 이후 스키마는 불변.
 - **`data` 브랜치** — 백엔드가 상태를 커밋하는 GitHub 브랜치. 코드 없음, JSON 만.
+- **`monitoring` 브랜치** (v3.9) — 데이터 저장소의 **로그 전용** 브랜치. 이벤트 로그
+  (`monitoring/events-*.jsonl`)·모니터 스냅샷(`latest.html`)·유실 원문 큐(`lost_queue.json`)가
+  여기 쌓인다. `data` 에서 분기해 만들어 과거 로그를 히스토리째 승계했다. **분리한 이유**는
+  GitHub Contents API 의 PUT 이 파일이 아니라 **브랜치 HEAD 단위로 충돌**하기 때문 — 이 로그들은
+  `/write` 직렬화 창구를 거치지 않고 제어 채널이 직접 커밋하는데, 제어 채널은 인스턴스가 최대
+  20개라 버스트 때 `data` 브랜치 쓰기를 409 로 밀어냈다(2026-09-24 트윗 유실 사고).
+  env `MONITOR_BRANCH` 로 지정(기본 `monitoring`). "로그 브랜치"라고 불러도 되지만 문서·코드
+  표기는 `monitoring` 브랜치로 통일.
 - **`devpapers` 브랜치** — 개발 중 상시 참조하지 않는 문서(배경자료·구버전 기록·운영자용
   설명자료 등)를 모아두는 GitHub 브랜치. `docs/`에서 개발 시 계속 쓰는 4개
   (`SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md`)만 `main`에 남기고 나머지가

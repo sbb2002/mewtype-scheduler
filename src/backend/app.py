@@ -159,7 +159,12 @@ def _monitor():
         html = result.pop("html")
         filename = result["filename"]
         try:
-            gh.write_text(
+            # (v3.9) monitoring/latest.html 은 monitoring 브랜치에 쓰기.
+            # GitHubStore 는 모듈 상단에서 이미 import 한다 — 여기서 다시 import 하면
+            # 파이썬이 이 이름을 _monitor() 전체의 지역 변수로 보게 돼, 함수 앞부분의
+            # gh = GitHubStore(...) 가 UnboundLocalError 로 죽는다(실제로 겪은 장애).
+            gh_monitor = GitHubStore(cfg.github_token, cfg.github_repo, cfg.monitor_branch)
+            gh_monitor.write_text(
                 "monitoring/latest.html", html, prev_sha=None,
                 message=f"data: monitor latest {result['date']}",
             )

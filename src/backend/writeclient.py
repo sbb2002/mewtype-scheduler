@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import threading
+import time
 from typing import Any
 
 try:
@@ -34,6 +36,13 @@ log = logging.getLogger("backend.writeclient")
 
 _TIMEOUT_SEC = 60
 _WAIT_NOTICE_DELAY_SEC = 2.0
+
+# (v3.8.9) /write 429/503 백오프 재시도
+_MAX_RETRIES = 5  # 최대 5회 재시도 = 총 6회 시도
+_INITIAL_BACKOFF_SEC = 1.5  # 첫 재시도 대기 시간
+_MAX_BACKOFF_SEC = 20.0  # 지수 백오프 상한(총 대기 시간 60초 이내 유지)
+_BACKOFF_MULTIPLIER = 2.0  # 매 재시도마다 2배
+_JITTER_SEC = 0.5  # 지터 범위 상한
 
 
 class WriteError(RuntimeError):
@@ -81,12 +90,36 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
     timer.start()
     try:
         tok = fetch_id_token(Request(), main_url)
-        resp = requests.post(
-            f"{main_url}/write",
-            json={"kind": kind, "args": args},
-            headers={"Authorization": f"Bearer {tok}"},
-            timeout=_TIMEOUT_SEC,
-        )
+
+        # (v3.8.9) /write 429/503 지수 백오프 재시도
+        retry = 0
+        while True:
+            resp = requests.post(
+                f"{main_url}/write",
+                json={"kind": kind, "args": args},
+                headers={"Authorization": f"Bearer {tok}"},
+                timeout=_TIMEOUT_SEC,
+            )
+
+            # 429/503 → 지수 백오프 재시도 (Cloud Run이 백엔드 컨테이너에 요청을 배정하기 전에
+            # 거절한 것이라 백엔드가 요청을 보지 못했다 — 재시도해도 중복 커밋이 없다)
+            if resp.status_code in (429, 503) and retry < _MAX_RETRIES:
+                retry += 1
+                backoff = min(
+                    _INITIAL_BACKOFF_SEC * (_BACKOFF_MULTIPLIER ** (retry - 1)),
+                    _MAX_BACKOFF_SEC,
+                )
+                wait = backoff + random.uniform(0, _JITTER_SEC)
+                log.warning(
+                    "/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
+                    resp.status_code,
+                    retry,
+                    _MAX_RETRIES,
+                    wait,
+                )
+                time.sleep(wait)
+                continue
+            break
     except Exception as e:  # noqa: BLE001
         if notice_sent.is_set():
             _send_done_notice(kind, tag, ok=False, err=str(e))
@@ -241,3 +274,92 @@ if __name__ == "__main__":
     _with_fakes(_FakeRequestsFast, lambda: call_write("merge_rows", label="빠른케이스"))
     assert sent == [], f"2초 안에 끝나면 대기/완료 DM 모두 없어야 함(기존 동작 유지), 받음 {sent}"
     print("[PASS] writeclient: 빠른 경로는 DM 없음(기존 동작 유지)")
+
+    # ── (v3.8.9) 429/503 재시도 테스트 ──
+    class _FakeResp429Retry:
+        """429를 2번 반환하고 3번째에 200 반환."""
+        call_count = 0
+
+        @classmethod
+        def json(cls):
+            return {"ok": True, "changed": True}
+
+        @classmethod
+        def post(cls, *a, **k):
+            cls.call_count += 1
+            resp = type("Resp", (), {})()
+            if cls.call_count <= 2:
+                resp.status_code = 429
+                resp.text = "Rate limit exceeded"
+            else:
+                resp.status_code = 200
+                resp.text = ""
+                resp.json = cls.json
+            return resp
+
+    class _FakeResp429All:
+        """계속 429 반환."""
+        call_count = 0
+
+        @classmethod
+        def post(cls, *a, **k):
+            cls.call_count += 1
+            resp = type("Resp", (), {})()
+            resp.status_code = 429
+            resp.text = "Rate limit"
+            return resp
+
+    class _FakeRespNetErr:
+        """네트워크 예외 발생."""
+        call_count = 0
+
+        @classmethod
+        def post(cls, *a, **k):
+            cls.call_count += 1
+            raise ConnectionError("네트워크 실패")
+
+    # 테스트용 짧은 상수로 오버라이드
+    _orig_backoff = _INITIAL_BACKOFF_SEC, _MAX_BACKOFF_SEC, _BACKOFF_MULTIPLIER, _JITTER_SEC
+    _orig_notice_delay = _WAIT_NOTICE_DELAY_SEC
+    globals()["_INITIAL_BACKOFF_SEC"] = 0.01
+    globals()["_MAX_BACKOFF_SEC"] = 0.05
+    globals()["_BACKOFF_MULTIPLIER"] = 2.0
+    globals()["_JITTER_SEC"] = 0.05  # 지터도 짧게 설정
+    globals()["_WAIT_NOTICE_DELAY_SEC"] = 0.001  # 대기 DM이 발화하도록 매우 짧게 설정
+
+    # 테스트 1: 429→429→200 성공
+    sent.clear()
+    _FakeResp429Retry.call_count = 0
+    result = _with_fakes(_FakeResp429Retry, lambda: call_write("test_retry", label="재시도성공"))
+    assert result == {"ok": True, "changed": True}, f"재시도 후 성공 결과 예상, 받음: {result}"
+    assert _FakeResp429Retry.call_count == 3, f"3회 시도 예상, 받음: {_FakeResp429Retry.call_count}"
+    assert len(sent) == 2, f"재시도 후 성공: 대기 DM + 완료 DM 2건 기대, 받음 {len(sent)}"
+    print("[PASS] writeclient: 429 재시도 후 성공")
+
+    # 테스트 2: 계속 429 → 재시도 소진 후 실패
+    sent.clear()
+    _FakeResp429All.call_count = 0
+    try:
+        _with_fakes(_FakeResp429All, lambda: call_write("test_all_429", label="재시도소진"))
+        raise AssertionError("계속 429이면 WriteError 를 던져야 함")
+    except WriteError as e:
+        assert "HTTP 429" in str(e), f"HTTP 429 실패 메시지 예상, 받음: {e}"
+        assert _FakeResp429All.call_count == 6, f"1+5회 시도=6회 예상, 받음: {_FakeResp429All.call_count}"
+    assert len(sent) == 2, f"재시도 소진 후 실패: 대기 DM + 실패 DM 2건 기대, 받음 {len(sent)}"
+    assert sent[1][0].startswith("⚠️"), "실패 DM이어야 함"
+    print("[PASS] writeclient: 429 재시도 소진 후 실패")
+
+    # 테스트 3: 네트워크 예외 → 재시도 금지
+    sent.clear()
+    _FakeRespNetErr.call_count = 0
+    try:
+        _with_fakes(_FakeRespNetErr, lambda: call_write("test_net_err", label="네트워크실패"))
+        raise AssertionError("네트워크 예외는 즉시 실패해야 함")
+    except WriteError as e:
+        assert "네트워크 실패" in str(e), f"네트워크 예외 메시지 예상, 받음: {e}"
+        assert _FakeRespNetErr.call_count == 1, f"재시도 없이 1회만 시도, 받음: {_FakeRespNetErr.call_count}"
+    print("[PASS] writeclient: 네트워크 예외는 재시도 금지")
+
+    # 원래 상수 복구
+    globals()["_INITIAL_BACKOFF_SEC"], globals()["_MAX_BACKOFF_SEC"], globals()["_BACKOFF_MULTIPLIER"], globals()["_JITTER_SEC"] = _orig_backoff
+    globals()["_WAIT_NOTICE_DELAY_SEC"] = _orig_notice_delay

@@ -255,8 +255,23 @@ def _build_day(
     `fetch_external=False`면 healthchecks.io/Vercel 조회를 건너뛰고 downRanges=[]/
     vercelPush=0 으로 채운다(v3.8.5, `--yearly`가 날짜당 최대 366회 외부 API를 부르지
     않도록 — 선택된 날짜에만 True로 준다. 잔디 색(그룹의 정상/degraded/err 판정)은
-    이벤트 로그만으로 계산돼 영향 없다)."""
-    text, _sha = gh.read_text(f"monitoring/events-{date_kst}.jsonl")
+    이벤트 로그만으로 계산돼 영향 없다).
+
+    (v3.9) 이벤트 로그는 monitoring 브랜치에 있다."""
+    import os
+    from .gh_store import GitHubStore
+
+    # monitoring 브랜치에서 읽기 — 실제 GitHubStore만 브랜치 교체
+    # (self-test 의 _RangeGh 같은 mock은 속성이 없어도 .read_text 만 있으면 됨)
+    monitor_branch = os.environ.get("MONITOR_BRANCH", "monitoring").strip() or "monitoring"
+    if hasattr(gh, "token") and monitor_branch != getattr(gh, "branch", None):
+        # 실제 GitHubStore — 브랜치만 교체한 복제본
+        gh_monitor = GitHubStore(gh.token, gh.repo, monitor_branch, session=gh.session, timeout=gh.timeout)
+    else:
+        # mock 또는 이미 monitoring 브랜치 — 그대로 쓰기
+        gh_monitor = gh
+
+    text, _sha = gh_monitor.read_text(f"monitoring/events-{date_kst}.jsonl")
     events = parse_events(text)
     grouped = _group(events)
     return {
@@ -2066,9 +2081,13 @@ if __name__ == "__main__":
             return (None, None)  # 아직 로그 없는 날짜(404) — 전부 빈 이벤트로 처리돼야 함
 
     gh = _RangeGh()
-    today = datetime.now(KST).strftime("%Y-%m-%d")
+    now_kst = datetime.now(KST)
+    today_bucket = bucket_date_kst(now_kst)  # 06:00 KST 경계 기준 날짜
     report_monthly = build_report(gh, monthly=True)
-    expected_days = int(today[8:10])
+    # 기준일이 속한 달의 1일 이후 호출 수를 기대값으로 사용 (09-01~오늘)
+    first_of_month = today_bucket[:8] + "01"
+    expected_days = (datetime.strptime(today_bucket, "%Y-%m-%d") -
+                     datetime.strptime(first_of_month, "%Y-%m-%d")).days + 1
     assert len(gh.calls) == expected_days, (len(gh.calls), expected_days)
     assert report_monthly["monthly"] is True and report_monthly["yearly"] is False
     assert len(report_monthly["dates"]) == expected_days
@@ -2079,7 +2098,7 @@ if __name__ == "__main__":
     # ── build_report(yearly=True): 올해 1월 1일~오늘치 날짜 수만큼 조회(v3.8.5) ──
     gh2 = _RangeGh()
     report_yearly = build_report(gh2, yearly=True)
-    expected_year_days = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(today[:4] + "-01-01", "%Y-%m-%d")).days + 1
+    expected_year_days = (datetime.strptime(today_bucket, "%Y-%m-%d") - datetime.strptime(today_bucket[:4] + "-01-01", "%Y-%m-%d")).days + 1
     assert len(gh2.calls) == expected_year_days, (len(gh2.calls), expected_year_days)
     assert report_yearly["yearly"] is True and report_yearly["monthly"] is False
     assert len(report_yearly["dates"]) == expected_year_days
