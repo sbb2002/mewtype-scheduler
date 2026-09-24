@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from .monitor_log import DAY_START_HOUR, bucket_date_kst
+from .monitor_log import DAY_START_HOUR, _monitor_gh, bucket_date_kst
 
 logger = logging.getLogger(__name__)
 
@@ -416,7 +416,9 @@ def _build_day(
     있었는지. 파일이 없으면 "이벤트 0건"인지 "기록 누락"인지 구분할 수 없으므로 잔디/DM 이
     0건으로 단정하지 않도록 따로 남긴다(monitor_log 는 변화 없는 tick 을 안 쓰므로 조용한
     날엔 실제로 파일이 없을 수 있다)."""
-    text, _sha = gh.read_text(f"monitoring/events-{date_kst}.jsonl")
+    # (v3.9) 이벤트 로그는 monitoring 브랜치에 있다 — monitor_log 의 헬퍼로 브랜치만 바꾼
+    # 복제본을 얻는다(mock store 는 그대로 통과하므로 self-test 영향 없음).
+    text, _sha = _monitor_gh(gh).read_text(f"monitoring/events-{date_kst}.jsonl")
     return build_day_from_text(
         date_kst, text, now_hm=now_hm,
         down_ranges=(
@@ -2566,9 +2568,13 @@ if __name__ == "__main__":
             return (None, None)  # 아직 로그 없는 날짜(404) — 전부 빈 이벤트로 처리돼야 함
 
     gh = _RangeGh()
-    today = datetime.now(KST).strftime("%Y-%m-%d")
+    now_kst = datetime.now(KST)
+    today_bucket = bucket_date_kst(now_kst)  # 06:00 KST 경계 기준 날짜
     report_monthly = build_report(gh, monthly=True)
-    expected_days = int(today[8:10])
+    # 기준일이 속한 달의 1일 이후 호출 수를 기대값으로 사용 (09-01~오늘)
+    first_of_month = today_bucket[:8] + "01"
+    expected_days = (datetime.strptime(today_bucket, "%Y-%m-%d") -
+                     datetime.strptime(first_of_month, "%Y-%m-%d")).days + 1
     assert len(gh.calls) == expected_days, (len(gh.calls), expected_days)
     assert report_monthly["monthly"] is True and report_monthly["yearly"] is False
     assert len(report_monthly["dates"]) == expected_days
@@ -2579,7 +2585,7 @@ if __name__ == "__main__":
     # ── build_report(yearly=True): 올해 1월 1일~오늘치 날짜 수만큼 조회(v3.8.5) ──
     gh2 = _RangeGh()
     report_yearly = build_report(gh2, yearly=True)
-    expected_year_days = (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(today[:4] + "-01-01", "%Y-%m-%d")).days + 1
+    expected_year_days = (datetime.strptime(today_bucket, "%Y-%m-%d") - datetime.strptime(today_bucket[:4] + "-01-01", "%Y-%m-%d")).days + 1
     assert len(gh2.calls) == expected_year_days, (len(gh2.calls), expected_year_days)
     assert report_yearly["yearly"] is True and report_yearly["monthly"] is False
     assert len(report_yearly["dates"]) == expected_year_days

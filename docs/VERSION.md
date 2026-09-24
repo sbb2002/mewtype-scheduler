@@ -19,6 +19,60 @@ v3.8.9b …). 커밋 메시지·PR 제목·코드 주석·문서 모두 같은 �
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
+- **v3.9** (기능, 2026-09-25 배포) — **트윗 유실 방어 4겹**. 2026-09-24 19:50 KST 버스트에서
+  미야코 2건·리츠 1건·공식 릴레이 1건이 영구 유실된 사고 대응.
+  1. **원인 규명** — 모니터 이벤트 로그와 Cloud Run 로그를 대조해 **두 고장이 동시에** 터진 것을 확인.
+     ① `mewtype-backend` 가 `--max-instances=1` 이라 처리 중일 때 Cloud Run 이 초과 요청을
+     **버퍼링하지 않고 429 로 거절**(`The request was aborted because there was no available instance`)
+     하는데 `writeclient.call_write` 에 재시도가 없어 그대로 버려졌다(미야코 2건·릴레이 1건).
+     ② 직렬화 창구 밖에서 제어 채널(인스턴스 최대 20)이 직접 커밋하는 **모니터 로그가 `data` 브랜치
+     HEAD 를 흔들어** 백엔드의 `tweets.json` PUT 을 409 로 밀어냈다(리츠 1건). GitHub Contents API 의
+     PUT 은 파일이 아니라 **브랜치 HEAD 단위로 충돌**하기 때문. `data` 최근 100커밋 중 **65개가
+     모니터 로그**였다(데이터 쓰기 전부를 합친 34개의 약 2배).
+     `writers.py` 의 "Cloud Run 이 초과 요청을 자체 버퍼링 — 별도 큐 프로덕트 불필요" 주석이 실제와
+     **반대**였던 것이 핵심이며, `deploy/scheduler.sh` 는 이미 "429 가능 → 재시도"를 알고
+     `--max-retry-attempts=3` 을 걸어둔 상태였다(같은 대응이 `/write` 경로에만 빠져 있었다).
+  2. **방어 1 — 429 백오프 재시도** (`writeclient.py`) — `resp.status_code in (429, 503)` **일 때만**
+     지수 백오프 재시도(1.5→3→6→12→20초 + 지터, 총 45초). 실측 경합 구간 30초를 덮는 값으로 잡았다.
+     429 는 요청이 컨테이너에 **닿기 전** 거절이라 재시도해도 중복 커밋이 없다. 반대로 네트워크 예외는
+     서버가 이미 처리 중일 수 있어 **재시도하지 않는다**(중복 커밋 방지, 기존 동작 유지).
+     대기/완료 DM 짝 로직(2초 타이머)은 그대로 — 상태 판정·DM·return 을 `finally: timer.cancel()`
+     **뒤에** 두는 원본 구조를 유지해야 완료 DM 누락 레이스가 안 생긴다.
+  3. **방어 2 — 409 재시도 강화** (`telegram_app._commit_personal_tweet`, `monitor_log.log_events`) —
+     둘 다 "백오프 없이 즉시 2회"라 경합에 구조적으로 취약했다(리츠 건이 이 경로). **5회 +
+     0.5→1→2→4초 백오프 + 지터 300ms**. 재시도마다 반드시 **다시 읽어 머지**한다(낡은 payload 를
+     새 sha 로 재-PUT 하면 남의 커밋을 조용히 덮어쓴다 — `gh_store.ConflictError` docstring 참고).
+  4. **방어 3 — `monitoring` 브랜치 분리** (`monitor_log.py`, `monitor_report.py`, `app.py`,
+     `config.py`, `deploy/*.sh`, `src/frontend/monitor.html`) — 이벤트 로그·
+     `latest.html`·유실 큐를 `data` 가 아닌 전용 브랜치에 쓴다. 충돌 단위가 브랜치이므로
+     **구조적으로 경합이 불가능**해진다. `monitor_log._monitor_gh(gh)` 가 넘겨받은 `GitHubStore` 의
+     브랜치만 바꾼 복제본을 돌려주는 방식이라 **`log_event` 호출부 49곳(handlers 11 + telegram_app 38)은
+     한 줄도 안 고쳤다**. env `MONITOR_BRANCH`(기본 `monitoring`). 브랜치는 `data` 에서 **분기**해
+     만들어 기존 `monitoring/events-*.jsonl` 이 히스토리째 승계되므로 `/monitor --monthly|--yearly`
+     의 과거 조회가 그대로 동작한다(이관 스크립트 없음).
+  5. **방어 4 — 유실 원문 보존 + 재투입** (`telegram_app._dm_lost_raw`, `monitor_log.push_lost`,
+     `/ingest --retroactive`) — 종전에는 실패 시 에러 메시지만 DM 으로 가고 **원문이 사라져 수동
+     재투입조차 불가능**했다. 이제 유실 확정 4지점(`/write` 호출 예외 · 백엔드가 `mode:"error"` 반환 ·
+     auto notice 실패 · `/ingest` 라우트 예외)에서 원문을 **DM 전량 회신** + **`monitoring/lost_queue.json`
+     적재**(최대 50건, 오래된 것부터 제거)를 함께 한다. 유실은 쓰기가 막혀서 생기는데 그 기록을 또
+     막힌 곳에 쓰면 같이 실패하므로 **반드시 monitoring 브랜치**여야 한다. 큐 항목에 `tag`(트윗 태그)를
+     보관해 재투입 때 vxtwitter 원문·미디어를 복원한다. DM 분할은 텔레그램 4096 제한이 **UTF-16 코드
+     유닛** 기준이고 이모지가 2유닛·`html.escape` 가 길이를 늘리므로, 조립된 **최종 메시지 길이를 재서**
+     초과하면 더 쪼갠다(실측 최대 2581유닛). `/ingest --retroactive` 는 큐를 **한 건씩 순차** 재투입
+     (동시 발사가 애초 유실 원인) — `kind` 별 분기, 개별 try/except, **성공한 항목만 큐에서 제거**.
+  6. **같이 고친 버그** — (a) `app.py _monitor()` 에서 함수 내 `from .gh_store import GitHubStore` 가
+     그 이름을 함수 전체의 지역 변수로 만들어, 함수 앞부분의 `gh = GitHubStore(...)` 가
+     `UnboundLocalError` 로 죽던 문제. **self-test 는 못 잡았고 배포 후 `/monitor` 실동작 검증에서
+     발견**했다(모든 백엔드 모듈을 AST 로 훑어 같은 섀도잉이 더 없는지 확인 완료).
+     (b) `monitor_report` self-test 가 기대값을 벽시계 날짜로 만들어 **00:00~05:59 KST 에 항상 실패**하던
+     기존 버그 — `build_report` 는 `bucket_date_kst`(06:00 경계)를 쓰므로 테스트도 같은 기준으로 수정
+     (프로덕션 동작은 그대로).
+  7. **검증** — 관련 모듈 self-test 10개 통과. 배포 후 `mewtype-light` 수동 트리거로 무변화 tick 이
+     로그를 안 남기는 정상 동작 확인, `mewtype-monitor` 수동 트리거로 `data: monitor latest` 커밋이
+     **`monitoring` 브랜치에만** 생기고 `data` 브랜치는 그대로인 것 확인, 프론트가 보는
+     `raw.githubusercontent.com/.../monitoring/monitoring/latest.html` HTTP 200 확인.
+     **미확인**: 실제 버스트 재현은 불가 — 다음 버스트에서 429/409 재시도 로그가 실제로 찍히는지
+     관찰 필요.
 - **v3.8.9a** (v3.8.9 의 후속 패치 — 웹 monitor UI·과거 소급)
   1. **모바일 전체 추이 가로 스크롤 제거** — 잔디+주간 막대를 한 줄에 그리면 약 490px 라 폰에서 가로 스크롤이
      생겼다. 640px 이하에선 잔디 칸 크기를 화면 폭에 맞추고(390px 폭 실측: 262px/영역 291px), "📊 주간요약 보기"
@@ -126,8 +180,7 @@ v3.8.9b …). 커밋 메시지·PR 제목·코드 주석·문서 모두 같은 �
      `/monitor-live`·`day.json`(스냅샷/즉석 계산 양쪽)·`latest.html` 폴백을 브라우저에서 직접 확인. Flask 테스트
      클라이언트로 `/monitor` 라우트를 monitor_auto on/off 로 돌려 스냅샷은 둘 다, DM 은 on 일 때만 나가는 것 확인.
      **미확인**: 실 healthchecks 키로 과거 날짜 flips 가 얼마나 거슬러 조회되는지(보관 기간) — 조회 실패면
-     "확인 불가"로 남을 뿐 틀린 값은 안 들어감. 배포 후 첫 06:10 실행 결과 확인 필요.
-- **v3.8.8** (핫픽스) — 웹 monitor(`/monitor-live`)에서 타임라인을 클릭해 팝업을 고정(pin)하면
+     "확인 불가"로 남을 뿐 틀린 값은 안 들어감. 배포 후 첫 06:10 실행 결과 확인 필요.- **v3.8.8** (핫픽스) — 웹 monitor(`/monitor-live`)에서 타임라인을 클릭해 팝업을 고정(pin)하면
   60초 self-refresh 자체가 통째로 건너뛰어져, 오늘의 멤버 현황·우측 요약·표 등 타임라인과 무관한
   패널까지 같이 멎어 보이던 문제 수정. 사용자가 실배포판을 버전태그 이스터에그로 열어보다가
   발견("타임플롯 우측 요약이나 오늘의 멤버 현황이 업데이트 안되는 것 같다").

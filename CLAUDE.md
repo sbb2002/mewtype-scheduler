@@ -143,6 +143,36 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   비활성 + 업스트림 아이콘을 메인 화면 네임플레이트 X·YouTube 아이콘으로(결과색 둥근 네모 테두리) + 업스트림·운영자 명령을
 >   기존 로그에서 소급 복원(`_derive_upstream`/`_derive_cmd`, 복원 불가분 생략) + 09-09~09-14(전부 `[백필]`)는
 >   트리거 수 `?`. 요약 `docs/VERSION.md`.
+> - **v3.9** (2026-09-25 배포): **트윗 유실 방어 4겹**. 2026-09-24 19:50 KST 버스트에서 미야코 2건·
+>   리츠 1건·공식 릴레이 1건이 유실된 사고 대응(모니터 로그·Cloud Run 로그로 원인 확정).
+>   원인은 **두 가지가 동시에** 터진 것 — ① 백엔드가 `max-instances=1`이라 Cloud Run 이 초과 요청을
+>   버퍼링하지 않고 **429 로 거절**(`no available instance`)하는데 `call_write` 에 재시도가 없었고,
+>   ② 직렬화 밖에서 제어 채널이 직접 커밋하는 **모니터 로그가 `data` 브랜치 HEAD 를 흔들어** 백엔드의
+>   `tweets.json` PUT 을 409 로 밀어냈다(최근 100커밋 중 65개가 모니터 로그였다).
+>   `writers.py` 주석의 "Cloud Run 이 초과 요청을 자체 버퍼링" 전제가 **사실과 반대**였던 것이 핵심.
+>   - **방어 1** `writeclient.call_write` — HTTP **429/503 만** 지수 백오프 재시도(1.5→3→6→12→20초,
+>     지터 포함 최대 45초). 429 는 컨테이너에 **닿기 전** 거절이라 중복 커밋 위험이 없다. 반면
+>     네트워크 예외는 서버가 이미 처리 중일 수 있어 **재시도하지 않는다**(기존 동작 유지).
+>   - **방어 2** 409 재시도 강화 — `_commit_personal_tweet`·`monitor_log.log_events` 둘 다 "즉시 2회"
+>     에서 **5회 + 백오프(0.5→1→2→4초, 지터 300ms)**. 재시도마다 반드시 **다시 읽어 머지**한다.
+>   - **방어 3** **`monitoring` 브랜치 분리** — 이벤트 로그·`latest.html`·유실 큐를 `data` 가 아닌
+>     전용 브랜치에 쓴다. GitHub Contents API 충돌 단위가 브랜치 HEAD 이므로 구조적으로 경합 불가.
+>     `monitor_log._monitor_gh(gh)` 가 넘겨받은 store 의 브랜치만 바꾼 복제본을 돌려주는 방식이라
+>     **`log_event` 호출부 49곳(handlers 11 + telegram_app 38)은 한 줄도 안 고쳤다.**
+>     env `MONITOR_BRANCH`(기본 `monitoring`), 배포 스크립트 2개에 주입. `vercel.json` 배포 제외 추가.
+>   - **방어 4** 유실 원문 보존 — `_dm_lost_raw` 가 유실 확정 4지점(`/write` 호출 예외 ·
+>     백엔드 `mode:"error"` 반환 · auto notice 실패 · `/ingest` 라우트 예외)에서 원문을 **DM 으로 전량
+>     회신**(텔레그램 4096 은 UTF-16 코드 유닛 기준이라 조립된 최종 길이를 재서 분할)하고,
+>     **동시에 `monitoring/lost_queue.json` 에 적재**(최대 50건, 오래된 것부터 제거).
+>     유실은 쓰기가 막혀 생기는데 그 기록을 또 막힌 곳에 쓰면 같이 실패하므로 **반드시 monitoring 브랜치**.
+>     큐 항목에 `tag`(트윗 태그)를 보관해 재투입 때 vxtwitter 원문·미디어를 복원한다.
+>   - **`/ingest --retroactive`** — 큐를 읽어 **한 건씩 순차** 재투입(동시 발사가 애초 유실 원인).
+>     `kind` 별로 personal_tweet / notice / route 재판정 분기, 개별 try/except, **성공한 항목만 큐에서 제거**.
+>   - 같이 고친 것: `app.py _monitor()` 에서 함수 내 `from .gh_store import GitHubStore` 가 이름을
+>     지역 변수로 만들어 함수 앞부분이 `UnboundLocalError` 로 죽던 버그(배포 후 실동작 검증에서 발견 —
+>     self-test 는 못 잡았다), `monitor_report` self-test 가 06:00 경계를 안 써서 00:00~05:59 KST 에
+>     항상 실패하던 기존 버그.
+>   - 상세 요약 `docs/VERSION.md`. 흐름 도식(플로우차트): 이번 세션 산출물.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
@@ -207,6 +237,10 @@ src/
     writers.py         # (v3.7) /write 잡 kind → telegram_app 커밋 함수 매핑(지연 import).
                        #   (v3.7.1 A-1) 잡은 커밋 전용 — 외부 호출은 제어 채널에서 준비해 인자로 넘김
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출(OIDC, 60초). MAIN_SERVICE_URL 없으면 로컬 디스패치
+                       #        (v3.9) HTTP 429/503 만 지수 백오프 재시도(1.5→3→6→12→20초 +지터,
+                       #        최대 45초). 429 는 Cloud Run 이 컨테이너 배정 전에 거절한 것이라
+                       #        중복 커밋 위험이 없어 재시도가 안전. 네트워크 예외는 서버가 이미
+                       #        처리 중일 수 있어 재시도 안 함
     preview.py         # (v3) preview.json 계약 A′ — make_item/match_item/sort/promote_state (순수)
     preview_build.py   # (v3) reconcile 포크 → 6상태 preview 재구성 (순수). (v3.1.4) 그룹 공식 채널
                        #      (@BDP_yumemita) 영상 → 5인 팬아웃(host="group")
@@ -232,7 +266,14 @@ src/
                        #        v3.8.9 에 Vercel REST API 배포 시도 수(`_vercel_deploys`)로 대체돼 안 쓰임.
                        #        옛 대시보드(카테고리별 누적 막대+날짜 히트맵) 코드는
                        #        git 이력(v3.4.14 이전)에만 남아있음.
-    monitor_log.py     # (v3.5) 모니터링 이벤트 로그 — tick/wake/preview 전이/notice/tweet/
+    monitor_log.py     # (v3.9) _monitor_gh(gh) — 넘겨받은 store 의 브랜치만 MONITOR_BRANCH
+                       #        (기본 monitoring)로 바꾼 복제본 반환. log_event/log_events 가
+                       #        내부에서 이걸 쓰므로 **호출부 49곳은 무수정**.
+                       #        + 유실 원문 큐 push_lost/read_lost/write_lost
+                       #        (monitoring/lost_queue.json, 최대 50건). push_lost 는 ConflictError
+                       #        만 재시도하고 그 외 예외는 1회로 끝낸다 — 유실 처리 경로에서
+                       #        호출되므로 여기서 7.5초를 더 쓰면 버스트를 악화시킨다. 예외 안 던짐
+                       # (v3.5) 모니터링 이벤트 로그 — tick/wake/preview 전이/notice/tweet/
                        #        relay/운영자 `/pause`·`/resume` 마다 `monitoring/events-
                        #        YYYY-MM-DD.jsonl`(data 저장소)에 한 줄 append. 공통 필드
                        #        `ts/flow/result/who/detail` + 흐름별 추가 필드, `result`는
@@ -272,6 +313,12 @@ src/
     telegram_app.py    # (v2.1) 공개 webhook 서비스 — 엔트리포인트 src.backend.telegram_app:app.
                        #        (v2.3) POST /ingest — 업스트림 시스템(운영자 폰 Automate)이 X 알림 텍스트를 중계
                        #        (v2.5) /list /del /ingest(=/add) /undo — 텔레그램 수동 관리 명령
+                       #        (v3.9) /ingest --retroactive — monitoring/lost_queue.json 의
+                       #        유실 원문을 **한 건씩 순차** 재투입(동시 발사가 애초 유실 원인).
+                       #        kind 별 분기(personal_tweet/notice/route 재판정) · 개별 try/except ·
+                       #        **성공한 항목만 큐에서 제거**(실패분은 남아 다음에 재시도).
+                       #        _dm_lost_raw(reason, raw, kind/channel_key/tag/gh) 도 같은 버전 —
+                       #        DM 전량 회신 + 큐 적재를 함께 한다(4지점에서 호출)
                        #        (v3.5, 구 /push-monitor) /monitor [--auto|--off|--monthly|
                        #        --yearly|YYYY-MM-DD] — Ops Monitor 리포트 즉시 DM / 자동
                        #        실행 on-off / 이번 달 전체(월간 그리드) / 올해 전체(연간
@@ -328,6 +375,18 @@ data 브랜치 (v3)        # preview.json + preview_archive.json + control.json
                        #   + tweets.json / tweet_archive.json (개인 트윗, +text_ko)
                        #   + admin_state.json (계약 G′ — pending_op/edit_lock/suppress/undo 슬롯)
                        #   .old/ = 전환 시 치워둔 v2 파일(schedule/pending/ingest_queue …). 롤백용. 코드 없음
+monitoring 브랜치 (v3.9) # 데이터 저장소의 로그 전용 브랜치. `data` 에서 분기해 만들었으므로
+                       #   기존 monitoring/ 파일이 히스토리째 승계됨(이관 스크립트 없음).
+                       #   monitoring/events-YYYY-MM-DD.jsonl (이벤트 로그, 06:00 KST 경계)
+                       #   + monitoring/latest.html (모니터 스냅샷)
+                       #   + monitoring/lost_queue.json (유실 원문 큐 `{"pending":[...]}`, 최대 50건)
+                       #   **data 브랜치 HEAD 와 경합하지 않게 하는 것이 존재 이유** — 이 로그들은
+                       #   /write 직렬화 창구를 안 거치고 제어 채널이 직접 커밋하는데, 제어 채널은
+                       #   인스턴스가 최대 20개라 버스트 때 data 브랜치 쓰기를 409 로 밀어냈다(v3.9).
+                       #   env MONITOR_BRANCH 로 지정(기본 monitoring).
+                       #   ※ 이 브랜치는 **데이터 저장소에만** 있다 — 코드 저장소의 vercel.json 과
+                       #   무관(Vercel 은 코드 저장소만 본다). vercel.json 은 `"*": false` +
+                       #   `"main": true` 라 main 외 전부 이미 차단되므로 손댈 것 없음
 devpapers 브랜치 (v3.3)  # docs/ 중 개발 시 상시 참조 안 하는 문서 전부(배경자료·구버전 기록·
                        #   운영자용 설명자료 등) + docs/PUSH_MONITOR.html(1시간마다 자동 커밋).
                        #   코드 없음. data 브랜치와 같은 이유로 Vercel 배포 트리거 밖

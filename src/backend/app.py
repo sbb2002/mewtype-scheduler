@@ -128,6 +128,9 @@ def _monitor():
     try:
         cfg = _cfg()
         gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+        # (v3.9) monitoring/ 아래(이벤트 로그·days·summary·latest.html)는 전용 브랜치.
+        # data 브랜치 HEAD 를 흔들지 않기 위한 분리라, 읽기도 같은 브랜치를 봐야 한다.
+        gh_monitor = GitHubStore(cfg.github_token, cfg.github_repo, cfg.monitor_branch)
         now = datetime.now(KST)
         today_bucket = bucket_date_kst(now)
         now_iso = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -135,7 +138,7 @@ def _monitor():
         # (v3.8.9) 스냅샷은 monitor_auto 와 무관하게 매일 — 웹 monitor(이스터에그)의 전 기간
         # 잔디/지난 날짜 상세가 여기에 의존한다. monitor_auto 는 DM 발송만 좌우.
         snap = monitor_snapshot.run_daily(
-            gh, today_bucket=today_bucket, now_iso=now_iso,
+            gh_monitor, today_bucket=today_bucket, now_iso=now_iso,
             healthchecks_api_key=cfg.healthchecks_api_key,
             healthchecks_uuid=(cfg.healthcheck_url.rsplit("/", 1)[-1] if cfg.healthcheck_url else ""),
             vercel_token=cfg.vercel_token,
@@ -144,10 +147,13 @@ def _monitor():
         result = {"date": yday, "snapshotted": snap["snapshotted"], "dm": False}
 
         # 폴백 페이지(monitor.html 이 /monitor-live 실패 시 보여줌) — 전날 상세 + 전 기간 잔디.
+        # (v3.9) latest.html 은 monitoring 브랜치에 쓴다. GitHubStore 를 이 함수 안에서 다시
+        # import 하면 파이썬이 그 이름을 _monitor() 전체의 지역 변수로 보게 돼, 함수 앞부분의
+        # gh = GitHubStore(...) 가 UnboundLocalError 로 죽는다(실제로 겪은 장애) — 모듈 상단 것을 쓴다.
         if snap["yesterday"] is not None:
             try:
                 report = monitor_report.snapshot_report(snap["yesterday"], yday, snap["summary"])
-                gh.write_text(
+                gh_monitor.write_text(
                     "monitoring/latest.html", monitor_report.render_html(report), prev_sha=None,
                     message=f"data: monitor latest {yday}",
                 )
