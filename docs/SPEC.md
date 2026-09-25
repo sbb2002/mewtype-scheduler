@@ -155,7 +155,7 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
 
 ### 1-1. 아이템 매칭 (`preview.match_item`)
 
-같은 `channel_key` + (`video_id` 일치 ∥ `url` 일치 ∥ `scheduled_start` ±45분(`superscede_sec`, v3.9a — 구 ±4h)).
+같은 `channel_key` + (`video_id` 일치 ∥ `url` 일치 ∥ `scheduled_start` ±45분(`superscede_sec`, v3.8.10 — 구 ±4h)).
 매칭되면 같은 `id` 유지·필드 갱신. 안 되면 새 `id`. `none` 으로 사라진 뒤 오는 예고는 무조건 새 아이템.
 
 ### 1-2. 상태 승격 (`preview.promote_state`)
@@ -167,7 +167,7 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
 
 `xrelay`/`xtweet` 가 `collab_with` 채운 `announced` 아이템을 참여 유닛 전부에 fan-out.
 url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레인이 아니라 url 추적. `preview_build` 가
-참여자(`channel_key` ∪ `collab_with`) 중 아무 채널에나 실물 ±45분(`SCHEDULED_SUPERSEDE_SEC`, v3.9a — 구 ±4h) 안에 뜨면 supersede 하고
+참여자(`channel_key` ∪ `collab_with`) 중 아무 채널에나 실물 ±45분(`SCHEDULED_SUPERSEDE_SEC`, v3.8.10 — 구 ±4h) 안에 뜨면 supersede 하고
 `_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관. `host=="group"` 은 supersede 면제.
 프론트 `render.js` 가 union 레인에 `.card--collab` 팬아웃. 상세: `docs/old/v2/v2_4_collab.md` §8.
 
@@ -512,7 +512,7 @@ def build_archive_appends(prev_archive, gone_items, now_iso) -> (new_archive, ch
    사라지는(archive 도 안 되는) 버그가 있었다(실측: 리미스타 채널 합동 생중계).
 3. **prev 아이템 중 이번 videos 에 없던 것** —
    · video_id 有: removed 유예(`STALE_REMOVE_SEC` 6.5h). 유예 중 carry + FSM, 경과 시 removed.
-   · video_id 無 (announced 자리표시): 참여자 채널에 실물 ±45분(v3.9a, 구 ±4h) → supersede + `_carry_collab`.
+   · video_id 無 (announced 자리표시): 참여자 채널에 실물 ±45분(v3.8.10, 구 ±4h) → supersede + `_carry_collab`.
      `expires_at` 도달 / `first_seen`+18h(시각 없음) → gone. 아니면 FSM(assumed-live·지각강등).
 4. **ytnotif 머지** — video_id 로 `items` 직접 스캔(ytnotif 는 channel_key 없음). `reminder`/`sub_start` →
    매칭 아이템 live 승격, `tunein` → scheduled_start 보강. 미매칭+채널미상은 skip
