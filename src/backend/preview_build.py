@@ -24,7 +24,7 @@ STALE_REMOVE_SEC = 6 * 3600 + 1800  # 6.5h
 
 # announced/upcoming 예고가 실물 upcoming/live 로 확정되는 시간 범위.
 # 한 멤버가 저녁+翌朝 2슬롯을 잡는 경우도 있으므로 날짜 아니라 시간 근접.
-# (v3.9a) 4h → 45분. preview.match_item 기본 창과 같은 값 — 둘이 다르면 match_item 이 따로
+# (v3.8.10) 4h → 45분. preview.match_item 기본 창과 같은 값 — 둘이 다르면 match_item 이 따로
 # 받아준 예고를 다음 tick 의 2-b 가 다시 지운다(2026-09-25 아라레 22:30 예고가 같은
 # channel_key=arale 인 그룹 방송 19:30 의 자리표시로 오판돼 archive 없이 사라질 뻔함).
 SCHEDULED_SUPERSEDE_SEC = 45 * 60
@@ -276,7 +276,7 @@ def build_preview(
         # 2-b. video_id 없는 announced 자리표시 (x-relay/personal/yt-notif)
         announced_ss = item.get("scheduled_start")
         _host = item.get("host")
-        # 참여자(channel_key ∪ collab_with) 중 아무 채널에나 실물이 ±45분(v3.9a, 구 4h) 안에 뜨면 supersede.
+        # 참여자(channel_key ∪ collab_with) 중 아무 채널에나 실물이 ±45분(v3.8.10, 구 4h) 안에 뜨면 supersede.
         # host="group"(出演情報, 외부 이벤트)은 예외 — TTL 로만 소멸.
         if announced_ss and _host != "group":
             _chans = {item.get("channel_key"), *(item.get("collab_with") or [])}
@@ -597,7 +597,7 @@ if __name__ == "__main__":
     print(f"  supersede: announced collab → upcoming real, collab_with transferred")
 
     print("\n" + "=" * 70)
-    print("✓ Test 6b: (v3.9a) 그룹 방송 3h 뒤 아라레 개인 예고는 supersede 안 됨")
+    print("✓ Test 6b: (v3.8.10) 그룹 방송 3h 뒤 아라레 개인 예고는 supersede 안 됨")
     print("=" * 70)
     # 그룹 공식 채널 방송은 channel_key=arale 로 저장된다. 같은 레인의 3h 뒤 개인 예고가
     # 그 자리표시로 오판돼 지워지면 안 된다(2026-09-25 19:30 DAY2 ↔ 아라레 22:30).
