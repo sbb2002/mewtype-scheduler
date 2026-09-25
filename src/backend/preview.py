@@ -156,7 +156,7 @@ def match_item(
     items: list[dict],
     inc: dict,
     *,
-    superscede_sec: int = 4 * 3600,
+    superscede_sec: int = 45 * 60,
 ) -> dict | None:
     """
     Find an existing item that matches the incoming item by:
@@ -169,7 +169,11 @@ def match_item(
     Args:
         items: List of current preview items
         inc: Incoming item to match against
-        superscede_sec: Time window for scheduled_start proximity (default 4h)
+        superscede_sec: Time window for scheduled_start proximity (default 45min).
+            (v3.9a) 4h → 45분. 그룹 공식 채널 방송은 channel_key=channel_order[0](arale)로
+            저장되므로, 그 앞뒤 4h 안에 잡힌 아라레 개인 방송 예고가 그룹 항목과 "같은 방송"으로
+            매칭돼 흡수·유실됐다(2026-09-25 19:30 그룹 DAY2 ↔ 아라레 22:30). 실측(09-01~09-25,
+            종료 라이브 47건): 같은 채널 종료→다음 시작 최소 6.7h, 라이브 최단 14.6분.
 
     Returns:
         Matching item dict or None
@@ -348,7 +352,7 @@ if __name__ == "__main__":
     assert match2 is not None and match2["id"] == "pv_aaa1", "url 매칭 실패"
     print(f"✓ match_item (url): {match2['id']}")
 
-    # Test 4: match_item — 시각근접 (±4h)
+    # Test 4: match_item — 시각근접 (명시 ±4h)
     inc3 = {
         "channel_key": "arale",
         "video_id": None,
@@ -360,6 +364,15 @@ if __name__ == "__main__":
         match3 is not None and match3["id"] == "pv_aaa1"
     ), "시각근접 매칭 실패"
     print(f"✓ match_item (scheduled_start ±4h): {match3['id']}")
+
+    # Test 4b: (v3.9a) 기본 창 45분 — 30분 차는 매칭, 3h 차(그룹 19:30 ↔ 아라레 22:30)는 미매칭
+    inc3b = {"channel_key": "arale", "video_id": None, "url": None,
+             "scheduled_start": "2026-09-09T13:30:00Z"}  # 30분 뒤
+    assert match_item(items, inc3b) is not None, "45분 창 안(30분 차) 매칭 실패"
+    inc3c = {"channel_key": "arale", "video_id": None, "url": None,
+             "scheduled_start": "2026-09-09T16:00:00Z"}  # 3h 뒤
+    assert match_item(items, inc3c) is None, "45분 창 밖(3h 차)인데 매칭됨"
+    print("✓ match_item 기본 창 45분 (30분 차 매칭 / 3h 차 미매칭)")
 
     # Test 5: match_item — 다른 channel_key 는 매칭 안 함
     inc_other = {

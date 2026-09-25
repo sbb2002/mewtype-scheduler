@@ -24,7 +24,10 @@ STALE_REMOVE_SEC = 6 * 3600 + 1800  # 6.5h
 
 # announced/upcoming 예고가 실물 upcoming/live 로 확정되는 시간 범위.
 # 한 멤버가 저녁+翌朝 2슬롯을 잡는 경우도 있으므로 날짜 아니라 시간 근접.
-SCHEDULED_SUPERSEDE_SEC = 4 * 3600
+# (v3.9a) 4h → 45분. preview.match_item 기본 창과 같은 값 — 둘이 다르면 match_item 이 따로
+# 받아준 예고를 다음 tick 의 2-b 가 다시 지운다(2026-09-25 아라레 22:30 예고가 같은
+# channel_key=arale 인 그룹 방송 19:30 의 자리표시로 오판돼 archive 없이 사라질 뻔함).
+SCHEDULED_SUPERSEDE_SEC = 45 * 60
 
 # announced 행(x-relay/personal 유래)이 expires_at 없을 때 first_seen 기준 TTL.
 ANNOUNCED_NO_TIME_TTL_SEC = 18 * 3600
@@ -273,7 +276,7 @@ def build_preview(
         # 2-b. video_id 없는 announced 자리표시 (x-relay/personal/yt-notif)
         announced_ss = item.get("scheduled_start")
         _host = item.get("host")
-        # 참여자(channel_key ∪ collab_with) 중 아무 채널에나 실물이 ±4h 안에 뜨면 supersede.
+        # 참여자(channel_key ∪ collab_with) 중 아무 채널에나 실물이 ±45분(v3.9a, 구 4h) 안에 뜨면 supersede.
         # host="group"(出演情報, 외부 이벤트)은 예외 — TTL 로만 소멸.
         if announced_ss and _host != "group":
             _chans = {item.get("channel_key"), *(item.get("collab_with") or [])}
@@ -592,6 +595,39 @@ if __name__ == "__main__":
     assert arale_item["collab_with"] == ["nonoka"], f"Got {arale_item.get('collab_with')}"
     assert arale_item["kind"] == "collab"
     print(f"  supersede: announced collab → upcoming real, collab_with transferred")
+
+    print("\n" + "=" * 70)
+    print("✓ Test 6b: (v3.9a) 그룹 방송 3h 뒤 아라레 개인 예고는 supersede 안 됨")
+    print("=" * 70)
+    # 그룹 공식 채널 방송은 channel_key=arale 로 저장된다. 같은 레인의 3h 뒤 개인 예고가
+    # 그 자리표시로 오판돼 지워지면 안 된다(2026-09-25 19:30 DAY2 ↔ 아라레 22:30).
+    videos_grp = {
+        "grp_live": types.SimpleNamespace(
+            video_id="grp_live",
+            channel_id="UCWfF0DB6m_t2CE3KcOOOX7g",
+            title="Group Live",
+            thumbnail="https://i.ytimg.com/vi/grp_live/mqdefault.jpg",
+            live_state="upcoming",
+            scheduled_start="2026-09-09T10:30:00Z",
+            actual_start=None,
+            actual_end=None,
+            concurrent_viewers=None,
+        ),
+    }
+    prev_grp = preview.default_preview()
+    prev_grp["items"] = [
+        preview.make_item(
+            channel_key="arale", state="announced", source="x-relay", now_iso=now_iso,
+            id="pv_arale_solo", scheduled_start="2026-09-09T13:30:00Z", first_seen=now_iso,
+        ),
+    ]
+    new_preview_6b, _t, _w, _g = build_preview(channels_cfg, videos_grp, prev_grp, now_iso)
+    # (make_item 은 id 를 channel_key|first_seen 로 파생하므로 id 대신 video_id 유무로 구분)
+    solo_6b = [it for it in new_preview_6b["items"]
+               if not it.get("video_id") and it["scheduled_start"] == "2026-09-09T13:30:00Z"]
+    assert len(new_preview_6b["items"]) == 2 and len(solo_6b) == 1, \
+        f"3h 뒤 개인 예고가 supersede 됨: {new_preview_6b['items']}"
+    print(f"  kept: group(video_id) + arale announced 13:30Z")
 
     print("\n" + "=" * 70)
     print("✓ Test 7: announced expires_at 도달 → archive")

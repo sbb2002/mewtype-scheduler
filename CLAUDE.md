@@ -173,6 +173,18 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     self-test 는 못 잡았다), `monitor_report` self-test 가 06:00 경계를 안 써서 00:00~05:59 KST 에
 >     항상 실패하던 기존 버그.
 >   - 상세 요약 `docs/VERSION.md`. 흐름 도식(플로우차트): 이번 세션 산출물.
+> - **v3.9a** (핫픽스, 2026-09-25): **같은 방송 판정 시각 창 ±4h → ±45분** — 두 상수 모두.
+>   `preview.match_item` 기본 `superscede_sec`(예고가 **들어올 때** 기존 항목과 합칠지) +
+>   `preview_build.SCHEDULED_SUPERSEDE_SEC`(**tick 때** `video_id` 없는 announced 를 같은 채널
+>   실물의 자리표시로 보고 지울지). 계기: 그룹 공식 채널 방송은 `channel_key=channel_order[0]`
+>   (=`arale`)로 저장되는데, 09-25 19:30 그룹 DAY2(`video_id` 有)와 3h 차인 아라레 22:30 개인 방송
+>   예고가 `match_item` ±4h 에 걸려 그룹 항목에 흡수됐다(`merge_announced` 상위 티어 보호 분기 →
+>   시각 버려짐, 로그는 `mode: added` 로 성공처럼 남음). `match_item` 만 줄이면 다음 tick 의 2-b 가
+>   같은 이유로 다시 지우므로 둘 다 바꿨다. 45분 근거(09-01~09-25 종료 라이브 47건, YouTube API
+>   실측): 같은 채널 종료→다음 시작 최소 6.7h, 라이브 최단 14.6분. **부작용**: 실물 영상의 예정
+>   시각이 예고 시각과 45분 넘게 다르면 자리표시가 `expires_at`(예고+3h)까지 카드 2장으로 남고,
+>   같은 방송 시각 변경을 45분 넘게 재공지하면 기존 예고가 갱신되지 않고 새 항목이 생긴다.
+>   `merge_member_live` 의 ±3h(`MEMBER_LIVE_MATCH_SEC`)·v1 `collector/reconcile.py` 의 4h 는 미변경.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
