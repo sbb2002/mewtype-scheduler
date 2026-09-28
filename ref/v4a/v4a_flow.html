@@ -144,9 +144,9 @@
 
   <header class="hero">
     <p class="eyebrow">mewtype-scheduler · v4a 설계안</p>
-    <h1>v4a 흐름도 — 서비스 2개 유지 + 쓰기 큐 일원화</h1>
-    <p>새 서비스 · 새 제품 없이, <b>이미 쓰고 있는 Cloud Tasks 큐를 우편함으로</b> 쓴다.
-      data 브랜치를 쓰는 곳은 백엔드 하나, 입구는 큐에 넣고 바로 돌아가며, "즉시 wake" 같은 지름길은 전부
+    <h1>v4a 흐름도 — 서비스 2개 유지 + 적용 큐 일원화</h1>
+    <p>새 서비스 · 새 제품 없이, <b>이미 쓰고 있는 Cloud Tasks 큐의 역할을 넓혀 적용 큐로</b> 쓴다.
+      data 브랜치를 쓰는 곳은 쓰기 서비스 하나, 접수 서비스는 적용 큐에 적재하고 바로 돌아가며, "즉시 wake" 같은 지름길은 전부
       <b>reconcile(전체 | 영상 하나)</b> 요청으로 통일한다. 운영 세션 상태는 새 <b>ops 브랜치</b>로 뺀다.</p>
     <p>현행 26가지 기능(9 · 14번 세부 포함 37행)이 모두 이 구조에서 동작한다 — 묶음 탭 → 기능 칩을 고르면 v4a 경로가 흐른다.
       <b>흰 테두리 번호</b> = v3.8.10에서 바뀐 단계.</p>
@@ -162,10 +162,10 @@
   <h2>원칙</h2>
   <p class="sub">v4a의 모든 변경은 이 다섯 줄로 판단한다.</p>
   <div class="rules">
-    <div class="rule"><span class="n">01</span><h3>data를 쓰는 곳은 백엔드 하나</h3><p>동시 1 · 인스턴스 1 유지 — tick과 큐 작업이 같은 인스턴스에서 한 줄로 선다.</p></div>
-    <div class="rule"><span class="n">02</span><h3>입구는 적재하고 바로 돌아간다</h3><p>동기 /write(60초 대기 · 429 백오프) 대신 Cloud Tasks 적재. 바쁘면 큐가 알아서 재시도.</p></div>
-    <div class="rule"><span class="n">03</span><h3>지름길 대신 reconcile</h3><p>즉시 wake · 편집 후 재확인 · /resume tick → 모두 reconcile(범위) 적재. 자기 호출 없음.</p></div>
-    <div class="rule"><span class="n">04</span><h3>느린 외부 호출은 제어 채널에서</h3><p>LLM · vxtwitter · videos.list · yt-dlp · OCR. 번역 재시도도 제어 채널로.</p></div>
+    <div class="rule"><span class="n">01</span><h3>data를 쓰는 곳은 쓰기 서비스 하나</h3><p>동시 1 · 인스턴스 1 유지 — 정기 reconcile과 작업 적용이 같은 인스턴스에서 한 줄로 선다.</p></div>
+    <div class="rule"><span class="n">02</span><h3>접수 서비스는 적재하고 바로 돌아간다</h3><p>동기 /write(60초 대기 · 429 백오프) 대신 Cloud Tasks 적재. 바쁘면 큐가 알아서 재시도.</p></div>
+    <div class="rule"><span class="n">03</span><h3>지름길 대신 reconcile</h3><p>즉시 wake · 편집 후 재확인 · /resume 후 tick → 모두 reconcile(범위) 적재. 자기 호출 없음.</p></div>
+    <div class="rule"><span class="n">04</span><h3>느린 외부 호출은 접수 서비스에서</h3><p>LLM · vxtwitter · videos.list · yt-dlp · OCR. 번역 재시도도 접수 서비스로.</p></div>
     <div class="rule"><span class="n">05</span><h3>운영 세션 상태는 ops 브랜치로</h3><p>마법사 · 확인 대기 · 편집 락 · undo · control. 공개 데이터와 충돌하지 않는다.</p></div>
   </div>
 
@@ -206,6 +206,67 @@
     <div class="cap" id="cap"></div>
   </div>
 
+  <h2>Terminology — v4a 용어</h2>
+  <p class="sub">이름 규칙: <b>서비스는 역할로, 큐는 전달하는 엔드포인트 이름으로, Scheduler 잡은 부르는 동작으로.</b>
+    현재(v3.8.10) 이름은 <code>docs/TERMINOLOGY.md</code> 기준이며, v4a 용어는 채택 · 구현 시점에 그 문서로 옮긴다.</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>v4a 용어</th><th>GCP 리소스 이름</th><th>정의</th><th>현재(v3.8.10) 대응</th></tr></thead>
+    <tbody>
+      <tr><td><b>접수 서비스</b></td><td><code>mewtype-intake</code><br>Cloud Run · 공개</td>
+        <td>바깥에서 오는 모든 것을 받는다 — 업스트림 알림, 운영자 명령 대화, 외부 호출로 가공(LLM · vxtwitter · videos.list · yt-dlp · OCR), 적용 큐 적재, 조회 응답, 웹 모니터. <b>data 브랜치에 쓰지 않는다.</b></td>
+        <td>제어 채널 <code>mewtype-telegram</code></td></tr>
+      <tr><td><b>쓰기 서비스</b></td><td><code>mewtype-writer</code><br>Cloud Run · 비공개 · 동시 1 · 인스턴스 1</td>
+        <td>data 브랜치를 쓰는 <b>유일한</b> 주체. reconcile · 작업 적용 · 다음 확인 예약 · 결과 DM · 모니터링 스냅샷.</td>
+        <td>백엔드 <code>mewtype-backend</code></td></tr>
+      <tr><td><b>적용 큐</b></td><td><code>mewtype-apply</code><br>Cloud Tasks · 동시 전달 1</td>
+        <td>쓰기 서비스 <code>/apply</code> 로 작업을 하나씩 전달. 모든 쓰기 요청 · reconcile 요청이 여기로.</td>
+        <td>wake · tick 예약 큐 (<code>TASKS_QUEUE</code>)</td></tr>
+      <tr><td><b>가공 큐</b></td><td><code>mewtype-enrich</code><br>Cloud Tasks · 신규</td>
+        <td>접수 서비스 <code>/enrich</code> 로 번역 재시도 요청을 전달.</td>
+        <td>없음 (tick 안 <code>_translate_sweep</code>)</td></tr>
+      <tr><td><b>정기 reconcile 잡</b></td><td><code>mewtype-reconcile-10m</code><br><code>mewtype-reconcile-daily</code><br>Cloud Scheduler</td>
+        <td>10분마다 · 매일 06:00 JST 쓰기 서비스 <code>/reconcile</code> 호출 (daily는 아바타 포함).</td>
+        <td><code>mewtype-light</code> · <code>mewtype-baseline</code></td></tr>
+      <tr><td><b>스냅샷 잡</b></td><td><code>mewtype-snapshot-daily</code><br>Cloud Scheduler</td>
+        <td>매일 06:10 KST 쓰기 서비스 <code>/snapshot</code> 호출.</td>
+        <td><code>mewtype-monitor</code></td></tr>
+      <tr><td><b><code>data</code> 브랜치</b></td><td>데이터 저장소</td>
+        <td>공개 콘텐츠(preview · notices · tweets + archive)만. 쓰기 서비스만 쓴다.</td>
+        <td>같음 (admin_state · control 이 빠짐)</td></tr>
+      <tr><td><b><code>ops</code> 브랜치</b></td><td>데이터 저장소 · 신규</td>
+        <td>운영 세션 상태 — admin_state(대화 · 확인 대기 · 편집 락 · suppress) · control · undo 슬롯. 접수 서비스와 쓰기 서비스가 쓴다.</td>
+        <td>없음 (data 브랜치에 섞여 있음)</td></tr>
+      <tr><td><b><code>monitoring</code> 브랜치</b></td><td>데이터 저장소</td>
+        <td>이벤트 로그 · 모니터링 스냅샷 · 유실 큐.</td>
+        <td>같음</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="tbl-scroll" style="margin-top:12px"><table>
+    <thead><tr><th>엔드포인트</th><th>서비스</th><th>호출자</th><th>하는 일</th><th>현재 대응</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /ingest</code></td><td>접수</td><td>업스트림 시스템</td><td>X · YouTube 알림 접수 (경로 유지)</td><td>같음</td></tr>
+      <tr><td><code>POST /telegram</code></td><td>접수</td><td>Telegram webhook</td><td>운영자 명령</td><td>같음</td></tr>
+      <tr><td><code>POST /enrich</code></td><td>접수</td><td>가공 큐 (OIDC, 앱 안 검증)</td><td>번역 재시도 → 결과를 적용 큐에 적재</td><td>없음</td></tr>
+      <tr><td><code>GET /monitor-live</code></td><td>접수</td><td>프론트 monitor.html</td><td>웹 모니터 즉석 생성 (읽기 전용)</td><td>같음</td></tr>
+      <tr><td><code>POST /reconcile</code></td><td>쓰기</td><td>정기 reconcile 잡</td><td>reconcile(전체)</td><td><code>/tick</code></td></tr>
+      <tr><td><code>POST /apply</code></td><td>쓰기</td><td>적용 큐</td><td>작업 하나 적용 (콘텐츠 반영 · 명령 적용 · reconcile(범위))</td><td><code>/write</code> + <code>/wake</code> + Tasks발 <code>/tick</code></td></tr>
+      <tr><td><code>POST /snapshot</code></td><td>쓰기</td><td>스냅샷 잡</td><td>모니터링 스냅샷 + 멤버 현황 DM</td><td><code>/monitor</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="tbl-scroll" style="margin-top:12px"><table>
+    <thead><tr><th>동작 용어</th><th>정의</th></tr></thead>
+    <tbody>
+      <tr><td><b>reconcile(범위)</b></td><td>"지금 상태가 어때야 하나"를 다시 계산해 data에 맞추는 동작. 범위는 <b>전체</b>(RSS + 추적 중 전부) 또는 <b>영상 하나</b>. 누가 요청하든 같은 함수 — 정기 reconcile 잡은 <code>/reconcile</code> 로, 나머지는 적용 큐 → <code>/apply</code> 로.</td></tr>
+      <tr><td><b>적재</b></td><td>적용 큐 · 가공 큐에 작업을 넣는 것. 넣으면 바로 돌아가고 결과를 기다리지 않는다.</td></tr>
+      <tr><td><b>작업</b></td><td>적용 큐로 전달되는 요청 하나. 종류는 현재 <code>writers.py</code> 잡 종류 재사용 + <code>reconcile</code>. 서로 독립 · 멱등이어야 한다.</td></tr>
+      <tr><td><b>결과 DM</b></td><td>작업을 적용한 뒤 쓰기 서비스가 보내는 DM. 조회 응답 · 대화 질문은 접수 서비스가 즉시 보낸다.</td></tr>
+      <tr><td><b>마지막 시도</b></td><td>적용 큐가 재시도하다 한도에 이른 전달. 쓰기 서비스가 판별해 유실 큐에 적재한다 (판별 헤더는 확인 필요).</td></tr>
+      <tr><td><b>리소스 이름 전환</b></td><td>Cloud Run 서비스 이름을 실제로 <code>mewtype-intake</code> · <code>mewtype-writer</code> 로 바꾸는 일. URL이 바뀌므로 폰 Automate URL · Telegram webhook · monitor.html 주소 · OIDC · IAM을 같이 갱신 (아래 "대가").</td></tr>
+    </tbody>
+  </table></div>
+
   <h2>기능 커버리지</h2>
   <p class="sub">현행 기능 전부가 v4a에서 동작한다. "변경" = 경로가 바뀜(사용자가 보는 동작은 같음). 번호를 누르면 위 흐름도에서 재생된다.</p>
   <div class="tbl-scroll"><table>
@@ -218,11 +279,12 @@
   <div class="tbl-scroll"><table>
     <thead><tr><th>항목</th><th>내용</th></tr></thead>
     <tbody>
-      <tr><td><b>결과 DM이 비동기</b></td><td>명령 결과가 커밋 뒤 백엔드에서 온다. 결과 DM 조립을 /apply 작업 안으로 옮겨야 한다(apply_preview_edit는 이미 이 방식). 조회 · 마법사 질문은 지금처럼 즉시.</td></tr>
-      <tr><td><b>묶음 커밋 없음</b></td><td>1건 = 1커밋. v3.8.2 측정(약 3.3초/커밋) 대입 시 60건 버스트는 약 3분 + tick 실행분. raw CDN 캐시가 원래 최대 약 5분 — <b>추정, 재측정 필요</b>.</td></tr>
+      <tr><td><b>결과 DM이 비동기</b></td><td>명령 결과가 커밋 뒤 쓰기 서비스에서 온다. 결과 DM 조립을 /apply 작업 안으로 옮겨야 한다(apply_preview_edit는 이미 이 방식). 조회 · 마법사 질문은 지금처럼 즉시.</td></tr>
+      <tr><td><b>묶음 커밋 없음</b></td><td>1건 = 1커밋. v3.8.2 측정(약 3.3초/커밋) 대입 시 60건 버스트는 약 3분 + 정기 reconcile 실행분. raw CDN 캐시가 원래 최대 약 5분 — <b>추정, 재측정 필요</b>.</td></tr>
       <tr><td><b>순서 · 중복</b></td><td>Cloud Tasks는 전달 순서를 보장하지 않고 드물게 중복 전달할 수 있다 (확인 필요) → 작업은 독립 · 멱등(id 기준 upsert, undo는 expected_sha)이어야 한다. 전 잡 점검 필요.</td></tr>
       <tr><td><b>데드레터 없음</b></td><td>Cloud Tasks에는 DLQ가 없다 (확인 필요) → 최대 시도 횟수 + 마지막 시도 판별(X-CloudTasks-TaskRetryCount, 확인 필요)로 lost_queue 적재.</td></tr>
-      <tr><td><b>번역이 커밋 두 번</b></td><td>tick이 발견한 방송 제목은 원문으로 먼저, 번역은 가공 큐를 거쳐 나중에 커밋.</td></tr>
+      <tr><td><b>번역이 커밋 두 번</b></td><td>reconcile이 발견한 방송 제목은 원문으로 먼저, 번역은 가공 큐를 거쳐 나중에 커밋.</td></tr>
+      <tr><td><b>리소스 이름 전환</b></td><td>Cloud Run 서비스는 이름을 바꿀 수 없어 새로 배포 → URL이 바뀐다. mewtype-telegram → mewtype-intake 전환 시 업스트림 폰 Automate URL(경로 /ingest는 그대로) · Telegram webhook 재등록 · monitor.html 주소 · OIDC audience · IAM을 같이 갱신. 큐 · Scheduler 잡은 v4a 전환 때 어차피 새로 만들어 추가 비용 작음.</td></tr>
       <tr><td><b>ops 이관 · /enrich 인증</b></td><td>admin_state · control을 읽는 모든 곳 변경. /enrich는 공개 서비스 경로라 앱 안 OIDC 검증에 의존.</td></tr>
     </tbody>
   </table></div>
@@ -231,13 +293,13 @@
   <div class="tbl-scroll"><table>
     <thead><tr><th></th><th>v3b 목표안 (관제탑 + 우편함)</th><th>v4a</th></tr></thead>
     <tbody>
-      <tr><td><b>Cloud Run 서비스</b></td><td>3개 (게이트 · 감시자 · 관제탑)</td><td>2개 (현재 그대로)</td></tr>
-      <tr><td><b>우편함</b></td><td>Pub/Sub (신규 제품)</td><td>Cloud Tasks (이미 사용 중) + 가공 큐 1개</td></tr>
+      <tr><td><b>Cloud Run 서비스</b></td><td>3개 (게이트 · 감시자 · 관제탑)</td><td>2개 (접수 서비스 · 쓰기 서비스)</td></tr>
+      <tr><td><b>우편함</b></td><td>Pub/Sub (신규 제품)</td><td>Cloud Tasks 적용 큐 (현재 큐의 역할 확장) + 가공 큐</td></tr>
       <tr><td><b>쓰기 방식</b></td><td>Git Data API 전환 (여러 파일 1커밋)</td><td>Contents API 그대로</td></tr>
       <tr><td><b>묶음 커밋</b></td><td>있음</td><td>없음 (필요하면 나중에 /apply에 얹음)</td></tr>
       <tr><td><b>데드레터</b></td><td>Pub/Sub 기본 제공</td><td>마지막 시도 판별로 직접 구현</td></tr>
       <tr><td><b>운영 세션 상태</b></td><td>data 브랜치 (관제탑)</td><td>ops 브랜치로 분리</td></tr>
-      <tr><td><b>업스트림 폰</b></td><td>/x · /yt 분리 (폰 수정)</td><td>변경 없음</td></tr>
+      <tr><td><b>업스트림 폰</b></td><td>/x · /yt 분리 (경로 변경)</td><td>경로 유지. URL은 리소스 이름 전환 때만 변경</td></tr>
     </tbody>
   </table></div>
 
@@ -256,15 +318,15 @@
   /* ── 노드 ── [x, y, w, h, 제목, 부제, 종류] 종류: "ext"=서드파티, "new"=v4a 신규 */
   var N = {
     push:   [20,122,160,42,"X·YouTube 푸시","서드파티 알림","ext"],
-    up:     [20,206,160,44,"업스트림 · Automate","운영자 폰 (변경 없음)"],
+    up:     [20,206,160,44,"업스트림 · Automate","운영자 폰 (경로 /ingest 유지)"],
     op:     [20,318,160,42,"운영자","텔레그램 DM"],
     tg:     [20,410,160,44,"Telegram Bot API","webhook · DM · getFile","ext"],
-    sch:    [20,548,160,46,"Cloud Scheduler","10분 · 06:00 · 06:10 (3잡)"],
-    ctrl:   [290,222,190,66,"제어 채널",["mewtype-telegram · 공개","입구 · 가공 · 조회 응답 · /enrich"]],
-    qa:     [300,352,170,54,"쓰기 큐",["Cloud Tasks · 동시 1","기존 큐 · 모든 쓰기 요청"]],
-    be:     [290,470,190,66,"백엔드",["mewtype-backend · 비공개","/tick · /apply · /monitor"]],
-    qe:     [290,618,190,50,"가공 큐",["Cloud Tasks","번역 재시도 → /enrich"],"new"],
-    data:   [620,200,180,62,"GitHub · data",["preview · notices · tweets","공개 콘텐츠만 · 백엔드만 씀"]],
+    sch:    [20,548,160,46,"Cloud Scheduler","reconcile 2잡 · snapshot 1잡"],
+    ctrl:   [290,222,190,66,"접수 서비스",["mewtype-intake · 공개","/ingest · /telegram · /enrich · /monitor-live"]],
+    qa:     [300,352,170,54,"적용 큐",["Cloud Tasks mewtype-apply","동시 1 · 모든 쓰기 요청"]],
+    be:     [290,470,190,66,"쓰기 서비스",["mewtype-writer · 비공개","/reconcile · /apply · /snapshot"]],
+    qe:     [290,618,190,50,"가공 큐",["Cloud Tasks mewtype-enrich","번역 재시도 → /enrich"],"new"],
+    data:   [620,200,180,62,"GitHub · data",["preview · notices · tweets","공개 콘텐츠만 · 쓰기 서비스만 씀"]],
     ops:    [620,330,180,62,"GitHub · ops",["admin_state · control","undo 슬롯"],"new"],
     mon:    [620,466,180,62,"GitHub · monitoring",["이벤트 로그 · 스냅샷","유실 큐"]],
     cdn:    [870,200,160,62,"raw CDN",["raw.githubusercontent","약 5분 캐시"],"ext"],
@@ -287,11 +349,11 @@
   function viaBe(ext){ var e = C(ext); return ["be",[570,503],[570,BUS_Y],[e[0],BUS_Y],ext]; }
   function rt(a){ return a.concat(a.slice(0,-1).reverse()); }       // 왕복
   function back(a){ return a.slice().reverse(); }
-  var CQ     = ["ctrl","qa"];                                         // 제어 채널 → 쓰기 큐 (적재)
-  var QB     = ["qa","be"];                                           // 쓰기 큐 → 백엔드 /apply
-  var BQ     = [[480,490],[512,490],[512,379],[470,379]];             // 백엔드 → 쓰기 큐 (reconcile 적재)
-  var BQE    = [[360,520],[360,643]];                                 // 백엔드 → 가공 큐
-  var QEC    = [[480,643],[538,643],[538,255],[480,255]];             // 가공 큐 → 제어 채널 /enrich
+  var CQ     = ["ctrl","qa"];                                         // 접수 서비스 → 적용 큐 (적재)
+  var QB     = ["qa","be"];                                           // 적용 큐 → 쓰기 서비스 /apply
+  var BQ     = [[480,490],[512,490],[512,379],[470,379]];             // 쓰기 서비스 → 적용 큐 (reconcile 적재)
+  var BQE    = [[360,520],[360,643]];                                 // 쓰기 서비스 → 가공 큐
+  var QEC    = [[480,643],[538,643],[538,255],[480,255]];             // 가공 큐 → 접수 서비스 /enrich
   var X_IN   = ["push","up","ctrl"];
   var CMD    = ["op","tg","ctrl"];
   var DM     = ["ctrl","tg","op"];
@@ -320,24 +382,24 @@
   var F = [
     {id:"1", g:"A", t:"예정 · 라이브 정기 감지", c:"유지", trig:"Cloud Scheduler 10분", out:"preview.json",
       steps:[
-        s("E",[["sch","be"]],"Cloud Scheduler가 10분마다 백엔드 /tick = reconcile(전체)"),
+        s("E",[["sch","be"]],"Cloud Scheduler가 10분마다 쓰기 서비스 /reconcile = reconcile(전체)"),
         s("X",[rt(viaBe("yt"))],"YouTube RSS(6채널) + videos.list로 상태 · 예정 시각 확인"),
         s("O",[["be"]],"preview_build — 6상태 preview 재구성 (순수 함수 그대로)"),
         s("S",[["be","data"]],"변경분만 preview.json 커밋"),
         s("F",[TO_FAN],"raw CDN(최대 약 5분 캐시) → 팬 브라우저 75초 폴링")
       ]},
-    {id:"2", g:"A", t:"방송별 정밀 추적", c:"변경", trig:"쓰기 큐 reconcile(영상)", out:"preview.json",
-      why:"/wake 가 /apply 의 reconcile(영상)으로 흡수. 같은 큐(기존 TASKS_QUEUE)를 쓰기 요청과 함께 쓴다.",
+    {id:"2", g:"A", t:"방송별 정밀 추적", c:"변경", trig:"적용 큐 reconcile(영상)", out:"preview.json",
+      why:"/wake 가 /apply 의 reconcile(영상)으로 흡수. 현재 예약 큐(TASKS_QUEUE)는 적용 큐 mewtype-apply로 바뀌어 쓰기 요청과 함께 쓴다.",
       steps:[
-        s("O",[BQ],"백엔드가 다음 확인 시각에 reconcile(영상)을 쓰기 큐에 적재",Y),
-        s("O",[QB],"예약 시각에 백엔드 /apply reconcile(영상)",Y),
+        s("O",[BQ],"쓰기 서비스가 다음 확인 시각에 reconcile(영상)을 적용 큐에 적재",Y),
+        s("O",[QB],"예약 시각에 쓰기 서비스 /apply reconcile(영상)",Y),
         s("X",[rt(viaBe("yt"))],"videos.list로 watching · live · end 확인"),
         s("S",[["be","data"]],"상태 전이 커밋"),
         s("O",[BQ],"다음 확인 재적재 (live 10분 · 시작 +60분 이후 5분 · end 창 5분)")
       ]},
     {id:"3", g:"A", t:"그룹 공식 채널 5인 팬아웃", c:"유지", trig:"(1번 안)", out:"preview.json",
       steps:[
-        s("E",[["sch","be"]],"정기 /tick"),
+        s("E",[["sch","be"]],"정기 /reconcile"),
         s("X",[rt(viaBe("yt"))],"그룹 공식 채널(@BDP_yumemita)도 RSS · videos.list 대상"),
         s("O",[["be"]],"build_preview — 그룹 영상을 5인 레인으로 팬아웃(host=group)"),
         s("S",[["be","data"]],"preview.json 커밋"),
@@ -345,162 +407,162 @@
       ]},
     {id:"4", g:"A", t:"종료 방송 보관", c:"유지", trig:"(1 · 2번 안)", out:"preview_archive.json",
       steps:[
-        s("E",[["sch","be"],QB],"정기 /tick 또는 /apply reconcile"),
+        s("E",[["sch","be"],QB],"정기 /reconcile 또는 /apply reconcile"),
         s("X",[rt(viaBe("yt"))],"videos.list로 종료 · 취소 확인"),
         s("S",[["be","data"]],"preview.json에서 빼고 preview_archive.json에 기록")
       ]},
     {id:"5", g:"A", t:"아바타 갱신", c:"유지", trig:"Cloud Scheduler 06:00 JST", out:"preview.json",
       steps:[
-        s("E",[["sch","be"]],"06:00 JST baseline /tick"),
+        s("E",[["sch","be"]],"06:00 JST baseline /reconcile"),
         s("X",[rt(viaBe("yt"))],"channels.list로 5인 아바타 조회"),
         s("S",[["be","data"]],"preview.json에 반영")
       ]},
-    {id:"6", g:"A", t:"번역 재시도", c:"변경", trig:"정기 tick이 needs_tl 발견", out:"notices · tweets · preview.json",
-      why:"백엔드가 Groq를 부르던 _translate_sweep 제거. 백엔드는 가공 큐에 요청만 넣고, 번역은 제어 채널이 한다.",
+    {id:"6", g:"A", t:"번역 재시도", c:"변경", trig:"정기 reconcile이 needs_tl 발견", out:"notices · tweets · preview.json",
+      why:"현재 백엔드가 Groq를 부르던 _translate_sweep 제거. 쓰기 서비스는 가공 큐에 요청만 넣고, 번역은 접수 서비스가 한다.",
       steps:[
-        s("E",[["sch","be"]],"정기 /tick"),
+        s("E",[["sch","be"]],"정기 /reconcile"),
         s("O",[BQE],"needs_tl 행이 있으면 가공 큐에 번역 요청 적재 (10분 단위 이름으로 중복 방지)",Y),
-        s("O",[QEC],"가공 큐 → 제어 채널 /enrich (앱 안 OIDC 검증)",Y),
+        s("O",[QEC],"가공 큐 → 접수 서비스 /enrich (앱 안 OIDC 검증)",Y),
         s("S",[["data","ctrl"]],"needs_tl 행 읽기",Y),
         s("X",[rt(viaCtrl("groq"))],"Groq 번역",Y),
-        s("O",[CQ],"번역 결과를 쓰기 큐에 적재",Y),
-        s("O",[QB],"백엔드 /apply"),
+        s("O",[CQ],"번역 결과를 적용 큐에 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply"),
         s("S",[["be","data"]],"title_ko · text_ko 커밋, needs_tl 제거"),
         s("F",[TO_FAN],"팬 화면에 번역 표시")
       ]},
 
     {id:"7", g:"B", t:"공식 스케줄 · 출연 공지 · 즉시 개시 릴레이", c:"변경", trig:"공식 계정 트윗", out:"preview.json",
-      why:"동기 /write(최대 60초 대기) → 쓰기 큐 적재 후 즉시 응답. 결과 알림 DM은 백엔드가 커밋 뒤 보냄.",
+      why:"동기 /write(최대 60초 대기) → 적용 큐 적재 후 즉시 응답. 결과 알림 DM은 쓰기 서비스가 커밋 뒤 보냄.",
       steps:[
-        s("E",[X_IN],"공식 계정 트윗 알림 → Automate → 제어 채널 /ingest"),
+        s("E",[X_IN],"공식 계정 트윗 알림 → Automate → 접수 서비스 /ingest"),
         s("X",[rt(viaCtrl("vx"))],"tweet id로 원문 복원"),
         s("O",[["ctrl"]],"xrelay.parse — 일일 스케줄 · 출연 공지 · 즉시 개시"),
         s("X",[rt(viaCtrl("groq"))],"합동이 잡힌 행만 Groq 재확인"),
-        s("O",[CQ],"쓰기 큐에 merge_rows 적재 → 업스트림에 바로 응답",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 merge_rows 적재 → 업스트림에 바로 응답",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"preview.json에 announced 커밋"),
-        s("X",[BE_DM],"알림 레벨에 따라 결과 DM (백엔드)",Y),
+        s("X",[BE_DM],"알림 레벨에 따라 결과 DM (쓰기 서비스)",Y),
         s("F",[TO_FAN],"팬 화면에 예고 카드")
       ]},
     {id:"8", g:"B", t:"개인 트윗 배지 · 번역", c:"변경", trig:"5인 개인 트윗", out:"tweets.json",
-      why:"동기 /write → 쓰기 큐 적재.",
+      why:"동기 /write → 적용 큐 적재.",
       steps:[
-        s("E",[X_IN],"5인 개인 트윗 알림 → 제어 채널 /ingest"),
+        s("E",[X_IN],"5인 개인 트윗 알림 → 접수 서비스 /ingest"),
         s("O",[["ctrl"]],"route_by_title — 표시명으로 5인 판별"),
         s("X",[rt(viaCtrl("vx"))],"원문 · 미디어 · 인용 복원"),
         s("X",[rt(viaCtrl("groq"))],"Groq 번역"),
-        s("O",[CQ],"쓰기 큐에 personal_tweet 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"tweets.json 커밋 (24h 만료, 상한 50건)"),
         s("F",[TO_FAN],"아바타 편지 배지"),
         s("F",[["embed","browser"]],"말풍선 = X 공식 트윗 카드 + 번역")
       ]},
     {id:"9a", g:"B", t:"개인 트윗 → 예고 (YouTube URL)", c:"변경", trig:"8번과 같은 입구", out:"preview.json",
-      why:"즉시 wake 예약이 작업 안의 reconcile(영상) 적재로 바뀐다 (기존에도 백엔드 잡 안이라 동작은 같음).",
+      why:"즉시 wake 예약이 작업 안의 reconcile(영상) 적재로 바뀐다 (현재도 백엔드 잡 안이라 동작은 같음).",
       steps:[
         s("E",[X_IN],"개인 트윗에 YouTube URL"),
         s("X",[rt(viaCtrl("yt"))],"videos.list로 영상 확정 — 본인 · 타멤버 · 그룹 · 외부 채널"),
         s("X",[rt(viaCtrl("groq"))],"외부 채널이면 Groq 참여 판정"),
-        s("O",[CQ],"쓰기 큐에 url_confirmed_commit 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 url_confirmed_commit 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"preview.json 커밋"),
         s("O",[BQ],"같은 작업 안에서 reconcile(영상) 적재",Y)
       ]},
     {id:"9b", g:"B", t:"개인 트윗 → 소식 (비YouTube URL)", c:"변경", trig:"8번과 같은 입구", out:"notices.json",
-      why:"동기 /write → 쓰기 큐 적재.",
+      why:"동기 /write → 적용 큐 적재.",
       steps:[
         s("E",[X_IN],"개인 트윗에 bilibili 등 비YouTube URL"),
         s("X",[rt(viaCtrl("groq"))],"소식 준비 — 파싱 + Groq 제목 · 중복 판정"),
-        s("O",[CQ],"쓰기 큐에 apply_notice 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 apply_notice 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"notices.json 커밋"),
         s("F",[TO_FAN],"소식 티커")
       ]},
     {id:"9c", g:"B", t:"개인 트윗 → 예고 (URL 없음)", c:"변경", trig:"8번과 같은 입구", out:"preview.json",
-      why:"동기 /write → 쓰기 큐 적재.",
+      why:"동기 /write → 적용 큐 적재.",
       steps:[
         s("E",[X_IN],"URL 없는 개인 트윗"),
         s("O",[["ctrl"]],"parse_schedule — '방송' 키워드 + 날짜 게이트, 후기 가드"),
         s("X",[rt(viaCtrl("groq"))],"Groq로 본인 예고인지 최종 확인"),
-        s("O",[CQ],"쓰기 큐에 merge_rows 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 merge_rows 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"preview.json 커밋"),
         s("F",[TO_FAN],"예고 카드")
       ]},
     {id:"10", g:"B", t:"소식 게시판", c:"변경", trig:"방송 외 이벤트 트윗", out:"notices.json",
-      why:"동기 /write → 쓰기 큐 적재.",
+      why:"동기 /write → 적용 큐 적재.",
       steps:[
         s("E",[X_IN],"방송 외 이벤트 트윗 → /ingest"),
         s("X",[rt(viaCtrl("vx"))],"원문 복원"),
         s("X",[rt(viaCtrl("groq"))],"xnotice.parse + Groq 제목 추출 · 중복 판정"),
         s("X",[["ctrl","tg","ctrl"],rt(viaCtrl("groq"))],"크로스오버 공식 계정 + 이미지면 getFile → Groq 비전 OCR"),
-        s("O",[CQ],"쓰기 큐에 apply_notice 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 apply_notice 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"notices.json 커밋"),
         s("F",[TO_FAN],"소식 티커")
       ]},
 
     {id:"11", g:"C", t:"회원 전용 라이브 시작", c:"변경", trig:"YouTube 앱 회원 전용 시작 알림", out:"preview.json",
-      why:"동기 /write → 쓰기 큐 적재.",
+      why:"동기 /write → 적용 큐 적재.",
       steps:[
         s("E",[X_IN],"YouTube 앱 알림 → /ingest (source=yt)"),
         s("X",[rt(viaCtrl("ytdlp"))],"yt-dlp로 video_id · URL 조회"),
-        s("O",[CQ],"쓰기 큐에 yt_member_live_commit 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 yt_member_live_commit 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"preview.json에 live 반영"),
         s("F",[TO_FAN],"라이브 카드")
       ]},
     {id:"12", g:"C", t:"공개 방송 알림 즉시 확인", c:"변경", trig:"30분 전 · 리마인더 · 시작 알림", out:"preview.json",
-      why:"v3.8.10 불발 해소 — 제어 채널이 모든 쓰기를 큐로 보내므로 큐 설정이 반드시 있다. 알림 도착 → 큐 → 확인이 바로 이어진다.",
+      why:"v3.8.10 불발 해소 — 접수 서비스가 모든 쓰기를 큐로 보내므로 큐 설정이 반드시 있다. 알림 도착 → 큐 → 확인이 바로 이어진다.",
       steps:[
         s("E",[X_IN],"YouTube 앱 공개 방송 알림 → /ingest (source=yt), video_id 확보"),
-        s("O",[CQ],"쓰기 큐에 reconcile(영상) 적재",Y),
-        s("O",[QB],"백엔드 /apply reconcile(영상)",Y),
+        s("O",[CQ],"적용 큐에 reconcile(영상) 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply reconcile(영상)",Y),
         s("X",[rt(viaBe("yt"))],"videos.list로 live 확인"),
         s("S",[["be","data"]],"preview.json 커밋")
       ]},
 
     {id:"13", g:"D", t:"조회 명령", c:"유지", trig:"/status · /list · /notice-list", out:"(읽기만)",
       steps:[
-        s("E",[CMD],"운영자 명령 → 제어 채널 /telegram"),
+        s("E",[CMD],"운영자 명령 → 접수 서비스 /telegram"),
         s("S",[["data","ctrl"],["ops","ctrl"]],"data(콘텐츠) · ops(control 등) 읽기",Y),
         s("X",[DM],"즉시 DM 응답")
       ]},
     {id:"14a", g:"D", t:"/ingest preview", c:"변경", trig:"/ingest", out:"preview.json · ops",
-      why:"대기 슬롯이 ops 브랜치로, 쓰기는 큐로, 결과 DM은 백엔드가.",
+      why:"대기 슬롯이 ops 브랜치로, 쓰기는 큐로, 결과 DM은 쓰기 서비스가.",
       steps:[
         s("E",[CMD],"/ingest"),
         s("S",[["ctrl","ops"]],"ops에 대기 슬롯 — data와 충돌 없음",Y),
         s("E",[CMD],"예고 원문(또는 파일) 전송"),
         s("X",[rt(viaCtrl("groq"))],"xrelay.parse(아니면 개인 예고 재시도) + 합동 Groq 확인"),
-        s("O",[CQ],"쓰기 큐에 merge_rows 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 merge_rows 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"preview.json 커밋 + ops에 undo 슬롯",Y),
-        s("X",[BE_DM],"결과 요약 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 요약 DM (쓰기 서비스)",Y)
       ]},
     {id:"14b", g:"D", t:"/ingest notice (= /notice)", c:"변경", trig:"/ingest notice", out:"notices.json · ops",
-      why:"대기 슬롯이 ops로, 쓰기는 큐로, 결과 DM은 백엔드가.",
+      why:"대기 슬롯이 ops로, 쓰기는 큐로, 결과 DM은 쓰기 서비스가.",
       steps:[
         s("E",[CMD],"/ingest notice"),
         s("S",[["ctrl","ops"]],"ops에 대기 슬롯",Y),
         s("E",[CMD],"소식 원문 전송"),
         s("X",[rt(viaCtrl("groq"))],"xnotice.parse + Groq 제목 · 중복 판정"),
-        s("O",[CQ],"쓰기 큐에 apply_notice 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 apply_notice 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"notices.json 커밋 + undo 슬롯",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14c", g:"D", t:"/ingest tweet", c:"변경", trig:"/ingest tweet <유닛>", out:"tweets.json · ops",
-      why:"대기 슬롯이 ops로, 쓰기는 큐로, 결과 DM은 백엔드가.",
+      why:"대기 슬롯이 ops로, 쓰기는 큐로, 결과 DM은 쓰기 서비스가.",
       steps:[
         s("E",[CMD],"/ingest tweet <유닛>"),
         s("S",[["ctrl","ops"]],"ops에 대기 슬롯",Y),
         s("E",[CMD],"트윗 원문 전송"),
         s("X",[rt(viaCtrl("groq"))],"_maybe_personal_tweet(via=ops) — Groq 번역"),
-        s("O",[CQ],"쓰기 큐에 personal_tweet 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"tweets.json 커밋"),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14d", g:"D", t:"/edit preview", c:"변경", trig:"/edit", out:"preview.json · ops",
       why:"자기 /wake 동기 호출 제거 → 작업 안에서 reconcile(영상) 적재. 마법사 상태 · 편집 락은 ops로.",
@@ -509,23 +571,23 @@
         s("S",[["data","ctrl"]],"preview.json 읽어 목록 표시"),
         s("S",[["ctrl","ops"]],"마법사 단계 · 편집 락(60초)을 ops에",Y),
         s("E",[CMD],"유닛 → 번호 → 필드 → 값 → done"),
-        s("O",[CQ],"쓰기 큐에 apply_preview_edit 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 apply_preview_edit 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"preview.json 커밋 + undo 슬롯 · 락 해제",Y),
         s("O",[BQ],"state를 바꿨고 영상이 있으면 reconcile(영상) 적재 — 자기 호출 대신",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)")
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)")
       ]},
     {id:"14e", g:"D", t:"/edit notice (= /notice-edit)", c:"변경", trig:"/edit notice <id|번호>", out:"notices.json · ops",
-      why:"마법사 상태가 ops로, 결과 DM은 백엔드가.",
+      why:"마법사 상태가 ops로, 결과 DM은 쓰기 서비스가.",
       steps:[
         s("E",[CMD],"/edit notice <id | 번호>"),
         s("S",[["data","ctrl"]],"notices.json에서 대상 찾기"),
         s("S",[["ctrl","ops"]],"마법사 상태를 ops에",Y),
         s("E",[CMD],"제목 → 날짜 → URL (유지 = aNoneTokyo)"),
-        s("O",[CQ],"쓰기 큐에 notice_edit_commit 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 notice_edit_commit 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"notices.json 커밋 + undo 슬롯",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14f", g:"D", t:"/edit tweet", c:"변경", trig:"/edit tweet <유닛>", out:"tweets.json · ops",
       why:"14c와 같은 경로.",
@@ -534,10 +596,10 @@
         s("S",[["ctrl","ops"]],"ops에 대기 슬롯",Y),
         s("E",[CMD],"새 원문 전송"),
         s("X",[rt(viaCtrl("groq"))],"Groq 번역"),
-        s("O",[CQ],"쓰기 큐에 personal_tweet 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"tweets.json 커밋 (교체)"),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14g", g:"D", t:"/del preview", c:"변경", trig:"/del <유닛> <번호>", out:"preview.json · ops",
       why:"확인 대기가 ops로. terminate의 재등록 차단(suppress)을 삭제와 같은 작업 안에서 처리.",
@@ -547,28 +609,28 @@
         s("S",[["ctrl","ops"]],"ops에 확인 대기(대상 스냅샷)",Y),
         s("X",[DM],"경고 DM — y · terminate · N"),
         s("E",[CMD],"y 또는 terminate"),
-        s("O",[CQ],"쓰기 큐에 remove_broadcast(+terminate 여부) 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 remove_broadcast(+terminate 여부) 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"preview.json에서 제거 + undo · (terminate) suppress 12h",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14h", g:"D", t:"/del notice (= /notice-del)", c:"변경", trig:"/del notice <id|번호>", out:"notices.json · ops",
-      why:"결과 DM이 백엔드에서. undo 슬롯은 ops.",
+      why:"결과 DM이 쓰기 서비스에서. undo 슬롯은 ops.",
       steps:[
         s("E",[CMD],"/del notice <id | 번호> — 확인 단계 없음"),
-        s("O",[CQ],"쓰기 큐에 notice_del_commit 적재 (번호→id는 커밋 시점)",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 notice_del_commit 적재 (번호→id는 커밋 시점)",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"notices.json에서 제거 + undo 슬롯",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14i", g:"D", t:"/del tweet", c:"변경", trig:"/del tweet <유닛>", out:"tweets.json · ops",
-      why:"결과 DM이 백엔드에서. undo 슬롯은 ops.",
+      why:"결과 DM이 쓰기 서비스에서. undo 슬롯은 ops.",
       steps:[
         s("E",[CMD],"/del tweet <유닛> — 확인 단계 없음"),
-        s("O",[CQ],"쓰기 큐에 tweet_del_commit 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 tweet_del_commit 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"tweets.json에서 제거 + undo 슬롯",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"14j", g:"D", t:"/undo", c:"변경", trig:"/undo", out:"대상 파일 · ops",
       why:"undo 슬롯 · 확인 대기가 ops로. 복원과 슬롯 정리를 같은 작업 안에서.",
@@ -578,32 +640,32 @@
         s("S",[["ctrl","ops"]],"ops에 확인 대기",Y),
         s("X",[DM],"되돌릴 내용 + 확인 DM (y/N)"),
         s("E",[CMD],"y"),
-        s("O",[CQ],"쓰기 큐에 undo_restore 적재 (그 사이 바뀌었으면 거부)",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 undo_restore 적재 (그 사이 바뀌었으면 거부)",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"],["be","ops"]],"대상 파일 복원 + undo 슬롯 정리",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"15", g:"D", t:"수동 번역 /translate", c:"변경", trig:"/translate", out:"notices · tweets · preview",
-      why:"data 직접 쓰기(쓰기 큐 우회) 제거 → 쓰기 큐 경유.",
+      why:"data 직접 쓰기(적용 큐 우회) 제거 → 적용 큐 경유.",
       steps:[
         s("E",[CMD],"/translate preview|notice|tweet"),
         s("S",[["data","ctrl"]],"번역 대상 읽기"),
         s("X",[rt(viaCtrl("groq"))],"Groq 번역"),
-        s("O",[CQ],"쓰기 큐에 번역 반영 작업 적재",Y),
-        s("O",[QB],"백엔드 /apply",Y),
+        s("O",[CQ],"적용 큐에 번역 반영 작업 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply",Y),
         s("S",[["be","data"]],"번역 커밋",Y),
-        s("X",[BE_DM],"결과 DM (백엔드)",Y)
+        s("X",[BE_DM],"결과 DM (쓰기 서비스)",Y)
       ]},
     {id:"16", g:"D", t:"일시정지 · 재개 · 로그 레벨", c:"변경", trig:"/pause · /resume · /log", out:"ops control",
-      why:"control을 ops에 sha 검사로 씀(비상 브레이크는 큐 뒤에 서지 않게 직접). /resume의 동기 /tick 호출 → reconcile(전체) 적재.",
+      why:"control을 ops에 sha 검사로 씀(비상 브레이크는 큐 뒤에 서지 않게 직접). 현재 /resume의 동기 /tick 호출 → reconcile(전체) 적재.",
       steps:[
         s("E",[CMD],"/pause · /resume · /log"),
         s("S",[["ctrl","ops"]],"ops에 control 쓰기 (sha 검사) — 큐 상태와 무관하게 즉시",Y),
-        s("O",[CQ],"/resume이면 쓰기 큐에 reconcile(전체) 적재",Y),
-        s("O",[QB],"백엔드 /apply reconcile(전체)",Y),
+        s("O",[CQ],"/resume이면 적용 큐에 reconcile(전체) 적재",Y),
+        s("O",[QB],"쓰기 서비스 /apply reconcile(전체)",Y),
         s("X",[DM],"결과 DM")
       ]},
-    {id:"17", g:"D", t:"모니터 리포트 /monitor", c:"유지", trig:"/monitor [...]", out:"(--auto/--off는 ops control)",
+    {id:"17", g:"D", t:"모니터 리포트 /monitor 명령", c:"유지", trig:"/monitor [...]", out:"(--auto/--off는 ops control)",
       steps:[
         s("E",[CMD],"/monitor"),
         s("S",[["mon","ctrl"]],"monitoring 이벤트 로그 읽기"),
@@ -611,45 +673,45 @@
         s("X",[DM],"HTML 리포트 DM")
       ]},
     {id:"18", g:"D", t:"유실 원문 재투입 --retroactive", c:"변경", trig:"/ingest --retroactive", out:"lost_queue + 대상",
-      why:"큐에서 빼는 기준이 커밋 성공 → 적재 성공으로. 적재 뒤 최종 실패하면 백엔드가 다시 lost_queue에 넣는다(20번).",
+      why:"큐에서 빼는 기준이 커밋 성공 → 적재 성공으로. 적재 뒤 최종 실패하면 쓰기 서비스가 다시 lost_queue에 넣는다(20번).",
       steps:[
         s("E",[CMD],"/ingest --retroactive"),
         s("S",[["mon","ctrl"]],"monitoring/lost_queue.json 읽기"),
         s("O",[["ctrl"]],"한 건씩 순차로 가공 재실행 (7~10번 준비 단계)"),
-        s("O",[CQ],"쓰기 큐에 적재",Y),
+        s("O",[CQ],"적용 큐에 적재",Y),
         s("S",[["ctrl","mon"]],"적재에 성공한 항목만 lost_queue에서 제거",Y),
-        s("O",[QB],"백엔드 /apply"),
+        s("O",[QB],"쓰기 서비스 /apply"),
         s("S",[["be","data"]],"data 커밋"),
         s("X",[DM],"재투입 결과 DM")
       ]},
 
     {id:"19", g:"E", t:"상태 전이 알림 DM", c:"유지", trig:"1 · 2번 결과", out:"—",
       steps:[
-        s("E",[["sch","be"],QB],"정기 /tick 또는 /apply reconcile"),
+        s("E",[["sch","be"],QB],"정기 /reconcile 또는 /apply reconcile"),
         s("X",[rt(viaBe("yt"))],"videos.list 확인"),
         s("S",[["be","data"]],"상태 전이 커밋"),
         s("X",[BE_DM],"알림 레벨로 거른 뒤 DM")
       ]},
     {id:"20", g:"E", t:"유실 원문 보존", c:"변경", trig:"적재 실패 · 최종 시도 실패", out:"lost_queue.json",
-      why:"실패 지점이 4곳 → 2곳. Cloud Tasks에는 데드레터가 없어(확인 필요) 백엔드가 마지막 시도를 판별해 직접 적재한다.",
+      why:"실패 지점이 4곳 → 2곳. Cloud Tasks에는 데드레터가 없어(확인 필요) 쓰기 서비스가 마지막 시도를 판별해 직접 적재한다.",
       steps:[
         s("E",[X_IN],"/ingest로 트윗 도착 → 가공"),
-        s("O",[CQ],"① 쓰기 큐 적재 자체가 실패 (Tasks API 오류)",{n:true, stop:true}),
+        s("O",[CQ],"① 적용 큐 적재 자체가 실패 (Tasks API 오류)",{n:true, stop:true}),
         s("X",[DM],"원문 전체를 DM으로 회신"),
         s("S",[["ctrl","mon"]],"lost_queue.json에 적재"),
         s("O",[QB],"② 또는: 적재는 됐지만 /apply가 재시도를 다 쓰고 실패",{n:true, stop:true}),
-        s("X",[BE_DM],"백엔드가 마지막 시도를 판별(X-CloudTasks-TaskRetryCount, 확인 필요) → 원문 DM",Y),
-        s("S",[["be","mon"]],"백엔드가 lost_queue.json에 적재",Y)
+        s("X",[BE_DM],"쓰기 서비스가 마지막 시도를 판별(X-CloudTasks-TaskRetryCount, 확인 필요) → 원문 DM",Y),
+        s("S",[["be","mon"]],"쓰기 서비스가 lost_queue.json에 적재",Y)
       ],
       note:"적재된 원문은 18번으로 재투입."},
     {id:"21", g:"E", t:"모니터 이벤트 로그", c:"유지", trig:"각 처리마다", out:"events-*.jsonl",
       steps:[
-        s("E",[X_IN,["sch","be"]],"제어 채널 · 백엔드에서 처리 발생"),
+        s("E",[X_IN,["sch","be"]],"접수 서비스 · 쓰기 서비스에서 처리 발생"),
         s("S",[["ctrl","mon"],["be","mon"]],"monitoring 브랜치에 한 줄 append")
       ]},
     {id:"22", g:"E", t:"일일 스냅샷 + 멤버 현황 DM", c:"유지", trig:"Cloud Scheduler 06:10 KST", out:"monitoring",
       steps:[
-        s("E",[["sch","be"]],"06:10 KST 백엔드 /monitor"),
+        s("E",[["sch","be"]],"06:10 KST 쓰기 서비스 /snapshot"),
         s("S",[["mon","be"]],"전일 이벤트 로그 읽기"),
         s("X",[rt(viaBe("hc")),rt(viaBe("vapi"))],"healthchecks · Vercel API 조회"),
         s("S",[["be","mon"]],"days/ · summary.json · latest.html 커밋"),
@@ -657,14 +719,14 @@
       ]},
     {id:"23", g:"E", t:"웹 모니터 (이스터에그)", c:"유지", trig:"monitor.html 방문", out:"(읽기만)",
       steps:[
-        s("F",[WEB],"monitor.html → 제어 채널 GET /monitor-live"),
+        s("F",[WEB],"monitor.html → 접수 서비스 GET /monitor-live"),
         s("S",[["mon","ctrl"]],"monitoring 로그로 즉석 생성"),
         s("F",[back(WEB)],"HTML 응답"),
         s("F",[["mon","cdn","browser"]],"실패 시 raw latest.html 폴백")
       ]},
-    {id:"24", g:"E", t:"생존 신호", c:"유지", trig:"정기 tick", out:"—",
+    {id:"24", g:"E", t:"생존 신호", c:"유지", trig:"정기 reconcile 잡", out:"—",
       steps:[
-        s("E",[["sch","be"]],"정기 /tick"),
+        s("E",[["sch","be"]],"정기 /reconcile"),
         s("X",[viaBe("hc")],"healthchecks.io 핑 (일시정지 중에도)")
       ]},
 
