@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>v3b 목표 구조</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* 스타일 기준: docs/v3_pamphlet.html (devpapers) · ref/v3b_wiring_flow.html */
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --panel:#17181c; --panel2:#1e2024; --ink:#e9e9ea; --dim:#9a9ca2;
+    --faint:#6b6d73; --line:#2c2e33; --cyan:#cbf7f5; --warn:#ff8a7a; --ok:#8fe3ae;
+    --f-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1300px;margin:0 auto;padding:48px 16px 88px}
+  h2{margin:56px 0 6px;font-size:.8rem;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--cyan)}
+  h2+.sub{margin:0 0 20px;color:var(--dim);font-size:.9rem}
+  code{font-family:var(--f-mono);font-size:.86em}
+
+  .hero{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, rgba(203,247,245,.07), transparent 55%), var(--panel);
+    padding:30px 28px}
+  .hero .eyebrow{margin:0 0 10px;font-family:var(--f-mono);font-size:.72rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan)}
+  .hero h1{margin:0 0 10px;font-size:1.8rem;font-weight:700;letter-spacing:-.01em}
+  .hero p{margin:0 0 8px;max-width:78ch;color:var(--dim)}
+  .hero p b{color:var(--ink)}
+  .draft{display:inline-block;margin-top:8px;font-family:var(--f-mono);font-size:.72rem;padding:4px 10px;border-radius:999px;
+    border:1px solid rgba(255,138,122,.45);color:var(--warn)}
+
+  .principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .pr{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px}
+  .pr .n{font-family:var(--f-mono);font-size:.7rem;color:var(--cyan)}
+  .pr b{display:block;margin:2px 0 4px}
+  .pr p{margin:0;color:var(--dim);font-size:.86rem}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 14px;font-size:.8rem;color:var(--dim)}
+  .legend i{display:inline-block;width:22px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+
+  .diagram{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .tab{flex:1 1 auto;min-width:100px;padding:11px 10px;font:inherit;font-size:.82rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .tab:last-child{border-right:0}
+  .tab:hover{color:var(--ink)}
+  .tab .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
+  .tab[aria-selected="true"]{color:#0c1416;background:var(--tabc,var(--cyan));font-weight:600}
+  .tab[aria-selected="true"] .sw{background:#0c1416!important}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line);background:#15161a;min-height:50px}
+  .chip{font-family:var(--f-mono);font-size:.74rem;padding:4px 9px;border-radius:6px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);cursor:pointer;transition:.12s}
+  .chip:hover{color:var(--ink)}
+  .chip b{font-weight:600;color:var(--cc)}
+  .chip[aria-selected="true"]{border-color:var(--cc);color:var(--ink);background:color-mix(in srgb,var(--cc) 14%,transparent)}
+  .stage-scroll{overflow-x:auto;background:#0d0e11}
+  .stage{padding:18px 14px 6px;min-width:1000px}
+  #svg{width:100%;height:auto;display:block}
+
+  svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;transition:opacity .25s,stroke .25s}
+  svg .node text{fill:var(--dim);font-family:var(--f-sans)}
+  svg .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg .node.ext rect{stroke-dasharray:4 4}
+  svg .node.core rect{fill:#1b2226;stroke:#35545a;stroke-width:1.6}
+  svg .node.core .nt{font-size:14px}
+  svg .base{fill:none;stroke-width:1.4;opacity:.22;transition:opacity .25s}
+  svg.dimming .base{opacity:.06}
+  svg .node{transition:opacity .25s}
+  svg.dimming .node{opacity:.3}
+  svg .node.hot{opacity:1}
+  svg .node.hot rect{stroke:var(--hc,var(--cyan));stroke-width:2}
+  svg .node.hot .ns{fill:var(--dim)}
+  svg .group-t{fill:var(--faint);font-family:var(--f-mono);font-size:9px;letter-spacing:.08em}
+  svg .group-b{fill:none;stroke:#26282d;stroke-width:1;stroke-dasharray:3 5}
+  svg .group-b.run{stroke:#2f4146}
+  @keyframes flow{to{stroke-dashoffset:-20}}
+  svg .route{fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;
+    stroke-dasharray:4 6;opacity:.85;animation:flow 1s linear infinite}
+  svg .route.faint{opacity:.55;stroke-width:1.5}
+  svg .pk-halo{opacity:.22}
+  @media (prefers-reduced-motion:reduce){svg .route{animation:none} #packets{display:none}}
+
+  .cap{padding:14px 20px 18px;font-size:.9rem;min-height:130px}
+  .cap h3{margin:0 0 8px;font-size:1rem}
+  .cap h3 .id{font-family:var(--f-mono);margin-right:8px}
+  .cap dl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0}
+  .cap dt{color:var(--faint);font-family:var(--f-mono);font-size:.74rem;padding-top:2px}
+  .cap dd{margin:0}
+  .cap ol{margin:4px 0 0;padding-left:20px;color:var(--ink)}
+  .cap ol li{margin:2px 0}
+  .cap .note{margin-top:10px;padding:8px 12px;border-left:3px solid var(--cyan);background:rgba(203,247,245,.05);color:#cfe9e8;font-size:.86rem}
+  .cap .multi{color:var(--dim);margin:0}
+  .cap .multi b{font-family:var(--f-mono)}
+
+  table{width:100%;border-collapse:collapse;font-size:.86rem;background:var(--panel);border:1px solid var(--line)}
+  th,td{padding:8px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--faint);font-family:var(--f-mono);font-size:.72rem;font-weight:500;background:var(--panel2);white-space:nowrap}
+  td{color:var(--dim)}
+  td b{color:var(--ink);font-weight:600}
+  td .ids{font-family:var(--f-mono);font-size:.74rem;color:var(--cyan)}
+  .tbl-scroll{overflow-x:auto;border-radius:10px}
+  .tag{font-family:var(--f-mono);font-size:.7rem;padding:1px 7px;border-radius:5px;border:1px solid var(--line);white-space:nowrap}
+  .tag.keep{color:var(--ok);border-color:rgba(143,227,174,.4)}
+  .tag.chg{color:#e6bd72;border-color:rgba(230,189,114,.4)}
+  .tag.abs{color:#7fdcea;border-color:rgba(127,220,234,.4)}
+  .tag.del{color:var(--warn);border-color:rgba(255,138,122,.4)}
+
+  .tradeoffs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+  .to{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px}
+  .to b{display:block;margin-bottom:4px}
+  .to p{margin:0;color:var(--dim);font-size:.86rem}
+  .to.check{border-color:rgba(255,138,122,.35)}
+  .to.check b{color:var(--warn)}
+
+  .foot{margin-top:52px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.78rem;font-family:var(--f-mono)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">mewtype-scheduler · v3b 설계안</p>
+    <h1>v3b 목표 구조 — 관제탑 + 우편함</h1>
+    <p>지금은 네모 박스끼리 직접 쓰고, 직접 부르고, 직접 예약한다. 목표 구조에서는 역할을 셋으로 나눈다.
+      <b>게이트</b>는 받아서 가공하고, <b>감시자</b>는 보고, <b>관제탑</b>만 쓴다.
+      게이트와 감시자는 "본 사실"을 <b>우편함</b>에 넣고 바로 돌아가며, 관제탑이 우편함을 <b>묶음으로</b> 비워 한 번에 커밋한다.</p>
+    <p>현재 배선 지도(<code>ref/v3b_wiring_flow.html</code>)의 기능을 모두 유지한다. 아래 "기능 커버리지" 표가 그 대조표다.</p>
+    <span class="draft">설계안 · 실측 전 — 60건 버스트 재측정으로 채택 여부 결정</span>
+  </header>
+
+  <h2>설계 원칙</h2>
+  <p class="sub">v3b의 모든 변경은 이 다섯 줄에 비춰 판단한다.</p>
+  <div class="principles">
+    <div class="pr"><span class="n">01</span><b>쓰기는 관제탑만</b><p>data · monitoring 브랜치에 커밋하는 주체는 관제탑 하나. 머지 규칙(같은 방송 판정, 합동, 상태 역행 방지)도 관제탑 한 곳에만 있다.</p></div>
+    <div class="pr"><span class="n">02</span><b>보낸 쪽은 기다리지 않는다</b><p>게이트 · 감시자는 우편함에 넣으면 끝. 운영자 명령은 "접수" 응답 후 결과 DM이 따로 온다. 지난 관제탑의 60초 동기 대기를 없앤다.</p></div>
+    <div class="pr"><span class="n">03</span><b>묶음 커밋</b><p>관제탑은 깨어날 때 쌓인 이벤트를 전부 꺼내 브랜치당 커밋 1번. 60건이 몰려도 커밋은 몇 번이면 끝난다.</p></div>
+    <div class="pr"><span class="n">04</span><b>느린 일은 가장자리에서</b><p>LLM · vxtwitter · videos.list · yt-dlp · OCR은 게이트 · 감시자에서 끝내고, 관제탑은 순수 머지와 커밋만 한다.</p></div>
+    <div class="pr"><span class="n">05</span><b>읽기는 자유, 예약은 관제탑</b><p>읽기는 충돌하지 않으니 누구나 직접 읽는다. Cloud Tasks 예약은 관제탑만 한다 — 오늘 "즉시 wake 불발"(환경변수가 없는 쪽이 예약하던 문제)이 구조적으로 사라진다.</p></div>
+  </div>
+
+  <h2>목표 흐름도</h2>
+  <p class="sub">"시나리오" 탭은 기능 하나가 끝에서 끝까지 흐르는 경로, 분류 탭은 배선 가닥. 굵은 테두리 = 우리 코드(Cloud Run 서비스 3개: 게이트 · 감시자 · 관제탑). 점선 테두리 = 서드파티.</p>
+  <div class="legend" id="legend"></div>
+
+  <div class="diagram">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="chips" id="chips"></div>
+    <div class="stage-scroll"><div class="stage">
+      <svg id="svg" viewBox="0 0 1440 740" role="img" aria-label="v3b 목표 구조 흐름도">
+        <rect class="group-b" x="8" y="100" width="184" height="500" rx="10"/>
+        <text class="group-t" x="18" y="116">입력 · 트리거</text>
+        <rect class="group-b" x="270" y="198" width="712" height="486" rx="12"/>
+        <text class="group-t" x="280" y="214">GCP asia-northeast1 — 굵은 테두리 3개 = Cloud Run 서비스(우리 코드) · 우편함 = Pub/Sub · 예약 = Cloud Tasks</text>
+        <rect class="group-b" x="996" y="232" width="214" height="480" rx="10"/>
+        <text class="group-t" x="1006" y="248">데이터 저장소</text>
+        <rect class="group-b" x="276" y="12" width="1030" height="76" rx="10"/>
+        <text class="group-t" x="284" y="26">외부 서비스</text>
+        <rect class="group-b" x="1226" y="232" width="206" height="480" rx="10"/>
+        <text class="group-t" x="1236" y="248">프론트 · 배포</text>
+        <g id="base"></g><g id="routes"></g><g id="packets"></g><g id="nodes"></g>
+      </svg>
+    </div></div>
+    <div class="cap" id="cap"></div>
+  </div>
+
+  <h2>기능 커버리지 — 현재 기능이 목표 구조에서 어디로 흐르나</h2>
+  <p class="sub">왼쪽 = 지금 있는 기능(배선 지도 + CLAUDE.md 기준). 오른쪽 = 목표 구조의 경로. 빠진 기능 없음.</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>현재 기능</th><th>목표 구조에서의 경로</th><th>배선</th></tr></thead>
+    <tbody id="cov"></tbody>
+  </table></div>
+
+  <h2>현재 배선 36가닥 → 목표</h2>
+  <p class="sub"><span class="tag keep">유지</span> 그대로 · <span class="tag chg">변경</span> 출발/도착이 바뀜 · <span class="tag abs">흡수</span> 다른 배선으로 합쳐짐 · <span class="tag del">삭제</span></p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>현재</th><th>처리</th><th>목표 구조에서</th></tr></thead>
+    <tbody id="map"></tbody>
+  </table></div>
+
+  <h2>트레이드오프 · 검증 필요</h2>
+  <p class="sub">얻는 것만 있는 구조는 없다. 빨간 칸은 실측·확인 전이라 채택 전에 반드시 풀어야 하는 것.</p>
+  <div class="tradeoffs">
+    <div class="to"><b>운영자 응답이 두 번으로 나뉜다</b><p>"접수" DM이 먼저 오고, 반영 결과 DM은 관제탑이 커밋한 뒤 온다(수 초). 마법사형 명령은 단계마다 이 지연이 붙는다 — 어차피 재정리 대상이라 v3b에서 명령 체계를 같이 손보는 게 맞다.</p></div>
+    <div class="to"><b>화면 반영은 사실상 그대로</b><p>묶음 대기(수 초)가 더해지지만 raw CDN 캐시가 최대 약 5분이라 팬 화면 기준 체감 차이는 없다.</p></div>
+    <div class="to"><b>서비스가 2개 → 3개</b><p>관제탑은 concurrency=1로 따로 떼야 한다. 감시자가 같은 서비스에 있으면 관측 요청이 관제탑을 막는다(지금 백엔드가 /write 중에 /wake를 받으면 429가 나는 것과 같은 문제).</p></div>
+    <div class="to check"><b>우편함 = Pub/Sub 신규 도입 (확인 필요)</b><p>pull 구독 + "비우기" 알림 태스크(5초 단위 이름 중복 제거) 조합. 무료 한도(월 10GiB) 안이라고 보지만 계정 설정·IAM · 보존 기간 · 데드레터 동작은 미확인.</p></div>
+    <div class="to check"><b>여러 파일을 커밋 1개로 (구현 필요)</b><p>Contents API는 파일 1개씩이라 GitHub Git Data API(tree · commit · ref 갱신)로 바꿔야 한다. ref 갱신 충돌 시 재시도 규칙 설계 필요.</p></div>
+    <div class="to check"><b>60건 버스트 재측정 (채택 조건)</b><p>v3.8.2 측정 방식 그대로 지금 구조 / 지난 관제탑 / 새 구조를 지연 · 유실로 비교. 새 구조가 지연 중앙값과 유실 모두에서 이기지 못하면 채택하지 않는다.</p></div>
+  </div>
+
+  <div class="foot">
+    설계안(미구현 · 미측정). 현재 구조 근거: ref/v3b_wiring_map.md · ref/v3b_wiring_flow.html (2026-09-26 코드 확인).
+    지난 관제탑 측정: v3.8.2 db-control-tower 60건 버스트(2026-09-21).
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  var SVG = document.getElementById("svg");
+
+  /* ── 노드 ── [x, y, w, h, 제목, 부제(문자열|배열), 종류] 종류: ext=외부, core=핵심 */
+  var N = {
+    push:   [20,126,160,42,"X·YouTube 푸시","서드파티 알림","ext"],
+    up:     [20,210,160,44,"업스트림 · Automate","운영자 폰"],
+    op:     [20,322,160,42,"운영자","텔레그램 DM"],
+    tg:     [20,414,160,44,"Telegram Bot API","webhook · DM · getFile","ext"],
+    sch:    [20,536,160,46,"Cloud Scheduler","10분 · 06:00 · 06:10"],
+    gate:   [290,232,190,72,"게이트",["받기 · 가공 · 조회 응답","/x · /yt · /telegram · /enrich · /monitor-live"],"core"],
+    obs:    [290,496,190,72,"감시자",["보기 — 관측 사실만 보고","/observe/sweep · /video · /daily"],"core"],
+    mail:   [560,380,150,58,"우편함",["Pub/Sub · 데드레터","쌓아두고 바로 돌아감"]],
+    tasks:  [560,598,150,50,"Cloud Tasks",["관제탑만 예약","정밀 확인 · 재시도 · 비우기"]],
+    tower:  [780,366,182,102,"관제탑",["유일한 쓰기 주인","묶음 머지 → 브랜치당 1커밋","concurrency=1"],"core"],
+    data:   [1010,258,186,64,"GitHub · data",["preview · notices · tweets","admin_state · control"]],
+    mon:    [1010,470,186,64,"GitHub · monitoring",["이벤트 로그 · 스냅샷","유실(데드레터) 기록"]],
+    gitmain:[1010,640,186,50,"GitHub main","코드 저장소"],
+    cdn:    [1240,258,176,58,"raw CDN",["raw.githubusercontent","약 5분 캐시"],"ext"],
+    browser:[1240,380,176,58,"팬 브라우저","index.html · monitor.html"],
+    embed:  [1240,520,176,52,"X embed","platform.twitter.com","ext"],
+    vercel: [1240,640,176,50,"Vercel","정적 호스팅 · 자동 배포","ext"],
+    yt:     [290,34,150,46,"YouTube","RSS · Data API","ext"],
+    ytdlp:  [458,34,150,46,"yt-dlp","채널 streams 탭","ext"],
+    groq:   [626,34,150,46,"Groq LLM","판정 · 번역 · 비전 OCR","ext"],
+    vx:     [794,34,150,46,"vxtwitter / fxtwitter","트윗 원문 복원","ext"],
+    hc:     [962,34,150,46,"healthchecks.io","ping · 상태 API","ext"],
+    vapi:   [1130,34,160,46,"Vercel REST API","배포 시도 수","ext"]
+  };
+  function C(k){ var n = N[k]; return [n[0] + n[2]/2, n[1] + n[3]/2]; }
+
+  /* 경로 헬퍼 — 외부 호출은 버스(y=106)로, 감시자는 x=530 세로 버스로 게이트를 비켜 간다 */
+  var BY_ = 106;
+  function gX(ext){ var c = C("gate"), e = C(ext); return ["gate",[c[0],BY_],[e[0],BY_],ext]; }
+  function oX(ext){ var e = C(ext); return ["obs",[532,532],[532,BY_],[e[0],BY_],ext]; }
+  function back(r){ return r.slice().reverse(); }
+  function rt(r){ return r.concat(r.slice(0,-1).reverse()); }
+  function join(){ var o = []; for (var i = 0; i < arguments.length; i++){ var a = arguments[i]; o = o.concat(o.length ? a.slice(1) : a); } return o; }
+  var T2TG   = ["tower",[871,722],[200,722],[200,436],"tg"];      // 관제탑 → 텔레그램 DM (아래로 돌아감)
+  var MON2G  = ["mon",[1103,590],[512,590],[512,290],"gate"];    // monitoring 읽기 → 게이트 (/monitor-live)
+  var B2G    = ["browser",[1226,409],[1226,200],[385,200],"gate"]; // 브라우저 → 게이트 /monitor-live
+  var V2B    = ["gitmain","vercel",[1426,665],[1426,409],"browser"];
+
+  var CAT = {
+    E:{name:"E 입구", hex:"#7fdcea", desc:"외부 → 게이트 · 감시자"},
+    S:{name:"S 저장소", hex:"#e6bd72", desc:"관제탑만 쓰기, 읽기는 자유"},
+    X:{name:"X 외부 조회", hex:"#b9a2f5", desc:"느린 외부 호출은 가장자리에서"},
+    F:{name:"F 프론트", hex:"#8fe3ae", desc:"정적 사이트 배선 (현재와 동일)"},
+    O:{name:"기타", hex:"#f292b4", desc:"우편함 · 예약 — 새 구조의 내부 배선"}
+  };
+
+  /* ── 목표 배선 ── */
+  var W = [
+    {id:"E1",c:"E",t:"X 알림",from:"업스트림 Automate (X 알림)",to:"게이트 POST /x",how:"X-Ingest-Secret",fn:"공식 · 개인 트윗을 받아 가공 후 우편함으로",r:[["push","up","gate"]]},
+    {id:"E2",c:"E",t:"YouTube 알림 (분리)",from:"업스트림 Automate (YouTube 앱 알림)",to:"게이트 POST /yt",how:"X-Ingest-Secret",fn:"회원 전용 시작(yt-dlp) · 공개 알림 → '즉시 확인 요청' 이벤트",note:"지금은 /ingest 하나에 source로만 구분 — 엔드포인트를 나눈다.",r:[["push","up","gate"]]},
+    {id:"E3",c:"E",t:"운영자 명령",from:"텔레그램 Bot API",to:"게이트 POST /telegram",how:"Secret-Token + chat_id",fn:"조회 명령은 게이트가 바로 답하고, 변경 명령은 '접수' 후 우편함으로",r:[["op","tg","gate"]]},
+    {id:"E4",c:"E",t:"정기 관측",from:"Cloud Scheduler (10분)",to:"감시자 POST /observe/sweep",how:"OIDC",fn:"RSS + videos.list로 5인 · 그룹 채널 관측 → 사실만 우편함으로",note:"지금 /tick이 하던 머지 · 커밋 · 번역 sweep · 예약은 전부 관제탑으로 옮긴다. 감시자는 보기만 한다.",r:[["sch","obs"]]},
+    {id:"E5",c:"E",t:"일일 관측",from:"Cloud Scheduler (06:00 JST)",to:"감시자 POST /observe/sweep?daily",how:"OIDC",fn:"정기 관측 + 아바타(channels.list)",r:[["sch","obs"]]},
+    {id:"E6",c:"E",t:"일일 통계",from:"Cloud Scheduler (06:10 KST)",to:"감시자 POST /observe/daily",how:"OIDC",fn:"healthchecks · Vercel 배포 수 조회 → 관제탑이 스냅샷 커밋 + 멤버 현황 DM",r:[["sch","obs"]]},
+
+    {id:"M1",c:"O",t:"게이트 → 우편함",from:"게이트",to:"우편함 (Pub/Sub publish)",how:"비동기 · 대기 없음",fn:"가공 끝난 사실: 트윗 · 소식 · 예고 · 명령 · 즉시 확인 요청 · 모니터 이벤트",r:[["gate","mail"]]},
+    {id:"M2",c:"O",t:"감시자 → 우편함",from:"감시자",to:"우편함",how:"비동기",fn:"관측 사실: 영상 상태 · 시각 · 아바타 · 일일 통계",r:[["obs","mail"]]},
+    {id:"M3",c:"O",t:"우편함 → 관제탑 (묶음)",from:"우편함",to:"관제탑 /tower/drain",how:"'비우기' 태스크(5초 단위 이름 중복 제거)가 깨우면 pull로 전부 꺼냄",fn:"묶음 머지 → 브랜치당 커밋 1번 → ack. 실패 시 ack 안 함 = 자동 재전달",note:"버스트 60건이 와도 비우기 태스크는 이름 중복 제거로 몇 개만 생긴다. 관제탑이 429로 거절돼도 Cloud Tasks가 재시도하므로 유실 없음.",r:[["mail","tower"]]},
+    {id:"M4",c:"O",t:"정밀 확인 예약",from:"관제탑",to:"Cloud Tasks → 감시자 /observe/video",how:"OIDC",fn:"방송별 시작 −3분 · live · end 창 확인 + YouTube 알림 '즉시 확인'",note:"예약 주체가 관제탑 하나 → 오늘 유노 건(게이트에 Tasks 설정이 없어 즉시 확인이 14번 불발)이 구조적으로 사라진다.",r:[["tower","tasks","obs"]]},
+    {id:"M5",c:"O",t:"가공 재시도 예약",from:"관제탑",to:"Cloud Tasks → 게이트 /enrich/retry",how:"OIDC",fn:"번역 실패(needs_tl) · LLM 판정 실패분 재시도 — 지금 /tick에 얹혀 있던 번역 sweep 대체",r:[["tower","tasks","gate"]]},
+    {id:"M6",c:"O",t:"데드레터 재투입",from:"우편함 데드레터",to:"게이트 (운영자 재투입 명령)",how:"pull",fn:"끝내 처리 못 한 이벤트 보존 + 수동 재투입 — 지금 lost_queue · /ingest --retroactive 대체",r:[["mail","gate"]]},
+
+    {id:"S1",c:"S",t:"data 커밋 (단일 주인)",from:"관제탑",to:"data 브랜치",how:"Git Data API — 여러 파일을 커밋 1개로",fn:"preview · notices · tweets(+archive) · admin_state · control 전부. 머지 규칙은 여기 한 곳",r:[["tower","data"]]},
+    {id:"S2",c:"S",t:"monitoring 커밋",from:"관제탑",to:"monitoring 브랜치",how:"Git Data API",fn:"이벤트 로그(게이트 · 감시자 것도 우편함 경유) · 일일 스냅샷 · 데드레터 기록",r:[["tower","mon"]]},
+    {id:"S3",c:"S",t:"data 읽기",from:"data 브랜치",to:"게이트 · 감시자",how:"Contents API 읽기 (충돌 없음)",fn:"조회 명령 응답 · 추적 중인 영상 목록 · control(pause) 확인",r:[["data","gate"],["data",[990,290],[990,560],[480,560],"obs"]]},
+    {id:"S4",c:"S",t:"monitoring 읽기",from:"monitoring 브랜치",to:"게이트 /monitor-live",how:"읽기",fn:"웹 모니터 즉석 생성",r:[MON2G]},
+
+    {id:"X1",c:"X",t:"YouTube 관측",from:"감시자",to:"YouTube RSS · videos.list · channels.list",how:"API 키",fn:"새 영상 발견 · 상태 · 시각 · 아바타",r:[rt(oX("yt"))]},
+    {id:"X2",c:"X",t:"URL 확정 · 회원 라이브",from:"게이트",to:"YouTube videos.list · yt-dlp",how:"API 키 · 쿠키(선택)",fn:"트윗 속 URL 확정 · 회원 전용 video_id 조회",r:[rt(gX("yt")),rt(gX("ytdlp"))]},
+    {id:"X3",c:"X",t:"LLM · 비전",from:"게이트",to:"Groq + 텔레그램 getFile",how:"API 키",fn:"번역 · 제목 추출 · 참여/합동/예고 판정 · 중복 판정 · OCR",note:"지금은 백엔드도 번역 sweep으로 Groq를 부른다 — 목표 구조에선 게이트만.",r:[rt(gX("groq")),["gate","tg","gate"]]},
+    {id:"X4",c:"X",t:"트윗 원문 복원",from:"게이트",to:"vxtwitter → fxtwitter",how:"HTTP",fn:"잘린 원문 · 미디어 · 인용 복원",r:[rt(gX("vx"))]},
+    {id:"X5",c:"X",t:"운영 DM",from:"관제탑(결과 · 상태 전이) · 게이트(접수 · 조회 응답)",to:"Telegram sendMessage",how:"봇 토큰",fn:"알림 레벨 게이팅 포함",r:[T2TG.concat(["op"]),["gate","tg","op"]]},
+    {id:"X6",c:"X",t:"생존 · 통계",from:"감시자",to:"healthchecks.io · Vercel REST API",how:"ping URL · 토큰",fn:"정기 관측 성공 ping + 일일 통계 조회",r:[oX("hc"),rt(oX("vapi"))]},
+
+    {id:"F1",c:"F",t:"예고판 · 소식 · 트윗",from:"index.html (75초 폴링)",to:"raw CDN data/*.json",how:"fetch",fn:"현재와 동일",r:[["data","cdn","browser"]]},
+    {id:"F2",c:"F",t:"X 트윗 카드",from:"tweets.js",to:"platform.twitter.com",how:"iframe",fn:"현재와 동일",r:[["embed","browser"]]},
+    {id:"F3",c:"F",t:"웹 모니터",from:"monitor.html",to:"게이트 GET /monitor-live (읽기 전용) → 실패 시 raw 스냅샷",how:"CORS",fn:"현재와 동일. 읽기라 원칙 05에 맞음",r:[B2G,["mon","cdn","browser"]]},
+    {id:"F4",c:"F",t:"배포",from:"GitHub main",to:"Vercel",how:"Git 연동",fn:"현재와 동일",r:[V2B]}
+  ];
+
+  /* ── 시나리오 (끝에서 끝까지) ── */
+  var SC = [
+    {id:"①",t:"정기 감지 → 화면",steps:["Scheduler가 10분마다 감시자를 깨움","감시자가 RSS · videos.list로 관측","관측 사실을 우편함에 넣고 끝","관제탑이 묶음 머지 → data 커밋 1번 + 정밀 확인 예약","CDN을 거쳐 팬 화면에 반영"],
+      r:[join(["sch","obs"],oX("yt"),back(oX("yt")),["obs","mail","tower","data","cdn","browser"]),["tower","tasks"]]},
+    {id:"②",t:"YouTube 알림 즉시 확인 (오늘 유노 건)",steps:["업스트림이 '방송 시작' 알림을 게이트 /yt로","게이트가 '즉시 확인 요청'을 우편함에","관제탑이 Cloud Tasks로 감시자 /observe/video 예약 (예약 주체 = 관제탑)","감시자가 videos.list로 live 확인 → 우편함","관제탑이 live 반영 커밋 → 화면"],
+      note:"오늘은 게이트 쪽에서 예약을 시도하다 설정이 없어 조용히 실패했고, 14분 뒤 tick이 잡았다. 목표 구조에선 알림 도착 후 수십 초 안에 live가 커밋된다(CDN 캐시 제외, 추정).",
+      r:[join(["push","up","gate","mail","tower","tasks","obs"],oX("yt"),back(oX("yt")),["obs","mail","tower","data","cdn","browser"])]},
+    {id:"③",t:"개인 트윗 → 배지 · 예고",steps:["X 알림이 게이트 /x로","게이트가 vxtwitter로 원문 복원, Groq로 번역 · 예고 판정, URL이면 videos.list로 확정","가공된 사실(트윗 + 예고 후보)을 우편함에","관제탑이 머지 — 합동은 '확인된 근거'일 때만 붙이고, video_id가 다르면 합치지 않음","tweets · preview를 커밋 1번에 → 화면"],
+      note:"오늘 오표시 두 건(미야코 · 아라레 합동 오인)은 머지 규칙이 경로마다 따로 있어서 생겼다. 규칙이 관제탑 한 곳에만 있으면 한 번 고치면 끝난다.",
+      r:[join(["push","up","gate"],gX("vx"),back(gX("vx")),gX("groq"),back(gX("groq")),["gate","mail","tower","data","cdn","browser"])]},
+    {id:"④",t:"운영자 /del",steps:["운영자 명령이 게이트 /telegram으로","게이트가 '접수' DM을 바로 보내고 명령을 우편함에","관제탑이 삭제 + undo 스냅샷을 data 커밋 1번에","관제탑이 결과 DM"],
+      r:[["op","tg","gate","mail","tower","data"],T2TG.concat(["op"])]},
+    {id:"⑤",t:"버스트 60건 → 묶음 커밋",steps:["알림 60건이 수 초 사이에 게이트로","게이트는 각자 가공해 우편함에 넣고 즉시 반환 (대기 없음)","'비우기' 태스크는 이름 중복 제거로 몇 개만 생김","관제탑이 한 번에 꺼내 머지 → 브랜치당 커밋 1번"],
+      note:"지난 관제탑은 1건 = 1커밋(약 3.3초)을 모두가 60초까지 기다렸다. 채택 여부는 같은 60건 측정으로 결정한다.",
+      r:[["push","up","gate","mail"],["op","tg","gate","mail"],["sch","obs","mail"],["mail","tower","data"],["tower","mon"]]},
+    {id:"⑥",t:"번역 재시도",steps:["관제탑이 커밋 중 번역 실패(needs_tl)를 발견","Cloud Tasks로 게이트 /enrich/retry 예약","게이트가 Groq 번역 → 결과를 우편함에","관제탑이 반영 커밋"],
+      r:[join(["tower","tasks","gate"],gX("groq"),back(gX("groq")),["gate","mail","tower","data"])]},
+    {id:"⑦",t:"일일 스냅샷 · 웹 모니터",steps:["06:10 Scheduler가 감시자 /observe/daily","감시자가 healthchecks · Vercel 조회 → 우편함","관제탑이 monitoring 스냅샷 커밋 + 멤버 현황 DM","팬 · 운영자는 monitor.html에서 게이트 /monitor-live로 읽기"],
+      r:[join(["sch","obs"],rt(oX("vapi")),["obs","mail","tower","mon"]),T2TG.concat(["op"]),B2G]}
+  ];
+
+  /* ── 기능 커버리지 ── */
+  var COV = [
+    ["예정 · 라이브 자동 감지 (RSS · videos.list)","감시자 관측 → 우편함 → 관제탑 머지","E4 · X1 · M2 · M3 · S1"],
+    ["방송별 정밀 확인 (watching · live · end)","관제탑 예약 → 감시자 /observe/video","M4 · X1"],
+    ["아바타 갱신 (baseline)","감시자 일일 관측","E5 · X1"],
+    ["공식 일일 스케줄 · 出演情報 · 즉시개시 릴레이","게이트 /x 파싱 → 관제탑 머지","E1 · M1 · S1"],
+    ["그룹 공식 채널 5인 팬아웃","관제탑 머지 규칙","S1"],
+    ["개인 트윗 배지 · 번역 · 24h 만료","게이트 가공 → 관제탑 머지 · 만료 정리","E1 · X3 · X4 · S1"],
+    ["개인 트윗 → 예고 승격 (URL 확정 · 비YT 소식 이관 · 텍스트+LLM)","게이트 판정 → 관제탑 머지","E1 · X2 · X3 · S1"],
+    ["소식 게시판 (제목 추출 · 중복 판정 · OCR · 자정 정리)","게이트 가공 → 관제탑 머지 · 정리","E1 · X3 · S1"],
+    ["YouTube 회원 전용 라이브 (yt-dlp)","게이트 /yt → 관제탑 live 반영","E2 · X2 · S1"],
+    ["YouTube 공개 알림 즉시 확인","게이트 /yt → 관제탑 예약 → 감시자","E2 · M4"],
+    ["트윗 시각 우선 (apply_overrides)","관제탑 머지 규칙","S1"],
+    ["편집 락 · 12h 재진입 차단 · undo 스냅샷","관제탑 (admin_state를 같은 커밋에)","S1"],
+    ["조회 명령 (/status /list /notice-list …)","게이트가 data 읽어 바로 응답","E3 · S3 · X5"],
+    ["변경 명령 (/ingest /edit /del /undo /translate /notice…)","게이트 접수 → 관제탑 커밋 → 결과 DM","E3 · M1 · S1 · X5"],
+    ["/pause · /resume · 로그 레벨 · monitor_auto","관제탑이 control 커밋, /resume은 관제탑이 즉시 관측 예약","E3 · S1 · M4"],
+    ["상태 전이 알림 DM (레벨 게이팅)","관제탑이 커밋 후 발송","X5"],
+    ["번역 재시도 (needs_tl)","관제탑 예약 → 게이트 /enrich/retry","M5 · X3"],
+    ["모니터 이벤트 로그","모두 우편함 경유 → 관제탑이 monitoring 커밋","M1 · M2 · S2"],
+    ["일일 스냅샷 · 요약 · 멤버 현황 DM","감시자 /observe/daily → 관제탑","E6 · X6 · S2 · X5"],
+    ["웹 모니터 (/monitor-live, 폴백 스냅샷)","게이트 읽기 전용","F3 · S4"],
+    ["유실 원문 보존 · 재투입 (--retroactive)","우편함 데드레터 + 게이트 재투입 명령","M6"],
+    ["healthcheck","감시자 관측 성공 ping","X6"],
+    ["프론트 예고판 · 소식 · 트윗 · X 카드 · 배포","현재와 동일","F1 · F2 · F4"]
+  ];
+
+  /* ── 현재 36가닥 → 목표 ── */
+  var MAP = [
+    ["E1 X 알림 인입","keep","E1 (게이트 /x)"],["E2 YouTube 알림 인입","chg","E2 — /yt로 분리"],["E3 운영자 명령","keep","E3"],
+    ["E4 정기 수집 light","chg","E4 — 감시자는 관측만, 나머지는 관제탑"],["E5 baseline","chg","E5"],["E6 모니터 스냅샷","chg","E6 → 관제탑이 커밋"],
+    ["I1 /wake 예약","chg","M4 — 예약 주체 = 관제탑"],["I2 /tick 예약 (자기 재호출)","abs","M4 — 영상별 정밀 확인으로 흡수"],
+    ["I3 /write 쓰기 큐 (동기)","chg","M1 + M3 — 비동기 우편함 + 묶음"],["I4 등록 즉시 wake","abs","M4"],
+    ["I5 /resume → /tick","abs","M1 → 관제탑이 M4로 즉시 관측 예약"],["I6 백엔드 자기 호출","del","없음 (관제탑이 M4로 예약)"],
+    ["T /tick 한 바퀴","chg","감시자(관측) · 관제탑(머지 · 커밋 · 예약 · DM) · 게이트(번역)로 분해"],
+    ["S1 preview (두 갈래 쓰기)","chg","S1 — 관제탑만"],["S2 notices (/translate 우회)","chg","S1 — 관제탑만"],["S3 tweets (/translate 우회)","chg","S1 — 관제탑만"],
+    ["S4 admin_state (제어 채널 직접)","chg","S1 — 관제탑만, 같은 커밋"],["S5 control (충돌 검사 없는 덮어쓰기)","chg","S1 — 관제탑만"],
+    ["S6 ingest_queue (잔재)","del","없음 (우편함이 대체)"],["S7 이벤트 로그 · lost_queue (양쪽 직접)","chg","S2 + M6 — 관제탑 · 데드레터"],
+    ["S8 latest.html 등 (쓰는 쪽 둘)","chg","S2 — 관제탑만"],
+    ["X1 YouTube RSS","keep","X1 (감시자)"],["X2 YouTube Data API","keep","X1 (감시자) · X2 (게이트)"],["X3 yt-dlp","keep","X2"],
+    ["X4 Groq (양쪽)","chg","X3 — 게이트만"],["X5 비전 OCR","keep","X3"],["X6 vxtwitter","keep","X4"],
+    ["X7 운영 DM (양쪽)","chg","X5 — 결과는 관제탑, 접수 · 조회는 게이트"],["X8 healthchecks","keep","X6"],["X9 Vercel REST API","keep","X6"],
+    ["F1 예고판","keep","F1"],["F2 소식","keep","F1"],["F3 트윗","keep","F1"],["F4 X 카드","keep","F2"],
+    ["F5 웹 모니터 (Cloud Run 직접)","keep","F3 — 읽기 전용이라 유지"],["F6 배포","keep","F4"]
+  ];
+
+  /* ── SVG ── */
+  function el(tag, attrs, parent){ var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+  function pts(r){ return r.map(function(p){ return typeof p === "string" ? C(p) : p; }); }
+  function pathD(r){ return "M" + pts(r).map(function(q){ return q[0] + "," + q[1]; }).join(" L"); }
+  function pathLen(r){ var p = pts(r), L = 0; for (var i = 1; i < p.length; i++) L += Math.hypot(p[i][0]-p[i-1][0], p[i][1]-p[i-1][1]); return L; }
+  function nodeAt(p){ return Object.keys(N).filter(function(k){ var b = N[k]; return p[0] >= b[0] && p[0] <= b[0]+b[2] && p[1] >= b[1] && p[1] <= b[1]+b[3]; })[0]; }
+
+  var gNodes = document.getElementById("nodes");
+  Object.keys(N).forEach(function(k){
+    var n = N[k];
+    var g = el("g", {"class":"node" + (n[6] ? " " + n[6] : ""), id:"n_" + k, transform:"translate(" + n[0] + "," + n[1] + ")"}, gNodes);
+    el("rect", {width:n[2], height:n[3], rx:8}, g);
+    var subs = Array.isArray(n[5]) ? n[5] : [n[5]];
+    var ty = n[3]/2 - (subs.length - 1) * 5.5 - 2;
+    el("text", {"class":"nt", x:n[2]/2, y:ty, "text-anchor":"middle"}, g).textContent = n[4];
+    subs.forEach(function(line, i){ el("text", {"class":"ns", x:n[2]/2, y:ty + 14 + i * 11, "text-anchor":"middle"}, g).textContent = line; });
+  });
+
+  var gBase = document.getElementById("base");
+  W.forEach(function(w){ w.r.forEach(function(r){ el("path", {"class":"base", d:pathD(r), stroke:CAT[w.c].hex}, gBase); }); });
+
+  var gRoutes = document.getElementById("routes"), gPk = document.getElementById("packets");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* items: [{r:[...routes], hex}] */
+  function paint(items, withPackets){
+    gRoutes.textContent = ""; gPk.textContent = "";
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".node.hot").forEach(function(n){ n.classList.remove("hot"); n.style.removeProperty("--hc"); });
+    var total = items.reduce(function(s, it){ return s + it.r.length; }, 0);
+    items.forEach(function(it){
+      it.r.forEach(function(r){
+        var d = pathD(r);
+        el("path", {"class":"route" + (total > 10 ? " faint" : ""), d:d, stroke:it.hex}, gRoutes);
+        r.forEach(function(p){
+          var k = typeof p === "string" ? p : nodeAt(p); if (!k) return;
+          var n = document.getElementById("n_" + k);
+          if (n && !n.classList.contains("hot")){ n.classList.add("hot"); n.style.setProperty("--hc", it.hex); }
+        });
+        if (!withPackets || reduceMotion) return;
+        var g = el("g", {}, gPk);
+        el("circle", {"class":"pk-halo", r:10, fill:it.hex}, g);
+        el("circle", {r:4.5, fill:it.hex, style:"filter:drop-shadow(0 0 4px " + it.hex + ")"}, g);
+        var dur = Math.max(1.8, Math.min(7, pathLen(r) / 280)).toFixed(1) + "s";
+        var am = el("animateMotion", {dur:dur, repeatCount:"indefinite", begin:"indefinite", calcMode:"paced", path:d}, g);
+        try { am.beginElement(); } catch(e){}
+      });
+    });
+  }
+  function wItems(ids){ return ids.map(function(id){ var w = BY[id]; return {r:w.r, hex:CAT[w.c].hex}; }); }
+
+  var BY = {}; W.forEach(function(w){ BY[w.id] = w; });
+  var cap = document.getElementById("cap");
+  function esc(s){ return String(s).replace(/[&<>]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]; }); }
+  function capWire(w){
+    var h = '<h3><span class="id" style="color:' + CAT[w.c].hex + '">' + w.id + '</span>' + esc(w.t) + '</h3>' +
+      '<dl><dt>출발</dt><dd>' + esc(w.from) + '</dd><dt>도착</dt><dd>' + esc(w.to) + '</dd>' +
+      '<dt>방식</dt><dd>' + esc(w.how) + '</dd><dt>기능</dt><dd>' + esc(w.fn) + '</dd></dl>';
+    if (w.note) h += '<div class="note">' + esc(w.note) + '</div>';
+    cap.innerHTML = h;
+  }
+  function capScn(s){
+    var h = '<h3><span class="id" style="color:var(--cyan)">' + s.id + '</span>' + esc(s.t) + '</h3><ol>' +
+      s.steps.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>';
+    if (s.note) h += '<div class="note">' + esc(s.note) + '</div>';
+    cap.innerHTML = h;
+  }
+  function capMulti(title, desc, ids){
+    cap.innerHTML = '<h3>' + esc(title) + '</h3><p class="multi">' + esc(desc) + '</p>' +
+      (ids.length ? '<p class="multi" style="margin-top:6px">' + ids.map(function(id){
+        return '<b style="color:' + CAT[BY[id].c].hex + '">' + id + '</b> ' + esc(BY[id].t); }).join(' · ') + '</p>' : '');
+  }
+
+  var legend = document.getElementById("legend");
+  Object.keys(CAT).forEach(function(k){
+    var s = document.createElement("span");
+    s.innerHTML = '<i style="background:' + CAT[k].hex + '"></i>' + esc(CAT[k].name) + ' — ' + esc(CAT[k].desc);
+    legend.appendChild(s);
+  });
+
+  var tabs = document.getElementById("tabs"), chips = document.getElementById("chips");
+  var TABS = [{k:"SCN", name:"시나리오", hex:"#cbf7f5"},{k:"ALL", name:"전체", hex:"#e9e9ea"}]
+    .concat(Object.keys(CAT).map(function(k){ return {k:k, name:CAT[k].name, hex:CAT[k].hex}; }));
+  TABS.forEach(function(t){
+    var b = document.createElement("button");
+    b.className = "tab"; b.setAttribute("role","tab"); b.dataset.k = t.k;
+    b.style.setProperty("--tabc", t.hex);
+    b.innerHTML = '<span class="sw" style="background:' + t.hex + '"></span>' + esc(t.name);
+    b.addEventListener("click", function(){ selectTab(t.k); });
+    tabs.appendChild(b);
+  });
+  function mkChip(label, hex, onClick){
+    var b = document.createElement("button");
+    b.className = "chip"; b.setAttribute("aria-selected","false"); b.style.setProperty("--cc", hex);
+    b.innerHTML = label;
+    b.addEventListener("click", function(){
+      chips.querySelectorAll(".chip").forEach(function(x){ x.setAttribute("aria-selected", x === b ? "true" : "false"); });
+      onClick();
+    });
+    chips.appendChild(b); return b;
+  }
+
+  function selectTab(k){
+    tabs.querySelectorAll(".tab").forEach(function(b){ b.setAttribute("aria-selected", b.dataset.k === k ? "true" : "false"); });
+    chips.textContent = "";
+    if (k === "SCN"){
+      var first;
+      SC.forEach(function(s, i){
+        var c = mkChip('<b>' + s.id + '</b> ' + esc(s.t), "#cbf7f5", function(){ paint([{r:s.r, hex:"#cbf7f5"}], true); capScn(s); });
+        if (i === 0) first = c;
+      });
+      first.click();
+      return;
+    }
+    var list = W.filter(function(w){ return k === "ALL" || w.c === k; });
+    list.forEach(function(w){
+      mkChip('<b>' + w.id + '</b> ' + esc(w.t), CAT[w.c].hex, function(){ paint(wItems([w.id]), true); capWire(w); });
+    });
+    var ids = list.map(function(w){ return w.id; });
+    if (k === "ALL"){
+      paint(wItems(ids), false);
+      capMulti("목표 배선 " + ids.length + "가닥", "현재 36가닥 → " + ids.length + "가닥. 쓰기는 S1 · S2 둘뿐이고 둘 다 관제탑에서 나간다. 분류 탭이나 시나리오 탭을 고르면 흐름이 보인다.", []);
+    } else {
+      paint(wItems(ids), true);
+      capMulti(CAT[k].name + " — " + ids.length + "가닥", CAT[k].desc + ". 칩을 누르면 한 가닥만 남는다.", ids);
+    }
+  }
+
+  /* 표 */
+  var cov = document.getElementById("cov");
+  COV.forEach(function(r){ var tr = document.createElement("tr"); tr.innerHTML = '<td><b>' + esc(r[0]) + '</b></td><td>' + esc(r[1]) + '</td><td><span class="ids">' + esc(r[2]) + '</span></td>'; cov.appendChild(tr); });
+  var LBL = {keep:"유지", chg:"변경", abs:"흡수", del:"삭제"};
+  var map = document.getElementById("map");
+  MAP.forEach(function(r){ var tr = document.createElement("tr"); tr.innerHTML = '<td><b>' + esc(r[0]) + '</b></td><td><span class="tag ' + r[1] + '">' + LBL[r[1]] + '</span></td><td>' + esc(r[2]) + '</td>'; map.appendChild(tr); });
+
+  selectTab("SCN");
+})();
+</script>
+</body>
+</html>
