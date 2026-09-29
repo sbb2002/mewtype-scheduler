@@ -180,6 +180,20 @@ def start_tg_poll(app, stop: threading.Event):
         return None
     from . import tg_poll
 
+    # 안전장치: 폴링은 시작할 때 deleteWebhook 을 부른다. 운영 봇 토큰을 넣으면 운영 webhook 이 지워져
+    # 운영 텔레그램 명령이 멎는다 — 웹훅이 걸려 있는 봇이면 건드리지 않고 폴링을 거부한다(로컬 전용 봇만 허용).
+    try:
+        import requests
+        info = requests.get(f"https://api.telegram.org/bot{token}/getWebhookInfo", timeout=10).json()
+        hook = ((info or {}).get("result") or {}).get("url") or ""
+    except Exception as e:  # noqa: BLE001
+        log.error("getWebhookInfo 실패(%s) — 안전을 위해 텔레그램 폴링을 시작하지 않음", e)
+        return None
+    if hook:
+        log.error("이 봇에는 webhook 이 걸려 있다(%s…) — 운영 봇으로 보여 폴링을 거부. 로컬 전용 봇 토큰을 쓰세요",
+                  hook[:40])
+        return None
+
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     client = app.test_client()
 
