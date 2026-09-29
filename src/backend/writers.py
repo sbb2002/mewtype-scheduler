@@ -54,7 +54,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             via=a.get("via", "ingest"),
         ),
         "tweet_sweep": lambda gh, a: {"moved": t._tweet_sweep(gh, a["now_iso"])},
-        "tweet_del_commit": lambda gh, a: t._tweet_del_commit(gh, a["unit"], a["now_iso"]),
+        "tweet_del_commit": lambda gh, a: t._tweet_del_commit(gh, a["unit"], a["now_iso"], a.get("tweet_id")),
         "url_confirmed_commit": lambda gh, a: t._url_confirmed_commit(
             gh, a["video_id"], a["new_item"], a.get("next_check_at"), a["host_key"],
             a["now_iso"], via=a.get("via", "ingest"),

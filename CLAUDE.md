@@ -200,6 +200,11 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   - 그 밖: 공식 스케줄 영상 URL 즉시 확인(D13) · 소식 리트윗 제외(D16) · 트윗 48h(D18) · 원문 보존 `_local/raw`(D19) ·
 >     관리 페이지 `/admin`(`admin_web.py` · `admin_api.py`, 로그인 = 텔레그램 `/admin` 일회용 링크) ·
 >     텔레그램은 `/status /pause /resume /list /admin` 만(D24).
+>   - 관리 페이지 보강(2026-09-29~30): 세션 쿠키 `SameSite=Lax`(텔레그램 링크 로그인) · 예고 id 고유화
+>     (`preview.new_id` salt + `ensure_unique_ids` — 같은 tick 발견 항목 id 중복으로 수정 · 삭제가 엉뚱한 항목에 적용되던 문제) ·
+>     예고 수정에 합동 멤버 · 회원 전용 · 원문/한글 제목(번역 버튼, `title_manual` 이면 API 제목 · 자동 번역이 덮지 않음) ·
+>     소식 수정 파생값 재계산 · 트윗 단위 삭제/번역 · 작업 탭 = 지금 상태 + 흐름 경로 재생(`flowtrace.py`, 로컬 전용 ·
+>     `_local/ops/flows.json`) · 운영 탭 카드 정리.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계

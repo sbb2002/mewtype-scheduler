@@ -177,11 +177,13 @@ def build_preview(
         if matched:
             # 기존 아이템 업데이트
             item = dict(matched)
-            if video.title != matched.get("title"):
-                # 제목이 바뀌면(신규 확정·API 재구성 등) 번역이 stale 해지므로 재번역 대상으로.
-                item["title_ko"] = None
-                item["needs_tl"] = bool(video.title)
-            item["title"] = video.title
+            # (v4a) 관리 페이지에서 운영자가 제목(원문·한글)을 고친 항목은 API 제목 · 자동 번역으로 덮지 않는다
+            if not matched.get("title_manual"):
+                if video.title != matched.get("title"):
+                    # 제목이 바뀌면(신규 확정·API 재구성 등) 번역이 stale 해지므로 재번역 대상으로.
+                    item["title_ko"] = None
+                    item["needs_tl"] = bool(video.title)
+                item["title"] = video.title
             item["thumbnail"] = video.thumbnail
             item["url"] = url
             item["video_id"] = video_id
@@ -364,7 +366,8 @@ def build_preview(
         items[idx] = it
 
     # ─ 4. 정렬 및 반환 ─
-    new_preview["items"] = preview.sort_items(items)
+    # (v4a) 예전 방식(salt 없음)으로 만들어진 중복 id 정리 — 관리 수정·삭제·번역 반영이 id 로 대상을 찾는다
+    new_preview["items"] = preview.ensure_unique_ids(preview.sort_items(items))
     return new_preview, transitions, wakes, gone_items
 
 
@@ -909,6 +912,15 @@ if __name__ == "__main__":
     assert grp_item_14["title"] == "同時視聴配信 #13(タイトル変更)", grp_item_14
     assert grp_item_14["title_ko"] is None and grp_item_14["needs_tl"] is True, grp_item_14
     print("  title_ko/needs_tl: 신규=True, 제목 불변=유지, 제목 변경=재설정")
+
+    # Test 14b (v4a): 운영자가 고친 제목(title_manual)은 API 제목 변경에도 유지 · 재번역 안 함
+    manual = dict(grp_item_translated, title="運営者タイトル", title_ko="", title_manual=True)
+    new_preview_14b, *_r = build_preview(
+        channels_cfg_g, videos_group_retitled, {**new_preview_13, "items": [manual]}, now_iso
+    )
+    it14b = new_preview_14b["items"][0]
+    assert it14b["title"] == "運営者タイトル" and it14b["title_ko"] == "" and it14b["needs_tl"] is False, it14b
+    print("  (v4a) title_manual: API 제목 변경에도 운영자 제목 · 빈 번역 유지")
 
     # Test 15: 외부(미등록) 채널 소유 video_id 도 기존 아이템이면 enrich 계속 (v3.1.17)
     # 실측 버그: config/channels.json 미등록 채널(굿즈 판매사 등)에서 열린 합동방송을

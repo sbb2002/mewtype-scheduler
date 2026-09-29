@@ -130,7 +130,9 @@ def create_blueprint(
         cookie_kwargs = {
             "max_age": int(session_hours * 3600),
             "httponly": True,
-            "samesite": "Strict",
+            # Lax — 텔레그램 등 다른 사이트에서 연 로그인 링크는 302 뒤 /admin/ 요청에 Strict 쿠키가
+            # 실리지 않아 "로그인 필요"가 떴다. 쓰기(POST)는 CSRF 토큰으로 따로 막는다
+            "samesite": "Lax",
             "secure": secure,
             "path": "/admin",
         }
@@ -310,6 +312,7 @@ h1{color:#ff6b6b}</style></head>
             "list_history",
             "list_lost",
             "list_jobs",
+            "jobs_overview",
             "channels",
         }
 
@@ -364,6 +367,7 @@ h1{color:#ff6b6b}</style></head>
             "set_log_level",
             "set_monitor_auto",
             "undo",
+            "translate_text",
         }
 
         if name not in write_functions:
@@ -377,9 +381,24 @@ h1{color:#ff6b6b}</style></head>
         except Exception as e:
             return flask.jsonify({"error": f"JSON 파싱 실패: {e}"}), 400
 
+        # (v4a) 관리 조작 1건 = 흐름 1개(작업 탭 "최근 흐름"). 미리보기(confirm=False)는 조작이 아니라 제외
+        from . import flowtrace
+        label = getattr(api, "ADMIN_FLOW_LABELS", {}).get(name)
+        ft_token = flowtrace.current.set(None)
+        if label and body.get("confirm", True) is not False:
+            try:
+                desc = api.describe_target(name, body) if hasattr(api, "describe_target") else ""
+            except Exception:  # noqa: BLE001
+                desc = ""
+            flowtrace.start("admin", f"관리 조작 · {label}", desc)
+            flowtrace.mark("요청", "done")
         try:
             func = getattr(api, name)
-            result = func(**body)
+            try:
+                result = func(**body)
+            finally:
+                _finish_admin_flow(flowtrace, locals().get("result"))
+                flowtrace.current.reset(ft_token)
 
             resp = flask.jsonify(result)
             resp.headers["Cache-Control"] = "no-store"
@@ -393,6 +412,28 @@ h1{color:#ff6b6b}</style></head>
             return flask.jsonify({"ok": False, "error": str(e)[:300]}), 500
 
     return bp
+
+
+def _finish_admin_flow(flowtrace, result) -> None:
+    """관리 조작 흐름 마무리 — 결과로 성공 · 실패. 적용 큐를 안 거친 조작(운영 설정)은 반영 = ops 직접 저장."""
+    try:
+        f = flowtrace.get(flowtrace.current.get())
+        if not f or f["status"] not in ("run", "wait"):
+            return
+        ok = isinstance(result, dict) and result.get("ok")
+        stages = {s["n"]: s["s"] for s in f["stages"]}
+        if ok:
+            if stages.get("반영") not in ("done",):
+                flowtrace.mark("반영", "done", "운영 설정 직접 저장 (ops)")
+            flowtrace.mark("이력", "done")
+            flowtrace.finish("완료")
+            return
+        err = (result or {}).get("error") if isinstance(result, dict) else "예외"
+        if stages.get("적용 대기") in ("todo",):
+            flowtrace.mark("준비", "fail", str(err)[:120])   # 적용 큐에 싣기 전(검증 · 충돌 · 파싱)에 거절
+        flowtrace.finish(f"실패 — {err}", fail=True)
+    except Exception:  # noqa: BLE001
+        logger.warning("관리 조작 흐름 마무리 실패", exc_info=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

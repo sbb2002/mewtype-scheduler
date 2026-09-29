@@ -225,6 +225,211 @@
             color: rgb(180, 180, 180);
         }
 
+        .badge-upcoming {
+            background-color: rgba(139, 92, 246, 0.3);
+            color: rgb(196, 181, 253);
+        }
+
+        /* (v4a) 합동 배지 — 한 방송은 주 레인(channel_key)에 1줄만 두고 참여 멤버를 적는다 */
+        .badge-collab {
+            background-color: rgba(236, 72, 153, 0.25);
+            color: rgb(249, 168, 212);
+            margin-left: 0.5rem;
+        }
+
+        /* (v4a) 작업 탭 — 최근 흐름(경로 재생) · 예정된 확인 · 최근 자동 처리 · 번역 대기 · 내가 한 조작 */
+        #jobs-tab { --ok: #3ecf8e; --fail: #ff5d5d; --run: #f5b83d; --wait: #7c8aa0; }
+        .jobs-sec { display: grid; gap: 10px; margin-bottom: 28px; align-content: start; }
+        .jobs-sec h2 { margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+        .jobs-sec h2 small { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400; }
+        .jobs-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+        .now-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+        .now-tile {
+            background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-left: 3px solid var(--ok);
+            border-radius: 6px; padding: 8px 12px; display: grid; gap: 2px; align-content: start;
+        }
+        .now-tile.warn { border-left-color: var(--run); }
+        .now-tile.bad { border-left-color: var(--fail); }
+        .now-tile.idle { border-left-color: var(--wait); }
+        .now-tile .lbl { font-size: 0.75rem; color: var(--color-text-muted); }
+        .now-tile .val { font-weight: 600; }
+        .now-tile .sub { font-size: 0.78rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
+        .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+        .chip {
+            font: inherit; font-size: 0.8rem; color: var(--color-text-muted); background: var(--color-bg-secondary);
+            border: 1px solid var(--color-border); border-radius: 999px; padding: 3px 11px; cursor: pointer;
+        }
+        .chip[aria-pressed="true"] { color: var(--color-text); border-color: var(--color-accent); }
+        .flows { display: grid; gap: 6px; }
+        .flow {
+            display: grid; grid-template-columns: 5.6rem 1fr auto; gap: 4px 14px; align-items: center;
+            background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 6px;
+            padding: 10px 12px; cursor: pointer; text-align: left; color: inherit; font: inherit; width: 100%;
+        }
+        .flow:hover { border-color: #4a4a4a; }
+        .flow.sel { border-color: var(--color-accent); }
+        .flow .t { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; color: var(--color-text-muted); }
+        .flow .what { min-width: 0; }
+        .flow .what .k { font-size: 0.78rem; color: var(--color-text-muted); }
+        .flow .what .d { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .flow .st { font-size: 0.8rem; text-align: right; white-space: nowrap; }
+        .fbar { grid-column: 2 / 4; display: flex; align-items: center; }
+        .fbar i { width: 9px; height: 9px; border-radius: 50%; background: #3a3a3a; flex: 0 0 auto; }
+        .fbar b { height: 2px; flex: 1 1 0; max-width: 34px; background: #3a3a3a; }
+        .fbar i.done, .fbar b.done { background: var(--ok); }
+        .fbar i.skip { background: transparent; border: 1px dashed #555; }
+        .fbar i.fail { background: var(--fail); box-shadow: 0 0 0 3px rgba(255, 93, 93, .18); }
+        .fbar i.run { background: var(--run); animation: jpulse 1.2s ease-in-out infinite; }
+        .fbar i.wait { background: var(--wait); animation: jpulse 2.4s ease-in-out infinite; }
+        .fbar .lbl { margin-left: 10px; font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @keyframes jpulse { 50% { opacity: .35; } }
+        .s-ok { color: var(--ok); } .s-fail { color: var(--fail); } .s-run { color: var(--run); } .s-wait { color: var(--wait); }
+        .fdetail { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; display: grid; gap: 12px; }
+        .fdetail-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+        .fdetail-head .ttl { font-weight: 600; }
+        .fdetail-head .sub { color: var(--color-text-muted); font-size: 0.8rem; }
+        .fchart { overflow-x: auto; padding-bottom: 4px; }
+        .fchain { display: flex; align-items: stretch; min-width: max-content; }
+        .fnode {
+            width: 128px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-bg);
+            padding: 8px 10px; display: grid; gap: 3px; align-content: start; opacity: .45;
+            transition: border-color .25s, background-color .25s, opacity .25s;
+        }
+        .fnode .n { font-weight: 600; font-size: 0.82rem; }
+        .fnode .x { font-size: 0.72rem; color: var(--color-text-muted); line-height: 1.4; }
+        .fnode .note { font-size: 0.72rem; color: var(--color-text); line-height: 1.4; }
+        .fnode .ms { font-family: ui-monospace, Consolas, monospace; font-size: 0.72rem; color: var(--color-text-muted); min-height: 1em; }
+        .fnode.lit { opacity: 1; }
+        .fnode.done { border-color: rgba(62, 207, 142, .6); }
+        .fnode.done .ms { color: var(--ok); }
+        .fnode.fail { border-color: var(--fail); background: rgba(255, 93, 93, .07); }
+        .fnode.fail .ms { color: var(--fail); }
+        .fnode.run { border-color: var(--run); animation: jglow 1.2s ease-in-out infinite; }
+        .fnode.wait { border-color: var(--wait); animation: jglow 2.4s ease-in-out infinite; }
+        .fnode.skip.lit { opacity: .35; border-style: dashed; }
+        @keyframes jglow { 50% { background: #1d1d1d; } }
+        .fedge { width: 24px; display: grid; place-items: center; }
+        .fedge span { display: block; height: 2px; width: 100%; background: #3a3a3a; position: relative; transition: background .25s; }
+        .fedge span::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left-color: #3a3a3a; border-right: 0; }
+        .fedge.lit span { background: var(--ok); }
+        .fedge.lit span::after { border-left-color: var(--ok); }
+        .freason { border-left: 3px solid var(--ok); padding: 6px 12px; background: rgba(62, 207, 142, .06); font-size: 0.85rem; min-height: 1.5em; }
+        .freason.fail { border-left-color: var(--fail); background: rgba(255, 93, 93, .06); }
+        .freason.run { border-left-color: var(--run); background: rgba(245, 184, 61, .06); }
+        .freason.wait { border-left-color: var(--wait); background: rgba(124, 138, 160, .08); }
+        .jlist { display: grid; border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; }
+        .jrow { display: grid; grid-template-columns: 7.2rem 1fr; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); }
+        .jrow:first-child { border-top: 0; }
+        .jrow .t { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; color: var(--color-text-muted); }
+        .jrow .m { font-size: 0.8rem; color: var(--color-text-muted); }
+        .jempty { color: var(--color-text-muted); font-size: 0.85rem; padding: 10px 12px; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 6px; }
+        @media (max-width: 720px) {
+            .jobs-grid2 { grid-template-columns: 1fr; }
+            .flow { grid-template-columns: 4.6rem 1fr; }
+            .flow .st { grid-column: 2; text-align: left; }
+            .fbar { grid-column: 1 / 3; }
+            .jrow { grid-template-columns: 1fr; gap: 2px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .fbar i.run, .fbar i.wait, .fnode.run, .fnode.wait { animation: none; }
+            .fnode, .fedge span { transition: none; }
+        }
+
+        /* (v4a) 운영 탭 — 설정 카드 3장 */
+        #control-tab { --ok: #3ecf8e; --warn: #f5b83d; }
+        .ctl { display: grid; gap: 16px; max-width: 880px; }
+        .ctl-card {
+            background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 10px;
+            padding: 18px 20px; display: grid; gap: 12px;
+        }
+        .ctl-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+        .ctl-title { font-size: 1.05rem; font-weight: 700; margin: 0; }
+        .ctl-desc { color: var(--color-text-muted); font-size: 0.85rem; line-height: 1.6; margin: 4px 0 0; max-width: 60ch; }
+        .ctl-status {
+            display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 0.95rem;
+            padding: 6px 12px; border-radius: 999px; border: 1px solid currentColor;
+        }
+        .ctl-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+        .ctl-status.on { color: var(--ok); }
+        .ctl-status.paused { color: var(--warn); }
+        .ctl-meta { font-size: 0.78rem; color: var(--color-text-muted); }
+        .ctl-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .ctl-btn { font: inherit; font-weight: 600; border-radius: 6px; padding: 8px 16px; cursor: pointer; border: 1px solid transparent; }
+        .ctl-btn.pause { background: rgba(245, 184, 61, .15); color: var(--warn); border-color: rgba(245, 184, 61, .5); }
+        .ctl-btn.resume { background: rgba(62, 207, 142, .15); color: var(--ok); border-color: rgba(62, 207, 142, .5); }
+        .ctl-btn:disabled { opacity: .5; cursor: default; }
+        .ctl-list { margin: 0; padding-left: 1.1rem; color: var(--color-text-muted); font-size: 0.82rem; line-height: 1.7; }
+        .lv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .lv {
+            font: inherit; text-align: left; color: inherit; cursor: pointer; background: var(--color-bg);
+            border: 1px solid var(--color-border); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; align-content: start;
+        }
+        .lv:hover { border-color: #4a4a4a; }
+        .lv[aria-checked="true"] { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+        .lv-name { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 700; }
+        .lv-cur { font-size: 0.7rem; font-weight: 600; color: var(--color-accent); }
+        .lv-kinds { display: flex; flex-wrap: wrap; gap: 4px; }
+        .lv-kinds span { font-size: 0.72rem; padding: 2px 7px; border-radius: 999px; background: #262626; color: #cfcfcf; }
+        .lv-kinds span.add { background: rgba(6, 182, 212, .15); color: #7dd3e3; }
+        .lv-sum { font-size: 0.75rem; color: var(--color-text-muted); }
+        .sw { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 600; background: none; border: 0; color: inherit; font: inherit; padding: 0; }
+        .sw-track { width: 44px; height: 24px; border-radius: 999px; background: #3a3a3a; position: relative; transition: background .2s; flex: 0 0 auto; }
+        .sw-track::after {
+            content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+            background: #e8e8e8; transition: transform .2s;
+        }
+        .sw[aria-checked="true"] .sw-track { background: var(--ok); }
+        .sw[aria-checked="true"] .sw-track::after { transform: translateX(20px); }
+        .sw:focus-visible, .lv:focus-visible, .ctl-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+        @media (max-width: 720px) { .lv-grid { grid-template-columns: 1fr; } }
+        @media (prefers-reduced-motion: reduce) { .sw-track, .sw-track::after { transition: none; } }
+
+        /* (v4a) 수정 창 제목: [원문 | 입력 | 번역] / [한글 | 입력] / 팬 화면 미리보기 */
+        .title-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.35rem;
+        }
+        .title-row input { flex: 1; min-width: 0; }
+        .title-tag {
+            flex: 0 0 2.5rem;
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+        }
+        .tl-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.35rem; }
+        .tl-btn .spinner {
+            display: none;
+            width: 0.85rem;
+            height: 0.85rem;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: tl-spin 0.7s linear infinite;
+        }
+        .tl-btn.loading .spinner { display: inline-block; }
+        @keyframes tl-spin { to { transform: rotate(360deg); } }
+        .title-preview { margin-top: 0.5rem; }
+        .title-mq {
+            overflow: hidden;
+            white-space: nowrap;
+            border: 1px dashed #444;
+            border-radius: 4px;
+            padding: 0.3rem 0.5rem;
+            margin-top: 0.2rem;
+        }
+        .title-mq-in { display: inline-block; }
+        .title-mq.is-marquee .title-mq-in { animation: title-mq var(--dur, 12s) linear infinite; }
+        .title-mq.is-marquee .seg { padding-right: 3rem; }
+        @keyframes title-mq { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+        .list-item-sub {
+            color: var(--color-text-muted);
+            font-size: 0.8rem;
+            font-weight: 400;
+            margin-top: 0.2rem;
+        }
+
         /* 토스트 메시지 */
         .toast {
             position: fixed;
@@ -311,6 +516,8 @@
         }
 
         /* 로딩 상태 */
+        [hidden] { display: none !important; }
+
         .loading {
             text-align: center;
             padding: 2rem;
@@ -443,9 +650,10 @@
             </select>
         </div>
 
-        <div class="form-group" id="unit-select" style="display: none;">
-            <label>유닛 (트윗용)</label>
+        <div class="form-group" id="unit-select">
+            <label id="ingest-unit-label">유닛</label>
             <select id="ingest-unit"></select>
+            <div id="ingest-unit-help" class="list-item-sub"></div>
         </div>
 
         <div class="form-group">
@@ -459,7 +667,7 @@
 
         <div id="ingest-preview" style="display: none;">
             <h3>미리보기</h3>
-            <pre id="ingest-preview-content"></pre>
+            <div id="ingest-preview-content"></div>
             <div id="ingest-preview-note" style="color: var(--color-text-muted); margin-top: 0.5rem;"></div>
             <div class="form-group" style="margin-top: 1rem;">
                 <button onclick="app.confirmIngest()" style="background-color: #51cf66;">확정</button>
@@ -478,40 +686,57 @@
 
     <!-- ════ 탭: 작업 ════ -->
     <div class="tab-content" id="jobs-tab">
-        <h2>적용 큐</h2>
-        <div id="jobs-apply" class="loading">로드 중...</div>
+        <section class="jobs-sec" aria-labelledby="h-now">
+            <h2 id="h-now">지금 상태 <small id="now-at"></small></h2>
+            <div class="now-grid" id="now-grid"></div>
+        </section>
 
-        <h2>가공 큐</h2>
-        <div id="jobs-enrich" class="loading">로드 중...</div>
+        <section class="jobs-sec" aria-labelledby="h-flows">
+            <h2 id="h-flows">최근 흐름 <small>알림 · 관리 조작 · 방송 확인 1건이 한 줄. 누르면 경로를 재생합니다 · 탭을 열어 두면 5초마다 갱신</small></h2>
+            <div class="chips" role="group" aria-label="흐름 필터" id="flow-chips">
+                <button class="chip" data-f="all" aria-pressed="true">전체</button>
+                <button class="chip" data-f="attn" aria-pressed="false">멈춤 · 진행 중</button>
+                <button class="chip" data-f="x" aria-pressed="false">X 알림</button>
+                <button class="chip" data-f="yt" aria-pressed="false">YouTube 알림</button>
+                <button class="chip" data-f="admin" aria-pressed="false">관리 조작</button>
+                <button class="chip" data-f="wake" aria-pressed="false">방송 확인</button>
+            </div>
+            <div class="flows" id="flows"><div class="jempty">로드 중...</div></div>
+            <div class="fdetail" id="fdetail" hidden aria-live="polite">
+                <div class="fdetail-head">
+                    <div><div class="ttl" id="fd-ttl"></div><div class="sub" id="fd-sub"></div></div>
+                    <button type="button" id="fd-replay">다시 재생</button>
+                </div>
+                <div class="fchart"><div class="fchain" id="fd-chain"></div></div>
+                <div class="freason" id="fd-reason"></div>
+            </div>
+        </section>
 
-        <h2>최근 결과</h2>
-        <table id="jobs-recent">
-            <thead>
-                <tr>
-                    <th>작업</th>
-                    <th>상태</th>
-                    <th>시각</th>
-                </tr>
-            </thead>
-            <tbody id="jobs-recent-body">
-                <tr><td colspan="3" class="loading">로드 중...</td></tr>
-            </tbody>
-        </table>
+        <div class="jobs-grid2">
+            <section class="jobs-sec" aria-labelledby="h-sched">
+                <h2 id="h-sched">예정된 확인 <small>방송마다 잡힌 다음 확인</small></h2>
+                <div class="jlist" id="jobs-sched"></div>
+            </section>
+            <section class="jobs-sec" aria-labelledby="h-auto">
+                <h2 id="h-auto">최근 자동 처리 <small>끝난 작업</small></h2>
+                <div class="chips" role="group" aria-label="자동 처리 필터">
+                    <button class="chip" id="auto-all" aria-pressed="true">전체</button>
+                    <button class="chip" id="auto-fail" aria-pressed="false">실패만</button>
+                </div>
+                <div class="jlist" id="jobs-auto"></div>
+            </section>
+        </div>
 
-        <h2 style="margin-top: 2rem;">작업 이력 (운영자 조작)</h2>
-        <table id="jobs-history">
-            <thead>
-                <tr>
-                    <th>조작</th>
-                    <th>대상 · 내용</th>
-                    <th>결과</th>
-                    <th>시각</th>
-                </tr>
-            </thead>
-            <tbody id="jobs-history-body">
-                <tr><td colspan="4" class="loading">로드 중...</td></tr>
-            </tbody>
-        </table>
+        <div class="jobs-grid2">
+            <section class="jobs-sec" aria-labelledby="h-tl">
+                <h2 id="h-tl">번역 대기</h2>
+                <div id="jobs-tl"></div>
+            </section>
+            <section class="jobs-sec" aria-labelledby="h-mine">
+                <h2 id="h-mine">내가 한 조작 <small>관리 페이지에서 한 수정 · 삭제 · 투입 · 설정</small></h2>
+                <div class="jlist" id="jobs-history"></div>
+            </section>
+        </div>
     </div>
 
     <!-- ════ 탭: 유실 원문 ════ -->
@@ -522,14 +747,17 @@
 
     <!-- ════ 탭: 운영 ════ -->
     <div class="tab-content" id="control-tab">
-        <h2>운영 설정</h2>
+        <h2>운영</h2>
         <div id="control-status" class="loading">로드 중...</div>
     </div>
 
     <!-- ════ 탭: 리포트 ════ -->
     <div class="tab-content" id="report-tab">
         <h2>모니터링 리포트</h2>
-        <p><a href="/monitor-live" target="_blank" style="color: var(--color-accent); text-decoration: none;">웹 모니터 열기</a></p>
+        <p><a href="/monitor-live" target="_blank" style="color: var(--color-accent); text-decoration: none;">새 창에서 열기</a></p>
+        <!-- (v4a) 웹 모니터와 같은 렌더러(/monitor-live)를 탭 안에 띄운다. 탭을 열 때만 로드 -->
+        <iframe id="report-frame" title="모니터링 리포트"
+                style="width: 100%; height: 80vh; border: 1px solid #333; border-radius: 6px; background: #0f0f0f;"></iframe>
     </div>
 
     <!-- ════ 모달 ════ -->
@@ -595,16 +823,14 @@
                     });
                 });
 
-                // 투입 종류 변경 시 유닛 선택 표시/숨김
-                document.getElementById("ingest-kind").addEventListener("change", (e) => {
-                    const unitSelect = document.getElementById("unit-select");
-                    if (e.target.value === "tweet") {
-                        unitSelect.style.display = "block";
-                        this.loadUnits();
-                    } else {
-                        unitSelect.style.display = "none";
-                    }
-                });
+                // (v4a) 원문 투입: 종류에 따라 유닛 선택 구성. 종류 · 유닛 · 원문이 바뀌면 이전 미리보기는
+                // 무효 — 안 그러면 다른 입력으로 본 미리보기를 보고 확정하게 된다
+                document.getElementById("ingest-kind").addEventListener("change", () => this.updateIngestForm());
+                for (const id of ["ingest-unit", "ingest-raw"]) {
+                    document.getElementById(id).addEventListener("input", () => this.resetIngestPreview());
+                    document.getElementById(id).addEventListener("change", () => this.resetIngestPreview());
+                }
+                this.updateIngestForm();
 
                 // 초기 탭 로드
                 this.switchTab("preview");
@@ -612,6 +838,9 @@
 
             switchTab(tabName) {
                 this.currentTab = tabName;
+                // (v4a) 작업 탭을 열어 둔 동안만 5초마다 갱신
+                clearInterval(this.jobsTimer);
+                if (tabName === "jobs") this.jobsTimer = setInterval(() => this.loadJobs(), 5000);
 
                 // UI 업데이트
                 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -627,6 +856,9 @@
                 else if (tabName === "jobs") this.loadJobs();
                 else if (tabName === "lost") this.loadLost();
                 else if (tabName === "control") this.loadControl();
+                else if (tabName === "report") {
+                    document.getElementById("report-frame").src = "/monitor-live";  // 열 때마다 최신
+                }
             },
 
             formatTime(iso) {
@@ -645,6 +877,7 @@
                     live: "badge-live",
                     announced: "badge-announced",
                     watching: "badge-watching",
+                    upcoming: "badge-upcoming",
                     end: "badge-end",
                 };
                 return badges[state] || "badge-end";
@@ -705,6 +938,7 @@
 
             renderPreview() {
                 const container = document.getElementById("preview-list");
+                container.classList.remove("loading");
                 container.textContent = "";
 
                 if (!this.data.preview || !this.data.preview.items) {
@@ -746,14 +980,40 @@
                         badge.textContent = item.state.toUpperCase();
                         title.appendChild(badge);
 
+                        // (v4a) 합동: 팬 화면은 참여 멤버 레인마다 펼치지만, 여기선 수정·삭제 대상이
+                        // 1건임이 보이도록 주 레인에 1줄만 두고 참여 멤버를 배지로 적는다
+                        const collab = item.collab_with || [];
+                        if (collab.length || item.kind === "collab") {
+                            const cb = document.createElement("span");
+                            cb.className = "badge badge-collab";
+                            const names = [key, ...collab].map((k) => (this.channels[k] || {}).name_ko || k);
+                            cb.textContent = (item.host === "group" ? "그룹 채널 합동 · " : "합동 · ") + names.join("·");
+                            title.appendChild(cb);
+                        }
+
+                        if (item.membership) {
+                            const mb = document.createElement("span");
+                            mb.className = "badge badge-collab";
+                            mb.textContent = "회원 전용";
+                            title.appendChild(mb);
+                        }
+
+                        // 제목: 번역 우선, 원문은 아래 줄
                         const titleSpan = document.createElement("span");
-                        titleSpan.textContent = item.title || "제목 없음";
+                        titleSpan.textContent = item.title_ko || item.title || "제목 없음";
                         titleSpan.style.marginLeft = "0.5rem";
                         title.appendChild(titleSpan);
+                        if (item.title_ko && item.title && item.title_ko !== item.title) {
+                            const orig = document.createElement("div");
+                            orig.className = "list-item-sub";
+                            orig.textContent = item.title;
+                            title.appendChild(orig);
+                        }
 
                         const meta = document.createElement("div");
                         meta.className = "list-item-meta";
-                        meta.textContent = this.formatTime(item.scheduled_start || item.live_start);
+                        meta.textContent = this.formatTime(item.scheduled_start || item.live_start) +
+                            (item.video_id ? ` · ${item.video_id}` : "");
 
                         const actions = document.createElement("div");
                         actions.className = "list-item-actions";
@@ -767,7 +1027,7 @@
                         const delBtn = document.createElement("button");
                         delBtn.textContent = "삭제";
                         delBtn.className = "danger";
-                        delBtn.onclick = () => this.deletePreview(item.id);
+                        delBtn.onclick = () => this.deletePreview(item);
                         actions.appendChild(delBtn);
 
                         div.appendChild(title);
@@ -778,33 +1038,150 @@
                 }
             },
 
+            // (v4a) 수정 창 제목 칸 — 원문(+번역 버튼) / 한글 / 팬 화면 미리보기(메인 UI 와 같은 "한글　—　원문" 마퀴).
+            // 한글이 빈칸이면 번역 없음으로 저장(팬 화면엔 원문만). ids = {orig, ko}
+            buildTitleFields(form, ids, orig, ko, help) {
+                const group = document.createElement("div");
+                group.className = "form-group";
+                const label = document.createElement("label");
+                label.textContent = "제목";
+                group.appendChild(label);
+
+                const row1 = document.createElement("div");
+                row1.className = "title-row";
+                const tag1 = document.createElement("span");
+                tag1.className = "title-tag";
+                tag1.textContent = "원문";
+                const origInput = document.createElement("input");
+                origInput.type = "text";
+                origInput.id = ids.orig;
+                origInput.value = orig || "";
+                const tlBtn = document.createElement("button");
+                tlBtn.type = "button";
+                tlBtn.className = "tl-btn";
+                const spin = document.createElement("span");
+                spin.className = "spinner";
+                const tlText = document.createElement("span");
+                tlText.textContent = "번역";
+                tlBtn.appendChild(spin);
+                tlBtn.appendChild(tlText);
+                row1.appendChild(tag1);
+                row1.appendChild(origInput);
+                row1.appendChild(tlBtn);
+                group.appendChild(row1);
+
+                const row2 = document.createElement("div");
+                row2.className = "title-row";
+                const tag2 = document.createElement("span");
+                tag2.className = "title-tag";
+                tag2.textContent = "한글";
+                const koInput = document.createElement("input");
+                koInput.type = "text";
+                koInput.id = ids.ko;
+                koInput.value = ko || "";
+                koInput.placeholder = "비워 두면 번역 없음 (팬 화면엔 원문만)";
+                row2.appendChild(tag2);
+                row2.appendChild(koInput);
+                group.appendChild(row2);
+
+                if (help) {
+                    const h = document.createElement("div");
+                    h.className = "list-item-sub";
+                    h.textContent = help;
+                    group.appendChild(h);
+                }
+
+                const pv = document.createElement("div");
+                pv.className = "title-preview";
+                const pvLabel = document.createElement("div");
+                pvLabel.className = "list-item-sub";
+                pvLabel.textContent = "팬 화면 표시";
+                const mq = document.createElement("div");
+                mq.className = "title-mq";
+                const mqIn = document.createElement("div");
+                mqIn.className = "title-mq-in";
+                mq.appendChild(mqIn);
+                pv.appendChild(pvLabel);
+                pv.appendChild(mq);
+                group.appendChild(pv);
+
+                const refresh = () => this.renderTitleMarquee(mq, mqIn, origInput.value.trim(), koInput.value.trim());
+                origInput.addEventListener("input", refresh);
+                koInput.addEventListener("input", refresh);
+
+                tlBtn.onclick = async () => {
+                    const text = origInput.value.trim();
+                    if (!text) {
+                        this.showToast("원문을 먼저 입력하세요", "error");
+                        return;
+                    }
+                    tlBtn.disabled = true;
+                    tlBtn.classList.add("loading");
+                    tlText.textContent = "번역 중";
+                    try {
+                        const r = await this.apiCall("POST", "/translate_text", { text });
+                        if (r.ok && r.result && r.result.title_ko) {
+                            koInput.value = r.result.title_ko;
+                            refresh();
+                        } else {
+                            this.showToast(r.error || "번역 실패", "error");
+                        }
+                    } catch (e) {
+                        this.showToast(`번역 오류: ${e.message}`, "error");
+                    } finally {
+                        tlBtn.disabled = false;
+                        tlBtn.classList.remove("loading");
+                        tlText.textContent = "번역";
+                    }
+                };
+
+                form.appendChild(group);
+                // 모달이 보인 뒤에 폭을 재야 넘침 판정이 맞다
+                setTimeout(refresh, 0);
+            },
+
+            // 팬 화면과 같은 규칙: 한글 있으면 "한글　—　원문", 없으면 원문. 넘치면 두 벌 이어 붙여 흐르게
+            renderTitleMarquee(mq, mqIn, orig, ko) {
+                const text = ko ? `${ko}　—　${orig}`.trim() : (orig || "(제목 없음)");
+                mq.classList.remove("is-marquee");
+                mqIn.textContent = "";
+                const seg = document.createElement("span");
+                seg.className = "seg";
+                seg.textContent = text;
+                mqIn.appendChild(seg);
+                if (mq.clientWidth && mqIn.scrollWidth > mq.clientWidth) {
+                    const seg2 = seg.cloneNode(true);
+                    seg2.setAttribute("aria-hidden", "true");
+                    mqIn.appendChild(seg2);
+                    mq.style.setProperty("--dur", `${Math.max(6, Math.round(mqIn.scrollWidth / 2 / 55))}s`);
+                    mq.classList.add("is-marquee");
+                }
+            },
+
             editPreview(item) {
                 this.editState = {
                     type: "preview",
                     itemId: item.id,
                     seen: {
                         title: item.title,
+                        title_ko: item.title_ko ?? null,
                         state: item.state,
                         scheduled_start: item.scheduled_start,
                         url: item.url,
+                        collab_with: item.collab_with ?? null,
+                        membership: item.membership ?? false,
                     },
+                    channelKey: item.channel_key,
                 };
 
                 const form = document.getElementById("edit-modal-form");
                 form.textContent = "";
 
-                // 제목
-                const titleGroup = document.createElement("div");
-                titleGroup.className = "form-group";
-                const titleLabel = document.createElement("label");
-                titleLabel.textContent = "제목";
-                const titleInput = document.createElement("input");
-                titleInput.type = "text";
-                titleInput.id = "edit-title";
-                titleInput.value = item.title || "";
-                titleGroup.appendChild(titleLabel);
-                titleGroup.appendChild(titleInput);
-                form.appendChild(titleGroup);
+                // 제목 (원문 · 한글). 저장하면 이후 YouTube 제목 · 자동 번역이 덮지 않는다
+                this.buildTitleFields(form, { orig: "edit-title", ko: "edit-title-ko" }, item.title, item.title_ko,
+                    item.video_id
+                        ? "저장한 제목은 이후 YouTube 제목 변경 · 자동 번역에 덮이지 않습니다. 원문을 비우고 저장하면 다시 YouTube 제목을 따릅니다."
+                        : "");
 
                 // 상태
                 const stateGroup = document.createElement("div");
@@ -854,6 +1231,63 @@
                 urlGroup.appendChild(urlInput);
                 form.appendChild(urlGroup);
 
+                // (v4a) 합동 여부 + 참여 멤버 체크박스. 주 레인(channel_key) 멤버는 고정
+                const order = (this.data.preview && this.data.preview.channel_order) || [];
+                const nameOf = (k) => (this.channels[k] || {}).name_ko || k;
+                const collabSet = new Set(item.collab_with || []);
+                const collabGroup = document.createElement("div");
+                collabGroup.className = "form-group";
+                const collabLabel = document.createElement("label");
+                const collabCheck = document.createElement("input");
+                collabCheck.type = "checkbox";
+                collabCheck.id = "edit-collab";
+                collabCheck.checked = collabSet.size > 0;
+                collabLabel.appendChild(collabCheck);
+                collabLabel.appendChild(document.createTextNode(" 합동 방송"));
+                collabGroup.appendChild(collabLabel);
+
+                const members = document.createElement("div");
+                members.id = "edit-collab-members";
+                members.style.margin = "0.25rem 0 0 1.5rem";
+                members.style.display = collabCheck.checked ? "block" : "none";
+                const host = document.createElement("div");
+                host.className = "list-item-sub";
+                host.textContent = `주 레인: ${nameOf(item.channel_key)} (고정)` +
+                    (item.host === "group" ? " · 그룹 공식 채널 방송" : "");
+                members.appendChild(host);
+                for (const k of order) {
+                    if (k === item.channel_key) continue;
+                    const lab = document.createElement("label");
+                    lab.style.display = "block";
+                    lab.style.fontWeight = "400";
+                    const cb = document.createElement("input");
+                    cb.type = "checkbox";
+                    cb.className = "edit-collab-member";
+                    cb.value = k;
+                    cb.checked = collabSet.has(k);
+                    lab.appendChild(cb);
+                    lab.appendChild(document.createTextNode(" " + nameOf(k)));
+                    members.appendChild(lab);
+                }
+                collabCheck.onchange = () => {
+                    members.style.display = collabCheck.checked ? "block" : "none";
+                };
+                collabGroup.appendChild(members);
+                form.appendChild(collabGroup);
+
+                // (v4a) 회원 전용 여부
+                const memberGroup = document.createElement("div");
+                memberGroup.className = "form-group";
+                const memberLabel = document.createElement("label");
+                const memberCheck = document.createElement("input");
+                memberCheck.type = "checkbox";
+                memberCheck.id = "edit-membership";
+                memberCheck.checked = !!item.membership;
+                memberLabel.appendChild(memberCheck);
+                memberLabel.appendChild(document.createTextNode(" 회원 전용 (멤버십)"));
+                memberGroup.appendChild(memberLabel);
+                form.appendChild(memberGroup);
+
                 document.getElementById("edit-modal-title").textContent = "예고 편집";
                 document.getElementById("edit-modal").classList.add("active");
             },
@@ -883,8 +1317,13 @@
                     const patch = {};
                     const seen = this.editState.seen;
                     const titleInput = document.getElementById("edit-title");
-                    if (titleInput.value !== (seen.title || "")) {
-                        patch.title = titleInput.value;
+                    if (titleInput.value.trim() !== (seen.title || "")) {
+                        patch.title = titleInput.value.trim();
+                    }
+                    // 한글: 빈칸 = 번역 없음(빈 문자열로 저장)
+                    const koInput = document.getElementById("edit-title-ko");
+                    if (koInput.value.trim() !== (seen.title_ko || "")) {
+                        patch.title_ko = koInput.value.trim();
                     }
 
                     const stateInput = document.getElementById("edit-state");
@@ -903,6 +1342,27 @@
                     const urlInput = document.getElementById("edit-url");
                     if (urlInput.value !== (seen.url || "")) {
                         patch.url = urlInput.value;
+                    }
+
+                    // (v4a) 합동 멤버 — 채널 순서대로 비교. 합동 체크를 끄면 빈 목록(합동 아님)
+                    const collabOn = document.getElementById("edit-collab").checked;
+                    const picked = collabOn
+                        ? Array.from(document.querySelectorAll(".edit-collab-member"))
+                            .filter((cb) => cb.checked).map((cb) => cb.value)
+                        : [];
+                    if (collabOn && picked.length === 0) {
+                        this.showToast("합동이면 함께하는 멤버를 1명 이상 고르세요", "error");
+                        return;
+                    }
+                    const order = (this.data.preview && this.data.preview.channel_order) || [];
+                    const norm = (arr) => order.filter((k) => (arr || []).includes(k)).join(",");
+                    if (norm(picked) !== norm(seen.collab_with)) {
+                        patch.collab_with = picked;
+                    }
+
+                    const memberOn = document.getElementById("edit-membership").checked;
+                    if (memberOn !== !!seen.membership) {
+                        patch.membership = memberOn;
                     }
 
                     if (Object.keys(patch).length === 0) {
@@ -933,14 +1393,36 @@
                 }
             },
 
-            async deletePreview(itemId) {
-                if (!confirm("삭제하시겠습니까?")) return;
+            async deletePreview(item) {
+                // (v4a) 3단 확인 — ① 대상 확인 ② 재등록 차단 여부 ③ 최종 확인. 어느 단계든 취소하면
+                // 아무것도 지우지 않는다. (구: 2번째 창의 취소가 "차단 안 함 + 삭제 진행"이라 헷갈렸음)
+                const who = (this.channels[item.channel_key] || {}).name_ko || item.channel_key;
+                const collab = (item.collab_with || []).length ? ` (합동 ${item.collab_with.length + 1}인)` : "";
+                const desc =
+                    `[${(item.state || "").toUpperCase()}] ${who}${collab}\n` +
+                    `${item.title_ko || item.title || "제목 없음"}\n` +
+                    `${this.formatTime(item.scheduled_start || item.live_start)}` +
+                    (item.video_id ? ` · ${item.video_id}` : "");
+                if (!confirm(`이 예고를 삭제할까요?\n\n${desc}\n\n관리 페이지에는 되돌리기가 없습니다.`)) return;
 
-                const suppress = confirm("재등록을 차단하시겠습니까?");
+                const suppress = confirm(
+                    "재등록도 차단할까요?\n\n" +
+                    "확인 = 12시간 동안 같은 URL 이 다시 등록되지 않게 막음\n" +
+                    "취소 = 차단하지 않음 (다음 단계에서 한 번 더 묻습니다)"
+                );
+
+                if (!confirm(
+                    `최종 확인 — 정말 삭제합니다.\n\n${desc}\n` +
+                    `재등록 차단: ${suppress ? "예 (12시간)" : "아니오"}\n\n` +
+                    "취소하면 아무것도 지우지 않습니다."
+                )) {
+                    this.showToast("삭제를 취소했습니다");
+                    return;
+                }
 
                 try {
                     const result = await this.apiCall("POST", "/delete_preview", {
-                        item_id: itemId,
+                        item_id: item.id,
                         suppress,
                     });
 
@@ -959,76 +1441,157 @@
             // 원문 투입 탭
             // ─────────────────────────────────────────────────────────────────────
 
-            async loadUnits() {
-                try {
-                    const data = await this.apiCall("GET", "/channels");
-                    const select = document.getElementById("ingest-unit");
-                    select.textContent = "";
-                    if (data.channel_order) {
-                        for (const key of data.channel_order) {
-                            const opt = document.createElement("option");
-                            opt.value = key;
-                            const chName = data.channels?.[key]?.name_ko || key;
-                            opt.textContent = chName;
-                            select.appendChild(opt);
-                        }
-                    }
-                } catch (e) {
-                    console.error("유닛 로드 실패", e);
+            // 유닛 선택: 예고 = 비워 두면 공식 스케줄(@BDP_yumemita) · 고르면 개인 예고 / 트윗 = 필수 / 소식 = 없음
+            updateIngestForm() {
+                const kind = document.getElementById("ingest-kind").value;
+                const box = document.getElementById("unit-select");
+                const label = document.getElementById("ingest-unit-label");
+                const help = document.getElementById("ingest-unit-help");
+                const select = document.getElementById("ingest-unit");
+                const prev = select.value;
+                box.style.display = kind === "notice" ? "none" : "block";
+                select.textContent = "";
+                if (kind === "preview") {
+                    const opt = document.createElement("option");
+                    opt.value = "";
+                    opt.textContent = "공식 스케줄 (유닛 없음)";
+                    select.appendChild(opt);
+                    label.textContent = "유닛";
+                    help.textContent = "공식 계정(@BDP_yumemita) 스케줄 트윗이면 비워 두고, 멤버 개인 트윗의 예고면 그 멤버를 고르세요.";
+                } else {
+                    label.textContent = "유닛 (필수)";
+                    help.textContent = "트윗을 올린 멤버";
                 }
+                const order = (this.data.channels && this.data.channels.channel_order) || Object.keys(this.channels || {});
+                for (const key of order) {
+                    const opt = document.createElement("option");
+                    opt.value = key;
+                    opt.textContent = (this.channels[key] || {}).name_ko || key;
+                    select.appendChild(opt);
+                }
+                if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+                this.resetIngestPreview();
+            },
+
+            resetIngestPreview() {
+                this.ingestPreviewData = null;
+                document.getElementById("ingest-preview").style.display = "none";
             },
 
             async previewIngest() {
                 const kind = document.getElementById("ingest-kind").value;
                 const raw = document.getElementById("ingest-raw").value;
+                const unit = document.getElementById("ingest-unit").value;
 
                 if (!raw.trim()) {
                     this.showToast("원문을 입력하세요", "error");
                     return;
                 }
 
+                let endpoint;
+                const body = { raw, confirm: false };
+                if (kind === "preview") {
+                    endpoint = "/ingest_preview_raw";
+                    if (unit) body.channel_key = unit;
+                } else if (kind === "notice") {
+                    endpoint = "/ingest_notice_raw";
+                } else {
+                    endpoint = "/ingest_tweet_raw";
+                    body.unit = unit;
+                }
+
                 try {
-                    let endpoint;
-                    let body = { raw, confirm: false };
-
-                    if (kind === "preview") {
-                        endpoint = "/ingest_preview_raw";
-                    } else if (kind === "notice") {
-                        endpoint = "/ingest_notice_raw";
-                    } else if (kind === "tweet") {
-                        const unit = document.getElementById("ingest-unit").value;
-                        endpoint = "/ingest_tweet_raw";
-                        body.unit = unit;
-                    }
-
                     const result = await this.apiCall("POST", endpoint, body);
-
-                    this.ingestPreviewData = { result, endpoint, body };
-
-                    const previewDiv = document.getElementById("ingest-preview");
-                    const contentPre = document.getElementById("ingest-preview-content");
-                    const noteDiv = document.getElementById("ingest-preview-note");
-
-                    previewDiv.style.display = "block";
-
-                    if (result.preview) {
-                        let preview = result.preview;
-                        if (typeof preview === "object") {
-                            preview = JSON.stringify(preview, null, 2);
-                        }
-                        contentPre.textContent = preview;
-                    } else {
-                        contentPre.textContent = "미리보기 없음";
+                    if (!result.ok) {
+                        // 인식 실패 — 확정 버튼을 띄우지 않는다
+                        this.resetIngestPreview();
+                        this.showToast(result.error || "인식되지 않았습니다", "error");
+                        return;
                     }
-
-                    if (result.note) {
-                        noteDiv.textContent = result.note;
-                    } else {
-                        noteDiv.textContent = "";
-                    }
+                    this.ingestPreviewData = { result, endpoint, body, kind };
+                    this.renderIngestPreview(kind, result);
+                    document.getElementById("ingest-preview-note").textContent = result.note || "";
+                    document.getElementById("ingest-preview").style.display = "block";
                 } catch (e) {
+                    this.resetIngestPreview();
                     this.showToast(`미리보기 실패: ${e.message}`, "error");
                 }
+            },
+
+            // 미리보기 = "이렇게 반영됩니다". 사람이 읽는 요약 + 원본 데이터(접힘)
+            renderIngestPreview(kind, result) {
+                const box = document.getElementById("ingest-preview-content");
+                box.textContent = "";
+                const nameOf = (k) => (this.channels[k] || {}).name_ko || k || "?";
+                const line = (label, value) => {
+                    if (value === undefined || value === null || value === "") return;
+                    const d = document.createElement("div");
+                    const b = document.createElement("strong");
+                    b.textContent = label + ": ";
+                    d.appendChild(b);
+                    d.appendChild(document.createTextNode(String(value)));
+                    box.appendChild(d);
+                };
+                const head = (text) => {
+                    const d = document.createElement("div");
+                    d.textContent = text;
+                    d.style.marginBottom = "0.5rem";
+                    box.appendChild(d);
+                };
+                const pv = result.preview;
+
+                if (kind === "preview") {
+                    const rows = Array.isArray(pv) ? pv : [pv];
+                    head(`예고 ${rows.length}건이 반영됩니다`);
+                    for (const r of rows) {
+                        const div = document.createElement("div");
+                        div.className = "list-item";
+                        div.style.display = "block";
+                        const collab = r.collab_with || [];
+                        const t = document.createElement("div");
+                        t.className = "list-item-title";
+                        t.textContent = [r.channel_key, ...collab].map(nameOf).join("·") +
+                            (collab.length ? " (합동)" : "") + (r.membership ? " · 회원 전용" : "");
+                        div.appendChild(t);
+                        const when = r.scheduled_start
+                            ? (r.time_tbd ? this.formatTime(r.scheduled_start).slice(0, 5) + " (시각 미정)"
+                                          : this.formatTime(r.scheduled_start))
+                            : (r.video_id ? "시각은 영상 확인 후 결정" : "시각 없음");
+                        const m = document.createElement("div");
+                        m.className = "list-item-meta";
+                        m.textContent = [when, r.title || "", r.url || (r.video_id ? `video_id ${r.video_id}` : "")]
+                            .filter(Boolean).join(" · ");
+                        div.appendChild(m);
+                        box.appendChild(div);
+                    }
+                } else if (kind === "notice") {
+                    const p = (pv && pv.parsed) || {};
+                    const tl = (pv && pv.tl) || {};
+                    head("소식 1건이 반영됩니다");
+                    line("제목", tl.title_ko || p.title_ko || p.title);
+                    line("원문 제목", tl.title_ja || p.title);
+                    line("날짜", p.date);
+                    line("분류", p.category);
+                    line("URL", p.url);
+                    if (pv && pv.dup_id) line("⚠️ 중복 후보", `기존 소식 ${pv.dup_id} 와 같은 내용일 수 있습니다`);
+                } else {
+                    const p = (pv && pv.parsed) || {};
+                    head(`${nameOf(document.getElementById("ingest-unit").value)} 트윗 1건이 반영됩니다`);
+                    line("원문", p.text);
+                    line("번역", pv && pv.text_ko);
+                    line("URL", p.url);
+                }
+
+                const det = document.createElement("details");
+                det.style.marginTop = "0.5rem";
+                const sum = document.createElement("summary");
+                sum.textContent = "원본 데이터 보기";
+                det.appendChild(sum);
+                const pre = document.createElement("pre");
+                pre.textContent = JSON.stringify(pv, null, 2);
+                pre.style.whiteSpace = "pre-wrap";
+                det.appendChild(pre);
+                box.appendChild(det);
             },
 
             async confirmIngest() {
@@ -1038,14 +1601,14 @@
                 }
 
                 try {
-                    const body = { ...this.ingestPreviewData.body, confirm: true };
-                    const result = await this.apiCall("POST", this.ingestPreviewData.endpoint, body);
+                    const { endpoint, body, kind } = this.ingestPreviewData;
+                    const result = await this.apiCall("POST", endpoint, { ...body, confirm: true });
 
                     if (result.ok) {
-                        this.showToast("원문이 투입되었습니다");
+                        const where = kind === "preview" ? "예고" : "소식 · 트윗";
+                        this.showToast(`반영했습니다 — ${where} 탭에서 확인하세요`);
                         document.getElementById("ingest-raw").value = "";
-                        document.getElementById("ingest-preview").style.display = "none";
-                        this.ingestPreviewData = null;
+                        this.resetIngestPreview();
                     } else {
                         this.showToast(result.error || "투입 실패", "error");
                     }
@@ -1073,6 +1636,7 @@
 
             renderNotices() {
                 const container = document.getElementById("notices-list");
+                container.classList.remove("loading");
                 container.textContent = "";
 
                 if (!this.data.notices || !this.data.notices.notices) {
@@ -1088,11 +1652,18 @@
 
                     const title = document.createElement("div");
                     title.className = "list-item-title";
-                    title.textContent = notice.title || notice.title_ko || "제목 없음";
+                    title.textContent = notice.title_ko || notice.title || "제목 없음";
+                    if (notice.title_ko && notice.title && notice.title_ko !== notice.title) {
+                        const orig = document.createElement("div");
+                        orig.className = "list-item-sub";
+                        orig.textContent = notice.title;
+                        title.appendChild(orig);
+                    }
 
                     const meta = document.createElement("div");
                     meta.className = "list-item-meta";
-                    meta.textContent = notice.date || this.formatTime(notice.created_at);
+                    meta.textContent = [notice.date || "날짜 없음", notice.category, notice.url]
+                        .filter(Boolean).join(" · ");
 
                     const actions = document.createElement("div");
                     actions.className = "list-item-actions";
@@ -1105,7 +1676,7 @@
                     const delBtn = document.createElement("button");
                     delBtn.textContent = "삭제";
                     delBtn.className = "danger";
-                    delBtn.onclick = () => this.deleteNotice(notice.id);
+                    delBtn.onclick = () => this.deleteNotice(notice);
                     actions.appendChild(delBtn);
 
                     const tlBtn = document.createElement("button");
@@ -1122,6 +1693,7 @@
 
             renderTweets() {
                 const container = document.getElementById("tweets-list");
+                container.classList.remove("loading");
                 container.textContent = "";
 
                 if (!this.data.tweets || !this.data.tweets.tweets) {
@@ -1145,11 +1717,19 @@
 
                         const title = document.createElement("div");
                         title.className = "list-item-title";
-                        title.textContent = (tweet.text || tweet.text_ko || "").substring(0, 100);
+                        title.textContent = (tweet.text_ko || tweet.text || "(본문 없음)").substring(0, 140);
+                        if (tweet.text_ko && tweet.text) {
+                            const orig = document.createElement("div");
+                            orig.className = "list-item-sub";
+                            orig.textContent = tweet.text.substring(0, 140);
+                            title.appendChild(orig);
+                        }
 
                         const meta = document.createElement("div");
                         meta.className = "list-item-meta";
-                        meta.textContent = this.formatTime(tweet.created_at);
+                        // 트윗 항목엔 created_at 이 없다 — 받은 시각(received_at)
+                        meta.textContent = `받음 ${this.formatTime(tweet.received_at)}` +
+                            (tweet.text_ko ? "" : " · 번역 없음");
 
                         const actions = document.createElement("div");
                         actions.className = "list-item-actions";
@@ -1157,12 +1737,12 @@
                         const delBtn = document.createElement("button");
                         delBtn.textContent = "삭제";
                         delBtn.className = "danger";
-                        delBtn.onclick = () => this.deleteTweet(unit);
+                        delBtn.onclick = () => this.deleteTweet(unit, tweet);
                         actions.appendChild(delBtn);
 
                         const tlBtn = document.createElement("button");
                         tlBtn.textContent = "번역";
-                        tlBtn.onclick = () => this.translate("tweet", unit);
+                        tlBtn.onclick = () => this.translate("tweet", `${unit}|${tweet.id}`);
                         actions.appendChild(tlBtn);
 
                         div.appendChild(title);
@@ -1179,6 +1759,7 @@
                     nid: notice.id,
                     seen: {
                         title: notice.title,
+                        title_ko: notice.title_ko ?? null,
                         date: notice.date,
                         url: notice.url,
                     },
@@ -1187,18 +1768,9 @@
                 const form = document.getElementById("edit-modal-form");
                 form.textContent = "";
 
-                // 제목
-                const titleGroup = document.createElement("div");
-                titleGroup.className = "form-group";
-                const titleLabel = document.createElement("label");
-                titleLabel.textContent = "제목";
-                const titleInput = document.createElement("input");
-                titleInput.type = "text";
-                titleInput.id = "edit-notice-title";
-                titleInput.value = notice.title || "";
-                titleGroup.appendChild(titleLabel);
-                titleGroup.appendChild(titleInput);
-                form.appendChild(titleGroup);
+                // 제목 (원문 · 한글)
+                this.buildTitleFields(form, { orig: "edit-notice-title", ko: "edit-notice-title-ko" },
+                    notice.title, notice.title_ko, "");
 
                 // 날짜
                 const dateGroup = document.createElement("div");
@@ -1234,19 +1806,31 @@
                 if (this.editState.type === "notice") {
                     const patch = {};
 
+                    const seen = this.editState.seen;
                     const titleInput = document.getElementById("edit-notice-title");
-                    if (titleInput.value !== (this.editState.seen.title || "")) {
-                        patch.title = titleInput.value;
+                    if (titleInput.value.trim() && titleInput.value.trim() !== (seen.title || "")) {
+                        patch.title = titleInput.value.trim();
+                    }
+                    const koInput = document.getElementById("edit-notice-title-ko");
+                    if (koInput.value.trim() !== (seen.title_ko || "")) {
+                        patch.title_ko = koInput.value.trim();
                     }
 
+                    // (v4a) 날짜 없는 소식에서 칸을 안 건드려도 빈 날짜가 전송되던 문제 — 빈칸은 "바꾸지 않음"
                     const dateInput = document.getElementById("edit-notice-date");
-                    if (dateInput.value !== this.editState.seen.date) {
+                    if (dateInput.value && dateInput.value !== (seen.date || "")) {
                         patch.date = dateInput.value;
                     }
 
                     const urlInput = document.getElementById("edit-notice-url");
-                    if (urlInput.value !== (this.editState.seen.url || "")) {
-                        patch.url = urlInput.value;
+                    if (urlInput.value.trim() && urlInput.value.trim() !== (seen.url || "")) {
+                        patch.url = urlInput.value.trim();
+                    }
+
+                    if (Object.keys(patch).length === 0) {
+                        this.showToast("바뀐 것이 없습니다");
+                        this.closeModal();
+                        return;
                     }
 
                     try {
@@ -1268,11 +1852,11 @@
                 }
             },
 
-            async deleteNotice(nid) {
-                if (!confirm("삭제하시겠습니까?")) return;
+            async deleteNotice(notice) {
+                if (!confirm(`이 소식을 삭제할까요?\n\n${notice.date || ""} ${notice.title_ko || notice.title || ""}\n\n관리 페이지에는 되돌리기가 없습니다.`)) return;
 
                 try {
-                    const result = await this.apiCall("POST", "/delete_notice", { nid });
+                    const result = await this.apiCall("POST", "/delete_notice", { nid: notice.id });
 
                     if (result.ok) {
                         this.showToast("소식이 삭제되었습니다");
@@ -1285,11 +1869,14 @@
                 }
             },
 
-            async deleteTweet(unit) {
-                if (!confirm("삭제하시겠습니까?")) return;
+            // (v4a) 트윗 1건만 지운다. (구: 유닛의 트윗 스레드 전체(최대 50건)가 지워졌다)
+            async deleteTweet(unit, tweet) {
+                const who = (this.channels[unit] || {}).name_ko || unit;
+                const text = (tweet.text_ko || tweet.text || "").substring(0, 80);
+                if (!confirm(`${who} 트윗 1건을 삭제할까요?\n\n${text}\n\n관리 페이지에는 되돌리기가 없습니다.`)) return;
 
                 try {
-                    const result = await this.apiCall("POST", "/delete_tweet", { unit });
+                    const result = await this.apiCall("POST", "/delete_tweet", { unit, tweet_id: String(tweet.id) });
 
                     if (result.ok) {
                         this.showToast("트윗이 삭제되었습니다");
@@ -1323,105 +1910,376 @@
 
             async loadJobs() {
                 try {
-                    const data = await this.apiCall("GET", "/list_jobs");
-                    this.renderJobs(data);
+                    const data = await this.apiCall("GET", "/jobs_overview");
                     const hist = await this.apiCall("GET", "/list_history?limit=50");
+                    this.jobs = data;
+                    this.bindJobsControls();
+                    this.renderNow(data.now || {});
+                    this.renderFlows();
+                    this.renderSched(data);
+                    this.renderAuto();
+                    this.renderPendingTl(data);
                     this.renderHistory(hist || []);
+                    // 선택한 흐름이 갱신됐으면 상세도 갱신(재생 없이 현재 상태로)
+                    const cur = (data.flows || []).find((f) => f.id === this.flowSel);
+                    if (cur && JSON.stringify(cur) !== this.flowSelSnap) this.showFlow(cur, false);
                 } catch (e) {
                     console.error("작업 로드 실패", e);
                 }
             },
 
-            renderJobs(data) {
-                // Apply 큐
-                const applyDiv = document.getElementById("jobs-apply");
-                applyDiv.textContent = "";
-                // 대기 작업: {id, name, kind, run_at_iso, attempt} (jobqueue.pending)
-                const pendingText = (job) =>
-                    `${job.kind || "?"}${job.name ? " · " + job.name : ""} · ${this.formatTime(job.run_at_iso)}` +
-                    (job.attempt > 1 ? ` (재시도 ${job.attempt})` : "");
-                if (data.apply && data.apply.length > 0) {
-                    const list = document.createElement("ul");
-                    for (const job of data.apply) {
-                        const li = document.createElement("li");
-                        li.textContent = pendingText(job);
-                        list.appendChild(li);
+            bindJobsControls() {
+                if (this.jobsBound) return;
+                this.jobsBound = true;
+                this.flowFilter = "all";
+                this.autoFailOnly = false;
+                document.querySelectorAll("#flow-chips .chip").forEach((c) => {
+                    c.addEventListener("click", () => {
+                        this.flowFilter = c.dataset.f;
+                        document.querySelectorAll("#flow-chips .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+                        this.renderFlows();
+                    });
+                });
+                const setAuto = (fail) => {
+                    this.autoFailOnly = fail;
+                    document.getElementById("auto-all").setAttribute("aria-pressed", String(!fail));
+                    document.getElementById("auto-fail").setAttribute("aria-pressed", String(fail));
+                    this.renderAuto();
+                };
+                document.getElementById("auto-all").addEventListener("click", () => setAuto(false));
+                document.getElementById("auto-fail").addEventListener("click", () => setAuto(true));
+                document.getElementById("fd-replay").addEventListener("click", () => {
+                    const f = ((this.jobs || {}).flows || []).find((x) => x.id === this.flowSel);
+                    if (f) this.showFlow(f, true);
+                });
+            },
+
+            // (v4a) 지금 상태 — 러너 · 텔레그램 · 마지막 알림(X · YouTube) · 적용 큐 · 방송 · 데이터 갱신
+            renderNow(n) {
+                const grid = document.getElementById("now-grid");
+                grid.textContent = "";
+                const nowMs = Date.parse(n.server_now || new Date().toISOString());
+                const ago = (iso) => {
+                    if (!iso) return "";
+                    const m = Math.round((nowMs - Date.parse(iso)) / 60000);
+                    if (m < 1) return "방금";
+                    if (m < 60) return `${m}분 전`;
+                    const h = Math.floor(m / 60);
+                    return h < 24 ? `${h}시간 ${m % 60}분 전` : `${Math.floor(h / 24)}일 전`;
+                };
+                const tile = (label, val, sub, level) => {
+                    const d = document.createElement("div");
+                    d.className = "now-tile" + (level && level !== "ok" ? " " + level : "");
+                    const a = document.createElement("div");
+                    a.className = "lbl";
+                    a.textContent = label;
+                    const b = document.createElement("div");
+                    b.className = "val";
+                    b.textContent = val;
+                    d.append(a, b);
+                    if (sub) {
+                        const c = document.createElement("div");
+                        c.className = "sub";
+                        c.textContent = sub;
+                        d.appendChild(c);
                     }
-                    applyDiv.appendChild(list);
+                    grid.appendChild(d);
+                };
+                document.getElementById("now-at").textContent = `${this.formatTime(n.server_now)} 기준 · 5초마다 갱신`;
+
+                const r = n.runner;
+                tile("러너", r ? "가동 중" : "정보 없음",
+                     r ? `${this.formatTime(r.started_at)}부터 (${ago(r.started_at)}) · ${r.bind}:${r.port}` : "runner.json 없음",
+                     r ? "ok" : "warn");
+
+                const tg = n.telegram || {};
+                if (tg.state === "ok") {
+                    tile("텔레그램 봇", "정상", `마지막 확인 ${this.formatTime(tg.last_ok)} (${ago(tg.last_ok)})`, "ok");
+                } else if (tg.state === "error") {
+                    tile("텔레그램 봇", `오류 ${tg.fails || 1}회째`,
+                         `${tg.last_error || ""} · ${ago(tg.error_at)}` +
+                         (String(tg.last_error || "").includes("409") ? " — 같은 봇을 다른 곳에서도 폴링 중" : ""), "bad");
+                } else if (tg.state === "starting") {
+                    tile("텔레그램 봇", "연결 중", "첫 응답 대기", "warn");
                 } else {
-                    applyDiv.textContent = "대기 작업 없음";
+                    tile("텔레그램 봇", "꺼짐", tg.reason || "", "warn");
                 }
 
-                // Enrich 큐
-                const enrichDiv = document.getElementById("jobs-enrich");
-                enrichDiv.textContent = "";
-                if (data.enrich && data.enrich.length > 0) {
-                    const list = document.createElement("ul");
-                    for (const job of data.enrich) {
-                        const li = document.createElement("li");
-                        li.textContent = pendingText(job);
-                        list.appendChild(li);
+                for (const [key, label] of [["x", "마지막 X 알림"], ["yt", "마지막 YouTube 알림"]]) {
+                    const u = (n.upstream || {})[key];
+                    if (!u) {
+                        tile(label, "오늘 없음", "어제 · 오늘 기록에 수신이 없습니다", "idle");
+                    } else {
+                        tile(label, `${this.formatTime(u.ts)} · ${ago(u.ts)}`, (u.ok ? "" : "✕ ") + (u.text || ""),
+                             u.ok ? "ok" : "bad");
                     }
-                    enrichDiv.appendChild(list);
-                } else {
-                    enrichDiv.textContent = "대기 작업 없음";
                 }
 
-                // Recent 결과
-                const tbody = document.getElementById("jobs-recent-body");
-                tbody.textContent = "";
-                if (data.recent && data.recent.length > 0) {
-                    for (const job of data.recent) {
-                        const tr = document.createElement("tr");
-                        // 최근 결과: {ts, job_id, kind, ok, attempt, summary} (apply.recent)
-                        const tdId = document.createElement("td");
-                        tdId.textContent = job.kind || job.job_id || "—";
-                        const tdStatus = document.createElement("td");
-                        tdStatus.textContent = (job.ok ? "✓ " : "✗ ") + (job.summary || "");
-                        const tdTime = document.createElement("td");
-                        tdTime.textContent = this.formatTime(job.ts);
-                        tr.appendChild(tdId);
-                        tr.appendChild(tdStatus);
-                        tr.appendChild(tdTime);
-                        tbody.appendChild(tr);
-                    }
+                const q = n.queue || {};
+                tile("적용 큐", q.due ? `지금 처리 대기 ${q.due}건` : "밀린 작업 없음",
+                     `예약 ${q.scheduled || 0}건 · 번역 대기 ${q.enrich || 0}건`, q.due > 3 ? "warn" : "ok");
+
+                const nx = (n.next || [])[0];
+                if ((n.live || []).length) {
+                    tile("방송", `라이브 ${n.live.length}건`, n.live.join(" / "), "ok");
                 } else {
-                    const tr = document.createElement("tr");
-                    const td = document.createElement("td");
-                    td.colSpan = 3;
-                    td.textContent = "결과 없음";
-                    tr.appendChild(td);
-                    tbody.appendChild(tr);
+                    tile("방송", "라이브 없음", nx ? `다음 ${this.formatTime(nx.at)} · ${nx.what}` : "예정된 방송 없음", "idle");
+                }
+
+                tile("데이터 갱신", n.last_reconcile ? `${this.formatTime(n.last_reconcile)} · ${ago(n.last_reconcile)}` : "기록 없음",
+                     `마지막 정기 수집 · 예고 파일 ${this.formatTime(n.preview_generated_at)}`,
+                     n.last_reconcile && nowMs - Date.parse(n.last_reconcile) > 25 * 60000 ? "warn" : "ok");
+            },
+
+            flowStatus(f) {
+                const cur = (f.stages || []).find((s) => ["fail", "run", "wait"].includes(s.s));
+                const icon = { ok: "●", fail: "✕", run: "◐", wait: "◔" }[f.status] || "●";
+                let text;
+                if (f.status === "ok") text = `완료${f.total ? " " + f.total : ""}`;
+                else if (f.status === "fail") text = `${cur ? cur.n + "에서 " : ""}멈춤`;
+                else if (f.status === "wait") text = cur && cur.note ? cur.note : "대기 중";
+                else text = `${cur ? cur.n : ""} 처리 중`;
+                return { icon, text };
+            },
+
+            renderFlows() {
+                const box = document.getElementById("flows");
+                box.textContent = "";
+                const flows = ((this.jobs || {}).flows || []).filter((f) =>
+                    this.flowFilter === "all" || !this.flowFilter ? true
+                        : this.flowFilter === "attn" ? f.status !== "ok" : f.cat === this.flowFilter);
+                if (!flows.length) {
+                    const e = document.createElement("div");
+                    e.className = "jempty";
+                    e.textContent = "기록된 흐름이 없습니다 — 알림이 들어오거나 관리 페이지에서 조작하면 여기 쌓입니다.";
+                    box.appendChild(e);
+                    return;
+                }
+                for (const f of flows.slice(0, 60)) {
+                    const b = document.createElement("button");
+                    b.type = "button";
+                    b.className = "flow" + (f.id === this.flowSel ? " sel" : "");
+                    const t = document.createElement("div");
+                    t.className = "t";
+                    t.textContent = this.formatTime(f.t0);
+                    const what = document.createElement("div");
+                    what.className = "what";
+                    const k = document.createElement("div");
+                    k.className = "k";
+                    k.textContent = f.kind;
+                    const d = document.createElement("div");
+                    d.className = "d";
+                    d.textContent = f.desc || "—";
+                    what.append(k, d);
+                    const { icon, text } = this.flowStatus(f);
+                    const st = document.createElement("div");
+                    st.className = "st s-" + f.status;
+                    st.textContent = `${icon} ${text}`;
+                    const bar = document.createElement("div");
+                    bar.className = "fbar";
+                    (f.stages || []).forEach((s, i) => {
+                        if (i) {
+                            const ln = document.createElement("b");
+                            if (s.s !== "todo") ln.className = "done";
+                            bar.appendChild(ln);
+                        }
+                        const dot = document.createElement("i");
+                        if (s.s !== "todo") dot.className = s.s;
+                        dot.title = `${s.n}${s.note ? " — " + s.note : ""}`;
+                        bar.appendChild(dot);
+                    });
+                    const cur = (f.stages || []).find((s) => ["fail", "run", "wait"].includes(s.s));
+                    const lbl = document.createElement("span");
+                    lbl.className = "lbl";
+                    lbl.textContent = cur ? `${cur.n} 단계` : `${(f.stages || []).filter((s) => s.s === "done").length}단계 거침`;
+                    bar.appendChild(lbl);
+                    b.append(t, what, st, bar);
+                    b.addEventListener("click", () => {
+                        this.flowSel = f.id;
+                        this.renderFlows();
+                        this.showFlow(f, true);
+                    });
+                    box.appendChild(b);
                 }
             },
 
-            // 작업 이력: {id, ts, action, target, summary, ok, error, job_id} (admin_api.list_history)
+            // 경로 재생: 통과한 단계부터 차례로 켠다. 멈춘 · 진행 중 단계는 거기서 멈추고 사유를 보인다
+            showFlow(f, animate) {
+                (this.flowTimers || []).forEach(clearTimeout);
+                this.flowTimers = [];
+                this.flowSelSnap = JSON.stringify(f);
+                document.getElementById("fdetail").hidden = false;
+                document.getElementById("fd-ttl").textContent = f.kind;
+                document.getElementById("fd-sub").textContent =
+                    `${this.formatTime(f.t0)} · ${f.desc || ""}${f.total ? " · 전체 " + f.total : ""}`;
+                const chain = document.getElementById("fd-chain");
+                chain.textContent = "";
+                const nodes = [], edges = [];
+                (f.stages || []).forEach((s, i) => {
+                    if (i) {
+                        const e = document.createElement("div");
+                        e.className = "fedge";
+                        e.appendChild(document.createElement("span"));
+                        chain.appendChild(e);
+                        edges.push(e);
+                    }
+                    const n = document.createElement("div");
+                    n.className = "fnode";
+                    const nm = document.createElement("div");
+                    nm.className = "n";
+                    nm.textContent = s.n;
+                    const x = document.createElement("div");
+                    x.className = "x";
+                    x.textContent = s.x || " ";
+                    const note = document.createElement("div");
+                    note.className = "note";
+                    const ms = document.createElement("div");
+                    ms.className = "ms";
+                    n.append(nm, x, note, ms);
+                    chain.appendChild(n);
+                    nodes.push({ n, note, ms, s });
+                });
+                const r = document.getElementById("fd-reason");
+                r.className = "freason" + (f.status === "ok" ? "" : " " + f.status);
+                r.textContent = "";
+                const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                const step = animate && !reduce ? 420 : 0;
+                const upto = (() => {
+                    let last = -1;
+                    (f.stages || []).forEach((s, i) => { if (s.s !== "todo") last = i; });
+                    return last + 1;
+                })();
+                const light = (i) => {
+                    if (i && nodes[i].s.s !== "skip") edges[i - 1].classList.add("lit");
+                    const { n, note, ms, s } = nodes[i];
+                    n.classList.add("lit", s.s);
+                    note.textContent = s.note || "";
+                    ms.textContent = s.s === "skip" ? "해당 없음" : (s.ms || "");
+                };
+                const done = () => {
+                    const cur = (f.stages || []).find((s) => ["fail", "run", "wait"].includes(s.s));
+                    r.textContent = f.reason || (cur ? `${cur.n}: ${cur.note || cur.s}` : "");
+                };
+                if (!step) {
+                    for (let i = 0; i < upto; i++) light(i);
+                    done();
+                    return;
+                }
+                for (let i = 0; i < upto; i++) this.flowTimers.push(setTimeout(() => light(i), step * i));
+                this.flowTimers.push(setTimeout(done, step * upto));
+            },
+
+            renderSched(data) {
+                const box = document.getElementById("jobs-sched");
+                box.textContent = "";
+                const row = (t, main, sub) => {
+                    const r = document.createElement("div");
+                    r.className = "jrow";
+                    const a = document.createElement("div");
+                    a.className = "t";
+                    a.textContent = t;
+                    const b = document.createElement("div");
+                    const m = document.createElement("div");
+                    m.textContent = main;
+                    const s2 = document.createElement("div");
+                    s2.className = "m";
+                    s2.textContent = sub;
+                    b.append(m, s2);
+                    r.append(a, b);
+                    box.appendChild(r);
+                };
+                for (const j of data.scheduled || []) {
+                    row(this.formatTime(j.run_at), j.what, j.why + (j.attempt > 1 ? ` · 재시도 ${j.attempt}회째` : ""));
+                }
+                const p = data.periodic || {};
+                if (p.light) {
+                    row("10분마다", "정기 수집 (전체 채널)",
+                        `다음 ${this.formatTime(p.light).slice(6)} · 매일 06:00 JST 전체 확인 · 06:10 스냅샷`);
+                }
+                if (!box.children.length) row("—", "예정된 확인 없음", "");
+            },
+
+            renderAuto() {
+                const box = document.getElementById("jobs-auto");
+                box.textContent = "";
+                const list = ((this.jobs || {}).auto || []).filter((a) => !this.autoFailOnly || !a.ok).slice(0, 30);
+                if (!list.length) {
+                    const r = document.createElement("div");
+                    r.className = "jrow";
+                    r.textContent = this.autoFailOnly ? "실패한 작업이 없습니다" : "기록 없음";
+                    box.appendChild(r);
+                    return;
+                }
+                for (const a of list) {
+                    const r = document.createElement("div");
+                    r.className = "jrow";
+                    const t = document.createElement("div");
+                    t.className = "t";
+                    t.textContent = this.formatTime(a.ts);
+                    const b = document.createElement("div");
+                    if (!a.ok) b.className = "s-fail";
+                    b.textContent = (a.ok ? "✓ " : "✕ ") + a.text;
+                    r.append(t, b);
+                    box.appendChild(r);
+                }
+            },
+
+            renderPendingTl(data) {
+                const box = document.getElementById("jobs-tl");
+                box.textContent = "";
+                const list = data.pending_tl || [];
+                if (!list.length) {
+                    const e = document.createElement("div");
+                    e.className = "jempty";
+                    e.textContent = "없음 — 새 제목이 들어오면 번역될 때까지 여기 보입니다.";
+                    box.appendChild(e);
+                    return;
+                }
+                const l = document.createElement("div");
+                l.className = "jlist";
+                for (const txt of list) {
+                    const r = document.createElement("div");
+                    r.className = "jrow";
+                    r.style.gridTemplateColumns = "1fr";
+                    r.textContent = txt;
+                    l.appendChild(r);
+                }
+                box.appendChild(l);
+            },
+
+            // 내가 한 조작: {id, ts, action, target, summary, ok, error, job_id} (admin_api.list_history)
             renderHistory(items) {
-                const tbody = document.getElementById("jobs-history-body");
-                tbody.textContent = "";
+                const box = document.getElementById("jobs-history");
+                box.textContent = "";
+                const LABEL = {
+                    edit_preview: "예고 수정", delete_preview: "예고 삭제", ingest_preview: "원문 투입 · 예고",
+                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "원문 투입 · 트윗", edit_notice: "소식 수정",
+                    delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
+                    retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
+                    set_monitor_auto: "멤버 현황 DM",
+                };
                 if (!items.length) {
-                    const tr = document.createElement("tr");
-                    const td = document.createElement("td");
-                    td.colSpan = 4;
-                    td.textContent = "이력 없음";
-                    tr.appendChild(td);
-                    tbody.appendChild(tr);
+                    const r = document.createElement("div");
+                    r.className = "jrow";
+                    r.textContent = "아직 없음";
+                    box.appendChild(r);
                     return;
                 }
                 for (const h of items) {
-                    const tr = document.createElement("tr");
-                    const cells = [
-                        h.action || "—",
-                        [h.target, h.summary].filter(Boolean).join(" · ") || "—",
-                        h.ok ? "✓" : "✗ " + (h.error || ""),
-                        this.formatTime(h.ts),
-                    ];
-                    for (const c of cells) {
-                        const td = document.createElement("td");
-                        td.textContent = c;
-                        tr.appendChild(td);
-                    }
-                    tbody.appendChild(tr);
+                    const r = document.createElement("div");
+                    r.className = "jrow";
+                    const t = document.createElement("div");
+                    t.className = "t";
+                    t.textContent = this.formatTime(h.ts);
+                    const b = document.createElement("div");
+                    const m = document.createElement("div");
+                    m.textContent = `${LABEL[h.action] || h.action}${h.summary ? " · " + h.summary : ""}`;
+                    const s2 = document.createElement("div");
+                    s2.className = "m" + (h.ok ? "" : " s-fail");
+                    s2.textContent = h.ok ? "✓ 반영 · 되돌리기는 아직 없음" : `✕ ${h.error || "실패"}`;
+                    b.append(m, s2);
+                    r.append(t, b);
+                    box.appendChild(r);
                 }
             },
 
@@ -1440,19 +2298,34 @@
 
             renderLost(data) {
                 const container = document.getElementById("lost-list");
+                container.classList.remove("loading");
                 container.textContent = "";
 
                 if (!Array.isArray(data) || data.length === 0) {
-                    const p = document.createElement("p");
-                    p.textContent = "유실 원문 없음";
-                    container.appendChild(p);
+                    // (v4a) 빈 상태 — 이 탭이 무엇인지 설명
+                    const box = document.createElement("div");
+                    box.className = "jempty";
+                    box.style.display = "grid";
+                    box.style.gap = "0.4rem";
+                    for (const line of [
+                        "유실 원문 없음 — 지금 다시 처리할 것이 없습니다.",
+                        "여기 쌓이는 것: 알림(X · YouTube)을 받았지만 반영하다 실패한 원문, 재시도 끝에 실패한 적용 작업. " +
+                        "같은 원문이 텔레그램 DM 으로도 옵니다. 최대 50건, 넘치면 오래된 것부터 버립니다.",
+                        "쌓이지 않는 것: 인증 실패(403)로 거절한 알림 — 원문을 받기 전에 거절하기 때문입니다. 작업 탭 최근 흐름에서 확인하세요.",
+                        "쓰는 법: 항목을 체크하고 「선택 재투입」을 누르면 한 건씩 다시 처리하고, 성공한 건만 목록에서 빠집니다.",
+                    ]) {
+                        const p = document.createElement("div");
+                        p.textContent = line;
+                        box.appendChild(p);
+                    }
+                    container.appendChild(box);
                     return;
                 }
 
                 const table = document.createElement("table");
                 const thead = document.createElement("thead");
                 const headerRow = document.createElement("tr");
-                for (const label of ["선택", "사유", "원문", "시각"]) {
+                for (const label of ["선택", "종류", "사유", "원문", "시각"]) {
                     const th = document.createElement("th");
                     th.textContent = label;
                     headerRow.appendChild(th);
@@ -1472,13 +2345,44 @@
                     tdCheck.appendChild(checkbox);
                     tr.appendChild(tdCheck);
 
+                    const kindLabel = { personal_tweet: "개인 트윗", notice: "소식", ingest: "업스트림 알림",
+                                        apply_job: "적용 작업" }[item.kind] || item.kind || "—";
+                    const tdKind = document.createElement("td");
+                    tdKind.textContent = kindLabel +
+                        (item.channel_key ? ` · ${(this.channels[item.channel_key] || {}).name_ko || item.channel_key}` : "") +
+                        (item.job_kind ? ` · ${item.job_kind}` : "");
+                    tr.appendChild(tdKind);
+
                     const tdReason = document.createElement("td");
                     tdReason.textContent = item.reason || "—";
+                    const res = (this.lostResults || {})[item.ts];
+                    if (res) {
+                        const r = document.createElement("div");
+                        r.className = "list-item-sub";
+                        r.style.color = "#ff6b6b";
+                        r.textContent = `재투입 실패: ${res}`;
+                        tdReason.appendChild(r);
+                    }
                     tr.appendChild(tdReason);
 
+                    // 원문: 앞부분만 보이고 눌러서 전체 보기
                     const tdRaw = document.createElement("td");
-                    tdRaw.textContent = (item.raw || "").substring(0, 50);
                     tdRaw.style.fontSize = "0.85rem";
+                    const det = document.createElement("details");
+                    const sum = document.createElement("summary");
+                    sum.textContent = (item.raw || "").substring(0, 60) || "(원문 없음)";
+                    det.appendChild(sum);
+                    const pre = document.createElement("pre");
+                    pre.style.whiteSpace = "pre-wrap";
+                    pre.textContent = item.raw || "";
+                    det.appendChild(pre);
+                    if (item.tweet_url) {
+                        const a = document.createElement("div");
+                        a.className = "list-item-sub";
+                        a.textContent = item.tweet_url;
+                        det.appendChild(a);
+                    }
+                    tdRaw.appendChild(det);
                     tr.appendChild(tdRaw);
 
                     const tdTime = document.createElement("td");
@@ -1506,15 +2410,17 @@
                     return;
                 }
 
+                if (!confirm(`유실 원문 ${ids.length}건을 한 건씩 다시 처리할까요?\n성공한 건만 목록에서 빠집니다.`)) return;
+
                 try {
                     const result = await this.apiCall("POST", "/retry_lost", { ids });
-
-                    if (result.ok) {
-                        this.showToast(`${ids.length}개 항목 재투입 완료`);
-                        this.loadLost();
-                    } else {
-                        this.showToast(result.error || "재투입 실패", "error");
-                    }
+                    const done = result.done || [];
+                    const failed = result.failed || [];
+                    this.showToast(`성공 ${done.length}건 · 실패 ${failed.length}건`, failed.length ? "error" : "success");
+                    // 실패 사유를 남은 항목 옆에 표시. 목록 id 는 순번 기반이라 재조회 후 바뀌므로 원문 시각(ts)으로 맞춘다
+                    this.lostResults = {};
+                    for (const f of failed) this.lostResults[f.id.split(":").slice(1).join(":")] = f.error;
+                    this.loadLost();
                 } catch (e) {
                     this.showToast(`오류: ${e.message}`, "error");
                 }
@@ -1533,97 +2439,108 @@
                 }
             },
 
+            // (v4a) 운영 탭 — 수집 · 반영(일시정지) / 텔레그램 알림 레벨 / 매일 멤버 현황 DM.
+            // 설명 문구는 코드 기준: 일시정지 = handlers 정기 수집 · 방송 확인 + 공식 스케줄 · 개인 예고 반영 건너뜀
+            // (소식 · 개인 트윗은 계속), 레벨별 종류 = notify._LEVEL_KINDS, 멤버 현황 = 매일 06:10 스냅샷 작업
             renderControl(data) {
                 const container = document.getElementById("control-status");
+                container.classList.remove("loading");
                 container.textContent = "";
+                const mk = (tag, cls, text) => {
+                    const e = document.createElement(tag);
+                    if (cls) e.className = cls;
+                    if (text !== undefined) e.textContent = text;
+                    return e;
+                };
+                const wrap = mk("div", "ctl");
 
-                // 일시정지 상태
-                const pausedDiv = document.createElement("div");
-                pausedDiv.className = "form-group";
+                // ① 수집 · 반영
+                const c1 = mk("section", "ctl-card");
+                const h1 = mk("div", "ctl-head");
+                const t1 = mk("div");
+                t1.appendChild(mk("h3", "ctl-title", "수집 · 반영"));
+                t1.appendChild(mk("p", "ctl-desc",
+                    "일시정지하면 정기 수집(10분마다)과 방송 확인이 멈추고, 들어오는 공식 스케줄 · 개인 예고도 반영하지 않습니다. " +
+                    "소식과 개인 트윗은 계속 반영됩니다. 재개하면 바로 수집을 한 번 돌립니다."));
+                const st = mk("span", "ctl-status " + (data.paused ? "paused" : "on"), data.paused ? "일시정지됨" : "정상 운영 중");
+                h1.append(t1, st);
+                const a1 = mk("div", "ctl-actions");
+                const b1 = mk("button", "ctl-btn " + (data.paused ? "resume" : "pause"), data.paused ? "재개" : "일시정지");
+                b1.type = "button";
+                b1.onclick = () => this.setPaused(!data.paused);
+                a1.appendChild(b1);
+                if (data.paused && data.since) a1.appendChild(mk("span", "ctl-meta", `${this.formatTime(data.since)}부터 정지`));
+                c1.append(h1, a1);
+                wrap.appendChild(c1);
 
-                const pausedLabel = document.createElement("label");
-                pausedLabel.style.fontWeight = "600";
-                pausedLabel.textContent = data.paused ? "상태: 일시정지됨" : "상태: 정상 운영중";
-                pausedDiv.appendChild(pausedLabel);
-
-                const pauseBtn = document.createElement("button");
-                pauseBtn.textContent = data.paused ? "재개" : "일시정지";
-                pauseBtn.style.marginTop = "0.5rem";
-                pauseBtn.onclick = () => this.setPaused(!data.paused);
-                pausedDiv.appendChild(pauseBtn);
-
-                container.appendChild(pausedDiv);
-
-                // 알림 레벨
-                const levelDiv = document.createElement("div");
-                levelDiv.className = "form-group";
-                levelDiv.style.marginTop = "1rem";
-
-                const levelLabel = document.createElement("label");
-                levelLabel.textContent = "알림 레벨";
-                levelDiv.appendChild(levelLabel);
-
-                const levelSelect = document.createElement("select");
-                levelSelect.id = "control-level";
-                for (const lv of ["simple", "normal", "detail"]) {
-                    const opt = document.createElement("option");
-                    opt.value = lv;
-                    opt.textContent = lv.charAt(0).toUpperCase() + lv.slice(1);
-                    opt.selected = lv === data.log_level;
-                    levelSelect.appendChild(opt);
+                // ② 텔레그램 알림 레벨
+                const c2 = mk("section", "ctl-card");
+                const t2 = mk("div");
+                t2.appendChild(mk("h3", "ctl-title", "텔레그램 알림 레벨"));
+                t2.appendChild(mk("p", "ctl-desc", "상태 변화가 생겼을 때 로컬 봇이 DM 으로 보낼 종류를 정합니다. 고르면 바로 적용됩니다."));
+                c2.appendChild(t2);
+                const LV = [
+                    { key: "simple", name: "간단", sum: "방송 시작 · 종료 위주",
+                      kinds: ["예정 방송 확정", "방송 시작", "방송 종료"], add: [] },
+                    { key: "normal", name: "보통", sum: "간단 + 새 예고 · 소식 · 트윗",
+                      kinds: ["예정 방송 확정", "방송 시작", "방송 종료"], add: ["예고 등록", "소식", "개인 트윗"] },
+                    { key: "detail", name: "자세히", sum: "보통 + 처리 과정 · 오류",
+                      kinds: ["예정 방송 확정", "방송 시작", "방송 종료", "예고 등록", "소식", "개인 트윗"],
+                      add: ["알림 수신 결과", "상태 되돌림", "오류", "요약"] },
+                ];
+                const cur = data.log_level || "normal";
+                const grid = mk("div", "lv-grid");
+                grid.setAttribute("role", "radiogroup");
+                grid.setAttribute("aria-label", "알림 레벨");
+                for (const lv of LV) {
+                    const b = mk("button", "lv");
+                    b.type = "button";
+                    b.setAttribute("role", "radio");
+                    b.setAttribute("aria-checked", String(lv.key === cur));
+                    const nm = mk("div", "lv-name");
+                    nm.appendChild(mk("span", "", lv.name));
+                    if (lv.key === cur) nm.appendChild(mk("span", "lv-cur", "현재"));
+                    const kinds = mk("div", "lv-kinds");
+                    for (const k of lv.kinds) kinds.appendChild(mk("span", "", k));
+                    for (const k of lv.add) kinds.appendChild(mk("span", "add", k));
+                    b.append(nm, mk("div", "lv-sum", lv.sum), kinds);
+                    b.onclick = () => { if (lv.key !== cur) this.setLogLevel(lv.key); };
+                    grid.appendChild(b);
                 }
-                levelDiv.appendChild(levelSelect);
+                c2.appendChild(grid);
+                wrap.appendChild(c2);
 
-                const setLevelBtn = document.createElement("button");
-                setLevelBtn.textContent = "적용";
-                setLevelBtn.style.marginTop = "0.5rem";
-                setLevelBtn.onclick = () => this.setLogLevel(levelSelect.value);
-                levelDiv.appendChild(setLevelBtn);
+                // ③ 매일 멤버 현황 DM
+                const c3 = mk("section", "ctl-card");
+                const h3 = mk("div", "ctl-head");
+                const t3 = mk("div");
+                t3.appendChild(mk("h3", "ctl-title", "매일 멤버 현황 DM"));
+                t3.appendChild(mk("p", "ctl-desc",
+                    "매일 06:10(KST) 하루치 모니터링 스냅샷을 찍을 때 \"오늘의 멤버 현황\"을 텍스트 DM 으로 보냅니다. " +
+                    "끄더라도 스냅샷은 그대로 찍혀 웹 모니터에 쓰입니다."));
+                const sw = mk("button", "sw");
+                sw.type = "button";
+                sw.setAttribute("role", "switch");
+                sw.setAttribute("aria-checked", String(!!data.monitor_auto));
+                sw.append(mk("span", "sw-track"), mk("span", "", data.monitor_auto ? "켜짐" : "꺼짐"));
+                sw.onclick = () => this.setMonitorAuto(!data.monitor_auto);
+                h3.append(t3, sw);
+                c3.appendChild(h3);
+                wrap.appendChild(c3);
 
-                container.appendChild(levelDiv);
-
-                // 모니터 DM
-                const monitorDiv = document.createElement("div");
-                monitorDiv.className = "form-group";
-                monitorDiv.style.marginTop = "1rem";
-
-                const monitorLabel = document.createElement("label");
-                monitorLabel.textContent = "일일 멤버 현황 DM";
-                monitorDiv.appendChild(monitorLabel);
-
-                const monitorCheck = document.createElement("input");
-                monitorCheck.type = "checkbox";
-                monitorCheck.id = "control-monitor";
-                monitorCheck.checked = data.monitor_auto;
-                monitorCheck.style.width = "auto";
-                const monitorText = document.createElement("label");
-                monitorText.htmlFor = "control-monitor";
-                monitorText.textContent = "자동 전송";
-                monitorText.style.marginLeft = "0.5rem";
-                monitorText.style.width = "auto";
-
-                const monitorContainer = document.createElement("div");
-                monitorContainer.style.display = "flex";
-                monitorContainer.style.alignItems = "center";
-                monitorContainer.appendChild(monitorCheck);
-                monitorContainer.appendChild(monitorText);
-                monitorDiv.appendChild(monitorContainer);
-
-                const setMonitorBtn = document.createElement("button");
-                setMonitorBtn.textContent = "적용";
-                setMonitorBtn.style.marginTop = "0.5rem";
-                setMonitorBtn.onclick = () => this.setMonitorAuto(monitorCheck.checked);
-                monitorDiv.appendChild(setMonitorBtn);
-
-                container.appendChild(monitorDiv);
+                if (data.updated_at) {
+                    wrap.appendChild(mk("div", "ctl-meta",
+                        `마지막 변경 ${this.formatTime(data.updated_at)}` + (data.by ? ` · ${data.by === "admin" ? "관리 페이지" : data.by}` : "")));
+                }
+                container.appendChild(wrap);
             },
 
             async setPaused(paused) {
+                if (paused && !confirm("수집 · 반영을 일시정지할까요?\n\n정기 수집과 방송 확인이 멈추고, 공식 스케줄 · 개인 예고도 반영하지 않습니다.")) return;
                 try {
                     const result = await this.apiCall("POST", "/set_paused", { paused });
-
                     if (result.ok) {
-                        this.showToast(paused ? "일시정지되었습니다" : "재개되었습니다");
+                        this.showToast(paused ? "일시정지했습니다" : "재개했습니다 — 수집을 한 번 돌립니다");
                         this.loadControl();
                     } else {
                         this.showToast(result.error || "설정 변경 실패", "error");
@@ -1636,9 +2553,8 @@
             async setLogLevel(level) {
                 try {
                     const result = await this.apiCall("POST", "/set_log_level", { level });
-
                     if (result.ok) {
-                        this.showToast("알림 레벨이 변경되었습니다");
+                        this.showToast("알림 레벨을 바꿨습니다");
                         this.loadControl();
                     } else {
                         this.showToast(result.error || "설정 변경 실패", "error");
@@ -1651,9 +2567,8 @@
             async setMonitorAuto(enabled) {
                 try {
                     const result = await this.apiCall("POST", "/set_monitor_auto", { enabled });
-
                     if (result.ok) {
-                        this.showToast(enabled ? "자동 DM이 켜졌습니다" : "자동 DM이 꺼졌습니다");
+                        this.showToast(enabled ? "멤버 현황 DM 을 켰습니다" : "멤버 현황 DM 을 껐습니다");
                         this.loadControl();
                     } else {
                         this.showToast(result.error || "설정 변경 실패", "error");

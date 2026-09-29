@@ -25,22 +25,61 @@ def default_preview() -> dict:
     }
 
 
-def new_id(channel_key: str, first_seen_iso: str) -> str:
+def new_id(channel_key: str, first_seen_iso: str, salt: str = "") -> str:
     """
     Generate a stable item ID from channel_key and first_seen timestamp.
 
-    ID format: "pv_" + first 8 hex chars of sha1(f"{channel_key}|{first_seen}").
+    ID format: "pv_" + first 8 hex chars of sha1(f"{channel_key}|{first_seen}[|{salt}]").
+
+    (v4a) salt — 같은 tick 에 같은 채널에서 여러 항목이 처음 발견되면 first_seen 이 같아
+    id 가 겹쳤다(콜드 스타트 실측: 아라레 3건이 한 id). id 로 대상을 찾는 관리 수정·삭제가
+    첫 항목에 잘못 적용되므로, make_item 이 video_id·url·scheduled_start·title 중 처음 있는
+    값을 salt 로 섞는다. salt 가 비면 예전 방식과 같은 값.
 
     Args:
         channel_key: e.g., "arale"
         first_seen_iso: UTC ISO timestamp, e.g., "2026-08-30T12:00:00Z"
+        salt: 항목 구분값 (없으면 "")
 
     Returns:
         ID like "pv_a1b2c3d4"
     """
-    source = f"{channel_key}|{first_seen_iso}".encode("utf-8")
-    hash_obj = hashlib.sha1(source)
+    source = f"{channel_key}|{first_seen_iso}" + (f"|{salt}" if salt else "")
+    hash_obj = hashlib.sha1(source.encode("utf-8"))
     return "pv_" + hash_obj.hexdigest()[:8]
+
+
+def _id_salt(fields: dict) -> str:
+    """new_id 의 salt — 항목을 구분하는 첫 번째 값(video_id → url → scheduled_start → title)."""
+    for k in ("video_id", "url", "scheduled_start", "title"):
+        if fields.get(k):
+            return str(fields[k])
+    return ""
+
+
+def ensure_unique_ids(items: list[dict]) -> list[dict]:
+    """(v4a) 같은 id 가 둘 이상이면 앞의 것만 id 를 유지하고 뒤의 것은 salt 로 새 id 를 준다.
+
+    salt 도입 전에 만들어진(또는 salt 까지 같은) 중복 id 를 정리하는 용도. 새 id 는 다음 tick
+    부터 video_id 매칭으로 그대로 이어진다. 입력은 수정하지 않는다.
+    """
+    seen: set = set()
+    out = []
+    for it in items:
+        iid = it.get("id")
+        if iid and iid in seen:
+            base = f"{_id_salt(it)}|{len(out)}"
+            n = 0
+            nid = new_id(it.get("channel_key", ""), it.get("first_seen", ""), base)
+            while nid in seen:
+                n += 1
+                nid = new_id(it.get("channel_key", ""), it.get("first_seen", ""), f"{base}|{n}")
+            it = dict(it, id=nid)
+            iid = nid
+        if iid:
+            seen.add(iid)
+        out.append(it)
+    return out
 
 
 def make_item(
@@ -67,7 +106,7 @@ def make_item(
     """
     # 필수 필드 — now_iso 로 초기화
     item = {
-        "id": new_id(channel_key, fields.get("first_seen", now_iso)),
+        "id": new_id(channel_key, fields.get("first_seen", now_iso), _id_salt(fields)),
         "state": state,
         "state_since": now_iso,
         "channel_key": channel_key,
@@ -310,6 +349,18 @@ if __name__ == "__main__":
     assert id1 == id2, "new_id 재현성 실패"
     assert id1.startswith("pv_") and len(id1) == 11, "new_id 형식 실패"
     print(f"✓ new_id 안정성: {id1}")
+
+    # Test 1b: (v4a) 같은 tick·같은 채널 두 영상 → id 다름 / ensure_unique_ids
+    a = make_item(channel_key="arale", state="upcoming", source="api", now_iso=now, video_id="V1")
+    b = make_item(channel_key="arale", state="upcoming", source="api", now_iso=now, video_id="V2")
+    assert a["id"] != b["id"], "같은 first_seen 이라도 video_id 가 다르면 id 가 달라야 함"
+    dup = [dict(a), dict(b, id=a["id"]), dict(b, id=a["id"], video_id="V3")]
+    fixed = ensure_unique_ids(dup)
+    assert fixed[0]["id"] == a["id"], "앞 항목 id 유지"
+    assert len({x["id"] for x in fixed}) == 3, "중복 id 정리 실패"
+    assert dup[1]["id"] == a["id"], "입력 수정됨"
+    assert ensure_unique_ids(fixed) == fixed, "이미 고유하면 그대로"
+    print("✓ (v4a) id salt · ensure_unique_ids")
 
     # Test 2: match_item — video_id 매칭
     items = [

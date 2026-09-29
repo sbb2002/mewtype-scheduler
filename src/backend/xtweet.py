@@ -643,7 +643,7 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
     cur = items[idx]
     original = dict(cur)
 
-    if new_item.get("title") != cur.get("title"):
+    if new_item.get("title") != cur.get("title") and not cur.get("title_manual"):  # (v4a) 운영자 제목 보호
         cur["title"] = new_item.get("title")
         cur["title_ko"] = None
         cur["needs_tl"] = bool(new_item.get("title"))

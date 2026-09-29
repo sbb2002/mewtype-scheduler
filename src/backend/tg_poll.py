@@ -27,6 +27,17 @@ _BACKOFF = (1, 2, 4, 8, 16, 30)  # 초 단위, 마지막 값이 상한
 _MAX_BACKOFF = 30  # 최대 대기 시간 (초)
 
 
+# (v4a) 관리 페이지 작업 탭 "지금 상태"용 — 같은 프로세스의 admin_api 가 읽는다.
+# state: off(시작 안 함) · ok(마지막 getUpdates 성공) · error(연속 실패 중)
+STATUS: dict = {"state": "off", "reason": "폴링을 시작하지 않음", "last_ok": None, "last_error": None,
+                "error_at": None, "fails": 0}
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _mask_token(token: str) -> str:
     """토큰을 마스킹해서 로그에 안전하게 기록."""
     if not token or len(token) < 8:
@@ -132,6 +143,8 @@ def run_polling(
                 # 백오프로 이동
                 raise RuntimeError("ok=false")
 
+            STATUS.update(state="ok", reason="", last_ok=_now_iso(), fails=0)
+
             # 업데이트 처리
             updates = data.get("result", [])
             if updates:
@@ -160,6 +173,8 @@ def run_polling(
 
         except Exception as e:
             # 네트워크 오류 또는 기타 예외 → 백오프
+            STATUS.update(state="error", last_error=str(e)[:120], error_at=_now_iso(),
+                          fails=STATUS.get("fails", 0) + 1)
             wait_time = _BACKOFF[min(backoff_attempt, len(_BACKOFF) - 1)]
             backoff_attempt += 1
 

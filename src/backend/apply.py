@@ -47,14 +47,55 @@ def pending() -> list[dict]:
     return _q.pending() if _q is not None else []
 
 
+_recent_loaded = False
+
+
+def _recent_path():
+    import os
+    from pathlib import Path
+    return Path(os.environ.get("LOCAL_DATA_DIR") or "./_local") / "ops" / "recent_jobs.json"
+
+
+def _recent_load() -> None:
+    """(v4a) 재시작해도 최근 결과가 남도록 로컬 파일에서 읽는다(로컬 시험판 한정)."""
+    global _recent_loaded
+    if _recent_loaded:
+        return
+    _recent_loaded = True
+    from . import storage
+    if not storage.is_local():
+        return
+    try:
+        p = _recent_path()
+        if p.exists():
+            for e in reversed(json.loads(p.read_text(encoding="utf-8")).get("items", [])):
+                _recent.appendleft(e)
+    except Exception:  # noqa: BLE001
+        log.warning("recent_jobs.json 읽기 실패", exc_info=True)
+
+
 def recent(limit: int = 50) -> list[dict]:
     with _recent_lock:
+        _recent_load()
         return list(_recent)[:limit]
 
 
 def _record(entry: dict) -> None:
+    import os
+    from . import storage
     with _recent_lock:
+        _recent_load()
         _recent.appendleft(entry)
+        if storage.is_local():
+            try:
+                p = _recent_path()
+                p.parent.mkdir(parents=True, exist_ok=True)
+                tmp = p.with_suffix(".tmp")
+                tmp.write_text(json.dumps({"items": list(_recent)}, ensure_ascii=False, default=str),
+                               encoding="utf-8")
+                os.replace(tmp, p)
+            except Exception:  # noqa: BLE001
+                log.warning("recent_jobs.json 저장 실패", exc_info=True)
 
 
 def submit(kind: str, args: dict, *, wait: bool = True, run_at_iso: str | None = None,
@@ -65,6 +106,16 @@ def submit(kind: str, args: dict, *, wait: bool = True, run_at_iso: str | None =
     """
     args = dict(args or {})
     args.pop("gh", None)   # 호출부 store 는 넘기지 않는다 — 쓰기 쪽이 스스로 만든다
+    from . import flowtrace
+    fid = flowtrace.current.get()
+    if fid and "_flow" not in args:
+        # (v4a) 흐름 기록 — 이 작업이 어느 알림 · 조작에서 나왔는지. 적재 = 준비 끝 · 적용 대기 시작
+        args["_flow"] = fid
+        if flowtrace.stage_state("준비", fid) in ("todo", "run"):
+            flowtrace.mark("준비", "done", fid=fid)
+        flowtrace.mark("적용 대기", "run", fid=fid)
+        if not wait:
+            flowtrace.annotate(fid=fid, detached=True)   # 요청은 먼저 끝난다 — 워커가 반영 후 흐름을 마무리
     if _q is None:
         return handle(kind, args, {"job_id": "inline", "attempt": 1, "is_last": True, "queue": "inline"})
     if wait:
@@ -83,10 +134,64 @@ def enqueue_reconcile(*, video_id: str | None = None, mode: str = "light",
         return None
     when = run_at_iso or _now_iso()
     if video_id:
-        return _q.enqueue("reconcile", {"scope": "video", "video_id": video_id},
-                          run_at_iso=when, name=f"reconcile-video-{video_id}-{when[:16]}")
+        name = f"reconcile-video-{video_id}-{when[:16]}"
+        args = {"scope": "video", "video_id": video_id}
+        if not any(j.get("name") == name for j in _q.pending()):   # 이미 있는 예약이면 흐름을 새로 안 만든다
+            fid = _start_wake_flow(video_id, when)
+            if fid:
+                args["_flow"] = fid
+        return _q.enqueue("reconcile", args, run_at_iso=when, name=name)
     return _q.enqueue("reconcile", {"scope": "all", "mode": mode},
                       run_at_iso=when, name=f"reconcile-all-{mode}-{when[:16]}")
+
+
+def _kst_hm(iso: str) -> str:
+    try:
+        dt = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        return (dt + timedelta(hours=9)).strftime("%m/%d %H:%M")
+    except Exception:  # noqa: BLE001
+        return iso
+
+
+def _broadcast_label(video_id: str) -> str:
+    """방송 확인 흐름 설명 — "멤버 「제목」" (예고에 없으면 video_id)."""
+    try:
+        from ..collector.config import load_channels
+        from . import storage
+        pv, _ = storage.make_store("data").read_json("preview.json")
+        it = next((i for i in (pv or {}).get("items", []) if i.get("video_id") == video_id), None)
+        if not it:
+            return video_id
+        chs = load_channels().get("channels", {})
+        keys = [it.get("channel_key")] + list(it.get("collab_with") or [])
+        who = "·".join((chs.get(k) or {}).get("name_ko") or k for k in keys if k)
+        if len(keys) >= 5:
+            who = "5인 합동"
+        title = (it.get("title_ko") or it.get("title") or "").strip()
+        return f"{who} 「{title[:40]}」 · {video_id}" if title else f"{who} · {video_id}"
+    except Exception:  # noqa: BLE001
+        return video_id
+
+
+def _start_wake_flow(video_id: str, when: str) -> str | None:
+    """(v4a) 방송 확인 예약 흐름 — 예약(누가) → 대기(언제까지). 이 예약을 만든 흐름이 방송 확인이면
+    그 흐름의 "다음 확인" 단계를 채운다."""
+    from . import flowtrace
+    if not flowtrace.enabled():
+        return None
+    parent = flowtrace.get(flowtrace.current.get())
+    if parent and parent.get("cat") == "wake":
+        origin = "이전 확인에서"
+        flowtrace.mark("다음 확인", "done", f"{_kst_hm(when)} 예약", fid=parent["id"], ms=_kst_hm(when)[6:])
+    elif parent:
+        origin = f"{parent.get('kind', '')}에서"
+    else:
+        origin = "정기 수집에서"
+    fid = flowtrace.start("wake", "방송 확인", _broadcast_label(video_id), bind=False,
+                          video_id=video_id, run_at=when)
+    flowtrace.mark("예약", "done", origin, fid=fid, ms=_kst_hm(_now_iso())[6:])
+    flowtrace.mark("대기", "wait", f"{_kst_hm(when)} 까지", fid=fid)
+    return fid
 
 
 class LocalTaskShim:
@@ -101,7 +206,58 @@ class LocalTaskShim:
 
 # ── 작업 처리 (스레드 q-apply) ────────────────────────────────────────────────
 
+_KIND_LABEL = {
+    "merge_rows": "예고 반영", "personal_tweet": "개인 트윗 반영", "apply_notice": "소식 반영",
+    "url_confirmed_commit": "URL 확정 예고 반영", "yt_member_live_commit": "회원 전용 라이브 반영",
+    "yt_notif": "YouTube 알림 반영", "apply_preview_edit": "예고 수정 반영", "remove_broadcast": "예고 삭제",
+    "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제", "tweet_del_commit": "트윗 삭제",
+    "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리", "snapshot": "일일 스냅샷",
+}
+
+
+def _wake_note(res: dict) -> str:
+    """방송 확인 결과 한 줄 — 상태 전이가 있으면 그것, 없으면 변화 없음."""
+    trans = [x for x in (res or {}).get("log") or [] if isinstance(x, str) and x.startswith("→")]
+    q = (res or {}).get("quota_used")
+    head = " · ".join(t.split(" ")[0] for t in trans) if trans else "변화 없음"
+    return head + (f" · 쿼터 {q}" if q else "")
+
+
 def handle(kind: str, args: dict, meta: dict) -> dict:
+    """(v4a) 작업 처리 + 흐름 기록(작업 인자 `_flow`). 흐름 기록은 로컬 전용 · 실패해도 처리엔 영향 없음."""
+    from . import flowtrace
+    fid = (args or {}).get("_flow")
+    if not fid:
+        return _handle(kind, args, meta)
+    is_wake = kind == "reconcile" and (args or {}).get("scope") == "video"
+    with flowtrace.bound(fid):
+        flowtrace.mark("대기" if is_wake else "적용 대기", "done")
+        try:
+            res = _handle(kind, args, meta)
+        except Exception as exc:
+            stage = "확인 · 반영" if is_wake else "반영"
+            if meta.get("is_last", True):
+                flowtrace.mark(stage, "fail", f"{type(exc).__name__}: {str(exc)[:120]}")
+                if is_wake:
+                    flowtrace.finish("확인 실패 — 다음 정기 수집이 다시 확인합니다")
+            else:
+                flowtrace.mark(stage, "run", f"{meta.get('attempt')}번째 시도 실패 — 재시도 대기: {str(exc)[:80]}")
+            raise
+        if is_wake:
+            flowtrace.mark("확인 · 반영", "done", _wake_note(res))
+            f = flowtrace.get(fid)
+            nxt = next((s for s in (f or {}).get("stages", []) if s["n"] == "다음 확인"), None)
+            flowtrace.finish("완료 — " + _wake_note(res) +
+                             ("" if nxt and nxt["s"] == "done" else " · 이 방송의 추가 확인 예약 없음"))
+        else:
+            flowtrace.mark("반영", "done", _KIND_LABEL.get(kind, kind))
+            f = flowtrace.get(fid)
+            if f and f.get("detached") and f.get("status") in ("run", "wait"):
+                flowtrace.finish(f"완료 — {_KIND_LABEL.get(kind, kind)}")
+        return res
+
+
+def _handle(kind: str, args: dict, meta: dict) -> dict:
     from . import storage, writers
 
     if kind == "reconcile":
@@ -127,15 +283,22 @@ def _slim(result: dict) -> dict:
     return {k: result.get(k) for k in keep if k in (result or {})}
 
 
+def _brief(job: dict) -> dict:
+    a = job.get("args") or {}
+    return {k: a[k] for k in ("scope", "mode", "video_id", "channel_key", "unit", "nid") if a.get(k)}
+
+
 def on_done(job: dict, result) -> None:
     _record({"ts": _now_iso(), "job_id": job.get("id"), "kind": job.get("kind"), "ok": True,
-             "attempt": job.get("attempt"), "summary": _summary(result)})
+             "attempt": job.get("attempt"), "summary": _summary(result), "brief": _brief(job),
+             "result": _slim(result) if isinstance(result, dict) and "log" in result else None})
 
 
 def on_dead(job: dict, exc: BaseException) -> None:
     """마지막 시도까지 실패 — 유실 원문 큐 + DM (설계 기능 20 ②)."""
     _record({"ts": _now_iso(), "job_id": job.get("id"), "kind": job.get("kind"), "ok": False,
-             "attempt": job.get("attempt"), "summary": f"{type(exc).__name__}: {str(exc)[:200]}"})
+             "attempt": job.get("attempt"), "summary": f"{type(exc).__name__}: {str(exc)[:200]}",
+             "brief": _brief(job)})
     args = job.get("args") or {}
     if job.get("kind") in ("reconcile", "snapshot", "apply_translation"):
         return  # 재계산으로 복구되는 작업 — 원문이 없으므로 유실 큐 대상 아님

@@ -99,6 +99,7 @@ from . import statemachine
 from . import writeclient
 from . import llm
 from . import storage                      # (v4a) store 팩토리 — 로컬/깃허브 + ops 라우팅
+from . import flowtrace                    # (v4a) 흐름 기록(관리 페이지 작업 탭) — 로컬 전용
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -2734,6 +2735,44 @@ def _handle_member_live_start(parsed: dict, channels_cfg: dict, now_iso: str) ->
     return {"ok": True, "member_live": ck, "mode": mode, "video_id": live["video_id"]}, 200
 
 
+def _finish_ingest_flow(body, code: int) -> None:
+    """(v4a) /ingest 흐름 마무리 — 응답으로 결과 사유를 정한다. 결과를 안 기다린 작업(detached)이 남았으면
+    적용 큐 워커가 마무리하므로 사유만 남긴다. 기록 실패는 무시."""
+    try:
+        f = flowtrace.get(flowtrace.current.get())
+        if not f or f["status"] not in ("run", "wait"):
+            return
+        try:
+            j = body.get_json(silent=True) or {}
+        except Exception:  # noqa: BLE001
+            j = {}
+        if code >= 400 or j.get("ok") is False:
+            flowtrace.finish(f"실패 — {j.get('error') or f'HTTP {code}'}", fail=True)
+            return
+        if j.get("personal"):
+            why = f"개인 트윗 · {j.get('mode')}"
+        elif j.get("public_relay"):
+            why = f"YouTube {j['public_relay']} · {j.get('video_id')}"
+        elif j.get("paused"):
+            why = "일시정지 중 — 무시"
+        elif j.get("echo"):
+            why = "ECHO (테스트 부계정) — 반영 안 함"
+        elif j.get("ignored"):
+            why = f"처리 대상 아님 — {j['ignored'] if j['ignored'] is not True else '무시'}"
+        elif "parsed" in j:
+            why = (f"공식 스케줄 {j['parsed']}행 반영" if j["parsed"]
+                   else "스케줄 형식 아님" + (" — 소식으로 반영" if any(
+                       s["n"] == "반영" and s["s"] == "done" for s in f["stages"]) else " — 반영할 것 없음"))
+        else:
+            why = "처리 끝"
+        if f.get("detached"):
+            flowtrace.set_reason(why + " · 적용 작업 처리 중")
+        else:
+            flowtrace.finish(why)
+    except Exception:  # noqa: BLE001
+        log.warning("흐름 마무리 실패", exc_info=True)
+
+
 def _handle_yt_relay(payload) -> tuple[dict, int]:
     """(v3.7.3, v3.8.4 확장) `source=yt` 중계 처리.
 
@@ -2753,12 +2792,16 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
     # 회원전용 시작 — 기존 경로 그대로(우선순위 유지: parse_public_live_relay 는 이 kind 를 걸러낸다).
     parsed = ytnotif.parse_member_live_relay(payload, channels_cfg)
     if parsed is not None:
+        flowtrace.mark("알림 해석", "done", f"회원 전용 라이브 시작 · {parsed.get('channel_key')}")
         return _handle_member_live_start(parsed, channels_cfg, now_iso)
 
     # (v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START — 이전엔 여기서 전부 무시됐다.
     public = ytnotif.parse_public_live_relay(payload, channels_cfg)
     if public is None:
+        flowtrace.mark("알림 해석", "done", "처리 대상 알림 아님")
         return {"ok": True, "ignored": True}, 200
+    flowtrace.mark("알림 해석", "done", f"{public['relay_kind']} · {public.get('channel_key') or '?'}"
+                   + (f" · {public['video_id']}" if public.get("resolved") else " · 영상 미상"))
 
     if public["resolved"] and storage.is_local():
         # (v4a D1·D2·D3) 알림 자체를 상태 신호로 쓴다 — 적용 큐 작업 yt_notif 로 적재하고 바로 돌아간다(원칙 ②).
@@ -3829,14 +3872,28 @@ def _handle_tweet_list(gh, channels_cfg: dict) -> None:
     _send_telegram("\n\n".join(lines))
 
 
-def _tweet_del_commit(gh, unit: str, now_iso: str) -> dict:
-    """(write-queue) /del tweet 실제 반영 — 슬롯 제거 + undo 스냅샷."""
+def _tweet_del_commit(gh, unit: str, now_iso: str, tweet_id: str | None = None) -> dict:
+    """(write-queue) /del tweet 실제 반영 — 슬롯 제거 + undo 스냅샷.
+
+    (v4a) tweet_id 를 주면 그 유닛 스레드에서 그 트윗 1건만 뺀다(관리 페이지 트윗별 삭제).
+    없으면 예전처럼 유닛 슬롯 전체를 뺀다(텔레그램 /del tweet)."""
     prev, sha = gh.read_json(_TWEETS_PATH)
     prev = prev or {}
     tw = dict(prev.get("tweets", {}) or {})
     if unit not in tw:
         return {"found": False}
-    tw.pop(unit)
+    if tweet_id:
+        cur = tw[unit]
+        lst = cur if isinstance(cur, list) else [cur]
+        keep = [m for m in lst if str((m or {}).get("id")) != str(tweet_id)]
+        if len(keep) == len(lst):
+            return {"found": False}
+        if keep:
+            tw[unit] = keep
+        else:
+            tw.pop(unit)
+    else:
+        tw.pop(unit)
     new = dict(prev)
     new["tweets"] = tw
     new["generated_at"] = now_iso
@@ -4090,7 +4147,9 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
         _op_clear(gh, now_iso, release_lock_id=pid)
         _send_telegram("변경 사항이 없습니다.")
         return
-    field_map = {"title": "title", "state": "state", "date": "scheduled_start", "url": "url"}
+    field_map = {"title": "title", "state": "state", "date": "scheduled_start", "url": "url",
+                 "collab_with": "collab_with", "membership": "membership",  # (v4a) 관리 페이지 합동·회원 전용
+                 "title_ko": "title_ko"}  # (v4a) 관리 페이지 한글 제목
     conflicts = []
     for _try in (1, 2):
         prev, sha = gh.read_json(_PREVIEW_PATH)
@@ -4110,6 +4169,27 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
             if cur != want_pre:
                 conflicts.append(f"{f}: 운영자값 유지 (그 사이 tick: {want_pre!r}→{cur!r})")
             it[key] = val
+        if "title" in patch or "title_ko" in patch:
+            # (v4a) 운영자가 제목을 고치면 이후 API 제목 · 자동 번역이 덮지 않는다(title_manual).
+            # 한글을 비워 저장하면 빈 번역 그대로(자동 번역 안 함). 원문을 비워 저장하면 보호를 풀고
+            # 다음 reconcile 이 API 제목과 그 번역으로 다시 채운다.
+            if patch.get("title") == "":
+                it.pop("title_manual", None)
+                it["title"] = None
+                it["title_ko"] = None
+                it["needs_tl"] = False
+            else:
+                it["title_manual"] = True
+                it["needs_tl"] = False
+        if "collab_with" in patch:
+            # (v4a) 합동 표식(kind)을 참여 멤버와 맞춘다. 합동을 끄면 그룹 채널 표식(host)도 뗀다
+            if it.get("collab_with"):
+                it["kind"] = it.get("kind") or "collab"
+            else:
+                if it.get("kind") == "collab":
+                    it["kind"] = None
+                if it.get("host") == "group":
+                    it["host"] = None
         if "state" in patch:
             # FSM 판정 기준(state_since) 을 리셋 — "방금 이 상태로 막 진입"한 것으로 취급.
             # 안 하면 예전 state_since 가 그대로 남아 end→none(30분 경과) 같은 판정이
@@ -4642,12 +4722,15 @@ if _FLASK_AVAILABLE:
         """(v3.8.9) 아래 `_ingest_impl` 을 감싸 알림 1건마다 모니터 로그 `flow="upstream"` 을 남긴다
         (웹 monitor "업스트림 감지" 행). 인증 실패(403)는 업스트림 알림이 아니므로 기록 안 함.
         기록 실패는 응답에 영향 없음."""
+        _ft_token = flowtrace.current.set(None)   # (v4a) 요청 스레드 재사용 — 이전 요청의 흐름이 남지 않게
         try:
             resp = _ingest_impl()
         except Exception as e:  # noqa: BLE001 — 원래도 Flask 가 500 으로 냈을 경우
             log.exception("ingest 처리 중 예외")
             resp = (jsonify({"ok": False, "error": str(e)[:200]}), 500)
         body, code = (resp[0], resp[1]) if isinstance(resp, tuple) else (resp, 200)
+        _finish_ingest_flow(body, code)
+        flowtrace.current.reset(_ft_token)
         if code != 403:
             try:
                 payload = request.form if request.form else (request.get_json(silent=True) or {})
@@ -4676,11 +4759,25 @@ if _FLASK_AVAILABLE:
         `INGEST_ECHO` env 가 참이면: 파싱조차 안 하고 받은 텍스트 그대로만 DM 회신
         (임시 테스트 훅 — 아래 해당 블록 주석 참고).
         """
+        # (v4a) 흐름 기록 — 인증 전에 시작해야 거절된 알림도 "접수에서 멈춤"으로 남는다.
+        # 바디 캐시(get_data)는 아래 원래 자리보다 먼저 해도 같다(form 파싱 전이기만 하면 됨).
+        request.get_data(cache=True, parse_form_data=False, as_text=True)
+        _ft_payload = request.form if request.form else (request.get_json(silent=True) or {})
+        _ft_yt = (_ft_payload.get("source") or "").strip() == "yt"
+        _ft_title = (_ft_payload.get("title") or "").strip()
+        _ft_text = (_ft_payload.get("text") or "").strip().replace("\n", " ")
+        flowtrace.start("yt" if _ft_yt else "x", "YouTube 알림" if _ft_yt else "X 알림",
+                        " · ".join(x for x in (_ft_title, _ft_text[:60]) if x), via=request.remote_addr)
+
         secret = os.environ.get("INGEST_SECRET", "").strip()
         got = request.headers.get("X-Ingest-Secret", "").strip()
         if not secret or got != secret:
             log.warning("ingest: bad or missing secret")
+            flowtrace.mark("접수", "fail", "인증 실패 (403)")
+            flowtrace.finish("인증 실패 — 보낸 쪽의 X-Ingest-Secret 헤더가 이 서버 값과 다릅니다. "
+                             "원문을 받기 전에 거절해서 유실 원문 큐에도 남지 않습니다.")
             return jsonify({"ok": False}), 403
+        flowtrace.mark("접수", "done", "인증 통과")
 
         # 원본 바디를 form 파싱 전에 먼저 캐시한다. Werkzeug 는 request.form 을 건드리는
         # 순간 입력 스트림을 소비하면서 get_data() 캐시를 안 채우므로, 그 뒤에 부르는
@@ -4715,6 +4812,11 @@ if _FLASK_AVAILABLE:
         # vxtwitter 로 다시 조회해 원문을 통째로 교체한다 — 원문 없이는 파싱도 번역도
         # "제대로 ingest" 한 게 아니므로 아래 모든 파이프라인(소식/스케줄/개인트윗) 전에 선행.
         raw, _vx_ex = _recover_raw_via_vxtwitter(raw, x_tag)
+        if x_tag:
+            flowtrace.mark("원문 복원", "done", "vxtwitter 원문으로 교체" if _vx_ex is not None
+                           else "vxtwitter 조회 실패 — 폰 원문 사용")
+        else:
+            flowtrace.mark("원문 복원", "skip", "트윗 id 없음 — 폰 원문 사용")
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         gh = _make_gh()
@@ -4736,6 +4838,8 @@ if _FLASK_AVAILABLE:
             except Exception:
                 log.exception("route_by_title 실패 — official 로 폴백")
                 _route = "official"
+            flowtrace.mark("분류", "done", {"test": "테스트 부계정 (ECHO)", "official": "공식 · 그 외 → 소식 · 스케줄 판정"}
+                           .get(_route, f"개인 5인 → {_route}"))
             if _route == "test":
                 force_echo = True
             elif _route != "official":

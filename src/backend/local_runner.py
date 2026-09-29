@@ -191,11 +191,12 @@ def build_app():
 
 
 def start_tg_poll(app, stop: threading.Event):
+    from . import tg_poll
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
         log.warning("TELEGRAM_BOT_TOKEN 없음 — 텔레그램 명령 수신 비활성")
+        tg_poll.STATUS.update(state="off", reason="TELEGRAM_BOT_TOKEN 없음")
         return None
-    from . import tg_poll
 
     # 안전장치: 폴링은 시작할 때 deleteWebhook 을 부른다. 운영 봇 토큰을 넣으면 운영 webhook 이 지워져
     # 운영 텔레그램 명령이 멎는다 — 웹훅이 걸려 있는 봇이면 건드리지 않고 폴링을 거부한다(로컬 전용 봇만 허용).
@@ -205,11 +206,14 @@ def start_tg_poll(app, stop: threading.Event):
         hook = ((info or {}).get("result") or {}).get("url") or ""
     except Exception as e:  # noqa: BLE001
         log.error("getWebhookInfo 실패(%s) — 안전을 위해 텔레그램 폴링을 시작하지 않음", e)
+        tg_poll.STATUS.update(state="off", reason=f"getWebhookInfo 실패 — 폴링 시작 안 함")
         return None
     if hook:
         log.error("이 봇에는 webhook 이 걸려 있다(%s…) — 운영 봇으로 보여 폴링을 거부. 로컬 전용 봇 토큰을 쓰세요",
                   hook[:40])
+        tg_poll.STATUS.update(state="off", reason="webhook 이 걸린 봇(운영 봇으로 보임) — 폴링 거부")
         return None
+    tg_poll.STATUS.update(state="starting", reason="폴링 시작 중")
 
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     client = app.test_client()
@@ -243,6 +247,19 @@ def serve(app, stop: threading.Event):
         servers.append(srv)
         log.info("listening http://%s:%s", h, port)
     return servers
+
+
+def _write_runner_info(**kv) -> None:
+    """(v4a) 관리 페이지 작업 탭 "지금 상태" — 러너 가동 시각 등. 실패해도 무시."""
+    try:
+        import json
+        p = Path(os.environ["LOCAL_DATA_DIR"]) / "ops" / "runner.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(dict(kv, started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                     pid=os.getpid(), bind=os.environ.get("LOCAL_BIND") or "127.0.0.1",
+                                     port=os.environ.get("LOCAL_PORT")), ensure_ascii=False), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        log.warning("runner.json 기록 실패", exc_info=True)
 
 
 def main(argv=None) -> int:
@@ -284,6 +301,7 @@ def main(argv=None) -> int:
         threading.Thread(target=scheduler_loop, args=(stop,), name="scheduler", daemon=True).start()
     if not args.no_telegram:
         start_tg_poll(app, stop)
+    _write_runner_info(scheduler=not args.no_scheduler, telegram=not args.no_telegram)
     try:
         while True:
             time.sleep(3600)
