@@ -499,7 +499,8 @@ def summary_text(result: dict, now_iso: str) -> str:
     # 로그(statemachine.derive 토큰)에서 전이 요약 추출
     tallies: dict[str, int] = {}
     for tok in result.get("log", []):
-        for mark in ("→watching", "→live", "→end", "end→none", "watching-demote", "assumed-live drop"):
+        for mark in ("→watching", "→live", "→end", "end→out", "end-recover→live", "watching-demote",
+                     "nourl-drop", "nourl-search-hit", "nourl-search-miss"):  # (v4a) out·D4·D6 토큰
             if mark in tok:
                 tallies[mark] = tallies.get(mark, 0) + 1
                 break

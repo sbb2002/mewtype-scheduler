@@ -79,6 +79,7 @@ def build_preview(
     *,
     avatars: dict | None = None,
     ytnotif_items: list[dict] | None = None,
+    search_fn=None,
 ) -> tuple[dict, list[str], dict, list[dict]]:
     """
     Build new preview.json and identify wakes for Cloud Tasks enqueue.
@@ -90,6 +91,8 @@ def build_preview(
         now_iso: Current time in ISO format
         avatars: optional {channel_id: avatar_url}
         ytnotif_items: optional list of ytnotif parsed dicts
+        search_fn: (v4a D4) optional callable(channel_key) -> video_id | None.
+            URL 없는 예고의 시작+2분 search.list 1회 (쿼터 100). None 이면 검색 안 함(순수 테스트용)
 
     Returns:
         (new_preview, transitions, wakes, gone_items) where:
@@ -233,8 +236,8 @@ def build_preview(
         if tick.next_state != item["state"]:
             item = preview.set_state(item, tick.next_state, now_iso)
 
-        # none 이면 archive 이관, 아니면 items 에 추가
-        if tick.next_state == "none":
+        # out 이면 archive 이관, 아니면 items 에 추가 (v4a D7 — 구 none)
+        if tick.next_state == "out":
             gone_items.append(preview.to_archive_record(item, now_iso))
         else:
             items.append(item)
@@ -265,7 +268,7 @@ def build_preview(
             transitions.extend(tick.log)
             if tick.next_state != item["state"]:
                 item = preview.set_state(item, tick.next_state, now_iso)
-            if tick.next_state == "none":
+            if tick.next_state == "out":
                 gone_items.append(preview.to_archive_record(item, now_iso))
                 continue
             if tick.next_check_at:
@@ -303,14 +306,32 @@ def build_preview(
                 gone_items.append(preview.to_archive_record(item, now_iso))
                 continue
 
-        # 살아남음 — FSM(assumed_live 90분 폴백·watching 지각강등 등)
+        # 살아남음 — FSM (v4a: URL 없는 예고는 시작+2분 search.list 1회 · +1시간 out, D4)
         tick = statemachine.derive(item, now_iso, live_seen=None)
         transitions.extend(tick.log)
         if tick.next_state != item["state"]:
             item = preview.set_state(item, tick.next_state, now_iso)
-        if tick.next_state == "none":
+        if tick.next_state == "out":
             gone_items.append(preview.to_archive_record(item, now_iso))
             continue
+        # (v4a D4) 검색 신호가 났고 검색 함수가 주어졌으면 1회 실행. 찾으면 video_id/url 을 붙이고
+        # 즉시 reconcile(영상) 대상으로 올린다(wakes) — 다음 실행의 videos.list 가 제목·썸네일·상태를 채운다.
+        if search_fn is not None and any(l.startswith("nourl-search") for l in tick.log):
+            item = dict(item)
+            item["search_checked"] = True
+            item["last_updated"] = now_iso
+            found = None
+            try:
+                found = search_fn(item.get("channel_key"))
+            except Exception:  # noqa: BLE001
+                found = None
+            if found:
+                item["video_id"] = found
+                item["url"] = f"https://www.youtube.com/watch?v={found}"
+                transitions.append(f"nourl-search-hit {item.get('id', '?')} {found}")
+                wakes[found] = now_iso
+            else:
+                transitions.append(f"nourl-search-miss {item.get('id', '?')}")
         # video_id 없으면 wakes 에 안 넣는다 (Cloud Tasks 대상 아님 — handlers 가 light tick 예약)
         items.append(item)
 
@@ -931,6 +952,37 @@ if __name__ == "__main__":
     assert new_preview_15b["items"][0]["state"] == "end", new_preview_15b["items"][0]
     print("  방송 종료(live→none) 시에도 사라지지 않고 end 로 정상 전이")
 
+    # Test 16 (v4a D6): end 창 안에서 같은 영상이 다시 live 로 관측되면 live 로 복구
+    new_preview_16, tr_16, *_r = build_preview(channels_cfg_g, videos_ext_live, new_preview_15b, now_iso)
+    assert new_preview_16["items"][0]["state"] == "live", new_preview_16["items"][0]
+    assert any("end-recover→live" in t for t in tr_16), tr_16
+    print("  (v4a D6) end → 같은 영상 live 재관측 → live 복구")
+
+    # Test 17 (v4a D4): URL 없는 예고 — 시작+2분 search.list 1회, 찾으면 video_id 부여 + 즉시 wake
+    nourl = preview.make_item(
+        channel_key="arale", state="announced", source="x-relay", now_iso="2026-09-29T11:00:00Z",
+        title="歌枠", scheduled_start="2026-09-29T12:00:00Z", expires_at="2026-09-29T15:00:00Z",
+    )
+    calls = []
+    def _search(ck):
+        calls.append(ck)
+        return "found_vid01"
+    pv17, tr17, wk17, _g = build_preview(channels_cfg_g, {}, {"items": [nourl]}, "2026-09-29T12:01:00Z", search_fn=_search)
+    assert calls == [] and pv17["items"][0].get("video_id") is None, "시작+2분 전엔 검색 안 함"
+    pv17, tr17, wk17, _g = build_preview(channels_cfg_g, {}, pv17, "2026-09-29T12:02:00Z", search_fn=_search)
+    it17 = pv17["items"][0]
+    assert calls == ["arale"] and it17["video_id"] == "found_vid01" and it17["search_checked"] is True, it17
+    assert wk17.get("found_vid01") == "2026-09-29T12:02:00Z", wk17
+    # 못 찾은 경우: 1회만 검색하고, 예고+1시간에 out → 아카이브
+    calls.clear()
+    miss = lambda ck: calls.append(ck) or None
+    pv17m, *_r = build_preview(channels_cfg_g, {}, {"items": [nourl]}, "2026-09-29T12:03:00Z", search_fn=miss)
+    pv17m, *_r = build_preview(channels_cfg_g, {}, pv17m, "2026-09-29T12:30:00Z", search_fn=miss)
+    assert calls == ["arale"], f"검색은 1회만: {calls}"
+    pv17o, _t, _w, gone17 = build_preview(channels_cfg_g, {}, pv17m, "2026-09-29T13:00:00Z", search_fn=miss)
+    assert pv17o["items"] == [] and len(gone17) == 1, (pv17o["items"], gone17)
+    print("  (v4a D4) URL 없는 예고: +2분 검색 1회(찾으면 video_id+즉시 wake), 못 찾으면 +1시간 out")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 15개 self-test scenarios passed ✓")
+    print("SUCCESS: 모든 17개 self-test scenarios passed ✓ (v4a)")
     print("=" * 70)

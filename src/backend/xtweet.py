@@ -12,7 +12,7 @@
 tweets.json
   { "generated_at": "...Z",
     "tweets": { "<ck>": { channel_key, id, text, url, handle, received_at, expires_at } } }
-  채널당 최대 1건. 24h(TTL_HOURS) 안에 트윗 없으면 키 자체가 없음.
+  채널당 최대 1건. 48h(TTL_HOURS, v4a D18) 안에 트윗 없으면 키 자체가 없음.
 tweet_archive.json
   { "tweets": [ <위 + archived_at + archived_reason("expired"|"replaced")> ] }  append-only, id dedupe
 
@@ -31,7 +31,7 @@ from . import statemachine  # v3.6 URL 우선 ingest — build_item_from_video �
 
 UTC = timezone.utc
 
-TTL_HOURS = 24
+TTL_HOURS = 48  # (v4a D18)
 _TEXT_CAP = 600
 
 # android.title 매칭 폴백 (config/channels.json 에 x_names 가 없을 때).
@@ -907,7 +907,7 @@ if __name__ == "__main__":
     assert r["text"] == "おはよう！今日は22時から歌枠やります🎤", repr(r["text"])   # 앞뒤 ＼／ 제거
     assert r["url"] == "https://x.com/i/status/2096552878769152326"
     assert r["handle"] == "arale_yumemita"
-    assert r["expires_at"] == "2026-09-08T12:00:00Z"                 # +24h
+    assert r["expires_at"] == "2026-09-09T12:00:00Z"                 # +48h (v4a D18)
     assert r["text_ko"] is None                                       # (v3) text_ko 초기값
     assert parse("   \n＼／\n  ", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
     # 태그 없음 → 합성 id, url 없음

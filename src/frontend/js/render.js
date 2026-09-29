@@ -483,6 +483,21 @@ function byScheduledAsc(a, b) {
   return new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime();
 }
 
+// (v4a) 레인 아이템 정렬 순수 헬퍼. live 우선순위 보장:
+// - live 상태 아이템들 먼저 (ON-AIR zone)
+// - 그 다음 end 상태 아이템들 (OFF-AIR zone 내)
+// - 그 다음 announced/upcoming/watching (예고 영역)
+// 호출부: renderBoard 에서 각 레인마다. 테스트용 export.
+export function orderLaneItems(items) {
+  const live = items.filter(i => i.state === 'live');
+  const ended = items.filter(i => i.state === 'end');
+  const pending = items
+    .filter(i => i.state === 'announced' || i.state === 'upcoming' || i.state === 'watching')
+    .sort(byScheduledAsc);
+  // 반환: [live (선택), ended (선택), pending (정렬됨)]
+  return { live, ended, pending };
+}
+
 // ponytail: bucketOf 순수 헬퍼. selfcheck 에서 테스트용.
 export function bucketOf(item, nowMs) {
   return bucketKey(item, nowMs);
@@ -532,13 +547,8 @@ export function renderBoard(boardEl, preview, nowMs = Date.now()) {
     lane.appendChild(buildHeader(channelData));
 
     const list = byChannel[key] || [];
-    const live = list.filter((i) => i.state === "live");
-    // announced/upcoming/watching 을 버킷으로 분류
-    const pending = list
-      .filter((i) => i.state === "announced" || i.state === "upcoming" || i.state === "watching")
-      .sort(byScheduledAsc);
-    // end 상태는 별도 영역 없음(pending 에 섞이지 않음)
-    const ended = list.filter((i) => i.state === "end");
+    // (v4a) orderLaneItems 순수 함수로 레인 아이템 분류 및 정렬 (live 우선)
+    const { live, ended, pending } = orderLaneItems(list);
 
     lane.appendChild(buildLive(live, ended, nowMs, channelData, key));
     lane.appendChild(buildBuckets(pending, nowMs, channelData, key));

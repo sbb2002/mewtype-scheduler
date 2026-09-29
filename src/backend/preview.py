@@ -163,7 +163,7 @@ def match_item(
     - Same channel_key
     - AND (video_id match OR url match OR scheduled_start within ±superscede_sec)
 
-    An item that has transitioned to "end" → "none" (deleted) will not match
+    An item that has transitioned to "end" → "out" (archived, v4a D7 — 구 "none") will not match
     because it's already removed from items list (caller responsibility).
 
     Args:
@@ -240,8 +240,9 @@ def promote_state(item: dict) -> str:
     """
     Determine whether item should be promoted to "upcoming" or stay "announced".
 
-    Rules (명세 WP-0):
-    - "upcoming" = scheduled_start && !time_tbd && title && thumbnail && url && video_id
+    Rules (v4a D14):
+    - "upcoming" = video_id(영상 URL) && scheduled_start(날짜) && title
+      (구 v3: + !time_tbd + thumbnail. 썸네일은 videos.list 에서만 오고(D15) 판정에 쓰지 않는다)
     - Otherwise = "announced"
 
     Args:
@@ -251,20 +252,10 @@ def promote_state(item: dict) -> str:
         "announced" or "upcoming"
     """
     has_ss = bool(item.get("scheduled_start"))
-    no_time_tbd = not item.get("time_tbd", False)
     has_title = bool(item.get("title"))
-    has_thumbnail = bool(item.get("thumbnail"))
-    has_url = bool(item.get("url"))
     has_video_id = bool(item.get("video_id"))
 
-    if (
-        has_ss
-        and no_time_tbd
-        and has_title
-        and has_thumbnail
-        and has_url
-        and has_video_id
-    ):
+    if has_ss and has_title and has_video_id:
         return "upcoming"
 
     return "announced"
@@ -454,7 +445,11 @@ if __name__ == "__main__":
         "video_id": "abc123",
     }
     state_tbd = promote_state(time_tbd_item)
-    assert state_tbd == "announced", f"time_tbd announced 실패: {state_tbd}"
+    # (v4a D14) upcoming 필수 요소는 영상 URL · 날짜 · 제목 — 시각 미정(날짜만)이어도 영상이 있으면 upcoming
+    assert state_tbd == "upcoming", f"time_tbd + 영상 → upcoming 실패: {state_tbd}"
+    _no_thumb = dict(time_tbd_item, thumbnail=None, time_tbd=False)
+    assert promote_state(_no_thumb) == "upcoming", "(v4a D14) 썸네일은 판정에 안 씀"
+    assert promote_state(dict(_no_thumb, title=None)) == "announced", "제목 없으면 announced"
     print(f"✓ promote_state (time_tbd): {state_tbd}")
 
     # Test 10: set_state

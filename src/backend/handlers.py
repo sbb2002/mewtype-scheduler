@@ -23,6 +23,7 @@ from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
 from . import xtweet
+from . import statemachine
 
 log = logging.getLogger("backend.handlers")
 
@@ -64,7 +65,11 @@ def _wakes_within_horizon(wakes: dict[str, str], now_iso: str) -> dict[str, str]
 
 
 def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
-    """announced(자리표시) 아이템 중 '지금 ~ +_SCHED_WAKE_LOOKAHEAD_SEC' 에 시작하는 것들의 scheduled_start 목록."""
+    """URL 없는 announced(자리표시) 아이템의 다음 reconcile(전체) 시각 목록 — '지금 ~ +_SCHED_WAKE_LOOKAHEAD_SEC' 안의 것만.
+
+    (v4a D4) 예고 시각 자체가 아니라 FSM 이 URL 없는 예고에 주는 시각을 쓴다: 시작+2분(search.list 1회,
+    아직 안 했을 때)과 시작+1시간(out 판정). 영상 있는 아이템은 reconcile(영상) 이 따로 맡는다.
+    """
     try:
         now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
     except ValueError:
@@ -78,18 +83,22 @@ def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
         if not ss:
             continue
         try:
-            t = datetime.fromisoformat(ss.replace("Z", "+00:00"))
+            t0 = datetime.fromisoformat(ss.replace("Z", "+00:00"))
         except ValueError:
             continue
-        if now < t <= horizon:
-            out.add(ss)
+        marks = [t0 + timedelta(seconds=statemachine.NOURL_DROP_SEC)]
+        if not it.get("search_checked"):
+            marks.append(t0 + timedelta(seconds=statemachine.NOURL_SEARCH_DELAY_SEC))
+        for t in marks:
+            if now < t <= horizon:
+                out.add(t.strftime("%Y-%m-%dT%H:%M:%SZ"))
     return sorted(out)
 
 
 def _preview_log_events(
     prev_items: list[dict] | None, new_items: list[dict], gone_items: list[dict]
 ) -> list[dict]:
-    """new_items(상태 유지) + gone_items(→none으로 archive된 것)를 prev_items 와 비교해,
+    """new_items(상태 유지) + gone_items(→out 으로 archive된 것, v4a D7 — 구 none)를 prev_items 와 비교해,
     상태가 실제로 바뀐 아이템만 모니터링 로그용 이벤트로 뽑는다(순수 함수).
 
     notify.diff_events 는 사람이 읽을 텔레그램 알림용이라 kind 5종류만 다루고
@@ -130,7 +139,7 @@ def _preview_log_events(
     for it in new_items:
         _emit(it, it.get("state"))
     for it in gone_items:
-        _emit(it, "none")
+        _emit(it, "out")
     return events
 
 
@@ -609,8 +618,11 @@ if __name__ == "__main__":
         {"state": "announced", "scheduled_start": "2026-09-01T13:00:00Z", "time_tbd": True}, # time_tbd → 제외
         {"state": "upcoming",  "scheduled_start": "2026-09-01T13:00:00Z"},   # announced 아님 → 제외
     ]}
-    assert _scheduled_wake_times(_pv, _now) == ["2026-09-01T13:30:00Z"], _scheduled_wake_times(_pv, _now)
-    print("[OK] _scheduled_wake_times")
+    # (v4a D4) 13:30 예고 → +2분(13:32 검색) · +1시간(14:30 out). 11:00 예고의 +1시간(12:00)은 now 와 같아 제외.
+    assert _scheduled_wake_times(_pv, _now) == ["2026-09-01T13:32:00Z", "2026-09-01T14:30:00Z"], _scheduled_wake_times(_pv, _now)
+    _pv2 = {"items": [{"state": "announced", "scheduled_start": "2026-09-01T11:30:00Z", "search_checked": True}]}
+    assert _scheduled_wake_times(_pv2, _now) == ["2026-09-01T12:30:00Z"], "검색을 이미 했으면 out 시각만"
+    print("[OK] _scheduled_wake_times (v4a D4: +2분 검색 · +1시간 out)")
 
     _a = {"items": [{"state": "live", "id": "pv_1", "video_id": "v1", "last_updated": "x"}]}
     _bv = {"items": [{"state": "live", "id": "pv_1", "video_id": "v1", "last_updated": "y"}]}
@@ -644,15 +656,15 @@ if __name__ == "__main__":
         {"id": "pv_2", "video_id": "v2", "channel_key": "yuno", "state": "live", "title": "B"},  # 유지 → 제외
         {"id": "pv_4", "video_id": "v4", "channel_key": "miyako", "state": "announced", "title": "D"},  # 신규
     ]
-    _gone_items = [{"id": "pv_3", "video_id": "v3", "channel_key": "nonoka", "state": "none", "title": "C"}]
+    _gone_items = [{"id": "pv_3", "video_id": "v3", "channel_key": "nonoka", "state": "out", "title": "C"}]
     _evs = _preview_log_events(_prev_items, _new_items, _gone_items)
     _by_id = {e["id"]: e for e in _evs}
     assert len(_evs) == 3, _evs
     assert _by_id["pv_1"]["from_state"] == "upcoming" and _by_id["pv_1"]["to_state"] == "watching"
     assert _by_id["pv_4"]["from_state"] is None and _by_id["pv_4"]["to_state"] == "announced"
-    assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "none"
+    assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "out"
     assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
-    print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
+    print("[OK] _preview_log_events: 전이/신규/삭제(→out) 추출, 무변화 제외")
 
     # (v3.8.5a) collab_with 전파 — monitor 타임플롯의 합동 live 막대 아이콘용
     _collab_new = [

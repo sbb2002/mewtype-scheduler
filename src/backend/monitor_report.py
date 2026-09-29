@@ -260,7 +260,7 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             seg_from = _kst_hm(e["ts"])
             if i + 1 < len(evs):
                 seg_to = _kst_hm(evs[i + 1]["ts"])
-            elif to_state == "none":
+            elif to_state in ("out", "none"):  # (v4a D7) out = 구 none. 옛 로그의 none 도 그대로 읽는다
                 seg_to = _add_minutes(seg_from, 3)  # 사라짐은 짧게 표시(실제로 관찰 구간이 없으므로)
             else:
                 # "30:00" = 이 하루의 끝(다음날 06:00) — 프론트 minutesOf()가 이 가상 시각을

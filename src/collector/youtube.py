@@ -246,6 +246,59 @@ class YouTubeClient:
             logger.warning(f"Failed to parse search results for {channel_id}: {e}")
             return []
 
+    def search_live(self, channel_id: str) -> List[str]:
+        """
+        Search for currently live streams in a channel.
+
+        Calls YouTube Data API v3 search.list with eventType=live.
+        Quota cost: 100 units per call.
+
+        Used by v4a D4: an announced preview without a URL gets ONE check
+        at scheduled start + 2 minutes to confirm live status.
+
+        Args:
+            channel_id: YouTube channel ID
+
+        Returns:
+            List of video IDs for live streams (in response order).
+            On error (HTTP error, network error, malformed JSON):
+            returns [] and logs warning.
+        """
+        url = self.BASE + "/search"
+        params = {
+            'key': self.api_key,
+            'part': 'id',
+            'type': 'video',
+            'eventType': 'live',
+            'channelId': channel_id,
+            'maxResults': 5,
+        }
+
+        headers = {'User-Agent': USER_AGENT}
+
+        try:
+            response = self.session.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning(f"Failed to search live streams for {channel_id}: {e}")
+            return []
+
+        self.quota_used += 100
+
+        try:
+            data = response.json()
+            items = data.get('items', [])
+            video_ids = [item['id']['videoId'] for item in items if 'id' in item and 'videoId' in item['id']]
+            return video_ids
+        except Exception as e:
+            logger.warning(f"Failed to parse search results for {channel_id}: {e}")
+            return []
+
     def channels_list(self, channel_ids: List[str]) -> Dict[str, str]:
         """
         Fetch channel avatar (profile picture) URLs.
@@ -288,6 +341,9 @@ class YouTubeClient:
 
 
 if __name__ == "__main__":
+    import json
+    from unittest.mock import Mock
+
     # Test _video_from_item with sample API responses
 
     # Test case 1: Upcoming stream with scheduledStartTime
@@ -344,8 +400,72 @@ if __name__ == "__main__":
         print(f"  Actual start: {live_info.actual_start}")
         print(f"  Concurrent viewers: {live_info.concurrent_viewers}")
 
+        # Test search_live with mock session
+        print("\nTesting search_live method:")
+
+        # Mock test 1: Normal response with 2 items
+        mock_session_1 = Mock(spec=requests.Session)
+        mock_response_1 = Mock()
+        mock_response_1.status_code = 200
+        mock_response_1.json.return_value = {
+            'items': [
+                {'id': {'videoId': 'live_vid_1'}},
+                {'id': {'videoId': 'live_vid_2'}},
+            ]
+        }
+        mock_session_1.get.return_value = mock_response_1
+
+        client_1 = YouTubeClient('test_key', session=mock_session_1)
+        result_1 = client_1.search_live('UCtest_channel_1')
+        assert result_1 == ['live_vid_1', 'live_vid_2'], f"Expected ['live_vid_1', 'live_vid_2'], got {result_1}"
+        assert client_1.quota_used == 100, f"Expected quota_used=100, got {client_1.quota_used}"
+        # Verify request params include eventType=live and channelId
+        call_kwargs = mock_session_1.get.call_args[1]
+        params = call_kwargs['params']
+        assert params['eventType'] == 'live', f"Expected eventType=live, got {params['eventType']}"
+        assert params['channelId'] == 'UCtest_channel_1', f"Expected channelId=UCtest_channel_1, got {params['channelId']}"
+        print("  ✓ Normal response with 2 items → 2 ids in order")
+
+        # Mock test 2: Empty items
+        mock_session_2 = Mock(spec=requests.Session)
+        mock_response_2 = Mock()
+        mock_response_2.status_code = 200
+        mock_response_2.json.return_value = {'items': []}
+        mock_session_2.get.return_value = mock_response_2
+
+        client_2 = YouTubeClient('test_key', session=mock_session_2)
+        result_2 = client_2.search_live('UCtest_channel_2')
+        assert result_2 == [], f"Expected [], got {result_2}"
+        print("  ✓ Empty items → []")
+
+        # Mock test 3: HTTP 403 error
+        mock_session_3 = Mock(spec=requests.Session)
+        mock_response_3 = Mock()
+        mock_response_3.status_code = 403
+        mock_response_3.raise_for_status.side_effect = requests.exceptions.HTTPError("403 Forbidden")
+        mock_session_3.get.return_value = mock_response_3
+
+        client_3 = YouTubeClient('test_key', session=mock_session_3)
+        result_3 = client_3.search_live('UCtest_channel_3')
+        assert result_3 == [], f"Expected [] on HTTP 403, got {result_3}"
+        assert client_3.quota_used == 0, f"Expected quota_used=0 on error, got {client_3.quota_used}"
+        print("  ✓ HTTP 403 → []")
+
+        # Mock test 4: Exception during request
+        mock_session_4 = Mock(spec=requests.Session)
+        mock_session_4.get.side_effect = requests.exceptions.Timeout("Connection timeout")
+
+        client_4 = YouTubeClient('test_key', session=mock_session_4)
+        result_4 = client_4.search_live('UCtest_channel_4')
+        assert result_4 == [], f"Expected [] on exception, got {result_4}"
+        assert client_4.quota_used == 0, f"Expected quota_used=0 on exception, got {client_4.quota_used}"
+        print("  ✓ Exception → []")
+
         print("\nSUCCESS: YouTube client test passed")
 
+    except AssertionError as e:
+        print(f"ERROR: {e}")
+        exit(1)
     except Exception as e:
         print(f"ERROR: {e}")
         exit(1)
