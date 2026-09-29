@@ -2,6 +2,7 @@
 
 - 작성: 2026-09-29 · 브랜치 `v4a` (기준 `origin/main` `6af6db7`, v3.8.10) · 워크트리 `../mewtype-scheduler-v4a`
 - 입력: `v4a_design.md`(배선) · `v4a_decisions.md`(기능 결정 D1~D25) · `v4a_idea.md`(요약)
+- **진행: Wave 1~3 완료 (2026-09-29)** — 결과 `v4a_verify_report.md` · 관측 흐름 `v4a_verify_flow.html` · 운영 `v4a_local_runbook.md`
 - **목표: 배포·머지하지 않는다.** 완성 후 운영자 로컬 PC(24시간 가동)에서 며칠 시험 운영한다. 운영(v3.8.10)은 그대로 둔다.
 - 표기: **(선택)** = 사용자 미확정이라 기본값으로 둔 설계 선택. **(확인 필요)** = 코드·실측으로 아직 검증 안 함.
 

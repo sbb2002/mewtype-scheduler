@@ -185,6 +185,21 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   시각이 예고 시각과 45분 넘게 다르면 자리표시가 `expires_at`(예고+3h)까지 카드 2장으로 남고,
 >   같은 방송 시각 변경을 45분 넘게 재공지하면 기존 예고가 갱신되지 않고 새 항목이 생긴다.
 >   `merge_member_live` 의 ±3h(`MEMBER_LIVE_MATCH_SEC`)·v1 `collector/reconcile.py` 의 4h 는 미변경.
+> - **v4a (브랜치 `v4a` 전용 — 배포 · 머지 안 함, 로컬 시험판)** (2026-09-29): 운영자 로컬 PC 에서
+>   `python -m src.backend.local_runner` 로 돌린다(Tailscale 로 폰 알림 수신, 저장은 `_local/<브랜치>/`).
+>   **이 상자 위 서술(Cloud Run · Tasks · data 브랜치 커밋 경로)은 운영 v3.8.10 기준이고, v4a 에서는 아래가 다르다.**
+>   문서: `ref/v4a/` — 계획 `v4a_impl_plan.md` · 결정 `v4a_decisions.md`(D1~D25) · 검증 `v4a_verify_report.md` ·
+>   관측 흐름 `v4a_verify_flow.html` · 운영 `v4a_local_runbook.md` · 재검증 `verify/harness.py`(78개 확인).
+>   - 배선: `storage.py`(V4A_RUNTIME=local → `LocalStore`, control·admin_state 는 ops 로 라우팅) ·
+>     `apply.py`(적용 큐 = 쓰기 스레드 `q-apply`, data 를 쓰는 유일한 스레드) · `enrich.py`(가공 큐 `q-enrich`, 번역 수집) ·
+>     `jobqueue.py`(LocalQueue) · `writeclient.call_write` 는 로컬이면 적용 큐 적재 후 **결과 대기**(로컬 한정 — 배포 시 비동기로) ·
+>     즉시 wake · 자기 호출 · 재개 tick → reconcile(범위) 적재.
+>   - 상태 전이: watching = 영상 있는 예고 20분 전(D2) · URL 없는 예고는 +2분 `search.list` 1회 · +1h `out`(D4) ·
+>     assumed-live 폐지(D5) · end→live 복구(D6) · 아카이브 신호 `none` → **`out`**(D7) · upcoming = 영상·날짜·제목(D14) ·
+>     live_seen 3값(API upcoming=미확인). YouTube 알림 → `yt_notif` 작업(D1~D3).
+>   - 그 밖: 공식 스케줄 영상 URL 즉시 확인(D13) · 소식 리트윗 제외(D16) · 트윗 48h(D18) · 원문 보존 `_local/raw`(D19) ·
+>     관리 페이지 `/admin`(`admin_web.py` · `admin_api.py`, 로그인 = 텔레그램 `/admin` 일회용 링크) ·
+>     텔레그램은 `/status /pause /resume /list /admin` 만(D24).
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계

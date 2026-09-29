@@ -35,3 +35,24 @@
   웹 monitor 는 오늘치만 실시간으로 계산하고 지난 날짜는 이것을 읽는다. 외부 조회값
   (healthchecks.io·Vercel)은 찍은 시각(`snapshotAt`) 기준. **"스냅샷"만 단독으로 쓰지 말 것** —
   undo 스냅샷(`/undo` 되돌리기용), reconcile 의 "이전 스냅샷 대비 diff" 와 헷갈린다.
+
+## v4a 용어 (브랜치 `v4a` — 2026-09-29 구현, 미배포)
+
+`ref/v4a/v4a_design.md` §3 에서 2026-09-28 확정한 용어를 v4a 구현과 함께 옮긴다. 현행 운영(v3.8.10)을 가리킬 때는 위 표의
+이름(백엔드 · 제어 채널 · `/tick` 등)을 그대로 쓰고, v4a 구성 요소를 가리킬 때만 아래 이름을 쓴다.
+
+| 정식 명칭 | 가리키는 것 | 현행 대응 · 쓰지 말 것 |
+|---|---|---|
+| **접수 서비스** (`mewtype-intake`) | 바깥에서 오는 모든 것을 받는 공개 서비스 — `/ingest` · 관리 페이지 · 텔레그램 비상 명령 · 외부 호출로 가공. data 브랜치에 쓰지 않는다 | 현행 제어 채널 `mewtype-telegram` |
+| **쓰기 서비스** (`mewtype-writer`) | data 브랜치를 쓰는 **유일한** 주체. reconcile · 작업 적용 · 다음 확인 예약 · 알림 DM | 현행 백엔드 `mewtype-backend` |
+| **적용 큐** (`mewtype-apply`) | 쓰기 서비스로 작업을 하나씩 전달하는 큐. 모든 쓰기 요청 · reconcile 요청이 여기로 | 현행 wake · tick 예약 큐 · `/write` |
+| **가공 큐** (`mewtype-enrich`) | 번역 재시도를 쓰기 경로 밖(접수 쪽)에서 하게 전달하는 큐 | 현행 tick 안 `_translate_sweep` |
+| **reconcile(범위)** | "지금 상태가 어때야 하나"를 다시 계산해 data 에 맞추는 동작. 범위 = 전체 또는 영상 하나. 즉시 wake · 자기 호출 · 재개 tick 을 전부 대체 | 현행 `/tick` · `/wake` |
+| **작업 · 작업 id** | 적용 큐로 전달되는 요청 하나와 그 식별자(태스크 이름 = 중복 적재 방지) | job(단독) |
+| **`ops` 브랜치** | 운영 상태 — `control.json` · `admin_state.json`(재등록 차단 · 잔재 슬롯) · 작업 이력(`history.json`) · 로그인 nonce | 현행 data 브랜치의 control · admin_state |
+| **관리 페이지** | 운영자 웹 화면(`/admin`). 로그인 = 텔레그램 `/admin` 일회용 링크 | 관리 콘솔, 어드민 |
+| **텔레그램 비상 명령** | v4a 에서 텔레그램에 남는 명령 — `/status` `/pause` `/resume` `/list` `/admin` | — |
+| **`out`** | (v4a D7) preview 아이템이 `preview.json` 에서 빠져 `preview_archive.json` 으로 가는 신호. 저장되는 상태가 아니다(FSM 파생 값). 구 이름 `none` — 옛 모니터 로그의 `none` 은 같은 뜻으로 읽는다 | `none`(preview 상태를 가리킬 때). YouTube `liveBroadcastContent="none"` · 소식 `mode:"none"` 은 다른 뜻이라 그대로 |
+| **`yt_notif` 작업** | (v4a D1~D3) 업스트림 YouTube 알림을 상태 신호로 쓰는 적용 큐 작업 — reconcile(영상) 후 30분 전 알림 → watching, 시작 알림 → live, URL 없는 예고는 ±45분 자리표시에 URL 부여 | — |
+| **로컬 시험판** *(제안 — 사용자 확인 전)* | v4a 를 배포하지 않고 운영자 로컬 PC(24시간)에서 돌리는 형태. 저장은 `_local/<브랜치>/`, 폰 알림은 Tailscale 로 수신 | — |
+| **로컬 러너** *(제안 — 사용자 확인 전)* | 로컬 시험판을 한 프로세스로 띄우는 `python -m src.backend.local_runner` — 접수 앱 + 쓰기 스레드 `q-apply` + 가공 스레드 `q-enrich` + 정기 잡 스레드 + 텔레그램 폴링 | — |

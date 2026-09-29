@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>v4a 검증 흐름</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* 스타일 · 엔진 기준: ref/v3b/v3b_feature_flow.html (← docs/v3_pamphlet.html, devpapers) */
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --panel:#17181c; --panel2:#1e2024; --ink:#e9e9ea; --dim:#9a9ca2;
+    --faint:#6b6d73; --line:#2c2e33; --cyan:#cbf7f5; --warn:#ff8a7a; --new:#ffffff;
+    --cE:#7fdcea; --cS:#e6bd72; --cX:#b9a2f5; --cF:#8fe3ae; --cO:#f292b4;
+    --f-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto;padding:48px 16px 88px}
+  h2{margin:48px 0 6px;font-size:.8rem;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--cyan)}
+  h2+.sub{margin:0 0 16px;color:var(--dim);font-size:.9rem}
+  code{font-family:var(--f-mono);font-size:.86em}
+
+  .hero{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, rgba(203,247,245,.07), transparent 55%), var(--panel);
+    padding:30px 28px}
+  .hero .eyebrow{margin:0 0 10px;font-family:var(--f-mono);font-size:.72rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan)}
+  .hero h1{margin:0 0 10px;font-size:1.8rem;font-weight:700;letter-spacing:-.01em}
+  .hero p{margin:0 0 8px;max-width:74ch;color:var(--dim)}
+  .hero p b{color:var(--ink)}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .meta span{font-family:var(--f-mono);font-size:.72rem;padding:4px 10px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim)}
+  .meta b{color:var(--ink);font-weight:500}
+  .meta .draft{color:#f3c9c2;border-color:rgba(255,138,122,.4)}
+
+  .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+  .rule{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px}
+  .rule .n{font-family:var(--f-mono);font-size:.72rem;color:var(--cyan)}
+  .rule h3{margin:4px 0 6px;font-size:.95rem}
+  .rule p{margin:0;color:var(--dim);font-size:.85rem}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:0 0 14px;font-size:.8rem;color:var(--dim)}
+  .legend i{display:inline-block;width:22px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+  .legend .ring{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid var(--new);vertical-align:-2px;margin-right:6px}
+
+  .diagram{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .tab{flex:1 1 auto;min-width:120px;padding:11px 10px;font:inherit;font-size:.82rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .tab:last-child{border-right:0}
+  .tab:hover{color:var(--ink)}
+  .tab .k{font-family:var(--f-mono);margin-right:6px}
+  .tab[aria-selected="true"]{color:#0c1416;background:var(--cyan);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line);background:#15161a;min-height:50px}
+  .chip{font-family:var(--f-mono);font-size:.74rem;padding:4px 9px;border-radius:6px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);cursor:pointer;transition:.12s}
+  .chip:hover{color:var(--ink)}
+  .chip b{font-weight:600;color:var(--cyan)}
+  .chip .c{margin-left:5px;font-size:.66rem;padding:0 5px;border-radius:4px;border:1px solid var(--line);color:var(--dim)}
+  .chip[aria-selected="true"]{border-color:var(--cyan);color:var(--ink);background:rgba(203,247,245,.1)}
+
+  .ctrlbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);background:#131417}
+  .btn{font:inherit;font-size:.78rem;font-family:var(--f-mono);padding:4px 11px;border-radius:6px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+  .btn:hover{border-color:var(--cyan)}
+  .ctrlbar .now{margin-left:auto;font-family:var(--f-mono);font-size:.74rem;color:var(--faint)}
+
+  .stage-scroll{overflow-x:auto;background:#0d0e11}
+  .stage{padding:18px 14px 6px;min-width:960px}
+  #svg{width:100%;height:auto;display:block}
+
+  svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;transition:stroke .25s}
+  svg .node text{fill:var(--dim);font-family:var(--f-sans)}
+  svg .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg .node.ext rect{stroke-dasharray:4 4}
+  svg .node.newn .nt{fill:#fff}
+  svg .node .newtag{font-family:var(--f-mono);font-size:8px;fill:#0c1416}
+  svg .node{transition:opacity .25s}
+  svg.dimming .node{opacity:.32}
+  svg .node.hot{opacity:1}
+  svg .node.hot rect{stroke:var(--hc,var(--cyan));stroke-width:1.9}
+  svg .node.cur rect{fill:#23262b}
+  svg .group-t{fill:var(--faint);font-family:var(--f-mono);font-size:9px;letter-spacing:.08em}
+  svg .group-b{fill:none;stroke:#26282d;stroke-width:1;stroke-dasharray:3 5}
+  svg .skel{fill:none;stroke:#3a3d44;stroke-width:1.1;opacity:.35}
+  @keyframes flow{to{stroke-dashoffset:-20}}
+  svg .route{fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;
+    stroke-dasharray:4 6;animation:flow 1s linear infinite}
+  svg .done{fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;opacity:.5}
+  svg .done.cut{stroke-dasharray:5 5}
+  svg .badge text{font-family:var(--f-mono);font-size:9.5px;font-weight:600;fill:#0c1416}
+  svg .pk-halo{opacity:.22}
+
+  .cap{padding:16px 20px 20px;font-size:.9rem;min-height:220px}
+  .cap h3{margin:0 0 8px;font-size:1.02rem}
+  .cap h3 .id{font-family:var(--f-mono);margin-right:8px;color:var(--cyan)}
+  .cap h3 .c{margin-left:8px;font-family:var(--f-mono);font-size:.7rem;padding:1px 7px;border-radius:5px;border:1px solid var(--line);color:var(--dim);vertical-align:2px}
+  .cap dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:0 0 12px}
+  .cap dt{color:var(--faint);font-family:var(--f-mono);font-size:.74rem;padding-top:2px}
+  .cap dd{margin:0;color:var(--ink)}
+  .steps{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+  .steps li{display:flex;gap:10px;align-items:flex-start;padding:5px 9px;border-radius:7px;cursor:pointer;
+    color:var(--faint);border:1px solid transparent;transition:.2s}
+  .steps li:hover{border-color:var(--line)}
+  .steps li .n{flex:0 0 20px;height:20px;border-radius:50%;display:grid;place-items:center;
+    font-family:var(--f-mono);font-size:.7rem;font-weight:600;color:#0c1416;background:var(--sc);opacity:.45}
+  .steps li.chg .n{box-shadow:0 0 0 2px var(--new)}
+  .steps li.past{color:var(--dim)}
+  .steps li.past .n{opacity:.8}
+  .steps li.cur{color:var(--ink);background:color-mix(in srgb,var(--sc) 12%,transparent);border-color:color-mix(in srgb,var(--sc) 45%,transparent)}
+  .steps li.cur .n{opacity:1}
+  .steps li .kind{font-family:var(--f-mono);font-size:.68rem;color:var(--sc);margin-right:6px}
+  .steps li .v4{font-family:var(--f-mono);font-size:.64rem;color:#0c1416;background:var(--new);border-radius:4px;padding:0 5px;margin-right:6px}
+  .cap .chgbox{margin-top:12px;padding:8px 12px;border-left:3px solid var(--new);background:rgba(255,255,255,.05);color:var(--ink);font-size:.86rem}
+  .cap .note{margin-top:10px;padding:8px 12px;border-left:3px solid var(--line);color:var(--dim);font-size:.86rem}
+
+  table{width:100%;border-collapse:collapse;font-size:.86rem;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--faint);font-family:var(--f-mono);font-size:.72rem;font-weight:500;background:var(--panel2)}
+  td{color:var(--dim)}
+  td b{color:var(--ink)}
+  td .go{font-family:var(--f-mono);color:var(--cyan);cursor:pointer;background:none;border:0;padding:0;font:inherit}
+  td .c{font-family:var(--f-mono);font-size:.72rem;white-space:nowrap}
+  td .c.chg{color:var(--ink)}
+  .tbl-scroll{overflow-x:auto}
+
+  .foot{margin-top:52px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.78rem;font-family:var(--f-mono)}
+  @media (prefers-reduced-motion:reduce){ svg .route{animation:none} }
+
+  .checks{list-style:none;margin:10px 0 0;padding:0;font-size:12.5px}
+  .checks li{padding:3px 0 3px 2px;color:var(--dim)}
+  .checks li.ok{color:#8fe3ae} .checks li.ng{color:var(--warn)}
+  .verdict{display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600}
+  .verdict.ok{background:#1f3a2a;color:#8fe3ae} .verdict.ng{background:#3a1f1f;color:#ff8a7a}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:18px 0 8px}
+  .kpi div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi b{display:block;font-size:22px;color:var(--ink);font-family:var(--f-mono)}
+  .kpi span{font-size:12.5px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <p class="eyebrow">mewtype-scheduler · v4a 로컬 시험판 검증</p>
+    <h1>v4a 검증 흐름 — 흐름도대로 움직였나</h1>
+    <p>v4a 로컬 시험판(브랜치 <code>v4a</code>)을 실제 구성 그대로 띄워 — Flask 접수 앱 + 쓰기 스레드 <b>q-apply</b> + 가공 스레드 <b>q-enrich</b> + <code>_local/</code> 저장소 —
+      업스트림 알림 · 정기 reconcile · 관리 페이지 조작을 흘리고, <b>관측된 단계를 그대로</b> 흐름도(<code>v4a_flow.html</code>)의 노드 · 경로 위에 재생한다.
+      외부 서비스(YouTube Data API · RSS · Groq · vxtwitter · yt-dlp · Telegram 전송)만 가짜로 바꿨다 — 그 밖의 코드 경로는 실제 코드다.</p>
+    <p>묶음 탭 = 시나리오, 기능 칩 = 동작 하나(알림 1건 · reconcile 1회 · 관리 조작 1건). <b>흰 테두리 번호</b> = 흐름도(설계)와 다른 단계 — 칩 아래 사유와 그 동작의 확인 결과가 함께 나온다.</p>
+    <div class="meta">
+      <span>기준 커밋 <b>v4a 7ca77e8</b></span>
+      <span>검증 <b>2026-09-29</b></span>
+      <span>계획 <b>ref/v4a/v4a_impl_plan.md</b></span>
+      <span>결정 <b>ref/v4a/v4a_decisions.md</b></span>
+      <span>보고 <b>ref/v4a/v4a_verify_report.md</b></span>
+    </div>
+  </header>
+
+  <div class="kpi">
+    <div><b>78 / 78</b><span>확인 통과 (기능 · 결정 · 원칙)</span></div>
+    <div><b>4 / 4</b><span>원칙 ①③④⑤ — data 쓰기 스레드 · 지름길 · 외부 호출 위치 · ops</span></div>
+    <div><b>61</b><span>재생한 동작 (시나리오 14개)</span></div>
+    <div><b>45</b><span>흐름도와 다른 단계가 있는 동작 — 아래 표로 분류</span></div>
+  </div>
+
+  <h2>검증 흐름 (관측)</h2>
+  <p class="sub">선 색 = 단계 종류. 점선 박스 = 서드파티. 노드 부제 = 로컬 대응물. 원 번호 위치 = 그 단계가 지나간 경로. 저장소 읽기는 기록하지 않았다(쓰기만).</p>
+  <div class="legend" id="legend"></div>
+
+  <div class="diagram">
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <div class="chips" id="chips" aria-label="동작 목록"></div>
+    <div class="ctrlbar">
+      <button class="btn" id="bPrev" type="button">◀ 이전 동작</button>
+      <button class="btn" id="bPlay" type="button">⏸ 일시정지</button>
+      <button class="btn" id="bRe" type="button">⟲ 처음부터</button>
+      <button class="btn" id="bNext" type="button">다음 동작 ▶</button>
+      <span class="now" id="now"></span>
+    </div>
+    <div class="stage-scroll"><div class="stage">
+      <svg id="svg" viewBox="0 0 1240 700" role="img" aria-label="v4a 검증 흐름">
+        <rect class="group-b" x="8" y="96" width="184" height="514" rx="10"/>
+        <text class="group-t" x="18" y="112">입력 · 트리거</text>
+        <rect class="group-b" x="278" y="200" width="226" height="486" rx="10"/>
+        <text class="group-t" x="288" y="216">로컬 러너 (한 프로세스)</text>
+        <rect class="group-b" x="608" y="178" width="204" height="460" rx="10"/>
+        <text class="group-t" x="618" y="194">로컬 저장소 _local/</text>
+        <rect class="group-b" x="288" y="12" width="640" height="76" rx="10"/>
+        <text class="group-t" x="296" y="26">외부 서비스 (검증에서는 가짜)</text>
+        <rect class="group-b" x="858" y="178" width="184" height="226" rx="10"/>
+        <text class="group-t" x="868" y="194">프론트 (Tailscale IP)</text>
+        <g id="skel"></g>
+        <g id="done"></g>
+        <g id="routes"></g>
+        <g id="nodes"></g>
+        <g id="packets"></g>
+        <g id="badges"></g>
+      </svg>
+    </div></div>
+    <div class="cap" id="cap"></div>
+  </div>
+
+  <h2>흐름도와 다른 점</h2>
+  <p class="sub">관측 단계 중 흐름도(설계, 09-28)와 다른 것을 성격별로 묶었다. <b>로컬 한정</b> = 로컬 시험판을 위해 일부러 둔 차이 · <b>결정 반영</b> = 09-29 결정(D1~D25)이 흐름도보다 뒤 · <b>보완 필요</b> = 배포 전에 맞춰야 할 것.</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>성격</th><th>차이</th><th>설명</th></tr></thead>
+    <tbody><tr><td><span class="c">로컬 한정</span></td><td><b>접수 쪽이 적용 큐 결과를 기다린다</b></td><td>흐름도 원칙 ②는 적재 후 바로 응답. 로컬 시험판은 현행 DM 문구를 유지하려고 <code>submit_and_wait</code> 로 기다린다. Cloud Tasks 는 결과를 돌려주지 않으므로 배포 단계에서 비동기 적재 + 작업 결과 조회로 바꿔야 한다.</td></tr>
+<tr><td><span class="c">로컬 한정</span></td><td><b>업스트림 알림의 결과 DM 을 접수 쪽이 보낸다</b></td><td>흐름도 #7 은 쓰기 서비스가 커밋 뒤 DM. 위와 같은 이유(결과를 기다리므로 기존 코드가 그 자리에서 DM).</td></tr>
+<tr><td><span class="c">로컬 한정</span></td><td><b>정기 잡이 적용 큐를 거친다</b></td><td>흐름도는 Scheduler → 쓰기 서비스 <code>/reconcile</code> 직접. 로컬은 스케줄러 스레드가 적용 큐에 reconcile 을 적재하고 q-apply 가 실행 — '같은 인스턴스에서 작업과 한 줄로 선다'는 설계 의도와 같은 결과.</td></tr>
+<tr><td><span class="c chg">결정 반영</span></td><td><b>YouTube 알림 → <code>yt_notif</code> 작업</b></td><td>흐름도 #12 는 reconcile(영상)만. D1~D3 결정으로 reconcile(영상) 후 tunein→watching · 시작→live 를 알림으로 올리고, URL 없는 예고는 ±45분 자리표시에 URL 을 붙인다.</td></tr>
+<tr><td><span class="c chg">결정 반영</span></td><td><b>시작+2분 <code>search.list</code> · 원문 보존 <code>_local/raw</code></b></td><td>D4 · D19 결정으로 생긴 단계 — 흐름도(09-28)에는 없다.</td></tr>
+<tr><td><span class="c chg">보완 필요</span></td><td><b>작업 이력 · 재등록 차단을 접수 쪽이 기록</b></td><td>흐름도는 쓰기 서비스가 작업 결과와 함께 ops 에 기록. 로컬은 <code>admin_api</code>(접수)가 적재 결과를 받은 뒤 ops 에 쓴다. 결과를 기다리는 구조라 지금은 순서가 맞지만, 비동기로 바꾸면 쓰기 쪽으로 옮겨야 한다.</td></tr>
+<tr><td><span class="c chg">보완 필요</span></td><td><b>v3 undo 슬롯 · 편집 락 잔재</b></td><td>merge_rows 등 v3 커밋 함수가 여전히 <code>admin_state.json</code> 의 undo 슬롯 · 편집 락을 쓴다(ops 로 라우팅됨). 흐름도는 항목 단위 되돌리기(작업 이력)로 대체 — 이번 범위 밖(되돌리기 미구현).</td></tr>
+<tr><td><span class="c chg">미검증</span></td><td><b>#24 생존 신호 · #17 healthchecks/Vercel 조회 · #26 배포 · #10 비전 OCR</b></td><td>로컬 시험판 설정에 healthchecks · Vercel 이 없고 배포는 하지 않는다. OCR 은 대상 이미지 소식을 재생하지 않았다.</td></tr></tbody>
+  </table></div>
+
+  <h2>동작 목록</h2>
+  <p class="sub">칩과 같은 목록. 번호를 누르면 위 흐름으로 이동한다.</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>#</th><th>시나리오</th><th>동작 · 흐름도와 다른 점</th><th>대조</th><th>트리거</th><th>data 에 쓴 파일</th></tr></thead>
+    <tbody id="tbl"></tbody>
+  </table></div>
+
+  <h2>확인 결과 (78/78)</h2>
+  <p class="sub">시나리오 재생 하네스의 확인 항목 전부. 기능 번호는 <code>v4a_design.md</code> §8 · 결정 번호는 <code>v4a_decisions.md</code>.</p>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>시나리오</th><th>기능·결정</th><th>확인</th><th>결과</th></tr></thead>
+    <tbody><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>1</code></td><td>RSS+videos.list 로 upcoming 등록</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>2</code></td><td>다음 확인이 reconcile(영상) 작업으로 예약 (예정 20분 전)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>D2</code></td><td>예정 19분 전 → watching</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>2</code></td><td>폴링으로 live 전환</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>19</code></td><td>live 시작 알림 DM</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>2</code></td><td>API none → end</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>D6</code></td><td>end 창 안에서 같은 영상 live 재관측 → live 복구</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)</td><td><code>4·D7</code></td><td>end 30분 뒤 out → 아카이브</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F7 공식 스케줄 트윗 (D13 영상 URL 즉시 확인 · D19 원문 보존)</td><td><code>7</code></td><td>URL 없는 행 → announced</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F7 공식 스케줄 트윗 (D13 영상 URL 즉시 확인 · D19 원문 보존)</td><td><code>D13</code></td><td>영상 URL 행 → 접수 시 videos.list 확인 → upcoming + API 제목</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F7 공식 스케줄 트윗 (D13 영상 URL 즉시 확인 · D19 원문 보존)</td><td><code>D19</code></td><td>공식 스케줄 원문 보존 (_local/raw)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F8·F9 개인 트윗 (배지 · 예고 텍스트 · 예고 URL)</td><td><code>8</code></td><td>개인 트윗 → tweets.json</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F8·F9 개인 트윗 (배지 · 예고 텍스트 · 예고 URL)</td><td><code>9c</code></td><td>URL 없는 개인 예고 → 정규식 + LLM 확인 → announced</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F8·F9 개인 트윗 (배지 · 예고 텍스트 · 예고 URL)</td><td><code>9a</code></td><td>YouTube URL 개인 예고 → videos.list 확정 → upcoming</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F10 소식 (D16 리트윗 제외)</td><td><code>D16</code></td><td>리트윗 → 소식 아님</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F10 소식 (D16 리트윗 제외)</td><td><code>10</code></td><td>공식 소식 → notices.json</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>7</code></td><td>URL 없는 예고 (미야코, 35분 뒤)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>D3</code></td><td>30분 전 알림 → 자리표시가 영상과 합쳐짐 (미야코 항목 1개)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>D2</code></td><td>30분 전 알림 → watching (20분 창보다 일러도 유지)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>D2</code></td><td>다음 reconcile 에서도 watching 유지 (되돌림 없음)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>D1</code></td><td>시작 알림 → live (API 는 아직 upcoming)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>D1</code></td><td>API 가 아직 upcoming 이어도 live 유지 (end 로 안 떨어짐)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)</td><td><code>D1</code></td><td>폴링 안전망이 live 확인</td><td><span class="verdict ok">통과</span></td></tr><tr><td>D4 URL 없는 예고 — 시작+2분 search.list 1회 · +1시간 out</td><td><code>D4</code></td><td>+2분 search.list → 찾으면 video_id 부여</td><td><span class="verdict ok">통과</span></td></tr><tr><td>D4 URL 없는 예고 — 시작+2분 search.list 1회 · +1시간 out</td><td><code>D4</code></td><td>search.list 는 URL 없는 예고마다 1회 (2건 → 2회)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>D4 URL 없는 예고 — 시작+2분 search.list 1회 · +1시간 out</td><td><code>D4</code></td><td>찾은 영상 → reconcile(영상) → live</td><td><span class="verdict ok">통과</span></td></tr><tr><td>D4 URL 없는 예고 — 시작+2분 search.list 1회 · +1시간 out</td><td><code>D4</code></td><td>재실행해도 검색 반복 없음</td><td><span class="verdict ok">통과</span></td></tr><tr><td>D4 URL 없는 예고 — 시작+2분 search.list 1회 · +1시간 out</td><td><code>D4</code></td><td>못 찾은 예고 → +1시간 out (아카이브)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F11 회원 전용 라이브 (알림 + yt-dlp)</td><td><code>11</code></td><td>회원 전용 시작 알림 → yt-dlp video_id → live · membership</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F6 번역 재시도 (가공 큐 → 적용 큐)</td><td><code>6</code></td><td>needs_tl 항목이 가공 큐 수집 → 적용 큐 반영으로 번역됨</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F6 번역 재시도 (가공 큐 → 적용 큐)</td><td><code>6</code></td><td>순서: reconcile(q-apply) → translate_sweep(q-enrich) → apply_translation(q-apply)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>27</code></td><td>/admin → 일회용 로그인 링크 DM</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>27</code></td><td>링크 열기 → 세션 쿠키</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>27</code></td><td>같은 링크 재사용 → 403</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>13</code></td><td>관리 API 읽기 (예고 목록)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>14d</code></td><td>예고 편집 → 적용 큐 → 반영</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>14d</code></td><td>열람 값 충돌 → conflict</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>CSRF</code></td><td>CSRF 없이 POST → 403</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>14g</code></td><td>예고 삭제 + 재등록 차단(ops)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>14g</code></td><td>차단된 URL 은 reconcile 이 다시 싣지 않음</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>16</code></td><td>관리 페이지 일시정지 → ops/control.json</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>16</code></td><td>일시정지 중 ingest 무시</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>16</code></td><td>재개 → reconcile(전체) 적재 (자기 호출 없음)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>14j</code></td><td>작업 이력(ops/history.json)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>D24</code></td><td>/status 비상 명령 응답</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>D24</code></td><td>마법사 명령 → 관리 페이지 안내</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>16</code></td><td>/pause 비상 명령 → ops control</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령</td><td><code>16</code></td><td>/resume → 재개 + reconcile 적재</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F3·F5 그룹 공식 채널 5인 팬아웃 · 아바타 (baseline)</td><td><code>3</code></td><td>그룹 채널 영상 → 5인 레인 팬아웃(host=group)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F3·F5 그룹 공식 채널 5인 팬아웃 · 아바타 (baseline)</td><td><code>5</code></td><td>baseline → channels.list 아바타 반영</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F9b 개인 트윗 비YouTube URL → 소식</td><td><code>9b</code></td><td>비YouTube URL 개인 트윗 → notices.json (preview 아님)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14a</code></td><td>원문 투입 미리보기 — 반영 안 함</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14a</code></td><td>확정 → 적용 큐 → preview 반영</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14b</code></td><td>소식 원문 미리보기</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14b</code></td><td>소식 확정 → notices.json</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14e</code></td><td>소식 편집</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>15</code></td><td>수동 번역(소식) — 이미 번역돼 있어도 덮어씀(force)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14h</code></td><td>소식 삭제</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14c</code></td><td>트윗 원문 미리보기(번역 포함)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14c·14f</code></td><td>트윗 투입 → tweets.json</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>15</code></td><td>제목 없는 예고 번역 → 분명한 오류</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>15</code></td><td>수동 번역(예고)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14i</code></td><td>트윗 삭제</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역</td><td><code>14j</code></td><td>조작마다 작업 이력</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>20</code></td><td>결과를 기다린 작업 실패 → 유실 원문 1건(원문 그대로 · kind=personal_tweet)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>20</code></td><td>유실 알림 DM 1건 (중복 없음)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>18</code></td><td>재투입 → 원문 그대로 반영</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>18</code></td><td>성공한 항목은 유실 큐에서 제거</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>18</code></td><td>엉터리 소식 없음 (작업 인자 JSON 이 원문으로 처리되지 않음)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>20</code></td><td>비동기 작업 실패 → 유실 큐에 작업(apply_job) 보관 + 쓰기 쪽 DM</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)</td><td><code>18</code></td><td>apply_job 재투입 → 같은 작업 재적재 → 반영</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F22·F23 스냅샷 잡 · 웹 모니터</td><td><code>22</code></td><td>스냅샷 작업 (q-apply)</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F22·F23 스냅샷 잡 · 웹 모니터</td><td><code>23</code></td><td>웹 모니터 /monitor-live</td><td><span class="verdict ok">통과</span></td></tr><tr><td>F22·F23 스냅샷 잡 · 웹 모니터</td><td><code>25</code></td><td>프론트 / + /data/preview.json</td><td><span class="verdict ok">통과</span></td></tr><tr><td>원칙 검증</td><td><code>원칙①</code></td><td>data 브랜치 커밋 47건 전부 q-apply 스레드</td><td><span class="verdict ok">통과</span></td></tr><tr><td>원칙 검증</td><td><code>원칙③</code></td><td>Cloud Tasks · 자기 호출 지름길 사용 0건</td><td><span class="verdict ok">통과</span></td></tr><tr><td>원칙 검증</td><td><code>원칙④</code></td><td>LLM · vxtwitter · yt-dlp 호출이 쓰기 스레드에서 0건</td><td><span class="verdict ok">통과</span></td></tr><tr><td>원칙 검증</td><td><code>원칙⑤</code></td><td>운영 상태 쓰기 35건 → ops 브랜치</td><td><span class="verdict ok">통과</span></td></tr></tbody>
+  </table></div>
+
+  <h2>검증 중 발견해 고친 결함</h2>
+  <div class="tbl-scroll"><table>
+    <thead><tr><th>결함</th><th>내용</th><th>수정 커밋</th></tr></thead>
+    <tbody><tr><td><b>유실 원문 중복 · 엉터리 재투입</b></td><td>결과를 기다린 작업이 실패하면 접수 · 쓰기 양쪽이 유실 큐에 넣고 DM 도 두 번. 쓰기 쪽 항목은 작업 인자 JSON 이라 재투입하면 트윗 · 소식으로 잘못 등록</td><td><code>33eebe1</code></td></tr>
+<tr><td><b>관리 페이지 로그인 토큰 ↔ 세션 쿠키 혼용</b></td><td>같은 서명이라 로그인 링크 토큰을 쿠키로 넣으면 nonce 소모 없이 읽기 API 접근 가능 → 용도 구분 서명</td><td><code>3051213</code></td></tr>
+<tr><td><b>예고 편집이 저장되지 않음</b></td><td>submitEdit 이 두 번 정의돼 소식용이 예고용을 덮어씀 (브라우저 확인에서 발견)</td><td><code>4ac110e</code></td></tr>
+<tr><td><b>예고 시각 9시간 밀림</b></td><td>KST 라벨 칸에 UTC 값을 넣고 저장 때 브라우저 시간대로 해석 — 손대지 않고 저장만 해도 변경</td><td><code>4ac110e</code></td></tr>
+<tr><td><b>관리 페이지 작업 탭 필드 불일치 · 작업 이력 표 누락</b></td><td>대기 작업 · 최근 결과가 실제 응답 필드와 달라 비어 보였고, 명세의 작업 이력 표가 없었음</td><td><code>4ac110e</code></td></tr>
+<tr><td><b>(예방) 운영 봇 토큰으로 로컬 폴링 시 운영 webhook 삭제</b></td><td>폴링 시작 시 deleteWebhook — webhook 이 걸린 봇이면 폴링 거부</td><td><code>7ca77e8</code></td></tr></tbody>
+  </table></div>
+
+</div>
+<script>
+(function(){
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+  var SVG = document.getElementById("svg");
+
+  /* ── 노드 ── [x, y, w, h, 제목, 부제, 종류] 종류: "ext"=서드파티, "new"=v4a 신규 */
+  var N = {
+    push:   [20,122,160,42,"X·YouTube 푸시","서드파티 알림","ext"],
+    up:     [20,206,160,44,"업스트림 · Automate","폰 → Tailscale → /ingest"],
+    op:     [20,318,160,42,"운영자","텔레그램 알림 · 비상 명령"],
+    adm:    [20,476,160,44,"관리 페이지",["운영자 브라우저","/admin (Tailscale IP)"],"new"],
+    tg:     [20,410,160,44,"Telegram Bot API","로컬 봇 · getUpdates 폴링","ext"],
+    sch:    [20,548,160,46,"정기 잡 (로컬)",["scheduler 스레드","10분 · 06:00 · 06:10"]],
+    ctrl:   [290,222,190,66,"접수 서비스",["로컬: Flask 접수 앱","/ingest · /telegram · /admin"]],
+    qa:     [300,352,170,54,"적용 큐",["로컬: LocalQueue(apply)","순차 1 · 예약 · 재시도"]],
+    be:     [290,470,190,66,"쓰기 서비스",["로컬: 스레드 q-apply","data 를 쓰는 유일한 스레드"]],
+    qe:     [290,618,190,50,"가공 큐",["로컬: LocalQueue(enrich)","스레드 q-enrich · 번역 수집"],"new"],
+    data:   [620,200,180,62,"_local/data",["preview · notices · tweets","q-apply 만 씀"]],
+    ops:    [620,330,180,62,"_local/ops",["control · admin_state","작업 이력 · 로그인 nonce"],"new"],
+    mon:    [620,466,180,62,"_local/monitoring",["이벤트 로그 · 스냅샷","유실 큐"]],
+    raw:    [620,576,180,50,"_local/raw",["스케줄 원문 보존 (D19)","로컬 전용"],"new"],
+    cdn:    [870,200,160,62,"/data/* 서빙",["로컬 러너 · no-store","(raw CDN 대신)"]],
+    browser:[870,330,160,58,"브라우저","index · monitor · admin"],
+    yt:     [300,34,140,46,"YouTube","RSS · Data API","ext"],
+    ytdlp:  [455,34,140,46,"yt-dlp","채널 streams 탭","ext"],
+    groq:   [610,34,140,46,"Groq LLM","번역 · 판정","ext"],
+    vx:     [765,34,140,46,"vxtwitter / fxtwitter","트윗 원문 복원","ext"]
+  };
+  function C(k){ var n = N[k]; return [n[0] + n[2]/2, n[1] + n[3]/2]; }
+
+  /* ── 경로 조각 ── */
+  var BUS_Y = 108;
+  function viaCtrl(ext){ var c = C("ctrl"), e = C(ext); return ["ctrl",[c[0],BUS_Y],[e[0],BUS_Y],ext]; }
+  function viaBe(ext){ var e = C(ext); return ["be",[570,503],[570,BUS_Y],[e[0],BUS_Y],ext]; }
+  function rt(a){ return a.concat(a.slice(0,-1).reverse()); }       // 왕복
+  function back(a){ return a.slice().reverse(); }
+  var CQ     = ["ctrl","qa"];                                         // 접수 서비스 → 적용 큐 (적재)
+  var QB     = ["qa","be"];                                           // 적용 큐 → 쓰기 서비스 /apply
+  var BQ     = [[480,490],[512,490],[512,379],[470,379]];             // 쓰기 서비스 → 적용 큐 (reconcile 적재)
+  var BQE    = [[360,520],[360,643]];                                 // 쓰기 서비스 → 가공 큐
+  var QEC    = [[480,643],[538,643],[538,255],[480,255]];             // 가공 큐 → 접수 서비스 /enrich
+  var X_IN   = ["push","up","ctrl"];
+  var CMD    = ["op","tg","ctrl"];
+  var DM     = ["ctrl","tg","op"];
+  var BE_DM  = ["be","tg","op"];
+  var TO_FAN = ["data","cdn","browser"];
+  var WEB    = ["browser",[845,296],"ctrl"];
+  var ADM    = ["adm",[240,498],[240,270],"ctrl"];                     // 관리 페이지 → 접수 서비스 (/admin/api)
+  var SCHQ = ["sch",[250,571],[250,379],"qa"];
+  var RAWP = ["ctrl",[552,262],[552,601],"raw"];
+  var MON_ADM = ["mon","ctrl",[240,270],[240,498],"adm"];              // 작업 결과 조회 → 관리 페이지                          // 웹 모니터 요청 (ops 박스 비켜 감)
+
+  /* ── 단계 종류 ── */
+  var K = {
+    E:{name:"입력 · 트리거", hex:"#7fdcea"},
+    O:{name:"내부 처리 · 큐", hex:"#f292b4"},
+    X:{name:"외부 조회 · DM", hex:"#b9a2f5"},
+    S:{name:"저장소 읽기 · 쓰기", hex:"#e6bd72"},
+    F:{name:"프론트 · 배포", hex:"#8fe3ae"}
+  };
+  /* s(종류, 경로 목록, 설명, 옵션) — 옵션 n:true = 흐름도(설계)와 다른 단계, stop:true = 도중에 끊김(실패 상황) */
+  function s(k, rs, t, o){ o = o || {}; return {k:k, rs:rs, t:t, n:!!o.n, stop:!!o.stop}; }
+  var Y = {n:true};
+  /* 관리 조작의 공통 마무리 — 작업 결과를 이벤트 로그에 남기고 관리 페이지가 작업 id로 확인 */
+  function RES(){ return [
+    s("S",[["be","mon"]],"작업 결과를 이벤트 로그에 (작업 id)",Y),
+    s("F",[MON_ADM],"관리 페이지가 작업 id로 결과 확인 — 반영 · 충돌 · 실패",Y)
+  ]; }
+
+  var G = {"A": "F1·F2 정기 감지와 방송별 정밀 추적 (D2·D6·D7)", "B": "F7 공식 스케줄 트윗 (D13 영상 URL 즉시 확인 · D19 원문 보존)", "C": "F8·F9 개인 트윗 (배지 · 예고 텍스트 · 예고 URL)", "D": "F10 소식 (D16 리트윗 제외)", "E": "F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)", "F": "D4 URL 없는 예고 — 시작+2분 search.list 1회 · +1시간 out", "G": "F11 회원 전용 라이브 (알림 + yt-dlp)", "H": "F6 번역 재시도 (가공 큐 → 적용 큐)", "I": "F27·F13~F17 관리 페이지 (일회용 로그인 · 조작) + 텔레그램 비상 명령", "J": "F3·F5 그룹 공식 채널 5인 팬아웃 · 아바타 (baseline)", "K": "F9b 개인 트윗 비YouTube URL → 소식", "L": "F14a~F15 관리 페이지 원문 투입 · 소식/트윗 편집 · 삭제 · 번역", "M": "F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)", "N": "F22·F23 스냅샷 잡 · 웹 모니터"};
+
+  /* ── 기능 (v4a 경로) ── 표 원본: v4a_design.md §7. c = v3.8.10 대비("유지"|"변경"), why = 바뀐 점 */
+  var F = [
+    {id:"A1", g:"A", t:"reconcile(전체 · light) — 시각 16:29 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음 / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이", checks:["✓ [1] RSS+videos.list 로 upcoming 등록", "✓ [2] 다음 확인이 reconcile(영상) 작업으로 예약 (예정 20분 전)"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 19:10 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [q-enrich]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [q-enrich]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]")
+      ]},
+    {id:"A2", g:"A", t:"reconcile(영상 VUP00000001) — 시각 19:11 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D2] 예정 19분 전 → watching"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 19:15 KST [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"A3", g:"A", t:"reconcile(영상 VUP00000001) — 시각 19:32 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [2] 폴링으로 live 전환", "✓ [19] live 시작 알림 DM"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 19:40 KST [q-apply]"),
+        s("X",[BE_DM],"DM: 🔴 방송 시작 나카마치 아라레 「【歌枠】アコギ」 예정 09/29 19:30 → 실제"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"A4", g:"A", t:"reconcile(영상 VUP00000001) — 시각 20:52 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [2] API none → end"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 20:55 KST [q-apply]"),
+        s("X",[BE_DM],"DM: ⚫ 방송 종료 나카마치 아라레 「【歌枠】アコギ」 09/29 19:31 ~ 미정 (미"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"A5", g:"A", t:"reconcile(영상 VUP00000001) — 시각 21:00 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D6] end 창 안에서 같은 영상 live 재관측 → live 복구"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("X",[BE_DM],"DM: 🔴 방송 시작 나카마치 아라레 「【歌枠】アコギ」 예정 09/29 19:30 → 실제"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"A6", g:"A", t:"reconcile(영상 VUP00000001) — 시각 21:06 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:[],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("X",[BE_DM],"DM: ⚫ 방송 종료 나카마치 아라레 「【歌枠】アコギ」 09/29 19:31 ~ 미정 (미"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"A7", g:"A", t:"reconcile(영상 VUP00000001) — 시각 21:40 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json, preview_archive.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [4·D7] end 30분 뒤 out → 아카이브"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview_archive.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"B1", g:"B", t:"X 알림 · 夢限大みゅーたいぷ · 9/29(火) 配信スケジュール", c:"차이", trig:"업스트림(폰 Automate)", out:"preview.json", why:"D19 결정 — 스케줄 관련 원문 보존 (흐름도에 없는 저장소, 로컬 전용) / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체)", checks:["✓ [7] URL 없는 행 → announced", "✓ [D13] 영상 URL 행 → 접수 시 videos.list 확인 → upcoming + API 제목", "✓ [D19] 공식 스케줄 원문 보존 (_local/raw)"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · collab_partners [접수(요청 스레드)]"),
+        s("S",[RAWP],"쓰기 _local/raw/raw/2026-09.jsonl [접수(요청 스레드)]",{n:true}),
+        s("X",[rt(viaCtrl("yt"))],"youtube · videos.list [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 merge_rows 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 merge_rows 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("O",[CQ],"적용 큐에 reconcile(video) 적재 · 예약 16:29 KST [접수(요청 스레드)]"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]")
+      ]},
+    {id:"C1", g:"C", t:"X 알림 · 千石ユノ · おはよう！今日もがんばる☀", c:"차이", trig:"업스트림(폰 Automate)", out:"tweets.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤)", checks:["✓ [8] 개인 트윗 → tweets.json"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[DM],"DM: 🐦 센고쿠 유노 새 트윗 (스레드 1/50) yuno · おはよう！今日もがんばる☀",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"C2", g:"C", t:"X 알림 · 峰月律 · 明日21時から歌枠配信します🎤 来てね！", c:"차이", trig:"업스트림(폰 Automate)", out:"tweets.json, preview.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤) / D19 결정 — 스케줄 관련 원문 보존 (흐름도에 없는 저장소, 로컬 전용) / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체)", checks:["✓ [9c] URL 없는 개인 예고 → 정규식 + LLM 확인 → announced"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[DM],"DM: 🐦 미네츠키 리츠 새 트윗 (스레드 1/50) ritsu · 明日21時から歌枠配信し",{n:true}),
+        s("S",[RAWP],"쓰기 _local/raw/raw/2026-09.jsonl [접수(요청 스레드)]",{n:true}),
+        s("X",[rt(viaCtrl("groq"))],"groq · announces_own_broadcast [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 merge_rows 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 merge_rows 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("X",[rt(viaCtrl("groq"))],"groq · broadcast_change [접수(요청 스레드)]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"C3", g:"C", t:"X 알림 · 宮永ののか🐰🩹 · このあと配信するよ！ https://www.you", c:"차이", trig:"업스트림(폰 Automate)", out:"tweets.json, preview.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤) / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / D19 결정 — 스케줄 관련 원문 보존 (흐름도에 없는 저장소, 로컬 전용)", checks:["✓ [9a] YouTube URL 개인 예고 → videos.list 확정 → upcoming"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[DM],"DM: 🐦 미야나가 노노카 새 트윗 (스레드 1/50) nonoka · このあと配信するよ！",{n:true}),
+        s("X",[rt(viaCtrl("yt"))],"youtube · videos.list [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 url_confirmed_commit 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 url_confirmed_commit 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("S",[RAWP],"쓰기 _local/raw/raw/2026-09.jsonl [접수(요청 스레드)]",{n:true}),
+        s("X",[rt(viaCtrl("groq"))],"groq · broadcast_change [접수(요청 스레드)]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"C4", g:"C", t:"X 알림 · 千石ユノ · RT @ritsu_yumemita: 配信ありがと", c:"일치", trig:"업스트림(폰 Automate)", out:"—", why:"", checks:[],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"D1", g:"D", t:"X 알림 · 夢限大みゅーたいぷ · RT @bang_dream_info: ／", c:"일치", trig:"업스트림(폰 Automate)", out:"—", why:"", checks:["✓ [D16] 리트윗 → 소식 아님"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"D2", g:"D", t:"X 알림 · 夢限大みゅーたいぷ · 💿夢限大みゅーたいぷ 6th Single💿", c:"차이", trig:"업스트림(폰 Automate)", out:"notices.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤)", checks:["✓ [10] 공식 소식 → notices.json"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · notice_title [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 notice_sweep 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 notice_sweep 실행"),
+        s("O",[CQ],"적용 큐에 apply_notice 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_notice 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/notices.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("X",[DM],"DM: 🆕 소식 추가됨 [음반·굿즈] 2026-10-05 · 10/5発売決定 ↩️ /und",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"E1", g:"E", t:"X 알림 · 夢限大みゅーたいぷ · 9/29(火) 配信スケジュール", c:"차이", trig:"업스트림(폰 Automate)", out:"preview.json", why:"D19 결정 — 스케줄 관련 원문 보존 (흐름도에 없는 저장소, 로컬 전용) / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체)", checks:["✓ [7] URL 없는 예고 (미야코, 35분 뒤)"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("S",[RAWP],"쓰기 _local/raw/raw/2026-09.jsonl [접수(요청 스레드)]",{n:true}),
+        s("O",[CQ],"적용 큐에 merge_rows 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 merge_rows 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"E2", g:"E", t:"YouTube 알림 · LIVESTREAM_TUNEIN · MIYAKO00001", c:"차이", trig:"업스트림(폰 Automate)", out:"preview.json", why:"D1~D3 결정 — 알림을 상태 신호로 쓰는 yt_notif 작업 (흐름도 #12 는 reconcile(영상)만) / D1~D3 결정 — yt_notif: reconcile(영상) 후 tunein→watching · 시작→live", checks:["✓ [D3] 30분 전 알림 → 자리표시가 영상과 합쳐짐 (미야코 항목 1개)", "✓ [D2] 30분 전 알림 → watching (20분 창보다 일러도 유지)"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("O",[CQ],"적용 큐에 yt_notif 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_notif 실행",{n:true}),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:50 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:32 KST [q-apply]")
+      ]},
+    {id:"E3", g:"E", t:"reconcile(영상 MIYAKO00001) — 시각 16:31 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"—", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D2] 다음 reconcile 에서도 watching 유지 (되돌림 없음)"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:33 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]")
+      ]},
+    {id:"E4", g:"E", t:"YouTube 알림 · SUBSCRIPTION_LIVESTREAM_START · MIYAKO00001", c:"차이", trig:"업스트림(폰 Automate)", out:"preview.json", why:"D1~D3 결정 — 알림을 상태 신호로 쓰는 yt_notif 작업 (흐름도 #12 는 reconcile(영상)만) / D1~D3 결정 — yt_notif: reconcile(영상) 후 tunein→watching · 시작→live", checks:["✓ [D1] 시작 알림 → live (API 는 아직 upcoming)"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("O",[CQ],"적용 큐에 yt_notif 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_notif 실행",{n:true}),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:33 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("X",[BE_DM],"DM: 🔴 방송 시작 후지 미야코 「【雑談】みやこの部屋」 예정 09/29 17:10 → 실"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:32 KST [q-apply]")
+      ]},
+    {id:"E5", g:"E", t:"reconcile(영상 MIYAKO00001) — 시각 16:34 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"—", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D1] API 가 아직 upcoming 이어도 live 유지 (end 로 안 떨어짐)"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]")
+      ]},
+    {id:"E6", g:"E", t:"reconcile(영상 MIYAKO00001) — 시각 16:41 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D1] 폴링 안전망이 live 확인"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:50 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"F1", g:"F", t:"X 알림 · 夢限大みゅーたいぷ · 9/29(火) 配信スケジュール", c:"차이", trig:"업스트림(폰 Automate)", out:"preview.json", why:"D19 결정 — 스케줄 관련 원문 보존 (흐름도에 없는 저장소, 로컬 전용) / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체)", checks:[],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("S",[RAWP],"쓰기 _local/raw/raw/2026-09.jsonl [접수(요청 스레드)]",{n:true}),
+        s("O",[CQ],"적용 큐에 merge_rows 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 merge_rows 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"F2", g:"F", t:"reconcile(전체 · light) — 시각 17:22 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음 / D4 결정 — 시작+2분 search.list 1회 (흐름도에 없는 조회) / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이", checks:["✓ [D4] +2분 search.list → 찾으면 video_id 부여", "✓ [D4] search.list 는 URL 없는 예고마다 1회 (2건 → 2회)"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · search.list(eventType=live) [q-apply]",{n:true}),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 17:30 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 17:22 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(all) · 예약 18:20 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [q-enrich]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [q-enrich]",{n:true}),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]")
+      ]},
+    {id:"F3", g:"F", t:"reconcile(영상 NONOKA00001) — 시각 17:23 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D4] 찾은 영상 → reconcile(영상) → live"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(video) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(video) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 17:30 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(all) · 예약 18:20 KST [q-apply]"),
+        s("X",[BE_DM],"DM: 🔴 방송 시작 미야나가 노노카 「【ゲーム】」 예정 09/29 17:20 → 실제 0"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"F4", g:"F", t:"reconcile(전체 · light) — 시각 17:40 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음 / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이", checks:["✓ [D4] 재실행해도 검색 반복 없음"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 17:45 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 17:50 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(all) · 예약 18:20 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(all) · 예약 20:32 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [q-enrich]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [q-enrich]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]")
+      ]},
+    {id:"F5", g:"F", t:"reconcile(전체 · light) — 시각 18:21 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json, preview_archive.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [D4] 못 찾은 예고 → +1시간 out (아카이브)"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview_archive.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:25 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:24 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(all) · 예약 20:32 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]")
+      ]},
+    {id:"G1", g:"G", t:"YouTube 알림 · SPONSORSHIPS_LIVESTREAM_START · default", c:"차이", trig:"업스트림(폰 Automate)", out:"preview.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤)", checks:["✓ [11] 회원 전용 시작 알림 → yt-dlp video_id → live · membership"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("ytdlp"))],"yt-dlp · streams 탭 [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 yt_member_live_commit 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_member_live_commit 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[DM],"DM: 🔒 나카마치 아라레 회원 전용 방송 시작 → live 반영 🔒メン限雑談 https:",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"H1", g:"H", t:"reconcile(전체 · light) — 시각 16:30 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음 / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이", checks:["✓ [6] needs_tl 항목이 가공 큐 수집 → 적용 큐 반영으로 번역됨", "✓ [6] 순서: reconcile(q-apply) → translate_sweep(q-enrich) → apply_translation(q-apply)"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 21:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [q-enrich]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [q-enrich]",{n:true}),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]")
+      ]},
+    {id:"I1", g:"I", t:"텔레그램 /admin", c:"일치", trig:"텔레그램 비상 명령", out:"—", why:"", checks:["✓ [27] /admin → 일회용 로그인 링크 DM"],
+      steps:[
+        s("E",[CMD],"텔레그램 명령 → 접수 /telegram (로컬: getUpdates 폴링이 전달)"),
+        s("X",[DM],"DM: 🔐 관리 페이지 로그인 링크 (5분 · 1회용) http://127.0.0.1:87"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"I2", g:"I", t:"관리 페이지 로그인 링크 열기", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [27] 링크 열기 → 세션 쿠키"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → GET /admin/login"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/admin_nonces.json [접수(요청 스레드)]")
+      ]},
+    {id:"I3", g:"I", t:"관리 페이지 로그인 링크 열기", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [27] 같은 링크 재사용 → 403", "✓ [13] 관리 API 읽기 (예고 목록)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → GET /admin/login"),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/csrf"),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/list_preview")
+      ]},
+    {id:"I4", g:"I", t:"관리 페이지 · edit_preview", c:"차이", trig:"관리 페이지", out:"preview.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14d] 예고 편집 → 적용 큐 → 반영"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /edit_preview (세션 + CSRF)"),
+        s("O",[CQ],"적용 큐에 apply_preview_edit 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_preview_edit 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("X",[BE_DM],"DM: ✏️ 예고 편집 반영 (title). /undo 로 되돌릴 수 있습니다."),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"I5", g:"I", t:"관리 페이지 · edit_preview", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [14d] 열람 값 충돌 → conflict"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /edit_preview (세션 + CSRF)")
+      ]},
+    {id:"I6", g:"I", t:"관리 페이지 · set_paused", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [CSRF] CSRF 없이 POST → 403"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /set_paused (세션 + CSRF)")
+      ]},
+    {id:"I7", g:"I", t:"관리 페이지 · delete_preview", c:"차이", trig:"관리 페이지", out:"preview.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 재등록 차단(suppress)을 접수 쪽이 기록 (흐름도: 쓰기 서비스) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14g] 예고 삭제 + 재등록 차단(ops)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /delete_preview (세션 + CSRF)"),
+        s("O",[CQ],"적용 큐에 remove_broadcast 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 remove_broadcast 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/admin_state.json [접수(요청 스레드)]",{n:true}),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"I8", g:"I", t:"reconcile(전체 · light) — 시각 16:31 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"—", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [14g] 차단된 URL 은 reconcile 이 다시 싣지 않음"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)")
+      ]},
+    {id:"I9", g:"I", t:"관리 페이지 · set_paused", c:"차이", trig:"관리 페이지", out:"—", why:"작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [16] 관리 페이지 일시정지 → ops/control.json"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /set_paused (세션 + CSRF)"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/control.json [접수(요청 스레드)]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"I10", g:"I", t:"X 알림 · 夢限大みゅーたいぷ · 9/29(火) 配信スケジュール", c:"일치", trig:"업스트림(폰 Automate)", out:"—", why:"", checks:["✓ [16] 일시정지 중 ingest 무시"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"I11", g:"I", t:"관리 페이지 · set_paused", c:"차이", trig:"관리 페이지", out:"—", why:"작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [16] 재개 → reconcile(전체) 적재 (자기 호출 없음)", "✓ [14j] 작업 이력(ops/history.json)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /set_paused (세션 + CSRF)"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/control.json [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 reconcile(all) 적재 · 예약 16:29 KST [접수(요청 스레드)]"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true}),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/list_history")
+      ]},
+    {id:"I12", g:"I", t:"텔레그램 /status", c:"일치", trig:"텔레그램 비상 명령", out:"—", why:"", checks:["✓ [D24] /status 비상 명령 응답"],
+      steps:[
+        s("E",[CMD],"텔레그램 명령 → 접수 /telegram (로컬: getUpdates 폴링이 전달)"),
+        s("X",[DM],"DM: 🟢 mewtype v3 | paused: no | log: normal previe"),
+        s("X",[DM],"DM: 📖 /status 필드 (v3) · paused — /pause 로 멈춤. 정지 중"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"I13", g:"I", t:"텔레그램 /edit preview", c:"일치", trig:"텔레그램 비상 명령", out:"—", why:"", checks:["✓ [D24] 마법사 명령 → 관리 페이지 안내"],
+      steps:[
+        s("E",[CMD],"텔레그램 명령 → 접수 /telegram (로컬: getUpdates 폴링이 전달)"),
+        s("X",[DM],"DM: 📱 mewtype v4a (로컬 시험판) 비상 명령: /status /pause /"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"I14", g:"I", t:"텔레그램 /pause", c:"일치", trig:"텔레그램 비상 명령", out:"—", why:"", checks:["✓ [16] /pause 비상 명령 → ops control"],
+      steps:[
+        s("E",[CMD],"텔레그램 명령 → 접수 /telegram (로컬: getUpdates 폴링이 전달)"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/control.json [접수(요청 스레드)]"),
+        s("X",[DM],"DM: ⏸ 일시정지됨. /resume 으로 재개하세요."),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"I15", g:"I", t:"텔레그램 /resume", c:"일치", trig:"텔레그램 비상 명령", out:"—", why:"", checks:["✓ [16] /resume → 재개 + reconcile 적재"],
+      steps:[
+        s("E",[CMD],"텔레그램 명령 → 접수 /telegram (로컬: getUpdates 폴링이 전달)"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/control.json [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 reconcile(all) 적재 · 예약 16:29 KST [접수(요청 스레드)]"),
+        s("X",[DM],"DM: ▶️ 재개. reconcile(전체) 적재됨 (작업 b430ec90fc06) — 결"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"J1", g:"J", t:"reconcile(전체 · baseline) — 시각 16:29 KST", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"preview.json", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음 / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이", checks:["✓ [3] 그룹 채널 영상 → 5인 레인 팬아웃(host=group)", "✓ [5] baseline → channels.list 아바타 반영"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 reconcile(all) 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 reconcile(all) 실행"),
+        s("X",[rt(viaBe("yt"))],"youtube · RSS [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · channels.list [q-apply]"),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 23:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQE],"가공 큐에 translate_sweep 적재 [q-apply]"),
+        s("O",[QEC],"가공 큐 → translate_sweep 실행 (q-enrich = 흐름도 /enrich)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [q-enrich]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [q-enrich]",{n:true}),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]")
+      ]},
+    {id:"K1", g:"K", t:"X 알림 · 仲町あられ · 10/1 20時からbilibiliで配信します！ ", c:"차이", trig:"업스트림(폰 Automate)", out:"tweets.json, notices.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤) / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체)", checks:["✓ [9b] 비YouTube URL 개인 트윗 → notices.json (preview 아님)"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[DM],"DM: 🐦 나카마치 아라레 새 트윗 (스레드 1/50) arale · 10/1 20時からb",{n:true}),
+        s("X",[rt(viaCtrl("groq"))],"groq · notice_title [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 notice_sweep 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 notice_sweep 실행"),
+        s("O",[CQ],"적용 큐에 apply_notice 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_notice 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/notices.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("X",[rt(viaCtrl("groq"))],"groq · broadcast_change [접수(요청 스레드)]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]")
+      ]},
+    {id:"L1", g:"L", t:"관리 페이지 · ingest_preview_raw", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [14a] 원문 투입 미리보기 — 반영 안 함"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /ingest_preview_raw (세션 + CSRF)")
+      ]},
+    {id:"L2", g:"L", t:"관리 페이지 · ingest_preview_raw", c:"차이", trig:"관리 페이지", out:"preview.json", why:"D19 결정 — 스케줄 관련 원문 보존 (흐름도에 없는 저장소, 로컬 전용) / 로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14a] 확정 → 적용 큐 → preview 반영"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /ingest_preview_raw (세션 + CSRF)"),
+        s("S",[RAWP],"쓰기 _local/raw/raw/2026-09.jsonl [접수(요청 스레드)]",{n:true}),
+        s("O",[CQ],"적용 큐에 merge_rows 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 merge_rows 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L3", g:"L", t:"관리 페이지 · ingest_notice_raw", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [14b] 소식 원문 미리보기"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /ingest_notice_raw (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · notice_title [접수(요청 스레드)]")
+      ]},
+    {id:"L4", g:"L", t:"관리 페이지 · ingest_notice_raw", c:"차이", trig:"관리 페이지", out:"notices.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14b] 소식 확정 → notices.json"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /ingest_notice_raw (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · notice_title [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 notice_sweep 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 notice_sweep 실행"),
+        s("O",[CQ],"적용 큐에 apply_notice 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_notice 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/notices.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L5", g:"L", t:"관리 페이지 · edit_notice", c:"차이", trig:"관리 페이지", out:"notices.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14e] 소식 편집"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /edit_notice (세션 + CSRF)"),
+        s("O",[CQ],"적용 큐에 notice_edit_commit 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 notice_edit_commit 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/notices.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L6", g:"L", t:"관리 페이지 · translate", c:"차이", trig:"관리 페이지", out:"notices.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [15] 수동 번역(소식) — 이미 번역돼 있어도 덮어씀(force)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /translate (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · notice_title [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/notices.json [q-apply]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L7", g:"L", t:"관리 페이지 · delete_notice", c:"차이", trig:"관리 페이지", out:"notices.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14h] 소식 삭제"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /delete_notice (세션 + CSRF)"),
+        s("O",[CQ],"적용 큐에 notice_del_commit 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 notice_del_commit 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/notices.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L8", g:"L", t:"관리 페이지 · ingest_tweet_raw", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [14c] 트윗 원문 미리보기(번역 포함)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /ingest_tweet_raw (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]")
+      ]},
+    {id:"L9", g:"L", t:"관리 페이지 · ingest_tweet_raw", c:"차이", trig:"관리 페이지", out:"tweets.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14c·14f] 트윗 투입 → tweets.json"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /ingest_tweet_raw (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L10", g:"L", t:"관리 페이지 · translate", c:"일치", trig:"관리 페이지", out:"—", why:"", checks:["✓ [15] 제목 없는 예고 번역 → 분명한 오류"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /translate (세션 + CSRF)")
+      ]},
+    {id:"L11", g:"L", t:"관리 페이지 · translate", c:"차이", trig:"관리 페이지", out:"preview.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [15] 수동 번역(예고)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /translate (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 apply_translation 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 apply_translation 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"L12", g:"L", t:"관리 페이지 · delete_tweet", c:"차이", trig:"관리 페이지", out:"tweets.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / v3 undo 슬롯 · 편집 락 잔재를 쓰기 스레드가 계속 기록 (흐름도: 작업 이력으로 대체) / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [14i] 트윗 삭제", "✓ [14j] 조작마다 작업 이력"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /delete_tweet (세션 + CSRF)"),
+        s("O",[CQ],"적용 큐에 tweet_del_commit 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 tweet_del_commit 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "ops"]],"쓰기 _local/ops/admin_state.json [q-apply]",{n:true}),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true}),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/list_history")
+      ]},
+    {id:"M1", g:"M", t:"X 알림 · 藤都子 · 今日のおやつはプリン🍮", c:"차이", trig:"업스트림(폰 Automate)", out:"—", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 로컬 한정 — 결과 DM 을 접수 쪽이 보냄 (흐름도 #7: 쓰기 서비스가 커밋 뒤)", checks:["✓ [20] 결과를 기다린 작업 실패 → 유실 원문 1건(원문 그대로 · kind=personal_tweet)", "✓ [20] 유실 알림 DM 1건 (중복 없음)"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("O",[["be"]],"personal_tweet 실패 — 주입된 실패 (검증용)",{stop:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행 (시도 2)"),
+        s("O",[["be"]],"personal_tweet 실패 — 주입된 실패 (검증용)",{stop:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행 (시도 3)"),
+        s("O",[["be"]],"personal_tweet 실패 — 주입된 실패 (검증용)",{stop:true}),
+        s("X",[DM],"DM: ⚠️ 원문 유실 — 재투입용 실패사유: personal tweet write 호출 ",{n:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/유실 원문 큐 [접수(요청 스레드)]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/list_lost")
+      ]},
+    {id:"M2", g:"M", t:"관리 페이지 · retry_lost", c:"차이", trig:"관리 페이지", out:"tweets.json", why:"로컬 한정 — 적재 후 결과를 기다린다 (흐름도: 적재하고 바로 응답). 계획 §1 알려진 차이 / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [18] 재투입 → 원문 그대로 반영", "✓ [18] 성공한 항목은 유실 큐에서 제거", "✓ [18] 엉터리 소식 없음 (작업 인자 JSON 이 원문으로 처리되지 않음)"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /retry_lost (세션 + CSRF)"),
+        s("X",[rt(viaCtrl("vx"))],"vxtwitter · fetch_tweet [접수(요청 스레드)]"),
+        s("X",[rt(viaCtrl("groq"))],"groq · translate [접수(요청 스레드)]"),
+        s("O",[CQ],"적용 큐에 personal_tweet 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 personal_tweet 실행"),
+        s("S",[["be", "data"]],"쓰기 _local/data/tweets.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("X",[DM],"DM: 🐦 후지 미야코 새 트윗 (스레드 1/50) miyako · 今日のおやつはプリン🍮"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/유실 원문 큐 [접수(요청 스레드)]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true}),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/list_lost")
+      ]},
+    {id:"M3", g:"M", t:"YouTube 알림 · SUBSCRIPTION_LIVESTREAM_START · RITSULV0001", c:"차이", trig:"업스트림(폰 Automate)", out:"—", why:"D1~D3 결정 — 알림을 상태 신호로 쓰는 yt_notif 작업 (흐름도 #12 는 reconcile(영상)만) / D1~D3 결정 — yt_notif: reconcile(영상) 후 tunein→watching · 시작→live", checks:["✓ [20] 비동기 작업 실패 → 유실 큐에 작업(apply_job) 보관 + 쓰기 쪽 DM"],
+      steps:[
+        s("E",[X_IN],"업스트림 알림 → 접수 /ingest"),
+        s("O",[CQ],"적용 큐에 yt_notif 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_notif 실행",{n:true}),
+        s("O",[["be"]],"yt_notif 실패 — 주입된 실패 (검증용)",{stop:true}),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [접수(요청 스레드)]"),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_notif 실행 (시도 2)",{n:true}),
+        s("O",[["be"]],"yt_notif 실패 — 주입된 실패 (검증용)",{stop:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_notif 실행 (시도 3)",{n:true}),
+        s("O",[["be"]],"yt_notif 실패 — 주입된 실패 (검증용)",{stop:true}),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/유실 원문 큐 [q-apply]"),
+        s("X",[BE_DM],"DM: ⚠️ 적용 큐 작업 실패 — yt_notif (시도 3회) 주입된 실패 (검증용) "),
+        s("E",[ADM],"관리 페이지 → GET /admin/api/list_lost")
+      ]},
+    {id:"M4", g:"M", t:"관리 페이지 · retry_lost", c:"차이", trig:"관리 페이지", out:"preview.json", why:"D1~D3 결정 — 알림을 상태 신호로 쓰는 yt_notif 작업 (흐름도 #12 는 reconcile(영상)만) / D1~D3 결정 — yt_notif: reconcile(영상) 후 tunein→watching · 시작→live / 작업 이력을 접수 쪽(admin_api)이 기록 (흐름도: 쓰기 서비스가 작업 결과와 함께)", checks:["✓ [18] apply_job 재투입 → 같은 작업 재적재 → 반영"],
+      steps:[
+        s("E",[ADM],"관리 페이지 → POST /retry_lost (세션 + CSRF)"),
+        s("O",[CQ],"적용 큐에 yt_notif 적재 [접수(요청 스레드)]",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 yt_notif 실행",{n:true}),
+        s("X",[rt(viaBe("yt"))],"youtube · videos.list [q-apply]"),
+        s("S",[["be", "data"]],"쓰기 _local/data/preview.json [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 23:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 18:10 KST [q-apply]"),
+        s("O",[BQ],"다음 확인 적재 reconcile(video) · 예약 16:40 KST [q-apply]"),
+        s("X",[BE_DM],"DM: 🔴 방송 시작 미네츠키 리츠 「【雑談】」 예정 09/29 16:29 → 실제 09/"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/이벤트 로그 한 줄 [q-apply]"),
+        s("S",[["ctrl", "mon"]],"쓰기 _local/monitoring/유실 원문 큐 [접수(요청 스레드)]"),
+        s("S",[["ctrl", "ops"]],"쓰기 _local/ops/history.json [접수(요청 스레드)]",{n:true})
+      ]},
+    {id:"N1", g:"N", t:"스냅샷 잡 (06:10 KST)", c:"차이", trig:"정기 잡 / 예약 시각 도달", out:"—", why:"로컬: 스케줄러 스레드가 적용 큐에 적재 (흐름도: Scheduler → 쓰기 서비스 직접). 같은 한 줄에 선다는 점은 같음", checks:["✓ [22] 스냅샷 작업 (q-apply)", "✓ [23] 웹 모니터 /monitor-live", "✓ [25] 프론트 / + /data/preview.json"],
+      steps:[
+        s("E",[SCHQ],"정기 잡 → 적용 큐에 snapshot 적재",{n:true}),
+        s("O",[QB],"쓰기 스레드 q-apply 가 snapshot 실행"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/monitoring/days/2026-09-28.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/monitoring/summary.json [q-apply]"),
+        s("S",[["be", "mon"]],"쓰기 _local/monitoring/monitoring/latest.html [q-apply]"),
+        s("F",[WEB],"브라우저 → 웹 모니터 /monitor-live"),
+        s("F",[["browser","cdn"]],"브라우저 → 로컬 러너 /"),
+        s("F",[["browser","cdn"]],"브라우저 → 로컬 러너 /data/preview.json")
+      ]}
+  ];
+  F.forEach(function(f, i){ f.i = i; });
+
+  /* ── SVG 유틸 ── */
+  function el(tag, attrs, parent){
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function pts(route){ return route.map(function(p){ return typeof p === "string" ? C(p) : p; }); }
+  function pathD(route){
+    var p = pts(route);
+    if (p.length === 1) return "M" + p[0][0] + "," + p[0][1];
+    return "M" + p.map(function(q){ return q[0] + "," + q[1]; }).join(" L");
+  }
+  function nodeAt(p){
+    return Object.keys(N).filter(function(k){
+      var b = N[k]; return p[0] >= b[0] && p[0] <= b[0]+b[2] && p[1] >= b[1] && p[1] <= b[1]+b[3];
+    })[0];
+  }
+  function esc(x){ return String(x).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+
+  /* 노드 */
+  var gNodes = document.getElementById("nodes");
+  Object.keys(N).forEach(function(k){
+    var n = N[k];
+    var g = el("g", {"class":"node" + (n[6] === "ext" ? " ext" : "") + (n[6] === "new" ? " newn" : ""), id:"n_" + k,
+      transform:"translate(" + n[0] + "," + n[1] + ")"}, gNodes);
+    el("rect", {width:n[2], height:n[3], rx:8}, g);
+    var subs = Array.isArray(n[5]) ? n[5] : [n[5]];
+    var ty = n[3]/2 - (subs.length - 1) * 5.5 - 2;
+    var t = el("text", {"class":"nt", x:n[2]/2, y:ty, "text-anchor":"middle"}, g); t.textContent = n[4];
+    subs.forEach(function(line, i){
+      var st = el("text", {"class":"ns", x:n[2]/2, y:ty + 13 + i * 11, "text-anchor":"middle"}, g); st.textContent = line;
+    });
+    if (n[6] === "new"){
+      /* 인라인 style — 노드 공통 CSS(.node rect 의 fill · hot stroke)가 덮어쓰지 않게 */
+      el("rect", {x:n[2] - 30, y:-7, width:28, height:13, rx:3, style:"fill:#ffffff;stroke:none"}, g);
+      var nt = el("text", {"class":"newtag", x:n[2] - 16, y:3, "text-anchor":"middle"}, g); nt.textContent = "NEW";
+    }
+  });
+
+  /* 배선 골격 */
+  var gSkel = document.getElementById("skel"), seen = {};
+  F.forEach(function(f){ f.steps.forEach(function(st){ st.rs.forEach(function(r){
+    if (r.length < 2) return;
+    var d = pathD(r); if (seen[d]) return; seen[d] = 1;
+    el("path", {"class":"skel", d:d}, gSkel);
+  }); }); });
+
+  var gDone = document.getElementById("done"), gRoutes = document.getElementById("routes"),
+      gPk = document.getElementById("packets"), gBadges = document.getElementById("badges");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ── 재생 상태 ── */
+  var placed = [];
+  var cur = null, idx = 0, phase = "idle", t0 = 0, dur = 0, live = [], playing = true, acc = 0, last = null;
+  var capEl = document.getElementById("cap"), nowEl = document.getElementById("now"), bPlay = document.getElementById("bPlay");
+
+  function colorOf(st){ return K[st.k].hex; }
+  function stepLabel(st, i){ return st.stop ? "✕" : String(i + 1); }
+  function hotNodes(st, hex, isCur){
+    st.rs.forEach(function(r){ r.forEach(function(p){
+      var k = typeof p === "string" ? p : nodeAt(p); if (!k) return;
+      var n = document.getElementById("n_" + k);
+      if (!n) return;
+      n.classList.add("hot"); n.style.setProperty("--hc", hex);
+      if (isCur) n.classList.add("cur");
+    }); });
+  }
+  function clearCur(){ SVG.querySelectorAll(".node.cur").forEach(function(n){ n.classList.remove("cur"); }); }
+
+  function badge(x, y, label, hex, isNew){
+    var g = el("g", {"class":"badge", transform:"translate(" + x + "," + y + ")"}, gBadges);
+    el("circle", {r:8.5, fill:hex, stroke:isNew ? "#ffffff" : "#0d0e11", "stroke-width":isNew ? 2 : 1.5}, g);
+    var t = el("text", {x:0, y:3.4, "text-anchor":"middle"}, g); t.textContent = label;
+  }
+
+  function renderDone(i){
+    var st = cur.steps[i], hex = colorOf(st);
+    hotNodes(st, hex, false);
+    st.rs.forEach(function(r, j){
+      if (r.length < 2){
+        var c = C(r[0]);
+        if (j === 0){ var bx = c[0] + N[r[0]][2]/2 - 4, by = c[1] - N[r[0]][3]/2 + 4; placed.push([bx, by]); badge(bx, by, stepLabel(st, i), hex, st.n); }
+        return;
+      }
+      var p = el("path", {"class":"done" + (st.stop ? " cut" : ""), d:pathD(r), stroke:hex}, gDone);
+      if (j !== 0) return;
+      /* 같은 경로를 여러 단계가 지나면 번호가 겹친다 — 빈자리가 나올 때까지 경로를 따라 옮긴다 */
+      var L = p.getTotalLength();
+      var fr = st.stop ? [0.55, 0.4, 0.7, 0.25] : [0.42, 0.25, 0.6, 0.15, 0.75, 0.33, 0.52, 0.85];
+      var q = null;
+      for (var m = 0; m < fr.length; m++){
+        var c2 = p.getPointAtLength(L * fr[m]);
+        if (!placed.some(function(b){ return Math.hypot(b[0] - c2.x, b[1] - c2.y) < 17; })){ q = c2; break; }
+      }
+      if (!q) q = p.getPointAtLength(L * fr[0]);
+      placed.push([q.x, q.y]);
+      badge(q.x, q.y, stepLabel(st, i), hex, st.n);
+    });
+  }
+
+  function clearStage(){
+    gDone.textContent = ""; gRoutes.textContent = ""; gPk.textContent = ""; gBadges.textContent = ""; placed = [];
+    SVG.querySelectorAll(".node.hot").forEach(function(n){ n.classList.remove("hot"); n.style.removeProperty("--hc"); });
+    clearCur(); live = [];
+  }
+
+  function markList(){
+    capEl.querySelectorAll(".steps li").forEach(function(li, i){
+      li.classList.toggle("past", i < idx);
+      li.classList.toggle("cur", i === idx && phase === "anim");
+    });
+    nowEl.textContent = cur ? ("#" + cur.id + " · 단계 " + Math.min(idx + 1, cur.steps.length) + " / " + cur.steps.length) : "";
+  }
+
+  function startStep(){
+    var st = cur.steps[idx], hex = colorOf(st);
+    gRoutes.textContent = ""; gPk.textContent = ""; live = []; clearCur();
+    hotNodes(st, hex, true);
+    var maxL = 0;
+    st.rs.forEach(function(r){
+      if (r.length < 2){
+        var c = C(r[0]);
+        var ring = el("circle", {cx:c[0], cy:c[1], r:10, fill:"none", stroke:hex, "stroke-width":2}, gPk);
+        live.push({ring:ring});
+        return;
+      }
+      var path = el("path", {"class":"route", d:pathD(r), stroke:hex}, gRoutes);
+      var L = path.getTotalLength(); maxL = Math.max(maxL, L);
+      var p0 = pts(r)[0];
+      var g = el("g", {transform:"translate(" + p0[0] + "," + p0[1] + ")"}, gPk);
+      el("circle", {"class":"pk-halo", r:10, fill:hex}, g);
+      el("circle", {r:4.5, fill:hex, style:"filter:drop-shadow(0 0 4px " + hex + ")"}, g);
+      live.push({path:path, L:L, g:g});
+    });
+    dur = maxL ? Math.max(800, Math.min(2800, maxL / 0.24)) : 1100;
+    phase = "anim"; t0 = acc; markList();
+  }
+
+  function finishStep(){
+    gRoutes.textContent = ""; gPk.textContent = ""; live = [];
+    renderDone(idx);
+    idx++;
+    phase = "gap"; t0 = acc; dur = idx >= cur.steps.length ? 2200 : 320;
+    markList();
+  }
+
+  function update(){
+    if (!cur || phase === "idle") return;
+    var t = (acc - t0) / dur;
+    if (phase === "anim"){
+      var st = cur.steps[idx], k = Math.min(t, 1), e = k < .5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2)/2;
+      live.forEach(function(o){
+        if (o.ring){ o.ring.setAttribute("r", 10 + 34 * k); o.ring.setAttribute("opacity", 1 - k); return; }
+        var q = o.path.getPointAtLength(o.L * e * (st.stop ? 0.55 : 1));
+        o.g.setAttribute("transform", "translate(" + q.x + "," + q.y + ")");
+      });
+      if (t >= 1) finishStep();
+    } else if (phase === "gap" && t >= 1){
+      if (idx >= cur.steps.length) jump(0); else startStep();
+    }
+  }
+
+  function loop(ts){
+    if (last !== null && playing) acc += ts - last;
+    last = ts;
+    update();
+    requestAnimationFrame(loop);
+  }
+
+  function jump(i){
+    clearStage();
+    for (var j = 0; j < i; j++) renderDone(j);
+    idx = i;
+    if (reduceMotion){
+      for (var m = i; m < cur.steps.length; m++) renderDone(m);
+      idx = cur.steps.length; phase = "idle"; markList(); return;
+    }
+    startStep();
+  }
+
+  function renderCap(f){
+    var h = '<h3><span class="id">#' + esc(f.id) + '</span>' + esc(f.t) + '<span class="c">흐름도 대조 ' + esc(f.c) + '</span></h3>' +
+      '<dl><dt>묶음</dt><dd>' + esc(f.g + " · " + G[f.g]) + '</dd>' +
+      '<dt>트리거</dt><dd>' + esc(f.trig) + '</dd>' +
+      '<dt>쓰는 곳</dt><dd>' + esc(f.out) + '</dd></dl><ol class="steps">';
+    f.steps.forEach(function(st, i){
+      h += '<li data-i="' + i + '" class="' + (st.n ? "chg" : "") + '" style="--sc:' + colorOf(st) + '"><span class="n">' + stepLabel(st, i) + '</span>' +
+        '<span>' + (st.n ? '<span class="v4">차이</span>' : '') + '<span class="kind">' + esc(K[st.k].name) + '</span>' + esc(st.t) + '</span></li>';
+    });
+    h += '</ol>';
+    if (f.why) h += '<div class="chgbox">흐름도와 다른 점 — ' + esc(f.why) + '</div>';
+    if (f.note) h += '<div class="note">' + esc(f.note) + '</div>';
+    if (f.checks && f.checks.length) h += '<ul class="checks">' + f.checks.map(function(c){ return '<li class="' + (c[0] === "✓" ? "ok" : "ng") + '">' + esc(c) + '</li>'; }).join('') + '</ul>';
+    capEl.innerHTML = h;
+    capEl.querySelectorAll(".steps li").forEach(function(li){
+      li.addEventListener("click", function(){ jump(+li.dataset.i); });
+    });
+  }
+
+  /* ── 탭 · 칩 ── */
+  var tabs = document.getElementById("tabs"), chips = document.getElementById("chips");
+  Object.keys(G).forEach(function(g){
+    var b = document.createElement("button");
+    b.className = "tab"; b.type = "button"; b.setAttribute("role","tab"); b.dataset.g = g;
+    b.innerHTML = '<span class="k">' + g + '</span>' + esc(G[g]);
+    b.addEventListener("click", function(){ selectGroup(g, true); });
+    tabs.appendChild(b);
+  });
+
+  function selectGroup(g, autoFirst){
+    tabs.querySelectorAll(".tab").forEach(function(b){ b.setAttribute("aria-selected", b.dataset.g === g ? "true" : "false"); });
+    chips.textContent = "";
+    F.filter(function(f){ return f.g === g; }).forEach(function(f){
+      var b = document.createElement("button");
+      b.className = "chip"; b.type = "button"; b.dataset.id = f.id; b.setAttribute("aria-selected","false");
+      b.innerHTML = '<b>#' + esc(f.id) + '</b> ' + esc(f.t) + (f.c !== "일치" ? '<span class="c">' + esc(f.c) + '</span>' : '');
+      b.addEventListener("click", function(){ selectFeature(f); });
+      chips.appendChild(b);
+    });
+    if (autoFirst) selectFeature(F.filter(function(f){ return f.g === g; })[0]);
+  }
+
+  function selectFeature(f){
+    if (!cur || cur.g !== f.g) selectGroup(f.g, false);
+    cur = f;
+    chips.querySelectorAll(".chip").forEach(function(b){ b.setAttribute("aria-selected", b.dataset.id === f.id ? "true" : "false"); });
+    SVG.classList.add("dimming");
+    renderCap(f);
+    jump(0);
+  }
+
+  document.getElementById("bPlay").addEventListener("click", function(){
+    playing = !playing; bPlay.textContent = playing ? "⏸ 일시정지" : "▶ 재생";
+  });
+  document.getElementById("bRe").addEventListener("click", function(){ if (cur) jump(0); });
+  document.getElementById("bPrev").addEventListener("click", function(){ selectFeature(F[(cur.i - 1 + F.length) % F.length]); });
+  document.getElementById("bNext").addEventListener("click", function(){ selectFeature(F[(cur.i + 1) % F.length]); });
+
+  /* 범례 */
+  var legend = document.getElementById("legend");
+  Object.keys(K).forEach(function(k){
+    var sp = document.createElement("span");
+    sp.innerHTML = '<i style="background:' + K[k].hex + '"></i>' + esc(K[k].name);
+    legend.appendChild(sp);
+  });
+  var sp2 = document.createElement("span");
+  sp2.innerHTML = '<span class="ring"></span>흐름도(설계)와 다른 단계';
+  legend.appendChild(sp2);
+
+  /* 커버리지 표 */
+  var tbl = document.getElementById("tbl");
+  F.forEach(function(f){
+    var tr = document.createElement("tr");
+    tr.innerHTML = '<td><button class="go" type="button">#' + esc(f.id) + '</button></td><td>' + esc(f.g + " " + G[f.g]) + '</td>' +
+      '<td><b>' + esc(f.t) + '</b>' + (f.why ? '<br>' + esc(f.why) : '') + '</td>' +
+      '<td><span class="c' + (f.c !== "일치" ? " chg" : "") + '">' + esc(f.c) + '</span></td>' +
+      '<td>' + esc(f.trig) + '</td><td>' + esc(f.out) + '</td>';
+    tr.querySelector(".go").addEventListener("click", function(){
+      selectFeature(f);
+      document.querySelector(".diagram").scrollIntoView({behavior:"smooth", block:"start"});
+    });
+    tbl.appendChild(tr);
+  });
+
+  selectFeature(F[0]);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
