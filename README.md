@@ -6,6 +6,9 @@
 
 📋 [PRD](./docs/beta_version/PRD.md) | 📦 [구현 명세](./docs/SPEC.md)
 
+> **브랜치 `v4a` — 로컬 시험판 (미배포).** 별도 테스트 기기에서 돌리는 방법: [ref/v4a/v4a_local_runbook.md](./ref/v4a/v4a_local_runbook.md) ·
+> 검증 결과: [ref/v4a/v4a_verify_report.md](./ref/v4a/v4a_verify_report.md) · 관측 흐름: `ref/v4a/v4a_verify_flow.html`
+
 ---
 
 ## 구조

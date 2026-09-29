@@ -11,7 +11,7 @@ v4a 구성 요소 → 이 프로세스 (`ref/v4a/v4a_impl_plan.md` §1)
   Telegram webhook  스레드 tg-poll — 로컬 봇 getUpdates → 같은 /telegram 처리
   raw CDN · 프론트  같은 Flask 앱: / (src/frontend) · /data/* (_local/data)
 
-바인딩: 127.0.0.1 + LOCAL_BIND(기본 100.79.146.124 — Tailscale), 포트 LOCAL_PORT(기본 8787).
+바인딩: 127.0.0.1 + LOCAL_BIND(비우면 이 기기의 `tailscale ip -4` 자동 감지), 포트 LOCAL_PORT(기본 8787).
 외부 인터넷 인바운드는 필요 없다(폰 → Tailscale → 이 PC, 나머지는 전부 이 PC 에서 나가는 연결).
 """
 from __future__ import annotations
@@ -36,7 +36,6 @@ _DEFAULTS = {
     "V4A_RUNTIME": "local",
     "ALLOW_UNAUTH": "1",          # 로컬: Cloud Run OIDC 검증 경로를 쓰지 않음(/admin 은 자체 인증)
     "LOCAL_DATA_DIR": str(ROOT / "_local"),
-    "LOCAL_BIND": "100.79.146.124",
     "LOCAL_PORT": "8787",
 }
 _REQUIRED = ("YOUTUBE_API_KEY", "INGEST_SECRET", "ADMIN_SECRET")
@@ -58,6 +57,24 @@ def load_env_file(path: Path) -> list[str]:
             os.environ[k] = v
         keys.append(k)
     return keys
+
+
+def detect_tailscale_ip() -> str:
+    """이 기기의 Tailscale IPv4 (`tailscale ip -4`). CLI 가 PATH 에 없으면 OS 기본 설치 경로도 본다. 못 찾으면 ""."""
+    import shutil
+    import subprocess
+
+    cands = [shutil.which("tailscale"), str(Path("C:/Program Files/Tailscale/tailscale.exe")),
+             "/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/usr/bin/tailscale"]
+    for exe in [c for c in cands if c and Path(c).exists()]:
+        try:
+            out = subprocess.run([exe, "ip", "-4"], capture_output=True, text=True, timeout=10).stdout
+        except Exception:  # noqa: BLE001
+            continue
+        ip = next((l.strip() for l in out.splitlines() if l.strip().startswith("100.")), "")
+        if ip:
+            return ip
+    return ""
 
 
 def check_config() -> list[str]:
@@ -240,6 +257,15 @@ def main(argv=None) -> int:
     load_env_file(Path(args.env))
     for k, v in _DEFAULTS.items():
         os.environ.setdefault(k, v)
+    if not os.environ.get("LOCAL_BIND", "").strip():
+        ip = detect_tailscale_ip()
+        if ip:
+            os.environ["LOCAL_BIND"] = ip
+            log.info("Tailscale IP 자동 감지: %s", ip)
+        else:
+            log.warning("Tailscale IP 를 못 찾음 — 127.0.0.1 에만 바인딩(폰에서 접속 불가). Tailscale 로그인 확인 또는 LOCAL_BIND 지정")
+    log.info("접속 주소: http://%s:%s/  (관리 페이지 링크 기준 %s)", os.environ.get("LOCAL_BIND") or "127.0.0.1",
+             os.environ["LOCAL_PORT"], os.environ.get("ADMIN_BASE_URL") or "LOCAL_BIND")
     missing = check_config()
     if missing:
         log.error("필수 설정 누락: %s — %s 에 넣으세요", ", ".join(missing), args.env)
