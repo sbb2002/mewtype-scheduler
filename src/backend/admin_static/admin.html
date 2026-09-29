@@ -497,6 +497,21 @@
                 <tr><td colspan="3" class="loading">로드 중...</td></tr>
             </tbody>
         </table>
+
+        <h2 style="margin-top: 2rem;">작업 이력 (운영자 조작)</h2>
+        <table id="jobs-history">
+            <thead>
+                <tr>
+                    <th>조작</th>
+                    <th>대상 · 내용</th>
+                    <th>결과</th>
+                    <th>시각</th>
+                </tr>
+            </thead>
+            <tbody id="jobs-history-body">
+                <tr><td colspan="4" class="loading">로드 중...</td></tr>
+            </tbody>
+        </table>
     </div>
 
     <!-- ════ 탭: 유실 원문 ════ -->
@@ -819,8 +834,8 @@
                 startInput.type = "datetime-local";
                 startInput.id = "edit-start";
                 if (item.scheduled_start) {
-                    const d = new Date(item.scheduled_start);
-                    startInput.value = d.toISOString().slice(0, 16);
+                    // (Claude 검증 수정) 브라우저 시간대와 무관하게 KST 로 표시 — UTC 값을 넣으면 9시간 밀린다
+                    startInput.value = this.utcIsoToKstInput(item.scheduled_start);
                 }
                 startGroup.appendChild(startLabel);
                 startGroup.appendChild(startInput);
@@ -843,30 +858,57 @@
                 document.getElementById("edit-modal").classList.add("active");
             },
 
+            // (Claude 검증 수정) 같은 이름의 submitEdit 가 두 번 정의돼 뒤의 것(소식)이 앞의 것(예고)을 덮어써
+            // 예고 편집 저장이 아무 일도 하지 않았다 — 종류별 함수로 나누고 여기서 고른다
             async submitEdit() {
+                if (this.editState.type === "preview") return this.submitPreviewEdit();
+                if (this.editState.type === "notice") return this.submitNoticeEdit();
+            },
+
+            // "2026-09-29T14:15:00Z"(UTC) → "2026-09-29T23:15"(KST, datetime-local 값). 브라우저 시간대와 무관
+            utcIsoToKstInput(iso) {
+                const ms = Date.parse(iso) + 9 * 3600 * 1000;
+                return new Date(ms).toISOString().slice(0, 16);
+            },
+
+            // "2026-09-29T23:15"(KST) → "2026-09-29T14:15:00Z" — 저장 형식(밀리초 없음)과 같게
+            kstInputToUtcIso(value) {
+                const ms = Date.parse(value + ":00+09:00");
+                return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+            },
+
+            async submitPreviewEdit() {
                 if (this.editState.type === "preview") {
+                    // (Claude 검증 수정) null 값 필드는 빈 입력과 같다고 본다 — 안 그러면 손대지 않은 빈 필드가 ""로 저장된다
                     const patch = {};
+                    const seen = this.editState.seen;
                     const titleInput = document.getElementById("edit-title");
-                    if (titleInput.value !== this.editState.seen.title) {
+                    if (titleInput.value !== (seen.title || "")) {
                         patch.title = titleInput.value;
                     }
 
                     const stateInput = document.getElementById("edit-state");
-                    if (stateInput.value !== this.editState.seen.state) {
+                    if (stateInput.value !== seen.state) {
                         patch.state = stateInput.value;
                     }
 
                     const startInput = document.getElementById("edit-start");
                     if (startInput.value) {
-                        const iso = new Date(startInput.value).toISOString();
-                        if (iso !== this.editState.seen.scheduled_start) {
+                        const iso = this.kstInputToUtcIso(startInput.value);
+                        if (iso !== seen.scheduled_start) {
                             patch.scheduled_start = iso;
                         }
                     }
 
                     const urlInput = document.getElementById("edit-url");
-                    if (urlInput.value !== this.editState.seen.url) {
+                    if (urlInput.value !== (seen.url || "")) {
                         patch.url = urlInput.value;
+                    }
+
+                    if (Object.keys(patch).length === 0) {
+                        this.showToast("바뀐 것이 없습니다");
+                        this.closeModal();
+                        return;
                     }
 
                     try {
@@ -1188,12 +1230,12 @@
                 document.getElementById("edit-modal").classList.add("active");
             },
 
-            async submitEdit() {
+            async submitNoticeEdit() {
                 if (this.editState.type === "notice") {
                     const patch = {};
 
                     const titleInput = document.getElementById("edit-notice-title");
-                    if (titleInput.value !== this.editState.seen.title) {
+                    if (titleInput.value !== (this.editState.seen.title || "")) {
                         patch.title = titleInput.value;
                     }
 
@@ -1203,7 +1245,7 @@
                     }
 
                     const urlInput = document.getElementById("edit-notice-url");
-                    if (urlInput.value !== this.editState.seen.url) {
+                    if (urlInput.value !== (this.editState.seen.url || "")) {
                         patch.url = urlInput.value;
                     }
 
@@ -1283,6 +1325,8 @@
                 try {
                     const data = await this.apiCall("GET", "/list_jobs");
                     this.renderJobs(data);
+                    const hist = await this.apiCall("GET", "/list_history?limit=50");
+                    this.renderHistory(hist || []);
                 } catch (e) {
                     console.error("작업 로드 실패", e);
                 }
@@ -1292,11 +1336,15 @@
                 // Apply 큐
                 const applyDiv = document.getElementById("jobs-apply");
                 applyDiv.textContent = "";
+                // 대기 작업: {id, name, kind, run_at_iso, attempt} (jobqueue.pending)
+                const pendingText = (job) =>
+                    `${job.kind || "?"}${job.name ? " · " + job.name : ""} · ${this.formatTime(job.run_at_iso)}` +
+                    (job.attempt > 1 ? ` (재시도 ${job.attempt})` : "");
                 if (data.apply && data.apply.length > 0) {
                     const list = document.createElement("ul");
                     for (const job of data.apply) {
                         const li = document.createElement("li");
-                        li.textContent = job.id || job;
+                        li.textContent = pendingText(job);
                         list.appendChild(li);
                     }
                     applyDiv.appendChild(list);
@@ -1311,7 +1359,7 @@
                     const list = document.createElement("ul");
                     for (const job of data.enrich) {
                         const li = document.createElement("li");
-                        li.textContent = job.id || job;
+                        li.textContent = pendingText(job);
                         list.appendChild(li);
                     }
                     enrichDiv.appendChild(list);
@@ -1325,10 +1373,11 @@
                 if (data.recent && data.recent.length > 0) {
                     for (const job of data.recent) {
                         const tr = document.createElement("tr");
+                        // 최근 결과: {ts, job_id, kind, ok, attempt, summary} (apply.recent)
                         const tdId = document.createElement("td");
-                        tdId.textContent = job.id || "—";
+                        tdId.textContent = job.kind || job.job_id || "—";
                         const tdStatus = document.createElement("td");
-                        tdStatus.textContent = job.result || "—";
+                        tdStatus.textContent = (job.ok ? "✓ " : "✗ ") + (job.summary || "");
                         const tdTime = document.createElement("td");
                         tdTime.textContent = this.formatTime(job.ts);
                         tr.appendChild(tdId);
@@ -1342,6 +1391,36 @@
                     td.colSpan = 3;
                     td.textContent = "결과 없음";
                     tr.appendChild(td);
+                    tbody.appendChild(tr);
+                }
+            },
+
+            // 작업 이력: {id, ts, action, target, summary, ok, error, job_id} (admin_api.list_history)
+            renderHistory(items) {
+                const tbody = document.getElementById("jobs-history-body");
+                tbody.textContent = "";
+                if (!items.length) {
+                    const tr = document.createElement("tr");
+                    const td = document.createElement("td");
+                    td.colSpan = 4;
+                    td.textContent = "이력 없음";
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
+                    return;
+                }
+                for (const h of items) {
+                    const tr = document.createElement("tr");
+                    const cells = [
+                        h.action || "—",
+                        [h.target, h.summary].filter(Boolean).join(" · ") || "—",
+                        h.ok ? "✓" : "✗ " + (h.error || ""),
+                        this.formatTime(h.ts),
+                    ];
+                    for (const c of cells) {
+                        const td = document.createElement("td");
+                        td.textContent = c;
+                        tr.appendChild(td);
+                    }
                     tbody.appendChild(tr);
                 }
             },
