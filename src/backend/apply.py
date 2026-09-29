@@ -68,7 +68,8 @@ def submit(kind: str, args: dict, *, wait: bool = True, run_at_iso: str | None =
     if _q is None:
         return handle(kind, args, {"job_id": "inline", "attempt": 1, "is_last": True, "queue": "inline"})
     if wait:
-        return _q.submit_and_wait(kind, args, timeout=timeout)
+        # 결과를 기다리는 호출부(접수 쪽)는 실패하면 스스로 원문과 함께 유실 처리한다 — on_dead 가 중복 처리하지 않게 표시
+        return _q.submit_and_wait(kind, dict(args, _waited=True), timeout=timeout)
     return {"queued": True, "job_id": _q.enqueue(kind, args, run_at_iso=run_at_iso, name=name)}
 
 
@@ -135,16 +136,19 @@ def on_dead(job: dict, exc: BaseException) -> None:
     """마지막 시도까지 실패 — 유실 원문 큐 + DM (설계 기능 20 ②)."""
     _record({"ts": _now_iso(), "job_id": job.get("id"), "kind": job.get("kind"), "ok": False,
              "attempt": job.get("attempt"), "summary": f"{type(exc).__name__}: {str(exc)[:200]}"})
+    args = job.get("args") or {}
     if job.get("kind") in ("reconcile", "snapshot", "apply_translation"):
         return  # 재계산으로 복구되는 작업 — 원문이 없으므로 유실 큐 대상 아님
+    if args.get("_waited"):
+        return  # 결과를 기다리던 접수 쪽이 원문과 함께 유실 처리한다(_dm_lost_raw) — 중복 적재 · 중복 DM 방지
     try:
         from . import monitor_log, storage
-        args = job.get("args") or {}
-        prepared = args.get("prepared") if isinstance(args.get("prepared"), dict) else {}
-        raw = args.get("raw") or prepared.get("raw")
+        # 결과를 기다리지 않은 작업(yt_notif 등) — 원문 트윗이 아니라 "작업 그 자체"를 보관하고,
+        # 관리 페이지 재투입은 같은 작업을 다시 적재한다(admin_api._retry_one 의 apply_job 갈래).
         monitor_log.push_lost(storage.make_store("data"), {
             "ts": _now_iso(), "reason": f"적용 큐 작업 실패({job.get('kind')}): {str(exc)[:200]}",
-            "kind": job.get("kind"), "raw": raw or json.dumps(args, ensure_ascii=False, default=str)[:4000],
+            "kind": "apply_job", "job_kind": job.get("kind"),
+            "raw": json.dumps(args, ensure_ascii=False, default=str)[:4000],
             "channel_key": args.get("channel_key"), "job_id": job.get("id"),
         })
     except Exception:  # noqa: BLE001

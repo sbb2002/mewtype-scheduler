@@ -312,8 +312,10 @@ def translate(target: str, key: str) -> dict:
     up = enrich.empty_updates()
     if target == "preview":
         it = next((i for i in list_preview().get("items", []) if i.get("id") == key), None)
-        if not it or not it.get("title"):
+        if not it:
             return _err("항목 없음")
+        if not it.get("title"):
+            return _err("제목이 없는 예고라 번역할 것이 없습니다")
         ko = llm.translate(it["title"])
         if ko:
             up["preview"][key] = {"title": it["title"], "title_ko": ko}
@@ -342,6 +344,13 @@ def _retry_one(t, item: dict, chs: dict, now: str) -> str:
     """유실 원문 1건 재처리 → 결과 모드 문자열 (v3.9 `/ingest --retroactive` 와 같은 갈래)."""
     kind = item.get("kind", "ingest")
     raw, title, tag = item.get("raw", ""), item.get("title", ""), item.get("tag")
+    if kind == "apply_job":
+        # 결과를 기다리지 않은 적용 큐 작업의 실패 — 같은 작업을 다시 적재(결과 대기)
+        import json as _json
+        args = _json.loads(raw or "{}")
+        args.pop("_waited", None)
+        apply.submit(item.get("job_kind") or "", args, wait=True)
+        return "resubmitted"
     if kind == "personal_tweet":
         return t._maybe_personal_tweet(raw, title=title, tag=tag, channel_key=item.get("channel_key", ""),
                                        now_iso=now, via="ops")
