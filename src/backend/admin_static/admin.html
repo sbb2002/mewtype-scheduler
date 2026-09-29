@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>뮤타입 방송 스케줄 — 관리 페이지</title>
+    <style>
+        :root {
+            --color-bg: #0f0f0f;
+            --color-bg-secondary: #1a1a1a;
+            --color-text: #e8e8e8;
+            --color-text-muted: #999999;
+            --color-border: #333333;
+            --color-live: #ff0000;
+            --color-live-text: #ffffff;
+            --color-accent: #06b6d4;
+            --gap: 1rem;
+            --page-pad: clamp(1rem, 4vw, 3rem);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scrollbar-color: var(--color-border) transparent;
+        }
+
+        body {
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            margin: 0;
+            padding: var(--page-pad);
+        }
+
+        h1 {
+            margin: 0 0 1.5rem 0;
+            font-size: 1.5rem;
+        }
+
+        h2 {
+            margin: 1.5rem 0 1rem 0;
+            font-size: 1.2rem;
+        }
+
+        h3 {
+            margin: 1rem 0 0.5rem 0;
+            font-size: 1rem;
+        }
+
+        /* 탭 네비게이션 */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--color-border);
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--color-text);
+        }
+
+        .tab-btn.active {
+            color: var(--color-accent);
+            border-bottom-color: var(--color-accent);
+        }
+
+        /* 탭 콘텐츠 */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 폼 요소 */
+        input, select, textarea {
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            color: var(--color-text);
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: inherit;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+        }
+
+        button {
+            background-color: var(--color-accent);
+            border: none;
+            color: var(--color-bg);
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button.danger {
+            background-color: #ff6b6b;
+        }
+
+        /* 테이블 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        th {
+            background-color: var(--color-bg-secondary);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: var(--color-bg-secondary);
+        }
+
+        /* 리스트 */
+        .list-item {
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .list-item-title {
+            flex: 1;
+            font-weight: 600;
+        }
+
+        .list-item-meta {
+            color: var(--color-text-muted);
+            font-size: 0.85rem;
+        }
+
+        .list-item-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        /* 폼 그룹 */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+
+        /* 상태 배지 */
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .badge-live {
+            background-color: var(--color-live);
+            color: var(--color-live-text);
+        }
+
+        .badge-announced {
+            background-color: rgba(124, 138, 160, 0.3);
+            color: rgb(180, 192, 212);
+        }
+
+        .badge-watching {
+            background-color: rgba(6, 182, 212, 0.3);
+            color: rgb(100, 200, 220);
+        }
+
+        .badge-end {
+            background-color: rgba(153, 153, 153, 0.3);
+            color: rgb(180, 180, 180);
+        }
+
+        /* 토스트 메시지 */
+        .toast {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            padding: 1rem;
+            max-width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            animation: slideIn 0.3s ease-out;
+            z-index: 1000;
+        }
+
+        .toast.success {
+            border-left: 3px solid #51cf66;
+        }
+
+        .toast.error {
+            border-left: 3px solid #ff6b6b;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* 모달 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .modal-header button {
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            justify-content: flex-end;
+        }
+
+        /* 로딩 상태 */
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--color-text-muted);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--color-border);
+            border-top-color: var(--color-accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 반응형 */
+        @media (max-width: 640px) {
+            body {
+                padding: var(--page-pad);
+            }
+
+            .list-item {
+                flex-direction: column;
+            }
+
+            .list-item-actions {
+                width: 100%;
+            }
+
+            .list-item-actions button {
+                flex: 1;
+            }
+
+            .modal-content {
+                width: 95%;
+            }
+
+            .toast {
+                right: 0.5rem;
+                left: 0.5rem;
+                max-width: none;
+            }
+        }
+
+        /* 인라인 폼 */
+        .inline-form {
+            margin: 1rem 0;
+            padding: 1rem;
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+        }
+
+        .inline-form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .inline-form-row.full {
+            grid-template-columns: 1fr;
+        }
+
+        /* 프리 텍스트 출력 */
+        pre {
+            background-color: var(--color-bg);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            color: var(--color-text-muted);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        /* 체크박스 */
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 0.5rem;
+            cursor: pointer;
+        }
+
+        label {
+            cursor: pointer;
+        }
+
+        /* 헬퍼 텍스트 */
+        .help-text {
+            color: var(--color-text-muted);
+            font-size: 0.85rem;
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>뮤타입 방송 스케줄 — 관리 페이지</h1>
+
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="preview">예고</button>
+        <button class="tab-btn" data-tab="ingest">원문 투입</button>
+        <button class="tab-btn" data-tab="content">소식 · 트윗</button>
+        <button class="tab-btn" data-tab="jobs">작업</button>
+        <button class="tab-btn" data-tab="lost">유실 원문</button>
+        <button class="tab-btn" data-tab="control">운영</button>
+        <button class="tab-btn" data-tab="report">리포트</button>
+    </div>
+
+    <!-- ════ 탭: 예고 ════ -->
+    <div class="tab-content active" id="preview-tab">
+        <h2>예고</h2>
+        <div id="preview-list" class="loading">로드 중...</div>
+    </div>
+
+    <!-- ════ 탭: 원문 투입 ════ -->
+    <div class="tab-content" id="ingest-tab">
+        <h2>원문 투입</h2>
+        <div class="form-group">
+            <label>종류</label>
+            <select id="ingest-kind">
+                <option value="preview">예고</option>
+                <option value="notice">소식</option>
+                <option value="tweet">트윗</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="unit-select" style="display: none;">
+            <label>유닛 (트윗용)</label>
+            <select id="ingest-unit"></select>
+        </div>
+
+        <div class="form-group">
+            <label>원문</label>
+            <textarea id="ingest-raw" placeholder="원문을 붙여 넣으세요" rows="8"></textarea>
+        </div>
+
+        <div class="form-group">
+            <button onclick="app.previewIngest()">미리보기</button>
+        </div>
+
+        <div id="ingest-preview" style="display: none;">
+            <h3>미리보기</h3>
+            <pre id="ingest-preview-content"></pre>
+            <div id="ingest-preview-note" style="color: var(--color-text-muted); margin-top: 0.5rem;"></div>
+            <div class="form-group" style="margin-top: 1rem;">
+                <button onclick="app.confirmIngest()" style="background-color: #51cf66;">확정</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════ 탭: 소식 · 트윗 ════ -->
+    <div class="tab-content" id="content-tab">
+        <h2>소식</h2>
+        <div id="notices-list" class="loading">로드 중...</div>
+
+        <h2 style="margin-top: 2rem;">트윗</h2>
+        <div id="tweets-list" class="loading">로드 중...</div>
+    </div>
+
+    <!-- ════ 탭: 작업 ════ -->
+    <div class="tab-content" id="jobs-tab">
+        <h2>적용 큐</h2>
+        <div id="jobs-apply" class="loading">로드 중...</div>
+
+        <h2>가공 큐</h2>
+        <div id="jobs-enrich" class="loading">로드 중...</div>
+
+        <h2>최근 결과</h2>
+        <table id="jobs-recent">
+            <thead>
+                <tr>
+                    <th>작업</th>
+                    <th>상태</th>
+                    <th>시각</th>
+                </tr>
+            </thead>
+            <tbody id="jobs-recent-body">
+                <tr><td colspan="3" class="loading">로드 중...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ════ 탭: 유실 원문 ════ -->
+    <div class="tab-content" id="lost-tab">
+        <h2>유실 원문</h2>
+        <div id="lost-list" class="loading">로드 중...</div>
+    </div>
+
+    <!-- ════ 탭: 운영 ════ -->
+    <div class="tab-content" id="control-tab">
+        <h2>운영 설정</h2>
+        <div id="control-status" class="loading">로드 중...</div>
+    </div>
+
+    <!-- ════ 탭: 리포트 ════ -->
+    <div class="tab-content" id="report-tab">
+        <h2>모니터링 리포트</h2>
+        <p><a href="/monitor-live" target="_blank" style="color: var(--color-accent); text-decoration: none;">웹 모니터 열기</a></p>
+    </div>
+
+    <!-- ════ 모달 ════ -->
+    <div class="modal" id="edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="edit-modal-title">편집</h3>
+                <button onclick="app.closeModal()">&times;</button>
+            </div>
+            <div id="edit-modal-form"></div>
+            <div class="modal-actions">
+                <button onclick="app.closeModal()">취소</button>
+                <button onclick="app.submitEdit()" style="background-color: #51cf66;">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════════════════════
+        // 앱 상태 · 헬퍼
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        const app = {
+            csrfToken: null,
+            currentTab: "preview",
+            data: {
+                preview: null,
+                notices: null,
+                tweets: null,
+                control: null,
+                channels: null,
+            },
+            editState: null,
+            ingestPreviewData: null,
+            channels: {},
+
+            async init() {
+                // CSRF 토큰 가져오기
+                try {
+                    const resp = await fetch("/admin/api/csrf");
+                    const data = await resp.json();
+                    this.csrfToken = data.token;
+                } catch (e) {
+                    console.error("CSRF 토큰 로드 실패", e);
+                }
+
+                // 채널 정보 로드
+                try {
+                    const resp = await fetch("/admin/api/channels");
+                    const data = await resp.json();
+                    this.data.channels = data;
+                    if (data.channels) {
+                        this.channels = data.channels;
+                    }
+                } catch (e) {
+                    console.error("채널 정보 로드 실패", e);
+                }
+
+                // 탭 네비게이션
+                document.querySelectorAll(".tab-btn").forEach((btn) => {
+                    btn.addEventListener("click", (e) => {
+                        this.switchTab(e.target.dataset.tab);
+                    });
+                });
+
+                // 투입 종류 변경 시 유닛 선택 표시/숨김
+                document.getElementById("ingest-kind").addEventListener("change", (e) => {
+                    const unitSelect = document.getElementById("unit-select");
+                    if (e.target.value === "tweet") {
+                        unitSelect.style.display = "block";
+                        this.loadUnits();
+                    } else {
+                        unitSelect.style.display = "none";
+                    }
+                });
+
+                // 초기 탭 로드
+                this.switchTab("preview");
+            },
+
+            switchTab(tabName) {
+                this.currentTab = tabName;
+
+                // UI 업데이트
+                document.querySelectorAll(".tab-btn").forEach((btn) => {
+                    btn.classList.toggle("active", btn.dataset.tab === tabName);
+                });
+                document.querySelectorAll(".tab-content").forEach((content) => {
+                    content.classList.toggle("active", content.id === tabName + "-tab");
+                });
+
+                // 탭별 데이터 로드
+                if (tabName === "preview") this.loadPreview();
+                else if (tabName === "content") this.loadNoticesAndTweets();
+                else if (tabName === "jobs") this.loadJobs();
+                else if (tabName === "lost") this.loadLost();
+                else if (tabName === "control") this.loadControl();
+            },
+
+            formatTime(iso) {
+                if (!iso) return "—";
+                const d = new Date(iso);
+                const kst = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+                const month = String(kst.getMonth() + 1).padStart(2, "0");
+                const date = String(kst.getDate()).padStart(2, "0");
+                const hours = String(kst.getHours()).padStart(2, "0");
+                const minutes = String(kst.getMinutes()).padStart(2, "0");
+                return `${month}/${date} ${hours}:${minutes}`;
+            },
+
+            stateBadge(state) {
+                const badges = {
+                    live: "badge-live",
+                    announced: "badge-announced",
+                    watching: "badge-watching",
+                    end: "badge-end",
+                };
+                return badges[state] || "badge-end";
+            },
+
+            showToast(message, type = "success") {
+                const toast = document.createElement("div");
+                toast.className = `toast ${type}`;
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            },
+
+            async apiCall(method, endpoint, body) {
+                const opts = {
+                    method,
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                };
+
+                if (body) {
+                    opts.body = JSON.stringify(body);
+                }
+
+                if (method === "POST") {
+                    opts.headers["X-CSRF-Token"] = this.csrfToken;
+                }
+
+                const resp = await fetch(`/admin/api${endpoint}`, opts);
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || "요청 실패");
+                }
+
+                return data;
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 예고 탭
+            // ─────────────────────────────────────────────────────────────────────
+
+            async loadPreview() {
+                try {
+                    const data = await this.apiCall("GET", "/list_preview");
+                    this.data.preview = data;
+                    this.renderPreview();
+                } catch (e) {
+                    const container = document.getElementById("preview-list");
+                    container.textContent = ""; // Clear
+                    const p = document.createElement("p");
+                    p.style.color = "#ff6b6b";
+                    p.textContent = `로드 실패: ${e.message}`;
+                    container.appendChild(p);
+                }
+            },
+
+            renderPreview() {
+                const container = document.getElementById("preview-list");
+                container.textContent = "";
+
+                if (!this.data.preview || !this.data.preview.items) {
+                    const p = document.createElement("p");
+                    p.textContent = "데이터 없음";
+                    container.appendChild(p);
+                    return;
+                }
+
+                // 채널별로 그룹화
+                const byChannel = {};
+                for (const item of this.data.preview.items) {
+                    const key = item.channel_key;
+                    if (!byChannel[key]) {
+                        byChannel[key] = [];
+                    }
+                    byChannel[key].push(item);
+                }
+
+                // 채널 순서대로 렌더링
+                const channelOrder = this.data.preview.channel_order || [];
+                for (const key of channelOrder) {
+                    if (!byChannel[key]) continue;
+
+                    const h3 = document.createElement("h3");
+                    const chInfo = this.channels[key] || {};
+                    h3.textContent = chInfo.name_ko || key;
+                    container.appendChild(h3);
+
+                    for (const item of byChannel[key]) {
+                        const div = document.createElement("div");
+                        div.className = "list-item";
+
+                        const title = document.createElement("div");
+                        title.className = "list-item-title";
+
+                        const badge = document.createElement("span");
+                        badge.className = `badge ${this.stateBadge(item.state)}`;
+                        badge.textContent = item.state.toUpperCase();
+                        title.appendChild(badge);
+
+                        const titleSpan = document.createElement("span");
+                        titleSpan.textContent = item.title || "제목 없음";
+                        titleSpan.style.marginLeft = "0.5rem";
+                        title.appendChild(titleSpan);
+
+                        const meta = document.createElement("div");
+                        meta.className = "list-item-meta";
+                        meta.textContent = this.formatTime(item.scheduled_start || item.live_start);
+
+                        const actions = document.createElement("div");
+                        actions.className = "list-item-actions";
+
+                        const editBtn = document.createElement("button");
+                        editBtn.textContent = "수정";
+                        editBtn.style.backgroundColor = "var(--color-accent)";
+                        editBtn.onclick = () => this.editPreview(item);
+                        actions.appendChild(editBtn);
+
+                        const delBtn = document.createElement("button");
+                        delBtn.textContent = "삭제";
+                        delBtn.className = "danger";
+                        delBtn.onclick = () => this.deletePreview(item.id);
+                        actions.appendChild(delBtn);
+
+                        div.appendChild(title);
+                        div.appendChild(meta);
+                        div.appendChild(actions);
+                        container.appendChild(div);
+                    }
+                }
+            },
+
+            editPreview(item) {
+                this.editState = {
+                    type: "preview",
+                    itemId: item.id,
+                    seen: {
+                        title: item.title,
+                        state: item.state,
+                        scheduled_start: item.scheduled_start,
+                        url: item.url,
+                    },
+                };
+
+                const form = document.getElementById("edit-modal-form");
+                form.textContent = "";
+
+                // 제목
+                const titleGroup = document.createElement("div");
+                titleGroup.className = "form-group";
+                const titleLabel = document.createElement("label");
+                titleLabel.textContent = "제목";
+                const titleInput = document.createElement("input");
+                titleInput.type = "text";
+                titleInput.id = "edit-title";
+                titleInput.value = item.title || "";
+                titleGroup.appendChild(titleLabel);
+                titleGroup.appendChild(titleInput);
+                form.appendChild(titleGroup);
+
+                // 상태
+                const stateGroup = document.createElement("div");
+                stateGroup.className = "form-group";
+                const stateLabel = document.createElement("label");
+                stateLabel.textContent = "상태";
+                const stateSelect = document.createElement("select");
+                stateSelect.id = "edit-state";
+                const states = ["announced", "upcoming", "watching", "live", "end"];
+                for (const s of states) {
+                    const opt = document.createElement("option");
+                    opt.value = s;
+                    opt.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+                    opt.selected = s === item.state;
+                    stateSelect.appendChild(opt);
+                }
+                stateGroup.appendChild(stateLabel);
+                stateGroup.appendChild(stateSelect);
+                form.appendChild(stateGroup);
+
+                // 시각
+                const startGroup = document.createElement("div");
+                startGroup.className = "form-group";
+                const startLabel = document.createElement("label");
+                startLabel.textContent = "예정 시각 (KST)";
+                const startInput = document.createElement("input");
+                startInput.type = "datetime-local";
+                startInput.id = "edit-start";
+                if (item.scheduled_start) {
+                    const d = new Date(item.scheduled_start);
+                    startInput.value = d.toISOString().slice(0, 16);
+                }
+                startGroup.appendChild(startLabel);
+                startGroup.appendChild(startInput);
+                form.appendChild(startGroup);
+
+                // URL
+                const urlGroup = document.createElement("div");
+                urlGroup.className = "form-group";
+                const urlLabel = document.createElement("label");
+                urlLabel.textContent = "URL";
+                const urlInput = document.createElement("input");
+                urlInput.type = "text";
+                urlInput.id = "edit-url";
+                urlInput.value = item.url || "";
+                urlGroup.appendChild(urlLabel);
+                urlGroup.appendChild(urlInput);
+                form.appendChild(urlGroup);
+
+                document.getElementById("edit-modal-title").textContent = "예고 편집";
+                document.getElementById("edit-modal").classList.add("active");
+            },
+
+            async submitEdit() {
+                if (this.editState.type === "preview") {
+                    const patch = {};
+                    const titleInput = document.getElementById("edit-title");
+                    if (titleInput.value !== this.editState.seen.title) {
+                        patch.title = titleInput.value;
+                    }
+
+                    const stateInput = document.getElementById("edit-state");
+                    if (stateInput.value !== this.editState.seen.state) {
+                        patch.state = stateInput.value;
+                    }
+
+                    const startInput = document.getElementById("edit-start");
+                    if (startInput.value) {
+                        const iso = new Date(startInput.value).toISOString();
+                        if (iso !== this.editState.seen.scheduled_start) {
+                            patch.scheduled_start = iso;
+                        }
+                    }
+
+                    const urlInput = document.getElementById("edit-url");
+                    if (urlInput.value !== this.editState.seen.url) {
+                        patch.url = urlInput.value;
+                    }
+
+                    try {
+                        const result = await this.apiCall("POST", "/edit_preview", {
+                            item_id: this.editState.itemId,
+                            patch,
+                            seen: this.editState.seen,
+                        });
+
+                        if (result.ok) {
+                            this.showToast("예고가 수정되었습니다");
+                            this.closeModal();
+                            this.loadPreview();
+                        } else if (result.error && result.error.startsWith("conflict:")) {
+                            this.showToast("충돌: 그 사이 값이 바뀌었습니다 — 새로고침 후 다시 시도", "error");
+                        } else {
+                            this.showToast(result.error || "수정 실패", "error");
+                        }
+                    } catch (e) {
+                        this.showToast(`오류: ${e.message}`, "error");
+                    }
+                }
+            },
+
+            async deletePreview(itemId) {
+                if (!confirm("삭제하시겠습니까?")) return;
+
+                const suppress = confirm("재등록을 차단하시겠습니까?");
+
+                try {
+                    const result = await this.apiCall("POST", "/delete_preview", {
+                        item_id: itemId,
+                        suppress,
+                    });
+
+                    if (result.ok) {
+                        this.showToast("예고가 삭제되었습니다");
+                        this.loadPreview();
+                    } else {
+                        this.showToast(result.error || "삭제 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 원문 투입 탭
+            // ─────────────────────────────────────────────────────────────────────
+
+            async loadUnits() {
+                try {
+                    const data = await this.apiCall("GET", "/channels");
+                    const select = document.getElementById("ingest-unit");
+                    select.textContent = "";
+                    if (data.channel_order) {
+                        for (const key of data.channel_order) {
+                            const opt = document.createElement("option");
+                            opt.value = key;
+                            const chName = data.channels?.[key]?.name_ko || key;
+                            opt.textContent = chName;
+                            select.appendChild(opt);
+                        }
+                    }
+                } catch (e) {
+                    console.error("유닛 로드 실패", e);
+                }
+            },
+
+            async previewIngest() {
+                const kind = document.getElementById("ingest-kind").value;
+                const raw = document.getElementById("ingest-raw").value;
+
+                if (!raw.trim()) {
+                    this.showToast("원문을 입력하세요", "error");
+                    return;
+                }
+
+                try {
+                    let endpoint;
+                    let body = { raw, confirm: false };
+
+                    if (kind === "preview") {
+                        endpoint = "/ingest_preview_raw";
+                    } else if (kind === "notice") {
+                        endpoint = "/ingest_notice_raw";
+                    } else if (kind === "tweet") {
+                        const unit = document.getElementById("ingest-unit").value;
+                        endpoint = "/ingest_tweet_raw";
+                        body.unit = unit;
+                    }
+
+                    const result = await this.apiCall("POST", endpoint, body);
+
+                    this.ingestPreviewData = { result, endpoint, body };
+
+                    const previewDiv = document.getElementById("ingest-preview");
+                    const contentPre = document.getElementById("ingest-preview-content");
+                    const noteDiv = document.getElementById("ingest-preview-note");
+
+                    previewDiv.style.display = "block";
+
+                    if (result.preview) {
+                        let preview = result.preview;
+                        if (typeof preview === "object") {
+                            preview = JSON.stringify(preview, null, 2);
+                        }
+                        contentPre.textContent = preview;
+                    } else {
+                        contentPre.textContent = "미리보기 없음";
+                    }
+
+                    if (result.note) {
+                        noteDiv.textContent = result.note;
+                    } else {
+                        noteDiv.textContent = "";
+                    }
+                } catch (e) {
+                    this.showToast(`미리보기 실패: ${e.message}`, "error");
+                }
+            },
+
+            async confirmIngest() {
+                if (!this.ingestPreviewData) {
+                    this.showToast("먼저 미리보기를 클릭하세요", "error");
+                    return;
+                }
+
+                try {
+                    const body = { ...this.ingestPreviewData.body, confirm: true };
+                    const result = await this.apiCall("POST", this.ingestPreviewData.endpoint, body);
+
+                    if (result.ok) {
+                        this.showToast("원문이 투입되었습니다");
+                        document.getElementById("ingest-raw").value = "";
+                        document.getElementById("ingest-preview").style.display = "none";
+                        this.ingestPreviewData = null;
+                    } else {
+                        this.showToast(result.error || "투입 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 소식 · 트윗 탭
+            // ─────────────────────────────────────────────────────────────────────
+
+            async loadNoticesAndTweets() {
+                try {
+                    const notices = await this.apiCall("GET", "/list_notices");
+                    const tweets = await this.apiCall("GET", "/list_tweets");
+                    this.data.notices = notices;
+                    this.data.tweets = tweets;
+                    this.renderNotices();
+                    this.renderTweets();
+                } catch (e) {
+                    console.error("소식/트윗 로드 실패", e);
+                }
+            },
+
+            renderNotices() {
+                const container = document.getElementById("notices-list");
+                container.textContent = "";
+
+                if (!this.data.notices || !this.data.notices.notices) {
+                    const p = document.createElement("p");
+                    p.textContent = "소식 없음";
+                    container.appendChild(p);
+                    return;
+                }
+
+                for (const notice of this.data.notices.notices) {
+                    const div = document.createElement("div");
+                    div.className = "list-item";
+
+                    const title = document.createElement("div");
+                    title.className = "list-item-title";
+                    title.textContent = notice.title || notice.title_ko || "제목 없음";
+
+                    const meta = document.createElement("div");
+                    meta.className = "list-item-meta";
+                    meta.textContent = notice.date || this.formatTime(notice.created_at);
+
+                    const actions = document.createElement("div");
+                    actions.className = "list-item-actions";
+
+                    const editBtn = document.createElement("button");
+                    editBtn.textContent = "수정";
+                    editBtn.onclick = () => this.editNotice(notice);
+                    actions.appendChild(editBtn);
+
+                    const delBtn = document.createElement("button");
+                    delBtn.textContent = "삭제";
+                    delBtn.className = "danger";
+                    delBtn.onclick = () => this.deleteNotice(notice.id);
+                    actions.appendChild(delBtn);
+
+                    const tlBtn = document.createElement("button");
+                    tlBtn.textContent = "번역";
+                    tlBtn.onclick = () => this.translate("notice", notice.id);
+                    actions.appendChild(tlBtn);
+
+                    div.appendChild(title);
+                    div.appendChild(meta);
+                    div.appendChild(actions);
+                    container.appendChild(div);
+                }
+            },
+
+            renderTweets() {
+                const container = document.getElementById("tweets-list");
+                container.textContent = "";
+
+                if (!this.data.tweets || !this.data.tweets.tweets) {
+                    const p = document.createElement("p");
+                    p.textContent = "트윗 없음";
+                    container.appendChild(p);
+                    return;
+                }
+
+                for (const [unit, tweetList] of Object.entries(this.data.tweets.tweets)) {
+                    const h4 = document.createElement("h4");
+                    const chName = this.channels[unit]?.name_ko || unit;
+                    h4.textContent = chName;
+                    container.appendChild(h4);
+
+                    for (const tweet of (Array.isArray(tweetList) ? tweetList : [tweetList])) {
+                        if (!tweet) continue;
+
+                        const div = document.createElement("div");
+                        div.className = "list-item";
+
+                        const title = document.createElement("div");
+                        title.className = "list-item-title";
+                        title.textContent = (tweet.text || tweet.text_ko || "").substring(0, 100);
+
+                        const meta = document.createElement("div");
+                        meta.className = "list-item-meta";
+                        meta.textContent = this.formatTime(tweet.created_at);
+
+                        const actions = document.createElement("div");
+                        actions.className = "list-item-actions";
+
+                        const delBtn = document.createElement("button");
+                        delBtn.textContent = "삭제";
+                        delBtn.className = "danger";
+                        delBtn.onclick = () => this.deleteTweet(unit);
+                        actions.appendChild(delBtn);
+
+                        const tlBtn = document.createElement("button");
+                        tlBtn.textContent = "번역";
+                        tlBtn.onclick = () => this.translate("tweet", unit);
+                        actions.appendChild(tlBtn);
+
+                        div.appendChild(title);
+                        div.appendChild(meta);
+                        div.appendChild(actions);
+                        container.appendChild(div);
+                    }
+                }
+            },
+
+            editNotice(notice) {
+                this.editState = {
+                    type: "notice",
+                    nid: notice.id,
+                    seen: {
+                        title: notice.title,
+                        date: notice.date,
+                        url: notice.url,
+                    },
+                };
+
+                const form = document.getElementById("edit-modal-form");
+                form.textContent = "";
+
+                // 제목
+                const titleGroup = document.createElement("div");
+                titleGroup.className = "form-group";
+                const titleLabel = document.createElement("label");
+                titleLabel.textContent = "제목";
+                const titleInput = document.createElement("input");
+                titleInput.type = "text";
+                titleInput.id = "edit-notice-title";
+                titleInput.value = notice.title || "";
+                titleGroup.appendChild(titleLabel);
+                titleGroup.appendChild(titleInput);
+                form.appendChild(titleGroup);
+
+                // 날짜
+                const dateGroup = document.createElement("div");
+                dateGroup.className = "form-group";
+                const dateLabel = document.createElement("label");
+                dateLabel.textContent = "날짜 (YYYY-MM-DD)";
+                const dateInput = document.createElement("input");
+                dateInput.type = "date";
+                dateInput.id = "edit-notice-date";
+                dateInput.value = notice.date || "";
+                dateGroup.appendChild(dateLabel);
+                dateGroup.appendChild(dateInput);
+                form.appendChild(dateGroup);
+
+                // URL
+                const urlGroup = document.createElement("div");
+                urlGroup.className = "form-group";
+                const urlLabel = document.createElement("label");
+                urlLabel.textContent = "URL";
+                const urlInput = document.createElement("input");
+                urlInput.type = "text";
+                urlInput.id = "edit-notice-url";
+                urlInput.value = notice.url || "";
+                urlGroup.appendChild(urlLabel);
+                urlGroup.appendChild(urlInput);
+                form.appendChild(urlGroup);
+
+                document.getElementById("edit-modal-title").textContent = "소식 편집";
+                document.getElementById("edit-modal").classList.add("active");
+            },
+
+            async submitEdit() {
+                if (this.editState.type === "notice") {
+                    const patch = {};
+
+                    const titleInput = document.getElementById("edit-notice-title");
+                    if (titleInput.value !== this.editState.seen.title) {
+                        patch.title = titleInput.value;
+                    }
+
+                    const dateInput = document.getElementById("edit-notice-date");
+                    if (dateInput.value !== this.editState.seen.date) {
+                        patch.date = dateInput.value;
+                    }
+
+                    const urlInput = document.getElementById("edit-notice-url");
+                    if (urlInput.value !== this.editState.seen.url) {
+                        patch.url = urlInput.value;
+                    }
+
+                    try {
+                        const result = await this.apiCall("POST", "/edit_notice", {
+                            nid: this.editState.nid,
+                            patch,
+                        });
+
+                        if (result.ok) {
+                            this.showToast("소식이 수정되었습니다");
+                            this.closeModal();
+                            this.loadNoticesAndTweets();
+                        } else {
+                            this.showToast(result.error || "수정 실패", "error");
+                        }
+                    } catch (e) {
+                        this.showToast(`오류: ${e.message}`, "error");
+                    }
+                }
+            },
+
+            async deleteNotice(nid) {
+                if (!confirm("삭제하시겠습니까?")) return;
+
+                try {
+                    const result = await this.apiCall("POST", "/delete_notice", { nid });
+
+                    if (result.ok) {
+                        this.showToast("소식이 삭제되었습니다");
+                        this.loadNoticesAndTweets();
+                    } else {
+                        this.showToast(result.error || "삭제 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            async deleteTweet(unit) {
+                if (!confirm("삭제하시겠습니까?")) return;
+
+                try {
+                    const result = await this.apiCall("POST", "/delete_tweet", { unit });
+
+                    if (result.ok) {
+                        this.showToast("트윗이 삭제되었습니다");
+                        this.loadNoticesAndTweets();
+                    } else {
+                        this.showToast(result.error || "삭제 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            async translate(target, key) {
+                try {
+                    const result = await this.apiCall("POST", "/translate", { target, key });
+
+                    if (result.ok) {
+                        this.showToast("번역 작업이 적재되었습니다");
+                        setTimeout(() => this.loadNoticesAndTweets(), 2000);
+                    } else {
+                        this.showToast(result.error || "번역 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 작업 탭
+            // ─────────────────────────────────────────────────────────────────────
+
+            async loadJobs() {
+                try {
+                    const data = await this.apiCall("GET", "/list_jobs");
+                    this.renderJobs(data);
+                } catch (e) {
+                    console.error("작업 로드 실패", e);
+                }
+            },
+
+            renderJobs(data) {
+                // Apply 큐
+                const applyDiv = document.getElementById("jobs-apply");
+                applyDiv.textContent = "";
+                if (data.apply && data.apply.length > 0) {
+                    const list = document.createElement("ul");
+                    for (const job of data.apply) {
+                        const li = document.createElement("li");
+                        li.textContent = job.id || job;
+                        list.appendChild(li);
+                    }
+                    applyDiv.appendChild(list);
+                } else {
+                    applyDiv.textContent = "대기 작업 없음";
+                }
+
+                // Enrich 큐
+                const enrichDiv = document.getElementById("jobs-enrich");
+                enrichDiv.textContent = "";
+                if (data.enrich && data.enrich.length > 0) {
+                    const list = document.createElement("ul");
+                    for (const job of data.enrich) {
+                        const li = document.createElement("li");
+                        li.textContent = job.id || job;
+                        list.appendChild(li);
+                    }
+                    enrichDiv.appendChild(list);
+                } else {
+                    enrichDiv.textContent = "대기 작업 없음";
+                }
+
+                // Recent 결과
+                const tbody = document.getElementById("jobs-recent-body");
+                tbody.textContent = "";
+                if (data.recent && data.recent.length > 0) {
+                    for (const job of data.recent) {
+                        const tr = document.createElement("tr");
+                        const tdId = document.createElement("td");
+                        tdId.textContent = job.id || "—";
+                        const tdStatus = document.createElement("td");
+                        tdStatus.textContent = job.result || "—";
+                        const tdTime = document.createElement("td");
+                        tdTime.textContent = this.formatTime(job.ts);
+                        tr.appendChild(tdId);
+                        tr.appendChild(tdStatus);
+                        tr.appendChild(tdTime);
+                        tbody.appendChild(tr);
+                    }
+                } else {
+                    const tr = document.createElement("tr");
+                    const td = document.createElement("td");
+                    td.colSpan = 3;
+                    td.textContent = "결과 없음";
+                    tr.appendChild(td);
+                    tbody.appendChild(tr);
+                }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 유실 원문 탭
+            // ─────────────────────────────────────────────────────────────────────
+
+            async loadLost() {
+                try {
+                    const data = await this.apiCall("GET", "/list_lost");
+                    this.renderLost(data);
+                } catch (e) {
+                    console.error("유실 원문 로드 실패", e);
+                }
+            },
+
+            renderLost(data) {
+                const container = document.getElementById("lost-list");
+                container.textContent = "";
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    const p = document.createElement("p");
+                    p.textContent = "유실 원문 없음";
+                    container.appendChild(p);
+                    return;
+                }
+
+                const table = document.createElement("table");
+                const thead = document.createElement("thead");
+                const headerRow = document.createElement("tr");
+                for (const label of ["선택", "사유", "원문", "시각"]) {
+                    const th = document.createElement("th");
+                    th.textContent = label;
+                    headerRow.appendChild(th);
+                }
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+
+                const tbody = document.createElement("tbody");
+                for (const item of data) {
+                    const tr = document.createElement("tr");
+
+                    const tdCheck = document.createElement("td");
+                    const checkbox = document.createElement("input");
+                    checkbox.type = "checkbox";
+                    checkbox.value = item.id;
+                    checkbox.className = "lost-checkbox";
+                    tdCheck.appendChild(checkbox);
+                    tr.appendChild(tdCheck);
+
+                    const tdReason = document.createElement("td");
+                    tdReason.textContent = item.reason || "—";
+                    tr.appendChild(tdReason);
+
+                    const tdRaw = document.createElement("td");
+                    tdRaw.textContent = (item.raw || "").substring(0, 50);
+                    tdRaw.style.fontSize = "0.85rem";
+                    tr.appendChild(tdRaw);
+
+                    const tdTime = document.createElement("td");
+                    tdTime.textContent = this.formatTime(item.ts);
+                    tr.appendChild(tdTime);
+
+                    tbody.appendChild(tr);
+                }
+                table.appendChild(tbody);
+                container.appendChild(table);
+
+                const button = document.createElement("button");
+                button.textContent = "선택 재투입";
+                button.style.marginTop = "1rem";
+                button.onclick = () => this.retryLost();
+                container.appendChild(button);
+            },
+
+            async retryLost() {
+                const checkboxes = document.querySelectorAll(".lost-checkbox:checked");
+                const ids = Array.from(checkboxes).map((cb) => cb.value);
+
+                if (ids.length === 0) {
+                    this.showToast("선택된 항목이 없습니다", "error");
+                    return;
+                }
+
+                try {
+                    const result = await this.apiCall("POST", "/retry_lost", { ids });
+
+                    if (result.ok) {
+                        this.showToast(`${ids.length}개 항목 재투입 완료`);
+                        this.loadLost();
+                    } else {
+                        this.showToast(result.error || "재투입 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 운영 탭
+            // ─────────────────────────────────────────────────────────────────────
+
+            async loadControl() {
+                try {
+                    const data = await this.apiCall("GET", "/get_control");
+                    this.renderControl(data);
+                } catch (e) {
+                    console.error("운영 설정 로드 실패", e);
+                }
+            },
+
+            renderControl(data) {
+                const container = document.getElementById("control-status");
+                container.textContent = "";
+
+                // 일시정지 상태
+                const pausedDiv = document.createElement("div");
+                pausedDiv.className = "form-group";
+
+                const pausedLabel = document.createElement("label");
+                pausedLabel.style.fontWeight = "600";
+                pausedLabel.textContent = data.paused ? "상태: 일시정지됨" : "상태: 정상 운영중";
+                pausedDiv.appendChild(pausedLabel);
+
+                const pauseBtn = document.createElement("button");
+                pauseBtn.textContent = data.paused ? "재개" : "일시정지";
+                pauseBtn.style.marginTop = "0.5rem";
+                pauseBtn.onclick = () => this.setPaused(!data.paused);
+                pausedDiv.appendChild(pauseBtn);
+
+                container.appendChild(pausedDiv);
+
+                // 알림 레벨
+                const levelDiv = document.createElement("div");
+                levelDiv.className = "form-group";
+                levelDiv.style.marginTop = "1rem";
+
+                const levelLabel = document.createElement("label");
+                levelLabel.textContent = "알림 레벨";
+                levelDiv.appendChild(levelLabel);
+
+                const levelSelect = document.createElement("select");
+                levelSelect.id = "control-level";
+                for (const lv of ["simple", "normal", "detail"]) {
+                    const opt = document.createElement("option");
+                    opt.value = lv;
+                    opt.textContent = lv.charAt(0).toUpperCase() + lv.slice(1);
+                    opt.selected = lv === data.log_level;
+                    levelSelect.appendChild(opt);
+                }
+                levelDiv.appendChild(levelSelect);
+
+                const setLevelBtn = document.createElement("button");
+                setLevelBtn.textContent = "적용";
+                setLevelBtn.style.marginTop = "0.5rem";
+                setLevelBtn.onclick = () => this.setLogLevel(levelSelect.value);
+                levelDiv.appendChild(setLevelBtn);
+
+                container.appendChild(levelDiv);
+
+                // 모니터 DM
+                const monitorDiv = document.createElement("div");
+                monitorDiv.className = "form-group";
+                monitorDiv.style.marginTop = "1rem";
+
+                const monitorLabel = document.createElement("label");
+                monitorLabel.textContent = "일일 멤버 현황 DM";
+                monitorDiv.appendChild(monitorLabel);
+
+                const monitorCheck = document.createElement("input");
+                monitorCheck.type = "checkbox";
+                monitorCheck.id = "control-monitor";
+                monitorCheck.checked = data.monitor_auto;
+                monitorCheck.style.width = "auto";
+                const monitorText = document.createElement("label");
+                monitorText.htmlFor = "control-monitor";
+                monitorText.textContent = "자동 전송";
+                monitorText.style.marginLeft = "0.5rem";
+                monitorText.style.width = "auto";
+
+                const monitorContainer = document.createElement("div");
+                monitorContainer.style.display = "flex";
+                monitorContainer.style.alignItems = "center";
+                monitorContainer.appendChild(monitorCheck);
+                monitorContainer.appendChild(monitorText);
+                monitorDiv.appendChild(monitorContainer);
+
+                const setMonitorBtn = document.createElement("button");
+                setMonitorBtn.textContent = "적용";
+                setMonitorBtn.style.marginTop = "0.5rem";
+                setMonitorBtn.onclick = () => this.setMonitorAuto(monitorCheck.checked);
+                monitorDiv.appendChild(setMonitorBtn);
+
+                container.appendChild(monitorDiv);
+            },
+
+            async setPaused(paused) {
+                try {
+                    const result = await this.apiCall("POST", "/set_paused", { paused });
+
+                    if (result.ok) {
+                        this.showToast(paused ? "일시정지되었습니다" : "재개되었습니다");
+                        this.loadControl();
+                    } else {
+                        this.showToast(result.error || "설정 변경 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            async setLogLevel(level) {
+                try {
+                    const result = await this.apiCall("POST", "/set_log_level", { level });
+
+                    if (result.ok) {
+                        this.showToast("알림 레벨이 변경되었습니다");
+                        this.loadControl();
+                    } else {
+                        this.showToast(result.error || "설정 변경 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            async setMonitorAuto(enabled) {
+                try {
+                    const result = await this.apiCall("POST", "/set_monitor_auto", { enabled });
+
+                    if (result.ok) {
+                        this.showToast(enabled ? "자동 DM이 켜졌습니다" : "자동 DM이 꺼졌습니다");
+                        this.loadControl();
+                    } else {
+                        this.showToast(result.error || "설정 변경 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // 모달 관리
+            // ─────────────────────────────────────────────────────────────────────
+
+            closeModal() {
+                document.getElementById("edit-modal").classList.remove("active");
+                this.editState = null;
+            },
+        };
+
+        // 초기화
+        document.addEventListener("DOMContentLoaded", () => app.init());
+    </script>
+</body>
+</html>

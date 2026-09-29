@@ -74,7 +74,9 @@ def _monitor_gh(gh):
     if branch == getattr(gh, "branch", None):
         return gh
 
-    # 브랜치만 교체한 새 GitHubStore 반환
+    # 브랜치만 교체한 복제본 반환 — (v4a) LocalStore · RoutedStore 도 같은 방식(storage.with_branch)
+    if hasattr(gh, "with_branch"):
+        return gh.with_branch(branch)
     return GitHubStore(gh.token, gh.repo, branch, session=gh.session, timeout=gh.timeout)
 
 

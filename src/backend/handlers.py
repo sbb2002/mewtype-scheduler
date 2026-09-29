@@ -24,6 +24,7 @@ from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
 from . import xtweet
 from . import statemachine
+from . import storage
 
 log = logging.getLogger("backend.handlers")
 
@@ -173,6 +174,10 @@ def _stable_view(preview: dict) -> dict:
 
 
 def _make_task_queue(cfg):
+    # (v4a) 로컬 시험판: Cloud Tasks 대신 적용 큐에 reconcile(범위) 적재 (원칙 ③)
+    if storage.is_local():
+        from . import apply
+        return apply.LocalTaskShim() if apply.has_queue() else None
     try:
         from .tasks import TaskQueue
 
@@ -186,6 +191,15 @@ def _make_task_queue(cfg):
     except Exception as e:  # noqa: BLE001 — 로컬/부트스트랩 허용
         log.warning("TaskQueue 비활성 (%s) — enqueue 건너뜀", e)
         return None
+
+
+def _search_live_first(yt, id_by_key: dict, channel_key: str | None) -> str | None:
+    """(v4a D4) URL 없는 예고의 시작+2분 search.list 1회 — 그 채널의 첫 live 영상 id (쿼터 100)."""
+    cid = id_by_key.get(channel_key or "")
+    if not cid:
+        return None
+    ids = yt.search_live(cid)
+    return ids[0] if ids else None
 
 
 def _ping_healthcheck(url: str) -> None:
@@ -222,89 +236,9 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
     llm = _make_llm(cfg)
     if llm is None:
         return out
-
-    # notices.json
-    nj = None
-    try:
-        nj, sha = gh.read_json("notices.json")
-        if nj and nj.get("notices"):
-            changed = False
-            for n in nj["notices"]:
-                if not n.get("needs_tl"):
-                    continue
-                res = llm.notice_title(n.get("body_for_llm") or n.get("title") or "")
-                if res and res.get("title_ko"):
-                    n["title"] = res.get("title_ja") or n.get("title")
-                    n["title_ko"] = res["title_ko"]
-                    n.pop("needs_tl", None)
-                    n["last_updated"] = now_iso
-                    changed = True
-                    out["notice_tl"] += 1
-            if changed:
-                nj["generated_at"] = now_iso
-                gh.write_json("notices.json", nj, prev_sha=sha,
-                              message=f"data: notices tl {now_iso}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("notice 번역 sweep 실패: %s", e)
-
-    # tweets.json
-    try:
-        tj, sha = gh.read_json("tweets.json")
-        if tj and tj.get("tweets"):
-            changed = False
-            for _k, lst in list(tj["tweets"].items()):
-                # 계약 I — tweets[ck] 는 메시지 배열. v2.8 단건 dict 는 [dict] 로 승계.
-                norm = lst if isinstance(lst, list) else ([lst] if isinstance(lst, dict) else [])
-                if norm is not lst:
-                    tj["tweets"][_k] = norm
-                    changed = True
-                for t in norm:
-                    q = t.get("quote")
-                    if q and q.get("needs_tl") and q.get("text") and not q.get("text_ko"):
-                        ko = (xtweet.find_reused_ko(q["text"], tweets_data=tj, notices_data=nj)
-                              or llm.translate(q["text"]))
-                        if ko:
-                            q["text_ko"] = ko
-                            q.pop("needs_tl", None)
-                            changed = True
-                            out["tweet_tl"] += 1
-                    if not t.get("needs_tl"):
-                        continue
-                    ko = llm.translate(t.get("text") or "")
-                    if ko:
-                        t["text_ko"] = ko
-                        t.pop("needs_tl", None)
-                        changed = True
-                        out["tweet_tl"] += 1
-            if changed:
-                tj["generated_at"] = now_iso
-                gh.write_json("tweets.json", tj, prev_sha=sha,
-                              message=f"data: tweets tl {now_iso}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("tweet 번역 sweep 실패: %s", e)
-
-    # preview.json — 방송 제목 번역
-    try:
-        pj, sha = gh.read_json("preview.json")
-        if pj and pj.get("items"):
-            changed = False
-            for it in pj["items"]:
-                if not it.get("needs_tl") or not it.get("title"):
-                    continue
-                ko = llm.translate(it["title"])
-                if ko:
-                    it["title_ko"] = ko
-                    it.pop("needs_tl", None)
-                    changed = True
-                    out["preview_tl"] += 1
-            if changed:
-                pj["generated_at"] = now_iso
-                gh.write_json("preview.json", pj, prev_sha=sha,
-                              message=f"data: preview tl {now_iso}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("preview 번역 sweep 실패: %s", e)
-
-    return out
+    # (v4a) 읽기(번역 수집)와 쓰기(반영)를 enrich 모듈로 분리 — 로컬 시험판은 가공 큐가 수집을 맡는다.
+    from . import enrich
+    return enrich.apply_translations(gh, enrich.collect(gh, llm, now_iso), now_iso)
 
 
 def _should_log_run(
@@ -336,7 +270,8 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     channels_cfg = load_channels()
     id_by_key = {k: v["channel_id"] for k, v in channels_cfg["channels"].items()}
 
-    gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+    # (v4a) store 팩토리 — 로컬 시험판은 LocalStore, control/admin_state 는 ops 로 라우팅
+    gh = storage.make_store("data") or GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
 
     # ── 일시정지 가드 ──
     control, _ = gh.read_json("control.json")
@@ -375,6 +310,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
 
         new_preview, transitions, wakes, gone_items = build_preview(
             channels_cfg, videos, prev_preview, now_iso, avatars=avatars,
+            search_fn=lambda ck: _search_live_first(yt, id_by_key, ck),
         )
 
         # ── 트윗·릴레이 예고 시각 override 재적용 (알려진 지연: wakes 는 override 전 시각 기준) ──
@@ -487,9 +423,14 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 log.error("post-end tick enqueue 실패: %s", e)
 
     # ── LLM 번역 재시도 sweep (needs_tl 행) — 정기 tick 에서만 ──
+    # (v4a) 로컬 시험판: 가공 큐(q-enrich)에 적재 → 수집 후 적용 큐로 반영. 여기서는 기다리지 않는다.
     tl = {"notice_tl": 0, "tweet_tl": 0, "preview_tl": 0}
     if not is_wake:
-        tl = _translate_sweep(gh, cfg, now_iso)
+        from . import enrich
+        if storage.is_local() and enrich.has_queue():
+            enrich.enqueue_sweep()
+        else:
+            tl = _translate_sweep(gh, cfg, now_iso)
 
     # 상태 카운트
     state_counts: dict[str, int] = {}

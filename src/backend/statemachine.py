@@ -215,7 +215,8 @@ def derive(
         # 규칙 2 예외 (v3.7.3): 예정 시각이 20분보다 더 미래로 밀렸으면(수신 시각으로 잘못 잡혔다가
         # API 시작 시각으로 정정된 경우 등) 대기 상태로 되돌리고 ss-20분에 재진입 예약.
         # (2026-09-17 DWMQTpDQ1fc: ss 는 9/25 인데 48시간 동안 /wake 3,331회)
-        elif ss and now < ss - timedelta(seconds=PRELIVE_LEAD_SEC):
+        # (v4a D2) YT "30분 전" 알림으로 들어온 watching(yt_tunein)은 20분 창보다 일러도 유지한다.
+        elif ss and now < ss - timedelta(seconds=PRELIVE_LEAD_SEC) and not item.get("yt_tunein"):
             next_state = "upcoming" if video_id else "announced"
             next_check_at = _to_iso(ss - timedelta(seconds=PRELIVE_LEAD_SEC))
             log.append(f"watching-regress→{next_state} {item_id}")
@@ -553,6 +554,8 @@ if __name__ == "__main__":
     assert derive(dict(near, state="upcoming"), "2026-09-19T08:05:30Z").next_state == "watching"
     assert derive(w, "2026-09-19T08:00:00Z", live_seen=True).next_state == "live", "시작 신호가 예정 시각보다 우선"
     assert derive(dict(w, scheduled_start="2026-09-19T08:02:00Z"), "2026-09-19T08:00:00Z").next_state == "watching"
+    _tun = dict(w, scheduled_start="2026-09-19T08:30:00Z", yt_tunein=True)
+    assert derive(_tun, "2026-09-19T08:00:00Z").next_state == "watching", "(v4a D2) 30분 전 알림 watching 은 유지"
     print("  미래로 밀린 watching → upcoming(video_id 있음)/announced(없음) + ss-20분 예약, live_seen 우선, 정상 watching 유지")
 
     print("\n" + "=" * 70)

@@ -169,7 +169,9 @@ def build_preview(
                 channel_key = order[0]
                 group_collab_with = order[1:] or None
 
-        live_seen = video.live_state == "live"
+        # (v4a D1) 3값: live=True · none=False · upcoming=None(미확인). 알림으로 먼저 live 가 된 아이템을
+        # API 가 아직 upcoming 으로 보는 동안 end 로 떨어뜨리지 않기 위함(구: upcoming 도 False 였음).
+        live_seen = True if video.live_state == "live" else (False if video.live_state == "none" else None)
         url = f"https://www.youtube.com/watch?v={video_id}"
 
         if matched:

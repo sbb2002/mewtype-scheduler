@@ -64,6 +64,17 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
     2초 안에 끝나는 빠른 경로는 지금처럼 아무 DM 도 안 나간다(각 핸들러가 이미 보내는
     자체 완료 DM 과 중복 안 되게).
     """
+    # (v4a) 로컬 시험판: 적용 큐(쓰기 스레드 q-apply)에 적재하고 결과를 기다린다 — data 를 쓰는 곳은
+    # 그 스레드 하나(원칙 ①). 결과를 기다리는 건 현행 DM 문구 유지를 위한 로컬 한정 선택(계획 §1 알려진 차이).
+    from . import storage
+    if storage.is_local():
+        from . import apply
+        if apply.has_queue():
+            try:
+                return apply.submit(kind, args, wait=True)
+            except Exception as e:  # noqa: BLE001
+                raise WriteError(f"적용 큐 작업 실패({kind}): {e}") from e
+
     main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
     if not main_url:
         from . import writers

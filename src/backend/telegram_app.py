@@ -98,6 +98,7 @@ from . import monitor_snapshot
 from . import statemachine
 from . import writeclient
 from . import llm
+from . import storage                      # (v4a) store 팩토리 — 로컬/깃허브 + ops 라우팅
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -757,6 +758,41 @@ def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
             log.warning("monitor_log 기록 실패(ops /pause)")
 
 
+def _admin_base_url() -> str:
+    """(v4a) 관리 페이지 주소의 기준 — ADMIN_BASE_URL, 없으면 로컬 러너 바인딩(Tailscale IP) 주소."""
+    base = os.environ.get("ADMIN_BASE_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    host = os.environ.get("LOCAL_BIND", "").strip() or "127.0.0.1"
+    port = os.environ.get("LOCAL_PORT", "").strip() or "8787"
+    return f"http://{host}:{port}"
+
+
+def _handle_admin_link() -> None:
+    """(v4a D24) /admin — 관리 페이지 일회용 로그인 링크를 운영자 DM 으로.
+
+    chat_id · webhook secret 검증은 /telegram 진입에서 이미 끝났다. 링크는 서명 · 짧은 수명 · 1회용
+    (`admin_web.make_login_url`, nonce 는 ops 에 사용 처리).
+    """
+    secret = os.environ.get("ADMIN_SECRET", "").strip()
+    if not secret:
+        _send_telegram("⚠️ ADMIN_SECRET 미설정 — 관리 페이지 로그인 링크를 만들 수 없습니다.")
+        return
+    from . import admin_web
+    url = admin_web.make_login_url(_admin_base_url(), secret=secret)
+    _send_telegram(f"🔐 관리 페이지 로그인 링크 (5분 · 1회용)\n{html.escape(url)}")
+
+
+def _handle_resume_local(gh, now_iso: str) -> None:
+    """(v4a) /resume — ops 의 control 을 재개로 바꾸고 reconcile(전체) 적재 (v3 의 /tick 동기 호출 대체, 원칙 ③)."""
+    control, sha = gh.read_json("control.json")
+    control = set_paused(control or default_control(), False, by="telegram:/resume", now_iso=now_iso)
+    gh.write_json("control.json", control, prev_sha=sha, message=f"ops: resume via /resume {now_iso}")
+    from . import apply
+    job = apply.enqueue_reconcile(mode="light")
+    _send_telegram(f"▶️ 재개. reconcile(전체) 적재됨 (작업 {job or '-'}) — 결과는 상태 전이 알림으로 옵니다.")
+
+
 def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None:
     """
     /resume 명령 처리.
@@ -924,7 +960,9 @@ def _log_cmd_event(now_iso: str, fields: dict) -> None:
 
 
 def _make_gh() -> "GitHubStore | None":
-    """env 에서 GitHubStore 구성. 필수 값 없으면 None."""
+    """env 에서 store 구성. 필수 값 없으면 None. (v4a) 로컬 시험판이면 LocalStore(+ops 라우팅)."""
+    if storage.is_local():
+        return storage.make_store("data")
     token = os.environ.get("GITHUB_TOKEN", "").strip()
     repo = os.environ.get("GITHUB_REPO", "").strip()
     branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
@@ -1013,9 +1051,9 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
         # 로그엔 남기지 않아, monitor 타임플롯이 이 삭제를 몰라 마지막으로 알려진 상태
         # (예: watching)를 지금까지 계속 진행 중인 것처럼 그렸다(실측 2026-09-22).
         _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=snapshot.get("channel_key", ""),
-                  detail=f"{action} · {snapshot.get('state')}→none",
+                  detail=f"{action} · {snapshot.get('state')}→out",
                   id=snapshot.get("id"), video_id=snapshot.get("video_id"),
-                  from_state=snapshot.get("state"), to_state="none",
+                  from_state=snapshot.get("state"), to_state="out",
                   title=snapshot.get("title"), collab_with=snapshot.get("collab_with"))
     return changed
 
@@ -2722,6 +2760,16 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
     if public is None:
         return {"ok": True, "ignored": True}, 200
 
+    if public["resolved"] and storage.is_local():
+        # (v4a D1·D2·D3) 알림 자체를 상태 신호로 쓴다 — 적용 큐 작업 yt_notif 로 적재하고 바로 돌아간다(원칙 ②).
+        # 작업은 reconcile(영상)으로 API 사실을 먼저 반영한 뒤 tunein→watching / 시작→live 로 올린다.
+        from . import apply
+        job = apply.submit("yt_notif", {"video_id": public["video_id"], "relay_kind": public["relay_kind"],
+                                        "now_iso": now_iso, "channel_key": public.get("channel_key")}, wait=False)
+        log.info("public yt relay → yt_notif 적재: kind=%s video_id=%s", public["relay_kind"], public["video_id"])
+        return {"ok": True, "public_relay": public["relay_kind"], "video_id": public["video_id"],
+                "queued": job.get("job_id")}, 200
+
     if public["resolved"]:
         # 실제 video_id 확보 — 새 GitHub 쓰기 없이 즉시 wake 하나만 예약한다. 승격
         # (announced/upcoming 자동 판정, live_state 가 이미 live 면 곧장 live)·DM·모니터
@@ -2753,13 +2801,77 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
     )
 
 
+def _preserve_raw(kind: str, raw: str, meta: dict, now_iso: str) -> None:
+    """(v4a D19) 스케줄 관련 트윗 원문 보존 → raw store(`raw/YYYY-MM.jsonl`). 실패해도 흐름 무영향.
+
+    로컬 시험판 전용(`_local/raw/`). 배포 시 보존 위치는 미결 — 데이터 저장소가 공개라 원문이 그대로 공개된다
+    (`ref/v4a/v4a_decisions.md` §2-1). 그래서 로컬이 아니면 아무것도 하지 않는다.
+    """
+    if not storage.is_local() or not raw:
+        return
+    try:
+        from . import rawlog
+        rawlog.append_raw(storage.make_store("raw"), kind=kind, raw=raw, meta=meta, now_iso=now_iso)
+    except Exception:  # noqa: BLE001
+        log.warning("원문 보존 실패(%s)", kind, exc_info=True)
+
+
+def _confirm_rows_with_videos(rows: list[dict], now_iso: str) -> tuple[list[dict], list[str]]:
+    """(v4a D13) 공식 스케줄 행 중 영상 URL(video_id) 이 있는 것은 접수 시점에 videos.list 로 확인해
+    제목 · 썸네일 · 예정 시각을 채우고 upcoming(혹은 이미 live 면 live)으로 올린다.
+
+    API 실패 · 영상 없음이면 그 행은 그대로(announced + video_id) — 다음 reconcile 이 같은 일을 한다.
+    반환: (행 목록, 확인된 video_id 목록). 느린 외부 호출이라 접수 쪽에서 한다(원칙 ④).
+    """
+    vids = [r.get("video_id") for r in rows if r.get("video_id")]
+    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not vids or not api_key or YouTubeClient is None:
+        return rows, []
+    try:
+        infos = YouTubeClient(api_key).videos_list(vids)
+    except Exception:  # noqa: BLE001
+        log.warning("공식 스케줄 영상 확인(videos.list) 실패 — 다음 reconcile 에 맡김", exc_info=True)
+        return rows, []
+    out, confirmed = [], []
+    for r in rows:
+        info = infos.get(r.get("video_id")) if r.get("video_id") else None
+        if info is None:
+            out.append(r)
+            continue
+        r = dict(r)
+        r["title"] = info.title or r.get("title")
+        r["thumbnail"] = info.thumbnail or r.get("thumbnail")
+        r["url"] = f"https://www.youtube.com/watch?v={info.video_id}"
+        if info.scheduled_start:
+            r["scheduled_start"] = info.scheduled_start
+            r["api_start_seen"] = info.scheduled_start
+            r["info_source"] = "api"
+        if r.get("title"):
+            r["needs_tl"] = True
+        if info.live_state == "live":
+            r = preview_mod.set_state(r, "live", now_iso)
+            r["actual_start"] = info.actual_start or now_iso
+        else:
+            promoted = preview_mod.promote_state(r)
+            if promoted != r.get("state"):
+                r = preview_mod.set_state(r, promoted, now_iso)
+        out.append(r)
+        confirmed.append(info.video_id)
+    return out, confirmed
+
+
 def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
     """(v3.6) URL 확정 예고 반영 직후 Cloud Tasks wake 즉시 등록.
 
     light tick(10분 간격, 2026-09-16 3h→10분 단축)을 안 기다리고 live/watching 전이를
     바로 예약 — 버그리포트 20260916 #1(미예고 방송 발견까지 tick 텀만큼 지연)의 근본 대응.
     실패해도 non-fatal(다음 light tick 이 안전망으로 회수).
+    (v4a) 로컬 시험판: Cloud Tasks 대신 적용 큐에 reconcile(영상) 적재.
     """
+    if storage.is_local():
+        from . import apply
+        apply.enqueue_reconcile(video_id=video_id, run_at_iso=schedule_time_iso)
+        return
     try:
         from .tasks import TaskQueue
         tq = TaskQueue(
@@ -2922,7 +3034,7 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
 
     action = result.get("action")
     if action == "del":
-        patch = {"state": "none"}
+        patch = {"state": "out"}   # (v4a D7) 구 none
         pre = {"state": target.get("state")}
         label = f"{channel_key} 방송 취소(LLM)"
     elif action == "edit":
@@ -3146,6 +3258,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
     channels_cfg = _load_channels_config()
     if _maybe_url_confirmed_schedule(gh, raw, channel_key, now_iso, channels_cfg, via=via,
                                      quote=quote):
+        _preserve_raw("personal_schedule_url", raw, {"channel_key": channel_key, "tag": tag}, now_iso)
         return   # 유튜브 URL 이 있었음(raw 또는 quote) — 반영/스킵 여부와 무관하게 아래로 안 넘어감
     if _maybe_nonyt_url_notice(gh, raw, tag, now_iso):
         return   # 비유튜브 URL 이 있었음 — 소식 경로가 처리(등록/스킵 모두 포함)
@@ -3158,6 +3271,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     if not row:
         return
+    _preserve_raw("personal_schedule_candidate", raw, {"channel_key": channel_key, "tag": tag}, now_iso)
 
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not groq_key:
@@ -3968,6 +4082,8 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
 def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
     """답한 필드만 preview.json 아이템에 병합. edit_lock 해제. tick 충돌 필드 알림."""
     patch = ctx.get("patch") or {}
+    if patch.get("state") == "none":           # (v4a D7) 구 이름 none → out
+        patch = dict(patch, state="out")
     pid = ctx.get("id")
     pre = ctx.get("pre") or {}
     if not patch:
@@ -4037,8 +4153,8 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
     archive 반영이 전혀 안 일어나 다음 tick(최대 3h) 까지 방치되는 문제가 있었다
     (실측: 외부 채널 합동방송이 그 사이 아예 사라진 사례).
 
-    - "none" → preview.json 에서 즉시 제거 + preview_archive.json 에 기록
-      (FSM 의 end→none 전이와 동일하게 취급).
+    - "out"(v4a D7, 구 "none" 도 받음) → preview.json 에서 즉시 제거 + preview_archive.json 에 기록
+      (FSM 의 end→out 전이와 동일하게 취급).
     - video_id 있음(live/end/watching/upcoming — API 로 실물 검증 가능) → 메인 서비스
       `/wake` 를 OIDC 로 호출해 실제 상태로 재확인 + Cloud Tasks wake 재예약까지 그쪽에
       맡긴다. 운영자가 잘못 짚었어도 API 확인 결과가 우선하므로 안전하다.
@@ -4049,7 +4165,7 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
     state = item.get("state")
     video_id = item.get("video_id")
 
-    if state == "none":
+    if state in ("out", "none"):
         for attempt in (1, 2):
             prev, sha = gh.read_json(_PREVIEW_PATH)
             prev = prev or {"items": []}
@@ -4063,12 +4179,12 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
             new_pv["generated_at"] = now_iso
             try:
                 gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha,
-                               message=f"data: /edit preview→none {pid} {now_iso}")
+                               message=f"data: /edit preview→out {pid} {now_iso}")
                 break
             except ConflictError:
                 if attempt == 2:
                     raise
-                log.warning("/edit preview→none: 충돌 — 재시도")
+                log.warning("/edit preview→out: 충돌 — 재시도")
         try:
             arch, arch_sha = gh.read_json(_PREVIEW_ARCHIVE_PATH)
             arch = dict(arch or {"items": []})
@@ -4081,6 +4197,12 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
         except Exception:  # noqa: BLE001
             log.warning("preview_archive 반영 실패 — preview.json 제거는 유지", exc_info=True)
         return "🗑 즉시 제거 + 아카이브 반영 완료."
+
+    if video_id and storage.is_local():
+        # (v4a #14d) 자기 호출(/wake 동기 호출) 대신 reconcile(영상) 적재 — 원칙 ③
+        from . import apply
+        apply.enqueue_reconcile(video_id=video_id)
+        return "✅ reconcile(영상) 적재 — 실물 재확인 + 다음 체크 재예약."
 
     if video_id:
         main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
@@ -4111,7 +4233,7 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
             return "(이미 다른 경로로 제거됨)"
         it2 = preview_mod.set_state(items[idx], tick.next_state, now_iso)
         gone2 = None
-        if tick.next_state == "none":
+        if tick.next_state in ("out", "none"):
             items.pop(idx)
             gone2 = it2
         else:
@@ -4299,12 +4421,14 @@ if _FLASK_AVAILABLE:
             gh_repo = os.environ.get("GITHUB_REPO", "").strip()
             gh_branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
 
-            if not gh_token or not gh_repo:
+            if storage.is_local():
+                gh = storage.make_store("data")      # (v4a) 로컬 시험판
+            elif not gh_token or not gh_repo:
                 log.warning("GitHub config missing")
                 _send_telegram("⚠️ GitHub 설정 누락")
                 return _done(False)
-
-            gh = GitHubStore(gh_token, gh_repo, gh_branch)
+            else:
+                gh = GitHubStore(gh_token, gh_repo, gh_branch)
             channels_cfg = _load_channels_config()
 
             # v2.5: 대기 중인 /del 확인(y/N) 이 있으면 명령 디스패치보다 먼저 처리.
@@ -4366,6 +4490,23 @@ if _FLASK_AVAILABLE:
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
+            # (v4a D24) 로컬 시험판: 텔레그램은 알림 + 비상 명령(/status /pause /resume /list /admin)만.
+            # 나머지 조작은 관리 페이지(/admin 로그인 링크). 마법사 대화 상태는 만들지 않는다.
+            if storage.is_local():
+                if cmd == "/admin":
+                    _handle_admin_link()
+                    return _done()
+                if cmd == "/resume":
+                    _handle_resume_local(gh, now_utc)
+                    return _done()
+                if cmd not in ("/status", "/pause", "/list"):
+                    _send_telegram(
+                        "<b>📱 mewtype v4a (로컬 시험판)</b>\n\n"
+                        "비상 명령: /status /pause /resume /list [notice|tweet]\n"
+                        "/admin — 관리 페이지 로그인 링크(일회용)\n\n"
+                        "예고 · 소식 · 트윗 편집 · 삭제 · 원문 투입 · 번역 · 유실 원문 재투입 · 알림 레벨은 관리 페이지에서."
+                    )
+                    return _done()
             if cmd == "/status":
                 _handle_status(gh, channels_cfg, now_utc)
             elif cmd == "/pause":
@@ -4721,7 +4862,10 @@ if _FLASK_AVAILABLE:
                 return jsonify({"ok": True, "paused": True}), 200
 
             # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
-            _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영")
+            # (v4a) ingest_queue 는 ECHO/DRY-RUN 시절 잔재(설계 §12-1) — 로컬 시험판에선 매 알림마다 빈 작업을
+            # 적용 큐에 싣지 않도록 건너뛴다.
+            _drain = ({} if storage.is_local() else
+                      writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영"))
             drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
             failed = xrelay.unparsed_lines(raw)
 
@@ -4747,11 +4891,19 @@ if _FLASK_AVAILABLE:
                     {"ok": True, "parsed": 0, "failed": len(failed), "drained": drained}
                 ), 200
 
+            # (v4a D19) 스케줄 관련 원문 보존 — 파싱 결과만 남던 공식 스케줄 트윗 원문
+            _preserve_raw("official_schedule", raw, {"title": title, "tweet_url": tweet_url,
+                                                     "rows": len(rows)}, now_iso)
+            # (v4a D13) 영상 URL 이 있는 행은 지금 videos.list 로 확인해 upcoming 으로 등록
+            rows, _confirmed_vids = _confirm_rows_with_videos(rows, now_iso)
+
             changed = writeclient.call_write(
                 "merge_rows", gh=gh, rows=rows, now_iso=now_iso,
                 message=f"data: xrelay scheduled {now_iso}",
                 action=f"ingest {title or raw[:40]}".strip(),
             ).get("changed")
+            for _vid in _confirmed_vids:   # 등록 즉시 확인 — reconcile(영상) 적재 (원칙 ③)
+                _enqueue_wake_now(_vid, now_iso)
 
             summary = xrelay.summary_text(rows, channels_cfg)
             if tweet_url:
@@ -5087,7 +5239,7 @@ if __name__ == "__main__":
             # (v3.8.7) /del 이 모니터 이벤트 로그에도 남는지 — 실측 버그(2026-09-22):
             # /del(terminate) 로 지운 방송이 모니터 타임플롯엔 계속 watching 으로 남아있었음.
             _ev_del = next((v for k, v in g.store.items() if k.startswith("monitoring/events-")), "")
-            assert '"flow": "preview"' in _ev_del and '"to_state": "none"' in _ev_del, _ev_del
+            assert '"flow": "preview"' in _ev_del and '"to_state": "out"' in _ev_del, _ev_del
             print("[OK] _remove_broadcast: 모니터 이벤트 로그에 상태 전이(→none) 기록됨")
         else:
             print("[skip] xrelay.parse 0행 — 파서 픽스처 확인")
@@ -5712,7 +5864,7 @@ if __name__ == "__main__":
                                       "pre": {"state": "watching"}})
         assert g2b.store[_PREVIEW_PATH]["items"] == [], g2b.store[_PREVIEW_PATH]
         _ev_edit = next((v for k, v in g2b.store.items() if k.startswith("monitoring/events-")), "")
-        assert '"flow": "preview"' in _ev_edit and '"to_state": "none"' in _ev_edit             and '"from_state": "watching"' in _ev_edit, _ev_edit
+        assert '"flow": "preview"' in _ev_edit and '"to_state": "out"' in _ev_edit             and '"from_state": "watching"' in _ev_edit, _ev_edit
         print("[OK] _apply_preview_edit: state 변경(→none)이 모니터 이벤트 로그에도 기록됨")
 
         # (b) video_id 있는 아이템 → MAIN_SERVICE_URL 미설정이면 안 죽고 안내만.
