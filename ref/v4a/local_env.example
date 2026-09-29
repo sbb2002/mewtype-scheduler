@@ -12,9 +12,9 @@ TELEGRAM_BOT_TOKEN=         # ★ 로컬 전용 새 봇(BotFather). 운영 봇 �
 TELEGRAM_CHAT_ID=           # 운영자 chat id (알림 DM · 명령 허용)
 
 # ── 선택 (기본값) ──
-# LOCAL_BIND=100.79.146.124 # Tailscale IP. 127.0.0.1 에도 항상 바인딩
+# LOCAL_BIND=              # 비우면 이 기기의 Tailscale IP(tailscale ip -4) 자동 감지. 127.0.0.1 에도 항상 바인딩
 # LOCAL_PORT=8787
 # LOCAL_DATA_DIR=./_local
-# ADMIN_BASE_URL=http://100.79.146.124:8787   # /admin 로그인 링크 주소
+# ADMIN_BASE_URL=          # /admin 로그인 링크 주소. 비우면 http://<LOCAL_BIND>:<LOCAL_PORT>
 # YT_COOKIES_FILE=          # 회원 전용 yt-dlp 조회용(없어도 동작)
 # HEALTHCHECK_URL=          # 비워 두면 생존 신호 안 보냄

@@ -10,7 +10,7 @@
 
 | 전제 | 내용 | 근거 |
 |---|---|---|
-| 로컬 PC | 24시간 가동. 외부 인바운드 방화벽 해제 불가 | 사용자 |
+| 로컬 PC | 24시간 가동. 외부 인바운드 방화벽 해제 불가. (2026-09-29 추가) 개발 PC 가 아닌 **별도 테스트 기기**에서 운영 | 사용자 |
 | 폰 → 로컬 | Tailscale. 로컬 PC `100.79.146.124`, 폰 `s23` `100.82.203.42`, 직접 연결, 폰→PC HTTP 확인 | 2026-09-29 실측 |
 | 저장 | GitHub 데이터 저장소 안 씀 → **로컬 디렉터리** (`_local/<브랜치>/`) | 사용자 |
 | 외부 서비스 | Vercel 제외 그대로 (YouTube API · Groq · vxtwitter · healthchecks · Telegram) | 사용자 |
@@ -124,7 +124,7 @@
 
 ```
 python -m src.backend.local_runner          # .env.local 읽음
-  바인딩: 127.0.0.1 + LOCAL_BIND(기본 100.79.146.124), 포트 LOCAL_PORT(기본 8787)
+  바인딩: 127.0.0.1 + LOCAL_BIND(비우면 Tailscale IP 자동 감지), 포트 LOCAL_PORT(기본 8787)
   /            프론트 (src/frontend)
   /data/*      _local/data/*  (no-store)
   /ingest      업스트림 (X-Ingest-Secret)
