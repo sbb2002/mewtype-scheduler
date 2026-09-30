@@ -260,7 +260,12 @@
             border: 1px solid var(--color-border); border-radius: 999px; padding: 3px 11px; cursor: pointer;
         }
         .chip[aria-pressed="true"] { color: var(--color-text); border-color: var(--color-accent); }
-        .flows { display: grid; gap: 6px; }
+        /* 흐름이 쌓여도 작업 탭이 길어지지 않게 — 일정 높이만 차지하고 안에서 스크롤 */
+        .flows {
+            display: grid; gap: 6px; align-content: start; max-height: min(26rem, 55vh); overflow-y: auto;
+            padding-right: 6px; scrollbar-width: thin; scrollbar-color: var(--color-border) transparent;
+            overscroll-behavior: contain;
+        }
         .flow {
             display: grid; grid-template-columns: 5.6rem 1fr auto; gap: 4px 14px; align-items: center;
             background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 6px;
@@ -317,7 +322,12 @@
         .freason.fail { border-left-color: var(--fail); background: rgba(255, 93, 93, .06); }
         .freason.run { border-left-color: var(--run); background: rgba(245, 184, 61, .06); }
         .freason.wait { border-left-color: var(--wait); background: rgba(124, 138, 160, .08); }
-        .jlist { display: grid; border: 1px solid var(--color-border); border-radius: 6px; overflow: hidden; }
+        /* 쌓여도 작업 탭이 길어지지 않게 — 일정 높이만 차지하고 안에서 스크롤(최근 흐름과 같은 규칙) */
+        .jlist, #jobs-tl {
+            display: grid; align-content: start; max-height: min(22rem, 45vh); overflow-y: auto; overscroll-behavior: contain;
+            scrollbar-width: thin; scrollbar-color: var(--color-border) transparent;
+        }
+        .jlist { border: 1px solid var(--color-border); border-radius: 6px; }
         .jrow { display: grid; grid-template-columns: 7.2rem 1fr; gap: 12px; padding: 8px 12px; border-top: 1px solid var(--color-border); background: var(--color-bg-secondary); }
         .jrow:first-child { border-top: 0; }
         .jrow .t { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; color: var(--color-text-muted); }
@@ -617,7 +627,123 @@
             font-size: 0.85rem;
             margin-top: 0.25rem;
         }
-    </style>
+    
+        /* (v4a) 원문 투입 탭 */
+        .ing-head h2 { margin-bottom: 0.25rem; }
+        .ing-head p { margin: 0 0 1.25rem; color: var(--color-text-muted); }
+        .ing-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+        @media (max-width: 860px) { .ing-layout { grid-template-columns: 1fr; } }
+        .ing-card {
+            background: var(--color-bg-secondary); border: 1px solid var(--color-border);
+            border-radius: 12px; padding: 1.25rem; display: grid; gap: 0.9rem;
+        }
+        .ing-result { position: sticky; top: 1rem; }
+        @media (max-width: 860px) { .ing-result { position: static; } }
+        .ing-step { display: flex; align-items: center; gap: 0.6rem; }
+        .ing-step h3 { margin: 0; font-size: 0.95rem; }
+        .ing-num {
+            width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none;
+            background: rgba(6, 182, 212, 0.18); color: var(--color-accent); font-size: 0.75rem; font-weight: 700;
+        }
+        .ing-card .form-group { margin: 0; }
+        .ing-card select, .ing-card textarea { background: var(--color-bg); border-radius: 8px; padding: 0.6rem 0.75rem; }
+        .ing-card textarea { resize: vertical; min-height: 9rem; line-height: 1.6; font-size: 0.9rem; }
+        .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+        .seg-btn {
+            background: var(--color-bg); color: var(--color-text-muted); border: 1px solid var(--color-border);
+            border-radius: 10px; padding: 0.6rem 0.5rem; display: grid; gap: 1px; text-align: center; font-weight: 400;
+            transition: border-color 0.15s, background 0.15s, color 0.15s;
+        }
+        .seg-btn b { font-size: 0.95rem; color: var(--color-text); }
+        .seg-btn small { font-size: 0.72rem; }
+        .seg-btn:hover { opacity: 1; border-color: #4a4a4a; }
+        .seg-btn[aria-checked="true"] { border-color: var(--color-accent); background: rgba(6, 182, 212, 0.1); }
+        .seg-btn[aria-checked="true"] b, .seg-btn[aria-checked="true"] small { color: var(--color-accent); }
+        .ing-help { margin-top: 0.35rem; font-size: 0.78rem; color: var(--color-text-muted); }
+        .ing-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 0.35rem; }
+        .ing-count { font-size: 0.78rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+        .btn-ghost { background: none; color: var(--color-text-muted); font-weight: 400; padding: 0.15rem 0.5rem; font-size: 0.8rem; }
+        .btn-ghost:hover { color: var(--color-text); opacity: 1; }
+        .btn-main, .btn-ok { width: 100%; padding: 0.7rem 1rem; border-radius: 8px; font-size: 0.95rem; }
+        .btn-ok { background-color: #3ecf8e; margin-top: 0.9rem; }
+        .ing-empty {
+            display: grid; gap: 0.5rem; justify-items: center; text-align: center; padding: 2rem 1rem;
+            color: var(--color-text-muted); border: 1px dashed var(--color-border); border-radius: 10px; line-height: 1.6;
+        }
+        .ing-empty-ico { font-size: 1.6rem; opacity: 0.7; }
+        .ing-note { color: var(--color-text-muted); font-size: 0.8rem; margin-top: 0.6rem; }
+        .ing-note:empty { display: none; }
+        .pv-head { font-weight: 600; margin-bottom: 0.6rem; }
+        .pv-card { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 10px; padding: 0.75rem 0.9rem; margin-bottom: 0.5rem; display: grid; gap: 0.2rem; }
+        .pv-card .list-item-title { flex: none; }
+        .pv-kv { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+        .pv-kv .k { color: var(--color-text-muted); font-size: 0.8rem; }
+        .pv-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.75rem; }
+        .pv-warn { background: rgba(245, 184, 61, 0.12); border: 1px solid rgba(245, 184, 61, 0.4); color: #f5b83d; border-radius: 8px; padding: 0.5rem 0.75rem; margin-top: 0.5rem; font-size: 0.85rem; }
+        #ingest-preview details { margin-top: 0.75rem; font-size: 0.8rem; color: var(--color-text-muted); }
+        #ingest-preview pre { background: var(--color-bg); border-radius: 8px; padding: 0.6rem; overflow: auto; max-height: 14rem; }
+
+        /* (v4a) 원문 투입 — 자동/수동 세부 탭 · 폼 요소 */
+        .ing-subtabs { display: flex; gap: 4px; border-bottom: 1px solid var(--color-border); margin-bottom: 1.25rem; }
+        .ing-subtab {
+            background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px;
+            color: var(--color-text-muted); padding: 0.6rem 1rem; display: flex; gap: 0.5rem; align-items: baseline; font-weight: 400;
+        }
+        .ing-subtab b { font-weight: 600; color: var(--color-text); }
+        .ing-subtab small { font-size: 0.74rem; }
+        .ing-subtab:hover { opacity: 1; }
+        .ing-subtab:hover b { color: var(--color-accent); }
+        .ing-subtab[aria-selected="true"] { border-bottom-color: var(--color-accent); }
+        .ing-subtab[aria-selected="true"] b, .ing-subtab[aria-selected="true"] small { color: var(--color-accent); }
+        .ing-fields { display: grid; gap: 0.9rem; }
+        .ing-fields[hidden], #a-host-box[hidden], #a-tweet-box[hidden], #a-raw-box[hidden] { display: none; }
+        .ing-card label, .ing-lbl { display: block; font-size: 0.8rem; color: var(--color-text-muted); margin-bottom: 0.3rem; font-weight: 400; }
+        .req { color: var(--color-accent); }
+        .ing-card input[type=text], .ing-card input[type=date], .ing-card input[type=time] {
+            background: var(--color-bg); border-radius: 8px; padding: 0.6rem 0.75rem;
+        }
+        .ing-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        @media (max-width: 520px) { .ing-row2 { grid-template-columns: 1fr; } }
+        .ing-inline { display: flex; gap: 0.5rem; align-items: center; }
+        .ing-inline.top { align-items: flex-start; }
+        .ing-inline input, .ing-inline textarea { flex: 1; min-width: 0; }
+        .btn-line {
+            background: none; color: var(--color-text); border: 1px solid var(--color-border); border-radius: 8px;
+            padding: 0.5rem 0.85rem; font-size: 0.8rem; font-weight: 500; white-space: nowrap;
+        }
+        .btn-line:hover { border-color: var(--color-accent); color: var(--color-accent); opacity: 1; }
+        .ing-card .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .ing-card .chip {
+            background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);
+            border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.84rem; font-weight: 400;
+        }
+        .ing-card .chip:hover { opacity: 1; border-color: var(--color-accent); }
+        .chip[aria-pressed="true"] { border-color: var(--color-accent); background: rgba(6, 182, 212, 0.14); color: var(--color-accent); }
+        .ing-card .chip.main[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); font-weight: 600; }
+        .ing-card .chip:disabled { opacity: 0.35; cursor: not-allowed; text-decoration: line-through; }
+        .ing-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+        @media (max-width: 520px) { .ing-opts { grid-template-columns: 1fr; } }
+        .ing-card label.ing-toggle {
+            display: flex; align-items: center; gap: 0.6rem; background: var(--color-bg); border: 1px solid var(--color-border);
+            border-radius: 10px; padding: 0.6rem 0.75rem; cursor: pointer; margin: 0; color: var(--color-text);
+        }
+        .ing-toggle input { width: 16px; height: 16px; accent-color: var(--color-accent); flex: none; }
+        .ing-toggle span { display: grid; }
+        .ing-toggle small { color: var(--color-text-muted); font-size: 0.74rem; }
+        .ing-toggle:has(input:checked) { border-color: var(--color-accent); }
+        .ing-toggle:has(input:disabled) { opacity: 0.5; }
+        .ing-toggle[hidden] { display: none !important; }
+        .pv-change { margin-top: 0.9rem; padding-top: 0.75rem; border-top: 1px solid var(--color-border); display: grid; gap: 0.5rem; }
+        .pv-change .pv-head { margin: 0; }
+        .chg-info { font-size: 0.82rem; color: var(--color-text-muted); }
+        .chg-row {
+            display: flex; gap: 0.6rem; align-items: flex-start; background: var(--color-bg); border: 1px solid var(--color-border);
+            border-radius: 8px; padding: 0.5rem 0.7rem; cursor: pointer; margin: 0; color: var(--color-text); font-size: 0.85rem;
+        }
+        .chg-row input { width: 16px; height: 16px; accent-color: var(--color-accent); flex: none; margin-top: 0.15rem; }
+        .chg-row:has(input:checked) { border-color: #ff6b6b; }
+        .chg-row .w { color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+</style>
 </head>
 <body>
     <h1>뮤타입 방송 스케줄 — 관리 페이지</h1>
@@ -640,38 +766,162 @@
 
     <!-- ════ 탭: 원문 투입 ════ -->
     <div class="tab-content" id="ingest-tab">
-        <h2>원문 투입</h2>
-        <div class="form-group">
-            <label>종류</label>
-            <select id="ingest-kind">
-                <option value="preview">예고</option>
-                <option value="notice">소식</option>
-                <option value="tweet">트윗</option>
-            </select>
+        <div class="ing-head">
+            <h2>원문 투입</h2>
+            <p>위 세부 탭에서 방식을 고릅니다. 자동은 X 알림 원문(트윗은 URL)을 파싱하고, 수동은 관리자가 값을 직접 정합니다. 두 방식 모두 미리보기를 본 뒤 확정합니다.</p>
         </div>
 
-        <div class="form-group" id="unit-select">
-            <label id="ingest-unit-label">유닛</label>
-            <select id="ingest-unit"></select>
-            <div id="ingest-unit-help" class="list-item-sub"></div>
+        <div class="ing-subtabs" role="tablist" aria-label="투입 방식" id="ing-subtabs">
+            <button type="button" class="ing-subtab" role="tab" aria-selected="true" data-mode="auto"><b>자동</b><small>원문 붙여넣기</small></button>
+            <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-mode="manual"><b>수동</b><small>직접 입력</small></button>
         </div>
 
-        <div class="form-group">
-            <label>원문</label>
-            <textarea id="ingest-raw" placeholder="원문을 붙여 넣으세요" rows="8"></textarea>
-        </div>
+        <div class="ing-layout">
+            <section class="ing-card" aria-labelledby="ing-h1">
+                <div class="ing-step"><span class="ing-num">1</span><h3 id="ing-h1">무엇을 투입할까요</h3></div>
+                <div class="seg" role="radiogroup" aria-label="종류" id="ingest-seg">
+                    <button type="button" class="seg-btn" role="radio" data-kind="preview" aria-checked="true"><b>예고</b><small>방송 스케줄</small></button>
+                    <button type="button" class="seg-btn" role="radio" data-kind="notice" aria-checked="false"><b>소식</b><small>방송 외 이벤트</small></button>
+                    <button type="button" class="seg-btn" role="radio" data-kind="tweet" aria-checked="false"><b>트윗</b><small>멤버 개인 트윗</small></button>
+                </div>
 
-        <div class="form-group">
-            <button onclick="app.previewIngest()">미리보기</button>
-        </div>
+                <div class="ing-step"><span class="ing-num">2</span><h3 id="ing-h2">내용</h3></div>
 
-        <div id="ingest-preview" style="display: none;">
-            <h3>미리보기</h3>
-            <div id="ingest-preview-content"></div>
-            <div id="ingest-preview-note" style="color: var(--color-text-muted); margin-top: 0.5rem;"></div>
-            <div class="form-group" style="margin-top: 1rem;">
-                <button onclick="app.confirmIngest()" style="background-color: #51cf66;">확정</button>
-            </div>
+                <!-- 자동 -->
+                <div class="ing-fields" id="f-auto">
+                    <div id="a-host-box">
+                        <span class="ing-lbl">호스트</span>
+                        <div class="chips" id="a-host" role="radiogroup" aria-label="호스트"></div>
+                        <div class="ing-help">공식 계정(@BDP_yumemita) 스케줄 트윗이면 '공식 스케줄'을 두고, 멤버 개인 트윗의 예고면 그 멤버를 고르세요.</div>
+                    </div>
+                    <div id="a-tweet-box" hidden>
+                        <label for="a-turl">트윗 URL</label>
+                        <input type="text" id="a-turl" placeholder="https://x.com/…/status/…" autocomplete="off">
+                        <div class="ing-help">URL 만 넣으면 됩니다. 작성자(호스트)는 트윗에서 자동으로 판별하고, X 카드와 한글 번역도 자동으로 만듭니다.</div>
+                    </div>
+                    <div id="a-raw-box">
+                        <label for="a-raw">원문</label>
+                        <textarea id="a-raw" placeholder="원문을 붙여 넣으세요" rows="9"></textarea>
+                        <div class="ing-foot">
+                            <span id="a-count" class="ing-count">0자</span>
+                            <button type="button" class="btn-ghost" id="a-clear">지우기</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 수동 · 예고 -->
+                <div class="ing-fields" id="f-m-preview" hidden>
+                    <div>
+                        <span class="ing-lbl">호스트 <span class="req">(필수)</span></span>
+                        <div class="chips" id="m-host" role="radiogroup" aria-label="호스트"></div>
+                    </div>
+                    <div>
+                        <span class="ing-lbl">합동 참여 멤버</span>
+                        <div class="chips" id="m-collab" aria-label="합동 멤버"></div>
+                        <div class="ing-help">호스트로 고른 멤버는 자동으로 제외됩니다. 아무도 고르지 않으면 단독 방송입니다.</div>
+                    </div>
+                    <div class="ing-row2">
+                        <div><label for="m-date">방송 날짜 (KST)</label><input type="date" id="m-date"></div>
+                        <div><label for="m-time">시작 시각 (KST)</label><input type="time" id="m-time" value="20:00"></div>
+                    </div>
+                    <div class="ing-opts">
+                        <label class="ing-toggle"><input type="checkbox" id="m-tbd"><span>시각 미정<small>날짜만 표시합니다</small></span></label>
+                        <label class="ing-toggle"><input type="checkbox" id="m-member"><span>회원 전용<small>멤버십 방송으로 표시</small></span></label>
+                    </div>
+                    <div>
+                        <label for="m-title">원문 제목 <span class="req">(필수)</span></label>
+                        <div class="ing-inline"><input type="text" id="m-title" placeholder="입력한 그대로 저장됩니다" autocomplete="off"><button type="button" class="btn-line" id="m-tl">번역</button></div>
+                        <div class="ing-help">번역을 누르면 아래 한글 제목이 채워집니다.</div>
+                    </div>
+                    <div>
+                        <label for="m-title-ko">한글 제목</label>
+                        <input type="text" id="m-title-ko" placeholder="비워 두면 자동 번역" autocomplete="off">
+                        <div class="ing-help">직접 쓴 제목은 자동 번역이 덮어쓰지 않습니다.</div>
+                    </div>
+                    <div>
+                        <label for="m-url">유튜브 URL (선택)</label>
+                        <input type="text" id="m-url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+                        <div class="ing-help">넣으면 확정 뒤 그 영상을 바로 확인해 방송 상태와 시각을 맞춥니다. 직접 쓴 제목은 유지됩니다. 비우면 시각이 되어 영상이 뜨기를 기다립니다.</div>
+                    </div>
+                </div>
+
+                <!-- 수동 · 소식 -->
+                <div class="ing-fields" id="f-m-notice" hidden>
+                    <div>
+                        <label for="n-title">원문 제목 <span class="req">(필수)</span></label>
+                        <div class="ing-inline"><input type="text" id="n-title" placeholder="입력한 그대로 저장됩니다" autocomplete="off"><button type="button" class="btn-line" id="n-tl">번역</button></div>
+                        <div class="ing-help">번역을 누르면 아래 한글 제목이 채워집니다.</div>
+                    </div>
+                    <div>
+                        <label for="n-title-ko">한글 제목</label>
+                        <input type="text" id="n-title-ko" placeholder="비워 두면 자동 번역" autocomplete="off">
+                        <div class="ing-help">직접 쓴 제목은 자동 번역이 덮어쓰지 않습니다.</div>
+                    </div>
+                    <div class="ing-row2">
+                        <div><label for="n-date">날짜</label><input type="date" id="n-date"></div>
+                        <div><label for="n-cat">분류</label>
+                            <select id="n-cat">
+                                <option value="live">라이브 예고</option>
+                                <option value="release">음반 · 굿즈</option>
+                                <option value="platform">타 플랫폼</option>
+                                <option value="etc" selected>기타</option>
+                            </select></div>
+                    </div>
+                    <div><label for="n-url">URL (선택)</label><input type="text" id="n-url" placeholder="https://" autocomplete="off"></div>
+                </div>
+
+                <!-- 수동 · 트윗 -->
+                <div class="ing-fields" id="f-m-tweet" hidden>
+                    <div>
+                        <span class="ing-lbl">호스트 <span class="req">(필수)</span></span>
+                        <div class="chips" id="t-host" role="radiogroup" aria-label="호스트"></div>
+                    </div>
+                    <div>
+                        <label for="t-url">트윗 URL <span class="req">(필수)</span></label>
+                        <input type="text" id="t-url" placeholder="https://x.com/…/status/…" autocomplete="off">
+                        <div class="ing-help">이 주소로 X 공식 카드를 표시합니다.</div>
+                    </div>
+                    <div>
+                        <label for="t-text">원문 <span class="req">(필수)</span></label>
+                        <div class="ing-inline top"><textarea id="t-text" rows="4"></textarea><button type="button" class="btn-line" id="t-tl">번역</button></div>
+                        <div class="ing-help">번역을 누르면 아래 한글 번역이 채워집니다.</div>
+                    </div>
+                    <div>
+                        <label for="t-text-ko">한글 번역</label>
+                        <textarea id="t-text-ko" rows="3" placeholder="비워 두면 자동 번역"></textarea>
+                        <div class="ing-help">직접 쓴 번역은 자동 번역이 덮어쓰지 않습니다.</div>
+                    </div>
+                </div>
+
+                <label class="ing-toggle" id="ing-detect-box" hidden>
+                    <input type="checkbox" id="ing-detect">
+                    <span>내용 감지를 통한 예고 수정<small>글에서 방송 취소·변경을 감지해, 미리보기에서 고른 예고를 실제로 내리거나 바꿉니다. 취소는 /del terminate 와 같습니다.</small></span>
+                </label>
+
+                <button type="button" class="btn-main" onclick="app.previewIngest()">미리보기</button>
+            </section>
+
+            <section class="ing-card ing-result" aria-labelledby="ing-h3">
+                <div class="ing-step"><span class="ing-num">3</span><h3 id="ing-h3">확인 후 반영</h3></div>
+                <div id="ingest-empty" class="ing-empty">
+                    <div class="ing-empty-ico" aria-hidden="true">📝</div>
+                    <div>입력한 뒤 <b>미리보기</b>를 누르면<br>여기에 반영될 내용이 표시됩니다.</div>
+                </div>
+                <div id="ingest-force" class="pv-warn" hidden>
+                    <div id="ingest-force-msg"></div>
+                    <label for="ingest-force-unit" style="margin-top:.6rem">넣는다면 어느 호스트의 트윗으로 표시할까요</label>
+                    <select id="ingest-force-unit"></select>
+                    <div class="pv-actions">
+                        <button type="button" class="btn-ghost" onclick="app.cancelForce()">취소</button>
+                        <button type="button" class="btn-main" style="width:auto" onclick="app.forceIngest()">그래도 넣기</button>
+                    </div>
+                </div>
+                <div id="ingest-preview" style="display: none;">
+                    <div id="ingest-preview-content"></div>
+                    <div id="ingest-preview-note" class="ing-note"></div>
+                    <button type="button" class="btn-ok" onclick="app.confirmIngest()">확정하고 반영</button>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -792,6 +1042,7 @@
             },
             editState: null,
             ingestPreviewData: null,
+            ing: { mode: "auto", kind: "preview", autoHost: "", host: "arale", collab: new Set(), thost: "arale" },
             channels: {},
 
             async init() {
@@ -823,13 +1074,38 @@
                     });
                 });
 
-                // (v4a) 원문 투입: 종류에 따라 유닛 선택 구성. 종류 · 유닛 · 원문이 바뀌면 이전 미리보기는
-                // 무효 — 안 그러면 다른 입력으로 본 미리보기를 보고 확정하게 된다
-                document.getElementById("ingest-kind").addEventListener("change", () => this.updateIngestForm());
-                for (const id of ["ingest-unit", "ingest-raw"]) {
-                    document.getElementById(id).addEventListener("input", () => this.resetIngestPreview());
-                    document.getElementById(id).addEventListener("change", () => this.resetIngestPreview());
-                }
+                // (v4a) 원문 투입: 세부 탭(자동/수동) · 종류 · 입력이 바뀌면 이전 미리보기는 무효 —
+                // 안 그러면 다른 입력으로 본 미리보기를 보고 확정하게 된다
+                document.querySelectorAll("#ing-subtabs .ing-subtab").forEach((b) => b.addEventListener("click", () => {
+                    this.ing.mode = b.dataset.mode;
+                    this.updateIngestForm();
+                }));
+                document.querySelectorAll("#ingest-seg .seg-btn").forEach((b) => b.addEventListener("click", () => {
+                    this.ing.kind = b.dataset.kind;
+                    this.updateIngestForm();
+                }));
+                document.querySelectorAll("#ingest-tab .ing-card:not(.ing-result) input, #ingest-tab .ing-card:not(.ing-result) select, #ingest-tab .ing-card:not(.ing-result) textarea")
+                    .forEach((el) => {
+                        el.addEventListener("input", () => this.resetIngestPreview());
+                        el.addEventListener("change", () => this.resetIngestPreview());
+                    });
+                const rawEl = document.getElementById("a-raw");
+                const countEl = document.getElementById("a-count");
+                rawEl.addEventListener("input", () => { countEl.textContent = `${rawEl.value.length.toLocaleString()}자`; });
+                document.getElementById("a-clear").addEventListener("click", () => {
+                    rawEl.value = "";
+                    document.getElementById("a-turl").value = "";
+                    countEl.textContent = "0자";
+                    this.resetIngestPreview();
+                    (document.getElementById("a-tweet-box").hidden ? rawEl : document.getElementById("a-turl")).focus();
+                });
+                document.getElementById("m-tbd").addEventListener("change", (e) => {
+                    document.getElementById("m-time").disabled = e.target.checked;
+                });
+                document.getElementById("m-date").value = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+                document.getElementById("n-tl").addEventListener("click", (e) => this.translateInto("n-title", "n-title-ko", e.currentTarget));
+                document.getElementById("m-tl").addEventListener("click", (e) => this.translateInto("m-title", "m-title-ko", e.currentTarget));
+                document.getElementById("t-tl").addEventListener("click", (e) => this.translateInto("t-text", "t-text-ko", e.currentTarget));
                 this.updateIngestForm();
 
                 // 초기 탭 로드
@@ -1438,72 +1714,205 @@
             },
 
             // ─────────────────────────────────────────────────────────────────────
-            // 원문 투입 탭
+            // 원문 투입 탭 — 세부 탭 자동(원문 · 트윗은 URL) / 수동(직접 입력) × 종류 예고 · 소식 · 트윗
             // ─────────────────────────────────────────────────────────────────────
 
-            // 유닛 선택: 예고 = 비워 두면 공식 스케줄(@BDP_yumemita) · 고르면 개인 예고 / 트윗 = 필수 / 소식 = 없음
-            updateIngestForm() {
-                const kind = document.getElementById("ingest-kind").value;
-                const box = document.getElementById("unit-select");
-                const label = document.getElementById("ingest-unit-label");
-                const help = document.getElementById("ingest-unit-help");
-                const select = document.getElementById("ingest-unit");
-                const prev = select.value;
-                box.style.display = kind === "notice" ? "none" : "block";
-                select.textContent = "";
-                if (kind === "preview") {
-                    const opt = document.createElement("option");
-                    opt.value = "";
-                    opt.textContent = "공식 스케줄 (유닛 없음)";
-                    select.appendChild(opt);
-                    label.textContent = "유닛";
-                    help.textContent = "공식 계정(@BDP_yumemita) 스케줄 트윗이면 비워 두고, 멤버 개인 트윗의 예고면 그 멤버를 고르세요.";
-                } else {
-                    label.textContent = "유닛 (필수)";
-                    help.textContent = "트윗을 올린 멤버";
-                }
+            ingestMembers() {
                 const order = (this.data.channels && this.data.channels.channel_order) || Object.keys(this.channels || {});
-                for (const key of order) {
-                    const opt = document.createElement("option");
-                    opt.value = key;
-                    opt.textContent = (this.channels[key] || {}).name_ko || key;
-                    select.appendChild(opt);
+                return order.map((k) => [k, (this.channels[k] || {}).name_ko || k]);
+            },
+
+            // 멤버 칩 — main: 선택 강조(단일 선택), disabled(k): 선택 불가 표시
+            drawChips(box, isOn, onClick, opts = {}) {
+                box.textContent = "";
+                const add = (key, label, extra) => {
+                    const b = document.createElement("button");
+                    b.type = "button";
+                    b.className = "chip" + (opts.main && !extra ? " main" : "");
+                    b.textContent = label;
+                    b.setAttribute("aria-pressed", String(isOn(key)));
+                    if (opts.disabled && opts.disabled(key)) b.disabled = true;
+                    b.addEventListener("click", () => onClick(key));
+                    box.appendChild(b);
+                };
+                if (opts.none) add("", opts.none, true);
+                for (const [k, n] of this.ingestMembers()) add(k, n);
+            },
+
+            // 「내용 감지를 통한 예고 수정」은 글(호스트가 정해진)이 있을 때만: 자동·예고(호스트 선택 시) · 자동·트윗 · 수동·트윗
+            detectAvailable() {
+                const { mode, kind, autoHost } = this.ing;
+                return (mode === "auto" && ((kind === "preview" && !!autoHost) || kind === "tweet")) ||
+                       (mode === "manual" && kind === "tweet");
+            },
+
+            syncDetectBox() {
+                const box = document.getElementById("ing-detect-box");
+                const ok = this.detectAvailable();
+                box.hidden = !ok;
+                if (!ok) document.getElementById("ing-detect").checked = false;
+            },
+
+            drawIngestChips() {
+                const s = this.ing;
+                const redraw = () => { this.drawIngestChips(); this.syncDetectBox(); this.resetIngestPreview(); };
+                this.drawChips(document.getElementById("a-host"), (k) => s.autoHost === k,
+                    (k) => { s.autoHost = k; redraw(); }, { main: true, none: "공식 스케줄 (호스트 없음)" });
+                this.drawChips(document.getElementById("m-host"), (k) => s.host === k,
+                    (k) => { s.host = k; s.collab.delete(k); redraw(); }, { main: true });
+                this.drawChips(document.getElementById("m-collab"), (k) => s.collab.has(k),
+                    (k) => { s.collab.has(k) ? s.collab.delete(k) : s.collab.add(k); redraw(); },
+                    { disabled: (k) => k === s.host });
+                this.drawChips(document.getElementById("t-host"), (k) => s.thost === k,
+                    (k) => { s.thost = k; redraw(); }, { main: true });
+            },
+
+            updateIngestForm() {
+                const { mode, kind } = this.ing;
+                document.querySelectorAll("#ing-subtabs .ing-subtab").forEach((b) =>
+                    b.setAttribute("aria-selected", String(b.dataset.mode === mode)));
+                document.querySelectorAll("#ingest-seg .seg-btn").forEach((b) =>
+                    b.setAttribute("aria-checked", String(b.dataset.kind === kind)));
+                document.getElementById("f-auto").hidden = mode !== "auto";
+                document.getElementById("a-host-box").hidden = kind !== "preview";
+                document.getElementById("a-tweet-box").hidden = kind !== "tweet";
+                document.getElementById("a-raw-box").hidden = kind === "tweet";
+                for (const k of ["preview", "notice", "tweet"]) {
+                    document.getElementById("f-m-" + k).hidden = !(mode === "manual" && kind === k);
                 }
-                if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+                this.drawIngestChips();
+                this.syncDetectBox();
                 this.resetIngestPreview();
             },
 
             resetIngestPreview() {
                 this.ingestPreviewData = null;
                 document.getElementById("ingest-preview").style.display = "none";
+                document.getElementById("ingest-force").hidden = true;
+                document.getElementById("ingest-empty").style.display = "";
             },
 
-            async previewIngest() {
-                const kind = document.getElementById("ingest-kind").value;
-                const raw = document.getElementById("ingest-raw").value;
-                const unit = document.getElementById("ingest-unit").value;
-
-                if (!raw.trim()) {
-                    this.showToast("원문을 입력하세요", "error");
+            // 제목 · 본문 번역 — 입력 중인 원문만 번역해 채운다(저장 안 함). 직접 쓴 값은 자동 번역이 덮지 않는다
+            async translateInto(srcId, dstId, btn) {
+                const text = document.getElementById(srcId).value.trim();
+                if (!text) {
+                    this.showToast("번역할 원문을 먼저 입력하세요", "error");
                     return;
                 }
+                btn.disabled = true;
+                const label = btn.textContent;
+                btn.textContent = "번역 중…";
+                try {
+                    const r = await this.apiCall("POST", "/translate_text", { text });
+                    if (r.ok && r.result && r.result.title_ko) {
+                        document.getElementById(dstId).value = r.result.title_ko;
+                        this.resetIngestPreview();
+                    } else {
+                        this.showToast(r.error || "번역 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`번역 실패: ${e.message}`, "error");
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = label;
+                }
+            },
 
-                let endpoint;
-                const body = { raw, confirm: false };
-                if (kind === "preview") {
-                    endpoint = "/ingest_preview_raw";
-                    if (unit) body.channel_key = unit;
-                } else if (kind === "notice") {
-                    endpoint = "/ingest_notice_raw";
-                } else {
-                    endpoint = "/ingest_tweet_raw";
-                    body.unit = unit;
+            // 멤버가 아닌 트윗 — 되묻기. "그래도 넣기"는 붙일 호스트를 골라 force_unit 으로 미리보기부터 다시 한다
+            showForceConfirm(result) {
+                this.resetIngestPreview();
+                document.getElementById("ingest-empty").style.display = "none";
+                document.getElementById("ingest-force-msg").textContent =
+                    `${result.message} (작성자 @${result.author})`;
+                const sel = document.getElementById("ingest-force-unit");
+                sel.textContent = "";
+                for (const [k, n] of this.ingestMembers()) {
+                    const opt = document.createElement("option");
+                    opt.value = k;
+                    opt.textContent = n;
+                    sel.appendChild(opt);
+                }
+                document.getElementById("ingest-force").hidden = false;
+            },
+
+            cancelForce() {
+                this.resetIngestPreview();
+            },
+
+            forceIngest() {
+                this.previewIngest(document.getElementById("ingest-force-unit").value);
+            },
+
+            buildIngestRequest(forceUnit) {
+                const req = this.buildIngestRequestBase(forceUnit);
+                if (req && this.detectAvailable() && document.getElementById("ing-detect").checked) {
+                    req.body.detect_change = true;
+                }
+                return req;
+            },
+
+            // 현재 세부 탭 · 종류에 맞는 요청 = {endpoint, body}. 입력 누락은 null(토스트 후 중단)
+            buildIngestRequestBase(forceUnit) {
+                const { mode, kind, host, collab, thost, autoHost } = this.ing;
+                const v = (id) => document.getElementById(id).value;
+                const need = (cond, msg) => { if (!cond) this.showToast(msg, "error"); return cond; };
+
+                if (mode === "auto") {
+                    if (kind === "preview") {
+                        if (!need(v("a-raw").trim(), "원문을 입력하세요")) return null;
+                        const body = { raw: v("a-raw"), confirm: false };
+                        if (autoHost) body.channel_key = autoHost;
+                        return { endpoint: "/ingest_preview_raw", body };
+                    }
+                    if (kind === "notice") {
+                        if (!need(v("a-raw").trim(), "원문을 입력하세요")) return null;
+                        return { endpoint: "/ingest_notice_raw", body: { raw: v("a-raw"), confirm: false } };
+                    }
+                    // 트윗 = URL 만. 작성자(호스트)는 서버가 트윗에서 판별하고, 멤버가 아니면 되묻는다
+                    if (!need(v("a-turl").trim(), "트윗 URL 을 입력하세요")) return null;
+                    const body = { url: v("a-turl").trim(), confirm: false };
+                    if (forceUnit) body.force_unit = forceUnit;
+                    return { endpoint: "/ingest_tweet_url", body };
                 }
 
+                if (kind === "preview") {
+                    return {
+                        endpoint: "/ingest_preview_manual",
+                        body: {
+                            host, collab_with: [...collab].filter((k) => k !== host), date: v("m-date"),
+                            time: document.getElementById("m-tbd").checked ? null : v("m-time"),
+                            time_tbd: document.getElementById("m-tbd").checked,
+                            membership: document.getElementById("m-member").checked,
+                            title: v("m-title"), title_ko: v("m-title-ko"), url: v("m-url"), confirm: false,
+                        },
+                    };
+                }
+                if (kind === "notice") {
+                    return {
+                        endpoint: "/ingest_notice_manual",
+                        body: { title: v("n-title"), title_ko: v("n-title-ko"), date: v("n-date") || null,
+                                category: v("n-cat"), url: v("n-url"), confirm: false },
+                    };
+                }
+                return {
+                    endpoint: "/ingest_tweet_manual",
+                    body: { url: v("t-url"), host: thost, text: v("t-text"), text_ko: v("t-text-ko"), confirm: false },
+                };
+            },
+
+            async previewIngest(forceUnit) {
+                const req = this.buildIngestRequest(forceUnit);
+                if (!req) return;
+                const { endpoint, body } = req;
+                const kind = this.ing.kind;
                 try {
                     const result = await this.apiCall("POST", endpoint, body);
+                    if (!result.ok && result.confirm_needed) {
+                        this.showForceConfirm(result);
+                        return;
+                    }
                     if (!result.ok) {
-                        // 인식 실패 — 확정 버튼을 띄우지 않는다
+                        // 인식 실패 · 입력 오류 — 확정 버튼을 띄우지 않는다
                         this.resetIngestPreview();
                         this.showToast(result.error || "인식되지 않았습니다", "error");
                         return;
@@ -1512,6 +1921,8 @@
                     this.renderIngestPreview(kind, result);
                     document.getElementById("ingest-preview-note").textContent = result.note || "";
                     document.getElementById("ingest-preview").style.display = "block";
+                    document.getElementById("ingest-empty").style.display = "none";
+                    document.getElementById("ingest-force").hidden = true;
                 } catch (e) {
                     this.resetIngestPreview();
                     this.showToast(`미리보기 실패: ${e.message}`, "error");
@@ -1523,35 +1934,41 @@
                 const box = document.getElementById("ingest-preview-content");
                 box.textContent = "";
                 const nameOf = (k) => (this.channels[k] || {}).name_ko || k || "?";
+                const CAT = { live: "라이브 예고", release: "음반 · 굿즈", platform: "타 플랫폼", etc: "기타" };
                 const line = (label, value) => {
                     if (value === undefined || value === null || value === "") return;
                     const d = document.createElement("div");
-                    const b = document.createElement("strong");
-                    b.textContent = label + ": ";
-                    d.appendChild(b);
-                    d.appendChild(document.createTextNode(String(value)));
+                    d.className = "pv-kv";
+                    const k = document.createElement("span");
+                    k.className = "k";
+                    k.textContent = label;
+                    const v = document.createElement("span");
+                    v.textContent = String(value);
+                    d.appendChild(k);
+                    d.appendChild(v);
                     box.appendChild(d);
                 };
                 const head = (text) => {
                     const d = document.createElement("div");
                     d.textContent = text;
-                    d.style.marginBottom = "0.5rem";
+                    d.className = "pv-head";
                     box.appendChild(d);
                 };
                 const pv = result.preview;
+                const manual = this.ing.mode === "manual";
 
                 if (kind === "preview") {
-                    const rows = Array.isArray(pv) ? pv : [pv];
-                    head(`예고 ${rows.length}건이 반영됩니다`);
+                    const rows = (Array.isArray(pv) ? pv : [pv]).filter(Boolean);
+                    if (rows.length) head(`예고 ${rows.length}건이 반영됩니다`);
                     for (const r of rows) {
                         const div = document.createElement("div");
-                        div.className = "list-item";
-                        div.style.display = "block";
+                        div.className = "pv-card";
                         const collab = r.collab_with || [];
                         const t = document.createElement("div");
                         t.className = "list-item-title";
                         t.textContent = [r.channel_key, ...collab].map(nameOf).join("·") +
-                            (collab.length ? " (합동)" : "") + (r.membership ? " · 회원 전용" : "");
+                            (collab.length ? " (합동)" : "") + (r.membership ? " · 회원 전용" : "") +
+                            (manual ? " · 수동 입력" : "");
                         div.appendChild(t);
                         const when = r.scheduled_start
                             ? (r.time_tbd ? this.formatTime(r.scheduled_start).slice(0, 5) + " (시각 미정)"
@@ -1559,10 +1976,18 @@
                             : (r.video_id ? "시각은 영상 확인 후 결정" : "시각 없음");
                         const m = document.createElement("div");
                         m.className = "list-item-meta";
-                        m.textContent = [when, r.title || "", r.url || (r.video_id ? `video_id ${r.video_id}` : "")]
+                        m.textContent = [when, r.title_ko || "", r.title || "",
+                                         r.url || (r.video_id ? `video_id ${r.video_id}` : "")]
                             .filter(Boolean).join(" · ");
                         div.appendChild(m);
                         box.appendChild(div);
+                    }
+                    if (result.merge) {
+                        const w = document.createElement("div");
+                        w.className = "pv-warn";
+                        w.textContent = "⚠️ 같은 방송이 이미 있어요: " +
+                            [this.formatTime(result.merge.scheduled_start), result.merge.title].filter(Boolean).join(" · ");
+                        box.appendChild(w);
                     }
                 } else if (kind === "notice") {
                     const p = (pv && pv.parsed) || {};
@@ -1571,19 +1996,26 @@
                     line("제목", tl.title_ko || p.title_ko || p.title);
                     line("원문 제목", tl.title_ja || p.title);
                     line("날짜", p.date);
-                    line("분류", p.category);
+                    line("분류", CAT[p.category] || p.category);
                     line("URL", p.url);
-                    if (pv && pv.dup_id) line("⚠️ 중복 후보", `기존 소식 ${pv.dup_id} 와 같은 내용일 수 있습니다`);
+                    if (pv && pv.dup_id) {
+                        const w = document.createElement("div");
+                        w.className = "pv-warn";
+                        w.textContent = `⚠️ 중복 후보 — 기존 소식 ${pv.dup_id} 와 같은 내용일 수 있습니다`;
+                        box.appendChild(w);
+                    }
                 } else {
                     const p = (pv && pv.parsed) || {};
-                    head(`${nameOf(document.getElementById("ingest-unit").value)} 트윗 1건이 반영됩니다`);
+                    head(`${nameOf(pv && pv.unit)} 트윗 1건이 반영됩니다`);
+                    line("X 카드", p.url);
                     line("원문", p.text);
-                    line("번역", pv && pv.text_ko);
-                    line("URL", p.url);
+                    line("한글 번역", (pv && pv.text_ko) || "저장 후 자동 번역됩니다");
+                    if (pv && pv.forced) line("작성자", `@${pv.author} (유메미타 멤버 아님 — 선택한 호스트로 표시)`);
                 }
 
+                if (result.change) this.renderChange(box, result.change);
+
                 const det = document.createElement("details");
-                det.style.marginTop = "0.5rem";
                 const sum = document.createElement("summary");
                 sum.textContent = "원본 데이터 보기";
                 det.appendChild(sum);
@@ -1594,6 +2026,55 @@
                 box.appendChild(det);
             },
 
+            // 「내용 감지를 통한 예고 수정」 결과 — 후보 방송 체크 목록(LLM 이 고른 것이 미리 체크). 확정 시 체크된 것만 적용
+            renderChange(box, ch) {
+                const wrap = document.createElement("div");
+                wrap.className = "pv-change";
+                const h = document.createElement("div");
+                h.className = "pv-head";
+                h.textContent = "예고 수정 감지";
+                wrap.appendChild(h);
+                const info = (text, cls) => {
+                    const d = document.createElement("div");
+                    d.className = cls || "chg-info";
+                    d.textContent = text;
+                    wrap.appendChild(d);
+                };
+                if (ch.action === "failed") {
+                    info("⚠️ " + (ch.message || "판정에 실패했습니다"), "pv-warn");
+                } else if (ch.action === "none") {
+                    info(ch.candidates.length
+                        ? "취소·변경 글로 감지되지 않았습니다 — 예고는 바뀌지 않습니다."
+                        : "이 호스트의 활성 예고가 없어 수정할 대상이 없습니다.");
+                    if (ch.reason) info("판정 근거: " + ch.reason);
+                } else {
+                    if (ch.reason) info("판정 근거: " + ch.reason);
+                    info(ch.action === "del"
+                        ? "방송 취소로 감지했습니다. 체크한 예고를 내립니다 (/del terminate 와 같음: 삭제 + 영상 URL 12시간 재등록 차단)."
+                        : `일정 변경으로 감지했습니다. 체크한 예고를 ${this.formatTime(ch.when_iso)} 로 옮깁니다.`);
+                    for (const c of ch.candidates) {
+                        const lab = document.createElement("label");
+                        lab.className = "chg-row";
+                        const cb = document.createElement("input");
+                        cb.type = "checkbox";
+                        cb.className = "chg-cb";
+                        cb.dataset.id = c.id;
+                        cb.checked = !!c.selected;
+                        const w = document.createElement("span");
+                        w.className = "w";
+                        w.textContent = c.when;
+                        const t = document.createElement("span");
+                        t.textContent = c.title || "(제목 없음)";
+                        lab.appendChild(cb);
+                        lab.appendChild(w);
+                        lab.appendChild(t);
+                        wrap.appendChild(lab);
+                    }
+                    info("틀리게 골랐다면 체크를 바꾸세요. 체크한 예고만 적용됩니다.");
+                }
+                box.appendChild(wrap);
+            },
+
             async confirmIngest() {
                 if (!this.ingestPreviewData) {
                     this.showToast("먼저 미리보기를 클릭하세요", "error");
@@ -1602,12 +2083,31 @@
 
                 try {
                     const { endpoint, body, kind } = this.ingestPreviewData;
-                    const result = await this.apiCall("POST", endpoint, { ...body, confirm: true });
+                    const send = { ...body, confirm: true };
+                    const chg = this.ingestPreviewData.result.change;
+                    if (chg && (chg.action === "del" || chg.action === "edit")) {
+                        send.change_ids = [...document.querySelectorAll("#ingest-preview-content .chg-cb:checked")]
+                            .map((c) => c.dataset.id);
+                        send.change_action = chg.action;
+                        send.change_when = chg.when_iso;
+                    }
+                    const result = await this.apiCall("POST", endpoint, send);
 
                     if (result.ok) {
                         const where = kind === "preview" ? "예고" : "소식 · 트윗";
-                        this.showToast(`반영했습니다 — ${where} 탭에서 확인하세요`);
-                        document.getElementById("ingest-raw").value = "";
+                        const ap = (result.change && result.change.applied) || [];
+                        const er = (result.change && result.change.errors) || [];
+                        this.showToast(ap.length
+                            ? `반영했습니다 — 예고 ${ap.length}건 ${result.change.action === "del" ? "삭제" : "변경"} · ${where} 탭에서 확인하세요`
+                            : `반영했습니다 — ${where} 탭에서 확인하세요`);
+                        if (er.length) this.showToast(`일부 실패: ${er.join(" / ")}`, "error");
+                        // 입력 비우기(호스트 · 날짜 · 분류는 다음 입력을 위해 유지)
+                        for (const id of ["a-raw", "a-turl", "m-title", "m-title-ko", "m-url", "n-title", "n-title-ko",
+                                          "n-url", "t-url", "t-text", "t-text-ko"]) {
+                            document.getElementById(id).value = "";
+                        }
+                        document.getElementById("a-count").textContent = "0자";
+                        document.getElementById("ing-detect").checked = false;
                         this.resetIngestPreview();
                     } else {
                         this.showToast(result.error || "투입 실패", "error");
@@ -2044,6 +2544,8 @@
 
             renderFlows() {
                 const box = document.getElementById("flows");
+                const keepScroll = box.scrollTop;                       // 5초 갱신마다 다시 그려도 보던 위치 유지
+                requestAnimationFrame(() => { box.scrollTop = keepScroll; });
                 box.textContent = "";
                 const flows = ((this.jobs || {}).flows || []).filter((f) =>
                     this.flowFilter === "all" || !this.flowFilter ? true
@@ -2169,8 +2671,15 @@
                 this.flowTimers.push(setTimeout(done, step * upto));
             },
 
+            // 다시 그리기 전에 부르면, 그린 뒤 스크롤 위치를 되돌린다
+            keepScroll(box) {
+                const top = box.scrollTop;
+                requestAnimationFrame(() => { box.scrollTop = top; });
+            },
+
             renderSched(data) {
                 const box = document.getElementById("jobs-sched");
+                this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
                 box.textContent = "";
                 const row = (t, main, sub) => {
                     const r = document.createElement("div");
@@ -2201,6 +2710,7 @@
 
             renderAuto() {
                 const box = document.getElementById("jobs-auto");
+                this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
                 box.textContent = "";
                 const list = ((this.jobs || {}).auto || []).filter((a) => !this.autoFailOnly || !a.ok).slice(0, 30);
                 if (!list.length) {
@@ -2226,6 +2736,7 @@
 
             renderPendingTl(data) {
                 const box = document.getElementById("jobs-tl");
+                this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
                 box.textContent = "";
                 const list = data.pending_tl || [];
                 if (!list.length) {
@@ -2250,10 +2761,11 @@
             // 내가 한 조작: {id, ts, action, target, summary, ok, error, job_id} (admin_api.list_history)
             renderHistory(items) {
                 const box = document.getElementById("jobs-history");
+                this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
                 box.textContent = "";
                 const LABEL = {
                     edit_preview: "예고 수정", delete_preview: "예고 삭제", ingest_preview: "원문 투입 · 예고",
-                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "원문 투입 · 트윗", edit_notice: "소식 수정",
+                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정",
                     delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
                     retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
                     set_monitor_auto: "멤버 현황 DM",

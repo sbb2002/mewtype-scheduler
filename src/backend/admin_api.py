@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -194,7 +195,74 @@ def delete_preview(item_id: str, suppress: bool) -> dict:
                    f"{cur.get('channel_key')} {cur.get('title') or ''}" + (" (재등록 차단)" if suppress else ""), res)
 
 
-def ingest_preview_raw(raw: str, *, confirm: bool, channel_key: str | None = None) -> dict:
+def _change_plan(t, raw: str, host: str, now: str) -> dict:
+    """(v4a) 「내용 감지를 통한 예고 수정」 — 글에서 방송 취소·변경을 감지하고 영향받는 예고를 고른다(미리보기용, 저장 안 함).
+    반환 {"action": del|edit|none|failed, "when_iso", "candidates": [{"id","when","title","selected"}], "message"?}"""
+    plan = t._detect_broadcast_change(raw, host, now, list_preview().get("items", []))
+    if plan is None:
+        return {"action": "failed", "when_iso": None, "candidates": [],
+                "message": "판정에 실패했습니다(LLM 사용 불가 또는 응답 없음) — 예고는 바뀌지 않습니다"}
+    sel = set(plan["target_ids"])
+    return {"action": plan["action"], "when_iso": plan["when_iso"], "reason": plan.get("reason") or "",
+            "candidates": [{"id": c["id"], "when": t._kst_label(c.get("scheduled_start")),
+                            "title": c.get("title_ko") or c.get("title") or "", "selected": c["id"] in sel}
+                           for c in plan["candidates"]]}
+
+
+def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str | None) -> dict:
+    """(v4a) 미리보기에서 관리자가 확인한 예고에만 취소·변경 적용. 취소 = `/del` terminate 와 동일
+    (삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다). 채널 자리표시 URL 은 차단하지 않는다."""
+    t = _t()
+    out = {"action": action, "applied": [], "errors": []}
+    if action not in ("del", "edit") or not ids:
+        return out
+    items = {i["id"]: i for i in list_preview().get("items", [])
+             if i.get("channel_key") == host and i.get("state") in t.xtweet._ACTIVE_STATES}
+    for iid in ids:
+        it = items.get(iid)
+        if it is None:
+            out["errors"].append(f"{iid}: 이미 사라졌거나 대상이 아닙니다")
+            continue
+        label = f"{t._kst_label(it.get('scheduled_start'))} {it.get('title_ko') or it.get('title') or ''}".strip()
+        if action == "del":
+            r = delete_preview(iid, bool(it.get("url") and t.xtweet.YT_VIDEO_RE.search(it["url"])))
+        elif when_iso:
+            r = edit_preview(iid, {"scheduled_start": when_iso}, {})
+        else:
+            r = _err("변경할 시각이 없습니다")
+        (out["applied"] if r.get("ok") else out["errors"]).append(label if r.get("ok") else f"{label}: {r.get('error')}")
+    return out
+
+
+def ingest_preview_raw(raw: str, *, confirm: bool, channel_key: str | None = None, detect_change: bool = False,
+                       change_ids: list | None = None, change_action: str | None = None,
+                       change_when: str | None = None) -> dict:
+    """예고 원문 투입 + (v4a) 「내용 감지를 통한 예고 수정」. detect_change 는 호스트(channel_key)가 있을 때만.
+    감지만 되고 예고로는 인식되지 않는 글(예: 휴방 안내)도 미리보기 · 확정이 된다(change_only)."""
+    if not (detect_change and channel_key):
+        return _ingest_preview_raw_core(raw, confirm=confirm, channel_key=channel_key)
+    t = _t()
+    if not confirm:
+        plan = _change_plan(t, (raw or "").strip(), channel_key, _now_iso())
+        res = _ingest_preview_raw_core(raw, confirm=False, channel_key=channel_key)
+        if res.get("ok"):
+            res["change"] = plan
+            return res
+        if plan["action"] in ("del", "edit"):
+            return {"ok": True, "preview": [], "change": plan,
+                    "note": "예고 글로는 인식되지 않았지만 방송 취소·변경으로 감지되었습니다"}
+        return res
+    res = _ingest_preview_raw_core(raw, confirm=True, channel_key=channel_key)
+    recog_fail = (not res.get("ok")) and "인식되지 않았습니다" in (res.get("error") or "")
+    if res.get("ok") or (recog_fail and change_ids):
+        ch = _apply_change(channel_key, change_action, change_ids, change_when)
+        if recog_fail:
+            res = _ok({"change_only": True})
+        res["change"] = ch
+    return res
+
+
+def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None = None) -> dict:
     """예고 원문 투입. confirm=False → 반영 없이 파싱 미리보기 {"ok", "preview": [행...], "note"}.
     confirm=True → 적용 큐 적재. channel_key 는 개인 예고일 때 유닛 지정(없으면 공식 스케줄 형식만)."""
     t = _t()
@@ -285,6 +353,220 @@ def ingest_tweet_raw(raw: str, *, unit: str, confirm: bool) -> dict:
         return {"ok": True, "preview": {"parsed": prepared.get("parsed"), "text_ko": prepared.get("text_ko")}}
     res = _submit("personal_tweet", {"prepared": prepared, "channel_key": unit, "now_iso": now, "via": "ops"})
     return _record("ingest_tweet", unit, raw[:60], res)
+
+
+_TWEET_URL_RE = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([^/?#\s]+)/status(?:es)?/(\d{6,25})")
+
+
+def ingest_tweet_url(url: str, *, confirm: bool, force_unit: str | None = None, detect_change: bool = False,
+                     change_ids: list | None = None, change_action: str | None = None,
+                     change_when: str | None = None) -> dict:
+    """개인 트윗 URL 투입. URL 만 받아 작성자(호스트) 판별 · 본문 · 미디어 · 번역을 자동으로 채운다.
+
+    작성자 = vxtwitter/fxtwitter 응답의 X 핸들(URL 의 핸들은 `i` 일 수 있어 응답을 우선) — `config/channels.json`
+    의 `handle`(X 핸들과 같다, 운영자 확인 2026-09-30)과 대소문자 무시로 맞춘다.
+    멤버가 아니면 {"ok": False, "confirm_needed": "not_member", "author", "message"} — 관리자가 `force_unit`(붙일
+    호스트)을 골라 다시 부르면 그 호스트 레인에 넣는다.
+    confirm=False → 반영 없이 미리보기 {"ok", "preview": {"parsed", "text_ko", "unit", "author"}}."""
+    from . import vxtwitter
+    m = _TWEET_URL_RE.match((url or "").strip())
+    if not m:
+        return _err("트윗 URL 이 아닙니다 (https://x.com/…/status/숫자)")
+    tid = m.group(2)
+    j = vxtwitter.fetch_tweet(tid)
+    if not j:
+        return _err("트윗을 가져오지 못했습니다 — 비공개이거나 삭제됐거나 조회 서비스가 응답하지 않습니다")
+    ex = vxtwitter.extract(j)
+    author = (ex.get("author") or m.group(1) or "").lstrip("@")
+    t = _t()
+    chs = t._load_channels_config().get("channels") or {}
+    natural = next((k for k, v in chs.items()
+                    if not v.get("is_group") and (v.get("handle") or "").lower() == author.lower()), None)
+    unit = natural
+    if unit is None:
+        if not force_unit:
+            return {"ok": False, "confirm_needed": "not_member", "author": author,
+                    "message": "이 트윗은 유메미타 멤버가 아닙니다. 그래도 넣을까요?"}
+        if force_unit not in chs or chs[force_unit].get("is_group"):
+            return _err("붙일 호스트를 고르세요")
+        unit = force_unit
+    now = _now_iso()
+    name = chs[unit].get("name") or unit
+    prepared = t._prepare_personal_tweet(ex.get("text") or "", title=name, tag=f"tweet-{tid}", channel_key=unit,
+                                         now_iso=now, vx_extract=ex, gh=_store())
+    if not prepared:
+        return _err("트윗으로 인식되지 않았습니다 (리트윗 · 빈 본문 등)")
+    if not confirm:
+        out = {"ok": True, "preview": {"parsed": prepared.get("parsed"), "text_ko": prepared.get("text_ko"),
+                                       "unit": unit, "author": author, "forced": natural is None}}
+        if detect_change:
+            out["change"] = _change_plan(t, ex.get("text") or "", unit, now)
+        return out
+    res = _submit("personal_tweet", {"prepared": prepared, "channel_key": unit, "now_iso": now, "via": "ops"})
+    res = _record("ingest_tweet", unit, f"tweet-{tid}", res)
+    if detect_change and res.get("ok"):
+        res["change"] = _apply_change(unit, change_action, change_ids, change_when)
+    return res
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
+_NOTICE_CATS = ("live", "release", "platform", "etc")
+
+
+def _host_ok(chs: dict, key: str | None) -> bool:
+    v = (chs.get("channels") or {}).get(key or "")
+    return bool(v) and not v.get("is_group")
+
+
+def ingest_preview_manual(*, host: str, date: str, title: str, confirm: bool, collab_with: list | None = None,
+                          time: str | None = None, time_tbd: bool = False, membership: bool = False,
+                          title_ko: str = "", url: str = "") -> dict:
+    """(v4a) 예고 수동 입력 — 관리자가 호스트 · 합동 · 시각 · 제목을 직접 정한다.
+
+    시각은 KST 로 받아 UTC 로 저장(time_tbd 면 `<날짜>T00:00:00Z` 자리표시, 계약 §2). 제목은 title_manual 로
+    보호돼 API 제목 · 자동 번역이 덮지 않는다(한글을 비우면 needs_tl 로 자동 번역). 같은 방송이 이미 있으면
+    입력값을 그 항목에 덮어쓰고(상태 · video_id 보존) 미리보기에 알린다. 유튜브 URL 이 있으면 확정 뒤 그 영상을 즉시 확인."""
+    t = _t()
+    chs = t._load_channels_config()
+    order = chs.get("channel_order") or []
+    title, title_ko, url = (title or "").strip(), (title_ko or "").strip(), (url or "").strip()
+    if not _host_ok(chs, host):
+        return _err("호스트를 고르세요")
+    cw = [k for k in order if k in (collab_with or []) and k != host]
+    if any(k not in order for k in (collab_with or [])):
+        return _err("합동 멤버 키가 올바르지 않습니다")
+    if not _DATE_RE.match(date or ""):
+        return _err("방송 날짜를 입력하세요")
+    if not time_tbd and not _TIME_RE.match(time or ""):
+        return _err("시작 시각을 입력하세요 (모르면 「시각 미정」을 체크)")
+    if not title:
+        return _err("원문 제목을 입력하세요")
+    vid = None
+    if url:
+        m = t.xtweet.YT_VIDEO_RE.search(url) or re.search(r"youtu\.be/([\w-]{11})(?![\w-])", url)
+        if not m:
+            return _err("유튜브 영상 URL 이 아닙니다")
+        vid = m.group(1)
+        url = f"https://www.youtube.com/watch?v={vid}"
+    try:
+        start_z = (f"{date}T00:00:00Z" if time_tbd
+                   else t.xtweet._start_from(date, time).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return _err("날짜 · 시각 형식이 올바르지 않습니다")
+    now = _now_iso()
+    handle = chs["channels"][host].get("handle") or ""
+    item = t.preview_mod.make_item(
+        channel_key=host, state="announced", source="manual", now_iso=now,
+        video_id=vid, title=title, title_ko=title_ko or None,
+        url=url or (f"https://www.youtube.com/@{handle}" if handle else None),
+        scheduled_start=start_z, time_tbd=bool(time_tbd), membership=bool(membership),
+        collab_with=cw or None, kind="collab" if cw else None,
+        info_source="manual", info_at=now)
+    # make_item 의 id salt 는 url 을 먼저 쓰는데 영상 없는 수동 예고의 url 은 채널 페이지라 같다 — 같은 초에 같은 호스트로
+    # 만든 두 예고의 id 가 겹쳐 삭제 · 수정 · 취소 판정이 엉뚱한 항목에 적용됐다. 시각 + 제목으로 구분한다
+    item["id"] = t.preview_mod.new_id(host, item["first_seen"], f"{start_z}|{title}|{vid or ''}")
+    item["title_manual"] = True
+    item["needs_tl"] = not title_ko
+    probe = dict(item, url=item.get("url") if vid else None)      # 채널 자리표시 url 로는 매칭하지 않는다
+    matched = t.preview_mod.match_item(list_preview().get("items", []), probe)
+    if not confirm:
+        note = ("같은 방송이 이미 있어 그 항목에 합쳐집니다 — 상태 · 영상 연결은 유지하고 입력한 값만 덮어씁니다"
+                if matched else "새 예고로 추가됩니다")
+        if vid:
+            note += " · 확정 뒤 영상 URL 을 바로 확인합니다"
+        return {"ok": True, "preview": item, "note": note,
+                "merge": ({"id": matched.get("id"), "title": matched.get("title"),
+                           "scheduled_start": matched.get("scheduled_start")} if matched else None)}
+    res = _submit("manual_preview", {"item": item, "now_iso": now})
+    if res["ok"] and vid:
+        apply.enqueue_reconcile(video_id=vid)
+    return _record("ingest_preview", host, f"수동 · {title[:40]}", res)
+
+
+def ingest_notice_manual(*, title: str, confirm: bool, date: str | None = None, category: str = "etc",
+                         url: str = "", title_ko: str = "") -> dict:
+    """(v4a) 소식 수동 입력 — 제목 · 날짜 · 분류 · URL 을 직접 넣는다. 한글 제목을 비우면 자동 번역(needs_tl).
+    미리보기 형태는 원문 투입과 같다({"parsed","tl","dup_id"})."""
+    import hashlib
+    t = _t()
+    title, title_ko, url = (title or "").strip(), (title_ko or "").strip(), (url or "").strip()
+    if not title:
+        return _err("원문 제목을 입력하세요")
+    if date and not _DATE_RE.match(date):
+        return _err("날짜 형식이 올바르지 않습니다")
+    if category not in _NOTICE_CATS:
+        return _err("분류가 올바르지 않습니다")
+    if url and not re.match(r"^https?://", url):
+        return _err("URL 은 http(s):// 로 시작해야 합니다")
+    now = _now_iso()
+    xn = t.xnotice
+    site, site_url, anchor_a = xn._site_url_anchor(url) if url else (None, None, None)
+    now_jst = datetime.now(xn.JST)
+    parsed = {
+        "id": "m" + hashlib.sha1(f"{category}|{date}|{title}".encode("utf-8")).hexdigest()[:15],
+        "category": category, "title": title, "title_raw": title, "title_ko": title_ko or None,
+        "body_for_llm": title, "body_raw": title, "date": date or None, "time": None, "deadline": False,
+        "site": site, "url": site_url or url or None, "tweet_url": None, "src_handle": None, "is_recap": False,
+        "anchor_a": anchor_a, "anchor_b": None, "title_slug": xn._title_slug(title),
+        "expires_at": xn._expires_at(date, None, now, now_jst),
+    }
+    gh = _store()
+    dup_id = None
+    try:
+        import copy
+        prev, _ = gh.read_json(t._NOTICES_PATH)
+        arch, _ = gh.read_json(t._NOTICE_ARCHIVE_PATH)
+        prev = prev or t.notices.default_notices()
+        arch = arch or t.notices.default_archive()
+        _, _, changed, mode = t.notices.merge_notice(copy.deepcopy(prev), copy.deepcopy(parsed), now,
+                                                     archive=copy.deepcopy(arch))
+        if changed and mode == "added":
+            dup_id = t._inline_notice_dup_check(parsed, prev)
+    except Exception:  # noqa: BLE001
+        log.warning("수동 소식: 중복 확인 실패", exc_info=True)
+    prepared = {"parsed": parsed, "tl": ({"title_ja": title, "title_ko": title_ko} if title_ko else None),
+                "dup_id": dup_id}
+    if not confirm:
+        return {"ok": True, "preview": {"parsed": parsed, "tl": prepared["tl"], "dup_id": dup_id},
+                "note": "수동 입력 — 한글 제목을 비우면 저장 후 자동 번역됩니다"}
+    apply.submit("notice_sweep", {"now_iso": now}, wait=True)
+    res = _submit("apply_notice", {"prepared": prepared, "now_iso": now})
+    return _record("ingest_notice", "notice", f"수동 · {title[:40]}", res)
+
+
+def ingest_tweet_manual(*, url: str, host: str, text: str, confirm: bool, text_ko: str = "",
+                        detect_change: bool = False, change_ids: list | None = None,
+                        change_action: str | None = None, change_when: str | None = None) -> dict:
+    """(v4a) 트윗 수동 입력 — 트윗 URL(X 카드) + 호스트 + 원문 + (선택)한글 번역. 번역을 비우면 자동 번역.
+    작성자 판별은 하지 않는다(호스트는 관리자가 고른다). 미디어 · 인용 트윗은 URL 로 조회해 채운다."""
+    t = _t()
+    chs = t._load_channels_config()
+    if not _host_ok(chs, host):
+        return _err("호스트를 고르세요")
+    m = _TWEET_URL_RE.match((url or "").strip())
+    if not m:
+        return _err("트윗 URL 이 아닙니다 (https://x.com/…/status/숫자)")
+    text, text_ko = (text or "").strip(), (text_ko or "").strip()
+    if not text:
+        return _err("원문을 입력하세요")
+    now = _now_iso()
+    name = chs["channels"][host].get("name") or host
+    prepared = t._prepare_personal_tweet(text, title=name, tag=f"tweet-{m.group(2)}", channel_key=host,
+                                         now_iso=now, gh=_store(), text_ko_override=text_ko or None)
+    if not prepared:
+        return _err("트윗으로 인식되지 않았습니다 (리트윗 형식 등)")
+    if not confirm:
+        out = {"ok": True, "preview": {"parsed": prepared.get("parsed"), "text_ko": prepared.get("text_ko"),
+                                       "unit": host, "author": None, "forced": False}}
+        if detect_change:
+            out["change"] = _change_plan(t, text, host, now)
+        return out
+    res = _submit("personal_tweet", {"prepared": prepared, "channel_key": host, "now_iso": now, "via": "ops"})
+    res = _record("ingest_tweet", host, f"수동 · tweet-{m.group(2)}", res)
+    if detect_change and res.get("ok"):
+        res["change"] = _apply_change(host, change_action, change_ids, change_when)
+    return res
 
 
 def edit_notice(nid: str, patch: dict) -> dict:
@@ -509,7 +791,9 @@ def undo(history_id: str) -> dict:
 # 관리 조작 흐름 이름 (admin_web 이 조작 1건마다 흐름을 연다). 미리보기(confirm=False)는 조작이 아니라 제외.
 ADMIN_FLOW_LABELS = {
     "edit_preview": "예고 수정", "delete_preview": "예고 삭제", "ingest_preview_raw": "원문 투입 · 예고",
-    "ingest_notice_raw": "원문 투입 · 소식", "ingest_tweet_raw": "원문 투입 · 트윗", "edit_notice": "소식 수정",
+    "ingest_notice_raw": "원문 투입 · 소식", "ingest_tweet_raw": "원문 투입 · 트윗", "ingest_tweet_url": "URL 투입 · 트윗",
+    "ingest_preview_manual": "수동 입력 · 예고", "ingest_notice_manual": "수동 입력 · 소식",
+    "ingest_tweet_manual": "수동 입력 · 트윗", "edit_notice": "소식 수정",
     "delete_notice": "소식 삭제", "delete_tweet": "트윗 삭제", "translate": "번역", "retry_lost": "유실 원문 재투입",
     "set_paused": "일시정지 · 재개", "set_log_level": "알림 레벨", "set_monitor_auto": "멤버 현황 DM",
 }
@@ -545,8 +829,9 @@ def describe_target(name: str, body: dict) -> str:
             unit = (body.get("unit") or body.get("key") or "").split("|")[0]
             return f"{names.get(unit, unit)} 트윗"
         if name.startswith("ingest_"):
-            who = body.get("channel_key") or body.get("unit")
-            return (f"{names.get(who, who)} · " if who else "") + (body.get("raw") or "").replace("\n", " ")[:50]
+            who = body.get("channel_key") or body.get("unit") or body.get("host")
+            what = body.get("raw") or body.get("title") or body.get("url") or body.get("text") or ""
+            return (f"{names.get(who, who)} · " if who else "") + what.replace("\n", " ")[:50]
         if name == "retry_lost":
             return f"{len(body.get('ids') or [])}건"
         if name == "set_paused":
@@ -734,7 +1019,8 @@ def _now_status(pv: dict, names: dict, flowtrace) -> dict:
 API_FUNCTIONS: tuple[str, ...] = (
     "list_preview", "list_notices", "list_tweets", "get_control", "list_history", "list_lost",
     "list_jobs", "channels", "edit_preview", "delete_preview", "ingest_preview_raw",
-    "ingest_notice_raw", "ingest_tweet_raw", "edit_notice", "delete_notice", "delete_tweet",
+    "ingest_notice_raw", "ingest_tweet_raw", "ingest_tweet_url", "ingest_preview_manual",
+    "ingest_notice_manual", "ingest_tweet_manual", "edit_notice", "delete_notice", "delete_tweet",
     "translate", "retry_lost", "set_paused", "set_log_level", "set_monitor_auto", "undo",
     "translate_text", "jobs_overview",
 )

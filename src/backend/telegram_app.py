@@ -1016,6 +1016,65 @@ def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = N
     return changed
 
 
+def _commit_manual_preview(gh, item: dict, now_iso: str) -> dict:
+    """(v4a) 관리 페이지 「수동 입력 · 예고」 커밋 (적용 큐에서 실행).
+
+    같은 방송(`preview_mod.match_item` — 같은 호스트 + video_id/url/±45분)이 이미 있으면 그 항목에 관리자 값을 덮어쓴다
+    (상태 · video_id 는 보존, 제목은 title_manual 로 보호). 없으면 announced 새 항목으로 추가.
+    반환: {"mode": "added"|"merged"|"unchanged", "id": str}"""
+    mode, item_id = "unchanged", item.get("id")
+    prev = new_sha = None
+    changed = False
+    for attempt in (1, 2):
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {"items": []}
+        items = [dict(i) for i in (prev.get("items") or [])]
+        # 영상 없는 수동 예고의 url 은 채널 페이지 자리표시 — 그 url 로 매칭하면 같은 호스트의 서로 다른 방송이 합쳐진다
+        probe = dict(item, url=item.get("url") if item.get("video_id") else None)
+        matched = preview_mod.match_item(items, probe)
+        if matched is None:
+            new_item = dict(item)
+            if any(i.get("id") == new_item.get("id") for i in items):     # 안전망 — id 충돌이면 새로 부여
+                new_item["id"] = preview_mod.new_id(new_item.get("channel_key", ""), now_iso,
+                                                    f"{new_item.get('scheduled_start')}|{len(items)}")
+            items.append(new_item)
+            mode, item_id = "added", new_item.get("id")
+        else:
+            i = items.index(matched)
+            cur = dict(items[i])
+            orig = dict(cur)
+            for k in ("title", "title_ko", "title_manual", "needs_tl", "collab_with", "kind", "membership",
+                      "scheduled_start", "time_tbd"):
+                if k in item:
+                    cur[k] = item[k]
+            if not cur.get("video_id") and item.get("video_id"):
+                cur["video_id"] = item["video_id"]
+                cur["url"] = item.get("url") or cur.get("url")
+            cur["expires_at"] = preview_mod._calculate_expires_at(
+                cur.get("scheduled_start"), cur.get("time_tbd", False), cur.get("membership", False))
+            cur["info_source"], cur["info_at"] = "manual", now_iso
+            if cur != orig:
+                cur["last_updated"] = now_iso
+                items[i] = cur
+                mode = "merged"
+            item_id = cur.get("id")
+        merged = dict(prev)
+        merged["items"] = items
+        merged["generated_at"] = now_iso
+        try:
+            changed, new_sha = gh.write_json(_PREVIEW_PATH, merged, prev_sha=sha,
+                                             message=f"data: admin 수동 예고 {mode} {now_iso}")
+            break
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("수동 예고: preview.json 충돌 — 재계산 후 재시도")
+    if changed:
+        _save_undo(gh, action=f"admin 수동 예고 {item.get('channel_key')}", prev_content=prev or {},
+                   new_sha=new_sha, now_iso=now_iso)
+    return {"mode": mode if changed else "unchanged", "id": item_id}
+
+
 def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
     """snapshot 과 정확히 일치하는 preview.items[] 항목 1개를 제거 (v3 /del).
 
@@ -1694,7 +1753,8 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
 
 
 def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_key: str, now_iso: str,
-                            vx_extract: dict | None = None, gh: GitHubStore | None = None) -> dict | None:
+                            vx_extract: dict | None = None, gh: GitHubStore | None = None,
+                            text_ko_override: str | None = None) -> dict | None:
     """(WP-3b) 개인 트윗 준비 (제어 채널에서 실행).
 
     외부 호출(vxtwitter·LLM) + 머지 변화 판정까지 한 뒤 결과를 반환.
@@ -1736,7 +1796,9 @@ def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_ke
 
     # changed 일 때만 번역
     if changed:
-        if text_src and not parsed.get("text_ko"):
+        if text_ko_override:                 # (v4a) 관리자가 직접 쓴 번역 — LLM 호출 생략
+            text_ko = text_ko_override
+        elif text_src and not parsed.get("text_ko"):
             text_ko = _inline_translate(text_src)
 
         # 인용
@@ -3035,6 +3097,84 @@ def _parse_kst_mmdd_hhmm(text: str | None, now_iso: str) -> str | None:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_DOW_KO = "월화수목금토일"
+
+
+def _change_candidates(items: list[dict], channel_key: str, limit: int = 8) -> list[dict]:
+    """(v4a) 취소·변경 판정 후보 = channel_key 가 **호스트**인 활성(announced~live) 예고, 시각 오름차순 최대 limit 개.
+    게스트(collab_with)로만 엮인 예고는 대상 아님(2026-09-22 확정)."""
+    act = [it for it in (items or [])
+           if it.get("channel_key") == channel_key and it.get("state") in xtweet._ACTIVE_STATES]
+    act.sort(key=lambda x: x.get("scheduled_start") or "9999-99-99T99:99:99Z")
+    return act[:limit]
+
+
+def _kst_label(iso: str | None) -> str:
+    try:
+        return datetime.fromisoformat((iso or "").replace("Z", "+00:00")).astimezone(KST).strftime("%m/%d %H:%M")
+    except (ValueError, AttributeError):
+        return "시각 미정"
+
+
+def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: list[dict]) -> dict | None:
+    """(v4a) 글에서 방송 취소·변경을 감지하고 **영향받는 예고를 선택**한다(자동 인입 · 관리 페이지 공용).
+
+    반환 {"action": "del"|"edit"|"none", "target_ids": [...], "when_iso": str|None, "candidates": [item...], "reason": str}.
+    reason = LLM 의 판정 근거 한 문장("없음"일 때도 있다). LLM 을 못 부른 경우(후보 없음)는 그 사유.
+    후보가 없으면 LLM 호출 없이 none. LLM 사용 불가 · 5회 실패 → None(호출부는 아무것도 안 바꾸고 알린다).
+    LLM 이 후보 밖 id 를 주거나 edit 인데 시각 파싱이 안 되면 그 부분을 버리고 none 으로 내린다."""
+    cands = _change_candidates(items, channel_key)
+    none = {"action": "none", "target_ids": [], "when_iso": None, "candidates": cands,
+            "reason": "이 호스트의 활성 예고가 없어 판정하지 않았습니다"}
+    if not cands or xtweet is None:
+        return none
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        log.warning("GROQ_API_KEY 없음 — 방송 취소/변경 판정 스킵")
+        return None
+    from .llm import LLMClient
+    try:
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(KST)
+    except (ValueError, AttributeError):
+        now_dt = datetime.now(KST)
+    now_label = f"{now_dt.strftime('%m/%d')}({_DOW_KO[now_dt.weekday()]}) {now_dt.strftime('%H:%M')}"
+    res = LLMClient(groq_key).broadcast_change_targets(
+        raw, [{"id": c["id"], "when": _kst_label(c.get("scheduled_start")),
+               "title": (c.get("title_ko") or c.get("title") or "(제목 없음)")[:60]} for c in cands], now_label)
+    if res is None:
+        return None
+    valid = {c["id"] for c in cands}
+    ids = [i for i in res["target_ids"] if i in valid]
+    action, when_iso, reason = res["action"], None, res.get("reason") or ""
+    if action == "edit":
+        when_iso = _parse_kst_mmdd_hhmm(res.get("when"), now_iso)
+        if not when_iso:
+            action, reason = "none", f"{reason} (변경 시각을 해석하지 못해 미반영)".strip()
+    if action in ("del", "edit") and not ids:
+        action, reason = "none", f"{reason} (대상 방송을 특정하지 못해 미반영)".strip()
+    if action == "none":
+        ids, when_iso = [], None
+    return {"action": action, "target_ids": ids, "when_iso": when_iso, "candidates": cands, "reason": reason}
+
+
+def _terminate_broadcast(gh, item: dict, now_iso: str, action: str) -> bool:
+    """(v4a) `/del` 의 terminate 와 동일 — 예고 삭제(아카이브) + 그 영상 URL 을 12h 재등록 차단.
+    영상 URL 이 없으면(채널 자리표시) 차단은 생략하고 일반 삭제만 한다. 삭제됐으면 True."""
+    removed = writeclient.call_write(
+        "remove_broadcast", gh=gh, snapshot=item, now_iso=now_iso, action=action,
+    ).get("removed")
+    url = item.get("url")
+    if removed and url and xtweet.YT_VIDEO_RE.search(url):
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(_ADMIN_STATE_PATH,
+                          admin.add_suppress(st or admin.default_admin_state(), url=url, now_iso=now_iso),
+                          prev_sha=sh, message=f"data: suppress += {url} {now_iso}")
+        except Exception:  # noqa: BLE001
+            log.exception("suppress 추가 실패")
+    return bool(removed)
+
+
 def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
                             channels_cfg: dict, *, via: str = "ingest") -> None:
     """(v3.8.7) 개인 트윗에 `配信` 키워드가 있으면, 그 멤버가 **호스트**인 기존 예고를
@@ -3056,48 +3196,39 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
     except Exception:
         log.exception("방송 취소/변경 판정: preview.json 조회 실패")
         return
-    target = xtweet.find_active_item((prev or {}).get("items", []) or [], channel_key)
-    if target is None:
+    items = (prev or {}).get("items", []) or []
+    if xtweet.find_active_item(items, channel_key) is None:
         return   # 취소/변경할 활성 예고 자체가 없음 — LLM 호출 비용 절감
 
-    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not groq_key:
-        log.warning("GROQ_API_KEY 없음 — 방송 취소/변경 판정 스킵")
+    # (v4a) 영향받는 방송을 LLM 이 후보 목록에서 **선택** — "오늘 휴방"이면 오늘 방송 전부, "아침만"이면 그것만.
+    # 삭제는 `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다)
+    plan = _detect_broadcast_change(raw, channel_key, now_iso, items)
+    if plan is None:
+        log.warning("방송 취소/변경 판정: LLM 사용 불가 또는 5회 모두 실패 — 미반영")
         _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
-                  detail="broadcast-change skip: GROQ_API_KEY 미설정", via=via)
+                        detail="broadcast-change skip: 판정 실패(GROQ 키 없음 또는 5회 모두 실패)", via=via)
         return
-
-    from .llm import LLMClient
-    result = LLMClient(groq_key).broadcast_change(raw)
-    if result is None:
-        log.warning("방송 취소/변경 판정: LLM 5회 모두 실패 — 미반영")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
-                  detail="broadcast-change skip: broadcast_change() 5회 모두 실패", via=via)
-        return
-
-    action = result.get("action")
-    if action == "del":
-        patch = {"state": "out"}   # (v4a D7) 구 none
-        pre = {"state": target.get("state")}
-        label = f"{channel_key} 방송 취소(LLM)"
-    elif action == "edit":
-        new_iso = _parse_kst_mmdd_hhmm(result.get("when"), now_iso)
-        if not new_iso:
-            log.warning("방송 취소/변경 판정: edit 인데 when 파싱 실패 — 미반영 (%r)", result.get("when"))
-            return
-        patch = {"date": new_iso}
-        pre = {"date": target.get("scheduled_start")}
-        label = f"{channel_key} 방송 일정변경(LLM)"
-    else:
-        return   # action == "none" — 취소/변경 아님
-
-    ctx = {"id": target["id"], "patch": patch, "pre": pre}
-    try:
-        writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx, label=label)
-    except Exception:
-        log.exception("방송 취소/변경 반영 실패")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
-                  detail="broadcast-change write 실패 — 취소/변경 유실", via=via)
+    # 근거는 "없음"이어도 남긴다 — 놓친 취소를 나중에 확인하고 프롬프트를 조정하는 자료(2026-09-30 운영자 요청)
+    _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                    detail=f"broadcast-change {plan['action']} · {plan.get('reason') or '(근거 없음)'}"
+                           + (f" · 대상 {len(plan['target_ids'])}건" if plan["target_ids"] else ""))
+    if plan["action"] == "none":
+        return   # 취소/변경 아님, 또는 어느 방송인지 특정 불가
+    by_id = {c["id"]: c for c in plan["candidates"]}
+    for iid in plan["target_ids"]:
+        target = by_id[iid]
+        try:
+            if plan["action"] == "del":
+                _terminate_broadcast(gh, target, now_iso, f"{channel_key} 방송 취소(LLM)")
+            else:
+                ctx = {"id": iid, "patch": {"date": plan["when_iso"]},
+                       "pre": {"date": target.get("scheduled_start")}}
+                writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx,
+                                       label=f"{channel_key} 방송 일정변경(LLM)")
+        except Exception:
+            log.exception("방송 취소/변경 반영 실패")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                            detail=f"broadcast-change write 실패 — 취소/변경 유실 ({iid})", via=via)
 
 
 def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,

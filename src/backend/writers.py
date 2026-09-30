@@ -39,6 +39,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
                           if a.get("merge_fn") == "personal_schedule" else None),
             )
         },
+        "manual_preview": lambda gh, a: t._commit_manual_preview(gh, a["item"], a["now_iso"]),
         "remove_broadcast": lambda gh, a: {
             "removed": t._remove_broadcast(gh, a["snapshot"], a["now_iso"], a["action"])
         },
@@ -95,7 +96,7 @@ if __name__ == "__main__":
     # (실제 GitHub 쓰기는 telegram_app.py 쪽 self-test 가 이미 커버).
     reg = _registry()
     expected = {
-        "merge_rows", "remove_broadcast", "apply_notice", "notice_sweep",
+        "merge_rows", "manual_preview", "remove_broadcast", "apply_notice", "notice_sweep",
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
         "tweet_del_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain",

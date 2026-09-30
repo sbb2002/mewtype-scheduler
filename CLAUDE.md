@@ -205,6 +205,30 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     예고 수정에 합동 멤버 · 회원 전용 · 원문/한글 제목(번역 버튼, `title_manual` 이면 API 제목 · 자동 번역이 덮지 않음) ·
 >     소식 수정 파생값 재계산 · 트윗 단위 삭제/번역 · 작업 탭 = 지금 상태 + 흐름 경로 재생(`flowtrace.py`, 로컬 전용 ·
 >     `_local/ops/flows.json`) · 운영 탭 카드 정리.
+>   - 원문 투입 탭 개편(2026-09-30): 2단 카드(입력 / 확인 후 반영) · 종류 세그먼트 버튼 · **트윗은 URL 만 투입**
+>     (`admin_api.ingest_tweet_url` — vxtwitter/fxtwitter 응답의 작성자 X 핸들을 `channels.json` `handle`(X 핸들과 동일,
+>     운영자 확인)과 대소문자 무시로 맞춰 호스트 자동 판별 · X 카드 + 번역 자동. 멤버가 아니면 `confirm_needed:"not_member"`
+>     로 되묻고, "그래도 넣기"는 붙일 호스트를 골라 `force_unit` 으로 다시 미리보기). `vxtwitter.extract` 가 `author` 를 돌려줌.
+>   - 원문 투입 탭 **자동 / 수동 세부 탭**(2026-09-30, 초안 아티팩트대로 구현). 수동 = 관리자가 값을 직접 정한다:
+>     예고 `ingest_preview_manual`(호스트 · 합동 · 날짜/시각 KST→UTC 또는 시각 미정 · 회원 전용 · 원문/한글 제목 · 유튜브 URL —
+>     확정 시 `manual_preview` 적용 큐 작업 `telegram_app._commit_manual_preview`: 같은 방송(`match_item` 호스트+video_id/url/±45분)이
+>     있으면 그 항목에 값을 덮어쓰되 상태·video_id 보존, 없으면 `source:"manual"` announced 신규 추가. 제목은 `title_manual` 보호,
+>     한글 비우면 `needs_tl` 로 자동 번역. URL 있으면 `enqueue_reconcile(video_id)`) ·
+>     소식 `ingest_notice_manual`(제목/한글 제목/날짜/분류/URL, 한글 비우면 자동 번역) ·
+>     트윗 `ingest_tweet_manual`(URL + 호스트 + 원문 + 번역, `_prepare_personal_tweet(text_ko_override)` 로 LLM 생략).
+>     제목·본문 「번역」 버튼 = 기존 `translate_text`. 자동 탭 호스트 선택도 칩 버튼.
+>   - **내용 감지를 통한 예고 수정**(2026-09-30): 원문 투입 체크박스(자동·예고(호스트 선택 시) · 자동·트윗 · 수동·트윗). 글에서 방송
+>     취소·변경을 감지해 미리보기에 대상 예고 체크 목록을 보이고(LLM 이 고른 것이 미리 체크), 확정 시 **체크된 예고에만** 적용.
+>     취소 = `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 · 채널 자리표시 URL 은 차단 생략). 변경 = 시각 이동.
+>     `llm.broadcast_change_targets`(후보 목록 중 영향받는 id 선택 — "오늘 휴방"이면 오늘 방송 전부, "아침만"이면 그것만) ·
+>     `telegram_app._detect_broadcast_change` / `_terminate_broadcast` / `_change_candidates`. **자동 인입 경로
+>     `_maybe_broadcast_change` 도 같은 판정으로 교체** — 예전(v3.8.7)은 `find_active_item` 이 가장 이른 1개만 골라 "오늘 휴방"에
+>     방송이 2개면 1개만 내려갔다(2026-09-30 리츠). 감지만 되고 예고로는 인식되지 않는 글(휴방 안내)도 확정 가능(`change_only`).
+>     판정은 전부 LLM(정규식·키워드 분류 없음) — 단, 자동 인입 경로의 `配信` 포함 게이트(v3.8.7)는 운영자 결정으로 **유지**.
+>     LLM 은 판정마다 **근거 한 문장(`reason`)** 을 쓰고(없음일 때도), 자동 경로는 "없음"도 monitor 이벤트로 남긴다
+>     (`broadcast-change none · <근거>`), 관리 페이지 미리보기엔 "판정 근거"로 표시 — 놓친 취소를 확인·프롬프트 조정하는 자료.
+>     같이 고친 것: 영상 없는 수동 예고의 url(채널 페이지)이 같아 `match_item` 이 다른 방송을 합치고 `make_item` id salt 가 충돌하던 문제
+>     (수동 예고는 url 매칭 제외 + 시각·제목으로 id 부여). 확인 필요(미수정): `match_item` 의 url 매칭은 개인 예고 자리표시(채널 URL)에도 같은 위험.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계

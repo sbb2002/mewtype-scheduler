@@ -482,6 +482,80 @@ class LLMClient:
         logger.warning("broadcast_change: 5회 모두 실패 — None (호출부 미반영 처리)")
         return None
 
+    def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str) -> dict | None:
+        """
+        (v4a) 취소·변경 글 판정 + **어느 방송인지 선택**. `broadcast_change` 는 종류만 판정해 호출부가
+        "가장 이른 1개"를 고르는 규칙이라, "오늘 휴방"인데 오늘 방송이 2개인 경우 1개만 내려갔다
+        (2026-09-30 리츠). 여기서는 그 멤버의 활성 예고 목록을 주고 영향받는 방송의 id 를 고르게 한다.
+
+        Args:
+            text_ja: 트윗 원문
+            candidates: [{"id", "when": "MM/DD HH:MM"(KST), "title"}] — 그 멤버가 호스트인 활성 예고
+            now_kst: 지금 KST "MM/DD(요일) HH:MM" — 오늘/내일 · 아침/밤 같은 상대 표현의 기준
+
+        Returns:
+            {"action": "del"|"edit"|"none", "target_ids": [...], "when": "MM/DD HH:MM"|None, "reason": str}
+            reason = 판정 근거 한 줄(한국어) — "없음"일 때도 쓴다(놓친 사례를 나중에 확인·프롬프트 조정하는 자료).
+            5회 모두 실패 시 None(호출부는 아무것도 바꾸지 않는다).
+        """
+        if self.disabled:
+            logger.warning("LLMClient disabled (api_key missing)")
+            return None
+        masked_text, _mapping = _mask_glossary(text_ja or "")
+        lines = "\n".join(f"- id={c['id']} | {c['when']} | {c['title']}" for c in candidates)
+        prompt = (
+            f"다음은 유메미타 멤버가 올린 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
+            f"지금(KST)은 {now_kst} 이다. 이 멤버가 예고해 둔 방송 목록(KST):\n{lines}\n\n"
+            f"질문: 이 글이 위 방송 중 일부 또는 전부를 취소하거나 일정을 변경한다고 알리는 글인가?\n"
+            f"- 취소라면 action=\"del\". target_ids 에는 취소되는 방송의 id 만 넣는다.\n"
+            f"  · 범위 표현이 없으면(예: \"오늘 방송 쉽니다\") 그 날짜(오늘/내일 등)의 방송을 모두 넣는다.\n"
+            f"  · 범위가 있으면(아침/낮/밤, 시각, 방송 제목·내용) 그에 맞는 방송만 넣는다.\n"
+            f"- 새 날짜/시각으로 변경(연기)이라면 action=\"edit\", when 에 KST 기준 새 일정을 "
+            f"\"MM/DD HH:MM\" 형식으로 채우고 target_ids 에 변경되는 방송의 id 를 넣는다.\n"
+            f"- 취소도 변경도 아니면(평소 예고·잡담·후기 등) 또는 목록의 어떤 방송인지 알 수 없으면 "
+            f"action=\"none\", target_ids=[], when=null\n"
+            f"target_ids 는 반드시 위 목록의 id 에서만 고른다.\n"
+            f"reason 에는 그렇게 판정한 근거를 글의 어느 표현 때문인지 드러내 한국어 한 문장으로 쓴다"
+            f"(action 이 none 일 때도 왜 취소·변경이 아니라고 봤는지 쓴다). JSON 포맷만 출력.\n\n출력:\n"
+            f'{{"action": "del" 또는 "edit" 또는 "none", "target_ids": ["id", ...], "when": "MM/DD HH:MM" 또는 null, '
+            f'"reason": "근거 한 문장"}}'
+        )
+        schema = {
+            "name": "broadcast_change_targets",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["del", "edit", "none"]},
+                    "target_ids": {"type": "array", "items": {"type": "string"}},
+                    "when": {"type": ["string", "null"]},
+                    "reason": {"type": "string"},
+                },
+                "required": ["action", "target_ids", "when", "reason"],
+                "additionalProperties": False,
+            },
+        }
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=schema)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=schema)
+            if not response:
+                continue
+            try:
+                result = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"broadcast_change_targets: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if (isinstance(result, dict) and result.get("action") in ("del", "edit", "none")
+                    and isinstance(result.get("target_ids"), list)):
+                return {"action": result["action"],
+                        "target_ids": [str(x) for x in result["target_ids"]],
+                        "when": result.get("when"),
+                        "reason": str(result.get("reason") or "").strip()[:200]}
+            logger.warning(f"broadcast_change_targets: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+        logger.warning("broadcast_change_targets: 5회 모두 실패 — None (호출부 미반영 처리)")
+        return None
+
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
         """
         (v3.7) 신규 소식이 `candidates`(같은 날짜의 기존 소식들) 중 하나와 같은 행사를

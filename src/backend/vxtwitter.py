@@ -78,7 +78,8 @@ def _fx_to_vx(fx: dict) -> dict | None:
         return None
     urls, ext = _fx_media(t.get("media"))
     out: dict = {"text": t.get("text") or "", "mediaURLs": urls, "media_extended": ext,
-                 "tweetID": t.get("id")}
+                 "tweetID": t.get("id"),
+                 "user_screen_name": ((t.get("author") or {}).get("screen_name") or "")}
     q = t.get("quote")
     if isinstance(q, dict):
         qurls, qext = _fx_media(q.get("media"))
@@ -216,6 +217,7 @@ def extract(j: dict) -> dict:
 
     return {
         "text": text,
+        "author": str(j.get("user_screen_name") or ""),     # (v4a) 작성자 X 핸들 — URL 투입에서 멤버 판별용
         "media": media_urls,
         "urls": urls,
         "yt_video_id": yt_video_id,
