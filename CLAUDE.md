@@ -249,6 +249,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     (`broadcast-change none · <근거>`), 관리 페이지 미리보기엔 "판정 근거"로 표시 — 놓친 취소를 확인·프롬프트 조정하는 자료.
 >     같이 고친 것: 영상 없는 수동 예고의 url(채널 페이지)이 같아 `match_item` 이 다른 방송을 합치고 `make_item` id salt 가 충돌하던 문제
 >     (수동 예고는 url 매칭 제외 + 시각·제목으로 id 부여). 확인 필요(미수정): `match_item` 의 url 매칭은 개인 예고 자리표시(채널 URL)에도 같은 위험.
+  - **모바일 UI**(2026-09-30, `admin.html` 한 파일, ≤640px 미디어 쿼리): 하단 고정 탭 바(7탭 아이콘+글자) · 버튼 44px/입력 16px(iOS 확대 방지) ·
+    수정·참여 멤버 팝업은 바닥 시트 · 토스트는 탭 바 위 · 원문 투입 미리보기 시 결과 카드로 자동 스크롤. 높이 제한 스크롤 목록(`.flows`/`.jlist`/`#jobs-tl`)은
+    `grid-auto-rows: max-content` — 안 그러면 button `min-height` 때문에 줄이 눌려 서로 겹친다. 작업 탭 「최근 흐름」의 경로 재생 영역은 누른 줄 **바로 아래**로
+    펼쳐지는 아코디언(`toggleFlow`/`placeFlowDetail`, 같은 줄 재클릭 = 접기, 다른 줄 = 접은 뒤 이동), 5초 갱신 때도 유지. 데스크톱도 동일.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
