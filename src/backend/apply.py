@@ -145,6 +145,26 @@ def enqueue_reconcile(*, video_id: str | None = None, mode: str = "light",
                       run_at_iso=when, name=f"reconcile-all-{mode}-{when[:16]}")
 
 
+def cancel_video_checks(video_id: str | None, reason: str = "예고 삭제") -> int:
+    """(v4a) 그 영상의 예약된 확인(reconcile 영상)을 지운다 — 지운 예고가 나중 확인으로 되살아나지 않게(2026-09-30 검증:
+    차단 없이 지운 그룹 예고가 예약된 확인 때 5인 합동으로 다시 생겼다). 지운 개수. 적용 큐가 없으면(배포 경로) 0."""
+    if _q is None or not video_id:
+        return 0
+    gone = _q.cancel(lambda j: j.get("kind") == "reconcile" and (j.get("args") or {}).get("video_id") == video_id)
+    if gone:
+        from . import flowtrace
+        for j in gone:
+            fid = (j.get("args") or {}).get("_flow")
+            if fid:
+                try:
+                    flowtrace.mark("대기", "done", f"{reason} — 예약된 확인 취소", fid=fid)
+                    flowtrace.finish(f"{reason} — 예약된 확인 취소", fid=fid)
+                except Exception:  # noqa: BLE001
+                    log.warning("예약된 확인 취소: 흐름 기록 실패", exc_info=True)
+        log.info("예약된 확인 %d건 취소 (%s · %s)", len(gone), video_id, reason)
+    return len(gone)
+
+
 def _kst_hm(iso: str) -> str:
     try:
         dt = datetime.strptime(iso[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
@@ -212,6 +232,7 @@ _KIND_LABEL = {
     "yt_notif": "YouTube 알림 반영", "apply_preview_edit": "예고 수정 반영", "remove_broadcast": "예고 삭제",
     "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제", "tweet_del_commit": "트윗 삭제",
     "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리", "snapshot": "일일 스냅샷",
+    "group_pending": "그룹 영상 확인 대기",
 }
 
 

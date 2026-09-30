@@ -212,6 +212,18 @@ class LocalQueue:
             logger.debug(f"Enqueued job {job_id} (kind={kind}, name={name})")
             return job_id
 
+    def cancel(self, pred) -> list[dict]:
+        """(v4a) 아직 실행 전인 잡 중 `pred(job_dict)` 가 참인 것을 지운다. 결과를 기다리는 잡(submit_and_wait)은 건드리지 않는다.
+        지운 잡들의 사본을 돌려준다(실행 중인 잡은 이미 목록에서 빠져 있어 대상이 아니다)."""
+        with self._lock:
+            gone = [j for jid, j in self._jobs.items() if jid not in self._wait_holders and pred(j)]
+            for j in gone:
+                del self._jobs[j["id"]]
+            if gone:
+                self._save_jobs()
+                self._condition.notify_all()
+            return [dict(j) for j in gone]
+
     def pending(self) -> list[dict]:
         """미처리 잡 스냅샷 (id, name, kind, run_at_iso, attempt)."""
         with self._lock:

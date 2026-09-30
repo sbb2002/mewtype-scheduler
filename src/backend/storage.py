@@ -22,7 +22,10 @@ from typing import Optional
 from .gh_store import GitHubStore
 
 # ops 로 보내는 경로 (data 브랜치에서 빠짐)
-OPS_PATHS = frozenset({"control.json", "admin_state.json"})
+OPS_PATHS = frozenset({"control.json", "admin_state.json",
+                       "group_pending.json",    # (v4a) 그룹 영상 참여 멤버 확인 대기 — 운영 상태
+                       "video_releases.json",   # (v4a) 방송 카드로 올리지 않은 프리미어(녹화 영상) 기록
+                       "llm_actions.json"})     # (v4a) LLM 판단 기록 · 되돌리기  # (v4a) 방송 카드로 올리지 않은 프리미어(녹화 영상) 기록   # (v4a) 그룹 영상 참여 멤버 확인 대기 — 운영 상태
 
 _ROLE_ENV = {
     "data": ("DATA_BRANCH", "data"),

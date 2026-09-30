@@ -26,6 +26,8 @@ class VideoInfo:
     actual_start: Optional[str]  # ISO string with 'Z', or None
     actual_end: Optional[str]  # ISO string with 'Z', or None
     concurrent_viewers: Optional[int]  # Number of current viewers, or None
+    # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등) 여부. 생방송 예정 · 진행과 구별한다. 기본 False(옛 생성 코드 호환)
+    is_premiere: bool = False
 
 
 def _video_from_item(item: dict) -> VideoInfo:
@@ -70,6 +72,14 @@ def _video_from_item(item: dict) -> VideoInfo:
         except (ValueError, TypeError):
             pass
 
+    # (v4a) 프리미어 = 예정 · 진행 중인데 영상 파일이 이미 올라가 있다(status.uploadStatus="processed"). 생방송 틀은 방송 전 · 중
+    # "uploaded" 에 contentDetails.duration "P0D". 실측(2026-09-30): 5th 싱글 기념 무비 프리미어 = processed · duration 없음,
+    # 예정 생방송 5건 = uploaded · P0D. 歌枠 같은 노래 "생방송"은 해당 없음 — 녹화된 노래 · 뮤비 공개만 걸러 낸다.
+    upload_status = (item.get('status') or {}).get('uploadStatus')
+    duration = (item.get('contentDetails') or {}).get('duration')
+    is_premiere = live_state in ('upcoming', 'live') and (
+        upload_status == 'processed' or duration not in (None, 'P0D'))
+
     return VideoInfo(
         video_id=video_id,
         channel_id=channel_id,
@@ -80,6 +90,7 @@ def _video_from_item(item: dict) -> VideoInfo:
         actual_start=actual_start,
         actual_end=actual_end,
         concurrent_viewers=concurrent_viewers,
+        is_premiere=is_premiere,
     )
 
 
@@ -165,7 +176,8 @@ class YouTubeClient:
             url = self.BASE + "/videos"
             params = {
                 'key': self.api_key,
-                'part': 'snippet,liveStreamingDetails',
+                # (v4a) contentDetails · status — 프리미어 판정용(videos.list 는 part 수와 무관하게 1 unit)
+                'part': 'snippet,liveStreamingDetails,contentDetails,status',
                 'id': video_id_str,
             }
 
@@ -460,6 +472,19 @@ if __name__ == "__main__":
         assert result_4 == [], f"Expected [] on exception, got {result_4}"
         assert client_4.quota_used == 0, f"Expected quota_used=0 on exception, got {client_4.quota_used}"
         print("  ✓ Exception → []")
+
+        # (v4a) 프리미어 판정 — 실측(2026-09-30) 응답 형태: 프리미어 = processed · duration 없음 / 생방송 = uploaded · P0D
+        prem = _video_from_item({"id": "ojgoIwE1fL0", "snippet": {"liveBroadcastContent": "upcoming", "title": "MV"},
+                                 "liveStreamingDetails": {"scheduledStartTime": "2026-09-30T12:00:00Z"},
+                                 "contentDetails": {}, "status": {"uploadStatus": "processed"}})
+        live = _video_from_item({"id": "2nznMoF9BF0", "snippet": {"liveBroadcastContent": "upcoming", "title": "歌枠"},
+                                 "liveStreamingDetails": {"scheduledStartTime": "2026-09-30T13:30:00Z"},
+                                 "contentDetails": {"duration": "P0D"}, "status": {"uploadStatus": "uploaded"}})
+        done = _video_from_item({"id": "zVdR0urFjnc", "snippet": {"liveBroadcastContent": "none", "title": "cover"},
+                                 "contentDetails": {"duration": "PT3M15S"}, "status": {"uploadStatus": "processed"}})
+        old = _video_from_item({"id": "x", "snippet": {"liveBroadcastContent": "upcoming"}})  # part 없는 옛 응답
+        assert prem.is_premiere and not live.is_premiere and not done.is_premiere and not old.is_premiere
+        print("  ✓ 프리미어 판정 (processed/duration 있음 = 프리미어, uploaded/P0D = 생방송, 지난 영상 · 옛 응답 = 아님)")
 
         print("\nSUCCESS: YouTube client test passed")
 

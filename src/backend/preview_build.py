@@ -80,6 +80,7 @@ def build_preview(
     avatars: dict | None = None,
     ytnotif_items: list[dict] | None = None,
     search_fn=None,
+    skipped: list | None = None,
 ) -> tuple[dict, list[str], dict, list[dict]]:
     """
     Build new preview.json and identify wakes for Cloud Tasks enqueue.
@@ -144,6 +145,14 @@ def build_preview(
 
     # ─ 1. videos.list 결과 처리 (API 확정 영상) ─
     for video_id, video in videos.items():
+        if getattr(video, "is_premiere", False):
+            # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송이 아니다(2026-09-30 운영자 결정). 새로 만들지 않고, 트윗 등으로
+            # 먼저 올라와 있던 항목도 이번에 뺀다(아카이브 안 함). 호출부가 `skipped` 로 받아 기록해 둔다(추후 플레이어 재료)
+            if skipped is not None:
+                skipped.append({"video_id": video_id, "channel_id": video.channel_id, "title": video.title,
+                                "scheduled_start": video.scheduled_start,
+                                "removed_item": (prev_by_video_id.get(video_id) or {}).get("id")})
+            continue
         # video_id 는 고유하므로 이전 아이템은 video_id 로만 정확히 잡는다.
         # (in-progress items 대상 match_item 은 백투백 방송에서 오매칭 위험 → 안 씀)
         matched = prev_by_video_id.get(video_id)
@@ -164,6 +173,12 @@ def build_preview(
             # 그룹 공식 채널(@BDP_yumemita) 감지 — channel_order 밖이므로 전용 레인이 없다.
             # 5인 전원 레인에 팬아웃되도록 주 레인 + collab_with 로 변환(신규 생성시에만 필요).
             group_collab_with = None
+            if channel_key == GROUP_CHANNEL_KEY and not matched:
+                # (v4a) 수집(RSS · 예약된 영상 확인 · 알림 후 확인)은 그룹 영상을 **새로 만들지 않는다** — 참여 멤버 근거 없이
+                # 5인 합동으로 팬아웃하게 되기 때문(2026-09-30 운영자 결정). 그룹 영상은 공식 트윗의 근거(이름 · 인원 표현 ·
+                # 이미지 OCR) · 관리 페이지 선택으로만 등록되고, 등록된 뒤엔 위 matched 로 갱신된다. 지운 그룹 예고가 이미
+                # 예약돼 있던 영상 확인으로 되살아나던 문제도 이것으로 막힌다.
+                continue
             if channel_key == GROUP_CHANNEL_KEY:
                 order = channels_cfg["channel_order"]
                 channel_key = order[0]
@@ -843,7 +858,7 @@ if __name__ == "__main__":
     print(f"  stale video (21h no update) → removed, archived")
 
     print("\n" + "=" * 70)
-    print("✓ Test 13: 그룹 공식 채널(@BDP_yumemita) 영상 → 5인 팬아웃 (host=group)")
+    print("✓ Test 13: 그룹 공식 채널(@BDP_yumemita) 영상 — 수집은 새로 만들지 않고, 등록된 항목만 갱신 (v4a)")
     print("=" * 70)
     channels_cfg_g = {
         "channel_order": ["arale", "yuno", "nonoka"],
@@ -867,18 +882,28 @@ if __name__ == "__main__":
             concurrent_viewers=1000,
         ),
     }
+    # (v4a) 등록되지 않은 그룹 영상(RSS · 예약된 확인 · 지운 뒤 확인) → 만들지 않는다(근거 없는 5인 팬아웃 금지)
+    new_preview_13x, *_x = build_preview(channels_cfg_g, videos_group, preview.default_preview(), now_iso)
+    assert new_preview_13x["items"] == [], new_preview_13x["items"]
+    print("  미등록 그룹 영상 → 새 항목 없음")
+    # 공식 트윗 근거 · 관리자 선택으로 등록된 그룹 예고(여기선 아라레 + 유노 + 노노카) → 참여 멤버 유지한 채 API 로 갱신
+    registered = preview.make_item(
+        channel_key="arale", state="announced", source="x-relay", now_iso=now_iso,
+        video_id="grp_vid", url="https://www.youtube.com/watch?v=grp_vid",
+        scheduled_start="2026-09-11T13:58:00Z", collab_with=["yuno", "nonoka"], host="group", kind="collab",
+    )
     new_preview_13, trans_13, wakes_13, _g = build_preview(
-        channels_cfg_g, videos_group, preview.default_preview(), now_iso
+        channels_cfg_g, videos_group, {**preview.default_preview(), "items": [registered]}, now_iso
     )
     assert len(new_preview_13["items"]) == 1, new_preview_13["items"]
     grp_item = new_preview_13["items"][0]
-    assert grp_item["channel_key"] == "arale", grp_item  # channel_order[0] 이 주 레인
+    assert grp_item["channel_key"] == "arale", grp_item  # 등록된 주 레인 유지
     assert grp_item["collab_with"] == ["yuno", "nonoka"], grp_item
     assert grp_item["host"] == "group", grp_item
     assert grp_item["kind"] == "collab", grp_item
     assert grp_item["video_id"] == "grp_vid", grp_item
     assert grp_item["state"] == "live", grp_item
-    print(f"  group channel video → channel_key=arale, collab_with=[yuno,nonoka], host=group")
+    print(f"  등록된 그룹 예고 → 참여 멤버 유지 · API 로 live 갱신")
 
     # 다음 tick 재매칭(video_id) — 기존 팬아웃 필드 유지 확인
     new_preview_13b, *_r = build_preview(

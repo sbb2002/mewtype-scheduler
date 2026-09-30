@@ -159,7 +159,9 @@ _llm("notice_title", lambda body, **k: {"title_ja": (body or "").split("\n")[0][
 _llm("announces_own_broadcast", lambda t, **k: "ありがとう" not in t)
 _llm("participation", lambda t, **k: True)
 _llm("collab_partners", lambda t, **k: list(k.get("candidate_names") or []))
-_llm("broadcast_change", lambda t, **k: {"action": "none", "when": None})
+# (2026-09-30) 취소·변경 판정은 broadcast_change_targets(후보 중 대상 선택) — 옛 broadcast_change 만 가짜로 두면 실제 Groq 를 부른다
+_llm("broadcast_change_targets", lambda t, cands, now_label, **k: {"action": "none", "target_ids": [], "when": None,
+                                                                  "reason": "하네스 기본 — 취소·변경 아님"})
 _llm("duplicate_notice", lambda *a, **k: None)
 
 
@@ -588,13 +590,19 @@ def run():
 
     # F20 · F18 — 유실 원문
     # F3 · F5 — 그룹 채널 팬아웃 · 아바타
-    scenario("F3·F5 그룹 공식 채널 5인 팬아웃 · 아바타 (baseline)")
+    # (2026-09-30 운영자 결정) 수집은 그룹 영상을 새로 만들지 않는다 — 참여 멤버 근거(공식 글의 이름 · 全員 등 인원 표현 ·
+    # 이미지 OCR)가 있을 때만 그 멤버로 올린다. 상세 시나리오는 harness_b.py B9
+    scenario("F3·F5 그룹 공식 채널 영상 — 근거가 있을 때만 · 아바타 (baseline)")
     tg_ = rnd(REAL_NOW + timedelta(hours=7))
     video("GRPVID00001", "group", "upcoming", z(tg_), title="【5人】同時視聴")
     RSS.clear(); RSS["group"] = ["GRPVID00001"]
     reconcile(mode="baseline", at=REAL_NOW)
+    check("3", "그룹 채널 영상 — 수집(RSS · baseline)은 새로 만들지 않음",
+          item(lambda i: i.get("video_id") == "GRPVID00001") is None)
+    ingest_x("＼配信開始📡／\n🛸#ゆめみた 全員集合！生配信\nhttps://youtube.com/live/GRPVID00001", "夢限大みゅーたいぷ",
+             tag="p#x#1tweet-2100000000000000012")
     g = item(lambda i: i.get("video_id") == "GRPVID00001")
-    check("3", "그룹 채널 영상 → 5인 레인 팬아웃(host=group)", g and g.get("host") == "group"
+    check("3", "공식 글의 인원 표현(全員) → 5인 레인 팬아웃(host=group)", g and g.get("host") == "group"
           and len(g.get("collab_with") or []) == 4, g)
     chs = (GH.read_json("preview.json")[0] or {}).get("channels", {})
     check("5", "baseline → channels.list 아바타 반영", all((chs.get(k) or {}).get("avatar") for k in

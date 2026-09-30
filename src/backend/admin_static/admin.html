@@ -297,6 +297,18 @@
         .flow.sel { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
         .fwrap .fdetail { border-color: var(--color-accent); border-top-left-radius: 0; border-top-right-radius: 0; }
         @media (prefers-reduced-motion: reduce) { .fwrap { transition: none; } }
+        /* (v4a) 흐름 상세 — LLM 판단 · 되돌리기 */
+        .fllm { display: grid; gap: 8px; }
+        .fllm-row { border: 1px solid rgba(167, 139, 250, .45); background: rgba(167, 139, 250, .07); border-radius: 8px;
+            padding: 10px 12px; display: grid; gap: 4px; }
+        .fllm-row .h { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+        .fllm-row .k { font-size: 0.75rem; color: #c4b5fd; font-weight: 700; }
+        .fllm-row .s { font-weight: 600; overflow-wrap: anywhere; }
+        .fllm-row .r { font-size: 0.8rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
+        .fllm-row .st { font-size: 0.78rem; color: var(--color-text-muted); }
+        .fllm-row .st.done { color: var(--ok); }
+        .fllm-row button { justify-self: start; background: rgba(167, 139, 250, .2); color: #ddd6fe; border: 1px solid rgba(167, 139, 250, .6); }
+        .flow .llm-tag { margin-left: 6px; font-size: 0.7rem; padding: 1px 6px; border-radius: 999px; background: rgba(167, 139, 250, .2); color: #c4b5fd; }
         .fdetail { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; display: grid; gap: 12px; }
         .fdetail-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
         .fdetail-head .ttl { font-weight: 600; }
@@ -753,6 +765,21 @@
         .chg-row input { width: 16px; height: 16px; accent-color: var(--color-accent); flex: none; margin-top: 0.15rem; }
         .chg-row:has(input:checked) { border-color: #ff6b6b; }
         .chg-row .w { color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        /* (v4a) 예고 탭 — 그룹 영상 참여 멤버 확인 대기 */
+        .gp-card { border: 1px solid rgba(245, 184, 61, 0.45); background: rgba(245, 184, 61, 0.06); border-radius: 10px;
+            padding: 0.9rem 1rem; margin-bottom: 1.25rem; display: grid; gap: 0.6rem; }
+        .gp-head h3 { margin: 0; font-size: 0.95rem; color: #f5b83d; display: flex; gap: 0.5rem; align-items: baseline; }
+        .gp-count { font-size: 0.8rem; font-weight: 600; }
+        .gp-head p { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--color-text-muted); line-height: 1.6; }
+        .gp-list { display: grid; gap: 0.5rem; }
+        .gp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem 0.8rem; align-items: center;
+            background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.6rem 0.8rem; }
+        .gp-row .t { font-weight: 600; overflow-wrap: anywhere; }
+        .gp-row .m { font-size: 0.78rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
+        .gp-row .a { display: flex; gap: 0.4rem; }
+        .gp-row .a button { white-space: nowrap; }
+        .gp-row .a .ghost { background: none; color: var(--color-text-muted); border: 1px solid var(--color-border); }
+        @media (max-width: 640px) { .gp-row { grid-template-columns: 1fr; } .gp-row .a button { flex: 1; } }
         #pick-body { display: grid; gap: 0.75rem; }
         #pick-body .pick-video { font-weight: 600; overflow-wrap: anywhere; }
         #pick-body .pick-help { font-size: 0.82rem; color: var(--color-text-muted); }
@@ -877,6 +904,14 @@
     <!-- ════ 탭: 예고 ════ -->
     <div class="tab-content active" id="preview-tab">
         <h2>예고</h2>
+        <section class="gp-card" id="grp-pending" hidden aria-labelledby="gp-h">
+            <div class="gp-head">
+                <h3 id="gp-h">그룹 영상 — 참여 멤버 확인 대기 <span class="gp-count" id="gp-count"></span></h3>
+                <p>공식 글에 멤버 이름 · 인원 표현(全員 등)이 없고 이미지에서도 읽지 못해 예고에 올리지 않은 영상입니다.
+                    참여 멤버를 고르면 올라갑니다. 같은 영상을 담은 공식 글에 근거가 나오면 자동으로 확정됩니다.</p>
+            </div>
+            <div class="gp-list" id="gp-list"></div>
+        </section>
         <div id="preview-list" class="loading">로드 중...</div>
     </div>
 
@@ -1066,6 +1101,7 @@
                 <button class="chip" data-f="yt" aria-pressed="false">YouTube 알림</button>
                 <button class="chip" data-f="admin" aria-pressed="false">관리 조작</button>
                 <button class="chip" data-f="wake" aria-pressed="false">방송 확인</button>
+                <button class="chip" data-f="llm" aria-pressed="false">LLM 판단</button>
             </div>
             <div class="flows" id="flows"><div class="jempty">로드 중...</div></div>
             <div id="fd-holder" hidden><div class="fwrap" id="fwrap"><div class="fwrap-in">
@@ -1076,6 +1112,7 @@
                 </div>
                 <div class="fchart"><div class="fchain" id="fd-chain"></div></div>
                 <div class="freason" id="fd-reason"></div>
+                <div class="fllm" id="fd-llm" hidden></div>
             </div>
             </div></div></div>
         </section>
@@ -1333,6 +1370,7 @@
             // ─────────────────────────────────────────────────────────────────────
 
             async loadPreview() {
+                this.loadGroupPending();
                 try {
                     const data = await this.apiCall("GET", "/list_preview");
                     this.data.preview = data;
@@ -1345,6 +1383,62 @@
                     p.textContent = `로드 실패: ${e.message}`;
                     container.appendChild(p);
                 }
+            },
+
+            // (v4a) 그룹 영상 — 참여 멤버 확인 대기(근거가 없어 예고에 올리지 않은 영상). 없으면 영역을 숨긴다
+            async loadGroupPending() {
+                const box = document.getElementById("grp-pending");
+                let items = [];
+                try {
+                    items = (await this.apiCall("GET", "/list_group_pending")).items || [];
+                } catch (e) {
+                    console.error("확인 대기 로드 실패", e);
+                }
+                box.hidden = !items.length;
+                document.getElementById("gp-count").textContent = items.length ? `${items.length}건` : "";
+                const list = document.getElementById("gp-list");
+                list.textContent = "";
+                const KIND = { live_now: "공식 방송 공지", appearance: "공식 출연 정보", member_tweet: "멤버 트윗" };
+                for (const e of items) {
+                    const row = document.createElement("div");
+                    row.className = "gp-row";
+                    const info = document.createElement("div");
+                    const t = document.createElement("div");
+                    t.className = "t";
+                    t.textContent = e.title || "(제목 없음)";
+                    const m = document.createElement("div");
+                    m.className = "m";
+                    m.textContent = [e.scheduled_start ? this.formatTime(e.scheduled_start) : "", KIND[e.kind] || e.kind || "",
+                        e.video_id || "", `처음 ${this.formatTime(e.first_seen)}`].filter(Boolean).join(" · ");
+                    info.append(t, m);
+                    const act = document.createElement("div");
+                    act.className = "a";
+                    const pick = document.createElement("button");
+                    pick.type = "button";
+                    pick.textContent = "멤버 고르기";
+                    pick.addEventListener("click", () => this.showMemberPicker(
+                        { title: e.title, scheduled_start: e.scheduled_start }, { suggested: e.suggested || [], ocr: e.ocr },
+                        { type: "pending", video_id: e.video_id }));
+                    const skip = document.createElement("button");
+                    skip.type = "button";
+                    skip.className = "ghost";
+                    skip.textContent = "무시";
+                    skip.addEventListener("click", () => this.dismissGroupPending(e));
+                    act.append(pick, skip);
+                    row.append(info, act);
+                    list.appendChild(row);
+                }
+            },
+
+            async dismissGroupPending(e) {
+                if (!confirm(`확인 대기에서 뺄까요?\n\n${e.title || e.video_id}\n\n예고에는 올라가지 않습니다(방송이 아니거나 올리지 않을 영상).`)) return;
+                try {
+                    const r = await this.apiCall("POST", "/dismiss_group_pending", { video_id: e.video_id });
+                    this.showToast(r.ok ? "확인 대기에서 뺐습니다" : (r.error || "실패"), r.ok ? "success" : "error");
+                } catch (err) {
+                    this.showToast(`실패: ${err.message}`, "error");
+                }
+                this.loadGroupPending();
             },
 
             renderPreview() {
@@ -1983,8 +2077,10 @@
             },
 
             // 그룹 공식 채널 영상 — 5인 합동으로 자동 등록하지 않고 참여 멤버를 고르게 한다(수동 · 예고의 합동 멤버와 같은 칩)
-            showMemberPicker(video, info = {}) {
-                // 트윗 이미지를 OCR 로 읽어 온 참여 멤버(info.suggested)는 미리 선택해 둔다 — 맞으면 확인, 틀리면 칩으로 수정
+            showMemberPicker(video, info = {}, mode = null) {
+                // 글의 근거(이름 · 全員 등) 또는 트윗 이미지 OCR 로 읽어 온 참여 멤버(info.suggested)는 미리 선택해 둔다 —
+                // 맞으면 확인, 틀리면 칩으로 수정. mode = {type:"pending", video_id} 면 확인 대기 영상 확정(원문 투입과 별개)
+                this.pickMode = mode;
                 const suggested = new Set(info.suggested || []);
                 this.pickSel = new Set(suggested);
                 const body = document.getElementById("pick-body");
@@ -1997,6 +2093,8 @@
                 const help = document.createElement("div");
                 help.className = "pick-help";
                 const OCR = {
+                    names: "글 · 영상 제목에 적힌 멤버가 미리 선택돼 있습니다. 맞으면 확인, 틀리면 칩을 눌러 바꾸세요.",
+                    count: "글에 전원 참가 표현(全員 등)이 있어 5명이 미리 선택돼 있습니다. 맞으면 확인, 틀리면 칩을 눌러 바꾸세요.",
                     ok: "트윗 이미지에서 읽은 참여 멤버가 미리 선택돼 있습니다. 맞으면 확인, 틀리면 칩을 눌러 바꾸세요.",
                     none: "트윗 이미지에서 참여 멤버를 읽지 못했습니다. 직접 고르세요.",
                     unavailable: "이미지 판독을 쓸 수 없어(키·모델 없음) 직접 고르셔야 합니다.",
@@ -2026,9 +2124,21 @@
                 document.getElementById("pick-modal").classList.remove("active");
             },
 
-            confirmPick() {
+            async confirmPick() {
                 if (!this.pickSel || !this.pickSel.size) {
                     this.showToast("참여 멤버를 한 명 이상 고르세요", "error");
+                    return;
+                }
+                if (this.pickMode && this.pickMode.type === "pending") {
+                    const video_id = this.pickMode.video_id;
+                    this.closePick();
+                    try {
+                        const r = await this.apiCall("POST", "/resolve_group_pending", { video_id, members: [...this.pickSel] });
+                        this.showToast(r.ok ? "선택한 멤버로 예고에 올렸습니다" : (r.error || "실패"), r.ok ? "success" : "error");
+                    } catch (err) {
+                        this.showToast(`실패: ${err.message}`, "error");
+                    }
+                    this.loadPreview();
                     return;
                 }
                 this.ing.picked = [...this.pickSel];
@@ -2785,6 +2895,12 @@
                 try {
                     const data = await this.apiCall("GET", "/jobs_overview");
                     const hist = await this.apiCall("GET", "/list_history?limit=50");
+                    try {
+                        const la = await this.apiCall("GET", "/list_llm_actions");
+                        this.llmActions = Object.fromEntries((la.items || []).map((e) => [e.id, e]));
+                    } catch (e) {
+                        this.llmActions = this.llmActions || {};
+                    }
                     this.jobs = data;
                     this.bindJobsControls();
                     this.renderNow(data.now || {});
@@ -2923,7 +3039,8 @@
                 box.textContent = "";
                 const flows = ((this.jobs || {}).flows || []).filter((f) =>
                     this.flowFilter === "all" || !this.flowFilter ? true
-                        : this.flowFilter === "attn" ? f.status !== "ok" : f.cat === this.flowFilter);
+                        : this.flowFilter === "attn" ? f.status !== "ok"
+                        : this.flowFilter === "llm" ? (f.llm || []).length > 0 : f.cat === this.flowFilter);
                 if (!flows.length) {
                     const e = document.createElement("div");
                     e.className = "jempty";
@@ -2943,6 +3060,12 @@
                     const k = document.createElement("div");
                     k.className = "k";
                     k.textContent = f.kind;
+                    if ((f.llm || []).length) {
+                        const tag = document.createElement("span");
+                        tag.className = "llm-tag";
+                        tag.textContent = `LLM 판단 ${f.llm.length}`;
+                        k.appendChild(tag);
+                    }
                     const d = document.createElement("div");
                     d.className = "d";
                     d.textContent = f.desc || "—";
@@ -3054,6 +3177,7 @@
                     chain.appendChild(n);
                     nodes.push({ n, note, ms, s });
                 });
+                this.renderFlowLlm(f);
                 const r = document.getElementById("fd-reason");
                 r.className = "freason" + (f.status === "ok" ? "" : " " + f.status);
                 r.textContent = "";
@@ -3082,6 +3206,67 @@
                 }
                 for (let i = 0; i < upto; i++) this.flowTimers.push(setTimeout(() => light(i), step * i));
                 this.flowTimers.push(setTimeout(done, step * upto));
+            },
+
+            // (v4a) 흐름 상세 — 이 흐름에서 LLM 이 내린 판단 · 근거 · 되돌리기
+            renderFlowLlm(f) {
+                const box = document.getElementById("fd-llm");
+                box.textContent = "";
+                const list = f.llm || [];
+                box.hidden = !list.length;
+                const KIND = { broadcast_change: "방송 취소 · 변경", own_broadcast: "본인 예고 확인", participation: "외부 채널 참여",
+                    collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복" };
+                for (const brief of list) {
+                    const e = (this.llmActions || {})[brief.id] || brief;
+                    const row = document.createElement("div");
+                    row.className = "fllm-row";
+                    const h = document.createElement("div");
+                    h.className = "h";
+                    const k = document.createElement("span");
+                    k.className = "k";
+                    k.textContent = `LLM 판단 · ${KIND[e.kind] || e.kind}`;
+                    h.appendChild(k);
+                    const s = document.createElement("div");
+                    s.className = "s";
+                    s.textContent = e.summary || "";
+                    row.append(h, s);
+                    if (e.reason) {
+                        const r = document.createElement("div");
+                        r.className = "r";
+                        r.textContent = `근거: ${e.reason}`;
+                        row.appendChild(r);
+                    }
+                    const st = document.createElement("div");
+                    st.className = "st";
+                    if (e.undone) {
+                        st.classList.add("done");
+                        st.textContent = `되돌림 ${this.formatTime(e.undone.at)} — ${(e.undone.applied || []).join(" · ") || "변화 없음"}` +
+                            ((e.undone.skipped || []).length ? ` (건너뜀: ${e.undone.skipped.join(" · ")})` : "");
+                        row.appendChild(st);
+                    } else if (e.undo || brief.undo) {
+                        const b = document.createElement("button");
+                        b.type = "button";
+                        b.textContent = "되돌리기";
+                        b.addEventListener("click", () => this.undoLlm(e));
+                        row.appendChild(b);
+                    } else {
+                        st.textContent = "검토용 — 바뀐 데이터가 없는 판단입니다. 필요하면 원문 투입으로 직접 넣으세요.";
+                        row.appendChild(st);
+                    }
+                    box.appendChild(row);
+                }
+            },
+
+            async undoLlm(e) {
+                if (!confirm(`이 LLM 판단을 되돌릴까요?\n\n${e.summary || e.id}\n\n그때 바뀐 항목만 되돌립니다. 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.`)) return;
+                try {
+                    const r = await this.apiCall("POST", "/undo_llm_action", { action_id: e.id });
+                    this.showToast(r.ok ? `되돌렸습니다 — ${((r.result || {}).applied || []).join(" · ")}` : (r.error || "실패"),
+                        r.ok ? "success" : "error");
+                } catch (err) {
+                    this.showToast(`실패: ${err.message}`, "error");
+                }
+                this.loadJobs();
             },
 
             // 다시 그리기 전에 부르면, 그린 뒤 스크롤 위치를 되돌린다

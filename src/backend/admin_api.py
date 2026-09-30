@@ -283,6 +283,8 @@ def _video_preview(t, chs: dict, vid: str, author_key: str | None, now: str,
         return None, "영상 조회에 실패했습니다(잠시 뒤 다시 시도)", None
     if info is None or not info.channel_id:
         return None, "영상을 API 로 확인하지 못했습니다(회원 전용 · 비공개 · 삭제 등)", None
+    if getattr(info, "is_premiere", False):
+        return None, "프리미어 공개(녹화된 노래 · 뮤비 · 커버 등) 영상이라 방송 예고로 올리지 않습니다", None
     host_key, host, collab = t.xtweet.resolve_url_host(info.channel_id, author_key, chs)
     if host_key is None:
         return None, "유메미타 멤버 · 그룹 공식 채널의 영상이 아닙니다", None
@@ -305,7 +307,7 @@ def _video_preview(t, chs: dict, vid: str, author_key: str | None, now: str,
     return item, f"영상 확인됨 — 확정하면 「{label}」 상태로 바로 올라갑니다 · {tail}", next_check
 
 
-def _group_choice(t, vid: str, item: dict, media: list | None) -> dict:
+def _group_choice(t, vid: str, item: dict, media: list | None, text: str | None = None) -> dict:
     """(v4a) 그룹 공식 채널 영상 = 5인 합동으로 자동 팬아웃하지 않는다 — 프론트가 참여 멤버 선택 팝업을 띄우게 응답한다.
     트윗의 첨부 이미지가 있으면 비전 OCR 로 읽은 멤버를 `suggested` 로 미리 제안한다(관리자가 확인 · 수정).
     이미 같은 영상이 등록돼 있으면 새로 만들지 않는다(예고 탭 수정에서 합동 멤버를 바꾼다)."""
@@ -313,8 +315,13 @@ def _group_choice(t, vid: str, item: dict, media: list | None) -> dict:
     if existing is not None:
         names = "·".join([existing.get("channel_key"), *(existing.get("collab_with") or [])])
         return _err(f"이미 등록된 영상입니다({names}) — 참여 멤버를 바꾸려면 예고 탭의 수정을 쓰세요")
-    suggested, ocr = t._ocr_cast_keys(media)
-    return {"ok": True, "choose_members": True, "preview": [], "suggested": suggested, "ocr": ocr,
+    # (v4a) 제안 순서 = 글의 근거(정식 이름 · 全員 등 인원 표현) → 영상 제목의 정식 이름 → 첨부 이미지 OCR
+    suggested, ocr = t.xrelay.members_evidence(text)
+    if not suggested:
+        suggested, ocr = t.xrelay.members_evidence(item.get("title"))
+    if not suggested:
+        suggested, ocr = t._ocr_cast_keys(media)
+    return {"ok": True, "choose_members": True, "preview": [], "suggested": suggested or [], "ocr": ocr,
             "video": {"video_id": vid, "title": item.get("title"), "scheduled_start": item.get("scheduled_start"),
                       "state": item.get("state")},
             "note": "그룹 공식 채널 영상 — 참여 멤버를 골라야 합니다"}
@@ -385,6 +392,9 @@ def ingest_preview_url(url: str, *, confirm: bool, force_unit: str | None = None
     text = ex.get("text") or ""
     channels = chs.get("channels") or {}
     if any(v.get("is_group") and (v.get("handle") or "").lower() == author.lower() for v in channels.values()):
+        grp = _official_group_video(t, text, confirm=confirm, members=members, media=ex.get("media"))
+        if grp is not None:
+            return grp
         return ingest_preview_raw(text, confirm=confirm)          # 공식 스케줄 서식(호스트 없음)
     natural = next((k for k, v in channels.items()
                     if not v.get("is_group") and (v.get("handle") or "").lower() == author.lower()), None)
@@ -403,6 +413,109 @@ def ingest_preview_url(url: str, *, confirm: bool, force_unit: str | None = None
     if not confirm and res.get("ok"):
         res["author"], res["unit"], res["forced"] = author, unit, natural is None
     return res
+
+
+def _commit_group_rows(t, rows: list[dict], now: str, desc: str) -> dict:
+    """(v4a) 참여 멤버가 정해진 그룹 영상 행을 반영 — 영상 즉시 확인(D13) → 예고 반영 → 확인 대기에서 뺌 → 영상 확인 적재."""
+    rows, vids = t._confirm_rows_with_videos(rows, now)
+    res = _submit("merge_rows", {"rows": rows, "now_iso": now, "message": f"data: admin 그룹 영상 {now}",
+                                 "action": f"admin 그룹 영상 {desc}"[:80]})
+    if res.get("ok"):
+        done = [r.get("video_id") for r in rows if r.get("video_id")]
+        if done:
+            _submit("group_pending", {"op": "remove", "now_iso": now, "video_ids": done})
+        for v in vids:
+            apply.enqueue_reconcile(video_id=v)
+    return _record("ingest_preview", "group", desc, res)
+
+
+def _official_group_video(t, text: str, *, confirm: bool, members: list | None, media: list | None) -> dict | None:
+    """(v4a) 공식 트윗 URL 투입 중 그룹 영상 처리. 해당 없으면 None(일반 공식 스케줄 경로로).
+    · 참여 멤버 근거(이름 · 全員 등)가 없는 그룹 방송 글 → 선택 팝업(첨부 이미지 OCR 제안). 고른 멤버로 미리보기 · 확정.
+    · 글이 「확인 대기」 중인 영상 URL 을 담고 근거가 있으면 → 그 멤버로 확정(같은 영상 URL 근거)."""
+    now = _now_iso()
+    registered = {i.get("video_id") for i in list_preview().get("items", []) if i.get("video_id")}
+    if t.xrelay.parse(text, now):
+        return None                                   # 근거가 있는 서식 — 일반 경로
+    cand = next((c for c in t.xrelay.parse_pending(text, now)), None)
+    if cand is None:
+        pending = t._group_pending_items(_store())
+        ev, basis = t.xrelay.members_evidence(text)
+        vid = next((m.group(1) for m in t.xrelay.YT_VIDEO_RE.finditer(t.xrelay.normalize(text))
+                    if m.group(1) in pending and m.group(1) not in registered), None)
+        if vid is None or not ev:
+            return None
+        row = t.xrelay.group_row(pending[vid], ev, now)
+        if not confirm:
+            return {"ok": True, "preview": [row],
+                    "note": f"확인 대기 중인 그룹 영상 — 이 글의 근거({'인원 표현' if basis == 'count' else '이름'})로 확정됩니다"}
+        return _commit_group_rows(t, [row], now, f"{vid} · 같은 영상 URL 근거")
+    vid = cand["video_id"]
+    if vid in registered:
+        return _err("이미 등록된 영상입니다 — 참여 멤버를 바꾸려면 예고 탭의 수정을 쓰세요")
+    if members is None:
+        suggested, ocr = t._ocr_cast_keys(media)
+        return {"ok": True, "choose_members": True, "preview": [], "suggested": suggested, "ocr": ocr,
+                "video": {"video_id": vid, "title": cand.get("title"), "scheduled_start": cand.get("scheduled_start"),
+                          "state": "announced"},
+                "note": "공식 글에 참여 멤버 근거(이름 · 全員 등 인원 표현)가 없습니다 — 참여 멤버를 고르세요"}
+    sel = [k for k in (t._load_channels_config().get("channel_order") or []) if k in members]
+    if not sel:
+        return _err("참여 멤버를 한 명 이상 고르세요")
+    row = t.xrelay.group_row(cand, sel, now)
+    if not confirm:
+        return {"ok": True, "preview": [row], "note": "선택한 참여 멤버로 올라갑니다"}
+    return _commit_group_rows(t, [row], now, f"{vid} · 선택 멤버")
+
+
+def list_llm_actions(limit: int = 300) -> dict:
+    """(v4a) LLM 판단 기록(최신 먼저) — 작업 탭 「LLM 판단」 필터 · 되돌리기."""
+    items = _t()._llm_actions_read(_store())
+    return {"items": list(reversed(items))[: max(1, int(limit or 300))]}
+
+
+def undo_llm_action(action_id: str) -> dict:
+    """(v4a) LLM 판단 되돌리기 — 그때 바뀐 항목만 되돌린다(그 뒤 다른 이유로 바뀐 항목은 건너뜀). 되살린 영상은 곧바로 확인 적재."""
+    res = _submit("llm_action", {"op": "undo", "now_iso": _now_iso(), "action_id": action_id})
+    if res.get("ok") and (res.get("result") or {}).get("error"):
+        res = _err(res["result"]["error"])
+    elif res.get("ok"):
+        for v in (res.get("result") or {}).get("restored_video_ids") or []:
+            apply.enqueue_reconcile(video_id=v)
+        if not (res.get("result") or {}).get("applied"):
+            res = dict(res, ok=False, error="되돌릴 것이 없습니다 — " + "; ".join((res.get("result") or {}).get("skipped") or []))
+    return _record("undo_llm_action", action_id, "; ".join((res.get("result") or {}).get("applied") or []), res)
+
+
+def list_group_pending() -> dict:
+    """(v4a) 그룹 영상 「참여 멤버 확인 대기」 목록 — 근거가 없어 예고에 올리지 않은 영상."""
+    t = _t()
+    items = sorted(t._group_pending_items(_store()).values(), key=lambda e: e.get("scheduled_start") or "")
+    return {"items": items}
+
+
+def resolve_group_pending(video_id: str, members: list) -> dict:
+    """(v4a) 확인 대기 영상을 관리자가 고른 참여 멤버로 예고에 올린다(1명 = 그 멤버 단독, 2명 이상 = 합동)."""
+    t = _t()
+    entry = t._group_pending_items(_store()).get(video_id or "")
+    if entry is None:
+        return _err("확인 대기 목록에 없습니다 (이미 확정됐거나 지났음)")
+    sel = [k for k in (t._load_channels_config().get("channel_order") or []) if k in (members or [])]
+    if not sel:
+        return _err("참여 멤버를 한 명 이상 고르세요")
+    now = _now_iso()
+    if any(i.get("video_id") == video_id for i in list_preview().get("items", [])):
+        _submit("group_pending", {"op": "remove", "now_iso": now, "video_ids": [video_id]})
+        return _err("이미 예고에 있는 영상입니다 — 대기에서만 뺐습니다. 참여 멤버는 예고 탭 수정으로 바꾸세요")
+    return _commit_group_rows(t, [t.xrelay.group_row(entry, sel, now)], now, f"{video_id} · 확인 대기 확정")
+
+
+def dismiss_group_pending(video_id: str) -> dict:
+    """(v4a) 확인 대기에서 뺀다(방송이 아니거나 올리지 않을 영상)."""
+    res = _submit("group_pending", {"op": "remove", "now_iso": _now_iso(), "video_ids": [video_id]})
+    if res.get("ok") and not (res.get("result") or {}).get("removed"):
+        res = _err("확인 대기 목록에 없습니다")
+    return _record("dismiss_group_pending", video_id, "", res)
 
 
 def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None = None,
@@ -444,7 +557,8 @@ def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None
             item, vnote, _nc = _video_preview(t, chs, vid, channel_key, now, members)
             if item is not None:
                 if members is None and item.get("host") == "group":
-                    return _group_choice(t, vid, item, media)     # 5인 팬아웃 금지 — 이미지 OCR 제안 + 선택 팝업
+                    # 5인 팬아웃 금지 — 글 · 제목의 근거 또는 이미지 OCR 로 제안 + 선택 팝업
+                    return _group_choice(t, vid, item, media, raw + ("\n" + quote if quote else ""))
                 return {"ok": True, "preview": [item], "note": vnote}
         else:
             gitem, _gn, gnc = _video_preview(t, chs, vid, channel_key, now, members)
@@ -987,6 +1101,8 @@ ADMIN_FLOW_LABELS = {
     "ingest_tweet_manual": "수동 입력 · 트윗", "edit_notice": "소식 수정", "edit_tweet": "트윗 수정",
     "delete_notice": "소식 삭제", "delete_tweet": "트윗 삭제", "translate": "번역", "retry_lost": "유실 원문 재투입",
     "set_paused": "일시정지 · 재개", "set_log_level": "알림 레벨", "set_monitor_auto": "멤버 현황 DM",
+    "resolve_group_pending": "그룹 영상 확인 대기 · 확정", "dismiss_group_pending": "그룹 영상 확인 대기 · 무시",
+    "undo_llm_action": "LLM 판단 되돌리기",
 }
 
 
@@ -1008,6 +1124,13 @@ def describe_target(name: str, body: dict) -> str:
     """관리 조작 흐름 설명 한 줄 — 무엇을 건드렸는지."""
     try:
         names = _names()
+        if name == "undo_llm_action":
+            e = next((x for x in _t()._llm_actions_read(_store()) if x.get("id") == body.get("action_id")), {})
+            return (e.get("summary") or body.get("action_id") or "")[:60]
+        if name in ("resolve_group_pending", "dismiss_group_pending"):
+            e = _t()._group_pending_items(_store()).get(body.get("video_id") or "") or {}
+            who = "·".join(names.get(k, k) for k in (body.get("members") or []))
+            return " · ".join(x for x in ((e.get("title") or "")[:40], body.get("video_id") or "", who) if x)
         if name in ("edit_preview", "delete_preview") or (name == "translate" and body.get("target") == "preview"):
             key = body.get("item_id") or body.get("key")
             it = next((i for i in list_preview().get("items", []) if i.get("id") == key), None)

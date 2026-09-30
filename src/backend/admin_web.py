@@ -314,6 +314,8 @@ h1{color:#ff6b6b}</style></head>
             "list_jobs",
             "jobs_overview",
             "channels",
+            "list_group_pending",
+            "list_llm_actions",
         }
 
         if name not in read_functions:
@@ -374,6 +376,9 @@ h1{color:#ff6b6b}</style></head>
             "set_monitor_auto",
             "undo",
             "translate_text",
+            "resolve_group_pending",
+            "dismiss_group_pending",
+            "undo_llm_action",
         }
 
         if name not in write_functions:

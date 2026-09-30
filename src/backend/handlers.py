@@ -262,6 +262,46 @@ def _should_log_run(
     )
 
 
+_VIDEO_RELEASES_PATH = "video_releases.json"
+_VIDEO_RELEASES_MAX = 300
+
+
+def record_video_releases(gh, entries: list[dict], now_iso: str) -> dict:
+    """(v4a) 방송 카드로 올리지 않은 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등) 기록 — ops `video_releases.json`.
+    버리지 않고 남겨 두는 이유: 추후 보조 기능("유메미타 플레이어")의 재료(운영자 구상). video_id 기준 upsert(처음 본 시각 유지),
+    최근 300건. 반환 {"added": [새 video_id]}. 쓰기 실패는 호출부 흐름을 막지 않도록 예외를 삼킨다."""
+    uniq = {}
+    for e in entries or []:
+        if e.get("video_id"):
+            uniq.setdefault(e["video_id"], e)
+    if not uniq:
+        return {"added": []}
+    try:
+        for _try in range(3):
+            cur, sha = gh.read_json(_VIDEO_RELEASES_PATH)
+            items = list((cur or {}).get("items") or [])
+            by = {i.get("video_id"): i for i in items}
+            added = []
+            for vid, e in uniq.items():
+                if vid in by:
+                    by[vid]["last_seen"] = now_iso
+                    continue
+                row = {k: e.get(k) for k in ("video_id", "channel_id", "title", "scheduled_start", "source")}
+                row.update(first_seen=now_iso, last_seen=now_iso)
+                items.append(row)
+                added.append(vid)
+            items = items[-_VIDEO_RELEASES_MAX:]
+            try:
+                gh.write_json(_VIDEO_RELEASES_PATH, {"items": items}, prev_sha=sha,
+                              message=f"ops: 프리미어(녹화 영상) 기록 +{len(added)} {now_iso}")
+                return {"added": added}
+            except ConflictError:
+                continue
+    except Exception:  # noqa: BLE001
+        log.warning("프리미어 기록 실패", exc_info=True)
+    return {"added": []}
+
+
 def _run(mode: str, woken_video_id: str | None) -> dict:
     cfg = load_config()
     now_iso = _now_iso()
@@ -312,9 +352,10 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             prev_preview = preview_mod.default_preview()
         prev_archive, arch_sha = gh.read_json("preview_archive.json")
 
+        _premieres: list[dict] = []
         new_preview, transitions, wakes, gone_items = build_preview(
             channels_cfg, videos, prev_preview, now_iso, avatars=avatars,
-            search_fn=lambda ck: _search_live_first(yt, id_by_key, ck),
+            search_fn=lambda ck: _search_live_first(yt, id_by_key, ck), skipped=_premieres,
         )
 
         # ── 트윗·릴레이 예고 시각 override 재적용 (알려진 지연: wakes 는 override 전 시각 기준) ──
@@ -394,6 +435,18 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             if _attempt == 2:
                 raise
             log.warning("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
+
+    # ── (v4a) 수집에서 뺀 프리미어(녹화 영상 공개) 기록 · 있던 예고를 뺐으면 모니터 로그 ──
+    if _premieres:
+        record_video_releases(gh, [dict(p, source="reconcile") for p in _premieres], now_iso)
+        try:
+            log_events(gh, now_iso, [{
+                "ts": now_iso, "flow": "preview", "result": RESULT_OK, "who": p.get("channel_id") or "",
+                "detail": f"프리미어(녹화 영상) — 방송 카드에서 뺌 · {p['video_id']}", "video_id": p["video_id"],
+                "item_id": p.get("removed_item"), "title": p.get("title"),
+            } for p in {x["video_id"]: x for x in _premieres}.values() if p.get("removed_item")])
+        except Exception:  # noqa: BLE001
+            log.warning("프리미어 모니터 로그 실패", exc_info=True)
 
     # ── Cloud Tasks enqueue ──
     enqueued, enqueue_errors = 0, []

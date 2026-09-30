@@ -76,6 +76,16 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         "ingest_queue_drain": lambda gh, a: dict(zip(
             ("applied", "rows"), t._ingest_queue_drain(gh, a["now_iso"]),
         )),
+        # (v4a) LLM 판단 기록 · 되돌리기 (ops llm_actions.json)
+        "llm_action": lambda gh, a: t._llm_action_commit(gh, a["op"], a["now_iso"], entry=a.get("entry"),
+                                                         action_id=a.get("action_id")),
+        # (v4a) 프리미어(녹화 영상 공개) 기록 (ops video_releases.json)
+        "video_release": lambda gh, a: __import__("src.backend.handlers", fromlist=["x"]).record_video_releases(
+            gh, a.get("entries") or [], a["now_iso"]),
+        # (v4a) 그룹 영상 「참여 멤버 확인 대기」 추가 · 제거 (ops group_pending.json)
+        "group_pending": lambda gh, a: t._group_pending_commit(
+            gh, a["op"], a["now_iso"], entries=a.get("entries"), video_ids=a.get("video_ids"),
+        ),
     }
 
 
@@ -100,7 +110,7 @@ if __name__ == "__main__":
         "merge_rows", "manual_preview", "remove_broadcast", "apply_notice", "notice_sweep",
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
         "tweet_del_commit", "tweet_edit_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
-        "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain",
+        "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain", "group_pending", "video_release", "llm_action",
     }
     missing = expected - set(reg)
     assert not missing, f"registry missing kinds: {missing}"

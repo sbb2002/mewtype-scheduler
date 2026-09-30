@@ -1107,6 +1107,13 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
             log.warning("del: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
+        # (v4a) 그 영상에 예약돼 있던 확인도 지운다 — 남겨 두면 그 확인이 영상을 다시 불러와 예고를 되살렸다(2026-09-30 검증)
+        if snapshot.get("video_id"):
+            try:
+                from . import apply as _apply
+                _apply.cancel_video_checks(snapshot["video_id"], reason=action)
+            except Exception:  # noqa: BLE001
+                log.warning("예약된 확인 취소 실패", exc_info=True)
         # (v3.8.7) /del(terminate 포함)이 preview.json 은 지우면서도 모니터 이벤트
         # 로그엔 남기지 않아, monitor 타임플롯이 이 삭제를 몰라 마지막으로 알려진 상태
         # (예: watching)를 지금까지 계속 진행 중인 것처럼 그렸다(실측 2026-09-22).
@@ -1741,6 +1748,9 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
             # changed and mode == "added" 일 때만 중복판정 LLM 호출
             if changed and mode == "added":
                 dup_id = _inline_notice_dup_check(parsed, prev)
+                if dup_id:
+                    _llm_record(gh, "duplicate_notice", "notice",
+                                f"같은 소식으로 판정 — {(parsed.get('title') or '')[:40]}", f"기존 소식 {dup_id}", now_iso=now_iso)
         except Exception:
             log.warning("준비: notices 읽기 실패", exc_info=True)
             dup_id = None
@@ -2937,11 +2947,16 @@ def _confirm_rows_with_videos(rows: list[dict], now_iso: str) -> tuple[list[dict
     except Exception:  # noqa: BLE001
         log.warning("공식 스케줄 영상 확인(videos.list) 실패 — 다음 reconcile 에 맡김", exc_info=True)
         return rows, []
-    out, confirmed = [], []
+    out, confirmed, releases = [], [], []
     for r in rows:
         info = infos.get(r.get("video_id")) if r.get("video_id") else None
         if info is None:
             out.append(r)
+            continue
+        if getattr(info, "is_premiere", False):
+            # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 카드로 올리지 않는다(2026-09-30 운영자 결정)
+            releases.append({"video_id": info.video_id, "channel_id": info.channel_id, "title": info.title,
+                             "scheduled_start": info.scheduled_start, "source": "official_tweet"})
             continue
         r = dict(r)
         r["title"] = info.title or r.get("title")
@@ -2962,6 +2977,11 @@ def _confirm_rows_with_videos(rows: list[dict], now_iso: str) -> tuple[list[dict
                 r = preview_mod.set_state(r, promoted, now_iso)
         out.append(r)
         confirmed.append(info.video_id)
+    if releases:
+        try:
+            writeclient.call_write("video_release", gh=None, entries=releases, now_iso=now_iso, label="프리미어 기록")
+        except Exception:  # noqa: BLE001
+            log.warning("프리미어 기록 실패", exc_info=True)
     return out, confirmed
 
 
@@ -3213,27 +3233,46 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
                     detail=f"broadcast-change {plan['action']} · {plan.get('reason') or '(근거 없음)'}"
                            + (f" · 대상 {len(plan['target_ids'])}건" if plan["target_ids"] else ""))
     if plan["action"] == "none":
+        if plan["candidates"]:        # 후보가 있어 LLM 이 실제로 판단한 경우만(검토용)
+            _llm_record(gh, "broadcast_change", channel_key, "방송 취소 · 변경 아님", plan.get("reason"), now_iso=now_iso)
         return   # 취소/변경 아님, 또는 어느 방송인지 특정 불가
     by_id = {c["id"]: c for c in plan["candidates"]}
+    removed, unsup, changes = [], [], []
     for iid in plan["target_ids"]:
         target = by_id[iid]
         try:
             if plan["action"] == "del":
-                _terminate_broadcast(gh, target, now_iso, f"{channel_key} 방송 취소(LLM)")
+                if _terminate_broadcast(gh, target, now_iso, f"{channel_key} 방송 취소(LLM)"):
+                    removed.append(target)
+                    if target.get("url") and xtweet.YT_VIDEO_RE.search(target["url"]):
+                        unsup.append(target["url"])
             else:
                 ctx = {"id": iid, "patch": {"date": plan["when_iso"]},
                        "pre": {"date": target.get("scheduled_start")}}
                 writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx,
                                        label=f"{channel_key} 방송 일정변경(LLM)")
+                changes.append({"id": iid, "field": "scheduled_start", "from": target.get("scheduled_start"),
+                                "to": plan["when_iso"]})
         except Exception:
             log.exception("방송 취소/변경 반영 실패")
             _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                             detail=f"broadcast-change write 실패 — 취소/변경 유실 ({iid})", via=via)
+    if removed:
+        _llm_record(gh, "broadcast_change", channel_key,
+                    f"방송 취소 {len(removed)}건 — " + " / ".join(
+                        f"{_kst_label(x.get('scheduled_start'))} {(x.get('title_ko') or x.get('title') or '')[:24]}" for x in removed),
+                    plan.get("reason"), undo={"type": "restore_items", "items": removed, "unsuppress": unsup},
+                    now_iso=now_iso)
+    if changes:
+        _llm_record(gh, "broadcast_change", channel_key,
+                    f"방송 시각 변경 {len(changes)}건 → {_kst_label(plan['when_iso'])}", plan.get("reason"),
+                    undo={"type": "restore_fields", "changes": changes}, now_iso=now_iso)
 
 
 def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
                                   channels_cfg: dict, *, via: str = "ingest",
-                                  quote: str | None = None) -> bool:
+                                  quote: str | None = None, tag: str | None = None,
+                                  media: list | None = None) -> bool:
     """(v3.6) 원문에 유튜브 URL 이 있으면 `videos.list` 로 즉시 메타 확정해 반영.
 
     설계(2026-09-16 대화):
@@ -3285,19 +3324,69 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         # 케이스(회원전용·삭제 등)라 monitor 에는 안 남긴다.
         return False
 
+    if getattr(info, "is_premiere", False):
+        # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 예고로 올리지 않는다. 歌枠 같은 노래 생방송은 해당 없음
+        log.info("URL 확정 예고: %s 는 프리미어(녹화 영상) — 방송 카드로 안 올림", video_id)
+        try:
+            writeclient.call_write("video_release", gh=gh, now_iso=now_iso, label="프리미어 기록", entries=[{
+                "video_id": video_id, "channel_id": info.channel_id, "title": info.title,
+                "scheduled_start": info.scheduled_start, "source": f"tweet:{channel_key}"}])
+        except Exception:  # noqa: BLE001
+            log.warning("프리미어 기록 실패", exc_info=True)
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"url-schedule skip: 프리미어(녹화 영상) {video_id}")
+        return True
+
     host_key, host, collab_with = xtweet.resolve_url_host(info.channel_id, channel_key, channels_cfg)
+
+    if host == "group":
+        # (v4a) 그룹 공식 채널 영상 — 5인 합동으로 바로 올리지 않는다(2026-09-30 운영자 결정). 근거 = 글(본문 + 인용)의
+        # 정식 이름 · 인원 표현 → 영상 제목의 정식 이름 → 첨부 이미지 OCR. 작성자 본인을 자동으로 넣지는 않는다.
+        # 근거가 없으면 확인 대기(관리 페이지에서 멤버 선택)로 적고 끝낸다. 이미 예고에 있는 영상이면 참여 멤버를 건드리지 않는다.
+        try:
+            _pv, _ = gh.read_json(_PREVIEW_PATH)
+        except Exception:  # noqa: BLE001
+            _pv = None
+        if any(i.get("video_id") == video_id for i in (_pv or {}).get("items") or []):
+            log.info("URL 확정 예고: 그룹 영상 %s 은 이미 예고에 있음 — 참여 멤버 유지", video_id)
+            return True
+        members, basis = xrelay.members_evidence(search_text)
+        if not members:
+            members, basis = xrelay.members_evidence(info.title)
+        ocr_state = None
+        if not members:
+            members, ocr_state = _ocr_cast_keys(media if media is not None else _tweet_media_by_tag(tag))
+            basis = "ocr" if members else ""
+        if not members:
+            _record_group_pending(gh, [{
+                "video_id": video_id, "url": f"https://www.youtube.com/watch?v={video_id}", "title": info.title,
+                "scheduled_start": info.scheduled_start or info.actual_start or now_iso, "kind": "member_tweet",
+                "ocr": ocr_state, "suggested": [], "source": channel_key,
+                "tweet_url": _tweet_url_from_tag(tag) if tag else None,
+            }], now_iso)
+            return True
+        host_key, collab_with = members[0], (members[1:] or None)
+        host = "group" if collab_with else None
+        ocr_group = basis == "ocr"
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"group-video members {basis} · {','.join(members)} · {video_id}")
 
     if host_key is not None and host is None:
         # (v3.8.3) 본인 채널 합동 — 제목/원문에 다른 멤버 정식 표기가 있으면 게스트 후보.
         # (v3.8.6) 언급됐다고 곧장 확정하지 않고 LLM 으로 "실제로 같이 나오는 방송인가"
         # 재확인한다 — 이름 언급이 안부 인사·잡담일 수도 있어 오탐 위험(find_guest_members
         # 는 "정식 표기가 나온다"만 볼 뿐 문맥은 모른다).
-        guests = xtweet.find_guest_members(channels_cfg, host_key, info.title, search_text)
+        guest_cands = xtweet.find_guest_members(channels_cfg, host_key, info.title, search_text)
         guests = _confirm_llm_collab_guests(
-            gh, search_text, host_key=host_key, guest_keys=guests,
+            gh, search_text, host_key=host_key, guest_keys=guest_cands,
             channels_cfg=channels_cfg, now_iso=now_iso, via=via,
         )
-        merged = [*(collab_with or []), *[g for g in guests if g not in (collab_with or [])]]
+        llm_guests = [g for g in guests if g not in (collab_with or [])]
+        rejected = [g for g in guest_cands if g not in guests]
+        if rejected:
+            _llm_record(gh, "collab_guest", host_key, f"게스트 아님 판정 — {','.join(rejected)} · {(info.title or '')[:30]}",
+                        now_iso=now_iso)
+        merged = [*(collab_with or []), *llm_guests]
         collab_with = merged or None
 
     if host_key is None:
@@ -3318,12 +3407,20 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
             return True
         if ok is not True:
             log.info("URL 확정 예고: 외부 채널 + LLM 미확인(%s) — 스킵", ok)
+            _llm_record(gh, "participation", channel_key, f"외부 채널 영상 — 참여 아님 · {(info.title or '')[:40]}",
+                        now_iso=now_iso)
             return True
         host_key, host, collab_with = channel_key, None, None
+        llm_participation = True
 
     new_item, next_check_at = xtweet.build_item_from_video(
         info, channel_key=host_key, host=host, collab_with=collab_with, now_iso=now_iso,
     )
+    try:                                  # 되돌리기용 — 같은 영상의 기존 항목(있으면)
+        _pv0, _ = gh.read_json(_PREVIEW_PATH)
+        _pre = next((i for i in (_pv0 or {}).get("items") or [] if i.get("video_id") == video_id), None)
+    except Exception:  # noqa: BLE001
+        _pre = None
 
     # (WP-3b) 커밋은 백엔드 잡에서 — call_write 로 위임
     try:
@@ -3339,6 +3436,20 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         return True
 
     if changed:
+        _undo_item = ({"type": "replace_items", "items": [_pre]} if _pre
+                      else {"type": "remove_items", "items": [{"video_id": video_id}]})
+        if locals().get("llm_participation"):
+            _llm_record(gh, "participation", channel_key, f"외부 채널 영상에 참여로 판정 → 예고 등록 · {(info.title or '')[:40]}",
+                        undo=_undo_item, now_iso=now_iso)
+        if locals().get("llm_guests"):
+            _llm_record(gh, "collab_guest", host_key, f"게스트 {','.join(llm_guests)} 합동으로 판정 · {(info.title or '')[:30]}",
+                        undo={"type": "remove_guests", "video_id": video_id, "guests": llm_guests}, now_iso=now_iso)
+        if locals().get("ocr_group"):
+            _llm_record(gh, "ocr_members", channel_key, f"이미지 OCR 로 참여 멤버 판정 — {','.join(members)} · {(info.title or '')[:30]}",
+                        undo={"type": "remove_items", "items": [{"video_id": video_id}], "to_pending": [{
+                            "video_id": video_id, "url": f"https://www.youtube.com/watch?v={video_id}", "title": info.title,
+                            "scheduled_start": info.scheduled_start or now_iso, "kind": "member_tweet", "ocr": "ok",
+                            "suggested": members, "source": channel_key}]}, now_iso=now_iso)
         name = channels_cfg.get("channels", {}).get(host_key, {}).get("name_ko", host_key)
         state_label = {"live": "🔴 라이브 중", "watching": "⏳ 시작 임박",
                        "upcoming": "📅 예정"}.get(new_item.get("state"), new_item.get("state"))
@@ -3431,7 +3542,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
 
     channels_cfg = _load_channels_config()
     if _maybe_url_confirmed_schedule(gh, raw, channel_key, now_iso, channels_cfg, via=via,
-                                     quote=quote):
+                                     quote=quote, tag=tag):
         _preserve_raw("personal_schedule_url", raw, {"channel_key": channel_key, "tag": tag}, now_iso)
         return   # 유튜브 URL 이 있었음(raw 또는 quote) — 반영/스킵 여부와 무관하게 아래로 안 넘어감
     if _maybe_nonyt_url_notice(gh, raw, tag, now_iso):
@@ -3463,8 +3574,14 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     if confirmed is not True:
         log.info("텍스트 예고 후보 — LLM 최종 확인 미통과(%s) → 미등록", confirmed)
+        _llm_record(gh, "own_broadcast", channel_key, f"본인 방송 예고 아님 — {raw[:60]}", now_iso=now_iso)
         return
 
+    try:                                  # 되돌리기용 — 합쳐질 기존 항목(있으면)의 합치기 전 모습
+        _pv0, _ = gh.read_json(_PREVIEW_PATH)
+        _pre = preview_mod.match_item((_pv0 or {}).get("items") or [], row)
+    except Exception:  # noqa: BLE001
+        _pre = None
     try:
         res = writeclient.call_write("merge_rows", gh=gh, rows=[row], now_iso=now_iso,
                                      message=f"data: personal schedule {channel_key} {now_iso}",
@@ -3475,6 +3592,10 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         log.exception("personal schedule 반영 실패")
         return
     when = "시간 미정" if row.get("time_tbd") else xrelay._jst_hm(row.get("scheduled_start")) + " JST"
+    if changed:
+        _llm_record(gh, "own_broadcast", channel_key, f"본인 예고로 등록 — {when} · {raw[:40]}",
+                    undo=({"type": "replace_items", "items": [_pre]} if _pre
+                          else {"type": "remove_items", "items": [{"id": row.get("id")}]}), now_iso=now_iso)
     link = row.get("url") or ""
     _auto_dm(
         gh, "scheduled",
@@ -3841,8 +3962,368 @@ def _ocr_cast_keys(media: list[str] | None, limit: int = 4) -> tuple[list[str], 
                     matched.append(key)
         if matched:
             log.info("cast OCR(관리 페이지): %s → %s", names, matched)
-            return matched, "ok"
+            return [k for k in xrelay.ALL_KEYS if k in matched], "ok"
     return [], "none"
+
+
+# ─── (v4a) LLM 판단 기록 · 되돌리기 (2026-09-30 운영자 요청) ─────────────────────────────────────────────
+# LLM 판단에 기대는 만큼 운영자가 개입할 장치 — 자동 인입에서 LLM 이 내린 판단을 ops `llm_actions.json` 에 남기고(작업 탭 「LLM 판단」
+# 필터), 데이터를 바꾼 판단은 되돌리기 정보(undo)를 함께 적는다. 되돌리기는 적용 큐에서 **그때 바뀐 항목만** 되돌리며, 그 뒤에 다른 이유로
+# 이미 바뀐 항목은 건드리지 않는다(건너뜀으로 보고). "아님" 판단(예고 아님 · 참여 아님 · 취소 아님 · 중복 소식)은 검토용 — 되돌릴 데이터가
+# 없으니 원문 투입으로 직접 넣는다. 번역 · 소식 제목 추출은 판단이 아니라 제외.
+_LLM_ACTIONS_PATH = "llm_actions.json"
+_LLM_ACTIONS_MAX = 300
+
+
+def _llm_record(gh, kind: str, who: str, summary: str, reason: str = "", *, undo: dict | None = None,
+                now_iso: str | None = None) -> str | None:
+    """LLM 판단 1건을 기록하고 지금 흐름에 표시한다. 기록 실패는 본 처리에 영향을 주지 않는다. 기록 id."""
+    import uuid
+    now_iso = now_iso or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = {"id": "llm_" + uuid.uuid4().hex[:10], "ts": now_iso, "kind": kind, "who": who or "",
+             "summary": (summary or "")[:200], "reason": (reason or "")[:300], "undo": undo, "undone": None,
+             "flow_id": flowtrace.current.get()}
+    try:
+        writeclient.call_write("llm_action", gh=gh, op="add", entry=entry, now_iso=now_iso, label="LLM 판단 기록")
+    except Exception:  # noqa: BLE001
+        log.warning("LLM 판단 기록 실패", exc_info=True)
+        return None
+    try:
+        flowtrace.add_llm({"id": entry["id"], "kind": kind, "summary": entry["summary"], "undo": bool(undo)})
+    except Exception:  # noqa: BLE001
+        pass
+    return entry["id"]
+
+
+def _llm_actions_read(gh) -> list[dict]:
+    try:
+        cur, _ = gh.read_json(_LLM_ACTIONS_PATH)
+    except Exception:  # noqa: BLE001
+        return []
+    return list((cur or {}).get("items") or [])
+
+
+def _llm_action_commit(gh, op: str, now_iso: str, entry: dict | None = None, action_id: str | None = None) -> dict:
+    """(적용 큐) op="add" — 기록 추가(최근 300건). op="undo" — 되돌리기 실행 후 기록에 표시."""
+    if op == "undo":
+        return _llm_undo(gh, action_id or "", now_iso)
+    for _try in range(3):
+        cur, sha = gh.read_json(_LLM_ACTIONS_PATH)
+        items = list((cur or {}).get("items") or [])
+        items.append(entry)
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items[-_LLM_ACTIONS_MAX:]}, prev_sha=sha,
+                          message=f"ops: LLM 판단 기록 {entry.get('kind')} {now_iso}")
+            return {"id": entry.get("id")}
+        except ConflictError:
+            continue
+    raise RuntimeError("llm_actions 쓰기 충돌이 계속됨")
+
+
+def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
+    """(적용 큐) LLM 판단 되돌리기. undo 종류:
+    restore_items(지운 예고 되살림 + 재등록 차단 해제) · restore_fields(바꾼 값 되돌림 — 지금 값이 그때 바꾼 값일 때만) ·
+    remove_items(만든 예고 지움, to_pending 이 있으면 그룹 영상 확인 대기로) · replace_items(합친 예고를 합치기 전으로) ·
+    remove_guests(더한 게스트 뺌). 반환 {"applied": [...], "skipped": [...], "restored_video_ids": [...]}."""
+    entries = _llm_actions_read(gh)
+    e = next((x for x in entries if x.get("id") == action_id), None)
+    # 거절은 예외가 아니라 결과로 — 예외면 적용 큐가 재시도 끝에 "dead"(실패 작업)로 남긴다
+    if e is None:
+        return {"error": "LLM 판단 기록이 없습니다", "applied": [], "skipped": []}
+    if e.get("undone"):
+        return {"error": "이미 되돌린 판단입니다", "applied": [], "skipped": []}
+    u = e.get("undo")
+    if not u:
+        return {"error": "되돌릴 데이터가 없는 판단입니다(검토용) — 필요하면 원문 투입으로 직접 넣으세요",
+                "applied": [], "skipped": []}
+    applied, skipped, restored = [], [], []
+    t = u.get("type")
+
+    def label(it):
+        return f"{it.get('channel_key') or ''} {(it.get('title') or '')[:30]} {_kst_label(it.get('scheduled_start'))}".strip()
+
+    for _try in range(3):
+        applied, skipped, restored = [], [], []
+        pv, sha = gh.read_json(_PREVIEW_PATH)
+        pv = pv or {"items": []}
+        items = [dict(i) for i in pv.get("items") or []]
+
+        def find(key):
+            return next((i for i in items if (key.get("id") and i.get("id") == key["id"]) or
+                         (key.get("video_id") and i.get("video_id") == key["video_id"])), None)
+
+        if t == "restore_items":
+            for snap in u.get("items") or []:
+                if find(snap):
+                    skipped.append(f"{label(snap)} — 이미 예고에 있음")
+                    continue
+                items.append(dict(snap, last_updated=now_iso))
+                applied.append(f"되살림 {label(snap)}")
+                if snap.get("video_id"):
+                    restored.append(snap["video_id"])
+        elif t == "restore_fields":
+            for ch in u.get("changes") or []:
+                it = find(ch)
+                if it is None or it.get(ch["field"]) != ch.get("to"):
+                    skipped.append(f"{ch.get('id') or ch.get('video_id')} {ch['field']} — 그 뒤 바뀌었거나 없음")
+                    continue
+                it[ch["field"]] = ch.get("from")
+                it["last_updated"] = now_iso
+                applied.append(f"{label(it)} {ch['field']} 되돌림")
+        elif t == "remove_items":
+            for key in u.get("items") or []:
+                it = find(key)
+                if it is None:
+                    skipped.append(f"{key.get('id') or key.get('video_id')} — 이미 없음")
+                    continue
+                items.remove(it)
+                applied.append(f"지움 {label(it)}")
+        elif t == "replace_items":
+            for snap in u.get("items") or []:
+                it = find(snap)
+                if it is None:
+                    skipped.append(f"{label(snap)} — 이미 없음")
+                    continue
+                items[items.index(it)] = dict(snap, last_updated=now_iso)
+                applied.append(f"합치기 전으로 {label(snap)}")
+        elif t == "remove_guests":
+            it = find(u)
+            gone = [g for g in (u.get("guests") or []) if it and g in (it.get("collab_with") or [])]
+            if not gone:
+                skipped.append("더했던 게스트가 이미 없음")
+            else:
+                cw = [g for g in it.get("collab_with") or [] if g not in gone]
+                it["collab_with"] = cw or None
+                if not cw and it.get("kind") == "collab":
+                    it["kind"] = None
+                it["last_updated"] = now_iso
+                applied.append(f"{label(it)} 게스트 {','.join(gone)} 뺌")
+        else:
+            return {"error": f"알 수 없는 되돌리기 종류: {t}", "applied": [], "skipped": []}
+        if not applied:
+            break
+        new_pv = dict(pv, items=preview_mod.sort_items(items), generated_at=now_iso)
+        try:
+            gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha, message=f"data: LLM 판단 되돌리기 {action_id} {now_iso}")
+            _save_undo(gh, action=f"LLM 판단 되돌리기 {e.get('kind')}", prev_content=pv, new_sha=None, now_iso=now_iso)
+            break
+        except ConflictError:
+            continue
+    # 재등록 차단 해제(취소 되돌리기) · 그룹 영상 확인 대기로(OCR 되돌리기)
+    unsup = set(u.get("unsuppress") or [])
+    if applied and unsup:
+        try:
+            st, ssha = gh.read_json(_ADMIN_STATE_PATH)
+            st = dict(st or admin.default_admin_state())
+            st["suppress"] = [x for x in st.get("suppress") or [] if x.get("url") not in unsup]
+            gh.write_json(_ADMIN_STATE_PATH, st, prev_sha=ssha, message=f"ops: suppress -= {len(unsup)} {now_iso}")
+            applied.append(f"재등록 차단 해제 {len(unsup)}건")
+        except Exception:  # noqa: BLE001
+            log.warning("재등록 차단 해제 실패", exc_info=True)
+            skipped.append("재등록 차단 해제 실패")
+    if applied and u.get("to_pending"):
+        try:
+            _group_pending_commit(gh, "add", now_iso, entries=u["to_pending"])
+            applied.append("그룹 영상 확인 대기로 옮김")
+        except Exception:  # noqa: BLE001
+            log.warning("확인 대기로 옮기기 실패", exc_info=True)
+    # 기록에 되돌림 표시
+    for _try in range(3):
+        cur, lsha = gh.read_json(_LLM_ACTIONS_PATH)
+        items2 = list((cur or {}).get("items") or [])
+        for x in items2:
+            if x.get("id") == action_id:
+                x["undone"] = {"at": now_iso, "applied": applied, "skipped": skipped}
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items2}, prev_sha=lsha, message=f"ops: LLM 판단 되돌림 {action_id}")
+            break
+        except ConflictError:
+            continue
+    _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=e.get("who") or "",
+                    detail=f"LLM 판단 되돌리기 {e.get('kind')} · {'; '.join(applied) or '변화 없음'}", via="ops")
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": restored}
+
+
+# ─── (v4a) 그룹 영상 참여 멤버 — 근거 판정 · 확인 대기 (2026-09-30 운영자 결정) ─────────────────────────────
+# 근거 없이 5인 합동으로 팬아웃하지 않는다. 근거 = 글의 정식 이름 · 인원 표현(全員 · 全体配信 · 5名 · 5人)(`xrelay.members_evidence`)
+# → 첨부 이미지 OCR(`_ocr_cast_keys`). 그래도 없으면 등록하지 않고 「참여 멤버 확인 대기」(ops `group_pending.json`)에 적고 DM —
+# 관리 페이지 예고 탭에서 멤버를 고르거나, 같은 영상 URL 을 담은 뒤이은 공식 글에 근거가 나오면 그때 자동 확정한다.
+# 대기는 따로 적어 둘 뿐 다른 인입(같은 글의 다른 행 · 소식 · 이후 알림)을 막지 않는다.
+_GROUP_PENDING_PATH = "group_pending.json"
+_GROUP_PENDING_KEEP_SEC = 6 * 3600      # 예정 시각 + 6시간이 지나면 대기에서 뺀다(끝난 방송)
+
+
+def _tweet_media_by_tag(tag: str | None) -> list[str]:
+    """트윗 태그(`...tweet-<id>`)로 첨부 이미지 URL 목록 — 없거나 조회 실패면 []."""
+    if not tag or vxtwitter is None or xtweet is None:
+        return []
+    tid = xtweet._tweet_id(tag)
+    if not tid or not tid.isdigit():
+        return []
+    try:
+        j = vxtwitter.fetch_tweet(tid)
+        return list(vxtwitter.extract(j).get("media") or []) if j else []
+    except Exception:  # noqa: BLE001
+        log.warning("트윗 이미지 조회 실패 (%s)", tid, exc_info=True)
+        return []
+
+
+def _is_group_author(vx_ex: dict | None, title: str | None) -> bool:
+    """이 알림이 그룹 공식 X(@BDP_yumemita) 글인가 — vxtwitter 작성자 핸들 우선, 없으면 알림 제목(표시명)."""
+    chs = (_load_channels_config().get("channels") or {})
+    handles = {(v.get("handle") or "").lower() for v in chs.values() if v.get("is_group")}
+    author = ((vx_ex or {}).get("author") or "").lower()
+    if author:
+        return author in handles
+    return (title or "").strip().startswith("夢限大みゅーたいぷ")
+
+
+def _group_pending_items(gh) -> dict:
+    """확인 대기 중인 그룹 영상 {video_id: 항목}."""
+    try:
+        cur, _ = gh.read_json(_GROUP_PENDING_PATH)
+    except Exception:  # noqa: BLE001
+        log.warning("group_pending 읽기 실패", exc_info=True)
+        return {}
+    return {e["video_id"]: e for e in (cur or {}).get("items") or [] if e.get("video_id")}
+
+
+def _group_pending_alive(e: dict, now_iso: str) -> bool:
+    try:
+        ss = datetime.fromisoformat((e.get("scheduled_start") or e.get("first_seen") or now_iso).replace("Z", "+00:00"))
+        now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return True
+    return (now - ss).total_seconds() < _GROUP_PENDING_KEEP_SEC
+
+
+def _group_pending_commit(gh, op: str, now_iso: str, entries: list | None = None,
+                          video_ids: list | None = None) -> dict:
+    """(v4a) 적용 큐에서 실행 — 확인 대기 목록 추가(op="add", video_id 기준 upsert) · 제거(op="remove").
+    처음 본 시각 · 제안 멤버는 유지하고 마지막 본 시각 · 출처 글만 더한다. 예정 시각 + 6시간이 지난 항목은 함께 정리.
+    반환 {"added": [새로 들어간 video_id], "removed": [뺀 video_id]}."""
+    for _try in range(3):
+        cur, sha = gh.read_json(_GROUP_PENDING_PATH)
+        before = list((cur or {}).get("items") or [])
+        items = [dict(e) for e in before if _group_pending_alive(e, now_iso)]
+        added, removed = [], []
+        if op == "add":
+            by = {e["video_id"]: e for e in items}
+            for en in entries or []:
+                vid = en.get("video_id")
+                if not vid:
+                    continue
+                src = en.get("tweet_url")
+                if vid in by:
+                    e = by[vid]
+                    e["last_seen"] = now_iso
+                    if src and src not in (e.get("sources") or []):
+                        e["sources"] = [*(e.get("sources") or []), src]
+                    if en.get("suggested") and not e.get("suggested"):
+                        e["suggested"], e["ocr"] = list(en["suggested"]), en.get("ocr")
+                    continue
+                e = {k: en.get(k) for k in ("video_id", "url", "title", "scheduled_start", "kind", "ocr", "source")}
+                e.update(suggested=list(en.get("suggested") or []), first_seen=now_iso, last_seen=now_iso,
+                         sources=[src] if src else [])
+                items.append(e)
+                by[vid] = e
+                added.append(vid)
+        elif op == "remove":
+            gone = set(video_ids or [])
+            removed = [e["video_id"] for e in items if e.get("video_id") in gone]
+            items = [e for e in items if e.get("video_id") not in gone]
+        else:
+            raise ValueError(f"group_pending op: {op}")
+        if items == before:
+            return {"added": added, "removed": removed}
+        try:
+            gh.write_json(_GROUP_PENDING_PATH, {"items": items}, prev_sha=sha,
+                          message=f"ops: 그룹 영상 확인 대기 {op} {now_iso}")
+            return {"added": added, "removed": removed}
+        except ConflictError:
+            continue
+    raise RuntimeError("group_pending 쓰기 충돌이 계속됨")
+
+
+def _record_group_pending(gh, entries: list[dict], now_iso: str) -> list[str]:
+    """확인 대기에 적고(적용 큐), 새로 들어간 영상만 DM 으로 알린다. 새로 들어간 video_id 목록."""
+    if not entries:
+        return []
+    try:
+        added = writeclient.call_write("group_pending", gh=gh, op="add", now_iso=now_iso, entries=entries,
+                                       label="그룹 영상 확인 대기").get("added") or []
+    except Exception:  # noqa: BLE001
+        log.exception("그룹 영상 확인 대기 기록 실패")
+        return []
+    new = [e for e in entries if e.get("video_id") in added]
+    if new:
+        lines = []
+        for e in new:
+            when = _kst_label(e.get("scheduled_start"))
+            lines.append(f"· {html.escape(when)} {html.escape((e.get('title') or '(제목 없음)')[:60])}\n  {html.escape(e.get('url') or '')}")
+        # 관리자가 멤버를 골라야 하는 알림이라 알림 레벨과 무관하게 보낸다(자동 알림 게이트 `_auto_dm` 을 쓰지 않음)
+        _send_telegram("🛸 <b>그룹 영상 — 참여 멤버 확인 대기</b>\n" + "\n".join(lines) +
+                 "\n\n글에 멤버 이름 · 인원 표현(全員 등)이 없고 이미지에서도 읽지 못해 예고에 올리지 않았습니다. "
+                       "관리 페이지 예고 탭에서 참여 멤버를 고르세요. 같은 영상을 담은 공식 글에 근거가 나오면 자동으로 확정됩니다.",
+                       silent=False)
+    for e in entries:
+        _log_event_safe(gh, now_iso, "relay", RESULT_OK, who=e.get("source") or "group",
+                        detail=f"group-video pending {e.get('video_id')} · {e.get('kind') or ''} · OCR {e.get('ocr') or '-'}",
+                        via="ingest")
+    return added
+
+
+def _resolve_group_videos(gh, raw: str, rows: list[dict], now_iso: str, *, media: list | None,
+                          tweet_url: str | None) -> tuple[list[dict], list[dict], list[str], list[dict]]:
+    """(v4a) 공식 X 글의 그룹 영상 처리. 반환 (행 목록, 새 확인 대기 항목, 이번에 확정된 대기 video_id).
+
+    ① 이 글이 그룹 명의 방송 글인데 참여 멤버 근거가 없으면(`xrelay.parse_pending`) 첨부 이미지 OCR → 읽히면 그 멤버로 행을 만들고,
+       안 읽히면 확인 대기 항목으로 돌려준다(이미 예고에 있는 영상은 건드리지 않는다 — 재공지).
+    ② 이 글이 확인 대기 중인 영상의 URL 을 담고 있고 근거(이름 · 인원 표현 · OCR)가 있으면 그 멤버로 행을 만든다(같은 영상 URL 근거)."""
+    if xrelay is None:
+        return rows, [], []
+    try:
+        pv, _ = gh.read_json(_PREVIEW_PATH)
+    except Exception:  # noqa: BLE001
+        pv = None
+    registered = {i.get("video_id") for i in (pv or {}).get("items") or [] if i.get("video_id")}
+    have = {r.get("video_id") for r in rows if r.get("video_id")}
+    pending = _group_pending_items(gh)
+    ocr: dict = {}
+
+    def ocr_members() -> list[str]:
+        if "m" not in ocr:
+            ocr["m"], ocr["state"] = _ocr_cast_keys(media)
+        return ocr["m"]
+
+    out, new_pending, resolved, ocr_rows = list(rows), [], [], []
+    for c in xrelay.parse_pending(raw, now_iso):
+        vid = c.get("video_id")
+        if not vid or vid in registered or vid in have:
+            continue
+        members = ocr_members()
+        if members:
+            out.append(xrelay.group_row(c, members, now_iso))
+            ocr_rows.append(dict(c, suggested=members))
+            have.add(vid)
+            if vid in pending:
+                resolved.append(vid)
+            continue
+        new_pending.append(dict(c, suggested=[], ocr=ocr.get("state"), tweet_url=tweet_url, source="group"))
+    ev, _basis = xrelay.members_evidence(raw)
+    for m in xrelay.YT_VIDEO_RE.finditer(xrelay.normalize(raw)):
+        vid = m.group(1)
+        if vid not in pending or vid in have or vid in registered:
+            continue
+        members = ev or ocr_members()
+        if members:
+            out.append(xrelay.group_row(pending[vid], members, now_iso))
+            if not ev:
+                ocr_rows.append(dict(pending[vid], suggested=members))
+            have.add(vid)
+            resolved.append(vid)
+    new_pending = [e for e in new_pending if e["video_id"] not in have]
+    return out, new_pending, resolved, ocr_rows
 
 
 def _maybe_tag_cast_participants(parsed: dict, tag: str | None) -> None:
@@ -5166,6 +5647,21 @@ if _FLASK_AVAILABLE:
             drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
             failed = xrelay.unparsed_lines(raw)
 
+            # (v4a) 그룹 영상 — 근거(이미지 OCR · 같은 영상 URL) 로 행을 더하거나, 근거가 없으면 확인 대기로 적는다.
+            # 대기는 따로 적을 뿐 아래 흐름(같은 글의 다른 행 반영 · 응답)을 멈추지 않는다.
+            _grp_resolved, _grp_added, _grp_new, _grp_ocr = [], [], [], []
+            if _is_group_author(_vx_ex, title):
+                try:
+                    rows, _grp_new, _grp_resolved, _grp_ocr = _resolve_group_videos(
+                        gh, raw, rows, now_iso, media=(_vx_ex or {}).get("media") or [], tweet_url=tweet_url)
+                    _grp_added = _record_group_pending(gh, _grp_new, now_iso)
+                except Exception:  # noqa: BLE001
+                    log.exception("그룹 영상 근거 처리 실패 — 이 글의 나머지 반영은 계속")
+
+            if not rows and _grp_new:
+                # 확인 대기로 적었다(새 항목이면 DM 도 보냄) — "형식 아님 — 무시" 안내는 생략
+                return jsonify({"ok": True, "parsed": 0, "group_pending": [e["video_id"] for e in _grp_new]}), 200
+
             if not rows:
                 # 소식 자동 인입은 라우트 상단 _maybe_auto_notice 에서 이미 처리됨(ECHO 무관).
                 if failed:
@@ -5191,6 +5687,9 @@ if _FLASK_AVAILABLE:
             # (v4a D19) 스케줄 관련 원문 보존 — 파싱 결과만 남던 공식 스케줄 트윗 원문
             _preserve_raw("official_schedule", raw, {"title": title, "tweet_url": tweet_url,
                                                      "rows": len(rows)}, now_iso)
+            if _grp_resolved:
+                _preserve_raw("group_video_evidence", raw, {"title": title, "tweet_url": tweet_url,
+                                                            "resolved": _grp_resolved}, now_iso)
             # (v4a D13) 영상 URL 이 있는 행은 지금 videos.list 로 확인해 upcoming 으로 등록
             rows, _confirmed_vids = _confirm_rows_with_videos(rows, now_iso)
 
@@ -5201,6 +5700,18 @@ if _FLASK_AVAILABLE:
             ).get("changed")
             for _vid in _confirmed_vids:   # 등록 즉시 확인 — reconcile(영상) 적재 (원칙 ③)
                 _enqueue_wake_now(_vid, now_iso)
+            for _o in (_grp_ocr if changed else []):   # 이미지 OCR 판정으로 올린 그룹 영상 — LLM 판단 기록(되돌리기 = 확인 대기로)
+                _llm_record(gh, "ocr_members", "group",
+                            f"이미지 OCR 로 참여 멤버 판정 — {','.join(_o['suggested'])} · {(_o.get('title') or '')[:30]}",
+                            undo={"type": "remove_items", "items": [{"video_id": _o["video_id"]}], "to_pending": [dict(
+                                {k: _o.get(k) for k in ("video_id", "url", "title", "scheduled_start", "kind")},
+                                ocr="ok", suggested=_o["suggested"], source="group", tweet_url=tweet_url)]}, now_iso=now_iso)
+            if _grp_resolved:              # 확인 대기 → 근거로 확정됨: 대기에서 뺀다
+                try:
+                    writeclient.call_write("group_pending", gh=gh, op="remove", now_iso=now_iso,
+                                           video_ids=_grp_resolved, label="그룹 영상 확인 대기 해제")
+                except Exception:  # noqa: BLE001
+                    log.exception("그룹 영상 확인 대기 해제 실패")
 
             summary = xrelay.summary_text(rows, channels_cfg)
             if tweet_url:
@@ -5924,11 +6435,15 @@ if __name__ == "__main__":
         import src.backend.llm as _llm_mod5
 
         class _FakeChangeLLM:
+            # (v4a) 판정은 broadcast_change_targets — 후보 중 영향받는 id 를 고른다. del/edit 면 후보 전부를 고른 것으로 흉내
             _RESULT = None
             def __init__(self, api_key):
                 pass
-            def broadcast_change(self, text):
-                return self._RESULT
+            def broadcast_change_targets(self, text, cands, now_label):
+                r = dict(self._RESULT)
+                r.setdefault("target_ids", [c["id"] for c in cands] if r["action"] != "none" else [])
+                r.setdefault("reason", "self-test")
+                return r
 
         _orig_llm_cls5 = _llm_mod5.LLMClient
         _orig_env5 = dict(os.environ)
@@ -5944,9 +6459,10 @@ if __name__ == "__main__":
                                     "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
             pv_bc1 = (gbc1.store.get(_PREVIEW_PATH) or {}).get("items") or []
             assert not pv_bc1, pv_bc1
+            # (v4a) 취소 = `/del` terminate 와 동일 — 아카이브에 남기지 않고 지운다(영상 URL 이 있으면 12h 재등록 차단)
             arch_bc1 = (gbc1.store.get(_PREVIEW_ARCHIVE_PATH) or {}).get("items") or []
-            assert any(a.get("id") == "pv_nonoka1" for a in arch_bc1), arch_bc1
-            print("[OK] _maybe_broadcast_change (LLM del → 기존 예고 즉시 제거+아카이브)")
+            assert not any(a.get("id") == "pv_nonoka1" for a in arch_bc1), arch_bc1
+            print("[OK] _maybe_broadcast_change (LLM del → /del terminate 와 동일하게 즉시 제거)")
 
             # edit → scheduled_start 갱신, 항목은 유지
             _FakeChangeLLM._RESULT = {"action": "edit", "when": "09/23 23:00"}
@@ -5993,7 +6509,7 @@ if __name__ == "__main__":
                                     "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
             assert gbc6.store[_PREVIEW_PATH]["items"] == [_NONOKA_ITEM]
             _ev_bc6 = next((v for k, v in gbc6.store.items() if k.startswith("monitoring/events-")), "")
-            assert '"result": "degraded"' in _ev_bc6 and "GROQ_API_KEY" in _ev_bc6, _ev_bc6
+            assert '"result": "degraded"' in _ev_bc6 and "GROQ" in _ev_bc6, _ev_bc6
             print("[OK] _maybe_broadcast_change (GROQ_API_KEY 없음 → 미반영, degraded 로그)")
         finally:
             _llm_mod5.LLMClient = _orig_llm_cls5

@@ -246,6 +246,19 @@ def annotate(*, fid: str | None = None, **kv) -> None:
             _save()
 
 
+def add_llm(info: dict, *, fid: str | None = None) -> None:
+    """(v4a) 흐름에 LLM 판단 1건을 붙인다 — 작업 탭 「LLM 판단」 필터 · 되돌리기. info = {"id","kind","summary","undo"}."""
+    fid = fid or current.get()
+    if not fid or not enabled():
+        return
+    with _lock:
+        _load()
+        f = _flows.get(fid)
+        if f:
+            f.setdefault("llm", []).append(info)
+            _save()
+
+
 def is_open(fid: str | None = None) -> bool:
     f = get(fid or current.get())
     return bool(f) and f["status"] in ("run", "wait")
