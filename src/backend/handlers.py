@@ -289,7 +289,11 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     if woken_video_id:
         candidates.add(woken_video_id)
     if not is_wake:
-        rss_map = fetch_all_rss_video_ids(id_by_key)
+        # (v4a) RSS 는 **개인 유닛 채널만** — 그룹 공식 채널(@BDP_yumemita)을 돌리면 5th 싱글 뮤비 같은 노래 영상이 5인 합동
+        # 방송으로 팬아웃돼 올라왔다(2026-09-30). 그룹 채널 영상은 트윗·수동 입력(참여 멤버 선택)으로만 올린다.
+        # id_by_key 자체는 그대로 둔다 — 이미 추적 중인 영상의 enrich(videos.list)·아바타는 그룹 채널도 필요.
+        rss_ids = {k: v for k, v in id_by_key.items() if not (channels_cfg["channels"].get(k) or {}).get("is_group")}
+        rss_map = fetch_all_rss_video_ids(rss_ids)
         for ids in rss_map.values():
             candidates.update(ids)
 

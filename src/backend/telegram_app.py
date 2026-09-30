@@ -3817,6 +3817,34 @@ def _make_vision_client():
         return None
 
 
+def _ocr_cast_keys(media: list[str] | None, limit: int = 4) -> tuple[list[str], str]:
+    """(v4a) 트윗 첨부 이미지를 비전 OCR 로 읽어 참여 멤버(5인 key)를 제안한다(관리 페이지 참여 멤버 선택 팝업용).
+    출연진 패널이 아닌 이미지는 건너뛰고 앞에서 `limit` 장까지 본다. 반환 (keys, 상태) — 상태:
+    ok(멤버 판독) · none(이미지는 있으나 판독 실패/매칭 없음) · no_image · unavailable(키·모델 없음)."""
+    if not media:
+        return [], "no_image"
+    vc = _make_vision_client()
+    if vc is None or xrelay is None:
+        return [], "unavailable"
+    for url in list(media)[:limit]:
+        try:
+            names = vc.cast_names(image_url=url)
+        except Exception:  # noqa: BLE001
+            log.warning("cast OCR 실패 (%s)", url, exc_info=True)
+            continue
+        if not names:
+            continue
+        matched: list[str] = []
+        for name in names:
+            for token, key in xrelay.NAME_TO_KEY:
+                if token in name and key not in matched:
+                    matched.append(key)
+        if matched:
+            log.info("cast OCR(관리 페이지): %s → %s", names, matched)
+            return matched, "ok"
+    return [], "none"
+
+
 def _maybe_tag_cast_participants(parsed: dict, tag: str | None) -> None:
     """(v3.2) 크로스오버 공식 계정 소식이면 첨부 이미지를 비전 OCR 로 읽어
     5인 중 누가 출연하는지 `parsed["participants"]` 에 채운다 (제자리 수정).
@@ -4033,6 +4061,40 @@ def _tweet_del_commit(gh, unit: str, now_iso: str, tweet_id: str | None = None) 
     _save_undo(gh, action=f"/del tweet {unit}", prev_content=prev, new_sha=nsha,
                now_iso=now_iso, path=_TWEETS_PATH)
     return {"found": True}
+
+
+def _tweet_edit_commit(gh, unit: str, tweet_id: str, text_ko: str, now_iso: str) -> dict:
+    """(v4a) 관리 페이지 트윗 수정 — 그 트윗의 한글 번역만 바꾼다(원문 · X 카드는 그대로). needs_tl 을 내려 자동 번역이
+    다시 덮지 않게 하고 undo 스냅샷을 남긴다. 반환 {"found": bool, "changed": bool}."""
+    for attempt in (1, 2):
+        prev, sha = gh.read_json(_TWEETS_PATH)
+        prev = prev or {}
+        tw = dict(prev.get("tweets", {}) or {})
+        cur = tw.get(unit)
+        lst = [dict(m) for m in (cur if isinstance(cur, list) else [cur]) if m]
+        i = next((k for k, m in enumerate(lst) if str(m.get("id")) == str(tweet_id)), None)
+        if i is None:
+            return {"found": False, "changed": False}
+        if lst[i].get("text_ko") == text_ko and not lst[i].get("needs_tl"):
+            return {"found": True, "changed": False}
+        lst[i]["text_ko"] = text_ko
+        lst[i].pop("needs_tl", None)
+        tw[unit] = lst
+        new = dict(prev)
+        new["tweets"] = tw
+        new["generated_at"] = now_iso
+        try:
+            _, nsha = gh.write_json(_TWEETS_PATH, new, prev_sha=sha,
+                                    message=f"data: admin 트윗 번역 수정 {unit} {now_iso}")
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("트윗 수정: tweets.json 충돌 — 재시도")
+            continue
+        _save_undo(gh, action=f"admin 트윗 수정 {unit}", prev_content=prev, new_sha=nsha,
+                   now_iso=now_iso, path=_TWEETS_PATH)
+        return {"found": True, "changed": True}
+    return {"found": False, "changed": False}
 
 
 def _handle_tweet_del(gh, channels_cfg: dict, now_iso: str, unit: str) -> None:

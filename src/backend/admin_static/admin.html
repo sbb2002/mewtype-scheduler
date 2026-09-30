@@ -401,7 +401,9 @@
             gap: 0.5rem;
             margin-top: 0.35rem;
         }
-        .title-row input { flex: 1; min-width: 0; }
+        .title-row input, .title-row textarea { flex: 1; min-width: 0; }
+        .title-row.top { align-items: flex-start; }
+        .title-row textarea[readonly] { color: var(--color-text-muted); }
         .title-tag {
             flex: 0 0 2.5rem;
             font-size: 0.8rem;
@@ -743,6 +745,16 @@
         .chg-row input { width: 16px; height: 16px; accent-color: var(--color-accent); flex: none; margin-top: 0.15rem; }
         .chg-row:has(input:checked) { border-color: #ff6b6b; }
         .chg-row .w { color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        #pick-body { display: grid; gap: 0.75rem; }
+        #pick-body .pick-video { font-weight: 600; overflow-wrap: anywhere; }
+        #pick-body .pick-help { font-size: 0.82rem; color: var(--color-text-muted); }
+        #pick-body .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        #pick-body .chip {
+            background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);
+            border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.84rem; font-weight: 400;
+        }
+        #pick-body .chip:hover { opacity: 1; border-color: var(--color-accent); }
+        #pick-body .chip[aria-pressed="true"] { border-color: var(--color-accent); background: rgba(6, 182, 212, 0.14); color: var(--color-accent); }
 </style>
 </head>
 <body>
@@ -789,15 +801,10 @@
 
                 <!-- 자동 -->
                 <div class="ing-fields" id="f-auto">
-                    <div id="a-host-box">
-                        <span class="ing-lbl">호스트</span>
-                        <div class="chips" id="a-host" role="radiogroup" aria-label="호스트"></div>
-                        <div class="ing-help">공식 계정(@BDP_yumemita) 스케줄 트윗이면 '공식 스케줄'을 두고, 멤버 개인 트윗의 예고면 그 멤버를 고르세요.</div>
-                    </div>
-                    <div id="a-tweet-box" hidden>
-                        <label for="a-turl">트윗 URL</label>
+                    <div id="a-tweet-box">
+                        <label for="a-turl" id="a-turl-label">트윗 URL</label>
                         <input type="text" id="a-turl" placeholder="https://x.com/…/status/…" autocomplete="off">
-                        <div class="ing-help">URL 만 넣으면 됩니다. 작성자(호스트)는 트윗에서 자동으로 판별하고, X 카드와 한글 번역도 자동으로 만듭니다.</div>
+                        <div class="ing-help" id="a-turl-hint"></div>
                     </div>
                     <div id="a-raw-box">
                         <label for="a-raw">원문</label>
@@ -892,6 +899,11 @@
                         <div class="ing-help">직접 쓴 번역은 자동 번역이 덮어쓰지 않습니다.</div>
                     </div>
                 </div>
+
+                <label class="ing-toggle" id="ing-both-box" hidden>
+                    <input type="checkbox" id="ing-both">
+                    <span>내용 감지를 통한 트윗과 예고를 같이 추가<small>이 트윗의 내용에서 방송 예고도 찾아, 트윗과 예고를 한 번에 올립니다. 예고로 인식되지 않으면 트윗만 추가됩니다.</small></span>
+                </label>
 
                 <label class="ing-toggle" id="ing-detect-box" hidden>
                     <input type="checkbox" id="ing-detect">
@@ -1010,6 +1022,21 @@
                 style="width: 100%; height: 80vh; border: 1px solid #333; border-radius: 6px; background: #0f0f0f;"></iframe>
     </div>
 
+    <!-- ════ 참여 멤버 선택 팝업 (그룹 공식 채널 YouTube 영상 URL) ════ -->
+    <div class="modal" id="pick-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>참여 멤버 선택</h3>
+                <button onclick="app.closePick()">&times;</button>
+            </div>
+            <div id="pick-body"></div>
+            <div class="modal-actions">
+                <button onclick="app.closePick()">취소</button>
+                <button onclick="app.confirmPick()" style="background-color: #51cf66;">확인</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ════ 모달 ════ -->
     <div class="modal" id="edit-modal">
         <div class="modal-content">
@@ -1042,7 +1069,7 @@
             },
             editState: null,
             ingestPreviewData: null,
-            ing: { mode: "auto", kind: "preview", autoHost: "", host: "arale", collab: new Set(), thost: "arale" },
+            ing: { mode: "auto", kind: "preview", host: "arale", collab: new Set(), thost: "arale" },
             channels: {},
 
             async init() {
@@ -1573,6 +1600,7 @@
             async submitEdit() {
                 if (this.editState.type === "preview") return this.submitPreviewEdit();
                 if (this.editState.type === "notice") return this.submitNoticeEdit();
+                if (this.editState.type === "tweet") return this.submitTweetEdit();
             },
 
             // "2026-09-29T14:15:00Z"(UTC) → "2026-09-29T23:15"(KST, datetime-local 값). 브라우저 시간대와 무관
@@ -1741,9 +1769,13 @@
 
             // 「내용 감지를 통한 예고 수정」은 글(호스트가 정해진)이 있을 때만: 자동·예고(호스트 선택 시) · 자동·트윗 · 수동·트윗
             detectAvailable() {
-                const { mode, kind, autoHost } = this.ing;
-                return (mode === "auto" && ((kind === "preview" && !!autoHost) || kind === "tweet")) ||
-                       (mode === "manual" && kind === "tweet");
+                const { mode, kind } = this.ing;
+                return (mode === "auto" && (kind === "preview" || kind === "tweet")) || (mode === "manual" && kind === "tweet");
+            },
+
+            // 「트윗과 예고를 같이 추가」는 자동 · 트윗에서만(트윗 URL 하나로 두 가지를 동시에 올린다)
+            bothAvailable() {
+                return this.ing.mode === "auto" && this.ing.kind === "tweet";
             },
 
             syncDetectBox() {
@@ -1751,13 +1783,14 @@
                 const ok = this.detectAvailable();
                 box.hidden = !ok;
                 if (!ok) document.getElementById("ing-detect").checked = false;
+                const both = this.bothAvailable();
+                document.getElementById("ing-both-box").hidden = !both;
+                if (!both) document.getElementById("ing-both").checked = false;
             },
 
             drawIngestChips() {
                 const s = this.ing;
                 const redraw = () => { this.drawIngestChips(); this.syncDetectBox(); this.resetIngestPreview(); };
-                this.drawChips(document.getElementById("a-host"), (k) => s.autoHost === k,
-                    (k) => { s.autoHost = k; redraw(); }, { main: true, none: "공식 스케줄 (호스트 없음)" });
                 this.drawChips(document.getElementById("m-host"), (k) => s.host === k,
                     (k) => { s.host = k; s.collab.delete(k); redraw(); }, { main: true });
                 this.drawChips(document.getElementById("m-collab"), (k) => s.collab.has(k),
@@ -1774,9 +1807,14 @@
                 document.querySelectorAll("#ingest-seg .seg-btn").forEach((b) =>
                     b.setAttribute("aria-checked", String(b.dataset.kind === kind)));
                 document.getElementById("f-auto").hidden = mode !== "auto";
-                document.getElementById("a-host-box").hidden = kind !== "preview";
-                document.getElementById("a-tweet-box").hidden = kind !== "tweet";
-                document.getElementById("a-raw-box").hidden = kind === "tweet";
+                // 자동: 예고 · 트윗 = URL 한 칸(작성자·내용은 자동 판별), 소식 = 원문
+                document.getElementById("a-tweet-box").hidden = kind === "notice";
+                document.getElementById("a-raw-box").hidden = kind !== "notice";
+                document.getElementById("a-turl-label").textContent =
+                    kind === "preview" ? "트윗 URL 또는 YouTube 영상 URL" : "트윗 URL";
+                document.getElementById("a-turl-hint").textContent = kind === "preview"
+                    ? "트윗 URL: 작성자(호스트)와 본문의 시각 · 회원 전용 · 합동을 자동으로 파악합니다(공식 스케줄 트윗도 그대로). YouTube 영상 URL: 멤버 · 그룹 채널 영상이면 예정 · 라이브 등 실제 상태로 바로 올립니다."
+                    : "URL 만 넣으면 됩니다. 작성자(호스트)는 트윗에서 자동으로 판별하고, X 카드와 한글 번역도 자동으로 만듭니다.";
                 for (const k of ["preview", "notice", "tweet"]) {
                     document.getElementById("f-m-" + k).hidden = !(mode === "manual" && kind === k);
                 }
@@ -1787,6 +1825,7 @@
 
             resetIngestPreview() {
                 this.ingestPreviewData = null;
+                this.ing.picked = null;                    // 입력이 바뀌면 고른 참여 멤버도 무효
                 document.getElementById("ingest-preview").style.display = "none";
                 document.getElementById("ingest-force").hidden = true;
                 document.getElementById("ingest-empty").style.display = "";
@@ -1835,6 +1874,60 @@
                 document.getElementById("ingest-force").hidden = false;
             },
 
+            // 그룹 공식 채널 영상 — 5인 합동으로 자동 등록하지 않고 참여 멤버를 고르게 한다(수동 · 예고의 합동 멤버와 같은 칩)
+            showMemberPicker(video, info = {}) {
+                // 트윗 이미지를 OCR 로 읽어 온 참여 멤버(info.suggested)는 미리 선택해 둔다 — 맞으면 확인, 틀리면 칩으로 수정
+                const suggested = new Set(info.suggested || []);
+                this.pickSel = new Set(suggested);
+                const body = document.getElementById("pick-body");
+                body.textContent = "";
+                const t = document.createElement("div");
+                t.className = "pick-video";
+                t.textContent = [video.scheduled_start ? this.formatTime(video.scheduled_start) : "", video.title || ""]
+                    .filter(Boolean).join(" · ") || "그룹 공식 채널 영상";
+                body.appendChild(t);
+                const help = document.createElement("div");
+                help.className = "pick-help";
+                const OCR = {
+                    ok: "트윗 이미지에서 읽은 참여 멤버가 미리 선택돼 있습니다. 맞으면 확인, 틀리면 칩을 눌러 바꾸세요.",
+                    none: "트윗 이미지에서 참여 멤버를 읽지 못했습니다. 직접 고르세요.",
+                    unavailable: "이미지 판독을 쓸 수 없어(키·모델 없음) 직접 고르셔야 합니다.",
+                };
+                help.textContent = (OCR[info.ocr] || "그룹 공식 채널 영상은 5인 합동으로 자동 등록하지 않습니다. 이 방송에 참여하는 멤버를 고르세요") +
+                    " (1명이면 그 멤버의 일반 예고, 2명 이상이면 합동)";
+                body.appendChild(help);
+                const chips = document.createElement("div");
+                chips.className = "chips";
+                for (const [k, n] of this.ingestMembers()) {
+                    const b = document.createElement("button");
+                    b.type = "button";
+                    b.className = "chip";
+                    b.textContent = n;
+                    b.setAttribute("aria-pressed", String(suggested.has(k)));
+                    b.addEventListener("click", () => {
+                        this.pickSel.has(k) ? this.pickSel.delete(k) : this.pickSel.add(k);
+                        b.setAttribute("aria-pressed", String(this.pickSel.has(k)));
+                    });
+                    chips.appendChild(b);
+                }
+                body.appendChild(chips);
+                document.getElementById("pick-modal").classList.add("active");
+            },
+
+            closePick() {
+                document.getElementById("pick-modal").classList.remove("active");
+            },
+
+            confirmPick() {
+                if (!this.pickSel || !this.pickSel.size) {
+                    this.showToast("참여 멤버를 한 명 이상 고르세요", "error");
+                    return;
+                }
+                this.ing.picked = [...this.pickSel];
+                this.closePick();
+                this.previewIngest();
+            },
+
             cancelForce() {
                 this.resetIngestPreview();
             },
@@ -1848,21 +1941,26 @@
                 if (req && this.detectAvailable() && document.getElementById("ing-detect").checked) {
                     req.body.detect_change = true;
                 }
+                if (req && this.bothAvailable() && document.getElementById("ing-both").checked) {
+                    req.body.with_preview = true;
+                }
                 return req;
             },
 
             // 현재 세부 탭 · 종류에 맞는 요청 = {endpoint, body}. 입력 누락은 null(토스트 후 중단)
             buildIngestRequestBase(forceUnit) {
-                const { mode, kind, host, collab, thost, autoHost } = this.ing;
+                const { mode, kind, host, collab, thost } = this.ing;
                 const v = (id) => document.getElementById(id).value;
                 const need = (cond, msg) => { if (!cond) this.showToast(msg, "error"); return cond; };
 
                 if (mode === "auto") {
                     if (kind === "preview") {
-                        if (!need(v("a-raw").trim(), "원문을 입력하세요")) return null;
-                        const body = { raw: v("a-raw"), confirm: false };
-                        if (autoHost) body.channel_key = autoHost;
-                        return { endpoint: "/ingest_preview_raw", body };
+                        // 예고 = URL 하나. 트윗이면 작성자 · 본문에서, 영상이면 API 에서 호스트 · 시각 · 상태를 파악한다
+                        if (!need(v("a-turl").trim(), "트윗 URL 또는 YouTube 영상 URL 을 입력하세요")) return null;
+                        const body = { url: v("a-turl").trim(), confirm: false };
+                        if (forceUnit) body.force_unit = forceUnit;
+                        if (this.ing.picked) body.members = this.ing.picked;   // 그룹 공식 채널 영상의 참여 멤버(팝업에서 고름)
+                        return { endpoint: "/ingest_preview_url", body };
                     }
                     if (kind === "notice") {
                         if (!need(v("a-raw").trim(), "원문을 입력하세요")) return null;
@@ -1872,6 +1970,7 @@
                     if (!need(v("a-turl").trim(), "트윗 URL 을 입력하세요")) return null;
                     const body = { url: v("a-turl").trim(), confirm: false };
                     if (forceUnit) body.force_unit = forceUnit;
+                    if (this.ing.picked) body.members = this.ing.picked;   // 트윗 안 그룹 영상의 참여 멤버(팝업에서 고름)
                     return { endpoint: "/ingest_tweet_url", body };
                 }
 
@@ -1909,6 +2008,10 @@
                     const result = await this.apiCall("POST", endpoint, body);
                     if (!result.ok && result.confirm_needed) {
                         this.showForceConfirm(result);
+                        return;
+                    }
+                    if (result.ok && result.choose_members) {
+                        this.showMemberPicker(result.video || {}, result);
                         return;
                     }
                     if (!result.ok) {
@@ -2013,6 +2116,7 @@
                     if (pv && pv.forced) line("작성자", `@${pv.author} (유메미타 멤버 아님 — 선택한 호스트로 표시)`);
                 }
 
+                if (result.schedule) this.renderScheduleSection(box, result.schedule);
                 if (result.change) this.renderChange(box, result.change);
 
                 const det = document.createElement("details");
@@ -2024,6 +2128,50 @@
                 pre.style.whiteSpace = "pre-wrap";
                 det.appendChild(pre);
                 box.appendChild(det);
+            },
+
+            // 「트윗과 예고를 같이 추가」 — 같은 트윗에서 찾은 예고(없으면 사유)
+            renderScheduleSection(box, sch) {
+                const wrap = document.createElement("div");
+                wrap.className = "pv-change";
+                const h = document.createElement("div");
+                h.className = "pv-head";
+                h.textContent = "예고 함께 추가";
+                wrap.appendChild(h);
+                const nameOf = (k) => (this.channels[k] || {}).name_ko || k || "?";
+                if (!sch.ok) {
+                    const d = document.createElement("div");
+                    d.className = "chg-info";
+                    d.textContent = `예고로는 인식되지 않아 트윗만 추가됩니다 — ${sch.error || ""}`;
+                    wrap.appendChild(d);
+                } else {
+                    const rows = (Array.isArray(sch.preview) ? sch.preview : [sch.preview]).filter(Boolean);
+                    for (const r of rows) {
+                        const card = document.createElement("div");
+                        card.className = "pv-card";
+                        const collab = r.collab_with || [];
+                        const t = document.createElement("div");
+                        t.className = "list-item-title";
+                        t.textContent = [r.channel_key, ...collab].map(nameOf).join("·") + (collab.length ? " (합동)" : "") +
+                            (r.membership ? " · 회원 전용" : "");
+                        card.appendChild(t);
+                        const m = document.createElement("div");
+                        m.className = "list-item-meta";
+                        const when = r.scheduled_start
+                            ? (r.time_tbd ? this.formatTime(r.scheduled_start).slice(0, 5) + " (시각 미정)" : this.formatTime(r.scheduled_start))
+                            : "시각 없음";
+                        m.textContent = [when, r.title_ko || "", r.title || ""].filter(Boolean).join(" · ");
+                        card.appendChild(m);
+                        wrap.appendChild(card);
+                    }
+                    if (sch.note) {
+                        const d = document.createElement("div");
+                        d.className = "chg-info";
+                        d.textContent = sch.note;
+                        wrap.appendChild(d);
+                    }
+                }
+                box.appendChild(wrap);
             },
 
             // 「내용 감지를 통한 예고 수정」 결과 — 후보 방송 체크 목록(LLM 이 고른 것이 미리 체크). 확정 시 체크된 것만 적용
@@ -2101,6 +2249,10 @@
                             ? `반영했습니다 — 예고 ${ap.length}건 ${result.change.action === "del" ? "삭제" : "변경"} · ${where} 탭에서 확인하세요`
                             : `반영했습니다 — ${where} 탭에서 확인하세요`);
                         if (er.length) this.showToast(`일부 실패: ${er.join(" / ")}`, "error");
+                        if (result.schedule) {
+                            this.showToast(result.schedule.ok ? "예고도 함께 추가했습니다"
+                                : `예고는 추가되지 않았습니다 — ${result.schedule.error || ""}`, result.schedule.ok ? undefined : "error");
+                        }
                         // 입력 비우기(호스트 · 날짜 · 분류는 다음 입력을 위해 유지)
                         for (const id of ["a-raw", "a-turl", "m-title", "m-title-ko", "m-url", "n-title", "n-title-ko",
                                           "n-url", "t-url", "t-text", "t-text-ko"]) {
@@ -2108,6 +2260,7 @@
                         }
                         document.getElementById("a-count").textContent = "0자";
                         document.getElementById("ing-detect").checked = false;
+                        document.getElementById("ing-both").checked = false;
                         this.resetIngestPreview();
                     } else {
                         this.showToast(result.error || "투입 실패", "error");
@@ -2179,11 +2332,6 @@
                     delBtn.onclick = () => this.deleteNotice(notice);
                     actions.appendChild(delBtn);
 
-                    const tlBtn = document.createElement("button");
-                    tlBtn.textContent = "번역";
-                    tlBtn.onclick = () => this.translate("notice", notice.id);
-                    actions.appendChild(tlBtn);
-
                     div.appendChild(title);
                     div.appendChild(meta);
                     div.appendChild(actions);
@@ -2234,16 +2382,16 @@
                         const actions = document.createElement("div");
                         actions.className = "list-item-actions";
 
+                        const editBtn = document.createElement("button");
+                        editBtn.textContent = "수정";
+                        editBtn.onclick = () => this.editTweet(unit, tweet);
+                        actions.appendChild(editBtn);
+
                         const delBtn = document.createElement("button");
                         delBtn.textContent = "삭제";
                         delBtn.className = "danger";
                         delBtn.onclick = () => this.deleteTweet(unit, tweet);
                         actions.appendChild(delBtn);
-
-                        const tlBtn = document.createElement("button");
-                        tlBtn.textContent = "번역";
-                        tlBtn.onclick = () => this.translate("tweet", `${unit}|${tweet.id}`);
-                        actions.appendChild(tlBtn);
 
                         div.appendChild(title);
                         div.appendChild(meta);
@@ -2300,6 +2448,119 @@
 
                 document.getElementById("edit-modal-title").textContent = "소식 편집";
                 document.getElementById("edit-modal").classList.add("active");
+            },
+
+            // (v4a) 트윗 수정 창 — 소식 수정 창과 같은 구조([원문 | 번역 버튼] / [한글]), 트윗은 한글 번역만 고친다:
+            // 원문은 읽기 전용(X 카드가 원문을 그대로 보여 준다). 한글은 비울 수 없다(비우면 팬 화면에 「번역 준비 중…」)
+            editTweet(unit, tweet) {
+                this.editState = { type: "tweet", unit, tweetId: String(tweet.id), seen: { text_ko: tweet.text_ko ?? "" } };
+                const form = document.getElementById("edit-modal-form");
+                form.textContent = "";
+
+                const group = document.createElement("div");
+                group.className = "form-group";
+                const label = document.createElement("label");
+                label.textContent = `번역 — ${(this.channels[unit] || {}).name_ko || unit} 트윗`;
+                group.appendChild(label);
+
+                const row1 = document.createElement("div");
+                row1.className = "title-row top";
+                const tag1 = document.createElement("span");
+                tag1.className = "title-tag";
+                tag1.textContent = "원문";
+                const orig = document.createElement("textarea");
+                orig.id = "edit-tweet-orig";
+                orig.rows = 4;
+                orig.readOnly = true;
+                orig.value = tweet.text || "";
+                const tlBtn = document.createElement("button");
+                tlBtn.type = "button";
+                tlBtn.className = "tl-btn";
+                const spin = document.createElement("span");
+                spin.className = "spinner";
+                const tlText = document.createElement("span");
+                tlText.textContent = "번역";
+                tlBtn.appendChild(spin);
+                tlBtn.appendChild(tlText);
+                row1.appendChild(tag1);
+                row1.appendChild(orig);
+                row1.appendChild(tlBtn);
+                group.appendChild(row1);
+
+                const row2 = document.createElement("div");
+                row2.className = "title-row top";
+                const tag2 = document.createElement("span");
+                tag2.className = "title-tag";
+                tag2.textContent = "한글";
+                const ko = document.createElement("textarea");
+                ko.id = "edit-tweet-ko";
+                ko.rows = 4;
+                ko.value = tweet.text_ko || "";
+                ko.placeholder = "번역을 입력하세요 (비울 수 없습니다)";
+                row2.appendChild(tag2);
+                row2.appendChild(ko);
+                group.appendChild(row2);
+
+                const help = document.createElement("div");
+                help.className = "list-item-sub";
+                help.textContent = "번역 버튼은 한글 칸만 채웁니다(저장은 아래 저장). 직접 고친 번역은 자동 번역이 덮어쓰지 않습니다.";
+                group.appendChild(help);
+                form.appendChild(group);
+
+                tlBtn.onclick = async () => {
+                    const text = orig.value.trim();
+                    if (!text) {
+                        this.showToast("번역할 원문이 없습니다", "error");
+                        return;
+                    }
+                    tlBtn.disabled = true;
+                    tlBtn.classList.add("loading");
+                    tlText.textContent = "번역 중";
+                    try {
+                        const r = await this.apiCall("POST", "/translate_text", { text });
+                        if (r.ok && r.result && r.result.title_ko) {
+                            ko.value = r.result.title_ko;
+                        } else {
+                            this.showToast(r.error || "번역 실패", "error");
+                        }
+                    } catch (e) {
+                        this.showToast(`번역 오류: ${e.message}`, "error");
+                    } finally {
+                        tlBtn.disabled = false;
+                        tlBtn.classList.remove("loading");
+                        tlText.textContent = "번역";
+                    }
+                };
+
+                document.getElementById("edit-modal-title").textContent = "트윗 편집";
+                document.getElementById("edit-modal").classList.add("active");
+            },
+
+            async submitTweetEdit() {
+                const text_ko = document.getElementById("edit-tweet-ko").value.trim();
+                if (!text_ko) {
+                    this.showToast("한글 번역을 비울 수 없습니다", "error");
+                    return;
+                }
+                if (text_ko === (this.editState.seen.text_ko || "")) {
+                    this.showToast("바뀐 것이 없습니다");
+                    this.closeModal();
+                    return;
+                }
+                try {
+                    const result = await this.apiCall("POST", "/edit_tweet", {
+                        unit: this.editState.unit, tweet_id: this.editState.tweetId, text_ko,
+                    });
+                    if (result.ok) {
+                        this.showToast("트윗 번역이 수정되었습니다");
+                        this.closeModal();
+                        this.loadNoticesAndTweets();
+                    } else {
+                        this.showToast(result.error || "수정 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
             },
 
             async submitNoticeEdit() {
@@ -2765,7 +3026,7 @@
                 box.textContent = "";
                 const LABEL = {
                     edit_preview: "예고 수정", delete_preview: "예고 삭제", ingest_preview: "원문 투입 · 예고",
-                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정",
+                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정", edit_tweet: "트윗 수정",
                     delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
                     retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
                     set_monitor_auto: "멤버 현황 DM",
