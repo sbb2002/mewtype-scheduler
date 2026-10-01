@@ -356,16 +356,17 @@
         .fedge span::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left-color: #3a3a3a; border-right: 0; }
         .fedge.lit span { background: var(--ok); }
         .fedge.lit span::after { border-left-color: var(--ok); }
-        /* (2026-10-01) LLM 판단 되돌리기 — 흐름도가 마지막 단계부터 판단한 단계까지 거꾸로 감긴다(보라 = LLM, 화살표 반대로) */
-        .fnode.rewound { opacity: .6; border-color: rgba(167, 139, 250, .7); border-style: dashed; background: rgba(167, 139, 250, .06); }
-        .fnode.rewound .ms { color: #c4b5fd; }
+        /* (2026-10-01) LLM 판단 되돌리기 — 흐름도가 마지막 단계부터 판단한 단계까지 거꾸로 감긴다(노랑 점선 · 화살표 반대로, 운영자 요청).
+           번쩍임(rewinding)은 감길 때 한 번만 — 끝나면 JS 가 클래스를 뗀다(flashOnce). 안 떼면 5초 갱신이 상세를 다시 붙일 때마다 재생됐다 */
+        .fnode.rewound { opacity: .6; border-color: rgba(245, 184, 61, .75); border-style: dashed; background: rgba(245, 184, 61, .06); }
+        .fnode.rewound .ms { color: #f7c766; }
         .fnode.rewinding { animation: rewind-pulse .45s ease-out; }
-        @keyframes rewind-pulse { 0% { background: rgba(167, 139, 250, .45); opacity: 1; transform: scale(1.04); } 100% { transform: scale(1); } }
+        @keyframes rewind-pulse { 0% { background: rgba(245, 184, 61, .4); opacity: 1; transform: scale(1.04); } 100% { transform: scale(1); } }
         .fnode.undo-at { opacity: 1; border-color: var(--ok); box-shadow: 0 0 0 2px rgba(62, 207, 142, .25); }
         .fnode.undo-at .ms { color: var(--ok); font-weight: 600; }
-        .fedge.rewound span { background: #a78bfa; }
-        .fedge.rewound span::after { right: auto; left: -1px; border: 5px solid transparent; border-right-color: #a78bfa; border-left: 0; }
-        .freason.undone { border-left-color: #a78bfa; background: rgba(167, 139, 250, .08); }
+        .fedge.rewound span { background: #f5b83d; }
+        .fedge.rewound span::after { right: auto; left: -1px; border: 5px solid transparent; border-right-color: #f5b83d; border-left: 0; }
+        .freason.undone { border-left-color: #f5b83d; background: rgba(245, 184, 61, .08); }
         @media (prefers-reduced-motion: reduce) { .fnode.rewinding { animation: none; } }
         .freason { border-left: 3px solid var(--ok); padding: 6px 12px; background: rgba(62, 207, 142, .06); font-size: 0.85rem; min-height: 1.5em; }
         .freason.fail { border-left-color: var(--fail); background: rgba(255, 93, 93, .06); }
@@ -3260,6 +3261,18 @@
                 this.flowTimers.push(setTimeout(done, step * upto));
             },
 
+            // 애니메이션 클래스를 한 번만 재생하고 뗀다. 붙여 둔 채면 5초 갱신이 상세를 목록에서 떼었다 다시 붙일 때마다
+            // 브라우저가 애니메이션을 처음부터 다시 재생해 주기적으로 번쩍였다(2026-10-01). animationend 가 안 오는 경우(재생 중
+            // 떼어짐 · 애니메이션 끔)를 위해 시간 제한으로도 뗀다
+            flashOnce(el, cls, ms) {
+                el.classList.remove(cls);
+                void el.offsetWidth;                          // 같은 클래스를 다시 붙여도 처음부터 재생되게
+                el.classList.add(cls);
+                const off = () => el.classList.remove(cls);
+                el.addEventListener("animationend", off, { once: true });
+                setTimeout(off, ms);
+            },
+
             // 이 흐름에서 되돌린 LLM 판단 목록
             flowUndone(f) {
                 return (f.llm || []).map((x) => (this.llmActions || {})[x.id]).filter((e) => e && e.undone);
@@ -3281,8 +3294,7 @@
                 const r = document.getElementById("fd-reason");
                 const back = (i, pulse) => {
                     const { n, ms } = nodes[i];
-                    n.classList.remove("rewinding");
-                    if (pulse) { void n.offsetWidth; n.classList.add("rewinding"); }
+                    if (pulse) this.flashOnce(n, "rewinding", 700);   // 감길 때 한 번만 번쩍
                     n.classList.add("rewound");
                     ms.textContent = "↩ 되돌림";
                     if (edges[i - 1]) edges[i - 1].classList.add("rewound");
@@ -3342,7 +3354,7 @@
                     st.className = "st";
                     if (e.undone) {
                         row.classList.add("undone");
-                        if (brief.id === justUndoneId) row.classList.add("just-undone");
+                        if (brief.id === justUndoneId) this.flashOnce(row, "just-undone", 2200);
                         // 버튼은 남겨 두고 「되돌려짐!」 비활성으로(한 번 되돌린 판단은 다시 되돌릴 수 없다) — 2026-10-01 운영자 요청
                         const b = document.createElement("button");
                         b.type = "button";
