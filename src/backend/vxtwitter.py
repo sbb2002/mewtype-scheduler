@@ -78,7 +78,9 @@ def _fx_to_vx(fx: dict) -> dict | None:
         return None
     urls, ext = _fx_media(t.get("media"))
     out: dict = {"text": t.get("text") or "", "mediaURLs": urls, "media_extended": ext,
-                 "tweetID": t.get("id")}
+                 "tweetID": t.get("id"),
+                 # (v3.8.11) 작성자 — 리트윗이면 원 글쓴이가 온다(개인 5인 리트윗 판정용)
+                 "user_screen_name": ((t.get("author") or {}).get("screen_name") or "")}
     q = t.get("quote")
     if isinstance(q, dict):
         qurls, qext = _fx_media(q.get("media"))
@@ -216,6 +218,7 @@ def extract(j: dict) -> dict:
 
     return {
         "text": text,
+        "author": str(j.get("user_screen_name") or ""),   # (v3.8.11) 작성자 X 핸들 — 리트윗 판정용
         "media": media_urls,
         "urls": urls,
         "yt_video_id": yt_video_id,

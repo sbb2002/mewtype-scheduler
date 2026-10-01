@@ -185,6 +185,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   시각이 예고 시각과 45분 넘게 다르면 자리표시가 `expires_at`(예고+3h)까지 카드 2장으로 남고,
 >   같은 방송 시각 변경을 45분 넘게 재공지하면 기존 예고가 갱신되지 않고 새 항목이 생긴다.
 >   `merge_member_live` 의 ±3h(`MEMBER_LIVE_MATCH_SEC`)·v1 `collector/reconcile.py` 의 4h 는 미변경.
+> - **v3.8.11** (핫픽스, 2026-10-01): **멤버 리트윗 필터 복구.** `/ingest` 가 원문을 vxtwitter 본문으로 바꾸면
+>   (`_recover_raw_via_vxtwitter`, 09-13~) 폰 원문의 리트윗 표시 `@핸들:` 가 사라져 `xtweet.parse` 리트윗 필터가 무력화돼
+>   있었다 — 10-01 미야코가 애니 재방송 안내를 리트윗 → 트윗 배지 + LLM 이 본인 예고로 통과 → 가짜 「10/01 23:00」 예고가
+>   `match_item` 채널 url 매칭으로 기존 미야코 10/11 예고를 덮음(data 브랜치 수동 복원). 수정: 개인 5인 분기 직전
+>   `telegram_app._personal_retweet_reason` — 교체 전 폰 원문이 `@핸들:` 로 시작하거나 vxtwitter 작성자(`vxtwitter.extract`
+>   `author`, 이번에 추가) ≠ 멤버 `handle` 이면 건너뜀(`mode: "retweet"`). 채널 url 매칭 문제는 운영 미수정(v4a D30 에서 수정).
+>   요약 `docs/VERSION.md`.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
