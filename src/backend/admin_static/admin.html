@@ -307,8 +307,26 @@
         .fllm-row .r { font-size: 0.8rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
         .fllm-row .st { font-size: 0.78rem; color: var(--color-text-muted); }
         .fllm-row .st.done { color: var(--ok); }
-        .fllm-row button { justify-self: start; background: rgba(167, 139, 250, .2); color: #ddd6fe; border: 1px solid rgba(167, 139, 250, .6); }
+        .fllm-row button { justify-self: start; background: rgba(167, 139, 250, .2); color: #ddd6fe; border: 1px solid rgba(167, 139, 250, .6);
+            display: inline-flex; align-items: center; gap: 0.4rem; }
+        .fllm-row button:disabled { opacity: .7; cursor: progress; }
+        .fllm-row button.undone-btn { background: rgba(62, 207, 142, .15); color: var(--ok); border-color: rgba(62, 207, 142, .55); opacity: 1; cursor: default; }
+        .fllm-row button .spinner { display: none; width: 0.8rem; height: 0.8rem; border: 2px solid currentColor; border-right-color: transparent;
+            border-radius: 50%; animation: tl-spin 0.7s linear infinite; }
+        .fllm-row button.loading .spinner { display: inline-block; }
+        /* (2026-10-01) 되돌린 판단 — 초록 테두리 · 「✓ 되돌림 완료」. 방금 되돌린 줄은 한 번 번쩍여 결과가 바뀐 것을 보이게 */
+        .fllm-row.undone { border-color: rgba(62, 207, 142, .55); background: rgba(62, 207, 142, .07); }
+        .fllm-row.undone .k { color: var(--ok); }
+        .fllm-row .st.done { font-weight: 600; }
+        .fllm-row.just-undone { animation: llm-undone 1.8s ease-out; }
+        @keyframes llm-undone {
+            0% { background: rgba(62, 207, 142, .38); box-shadow: 0 0 0 0 rgba(62, 207, 142, .7); }
+            60% { box-shadow: 0 0 0 10px rgba(62, 207, 142, 0); }
+            100% { background: rgba(62, 207, 142, .07); box-shadow: 0 0 0 0 rgba(62, 207, 142, 0); }
+        }
+        @media (prefers-reduced-motion: reduce) { .fllm-row.just-undone { animation: none; } }
         .flow .llm-tag { margin-left: 6px; font-size: 0.7rem; padding: 1px 6px; border-radius: 999px; background: rgba(167, 139, 250, .2); color: #c4b5fd; }
+        .flow .llm-tag.undone { background: rgba(62, 207, 142, .18); color: var(--ok); }
         .fdetail { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; display: grid; gap: 12px; }
         .fdetail-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
         .fdetail-head .ttl { font-weight: 600; }
@@ -338,6 +356,17 @@
         .fedge span::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left-color: #3a3a3a; border-right: 0; }
         .fedge.lit span { background: var(--ok); }
         .fedge.lit span::after { border-left-color: var(--ok); }
+        /* (2026-10-01) LLM 판단 되돌리기 — 흐름도가 마지막 단계부터 판단한 단계까지 거꾸로 감긴다(보라 = LLM, 화살표 반대로) */
+        .fnode.rewound { opacity: .6; border-color: rgba(167, 139, 250, .7); border-style: dashed; background: rgba(167, 139, 250, .06); }
+        .fnode.rewound .ms { color: #c4b5fd; }
+        .fnode.rewinding { animation: rewind-pulse .45s ease-out; }
+        @keyframes rewind-pulse { 0% { background: rgba(167, 139, 250, .45); opacity: 1; transform: scale(1.04); } 100% { transform: scale(1); } }
+        .fnode.undo-at { opacity: 1; border-color: var(--ok); box-shadow: 0 0 0 2px rgba(62, 207, 142, .25); }
+        .fnode.undo-at .ms { color: var(--ok); font-weight: 600; }
+        .fedge.rewound span { background: #a78bfa; }
+        .fedge.rewound span::after { right: auto; left: -1px; border: 5px solid transparent; border-right-color: #a78bfa; border-left: 0; }
+        .freason.undone { border-left-color: #a78bfa; background: rgba(167, 139, 250, .08); }
+        @media (prefers-reduced-motion: reduce) { .fnode.rewinding { animation: none; } }
         .freason { border-left: 3px solid var(--ok); padding: 6px 12px; background: rgba(62, 207, 142, .06); font-size: 0.85rem; min-height: 1.5em; }
         .freason.fail { border-left-color: var(--fail); background: rgba(255, 93, 93, .06); }
         .freason.run { border-left-color: var(--run); background: rgba(245, 184, 61, .06); }
@@ -452,7 +481,8 @@
         }
         .title-mq-in { display: inline-block; }
         .title-mq.is-marquee .title-mq-in { animation: title-mq var(--dur, 12s) linear infinite; }
-        .title-mq.is-marquee .seg { padding-right: 3rem; }
+        /* 마퀴 조각은 mq-seg — 원문 투입 종류 버튼의 .seg(3열 그리드)와 이름이 같으면 조각이 블록이 돼 2줄로 쌓인다(2026-10-01) */
+        .title-mq.is-marquee .mq-seg { padding-right: 3rem; }
         @keyframes title-mq { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
         .list-item-sub {
@@ -1654,7 +1684,7 @@
                 mq.classList.remove("is-marquee");
                 mqIn.textContent = "";
                 const seg = document.createElement("span");
-                seg.className = "seg";
+                seg.className = "mq-seg";
                 seg.textContent = text;
                 mqIn.appendChild(seg);
                 if (mq.clientWidth && mqIn.scrollWidth > mq.clientWidth) {
@@ -2927,6 +2957,8 @@
                     // 선택한 흐름이 갱신됐으면 상세도 갱신(재생 없이 현재 상태로)
                     const cur = (data.flows || []).find((f) => f.id === this.flowSel);
                     if (cur && JSON.stringify(cur) !== this.flowSelSnap) this.showFlow(cur, false);
+                    // 흐름 기록은 그대로인데 그 흐름의 LLM 판단이 되돌려졌으면(판단 기록만 바뀜) 판단 칸만 다시 그린다
+                    else if (cur && this.llmUndoneSnap(cur) !== this.flowLlmSnap) this.renderFlowLlm(cur);
                 } catch (e) {
                     console.error("작업 로드 실패", e);
                 }
@@ -3077,8 +3109,9 @@
                     k.textContent = f.kind;
                     if ((f.llm || []).length) {
                         const tag = document.createElement("span");
-                        tag.className = "llm-tag";
-                        tag.textContent = `LLM 판단 ${f.llm.length}`;
+                        const undone = f.llm.filter((x) => ((this.llmActions || {})[x.id] || {}).undone).length;
+                        tag.className = "llm-tag" + (undone ? " undone" : "");
+                        tag.textContent = `LLM 판단 ${f.llm.length}` + (undone ? ` · ✓ 되돌림${f.llm.length > 1 ? " " + undone : ""}` : "");
                         k.appendChild(tag);
                     }
                     const d = document.createElement("div");
@@ -3192,6 +3225,8 @@
                     chain.appendChild(n);
                     nodes.push({ n, note, ms, s });
                 });
+                this.flowNodes = nodes;                       // 되돌리기 되감기(rewindFlow)가 쓴다
+                this.flowEdges = edges;
                 this.renderFlowLlm(f);
                 const r = document.getElementById("fd-reason");
                 r.className = "freason" + (f.status === "ok" ? "" : " " + f.status);
@@ -3213,6 +3248,8 @@
                 const done = () => {
                     const cur = (f.stages || []).find((s) => ["fail", "run", "wait"].includes(s.s));
                     r.textContent = f.reason || (cur ? `${cur.n}: ${cur.note || cur.s}` : "");
+                    // 이 흐름의 LLM 판단을 되돌렸으면 재생 끝에 되감긴 모습으로(재생 중이었으면 되감기도 움직여서)
+                    if (this.flowUndone(f).length) this.rewindFlow(f, !!step);
                 };
                 if (!step) {
                     for (let i = 0; i < upto; i++) light(i);
@@ -3223,11 +3260,61 @@
                 this.flowTimers.push(setTimeout(done, step * upto));
             },
 
+            // 이 흐름에서 되돌린 LLM 판단 목록
+            flowUndone(f) {
+                return (f.llm || []).map((x) => (this.llmActions || {})[x.id]).filter((e) => e && e.undone);
+            },
+
+            // (2026-10-01) LLM 판단 되돌리기 → 흐름도를 마지막 단계부터 LLM 이 판단한 단계(준비 · Groq)까지 거꾸로 감는다.
+            // 지나간 단계 = 보라 점선 「↩ 되돌림」 · 화살표 반대, 판단 단계 = 초록 「↩ 판단 되돌림」, 결과 칸에 무엇을 되돌렸는지.
+            // animate=false 면 끝 모습만(이미 되돌린 흐름을 다시 열 때). 끝나면 resolve.
+            rewindFlow(f, animate) {
+                const nodes = this.flowNodes || [], edges = this.flowEdges || [];
+                if (!nodes.length) return Promise.resolve();
+                let target = -1, last = -1;
+                nodes.forEach((x, i) => {
+                    if ((x.s.x || "").includes("Groq")) target = i;
+                    if (x.s.s !== "todo") last = i;
+                });
+                if (target < 0) target = 0;
+                const applied = this.flowUndone(f).flatMap((e) => e.undone.applied || []).join(" · ");
+                const r = document.getElementById("fd-reason");
+                const back = (i, pulse) => {
+                    const { n, ms } = nodes[i];
+                    n.classList.remove("rewinding");
+                    if (pulse) { void n.offsetWidth; n.classList.add("rewinding"); }
+                    n.classList.add("rewound");
+                    ms.textContent = "↩ 되돌림";
+                    if (edges[i - 1]) edges[i - 1].classList.add("rewound");
+                };
+                const finish = () => {
+                    const t = nodes[target];
+                    t.n.classList.add("undo-at");
+                    t.ms.textContent = "↩ 판단 되돌림";
+                    r.className = "freason undone";
+                    r.textContent = `${f.reason ? f.reason + "  →  " : ""}↩ LLM 판단 되돌림${applied ? " — " + applied : ""}`;
+                };
+                const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                if (!animate || reduce) {
+                    for (let i = last; i > target; i--) back(i, false);
+                    finish();
+                    return Promise.resolve();
+                }
+                return new Promise((resolve) => {
+                    let k = 0;
+                    for (let i = last; i > target; i--, k++) this.flowTimers.push(setTimeout(() => back(i, true), 380 * k));
+                    // 끝 신호는 flowTimers 밖에 둔다 — 그 사이 상세가 다시 그려져 타이머가 지워져도 기다리는 쪽이 멈추지 않게
+                    // (다시 그려졌으면 showFlow 가 되감긴 모습을 이미 그렸으므로 여기선 손대지 않는다)
+                    setTimeout(() => { if (this.flowNodes === nodes) finish(); resolve(); }, 380 * k + 150);
+                });
+            },
+
             // (v4a) 흐름 상세 — 이 흐름에서 LLM 이 내린 판단 · 근거 · 되돌리기
-            renderFlowLlm(f) {
+            renderFlowLlm(f, justUndoneId) {
                 const box = document.getElementById("fd-llm");
                 box.textContent = "";
                 const list = f.llm || [];
+                this.flowLlmSnap = this.llmUndoneSnap(f);
                 box.hidden = !list.length;
                 const KIND = { broadcast_change: "방송 취소 · 변경", own_broadcast: "본인 예고 확인", participation: "외부 채널 참여",
                     collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복" };
@@ -3254,15 +3341,27 @@
                     const st = document.createElement("div");
                     st.className = "st";
                     if (e.undone) {
+                        row.classList.add("undone");
+                        if (brief.id === justUndoneId) row.classList.add("just-undone");
+                        // 버튼은 남겨 두고 「되돌려짐!」 비활성으로(한 번 되돌린 판단은 다시 되돌릴 수 없다) — 2026-10-01 운영자 요청
+                        const b = document.createElement("button");
+                        b.type = "button";
+                        b.className = "undone-btn";
+                        b.disabled = true;
+                        b.textContent = "되돌려짐!";
                         st.classList.add("done");
-                        st.textContent = `되돌림 ${this.formatTime(e.undone.at)} — ${(e.undone.applied || []).join(" · ") || "변화 없음"}` +
+                        st.textContent = `✓ 되돌림 완료 ${this.formatTime(e.undone.at)} — ${(e.undone.applied || []).join(" · ") || "변화 없음"}` +
                             ((e.undone.skipped || []).length ? ` (건너뜀: ${e.undone.skipped.join(" · ")})` : "");
-                        row.appendChild(st);
+                        row.append(b, st);
                     } else if (e.undo || brief.undo) {
                         const b = document.createElement("button");
                         b.type = "button";
-                        b.textContent = "되돌리기";
-                        b.addEventListener("click", () => this.undoLlm(e));
+                        const spin = document.createElement("span");
+                        spin.className = "spinner";
+                        const label = document.createElement("span");
+                        label.textContent = "되돌리기";
+                        b.append(spin, label);
+                        b.addEventListener("click", () => this.undoLlm(e, f, b, label));
                         row.appendChild(b);
                     } else {
                         st.textContent = "검토용 — 바뀐 데이터가 없는 판단입니다. 필요하면 원문 투입으로 직접 넣으세요.";
@@ -3272,16 +3371,47 @@
                 }
             },
 
-            async undoLlm(e) {
+            // 흐름의 LLM 판단 중 되돌린 것들의 상태 — 5초 갱신 때 바뀌었으면(다른 기기에서 되돌림 등) 상세를 다시 그린다
+            llmUndoneSnap(f) {
+                return JSON.stringify((f.llm || []).map((x) => !!((this.llmActions || {})[x.id] || {}).undone));
+            },
+
+            // (2026-10-01) 누르면 버튼이 「되돌리는 중…」으로 잠기고(두 번 눌림 방지), 끝나면 그 줄이 초록으로 번쩍이며
+            // 「✓ 되돌림 완료 — 무엇을 했는지」로 바뀐다. 흐름 목록 태그도 「✓ 되돌림」. 전엔 토스트만 3초 뜨고 줄은 그대로였다
+            async undoLlm(e, f, btn, label) {
                 if (!confirm(`이 LLM 판단을 되돌릴까요?\n\n${e.summary || e.id}\n\n그때 바뀐 항목만 되돌립니다. 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.`)) return;
+                btn.disabled = true;
+                btn.classList.add("loading");
+                label.textContent = "되돌리는 중…";
+                let r;
                 try {
-                    const r = await this.apiCall("POST", "/undo_llm_action", { action_id: e.id });
-                    this.showToast(r.ok ? `되돌렸습니다 — ${((r.result || {}).applied || []).join(" · ")}` : (r.error || "실패"),
-                        r.ok ? "success" : "error");
+                    r = await this.apiCall("POST", "/undo_llm_action", { action_id: e.id });
                 } catch (err) {
-                    this.showToast(`실패: ${err.message}`, "error");
+                    r = { ok: false, error: err.message };
                 }
-                this.loadJobs();
+                if (r.ok) {
+                    const res = r.result || {};
+                    // 서버 기록과 같은 모양으로 바로 반영(목록을 다시 받기 전에도 결과가 보이게)
+                    this.llmActions = this.llmActions || {};
+                    this.llmActions[e.id] = Object.assign({}, e, {
+                        undone: { at: new Date().toISOString(), applied: res.applied || [], skipped: res.skipped || [] } });
+                    this.showToast(`되돌렸습니다 — ${(res.applied || []).join(" · ")}`, "success");
+                    btn.classList.remove("loading");
+                    label.textContent = "되감는 중…";
+                    // 5초 갱신이 판단 칸을 먼저 다시 그려 버리지 않게(되감기 → 번쩍임 순서 유지)
+                    if (this.flowSel === f.id) this.flowLlmSnap = this.llmUndoneSnap(f);
+                } else {
+                    this.showToast(r.error || "실패", "error");
+                }
+                const reload = this.loadJobs();              // 판단 기록 · 흐름 목록 · 예약된 확인 갱신(되감기와 동시에)
+                if (r.ok && this.flowSel === f.id) await this.rewindFlow(f, true);
+                await reload;
+                if (this.flowSel === f.id) this.renderFlowLlm(f, r.ok ? e.id : null);
+                else {
+                    btn.disabled = false;
+                    btn.classList.remove("loading");
+                    label.textContent = "되돌리기";
+                }
             },
 
             // 다시 그리기 전에 부르면, 그린 뒤 스크롤 위치를 되돌린다

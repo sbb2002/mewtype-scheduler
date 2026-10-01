@@ -306,7 +306,8 @@ def _slim(result: dict) -> dict:
 
 def _brief(job: dict) -> dict:
     a = job.get("args") or {}
-    return {k: a[k] for k in ("scope", "mode", "video_id", "channel_key", "unit", "nid") if a.get(k)}
+    # op = llm_action · group_pending 의 동작(add · undo · remove …) — 관리 페이지 「최근 자동 처리」 문구를 가르는 데 쓴다
+    return {k: a[k] for k in ("scope", "mode", "video_id", "channel_key", "unit", "nid", "op") if a.get(k)}
 
 
 def on_done(job: dict, result) -> None:

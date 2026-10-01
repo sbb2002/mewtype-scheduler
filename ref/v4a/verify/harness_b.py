@@ -631,6 +631,59 @@ def run():
     rj = next((a for a in acts if a["kind"] == "collab_guest" and "공식 스케줄 합동 줄" in a.get("summary", "")), None)
     check("B13", "공식 스케줄 합동 줄 게스트 제외 판단 기록(되돌리기 없음)", rj is not None and not rj.get("undo"), rj)
 
+    # ═════ B14 멤버 리트윗은 개인 트윗 · 예고 어디에도 안 올림 (v3.8.11, D17 필터 누락 수정) ═════
+    scenario("B14 멤버 리트윗 — vxtwitter 원문 교체 뒤에도 리트윗으로 판정해 건너뜀")
+    RT_TEXT = ("／\n#アニメゆめみた🛸\nTOKYO MXほかにて週2回の再放送が決定🎉🎉\n＼\n\n"
+               "📅10/1(木)23:00より毎週木曜\nTOKYO MXほかにて再放送がスタート🛸")
+    TW["2100000000000000340"] = {"author": "bang_dream_info", "text": RT_TEXT}
+    n_pv = len(pv())
+    h.ingest_x("@bang_dream_info: " + RT_TEXT, "藤都子", tag="p#x#1tweet-2100000000000000340")
+    mt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
+    check("B14", "리트윗(폰 원문 @핸들:) → 트윗 배지 안 올림",
+          not any(str(t.get("id")) == "2100000000000000340" for t in (mt if isinstance(mt, list) else [mt])), mt)
+    check("B14", "리트윗 → 예고도 안 만듦", len(pv()) == n_pv
+          and not item(lambda i: i.get("channel_key") == "miyako" and i.get("source") == "personal"
+                       and (i.get("scheduled_start") or "").startswith("2026-10-01T14")), len(pv()))
+    check("B14", "리트윗 건너뜀 로그", events(lambda e: "retweet skip" in e.get("detail", "")))
+    # 폰 원문에 표시가 없어도(vxtwitter 작성자가 다른 계정) 리트윗으로
+    TW["2100000000000000341"] = {"author": "bang_dream_info", "text": "再放送決定！"}
+    h.ingest_x("再放送決定！", "藤都子", tag="p#x#1tweet-2100000000000000341")
+    mt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
+    check("B14", "작성자 ≠ 멤버(폰 원문 표시 없음) → 리트윗으로 건너뜀",
+          not any(str(t.get("id")) == "2100000000000000341" for t in (mt if isinstance(mt, list) else [mt])), mt)
+
+    # ═════ B15 쓰기 대기 · 결과 DM — 로컬 적용 큐 경로, 「자세히」일 때만 · 실제 결과 (2026-10-01 운영자 결정) ═════
+    scenario("B15 2초 넘는 쓰기의 대기 · 결과 DM — 「자세히」에서만, 결과를 그대로 말함")
+    import time as _t
+    from src.backend import writeclient, writers
+    _orig_dispatch = writers.dispatch
+
+    def _slow_dispatch(kind, gh, args):
+        if kind == "video_release":
+            _t.sleep(2.3)
+        return _orig_dispatch(kind, gh, args)
+
+    writers.dispatch = _slow_dispatch
+    try:
+        ent = [{"video_id": "SLOWDM00001", "channel_id": h.CID["group"], "title": "느린 기록", "scheduled_start": z(REAL_NOW)}]
+        h.DMS.clear()
+        writeclient.call_write("video_release", gh=None, entries=ent, now_iso=z(REAL_NOW), label="느린 쓰기 시험")
+        check("B15", "알림 레벨 normal → 2초 넘어도 대기 · 결과 DM 없음",
+              not any("처리 중" in d or "프리미어 기록:" in d for d in h.DMS), h.DMS[-3:])
+        post("set_log_level", {"level": "detail"})
+        h.DMS.clear()
+        ent2 = [dict(ent[0], video_id="SLOWDM00002")]
+        writeclient.call_write("video_release", gh=None, entries=ent2, now_iso=z(REAL_NOW), label="느린 쓰기 시험")
+        check("B15", "「자세히」 → 대기 DM(우리말 작업 이름)", any("⏳ 프리미어 기록 처리 중…" in d for d in h.DMS), h.DMS[-3:])
+        check("B15", "「자세히」 → 결과 DM 이 실제 결과(추가 1건)", any("✅ 프리미어 기록: 추가 1건" in d for d in h.DMS), h.DMS[-3:])
+        h.DMS.clear()
+        writeclient.call_write("video_release", gh=None, entries=ent2, now_iso=z(REAL_NOW), label="같은 영상 다시")
+        check("B15", "이미 기록된 영상 → 「바뀐 것 없음」(처리 완료로 뭉뚱그리지 않음)",
+              any("☑️ 프리미어 기록: 바뀐 것 없음" in d for d in h.DMS), h.DMS[-3:])
+    finally:
+        writers.dispatch = _orig_dispatch
+        post("set_log_level", {"level": "normal"})
+
     # ═════ 원칙 ═════
     scenario("원칙 (2차 시나리오 포함)")
     commits = [json.loads(l) for l in open(h.WORK / "_local/data/.commits.jsonl", encoding="utf-8")]

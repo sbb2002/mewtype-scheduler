@@ -581,7 +581,7 @@ _STATUS_GLOSSARY = (
     "· <b>LLM 큐</b> — 번역 대기(needs_tl) 행 수. /translate 로 즉시 처리 가능\n"
     "\n"
     "🔧 <b>로그 레벨</b> (/log 로 변경)\n"
-    "· <b>detail</b> — announced·upcoming·live·demote·notice·tweet·ingest + 오류/요약\n"
+    "· <b>detail</b> — announced·upcoming·live·demote·notice·tweet·ingest + 오류/요약 + 처리 진행(2초 넘는 쓰기의 대기 · 결과)\n"
     "· <b>normal</b> — announced·upcoming·live·notice·tweet (기본값)\n"
     "· <b>simple</b> — upcoming·live 만"
 )
@@ -2522,6 +2522,27 @@ def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> tuple[str, dict | N
         log.info("ingest: vxtwitter 원문으로 교체 (tweet %s, raw_len=%d vx_len=%d)",
                   tid, len(raw), len(text))
     return text, ex
+
+
+def _personal_retweet_reason(phone_raw: str, vx_extract: dict | None, channel_key: str,
+                             channels_cfg: dict) -> str | None:
+    """(v3.8.11) 개인 5인 알림이 **리트윗(남의 글)** 인지 — 맞으면 사유, 아니면 None.
+
+    ① 폰 원문(vxtwitter 교체 **전**)이 `@핸들:` / `RT @핸들:` 로 시작 ② vxtwitter 가 돌려준 작성자 ≠ 그 멤버 핸들.
+    `_recover_raw_via_vxtwitter` 가 원문을 vxtwitter 본문으로 바꾸면서 리트윗 표시(`@핸들:`)가 지워져, 그 뒤
+    `xtweet.parse` 의 리트윗 필터(D17)가 무력화돼 있었다(09-13 정본 교체 도입부터). 실례 2026-10-01: 미야코가
+    @bang_dream_info 의 애니 재방송 안내(「10/1(木)23:00より TOKYO MX」)를 리트윗 → 트윗 배지 + LLM 이 본인 예고로
+    통과시켜 가짜 「10/01 23:00」 예고(운영에선 기존 10/11 예고를 덮음). 인용(QRT)은 작성자가 멤버라 해당 없음.
+    """
+    body = xtweet._clean_text(phone_raw or "") if xtweet is not None else (phone_raw or "")
+    m = re.match(r"^\s*(?:RT\s+)?@(\w{1,15})\s*[:：]", body)
+    if m:
+        return f"폰 원문이 @{m.group(1)} 의 글"
+    author = ((vx_extract or {}).get("author") or "").lstrip("@").lower()
+    handle = (((channels_cfg.get("channels") or {}).get(channel_key) or {}).get("handle") or "").lower()
+    if author and handle and author != handle:
+        return f"작성자 @{author} ≠ @{handle}"
+    return None
 
 
 def _expand_truncated_yt(raw: str, tag) -> str:
@@ -5520,6 +5541,7 @@ if _FLASK_AVAILABLE:
         # 폰이 보낸 본문이 깨졌거나(이모지 서로게이트쌍 처리 오류) 잘렸으면, 같은 트윗을
         # vxtwitter 로 다시 조회해 원문을 통째로 교체한다 — 원문 없이는 파싱도 번역도
         # "제대로 ingest" 한 게 아니므로 아래 모든 파이프라인(소식/스케줄/개인트윗) 전에 선행.
+        phone_raw = raw                                    # (v3.8.11) 교체 전 원문 — 리트윗 표시(`@핸들:`)는 여기에만 있다
         raw, _vx_ex = _recover_raw_via_vxtwitter(raw, x_tag)
         if x_tag:
             flowtrace.mark("원문 복원", "done", "vxtwitter 원문으로 교체" if _vx_ex is not None
@@ -5552,6 +5574,14 @@ if _FLASK_AVAILABLE:
             if _route == "test":
                 force_echo = True
             elif _route != "official":
+                # (v3.8.11) 리트윗(남의 글)은 개인 트윗 · 예고 어디에도 안 올린다(D17) — vxtwitter 교체가 표시를 지우기 전 원문으로 판정
+                rt = _personal_retweet_reason(phone_raw, _vx_ex, _route, _load_channels_config())
+                if rt:
+                    log.info("개인 트윗: 리트윗이라 건너뜀 — %s (tweet %s)", rt, x_tag)
+                    _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=_route, via="ingest",
+                                    detail=f"retweet skip: {rt}")
+                    flowtrace.mark("준비", "skip", f"리트윗 — {rt}")
+                    return jsonify({"ok": True, "personal": _route, "mode": "retweet"}), 200
                 mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
                                             now_iso=now_iso, vx_extract=_vx_ex)
                 return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
@@ -5911,6 +5941,16 @@ if __name__ == "__main__":
     _clean = "오늘 21시 방송해요"
     assert _recover_raw_via_vxtwitter(_clean, None) == (_clean, None)  # tweet id 없음 → 무회귀
     print("[OK] _recover_raw_via_vxtwitter (조기반환)")
+
+    # ── (v3.8.11) _personal_retweet_reason — vxtwitter 교체 전 원문 · 작성자로 리트윗 판정 ──
+    _rcfg = {"channels": {"miyako": {"handle": "miyako_yumemita"}}}
+    assert _personal_retweet_reason("@bang_dream_info: ／ #アニメゆめみた 10/1(木)23:00より", None, "miyako", _rcfg)
+    assert _personal_retweet_reason("RT @bang_dream_info: 再放送", None, "miyako", _rcfg)
+    assert _personal_retweet_reason("再放送決定！", {"author": "bang_dream_info"}, "miyako", _rcfg)   # 폰 원문에 표시 없어도 작성자로
+    assert _personal_retweet_reason("今日も配信！", {"author": "Miyako_Yumemita"}, "miyako", _rcfg) is None  # 대소문자 무시
+    assert _personal_retweet_reason("今日も配信！", None, "miyako", _rcfg) is None                        # 조회 실패 → 원문만
+    assert _personal_retweet_reason("今日も配信！", {"author": ""}, "miyako", _rcfg) is None
+    print("[OK] _personal_retweet_reason (폰 원문 @핸들: · 작성자 불일치 → 리트윗)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}

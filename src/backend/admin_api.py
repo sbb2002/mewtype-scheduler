@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -1201,6 +1202,9 @@ _AUTO_LABEL = {
     "yt_member_live_commit": "회원 전용 라이브 반영", "apply_preview_edit": "예고 수정 반영",
     "remove_broadcast": "예고 삭제", "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제",
     "tweet_del_commit": "트윗 삭제",
+    # (2026-10-01) 내부 이름(llm_action 등)이 그대로 보이던 작업들
+    "manual_preview": "수동 예고 반영", "tweet_edit_commit": "트윗 수정 반영", "video_release": "프리미어 기록",
+    "group_pending": "그룹 영상 확인 대기", "llm_action": "LLM 판단 기록",
 }
 
 
@@ -1219,6 +1223,13 @@ def _auto_text(e: dict, items_by_vid: dict, names: dict) -> str:
         mode = {"light": "10분", "baseline": "매일 전체"}.get(b.get("mode") or r.get("mode"), b.get("mode") or "")
         n = r.get("candidates")
         return f"정기 수집({mode}) — 영상 {n}개 확인, {change}" if n is not None else f"정기 수집({mode}) — {change}"
+    if kind == "llm_action" and b.get("op") == "undo":
+        # 결과 요약(summary)은 결과 dict 의 JSON — 되돌린 내용(applied)을 꺼내 보인다. 잘렸거나 못 읽으면 이름만
+        try:
+            applied = (json.loads(e.get("summary") or "{}").get("applied") or [])
+        except (ValueError, AttributeError):
+            applied = []
+        return "↩ LLM 판단 되돌리기" + (f" — {' · '.join(applied)}" if applied else "")
     return _AUTO_LABEL.get(kind, kind)
 
 

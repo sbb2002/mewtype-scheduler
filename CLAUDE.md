@@ -188,10 +188,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > - **v4a (브랜치 `v4a` 전용 — 배포 · 머지 안 함, 로컬 시험판)** (2026-09-29): 운영자 로컬 PC 에서
 >   `python -m src.backend.local_runner` 로 돌린다(Tailscale 로 폰 알림 수신, 저장은 `_local/<브랜치>/`).
 >   **이 상자 위 서술(Cloud Run · Tasks · data 브랜치 커밋 경로)은 운영 v3.8.10 기준이고, v4a 에서는 아래가 다르다.**
->   문서: `ref/v4a/` — 계획 `v4a_impl_plan.md` · 결정 `v4a_decisions.md`(D1~D32, 10-01 후속 결정 = §1-9 D26~D32) · 검증 `v4a_verify_report.md` ·
+>   문서: `ref/v4a/` — 계획 `v4a_impl_plan.md` · 결정 `v4a_decisions.md`(D1~D34, 10-01 후속 결정 = §1-9 D26~D34) · 검증 `v4a_verify_report.md` ·
 >   2차 검증 `v4a_verify_report_0930.md` · **남은 작업 `v4a_remaining_0930.md`**(10-01 갱신 — 결정 6건 · 작은 수정 6건 반영 결과와 남은 것) ·
 >   관측 흐름 `v4a_verify_flow.html` · 운영 `v4a_local_runbook.md` · 재검증 `verify/harness.py`(79개 확인) ·
->   `verify/harness_b.py`(09-30 이후 기능 89개 — 결과 `results_b.json`, git 제외).
+>   `verify/harness_b.py`(09-30 이후 기능 97개 — 결과 `results_b.json`, git 제외).
 >   - 배선: `storage.py`(V4A_RUNTIME=local → `LocalStore`, control·admin_state 는 ops 로 라우팅) ·
 >     `apply.py`(적용 큐 = 쓰기 스레드 `q-apply`, data 를 쓰는 유일한 스레드) · `enrich.py`(가공 큐 `q-enrich`, 번역 수집) ·
 >     `jobqueue.py`(LocalQueue) · `writeclient.call_write` 는 로컬이면 적용 큐 적재 후 **결과 대기**(로컬 한정 — 배포 시 비동기로) ·
@@ -303,6 +303,24 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     스케줄이 아닌 인용(09-22 리츠가 유노 예고 인용)은 그대로 작성자를 게스트로(`xtweet.resolve_url_host`). 한계: 인용문의 **첫 영상**을 처리하고 끝나므로
 >     인용문 뒤쪽의 작성자 본인 영상은 이 글로는 안 잡힌다. ③ 예고 수정 `url` 은 http(s) 만(`admin_api.edit_preview`). ④ Windows 파일 교체 권한 오류
 >     짧은 재시도(`local_store.replace_retry` — flows · recent_jobs · LocalStore · jobqueue). ⑤ 옛 `llm.broadcast_change` 삭제(→ `broadcast_change_targets`).
+>   - **10-01 오후 후속(v4a)**: ① 관리 페이지 수정 팝업 「팬 화면 표시」가 같은 문장 2줄로 나오던 것 — 마퀴 조각 class `seg` 가 원문 투입
+>     종류 버튼의 `.seg`(3열 그리드)를 물려받아 블록으로 쌓였다 → `mq-seg`. ② **LLM 판단 되돌리기 화면 표시** — 누르면 버튼이 「되돌리는 중…」으로
+>     잠기고(두 번 눌림 방지), 응답 뒤 흐름도가 마지막 단계부터 LLM 이 판단한 단계(준비 · Groq)까지 거꾸로 감긴다(`rewindFlow` — 지나간 단계 보라 점선
+>     「↩ 되돌림」 · 화살표 반대, 판단 단계 초록 「↩ 판단 되돌림」, 결과 칸 「→ ↩ LLM 판단 되돌림 — 내용」). 끝나면 판단 칸이 초록으로 번쩍이고 버튼은
+>     없어지지 않고 **「되돌려짐!」 비활성**으로 남는다(운영자 요청). 흐름 목록 태그 「LLM 판단 n · ✓ 되돌림」. 이미 되돌린 흐름을 열거나 다시 재생해도
+>     같은 모습. 전엔 토스트 3초뿐이고 상세가 안 바뀌어(흐름 기록이 그대로라 다시 그리지 않음) 두 번 누르게 됐다. ③ 작업 탭 「최근 자동 처리」 —
+>     `llm_action` 등 내부 이름을 우리말로, 되돌리기는 「↩ LLM 판단 되돌리기 — 내용」(`apply._brief` 에 `op`). ④ **멤버 리트윗 판정**(운영 v3.8.11 과
+>     같은 수정 — `telegram_app._personal_retweet_reason`, 운영 쪽은 PR #50 열림 · 병합 · 배포는 운영자 결정): `/ingest` 가 원문을 vxtwitter 본문으로
+>     바꾸면 리트윗 표시(`@핸들:`)가 사라져 D17 필터가 무력화돼 있었다(10-01 미야코가 애니 재방송 안내를 리트윗 → 가짜 「10/01 23:00」 예고). 교체 전 폰
+>     원문의 `@핸들:` · vxtwitter 작성자 ≠ 멤버 handle 이면 건너뜀. **응답 서비스에 따라 다르다** — vxtwitter 는 리트윗 자체(`RT @…:` 본문, 작성자 =
+>     리트윗한 계정), fxtwitter(폴백)는 원 글 본문 + 원 작성자 + `reposted_by`. 이 PC 에서는 vxtwitter 가 자주 403/500 이라 fxtwitter 로 떨어진다.
+>     ⑤ **쓰기 대기 · 결과 DM**(`writeclient._Progress`, 2026-10-01 운영자 결정 — v4a 만, 운영 v3 는 핫픽스 안 함): 2초 넘는 쓰기의 「⏳ … 처리 중」과
+>     짝 DM 을 **알림 레벨 「자세히」에서만**(notify `_LEVEL_KINDS` detail 의 `progress`), 짝 DM 은 「처리 완료」가 아니라 **실제 결과**(✅ 추가 · 갱신 ·
+>     반영 / ☑️ 안 올림 — 지난 소식과 같은 글(recap) · 이미 본 글 · 바뀐 것 없음 / ⚠️ 실패). 적용 큐(로컬)와 `/write`(배포) 두 경로 공용 — 전엔 로컬
+>     경로엔 이 DM 이 없었다. 계기: 운영이 recap 으로 끝난 소식에 「✅ 처리 완료 [소식 제목]apply_notice」를 보내 올라간 것처럼 읽혔다.
+>     **확인됨 · 미수정(결정 대기)**: 소식 경로(`xnotice.parse` D16)도 복원된 본문만 보므로, fxtwitter 로 떨어지면 남의 글 리트윗이 `@BDP_yumemita`
+>     소식으로 들어갈 수 있다(10-01 TV LIVE 리트윗은 vxtwitter 가 응답해 걸러졌다). 그리고 「공식」 경로는 알림 제목이 멤버가 아니면 글쓴 계정을
+>     확인하지 않는다(폰이 「バンドリ！アワーノーツ」 등 다른 계정 알림도 보냄).
 >   - **모바일 UI**(2026-09-30, `admin.html` 한 파일, ≤640px 미디어 쿼리): 하단 고정 탭 바(7탭 아이콘+글자) · 버튼 44px/입력 16px(iOS 확대 방지) ·
 >     수정·참여 멤버 팝업은 바닥 시트 · 토스트는 탭 바 위 · 원문 투입 미리보기 시 결과 카드로 자동 스크롤. 높이 제한 스크롤 목록(`.flows`/`.jlist`/`#jobs-tl`)은
 >     `grid-auto-rows: max-content` — 안 그러면 button `min-height` 때문에 줄이 눌려 서로 겹친다. 작업 탭 「최근 흐름」의 경로 재생 영역은 누른 줄 **바로 아래**로
