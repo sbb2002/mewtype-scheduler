@@ -77,6 +77,10 @@ class Clock:
 
 CLOCK = Clock()
 REAL_NOW = CLOCK.now
+# (10-01) 가짜 트윗 id — 트윗 수명이 X 게시 시각(Snowflake) + 48h 가 되면서, 예전 고정 id(2100000000000000xxx = 2026-09-15 게시)는
+# 실행 날 기준으로 이미 만료다. 실행 시각의 Snowflake 앞 16자리(TP)로 "방금 게시된" id 를 만든다 — 뒤 3자리는 시나리오별 번호.
+# 1000 단위로 내림해 두어 TP + "ddd" == 그 수 + ddd (게시 시각 오차 1ms 미만).
+TP = str(((int(REAL_NOW.timestamp() * 1000) - 1288834974657) << 22) // 1000 * 1000)[:16]
 
 
 def z(dt):
@@ -421,7 +425,7 @@ def run():
     video("COLLAB00001", "arale", "upcoming", z(t_col), title="【合同】あられ×都子")
     text = sched_tweet([f"🎤{jst_line_time(t_yuno)}〜 千石ユノ", "youtube.com/@yuno_yumemita",
                         f"💪{jst_line_time(t_col)}〜 仲町あられ×藤都子", "youtube.com/watch?v=COLLAB00001"])
-    ingest_x(text, "夢限大みゅーたいぷ", tag="p#x#1tweet-2100000000000000001")
+    ingest_x(text, "夢限大みゅーたいぷ", tag=f"p#x#1tweet-{TP}001")
     y = item(lambda i: i.get("channel_key") == "yuno" and i.get("source") == "x-relay")
     c = item(lambda i: i.get("video_id") == "COLLAB00001")
     check("7", "URL 없는 행 → announced", y and y["state"] == "announced", y)
@@ -432,30 +436,30 @@ def run():
 
     # F8 · F9 — 개인 트윗
     scenario("F8·F9 개인 트윗 (배지 · 예고 텍스트 · 예고 URL)")
-    ingest_x("おはよう！今日もがんばる☀", "千石ユノ", tag="p#x#1tweet-2100000000000000002")
+    ingest_x("おはよう！今日もがんばる☀", "千石ユノ", tag=f"p#x#1tweet-{TP}002")
     tw = (GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("yuno")
     check("8", "개인 트윗 → tweets.json", tw and "おはよう" in json.dumps(tw, ensure_ascii=False), tw)
-    ingest_x("明日21時から歌枠配信します🎤 来てね！", "峰月律", tag="p#x#1tweet-2100000000000000003")
+    ingest_x("明日21時から歌枠配信します🎤 来てね！", "峰月律", tag=f"p#x#1tweet-{TP}003")
     r = item(lambda i: i.get("channel_key") == "ritsu" and i.get("source") == "personal")
     check("9c", "URL 없는 개인 예고 → 정규식 + LLM 확인 → announced", r and r["state"] == "announced", r)
     t_p = rnd(REAL_NOW + timedelta(hours=2))
     video("PERSVID0001", "nonoka", "upcoming", z(t_p), title="【ギター】弾き語り")
     ingest_x("このあと配信するよ！ https://www.youtube.com/watch?v=PERSVID0001", "宮永ののか🐰🩹",
-             tag="p#x#1tweet-2100000000000000004")
+             tag=f"p#x#1tweet-{TP}004")
     p = item(lambda i: i.get("video_id") == "PERSVID0001")
     check("9a", "YouTube URL 개인 예고 → videos.list 확정 → upcoming", p and p["state"] == "upcoming", p)
-    ingest_x("RT @ritsu_yumemita: 配信ありがとう！", "千石ユノ", tag="p#x#1tweet-2100000000000000005")
+    ingest_x("RT @ritsu_yumemita: 配信ありがとう！", "千石ユノ", tag=f"p#x#1tweet-{TP}005")
 
     # F10 · D16 — 소식
     scenario("F10 소식 (D16 리트윗 제외)")
     before = len((GH.read_json("notices.json")[0] or {}).get("notices", []))
     ingest_x("RT @bang_dream_info: ／\nTVアニメ「バンドリ！ ゆめ∞みた」\n最終話放送記念リポストキャンペーン🛸✨\n＼\n10/9(木)23:59まで",
-             "夢限大みゅーたいぷ", tag="p#x#1tweet-2100000000000000006")
+             "夢限大みゅーたいぷ", tag=f"p#x#1tweet-{TP}006")
     after_rt = len((GH.read_json("notices.json")[0] or {}).get("notices", []))
     check("D16", "리트윗 → 소식 아님", after_rt == before, after_rt)
     d = (REAL_NOW + timedelta(days=6)).astimezone(JST)
     ingest_x(f"💿夢限大みゅーたいぷ 6th Single💿\n{d.month}/{d.day}発売決定！\n予約受付中です✨\n#ゆめみた",
-             "夢限大みゅーたいぷ", tag="p#x#1tweet-2100000000000000007")
+             "夢限大みゅーたいぷ", tag=f"p#x#1tweet-{TP}007")
     ns = (GH.read_json("notices.json")[0] or {}).get("notices", [])
     check("10", "공식 소식 → notices.json", len(ns) == before + 1, ns[-1:] if ns else ns)
 
@@ -463,7 +467,7 @@ def run():
     scenario("F12 YouTube 알림 (D1 시작 · D2 30분 전 · D3 URL 없는 예고 ±45분)")
     t_r = rnd(REAL_NOW + timedelta(minutes=35))
     ingest_x(sched_tweet([f"💭{jst_line_time(t_r)}〜 藤都子", "youtube.com/@miyako_yumemita"]),
-             "夢限大みゅーたいぷ", tag="p#x#1tweet-2100000000000000008")
+             "夢限大みゅーたいぷ", tag=f"p#x#1tweet-{TP}008")
     ph = item(lambda i: i.get("channel_key") == "miyako" and not i.get("video_id") and i.get("source") == "x-relay"
               and i.get("scheduled_start") == z(t_r))
     check("7", "URL 없는 예고 (미야코, 35분 뒤)", ph and ph["state"] == "announced", ph)
@@ -496,7 +500,7 @@ def run():
     t4 = rnd(REAL_NOW + timedelta(minutes=50))
     ingest_x(sched_tweet([f"🎮{jst_line_time(t4)}〜 宮永ののか", "youtube.com/@nonoka_yumemi…",
                           f"🎤{jst_line_time(t4)}〜 峰月律", "youtube.com/@ritsu_yumemita"]),
-             "夢限大みゅーたいぷ", tag="p#x#1tweet-2100000000000000009")
+             "夢限大みゅーたいぷ", tag=f"p#x#1tweet-{TP}009")
     SEARCH[CID["nonoka"]] = ["NONOKA00001"]
     video("NONOKA00001", "nonoka", "live", z(t4), title="【ゲーム】", actual_start=z(t4 + timedelta(minutes=1)))
     n_search_before = sum(1 for e in TRACE if e.get("call", "").startswith("search.list"))
@@ -600,7 +604,7 @@ def run():
     check("3", "그룹 채널 영상 — 수집(RSS · baseline)은 새로 만들지 않음",
           item(lambda i: i.get("video_id") == "GRPVID00001") is None)
     ingest_x("＼配信開始📡／\n🛸#ゆめみた 全員集合！生配信\nhttps://youtube.com/live/GRPVID00001", "夢限大みゅーたいぷ",
-             tag="p#x#1tweet-2100000000000000012")
+             tag=f"p#x#1tweet-{TP}012")
     g = item(lambda i: i.get("video_id") == "GRPVID00001")
     check("3", "공식 글의 인원 표현(全員) → 5인 레인 팬아웃(host=group)", g and g.get("host") == "group"
           and len(g.get("collab_with") or []) == 4, g)
@@ -614,7 +618,7 @@ def run():
     n0 = len((GH.read_json("notices.json")[0] or {}).get("notices", []))
     d9 = (REAL_NOW + timedelta(days=2)).astimezone(JST)
     ingest_x(f"{d9.month}/{d9.day} 20時からbilibiliで配信します！ https://live.bilibili.com/12345678", "仲町あられ",
-             tag="p#x#1tweet-2100000000000000011")
+             tag=f"p#x#1tweet-{TP}011")
     ns = (GH.read_json("notices.json")[0] or {}).get("notices", [])
     check("9b", "비YouTube URL 개인 트윗 → notices.json (preview 아님)", len(ns) == n0 + 1, ns[-1:])
 
@@ -686,7 +690,7 @@ def run():
     scenario("F20·F18 유실 원문 (마지막 시도 실패 → 유실 큐 → 관리 페이지 재투입)")
     FAIL_INJECT["personal_tweet"] = True
     DMS.clear()
-    ingest_x("今日のおやつはプリン🍮", "藤都子", tag="p#x#1tweet-2100000000000000010")
+    ingest_x("今日のおやつはプリン🍮", "藤都子", tag=f"p#x#1tweet-{TP}010")
     time.sleep(1.0); idle()
     lost = client.get("/admin/api/list_lost").get_json()
     mine = [l for l in lost if "プリン" in (l.get("raw") or "")]

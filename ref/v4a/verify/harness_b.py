@@ -11,7 +11,7 @@ import json
 import re
 import sys
 import traceback
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -187,20 +187,20 @@ def run():
     p = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=GRPVID00001", "confirm": False})
     check("B3", "같은 그룹 영상 재투입 → 이미 등록 안내", not p.get("ok") and "이미 등록" in (p.get("error") or ""), p)
 
-    TW["2100000000000000101"] = {"author": "ritsu_yumemita", "text": "明日21時から歌枠配信します🎤 来てね！"}
-    p = post("ingest_preview_url", {"url": "https://x.com/i/status/2100000000000000101", "confirm": False})
+    TW[f"{h.TP}101"] = {"author": "ritsu_yumemita", "text": "明日21時から歌枠配信します🎤 来てね！"}
+    p = post("ingest_preview_url", {"url": f"https://x.com/i/status/{h.TP}101", "confirm": False})
     check("B2", "멤버 트윗 URL → 작성자 핸들로 호스트 판별 · 개인 예고 미리보기",
           p.get("ok") and p.get("unit") == "ritsu" and p.get("preview"), p)
-    TW["2100000000000000102"] = {"author": "someone_else", "text": "明日21時から配信します"}
-    p = post("ingest_preview_url", {"url": "https://x.com/someone_else/status/2100000000000000102", "confirm": False})
+    TW[f"{h.TP}102"] = {"author": "someone_else", "text": "明日21時から配信します"}
+    p = post("ingest_preview_url", {"url": f"https://x.com/someone_else/status/{h.TP}102", "confirm": False})
     check("B2", "비멤버 트윗 → 되묻기(not_member)", p.get("confirm_needed") == "not_member", p)
-    p = post("ingest_preview_url", {"url": "https://x.com/someone_else/status/2100000000000000102", "confirm": False,
+    p = post("ingest_preview_url", {"url": f"https://x.com/someone_else/status/{h.TP}102", "confirm": False,
                                     "force_unit": "miyako"})
     check("B2", "그래도 넣기(force_unit) → 고른 호스트로 미리보기", p.get("ok") and p.get("unit") == "miyako" and p.get("forced"), p)
     h.video("GRPVID00003", "group", "upcoming", z(t_g + timedelta(hours=2)), title="生配信")
-    TW["2100000000000000103"] = {"author": "BDP_yumemita",
+    TW[f"{h.TP}103"] = {"author": "BDP_yumemita",
                                  "text": "本日21時〜生配信！\n#ゆめみた\nhttps://www.youtube.com/watch?v=GRPVID00003"}
-    p = post("ingest_preview_url", {"url": "https://x.com/BDP_yumemita/status/2100000000000000103", "confirm": False})
+    p = post("ingest_preview_url", {"url": f"https://x.com/BDP_yumemita/status/{h.TP}103", "confirm": False})
     rows = p.get("preview") or []
     RES_B.append({"obs": "C1-공식 트윗 URL", "choose_members": p.get("choose_members"),
                   "rows": [(x.get("channel_key"), x.get("collab_with"), x.get("host")) for x in rows]})
@@ -211,9 +211,9 @@ def run():
     scenario("B3 트윗 안 그룹 영상 — 첨부 이미지 OCR 로 참여 멤버 제안 → 관리자 확인")
     h.video("GRPVID00002", "group", "upcoming", z(t_g + timedelta(hours=1)), title="コラボ配信")
     OCR["https://pbs.twimg.com/media/cast1.jpg"] = ["仲町あられ", "宮永ののか"]
-    TW["2100000000000000104"] = {"author": "arale_yumemita", "media": ["https://pbs.twimg.com/media/cast1.jpg"],
+    TW[f"{h.TP}104"] = {"author": "arale_yumemita", "media": ["https://pbs.twimg.com/media/cast1.jpg"],
                                  "text": "今日はコラボ配信！ https://www.youtube.com/watch?v=GRPVID00002"}
-    u = "https://x.com/arale_yumemita/status/2100000000000000104"
+    u = f"https://x.com/arale_yumemita/status/{h.TP}104"
     p = post("ingest_preview_url", {"url": u, "confirm": False})
     check("B3", "멤버 트윗 안 그룹 영상 → 선택 팝업 + OCR 제안(아라레 · 노노카)",
           p.get("choose_members") and p.get("suggested") == ["arale", "nonoka"] and p.get("ocr") == "ok", p)
@@ -227,30 +227,30 @@ def run():
     # ═════ B4 트윗 + 예고 동시 ═════
     scenario("B4 트윗과 예고를 같이 추가 (with_preview)")
     d4 = REAL_NOW + timedelta(days=1)
-    TW["2100000000000000105"] = {"author": "miyako_yumemita", "text": f"{mmdd(d4)} 22時から雑談配信します！"}
-    u5 = "https://x.com/miyako_yumemita/status/2100000000000000105"
+    TW[f"{h.TP}105"] = {"author": "miyako_yumemita", "text": f"{mmdd(d4)} 22時から雑談配信します！"}
+    u5 = f"https://x.com/miyako_yumemita/status/{h.TP}105"
     p = post("ingest_tweet_url", {"url": u5, "confirm": False, "with_preview": True})
     check("B4", "미리보기에 트윗 + 예고 둘 다", p.get("ok") and (p.get("schedule") or {}).get("ok"), p)
     r = post("ingest_tweet_url", {"url": u5, "confirm": True, "with_preview": True})
     tws = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
     mi = item(lambda i: i.get("channel_key") == "miyako" and (i.get("scheduled_start") or "").startswith(kst_date(d4)[:10]))
     check("B4", "확정 → 트윗 저장 + 미야코 예고 추가", r.get("ok") and (r.get("schedule") or {}).get("ok")
-          and any(str(t.get("id")) == "2100000000000000105" for t in tws) and mi, (r, mi))
-    TW["2100000000000000106"] = {"author": "miyako_yumemita", "text": "今日のおやつはプリン🍮"}
-    r = post("ingest_tweet_url", {"url": "https://x.com/miyako_yumemita/status/2100000000000000106", "confirm": True,
+          and any(str(t.get("id")) == f"{h.TP}105" for t in tws) and mi, (r, mi))
+    TW[f"{h.TP}106"] = {"author": "miyako_yumemita", "text": "今日のおやつはプリン🍮"}
+    r = post("ingest_tweet_url", {"url": f"https://x.com/miyako_yumemita/status/{h.TP}106", "confirm": True,
                                   "with_preview": True})
     check("B4", "예고가 아닌 트윗 → 트윗만 저장, 예고 부분은 실패로 알림",
           r.get("ok") and (r.get("schedule") or {}).get("ok") is False, r)
 
     # ═════ B7 트윗 수정 ═════
     scenario("B7 트윗 수정 (한글 번역만)")
-    r = post("edit_tweet", {"unit": "miyako", "tweet_id": "2100000000000000105", "text_ko": "직접 고친 번역"})
-    t5 = next((t for t in (h.GH.read_json("tweets.json")[0] or {})["tweets"]["miyako"] if str(t.get("id")) == "2100000000000000105"), {})
+    r = post("edit_tweet", {"unit": "miyako", "tweet_id": f"{h.TP}105", "text_ko": "직접 고친 번역"})
+    t5 = next((t for t in (h.GH.read_json("tweets.json")[0] or {})["tweets"]["miyako"] if str(t.get("id")) == f"{h.TP}105"), {})
     check("B7", "번역 수정 반영 · 원문 그대로 · needs_tl 해제", r.get("ok") and t5.get("text_ko") == "직접 고친 번역"
           and "雑談配信" in (t5.get("text") or "") and not t5.get("needs_tl"), t5)
-    check("B7", "빈 번역 거부", not post("edit_tweet", {"unit": "miyako", "tweet_id": "2100000000000000105", "text_ko": " "}).get("ok"))
+    check("B7", "빈 번역 거부", not post("edit_tweet", {"unit": "miyako", "tweet_id": f"{h.TP}105", "text_ko": " "}).get("ok"))
     post("ingest_tweet_url", {"url": u5, "confirm": True})
-    t5b = next((t for t in (h.GH.read_json("tweets.json")[0] or {})["tweets"]["miyako"] if str(t.get("id")) == "2100000000000000105"), {})
+    t5b = next((t for t in (h.GH.read_json("tweets.json")[0] or {})["tweets"]["miyako"] if str(t.get("id")) == f"{h.TP}105"), {})
     RES_B.append({"obs": "B7-재투입 후 번역", "text_ko": t5b.get("text_ko")})
     check("B7", "[관측] 같은 트윗 재투입 후에도 고친 번역 유지", t5b.get("text_ko") == "직접 고친 번역", t5b.get("text_ko"))
 
@@ -265,8 +265,8 @@ def run():
     pm = item(lambda i: i.get("video_id") == "RITPM000001")
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "del", "target_ids": [c["id"] for c in cands if c["title"] != "時刻未定"],
                                            "when": None, "reason": "오늘 방송을 쉰다고 함"}
-    TW["2100000000000000107"] = {"author": "ritsu_yumemita", "text": "今日の配信、諸事情によりお休みさせて頂きます…！"}
-    u7 = "https://x.com/ritsu_yumemita/status/2100000000000000107"
+    TW[f"{h.TP}107"] = {"author": "ritsu_yumemita", "text": "今日の配信、諸事情によりお休みさせて頂きます…！"}
+    u7 = f"https://x.com/ritsu_yumemita/status/{h.TP}107"
     p = post("ingest_tweet_url", {"url": u7, "confirm": False, "detect_change": True})
     ch = p.get("change") or {}
     sel = [c["id"] for c in ch.get("candidates", []) if c.get("selected")]
@@ -283,11 +283,11 @@ def run():
     new_at = t_am + timedelta(hours=1)
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "edit", "target_ids": [am["id"]],
                                            "when": new_at.astimezone(KST).strftime("%m/%d %H:%M"), "reason": "1시간 늦춘다고 함"}
-    p = post("ingest_tweet_manual", {"url": "https://x.com/ritsu_yumemita/status/2100000000000000108", "host": "ritsu",
+    p = post("ingest_tweet_manual", {"url": f"https://x.com/ritsu_yumemita/status/{h.TP}108", "host": "ritsu",
                                      "text": "配信1時間遅らせます！", "confirm": False, "detect_change": True})
     ch = p.get("change") or {}
     check("B5", "변경 감지 → 새 시각 해석", ch.get("action") == "edit" and ch.get("when_iso") == z(new_at), ch)
-    post("ingest_tweet_manual", {"url": "https://x.com/ritsu_yumemita/status/2100000000000000108", "host": "ritsu",
+    post("ingest_tweet_manual", {"url": f"https://x.com/ritsu_yumemita/status/{h.TP}108", "host": "ritsu",
                                  "text": "配信1時間遅らせます！", "confirm": True, "detect_change": True,
                                  "change_action": "edit", "change_ids": [am["id"]], "change_when": ch.get("when_iso")})
     am2 = item(lambda i: i.get("id") == am["id"])
@@ -300,8 +300,8 @@ def run():
     check("B5", "영상 있는 예고의 시각 변경 → 다음 수집이 API 시각으로 되돌림(의도된 동작)", am3 and am3["scheduled_start"] == z(t_am),
           (am3 or {}).get("scheduled_start"))
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "del", "target_ids": [am["id"]], "when": None, "reason": "쉰다고 함"}
-    TW["2100000000000000109"] = {"author": "ritsu_yumemita", "text": "ごめん、今日はお休み！"}
-    u9 = "https://x.com/ritsu_yumemita/status/2100000000000000109"
+    TW[f"{h.TP}109"] = {"author": "ritsu_yumemita", "text": "ごめん、今日はお休み！"}
+    u9 = f"https://x.com/ritsu_yumemita/status/{h.TP}109"
     p = post("ingest_preview_url", {"url": u9, "confirm": False, "detect_change": True})
     check("B5", "예고 글이 아니어도 취소만 감지되면 미리보기 가능", p.get("ok") and not p.get("preview")
           and (p.get("change") or {}).get("action") == "del", p)
@@ -318,15 +318,15 @@ def run():
     h.reconcile()
     n2 = item(lambda i: i.get("video_id") == "NONOVID0002")
     CHANGE_CALLS.clear()
-    h.ingest_x("今日はお休みします🙏", "宮永ののか🐰🩹", tag="p#x#1tweet-2100000000000000110")
+    h.ingest_x("今日はお休みします🙏", "宮永ののか🐰🩹", tag=f"p#x#1tweet-{h.TP}110")
     check("B6", "配信 없는 글 → 판정 호출 없음(게이트)", not CHANGE_CALLS and item(lambda i: i.get("id") == n2["id"]))
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "none", "target_ids": [], "when": None, "reason": "방송 후기라 취소 아님"}
-    h.ingest_x("今日の配信ありがとう！楽しかった", "宮永ののか🐰🩹", tag="p#x#1tweet-2100000000000000111")
+    h.ingest_x("今日の配信ありがとう！楽しかった", "宮永ののか🐰🩹", tag=f"p#x#1tweet-{h.TP}111")
     ev_none = events(lambda e: "broadcast-change none" in e.get("detail", ""))
     check("B6", "'없음' 판정도 근거와 함께 로그", CHANGE_CALLS and ev_none and "후기" in ev_none[-1]["detail"], ev_none[-1:])
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "del", "target_ids": [c["id"] for c in cands], "when": None,
                                            "reason": "오늘 방송 취소"}
-    h.ingest_x("今日の配信お休みします🙏ごめんね", "宮永ののか🐰🩹", tag="p#x#1tweet-2100000000000000112")
+    h.ingest_x("今日の配信お休みします🙏ごめんね", "宮永ののか🐰🩹", tag=f"p#x#1tweet-{h.TP}112")
     check("B6", "취소 판정 → 삭제 + 12h 재등록 차단 + 근거 로그",
           not item(lambda i: i.get("id") == n2["id"]) and "https://www.youtube.com/watch?v=NONOVID0002" in suppressed_urls()
           and events(lambda e: "broadcast-change del" in e.get("detail", "")))
@@ -379,23 +379,23 @@ def run():
     DAY2_1 = ("＼全編無料生配信あり📺✨／\n\n#アニメゆめみた 放送記念フリーライブ\n「新宿着陸計画」DAY2🌎\n\n"
               "当日は全編無料配信有🛸✅\n📡こちら\nhttps://youtube.com/live/GRPDAY20001\n\n#バンドリ")
     h.DMS.clear()
-    r = off_tweet("2100000000000000201", DAY2_1)
+    r = off_tweet(f"{h.TP}201", DAY2_1)
     check("B9", "공식 글 · 이름 / 인원 표현 / 이미지 근거 없음 → 예고에 안 올림 + 확인 대기",
           not item(lambda i: i.get("video_id") == "GRPDAY20001") and "GRPDAY20001" in pending(), (r, pending()))
     check("B9", "확인 대기 DM 1건", sum("참여 멤버 확인 대기" in d for d in h.DMS) == 1, h.DMS[-2:])
     h.DMS.clear()
-    off_tweet("2100000000000000202", DAY2_1.replace("#バンドリ", "#ゆめみたフリーライブ_DAY2"))
+    off_tweet(f"{h.TP}202", DAY2_1.replace("#バンドリ", "#ゆめみたフリーライブ_DAY2"))
     check("B9", "같은 영상 재공지(근거 없음) → 대기 유지 · DM 중복 없음",
           "GRPDAY20001" in pending() and not any("참여 멤버 확인 대기" in d for d in h.DMS), h.DMS[-2:])
     # 대기 중에도 다른 인입은 평소대로 — 개인 트윗 배지
-    TW["2100000000000000203"] = {"author": "yuno_yumemita", "text": "今日もがんばる☀"}
-    h.ingest_x("今日もがんばる☀", "千石ユノ", tag="p#x#1tweet-2100000000000000203")
+    TW[f"{h.TP}203"] = {"author": "yuno_yumemita", "text": "今日もがんばる☀"}
+    h.ingest_x("今日もがんばる☀", "千石ユノ", tag=f"p#x#1tweet-{h.TP}203")
     yt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("yuno") or []
     check("B9", "확인 대기가 다른 인입을 막지 않음(이어서 온 개인 트윗 반영)",
-          any(str(t.get("id")) == "2100000000000000203" for t in (yt if isinstance(yt, list) else [yt])), yt)
+          any(str(t.get("id")) == f"{h.TP}203" for t in (yt if isinstance(yt, list) else [yt])), yt)
     DAY2_2 = ("＼明日開催📢／\n#アニメゆめみた 放送記念フリーライブ\n「新宿着陸計画」DAY2🌎\n"
               "メンバー5人からコメント動画が到着💡✨\n📡こちら\nhttps://youtube.com/live/GRPDAY20001")
-    off_tweet("2100000000000000204", DAY2_2)
+    off_tweet(f"{h.TP}204", DAY2_2)
     g = item(lambda i: i.get("video_id") == "GRPDAY20001")
     check("B9", "같은 영상 URL 을 담은 뒤 공지의 'メンバー5人' → 5인 합동 확정 + 대기에서 빠짐",
           g and g.get("host") == "group" and len([g["channel_key"], *(g.get("collab_with") or [])]) == 5
@@ -406,13 +406,13 @@ def run():
     t_s = h.rnd(REAL_NOW + timedelta(days=3))
     h.video("SIGNEVT0001", "group", "upcoming", z(t_s), title="サイン会")
     OCR["https://pbs.twimg.com/media/sign.jpg"] = ["仲町あられ", "宮永ののか", "峰月律", "藤都子", "千石ユノ"]
-    off_tweet("2100000000000000205", "【📺配信開始📢】\n🛸夢限大みゅーたいぷ 5th Single\nリリース記念 インターネットサイン会🖋\n"
+    off_tweet(f"{h.TP}205", "【📺配信開始📢】\n🛸夢限大みゅーたいぷ 5th Single\nリリース記念 インターネットサイン会🖋\n"
               "📺ご視聴はこちら\nhttps://youtube.com/live/SIGNEVT0001", media=["https://pbs.twimg.com/media/sign.jpg"])
     g = item(lambda i: i.get("video_id") == "SIGNEVT0001")
     check("B9", "글에 근거가 없어도 이미지 OCR 로 5명 판독 → 5인 합동", g and len([g["channel_key"], *(g.get("collab_with") or [])]) == 5, g)
     OCR["https://pbs.twimg.com/media/two.jpg"] = ["峰月律", "藤都子"]
     h.video("GRPTWO00001", "group", "upcoming", z(t_s + timedelta(hours=3)), title="コラボ")
-    off_tweet("2100000000000000206", "＼配信開始📡／\n🛸#ゆめみた コラボ生配信\nhttps://youtube.com/live/GRPTWO00001",
+    off_tweet(f"{h.TP}206", "＼配信開始📡／\n🛸#ゆめみた コラボ生配信\nhttps://youtube.com/live/GRPTWO00001",
               media=["https://pbs.twimg.com/media/two.jpg"])
     g = item(lambda i: i.get("video_id") == "GRPTWO00001")
     check("B9", "OCR 이 읽은 멤버만(리츠 · 미야코) — 5인 아님", g and g["channel_key"] == "ritsu" and g.get("collab_with") == ["miyako"], g)
@@ -420,27 +420,27 @@ def run():
     # 일일 스케줄의 "全員" 줄
     t_all = h.rnd(REAL_NOW + timedelta(hours=10))
     h.video("ALLMEMB0001", "group", "upcoming", z(t_all), title="全員集合")
-    off_tweet("2100000000000000207", h.sched_tweet([f"🛸{h.jst_line_time(t_all)}〜 全員",
+    off_tweet(f"{h.TP}207", h.sched_tweet([f"🛸{h.jst_line_time(t_all)}〜 全員",
                                                     "https://www.youtube.com/watch?v=ALLMEMB0001"]))
     g = item(lambda i: i.get("video_id") == "ALLMEMB0001")
     check("B9", "스케줄 '全員' 줄 → 5인 합동", g and g.get("host") == "group" and len(g.get("collab_with") or []) == 4, g)
 
     # 경로 ① — 멤버 트윗 안의 그룹 영상
     h.video("MEMGRP00001", "group", "upcoming", z(t_s + timedelta(hours=6)), title="歌ってみた")
-    TW["2100000000000000208"] = {"author": "arale_yumemita", "text": "見てね！ https://www.youtube.com/watch?v=MEMGRP00001"}
-    h.ingest_x("見てね！ https://www.youtube.com/watch?v=MEMGRP00001", "仲町あられ", tag="p#x#1tweet-2100000000000000208")
+    TW[f"{h.TP}208"] = {"author": "arale_yumemita", "text": "見てね！ https://www.youtube.com/watch?v=MEMGRP00001"}
+    h.ingest_x("見てね！ https://www.youtube.com/watch?v=MEMGRP00001", "仲町あられ", tag=f"p#x#1tweet-{h.TP}208")
     check("B9", "멤버 트윗 · 그룹 영상 · 근거 없음 → 올리지 않고 확인 대기(작성자 자동 포함 안 함)",
           not item(lambda i: i.get("video_id") == "MEMGRP00001") and "MEMGRP00001" in pending(), pending().keys())
     h.video("MEMGRP00002", "group", "upcoming", z(t_s + timedelta(hours=7)), title="【歌ってみた】covered by 仲町あられ・峰月律")
-    TW["2100000000000000209"] = {"author": "arale_yumemita", "text": "プレミア公開！ https://www.youtube.com/watch?v=MEMGRP00002"}
-    h.ingest_x("プレミア公開！ https://www.youtube.com/watch?v=MEMGRP00002", "仲町あられ", tag="p#x#1tweet-2100000000000000209")
+    TW[f"{h.TP}209"] = {"author": "arale_yumemita", "text": "プレミア公開！ https://www.youtube.com/watch?v=MEMGRP00002"}
+    h.ingest_x("プレミア公開！ https://www.youtube.com/watch?v=MEMGRP00002", "仲町あられ", tag=f"p#x#1tweet-{h.TP}209")
     g = item(lambda i: i.get("video_id") == "MEMGRP00002")
     check("B9", "멤버 트윗 · 영상 제목의 정식 이름(仲町あられ・峰月律) → 그 두 명만", g and g["channel_key"] == "arale"
           and g.get("collab_with") == ["ritsu"], g)
     h.video("MEMGRP00003", "group", "upcoming", z(t_s + timedelta(hours=8)), title="全員集合")
-    TW["2100000000000000210"] = {"author": "nonoka_yumemita", "text": "今日22時から！ 全体配信あります！ https://www.youtube.com/watch?v=MEMGRP00003"}
+    TW[f"{h.TP}210"] = {"author": "nonoka_yumemita", "text": "今日22時から！ 全体配信あります！ https://www.youtube.com/watch?v=MEMGRP00003"}
     h.ingest_x("今日22時から！ 全体配信あります！ https://www.youtube.com/watch?v=MEMGRP00003", "宮永ののか🐰🩹",
-               tag="p#x#1tweet-2100000000000000210")
+               tag=f"p#x#1tweet-{h.TP}210")
     g = item(lambda i: i.get("video_id") == "MEMGRP00003")
     check("B9", "멤버 트윗 · '全体配信' → 5인", g and len([g["channel_key"], *(g.get("collab_with") or [])]) == 5, g)
 
@@ -450,7 +450,7 @@ def run():
     check("B9", "관리 페이지 확정(아라레 · 유노 선택) → channel_order 순 합동 + 대기에서 빠짐",
           r.get("ok") and g and g["channel_key"] == "arale" and g.get("collab_with") == ["yuno"] and "MEMGRP00001" not in pending(), (r, g))
     h.video("GRPIGN00001", "group", "upcoming", z(t_s + timedelta(hours=9)), title="何か")
-    off_tweet("2100000000000000211", "＼配信開始📡／\n夢限大みゅーたいぷ\nhttps://youtube.com/live/GRPIGN00001")
+    off_tweet(f"{h.TP}211", "＼配信開始📡／\n夢限大みゅーたいぷ\nhttps://youtube.com/live/GRPIGN00001")
     r = post("dismiss_group_pending", {"video_id": "GRPIGN00001"})
     check("B9", "관리 페이지 무시 → 대기에서 빠지고 예고엔 없음", r.get("ok") and "GRPIGN00001" not in pending()
           and not item(lambda i: i.get("video_id") == "GRPIGN00001"), r)
@@ -483,7 +483,7 @@ def run():
 
     t_p = h.rnd(REAL_NOW + timedelta(hours=4))
     premiere("PREMMV00001", "group", z(t_p), "【MV】新曲")
-    off_tweet("2100000000000000310", "＼配信開始📡／\n🛸#ゆめみた 全員で新曲MVプレミア公開\nhttps://youtube.com/live/PREMMV00001")
+    off_tweet(f"{h.TP}310", "＼配信開始📡／\n🛸#ゆめみた 全員で新曲MVプレミア公開\nhttps://youtube.com/live/PREMMV00001")
     check("B10", "공식 글(근거 全員)의 그룹 채널 프리미어(MV) → 예고 안 만듦 + 기록",
           not item(lambda i: i.get("video_id") == "PREMMV00001") and "PREMMV00001" in releases(), releases())
     premiere("PREMCV00001", "group", z(t_p + timedelta(hours=1)), "【歌ってみた】カバー")
@@ -500,14 +500,14 @@ def run():
           and "PREMQZ00001" not in releases(), releases())
     check("B10", "歌枠(노래 생방송)은 그대로 upcoming", (item(lambda i: i.get("video_id") == "UTAWAKU0001") or {}).get("state") == "upcoming")
     premiere("PREMCV00002", "yuno", z(t_p + timedelta(hours=3)), "【歌ってみた】新しいカバー")
-    TW["2100000000000000301"] = {"author": "yuno_yumemita", "text": "カバー動画プレミア公開！ https://www.youtube.com/watch?v=PREMCV00002"}
-    h.ingest_x("カバー動画プレミア公開！ https://www.youtube.com/watch?v=PREMCV00002", "千石ユノ", tag="p#x#1tweet-2100000000000000301")
+    TW[f"{h.TP}301"] = {"author": "yuno_yumemita", "text": "カバー動画プレミア公開！ https://www.youtube.com/watch?v=PREMCV00002"}
+    h.ingest_x("カバー動画プレミア公開！ https://www.youtube.com/watch?v=PREMCV00002", "千石ユノ", tag=f"p#x#1tweet-{h.TP}301")
     check("B10", "멤버 트윗의 멤버 채널 프리미어(커버) URL → 카드 등록",
           (item(lambda i: i.get("video_id") == "PREMCV00002") or {}).get("channel_key") == "yuno"
           and "PREMCV00002" not in releases(), item(lambda i: i.get("video_id") == "PREMCV00002"))
     premiere("PREMMV00002", "group", z(t_p + timedelta(hours=5)), "【MV】カップリング曲")
-    TW["2100000000000000311"] = {"author": "ritsu_yumemita", "text": "MVプレミア公開！ https://www.youtube.com/watch?v=PREMMV00002"}
-    h.ingest_x("MVプレミア公開！ https://www.youtube.com/watch?v=PREMMV00002", "峰月律", tag="p#x#1tweet-2100000000000000311")
+    TW[f"{h.TP}311"] = {"author": "ritsu_yumemita", "text": "MVプレミア公開！ https://www.youtube.com/watch?v=PREMMV00002"}
+    h.ingest_x("MVプレミア公開！ https://www.youtube.com/watch?v=PREMMV00002", "峰月律", tag=f"p#x#1tweet-{h.TP}311")
     check("B10", "멤버 트윗의 그룹 채널 프리미어 URL → 예고 안 만듦 + 기록",
           not item(lambda i: i.get("video_id") == "PREMMV00002") and "PREMMV00002" in releases(), releases())
     r = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=PREMMV00002", "confirm": False})
@@ -527,7 +527,7 @@ def run():
     h.reconcile()
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "del", "target_ids": [c["id"] for c in cands if "雑談2" in c["title"]],
                                            "when": None, "reason": "오늘 방송을 쉰다고 함(오판 가정)"}
-    h.ingest_x("今日の配信お休みします🙏", "宮永ののか🐰🩹", tag="p#x#1tweet-2100000000000000302")
+    h.ingest_x("今日の配信お休みします🙏", "宮永ののか🐰🩹", tag=f"p#x#1tweet-{h.TP}302")
     check("B11", "(전제) LLM 자동 취소 → 삭제 + 재등록 차단", not item(lambda i: i.get("video_id") == "NONOVID0009")
           and "https://www.youtube.com/watch?v=NONOVID0009" in suppressed_urls())
     act = next((a for a in llm_actions() if a["kind"] == "broadcast_change" and a.get("undo")), None)
@@ -547,8 +547,8 @@ def run():
     r3 = post("undo_llm_action", {"action_id": (none_act or {}).get("id", "x")})
     check("B11", "검토용 판단(취소 아님) → 되돌리기 없음 안내", none_act and not r3.get("ok") and "검토용" in (r3.get("error") or ""), r3)
 
-    TW["2100000000000000303"] = {"author": "miyako_yumemita", "text": "明日21時から歌枠配信します🎤"}
-    h.ingest_x("明日21時から歌枠配信します🎤", "藤都子", tag="p#x#1tweet-2100000000000000303")
+    TW[f"{h.TP}303"] = {"author": "miyako_yumemita", "text": "明日21時から歌枠配信します🎤"}
+    h.ingest_x("明日21時から歌枠配信します🎤", "藤都子", tag=f"p#x#1tweet-{h.TP}303")
     own = next((a for a in llm_actions() if a["kind"] == "own_broadcast" and a.get("undo")), None)
     created = own and item(lambda i: i.get("channel_key") == "miyako" and i.get("source") == "personal"
                            and "21:00" in h.xrelay._jst_hm(i.get("scheduled_start")) if False else True)
@@ -560,9 +560,9 @@ def run():
 
     OCR["https://pbs.twimg.com/media/ocr3.jpg"] = ["峰月律", "千石ユノ"]
     h.video("GRPOCR00003", "group", "upcoming", z(REAL_NOW + timedelta(days=4)), title="コラボ")
-    TW["2100000000000000304"] = {"author": "BDP_yumemita", "media": ["https://pbs.twimg.com/media/ocr3.jpg"],
+    TW[f"{h.TP}304"] = {"author": "BDP_yumemita", "media": ["https://pbs.twimg.com/media/ocr3.jpg"],
                                  "text": "＼配信開始📡／\n🛸#ゆめみた コラボ生配信\nhttps://youtube.com/live/GRPOCR00003"}
-    h.ingest_x(TW["2100000000000000304"]["text"], "夢限大みゅーたいぷ", tag="p#x#1tweet-2100000000000000304")
+    h.ingest_x(TW[f"{h.TP}304"]["text"], "夢限大みゅーたいぷ", tag=f"p#x#1tweet-{h.TP}304")
     oc = next((a for a in llm_actions() if a["kind"] == "ocr_members"
                and (a.get("undo") or {}).get("items", [{}])[0].get("video_id") == "GRPOCR00003"), None)
     check("B11", "이미지 OCR 판정(LLM) 기록", oc is not None and item(lambda i: i.get("video_id") == "GRPOCR00003"))
@@ -581,19 +581,19 @@ def run():
              f"🎮{ks.strftime('%H:%M')}～ 藤都子\nhttps://www.youtube.com/watch?v=MIYSCH00001\n\n"
              "✨23:00～ 宮永ののか\nhttps://www.youtube.com/@nonoka_yumemita\n\n"
              "※時刻は予告なく変更の場合がございます。\n#バンドリ #ゆめみた")
-    TW["2100000000000000320"] = {"author": "nonoka_yumemita", "text": "今日は23時から！みんなきてね",
+    TW[f"{h.TP}320"] = {"author": "nonoka_yumemita", "text": "今日は23時から！みんなきてね",
                                  "qrt": {"text": sched, "media": []}}
-    h.ingest_x("今日は23時から！みんなきてね", "宮永ののか", tag="p#x#1tweet-2100000000000000320")
+    h.ingest_x("今日は23時から！みんなきてね", "宮永ののか", tag=f"p#x#1tweet-{h.TP}320")
     mi = item(lambda i: i.get("video_id") == "MIYSCH00001")
     check("B12", "인용문의 미야코 영상 → 미야코 단독(작성자 게스트 · 인용문 이름 게스트 둘 다 없음)",
           mi and mi["channel_key"] == "miyako" and not mi.get("collab_with"), mi)
     # 스케줄이 아닌 멤버 예고 인용(09-22 리츠 → 유노 실례)은 그대로 — 작성자를 게스트로
     t_y = h.rnd(REAL_NOW + timedelta(hours=7))
     h.video("YUNOQT00001", "yuno", "upcoming", z(t_y), title="【肉】焼肉を食べる【千石ユノ】")
-    TW["2100000000000000321"] = {"author": "ritsu_yumemita", "text": "肉、食べます\nユノちゃんちに来ました",
+    TW[f"{h.TP}321"] = {"author": "ritsu_yumemita", "text": "肉、食べます\nユノちゃんちに来ました",
                                  "qrt": {"text": "〈配信のおしらせ〉\n今夜 #ぷりはとDay2\n\n肉を食べます\n\n"
                                                  "https://www.youtube.com/watch?v=YUNOQT00001", "media": []}}
-    h.ingest_x("肉、食べます\nユノちゃんちに来ました", "峰月律", tag="p#x#1tweet-2100000000000000321")
+    h.ingest_x("肉、食べます\nユノちゃんちに来ました", "峰月律", tag=f"p#x#1tweet-{h.TP}321")
     yq = item(lambda i: i.get("video_id") == "YUNOQT00001")
     check("B12", "멤버 예고 인용(스케줄 아님) → 작성자(리츠)를 게스트로(기존 동작 유지)",
           yq and yq["channel_key"] == "yuno" and "ritsu" in (yq.get("collab_with") or []), yq)
@@ -604,8 +604,8 @@ def run():
     t_u = h.rnd(REAL_NOW + timedelta(hours=8))
     h.video("ARADM000001", "arale", "upcoming", z(t_u), title="【雑談】DM確認")
     h.DMS.clear()
-    TW["2100000000000000330"] = {"author": "arale_yumemita", "text": "今夜配信！ https://www.youtube.com/watch?v=ARADM000001"}
-    h.ingest_x("今夜配信！ https://www.youtube.com/watch?v=ARADM000001", "仲町あられ", tag="p#x#1tweet-2100000000000000330")
+    TW[f"{h.TP}330"] = {"author": "arale_yumemita", "text": "今夜配信！ https://www.youtube.com/watch?v=ARADM000001"}
+    h.ingest_x("今夜配信！ https://www.youtube.com/watch?v=ARADM000001", "仲町あられ", tag=f"p#x#1tweet-{h.TP}330")
     check("B13", "URL 확정 예고 DM 이 normal 레벨에서 나감", any("URL 확정 예고 반영" in d for d in h.DMS), h.DMS[-3:])
     # (c) 예고 수정 url — http(s) 만
     a1 = item(lambda i: i.get("video_id") == "ARADM000001")
@@ -624,7 +624,7 @@ def run():
     t_c2 = h.rnd(REAL_NOW + timedelta(hours=9))
     kc = t_c2.astimezone(KST)
     h._llm("collab_partners", lambda t, **k: [])
-    off_tweet("2100000000000000331", f"／\n🛸夢限大みゅーたいぷ\n{kc.month}/{kc.day}(水)の配信スケジュール🌟\n＼\n\n"
+    off_tweet(f"{h.TP}331", f"／\n🛸夢限大みゅーたいぷ\n{kc.month}/{kc.day}(水)の配信スケジュール🌟\n＼\n\n"
                                      f"🎮{kc.strftime('%H:%M')}～ 峰月律×千石ユノ\nhttps://www.youtube.com/@ritsu_yumemita\n")
     h._llm("collab_partners", lambda t, **k: list(k.get("candidate_names") or []))
     acts = h.client.get("/admin/api/list_llm_actions").get_json().get("items", [])
@@ -635,22 +635,25 @@ def run():
     scenario("B14 멤버 리트윗 — vxtwitter 원문 교체 뒤에도 리트윗으로 판정해 건너뜀")
     RT_TEXT = ("／\n#アニメゆめみた🛸\nTOKYO MXほかにて週2回の再放送が決定🎉🎉\n＼\n\n"
                "📅10/1(木)23:00より毎週木曜\nTOKYO MXほかにて再放送がスタート🛸")
-    TW["2100000000000000340"] = {"author": "bang_dream_info", "text": RT_TEXT}
+    TW[f"{h.TP}340"] = {"author": "bang_dream_info", "text": RT_TEXT}
     n_pv = len(pv())
-    h.ingest_x("@bang_dream_info: " + RT_TEXT, "藤都子", tag="p#x#1tweet-2100000000000000340")
+    _pv_before = {i.get("id") for i in pv()}
+    h.ingest_x("@bang_dream_info: " + RT_TEXT, "藤都子", tag=f"p#x#1tweet-{h.TP}340")
     mt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
     check("B14", "리트윗(폰 원문 @핸들:) → 트윗 배지 안 올림",
-          not any(str(t.get("id")) == "2100000000000000340" for t in (mt if isinstance(mt, list) else [mt])), mt)
-    check("B14", "리트윗 → 예고도 안 만듦", len(pv()) == n_pv
-          and not item(lambda i: i.get("channel_key") == "miyako" and i.get("source") == "personal"
-                       and (i.get("scheduled_start") or "").startswith("2026-10-01T14")), len(pv()))
+          not any(str(t.get("id")) == f"{h.TP}340" for t in (mt if isinstance(mt, list) else [mt])), mt)
+    # 이 리트윗 전후로 **새로 생긴** 미야코 개인 예고만 본다 — 앞 시나리오(B4)가 정상으로 만든 같은 시간대 예고와 헷갈리지 않게(10-01)
+    _rt_hit = item(lambda i: i.get("id") not in _pv_before and i.get("channel_key") == "miyako"
+                   and i.get("source") == "personal")
+    check("B14", "리트윗 → 예고도 안 만듦", len(pv()) == n_pv and not _rt_hit,
+          {"before": n_pv, "after": len(pv()), "hit": _rt_hit and {k: _rt_hit.get(k) for k in ("id", "title", "scheduled_start", "info_at")}})
     check("B14", "리트윗 건너뜀 로그", events(lambda e: "retweet skip" in e.get("detail", "")))
     # 폰 원문에 표시가 없어도(vxtwitter 작성자가 다른 계정) 리트윗으로
-    TW["2100000000000000341"] = {"author": "bang_dream_info", "text": "再放送決定！"}
-    h.ingest_x("再放送決定！", "藤都子", tag="p#x#1tweet-2100000000000000341")
+    TW[f"{h.TP}341"] = {"author": "bang_dream_info", "text": "再放送決定！"}
+    h.ingest_x("再放送決定！", "藤都子", tag=f"p#x#1tweet-{h.TP}341")
     mt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
     check("B14", "작성자 ≠ 멤버(폰 원문 표시 없음) → 리트윗으로 건너뜀",
-          not any(str(t.get("id")) == "2100000000000000341" for t in (mt if isinstance(mt, list) else [mt])), mt)
+          not any(str(t.get("id")) == f"{h.TP}341" for t in (mt if isinstance(mt, list) else [mt])), mt)
 
     # ═════ B15 쓰기 대기 · 결과 DM — 로컬 적용 큐 경로, 「자세히」일 때만 · 실제 결과 (2026-10-01 운영자 결정) ═════
     scenario("B15 2초 넘는 쓰기의 대기 · 결과 DM — 「자세히」에서만, 결과를 그대로 말함")
@@ -699,29 +702,51 @@ def run():
     N_TEXT = f"💿夢限大みゅーたいぷ 7th Single💿\n{dn.month}/{dn.day}発売決定！\n予約受付中です✨\n#ゆめみた"
     n0 = notices_n()
     # ① fxtwitter 폴백 리트윗 — 원 글 본문 · 원 작성자 + reposted_by (폰 원문에 표시 없음)
-    TW["2100000000000000350"] = {"author": "TVLIVE_info", "reposted_by": "BDP_yumemita", "text": N_TEXT}
-    r = h.ingest_x(N_TEXT, OFF, tag="p#x#1tweet-2100000000000000350")
+    TW[f"{h.TP}350"] = {"author": "TVLIVE_info", "reposted_by": "BDP_yumemita", "text": N_TEXT}
+    r = h.ingest_x(N_TEXT, OFF, tag=f"p#x#1tweet-{h.TP}350")
     check("B16", "fxtwitter 리트윗(reposted_by) → 소식 안 올림", notices_n() == n0 and "공식 글 아님" in str(r.get("ignored")), r)
     check("B16", "흐름 결과 「처리 대상 아님 — 공식 글 아님 · 리트윗」", "공식 글 아님 · 리트윗" in last_reason(), last_reason())
     # ② 다른 계정(게임 공식 등) 글 — 작성자 확인됨
-    TW["2100000000000000351"] = {"author": "bang_dream_GBP", "text": N_TEXT}
-    r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag="p#x#1tweet-2100000000000000351")
+    TW[f"{h.TP}351"] = {"author": "bang_dream_GBP", "text": N_TEXT}
+    r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag=f"p#x#1tweet-{h.TP}351")
     check("B16", "다른 계정 글(작성자 ≠ 그룹) → 소식 안 올림", notices_n() == n0 and "다른 계정 글" in str(r.get("ignored")), r)
     # ③ 조회 실패 — 표시명으로
-    r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag="p#x#1tweet-2100000000000000352")
+    r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag=f"p#x#1tweet-{h.TP}352")
     check("B16", "조회 실패 + 다른 표시명 → 소식 안 올림", notices_n() == n0 and "다른 계정 알림" in str(r.get("ignored")), r)
     check("B16", "건너뜀 로그(relay · 공식 글 아님)", events(lambda e: e.get("flow") == "relay" and "공식 글 아님" in e.get("detail", "")))
     # ④ 그룹이 직접 쓴 글 → 소식 추가 + 흐름 결과에 「소식 추가」
-    off_tweet("2100000000000000353", N_TEXT)
+    off_tweet(f"{h.TP}353", N_TEXT)
     check("B16", "그룹 직접 글 → 소식 추가", notices_n() == n0 + 1, notices_n())
     check("B16", "흐름 결과 「스케줄 형식 아님 · 소식 추가」", last_reason() == "스케줄 형식 아님 · 소식 추가", last_reason())
     # ⑤ 같은 글 다시 → 이미 본 글 (전엔 소식 쓰기가 돌았다는 이유로 「소식으로 반영」이라 적혔다)
-    off_tweet("2100000000000000353", N_TEXT)
+    off_tweet(f"{h.TP}353", N_TEXT)
     check("B16", "같은 글 다시 → 흐름 결과 「소식 안 올림 — 이미 본 글」",
           last_reason() == "스케줄 형식 아님 · 소식 안 올림 — 이미 본 글", last_reason())
     # ⑥ 소식도 스케줄도 아님
-    off_tweet("2100000000000000354", "おはようございます☀️")
+    off_tweet(f"{h.TP}354", "おはようございます☀️")
     check("B16", "잡담 → 흐름 결과 「스케줄 형식 아님 · 소식 아님」", last_reason() == "스케줄 형식 아님 · 소식 아님", last_reason())
+
+    # ═════ B17 트윗 수명 = X 게시 시각 + 48h · 48h 지난 트윗은 관리 페이지에서 경고 (2026-10-01 운영자 결정) ═════
+    scenario("B17 트윗 수명 = 게시 시각(Snowflake) + 48h — 48h 지난 트윗은 자동 인입에서 안 올리고 관리 페이지는 경고")
+    from src.backend import xtweet as _xt
+    OLD = "2100000000000000901"          # 2026-09-15 게시 상당 — 실행 날 기준 48h 지남
+    TW[OLD] = {"author": "miyako_yumemita", "text": "むかしのつぶやき"}
+    h.ingest_x("むかしのつぶやき", "藤都子", tag=f"p#x#1tweet-{OLD}")
+    mt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
+    check("B17", "자동 인입 — 게시 48h 지난 트윗은 올리지 않음", not any(str(t.get("id")) == OLD for t in mt), [t.get("id") for t in mt][-3:])
+    r = post("ingest_tweet_url", {"url": f"https://x.com/miyako_yumemita/status/{OLD}", "confirm": False})
+    check("B17", "관리 페이지 URL 투입 — too_old + 경고 문구", r.get("too_old") is True and r.get("error") == "게시된지 48시간이 지난 트윗입니다.", r)
+    r = post("ingest_tweet_manual", {"url": f"https://x.com/i/status/{OLD}", "host": "miyako", "text": "むかし", "confirm": False})
+    check("B17", "관리 페이지 수동 투입도 같은 경고", r.get("too_old") is True, r)
+    NEW = f"{h.TP}902"
+    TW[NEW] = {"author": "miyako_yumemita", "text": "いまのつぶやき"}
+    h.ingest_x("いまのつぶやき", "藤都子", tag=f"p#x#1tweet-{NEW}")
+    mt = (h.GH.read_json("tweets.json")[0] or {}).get("tweets", {}).get("miyako") or []
+    nt = next((t for t in mt if str(t.get("id")) == NEW), None)
+    _p = _xt.snowflake_iso(NEW)
+    _exp = (datetime.fromisoformat(_p.replace("Z", "+00:00")) + timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%SZ") if _p else None
+    check("B17", "최근 트윗 — posted_at = Snowflake 게시 시각, expires_at = 그 + 48h",
+          bool(nt) and nt.get("posted_at") == _p and nt.get("expires_at") == _exp, nt and {k: nt.get(k) for k in ("posted_at", "received_at", "expires_at")})
 
     # ═════ 원칙 ═════
     scenario("원칙 (2차 시나리오 포함)")

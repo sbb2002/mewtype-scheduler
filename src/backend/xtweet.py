@@ -11,8 +11,9 @@
 
 tweets.json
   { "generated_at": "...Z",
-    "tweets": { "<ck>": { channel_key, id, text, url, handle, received_at, expires_at } } }
+    "tweets": { "<ck>": { channel_key, id, text, url, handle, received_at, posted_at, expires_at } } }
   채널당 최대 1건. 48h(TTL_HOURS, v4a D18) 안에 트윗 없으면 키 자체가 없음.
+  (v4a 10-01) expires_at = posted_at(X 게시 시각, Snowflake) + 48h — 게시 시각을 모르면 received_at + 48h.
 tweet_archive.json
   { "tweets": [ <위 + archived_at + archived_reason("expired"|"replaced")> ] }  append-only, id dedupe
 
@@ -131,7 +132,11 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
             (channel_key + "|" + body[:80]).encode("utf-8")
         ).hexdigest()[:15]
     now = _parse_iso(now_iso) or datetime.now(UTC)
-    exp = (now + timedelta(hours=TTL_HOURS)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # (v4a, 10-01 운영자 결정) 수명 = **X 게시 시각 + 48h** — 팬이 보는 시각(카드 · 말풍선 아래)과 사라지는 시점을 맞춘다.
+    # 게시 시각은 Snowflake id 에서 얻고, 못 얻으면(합성 id 등) 받은 시각 + 48h(그때 말풍선 아래는 「HH:MM 등록」).
+    posted = None if synthetic else snowflake_iso(tid)
+    base = _parse_iso(posted) or now
+    exp = (base + timedelta(hours=TTL_HOURS)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "channel_key": channel_key,
         "id": tid,
@@ -140,6 +145,7 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
         "url": None if synthetic else f"https://x.com/i/status/{tid}",
         "handle": handle or "",
         "received_at": now_iso,
+        "posted_at": posted,                 # (v4a) X 게시 시각(Snowflake) — 없으면 None
         "expires_at": exp,
         "media": list(media) if media else [],
         "quote": ({"text": quote.get("text") or "", "media": list(quote.get("media") or []),
@@ -201,7 +207,7 @@ def default_archive() -> dict:
     return {"tweets": []}
 
 
-_ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "expires_at",
+_ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "posted_at", "expires_at",
              "media", "quote")
 
 
@@ -215,9 +221,10 @@ def _as_list(v) -> list:
 
 
 def _sort_key(m: dict):
-    """received_at 오름차순 + Snowflake id tiebreak (합성 id 는 0)."""
+    """게시 시각(posted_at, 없으면 received_at) 오름차순 + Snowflake id tiebreak (합성 id 는 0).
+    (v4a) 늦게 들어온 옛 트윗이 최신 글 뒤에 붙지 않게 — 전엔 received_at 순."""
     sid = str(m.get("id") or "")
-    return (m.get("received_at") or "", int(sid) if sid.isdigit() else 0)
+    return (m.get("posted_at") or m.get("received_at") or "", int(sid) if sid.isdigit() else 0)
 
 
 def _newer(inc: dict, cur: dict) -> bool:
@@ -907,12 +914,24 @@ if __name__ == "__main__":
     assert r["text"] == "おはよう！今日は22時から歌枠やります🎤", repr(r["text"])   # 앞뒤 ＼／ 제거
     assert r["url"] == "https://x.com/i/status/2096552878769152326"
     assert r["handle"] == "arale_yumemita"
-    assert r["expires_at"] == "2026-09-09T12:00:00Z"                 # +48h (v4a D18)
+    # (v4a 10-01) 수명 = 게시 시각(Snowflake 2026-09-06T10:55:33Z) + 48h — 받은 시각(NOW) 기준 아님
+    assert r["posted_at"] == "2026-09-06T10:55:33Z", r["posted_at"]
+    assert r["expires_at"] == "2026-09-08T10:55:33Z", r["expires_at"]
+    assert r["received_at"] == NOW
     assert r["text_ko"] is None                                       # (v3) text_ko 초기값
     assert parse("   \n＼／\n  ", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
-    # 태그 없음 → 합성 id, url 없음
+    # 태그 없음 → 합성 id, url 없음 · 게시 시각 모름 → 받은 시각 + 48h
     r2 = parse("ねむい", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW)
     assert r2["id"].startswith("p") and r2["url"] is None, r2
+    assert r2["posted_at"] is None and r2["expires_at"] == "2026-09-09T12:00:00Z", r2
+    # 게시된 지 48h 넘은 트윗 → merge_thread 가 stale(올리지 않음)
+    _old = parse("むかし", title="仲町あられ", tag=TAG, channel_key="arale", now_iso="2026-09-08T11:00:00Z")
+    assert merge_thread(default_tweets(), _old, "2026-09-08T11:00:00Z")[3] == "stale"
+    # 정렬은 게시 시각 순 — 늦게 받은 옛 트윗이 앞에
+    _a = dict(r, id="2096552878769152326", posted_at="2026-09-06T10:55:33Z", received_at="2026-09-07T12:30:00Z")
+    _b = dict(r, id="2096600000000000000", posted_at="2026-09-06T14:00:00Z", received_at="2026-09-06T14:00:20Z")
+    assert [m["id"] for m in sorted([_b, _a], key=_sort_key)] == [_a["id"], _b["id"]]
+    print("[OK] (v4a) 수명 = 게시 시각 + 48h · 게시 시각 없으면 받은 시각 · 정렬 게시 시각 순")
     # (v3) 리트윗/타인글 필터
     assert parse("@arale: 今日の配信楽しみ〜", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None
     assert parse("@someone：話題です", title="峰月律", tag=None, channel_key="ritsu", now_iso=NOW) is None

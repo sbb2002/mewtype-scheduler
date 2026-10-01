@@ -1,6 +1,6 @@
 // tweets.js — 예고판 상단 멤버 개인 트윗 "편지 배지" + 메신저형 스레드 (v3.1).
 // tweets.json (계약 I): tweets[ck] = [ <메시지>, … ] 최신이 뒤, 유닛당 저장 상한 xtweet.MAX_THREAD.
-//   화면에는 메시지별 expires_at(받은 시각 + 24h)이 안 지난 것을 최대 MAX_THREAD 건까지 노출 —
+//   화면에는 메시지별 expires_at(X 게시 시각 + 48h, v4a — 게시 시각을 모르면 받은 시각 + 48h)이 안 지난 것을 최대 MAX_THREAD 건까지 노출 —
 //   안 읽은 메시지 폭주 방지는 말풍선 스크롤(css: 2/3 뷰포트 높이 초과 시 스크롤)이 맡는다.
 //   v2.8 단건(dict)도 _list() 가 [dict] 로 감싸 하위호환.
 // 계약·목업: docs/plan/v2_8_personal_tweets.md · docs/SPEC.md §계약 I
@@ -91,7 +91,23 @@ function _flipLang() {
 function _mobile() {
   return window.matchMedia && window.matchMedia("(max-width: 767px)").matches;
 }
-/** data → { ck: [메시지…] }. 메시지별 expires_at(24h) 필터 + received_at 오름차순 + 상한(MAX_THREAD). */
+/* (v4a) 메시지 시각 = X 게시 시각. 백엔드 posted_at, 없으면(그 전에 저장된 메시지) Snowflake id 에서 계산.
+   둘 다 못 얻으면 받은 시각(received_at)을 쓰고 화면에는 「HH:MM 등록」으로 구분한다.
+   BigInt 리터럴(22n)은 쓰지 않는다 — 지원 안 하는 브라우저에서 모듈 전체가 파싱 오류로 죽지 않게. */
+const _TW_EPOCH_MS = 1288834974657;
+function _postedIso(m) {
+  if (m.posted_at) return m.posted_at;
+  const id = String(m.id || "");
+  if (/^\d{15,}$/.test(id) && typeof BigInt === "function") {
+    try {
+      const ms = Number(BigInt(id) >> BigInt(22)) + _TW_EPOCH_MS;
+      return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");   // 백엔드 posted_at 형식(초 단위)과 같게 — 정렬 비교용
+    } catch { /* 아래 폴백 */ }
+  }
+  return "";
+}
+function _whenIso(m) { return _postedIso(m) || m.received_at || ""; }
+/** data → { ck: [메시지…] }. 메시지별 expires_at(게시 시각 + 48h) 필터 + 게시 시각 오름차순 + 상한(MAX_THREAD). */
 function _visible(data) {
   const now = Date.now();
   const out = {};
@@ -99,7 +115,7 @@ function _visible(data) {
   for (const ck of Object.keys(t)) {
     const msgs = _list(t[ck])
       .filter((m) => { const e = Date.parse(m.expires_at); return isNaN(e) || e > now; })
-      .sort((a, b) => (a.received_at || "").localeCompare(b.received_at || ""))
+      .sort((a, b) => _whenIso(a).localeCompare(_whenIso(b)))
       .slice(-MAX_THREAD);
     if (msgs.length) out[ck] = msgs;
   }
@@ -297,7 +313,7 @@ function _groupMsgs(list) {
   for (const m of list) {
     const g = out[out.length - 1];
     const prev = g && g[g.length - 1];
-    if (prev && Math.abs(Date.parse(m.received_at) - Date.parse(prev.received_at)) <= GROUP_GAP_MS) g.push(m);
+    if (prev && Math.abs(Date.parse(_whenIso(m)) - Date.parse(_whenIso(prev))) <= GROUP_GAP_MS) g.push(m);
     else out.push([m]);
   }
   return out;
@@ -320,8 +336,10 @@ function _renderThread(scrollEl, list) {
     const last = g[g.length - 1];
     const tm = document.createElement("time");
     tm.className = "lane__thread__t";
-    tm.dateTime = last.received_at || "";
-    tm.textContent = _hm(last.received_at) + (gi === groups.length - 1 ? " · " + _ago(last.received_at) : "");
+    // (v4a) 게시 시각 — 못 얻은 메시지만 받은 시각에 「등록」을 붙여 구분
+    const posted = _postedIso(last), when = posted || last.received_at || "";
+    tm.dateTime = when;
+    tm.textContent = _hm(when) + (posted ? "" : " 등록") + (gi === groups.length - 1 ? " · " + _ago(when) : "");
     gw.appendChild(tm);
     scrollEl.appendChild(gw);
   });

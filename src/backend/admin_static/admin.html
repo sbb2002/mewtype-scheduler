@@ -2281,6 +2281,8 @@
                     if (!result.ok) {
                         // 인식 실패 · 입력 오류 — 확정 버튼을 띄우지 않는다
                         this.resetIngestPreview();
+                        // (v4a) 게시 + 48h 가 지난 트윗 — 넣어도 팬 화면에 안 보이므로 경고창(운영자 요청)
+                        if (result.too_old) { alert(result.error); return; }
                         this.showToast(result.error || "인식되지 않았습니다", "error");
                         return;
                     }

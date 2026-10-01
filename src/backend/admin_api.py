@@ -17,7 +17,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import apply, enrich, storage
 
@@ -689,6 +689,18 @@ def ingest_tweet_raw(raw: str, *, unit: str, confirm: bool) -> dict:
 
 
 _TWEET_URL_RE = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([^/?#\s]+)/status(?:es)?/(\d{6,25})")
+TWEET_TOO_OLD_MSG = "게시된지 48시간이 지난 트윗입니다."
+
+
+def _tweet_too_old(tid: str, now: str) -> dict | None:
+    """(v4a, 10-01 운영자 결정) 트윗 수명 = X 게시 시각 + 48h — 이미 지난 트윗은 넣어도 팬 화면에 안 보이므로 받지 않는다.
+    관리 페이지는 `too_old` 를 보고 경고창을 띄운다. 게시 시각을 못 얻으면(id 형식 밖) 막지 않는다."""
+    from . import xtweet
+    posted = xtweet._parse_iso(xtweet.snowflake_iso(tid))
+    cur = xtweet._parse_iso(now)
+    if posted and cur and cur >= posted + timedelta(hours=xtweet.TTL_HOURS):
+        return dict(_err(TWEET_TOO_OLD_MSG), too_old=True)
+    return None
 
 
 def ingest_tweet_url(url: str, *, confirm: bool, force_unit: str | None = None, detect_change: bool = False,
@@ -707,6 +719,9 @@ def ingest_tweet_url(url: str, *, confirm: bool, force_unit: str | None = None, 
     if not m:
         return _err("트윗 URL 이 아닙니다 (https://x.com/…/status/숫자)")
     tid = m.group(2)
+    old = _tweet_too_old(tid, _now_iso())      # 조회 전에 — 게시 시각은 id 만으로 안다
+    if old:
+        return old
     j = vxtwitter.fetch_tweet(tid)
     if not j:
         return _err("트윗을 가져오지 못했습니다 — 비공개이거나 삭제됐거나 조회 서비스가 응답하지 않습니다")
@@ -893,6 +908,9 @@ def ingest_tweet_manual(*, url: str, host: str, text: str, confirm: bool, text_k
     m = _TWEET_URL_RE.match((url or "").strip())
     if not m:
         return _err("트윗 URL 이 아닙니다 (https://x.com/…/status/숫자)")
+    old = _tweet_too_old(m.group(2), _now_iso())
+    if old:
+        return old
     text, text_ko = (text or "").strip(), (text_ko or "").strip()
     if not text:
         return _err("원문을 입력하세요")

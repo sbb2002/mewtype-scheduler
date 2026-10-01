@@ -331,6 +331,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     「06:00」이 돼 마지막 정상 구간(마지막 기록 tick 이후)이 1px · 누계 누락이던 것(v3.5.0 부터) → `segLabel` 로 「30:00」. 오늘은 `day.nowHm`(현재 시각)까지만
 >     칠하고 누계 % 도 관측 시간 기준(`dayEndMin`). + v4a 한정 타임라인 「현재 시각까지」 흰 반투명 배경(`REPORT.runMark` = `V4A_RUNTIME=local`,
 >     트리거 기준선 ~ 개인 트윗 미야코 줄 아래, x=0 ~ 지금).
+>     ⑨ **트윗 수명 = X 게시 시각 + 48h**(10-01 운영자 결정, D18 의 기준 변경): `xtweet.parse` 가 `posted_at`(Snowflake) 저장,
+>     `expires_at = posted_at + 48h`(게시 시각 모르면 `received_at` + 48h) — 48h 지난 트윗은 `merge_thread` 가 `stale` 로 안 올린다.
+>     관리 페이지 트윗 투입(자동 URL · 수동)은 경고창 「게시된지 48시간이 지난 트윗입니다.」(`admin_api._tweet_too_old` → `too_old`).
+>     팬 화면(`tweets.js`) 말풍선 아래 시각 · 정렬 · 묶음 = 게시 시각(못 얻으면 받은 시각 + 「등록」). 하네스 가짜 트윗 id 는 실행 시각 기준(`harness.TP`).
 >   - **모바일 UI**(2026-09-30, `admin.html` 한 파일, ≤640px 미디어 쿼리): 하단 고정 탭 바(7탭 아이콘+글자) · 버튼 44px/입력 16px(iOS 확대 방지) ·
 >     수정·참여 멤버 팝업은 바닥 시트 · 토스트는 탭 바 위 · 원문 투입 미리보기 시 결과 카드로 자동 스크롤. 높이 제한 스크롤 목록(`.flows`/`.jlist`/`#jobs-tl`)은
 >     `grid-auto-rows: max-content` — 안 그러면 button `min-height` 때문에 줄이 눌려 서로 겹친다. 작업 탭 「최근 흐름」의 경로 재생 영역은 누른 줄 **바로 아래**로
