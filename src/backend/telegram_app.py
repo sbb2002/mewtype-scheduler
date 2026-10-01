@@ -2404,6 +2404,7 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
     # 준비 단계: 파싱 + LLM + 중복판정
     prepared = _prepare_notice(raw, now_iso, tag=tag, title=title, gh=gh)
     if prepared is None:
+        flowtrace.annotate(notice="none")   # (v4a) 작업 탭 결과에 소식 판정 표시(_finish_ingest_flow)
         return "none"
 
     try:
@@ -2411,7 +2412,9 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso,
                                         label=_notice_label(prepared))
         mode, parsed = result.get("mode"), result.get("parsed")
+        flowtrace.annotate(notice=mode or "unchanged")
     except Exception:
+        flowtrace.annotate(notice="error")
         log.exception("auto notice 실패")
         _dm_lost_raw("auto notice 호출 실패", raw, title=title or "", kind="notice",
                     tag=tag, gh=gh)
@@ -2534,15 +2537,60 @@ def _personal_retweet_reason(phone_raw: str, vx_extract: dict | None, channel_ke
     @bang_dream_info 의 애니 재방송 안내(「10/1(木)23:00より TOKYO MX」)를 리트윗 → 트윗 배지 + LLM 이 본인 예고로
     통과시켜 가짜 「10/01 23:00」 예고(운영에선 기존 10/11 예고를 덮음). 인용(QRT)은 작성자가 멤버라 해당 없음.
     """
-    body = xtweet._clean_text(phone_raw or "") if xtweet is not None else (phone_raw or "")
-    m = re.match(r"^\s*(?:RT\s+)?@(\w{1,15})\s*[:：]", body)
-    if m:
-        return f"폰 원문이 @{m.group(1)} 의 글"
-    author = ((vx_extract or {}).get("author") or "").lstrip("@").lower()
     handle = (((channels_cfg.get("channels") or {}).get(channel_key) or {}).get("handle") or "").lower()
+    rt = _retweet_mark(phone_raw, vx_extract)
+    if rt:
+        return rt
+    author = ((vx_extract or {}).get("author") or "").lstrip("@").lower()
     if author and handle and author != handle:
         return f"작성자 @{author} ≠ @{handle}"
     return None
+
+
+_RT_HEAD_RE = re.compile(r"^\s*(?:RT\s+)?@(\w{1,15})\s*[:：]")
+
+
+def _retweet_mark(phone_raw: str, vx_extract: dict | None) -> str | None:
+    """(v4a) 리트윗 **표시** 가 있으면 사유, 없으면 None — 작성자 비교는 호출부가 한다.
+
+    ① 폰 원문(vxtwitter 교체 **전**)이 `@핸들:` / `RT @핸들:` 로 시작 ② vxtwitter 본문이 `RT @핸들:` 로 시작
+    (vxtwitter 는 리트윗 자체를 준다 — 작성자 = 리트윗한 계정이라 작성자 비교로는 안 잡힘)
+    ③ fxtwitter(폴백)의 `reposted_by` 가 있음(원 글 본문 + 원 작성자를 주고 리트윗한 계정을 여기 싣는다).
+    """
+    body = xtweet._clean_text(phone_raw or "") if xtweet is not None else (phone_raw or "")
+    m = _RT_HEAD_RE.match(body)
+    if m:
+        return f"폰 원문이 @{m.group(1)} 의 글"
+    ex = vx_extract or {}
+    m = re.match(r"^\s*RT\s+@(\w{1,15})\s*[:：]", ex.get("text") or "")
+    if m:
+        return f"@{m.group(1)} 의 글을 리트윗"
+    if ex.get("reposted_by"):
+        return f"@{ex['reposted_by']} 가 @{ex.get('author') or '?'} 의 글을 리트윗"
+    return None
+
+
+def _official_skip_reason(phone_raw: str, vx_extract: dict | None, title: str | None,
+                          channels_cfg: dict) -> str | None:
+    """(v4a, 10-01 운영자 결정) 「공식」 경로는 그룹 공식 X(@BDP_yumemita)가 **직접 쓴 글**만 받는다 — 아니면 사유.
+
+    소식 · 공식 스케줄 판정 전에 건다. 리트윗(표시 · `reposted_by`) → 작성자(vxtwitter/fxtwitter)가 그룹 핸들이 아님 →
+    작성자를 모르면(조회 둘 다 실패) 알림 제목(표시명)이 그룹 이름으로 시작하지 않음 순.
+    전엔 개인 5인 표시명이 아닌 알림은 전부 「공식」으로 들어와(폰이 「バンドリ！アワーノーツ」 등 다른 계정 알림도 보냄),
+    fxtwitter 로 떨어지면 남의 글 리트윗이 원 글 본문 그대로 소식이 될 수 있었다.
+    """
+    rt = _retweet_mark(phone_raw, vx_extract)
+    if rt:
+        return f"리트윗: {rt}"
+    handles = {(v.get("handle") or "").lower()
+               for v in (channels_cfg.get("channels") or {}).values() if v.get("is_group")}
+    author = ((vx_extract or {}).get("author") or "").lstrip("@").lower()
+    if author:
+        return None if author in handles else f"다른 계정 글: 작성자 @{author}"
+    t = (title or "").strip()
+    if t.startswith("夢限大みゅーたいぷ"):
+        return None
+    return f"다른 계정 알림: 표시명 「{t[:30]}」" if t else "작성자 확인 불가: 알림 표시명 없음"
 
 
 def _expand_truncated_yt(raw: str, tag) -> str:
@@ -2830,6 +2878,19 @@ def _handle_member_live_start(parsed: dict, channels_cfg: dict, now_iso: str) ->
     return {"ok": True, "member_live": ck, "mode": mode, "video_id": live["video_id"]}, 200
 
 
+# (v4a) 소식 판정 mode(`notices.merge_notice` · `_maybe_auto_notice`) → 작업 탭 결과 문구
+_NOTICE_VERDICT = {
+    "none": "소식 아님",
+    "added": "소식 추가",
+    "updated": "소식 갱신",
+    "recap": "소식 안 올림 — 지난 소식과 같은 글(recap)",
+    "dup": "소식 안 올림 — 이미 본 글",
+    "skip": "소식 안 올림 — 이미 지난 이벤트",
+    "unchanged": "소식 바뀐 것 없음",
+    "error": "소식 반영 실패",
+}
+
+
 def _finish_ingest_flow(body, code: int) -> None:
     """(v4a) /ingest 흐름 마무리 — 응답으로 결과 사유를 정한다. 결과를 안 기다린 작업(detached)이 남았으면
     적용 큐 워커가 마무리하므로 사유만 남긴다. 기록 실패는 무시."""
@@ -2855,9 +2916,14 @@ def _finish_ingest_flow(body, code: int) -> None:
         elif j.get("ignored"):
             why = f"처리 대상 아님 — {j['ignored'] if j['ignored'] is not True else '무시'}"
         elif "parsed" in j:
-            why = (f"공식 스케줄 {j['parsed']}행 반영" if j["parsed"]
-                   else "스케줄 형식 아님" + (" — 소식으로 반영" if any(
-                       s["n"] == "반영" and s["s"] == "done" for s in f["stages"]) else " — 반영할 것 없음"))
+            # (v4a) 소식 판정을 같이 적는다 — 전엔 소식 쓰기(정리 포함)가 한 번이라도 돌면 「소식으로 반영」이라,
+            # 이미 본 글 · recap 처럼 안 올린 것도 인입된 것처럼 보였다
+            why = (f"공식 스케줄 {j['parsed']}행 반영" if j["parsed"] else "스케줄 형식 아님")
+            nm = f.get("notice")
+            if nm:
+                why += " · " + _NOTICE_VERDICT.get(nm, f"소식 {nm}")
+            elif not j["parsed"]:
+                why += " — 반영할 것 없음"
         else:
             why = "처리 끝"
         if f.get("detached"):
@@ -5585,6 +5651,15 @@ if _FLASK_AVAILABLE:
                 mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
                                             now_iso=now_iso, vx_extract=_vx_ex)
                 return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
+            elif raw:   # 빈 text 는 아래에서 400(폰 쪽 이상 계측) — 판정하지 않는다
+                # (v4a, 10-01 운영자 결정) 「공식」 = @BDP_yumemita 가 직접 쓴 글만 — 리트윗 · 다른 계정 글은 소식 · 스케줄 어디에도 안 올린다
+                skip = _official_skip_reason(phone_raw, _vx_ex, title, _load_channels_config())
+                if skip:
+                    log.info("공식 경로: 건너뜀 — %s (tweet %s)", skip, x_tag)
+                    _log_event_safe(gh, now_iso, "relay", RESULT_OK, via="ingest",
+                                    detail=f"mode: none · 공식 글 아님 · {skip}")
+                    flowtrace.mark("준비", "skip", f"공식 글 아님 · {skip}")
+                    return jsonify({"ok": True, "ignored": f"공식 글 아님 · {skip}"}), 200
 
         # (v2.7) 소식 게시판 — schedule.json 과 별개 파이프라인. INGEST_ECHO/DRY-RUN 과
         # 무관하게 여기서 항상 시도한다(소식이 아니면 GitHub 도 안 건드림).
@@ -5950,7 +6025,30 @@ if __name__ == "__main__":
     assert _personal_retweet_reason("今日も配信！", {"author": "Miyako_Yumemita"}, "miyako", _rcfg) is None  # 대소문자 무시
     assert _personal_retweet_reason("今日も配信！", None, "miyako", _rcfg) is None                        # 조회 실패 → 원문만
     assert _personal_retweet_reason("今日も配信！", {"author": ""}, "miyako", _rcfg) is None
-    print("[OK] _personal_retweet_reason (폰 원문 @핸들: · 작성자 불일치 → 리트윗)")
+    # (v4a) vxtwitter 리트윗 본문(작성자 = 리트윗한 멤버) · fxtwitter reposted_by
+    assert _personal_retweet_reason("再放送", {"author": "miyako_yumemita", "text": "RT @bang_dream_info: 再放送"},
+                                    "miyako", _rcfg)
+    assert _personal_retweet_reason("再放送", {"author": "bang_dream_info", "reposted_by": "miyako_yumemita"},
+                                    "miyako", _rcfg).startswith("@miyako_yumemita 가 @bang_dream_info")
+    print("[OK] _personal_retweet_reason (폰 원문 @핸들: · RT 본문 · reposted_by · 작성자 불일치 → 리트윗)")
+
+    # ── (v4a 10-01) _official_skip_reason — 「공식」 = @BDP_yumemita 가 직접 쓴 글만 ──
+    _ocfg = {"channels": {"miyako": {"handle": "miyako_yumemita"},
+                          "group": {"handle": "BDP_yumemita", "is_group": True}}}
+    _G = "夢限大みゅーたいぷ"
+    assert _official_skip_reason("本日の配信", {"author": "BDP_yumemita"}, _G, _ocfg) is None          # 직접 쓴 글
+    assert _official_skip_reason("本日の配信", {"author": "bdp_yumemita"}, "", _ocfg) is None           # 대소문자 무시 · 표시명 무관
+    assert _official_skip_reason("本日の配信", None, _G, _ocfg) is None                                 # 조회 실패 → 표시명
+    assert _official_skip_reason("本日の配信", None, _G + "公式", _ocfg) is None
+    assert _official_skip_reason("@TVLIVE_info: 出演", None, _G, _ocfg).startswith("리트윗:")          # 폰 원문 표시
+    assert _official_skip_reason("出演", {"author": "BDP_yumemita", "text": "RT @TVLIVE_info: 出演"}, _G, _ocfg)  # vx 리트윗
+    assert _official_skip_reason("出演", {"author": "TVLIVE_info", "reposted_by": "BDP_yumemita"}, _G, _ocfg)  # fx 리트윗
+    assert _official_skip_reason("新曲", {"author": "bang_dream_GBP"}, "バンドリ！アワーノーツ", _ocfg).startswith("다른 계정 글")
+    assert _official_skip_reason("新曲", None, "バンドリ！アワーノーツ", _ocfg).startswith("다른 계정 알림")
+    assert _official_skip_reason("新曲", None, "", _ocfg).startswith("작성자 확인 불가")
+    assert _official_skip_reason("引用です", {"author": "BDP_yumemita", "qrt_url": "x"}, _G, _ocfg) is None  # 인용(QRT)은 직접 쓴 글
+    assert set(_NOTICE_VERDICT) >= {"none", "added", "updated", "recap", "dup", "skip", "unchanged", "error"}
+    print("[OK] _official_skip_reason (리트윗 · 다른 계정 → 공식 경로 제외)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}

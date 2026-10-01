@@ -36,7 +36,7 @@ def _fetch_tweet(tid, *a, **k):
 
 def _extract(j):
     return {"text": j.get("text", ""), "author": j.get("author", ""), "media": j.get("media", []), "urls": [],
-            "yt_video_id": None, "qrt_url": None, "qrt": j.get("qrt")}
+            "yt_video_id": None, "qrt_url": None, "qrt": j.get("qrt"), "reposted_by": j.get("reposted_by", "")}
 
 
 vxtwitter.fetch_tweet, vxtwitter.extract = _fetch_tweet, _extract
@@ -683,6 +683,45 @@ def run():
     finally:
         writers.dispatch = _orig_dispatch
         post("set_log_level", {"level": "normal"})
+
+    # ═════ B16 「공식」 = @BDP_yumemita 가 직접 쓴 글만 · 작업 탭 결과에 소식 판정 (2026-10-01 운영자 결정) ═════
+    scenario("B16 공식 경로 — 리트윗 · 다른 계정 글은 소식 · 스케줄 판정 전에 건너뜀, 흐름 결과에 소식 판정")
+    from src.backend import flowtrace
+
+    def notices_n():
+        return len((h.GH.read_json("notices.json")[0] or {}).get("notices", []))
+
+    def last_reason():
+        f = flowtrace.list_flows(1)
+        return (f[0].get("reason") or "") if f else ""
+
+    dn = (REAL_NOW + timedelta(days=8)).astimezone(KST)
+    N_TEXT = f"💿夢限大みゅーたいぷ 7th Single💿\n{dn.month}/{dn.day}発売決定！\n予約受付中です✨\n#ゆめみた"
+    n0 = notices_n()
+    # ① fxtwitter 폴백 리트윗 — 원 글 본문 · 원 작성자 + reposted_by (폰 원문에 표시 없음)
+    TW["2100000000000000350"] = {"author": "TVLIVE_info", "reposted_by": "BDP_yumemita", "text": N_TEXT}
+    r = h.ingest_x(N_TEXT, OFF, tag="p#x#1tweet-2100000000000000350")
+    check("B16", "fxtwitter 리트윗(reposted_by) → 소식 안 올림", notices_n() == n0 and "공식 글 아님" in str(r.get("ignored")), r)
+    check("B16", "흐름 결과 「처리 대상 아님 — 공식 글 아님 · 리트윗」", "공식 글 아님 · 리트윗" in last_reason(), last_reason())
+    # ② 다른 계정(게임 공식 등) 글 — 작성자 확인됨
+    TW["2100000000000000351"] = {"author": "bang_dream_GBP", "text": N_TEXT}
+    r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag="p#x#1tweet-2100000000000000351")
+    check("B16", "다른 계정 글(작성자 ≠ 그룹) → 소식 안 올림", notices_n() == n0 and "다른 계정 글" in str(r.get("ignored")), r)
+    # ③ 조회 실패 — 표시명으로
+    r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag="p#x#1tweet-2100000000000000352")
+    check("B16", "조회 실패 + 다른 표시명 → 소식 안 올림", notices_n() == n0 and "다른 계정 알림" in str(r.get("ignored")), r)
+    check("B16", "건너뜀 로그(relay · 공식 글 아님)", events(lambda e: e.get("flow") == "relay" and "공식 글 아님" in e.get("detail", "")))
+    # ④ 그룹이 직접 쓴 글 → 소식 추가 + 흐름 결과에 「소식 추가」
+    off_tweet("2100000000000000353", N_TEXT)
+    check("B16", "그룹 직접 글 → 소식 추가", notices_n() == n0 + 1, notices_n())
+    check("B16", "흐름 결과 「스케줄 형식 아님 · 소식 추가」", last_reason() == "스케줄 형식 아님 · 소식 추가", last_reason())
+    # ⑤ 같은 글 다시 → 이미 본 글 (전엔 소식 쓰기가 돌았다는 이유로 「소식으로 반영」이라 적혔다)
+    off_tweet("2100000000000000353", N_TEXT)
+    check("B16", "같은 글 다시 → 흐름 결과 「소식 안 올림 — 이미 본 글」",
+          last_reason() == "스케줄 형식 아님 · 소식 안 올림 — 이미 본 글", last_reason())
+    # ⑥ 소식도 스케줄도 아님
+    off_tweet("2100000000000000354", "おはようございます☀️")
+    check("B16", "잡담 → 흐름 결과 「스케줄 형식 아님 · 소식 아님」", last_reason() == "스케줄 형식 아님 · 소식 아님", last_reason())
 
     # ═════ 원칙 ═════
     scenario("원칙 (2차 시나리오 포함)")

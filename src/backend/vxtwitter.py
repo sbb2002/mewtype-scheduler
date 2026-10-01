@@ -79,7 +79,11 @@ def _fx_to_vx(fx: dict) -> dict | None:
     urls, ext = _fx_media(t.get("media"))
     out: dict = {"text": t.get("text") or "", "mediaURLs": urls, "media_extended": ext,
                  "tweetID": t.get("id"),
-                 "user_screen_name": ((t.get("author") or {}).get("screen_name") or "")}
+                 "user_screen_name": ((t.get("author") or {}).get("screen_name") or ""),
+                 # (v4a) 리트윗이면 fxtwitter 는 원 글(본문 · 작성자)을 주고 리트윗한 계정을 여기에 싣는다
+                 # (2026-10-01 실측: 미야코가 @bang_dream_info 글을 리트윗 → author=bang_dream_info,
+                 #  reposted_by.screen_name=miyako_yumemita). vxtwitter 는 리트윗 자체(`RT @…:` 본문)를 준다.
+                 "reposted_by": ((t.get("reposted_by") or {}).get("screen_name") or "")}
     q = t.get("quote")
     if isinstance(q, dict):
         qurls, qext = _fx_media(q.get("media"))
@@ -218,6 +222,7 @@ def extract(j: dict) -> dict:
     return {
         "text": text,
         "author": str(j.get("user_screen_name") or ""),     # (v4a) 작성자 X 핸들 — URL 투입에서 멤버 판별용
+        "reposted_by": str(j.get("reposted_by") or ""),     # (v4a) 리트윗한 계정(fxtwitter 폴백일 때만) — 리트윗 판정용
         "media": media_urls,
         "urls": urls,
         "yt_video_id": yt_video_id,
@@ -375,6 +380,12 @@ if __name__ == "__main__":
     assert extract(_fx_to_vx(fx_media))["media"] == [
         "https://pbs.twimg.com/media/p.jpg", "https://pbs.twimg.com/v_thumb.jpg", "https://pbs.twimg.com/g_thumb.jpg"]
     assert _fx_to_vx({"tweet": {"id": "1"}}) is None and _fx_to_vx({}) is None
+    # (v4a) 리트윗 — fxtwitter 는 원 글 작성자 + reposted_by (2026-10-01 실측 형식)
+    _rt = extract(_fx_to_vx({"tweet": {"id": "2", "text": "再放送", "author": {"screen_name": "bang_dream_info"},
+                                       "reposted_by": {"screen_name": "miyako_yumemita", "name": "藤都子"}}}))
+    assert (_rt["author"], _rt["reposted_by"]) == ("bang_dream_info", "miyako_yumemita"), _rt
+    assert extract(_fx_to_vx(fx_media))["reposted_by"] == "" and extract({"text": "x"})["reposted_by"] == ""
+    print("[OK] fxtwitter reposted_by → extract")
     print("  fx 미디어: 사진 원본 / 영상·GIF 썸네일, 빈 응답 None")
 
     # ── (v3.7.4) 영상·GIF 는 썸네일 — 실측 2026-09-19 18:07 KST 아라레(2101235831302431170) 응답 ──
