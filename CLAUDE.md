@@ -190,6 +190,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   **이 상자 위 서술(Cloud Run · Tasks · data 브랜치 커밋 경로)은 운영 v3.8.10 기준이고, v4a 에서는 아래가 다르다.**
 >   문서: `ref/v4a/` — 계획 `v4a_impl_plan.md` · 결정 `v4a_decisions.md`(D1~D34, 10-01 후속 결정 = §1-9 D26~D34) · 검증 `v4a_verify_report.md` ·
 >   2차 검증 `v4a_verify_report_0930.md` · **남은 작업 `v4a_remaining_0930.md`**(10-01 갱신 — 결정 6건 · 작은 수정 6건 반영 결과와 남은 것) ·
+>   **남은 실측 확인 `v4a_pending_checks.md`**(상황이 와야 볼 수 있는 것 — 폰 배선 · 프리미어 · 예고 DM · OCR · D4. 다른 세션이 이어받아 확인) ·
+>   폰 Automate 배선 `docs/v4a_automate_wire.md`(10-01 Fork 분리 · 재시도 적용) ·
 >   관측 흐름 `v4a_verify_flow.html` · 운영 `v4a_local_runbook.md` · 재검증 `verify/harness.py`(79개 확인) ·
 >   `verify/harness_b.py`(09-30 이후 기능 97개 — 결과 `results_b.json`, git 제외).
 >   - 배선: `storage.py`(V4A_RUNTIME=local → `LocalStore`, control·admin_state 는 ops 로 라우팅) ·

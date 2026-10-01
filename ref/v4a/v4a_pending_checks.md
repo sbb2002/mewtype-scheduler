@@ -1,0 +1,88 @@
+# v4a 남은 실측 확인 — 상황이 생길 때 확인할 것 (2026-10-01 작성)
+
+코드 · 하네스 검증은 끝났고(1차 79/79 · 2차 106/106, 커밋 `63d0e88` 이후), **실제 상황이 와야만 볼 수 있는 것**만 남았다.
+다른 세션이 이어받을 수 있게 항목마다 「무엇을 · 언제 · 어디서 · 기대 결과」를 적는다. 확인하면 항목 끝의 상태를 바꾸고 날짜 · 근거를 남길 것.
+경위 · 결정 기록은 `v4a_remaining_0930.md`(§3), 결정 번호는 `v4a_decisions.md`.
+
+## 확인할 때 보는 곳
+
+| 자료 | 위치 | 메모 |
+|---|---|---|
+| v4a 이벤트 로그 | `_local/monitoring/monitoring/events-YYYY-MM-DD.jsonl` | 하루 경계 **KST 06:00**(전날 날짜 파일에 들어감). 시각은 UTC. `flow` = upstream · relay · notice · tweet · preview … |
+| v4a 흐름 기록 | `_local/ops/flows.json` (관리 페이지 작업 탭 「최근 흐름」) | `reason` = 흐름 결과 문구, `notice` = 소식 판정 mode |
+| LLM 판단 기록 | `_local/ops/llm_actions.json` | `kind` = ocr_members · broadcast_change · own_broadcast … |
+| 러너 상태 | `_local/ops/runner.json` | 재시작 시각 · PID. 코드 변경은 **재시작 뒤**부터 반영 |
+| 폰 Automate 로그 | 운영자가 내보내 줌(예: `ref/flow-11_261001.log`, `*.log` 라 git 제외) | 시각은 **KST**. 형식 `MM-DD HH:MM:SS.mmm I <파이버>@<블록>: …`, 실패는 `F` |
+| 운영 Cloud Run 요청 로그 | `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="mewtype-telegram" AND httpRequest.requestUrl:"/ingest" AND timestamp>="…Z"' --format="value(timestamp,httpRequest.status,httpRequest.latency)"` | 읽기 전용. timestamp = 요청 접수 시각 |
+| 관리 페이지 | 텔레그램 `/admin` 일회용 링크 | 실데이터를 바꾸지 않는 확인은 미리보기까지만 |
+
+---
+
+## 1. 폰 → v4a 전달 (6번) — 배선 수정 10-01 적용, **다음 폰 로그로 확인**
+
+배선: `docs/v4a_automate_wire.md`(현행) · 설계 근거 `docs/v4a_automate_wire_proposed.md` · 진단 `v4a_remaining_0930.md` §3-2.
+`[48]` Fork → 운영 `[49]` failure catch(retry 0) → `[40]` → `[50]` 성공 로그 / `[53]` 실패 로그,
+v4a `[51]` failure catch(retry 2) → `[47]` → `[52]` 성공 로그 / `[54]` 실패 로그.
+
+| # | 확인 | 기대 | 상태 |
+|---|---|---|---|
+| 1-1 | X 알림마다 폰 로그에 `prod http=…` 와 `v4a http=…` 가 각각 남는가 | 둘 다 200 | 미확인 |
+| 1-2 | v4a 도착이 운영 응답을 기다리지 않는가 | 폰 로그에서 `[47]` 시작 시각 ≈ `[40]` 시작 시각(이전엔 `[40]` 끝난 뒤) | 미확인 |
+| 1-3 | 알림이 몰릴 때(같은 초 2~3건) 누락이 없는가 | 그 시각 운영 Cloud Run `/ingest` 건수 = v4a `flow=upstream` 건수 | 미확인 |
+| 1-4 | failure catch 의 retry limit 이 가정대로인가 | 러너를 끈 상태로 알림 1건 → 약 30초 뒤 `v4a FAIL retry=2 …` **1줄**(재시도 2번 후 ERROR 경로). 다르면 `[51]` 재설계 | 미확인 |
+| 1-5 | 성공 시 `[52]` 의 `v4a_retry` 값 | 실패가 없으면 failure catch 출력이 안 채워져 빈 값 · null 로 찍힐 수 있음 — 동작 영향 없음, 표시만 확인 | 미확인 |
+| 1-6 | `[47]` 접속 실패(`failed to connect … 100.79.146.124:8787`)가 다시 나는가 | 재시도로 흡수되면 `v4a http=200 retry=1/2`. 3회 다 실패가 이어지면 Tailscale 경로 점검(10-01 까지 PC 는 깨어 있었는데 실패 — 원인 미확정) | 미확인 |
+
+## 2. 멤버 채널 프리미어 추적 (D26) — **10-01 18:00 KST 노노카 퀴즈**
+
+영상 `zh6vG0isdAE`(「このエピソード夢？現実？クイズ【宮永ののか】#ゆめみた」), 18:00 KST = 09:00Z. 10-01 10:06 KST 에 upcoming 카드로 올라온 것까지 확인.
+
+| 확인 | 기대 | 상태 |
+|---|---|---|
+| 이벤트 로그 `flow=preview` · `video_id=zh6vG0isdAE` 의 전이 | upcoming → watching(17:40 KST 확인 때) → live → end 순. 프리미어는 영상 길이만큼 재생되고 끝난다 | 미확인 |
+| end 뒤 처리 | 일반 방송처럼 종료 · 아카이브로 넘어가는가(이상하게 오래 live 로 남지 않는가) | 미확인 |
+
+## 3. 예고 DM (D29) — normal 레벨, 4경로 중 1경로만 확인
+
+옛 이름 `scheduled` → `announced` 로 바꾼 4곳. **본인 예고 경로는 10-01 10:11 KST 에 확인**(「📅 … 본인 예고 감지 → 23:00 JST」).
+「🆕 소식 갱신됨」은 `notice` 종류라 증거가 아니다.
+
+| 경로 | 언제 오나 | 기대 DM | 상태 |
+|---|---|---|---|
+| URL 확정 예고 | 멤버 트윗에 YouTube 영상 URL | 예고 반영 DM | 미확인 |
+| 공식 일일 스케줄 요약 | @BDP_yumemita 「配信スケジュール」 글 | 스케줄 요약 DM(`↩️ /undo …` 포함) | 미확인 |
+| 대기열 반영 | 로컬 v4a 에선 대기열 drain 을 건너뛴다(`storage.is_local()`) — **v4a 에선 나올 일이 없음** | — | 해당 없음(운영 반영 때 확인) |
+
+## 4. 쓰기 결과 DM (D33) — 알림 레벨 「자세히」에서만
+
+2초 넘는 쓰기에 「⏳ … 처리 중」 + 실제 결과(✅ 추가 · ☑️ 안 올림 — 이미 본 글 …). 하네스 B15 로 확인됨.
+실동작은 운영자가 알림 레벨을 「자세히」로 둔 동안에만 볼 수 있다 — **레벨을 바꾸는 건 운영자 결정**(DM 이 많아진다). 상태: 미확인(선택).
+
+## 5. 작업 탭 소식 판정 문구 (9번) — 공식 계정이 직접 쓴 글이 올 때
+
+리트윗 건너뜀 쪽은 **10-01 15:22 KST 확인**(「처리 대상 아님 — 공식 글 아님 · 리트윗: 폰 원문이 @bang_dream_info 의 글」).
+남은 것: @BDP_yumemita 의 직접 글이 왔을 때 `flows.json` 의 `reason` 이 「스케줄 형식 아님 · 소식 추가 / 소식 갱신 / 소식 안 올림 — 이미 본 글 / 소식 아님」
+중 하나로 나오는가(`notice` 필드 채워짐). 상태: 미확인.
+
+## 6. 언제 올지 모르는 것
+
+| 항목 | 언제 | 확인 | 상태 |
+|---|---|---|---|
+| 그룹 영상 출연진 이미지 OCR 정확도 | 공식 X 가 그룹 방송 영상 URL + 출연진 이미지를 올리고 글에 이름 · 인원 근거가 없을 때 | `llm_actions.json` `kind=ocr_members` 의 멤버가 이미지와 맞는가. 틀리면 작업 탭 「LLM 판단」 되돌리기(→ 확인 대기) | 미확인 |
+| D4 `search.list` 시작 +2분 | URL 없는 예고(본인 텍스트 예고 · 공식 스케줄의 채널 주소 줄)가 시작할 때 | 시작+2분 무렵 그 예고에 `video_id` 가 채워지고 live 로 바뀌는가(이벤트 로그 `flow=preview`). 못 찾으면 +1h 에 `out`(D4) | 미확인 |
+
+## 7. 결정 대기 (검증 아님)
+
+- **「バンドリ！アワーノーツ」(게임 계정) 글을 소식에 올릴지** — 10-01 「공식 = @BDP_yumemita 직접 글」 적용으로 지금은 빠진다.
+  그전 09-30~10-01 v4a 에서 이 계정 알림으로 소식 추가 8 · 갱신 2(게임 공지 + 5th Single 발매 소식). 올리기로 하면 그 계정 핸들을
+  허용 목록에 넣는 수정이 필요(핸들은 vxtwitter `author` 로 확인 — 추측 금지).
+
+---
+
+## 10-01 에 확인 끝난 것 (참고)
+
+- 관리 페이지(데이터 사본 · 별도 러너 127.0.0.1:8799 로 확인, 실데이터 무변경): 자동 · 예고 「내용 감지」 체크박스 — 빈칸 · 멤버 트윗 URL · `x.com/i/status/…` 에선 보이고,
+  `@BDP_yumemita` 트윗 URL · YouTube URL(watch · youtu.be)에선 숨음. 재등록 차단 중 영상 미리보기 「⚠ 재등록 차단 중(해제 10/02 15:00) — 확정하면 차단을 풀고 올립니다」.
+- 작업 탭 「최근 자동 처리」 우리말(정기 수집 · 개인 트윗 반영 · 소식 반영). 「내가 한 조작」 에 `undo_llm_action` · `dismiss_group_pending` 이 내부 이름 그대로
+  보이던 것을 우리말로 고침(`admin.html` `renderHistory` LABEL).
+- 멤버 · 공식 리트윗 건너뜀 실동작(10-01 15:22 · 16:04 KST). 본인 예고 DM(D29) 10:11 KST.
