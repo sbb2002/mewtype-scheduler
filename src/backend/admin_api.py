@@ -1042,6 +1042,64 @@ def _retry_one(t, item: dict, chs: dict, now: str) -> str:
     return t._maybe_auto_notice(raw, now, tag=tag, title=title)
 
 
+LOST_ENDED_MSG = "이미 끝난 방송입니다 (종료 + 30분 지남)."
+
+
+def _lost_tweet_stale(t, item: dict, chs: dict, now: str) -> str | None:
+    """(v4a, 10-01 운영자 결정) 유실 원문(멤버 트윗) 재투입 전 — 이미 올릴 의미가 없으면 경고 문구, 있으면 None.
+
+    트윗 배지 수명 = X 게시 시각 + 48h(`xtweet.TTL_HOURS`). 48h 가 지났어도 그 트윗이 알린 **방송이 아직 유효**하면
+    (예정 · 라이브 · 끝났어도 end 창 = 종료 + 30분(`statemachine.END_WINDOW_SEC`) 안) 예고를 위해 재투입한다 —
+    end 단계에서 방송을 다시 켜는 경우가 있어서. 영상 URL 이 있으면 `videos.list`(쿼터 1)로, 없으면 본문 예고 파싱
+    (게시 시각 기준으로 읽고 그 예고의 `expires_at` 까지 유효)으로 본다. 공식 계정 원문(소식)은 대상이 아니다 — 소식은
+    자체 날짜 규칙으로 걸러진다. 판단할 근거가 없으면(게시 시각 모름) 막지 않는다."""
+    from . import statemachine, xtweet
+    kind = item.get("kind", "ingest")
+    if kind == "personal_tweet":
+        ck = item.get("channel_key", "")
+    elif kind == "ingest" and t.xtweet is not None:
+        try:
+            ck = t.xtweet.route_by_title(item.get("title", ""), chs, test_titles=())
+        except Exception:  # noqa: BLE001
+            return None
+        if ck == "official":
+            return None
+    else:
+        return None
+    posted = xtweet.snowflake_iso(xtweet._tweet_id(item.get("tag")) if item.get("tag") else None)
+    p, cur = xtweet._parse_iso(posted), xtweet._parse_iso(now)
+    if not p or not cur or cur < p + timedelta(hours=xtweet.TTL_HOURS):
+        return None                                   # 트윗 자체가 아직 유효(또는 판단 불가) — 그대로 재투입
+    raw = item.get("raw", "") or ""
+    ended = False
+    m = t.xrelay.YT_VIDEO_RE.search(t.xrelay.normalize(raw)) if t.xrelay is not None else None
+    if m:
+        api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+        info = None
+        if api_key and t.YouTubeClient is not None:
+            try:
+                info = t.YouTubeClient(api_key).videos_list([m.group(1)]).get(m.group(1))
+            except Exception:  # noqa: BLE001
+                log.warning("유실 원문 판정: videos.list 실패", exc_info=True)
+        if info is not None:
+            if info.live_state in ("upcoming", "live"):
+                return None                           # 방송 예정 · 진행 중
+            end = xtweet._parse_iso(info.actual_end)
+            if end and cur < end + timedelta(seconds=statemachine.END_WINDOW_SEC):
+                return None                           # end 창 안 — 다시 켜질 수 있음
+            ended = bool(end)
+    else:
+        handle = ((chs.get("channels") or {}).get(ck) or {}).get("handle", "")
+        try:
+            row = xtweet.parse_schedule(raw, channel_key=ck, tag=item.get("tag"), now_iso=posted, handle=handle)
+        except Exception:  # noqa: BLE001
+            row = None
+        if row and not xtweet._reached(row.get("expires_at"), now):
+            return None                               # 본문이 알린 방송이 아직 유효
+        ended = bool(row)
+    return TWEET_TOO_OLD_MSG + (" " + LOST_ENDED_MSG if ended else "")
+
+
 def retry_lost(ids: list[str]) -> dict:
     """유실 원문 재투입 — 한 건씩 순차(동시 발사가 애초 유실 원인, v3.9). 성공한 항목만 큐에서 뺀다."""
     from . import monitor_log
@@ -1052,10 +1110,20 @@ def retry_lost(ids: list[str]) -> dict:
     want = set(ids or [])
     chs = t._load_channels_config()
     now = _now_iso()
-    done, failed, keep = [], [], []
+    done, failed, keep, stale = [], [], [], []
     for i, it in enumerate(pending):
         lid = _lost_id(i, it)
         if lid not in want:
+            keep.append(it)
+            continue
+        try:
+            why = _lost_tweet_stale(t, it, chs, now)
+        except Exception:  # noqa: BLE001
+            log.warning("유실 원문 판정 실패 — 막지 않고 재투입", exc_info=True)
+            why = None
+        if why:
+            # 올릴 의미가 없는 항목 — 재투입하지 않고 큐에 남긴다(지우는 건 관리자 판단). 화면은 경고창
+            stale.append({"id": lid, "error": why})
             keep.append(it)
             continue
         try:
@@ -1070,10 +1138,12 @@ def retry_lost(ids: list[str]) -> dict:
             keep.append(it)
     if done:
         monitor_log.write_lost(gh, keep, sha, f"data: lost_queue admin 재투입 ({len(done)}/{len(want)})")
-    res = {"ok": not failed, "job_id": None, "result": {"done": done, "failed": failed},
-           "error": None if not failed else f"{len(failed)}건 실패"}
-    res["done"], res["failed"] = done, failed
-    return _record("retry_lost", ",".join(sorted(want))[:100], f"성공 {len(done)} · 실패 {len(failed)}", res)
+    res = {"ok": not failed and not stale, "job_id": None, "result": {"done": done, "failed": failed, "stale": stale},
+           "error": None if not (failed or stale) else
+           " · ".join([f"{len(failed)}건 실패"] * bool(failed) + [f"{len(stale)}건 재투입 안 함"] * bool(stale))}
+    res["done"], res["failed"], res["stale"] = done, failed, stale
+    return _record("retry_lost", ",".join(sorted(want))[:100],
+                   f"성공 {len(done)} · 실패 {len(failed)}" + (f" · 안 함 {len(stale)}" if stale else ""), res)
 
 
 def _write_control(mutate, action: str) -> dict:

@@ -748,6 +748,40 @@ def run():
     check("B17", "최근 트윗 — posted_at = Snowflake 게시 시각, expires_at = 그 + 48h",
           bool(nt) and nt.get("posted_at") == _p and nt.get("expires_at") == _exp, nt and {k: nt.get(k) for k in ("posted_at", "received_at", "expires_at")})
 
+    # ═════ B18 유실 원문 재투입 — 게시 48h 지난 멤버 트윗은 방송이 아직 유효(예정 · 라이브 · end 창 30분 안)할 때만 (2026-10-01 운영자 결정) ═════
+    scenario("B18 유실 원문 재투입 — 게시 48h 지남 + 방송 끝남(종료 + 30분 지남)이면 재투입 안 함 · 경고, end 창 안이면 재투입")
+    from src.backend import monitor_log as _ml
+    now_ = h.CLOCK.now
+    h.video("LOSTUP00001", "miyako", "upcoming", z(now_ + timedelta(hours=5)))
+    h.video("LOSTEN00010", "miyako", "none", z(now_ - timedelta(hours=2)), actual_start=z(now_ - timedelta(hours=2)),
+            actual_end=z(now_ - timedelta(minutes=10)))
+    h.video("LOSTEN00040", "miyako", "none", z(now_ - timedelta(hours=2)), actual_start=z(now_ - timedelta(hours=2)),
+            actual_end=z(now_ - timedelta(minutes=40)))
+    cases = {   # ts(구분용) → (kind, 제목, 원문, tag)
+        "B18-plain":  ("personal_tweet", "藤都子", "むかしの雑談だよ", "2100000000000000911"),
+        "B18-up":     ("personal_tweet", "藤都子", "配信します https://www.youtube.com/watch?v=LOSTUP00001", "2100000000000000912"),
+        "B18-end10":  ("personal_tweet", "藤都子", "配信ありがとう https://www.youtube.com/watch?v=LOSTEN00010", "2100000000000000913"),
+        "B18-end40":  ("personal_tweet", "藤都子", "配信ありがとう https://www.youtube.com/watch?v=LOSTEN00040", "2100000000000000914"),
+        "B18-fresh":  ("personal_tweet", "藤都子", "いまの雑談だよ", f"{h.TP}915"),
+        "B18-official": ("ingest", "夢限大みゅーたいぷ", "むかしのお知らせ", "2100000000000000916"),
+    }
+    for ts, (kind, title, raw, tid) in cases.items():
+        _ml.push_lost(h.GH, {"ts": ts, "kind": kind, "title": title, "raw": raw, "tag": f"p#x#1tweet-{tid}",
+                             "channel_key": "miyako" if kind == "personal_tweet" else ""})
+    lost = h.client.get("/admin/api/list_lost", headers=H).get_json()
+    ids = {l["ts"]: l["id"] for l in lost if str(l.get("ts", "")).startswith("B18-")}
+    r = post("retry_lost", {"ids": list(ids.values())})
+    stale = {s["id"]: s["error"] for s in r.get("stale") or []}
+    check("B18", "게시 48h 지남 · 방송 없음 → 재투입 안 함 + 48h 경고", stale.get(ids.get("B18-plain")) == "게시된지 48시간이 지난 트윗입니다.", r)
+    check("B18", "게시 48h 지남이어도 방송 예정이면 재투입", ids.get("B18-up") not in stale, stale)
+    check("B18", "방송 종료 10분 뒤(end 창 30분 안) → 재투입", ids.get("B18-end10") not in stale, stale)
+    check("B18", "방송 종료 40분 지남 → 재투입 안 함 + 끝난 방송 경고",
+          "이미 끝난 방송입니다" in (stale.get(ids.get("B18-end40")) or ""), stale)
+    check("B18", "게시 48h 안의 트윗 → 판정 없이 재투입", ids.get("B18-fresh") not in stale, stale)
+    check("B18", "공식 계정 원문(소식 경로)은 이 판정 대상 아님", ids.get("B18-official") not in stale, stale)
+    left = {l["ts"] for l in h.client.get("/admin/api/list_lost", headers=H).get_json()}
+    check("B18", "재투입 안 한 항목은 큐에 남음(지우지 않음)", {"B18-plain", "B18-end40"} <= left, sorted(x for x in left if x.startswith("B18")))
+
     # ═════ 원칙 ═════
     scenario("원칙 (2차 시나리오 포함)")
     commits = [json.loads(l) for l in open(h.WORK / "_local/data/.commits.jsonl", encoding="utf-8")]

@@ -3686,10 +3686,16 @@
                     const result = await this.apiCall("POST", "/retry_lost", { ids });
                     const done = result.done || [];
                     const failed = result.failed || [];
-                    this.showToast(`성공 ${done.length}건 · 실패 ${failed.length}건`, failed.length ? "error" : "success");
+                    const stale = result.stale || [];     // (v4a) 올릴 의미가 없어 재투입하지 않은 항목(게시 48h 지남 · 방송 끝남)
+                    this.showToast(`성공 ${done.length}건 · 실패 ${failed.length}건` + (stale.length ? ` · 안 함 ${stale.length}건` : ""),
+                                   failed.length || stale.length ? "error" : "success");
+                    if (stale.length) {
+                        alert(stale.length === 1 ? stale[0].error
+                              : `${stale.length}건은 재투입하지 않았습니다.\n\n` + stale.map((s) => "· " + s.error).join("\n"));
+                    }
                     // 실패 사유를 남은 항목 옆에 표시. 목록 id 는 순번 기반이라 재조회 후 바뀌므로 원문 시각(ts)으로 맞춘다
                     this.lostResults = {};
-                    for (const f of failed) this.lostResults[f.id.split(":").slice(1).join(":")] = f.error;
+                    for (const f of [...failed, ...stale]) this.lostResults[f.id.split(":").slice(1).join(":")] = f.error;
                     this.loadLost();
                 } catch (e) {
                     this.showToast(`오류: ${e.message}`, "error");
