@@ -267,7 +267,8 @@ _VIDEO_RELEASES_MAX = 300
 
 
 def record_video_releases(gh, entries: list[dict], now_iso: str) -> dict:
-    """(v4a) 방송 카드로 올리지 않은 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등) 기록 — ops `video_releases.json`.
+    """(v4a) 방송 카드로 올리지 않은 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등) 기록 — ops `video_releases.json`.
+    (2026-10-01 부터 그룹 채널만 — 멤버 개인 채널 프리미어는 방송 카드로 올린다. 그 전 기록엔 멤버 채널 것이 섞여 있을 수 있다.)
     버리지 않고 남겨 두는 이유: 추후 보조 기능("유메미타 플레이어")의 재료(운영자 구상). video_id 기준 upsert(처음 본 시각 유지),
     최근 300건. 반환 {"added": [새 video_id]}. 쓰기 실패는 호출부 흐름을 막지 않도록 예외를 삼킨다."""
     uniq = {}
@@ -436,13 +437,13 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 raise
             log.warning("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
 
-    # ── (v4a) 수집에서 뺀 프리미어(녹화 영상 공개) 기록 · 있던 예고를 뺐으면 모니터 로그 ──
+    # ── (v4a) 수집에서 뺀 그룹 채널 프리미어(녹화 영상 공개) 기록 · 있던 예고를 뺐으면 모니터 로그 ──
     if _premieres:
         record_video_releases(gh, [dict(p, source="reconcile") for p in _premieres], now_iso)
         try:
             log_events(gh, now_iso, [{
                 "ts": now_iso, "flow": "preview", "result": RESULT_OK, "who": p.get("channel_id") or "",
-                "detail": f"프리미어(녹화 영상) — 방송 카드에서 뺌 · {p['video_id']}", "video_id": p["video_id"],
+                "detail": f"그룹 채널 프리미어(녹화 영상) — 방송 카드에서 뺌 · {p['video_id']}", "video_id": p["video_id"],
                 "item_id": p.get("removed_item"), "title": p.get("title"),
             } for p in {x["video_id"]: x for x in _premieres}.values() if p.get("removed_item")])
         except Exception:  # noqa: BLE001

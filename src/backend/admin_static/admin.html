@@ -1262,11 +1262,14 @@
                 const rawEl = document.getElementById("a-raw");
                 const countEl = document.getElementById("a-count");
                 rawEl.addEventListener("input", () => { countEl.textContent = `${rawEl.value.length.toLocaleString()}자`; });
+                // 자동·예고: URL 종류(멤버 트윗 / YouTube · 공식 트윗)에 따라 「내용 감지」 체크박스를 보이거나 숨긴다
+                document.getElementById("a-turl").addEventListener("input", () => this.syncDetectBox());
                 document.getElementById("a-clear").addEventListener("click", () => {
                     rawEl.value = "";
                     document.getElementById("a-turl").value = "";
                     countEl.textContent = "0자";
                     this.resetIngestPreview();
+                    this.syncDetectBox();
                     (document.getElementById("a-tweet-box").hidden ? rawEl : document.getElementById("a-turl")).focus();
                 });
                 document.getElementById("m-tbd").addEventListener("change", (e) => {
@@ -1969,10 +1972,22 @@
                 for (const [k, n] of this.ingestMembers()) add(k, n);
             },
 
-            // 「내용 감지를 통한 예고 수정」은 글(호스트가 정해진)이 있을 때만: 자동·예고(호스트 선택 시) · 자동·트윗 · 수동·트윗
+            // 「내용 감지를 통한 예고 수정」은 글(호스트가 정해진)이 있을 때만: 자동·예고(멤버 트윗 URL) · 자동·트윗 · 수동·트윗
             detectAvailable() {
                 const { mode, kind } = this.ing;
-                return (mode === "auto" && (kind === "preview" || kind === "tweet")) || (mode === "manual" && kind === "tweet");
+                if (mode === "auto" && kind === "preview") return this.previewUrlTakesDetect();
+                return (mode === "auto" && kind === "tweet") || (mode === "manual" && kind === "tweet");
+            },
+
+            // 자동·예고 URL 이 YouTube 영상이거나 그룹 공식 계정 트윗이면 서버가 「내용 감지」를 쓰지 않는다 — 체크박스를 숨긴다.
+            // 주소에 작성자가 안 보이는 트윗(x.com/i/status/…)은 누가 썼는지 몰라 그대로 보여 준다(서버가 작성자를 보고 판단)
+            previewUrlTakesDetect() {
+                const url = (document.getElementById("a-turl").value || "").trim();
+                if (/youtu\.be\/|youtube\.com\/(watch|live|shorts)/i.test(url)) return false;
+                const m = url.match(/^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([^/?#\s]+)\/status/i);
+                if (!m) return true;
+                const author = m[1].toLowerCase();
+                return !Object.values(this.channels || {}).some((c) => c.is_group && (c.handle || "").toLowerCase() === author);
             },
 
             // 「트윗과 예고를 같이 추가」는 자동 · 트윗에서만(트윗 URL 하나로 두 가지를 동시에 올린다)

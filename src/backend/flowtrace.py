@@ -80,7 +80,8 @@ def _save() -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps({"flows": list(_flows.values())}, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, p)
+        from .local_store import replace_retry   # (v4a) Windows 권한 오류 짧은 재시도
+        replace_retry(tmp, p)
     except Exception:  # noqa: BLE001
         log.warning("flows.json 저장 실패", exc_info=True)
 

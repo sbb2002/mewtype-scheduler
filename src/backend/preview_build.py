@@ -37,6 +37,19 @@ ANNOUNCED_NO_TIME_TTL_SEC = 18 * 3600
 GROUP_CHANNEL_KEY = "group"
 
 
+def is_group_release(video, channels_cfg: dict) -> bool:
+    """(v4a) 방송 카드로 올리지 않는 영상인가 = **그룹 공식 채널**의 프리미어(녹화 영상 공개 — 싱글 무비 · 뮤비 · 커버 등).
+
+    멤버 개인 채널 프리미어(퀴즈 · 기념 영상 등)는 방송 카드로 올린다(2026-10-01 운영자 결정 — 09-30 엔 채널 무관 전부 뺐다).
+    프리미어 판정 자체는 `VideoInfo.is_premiere`(업로드 상태 processed / duration ≠ P0D). 카테고리로는 못 가른다 —
+    그룹 채널은 싱글 무비 · 생방송 · 라디오가 전부 24(Entertainment)다(2026-10-01 실측).
+    """
+    if not getattr(video, "is_premiere", False):
+        return False
+    group_id = ((channels_cfg.get("channels") or {}).get(GROUP_CHANNEL_KEY) or {}).get("channel_id")
+    return bool(group_id) and getattr(video, "channel_id", None) == group_id
+
+
 def _age_sec(iso_then: str, now_iso: str) -> float:
     """now_iso - iso_then 을 초로. 파싱 실패 시 0."""
     try:
@@ -145,9 +158,9 @@ def build_preview(
 
     # ─ 1. videos.list 결과 처리 (API 확정 영상) ─
     for video_id, video in videos.items():
-        if getattr(video, "is_premiere", False):
-            # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송이 아니다(2026-09-30 운영자 결정). 새로 만들지 않고, 트윗 등으로
-            # 먼저 올라와 있던 항목도 이번에 뺀다(아카이브 안 함). 호출부가 `skipped` 로 받아 기록해 둔다(추후 플레이어 재료)
+        if is_group_release(video, channels_cfg):
+            # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송이 아니다(2026-09-30 운영자 결정, 10-01 그룹 채널로 한정).
+            # 새로 만들지 않고, 트윗 등으로 먼저 올라와 있던 항목도 이번에 뺀다(아카이브 안 함). 호출부가 `skipped` 로 받아 기록해 둔다(추후 플레이어 재료)
             if skipped is not None:
                 skipped.append({"video_id": video_id, "channel_id": video.channel_id, "title": video.title,
                                 "scheduled_start": video.scheduled_start,

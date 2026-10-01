@@ -103,7 +103,8 @@ class LocalQueue:
             tmp_path = self.persist_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp_path, self.persist_path)
+            from .local_store import replace_retry   # (v4a) Windows 권한 오류 짧은 재시도
+            replace_retry(tmp_path, self.persist_path)
         except Exception as e:
             logger.error(f"Failed to save jobs to {self.persist_path}: {e}")
 

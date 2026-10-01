@@ -81,7 +81,6 @@ def recent(limit: int = 50) -> list[dict]:
 
 
 def _record(entry: dict) -> None:
-    import os
     from . import storage
     with _recent_lock:
         _recent_load()
@@ -93,7 +92,8 @@ def _record(entry: dict) -> None:
                 tmp = p.with_suffix(".tmp")
                 tmp.write_text(json.dumps({"items": list(_recent)}, ensure_ascii=False, default=str),
                                encoding="utf-8")
-                os.replace(tmp, p)
+                from .local_store import replace_retry   # (v4a) Windows 권한 오류 짧은 재시도
+                replace_retry(tmp, p)
             except Exception:  # noqa: BLE001
                 log.warning("recent_jobs.json 저장 실패", exc_info=True)
 

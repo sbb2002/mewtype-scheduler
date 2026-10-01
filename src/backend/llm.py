@@ -418,73 +418,9 @@ class LLMClient:
         logger.warning("collab_partners: 5회 모두 실패 — None (호출부 미추가 처리)")
         return None
 
-    def broadcast_change(self, text_ja: str) -> dict | None:
-        """
-        (v3.8.7) 개인 트윗이 기존에 예고한 방송을 취소하거나 일정을 변경하는 글인지 판정.
-
-        발동 조건은 호출부(`_maybe_broadcast_change`)가 담당 — 원문에 `配信` 키워드가
-        있고, 그 멤버 소유의 미종료 예고가 실제로 있을 때만 호출한다. 실측 계기
-        (2026-09-22): 멤버가 당일 방송 취소를 공지했는데, 아무 로직도 기존 예고를
-        내리지 않아 나중에 옛 공지가 재-ingest 되며 이미 취소된 방송이 되살아났다.
-
-        Args:
-            text_ja: 트윗 원문(원어 그대로)
-
-        Returns:
-            {"action": "del"|"edit"|"none", "when": "MM/DD HH:MM"(KST, edit일 때만)|None}
-            또는 5회 모두 실패 시 None(호출부는 아무것도 바꾸지 않는다 — 안전한 실패).
-        """
-        if self.disabled:
-            logger.warning("LLMClient disabled (api_key missing)")
-            return None
-
-        masked_text, _mapping = _mask_glossary(text_ja or "")
-        prompt = (
-            f"다음은 유메미타 멤버가 올린 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
-            f"질문: 이 글이 이전에 예고한 자신의 방송을 취소하거나 일정을 변경한다고 "
-            f"알리는 글인가?\n"
-            f"- 취소라면 action=\"del\", when=null\n"
-            f"- 새 날짜/시각으로 변경(연기)이라면 action=\"edit\", when 에 KST 기준 "
-            f"새 일정을 \"MM/DD HH:MM\" 형식으로 채워라(예: \"09/23 23:00\")\n"
-            f"- 취소도 변경도 아니면(평소 방송 예고·잡담·후기 등) action=\"none\", when=null\n"
-            f"JSON 포맷만 출력.\n\n출력:\n"
-            f'{{"action": "del" 또는 "edit" 또는 "none", "when": "MM/DD HH:MM" 또는 null}}'
-        )
-        schema = {
-            "name": "broadcast_change",
-            "strict": True,
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "action": {"type": "string", "enum": ["del", "edit", "none"]},
-                    "when": {"type": ["string", "null"]},
-                },
-                "required": ["action", "when"],
-                "additionalProperties": False,
-            },
-        }
-
-        for attempt in range(1, 6):
-            response = self._call_groq(self.model, prompt, json_schema=schema)
-            if not response:
-                response = self._call_groq(self.fallback, prompt, json_schema=schema)
-            if not response:
-                continue
-            try:
-                result = json.loads(_strip_json_fence(response))
-            except json.JSONDecodeError:
-                logger.warning(f"broadcast_change: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
-                continue
-            if isinstance(result, dict) and result.get("action") in ("del", "edit", "none"):
-                return {"action": result["action"], "when": result.get("when")}
-            logger.warning(f"broadcast_change: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
-
-        logger.warning("broadcast_change: 5회 모두 실패 — None (호출부 미반영 처리)")
-        return None
-
     def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str) -> dict | None:
         """
-        (v4a) 취소·변경 글 판정 + **어느 방송인지 선택**. `broadcast_change` 는 종류만 판정해 호출부가
+        (v4a) 취소·변경 글 판정 + **어느 방송인지 선택**. 옛 `broadcast_change`(2026-10-01 삭제)는 종류만 판정해 호출부가
         "가장 이른 1개"를 고르는 규칙이라, "오늘 휴방"인데 오늘 방송이 2개인 경우 1개만 내려갔다
         (2026-09-30 리츠). 여기서는 그 멤버의 활성 예고 목록을 주고 영향받는 방송의 id 를 고르게 한다.
 
@@ -1158,39 +1094,43 @@ if __name__ == "__main__":
     assert LLMClient("test-key").collab_partners("아무 글", host_name="유노", candidate_names=[]) == []
     print("✓ collab_partners: 후보 없음 → API 호출 없이 빈 배열")
 
-    # ──── 시나리오 8e: broadcast_change — 취소/변경/무관 3분기 (v3.8.7) ────
-    print("\n[시나리오 8e] broadcast_change — 기존 예고 취소/변경 판정")
+    # ──── 시나리오 8e: broadcast_change_targets — 취소/변경/무관 + 대상 선택 (v4a) ────
+    # (2026-10-01) 옛 broadcast_change(종류만 판정, 호출부가 가장 이른 1개 선택)는 호출처가 없어 지웠다 — 이 판정으로 대체됨
+    print("\n[시나리오 8e] broadcast_change_targets — 취소/변경 판정 + 영향받는 방송 선택")
     print("-" * 70)
 
+    bc_cands = [{"id": "pv_a", "when": "09/30 22:30", "title": "雑談"},
+                {"id": "pv_b", "when": "09/30 23:00", "title": "ゲーム"}]
     llm_bc_del = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"action": "del", "when": null}')
+        "test-key", session=ParticipationSession(
+            0, '{"action": "del", "target_ids": ["pv_a", "pv_b"], "when": null, "reason": "오늘 쉰다고 함"}')
     )
-    result = llm_bc_del.broadcast_change(
-        "죄송합니다 여러분! 오늘 이 방송 없이, 오늘은 쉬어요!"
-    )
-    assert result == {"action": "del", "when": None}, result
-    print("✓ broadcast_change: 취소 공지 → action=del")
+    result = llm_bc_del.broadcast_change_targets("今日は配信お休みします", bc_cands, "09/30(화) 18:00")
+    assert result == {"action": "del", "target_ids": ["pv_a", "pv_b"], "when": None, "reason": "오늘 쉰다고 함"}, result
+    print("✓ broadcast_change_targets: 휴방 → action=del + 그날 방송 전부")
 
     llm_bc_edit = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"action": "edit", "when": "09/23 23:00"}')
+        "test-key", session=ParticipationSession(
+            0, '{"action": "edit", "target_ids": ["pv_b"], "when": "10/01 23:00", "reason": "내일로 미룸"}')
     )
-    result = llm_bc_edit.broadcast_change("오늘 방송 못하고 내일 23시로 미룰게요ㅠㅠ")
-    assert result == {"action": "edit", "when": "09/23 23:00"}, result
-    print("✓ broadcast_change: 일정 변경 공지 → action=edit + when")
+    result = llm_bc_edit.broadcast_change_targets("ゲーム配信は明日23時に変更！", bc_cands, "09/30(화) 18:00")
+    assert result["action"] == "edit" and result["target_ids"] == ["pv_b"] and result["when"] == "10/01 23:00", result
+    print("✓ broadcast_change_targets: 일정 변경 → action=edit + when + 대상 1건")
 
     llm_bc_none = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"action": "none", "when": null}')
+        "test-key", session=ParticipationSession(
+            0, '{"action": "none", "target_ids": [], "when": null, "reason": "평소 예고"}')
     )
-    result = llm_bc_none.broadcast_change("오늘 방송 너무 재밌었다ㅎㅎ 다들 고마워")
-    assert result == {"action": "none", "when": None}, result
-    print("✓ broadcast_change: 평소 후기/잡담 → action=none (오탐 방지)")
+    result = llm_bc_none.broadcast_change_targets("今日も配信するよ！", bc_cands, "09/30(화) 18:00")
+    assert result["action"] == "none" and result["target_ids"] == [] and result["reason"] == "평소 예고", result
+    print("✓ broadcast_change_targets: 평소 예고 → action=none (근거는 남김)")
 
     llm_bc_fail = LLMClient(
-        "test-key", session=ParticipationSession(99, '{"action": "del", "when": null}')
+        "test-key", session=ParticipationSession(99, '{"action": "del", "target_ids": [], "when": null, "reason": ""}')
     )
-    result = llm_bc_fail.broadcast_change("계속 깨진 응답")
+    result = llm_bc_fail.broadcast_change_targets("계속 깨진 응답", bc_cands, "09/30(화) 18:00")
     assert result is None, result
-    print("✓ broadcast_change: 5회 모두 실패 → None (호출부 미반영 처리)")
+    print("✓ broadcast_change_targets: 5회 모두 실패 → None (호출부 미반영 처리)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
     print("\n[시나리오 9] translate 반복 압축 (의성어 8회+ 연속반복)")

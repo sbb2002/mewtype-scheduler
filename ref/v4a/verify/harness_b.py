@@ -36,7 +36,7 @@ def _fetch_tweet(tid, *a, **k):
 
 def _extract(j):
     return {"text": j.get("text", ""), "author": j.get("author", ""), "media": j.get("media", []), "urls": [],
-            "yt_video_id": None, "qrt_url": None, "qrt": None}
+            "yt_video_id": None, "qrt_url": None, "qrt": j.get("qrt")}
 
 
 vxtwitter.fetch_tweet, vxtwitter.extract = _fetch_tweet, _extract
@@ -295,7 +295,9 @@ def run():
     h.reconcile()
     am3 = item(lambda i: i.get("id") == am["id"])
     RES_B.append({"obs": "B5-변경 후 reconcile", "after": am3 and am3.get("scheduled_start"), "api": z(t_am)})
-    check("B5", "[관측] 영상 있는 예고의 시각 변경이 다음 수집 뒤에도 유지", am3 and am3["scheduled_start"] == z(new_at),
+    # (2026-10-01 운영자 결정 — 현행 유지) 영상이 있는 예고는 YouTube API 예정 시각이 진실. 트윗 · 관리 페이지로 바꾼 시각은
+    # 다음 수집이 API 시각으로 되돌린다(유튜브 예약 프레임 시각을 고치지 않았다면)
+    check("B5", "영상 있는 예고의 시각 변경 → 다음 수집이 API 시각으로 되돌림(의도된 동작)", am3 and am3["scheduled_start"] == z(t_am),
           (am3 or {}).get("scheduled_start"))
     CHANGE["fn"] = lambda raw, cands, nl: {"action": "del", "target_ids": [am["id"]], "when": None, "reason": "쉰다고 함"}
     TW["2100000000000000109"] = {"author": "ritsu_yumemita", "text": "ごめん、今日はお休み！"}
@@ -328,13 +330,16 @@ def run():
     check("B6", "취소 판정 → 삭제 + 12h 재등록 차단 + 근거 로그",
           not item(lambda i: i.get("id") == n2["id"]) and "https://www.youtube.com/watch?v=NONOVID0002" in suppressed_urls()
           and events(lambda e: "broadcast-change del" in e.get("detail", "")))
-    # 오판이었다고 치고 관리자가 복구를 시도
+    # 오판이었다고 치고 관리자가 URL 로 직접 복구 — (2026-10-01) 미리보기가 재등록 차단 중임을 알리고, 확정하면 차단을 풀고 올린다
+    # (전엔 「성공」으로 끝난 뒤 다음 수집이 차단 때문에 다시 뺐다). 다른 복구 수단 = LLM 판단 되돌리기(B11)
+    pv_ = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=NONOVID0002", "confirm": False})
+    check("B6", "URL 재투입 미리보기 — 재등록 차단 중 · 해제 시각 안내", "재등록 차단 중" in (pv_.get("note") or ""), pv_.get("note"))
     r = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=NONOVID0002", "confirm": True})
     h.reconcile()
     back = item(lambda i: i.get("video_id") == "NONOVID0002")
     RES_B.append({"obs": "B6-오판 복구", "ingest_ok": r.get("ok"), "back": bool(back)})
-    # URL 재투입은 12h 재등록 차단 때문에 다음 수집에서 빠진다(차단이 제 역할) — 오판 복구는 LLM 판단 되돌리기(B11)
-    check("B6", "URL 재투입은 재등록 차단으로 빠짐 — 복구 수단은 LLM 판단 되돌리기(B11)", back is None, r)
+    check("B6", "URL 재투입 확정 → 차단을 풀고 올림 · 다음 수집 뒤에도 유지",
+          back is not None and "https://www.youtube.com/watch?v=NONOVID0002" not in suppressed_urls(), r)
     h.RSS.clear()
 
     # ═════ T1 삭제 뒤 예약된 영상 확인 ═════
@@ -463,8 +468,9 @@ def run():
     post("delete_preview", {"item_id": c["id"], "suppress": False})
     after = [j for j in h.q_apply.pending() if j["name"] and "CANCEL00001" in j["name"]]
     check("C1", "예고 삭제 → 그 영상의 예약된 확인도 취소", before and not after, (before, after))
-    # ═════ B10 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버)는 방송 카드로 올리지 않음 ═════
-    scenario("B10 노래 · 뮤비 등 프리미어(녹화 영상)는 빼고, 歌枠 같은 노래 생방송은 그대로")
+    # ═════ B10 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버)는 방송 카드로 올리지 않음 ═════
+    # (2026-10-01 운영자 결정) 그룹 채널 것만 뺀다 — 멤버 개인 채널 프리미어(퀴즈 · 커버 등)는 방송 카드로 올린다
+    scenario("B10 그룹 채널 프리미어(녹화 영상)만 빼고, 멤버 채널 프리미어 · 歌枠 생방송은 그대로")
 
     def premiere(vid, ck, ss, title):
         kw = dict(video_id=vid, channel_id=h.CID[ck], title=title, thumbnail=None, live_state="upcoming",
@@ -476,25 +482,38 @@ def run():
         return {i["video_id"] for i in (st or {}).get("items", [])}
 
     t_p = h.rnd(REAL_NOW + timedelta(hours=4))
-    premiere("PREMMV00001", "arale", z(t_p), "【MV】新曲")
-    h.video("UTAWAKU0001", "arale", "upcoming", z(t_p + timedelta(hours=2)), title="【歌枠】アコギで歌う")
-    h.RSS.clear(); h.RSS["arale"] = ["PREMMV00001", "UTAWAKU0001"]
-    h.reconcile()
-    h.RSS.clear()
-    check("B10", "RSS 로 찾은 프리미어(MV) → 예고로 안 만듦 + 기록", not item(lambda i: i.get("video_id") == "PREMMV00001")
-          and "PREMMV00001" in releases(), releases())
-    check("B10", "歌枠(노래 생방송)은 그대로 upcoming", (item(lambda i: i.get("video_id") == "UTAWAKU0001") or {}).get("state") == "upcoming")
-    premiere("PREMCV00001", "ritsu", z(t_p + timedelta(hours=1)), "【歌ってみた】カバー")
+    premiere("PREMMV00001", "group", z(t_p), "【MV】新曲")
+    off_tweet("2100000000000000310", "＼配信開始📡／\n🛸#ゆめみた 全員で新曲MVプレミア公開\nhttps://youtube.com/live/PREMMV00001")
+    check("B10", "공식 글(근거 全員)의 그룹 채널 프리미어(MV) → 예고 안 만듦 + 기록",
+          not item(lambda i: i.get("video_id") == "PREMMV00001") and "PREMMV00001" in releases(), releases())
+    premiere("PREMCV00001", "group", z(t_p + timedelta(hours=1)), "【歌ってみた】カバー")
     post("ingest_preview_manual", {"host": "ritsu", "date": kst_date(t_p), "time": t_p.astimezone(KST).strftime("%H:%M"),
                                    "title": "手動で入れた", "url": "https://www.youtube.com/watch?v=PREMCV00001", "confirm": True})
-    check("B10", "수동 예고에 프리미어 URL → 확정 뒤 영상 확인에서 빠짐", not item(lambda i: i.get("video_id") == "PREMCV00001"))
+    check("B10", "수동 예고에 그룹 채널 프리미어 URL → 확정 뒤 영상 확인에서 빠짐", not item(lambda i: i.get("video_id") == "PREMCV00001"))
+    premiere("PREMQZ00001", "arale", z(t_p + timedelta(minutes=30)), "このエピソード夢？現実？クイズ")
+    h.video("UTAWAKU0001", "arale", "upcoming", z(t_p + timedelta(hours=2)), title="【歌枠】アコギで歌う")
+    h.RSS.clear(); h.RSS["arale"] = ["PREMQZ00001", "UTAWAKU0001"]
+    h.reconcile()
+    h.RSS.clear()
+    check("B10", "RSS 로 찾은 멤버 채널 프리미어(퀴즈) → upcoming 카드 · 기록 안 함",
+          (item(lambda i: i.get("video_id") == "PREMQZ00001") or {}).get("state") == "upcoming"
+          and "PREMQZ00001" not in releases(), releases())
+    check("B10", "歌枠(노래 생방송)은 그대로 upcoming", (item(lambda i: i.get("video_id") == "UTAWAKU0001") or {}).get("state") == "upcoming")
     premiere("PREMCV00002", "yuno", z(t_p + timedelta(hours=3)), "【歌ってみた】新しいカバー")
     TW["2100000000000000301"] = {"author": "yuno_yumemita", "text": "カバー動画プレミア公開！ https://www.youtube.com/watch?v=PREMCV00002"}
     h.ingest_x("カバー動画プレミア公開！ https://www.youtube.com/watch?v=PREMCV00002", "千石ユノ", tag="p#x#1tweet-2100000000000000301")
-    check("B10", "멤버 트윗의 프리미어 URL → 예고 안 만듦 + 기록", not item(lambda i: i.get("video_id") == "PREMCV00002")
-          and "PREMCV00002" in releases())
-    r = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=PREMCV00002", "confirm": False})
+    check("B10", "멤버 트윗의 멤버 채널 프리미어(커버) URL → 카드 등록",
+          (item(lambda i: i.get("video_id") == "PREMCV00002") or {}).get("channel_key") == "yuno"
+          and "PREMCV00002" not in releases(), item(lambda i: i.get("video_id") == "PREMCV00002"))
+    premiere("PREMMV00002", "group", z(t_p + timedelta(hours=5)), "【MV】カップリング曲")
+    TW["2100000000000000311"] = {"author": "ritsu_yumemita", "text": "MVプレミア公開！ https://www.youtube.com/watch?v=PREMMV00002"}
+    h.ingest_x("MVプレミア公開！ https://www.youtube.com/watch?v=PREMMV00002", "峰月律", tag="p#x#1tweet-2100000000000000311")
+    check("B10", "멤버 트윗의 그룹 채널 프리미어 URL → 예고 안 만듦 + 기록",
+          not item(lambda i: i.get("video_id") == "PREMMV00002") and "PREMMV00002" in releases(), releases())
+    r = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=PREMMV00002", "confirm": False})
     check("B10", "관리 페이지 URL 투입도 거절 + 이유", not r.get("ok") and "프리미어" in (r.get("error") or ""), r)
+    r = post("ingest_preview_url", {"url": "https://www.youtube.com/watch?v=PREMQZ00001", "confirm": False})
+    check("B10", "관리 페이지 URL 투입 — 멤버 채널 프리미어는 거절하지 않음", "프리미어" not in (r.get("error") or ""), r)
 
     # ═════ B11 LLM 판단 기록 · 되돌리기 ═════
     scenario("B11 LLM 판단 — 작업 탭 필터 표시 · 되돌리기")
@@ -552,6 +571,65 @@ def run():
     check("B11", "OCR 판정 되돌리기 → 예고에서 빼고 확인 대기로(OCR 제안 유지)", r.get("ok")
           and not item(lambda i: i.get("video_id") == "GRPOCR00003") and pend.get("GRPOCR00003", {}).get("suggested") == ["yuno", "ritsu"],
           (r, pend.get("GRPOCR00003")))
+
+    # ═════ B12 공식 스케줄 인용 — 작성자를 게스트로 넣지 않음 (2026-10-01 운영자 결정) ═════
+    scenario("B12 멤버가 공식 일일 스케줄을 인용 — 인용문에만 있는 다른 멤버 영상에 작성자를 게스트로 넣지 않음")
+    t_s = h.rnd(REAL_NOW + timedelta(hours=6))
+    ks = t_s.astimezone(KST)
+    h.video("MIYSCH00001", "miyako", "upcoming", z(t_s), title="【零】＃９【ゆめみた/藤都子】")
+    sched = (f"／\n🛸夢限大みゅーたいぷ\n{ks.month}/{ks.day}(水)の配信スケジュール🌟\n＼\n\n"
+             f"🎮{ks.strftime('%H:%M')}～ 藤都子\nhttps://www.youtube.com/watch?v=MIYSCH00001\n\n"
+             "✨23:00～ 宮永ののか\nhttps://www.youtube.com/@nonoka_yumemita\n\n"
+             "※時刻は予告なく変更の場合がございます。\n#バンドリ #ゆめみた")
+    TW["2100000000000000320"] = {"author": "nonoka_yumemita", "text": "今日は23時から！みんなきてね",
+                                 "qrt": {"text": sched, "media": []}}
+    h.ingest_x("今日は23時から！みんなきてね", "宮永ののか", tag="p#x#1tweet-2100000000000000320")
+    mi = item(lambda i: i.get("video_id") == "MIYSCH00001")
+    check("B12", "인용문의 미야코 영상 → 미야코 단독(작성자 게스트 · 인용문 이름 게스트 둘 다 없음)",
+          mi and mi["channel_key"] == "miyako" and not mi.get("collab_with"), mi)
+    # 스케줄이 아닌 멤버 예고 인용(09-22 리츠 → 유노 실례)은 그대로 — 작성자를 게스트로
+    t_y = h.rnd(REAL_NOW + timedelta(hours=7))
+    h.video("YUNOQT00001", "yuno", "upcoming", z(t_y), title="【肉】焼肉を食べる【千石ユノ】")
+    TW["2100000000000000321"] = {"author": "ritsu_yumemita", "text": "肉、食べます\nユノちゃんちに来ました",
+                                 "qrt": {"text": "〈配信のおしらせ〉\n今夜 #ぷりはとDay2\n\n肉を食べます\n\n"
+                                                 "https://www.youtube.com/watch?v=YUNOQT00001", "media": []}}
+    h.ingest_x("肉、食べます\nユノちゃんちに来ました", "峰月律", tag="p#x#1tweet-2100000000000000321")
+    yq = item(lambda i: i.get("video_id") == "YUNOQT00001")
+    check("B12", "멤버 예고 인용(스케줄 아님) → 작성자(리츠)를 게스트로(기존 동작 유지)",
+          yq and yq["channel_key"] == "yuno" and "ritsu" in (yq.get("collab_with") or []), yq)
+
+    # ═════ B13 10-01 작은 수정 — 예고 DM · 예고 url 형식 · 취소 글 원문 보존 · 공식 합동 줄 게스트 판단 기록 ═════
+    scenario("B13 예고 DM(announced) · 예고 수정 url 검사 · 취소 글 원문 보존 · 공식 합동 줄 게스트 판단 기록")
+    # (1-3) URL 확정 예고 DM — kind 가 옛 이름 scheduled 라 어느 레벨에서도 안 나가던 것(기본 레벨 normal)
+    t_u = h.rnd(REAL_NOW + timedelta(hours=8))
+    h.video("ARADM000001", "arale", "upcoming", z(t_u), title="【雑談】DM確認")
+    h.DMS.clear()
+    TW["2100000000000000330"] = {"author": "arale_yumemita", "text": "今夜配信！ https://www.youtube.com/watch?v=ARADM000001"}
+    h.ingest_x("今夜配信！ https://www.youtube.com/watch?v=ARADM000001", "仲町あられ", tag="p#x#1tweet-2100000000000000330")
+    check("B13", "URL 확정 예고 DM 이 normal 레벨에서 나감", any("URL 확정 예고 반영" in d for d in h.DMS), h.DMS[-3:])
+    # (c) 예고 수정 url — http(s) 만
+    a1 = item(lambda i: i.get("video_id") == "ARADM000001")
+    bad = post("edit_preview", {"item_id": a1["id"], "patch": {"url": "javascript:alert(1)"}, "seen": {}})
+    good = post("edit_preview", {"item_id": a1["id"], "patch": {"url": "https://www.youtube.com/watch?v=ARADM000001"},
+                                 "seen": {}})
+    check("B13", "예고 수정 url — javascript: 거절 · https 허용", not bad.get("ok") and "http" in (bad.get("error") or "")
+          and good.get("ok") is not False, (bad, good))
+    # (1-5) 취소를 일으킨 글 원문 보존(B6 의 자동 취소 · 이 아래 관리 페이지 취소)
+    raw_rows = [json.loads(l) for f in (h.WORK / "_local/raw/raw").glob("*.jsonl")
+                for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
+    bc = [r for r in raw_rows if r.get("kind") == "broadcast_change"]
+    check("B13", "자동 인입 취소 글 원문 보존(broadcast_change · 근거 · 대상)",
+          any("お休み" in r["raw"] and r["meta"].get("reason") and r["meta"].get("targets") for r in bc), bc[-1:])
+    # (e) 공식 일일 스케줄 합동 줄 — LLM 이 게스트를 빼면 판단 기록(검토용 · 되돌리기 없음)
+    t_c2 = h.rnd(REAL_NOW + timedelta(hours=9))
+    kc = t_c2.astimezone(KST)
+    h._llm("collab_partners", lambda t, **k: [])
+    off_tweet("2100000000000000331", f"／\n🛸夢限大みゅーたいぷ\n{kc.month}/{kc.day}(水)の配信スケジュール🌟\n＼\n\n"
+                                     f"🎮{kc.strftime('%H:%M')}～ 峰月律×千石ユノ\nhttps://www.youtube.com/@ritsu_yumemita\n")
+    h._llm("collab_partners", lambda t, **k: list(k.get("candidate_names") or []))
+    acts = h.client.get("/admin/api/list_llm_actions").get_json().get("items", [])
+    rj = next((a for a in acts if a["kind"] == "collab_guest" and "공식 스케줄 합동 줄" in a.get("summary", "")), None)
+    check("B13", "공식 스케줄 합동 줄 게스트 제외 판단 기록(되돌리기 없음)", rj is not None and not rj.get("undo"), rj)
 
     # ═════ 원칙 ═════
     scenario("원칙 (2차 시나리오 포함)")

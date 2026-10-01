@@ -191,6 +191,25 @@ def _calculate_expires_at(scheduled_start: str | None, time_tbd: bool, membershi
     return expires.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _is_channel_page(url: str | None) -> bool:
+    """(v4a) 유튜브 채널 페이지 url(`/@handle` · `/channel/` 등)인가 — 영상 없는 예고의 자리표시."""
+    u = (url or "").lower()
+    return "youtube.com/" in u and any(p in u for p in ("youtube.com/@", "youtube.com/channel/", "youtube.com/c/",
+                                                        "youtube.com/user/"))
+
+
+def _jst_day(item: dict) -> str | None:
+    """(v4a) scheduled_start 의 JST 날짜(YYYY-MM-DD). 시각 미정 자리표시 `<날짜>T00:00:00Z` 도 그 날짜가 나온다(JST 09:00)."""
+    ss = item.get("scheduled_start")
+    if not ss:
+        return None
+    try:
+        dt = datetime.fromisoformat(ss.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    return dt.astimezone(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+
+
 def match_item(
     items: list[dict],
     inc: dict,
@@ -201,6 +220,8 @@ def match_item(
     Find an existing item that matches the incoming item by:
     - Same channel_key
     - AND (video_id match OR url match OR scheduled_start within ±superscede_sec)
+    - (v4a) url 매칭에서 채널 페이지 url(영상 없는 예고의 자리표시)은 뺀다. 대신 한쪽이 시각 미정(time_tbd)이면
+      JST 날짜가 같을 때 같은 방송으로 본다(서로 다른 video_id 끼리는 제외).
 
     An item that has transitioned to "end" → "out" (archived, v4a D7 — 구 "none") will not match
     because it's already removed from items list (caller responsibility).
@@ -230,8 +251,16 @@ def match_item(
         if inc_video_id and item.get("video_id") == inc_video_id:
             return item
 
-        # url 매칭
-        if inc_url and item.get("url") == inc_url:
+        # url 매칭 — (v4a) 채널 페이지 url 은 빼고. 영상 없는 개인 · 수동 예고의 url 은 채널 페이지 자리표시라 같은 멤버의
+        # 모든 예고가 같은 값이다 — 날짜가 달라도 두 예고가 한 건으로 합쳐지고 한쪽 시각이 사라졌다(2026-09-30 재현)
+        if inc_url and not _is_channel_page(inc_url) and item.get("url") == inc_url:
+            return item
+
+        # (v4a) 한쪽이 시각 미정(time_tbd)이면 JST 날짜가 같을 때 같은 방송 — 위 url 자리표시 매칭이 우연히 맡던 일
+        # (「10/11 配信」 뒤 「10/11 21:00〜」 가 같은 카드를 채우던 것)을 날짜 기준으로 대신한다. 서로 다른 영상이면 제외
+        if ((inc.get("time_tbd") or item.get("time_tbd"))
+                and not (inc_video_id and item.get("video_id"))
+                and _jst_day(inc) and _jst_day(inc) == _jst_day(item)):
             return item
 
         # scheduled_start 시각근접 (±superscede_sec)
@@ -426,6 +455,26 @@ if __name__ == "__main__":
     match_other = match_item(items, inc_other)
     assert match_other is None, "다른 채널 매칭 (false positive)"
     print(f"✓ match_item (다른 channel_key): None")
+
+    # Test 5b: (v4a) 채널 페이지 url 은 같은 방송 근거가 아님 — 같은 멤버의 영상 없는 예고 2건(다른 날)이 합쳐지지 않는다
+    ch_url = "https://www.youtube.com/@miyako_yumemita"
+    p_items = [{"id": "pv_m1", "channel_key": "miyako", "video_id": None, "url": ch_url,
+                "scheduled_start": "2026-10-03T12:00:00Z", "time_tbd": False}]
+    assert match_item(p_items, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                                "scheduled_start": "2026-10-05T12:00:00Z"}) is None, "채널 url 로 다른 날 예고가 합쳐짐"
+    assert match_item(p_items, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                                "scheduled_start": "2026-10-03T12:20:00Z"}) is not None, "45분 창 안인데 미매칭"
+    # 시각 미정 ↔ 같은 JST 날짜 (10/11 시각 미정 + 10/11 21:00 JST = 12:00Z) → 같은 방송, 다른 날은 아님
+    tbd = [{"id": "pv_t1", "channel_key": "miyako", "video_id": None, "url": ch_url,
+            "scheduled_start": "2026-10-11T00:00:00Z", "time_tbd": True}]
+    assert match_item(tbd, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                            "scheduled_start": "2026-10-11T12:00:00Z"}) is not None, "시각 미정 ↔ 같은 날 미매칭"
+    assert match_item(tbd, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                            "scheduled_start": "2026-10-11T16:00:00Z"}) is None, "JST 다음날(10/12 01:00)인데 매칭됨"
+    assert match_item(tbd, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                            "scheduled_start": "2026-10-12T00:00:00Z", "time_tbd": True}) is None, "다른 날 시각 미정끼리 매칭됨"
+    assert _is_channel_page(ch_url) and not _is_channel_page("https://www.youtube.com/watch?v=abc")
+    print("✓ match_item (v4a) 채널 url 자리표시 제외 · 시각 미정 ↔ 같은 JST 날짜")
 
     # Test 6: sort_items 우선순위
     unsorted = [

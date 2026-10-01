@@ -93,6 +93,7 @@ except Exception:                           # pragma: no cover
     YouTubeClient = None
 
 from . import preview as preview_mod
+from . import preview_build                # (v4a) is_group_release — 그룹 채널 프리미어 판정
 from . import monitor_report
 from . import monitor_snapshot
 from . import statemachine
@@ -551,7 +552,8 @@ def _auto_dm_allows(gh, kind: str) -> bool:
 
     운영자가 직접 친 명령의 응답에는 쓰지 않는다 — 자동으로 튀어나오는 알림
     (소식/트윗/본인예고/ingest 결과)만 이 게이트를 통과해야 한다.
-    레벨 매핑: notify._LEVEL_KINDS — detail=전부 / normal=scheduled·upcoming·live·notice·tweet / simple=upcoming·live.
+    레벨 매핑: notify._LEVEL_KINDS — detail=전부 / normal=announced·upcoming·live·notice·tweet / simple=upcoming·live.
+    kind 는 반드시 그 표에 있는 이름 — 없는 이름(예: v3 이전 `scheduled`)은 어느 레벨에서도 안 나간다.
     """
     try:
         control, _ = gh.read_json("control.json")
@@ -2653,7 +2655,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
                              handle=handle, now_iso=now_iso, via=via, quote=quote_src)
     # (v3.8.7) 기존 예고 취소/변경 여부는 새 예고 생성과 별개로 항상 확인
-    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via)
+    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via, tag=tag)
     return mode
 
 
@@ -2948,13 +2950,14 @@ def _confirm_rows_with_videos(rows: list[dict], now_iso: str) -> tuple[list[dict
         log.warning("공식 스케줄 영상 확인(videos.list) 실패 — 다음 reconcile 에 맡김", exc_info=True)
         return rows, []
     out, confirmed, releases = [], [], []
+    channels_cfg = _load_channels_config()
     for r in rows:
         info = infos.get(r.get("video_id")) if r.get("video_id") else None
         if info is None:
             out.append(r)
             continue
-        if getattr(info, "is_premiere", False):
-            # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 카드로 올리지 않는다(2026-09-30 운영자 결정)
+        if preview_build.is_group_release(info, channels_cfg):
+            # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 카드로 올리지 않는다(2026-09-30 운영자 결정, 10-01 그룹 채널로 한정)
             releases.append({"video_id": info.video_id, "channel_id": info.channel_id, "title": info.title,
                              "scheduled_start": info.scheduled_start, "source": "official_tweet"})
             continue
@@ -3023,7 +3026,7 @@ def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
 
 def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list[str],
                                channels_cfg: dict, now_iso: str, via: str,
-                               flow: str = "tweet") -> list[str]:
+                               flow: str = "tweet", status: dict | None = None) -> list[str]:
     """(v3.8.6) 트윗/릴레이 텍스트에 이름이 언급된 게스트 후보를 LLM으로 최종 확인.
 
     발동시점(2026-09-22 확정) — 아래 **둘 중 하나라도** 해당하면 무조건 호출:
@@ -3038,6 +3041,8 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
     GROQ_API_KEY 없거나 LLM 5회 모두 실패하면 안전한 기본값(게스트 미추가) — 등록
     자체(호스트 채널·author 콜라보)는 이 판정과 무관하게 이미 확정돼 있으므로 막지 않는다.
     `flow`: 모니터 이벤트 로그 분류용("tweet" 개인트윗 경로 | "relay" 공식 계정 릴레이 경로).
+    `status`: (v4a) 주면 LLM 이 실제로 판정했을 때 `status["decided"]=True` — 빈 결과가 "아무도 게스트 아님" 판정인지
+    인프라 실패(키 없음 · 5회 실패)인지 호출부가 가르기 위함(판정만 LLM 판단 기록에 남긴다).
     """
     if not guest_keys:
         return []
@@ -3061,6 +3066,8 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
         _log_event_safe(gh, now_iso, flow, RESULT_DEGRADED, who=host_key,
                   detail="collab-guest skip: collab_partners() 5회 모두 실패 — 미추가", via=via)
         return []
+    if status is not None:
+        status["decided"] = True
     return [name_to_key[n] for n in confirmed if n in name_to_key]
 
 
@@ -3077,10 +3084,17 @@ def _confirm_relay_rows_collab(gh, raw: str, rows: list[dict], channels_cfg: dic
     for row in rows:
         if row.get("host") == "group" or not row.get("collab_with"):
             continue
+        st: dict = {}
         confirmed = _confirm_llm_collab_guests(
             gh, raw, host_key=row["channel_key"], guest_keys=list(row["collab_with"]),
-            channels_cfg=channels_cfg, now_iso=now_iso, via=via, flow="relay",
+            channels_cfg=channels_cfg, now_iso=now_iso, via=via, flow="relay", status=st,
         )
+        rejected = [g for g in row["collab_with"] if g not in confirmed]
+        if rejected and st.get("decided"):
+            # (v4a) 게스트를 빼는 LLM 판단도 기록(검토용 — 되돌릴 데이터 없음. 틀렸으면 예고 탭 수정으로 합동 멤버를 넣는다)
+            _llm_record(gh, "collab_guest", row["channel_key"],
+                        f"공식 스케줄 합동 줄 — 게스트 아님 판정 {','.join(rejected)} · "
+                        f"{_kst_label(row.get('scheduled_start'))} {(row.get('title') or '')[:24]}".strip(), now_iso=now_iso)
         row["collab_with"] = confirmed or None
         if not confirmed and row.get("kind") == "collab":
             row["kind"] = None
@@ -3196,7 +3210,7 @@ def _terminate_broadcast(gh, item: dict, now_iso: str, action: str) -> bool:
 
 
 def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
-                            channels_cfg: dict, *, via: str = "ingest") -> None:
+                            channels_cfg: dict, *, via: str = "ingest", tag: str | None = None) -> None:
     """(v3.8.7) 개인 트윗에 `配信` 키워드가 있으면, 그 멤버가 **호스트**인 기존 예고를
     취소·변경하는 글인지 LLM 으로 판정해 반영한다.
 
@@ -3257,6 +3271,14 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
             log.exception("방송 취소/변경 반영 실패")
             _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                             detail=f"broadcast-change write 실패 — 취소/변경 유실 ({iid})", via=via)
+    if removed or changes:
+        # (v4a) 예고를 내리거나 옮기게 한 글도 원문 보존(D19 확장, 2026-10-01 운영자 결정) — tweets.json 은 48h 뒤 사라진다.
+        # 판정 근거 · 대상과 함께 남겨 LLM 판단 되돌리기 · 프롬프트 조정의 자료로 쓴다
+        _preserve_raw("broadcast_change", raw, {
+            "channel_key": channel_key, "action": plan["action"], "via": via, "tag": tag, "reason": plan.get("reason"),
+            "targets": [f"{_kst_label(x.get('scheduled_start'))} {(x.get('title_ko') or x.get('title') or '')[:24]}".strip()
+                        for x in removed] + [f"{_kst_label(c['from'])} → {_kst_label(c['to'])}" for c in changes],
+        }, now_iso)
     if removed:
         _llm_record(gh, "broadcast_change", channel_key,
                     f"방송 취소 {len(removed)}건 — " + " / ".join(
@@ -3304,6 +3326,14 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
     if not m:
         return False
     video_id = m.group(1)
+    # (v4a) 인용문이 공식 일일 스케줄이면 그 안의 영상 · 이름은 그날 각자의 방송이다(2026-10-01 운영자 결정). 실측 오탐(09-23):
+    # 노노카가 스케줄을 인용하며 자기 23:00 방송을 알렸는데, 본문엔 URL 이 없고 인용문의 첫 영상이 미야코 방송이라 노노카가
+    # 그 방송의 게스트로 붙었다. 그래서 ① 영상 URL 이 본문엔 없고 스케줄 인용문에만 있으면 작성자를 게스트로 넣지 않고
+    # ② 게스트 이름 찾기 · LLM 게스트 확인에 스케줄 인용문을 쓰지 않는다(안 그러면 인용문의 「宮永ののか」로 다시 붙는다).
+    # 멤버 예고 인용(09-22 리츠 → 유노)처럼 스케줄이 아닌 인용은 그대로 — 작성자 게스트 · 이름 탐색 모두 인용문 포함.
+    official_quote = xrelay.is_daily_schedule(quote)
+    url_only_in_official_quote = official_quote and not xrelay.YT_VIDEO_RE.search(xrelay.normalize(raw))
+    guest_text = raw if official_quote else search_text
 
     api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not api_key:
@@ -3324,9 +3354,10 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         # 케이스(회원전용·삭제 등)라 monitor 에는 안 남긴다.
         return False
 
-    if getattr(info, "is_premiere", False):
-        # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 예고로 올리지 않는다. 歌枠 같은 노래 생방송은 해당 없음
-        log.info("URL 확정 예고: %s 는 프리미어(녹화 영상) — 방송 카드로 안 올림", video_id)
+    if preview_build.is_group_release(info, channels_cfg):
+        # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 예고로 올리지 않는다. 歌枠 같은 노래 생방송은 해당 없음.
+        # 멤버 개인 채널 프리미어는 방송 카드로 올린다(2026-10-01 운영자 결정)
+        log.info("URL 확정 예고: %s 는 그룹 채널 프리미어(녹화 영상) — 방송 카드로 안 올림", video_id)
         try:
             writeclient.call_write("video_release", gh=gh, now_iso=now_iso, label="프리미어 기록", entries=[{
                 "video_id": video_id, "channel_id": info.channel_id, "title": info.title,
@@ -3338,6 +3369,10 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         return True
 
     host_key, host, collab_with = xtweet.resolve_url_host(info.channel_id, channel_key, channels_cfg)
+    if url_only_in_official_quote and host is None and collab_with == [channel_key]:
+        log.info("URL 확정 예고: %s 는 인용한 공식 스케줄에만 있는 %s 방송 — 작성자(%s)를 게스트로 넣지 않음",
+                 video_id, host_key, channel_key)
+        collab_with = None
 
     if host == "group":
         # (v4a) 그룹 공식 채널 영상 — 5인 합동으로 바로 올리지 않는다(2026-09-30 운영자 결정). 근거 = 글(본문 + 인용)의
@@ -3376,9 +3411,9 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         # (v3.8.6) 언급됐다고 곧장 확정하지 않고 LLM 으로 "실제로 같이 나오는 방송인가"
         # 재확인한다 — 이름 언급이 안부 인사·잡담일 수도 있어 오탐 위험(find_guest_members
         # 는 "정식 표기가 나온다"만 볼 뿐 문맥은 모른다).
-        guest_cands = xtweet.find_guest_members(channels_cfg, host_key, info.title, search_text)
+        guest_cands = xtweet.find_guest_members(channels_cfg, host_key, info.title, guest_text)
         guests = _confirm_llm_collab_guests(
-            gh, search_text, host_key=host_key, guest_keys=guest_cands,
+            gh, guest_text, host_key=host_key, guest_keys=guest_cands,
             channels_cfg=channels_cfg, now_iso=now_iso, via=via,
         )
         llm_guests = [g for g in guests if g not in (collab_with or [])]
@@ -3454,7 +3489,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         state_label = {"live": "🔴 라이브 중", "watching": "⏳ 시작 임박",
                        "upcoming": "📅 예정"}.get(new_item.get("state"), new_item.get("state"))
         _auto_dm(
-            gh, "scheduled",
+            gh, "announced",   # (v4a) v3 에서 scheduled → announced 로 개명됐는데 여기만 옛 이름이라 어느 레벨에서도 안 나갔다
             f"📅 <b>{html.escape(name)}</b> URL 확정 예고 반영 → {state_label}"
             f"\n{html.escape(new_item.get('url') or '')}",
         )
@@ -3598,7 +3633,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
                           else {"type": "remove_items", "items": [{"id": row.get("id")}]}), now_iso=now_iso)
     link = row.get("url") or ""
     _auto_dm(
-        gh, "scheduled",
+        gh, "announced",   # (v4a) 옛 이름 scheduled — 레벨 표에 없어 v3.0 부터 안 나갔다
         f"📅 <b>{html.escape(name)}</b> 본인 예고 감지 → {when}"
         + (f"\n{html.escape(link)}" if link else "")
         + ("\n\n↩️ /undo 로 되돌릴 수 있습니다." if changed else ""),
@@ -5674,7 +5709,7 @@ if _FLASK_AVAILABLE:
                 if drained:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 # 대기열 반영이 있었으면(=실제 scheduled 변경) scheduled, 아니면 잡음성 ingest.
-                _auto_dm(gh, "scheduled" if drained else "ingest", msg)
+                _auto_dm(gh, "announced" if drained else "ingest", msg)   # (v4a) 옛 이름 scheduled → announced
                 try:
                     log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
                               detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none", via="ingest")
@@ -5725,7 +5760,7 @@ if _FLASK_AVAILABLE:
                 summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
             if changed:
                 summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
-            _auto_dm(gh, "scheduled", summary)   # 공식 일일 스케줄 → scheduled 행 반영
+            _auto_dm(gh, "announced", summary)   # 공식 일일 스케줄 → announced 행 반영 (v4a: 옛 이름 scheduled 라 안 나가던 것)
             try:
                 log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
                           detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""), via="ingest")

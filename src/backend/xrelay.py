@@ -224,6 +224,12 @@ def _video_url_near(lines: list[str], idx: int) -> str | None:
     return None
 
 
+def is_daily_schedule(text: str | None) -> bool:
+    """(v4a) 공식 일일 스케줄 서식인가 — `parse_bdp_schedule` 와 같은 헤더(`M/D(曜)の配信スケジュール`) 기준.
+    멤버가 이 글을 인용했을 때 인용문의 영상 · 이름은 그날 **각자의 방송**이지 작성자의 합동 방송 근거가 아니다."""
+    return bool(text) and bool(HEADER_RE.search(normalize(text)))
+
+
 def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
     """`@BDP_yumemita` 일일 스케줄 트윗 → announced 아이템 리스트 (v3).
 

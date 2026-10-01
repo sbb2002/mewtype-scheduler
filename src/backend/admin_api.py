@@ -148,6 +148,12 @@ def edit_preview(item_id: str, patch: dict, seen: dict) -> dict:
         return _err(f"state 는 {', '.join(_EDITABLE_STATES)} 중 하나 (삭제는 삭제 버튼)")
     if "membership" in patch and not isinstance(patch["membership"], bool):
         return _err("membership 은 true/false")
+    if "url" in patch:
+        # (v4a) 팬 화면(render.js)이 이 값을 그대로 링크로 쓴다 — http(s) 주소만 받는다(javascript: 등 차단). 비우기는 허용
+        u = (patch["url"] or "").strip() if isinstance(patch["url"], (str, type(None))) else None
+        if u is None or (u and not re.match(r"^https?://[^\s]+$", u, re.IGNORECASE)):
+            return _err("URL 은 http:// 또는 https:// 로 시작하는 주소여야 합니다")
+        patch["url"] = u or None
     pv = list_preview()
     cur = next((it for it in pv.get("items", []) if it.get("id") == item_id), None)
     if cur is None:
@@ -196,6 +202,45 @@ def delete_preview(item_id: str, suppress: bool) -> dict:
                    f"{cur.get('channel_key')} {cur.get('title') or ''}" + (" (재등록 차단)" if suppress else ""), res)
 
 
+def _suppress_until(vid: str | None) -> str | None:
+    """(v4a) 이 영상의 재등록 차단(12h — `/del` terminate · 취소 감지 · 삭제 시 차단)이 살아 있으면 해제 시각(UTC ISO), 아니면 None.
+    차단 목록은 url 로 적혀 있어 video_id 가 든 url 이면 형식(watch · live · youtu.be)과 무관하게 같은 영상으로 본다."""
+    if not vid:
+        return None
+    from . import admin
+    try:
+        st, _ = _store().read_json("admin_state.json")
+    except Exception:  # noqa: BLE001
+        return None
+    now = _now_iso()
+    ends = [x.get("until") for x in (st or {}).get("suppress") or []
+            if vid in (x.get("url") or "") and admin.suppressed({"suppress": [x]}, x.get("url"), now)]
+    return max(ends) if ends else None
+
+
+def _lift_suppress(vid: str | None) -> bool:
+    """(v4a) 관리자가 그 영상 하나를 직접 다시 올릴 때 재등록 차단을 푼다 — 안 풀면 다음 수집이 바로 다시 뺀다.
+    (공식 스케줄 원문을 통째로 넣는 경우엔 부르지 않는다 — 그 안의 취소된 영상까지 되살리지 않게.) 풀었으면 True."""
+    if not _suppress_until(vid):
+        return False
+    try:
+        gh = _store()
+        st, sha = gh.read_json("admin_state.json")
+        st = dict(st or {})
+        st["suppress"] = [x for x in st.get("suppress") or [] if vid not in (x.get("url") or "")]
+        gh.write_json("admin_state.json", st, prev_sha=sha, message=f"ops: suppress -= {vid} (관리자 재등록) {_now_iso()}")
+        return True
+    except Exception:  # noqa: BLE001
+        log.warning("재등록 차단 해제 실패 %s", vid, exc_info=True)
+        return False
+
+
+def _suppress_note(t, vid: str | None) -> str:
+    """미리보기 안내 — 재등록 차단 중이면 해제 시각과 확정 시 동작을 알린다."""
+    until = _suppress_until(vid)
+    return f" · ⚠ 재등록 차단 중(해제 {t._kst_label(until)}) — 확정하면 차단을 풀고 올립니다" if until else ""
+
+
 def _change_plan(t, raw: str, host: str, now: str) -> dict:
     """(v4a) 「내용 감지를 통한 예고 수정」 — 글에서 방송 취소·변경을 감지하고 영향받는 예고를 고른다(미리보기용, 저장 안 함).
     반환 {"action": del|edit|none|failed, "when_iso", "candidates": [{"id","when","title","selected"}], "message"?}"""
@@ -210,9 +255,11 @@ def _change_plan(t, raw: str, host: str, now: str) -> dict:
                            for c in plan["candidates"]]}
 
 
-def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str | None) -> dict:
+def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str | None,
+                  raw: str | None = None, tag: str | None = None) -> dict:
     """(v4a) 미리보기에서 관리자가 확인한 예고에만 취소·변경 적용. 취소 = `/del` terminate 와 동일
-    (삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다). 채널 자리표시 URL 은 차단하지 않는다."""
+    (삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다). 채널 자리표시 URL 은 차단하지 않는다.
+    raw: 취소·변경을 일으킨 글 — 하나라도 적용되면 원문 보존(`broadcast_change`, 2026-10-01 운영자 결정)."""
     t = _t()
     out = {"action": action, "applied": [], "errors": []}
     if action not in ("del", "edit") or not ids:
@@ -232,6 +279,9 @@ def _apply_change(host: str, action: str | None, ids: list | None, when_iso: str
         else:
             r = _err("변경할 시각이 없습니다")
         (out["applied"] if r.get("ok") else out["errors"]).append(label if r.get("ok") else f"{label}: {r.get('error')}")
+    if out["applied"] and raw:
+        t._preserve_raw("broadcast_change", raw, {"channel_key": host, "action": action, "via": "admin", "tag": tag,
+                                                  "targets": out["applied"]}, _now_iso())
     return out
 
 
@@ -260,7 +310,7 @@ def ingest_preview_raw(raw: str, *, confirm: bool, channel_key: str | None = Non
                                    members=members, media=media)
     recog_fail = (not res.get("ok")) and "인식되지 않았습니다" in (res.get("error") or "")
     if res.get("ok") or (recog_fail and change_ids):
-        ch = _apply_change(channel_key, change_action, change_ids, change_when)
+        ch = _apply_change(channel_key, change_action, change_ids, change_when, raw=raw, tag=tag)
         if recog_fail:
             res = _ok({"change_only": True})
         res["change"] = ch
@@ -283,8 +333,8 @@ def _video_preview(t, chs: dict, vid: str, author_key: str | None, now: str,
         return None, "영상 조회에 실패했습니다(잠시 뒤 다시 시도)", None
     if info is None or not info.channel_id:
         return None, "영상을 API 로 확인하지 못했습니다(회원 전용 · 비공개 · 삭제 등)", None
-    if getattr(info, "is_premiere", False):
-        return None, "프리미어 공개(녹화된 노래 · 뮤비 · 커버 등) 영상이라 방송 예고로 올리지 않습니다", None
+    if t.preview_build.is_group_release(info, chs):
+        return None, "그룹 채널의 프리미어 공개(녹화된 노래 · 뮤비 · 커버 등) 영상이라 방송 예고로 올리지 않습니다", None
     host_key, host, collab = t.xtweet.resolve_url_host(info.channel_id, author_key, chs)
     if host_key is None:
         return None, "유메미타 멤버 · 그룹 공식 채널의 영상이 아닙니다", None
@@ -304,7 +354,7 @@ def _video_preview(t, chs: dict, vid: str, author_key: str | None, now: str,
     label = {"live": "라이브 중", "watching": "시작 임박", "upcoming": "예정", "end": "종료"}.get(
         item.get("state"), item.get("state"))
     tail = "선택한 참여 멤버로 올라갑니다" if picked else "합동 여부는 확정할 때 LLM 이 한 번 더 확인합니다"
-    return item, f"영상 확인됨 — 확정하면 「{label}」 상태로 바로 올라갑니다 · {tail}", next_check
+    return item, f"영상 확인됨 — 확정하면 「{label}」 상태로 바로 올라갑니다 · {tail}{_suppress_note(t, vid)}", next_check
 
 
 def _group_choice(t, vid: str, item: dict, media: list | None, text: str | None = None) -> dict:
@@ -332,6 +382,7 @@ def _commit_group_video(item: dict, vid: str, next_check: str | None, now: str) 
     res = _submit("url_confirmed_commit", {"video_id": vid, "new_item": item, "next_check_at": next_check,
                                            "host_key": item["channel_key"], "now_iso": now, "via": "ops"})
     if res["ok"]:
+        _lift_suppress(vid)
         apply.enqueue_reconcile(video_id=vid)
     return _record("ingest_preview", item["channel_key"], f"영상 URL {vid} · 선택 멤버", res)
 
@@ -361,6 +412,7 @@ def _ingest_video_url(t, chs: dict, vid: str, url: str, confirm: bool, members: 
         return _record("ingest_preview", item["channel_key"], f"영상 URL {vid}", _err(str(e)[:250]))
     if not done:
         return _err("영상을 확정하지 못했습니다 — 수동 입력을 쓰세요")
+    _lift_suppress(vid)
     apply.enqueue_reconcile(video_id=vid)
     return _record("ingest_preview", item["channel_key"], f"영상 URL {vid}", _ok({"path": "url_confirmed"}))
 
@@ -553,15 +605,20 @@ def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None
     vnote = ""
     if ym:
         vid = ym.group(1)
+        # 확정(_maybe_url_confirmed_schedule)과 같게 — 영상 URL 이 본문엔 없고 인용한 공식 일일 스케줄에만 있으면
+        # 작성자를 게스트로 넣지 않는다(2026-10-01 운영자 결정). 미리보기 단계의 게스트도 그에 맞춘다
+        url_only_in_official_quote = (t.xrelay is not None and t.xrelay.is_daily_schedule(quote)
+                                      and not t.xrelay.YT_VIDEO_RE.search(t.xrelay.normalize(raw)))
+        guest_author = None if url_only_in_official_quote else channel_key
         if not confirm:
-            item, vnote, _nc = _video_preview(t, chs, vid, channel_key, now, members)
+            item, vnote, _nc = _video_preview(t, chs, vid, guest_author, now, members)
             if item is not None:
                 if members is None and item.get("host") == "group":
                     # 5인 팬아웃 금지 — 글 · 제목의 근거 또는 이미지 OCR 로 제안 + 선택 팝업
                     return _group_choice(t, vid, item, media, raw + ("\n" + quote if quote else ""))
                 return {"ok": True, "preview": [item], "note": vnote}
         else:
-            gitem, _gn, gnc = _video_preview(t, chs, vid, channel_key, now, members)
+            gitem, _gn, gnc = _video_preview(t, chs, vid, guest_author, now, members)
             if gitem is not None and gitem.get("host") == "group" and members is None:
                 return _err("그룹 공식 채널 영상은 참여 멤버를 골라야 합니다 — 미리보기에서 멤버를 고르세요")
             if gitem is not None and members is not None:
@@ -572,6 +629,7 @@ def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None
                 return _record("ingest_preview", channel_key, "개인 예고(영상 URL)", _err(str(e)[:250]))
             if done:
                 t._preserve_raw("personal_schedule_url", raw, {"channel_key": channel_key, "via": "admin"}, now)
+                _lift_suppress(vid)
                 apply.enqueue_reconcile(video_id=vid)
                 return _record("ingest_preview", channel_key, "개인 예고(영상 URL)", _ok({"path": "url_confirmed"}))
             # 영상을 API 로 확정하지 못함(회원 전용 · 삭제 등) — 본문 파싱으로 최소한 등록(v3.6 과 같은 폴백)
@@ -691,7 +749,7 @@ def ingest_tweet_url(url: str, *, confirm: bool, force_unit: str | None = None, 
                                   quote=(ex.get("qrt") or {}).get("text"), members=members, media=ex.get("media"))
         res["schedule"] = {"ok": bool(sres.get("ok")), "error": sres.get("error")}
     if detect_change and res.get("ok"):
-        res["change"] = _apply_change(unit, change_action, change_ids, change_when)
+        res["change"] = _apply_change(unit, change_action, change_ids, change_when, raw=ex.get("text"), tag=f"tweet-{tid}")
     return res
 
 
@@ -760,12 +818,13 @@ def ingest_preview_manual(*, host: str, date: str, title: str, confirm: bool, co
         note = ("같은 방송이 이미 있어 그 항목에 합쳐집니다 — 상태 · 영상 연결은 유지하고 입력한 값만 덮어씁니다"
                 if matched else "새 예고로 추가됩니다")
         if vid:
-            note += " · 확정 뒤 영상 URL 을 바로 확인합니다"
+            note += " · 확정 뒤 영상 URL 을 바로 확인합니다" + _suppress_note(t, vid)
         return {"ok": True, "preview": item, "note": note,
                 "merge": ({"id": matched.get("id"), "title": matched.get("title"),
                            "scheduled_start": matched.get("scheduled_start")} if matched else None)}
     res = _submit("manual_preview", {"item": item, "now_iso": now})
     if res["ok"] and vid:
+        _lift_suppress(vid)
         apply.enqueue_reconcile(video_id=vid)
     return _record("ingest_preview", host, f"수동 · {title[:40]}", res)
 
@@ -851,7 +910,7 @@ def ingest_tweet_manual(*, url: str, host: str, text: str, confirm: bool, text_k
     res = _submit("personal_tweet", {"prepared": prepared, "channel_key": host, "now_iso": now, "via": "ops"})
     res = _record("ingest_tweet", host, f"수동 · tweet-{m.group(2)}", res)
     if detect_change and res.get("ok"):
-        res["change"] = _apply_change(host, change_action, change_ids, change_when)
+        res["change"] = _apply_change(host, change_action, change_ids, change_when, raw=text, tag=f"tweet-{m.group(2)}")
     return res
 
 
@@ -918,52 +977,6 @@ def edit_tweet(unit: str, tweet_id: str, text_ko: str) -> dict:
     elif res["ok"] and not (res.get("result") or {}).get("changed", True):
         res = _err("바뀐 것이 없습니다")
     return _record("edit_tweet", f"{unit}:{tweet_id}", text_ko[:60], res)
-
-
-def translate(target: str, key: str) -> dict:
-    """수동 번역. target ∈ {"preview", "notice", "tweet"}, key = 항목 id(트윗은 유닛)."""
-    from .config import load_config
-    from .handlers import _make_llm
-    cfg = load_config()
-    if not cfg.groq_api_key:
-        return _err("GROQ_API_KEY 없음")
-    llm = _make_llm(cfg)
-    up = enrich.empty_updates()
-    if target == "preview":
-        it = next((i for i in list_preview().get("items", []) if i.get("id") == key), None)
-        if not it:
-            return _err("항목 없음")
-        if not it.get("title"):
-            return _err("제목이 없는 예고라 번역할 것이 없습니다")
-        ko = llm.translate(it["title"])
-        if ko:
-            up["preview"][key] = {"title": it["title"], "title_ko": ko}
-    elif target == "notice":
-        n = next((x for x in list_notices().get("notices", []) if x.get("id") == key), None)
-        if not n:
-            return _err("소식 없음")
-        r = llm.notice_title(n.get("body_for_llm") or n.get("title") or "")
-        if r and r.get("title_ko"):
-            up["notices"][key] = {"title": r.get("title_ja") or n.get("title"), "title_ko": r["title_ko"]}
-    elif target == "tweet":
-        # key = 유닛(그 유닛 전부) 또는 "유닛|트윗id"(그 트윗만)
-        unit, _, tid = key.partition("|")
-        lst = (list_tweets().get("tweets") or {}).get(unit) or []
-        lst = lst if isinstance(lst, list) else [lst]
-        if tid:
-            lst = [tw for tw in lst if str(tw.get("id")) == tid]
-            if not lst:
-                return _err("트윗 없음")
-        for tw in lst:
-            ko = llm.translate(tw.get("text") or "")
-            if ko:
-                up["tweets"][f"{unit}|{tw.get('id')}"] = {"text_ko": ko}
-    else:
-        return _err("target 은 preview · notice · tweet")
-    if not enrich.count(up):
-        return _record("translate", f"{target}:{key}", "번역 실패", _err("LLM 번역 실패"))
-    res = _submit("apply_translation", {"updates": up, "now_iso": _now_iso(), "force": True})
-    return _record("translate", f"{target}:{key}", "", res)
 
 
 def translate_text(text: str) -> dict:
@@ -1086,11 +1099,6 @@ def set_monitor_auto(enabled: bool) -> dict:
                                   "monitor_auto"))
 
 
-def undo(history_id: str) -> dict:
-    """(범위 밖 — 항목 단위 되돌리기는 배포 단계) 현재는 {"ok": False, "error": "미구현"}."""
-    return {"ok": False, "job_id": None, "result": None, "error": "미구현 (v4a 로컬 시험판 범위 밖)"}
-
-
 # ── (v4a) 작업 탭 — 흐름 · 예정된 확인 · 최근 자동 처리 · 번역 대기 ───────────────────────────────────────
 
 # 관리 조작 흐름 이름 (admin_web 이 조작 1건마다 흐름을 연다). 미리보기(confirm=False)는 조작이 아니라 제외.
@@ -1099,7 +1107,7 @@ ADMIN_FLOW_LABELS = {
     "ingest_notice_raw": "원문 투입 · 소식", "ingest_tweet_raw": "원문 투입 · 트윗", "ingest_tweet_url": "URL 투입 · 트윗", "ingest_preview_url": "URL 투입 · 예고",
     "ingest_preview_manual": "수동 입력 · 예고", "ingest_notice_manual": "수동 입력 · 소식",
     "ingest_tweet_manual": "수동 입력 · 트윗", "edit_notice": "소식 수정", "edit_tweet": "트윗 수정",
-    "delete_notice": "소식 삭제", "delete_tweet": "트윗 삭제", "translate": "번역", "retry_lost": "유실 원문 재투입",
+    "delete_notice": "소식 삭제", "delete_tweet": "트윗 삭제", "retry_lost": "유실 원문 재투입",
     "set_paused": "일시정지 · 재개", "set_log_level": "알림 레벨", "set_monitor_auto": "멤버 현황 DM",
     "resolve_group_pending": "그룹 영상 확인 대기 · 확정", "dismiss_group_pending": "그룹 영상 확인 대기 · 무시",
     "undo_llm_action": "LLM 판단 되돌리기",
@@ -1131,15 +1139,15 @@ def describe_target(name: str, body: dict) -> str:
             e = _t()._group_pending_items(_store()).get(body.get("video_id") or "") or {}
             who = "·".join(names.get(k, k) for k in (body.get("members") or []))
             return " · ".join(x for x in ((e.get("title") or "")[:40], body.get("video_id") or "", who) if x)
-        if name in ("edit_preview", "delete_preview") or (name == "translate" and body.get("target") == "preview"):
+        if name in ("edit_preview", "delete_preview"):
             key = body.get("item_id") or body.get("key")
             it = next((i for i in list_preview().get("items", []) if i.get("id") == key), None)
             return _item_label(it, names) if it else str(key)
-        if name in ("edit_notice", "delete_notice") or (name == "translate" and body.get("target") == "notice"):
+        if name in ("edit_notice", "delete_notice"):
             key = body.get("nid") or body.get("key")
             n = next((x for x in list_notices().get("notices", []) if x.get("id") == key), None)
             return (n.get("title_ko") or n.get("title") or key) if n else str(key)
-        if name in ("delete_tweet", "edit_tweet") or (name == "translate" and body.get("target") == "tweet"):
+        if name in ("delete_tweet", "edit_tweet"):
             unit = (body.get("unit") or body.get("key") or "").split("|")[0]
             return f"{names.get(unit, unit)} 트윗"
         if name.startswith("ingest_"):
@@ -1335,7 +1343,7 @@ API_FUNCTIONS: tuple[str, ...] = (
     "list_jobs", "channels", "edit_preview", "delete_preview", "ingest_preview_raw",
     "ingest_notice_raw", "ingest_tweet_raw", "ingest_tweet_url", "ingest_preview_url", "ingest_preview_manual",
     "ingest_notice_manual", "ingest_tweet_manual", "edit_notice", "edit_tweet", "delete_notice", "delete_tweet",
-    "translate", "retry_lost", "set_paused", "set_log_level", "set_monitor_auto", "undo",
+    "retry_lost", "set_paused", "set_log_level", "set_monitor_auto",
     "translate_text", "jobs_overview",
 )
 
@@ -1401,7 +1409,8 @@ if __name__ == "__main__":
         assert os.path.exists(os.path.join(d, "ops", "history.json"))
         # 원문 투입 미리보기 — 개인 예고 유닛 미지정
         assert ingest_preview_raw("こんにちは", confirm=False)["ok"] is False
-        assert undo("x")["ok"] is False
+        # (2026-10-01) 쓰이지 않던 API 정리 — 목록 번역(translate) · 미구현 이력 되돌리기(undo)
+        assert "translate" not in API_FUNCTIONS and "undo" not in API_FUNCTIONS
         # (v4a) 트윗 단위 삭제 — 같은 유닛의 다른 트윗은 남는다
         gh.write_json("tweets.json", {"tweets": {"arale": [{"id": "1", "text": "a"}, {"id": "2", "text": "b"}]}},
                       prev_sha=gh.read_json("tweets.json")[1], message="seed")

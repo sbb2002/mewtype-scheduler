@@ -34,6 +34,22 @@ def _sha1_hex(data: bytes) -> str:
     return hashlib.sha1(data).hexdigest()
 
 
+def replace_retry(src, dst, *, tries: int = 6, delay: float = 0.05) -> None:
+    """(v4a) `os.replace` + Windows 권한 오류 짧은 재시도(최대 약 1.5초).
+
+    Windows 는 다른 스레드 · 프로세스가 대상 파일을 열어 둔 동안(읽기 포함) 교체를 PermissionError(WinError 5 · 32)로
+    거절한다(2026-09-30 로컬 러너 실측 — flows.json · recent_jobs.json). 잠깐 뒤 다시 하면 대개 된다.
+    끝내 안 되면 마지막 예외를 그대로 던진다(호출부의 기존 실패 처리 그대로)."""
+    for i in range(tries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(delay * (2 ** i))
+
+
 class LocalStore:
     """로컬 파일 저장소. GitHubStore 와 같은 인터페이스를 제공하되
     GitHub 대신 로컬 파일시스템에서 읽고 쓴다.
@@ -272,7 +288,7 @@ class LocalStore:
 
             try:
                 # os.replace (원자적, 크로스플랫폼)
-                os.replace(tmp_path, file_path)
+                replace_retry(tmp_path, file_path)   # (v4a) Windows 권한 오류 짧은 재시도
                 sha = _sha1_hex(content_bytes)
 
                 # .commits.jsonl 에 기록
