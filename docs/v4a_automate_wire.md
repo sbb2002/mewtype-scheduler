@@ -112,12 +112,13 @@
             }
             ```
         - save response: (비움)                     ← 변경: 파일 `ingest` 저장 해제 — 동시 파이버 파일 충돌 원인
-        - timeout: 10s                              (접속 제한 시간 — 응답 대기는 아님)
+        - timeout: 1m                               ← 정정(10-02): 문서엔 10s 로 적혀 있었으나 실제 폰 설정은 1분
         <output>
         - response status code: httpcode            (현행 그대로)
         - response content or filename: httppresp   (현행 그대로 — 파일 저장을 끄면 내용이 들어온다)
 [50] log append                                   ← 신규
     - message: "prod http=" ++ httpcode ++ " tag=" ++ coalesce(nx["pde_noti_tag"], nx["chime.slot_key"], "-")
+      ← 변경(10-02): message 칸 수식(fx) 모드. 10-01 엔 텍스트 모드라 수식 문자열이 그대로 찍혔다
     - go to end
 [53] log append                                   ← 신규: 운영 전송 실패
     - message: "prod FAIL block=" ++ prod_fail_block ++ " " ++ prod_fail_type ++ ": " ++ prod_fail_msg ++ " tag=" ++ coalesce(nx["pde_noti_tag"], nx["chime.slot_key"], "-")
@@ -151,7 +152,7 @@
             }
             ```
         - save response: (비움)
-        - timeout: 10s
+        - timeout: 1m                               ← 변경(10-02): 10s → 1분(운영 [40] 과 같게). 10-01 22:58 백엔드 처리 10.2s 중 끊김
         <output>
         - response status code: httpcode            (현행 그대로)
         - response content or filename: httppresp   (현행 그대로)
