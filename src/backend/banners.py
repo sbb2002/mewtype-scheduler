@@ -485,6 +485,12 @@ def edit_banner(prev: dict, bid: str, patch: dict, now_iso: str) -> tuple[dict, 
         b[k] = v
     if "hold" in patch and patch["hold"] is None:
         b["hold"] = None
+    gj = patch.get("gachas_ja")
+    if isinstance(gj, dict):                     # {가챠 id: 일본어 원제} — 빈 값은 무시(원문은 비울 수 없음). id 는 안 바뀐다
+        for g in b.get("gachas") or []:
+            v = gj.get(g.get("id"))
+            if isinstance(v, str) and v.strip():
+                g["title_ja"] = v.strip()
     gk = patch.get("gachas_ko")
     if isinstance(gk, dict):                     # {가챠 id: 한글 제목} — 빈 문자열이면 한글 없음(원제만 표시)
         for g in b.get("gachas") or []:
@@ -669,6 +675,11 @@ if __name__ == "__main__":
     assert chg and eg["banners"][0]["gachas"][0]["title_ko"] == "수정한 가챠"
     ed2, chg2, _ = edit_banner(P1, b["id"], {"drop_gachas": [gid]}, N)
     assert chg2 and ed2["banners"][0]["gachas"] == []
+    # 가챠 원제 수정(id 유지, match_keys 는 새 제목으로 다시 계산)
+    ej, cj, _ = edit_banner(P1, b["id"], {"gachas_ja": {gid: " 新しいガチャ名 "}}, N)
+    assert cj and ej["banners"][0]["gachas"][0]["title_ja"] == "新しいガチャ名" and ej["banners"][0]["gachas"][0]["id"] == gid
+    assert any("新しいガチャ名" in k or name_key("新しいガチャ名") == k for k in ej["banners"][0]["match_keys"])
+    assert not edit_banner(P1, b["id"], {"gachas_ja": {gid: "   "}}, N)[1]          # 빈 원문은 무시
     # 이미지 링크 수정 — http(s) 만, 최대 6장, 비우면 이미지 없음
     ei, ci, er_i = edit_banner(P1, b["id"], {"image_urls": ["https://x/1.jpg", " https://x/2.jpg "]}, N)
     assert ci and er_i is None and ei["banners"][0]["image_urls"] == ["https://x/1.jpg", "https://x/2.jpg"]

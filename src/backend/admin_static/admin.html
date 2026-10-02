@@ -196,6 +196,8 @@
             margin-bottom: 0.25rem;
             font-weight: 500;
         }
+        /* 항목 제목은 클릭 대상이 아니다 — 체크박스 등을 감싼 label 만 pointer */
+        .form-group > label:not(:has(input)) { cursor: default; }
 
         /* 상태 배지 */
         .badge {
@@ -1582,11 +1584,11 @@
 
             // (v4a) 수정 창 제목 칸 — 원문(+번역 버튼) / 한글 / 팬 화면 미리보기(메인 UI 와 같은 "한글　—　원문" 마퀴).
             // 한글이 빈칸이면 번역 없음으로 저장(팬 화면엔 원문만). ids = {orig, ko}
-            buildTitleFields(form, ids, orig, ko, help) {
+            buildTitleFields(form, ids, orig, ko, help, labelText) {
                 const group = document.createElement("div");
                 group.className = "form-group";
                 const label = document.createElement("label");
-                label.textContent = "제목";
+                label.textContent = labelText || "제목";
                 group.appendChild(label);
 
                 const row1 = document.createElement("div");
@@ -2661,6 +2663,7 @@
                         start: b.start_at ? this.utcIsoToKstInput(b.start_at) : "", end: b.end_at ? this.utcIsoToKstInput(b.end_at) : "",
                         hold: !!b.hold,
                         gachas: Object.fromEntries((b.gachas || []).map((g) => [g.id, g.title_ko || ""])),
+                        gachasJa: Object.fromEntries((b.gachas || []).map((g) => [g.id, g.title_ja || ""])),
                         images: (b.image_urls || []).slice(),
                         gperiod: Object.fromEntries((b.gachas || []).map((g) => [g.id, {
                             start: g.start_at ? this.utcIsoToKstInput(g.start_at) : "", end: g.end_at ? this.utcIsoToKstInput(g.end_at) : "" }])),
@@ -2700,25 +2703,18 @@
                     form.appendChild(g);
                 }
 
+                const many = (b.gachas || []).length > 1;
                 (b.gachas || []).forEach((g, idx) => {
-                    const grp = document.createElement("div");
-                    grp.className = "form-group";
-                    const l = document.createElement("label");
-                    l.textContent = `가챠 한글 제목 — 원제: ${g.title_ja}`;
-                    const i = document.createElement("input");
-                    i.type = "text";
-                    i.id = `edit-bn-g-${idx}`;
-                    i.dataset.gid = g.id;
-                    i.value = g.title_ko || "";
-                    grp.appendChild(l);
-                    grp.appendChild(i);
-                    form.appendChild(grp);
+                    this.buildTitleFields(form, { orig: `edit-bn-gj-${idx}`, ko: `edit-bn-g-${idx}` }, g.title_ja, g.title_ko, "",
+                        many ? `가챠 ${idx + 1} 제목` : "가챠 제목");
+                    document.getElementById(`edit-bn-gj-${idx}`).dataset.gja = g.id;     // 원문 박스
+                    document.getElementById(`edit-bn-g-${idx}`).dataset.gko = g.id;      // 한글 박스
 
                     // 가챠 기간 — 비우면 행사와 같음(팬 화면은 행사와 다른 부분만 표시)
                     const per = document.createElement("div");
                     per.className = "form-group";
                     const pl = document.createElement("label");
-                    pl.textContent = `가챠 기간 (KST) — 비우면 행사와 같음 · ${g.title_ko || g.title_ja}`;
+                    pl.textContent = "가챠 기간 (KST) — 비우면 행사와 같음" + (many ? ` (가챠 ${idx + 1})` : "");
                     per.appendChild(pl);
                     [["gs", "시작", this.editState.seen.gperiod[g.id].start], ["ge", "종료", this.editState.seen.gperiod[g.id].end]].forEach(([k, txt, val]) => {
                         const row = document.createElement("div");
@@ -2729,7 +2725,7 @@
                         const inp = document.createElement("input");
                         inp.type = "datetime-local";
                         inp.id = `edit-bn-${k}-${idx}`;
-                        inp.dataset.gid = g.id;
+                        inp.dataset.gper = g.id;
                         inp.dataset.k = k;
                         inp.value = val || "";
                         row.appendChild(tag);
@@ -2788,18 +2784,24 @@
                 if (en && en !== seen.end) patch.end_at = this.kstInputToUtcIso(en);
                 const ch = document.getElementById("edit-bn-clearhold");
                 if (ch && ch.checked) patch.clear_hold = true;
-                const gk = {};
-                document.querySelectorAll("#edit-modal-form input[data-gid]").forEach((i) => {
-                    if (i.value.trim() !== (seen.gachas[i.dataset.gid] || "")) gk[i.dataset.gid] = i.value.trim();
+                const gk = {}, gj = {};
+                document.querySelectorAll("#edit-modal-form input[data-gko]").forEach((i) => {
+                    if (i.value.trim() !== (seen.gachas[i.dataset.gko] || "")) gk[i.dataset.gko] = i.value.trim();
+                });
+                document.querySelectorAll("#edit-modal-form input[data-gja]").forEach((i) => {
+                    const v = i.value.trim();
+                    if (v && v !== (seen.gachasJa[i.dataset.gja] || "")) gj[i.dataset.gja] = v;
                 });
                 if (Object.keys(gk).length) patch.gachas_ko = gk;
+                if (Object.keys(gj).length) patch.gachas_ja = gj;
                 // 가챠 기간 — 바뀐 가챠만. 빈 값은 null(행사와 같음)
                 const gp = {};
-                document.querySelectorAll("#edit-modal-form input[data-k]").forEach((i) => {
-                    const old = (seen.gperiod[i.dataset.gid] || {})[i.dataset.k === "gs" ? "start" : "end"] || "";
+                document.querySelectorAll("#edit-modal-form input[data-gper]").forEach((i) => {
+                    const gid = i.dataset.gper;
+                    const old = (seen.gperiod[gid] || {})[i.dataset.k === "gs" ? "start" : "end"] || "";
                     if ((i.value || "") !== old) {
-                        gp[i.dataset.gid] = gp[i.dataset.gid] || {};
-                        gp[i.dataset.gid][i.dataset.k === "gs" ? "start_at" : "end_at"] = i.value ? this.kstInputToUtcIso(i.value) : null;
+                        gp[gid] = gp[gid] || {};
+                        gp[gid][i.dataset.k === "gs" ? "start_at" : "end_at"] = i.value ? this.kstInputToUtcIso(i.value) : null;
                     }
                 });
                 if (Object.keys(gp).length) patch.gachas_period = gp;
