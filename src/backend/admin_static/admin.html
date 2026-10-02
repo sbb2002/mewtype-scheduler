@@ -3963,7 +3963,7 @@
                     opt = { error: err.message };
                 }
                 btn.disabled = false;
-                if (opt.error) { this.showToast(opt.error, "error"); return; }
+                if (opt.error) { await this.alertModal(opt.error + "\n\n(「함수 없음」이면 러너가 옛 코드로 떠 있는 것 — 러너를 재시작하세요)", "사용자 판단을 열 수 없음"); return; }
                 const res = await this.confirmModal({
                     title: `사용자 판단 — ${this.llmKindLabel(e.kind)}`,
                     message: `${e.summary || e.id}\n\n결과를 직접 고르면 LLM 호출 없이 같은 반영 경로로 처리하고, 새 판단 기록으로 이어집니다.`,
@@ -3988,7 +3988,7 @@
                 }
                 btn.classList.remove("loading");
                 if (r.ok) this.showToast(`${name} 완료 — ${(r.result || {}).result || ""}`, "success");
-                else this.showToast(r.error || "실패", "error");
+                else await this.alertModal(r.error || "실패", `${name} 실패`);
                 await this.loadJobs();
                 if (this.flowSel === f.id) this.renderFlowLlm(f, r.ok ? e.id : null);
                 else { btn.disabled = false; label.textContent = orig; }
