@@ -24,3 +24,4 @@ ref/www.youtube.com_cookies.txt
 # (v4a) 로컬 시험판 — 데이터 · 비밀값
 _local/
 .env.local
+ref/v4a/verify/results_c.json

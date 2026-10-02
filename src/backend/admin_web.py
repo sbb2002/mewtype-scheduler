@@ -380,6 +380,9 @@ h1{color:#ff6b6b}</style></head>
             "resolve_group_pending",
             "dismiss_group_pending",
             "undo_llm_action",
+            "rejudge_llm_action",
+            "decide_llm_action",
+            "llm_review_options",      # 선택지 조회지만 action_id 인자가 필요해 POST
         }
 
         if name not in write_functions:

@@ -533,16 +533,43 @@ def list_llm_actions(limit: int = 300) -> dict:
 
 
 def undo_llm_action(action_id: str) -> dict:
-    """(v4a) LLM 판단 되돌리기 — 그때 바뀐 항목만 되돌린다(그 뒤 다른 이유로 바뀐 항목은 건너뜀). 되살린 영상은 곧바로 확인 적재."""
+    """(v4a) LLM 판단 반려(구 되돌리기) — 그때 바뀐 항목만 되돌린다(그 뒤 다른 이유로 바뀐 항목은 건너뜀). 되살린 영상은 곧바로 확인 적재."""
     res = _submit("llm_action", {"op": "undo", "now_iso": _now_iso(), "action_id": action_id})
     if res.get("ok") and (res.get("result") or {}).get("error"):
         res = _err(res["result"]["error"])
     elif res.get("ok"):
         for v in (res.get("result") or {}).get("restored_video_ids") or []:
             apply.enqueue_reconcile(video_id=v)
-        if not (res.get("result") or {}).get("applied"):
-            res = dict(res, ok=False, error="되돌릴 것이 없습니다 — " + "; ".join((res.get("result") or {}).get("skipped") or []))
+        if not (res.get("result") or {}).get("applied") and not (res.get("result") or {}).get("review_only"):
+            res = dict(res, ok=False, error="반려로 되돌릴 것이 없습니다 — " + "; ".join((res.get("result") or {}).get("skipped") or []))
     return _record("undo_llm_action", action_id, "; ".join((res.get("result") or {}).get("applied") or []), res)
+
+
+def llm_review_options(action_id: str) -> dict:
+    """(v4a) 사용자 판단 팝업의 선택지(멤버 · 종류별 후보)."""
+    r = _t()._llm_review_options(_store(), action_id)
+    return r
+
+
+def _review_api(action_id: str, mode: str, decision: dict | None) -> dict:
+    try:
+        r = _t()._llm_review(_store(), action_id, mode, decision, _now_iso())
+    except Exception as e:  # noqa: BLE001
+        log.exception("LLM 판단 후속 처리 실패")
+        r = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+    res = _err(r["error"]) if r.get("error") else _ok(r)
+    return _record("rejudge_llm_action" if mode == "rejudge" else "decide_llm_action", action_id,
+                   r.get("result") or r.get("error") or "", res)
+
+
+def rejudge_llm_action(action_id: str) -> dict:
+    """(v4a) 반려된 LLM 판단을 같은 입력 + 「반려됐다」 힌트로 LLM 이 다시 판단 — 새 판단 기록으로 이어진다."""
+    return _review_api(action_id, "rejudge", None)
+
+
+def decide_llm_action(action_id: str, decision: dict) -> dict:
+    """(v4a) 반려된 LLM 판단을 운영자가 직접 정한 결과로 처리(LLM 호출 없이 같은 반영 경로)."""
+    return _review_api(action_id, "user", decision if isinstance(decision, dict) else {})
 
 
 def list_group_pending() -> dict:
@@ -1232,7 +1259,7 @@ ADMIN_FLOW_LABELS = {
     "delete_notice": "소식 삭제", "delete_tweet": "트윗 삭제", "retry_lost": "유실 원문 재투입",
     "set_paused": "일시정지 · 재개", "set_log_level": "알림 레벨", "set_monitor_auto": "멤버 현황 DM",
     "resolve_group_pending": "그룹 영상 확인 대기 · 확정", "dismiss_group_pending": "그룹 영상 확인 대기 · 무시",
-    "undo_llm_action": "LLM 판단 되돌리기",
+    "undo_llm_action": "LLM 판단 반려", "rejudge_llm_action": "LLM 판단 재판단", "decide_llm_action": "LLM 판단 · 사용자 판단",
 }
 
 
@@ -1351,7 +1378,9 @@ def _auto_text(e: dict, items_by_vid: dict, names: dict) -> str:
             applied = (json.loads(e.get("summary") or "{}").get("applied") or [])
         except (ValueError, AttributeError):
             applied = []
-        return "↩ LLM 판단 되돌리기" + (f" — {' · '.join(applied)}" if applied else "")
+        return "↩ LLM 판단 반려" + (f" — {' · '.join(applied)}" if applied else "")
+    if kind == "llm_action" and b.get("op") == "mark":
+        return "LLM 판단 후속 기록 갱신"
     return _AUTO_LABEL.get(kind, kind)
 
 

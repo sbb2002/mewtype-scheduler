@@ -83,7 +83,8 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         )),
         # (v4a) LLM 판단 기록 · 되돌리기 (ops llm_actions.json)
         "llm_action": lambda gh, a: t._llm_action_commit(gh, a["op"], a["now_iso"], entry=a.get("entry"),
-                                                         action_id=a.get("action_id")),
+                                                         action_id=a.get("action_id"), patch=a.get("patch"),
+                                                         guard=bool(a.get("guard"))),
         # (v4a) 프리미어(녹화 영상 공개) 기록 (ops video_releases.json)
         "video_release": lambda gh, a: __import__("src.backend.handlers", fromlist=["x"]).record_video_releases(
             gh, a.get("entries") or [], a["now_iso"]),

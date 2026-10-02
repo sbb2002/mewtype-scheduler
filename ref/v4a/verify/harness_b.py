@@ -545,7 +545,7 @@ def run():
     check("B11", "같은 판단 두 번 되돌리기 → 거절", not r2.get("ok") and "이미" in (r2.get("error") or ""), r2)
     none_act = next((a for a in llm_actions() if a["kind"] == "broadcast_change" and not a.get("undo")), None)
     r3 = post("undo_llm_action", {"action_id": (none_act or {}).get("id", "x")})
-    check("B11", "검토용 판단(취소 아님) → 되돌리기 없음 안내", none_act and not r3.get("ok") and "검토용" in (r3.get("error") or ""), r3)
+    check("B11", "검토용 판단(취소 아님) → 반려는 되지만 롤백할 변경 없음(10-02 반려 개편)", none_act and r3.get("ok") and (r3.get("result") or {}).get("review_only"), r3)
 
     TW[f"{h.TP}303"] = {"author": "miyako_yumemita", "text": "明日21時から歌枠配信します🎤"}
     h.ingest_x("明日21時から歌枠配信します🎤", "藤都子", tag=f"p#x#1tweet-{h.TP}303")
@@ -712,7 +712,7 @@ def run():
     check("B16", "다른 계정 글(작성자 ≠ 그룹) → 소식 안 올림", notices_n() == n0 and "다른 계정 글" in str(r.get("ignored")), r)
     # ③ 조회 실패 — 표시명으로
     r = h.ingest_x(N_TEXT, "バンドリ！アワーノーツ", tag=f"p#x#1tweet-{h.TP}352")
-    check("B16", "조회 실패 + 다른 표시명 → 소식 안 올림", notices_n() == n0 and "다른 계정 알림" in str(r.get("ignored")), r)
+    check("B16", "조회 실패 + 게임 계정 표시명 → 소식 안 올림(10-02 부터 행사 배너 경로로 감 — 소식 · 스케줄로는 안 감)", notices_n() == n0 and ("banner" in r or "다른 계정 알림" in str(r.get("ignored"))), r)
     check("B16", "건너뜀 로그(relay · 공식 글 아님)", events(lambda e: e.get("flow") == "relay" and "공식 글 아님" in e.get("detail", "")))
     # ④ 그룹이 직접 쓴 글 → 소식 추가 + 흐름 결과에 「소식 추가」
     off_tweet(f"{h.TP}353", N_TEXT)

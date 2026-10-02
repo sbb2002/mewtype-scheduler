@@ -317,8 +317,24 @@
             border-radius: 50%; animation: tl-spin 0.7s linear infinite; }
         .fllm-row button.loading .spinner { display: inline-block; }
         /* (2026-10-01) 되돌린 판단 — 초록 테두리 · 「✓ 되돌림 완료」. 방금 되돌린 줄은 한 번 번쩍여 결과가 바뀐 것을 보이게 */
-        .fllm-row.undone { border-color: rgba(62, 207, 142, .55); background: rgba(62, 207, 142, .07); }
-        .fllm-row.undone .k { color: var(--ok); }
+        /* (2026-10-02) 반려됨 — 노랑(되감기 점선과 같은 색). 후속 판단(재판단 · 사용자 판단)은 들여쓴 자식 줄 */
+        .fllm-row.undone { border-color: rgba(245, 184, 61, .6); background: rgba(245, 184, 61, .07); }
+        .fllm-row.undone .k { color: #f5b83d; }
+        .fllm-row .badge-rv { font-size: 0.7rem; padding: 1px 8px; border-radius: 999px; background: rgba(245, 184, 61, .2); color: #f5b83d; font-weight: 700; }
+        .fllm-row .st.done { color: #f5b83d; }
+        .fllm-row .st.fu { color: var(--ok); font-weight: 600; }
+        .fllm-row .acts { display: grid; gap: 8px; }
+        .fllm-row .act { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .fllm-row .act .note { font-size: 0.78rem; color: var(--color-text-muted); flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+        .fllm-row.fllm-child { margin: 6px 0 0 14px; }
+        /* 사용자 판단 양식 */
+        .modal--confirm.modal--wide .modal-content { max-width: 560px; }
+        .confirm-err { color: #e5484d; font-weight: 600; margin: 0.25rem 0; }
+        .dc .dc-seg { display: flex; gap: 6px; flex-wrap: wrap; margin: 0.25rem 0 0.75rem; }
+        .dc .dc-seg button { flex: 1 1 140px; min-height: 40px; border: 1px solid var(--color-border); background: transparent; color: inherit; border-radius: 8px; cursor: pointer; }
+        .dc .dc-seg button[aria-pressed="true"] { border-color: #a78bfa; background: rgba(167, 139, 250, .2); font-weight: 700; }
+        .dc .dc-checks { display: grid; gap: 4px; margin: 0.25rem 0 0.75rem; }
+        .dc .dc-check { display: flex; gap: 8px; align-items: center; }
         .fllm-row .st.done { font-weight: 600; }
         .fllm-row.just-undone { animation: llm-undone 1.8s ease-out; }
         @keyframes llm-undone {
@@ -328,7 +344,7 @@
         }
         @media (prefers-reduced-motion: reduce) { .fllm-row.just-undone { animation: none; } }
         .flow .llm-tag { margin-left: 6px; font-size: 0.7rem; padding: 1px 6px; border-radius: 999px; background: rgba(167, 139, 250, .2); color: #c4b5fd; }
-        .flow .llm-tag.undone { background: rgba(62, 207, 142, .18); color: var(--ok); }
+        .flow .llm-tag.undone { background: rgba(245, 184, 61, .2); color: #f5b83d; }
         .fdetail { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; display: grid; gap: 12px; }
         .fdetail-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
         .fdetail-head .ttl { font-weight: 600; }
@@ -1513,6 +1529,16 @@
                     p.textContent = o.message || "";
                     body.appendChild(p);
                     this._confirmCheck = null;
+                    this._confirmForm = null;
+                    document.getElementById("confirm-modal").classList.toggle("modal--wide", !!o.build);
+                    if (o.build) {                       // 입력 양식(사용자 판단 등) — { get(), validate() }
+                        this._confirmForm = o.build(body);
+                        const er = document.createElement("p");
+                        er.className = "confirm-err";
+                        er.id = "confirm-modal-err";
+                        er.hidden = true;
+                        body.appendChild(er);
+                    }
                     if (o.checkbox) {
                         const lab = document.createElement("label");
                         lab.className = "confirm-check";
@@ -1552,10 +1578,19 @@
             },
 
             confirmDone(yes) {
+                if (yes && this._confirmForm && this._confirmForm.validate) {   // 입력이 올바르지 않으면 팝업을 닫지 않고 알린다
+                    const msg = this._confirmForm.validate();
+                    if (msg) {
+                        const er = document.getElementById("confirm-modal-err");
+                        if (er) { er.textContent = msg; er.hidden = false; }
+                        return;
+                    }
+                }
                 const r = this._confirmResolve;
                 this._confirmResolve = null;
                 document.getElementById("confirm-modal").classList.remove("active");
-                if (r) r(yes ? { checked: !!(this._confirmCheck && this._confirmCheck.checked) } : null);
+                if (r) r(yes ? { checked: !!(this._confirmCheck && this._confirmCheck.checked),
+                                 data: this._confirmForm && this._confirmForm.get ? this._confirmForm.get() : undefined } : null);
             },
 
             async dismissGroupPending(e) {
@@ -3511,7 +3546,7 @@
                         const tag = document.createElement("span");
                         const undone = f.llm.filter((x) => ((this.llmActions || {})[x.id] || {}).undone).length;
                         tag.className = "llm-tag" + (undone ? " undone" : "");
-                        tag.textContent = `LLM 판단 ${f.llm.length}` + (undone ? ` · ✓ 되돌림${f.llm.length > 1 ? " " + undone : ""}` : "");
+                        tag.textContent = `LLM 판단 ${f.llm.length}` + (undone ? ` · 반려됨${f.llm.length > 1 ? " " + undone : ""}` : "");
                         k.appendChild(tag);
                     }
                     const d = document.createElement("div");
@@ -3695,15 +3730,15 @@
                     const { n, ms } = nodes[i];
                     if (pulse) this.flashOnce(n, "rewinding", 700);   // 감길 때 한 번만 번쩍
                     n.classList.add("rewound");
-                    ms.textContent = "↩ 되돌림";
+                    ms.textContent = "↩ 반려";
                     if (edges[i - 1]) edges[i - 1].classList.add("rewound");
                 };
                 const finish = () => {
                     const t = nodes[target];
                     t.n.classList.add("undo-at");
-                    t.ms.textContent = "↩ 판단 되돌림";
+                    t.ms.textContent = "↩ 판단 반려";
                     r.className = "freason undone";
-                    r.textContent = `${f.reason ? f.reason + "  →  " : ""}↩ LLM 판단 되돌림${applied ? " — " + applied : ""}`;
+                    r.textContent = `${f.reason ? f.reason + "  →  " : ""}↩ LLM 판단 반려${applied ? " — " + applied : ""}`;
                 };
                 const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
                 if (!animate || reduce) {
@@ -3720,78 +3755,31 @@
                 });
             },
 
-            // (v4a) 흐름 상세 — 이 흐름에서 LLM 이 내린 판단 · 근거 · 되돌리기
-            renderFlowLlm(f, justUndoneId) {
-                const box = document.getElementById("fd-llm");
-                box.textContent = "";
-                const list = f.llm || [];
-                this.flowLlmSnap = this.llmUndoneSnap(f);
-                box.hidden = !list.length;
+            // (2026-10-02) LLM 판단 반려 · 재판단 · 사용자 판단 — 설계 ref/v4a/v4a_llm_review_scenarios.md
+            //   미처리 [반려] → 반려됨 [LLM 재판단] [사용자 판단] → 새 판단이 아래로 이어지고, 그 판단도 다시 반려할 수 있다.
+            //   반려 = 그 판단이 데이터에 한 변경만 원래대로 돌리는 롤백(같은 글을 다시 판정하지 않음). 이름만 바꾼 이전 「되돌리기」와 같은 동작.
+            llmKindLabel(kind) {
                 const KIND = { broadcast_change: "방송 취소 · 변경", own_broadcast: "본인 예고 확인", participation: "외부 채널 참여",
-                    collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복" };
-                for (const brief of list) {
-                    const e = (this.llmActions || {})[brief.id] || brief;
-                    const row = document.createElement("div");
-                    row.className = "fllm-row";
-                    const h = document.createElement("div");
-                    h.className = "h";
-                    const k = document.createElement("span");
-                    k.className = "k";
-                    k.textContent = `LLM 판단 · ${KIND[e.kind] || e.kind}`;
-                    h.appendChild(k);
-                    const s = document.createElement("div");
-                    s.className = "s";
-                    s.textContent = e.summary || "";
-                    row.append(h, s);
-                    if (e.reason) {
-                        const r = document.createElement("div");
-                        r.className = "r";
-                        r.textContent = `근거: ${e.reason}`;
-                        row.appendChild(r);
-                    }
-                    const st = document.createElement("div");
-                    st.className = "st";
-                    if (e.undone) {
-                        row.classList.add("undone");
-                        if (brief.id === justUndoneId) this.flashOnce(row, "just-undone", 2200);
-                        // 버튼은 남겨 두고 「되돌려짐!」 비활성으로(한 번 되돌린 판단은 다시 되돌릴 수 없다) — 2026-10-01 운영자 요청
-                        const b = document.createElement("button");
-                        b.type = "button";
-                        b.className = "undone-btn";
-                        b.disabled = true;
-                        b.textContent = "되돌려짐!";
-                        st.classList.add("done");
-                        st.textContent = `✓ 되돌림 완료 ${this.formatTime(e.undone.at)} — ${(e.undone.applied || []).join(" · ") || "변화 없음"}` +
-                            ((e.undone.skipped || []).length ? ` (건너뜀: ${e.undone.skipped.join(" · ")})` : "");
-                        row.append(b, st);
-                    } else if (e.undo || brief.undo) {
-                        const b = document.createElement("button");
-                        b.type = "button";
-                        const spin = document.createElement("span");
-                        spin.className = "spinner";
-                        const label = document.createElement("span");
-                        label.textContent = "되돌리기";
-                        b.append(spin, label);
-                        b.addEventListener("click", () => this.undoLlm(e, f, b, label));
-                        row.appendChild(b);
-                    } else {
-                        st.textContent = "검토용 — 바뀐 데이터가 없는 판단입니다. 필요하면 원문 투입으로 직접 넣으세요.";
-                        row.appendChild(st);
-                    }
-                    box.appendChild(row);
-                }
+                    collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복",
+                    banner_judge: "행사 배너", user_review: "사용자 판단" };
+                return KIND[kind] || kind;
             },
 
-            // 흐름의 LLM 판단 중 되돌린 것들의 상태 — 5초 갱신 때 바뀌었으면(다른 기기에서 되돌림 등) 상세를 다시 그린다
+            // 이 판단과 이어진 판단들의 상태 지문 — 5초 갱신 때 바뀌었으면(다른 기기에서 반려 등) 상세를 다시 그린다
+            llmSnapOf(e, depth) {
+                const d = depth || 0;
+                if (!e || d > 8) return null;
+                const fu = e.followup || {};
+                return [!!e.undone, fu.type || "", !!fu.running,
+                    (fu.new_ids || []).map((id) => this.llmSnapOf((this.llmActions || {})[id], d + 1))];
+            },
             llmUndoneSnap(f) {
-                return JSON.stringify((f.llm || []).map((x) => !!((this.llmActions || {})[x.id] || {}).undone));
+                return JSON.stringify((f.llm || []).map((x) => this.llmSnapOf((this.llmActions || {})[x.id])));
             },
 
-            // (2026-10-01) 누르면 버튼이 「되돌리는 중…」으로 잠기고(두 번 눌림 방지), 끝나면 그 줄이 초록으로 번쩍이며
-            // 「✓ 되돌림 완료 — 무엇을 했는지」로 바뀐다. 흐름 목록 태그도 「✓ 되돌림」. 전엔 토스트만 3초 뜨고 줄은 그대로였다
-            // 되돌리기 = 그 판단이 **데이터에 한 변경만** 원래 상태로 돌리는 롤백이다. 같은 글을 다시 판정 · 재처리하지는 않는다.
-            // 판단 종류별로 실제로 일어나는 일을 확인 팝업에 적는다(백엔드 `_llm_undo` / `banners.restore` 의 undo 종류와 같다).
+            // 반려하면 무엇이 일어나는지 — 판단 종류별로 버튼 옆 · 확인 팝업에 적는다(백엔드 `_llm_undo` / `banners.restore` 의 undo 종류와 같다)
             undoDescribe(e) {
+                if (!e.undo) return "롤백할 변경이 없는 검토용 판단입니다 — 표시만 「반려됨」으로 바뀌고, 이어서 LLM 재판단 · 사용자 판단을 고를 수 있습니다.";
                 const u = e.undo || {};
                 switch (u.type) {
                     case "restore_banner":
@@ -3799,20 +3787,136 @@
                         return u.before ? "그 판단이 바꾼 행사 배너 한 건을 변경 전 상태로 돌립니다(행사는 남습니다)."
                                         : "그 판단이 새로 만든 행사 배너를 지웁니다.";
                     case "restore_items": return "그 판단이 지운 예고를 되살리고 재등록 차단을 풉니다.";
-                    case "restore_fields": return "그 판단이 바꾼 값(시각 등)을 원래 값으로 돌립니다(예고는 남습니다).";
+                    case "restore_fields": return "그 판단이 바꾼 값(시각 · 합동 멤버 등)을 원래 값으로 돌립니다(예고는 남습니다).";
                     case "remove_items": return u.to_pending ? "그 판단이 올린 그룹 영상 예고를 예고에서 빼고 「참여 멤버 확인 대기」로 옮깁니다."
                                                              : "그 판단이 새로 올린 예고를 지웁니다.";
                     case "replace_items": return "그 판단으로 합쳐진 예고를 합치기 전 상태로 되돌립니다.";
                     case "remove_guests": return "그 판단이 더한 합동 게스트를 뺍니다(예고는 남습니다).";
+                    case "restore_notice": return "그 판단으로 「같은 소식」에 병합된 글을 떼어 기존 소식을 병합 전 모습으로 돌립니다.";
                     default: return "그 판단이 데이터에 한 변경을 원래대로 돌립니다.";
                 }
             },
 
-            async undoLlm(e, f, btn, label) {
-                if (!(await this.confirmModal({ title: "LLM 판단 되돌리기", message: `${e.summary || e.id}\n\n▶ ${this.undoDescribe(e)}\n\n· 이 판단이 한 변경만 원래대로 돌립니다(롤백).\n· 같은 글을 다시 판정하거나 재처리하지는 않습니다. 다시 올리려면 「원문 투입」을 쓰세요.\n· 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.\n· 한 번 되돌린 판단은 다시 되돌릴 수 없습니다.`, okText: "되돌리기" }))) return;
+            // 버튼 하나(스피너 + 글자). { b, label }
+            llmBtn(text, onClick, opts) {
+                const o = opts || {};
+                const b = document.createElement("button");
+                b.type = "button";
+                const spin = document.createElement("span");
+                spin.className = "spinner";
+                const label = document.createElement("span");
+                label.textContent = text;
+                b.append(spin, label);
+                if (o.cls) b.className = o.cls;
+                if (o.disabled) { b.disabled = true; if (o.title) b.title = o.title; }
+                else b.addEventListener("click", () => onClick(b, label));
+                return { b, label };
+            },
+
+            // 버튼 + 그 옆 설명(누르면 어떻게 되는지)
+            llmAct(text, note, onClick, opts) {
+                const wrap = document.createElement("div");
+                wrap.className = "act";
+                const { b } = this.llmBtn(text, onClick, opts);
+                const n = document.createElement("span");
+                n.className = "note";
+                n.textContent = note;
+                wrap.append(b, n);
+                return wrap;
+            },
+
+            // 판단 한 줄(+ 이어진 판단들이 들여쓰기로 아래에)
+            llmRow(e, f, depth, justId) {
+                const row = document.createElement("div");
+                row.className = "fllm-row" + (depth ? " fllm-child" : "") + (e.undone ? " undone" : "");
+                const h = document.createElement("div");
+                h.className = "h";
+                const k = document.createElement("span");
+                k.className = "k";
+                const by = e.by === "user" ? "사용자 판단" : e.by === "llm_rejudge" ? "LLM 재판단" : "";
+                k.textContent = depth ? `↳ ${by || "후속"} · ${this.llmKindLabel(e.kind)}` : `LLM 판단 · ${this.llmKindLabel(e.kind)}`;
+                h.appendChild(k);
+                if (e.undone) {
+                    const bd = document.createElement("span");
+                    bd.className = "badge-rv";
+                    bd.textContent = "반려됨";
+                    h.appendChild(bd);
+                }
+                const s = document.createElement("div");
+                s.className = "s";
+                s.textContent = e.summary || "";
+                row.append(h, s);
+                if (e.reason) {
+                    const r = document.createElement("div");
+                    r.className = "r";
+                    r.textContent = `근거: ${e.reason}`;
+                    row.appendChild(r);
+                }
+                const SUPPORTED = ["banner_judge", "broadcast_change", "collab_guest", "duplicate_notice", "ocr_members", "own_broadcast", "participation"];
+                const acts = document.createElement("div");
+                acts.className = "acts";
+                const st = document.createElement("div");
+                st.className = "st";
+                const redraw = () => this.flowSel === f.id && this.renderFlowLlm(f, null);
+                if (e.kind === "user_review") {
+                    st.textContent = "사용자 판단 기록 — 데이터를 바꾸지 않은 결정입니다.";
+                    row.appendChild(st);
+                } else if (!e.undone) {
+                    acts.appendChild(this.llmAct("반려", `누르면: ${this.undoDescribe(e)}`, (b, label) => this.rejectLlm(e, f, b, label), {}));
+                    row.appendChild(acts);
+                } else {
+                    if (justId === e.id) this.flashOnce(row, "just-undone", 2200);
+                    st.classList.add("done");
+                    st.textContent = `반려됨 ${this.formatTime(e.undone.at)} — ${(e.undone.applied || []).join(" · ") || "롤백 없음"}` +
+                        (((e.undone.skipped || []).filter((x) => !String(x).startsWith("롤백할 변경 없음"))).length
+                            ? ` (건너뜀: ${e.undone.skipped.filter((x) => !String(x).startsWith("롤백할 변경 없음")).join(" · ")})` : "");
+                    row.appendChild(st);
+                    const fu = e.followup;
+                    if (!fu) {
+                        const ok = SUPPORTED.includes(e.kind);
+                        const noInput = !e.input;
+                        acts.appendChild(this.llmAct("LLM 재판단",
+                            noInput ? "입력 원문이 기록되지 않은 옛 기록이라 쓸 수 없습니다."
+                                    : "기록해 둔 입력으로 LLM 이 같은 판정을 다시 합니다(「이전 판정이 반려됐다」 힌트 포함). 결과는 새 판단으로 이어집니다.",
+                            (b, label) => this.rejudgeLlm(e, f, b, label),
+                            { disabled: !ok || noInput, title: !ok ? "이 종류는 지원하지 않습니다" : "입력 원문이 기록되지 않은 옛 기록 — 사용자 판단만 가능합니다" }));
+                        acts.appendChild(this.llmAct("사용자 판단", "LLM 대신 내가 결과를 직접 정합니다. 같은 반영 경로를 타고 새 판단으로 이어집니다.",
+                            (b) => this.decideLlm(e, f, b), { disabled: !ok, title: "이 종류는 지원하지 않습니다" }));
+                        row.appendChild(acts);
+                    } else {
+                        const t = fu.type === "rejudge" ? "LLM 재판단" : "사용자 판단";
+                        const r2 = document.createElement("div");
+                        r2.className = "st fu";
+                        r2.textContent = fu.running ? `→ ${t} 진행 중… (오래 걸리면 새로고침)` : `→ ${t}됨 ${this.formatTime(fu.at)} — ${fu.result || ""}`;
+                        row.appendChild(r2);
+                        for (const id of fu.new_ids || []) {
+                            const c = (this.llmActions || {})[id];
+                            if (c) row.appendChild(this.llmRow(c, f, depth + 1, justId));
+                        }
+                    }
+                }
+                return row;
+            },
+
+            // (v4a) 흐름 상세 — 이 흐름에서 LLM 이 내린 판단 · 근거 · 반려 · 재판단 · 사용자 판단
+            renderFlowLlm(f, justUndoneId) {
+                const box = document.getElementById("fd-llm");
+                box.textContent = "";
+                const list = f.llm || [];
+                this.flowLlmSnap = this.llmUndoneSnap(f);
+                box.hidden = !list.length;
+                for (const brief of list) {
+                    const e = (this.llmActions || {})[brief.id] || brief;
+                    box.appendChild(this.llmRow(e, f, 0, justUndoneId));
+                }
+            },
+
+            // 반려 — 그 판단이 한 변경만 원래대로(롤백). 같은 글을 다시 판정하지는 않는다. 흐름도가 마지막 단계부터 판단한 단계까지 거꾸로 감긴다
+            async rejectLlm(e, f, btn, label) {
+                if (!(await this.confirmModal({ title: "LLM 판단 반려", message: `${e.summary || e.id}\n\n▶ ${this.undoDescribe(e)}\n\n· 이 판단이 한 변경만 원래대로 돌립니다(롤백).\n· 같은 글을 자동으로 다시 판정하지는 않습니다. 반려 뒤 「LLM 재판단」 또는 「사용자 판단」을 고를 수 있습니다.\n· 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.\n· 한 번 반려한 판단은 다시 반려할 수 없습니다.`, okText: "반려" }))) return;
                 btn.disabled = true;
                 btn.classList.add("loading");
-                label.textContent = "되돌리는 중…";
+                label.textContent = "반려하는 중…";
                 let r;
                 try {
                     r = await this.apiCall("POST", "/undo_llm_action", { action_id: e.id });
@@ -3821,11 +3925,10 @@
                 }
                 if (r.ok) {
                     const res = r.result || {};
-                    // 서버 기록과 같은 모양으로 바로 반영(목록을 다시 받기 전에도 결과가 보이게)
                     this.llmActions = this.llmActions || {};
                     this.llmActions[e.id] = Object.assign({}, e, {
                         undone: { at: new Date().toISOString(), applied: res.applied || [], skipped: res.skipped || [] } });
-                    this.showToast(`되돌렸습니다 — ${(res.applied || []).join(" · ")}`, "success");
+                    this.showToast(`반려했습니다 — ${(res.applied || []).join(" · ") || "롤백할 변경 없음"}`, "success");
                     btn.classList.remove("loading");
                     label.textContent = "되감는 중…";
                     // 5초 갱신이 판단 칸을 먼저 다시 그려 버리지 않게(되감기 → 번쩍임 순서 유지)
@@ -3834,14 +3937,181 @@
                     this.showToast(r.error || "실패", "error");
                 }
                 const reload = this.loadJobs();              // 판단 기록 · 흐름 목록 · 예약된 확인 갱신(되감기와 동시에)
-                if (r.ok && this.flowSel === f.id) await this.rewindFlow(f, true);
+                if (r.ok && this.flowSel === f.id && this.flowUndone(f).some((x) => x.id === e.id)) await this.rewindFlow(f, true);
                 await reload;
                 if (this.flowSel === f.id) this.renderFlowLlm(f, r.ok ? e.id : null);
                 else {
                     btn.disabled = false;
                     btn.classList.remove("loading");
-                    label.textContent = "되돌리기";
+                    label.textContent = "반려";
                 }
+            },
+
+            // LLM 재판단 — 같은 입력 + 반려 힌트로 LLM 이 다시 판정
+            async rejudgeLlm(e, f, btn, label) {
+                if (!(await this.confirmModal({ title: "LLM 재판단", message: `${e.summary || e.id}\n\n▶ 기록해 둔 입력(원문 등)으로 LLM 이 같은 판정을 다시 합니다.\n\n· 프롬프트에 「이전 판정이 반려됐다. 같은 결론을 반복하지 말라」는 힌트가 붙습니다.\n· 결과는 평소 인입과 같은 경로로 반영되고, 새 판단 기록으로 이어집니다(그 판단도 다시 반려할 수 있습니다).\n· 외부 LLM 을 호출합니다.`, okText: "재판단" }))) return;
+                await this.runReview(e, f, btn, label, "/rejudge_llm_action", { action_id: e.id }, "재판단 중…", "LLM 재판단");
+            },
+
+            // 사용자 판단 — 종류별 선택지를 고르면 LLM 호출 없이 그 결과를 같은 반영 경로로
+            async decideLlm(e, f, btn) {
+                btn.disabled = true;
+                let opt;
+                try {
+                    opt = await this.apiCall("POST", "/llm_review_options", { action_id: e.id });
+                } catch (err) {
+                    opt = { error: err.message };
+                }
+                btn.disabled = false;
+                if (opt.error) { this.showToast(opt.error, "error"); return; }
+                const res = await this.confirmModal({
+                    title: `사용자 판단 — ${this.llmKindLabel(e.kind)}`,
+                    message: `${e.summary || e.id}\n\n결과를 직접 고르면 LLM 호출 없이 같은 반영 경로로 처리하고, 새 판단 기록으로 이어집니다.`,
+                    okText: "이 결과로 처리",
+                    build: (body) => this.buildDecideForm(e, opt, body),
+                });
+                if (!res) return;
+                const label = btn.querySelector("span:last-child");
+                await this.runReview(e, f, btn, label, "/decide_llm_action", { action_id: e.id, decision: res.data }, "처리 중…", "사용자 판단");
+            },
+
+            async runReview(e, f, btn, label, endpoint, body, busyText, name) {
+                const orig = label.textContent;
+                btn.disabled = true;
+                btn.classList.add("loading");
+                label.textContent = busyText;
+                let r;
+                try {
+                    r = await this.apiCall("POST", endpoint, body);
+                } catch (err) {
+                    r = { ok: false, error: err.message };
+                }
+                btn.classList.remove("loading");
+                if (r.ok) this.showToast(`${name} 완료 — ${(r.result || {}).result || ""}`, "success");
+                else this.showToast(r.error || "실패", "error");
+                await this.loadJobs();
+                if (this.flowSel === f.id) this.renderFlowLlm(f, r.ok ? e.id : null);
+                else { btn.disabled = false; label.textContent = orig; }
+            },
+
+            // 사용자 판단 입력 양식 — 판단 종류마다 다르다. { get(), validate() }
+            buildDecideForm(e, opt, body) {
+                const mk = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+                const wrap = mk("div", "dc");
+                body.appendChild(wrap);
+                // 선택지 버튼 묶음(하나만 선택)
+                const seg = (choices, initial, onChange) => {
+                    const row = mk("div", "dc-seg");
+                    let cur = initial;
+                    const btns = choices.map(([val, txt]) => {
+                        const b = mk("button", "", txt);
+                        b.type = "button";
+                        b.addEventListener("click", () => { cur = val; paint(); onChange(val); });
+                        row.appendChild(b);
+                        return [val, b];
+                    });
+                    const paint = () => btns.forEach(([v, b]) => b.setAttribute("aria-pressed", String(v === cur)));
+                    paint();
+                    wrap.appendChild(row);
+                    return () => cur;
+                };
+                const field = (labelText, inputEl, parent) => {
+                    const g = mk("div", "form-group");
+                    g.appendChild(mk("label", "", labelText));
+                    g.appendChild(inputEl);
+                    (parent || wrap).appendChild(g);
+                    return g;
+                };
+                const input = (type, ph, val) => { const i = document.createElement("input"); i.type = type; if (ph) i.placeholder = ph; if (val) i.value = val; return i; };
+                const checks = (items, selected, parent) => {   // [{value, text}] → 체크박스 목록
+                    const box = mk("div", "dc-checks");
+                    const els = items.map((it) => {
+                        const lab = mk("label", "dc-check");
+                        const c = document.createElement("input");
+                        c.type = "checkbox";
+                        c.value = it.value;
+                        c.checked = selected.includes(it.value);
+                        lab.append(c, mk("span", "", it.text));
+                        box.appendChild(lab);
+                        return c;
+                    });
+                    (parent || wrap).appendChild(box);
+                    return () => els.filter((c) => c.checked).map((c) => c.value);
+                };
+                const members = (opt.members || []).map((m) => ({ value: m.key, text: m.name }));
+                const kind = e.kind;
+
+                if (kind === "banner_judge") {
+                    const sub = mk("div");
+                    const ja = input("text", "원문(일본어)"), ko = input("text", "한글 이름");
+                    const st = input("datetime-local"), en = input("datetime-local");
+                    field("행사 이름 — 원문", ja, sub); field("행사 이름 — 한글", ko, sub);
+                    field("시작 (KST, 모르면 비움)", st, sub); field("종료 (KST, 필수 — 종료일 없는 행사는 올리지 않습니다)", en, sub);
+                    sub.hidden = true;
+                    const getC = seg([["skip", "올리지 않음"], ["register", "행사로 올림(직접 입력)"]], "skip", (v) => { sub.hidden = v !== "register"; });
+                    wrap.appendChild(sub);
+                    return {
+                        get: () => getC() === "register" ? { choice: "register", name_ja: ja.value, name_ko: ko.value, start: st.value, end: en.value } : { choice: "skip" },
+                        validate: () => getC() === "register" && !en.value ? "종료 일시를 입력하세요" : (getC() === "register" && !(ja.value.trim() || ko.value.trim()) ? "행사 이름을 입력하세요" : ""),
+                    };
+                }
+                if (kind === "broadcast_change") {
+                    const sub = mk("div");
+                    const cands = (opt.candidates || []);
+                    sub.appendChild(mk("div", "list-item-sub", cands.length ? "대상 예고(이 멤버가 호스트인 활성 예고)" : "이 멤버의 활성 예고가 없습니다."));
+                    const getT = checks(cands.map((c) => ({ value: c.id, text: `${c.when} ${c.title}` })), [], sub);
+                    const when = input("datetime-local");
+                    const wg = field("새 시각 (KST)", when, sub);
+                    wg.hidden = true;
+                    const getC = seg([["none", "해당 없음"], ["cancel", "취소 적용"], ["edit", "일정 변경 적용"]], "none", (v) => { sub.hidden = v === "none"; wg.hidden = v !== "edit"; });
+                    sub.hidden = true;
+                    wrap.appendChild(sub);
+                    return {
+                        get: () => ({ choice: getC(), target_ids: getT(), when: when.value }),
+                        validate: () => getC() === "none" ? "" : (!getT().length ? "대상 예고를 하나 이상 고르세요" : (getC() === "edit" && !when.value ? "새 시각을 입력하세요" : "")),
+                    };
+                }
+                if (kind === "collab_guest") {
+                    wrap.appendChild(mk("div", "list-item-sub", "같이 나오는 게스트를 체크하세요(체크 해제 = 게스트 아님). LLM 후보: " +
+                        ((opt.guest_keys || []).map((k) => (members.find((m) => m.value === k) || {}).text || k).join(", ") || "-")));
+                    const host = e.who;
+                    const getG = checks(members.filter((m) => m.value !== host), [], wrap);
+                    return { get: () => ({ choice: "set", guests: getG() }), validate: () => "" };
+                }
+                if (kind === "duplicate_notice") {
+                    const sub = mk("div");
+                    const sel = document.createElement("select");
+                    sel.appendChild(new Option("— 병합할 기존 소식 선택 —", ""));
+                    (opt.notices || []).forEach((n) => sel.appendChild(new Option(`${n.date || ""} ${n.title}`, n.id)));
+                    field("같은 소식으로 볼 기존 소식", sel, sub);
+                    sub.hidden = true;
+                    const getC = seg([["separate", "별도 소식으로 등록"], ["dup", "기존 소식과 같음(병합)"]], "separate", (v) => { sub.hidden = v !== "dup"; });
+                    wrap.appendChild(sub);
+                    return { get: () => getC() === "dup" ? { choice: "dup", dup_id: sel.value } : { choice: "separate" },
+                             validate: () => getC() === "dup" && !sel.value ? "병합할 기존 소식을 고르세요" : "" };
+                }
+                if (kind === "ocr_members") {
+                    const sub = mk("div");
+                    if (!opt.pending) sub.appendChild(mk("div", "list-item-sub", "⚠ 이 영상이 확인 대기에 없습니다(이미 확정됐거나 지났음) — 처리하면 오류가 날 수 있습니다."));
+                    sub.appendChild(mk("div", "list-item-sub", "참여 멤버를 고르세요(LLM 판독 멤버가 미리 체크됨)."));
+                    const getM = checks(members, opt.suggested || [], sub);
+                    const getC = seg([["members", "고른 멤버로 예고에 올림"], ["skip", "올리지 않음"]], "members", (v) => { sub.hidden = v !== "members"; });
+                    wrap.appendChild(sub);
+                    return { get: () => getC() === "members" ? { choice: "members", members: getM() } : { choice: "skip" },
+                             validate: () => getC() === "members" && !getM().length ? "참여 멤버를 한 명 이상 고르세요" : "" };
+                }
+                if (kind === "own_broadcast") {
+                    const getC = seg([["register", "예고로 등록(LLM 확인 생략)"], ["skip", "등록 안 함"]], "register", () => {});
+                    wrap.appendChild(mk("div", "list-item-sub", "등록은 파서가 글에서 뽑은 날짜 · 시각으로 합니다(읽지 못하면 오류). 고치려면 예고 탭 수정."));
+                    return { get: () => ({ choice: getC() }), validate: () => "" };
+                }
+                if (kind === "participation") {
+                    const getC = seg([["register", "참여로 등록(LLM 확인 생략)"], ["skip", "참여 아님"]], "register", () => {});
+                    wrap.appendChild(mk("div", "list-item-sub", "영상 정보는 다시 조회합니다(조회 실패 · 삭제된 영상이면 오류)."));
+                    return { get: () => ({ choice: getC() }), validate: () => "" };
+                }
+                wrap.appendChild(mk("div", "list-item-sub", "이 종류는 사용자 판단을 지원하지 않습니다."));
+                return { get: () => ({}), validate: () => "지원하지 않는 종류" };
             },
 
             // 다시 그리기 전에 부르면, 그린 뒤 스크롤 위치를 되돌린다
@@ -3942,7 +4212,7 @@
                     delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
                     retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
                     set_monitor_auto: "멤버 현황 DM",
-                    undo_llm_action: "↩ LLM 판단 되돌리기", dismiss_group_pending: "참여 멤버 확인 대기 무시",
+                    undo_llm_action: "↩ LLM 판단 반려", rejudge_llm_action: "LLM 판단 재판단", decide_llm_action: "LLM 판단 · 사용자 판단", dismiss_group_pending: "참여 멤버 확인 대기 무시",
                 };
                 if (!items.length) {
                     const r = document.createElement("div");

@@ -289,6 +289,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     (`handlers.record_video_releases`, 적용 큐 작업 `video_release`)에 기록 — 추후 보조 기능("유메미타 플레이어") 재료.
 >     10-01 전 기록엔 멤버 채널 프리미어 1건(노노카 퀴즈 `zh6vG0isdAE`)이 섞여 있다.
 >   - **LLM 판단 기록 · 되돌리기**(2026-09-30 운영자 요청): 자동 인입에서 LLM 이 내린 판단을 ops `llm_actions.json`(최근 300건)에 남기고
+  - **LLM 판단 반려 · 재판단 · 사용자 판단**(2026-10-02, v4a 만 — 설계·판단별 시나리오 `ref/v4a/v4a_llm_review_scenarios.md`): 「되돌리기」를 「반려」로 바꾸고(동작 동일 = 그 판단이 한 변경만 롤백, 검토용 판단도 표시만 반려), 반려된 판단은 **LLM 재판단**(기록의 `input` 으로 같은 판정을 `llm.REVIEW_HINT` 힌트와 함께 재실행) 또는 **사용자 판단**(종류별 선택지를 강제값 `_REVIEW["forced"]` 로 주입해 같은 반영 경로)으로 잇는다. 7종 전부(banner_judge · broadcast_change · collab_guest · duplicate_notice[병합 전 스냅샷 `restore_notice`] · ocr_members · own_broadcast · participation). 새 기록은 `parent_id`·`by` 로 이어지고 다시 반려 가능, 한 기록의 후속은 한 번(`followup` 선점). 입력 없는 옛 기록은 재판단 불가. 코드: `telegram_app._llm_review`·`_REVIEW_RUNNERS`, API `rejudge_llm_action`·`decide_llm_action`·`llm_review_options`(POST). 검증 `ref/v4a/verify/harness_c.py`(52개).
 >     흐름에 표시(`flowtrace.add_llm`) — 작업 탭 「최근 흐름」 **「LLM 판단」 필터**, 펼친 경로 재생 영역에 판단 · 근거 · **「되돌리기」**
 >     (`admin_api.undo_llm_action` → 적용 큐 `llm_action` op=undo → `telegram_app._llm_undo`). 대상과 되돌리기: 방송 취소(되살림 + 재등록 차단 해제) ·
 >     시각 변경(그때 바꾼 값이면 원래 값) · 본인 예고 최종 확인(등록한 예고 지움 / 합쳤으면 합치기 전으로) · 외부 채널 참여(등록 지움) ·

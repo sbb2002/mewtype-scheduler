@@ -10,6 +10,17 @@ import time
 from dataclasses import dataclass
 
 import requests
+import contextvars
+
+# (v4a, 2026-10-02) LLM 판단 반려 → 재판단: 관리 페이지에서 반려된 판단을 다시 돌릴 때 판정 호출 앞에 붙는 힌트.
+# 판정 6종(참여 · 예고 최종확인 · 게스트 · 취소/변경 · 소식 중복 · 행사)에만 쓰고 번역 · 제목 추출에는 붙이지 않는다.
+REVIEW_HINT: contextvars.ContextVar[str] = contextvars.ContextVar("llm_review_hint", default="")
+
+
+def _with_hint(prompt: str) -> str:
+    h = REVIEW_HINT.get()
+    return h + "\n\n" + prompt if h else prompt
+
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +293,7 @@ class LLMClient:
         )
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=_PARTICIPATION_SCHEMA)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_PARTICIPATION_SCHEMA)
@@ -327,6 +339,7 @@ class LLMClient:
         )
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=_ANNOUNCE_SCHEMA)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_ANNOUNCE_SCHEMA)
@@ -401,6 +414,7 @@ class LLMClient:
         }
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
@@ -472,6 +486,7 @@ class LLMClient:
             },
         }
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
@@ -540,6 +555,7 @@ class LLMClient:
         }
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
@@ -656,6 +672,7 @@ class LLMClient:
             return _unmask_glossary(v, mapping, to=to).strip() if isinstance(v, str) and v.strip() else None
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
