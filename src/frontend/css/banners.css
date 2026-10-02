@@ -51,7 +51,7 @@
 .bnr__card.is-hold .bnr__dday { background: var(--bnr-hold-soft); color: var(--bnr-hold); }
 .bnr__card.is-sched .bnr__dday { background: var(--bnr-sched-soft); color: var(--bnr-sched); }
 .bnr__card.is-urgent .bnr__dday { background: var(--bnr-urgent-soft); color: var(--bnr-urgent); }
-.bnr__bar { height: 5px; margin-top: 4px; border-radius: 3px; background: #33363a; overflow: hidden; }
+.bnr__bar { height: 7px; margin-top: 5px; border-radius: 4px; background: #565c66; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); overflow: hidden; }   /* 빈칸을 카드 배경(#1a1a1a)과 확실히 구분되는 밝은 회색 + 옅은 테두리로 */
 .bnr__fill { height: 100%; border-radius: 3px; background: var(--bnr-live); }
 .bnr__card.is-urgent .bnr__fill { background: var(--bnr-urgent); }          /* 종료 D-3 부터 빨강 */
 
