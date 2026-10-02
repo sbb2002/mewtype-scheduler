@@ -1,0 +1,59 @@
+/* banners.css — 소식 란을 펼쳤을 때 맨 위 「행사 배너」 (v4a, 2026-10-02). 다크 단일 테마, layout.css · notices.css 토큰 재사용.
+   마크업은 js/banners.js. 계약: docs/SPEC.md 계약 J. */
+
+:root {
+  --bnr-surface: #202225;
+  --bnr-border: #2e3033;
+  --bnr-live: #5fb7c9;                /* 진행 중 — 사이트의 live 빨강 · collab 보라와 겹치지 않는 청록 */
+  --bnr-live-soft: #14343b;
+  --bnr-hold: var(--color-late);      /* 보류 — 앰버 */
+  --bnr-hold-soft: #3a2c10;
+  --bnr-sched: var(--color-sched);    /* 예정 — 슬레이트 */
+  --bnr-sched-soft: #20262f;
+  --bnr-faint: #6f6f6f;
+}
+
+.ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft, #2a2a2a); }
+
+.bnr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 10px; }
+.bnr + .bnr { margin-top: 10px; }
+
+.bnr__card { display: flex; gap: 12px; min-width: 0; padding: 10px; border: 1px solid var(--bnr-border); border-radius: 6px; background: var(--color-bg-secondary); }
+.bnr__card.is-live { border-color: color-mix(in srgb, var(--bnr-live) 40%, var(--bnr-border)); }
+.bnr__card.is-hold { border-color: color-mix(in srgb, var(--bnr-hold) 35%, var(--bnr-border)); }
+
+.bnr__img { position: relative; flex: none; width: clamp(120px, 38%, 190px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 4px; background: #000; align-self: flex-start; }
+.bnr__img[hidden] { display: none; }
+.bnr__strip { display: flex; height: 100%; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+.bnr__strip img { flex: 0 0 100%; width: 100%; height: 100%; object-fit: cover; display: block; }
+.bnr__card.is-hold .bnr__strip img { filter: grayscale(1) brightness(0.7); }
+.bnr__img[data-chip]::before {
+  content: attr(data-chip);
+  position: absolute; left: 6px; top: 6px; z-index: 1;
+  padding: 1px 7px; border-radius: 3px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
+  color: #071418; background: var(--bnr-live);
+}
+.bnr__card.is-hold .bnr__img[data-chip]::before { background: var(--bnr-hold); color: #1b1303; }
+.bnr__card.is-sched .bnr__img[data-chip]::before { background: var(--bnr-sched); color: #0d1117; }
+
+.bnr__body { min-width: 0; flex: 1; display: grid; gap: 3px; align-content: start; }
+.bnr__eyebrow { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; color: var(--bnr-faint); }
+.bnr__name { font-size: 0.98rem; font-weight: 600; line-height: 1.3; text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }
+.bnr__orig { font-size: 0.72rem; line-height: 1.35; color: var(--bnr-faint); opacity: 0.85; overflow-wrap: anywhere; }   /* 원제 — 작고 희미하게 */
+.bnr__period { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.bnr__dates { font-size: 0.86rem; font-weight: 600; }
+.bnr__card.is-hold .bnr__dates { color: var(--bnr-hold); }
+.bnr__dday { font-size: 0.72rem; padding: 0 8px; border-radius: 999px; background: var(--bnr-live-soft); color: var(--bnr-live); font-weight: 600; }
+.bnr__card.is-hold .bnr__dday { background: var(--bnr-hold-soft); color: var(--bnr-hold); }
+.bnr__card.is-sched .bnr__dday { background: var(--bnr-sched-soft); color: var(--bnr-sched); }
+.bnr__bar { height: 5px; margin-top: 5px; border-radius: 3px; background: #33363a; overflow: hidden; }
+.bnr__fill { height: 100%; border-radius: 3px; background: var(--bnr-live); }
+
+@media (max-width: 640px) {
+  .bnr { grid-template-columns: 1fr; }
+  .bnr__card { gap: 10px; padding: 8px; }
+  .bnr__img { width: 36%; }                 /* 폰에서도 이미지는 왼쪽에 작게 — 카드 2장이 목록을 다 차지하지 않게 */
+  .bnr__name { font-size: 0.9rem; }
+}
+@media (prefers-reduced-motion: reduce) { .bnr__strip { transition: none; } }

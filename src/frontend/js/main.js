@@ -1,8 +1,8 @@
 import { fetchPreview } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
-import { renderNotices } from "./notices.js";
+import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
-import { PREVIEW_URL, NOTICES_URL, TWEETS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
+import { PREVIEW_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
 const foot = document.getElementById("foot");
@@ -34,6 +34,16 @@ async function pollNotices() {
     renderNotices(notice, r.ok ? r.data : null);
   } catch (e) {
     /* 티커 오류가 메인 보드를 막지 않게 */
+  }
+}
+
+/** (v4a) 행사 배너 폴링 — 소식 란 펼침 맨 위. 404/오류면 배너 없이 둔다. */
+async function pollBanners() {
+  const r = await fetchPreview(BANNERS_URL);
+  try {
+    setBanners(notice, r.ok ? r.data : null);
+  } catch (e) {
+    /* 배너 오류가 소식 · 보드를 막지 않게 */
   }
 }
 
@@ -184,6 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
   poll();
   pollNotices();
   pollTweets();
+  pollBanners();
   initDisclaimerRotator();
   positionDisclaimerPopup();
   window.addEventListener("resize", positionDisclaimerPopup);
@@ -196,10 +207,12 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(poll, POLL_MS);
   setInterval(pollNotices, POLL_MS);
   setInterval(pollTweets, POLL_MS);
+  setInterval(pollBanners, POLL_MS);
 
   // 1분마다 남은시간 텍스트 갱신. 카드가 다른 시간대 구간으로 넘어갔으면 보드 재렌더.
   setInterval(() => {
     if (updateCountdowns(board) && lastSchedule) paintBoard();
+    try { refreshBanners(notice); } catch (e) { /* D-day · 상태 갱신 실패는 무시 */ }
   }, COUNTDOWN_TICK_MS);
 
   // 모바일↔PC 경계(767px)를 넘으면 예고 버킷 구성이 달라지므로 재렌더.
@@ -219,6 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
     poll();
     pollNotices();
     pollTweets();
+    pollBanners();
   };
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refetchAll();

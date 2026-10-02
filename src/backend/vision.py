@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import logging
 import re
+import time
 
 import requests
 
@@ -38,6 +39,16 @@ FALLBACK_VISION_MODEL = "qwen/qwen3.6-27b"
 _NAME_LINE_RE = re.compile(r"^\s*\d+\.\s*(.+?)\s*$", re.MULTILINE)
 
 _NONE_MARKER = "NONE"
+
+# (v4a 2026-10-02) 행사 배너 — 게임 계정 트윗의 첨부 이미지(행사 · 가챠 소개 카드)에서 글자만 옮겨 적는다.
+# 개최기간(開催期間)이 본문이 아니라 이미지에만 있는 경우가 실측으로 확인돼(09-24 글) 판정 LLM 에 글자를 넘겨 준다.
+_CARD_PROMPT = (
+    "이 이미지에 보이는 일본어 글자를 위에서 아래 순서로 줄 단위로 그대로 옮겨 적어라.\n"
+    "규칙:\n"
+    "1. 실제로 보이는 글자만 적는다. 번역 · 발음 · 설명을 추가하지 않는다. 확실하지 않은 글자는 ? 로 쓴다.\n"
+    "2. 제목 · 개최기간(開催期間의 날짜와 시각) · 본문 문장을 포함한다. 로고 · 저작권 표기 · 장식 글자는 건너뛴다.\n"
+    "3. 최대 10줄. 글자가 거의 없는 이미지는 보이는 것만 적고, 하나도 없으면 NONE 한 단어만 출력한다."
+)
 
 _CAST_PROMPT = (
     "이 이미지가 여러 인물 사진이 나란히 배치되고 그 아래마다 이름이 적힌 "
@@ -81,6 +92,7 @@ class VisionClient:
         self.session = session or requests.Session()
         self.timeout = timeout
         self.disabled = not self.api_key
+        self._retry_after: float | None = None     # 마지막 _call 이 429 로 막혔을 때 기다릴 초(read_card 가 사용)
 
     def cast_names(
         self, *, image_url: str | None = None, image_bytes: bytes | None = None
@@ -127,7 +139,35 @@ class VisionClient:
 
         return None
 
-    def _call(self, model: str, image_content: dict) -> str | None:
+    def read_card(self, *, image_url: str) -> str | None:
+        """(v4a) 행사 · 가챠 소개 카드 이미지의 글자를 줄 단위로 옮겨 적는다. 실패 · 글자 없음이면 None.
+
+        메인 모델이 실패하면 폴백 모델로 1회만 재시도한다(cast_names 와 같은 정책 — 무료 티어 한도가 낮다)."""
+        if self.disabled or not image_url:
+            return None
+        content = {"type": "image_url", "image_url": {"url": image_url}}
+        # 실측(2026-10-02): 이 계정에서 쓸 수 있는 비전 모델은 qwen/qwen3.8-27b 하나뿐이고(폴백 qwen3.6 은 404),
+        # 분당 입력 토큰 한도(ITPM 7000)가 낮아 한 글의 이미지 3~4장을 연달아 읽으면 429 가 난다 → 429 는 안내된 시간만큼
+        # 기다렸다 같은 모델을 다시 부른다(최대 3회, 한 번에 15초 상한). 폴백은 메인이 429 가 아닌 이유로 실패했을 때만.
+        for model in (self.model, self.fallback):
+            for attempt in range(3):
+                self._retry_after = None
+                text = self._call(model, content, prompt=_CARD_PROMPT, max_tokens=500)
+                if text is None and self._retry_after is not None and attempt < 2:
+                    time.sleep(min(self._retry_after + 0.5, 15.0))
+                    continue
+                break
+            if text is None:
+                if self._retry_after is not None:
+                    return None          # 한도에 계속 막힘 — 폴백(없는 모델)으로 넘기지 않는다
+                continue
+            text = text.strip()
+            if not text or text.upper() == _NONE_MARKER:
+                return None
+            return text[:800]
+        return None
+
+    def _call(self, model: str, image_content: dict, *, prompt: str = _CAST_PROMPT, max_tokens: int = 300) -> str | None:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -138,11 +178,11 @@ class VisionClient:
             "messages": [
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": _CAST_PROMPT}, image_content],
+                    "content": [{"type": "text", "text": prompt}, image_content],
                 }
             ],
             "temperature": 0,
-            "max_tokens": 300,
+            "max_tokens": max_tokens,
             "reasoning_effort": "none",
         }
         try:
@@ -153,6 +193,14 @@ class VisionClient:
 
         if resp.status_code != 200:
             logger.warning("vision: %s %s %s", model, resp.status_code, resp.text[:200])
+            if resp.status_code == 429:
+                m = re.search(r"try again in ([0-9.]+)\s*(ms|s)", resp.text or "")
+                ra = resp.headers.get("retry-after") if getattr(resp, "headers", None) else None
+                try:
+                    sec = float(ra) if ra else (float(m.group(1)) / (1000.0 if m.group(2) == "ms" else 1.0) if m else 5.0)
+                except ValueError:
+                    sec = 5.0
+                self._retry_after = sec
             return None
 
         try:

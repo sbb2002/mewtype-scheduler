@@ -29,7 +29,7 @@ log = logging.getLogger("backend.local_runner")
 
 ROOT = Path(__file__).resolve().parents[2]          # 저장소 루트
 FRONTEND = ROOT / "src" / "frontend"
-_DATA_FILES = {"preview.json", "notices.json", "tweets.json"}
+_DATA_FILES = {"preview.json", "notices.json", "tweets.json", "banners.json"}
 JST = timezone(timedelta(hours=9))
 
 _DEFAULTS = {

@@ -30,6 +30,12 @@ export const TWEETS_URL = getDataUrl(
   "/data/tweets.json"
 );
 
+// (v4a) 행사 배너 — 소식 란 펼침 맨 위. 없으면(404) 그냥 안 뜬다.
+export const BANNERS_URL = getDataUrl(
+  "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/banners.json",
+  "/data/banners.json"
+);
+
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;

@@ -90,6 +90,11 @@ def list_notices() -> dict:
     return _store().read_json("notices.json")[0] or {"notices": []}
 
 
+def list_banners() -> dict:
+    """(v4a) banners.json 전체 ({"generated_at", "banners": [...]}) — 상태는 화면에서 파생해 보인다."""
+    return _store().read_json("banners.json")[0] or {"banners": []}
+
+
 def list_tweets() -> dict:
     """tweets.json 전체 ({"generated_at", "tweets": {<unit>: [..]}})."""
     return _store().read_json("tweets.json")[0] or {"tweets": {}}
@@ -968,6 +973,33 @@ def delete_notice(nid: str) -> dict:
     return _record("delete_notice", nid, "", res)
 
 
+def edit_banner(bid: str, patch: dict) -> dict:
+    """(v4a) 행사 수정. patch 키: name_ko · name_ja · start_at · end_at(UTC ISO) · clear_hold(true 면 보류 해제) ·
+    gachas_ko({가챠 id: 한글 제목}) · drop_gachas([가챠 id]). 검증은 `banners.edit_banner`(종료가 시작보다 앞서면 거절)."""
+    ok_keys = ("name_ko", "name_ja", "start_at", "end_at", "gachas_ko", "drop_gachas")
+    p = {k: v for k, v in (patch or {}).items() if k in ok_keys}
+    if (patch or {}).get("clear_hold"):
+        p["hold"] = None
+    if not p:
+        return _err("바꿀 필드가 없습니다")
+    res = _submit("banner_edit_commit", {"bid": bid, "patch": p, "now_iso": _now_iso()})
+    inner = res.get("result") or {}
+    if res["ok"] and inner.get("ok") is False:
+        res = _err(inner.get("error") or "수정 실패")
+    elif res["ok"] and not inner.get("changed"):
+        res = _err("바뀐 것이 없습니다")
+    return _record("edit_banner", bid, str(p)[:200], res)
+
+
+def delete_banner(bid: str) -> dict:
+    """(v4a) 행사 삭제 — banners_archive.json 으로 옮긴다(archived_reason=deleted)."""
+    res = _submit("banner_del_commit", {"bid": bid, "now_iso": _now_iso()})
+    inner = res.get("result") or {}
+    if res["ok"] and inner.get("ok") is False:
+        res = _err(inner.get("error") or "삭제 실패")
+    return _record("delete_banner", bid, "", res)
+
+
 def delete_tweet(unit: str, tweet_id: str | None = None) -> dict:
     """트윗 삭제. tweet_id 를 주면 그 트윗 1건만, 없으면 그 유닛의 트윗 전부(텔레그램 /del tweet 과 같음)."""
     args = {"unit": unit, "now_iso": _now_iso()}
@@ -1284,7 +1316,8 @@ def _kst(iso: str) -> str:
 
 
 _AUTO_LABEL = {
-    "snapshot": "일일 스냅샷", "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리",
+    "snapshot": "일일 스냅샷", "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리", "apply_banner": "행사 배너 반영", "banner_sweep": "지난 행사 정리",
+    "banner_edit_commit": "행사 수정", "banner_del_commit": "행사 삭제",
     "yt_notif": "YouTube 알림 반영", "merge_rows": "예고 반영", "personal_tweet": "개인 트윗 반영",
     "apply_notice": "소식 반영", "url_confirmed_commit": "URL 확정 예고 반영",
     "yt_member_live_commit": "회원 전용 라이브 반영", "apply_preview_edit": "예고 수정 반영",

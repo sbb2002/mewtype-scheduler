@@ -48,6 +48,11 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             t._commit_notice(gh, a.get("prepared"), a["now_iso"]),
         )),
         "notice_sweep": lambda gh, a: {"moved": t._notice_sweep(gh, a["now_iso"])},
+        # (v4a) 행사 배너 — 판정 커밋 · 정리 · 관리 페이지 수정/삭제
+        "apply_banner": lambda gh, a: t._commit_banner(gh, a.get("prepared"), a["now_iso"]),
+        "banner_sweep": lambda gh, a: {"moved": t._banner_sweep(gh, a["now_iso"])},
+        "banner_edit_commit": lambda gh, a: t._banner_edit_commit(gh, a["bid"], a["patch"], a["now_iso"]),
+        "banner_del_commit": lambda gh, a: t._banner_del_commit(gh, a["bid"], a["now_iso"]),
         "notice_del_commit": lambda gh, a: t._notice_del_commit(gh, a["nid"], a["now_iso"]),
         "notice_edit_commit": lambda gh, a: t._notice_edit_commit(gh, a["nid"], a["patch"], a["now_iso"]),
         "personal_tweet": lambda gh, a: t._commit_personal_tweet(
@@ -111,6 +116,7 @@ if __name__ == "__main__":
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
         "tweet_del_commit", "tweet_edit_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain", "group_pending", "video_release", "llm_action",
+        "apply_banner", "banner_sweep", "banner_edit_commit", "banner_del_commit",
     }
     missing = expected - set(reg)
     assert not missing, f"registry missing kinds: {missing}"

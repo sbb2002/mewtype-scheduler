@@ -4,6 +4,8 @@
 // renderNotices(section, data) 는 poll 마다 호출된다. 내용이 안 바뀌면 아무것도 안 하고
 // 계속 돌린다. 만료(expires_at 지남) 소식은 프론트에서도 숨긴다(백엔드 sweep 지연 대비).
 
+import { visibleBanners, bannerHTML, bannerSig, mountBannerMotion, stopBannerMotion } from "./banners.js";   // (v4a) 펼친 목록 맨 위 행사 배너
+
 const CAT_KO = { live: "라이브예고", release: "음반·굿즈", platform: "타 플랫폼", etc: "기타" };
 const SITE_ICON = {
   youtube: '<path fill="currentColor" d="M23 12s0-3.7-.5-5.5a3 3 0 0 0-2.1-2.1C18.6 3.9 12 3.9 12 3.9s-6.6 0-8.4.5A3 3 0 0 0 1.5 6.5C1 8.3 1 12 1 12s0 3.7.5 5.5a3 3 0 0 0 2.1 2.1c1.8.5 8.4.5 8.4.5s6.6 0 8.4-.5a3 3 0 0 0 2.1-2.1C23 15.7 23 12 23 12ZM9.8 15.4V8.6l6 3.4-6 3.4Z"/>',
@@ -14,7 +16,8 @@ const SITE_ICON = {
   web: '<path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15 15 0 0 0-1.3-3.6A8 8 0 0 1 18.9 8ZM12 4c.8 1 1.5 2.4 1.9 4h-3.8C10.5 6.4 11.2 5 12 4ZM4.3 14a8 8 0 0 1 0-4h3.4a17 17 0 0 0 0 4H4.3Zm.8 2h3a15 15 0 0 0 1.3 3.6A8 8 0 0 1 5.1 16Zm3-8h-3a8 8 0 0 1 4.3-3.6A15 15 0 0 0 8.1 8ZM12 20c-.8-1-1.5-2.4-1.9-4h3.8c-.4 1.6-1.1 3-1.9 4Zm2.3-6H9.7a15 15 0 0 1 0-4h4.6a15 15 0 0 1 0 4Zm.3 5.6a15 15 0 0 0 1.3-3.6h3a8 8 0 0 1-4.3 3.6Zm1.7-5.6a17 17 0 0 0 0-4h3.4a8 8 0 0 1 0 4h-3.4Z"/>',
 };
 
-const _st = { built: false, sig: "", idx: 0, collapsed: true, open: false, timer: null, paused: false };
+const _st = { built: false, sig: "", idx: 0, collapsed: true, open: false, timer: null, paused: false,
+              bn: [], bnSig: "", rawBanners: null, lastData: undefined };
 const NTC_VISIBLE_ROWS = 7; // 펼친 목록 최대 노출 행 수 — 넘으면 스크롤 (PC/모바일 공통)
 
 function _todayKST() {
@@ -97,8 +100,22 @@ function _marquee(scope) {
   });
 }
 
+// (v4a) 행사 배너 데이터 반영 — 바뀌었을 때만 소식 영역을 다시 그린다. 소식이 0건이면 배너도 안 보인다(알려진 한계).
+export function setBanners(section, data) {
+  _st.rawBanners = data || null;
+  const now = Date.now();
+  const list = visibleBanners(_st.rawBanners, now);
+  const sig = bannerSig(list, now);
+  if (sig === _st.bnSig) return;
+  _st.bn = list;
+  _st.bnSig = sig;
+  if (section && _st.lastData !== undefined) renderNotices(section, _st.lastData);
+}
+export function refreshBanners(section) { setBanners(section, _st.rawBanners); }
+
 export function renderNotices(section, data) {
   if (!section) return;
+  _st.lastData = data;
   const list = _visible(data);
 
   if (!list.length) {
@@ -121,7 +138,7 @@ export function renderNotices(section, data) {
   }
   section.dataset.empty = "0";
 
-  const sig = list.map((n) => n.id + ":" + (n.last_updated || "")).join("|");
+  const sig = list.map((n) => n.id + ":" + (n.last_updated || "")).join("|") + "#" + _st.bnSig;
   if (_st.built && sig === _st.sig) return;   // 변화 없음 → 계속 돌림
   _st.sig = sig;
 
@@ -140,7 +157,10 @@ export function renderNotices(section, data) {
       `<button class="ntc__tgl" type="button" aria-expanded="${_st.open}" aria-label="소식 전체 보기">` +
         `${_st.open ? "▴" : "▾"}</button>` +
     `</div>` +
-    `<ul class="ntc__list">${list.map((n) => "<li>" + _itemHTML(n) + "</li>").join("")}</ul>`;
+    `<ul class="ntc__list">` +
+      (_st.bn.length ? `<li class="ntc__banners">${bannerHTML(_st.bn, Date.now())}</li>` : "") +
+      list.map((n) => "<li>" + _itemHTML(n) + "</li>").join("") +
+    `</ul>`;
 
   const track = section.querySelector(".ntc__track");
   const ticker = section.querySelector(".ntc__ticker");
@@ -148,6 +168,7 @@ export function renderNotices(section, data) {
   const listEl = section.querySelector(".ntc__list");
   _marquee(track);
   _marquee(listEl);
+  if (_st.bn.length) mountBannerMotion(listEl); else stopBannerMotion();
 
   const H = track.firstElementChild ? track.firstElementChild.getBoundingClientRect().height : 35;
   const N = list.length;
@@ -181,10 +202,11 @@ export function renderNotices(section, data) {
   const applyListHeight = () => {
     if (!listEl) return;
     if (_st.open) {
-      const itemH = listEl.firstElementChild
-        ? listEl.firstElementChild.getBoundingClientRect().height
-        : 35;
-      const capByCount = Math.round(itemH * NTC_VISIBLE_ROWS);
+      const firstRow = listEl.querySelector(".ntc__item");
+      const itemH = firstRow ? firstRow.getBoundingClientRect().height : 35;
+      const bnr = listEl.querySelector(".ntc__banners");           // (v4a) 배너 영역은 소식 7행 한도와 따로 더한다
+      const bnrH = bnr ? bnr.getBoundingClientRect().height : 0;
+      const capByCount = Math.round(itemH * NTC_VISIBLE_ROWS + bnrH);
       const capByViewport = Math.round(window.innerHeight * 0.7);
       const h = Math.min(listEl.scrollHeight, capByCount, capByViewport);
       listEl.style.maxHeight = h + "px";

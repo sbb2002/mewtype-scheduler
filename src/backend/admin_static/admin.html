@@ -1109,7 +1109,10 @@
 
     <!-- ════ 탭: 소식 · 트윗 ════ -->
     <div class="tab-content" id="content-tab">
-        <h2>소식</h2>
+        <h2>행사 배너</h2>
+        <div id="banners-list" class="loading">로드 중...</div>
+
+        <h2 style="margin-top: 2rem;">소식</h2>
         <div id="notices-list" class="loading">로드 중...</div>
 
         <h2 style="margin-top: 2rem;">트윗</h2>
@@ -1837,6 +1840,7 @@
                 if (this.editState.type === "preview") return this.submitPreviewEdit();
                 if (this.editState.type === "notice") return this.submitNoticeEdit();
                 if (this.editState.type === "tweet") return this.submitTweetEdit();
+                if (this.editState.type === "banner") return this.submitBannerEdit();
             },
 
             // "2026-09-29T14:15:00Z"(UTC) → "2026-09-29T23:15"(KST, datetime-local 값). 브라우저 시간대와 무관
@@ -2550,10 +2554,208 @@
                     const tweets = await this.apiCall("GET", "/list_tweets");
                     this.data.notices = notices;
                     this.data.tweets = tweets;
+                    try {
+                        this.data.banners = await this.apiCall("GET", "/list_banners");
+                    } catch (e) {
+                        this.data.banners = { banners: [] };
+                    }
+                    this.renderBanners();
                     this.renderNotices();
                     this.renderTweets();
                 } catch (e) {
                     console.error("소식/트윗 로드 실패", e);
+                }
+            },
+
+            // ───────────────────────────────────────────────────
+            // (v4a) 행사 배너 — 소식 란 맨 위 카드. 상태는 저장값이 아니라 지금 시각으로 파생(banners.derive 와 같은 규칙)
+            // ───────────────────────────────────────────────────
+
+            bannerState(b, now) {
+                const start = Date.parse(b.start_at || ""), end = Date.parse(b.end_at || "");
+                if (isNaN(start) || isNaN(end)) return !isNaN(end) && now >= end ? "gone" : "pending";
+                if (b.hold) {
+                    const until = Date.parse(b.hold.until || "");
+                    return isNaN(until) || now >= until ? "gone" : "hold";
+                }
+                if (now >= end) return "gone";
+                return now < start ? "announced" : "live";
+            },
+
+            kstText(iso) {
+                return iso && !isNaN(Date.parse(iso)) ? this.utcIsoToKstInput(iso).replace("T", " ") : "—";
+            },
+
+            renderBanners() {
+                const container = document.getElementById("banners-list");
+                container.classList.remove("loading");
+                container.textContent = "";
+                const list = (this.data.banners && this.data.banners.banners) || [];
+                if (!list.length) {
+                    const p = document.createElement("p");
+                    p.textContent = "올라온 행사가 없습니다 (게임 계정 글에서 시작·종료일이 모두 확인되면 자동으로 올라옵니다)";
+                    container.appendChild(p);
+                    return;
+                }
+                const LABEL = { live: "진행 중", announced: "예정", hold: "보류", pending: "대기(시작·종료 중 하나를 몰라 화면엔 안 보임)", gone: "종료(곧 정리)" };
+                const now = Date.now();
+                for (const b of list) {
+                    const st = this.bannerState(b, now);
+                    const div = document.createElement("div");
+                    div.className = "list-item";
+
+                    const title = document.createElement("div");
+                    title.className = "list-item-title";
+                    title.textContent = b.name_ko || b.name_ja || "이름 없음";
+                    if (b.name_ko && b.name_ja && b.name_ko !== b.name_ja) {
+                        const orig = document.createElement("div");
+                        orig.className = "list-item-sub";
+                        orig.textContent = b.name_ja;
+                        title.appendChild(orig);
+                    }
+
+                    const meta = document.createElement("div");
+                    meta.className = "list-item-meta";
+                    const hold = b.hold ? `보류 표시 ~ ${this.kstText(b.hold.until).slice(0, 10)}` : "";
+                    meta.textContent = [LABEL[st], `${this.kstText(b.start_at)} ~ ${this.kstText(b.end_at)} (KST)`, hold,
+                        `이미지 ${(b.image_urls || []).length}장`].filter(Boolean).join(" · ");
+                    div.appendChild(title);
+                    div.appendChild(meta);
+
+                    for (const g of (b.gachas || [])) {
+                        const gl = document.createElement("div");
+                        gl.className = "list-item-meta";
+                        gl.textContent = `가챠 · ${g.title_ko || g.title_ja}` + ((g.image_urls || []).length ? ` · 이미지 ${g.image_urls.length}장` : "");
+                        div.appendChild(gl);
+                    }
+
+                    const actions = document.createElement("div");
+                    actions.className = "list-item-actions";
+                    const editBtn = document.createElement("button");
+                    editBtn.textContent = "수정";
+                    editBtn.onclick = () => this.editBanner(b);
+                    actions.appendChild(editBtn);
+                    const delBtn = document.createElement("button");
+                    delBtn.textContent = "삭제";
+                    delBtn.className = "danger";
+                    delBtn.onclick = () => this.deleteBanner(b);
+                    actions.appendChild(delBtn);
+                    div.appendChild(actions);
+                    container.appendChild(div);
+                }
+            },
+
+            editBanner(b) {
+                this.editState = {
+                    type: "banner",
+                    bid: b.id,
+                    seen: {
+                        name_ja: b.name_ja || "", name_ko: b.name_ko || "",
+                        start: b.start_at ? this.utcIsoToKstInput(b.start_at) : "", end: b.end_at ? this.utcIsoToKstInput(b.end_at) : "",
+                        hold: !!b.hold,
+                        gachas: Object.fromEntries((b.gachas || []).map((g) => [g.id, g.title_ko || ""])),
+                    },
+                };
+                const form = document.getElementById("edit-modal-form");
+                form.textContent = "";
+                this.buildTitleFields(form, { orig: "edit-bn-ja", ko: "edit-bn-ko" }, b.name_ja, b.name_ko,
+                    "행사 이름. 한글은 팬 화면에 크게, 원문은 그 아래 작고 희미하게 나옵니다.");
+
+                const mkDt = (id, labelText, value) => {
+                    const g = document.createElement("div");
+                    g.className = "form-group";
+                    const l = document.createElement("label");
+                    l.textContent = labelText;
+                    const i = document.createElement("input");
+                    i.type = "datetime-local";
+                    i.id = id;
+                    i.value = value || "";
+                    g.appendChild(l);
+                    g.appendChild(i);
+                    form.appendChild(g);
+                };
+                mkDt("edit-bn-start", "시작 (KST)", this.editState.seen.start);
+                mkDt("edit-bn-end", "종료 (KST)", this.editState.seen.end);
+
+                if (b.hold) {
+                    const g = document.createElement("div");
+                    g.className = "form-group";
+                    const l = document.createElement("label");
+                    const c = document.createElement("input");
+                    c.type = "checkbox";
+                    c.id = "edit-bn-clearhold";
+                    l.appendChild(c);
+                    l.appendChild(document.createTextNode(" 보류 표시 해제 (날짜 그대로 다시 올림)"));
+                    g.appendChild(l);
+                    form.appendChild(g);
+                }
+
+                (b.gachas || []).forEach((g, idx) => {
+                    const grp = document.createElement("div");
+                    grp.className = "form-group";
+                    const l = document.createElement("label");
+                    l.textContent = `가챠 한글 제목 — 원제: ${g.title_ja}`;
+                    const i = document.createElement("input");
+                    i.type = "text";
+                    i.id = `edit-bn-g-${idx}`;
+                    i.dataset.gid = g.id;
+                    i.value = g.title_ko || "";
+                    grp.appendChild(l);
+                    grp.appendChild(i);
+                    form.appendChild(grp);
+                });
+
+                document.getElementById("edit-modal-title").textContent = "행사 배너 편집";
+                document.getElementById("edit-modal").classList.add("active");
+            },
+
+            async submitBannerEdit() {
+                const seen = this.editState.seen, patch = {};
+                const ja = document.getElementById("edit-bn-ja").value.trim();
+                const ko = document.getElementById("edit-bn-ko").value.trim();
+                if (ja && ja !== seen.name_ja) patch.name_ja = ja;
+                if (ko !== seen.name_ko) patch.name_ko = ko || null;
+                const st = document.getElementById("edit-bn-start").value, en = document.getElementById("edit-bn-end").value;
+                if (st && st !== seen.start) patch.start_at = this.kstInputToUtcIso(st);
+                if (en && en !== seen.end) patch.end_at = this.kstInputToUtcIso(en);
+                const ch = document.getElementById("edit-bn-clearhold");
+                if (ch && ch.checked) patch.clear_hold = true;
+                const gk = {};
+                document.querySelectorAll("#edit-modal-form input[data-gid]").forEach((i) => {
+                    if (i.value.trim() !== (seen.gachas[i.dataset.gid] || "")) gk[i.dataset.gid] = i.value.trim();
+                });
+                if (Object.keys(gk).length) patch.gachas_ko = gk;
+                if (!Object.keys(patch).length) {
+                    this.showToast("바뀐 것이 없습니다");
+                    this.closeModal();
+                    return;
+                }
+                try {
+                    const result = await this.apiCall("POST", "/edit_banner", { bid: this.editState.bid, patch });
+                    if (result.ok) {
+                        this.showToast("행사 배너가 수정되었습니다");
+                        this.closeModal();
+                        this.loadNoticesAndTweets();
+                    } else {
+                        this.showToast(result.error || "수정 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
+                }
+            },
+
+            async deleteBanner(b) {
+                if (!confirm(`이 행사를 배너에서 내릴까요?\n\n${b.name_ko || b.name_ja}\n\n내린 행사는 보관됩니다.`)) return;
+                try {
+                    const result = await this.apiCall("POST", "/delete_banner", { bid: b.id });
+                    if (result.ok) {
+                        this.showToast("행사가 내려갔습니다");
+                        this.loadNoticesAndTweets();
+                    } else {
+                        this.showToast(result.error || "삭제 실패", "error");
+                    }
+                } catch (e) {
+                    this.showToast(`오류: ${e.message}`, "error");
                 }
             },
 
@@ -3522,7 +3724,7 @@
                 box.textContent = "";
                 const LABEL = {
                     edit_preview: "예고 수정", delete_preview: "예고 삭제", ingest_preview: "원문 투입 · 예고",
-                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정", edit_tweet: "트윗 수정",
+                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정", edit_banner: "행사 수정", delete_banner: "행사 삭제", edit_tweet: "트윗 수정",
                     delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
                     retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
                     set_monitor_auto: "멤버 현황 DM",

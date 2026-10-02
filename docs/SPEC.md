@@ -453,6 +453,34 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 
 ---
 
+## 6-4. 계약 J — `banners.json` / `banners_archive.json` (data 브랜치, v4a)
+
+게임 계정(`bang_dream_on`)이 알리는 **행사**(챌린지 라이브 등)와 딸린 **가챠**를 소식 란 맨 위 카드로 보이는 데이터. `banners.py`.
+용어: `docs/TERMINOLOGY.md` 「행사 배너 용어」. 설계 배경: `ref/v4a/v4a_event_banner_design.md`.
+
+- `banners.json` = `{ generated_at, banners[] }`. 행사 항목:
+  `id`(`bn_<이름 키 해시>` — 날짜가 바뀌어도 안 변함)·`name_ja`·`name_ko`·`match_keys[]`(소식과 겹침 판정용 정규화 이름)·
+  `image_urls[]`(링크만 저장 · 최대 6)·`start_at`·`end_at`(UTC ISO — **둘 다 필수**)·`start_time_tbd?`(날짜만 알려진 시작)·
+  `hold`(`null` 또는 `{anchor, until}` — 보류 시작 때 표시한 개최일 · +15일)·`gachas[]`·`src_ids[]`(근거 트윗 id)·
+  `first_seen`·`last_updated`.
+  가챠: `{id, title_ja, title_ko, image_urls[], start_at|null, end_at|null}` — 기간이 `null` 이면 행사와 같음(표시도 생략).
+- **저장하지 않는 값**: 표시 상태는 현재 시각으로 파생(`banners.derive`) — `hold`(보류, `hold.until` 전) · `announced`(시작 전) · `live`(진행 중) ·
+  `gone`(종료 · 보류 만료 · 종료일 없음). `gone` 은 `sweep` 이 `banners_archive.json` 으로 옮긴다. 프론트(`banners.js`)도 같은 규칙으로 숨긴다.
+- **올리지 않는 경우**: 상시화 행사(LLM `permanent`) · 기간이 120일 초과(상시 의심, 저장도 안 함) · 유메미타/멤버와 무관 · 같은 행사의 새 사실 없는 재공지.
+  **종료일이 없는 행사는 화면에 안 올린다** — 다만 시작 · 종료가 글 여러 개에 나뉘어 오므로(09-24 글은 시작만, 09-30 글은 종료만 — 실측) 하나만 알면 **대기**
+  (`derive` = `pending`)로 저장해 두고 나머지가 채워지면 올린다. 대기는 LLM 에게는 기존 행사로 보이고(`for_llm`), 30일 갱신이 없으면 정리된다.
+- **이미지**: 링크만 저장한다(자체 복사 안 함). 글에 첨부 이미지가 있고 판정이 행사 정보를 줬으면 비전(`vision.read_card`, qwen3.8-27b — 쓸 수 있는 비전 모델이
+  이것 하나뿐이고 ITPM 7000 이라 429 는 안내 시간만큼 기다려 재시도)으로 카드 속 글자(개최기간은 본문이 아니라 이미지에만 있는 경우가 실측으로 있었다)를 읽어 다시 판정한다.
+  `image_roles` 로 이미지마다 행사 / 가챠 / 안 씀을 나눈다. 최대 4장을 읽고 항목당 6장까지 저장. 프론트는 여러 장이면 4.5초 주기로 가로로 한 칸씩 넘긴다(호버 중 멈춤).
+- **가챠**: 행사에 딸린 카드. `start_at`/`end_at` 이 `null` 이면 행사와 같다는 뜻 — 프론트는 행사와 같은 기간이면 기간을 적지 않는다(다르면 적는다).
+- 행사 판정: `llm.banner_judge(text, posted_kst, active)` → `{action: none|upsert|hold|cancel, banner_ref, event, gacha, image_for, reason}`.
+  시각은 LLM 이 JST 문자열로 주고 코드가 UTC 로 바꾼다. 코드가 형식 · 순서 · 참조 id 를 **검증**한 뒤에만 반영(`banners.apply_judgement`).
+  LLM 5회 실패 → 등록하지 않음(소식과 반대 기본값) + monitor `degraded`.
+- 되돌리기: `_llm_record(kind="banner_judge", undo={"type":"restore_banner", …})` — 변경 전 항목 스냅샷으로 복원, 새로 만든 항목이면 삭제.
+- 소식과의 중복 방지: 게임 계정 글은 소식 경로를 타지 않고, 다른 계정 글이라도 활성 · 보관 행사의 `match_keys` 가 본문에 들어 있으면 소식으로 올리지 않는다(`banners.covers_text`).
+
+---
+
 ## 7. 직렬화 / 시간 규칙 (전 모듈 공통)
 
 - JSON 저장: `json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"` (끝 개행 1개).

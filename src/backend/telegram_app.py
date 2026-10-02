@@ -67,6 +67,11 @@ except ImportError:
     xnotice = notices = None
 
 try:
+    from . import banners                   # (v4a) 행사 배너 — 게임 계정 글의 행사 판정
+except ImportError:
+    banners = None
+
+try:
     from . import xtweet                    # (v2.8) 멤버 개인 트윗
 except ImportError:
     xtweet = None
@@ -2401,6 +2406,20 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
     if gh is None:
         return "no-gh"
 
+    # (v4a, 2026-10-02) 행사 배너가 이미 다루는 행사 · 가챠면 소식으로 또 올리지 않는다
+    if banners is not None:
+        try:
+            cur_b, _ = gh.read_json(_BANNERS_PATH)
+            arc_b, _ = gh.read_json(_BANNERS_ARCHIVE_PATH)
+            rows_b = list((cur_b or {}).get("banners") or []) + list((arc_b or {}).get("banners") or [])
+            hit = banners.covers_text(rows_b, raw)
+        except Exception:  # noqa: BLE001
+            hit = None
+        if hit:
+            log.info("auto notice: 행사 배너가 다루는 내용(%s)이라 건너뜀", hit)
+            flowtrace.annotate(notice="banner")
+            return "banner"
+
     # 준비 단계: 파싱 + LLM + 중복판정
     prepared = _prepare_notice(raw, now_iso, tag=tag, title=title, gh=gh)
     if prepared is None:
@@ -2878,6 +2897,272 @@ def _handle_member_live_start(parsed: dict, channels_cfg: dict, now_iso: str) ->
     return {"ok": True, "member_live": ck, "mode": mode, "video_id": live["video_id"]}, 200
 
 
+# ── (v4a, 2026-10-02) 행사 배너 — 게임 계정(bang_dream_on) 글 → 행사 판정 → banners.json ──────────────────────
+# 게임 계정 글은 소식 · 스케줄 경로를 타지 않고 여기로만 온다. 준비(외부 LLM)는 제어 채널, 잡은 커밋만(`apply_banner`).
+# 설계: ref/v4a/v4a_event_banner_design.md · 계약: docs/SPEC.md 계약 J · 용어: docs/TERMINOLOGY.md 「행사 배너 용어」.
+_BANNERS_PATH = "banners.json"
+_BANNERS_ARCHIVE_PATH = "banners_archive.json"
+
+_BANNER_VERDICT = {
+    "none": "행사 배너 — 해당 없음",
+    "added": "행사 배너 추가",
+    "updated": "행사 배너 갱신",
+    "held": "행사 배너 — 보류 표시",
+    "cancelled": "행사 배너 — 취소로 내림",
+    "dup": "행사 배너 — 이미 반영한 글",
+    "invalid": "행사 배너 — 판정 값 검증 실패(올리지 않음)",
+    "skip_permanent": "행사 배너 — 상시화된 행사(올리지 않음)",
+    "error": "행사 배너 — 반영 실패",
+    "llm_failed": "행사 배너 — 판정 LLM 실패(올리지 않음)",
+}
+_BANNER_CHANGED = ("added", "updated", "held", "cancelled")
+
+
+def _game_account(vx_ex: dict | None, title: str | None, cfg: dict | None = None) -> str | None:
+    """이 알림이 게임 계정(`config/channels.json` `game_accounts`)의 글이면 그 키, 아니면 None.
+
+    작성자 핸들(vxtwitter/fxtwitter)이 있으면 그것만 본다. 조회가 둘 다 실패했을 때만 알림 표시명(`x_names`)으로 판정한다.
+    """
+    ga = ((cfg if cfg is not None else _load_channels_config()).get("game_accounts") or {})
+    if not ga:
+        return None
+    author = ((vx_ex or {}).get("author") or "").lstrip("@").lower()
+    if author:
+        return next((k for k, v in ga.items() if (v.get("handle") or k).lower() == author), None)
+    t = (title or "").strip()
+    return next((k for k, v in ga.items() if t and t in (v.get("x_names") or [])), None) if t else None
+
+
+def _banner_posted_jst(tag: str | None, now_iso: str) -> str:
+    """글 게시 시각(JST 문자열) — 트윗 id(Snowflake)에서, 못 구하면 지금."""
+    posted = None
+    if xtweet is not None and tag:
+        try:
+            posted = xtweet.snowflake_iso(xtweet._tweet_id(tag))
+        except Exception:  # noqa: BLE001
+            posted = None
+    return banners.to_jst(posted or now_iso) or ""
+
+
+def _banner_label(prepared: dict | None) -> str:
+    j = (prepared or {}).get("judgement") or {}
+    name = ((j.get("event") or {}).get("name_ja") or (j.get("gacha") or {}).get("title_ja") or "")[:20]
+    return f"행사 배너 {j.get('action', '')} {name}".strip()
+
+
+def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
+    """행사 · 가챠 소개 카드 이미지의 글자를 비전으로 읽는다 — [{"idx": 1부터, "text": 글자|None}]. 비전 불가면 []."""
+    vc = _make_vision_client()
+    if vc is None or not media:
+        return []
+    out = []
+    for i, url in enumerate(list(media)[:limit], start=1):
+        try:
+            out.append({"idx": i, "text": vc.read_card(image_url=url)})
+        except Exception:  # noqa: BLE001
+            log.warning("행사 배너 이미지 OCR 실패 (%s)", url, exc_info=True)
+            out.append({"idx": i, "text": None})
+    return out if any(o["text"] for o in out) else []
+
+
+def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str, gh) -> dict:
+    """(제어 채널) 행사 판정 준비 — 현재 배너를 읽고 외부 LLM 을 1회 부른다.
+
+    반환: {"judgement": dict, "post": {tweet_id, media}} | {"failed": 사유}. 실패 땐 등록하지 않는다.
+    """
+    llm_client = _make_llm_client()
+    if llm_client is None:
+        return {"failed": "LLM 비활성(GROQ_API_KEY 없음)"}
+    try:
+        prev, _ = gh.read_json(_BANNERS_PATH)
+    except Exception:  # noqa: BLE001
+        log.warning("행사 배너 준비: banners.json 읽기 실패", exc_info=True)
+        prev = None
+    prev = prev or banners.default_banners()
+    posted = _banner_posted_jst(tag, now_iso)
+    active = banners.for_llm(prev, now_iso)
+    media = list((vx_ex or {}).get("media") or [])[:4]      # OCR · 용도 판정과 장수를 맞춘다
+    j = llm_client.banner_judge(raw, posted, active)
+    if j is None:
+        return {"failed": "LLM 판정 5회 실패"}
+    # 2단계 — 글만으로 행사 정보가 있다고 본 판정에 한해, 첨부 이미지 속 글자(개최기간은 이미지에만 있는 경우가 실측으로 있었다)를
+    # 비전으로 읽어 다시 판정한다. 무관한 글(대부분)은 비전 호출이 없다. 읽기 실패 · 재판정 실패면 1단계 판정을 그대로 쓴다.
+    if j.get("action") == "upsert" and media:
+        ocr = _ocr_banner_images(media)
+        if ocr:
+            j2 = llm_client.banner_judge(raw, posted, active, images_ocr=ocr)
+            if j2 is not None:
+                j = j2
+    tid = ""
+    if xtweet is not None and tag:
+        try:
+            tid = xtweet._tweet_id(tag) or ""
+        except Exception:  # noqa: BLE001
+            tid = ""
+    return {"judgement": j, "post": {"tweet_id": tid, "media": media}}
+
+
+def _banners_rw(gh):
+    prev, psha = gh.read_json(_BANNERS_PATH)
+    arc, asha = gh.read_json(_BANNERS_ARCHIVE_PATH)
+    return (prev or banners.default_banners(), psha, arc or banners.default_archive(), asha)
+
+
+def _banners_write(gh, new_b: dict, psha, new_a: dict, arc: dict, asha, message: str) -> None:
+    gh.write_json(_BANNERS_PATH, new_b, prev_sha=psha, message=message)
+    if new_a != arc:
+        gh.write_json(_BANNERS_ARCHIVE_PATH, new_a, prev_sha=asha, message=message + " (archive)")
+
+
+def _commit_banner(gh, prepared: dict | None, now_iso: str) -> dict:
+    """(적용 큐 잡) 행사 판정 커밋 — 지난 행사 정리 + 반영 + 보관. 반환: {mode, detail, id, shown, undo, moved}."""
+    if banners is None or not prepared or not prepared.get("judgement"):
+        return {"mode": "none", "detail": "", "id": None, "shown": False, "undo": None, "moved": 0}
+    for _try in range(1, 4):
+        prev, psha, arc, asha = _banners_rw(gh)
+        swept, arc2, moved = banners.sweep(prev, arc, now_iso)
+        r = banners.apply_judgement(swept, prepared["judgement"], prepared.get("post") or {}, now_iso)
+        new_a = dict(arc2)
+        if r["archive_add"]:
+            new_a["banners"] = list(new_a.get("banners") or []) + r["archive_add"]
+        res = {"mode": r["mode"], "detail": r["detail"], "id": r["id"], "shown": r["shown"], "undo": r["undo"],
+               "moved": len(moved)}
+        if r["mode"] not in _BANNER_CHANGED and not moved:
+            return res
+        out = r["banners"] if r["mode"] in _BANNER_CHANGED else swept
+        out = dict(out, generated_at=now_iso)
+        try:
+            _banners_write(gh, out, psha, new_a, arc, asha, f"data: banner {r['mode']} {now_iso}")
+        except ConflictError:
+            if _try == 3:
+                raise
+            log.warning("banner: banners.json 충돌 — 재시도")
+            continue
+        return res
+    return {"mode": "error", "detail": "충돌이 계속됨", "id": None, "shown": False, "undo": None, "moved": 0}
+
+
+def _banner_sweep(gh, now_iso: str) -> int:
+    """(적용 큐 잡) 지난 행사 · 보류 만료 · 오래된 대기를 banners_archive.json 으로. 옮긴 수."""
+    if banners is None:
+        return 0
+    for _try in range(1, 4):
+        prev, psha, arc, asha = _banners_rw(gh)
+        new_b, new_a, moved = banners.sweep(prev, arc, now_iso)
+        if not moved:
+            return 0
+        try:
+            _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: banner sweep {now_iso}")
+            return len(moved)
+        except ConflictError:
+            if _try == 3:
+                raise
+    return 0
+
+
+def _banner_edit_commit(gh, bid: str, patch: dict, now_iso: str) -> dict:
+    """(적용 큐 잡) 관리 페이지 행사 수정."""
+    prev, psha, arc, asha = _banners_rw(gh)
+    new_b, changed, err = banners.edit_banner(prev, bid, patch, now_iso)
+    if err:
+        return {"ok": False, "error": err}
+    if changed:
+        gh.write_json(_BANNERS_PATH, new_b, prev_sha=psha, message=f"data: banner edit {bid} {now_iso}")
+    return {"ok": True, "changed": changed}
+
+
+def _banner_del_commit(gh, bid: str, now_iso: str) -> dict:
+    """(적용 큐 잡) 관리 페이지 행사 삭제 — 보관(archived_reason=deleted)으로 옮긴다."""
+    prev, psha, arc, asha = _banners_rw(gh)
+    hit = next((b for b in prev.get("banners") or [] if b.get("id") == bid), None)
+    if hit is None:
+        return {"ok": False, "error": "행사를 찾을 수 없음"}
+    new_b = dict(prev, banners=[b for b in prev["banners"] if b is not hit], generated_at=now_iso)
+    new_a = dict(arc, banners=list(arc.get("banners") or []) + [dict(hit, archived_at=now_iso, archived_reason="deleted")])
+    _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: banner delete {bid} {now_iso}")
+    return {"ok": True}
+
+
+def _handle_banner_ingest(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str, title: str,
+                          now_iso: str, gh, acct: str):
+    """/ingest — 게임 계정 글 처리. 소식 · 스케줄 경로로 가지 않는다. (응답 body, 코드) 반환."""
+    rt = _retweet_mark(phone_raw, vx_ex)
+    if rt:
+        log.info("행사 배너: 게임 계정 리트윗이라 건너뜀 — %s (tweet %s)", rt, x_tag)
+        flowtrace.mark("행사 판정", "skip", f"리트윗 — {rt}")
+        _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=acct, via="ingest", detail=f"banner skip: 리트윗 {rt}")
+        return jsonify({"ok": True, "ignored": f"게임 계정 리트윗 — {rt}"}), 200
+    if banners is None or gh is None:
+        return jsonify({"ok": True, "ignored": "행사 배너 모듈 없음"}), 200
+    flowtrace.mark("행사 판정", "run", f"게임 계정 @{acct} — 외부 LLM 판정")
+    prepared = _prepare_banner(raw, x_tag, vx_ex, now_iso, gh)
+    if prepared.get("failed"):
+        flowtrace.annotate(banner="llm_failed")
+        flowtrace.mark("행사 판정", "fail", prepared["failed"])
+        _log_event_safe(gh, now_iso, "notice", RESULT_DEGRADED, who=acct, via="ingest",
+                        detail=f"banner skip: {prepared['failed']}")
+        _dm_lost_raw("행사 판정 LLM 실패 — 올리지 않음", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
+        return jsonify({"ok": True, "banner": "llm_failed", "detail": prepared["failed"]}), 200
+    j = prepared["judgement"]
+    try:
+        result = writeclient.call_write("apply_banner", gh=gh, prepared=prepared, now_iso=now_iso,
+                                        label=_banner_label(prepared))
+    except Exception:
+        flowtrace.annotate(banner="error")
+        log.exception("행사 배너 반영 실패")
+        _dm_lost_raw("행사 배너 반영 호출 실패", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
+        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, who=acct, via="ingest", detail="banner: error (exception)")
+        return jsonify({"ok": True, "banner": "error"}), 200
+    mode = result.get("mode") or "none"
+    flowtrace.annotate(banner=mode)
+    name = ((j.get("event") or {}).get("name_ja") or (j.get("gacha") or {}).get("title_ja") or "")[:40]
+    undo = result.get("undo") if mode in _BANNER_CHANGED else None
+    _llm_record(gh, "banner_judge", acct, f"{_BANNER_VERDICT.get(mode, mode)} — {name}".strip(" —"),
+                j.get("reason") or "", undo=undo, now_iso=now_iso)
+    _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=acct, via="ingest",
+                    detail=f"banner mode: {mode} · {result.get('detail') or ''}"[:200])
+    if mode in _BANNER_CHANGED:
+        _auto_dm(gh, "banner", f"🎴 <b>행사 배너</b> — {html.escape(_BANNER_VERDICT.get(mode, mode))}\n"
+                              f"{html.escape(result.get('detail') or '')}\n"
+                              f"<i>{html.escape((j.get('reason') or '')[:120])}</i>")
+    return jsonify({"ok": True, "banner": mode, "detail": result.get("detail") or ""}), 200
+
+
+def _undo_banner_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
+    """(적용 큐) `restore_banner` 되돌리기 — banners.json · banners_archive.json 에서 그 행사만 변경 전으로."""
+    u = e.get("undo") or {}
+    applied, skipped = [], []
+    for _try in range(1, 4):
+        applied, skipped = [], []
+        prev, psha, arc, asha = _banners_rw(gh)
+        new_b, new_a, msg = banners.restore(prev, u, arc, now_iso)
+        if msg == "되돌림":
+            applied.append(f"행사 배너 되돌림 — {((u.get('before') or {}).get('name_ko') or (u.get('before') or {}).get('name_ja') or u.get('id'))}")
+            try:
+                _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: 행사 배너 LLM 판단 되돌리기 {action_id} {now_iso}")
+            except ConflictError:
+                if _try == 3:
+                    raise
+                continue
+        else:
+            skipped.append(msg)
+        break
+    for _try in range(3):
+        cur, lsha = gh.read_json(_LLM_ACTIONS_PATH)
+        items2 = list((cur or {}).get("items") or [])
+        for x in items2:
+            if x.get("id") == action_id:
+                x["undone"] = {"at": now_iso, "applied": applied, "skipped": skipped}
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items2}, prev_sha=lsha, message=f"ops: LLM 판단 되돌림 {action_id}")
+            break
+        except ConflictError:
+            continue
+    _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=e.get("who") or "", via="ops",
+                    detail=f"LLM 판단 되돌리기 banner_judge · {'; '.join(applied) or '; '.join(skipped) or '변화 없음'}")
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": []}
+
+
 # (v4a) 소식 판정 mode(`notices.merge_notice` · `_maybe_auto_notice`) → 작업 탭 결과 문구
 _NOTICE_VERDICT = {
     "none": "소식 아님",
@@ -2888,6 +3173,7 @@ _NOTICE_VERDICT = {
     "skip": "소식 안 올림 — 이미 지난 이벤트",
     "unchanged": "소식 바뀐 것 없음",
     "error": "소식 반영 실패",
+    "banner": "소식 안 올림 — 행사 배너가 이미 다루는 내용",
 }
 
 
@@ -2907,6 +3193,10 @@ def _finish_ingest_flow(body, code: int) -> None:
             return
         if j.get("personal"):
             why = f"개인 트윗 · {j.get('mode')}"
+        elif j.get("banner"):
+            why = _BANNER_VERDICT.get(j["banner"], f"행사 배너 {j['banner']}")
+            if j.get("detail"):
+                why += f" · {str(j['detail'])[:60]}"
         elif j.get("public_relay"):
             why = f"YouTube {j['public_relay']} · {j.get('video_id')}"
         elif j.get("paused"):
@@ -4158,6 +4448,8 @@ def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
     if not u:
         return {"error": "되돌릴 데이터가 없는 판단입니다(검토용) — 필요하면 원문 투입으로 직접 넣으세요",
                 "applied": [], "skipped": []}
+    if u.get("type") == "restore_banner":
+        return _undo_banner_action(gh, e, action_id, now_iso)
     applied, skipped, restored = [], [], []
     t = u.get("type")
 
@@ -5651,6 +5943,10 @@ if _FLASK_AVAILABLE:
                 mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
                                             now_iso=now_iso, vx_extract=_vx_ex)
                 return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
+            elif raw and (_gacct := _game_account(_vx_ex, title, _load_channels_config())):
+                # (v4a, 2026-10-02) 게임 계정(bang_dream_on) 글 — 소식 · 스케줄로 가지 않고 행사 배너 판정으로만
+                flowtrace.mark("분류", "done", f"게임 계정 @{_gacct} → 행사 판정")
+                return _handle_banner_ingest(raw, phone_raw, _vx_ex, x_tag, title, now_iso, gh, _gacct)
             elif raw:   # 빈 text 는 아래에서 400(폰 쪽 이상 계측) — 판정하지 않는다
                 # (v4a, 10-01 운영자 결정) 「공식」 = @BDP_yumemita 가 직접 쓴 글만 — 리트윗 · 다른 계정 글은 소식 · 스케줄 어디에도 안 올린다
                 skip = _official_skip_reason(phone_raw, _vx_ex, title, _load_channels_config())
@@ -6049,6 +6345,69 @@ if __name__ == "__main__":
     assert _official_skip_reason("引用です", {"author": "BDP_yumemita", "qrt_url": "x"}, _G, _ocfg) is None  # 인용(QRT)은 직접 쓴 글
     assert set(_NOTICE_VERDICT) >= {"none", "added", "updated", "recap", "dup", "skip", "unchanged", "error"}
     print("[OK] _official_skip_reason (리트윗 · 다른 계정 → 공식 경로 제외)")
+
+    # ── (v4a 2026-10-02) 행사 배너 — 게임 계정 판별 · 커밋 · 되돌리기 · 소식 제외 ──
+    _gcfg = {"game_accounts": {"bang_dream_on": {"handle": "bang_dream_on", "x_names": ["バンドリ！アワーノーツ"]}}}
+    assert _game_account({"author": "bang_dream_on"}, "", _gcfg) == "bang_dream_on"
+    assert _game_account({"author": "Bang_Dream_ON"}, "x", _gcfg) == "bang_dream_on"            # 대소문자 무시
+    assert _game_account({"author": "BDP_yumemita"}, "バンドリ！アワーノーツ", _gcfg) is None          # 작성자가 있으면 그것만 본다
+    assert _game_account(None, "バンドリ！アワーノーツ", _gcfg) == "bang_dream_on"                  # 조회 실패 → 표시명
+    assert _game_account(None, "夢限大みゅーたいぷ", _gcfg) is None and _game_account(None, "", _gcfg) is None
+    assert _game_account({"author": "bang_dream_on"}, "", {"game_accounts": {}}) is None
+
+    class _MemGH:
+        """read_json/write_json 만 흉내 내는 메모리 저장소(sha = 쓰기 횟수)."""
+        def __init__(self):
+            self.f, self.n = {}, 0
+
+        def read_json(self, p):
+            v = self.f.get(p)
+            return (json.loads(json.dumps(v)) if v is not None else None), (str(self.n) if v is not None else None)
+
+        def write_json(self, p, obj, prev_sha=None, message=""):
+            self.n += 1
+            self.f[p] = json.loads(json.dumps(obj))
+            return None, str(self.n)
+
+    _bgh = _MemGH()
+    _bnow = "2026-10-02T03:00:00Z"
+    _bj = {"action": "upsert", "banner_ref": None, "image_for": "none", "reason": "새 행사",
+           "event": {"name_ja": "チャレンジライブイベント「アイの奔流 AtoZ」", "name_ko": "사랑은 격류 AtoZ",
+                     "start_jst": "2026-09-30 18:00", "end_jst": "2026-10-08 20:59", "permanent": False},
+           "gacha": {"title_ja": "「ワタシが主役のサイバーナイトガチャ」", "title_ko": "내가 주인공 가챠", "start_jst": None, "end_jst": None}}
+    _r1 = _commit_banner(_bgh, {"judgement": _bj, "post": {"tweet_id": "9001", "media": ["https://x/e.jpg"]}}, _bnow)
+    assert _r1["mode"] == "added" and _r1["shown"], _r1
+    assert _bgh.f[_BANNERS_PATH]["banners"][0]["image_urls"] == ["https://x/e.jpg"]
+    # 같은 글 재전송 = dup (쓰기 없음)
+    _n0 = _bgh.n
+    assert _commit_banner(_bgh, {"judgement": _bj, "post": {"tweet_id": "9001", "media": []}}, _bnow)["mode"] == "dup" and _bgh.n == _n0
+    # 소식과 겹침 판정 — 행사 · 가챠 이름이 본문에 있으면
+    assert banners.covers_text(_bgh.f[_BANNERS_PATH]["banners"], "「アイの奔流 AtoZ」このあと18:00より開催") is not None
+    # 판정이 none → 아무것도 안 씀
+    assert _commit_banner(_bgh, {"judgement": {"action": "none", "reason": "무관"}, "post": {"tweet_id": "9002"}}, _bnow)["mode"] == "none" and _bgh.n == _n0
+    # 종료 후 정리 — 새 글이 와도 지난 행사는 보관으로
+    _late = "2026-10-09T00:00:00Z"
+    _commit_banner(_bgh, {"judgement": {"action": "none", "reason": ""}, "post": {"tweet_id": "9003"}}, _late)
+    assert _bgh.f[_BANNERS_PATH]["banners"] == [] and _bgh.f[_BANNERS_ARCHIVE_PATH]["banners"][0]["archived_reason"] == "ended"
+    # 되돌리기(새로 만든 행사 → 삭제): LLM 판단 기록 + restore_banner
+    _bgh2 = _MemGH()
+    _r2 = _commit_banner(_bgh2, {"judgement": _bj, "post": {"tweet_id": "9101", "media": []}}, _bnow)
+    _bgh2.f[_LLM_ACTIONS_PATH] = {"items": [{"id": "llm_t1", "ts": _bnow, "kind": "banner_judge", "who": "bang_dream_on",
+                                             "undo": _r2["undo"], "undone": None}]}
+    _ur = _llm_undo(_bgh2, "llm_t1", _bnow)
+    assert _ur["applied"] and _bgh2.f[_BANNERS_PATH]["banners"] == [], _ur
+    assert _bgh2.f[_LLM_ACTIONS_PATH]["items"][0]["undone"]["applied"]
+    # 관리 페이지 수정 · 삭제 커밋
+    _bgh3 = _MemGH()
+    _r3 = _commit_banner(_bgh3, {"judgement": _bj, "post": {"tweet_id": "9201", "media": []}}, _bnow)
+    _bid = _r3["id"]
+    assert _banner_edit_commit(_bgh3, _bid, {"name_ko": "수정됨"}, _bnow) == {"ok": True, "changed": True}
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["name_ko"] == "수정됨"
+    assert _banner_edit_commit(_bgh3, _bid, {"end_at": "2026-01-01T00:00:00Z"}, _bnow)["ok"] is False
+    assert _banner_del_commit(_bgh3, _bid, _bnow)["ok"] and _bgh3.f[_BANNERS_PATH]["banners"] == []
+    assert _bgh3.f[_BANNERS_ARCHIVE_PATH]["banners"][0]["archived_reason"] == "deleted"
+    assert set(_BANNER_VERDICT) >= {"none", "added", "updated", "held", "cancelled", "dup", "invalid", "error", "llm_failed"}
+    print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}

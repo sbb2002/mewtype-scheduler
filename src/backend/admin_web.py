@@ -307,6 +307,7 @@ h1{color:#ff6b6b}</style></head>
         read_functions = {
             "list_preview",
             "list_notices",
+            "list_banners",
             "list_tweets",
             "get_control",
             "list_history",
@@ -366,6 +367,8 @@ h1{color:#ff6b6b}</style></head>
             "ingest_notice_manual",
             "ingest_tweet_manual",
             "edit_notice",
+            "edit_banner",
+            "delete_banner",
             "edit_tweet",
             "delete_notice",
             "delete_tweet",
