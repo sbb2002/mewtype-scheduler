@@ -24,9 +24,10 @@
 .bnr__card.is-urgent { border-color: color-mix(in srgb, var(--bnr-urgent) 45%, var(--bnr-border)); }
 .bnr__card.is-hold { border-color: color-mix(in srgb, var(--bnr-hold) 35%, var(--bnr-border)); }
 
-.bnr__img { position: relative; flex: none; width: clamp(150px, 36%, 260px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 4px; background: #000; align-self: flex-start; }
+/* PC: 이미지는 16:9 비율을 지킨 채 오른쪽 텍스트 영역 높이까지 커지고(크기는 banners.js 가 잰다) 세로 중앙에 놓인다. 아래 폭은 JS 가 돌기 전 대비 값 */
+.bnr__img { position: relative; flex: none; width: clamp(150px, 36%, 260px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 4px; background: #000; align-self: center; }
 .bnr__img[hidden] { display: none; }
-.bnr__img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; will-change: transform; }
+.bnr__img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; will-change: transform; }   /* 잘리지 않게 */
 .bnr__card.is-hold .bnr__img img { filter: grayscale(1) brightness(0.7); }
 .bnr__img[data-chip]::before {
   content: attr(data-chip);
@@ -65,10 +66,11 @@
 .bnr__name--sub { font-size: 0.88rem; }
 .bnr__gnote { font-size: 0.78rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 
+/* 모바일: 이미지를 맨 위에 두고 가로를 배너에 꽉 채운다(16:9 비율 유지). 텍스트 · 진행 막대 · 딸린 가챠는 그 아래. */
 @media (max-width: 640px) {
   .bnr { grid-template-columns: 1fr; }
-  .bnr__card { gap: 10px; padding: 8px; }
-  .bnr__img { width: 38%; }                 /* 폰에서도 이미지는 왼쪽에 작게 */
-  .bnr__name { font-size: 0.9rem; }
+  .bnr__card { flex-direction: column; gap: 10px; padding: 8px; }
+  .bnr__img { width: 100% !important; height: auto !important; aspect-ratio: 16 / 9; align-self: stretch; }
+  .bnr__name { font-size: 0.95rem; }
 }
 @media (prefers-reduced-motion: reduce) { .bnr__img img { transition: none; } }

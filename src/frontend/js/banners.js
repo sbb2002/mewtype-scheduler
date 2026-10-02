@@ -11,6 +11,7 @@ const IMG_SLIDE_MS = 5000;      // 이미지가 여러 장이면 5초 머문 뒤
 const SLIDE_MS = 650;
 const URGENT_MS = 3 * 86400000;
 const _timers = [];
+const _ros = [];
 
 function _esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -71,7 +72,7 @@ function _chip(b, st, now) {
 function _period(b, st) {
   const start = _ms(b.start_at), end = _ms(b.end_at);
   if (st === "hold") return `${_md(_ms(b.hold.anchor) ?? start)}(보류)`;
-  return `${_stamp(start, !b.start_time_tbd)} ~ ${_stamp(end, true)}`;
+  return `${_stamp(start, !b.start_time_tbd)} ~ ${_stamp(end, true)} 종료`;   // 행사 종료 시각을 말로 못박는다(가챠 종료는 아래 하위 블록에 따로)
 }
 
 // 가챠는 행사 안에 포함된 하위 블록 — 행사와 같은 부분은 적지 않고 **다른 부분만** 적는다.
@@ -149,6 +150,25 @@ export function bannerSig(list, now) {
 
 export function stopBannerMotion() {
   while (_timers.length) clearInterval(_timers.pop());
+  while (_ros.length) _ros.pop().disconnect();
+}
+
+// PC(폭 641px 이상): 이미지 칸을 오른쪽 텍스트 영역 높이까지 키운다. 16:9 비율은 그대로(잘리지 않음), 세로 중앙 정렬은 CSS(align-self:center).
+// 가로가 카드의 절반을 넘으면 거기서 멈추고(높이는 비율대로 줄어 중앙에 놓인다). 모바일은 CSS 가 위쪽 꽉 찬 이미지로 처리하므로 인라인 크기를 지운다.
+function _layoutImages(scope) {
+  const mobile = window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+  scope.querySelectorAll(".bnr__card").forEach((card) => {
+    const box = card.querySelector(".bnr__img");
+    if (!box) return;
+    if (mobile) { box.style.width = ""; box.style.height = ""; return; }
+    const body = card.querySelector(".bnr__body");
+    const h = body ? body.getBoundingClientRect().height : 0;
+    const maxW = card.getBoundingClientRect().width * 0.5;
+    if (!h || !maxW) return;
+    const w = Math.min((h * 16) / 9, maxW);
+    box.style.width = `${Math.round(w)}px`;
+    box.style.height = `${Math.round((w * 9) / 16)}px`;
+  });
 }
 
 // 이미지 로드 실패 → 이미지 칸만 숨김. 여러 장이면 5초 머문 뒤 다음 이미지가 왼쪽에서 들어오며 현재 이미지가 오른쪽으로 밀려 나간다
@@ -156,6 +176,13 @@ export function stopBannerMotion() {
 export function mountBannerMotion(scope) {
   stopBannerMotion();
   const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  _layoutImages(scope);
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => _layoutImages(scope));
+    scope.querySelectorAll(".bnr__card").forEach((c) => ro.observe(c));
+    scope.querySelectorAll(".bnr__body").forEach((c) => ro.observe(c));
+    _ros.push(ro);
+  }
   scope.querySelectorAll(".bnr__img").forEach((box) => {
     const imgs = Array.from(box.querySelectorAll("img"));
     imgs.forEach((im, i) => { im.style.transform = i === 0 ? "translateX(0)" : "translateX(-100%)"; });
