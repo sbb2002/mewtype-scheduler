@@ -20,6 +20,10 @@
 
 .ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft, #2a2a2a); }
 
+/* 기기 · 브라우저의 다크/라이트 변환(강제 다크, 고대비 모드)에 색이 흔들리지 않게 — 배너는 항상 이 팔레트 그대로 */
+.bnr, .bnr * { color-scheme: dark; forced-color-adjust: none; }
+.bnr__bar, .bnr__fill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
 .bnr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px; }
 
 .bnr__card { display: flex; gap: 14px; min-width: 0; padding: 10px; border: 1px solid var(--bnr-border); border-radius: 6px; background: var(--color-bg-secondary); }
@@ -54,9 +58,9 @@
 .bnr__card.is-hold .bnr__dday { background: var(--bnr-hold-soft); color: var(--bnr-hold); }
 .bnr__card.is-sched .bnr__dday { background: var(--bnr-sched-soft); color: var(--bnr-sched); }
 .bnr__card.is-urgent .bnr__dday { background: var(--bnr-urgent-soft); color: var(--bnr-urgent); }
-.bnr__bar { height: 7px; margin-top: 5px; border-radius: 4px; background: var(--bnr-track); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); overflow: hidden; }   /* 빈칸을 카드 배경(#1a1a1a)과 확실히 구분되는 밝은 회색 + 옅은 테두리로 */
-.bnr__fill { height: 100%; border-radius: 4px; background: var(--bnr-fill); }
-.bnr__card.is-urgent .bnr__fill { background: var(--bnr-fill-urgent); }          /* 종료 D-3 부터 빨강 */
+.bnr__bar { height: 7px; margin-top: 5px; border-radius: 4px; background-color: var(--bnr-track); background-image: linear-gradient(var(--bnr-track), var(--bnr-track)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); overflow: hidden; }   /* 빈칸을 카드 배경(#1a1a1a)과 확실히 구분되는 밝은 회색 + 옅은 테두리로 */
+.bnr__fill { height: 100%; border-radius: 4px; background-color: var(--bnr-fill); background-image: linear-gradient(var(--bnr-fill), var(--bnr-fill)); }
+.bnr__card.is-urgent .bnr__fill { background-color: var(--bnr-fill-urgent); background-image: linear-gradient(var(--bnr-fill-urgent), var(--bnr-fill-urgent)); }          /* 종료 D-3 부터 빨강 */
 
 /* 딸린 가챠 — 행사 안에 포함된 하위 블록(왼쪽 세로줄 + 옅은 배경) */
 .bnr__sub { margin-top: 6px; padding: 8px 10px 8px 12px; display: grid; gap: 1px; border-radius: 6px;
