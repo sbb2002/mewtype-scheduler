@@ -128,30 +128,53 @@ def covers_text(banners: list[dict], text: str) -> str | None:
 
 # ── 표시 상태 파생 ────────────────────────────────────────────────────
 
-def derive(b: dict, now_iso: str) -> tuple[str, str]:
-    """(상태, 사유). 상태 ∈ hold | announced | live | gone.
+_KST = timezone(timedelta(hours=9))
 
-    pending: 시작 · 종료 중 하나를 아직 모름(화면에 안 올림 — 나머지가 채워지면 올림). gone 사유:
-    hold_expired(보류 + 15일 지남) · ended(종료일 지남) · incomplete_expired(대기인 채 30일 넘게 갱신 없음).
+
+def full_end(b: dict) -> datetime | None:
+    """완전 종료 시각 — 행사 종료와 가챠 자체 종료(없으면 행사와 같음) 중 가장 늦은 것."""
+    ends = [_parse_iso(b.get("end_at"))] + [_parse_iso(g.get("end_at")) for g in b.get("gachas") or []]
+    ends = [e for e in ends if e is not None]
+    return max(ends) if ends else None
+
+
+def _midnight_after(dt: datetime) -> datetime:
+    """dt 가 속한 한국 시간 날짜의 다음 날 00:00(KST) — 완전 종료 뒤 「종료」 표시를 내리는 시각."""
+    k = dt.astimezone(_KST)
+    return (k.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
+
+
+def derive(b: dict, now_iso: str) -> tuple[str, str]:
+    """(상태, 사유). 상태 ∈ hold | announced | live | done | gone | pending.
+
+    announced 에는 **종료일을 아직 모르는 개최 전 공지**도 포함한다(시작 일시를 먼저 알려준다 — 2026-10-02 운영자 결정).
+    done: 행사 · 가챠가 모두 끝났지만 그날 자정(KST)까지는 「종료」로 계속 보인다.
+    pending: 시작을 모르거나, 종료를 모르는데 이미 시작했음(화면에 안 올림 — 상시화 행사 거르기). gone 사유:
+    hold_expired(보류 + 15일 지남) · ended(종료일 다음 날 자정 지남) · incomplete_expired(대기인 채 30일 넘게 갱신 없음).
     """
     now = _parse_iso(now_iso)
     end = _parse_iso(b.get("end_at"))
     start = _parse_iso(b.get("start_at"))
-    if end is None or start is None:
-        if end is not None and now >= end:
+    h = b.get("hold")
+    if start is None or (end is None and not h and now >= start):
+        if end is not None and now >= _midnight_after(end):
             return "gone", "ended"
         last = _parse_iso(b.get("last_updated")) or now
         if (now - last).days >= PENDING_DAYS:
             return "gone", "incomplete_expired"
         return "pending", "incomplete"
-    h = b.get("hold")
     if h:
         until = _parse_iso(h.get("until"))
         if until is None or now >= until:
             return "gone", "hold_expired"
         return "hold", ""
-    if now >= end:
+    if end is None:                       # 개최 전 · 종료일 미정
+        return "announced", ""
+    fe = full_end(b) or end
+    if now >= _midnight_after(fe):
         return "gone", "ended"
+    if now >= fe:
+        return "done", ""
     return ("announced" if now < start else "live"), ""
 
 
@@ -174,8 +197,8 @@ def for_llm(prev: dict, now_iso: str) -> list[dict]:
 
 
 def visible(prev: dict, now_iso: str) -> list[dict]:
-    """화면에 올라가는 행사 — 보류 · 예정 · 진행 중."""
-    return [b for b in prev.get("banners") or [] if derive(b, now_iso)[0] in ("hold", "announced", "live")]
+    """화면에 올라가는 행사 — 보류 · 예정 · 진행 중 · 종료(그날 자정까지)."""
+    return [b for b in prev.get("banners") or [] if derive(b, now_iso)[0] in ("hold", "announced", "live", "done")]
 
 
 # ── 판정 반영 ────────────────────────────────────────────────────────
@@ -385,7 +408,7 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     name = target.get("name_ko") or target.get("name_ja")
     st = derive(target, now_iso)[0]
     note = " (시작 · 종료 중 하나를 아직 몰라 대기)" if st == "pending" else ""
-    out["shown"] = st in ("hold", "announced", "live")
+    out["shown"] = st in ("hold", "announced", "live", "done")
     return done("added" if is_new else "updated", f"{'새 행사' if is_new else '갱신'} — {name}{note}", id=target["id"],
                 undo={"type": "restore_banner", "id": target["id"], "before": before})
 
@@ -500,7 +523,16 @@ if __name__ == "__main__":
     assert b["image_urls"] == ["https://x/e.jpg"] and len(b["gachas"]) == 1 and b["gachas"][0]["start_at"] is None
     assert derive(b, N) == ("live", "")
     assert derive(b, "2026-09-29T00:00:00Z") == ("announced", "")
-    assert derive(b, "2026-10-08T12:00:00Z") == ("gone", "ended")
+    assert derive(b, "2026-10-08T12:00:00Z") == ("done", "")                 # 종료 직후 — 그날 자정까지 「종료」 표시
+    assert derive(b, "2026-10-08T14:59:00Z") == ("done", "")                 # 10.08 23:59 KST
+    assert derive(b, "2026-10-08T15:00:00Z") == ("gone", "ended")            # 10.09 00:00 KST — 내림
+    # 가챠가 더 늦게 끝나면 완전 종료는 가챠 기준
+    bg = dict(b, gachas=[dict(b["gachas"][0], end_at="2026-10-09T02:59:00Z")])
+    assert derive(bg, "2026-10-08T12:00:00Z") == ("live", "") and derive(bg, "2026-10-09T03:00:00Z") == ("done", "")
+    assert derive(bg, "2026-10-09T15:00:00Z") == ("gone", "ended")
+    # 종료일을 모르는 개최 전 공지는 올린다(announced), 시작한 뒤에도 종료일이 없으면 안 올린다(pending)
+    ns = {"id": "x", "name_ja": "x", "start_at": "2026-10-05T09:00:00Z", "end_at": None, "gachas": [], "last_updated": N}
+    assert derive(ns, N) == ("announced", "") and derive(ns, "2026-10-05T09:00:00Z") == ("pending", "incomplete")
     P1 = r["banners"]
 
     # 같은 글 재전송 = dup, 새 사실 없는 재공지(판정 none)는 그대로
@@ -522,7 +554,7 @@ if __name__ == "__main__":
     only_start = {"name_ja": EV["name_ja"], "name_ko": EV["name_ko"], "start_jst": "2026-09-28 15:00", "end_jst": None, "permanent": False}
     only_end = {"name_ja": EV["name_ja"], "name_ko": None, "start_jst": None, "end_jst": "2026-10-08 20:59", "permanent": False}
     a1 = apply_judgement(default_banners(), {"action": "upsert", "event": only_start, "gacha": GA, "image_for": "none", "reason": ""}, P("a1"), "2026-09-24T13:30:00Z")
-    assert a1["mode"] == "added" and not a1["shown"]
+    assert a1["mode"] == "added" and a1["shown"]                  # 시작 전 공지는 종료일을 몰라도 올린다(예정)
     a2 = apply_judgement(a1["banners"], {"action": "upsert", "banner_ref": a1["id"], "event": only_end, "gacha": None, "image_for": "none", "reason": ""}, P("a2"), "2026-09-30T09:13:00Z")
     assert a2["mode"] == "updated" and a2["shown"] and a2["banners"]["banners"][0]["start_at"] == "2026-09-28T06:00:00Z", a2
     # 날짜 재공지(「このあと18:00より」)로 시작일이 바뀜 — 보류 없이도 갱신, 이후 진행 중

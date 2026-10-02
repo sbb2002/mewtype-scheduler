@@ -2571,14 +2571,21 @@
             // (v4a) 행사 배너 — 소식 란 맨 위 카드. 상태는 저장값이 아니라 지금 시각으로 파생(banners.derive 와 같은 규칙)
             // ───────────────────────────────────────────────────
 
+            // banners.derive 와 같은 규칙: 개최 전 · 종료일 미정은 예정으로 보임, 완전 종료(행사 · 가챠 중 늦은 쪽) 뒤에도 그날 자정(KST)까지 done
             bannerState(b, now) {
                 const start = Date.parse(b.start_at || ""), end = Date.parse(b.end_at || "");
-                if (isNaN(start) || isNaN(end)) return !isNaN(end) && now >= end ? "gone" : "pending";
+                const OFF = 9 * 3600000, DAY = 86400000;
+                const midAfter = (ms) => (Math.floor((ms + OFF) / DAY) + 1) * DAY - OFF;
+                if (isNaN(start) || (isNaN(end) && !b.hold && now >= start)) return !isNaN(end) && now >= midAfter(end) ? "gone" : "pending";
                 if (b.hold) {
                     const until = Date.parse(b.hold.until || "");
                     return isNaN(until) || now >= until ? "gone" : "hold";
                 }
-                if (now >= end) return "gone";
+                if (isNaN(end)) return "announced";
+                const ends = [end].concat((b.gachas || []).map((g) => Date.parse(g.end_at || "")).filter((x) => !isNaN(x)));
+                const fe = Math.max.apply(null, ends);
+                if (now >= midAfter(fe)) return "gone";
+                if (now >= fe) return "done";
                 return now < start ? "announced" : "live";
             },
 
@@ -2597,7 +2604,7 @@
                     container.appendChild(p);
                     return;
                 }
-                const LABEL = { live: "진행 중", announced: "예정", hold: "보류", pending: "대기(시작·종료 중 하나를 몰라 화면엔 안 보임)", gone: "종료(곧 정리)" };
+                const LABEL = { live: "진행 중", announced: "예정", hold: "보류", done: "종료(자정까지 표시)", pending: "대기(시작을 모르거나 종료일 없이 이미 시작해 화면엔 안 보임)", gone: "종료(곧 정리)" };
                 const now = Date.now();
                 for (const b of list) {
                     const st = this.bannerState(b, now);
