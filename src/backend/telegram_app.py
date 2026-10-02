@@ -6423,6 +6423,15 @@ if __name__ == "__main__":
     assert _banner_edit_commit(_bgh3, _bid, {"name_ko": "수정됨"}, _bnow) == {"ok": True, "changed": True}
     assert _bgh3.f[_BANNERS_PATH]["banners"][0]["name_ko"] == "수정됨"
     assert _banner_edit_commit(_bgh3, _bid, {"end_at": "2026-01-01T00:00:00Z"}, _bnow)["ok"] is False
+    # 관리 페이지: 행사 이미지 링크 · 가챠 기간 수정(저장소까지 반영)
+    assert _banner_edit_commit(_bgh3, _bid, {"image_urls": ["https://x/a.jpg", "https://x/b.jpg"]}, _bnow) == {"ok": True, "changed": True}
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["image_urls"] == ["https://x/a.jpg", "https://x/b.jpg"]
+    assert _banner_edit_commit(_bgh3, _bid, {"image_urls": ["ftp://x/a.jpg"]}, _bnow)["ok"] is False
+    _gid = _bgh3.f[_BANNERS_PATH]["banners"][0]["gachas"][0]["id"]
+    assert _banner_edit_commit(_bgh3, _bid, {"gachas_period": {_gid: {"start_at": "2026-09-30T09:00:00Z", "end_at": "2026-10-09T02:59:00Z"}}}, _bnow)["changed"]
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["gachas"][0]["end_at"] == "2026-10-09T02:59:00Z"
+    assert _banner_edit_commit(_bgh3, _bid, {"gachas_period": {_gid: {"start_at": "", "end_at": None}}}, _bnow)["changed"]
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["gachas"][0]["end_at"] is None
     assert _banner_del_commit(_bgh3, _bid, _bnow)["ok"] and _bgh3.f[_BANNERS_PATH]["banners"] == []
     assert _bgh3.f[_BANNERS_ARCHIVE_PATH]["banners"][0]["archived_reason"] == "deleted"
     assert set(_BANNER_VERDICT) >= {"none", "added", "updated", "held", "cancelled", "dup", "invalid", "error", "llm_failed"}

@@ -475,7 +475,13 @@ def edit_banner(prev: dict, bid: str, patch: dict, now_iso: str) -> tuple[dict, 
             if _parse_iso(v) is None:
                 return prev, False, f"{k} 형식 오류"
         if k == "image_urls":
-            v = _merge_images([], v if isinstance(v, list) else [])
+            lst = v if isinstance(v, list) else []
+            bad = [u for u in lst if not (isinstance(u, str) and re.match(r"^https?://\S+$", u.strip()))]
+            if bad:
+                return prev, False, f"이미지 링크는 http(s):// 로 시작해야 합니다: {str(bad[0])[:60]}"
+            if len(lst) > MAX_IMAGES:
+                return prev, False, f"이미지는 최대 {MAX_IMAGES}장입니다"
+            v = _merge_images([], [u.strip() for u in lst])
         b[k] = v
     if "hold" in patch and patch["hold"] is None:
         b["hold"] = None
@@ -484,6 +490,24 @@ def edit_banner(prev: dict, bid: str, patch: dict, now_iso: str) -> tuple[dict, 
         for g in b.get("gachas") or []:
             if g.get("id") in gk:
                 g["title_ko"] = (gk[g["id"]] or "").strip() or None
+    gp = patch.get("gachas_period")
+    if isinstance(gp, dict):                     # {가챠 id: {start_at, end_at}} — 빈 값(None · "")이면 「행사와 같음」
+        for g in b.get("gachas") or []:
+            o = gp.get(g.get("id"))
+            if not isinstance(o, dict):
+                continue
+            for key in ("start_at", "end_at"):
+                if key in o:
+                    val = o[key]
+                    if val in (None, ""):
+                        g[key] = None
+                    elif _parse_iso(val) is None:
+                        return prev, False, f"가챠 {key} 형식 오류"
+                    else:
+                        g[key] = val
+            gs, ge = _parse_iso(g.get("start_at")), _parse_iso(g.get("end_at"))
+            if gs and ge and ge < gs:
+                return prev, False, "가챠 종료가 시작보다 앞섭니다"
     if isinstance(patch.get("drop_gachas"), list):
         b["gachas"] = [g for g in b.get("gachas") or [] if g.get("id") not in patch["drop_gachas"]]
     s, e = _parse_iso(b.get("start_at")), _parse_iso(b.get("end_at"))
@@ -645,4 +669,18 @@ if __name__ == "__main__":
     assert chg and eg["banners"][0]["gachas"][0]["title_ko"] == "수정한 가챠"
     ed2, chg2, _ = edit_banner(P1, b["id"], {"drop_gachas": [gid]}, N)
     assert chg2 and ed2["banners"][0]["gachas"] == []
+    # 이미지 링크 수정 — http(s) 만, 최대 6장, 비우면 이미지 없음
+    ei, ci, er_i = edit_banner(P1, b["id"], {"image_urls": ["https://x/1.jpg", " https://x/2.jpg "]}, N)
+    assert ci and er_i is None and ei["banners"][0]["image_urls"] == ["https://x/1.jpg", "https://x/2.jpg"]
+    assert edit_banner(P1, b["id"], {"image_urls": ["javascript:alert(1)"]}, N)[2] is not None
+    assert edit_banner(P1, b["id"], {"image_urls": ["https://x/%d.jpg" % i for i in range(7)]}, N)[2] is not None
+    ec, cc, _ = edit_banner(ei, b["id"], {"image_urls": []}, N)
+    assert cc and ec["banners"][0]["image_urls"] == []
+    # 가챠 기간 수정 — 값을 주면 설정, 빈 값이면 행사와 같음(null), 종료가 시작보다 앞서면 거절
+    gp, cg, eg2 = edit_banner(P1, b["id"], {"gachas_period": {gid: {"start_at": "2026-09-30T09:00:00Z", "end_at": "2026-10-09T02:59:00Z"}}}, N)
+    assert cg and eg2 is None and gp["banners"][0]["gachas"][0]["end_at"] == "2026-10-09T02:59:00Z"
+    gq, cq, _ = edit_banner(gp, b["id"], {"gachas_period": {gid: {"start_at": "", "end_at": None}}}, N)
+    assert cq and gq["banners"][0]["gachas"][0]["start_at"] is None and gq["banners"][0]["gachas"][0]["end_at"] is None
+    assert edit_banner(P1, b["id"], {"gachas_period": {gid: {"start_at": "2026-10-09T00:00:00Z", "end_at": "2026-10-08T00:00:00Z"}}}, N)[2] is not None
+    assert edit_banner(P1, b["id"], {"gachas_period": {gid: {"end_at": "not-a-date"}}}, N)[2] is not None
     print("[PASS] banners self-test (시각 · 이름 키 · 반영 · 보류/재개 · 취소/되돌리기 · sweep · 소식 겹침 · 수정)")

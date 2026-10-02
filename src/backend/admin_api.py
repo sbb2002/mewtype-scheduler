@@ -975,8 +975,9 @@ def delete_notice(nid: str) -> dict:
 
 def edit_banner(bid: str, patch: dict) -> dict:
     """(v4a) 행사 수정. patch 키: name_ko · name_ja · start_at · end_at(UTC ISO) · clear_hold(true 면 보류 해제) ·
-    gachas_ko({가챠 id: 한글 제목}) · drop_gachas([가챠 id]). 검증은 `banners.edit_banner`(종료가 시작보다 앞서면 거절)."""
-    ok_keys = ("name_ko", "name_ja", "start_at", "end_at", "gachas_ko", "drop_gachas")
+    image_urls(행사 이미지 링크 목록 — 링크만, 최대 6장, 빈 목록이면 이미지 없음) ·
+    gachas_ko({가챠 id: 한글 제목}) · gachas_period({가챠 id: {start_at, end_at}} — 빈 값이면 행사와 같음) · drop_gachas([가챠 id]). 검증은 `banners.edit_banner`(종료가 시작보다 앞서면 거절)."""
+    ok_keys = ("name_ko", "name_ja", "start_at", "end_at", "image_urls", "gachas_ko", "gachas_period", "drop_gachas")
     p = {k: v for k, v in (patch or {}).items() if k in ok_keys}
     if (patch or {}).get("clear_hold"):
         p["hold"] = None

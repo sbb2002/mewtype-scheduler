@@ -2661,6 +2661,9 @@
                         start: b.start_at ? this.utcIsoToKstInput(b.start_at) : "", end: b.end_at ? this.utcIsoToKstInput(b.end_at) : "",
                         hold: !!b.hold,
                         gachas: Object.fromEntries((b.gachas || []).map((g) => [g.id, g.title_ko || ""])),
+                        images: (b.image_urls || []).slice(),
+                        gperiod: Object.fromEntries((b.gachas || []).map((g) => [g.id, {
+                            start: g.start_at ? this.utcIsoToKstInput(g.start_at) : "", end: g.end_at ? this.utcIsoToKstInput(g.end_at) : "" }])),
                     },
                 };
                 const form = document.getElementById("edit-modal-form");
@@ -2710,7 +2713,65 @@
                     grp.appendChild(l);
                     grp.appendChild(i);
                     form.appendChild(grp);
+
+                    // 가챠 기간 — 비우면 행사와 같음(팬 화면은 행사와 다른 부분만 표시)
+                    const per = document.createElement("div");
+                    per.className = "form-group";
+                    const pl = document.createElement("label");
+                    pl.textContent = `가챠 기간 (KST) — 비우면 행사와 같음 · ${g.title_ko || g.title_ja}`;
+                    per.appendChild(pl);
+                    [["gs", "시작", this.editState.seen.gperiod[g.id].start], ["ge", "종료", this.editState.seen.gperiod[g.id].end]].forEach(([k, txt, val]) => {
+                        const row = document.createElement("div");
+                        row.className = "title-row";
+                        const tag = document.createElement("span");
+                        tag.className = "title-tag";
+                        tag.textContent = txt;
+                        const inp = document.createElement("input");
+                        inp.type = "datetime-local";
+                        inp.id = `edit-bn-${k}-${idx}`;
+                        inp.dataset.gid = g.id;
+                        inp.dataset.k = k;
+                        inp.value = val || "";
+                        row.appendChild(tag);
+                        row.appendChild(inp);
+                        per.appendChild(row);
+                    });
+                    form.appendChild(per);
                 });
+
+                // 행사 이미지 링크 — 한 줄에 하나(최대 6장). 자체 업로드는 없고 링크만 쓴다(X 트윗의 행사 키비주얼 등). 비우면 이미지 없는 배너.
+                const ig = document.createElement("div");
+                ig.className = "form-group";
+                const il = document.createElement("label");
+                il.textContent = "행사 이미지 링크 (한 줄에 하나, 최대 6장)";
+                const ta = document.createElement("textarea");
+                ta.id = "edit-bn-imgs";
+                ta.rows = 4;
+                ta.style.width = "100%";
+                ta.placeholder = "https://pbs.twimg.com/media/….jpg";
+                ta.value = this.editState.seen.images.join("\n");
+                const strip = document.createElement("div");
+                strip.id = "edit-bn-imgs-preview";
+                strip.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px";
+                const paint = () => {
+                    strip.textContent = "";
+                    ta.value.split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 6).forEach((u) => {
+                        if (!/^https?:\/\//.test(u)) return;
+                        const im = document.createElement("img");
+                        im.src = u;
+                        im.referrerPolicy = "no-referrer";
+                        im.alt = "";
+                        im.style.cssText = "width:96px;height:54px;object-fit:contain;background:#000;border-radius:4px";
+                        im.onerror = () => { im.style.outline = "2px solid #e5484d"; im.title = "이미지를 불러오지 못했습니다"; };
+                        strip.appendChild(im);
+                    });
+                };
+                ta.addEventListener("input", paint);
+                ig.appendChild(il);
+                ig.appendChild(ta);
+                ig.appendChild(strip);
+                form.appendChild(ig);
+                paint();
 
                 document.getElementById("edit-modal-title").textContent = "행사 배너 편집";
                 document.getElementById("edit-modal").classList.add("active");
@@ -2732,6 +2793,19 @@
                     if (i.value.trim() !== (seen.gachas[i.dataset.gid] || "")) gk[i.dataset.gid] = i.value.trim();
                 });
                 if (Object.keys(gk).length) patch.gachas_ko = gk;
+                // 가챠 기간 — 바뀐 가챠만. 빈 값은 null(행사와 같음)
+                const gp = {};
+                document.querySelectorAll("#edit-modal-form input[data-k]").forEach((i) => {
+                    const old = (seen.gperiod[i.dataset.gid] || {})[i.dataset.k === "gs" ? "start" : "end"] || "";
+                    if ((i.value || "") !== old) {
+                        gp[i.dataset.gid] = gp[i.dataset.gid] || {};
+                        gp[i.dataset.gid][i.dataset.k === "gs" ? "start_at" : "end_at"] = i.value ? this.kstInputToUtcIso(i.value) : null;
+                    }
+                });
+                if (Object.keys(gp).length) patch.gachas_period = gp;
+                // 이미지 링크
+                const lines = document.getElementById("edit-bn-imgs").value.split("\n").map((x) => x.trim()).filter(Boolean);
+                if (JSON.stringify(lines) !== JSON.stringify(seen.images)) patch.image_urls = lines;
                 if (!Object.keys(patch).length) {
                     this.showToast("바뀐 것이 없습니다");
                     this.closeModal();
