@@ -1536,13 +1536,19 @@
                     ok.style.backgroundColor = o.danger ? "#e5484d" : "#51cf66";
                     ok.style.color = o.danger ? "#fff" : "";
                     document.getElementById("confirm-modal-cancel").textContent = o.cancelText || "취소";
+                    document.getElementById("confirm-modal-cancel").style.display = o.alert ? "none" : "";   // 안내(alert)는 확인 버튼 하나
                     document.getElementById("confirm-modal").classList.add("active");
                     if (!this._confirmKey) {
                         this._confirmKey = (ev) => { if (ev.key === "Escape" && this._confirmResolve) this.confirmDone(false); };
                         document.addEventListener("keydown", this._confirmKey);
                     }
-                    setTimeout(() => document.getElementById("confirm-modal-cancel").focus(), 0);
+                    setTimeout(() => document.getElementById(o.alert ? "confirm-modal-ok" : "confirm-modal-cancel").focus(), 0);
                 });
+            },
+
+            // 안내 팝업 — 브라우저 alert() 대신. 확인 버튼 하나, 닫으면 resolve.
+            async alertModal(message, title) {
+                await this.confirmModal({ title: title || "안내", message, okText: "확인", alert: true });
             },
 
             confirmDone(yes) {
@@ -2369,7 +2375,7 @@
                         // 인식 실패 · 입력 오류 — 확정 버튼을 띄우지 않는다
                         this.resetIngestPreview();
                         // (v4a) 게시 + 48h 가 지난 트윗 — 넣어도 팬 화면에 안 보이므로 경고창(운영자 요청)
-                        if (result.too_old) { alert(result.error); return; }
+                        if (result.too_old) { await this.alertModal(result.error, "넣을 수 없는 트윗"); return; }
                         this.showToast(result.error || "인식되지 않았습니다", "error");
                         return;
                     }
@@ -3783,8 +3789,27 @@
 
             // (2026-10-01) 누르면 버튼이 「되돌리는 중…」으로 잠기고(두 번 눌림 방지), 끝나면 그 줄이 초록으로 번쩍이며
             // 「✓ 되돌림 완료 — 무엇을 했는지」로 바뀐다. 흐름 목록 태그도 「✓ 되돌림」. 전엔 토스트만 3초 뜨고 줄은 그대로였다
+            // 되돌리기 = 그 판단이 **데이터에 한 변경만** 원래 상태로 돌리는 롤백이다. 같은 글을 다시 판정 · 재처리하지는 않는다.
+            // 판단 종류별로 실제로 일어나는 일을 확인 팝업에 적는다(백엔드 `_llm_undo` / `banners.restore` 의 undo 종류와 같다).
+            undoDescribe(e) {
+                const u = e.undo || {};
+                switch (u.type) {
+                    case "restore_banner":
+                        if (u.was_archived) return "취소로 내린 행사 배너를 보관에서 꺼내 되살립니다.";
+                        return u.before ? "그 판단이 바꾼 행사 배너 한 건을 변경 전 상태로 돌립니다(행사는 남습니다)."
+                                        : "그 판단이 새로 만든 행사 배너를 지웁니다.";
+                    case "restore_items": return "그 판단이 지운 예고를 되살리고 재등록 차단을 풉니다.";
+                    case "restore_fields": return "그 판단이 바꾼 값(시각 등)을 원래 값으로 돌립니다(예고는 남습니다).";
+                    case "remove_items": return u.to_pending ? "그 판단이 올린 그룹 영상 예고를 예고에서 빼고 「참여 멤버 확인 대기」로 옮깁니다."
+                                                             : "그 판단이 새로 올린 예고를 지웁니다.";
+                    case "replace_items": return "그 판단으로 합쳐진 예고를 합치기 전 상태로 되돌립니다.";
+                    case "remove_guests": return "그 판단이 더한 합동 게스트를 뺍니다(예고는 남습니다).";
+                    default: return "그 판단이 데이터에 한 변경을 원래대로 돌립니다.";
+                }
+            },
+
             async undoLlm(e, f, btn, label) {
-                if (!(await this.confirmModal({ title: "LLM 판단 되돌리기", message: `${e.summary || e.id}\n\n그때 바뀐 항목만 되돌립니다. 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.`, okText: "되돌리기" }))) return;
+                if (!(await this.confirmModal({ title: "LLM 판단 되돌리기", message: `${e.summary || e.id}\n\n▶ ${this.undoDescribe(e)}\n\n· 이 판단이 한 변경만 원래대로 돌립니다(롤백).\n· 같은 글을 다시 판정하거나 재처리하지는 않습니다. 다시 올리려면 「원문 투입」을 쓰세요.\n· 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.\n· 한 번 되돌린 판단은 다시 되돌릴 수 없습니다.`, okText: "되돌리기" }))) return;
                 btn.disabled = true;
                 btn.classList.add("loading");
                 label.textContent = "되돌리는 중…";
@@ -4081,8 +4106,8 @@
                     this.showToast(`성공 ${done.length}건 · 실패 ${failed.length}건` + (stale.length ? ` · 안 함 ${stale.length}건` : ""),
                                    failed.length || stale.length ? "error" : "success");
                     if (stale.length) {
-                        alert(stale.length === 1 ? stale[0].error
-                              : `${stale.length}건은 재투입하지 않았습니다.\n\n` + stale.map((s) => "· " + s.error).join("\n"));
+                        await this.alertModal(stale.length === 1 ? stale[0].error
+                              : `${stale.length}건은 재투입하지 않았습니다.\n\n` + stale.map((s) => "· " + s.error).join("\n"), "재투입하지 않은 항목");
                     }
                     // 실패 사유를 남은 항목 옆에 표시. 목록 id 는 순번 기반이라 재조회 후 바뀌므로 원문 시각(ts)으로 맞춘다
                     this.lostResults = {};
