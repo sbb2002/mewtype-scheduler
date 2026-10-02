@@ -13,6 +13,9 @@
   --bnr-urgent: #e5484d;              /* 종료 D-3 부터 진행 막대 · 칩 */
   --bnr-urgent-soft: #3a1618;
   --bnr-faint: #6f6f6f;
+  --bnr-track: #7a828e;               /* 진행 막대 빈칸 — 카드 배경(#1a1a1a)과 확실히 구분 */
+  --bnr-fill: #8fe3f5;                /* 진행 막대 진행률칸(밝은 청록) */
+  --bnr-fill-urgent: #ff7377;         /* 종료 D-3 부터(밝은 빨강) */
 }
 
 .ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft, #2a2a2a); }
@@ -51,9 +54,9 @@
 .bnr__card.is-hold .bnr__dday { background: var(--bnr-hold-soft); color: var(--bnr-hold); }
 .bnr__card.is-sched .bnr__dday { background: var(--bnr-sched-soft); color: var(--bnr-sched); }
 .bnr__card.is-urgent .bnr__dday { background: var(--bnr-urgent-soft); color: var(--bnr-urgent); }
-.bnr__bar { height: 7px; margin-top: 5px; border-radius: 4px; background: #565c66; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); overflow: hidden; }   /* 빈칸을 카드 배경(#1a1a1a)과 확실히 구분되는 밝은 회색 + 옅은 테두리로 */
-.bnr__fill { height: 100%; border-radius: 3px; background: var(--bnr-live); }
-.bnr__card.is-urgent .bnr__fill { background: var(--bnr-urgent); }          /* 종료 D-3 부터 빨강 */
+.bnr__bar { height: 7px; margin-top: 5px; border-radius: 4px; background: var(--bnr-track); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); overflow: hidden; }   /* 빈칸을 카드 배경(#1a1a1a)과 확실히 구분되는 밝은 회색 + 옅은 테두리로 */
+.bnr__fill { height: 100%; border-radius: 4px; background: var(--bnr-fill); }
+.bnr__card.is-urgent .bnr__fill { background: var(--bnr-fill-urgent); }          /* 종료 D-3 부터 빨강 */
 
 /* 딸린 가챠 — 행사 안에 포함된 하위 블록(왼쪽 세로줄 + 옅은 배경) */
 .bnr__sub { margin-top: 6px; padding: 8px 10px 8px 12px; display: grid; gap: 1px; border-radius: 6px;
