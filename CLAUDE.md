@@ -341,8 +341,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     영상 URL 이 있으면 `videos.list` 로, 없으면 본문 예고 파싱(게시 시각 기준)의 `expires_at` 으로 판단. 공식 계정 원문(소식 경로)은 대상 아님.
 >     (운영자는 「live 종료 + 20분」이라 했으나 코드의 end 창이 30분이라 30분으로 맞춤 — 운영자 확인 10-01.)
 >   - **행사 배너**(2026-10-02, v4a 만): 게임 계정(`config/channels.json` `game_accounts` — `bang_dream_on`, 표시명 バンドリ！アワーノーツ)의 글은 소식 · 스케줄이 아니라
-    **행사 판정**(`llm.banner_judge` → `banners.apply_judgement`)으로만 간다 → 소식 란 펼침 맨 위 **행사 카드 + 가챠 카드**(`banners.json`, 프론트 `js/banners.js` · `css/banners.css`).
-    종료일 없는 행사 · 상시화 행사는 안 올림(시작만/종료만 아는 건 대기로 저장), 개최 보류는 `mm.dd(보류)` + 15일, 이미지는 링크만(여러 장이면 4.5초 주기 슬라이드),
+    **행사 판정**(`llm.banner_judge` → `banners.apply_judgement`)으로만 간다 → 소식 란 펼침 맨 위 **행사 카드**(안에 딸린 가챠 하위 블록, `banners.json`, 프론트 `js/banners.js` · `css/banners.css`).
+    종료일 없는 행사 · 상시화 행사는 안 올림(시작만/종료만 아는 건 대기로 저장), 개최 보류는 `mm.dd(보류)` + 15일, 종료 D-3 부터 진행 막대 빨강,
+    이미지는 **X 트윗의 행사 키비주얼만**(링크만, 가챠 이미지 · 소개 카드 · 출처 불분명한 배너는 안 씀, 여러 장이면 5초 한 방향 슬라이드),
     개최기간이 이미지에만 있는 글은 비전(`vision.read_card`)으로 읽어 재판정(2단계). 게임 계정 글이 아니어도 행사 · 가챠 이름이 본문에 있으면 소식으로 안 올림(`banners.covers_text`).
     LLM 판단은 작업 탭 「LLM 판단」(`kind=banner_judge`)에 기록 · 되돌리기(`restore_banner`). 관리 페이지 「소식 · 트윗」 탭 맨 위에서 수정 · 삭제.
     용어 `docs/TERMINOLOGY.md` 「행사 배너 용어」, 계약 `docs/SPEC.md` 계약 J, 설계 · 구현 결과 `ref/v4a/v4a_event_banner_design.md`.

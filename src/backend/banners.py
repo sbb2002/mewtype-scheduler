@@ -362,27 +362,15 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
         g = None
 
     # 이미지 — 어느 카드에 붙일지는 판정이 정한다
+    # 이미지 — 2026-10-02 운영자 결정: X 트윗에서 걸린 이미지 중 **행사 키비주얼**(로고 · 일러스트 · 개최기간만 있는 온전한 그림)만 쓴다.
+    # 소개 카드 · 방송 화면 캡처 · 가챠 이미지(정사각형이라 배너 비율에 안 맞고 필수도 아님)는 안 쓴다. 판정이 이미지 용도를 못 정했으면
+    # (비전 실패 등) 안 붙인다 — 잘못된 이미지가 올라가는 것보다 이미지가 없는 쪽이 낫다.
     media = [u for u in (post.get("media") or []) if isinstance(u, str)]
     roles = j.get("image_roles") if isinstance(j.get("image_roles"), list) else []
-    if media and len(roles) == len(media) and any(r in ("event", "gacha") for r in roles):
-        # 이미지마다 용도를 판정했다(이미지 속 글자를 읽은 판정) — 그대로 나눠 붙인다. none 은 안 붙인다.
+    if media and len(roles) == len(media):
         ev_imgs = [u for u, r in zip(media, roles) if r == "event"]
-        ga_imgs = [u for u, r in zip(media, roles) if r == "gacha"]
         if ev_imgs:
             target["image_urls"] = _merge_images(target.get("image_urls"), ev_imgs)
-        if ga_imgs and g is None and target.get("gachas"):
-            g = target["gachas"][-1]                      # 판정이 가챠 이름은 안 줬지만 가챠 이미지로 봤으면 가장 최근 가챠에
-        if ga_imgs and g is not None:
-            g["image_urls"] = _merge_images(g.get("image_urls"), ga_imgs)
-    else:
-        where = j.get("image_for")
-        if where not in ("event", "gacha"):
-            # 판정이 이미지 용도를 안 정했으면(LLM 은 이미지를 못 본다) 글이 소개한 쪽에 붙인다 — 가챠만 소개한 글은 가챠, 그 밖엔 행사
-            where = "gacha" if (g is not None and not ev) else "event"
-        if media and where == "gacha" and g is not None:
-            g["image_urls"] = _merge_images(g.get("image_urls"), media)
-        elif media and where == "event":
-            target["image_urls"] = _merge_images(target.get("image_urls"), media)
 
     target["match_keys"] = _keys(target)
     if tid and tid not in target["src_ids"]:
@@ -505,7 +493,7 @@ if __name__ == "__main__":
 
     # 새 행사 + 가챠 + 이미지
     r = apply_judgement(default_banners(), {"action": "upsert", "banner_ref": None, "event": EV, "gacha": GA,
-                                            "image_for": "event", "reason": "r"}, P("111", ["https://x/e.jpg"]), N)
+                                            "image_roles": ["event"], "image_for": "event", "reason": "r"}, P("111", ["https://x/e.jpg"]), N)
     assert r["mode"] == "added", r
     b = r["banners"]["banners"][0]
     assert b["start_at"] == "2026-09-30T09:00:00Z" and b["end_at"] == "2026-10-08T11:59:00Z"
@@ -520,9 +508,10 @@ if __name__ == "__main__":
     assert apply_judgement(P1, {"action": "none", "reason": "새 사실 없음"}, P("222"), N)["mode"] == "none"
 
     # 가챠 이미지 갱신(행사 정보 없이 banner_ref 로)
-    r2 = apply_judgement(P1, {"action": "upsert", "banner_ref": b["id"], "event": None, "gacha": GA, "image_for": "gacha", "reason": ""},
-                         P("333", ["https://x/g.jpg"]), N)
-    assert r2["mode"] == "updated" and r2["banners"]["banners"][0]["gachas"][0]["image_urls"] == ["https://x/g.jpg"], r2
+    r2 = apply_judgement(P1, {"action": "upsert", "banner_ref": b["id"], "event": None, "gacha": dict(GA, start_jst="2026-09-30 18:00", end_jst="2026-10-09 11:59"),
+                              "image_roles": ["gacha"], "image_for": "gacha", "reason": ""}, P("333", ["https://x/g.jpg"]), N)
+    g0 = r2["banners"]["banners"][0]["gachas"][0]
+    assert r2["mode"] == "updated" and g0["image_urls"] == [] and g0["end_at"] == "2026-10-09T02:59:00Z", r2     # 가챠 이미지는 안 씀, 기간은 갱신
 
     # 종료일 없음 · 상시 · 120일 초과 → 안 올림
     noend = dict(EV, end_jst=None)
@@ -578,7 +567,7 @@ if __name__ == "__main__":
     assert restore(default_banners(), r["undo"], default_archive(), N)[2] == "이미 없음"
     # 갱신 되돌리기
     back3, _, m3 = restore(r2["banners"], r2["undo"], default_archive(), N)
-    assert m3 == "되돌림" and back3["banners"][0]["gachas"][0]["image_urls"] == []
+    assert m3 == "되돌림" and back3["banners"][0]["gachas"][0]["end_at"] is None
 
     # sweep
     sw, sa, moved = sweep(P1, default_archive(), "2026-10-09T00:00:00Z")
@@ -587,17 +576,18 @@ if __name__ == "__main__":
 
     # 이미지마다 용도를 판정(image_roles)했으면 그대로 나눈다 — 행사 2장 · 가챠 1장, none 은 안 붙임
     rr = apply_judgement(default_banners(), {"action": "upsert", "banner_ref": None, "event": EV, "gacha": GA,
-                                             "image_roles": ["event", "event", "gacha", "none"], "image_for": "none", "reason": ""},
+                                             "image_roles": ["none", "event", "gacha", "none"], "image_for": "none", "reason": ""},
                          P("rr1", ["https://x/1.jpg", "https://x/2.jpg", "https://x/3.jpg", "https://x/4.jpg"]), N)
     rb = rr["banners"]["banners"][0]
-    assert rb["image_urls"] == ["https://x/1.jpg", "https://x/2.jpg"] and rb["gachas"][0]["image_urls"] == ["https://x/3.jpg"], rb
-    # 이미지 용도를 안 정했으면(image_for) 기존 규칙
+    assert rb["image_urls"] == ["https://x/2.jpg"] and rb["gachas"][0]["image_urls"] == [], rb      # event 용도만, 가챠 이미지는 안 씀
+    # 용도를 못 정했으면(roles 없음 · 장수 불일치) 이미지를 안 붙인다
+    rn2 = apply_judgement(default_banners(), {"action": "upsert", "banner_ref": None, "event": EV, "gacha": None, "image_for": "event", "reason": ""},
+                          P("rn2", ["https://x/1.jpg"]), N)
+    assert rn2["banners"]["banners"][0]["image_urls"] == []
 
     # 이미지 용도가 none 이어도 upsert 글의 첨부 이미지는 행사(가챠만 소개한 글이면 가챠)에 붙는다
-    im = apply_judgement(default_banners(), {"action": "upsert", "banner_ref": None, "event": EV, "gacha": None, "image_for": "none", "reason": ""}, P("im1", ["https://x/a.jpg"]), N)
+    im = apply_judgement(default_banners(), {"action": "upsert", "banner_ref": None, "event": EV, "gacha": None, "image_roles": ["event"], "image_for": "none", "reason": ""}, P("im1", ["https://x/a.jpg"]), N)
     assert im["banners"]["banners"][0]["image_urls"] == ["https://x/a.jpg"]
-    ig = apply_judgement(im["banners"], {"action": "upsert", "banner_ref": im["id"], "event": None, "gacha": GA, "image_for": "none", "reason": ""}, P("im2", ["https://x/b.jpg"]), N)
-    assert ig["banners"]["banners"][0]["gachas"][0]["image_urls"] == ["https://x/b.jpg"] and ig["banners"]["banners"][0]["image_urls"] == ["https://x/a.jpg"]
 
     # 가챠만 소개한 글이 행사 칸에 들어와도 행사 날짜는 그대로, 가챠가 붙는다
     gx = apply_judgement(P1, {"action": "upsert", "banner_ref": b["id"], "gacha": None, "image_for": "none", "reason": "",

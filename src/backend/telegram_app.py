@@ -2950,6 +2950,21 @@ def _banner_label(prepared: dict | None) -> str:
     return f"행사 배너 {j.get('action', '')} {name}".strip()
 
 
+# 행사 키비주얼이 아닌 소개 카드(제목 막대 + 설명문이 붙은 화면)에 나오는 말 — 판정 LLM 이 event 로 잘못 정해도 코드가 none 으로 돌린다.
+_CARD_MARKERS = ("イベント情報", "ガチャ紹介", "紹介", "あらすじ", "情報")
+
+
+def _filter_banner_roles(roles: list[str], ocr: list[dict]) -> list[str]:
+    """판정이 준 이미지 용도 중, 이미지 속 글자에 소개 카드 표지가 있으면 event 를 none 으로 돌린다. 장수가 안 맞으면 그대로."""
+    if len(roles) != len(ocr):
+        return roles
+    out = []
+    for r, o in zip(roles, ocr):
+        txt = (o.get("text") or "")
+        out.append("none" if r == "event" and any(m in txt for m in _CARD_MARKERS) else r)
+    return out
+
+
 def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
     """행사 · 가챠 소개 카드 이미지의 글자를 비전으로 읽는다 — [{"idx": 1부터, "text": 글자|None}]. 비전 불가면 []."""
     vc = _make_vision_client()
@@ -2987,12 +3002,16 @@ def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str,
         return {"failed": "LLM 판정 5회 실패"}
     # 2단계 — 글만으로 행사 정보가 있다고 본 판정에 한해, 첨부 이미지 속 글자(개최기간은 이미지에만 있는 경우가 실측으로 있었다)를
     # 비전으로 읽어 다시 판정한다. 무관한 글(대부분)은 비전 호출이 없다. 읽기 실패 · 재판정 실패면 1단계 판정을 그대로 쓴다.
-    if j.get("action") == "upsert" and media:
+    # 새 사실이 없다고 본 글이라도 이미 올라 있는 행사 · 가챠 이름이 본문에 있으면 이미지 속 기간이 바뀌었을 수 있다(실측: 09-30 가챠 개최 글의
+    # 이미지에만 가챠 종료일이 10/9 로 늘어난 것이 적혀 있었다) — 그 경우에도 이미지를 읽는다.
+    related = j.get("action") == "none" and banners.covers_text(banners.active(prev, now_iso), raw)
+    if media and (j.get("action") == "upsert" or related):
         ocr = _ocr_banner_images(media)
         if ocr:
             j2 = llm_client.banner_judge(raw, posted, active, images_ocr=ocr)
             if j2 is not None:
                 j = j2
+            j["image_roles"] = _filter_banner_roles(j.get("image_roles") or [], ocr)
     tid = ""
     if xtweet is not None and tag:
         try:
@@ -6371,7 +6390,7 @@ if __name__ == "__main__":
 
     _bgh = _MemGH()
     _bnow = "2026-10-02T03:00:00Z"
-    _bj = {"action": "upsert", "banner_ref": None, "image_for": "none", "reason": "새 행사",
+    _bj = {"action": "upsert", "banner_ref": None, "image_for": "none", "image_roles": ["event"], "reason": "새 행사",
            "event": {"name_ja": "チャレンジライブイベント「アイの奔流 AtoZ」", "name_ko": "사랑은 격류 AtoZ",
                      "start_jst": "2026-09-30 18:00", "end_jst": "2026-10-08 20:59", "permanent": False},
            "gacha": {"title_ja": "「ワタシが主役のサイバーナイトガチャ」", "title_ko": "내가 주인공 가챠", "start_jst": None, "end_jst": None}}
@@ -6407,6 +6426,11 @@ if __name__ == "__main__":
     assert _banner_del_commit(_bgh3, _bid, _bnow)["ok"] and _bgh3.f[_BANNERS_PATH]["banners"] == []
     assert _bgh3.f[_BANNERS_ARCHIVE_PATH]["banners"][0]["archived_reason"] == "deleted"
     assert set(_BANNER_VERDICT) >= {"none", "added", "updated", "held", "cancelled", "dup", "invalid", "error", "llm_failed"}
+    # 소개 카드(제목 막대 + 설명문)는 event 로 판정돼도 none 으로 돌린다 — 온전한 키비주얼만 남김
+    _ocr = [{"text": "アワーノーツ 初回イベント情報 開催期間 9月28日"}, {"text": "イベント アイの奔流 開催期間 9月30日"}, {"text": "イベントガチャ紹介"}]
+    assert _filter_banner_roles(["event", "event", "gacha"], _ocr) == ["none", "event", "gacha"]
+    assert _filter_banner_roles(["event"], [{"text": "x"}, {"text": "y"}]) == ["event"]       # 장수가 안 맞으면 그대로
+
     print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──

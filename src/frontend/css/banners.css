@@ -1,5 +1,5 @@
 /* banners.css — 소식 란을 펼쳤을 때 맨 위 「행사 배너」 (v4a, 2026-10-02). 다크 단일 테마, layout.css · notices.css 토큰 재사용.
-   마크업은 js/banners.js. 계약: docs/SPEC.md 계약 J. */
+   마크업은 js/banners.js. 계약: docs/SPEC.md 계약 J. 행사 카드 1장 안에 가챠가 하위 블록으로 들어간다. */
 
 :root {
   --bnr-surface: #202225;
@@ -10,50 +10,65 @@
   --bnr-hold-soft: #3a2c10;
   --bnr-sched: var(--color-sched);    /* 예정 — 슬레이트 */
   --bnr-sched-soft: #20262f;
+  --bnr-urgent: #e5484d;              /* 종료 D-3 부터 진행 막대 · 칩 */
+  --bnr-urgent-soft: #3a1618;
   --bnr-faint: #6f6f6f;
 }
 
 .ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft, #2a2a2a); }
 
-.bnr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 10px; }
-.bnr + .bnr { margin-top: 10px; }
+.bnr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px; }
 
-.bnr__card { display: flex; gap: 12px; min-width: 0; padding: 10px; border: 1px solid var(--bnr-border); border-radius: 6px; background: var(--color-bg-secondary); }
+.bnr__card { display: flex; gap: 14px; min-width: 0; padding: 10px; border: 1px solid var(--bnr-border); border-radius: 6px; background: var(--color-bg-secondary); }
 .bnr__card.is-live { border-color: color-mix(in srgb, var(--bnr-live) 40%, var(--bnr-border)); }
+.bnr__card.is-urgent { border-color: color-mix(in srgb, var(--bnr-urgent) 45%, var(--bnr-border)); }
 .bnr__card.is-hold { border-color: color-mix(in srgb, var(--bnr-hold) 35%, var(--bnr-border)); }
 
-.bnr__img { position: relative; flex: none; width: clamp(120px, 38%, 190px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 4px; background: #000; align-self: flex-start; }
+.bnr__img { position: relative; flex: none; width: clamp(150px, 36%, 260px); aspect-ratio: 16 / 9; overflow: hidden; border-radius: 4px; background: #000; align-self: flex-start; }
 .bnr__img[hidden] { display: none; }
-.bnr__strip { display: flex; height: 100%; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
-.bnr__strip img { flex: 0 0 100%; width: 100%; height: 100%; object-fit: cover; display: block; }
-.bnr__card.is-hold .bnr__strip img { filter: grayscale(1) brightness(0.7); }
+.bnr__img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; will-change: transform; }
+.bnr__card.is-hold .bnr__img img { filter: grayscale(1) brightness(0.7); }
 .bnr__img[data-chip]::before {
   content: attr(data-chip);
-  position: absolute; left: 6px; top: 6px; z-index: 1;
+  position: absolute; left: 6px; top: 6px; z-index: 2;
   padding: 1px 7px; border-radius: 3px;
   font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
   color: #071418; background: var(--bnr-live);
 }
-.bnr__card.is-hold .bnr__img[data-chip]::before { background: var(--bnr-hold); color: #1b1303; }
 .bnr__card.is-sched .bnr__img[data-chip]::before { background: var(--bnr-sched); color: #0d1117; }
+.bnr__card.is-hold .bnr__img[data-chip]::before { background: var(--bnr-hold); color: #1b1303; }
+.bnr__card.is-urgent .bnr__img[data-chip]::before { background: var(--bnr-urgent); color: #fff; }
 
 .bnr__body { min-width: 0; flex: 1; display: grid; gap: 3px; align-content: start; }
 .bnr__eyebrow { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; color: var(--bnr-faint); }
-.bnr__name { font-size: 0.98rem; font-weight: 600; line-height: 1.3; text-wrap: balance; word-break: keep-all; overflow-wrap: anywhere; }
+.bnr__name { font-size: 1rem; font-weight: 600; line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; text-wrap: balance; }
 .bnr__orig { font-size: 0.72rem; line-height: 1.35; color: var(--bnr-faint); opacity: 0.85; overflow-wrap: anywhere; }   /* 원제 — 작고 희미하게 */
 .bnr__period { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-top: 2px; font-variant-numeric: tabular-nums; }
-.bnr__dates { font-size: 0.86rem; font-weight: 600; }
+.bnr__dates { font-size: 0.88rem; font-weight: 600; }
 .bnr__card.is-hold .bnr__dates { color: var(--bnr-hold); }
 .bnr__dday { font-size: 0.72rem; padding: 0 8px; border-radius: 999px; background: var(--bnr-live-soft); color: var(--bnr-live); font-weight: 600; }
 .bnr__card.is-hold .bnr__dday { background: var(--bnr-hold-soft); color: var(--bnr-hold); }
 .bnr__card.is-sched .bnr__dday { background: var(--bnr-sched-soft); color: var(--bnr-sched); }
-.bnr__bar { height: 5px; margin-top: 5px; border-radius: 3px; background: #33363a; overflow: hidden; }
+.bnr__card.is-urgent .bnr__dday { background: var(--bnr-urgent-soft); color: var(--bnr-urgent); }
+.bnr__bar { height: 5px; margin-top: 4px; border-radius: 3px; background: #33363a; overflow: hidden; }
 .bnr__fill { height: 100%; border-radius: 3px; background: var(--bnr-live); }
+.bnr__card.is-urgent .bnr__fill { background: var(--bnr-urgent); }          /* 종료 D-3 부터 빨강 */
+
+/* 딸린 가챠 — 행사 안에 포함된 하위 블록(왼쪽 세로줄 + 옅은 배경) */
+.bnr__sub { margin-top: 6px; padding: 8px 10px 8px 12px; display: grid; gap: 1px; border-radius: 6px;
+  border-left: 3px solid color-mix(in srgb, var(--bnr-live) 60%, transparent); background: color-mix(in srgb, var(--bnr-live) 8%, var(--color-bg-secondary)); }
+.bnr__card.is-sched .bnr__sub { border-left-color: color-mix(in srgb, var(--bnr-sched) 60%, transparent); background: color-mix(in srgb, var(--bnr-sched) 9%, var(--color-bg-secondary)); }
+.bnr__card.is-hold .bnr__sub { border-left-color: color-mix(in srgb, var(--bnr-hold) 60%, transparent); background: color-mix(in srgb, var(--bnr-hold) 8%, var(--color-bg-secondary)); }
+.bnr__card.is-urgent .bnr__sub { border-left-color: color-mix(in srgb, var(--bnr-urgent) 60%, transparent); background: color-mix(in srgb, var(--bnr-urgent) 8%, var(--color-bg-secondary)); }
+.bnr__subtag { display: inline-flex; align-items: center; gap: 6px; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; color: var(--color-text-muted); }
+.bnr__subtag i { font-style: normal; padding: 0 6px; border-radius: 3px; background: color-mix(in srgb, var(--color-text) 14%, transparent); color: var(--color-text); }
+.bnr__name--sub { font-size: 0.88rem; }
+.bnr__gnote { font-size: 0.78rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
   .bnr { grid-template-columns: 1fr; }
   .bnr__card { gap: 10px; padding: 8px; }
-  .bnr__img { width: 36%; }                 /* 폰에서도 이미지는 왼쪽에 작게 — 카드 2장이 목록을 다 차지하지 않게 */
+  .bnr__img { width: 38%; }                 /* 폰에서도 이미지는 왼쪽에 작게 */
   .bnr__name { font-size: 0.9rem; }
 }
-@media (prefers-reduced-motion: reduce) { .bnr__strip { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .bnr__img img { transition: none; } }
