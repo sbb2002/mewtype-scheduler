@@ -209,3 +209,26 @@ v4a 코드는 `storage.is_local()`(= `V4A_RUNTIME=local`) 분기로 로컬과 �
 | Vercel 하루 배포 한도 | D3 머지 push 1회, 여유 시각 |
 | 스테이징 중 운영 데이터 사본이 어긋나 비교가 무의미해짐 | 스테이징은 `*-stage` 브랜치에서만 쓰고, 비교 기준은 "같은 입력에서의 판정"(데이터 상태 아님) |
 | 관리 페이지 작업 탭이 배포판에서 비어 보임 | WP-5 로 안내 문구 대체, 이벤트 로그/리포트로 확인 |
+
+---
+
+## 10. 진행 기록 (2026-10-03~04)
+
+| 단계 | 상태 | 근거 |
+|---|---|---|
+| B 연결부 이식 | **완료** — 커밋 `0015ebf` · `7331f23` | self-test 전부 · 하네스 79/79 · 117/117 · 52/52 · apply 클라우드 경로 self-test |
+| B 추가 수정 | 스테이징에서 **끝난 방송 URL 이 upcoming 으로 되살아나는 문제** 재현 → `actual_end` 있는 영상은 URL 확정 예고에 안 올림(`7331f23`) | 10-03 아라레 인용 휴방 글로 재현 · 수정 후 재확인 |
+| C 스테이징 | **완료** — `mewtype-backend-stage` · `mewtype-telegram-stage` · 큐 `mewtype-wake-stage` · 브랜치 `data-stage` · `monitoring-stage` · `ops-stage`(운영 사본) | 정기 수집 ✔ · S1(인용 휴방 글: 합동 · 부활 없음) ✔ · S3(YT 알림 → Cloud Tasks → /write) ✔ · S4(관리 페이지 로그인 · 예고 · 작업 · 리포트 25일 기록) ✔ · S5(예고 삭제 → 예약된 확인 취소) ✔ |
+| 데이터 이관 | **완료** — 운영 `ops` 브랜치 생성(`ccfcc3d`, data 의 control.json · admin_state.json), 운영 `data` 에 `banners.json`(로컬 시험판 1건, `bc173c6`). 리포트 기록은 같은 `monitoring` 브랜치를 그대로 쓰므로 이관 불필요 | 롤백 기준점: data `84096f0` · monitoring `29e8f5e` · 리비전 `mewtype-backend-00122-4qx` · `mewtype-telegram-00088-mn7` |
+| IAM · Secret | **완료** — 접수 서비스 SA 에 Cloud Tasks 적재 · 조회 · 삭제 + 자기 actAs, 쓰기 서비스 SA 에 조회 · 삭제, `ADMIN_SECRET` · `ADMIN_SECRET_STAGE` 생성 | — |
+| D 운영 배포 | **대기 — 운영자 승인 필요**(자동 권한 판정이 운영 배포를 막음) | 아래 순서 |
+
+### 운영 배포 순서 (승인 후)
+
+1. `git fetch` 후 로컬 `v4a` = `origin/v4a` 확인 (`--source .` 는 로컬 트리를 올린다)
+2. `bash deploy/deploy.sh` — 쓰기 서비스 먼저(새 접수 서비스가 보내는 v4 작업을 받을 수 있게). 이름 · URL 그대로라 폰 · webhook · Scheduler 변경 없음
+3. `bash deploy/deploy_telegram.sh` — 접수 서비스
+4. 확인: `/` 헬스체크 · 다음 정기 수집 로그 · 텔레그램 `/admin` 로그인 링크 → 관리 페이지 · 다음 실제 알림 처리
+5. **배포 사이에 들어온 알림 대조**: 운영 이벤트 로그(upstream) 와 로컬 시험판 관리 페이지 흐름 기록을 시각별로 맞춰, 운영에 빠진 것은 관리 페이지 원문 투입으로 보충(운영자 지시 10-04)
+6. 이상 없으면 `v4a` → `main` 머지(Vercel 1회 배포, 프론트 배너 · 트윗 표시), PR #50 닫기, 문서(`CLAUDE.md` · `docs/VERSION.md` v4.0) 갱신
+7. 문제 시: `gcloud run services update-traffic <서비스> --to-revisions=<위 기준 리비전>=100`
