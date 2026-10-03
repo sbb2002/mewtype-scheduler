@@ -47,7 +47,7 @@ v4a 코드는 `storage.is_local()`(= `V4A_RUNTIME=local`) 분기로 로컬과 �
 | L6 | `apply.cancel_video_checks` | 적용 큐에서 그 영상의 예약 reconcile 삭제 | 비로컬이면 **0 반환(아무것도 안 지움)** — 지운 예고가 예약된 확인으로 되살아나는 문제(09-30 실측)가 클라우드에서 재발 | WP-3 |
 | L7 | `enrich`(가공 큐) · `handlers` 번역 | `q-enrich` 에 적재 | 비로컬이면 v3 `_translate_sweep` 를 tick 안에서 직접 실행(v3 동작) | v4.0 은 유지 가능(§3 단계 B) |
 | L8 | `admin_api` 의 작업 탭 | `apply.pending()` · `apply.recent()` · `enrich.pending()` · `flowtrace`(로컬 파일) | 접수 서비스 프로세스 메모리에는 **큐도 최근 결과도 없다** → 「예정된 확인」「최근 자동 처리」「지금 상태」「최근 흐름」이 비어 보임. `flowtrace` 는 코드 주석에 "배포판은 흐름마다 기록 커밋이 늘어 v3.9 식 브랜치 경합" 이라며 **의도적으로 비로컬 no-op** | WP-5 |
-| L9 | `telegram_app._preserve_raw`(D19) | `_local/raw` 에 원문 보존 | `if not storage.is_local(): return` — **조용히 아무것도 안 함**(데이터 저장소가 공개라 원문 노출 위험 때문에 의도적) | §8 결정 |
+| L9 | `telegram_app._preserve_raw`(D19) | `_local/raw` 에 원문 보존 | `if not storage.is_local(): return` — **조용히 아무것도 안 함**(데이터 저장소가 공개라 원문 노출 위험 때문에 의도적) | WP-9 (운영자 결정 10-03: 데이터 저장소에 보존) |
 | L10 | `storage.make_store("ops")` | `_local/ops` | `OPS_BRANCH` env 가 있을 때만 ops 라우팅. **env 없으면 control · admin_state 가 `data` 브랜치에 남는다** | WP-4 |
 | L11 | `tg_poll`(텔레그램 getUpdates 폴링) | 로컬 봇 폴링 | 클라우드는 기존 **webhook**(`telegram_webhook.sh`) 사용 | 변경 없음 |
 | L12 | `local_runner` 의 스케줄러 스레드(10분 · 06:00 JST · 06:10 KST) | in-process | **Cloud Scheduler 3잡**(기존) | 변경 없음 |
@@ -112,7 +112,9 @@ v4a 코드는 `storage.is_local()`(= `V4A_RUNTIME=local`) 분기로 로컬과 �
 | WP-7 | 보안 (§2-1) | `Secure` 쿠키(`X-Forwarded-Proto`), nonce 경합, `ALLOW_UNAUTH=1` 이 새 경로에 미치는 영향을 `/security-review` 로 점검. `/admin` 은 자체 인증이라 별도지만, 새 경로 추가 시 OIDC 가정이 없는지 확인 | 리뷰 결과 문서 |
 | WP-8 | **하네스 재검증** | `ref/v4a/verify/harness.py`(79) · `harness_b.py`(97) · `harness_c.py`(신규) 전부 통과 상태 유지 확인 | 전부 PASS |
 
-(D19 원문 보존 L9 와 L7 가공 큐는 §8 결정으로 처리.)
+| WP-9 | **원문 보존 켜기** (L9) | `_preserve_raw` 의 비로컬 즉시 반환 제거 + `deploy_telegram.sh` 에 `RAW_BRANCH=raw`. 저장 위치 = **데이터 저장소의 `raw` 브랜치**(`storage._ROLE_ENV` 의 기존 기본값, 코드가 이미 이 역할을 가짐). `data` 브랜치 자체가 아닌 이유: 호출부 10곳이 전부 접수 서비스(`telegram_app` · `admin_api`)라, `data` 에 쓰면 쓰기 서비스와 같은 브랜치 HEAD 를 두고 409 경합 — v3.9 에서 `monitoring` 을 분리한 것과 같은 이유. 공개 범위는 `data` 와 같다 | 스테이징에서 공식 스케줄 · 휴방 글 후 `raw/YYYY-MM.jsonl` 에 한 줄씩 |
+
+(L7 가공 큐는 v4.0 에서 v3 `_translate_sweep` 경로 유지.)
 
 ### 단계 C — 스테이징 가동 (운영과 병행, 운영 영향 없음)
 
@@ -192,8 +194,8 @@ v4a 코드는 `storage.is_local()`(= `V4A_RUNTIME=local`) 분기로 로컬과 �
 ## 8. 계획에 반영한 선택 (이의가 없으면 이대로 진행)
 
 1. **큐 전송 방식 = 안 1** (§3-1). v4a 로컬 시험에서 접수 쪽은 적용 큐에 적재한 뒤 **결과를 기다린다**(`apply.submit(wait=True)`) — 호출하는 쪽에서 본 동작은 안 1(`/write` 동기 호출)과 같고, DM 문구 · 분기도 그 전제로 검증됐다. 안 2(Cloud Tasks 비동기)는 `v4a_impl_plan.md` §1 이 "배포 단계에서 바꿔야 한다"고 적어 둔 방향이지만 **로컬에서 한 번도 안 돌아본 동작**이라 v4.0 범위에서 제외한다.
-2. **서비스 이름은 그대로**(`mewtype-backend` · `mewtype-telegram`). 설계 §3 · §12-9 의 `mewtype-intake/writer` 이름은 설계 문서에만 있고 이 계획에서는 바꾸지 않는다 — 결정할 것 없음.
-3. **원문 보존(D19)**: v4a 는 공식 스케줄 · 개인 예고 후보 · 휴방/변경 글의 **원문을 `_local/raw/` 에 남긴다**(오늘처럼 판정이 이상할 때 입력을 볼 수 있게). 배포판에서는 데이터 저장소가 공개라 코드가 의도적으로 **저장하지 않는다**(`_preserve_raw` 가 비로컬이면 즉시 반환). v4.0 은 이 기능이 빠진 채 배포된다. 필요하면 비공개 저장 위치를 따로 정한다.
+2. **서비스 이름은 그대로**(`mewtype-backend` · `mewtype-telegram`). 설계 §3 · §12-9 의 `mewtype-intake/writer` 는 이전 세션이 운영자와 논의 없이 정한 이름(운영자 확인 10-03). 운영자 지침 = "운영에 지장 없는 것은 그대로" → 문서 용어로는 남기되, 실제 서비스 이름 변경은 URL · webhook · 폰 설정을 바꾸므로(운영 영향) **하지 않는다**.
+3. **원문 보존(D19) 켠다** — 운영자 결정(10-03): 데이터 저장소에 보존. 공개 범위는 이미 공개 중인 `tweet_archive.json`(원문 `text`)과 같은 수준(`v4a_decisions.md` §2-1). 브랜치는 `data` 가 아니라 같은 저장소의 `raw` 브랜치(WP-9 — 쓰기 경합 회피).
 
 ## 9. 알려진 위험
 

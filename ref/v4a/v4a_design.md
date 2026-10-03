@@ -13,7 +13,7 @@
 | 결정 | 내용 |
 |---|---|
 | 방향 | v4a = 서비스 2개 유지 + Cloud Tasks 적용 큐 일원화 + reconcile 통일 + `ops` 브랜치 |
-| 이름 | §3 (접수 서비스 `mewtype-intake` · 쓰기 서비스 `mewtype-writer` · 적용 큐 · 가공 큐 · `/reconcile` · `/snapshot`) |
+| 이름 | §3 (접수 서비스 `mewtype-intake` · 쓰기 서비스 `mewtype-writer` · 적용 큐 · 가공 큐 · `/reconcile` · `/snapshot`) <br>**(2026-10-03 운영자 정정: 이 이름들은 논의 없이 정해진 것 — 사용자 결정 아님. 문서 용어로만 쓰고 실제 Cloud Run 서비스 이름은 바꾸지 않는다, `v4_release_plan.md` §8)** |
 | 운영 조작 | 텔레그램 마법사 명령을 **웹 관리 페이지 하나**로 옮긴다 — 마법사는 급할 때는 되지만 복잡한 수정이 불편했음 |
 | 로그인 | **텔레그램 일회용 링크** — 봇에 `/admin` → 서명된 짧은 수명 링크를 DM으로 받음 |
 | 텔레그램 역할 | **알림 DM + 비상 명령**(`/status` `/pause` `/resume` `/admin`)만 |
