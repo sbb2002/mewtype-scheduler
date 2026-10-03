@@ -3,8 +3,17 @@ set -euo pipefail
 
 source deploy/env.sh
 
-echo "=== mewtype-telegram 서비스 URL 조회 ==="
+TELEGRAM_SERVICE="${TELEGRAM_SERVICE:-mewtype-telegram}"   # (v4) 스테이징은 다른 이름으로 덮어쓴다
+
+echo "=== $SERVICE_NAME(쓰기 서비스) URL 조회 ==="
 MAIN_URL=$(gcloud run services describe "$SERVICE_NAME" --region "$GCP_LOCATION" --format='value(status.url)')
+# (v4) 관리 페이지 로그인 링크의 기준 주소 = 이 서비스 자신의 URL (없으면 첫 배포 — 배포 후 아래에서 다시 설정)
+SELF_URL=$(gcloud run services describe "$TELEGRAM_SERVICE" --region "$GCP_LOCATION" --format='value(status.url)' 2>/dev/null || true)
+# (v4) ADMIN_SECRET: 관리 페이지 로그인 링크 서명 키. setup.sh 가 만든다.
+_ADMIN_SECRET=""
+if gcloud secrets describe "${ADMIN_SECRET_NAME:-ADMIN_SECRET}" &>/dev/null; then
+  _ADMIN_SECRET=",ADMIN_SECRET=${ADMIN_SECRET_NAME:-ADMIN_SECRET}:latest"
+fi
 
 echo "=== mewtype-telegram 배포 (webhook 서비스) ==="
 # INVOKER_SA 로 실행한다. /resume 이 메인 /tick 을 OIDC 로 호출할 때 메인의
@@ -41,14 +50,17 @@ if gcloud secrets describe YT_COOKIES &>/dev/null; then
 fi
 # --timeout=240: (v3.8.5 핫픽스) 수동 `/monitor --yearly`(최대 366일 조회)가 기존 60s로는
 # 끝나기 전에 워커가 죽을 수 있어 상향(Cloud Run 기본 요청 타임아웃 300s 안쪽으로 유지).
-gcloud run deploy mewtype-telegram \
+# (v4) 접수 서비스 env 추가 — OPS_BRANCH(운영 상태) · RAW_BRANCH(원문 보존 = monitoring) · ADMIN_BASE_URL(로그인 링크) ·
+#      Cloud Tasks(GCP_PROJECT · GCP_LOCATION · TASKS_QUEUE · INVOKER_SA): 즉시 확인 예약 · 비동기 적용 작업 · 예약 취소.
+#      (v3 까지는 이 서비스에 큐 설정이 없어 YouTube 알림 즉시 확인이 예약되지 않았다 — 기능 점검 #12)
+gcloud run deploy "$TELEGRAM_SERVICE" \
   --source . --region "$GCP_LOCATION" \
   --allow-unauthenticated \
   --service-account "$INVOKER_SA" \
   --command=gunicorn \
   --args="--bind=0.0.0.0:8080,--workers=1,--threads=4,--timeout=240,src.backend.telegram_app:app" \
-  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}${_YTC_SECRET}${_VC_SECRET}" \
-  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,MONITOR_BRANCH=${MONITOR_BRANCH:-monitoring},TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}${_YTC_ENV}"
+  --set-secrets "GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest,TELEGRAM_WEBHOOK_SECRET=TELEGRAM_WEBHOOK_SECRET:latest,INGEST_SECRET=INGEST_SECRET:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest${_HC_SECRET}${_GROQ_SECRET}${_YTC_SECRET}${_VC_SECRET}${_ADMIN_SECRET}" \
+  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,MONITOR_BRANCH=${MONITOR_BRANCH:-monitoring},OPS_BRANCH=${OPS_BRANCH:-ops},RAW_BRANCH=${MONITOR_BRANCH:-monitoring},ADMIN_BASE_URL=${SELF_URL},GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,MAIN_SERVICE_URL=$MAIN_URL,HEALTHCHECK_URL=$HEALTHCHECK_URL,ALLOW_UNAUTH=1,INGEST_DRY_RUN=${INGEST_DRY_RUN:-0},INGEST_ECHO=${INGEST_ECHO:-0},INGEST_YT_ENABLED=${INGEST_YT_ENABLED:-0}${_YTC_ENV}"
 
 # INGEST_DRY_RUN=1 이면 /ingest 가 schedule.json 을 안 쓰고 받은 원문·파싱결과만 DM 회신
 # (푸시 알림 "Show more" 잘림 확인용). 확인 끝나면 env.sh 에서 0 으로 두고 재배포, 또는:
@@ -63,4 +75,9 @@ gcloud run services add-iam-policy-binding "$SERVICE_NAME" \
   --role roles/run.invoker \
   --quiet 2>/dev/null || true
 
-echo "=== mewtype-telegram 배포 완료 ==="
+if [ -z "$SELF_URL" ]; then
+  SELF_URL=$(gcloud run services describe "$TELEGRAM_SERVICE" --region "$GCP_LOCATION" --format='value(status.url)')
+  gcloud run services update "$TELEGRAM_SERVICE" --region "$GCP_LOCATION" --update-env-vars "ADMIN_BASE_URL=$SELF_URL"
+fi
+
+echo "=== $TELEGRAM_SERVICE 배포 완료 ($SELF_URL) ==="

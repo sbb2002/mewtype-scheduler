@@ -1,6 +1,9 @@
 """방송 일정 관련 트윗 원문 보존 (결정 D19).
 
-raw/<YYYY-MM>.jsonl 로 각 라인이 한 건의 원문을 JSON 객체로 기록.
+raw/<YYYY-MM-DD>.jsonl 로 각 라인이 한 건의 원문을 JSON 객체로 기록.
+(v4, 2026-10-03) 하루 한 파일 — 날짜는 이벤트 로그와 같은 KST 06:00 경계(`monitor_log.bucket_date_kst`)라
+`monitoring/events-<날짜>.jsonl` 과 같은 이름의 날짜로 찾으면 된다. 월 단위 파일은 한 달 누적이 Contents API 의
+1MB(본문 응답) 한도에 다가갈 수 있어 바꿨다. 배포판 저장 위치 = 데이터 저장소 `monitoring` 브랜치(`RAW_BRANCH`).
 각 줄: {"ts": ISO문자열, "kind": 종류, "raw": 원문, "meta": 메타데이터또는{}}
 
 kind 예: "official_schedule", "personal_schedule", "personal_schedule_candidate"
@@ -36,7 +39,7 @@ def append_raw(
     meta: Optional[dict] = None,
     now_iso: str,
 ) -> bool:
-    """원문을 raw/<YYYY-MM>.jsonl 에 한 줄 append.
+    """원문을 raw/<YYYY-MM-DD>.jsonl 에 한 줄 append (날짜 = KST 06:00 경계).
 
     store: read_text/write_text 메서드가 있는 객체 (GitHubStore 등).
     kind: "official_schedule" 등 문자열 구분자.
@@ -46,15 +49,15 @@ def append_raw(
 
     성공 시 True, 실패 시 False 반환 (예외는 발생 안 함).
     """
-    # now_iso에서 월(YYYY-MM) 추출
+    # now_iso → 날짜(KST 06:00 경계, 이벤트 로그와 같음)
     try:
-        dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
-        month = dt.strftime("%Y-%m")
+        from .monitor_log import bucket_date_kst
+        day = bucket_date_kst(datetime.fromisoformat(now_iso.replace("Z", "+00:00")))
     except Exception as e:
         logger.warning(f"rawlog.append_raw: now_iso 파싱 실패 {now_iso!r}: {e}")
         return False
 
-    path = f"raw/{month}.jsonl"
+    path = day_path(day)
 
     # 한 줄의 JSON 객체 생성
     line_obj = {
@@ -99,39 +102,43 @@ def append_raw(
     return False
 
 
-def read_month(store, month: str) -> list[dict]:
-    """raw/<YYYY-MM>.jsonl 을 읽어 모든 줄을 파싱한 dict 리스트 반환.
+def day_path(day: str) -> str:
+    """하루치 원문 파일 경로 (`day` = "YYYY-MM-DD")."""
+    return f"raw/{day}.jsonl"
 
-    month: "2026-09" 형식의 문자열.
 
-    파싱 실패한 줄은 skip (로그만 남김).
-    파일 없음(404)이면 [] 반환.
-    네트워크 오류 등은 예외 발생.
-    """
-    path = f"raw/{month}.jsonl"
-
+def read_day(store, day: str) -> list[dict]:
+    """raw/<YYYY-MM-DD>.jsonl 을 읽어 줄마다 dict. 파일 없음(404)이면 []. 파싱 실패 줄은 건너뜀.
+    네트워크 오류 등은 예외 발생."""
+    path = day_path(day)
     try:
         text, _ = store.read_text(path)
     except Exception as e:
-        logger.warning(f"rawlog.read_month: {path} 읽기 실패: {e}")
+        logger.warning(f"rawlog.read_day: {path} 읽기 실패: {e}")
         raise
-
     if text is None:
         return []
-
     result = []
     for line_num, line in enumerate(text.split("\n"), start=1):
         line = line.strip()
         if not line:
             continue
         try:
-            obj = json.loads(line)
-            result.append(obj)
+            result.append(json.loads(line))
         except json.JSONDecodeError as e:
-            logger.warning(f"rawlog.read_month: {path}:{line_num} JSON 파싱 실패: {e}")
-            continue
-
+            logger.warning(f"rawlog.read_day: {path}:{line_num} JSON 파싱 실패: {e}")
     return result
+
+
+def read_range(store, start_day: str, end_day: str) -> list[dict]:
+    """start_day ~ end_day(둘 다 포함, "YYYY-MM-DD") 의 일 파일을 이어 읽는다 — 월 · 년 단위 조회용."""
+    from datetime import date, timedelta
+    d, end = date.fromisoformat(start_day), date.fromisoformat(end_day)
+    out = []
+    while d <= end:
+        out.extend(read_day(store, d.isoformat()))
+        d += timedelta(days=1)
+    return out
 
 
 if __name__ == "__main__":
@@ -219,18 +226,25 @@ if __name__ == "__main__":
     )
     assert ok2, "두 번째 줄 추가 실패"
 
-    # read_month 확인
-    items = read_month(store1, "2026-09")
+    # read_day 확인 (KST 06:00 경계 — 10:00Z · 11:00Z 는 KST 19:00 · 20:00 → 2026-09-29)
+    items = read_day(store1, "2026-09-29")
     assert len(items) == 2, f"기대: 2줄, 실제: {len(items)}"
     assert items[0]["kind"] == "personal_schedule"
     assert items[0]["raw"] == "9월 30일 19시 라이브"
     assert items[1]["kind"] == "official_schedule"
-    print(f"  ✓ 두 줄 append 완료, read_month 검증 통과")
+    print(f"  ✓ 두 줄 append 완료, read_day 검증 통과")
+    # 경계: 2026-09-29T20:30Z = KST 09-30 05:30 → 아직 09-29 버킷, 21:00Z = KST 06:00 → 09-30 버킷
+    append_raw(store1, kind="k", raw="경계 전", meta={}, now_iso="2026-09-29T20:30:00Z")
+    append_raw(store1, kind="k", raw="경계 후", meta={}, now_iso="2026-09-29T21:00:00Z")
+    assert [x["raw"] for x in read_day(store1, "2026-09-29")][-1] == "경계 전"
+    assert [x["raw"] for x in read_day(store1, "2026-09-30")] == ["경계 후"]
+    assert len(read_range(store1, "2026-09-28", "2026-09-30")) == 4
+    print(f"  ✓ 06:00 KST 경계 · read_range 이어 읽기")
 
     # 테스트 2: ConflictError 2회 후 성공
     print("테스트 2: 409 충돌 2회 후 성공...")
     store2 = FakeStore()
-    store2.conflict_until["raw/2026-09.jsonl"] = 2  # 처음 2회 충돌
+    store2.conflict_until["raw/2026-09-29.jsonl"] = 2  # 처음 2회 충돌
 
     ok3 = append_raw(
         store2,
@@ -245,7 +259,7 @@ if __name__ == "__main__":
     # 테스트 3: ConflictError 3회 이상 → 실패
     print("테스트 3: 409 충돌 3회 이상 → False 반환...")
     store3 = FakeStore()
-    store3.conflict_until["raw/2026-09.jsonl"] = 10  # 항상 충돌
+    store3.conflict_until["raw/2026-09-29.jsonl"] = 10  # 항상 충돌
 
     ok4 = append_raw(
         store3,
@@ -286,7 +300,7 @@ if __name__ == "__main__":
         now_iso="2026-09-30T00:00:00Z",
     )
     assert ok6, "404 파일에 첫 줄 추가 실패"
-    items5 = read_month(store5, "2026-09")
+    items5 = read_day(store5, "2026-09-30")
     assert len(items5) == 1
     assert items5[0]["meta"]["order"] == 1
     print(f"  ✓ 404 파일에서 첫 줄 생성 완료")

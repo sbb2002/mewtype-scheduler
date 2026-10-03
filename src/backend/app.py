@@ -6,7 +6,8 @@
   POST /write     — mewtype-telegram (body: {"kind": "...", "args": {...}}). GitHub data
                     브랜치 콘텐츠 쓰기 전담 — 이 서비스가 `--concurrency=1
                     --max-instances=1` 이라 여기로 들어오는 모든 요청(이 라우트 포함)이
-                    자동으로 직렬화된다. 실제 job 은 `writers.dispatch()`.
+                    자동으로 직렬화된다. (v4) 실제 처리는 `apply.handle()`(writers 의 콘텐츠
+                    반영 + v4 전용 작업). 접수 서비스의 동기 호출과 Cloud Tasks 적재가 같은 라우트로 온다.
   POST /monitor   — Cloud Scheduler (1일 1회 KST 06:10, body 없음). (v3.8.9) 매일
                     전일자(06:00 KST 경계 기준, 방금 끝난 하루) 스냅샷을 찍어
                     `monitoring/days/`·`monitoring/summary.json` 에 저장하고
@@ -25,9 +26,8 @@ from functools import lru_cache
 
 from flask import Flask, jsonify, request
 
-from . import handlers, notify, oidc, writers
+from . import handlers, notify, oidc
 from .config import load_config
-from .gh_store import GitHubStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("backend.app")
@@ -93,6 +93,9 @@ def _wake():
         return jsonify({"error": str(e)}), 500
 
 
+_WRITE_MAX_ATTEMPTS = 5   # (v4) Cloud Tasks 로 온 /write 작업의 최대 시도 (큐 기본값 100 회까지 가지 않게)
+
+
 @app.post("/write")
 def _write():
     try:
@@ -104,15 +107,28 @@ def _write():
     args = body.get("args") or {}
     if not kind:
         return jsonify({"error": "kind required"}), 400
+    # (v4) 모든 작업 종류를 적용 처리기(apply.handle)로 — writers 의 콘텐츠 반영 + v4 전용 작업(yt_notif · reconcile ·
+    # snapshot · apply_translation). 접수 서비스의 동기 호출(결과 대기)과 Cloud Tasks 적재(apply.submit(wait=False))가
+    # 같은 라우트로 온다. Cloud Tasks 는 실패하면 재시도하므로 _WRITE_MAX_ATTEMPTS 번째 시도에서 유실 처리하고 멈춘다.
+    from . import apply
+    task_name = request.headers.get("X-CloudTasks-TaskName", "")
     try:
-        cfg = _cfg()
-        gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
-        return jsonify(writers.dispatch(kind, gh, args))
+        attempt = int(request.headers.get("X-CloudTasks-TaskRetryCount", "0")) + 1
+    except ValueError:
+        attempt = 1
+    is_last = (not task_name) or attempt >= _WRITE_MAX_ATTEMPTS
+    meta = {"job_id": task_name or "sync", "attempt": attempt, "is_last": is_last, "queue": "tasks" if task_name else "sync"}
+    try:
+        return jsonify(apply.handle(kind, args, meta))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:  # noqa: BLE001
-        log.exception("write 실패 kind=%s", kind)
-        _alert(f"/write kind={kind}", e)
+        log.exception("write 실패 kind=%s attempt=%s", kind, attempt)
+        if task_name and is_last:
+            apply.on_dead({"id": task_name, "kind": kind, "args": args, "attempt": attempt}, e)
+            return jsonify({"error": str(e), "dead": True}), 200   # 200 → Cloud Tasks 재시도 중단
+        if not task_name:
+            _alert(f"/write kind={kind}", e)
         return jsonify({"error": str(e)}), 500
 
 

@@ -24,6 +24,8 @@ _VC_SECRET=""
 if gcloud secrets describe VERCEL_TOKEN &>/dev/null; then
   _VC_SECRET=",VERCEL_TOKEN=VERCEL_TOKEN:latest"
 fi
+# (v4) OPS_BRANCH: control · admin_state · LLM 판단 기록 등 운영 상태(storage.OPS_PATHS)를 data 대신 ops 브랜치로.
+#      RAW_BRANCH: 원문 보존(D19) 위치 = monitoring 브랜치(2026-10-03 운영자 결정).
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$GCP_LOCATION" \
@@ -32,7 +34,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --concurrency=1 \
   --max-instances=1 \
   --set-secrets "YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,TELEGRAM_BOT_TOKEN=TELEGRAM_BOT_TOKEN:latest${_HC_SECRET}${_GROQ_SECRET}${_VC_SECRET}" \
-  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,MONITOR_BRANCH=${MONITOR_BRANCH:-monitoring},GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid"
+  --set-env-vars "GITHUB_REPO=$GITHUB_REPO,DATA_BRANCH=$DATA_BRANCH,MONITOR_BRANCH=${MONITOR_BRANCH:-monitoring},OPS_BRANCH=${OPS_BRANCH:-ops},RAW_BRANCH=${MONITOR_BRANCH:-monitoring},GCP_PROJECT=$GCP_PROJECT,GCP_LOCATION=$GCP_LOCATION,TASKS_QUEUE=$TASKS_QUEUE,INVOKER_SA=$INVOKER_SA,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID,HEALTHCHECK_URL=$HEALTHCHECK_URL,SERVICE_URL=https://placeholder.invalid"
 # SERVICE_URL 은 배포 후 실제 URL 을 알 수 있으므로 일단 placeholder 로 부팅시키고 아래에서 교체한다.
 
 echo "=== 서비스 URL 조회 ==="

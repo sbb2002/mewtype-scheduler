@@ -96,6 +96,28 @@ def _build_task(
     return task_dict
 
 
+def from_env() -> "TaskQueue | None":
+    """(v4) 환경변수로 TaskQueue 구성 — 접수 서비스 · 쓰기 서비스 공용. 대상은 쓰기 서비스
+    (접수: `MAIN_SERVICE_URL`, 쓰기 서비스 자신: `SERVICE_URL`). 값이 모자라면 None."""
+    import os
+
+    target = (os.environ.get("MAIN_SERVICE_URL", "").strip() or os.environ.get("SERVICE_URL", "").strip()).rstrip("/")
+    vals = {
+        "project": os.environ.get("GCP_PROJECT", "").strip(),
+        "location": os.environ.get("GCP_LOCATION", "").strip(),
+        "queue": os.environ.get("TASKS_QUEUE", "").strip(),
+        "target_url": target,
+        "invoker_sa": os.environ.get("INVOKER_SA", "").strip(),
+    }
+    if not all(vals.values()) or target.endswith("placeholder.invalid"):
+        return None
+    try:
+        return TaskQueue(**vals)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"TaskQueue 구성 실패: {e}")
+        return None
+
+
 class TaskQueue:
     """Cloud Tasks 큐 래퍼. enqueue_wake 메서드로 태스크 등록."""
 
@@ -160,6 +182,54 @@ class TaskQueue:
             name_key=f"tick-{mode}",
             schedule_time_iso=schedule_time_iso,
         )
+
+    def enqueue_write(self, kind: str, args: dict, *, schedule_time_iso: str | None = None) -> str:
+        """(v4) 적용 작업 하나를 쓰기 서비스 `/write` 로 비동기 전달 — `apply.submit(wait=False)` 의 클라우드 대응.
+
+        이름은 매번 새로 만든다(`write-<kind>-<임의값>`) — 같은 이름을 다시 쓰면 Cloud Tasks 가 한동안 거절한다.
+        """
+        import uuid
+
+        safe_kind = "".join(c if (c.isalnum() or c in "-_") else "-" for c in kind)[:60]
+        return self._enqueue(
+            path="/write",
+            body={"kind": kind, "args": args},
+            name_key=f"write-{safe_kind}-{uuid.uuid4().hex[:12]}",
+            schedule_time_iso=schedule_time_iso or _to_iso(datetime.now(timezone.utc)),
+        )
+
+    def list_pending(self, prefix: str = "") -> list[dict]:
+        """(v4) 대기 중인 태스크 [{name(짧은 이름), run_at(ISO)}] — 관리 페이지 「예정된 확인」(클라우드)."""
+        parent = self.client.queue_path(self.project, self.location, self.queue)
+        out = []
+        for t in self.client.list_tasks(request={"parent": parent}):
+            short = t.name.rsplit("/", 1)[-1]
+            if prefix and not short.startswith(prefix):
+                continue
+            st = getattr(t, "schedule_time", None)
+            run_at = None
+            if st is not None:
+                try:
+                    run_at = _to_iso(st if isinstance(st, datetime) else st.ToDatetime().replace(tzinfo=timezone.utc))
+                except Exception:  # noqa: BLE001
+                    run_at = None
+            out.append({"name": short, "run_at": run_at})
+        return out
+
+    def delete_by_prefix(self, prefix: str) -> int:
+        """(v4) 이름이 `prefix` 로 시작하는 대기 태스크를 지운다(예: `wake-<video_id>-` — 그 영상의 예약된 확인).
+        지운 개수. 이미 실행 중 · 사라진 태스크는 건너뛴다."""
+        parent = self.client.queue_path(self.project, self.location, self.queue)
+        gone = 0
+        for t in self.client.list_tasks(request={"parent": parent}):
+            if not t.name.rsplit("/", 1)[-1].startswith(prefix):
+                continue
+            try:
+                self.client.delete_task(request={"name": t.name})
+                gone += 1
+            except Exception as e:  # noqa: BLE001 — NotFound(이미 실행됨) 등
+                logger.info(f"delete_task 건너뜀 {t.name}: {e}")
+        return gone
 
     def _enqueue(self, *, path: str, body: dict, name_key: str, schedule_time_iso: str) -> str:
         queue_path = self.client.queue_path(self.project, self.location, self.queue)

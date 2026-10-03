@@ -1391,7 +1391,18 @@ def jobs_overview() -> dict:
     pv = list_preview()
     items_by_vid = {i.get("video_id"): i for i in pv.get("items", []) if i.get("video_id")}
 
+    cloud = not storage.is_local()
     scheduled = []
+    if cloud:
+        # (v4) 배포판: 예약된 확인 = Cloud Tasks 큐의 wake-<video_id>-<분> 태스크
+        for t in _cloud_tasks():
+            nm = t.get("name") or ""
+            if not nm.startswith("wake-"):
+                continue
+            vid = nm[len("wake-"):].rsplit("-", 1)[0]
+            it = items_by_vid.get(vid)
+            scheduled.append({"run_at": t.get("run_at"), "video_id": vid, "attempt": None,
+                              "what": _item_label(it, names) if it else vid, "why": _check_reason(it, t.get("run_at") or "")})
     for j in apply.pending():
         nm = j.get("name") or ""
         if j.get("kind") != "reconcile" or not nm.startswith("reconcile-video-"):
@@ -1413,6 +1424,8 @@ def jobs_overview() -> dict:
 
     auto = [{"ts": e.get("ts"), "ok": bool(e.get("ok")), "text": _auto_text(e, items_by_vid, names)}
             for e in apply.recent(100)]
+    if cloud:
+        auto = _cloud_auto(names)
 
     pending_tl = []
     for it in pv.get("items", []):
@@ -1426,9 +1439,85 @@ def jobs_overview() -> dict:
             if tw and tw.get("needs_tl"):
                 pending_tl.append(f"트윗 · {names.get(unit, unit)} 「{(tw.get('text') or '')[:30]}」")
 
-    return {"flows": flowtrace.list_flows(), "scheduled": scheduled, "periodic": periodic, "auto": auto,
+    flows = _cloud_flows(names) if cloud else flowtrace.list_flows()
+    return {"flows": flows, "scheduled": scheduled, "periodic": periodic, "auto": auto,
             "pending_tl": pending_tl, "enrich_pending": len(enrich.pending()),
-            "now": _now_status(pv, names, flowtrace)}
+            "now": _now_status(pv, names, flowtrace, scheduled=scheduled if cloud else None),
+            "runtime": "cloud" if cloud else "local"}
+
+
+# ── (v4) 배포판(Cloud Run) 작업 탭 — 로컬 러너의 큐 · 흐름 기록(flowtrace) 대신 ─────────────────────────────
+# 흐름 기록은 흐름마다 커밋이 늘어 브랜치 경합을 만들어 배포판에선 남기지 않는다(flowtrace 주석). 대신
+#   · 예정된 확인 = Cloud Tasks 대기 태스크  · 최근 자동 처리 = 모니터 이벤트 로그(오늘 · 어제)
+#   · 최근 흐름 = LLM 판단 기록(ops llm_actions.json) 한 건 = 한 줄 — 반려 · 재판단 · 사용자 판단을 여기서 한다.
+_PROC_START = _now_iso()
+
+
+def _cloud_tasks() -> list[dict]:
+    try:
+        from . import tasks
+        tq = tasks.from_env()
+        return tq.list_pending() if tq is not None else []
+    except Exception:  # noqa: BLE001
+        log.warning("Cloud Tasks 목록 조회 실패", exc_info=True)
+        return []
+
+
+def _cloud_events(days: int = 2) -> list[dict]:
+    """모니터 이벤트 로그(최신 먼저) — 오늘 · 어제(06:00 KST 경계)."""
+    import json as _json
+    from datetime import timedelta
+    from . import monitor_log
+    out = []
+    try:
+        mon = storage.make_store("monitoring")
+        now = datetime.now(timezone.utc)
+        for k in range(days):
+            d = now - timedelta(days=k)
+            txt = mon.read_text(monitor_log.event_path(d.strftime("%Y-%m-%dT%H:%M:%SZ")))[0] or ""
+            for line in txt.splitlines():
+                try:
+                    out.append(_json.loads(line))
+                except Exception:  # noqa: BLE001
+                    continue
+    except Exception:  # noqa: BLE001
+        log.warning("이벤트 로그 읽기 실패", exc_info=True)
+    out.sort(key=lambda e: e.get("ts") or "", reverse=True)
+    return out
+
+
+_FLOW_KO = {"tick": "정기 수집", "wake": "방송 확인", "preview": "예고", "tweet": "개인 트윗", "relay": "공식 스케줄",
+            "notice": "소식", "upstream": "업스트림 알림", "cmd": "운영자 명령", "banner": "행사 배너"}
+
+
+def _cloud_auto(names: dict) -> list[dict]:
+    out = []
+    for e in _cloud_events()[:100]:
+        who = e.get("who") or ""
+        who = names.get(who, who)
+        parts = [_FLOW_KO.get(e.get("flow"), e.get("flow") or ""), who, e.get("detail") or ""]
+        out.append({"ts": e.get("ts"), "ok": e.get("result") != "err",
+                    "text": " · ".join(p for p in parts if p)})
+    return out
+
+
+def _cloud_flows(names: dict) -> list[dict]:
+    """LLM 판단 기록 → 작업 탭 흐름 줄(판단 1건 = 1줄, 후속 판단은 그 줄 안에 이어짐)."""
+    out = []
+    for e in list_llm_actions(300).get("items") or []:
+        if e.get("parent_id"):
+            continue
+        who = names.get(e.get("who") or "", e.get("who") or "")
+        out.append({
+            "id": "llm-" + e["id"], "cat": "x", "kind": "LLM 판단", "t0": e.get("ts"), "updated": e.get("ts"),
+            "desc": " · ".join(p for p in (who, e.get("summary") or "") if p),
+            "status": "ok", "reason": e.get("reason") or "",
+            "stages": [{"n": "접수", "s": "done", "x": "알림 · 관리 페이지", "note": ""},
+                       {"n": "LLM 판단", "s": "done", "x": "Groq", "note": (e.get("summary") or "")[:60]},
+                       {"n": "반영", "s": "done", "x": "data 쓰기", "note": ""}],
+            "llm": [{"id": e["id"], "kind": e.get("kind"), "summary": e.get("summary"), "undo": bool(e.get("undo"))}],
+        })
+    return out[:200]
 
 
 def _last_upstream(flows: list[dict]) -> dict:
@@ -1462,7 +1551,7 @@ def _last_upstream(flows: list[dict]) -> dict:
     return out
 
 
-def _now_status(pv: dict, names: dict, flowtrace) -> dict:
+def _now_status(pv: dict, names: dict, flowtrace, *, scheduled: list | None = None) -> dict:
     """작업 탭 "지금 상태" — 러너 · 텔레그램 · 마지막 알림 · 큐 · 방송 · 데이터 갱신."""
     import json as _json
     import os as _os
@@ -1481,11 +1570,19 @@ def _now_status(pv: dict, names: dict, flowtrace) -> dict:
         tg = {"state": "unknown"}
     pend = apply.pending()
     due = [j for j in pend if (j.get("run_at_iso") or "") <= now_iso]
+    if scheduled is not None:
+        # (v4) 배포판 — 러너 대신 Cloud Run 리비전, 텔레그램은 webhook, 큐는 Cloud Tasks 예약
+        runner = {"cloud": True, "revision": _os.environ.get("K_REVISION") or "", "started_at": _PROC_START}
+        tg = {"state": "webhook"}
+        due = [t for t in scheduled if (t.get("run_at") or "") <= now_iso]
+        pend = scheduled
     items = pv.get("items", []) or []
     live = [_item_label(i, names) for i in items if i.get("state") == "live"]
     nxt = sorted((i for i in items if i.get("state") in ("announced", "upcoming", "watching")
                   and (i.get("scheduled_start") or "") >= now_iso[:13]), key=lambda i: i.get("scheduled_start") or "")
     last_rec = next((e for e in apply.recent(200) if e.get("kind") == "reconcile" and e.get("ok")), None)
+    if scheduled is not None:
+        last_rec = next((e for e in _cloud_events() if e.get("flow") == "tick"), None)
     return {
         "server_now": now_iso,
         "runner": runner,

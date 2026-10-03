@@ -34,6 +34,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _cloud_intake() -> bool:
+    """(v4) 클라우드의 접수 서비스인가 — 로컬이 아니고 쓰기 서비스 주소(MAIN_SERVICE_URL)를 안다.
+    쓰기 서비스 자신은 이 값이 없어 작업을 그 자리에서 처리한다."""
+    import os
+    from . import storage
+    return not storage.is_local() and bool(os.environ.get("MAIN_SERVICE_URL", "").strip())
+
+
+def _task_queue():
+    """(v4) 클라우드 Cloud Tasks 큐 (env 로 구성, 없으면 None)."""
+    from . import storage
+    if storage.is_local():
+        return None
+    from . import tasks
+    return tasks.from_env()
+
+
 def set_queue(q) -> None:
     global _q
     _q = q
@@ -117,6 +134,18 @@ def submit(kind: str, args: dict, *, wait: bool = True, run_at_iso: str | None =
         if not wait:
             flowtrace.annotate(fid=fid, detached=True)   # 요청은 먼저 끝난다 — 워커가 반영 후 흐름을 마무리
     if _q is None:
+        if _cloud_intake():
+            # (v4) 클라우드 접수 서비스 — data 를 직접 쓰지 않고 쓰기 서비스로 보낸다(원칙 ①).
+            # 결과를 기다리는 호출은 /write 동기 호출(로컬의 결과 대기와 같은 동작), 아니면 Cloud Tasks 로 /write 에 적재.
+            from . import writeclient
+            if not wait:
+                tq = _task_queue()
+                if tq is not None:
+                    try:
+                        return {"queued": True, "job_id": tq.enqueue_write(kind, args, schedule_time_iso=run_at_iso)}
+                    except Exception:  # noqa: BLE001
+                        log.warning("적용 작업 적재 실패(%s) — 동기 호출로 대신", kind, exc_info=True)
+            return writeclient.post_write(kind, args)
         return handle(kind, args, {"job_id": "inline", "attempt": 1, "is_last": True, "queue": "inline"})
     if wait:
         # 결과를 기다리는 호출부(접수 쪽)는 실패하면 스스로 원문과 함께 유실 처리한다 — on_dead 가 중복 처리하지 않게 표시
@@ -130,9 +159,17 @@ def enqueue_reconcile(*, video_id: str | None = None, mode: str = "light",
 
     이름 = 범위 + 실행 시각(분)이라 같은 확인이 여러 번 적재돼도 하나만 남는다(Cloud Tasks 태스크 이름 의미).
     """
-    if _q is None:
-        return None
     when = run_at_iso or _now_iso()
+    if _q is None:
+        # (v4) 클라우드: Cloud Tasks 로 쓰기 서비스의 /wake(영상) · /tick(전체) 예약 — reconcile(범위)와 같은 처리
+        tq = _task_queue()
+        if tq is None:
+            return None
+        try:
+            return tq.enqueue_wake(video_id, when) if video_id else tq.enqueue_tick(mode, when)
+        except Exception:  # noqa: BLE001
+            log.warning("reconcile 예약 실패(%s) — 다음 정기 수집이 회수", video_id or mode, exc_info=True)
+            return None
     if video_id:
         name = f"reconcile-video-{video_id}-{when[:16]}"
         args = {"scope": "video", "video_id": video_id}
@@ -147,9 +184,22 @@ def enqueue_reconcile(*, video_id: str | None = None, mode: str = "light",
 
 def cancel_video_checks(video_id: str | None, reason: str = "예고 삭제") -> int:
     """(v4a) 그 영상의 예약된 확인(reconcile 영상)을 지운다 — 지운 예고가 나중 확인으로 되살아나지 않게(2026-09-30 검증:
-    차단 없이 지운 그룹 예고가 예약된 확인 때 5인 합동으로 다시 생겼다). 지운 개수. 적용 큐가 없으면(배포 경로) 0."""
-    if _q is None or not video_id:
+    차단 없이 지운 그룹 예고가 예약된 확인 때 5인 합동으로 다시 생겼다). 지운 개수. 클라우드는 Cloud Tasks 의 wake 태스크."""
+    if not video_id:
         return 0
+    if _q is None:
+        # (v4) 클라우드: 그 영상의 대기 중인 Cloud Tasks 확인(wake-<video_id>-…)을 지운다
+        tq = _task_queue()
+        if tq is None:
+            return 0
+        try:
+            n = tq.delete_by_prefix(f"wake-{video_id}-")
+        except Exception:  # noqa: BLE001
+            log.warning("예약된 확인 취소 실패(%s)", video_id, exc_info=True)
+            return 0
+        if n:
+            log.info("예약된 확인 %d건 취소 (%s · %s)", n, video_id, reason)
+        return n
     gone = _q.cancel(lambda j: j.get("kind") == "reconcile" and (j.get("args") or {}).get("video_id") == video_id)
     if gone:
         from . import flowtrace
@@ -568,3 +618,51 @@ if __name__ == "__main__":
     except ValueError:
         pass
     print("[PASS] apply self-test: yt 알림 반영(D1·D2·D3) · 되돌림 없음 · 큐 없을 때 즉시 처리")
+
+    # (v4) 클라우드 접수 서비스 경로 — data 를 직접 쓰지 않고 쓰기 서비스로(동기 /write · Cloud Tasks)
+    import os
+    import src.backend.tasks as _tasks
+    import src.backend.writeclient as _wc
+
+    class _FakeTQ:
+        def __init__(self):
+            self.calls = []
+        def enqueue_write(self, kind, args, *, schedule_time_iso=None):
+            self.calls.append(("write", kind, args)); return "write-x"
+        def enqueue_wake(self, vid, when):
+            self.calls.append(("wake", vid, when)); return f"wake-{vid}"
+        def enqueue_tick(self, mode, when):
+            self.calls.append(("tick", mode, when)); return f"tick-{mode}"
+        def delete_by_prefix(self, prefix):
+            self.calls.append(("del", prefix)); return 2
+
+    _env = dict(os.environ)
+    _orig_from_env, _orig_post = _tasks.from_env, _wc.post_write
+    try:
+        os.environ.pop("V4A_RUNTIME", None)
+        os.environ["MAIN_SERVICE_URL"] = "https://writer.example"
+        tq = _FakeTQ()
+        _tasks.from_env = lambda: tq
+        posted = []
+        _wc.post_write = lambda kind, args, **kw: (posted.append((kind, args)), {"ok": True, "via": "sync"})[1]
+        assert submit("merge_rows", {"rows": []}) == {"ok": True, "via": "sync"} and posted[-1][0] == "merge_rows"
+        assert submit("yt_notif", {"video_id": "V1"}, wait=False) == {"queued": True, "job_id": "write-x"}
+        assert tq.calls[-1] == ("write", "yt_notif", {"video_id": "V1"})
+        assert enqueue_reconcile(video_id="V1", run_at_iso="2026-10-04T00:00:00Z") == "wake-V1"
+        assert enqueue_reconcile(mode="light") == "tick-light"
+        assert cancel_video_checks("V1") == 2 and tq.calls[-1] == ("del", "wake-V1-")
+        # Cloud Tasks 설정이 없으면 비동기 적재 대신 동기 호출, 예약은 None(다음 정기 수집이 회수)
+        _tasks.from_env = lambda: None
+        assert submit("yt_notif", {"video_id": "V2"}, wait=False)["via"] == "sync"
+        assert enqueue_reconcile(video_id="V2") is None and cancel_video_checks("V2") == 0
+        # 쓰기 서비스 자신(MAIN_SERVICE_URL 없음)은 그 자리에서 처리
+        os.environ.pop("MAIN_SERVICE_URL")
+        try:
+            submit("no-such-kind", {})
+            raise AssertionError
+        except ValueError:
+            pass
+    finally:
+        os.environ.clear(); os.environ.update(_env)
+        _tasks.from_env, _wc.post_write = _orig_from_env, _orig_post
+    print("[PASS] apply self-test (v4 클라우드): 접수 = 동기 /write · Cloud Tasks 적재 · wake/tick 예약 · 예약 취소, 쓰기 서비스 = 즉시 처리")

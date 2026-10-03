@@ -968,15 +968,9 @@ def _log_cmd_event(now_iso: str, fields: dict) -> None:
 
 
 def _make_gh() -> "GitHubStore | None":
-    """env 에서 store 구성. 필수 값 없으면 None. (v4a) 로컬 시험판이면 LocalStore(+ops 라우팅)."""
-    if storage.is_local():
-        return storage.make_store("data")
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    repo = os.environ.get("GITHUB_REPO", "").strip()
-    branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
-    if not token or not repo:
-        return None
-    return GitHubStore(token, repo, branch)
+    """env 에서 store 구성. 필수 값 없으면 None. (v4) 로컬이면 LocalStore, 클라우드면 GitHubStore —
+    둘 다 control · admin_state 등은 ops 로 라우팅(`storage.make_store`, 클라우드는 OPS_BRANCH 가 있을 때)."""
+    return storage.make_store("data")
 
 
 # ── ingest 대기열 (ECHO/DRY-RUN 중 받은 스케줄 트윗을 실배포 전환 시 반영) ──
@@ -3296,7 +3290,7 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
     flowtrace.mark("알림 해석", "done", f"{public['relay_kind']} · {public.get('channel_key') or '?'}"
                    + (f" · {public['video_id']}" if public.get("resolved") else " · 영상 미상"))
 
-    if public["resolved"] and storage.is_local():
+    if public["resolved"]:
         # (v4a D1·D2·D3) 알림 자체를 상태 신호로 쓴다 — 적용 큐 작업 yt_notif 로 적재하고 바로 돌아간다(원칙 ②).
         # 작업은 reconcile(영상)으로 API 사실을 먼저 반영한 뒤 tunein→watching / 시작→live 로 올린다.
         from . import apply
@@ -3305,17 +3299,6 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
         log.info("public yt relay → yt_notif 적재: kind=%s video_id=%s", public["relay_kind"], public["video_id"])
         return {"ok": True, "public_relay": public["relay_kind"], "video_id": public["video_id"],
                 "queued": job.get("job_id")}, 200
-
-    if public["resolved"]:
-        # 실제 video_id 확보 — 새 GitHub 쓰기 없이 즉시 wake 하나만 예약한다. 승격
-        # (announced/upcoming 자동 판정, live_state 가 이미 live 면 곧장 live)·DM·모니터
-        # 로그·다음 wake 예약은 기존 handlers._run(/wake) 파이프라인이 전부 처리한다 —
-        # 여기서 preview.json 을 직접 건드리지 않는다(레이스는 기존 낙관적 동시성 재시도 +
-        # Cloud Tasks 태스크명 dedupe 로 이미 방어됨).
-        _enqueue_wake_now(public["video_id"], now_iso)
-        log.info("public yt relay → 즉시 wake: kind=%s video_id=%s", public["relay_kind"], public["video_id"])
-        return {"ok": True, "public_relay": public["relay_kind"], "video_id": public["video_id"],
-                "woken": True}, 200
 
     # video_id 미상("default") — 회원전용으로 추정.
     if public["relay_kind"] == "tunein":
@@ -3338,12 +3321,13 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
 
 
 def _preserve_raw(kind: str, raw: str, meta: dict, now_iso: str) -> None:
-    """(v4a D19) 스케줄 관련 트윗 원문 보존 → raw store(`raw/YYYY-MM.jsonl`). 실패해도 흐름 무영향.
+    """(v4a D19) 스케줄 관련 트윗 원문 보존 → raw store(`raw/YYYY-MM-DD.jsonl`). 실패해도 흐름 무영향.
 
-    로컬 시험판 전용(`_local/raw/`). 배포 시 보존 위치는 미결 — 데이터 저장소가 공개라 원문이 그대로 공개된다
-    (`ref/v4a/v4a_decisions.md` §2-1). 그래서 로컬이 아니면 아무것도 하지 않는다.
+    로컬 = `_local/raw/`. (v4, 2026-10-03 운영자 결정) 클라우드 = 데이터 저장소의 `monitoring` 브랜치(`RAW_BRANCH`).
+    데이터 저장소는 공개 — 이미 공개 중인 `tweet_archive.json` 원문과 같은 수준. `RAW_BRANCH` 가 없으면(설정 누락)
+    없는 브랜치에 쓰지 않도록 건너뛴다.
     """
-    if not storage.is_local() or not raw:
+    if not raw or (not storage.is_local() and not os.environ.get("RAW_BRANCH", "").strip()):
         return
     try:
         from . import rawlog
@@ -3408,29 +3392,14 @@ def _confirm_rows_with_videos(rows: list[dict], now_iso: str) -> tuple[list[dict
 
 
 def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
-    """(v3.6) URL 확정 예고 반영 직후 Cloud Tasks wake 즉시 등록.
-
-    light tick(10분 간격, 2026-09-16 3h→10분 단축)을 안 기다리고 live/watching 전이를
-    바로 예약 — 버그리포트 20260916 #1(미예고 방송 발견까지 tick 텀만큼 지연)의 근본 대응.
-    실패해도 non-fatal(다음 light tick 이 안전망으로 회수).
-    (v4a) 로컬 시험판: Cloud Tasks 대신 적용 큐에 reconcile(영상) 적재.
+    """(v3.6) URL 확정 예고 반영 직후 즉시 확인 예약 — light tick 을 안 기다리고 live/watching 전이를 바로.
+    (v4) `apply.enqueue_reconcile`(로컬 = 적용 큐, 클라우드 = Cloud Tasks /wake). 실패해도 non-fatal(다음 light tick 이 회수).
     """
-    if storage.is_local():
+    try:
         from . import apply
         apply.enqueue_reconcile(video_id=video_id, run_at_iso=schedule_time_iso)
-        return
-    try:
-        from .tasks import TaskQueue
-        tq = TaskQueue(
-            project=os.environ.get("GCP_PROJECT", "").strip(),
-            location=os.environ.get("GCP_LOCATION", "").strip(),
-            queue=os.environ.get("TASKS_QUEUE", "").strip(),
-            target_url=os.environ.get("SERVICE_URL", "").strip().rstrip("/"),
-            invoker_sa=os.environ.get("INVOKER_SA", "").strip(),
-        )
-        tq.enqueue_wake(video_id, schedule_time_iso)
-    except Exception:
-        log.debug("URL 확정 예고: wake enqueue 실패 (다음 light tick 에서 회수)")
+    except Exception:  # noqa: BLE001
+        log.debug("즉시 확인 예약 실패 (다음 light tick 에서 회수)", exc_info=True)
 
 
 def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
@@ -5797,27 +5766,11 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
             log.warning("preview_archive 반영 실패 — preview.json 제거는 유지", exc_info=True)
         return "🗑 즉시 제거 + 아카이브 반영 완료."
 
-    if video_id and storage.is_local():
-        # (v4a #14d) 자기 호출(/wake 동기 호출) 대신 reconcile(영상) 적재 — 원칙 ③
+    if video_id:
+        # (v4a #14d) 자기 호출(/wake 동기 호출) 대신 reconcile(영상) 적재 — 원칙 ③ (클라우드는 Cloud Tasks /wake)
         from . import apply
         apply.enqueue_reconcile(video_id=video_id)
         return "✅ reconcile(영상) 적재 — 실물 재확인 + 다음 체크 재예약."
-
-    if video_id:
-        main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
-        if not (fetch_id_token and Request and requests and main_url):
-            return "⚠️ 메인 서비스 호출 불가(설정 없음) — 다음 정기 tick 이 처리합니다."
-        try:
-            tok = fetch_id_token(Request(), main_url)
-            resp = requests.post(
-                f"{main_url}/wake", json={"video_id": video_id},
-                headers={"Authorization": f"Bearer {tok}"}, timeout=30,
-            )
-            if resp.status_code == 200:
-                return "✅ 메인 서비스 /wake 로 실물 재확인 + 다음 체크 재예약 완료."
-            return f"⚠️ /wake 호출 실패(HTTP {resp.status_code}) — 다음 정기 tick 이 처리합니다."
-        except Exception as e:  # noqa: BLE001
-            return f"⚠️ /wake 호출 실패({e}) — 다음 정기 tick 이 처리합니다."
 
     # video_id 없는 announced 자리표시 — API 검증 대상 아님, FSM 1회만 로컬 파생.
     tick = statemachine.derive(item, now_iso, live_seen=None)
@@ -6020,14 +5973,11 @@ if _FLASK_AVAILABLE:
             gh_repo = os.environ.get("GITHUB_REPO", "").strip()
             gh_branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
 
-            if storage.is_local():
-                gh = storage.make_store("data")      # (v4a) 로컬 시험판
-            elif not gh_token or not gh_repo:
+            gh = storage.make_store("data")      # (v4) 로컬 · 클라우드 공통 (ops 라우팅 포함)
+            if gh is None:
                 log.warning("GitHub config missing")
                 _send_telegram("⚠️ GitHub 설정 누락")
                 return _done(False)
-            else:
-                gh = GitHubStore(gh_token, gh_repo, gh_branch)
             channels_cfg = _load_channels_config()
 
             # v2.5: 대기 중인 /del 확인(y/N) 이 있으면 명령 디스패치보다 먼저 처리.
@@ -6089,23 +6039,22 @@ if _FLASK_AVAILABLE:
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
-            # (v4a D24) 로컬 시험판: 텔레그램은 알림 + 비상 명령(/status /pause /resume /list /admin)만.
+            # (v4a D24) 텔레그램은 알림 + 비상 명령(/status /pause /resume /list /admin)만.
             # 나머지 조작은 관리 페이지(/admin 로그인 링크). 마법사 대화 상태는 만들지 않는다.
-            if storage.is_local():
-                if cmd == "/admin":
-                    _handle_admin_link()
-                    return _done()
-                if cmd == "/resume":
-                    _handle_resume_local(gh, now_utc)
-                    return _done()
-                if cmd not in ("/status", "/pause", "/list"):
-                    _send_telegram(
-                        "<b>📱 mewtype v4a (로컬 시험판)</b>\n\n"
-                        "비상 명령: /status /pause /resume /list [notice|tweet]\n"
-                        "/admin — 관리 페이지 로그인 링크(일회용)\n\n"
-                        "예고 · 소식 · 트윗 편집 · 삭제 · 원문 투입 · 번역 · 유실 원문 재투입 · 알림 레벨은 관리 페이지에서."
-                    )
-                    return _done()
+            if cmd == "/admin":
+                _handle_admin_link()
+                return _done()
+            if cmd == "/resume":
+                _handle_resume_local(gh, now_utc)
+                return _done()
+            if cmd not in ("/status", "/pause", "/list"):
+                _send_telegram(
+                    "<b>📱 mewtype v4</b>\n\n"
+                    "비상 명령: /status /pause /resume /list [notice|tweet]\n"
+                    "/admin — 관리 페이지 로그인 링크(일회용)\n\n"
+                    "예고 · 소식 · 트윗 편집 · 삭제 · 원문 투입 · 번역 · 유실 원문 재투입 · 알림 레벨은 관리 페이지에서."
+                )
+                return _done()
             if cmd == "/status":
                 _handle_status(gh, channels_cfg, now_utc)
             elif cmd == "/pause":
@@ -6509,8 +6458,7 @@ if _FLASK_AVAILABLE:
             # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
             # (v4a) ingest_queue 는 ECHO/DRY-RUN 시절 잔재(설계 §12-1) — 로컬 시험판에선 매 알림마다 빈 작업을
             # 적용 큐에 싣지 않도록 건너뛴다.
-            _drain = ({} if storage.is_local() else
-                      writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영"))
+            _drain = {}   # (v4) ingest_queue 는 ECHO/DRY-RUN 시절 잔재 — 반영할 대기열 없음
             drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
             failed = xrelay.unparsed_lines(raw)
 
@@ -6678,6 +6626,23 @@ if _FLASK_AVAILABLE:
     def _health():
         """헬스체크."""
         return "ok", 200
+
+    def _register_admin_cloud() -> None:
+        """(v4) 클라우드 접수 서비스에 관리 페이지(/admin) 등록. 로컬은 local_runner.build_app 이 등록한다.
+        Cloud Run 은 TLS 를 앞단에서 끝내므로 X-Forwarded-Proto 를 믿어야(ProxyFix) 세션 쿠키에 Secure 가 붙는다."""
+        secret = os.environ.get("ADMIN_SECRET", "").strip()
+        if storage.is_local() or not secret or "admin" in app.blueprints:
+            return
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        from . import admin_api, admin_web
+        ops_store = storage.make_store("ops")
+        if ops_store is None:
+            log.warning("관리 페이지 미등록 — GitHub 설정 없음")
+            return
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+        app.register_blueprint(admin_web.create_blueprint(api=admin_api, ops_store=ops_store, secret=secret))
+
+    _register_admin_cloud()
 
 
 if __name__ == "__main__":
@@ -7659,11 +7624,11 @@ if __name__ == "__main__":
         assert '"flow": "preview"' in _ev_edit and '"to_state": "out"' in _ev_edit             and '"from_state": "watching"' in _ev_edit, _ev_edit
         print("[OK] _apply_preview_edit: state 변경(→none)이 모니터 이벤트 로그에도 기록됨")
 
-        # (b) video_id 있는 아이템 → MAIN_SERVICE_URL 미설정이면 안 죽고 안내만.
+        # (b) video_id 있는 아이템 → (v4) 자기 호출 대신 reconcile(영상) 적재. 큐 · Cloud Tasks 설정이 없어도 안 죽는다.
         item_b = {"id": "pv_x1", "state": "live", "video_id": "vvv", "channel_key": "arale"}
         r_video = _activate_state_edit(g2, item_b, NW)
-        assert "다음 정기 tick" in r_video, r_video
-        print("[OK] _activate_state_edit: video_id 있음 + 메인서비스 미설정 → 경고만(안 죽음)")
+        assert "reconcile(영상) 적재" in r_video, r_video
+        print("[OK] _activate_state_edit: video_id 있음 → reconcile(영상) 적재 (설정 없어도 안 죽음)")
 
         # (c) video_id 없는 announced, 아직 30분 안 지난 상태로 state="end" 강제 지정
         #     → FSM 재판정 결과 그대로(end 창 유지, none 으로 안 건너뜀).
@@ -7699,40 +7664,37 @@ if __name__ == "__main__":
             return True
 
         _orig_send_tg = globals()["_send_telegram"]
-        _orig_gh_store = globals()["GitHubStore"]
-        _orig_del_req = globals()["_handle_del_request"]
+        _orig_status = globals()["_handle_status"]
+        _orig_make_store = storage.make_store
         _orig_env4 = dict(os.environ)
         try:
             os.environ["GITHUB_TOKEN"] = "test-token"
             os.environ["GITHUB_REPO"] = "test/repo"
             globals()["_send_telegram"] = _fake_send_telegram
-            globals()["GitHubStore"] = _FakeGHStore
+            storage.make_store = lambda role="data": _FakeGHStore()   # (v4) 웹훅 store 는 storage.make_store 로 만든다
             _FakeGHStore._store = {}
             client = app.test_client()
 
-            # 실사례 재현: /del preview (유닛/번호 누락) — 현재 코드는 이미 사용법
-            # 안내를 보낸다(버그리포트 당시엔 조용히 끝났다는 보고 — 재현 안 됨은
-            # 배포 지연/환경차 가능성. 그래도 이 경로가 DM 을 보낸다는 걸 고정한다).
+            # (v4 D24) 텔레그램은 비상 명령만 — 옛 마법사 명령(/del 등)은 관리 페이지 안내 DM 1건으로 끝난다.
             _sent_msgs.clear()
             resp = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/del preview"}})
             assert resp.status_code == 200
             assert len(_sent_msgs) == 1, _sent_msgs
-            assert "사용법" in _sent_msgs[0], _sent_msgs
-            print("[OK] 안전망: /del preview(유닛·번호 누락) → 사용법 안내 DM 정상 발송")
+            assert "관리 페이지" in _sent_msgs[0] and "/admin" in _sent_msgs[0], _sent_msgs
+            print("[OK] (v4 D24) /del 등 옛 명령 → 비상 명령 · 관리 페이지 안내 DM")
 
-            # 안전망 자체 검증: 핸들러가 DM 없이 끝나는 상황을 인위로 만들어도
-            # _done() 이 대신 알린다.
+            # 안전망 자체 검증: 핸들러가 DM 없이 끝나는 상황을 인위로 만들어도 _done() 이 대신 알린다.
             _sent_msgs.clear()
-            globals()["_handle_del_request"] = lambda *a, **kw: None
-            resp2 = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/del arale 1"}})
+            globals()["_handle_status"] = lambda *a, **kw: None
+            resp2 = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/status"}})
             assert resp2.status_code == 200
             assert len(_sent_msgs) == 1, _sent_msgs
             assert "결과를 알려드리지 못했습니다" in _sent_msgs[0], _sent_msgs
             print("[OK] 안전망: 핸들러가 DM 없이 끝나는 경로 → _done() 이 대신 안내 DM 발송")
         finally:
             globals()["_send_telegram"] = _orig_send_tg
-            globals()["GitHubStore"] = _orig_gh_store
-            globals()["_handle_del_request"] = _orig_del_req
+            globals()["_handle_status"] = _orig_status
+            storage.make_store = _orig_make_store
             os.environ.clear()
             os.environ.update(_orig_env4)
 
@@ -7963,12 +7925,20 @@ if __name__ == "__main__":
                     "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:fa7ca7b21bde0000",
                     "tag": "mn4Jjd7KdXY::199826f2-810d-4770-a851-c23591a45b10",
                 }
+                # (v4 D1·D2·D3) 실물 video_id 가 있는 알림은 적용 작업 yt_notif 로 적재된다(로컬 = 적용 큐,
+                # 클라우드 = Cloud Tasks → 쓰기 서비스 /write). 작업이 reconcile(영상) 후 tunein→watching / 시작→live.
+                import src.backend.apply as _ap
+                _yt_jobs: list = []
+                _orig_ap_submit = _ap.submit
+                _ap.submit = lambda kind, args, **kw: (_yt_jobs.append((kind, dict(args), kw)),
+                                                       {"queued": True, "job_id": f"j{len(_yt_jobs)}"})[1]
                 rt1 = client.post("/ingest", data=_tunein_form, headers=_yt_hdr)
                 jt1 = rt1.get_json()
-                assert rt1.status_code == 200 and jt1.get("woken") is True, (rt1.status_code, jt1)
+                assert rt1.status_code == 200 and jt1.get("queued") == "j1", (rt1.status_code, jt1)
                 assert jt1["public_relay"] == "tunein" and jt1["video_id"] == "mn4Jjd7KdXY", jt1
-                assert _enqueue_wake_now_counts["count"] == 1 and _woken_ids == ["mn4Jjd7KdXY"]
-                print("[OK] v3.8.4: /ingest source=yt TUNEIN(실물 video_id) → 즉시 _enqueue_wake_now 1회"
+                assert _yt_jobs[-1][0] == "yt_notif" and _yt_jobs[-1][1]["video_id"] == "mn4Jjd7KdXY" \
+                    and _yt_jobs[-1][1]["relay_kind"] == "tunein" and _yt_jobs[-1][2].get("wait") is False, _yt_jobs
+                print("[OK] v4: /ingest source=yt TUNEIN(실물 video_id) → yt_notif 적재(결과 안 기다림)"
                       " (09-22 09:33 千石ユノ 실측 회귀 테스트 — 예전엔 조용히 ignored 였음)")
 
                 # REMINDER(일반 채널 라이브 시작)도 동일 — video_id 실물 확보 케이스.
@@ -7982,9 +7952,10 @@ if __name__ == "__main__":
                 }
                 rt2 = client.post("/ingest", data=_reminder_form, headers=_yt_hdr)
                 jt2 = rt2.get_json()
-                assert rt2.status_code == 200 and jt2.get("woken") is True and jt2["public_relay"] == "reminder", jt2
-                assert _enqueue_wake_now_counts["count"] == 1 and _woken_ids == ["bgzve7Y7S50"]
-                print("[OK] v3.8.4: /ingest source=yt REMINDER(실물 video_id) → 즉시 _enqueue_wake_now 1회")
+                assert rt2.status_code == 200 and jt2.get("queued") == "j2" and jt2["public_relay"] == "reminder", jt2
+                assert _yt_jobs[-1][0] == "yt_notif" and _yt_jobs[-1][1]["video_id"] == "bgzve7Y7S50", _yt_jobs
+                _ap.submit = _orig_ap_submit
+                print("[OK] v4: /ingest source=yt REMINDER(실물 video_id) → yt_notif 적재")
 
                 # 회원전용 추정 TUNEIN(video_id=default) — 실측 미확인 포맷이라 승격 스킵(무시 유지).
                 _enqueue_wake_now_counts["count"] = 0

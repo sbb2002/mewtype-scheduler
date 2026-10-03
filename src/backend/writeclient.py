@@ -82,18 +82,38 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
     main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
     if not main_url:
         from . import writers
+        _reg = getattr(writers, "_registry", None)
+        if _reg is not None and kind not in _reg():
+            # (v4) 쓰기 서비스 안에서 부른 v4 전용 작업(yt_notif · reconcile 등) — 적용 처리기로 그 자리에서
+            from . import apply
+            return apply.handle(kind, dict(args), {"job_id": "inline", "attempt": 1, "is_last": True, "queue": "inline"})
         if gh is None:
             raise WriteError("call_write: MAIN_SERVICE_URL 미설정 + gh 없음 — 로컬 디스패치 불가")
         return writers.dispatch(kind, gh, args)
 
-    if not (fetch_id_token and Request and requests):
-        raise WriteError("call_write: google-auth/requests 미탑재 — /write 호출 불가")
-
     prog = _Progress(kind, tag, gh).start()
     try:
-        tok = fetch_id_token(Request(), main_url)
+        res = post_write(kind, args, main_url=main_url)
+    except WriteError as e:
+        prog.finish(ok=False, err=getattr(e, "short", None) or str(e))   # DM 은 짧게(예: "HTTP 500")
+        raise
+    prog.finish(ok=True, result=res)
+    return res
 
-        # (v3.8.9) /write 429/503 지수 백오프 재시도
+
+def post_write(kind: str, args: dict, *, main_url: str | None = None) -> dict:
+    """쓰기 서비스 `/write` 동기 호출(OIDC) — 결과 dict. `call_write`(DM 포함) · `apply.submit`(v4 클라우드 접수) 공용.
+
+    (v3.8.9) HTTP 429/503 은 Cloud Run 이 컨테이너에 배정하기 **전에** 거절한 것이라 재시도해도 중복 커밋이 없다 →
+    지수 백오프 재시도. 네트워크 예외는 서버가 이미 처리 중일 수 있어 재시도하지 않는다.
+    """
+    main_url = (main_url or os.environ.get("MAIN_SERVICE_URL", "")).strip().rstrip("/")
+    if not main_url:
+        raise WriteError("post_write: MAIN_SERVICE_URL 미설정")
+    if not (fetch_id_token and Request and requests):
+        raise WriteError("call_write: google-auth/requests 미탑재 — /write 호출 불가")
+    try:
+        tok = fetch_id_token(Request(), main_url)
         retry = 0
         while True:
             resp = requests.post(
@@ -102,9 +122,6 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
                 headers={"Authorization": f"Bearer {tok}"},
                 timeout=_TIMEOUT_SEC,
             )
-
-            # 429/503 → 지수 백오프 재시도 (Cloud Run이 백엔드 컨테이너에 요청을 배정하기 전에
-            # 거절한 것이라 백엔드가 요청을 보지 못했다 — 재시도해도 중복 커밋이 없다)
             if resp.status_code in (429, 503) and retry < _MAX_RETRIES:
                 retry += 1
                 backoff = min(
@@ -112,27 +129,21 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
                     _MAX_BACKOFF_SEC,
                 )
                 wait = backoff + random.uniform(0, _JITTER_SEC)
-                log.warning(
-                    "/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
-                    resp.status_code,
-                    retry,
-                    _MAX_RETRIES,
-                    wait,
-                )
+                log.warning("/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
+                            resp.status_code, retry, _MAX_RETRIES, wait)
                 time.sleep(wait)
                 continue
             break
     except Exception as e:  # noqa: BLE001
-        prog.finish(ok=False, err=str(e))
-        raise WriteError(f"/write 호출 실패({kind}): {e}") from e
+        err = WriteError(f"/write 호출 실패({kind}): {e}")
+        err.short = str(e)
+        raise err from e
 
     if resp.status_code != 200:
-        prog.finish(ok=False, err=f"HTTP {resp.status_code}")
-        raise WriteError(f"/write 실패({kind}): HTTP {resp.status_code} {resp.text[:200]}")
-
-    res = resp.json()
-    prog.finish(ok=True, result=res)
-    return res
+        err = WriteError(f"/write 실패({kind}): HTTP {resp.status_code} {resp.text[:200]}")
+        err.short = f"HTTP {resp.status_code}"
+        raise err
+    return resp.json()
 
 
 class _Progress:

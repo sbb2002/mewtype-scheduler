@@ -3459,12 +3459,19 @@
                 document.getElementById("now-at").textContent = `${this.formatTime(n.server_now)} 기준 · 5초마다 갱신`;
 
                 const r = n.runner;
-                tile("러너", r ? "가동 중" : "정보 없음",
-                     r ? `${this.formatTime(r.started_at)}부터 (${ago(r.started_at)}) · ${r.bind}:${r.port}` : "runner.json 없음",
-                     r ? "ok" : "warn");
+                const cloud = !!(r && r.cloud);   // (v4) 배포판(Cloud Run)
+                if (cloud) {
+                    tile("서버", "Cloud Run", `${r.revision || "리비전 미상"} · 이 인스턴스 ${this.formatTime(r.started_at)}부터`, "ok");
+                } else {
+                    tile("러너", r ? "가동 중" : "정보 없음",
+                         r ? `${this.formatTime(r.started_at)}부터 (${ago(r.started_at)}) · ${r.bind}:${r.port}` : "runner.json 없음",
+                         r ? "ok" : "warn");
+                }
 
                 const tg = n.telegram || {};
-                if (tg.state === "ok") {
+                if (tg.state === "webhook") {
+                    tile("텔레그램 봇", "webhook", "명령은 텔레그램 서버가 이 서비스로 전달", "ok");
+                } else if (tg.state === "ok") {
                     tile("텔레그램 봇", "정상", `마지막 확인 ${this.formatTime(tg.last_ok)} (${ago(tg.last_ok)})`, "ok");
                 } else if (tg.state === "error") {
                     tile("텔레그램 봇", `오류 ${tg.fails || 1}회째`,
@@ -3487,8 +3494,12 @@
                 }
 
                 const q = n.queue || {};
-                tile("적용 큐", q.due ? `지금 처리 대기 ${q.due}건` : "밀린 작업 없음",
-                     `예약 ${q.scheduled || 0}건 · 번역 대기 ${q.enrich || 0}건`, q.due > 3 ? "warn" : "ok");
+                if (cloud) {
+                    tile("예약된 확인", `${(q.due || 0) + (q.scheduled || 0)}건`, "Cloud Tasks 대기 태스크 (방송 확인)", "ok");
+                } else {
+                    tile("적용 큐", q.due ? `지금 처리 대기 ${q.due}건` : "밀린 작업 없음",
+                         `예약 ${q.scheduled || 0}건 · 번역 대기 ${q.enrich || 0}건`, q.due > 3 ? "warn" : "ok");
+                }
 
                 const nx = (n.next || [])[0];
                 if ((n.live || []).length) {
@@ -3498,8 +3509,9 @@
                 }
 
                 tile("데이터 갱신", n.last_reconcile ? `${this.formatTime(n.last_reconcile)} · ${ago(n.last_reconcile)}` : "기록 없음",
-                     `마지막 정기 수집 · 예고 파일 ${this.formatTime(n.preview_generated_at)}`,
-                     n.last_reconcile && nowMs - Date.parse(n.last_reconcile) > 25 * 60000 ? "warn" : "ok");
+                     cloud ? `변화가 있었던 마지막 정기 수집(변화 없으면 기록 안 함) · 예고 파일 ${this.formatTime(n.preview_generated_at)}`
+                           : `마지막 정기 수집 · 예고 파일 ${this.formatTime(n.preview_generated_at)}`,
+                     !cloud && n.last_reconcile && nowMs - Date.parse(n.last_reconcile) > 25 * 60000 ? "warn" : "ok");
             },
 
             flowStatus(f) {
@@ -3526,7 +3538,9 @@
                 if (!flows.length) {
                     const e = document.createElement("div");
                     e.className = "jempty";
-                    e.textContent = "기록된 흐름이 없습니다 — 알림이 들어오거나 관리 페이지에서 조작하면 여기 쌓입니다.";
+                    e.textContent = (this.jobs || {}).runtime === "cloud"
+                        ? "배포판에서는 LLM 판단만 여기 한 줄씩 남습니다(반려 · 재판단 · 사용자 판단). 그 밖의 처리는 아래 「최근 자동 처리」(이벤트 로그)에서 보세요."
+                        : "기록된 흐름이 없습니다 — 알림이 들어오거나 관리 페이지에서 조작하면 여기 쌓입니다.";
                     box.appendChild(e);
                     return;
                 }
