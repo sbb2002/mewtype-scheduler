@@ -131,6 +131,8 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
       "source": "personal",                // x-relay | personal | yt-notif | api | manual
       "info_source": "personal",           // 마지막으로 타이밍/정보를 갱신한 신호 종류
       "info_at": "2026-09-08T09:00:00Z",   // 그 신호 시각(트윗 snowflake 유래 등)
+      "src_url": "https://x.com/i/status/…", // (v4.0.4, 선택) 이 예고를 처음 알린 트윗(공식 스케줄 · 본인 예고 · URL 확정).
+                                           //   비어 있을 때만 채운다. 리포트 팝업 X url · announced at(트윗 ID 게시 시각). 프론트 미사용
       "api_start_seen": null,              // 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정) 트윗값 대신 API 승
 
       "assumed_live": false,               // video_id 없이 scheduled_start 지남 → 프론트 "방송 중(추정)"

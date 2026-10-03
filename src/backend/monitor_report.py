@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -105,7 +106,8 @@ def _tone_json(events: list[dict]) -> list[dict]:
     """notice/relay 공용 — 헤드라인을 안 남겨서 tone/detail만. (v3.8.9) via(ingest|ops) 동봉 —
     업스트림 이벤트가 없는 옛 날짜의 트리거 📥 를 자동 인입(via=ingest)만으로 세기 위해."""
     return [
-        {"t": _kst_hm(e["ts"]), "tone": e.get("result", "ok"), "d": e.get("detail", ""), "via": e.get("via")}
+        {"t": _kst_hm(e["ts"]), "tone": e.get("result", "ok"), "d": e.get("detail", ""), "via": e.get("via"),
+         "ts": e["ts"], "nid": e.get("notice_id")}   # (v4.0.4) 팝업 상세를 찾는 열쇠
         for e in sorted(events, key=lambda x: x["ts"])
     ]
 
@@ -230,7 +232,7 @@ def _cmd_json(events: list[dict]) -> list[dict]:
 def _tweet_json(events: list[dict]) -> list[dict]:
     return [
         {"t": _kst_hm(e["ts"]), "member": e.get("who", ""), "tone": e.get("result", "ok"), "d": e.get("detail", ""),
-         "via": e.get("via")}
+         "via": e.get("via"), "ts": e["ts"], "tid": e.get("tweet_id")}   # (v4.0.4) 팝업 상세를 찾는 열쇠
         for e in sorted(events, key=lambda x: x["ts"])
     ]
 
@@ -254,7 +256,8 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             # (v3.8.9) carried=True — 관측된 전이가 아니라 "하루 시작 전부터 이 상태"를
             # 표시하는 선행 구간임을 남긴다(DM 멤버 현황이 시작 시각을 단정하지 않도록).
             segs.append({"s": evs[0]["from_state"], "from": "06:00", "to": _kst_hm(evs[0]["ts"]),
-                         "carried": True})
+                         "carried": True, "id": evs[0].get("item_id") or evs[0].get("id"),
+                         "vid": evs[0].get("video_id"), "title": evs[0].get("title")})
         for i, e in enumerate(evs):
             to_state = e.get("to_state")
             title = e.get("title") or title
@@ -267,7 +270,9 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
                 # "30:00" = 이 하루의 끝(다음날 06:00) — 프론트 minutesOf()가 이 가상 시각을
                 # 앵커 변환 없이 그대로 받아들여 차트 맨 끝에 고정한다.
                 seg_to = now_hm or "30:00"
-            seg = {"s": to_state, "from": seg_from, "to": seg_to}
+            # (v4.0.4) id · vid · title = 팝업 상세를 찾는 열쇠(구간마다 — 한 멤버가 하루 여러 방송이어도 구간별 정보)
+            seg = {"s": to_state, "from": seg_from, "to": seg_to, "id": e.get("item_id") or e.get("id"),
+                   "vid": e.get("video_id"), "title": e.get("title")}
             if e.get("result") and e["result"] != "ok":
                 seg["q"] = e["result"]
                 seg["qd"] = e.get("detail", "")
@@ -282,6 +287,104 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             segs.append(seg)
         out.append({"member": member, "title": title, "segs": segs})
     return out
+
+
+# ── (v4.0.4) 팝업 상세 — 예고 · 소식 · 개인 트윗 이벤트를 데이터 파일과 맞춰 붙인다 ─────────────────────────
+# 이벤트 로그엔 "mode: updated" 같은 처리 결과만 남아 팝업이 쓸모없었다. 리포트를 **보여줄 때** 예고 · 소식 · 트윗 파일
+# (보관함 포함)에서 찾아 팝업 정보(info)를 붙인다 — 그래서 지난 날짜에도 적용된다. 맞춰 붙이는 열쇠:
+#   예고 = 이벤트의 item_id(구 기록은 id) · 소식 = notice_id(v4.0.4~) 또는 시각(first_seen/last_updated) ·
+#   트윗 = tweet_id(v4.0.4~) 또는 (멤버, received_at = 이벤트 시각). 못 찾으면 info 없이(프론트가 처리 결과로 대체).
+
+_TWEET_EPOCH_MS = 1288834974657
+
+
+def snowflake_iso(url_or_id: str | None) -> str | None:
+    """트윗 URL/ID → 게시 시각(UTC ISO 'Z'). X Snowflake ID 의 앞 42비트가 ms 시각."""
+    m = re.search(r"(\d{15,20})", url_or_id or "")
+    if not m:
+        return None
+    try:
+        ms = (int(m.group(1)) >> 22) + _TWEET_EPOCH_MS
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def load_detail_lookup(gh) -> dict:
+    """data 브랜치의 예고 · 소식 · 트윗(+보관함)을 읽어 찾기 표로. 읽기 실패한 파일은 빈 것으로."""
+    def read(path):
+        try:
+            d, _ = gh.read_json(path)
+            return d or {}
+        except Exception:  # noqa: BLE001
+            return {}
+    pv = {}
+    for path in ("preview_archive.json", "preview.json"):          # 현재 파일이 보관함보다 우선
+        for it in read(path).get("items") or []:
+            if it.get("id"):
+                pv[it["id"]] = it
+    nt_id, nt_ts = {}, {}
+    for path in ("notice_archive.json", "notices.json"):
+        for n in read(path).get("notices") or []:
+            for k in [n.get("id"), *(n.get("seen_ids") or [])]:
+                if k:
+                    nt_id[str(k)] = n
+            for k in (n.get("first_seen"), n.get("last_updated")):
+                if k:
+                    nt_ts[k] = n
+    tw_id, tw_key = {}, {}
+    arch = read("tweet_archive.json").get("tweets") or []
+    cur = read("tweets.json").get("tweets") or {}
+    cur_list = [t for v in (cur.values() if isinstance(cur, dict) else []) for t in (v if isinstance(v, list) else [v]) if t]
+    for t in [*arch, *cur_list]:
+        if t.get("id"):
+            tw_id[str(t["id"])] = t
+        if t.get("received_at"):
+            tw_key[(t.get("channel_key"), t["received_at"])] = t
+    return {"pv": pv, "nt_id": nt_id, "nt_ts": nt_ts, "tw_id": tw_id, "tw_key": tw_key}
+
+
+def _yt_url(it: dict | None, vid: str | None) -> str | None:
+    u = (it or {}).get("url") or ""
+    if "youtube.com" in u or "youtu.be" in u:
+        return u
+    v = (it or {}).get("video_id") or vid
+    return f"https://www.youtube.com/watch?v={v}" if v else None
+
+
+def attach_details(day: dict, lk: dict) -> dict:
+    """하루치 dict 의 예고 구간 · 소식 · 트윗 항목에 팝업 정보(info)를 붙인다(제자리 수정 · 반환)."""
+    for row in day.get("preview") or []:
+        for sg in row.get("segs") or []:
+            it = lk["pv"].get(sg.get("id") or "")
+            src = (it or {}).get("src_url")
+            sg["info"] = {"title": (it or {}).get("title") or sg.get("title") or row.get("title"),
+                          "start": (it or {}).get("scheduled_start"), "yt": _yt_url(it, sg.get("vid")),
+                          "src": src, "announced": snowflake_iso(src)}
+    for e in day.get("notice") or []:
+        n = lk["nt_id"].get(str(e.get("nid") or "")) or lk["nt_ts"].get(e.get("ts") or "")
+        if n:
+            # 소식엔 본문 한글 번역이 없다 — 원문 = 트윗 원문(body_raw), 한글 = 팬 화면 소식 줄의 한글 제목(title_ko)
+            e["info"] = {"orig": n.get("body_raw") or n.get("title_raw") or n.get("title"),
+                         "ko": n.get("title_ko"), "x": n.get("tweet_url")}
+    for e in day.get("tweet") or []:
+        t = lk["tw_id"].get(str(e.get("tid") or "")) or lk["tw_key"].get((e.get("member"), e.get("ts") or ""))
+        if t:
+            e["info"] = {"orig": t.get("text"), "ko": t.get("text_ko"),
+                         "x": t.get("url") or (f"https://x.com/i/status/{t['id']}" if t.get("id") else None)}
+    return day
+
+
+def refresh_detail_parts(day: dict, text: str | None) -> dict:
+    """지난 날짜 스냅샷(v4.0.4 이전에 저장 — 구간에 항목 열쇠가 없음)의 예고 · 소식 · 트윗 부분을 이벤트 로그로
+    다시 만든다. 나머지(백엔드 상태 · 외부 조회 · 트리거)는 스냅샷 값 그대로."""
+    if text is None:
+        return day
+    grouped = _group(parse_events(text))
+    day["preview"] = _preview_json(grouped["preview"], day.get("nowHm"))
+    day["notice"] = _tone_json(grouped["notice"])
+    day["tweet"] = _tweet_json(grouped["tweet"])
+    return day
 
 
 def _day_bounds(date_kst: str) -> tuple[datetime, datetime]:
@@ -792,7 +895,12 @@ _TEMPLATE = r"""<!doctype html>
 
   .tooltip{position:fixed; background:#1c1e24; border:1px solid var(--line); border-radius:8px;
     padding:9px 11px; font-size:.76rem; pointer-events:auto; z-index:50; display:none;
-    box-shadow:0 8px 24px rgba(0,0,0,.45); max-width:280px}
+    box-shadow:0 8px 24px rgba(0,0,0,.45); max-width:340px}
+  /* (v4.0.4) 예고 · 소식 · 트윗 팝업 상세 — 링크는 클릭으로 고정한 팝업에서 연다 */
+  .tooltip .tt-kv{margin:2px 0; color:var(--ink); word-break:break-word; white-space:pre-wrap}
+  .tooltip .tt-kv > span{color:var(--muted); margin-right:4px}
+  .tooltip a.tt-link{color:#6cb4ff; word-break:break-all}
+  .tooltip .tt-hint{color:var(--muted); font-size:.68rem; margin-top:4px}
   .tooltip .tt-h{color:var(--muted); font:11px var(--mono); margin-bottom:5px}
   .tooltip .tt-title{font-size:.82rem; color:var(--ink); margin-bottom:3px; font-weight:600}
   .tooltip .tt-raw{font-family:var(--mono); font-size:.76rem; margin-bottom:3px}
@@ -956,6 +1064,30 @@ const X_ICON_D =
   "M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z";
 // (v3.8.9) 운영자 명령 원문·응답 요약은 사람이 입력한 텍스트라 툴팁/표(innerHTML)에 넣기 전에 escape.
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// (v4.0.4) 팝업 상세 — 값이 없으면 "-". 링크는 새 창으로(클릭해 고정한 팝업에서 누른다)
+function ttKst(iso){
+  const ms = Date.parse(iso || "");
+  if (isNaN(ms)) return "-";
+  const d = new Date(ms + 9 * 3600e3), p = n => String(n).padStart(2, "0");
+  return `${p(d.getUTCMonth()+1)}/${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} KST`;
+}
+function ttLink(u){
+  if (!u || !/^https?:\/\//.test(u)) return "-";
+  return `<a class="tt-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u.replace(/^https?:\/\/(www\.)?/, ""))}</a>`;
+}
+function ttKv(k, v){ return `<div class="tt-kv"><span>${k}:</span>${v}</div>`; }
+function ttClip(s, n){ s = String(s || "").trim(); return s ? esc(s.length > n ? s.slice(0, n) + "…" : s) : "-"; }
+const TT_HINT = `<div class="tt-hint">클릭하면 팝업이 고정되어 링크를 열 수 있습니다</div>`;
+function previewInfoHtml(sg){
+  const i = sg.info || {};
+  return ttKv("title", ttClip(i.title || sg.title, 120)) + ttKv("start at", ttKst(i.start)) +
+    ttKv("YT url", ttLink(i.yt)) + ttKv("announced at", ttKst(i.announced)) + ttKv("X url", ttLink(i.src)) + TT_HINT;
+}
+function textInfoHtml(e){
+  const i = e.info;
+  if (!i) return esc(e.d || "");   // 맞춰 붙일 항목이 없는 기록(예: 「소식 아님」 판정) — 처리 결과 그대로
+  return ttKv("원문", ttClip(i.orig, 280)) + ttKv("한글", ttClip(i.ko, 280)) + ttKv("X url", ttLink(i.x)) + TT_HINT;
+}
 
 // (v3.8.9) 📥 트리거 = 업스트림 알림 수신(upstream 이벤트). 그 기록이 없는 옛 날짜만 예전처럼
 // relay·notice·tweet 결과에서 역산하되, 운영자 수동 /ingest(via=ops)는 빼고 센다.
@@ -1512,8 +1644,8 @@ function renderTimeline(){
         ? `<div class="tt-collab">함께: ${sg.collab_with.map(ck =>
             `<img src="${MEMBER_ICON[ck]}" alt="${MEMBER_KO[ck]||ck}">${MEMBER_KO[ck]||ck}`).join(" ")}</div>`
         : "";
-      wireTip(rect, { t:sg.from+"–"+sg.to, title:v.title, raw:label, tone:"ok",
-        d:(sg.qd || ("video: "+(v.title||"—"))) + collabTip });
+      wireTip(rect, { t:sg.from+"–"+sg.to, title:esc(MEMBER_KO[v.member] || v.member), raw:label, tone:"ok",
+        d:(sg.qd ? esc(sg.qd) : "") + previewInfoHtml(sg) + collabTip });
       svg.appendChild(rect);
       if (isCollabLive) {
         const iconSize = 12, gap = 2;
@@ -1524,8 +1656,8 @@ function renderTimeline(){
           icon.setAttribute("y", ry - 6 - iconSize - 2);
           icon.setAttribute("width", iconSize); icon.setAttribute("height", iconSize);
           icon.setAttribute("class", "tl-collab-icon");
-          wireTip(icon, { t:sg.from+"–"+sg.to, title:v.title, raw:label, tone:"ok",
-            d:(sg.qd || ("video: "+(v.title||"—"))) + collabTip });
+          wireTip(icon, { t:sg.from+"–"+sg.to, title:esc(MEMBER_KO[v.member] || v.member), raw:label, tone:"ok",
+            d:(sg.qd ? esc(sg.qd) : "") + previewInfoHtml(sg) + collabTip });
           svg.appendChild(icon);
         });
       }
@@ -1636,9 +1768,9 @@ function renderTimeline(){
     svg.appendChild(g);
   });
   NOTICE.forEach((e, i) => drawDot(e.t, rowY["notice|notice"], e.tone,
-    { t:e.t, title:"소식", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"notice"+i }));
+    { t:e.t, title:"소식", raw:TONE_LABEL[e.tone], tone:e.tone, d:textInfoHtml(e), _idx:"notice"+i }));
   TWEET.forEach((e, i) => drawDot(e.t, rowY["tweet|"+e.member], e.tone,
-    { t:e.t, title:(MEMBER_KO[e.member]||e.member)+" 개인 트윗", raw:TONE_LABEL[e.tone], tone:e.tone, d:e.d, _idx:"tweet"+i }));
+    { t:e.t, title:(MEMBER_KO[e.member]||e.member)+" 개인 트윗", raw:TONE_LABEL[e.tone], tone:e.tone, d:textInfoHtml(e), _idx:"tweet"+i }));
   CMD.forEach((e, i) => drawDot(e.t, rowY["cmd|cmd"], e.tone,
     { t:e.t, title:"💬 " + esc(e.derived ? e.cmd : (e.d || e.cmd)), raw:TONE_LABEL[e.tone] || esc(e.tone), tone:e.tone,
       d: e.derived ? esc(e.d) + " · (이전 로그에서 복원 — 응답 기록 없음)" : (e.reply ? "응답: " + esc(e.reply) : ""),
@@ -2685,6 +2817,33 @@ if __name__ == "__main__":
         os.environ["V4A_RUNTIME"] = _rt_prev
     assert 'function segLabel(m){ return m >= 1440 ? "30:00"' in _TEMPLATE   # 하루 끝 = "30:00"
     print("[OK] (v4a) nowHm · runMark · 하루 끝 30:00")
+
+    # (v4.0.4) 팝업 상세 — 트윗 ID 게시 시각 · 데이터와 맞춰 붙이기(열쇠: 예고 item_id · 트윗 tweet_id/(멤버, 시각) · 소식 notice_id/시각)
+    assert snowflake_iso("https://x.com/i/status/2106410068959007094") == "2026-10-03T15:44:30Z"
+    assert snowflake_iso(None) is None and snowflake_iso("no id") is None
+    _ev = [
+        {"ts": "2026-10-03T04:08:30Z", "flow": "preview", "who": "arale", "from_state": None, "to_state": "announced",
+         "item_id": "pv_a", "result": "ok"},
+        {"ts": "2026-10-03T05:00:00Z", "flow": "tweet", "who": "arale", "result": "ok", "detail": "mode: added"},
+        {"ts": "2026-10-03T06:00:00Z", "flow": "tweet", "who": "miyako", "result": "ok", "detail": "mode: added", "tweet_id": "222"},
+        {"ts": "2026-10-03T07:00:00Z", "flow": "notice", "result": "ok", "detail": "mode: updated", "notice_id": "333"},
+        {"ts": "2026-10-03T08:00:00Z", "flow": "notice", "result": "ok", "detail": "mode: none"},
+    ]
+    _d = build_day_from_text("2026-10-03", "\n".join(json.dumps(e) for e in _ev), now_hm=None, down_ranges=[], vercel_deploys=None)
+    _lk = {"pv": {"pv_a": {"id": "pv_a", "title": None, "scheduled_start": "2026-10-03T13:00:00Z", "url": None,
+                           "src_url": "https://x.com/i/status/2106232425852670193"}},
+           "nt_id": {"333": {"body_raw": "原文", "title_ko": "한글 제목", "tweet_url": "https://x.com/i/status/333"}}, "nt_ts": {},
+           "tw_id": {"222": {"id": "222", "text": "t2", "text_ko": "트2", "url": "https://x.com/i/status/222"}},
+           "tw_key": {("arale", "2026-10-03T05:00:00Z"): {"id": "111", "text": "t1", "text_ko": "트1"}}}
+    attach_details(_d, _lk)
+    _pi = _d["preview"][0]["segs"][0]["info"]
+    assert _pi["start"] == "2026-10-03T13:00:00Z" and _pi["yt"] is None and _pi["src"].endswith("2106232425852670193") \
+        and _pi["announced"] == snowflake_iso(_pi["src"]), _pi
+    assert _d["tweet"][0]["info"]["x"] == "https://x.com/i/status/111" and _d["tweet"][1]["info"]["ko"] == "트2"
+    assert _d["notice"][0]["info"] == {"orig": "原文", "ko": "한글 제목", "x": "https://x.com/i/status/333"}
+    assert "info" not in _d["notice"][1], "맞춰 붙일 소식이 없으면 info 없음(프론트는 처리 결과로)"
+    assert "previewInfoHtml" in _TEMPLATE and "textInfoHtml" in _TEMPLATE and '"video: "' not in _TEMPLATE
+    print("[OK] (v4.0.4) 팝업 상세 — 예고 · 트윗 · 소식 맞춰 붙이기 · 트윗 게시 시각")
     # (v3.8.9) 인입 = 업스트림(실제 기록 + 옛 로그 복원분) 건수
     assert day_trigger_count(dd) == len(dd["ops"]) + len(dd["ticks"]) + len(dd["upstream"])
     empty_file = build_day_from_text("2026-09-15", "", now_hm=None, down_ranges=None, vercel_deploys=None)
