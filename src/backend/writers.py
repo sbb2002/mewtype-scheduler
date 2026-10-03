@@ -37,6 +37,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
                 action=a.get("action"),
                 merge_fn=(t.xtweet.merge_personal_schedule
                           if a.get("merge_fn") == "personal_schedule" else None),
+                src_url=a.get("src_url"),
             )
         },
         "manual_preview": lambda gh, a: t._commit_manual_preview(gh, a["item"], a["now_iso"]),
@@ -64,7 +65,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         "tweet_edit_commit": lambda gh, a: t._tweet_edit_commit(gh, a["unit"], a["tweet_id"], a["text_ko"], a["now_iso"]),
         "url_confirmed_commit": lambda gh, a: t._url_confirmed_commit(
             gh, a["video_id"], a["new_item"], a.get("next_check_at"), a["host_key"],
-            a["now_iso"], via=a.get("via", "ingest"),
+            a["now_iso"], via=a.get("via", "ingest"), src_url=a.get("src_url"),
         ),
         "yt_member_live_commit": lambda gh, a: t._commit_yt_member_live(
             gh, a["live"], a["now_iso"], via=a.get("via", "ingest"),

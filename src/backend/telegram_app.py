@@ -1002,8 +1002,22 @@ def _log_preview_diff(gh, prev_items: list[dict] | None, new_items: list[dict], 
         log.warning("monitor_log 기록 실패(preview diff)")
 
 
+def _set_src_url(items: list[dict], probes: list[dict], src_url: str | None,
+                 prev_items: list[dict] | None = None) -> None:
+    """(v4.0.4) 이번 글로 생기거나 맞춰진 예고에 출처 트윗 URL(`src_url`)을 남긴다 — 처음 알린 트윗을 유지한다.
+    병합이 같은 예고를 새 줄로 통째로 바꾸는 경우(공식 스케줄 announced 갱신)가 있어, 병합 전 항목의 값을 먼저 이어받는다.
+    리포트 팝업의 X url · announced at(트윗 ID 의 게시 시각)에 쓴다. 항목 찾기는 merge 와 같은 `preview.match_item`."""
+    for p in probes or []:
+        m = preview_mod.match_item(items, p)
+        if m is None or m.get("src_url"):
+            continue
+        old = preview_mod.match_item(list(prev_items or []), p)
+        if (old or {}).get("src_url") or src_url:
+            m["src_url"] = (old or {}).get("src_url") or src_url
+
+
 def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = None,
-                              merge_fn=None) -> bool:
+                              merge_fn=None, src_url: str | None = None) -> bool:
     """rows 를 `merge_fn` 으로 preview.json 의 items 에 반영 (base-sha 충돌 시 1회 재시도).
 
     (v3) merge_fn 계약: `xrelay.merge_announced(items, rows, now) -> (items, changed)` (rows 통째) /
@@ -1025,6 +1039,7 @@ def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = N
                 any_ch = any_ch or c1
         else:
             items, any_ch = merge_fn(items, rows, now_iso)
+        _set_src_url(items, rows, src_url, prev.get("items"))
         merged = dict(prev)
         merged["items"] = items
         merged["generated_at"] = now_iso
@@ -2006,6 +2021,7 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
         log_event(
             gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
             who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
+            tweet_id=(row or {}).get("id"),   # (v4.0.4) 리포트 팝업이 원문 · 번역 · X url 을 찾는 열쇠
         )
     except Exception:  # noqa: BLE001
         log.warning("monitor_log 기록 실패(tweet)")
@@ -2468,7 +2484,8 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
             log.warning("monitor_log 기록 실패(notice)")
         return "error"
     try:
-        log_event(gh, now_iso, "notice", RESULT_OK, detail=f"mode: {mode}", via="ingest")
+        log_event(gh, now_iso, "notice", RESULT_OK, detail=f"mode: {mode}", via="ingest",
+                  notice_id=(parsed or {}).get("id"))   # (v4.0.4) 리포트 팝업 — 소식 원문 · 번역 · X url 을 찾는 열쇠
     except Exception:  # noqa: BLE001
         log.warning("monitor_log 기록 실패(notice)")
     if mode in ("added", "updated") and _auto_dm_allows(gh, "notice"):
@@ -2773,7 +2790,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
 
 
 def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str | None,
-                          host_key: str, now_iso: str, *, via: str = "ingest") -> dict:
+                          host_key: str, now_iso: str, *, via: str = "ingest", src_url: str | None = None) -> dict:
     """(WP-3b) URL 확정 예고 커밋 (백엔드 잡에서 실행).
 
     preview.json 에 반영하고 필요시 Cloud Tasks wake enqueue.
@@ -2786,6 +2803,11 @@ def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str 
             items, changed = xtweet.merge_video_confirmed(
                 prev.get("items", []) or [], video_id, new_item, now_iso,
             )
+            if src_url:
+                _n = next((i for i in items if i.get("video_id") == video_id and not i.get("src_url")), None)
+                if _n is not None:
+                    _n["src_url"] = src_url
+                    changed = True
             merged = dict(prev)
             merged["items"] = items
             merged["generated_at"] = now_iso
@@ -3889,7 +3911,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         res = writeclient.call_write("url_confirmed_commit", gh=gh, video_id=video_id,
                                      new_item=new_item, next_check_at=next_check_at,
                                      host_key=host_key, now_iso=now_iso, via=via,
-                                     label=f"{host_key} 예고확정")
+                                     label=f"{host_key} 예고확정", src_url=_tweet_url_from_tag(tag or "") or None)
         changed = res.get("changed", False)
     except Exception:
         log.exception("URL 확정 예고: /write 호출 실패")
@@ -4052,7 +4074,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         res = writeclient.call_write("merge_rows", gh=gh, rows=[row], now_iso=now_iso,
                                      message=f"data: personal schedule {channel_key} {now_iso}",
                                      action=f"본인 예고 {name} ({(raw[:40] or '').strip()})",
-                                     merge_fn="personal_schedule")
+                                     merge_fn="personal_schedule", src_url=_tweet_url_from_tag(tag or "") or None)
         changed = res.get("changed", False)
     except Exception:
         log.exception("personal schedule 반영 실패")
@@ -5841,6 +5863,21 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
 
 _MONITOR_LIVE_TTL_SEC = 60
 _monitor_live_cache: dict = {"at": 0.0, "report": None}
+_detail_lookup_cache: dict = {"at": 0.0, "lk": None}   # (v4.0.4) 팝업 상세 찾기 표 — 60초
+
+
+def _detail_lookup(gh) -> dict:
+    """(v4.0.4) 리포트 팝업 상세용 찾기 표(예고 · 소식 · 트윗 + 보관함). 실패하면 빈 표 — 팝업만 덜 자세해진다."""
+    c = _detail_lookup_cache
+    if c["lk"] is not None and time.monotonic() - c["at"] < _MONITOR_LIVE_TTL_SEC:
+        return c["lk"]
+    try:
+        lk = monitor_report.load_detail_lookup(gh)
+    except Exception:  # noqa: BLE001
+        log.warning("팝업 상세 찾기 표 실패", exc_info=True)
+        return {"pv": {}, "nt_id": {}, "nt_ts": {}, "tw_id": {}, "tw_key": {}}
+    c["lk"], c["at"] = lk, time.monotonic()
+    return lk
 _monitor_live_lock = threading.Lock()
 
 
@@ -5892,6 +5929,7 @@ def _monitor_live_report() -> dict:
         )
         date_kst = today["date"]
         day = today["days"][date_kst]
+        monitor_report.attach_details(day, _detail_lookup(gh))   # (v4.0.4) 팝업 상세
         summary = dict(_monitor_summary_days(gh))
         summary[date_kst] = monitor_snapshot.summary_entry(day)  # 오늘 칸은 실시간 값
         report = monitor_report.snapshot_report(day, date_kst, summary)
@@ -5923,6 +5961,13 @@ def _monitor_past_day(date_kst: str) -> dict:
             )
             day["date"] = date_kst
             day["snapshotAt"] = None  # 즉석 계산 — 페이지가 "스냅샷 아님"으로 표시
+        # (v4.0.4) 팝업 상세 — 예고 · 소식 · 트윗 부분을 이벤트 로그로 다시 만들고(옛 스냅샷엔 항목 열쇠가 없다) 데이터와 맞춰 붙인다
+        try:
+            _txt, _ = _monitor_gh(gh).read_text(f"monitoring/events-{date_kst}.jsonl")
+            monitor_report.refresh_detail_parts(day, _txt)
+            monitor_report.attach_details(day, _detail_lookup(gh))
+        except Exception:  # noqa: BLE001
+            log.warning("지난 날짜 팝업 상세 실패 date=%s", date_kst, exc_info=True)
         if len(_monitor_day_cache) >= _MONITOR_DAY_CACHE_MAX:
             _monitor_day_cache.pop(next(iter(_monitor_day_cache)))
         _monitor_day_cache[date_kst] = {"day": day, "snapshot": is_snapshot, "at": now}
@@ -6534,7 +6579,7 @@ if _FLASK_AVAILABLE:
             changed = writeclient.call_write(
                 "merge_rows", gh=gh, rows=rows, now_iso=now_iso,
                 message=f"data: xrelay scheduled {now_iso}",
-                action=f"ingest {title or raw[:40]}".strip(),
+                action=f"ingest {title or raw[:40]}".strip(), src_url=tweet_url or None,
             ).get("changed")
             for _vid in _confirmed_vids:   # 등록 즉시 확인 — reconcile(영상) 적재 (원칙 ③)
                 _enqueue_wake_now(_vid, now_iso)
@@ -7007,6 +7052,12 @@ if __name__ == "__main__":
             _ev_new = next((v for k, v in g.store.items() if k.startswith("monitoring/events-")), "")
             assert '"flow": "preview"' in _ev_new and '"from_state": null' in _ev_new                 and '"to_state": "announced"' in _ev_new, _ev_new
             print("[OK] _merge_rows_into_schedule: 새 예고 생성이 flow=preview(from_state=null→announced)로 기록됨")
+            # (v4.0.4) 출처 트윗 URL — 비어 있을 때만 채우고, 같은 예고를 다른 트윗이 다시 알려도 처음 것을 유지
+            _merge_rows_into_schedule(g, rows, "2026-09-09T00:00:00Z", message="t2", src_url="https://x.com/i/status/111")
+            assert all(it.get("src_url") == "https://x.com/i/status/111" for it in g.store[_PREVIEW_PATH]["items"])
+            _merge_rows_into_schedule(g, rows, "2026-09-09T00:00:01Z", message="t3", src_url="https://x.com/i/status/999")
+            assert all(it.get("src_url") == "https://x.com/i/status/111" for it in g.store[_PREVIEW_PATH]["items"])
+            print("[OK] _merge_rows_into_schedule: 출처 트윗 src_url 저장(처음 알린 트윗 유지)")
 
             # _remove_broadcast — id 매칭
             snap = dict(pv["items"][0])
