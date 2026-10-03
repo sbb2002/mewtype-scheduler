@@ -169,7 +169,7 @@ _llm("broadcast_change_targets", lambda t, cands, now_label, **k: {"action": "no
 _llm("duplicate_notice", lambda *a, **k: None)
 
 
-def _tg_send(self, text, *, parse_mode="HTML", silent=False):
+def _tg_send(self, text, *, parse_mode="HTML", silent=False, no_preview=False):
     DMS.append(text)
     tr("dm", text=re.sub(r"<[^>]+>", "", text)[:80])
     return True
@@ -547,9 +547,11 @@ def run():
                 if "/admin/login" in d), None)
     check("27", "/admin → 일회용 로그인 링크 DM", url, dms)
     path = url.split("://", 1)[1].split("/", 1)[1]
-    r = client.get("/" + path)
-    check("27", "링크 열기 → 세션 쿠키", r.status_code == 302, r.status_code)
-    check("27", "같은 링크 재사용 → 403", client.get("/" + path).status_code == 403)
+    tok_q = path.split("t=", 1)[1]
+    check("27", "링크 열기(GET) → 확인 화면(소모 안 함)", client.get("/" + path).status_code == 200)
+    r = client.post("/admin/login", data={"t": tok_q})
+    check("27", "「로그인」 버튼(POST) → 세션 쿠키", r.status_code == 303, r.status_code)
+    check("27", "같은 링크 재사용 → 403", client.post("/admin/login", data={"t": tok_q}).status_code == 403)
     tok = client.get("/admin/api/csrf").get_json()["token"]
     H = {"X-CSRF-Token": tok}
     lst = client.get("/admin/api/list_preview").get_json()

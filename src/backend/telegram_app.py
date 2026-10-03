@@ -412,7 +412,7 @@ def _note_dm(text: str) -> None:
         texts.append(text or "")
 
 
-def _send_telegram(text: str, silent: bool = False) -> bool:
+def _send_telegram(text: str, silent: bool = False, no_preview: bool = False) -> bool:
     """Telegram으로 메시지 전송."""
     _note_dm(text)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -427,6 +427,8 @@ def _send_telegram(text: str, silent: bool = False) -> bool:
         return False
 
     tg = Telegram(bot_token, chat_id)
+    if no_preview:
+        return tg.send(text, parse_mode="HTML", silent=silent, no_preview=True)
     return tg.send(text, parse_mode="HTML", silent=silent)
 
 
@@ -788,7 +790,7 @@ def _handle_admin_link() -> None:
         return
     from . import admin_web
     url = admin_web.make_login_url(_admin_base_url(), secret=secret)
-    _send_telegram(f"🔐 관리 페이지 로그인 링크 (5분 · 1회용)\n{html.escape(url)}")
+    _send_telegram(f"🔐 관리 페이지 로그인 링크 (5분 · 1회용 — 열고 「로그인」 버튼)\n{html.escape(url)}", no_preview=True)
 
 
 def _handle_resume_local(gh, now_iso: str) -> None:

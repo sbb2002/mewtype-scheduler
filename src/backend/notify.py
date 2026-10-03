@@ -97,6 +97,7 @@ class Telegram:
         *,
         parse_mode: str = "HTML",
         silent: bool = False,
+        no_preview: bool = False,
     ) -> bool:
         """
         메시지 전송.
@@ -124,6 +125,10 @@ class Telegram:
         }
         if silent:
             payload["disable_notification"] = True
+        if no_preview:
+            # (v4) 링크 미리보기 끄기 — 텔레그램 서버가 일회용 로그인 링크를 미리 열지 않게
+            payload["link_preview_options"] = '{"is_disabled": true}'
+            payload["disable_web_page_preview"] = True
 
         try:
             resp = self.session.post(url, data=payload, timeout=self.timeout)
