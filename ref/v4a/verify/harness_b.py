@@ -112,7 +112,7 @@ def run():
     # 로그인 (텔레그램 /admin 일회용 링크)
     dms = h.tg("/admin")
     url = next(re.search(r"https?://\S+/admin/login\?t=\S+", d).group(0) for d in dms if "/admin/login" in d)
-    h.client.get("/" + url.split("://", 1)[1].split("/", 1)[1])
+    h.client.post("/admin/login", data={"t": url.split("t=", 1)[1]})   # (v4) 링크 열기 → 「로그인」 버튼(POST)
     H = {"X-CSRF-Token": h.client.get("/admin/api/csrf").get_json()["token"]}
 
     def post(name, body):

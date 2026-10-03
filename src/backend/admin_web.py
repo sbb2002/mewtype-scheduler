@@ -140,10 +140,49 @@ def create_blueprint(
 
     # ─── 로그인 · 세션 ────────────────────────────────────────────────────────
 
+    _FAIL = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="dark">
+<title>로그인 실패</title>
+<style>body{background:#0f0f0f;color:#e8e8e8;font-family:system-ui;padding:2rem}
+h1{color:#ff6b6b}</style></head>
+<body><h1>로그인 실패</h1>
+<p>링크가 만료됐거나 이미 사용됐습니다. 텔레그램에서 /admin 을 다시 보내세요.</p>
+</body></html>"""
+
+    def _nonce_used(nonce: str) -> bool:
+        try:
+            data, _ = ops_store.read_json("admin_nonces.json")
+        except Exception:  # noqa: BLE001
+            return False
+        return nonce in ((data or {}).get("used") or {})
+
     @bp.route("/login", methods=["GET"])
+    def login_page():
+        """(v4, 2026-10-04) 링크를 여는 것(GET)만으로는 로그인하지 않는다 — 확인 화면의 버튼(POST)을 눌러야
+        일회용 링크를 쓰고 세션을 발급한다. 배포판에서 텔레그램 서버가 링크 미리보기를 만들려고 링크를 먼저 열어
+        (User-Agent `TelegramBot (like TwitterBot)`) nonce 를 소모해, 운영자 클릭이 「로그인 실패」가 됐다.
+        로컬(Tailscale 주소)에서는 텔레그램 서버가 닿지 않아 드러나지 않았다."""
+        token = flask.request.args.get("t", "")
+        payload = _verify_signature(token, "login")
+        if (not payload or not payload.get("n") or payload.get("exp", 0) < int(clock())
+                or _nonce_used(payload["n"])):
+            return flask.render_template_string(_FAIL), 403
+        return flask.render_template_string(
+            """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="color-scheme" content="dark">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>관리 페이지 로그인</title>
+<style>body{background:#0f0f0f;color:#e8e8e8;font-family:system-ui;padding:2rem;max-width:28rem;margin:auto}
+button{font:inherit;font-size:1.05rem;min-height:44px;width:100%;margin-top:1rem;border:0;border-radius:8px;
+background:#2fa3c4;color:#fff;cursor:pointer}</style></head>
+<body><h1>관리 페이지</h1><p>아래 버튼을 누르면 로그인합니다. 이 링크는 한 번만 쓸 수 있습니다.</p>
+<form method="post" action="/admin/login"><input type="hidden" name="t" value="{{ t }}">
+<button type="submit">로그인</button></form></body></html>""", t=token)
+
+    @bp.route("/login", methods=["POST"])
     def login():
         """로그인 토큰 확인 → nonce 사용 처리 → 세션 쿠키 발급."""
-        token = flask.request.args.get("t", "")
+        token = flask.request.form.get("t", "")
 
         # 서명 검증
         payload = _verify_signature(token, "login")
@@ -247,7 +286,7 @@ h1{color:#ff6b6b}</style></head>
         # 세션 쿠키 발급
         sid = secrets.token_hex(8)
         cookie_value, cookie_kwargs = _make_session_cookie(sid)
-        resp = flask.redirect("/admin/")
+        resp = flask.redirect("/admin/", code=303)
         resp.set_cookie("mt_admin", cookie_value, **cookie_kwargs)
         return resp
 
@@ -540,7 +579,11 @@ if __name__ == "__main__":
         print("\n2. 로그인 엔드포인트")
         token = url.split("t=")[1]
         resp = client.get(f"/admin/login?t={token}")
-        assert_test(resp.status_code == 302, "유효한 토큰 → 302 리다이렉트")
+        assert_test(resp.status_code == 200 and b'method="post"' in resp.data, "GET → 확인 화면(로그인 버튼)")
+        assert_test(client.get(f"/admin/login?t={token}").status_code == 200,
+                    "GET 을 여러 번 해도(텔레그램 미리보기 등) 링크가 소모되지 않음")
+        resp = client.post("/admin/login", data={"t": token})
+        assert_test(resp.status_code == 303, "POST(버튼) → 303 리다이렉트")
         # Set-Cookie 헤더에 mt_admin 쿠키가 있는지 확인
         set_cookie_headers = resp.headers.getlist("Set-Cookie")
         has_cookie = any("mt_admin" in c for c in set_cookie_headers)
@@ -548,8 +591,9 @@ if __name__ == "__main__":
 
         # 3. 같은 토큰 재사용 → 403
         print("\n3. 토큰 재사용 차단")
-        resp = client.get(f"/admin/login?t={token}")
+        resp = client.post("/admin/login", data={"t": token})
         assert_test(resp.status_code == 403, "재사용된 토큰 → 403")
+        assert_test(client.get(f"/admin/login?t={token}").status_code == 403, "사용된 토큰은 GET 확인 화면도 403")
 
         # 4. 만료된 토큰 → 403
         print("\n4. 만료된 토큰 차단")
@@ -558,13 +602,13 @@ if __name__ == "__main__":
         past_token = past_url.split("t=")[1]
         # 그 다음 시간을 5분 이상 진행시킨다
         clock.advance(400)  # 5분 초과
-        resp = client.get(f"/admin/login?t={past_token}")
+        resp = client.post("/admin/login", data={"t": past_token})
         assert_test(resp.status_code == 403, "만료된 토큰 → 403")
 
         # 5. 변조된 서명 → 403
         print("\n5. 변조된 서명 차단")
         tampered = url.split("t=")[1][:-4] + "xxxx"
-        resp = client.get(f"/admin/login?t={tampered}")
+        resp = client.post("/admin/login", data={"t": tampered})
         assert_test(resp.status_code == 403, "변조된 서명 → 403")
 
         # 6. 세션 쿠키로 /admin 접근 → 200
@@ -572,7 +616,7 @@ if __name__ == "__main__":
         # 새 토큰으로 로그인
         new_url = make_login_url("http://localhost", secret=secret, ttl_sec=300, clock=clock)
         new_token = new_url.split("t=")[1]
-        resp = client.get(f"/admin/login?t={new_token}")
+        resp = client.post("/admin/login", data={"t": new_token})
         # Set-Cookie 헤더에서 mt_admin 쿠키 값 추출
         cookie = None
         for sc in resp.headers.getlist("Set-Cookie"):
