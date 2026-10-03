@@ -927,7 +927,9 @@ const STATE = {
   watching: { label:"대기(watching)",   color:"var(--st-watching)" },
   live:     { label:"방송 중(live)",    color:"var(--st-live)" },
   end:      { label:"방송 종료(end)",   color:"var(--st-end)" },
-  none:     { label:"사라짐(none)",     color:"var(--st-none)" },
+  // (v4.0.2) 현행 용어 out(docs/TERMINOLOGY.md — v4a D7). 옛 로그의 none 은 같은 뜻이라 같은 이름으로 보인다.
+  out:      { label:"사라짐(out)",      color:"var(--st-none)" },
+  none:     { label:"사라짐(out)",      color:"var(--st-none)" },
 };
 // (v3.8.4 item 9) sg.s 가 비어 있으면(과거 데이터 — from_state/to_state 필드 누락 버그가
 // 고쳐지기 전에 기록된 이벤트) 'null' 문자열이 그대로 노출되던 것 방지. 새로 기록되는
@@ -1141,7 +1143,7 @@ const legendEl = document.getElementById("legend");
   legendEl.appendChild(btn);
 });
 function stateChipsHtml(){
-  const chips = Object.entries(STATE).map(([k,v]) => {
+  const chips = Object.entries(STATE).filter(([k]) => k !== "none").map(([k,v]) => {   // none = out 의 옛 이름(범례엔 한 번만)
     const bg = k === "watching"
       ? "repeating-linear-gradient(45deg, #f5c344 0 3px, #9aa0a8 3px 6px)" : v.color;
     return `<span class="lg-chip"><i style="background:${bg}"></i>${v.label}</span>`;
