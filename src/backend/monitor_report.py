@@ -524,8 +524,9 @@ def snapshot_report(day: dict, date_kst: str, summary_days: dict) -> dict:
         "date": date_kst, "monthly": False, "yearly": False, "all": True,
         "dates": [date_kst], "days": {date_kst: day}, "summary": summary_days,
         "eventCount": day.get("eventCount", 0),
-        # (v4a 한정) 타임라인 「현재 시각까지」 흰 반투명 배경 — 로컬 러너에서만(운영 Cloud Run 엔 안 나옴)
-        "runMark": os.environ.get("V4A_RUNTIME", "").strip().lower() == "local",
+        # 타임라인 「현재 시각까지」 흰 반투명 배경. (v4.0.2) v4a 때는 로컬 러너에서만 켰다 — v4.0 이 운영이 되면서 배포판에서도 켠다.
+        # 실제로 칠하는 건 오늘(현재 시각 nowHm 이 있는 날)뿐이다(프론트 조건).
+        "runMark": True,
     }
 
 
@@ -926,7 +927,9 @@ const STATE = {
   watching: { label:"대기(watching)",   color:"var(--st-watching)" },
   live:     { label:"방송 중(live)",    color:"var(--st-live)" },
   end:      { label:"방송 종료(end)",   color:"var(--st-end)" },
-  none:     { label:"사라짐(none)",     color:"var(--st-none)" },
+  // (v4.0.2) 현행 용어 out(docs/TERMINOLOGY.md — v4a D7). 옛 로그의 none 은 같은 뜻이라 같은 이름으로 보인다.
+  out:      { label:"사라짐(out)",      color:"var(--st-none)" },
+  none:     { label:"사라짐(out)",      color:"var(--st-none)" },
 };
 // (v3.8.4 item 9) sg.s 가 비어 있으면(과거 데이터 — from_state/to_state 필드 누락 버그가
 // 고쳐지기 전에 기록된 이벤트) 'null' 문자열이 그대로 노출되던 것 방지. 새로 기록되는
@@ -1140,7 +1143,7 @@ const legendEl = document.getElementById("legend");
   legendEl.appendChild(btn);
 });
 function stateChipsHtml(){
-  const chips = Object.entries(STATE).map(([k,v]) => {
+  const chips = Object.entries(STATE).filter(([k]) => k !== "none").map(([k,v]) => {   // none = out 의 옛 이름(범례엔 한 번만)
     const bg = k === "watching"
       ? "repeating-linear-gradient(45deg, #f5c344 0 3px, #9aa0a8 3px 6px)" : v.color;
     return `<span class="lg-chip"><i style="background:${bg}"></i>${v.label}</span>`;
@@ -1406,7 +1409,7 @@ function renderTimeline(){
 
   // (v4a 한정, 운영자 요청) 오늘 — 플롯 왼쪽 끝(x=0)부터 현재 시각까지, 트리거 기준선(세로 막대 아랫부분)에서
   // 개인 트윗 마지막 줄(미야코) 아래까지 흰 반투명 배경. 어디까지 관측 · 작동했는지 한눈에 보이게.
-  // 다른 요소가 그 위에 얹히도록 맨 먼저 그린다. REPORT.runMark 는 로컬 러너(V4A_RUNTIME=local)에서만 켜진다.
+  // 다른 요소가 그 위에 얹히도록 맨 먼저 그린다. (v4.0.2) REPORT.runMark 는 배포판 · 로컬 모두 켜진다(오늘만 칠함).
   if (REPORT.runMark && CURRENT_DAY && CURRENT_DAY.nowHm) {
     const tw = LANES.find(g => g.key === "tweet");
     const y0 = rowY["trigger|all"], y1 = tw._blockTop + tw._blockHeight;
@@ -2667,14 +2670,11 @@ if __name__ == "__main__":
     dtext = "\n".join(json.dumps(e) for e in events)
     dd = build_day_from_text("2026-09-15", dtext, now_hm=None, down_ranges=[], vercel_deploys=None)
     assert dd["hasLog"] is True and dd["eventCount"] == len(events)
-    # (v4a) 관측 끝 — 지난 날짜 None(하루 끝까지), 오늘은 현재 시각. runMark 는 로컬 러너에서만
+    # (v4a) 관측 끝 — 지난 날짜 None(하루 끝까지), 오늘은 현재 시각. (v4.0.2) runMark 는 배포판에서도 켜짐
     assert dd["nowHm"] is None
     assert build_day_from_text("2026-09-15", dtext, now_hm="16:30", down_ranges=[], vercel_deploys=None)["nowHm"] == "16:30"
     _rt_prev = os.environ.pop("V4A_RUNTIME", None)
-    assert snapshot_report(dd, "2026-09-15", {})["runMark"] is False
-    os.environ["V4A_RUNTIME"] = "local"
-    assert snapshot_report(dd, "2026-09-15", {})["runMark"] is True
-    os.environ.pop("V4A_RUNTIME", None)
+    assert snapshot_report(dd, "2026-09-15", {})["runMark"] is True, "배포판(V4A_RUNTIME 없음)에서도 켜짐"
     if _rt_prev is not None:
         os.environ["V4A_RUNTIME"] = _rt_prev
     assert 'function segLabel(m){ return m >= 1440 ? "30:00"' in _TEMPLATE   # 하루 끝 = "30:00"

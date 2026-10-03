@@ -981,6 +981,27 @@ _INGEST_QUEUE_MAX = 30       # data 브랜치 파일 비대 방지 (일일 트�
 _INGEST_RAW_CAP = 8000       # 저장 원문 상한
 
 
+def _log_preview_diff(gh, prev_items: list[dict] | None, new_items: list[dict], now_iso: str) -> None:
+    """정기 수집(/tick · /wake) 밖에서 preview.json 을 쓴 경로의 상태 전이를 flow="preview" 로 남긴다 —
+    리포트 타임라인(간트)은 이 로그만 보고 그린다. 새 항목은 from_state=None 으로 남아 「언제 생겼나」가 기록된다.
+    (v4.0.2) 공식 스케줄 · 본인 예고 · URL 확정 · 수동 예고로 생긴 예고는 생성 기록이 없어, 리포트가 그날 첫 기록
+    (예: 20:34 announced→out)만 보고 「06:00 부터 announced」로 거꾸로 채웠다(10-03 아라레 22:00 예고, 실제 생성 13:08).
+    handlers._preview_log_events 와 같은 순수 diff. 기록 실패는 본 처리에 영향 없음."""
+    try:
+        from .handlers import _preview_log_events
+        for ev in _preview_log_events(prev_items or [], new_items, []):
+            _log_event_safe(
+                gh, now_iso, "preview", RESULT_OK,
+                who=ev.get("channel_key", ""),
+                detail=f"{ev.get('from_state')}→{ev.get('to_state')}",
+                from_state=ev.get("from_state"), to_state=ev.get("to_state"),
+                video_id=ev.get("video_id"), item_id=ev.get("id"), title=ev.get("title"),
+                assumed_live=ev.get("assumed_live", False),
+            )
+    except Exception:  # noqa: BLE001
+        log.warning("monitor_log 기록 실패(preview diff)")
+
+
 def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = None,
                               merge_fn=None) -> bool:
     """rows 를 `merge_fn` 으로 preview.json 의 items 에 반영 (base-sha 충돌 시 1회 재시도).
@@ -1016,6 +1037,7 @@ def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = N
             log.warning("ingest: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action or message, prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
+        _log_preview_diff(gh, (prev or {}).get("items"), items, now_iso)
     return changed
 
 
@@ -1075,6 +1097,7 @@ def _commit_manual_preview(gh, item: dict, now_iso: str) -> dict:
     if changed:
         _save_undo(gh, action=f"admin 수동 예고 {item.get('channel_key')}", prev_content=prev or {},
                    new_sha=new_sha, now_iso=now_iso)
+        _log_preview_diff(gh, (prev or {}).get("items"), items, now_iso)
     return {"mode": mode if changed else "unchanged", "id": item_id}
 
 
@@ -2785,6 +2808,7 @@ def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str 
     if changed:
         _save_undo(gh, action=f"URL 확정 예고 {host_key} ({video_id})",
                    prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
+        _log_preview_diff(gh, (prev or {}).get("items"), items, now_iso)
         if next_check_at:
             _enqueue_wake_now(video_id, next_check_at)
 
@@ -2837,19 +2861,7 @@ def _commit_yt_member_live(gh, live: dict, now_iso: str, *, via: str = "ingest")
     # "→end" 로 바로 건너뜀) "live(빨강)로 안 뜨고 announced/upcoming/end 만 보인다"는
     # 증상으로 나타났다. handlers._preview_log_events 와 같은 (순수) diff 로직을 그대로
     # 재사용해 전이만 뽑는다.
-    try:
-        from .handlers import _preview_log_events
-        for ev in _preview_log_events(prev_items, items, []):
-            _log_event_safe(
-                gh, now_iso, "preview", RESULT_OK,
-                who=ev.get("channel_key", ""),
-                detail=f"{ev.get('from_state')}→{ev.get('to_state')}",
-                from_state=ev.get("from_state"), to_state=ev.get("to_state"),
-                video_id=ev.get("video_id"), item_id=ev.get("id"), title=ev.get("title"),
-                assumed_live=ev.get("assumed_live", False),
-            )
-    except Exception:  # noqa: BLE001
-        log.warning("monitor_log 기록 실패(preview, member-live)")
+    _log_preview_diff(gh, prev_items, items, now_iso)
 
     return {"changed": True, "mode": mode, "error": False}
 
@@ -6991,6 +7003,10 @@ if __name__ == "__main__":
             adm = g.store.get(_ADMIN_STATE_PATH) or {}
             assert adm.get("undo", {}).get("path") == "preview.json"
             print(f"[OK] _merge_rows_into_schedule → preview.json ({len(pv['items'])} items, undo path 확인)")
+            # (v4.0.2) 새 예고는 생성 기록(from_state 없음 → announced)이 모니터 로그에 남아야 리포트가 06:00 부터로 안 채운다
+            _ev_new = next((v for k, v in g.store.items() if k.startswith("monitoring/events-")), "")
+            assert '"flow": "preview"' in _ev_new and '"from_state": null' in _ev_new                 and '"to_state": "announced"' in _ev_new, _ev_new
+            print("[OK] _merge_rows_into_schedule: 새 예고 생성이 flow=preview(from_state=null→announced)로 기록됨")
 
             # _remove_broadcast — id 매칭
             snap = dict(pv["items"][0])
