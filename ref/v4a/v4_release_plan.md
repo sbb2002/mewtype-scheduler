@@ -112,7 +112,7 @@ v4a 코드는 `storage.is_local()`(= `V4A_RUNTIME=local`) 분기로 로컬과 �
 | WP-7 | 보안 (§2-1) | `Secure` 쿠키(`X-Forwarded-Proto`), nonce 경합, `ALLOW_UNAUTH=1` 이 새 경로에 미치는 영향을 `/security-review` 로 점검. `/admin` 은 자체 인증이라 별도지만, 새 경로 추가 시 OIDC 가정이 없는지 확인 | 리뷰 결과 문서 |
 | WP-8 | **하네스 재검증** | `ref/v4a/verify/harness.py`(79) · `harness_b.py`(97) · `harness_c.py`(신규) 전부 통과 상태 유지 확인 | 전부 PASS |
 
-| WP-9 | **원문 보존 켜기** (L9) | `_preserve_raw` 의 비로컬 즉시 반환 제거 + `deploy_telegram.sh` 에 `RAW_BRANCH=raw`. 저장 위치 = **데이터 저장소의 `raw` 브랜치**(`storage._ROLE_ENV` 의 기존 기본값, 코드가 이미 이 역할을 가짐). `data` 브랜치 자체가 아닌 이유: 호출부 10곳이 전부 접수 서비스(`telegram_app` · `admin_api`)라, `data` 에 쓰면 쓰기 서비스와 같은 브랜치 HEAD 를 두고 409 경합 — v3.9 에서 `monitoring` 을 분리한 것과 같은 이유. 공개 범위는 `data` 와 같다 | 스테이징에서 공식 스케줄 · 휴방 글 후 `raw/YYYY-MM.jsonl` 에 한 줄씩 |
+| WP-9 | **원문 보존 켜기** (L9) | `_preserve_raw` 의 비로컬 즉시 반환 제거 + `deploy_telegram.sh` 에 `RAW_BRANCH=monitoring`. 저장 위치 = **데이터 저장소의 기존 `monitoring` 브랜치**, 경로 `raw/…jsonl`(운영자 결정 10-03 — 새 브랜치 안 만듦. 코드의 `raw` 역할 기본 브랜치명 `raw` 는 로컬 시험판용 이름일 뿐 배포판에 존재한 적 없음). `data` 가 아닌 이유: 호출부 10곳이 전부 접수 서비스라 쓰기 서비스와 409 경합. **리포트 영향 조사(10-03)**: ① 읽기 — 리포트 · 스냅샷은 `monitoring/events-<날짜>.jsonl` · `monitoring/days/` · `monitoring/summary.json` 을 경로로 직접 읽고, 디렉터리 조회는 `list_dir("monitoring")` + 정규식 `events-YYYY-MM-DD.jsonl` 뿐(하위 폴더 · 다른 경로 제외) → `raw/` 는 집계에 안 섞임. 리포트의 커밋 수 집계 없음(Vercel 수치는 Vercel API) ② 쓰기 — `monitoring` 에 커밋이 하루 몇 건 늘어 같은 브랜치 HEAD 경합이 조금 늘어남. 이벤트 로그는 409 재시도 5회, 스냅샷 `days/`·`summary.json` 은 1회 재시도, `latest.html` 은 재시도 없음(실패해도 DM 은 진행 · 웹 monitor 폴백 파일만 하루 늦음), 원문 보존 자체는 3회 재시도 후 실패 시 원문만 누락(흐름 무영향) ③ **파일 크기** — `gh_store.read_text` 는 Contents API 의 `content` 필드를 쓰는데 1MB 넘는 파일은 이 필드가 비어 읽기 실패 [확인 필요: GitHub 문서 기준]. 월 단위 파일(`raw/YYYY-MM.jsonl`)은 한 달 누적이 1MB 에 근접할 수 있어 **일 단위(`raw/YYYY-MM-DD.jsonl`)로 바꾼다**(`rawlog.append_raw` · `read_month` 경로) | 스테이징에서 공식 스케줄 · 휴방 글 후 `monitoring` 브랜치 `raw/` 에 한 줄씩, 다음 날 06:10 스냅샷 · 리포트 정상 |
 
 (L7 가공 큐는 v4.0 에서 v3 `_translate_sweep` 경로 유지.)
 
@@ -195,7 +195,7 @@ v4a 코드는 `storage.is_local()`(= `V4A_RUNTIME=local`) 분기로 로컬과 �
 
 1. **큐 전송 방식 = 안 1** (§3-1). v4a 로컬 시험에서 접수 쪽은 적용 큐에 적재한 뒤 **결과를 기다린다**(`apply.submit(wait=True)`) — 호출하는 쪽에서 본 동작은 안 1(`/write` 동기 호출)과 같고, DM 문구 · 분기도 그 전제로 검증됐다. 안 2(Cloud Tasks 비동기)는 `v4a_impl_plan.md` §1 이 "배포 단계에서 바꿔야 한다"고 적어 둔 방향이지만 **로컬에서 한 번도 안 돌아본 동작**이라 v4.0 범위에서 제외한다.
 2. **서비스 이름은 그대로**(`mewtype-backend` · `mewtype-telegram`). 설계 §3 · §12-9 의 `mewtype-intake/writer` 는 이전 세션이 운영자와 논의 없이 정한 이름(운영자 확인 10-03). 운영자 지침 = "운영에 지장 없는 것은 그대로" → 문서 용어로는 남기되, 실제 서비스 이름 변경은 URL · webhook · 폰 설정을 바꾸므로(운영 영향) **하지 않는다**.
-3. **원문 보존(D19) 켠다** — 운영자 결정(10-03): 데이터 저장소에 보존. 공개 범위는 이미 공개 중인 `tweet_archive.json`(원문 `text`)과 같은 수준(`v4a_decisions.md` §2-1). 브랜치는 `data` 가 아니라 같은 저장소의 `raw` 브랜치(WP-9 — 쓰기 경합 회피).
+3. **원문 보존(D19) 켠다** — 운영자 결정(10-03): 데이터 저장소의 **기존 `monitoring` 브랜치**에 보존(새 브랜치 안 만듦). 공개 범위는 이미 공개 중인 `tweet_archive.json`(원문 `text`)과 같은 수준(`v4a_decisions.md` §2-1). 리포트 · 스냅샷 영향 조사는 WP-9.
 
 ## 9. 알려진 위험
 
