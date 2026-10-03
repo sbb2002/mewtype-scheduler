@@ -733,7 +733,11 @@ _TEMPLATE = r"""<!doctype html>
   .tl-labels .row img{width:22px; height:22px; border-radius:5px; vertical-align:middle; background:var(--panel-2);
     border:1px solid var(--line-soft); padding:2px}
   .tl-scroll{position:relative; overflow-x:auto; overflow-y:hidden; flex:1; min-width:0;
-    touch-action:none; cursor:grab}
+    touch-action:none; cursor:grab;
+    /* (v4.0.3) 이동은 드래그 · 확대 버튼으로 한다 — 가로 스크롤바는 숨긴다(드래그 중 생겼다 사라지며 깜빡였다).
+       드래그가 텍스트 선택으로 번지지 않게(아래 x축 시각 라벨이 긁힌 것처럼 보였다) 선택도 막는다 */
+    scrollbar-width:none; -ms-overflow-style:none; user-select:none; -webkit-user-select:none}
+  .tl-scroll::-webkit-scrollbar{display:none}
   .tl-scroll.dragging{cursor:grabbing}
   .tl-scroll.locked{overflow:hidden; cursor:default}
   #tlSvg{display:block}
@@ -2306,6 +2310,8 @@ function hideCrosshair(){
   }
 
   scrollEl.addEventListener("pointerdown", (ev) => {
+    // (v4.0.3) 마우스 드래그가 문서의 텍스트 선택을 시작하지 않게 — 클릭(팝업 고정)은 그대로 발생한다
+    if (ev.pointerType === "mouse") ev.preventDefault();
     pointers.set(ev.pointerId, ev.clientX);
     scrollEl.setPointerCapture(ev.pointerId);
     if (pointers.size === 2) {
