@@ -47,8 +47,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현행 = v3.0** (배포 2026-09-09). 아래 저장소 구조·데이터 흐름 서술은 v2 계보를 담고
-> 있고, v3 델타는 아래 상자 + `docs/plan/v3_*.md` 에 있다. 새 작업은 v3 기준으로.
+> **현행 = v4.0** (배포 2026-10-04, v4a 로컬 시험판의 정식화 — 요약 `docs/VERSION.md`, 계획 · 진행 `ref/v4a/v4_release_plan.md`).
+> 처리 로직은 아래 상자 맨 끝 **v4a** 항목, 배포 연결부는 그 안의 「v4.0 배포」 항목이 기준이다. 그 위의 v3.x 항목들과
+> 아래 저장소 구조·데이터 흐름 서술은 v2~v3 계보 기록이다(v4.0 에서 바뀐 곳은 v4a 항목이 우선).
+> (이전: 현행 = v3.0, 배포 2026-09-09.)
 >
 > **v3.0 델타 (요약)** — 상세: `docs/plan/v3_backend_surgery.md`(기능), `docs/plan/v3_impl_spec.md`
 > (코드 WP), `docs/plan/v3_golive.md`(전환·롤백 런북), `docs/plan/v3_draft.md`(결정 로그):
@@ -185,7 +187,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   시각이 예고 시각과 45분 넘게 다르면 자리표시가 `expires_at`(예고+3h)까지 카드 2장으로 남고,
 >   같은 방송 시각 변경을 45분 넘게 재공지하면 기존 예고가 갱신되지 않고 새 항목이 생긴다.
 >   `merge_member_live` 의 ±3h(`MEMBER_LIVE_MATCH_SEC`)·v1 `collector/reconcile.py` 의 4h 는 미변경.
-> - **v4a (브랜치 `v4a` 전용 — 배포 · 머지 안 함, 로컬 시험판)** (2026-09-29): 운영자 로컬 PC 에서
+> - **v4.0 배포 (2026-10-04)** — 아래 v4a 가 정식 배포됐다. 로컬 러너 서술 중 **배포판에서 다른 점**: 저장 = GitHub
+>   `data` / `ops` / `monitoring` 브랜치(`_local/` 아님) · 적용 큐 대신 쓰기 서비스 `/write`(→ `apply.handle`, 접수 서비스가 동기 호출 또는
+>   Cloud Tasks 적재) · 예약 = Cloud Tasks `/wake` `/tick`(큐 `mewtype-wake`) · 가공 큐 대신 정기 수집 안 번역 sweep · 텔레그램 = webhook ·
+>   관리 페이지 작업 탭의 경로 재생(`flowtrace`)은 로컬 전용(배포판은 LLM 판단 기록 · 이벤트 로그 · Cloud Tasks 예약을 보여줌) ·
+>   원문 보존 = `monitoring` 브랜치 `raw/YYYY-MM-DD.jsonl`. 서비스 이름 · URL 은 v3 그대로(`mewtype-backend` · `mewtype-telegram`).
+>   스테이징 배포 `STAGE=1 bash deploy/deploy.sh`(`deploy/env.stage.sh`). 상세 `docs/VERSION.md` v4.0.
+> - **v4a (브랜치 `v4a` 에서 개발 · 로컬 시험판 → 2026-10-04 v4.0 으로 배포)** (2026-09-29): 운영자 로컬 PC 에서
 >   `python -m src.backend.local_runner` 로 돌린다(Tailscale 로 폰 알림 수신, 저장은 `_local/<브랜치>/`).
 >   **이 상자 위 서술(Cloud Run · Tasks · data 브랜치 커밋 경로)은 운영 v3.8.10 기준이고, v4a 에서는 아래가 다르다.**
 >   문서: `ref/v4a/` — 계획 `v4a_impl_plan.md` · 결정 `v4a_decisions.md`(D1~D34, 10-01 후속 결정 = §1-9 D26~D34) · 검증 `v4a_verify_report.md` ·
