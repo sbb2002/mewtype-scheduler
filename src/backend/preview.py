@@ -25,22 +25,61 @@ def default_preview() -> dict:
     }
 
 
-def new_id(channel_key: str, first_seen_iso: str) -> str:
+def new_id(channel_key: str, first_seen_iso: str, salt: str = "") -> str:
     """
     Generate a stable item ID from channel_key and first_seen timestamp.
 
-    ID format: "pv_" + first 8 hex chars of sha1(f"{channel_key}|{first_seen}").
+    ID format: "pv_" + first 8 hex chars of sha1(f"{channel_key}|{first_seen}[|{salt}]").
+
+    (v4a) salt — 같은 tick 에 같은 채널에서 여러 항목이 처음 발견되면 first_seen 이 같아
+    id 가 겹쳤다(콜드 스타트 실측: 아라레 3건이 한 id). id 로 대상을 찾는 관리 수정·삭제가
+    첫 항목에 잘못 적용되므로, make_item 이 video_id·url·scheduled_start·title 중 처음 있는
+    값을 salt 로 섞는다. salt 가 비면 예전 방식과 같은 값.
 
     Args:
         channel_key: e.g., "arale"
         first_seen_iso: UTC ISO timestamp, e.g., "2026-08-30T12:00:00Z"
+        salt: 항목 구분값 (없으면 "")
 
     Returns:
         ID like "pv_a1b2c3d4"
     """
-    source = f"{channel_key}|{first_seen_iso}".encode("utf-8")
-    hash_obj = hashlib.sha1(source)
+    source = f"{channel_key}|{first_seen_iso}" + (f"|{salt}" if salt else "")
+    hash_obj = hashlib.sha1(source.encode("utf-8"))
     return "pv_" + hash_obj.hexdigest()[:8]
+
+
+def _id_salt(fields: dict) -> str:
+    """new_id 의 salt — 항목을 구분하는 첫 번째 값(video_id → url → scheduled_start → title)."""
+    for k in ("video_id", "url", "scheduled_start", "title"):
+        if fields.get(k):
+            return str(fields[k])
+    return ""
+
+
+def ensure_unique_ids(items: list[dict]) -> list[dict]:
+    """(v4a) 같은 id 가 둘 이상이면 앞의 것만 id 를 유지하고 뒤의 것은 salt 로 새 id 를 준다.
+
+    salt 도입 전에 만들어진(또는 salt 까지 같은) 중복 id 를 정리하는 용도. 새 id 는 다음 tick
+    부터 video_id 매칭으로 그대로 이어진다. 입력은 수정하지 않는다.
+    """
+    seen: set = set()
+    out = []
+    for it in items:
+        iid = it.get("id")
+        if iid and iid in seen:
+            base = f"{_id_salt(it)}|{len(out)}"
+            n = 0
+            nid = new_id(it.get("channel_key", ""), it.get("first_seen", ""), base)
+            while nid in seen:
+                n += 1
+                nid = new_id(it.get("channel_key", ""), it.get("first_seen", ""), f"{base}|{n}")
+            it = dict(it, id=nid)
+            iid = nid
+        if iid:
+            seen.add(iid)
+        out.append(it)
+    return out
 
 
 def make_item(
@@ -67,7 +106,7 @@ def make_item(
     """
     # 필수 필드 — now_iso 로 초기화
     item = {
-        "id": new_id(channel_key, fields.get("first_seen", now_iso)),
+        "id": new_id(channel_key, fields.get("first_seen", now_iso), _id_salt(fields)),
         "state": state,
         "state_since": now_iso,
         "channel_key": channel_key,
@@ -152,6 +191,25 @@ def _calculate_expires_at(scheduled_start: str | None, time_tbd: bool, membershi
     return expires.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _is_channel_page(url: str | None) -> bool:
+    """(v4a) 유튜브 채널 페이지 url(`/@handle` · `/channel/` 등)인가 — 영상 없는 예고의 자리표시."""
+    u = (url or "").lower()
+    return "youtube.com/" in u and any(p in u for p in ("youtube.com/@", "youtube.com/channel/", "youtube.com/c/",
+                                                        "youtube.com/user/"))
+
+
+def _jst_day(item: dict) -> str | None:
+    """(v4a) scheduled_start 의 JST 날짜(YYYY-MM-DD). 시각 미정 자리표시 `<날짜>T00:00:00Z` 도 그 날짜가 나온다(JST 09:00)."""
+    ss = item.get("scheduled_start")
+    if not ss:
+        return None
+    try:
+        dt = datetime.fromisoformat(ss.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+    return dt.astimezone(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+
+
 def match_item(
     items: list[dict],
     inc: dict,
@@ -162,8 +220,10 @@ def match_item(
     Find an existing item that matches the incoming item by:
     - Same channel_key
     - AND (video_id match OR url match OR scheduled_start within ±superscede_sec)
+    - (v4a) url 매칭에서 채널 페이지 url(영상 없는 예고의 자리표시)은 뺀다. 대신 한쪽이 시각 미정(time_tbd)이면
+      JST 날짜가 같을 때 같은 방송으로 본다(서로 다른 video_id 끼리는 제외).
 
-    An item that has transitioned to "end" → "none" (deleted) will not match
+    An item that has transitioned to "end" → "out" (archived, v4a D7 — 구 "none") will not match
     because it's already removed from items list (caller responsibility).
 
     Args:
@@ -191,8 +251,16 @@ def match_item(
         if inc_video_id and item.get("video_id") == inc_video_id:
             return item
 
-        # url 매칭
-        if inc_url and item.get("url") == inc_url:
+        # url 매칭 — (v4a) 채널 페이지 url 은 빼고. 영상 없는 개인 · 수동 예고의 url 은 채널 페이지 자리표시라 같은 멤버의
+        # 모든 예고가 같은 값이다 — 날짜가 달라도 두 예고가 한 건으로 합쳐지고 한쪽 시각이 사라졌다(2026-09-30 재현)
+        if inc_url and not _is_channel_page(inc_url) and item.get("url") == inc_url:
+            return item
+
+        # (v4a) 한쪽이 시각 미정(time_tbd)이면 JST 날짜가 같을 때 같은 방송 — 위 url 자리표시 매칭이 우연히 맡던 일
+        # (「10/11 配信」 뒤 「10/11 21:00〜」 가 같은 카드를 채우던 것)을 날짜 기준으로 대신한다. 서로 다른 영상이면 제외
+        if ((inc.get("time_tbd") or item.get("time_tbd"))
+                and not (inc_video_id and item.get("video_id"))
+                and _jst_day(inc) and _jst_day(inc) == _jst_day(item)):
             return item
 
         # scheduled_start 시각근접 (±superscede_sec)
@@ -240,8 +308,9 @@ def promote_state(item: dict) -> str:
     """
     Determine whether item should be promoted to "upcoming" or stay "announced".
 
-    Rules (명세 WP-0):
-    - "upcoming" = scheduled_start && !time_tbd && title && thumbnail && url && video_id
+    Rules (v4a D14):
+    - "upcoming" = video_id(영상 URL) && scheduled_start(날짜) && title
+      (구 v3: + !time_tbd + thumbnail. 썸네일은 videos.list 에서만 오고(D15) 판정에 쓰지 않는다)
     - Otherwise = "announced"
 
     Args:
@@ -251,20 +320,10 @@ def promote_state(item: dict) -> str:
         "announced" or "upcoming"
     """
     has_ss = bool(item.get("scheduled_start"))
-    no_time_tbd = not item.get("time_tbd", False)
     has_title = bool(item.get("title"))
-    has_thumbnail = bool(item.get("thumbnail"))
-    has_url = bool(item.get("url"))
     has_video_id = bool(item.get("video_id"))
 
-    if (
-        has_ss
-        and no_time_tbd
-        and has_title
-        and has_thumbnail
-        and has_url
-        and has_video_id
-    ):
+    if has_ss and has_title and has_video_id:
         return "upcoming"
 
     return "announced"
@@ -319,6 +378,18 @@ if __name__ == "__main__":
     assert id1 == id2, "new_id 재현성 실패"
     assert id1.startswith("pv_") and len(id1) == 11, "new_id 형식 실패"
     print(f"✓ new_id 안정성: {id1}")
+
+    # Test 1b: (v4a) 같은 tick·같은 채널 두 영상 → id 다름 / ensure_unique_ids
+    a = make_item(channel_key="arale", state="upcoming", source="api", now_iso=now, video_id="V1")
+    b = make_item(channel_key="arale", state="upcoming", source="api", now_iso=now, video_id="V2")
+    assert a["id"] != b["id"], "같은 first_seen 이라도 video_id 가 다르면 id 가 달라야 함"
+    dup = [dict(a), dict(b, id=a["id"]), dict(b, id=a["id"], video_id="V3")]
+    fixed = ensure_unique_ids(dup)
+    assert fixed[0]["id"] == a["id"], "앞 항목 id 유지"
+    assert len({x["id"] for x in fixed}) == 3, "중복 id 정리 실패"
+    assert dup[1]["id"] == a["id"], "입력 수정됨"
+    assert ensure_unique_ids(fixed) == fixed, "이미 고유하면 그대로"
+    print("✓ (v4a) id salt · ensure_unique_ids")
 
     # Test 2: match_item — video_id 매칭
     items = [
@@ -384,6 +455,26 @@ if __name__ == "__main__":
     match_other = match_item(items, inc_other)
     assert match_other is None, "다른 채널 매칭 (false positive)"
     print(f"✓ match_item (다른 channel_key): None")
+
+    # Test 5b: (v4a) 채널 페이지 url 은 같은 방송 근거가 아님 — 같은 멤버의 영상 없는 예고 2건(다른 날)이 합쳐지지 않는다
+    ch_url = "https://www.youtube.com/@miyako_yumemita"
+    p_items = [{"id": "pv_m1", "channel_key": "miyako", "video_id": None, "url": ch_url,
+                "scheduled_start": "2026-10-03T12:00:00Z", "time_tbd": False}]
+    assert match_item(p_items, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                                "scheduled_start": "2026-10-05T12:00:00Z"}) is None, "채널 url 로 다른 날 예고가 합쳐짐"
+    assert match_item(p_items, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                                "scheduled_start": "2026-10-03T12:20:00Z"}) is not None, "45분 창 안인데 미매칭"
+    # 시각 미정 ↔ 같은 JST 날짜 (10/11 시각 미정 + 10/11 21:00 JST = 12:00Z) → 같은 방송, 다른 날은 아님
+    tbd = [{"id": "pv_t1", "channel_key": "miyako", "video_id": None, "url": ch_url,
+            "scheduled_start": "2026-10-11T00:00:00Z", "time_tbd": True}]
+    assert match_item(tbd, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                            "scheduled_start": "2026-10-11T12:00:00Z"}) is not None, "시각 미정 ↔ 같은 날 미매칭"
+    assert match_item(tbd, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                            "scheduled_start": "2026-10-11T16:00:00Z"}) is None, "JST 다음날(10/12 01:00)인데 매칭됨"
+    assert match_item(tbd, {"channel_key": "miyako", "video_id": None, "url": ch_url,
+                            "scheduled_start": "2026-10-12T00:00:00Z", "time_tbd": True}) is None, "다른 날 시각 미정끼리 매칭됨"
+    assert _is_channel_page(ch_url) and not _is_channel_page("https://www.youtube.com/watch?v=abc")
+    print("✓ match_item (v4a) 채널 url 자리표시 제외 · 시각 미정 ↔ 같은 JST 날짜")
 
     # Test 6: sort_items 우선순위
     unsorted = [
@@ -454,7 +545,11 @@ if __name__ == "__main__":
         "video_id": "abc123",
     }
     state_tbd = promote_state(time_tbd_item)
-    assert state_tbd == "announced", f"time_tbd announced 실패: {state_tbd}"
+    # (v4a D14) upcoming 필수 요소는 영상 URL · 날짜 · 제목 — 시각 미정(날짜만)이어도 영상이 있으면 upcoming
+    assert state_tbd == "upcoming", f"time_tbd + 영상 → upcoming 실패: {state_tbd}"
+    _no_thumb = dict(time_tbd_item, thumbnail=None, time_tbd=False)
+    assert promote_state(_no_thumb) == "upcoming", "(v4a D14) 썸네일은 판정에 안 씀"
+    assert promote_state(dict(_no_thumb, title=None)) == "announced", "제목 없으면 announced"
     print(f"✓ promote_state (time_tbd): {state_tbd}")
 
     # Test 10: set_state

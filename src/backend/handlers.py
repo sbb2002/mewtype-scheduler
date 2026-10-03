@@ -23,6 +23,8 @@ from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
 from . import xtweet
+from . import statemachine
+from . import storage
 
 log = logging.getLogger("backend.handlers")
 
@@ -64,7 +66,11 @@ def _wakes_within_horizon(wakes: dict[str, str], now_iso: str) -> dict[str, str]
 
 
 def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
-    """announced(자리표시) 아이템 중 '지금 ~ +_SCHED_WAKE_LOOKAHEAD_SEC' 에 시작하는 것들의 scheduled_start 목록."""
+    """URL 없는 announced(자리표시) 아이템의 다음 reconcile(전체) 시각 목록 — '지금 ~ +_SCHED_WAKE_LOOKAHEAD_SEC' 안의 것만.
+
+    (v4a D4) 예고 시각 자체가 아니라 FSM 이 URL 없는 예고에 주는 시각을 쓴다: 시작+2분(search.list 1회,
+    아직 안 했을 때)과 시작+1시간(out 판정). 영상 있는 아이템은 reconcile(영상) 이 따로 맡는다.
+    """
     try:
         now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
     except ValueError:
@@ -78,18 +84,22 @@ def _scheduled_wake_times(preview: dict, now_iso: str) -> list[str]:
         if not ss:
             continue
         try:
-            t = datetime.fromisoformat(ss.replace("Z", "+00:00"))
+            t0 = datetime.fromisoformat(ss.replace("Z", "+00:00"))
         except ValueError:
             continue
-        if now < t <= horizon:
-            out.add(ss)
+        marks = [t0 + timedelta(seconds=statemachine.NOURL_DROP_SEC)]
+        if not it.get("search_checked"):
+            marks.append(t0 + timedelta(seconds=statemachine.NOURL_SEARCH_DELAY_SEC))
+        for t in marks:
+            if now < t <= horizon:
+                out.add(t.strftime("%Y-%m-%dT%H:%M:%SZ"))
     return sorted(out)
 
 
 def _preview_log_events(
     prev_items: list[dict] | None, new_items: list[dict], gone_items: list[dict]
 ) -> list[dict]:
-    """new_items(상태 유지) + gone_items(→none으로 archive된 것)를 prev_items 와 비교해,
+    """new_items(상태 유지) + gone_items(→out 으로 archive된 것, v4a D7 — 구 none)를 prev_items 와 비교해,
     상태가 실제로 바뀐 아이템만 모니터링 로그용 이벤트로 뽑는다(순수 함수).
 
     notify.diff_events 는 사람이 읽을 텔레그램 알림용이라 kind 5종류만 다루고
@@ -130,7 +140,7 @@ def _preview_log_events(
     for it in new_items:
         _emit(it, it.get("state"))
     for it in gone_items:
-        _emit(it, "none")
+        _emit(it, "out")
     return events
 
 
@@ -164,6 +174,10 @@ def _stable_view(preview: dict) -> dict:
 
 
 def _make_task_queue(cfg):
+    # (v4a) 로컬 시험판: Cloud Tasks 대신 적용 큐에 reconcile(범위) 적재 (원칙 ③)
+    if storage.is_local():
+        from . import apply
+        return apply.LocalTaskShim() if apply.has_queue() else None
     try:
         from .tasks import TaskQueue
 
@@ -177,6 +191,15 @@ def _make_task_queue(cfg):
     except Exception as e:  # noqa: BLE001 — 로컬/부트스트랩 허용
         log.warning("TaskQueue 비활성 (%s) — enqueue 건너뜀", e)
         return None
+
+
+def _search_live_first(yt, id_by_key: dict, channel_key: str | None) -> str | None:
+    """(v4a D4) URL 없는 예고의 시작+2분 search.list 1회 — 그 채널의 첫 live 영상 id (쿼터 100)."""
+    cid = id_by_key.get(channel_key or "")
+    if not cid:
+        return None
+    ids = yt.search_live(cid)
+    return ids[0] if ids else None
 
 
 def _ping_healthcheck(url: str) -> None:
@@ -213,89 +236,9 @@ def _translate_sweep(gh: GitHubStore, cfg, now_iso: str) -> dict:
     llm = _make_llm(cfg)
     if llm is None:
         return out
-
-    # notices.json
-    nj = None
-    try:
-        nj, sha = gh.read_json("notices.json")
-        if nj and nj.get("notices"):
-            changed = False
-            for n in nj["notices"]:
-                if not n.get("needs_tl"):
-                    continue
-                res = llm.notice_title(n.get("body_for_llm") or n.get("title") or "")
-                if res and res.get("title_ko"):
-                    n["title"] = res.get("title_ja") or n.get("title")
-                    n["title_ko"] = res["title_ko"]
-                    n.pop("needs_tl", None)
-                    n["last_updated"] = now_iso
-                    changed = True
-                    out["notice_tl"] += 1
-            if changed:
-                nj["generated_at"] = now_iso
-                gh.write_json("notices.json", nj, prev_sha=sha,
-                              message=f"data: notices tl {now_iso}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("notice 번역 sweep 실패: %s", e)
-
-    # tweets.json
-    try:
-        tj, sha = gh.read_json("tweets.json")
-        if tj and tj.get("tweets"):
-            changed = False
-            for _k, lst in list(tj["tweets"].items()):
-                # 계약 I — tweets[ck] 는 메시지 배열. v2.8 단건 dict 는 [dict] 로 승계.
-                norm = lst if isinstance(lst, list) else ([lst] if isinstance(lst, dict) else [])
-                if norm is not lst:
-                    tj["tweets"][_k] = norm
-                    changed = True
-                for t in norm:
-                    q = t.get("quote")
-                    if q and q.get("needs_tl") and q.get("text") and not q.get("text_ko"):
-                        ko = (xtweet.find_reused_ko(q["text"], tweets_data=tj, notices_data=nj)
-                              or llm.translate(q["text"]))
-                        if ko:
-                            q["text_ko"] = ko
-                            q.pop("needs_tl", None)
-                            changed = True
-                            out["tweet_tl"] += 1
-                    if not t.get("needs_tl"):
-                        continue
-                    ko = llm.translate(t.get("text") or "")
-                    if ko:
-                        t["text_ko"] = ko
-                        t.pop("needs_tl", None)
-                        changed = True
-                        out["tweet_tl"] += 1
-            if changed:
-                tj["generated_at"] = now_iso
-                gh.write_json("tweets.json", tj, prev_sha=sha,
-                              message=f"data: tweets tl {now_iso}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("tweet 번역 sweep 실패: %s", e)
-
-    # preview.json — 방송 제목 번역
-    try:
-        pj, sha = gh.read_json("preview.json")
-        if pj and pj.get("items"):
-            changed = False
-            for it in pj["items"]:
-                if not it.get("needs_tl") or not it.get("title"):
-                    continue
-                ko = llm.translate(it["title"])
-                if ko:
-                    it["title_ko"] = ko
-                    it.pop("needs_tl", None)
-                    changed = True
-                    out["preview_tl"] += 1
-            if changed:
-                pj["generated_at"] = now_iso
-                gh.write_json("preview.json", pj, prev_sha=sha,
-                              message=f"data: preview tl {now_iso}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("preview 번역 sweep 실패: %s", e)
-
-    return out
+    # (v4a) 읽기(번역 수집)와 쓰기(반영)를 enrich 모듈로 분리 — 로컬 시험판은 가공 큐가 수집을 맡는다.
+    from . import enrich
+    return enrich.apply_translations(gh, enrich.collect(gh, llm, now_iso), now_iso)
 
 
 def _should_log_run(
@@ -319,6 +262,47 @@ def _should_log_run(
     )
 
 
+_VIDEO_RELEASES_PATH = "video_releases.json"
+_VIDEO_RELEASES_MAX = 300
+
+
+def record_video_releases(gh, entries: list[dict], now_iso: str) -> dict:
+    """(v4a) 방송 카드로 올리지 않은 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등) 기록 — ops `video_releases.json`.
+    (2026-10-01 부터 그룹 채널만 — 멤버 개인 채널 프리미어는 방송 카드로 올린다. 그 전 기록엔 멤버 채널 것이 섞여 있을 수 있다.)
+    버리지 않고 남겨 두는 이유: 추후 보조 기능("유메미타 플레이어")의 재료(운영자 구상). video_id 기준 upsert(처음 본 시각 유지),
+    최근 300건. 반환 {"added": [새 video_id]}. 쓰기 실패는 호출부 흐름을 막지 않도록 예외를 삼킨다."""
+    uniq = {}
+    for e in entries or []:
+        if e.get("video_id"):
+            uniq.setdefault(e["video_id"], e)
+    if not uniq:
+        return {"added": []}
+    try:
+        for _try in range(3):
+            cur, sha = gh.read_json(_VIDEO_RELEASES_PATH)
+            items = list((cur or {}).get("items") or [])
+            by = {i.get("video_id"): i for i in items}
+            added = []
+            for vid, e in uniq.items():
+                if vid in by:
+                    by[vid]["last_seen"] = now_iso
+                    continue
+                row = {k: e.get(k) for k in ("video_id", "channel_id", "title", "scheduled_start", "source")}
+                row.update(first_seen=now_iso, last_seen=now_iso)
+                items.append(row)
+                added.append(vid)
+            items = items[-_VIDEO_RELEASES_MAX:]
+            try:
+                gh.write_json(_VIDEO_RELEASES_PATH, {"items": items}, prev_sha=sha,
+                              message=f"ops: 프리미어(녹화 영상) 기록 +{len(added)} {now_iso}")
+                return {"added": added}
+            except ConflictError:
+                continue
+    except Exception:  # noqa: BLE001
+        log.warning("프리미어 기록 실패", exc_info=True)
+    return {"added": []}
+
+
 def _run(mode: str, woken_video_id: str | None) -> dict:
     cfg = load_config()
     now_iso = _now_iso()
@@ -327,7 +311,8 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     channels_cfg = load_channels()
     id_by_key = {k: v["channel_id"] for k, v in channels_cfg["channels"].items()}
 
-    gh = GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+    # (v4a) store 팩토리 — 로컬 시험판은 LocalStore, control/admin_state 는 ops 로 라우팅
+    gh = storage.make_store("data") or GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
 
     # ── 일시정지 가드 ──
     control, _ = gh.read_json("control.json")
@@ -345,7 +330,11 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     if woken_video_id:
         candidates.add(woken_video_id)
     if not is_wake:
-        rss_map = fetch_all_rss_video_ids(id_by_key)
+        # (v4a) RSS 는 **개인 유닛 채널만** — 그룹 공식 채널(@BDP_yumemita)을 돌리면 5th 싱글 뮤비 같은 노래 영상이 5인 합동
+        # 방송으로 팬아웃돼 올라왔다(2026-09-30). 그룹 채널 영상은 트윗·수동 입력(참여 멤버 선택)으로만 올린다.
+        # id_by_key 자체는 그대로 둔다 — 이미 추적 중인 영상의 enrich(videos.list)·아바타는 그룹 채널도 필요.
+        rss_ids = {k: v for k, v in id_by_key.items() if not (channels_cfg["channels"].get(k) or {}).get("is_group")}
+        rss_map = fetch_all_rss_video_ids(rss_ids)
         for ids in rss_map.values():
             candidates.update(ids)
 
@@ -364,8 +353,10 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             prev_preview = preview_mod.default_preview()
         prev_archive, arch_sha = gh.read_json("preview_archive.json")
 
+        _premieres: list[dict] = []
         new_preview, transitions, wakes, gone_items = build_preview(
             channels_cfg, videos, prev_preview, now_iso, avatars=avatars,
+            search_fn=lambda ck: _search_live_first(yt, id_by_key, ck), skipped=_premieres,
         )
 
         # ── 트윗·릴레이 예고 시각 override 재적용 (알려진 지연: wakes 는 override 전 시각 기준) ──
@@ -446,6 +437,18 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 raise
             log.warning("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
 
+    # ── (v4a) 수집에서 뺀 그룹 채널 프리미어(녹화 영상 공개) 기록 · 있던 예고를 뺐으면 모니터 로그 ──
+    if _premieres:
+        record_video_releases(gh, [dict(p, source="reconcile") for p in _premieres], now_iso)
+        try:
+            log_events(gh, now_iso, [{
+                "ts": now_iso, "flow": "preview", "result": RESULT_OK, "who": p.get("channel_id") or "",
+                "detail": f"그룹 채널 프리미어(녹화 영상) — 방송 카드에서 뺌 · {p['video_id']}", "video_id": p["video_id"],
+                "item_id": p.get("removed_item"), "title": p.get("title"),
+            } for p in {x["video_id"]: x for x in _premieres}.values() if p.get("removed_item")])
+        except Exception:  # noqa: BLE001
+            log.warning("프리미어 모니터 로그 실패", exc_info=True)
+
     # ── Cloud Tasks enqueue ──
     enqueued, enqueue_errors = 0, []
     wakes = _wakes_within_horizon(wakes, now_iso)
@@ -478,9 +481,14 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 log.error("post-end tick enqueue 실패: %s", e)
 
     # ── LLM 번역 재시도 sweep (needs_tl 행) — 정기 tick 에서만 ──
+    # (v4a) 로컬 시험판: 가공 큐(q-enrich)에 적재 → 수집 후 적용 큐로 반영. 여기서는 기다리지 않는다.
     tl = {"notice_tl": 0, "tweet_tl": 0, "preview_tl": 0}
     if not is_wake:
-        tl = _translate_sweep(gh, cfg, now_iso)
+        from . import enrich
+        if storage.is_local() and enrich.has_queue():
+            enrich.enqueue_sweep()
+        else:
+            tl = _translate_sweep(gh, cfg, now_iso)
 
     # 상태 카운트
     state_counts: dict[str, int] = {}
@@ -609,8 +617,11 @@ if __name__ == "__main__":
         {"state": "announced", "scheduled_start": "2026-09-01T13:00:00Z", "time_tbd": True}, # time_tbd → 제외
         {"state": "upcoming",  "scheduled_start": "2026-09-01T13:00:00Z"},   # announced 아님 → 제외
     ]}
-    assert _scheduled_wake_times(_pv, _now) == ["2026-09-01T13:30:00Z"], _scheduled_wake_times(_pv, _now)
-    print("[OK] _scheduled_wake_times")
+    # (v4a D4) 13:30 예고 → +2분(13:32 검색) · +1시간(14:30 out). 11:00 예고의 +1시간(12:00)은 now 와 같아 제외.
+    assert _scheduled_wake_times(_pv, _now) == ["2026-09-01T13:32:00Z", "2026-09-01T14:30:00Z"], _scheduled_wake_times(_pv, _now)
+    _pv2 = {"items": [{"state": "announced", "scheduled_start": "2026-09-01T11:30:00Z", "search_checked": True}]}
+    assert _scheduled_wake_times(_pv2, _now) == ["2026-09-01T12:30:00Z"], "검색을 이미 했으면 out 시각만"
+    print("[OK] _scheduled_wake_times (v4a D4: +2분 검색 · +1시간 out)")
 
     _a = {"items": [{"state": "live", "id": "pv_1", "video_id": "v1", "last_updated": "x"}]}
     _bv = {"items": [{"state": "live", "id": "pv_1", "video_id": "v1", "last_updated": "y"}]}
@@ -644,15 +655,15 @@ if __name__ == "__main__":
         {"id": "pv_2", "video_id": "v2", "channel_key": "yuno", "state": "live", "title": "B"},  # 유지 → 제외
         {"id": "pv_4", "video_id": "v4", "channel_key": "miyako", "state": "announced", "title": "D"},  # 신규
     ]
-    _gone_items = [{"id": "pv_3", "video_id": "v3", "channel_key": "nonoka", "state": "none", "title": "C"}]
+    _gone_items = [{"id": "pv_3", "video_id": "v3", "channel_key": "nonoka", "state": "out", "title": "C"}]
     _evs = _preview_log_events(_prev_items, _new_items, _gone_items)
     _by_id = {e["id"]: e for e in _evs}
     assert len(_evs) == 3, _evs
     assert _by_id["pv_1"]["from_state"] == "upcoming" and _by_id["pv_1"]["to_state"] == "watching"
     assert _by_id["pv_4"]["from_state"] is None and _by_id["pv_4"]["to_state"] == "announced"
-    assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "none"
+    assert _by_id["pv_3"]["from_state"] == "end" and _by_id["pv_3"]["to_state"] == "out"
     assert "pv_2" not in _by_id, "상태 유지된 아이템은 이벤트로 안 뽑혀야 함"
-    print("[OK] _preview_log_events: 전이/신규/삭제(→none) 추출, 무변화 제외")
+    print("[OK] _preview_log_events: 전이/신규/삭제(→out) 추출, 무변화 제외")
 
     # (v3.8.5a) collab_with 전파 — monitor 타임플롯의 합동 live 막대 아이콘용
     _collab_new = [

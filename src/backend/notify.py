@@ -191,9 +191,10 @@ class Telegram:
 #   error / summary : 운영 진단 — detail 에서만
 _LEVEL_KINDS = {
     "detail": {"announced", "upcoming", "live_start", "live_end", "demote",
-               "notice", "tweet", "ingest", "error", "summary"},
+               "notice", "tweet", "ingest", "error", "summary", "banner",
+               "progress"},   # (v4a) 2초 넘게 걸린 쓰기의 대기 · 결과 DM(writeclient) — 「자세히」 전용(2026-10-01 운영자 결정)
     "normal": {"announced", "upcoming", "live_start", "live_end",
-               "notice", "tweet"},
+               "notice", "tweet", "banner"},
     "simple": {"upcoming", "live_start", "live_end"},
 }
 
@@ -499,7 +500,8 @@ def summary_text(result: dict, now_iso: str) -> str:
     # 로그(statemachine.derive 토큰)에서 전이 요약 추출
     tallies: dict[str, int] = {}
     for tok in result.get("log", []):
-        for mark in ("→watching", "→live", "→end", "end→none", "watching-demote", "assumed-live drop"):
+        for mark in ("→watching", "→live", "→end", "end→out", "end-recover→live", "watching-demote",
+                     "nourl-drop", "nourl-search-hit", "nourl-search-miss"):  # (v4a) out·D4·D6 토큰
             if mark in tok:
                 tallies[mark] = tallies.get(mark, 0) + 1
                 break

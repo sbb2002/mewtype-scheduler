@@ -17,7 +17,10 @@
   <iframe id="f" title="운영 모니터 리포트" hidden></iframe>
   <p id="msg">불러오는 중…</p>
   <script>
-    var LIVE_URL = "https://mewtype-telegram-lk3cg7l7ka-an.a.run.app/monitor-live";
+    // (v4a) hostname 이 *.vercel.app 이면 Cloud Run URL, 아니면 /monitor-live 로컬 경로 사용.
+    var LIVE_URL = location.hostname && location.hostname.endsWith('.vercel.app')
+      ? "https://mewtype-telegram-lk3cg7l7ka-an.a.run.app/monitor-live"
+      : "/monitor-live";
     var SNAPSHOT_URL = "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/monitoring/monitoring/latest.html";
     function load(url) {
       return fetch(url, { cache: "no-store" }).then(function (r) {

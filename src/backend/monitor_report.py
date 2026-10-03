@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -260,7 +261,7 @@ def _preview_json(events: list[dict], now_hm: str | None) -> list[dict]:
             seg_from = _kst_hm(e["ts"])
             if i + 1 < len(evs):
                 seg_to = _kst_hm(evs[i + 1]["ts"])
-            elif to_state == "none":
+            elif to_state in ("out", "none"):  # (v4a D7) out = 구 none. 옛 로그의 none 도 그대로 읽는다
                 seg_to = _add_minutes(seg_from, 3)  # 사라짐은 짧게 표시(실제로 관찰 구간이 없으므로)
             else:
                 # "30:00" = 이 하루의 끝(다음날 06:00) — 프론트 minutesOf()가 이 가상 시각을
@@ -448,6 +449,9 @@ def build_day_from_text(
         "upstream": sorted(_upstream_json(grouped["upstream"]) + _derive_upstream(grouped),
                            key=lambda x: _min_of_day(x["t"])),
         "preview": _preview_json(grouped["preview"], now_hm),
+        # (v4a) 오늘이면 관측 끝(현재 시각 KST "HH:MM"), 지난 날짜면 None — 프론트 dayEndMin() 이 백엔드 상태 막대 ·
+        # 누계 % 를 여기까지만 계산한다(아직 오지 않은 시간을 "정상"으로 칠하지 않게).
+        "nowHm": now_hm,
         "downRanges": down_ranges,
         "vercelDeploys": vercel_deploys,
         "eventCount": len(events),
@@ -520,6 +524,8 @@ def snapshot_report(day: dict, date_kst: str, summary_days: dict) -> dict:
         "date": date_kst, "monthly": False, "yearly": False, "all": True,
         "dates": [date_kst], "days": {date_kst: day}, "summary": summary_days,
         "eventCount": day.get("eventCount", 0),
+        # (v4a 한정) 타임라인 「현재 시각까지」 흰 반투명 배경 — 로컬 러너에서만(운영 Cloud Run 엔 안 나옴)
+        "runMark": os.environ.get("V4A_RUNTIME", "").strip().lower() == "local",
     }
 
 
@@ -1002,9 +1008,16 @@ function fmtHHMMSS(totalSec){
   return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0")+":"+String(ss).padStart(2,"0");
 }
 function addMinutes(hhmm, min){ return fmtHM(((minutesOf(hhmm) + min) % 1440 + 1440) % 1440); }
-function buildLayeredSegs(layers){
-  const points = new Set([0, 1440]);
-  layers.forEach(l => l.ranges.forEach(r => { points.add(minutesOf(r.from)); points.add(minutesOf(r.to)); }));
+// (v4a) 하루의 끝(1440분)은 "30:00"(가상 시각) 으로 적는다 — fmtHM(1440) 은 "06:00" 으로 돌아가
+// 마지막 구간이 "10:07–06:00" 처럼 끝이 시작보다 앞이 돼 1px 로만 그려지고 누계에서도 빠졌다(v3.5.0 부터).
+function segLabel(m){ return m >= 1440 ? "30:00" : fmtHM(m); }
+// endMin: 구간을 여기까지만 만든다(오늘 = 현재 시각까지 — 아직 오지 않은 시간을 "정상"으로 칠하지 않게). 없으면 하루 끝.
+function buildLayeredSegs(layers, endMin){
+  const END = endMin == null ? 1440 : Math.max(0, Math.min(1440, endMin));
+  const points = new Set([0, END]);
+  layers.forEach(l => l.ranges.forEach(r => {
+    [minutesOf(r.from), minutesOf(r.to)].forEach(m => { if (m > 0 && m < END) points.add(m); });
+  }));
   const sorted = Array.from(points).sort((a,b) => a-b);
   const segs = [];
   for (let i = 0; i < sorted.length - 1; i++) {
@@ -1014,11 +1027,13 @@ function buildLayeredSegs(layers){
     let state = "up";
     layers.forEach(l => { if (l.ranges.some(r => minutesOf(r.from) <= mid && mid < minutesOf(r.to))) state = l.state; });
     const last = segs[segs.length - 1];
-    if (last && last.s === state) last.to = fmtHM(m1);
-    else segs.push({ s: state, from: fmtHM(m0), to: fmtHM(m1) });
+    if (last && last.s === state) last.to = segLabel(m1);
+    else segs.push({ s: state, from: segLabel(m0), to: segLabel(m1) });
   }
   return segs;
 }
+// 그날 관측 끝(분) — 오늘이면 현재 시각(day.nowHm), 지난 날짜면 하루 끝.
+function dayEndMin(day){ return day && day.nowHm ? minutesOf(day.nowHm) : 1440; }
 const BACKEND_BUSY_MIN = 2; // 트리거 1건 처리에 걸리는 대략적 시간(분) — 실측 아닌 근사치
 function pausedRanges(ops){
   const sorted = ops.filter(e => e.cmd === "/pause" || e.cmd === "/resume").slice()
@@ -1032,7 +1047,7 @@ function pausedRanges(ops){
   if (openPause) ranges.push({from:openPause, to:"30:00"});
   return ranges;
 }
-function computeBackendSegs(ticks, ops, downRanges){
+function computeBackendSegs(ticks, ops, downRanges, endMin){
   return buildLayeredSegs([
     { state:"busy",   ranges: ticks.map(e => ({ from:e.t, to:addMinutes(e.t, BACKEND_BUSY_MIN) })) },
     { state:"paused", ranges: pausedRanges(ops) },
@@ -1040,7 +1055,7 @@ function computeBackendSegs(ticks, ops, downRanges){
     // 호출을 날짜마다 몰아서 하지 않기 위해 합의한 근사(v3.5 설계, v3.8.5 연간 리포트). 대신
     // 막대 툴팁에 미조회임을 밝힌다(drawHealthBar).
     { state:"down",   ranges: downRanges || [] },
-  ]);
+  ], endMin);
 }
 
 function fmtClock(min){
@@ -1389,6 +1404,22 @@ function renderTimeline(){
   defs.appendChild(makeHatch("liveAssumedHatch", "#ff5470"));
   svg.appendChild(defs);
 
+  // (v4a 한정, 운영자 요청) 오늘 — 플롯 왼쪽 끝(x=0)부터 현재 시각까지, 트리거 기준선(세로 막대 아랫부분)에서
+  // 개인 트윗 마지막 줄(미야코) 아래까지 흰 반투명 배경. 어디까지 관측 · 작동했는지 한눈에 보이게.
+  // 다른 요소가 그 위에 얹히도록 맨 먼저 그린다. REPORT.runMark 는 로컬 러너(V4A_RUNTIME=local)에서만 켜진다.
+  if (REPORT.runMark && CURRENT_DAY && CURRENT_DAY.nowHm) {
+    const tw = LANES.find(g => g.key === "tweet");
+    const y0 = rowY["trigger|all"], y1 = tw._blockTop + tw._blockHeight;
+    const xNow = timeToX(CURRENT_DAY.nowHm, plotW);
+    const shade = document.createElementNS(ns, "rect");
+    shade.setAttribute("x", 0); shade.setAttribute("y", y0);
+    shade.setAttribute("width", Math.max(0, xNow)); shade.setAttribute("height", Math.max(0, y1 - y0));
+    shade.setAttribute("fill", "#ffffff"); shade.setAttribute("fill-opacity", "0.06");
+    shade.setAttribute("pointer-events", "none");
+    shade.setAttribute("class", "tl-runmark");
+    svg.appendChild(shade);
+  }
+
   LANES.forEach(g => {
     g.rows.forEach(r => {
       const ry = rowY[g.key+"|"+r];
@@ -1654,7 +1685,8 @@ function renderRightPanel(){
       sw.setAttribute("width", 8); sw.setAttribute("height", 8); sw.setAttribute("rx", 2);
       sw.setAttribute("fill", HEALTH_COLOR[k]);
       svg.appendChild(sw);
-      const pct = Math.round(durSec[k] / 86400 * 100);
+      // (v4a) 오늘은 지금까지 관측한 시간 대비 — 하루 전체(86400초)로 나누면 정상이어도 낮게 나온다
+      const pct = Math.round(durSec[k] / Math.max(60, dayEndMin(CURRENT_DAY) * 60) * 100);
       const txt = document.createElementNS(ns,"text");
       txt.setAttribute("x", barsStartX + 13); txt.setAttribute("y", ry);
       txt.setAttribute("dominant-baseline", "central");
@@ -2169,7 +2201,7 @@ function loadDay(dateStr, opts){
   UPSTREAM = day.upstream || [];  // (v3.8.9) 옛 스냅샷/리포트엔 키가 없을 수 있음
   INGEST = computeIngest(RELAY, NOTICE, TWEET, day.upstream);
   TRIGGER_GROUPS = groupTriggerEvents(OPS, TICKS, INGEST);
-  BACKEND_SEGS = computeBackendSegs(TICKS, OPS, day.downRanges);
+  BACKEND_SEGS = computeBackendSegs(TICKS, OPS, day.downRanges, dayEndMin(day));
 
   // (v3.8.9) 지난 날짜 상세의 출처 — 스냅샷(매일 06:10 에 굳힌 것) / 즉석 계산(스냅샷 전).
   const provenance = day.snapshotAt ? ` (모니터링 스냅샷 ${day.snapshotAt.replace("T", " ").replace("Z", " UTC")})` :
@@ -2635,6 +2667,18 @@ if __name__ == "__main__":
     dtext = "\n".join(json.dumps(e) for e in events)
     dd = build_day_from_text("2026-09-15", dtext, now_hm=None, down_ranges=[], vercel_deploys=None)
     assert dd["hasLog"] is True and dd["eventCount"] == len(events)
+    # (v4a) 관측 끝 — 지난 날짜 None(하루 끝까지), 오늘은 현재 시각. runMark 는 로컬 러너에서만
+    assert dd["nowHm"] is None
+    assert build_day_from_text("2026-09-15", dtext, now_hm="16:30", down_ranges=[], vercel_deploys=None)["nowHm"] == "16:30"
+    _rt_prev = os.environ.pop("V4A_RUNTIME", None)
+    assert snapshot_report(dd, "2026-09-15", {})["runMark"] is False
+    os.environ["V4A_RUNTIME"] = "local"
+    assert snapshot_report(dd, "2026-09-15", {})["runMark"] is True
+    os.environ.pop("V4A_RUNTIME", None)
+    if _rt_prev is not None:
+        os.environ["V4A_RUNTIME"] = _rt_prev
+    assert 'function segLabel(m){ return m >= 1440 ? "30:00"' in _TEMPLATE   # 하루 끝 = "30:00"
+    print("[OK] (v4a) nowHm · runMark · 하루 끝 30:00")
     # (v3.8.9) 인입 = 업스트림(실제 기록 + 옛 로그 복원분) 건수
     assert day_trigger_count(dd) == len(dd["ops"]) + len(dd["ticks"]) + len(dd["upstream"])
     empty_file = build_day_from_text("2026-09-15", "", now_hm=None, down_ranges=None, vercel_deploys=None)

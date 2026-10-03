@@ -49,6 +49,29 @@ gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
   --condition=None \
   --quiet 2>/dev/null || true
 
+# (v4) 접수 서비스(INVOKER_SA 로 실행)도 Cloud Tasks 에 적재(즉시 확인 · 비동기 적용 작업)하고, 두 서비스 모두
+#      예약된 확인을 조회 · 취소(예고 삭제 시 · 관리 페이지 「예정된 확인」)한다. 적재한 태스크의 OIDC 토큰을
+#      INVOKER_SA 명의로 만들려면 접수 서비스가 자기 자신에 대한 serviceAccountUser 도 필요하다.
+gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+  --member="serviceAccount:$INVOKER_SA" \
+  --role="roles/cloudtasks.enqueuer" \
+  --condition=None \
+  --quiet 2>/dev/null || true
+gcloud iam service-accounts add-iam-policy-binding "$INVOKER_SA" \
+  --member="serviceAccount:$INVOKER_SA" \
+  --role="roles/iam.serviceAccountUser" \
+  --condition=None \
+  --quiet 2>/dev/null || true
+for SA in "$RUNTIME_SA" "$INVOKER_SA"; do
+  for ROLE in roles/cloudtasks.viewer roles/cloudtasks.taskDeleter; do
+    gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+      --member="serviceAccount:$SA" \
+      --role="$ROLE" \
+      --condition=None \
+      --quiet 2>/dev/null || true
+  done
+done
+
 # secretmanager.secretAccessor 역할 (RUNTIME_SA = 메인, INVOKER_SA = mewtype-telegram 실행 계정)
 for SA in "$RUNTIME_SA" "$INVOKER_SA"; do
   gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
@@ -116,5 +139,8 @@ create_secret GROQ_API_KEY "Groq API 키 (v3 번역/제목추출, 없으면 빈 
 create_secret HEALTHCHECKS_IO_READONLEY_TOKEN "healthchecks.io read-only API 키 (/monitor 백엔드 상태 조회용, 없으면 빈 값 Enter)" "${HEALTHCHECKS_IO_READONLEY_TOKEN:-}"
 # v3.8.9 Vercel REST API 토큰 — /monitor 의 배포 시도 수(Hobby 하루 100회 한도) 조회용. 없으면 "확인 불가".
 create_secret VERCEL_TOKEN "Vercel API 토큰 (/monitor 배포 시도 수 조회용, 없으면 빈 값 Enter)" "${VERCEL_TOKEN:-}"
+
+# (v4) 관리 페이지 로그인 링크 서명 키 — 값이 없으면 임의 생성(운영자가 알 필요 없음)
+create_secret "${ADMIN_SECRET_NAME:-ADMIN_SECRET}" "관리 페이지 서명 키" "${ADMIN_SECRET:-$(python -c 'import secrets;print(secrets.token_hex(32))')}"
 
 echo "=== 셋업 완료 ==="

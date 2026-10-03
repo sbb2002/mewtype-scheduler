@@ -39,6 +39,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
                           if a.get("merge_fn") == "personal_schedule" else None),
             )
         },
+        "manual_preview": lambda gh, a: t._commit_manual_preview(gh, a["item"], a["now_iso"]),
         "remove_broadcast": lambda gh, a: {
             "removed": t._remove_broadcast(gh, a["snapshot"], a["now_iso"], a["action"])
         },
@@ -47,6 +48,11 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             t._commit_notice(gh, a.get("prepared"), a["now_iso"]),
         )),
         "notice_sweep": lambda gh, a: {"moved": t._notice_sweep(gh, a["now_iso"])},
+        # (v4a) 행사 배너 — 판정 커밋 · 정리 · 관리 페이지 수정/삭제
+        "apply_banner": lambda gh, a: t._commit_banner(gh, a.get("prepared"), a["now_iso"]),
+        "banner_sweep": lambda gh, a: {"moved": t._banner_sweep(gh, a["now_iso"])},
+        "banner_edit_commit": lambda gh, a: t._banner_edit_commit(gh, a["bid"], a["patch"], a["now_iso"]),
+        "banner_del_commit": lambda gh, a: t._banner_del_commit(gh, a["bid"], a["now_iso"]),
         "notice_del_commit": lambda gh, a: t._notice_del_commit(gh, a["nid"], a["now_iso"]),
         "notice_edit_commit": lambda gh, a: t._notice_edit_commit(gh, a["nid"], a["patch"], a["now_iso"]),
         "personal_tweet": lambda gh, a: t._commit_personal_tweet(
@@ -54,7 +60,8 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             via=a.get("via", "ingest"),
         ),
         "tweet_sweep": lambda gh, a: {"moved": t._tweet_sweep(gh, a["now_iso"])},
-        "tweet_del_commit": lambda gh, a: t._tweet_del_commit(gh, a["unit"], a["now_iso"]),
+        "tweet_del_commit": lambda gh, a: t._tweet_del_commit(gh, a["unit"], a["now_iso"], a.get("tweet_id")),
+        "tweet_edit_commit": lambda gh, a: t._tweet_edit_commit(gh, a["unit"], a["tweet_id"], a["text_ko"], a["now_iso"]),
         "url_confirmed_commit": lambda gh, a: t._url_confirmed_commit(
             gh, a["video_id"], a["new_item"], a.get("next_check_at"), a["host_key"],
             a["now_iso"], via=a.get("via", "ingest"),
@@ -74,6 +81,17 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         "ingest_queue_drain": lambda gh, a: dict(zip(
             ("applied", "rows"), t._ingest_queue_drain(gh, a["now_iso"]),
         )),
+        # (v4a) LLM 판단 기록 · 되돌리기 (ops llm_actions.json)
+        "llm_action": lambda gh, a: t._llm_action_commit(gh, a["op"], a["now_iso"], entry=a.get("entry"),
+                                                         action_id=a.get("action_id"), patch=a.get("patch"),
+                                                         guard=bool(a.get("guard"))),
+        # (v4a) 프리미어(녹화 영상 공개) 기록 (ops video_releases.json)
+        "video_release": lambda gh, a: __import__("src.backend.handlers", fromlist=["x"]).record_video_releases(
+            gh, a.get("entries") or [], a["now_iso"]),
+        # (v4a) 그룹 영상 「참여 멤버 확인 대기」 추가 · 제거 (ops group_pending.json)
+        "group_pending": lambda gh, a: t._group_pending_commit(
+            gh, a["op"], a["now_iso"], entries=a.get("entries"), video_ids=a.get("video_ids"),
+        ),
     }
 
 
@@ -95,10 +113,11 @@ if __name__ == "__main__":
     # (실제 GitHub 쓰기는 telegram_app.py 쪽 self-test 가 이미 커버).
     reg = _registry()
     expected = {
-        "merge_rows", "remove_broadcast", "apply_notice", "notice_sweep",
+        "merge_rows", "manual_preview", "remove_broadcast", "apply_notice", "notice_sweep",
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
-        "tweet_del_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
-        "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain",
+        "tweet_del_commit", "tweet_edit_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
+        "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain", "group_pending", "video_release", "llm_action",
+        "apply_banner", "banner_sweep", "banner_edit_commit", "banner_del_commit",
     }
     missing = expected - set(reg)
     assert not missing, f"registry missing kinds: {missing}"

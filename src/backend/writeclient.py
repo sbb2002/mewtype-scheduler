@@ -54,44 +54,66 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
 
     `MAIN_SERVICE_URL` 미설정 시 로컬 디스패치(같은 프로세스, `gh` 필요) — self-test·
     단일 서비스 로컬 개발용. 설정돼 있으면 OIDC 로 `mewtype-backend` 의 `/write` 를 호출한다.
-    2초 안에 응답이 없으면 "처리 대기 중" DM 을 1회 보낸다(운영자 체감 응답성 확보).
 
-    `label`: 대기/완료 DM 에 붙일 내용 태그(예: `"千石ユノ 예고"` → `"[千石ユノ 예고]merge_rows"`).
-    생략하면 `args["action"]`(대부분의 호출부가 이미 undo 로그용으로 넘기고 있음)을 폴백으로
-    쓰고, 그것도 없으면 태그 없이 `kind` 만 나간다(기존 문구와 동일).
-    (v3.8.4) 대기 DM 이 실제로 나간 경우에만, 처리가 끝난 시점(성공/실패 모두)에 짝이 되는
-    완료/실패 DM 을 보낸다 — 예전엔 "처리 대기 중…"만 오고 끝났는지 알 길이 없었다.
-    2초 안에 끝나는 빠른 경로는 지금처럼 아무 DM 도 안 나간다(각 핸들러가 이미 보내는
-    자체 완료 DM 과 중복 안 되게).
+    `label`: 대기/결과 DM 에 붙일 내용(예: `"千石ユノ 예고"`). 생략하면 `args["action"]`(대부분의 호출부가
+    이미 undo 로그용으로 넘긴다)을 쓰고, 그것도 없으면 내용 줄 없이 나간다.
+    (v3.8.4) 2초 넘게 걸리면 「처리 중」 DM, 끝나면 짝이 되는 DM — 2초 안에 끝나면 아무 DM 도 없다.
+    (v4a, 2026-10-01 운영자 결정) 짝 DM 은 「처리 완료」가 아니라 **실제 결과**(추가 · 안 올림 — 이유 · 바뀐 것 없음 ·
+    실패)를 말하고, 작업 이름은 우리말로. 알림 레벨 「자세히(detail)」일 때만 나간다. 적용 큐(로컬)와 `/write`(배포)
+    두 경로가 같은 장치(`_Progress`)를 쓴다. 계기: 운영(v3)이 recap(지난 소식과 같은 글이라 안 올림)으로 끝난 소식에
+    「✅ 처리 완료 [소식 제목]apply_notice」를 보내, 올라간 것처럼 읽혔다.
     """
+    tag = label or (args.get("action") or "")
+    # (v4a) 로컬 시험판: 적용 큐(쓰기 스레드 q-apply)에 적재하고 결과를 기다린다 — data 를 쓰는 곳은
+    # 그 스레드 하나(원칙 ①). 결과를 기다리는 건 현행 DM 문구 유지를 위한 로컬 한정 선택(계획 §1 알려진 차이).
+    from . import storage
+    if storage.is_local():
+        from . import apply
+        if apply.has_queue():
+            prog = _Progress(kind, tag, gh).start()
+            try:
+                res = apply.submit(kind, args, wait=True)
+            except Exception as e:  # noqa: BLE001
+                prog.finish(ok=False, err=str(e))
+                raise WriteError(f"적용 큐 작업 실패({kind}): {e}") from e
+            prog.finish(ok=True, result=res)
+            return res
+
     main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
     if not main_url:
         from . import writers
+        _reg = getattr(writers, "_registry", None)
+        if _reg is not None and kind not in _reg():
+            # (v4) 쓰기 서비스 안에서 부른 v4 전용 작업(yt_notif · reconcile 등) — 적용 처리기로 그 자리에서
+            from . import apply
+            return apply.handle(kind, dict(args), {"job_id": "inline", "attempt": 1, "is_last": True, "queue": "inline"})
         if gh is None:
             raise WriteError("call_write: MAIN_SERVICE_URL 미설정 + gh 없음 — 로컬 디스패치 불가")
         return writers.dispatch(kind, gh, args)
 
+    prog = _Progress(kind, tag, gh).start()
+    try:
+        res = post_write(kind, args, main_url=main_url)
+    except WriteError as e:
+        prog.finish(ok=False, err=getattr(e, "short", None) or str(e))   # DM 은 짧게(예: "HTTP 500")
+        raise
+    prog.finish(ok=True, result=res)
+    return res
+
+
+def post_write(kind: str, args: dict, *, main_url: str | None = None) -> dict:
+    """쓰기 서비스 `/write` 동기 호출(OIDC) — 결과 dict. `call_write`(DM 포함) · `apply.submit`(v4 클라우드 접수) 공용.
+
+    (v3.8.9) HTTP 429/503 은 Cloud Run 이 컨테이너에 배정하기 **전에** 거절한 것이라 재시도해도 중복 커밋이 없다 →
+    지수 백오프 재시도. 네트워크 예외는 서버가 이미 처리 중일 수 있어 재시도하지 않는다.
+    """
+    main_url = (main_url or os.environ.get("MAIN_SERVICE_URL", "")).strip().rstrip("/")
+    if not main_url:
+        raise WriteError("post_write: MAIN_SERVICE_URL 미설정")
     if not (fetch_id_token and Request and requests):
         raise WriteError("call_write: google-auth/requests 미탑재 — /write 호출 불가")
-
-    tag = label or (args.get("action") or "")
-    notice_sent = threading.Event()
-
-    def _fire_wait_notice() -> None:
-        # DM 발송 자체보다 먼저 플래그를 세운다 — 메인 스레드가 timer.cancel() 직후
-        # notice_sent 를 확인할 때, "타이머는 발화했는데 아직 플래그 전이면 완료 DM 을
-        # 놓치는" 레이스를 피하기 위함(반대 방향 레이스는 무해 — DM 두 개 순서만 살짝
-        # 어긋날 수 있는 정도).
-        notice_sent.set()
-        _send_wait_notice(kind, tag)
-
-    timer = threading.Timer(_WAIT_NOTICE_DELAY_SEC, _fire_wait_notice)
-    timer.daemon = True
-    timer.start()
     try:
         tok = fetch_id_token(Request(), main_url)
-
-        # (v3.8.9) /write 429/503 지수 백오프 재시도
         retry = 0
         while True:
             resp = requests.post(
@@ -100,9 +122,6 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
                 headers={"Authorization": f"Bearer {tok}"},
                 timeout=_TIMEOUT_SEC,
             )
-
-            # 429/503 → 지수 백오프 재시도 (Cloud Run이 백엔드 컨테이너에 요청을 배정하기 전에
-            # 거절한 것이라 백엔드가 요청을 보지 못했다 — 재시도해도 중복 커밋이 없다)
             if resp.status_code in (429, 503) and retry < _MAX_RETRIES:
                 retry += 1
                 backoff = min(
@@ -110,54 +129,145 @@ def call_write(kind: str, *, gh=None, label: str | None = None, **args: Any) -> 
                     _MAX_BACKOFF_SEC,
                 )
                 wait = backoff + random.uniform(0, _JITTER_SEC)
-                log.warning(
-                    "/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
-                    resp.status_code,
-                    retry,
-                    _MAX_RETRIES,
-                    wait,
-                )
+                log.warning("/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
+                            resp.status_code, retry, _MAX_RETRIES, wait)
                 time.sleep(wait)
                 continue
             break
     except Exception as e:  # noqa: BLE001
-        if notice_sent.is_set():
-            _send_done_notice(kind, tag, ok=False, err=str(e))
-        raise WriteError(f"/write 호출 실패({kind}): {e}") from e
-    finally:
-        timer.cancel()
+        err = WriteError(f"/write 호출 실패({kind}): {e}")
+        err.short = str(e)
+        raise err from e
 
     if resp.status_code != 200:
-        if notice_sent.is_set():
-            _send_done_notice(kind, tag, ok=False, err=f"HTTP {resp.status_code}")
-        raise WriteError(f"/write 실패({kind}): HTTP {resp.status_code} {resp.text[:200]}")
-
-    if notice_sent.is_set():
-        _send_done_notice(kind, tag, ok=True)
+        err = WriteError(f"/write 실패({kind}): HTTP {resp.status_code} {resp.text[:200]}")
+        err.short = f"HTTP {resp.status_code}"
+        raise err
     return resp.json()
 
 
-def _tag_prefix(tag: str) -> str:
-    return f"[{tag}]" if tag else ""
+class _Progress:
+    """(v4a) 쓰기 1건의 대기 · 결과 DM. 2초 안에 끝나면 아무것도 안 보낸다.
+
+    2초가 지나면 타이머 스레드가 알림 레벨을 보고(「자세히」일 때만) 「⏳ … 처리 중」을 보내고, 끝나면 `finish()` 가
+    짝이 되는 결과 DM 을 보낸다. 상태(pending → sent | skipped | done)를 잠금으로 묶어, 레벨을 읽는 사이 작업이
+    끝나 버려도 결과 DM 없이 대기 DM 만 홀로 나가는 일이 없게 한다(레벨 판정은 타이머가 울린 뒤라 빠른 쓰기엔 비용 없음).
+    """
+
+    def __init__(self, kind: str, tag: str, gh) -> None:
+        self.kind, self.tag, self.gh = kind, tag, gh
+        self.phase = "pending"
+        self.lock = threading.Lock()
+        self.timer = threading.Timer(_WAIT_NOTICE_DELAY_SEC, self._fire)
+        self.timer.daemon = True
+
+    def start(self) -> "_Progress":
+        self.timer.start()
+        return self
+
+    def _fire(self) -> None:
+        allowed = _progress_dm_allowed(self.gh)
+        with self.lock:
+            if self.phase != "pending":
+                return                       # 레벨을 읽는 사이 이미 끝났다 — 대기 DM 생략
+            self.phase = "sent" if allowed else "skipped"
+        if allowed:
+            _send_wait_notice(self.kind, self.tag)
+
+    def finish(self, *, ok: bool, result: Any = None, err: str | None = None) -> None:
+        self.timer.cancel()
+        with self.lock:
+            was_sent = self.phase == "sent"
+            self.phase = "done"
+        if was_sent:
+            _send_done_notice(self.kind, self.tag, ok=ok, result=result, err=err)
+
+
+def _progress_dm_allowed(gh) -> bool:
+    """대기 · 결과 DM 은 알림 레벨 「자세히(detail)」일 때만(notify `_LEVEL_KINDS` 의 `progress`). 판단 못 하면 안 보낸다."""
+    try:
+        from .telegram_app import _auto_dm_allows
+    except Exception:  # noqa: BLE001
+        return False
+    store = gh
+    if store is None:
+        try:
+            from . import storage
+            store = storage.make_store("data")      # control.json 은 storage 가 ops 로 보낸다
+        except Exception:  # noqa: BLE001
+            store = None
+    try:
+        return bool(_auto_dm_allows(store, "progress"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _kind_ko(kind: str) -> str:
+    """작업 이름(apply_notice 등) → 관리 페이지 「최근 자동 처리」와 같은 우리말. 모르면 그대로."""
+    try:
+        from .admin_api import _AUTO_LABEL
+        return _AUTO_LABEL.get(kind) or kind
+    except Exception:  # noqa: BLE001
+        return kind
+
+
+# 결과 mode → (아이콘, 문구). ✅ = 데이터가 바뀜, ☑️ = 처리는 끝났지만 올리거나 바꾼 것 없음
+_MODE_KO = {
+    "added": ("✅", "추가"),
+    "updated": ("✅", "갱신"),
+    "rolled": ("✅", "추가 (오래된 글은 보관함으로)"),
+    "merged": ("✅", "기존 항목에 합침"),
+    "recap": ("☑️", "안 올림 — 지난 소식과 같은 글(recap)"),
+    "dup": ("☑️", "안 올림 — 이미 본 글(dup)"),
+    "skip": ("☑️", "안 올림 — 이미 지난 이벤트(skip)"),
+    "unchanged": ("☑️", "바뀐 것 없음"),
+    "none": ("☑️", "반영할 것 없음"),
+    "error": ("⚠️", "실패"),
+}
+
+
+def _result_phrase(result: Any) -> tuple[str, str]:
+    """쓰기 작업 반환값 → (아이콘, 문구). 작업마다 모양이 달라 mode → error → changed/removed → 그 밖 순으로 본다."""
+    r = result if isinstance(result, dict) else {}
+    mode = r.get("mode")
+    if mode in _MODE_KO:
+        return _MODE_KO[mode]
+    if mode:
+        return "✅", f"완료 ({mode})"
+    if r.get("error") is True:
+        return "⚠️", "실패"
+    if isinstance(r.get("added"), list) or isinstance(r.get("removed"), list):   # 목록형(그룹 확인 대기 · 프리미어 기록)
+        n_add, n_rm = len(r.get("added") or []), len(r.get("removed") or [])
+        parts = [f"추가 {n_add}건"] * bool(n_add) + [f"뺌 {n_rm}건"] * bool(n_rm)
+        return ("✅", " · ".join(parts)) if parts else ("☑️", "바뀐 것 없음")
+    for key, yes, no in (("changed", "반영", "바뀐 것 없음"), ("removed", "삭제", "지울 것 없음")):
+        if key in r:
+            return ("✅", yes) if r[key] else ("☑️", no)
+    return "✅", "완료"
+
+
+def _with_tag(text: str, tag: str) -> str:
+    return f"{text}\n{tag}" if tag else text
 
 
 def _send_wait_notice(kind: str, tag: str = "") -> None:
     try:
         from .telegram_app import _send_telegram
-        _send_telegram(f"⏳ 처리 대기 중… {_tag_prefix(tag)}{kind}", silent=True)
+        _send_telegram(_with_tag(f"⏳ {_kind_ko(kind)} 처리 중…", tag), silent=True)
     except Exception:  # noqa: BLE001
         log.warning("대기 안내 DM 실패(%s)", kind)
 
 
-def _send_done_notice(kind: str, tag: str, *, ok: bool, err: str | None = None) -> None:
+def _send_done_notice(kind: str, tag: str, *, ok: bool, result: Any = None, err: str | None = None) -> None:
     try:
         from .telegram_app import _send_telegram
         if ok:
-            _send_telegram(f"✅ 처리 완료 {_tag_prefix(tag)}{kind}", silent=True)
+            icon, phrase = _result_phrase(result)
+            _send_telegram(_with_tag(f"{icon} {_kind_ko(kind)}: {phrase}", tag), silent=icon != "⚠️")
         else:
-            _send_telegram(f"⚠️ 처리 실패 {_tag_prefix(tag)}{kind}: {(err or '')[:150]}")
+            _send_telegram(_with_tag(f"⚠️ {_kind_ko(kind)} 실패: {(err or '')[:150]}", tag))
     except Exception:  # noqa: BLE001
-        log.warning("완료 안내 DM 실패(%s)", kind)
+        log.warning("결과 안내 DM 실패(%s)", kind)
 
 
 if __name__ == "__main__":
@@ -197,10 +307,16 @@ if __name__ == "__main__":
 
     sent: list[tuple[str, bool]] = []
 
+    level = {"v": "detail"}       # (v4a) 대기 · 결과 DM 은 「자세히」일 때만
+
     class _FakeTelegramApp:
         @staticmethod
         def _send_telegram(text, silent=False):
             sent.append((text, silent))
+
+        @staticmethod
+        def _auto_dm_allows(gh, kind):
+            return kind == "progress" and level["v"] == "detail"
 
     class _FakeResp:
         status_code = 200
@@ -250,13 +366,13 @@ if __name__ == "__main__":
     result = _with_fakes(_FakeRequestsSlow, lambda: call_write("apply_notice", label="千石ユノ 예고"))
     assert result == {"ok": True, "changed": True}
     assert len(sent) == 2, f"대기 DM + 완료 DM 2건 기대, 받음 {sent}"
-    assert sent[0] == ("⏳ 처리 대기 중… [千石ユノ 예고]apply_notice", True), sent[0]
-    assert sent[1] == ("✅ 처리 완료 [千石ユノ 예고]apply_notice", True), sent[1]
+    assert sent[0] == ("⏳ 소식 반영 처리 중…\n千石ユノ 예고", True), sent[0]
+    assert sent[1] == ("✅ 소식 반영: 반영\n千石ユノ 예고", True), sent[1]     # 결과 {"changed": True}
     print("[PASS] writeclient: 느린 경로 → 대기+완료 DM 짝, label 태그 포함")
 
     sent.clear()
     _with_fakes(_FakeRequestsSlow, lambda: call_write("merge_rows", action="/ingest 개인예고 아라레"))
-    assert sent[0][0].startswith("⏳ 처리 대기 중… [/ingest 개인예고 아라레]merge_rows"), sent[0]
+    assert sent[0][0] == "⏳ 예고 반영 처리 중…\n/ingest 개인예고 아라레", sent[0]
     print("[PASS] writeclient: label 생략 시 args['action'] 폴백")
 
     sent.clear()
@@ -266,7 +382,7 @@ if __name__ == "__main__":
     except WriteError:
         pass
     assert len(sent) == 2, sent
-    assert sent[1][0].startswith("⚠️ 처리 실패 [실패케이스]merge_rows"), sent[1]
+    assert sent[1][0] == "⚠️ 예고 반영 실패: HTTP 500\n실패케이스", sent[1]
     assert sent[1][1] is False, "실패 DM 은 silent 아니어야 함"
     print("[PASS] writeclient: 실패 시에도 대기/실패 DM 짝 맞추기")
 
@@ -274,6 +390,44 @@ if __name__ == "__main__":
     _with_fakes(_FakeRequestsFast, lambda: call_write("merge_rows", label="빠른케이스"))
     assert sent == [], f"2초 안에 끝나면 대기/완료 DM 모두 없어야 함(기존 동작 유지), 받음 {sent}"
     print("[PASS] writeclient: 빠른 경로는 DM 없음(기존 동작 유지)")
+
+    # ── (v4a) 결과 DM 은 실제 결과를 말한다 · 「자세히」가 아니면 대기 · 결과 DM 모두 없음 ──
+    class _FakeRespRecap:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"mode": "recap", "parsed": {"title": "x"}}
+
+    class _FakeRequestsSlowRecap:
+        @staticmethod
+        def post(*a, **k):
+            _time.sleep(_WAIT_NOTICE_DELAY_SEC + 0.3)
+            return _FakeRespRecap()
+
+    sent.clear()
+    _with_fakes(_FakeRequestsSlowRecap, lambda: call_write("apply_notice", label="소식 사와카 히나노 TV LIVE 불참"))
+    assert sent[1] == ("☑️ 소식 반영: 안 올림 — 지난 소식과 같은 글(recap)\n소식 사와카 히나노 TV LIVE 불참", True), sent[1]
+    print("[PASS] writeclient: recap 결과 → 「안 올림 — 지난 소식과 같은 글」(처리 완료로 뭉뚱그리지 않음)")
+
+    sent.clear()
+    level["v"] = "normal"
+    _with_fakes(_FakeRequestsSlow, lambda: call_write("apply_notice", label="보통 레벨"))
+    assert sent == [], f"「자세히」가 아니면 대기 · 결과 DM 없어야 함, 받음 {sent}"
+    level["v"] = "detail"
+    print("[PASS] writeclient: 알림 레벨 normal → 대기 · 결과 DM 없음")
+
+    assert _result_phrase({"mode": "added"}) == ("✅", "추가")
+    assert _result_phrase({"changed": False}) == ("☑️", "바뀐 것 없음")
+    assert _result_phrase({"removed": True}) == ("✅", "삭제")
+    assert _result_phrase({"changed": False, "mode": "dup", "error": False}) == ("☑️", "안 올림 — 이미 본 글(dup)")
+    assert _result_phrase({"changed": False, "error": True}) == ("⚠️", "실패")
+    assert _result_phrase(None) == ("✅", "완료")
+    assert _result_phrase({"added": ["a", "b"], "removed": []}) == ("✅", "추가 2건")
+    assert _result_phrase({"added": [], "removed": ["v"]}) == ("✅", "뺌 1건")
+    assert _result_phrase({"added": []}) == ("☑️", "바뀐 것 없음")
+    print("[PASS] writeclient: 결과 문구(mode · changed · removed · error)")
 
     # ── (v3.8.9) 429/503 재시도 테스트 ──
     class _FakeResp429Retry:

@@ -26,6 +26,8 @@ class VideoInfo:
     actual_start: Optional[str]  # ISO string with 'Z', or None
     actual_end: Optional[str]  # ISO string with 'Z', or None
     concurrent_viewers: Optional[int]  # Number of current viewers, or None
+    # (v4a) 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등) 여부. 생방송 예정 · 진행과 구별한다. 기본 False(옛 생성 코드 호환)
+    is_premiere: bool = False
 
 
 def _video_from_item(item: dict) -> VideoInfo:
@@ -70,6 +72,14 @@ def _video_from_item(item: dict) -> VideoInfo:
         except (ValueError, TypeError):
             pass
 
+    # (v4a) 프리미어 = 예정 · 진행 중인데 영상 파일이 이미 올라가 있다(status.uploadStatus="processed"). 생방송 틀은 방송 전 · 중
+    # "uploaded" 에 contentDetails.duration "P0D". 실측(2026-09-30): 5th 싱글 기념 무비 프리미어 = processed · duration 없음,
+    # 예정 생방송 5건 = uploaded · P0D. 歌枠 같은 노래 "생방송"은 해당 없음 — 녹화된 노래 · 뮤비 공개만 걸러 낸다.
+    upload_status = (item.get('status') or {}).get('uploadStatus')
+    duration = (item.get('contentDetails') or {}).get('duration')
+    is_premiere = live_state in ('upcoming', 'live') and (
+        upload_status == 'processed' or duration not in (None, 'P0D'))
+
     return VideoInfo(
         video_id=video_id,
         channel_id=channel_id,
@@ -80,6 +90,7 @@ def _video_from_item(item: dict) -> VideoInfo:
         actual_start=actual_start,
         actual_end=actual_end,
         concurrent_viewers=concurrent_viewers,
+        is_premiere=is_premiere,
     )
 
 
@@ -165,7 +176,8 @@ class YouTubeClient:
             url = self.BASE + "/videos"
             params = {
                 'key': self.api_key,
-                'part': 'snippet,liveStreamingDetails',
+                # (v4a) contentDetails · status — 프리미어 판정용(videos.list 는 part 수와 무관하게 1 unit)
+                'part': 'snippet,liveStreamingDetails,contentDetails,status',
                 'id': video_id_str,
             }
 
@@ -246,6 +258,59 @@ class YouTubeClient:
             logger.warning(f"Failed to parse search results for {channel_id}: {e}")
             return []
 
+    def search_live(self, channel_id: str) -> List[str]:
+        """
+        Search for currently live streams in a channel.
+
+        Calls YouTube Data API v3 search.list with eventType=live.
+        Quota cost: 100 units per call.
+
+        Used by v4a D4: an announced preview without a URL gets ONE check
+        at scheduled start + 2 minutes to confirm live status.
+
+        Args:
+            channel_id: YouTube channel ID
+
+        Returns:
+            List of video IDs for live streams (in response order).
+            On error (HTTP error, network error, malformed JSON):
+            returns [] and logs warning.
+        """
+        url = self.BASE + "/search"
+        params = {
+            'key': self.api_key,
+            'part': 'id',
+            'type': 'video',
+            'eventType': 'live',
+            'channelId': channel_id,
+            'maxResults': 5,
+        }
+
+        headers = {'User-Agent': USER_AGENT}
+
+        try:
+            response = self.session.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning(f"Failed to search live streams for {channel_id}: {e}")
+            return []
+
+        self.quota_used += 100
+
+        try:
+            data = response.json()
+            items = data.get('items', [])
+            video_ids = [item['id']['videoId'] for item in items if 'id' in item and 'videoId' in item['id']]
+            return video_ids
+        except Exception as e:
+            logger.warning(f"Failed to parse search results for {channel_id}: {e}")
+            return []
+
     def channels_list(self, channel_ids: List[str]) -> Dict[str, str]:
         """
         Fetch channel avatar (profile picture) URLs.
@@ -288,6 +353,9 @@ class YouTubeClient:
 
 
 if __name__ == "__main__":
+    import json
+    from unittest.mock import Mock
+
     # Test _video_from_item with sample API responses
 
     # Test case 1: Upcoming stream with scheduledStartTime
@@ -344,8 +412,85 @@ if __name__ == "__main__":
         print(f"  Actual start: {live_info.actual_start}")
         print(f"  Concurrent viewers: {live_info.concurrent_viewers}")
 
+        # Test search_live with mock session
+        print("\nTesting search_live method:")
+
+        # Mock test 1: Normal response with 2 items
+        mock_session_1 = Mock(spec=requests.Session)
+        mock_response_1 = Mock()
+        mock_response_1.status_code = 200
+        mock_response_1.json.return_value = {
+            'items': [
+                {'id': {'videoId': 'live_vid_1'}},
+                {'id': {'videoId': 'live_vid_2'}},
+            ]
+        }
+        mock_session_1.get.return_value = mock_response_1
+
+        client_1 = YouTubeClient('test_key', session=mock_session_1)
+        result_1 = client_1.search_live('UCtest_channel_1')
+        assert result_1 == ['live_vid_1', 'live_vid_2'], f"Expected ['live_vid_1', 'live_vid_2'], got {result_1}"
+        assert client_1.quota_used == 100, f"Expected quota_used=100, got {client_1.quota_used}"
+        # Verify request params include eventType=live and channelId
+        call_kwargs = mock_session_1.get.call_args[1]
+        params = call_kwargs['params']
+        assert params['eventType'] == 'live', f"Expected eventType=live, got {params['eventType']}"
+        assert params['channelId'] == 'UCtest_channel_1', f"Expected channelId=UCtest_channel_1, got {params['channelId']}"
+        print("  ✓ Normal response with 2 items → 2 ids in order")
+
+        # Mock test 2: Empty items
+        mock_session_2 = Mock(spec=requests.Session)
+        mock_response_2 = Mock()
+        mock_response_2.status_code = 200
+        mock_response_2.json.return_value = {'items': []}
+        mock_session_2.get.return_value = mock_response_2
+
+        client_2 = YouTubeClient('test_key', session=mock_session_2)
+        result_2 = client_2.search_live('UCtest_channel_2')
+        assert result_2 == [], f"Expected [], got {result_2}"
+        print("  ✓ Empty items → []")
+
+        # Mock test 3: HTTP 403 error
+        mock_session_3 = Mock(spec=requests.Session)
+        mock_response_3 = Mock()
+        mock_response_3.status_code = 403
+        mock_response_3.raise_for_status.side_effect = requests.exceptions.HTTPError("403 Forbidden")
+        mock_session_3.get.return_value = mock_response_3
+
+        client_3 = YouTubeClient('test_key', session=mock_session_3)
+        result_3 = client_3.search_live('UCtest_channel_3')
+        assert result_3 == [], f"Expected [] on HTTP 403, got {result_3}"
+        assert client_3.quota_used == 0, f"Expected quota_used=0 on error, got {client_3.quota_used}"
+        print("  ✓ HTTP 403 → []")
+
+        # Mock test 4: Exception during request
+        mock_session_4 = Mock(spec=requests.Session)
+        mock_session_4.get.side_effect = requests.exceptions.Timeout("Connection timeout")
+
+        client_4 = YouTubeClient('test_key', session=mock_session_4)
+        result_4 = client_4.search_live('UCtest_channel_4')
+        assert result_4 == [], f"Expected [] on exception, got {result_4}"
+        assert client_4.quota_used == 0, f"Expected quota_used=0 on exception, got {client_4.quota_used}"
+        print("  ✓ Exception → []")
+
+        # (v4a) 프리미어 판정 — 실측(2026-09-30) 응답 형태: 프리미어 = processed · duration 없음 / 생방송 = uploaded · P0D
+        prem = _video_from_item({"id": "ojgoIwE1fL0", "snippet": {"liveBroadcastContent": "upcoming", "title": "MV"},
+                                 "liveStreamingDetails": {"scheduledStartTime": "2026-09-30T12:00:00Z"},
+                                 "contentDetails": {}, "status": {"uploadStatus": "processed"}})
+        live = _video_from_item({"id": "2nznMoF9BF0", "snippet": {"liveBroadcastContent": "upcoming", "title": "歌枠"},
+                                 "liveStreamingDetails": {"scheduledStartTime": "2026-09-30T13:30:00Z"},
+                                 "contentDetails": {"duration": "P0D"}, "status": {"uploadStatus": "uploaded"}})
+        done = _video_from_item({"id": "zVdR0urFjnc", "snippet": {"liveBroadcastContent": "none", "title": "cover"},
+                                 "contentDetails": {"duration": "PT3M15S"}, "status": {"uploadStatus": "processed"}})
+        old = _video_from_item({"id": "x", "snippet": {"liveBroadcastContent": "upcoming"}})  # part 없는 옛 응답
+        assert prem.is_premiere and not live.is_premiere and not done.is_premiere and not old.is_premiere
+        print("  ✓ 프리미어 판정 (processed/duration 있음 = 프리미어, uploaded/P0D = 생방송, 지난 영상 · 옛 응답 = 아님)")
+
         print("\nSUCCESS: YouTube client test passed")
 
+    except AssertionError as e:
+        print(f"ERROR: {e}")
+        exit(1)
     except Exception as e:
         print(f"ERROR: {e}")
         exit(1)

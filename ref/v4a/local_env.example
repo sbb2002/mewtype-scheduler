@@ -1,0 +1,20 @@
+# v4a 로컬 시험판 설정 — 이 파일을 .env.local 로 복사해 값을 채운다 (.env.local 은 git 에 안 올라감)
+# 실행: python -m src.backend.local_runner   (저장소 루트에서)
+
+# ── 필수 ──
+YOUTUBE_API_KEY=            # 운영과 같은 키면 하루 쿼터(10,000)를 나눠 쓴다 — 로컬 10분 reconcile ≈ 300/일 + search.list 1회 100
+INGEST_SECRET=              # 운영과 다른 값. 폰 Automate 의 로컬 전송 블록 X-Ingest-Secret 헤더에 같은 값
+ADMIN_SECRET=               # 관리 페이지 로그인 링크 · 세션 서명 키. 길고 무작위로 (예: python -c "import secrets;print(secrets.token_hex(32))")
+
+# ── 권장 ──
+GROQ_API_KEY=               # 없으면 번역 · 제목 추출 · 개인 예고 최종 확인이 꺼진다(텍스트 예고는 미등록)
+TELEGRAM_BOT_TOKEN=         # ★ 로컬 전용 새 봇(BotFather). 운영 봇 토큰 금지 — webhook 이 걸린 봇이면 러너가 폴링을 거부한다
+TELEGRAM_CHAT_ID=           # 운영자 chat id (알림 DM · 명령 허용)
+
+# ── 선택 (기본값) ──
+# LOCAL_BIND=              # 비우면 이 기기의 Tailscale IP(tailscale ip -4) 자동 감지. 127.0.0.1 에도 항상 바인딩
+# LOCAL_PORT=8787
+# LOCAL_DATA_DIR=./_local
+# ADMIN_BASE_URL=          # /admin 로그인 링크 주소. 비우면 http://<LOCAL_BIND>:<LOCAL_PORT>
+# YT_COOKIES_FILE=          # 회원 전용 yt-dlp 조회용(없어도 동작)
+# HEALTHCHECK_URL=          # 비워 두면 생존 신호 안 보냄

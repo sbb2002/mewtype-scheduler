@@ -68,6 +68,28 @@ _SKIP_LINE_RE = re.compile(
     r"全員|みんな|【\s*(?:bilibili|ビリビリ|ニコ生?|ニコニコ|ツイキャス|twitcast|mildom|twitch)\s*】",
     re.IGNORECASE,
 )
+# (v4a) 일일 스케줄에서 여전히 건너뛰는 줄 — YouTube 가 아닌 플랫폼. "全員" 줄은 이제 5인 행으로 읽는다(아래 WHOLE_GROUP_RE).
+_NONYT_LINE_RE = re.compile(
+    r"【\s*(?:bilibili|ビリビリ|ニコ生?|ニコニコ|ツイキャス|twitcast|mildom|twitch)\s*】", re.IGNORECASE,
+)
+
+# (v4a) 그룹 영상 참여 멤버의 근거 (2026-09-30 운영자 결정 — 근거 없이 5인 팬아웃 금지).
+#   5인 전원을 뜻하는 인원 표현: 全員 · 全体(生)配信 · 5名 · 5人. 실측(09-12~09-30 공식 트윗 185건): 全員集合 방송 ·
+#   「5名が出演」 · 「全体生配信決定」 · 「メンバー5人」. 「全編無料配信」의 全(공연 전체)은 사람 수가 아니라 잡지 않고,
+#   「5名様」(경품 인원)도 제외. 5명 미만 「N名」은 누구인지 알 수 없어 근거가 아니다(실측 0건).
+WHOLE_GROUP_RE = re.compile(r"全員|全体\s*生?\s*配信|(?<![0-9])5\s*(?:名(?!様)|人)|五\s*人")
+# 정식 이름(`config/channels.json` x_names 와 같음). 공식 트윗은 정식 이름으로 출연자를 적는다.
+FORMAL_NAME_TO_KEY: list[tuple[str, str]] = [
+    ("仲町あられ", "arale"),
+    ("千石ユノ", "yuno"),
+    ("宮永ののか", "nonoka"),
+    ("峰月律", "ritsu"),
+    ("藤都子", "miyako"),
+]
+# 곡 크레디트 줄(「作詞：仲町あられ」 등 — 공연 중 NOW ON PLAY 트윗)은 출연 근거가 아니다
+_CREDIT_LINE_RE = re.compile(r"作詞|作曲|編曲|Sound Produce", re.IGNORECASE)
+# 그룹 명의 — 이름도 인원 표현도 없는 방송 글이 "그룹 방송 후보"인지 가를 때만 쓴다(이것만으론 근거가 아님)
+_GROUP_NAME_RE = re.compile(r"夢限大みゅーたいぷ|ゆめみた")
 
 # "出演情報" — @BDP_yumemita 가 외부 이벤트/합방 출연을 알릴 때 (일일 스케줄과 서식 다름).
 #   ＼出演情報／  9/10(木) 22:00頃〜  「이벤트명」  夢限大みゅーたいぷ 5名が出演  <영상 URL>
@@ -136,6 +158,48 @@ def _names(line: str) -> tuple[str | None, list[str]]:
     return keys[0], keys[1:]
 
 
+def members_evidence(text: str | None) -> tuple[list[str] | None, str]:
+    """(v4a) 글에서 그룹 영상의 **참여 멤버 근거**를 찾는다 → (멤버 key 목록 | None, 근거).
+
+    근거 = "count"(인원 표현 → 5인 전원) · "names"(정식 이름 → 그 멤버만, channel_order 순) · ""(없음).
+    그룹 명의(夢限大みゅーたいぷ · #ゆめみた 해시태그)만으로는 근거가 아니다 — 이름 · 인원 표현이 없으면 호출부가
+    이미지 OCR → 그래도 없으면 관리 페이지 확인 대기로 넘긴다."""
+    t = normalize(text or "")
+    if WHOLE_GROUP_RE.search(t):
+        return list(ALL_KEYS), "count"
+    body = "\n".join(line for line in t.split("\n") if not _CREDIT_LINE_RE.search(line))
+    found = {key for token, key in FORMAL_NAME_TO_KEY if token in body}
+    if found:
+        return [k for k in ALL_KEYS if k in found], "names"
+    return None, ""
+
+
+def group_row(fields: dict, members: list[str], now_iso: str) -> dict:
+    """(v4a) 참여 멤버가 정해진 그룹 영상 → announced 예고 행.
+    1명이면 그 멤버의 단독 예고, 2명 이상이면 channel_order 첫 멤버를 주 레인으로 host="group" 합동."""
+    sel = [k for k in ALL_KEYS if k in (members or [])]
+    if not sel:
+        raise ValueError("참여 멤버가 비었습니다")
+    collab = sel[1:] or None
+    return preview.make_item(
+        channel_key=sel[0],
+        state="announced",
+        source="x-relay",
+        now_iso=now_iso,
+        first_seen=now_iso,
+        title=fields.get("title"),
+        url=fields.get("url"),
+        video_id=fields.get("video_id"),
+        scheduled_start=fields.get("scheduled_start") or now_iso,
+        kind="collab" if collab else None,
+        membership=False,
+        collab_with=collab,
+        host="group" if collab else None,
+        info_source="x-relay",
+        info_at=now_iso,
+    )
+
+
 def _iso_z(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -158,6 +222,12 @@ def _video_url_near(lines: list[str], idx: int) -> str | None:
             return u if u.startswith("http") else "https://" + u
         break  # 엔트리 직후 첫 비어있지 않은 줄이 URL 이 아니면 없음
     return None
+
+
+def is_daily_schedule(text: str | None) -> bool:
+    """(v4a) 공식 일일 스케줄 서식인가 — `parse_bdp_schedule` 와 같은 헤더(`M/D(曜)の配信スケジュール`) 기준.
+    멤버가 이 글을 인용했을 때 인용문의 영상 · 이름은 그날 **각자의 방송**이지 작성자의 합동 방송 근거가 아니다."""
+    return bool(text) and bool(HEADER_RE.search(normalize(text)))
 
 
 def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
@@ -187,9 +257,14 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
         times = list(TIME_RE.finditer(line))
         if not times:
             continue
-        if _SKIP_LINE_RE.search(line):
-            continue                         # (v2.6) 全員/비-YT 플랫폼 라인 — 미지원, 스킵
-        key, collab = _names(line)
+        if _NONYT_LINE_RE.search(line):
+            continue                         # (v2.6) 비-YT 플랫폼 라인 — 미지원, 스킵
+        # (v4a) "🛸22:00～ 全員" — 공식 스케줄이 전원을 명시한 줄 = 5인 합동(인원 근거). 전엔 스킵해 09-29 全員集合 방송이
+        # 스케줄로는 안 올라갔다. "みんな"는 뜻이 모호해 그대로 스킵
+        whole = bool(re.search(r"全員", line))
+        if not whole and _SKIP_LINE_RE.search(line):
+            continue
+        key, collab = (ALL_KEYS[0], list(ALL_KEYS[1:])) if whole else _names(line)
         if not key:
             continue
         membership = "メン限" in line
@@ -238,57 +313,67 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                 info_source="x-relay",
                 info_at=now_iso,
             )
+            if whole:
+                item["host"] = "group"
             # ponytail: icon, start_approx, assumed_live 필드는 v3에서 미사용이지만
             # 호환성·디버그 목적으로 extra 에 남겨둔다 — 불필요하면 이후 정리
             rows.append(item)
     return rows
 
 
-def parse_appearance(text: str, now_iso: str) -> list[dict]:
-    """`出演情報` 계열 트윗 → announced(host="group") 아이템 1개 (v3). 형식 아니면 `[]`.
-
-    일일 스케줄과 서식이 다르다: `M/D(曜) HH:MM頃〜` 단일 시각 + `「이벤트명」`
-    + `N名が出演` + 영상 URL. 5인(또는 이름이 직접 나온 멤버) 전원 레인에 팬아웃되도록
-    `channel_key` + `collab_with` 로 나눠 담는다.
-    """
-    t = normalize(text)
+def _appearance_core(t: str, now_iso: str) -> dict | None:
+    """出演情報 트윗(정규화된 t)의 공통 필드 {"scheduled_start","title","url","video_id"}. 서식이 아니면 None."""
     if not APPEARANCE_MARK_RE.search(t):
-        return []
+        return None
     dt = APPEARANCE_DT_RE.search(t)
     if not dt:
-        return []
-
+        return None
     try:
         now_jst = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(JST)
     except (ValueError, AttributeError):
         now_jst = datetime.now(JST)
-
     month, day = int(dt.group(1)), int(dt.group(2))
     hh, mm = int(dt.group(3)), int(dt.group(4))
     day_carry, hh = divmod(hh, 24)          # 심야표기 24:00〜
     base = datetime(_infer_year(month, day, now_jst), month, day, tzinfo=JST)
     start = (base + timedelta(days=day_carry)).replace(hour=hh, minute=mm)
-    start_z = _iso_z(start)
-
-    # 참여자: 이름이 직접 나오면 그것, 아니면 "N名"/"夢限大みゅーたいぷ" → 전원
-    key, collab = _names(t)
-    if key:
-        members = [key, *collab]
-    else:
-        cnt = APPEARANCE_COUNT_RE.search(t)
-        n = int(cnt.group(1)) if cnt else 0
-        whole = ("夢限大みゅーたいぷ" in t) or ("ゆめみた" in t)
-        members = list(ALL_KEYS) if (n >= len(ALL_KEYS) or (whole and n == 0)) else []
-    if not members:
-        return []
-
     tm = _TITLE_RE.search(t)
-    title = tm.group(1).lstrip("#＃ ").strip() if tm else None
     hit = YT_VIDEO_RE.search(t)
     url = None
     if hit:
         u = hit.group(0)
         url = u if u.startswith("http") else "https://" + u
+    return {"scheduled_start": _iso_z(start), "title": tm.group(1).lstrip("#＃ ").strip() if tm else None,
+            "url": url, "video_id": hit.group(1) if hit else None}
+
+
+def _appearance_members(t: str) -> list[str]:
+    """出演情報의 참여자 근거 — 이름이 직접 나오면 그것, 아니면 "N名が出演"(N≥5) · 인원 표현이면 전원.
+    (v4a) 그룹 명의(夢限大みゅーたいぷ/ゆめみた)만 있는 경우는 근거가 아니다 — 전엔 5인으로 올렸다."""
+    key, collab = _names(t)
+    if key:
+        return [key, *collab]
+    cnt = APPEARANCE_COUNT_RE.search(t)
+    n = int(cnt.group(1)) if cnt else 0
+    if n >= len(ALL_KEYS) or WHOLE_GROUP_RE.search(t):
+        return list(ALL_KEYS)
+    return []
+
+
+def parse_appearance(text: str, now_iso: str) -> list[dict]:
+    """`出演情報` 계열 트윗 → announced(host="group") 아이템 1개 (v3). 형식 아니면 `[]`.
+
+    일일 스케줄과 서식이 다르다: `M/D(曜) HH:MM頃〜` 단일 시각 + `「이벤트명」`
+    + `N名が出演` + 영상 URL. 참여 멤버 근거(이름 · 5名 등 인원 표현)가 있을 때만 그 멤버 레인에 팬아웃되도록
+    `channel_key` + `collab_with` 로 나눠 담는다. 근거가 없으면 `[]` — 영상 URL 이 있으면 `parse_pending` 이 확인 대기 후보로 준다.
+    """
+    t = normalize(text)
+    core = _appearance_core(t, now_iso)
+    if core is None:
+        return []
+    members = _appearance_members(t)
+    if not members:
+        return []
 
     item = preview.make_item(
         channel_key=members[0],
@@ -296,9 +381,9 @@ def parse_appearance(text: str, now_iso: str) -> list[dict]:
         source="x-relay",
         now_iso=now_iso,
         first_seen=now_iso,
-        title=title,
-        url=url,
-        scheduled_start=start_z,
+        title=core["title"],
+        url=core["url"],
+        scheduled_start=core["scheduled_start"],
         kind="collab",
         membership=False,
         collab_with=members[1:] or None,
@@ -354,39 +439,44 @@ def _relative_day_time_jst(t: str, now_iso: str) -> str | None:
     return dt_jst.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _live_now_core(t: str, now_iso: str) -> dict | None:
+    """즉시개시 트윗(정규화된 t)의 공통 필드 {"scheduled_start","title","url","video_id"}. 서식이 아니면 None."""
+    if HEADER_RE.search(t) or APPEARANCE_MARK_RE.search(t):
+        return None                          # 스케줄/출연 서식은 각자 파서가 담당
+    if not LIVE_NOW_RE.search(t):
+        return None
+    hit = YT_VIDEO_RE.search(t)
+    if not hit:
+        return None                          # video_id 없는 "지금 시작" 공지는 노이즈 위험 → 무시
+    video_url = hit.group(0)
+    if not video_url.startswith("http"):
+        video_url = "https://" + video_url
+    tm = _TITLE_RE.search(t)
+    return {"scheduled_start": _relative_day_time_jst(t, now_iso) or now_iso,
+            "title": tm.group(1).lstrip("#＃ ").strip() if tm else None,
+            "url": video_url, "video_id": hit.group(1)}
+
+
 def parse_live_now(text: str, now_iso: str) -> list[dict]:
     """"지금 막 시작" 계열 트윗 → announced(video_id 포함) 아이템 1개 (v3). 형식 아니면 `[]`.
 
     일일 스케줄/出演情報 마커가 없고, 즉시개시 문구 + 온전한 YouTube 영상 URL 이 함께 있을 때만
-    반응한다. 개인 이름이 있으면 그 멤버(+동석자), 없고 그룹 명의(夢限大みゅーたいぷ/ゆめみた)면
-    5인 전원(host="group") — 그 외엔 채널을 특정 못 하므로 `[]`.
+    반응한다. 개인 이름이 있으면 그 멤버(+동석자), 없으면 인원 표현(全員 · 全体配信 · 5名 · 5人)이 있을 때만
+    5인 전원(host="group"). (v4a) 그룹 명의(夢限大みゅーたいぷ/#ゆめみた)만 있고 근거가 없으면 `[]` —
+    `parse_pending` 이 확인 대기 후보로 주고, 호출부가 이미지 OCR → 관리 페이지 확인 대기로 넘긴다.
     video_id 가 이미 있으므로 다음 videos.list 후보에 바로 잡혀 API 로 title/thumbnail 이 채워진다.
     """
     t = normalize(text)
-    if HEADER_RE.search(t) or APPEARANCE_MARK_RE.search(t):
-        return []                            # 스케줄/출연 서식은 각자 파서가 담당
-    if not LIVE_NOW_RE.search(t):
+    core = _live_now_core(t, now_iso)
+    if core is None:
         return []
-    hit = YT_VIDEO_RE.search(t)
-    if not hit:
-        return []                            # video_id 없는 "지금 시작" 공지는 노이즈 위험 → 무시
-    video_url = hit.group(0)
-    if not video_url.startswith("http"):
-        video_url = "https://" + video_url
-    video_id = hit.group(1)
-
     key, collab = _names(t)
     host = None
     if not key:
-        if "夢限大みゅーたいぷ" in t or "ゆめみた" in t:
-            key, collab = ALL_KEYS[0], ALL_KEYS[1:]
-            host = "group"
-        else:
-            return []                        # 채널 특정 불가
-
-    tm = _TITLE_RE.search(t)
-    title = tm.group(1).lstrip("#＃ ").strip() if tm else None
-    scheduled_start = _relative_day_time_jst(t, now_iso) or now_iso
+        if members_evidence(t)[1] != "count":
+            return []                        # 근거 없음 — 확인 대기 후보(parse_pending) 또는 채널 특정 불가
+        key, collab = ALL_KEYS[0], list(ALL_KEYS[1:])
+        host = "group"
 
     item = preview.make_item(
         channel_key=key,
@@ -394,10 +484,10 @@ def parse_live_now(text: str, now_iso: str) -> list[dict]:
         source="x-relay",
         now_iso=now_iso,
         first_seen=now_iso,
-        title=title,
-        url=video_url,
-        video_id=video_id,
-        scheduled_start=scheduled_start,
+        title=core["title"],
+        url=core["url"],
+        video_id=core["video_id"],
+        scheduled_start=core["scheduled_start"],
         kind="collab" if collab else None,
         membership=False,
         collab_with=collab or None,
@@ -406,6 +496,24 @@ def parse_live_now(text: str, now_iso: str) -> list[dict]:
         info_at=now_iso,
     )
     return [item]
+
+
+def parse_pending(text: str, now_iso: str) -> list[dict]:
+    """(v4a) 그룹 명의의 방송 글인데 **참여 멤버 근거가 없는** 것 → 확인 대기 후보 `[{"video_id","url","title",
+    "scheduled_start","kind"}]`. 出演情報 · 즉시개시 서식 + 온전한 YouTube 영상 URL 이 있을 때만(영상이 있어야 나중에
+    같은 URL 을 담은 글의 근거로 확정하거나 관리자가 멤버를 고를 수 있다). 근거가 있으면 `parse()` 가 행을 만드므로 `[]`."""
+    t = normalize(text)
+    if HEADER_RE.search(t) or not _GROUP_NAME_RE.search(t):
+        return []
+    core = _appearance_core(t, now_iso)
+    if core is not None:
+        if _appearance_members(t) or not core["video_id"]:
+            return []
+        return [dict(core, kind="appearance")]
+    core = _live_now_core(t, now_iso)
+    if core is None or _names(t)[0] or members_evidence(t)[1] == "count":
+        return []
+    return [dict(core, kind="live_now")]
 
 
 def parse(text: str, now_iso: str) -> list[dict]:
@@ -825,36 +933,34 @@ if __name__ == "__main__":
     )
     assert parse_bdp_schedule(S13, NOW) == []
     assert parse_appearance(S13, NOW) == []
-    r13 = parse_live_now(S13, NOW)
-    assert len(r13) == 1, r13
-    g13 = r13[0]
-    assert g13["channel_key"] == "arale" and g13["collab_with"] == ["yuno", "nonoka", "ritsu", "miyako"], g13
-    assert g13["host"] == "group" and g13["kind"] == "collab", g13
-    assert g13["video_id"] == "V2AJBNJGR8E", g13
+    # (v4a) 이름 · 인원 표현이 없다 — 그룹 명의만으로 5인 팬아웃하지 않는다. 실제 출연자는 첨부 이미지에만 있다(OCR 몫)
+    assert parse_live_now(S13, NOW) == [] and parse(S13, NOW) == []
+    p13 = parse_pending(S13, NOW)
+    assert len(p13) == 1 and p13[0]["video_id"] == "V2AJBNJGR8E" and p13[0]["kind"] == "live_now", p13
     # NOW = 2026-09-03T00:00:00Z(09:00 JST) → "本日12時〜" = 같은 날 12:00 JST = 03:00 UTC
-    assert g13["scheduled_start"] == "2026-09-03T03:00:00Z", g13["scheduled_start"]
-    assert parse(S13, NOW) == r13
+    assert p13[0]["scheduled_start"] == "2026-09-03T03:00:00Z", p13
     assert looks_relayable(S13)
-    print("[OK] S13  (生配信 단독 + 외부 채널 URL + 本日HH時〜 → host=group, 당일 시각 반영)")
+    print("[OK] S13  (生配信 + 그룹 명의만 → 행 없음 · 확인 대기 후보, 당일 시각 반영)")
 
     # S14: 시각 표기가 없으면(예: "配信開始" 만) 종전대로 ingest 시각(now_iso)을 씀
     S14 = "＼配信開始📢／\n夢限大みゅーたいぷ\nhttps://youtube.com/live/aBcDeFgHiJk"
-    r14 = parse_live_now(S14, NOW)
+    assert parse_live_now(S14, NOW) == []
+    r14 = parse_pending(S14, NOW)
     assert len(r14) == 1 and r14[0]["scheduled_start"] == NOW, r14
     print("[OK] S14  (당일 시각 표기 없음 → scheduled_start=ingest 시각 그대로)")
 
     # S15: "明日" 계열 — +1일 반영 (parse_bdp_schedule 의 明日 관례와 동일)
     S15 = "＼本日開催📢／\n夢限大みゅーたいぷ\n明日20時〜生配信！\nhttps://youtube.com/live/tmrwVideoI1"
-    r15 = parse_live_now(S15, NOW)
-    assert len(r15) == 1, r15
+    r15 = parse_pending(S15, NOW)
+    assert len(r15) == 1 and parse_live_now(S15, NOW) == [], r15
     # NOW = 2026-09-03T00:00:00Z(09:00 JST) → 明日20:00 = 2026-09-04 20:00 JST = 11:00 UTC
     assert r15[0]["scheduled_start"] == "2026-09-04T11:00:00Z", r15[0]["scheduled_start"]
     print("[OK] S15  (明日HH時〜 → +1일 반영)")
 
     # S16: "明日朝" 복합형(明日 + 시간대어 필러) — parse_bdp_schedule 의 明日朝 표기와 동일
     S16 = "＼本日開催📢／\n夢限大みゅーたいぷ\n明日朝7:00〜生配信！\nhttps://youtube.com/live/tmrwVideoI2"
-    r16 = parse_live_now(S16, NOW)
-    assert len(r16) == 1, r16
+    r16 = parse_pending(S16, NOW)
+    assert len(r16) == 1 and parse_live_now(S16, NOW) == [], r16
     assert r16[0]["scheduled_start"] == "2026-09-03T22:00:00Z", r16[0]["scheduled_start"]  # 익일 07:00 JST
     print("[OK] S16  (明日朝HH:MM〜 → 필러 건너뛰고 +1일 반영)")
 
@@ -874,6 +980,58 @@ if __name__ == "__main__":
     assert col17["channel_key"] == "ritsu" and col17["collab_with"] == ["yuno"], col17
     assert looks_relayable(S17)
     print("[OK] S17  (공휴일 헤더 '(火・祝)' → 4행 정상 파싱, 회귀 방지)")
+
+    # ── (v4a) 그룹 영상 참여 멤버 근거 — 실측 공식 트윗(2026-09-12~09-30) 기반 ──
+    # S18: 일일 스케줄의 "全員" 줄(09-29 全員集合) → 5인 합동 행(전엔 스킵해 스케줄로 안 올라갔다)
+    S18 = (
+        "／\n🛸#ゆめみた\n9/29(火)の配信スケジュール🌟\n＼\n\n"
+        "🛸22:00～ 全員\nhttps://www.youtube.com/watch?v=dRUOZpog1Dk\n\n"
+        "🎮23:30～ 千石ユノ\nhttps://www.youtube.com/@yuno_yumemita\n\n#バンドリ"
+    )
+    r18 = parse_bdp_schedule(S18, NOW)
+    g18 = next(x for x in r18 if x.get("video_id") == "dRUOZpog1Dk")
+    assert g18["channel_key"] == "arale" and g18["collab_with"] == ["yuno", "nonoka", "ritsu", "miyako"], g18
+    assert g18["host"] == "group" and g18["kind"] == "collab", g18
+    assert any(x["channel_key"] == "yuno" and not x.get("host") for x in r18), r18
+    assert unparsed_lines(S18) == [], unparsed_lines(S18)
+    print("[OK] S18  (스케줄 '全員' 줄 → 5인 합동 행 + 영상 URL)")
+
+    # S19: 인원 표현 — 全員 · 全体生配信 · 5名 · メンバー5人 은 근거, 全編 · 5名様 · 15名 은 아님
+    assert members_evidence("🛸#ゆめみた 全員集合！ 生配信") == (ALL_KEYS, "count")
+    assert members_evidence("＼🎊全体生配信決定🎊／")[1] == "count"
+    assert members_evidence("夢限大みゅーたいぷ 5名が出演🎉")[1] == "count"
+    assert members_evidence("メンバー5人からコメント動画が到着")[1] == "count"
+    assert members_evidence("＼全編無料生配信あり📺✨／ #アニメゆめみた") == (None, "")
+    assert members_evidence("抽選で5名様にプレゼント") == (None, "")
+    assert members_evidence("先着15名") == (None, "")
+    assert members_evidence("宮永ののか・峰月律・藤都子が出演🎉") == (["nonoka", "ritsu", "miyako"], "names")
+    assert members_evidence("M7 チューニング\n作詞：仲町あられ・千石ユノ・堀江晶太") == (None, ""), "크레디트 줄은 근거 아님"
+    print("[OK] S19  (members_evidence — 인원 표현 · 정식 이름, 全編/5名様/크레디트 제외)")
+
+    # S20: 실측 — 프리라이브 DAY2 첫 공지(09-17): 이름 · 인원 표현 없음 → 행 없음 · 확인 대기 후보
+    S20 = ("＼全編無料生配信あり📺✨／\n\n#アニメゆめみた 放送記念フリーライブ\n「新宿着陸計画」DAY2🌎\n\n"
+           "当日は全編無料配信有🛸✅\n📡こちら\nhttps://youtube.com/live/DWMQTpDQ1fc\n\n#バンドリ")
+    assert parse(S20, NOW) == [], parse(S20, NOW)
+    p20 = parse_pending(S20, NOW)
+    assert len(p20) == 1 and p20[0]["video_id"] == "DWMQTpDQ1fc", p20
+    # 같은 영상 URL 을 담은 뒤이은 공지(09-24)의 "メンバー5人" 이 근거가 된다(호출부가 확정)
+    S20b = ("＼明日開催📢／\n#アニメゆめみた 放送記念フリーライブ\n「新宿着陸計画」DAY2🌎\n"
+            "メンバー5人からコメント動画が到着💡✨\n📡こちら\nhttps://youtube.com/live/DWMQTpDQ1fc")
+    assert members_evidence(S20b) == (ALL_KEYS, "count")
+    row = group_row(p20[0], members_evidence(S20b)[0], NOW)
+    assert row["host"] == "group" and row["collab_with"] == ["yuno", "nonoka", "ritsu", "miyako"], row
+    solo = group_row(p20[0], ["ritsu"], NOW)
+    assert solo["channel_key"] == "ritsu" and solo.get("host") is None and solo["collab_with"] is None, solo
+    print("[OK] S20  (DAY2 첫 공지 → 확인 대기 후보 · 같은 URL 뒤 공지의 'メンバー5人'으로 5인 행)")
+
+    # S21: 出演情報 — 그룹 명의만 있고 인원 표현이 없으면 행 없음(전엔 5인), 영상 URL 이 있으면 확인 대기 후보
+    S21 = ("＼🛸出演情報📢／\n\n9/10(木) 22:00頃〜\n「#バンドリTVLIVE 2026」\n\n夢限大みゅーたいぷが出演🛸\n"
+           "https://youtube.com/live/ri2_BimgJIA")
+    assert parse_appearance(S21, NOW) == [] and parse(S21, NOW) == []
+    p21 = parse_pending(S21, NOW)
+    assert len(p21) == 1 and p21[0]["kind"] == "appearance" and p21[0]["title"] == "バンドリTVLIVE 2026", p21
+    assert parse_pending(S7, NOW) == [] and parse_pending(S10, NOW) == [], "근거 있는 글은 후보가 아님"
+    print("[OK] S21  (出演情報 그룹 명의만 → 행 없음 · 확인 대기 후보)")
 
     # unparsed_lines
     S_BAD = (

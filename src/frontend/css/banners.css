@@ -1,0 +1,104 @@
+/* banners.css — 소식 란을 펼쳤을 때 맨 위 「행사 배너」 (v4a, 2026-10-02). 다크 단일 테마. 디자인 = 아티팩트 「행사 배너 절충안 상세」.
+   마크업은 js/banners.js. 계약: docs/SPEC.md 계약 J. */
+
+:root {
+  --bnr-surface: #202225;
+  --bnr-line: #2e3033;
+  --bnr-live: #5fb7c9;  --bnr-live-soft: #14343b;  --bnr-fill-live: #8fe3f5;     /* 진행 중 — 청록 */
+  --bnr-warn: #f2c14e;  --bnr-warn-soft: #3b3010;  --bnr-fill-warn: #ffd45e;     /* 먼저 끝나는 종료 3일(달력) 전부터 — 노랑 */
+  --bnr-urgent: #ff6a6f; --bnr-urgent-soft: #3a1618; --bnr-fill-urgent: #ff7377; /* 먼저 끝나는 종료를 넘김 — 빨강 */
+  --bnr-sched: #9fb0c8; --bnr-sched-soft: #1f2733; --bnr-fill-sched: #b9c7dc;     /* 개최 전 — 슬레이트 */
+  --bnr-hold: var(--color-late); --bnr-hold-soft: #3a2c10;                        /* 보류 — 앰버 */
+  --bnr-done: #9aa0aa;  --bnr-done-soft: #272a2f;  --bnr-fill-done: #8a909a;      /* 모두 종료(자정까지) — 회색 */
+  --bnr-track: #7a828e;                                                           /* 진행 막대 빈칸 */
+}
+
+/* 기기 · 브라우저의 다크/라이트 변환에 색이 흔들리지 않게 */
+.bnr, .bnr * { color-scheme: dark; forced-color-adjust: none; }
+
+.ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft, #2a2a2a); }
+
+.bnr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 10px; }
+
+/* 상태 → 색 토큰 */
+.bnr__card { --acc: var(--bnr-live); --acc-soft: var(--bnr-live-soft); --fill: var(--bnr-fill-live); }
+.bnr__card[data-st="sched"]  { --acc: var(--bnr-sched);  --acc-soft: var(--bnr-sched-soft);  --fill: var(--bnr-fill-sched); }
+.bnr__card[data-st="warn"]   { --acc: var(--bnr-warn);   --acc-soft: var(--bnr-warn-soft);   --fill: var(--bnr-fill-warn); }
+.bnr__card[data-st="urgent"] { --acc: var(--bnr-urgent); --acc-soft: var(--bnr-urgent-soft); --fill: var(--bnr-fill-urgent); }
+.bnr__card[data-st="hold"]   { --acc: var(--bnr-hold);   --acc-soft: var(--bnr-hold-soft);   --fill: var(--bnr-hold); }
+.bnr__card[data-st="done"]   { --acc: var(--bnr-done);   --acc-soft: var(--bnr-done-soft);   --fill: var(--bnr-fill-done); }
+
+.bnr__card { position: relative; display: flex; min-width: 0; border-radius: 12px; overflow: hidden; isolation: isolate;
+  border: 1px solid color-mix(in srgb, var(--acc) 45%, var(--bnr-line)); background: var(--color-bg-secondary); }
+.bnr__bg { position: absolute; inset: -24px; z-index: -2; background-size: cover; background-position: center; filter: blur(24px) saturate(1.25); transform: scale(1.1); opacity: 0.6; }
+.bnr__card:has(.bnr__bg)::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(15, 15, 15, 0.45), rgba(15, 15, 15, 0.82)); }
+
+.bnr__left { flex: none; width: min(44%, 300px); padding: 12px; display: grid; align-items: center; }
+.bnr__img { position: relative; overflow: hidden; border-radius: 6px; background: #000; aspect-ratio: 16 / 9; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55); }
+.bnr__img[hidden] { display: none; }
+.bnr__img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; will-change: transform; }   /* 16:9 그대로, 잘리지 않게 */
+.bnr__card[data-st="hold"] .bnr__img img { filter: grayscale(1) brightness(0.7); }
+.bnr__card[data-st="done"] .bnr__img img { filter: grayscale(0.75) brightness(0.8); }
+.bnr__state { position: absolute; left: 6px; top: 6px; z-index: 2; padding: 1px 7px; border-radius: 3px; font-size: 0.68rem; font-weight: 700; background: var(--acc); color: #1b1303; }
+.bnr__card[data-st="live"] .bnr__state { color: #071418; }
+.bnr__card[data-st="sched"] .bnr__state { color: #0d1117; }
+.bnr__card[data-st="urgent"] .bnr__state { color: #fff; }
+.bnr__card[data-st="done"] .bnr__state { color: #14161a; }
+
+.bnr__mid { flex: none; width: 0; border-left: 2px dashed rgba(255, 255, 255, 0.3); margin: 12px 0; }   /* 절취선 */
+.bnr__right { flex: 1; min-width: 0; padding: 12px 14px; display: grid; gap: 5px; align-content: center; }
+
+.bnr__eyebrow { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; color: #c4c4c4; }
+.bnr__name { font-size: 1.1rem; font-weight: 600; line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; text-wrap: balance; }
+.bnr__card[data-st="done"] .bnr__name { color: #cfcfcf; }
+.bnr__orig { font-size: 0.72rem; line-height: 1.35; color: #a9a9a9; opacity: 0.92; overflow-wrap: anywhere; }   /* 원제 — 작고 희미하게 */
+.bnr__dates { font-size: 0.72rem; line-height: 1.35; color: #b3b3b3; opacity: 0.92; font-variant-numeric: tabular-nums; }   /* 날짜 — 원제와 같은 글자 스타일 */
+.bnr__card[data-st="hold"] .bnr__dates { color: var(--bnr-hold); }
+.bnr__open { color: var(--acc); font-weight: 600; }
+.bnr__chip { color: var(--acc); }
+
+/* 딸린 가챠 — 날짜 텍스트 바로 아래, 행사 안에 포함된 유리 패널 */
+.bnr__glass { margin-top: 4px; padding: 8px 10px 8px 12px; display: grid; gap: 1px; border-radius: 8px; backdrop-filter: blur(6px);
+  background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.12); border-left: 3px solid color-mix(in srgb, var(--acc) 70%, transparent); }
+.bnr__name--sub { font-size: 0.9rem; }
+.bnr__tagline { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; color: #cfcfcf; }
+.bnr__tagline i { font-style: normal; padding: 0 6px; margin-right: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); color: #fff; }
+
+/* 종료 일정 박스 — 행사 종료 / 가챠 종료 */
+.bnr__ends { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: 4px; }
+.bnr__end { padding: 5px 9px; border-radius: 7px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); backdrop-filter: blur(6px); }
+.bnr__end small { display: block; font-size: 0.62rem; letter-spacing: 0.08em; color: #c4c4c4; }
+.bnr__end b { font-size: 0.8rem; font-weight: 600; color: #e8e8e8; font-variant-numeric: tabular-nums; }
+.bnr__end.is-hot { border-color: color-mix(in srgb, var(--acc) 60%, transparent); }
+.bnr__end.is-hot b { color: var(--acc); }
+.bnr__end.is-tbd b { color: #9a9a9a; font-weight: 400; }
+.bnr__end.is-over b { color: #9a9a9a; text-decoration: line-through; }
+.bnr__end.is-over small::after { content: " · 종료됨"; }
+
+/* 진행 막대 — 늦게 끝나는 종료가 100%, 먼저 끝나는 종료는 점선(항상 막대 위, 막대 세로 폭 안), 점선~100% 는 /// 무늬 */
+.bnr__prog { position: relative; margin-top: 6px; --cut: 100%; }
+.bnr__prog.has-bubble { padding-top: 34px; }
+.bnr__bar { position: relative; z-index: 1; height: 8px; border-radius: 4px; overflow: hidden;
+  background-color: var(--bnr-track); background-image: linear-gradient(var(--bnr-track), var(--bnr-track)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }
+.bnr__bar.has-cut::before { content: ""; position: absolute; left: var(--cut); right: 0; top: 0; bottom: 0;
+  background: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.34) 0 2px, transparent 2px 6px); }
+.bnr__bar i { position: relative; z-index: 1; display: block; height: 100%; width: var(--pct); border-radius: 4px; background-color: var(--fill); background-image: linear-gradient(var(--fill), var(--fill)); }
+.bnr__cut { position: absolute; bottom: 0; height: 8px; width: 2px; left: var(--cut); margin-left: -1px; z-index: 3; pointer-events: none;
+  background: repeating-linear-gradient(to bottom, #fff 0 2px, transparent 2px 4px); }
+.bnr__knob { position: absolute; bottom: -2px; left: var(--pct); width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #fff; border: 2px solid var(--fill); z-index: 2; }
+.bnr__card[data-st="done"] .bnr__knob { display: none; }
+.bnr__bubble { position: absolute; bottom: 20px; left: var(--pct); z-index: 4; width: 0; }
+.bnr__bd { position: absolute; bottom: 0; left: 0; transform: translateX(var(--shift, -50%)); white-space: nowrap; padding: 4px 10px; border-radius: 8px;
+  font-size: 0.74rem; font-weight: 700; background: var(--fill); color: #1b1303; }
+.bnr__card[data-st="urgent"] .bnr__bd { color: #3a0509; }
+.bnr__card[data-st="sched"] .bnr__bd { color: #0d1117; }
+.bnr__bubble::after { content: ""; position: absolute; bottom: -7px; left: -6px; border: 6px solid transparent; border-top-color: var(--fill); border-bottom: 0; }
+
+/* 모바일: 이미지를 맨 위에 가로로 꽉 채우고(16:9) 절취선은 가로로, 텍스트 · 가챠 · 종료 박스 · 진행 막대는 그 아래 */
+@media (max-width: 640px) {
+  .bnr { grid-template-columns: 1fr; }
+  .bnr__card { flex-direction: column; }
+  .bnr__left { width: 100%; }
+  .bnr__mid { width: auto; height: 0; border-left: 0; border-top: 2px dashed rgba(255, 255, 255, 0.3); margin: 0 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .bnr__img img { transition: none; } }

@@ -67,6 +67,11 @@ except ImportError:
     xnotice = notices = None
 
 try:
+    from . import banners                   # (v4a) 행사 배너 — 게임 계정 글의 행사 판정
+except ImportError:
+    banners = None
+
+try:
     from . import xtweet                    # (v2.8) 멤버 개인 트윗
 except ImportError:
     xtweet = None
@@ -93,11 +98,14 @@ except Exception:                           # pragma: no cover
     YouTubeClient = None
 
 from . import preview as preview_mod
+from . import preview_build                # (v4a) is_group_release — 그룹 채널 프리미어 판정
 from . import monitor_report
 from . import monitor_snapshot
 from . import statemachine
 from . import writeclient
 from . import llm
+from . import storage                      # (v4a) store 팩토리 — 로컬/깃허브 + ops 라우팅
+from . import flowtrace                    # (v4a) 흐름 기록(관리 페이지 작업 탭) — 로컬 전용
 from .control import (
     LOG_LEVELS,
     default_control,
@@ -549,7 +557,8 @@ def _auto_dm_allows(gh, kind: str) -> bool:
 
     운영자가 직접 친 명령의 응답에는 쓰지 않는다 — 자동으로 튀어나오는 알림
     (소식/트윗/본인예고/ingest 결과)만 이 게이트를 통과해야 한다.
-    레벨 매핑: notify._LEVEL_KINDS — detail=전부 / normal=scheduled·upcoming·live·notice·tweet / simple=upcoming·live.
+    레벨 매핑: notify._LEVEL_KINDS — detail=전부 / normal=announced·upcoming·live·notice·tweet / simple=upcoming·live.
+    kind 는 반드시 그 표에 있는 이름 — 없는 이름(예: v3 이전 `scheduled`)은 어느 레벨에서도 안 나간다.
     """
     try:
         control, _ = gh.read_json("control.json")
@@ -577,7 +586,7 @@ _STATUS_GLOSSARY = (
     "· <b>LLM 큐</b> — 번역 대기(needs_tl) 행 수. /translate 로 즉시 처리 가능\n"
     "\n"
     "🔧 <b>로그 레벨</b> (/log 로 변경)\n"
-    "· <b>detail</b> — announced·upcoming·live·demote·notice·tweet·ingest + 오류/요약\n"
+    "· <b>detail</b> — announced·upcoming·live·demote·notice·tweet·ingest + 오류/요약 + 처리 진행(2초 넘는 쓰기의 대기 · 결과)\n"
     "· <b>normal</b> — announced·upcoming·live·notice·tweet (기본값)\n"
     "· <b>simple</b> — upcoming·live 만"
 )
@@ -757,6 +766,41 @@ def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
             log.warning("monitor_log 기록 실패(ops /pause)")
 
 
+def _admin_base_url() -> str:
+    """(v4a) 관리 페이지 주소의 기준 — ADMIN_BASE_URL, 없으면 로컬 러너 바인딩(Tailscale IP) 주소."""
+    base = os.environ.get("ADMIN_BASE_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    host = os.environ.get("LOCAL_BIND", "").strip() or "127.0.0.1"
+    port = os.environ.get("LOCAL_PORT", "").strip() or "8787"
+    return f"http://{host}:{port}"
+
+
+def _handle_admin_link() -> None:
+    """(v4a D24) /admin — 관리 페이지 일회용 로그인 링크를 운영자 DM 으로.
+
+    chat_id · webhook secret 검증은 /telegram 진입에서 이미 끝났다. 링크는 서명 · 짧은 수명 · 1회용
+    (`admin_web.make_login_url`, nonce 는 ops 에 사용 처리).
+    """
+    secret = os.environ.get("ADMIN_SECRET", "").strip()
+    if not secret:
+        _send_telegram("⚠️ ADMIN_SECRET 미설정 — 관리 페이지 로그인 링크를 만들 수 없습니다.")
+        return
+    from . import admin_web
+    url = admin_web.make_login_url(_admin_base_url(), secret=secret)
+    _send_telegram(f"🔐 관리 페이지 로그인 링크 (5분 · 1회용)\n{html.escape(url)}")
+
+
+def _handle_resume_local(gh, now_iso: str) -> None:
+    """(v4a) /resume — ops 의 control 을 재개로 바꾸고 reconcile(전체) 적재 (v3 의 /tick 동기 호출 대체, 원칙 ③)."""
+    control, sha = gh.read_json("control.json")
+    control = set_paused(control or default_control(), False, by="telegram:/resume", now_iso=now_iso)
+    gh.write_json("control.json", control, prev_sha=sha, message=f"ops: resume via /resume {now_iso}")
+    from . import apply
+    job = apply.enqueue_reconcile(mode="light")
+    _send_telegram(f"▶️ 재개. reconcile(전체) 적재됨 (작업 {job or '-'}) — 결과는 상태 전이 알림으로 옵니다.")
+
+
 def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None:
     """
     /resume 명령 처리.
@@ -924,13 +968,9 @@ def _log_cmd_event(now_iso: str, fields: dict) -> None:
 
 
 def _make_gh() -> "GitHubStore | None":
-    """env 에서 GitHubStore 구성. 필수 값 없으면 None."""
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-    repo = os.environ.get("GITHUB_REPO", "").strip()
-    branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
-    if not token or not repo:
-        return None
-    return GitHubStore(token, repo, branch)
+    """env 에서 store 구성. 필수 값 없으면 None. (v4) 로컬이면 LocalStore, 클라우드면 GitHubStore —
+    둘 다 control · admin_state 등은 ops 로 라우팅(`storage.make_store`, 클라우드는 OPS_BRANCH 가 있을 때)."""
+    return storage.make_store("data")
 
 
 # ── ingest 대기열 (ECHO/DRY-RUN 중 받은 스케줄 트윗을 실배포 전환 시 반영) ──
@@ -977,6 +1017,65 @@ def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = N
     return changed
 
 
+def _commit_manual_preview(gh, item: dict, now_iso: str) -> dict:
+    """(v4a) 관리 페이지 「수동 입력 · 예고」 커밋 (적용 큐에서 실행).
+
+    같은 방송(`preview_mod.match_item` — 같은 호스트 + video_id/url/±45분)이 이미 있으면 그 항목에 관리자 값을 덮어쓴다
+    (상태 · video_id 는 보존, 제목은 title_manual 로 보호). 없으면 announced 새 항목으로 추가.
+    반환: {"mode": "added"|"merged"|"unchanged", "id": str}"""
+    mode, item_id = "unchanged", item.get("id")
+    prev = new_sha = None
+    changed = False
+    for attempt in (1, 2):
+        prev, sha = gh.read_json(_PREVIEW_PATH)
+        prev = prev or {"items": []}
+        items = [dict(i) for i in (prev.get("items") or [])]
+        # 영상 없는 수동 예고의 url 은 채널 페이지 자리표시 — 그 url 로 매칭하면 같은 호스트의 서로 다른 방송이 합쳐진다
+        probe = dict(item, url=item.get("url") if item.get("video_id") else None)
+        matched = preview_mod.match_item(items, probe)
+        if matched is None:
+            new_item = dict(item)
+            if any(i.get("id") == new_item.get("id") for i in items):     # 안전망 — id 충돌이면 새로 부여
+                new_item["id"] = preview_mod.new_id(new_item.get("channel_key", ""), now_iso,
+                                                    f"{new_item.get('scheduled_start')}|{len(items)}")
+            items.append(new_item)
+            mode, item_id = "added", new_item.get("id")
+        else:
+            i = items.index(matched)
+            cur = dict(items[i])
+            orig = dict(cur)
+            for k in ("title", "title_ko", "title_manual", "needs_tl", "collab_with", "kind", "membership",
+                      "scheduled_start", "time_tbd"):
+                if k in item:
+                    cur[k] = item[k]
+            if not cur.get("video_id") and item.get("video_id"):
+                cur["video_id"] = item["video_id"]
+                cur["url"] = item.get("url") or cur.get("url")
+            cur["expires_at"] = preview_mod._calculate_expires_at(
+                cur.get("scheduled_start"), cur.get("time_tbd", False), cur.get("membership", False))
+            cur["info_source"], cur["info_at"] = "manual", now_iso
+            if cur != orig:
+                cur["last_updated"] = now_iso
+                items[i] = cur
+                mode = "merged"
+            item_id = cur.get("id")
+        merged = dict(prev)
+        merged["items"] = items
+        merged["generated_at"] = now_iso
+        try:
+            changed, new_sha = gh.write_json(_PREVIEW_PATH, merged, prev_sha=sha,
+                                             message=f"data: admin 수동 예고 {mode} {now_iso}")
+            break
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("수동 예고: preview.json 충돌 — 재계산 후 재시도")
+    if changed:
+        _save_undo(gh, action=f"admin 수동 예고 {item.get('channel_key')}", prev_content=prev or {},
+                   new_sha=new_sha, now_iso=now_iso)
+    return {"mode": mode if changed else "unchanged", "id": item_id}
+
+
 def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
     """snapshot 과 정확히 일치하는 preview.items[] 항목 1개를 제거 (v3 /del).
 
@@ -1009,13 +1108,20 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
             log.warning("del: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
+        # (v4a) 그 영상에 예약돼 있던 확인도 지운다 — 남겨 두면 그 확인이 영상을 다시 불러와 예고를 되살렸다(2026-09-30 검증)
+        if snapshot.get("video_id"):
+            try:
+                from . import apply as _apply
+                _apply.cancel_video_checks(snapshot["video_id"], reason=action)
+            except Exception:  # noqa: BLE001
+                log.warning("예약된 확인 취소 실패", exc_info=True)
         # (v3.8.7) /del(terminate 포함)이 preview.json 은 지우면서도 모니터 이벤트
         # 로그엔 남기지 않아, monitor 타임플롯이 이 삭제를 몰라 마지막으로 알려진 상태
         # (예: watching)를 지금까지 계속 진행 중인 것처럼 그렸다(실측 2026-09-22).
         _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=snapshot.get("channel_key", ""),
-                  detail=f"{action} · {snapshot.get('state')}→none",
+                  detail=f"{action} · {snapshot.get('state')}→out",
                   id=snapshot.get("id"), video_id=snapshot.get("video_id"),
-                  from_state=snapshot.get("state"), to_state="none",
+                  from_state=snapshot.get("state"), to_state="out",
                   title=snapshot.get("title"), collab_with=snapshot.get("collab_with"))
     return changed
 
@@ -1642,7 +1748,16 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
 
             # changed and mode == "added" 일 때만 중복판정 LLM 호출
             if changed and mode == "added":
-                dup_id = _inline_notice_dup_check(parsed, prev)
+                _fd = _review_forced("dup_id", _NOFORCE)      # 사용자 판단 — 같은 소식(id) / 별도 소식("")
+                dup_id = _inline_notice_dup_check(parsed, prev) if _fd is _NOFORCE else (_fd or None)
+                _before = next((copy.deepcopy(n) for n in prev.get("notices") or [] if n.get("id") == dup_id), None) if dup_id else None
+                if dup_id and _before is None:
+                    dup_id = None                              # 병합 대상이 없으면 별도 소식으로
+                if dup_id:
+                    _llm_record(gh, "duplicate_notice", "notice",
+                                f"같은 소식으로 판정 — {(parsed.get('title') or '')[:40]}", f"기존 소식 {dup_id}", now_iso=now_iso,
+                                undo={"type": "restore_notice", "id": dup_id, "before": _before, "parsed_id": parsed.get("id")},
+                                input=_inp(raw, tag=tag, title=title))
         except Exception:
             log.warning("준비: notices 읽기 실패", exc_info=True)
             dup_id = None
@@ -1655,7 +1770,8 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
 
 
 def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_key: str, now_iso: str,
-                            vx_extract: dict | None = None, gh: GitHubStore | None = None) -> dict | None:
+                            vx_extract: dict | None = None, gh: GitHubStore | None = None,
+                            text_ko_override: str | None = None) -> dict | None:
     """(WP-3b) 개인 트윗 준비 (제어 채널에서 실행).
 
     외부 호출(vxtwitter·LLM) + 머지 변화 판정까지 한 뒤 결과를 반환.
@@ -1697,7 +1813,9 @@ def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_ke
 
     # changed 일 때만 번역
     if changed:
-        if text_src and not parsed.get("text_ko"):
+        if text_ko_override:                 # (v4a) 관리자가 직접 쓴 번역 — LLM 호출 생략
+            text_ko = text_ko_override
+        elif text_src and not parsed.get("text_ko"):
             text_ko = _inline_translate(text_src)
 
         # 인용
@@ -2288,9 +2406,24 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
     if gh is None:
         return "no-gh"
 
+    # (v4a, 2026-10-02) 행사 배너가 이미 다루는 행사 · 가챠면 소식으로 또 올리지 않는다
+    if banners is not None:
+        try:
+            cur_b, _ = gh.read_json(_BANNERS_PATH)
+            arc_b, _ = gh.read_json(_BANNERS_ARCHIVE_PATH)
+            rows_b = list((cur_b or {}).get("banners") or []) + list((arc_b or {}).get("banners") or [])
+            hit = banners.covers_text(rows_b, raw)
+        except Exception:  # noqa: BLE001
+            hit = None
+        if hit:
+            log.info("auto notice: 행사 배너가 다루는 내용(%s)이라 건너뜀", hit)
+            flowtrace.annotate(notice="banner")
+            return "banner"
+
     # 준비 단계: 파싱 + LLM + 중복판정
     prepared = _prepare_notice(raw, now_iso, tag=tag, title=title, gh=gh)
     if prepared is None:
+        flowtrace.annotate(notice="none")   # (v4a) 작업 탭 결과에 소식 판정 표시(_finish_ingest_flow)
         return "none"
 
     try:
@@ -2298,7 +2431,9 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         result = writeclient.call_write("apply_notice", gh=gh, prepared=prepared, now_iso=now_iso,
                                         label=_notice_label(prepared))
         mode, parsed = result.get("mode"), result.get("parsed")
+        flowtrace.annotate(notice=mode or "unchanged")
     except Exception:
+        flowtrace.annotate(notice="error")
         log.exception("auto notice 실패")
         _dm_lost_raw("auto notice 호출 실패", raw, title=title or "", kind="notice",
                     tag=tag, gh=gh)
@@ -2409,6 +2544,72 @@ def _recover_raw_via_vxtwitter(raw: str, tag: str | None) -> tuple[str, dict | N
         log.info("ingest: vxtwitter 원문으로 교체 (tweet %s, raw_len=%d vx_len=%d)",
                   tid, len(raw), len(text))
     return text, ex
+
+
+def _personal_retweet_reason(phone_raw: str, vx_extract: dict | None, channel_key: str,
+                             channels_cfg: dict) -> str | None:
+    """(v3.8.11) 개인 5인 알림이 **리트윗(남의 글)** 인지 — 맞으면 사유, 아니면 None.
+
+    ① 폰 원문(vxtwitter 교체 **전**)이 `@핸들:` / `RT @핸들:` 로 시작 ② vxtwitter 가 돌려준 작성자 ≠ 그 멤버 핸들.
+    `_recover_raw_via_vxtwitter` 가 원문을 vxtwitter 본문으로 바꾸면서 리트윗 표시(`@핸들:`)가 지워져, 그 뒤
+    `xtweet.parse` 의 리트윗 필터(D17)가 무력화돼 있었다(09-13 정본 교체 도입부터). 실례 2026-10-01: 미야코가
+    @bang_dream_info 의 애니 재방송 안내(「10/1(木)23:00より TOKYO MX」)를 리트윗 → 트윗 배지 + LLM 이 본인 예고로
+    통과시켜 가짜 「10/01 23:00」 예고(운영에선 기존 10/11 예고를 덮음). 인용(QRT)은 작성자가 멤버라 해당 없음.
+    """
+    handle = (((channels_cfg.get("channels") or {}).get(channel_key) or {}).get("handle") or "").lower()
+    rt = _retweet_mark(phone_raw, vx_extract)
+    if rt:
+        return rt
+    author = ((vx_extract or {}).get("author") or "").lstrip("@").lower()
+    if author and handle and author != handle:
+        return f"작성자 @{author} ≠ @{handle}"
+    return None
+
+
+_RT_HEAD_RE = re.compile(r"^\s*(?:RT\s+)?@(\w{1,15})\s*[:：]")
+
+
+def _retweet_mark(phone_raw: str, vx_extract: dict | None) -> str | None:
+    """(v4a) 리트윗 **표시** 가 있으면 사유, 없으면 None — 작성자 비교는 호출부가 한다.
+
+    ① 폰 원문(vxtwitter 교체 **전**)이 `@핸들:` / `RT @핸들:` 로 시작 ② vxtwitter 본문이 `RT @핸들:` 로 시작
+    (vxtwitter 는 리트윗 자체를 준다 — 작성자 = 리트윗한 계정이라 작성자 비교로는 안 잡힘)
+    ③ fxtwitter(폴백)의 `reposted_by` 가 있음(원 글 본문 + 원 작성자를 주고 리트윗한 계정을 여기 싣는다).
+    """
+    body = xtweet._clean_text(phone_raw or "") if xtweet is not None else (phone_raw or "")
+    m = _RT_HEAD_RE.match(body)
+    if m:
+        return f"폰 원문이 @{m.group(1)} 의 글"
+    ex = vx_extract or {}
+    m = re.match(r"^\s*RT\s+@(\w{1,15})\s*[:：]", ex.get("text") or "")
+    if m:
+        return f"@{m.group(1)} 의 글을 리트윗"
+    if ex.get("reposted_by"):
+        return f"@{ex['reposted_by']} 가 @{ex.get('author') or '?'} 의 글을 리트윗"
+    return None
+
+
+def _official_skip_reason(phone_raw: str, vx_extract: dict | None, title: str | None,
+                          channels_cfg: dict) -> str | None:
+    """(v4a, 10-01 운영자 결정) 「공식」 경로는 그룹 공식 X(@BDP_yumemita)가 **직접 쓴 글**만 받는다 — 아니면 사유.
+
+    소식 · 공식 스케줄 판정 전에 건다. 리트윗(표시 · `reposted_by`) → 작성자(vxtwitter/fxtwitter)가 그룹 핸들이 아님 →
+    작성자를 모르면(조회 둘 다 실패) 알림 제목(표시명)이 그룹 이름으로 시작하지 않음 순.
+    전엔 개인 5인 표시명이 아닌 알림은 전부 「공식」으로 들어와(폰이 「バンドリ！アワーノーツ」 등 다른 계정 알림도 보냄),
+    fxtwitter 로 떨어지면 남의 글 리트윗이 원 글 본문 그대로 소식이 될 수 있었다.
+    """
+    rt = _retweet_mark(phone_raw, vx_extract)
+    if rt:
+        return f"리트윗: {rt}"
+    handles = {(v.get("handle") or "").lower()
+               for v in (channels_cfg.get("channels") or {}).values() if v.get("is_group")}
+    author = ((vx_extract or {}).get("author") or "").lstrip("@").lower()
+    if author:
+        return None if author in handles else f"다른 계정 글: 작성자 @{author}"
+    t = (title or "").strip()
+    if t.startswith("夢限大みゅーたいぷ"):
+        return None
+    return f"다른 계정 알림: 표시명 「{t[:30]}」" if t else "작성자 확인 불가: 알림 표시명 없음"
 
 
 def _expand_truncated_yt(raw: str, tag) -> str:
@@ -2542,7 +2743,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
     _maybe_personal_schedule(raw, tag=tag, channel_key=channel_key, name=name,
                              handle=handle, now_iso=now_iso, via=via, quote=quote_src)
     # (v3.8.7) 기존 예고 취소/변경 여부는 새 예고 생성과 별개로 항상 확인
-    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via)
+    _maybe_broadcast_change(gh, raw, channel_key, now_iso, channels_cfg, via=via, tag=tag)
     return mode
 
 
@@ -2696,6 +2897,369 @@ def _handle_member_live_start(parsed: dict, channels_cfg: dict, now_iso: str) ->
     return {"ok": True, "member_live": ck, "mode": mode, "video_id": live["video_id"]}, 200
 
 
+# ── (v4a, 2026-10-02) 행사 배너 — 게임 계정(bang_dream_on) 글 → 행사 판정 → banners.json ──────────────────────
+# 게임 계정 글은 소식 · 스케줄 경로를 타지 않고 여기로만 온다. 준비(외부 LLM)는 제어 채널, 잡은 커밋만(`apply_banner`).
+# 설계: ref/v4a/v4a_event_banner_design.md · 계약: docs/SPEC.md 계약 J · 용어: docs/TERMINOLOGY.md 「행사 배너 용어」.
+_BANNERS_PATH = "banners.json"
+_BANNERS_ARCHIVE_PATH = "banners_archive.json"
+
+_BANNER_VERDICT = {
+    "none": "행사 배너 — 해당 없음",
+    "added": "행사 배너 추가",
+    "updated": "행사 배너 갱신",
+    "held": "행사 배너 — 보류 표시",
+    "cancelled": "행사 배너 — 취소로 내림",
+    "dup": "행사 배너 — 이미 반영한 글",
+    "invalid": "행사 배너 — 판정 값 검증 실패(올리지 않음)",
+    "skip_permanent": "행사 배너 — 상시화된 행사(올리지 않음)",
+    "error": "행사 배너 — 반영 실패",
+    "llm_failed": "행사 배너 — 판정 LLM 실패(올리지 않음)",
+}
+_BANNER_CHANGED = ("added", "updated", "held", "cancelled")
+
+
+def _game_account(vx_ex: dict | None, title: str | None, cfg: dict | None = None) -> str | None:
+    """이 알림이 게임 계정(`config/channels.json` `game_accounts`)의 글이면 그 키, 아니면 None.
+
+    작성자 핸들(vxtwitter/fxtwitter)이 있으면 그것만 본다. 조회가 둘 다 실패했을 때만 알림 표시명(`x_names`)으로 판정한다.
+    """
+    ga = ((cfg if cfg is not None else _load_channels_config()).get("game_accounts") or {})
+    if not ga:
+        return None
+    author = ((vx_ex or {}).get("author") or "").lstrip("@").lower()
+    if author:
+        return next((k for k, v in ga.items() if (v.get("handle") or k).lower() == author), None)
+    t = (title or "").strip()
+    return next((k for k, v in ga.items() if t and t in (v.get("x_names") or [])), None) if t else None
+
+
+def _banner_posted_jst(tag: str | None, now_iso: str) -> str:
+    """글 게시 시각(JST 문자열) — 트윗 id(Snowflake)에서, 못 구하면 지금."""
+    posted = None
+    if xtweet is not None and tag:
+        try:
+            posted = xtweet.snowflake_iso(xtweet._tweet_id(tag))
+        except Exception:  # noqa: BLE001
+            posted = None
+    return banners.to_jst(posted or now_iso) or ""
+
+
+def _banner_label(prepared: dict | None) -> str:
+    j = (prepared or {}).get("judgement") or {}
+    name = ((j.get("event") or {}).get("name_ja") or (j.get("gacha") or {}).get("title_ja") or "")[:20]
+    return f"행사 배너 {j.get('action', '')} {name}".strip()
+
+
+# 행사 키비주얼이 아닌 소개 카드(제목 막대 + 설명문이 붙은 화면)에 나오는 말 — 판정 LLM 이 event 로 잘못 정해도 코드가 none 으로 돌린다.
+_CARD_MARKERS = ("イベント情報", "ガチャ紹介", "紹介", "あらすじ", "情報")
+
+
+def _filter_banner_roles(roles: list[str], ocr: list[dict]) -> list[str]:
+    """판정이 준 이미지 용도 중, 이미지 속 글자에 소개 카드 표지가 있으면 event 를 none 으로 돌린다. 장수가 안 맞으면 그대로."""
+    if len(roles) != len(ocr):
+        return roles
+    out = []
+    for r, o in zip(roles, ocr):
+        txt = (o.get("text") or "")
+        out.append("none" if r == "event" and any(m in txt for m in _CARD_MARKERS) else r)
+    return out
+
+
+def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
+    """행사 · 가챠 소개 카드 이미지의 글자를 비전으로 읽는다 — [{"idx": 1부터, "text": 글자|None}]. 비전 불가면 []."""
+    vc = _make_vision_client()
+    if vc is None or not media:
+        return []
+    out = []
+    for i, url in enumerate(list(media)[:limit], start=1):
+        try:
+            out.append({"idx": i, "text": vc.read_card(image_url=url)})
+        except Exception:  # noqa: BLE001
+            log.warning("행사 배너 이미지 OCR 실패 (%s)", url, exc_info=True)
+            out.append({"idx": i, "text": None})
+    return out if any(o["text"] for o in out) else []
+
+
+def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str, gh) -> dict:
+    """(제어 채널) 행사 판정 준비 — 현재 배너를 읽고 외부 LLM 을 1회 부른다.
+
+    반환: {"judgement": dict, "post": {tweet_id, media}} | {"failed": 사유}. 실패 땐 등록하지 않는다.
+    """
+    fj = _review_forced("banner")        # 사용자 판단 — 운영자가 정한 판정으로 LLM 을 건너뛴다
+    if fj is not None:
+        _tid = ""
+        if xtweet is not None and tag:
+            try:
+                _tid = xtweet._tweet_id(tag) or ""
+            except Exception:  # noqa: BLE001
+                _tid = ""
+        return {"judgement": fj, "post": {"tweet_id": _tid, "media": []}}
+    llm_client = _make_llm_client()
+    if llm_client is None:
+        return {"failed": "LLM 비활성(GROQ_API_KEY 없음)"}
+    try:
+        prev, _ = gh.read_json(_BANNERS_PATH)
+    except Exception:  # noqa: BLE001
+        log.warning("행사 배너 준비: banners.json 읽기 실패", exc_info=True)
+        prev = None
+    prev = prev or banners.default_banners()
+    posted = _banner_posted_jst(tag, now_iso)
+    active = banners.for_llm(prev, now_iso)
+    media = list((vx_ex or {}).get("media") or [])[:4]      # OCR · 용도 판정과 장수를 맞춘다
+    j = llm_client.banner_judge(raw, posted, active)
+    if j is None:
+        return {"failed": "LLM 판정 5회 실패"}
+    # 2단계 — 글만으로 행사 정보가 있다고 본 판정에 한해, 첨부 이미지 속 글자(개최기간은 이미지에만 있는 경우가 실측으로 있었다)를
+    # 비전으로 읽어 다시 판정한다. 무관한 글(대부분)은 비전 호출이 없다. 읽기 실패 · 재판정 실패면 1단계 판정을 그대로 쓴다.
+    # 새 사실이 없다고 본 글이라도 이미 올라 있는 행사 · 가챠 이름이 본문에 있으면 이미지 속 기간이 바뀌었을 수 있다(실측: 09-30 가챠 개최 글의
+    # 이미지에만 가챠 종료일이 10/9 로 늘어난 것이 적혀 있었다) — 그 경우에도 이미지를 읽는다.
+    related = j.get("action") == "none" and banners.covers_text(banners.active(prev, now_iso), raw)
+    if media and (j.get("action") == "upsert" or related):
+        ocr = _ocr_banner_images(media)
+        if ocr:
+            j2 = llm_client.banner_judge(raw, posted, active, images_ocr=ocr)
+            if j2 is not None:
+                j = j2
+            j["image_roles"] = _filter_banner_roles(j.get("image_roles") or [], ocr)
+    tid = ""
+    if xtweet is not None and tag:
+        try:
+            tid = xtweet._tweet_id(tag) or ""
+        except Exception:  # noqa: BLE001
+            tid = ""
+    return {"judgement": j, "post": {"tweet_id": tid, "media": media}}
+
+
+def _banners_rw(gh):
+    prev, psha = gh.read_json(_BANNERS_PATH)
+    arc, asha = gh.read_json(_BANNERS_ARCHIVE_PATH)
+    return (prev or banners.default_banners(), psha, arc or banners.default_archive(), asha)
+
+
+def _banners_write(gh, new_b: dict, psha, new_a: dict, arc: dict, asha, message: str) -> None:
+    gh.write_json(_BANNERS_PATH, new_b, prev_sha=psha, message=message)
+    if new_a != arc:
+        gh.write_json(_BANNERS_ARCHIVE_PATH, new_a, prev_sha=asha, message=message + " (archive)")
+
+
+def _commit_banner(gh, prepared: dict | None, now_iso: str) -> dict:
+    """(적용 큐 잡) 행사 판정 커밋 — 지난 행사 정리 + 반영 + 보관. 반환: {mode, detail, id, shown, undo, moved}."""
+    if banners is None or not prepared or not prepared.get("judgement"):
+        return {"mode": "none", "detail": "", "id": None, "shown": False, "undo": None, "moved": 0}
+    for _try in range(1, 4):
+        prev, psha, arc, asha = _banners_rw(gh)
+        swept, arc2, moved = banners.sweep(prev, arc, now_iso)
+        r = banners.apply_judgement(swept, prepared["judgement"], prepared.get("post") or {}, now_iso)
+        new_a = dict(arc2)
+        if r["archive_add"]:
+            new_a["banners"] = list(new_a.get("banners") or []) + r["archive_add"]
+        res = {"mode": r["mode"], "detail": r["detail"], "id": r["id"], "shown": r["shown"], "undo": r["undo"],
+               "moved": len(moved)}
+        if r["mode"] not in _BANNER_CHANGED and not moved:
+            return res
+        out = r["banners"] if r["mode"] in _BANNER_CHANGED else swept
+        out = dict(out, generated_at=now_iso)
+        try:
+            _banners_write(gh, out, psha, new_a, arc, asha, f"data: banner {r['mode']} {now_iso}")
+        except ConflictError:
+            if _try == 3:
+                raise
+            log.warning("banner: banners.json 충돌 — 재시도")
+            continue
+        return res
+    return {"mode": "error", "detail": "충돌이 계속됨", "id": None, "shown": False, "undo": None, "moved": 0}
+
+
+def _banner_sweep(gh, now_iso: str) -> int:
+    """(적용 큐 잡) 지난 행사 · 보류 만료 · 오래된 대기를 banners_archive.json 으로. 옮긴 수."""
+    if banners is None:
+        return 0
+    for _try in range(1, 4):
+        prev, psha, arc, asha = _banners_rw(gh)
+        new_b, new_a, moved = banners.sweep(prev, arc, now_iso)
+        if not moved:
+            return 0
+        try:
+            _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: banner sweep {now_iso}")
+            return len(moved)
+        except ConflictError:
+            if _try == 3:
+                raise
+    return 0
+
+
+def _banner_edit_commit(gh, bid: str, patch: dict, now_iso: str) -> dict:
+    """(적용 큐 잡) 관리 페이지 행사 수정."""
+    prev, psha, arc, asha = _banners_rw(gh)
+    new_b, changed, err = banners.edit_banner(prev, bid, patch, now_iso)
+    if err:
+        return {"ok": False, "error": err}
+    if changed:
+        gh.write_json(_BANNERS_PATH, new_b, prev_sha=psha, message=f"data: banner edit {bid} {now_iso}")
+    return {"ok": True, "changed": changed}
+
+
+def _banner_del_commit(gh, bid: str, now_iso: str) -> dict:
+    """(적용 큐 잡) 관리 페이지 행사 삭제 — 보관(archived_reason=deleted)으로 옮긴다."""
+    prev, psha, arc, asha = _banners_rw(gh)
+    hit = next((b for b in prev.get("banners") or [] if b.get("id") == bid), None)
+    if hit is None:
+        return {"ok": False, "error": "행사를 찾을 수 없음"}
+    new_b = dict(prev, banners=[b for b in prev["banners"] if b is not hit], generated_at=now_iso)
+    new_a = dict(arc, banners=list(arc.get("banners") or []) + [dict(hit, archived_at=now_iso, archived_reason="deleted")])
+    _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: banner delete {bid} {now_iso}")
+    return {"ok": True}
+
+
+def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str, title: str,
+                          now_iso: str, gh, acct: str):
+    """게임 계정 글 처리 본체 — Flask 응답이 아닌 (body dict, 코드) 를 돌려준다(관리 페이지 재판단도 재사용)."""
+    rt = _retweet_mark(phone_raw, vx_ex)
+    if rt:
+        log.info("행사 배너: 게임 계정 리트윗이라 건너뜀 — %s (tweet %s)", rt, x_tag)
+        flowtrace.mark("행사 판정", "skip", f"리트윗 — {rt}")
+        _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=acct, via="ingest", detail=f"banner skip: 리트윗 {rt}")
+        return {"ok": True, "ignored": f"게임 계정 리트윗 — {rt}"}, 200
+    if banners is None or gh is None:
+        return {"ok": True, "ignored": "행사 배너 모듈 없음"}, 200
+    flowtrace.mark("행사 판정", "run", f"게임 계정 @{acct} — 외부 LLM 판정")
+    prepared = _prepare_banner(raw, x_tag, vx_ex, now_iso, gh)
+    if prepared.get("failed"):
+        flowtrace.annotate(banner="llm_failed")
+        flowtrace.mark("행사 판정", "fail", prepared["failed"])
+        _log_event_safe(gh, now_iso, "notice", RESULT_DEGRADED, who=acct, via="ingest",
+                        detail=f"banner skip: {prepared['failed']}")
+        _dm_lost_raw("행사 판정 LLM 실패 — 올리지 않음", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
+        return {"ok": True, "banner": "llm_failed", "detail": prepared["failed"]}, 200
+    j = prepared["judgement"]
+    try:
+        result = writeclient.call_write("apply_banner", gh=gh, prepared=prepared, now_iso=now_iso,
+                                        label=_banner_label(prepared))
+    except Exception:
+        flowtrace.annotate(banner="error")
+        log.exception("행사 배너 반영 실패")
+        _dm_lost_raw("행사 배너 반영 호출 실패", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
+        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, who=acct, via="ingest", detail="banner: error (exception)")
+        return {"ok": True, "banner": "error"}, 200
+    mode = result.get("mode") or "none"
+    flowtrace.annotate(banner=mode)
+    name = ((j.get("event") or {}).get("name_ja") or (j.get("gacha") or {}).get("title_ja") or "")[:40]
+    undo = result.get("undo") if mode in _BANNER_CHANGED else None
+    _llm_record(gh, "banner_judge", acct, f"{_BANNER_VERDICT.get(mode, mode)} — {name}".strip(" —"),
+                j.get("reason") or "", undo=undo, now_iso=now_iso,
+                input=_inp(raw, tag=x_tag, acct=acct, media=(prepared.get("post") or {}).get("media")))
+    _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=acct, via="ingest",
+                    detail=f"banner mode: {mode} · {result.get('detail') or ''}"[:200])
+    if mode in _BANNER_CHANGED:
+        _auto_dm(gh, "banner", f"🎴 <b>행사 배너</b> — {html.escape(_BANNER_VERDICT.get(mode, mode))}\n"
+                              f"{html.escape(result.get('detail') or '')}\n"
+                              f"<i>{html.escape((j.get('reason') or '')[:120])}</i>")
+    return {"ok": True, "banner": mode, "detail": result.get("detail") or ""}, 200
+
+
+def _handle_banner_ingest(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str, title: str,
+                          now_iso: str, gh, acct: str):
+    """/ingest — 게임 계정 글 처리. 소식 · 스케줄 경로로 가지 않는다. (응답, 코드) 반환."""
+    body, code = _banner_ingest_core(raw, phone_raw, vx_ex, x_tag, title, now_iso, gh, acct)
+    return jsonify(body), code
+
+
+def _undo_banner_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
+    """(적용 큐) `restore_banner` 되돌리기 — banners.json · banners_archive.json 에서 그 행사만 변경 전으로."""
+    u = e.get("undo") or {}
+    applied, skipped = [], []
+    for _try in range(1, 4):
+        applied, skipped = [], []
+        prev, psha, arc, asha = _banners_rw(gh)
+        new_b, new_a, msg = banners.restore(prev, u, arc, now_iso)
+        if msg == "되돌림":
+            applied.append(f"행사 배너 되돌림 — {((u.get('before') or {}).get('name_ko') or (u.get('before') or {}).get('name_ja') or u.get('id'))}")
+            try:
+                _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: 행사 배너 LLM 판단 되돌리기 {action_id} {now_iso}")
+            except ConflictError:
+                if _try == 3:
+                    raise
+                continue
+        else:
+            skipped.append(msg)
+        break
+    for _try in range(3):
+        cur, lsha = gh.read_json(_LLM_ACTIONS_PATH)
+        items2 = list((cur or {}).get("items") or [])
+        for x in items2:
+            if x.get("id") == action_id:
+                x["undone"] = {"at": now_iso, "applied": applied, "skipped": skipped}
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items2}, prev_sha=lsha, message=f"ops: LLM 판단 되돌림 {action_id}")
+            break
+        except ConflictError:
+            continue
+    _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=e.get("who") or "", via="ops",
+                    detail=f"LLM 판단 되돌리기 banner_judge · {'; '.join(applied) or '; '.join(skipped) or '변화 없음'}")
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": []}
+
+
+# (v4a) 소식 판정 mode(`notices.merge_notice` · `_maybe_auto_notice`) → 작업 탭 결과 문구
+_NOTICE_VERDICT = {
+    "none": "소식 아님",
+    "added": "소식 추가",
+    "updated": "소식 갱신",
+    "recap": "소식 안 올림 — 지난 소식과 같은 글(recap)",
+    "dup": "소식 안 올림 — 이미 본 글",
+    "skip": "소식 안 올림 — 이미 지난 이벤트",
+    "unchanged": "소식 바뀐 것 없음",
+    "error": "소식 반영 실패",
+    "banner": "소식 안 올림 — 행사 배너가 이미 다루는 내용",
+}
+
+
+def _finish_ingest_flow(body, code: int) -> None:
+    """(v4a) /ingest 흐름 마무리 — 응답으로 결과 사유를 정한다. 결과를 안 기다린 작업(detached)이 남았으면
+    적용 큐 워커가 마무리하므로 사유만 남긴다. 기록 실패는 무시."""
+    try:
+        f = flowtrace.get(flowtrace.current.get())
+        if not f or f["status"] not in ("run", "wait"):
+            return
+        try:
+            j = body.get_json(silent=True) or {}
+        except Exception:  # noqa: BLE001
+            j = {}
+        if code >= 400 or j.get("ok") is False:
+            flowtrace.finish(f"실패 — {j.get('error') or f'HTTP {code}'}", fail=True)
+            return
+        if j.get("personal"):
+            why = f"개인 트윗 · {j.get('mode')}"
+        elif j.get("banner"):
+            why = _BANNER_VERDICT.get(j["banner"], f"행사 배너 {j['banner']}")
+            if j.get("detail"):
+                why += f" · {str(j['detail'])[:60]}"
+        elif j.get("public_relay"):
+            why = f"YouTube {j['public_relay']} · {j.get('video_id')}"
+        elif j.get("paused"):
+            why = "일시정지 중 — 무시"
+        elif j.get("echo"):
+            why = "ECHO (테스트 부계정) — 반영 안 함"
+        elif j.get("ignored"):
+            why = f"처리 대상 아님 — {j['ignored'] if j['ignored'] is not True else '무시'}"
+        elif "parsed" in j:
+            # (v4a) 소식 판정을 같이 적는다 — 전엔 소식 쓰기(정리 포함)가 한 번이라도 돌면 「소식으로 반영」이라,
+            # 이미 본 글 · recap 처럼 안 올린 것도 인입된 것처럼 보였다
+            why = (f"공식 스케줄 {j['parsed']}행 반영" if j["parsed"] else "스케줄 형식 아님")
+            nm = f.get("notice")
+            if nm:
+                why += " · " + _NOTICE_VERDICT.get(nm, f"소식 {nm}")
+            elif not j["parsed"]:
+                why += " — 반영할 것 없음"
+        else:
+            why = "처리 끝"
+        if f.get("detached"):
+            flowtrace.set_reason(why + " · 적용 작업 처리 중")
+        else:
+            flowtrace.finish(why)
+    except Exception:  # noqa: BLE001
+        log.warning("흐름 마무리 실패", exc_info=True)
+
+
 def _handle_yt_relay(payload) -> tuple[dict, int]:
     """(v3.7.3, v3.8.4 확장) `source=yt` 중계 처리.
 
@@ -2715,23 +3279,26 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
     # 회원전용 시작 — 기존 경로 그대로(우선순위 유지: parse_public_live_relay 는 이 kind 를 걸러낸다).
     parsed = ytnotif.parse_member_live_relay(payload, channels_cfg)
     if parsed is not None:
+        flowtrace.mark("알림 해석", "done", f"회원 전용 라이브 시작 · {parsed.get('channel_key')}")
         return _handle_member_live_start(parsed, channels_cfg, now_iso)
 
     # (v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START — 이전엔 여기서 전부 무시됐다.
     public = ytnotif.parse_public_live_relay(payload, channels_cfg)
     if public is None:
+        flowtrace.mark("알림 해석", "done", "처리 대상 알림 아님")
         return {"ok": True, "ignored": True}, 200
+    flowtrace.mark("알림 해석", "done", f"{public['relay_kind']} · {public.get('channel_key') or '?'}"
+                   + (f" · {public['video_id']}" if public.get("resolved") else " · 영상 미상"))
 
     if public["resolved"]:
-        # 실제 video_id 확보 — 새 GitHub 쓰기 없이 즉시 wake 하나만 예약한다. 승격
-        # (announced/upcoming 자동 판정, live_state 가 이미 live 면 곧장 live)·DM·모니터
-        # 로그·다음 wake 예약은 기존 handlers._run(/wake) 파이프라인이 전부 처리한다 —
-        # 여기서 preview.json 을 직접 건드리지 않는다(레이스는 기존 낙관적 동시성 재시도 +
-        # Cloud Tasks 태스크명 dedupe 로 이미 방어됨).
-        _enqueue_wake_now(public["video_id"], now_iso)
-        log.info("public yt relay → 즉시 wake: kind=%s video_id=%s", public["relay_kind"], public["video_id"])
+        # (v4a D1·D2·D3) 알림 자체를 상태 신호로 쓴다 — 적용 큐 작업 yt_notif 로 적재하고 바로 돌아간다(원칙 ②).
+        # 작업은 reconcile(영상)으로 API 사실을 먼저 반영한 뒤 tunein→watching / 시작→live 로 올린다.
+        from . import apply
+        job = apply.submit("yt_notif", {"video_id": public["video_id"], "relay_kind": public["relay_kind"],
+                                        "now_iso": now_iso, "channel_key": public.get("channel_key")}, wait=False)
+        log.info("public yt relay → yt_notif 적재: kind=%s video_id=%s", public["relay_kind"], public["video_id"])
         return {"ok": True, "public_relay": public["relay_kind"], "video_id": public["video_id"],
-                "woken": True}, 200
+                "queued": job.get("job_id")}, 200
 
     # video_id 미상("default") — 회원전용으로 추정.
     if public["relay_kind"] == "tunein":
@@ -2753,25 +3320,86 @@ def _handle_yt_relay(payload) -> tuple[dict, int]:
     )
 
 
-def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
-    """(v3.6) URL 확정 예고 반영 직후 Cloud Tasks wake 즉시 등록.
+def _preserve_raw(kind: str, raw: str, meta: dict, now_iso: str) -> None:
+    """(v4a D19) 스케줄 관련 트윗 원문 보존 → raw store(`raw/YYYY-MM-DD.jsonl`). 실패해도 흐름 무영향.
 
-    light tick(10분 간격, 2026-09-16 3h→10분 단축)을 안 기다리고 live/watching 전이를
-    바로 예약 — 버그리포트 20260916 #1(미예고 방송 발견까지 tick 텀만큼 지연)의 근본 대응.
-    실패해도 non-fatal(다음 light tick 이 안전망으로 회수).
+    로컬 = `_local/raw/`. (v4, 2026-10-03 운영자 결정) 클라우드 = 데이터 저장소의 `monitoring` 브랜치(`RAW_BRANCH`).
+    데이터 저장소는 공개 — 이미 공개 중인 `tweet_archive.json` 원문과 같은 수준. `RAW_BRANCH` 가 없으면(설정 누락)
+    없는 브랜치에 쓰지 않도록 건너뛴다.
+    """
+    if not raw or (not storage.is_local() and not os.environ.get("RAW_BRANCH", "").strip()):
+        return
+    try:
+        from . import rawlog
+        rawlog.append_raw(storage.make_store("raw"), kind=kind, raw=raw, meta=meta, now_iso=now_iso)
+    except Exception:  # noqa: BLE001
+        log.warning("원문 보존 실패(%s)", kind, exc_info=True)
+
+
+def _confirm_rows_with_videos(rows: list[dict], now_iso: str) -> tuple[list[dict], list[str]]:
+    """(v4a D13) 공식 스케줄 행 중 영상 URL(video_id) 이 있는 것은 접수 시점에 videos.list 로 확인해
+    제목 · 썸네일 · 예정 시각을 채우고 upcoming(혹은 이미 live 면 live)으로 올린다.
+
+    API 실패 · 영상 없음이면 그 행은 그대로(announced + video_id) — 다음 reconcile 이 같은 일을 한다.
+    반환: (행 목록, 확인된 video_id 목록). 느린 외부 호출이라 접수 쪽에서 한다(원칙 ④).
+    """
+    vids = [r.get("video_id") for r in rows if r.get("video_id")]
+    api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
+    if not vids or not api_key or YouTubeClient is None:
+        return rows, []
+    try:
+        infos = YouTubeClient(api_key).videos_list(vids)
+    except Exception:  # noqa: BLE001
+        log.warning("공식 스케줄 영상 확인(videos.list) 실패 — 다음 reconcile 에 맡김", exc_info=True)
+        return rows, []
+    out, confirmed, releases = [], [], []
+    channels_cfg = _load_channels_config()
+    for r in rows:
+        info = infos.get(r.get("video_id")) if r.get("video_id") else None
+        if info is None:
+            out.append(r)
+            continue
+        if preview_build.is_group_release(info, channels_cfg):
+            # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 카드로 올리지 않는다(2026-09-30 운영자 결정, 10-01 그룹 채널로 한정)
+            releases.append({"video_id": info.video_id, "channel_id": info.channel_id, "title": info.title,
+                             "scheduled_start": info.scheduled_start, "source": "official_tweet"})
+            continue
+        r = dict(r)
+        r["title"] = info.title or r.get("title")
+        r["thumbnail"] = info.thumbnail or r.get("thumbnail")
+        r["url"] = f"https://www.youtube.com/watch?v={info.video_id}"
+        if info.scheduled_start:
+            r["scheduled_start"] = info.scheduled_start
+            r["api_start_seen"] = info.scheduled_start
+            r["info_source"] = "api"
+        if r.get("title"):
+            r["needs_tl"] = True
+        if info.live_state == "live":
+            r = preview_mod.set_state(r, "live", now_iso)
+            r["actual_start"] = info.actual_start or now_iso
+        else:
+            promoted = preview_mod.promote_state(r)
+            if promoted != r.get("state"):
+                r = preview_mod.set_state(r, promoted, now_iso)
+        out.append(r)
+        confirmed.append(info.video_id)
+    if releases:
+        try:
+            writeclient.call_write("video_release", gh=None, entries=releases, now_iso=now_iso, label="프리미어 기록")
+        except Exception:  # noqa: BLE001
+            log.warning("프리미어 기록 실패", exc_info=True)
+    return out, confirmed
+
+
+def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
+    """(v3.6) URL 확정 예고 반영 직후 즉시 확인 예약 — light tick 을 안 기다리고 live/watching 전이를 바로.
+    (v4) `apply.enqueue_reconcile`(로컬 = 적용 큐, 클라우드 = Cloud Tasks /wake). 실패해도 non-fatal(다음 light tick 이 회수).
     """
     try:
-        from .tasks import TaskQueue
-        tq = TaskQueue(
-            project=os.environ.get("GCP_PROJECT", "").strip(),
-            location=os.environ.get("GCP_LOCATION", "").strip(),
-            queue=os.environ.get("TASKS_QUEUE", "").strip(),
-            target_url=os.environ.get("SERVICE_URL", "").strip().rstrip("/"),
-            invoker_sa=os.environ.get("INVOKER_SA", "").strip(),
-        )
-        tq.enqueue_wake(video_id, schedule_time_iso)
-    except Exception:
-        log.debug("URL 확정 예고: wake enqueue 실패 (다음 light tick 에서 회수)")
+        from . import apply
+        apply.enqueue_reconcile(video_id=video_id, run_at_iso=schedule_time_iso)
+    except Exception:  # noqa: BLE001
+        log.debug("즉시 확인 예약 실패 (다음 light tick 에서 회수)", exc_info=True)
 
 
 def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
@@ -2786,7 +3414,7 @@ def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
 
 def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list[str],
                                channels_cfg: dict, now_iso: str, via: str,
-                               flow: str = "tweet") -> list[str]:
+                               flow: str = "tweet", status: dict | None = None) -> list[str]:
     """(v3.8.6) 트윗/릴레이 텍스트에 이름이 언급된 게스트 후보를 LLM으로 최종 확인.
 
     발동시점(2026-09-22 확정) — 아래 **둘 중 하나라도** 해당하면 무조건 호출:
@@ -2801,6 +3429,8 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
     GROQ_API_KEY 없거나 LLM 5회 모두 실패하면 안전한 기본값(게스트 미추가) — 등록
     자체(호스트 채널·author 콜라보)는 이 판정과 무관하게 이미 확정돼 있으므로 막지 않는다.
     `flow`: 모니터 이벤트 로그 분류용("tweet" 개인트윗 경로 | "relay" 공식 계정 릴레이 경로).
+    `status`: (v4a) 주면 LLM 이 실제로 판정했을 때 `status["decided"]=True` — 빈 결과가 "아무도 게스트 아님" 판정인지
+    인프라 실패(키 없음 · 5회 실패)인지 호출부가 가르기 위함(판정만 LLM 판단 기록에 남긴다).
     """
     if not guest_keys:
         return []
@@ -2824,6 +3454,8 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
         _log_event_safe(gh, now_iso, flow, RESULT_DEGRADED, who=host_key,
                   detail="collab-guest skip: collab_partners() 5회 모두 실패 — 미추가", via=via)
         return []
+    if status is not None:
+        status["decided"] = True
     return [name_to_key[n] for n in confirmed if n in name_to_key]
 
 
@@ -2840,10 +3472,20 @@ def _confirm_relay_rows_collab(gh, raw: str, rows: list[dict], channels_cfg: dic
     for row in rows:
         if row.get("host") == "group" or not row.get("collab_with"):
             continue
+        st: dict = {}
         confirmed = _confirm_llm_collab_guests(
             gh, raw, host_key=row["channel_key"], guest_keys=list(row["collab_with"]),
-            channels_cfg=channels_cfg, now_iso=now_iso, via=via, flow="relay",
+            channels_cfg=channels_cfg, now_iso=now_iso, via=via, flow="relay", status=st,
         )
+        rejected = [g for g in row["collab_with"] if g not in confirmed]
+        if rejected and st.get("decided"):
+            # (v4a) 게스트를 빼는 LLM 판단도 기록(검토용 — 되돌릴 데이터 없음. 틀렸으면 예고 탭 수정으로 합동 멤버를 넣는다)
+            _llm_record(gh, "collab_guest", row["channel_key"],
+                        f"공식 스케줄 합동 줄 — 게스트 아님 판정 {','.join(rejected)} · "
+                        f"{_kst_label(row.get('scheduled_start'))} {(row.get('title') or '')[:24]}".strip(), now_iso=now_iso,
+                        input=_inp(raw, host_key=row["channel_key"], guest_keys=list(row["collab_with"]),
+                                   target={"channel_key": row["channel_key"], "start": row.get("scheduled_start"),
+                                           "video_id": row.get("video_id")}))
         row["collab_with"] = confirmed or None
         if not confirmed and row.get("kind") == "collab":
             row["kind"] = None
@@ -2880,8 +3522,95 @@ def _parse_kst_mmdd_hhmm(text: str | None, now_iso: str) -> str | None:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_DOW_KO = "월화수목금토일"
+
+
+def _change_candidates(items: list[dict], channel_key: str, limit: int = 8) -> list[dict]:
+    """(v4a) 취소·변경 판정 후보 = channel_key 가 **호스트**인 활성(announced~live) 예고, 시각 오름차순 최대 limit 개.
+    게스트(collab_with)로만 엮인 예고는 대상 아님(2026-09-22 확정)."""
+    act = [it for it in (items or [])
+           if it.get("channel_key") == channel_key and it.get("state") in xtweet._ACTIVE_STATES]
+    act.sort(key=lambda x: x.get("scheduled_start") or "9999-99-99T99:99:99Z")
+    return act[:limit]
+
+
+def _kst_label(iso: str | None) -> str:
+    try:
+        return datetime.fromisoformat((iso or "").replace("Z", "+00:00")).astimezone(KST).strftime("%m/%d %H:%M")
+    except (ValueError, AttributeError):
+        return "시각 미정"
+
+
+def _detect_broadcast_change(raw: str, channel_key: str, now_iso: str, items: list[dict]) -> dict | None:
+    """(v4a) 글에서 방송 취소·변경을 감지하고 **영향받는 예고를 선택**한다(자동 인입 · 관리 페이지 공용).
+
+    반환 {"action": "del"|"edit"|"none", "target_ids": [...], "when_iso": str|None, "candidates": [item...], "reason": str}.
+    reason = LLM 의 판정 근거 한 문장("없음"일 때도 있다). LLM 을 못 부른 경우(후보 없음)는 그 사유.
+    후보가 없으면 LLM 호출 없이 none. LLM 사용 불가 · 5회 실패 → None(호출부는 아무것도 안 바꾸고 알린다).
+    LLM 이 후보 밖 id 를 주거나 edit 인데 시각 파싱이 안 되면 그 부분을 버리고 none 으로 내린다."""
+    cands = _change_candidates(items, channel_key)
+    none = {"action": "none", "target_ids": [], "when_iso": None, "candidates": cands,
+            "reason": "이 호스트의 활성 예고가 없어 판정하지 않았습니다"}
+    if not cands or xtweet is None:
+        return none
+    fc = _review_forced("change")        # 사용자 판단 — 운영자가 고른 대상 · 시각으로 LLM 을 건너뛴다
+    if fc is not None:
+        valid = {c["id"] for c in cands}
+        ids = [i for i in fc.get("target_ids") or [] if i in valid]
+        when_iso = _kst_local_to_utc(fc.get("when")) if fc.get("action") == "edit" else None
+        if not ids or (fc.get("action") == "edit" and not when_iso):
+            return dict(none, reason="사용자 판단: 대상 예고 또는 변경 시각이 올바르지 않아 반영하지 않음")
+        return {"action": fc["action"], "target_ids": ids, "when_iso": when_iso, "candidates": cands,
+                "reason": "사용자 판단"}
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if not groq_key:
+        log.warning("GROQ_API_KEY 없음 — 방송 취소/변경 판정 스킵")
+        return None
+    from .llm import LLMClient
+    try:
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(KST)
+    except (ValueError, AttributeError):
+        now_dt = datetime.now(KST)
+    now_label = f"{now_dt.strftime('%m/%d')}({_DOW_KO[now_dt.weekday()]}) {now_dt.strftime('%H:%M')}"
+    res = LLMClient(groq_key).broadcast_change_targets(
+        raw, [{"id": c["id"], "when": _kst_label(c.get("scheduled_start")),
+               "title": (c.get("title_ko") or c.get("title") or "(제목 없음)")[:60]} for c in cands], now_label)
+    if res is None:
+        return None
+    valid = {c["id"] for c in cands}
+    ids = [i for i in res["target_ids"] if i in valid]
+    action, when_iso, reason = res["action"], None, res.get("reason") or ""
+    if action == "edit":
+        when_iso = _parse_kst_mmdd_hhmm(res.get("when"), now_iso)
+        if not when_iso:
+            action, reason = "none", f"{reason} (변경 시각을 해석하지 못해 미반영)".strip()
+    if action in ("del", "edit") and not ids:
+        action, reason = "none", f"{reason} (대상 방송을 특정하지 못해 미반영)".strip()
+    if action == "none":
+        ids, when_iso = [], None
+    return {"action": action, "target_ids": ids, "when_iso": when_iso, "candidates": cands, "reason": reason}
+
+
+def _terminate_broadcast(gh, item: dict, now_iso: str, action: str) -> bool:
+    """(v4a) `/del` 의 terminate 와 동일 — 예고 삭제(아카이브) + 그 영상 URL 을 12h 재등록 차단.
+    영상 URL 이 없으면(채널 자리표시) 차단은 생략하고 일반 삭제만 한다. 삭제됐으면 True."""
+    removed = writeclient.call_write(
+        "remove_broadcast", gh=gh, snapshot=item, now_iso=now_iso, action=action,
+    ).get("removed")
+    url = item.get("url")
+    if removed and url and xtweet.YT_VIDEO_RE.search(url):
+        try:
+            st, sh = gh.read_json(_ADMIN_STATE_PATH)
+            gh.write_json(_ADMIN_STATE_PATH,
+                          admin.add_suppress(st or admin.default_admin_state(), url=url, now_iso=now_iso),
+                          prev_sha=sh, message=f"data: suppress += {url} {now_iso}")
+        except Exception:  # noqa: BLE001
+            log.exception("suppress 추가 실패")
+    return bool(removed)
+
+
 def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
-                            channels_cfg: dict, *, via: str = "ingest") -> None:
+                            channels_cfg: dict, *, via: str = "ingest", tag: str | None = None) -> None:
     """(v3.8.7) 개인 트윗에 `配信` 키워드가 있으면, 그 멤버가 **호스트**인 기존 예고를
     취소·변경하는 글인지 LLM 으로 판정해 반영한다.
 
@@ -2894,60 +3623,79 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
     재사용 — state="none" 패치는 그 안에서 `_activate_state_edit`(즉시 제거+아카이브)
     까지 자동으로 이어진다.
     """
-    if _BROADCAST_KEYWORD not in (raw or "") or xtweet is None:
+    if (_BROADCAST_KEYWORD not in (raw or "") and _review_forced("change") is None) or xtweet is None:
         return
     try:
         prev, _ = gh.read_json(_PREVIEW_PATH)
     except Exception:
         log.exception("방송 취소/변경 판정: preview.json 조회 실패")
         return
-    target = xtweet.find_active_item((prev or {}).get("items", []) or [], channel_key)
-    if target is None:
+    items = (prev or {}).get("items", []) or []
+    if xtweet.find_active_item(items, channel_key) is None:
         return   # 취소/변경할 활성 예고 자체가 없음 — LLM 호출 비용 절감
 
-    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not groq_key:
-        log.warning("GROQ_API_KEY 없음 — 방송 취소/변경 판정 스킵")
+    # (v4a) 영향받는 방송을 LLM 이 후보 목록에서 **선택** — "오늘 휴방"이면 오늘 방송 전부, "아침만"이면 그것만.
+    # 삭제는 `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다)
+    plan = _detect_broadcast_change(raw, channel_key, now_iso, items)
+    if plan is None:
+        log.warning("방송 취소/변경 판정: LLM 사용 불가 또는 5회 모두 실패 — 미반영")
         _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
-                  detail="broadcast-change skip: GROQ_API_KEY 미설정", via=via)
+                        detail="broadcast-change skip: 판정 실패(GROQ 키 없음 또는 5회 모두 실패)", via=via)
         return
-
-    from .llm import LLMClient
-    result = LLMClient(groq_key).broadcast_change(raw)
-    if result is None:
-        log.warning("방송 취소/변경 판정: LLM 5회 모두 실패 — 미반영")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
-                  detail="broadcast-change skip: broadcast_change() 5회 모두 실패", via=via)
-        return
-
-    action = result.get("action")
-    if action == "del":
-        patch = {"state": "none"}
-        pre = {"state": target.get("state")}
-        label = f"{channel_key} 방송 취소(LLM)"
-    elif action == "edit":
-        new_iso = _parse_kst_mmdd_hhmm(result.get("when"), now_iso)
-        if not new_iso:
-            log.warning("방송 취소/변경 판정: edit 인데 when 파싱 실패 — 미반영 (%r)", result.get("when"))
-            return
-        patch = {"date": new_iso}
-        pre = {"date": target.get("scheduled_start")}
-        label = f"{channel_key} 방송 일정변경(LLM)"
-    else:
-        return   # action == "none" — 취소/변경 아님
-
-    ctx = {"id": target["id"], "patch": patch, "pre": pre}
-    try:
-        writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx, label=label)
-    except Exception:
-        log.exception("방송 취소/변경 반영 실패")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
-                  detail="broadcast-change write 실패 — 취소/변경 유실", via=via)
+    # 근거는 "없음"이어도 남긴다 — 놓친 취소를 나중에 확인하고 프롬프트를 조정하는 자료(2026-09-30 운영자 요청)
+    _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                    detail=f"broadcast-change {plan['action']} · {plan.get('reason') or '(근거 없음)'}"
+                           + (f" · 대상 {len(plan['target_ids'])}건" if plan["target_ids"] else ""))
+    if plan["action"] == "none":
+        if plan["candidates"]:        # 후보가 있어 LLM 이 실제로 판단한 경우만(검토용)
+            _llm_record(gh, "broadcast_change", channel_key, "방송 취소 · 변경 아님", plan.get("reason"), now_iso=now_iso,
+                        input=_inp(raw, channel_key=channel_key, tag=tag))
+        return   # 취소/변경 아님, 또는 어느 방송인지 특정 불가
+    by_id = {c["id"]: c for c in plan["candidates"]}
+    removed, unsup, changes = [], [], []
+    for iid in plan["target_ids"]:
+        target = by_id[iid]
+        try:
+            if plan["action"] == "del":
+                if _terminate_broadcast(gh, target, now_iso, f"{channel_key} 방송 취소(LLM)"):
+                    removed.append(target)
+                    if target.get("url") and xtweet.YT_VIDEO_RE.search(target["url"]):
+                        unsup.append(target["url"])
+            else:
+                ctx = {"id": iid, "patch": {"date": plan["when_iso"]},
+                       "pre": {"date": target.get("scheduled_start")}}
+                writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, ctx=ctx,
+                                       label=f"{channel_key} 방송 일정변경(LLM)")
+                changes.append({"id": iid, "field": "scheduled_start", "from": target.get("scheduled_start"),
+                                "to": plan["when_iso"]})
+        except Exception:
+            log.exception("방송 취소/변경 반영 실패")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+                            detail=f"broadcast-change write 실패 — 취소/변경 유실 ({iid})", via=via)
+    if removed or changes:
+        # (v4a) 예고를 내리거나 옮기게 한 글도 원문 보존(D19 확장, 2026-10-01 운영자 결정) — tweets.json 은 48h 뒤 사라진다.
+        # 판정 근거 · 대상과 함께 남겨 LLM 판단 되돌리기 · 프롬프트 조정의 자료로 쓴다
+        _preserve_raw("broadcast_change", raw, {
+            "channel_key": channel_key, "action": plan["action"], "via": via, "tag": tag, "reason": plan.get("reason"),
+            "targets": [f"{_kst_label(x.get('scheduled_start'))} {(x.get('title_ko') or x.get('title') or '')[:24]}".strip()
+                        for x in removed] + [f"{_kst_label(c['from'])} → {_kst_label(c['to'])}" for c in changes],
+        }, now_iso)
+    if removed:
+        _llm_record(gh, "broadcast_change", channel_key,
+                    f"방송 취소 {len(removed)}건 — " + " / ".join(
+                        f"{_kst_label(x.get('scheduled_start'))} {(x.get('title_ko') or x.get('title') or '')[:24]}" for x in removed),
+                    plan.get("reason"), undo={"type": "restore_items", "items": removed, "unsuppress": unsup},
+                    now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag))
+    if changes:
+        _llm_record(gh, "broadcast_change", channel_key,
+                    f"방송 시각 변경 {len(changes)}건 → {_kst_label(plan['when_iso'])}", plan.get("reason"),
+                    undo={"type": "restore_fields", "changes": changes}, now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag))
 
 
 def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
                                   channels_cfg: dict, *, via: str = "ingest",
-                                  quote: str | None = None) -> bool:
+                                  quote: str | None = None, tag: str | None = None,
+                                  media: list | None = None) -> bool:
     """(v3.6) 원문에 유튜브 URL 이 있으면 `videos.list` 로 즉시 메타 확정해 반영.
 
     설계(2026-09-16 대화):
@@ -2979,6 +3727,14 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
     if not m:
         return False
     video_id = m.group(1)
+    # (v4a) 인용문이 공식 일일 스케줄이면 그 안의 영상 · 이름은 그날 각자의 방송이다(2026-10-01 운영자 결정). 실측 오탐(09-23):
+    # 노노카가 스케줄을 인용하며 자기 23:00 방송을 알렸는데, 본문엔 URL 이 없고 인용문의 첫 영상이 미야코 방송이라 노노카가
+    # 그 방송의 게스트로 붙었다. 그래서 ① 영상 URL 이 본문엔 없고 스케줄 인용문에만 있으면 작성자를 게스트로 넣지 않고
+    # ② 게스트 이름 찾기 · LLM 게스트 확인에 스케줄 인용문을 쓰지 않는다(안 그러면 인용문의 「宮永ののか」로 다시 붙는다).
+    # 멤버 예고 인용(09-22 리츠 → 유노)처럼 스케줄이 아닌 인용은 그대로 — 작성자 게스트 · 이름 탐색 모두 인용문 포함.
+    official_quote = xrelay.is_daily_schedule(quote)
+    url_only_in_official_quote = official_quote and not xrelay.YT_VIDEO_RE.search(xrelay.normalize(raw))
+    guest_text = raw if official_quote else search_text
 
     api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not api_key:
@@ -2999,31 +3755,98 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         # 케이스(회원전용·삭제 등)라 monitor 에는 안 남긴다.
         return False
 
+    if info.live_state == "none" and getattr(info, "actual_end", None):
+        # (v4, 2026-10-03 스테이징 재현) 이미 끝난 방송은 예고에 올리지 않는다 — 공식 일일 스케줄을 인용한 휴방 글이
+        # 끝난 미야코 방송(7sBzjBKAxFQ)을 upcoming 카드로 되살렸다(다음 확인이 지울 때까지 팬 화면에 「예정」 + 예고 DM).
+        # 방송 후기 · 다시보기 안내처럼 끝난 영상 URL 을 단 글도 같은 경우다.
+        log.info("URL 확정 예고: %s 는 이미 끝난 방송(종료 %s) — 예고에 안 올림", video_id, info.actual_end)
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"url-schedule skip: 이미 끝난 방송 {video_id}")
+        return True
+
+    if preview_build.is_group_release(info, channels_cfg):
+        # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 예고로 올리지 않는다. 歌枠 같은 노래 생방송은 해당 없음.
+        # 멤버 개인 채널 프리미어는 방송 카드로 올린다(2026-10-01 운영자 결정)
+        log.info("URL 확정 예고: %s 는 그룹 채널 프리미어(녹화 영상) — 방송 카드로 안 올림", video_id)
+        try:
+            writeclient.call_write("video_release", gh=gh, now_iso=now_iso, label="프리미어 기록", entries=[{
+                "video_id": video_id, "channel_id": info.channel_id, "title": info.title,
+                "scheduled_start": info.scheduled_start, "source": f"tweet:{channel_key}"}])
+        except Exception:  # noqa: BLE001
+            log.warning("프리미어 기록 실패", exc_info=True)
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"url-schedule skip: 프리미어(녹화 영상) {video_id}")
+        return True
+
     host_key, host, collab_with = xtweet.resolve_url_host(info.channel_id, channel_key, channels_cfg)
+    if url_only_in_official_quote and host is None and collab_with == [channel_key]:
+        log.info("URL 확정 예고: %s 는 인용한 공식 스케줄에만 있는 %s 방송 — 작성자(%s)를 게스트로 넣지 않음",
+                 video_id, host_key, channel_key)
+        collab_with = None
+
+    if host == "group":
+        # (v4a) 그룹 공식 채널 영상 — 5인 합동으로 바로 올리지 않는다(2026-09-30 운영자 결정). 근거 = 글(본문 + 인용)의
+        # 정식 이름 · 인원 표현 → 영상 제목의 정식 이름 → 첨부 이미지 OCR. 작성자 본인을 자동으로 넣지는 않는다.
+        # 근거가 없으면 확인 대기(관리 페이지에서 멤버 선택)로 적고 끝낸다. 이미 예고에 있는 영상이면 참여 멤버를 건드리지 않는다.
+        try:
+            _pv, _ = gh.read_json(_PREVIEW_PATH)
+        except Exception:  # noqa: BLE001
+            _pv = None
+        if any(i.get("video_id") == video_id for i in (_pv or {}).get("items") or []):
+            log.info("URL 확정 예고: 그룹 영상 %s 은 이미 예고에 있음 — 참여 멤버 유지", video_id)
+            return True
+        members, basis = xrelay.members_evidence(search_text)
+        if not members:
+            members, basis = xrelay.members_evidence(info.title)
+        ocr_state = None
+        if not members:
+            _ocr_media = media if media is not None else _tweet_media_by_tag(tag)
+            members, ocr_state = _ocr_cast_keys(_ocr_media)
+            basis = "ocr" if members else ""
+        if not members:
+            _record_group_pending(gh, [{
+                "video_id": video_id, "url": f"https://www.youtube.com/watch?v={video_id}", "title": info.title,
+                "scheduled_start": info.scheduled_start or info.actual_start or now_iso, "kind": "member_tweet",
+                "ocr": ocr_state, "suggested": [], "source": channel_key,
+                "tweet_url": _tweet_url_from_tag(tag) if tag else None,
+            }], now_iso)
+            return True
+        host_key, collab_with = members[0], (members[1:] or None)
+        host = "group" if collab_with else None
+        ocr_group = basis == "ocr"
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"group-video members {basis} · {','.join(members)} · {video_id}")
 
     if host_key is not None and host is None:
         # (v3.8.3) 본인 채널 합동 — 제목/원문에 다른 멤버 정식 표기가 있으면 게스트 후보.
         # (v3.8.6) 언급됐다고 곧장 확정하지 않고 LLM 으로 "실제로 같이 나오는 방송인가"
         # 재확인한다 — 이름 언급이 안부 인사·잡담일 수도 있어 오탐 위험(find_guest_members
         # 는 "정식 표기가 나온다"만 볼 뿐 문맥은 모른다).
-        guests = xtweet.find_guest_members(channels_cfg, host_key, info.title, search_text)
+        guest_cands = xtweet.find_guest_members(channels_cfg, host_key, info.title, guest_text)
         guests = _confirm_llm_collab_guests(
-            gh, search_text, host_key=host_key, guest_keys=guests,
+            gh, guest_text, host_key=host_key, guest_keys=guest_cands,
             channels_cfg=channels_cfg, now_iso=now_iso, via=via,
         )
-        merged = [*(collab_with or []), *[g for g in guests if g not in (collab_with or [])]]
+        llm_guests = [g for g in guests if g not in (collab_with or [])]
+        rejected = [g for g in guest_cands if g not in guests]
+        if rejected:
+            _llm_record(gh, "collab_guest", host_key, f"게스트 아님 판정 — {','.join(rejected)} · {(info.title or '')[:30]}",
+                        now_iso=now_iso, input=_inp(guest_text, host_key=host_key, guest_keys=guest_cands,
+                                                    target={"video_id": video_id}))
+        merged = [*(collab_with or []), *llm_guests]
         collab_with = merged or None
 
     if host_key is None:
         groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-        if not groq_key:
+        _fpart = _review_forced("part") is True       # 사용자 판단 — 참여로 등록(LLM 확인만 건너뜀)
+        if not groq_key and not _fpart:
             log.warning("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
             _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
                       detail="url-schedule skip: GROQ_API_KEY 미설정 — 참여판정 불가, 미등록", via=via)
             return True
         author_name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
         from .llm import LLMClient
-        ok = LLMClient(groq_key).participation(raw, member_name=author_name)
+        ok = True if _fpart else LLMClient(groq_key).participation(raw, member_name=author_name)
         if ok is None:
             # LLM 5회 재시도 모두 실패(infra) — "무관하다고 확인됨"과는 다르다, monitor 에 남긴다.
             log.warning("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
@@ -3032,12 +3855,20 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
             return True
         if ok is not True:
             log.info("URL 확정 예고: 외부 채널 + LLM 미확인(%s) — 스킵", ok)
+            _llm_record(gh, "participation", channel_key, f"외부 채널 영상 — 참여 아님 · {(info.title or '')[:40]}",
+                        now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote, media=media, video_id=video_id))
             return True
         host_key, host, collab_with = channel_key, None, None
+        llm_participation = True
 
     new_item, next_check_at = xtweet.build_item_from_video(
         info, channel_key=host_key, host=host, collab_with=collab_with, now_iso=now_iso,
     )
+    try:                                  # 되돌리기용 — 같은 영상의 기존 항목(있으면)
+        _pv0, _ = gh.read_json(_PREVIEW_PATH)
+        _pre = next((i for i in (_pv0 or {}).get("items") or [] if i.get("video_id") == video_id), None)
+    except Exception:  # noqa: BLE001
+        _pre = None
 
     # (WP-3b) 커밋은 백엔드 잡에서 — call_write 로 위임
     try:
@@ -3053,11 +3884,28 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         return True
 
     if changed:
+        _undo_item = ({"type": "replace_items", "items": [_pre]} if _pre
+                      else {"type": "remove_items", "items": [{"video_id": video_id}]})
+        if locals().get("llm_participation"):
+            _llm_record(gh, "participation", channel_key, f"외부 채널 영상에 참여로 판정 → 예고 등록 · {(info.title or '')[:40]}",
+                        undo=_undo_item, now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote, media=media, video_id=video_id))
+        if locals().get("llm_guests"):
+            _llm_record(gh, "collab_guest", host_key, f"게스트 {','.join(llm_guests)} 합동으로 판정 · {(info.title or '')[:30]}",
+                        undo={"type": "remove_guests", "video_id": video_id, "guests": llm_guests}, now_iso=now_iso,
+                        input=_inp(guest_text, host_key=host_key, guest_keys=guest_cands, target={"video_id": video_id}))
+        if locals().get("ocr_group"):
+            _llm_record(gh, "ocr_members", channel_key, f"이미지 OCR 로 참여 멤버 판정 — {','.join(members)} · {(info.title or '')[:30]}",
+                        undo={"type": "remove_items", "items": [{"video_id": video_id}], "to_pending": [{
+                            "video_id": video_id, "url": f"https://www.youtube.com/watch?v={video_id}", "title": info.title,
+                            "scheduled_start": info.scheduled_start or now_iso, "kind": "member_tweet", "ocr": "ok",
+                            "suggested": members, "source": channel_key}]}, now_iso=now_iso,
+                        input=_inp(video_id=video_id, title=info.title, media=list(locals().get("_ocr_media") or []),
+                                   scheduled_start=info.scheduled_start or now_iso, kind="member_tweet", source=channel_key))
         name = channels_cfg.get("channels", {}).get(host_key, {}).get("name_ko", host_key)
         state_label = {"live": "🔴 라이브 중", "watching": "⏳ 시작 임박",
                        "upcoming": "📅 예정"}.get(new_item.get("state"), new_item.get("state"))
         _auto_dm(
-            gh, "scheduled",
+            gh, "announced",   # (v4a) v3 에서 scheduled → announced 로 개명됐는데 여기만 옛 이름이라 어느 레벨에서도 안 나갔다
             f"📅 <b>{html.escape(name)}</b> URL 확정 예고 반영 → {state_label}"
             f"\n{html.escape(new_item.get('url') or '')}",
         )
@@ -3145,7 +3993,8 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
 
     channels_cfg = _load_channels_config()
     if _maybe_url_confirmed_schedule(gh, raw, channel_key, now_iso, channels_cfg, via=via,
-                                     quote=quote):
+                                     quote=quote, tag=tag):
+        _preserve_raw("personal_schedule_url", raw, {"channel_key": channel_key, "tag": tag}, now_iso)
         return   # 유튜브 URL 이 있었음(raw 또는 quote) — 반영/스킵 여부와 무관하게 아래로 안 넘어감
     if _maybe_nonyt_url_notice(gh, raw, tag, now_iso):
         return   # 비유튜브 URL 이 있었음 — 소식 경로가 처리(등록/스킵 모두 포함)
@@ -3158,15 +4007,17 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     if not row:
         return
+    _preserve_raw("personal_schedule_candidate", raw, {"channel_key": channel_key, "tag": tag}, now_iso)
 
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not groq_key:
+    _fown = _review_forced("own") is True       # 사용자 판단 — 예고로 등록(LLM 최종 확인만 건너뜀)
+    if not groq_key and not _fown:
         log.warning("GROQ_API_KEY 없음 — 텍스트 예고 최종 확인 불가, 미등록(안전한 실패)")
         _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
                         detail="text-schedule skip: GROQ_API_KEY 미설정 — 최종확인 불가, 미등록", via=via)
         return
     from .llm import LLMClient
-    confirmed = LLMClient(groq_key).announces_own_broadcast(raw)
+    confirmed = True if _fown else LLMClient(groq_key).announces_own_broadcast(raw)
     if confirmed is None:
         # LLM 5회 재시도 모두 실패(infra) — "예고 아님"으로 확인된 것과는 다르다, monitor 에 남긴다.
         log.warning("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
@@ -3175,8 +4026,14 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     if confirmed is not True:
         log.info("텍스트 예고 후보 — LLM 최종 확인 미통과(%s) → 미등록", confirmed)
+        _llm_record(gh, "own_broadcast", channel_key, f"본인 방송 예고 아님 — {raw[:60]}", now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
         return
 
+    try:                                  # 되돌리기용 — 합쳐질 기존 항목(있으면)의 합치기 전 모습
+        _pv0, _ = gh.read_json(_PREVIEW_PATH)
+        _pre = preview_mod.match_item((_pv0 or {}).get("items") or [], row)
+    except Exception:  # noqa: BLE001
+        _pre = None
     try:
         res = writeclient.call_write("merge_rows", gh=gh, rows=[row], now_iso=now_iso,
                                      message=f"data: personal schedule {channel_key} {now_iso}",
@@ -3187,9 +4044,13 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         log.exception("personal schedule 반영 실패")
         return
     when = "시간 미정" if row.get("time_tbd") else xrelay._jst_hm(row.get("scheduled_start")) + " JST"
+    if changed:
+        _llm_record(gh, "own_broadcast", channel_key, f"본인 예고로 등록 — {when} · {raw[:40]}",
+                    undo=({"type": "replace_items", "items": [_pre]} if _pre
+                          else {"type": "remove_items", "items": [{"id": row.get("id")}]}), now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
     link = row.get("url") or ""
     _auto_dm(
-        gh, "scheduled",
+        gh, "announced",   # (v4a) 옛 이름 scheduled — 레벨 표에 없어 v3.0 부터 안 나갔다
         f"📅 <b>{html.escape(name)}</b> 본인 예고 감지 → {when}"
         + (f"\n{html.escape(link)}" if link else "")
         + ("\n\n↩️ /undo 로 되돌릴 수 있습니다." if changed else ""),
@@ -3529,6 +4390,765 @@ def _make_vision_client():
         return None
 
 
+def _ocr_cast_keys(media: list[str] | None, limit: int = 4) -> tuple[list[str], str]:
+    """(v4a) 트윗 첨부 이미지를 비전 OCR 로 읽어 참여 멤버(5인 key)를 제안한다(관리 페이지 참여 멤버 선택 팝업용).
+    출연진 패널이 아닌 이미지는 건너뛰고 앞에서 `limit` 장까지 본다. 반환 (keys, 상태) — 상태:
+    ok(멤버 판독) · none(이미지는 있으나 판독 실패/매칭 없음) · no_image · unavailable(키·모델 없음)."""
+    if not media:
+        return [], "no_image"
+    vc = _make_vision_client()
+    if vc is None or xrelay is None:
+        return [], "unavailable"
+    for url in list(media)[:limit]:
+        try:
+            names = vc.cast_names(image_url=url)
+        except Exception:  # noqa: BLE001
+            log.warning("cast OCR 실패 (%s)", url, exc_info=True)
+            continue
+        if not names:
+            continue
+        matched: list[str] = []
+        for name in names:
+            for token, key in xrelay.NAME_TO_KEY:
+                if token in name and key not in matched:
+                    matched.append(key)
+        if matched:
+            log.info("cast OCR(관리 페이지): %s → %s", names, matched)
+            return [k for k in xrelay.ALL_KEYS if k in matched], "ok"
+    return [], "none"
+
+
+# ─── (v4a) LLM 판단 기록 · 되돌리기 (2026-09-30 운영자 요청) ─────────────────────────────────────────────
+# LLM 판단에 기대는 만큼 운영자가 개입할 장치 — 자동 인입에서 LLM 이 내린 판단을 ops `llm_actions.json` 에 남기고(작업 탭 「LLM 판단」
+# 필터), 데이터를 바꾼 판단은 되돌리기 정보(undo)를 함께 적는다. 되돌리기는 적용 큐에서 **그때 바뀐 항목만** 되돌리며, 그 뒤에 다른 이유로
+# 이미 바뀐 항목은 건드리지 않는다(건너뜀으로 보고). "아님" 판단(예고 아님 · 참여 아님 · 취소 아님 · 중복 소식)은 검토용 — 되돌릴 데이터가
+# 없으니 원문 투입으로 직접 넣는다. 번역 · 소식 제목 추출은 판단이 아니라 제외.
+_LLM_ACTIONS_PATH = "llm_actions.json"
+_LLM_ACTIONS_MAX = 300
+
+
+# ── (2026-10-02) 반려 · 재판단 · 사용자 판단 ──────────────────────────────────────────────────
+# 「되돌리기」를 「반려」로 바꾸고, 반려된 판단은 **LLM 재판단**(기록해 둔 입력으로 같은 판정을 반려 힌트와 함께 다시) 또는
+# **사용자 판단**(운영자가 결과를 직접 정함)으로 이어 간다. 새 판단은 `parent_id` 로 반려한 기록에 이어져 다시 반려할 수 있다.
+# 설계 · 7가지 판단별 시나리오: ref/v4a/v4a_llm_review_scenarios.md.
+_REVIEW: contextvars.ContextVar[dict | None] = contextvars.ContextVar("llm_review", default=None)
+_NOFORCE = object()
+
+
+def _review_forced(key: str, default=None):
+    """재판단 · 사용자 판단 중 운영자가 정해 준 값(없으면 default). 각 판정 호출부가 LLM 을 부르기 전에 먼저 본다."""
+    ctx = _REVIEW.get()
+    f = (ctx or {}).get("forced") or {}
+    return f[key] if key in f else default
+
+
+def _inp(raw: str | None = None, **kw) -> dict:
+    """판단 기록의 입력 스냅샷 — 재판단이 같은 판정을 다시 돌릴 재료. 원문은 2000자까지."""
+    d = {k: v for k, v in kw.items() if v not in (None, "", [], {})}
+    if raw is not None:
+        d["raw"] = (raw or "")[:2000]
+    return d
+
+
+def _llm_record(gh, kind: str, who: str, summary: str, reason: str = "", *, undo: dict | None = None,
+                now_iso: str | None = None, input: dict | None = None) -> str | None:
+    """LLM 판단 1건을 기록하고 지금 흐름에 표시한다. 기록 실패는 본 처리에 영향을 주지 않는다. 기록 id.
+    input = 재판단용 입력 스냅샷(`_inp`). 재판단 · 사용자 판단 중이면 parent_id · by 가 붙는다."""
+    import uuid
+    now_iso = now_iso or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ctx = _REVIEW.get()
+    entry = {"id": "llm_" + uuid.uuid4().hex[:10], "ts": now_iso, "kind": kind, "who": who or "",
+             "summary": (summary or "")[:200], "reason": (reason or "")[:300], "undo": undo, "undone": None,
+             "flow_id": flowtrace.current.get(), "input": input or None, "followup": None,
+             "parent_id": (ctx or {}).get("parent"), "by": (ctx or {}).get("by") or "llm"}
+    try:
+        writeclient.call_write("llm_action", gh=gh, op="add", entry=entry, now_iso=now_iso, label="LLM 판단 기록")
+    except Exception:  # noqa: BLE001
+        log.warning("LLM 판단 기록 실패", exc_info=True)
+        return None
+    if ctx is not None:
+        ctx.setdefault("new_ids", []).append(entry["id"])
+    try:
+        flowtrace.add_llm({"id": entry["id"], "kind": kind, "summary": entry["summary"], "undo": bool(undo)})
+    except Exception:  # noqa: BLE001
+        pass
+    return entry["id"]
+
+
+def _llm_actions_read(gh) -> list[dict]:
+    try:
+        cur, _ = gh.read_json(_LLM_ACTIONS_PATH)
+    except Exception:  # noqa: BLE001
+        return []
+    return list((cur or {}).get("items") or [])
+
+
+def _llm_action_commit(gh, op: str, now_iso: str, entry: dict | None = None, action_id: str | None = None,
+                       patch: dict | None = None, guard: bool = False) -> dict:
+    """(적용 큐) op="add" — 기록 추가(최근 300건). op="undo" — 반려(되돌리기) 실행 후 기록에 표시.
+    op="mark" — 기록 필드 갱신(재판단 · 사용자 판단의 followup). guard=True 면 이미 followup 이 있을 때 거절(중복 클릭 방지)."""
+    if op == "undo":
+        return _llm_undo(gh, action_id or "", now_iso)
+    if op == "mark":
+        for _try in range(4):
+            cur, sha = gh.read_json(_LLM_ACTIONS_PATH)
+            items = list((cur or {}).get("items") or [])
+            hit = next((x for x in items if x.get("id") == action_id), None)
+            if hit is None:
+                return {"error": "LLM 판단 기록이 없습니다"}
+            if guard and hit.get("followup"):
+                return {"error": "이미 재판단 · 사용자 판단을 했거나 진행 중입니다"}
+            hit.update(patch or {})
+            try:
+                gh.write_json(_LLM_ACTIONS_PATH, {"items": items}, prev_sha=sha, message=f"ops: LLM 판단 갱신 {action_id}")
+                return {"ok": True}
+            except ConflictError:
+                continue
+        return {"error": "llm_actions 쓰기 충돌이 계속됨"}
+    for _try in range(3):
+        cur, sha = gh.read_json(_LLM_ACTIONS_PATH)
+        items = list((cur or {}).get("items") or [])
+        items.append(entry)
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items[-_LLM_ACTIONS_MAX:]}, prev_sha=sha,
+                          message=f"ops: LLM 판단 기록 {entry.get('kind')} {now_iso}")
+            return {"id": entry.get("id")}
+        except ConflictError:
+            continue
+    raise RuntimeError("llm_actions 쓰기 충돌이 계속됨")
+
+
+def _llm_mark_undone(gh, action_id: str, now_iso: str, applied: list, skipped: list) -> None:
+    """기록에 반려(되돌림) 표시."""
+    for _try in range(3):
+        cur, lsha = gh.read_json(_LLM_ACTIONS_PATH)
+        items2 = list((cur or {}).get("items") or [])
+        for x in items2:
+            if x.get("id") == action_id:
+                x["undone"] = {"at": now_iso, "applied": applied, "skipped": skipped}
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items2}, prev_sha=lsha, message=f"ops: LLM 판단 반려 {action_id}")
+            return
+        except ConflictError:
+            continue
+
+
+def _undo_notice_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
+    """(적용 큐) `restore_notice` 반려 — 「같은 소식」으로 병합된 기존 소식 행을 병합 전 모습으로. 그 글이 병합된 흔적이 없으면 건너뜀."""
+    u = e.get("undo") or {}
+    applied, skipped = [], []
+    for _try in range(1, 4):
+        applied, skipped = [], []
+        cur, sha = gh.read_json(_NOTICES_PATH)
+        cur = cur or notices.default_notices()
+        rows = list(cur.get("notices") or [])
+        row = next((n for n in rows if n.get("id") == u.get("id")), None)
+        if row is None:
+            skipped.append("병합됐던 소식이 이미 없음")
+        elif not u.get("before"):
+            skipped.append("병합 전 모습이 기록되지 않음")
+        elif u.get("parsed_id") not in (row.get("seen_ids") or []) and row.get("id") != u.get("parsed_id"):
+            skipped.append("그 글이 병합된 흔적이 없음(그 뒤 바뀜)")
+        else:
+            rows[rows.index(row)] = dict(u["before"])
+            applied.append(f"소식 병합 취소 — {(u['before'].get('title_ko') or u['before'].get('title') or '')[:30]}")
+            try:
+                gh.write_json(_NOTICES_PATH, dict(cur, notices=rows, generated_at=now_iso), prev_sha=sha,
+                              message=f"data: 소식 판단 반려 {action_id} {now_iso}")
+            except ConflictError:
+                if _try == 3:
+                    raise
+                continue
+        break
+    _llm_mark_undone(gh, action_id, now_iso, applied, skipped)
+    _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=e.get("who") or "", via="ops",
+                    detail=f"LLM 판단 반려 duplicate_notice · {'; '.join(applied) or '; '.join(skipped) or '변화 없음'}")
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": []}
+
+
+def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
+    """(적용 큐) LLM 판단 되돌리기. undo 종류:
+    restore_items(지운 예고 되살림 + 재등록 차단 해제) · restore_fields(바꾼 값 되돌림 — 지금 값이 그때 바꾼 값일 때만) ·
+    remove_items(만든 예고 지움, to_pending 이 있으면 그룹 영상 확인 대기로) · replace_items(합친 예고를 합치기 전으로) ·
+    remove_guests(더한 게스트 뺌). 반환 {"applied": [...], "skipped": [...], "restored_video_ids": [...]}."""
+    entries = _llm_actions_read(gh)
+    e = next((x for x in entries if x.get("id") == action_id), None)
+    # 거절은 예외가 아니라 결과로 — 예외면 적용 큐가 재시도 끝에 "dead"(실패 작업)로 남긴다
+    if e is None:
+        return {"error": "LLM 판단 기록이 없습니다", "applied": [], "skipped": []}
+    if e.get("undone"):
+        return {"error": "이미 반려한 판단입니다", "applied": [], "skipped": []}
+    if e.get("followup"):
+        return {"error": "이미 재판단 · 사용자 판단을 한 기록입니다", "applied": [], "skipped": []}
+    u = e.get("undo")
+    if not u:
+        # 검토용 판단(「아님」 판정) — 롤백할 변경이 없다. 표시만 반려됨으로 바꿔 재판단 · 사용자 판단으로 이어 간다
+        skipped = ["롤백할 변경 없음 (검토용 판단)"]
+        _llm_mark_undone(gh, action_id, now_iso, [], skipped)
+        _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=e.get("who") or "",
+                        detail=f"LLM 판단 반려 {e.get('kind')} · 롤백 없음", via="ops")
+        return {"applied": [], "skipped": skipped, "restored_video_ids": [], "review_only": True}
+    if u.get("type") == "restore_banner":
+        return _undo_banner_action(gh, e, action_id, now_iso)
+    if u.get("type") == "restore_notice":
+        return _undo_notice_action(gh, e, action_id, now_iso)
+    applied, skipped, restored = [], [], []
+    t = u.get("type")
+
+    def label(it):
+        return f"{it.get('channel_key') or ''} {(it.get('title') or '')[:30]} {_kst_label(it.get('scheduled_start'))}".strip()
+
+    for _try in range(3):
+        applied, skipped, restored = [], [], []
+        pv, sha = gh.read_json(_PREVIEW_PATH)
+        pv = pv or {"items": []}
+        items = [dict(i) for i in pv.get("items") or []]
+
+        def find(key):
+            return next((i for i in items if (key.get("id") and i.get("id") == key["id"]) or
+                         (key.get("video_id") and i.get("video_id") == key["video_id"])), None)
+
+        if t == "restore_items":
+            for snap in u.get("items") or []:
+                if find(snap):
+                    skipped.append(f"{label(snap)} — 이미 예고에 있음")
+                    continue
+                items.append(dict(snap, last_updated=now_iso))
+                applied.append(f"되살림 {label(snap)}")
+                if snap.get("video_id"):
+                    restored.append(snap["video_id"])
+        elif t == "restore_fields":
+            for ch in u.get("changes") or []:
+                it = find(ch)
+                if it is None or it.get(ch["field"]) != ch.get("to"):
+                    skipped.append(f"{ch.get('id') or ch.get('video_id')} {ch['field']} — 그 뒤 바뀌었거나 없음")
+                    continue
+                it[ch["field"]] = ch.get("from")
+                it["last_updated"] = now_iso
+                applied.append(f"{label(it)} {ch['field']} 되돌림")
+        elif t == "remove_items":
+            for key in u.get("items") or []:
+                it = find(key)
+                if it is None:
+                    skipped.append(f"{key.get('id') or key.get('video_id')} — 이미 없음")
+                    continue
+                items.remove(it)
+                applied.append(f"지움 {label(it)}")
+        elif t == "replace_items":
+            for snap in u.get("items") or []:
+                it = find(snap)
+                if it is None:
+                    skipped.append(f"{label(snap)} — 이미 없음")
+                    continue
+                items[items.index(it)] = dict(snap, last_updated=now_iso)
+                applied.append(f"합치기 전으로 {label(snap)}")
+        elif t == "remove_guests":
+            it = find(u)
+            gone = [g for g in (u.get("guests") or []) if it and g in (it.get("collab_with") or [])]
+            if not gone:
+                skipped.append("더했던 게스트가 이미 없음")
+            else:
+                cw = [g for g in it.get("collab_with") or [] if g not in gone]
+                it["collab_with"] = cw or None
+                if not cw and it.get("kind") == "collab":
+                    it["kind"] = None
+                it["last_updated"] = now_iso
+                applied.append(f"{label(it)} 게스트 {','.join(gone)} 뺌")
+        else:
+            return {"error": f"알 수 없는 되돌리기 종류: {t}", "applied": [], "skipped": []}
+        if not applied:
+            break
+        new_pv = dict(pv, items=preview_mod.sort_items(items), generated_at=now_iso)
+        try:
+            gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha, message=f"data: LLM 판단 되돌리기 {action_id} {now_iso}")
+            _save_undo(gh, action=f"LLM 판단 되돌리기 {e.get('kind')}", prev_content=pv, new_sha=None, now_iso=now_iso)
+            break
+        except ConflictError:
+            continue
+    # 재등록 차단 해제(취소 되돌리기) · 그룹 영상 확인 대기로(OCR 되돌리기)
+    unsup = set(u.get("unsuppress") or [])
+    if applied and unsup:
+        try:
+            st, ssha = gh.read_json(_ADMIN_STATE_PATH)
+            st = dict(st or admin.default_admin_state())
+            st["suppress"] = [x for x in st.get("suppress") or [] if x.get("url") not in unsup]
+            gh.write_json(_ADMIN_STATE_PATH, st, prev_sha=ssha, message=f"ops: suppress -= {len(unsup)} {now_iso}")
+            applied.append(f"재등록 차단 해제 {len(unsup)}건")
+        except Exception:  # noqa: BLE001
+            log.warning("재등록 차단 해제 실패", exc_info=True)
+            skipped.append("재등록 차단 해제 실패")
+    if applied and u.get("to_pending"):
+        try:
+            _group_pending_commit(gh, "add", now_iso, entries=u["to_pending"])
+            applied.append("그룹 영상 확인 대기로 옮김")
+        except Exception:  # noqa: BLE001
+            log.warning("확인 대기로 옮기기 실패", exc_info=True)
+    # 기록에 되돌림 표시
+    for _try in range(3):
+        cur, lsha = gh.read_json(_LLM_ACTIONS_PATH)
+        items2 = list((cur or {}).get("items") or [])
+        for x in items2:
+            if x.get("id") == action_id:
+                x["undone"] = {"at": now_iso, "applied": applied, "skipped": skipped}
+        try:
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items2}, prev_sha=lsha, message=f"ops: LLM 판단 되돌림 {action_id}")
+            break
+        except ConflictError:
+            continue
+    _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=e.get("who") or "",
+                    detail=f"LLM 판단 되돌리기 {e.get('kind')} · {'; '.join(applied) or '변화 없음'}", via="ops")
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": restored}
+
+
+# ─── (v4a, 2026-10-02) LLM 판단 재판단 · 사용자 판단 ───────────────────────────────────────────
+# 반려(`_llm_undo`)된 판단을 이어 간다. 관리 페이지 요청 스레드에서 돈다(적용 큐 작업이 아님) — 판정 함수들이 call_write 로 적용 큐에
+# 쓰고 결과를 기다리므로, 적용 큐 안에서 부르면 막힌다. 한 기록에서는 한 번만(followup 선점 → 실행 → 결과 기록).
+# 실패하면 followup 을 풀어 다시 시도할 수 있게 한다. 판단 종류마다 두 방식: 같은 판정 함수를 입력 스냅샷으로 다시 돌리거나(강제값은
+# `_REVIEW["forced"]` 로 LLM 호출부에 주입), 전용 적용기로 값을 직접 반영한다.
+
+
+def _kst_local_to_utc(s: str | None) -> str | None:
+    """관리 페이지 datetime-local("YYYY-MM-DDTHH:MM", KST) → UTC ISO. 형식이 틀리면 None."""
+    try:
+        dt = datetime.strptime((s or "").strip()[:16].replace(" ", "T"), "%Y-%m-%dT%H:%M")
+    except ValueError:
+        return None
+    return dt.replace(tzinfo=KST).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _review_hint_text(e: dict) -> str:
+    why = f" (근거: {e.get('reason')})" if e.get("reason") else ""
+    return (f"[재판단 요청] 앞서 이 글에 대해 「{e.get('summary')}」{why} 로 판단했으나 운영자가 반려했다. "
+            "같은 결론을 반복하지 말고, 글을 처음부터 다시 꼼꼼히 읽고 판단하라.")
+
+
+def _user_noop(gh, e: dict, summary: str, now_iso: str) -> None:
+    """사용자 판단이 「아무것도 안 함」일 때도 기록은 남긴다(parent 로 이어짐)."""
+    _llm_record(gh, "user_review", e.get("who") or "", summary, "사용자 판단", now_iso=now_iso)
+
+
+def _review_summaries(ctx: dict, gh) -> str:
+    ids = set(ctx.get("new_ids") or [])
+    return " / ".join(x.get("summary") or "" for x in _llm_actions_read(gh) if x.get("id") in ids)
+
+
+def _need_cfg_name(channel_key: str) -> tuple[dict, str, str]:
+    cfg = _load_channels_config()
+    ch = (cfg.get("channels") or {}).get(channel_key, {})
+    return cfg, ch.get("name_ko", channel_key), ch.get("handle", "")
+
+
+def _run_banner(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    raw, tag = inp.get("raw") or "", inp.get("tag") or ""
+    acct = inp.get("acct") or e.get("who") or ""
+    if mode == "user":
+        if dec.get("choice") != "register":
+            _user_noop(gh, e, "행사 배너 — 사용자 판단: 올리지 않음", now_iso)
+            return "사용자 판단: 올리지 않음 (변경 없음)"
+        name_ja, name_ko = (dec.get("name_ja") or "").strip(), (dec.get("name_ko") or "").strip()
+        if not (name_ja or name_ko):
+            raise ValueError("행사 이름을 입력하세요")
+
+        def jst(s):
+            s = (s or "").strip()
+            return s[:16].replace("T", " ") if s else None
+        if not jst(dec.get("end")):
+            raise ValueError("종료 일시를 입력하세요 (종료일 없는 행사는 올리지 않습니다)")
+        ctx["forced"]["banner"] = {
+            "action": "upsert", "banner_ref": None,
+            "event": {"name_ja": name_ja or name_ko, "name_ko": name_ko or None, "start_jst": jst(dec.get("start")),
+                      "end_jst": jst(dec.get("end")), "permanent": False},
+            "gacha": None, "image_for": "none", "image_roles": [], "reason": "사용자 판단"}
+    body, _code = _banner_ingest_core(raw, "", {"media": inp.get("media") or []}, tag, "", now_iso, gh, acct)
+    mode_txt = _BANNER_VERDICT.get(body.get("banner"), body.get("banner") or body.get("ignored") or "?")
+    return f"행사 판정: {mode_txt}" + (f" — {body.get('detail')}" if body.get("detail") else "")
+
+
+def _run_change(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    raw, ck = inp.get("raw") or "", inp.get("channel_key") or e.get("who") or ""
+    if mode == "user":
+        ch = dec.get("choice")
+        if ch not in ("cancel", "edit"):
+            _user_noop(gh, e, "방송 취소 · 변경 — 사용자 판단: 해당 없음", now_iso)
+            return "사용자 판단: 해당 없음 (변경 없음)"
+        ctx["forced"]["change"] = {"action": "del" if ch == "cancel" else "edit",
+                                   "target_ids": list(dec.get("target_ids") or []), "when": dec.get("when")}
+    cfg = _load_channels_config()
+    _maybe_broadcast_change(gh, raw, ck, now_iso, cfg, via="ops", tag=inp.get("tag"))
+    return _review_summaries(ctx, gh) or "판정 결과: 변경 없음"
+
+
+def _run_collab(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    host = inp.get("host_key") or e.get("who") or ""
+    cands = list(inp.get("guest_keys") or [])
+    cfg = _load_channels_config()
+    if mode == "user":
+        order = cfg.get("channel_order") or []
+        final = [k for k in order if k in (dec.get("guests") or []) and k != host]
+    else:
+        st: dict = {}
+        final = _confirm_llm_collab_guests(gh, inp.get("raw") or "", host_key=host, guest_keys=cands, channels_cfg=cfg,
+                                           now_iso=now_iso, via="ops", flow="relay", status=st)
+        if not st.get("decided"):
+            raise ValueError("LLM 판정을 못 했습니다 (키 없음 또는 5회 실패)")
+    target = inp.get("target") or {}
+    pv, _ = gh.read_json(_PREVIEW_PATH)
+    items = (pv or {}).get("items") or []
+    it = next((i for i in items if target.get("video_id") and i.get("video_id") == target["video_id"]), None)
+    if it is None and target.get("start"):
+        it = next((i for i in items if i.get("channel_key") == target.get("channel_key")
+                   and i.get("scheduled_start") == target["start"]), None)
+    if it is None:
+        raise ValueError("대상 예고를 찾을 수 없습니다 — 이미 내려갔거나 끝났습니다")
+    old = list(it.get("collab_with") or [])
+    new = [g for g in old if g not in cands]
+    new += [g for g in final if g not in new]
+    names = ",".join(final) or "없음"
+    if new == old:
+        _llm_record(gh, "collab_guest", host, f"게스트 {names} — 예고의 합동 멤버는 그대로 (변화 없음)", "재검토 결과 동일",
+                    now_iso=now_iso, input=inp)
+        return f"게스트 {names} — 변화 없음"
+    writeclient.call_write("apply_preview_edit", gh=gh, now_iso=now_iso, label=f"{host} 합동 게스트 재판단",
+                           ctx={"id": it["id"], "patch": {"collab_with": new or None}, "pre": {"collab_with": it.get("collab_with")}})
+    _llm_record(gh, "collab_guest", host, f"게스트 {names} 합동으로 판정 · {(it.get('title') or '')[:30]}", "",
+                undo={"type": "restore_fields", "changes": [{"id": it["id"], "field": "collab_with",
+                                                              "from": it.get("collab_with"), "to": new or None}]},
+                now_iso=now_iso, input=inp)
+    return f"게스트 {names} 로 합동 멤버 갱신"
+
+
+def _run_notice(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    if mode == "user":
+        if dec.get("choice") == "dup" and dec.get("dup_id"):
+            ctx["forced"]["dup_id"] = dec["dup_id"]
+        elif dec.get("choice") == "separate":
+            ctx["forced"]["dup_id"] = ""
+        else:
+            raise ValueError("같은 소식으로 볼 기존 소식을 고르거나 「별도 소식」을 선택하세요")
+    res = _maybe_auto_notice(inp.get("raw") or "", now_iso, tag=inp.get("tag"), title=inp.get("title"))
+    return f"소식 판정: {_NOTICE_VERDICT.get(res, res)}" + ((" — " + _review_summaries(ctx, gh)) if ctx.get("new_ids") else "")
+
+
+def _run_ocr(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    vid = inp.get("video_id") or ""
+    entry = _group_pending_items(gh).get(vid)
+    if entry is None:
+        raise ValueError("확인 대기 목록에 없습니다 — 이미 확정됐거나 지났음, 또는 예고에 이미 있습니다")
+    cfg = _load_channels_config()
+    order = cfg.get("channel_order") or []
+    if mode == "user":
+        members = [k for k in order if k in (dec.get("members") or [])]
+        if dec.get("choice") == "skip" or not members:
+            writeclient.call_write("group_pending", gh=gh, op="remove", now_iso=now_iso, video_ids=[vid], label="그룹 영상 확인 대기 제외")
+            _user_noop(gh, e, f"그룹 영상 — 사용자 판단: 올리지 않음 · {(entry.get('title') or '')[:30]}", now_iso)
+            return "사용자 판단: 올리지 않음 (대기에서 뺌)"
+    else:
+        members, st = _ocr_cast_keys(inp.get("media"))
+        if not members:
+            raise ValueError(f"이미지에서 참여 멤버를 읽지 못했습니다({st}) — 확인 대기에 그대로 둡니다")
+    row = xrelay.group_row(entry, members, now_iso)
+    rows, vids = _confirm_rows_with_videos([row], now_iso)
+    writeclient.call_write("merge_rows", gh=gh, rows=rows, now_iso=now_iso, message=f"data: 그룹 영상 재판단 {now_iso}",
+                           action=f"그룹 영상 {','.join(members)} · {vid}"[:80])
+    writeclient.call_write("group_pending", gh=gh, op="remove", now_iso=now_iso, video_ids=[vid], label="그룹 영상 확인 대기 해제")
+    for v in vids:
+        _enqueue_wake_now(v, now_iso)
+    by = "사용자 판단으로" if mode == "user" else "이미지 OCR 로"
+    _llm_record(gh, "ocr_members", inp.get("source") or "group",
+                f"{by} 참여 멤버 판정 — {','.join(members)} · {(entry.get('title') or '')[:30]}", "",
+                undo={"type": "remove_items", "items": [{"video_id": vid}],
+                      "to_pending": [dict({k: entry.get(k) for k in ("video_id", "url", "title", "scheduled_start", "kind", "source", "tweet_url")},
+                                          ocr="ok", suggested=members)]},
+                now_iso=now_iso, input=inp)
+    return f"참여 멤버 {','.join(members)} 로 예고에 올림"
+
+
+def _run_own(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    ck = inp.get("channel_key") or e.get("who") or ""
+    if mode == "user":
+        if dec.get("choice") != "register":
+            _user_noop(gh, e, "본인 방송 예고 — 사용자 판단: 등록 안 함", now_iso)
+            return "사용자 판단: 등록 안 함 (변경 없음)"
+        ctx["forced"]["own"] = True
+    _cfg, name, handle = _need_cfg_name(ck)
+    _maybe_personal_schedule(inp.get("raw") or "", tag=inp.get("tag"), channel_key=ck, name=name, handle=handle,
+                             now_iso=now_iso, via="ops", quote=inp.get("quote"))
+    return _review_summaries(ctx, gh) or "판정 결과: 등록할 예고 없음 (변경 없음)"
+
+
+def _run_part(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    ck = inp.get("channel_key") or e.get("who") or ""
+    if mode == "user":
+        if dec.get("choice") != "register":
+            _user_noop(gh, e, "외부 채널 영상 — 사용자 판단: 참여 아님", now_iso)
+            return "사용자 판단: 참여 아님 (변경 없음)"
+        ctx["forced"]["part"] = True
+    cfg = _load_channels_config()
+    _maybe_url_confirmed_schedule(gh, inp.get("raw") or "", ck, now_iso, cfg, via="ops", quote=inp.get("quote"),
+                                  tag=inp.get("tag"), media=inp.get("media"))
+    return _review_summaries(ctx, gh) or "판정 결과: 등록 안 함 (변경 없음)"
+
+
+_REVIEW_RUNNERS = {
+    "banner_judge": _run_banner, "broadcast_change": _run_change, "collab_guest": _run_collab,
+    "duplicate_notice": _run_notice, "ocr_members": _run_ocr, "own_broadcast": _run_own, "participation": _run_part,
+}
+
+
+def _llm_review(gh, action_id: str, mode: str, decision: dict | None, now_iso: str) -> dict:
+    """반려된 LLM 판단을 이어 간다. mode = "rejudge"(LLM 재판단) | "user"(사용자 판단). 반환 {"ok", "result", "new_ids"} | {"error"}."""
+    e = next((x for x in _llm_actions_read(gh) if x.get("id") == action_id), None)
+    if e is None:
+        return {"error": "LLM 판단 기록이 없습니다"}
+    if not e.get("undone"):
+        return {"error": "먼저 반려해야 합니다"}
+    if e.get("followup"):
+        return {"error": "이미 재판단 · 사용자 판단을 했거나 진행 중입니다"}
+    run = _REVIEW_RUNNERS.get(e.get("kind"))
+    if run is None:
+        return {"error": f"이 종류({e.get('kind')})는 재판단 · 사용자 판단을 지원하지 않습니다"}
+    inp = e.get("input")
+    if mode == "rejudge" and not inp:
+        return {"error": "입력 원문이 기록되지 않은 옛 기록이라 LLM 재판단을 할 수 없습니다 — 사용자 판단을 쓰세요"}
+    if mode == "user" and not decision:
+        return {"error": "선택한 결과가 없습니다"}
+    claim = writeclient.call_write("llm_action", gh=gh, op="mark", action_id=action_id, now_iso=now_iso, guard=True,
+                                   patch={"followup": {"type": mode, "at": now_iso, "running": True}}, label="LLM 판단 후속 선점")
+    if claim.get("error"):
+        return {"error": claim["error"]}
+    ctx = {"parent": action_id, "by": "user" if mode == "user" else "llm_rejudge", "forced": {}, "new_ids": []}
+    tok = _REVIEW.set(ctx)
+    htok = llm.REVIEW_HINT.set(_review_hint_text(e) if mode == "rejudge" else "")
+    try:
+        result = run(gh, e, inp or {}, mode, decision or {}, now_iso, ctx)
+    except Exception as ex:  # noqa: BLE001 — 실패하면 후속을 풀어 다시 시도할 수 있게
+        if not isinstance(ex, ValueError):
+            log.exception("LLM 판단 후속 실패 %s", action_id)
+        writeclient.call_write("llm_action", gh=gh, op="mark", action_id=action_id, now_iso=now_iso,
+                               patch={"followup": None}, label="LLM 판단 후속 해제")
+        return {"error": str(ex)[:250] if isinstance(ex, ValueError) else f"{type(ex).__name__}: {str(ex)[:200]}"}
+    finally:
+        llm.REVIEW_HINT.reset(htok)
+        _REVIEW.reset(tok)
+    fu = {"type": mode, "at": now_iso, "new_ids": ctx.get("new_ids") or [], "result": (result or "")[:300]}
+    writeclient.call_write("llm_action", gh=gh, op="mark", action_id=action_id, now_iso=now_iso,
+                           patch={"followup": fu}, label="LLM 판단 후속 기록")
+    _log_event_safe(gh, now_iso, "preview", RESULT_OK, who=e.get("who") or "", via="ops",
+                    detail=f"LLM 판단 {'재판단' if mode == 'rejudge' else '사용자 판단'} {e.get('kind')} · {(result or '')[:120]}")
+    return {"ok": True, "result": fu["result"], "new_ids": fu["new_ids"]}
+
+
+def _llm_review_options(gh, action_id: str) -> dict:
+    """사용자 판단 팝업에 필요한 선택지 — 멤버 · 판단 종류별 후보."""
+    e = next((x for x in _llm_actions_read(gh) if x.get("id") == action_id), None)
+    if e is None:
+        return {"error": "LLM 판단 기록이 없습니다"}
+    cfg = _load_channels_config()
+    chs = cfg.get("channels") or {}
+    out = {"kind": e.get("kind"), "who": e.get("who"), "input": e.get("input") or {},
+           "members": [{"key": k, "name": (chs.get(k) or {}).get("name_ko", k)} for k in cfg.get("channel_order") or []]}
+    inp = e.get("input") or {}
+    if e.get("kind") == "broadcast_change":
+        pv, _ = gh.read_json(_PREVIEW_PATH)
+        ck = inp.get("channel_key") or e.get("who") or ""
+        out["candidates"] = [{"id": c["id"], "when": _kst_label(c.get("scheduled_start")),
+                              "title": (c.get("title_ko") or c.get("title") or "(제목 없음)")[:60]}
+                             for c in _change_candidates((pv or {}).get("items") or [], ck)]
+    elif e.get("kind") == "duplicate_notice":
+        nj, _ = gh.read_json(_NOTICES_PATH)
+        out["notices"] = [{"id": n.get("id"), "date": n.get("date"), "title": (n.get("title_ko") or n.get("title") or "")[:60]}
+                          for n in (nj or {}).get("notices") or []]
+    elif e.get("kind") == "collab_guest":
+        out["guest_keys"] = list(inp.get("guest_keys") or [])
+    elif e.get("kind") == "ocr_members":
+        ent = _group_pending_items(gh).get(inp.get("video_id") or "") or {}
+        out["suggested"] = list(ent.get("suggested") or [])
+        out["pending"] = bool(ent)
+    return out
+
+
+# ─── (v4a) 그룹 영상 참여 멤버 — 근거 판정 · 확인 대기 (2026-09-30 운영자 결정) ─────────────────────────────
+# 근거 없이 5인 합동으로 팬아웃하지 않는다. 근거 = 글의 정식 이름 · 인원 표현(全員 · 全体配信 · 5名 · 5人)(`xrelay.members_evidence`)
+# → 첨부 이미지 OCR(`_ocr_cast_keys`). 그래도 없으면 등록하지 않고 「참여 멤버 확인 대기」(ops `group_pending.json`)에 적고 DM —
+# 관리 페이지 예고 탭에서 멤버를 고르거나, 같은 영상 URL 을 담은 뒤이은 공식 글에 근거가 나오면 그때 자동 확정한다.
+# 대기는 따로 적어 둘 뿐 다른 인입(같은 글의 다른 행 · 소식 · 이후 알림)을 막지 않는다.
+_GROUP_PENDING_PATH = "group_pending.json"
+_GROUP_PENDING_KEEP_SEC = 6 * 3600      # 예정 시각 + 6시간이 지나면 대기에서 뺀다(끝난 방송)
+
+
+def _tweet_media_by_tag(tag: str | None) -> list[str]:
+    """트윗 태그(`...tweet-<id>`)로 첨부 이미지 URL 목록 — 없거나 조회 실패면 []."""
+    if not tag or vxtwitter is None or xtweet is None:
+        return []
+    tid = xtweet._tweet_id(tag)
+    if not tid or not tid.isdigit():
+        return []
+    try:
+        j = vxtwitter.fetch_tweet(tid)
+        return list(vxtwitter.extract(j).get("media") or []) if j else []
+    except Exception:  # noqa: BLE001
+        log.warning("트윗 이미지 조회 실패 (%s)", tid, exc_info=True)
+        return []
+
+
+def _is_group_author(vx_ex: dict | None, title: str | None) -> bool:
+    """이 알림이 그룹 공식 X(@BDP_yumemita) 글인가 — vxtwitter 작성자 핸들 우선, 없으면 알림 제목(표시명)."""
+    chs = (_load_channels_config().get("channels") or {})
+    handles = {(v.get("handle") or "").lower() for v in chs.values() if v.get("is_group")}
+    author = ((vx_ex or {}).get("author") or "").lower()
+    if author:
+        return author in handles
+    return (title or "").strip().startswith("夢限大みゅーたいぷ")
+
+
+def _group_pending_items(gh) -> dict:
+    """확인 대기 중인 그룹 영상 {video_id: 항목}."""
+    try:
+        cur, _ = gh.read_json(_GROUP_PENDING_PATH)
+    except Exception:  # noqa: BLE001
+        log.warning("group_pending 읽기 실패", exc_info=True)
+        return {}
+    return {e["video_id"]: e for e in (cur or {}).get("items") or [] if e.get("video_id")}
+
+
+def _group_pending_alive(e: dict, now_iso: str) -> bool:
+    try:
+        ss = datetime.fromisoformat((e.get("scheduled_start") or e.get("first_seen") or now_iso).replace("Z", "+00:00"))
+        now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return True
+    return (now - ss).total_seconds() < _GROUP_PENDING_KEEP_SEC
+
+
+def _group_pending_commit(gh, op: str, now_iso: str, entries: list | None = None,
+                          video_ids: list | None = None) -> dict:
+    """(v4a) 적용 큐에서 실행 — 확인 대기 목록 추가(op="add", video_id 기준 upsert) · 제거(op="remove").
+    처음 본 시각 · 제안 멤버는 유지하고 마지막 본 시각 · 출처 글만 더한다. 예정 시각 + 6시간이 지난 항목은 함께 정리.
+    반환 {"added": [새로 들어간 video_id], "removed": [뺀 video_id]}."""
+    for _try in range(3):
+        cur, sha = gh.read_json(_GROUP_PENDING_PATH)
+        before = list((cur or {}).get("items") or [])
+        items = [dict(e) for e in before if _group_pending_alive(e, now_iso)]
+        added, removed = [], []
+        if op == "add":
+            by = {e["video_id"]: e for e in items}
+            for en in entries or []:
+                vid = en.get("video_id")
+                if not vid:
+                    continue
+                src = en.get("tweet_url")
+                if vid in by:
+                    e = by[vid]
+                    e["last_seen"] = now_iso
+                    if src and src not in (e.get("sources") or []):
+                        e["sources"] = [*(e.get("sources") or []), src]
+                    if en.get("suggested") and not e.get("suggested"):
+                        e["suggested"], e["ocr"] = list(en["suggested"]), en.get("ocr")
+                    continue
+                e = {k: en.get(k) for k in ("video_id", "url", "title", "scheduled_start", "kind", "ocr", "source")}
+                e.update(suggested=list(en.get("suggested") or []), first_seen=now_iso, last_seen=now_iso,
+                         sources=[src] if src else [])
+                items.append(e)
+                by[vid] = e
+                added.append(vid)
+        elif op == "remove":
+            gone = set(video_ids or [])
+            removed = [e["video_id"] for e in items if e.get("video_id") in gone]
+            items = [e for e in items if e.get("video_id") not in gone]
+        else:
+            raise ValueError(f"group_pending op: {op}")
+        if items == before:
+            return {"added": added, "removed": removed}
+        try:
+            gh.write_json(_GROUP_PENDING_PATH, {"items": items}, prev_sha=sha,
+                          message=f"ops: 그룹 영상 확인 대기 {op} {now_iso}")
+            return {"added": added, "removed": removed}
+        except ConflictError:
+            continue
+    raise RuntimeError("group_pending 쓰기 충돌이 계속됨")
+
+
+def _record_group_pending(gh, entries: list[dict], now_iso: str) -> list[str]:
+    """확인 대기에 적고(적용 큐), 새로 들어간 영상만 DM 으로 알린다. 새로 들어간 video_id 목록."""
+    if not entries:
+        return []
+    try:
+        added = writeclient.call_write("group_pending", gh=gh, op="add", now_iso=now_iso, entries=entries,
+                                       label="그룹 영상 확인 대기").get("added") or []
+    except Exception:  # noqa: BLE001
+        log.exception("그룹 영상 확인 대기 기록 실패")
+        return []
+    new = [e for e in entries if e.get("video_id") in added]
+    if new:
+        lines = []
+        for e in new:
+            when = _kst_label(e.get("scheduled_start"))
+            lines.append(f"· {html.escape(when)} {html.escape((e.get('title') or '(제목 없음)')[:60])}\n  {html.escape(e.get('url') or '')}")
+        # 관리자가 멤버를 골라야 하는 알림이라 알림 레벨과 무관하게 보낸다(자동 알림 게이트 `_auto_dm` 을 쓰지 않음)
+        _send_telegram("🛸 <b>그룹 영상 — 참여 멤버 확인 대기</b>\n" + "\n".join(lines) +
+                 "\n\n글에 멤버 이름 · 인원 표현(全員 등)이 없고 이미지에서도 읽지 못해 예고에 올리지 않았습니다. "
+                       "관리 페이지 예고 탭에서 참여 멤버를 고르세요. 같은 영상을 담은 공식 글에 근거가 나오면 자동으로 확정됩니다.",
+                       silent=False)
+    for e in entries:
+        _log_event_safe(gh, now_iso, "relay", RESULT_OK, who=e.get("source") or "group",
+                        detail=f"group-video pending {e.get('video_id')} · {e.get('kind') or ''} · OCR {e.get('ocr') or '-'}",
+                        via="ingest")
+    return added
+
+
+def _resolve_group_videos(gh, raw: str, rows: list[dict], now_iso: str, *, media: list | None,
+                          tweet_url: str | None) -> tuple[list[dict], list[dict], list[str], list[dict]]:
+    """(v4a) 공식 X 글의 그룹 영상 처리. 반환 (행 목록, 새 확인 대기 항목, 이번에 확정된 대기 video_id).
+
+    ① 이 글이 그룹 명의 방송 글인데 참여 멤버 근거가 없으면(`xrelay.parse_pending`) 첨부 이미지 OCR → 읽히면 그 멤버로 행을 만들고,
+       안 읽히면 확인 대기 항목으로 돌려준다(이미 예고에 있는 영상은 건드리지 않는다 — 재공지).
+    ② 이 글이 확인 대기 중인 영상의 URL 을 담고 있고 근거(이름 · 인원 표현 · OCR)가 있으면 그 멤버로 행을 만든다(같은 영상 URL 근거)."""
+    if xrelay is None:
+        return rows, [], []
+    try:
+        pv, _ = gh.read_json(_PREVIEW_PATH)
+    except Exception:  # noqa: BLE001
+        pv = None
+    registered = {i.get("video_id") for i in (pv or {}).get("items") or [] if i.get("video_id")}
+    have = {r.get("video_id") for r in rows if r.get("video_id")}
+    pending = _group_pending_items(gh)
+    ocr: dict = {}
+
+    def ocr_members() -> list[str]:
+        if "m" not in ocr:
+            ocr["m"], ocr["state"] = _ocr_cast_keys(media)
+        return ocr["m"]
+
+    out, new_pending, resolved, ocr_rows = list(rows), [], [], []
+    for c in xrelay.parse_pending(raw, now_iso):
+        vid = c.get("video_id")
+        if not vid or vid in registered or vid in have:
+            continue
+        members = ocr_members()
+        if members:
+            out.append(xrelay.group_row(c, members, now_iso))
+            ocr_rows.append(dict(c, suggested=members))
+            have.add(vid)
+            if vid in pending:
+                resolved.append(vid)
+            continue
+        new_pending.append(dict(c, suggested=[], ocr=ocr.get("state"), tweet_url=tweet_url, source="group"))
+    ev, _basis = xrelay.members_evidence(raw)
+    for m in xrelay.YT_VIDEO_RE.finditer(xrelay.normalize(raw)):
+        vid = m.group(1)
+        if vid not in pending or vid in have or vid in registered:
+            continue
+        members = ev or ocr_members()
+        if members:
+            out.append(xrelay.group_row(pending[vid], members, now_iso))
+            if not ev:
+                ocr_rows.append(dict(pending[vid], suggested=members))
+            have.add(vid)
+            resolved.append(vid)
+    new_pending = [e for e in new_pending if e["video_id"] not in have]
+    return out, new_pending, resolved, ocr_rows
+
+
 def _maybe_tag_cast_participants(parsed: dict, tag: str | None) -> None:
     """(v3.2) 크로스오버 공식 계정 소식이면 첨부 이미지를 비전 OCR 로 읽어
     5인 중 누가 출연하는지 `parsed["participants"]` 에 채운다 (제자리 수정).
@@ -3715,14 +5335,28 @@ def _handle_tweet_list(gh, channels_cfg: dict) -> None:
     _send_telegram("\n\n".join(lines))
 
 
-def _tweet_del_commit(gh, unit: str, now_iso: str) -> dict:
-    """(write-queue) /del tweet 실제 반영 — 슬롯 제거 + undo 스냅샷."""
+def _tweet_del_commit(gh, unit: str, now_iso: str, tweet_id: str | None = None) -> dict:
+    """(write-queue) /del tweet 실제 반영 — 슬롯 제거 + undo 스냅샷.
+
+    (v4a) tweet_id 를 주면 그 유닛 스레드에서 그 트윗 1건만 뺀다(관리 페이지 트윗별 삭제).
+    없으면 예전처럼 유닛 슬롯 전체를 뺀다(텔레그램 /del tweet)."""
     prev, sha = gh.read_json(_TWEETS_PATH)
     prev = prev or {}
     tw = dict(prev.get("tweets", {}) or {})
     if unit not in tw:
         return {"found": False}
-    tw.pop(unit)
+    if tweet_id:
+        cur = tw[unit]
+        lst = cur if isinstance(cur, list) else [cur]
+        keep = [m for m in lst if str((m or {}).get("id")) != str(tweet_id)]
+        if len(keep) == len(lst):
+            return {"found": False}
+        if keep:
+            tw[unit] = keep
+        else:
+            tw.pop(unit)
+    else:
+        tw.pop(unit)
     new = dict(prev)
     new["tweets"] = tw
     new["generated_at"] = now_iso
@@ -3731,6 +5365,40 @@ def _tweet_del_commit(gh, unit: str, now_iso: str) -> dict:
     _save_undo(gh, action=f"/del tweet {unit}", prev_content=prev, new_sha=nsha,
                now_iso=now_iso, path=_TWEETS_PATH)
     return {"found": True}
+
+
+def _tweet_edit_commit(gh, unit: str, tweet_id: str, text_ko: str, now_iso: str) -> dict:
+    """(v4a) 관리 페이지 트윗 수정 — 그 트윗의 한글 번역만 바꾼다(원문 · X 카드는 그대로). needs_tl 을 내려 자동 번역이
+    다시 덮지 않게 하고 undo 스냅샷을 남긴다. 반환 {"found": bool, "changed": bool}."""
+    for attempt in (1, 2):
+        prev, sha = gh.read_json(_TWEETS_PATH)
+        prev = prev or {}
+        tw = dict(prev.get("tweets", {}) or {})
+        cur = tw.get(unit)
+        lst = [dict(m) for m in (cur if isinstance(cur, list) else [cur]) if m]
+        i = next((k for k, m in enumerate(lst) if str(m.get("id")) == str(tweet_id)), None)
+        if i is None:
+            return {"found": False, "changed": False}
+        if lst[i].get("text_ko") == text_ko and not lst[i].get("needs_tl"):
+            return {"found": True, "changed": False}
+        lst[i]["text_ko"] = text_ko
+        lst[i].pop("needs_tl", None)
+        tw[unit] = lst
+        new = dict(prev)
+        new["tweets"] = tw
+        new["generated_at"] = now_iso
+        try:
+            _, nsha = gh.write_json(_TWEETS_PATH, new, prev_sha=sha,
+                                    message=f"data: admin 트윗 번역 수정 {unit} {now_iso}")
+        except ConflictError:
+            if attempt == 2:
+                raise
+            log.warning("트윗 수정: tweets.json 충돌 — 재시도")
+            continue
+        _save_undo(gh, action=f"admin 트윗 수정 {unit}", prev_content=prev, new_sha=nsha,
+                   now_iso=now_iso, path=_TWEETS_PATH)
+        return {"found": True, "changed": True}
+    return {"found": False, "changed": False}
 
 
 def _handle_tweet_del(gh, channels_cfg: dict, now_iso: str, unit: str) -> None:
@@ -3968,13 +5636,17 @@ def _handle_op_followup(gh, channels_cfg: dict, now_iso: str, message: dict, tex
 def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
     """답한 필드만 preview.json 아이템에 병합. edit_lock 해제. tick 충돌 필드 알림."""
     patch = ctx.get("patch") or {}
+    if patch.get("state") == "none":           # (v4a D7) 구 이름 none → out
+        patch = dict(patch, state="out")
     pid = ctx.get("id")
     pre = ctx.get("pre") or {}
     if not patch:
         _op_clear(gh, now_iso, release_lock_id=pid)
         _send_telegram("변경 사항이 없습니다.")
         return
-    field_map = {"title": "title", "state": "state", "date": "scheduled_start", "url": "url"}
+    field_map = {"title": "title", "state": "state", "date": "scheduled_start", "url": "url",
+                 "collab_with": "collab_with", "membership": "membership",  # (v4a) 관리 페이지 합동·회원 전용
+                 "title_ko": "title_ko"}  # (v4a) 관리 페이지 한글 제목
     conflicts = []
     for _try in (1, 2):
         prev, sha = gh.read_json(_PREVIEW_PATH)
@@ -3994,6 +5666,27 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
             if cur != want_pre:
                 conflicts.append(f"{f}: 운영자값 유지 (그 사이 tick: {want_pre!r}→{cur!r})")
             it[key] = val
+        if "title" in patch or "title_ko" in patch:
+            # (v4a) 운영자가 제목을 고치면 이후 API 제목 · 자동 번역이 덮지 않는다(title_manual).
+            # 한글을 비워 저장하면 빈 번역 그대로(자동 번역 안 함). 원문을 비워 저장하면 보호를 풀고
+            # 다음 reconcile 이 API 제목과 그 번역으로 다시 채운다.
+            if patch.get("title") == "":
+                it.pop("title_manual", None)
+                it["title"] = None
+                it["title_ko"] = None
+                it["needs_tl"] = False
+            else:
+                it["title_manual"] = True
+                it["needs_tl"] = False
+        if "collab_with" in patch:
+            # (v4a) 합동 표식(kind)을 참여 멤버와 맞춘다. 합동을 끄면 그룹 채널 표식(host)도 뗀다
+            if it.get("collab_with"):
+                it["kind"] = it.get("kind") or "collab"
+            else:
+                if it.get("kind") == "collab":
+                    it["kind"] = None
+                if it.get("host") == "group":
+                    it["host"] = None
         if "state" in patch:
             # FSM 판정 기준(state_since) 을 리셋 — "방금 이 상태로 막 진입"한 것으로 취급.
             # 안 하면 예전 state_since 가 그대로 남아 end→none(30분 경과) 같은 판정이
@@ -4037,8 +5730,8 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
     archive 반영이 전혀 안 일어나 다음 tick(최대 3h) 까지 방치되는 문제가 있었다
     (실측: 외부 채널 합동방송이 그 사이 아예 사라진 사례).
 
-    - "none" → preview.json 에서 즉시 제거 + preview_archive.json 에 기록
-      (FSM 의 end→none 전이와 동일하게 취급).
+    - "out"(v4a D7, 구 "none" 도 받음) → preview.json 에서 즉시 제거 + preview_archive.json 에 기록
+      (FSM 의 end→out 전이와 동일하게 취급).
     - video_id 있음(live/end/watching/upcoming — API 로 실물 검증 가능) → 메인 서비스
       `/wake` 를 OIDC 로 호출해 실제 상태로 재확인 + Cloud Tasks wake 재예약까지 그쪽에
       맡긴다. 운영자가 잘못 짚었어도 API 확인 결과가 우선하므로 안전하다.
@@ -4049,7 +5742,7 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
     state = item.get("state")
     video_id = item.get("video_id")
 
-    if state == "none":
+    if state in ("out", "none"):
         for attempt in (1, 2):
             prev, sha = gh.read_json(_PREVIEW_PATH)
             prev = prev or {"items": []}
@@ -4063,12 +5756,12 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
             new_pv["generated_at"] = now_iso
             try:
                 gh.write_json(_PREVIEW_PATH, new_pv, prev_sha=sha,
-                               message=f"data: /edit preview→none {pid} {now_iso}")
+                               message=f"data: /edit preview→out {pid} {now_iso}")
                 break
             except ConflictError:
                 if attempt == 2:
                     raise
-                log.warning("/edit preview→none: 충돌 — 재시도")
+                log.warning("/edit preview→out: 충돌 — 재시도")
         try:
             arch, arch_sha = gh.read_json(_PREVIEW_ARCHIVE_PATH)
             arch = dict(arch or {"items": []})
@@ -4083,20 +5776,10 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
         return "🗑 즉시 제거 + 아카이브 반영 완료."
 
     if video_id:
-        main_url = os.environ.get("MAIN_SERVICE_URL", "").strip().rstrip("/")
-        if not (fetch_id_token and Request and requests and main_url):
-            return "⚠️ 메인 서비스 호출 불가(설정 없음) — 다음 정기 tick 이 처리합니다."
-        try:
-            tok = fetch_id_token(Request(), main_url)
-            resp = requests.post(
-                f"{main_url}/wake", json={"video_id": video_id},
-                headers={"Authorization": f"Bearer {tok}"}, timeout=30,
-            )
-            if resp.status_code == 200:
-                return "✅ 메인 서비스 /wake 로 실물 재확인 + 다음 체크 재예약 완료."
-            return f"⚠️ /wake 호출 실패(HTTP {resp.status_code}) — 다음 정기 tick 이 처리합니다."
-        except Exception as e:  # noqa: BLE001
-            return f"⚠️ /wake 호출 실패({e}) — 다음 정기 tick 이 처리합니다."
+        # (v4a #14d) 자기 호출(/wake 동기 호출) 대신 reconcile(영상) 적재 — 원칙 ③ (클라우드는 Cloud Tasks /wake)
+        from . import apply
+        apply.enqueue_reconcile(video_id=video_id)
+        return "✅ reconcile(영상) 적재 — 실물 재확인 + 다음 체크 재예약."
 
     # video_id 없는 announced 자리표시 — API 검증 대상 아님, FSM 1회만 로컬 파생.
     tick = statemachine.derive(item, now_iso, live_seen=None)
@@ -4111,7 +5794,7 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
             return "(이미 다른 경로로 제거됨)"
         it2 = preview_mod.set_state(items[idx], tick.next_state, now_iso)
         gone2 = None
-        if tick.next_state == "none":
+        if tick.next_state in ("out", "none"):
             items.pop(idx)
             gone2 = it2
         else:
@@ -4299,12 +5982,11 @@ if _FLASK_AVAILABLE:
             gh_repo = os.environ.get("GITHUB_REPO", "").strip()
             gh_branch = os.environ.get("DATA_BRANCH", "data").strip() or "data"
 
-            if not gh_token or not gh_repo:
+            gh = storage.make_store("data")      # (v4) 로컬 · 클라우드 공통 (ops 라우팅 포함)
+            if gh is None:
                 log.warning("GitHub config missing")
                 _send_telegram("⚠️ GitHub 설정 누락")
                 return _done(False)
-
-            gh = GitHubStore(gh_token, gh_repo, gh_branch)
             channels_cfg = _load_channels_config()
 
             # v2.5: 대기 중인 /del 확인(y/N) 이 있으면 명령 디스패치보다 먼저 처리.
@@ -4366,6 +6048,22 @@ if _FLASK_AVAILABLE:
             # 명령 디스패치 ("/log detail" 처럼 인자 포함 가능)
             cmd, _, arg = text.partition(" ")
             arg = arg.strip()
+            # (v4a D24) 텔레그램은 알림 + 비상 명령(/status /pause /resume /list /admin)만.
+            # 나머지 조작은 관리 페이지(/admin 로그인 링크). 마법사 대화 상태는 만들지 않는다.
+            if cmd == "/admin":
+                _handle_admin_link()
+                return _done()
+            if cmd == "/resume":
+                _handle_resume_local(gh, now_utc)
+                return _done()
+            if cmd not in ("/status", "/pause", "/list"):
+                _send_telegram(
+                    "<b>📱 mewtype v4</b>\n\n"
+                    "비상 명령: /status /pause /resume /list [notice|tweet]\n"
+                    "/admin — 관리 페이지 로그인 링크(일회용)\n\n"
+                    "예고 · 소식 · 트윗 편집 · 삭제 · 원문 투입 · 번역 · 유실 원문 재투입 · 알림 레벨은 관리 페이지에서."
+                )
+                return _done()
             if cmd == "/status":
                 _handle_status(gh, channels_cfg, now_utc)
             elif cmd == "/pause":
@@ -4501,12 +6199,15 @@ if _FLASK_AVAILABLE:
         """(v3.8.9) 아래 `_ingest_impl` 을 감싸 알림 1건마다 모니터 로그 `flow="upstream"` 을 남긴다
         (웹 monitor "업스트림 감지" 행). 인증 실패(403)는 업스트림 알림이 아니므로 기록 안 함.
         기록 실패는 응답에 영향 없음."""
+        _ft_token = flowtrace.current.set(None)   # (v4a) 요청 스레드 재사용 — 이전 요청의 흐름이 남지 않게
         try:
             resp = _ingest_impl()
         except Exception as e:  # noqa: BLE001 — 원래도 Flask 가 500 으로 냈을 경우
             log.exception("ingest 처리 중 예외")
             resp = (jsonify({"ok": False, "error": str(e)[:200]}), 500)
         body, code = (resp[0], resp[1]) if isinstance(resp, tuple) else (resp, 200)
+        _finish_ingest_flow(body, code)
+        flowtrace.current.reset(_ft_token)
         if code != 403:
             try:
                 payload = request.form if request.form else (request.get_json(silent=True) or {})
@@ -4535,11 +6236,25 @@ if _FLASK_AVAILABLE:
         `INGEST_ECHO` env 가 참이면: 파싱조차 안 하고 받은 텍스트 그대로만 DM 회신
         (임시 테스트 훅 — 아래 해당 블록 주석 참고).
         """
+        # (v4a) 흐름 기록 — 인증 전에 시작해야 거절된 알림도 "접수에서 멈춤"으로 남는다.
+        # 바디 캐시(get_data)는 아래 원래 자리보다 먼저 해도 같다(form 파싱 전이기만 하면 됨).
+        request.get_data(cache=True, parse_form_data=False, as_text=True)
+        _ft_payload = request.form if request.form else (request.get_json(silent=True) or {})
+        _ft_yt = (_ft_payload.get("source") or "").strip() == "yt"
+        _ft_title = (_ft_payload.get("title") or "").strip()
+        _ft_text = (_ft_payload.get("text") or "").strip().replace("\n", " ")
+        flowtrace.start("yt" if _ft_yt else "x", "YouTube 알림" if _ft_yt else "X 알림",
+                        " · ".join(x for x in (_ft_title, _ft_text[:60]) if x), via=request.remote_addr)
+
         secret = os.environ.get("INGEST_SECRET", "").strip()
         got = request.headers.get("X-Ingest-Secret", "").strip()
         if not secret or got != secret:
             log.warning("ingest: bad or missing secret")
+            flowtrace.mark("접수", "fail", "인증 실패 (403)")
+            flowtrace.finish("인증 실패 — 보낸 쪽의 X-Ingest-Secret 헤더가 이 서버 값과 다릅니다. "
+                             "원문을 받기 전에 거절해서 유실 원문 큐에도 남지 않습니다.")
             return jsonify({"ok": False}), 403
+        flowtrace.mark("접수", "done", "인증 통과")
 
         # 원본 바디를 form 파싱 전에 먼저 캐시한다. Werkzeug 는 request.form 을 건드리는
         # 순간 입력 스트림을 소비하면서 get_data() 캐시를 안 채우므로, 그 뒤에 부르는
@@ -4573,7 +6288,13 @@ if _FLASK_AVAILABLE:
         # 폰이 보낸 본문이 깨졌거나(이모지 서로게이트쌍 처리 오류) 잘렸으면, 같은 트윗을
         # vxtwitter 로 다시 조회해 원문을 통째로 교체한다 — 원문 없이는 파싱도 번역도
         # "제대로 ingest" 한 게 아니므로 아래 모든 파이프라인(소식/스케줄/개인트윗) 전에 선행.
+        phone_raw = raw                                    # (v3.8.11) 교체 전 원문 — 리트윗 표시(`@핸들:`)는 여기에만 있다
         raw, _vx_ex = _recover_raw_via_vxtwitter(raw, x_tag)
+        if x_tag:
+            flowtrace.mark("원문 복원", "done", "vxtwitter 원문으로 교체" if _vx_ex is not None
+                           else "vxtwitter 조회 실패 — 폰 원문 사용")
+        else:
+            flowtrace.mark("원문 복원", "skip", "트윗 id 없음 — 폰 원문 사용")
 
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         gh = _make_gh()
@@ -4595,12 +6316,35 @@ if _FLASK_AVAILABLE:
             except Exception:
                 log.exception("route_by_title 실패 — official 로 폴백")
                 _route = "official"
+            flowtrace.mark("분류", "done", {"test": "테스트 부계정 (ECHO)", "official": "공식 · 그 외 → 소식 · 스케줄 판정"}
+                           .get(_route, f"개인 5인 → {_route}"))
             if _route == "test":
                 force_echo = True
             elif _route != "official":
+                # (v3.8.11) 리트윗(남의 글)은 개인 트윗 · 예고 어디에도 안 올린다(D17) — vxtwitter 교체가 표시를 지우기 전 원문으로 판정
+                rt = _personal_retweet_reason(phone_raw, _vx_ex, _route, _load_channels_config())
+                if rt:
+                    log.info("개인 트윗: 리트윗이라 건너뜀 — %s (tweet %s)", rt, x_tag)
+                    _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=_route, via="ingest",
+                                    detail=f"retweet skip: {rt}")
+                    flowtrace.mark("준비", "skip", f"리트윗 — {rt}")
+                    return jsonify({"ok": True, "personal": _route, "mode": "retweet"}), 200
                 mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
                                             now_iso=now_iso, vx_extract=_vx_ex)
                 return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
+            elif raw and (_gacct := _game_account(_vx_ex, title, _load_channels_config())):
+                # (v4a, 2026-10-02) 게임 계정(bang_dream_on) 글 — 소식 · 스케줄로 가지 않고 행사 배너 판정으로만
+                flowtrace.mark("분류", "done", f"게임 계정 @{_gacct} → 행사 판정")
+                return _handle_banner_ingest(raw, phone_raw, _vx_ex, x_tag, title, now_iso, gh, _gacct)
+            elif raw:   # 빈 text 는 아래에서 400(폰 쪽 이상 계측) — 판정하지 않는다
+                # (v4a, 10-01 운영자 결정) 「공식」 = @BDP_yumemita 가 직접 쓴 글만 — 리트윗 · 다른 계정 글은 소식 · 스케줄 어디에도 안 올린다
+                skip = _official_skip_reason(phone_raw, _vx_ex, title, _load_channels_config())
+                if skip:
+                    log.info("공식 경로: 건너뜀 — %s (tweet %s)", skip, x_tag)
+                    _log_event_safe(gh, now_iso, "relay", RESULT_OK, via="ingest",
+                                    detail=f"mode: none · 공식 글 아님 · {skip}")
+                    flowtrace.mark("준비", "skip", f"공식 글 아님 · {skip}")
+                    return jsonify({"ok": True, "ignored": f"공식 글 아님 · {skip}"}), 200
 
         # (v2.7) 소식 게시판 — schedule.json 과 별개 파이프라인. INGEST_ECHO/DRY-RUN 과
         # 무관하게 여기서 항상 시도한다(소식이 아니면 GitHub 도 안 건드림).
@@ -4721,9 +6465,26 @@ if _FLASK_AVAILABLE:
                 return jsonify({"ok": True, "paused": True}), 200
 
             # 실배포 전환 후 첫 호출 — 테스트 기간(ECHO/DRY-RUN)에 쌓인 트윗 먼저 반영.
-            _drain = writeclient.call_write("ingest_queue_drain", gh=gh, now_iso=now_iso, label="큐 반영")
+            # (v4a) ingest_queue 는 ECHO/DRY-RUN 시절 잔재(설계 §12-1) — 로컬 시험판에선 매 알림마다 빈 작업을
+            # 적용 큐에 싣지 않도록 건너뛴다.
+            _drain = {}   # (v4) ingest_queue 는 ECHO/DRY-RUN 시절 잔재 — 반영할 대기열 없음
             drained, drained_rows = _drain.get("applied", 0), _drain.get("rows", 0)
             failed = xrelay.unparsed_lines(raw)
+
+            # (v4a) 그룹 영상 — 근거(이미지 OCR · 같은 영상 URL) 로 행을 더하거나, 근거가 없으면 확인 대기로 적는다.
+            # 대기는 따로 적을 뿐 아래 흐름(같은 글의 다른 행 반영 · 응답)을 멈추지 않는다.
+            _grp_resolved, _grp_added, _grp_new, _grp_ocr = [], [], [], []
+            if _is_group_author(_vx_ex, title):
+                try:
+                    rows, _grp_new, _grp_resolved, _grp_ocr = _resolve_group_videos(
+                        gh, raw, rows, now_iso, media=(_vx_ex or {}).get("media") or [], tweet_url=tweet_url)
+                    _grp_added = _record_group_pending(gh, _grp_new, now_iso)
+                except Exception:  # noqa: BLE001
+                    log.exception("그룹 영상 근거 처리 실패 — 이 글의 나머지 반영은 계속")
+
+            if not rows and _grp_new:
+                # 확인 대기로 적었다(새 항목이면 DM 도 보냄) — "형식 아님 — 무시" 안내는 생략
+                return jsonify({"ok": True, "parsed": 0, "group_pending": [e["video_id"] for e in _grp_new]}), 200
 
             if not rows:
                 # 소식 자동 인입은 라우트 상단 _maybe_auto_notice 에서 이미 처리됨(ECHO 무관).
@@ -4737,7 +6498,7 @@ if _FLASK_AVAILABLE:
                 if drained:
                     msg += f"\n📥 대기열 {drained}건({drained_rows}행) 반영됨"
                 # 대기열 반영이 있었으면(=실제 scheduled 변경) scheduled, 아니면 잡음성 ingest.
-                _auto_dm(gh, "scheduled" if drained else "ingest", msg)
+                _auto_dm(gh, "announced" if drained else "ingest", msg)   # (v4a) 옛 이름 scheduled → announced
                 try:
                     log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
                               detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none", via="ingest")
@@ -4747,11 +6508,36 @@ if _FLASK_AVAILABLE:
                     {"ok": True, "parsed": 0, "failed": len(failed), "drained": drained}
                 ), 200
 
+            # (v4a D19) 스케줄 관련 원문 보존 — 파싱 결과만 남던 공식 스케줄 트윗 원문
+            _preserve_raw("official_schedule", raw, {"title": title, "tweet_url": tweet_url,
+                                                     "rows": len(rows)}, now_iso)
+            if _grp_resolved:
+                _preserve_raw("group_video_evidence", raw, {"title": title, "tweet_url": tweet_url,
+                                                            "resolved": _grp_resolved}, now_iso)
+            # (v4a D13) 영상 URL 이 있는 행은 지금 videos.list 로 확인해 upcoming 으로 등록
+            rows, _confirmed_vids = _confirm_rows_with_videos(rows, now_iso)
+
             changed = writeclient.call_write(
                 "merge_rows", gh=gh, rows=rows, now_iso=now_iso,
                 message=f"data: xrelay scheduled {now_iso}",
                 action=f"ingest {title or raw[:40]}".strip(),
             ).get("changed")
+            for _vid in _confirmed_vids:   # 등록 즉시 확인 — reconcile(영상) 적재 (원칙 ③)
+                _enqueue_wake_now(_vid, now_iso)
+            for _o in (_grp_ocr if changed else []):   # 이미지 OCR 판정으로 올린 그룹 영상 — LLM 판단 기록(되돌리기 = 확인 대기로)
+                _llm_record(gh, "ocr_members", "group",
+                            f"이미지 OCR 로 참여 멤버 판정 — {','.join(_o['suggested'])} · {(_o.get('title') or '')[:30]}",
+                            undo={"type": "remove_items", "items": [{"video_id": _o["video_id"]}], "to_pending": [dict(
+                                {k: _o.get(k) for k in ("video_id", "url", "title", "scheduled_start", "kind")},
+                                ocr="ok", suggested=_o["suggested"], source="group", tweet_url=tweet_url)]}, now_iso=now_iso,
+                            input=_inp(video_id=_o["video_id"], title=_o.get("title"), media=list((_vx_ex or {}).get("media") or []),
+                                       scheduled_start=_o.get("scheduled_start"), kind=_o.get("kind"), source="group"))
+            if _grp_resolved:              # 확인 대기 → 근거로 확정됨: 대기에서 뺀다
+                try:
+                    writeclient.call_write("group_pending", gh=gh, op="remove", now_iso=now_iso,
+                                           video_ids=_grp_resolved, label="그룹 영상 확인 대기 해제")
+                except Exception:  # noqa: BLE001
+                    log.exception("그룹 영상 확인 대기 해제 실패")
 
             summary = xrelay.summary_text(rows, channels_cfg)
             if tweet_url:
@@ -4765,7 +6551,7 @@ if _FLASK_AVAILABLE:
                 summary += f"\n\n📥 대기열 {drained}건({drained_rows}행)도 함께 반영"
             if changed:
                 summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
-            _auto_dm(gh, "scheduled", summary)   # 공식 일일 스케줄 → scheduled 행 반영
+            _auto_dm(gh, "announced", summary)   # 공식 일일 스케줄 → announced 행 반영 (v4a: 옛 이름 scheduled 라 안 나가던 것)
             try:
                 log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
                           detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""), via="ingest")
@@ -4850,6 +6636,23 @@ if _FLASK_AVAILABLE:
         """헬스체크."""
         return "ok", 200
 
+    def _register_admin_cloud() -> None:
+        """(v4) 클라우드 접수 서비스에 관리 페이지(/admin) 등록. 로컬은 local_runner.build_app 이 등록한다.
+        Cloud Run 은 TLS 를 앞단에서 끝내므로 X-Forwarded-Proto 를 믿어야(ProxyFix) 세션 쿠키에 Secure 가 붙는다."""
+        secret = os.environ.get("ADMIN_SECRET", "").strip()
+        if storage.is_local() or not secret or "admin" in app.blueprints:
+            return
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        from . import admin_api, admin_web
+        ops_store = storage.make_store("ops")
+        if ops_store is None:
+            log.warning("관리 페이지 미등록 — GitHub 설정 없음")
+            return
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+        app.register_blueprint(admin_web.create_blueprint(api=admin_api, ops_store=ops_store, secret=secret))
+
+    _register_admin_cloud()
+
 
 if __name__ == "__main__":
     import sys
@@ -4916,6 +6719,116 @@ if __name__ == "__main__":
     _clean = "오늘 21시 방송해요"
     assert _recover_raw_via_vxtwitter(_clean, None) == (_clean, None)  # tweet id 없음 → 무회귀
     print("[OK] _recover_raw_via_vxtwitter (조기반환)")
+
+    # ── (v3.8.11) _personal_retweet_reason — vxtwitter 교체 전 원문 · 작성자로 리트윗 판정 ──
+    _rcfg = {"channels": {"miyako": {"handle": "miyako_yumemita"}}}
+    assert _personal_retweet_reason("@bang_dream_info: ／ #アニメゆめみた 10/1(木)23:00より", None, "miyako", _rcfg)
+    assert _personal_retweet_reason("RT @bang_dream_info: 再放送", None, "miyako", _rcfg)
+    assert _personal_retweet_reason("再放送決定！", {"author": "bang_dream_info"}, "miyako", _rcfg)   # 폰 원문에 표시 없어도 작성자로
+    assert _personal_retweet_reason("今日も配信！", {"author": "Miyako_Yumemita"}, "miyako", _rcfg) is None  # 대소문자 무시
+    assert _personal_retweet_reason("今日も配信！", None, "miyako", _rcfg) is None                        # 조회 실패 → 원문만
+    assert _personal_retweet_reason("今日も配信！", {"author": ""}, "miyako", _rcfg) is None
+    # (v4a) vxtwitter 리트윗 본문(작성자 = 리트윗한 멤버) · fxtwitter reposted_by
+    assert _personal_retweet_reason("再放送", {"author": "miyako_yumemita", "text": "RT @bang_dream_info: 再放送"},
+                                    "miyako", _rcfg)
+    assert _personal_retweet_reason("再放送", {"author": "bang_dream_info", "reposted_by": "miyako_yumemita"},
+                                    "miyako", _rcfg).startswith("@miyako_yumemita 가 @bang_dream_info")
+    print("[OK] _personal_retweet_reason (폰 원문 @핸들: · RT 본문 · reposted_by · 작성자 불일치 → 리트윗)")
+
+    # ── (v4a 10-01) _official_skip_reason — 「공식」 = @BDP_yumemita 가 직접 쓴 글만 ──
+    _ocfg = {"channels": {"miyako": {"handle": "miyako_yumemita"},
+                          "group": {"handle": "BDP_yumemita", "is_group": True}}}
+    _G = "夢限大みゅーたいぷ"
+    assert _official_skip_reason("本日の配信", {"author": "BDP_yumemita"}, _G, _ocfg) is None          # 직접 쓴 글
+    assert _official_skip_reason("本日の配信", {"author": "bdp_yumemita"}, "", _ocfg) is None           # 대소문자 무시 · 표시명 무관
+    assert _official_skip_reason("本日の配信", None, _G, _ocfg) is None                                 # 조회 실패 → 표시명
+    assert _official_skip_reason("本日の配信", None, _G + "公式", _ocfg) is None
+    assert _official_skip_reason("@TVLIVE_info: 出演", None, _G, _ocfg).startswith("리트윗:")          # 폰 원문 표시
+    assert _official_skip_reason("出演", {"author": "BDP_yumemita", "text": "RT @TVLIVE_info: 出演"}, _G, _ocfg)  # vx 리트윗
+    assert _official_skip_reason("出演", {"author": "TVLIVE_info", "reposted_by": "BDP_yumemita"}, _G, _ocfg)  # fx 리트윗
+    assert _official_skip_reason("新曲", {"author": "bang_dream_GBP"}, "バンドリ！アワーノーツ", _ocfg).startswith("다른 계정 글")
+    assert _official_skip_reason("新曲", None, "バンドリ！アワーノーツ", _ocfg).startswith("다른 계정 알림")
+    assert _official_skip_reason("新曲", None, "", _ocfg).startswith("작성자 확인 불가")
+    assert _official_skip_reason("引用です", {"author": "BDP_yumemita", "qrt_url": "x"}, _G, _ocfg) is None  # 인용(QRT)은 직접 쓴 글
+    assert set(_NOTICE_VERDICT) >= {"none", "added", "updated", "recap", "dup", "skip", "unchanged", "error"}
+    print("[OK] _official_skip_reason (리트윗 · 다른 계정 → 공식 경로 제외)")
+
+    # ── (v4a 2026-10-02) 행사 배너 — 게임 계정 판별 · 커밋 · 되돌리기 · 소식 제외 ──
+    _gcfg = {"game_accounts": {"bang_dream_on": {"handle": "bang_dream_on", "x_names": ["バンドリ！アワーノーツ"]}}}
+    assert _game_account({"author": "bang_dream_on"}, "", _gcfg) == "bang_dream_on"
+    assert _game_account({"author": "Bang_Dream_ON"}, "x", _gcfg) == "bang_dream_on"            # 대소문자 무시
+    assert _game_account({"author": "BDP_yumemita"}, "バンドリ！アワーノーツ", _gcfg) is None          # 작성자가 있으면 그것만 본다
+    assert _game_account(None, "バンドリ！アワーノーツ", _gcfg) == "bang_dream_on"                  # 조회 실패 → 표시명
+    assert _game_account(None, "夢限大みゅーたいぷ", _gcfg) is None and _game_account(None, "", _gcfg) is None
+    assert _game_account({"author": "bang_dream_on"}, "", {"game_accounts": {}}) is None
+
+    class _MemGH:
+        """read_json/write_json 만 흉내 내는 메모리 저장소(sha = 쓰기 횟수)."""
+        def __init__(self):
+            self.f, self.n = {}, 0
+
+        def read_json(self, p):
+            v = self.f.get(p)
+            return (json.loads(json.dumps(v)) if v is not None else None), (str(self.n) if v is not None else None)
+
+        def write_json(self, p, obj, prev_sha=None, message=""):
+            self.n += 1
+            self.f[p] = json.loads(json.dumps(obj))
+            return None, str(self.n)
+
+    _bgh = _MemGH()
+    _bnow = "2026-10-02T03:00:00Z"
+    _bj = {"action": "upsert", "banner_ref": None, "image_for": "none", "image_roles": ["event"], "reason": "새 행사",
+           "event": {"name_ja": "チャレンジライブイベント「アイの奔流 AtoZ」", "name_ko": "사랑은 격류 AtoZ",
+                     "start_jst": "2026-09-30 18:00", "end_jst": "2026-10-08 20:59", "permanent": False},
+           "gacha": {"title_ja": "「ワタシが主役のサイバーナイトガチャ」", "title_ko": "내가 주인공 가챠", "start_jst": None, "end_jst": None}}
+    _r1 = _commit_banner(_bgh, {"judgement": _bj, "post": {"tweet_id": "9001", "media": ["https://x/e.jpg"]}}, _bnow)
+    assert _r1["mode"] == "added" and _r1["shown"], _r1
+    assert _bgh.f[_BANNERS_PATH]["banners"][0]["image_urls"] == ["https://x/e.jpg"]
+    # 같은 글 재전송 = dup (쓰기 없음)
+    _n0 = _bgh.n
+    assert _commit_banner(_bgh, {"judgement": _bj, "post": {"tweet_id": "9001", "media": []}}, _bnow)["mode"] == "dup" and _bgh.n == _n0
+    # 소식과 겹침 판정 — 행사 · 가챠 이름이 본문에 있으면
+    assert banners.covers_text(_bgh.f[_BANNERS_PATH]["banners"], "「アイの奔流 AtoZ」このあと18:00より開催") is not None
+    # 판정이 none → 아무것도 안 씀
+    assert _commit_banner(_bgh, {"judgement": {"action": "none", "reason": "무관"}, "post": {"tweet_id": "9002"}}, _bnow)["mode"] == "none" and _bgh.n == _n0
+    # 종료 후 정리 — 새 글이 와도 지난 행사는 보관으로
+    _late = "2026-10-09T00:00:00Z"
+    _commit_banner(_bgh, {"judgement": {"action": "none", "reason": ""}, "post": {"tweet_id": "9003"}}, _late)
+    assert _bgh.f[_BANNERS_PATH]["banners"] == [] and _bgh.f[_BANNERS_ARCHIVE_PATH]["banners"][0]["archived_reason"] == "ended"
+    # 되돌리기(새로 만든 행사 → 삭제): LLM 판단 기록 + restore_banner
+    _bgh2 = _MemGH()
+    _r2 = _commit_banner(_bgh2, {"judgement": _bj, "post": {"tweet_id": "9101", "media": []}}, _bnow)
+    _bgh2.f[_LLM_ACTIONS_PATH] = {"items": [{"id": "llm_t1", "ts": _bnow, "kind": "banner_judge", "who": "bang_dream_on",
+                                             "undo": _r2["undo"], "undone": None}]}
+    _ur = _llm_undo(_bgh2, "llm_t1", _bnow)
+    assert _ur["applied"] and _bgh2.f[_BANNERS_PATH]["banners"] == [], _ur
+    assert _bgh2.f[_LLM_ACTIONS_PATH]["items"][0]["undone"]["applied"]
+    # 관리 페이지 수정 · 삭제 커밋
+    _bgh3 = _MemGH()
+    _r3 = _commit_banner(_bgh3, {"judgement": _bj, "post": {"tweet_id": "9201", "media": []}}, _bnow)
+    _bid = _r3["id"]
+    assert _banner_edit_commit(_bgh3, _bid, {"name_ko": "수정됨"}, _bnow) == {"ok": True, "changed": True}
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["name_ko"] == "수정됨"
+    assert _banner_edit_commit(_bgh3, _bid, {"end_at": "2026-01-01T00:00:00Z"}, _bnow)["ok"] is False
+    # 관리 페이지: 행사 이미지 링크 · 가챠 기간 수정(저장소까지 반영)
+    assert _banner_edit_commit(_bgh3, _bid, {"image_urls": ["https://x/a.jpg", "https://x/b.jpg"]}, _bnow) == {"ok": True, "changed": True}
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["image_urls"] == ["https://x/a.jpg", "https://x/b.jpg"]
+    assert _banner_edit_commit(_bgh3, _bid, {"image_urls": ["ftp://x/a.jpg"]}, _bnow)["ok"] is False
+    _gid = _bgh3.f[_BANNERS_PATH]["banners"][0]["gachas"][0]["id"]
+    assert _banner_edit_commit(_bgh3, _bid, {"gachas_period": {_gid: {"start_at": "2026-09-30T09:00:00Z", "end_at": "2026-10-09T02:59:00Z"}}}, _bnow)["changed"]
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["gachas"][0]["end_at"] == "2026-10-09T02:59:00Z"
+    assert _banner_edit_commit(_bgh3, _bid, {"gachas_period": {_gid: {"start_at": "", "end_at": None}}}, _bnow)["changed"]
+    assert _bgh3.f[_BANNERS_PATH]["banners"][0]["gachas"][0]["end_at"] is None
+    assert _banner_del_commit(_bgh3, _bid, _bnow)["ok"] and _bgh3.f[_BANNERS_PATH]["banners"] == []
+    assert _bgh3.f[_BANNERS_ARCHIVE_PATH]["banners"][0]["archived_reason"] == "deleted"
+    assert set(_BANNER_VERDICT) >= {"none", "added", "updated", "held", "cancelled", "dup", "invalid", "error", "llm_failed"}
+    # 소개 카드(제목 막대 + 설명문)는 event 로 판정돼도 none 으로 돌린다 — 온전한 키비주얼만 남김
+    _ocr = [{"text": "アワーノーツ 初回イベント情報 開催期間 9月28日"}, {"text": "イベント アイの奔流 開催期間 9月30日"}, {"text": "イベントガチャ紹介"}]
+    assert _filter_banner_roles(["event", "event", "gacha"], _ocr) == ["none", "event", "gacha"]
+    assert _filter_banner_roles(["event"], [{"text": "x"}, {"text": "y"}]) == ["event"]       # 장수가 안 맞으면 그대로
+
+    print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}
@@ -5087,7 +7000,7 @@ if __name__ == "__main__":
             # (v3.8.7) /del 이 모니터 이벤트 로그에도 남는지 — 실측 버그(2026-09-22):
             # /del(terminate) 로 지운 방송이 모니터 타임플롯엔 계속 watching 으로 남아있었음.
             _ev_del = next((v for k, v in g.store.items() if k.startswith("monitoring/events-")), "")
-            assert '"flow": "preview"' in _ev_del and '"to_state": "none"' in _ev_del, _ev_del
+            assert '"flow": "preview"' in _ev_del and '"to_state": "out"' in _ev_del, _ev_del
             print("[OK] _remove_broadcast: 모니터 이벤트 로그에 상태 전이(→none) 기록됨")
         else:
             print("[skip] xrelay.parse 0행 — 파서 픽스처 확인")
@@ -5302,6 +7215,20 @@ if __name__ == "__main__":
         assert pv11c and pv11c[0]["channel_key"] == "yuno" and pv11c[0]["collab_with"] == ["ritsu"], pv11c
         print("[OK] _maybe_url_confirmed_schedule (URL이 quote에만 있어도 raw+quote 합본으로 등록, collab_with=[ritsu])")
 
+        # (v4) 이미 끝난 방송 URL — 예고에 안 올리고 처리 끝(텍스트 파싱으로도 안 넘김). 10-03 스테이징 재현 사례.
+        g11e = _FakeGH()
+        _ended = _FakeVideoInfo("7sBzjBKAxFQ", "UC_miyako", "【零】＃８", "none",
+                                scheduled_start="2026-10-03T06:00:00Z", actual_start="2026-10-03T06:00:17Z")
+        _ended.actual_end = "2026-10-03T10:00:00Z"
+        _FakeYouTubeClient._RESP = {"7sBzjBKAxFQ": _ended}
+        assert _maybe_url_confirmed_schedule(
+            g11e, "ほんでですね…今日はおやすみです", "arale", "2026-10-03T11:34:56Z", _CFG6,
+            quote="／\n🛸#ゆめみた\n10/3(土)の配信スケジュール🌟\n＼\n\n🎮15:00～ 藤都子\n"
+                  "https://www.youtube.com/watch?v=7sBzjBKAxFQ\n",
+        ) is True
+        assert not ((g11e.store.get(_PREVIEW_PATH) or {}).get("items") or []), g11e.store.get(_PREVIEW_PATH)
+        print("[OK] _maybe_url_confirmed_schedule (이미 끝난 방송 URL → 예고에 안 올림 — 10-03 인용 휴방 글 재현)")
+
         # (v3.8.6) _confirm_relay_rows_collab — 공식 계정 일일 스케줄(× 콜라보)도
         # 이름 매치만으론 확정 안 하고 무조건 LLM 재확인
         import src.backend.llm as _llm_mod4
@@ -5475,11 +7402,15 @@ if __name__ == "__main__":
         import src.backend.llm as _llm_mod5
 
         class _FakeChangeLLM:
+            # (v4a) 판정은 broadcast_change_targets — 후보 중 영향받는 id 를 고른다. del/edit 면 후보 전부를 고른 것으로 흉내
             _RESULT = None
             def __init__(self, api_key):
                 pass
-            def broadcast_change(self, text):
-                return self._RESULT
+            def broadcast_change_targets(self, text, cands, now_label):
+                r = dict(self._RESULT)
+                r.setdefault("target_ids", [c["id"] for c in cands] if r["action"] != "none" else [])
+                r.setdefault("reason", "self-test")
+                return r
 
         _orig_llm_cls5 = _llm_mod5.LLMClient
         _orig_env5 = dict(os.environ)
@@ -5495,9 +7426,10 @@ if __name__ == "__main__":
                                     "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
             pv_bc1 = (gbc1.store.get(_PREVIEW_PATH) or {}).get("items") or []
             assert not pv_bc1, pv_bc1
+            # (v4a) 취소 = `/del` terminate 와 동일 — 아카이브에 남기지 않고 지운다(영상 URL 이 있으면 12h 재등록 차단)
             arch_bc1 = (gbc1.store.get(_PREVIEW_ARCHIVE_PATH) or {}).get("items") or []
-            assert any(a.get("id") == "pv_nonoka1" for a in arch_bc1), arch_bc1
-            print("[OK] _maybe_broadcast_change (LLM del → 기존 예고 즉시 제거+아카이브)")
+            assert not any(a.get("id") == "pv_nonoka1" for a in arch_bc1), arch_bc1
+            print("[OK] _maybe_broadcast_change (LLM del → /del terminate 와 동일하게 즉시 제거)")
 
             # edit → scheduled_start 갱신, 항목은 유지
             _FakeChangeLLM._RESULT = {"action": "edit", "when": "09/23 23:00"}
@@ -5544,7 +7476,7 @@ if __name__ == "__main__":
                                     "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
             assert gbc6.store[_PREVIEW_PATH]["items"] == [_NONOKA_ITEM]
             _ev_bc6 = next((v for k, v in gbc6.store.items() if k.startswith("monitoring/events-")), "")
-            assert '"result": "degraded"' in _ev_bc6 and "GROQ_API_KEY" in _ev_bc6, _ev_bc6
+            assert '"result": "degraded"' in _ev_bc6 and "GROQ" in _ev_bc6, _ev_bc6
             print("[OK] _maybe_broadcast_change (GROQ_API_KEY 없음 → 미반영, degraded 로그)")
         finally:
             _llm_mod5.LLMClient = _orig_llm_cls5
@@ -5712,14 +7644,14 @@ if __name__ == "__main__":
                                       "pre": {"state": "watching"}})
         assert g2b.store[_PREVIEW_PATH]["items"] == [], g2b.store[_PREVIEW_PATH]
         _ev_edit = next((v for k, v in g2b.store.items() if k.startswith("monitoring/events-")), "")
-        assert '"flow": "preview"' in _ev_edit and '"to_state": "none"' in _ev_edit             and '"from_state": "watching"' in _ev_edit, _ev_edit
+        assert '"flow": "preview"' in _ev_edit and '"to_state": "out"' in _ev_edit             and '"from_state": "watching"' in _ev_edit, _ev_edit
         print("[OK] _apply_preview_edit: state 변경(→none)이 모니터 이벤트 로그에도 기록됨")
 
-        # (b) video_id 있는 아이템 → MAIN_SERVICE_URL 미설정이면 안 죽고 안내만.
+        # (b) video_id 있는 아이템 → (v4) 자기 호출 대신 reconcile(영상) 적재. 큐 · Cloud Tasks 설정이 없어도 안 죽는다.
         item_b = {"id": "pv_x1", "state": "live", "video_id": "vvv", "channel_key": "arale"}
         r_video = _activate_state_edit(g2, item_b, NW)
-        assert "다음 정기 tick" in r_video, r_video
-        print("[OK] _activate_state_edit: video_id 있음 + 메인서비스 미설정 → 경고만(안 죽음)")
+        assert "reconcile(영상) 적재" in r_video, r_video
+        print("[OK] _activate_state_edit: video_id 있음 → reconcile(영상) 적재 (설정 없어도 안 죽음)")
 
         # (c) video_id 없는 announced, 아직 30분 안 지난 상태로 state="end" 강제 지정
         #     → FSM 재판정 결과 그대로(end 창 유지, none 으로 안 건너뜀).
@@ -5755,40 +7687,37 @@ if __name__ == "__main__":
             return True
 
         _orig_send_tg = globals()["_send_telegram"]
-        _orig_gh_store = globals()["GitHubStore"]
-        _orig_del_req = globals()["_handle_del_request"]
+        _orig_status = globals()["_handle_status"]
+        _orig_make_store = storage.make_store
         _orig_env4 = dict(os.environ)
         try:
             os.environ["GITHUB_TOKEN"] = "test-token"
             os.environ["GITHUB_REPO"] = "test/repo"
             globals()["_send_telegram"] = _fake_send_telegram
-            globals()["GitHubStore"] = _FakeGHStore
+            storage.make_store = lambda role="data": _FakeGHStore()   # (v4) 웹훅 store 는 storage.make_store 로 만든다
             _FakeGHStore._store = {}
             client = app.test_client()
 
-            # 실사례 재현: /del preview (유닛/번호 누락) — 현재 코드는 이미 사용법
-            # 안내를 보낸다(버그리포트 당시엔 조용히 끝났다는 보고 — 재현 안 됨은
-            # 배포 지연/환경차 가능성. 그래도 이 경로가 DM 을 보낸다는 걸 고정한다).
+            # (v4 D24) 텔레그램은 비상 명령만 — 옛 마법사 명령(/del 등)은 관리 페이지 안내 DM 1건으로 끝난다.
             _sent_msgs.clear()
             resp = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/del preview"}})
             assert resp.status_code == 200
             assert len(_sent_msgs) == 1, _sent_msgs
-            assert "사용법" in _sent_msgs[0], _sent_msgs
-            print("[OK] 안전망: /del preview(유닛·번호 누락) → 사용법 안내 DM 정상 발송")
+            assert "관리 페이지" in _sent_msgs[0] and "/admin" in _sent_msgs[0], _sent_msgs
+            print("[OK] (v4 D24) /del 등 옛 명령 → 비상 명령 · 관리 페이지 안내 DM")
 
-            # 안전망 자체 검증: 핸들러가 DM 없이 끝나는 상황을 인위로 만들어도
-            # _done() 이 대신 알린다.
+            # 안전망 자체 검증: 핸들러가 DM 없이 끝나는 상황을 인위로 만들어도 _done() 이 대신 알린다.
             _sent_msgs.clear()
-            globals()["_handle_del_request"] = lambda *a, **kw: None
-            resp2 = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/del arale 1"}})
+            globals()["_handle_status"] = lambda *a, **kw: None
+            resp2 = client.post("/telegram", json={"message": {"chat": {"id": 0}, "text": "/status"}})
             assert resp2.status_code == 200
             assert len(_sent_msgs) == 1, _sent_msgs
             assert "결과를 알려드리지 못했습니다" in _sent_msgs[0], _sent_msgs
             print("[OK] 안전망: 핸들러가 DM 없이 끝나는 경로 → _done() 이 대신 안내 DM 발송")
         finally:
             globals()["_send_telegram"] = _orig_send_tg
-            globals()["GitHubStore"] = _orig_gh_store
-            globals()["_handle_del_request"] = _orig_del_req
+            globals()["_handle_status"] = _orig_status
+            storage.make_store = _orig_make_store
             os.environ.clear()
             os.environ.update(_orig_env4)
 
@@ -6019,12 +7948,20 @@ if __name__ == "__main__":
                     "kind": "a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:fa7ca7b21bde0000",
                     "tag": "mn4Jjd7KdXY::199826f2-810d-4770-a851-c23591a45b10",
                 }
+                # (v4 D1·D2·D3) 실물 video_id 가 있는 알림은 적용 작업 yt_notif 로 적재된다(로컬 = 적용 큐,
+                # 클라우드 = Cloud Tasks → 쓰기 서비스 /write). 작업이 reconcile(영상) 후 tunein→watching / 시작→live.
+                import src.backend.apply as _ap
+                _yt_jobs: list = []
+                _orig_ap_submit = _ap.submit
+                _ap.submit = lambda kind, args, **kw: (_yt_jobs.append((kind, dict(args), kw)),
+                                                       {"queued": True, "job_id": f"j{len(_yt_jobs)}"})[1]
                 rt1 = client.post("/ingest", data=_tunein_form, headers=_yt_hdr)
                 jt1 = rt1.get_json()
-                assert rt1.status_code == 200 and jt1.get("woken") is True, (rt1.status_code, jt1)
+                assert rt1.status_code == 200 and jt1.get("queued") == "j1", (rt1.status_code, jt1)
                 assert jt1["public_relay"] == "tunein" and jt1["video_id"] == "mn4Jjd7KdXY", jt1
-                assert _enqueue_wake_now_counts["count"] == 1 and _woken_ids == ["mn4Jjd7KdXY"]
-                print("[OK] v3.8.4: /ingest source=yt TUNEIN(실물 video_id) → 즉시 _enqueue_wake_now 1회"
+                assert _yt_jobs[-1][0] == "yt_notif" and _yt_jobs[-1][1]["video_id"] == "mn4Jjd7KdXY" \
+                    and _yt_jobs[-1][1]["relay_kind"] == "tunein" and _yt_jobs[-1][2].get("wait") is False, _yt_jobs
+                print("[OK] v4: /ingest source=yt TUNEIN(실물 video_id) → yt_notif 적재(결과 안 기다림)"
                       " (09-22 09:33 千石ユノ 실측 회귀 테스트 — 예전엔 조용히 ignored 였음)")
 
                 # REMINDER(일반 채널 라이브 시작)도 동일 — video_id 실물 확보 케이스.
@@ -6038,9 +7975,10 @@ if __name__ == "__main__":
                 }
                 rt2 = client.post("/ingest", data=_reminder_form, headers=_yt_hdr)
                 jt2 = rt2.get_json()
-                assert rt2.status_code == 200 and jt2.get("woken") is True and jt2["public_relay"] == "reminder", jt2
-                assert _enqueue_wake_now_counts["count"] == 1 and _woken_ids == ["bgzve7Y7S50"]
-                print("[OK] v3.8.4: /ingest source=yt REMINDER(실물 video_id) → 즉시 _enqueue_wake_now 1회")
+                assert rt2.status_code == 200 and jt2.get("queued") == "j2" and jt2["public_relay"] == "reminder", jt2
+                assert _yt_jobs[-1][0] == "yt_notif" and _yt_jobs[-1][1]["video_id"] == "bgzve7Y7S50", _yt_jobs
+                _ap.submit = _orig_ap_submit
+                print("[OK] v4: /ingest source=yt REMINDER(실물 video_id) → yt_notif 적재")
 
                 # 회원전용 추정 TUNEIN(video_id=default) — 실측 미확인 포맷이라 승격 스킵(무시 유지).
                 _enqueue_wake_now_counts["count"] = 0

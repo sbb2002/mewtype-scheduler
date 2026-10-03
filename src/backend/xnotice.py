@@ -353,12 +353,15 @@ def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None 
 
     v3: `title_raw` (정규식 제목) + `body_for_llm` (LLM 입력용 본문) 추가.
     호출부가 llm.notice_title(body_for_llm) 호출 시 제목·번역 확정.
+    (v4a D16) 리트윗 필터: RT @handle: 패턴 → None 반환 (남의 소식을 공식 소식으로 올리지 않게).
     """
     if not text or not text.strip():
         return None
     t = normalize(text)
     if "配信スケジュール" in t or "出演情報" in t:
         return None                       # 스케줄/출연 파이프라인 담당
+    if _HANDLE_HEAD_RE.match(t):
+        return None                       # (v4a D16) 리트윗/타인글 필터
 
     try:
         now_jst = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(JST)
@@ -546,17 +549,23 @@ if __name__ == "__main__":
     assert r12b and r12b["title"] == "会場でのCD販売スタート", r12b["title"]  # 역방향 ／…＼ 병합 + 💿 제거
     print("[OK] S12  최종화 부스트 · 플랫폼 나열 감점 · 역방향 병합 · 꼬리 이모지")
 
-    # S13: 업스트림 잘림으로 URL 이 "https://…" 로 끊긴 경우 → url=None, site="x" 폴백
-    # 실측(2026-09-13): @bang_dream_on 리트윗의 "▼YouTube Live\nhttps://…" 가 그대로
-    # notices.json 에 저장돼, 클릭해도 아무 데도 못 가는 깨진 링크가 남았다.
+    # S13: (v4a D16) 리트윗은 소식으로 등록 안 함 (남의 소식을 공식 소식으로 올리지 않게)
+    # 이전(v3까지)에는 RT 도 notices 에 들어갔는데, 그러면 URL 잘림·오탐 문제가 증가함
     S13 = ("RT @bang_dream_on: 本日21:00より「アワーノーツ リリース日決定特番」を生配信📺\n\n"
            "配信ではついに #アワーノーツ のリリース日を発表🎉\n"
            "その他にも最新情報を盛りだくさんでお届けいたします！ぜひご覧ください💫\n\n"
            "▼YouTube Live\nhttps://…")
     r13 = parse(S13, NOW, tag="p#https://x.com/#1tweet-2099069766875136210")
-    assert r13 and r13["url"] is None, r13
-    assert r13["site"] == "x", r13
-    assert r13["tweet_url"] == "https://x.com/i/status/2099069766875136210", r13
-    print("[OK] S13  잘린 URL(https://…) → url=None, site=x, tweet_url 로 폴백")
+    assert r13 is None, "리트윗은 소식 아님"
+    print("[OK] S13  리트윗 (RT @handle:) → None (v4a D16)")
+
+    # S13b: (v4a D16) @handle: 패턴 (RT 없이도) 리트윗으로 처리
+    S13b = ("@bang_dream_info: ／\n"
+            "TVアニメ「バンドリ！ ゆめ∞みた」\n"
+            "最終話放送記念リポストキャンペーン🛸✨\n"
+            "フォロー＆RTで抽選で豪華グッズが当たる！")
+    r13b = parse(S13b, NOW)
+    assert r13b is None, "@handle: 패턴도 타인글"
+    print("[OK] S13b @handle: 패턴 → None (v4a D16)")
 
     print("\nSUCCESS: xnotice self-test 통과")

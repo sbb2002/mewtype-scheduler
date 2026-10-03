@@ -10,6 +10,17 @@ import time
 from dataclasses import dataclass
 
 import requests
+import contextvars
+
+# (v4a, 2026-10-02) LLM 판단 반려 → 재판단: 관리 페이지에서 반려된 판단을 다시 돌릴 때 판정 호출 앞에 붙는 힌트.
+# 판정 6종(참여 · 예고 최종확인 · 게스트 · 취소/변경 · 소식 중복 · 행사)에만 쓰고 번역 · 제목 추출에는 붙이지 않는다.
+REVIEW_HINT: contextvars.ContextVar[str] = contextvars.ContextVar("llm_review_hint", default="")
+
+
+def _with_hint(prompt: str) -> str:
+    h = REVIEW_HINT.get()
+    return h + "\n\n" + prompt if h else prompt
+
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +293,7 @@ class LLMClient:
         )
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=_PARTICIPATION_SCHEMA)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_PARTICIPATION_SCHEMA)
@@ -327,6 +339,7 @@ class LLMClient:
         )
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=_ANNOUNCE_SCHEMA)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_ANNOUNCE_SCHEMA)
@@ -401,6 +414,7 @@ class LLMClient:
         }
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
@@ -418,53 +432,61 @@ class LLMClient:
         logger.warning("collab_partners: 5회 모두 실패 — None (호출부 미추가 처리)")
         return None
 
-    def broadcast_change(self, text_ja: str) -> dict | None:
+    def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str) -> dict | None:
         """
-        (v3.8.7) 개인 트윗이 기존에 예고한 방송을 취소하거나 일정을 변경하는 글인지 판정.
-
-        발동 조건은 호출부(`_maybe_broadcast_change`)가 담당 — 원문에 `配信` 키워드가
-        있고, 그 멤버 소유의 미종료 예고가 실제로 있을 때만 호출한다. 실측 계기
-        (2026-09-22): 멤버가 당일 방송 취소를 공지했는데, 아무 로직도 기존 예고를
-        내리지 않아 나중에 옛 공지가 재-ingest 되며 이미 취소된 방송이 되살아났다.
+        (v4a) 취소·변경 글 판정 + **어느 방송인지 선택**. 옛 `broadcast_change`(2026-10-01 삭제)는 종류만 판정해 호출부가
+        "가장 이른 1개"를 고르는 규칙이라, "오늘 휴방"인데 오늘 방송이 2개인 경우 1개만 내려갔다
+        (2026-09-30 리츠). 여기서는 그 멤버의 활성 예고 목록을 주고 영향받는 방송의 id 를 고르게 한다.
 
         Args:
-            text_ja: 트윗 원문(원어 그대로)
+            text_ja: 트윗 원문
+            candidates: [{"id", "when": "MM/DD HH:MM"(KST), "title"}] — 그 멤버가 호스트인 활성 예고
+            now_kst: 지금 KST "MM/DD(요일) HH:MM" — 오늘/내일 · 아침/밤 같은 상대 표현의 기준
 
         Returns:
-            {"action": "del"|"edit"|"none", "when": "MM/DD HH:MM"(KST, edit일 때만)|None}
-            또는 5회 모두 실패 시 None(호출부는 아무것도 바꾸지 않는다 — 안전한 실패).
+            {"action": "del"|"edit"|"none", "target_ids": [...], "when": "MM/DD HH:MM"|None, "reason": str}
+            reason = 판정 근거 한 줄(한국어) — "없음"일 때도 쓴다(놓친 사례를 나중에 확인·프롬프트 조정하는 자료).
+            5회 모두 실패 시 None(호출부는 아무것도 바꾸지 않는다).
         """
         if self.disabled:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
-
         masked_text, _mapping = _mask_glossary(text_ja or "")
+        lines = "\n".join(f"- id={c['id']} | {c['when']} | {c['title']}" for c in candidates)
         prompt = (
             f"다음은 유메미타 멤버가 올린 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
-            f"질문: 이 글이 이전에 예고한 자신의 방송을 취소하거나 일정을 변경한다고 "
-            f"알리는 글인가?\n"
-            f"- 취소라면 action=\"del\", when=null\n"
-            f"- 새 날짜/시각으로 변경(연기)이라면 action=\"edit\", when 에 KST 기준 "
-            f"새 일정을 \"MM/DD HH:MM\" 형식으로 채워라(예: \"09/23 23:00\")\n"
-            f"- 취소도 변경도 아니면(평소 방송 예고·잡담·후기 등) action=\"none\", when=null\n"
-            f"JSON 포맷만 출력.\n\n출력:\n"
-            f'{{"action": "del" 또는 "edit" 또는 "none", "when": "MM/DD HH:MM" 또는 null}}'
+            f"지금(KST)은 {now_kst} 이다. 이 멤버가 예고해 둔 방송 목록(KST):\n{lines}\n\n"
+            f"질문: 이 글이 위 방송 중 일부 또는 전부를 취소하거나 일정을 변경한다고 알리는 글인가?\n"
+            f"- 취소라면 action=\"del\". target_ids 에는 취소되는 방송의 id 만 넣는다.\n"
+            f"  · 범위 표현이 없으면(예: \"오늘 방송 쉽니다\") 그 날짜(오늘/내일 등)의 방송을 모두 넣는다.\n"
+            f"  · 범위가 있으면(아침/낮/밤, 시각, 방송 제목·내용) 그에 맞는 방송만 넣는다.\n"
+            f"- 새 날짜/시각으로 변경(연기)이라면 action=\"edit\", when 에 KST 기준 새 일정을 "
+            f"\"MM/DD HH:MM\" 형식으로 채우고 target_ids 에 변경되는 방송의 id 를 넣는다.\n"
+            f"- 취소도 변경도 아니면(평소 예고·잡담·후기 등) 또는 목록의 어떤 방송인지 알 수 없으면 "
+            f"action=\"none\", target_ids=[], when=null\n"
+            f"target_ids 는 반드시 위 목록의 id 에서만 고른다.\n"
+            f"reason 에는 그렇게 판정한 근거를 글의 어느 표현 때문인지 드러내 한국어 한 문장으로 쓴다"
+            f"(action 이 none 일 때도 왜 취소·변경이 아니라고 봤는지 쓴다). JSON 포맷만 출력.\n\n출력:\n"
+            f'{{"action": "del" 또는 "edit" 또는 "none", "target_ids": ["id", ...], "when": "MM/DD HH:MM" 또는 null, '
+            f'"reason": "근거 한 문장"}}'
         )
         schema = {
-            "name": "broadcast_change",
+            "name": "broadcast_change_targets",
             "strict": True,
             "schema": {
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["del", "edit", "none"]},
+                    "target_ids": {"type": "array", "items": {"type": "string"}},
                     "when": {"type": ["string", "null"]},
+                    "reason": {"type": "string"},
                 },
-                "required": ["action", "when"],
+                "required": ["action", "target_ids", "when", "reason"],
                 "additionalProperties": False,
             },
         }
-
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
@@ -473,13 +495,16 @@ class LLMClient:
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"broadcast_change: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.warning(f"broadcast_change_targets: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
-            if isinstance(result, dict) and result.get("action") in ("del", "edit", "none"):
-                return {"action": result["action"], "when": result.get("when")}
-            logger.warning(f"broadcast_change: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
-
-        logger.warning("broadcast_change: 5회 모두 실패 — None (호출부 미반영 처리)")
+            if (isinstance(result, dict) and result.get("action") in ("del", "edit", "none")
+                    and isinstance(result.get("target_ids"), list)):
+                return {"action": result["action"],
+                        "target_ids": [str(x) for x in result["target_ids"]],
+                        "when": result.get("when"),
+                        "reason": str(result.get("reason") or "").strip()[:200]}
+            logger.warning(f"broadcast_change_targets: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+        logger.warning("broadcast_change_targets: 5회 모두 실패 — None (호출부 미반영 처리)")
         return None
 
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
@@ -530,6 +555,7 @@ class LLMClient:
         }
 
         for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=schema)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
@@ -546,6 +572,139 @@ class LLMClient:
             logger.warning(f"duplicate_notice: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
         logger.warning("duplicate_notice: 5회 모두 실패 — None (신규로 등록)")
+        return None
+
+    def banner_judge(self, text: str, posted_jst: str, active: list[dict],
+                     images_ocr: list[dict] | None = None) -> dict | None:
+        """
+        (v4a) 행사 판정 — 게임 계정(`bang_dream_on`) 글 1건이 「행사 배너」에 무엇을 해야 하는지.
+
+        active: [{"id", "name_ja", "start_jst", "end_jst", "hold": bool, "gachas": [제목…]}, …] — 지금 배너에 올라 있는 행사.
+        posted_jst: 글 게시 시각 "YYYY-MM-DD HH:MM"(일본 표준시 JST).
+        images_ocr: [{"idx": 1, "text": "이미지 속 글자 또는 None"}, …] — 첨부 이미지를 비전으로 읽은 글자(개최기간이 본문이 아니라
+            이미지에만 있는 경우가 실측으로 확인됨). 주면 이미지마다 용도(image_roles)도 판정한다.
+
+        Returns:
+            {"action": none|upsert|hold|cancel, "banner_ref": id|None,
+             "event": {"name_ja","name_ko","start_jst","end_jst","permanent"}|None,
+             "gacha": {"title_ja","title_ko","start_jst","end_jst"}|None,
+             "image_for": event|gacha|none, "image_roles": [event|gacha|none …], "reason": str}
+            5회 모두 실패하면 None(호출부가 등록하지 않음 — 잘못 올라간 배너가 더 눈에 띄므로 소식과 반대 기본값).
+        시각은 JST 문자열로 받고, 검증 · UTC 변환은 `banners.apply_judgement` 가 한다.
+        """
+        if self.disabled:
+            return None
+        ids = [a["id"] for a in active]
+        n_img = len(images_ocr or [])
+        masked, mapping = _mask_glossary(text or "")
+        act_lines = "\n".join(
+            f'- id="{a["id"]}" 이름={a.get("name_ja")} 기간={a.get("start_jst")}~{a.get("end_jst")}'
+            f'{" (보류 중)" if a.get("hold") else ""} 가챠={",".join(a.get("gachas") or []) or "없음"}'
+            for a in active) or "(없음)"
+        rules = [
+            "게임 「バンドリ！ アワーノーツ」 공식 계정 글이 하나 들어왔다. 이 글이 팬 사이트의 「행사 배너」에 무엇을 해야 하는지 판정하라.",
+            "행사 = 게임 안 기간 한정 이벤트(예: 챌린지 라이브). 가챠 = 행사와 함께 오는 뽑기.",
+            "대상 = 夢限大みゅーたいぷ(멤버: 仲町あられ · 千石ユノ · 宮永ののか · 峰月律 · 藤都子)가 직접 나오는 행사 · 가챠뿐이다.",
+            "규칙:",
+            "- 점검 · 사과 · 보상 배포 · 불편 안내 같은 일반 공지, 유메미타와 무관한 글 → action=none.",
+            "- 현재 배너 목록의 행사와 같은 행사인데 새 사실(기간 · 가챠 · 곡)이 없고 「이 후 18:00 개최」 같은 당일 재공지 · 참여 독려뿐 → none.",
+            "- 단, 당일 재공지라도 글이 알리는 개최 시각이 현재 배너 목록의 시작 시각과 다르면 새 사실(시작 변경)이므로 upsert 하고 event_start_jst 에 새 시각을 준다.",
+            "- 새 행사 또는 기존 행사의 새 사실(개최일 · 종료일 · 가챠 · 신곡) → upsert. 기존 행사면 banner_ref 에 그 id.",
+            "- 상시화된 행사(종료 없이 상시 운영 · 常設 · 常時開催) → permanent=true, action=none.",
+            "- 개최가 보류 · 중단되어 새 날짜가 없다 → hold(banner_ref 필수). 새 날짜가 공지되면 upsert 로 새 기간을 준다.",
+            "- 행사 취소 · 조기 종료 → cancel(banner_ref 필수).",
+            "- 시각은 일본 표준시(JST) 문자열 \"YYYY-MM-DD HH:MM\"(날짜만 알면 \"YYYY-MM-DD\"), 모르면 null. 연도가 없으면 글 게시 시각 기준으로 정한다. "
+            "「このあと18:00より」 같은 상대 표현은 글 게시 시각의 날짜 + 그 시각으로 계산한다. "
+            "「~10月8日(木)20:59まで」 의 종료는 그 날짜 20:59.",
+            "- 「開催」 「開始」 처럼 지금 막 열렸다는 글인데 시작 시각이 글에 없고 기존 행사 목록에도 없으면 event_start_jst 는 글 게시 시각으로 둔다.",
+            "- 가챠 정보가 글에 있으면 gacha_* 를 채우고 없으면 null. 가챠에 자체 개최기간이 있으면(이미지 포함) 행사와 달라도 그대로 gacha_start_jst · gacha_end_jst 에 준다. 자체 기간이 없으면 null(행사와 같다는 뜻).",
+            "- 이름 · 제목은 일본어 원문 그대로(name_ja · title_ja)와 자연스러운 한국어 번역(name_ko · title_ko)을 둘 다 준다. "
+            "「」 같은 괄호는 원문 그대로 둔다. @@GLOSSARY0@@ 같은 토큰은 그대로 둔다.",
+            "- image_for: 글 첨부 이미지가 행사 소개면 event, 가챠 소개면 gacha, 아니면 none.",
+        ]
+        if n_img:
+            rules += [
+                f"- 첨부 이미지가 {n_img}장 있고 아래에 이미지 속 글자(OCR, 오독 가능)가 있다. 글 본문에 개최기간이 없으면 이미지 속 개최기간을 쓴다. 본문과 이미지가 다르면 본문이 우선.",
+                f"- image_roles: 이미지 {n_img}장 각각의 용도를 이미지 순서대로 {n_img}개 준다. **행사의 키비주얼 그 자체**(행사 로고 · 일러스트 · 개최기간 · 저작권 표기만 있는 온전한 그림)만 event 로 한다. "
+                "「初回イベント情報」 「イベントガチャ紹介」 「あらすじ紹介」 처럼 제목 막대와 설명문이 붙은 소개 카드, 방송 화면 캡처, 멤버 일러스트 소개, 보상 소개는 none. "
+                "가챠 이미지는 gacha(팬 사이트는 가챠 이미지를 쓰지 않지만 구분은 한다).",
+            ]
+        else:
+            rules.append("- image_roles 는 빈 배열 [] 로 준다.")
+        rules += [
+            "- reason 에 판정 근거를 한국어 한 문장으로 쓴다.",
+            "JSON 포맷만 출력.",
+        ]
+        ocr_block = ""
+        if n_img:
+            ocr_block = "\n첨부 이미지 속 글자(OCR):\n" + "\n".join(
+                f"이미지{o.get('idx')}: {(o.get('text') or '(글자 없음)').strip()}" for o in images_ocr) + "\n"
+        prompt = (
+            "\n".join(rules)
+            + f"\n\n글 게시 시각(JST): {posted_jst}\n현재 배너 목록:\n{act_lines}\n\n글:\n{masked}\n{ocr_block}"
+        )
+        nstr = {"type": ["string", "null"]}
+        schema = {
+            "name": "banner_judge",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["none", "upsert", "hold", "cancel"]},
+                    "banner_ref": {"type": ["string", "null"], "enum": [*ids, None]},
+                    "event_name_ja": nstr, "event_name_ko": nstr,
+                    "event_start_jst": nstr, "event_end_jst": nstr,
+                    "permanent": {"type": "boolean"},
+                    "gacha_title_ja": nstr, "gacha_title_ko": nstr,
+                    "gacha_start_jst": nstr, "gacha_end_jst": nstr,
+                    "image_for": {"type": "string", "enum": ["event", "gacha", "none"]},
+                    "image_roles": {"type": "array", "items": {"type": "string", "enum": ["event", "gacha", "none"]}},
+                    "reason": {"type": "string"},
+                },
+                "required": ["action", "banner_ref", "event_name_ja", "event_name_ko", "event_start_jst", "event_end_jst",
+                             "permanent", "gacha_title_ja", "gacha_title_ko", "gacha_start_jst", "gacha_end_jst",
+                             "image_for", "image_roles", "reason"],
+                "additionalProperties": False,
+            },
+        }
+
+        def _u(v, to):
+            return _unmask_glossary(v, mapping, to=to).strip() if isinstance(v, str) and v.strip() else None
+
+        for attempt in range(1, 6):
+            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
+            response = self._call_groq(self.model, prompt, json_schema=schema)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=schema)
+            if not response:
+                continue
+            try:
+                r = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.warning(f"banner_judge: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if not isinstance(r, dict) or r.get("action") not in ("none", "upsert", "hold", "cancel"):
+                logger.warning(f"banner_judge: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
+                continue
+            ev = None
+            if r.get("event_name_ja") or r.get("event_start_jst") or r.get("event_end_jst"):
+                ev = {"name_ja": _u(r.get("event_name_ja"), "ja"), "name_ko": _u(r.get("event_name_ko"), "ko"),
+                      "start_jst": r.get("event_start_jst"), "end_jst": r.get("event_end_jst"),
+                      "permanent": bool(r.get("permanent"))}
+            elif r.get("permanent"):
+                ev = {"name_ja": None, "name_ko": None, "start_jst": None, "end_jst": None, "permanent": True}
+            ga = None
+            if r.get("gacha_title_ja"):
+                ga = {"title_ja": _u(r.get("gacha_title_ja"), "ja"), "title_ko": _u(r.get("gacha_title_ko"), "ko"),
+                      "start_jst": r.get("gacha_start_jst"), "end_jst": r.get("gacha_end_jst")}
+            roles = [x if x in ("event", "gacha", "none") else "none" for x in (r.get("image_roles") or [])]
+            if n_img and len(roles) != n_img:
+                roles = []                       # 장수가 안 맞으면 쓰지 않는다(호출부가 image_for 로 대신 정함)
+            return {"action": r["action"], "banner_ref": r.get("banner_ref") if r.get("banner_ref") in ids else None,
+                    "event": ev, "gacha": ga, "image_for": r.get("image_for") or "none", "image_roles": roles,
+                    "reason": (r.get("reason") or "").strip()[:200]}
+
+        logger.warning("banner_judge: 5회 모두 실패 — None (등록하지 않음)")
         return None
 
     def translate(self, text_ja: str) -> str | None:
@@ -1084,39 +1243,43 @@ if __name__ == "__main__":
     assert LLMClient("test-key").collab_partners("아무 글", host_name="유노", candidate_names=[]) == []
     print("✓ collab_partners: 후보 없음 → API 호출 없이 빈 배열")
 
-    # ──── 시나리오 8e: broadcast_change — 취소/변경/무관 3분기 (v3.8.7) ────
-    print("\n[시나리오 8e] broadcast_change — 기존 예고 취소/변경 판정")
+    # ──── 시나리오 8e: broadcast_change_targets — 취소/변경/무관 + 대상 선택 (v4a) ────
+    # (2026-10-01) 옛 broadcast_change(종류만 판정, 호출부가 가장 이른 1개 선택)는 호출처가 없어 지웠다 — 이 판정으로 대체됨
+    print("\n[시나리오 8e] broadcast_change_targets — 취소/변경 판정 + 영향받는 방송 선택")
     print("-" * 70)
 
+    bc_cands = [{"id": "pv_a", "when": "09/30 22:30", "title": "雑談"},
+                {"id": "pv_b", "when": "09/30 23:00", "title": "ゲーム"}]
     llm_bc_del = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"action": "del", "when": null}')
+        "test-key", session=ParticipationSession(
+            0, '{"action": "del", "target_ids": ["pv_a", "pv_b"], "when": null, "reason": "오늘 쉰다고 함"}')
     )
-    result = llm_bc_del.broadcast_change(
-        "죄송합니다 여러분! 오늘 이 방송 없이, 오늘은 쉬어요!"
-    )
-    assert result == {"action": "del", "when": None}, result
-    print("✓ broadcast_change: 취소 공지 → action=del")
+    result = llm_bc_del.broadcast_change_targets("今日は配信お休みします", bc_cands, "09/30(화) 18:00")
+    assert result == {"action": "del", "target_ids": ["pv_a", "pv_b"], "when": None, "reason": "오늘 쉰다고 함"}, result
+    print("✓ broadcast_change_targets: 휴방 → action=del + 그날 방송 전부")
 
     llm_bc_edit = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"action": "edit", "when": "09/23 23:00"}')
+        "test-key", session=ParticipationSession(
+            0, '{"action": "edit", "target_ids": ["pv_b"], "when": "10/01 23:00", "reason": "내일로 미룸"}')
     )
-    result = llm_bc_edit.broadcast_change("오늘 방송 못하고 내일 23시로 미룰게요ㅠㅠ")
-    assert result == {"action": "edit", "when": "09/23 23:00"}, result
-    print("✓ broadcast_change: 일정 변경 공지 → action=edit + when")
+    result = llm_bc_edit.broadcast_change_targets("ゲーム配信は明日23時に変更！", bc_cands, "09/30(화) 18:00")
+    assert result["action"] == "edit" and result["target_ids"] == ["pv_b"] and result["when"] == "10/01 23:00", result
+    print("✓ broadcast_change_targets: 일정 변경 → action=edit + when + 대상 1건")
 
     llm_bc_none = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"action": "none", "when": null}')
+        "test-key", session=ParticipationSession(
+            0, '{"action": "none", "target_ids": [], "when": null, "reason": "평소 예고"}')
     )
-    result = llm_bc_none.broadcast_change("오늘 방송 너무 재밌었다ㅎㅎ 다들 고마워")
-    assert result == {"action": "none", "when": None}, result
-    print("✓ broadcast_change: 평소 후기/잡담 → action=none (오탐 방지)")
+    result = llm_bc_none.broadcast_change_targets("今日も配信するよ！", bc_cands, "09/30(화) 18:00")
+    assert result["action"] == "none" and result["target_ids"] == [] and result["reason"] == "평소 예고", result
+    print("✓ broadcast_change_targets: 평소 예고 → action=none (근거는 남김)")
 
     llm_bc_fail = LLMClient(
-        "test-key", session=ParticipationSession(99, '{"action": "del", "when": null}')
+        "test-key", session=ParticipationSession(99, '{"action": "del", "target_ids": [], "when": null, "reason": ""}')
     )
-    result = llm_bc_fail.broadcast_change("계속 깨진 응답")
+    result = llm_bc_fail.broadcast_change_targets("계속 깨진 응답", bc_cands, "09/30(화) 18:00")
     assert result is None, result
-    print("✓ broadcast_change: 5회 모두 실패 → None (호출부 미반영 처리)")
+    print("✓ broadcast_change_targets: 5회 모두 실패 → None (호출부 미반영 처리)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
     print("\n[시나리오 9] translate 반복 압축 (의성어 8회+ 연속반복)")

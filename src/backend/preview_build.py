@@ -37,6 +37,19 @@ ANNOUNCED_NO_TIME_TTL_SEC = 18 * 3600
 GROUP_CHANNEL_KEY = "group"
 
 
+def is_group_release(video, channels_cfg: dict) -> bool:
+    """(v4a) 방송 카드로 올리지 않는 영상인가 = **그룹 공식 채널**의 프리미어(녹화 영상 공개 — 싱글 무비 · 뮤비 · 커버 등).
+
+    멤버 개인 채널 프리미어(퀴즈 · 기념 영상 등)는 방송 카드로 올린다(2026-10-01 운영자 결정 — 09-30 엔 채널 무관 전부 뺐다).
+    프리미어 판정 자체는 `VideoInfo.is_premiere`(업로드 상태 processed / duration ≠ P0D). 카테고리로는 못 가른다 —
+    그룹 채널은 싱글 무비 · 생방송 · 라디오가 전부 24(Entertainment)다(2026-10-01 실측).
+    """
+    if not getattr(video, "is_premiere", False):
+        return False
+    group_id = ((channels_cfg.get("channels") or {}).get(GROUP_CHANNEL_KEY) or {}).get("channel_id")
+    return bool(group_id) and getattr(video, "channel_id", None) == group_id
+
+
 def _age_sec(iso_then: str, now_iso: str) -> float:
     """now_iso - iso_then 을 초로. 파싱 실패 시 0."""
     try:
@@ -79,6 +92,8 @@ def build_preview(
     *,
     avatars: dict | None = None,
     ytnotif_items: list[dict] | None = None,
+    search_fn=None,
+    skipped: list | None = None,
 ) -> tuple[dict, list[str], dict, list[dict]]:
     """
     Build new preview.json and identify wakes for Cloud Tasks enqueue.
@@ -90,6 +105,8 @@ def build_preview(
         now_iso: Current time in ISO format
         avatars: optional {channel_id: avatar_url}
         ytnotif_items: optional list of ytnotif parsed dicts
+        search_fn: (v4a D4) optional callable(channel_key) -> video_id | None.
+            URL 없는 예고의 시작+2분 search.list 1회 (쿼터 100). None 이면 검색 안 함(순수 테스트용)
 
     Returns:
         (new_preview, transitions, wakes, gone_items) where:
@@ -141,6 +158,14 @@ def build_preview(
 
     # ─ 1. videos.list 결과 처리 (API 확정 영상) ─
     for video_id, video in videos.items():
+        if is_group_release(video, channels_cfg):
+            # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송이 아니다(2026-09-30 운영자 결정, 10-01 그룹 채널로 한정).
+            # 새로 만들지 않고, 트윗 등으로 먼저 올라와 있던 항목도 이번에 뺀다(아카이브 안 함). 호출부가 `skipped` 로 받아 기록해 둔다(추후 플레이어 재료)
+            if skipped is not None:
+                skipped.append({"video_id": video_id, "channel_id": video.channel_id, "title": video.title,
+                                "scheduled_start": video.scheduled_start,
+                                "removed_item": (prev_by_video_id.get(video_id) or {}).get("id")})
+            continue
         # video_id 는 고유하므로 이전 아이템은 video_id 로만 정확히 잡는다.
         # (in-progress items 대상 match_item 은 백투백 방송에서 오매칭 위험 → 안 씀)
         matched = prev_by_video_id.get(video_id)
@@ -161,22 +186,32 @@ def build_preview(
             # 그룹 공식 채널(@BDP_yumemita) 감지 — channel_order 밖이므로 전용 레인이 없다.
             # 5인 전원 레인에 팬아웃되도록 주 레인 + collab_with 로 변환(신규 생성시에만 필요).
             group_collab_with = None
+            if channel_key == GROUP_CHANNEL_KEY and not matched:
+                # (v4a) 수집(RSS · 예약된 영상 확인 · 알림 후 확인)은 그룹 영상을 **새로 만들지 않는다** — 참여 멤버 근거 없이
+                # 5인 합동으로 팬아웃하게 되기 때문(2026-09-30 운영자 결정). 그룹 영상은 공식 트윗의 근거(이름 · 인원 표현 ·
+                # 이미지 OCR) · 관리 페이지 선택으로만 등록되고, 등록된 뒤엔 위 matched 로 갱신된다. 지운 그룹 예고가 이미
+                # 예약돼 있던 영상 확인으로 되살아나던 문제도 이것으로 막힌다.
+                continue
             if channel_key == GROUP_CHANNEL_KEY:
                 order = channels_cfg["channel_order"]
                 channel_key = order[0]
                 group_collab_with = order[1:] or None
 
-        live_seen = video.live_state == "live"
+        # (v4a D1) 3값: live=True · none=False · upcoming=None(미확인). 알림으로 먼저 live 가 된 아이템을
+        # API 가 아직 upcoming 으로 보는 동안 end 로 떨어뜨리지 않기 위함(구: upcoming 도 False 였음).
+        live_seen = True if video.live_state == "live" else (False if video.live_state == "none" else None)
         url = f"https://www.youtube.com/watch?v={video_id}"
 
         if matched:
             # 기존 아이템 업데이트
             item = dict(matched)
-            if video.title != matched.get("title"):
-                # 제목이 바뀌면(신규 확정·API 재구성 등) 번역이 stale 해지므로 재번역 대상으로.
-                item["title_ko"] = None
-                item["needs_tl"] = bool(video.title)
-            item["title"] = video.title
+            # (v4a) 관리 페이지에서 운영자가 제목(원문·한글)을 고친 항목은 API 제목 · 자동 번역으로 덮지 않는다
+            if not matched.get("title_manual"):
+                if video.title != matched.get("title"):
+                    # 제목이 바뀌면(신규 확정·API 재구성 등) 번역이 stale 해지므로 재번역 대상으로.
+                    item["title_ko"] = None
+                    item["needs_tl"] = bool(video.title)
+                item["title"] = video.title
             item["thumbnail"] = video.thumbnail
             item["url"] = url
             item["video_id"] = video_id
@@ -233,8 +268,8 @@ def build_preview(
         if tick.next_state != item["state"]:
             item = preview.set_state(item, tick.next_state, now_iso)
 
-        # none 이면 archive 이관, 아니면 items 에 추가
-        if tick.next_state == "none":
+        # out 이면 archive 이관, 아니면 items 에 추가 (v4a D7 — 구 none)
+        if tick.next_state == "out":
             gone_items.append(preview.to_archive_record(item, now_iso))
         else:
             items.append(item)
@@ -265,7 +300,7 @@ def build_preview(
             transitions.extend(tick.log)
             if tick.next_state != item["state"]:
                 item = preview.set_state(item, tick.next_state, now_iso)
-            if tick.next_state == "none":
+            if tick.next_state == "out":
                 gone_items.append(preview.to_archive_record(item, now_iso))
                 continue
             if tick.next_check_at:
@@ -303,14 +338,32 @@ def build_preview(
                 gone_items.append(preview.to_archive_record(item, now_iso))
                 continue
 
-        # 살아남음 — FSM(assumed_live 90분 폴백·watching 지각강등 등)
+        # 살아남음 — FSM (v4a: URL 없는 예고는 시작+2분 search.list 1회 · +1시간 out, D4)
         tick = statemachine.derive(item, now_iso, live_seen=None)
         transitions.extend(tick.log)
         if tick.next_state != item["state"]:
             item = preview.set_state(item, tick.next_state, now_iso)
-        if tick.next_state == "none":
+        if tick.next_state == "out":
             gone_items.append(preview.to_archive_record(item, now_iso))
             continue
+        # (v4a D4) 검색 신호가 났고 검색 함수가 주어졌으면 1회 실행. 찾으면 video_id/url 을 붙이고
+        # 즉시 reconcile(영상) 대상으로 올린다(wakes) — 다음 실행의 videos.list 가 제목·썸네일·상태를 채운다.
+        if search_fn is not None and any(l.startswith("nourl-search") for l in tick.log):
+            item = dict(item)
+            item["search_checked"] = True
+            item["last_updated"] = now_iso
+            found = None
+            try:
+                found = search_fn(item.get("channel_key"))
+            except Exception:  # noqa: BLE001
+                found = None
+            if found:
+                item["video_id"] = found
+                item["url"] = f"https://www.youtube.com/watch?v={found}"
+                transitions.append(f"nourl-search-hit {item.get('id', '?')} {found}")
+                wakes[found] = now_iso
+            else:
+                transitions.append(f"nourl-search-miss {item.get('id', '?')}")
         # video_id 없으면 wakes 에 안 넣는다 (Cloud Tasks 대상 아님 — handlers 가 light tick 예약)
         items.append(item)
 
@@ -341,7 +394,8 @@ def build_preview(
         items[idx] = it
 
     # ─ 4. 정렬 및 반환 ─
-    new_preview["items"] = preview.sort_items(items)
+    # (v4a) 예전 방식(salt 없음)으로 만들어진 중복 id 정리 — 관리 수정·삭제·번역 반영이 id 로 대상을 찾는다
+    new_preview["items"] = preview.ensure_unique_ids(preview.sort_items(items))
     return new_preview, transitions, wakes, gone_items
 
 
@@ -817,7 +871,7 @@ if __name__ == "__main__":
     print(f"  stale video (21h no update) → removed, archived")
 
     print("\n" + "=" * 70)
-    print("✓ Test 13: 그룹 공식 채널(@BDP_yumemita) 영상 → 5인 팬아웃 (host=group)")
+    print("✓ Test 13: 그룹 공식 채널(@BDP_yumemita) 영상 — 수집은 새로 만들지 않고, 등록된 항목만 갱신 (v4a)")
     print("=" * 70)
     channels_cfg_g = {
         "channel_order": ["arale", "yuno", "nonoka"],
@@ -841,18 +895,28 @@ if __name__ == "__main__":
             concurrent_viewers=1000,
         ),
     }
+    # (v4a) 등록되지 않은 그룹 영상(RSS · 예약된 확인 · 지운 뒤 확인) → 만들지 않는다(근거 없는 5인 팬아웃 금지)
+    new_preview_13x, *_x = build_preview(channels_cfg_g, videos_group, preview.default_preview(), now_iso)
+    assert new_preview_13x["items"] == [], new_preview_13x["items"]
+    print("  미등록 그룹 영상 → 새 항목 없음")
+    # 공식 트윗 근거 · 관리자 선택으로 등록된 그룹 예고(여기선 아라레 + 유노 + 노노카) → 참여 멤버 유지한 채 API 로 갱신
+    registered = preview.make_item(
+        channel_key="arale", state="announced", source="x-relay", now_iso=now_iso,
+        video_id="grp_vid", url="https://www.youtube.com/watch?v=grp_vid",
+        scheduled_start="2026-09-11T13:58:00Z", collab_with=["yuno", "nonoka"], host="group", kind="collab",
+    )
     new_preview_13, trans_13, wakes_13, _g = build_preview(
-        channels_cfg_g, videos_group, preview.default_preview(), now_iso
+        channels_cfg_g, videos_group, {**preview.default_preview(), "items": [registered]}, now_iso
     )
     assert len(new_preview_13["items"]) == 1, new_preview_13["items"]
     grp_item = new_preview_13["items"][0]
-    assert grp_item["channel_key"] == "arale", grp_item  # channel_order[0] 이 주 레인
+    assert grp_item["channel_key"] == "arale", grp_item  # 등록된 주 레인 유지
     assert grp_item["collab_with"] == ["yuno", "nonoka"], grp_item
     assert grp_item["host"] == "group", grp_item
     assert grp_item["kind"] == "collab", grp_item
     assert grp_item["video_id"] == "grp_vid", grp_item
     assert grp_item["state"] == "live", grp_item
-    print(f"  group channel video → channel_key=arale, collab_with=[yuno,nonoka], host=group")
+    print(f"  등록된 그룹 예고 → 참여 멤버 유지 · API 로 live 갱신")
 
     # 다음 tick 재매칭(video_id) — 기존 팬아웃 필드 유지 확인
     new_preview_13b, *_r = build_preview(
@@ -886,6 +950,15 @@ if __name__ == "__main__":
     assert grp_item_14["title"] == "同時視聴配信 #13(タイトル変更)", grp_item_14
     assert grp_item_14["title_ko"] is None and grp_item_14["needs_tl"] is True, grp_item_14
     print("  title_ko/needs_tl: 신규=True, 제목 불변=유지, 제목 변경=재설정")
+
+    # Test 14b (v4a): 운영자가 고친 제목(title_manual)은 API 제목 변경에도 유지 · 재번역 안 함
+    manual = dict(grp_item_translated, title="運営者タイトル", title_ko="", title_manual=True)
+    new_preview_14b, *_r = build_preview(
+        channels_cfg_g, videos_group_retitled, {**new_preview_13, "items": [manual]}, now_iso
+    )
+    it14b = new_preview_14b["items"][0]
+    assert it14b["title"] == "運営者タイトル" and it14b["title_ko"] == "" and it14b["needs_tl"] is False, it14b
+    print("  (v4a) title_manual: API 제목 변경에도 운영자 제목 · 빈 번역 유지")
 
     # Test 15: 외부(미등록) 채널 소유 video_id 도 기존 아이템이면 enrich 계속 (v3.1.17)
     # 실측 버그: config/channels.json 미등록 채널(굿즈 판매사 등)에서 열린 합동방송을
@@ -931,6 +1004,37 @@ if __name__ == "__main__":
     assert new_preview_15b["items"][0]["state"] == "end", new_preview_15b["items"][0]
     print("  방송 종료(live→none) 시에도 사라지지 않고 end 로 정상 전이")
 
+    # Test 16 (v4a D6): end 창 안에서 같은 영상이 다시 live 로 관측되면 live 로 복구
+    new_preview_16, tr_16, *_r = build_preview(channels_cfg_g, videos_ext_live, new_preview_15b, now_iso)
+    assert new_preview_16["items"][0]["state"] == "live", new_preview_16["items"][0]
+    assert any("end-recover→live" in t for t in tr_16), tr_16
+    print("  (v4a D6) end → 같은 영상 live 재관측 → live 복구")
+
+    # Test 17 (v4a D4): URL 없는 예고 — 시작+2분 search.list 1회, 찾으면 video_id 부여 + 즉시 wake
+    nourl = preview.make_item(
+        channel_key="arale", state="announced", source="x-relay", now_iso="2026-09-29T11:00:00Z",
+        title="歌枠", scheduled_start="2026-09-29T12:00:00Z", expires_at="2026-09-29T15:00:00Z",
+    )
+    calls = []
+    def _search(ck):
+        calls.append(ck)
+        return "found_vid01"
+    pv17, tr17, wk17, _g = build_preview(channels_cfg_g, {}, {"items": [nourl]}, "2026-09-29T12:01:00Z", search_fn=_search)
+    assert calls == [] and pv17["items"][0].get("video_id") is None, "시작+2분 전엔 검색 안 함"
+    pv17, tr17, wk17, _g = build_preview(channels_cfg_g, {}, pv17, "2026-09-29T12:02:00Z", search_fn=_search)
+    it17 = pv17["items"][0]
+    assert calls == ["arale"] and it17["video_id"] == "found_vid01" and it17["search_checked"] is True, it17
+    assert wk17.get("found_vid01") == "2026-09-29T12:02:00Z", wk17
+    # 못 찾은 경우: 1회만 검색하고, 예고+1시간에 out → 아카이브
+    calls.clear()
+    miss = lambda ck: calls.append(ck) or None
+    pv17m, *_r = build_preview(channels_cfg_g, {}, {"items": [nourl]}, "2026-09-29T12:03:00Z", search_fn=miss)
+    pv17m, *_r = build_preview(channels_cfg_g, {}, pv17m, "2026-09-29T12:30:00Z", search_fn=miss)
+    assert calls == ["arale"], f"검색은 1회만: {calls}"
+    pv17o, _t, _w, gone17 = build_preview(channels_cfg_g, {}, pv17m, "2026-09-29T13:00:00Z", search_fn=miss)
+    assert pv17o["items"] == [] and len(gone17) == 1, (pv17o["items"], gone17)
+    print("  (v4a D4) URL 없는 예고: +2분 검색 1회(찾으면 video_id+즉시 wake), 못 찾으면 +1시간 out")
+
     print("\n" + "=" * 70)
-    print("SUCCESS: 모든 15개 self-test scenarios passed ✓")
+    print("SUCCESS: 모든 17개 self-test scenarios passed ✓ (v4a)")
     print("=" * 70)

@@ -185,7 +185,7 @@ def merge_into(prev: dict, target_id: str, incoming: dict, now_iso: str) -> tupl
 
 
 _EDITABLE = ("title", "title_ko", "date", "time", "url", "site", "anchor_a", "category",
-             "deadline", "title_slug", "expires_at")
+             "deadline", "title_slug", "expires_at", "needs_tl")
 
 
 def edit_notice(prev: dict, nid: str, patch: dict, now_iso: str) -> tuple[dict, bool]:

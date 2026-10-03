@@ -47,8 +47,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현행 = v3.0** (배포 2026-09-09). 아래 저장소 구조·데이터 흐름 서술은 v2 계보를 담고
-> 있고, v3 델타는 아래 상자 + `docs/plan/v3_*.md` 에 있다. 새 작업은 v3 기준으로.
+> **현행 = v4.0** (배포 2026-10-04, v4a 로컬 시험판의 정식화 — 요약 `docs/VERSION.md`, 계획 · 진행 `ref/v4a/v4_release_plan.md`).
+> 처리 로직은 아래 상자 맨 끝 **v4a** 항목, 배포 연결부는 그 안의 「v4.0 배포」 항목이 기준이다. 그 위의 v3.x 항목들과
+> 아래 저장소 구조·데이터 흐름 서술은 v2~v3 계보 기록이다(v4.0 에서 바뀐 곳은 v4a 항목이 우선).
+> (이전: 현행 = v3.0, 배포 2026-09-09.)
 >
 > **v3.0 델타 (요약)** — 상세: `docs/plan/v3_backend_surgery.md`(기능), `docs/plan/v3_impl_spec.md`
 > (코드 WP), `docs/plan/v3_golive.md`(전환·롤백 런북), `docs/plan/v3_draft.md`(결정 로그):
@@ -185,6 +187,182 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >   시각이 예고 시각과 45분 넘게 다르면 자리표시가 `expires_at`(예고+3h)까지 카드 2장으로 남고,
 >   같은 방송 시각 변경을 45분 넘게 재공지하면 기존 예고가 갱신되지 않고 새 항목이 생긴다.
 >   `merge_member_live` 의 ±3h(`MEMBER_LIVE_MATCH_SEC`)·v1 `collector/reconcile.py` 의 4h 는 미변경.
+> - **v4.0 배포 (2026-10-04)** — 아래 v4a 가 정식 배포됐다. 로컬 러너 서술 중 **배포판에서 다른 점**: 저장 = GitHub
+>   `data` / `ops` / `monitoring` 브랜치(`_local/` 아님) · 적용 큐 대신 쓰기 서비스 `/write`(→ `apply.handle`, 접수 서비스가 동기 호출 또는
+>   Cloud Tasks 적재) · 예약 = Cloud Tasks `/wake` `/tick`(큐 `mewtype-wake`) · 가공 큐 대신 정기 수집 안 번역 sweep · 텔레그램 = webhook ·
+>   관리 페이지 작업 탭의 경로 재생(`flowtrace`)은 로컬 전용(배포판은 LLM 판단 기록 · 이벤트 로그 · Cloud Tasks 예약을 보여줌) ·
+>   원문 보존 = `monitoring` 브랜치 `raw/YYYY-MM-DD.jsonl`. 서비스 이름 · URL 은 v3 그대로(`mewtype-backend` · `mewtype-telegram`).
+>   스테이징 배포 `STAGE=1 bash deploy/deploy.sh`(`deploy/env.stage.sh`). 상세 `docs/VERSION.md` v4.0.
+> - **v4a (브랜치 `v4a` 에서 개발 · 로컬 시험판 → 2026-10-04 v4.0 으로 배포)** (2026-09-29): 운영자 로컬 PC 에서
+>   `python -m src.backend.local_runner` 로 돌린다(Tailscale 로 폰 알림 수신, 저장은 `_local/<브랜치>/`).
+>   **이 상자 위 서술(Cloud Run · Tasks · data 브랜치 커밋 경로)은 운영 v3.8.10 기준이고, v4a 에서는 아래가 다르다.**
+>   문서: `ref/v4a/` — 계획 `v4a_impl_plan.md` · 결정 `v4a_decisions.md`(D1~D34, 10-01 후속 결정 = §1-9 D26~D34) · 검증 `v4a_verify_report.md` ·
+>   2차 검증 `v4a_verify_report_0930.md` · **남은 작업 `v4a_remaining_0930.md`**(10-01 갱신 — 결정 6건 · 작은 수정 6건 반영 결과와 남은 것) ·
+>   **남은 실측 확인 `v4a_pending_checks.md`**(상황이 와야 볼 수 있는 것 — 폰 배선 · 프리미어 · 예고 DM · OCR · D4. 다른 세션이 이어받아 확인) ·
+>   폰 Automate 배선 `docs/v4a_automate_wire.md`(10-01 Fork 분리 · 재시도 적용) ·
+>   관측 흐름 `v4a_verify_flow.html` · 운영 `v4a_local_runbook.md` · 재검증 `verify/harness.py`(79개 확인) ·
+>   `verify/harness_b.py`(09-30 이후 기능 97개 — 결과 `results_b.json`, git 제외).
+>   - 배선: `storage.py`(V4A_RUNTIME=local → `LocalStore`, control·admin_state 는 ops 로 라우팅) ·
+>     `apply.py`(적용 큐 = 쓰기 스레드 `q-apply`, data 를 쓰는 유일한 스레드) · `enrich.py`(가공 큐 `q-enrich`, 번역 수집) ·
+>     `jobqueue.py`(LocalQueue) · `writeclient.call_write` 는 로컬이면 적용 큐 적재 후 **결과 대기**(로컬 한정 — 배포 시 비동기로) ·
+>     즉시 wake · 자기 호출 · 재개 tick → reconcile(범위) 적재.
+>   - 상태 전이: watching = 영상 있는 예고 20분 전(D2) · URL 없는 예고는 +2분 `search.list` 1회 · +1h `out`(D4) ·
+>     assumed-live 폐지(D5) · end→live 복구(D6) · 아카이브 신호 `none` → **`out`**(D7) · upcoming = 영상·날짜·제목(D14) ·
+>     live_seen 3값(API upcoming=미확인). YouTube 알림 → `yt_notif` 작업(D1~D3).
+>   - 그 밖: 공식 스케줄 영상 URL 즉시 확인(D13) · 소식 리트윗 제외(D16) · 트윗 48h(D18) · 원문 보존 `_local/raw`(D19 — 10-01 부터 예고를 내리거나
+>     옮기게 한 휴방 · 변경 글도 `broadcast_change` 로, D31) ·
+>     관리 페이지 `/admin`(`admin_web.py` · `admin_api.py`, 로그인 = 텔레그램 `/admin` 일회용 링크) ·
+>     텔레그램은 `/status /pause /resume /list /admin` 만(D24).
+>   - 관리 페이지 보강(2026-09-29~30): 세션 쿠키 `SameSite=Lax`(텔레그램 링크 로그인) · 예고 id 고유화
+>     (`preview.new_id` salt + `ensure_unique_ids` — 같은 tick 발견 항목 id 중복으로 수정 · 삭제가 엉뚱한 항목에 적용되던 문제) ·
+>     예고 수정에 합동 멤버 · 회원 전용 · 원문/한글 제목(번역 버튼, `title_manual` 이면 API 제목 · 자동 번역이 덮지 않음) ·
+>     소식 수정 파생값 재계산 · 트윗 단위 삭제/번역 · 작업 탭 = 지금 상태 + 흐름 경로 재생(`flowtrace.py`, 로컬 전용 ·
+>     `_local/ops/flows.json`) · 운영 탭 카드 정리.
+>   - 원문 투입 탭 개편(2026-09-30): 2단 카드(입력 / 확인 후 반영) · 종류 세그먼트 버튼 · **트윗은 URL 만 투입**
+>     (`admin_api.ingest_tweet_url` — vxtwitter/fxtwitter 응답의 작성자 X 핸들을 `channels.json` `handle`(X 핸들과 동일,
+>     운영자 확인)과 대소문자 무시로 맞춰 호스트 자동 판별 · X 카드 + 번역 자동. 멤버가 아니면 `confirm_needed:"not_member"`
+>     로 되묻고, "그래도 넣기"는 붙일 호스트를 골라 `force_unit` 으로 다시 미리보기). `vxtwitter.extract` 가 `author` 를 돌려줌.
+>   - 원문 투입 탭 **자동 / 수동 세부 탭**(2026-09-30, 초안 아티팩트대로 구현). 수동 = 관리자가 값을 직접 정한다:
+>     예고 `ingest_preview_manual`(호스트 · 합동 · 날짜/시각 KST→UTC 또는 시각 미정 · 회원 전용 · 원문/한글 제목 · 유튜브 URL —
+>     확정 시 `manual_preview` 적용 큐 작업 `telegram_app._commit_manual_preview`: 같은 방송(`match_item` 호스트+video_id/url/±45분)이
+>     있으면 그 항목에 값을 덮어쓰되 상태·video_id 보존, 없으면 `source:"manual"` announced 신규 추가. 제목은 `title_manual` 보호,
+>     한글 비우면 `needs_tl` 로 자동 번역. URL 있으면 `enqueue_reconcile(video_id)`) ·
+>     소식 `ingest_notice_manual`(제목/한글 제목/날짜/분류/URL, 한글 비우면 자동 번역) ·
+>     트윗 `ingest_tweet_manual`(URL + 호스트 + 원문 + 번역, `_prepare_personal_tweet(text_ko_override)` 로 LLM 생략).
+>     제목·본문 「번역」 버튼 = 기존 `translate_text`. 자동 탭 호스트 선택도 칩 버튼.
+>   - 소식·트윗 탭 버튼 통일(2026-09-30): 소식·트윗 모두 **수정 / 삭제**(목록 「번역」 버튼 제거 — 수정 창 안의 번역과 중복).
+>     트윗 수정 = `admin_api.edit_tweet`(→ `tweet_edit_commit` 적용 큐 → `telegram_app._tweet_edit_commit`) — **한글 번역만** 고친다
+>     (원문 읽기 전용 · 비울 수 없음: 번역이 없으면 팬 화면이 「번역 준비 중…」으로 남는다 · needs_tl 해제로 자동 번역이 안 덮음 · undo 스냅샷).
+>     같은 트윗을 다시 투입해도 내용이 같으면 `_commit_personal_tweet` 이 바로 돌아가 고친 번역이 유지된다(2026-09-30 검증). 새 번역으로
+>     덮이는 건 지운 뒤 다시 넣었거나 원문 · 미디어가 달라진 경우. 관리 API `translate`(목록 번역) · `undo(history_id)`(미구현)는 UI 에서 안 써 10-01 삭제했다.
+>   - **자동 · 예고 = URL 하나**(2026-09-30, 호스트 칩 · 원문 붙여넣기 UI 제거 — `ingest_preview_raw` API 는 남아 있음): `admin_api.ingest_preview_url`.
+>     트윗 URL → 작성자 핸들로 호스트 판별(멤버 = 개인 예고, 그룹 공식 `@BDP_yumemita` = 일일 스케줄 서식, 그 밖 = 되묻기 `not_member` +
+>     `force_unit`), 본문 · 인용 · 영상 URL 은 원문 투입과 같은 경로(`_ingest_preview_raw_core` 에 `tag`·`quote` 추가, 영상 URL 은 `_video_preview`
+>     로 미리보기, 확정에서 API 확정 실패 시 본문 파싱 폴백). **YouTube 영상 URL** → `_ingest_video_url`: 멤버 · 그룹 채널 영상만(외부 채널 거부),
+>     제목 · 시각 · 상태는 API(예정 · 임박 · 라이브로 바로), 회원 전용 · 비공개 영상은 API 가 못 봐서 수동 탭으로.
+>     **그룹 공식 채널 영상은 5인 합동으로 자동 팬아웃하지 않고**, 미리보기 때 「참여 멤버 선택」 팝업(수동 · 예고의 합동 멤버와 같은 칩)을 띄워
+>     고른 멤버만 올린다(1명 = 그 멤버의 일반 예고, 2명 이상 = `host="group"` 합동, `url_confirmed_commit` 직접 커밋 — LLM 합동 확인 · 팬아웃 경로 생략).
+>     이미 같은 영상이 등록돼 있으면 새로 만들지 않고 예고 탭 수정으로 안내.
+>     **멤버 트윗 URL 안에 든 그룹 영상도 같은 팝업**(멤버 없이 확정 요청은 거절) — 글 · 영상 제목의 근거(아래 `members_evidence`)를 먼저,
+>     없으면 트윗 첨부 이미지 비전 OCR(`telegram_app._ocr_cast_keys` → `vision.cast_names` → `xrelay.NAME_TO_KEY`)로 참여 멤버를 미리 선택해 두고,
+>     맞으면 확인 · 틀리면 칩으로 수정. 트윗+예고 동시 추가도 동일. 공식 트윗 URL(근거 없는 그룹 방송 글)도 같은 팝업(`admin_api._official_group_video`).
+>   - **그룹 영상 = 근거가 있을 때만**(2026-09-30 운영자 결정 · 구현): 어느 경로도 근거 없이 5인 합동으로 팬아웃하지 않는다. 근거 순서 =
+>     글의 **정식 이름**(`xrelay.FORMAL_NAME_TO_KEY` = x_names, 곡 크레디트 줄 제외) · **인원 표현**(`WHOLE_GROUP_RE`: 全員 · 全体(生)配信 ·
+>     5名 · 5人 → 전원. 「全編無料配信」의 全 · 「5名様」 · 5명 미만 N名은 근거 아님) → (멤버 트윗이면) 영상 제목의 정식 이름 → **첨부 이미지 OCR**.
+>     그룹 명의(夢限大みゅーたいぷ · #ゆめみた 해시태그)만으로는 근거가 아니다 — 전엔 이것만으로 5인이었다(`parse_live_now` · `parse_appearance`).
+>     근거가 없으면 예고에 올리지 않고 **「참여 멤버 확인 대기」**(ops `group_pending.json`, 적용 큐 작업 `group_pending`)에 적고 DM(관리자 조치가 필요해
+>     알림 레벨과 무관하게 보냄) → 관리 페이지 예고 탭 맨 위 카드에서 멤버 고르기(`resolve_group_pending`) · 무시(`dismiss_group_pending`), 또는
+>     **같은 영상 URL 을 담은 뒤이은 공식 글에 근거가 나오면 자동 확정**(`telegram_app._resolve_group_videos`, 예: DAY2 09-17 첫 공지 → 09-24
+>     「メンバー5人」). 대기는 따로 적을 뿐 다른 인입(같은 글의 다른 행 · 소식 · 이후 알림)을 막지 않는다. 예정 시각 + 6시간이 지나면 대기에서 빠진다.
+>     경로별: 공식 X(`xrelay.parse` 근거 행 · `parse_pending` 후보 → OCR → 대기) · 일일 스케줄 「全員」 줄 = 5인 행(전엔 스킵) · 멤버 트윗 안
+>     그룹 영상(`_maybe_url_confirmed_schedule`, 작성자를 자동으로 넣지 않음 · 이미 예고에 있으면 참여 멤버 유지) · 수집(`preview_build`)은
+>     그룹 영상을 **새로 만들지 않는다**(등록된 것만 갱신) — RSS 제외와 별개로 예약된 확인 · 알림 후 확인도 막는다.
+>     예고를 지우면 그 영상의 **예약된 확인도 취소**(`apply.cancel_video_checks` ← `_remove_broadcast`, `jobqueue.LocalQueue.cancel`).
+>     실측 대조(공식 트윗 185건, 09-12~09-30): 사인회 = 이미지 OCR 로 5인 · DAY2 = 대기 → 09-24 같은 URL 근거로 5인 · 全員集合 · FINAL = 인원 표현으로 5인.
+>   - **RSS 는 개인 유닛 채널만**(2026-09-30, `handlers.py` `rss_ids`): 그룹 공식 채널(@BDP_yumemita)을 돌리면 5th 싱글 뮤비 같은 **노래 영상**이
+>     5인 합동 방송으로 팬아웃돼 올라왔다(운영·로컬 모두 `source:api`, tick 이 최초 생성). 그룹 채널 영상은 이제 RSS 로는 새로 발견되지 않는다(근거가 있는 트윗 · 관리 페이지 입력 · 이미 추적 중인 영상만 — 위 「그룹 영상 = 근거가 있을 때만」).
+>     추적 중인 영상의 enrich · 아바타용 `id_by_key` 는 그룹 채널 포함 그대로. **운영(v3.8.10, main) 코드는 미변경** — 운영 RSS 는 아직 그룹 채널을 돈다.
+>     운영 데이터의 5th 싱글 뮤비 항목은 `/del terminate` 와 동일하게 제거(data 저장소 커밋 `44bcb605` `c44f9d84`, 재등록 차단 12h). 자동 · 트윗에는
+>     「내용 감지를 통한 트윗과 예고를 같이 추가」(`with_preview`) — 같은 트윗에서 예고도 만들어 미리보기 · 확정에 함께 반영.
+>   - **내용 감지를 통한 예고 수정**(2026-09-30): 원문 투입 체크박스(자동·예고 · 자동·트윗 · 수동·트윗 — 자동·예고에서는 멤버 트윗 URL 일 때만
+>     쓰여, YouTube URL · 공식 계정 트윗 URL 을 넣으면 10-01 부터 체크박스를 숨긴다(`admin.html` `previewUrlTakesDetect`)). 글에서 방송
+>     취소·변경을 감지해 미리보기에 대상 예고 체크 목록을 보이고(LLM 이 고른 것이 미리 체크), 확정 시 **체크된 예고에만** 적용.
+>     취소 = `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 · 채널 자리표시 URL 은 차단 생략). 변경 = 시각 이동 — 단 영상이 있는 예고는
+>     다음 수집(reconcile)이 API 예정 시각으로 되돌린다(2026-09-30 검증, 유튜브 프레임 시각이 그대로면 변경이 10분 안에 사라짐) — **의도된 동작**
+>     (2026-10-01 운영자 결정 D27: YouTube API 가 진실, 현행 유지).
+>     자동 경로의 취소 후보(`_change_candidates` = channel_key 가 그 멤버인 활성 예고)에는 `channel_key=channel_order[0]`(아라레)로 저장되는
+>     그룹 합동 방송도 들어간다. 잘못된 자동 취소의 복구 = 작업 탭 「LLM 판단」 되돌리기(되살림 + 재등록 차단 해제), 또는 관리 페이지에 그 영상 URL 을
+>     다시 넣기 — 미리보기가 「재등록 차단 중(해제 시각)」을 알리고, 관리자가 **그 영상 하나를 직접 확정하는 경로**(영상 URL · 멤버 트윗 URL ·
+>     참여 멤버 선택 · 수동 예고 URL)에서는 확정 시 차단을 푼다(`admin_api._lift_suppress`, 10-01). 공식 스케줄 원문을 통째로 넣을 때는 풀지 않는다.
+>     `llm.broadcast_change_targets`(후보 목록 중 영향받는 id 선택 — "오늘 휴방"이면 오늘 방송 전부, "아침만"이면 그것만) ·
+>     `telegram_app._detect_broadcast_change` / `_terminate_broadcast` / `_change_candidates`. **자동 인입 경로
+>     `_maybe_broadcast_change` 도 같은 판정으로 교체** — 예전(v3.8.7)은 `find_active_item` 이 가장 이른 1개만 골라 "오늘 휴방"에
+>     방송이 2개면 1개만 내려갔다(2026-09-30 리츠). 감지만 되고 예고로는 인식되지 않는 글(휴방 안내)도 확정 가능(`change_only`).
+>     판정은 전부 LLM(정규식·키워드 분류 없음) — 단, 자동 인입 경로의 `配信` 포함 게이트(v3.8.7)는 운영자 결정으로 **유지**.
+>     LLM 은 판정마다 **근거 한 문장(`reason`)** 을 쓰고(없음일 때도), 자동 경로는 "없음"도 monitor 이벤트로 남긴다
+>     (`broadcast-change none · <근거>`), 관리 페이지 미리보기엔 "판정 근거"로 표시 — 놓친 취소를 확인·프롬프트 조정하는 자료.
+>     같이 고친 것: 영상 없는 수동 예고의 url(채널 페이지)이 같아 `match_item` 이 다른 방송을 합치고 `make_item` id salt 가 충돌하던 문제
+>     (수동 예고는 url 매칭 제외 + 시각·제목으로 id 부여). 개인 트윗 예고(`xtweet.parse_schedule`, url = 채널 페이지)도 `match_item` url 매칭으로
+>     **같은 멤버의 영상 없는 예고 2건이 1건으로 합쳐지던 것**(날짜가 달라도 — 한쪽 시각이 사라짐, 09-30 재현 · 운영 3주 실제 발생 0건)을 10-01 에
+>     `preview.match_item` 에서 고쳤다(D30, **v4a 만** — 운영 v3.8.10 은 그대로): 채널 페이지 url(`_is_channel_page`)은 같은 방송 근거에서 빼고,
+>     대신 한쪽이 시각 미정(time_tbd)이면 JST 같은 날짜끼리 같은 방송(`_jst_day` — 「10/11 配信」 뒤 「10/11 21:00〜」 가 같은 카드를 채우게).
+>   - **그룹 공식 채널의 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 카드로 올리지 않는다**(2026-09-30 운영자 결정 · 구현, 10-01
+>     그룹 채널로 한정 D26 — 멤버 개인 채널 프리미어(퀴즈 · 기념 영상 · 커버 등)는 카드로 올린다. 첫 실례: 노노카 「このエピソード夢？現実？クイズ」
+>     10-01 18:00 KST). 프리미어 = 미리 올린 녹화본을 정해진 시각에 다 같이 처음 보는 YouTube 공개 방식(대기실 · 실시간 채팅). 歌枠 같은 노래
+>     **생방송**은 해당 없음. 판정 지점 = `preview_build.is_group_release`(프리미어 + 그룹 채널, 4경로 공용). 카테고리로는 못 가른다(그룹 채널은
+>     싱글 무비 · 생방송 · 라디오가 전부 24). 프리미어 판정 자체는 `videos.list` 의 `status.uploadStatus == "processed"`(영상 파일이 이미 있음) 또는 duration 이 `P0D` 가 아님, 그리고
+>     예정 · 진행 중(`collector/youtube.py` `VideoInfo.is_premiere`, part 에 contentDetails · status 추가 — 쿼터는 그대로 1). 실측: 5th 싱글 기념 무비
+>     프리미어 = processed · duration 없음, 예정 생방송 5건 = uploaded · P0D. 수집(`preview_build` — 새로 안 만들고 트윗 등으로 먼저 올라온
+>     항목도 뺌) · 공식 스케줄 영상 즉시 확인 · 멤버 트윗 URL · 관리 페이지 URL 투입 모두 막는다. 뺀 영상은 버리지 않고 ops `video_releases.json`
+>     (`handlers.record_video_releases`, 적용 큐 작업 `video_release`)에 기록 — 추후 보조 기능("유메미타 플레이어") 재료.
+>     10-01 전 기록엔 멤버 채널 프리미어 1건(노노카 퀴즈 `zh6vG0isdAE`)이 섞여 있다.
+>   - **LLM 판단 기록 · 되돌리기**(2026-09-30 운영자 요청): 자동 인입에서 LLM 이 내린 판단을 ops `llm_actions.json`(최근 300건)에 남기고
+  - **LLM 판단 반려 · 재판단 · 사용자 판단**(2026-10-02, v4a 만 — 설계·판단별 시나리오 `ref/v4a/v4a_llm_review_scenarios.md`): 「되돌리기」를 「반려」로 바꾸고(동작 동일 = 그 판단이 한 변경만 롤백, 검토용 판단도 표시만 반려), 반려된 판단은 **LLM 재판단**(기록의 `input` 으로 같은 판정을 `llm.REVIEW_HINT` 힌트와 함께 재실행) 또는 **사용자 판단**(종류별 선택지를 강제값 `_REVIEW["forced"]` 로 주입해 같은 반영 경로)으로 잇는다. 7종 전부(banner_judge · broadcast_change · collab_guest · duplicate_notice[병합 전 스냅샷 `restore_notice`] · ocr_members · own_broadcast · participation). 새 기록은 `parent_id`·`by` 로 이어지고 다시 반려 가능, 한 기록의 후속은 한 번(`followup` 선점). 입력 없는 옛 기록은 재판단 불가. 코드: `telegram_app._llm_review`·`_REVIEW_RUNNERS`, API `rejudge_llm_action`·`decide_llm_action`·`llm_review_options`(POST). 검증 `ref/v4a/verify/harness_c.py`(52개).
+>     흐름에 표시(`flowtrace.add_llm`) — 작업 탭 「최근 흐름」 **「LLM 판단」 필터**, 펼친 경로 재생 영역에 판단 · 근거 · **「되돌리기」**
+>     (`admin_api.undo_llm_action` → 적용 큐 `llm_action` op=undo → `telegram_app._llm_undo`). 대상과 되돌리기: 방송 취소(되살림 + 재등록 차단 해제) ·
+>     시각 변경(그때 바꾼 값이면 원래 값) · 본인 예고 최종 확인(등록한 예고 지움 / 합쳤으면 합치기 전으로) · 외부 채널 참여(등록 지움) ·
+>     게스트 확인(더한 게스트 뺌) · 그룹 영상 이미지 OCR(예고에서 빼고 「확인 대기」로, OCR 제안 유지). **그때 바뀐 항목만** 되돌리고 그 뒤 다른
+>     이유로 바뀐 항목은 건너뛴다(결과에 표시). "아님" 판단(예고 아님 · 참여 아님 · 게스트 아님 · 취소 아님) · 소식 중복 판정은 **검토용**(되돌릴
+>     데이터 없음 — 원문 투입으로 직접). 번역 · 소식 제목 추출은 판단이 아니라 제외. 관리자가 미리보기로 확인하고 확정한 조작도 제외.
+>     한 번 되돌린 판단은 다시 되돌릴 수 없다. 공식 일일 스케줄 합동 줄의 LLM 게스트 재확인(`_confirm_relay_rows_collab`)은 10-01 부터 게스트를
+>     **빼는** 판단만 검토용으로 기록(`collab_guest` — 키 없음 · 5회 실패로 빈 경우는 판단이 아니라 기록 안 함).
+>   - **2차 검증 후속 수정(2026-10-01, v4a 만 — 운영 main 반영은 시험 운영 뒤 한꺼번에 D32)**: ① 알림 레벨 표(`notify._LEVEL_KINDS`)에 없는 옛 이름
+>     `scheduled` 로 보내던 `_auto_dm` 4곳(URL 확정 예고 · 본인 예고 · 공식 일일 스케줄 요약 · 대기열 반영)을 `announced` 로(D29) — v3.0 부터 어느 레벨에서도
+>     안 나가던 DM 이 normal 이상에서 나간다. **운영 main 은 여전히 안 나간다.** ② 멤버가 **공식 일일 스케줄을 인용**한 글의 영상 URL 이 본문엔 없고
+>     인용문에만 있으면 작성자를 게스트로 넣지 않고, 이름 언급 게스트 찾기 · LLM 게스트 확인에도 스케줄 인용문을 쓰지 않는다(D28 —
+>     `xrelay.is_daily_schedule` · `_maybe_url_confirmed_schedule`, 관리 페이지 미리보기 `_ingest_preview_raw_core` 도 같게). 실측 오탐 09-23 노노카 → 미야코 방송.
+>     스케줄이 아닌 인용(09-22 리츠가 유노 예고 인용)은 그대로 작성자를 게스트로(`xtweet.resolve_url_host`). 한계: 인용문의 **첫 영상**을 처리하고 끝나므로
+>     인용문 뒤쪽의 작성자 본인 영상은 이 글로는 안 잡힌다. ③ 예고 수정 `url` 은 http(s) 만(`admin_api.edit_preview`). ④ Windows 파일 교체 권한 오류
+>     짧은 재시도(`local_store.replace_retry` — flows · recent_jobs · LocalStore · jobqueue). ⑤ 옛 `llm.broadcast_change` 삭제(→ `broadcast_change_targets`).
+>   - **10-01 오후 후속(v4a)**: ① 관리 페이지 수정 팝업 「팬 화면 표시」가 같은 문장 2줄로 나오던 것 — 마퀴 조각 class `seg` 가 원문 투입
+>     종류 버튼의 `.seg`(3열 그리드)를 물려받아 블록으로 쌓였다 → `mq-seg`. ② **LLM 판단 되돌리기 화면 표시** — 누르면 버튼이 「되돌리는 중…」으로
+>     잠기고(두 번 눌림 방지), 응답 뒤 흐름도가 마지막 단계부터 LLM 이 판단한 단계(준비 · Groq)까지 거꾸로 감긴다(`rewindFlow` — 지나간 단계 노랑 점선
+>     「↩ 되돌림」 · 화살표 반대, 판단 단계 초록 「↩ 판단 되돌림」, 결과 칸 「→ ↩ LLM 판단 되돌림 — 내용」). 끝나면 판단 칸이 초록으로 번쩍이고 버튼은
+>     없어지지 않고 **「되돌려짐!」 비활성**으로 남는다(운영자 요청). 흐름 목록 태그 「LLM 판단 n · ✓ 되돌림」. 이미 되돌린 흐름을 열거나 다시 재생해도
+>     같은 모습. 번쩍임은 감길 때 한 번만(`flashOnce` — 끝나면 클래스를 뗀다. 안 떼면 5초 갱신이 상세를 다시 붙일 때마다 재생돼 주기적으로 번쩍였다). 전엔 토스트 3초뿐이고 상세가 안 바뀌어(흐름 기록이 그대로라 다시 그리지 않음) 두 번 누르게 됐다. ③ 작업 탭 「최근 자동 처리」 —
+>     `llm_action` 등 내부 이름을 우리말로, 되돌리기는 「↩ LLM 판단 되돌리기 — 내용」(`apply._brief` 에 `op`). ④ **멤버 리트윗 판정**(운영 v3.8.11 과
+>     같은 수정 — `telegram_app._personal_retweet_reason`, 운영 쪽은 PR #50 열림 · 병합 · 배포는 운영자 결정): `/ingest` 가 원문을 vxtwitter 본문으로
+>     바꾸면 리트윗 표시(`@핸들:`)가 사라져 D17 필터가 무력화돼 있었다(10-01 미야코가 애니 재방송 안내를 리트윗 → 가짜 「10/01 23:00」 예고). 교체 전 폰
+>     원문의 `@핸들:` · vxtwitter 작성자 ≠ 멤버 handle 이면 건너뜀. **응답 서비스에 따라 다르다** — vxtwitter 는 리트윗 자체(`RT @…:` 본문, 작성자 =
+>     리트윗한 계정), fxtwitter(폴백)는 원 글 본문 + 원 작성자 + `reposted_by`. 이 PC 에서는 vxtwitter 가 자주 403/500 이라 fxtwitter 로 떨어진다.
+>     ⑤ **쓰기 대기 · 결과 DM**(`writeclient._Progress`, 2026-10-01 운영자 결정 — v4a 만, 운영 v3 는 핫픽스 안 함): 2초 넘는 쓰기의 「⏳ … 처리 중」과
+>     짝 DM 을 **알림 레벨 「자세히」에서만**(notify `_LEVEL_KINDS` detail 의 `progress`), 짝 DM 은 「처리 완료」가 아니라 **실제 결과**(✅ 추가 · 갱신 ·
+>     반영 / ☑️ 안 올림 — 지난 소식과 같은 글(recap) · 이미 본 글 · 바뀐 것 없음 / ⚠️ 실패). 적용 큐(로컬)와 `/write`(배포) 두 경로 공용 — 전엔 로컬
+>     경로엔 이 DM 이 없었다. 계기: 운영이 recap 으로 끝난 소식에 「✅ 처리 완료 [소식 제목]apply_notice」를 보내 올라간 것처럼 읽혔다.
+>     ⑥ **「공식」 경로 = @BDP_yumemita 가 직접 쓴 글만**(10-01 운영자 결정 · 구현, v4a 만): 소식 · 공식 스케줄 판정 **전에**
+>     `telegram_app._official_skip_reason` — 리트윗 표시(`_retweet_mark`: 폰 원문 `@핸들:` · vxtwitter `RT @…:` 본문 · fxtwitter `reposted_by`,
+>     `vxtwitter.extract` 가 돌려줌) → 작성자(vx/fx)가 그룹 핸들 아님 → 작성자를 모르면 알림 표시명이 「夢限大みゅーたいぷ」로 시작 안 함 순으로 건너뛴다
+>     (monitor `relay` 「mode: none · 공식 글 아님 · …」). 전엔 개인 5인 표시명이 아닌 알림은 전부 공식 경로라, fxtwitter 로 떨어지면 남의 글 리트윗이
+>     소식이 될 수 있었고 **「バンドリ！アワーノーツ」(게임 계정) 글이 소식으로 올라가고 있었다**(09-30~10-01 추가 8 · 갱신 2 — 게임 공지와 5th Single 발매 소식.
+>     이제 안 올라간다 — 그 계정을 허용할지는 운영자 확인 대기, `ref/v4a/v4a_remaining_0930.md` §3-6). ⑦ 작업 탭 흐름 결과에 소식 판정
+>     (`_NOTICE_VERDICT` — 「스케줄 형식 아님 · 소식 추가 / 소식 안 올림 — 이미 본 글 / 소식 아님」, 전엔 소식 쓰기가 돌면 무조건 「소식으로 반영」).
+>     ⑧ **리포트 백엔드 상태 막대**(`monitor_report.py`, v4a 만 — 운영 main 은 표시 버그라 핫픽스 안 함, 운영자 결정): 하루 끝(1440분)이 `fmtHM` 으로
+>     「06:00」이 돼 마지막 정상 구간(마지막 기록 tick 이후)이 1px · 누계 누락이던 것(v3.5.0 부터) → `segLabel` 로 「30:00」. 오늘은 `day.nowHm`(현재 시각)까지만
+>     칠하고 누계 % 도 관측 시간 기준(`dayEndMin`). + v4a 한정 타임라인 「현재 시각까지」 흰 반투명 배경(`REPORT.runMark` = `V4A_RUNTIME=local`,
+>     트리거 기준선 ~ 개인 트윗 미야코 줄 아래, x=0 ~ 지금).
+>     ⑨ **트윗 수명 = X 게시 시각 + 48h**(10-01 운영자 결정, D18 의 기준 변경): `xtweet.parse` 가 `posted_at`(Snowflake) 저장,
+>     `expires_at = posted_at + 48h`(게시 시각 모르면 `received_at` + 48h) — 48h 지난 트윗은 `merge_thread` 가 `stale` 로 안 올린다.
+>     관리 페이지 트윗 투입(자동 URL · 수동)은 경고창 「게시된지 48시간이 지난 트윗입니다.」(`admin_api._tweet_too_old` → `too_old`).
+>     팬 화면(`tweets.js`) 말풍선 아래 시각 · 정렬 · 묶음 = 게시 시각(못 얻으면 받은 시각 + 「등록」). 하네스 가짜 트윗 id 는 실행 시각 기준(`harness.TP`).
+>     유실 원문 재투입(관리 페이지)도 같은 논리(`admin_api._lost_tweet_stale`, 10-01 운영자 결정): **멤버 트윗**이 게시 48h 지났으면, 그 트윗이 알린 방송이
+>     아직 유효할 때(예정 · 라이브 · 끝났어도 end 창 = 종료 + 30분 `statemachine.END_WINDOW_SEC` 안 — end 단계에서 다시 켜는 경우 대비)만 재투입하고,
+>     아니면 재투입하지 않고 경고창(「게시된지 48시간이 지난 트윗입니다.」 + 끝난 방송이면 「이미 끝난 방송입니다 (종료 + 30분 지남).」), 항목은 큐에 남긴다.
+>     영상 URL 이 있으면 `videos.list` 로, 없으면 본문 예고 파싱(게시 시각 기준)의 `expires_at` 으로 판단. 공식 계정 원문(소식 경로)은 대상 아님.
+>     (운영자는 「live 종료 + 20분」이라 했으나 코드의 end 창이 30분이라 30분으로 맞춤 — 운영자 확인 10-01.)
+>   - **행사 배너**(2026-10-02, v4a 만): 게임 계정(`config/channels.json` `game_accounts` — `bang_dream_on`, 표시명 バンドリ！アワーノーツ)의 글은 소식 · 스케줄이 아니라
+    **행사 판정**(`llm.banner_judge` → `banners.apply_judgement`)으로만 간다 → 소식 란 펼침 맨 위 **행사 카드**(안에 딸린 가챠 하위 블록, `banners.json`, 프론트 `js/banners.js` · `css/banners.css`).
+    **개최 전 공지는 종료일을 몰라도 올림**(시작 일시를 먼저 알림), 시작한 뒤에도 종료일 없는 행사 · 상시화 행사는 안 올림(대기로 저장), 개최 보류는 `mm.dd(보류)` + 15일,
+    디자인 = 흐린 이미지 배경 + 절취선 카드(종료 일정 박스 두 칸 · 진행 막대: 늦은 종료 100% · 먼저 끝나는 종료는 점선 · 점선 이후 `///` · 달력 D-3 부터 노랑 · 점선을 넘으면 빨강 · 말풍선 꼬리는 현재 위치),
+    **모두 종료돼도 그날 자정(KST)까지 회색 「종료」로 표시**,
+    이미지는 **X 트윗의 행사 키비주얼만**(링크만, 가챠 이미지 · 소개 카드 · 출처 불분명한 배너는 안 씀, 여러 장이면 5초 한 방향 슬라이드),
+    개최기간이 이미지에만 있는 글은 비전(`vision.read_card`)으로 읽어 재판정(2단계). 게임 계정 글이 아니어도 행사 · 가챠 이름이 본문에 있으면 소식으로 안 올림(`banners.covers_text`).
+    LLM 판단은 작업 탭 「LLM 판단」(`kind=banner_judge`)에 기록 · 되돌리기(`restore_banner`). 관리 페이지 「소식 · 트윗」 탭 맨 위에서 수정 · 삭제.
+    용어 `docs/TERMINOLOGY.md` 「행사 배너 용어」, 계약 `docs/SPEC.md` 계약 J, 설계 · 구현 결과 `ref/v4a/v4a_event_banner_design.md`.
+    **운영 v3.8.10 에는 없음**(운영은 아직 이 계정 글을 소식으로 올린다).
+  - **모바일 UI**(2026-09-30, `admin.html` 한 파일, ≤640px 미디어 쿼리): 하단 고정 탭 바(7탭 아이콘+글자) · 버튼 44px/입력 16px(iOS 확대 방지) ·
+>     수정·참여 멤버 팝업은 바닥 시트 · 토스트는 탭 바 위 · 원문 투입 미리보기 시 결과 카드로 자동 스크롤. 높이 제한 스크롤 목록(`.flows`/`.jlist`/`#jobs-tl`)은
+>     `grid-auto-rows: max-content` — 안 그러면 button `min-height` 때문에 줄이 눌려 서로 겹친다. 작업 탭 「최근 흐름」의 경로 재생 영역은 누른 줄 **바로 아래**로
+>     펼쳐지는 아코디언(`toggleFlow`/`placeFlowDetail`, 같은 줄 재클릭 = 접기, 다른 줄 = 접은 뒤 이동), 5초 갱신 때도 유지. 데스크톱도 동일.
 - 그림: `docs/old/v2/v2_1_telegram.png` (v2.1)
 - **v2.3 (X 예고 릴레이 → `scheduled`)**: `docs/old/v2/v2_3_x_relay.md`, 핸드오프 `docs/old/v2/v2_3_handoff.md`
 - **업스트림 시스템(운영자 폰 Automate) 수식 작성 참고: `docs/AUTOMATE_MANUAL.md`** — 알림 중계
