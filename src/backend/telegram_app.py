@@ -3755,6 +3755,15 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         # 케이스(회원전용·삭제 등)라 monitor 에는 안 남긴다.
         return False
 
+    if info.live_state == "none" and getattr(info, "actual_end", None):
+        # (v4, 2026-10-03 스테이징 재현) 이미 끝난 방송은 예고에 올리지 않는다 — 공식 일일 스케줄을 인용한 휴방 글이
+        # 끝난 미야코 방송(7sBzjBKAxFQ)을 upcoming 카드로 되살렸다(다음 확인이 지울 때까지 팬 화면에 「예정」 + 예고 DM).
+        # 방송 후기 · 다시보기 안내처럼 끝난 영상 URL 을 단 글도 같은 경우다.
+        log.info("URL 확정 예고: %s 는 이미 끝난 방송(종료 %s) — 예고에 안 올림", video_id, info.actual_end)
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"url-schedule skip: 이미 끝난 방송 {video_id}")
+        return True
+
     if preview_build.is_group_release(info, channels_cfg):
         # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 예고로 올리지 않는다. 歌枠 같은 노래 생방송은 해당 없음.
         # 멤버 개인 채널 프리미어는 방송 카드로 올린다(2026-10-01 운영자 결정)
@@ -7205,6 +7214,20 @@ if __name__ == "__main__":
         pv11c = (g11c.store.get(_PREVIEW_PATH) or {}).get("items") or []
         assert pv11c and pv11c[0]["channel_key"] == "yuno" and pv11c[0]["collab_with"] == ["ritsu"], pv11c
         print("[OK] _maybe_url_confirmed_schedule (URL이 quote에만 있어도 raw+quote 합본으로 등록, collab_with=[ritsu])")
+
+        # (v4) 이미 끝난 방송 URL — 예고에 안 올리고 처리 끝(텍스트 파싱으로도 안 넘김). 10-03 스테이징 재현 사례.
+        g11e = _FakeGH()
+        _ended = _FakeVideoInfo("7sBzjBKAxFQ", "UC_miyako", "【零】＃８", "none",
+                                scheduled_start="2026-10-03T06:00:00Z", actual_start="2026-10-03T06:00:17Z")
+        _ended.actual_end = "2026-10-03T10:00:00Z"
+        _FakeYouTubeClient._RESP = {"7sBzjBKAxFQ": _ended}
+        assert _maybe_url_confirmed_schedule(
+            g11e, "ほんでですね…今日はおやすみです", "arale", "2026-10-03T11:34:56Z", _CFG6,
+            quote="／\n🛸#ゆめみた\n10/3(土)の配信スケジュール🌟\n＼\n\n🎮15:00～ 藤都子\n"
+                  "https://www.youtube.com/watch?v=7sBzjBKAxFQ\n",
+        ) is True
+        assert not ((g11e.store.get(_PREVIEW_PATH) or {}).get("items") or []), g11e.store.get(_PREVIEW_PATH)
+        print("[OK] _maybe_url_confirmed_schedule (이미 끝난 방송 URL → 예고에 안 올림 — 10-03 인용 휴방 글 재현)")
 
         # (v3.8.6) _confirm_relay_rows_collab — 공식 계정 일일 스케줄(× 콜라보)도
         # 이름 매치만으론 확정 안 하고 무조건 LLM 재확인

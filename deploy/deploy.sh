@@ -2,6 +2,8 @@
 set -euo pipefail
 
 source deploy/env.sh
+# (v4) STAGE=1 이면 스테이징 서비스 · 큐 · 브랜치로 덮어쓴다 (deploy/env.stage.sh)
+if [ "${STAGE:-0}" = 1 ]; then source deploy/env.stage.sh; fi
 
 echo "=== Cloud Run 배포 ==="
 # --concurrency=1 --max-instances=1: data 브랜치 쓰기를 직렬화(동시 실행 시 preview.json

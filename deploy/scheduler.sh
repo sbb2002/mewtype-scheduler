@@ -2,6 +2,8 @@
 set -euo pipefail
 
 source deploy/env.sh
+# (v4) STAGE=1 이면 스테이징 서비스 · 큐 · 브랜치로 덮어쓴다 (deploy/env.stage.sh)
+if [ "${STAGE:-0}" = 1 ]; then source deploy/env.stage.sh; fi
 
 echo "=== 서비스 URL 조회 ==="
 URL=$(gcloud run services describe "$SERVICE_NAME" \
