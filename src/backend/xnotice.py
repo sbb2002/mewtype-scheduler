@@ -241,7 +241,8 @@ def _site_url_anchor(t: str) -> tuple[str, str | None, str | None]:
 
 
 def _url_tail(u: str) -> str:
-    seg = [s for s in re.split(r"[/?#]", u) if s]
+    u = u.split("#", 1)[0]               # 조각(#…)은 페이지 안 위치일 뿐 — anchor 에서 뺀다
+    seg = [s for s in re.split(r"[/?]", u) if s]
     return seg[-1][:40] if seg else u[:40]
 
 
@@ -377,7 +378,9 @@ def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None 
     if not date_iso and time_hm:
         date_iso = now_jst.strftime("%Y-%m-%d")   # 시각만 → 오늘로 간주
 
-    site, url, anchor_a = _site_url_anchor(t)
+    # URL 은 normalize 전 원문에서 뽑는다 — normalize 가 `~` 를 `〜` 로 바꿔 `#:~:text=`(텍스트 조각 링크)
+    # · `/~user/` 같은 URL 이 깨진 채 저장되던 버그(2026-09-15 bushiroad 리트윗 소식).
+    site, url, anchor_a = _site_url_anchor(text.replace("\r\n", "\n").replace("\r", "\n"))
     qm = _QUOTE_RE.search(t)
     anchor_b = re.sub(r"\s+", "", qm.group(1)).lower()[:40] if qm else None
     headline = _headline(t)
@@ -567,5 +570,13 @@ if __name__ == "__main__":
     r13b = parse(S13b, NOW)
     assert r13b is None, "@handle: 패턴도 타인글"
     print("[OK] S13b @handle: 패턴 → None (v4a D16)")
+
+    # S14: URL 의 `~` 보존(normalize 가 〜 로 바꾸던 버그) + anchor_a 는 조각(#…) 제외
+    S14 = ("◤🎁コミックス特典情報🎁◢\n10月8日(木)発売\n『BanG Dream! ゆめ∞みた』\n\n"
+           "https://bushiroad-works.com/benefits/5728/#:~:text=%E2%96%A0BanG%20Dream!%201")
+    r14 = parse(S14, NOW)
+    assert r14["url"].endswith("/5728/#:~:text=%E2%96%A0BanG%20Dream!%201"), r14["url"]
+    assert r14["anchor_a"] == "5728", r14["anchor_a"]
+    print("[OK] S14  URL 물결표 보존 · 조각 제외 anchor")
 
     print("\nSUCCESS: xnotice self-test 통과")

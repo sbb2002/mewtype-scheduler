@@ -179,6 +179,8 @@
         .list-item-meta {
             color: var(--color-text-muted);
             font-size: 0.85rem;
+            min-width: 0;
+            overflow-wrap: anywhere;   /* 띄어쓰기 없는 긴 문자열이 칸을 밀어내지 않게 */
         }
 
         .list-item-actions {
@@ -2989,6 +2991,15 @@
                 }
             },
 
+            // 목록 표시용 URL — %XX 인코딩을 사람이 읽는 글자로 풀고, 조각(#…) · 쿼리(?…)는 떼고, 길면 말줄임.
+            // 저장값(notice.url)은 그대로. 전체 주소는 마우스를 올리면 title 로 보인다.
+            displayUrl(url, max = 48) {
+                let s = url;
+                try { s = decodeURI(url); } catch (e) { /* 잘못된 %XX 면 원문 그대로 */ }
+                s = s.replace(/^https?:\/\//, "").replace(/[?#].*$/, "").replace(/\/$/, "");
+                return s.length > max ? s.slice(0, max - 1) + "…" : s;
+            },
+
             renderNotices() {
                 const container = document.getElementById("notices-list");
                 container.classList.remove("loading");
@@ -3017,8 +3028,14 @@
 
                     const meta = document.createElement("div");
                     meta.className = "list-item-meta";
-                    meta.textContent = [notice.date || "날짜 없음", notice.category, notice.url]
+                    meta.textContent = [notice.date || "날짜 없음", notice.category,
+                                        notice.url && this.displayUrl(notice.url)]
                         .filter(Boolean).join(" · ");
+                    if (notice.url) {
+                        let full = notice.url;
+                        try { full = decodeURI(notice.url); } catch (e) { /* 원문 그대로 */ }
+                        meta.title = full;
+                    }
 
                     const actions = document.createElement("div");
                     actions.className = "list-item-actions";
