@@ -3110,6 +3110,7 @@
                     seen: {
                         title: notice.title,
                         title_ko: notice.title_ko ?? null,
+                        body_ko: notice.body_ko ?? "",
                         date: notice.date,
                         url: notice.url,
                     },
@@ -3148,33 +3149,40 @@
                 urlGroup.appendChild(urlInput);
                 form.appendChild(urlGroup);
 
+                // (v4.0.5) 본문 번역 — 원문(트윗 본문)은 읽기 전용, 한글만 고친다
+                if (notice.body_raw) {
+                    this.buildBodyFields(form, {
+                        label: "본문 번역",
+                        origId: "edit-notice-body", koId: "edit-notice-body-ko",
+                        orig: notice.body_raw, ko: notice.body_ko || "",
+                        placeholder: "본문 번역 (비우고 저장하면 다음 정기 수집 때 자동 번역)",
+                        help: "번역 버튼은 한글 칸만 채웁니다(저장은 아래 저장). 비우고 저장하면 자동 번역을 다시 합니다.",
+                    });
+                }
+
                 document.getElementById("edit-modal-title").textContent = "소식 편집";
                 document.getElementById("edit-modal").classList.add("active");
             },
 
-            // (v4a) 트윗 수정 창 — 소식 수정 창과 같은 구조([원문 | 번역 버튼] / [한글]), 트윗은 한글 번역만 고친다:
-            // 원문은 읽기 전용(X 카드가 원문을 그대로 보여 준다). 한글은 비울 수 없다(비우면 팬 화면에 「번역 준비 중…」)
-            editTweet(unit, tweet) {
-                this.editState = { type: "tweet", unit, tweetId: String(tweet.id), seen: { text_ko: tweet.text_ko ?? "" } };
-                const form = document.getElementById("edit-modal-form");
-                form.textContent = "";
-
+            // (v4.0.5) 본문 번역 칸 — [원문(읽기 전용) | 번역 버튼] / [한글]. 트윗 수정 · 소식 수정(본문) 공용.
+            // 번역 버튼은 한글 칸만 채운다(저장은 창의 저장 버튼).
+            buildBodyFields(form, { label, origId, koId, orig, ko, placeholder, help }) {
                 const group = document.createElement("div");
                 group.className = "form-group";
-                const label = document.createElement("label");
-                label.textContent = `번역 — ${(this.channels[unit] || {}).name_ko || unit} 트윗`;
-                group.appendChild(label);
+                const lab = document.createElement("label");
+                lab.textContent = label;
+                group.appendChild(lab);
 
                 const row1 = document.createElement("div");
                 row1.className = "title-row top";
                 const tag1 = document.createElement("span");
                 tag1.className = "title-tag";
                 tag1.textContent = "원문";
-                const orig = document.createElement("textarea");
-                orig.id = "edit-tweet-orig";
-                orig.rows = 4;
-                orig.readOnly = true;
-                orig.value = tweet.text || "";
+                const origEl = document.createElement("textarea");
+                origEl.id = origId;
+                origEl.rows = 4;
+                origEl.readOnly = true;
+                origEl.value = orig;
                 const tlBtn = document.createElement("button");
                 tlBtn.type = "button";
                 tlBtn.className = "tl-btn";
@@ -3185,7 +3193,7 @@
                 tlBtn.appendChild(spin);
                 tlBtn.appendChild(tlText);
                 row1.appendChild(tag1);
-                row1.appendChild(orig);
+                row1.appendChild(origEl);
                 row1.appendChild(tlBtn);
                 group.appendChild(row1);
 
@@ -3194,23 +3202,23 @@
                 const tag2 = document.createElement("span");
                 tag2.className = "title-tag";
                 tag2.textContent = "한글";
-                const ko = document.createElement("textarea");
-                ko.id = "edit-tweet-ko";
-                ko.rows = 4;
-                ko.value = tweet.text_ko || "";
-                ko.placeholder = "번역을 입력하세요 (비울 수 없습니다)";
+                const koEl = document.createElement("textarea");
+                koEl.id = koId;
+                koEl.rows = 4;
+                koEl.value = ko;
+                koEl.placeholder = placeholder;
                 row2.appendChild(tag2);
-                row2.appendChild(ko);
+                row2.appendChild(koEl);
                 group.appendChild(row2);
 
-                const help = document.createElement("div");
-                help.className = "list-item-sub";
-                help.textContent = "번역 버튼은 한글 칸만 채웁니다(저장은 아래 저장). 직접 고친 번역은 자동 번역이 덮어쓰지 않습니다.";
-                group.appendChild(help);
+                const helpEl = document.createElement("div");
+                helpEl.className = "list-item-sub";
+                helpEl.textContent = help;
+                group.appendChild(helpEl);
                 form.appendChild(group);
 
                 tlBtn.onclick = async () => {
-                    const text = orig.value.trim();
+                    const text = origEl.value.trim();
                     if (!text) {
                         this.showToast("번역할 원문이 없습니다", "error");
                         return;
@@ -3221,7 +3229,7 @@
                     try {
                         const r = await this.apiCall("POST", "/translate_text", { text });
                         if (r.ok && r.result && r.result.title_ko) {
-                            ko.value = r.result.title_ko;
+                            koEl.value = r.result.title_ko;
                         } else {
                             this.showToast(r.error || "번역 실패", "error");
                         }
@@ -3233,6 +3241,22 @@
                         tlText.textContent = "번역";
                     }
                 };
+            },
+
+            // (v4a) 트윗 수정 창 — 소식 수정 창과 같은 구조([원문 | 번역 버튼] / [한글]), 트윗은 한글 번역만 고친다:
+            // 원문은 읽기 전용(X 카드가 원문을 그대로 보여 준다). 한글은 비울 수 없다(비우면 팬 화면에 「번역 준비 중…」)
+            editTweet(unit, tweet) {
+                this.editState = { type: "tweet", unit, tweetId: String(tweet.id), seen: { text_ko: tweet.text_ko ?? "" } };
+                const form = document.getElementById("edit-modal-form");
+                form.textContent = "";
+
+                this.buildBodyFields(form, {
+                    label: `번역 — ${(this.channels[unit] || {}).name_ko || unit} 트윗`,
+                    origId: "edit-tweet-orig", koId: "edit-tweet-ko",
+                    orig: tweet.text || "", ko: tweet.text_ko || "",
+                    placeholder: "번역을 입력하세요 (비울 수 없습니다)",
+                    help: "번역 버튼은 한글 칸만 채웁니다(저장은 아래 저장). 직접 고친 번역은 자동 번역이 덮어쓰지 않습니다.",
+                });
 
                 document.getElementById("edit-modal-title").textContent = "트윗 편집";
                 document.getElementById("edit-modal").classList.add("active");
@@ -3288,6 +3312,11 @@
                     const urlInput = document.getElementById("edit-notice-url");
                     if (urlInput.value.trim() && urlInput.value.trim() !== (seen.url || "")) {
                         patch.url = urlInput.value.trim();
+                    }
+
+                    const bodyKo = document.getElementById("edit-notice-body-ko");
+                    if (bodyKo && bodyKo.value.trim() !== (seen.body_ko || "")) {
+                        patch.body_ko = bodyKo.value.trim();
                     }
 
                     if (Object.keys(patch).length === 0) {

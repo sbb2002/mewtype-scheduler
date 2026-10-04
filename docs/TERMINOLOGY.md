@@ -29,6 +29,9 @@
   `data` 브랜치와 같은 이유로 Vercel 배포 트리거에서 제외돼 있다(`vercel.json`). **"docs
   브랜치"라고 부르지 말 것** — `docs/` 폴더명과 헷갈린다.
 - **메인 콘텐츠** — preview(방송예고) · tweet(개인 트윗) · notice(공식 소식) 3종.
+- **소식 제목 · 본문 필드** — 소식 항목의 일본어 제목 = `title`, 한글 제목 = `title_ko`(LLM 이 따로 뽑은 제목),
+  트윗 원문 = `body_raw`, **본문 한글 번역 = `body_ko`**(v4.0.5, 2026-10-04 운영자 결정 — `<원문 필드>_ko` 모양.
+  `body_raw_ko` · `text_ko` 로 부르지 않는다. 개인 트윗의 본문 번역은 `text_ko` 로 따로 있다).
 - **모니터링 스냅샷** — (v3.8.9) 매일 KST 06:10 백엔드 `/monitor` 가 방금 끝난 하루(06:00~익일
   06:00 KST)의 모니터 리포트 데이터를 계산해 굳혀 둔 것. `monitoring/days/YYYY-MM-DD.json`
   (하루치 상세) + `monitoring/summary.json`(전 기간 잔디용 요약), `monitor_snapshot.py`.

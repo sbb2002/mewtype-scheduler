@@ -386,10 +386,20 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 티커. `notices.py`.
 
 - `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
-  `title`·`title_ko`·`title_raw`·`body_raw`·`body_for_llm`·`date`·`time`·`deadline`·`site`·`url`·
+  `title`·`title_ko`·`title_raw`·`body_raw`·`body_ko?`·`body_for_llm`·`date`·`time`·`deadline`·`site`·`url`·
   `tweet_url`·`src_handle`·`needs_tl?`·`participants?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`.
   정렬 date→time→id.
   `title_raw`(정규식 제목)·`body_raw`(원문, 600자 컷)는 파싱·번역 품질 개선용 기록 — 프론트 안 읽음, 아카이브까지 이관.
+- **`body_ko`** (v4.0.5) = `body_raw` 의 한글 번역(`title_ko` 는 한글 **제목**이라 별개). 팬 화면은 안 읽고, 리포트 팝업 「한글」 칸 ·
+  관리 페이지 소식 수정 창이 쓴다. 키가 없거나 `None` = 아직 번역 안 됨.
+  - 번역 시점: 접수 단계 `telegram_app._prepare_notice` 가 실제로 올라가거나(added) 본문이 바뀌는(updated) 소식일 때만
+    `llm.translate(body_raw)` → 커밋(`_commit_notice`)이 **번역한 본문이 지금 행의 본문과 같을 때만** 저장. dup · recap · skip 은 번역 안 함.
+  - 갱신(`_merge_fields`)으로 `body_raw` 가 바뀌면 `body_ko` 를 새 번역(없으면 `None`)으로 — 옛 본문의 번역이 남지 않게.
+  - 재시도 · 백필: 번역 sweep(`enrich.collect` — 배포판은 정기 수집 안 `_translate_sweep`, 로컬은 가공 큐)이 `body_ko` 가 없는
+    소식을 번역한다. `needs_tl` 플래그는 안 쓴다(제목 번역 전용 그대로). 한 번에 `enrich.BODY_TL_PER_SWEEP`(10)건까지,
+    `notices.json` 먼저 그다음 `notice_archive.json`(보관 시각 최근 것부터) — 지난 소식 백필도 이 경로로 나눠 채운다.
+  - 관리 페이지 수정(`admin_api.edit_notice` `body_ko`): 원문은 읽기 전용, 한글만 고친다. 비우고 저장하면 `None` → 다음 수집이 다시 자동 번역.
+  - 수동 소식 입력(`ingest_notice_manual`)은 본문 = 제목이라 한글 제목을 넣으면 그대로 `body_ko`.
 - **`participants`** (v3.2, 선택 필드): 크로스오버 공식 계정(`_CAST_LOOKUP_HANDLES`, 현재
   `bang_dream_on`) 소식만 대상 — 첨부 이미지를 `vision.py`(Groq 비전 OCR, `qwen/qwen3.8-27b`
   주+`qwen/qwen3.6-27b` 폴백)로 읽어 5인 중 출연이 확인된 `channel_key` 배열. `telegram_app
@@ -404,7 +414,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   1회 호출해 `title`(정제된 일본어)·`title_ko` 채움. 실패하면 `needs_tl=true` → 다음 `/tick` 의
   `_translate_sweep` 가 재시도. 운영자 `/translate notice` 는 즉시. (트윗 v3.0.1 인라인 번역과 동일 구조)
 - `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed, mode∈added|updated|recap|dup|skip)`.
-  지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브. `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko`) 만 대입.
+  지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브. `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko` · v4.0.5 `body_ko`) 만 대입.
 
 ---
 
