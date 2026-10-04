@@ -41,8 +41,18 @@ def enqueue_sweep() -> str | None:
     return _q.enqueue("translate_sweep", {}, name="translate-sweep")
 
 
+# (v4.0.5) 소식 본문 번역(body_ko)은 한 번에 이만큼만 — 지난 소식 백필(활성 32 · 아카이브 78건, 10-04)이
+# 첫 수집 한 번에 몰리지 않게. 정기 수집 10분마다 나눠서 채운다.
+BODY_TL_PER_SWEEP = 10
+
+
 def empty_updates() -> dict:
-    return {"notices": {}, "tweets": {}, "preview": {}}
+    return {"notices": {}, "tweets": {}, "preview": {}, "notice_body": {}, "archive_body": {}}
+
+
+def _needs_body_ko(n: dict) -> bool:
+    """본문 번역이 아직 없는 소식 — body_ko 가 없거나 None (빈 문자열 = 관리자가 비운 것, 건드리지 않음)."""
+    return bool(n.get("id") and (n.get("body_raw") or "").strip() and n.get("body_ko") is None)
 
 
 def count(updates: dict) -> int:
@@ -54,7 +64,9 @@ def collect(store, llm, now_iso: str) -> dict:
 
     {"notices": {nid: {"title", "title_ko"}},
      "tweets":  {"<unit>|<tweet id>": {"text_ko"?, "quote_text_ko"?}},
-     "preview": {item_id: {"title", "title_ko"}}}   # preview 는 번역 당시 원제목을 같이 실어 반영 때 대조
+     "preview": {item_id: {"title", "title_ko"}},   # preview 는 번역 당시 원제목을 같이 실어 반영 때 대조
+     "notice_body":  {nid: {"body_raw", "body_ko"}},  # (v4.0.5) 소식 본문 번역 — 번역한 본문을 같이 실어 대조
+     "archive_body": {nid: {"body_raw", "body_ko"}}}  #   지난 소식(notice_archive.json) 백필. 합쳐 BODY_TL_PER_SWEEP 건까지
     """
     out = empty_updates()
     if llm is None:
@@ -74,6 +86,24 @@ def collect(store, llm, now_iso: str) -> dict:
                 }
     except Exception as e:  # noqa: BLE001
         log.warning("notice 번역 수집 실패: %s", e)
+
+    # (v4.0.5) 소식 본문 번역 — 활성 소식 먼저, 남으면 지난 소식(최근 것부터)
+    budget = BODY_TL_PER_SWEEP
+    for path, key in (("notices.json", "notice_body"), ("notice_archive.json", "archive_body")):
+        if budget <= 0:
+            break
+        try:
+            data = nj if path == "notices.json" else store.read_json(path)[0]
+            rows = [n for n in (data or {}).get("notices", []) or [] if _needs_body_ko(n)]
+            if path == "notice_archive.json":
+                rows.sort(key=lambda n: n.get("archived_at") or "", reverse=True)
+            for n in rows[:budget]:
+                budget -= 1
+                ko = llm.translate(n["body_raw"])
+                if ko:
+                    out[key][n["id"]] = {"body_raw": n["body_raw"], "body_ko": ko}
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s 본문 번역 수집 실패: %s", path, e)
 
     try:
         tj, _ = store.read_json("tweets.json")
@@ -151,6 +181,26 @@ def apply_translations(store, updates: dict, now_iso: str, *, force: bool = Fals
                 nj["generated_at"] = now_iso
             return n_ok
         res["notice_tl"] = _write_retry(store, "notices.json", _m_notices, f"data: notices tl {now_iso}")
+
+    # (v4.0.5) 소식 본문 번역 — 그 사이 본문이 바뀐 행 · 이미 번역이 생긴 행(관리자 수정 등)은 건너뛴다.
+    # force 는 본문엔 안 쓴다(관리 페이지는 수정 창에서 body_ko 를 직접 고친다).
+    for path, key in (("notices.json", "notice_body"), ("notice_archive.json", "archive_body")):
+        bu = updates.get(key) or {}
+        if not bu:
+            continue
+
+        def _m_body(data, bu=bu, path=path):
+            n_ok = 0
+            for n in data.get("notices", []) or []:
+                u = bu.get(n.get("id"))
+                if not u or n.get("body_raw") != u.get("body_raw") or n.get("body_ko") is not None:
+                    continue
+                n["body_ko"] = u["body_ko"]
+                n_ok += 1
+            if n_ok and path == "notices.json":
+                data["generated_at"] = now_iso
+            return n_ok
+        res["notice_tl"] += _write_retry(store, path, _m_body, f"data: {path.split('.')[0]} body tl {now_iso}")
 
     tu = updates.get("tweets") or {}
     if tu:
@@ -262,4 +312,31 @@ if __name__ == "__main__":
         assert pj["items"][1].get("needs_tl") is True, "제목이 바뀐 항목은 다음 sweep 으로"
         assert s.read_json("notices.json")[0]["notices"][0]["title_ko"] == "제목"
         assert count(collect(s, None, now)) == 0
-    print("[PASS] enrich self-test: collect 읽기 전용 · apply 반영 · 제목 바뀐 항목 보류")
+
+        # (v4.0.5) 소식 본문 번역 — 활성 · 아카이브, 상한, 본문 바뀐 행 · 관리자가 비운 행 건너뜀
+        rows = [{"id": f"b{i}", "title": "t", "title_ko": "제", "body_raw": f"本文{i}"} for i in range(4)]
+        rows.append({"id": "b9", "title": "t", "title_ko": "제", "body_raw": "本文9", "body_ko": ""})
+        nj, sha = s.read_json("notices.json")
+        nj["notices"] = rows
+        s.write_json("notices.json", nj, prev_sha=sha, message="t")
+        s.write_json("notice_archive.json", {"notices": [
+            {"id": "a1", "body_raw": "古い", "archived_at": "2026-09-01T00:00:00Z"},
+            {"id": "a2", "body_raw": "新しい", "archived_at": "2026-09-20T00:00:00Z"},
+            {"id": "a3", "body_raw": "済み", "body_ko": "완료"}]}, prev_sha=None, message="t")
+        old_cap = BODY_TL_PER_SWEEP
+        globals()["BODY_TL_PER_SWEEP"] = 5
+        up = collect(s, _LLM(), now)
+        assert set(up["notice_body"]) == {"b0", "b1", "b2", "b3"} and list(up["archive_body"]) == ["a2"], up
+        nj, sha = s.read_json("notices.json")
+        nj["notices"][1]["body_raw"] = "本文1改"          # 그 사이 본문이 바뀜 → 반영 안 함
+        s.write_json("notices.json", nj, prev_sha=sha, message="t")
+        r = apply_translations(s, up, now)
+        assert r["notice_tl"] == 4, r
+        nl = {n["id"]: n for n in s.read_json("notices.json")[0]["notices"]}
+        assert nl["b0"]["body_ko"] == "KO:本文0" and nl["b1"].get("body_ko") is None and nl["b9"]["body_ko"] == ""
+        al = {n["id"]: n for n in s.read_json("notice_archive.json")[0]["notices"]}
+        assert al["a2"]["body_ko"] == "KO:新しい" and al["a1"].get("body_ko") is None and al["a3"]["body_ko"] == "완료"
+        up = collect(s, _LLM(), now)                       # 다음 수집: b1(새 본문) · a1
+        assert list(up["notice_body"]) == ["b1"] and list(up["archive_body"]) == ["a1"], up
+        globals()["BODY_TL_PER_SWEEP"] = old_cap
+    print("[PASS] enrich self-test: collect 읽기 전용 · apply 반영 · 제목 바뀐 항목 보류 · 소식 본문 번역(상한 · 백필)")

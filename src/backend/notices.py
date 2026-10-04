@@ -4,11 +4,13 @@
 
 notices.json
   { "generated_at": "...Z",
-    "notices": [ { id, category, title, title_ko, title_raw, body_raw, body_for_llm,
+    "notices": [ { id, category, title, title_ko, title_raw, body_raw, body_ko, body_for_llm,
                    date, time, deadline, site, url, tweet_url, src_handle, anchor_a, anchor_b,
                    title_slug, is_recap, needs_tl?, seen_ids[], first_seen, last_updated, expires_at } ] }
 notice_archive.json  { "notices": [ <notice + archived_at> ] }  (append-only, id dedupe)
   title_raw/body_raw 는 파싱·번역 품질 개선용 원문 기록 (프론트 안 읽음).
+  body_ko (v4.0.5) = body_raw 의 한글 번역. None(키 없음) = 아직 번역 안 됨 → 번역 sweep 이 채운다.
+    body_raw 가 바뀌면(더 최신 트윗으로 갱신) 같이 비운다 — 옛 본문의 번역이 남지 않게.
 
 중복 판정 (merge_notice) — v3: url ∥ title 기반
   1. incoming.id 가 어느 소식의 id/seen_ids 에 이미 있음        → "dup" (no-op)
@@ -84,6 +86,9 @@ def _seen(notice: dict, tid: str) -> bool:
 def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
     """기존 소식에 새 트윗 정보 반영 — 나중 트윗이 더 확정적이라고 보고 덮음."""
     out = dict(cur)
+    # (v4.0.5) 본문이 바뀌면 번역도 새 본문 것으로 — 없으면 비워 번역 sweep 이 다시 채우게
+    if inc.get("body_raw") and inc["body_raw"] != cur.get("body_raw"):
+        out["body_ko"] = inc.get("body_ko") or None
     for k in ("title", "title_ko", "title_raw", "body_raw", "body_for_llm", "time", "url",
               "site", "tweet_url", "src_handle", "category",
               "anchor_a", "anchor_b", "title_slug", "expires_at", "participants"):
@@ -103,7 +108,7 @@ def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
 
 def _new_row(inc: dict, now_iso: str) -> dict:
     row = {k: inc.get(k) for k in (
-        "id", "category", "title", "title_ko", "title_raw", "body_raw", "body_for_llm",
+        "id", "category", "title", "title_ko", "title_raw", "body_raw", "body_ko", "body_for_llm",
         "date", "time", "deadline", "site", "url",
         "tweet_url", "src_handle", "anchor_a", "anchor_b", "title_slug", "expires_at",
         "participants",
@@ -184,7 +189,7 @@ def merge_into(prev: dict, target_id: str, incoming: dict, now_iso: str) -> tupl
     return out, True
 
 
-_EDITABLE = ("title", "title_ko", "date", "time", "url", "site", "anchor_a", "category",
+_EDITABLE = ("title", "title_ko", "body_ko", "date", "time", "url", "site", "anchor_a", "category",
              "deadline", "title_slug", "expires_at", "needs_tl")
 
 
@@ -363,6 +368,20 @@ if __name__ == "__main__":
     assert edit_notice(E, "50", {"title": "会場:GARDEN"}, NOW)[1] is False   # 동일값 → no-op
     assert edit_notice(E, "50", {"id": "hax"}, NOW)[1] is False              # id 는 편집 불가
     print("[OK] edit_notice (title_ko 지원 · id/seen_ids/first_seen 보존 · no-op)")
+
+    # (v4.0.5) body_ko — 신규 보존 · 같은 본문 갱신이면 유지 · 본문이 바뀌면 새 번역(없으면 비움) · 수정 가능
+    B = default_notices()
+    B, _, _, m = merge_notice(B, inc(id="70", url="https://b.jp/1", body_raw="本文A", body_ko="본문A"), NOW)
+    assert m == "added" and B["notices"][0]["body_ko"] == "본문A"
+    B, _, _, m = merge_notice(B, inc(id="71", url="https://b.jp/1", body_raw="本文A"), NOW)
+    assert m == "updated" and B["notices"][0]["body_ko"] == "본문A", "같은 본문 → 번역 유지"
+    B, _, _, m = merge_notice(B, inc(id="72", url="https://b.jp/1", body_raw="本文B"), NOW)
+    assert m == "updated" and B["notices"][0]["body_raw"] == "本文B" and B["notices"][0]["body_ko"] is None, "본문 바뀜 → 비움"
+    B, _, _, m = merge_notice(B, inc(id="73", url="https://b.jp/1", body_raw="本文C", body_ko="본문C"), NOW)
+    assert B["notices"][0]["body_ko"] == "본문C"
+    B2, ch = edit_notice(B, B["notices"][0]["id"], {"body_ko": "고친 본문"}, NOW)
+    assert ch and B2["notices"][0]["body_ko"] == "고친 본문"
+    print("[OK] body_ko (신규 · 유지 · 본문 바뀌면 비움 · 수정)")
 
     # v3.2 — participants (비전 OCR 로 판별된 출연 채널) 필드가 신규/갱신 모두 보존되는지
     NP, AP = default_notices(), default_archive()

@@ -364,9 +364,9 @@ def attach_details(day: dict, lk: dict) -> dict:
     for e in day.get("notice") or []:
         n = lk["nt_id"].get(str(e.get("nid") or "")) or lk["nt_ts"].get(e.get("ts") or "")
         if n:
-            # 소식엔 본문 한글 번역이 없다 — 원문 = 트윗 원문(body_raw), 한글 = 팬 화면 소식 줄의 한글 제목(title_ko)
+            # 원문 = 트윗 원문(body_raw), 한글 = 본문 번역(body_ko, v4.0.5). 아직 번역 전이면 팬 화면 소식 줄의 한글 제목(title_ko)
             e["info"] = {"orig": n.get("body_raw") or n.get("title_raw") or n.get("title"),
-                         "ko": n.get("title_ko"), "x": n.get("tweet_url")}
+                         "ko": n.get("body_ko") or n.get("title_ko"), "x": n.get("tweet_url")}
     for e in day.get("tweet") or []:
         t = lk["tw_id"].get(str(e.get("tid") or "")) or lk["tw_key"].get((e.get("member"), e.get("ts") or ""))
         if t:
@@ -871,6 +871,9 @@ _TEMPLATE = r"""<!doctype html>
   .tl-right-health-label{font:10px var(--mono); fill:var(--muted); cursor:pointer; font-variant-numeric:tabular-nums}
   .tl-dot{cursor:pointer; stroke:var(--bg); stroke-width:1.5; transition:r .16s ease, cy .16s ease}
   .tl-dot:hover{stroke:var(--ink)}
+  /* (v4.0.5) 팝업을 고정한 요소 — 호버 때의 흰 테두리를 팝업이 떠 있는 동안 유지 + 발광으로 「이걸 눌렀다」 표시 */
+  .tl-dot.picked{stroke:var(--ink); stroke-width:2; filter:drop-shadow(0 0 3px rgba(255,255,255,.85))}
+  .tl-dot.dim.picked{opacity:1}
   .tl-dot.dim{opacity:.15}
   /* (v3.8.9) 업스트림 감지 아이콘 — 메인 화면 네임플레이트 X·YouTube 아이콘을 결과색 둥근 네모 테두리
      안에(테두리 색은 JS 가 rect 에 직접 지정 — .tl-dot 의 공통 stroke 는 덮지 않음). 아이콘은 밝은
@@ -879,6 +882,7 @@ _TEMPLATE = r"""<!doctype html>
   .tl-up-box{fill:var(--panel)}
   #tlRightSvg .tl-right-health-label.zero{fill:var(--muted-2)}  /* (v3.8.9a) 소식·트윗 0건 */
   .tl-up-icon:hover{color:#fff}
+  .tl-up-icon.picked{color:#fff}
   /* (후속) 트리거 = 짧은 세로 히스토그램 막대 (점 대체) */
   .tl-trigger-baseline{stroke:#ffffff; stroke-width:1; opacity:.55}
   .tl-trigger-bar{cursor:pointer; transition:filter .16s ease}
@@ -892,15 +896,21 @@ _TEMPLATE = r"""<!doctype html>
   .tl-trigger-line.active{stroke:#ffffff; stroke-width:1.5; stroke-dasharray:none; opacity:.95}
   .tl-seg{cursor:pointer}
   .tl-seg:hover{filter:brightness(1.25)}
+  .tl-seg.picked{stroke:var(--ink); stroke-width:1.5; filter:brightness(1.25) drop-shadow(0 0 3px rgba(255,255,255,.85))}
 
   .tooltip{position:fixed; background:#1c1e24; border:1px solid var(--line); border-radius:8px;
     padding:9px 11px; font-size:.76rem; pointer-events:auto; z-index:50; display:none;
-    box-shadow:0 8px 24px rgba(0,0,0,.45); max-width:340px}
+    box-shadow:0 8px 24px rgba(0,0,0,.45); max-width:340px;
+    max-height:calc(100vh - 16px); overflow-y:auto}
+  @media (max-width:640px){ .tooltip{max-width:calc(100vw - 16px)} }
   /* (v4.0.4) 예고 · 소식 · 트윗 팝업 상세 — 링크는 클릭으로 고정한 팝업에서 연다 */
   .tooltip .tt-kv{margin:2px 0; color:var(--ink); word-break:break-word; white-space:pre-wrap}
   .tooltip .tt-kv > span{color:var(--muted); margin-right:4px}
   .tooltip a.tt-link{color:#6cb4ff; word-break:break-all}
   .tooltip .tt-hint{color:var(--muted); font-size:.68rem; margin-top:4px}
+  /* (v4.0.5) 고정된 팝업은 안내 문구를 「바깥을 누르면 닫힘」으로 */
+  .tooltip .tt-hint .h-pin{display:none}
+  .tooltip.pinned .tt-hint .h-pin{display:inline} .tooltip.pinned .tt-hint .h-hover{display:none}
   .tooltip .tt-h{color:var(--muted); font:11px var(--mono); margin-bottom:5px}
   .tooltip .tt-title{font-size:.82rem; color:var(--ink); margin-bottom:3px; font-weight:600}
   .tooltip .tt-raw{font-family:var(--mono); font-size:.76rem; margin-bottom:3px}
@@ -1077,7 +1087,8 @@ function ttLink(u){
 }
 function ttKv(k, v){ return `<div class="tt-kv"><span>${k}:</span>${v}</div>`; }
 function ttClip(s, n){ s = String(s || "").trim(); return s ? esc(s.length > n ? s.slice(0, n) + "…" : s) : "-"; }
-const TT_HINT = `<div class="tt-hint">클릭하면 팝업이 고정되어 링크를 열 수 있습니다</div>`;
+const TT_HINT = `<div class="tt-hint"><span class="h-hover">클릭하면 팝업이 고정되어 링크를 열 수 있습니다</span>` +
+  `<span class="h-pin">팝업 바깥을 누르면 닫힙니다</span></div>`;
 function previewInfoHtml(sg){
   const i = sg.info || {};
   return ttKv("title", ttClip(i.title || sg.title, 120)) + ttKv("start at", ttKst(i.start)) +
@@ -1451,6 +1462,9 @@ function renderLabels(){
 const ZOOM_LEVELS = [1, 1.5, 2, 3, 4, 6, 8];
 let zoomIdx = 0;
 let triggerMarks = [];
+// (v4.0.5) 팝업이 있는 요소의 자리(플롯 좌표) — 요소를 빗나간 클릭을 가장 가까운 요소로 보정할 때 쓴다.
+// {x1, x2, y, hh(세로 반높이), tipData} 또는 트리거 막대 {.., html, mark}. renderTimeline 마다 새로 채운다.
+let tipTargets = [];
 let crosshairMinutes = null; // 크로스헤어가 가리키는 "시각"(분) — 줌해도 화면상 같은 시각에 고정하는 기준
 function currentPlotW(){ return BASE_W * ZOOM_LEVELS[zoomIdx]; }
 function viewportCenterMinutes(){
@@ -1521,6 +1535,8 @@ function renderTimeline(){
   const ns = "http://www.w3.org/2000/svg";
   svg.innerHTML = "";
   triggerMarks = [];
+  tipTargets = [];
+  const reg = (x1, x2, y, hh, extra) => tipTargets.push(Object.assign({ x1, x2, y, hh }, extra));
 
   const defs = document.createElementNS(ns, "defs");
   // (v3.8.4 item 10) 패턴 2종 — 둘 다 같은 모양(6x6, 45도, 절반 줄무늬), 바탕색만 다르다.
@@ -1615,8 +1631,10 @@ function renderTimeline(){
       rect.setAttribute("rx", 5);
       rect.setAttribute("fill", HEALTH_COLOR[sg.s]);
       rect.setAttribute("class","tl-seg");
-      wireTip(rect, { t:sg.from+"–"+sg.to, title:HEALTH_LABEL[sg.s], raw:sg.s, tone:sg.s==="down"?"err":"ok",
-        d: CURRENT_DAY.downRanges == null ? "healthchecks.io 미조회 — 다운 없음으로 간주(트리거·일시정지는 로그 기준)" : "healthchecks.io status/flips 기준" });
+      const tip = { t:sg.from+"–"+sg.to, title:HEALTH_LABEL[sg.s], raw:sg.s, tone:sg.s==="down"?"err":"ok",
+        d: CURRENT_DAY.downRanges == null ? "healthchecks.io 미조회 — 다운 없음으로 간주(트리거·일시정지는 로그 기준)" : "healthchecks.io status/flips 기준" };
+      wireTip(rect, tip);
+      reg(x1, x1 + Math.max(x2-x1, 1), ry, h/2, { tipData: tip, el: rect });
       svg.appendChild(rect);
     });
   })();
@@ -1644,8 +1662,10 @@ function renderTimeline(){
         ? `<div class="tt-collab">함께: ${sg.collab_with.map(ck =>
             `<img src="${MEMBER_ICON[ck]}" alt="${MEMBER_KO[ck]||ck}">${MEMBER_KO[ck]||ck}`).join(" ")}</div>`
         : "";
-      wireTip(rect, { t:sg.from+"–"+sg.to, title:esc(MEMBER_KO[v.member] || v.member), raw:label, tone:"ok",
-        d:(sg.qd ? esc(sg.qd) : "") + previewInfoHtml(sg) + collabTip });
+      const segTip = { t:sg.from+"–"+sg.to, title:esc(MEMBER_KO[v.member] || v.member), raw:label, tone:"ok",
+        d:(sg.qd ? esc(sg.qd) : "") + previewInfoHtml(sg) + collabTip };
+      wireTip(rect, segTip);
+      reg(x1, x1 + Math.max(x2-x1, 1), ry, 6, { tipData: segTip, el: rect });
       svg.appendChild(rect);
       if (isCollabLive) {
         const iconSize = 12, gap = 2;
@@ -1656,8 +1676,7 @@ function renderTimeline(){
           icon.setAttribute("y", ry - 6 - iconSize - 2);
           icon.setAttribute("width", iconSize); icon.setAttribute("height", iconSize);
           icon.setAttribute("class", "tl-collab-icon");
-          wireTip(icon, { t:sg.from+"–"+sg.to, title:esc(MEMBER_KO[v.member] || v.member), raw:label, tone:"ok",
-            d:(sg.qd ? esc(sg.qd) : "") + previewInfoHtml(sg) + collabTip });
+          wireTip(icon, segTip, rect);
           svg.appendChild(icon);
         });
       }
@@ -1666,7 +1685,9 @@ function renderTimeline(){
         dot.setAttribute("cx", x1); dot.setAttribute("cy", ry);
         dot.setAttribute("r", 3); dot.setAttribute("fill", TONE_COLOR[q]);
         dot.setAttribute("class", "tl-dot" + (activeTones.has(q) ? "" : " dim"));
-        wireTip(dot, { t:sg.from, title:v.title, raw:label+" 전이 · "+TONE_LABEL[q], tone:q, d:sg.qd || "" });
+        const dotTip = { t:sg.from, title:v.title, raw:label+" 전이 · "+TONE_LABEL[q], tone:q, d:sg.qd || "" };
+        wireTip(dot, dotTip);
+        reg(x1, x1, ry, 3, { tipData: dotTip, el: dot });
         svg.appendChild(dot);
       }
     });
@@ -1679,6 +1700,7 @@ function renderTimeline(){
     el.setAttribute("fill", TONE_COLOR[tone]);
     el.setAttribute("class", "tl-dot" + (activeTones.has(tone) ? "" : " dim"));
     wireTip(el, tipData);
+    reg(x, x, ry, 5, { tipData, el });
     svg.appendChild(el);
   }
   // (v3.8.4 item 8) 같은 시각의 트리거 이벤트 그룹 하나 = 점 하나. 대표 아이콘은
@@ -1740,6 +1762,8 @@ function renderTimeline(){
       bars.push(errBar);
     }
     m.bars = bars;
+    reg(m.x - triggerBarW/2, m.x + triggerBarW/2, TRIGGER_BASELINE_Y - h/2, h/2,
+        { html: () => triggerGroupDetailHtml(m.t, m.events), mark: m });
   });
   // (v3.8.9) 업스트림 감지 — 메인 화면 preview 네임플레이트 오른쪽의 X·YouTube 아이콘(src/frontend/
   // js/render.js X_ICON_D·YT_ICON_D, 24×24 기준)을 그대로 쓴다. 결과(정상/에러)는 아이콘을 두른 둥근
@@ -1762,9 +1786,11 @@ function renderTimeline(){
     icon.setAttribute("fill", "currentColor");
     icon.setAttribute("stroke", "none");
     g.appendChild(icon);
-    wireTip(g, { t:e.t, title:(UPSTREAM_SRC[e.src] || esc(e.src)) + (e.who ? " · " + esc(e.who) : ""),
+    const upTip = { t:e.t, title:(UPSTREAM_SRC[e.src] || esc(e.src)) + (e.who ? " · " + esc(e.who) : ""),
       raw:TONE_LABEL[e.tone] || esc(e.tone), tone:e.tone,
-      d:esc(e.d) + (e.derived ? " · (이전 로그에서 복원)" : ""), _idx:"upstream"+i });
+      d:esc(e.d) + (e.derived ? " · (이전 로그에서 복원)" : ""), _idx:"upstream"+i };
+    wireTip(g, upTip);
+    reg(x - B/2, x + B/2, ry, B/2, { tipData: upTip, el: g });
     svg.appendChild(g);
   });
   NOTICE.forEach((e, i) => drawDot(e.t, rowY["notice|notice"], e.tone,
@@ -1777,7 +1803,7 @@ function renderTimeline(){
       _idx:"cmd"+i }));
 
   document.getElementById("tlSub").textContent =
-    "점/막대 위에 마우스를 올리면 시간·제목·결과가 보이고, 클릭하면 상세(트리거는 목록, 그 외는 아래 표의 해당 행)가 열립니다.";
+    "점/막대 위에 마우스를 올리면 시간·제목·결과가 보이고, 클릭하면 팝업이 고정됩니다(빗나가도 가까운 점/막대로 · 팝업 바깥을 누르면 닫힘).";
 }
 
 // (사용자 요청) 오른쪽 요약 패널 — 24시간 플롯(#tlSvg, 줌·가로스크롤 대상)과 완전히 분리된
@@ -1923,42 +1949,62 @@ function showTip(ev, data){
     (data.title ? `<div class="tt-title">${data.title}</div>` : "") +
     `<div class="tt-raw ${data.tone}">${data.raw}</div>` +
     (data.d ? `<div class="tt-d">${data.d}</div>` : "");
-  tt.style.display = "block";
-  tt.style.left = (ev.clientX + 14) + "px";
-  tt.style.top = (ev.clientY + 14) + "px";
+  placeTip(tt, ev);
 }
-function hideTip(){ document.getElementById("tooltip").style.display = "none"; }
+// (v4.0.5) 커서 오른쪽 아래(+14px)에 띄우되 화면 밖으로 나가면 반대쪽으로 — 모바일에서 고정한 팝업이
+// 오른쪽 · 아래로 잘려 링크를 못 누르던 것. 팝업이 화면보다 크면 가장자리(8px)에 붙이고 안에서 스크롤.
+function placeTip(tt, ev){
+  tt.style.display = "block";
+  const M = 8, G = 14, vw = window.innerWidth, vh = window.innerHeight;
+  const w = tt.offsetWidth, h = tt.offsetHeight;
+  let left = ev.clientX + G, top = ev.clientY + G;
+  if (left + w > vw - M) left = Math.max(M, Math.min(ev.clientX - G - w, vw - M - w));
+  if (top + h > vh - M) top = Math.max(M, Math.min(ev.clientY - G - h, vh - M - h));
+  tt.style.left = left + "px";
+  tt.style.top = top + "px";
+}
+function hideTip(){ const tt = document.getElementById("tooltip"); tt.style.display = "none"; tt.classList.remove("pinned"); }
 function jumpToRow(idx){
   const row = document.querySelector(`#evBody tr[data-idx="${idx}"]`);
   if (!row) return;
-  row.scrollIntoView({ behavior:"smooth", block:"center" });
+  // (v4.0.5) 페이지는 스크롤하지 않는다 — 고정한 팝업(링크)이 타임라인에서 떨어져 표 위에 떠 버렸다. 행만 반짝임
   row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash");
 }
 
 let pinned = false;
+let pickedEl = null;   // (v4.0.5) 팝업을 고정한 요소 — .picked 로 표시, 닫을 때 뗀다
 function isPinned(){ return pinned; }
-function pinTip(ev, tipData){
+function markPicked(el){
+  if (pickedEl) pickedEl.classList.remove("picked");
+  pickedEl = el || null;
+  if (pickedEl) pickedEl.classList.add("picked");
+}
+function pinTip(ev, tipData, el){
   if (pinned) return;
   pinned = true;
+  markPicked(el);
   showTip(ev, tipData);
+  document.getElementById("tooltip").classList.add("pinned");
   document.getElementById("tlScroll").classList.add("locked");
 }
 function unpinTip(){
   if (!pinned) return;
   pinned = false;
   hideTip();
+  markPicked(null);
   document.getElementById("tlScroll").classList.remove("locked");
   // (v3.8.5a) 팝업을 닫을 때 트리거 히스토그램의 흰 실선(고정 선택)도 같이 꺼야
   // 한다 — 예전엔 안 꺼져서 팝업 닫힌 뒤에도 실선이 그 자리에 남아 있었다.
   setTriggerActiveNear(null);
 }
-function wireTip(el, tipData){
+// pickEl: 고정했을 때 표시할 요소(기본 = el 자신. 합동 구간 아이콘은 구간 막대를 표시)
+function wireTip(el, tipData, pickEl){
   el.addEventListener("mousemove", (ev) => { if (!isPinned()) showTip(ev, tipData); });
   el.addEventListener("mouseleave", () => { if (!isPinned()) hideTip(); });
   el.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    if (isPinned()) return;
-    pinTip(ev, tipData);
+    if (isPinned()) { unpinTip(); return; }   // (v4.0.5) 고정 중엔 팝업 바깥 클릭 = 닫기(다른 요소를 눌러도)
+    pinTip(ev, tipData, pickEl || el);
     if (tipData._idx) jumpToRow(tipData._idx);
   });
 }
@@ -1971,19 +2017,21 @@ document.addEventListener("click", (ev) => {
 function showLegendHtml(ev, html){
   const tt = document.getElementById("tooltip");
   tt.innerHTML = html;
-  tt.style.display = "block";
-  tt.style.left = (ev.clientX + 14) + "px";
-  tt.style.top = (ev.clientY + 14) + "px";
+  placeTip(tt, ev);
+}
+function pinLegend(ev, html){
+  pinned = true;
+  showLegendHtml(ev, html);
+  document.getElementById("tooltip").classList.add("pinned");
+  document.getElementById("tlScroll").classList.add("locked");
 }
 function wireLegend(el, htmlFn){
   el.addEventListener("mousemove", (ev) => { if (!isPinned()) showLegendHtml(ev, htmlFn()); });
   el.addEventListener("mouseleave", () => { if (!isPinned()) hideTip(); });
   el.addEventListener("click", (ev) => {
     ev.stopPropagation();
-    if (isPinned()) return;
-    pinned = true;
-    showLegendHtml(ev, htmlFn());
-    document.getElementById("tlScroll").classList.add("locked");
+    if (isPinned()) { unpinTip(); return; }
+    pinLegend(ev, htmlFn());
   });
 }
 
@@ -2441,7 +2489,9 @@ function hideCrosshair(){
     return Math.abs(xs[0] - xs[1]);
   }
 
+  let lastPointerType = "mouse";
   scrollEl.addEventListener("pointerdown", (ev) => {
+    lastPointerType = ev.pointerType || "mouse";
     // (v4.0.3) 마우스 드래그가 문서의 텍스트 선택을 시작하지 않게 — 클릭(팝업 고정)은 그대로 발생한다
     if (ev.pointerType === "mouse") ev.preventDefault();
     pointers.set(ev.pointerId, ev.clientX);
@@ -2506,6 +2556,19 @@ function hideCrosshair(){
     const snapPx = touchy ? TRIGGER_TOUCH_SNAP_PX : TRIGGER_HOVER_SNAP_PX;
     return (best && bestDist <= snapPx) ? best : null;
   }
+  // (v4.0.5) 요소를 빗나간 클릭 — 위아래 레인까지 포함해 가장 가까운 팝업 요소(구간 · 점 · 아이콘 · 막대).
+  // 거리 = 요소 상자 바깥까지의 직선 거리(상자 안이면 0). 같은 거리면 나중에 그린 것(위에 보이는 것) 우선.
+  const TIP_SNAP_PX = 22, TIP_TOUCH_SNAP_PX = 44;
+  function findNearestTip(xInPlot, y, touchy){
+    let best = null, bestDist = Infinity;
+    tipTargets.forEach(g => {
+      const dx = Math.max(g.x1 - xInPlot, 0, xInPlot - g.x2);
+      const dy = Math.max(Math.abs(y - g.y) - g.hh, 0);
+      const d = Math.hypot(dx, dy);
+      if (d <= bestDist) { bestDist = d; best = g; }
+    });
+    return (best && bestDist <= (touchy ? TIP_TOUCH_SNAP_PX : TIP_SNAP_PX)) ? best : null;
+  }
 
   scrollEl.addEventListener("click", (ev) => {
     if (dragMoved) { dragMoved = false; return; } // 드래그 끝의 관성 클릭 무시
@@ -2519,12 +2582,23 @@ function hideCrosshair(){
     const y = ev.clientY - scrollRect.top;
     const triggerRowH = (LANES.find(g => g.key === "trigger") || {}).rowH || (IS_NARROW ? 88 : 96);
     const inTriggerBand = Math.abs(y - rowY["trigger|all"]) <= triggerRowH / 2;
-    const mark = inTriggerBand ? findNearestTriggerMark(xInPlot, IS_NARROW) : null;
+    const touchy = IS_NARROW || ev.pointerType === "touch" || lastPointerType === "touch";
+    const mark = inTriggerBand ? findNearestTriggerMark(xInPlot, touchy) : null;
     if (mark) {
-      pinned = true;
       setTriggerActiveNear(mark.x);
-      showLegendHtml(ev, triggerGroupDetailHtml(mark.t, mark.events));
-      scrollEl.classList.add("locked");
+      pinLegend(ev, triggerGroupDetailHtml(mark.t, mark.events));
+      return;
+    }
+    // (v4.0.5) 그 밖은 가장 가까운 팝업 요소를 누른 것으로 — 없을 때만 예전처럼 세로선 고정(팝업 없음)
+    const near = findNearestTip(xInPlot, y, touchy);
+    if (near) {
+      if (near.mark) {
+        setTriggerActiveNear(near.mark.x);
+        pinLegend(ev, near.html());
+      } else {
+        pinTip(ev, near.tipData, near.el);
+        if (near.tipData._idx) jumpToRow(near.tipData._idx);
+      }
       return;
     }
     placeCrosshair(clientXToMinutes(ev.clientX));
@@ -2842,6 +2916,8 @@ if __name__ == "__main__":
     assert _d["tweet"][0]["info"]["x"] == "https://x.com/i/status/111" and _d["tweet"][1]["info"]["ko"] == "트2"
     assert _d["notice"][0]["info"] == {"orig": "原文", "ko": "한글 제목", "x": "https://x.com/i/status/333"}
     assert "info" not in _d["notice"][1], "맞춰 붙일 소식이 없으면 info 없음(프론트는 처리 결과로)"
+    _lk["nt_id"]["333"]["body_ko"] = "본문 번역"
+    assert attach_details(_d, _lk)["notice"][0]["info"]["ko"] == "본문 번역", "(v4.0.5) 본문 번역이 있으면 그것"
     assert "previewInfoHtml" in _TEMPLATE and "textInfoHtml" in _TEMPLATE and '"video: "' not in _TEMPLATE
     print("[OK] (v4.0.4) 팝업 상세 — 예고 · 트윗 · 소식 맞춰 붙이기 · 트윗 게시 시각")
     # (v3.8.9) 인입 = 업스트림(실제 기록 + 옛 로그 복원분) 건수

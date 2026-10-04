@@ -1753,7 +1753,9 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
     """(WP-3a) 소식 준비 (제어 채널에서 실행).
 
     외부 호출(비전 OCR·LLM) + 중복판정까지 한 뒤 결과를 반환.
-    반환: {"parsed": dict, "tl": dict|None, "dup_id": str|None} | None
+    반환: {"parsed": dict, "tl": dict|None, "dup_id": str|None, "body_src": str|None, "body_ko": str|None} | None
+    (v4.0.5) body_ko = 본문(body_raw) 한글 번역 — 실제로 올라가거나 본문이 바뀌는 소식일 때만 번역한다.
+    실패(None)면 저장 뒤 번역 sweep(`enrich.collect`)이 body_ko 가 빈 행을 다시 번역한다.
     """
     if xnotice is None or notices is None:
         return None
@@ -1772,6 +1774,7 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
 
     # 3. 중복판정 사전 계산
     dup_id = None
+    need_body = gh is None                 # (v4.0.5) 미리 못 보면 일단 번역
     if gh is not None:
         try:
             prev, _ = gh.read_json(_NOTICES_PATH)
@@ -1785,6 +1788,12 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
             parsed_copy = copy.deepcopy(parsed)
             new_n, new_a, changed, mode = notices.merge_notice(
                 prev_copy, parsed_copy, now_iso, archive=arch_copy)
+            # (v4.0.5) 본문 번역이 필요한가 — 올라가는(added · updated) 행에 아직 본문 번역이 없을 때만
+            if changed and mode in ("added", "updated"):
+                _row = next((n for n in new_n.get("notices") or []
+                             if parsed.get("id") and (n.get("id") == parsed["id"]
+                                                      or parsed["id"] in (n.get("seen_ids") or []))), None)
+                need_body = _row is None or not _row.get("body_ko")
 
             # changed and mode == "added" 일 때만 중복판정 LLM 호출
             if changed and mode == "added":
@@ -1801,11 +1810,18 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
         except Exception:
             log.warning("준비: notices 읽기 실패", exc_info=True)
             dup_id = None
+            need_body = True
+
+    # 4. (v4.0.5) 본문 한글 번역
+    body_src = parsed.get("body_raw")
+    body_ko = _inline_translate(body_src) if (need_body and body_src) else None
 
     return {
         "parsed": parsed,
         "tl": tl,
         "dup_id": dup_id,
+        "body_src": body_src,
+        "body_ko": body_ko,
     }
 
 
@@ -1919,6 +1935,9 @@ def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict |
                 row.pop("needs_tl", None)
             else:
                 row["needs_tl"] = True
+        # (v4.0.5) 본문 번역 — 번역한 본문이 지금 행의 본문과 같을 때만(없으면 번역 sweep 이 채움)
+        if row and prepared.get("body_ko") and row.get("body_raw") == prepared.get("body_src"):
+            row["body_ko"] = prepared["body_ko"]
 
         try:
             _, nsha = gh.write_json(_NOTICES_PATH, new_n, prev_sha=psha,

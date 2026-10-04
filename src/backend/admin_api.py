@@ -899,7 +899,7 @@ def ingest_notice_manual(*, title: str, confirm: bool, date: str | None = None, 
     parsed = {
         "id": "m" + hashlib.sha1(f"{category}|{date}|{title}".encode("utf-8")).hexdigest()[:15],
         "category": category, "title": title, "title_raw": title, "title_ko": title_ko or None,
-        "body_for_llm": title, "body_raw": title, "date": date or None, "time": None, "deadline": False,
+        "body_for_llm": title, "body_raw": title, "body_ko": title_ko or None, "date": date or None, "time": None, "deadline": False,
         "site": site, "url": site_url or url or None, "tweet_url": None, "src_handle": None, "is_recap": False,
         "anchor_a": anchor_a, "anchor_b": None, "title_slug": xn._title_slug(title),
         "expires_at": xn._expires_at(date, None, now, now_jst),
@@ -966,23 +966,28 @@ def ingest_tweet_manual(*, url: str, host: str, text: str, confirm: bool, text_k
 
 
 def edit_notice(nid: str, patch: dict) -> dict:
-    """소식 수정. patch 키: title · title_ko · date(YYYY-MM-DD) · url 중 일부.
+    """소식 수정. patch 키: title · title_ko · body_ko · date(YYYY-MM-DD) · url 중 일부.
 
     (v4a) 텔레그램 /notice-edit 과 같게 파생값을 다시 계산한다(`_notice_edit_finalize` — 날짜 → expires_at,
     URL → site · anchor_a, 제목 → title_slug). 전엔 값만 덮어써 날짜를 바꿔도 옛 날짜 기준으로 만료됐다.
-    제목(원문·한글)을 고치면 자동 번역을 끈다(needs_tl=False). 한글 빈 문자열 = 번역 없음."""
-    patch = {k: v for k, v in (patch or {}).items() if k in ("title", "title_ko", "date", "url")}
+    제목(원문·한글)을 고치면 자동 번역을 끈다(needs_tl=False). 한글 빈 문자열 = 번역 없음.
+    (v4.0.5) body_ko = 본문(트윗 원문) 한글 번역. 원문은 읽기 전용. 비우면 None 으로 — 다음 정기 수집이 다시 자동 번역한다."""
+    patch = {k: v for k, v in (patch or {}).items() if k in ("title", "title_ko", "body_ko", "date", "url")}
     if not patch:
         return _err("바꿀 필드가 없습니다")
     row = next((n for n in list_notices().get("notices", []) if n.get("id") == nid), None)
     if row is None:
         return _err("소식이 없습니다")
     t = _t()
-    full = t._notice_edit_finalize({k: v for k, v in patch.items() if k != "title_ko"}, row, _now_iso())
+    full = t._notice_edit_finalize({k: v for k, v in patch.items() if k not in ("title_ko", "body_ko")}, row, _now_iso())
     if "title_ko" in patch and patch["title_ko"] != row.get("title_ko"):
         full["title_ko"] = patch["title_ko"]
     if "title" in full or "title_ko" in full:
         full["needs_tl"] = False
+    if "body_ko" in patch:
+        body_ko = (patch["body_ko"] or "").strip() or None
+        if body_ko != row.get("body_ko"):
+            full["body_ko"] = body_ko
     if not full:
         return _err("바뀐 것이 없습니다")
     patch = full
@@ -1069,7 +1074,7 @@ def translate_text(text: str) -> dict:
     cfg = load_config()
     if not cfg.groq_api_key:
         return _err("GROQ_API_KEY 없음")
-    ko = _make_llm(cfg).translate(text[:500])
+    ko = _make_llm(cfg).translate(text[:1000])   # (v4.0.5) 소식 본문(body_raw 600자)도 통째로
     if not ko:
         return _err("번역 실패 (LLM 응답 없음) — 잠시 뒤 다시 시도")
     return _ok({"title_ko": ko})
