@@ -225,8 +225,9 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 ## 3. 계약 C — 프론트 DOM 구조
 
 `render.js` 가 생성하고 `css/` 가 스타일링. class 이름 변경은 이 문서 수정 후에만.
-`#board` 골격(`<section class="lane">` × `channel_order`, `lane__header`/`lane__live`/`lane__buckets`)은
-v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
+`#board` 골격(`<section class="lane">` × `channel_order`, `lane__header`)은 v2 와 동일 —
+`docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분 아래. **v4.1.0 에서 `lane__live`(ON-AIR 존) ·
+`lane__buckets`(오늘 / 7일 이내 / 7일 이후)를 없애고 타임테이블로 대체했다 — 아래 「타임테이블 · 이후 예고」 참조.**
 
 ### 레인 헤더 (`lane__header`) — v3.0.2
 
@@ -256,15 +257,49 @@ v2 와 동일 — `docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분:
   점처럼 뭉개지는 회귀가 났었다(v3.1.10 배포 직후 발견, body 밖 배지로 수정).
 - `time_tbd` → `<time>` 자리에 `M/D` 만 + `.card__rel` = "시간 미정", 카운트다운 스킵.
 
-### 라이브 존 (`lane__live`)
+### 타임테이블 · 이후 예고 (v4.1.0) — `timetable.js` · `css/timetable.css`
 
-`buildLive(liveItems, endedItems, …)`: `data-state="on"` 은 **실제 `live` 아이템이 있을 때만**.
-`end` 아이템은 존에 남기되 소등(`data-state="off"`). 둘 다 없으면 `<span class="lane__live-off">OFF-AIR</span>`.
+예고판의 **ON-AIR 존(`lane__live`) + 오늘 / 7일 이내 / 7일 이후 버킷(`lane__buckets`)을 대체**한다.
+`render.js renderBoard(boardEl, preview, nowMs, archive)` 가 화면 폭(`mqlPhone`, <768px)으로 두 구성 중 하나를 만든다.
 
-### 버킷 분류 (`bucketKey`)
+**오늘 구간** = KST 06:00 ~ 익일 06:00(`timetable.dayWindow`, 모니터링 하루 경계 `monitor_log.DAY_START_HOUR` 와 같음).
+`timetable.classify(items, archiveItems, nowMs, order)` 가 아이템을 나눈다:
 
-`scheduled_start − now`: `<24h`=`today` / `<7일`=`week` / 그 외·null=`rest`. PC·모바일 동일 3분할
-(v3.0.0 까진 PC 만 `<30일`=`month` / 그 외=`later` 4분할이었음). 대상 = state ∈ (announced, upcoming, watching).
+| 구분 | 기준 |
+|---|---|
+| `live` | `state=="live"` — 시작 = `actual_start`(없으면 `scheduled_start`) |
+| `ended` | `state=="end"`(끝 = `state_since`) + `preview_archive.json` 에서 **오늘 06:00 이후 시작해 이미 끝난** 항목(끝 = `archived_at`, 길이 10분~12시간만. 같은 `video_id` 는 한 번만) |
+| `upcoming` | announced/upcoming/watching 이고 `scheduled_start` 가 오늘 구간 안 (시각 미정 제외) |
+| `later` (이후 예고) | announced/upcoming/watching 이고 구간 뒤(`>= de`)이거나 `time_tbd` · 시각 없음. 기간 구분 없이 시작시각순 |
+
+합동(`collab_with`)은 참여 멤버(알려진 채널) **전원 행/레인에 팬아웃**(`timetable.itemKeys`, v3 와 같은 규칙).
+
+**PC (≥768px)** — `#board.board--tt`(5열 그리드 해제) 안에 위에서 아래로:
+1. `section.tt` 타임테이블: `.tt__axis`(06:00 부터 3시간 눈금, 자정은 `.is-midnight` 강조 + 익일 날짜) · 멤버 5행
+   (왼쪽 `section.lane.tt__lane[data-channel]` > `header.lane__header.tt__who` > `.lane__avatar` — **편지 배지(`.lane__tw`)와 말풍선의 기준 요소**.
+   오른쪽 `.tt__track[data-channel]` 에 블록 `.tt-blk.tt-blk--{upcoming|live|ended}`) · `.tt__ov`(지금 선 `.tt__now` · 지난 구간 음영 `.tt__past` · 자정 점선).
+   블록 폭 = 종료 시각을 알면(ended) 실제 길이, 모르면 고정 폭(live 는 시작~지금, 최소 폭 있음). 한 행에 한 줄만 쓰고 겹치면 앞 블록을 다음 블록 시작에서 자른다.
+   좁아도 블록 모양은 같고 넘치는 부분만 잘린다. 제목은 한 줄 + 넘치면 무한 marquee(`applyTimetableMarquees`).
+   블록은 **클릭해도 이동하지 않고** 호버 = 카드 팝업(`.tt-pop`) · 클릭 = 고정(바깥 클릭 / Esc / 재클릭으로 닫힘). 영상 이동은 팝업의 이미지 · 「▶ YouTube에서 보기」로만.
+2. `.tt-fold` 「오늘 이후 예고 N건 펼치기」(펼치면 「오늘 이후 예고 접기」)(방송인별 건수 아바타 포함).
+3. `.tt-later` 5열: 펼침(`#board.board--later-open`)일 때만 보임. 열 = `.lane.lane--later[data-channel][data-no-badge]` — **기존 네임플레이트**(`buildHeader`, 우측 세로 YT·X)
+   + `.lane__later` 안에 기존 카드(`createCard`). `data-no-badge` 인 레인에는 편지 배지가 안 붙는다(`tweets.js` 가 건너뜀) — 배지는 타임테이블 왼쪽 칸에만.
+
+**모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(편지 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
+`.tt-fold` + `.lane__later`. 오늘 카드: 예정 = 카운트다운 링(24시간 중 남은 비율, 1시간 이내 노랑 — **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
+하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
+이후 예고가 0건이면 `.tt-fold` 와 목록을 만들지 않는다(PC = 전체 0건, 모바일 = 그 멤버 0건).
+합동 카드는 이미지 **왼쪽 위에 참여 멤버 아바타만**(하단 선택 아이콘과 같은 고정 순서 아라레-유노-노노카-리츠-미야코로 겹쳐서, 이름 글자 없음, **그 레인의 본인은 뺀다**. 본인 외 참여자를 모르면 빈 알약을 만들지 않는다) 놓고, "합동" 글자는 날짜 옆 태그로만 쓴다.
+회원 전용(`membership`) 카드는 이미지 오른쪽 아래 알약 줄(`.tcard__pills`)의 **LIVE · 종료 알약 왼쪽에 🔒 알약**이 붙는다(예정 카드는 🔒 만).
+오늘 카드의 날짜·시각 줄(`.tcard__when`)은 상태와 관계없이 같은 굵은 글씨(종료는 `[날짜] [시작~종료]` — 글꼴은 같고 색만 종료 카드의 흐린 색. 방송 시간은 글자 대신 오른쪽 **회색 링**: 방송 중 경과 링이 끝난 순간에 멈춘 모양, "N분" + "방송") — "LIVE · 방송 중" · "N분 후" · 종료/예고 태그는 쓰지 않고(이미지 알약 · 링이 보여 줌) 태그는 **합동 · 회원 전용**만, 모자라면 다음 줄로 내려간다.
+오늘 카드 제목(`.tcard__ti`)은 한 줄 + 넘치면 기존 카드와 같은 marquee(`render.js applyMarquees`).
+마우스 드래그(`pointerType=="mouse"`)로도 넘길 수 있다 — 드래그 중 `#board.board--dragging`(스냅 해제), 놓으면 가장 가까운 유닛으로 `goDom`; 5px 넘게 끌었으면 그 클릭은 무시.
+
+- 갱신: `updateCountdowns` → `timetable.tickTimetable` 이 지금 선 · 링을 1분마다 옮기고, **오늘 구간이 끝나면(`nowMs >= boardEl.__ttDe`) `true`** 를 돌려 `main.js` 가 재렌더. 데이터는 75초 폴링(`poll`)이 바꿈.
+- 종료 블록용 `preview_archive.json`(`config.ARCHIVE_URL`)은 `main.js pollArchive` 가 따로 폴링 — 404 여도 보드는 그려지고 종료는 preview 의 `end` 상태만 나온다.
+- 한계(의도): 예고 항목에는 **종료 시각 필드가 없어** 예정 블록은 고정 폭이다. 종료 길이는 끝난 방송(`end` · 아카이브)에서만 알 수 있다.
+  시각 미정(`time_tbd`)은 타임테이블에 놓을 수 없어 이후 예고로 간다.
+- 자체 점검: `node src/frontend/js/timetable.selfcheck.mjs`(순수 함수 `dayWindow` · `classify` · `itemKeys`).
 
 ### 렌더 규칙
 
@@ -878,12 +913,14 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   투명 섞기 색(헤더 그라데이션·트윗 말풍선)이 이중 처리돼 뭉개진다. 라이트/다크 분기 CSS 없음.
 - **css/**: `reset` · `layout`(`#board` ≥1100px `grid-template-columns:repeat(5,1fr)`, <1100px 가로 스크롤) ·
   `card`(6상태 클래스 §3, mobile @media 파일 끝) · `notices` · `tweets`.
-- **js/config.js** — `PREVIEW_URL`(raw githubusercontent data/preview.json), `NOTICES_URL`, `TWEETS_URL`,
+- **js/config.js** — `PREVIEW_URL`(raw githubusercontent data/preview.json), `ARCHIVE_URL`(v4.1.0), `NOTICES_URL`, `TWEETS_URL`,
   `POLL_MS=75000`, `COUNTDOWN_TICK_MS=60000`, `FETCH_TIMEOUT_MS=8000`, `FALLBACK_CHANNEL_ORDER`, `FALLBACK_CHANNELS`.
 - **js/time.js** — 계약 D. 순수, DOM 접근 없음. selfcheck: `time.selfcheck.mjs`.
 - **js/api.js** — `fetchPreview(url)`: AbortController + `FETCH_TIMEOUT_MS`, `cache:"no-store"`. `{ok,data|error}`.
-- **js/render.js** — `renderBoard(boardEl, preview, nowMs)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시),
+- **js/render.js** — `renderBoard(boardEl, preview, nowMs, archive)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시. **v4.1.0**: PC = 타임테이블 + 이후 예고, 모바일 = 1명씩 슬라이드),
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
+- **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
+  `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
   **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어

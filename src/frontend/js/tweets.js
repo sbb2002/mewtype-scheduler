@@ -151,7 +151,8 @@ function _palette(laneEl) {
   return { bg: `rgb(${r} ${g} ${b})`, ink: L > 0.42 ? "#17171b" : "#ffffff" };
 }
 function _lanes(ck) {
-  return _st.board ? _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]`) : [];
+  // (v4.1.0) data-no-badge = 이후 예고 열(PC) — 편지 배지는 타임테이블 왼쪽 칸 / 모바일 레인에만 붙는다
+  return _st.board ? _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]:not([data-no-badge])`) : [];
 }
 // 원문 앵커: 메시지 URL → 없으면 X 프로필(x.com/<handle>) → 둘 다 없으면 비활성. 유튜브로는 안 감.
 function _setSrc(el, m) {
@@ -575,7 +576,7 @@ function _wire() {
   // 클릭 — 캐러셀 클론 포함 위임. 캡처 단계에서 앵커(.lane__link) 기본 내비를 가로챈다.
   board.addEventListener("click", (e) => {
     const lane = e.target.closest(".lane");
-    if (!lane) return;
+    if (!lane || lane.hasAttribute("data-no-badge")) return;
     const ck = lane.dataset.channel;
     if (!_visible(_st.data)[ck]) return;                 // 트윗 없음 → 유튜브 그대로
     if (!e.target.closest(".lane__tw, .lane__avatar")) return;  // 이름·레일 등 → 그대로
@@ -593,7 +594,7 @@ function _wire() {
   board.addEventListener("pointerover", (e) => {
     if (_mobile()) return;
     const lane = e.target.closest(".lane");
-    if (!lane || !e.target.closest(".lane__tw, .lane__avatar")) return;
+    if (!lane || lane.hasAttribute("data-no-badge") || !e.target.closest(".lane__tw, .lane__avatar")) return;
     const ck = lane.dataset.channel;
     if (!_visible(_st.data)[ck]) return;
     if (_st.pinned.has(ck) || _st.peek === ck) return;

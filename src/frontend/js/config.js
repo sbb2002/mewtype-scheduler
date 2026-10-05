@@ -36,6 +36,12 @@ export const BANNERS_URL = getDataUrl(
   "/data/banners.json"
 );
 
+// (v4.1.0) 지난 방송 아카이브 — 타임테이블의 "오늘 이미 끝난 방송" 표시용. 없으면(404) 종료 방송은 preview 의 end 상태만.
+export const ARCHIVE_URL = getDataUrl(
+  "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/preview_archive.json",
+  "/data/preview_archive.json"
+);
+
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;
