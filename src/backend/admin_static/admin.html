@@ -969,9 +969,9 @@
         .cx-chip { flex: none; background: var(--color-bg-secondary); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: 99px;
             min-height: 34px; padding: 0 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 500; }
         .cx-chip[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); background: rgba(6, 182, 212, 0.12); }
-        .cx-ico { width: 22px; height: 22px; border-radius: 50%; background: #333 center / cover no-repeat; flex: none; display: inline-block; }
-        .cx-chip:has(.cx-ico) { padding-left: 0.35rem; }
-        .cx-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, #9a9a9a); flex: none; display: inline-block; }
+        .cx-ico { width: 22px; height: 22px; border-radius: 50%; background: var(--c, #333) center / cover no-repeat; flex: none; display: inline-block; }
+        .cx-ico.lg { width: 30px; height: 30px; }
+        .cx-chip:has(.cx-ico), .ing-card .chip:has(.cx-ico), #pick-body .chip:has(.cx-ico) { padding-left: 0.35rem; display: inline-flex; align-items: center; gap: 0.4rem; }
         .cx-sbtn { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; background: var(--color-bg-secondary); border: 1px solid var(--color-border); }
         .cx-sbtn[aria-pressed="true"] { border-color: var(--color-accent); }
         .cx-search { width: 100%; }
@@ -995,7 +995,6 @@
         .cx-row[data-open="true"] .cx-row-b { display: block; }
         .cx-row .badge { padding: 1px 8px; font-size: 0.7rem; border-radius: 99px; white-space: nowrap; }
         .cx-row .badge-collab { margin-left: 0; }
-        .cx-av { width: 28px; height: 28px; border-radius: 50%; background: var(--c, #9a9a9a); color: #111; font-weight: 700; font-size: 0.8rem; display: grid; place-items: center; }
         .cx-body { display: grid; gap: 0.5rem; padding-top: 0.6rem; }
         .cx-orig { color: var(--color-text-muted); font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow-y: auto; }
         .cx-kv { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.25rem 0.6rem; margin: 0; font-size: 0.85rem; }
@@ -1410,6 +1409,8 @@
                     console.error("채널 정보 로드 실패", e);
                 }
 
+                this.cxEnsureAvatars();   // 멤버 아이콘(채널 프로필)용 — 비동기, 늦게 와도 cxPaintIcons 가 채운다
+
                 // 탭 네비게이션
                 document.querySelectorAll(".tab-btn").forEach((btn) => {
                     btn.addEventListener("click", (e) => {
@@ -1785,29 +1786,39 @@
                 return { arale: "#f59e0b", yuno: "#38bdf8", nonoka: "#f472b6", ritsu: "#a78bfa", miyako: "#4ade80" }[key] || "#9a9a9a";
             },
 
-            // 멤버 아이콘 — 메인 화면 레인 헤더와 같은 채널 프로필(preview.json channels[key].avatar, =s88). 아직 못 받았으면 색 점
-            cxUnitIcon(key) {
+            // 멤버 아이콘 — 메인 화면 레인 헤더와 같은 채널 프로필(preview.json channels[key].avatar, =s88).
+            // 아직 못 받았으면 멤버 색 원으로 두었다가 받으면 cxPaintIcons 가 이미지로 바꾼다. size: "" | "lg"
+            cxAvatarUrl(key) {
                 const ch = this.data.preview && this.data.preview.channels && this.data.preview.channels[key];
-                const url = ch && typeof ch.avatar === "string" ? ch.avatar.replace(/=s\d+/, "=s88") : "";
-                const e = this.cxEl("span", url ? "cx-ico" : "cx-dot");
-                if (url) {
-                    e.style.backgroundImage = `url("${url}")`;
-                    e.setAttribute("aria-hidden", "true");
-                } else {
-                    e.style.setProperty("--c", this.cxUnitColor(key));
-                }
+                return ch && typeof ch.avatar === "string" ? ch.avatar.replace(/=s\d+/, "=s88") : "";
+            },
+
+            cxUnitIcon(key, size) {
+                const e = this.cxEl("span", "cx-ico" + (size ? " " + size : ""));
+                e.dataset.unit = key;
+                e.setAttribute("aria-hidden", "true");
+                e.style.setProperty("--c", this.cxUnitColor(key));
+                const url = this.cxAvatarUrl(key);
+                if (url) e.style.backgroundImage = `url("${url}")`;
                 return e;
             },
 
-            // 소식 · 트윗 탭을 먼저 열면 preview.json(아바타 URL)이 아직 없다 — 한 번만 받아 와 도구줄을 다시 그린다
+            cxPaintIcons() {
+                document.querySelectorAll(".cx-ico[data-unit]").forEach((e) => {
+                    const url = this.cxAvatarUrl(e.dataset.unit);
+                    if (url) e.style.backgroundImage = `url("${url}")`;
+                });
+            },
+
+            // 아바타 URL 은 preview.json 에 있다 — 예고 탭을 거치지 않고 다른 탭을 먼저 열어도 되게 한 번만 받아 온다
             async cxEnsureAvatars() {
                 if (this._avatarReq || (this.data.preview && this.data.preview.channels)) return;
                 this._avatarReq = true;
                 try {
                     const pv = await this.apiCall("GET", "/list_preview");
                     if (!this.data.preview) this.data.preview = pv;
-                    if (this.currentTab === "content") this.renderContentTools();
-                } catch (e) { /* 색 점으로 계속 */ }
+                    this.cxPaintIcons();
+                } catch (e) { /* 색 원으로 계속 */ }
             },
 
             cxChips(options, cur, onPick, withDot) {
@@ -2115,8 +2126,7 @@
                     for (const item of list) {
                         const key = item.channel_key;
                         const who = (this.channels[key] || {}).name_ko || key;
-                        const lead = this.cxEl("span", "cx-av", who.slice(0, 1));
-                        lead.style.setProperty("--c", this.cxUnitColor(key));
+                        const lead = this.cxUnitIcon(key, "lg");
                         const metas = [this.cxEl("span", `badge ${this.stateBadge(item.state)}`, (item.state || "").toUpperCase()),
                             this.cxEl("span", "", `${who} · ${this.formatTime(item.scheduled_start || item.live_start)}`)];
                         const collab = item.collab_with || [];
@@ -2373,7 +2383,11 @@
                     cb.value = k;
                     cb.checked = collabSet.has(k);
                     lab.appendChild(cb);
-                    lab.appendChild(document.createTextNode(" " + nameOf(k)));
+                    const ic = this.cxUnitIcon(k);
+                    ic.style.verticalAlign = "middle";
+                    ic.style.margin = "0 0.35rem 0 0.15rem";
+                    lab.appendChild(ic);
+                    lab.appendChild(document.createTextNode(nameOf(k)));
                     members.appendChild(lab);
                 }
                 collabCheck.onchange = () => {
@@ -2560,7 +2574,8 @@
                     const b = document.createElement("button");
                     b.type = "button";
                     b.className = "chip" + (opts.main && !extra ? " main" : "");
-                    b.textContent = label;
+                    if (key) b.appendChild(this.cxUnitIcon(key));
+                    b.appendChild(document.createTextNode(label));
                     b.setAttribute("aria-pressed", String(isOn(key)));
                     if (opts.disabled && opts.disabled(key)) b.disabled = true;
                     b.addEventListener("click", () => onClick(key));
@@ -2721,7 +2736,8 @@
                     const b = document.createElement("button");
                     b.type = "button";
                     b.className = "chip";
-                    b.textContent = n;
+                    b.appendChild(this.cxUnitIcon(k));
+                    b.appendChild(document.createTextNode(n));
                     b.setAttribute("aria-pressed", String(suggested.has(k)));
                     b.addEventListener("click", () => {
                         this.pickSel.has(k) ? this.pickSel.delete(k) : this.pickSel.add(k);
@@ -3522,8 +3538,7 @@
                 const part = items.slice(0, u.limit.tweets);
                 for (const { unit, tweet } of part) {
                     const who = (this.channels[unit] || {}).name_ko || unit;
-                    const lead = this.cxEl("span", "cx-av", who.slice(0, 1));
-                    lead.style.setProperty("--c", this.cxUnitColor(unit));
+                    const lead = this.cxUnitIcon(unit, "lg");
                     const when = this.formatTime(tweet.posted_at || tweet.received_at);
                     const metas = [this.cxEl("span", "", `${who} · ${when}`)];
                     if (!tweet.text_ko) metas.push(this.cxEl("span", "badge badge-announced", "번역 없음"));
