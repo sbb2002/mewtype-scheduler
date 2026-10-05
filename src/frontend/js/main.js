@@ -2,18 +2,19 @@ import { fetchPreview } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
 import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
-import { PREVIEW_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
+import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
 const foot = document.getElementById("foot");
 const notice = document.getElementById("notice");
 
 let lastSchedule = null;
+let lastArchive = null;   // (v4.1.0) 오늘 이미 끝난 방송 표시용 — 없어도 보드는 그려진다
 let lastJSON = null;   // 내용이 안 바뀌면 renderBoard 생략 (모바일 캐러셀 위치 보존)
 
 /** 보드 재구성 + 그 위에 개인 트윗 편지 배지 재적용 (renderBoard 가 배지를 지우므로). */
 function paintBoard() {
-  renderBoard(board, lastSchedule);
+  renderBoard(board, lastSchedule, Date.now(), lastArchive);
   reapplyTweets(board);
 }
 
@@ -45,6 +46,16 @@ async function pollBanners() {
   } catch (e) {
     /* 배너 오류가 소식 · 보드를 막지 않게 */
   }
+}
+
+/** (v4.1.0) 지난 방송 아카이브 폴링 — 타임테이블의 종료(회색) 블록. 바뀌었을 때만 보드를 다시 그린다. */
+async function pollArchive() {
+  const r = await fetchPreview(ARCHIVE_URL);
+  if (!r.ok) return;
+  const j = JSON.stringify(r.data);
+  if (j === JSON.stringify(lastArchive)) return;
+  lastArchive = r.data;
+  if (lastSchedule) paintBoard();
 }
 
 async function poll() {
@@ -192,6 +203,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initMonitorEasterEgg();
   initMonitorTapEasterEgg();
   poll();
+  pollArchive();
   pollNotices();
   pollTweets();
   pollBanners();
@@ -205,17 +217,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   setInterval(poll, POLL_MS);
+  setInterval(pollArchive, POLL_MS);
   setInterval(pollNotices, POLL_MS);
   setInterval(pollTweets, POLL_MS);
   setInterval(pollBanners, POLL_MS);
 
-  // 1분마다 남은시간 텍스트 갱신. 카드가 다른 시간대 구간으로 넘어갔으면 보드 재렌더.
+  // 1분마다 남은시간 텍스트 · 타임테이블 지금 선 갱신. 오늘 구간(KST 06:00)이 바뀌었으면 보드 재렌더.
   setInterval(() => {
     if (updateCountdowns(board) && lastSchedule) paintBoard();
     try { refreshBanners(notice); } catch (e) { /* D-day · 상태 갱신 실패는 무시 */ }
   }, COUNTDOWN_TICK_MS);
 
-  // 모바일↔PC 경계(767px)를 넘으면 예고 버킷 구성이 달라지므로 재렌더.
+  // 모바일↔PC 경계(767px)를 넘으면 화면 구성(타임테이블 ↔ 한 명씩 슬라이드)이 달라지므로 재렌더.
   if (window.matchMedia) {
     window.matchMedia("(max-width: 767px)").addEventListener("change", () => {
       if (lastSchedule) paintBoard();
@@ -230,6 +243,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 가 안 뜰 수 있어 pageshow(persisted) 도 같이 건다.
   const refetchAll = () => {
     poll();
+    pollArchive();
     pollNotices();
     pollTweets();
     pollBanners();

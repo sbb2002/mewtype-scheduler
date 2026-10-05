@@ -60,54 +60,38 @@
   .lane__nav-btn { width: 26px; height: 26px; }   /* 터치 타깃 */
 }
 
-/* ── 편지 배지 (아바타 우상단, 살짝 겹침) ─────────────────────────── */
+/* ── 트윗 알림 배지 (아바타 우상단, 살짝 겹침) ───────────────────────
+   (v4.1.0) 봉투 아이콘을 없애고 동그라미만: 크기는 모두 같은 원: 안 읽음 1건 = 빈 원(숫자 없음), 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음 */
 .lane__tw {
   position: absolute;
-  left: 44px;
-  top: 8px;
+  /* 위치 = 아바타(44px) 오른쪽 위 모서리 바깥: 중심이 아바타 가로 87.5% · 세로 6% 지점. 헤더 높이(이동 레일 때문에 달라짐)와 상관없이
+     아바타가 세로 중앙이므로 top 을 50% 기준으로 잡는다. 타임테이블 칸(40px 아바타)은 timetable.css 에서 같은 비율로 */
+  left: 44.5px;
+  top: calc(50% - 29px);
   z-index: 12;
-  width: 19px;
-  height: 19px;
+  box-sizing: border-box;
+  width: 20px;                    /* 숫자 · 상태와 관계없이 항상 같은 크기 */
+  height: 20px;
   padding: 0;
-  border: 0;
-  background: none;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--color-bg-secondary, #1a1a1a);
+  border-radius: 999px;
+  background: #ccfbfa;
+  color: #0c1a1a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
-  color: #ccfbfa;
-  line-height: 0;
-  display: block;
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5));
 }
-.lane__tw svg {
-  width: 19px;
-  height: 19px;
-  display: block;
-}
 .lane__tw.is-read {
-  color: color-mix(in srgb, #ccfbfa 50%, var(--color-text-muted, #999));
+  display: none;                  /* 모두 읽으면 테두리도 남기지 않는다 (아바타를 누르면 스레드는 계속 열린다) */
 }
 .lane__tw:focus-visible {
   outline: 2px solid #ccfbfa;
   outline-offset: 2px;
-  border-radius: 3px;
-}
-/* (v3.1) 안 읽은 메시지 2건+ → 배지 우상단 카운트 */
-.lane__tw-count {
-  position: absolute;
-  top: -6px;
-  right: -7px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  display: grid;
-  place-items: center;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-  color: #0c1a1a;
-  background: #ccfbfa;
-  border-radius: 999px;
-  border: 1.5px solid var(--color-bg-secondary, #1a1a1a);
-  animation: none;
 }
 /* 안 읽음: 글로우 펄스 + 아주 약간 콩콩 점프 (주기적) */
 .lane__tw.is-unread {

@@ -14,8 +14,6 @@
 
 import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 
-const ENV_CLOSED = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4.75h18c1.24 0 2.25 1.01 2.25 2.25v.63l-11.02 6.9a.8.8 0 0 1-.86 0L.75 7.63V7c0-1.24 1.01-2.25 2.25-2.25Z"/><path d="M23.25 9.75V17c0 1.24-1.01 2.25-2.25 2.25H3A2.25 2.25 0 0 1 .75 17V9.75l10.64 6.66a1.15 1.15 0 0 0 1.22 0l10.64-6.66Z"/></svg>';
-const ENV_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.75 10.5v8.25c0 1.1.9 2 2 2h14.5c1.1 0 2-.9 2-2V10.5"/><path d="M2.75 10.5 12 4l9.25 6.5"/><path d="m2.75 10.5 8.4 5.9c.51.36 1.19.36 1.7 0l8.4-5.9"/></svg>';
 // 원문 링크 아이콘 = X (notice 의 x path 재활용).
 const X_SVG = '<svg class="src__ic" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg>';
 
@@ -151,7 +149,8 @@ function _palette(laneEl) {
   return { bg: `rgb(${r} ${g} ${b})`, ink: L > 0.42 ? "#17171b" : "#ffffff" };
 }
 function _lanes(ck) {
-  return _st.board ? _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]`) : [];
+  // (v4.1.0) data-no-badge = 이후 예고 열(PC) — 편지 배지는 타임테이블 왼쪽 칸 / 모바일 레인에만 붙는다
+  return _st.board ? _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]:not([data-no-badge])`) : [];
 }
 // 원문 앵커: 메시지 URL → 없으면 X 프로필(x.com/<handle>) → 둘 다 없으면 비활성. 유튜브로는 안 감.
 function _setSrc(el, m) {
@@ -389,14 +388,8 @@ function _apply() {
       const nm = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
       badge.setAttribute("aria-label",
         nm + (unread ? ` 읽지 않은 트윗 ${unreadN}건` : " 읽은 트윗") + ` (스레드 ${list.length}건)`);
-      badge.innerHTML = unread ? ENV_CLOSED : ENV_OPEN;
-      // 카운트 pill — 안 읽은 게 2건 이상일 때만
-      if (unreadN >= 2) {
-        const cnt = document.createElement("span");
-        cnt.className = "lane__tw-count";
-        cnt.textContent = String(unreadN);
-        badge.appendChild(cnt);
-      }
+      // (v4.1.0) 봉투 아이콘 없이 동그라미만: 같은 크기의 원 — 안 읽음 1건 = 빈 원, 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음
+      badge.textContent = unreadN >= 2 ? String(unreadN) : "";
     }
   }
 
@@ -575,7 +568,7 @@ function _wire() {
   // 클릭 — 캐러셀 클론 포함 위임. 캡처 단계에서 앵커(.lane__link) 기본 내비를 가로챈다.
   board.addEventListener("click", (e) => {
     const lane = e.target.closest(".lane");
-    if (!lane) return;
+    if (!lane || lane.hasAttribute("data-no-badge")) return;
     const ck = lane.dataset.channel;
     if (!_visible(_st.data)[ck]) return;                 // 트윗 없음 → 유튜브 그대로
     if (!e.target.closest(".lane__tw, .lane__avatar")) return;  // 이름·레일 등 → 그대로
@@ -593,7 +586,7 @@ function _wire() {
   board.addEventListener("pointerover", (e) => {
     if (_mobile()) return;
     const lane = e.target.closest(".lane");
-    if (!lane || !e.target.closest(".lane__tw, .lane__avatar")) return;
+    if (!lane || lane.hasAttribute("data-no-badge") || !e.target.closest(".lane__tw, .lane__avatar")) return;
     const ck = lane.dataset.channel;
     if (!_visible(_st.data)[ck]) return;
     if (_st.pinned.has(ck) || _st.peek === ck) return;

@@ -1,5 +1,9 @@
 import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
+import {
+  avatarSized, classify, itemKeys, buildTimetable, buildTodayCards, buildFoldButton,
+  tickTimetable, applyTimetableMarquees, closeCardPop,
+} from "./timetable.js";
 
 const DAY_MS = 86400000;
 
@@ -12,11 +16,6 @@ const KIND_LABEL = {
   morning: "아침",
   unknown: "",
 };
-
-/* 아바타 URL을 표시/샘플링에 충분한 작은 크기로 정규화 (yt3 URL의 =sNNN 파라미터). */
-function avatarSized(url, size) {
-  return typeof url === "string" ? url.replace(/=s\d+/, `=s${size}`) : url;
-}
 
 /* (v3.1.13) 방송 제목 — notices.js 와 동일하게 "[번역]　—　[원문]" 순. 번역 없으면 원문만. */
 function titleWithTranslation(item) {
@@ -59,10 +58,10 @@ function sampleLaneColor(url, laneEl) {
       let r = 0, g = 0, b = 0, n = 0;
       for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
       const rgb = `rgb(${(r / n) | 0} ${(g / n) | 0} ${(b / n) | 0})`;
-      // 같은 방송인의 레인(캐러셀 클론 포함) + 하단 페이지 도트에 반영
+      // 같은 방송인의 레인(캐러셀 클론 포함) · 타임테이블 행(v4.1.0) + 하단 페이지 도트에 반영
       const key = laneEl.dataset.channel;
       const sel = key
-        ? `#board .lane[data-channel="${CSS.escape(key)}"], #pager-dots .dot[data-channel="${CSS.escape(key)}"]`
+        ? `#board [data-channel="${CSS.escape(key)}"], #pager-dots .dot[data-channel="${CSS.escape(key)}"]`
         : null;
       const targets = sel ? document.querySelectorAll(sel) : [laneEl];
       targets.forEach((el) => el.style.setProperty("--lane-color", rgb));
@@ -385,31 +384,7 @@ function buildHeader(channelData) {
   return header;
 }
 
-/* ── 라이브 영역 (빨간 테두리 존 · 비어있으면 OFF-AIR) ────────────── */
-function buildLive(liveItems, endedItems, nowMs, channelData, laneKey) {
-  const el = document.createElement("div");
-  el.className = "lane__live";
-  // 빨간 테두리는 실제 live 가 있을 때만 켠다. end(방송 종료) 카드는 존에 남기되 소등.
-  el.dataset.state = liveItems.length ? "on" : "off";
-  for (const b of liveItems) el.appendChild(createCard(b, nowMs, channelData, laneKey));
-  for (const b of endedItems) el.appendChild(createCard(b, nowMs, channelData, laneKey));
-  if (!liveItems.length && !endedItems.length) {
-    const off = document.createElement("span");
-    off.className = "lane__live-off";
-    off.textContent = "OFF-AIR";
-    el.appendChild(off);
-  }
-  return el;
-}
-
-/* ── 예고 시간대별 분할 (오늘 / 7일 이내 / 7일 이후). PC·모바일 동일.
-   v3.0.0 까진 PC 만 "한 달 이내"/"그 이후" 로 4분할했으나 통합(화면 규격 무관 3분할). ── */
-const BUCKET_DEFS = [
-  ["today", "오늘"],
-  ["week", "7일 이내"],
-  ["rest", "7일 이후"],
-];
-
+/* 예고 시간대 구간 판정(bucketOf 순수 헬퍼 — selfcheck 용). 화면 구성은 timetable.js. */
 // KST 캘린더 날짜 문자열("YYYY-MM-DD") — bucketKey 가 "24시간 이내"가 아니라
 // "오늘(KST 날짜 일치)"로 정확히 판정하도록. (v3.2 버그: 자정 근처 방송이 24시간
 // 이내라는 이유로 다음날 새벽 예정인데도 "오늘"에 잡히던 문제 수정)
@@ -434,46 +409,6 @@ function bucketKey(item, nowMs) {
   const daysDiff = Math.round((startMidMs - nowMidMs) / DAY_MS);
   if (daysDiff >= 1 && daysDiff <= 7) return "week";
   return "rest";
-}
-
-function buildBuckets(pending, nowMs, channelData, laneKey) {
-  const wrap = document.createElement("div");
-  wrap.className = "lane__buckets";
-
-  const defs = BUCKET_DEFS;
-  const groups = {};
-  for (const [key] of defs) groups[key] = [];
-  for (const i of pending) (groups[bucketKey(i, nowMs)] ||= []).push(i);
-
-  for (const [key, label] of defs) {
-    const sec = document.createElement("section");
-    sec.className = "lane__bucket";
-    sec.dataset.bucket = key;
-
-    const h = document.createElement("h3");
-    h.className = "lane__bucket-label";
-    h.textContent = label;
-    sec.appendChild(h);
-
-    const list = document.createElement("ul");
-    list.className = "lane__bucket-list";
-    if (groups[key].length === 0) {
-      const none = document.createElement("li");
-      none.className = "lane__bucket-none";
-      none.textContent = "예고 없음";
-      list.appendChild(none);
-    } else {
-      for (const i of groups[key]) {
-        const li = document.createElement("li");
-        li.className = "lane__item";
-        li.appendChild(createCard(i, nowMs, channelData, laneKey));
-        list.appendChild(li);
-      }
-    }
-    sec.appendChild(list);
-    wrap.appendChild(sec);
-  }
-  return wrap;
 }
 
 function byScheduledAsc(a, b) {
@@ -513,50 +448,110 @@ export function laneKeys(items, channelOrder) {
   return Array.from(keys).filter(k => channelOrder.includes(k)).sort();
 }
 
+/* (v4.1.0) 이후 예고 목록 — 레인(PC 펼침 열 / 모바일 레인) 안의 카드들. 배포판 카드(createCard) 그대로. */
+function buildLaterList(items, nowMs, channelData, laneKey) {
+  const wrap = document.createElement("div");
+  wrap.className = "lane__later";
+  if (!items.length) {
+    const none = document.createElement("p");
+    none.className = "lane__later-none";
+    none.textContent = "이후 예고 없음";
+    wrap.appendChild(none);
+    return wrap;
+  }
+  for (const it of items) {
+    const li = document.createElement("div");
+    li.className = "lane__item";
+    li.appendChild(createCard(it, nowMs, channelData, laneKey));
+    wrap.appendChild(li);
+  }
+  return wrap;
+}
+
+/* 이후 예고 펼침 상태는 #board 의 클래스(board--later-open)로 둔다 — CSS 가 보이기/숨기기를 하므로
+   모바일 캐러셀 클론 레인도 자동으로 같이 열리고 닫히며, 재렌더 때도 유지된다. */
+let foldWired = false;
+function syncFold(boardEl) {
+  const open = boardEl.classList.contains("board--later-open");
+  boardEl.querySelectorAll(".tt-fold").forEach((b) => b.setAttribute("aria-expanded", String(open)));
+}
+function wireFold(boardEl) {
+  if (foldWired) return;
+  foldWired = true;
+  boardEl.addEventListener("click", (e) => {
+    if (!e.target.closest(".tt-fold")) return;
+    boardEl.classList.toggle("board--later-open");
+    syncFold(boardEl);
+  });
+}
+
 /**
- * 보드 전체 재구성 (v3).
+ * 보드 전체 재구성 (v4.1.0).
+ *  PC(≥768px)   : 오늘 타임테이블 + "이후 예고" 펼치기(방송인별 네임플레이트 · 카드 5열)
+ *  모바일(<768px): 방송인 1명씩 가로 슬라이드(현행) — 네임플레이트 · 오늘 카드 · 이후 예고 펼치기
  * @param {HTMLElement} boardEl
  * @param {Object} preview - {channel_order, channels, items}
  * @param {number} nowMs
+ * @param {Object|null} archive - preview_archive.json (오늘 이미 끝난 방송 표시용, 없어도 됨)
  */
-export function renderBoard(boardEl, preview, nowMs = Date.now()) {
+export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null) {
+  closeCardPop();
   boardEl.innerHTML = "";
 
   const channelOrder = preview.channel_order || FALLBACK_CHANNEL_ORDER;
-  const channels = preview.channels || FALLBACK_CHANNELS;
+  const channels = {};
+  for (const key of channelOrder) {
+    const c = { ...(FALLBACK_CHANNELS[key] || {}), ...((preview.channels || {})[key] || {}) };
+    if (c.name || c.name_ko) channels[key] = c;
+  }
+  const order = channelOrder.filter((k) => channels[k]);
 
-  // v3: 합동방송은 참여 멤버 전원(channel_key + collab_with) 레인에 팬아웃.
-  // 모르는 channel_key 는 무시.
-  const byChannel = {};
-  for (const item of preview.items || []) {
-    if (!item.channel_key || !channelOrder.includes(item.channel_key)) continue;
-    const keys = new Set([item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])]);
-    for (const k of keys) {
-      if (k && channelOrder.includes(k)) (byChannel[k] ||= []).push(item);
+  const cls = classify(preview.items, archive && archive.items, nowMs, order);
+  const ctx = { ...cls, nowMs, order, channels };
+  boardEl.__ttDe = cls.de;
+
+  // 이후 예고 — 합동은 참여 멤버 전원 레인에 팬아웃 (v3 와 같은 규칙)
+  const laterBy = {};
+  for (const it of cls.later) for (const k of itemKeys(it, order)) (laterBy[k] ||= []).push(it);
+  const counts = { total: cls.later.length, byKey: Object.fromEntries(order.map((k) => [k, (laterBy[k] || []).length])) };
+
+  const phone = mqlPhone.matches;
+  boardEl.classList.toggle("board--tt", !phone);
+
+  if (!phone) {
+    boardEl.appendChild(buildTimetable(ctx));
+    if (counts.total) boardEl.appendChild(buildFoldButton(counts, ctx, { perMember: true }));   // 이후 예고가 0건이면 버튼도 목록도 없다
+    const later = document.createElement("div");
+    later.className = "tt-later";
+    for (const key of order) {
+      const lane = document.createElement("section");
+      lane.className = "lane lane--later";
+      lane.dataset.channel = key;
+      lane.dataset.noBadge = "";           // 편지 배지는 타임테이블 왼쪽 칸에만 (tweets.js 가 건너뜀)
+      lane.appendChild(buildHeader(channels[key]));
+      lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
+      later.appendChild(lane);
+    }
+    if (counts.total) boardEl.appendChild(later);
+  } else {
+    for (const key of order) {
+      const lane = document.createElement("section");
+      lane.className = "lane";
+      lane.dataset.channel = key;
+      lane.appendChild(buildHeader(channels[key]));
+      lane.appendChild(buildTodayCards(ctx, key));
+      if ((laterBy[key] || []).length) {       // 이 멤버의 이후 예고가 0건이면 펼치기 버튼도 목록도 숨김
+        lane.appendChild(buildFoldButton({ total: laterBy[key].length }, ctx));
+        lane.appendChild(buildLaterList(laterBy[key], nowMs, channels[key], key));
+      }
+      boardEl.appendChild(lane);
     }
   }
+  for (const key of order) sampleLaneColor(avatarSized(channels[key].avatar, 176), boardEl.querySelector(`.lane[data-channel="${key}"]`));
 
-  for (const key of channelOrder) {
-    const channelData = { ...(FALLBACK_CHANNELS[key] || {}), ...(channels[key] || {}) };
-    if (!channelData.name && !channelData.name_ko) continue;
-
-    const lane = document.createElement("section");
-    lane.className = "lane";
-    lane.dataset.channel = key;
-
-    lane.appendChild(buildHeader(channelData));
-
-    const list = byChannel[key] || [];
-    // (v4a) orderLaneItems 순수 함수로 레인 아이템 분류 및 정렬 (live 우선)
-    const { live, ended, pending } = orderLaneItems(list);
-
-    lane.appendChild(buildLive(live, ended, nowMs, channelData, key));
-    lane.appendChild(buildBuckets(pending, nowMs, channelData, key));
-
-    boardEl.appendChild(lane);
-    sampleLaneColor(avatarSized(channelData.avatar, 88), lane);
-  }
-
+  wireFold(boardEl);
+  syncFold(boardEl);
+  applyTimetableMarquees(boardEl);
   applyMarquees(boardEl);
   carouselBoard = boardEl;
   initMobileCarousel(boardEl);
@@ -565,7 +560,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now()) {
 /* 제목이 카드 폭을 넘치면 흐르는 marquee 로 전환 (PC). 줄바꿈되는 모바일은
    scrollWidth ≈ clientWidth 라 자동으로 건너뜀. */
 function applyMarquees(boardEl) {
-  for (const t of boardEl.querySelectorAll(".card__title")) {
+  for (const t of boardEl.querySelectorAll(".card__title, .tcard__ti")) {   // (v4.1.0) 모바일 오늘 카드 제목(.tcard__ti)도 같은 marquee
     if (t.classList.contains("card__title--marquee")) continue;
     if (t.scrollWidth - t.clientWidth <= 4) continue;   // 넘치지 않으면 그대로
 
@@ -602,6 +597,7 @@ mqlPhone.addEventListener("change", () => {
 
 function clearCarousel(boardEl) {
   boardEl.querySelectorAll(".lane--clone").forEach((n) => n.remove());
+  boardEl.querySelectorAll(".lane").forEach((l) => { l.classList.remove("lane--active"); l.inert = false; });
   boardEl.classList.remove("board--carousel");
   if (boardEl._carouselCleanup) { boardEl._carouselCleanup(); boardEl._carouselCleanup = null; }
   const dots = document.getElementById("pager-dots");
@@ -661,10 +657,21 @@ function initMobileCarousel(boardEl) {
     return bi;
   };
 
+  // (v4.1.0) 지금 보고 있는 레인만 동작한다 — 좌우에 비쳐 보이는 레인의 스크롤바 · 클릭(트윗 배지 · 카드 · 펼치기 버튼)이
+  // 의도치 않게 반응하지 않게 inert 로 동작만 막는다(겉모양 · 스크롤바 표시는 그대로 — 바꾸면 카드 폭이 움찔거린다). 옆 레인은 드래그/스와이프의 시작점으로는 쓸 수 있다(보드가 받음).
+  let markedDi = -1;
+  const markActive = () => {
+    const di = currentDom();
+    if (di === markedDi) return;
+    markedDi = di;
+    slides().forEach((s, i) => { const on = i === di; s.classList.toggle("lane--active", on); s.inert = !on; });
+  };
+
   activeIdx = ((activeIdx % n) + n) % n;
   jumpReal(activeIdx);                                  // 즉시
-  requestAnimationFrame(() => jumpReal(activeIdx));     // 레이아웃 후
-  setTimeout(() => jumpReal(activeIdx), 60);            // 스냅 보정 후 (rAF 미실행 대비)
+  markActive();
+  requestAnimationFrame(() => { jumpReal(activeIdx); markActive(); });     // 레이아웃 후
+  setTimeout(() => { jumpReal(activeIdx); markActive(); }, 60);            // 스냅 보정 후 (rAF 미실행 대비)
 
   // 도트 인디케이터
   const dots = document.getElementById("pager-dots");
@@ -683,6 +690,9 @@ function initMobileCarousel(boardEl) {
       // 아바타 색이 이미 샘플링됐으면 그 값, 아니면 나중에 sampleLaneColor 가 채움
       const c = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
       if (c) btn.style.setProperty("--lane-color", c);
+      // (v4.1.0) 도트도 멤버 프로필 이미지로 — 레인 헤더 아바타와 같은 이미지
+      const av = lane.querySelector(".lane__avatar");
+      if (av && av.style.backgroundImage) btn.style.backgroundImage = av.style.backgroundImage;
       btn.setAttribute(
         "aria-label",
         (lane.querySelector(".lane__name-ko")?.textContent || `${i + 1}번`) + " 보기"
@@ -696,6 +706,7 @@ function initMobileCarousel(boardEl) {
   // 스크롤: active 갱신 + 클론에 닿으면 멈춘 뒤 반대편 실제 슬라이드로 순간이동
   let settle = null;
   const onScroll = () => {
+    markActive();
     const di = currentDom();
     let real = di - 1;
     if (real < 0) real = n - 1;
@@ -704,6 +715,7 @@ function initMobileCarousel(boardEl) {
 
     clearTimeout(settle);
     settle = setTimeout(() => {
+      if (drag) return;                      // 드래그 중에는 클론 → 실제 순간이동을 미룬다 (놓을 때 정리)
       const d = currentDom();
       if (d <= 0) jumpReal(n - 1);
       else if (d >= n + 1) jumpReal(0);
@@ -711,11 +723,52 @@ function initMobileCarousel(boardEl) {
   };
   boardEl.addEventListener("scroll", onScroll, { passive: true });
 
+  // (v4.1.0) 마우스 드래그로도 넘긴다 (터치는 기본 스크롤·스냅). 놓으면 가장 가까운 유닛으로 정렬되고,
+  // 5px 이상 끌었으면 그 클릭은 카드·링크 이동으로 치지 않는다.
+  let drag = null, dragMoved = false, suppressClick = false;
+  const onDown = (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    drag = { x: e.clientX, s: boardEl.scrollLeft };
+    dragMoved = false;
+  };
+  const onMove = (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!dragMoved && Math.abs(dx) > 5) { dragMoved = true; boardEl.classList.add("board--dragging"); }
+    if (dragMoved) { e.preventDefault(); boardEl.scrollLeft = drag.s - dx; }
+  };
+  const onUp = () => {
+    if (!drag) return;
+    const moved = dragMoved;
+    drag = null;
+    dragMoved = false;
+    if (!moved) return;
+    boardEl.classList.remove("board--dragging");
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; }, 0);
+    goDom(currentDom(), true);                // 놓은 자리에서 가장 가까운 유닛으로 (클론이면 settle 이 실제로 옮김)
+  };
+  const onClickCapture = (e) => { if (suppressClick) { e.preventDefault(); e.stopPropagation(); } };
+  const onDragStart = (e) => e.preventDefault();   // 링크·이미지 기본 끌기 방지
+  boardEl.addEventListener("pointerdown", onDown);
+  boardEl.addEventListener("click", onClickCapture, true);
+  boardEl.addEventListener("dragstart", onDragStart);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+
   const onResize = () => jumpReal(activeIdx);
   window.addEventListener("resize", onResize);
 
   boardEl._carouselCleanup = () => {
     boardEl.removeEventListener("scroll", onScroll);
+    boardEl.removeEventListener("pointerdown", onDown);
+    boardEl.removeEventListener("click", onClickCapture, true);
+    boardEl.removeEventListener("dragstart", onDragStart);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    boardEl.classList.remove("board--dragging");
     window.removeEventListener("resize", onResize);
     clearTimeout(settle);
   };
@@ -741,12 +794,11 @@ export function renderFooter(footEl, schedule, { stale = false } = {}) {
 }
 
 /**
- * v3 카운트다운 갱신 (재렌더 필요 시 true 반환).
+ * v3 카운트다운 갱신 (재렌더 필요 시 true 반환 — v4.1.0: 오늘 구간이 끝났을 때).
  * @param {HTMLElement} boardEl
  * @param {number} nowMs
  */
 export function updateCountdowns(boardEl, nowMs = Date.now()) {
-  let bucketChanged = false;
   for (const cardEl of boardEl.querySelectorAll(".card")) {
     const relSpan = cardEl.querySelector(".card__rel");
     const timeEl = cardEl.querySelector(".card__time");
@@ -768,12 +820,7 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
         relSpan.classList.toggle("card__rel--late", isLate(timeEl.dateTime, nowMs));
       }
     }
-
-    // 구간 변화 감지
-    const cur = cardEl.closest(".lane__bucket")?.dataset.bucket;
-    if (cur && bucketKey({ scheduled_start: timeEl.dateTime }, nowMs) !== cur) {
-      bucketChanged = true;
-    }
   }
-  return bucketChanged;
+  // 타임테이블: 지금 선 · 카운트다운 링 갱신. 오늘 구간(06:00)이 바뀌었으면 true → 호출부가 재렌더
+  return tickTimetable(boardEl, nowMs);
 }

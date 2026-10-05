@@ -1,0 +1,544 @@
+/* timetable.css — (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기.
+   예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 대체한다. 다크 단일 테마 — 색은 명시적으로.
+   --lane-color 는 render.js sampleLaneColor 가 아바타 평균색으로 채운다. 계약·화면: docs/SPEC.md "타임테이블". */
+
+/* PC: 5열 그리드를 풀고 타임테이블 → 펼치기 버튼 → 이후 예고 열 순서로 쌓는다 */
+/* 링 진행률(--p)을 CSS 가 부드럽게 보간하도록 숫자 속성으로 등록 */
+@property --p { syntax: "<number>"; inherits: false; initial-value: 0; }
+
+#board.board--tt {
+  display: block;
+}
+
+/* ── 공통 ─────────────────────────────────────────────────────────── */
+.tt__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  margin: 0 0 0.5rem;
+}
+.tt__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.tt__meta {
+  font-size: 0.76rem;
+  color: var(--color-text-muted);
+}
+
+.tt-tag {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: #3a3f48;
+  color: #d6dbe3;
+}
+.tt-tag--live { background: var(--color-live); color: var(--color-live-text); }
+.tt-tag--collab { background: var(--color-collab); color: #fff; }
+.tt-tag--mem { background: #2f6f4f; color: #dff7e8; }
+.tt-tag--end { background: #444; color: #ddd; }
+
+/* 카드·팝업 안의 멤버 동그라미 (레인 헤더 아바타 .lane__avatar 와 별개 — 트윗 배지 로직이 건드리지 않게) */
+.tt-ava,
+.tt-face {
+  flex: none;
+  border: 2px solid var(--lane-color, var(--color-border));
+  border-radius: 50%;
+  background: #111 center / cover no-repeat;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.tt-faces { display: inline-flex; }
+.tt-face {
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  border-width: 1.5px;
+  box-shadow: 0 0 0 2px var(--color-bg-secondary);
+}
+.tt-faces .tt-face:first-child { margin-left: 0; }
+
+/* 썸네일이 없는 항목(영상 없는 X 예고 · 회원 전용) 자리표시 — 레인 색 + 멤버 아바타 */
+:is(.tt-blk__th, .tcard__th, .tt-pop__img).tt-ph {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--lane-color, #555) 55%, #000),
+    color-mix(in srgb, var(--lane-color, #555) 14%, #141414));
+}
+.tt-ph__ava {
+  position: relative;
+  z-index: 1;                    /* 카드 위 어둡게 깔리는 그라데이션(::before) 위로 */
+  width: 38%;
+  max-width: 44px;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+/* ── PC 편성 레일 ──────────────────────────────────────────────────── */
+.tt__scroll {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 14px 14px 16px;
+  overflow-x: auto;
+}
+.tt__grid {
+  position: relative;
+  min-width: 1000px;
+  display: grid;
+  grid-template-columns: 124px 1fr;
+}
+.tt__axis {
+  grid-column: 2;
+  position: relative;
+  height: 36px;
+  border-bottom: 1px solid var(--color-border);
+}
+.tt__tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+}
+.tt__tick b {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+.tt__tick.is-first { transform: none; text-align: left; }
+.tt__tick.is-last { transform: translateX(-100%); text-align: right; }
+.tt__tick.is-midnight,
+.tt__tick.is-midnight b { color: var(--color-late); }   /* 자정 + 익일 날짜 */
+
+/* 왼쪽 멤버 칸 = 기존 레인 헤더와 같은 그라데이션. 트윗 알림 배지(.lane__tw)는 tweets.js 가 이 헤더에 붙인다. */
+.tt__lane {
+  height: 78px;
+  border: 0;
+  border-bottom: 1px dashed #2a2a2a;
+  border-radius: 0;
+  background: none;
+}
+.tt__who {
+  flex: 1;
+  height: 100%;
+  padding: 0 8px 0 10px;
+  border-bottom: 0;
+  background: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tt__who .lane__avatar { width: 40px; height: 40px; }
+.tt__who .lane__tw { left: 35px; top: calc(50% - 27.5px); }   /* 40px 아바타 기준 같은 비율(가로 87.5% · 세로 6%) */
+.tt__nm { position: relative; display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.tt__nm b { font-size: 0.84rem; white-space: nowrap; }
+.tt__nm small { font-size: 0.68rem; color: var(--color-text-muted); }
+
+.tt__track {
+  position: relative;
+  height: 78px;
+  border-bottom: 1px dashed #2a2a2a;
+  background-image: repeating-linear-gradient(to right, #262626 0 1px, transparent 1px calc(100% / 8));
+}
+.tt__empty {
+  position: absolute;
+  inset: 0 0 0 12px;
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  color: #5d5d5d;
+}
+
+/* 지금 선 · 지난 구간 음영 · 자정 점선 (위치는 render/timetable.js 가 % 로 채움) */
+.tt__ov {
+  position: absolute;
+  inset: 0 0 0 124px;
+  pointer-events: none;
+}
+.tt__past { position: absolute; top: 36px; bottom: 0; left: 0; background: rgba(0, 0, 0, 0.3); }
+.tt__now {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-live);
+  box-shadow: 0 0 10px rgba(255, 59, 48, 0.6);
+}
+.tt__nowtag {
+  position: absolute;
+  top: 40px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--color-live);
+  color: var(--color-live-text);
+  font-size: 0.64rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tt__mid {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  left: 75%;                      /* 06:00 + 18h = 자정 */
+  border-left: 1px dashed var(--color-late);
+  opacity: 0.8;
+}
+
+/* 예고 바(블록). 길이를 알면 실제 길이, 모르면 고정 폭. 좁아도 같은 모양 — 넘치는 부분은 잘리기만 한다 */
+.tt-blk {
+  position: absolute;
+  top: 7px;
+  height: 64px;
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--lane-color, #555) 60%, transparent);
+  background: color-mix(in srgb, var(--lane-color, #555) 16%, var(--color-bg-secondary));
+}
+.tt-blk:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
+.tt-blk__th {
+  flex: none;
+  width: 98px;
+  background: #111 center / cover no-repeat;
+}
+.tt-blk__tx {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px 4px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+.tt-blk__t {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+.tt-blk__rel { font-size: 0.66rem; color: var(--color-text-muted); }
+/* 제목: 한 줄. 넘치면 무한 marquee (timetable.js applyTimetableMarquees 가 is-marquee 를 켠다) */
+.tt-blk__n {
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.tt-blk__trk { display: inline-flex; }
+.tt-blk__trk > span { flex: none; padding-right: 2.5rem; }
+.tt-blk__n.is-marquee .tt-blk__trk { animation: tt-mq var(--dur, 12s) linear infinite; }
+@keyframes tt-mq { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .tt-blk__n.is-marquee .tt-blk__trk { animation: none; }
+}
+
+.tt-blk--live {
+  border: 2px solid var(--color-live);
+  background: color-mix(in srgb, var(--color-live) 18%, var(--color-bg-secondary));
+}
+.tt-blk--ended {
+  border-color: #444;
+  background: color-mix(in srgb, #8a8a8a 12%, var(--color-bg-secondary));
+}
+.tt-blk--ended .tt-blk__th { filter: grayscale(0.7) brightness(0.72); }
+.tt-blk--ended .tt-blk__t,
+.tt-blk--ended .tt-blk__n { color: #a8a8a8; }
+.tt-blk--soon { box-shadow: 0 0 0 1.5px var(--color-late) inset; }
+.tt-blk--collab { border-style: dashed; }
+
+.tt__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+.tt__legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.tt-lg--end { background: #555; }
+.tt-lg--live { border: 2px solid var(--color-live); }
+.tt-lg--soon { box-shadow: 0 0 0 1.5px var(--color-late) inset; }
+.tt-lg--collab { border: 1px dashed var(--color-collab); }
+
+/* 블록 카드 팝업 (body 에 absolute 로 얹음) */
+.tt-pop {
+  position: absolute;
+  z-index: 110;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.tt-pop__img {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: #111 center / cover no-repeat;
+}
+a.tt-pop__img { cursor: pointer; }
+.tt-pop--ended .tt-pop__img { filter: grayscale(0.65) brightness(0.8); }
+.tt-pop__body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 4px; }
+.tt-pop__nm { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; font-size: 0.76rem; }
+.tt-pop__rg { font-size: 0.78rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.tt-pop__ti { font-size: 0.84rem; font-weight: 700; line-height: 1.4; }
+.tt-pop__btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #cc1f1f;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.tt-pop__btn:hover { background: #e02a2a; }
+.tt-pop__none { margin-top: 6px; font-size: 0.72rem; color: var(--color-text-muted); }
+
+/* ── 이후 예고 펼치기 (PC·모바일 공통 버튼) ──────────────────────────── */
+.tt-fold {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  font-size: 0.86rem;
+  font-weight: 500;
+}
+.tt-fold:hover { background: #232323; }
+.tt-fold:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 2px; }
+.tt-fold__tri {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 9px solid var(--color-text);
+  transition: transform 0.2s;
+}
+.tt-fold[aria-expanded="true"] .tt-fold__tri { transform: rotate(180deg); }
+.tt-fold__close { display: none; }
+.board--later-open .tt-fold__open { display: none; }
+.board--later-open .tt-fold__close { display: inline; }
+.tt-fold__cn {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tt-fold__cn > span { display: inline-flex; gap: 3px; align-items: center; }
+.tt-fold__cn .tt-face { margin-left: 0; width: 14px; height: 14px; border-width: 1px; box-shadow: none; }
+
+/* 이후 예고 목록 — 펼친 상태(#board.board--later-open)에서만 보인다 */
+.tt-later { display: none; }
+.board--later-open .tt-later {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap);
+  align-items: start;
+  margin-top: 12px;
+}
+.lane__later {
+  display: none;
+  flex-direction: column;
+  gap: var(--gap);
+  padding: var(--gap);
+}
+.board--later-open .lane__later { display: flex; }
+.lane__later .lane__item { flex: none; }
+.lane__later-none {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+/* ── 모바일: 한 명씩 슬라이드(현행) 안의 오늘 카드 · 펼치기 ──────────── */
+.tt-today { padding: var(--gap) var(--gap) 0; }
+.tt-today__none {
+  padding: 1.2rem 0.5rem;
+  border: 1px dashed var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  text-align: center;
+  font-size: 0.84rem;
+}
+.tt-today__stack { display: flex; flex-direction: column; gap: 12px; }
+
+.tcard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg);
+  color: inherit;
+}
+.tcard--live { border: 2px solid var(--color-live); }
+.tcard--soon { border-color: var(--color-late); }
+.tcard--ended { color: #a8a8a8; }
+.tcard__th {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #111 center / cover no-repeat;
+}
+.tcard__th::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent 40%, transparent 60%, rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+}
+.tcard--ended .tcard__th { filter: grayscale(0.7) brightness(0.75); }
+.tcard__th > * { z-index: 1; }
+.tcard__collab {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.62);
+}
+.tcard__collab .tt-face { width: 26px; height: 26px; margin-left: -8px; border-width: 2px; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.62); }
+.tcard__collab .tt-faces .tt-face:first-child { margin-left: 0; }
+.tcard__pills {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tcard__pill {
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+.tcard__pill--live { background: var(--color-live); color: var(--color-live-text); box-shadow: 0 0 10px rgba(255, 0, 0, 0.55); }
+.tcard__pill--end { background: rgba(0, 0, 0, 0.65); color: #ddd; }
+.tcard__pill--lock { background: rgba(0, 0, 0, 0.65); color: #dff7e8; padding: 4px 9px; letter-spacing: 0; }
+/* 카운트다운 링: 24시간 중 남은 비율만큼 채워진다 (timetable.js updateRing). 제목 영역 오른쪽, 영역 높이에 맞춘 크기 */
+.tcard__ring {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--rc, var(--color-sched)) calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.1) 0);
+  transition: --p 0.6s linear;
+}
+/* 방송 중: 12시부터 시계방향으로 60분 채우고 → 다음 60분은 같은 방향으로 비운다 */
+.tcard__ring--live { --rcol: var(--color-live); }
+.tcard__ring--ended { --rcol: #8a8a8a; }            /* 종료 = 끝난 순간에 멈춘 회색 링 */
+.tcard--ended .tcard__ring b { color: #a8a8a8; }
+.tcard__ring--live.is-fill {
+  background: conic-gradient(from 0deg, var(--rcol) calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.1) 0);
+}
+.tcard__ring--live.is-erase {
+  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.1) calc(var(--p, 0) * 1%), var(--rcol) 0);
+}
+.tcard__ring--live span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
+.tcard__ring--live b { font-size: 0.74rem; font-weight: 600; }
+.tcard__ring--live small { font-size: 0.5rem; color: var(--color-text-muted); }
+.tcard--big .tcard__ring--live b { font-size: 0.82rem; }
+.tcard--big .tcard__ring--live small { font-size: 0.56rem; }
+@media (prefers-reduced-motion: reduce) {
+  .tcard__ring { transition: none; }
+}
+.tcard__ring::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--color-bg);
+}
+.tcard__ring span {
+  position: relative;
+  font-size: 0.66rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.tcard--big .tcard__ring { width: 54px; height: 54px; }
+.tcard--big .tcard__ring span { font-size: 0.74rem; }
+.tcard__body { padding: 10px 12px 12px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tcard__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.tcard__when {
+  display: flex;
+  gap: 4px 8px;               /* 태그가 많아 모자라면 다음 줄로 내려간다 */
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tcard__when b { color: var(--color-text); font-weight: 500; }
+.tcard--ended .tcard__when b { color: #a8a8a8; }
+/* 제목: 한 줄. 넘치면 render.js applyMarquees 가 .card__title--marquee 로 바꿔 무한히 흐르게 한다 */
+.tcard__ti { font-size: 0.9rem; font-weight: 700; line-height: 1.4; overflow: hidden; white-space: nowrap; }
+.tcard:hover .card__title-track { animation-play-state: paused; }
+.tcard--big .tcard__ti { font-size: 1.05rem; }
+
+@media (max-width: 767px) {
+  /* 마우스 드래그로 넘기는 동안은 스냅을 풀어 손에 붙어 따라오게 한다 (render.js initMobileCarousel) */
+  #board.board--carousel { cursor: grab; }
+  #board.board--dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+  .tt-fold { width: auto; margin: var(--gap) var(--gap) 0; }   /* 위 카드와 한 칸 떨어뜨림 */
+  .lane__later { padding-top: var(--gap); }
+  /* 하단 페이지 도트 = 멤버 프로필 이미지 (v4.1.0). 레인 아바타와 같은 이미지가 render.js 에서 들어온다 */
+  #pager-dots { gap: 14px; }
+  #pager-dots .dot {
+    width: 26px;
+    height: 26px;
+    background-color: var(--lane-color, var(--color-border));
+    background-size: cover;
+    background-position: center;
+    opacity: 0.5;
+    transform: none;
+  }
+  #pager-dots .dot--on {
+    opacity: 1;
+    transform: scale(1.2);
+    box-shadow: 0 0 0 2px var(--lane-color, #fff);
+  }
+}
