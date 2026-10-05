@@ -920,6 +920,8 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **js/api.js** — `fetchPreview(url)`: AbortController + `FETCH_TIMEOUT_MS`, `cache:"no-store"`. `{ok,data|error}`.
 - **js/render.js** — `renderBoard(boardEl, preview, nowMs, archive)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시. **v4.1.0**: PC = 타임테이블 + 이후 예고, 모바일 = 1명씩 슬라이드),
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
+- **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
+  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로, PC 는 `main.js` 가 `body` 맨 앞에 `#player-bar` 줄을 만들어 `.player-btn--top` 으로 붙인다(소식 막대 바로 위, 소식 막대 · 타임테이블과 왼쪽 선 일치, 모바일은 CSS 로 숨김). 클릭 시 `mew:player-open` 이벤트만 발행(동작은 미정).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시

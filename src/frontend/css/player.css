@@ -1,0 +1,62 @@
+/* player.css — (v4.2.0) 「CD + 음표 >」 버튼. 모바일 = 하단 멤버 아이콘 줄 맨 왼쪽(.player-btn--dock),
+   PC = 소식 막대 바로 위 줄(#player-bar > .player-btn--top, 소식 막대와 왼쪽 선 일치). 아이콘은 js/playerbtn.js (currentColor). 다크 단일 테마 — 색은 명시적으로. */
+
+.player-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.player-btn svg {
+  display: block;
+  width: 36px;
+  height: 21px;
+}
+.player-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+  background: #232323;
+}
+.player-btn:focus-visible {
+  outline: 2px solid var(--color-text-muted);
+  outline-offset: 2px;
+}
+
+/* PC: 소식 막대 바로 위 줄. 보드와 같은 최대 폭 · 좌우 패딩이라 소식 막대 · 타임테이블의 왼쪽 선과 맞는다 */
+#player-bar {
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: 8px var(--page-pad) 0;
+}
+.player-btn--top {
+  height: 32px;
+}
+.player-btn--top svg {
+  width: 40px;
+  height: 23px;
+}
+
+@media (max-width: 767px) {
+  #player-bar { display: none; }
+  /* 모바일: 하단 줄의 화면 왼쪽 끝(가장자리 여백 = --m-pad)에 두고, 멤버 아이콘은 그대로 가운데. 크기는 멤버 아이콘(26px)에 맞춤 */
+  #pager-dots .player-btn {
+    position: absolute;
+    left: var(--m-pad, 1rem);
+    top: 50%;
+    transform: translateY(-50%);
+    height: 26px;
+    padding: 0 7px;
+  }
+  #pager-dots .player-btn svg {
+    width: 31px;
+    height: 18px;
+  }
+}

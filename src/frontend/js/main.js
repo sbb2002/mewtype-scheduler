@@ -2,6 +2,7 @@ import { fetchPreview } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
 import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
+import { createPlayerButton } from "./playerbtn.js";
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
@@ -207,6 +208,11 @@ document.addEventListener("DOMContentLoaded", () => {
   pollNotices();
   pollTweets();
   pollBanners();
+  // (v4.2.0) PC: 소식 막대 바로 위, 소식 막대·타임테이블과 왼쪽 선을 맞춘 줄에 둔다 (모바일은 CSS 로 숨김 — 하단 멤버 아이콘 줄에 따로 있음)
+  const playerBar = document.createElement("div");
+  playerBar.id = "player-bar";
+  playerBar.appendChild(createPlayerButton("player-btn--top"));
+  document.body.prepend(playerBar);
   initDisclaimerRotator();
   positionDisclaimerPopup();
   window.addEventListener("resize", positionDisclaimerPopup);

@@ -1,5 +1,6 @@
 import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
+import { createPlayerButton } from "./playerbtn.js";
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
@@ -681,6 +682,7 @@ function initMobileCarousel(boardEl) {
   if (dots) {
     dots.hidden = false;
     dots.innerHTML = "";
+    dots.appendChild(createPlayerButton("player-btn--dock"));   // (v4.2.0) 멤버 아이콘 줄 맨 왼쪽
     reals.forEach((lane, i) => {
       const btn = document.createElement("button");
       btn.type = "button";

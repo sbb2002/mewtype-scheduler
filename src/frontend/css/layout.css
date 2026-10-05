@@ -175,7 +175,7 @@ body {
   border-top: 1px solid var(--color-border);
   font-size: 0.85rem;
   color: var(--color-text-muted);
-  z-index: 20;
+  z-index: 50;   /* (v4.2.0) 모바일 페이지 도트 띠(25) · 플레이어 버튼(40) 위 — 디스클레이머 팝업이 항상 맨 위에 뜬다. 트윗 시트(900)보다는 아래 */
 }
 
 /* 풀블리드 배경은 유지하되 내용은 보드와 같은 폭/여백에 정렬 */
