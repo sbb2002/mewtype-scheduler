@@ -493,7 +493,7 @@
             font-size: 0.8rem;
             color: var(--color-text-muted);
         }
-        .tl-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.35rem; }
+        .tl-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-width: 6rem; } /* 「번역 → 번역 중 + 회전 아이콘」으로 글자가 바뀌어도 폭이 변하지 않게 */
         .tl-btn .spinner {
             display: none;
             width: 0.85rem;
@@ -615,7 +615,8 @@
         /* 로딩 상태 */
         [hidden] { display: none !important; }
 
-        .loading {
+        /* 목록 자리표시(「로드 중…」) 전용 — 버튼이 쓰는 loading 클래스(번역 중 등)는 제외해야 버튼이 부풀지 않는다 */
+        .loading:not(button) {
             text-align: center;
             padding: 2rem;
             color: var(--color-text-muted);
@@ -1025,7 +1026,8 @@
         }
         @media (prefers-reduced-motion: reduce) { .cx-chev { transition: none; } }
         /* (v4.0.8) 쓰기 요청 대기 — 누른 버튼 가운데에 회전 아이콘, 글자는 숨겨 버튼 폭은 그대로 */
-        button.is-busy { position: relative; color: transparent !important; pointer-events: none; cursor: progress; }
+        button.is-busy-rel { position: relative; }
+        button.is-busy { color: transparent !important; overflow: hidden; padding-block: 0; padding-inline: 0; box-sizing: border-box; pointer-events: none; cursor: progress; }
         button.is-busy::after { content: ""; position: absolute; left: 50%; top: 50%; width: 1.05em; height: 1.05em; margin: -0.525em 0 0 -0.525em;
             border: 2px solid var(--busy-c, #fff); border-right-color: transparent; border-radius: 50%; animation: cx-spin 0.7s linear infinite; }
         @keyframes cx-spin { to { transform: rotate(360deg); } }
@@ -1549,20 +1551,31 @@
             },
 
             cxBusyStart(btn) {
-                if (!btn) return () => {};
+                // 자체 대기 표시(.loading + 안쪽 .spinner)를 쓰는 버튼(번역 · 되돌리기 등)은 겹치지 않게 건너뛴다
+                if (!btn || btn.matches(".tl-btn, .fllm-row button") || btn.classList.contains("loading")) return () => {};
                 let on = false;
+                const prev = { w: btn.style.width, h: btn.style.height };
                 const timer = setTimeout(() => {   // 120ms 안에 끝나는 요청엔 깜빡임 없이
+                    if (!btn.isConnected || btn.classList.contains("loading")) return;
                     on = true;
-                    btn.style.setProperty("--busy-c", getComputedStyle(btn).color);
+                    const cs = getComputedStyle(btn);
+                    const r = btn.getBoundingClientRect();
+                    btn.style.setProperty("--busy-c", cs.color);
+                    // 표시 중에도 버튼 크기가 변하지 않게 지금 크기로 고정, 위치 기준이 필요하면(static 일 때만) relative
+                    btn.style.width = r.width + "px";
+                    btn.style.height = r.height + "px";
+                    if (cs.position === "static") btn.classList.add("is-busy-rel");
                     btn.classList.add("is-busy");
                     btn.setAttribute("aria-busy", "true");
                 }, 120);
                 return () => {
                     clearTimeout(timer);
                     if (!on) return;
-                    btn.classList.remove("is-busy");
+                    btn.classList.remove("is-busy", "is-busy-rel");
                     btn.removeAttribute("aria-busy");
                     btn.style.removeProperty("--busy-c");
+                    btn.style.width = prev.w;
+                    btn.style.height = prev.h;
                 };
             },
 
