@@ -1031,6 +1031,13 @@
             border: 2px solid var(--busy-c, #fff); border-right-color: transparent; border-radius: 50%; animation: cx-spin 0.7s linear infinite; }
         @keyframes cx-spin { to { transform: rotate(360deg); } }
         @media (prefers-reduced-motion: reduce) { button.is-busy::after { animation-duration: 2s; } }
+        /* 칩 줄: 마우스 드래그 · 끝이 가려졌다는 흐림 표시 */
+        .cx-chips { cursor: grab; }
+        .cx-chips.dragging { cursor: grabbing; user-select: none; }
+        .cx-chips.dragging .cx-chip { pointer-events: none; }
+        .cx-chips[data-r="1"] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
+        .cx-chips[data-l="1"] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
+        .cx-chips[data-l="1"][data-r="1"] { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
 </style>
 </head>
 <body>
@@ -1833,7 +1840,43 @@
                     b.onclick = () => onPick(key);
                     box.appendChild(b);
                 }
+                this.cxChipsScroll(box);
                 return box;
+            },
+
+            // 칩 줄이 폭보다 길면 가로로 움직인다 — 터치는 기본 스크롤, 마우스는 드래그 · 휠(세로 휠 → 가로)로.
+            // 가려진 쪽 끝에는 흐려지는 표시(data-l / data-r)를 둔다.
+            cxChipsScroll(box) {
+                const fade = () => {
+                    box.dataset.l = box.scrollLeft > 2 ? "1" : "0";
+                    box.dataset.r = box.scrollLeft + box.clientWidth < box.scrollWidth - 2 ? "1" : "0";
+                };
+                box.addEventListener("scroll", fade, { passive: true });
+                requestAnimationFrame(fade);
+                if (window.ResizeObserver) new ResizeObserver(fade).observe(box);
+                box.addEventListener("wheel", (e) => {
+                    if (box.scrollWidth <= box.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+                    e.preventDefault();
+                    box.scrollLeft += e.deltaY;
+                }, { passive: false });
+                let sx = 0, sl = 0, down = false, moved = false;
+                box.addEventListener("pointerdown", (e) => {
+                    if (e.pointerType !== "mouse" || e.button !== 0) return;
+                    down = true; moved = false; sx = e.clientX; sl = box.scrollLeft;
+                });
+                window.addEventListener("pointermove", (e) => {
+                    if (!down) return;
+                    const dx = e.clientX - sx;
+                    if (!moved && Math.abs(dx) > 5) { moved = true; box.classList.add("dragging"); }
+                    if (moved) box.scrollLeft = sl - dx;
+                });
+                window.addEventListener("pointerup", () => {
+                    if (!down) return;
+                    down = false;
+                    box.classList.remove("dragging");
+                });
+                // 끌었으면 놓을 때 칩이 눌리지 않게
+                box.addEventListener("click", (e) => { if (moved) { e.preventDefault(); e.stopImmediatePropagation(); moved = false; } }, true);
             },
 
             // 구분 탭(선택) + 칩 + 검색 돋보기를 한 도구줄로. o = { seg:[{key,label,count}], segCur, onSeg, chips, hasSearch, q, searchOn, onSearch, onQ }
