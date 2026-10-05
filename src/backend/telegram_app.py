@@ -4062,6 +4062,11 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     if not row:
         return
+    # (v4.0.7) 예고 시각이 없는 텍스트 예고(URL 도 없음)는 올리지 않는다 — 날짜만 있는 글은 후기·공연 안내
+    # 오탐이 많았고(09-29 미야코 「10/11は #バンドリ13thライブ」), 영상이 없어 라이브 추적도 못 한다.
+    if row.get("time_tbd"):
+        log.info("텍스트 예고 후보 — 시각·URL 모두 없음(날짜만) → 미등록")
+        return
     _preserve_raw("personal_schedule_candidate", raw, {"channel_key": channel_key, "tag": tag}, now_iso)
 
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
@@ -4072,7 +4077,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
                         detail="text-schedule skip: GROQ_API_KEY 미설정 — 최종확인 불가, 미등록", via=via)
         return
     from .llm import LLMClient
-    confirmed = True if _fown else LLMClient(groq_key).announces_own_broadcast(raw)
+    confirmed = True if _fown else LLMClient(groq_key).announces_own_broadcast(raw, unit_name=name)
     if confirmed is None:
         # LLM 5회 재시도 모두 실패(infra) — "예고 아님"으로 확인된 것과는 다르다, monitor 에 남긴다.
         log.warning("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
@@ -7419,7 +7424,7 @@ if __name__ == "__main__":
             _ANSWER = True
             def __init__(self, api_key):
                 pass
-            def announces_own_broadcast(self, text):
+            def announces_own_broadcast(self, text, unit_name=None):
                 return self._ANSWER
 
         _orig_llm_cls = _llm_mod.LLMClient
@@ -7454,6 +7459,19 @@ if __name__ == "__main__":
             pv12 = (g12.store.get(_PREVIEW_PATH) or {}).get("items") or []
             assert not pv12, pv12
             print("[OK] _maybe_personal_schedule (아라레 후기 실사례 + LLM no → 미등록, 오탐 방지)")
+
+            # (v4.0.7) 날짜만 있고 시각·URL 없음 → LLM 이 "yes" 여도 미등록 (09-29 미야코 10/11 공연 오탐 실사례)
+            _FakeAnnounceLLM._ANSWER = True
+            g12b = _FakeGH()
+            globals()["_make_gh"] = lambda: g12b
+            _maybe_personal_schedule(
+                "#ゆめみた交信中\n全体配信ありゃとうございました✨\n"
+                "そして10/11は #バンドリ13thライブ ❣",
+                tag=None, channel_key="miyako", name="미야코", handle="miyako_yumemita",
+                now_iso="2026-09-29T14:14:24Z",
+            )
+            assert not (g12b.store.get(_PREVIEW_PATH) or {}).get("items")
+            print("[OK] _maybe_personal_schedule (날짜만·시각/URL 없음 → LLM yes 여도 미등록)")
 
             # GROQ_API_KEY 없으면 LLM 호출 자체가 불가 → 안전한 실패(미등록)
             del os.environ["GROQ_API_KEY"]
