@@ -951,6 +951,77 @@
             #report-frame { height: calc(100dvh - var(--nav-h) - var(--safe-b) - 8rem) !important; }
             pre { max-height: 220px; }
         }
+
+        /* (v4.0.8) 목록 UI — 구분 탭 · 칩 필터 · 한 줄 요약 행 · PC 2단. 예고 / 소식 · 트윗 탭 공용 */
+        .cx-tools { position: sticky; top: 0; z-index: 20; background: var(--color-bg); border-bottom: 1px solid var(--color-border);
+            padding: 0.5rem 0 0.45rem; display: grid; gap: 0.45rem; margin-bottom: 0.25rem; }
+        .cx-seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; }
+        .cx-seg button { background: none; border: 0; border-radius: 0; color: var(--color-text-muted); min-height: 40px; padding: 0.2rem 0.5rem;
+            display: flex; justify-content: center; align-items: center; gap: 0.4rem; font-weight: 500; }
+        .cx-seg button + button { border-left: 1px solid var(--color-border); }
+        .cx-seg button[aria-selected="true"] { background: rgba(6, 182, 212, 0.12); color: var(--color-accent); font-weight: 700; }
+        .cx-cnt { font-size: 0.72rem; padding: 0 0.4rem; border-radius: 99px; background: #262626; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+        .cx-seg button[aria-selected="true"] .cx-cnt { background: rgba(6, 182, 212, 0.22); color: var(--color-accent); }
+        .cx-toolrow { display: flex; gap: 0.5rem; align-items: center; min-width: 0; }
+        .cx-chips { display: flex; gap: 0.4rem; overflow-x: auto; flex: 1; min-width: 0; padding-block: 2px; scrollbar-width: none; }
+        .cx-chips::-webkit-scrollbar { display: none; }
+        .cx-chip { flex: none; background: var(--color-bg-secondary); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: 99px;
+            min-height: 34px; padding: 0 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 500; }
+        .cx-chip[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); background: rgba(6, 182, 212, 0.12); }
+        .cx-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, #9a9a9a); flex: none; display: inline-block; }
+        .cx-sbtn { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; background: var(--color-bg-secondary); border: 1px solid var(--color-border); }
+        .cx-sbtn[aria-pressed="true"] { border-color: var(--color-accent); }
+        .cx-search { width: 100%; }
+
+        .cx-split { display: block; }
+        .cx-list { min-width: 0; }
+        .cx-detail { display: none; }
+        .cx-sect { position: sticky; top: var(--cx-th, 0px); z-index: 10; background: var(--color-bg); padding: 0.7rem 0.1rem 0.3rem;
+            font-size: 0.78rem; color: var(--color-text-muted); letter-spacing: 0.02em; display: flex; justify-content: space-between; align-items: center; }
+        .cx-sect button { background: none; color: var(--color-accent); border: 0; padding: 0 0.3rem; min-height: 32px; font-weight: 500; }
+        .cx-row { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 10px; margin-bottom: 0.4rem; overflow: hidden; }
+        .cx-row[aria-selected="true"] { border-color: var(--color-accent); }
+        .cx-row-h { width: 100%; text-align: left; background: none; border: 0; border-radius: 0; color: inherit; padding: 0.6rem 0.75rem; min-height: 44px;
+            display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.6rem; align-items: start; font-weight: 400; }
+        .cx-row-h:hover { background: rgba(255, 255, 255, 0.03); }
+        .cx-t { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+        .cx-m { color: var(--color-text-muted); font-size: 0.78rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem 0.5rem; margin-top: 0.15rem; }
+        .cx-chev { color: var(--color-text-muted); align-self: center; transition: transform 0.15s; }
+        .cx-row[data-open="true"] .cx-chev { transform: rotate(90deg); }
+        .cx-row-b { display: none; padding: 0 0.75rem 0.75rem; border-top: 1px dashed var(--color-border); }
+        .cx-row[data-open="true"] .cx-row-b { display: block; }
+        .cx-row .badge { padding: 1px 8px; font-size: 0.7rem; border-radius: 99px; white-space: nowrap; }
+        .cx-row .badge-collab { margin-left: 0; }
+        .cx-av { width: 28px; height: 28px; border-radius: 50%; background: var(--c, #9a9a9a); color: #111; font-weight: 700; font-size: 0.8rem; display: grid; place-items: center; }
+        .cx-body { display: grid; gap: 0.5rem; padding-top: 0.6rem; }
+        .cx-orig { color: var(--color-text-muted); font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow-y: auto; }
+        .cx-kv { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.25rem 0.6rem; margin: 0; font-size: 0.85rem; }
+        .cx-kv dt { color: var(--color-text-muted); }
+        .cx-kv dd { margin: 0; overflow-wrap: anywhere; }
+        .cx-acts { display: flex; gap: 0.5rem; margin-top: 0.25rem; }
+        .cx-btn { flex: 1; min-height: 44px; border-radius: 8px; }
+        .cx-btn-pri { background: var(--color-accent); border-color: var(--color-accent); color: #04222a; font-weight: 600; }
+        .cx-btn-dng { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.45); }
+        .cx-empty { text-align: center; color: var(--color-text-muted); padding: 2rem 1rem; border: 1px dashed var(--color-border); border-radius: 10px; margin-top: 0.6rem; }
+        .cx-more { width: 100%; min-height: 44px; background: none; border: 1px dashed var(--color-border); color: var(--color-accent); border-radius: 10px; margin-top: 0.2rem; }
+        .cx-ph { color: var(--color-text-muted); text-align: center; padding: 2.5rem 0.5rem; }
+        .cx-dt { font-weight: 700; margin-bottom: 0.4rem; overflow-wrap: anywhere; }
+        .cx-top { position: fixed; right: 0.9rem; bottom: 1.2rem; z-index: 150; width: 44px; height: 44px; min-height: 0; padding: 0; border-radius: 50%;
+            background: #2a2a2a; border: 1px solid var(--color-border); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); display: none; }
+        .cx-top.on { display: block; }
+        @media (max-width: 640px) {
+            .cx-top { bottom: calc(var(--nav-h, 3.6rem) + var(--safe-b, 0px) + 0.8rem); }
+        }
+        @media (min-width: 960px) {
+            .cx-split { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 1rem; align-items: start; }
+            .cx-detail { display: block; position: sticky; top: calc(var(--cx-th, 0px) + 0.6rem); margin-top: 0.7rem; background: var(--color-bg-secondary);
+                border: 1px solid var(--color-border); border-radius: 12px; padding: 0.9rem; max-height: calc(100vh - var(--cx-th, 0px) - 2rem); overflow-y: auto; }
+            .cx-row-b { display: none !important; }
+            .cx-chev { display: none; }
+            .cx-row-h { grid-template-columns: auto minmax(0, 1fr); }
+            .cx-top { display: none !important; }
+        }
+        @media (prefers-reduced-motion: reduce) { .cx-chev { transition: none; } }
 </style>
 </head>
 <body>
@@ -968,7 +1039,6 @@
 
     <!-- ════ 탭: 예고 ════ -->
     <div class="tab-content active" id="preview-tab">
-        <h2>예고</h2>
         <section class="gp-card" id="grp-pending" hidden aria-labelledby="gp-h">
             <div class="gp-head">
                 <h3 id="gp-h">그룹 영상 — 참여 멤버 확인 대기 <span class="gp-count" id="gp-count"></span></h3>
@@ -977,7 +1047,11 @@
             </div>
             <div class="gp-list" id="gp-list"></div>
         </section>
-        <div id="preview-list" class="loading">로드 중...</div>
+        <div class="cx-tools" id="pv-tools"></div>
+        <div class="cx-split">
+            <div class="cx-list"><div id="preview-list" class="loading">로드 중...</div></div>
+            <aside class="cx-detail" id="pv-detail"></aside>
+        </div>
     </div>
 
     <!-- ════ 탭: 원문 투입 ════ -->
@@ -1143,14 +1217,15 @@
 
     <!-- ════ 탭: 소식 · 트윗 ════ -->
     <div class="tab-content" id="content-tab">
-        <h2>행사 배너</h2>
-        <div id="banners-list" class="loading">로드 중...</div>
-
-        <h2 style="margin-top: 2rem;">소식</h2>
-        <div id="notices-list" class="loading">로드 중...</div>
-
-        <h2 style="margin-top: 2rem;">트윗</h2>
-        <div id="tweets-list" class="loading">로드 중...</div>
+        <div class="cx-tools" id="ct-tools"></div>
+        <div class="cx-split">
+            <div class="cx-list">
+                <div id="banners-list" class="loading" hidden>로드 중...</div>
+                <div id="notices-list" class="loading">로드 중...</div>
+                <div id="tweets-list" class="loading" hidden>로드 중...</div>
+            </div>
+            <aside class="cx-detail" id="ct-detail"></aside>
+        </div>
     </div>
 
     <!-- ════ 탭: 작업 ════ -->
@@ -1234,6 +1309,8 @@
     </div>
 
     <!-- ════ 참여 멤버 선택 팝업 (그룹 공식 채널 YouTube 영상 URL) ════ -->
+    <button type="button" class="cx-top" id="cx-top" aria-label="맨 위로">↑</button>
+
     <div class="modal" id="pick-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -1297,6 +1374,9 @@
             ingestPreviewData: null,
             ing: { mode: "auto", kind: "preview", host: "arale", collab: new Set(), thost: "arale" },
             channels: {},
+            // (v4.0.8) 목록 UI 상태 — 구분 탭 · 필터 · 검색 · 더 보기 · 펼침/선택 행(탭별 ns: b 행사 · n 소식 · t 트윗 · p 예고)
+            ui: { sub: "notices", nCat: "all", tUnit: "all", pUnit: "all", qc: "", qp: "", searchC: false, searchP: false,
+                  limit: { notices: 8, tweets: 8 }, pastOpen: false, open: {}, sel: {} },
 
             async init() {
                 // CSRF 토큰 가져오기
@@ -1326,6 +1406,21 @@
                         this.switchTab(e.currentTarget.dataset.tab);
                     });
                 });
+
+                // (v4.0.8) 화면 폭이 좁음↔넓음을 넘나들면 목록을 다시 그린다(펼침 ↔ 상세창) · 맨 위로 버튼
+                window.matchMedia("(min-width: 960px)").addEventListener("change", () => {
+                    this.ui.open = {};
+                    this.ui.sel = {};
+                    if (this.currentTab === "content") this.renderContentAll();
+                    else if (this.currentTab === "preview" && this.data.preview) this.renderPreview();
+                });
+                const topBtn = document.getElementById("cx-top");
+                if (topBtn) {
+                    topBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+                    window.addEventListener("scroll", () => {
+                        topBtn.classList.toggle("on", window.scrollY > 500 && (this.currentTab === "content" || this.currentTab === "preview"));
+                    }, { passive: true });
+                }
 
                 // (v4a) 원문 투입: 세부 탭(자동/수동) · 종류 · 입력이 바뀌면 이전 미리보기는 무효 —
                 // 안 그러면 다른 입력으로 본 미리보기를 보고 확정하게 된다
@@ -1460,6 +1555,7 @@
                 try {
                     const data = await this.apiCall("GET", "/list_preview");
                     this.data.preview = data;
+                    this.renderPreviewTools();
                     this.renderPreview();
                 } catch (e) {
                     const container = document.getElementById("preview-list");
@@ -1606,106 +1702,361 @@
                 this.loadGroupPending();
             },
 
+            // ─────────────────────────────────────────────────────────────────────
+            // (v4.0.8) 목록 UI 공통 — 구분 탭 · 칩 필터 · 검색 · 한 줄 요약 행 · PC 2단(목록 + 상세)
+            // 좁은 화면: 행을 누르면 그 자리에서 펼쳐진다(한 번에 한 행). 넓은 화면(≥960px): 오른쪽 상세창에 열린다.
+            // 수정 팝업 · 삭제 확인 팝업은 기존 그대로(editXxx / deleteXxx 호출).
+            // ─────────────────────────────────────────────────────────────────────
+
+            cxWide() { return window.matchMedia("(min-width: 960px)").matches; },
+
+            cxEl(tag, cls, text) {
+                const e = document.createElement(tag);
+                if (cls) e.className = cls;
+                if (text != null) e.textContent = text;
+                return e;
+            },
+
+            cxUnitColor(key) {
+                return { arale: "#f59e0b", yuno: "#38bdf8", nonoka: "#f472b6", ritsu: "#a78bfa", miyako: "#4ade80" }[key] || "#9a9a9a";
+            },
+
+            cxChips(options, cur, onPick, withDot) {
+                const box = this.cxEl("div", "cx-chips");
+                box.setAttribute("role", "group");
+                for (const [key, label] of options) {
+                    const b = this.cxEl("button", "cx-chip");
+                    b.type = "button";
+                    b.setAttribute("aria-pressed", String(cur === key));
+                    if (withDot && key !== "all") {
+                        const d = this.cxEl("span", "cx-dot");
+                        d.style.setProperty("--c", this.cxUnitColor(key));
+                        b.appendChild(d);
+                    }
+                    b.appendChild(document.createTextNode(label));
+                    b.onclick = () => onPick(key);
+                    box.appendChild(b);
+                }
+                return box;
+            },
+
+            // 구분 탭(선택) + 칩 + 검색 돋보기를 한 도구줄로. o = { seg:[{key,label,count}], segCur, onSeg, chips, hasSearch, q, searchOn, onSearch, onQ }
+            cxTools(host, o) {
+                host.textContent = "";
+                if (o.seg) {
+                    const seg = this.cxEl("div", "cx-seg");
+                    seg.setAttribute("role", "tablist");
+                    for (const s of o.seg) {
+                        const b = this.cxEl("button", "");
+                        b.type = "button";
+                        b.setAttribute("role", "tab");
+                        b.setAttribute("aria-selected", String(o.segCur === s.key));
+                        b.appendChild(document.createTextNode(s.label));
+                        b.appendChild(this.cxEl("span", "cx-cnt", String(s.count)));
+                        b.onclick = () => o.onSeg(s.key);
+                        seg.appendChild(b);
+                    }
+                    host.appendChild(seg);
+                }
+                if (o.chips || o.hasSearch) {
+                    const row = this.cxEl("div", "cx-toolrow");
+                    if (o.chips) row.appendChild(o.chips);
+                    else row.appendChild(this.cxEl("div", "cx-chips"));
+                    if (o.hasSearch) {
+                        const sb = this.cxEl("button", "cx-sbtn", "🔍");
+                        sb.type = "button";
+                        sb.setAttribute("aria-label", "검색");
+                        sb.setAttribute("aria-pressed", String(!!o.searchOn));
+                        sb.onclick = o.onSearch;
+                        row.appendChild(sb);
+                    }
+                    host.appendChild(row);
+                    if (o.hasSearch && o.searchOn) {
+                        const inp = this.cxEl("input", "cx-search");
+                        inp.type = "search";
+                        inp.placeholder = "제목 · 본문 검색";
+                        inp.value = o.q || "";
+                        inp.oninput = () => o.onQ(inp.value);
+                        host.appendChild(inp);
+                        inp.focus();
+                    }
+                }
+                document.documentElement.style.setProperty("--cx-th", host.offsetHeight + "px");
+            },
+
+            cxSect(label, btnText, onBtn) {
+                const s = this.cxEl("div", "cx-sect");
+                s.appendChild(this.cxEl("span", "", label));
+                if (btnText) {
+                    const b = this.cxEl("button", "", btnText);
+                    b.type = "button";
+                    b.onclick = onBtn;
+                    s.appendChild(b);
+                }
+                return s;
+            },
+
+            cxEmpty(text) { return this.cxEl("div", "cx-empty", text); },
+
+            cxMore(left, onClick) {
+                const b = this.cxEl("button", "cx-more", `더 보기 (${left}건 남음)`);
+                b.type = "button";
+                b.onclick = onClick;
+                return b;
+            },
+
+            cxDetailEl(ns) { return document.getElementById(ns === "p" ? "pv-detail" : "ct-detail"); },
+
+            cxClearDetail(ns) {
+                const d = this.cxDetailEl(ns);
+                if (!d) return;
+                d.textContent = "";
+                d.appendChild(this.cxEl("div", "cx-ph", "왼쪽에서 항목을 고르면 여기에 상세와 수정 · 삭제가 열립니다."));
+            },
+
+            // 펼침 본문 — o = { orig, kv:[[키, 값, 전체값(툴팁)]], onEdit, onDel, extra }
+            cxBody(o) {
+                const box = this.cxEl("div", "cx-body");
+                if (o.orig) box.appendChild(this.cxEl("div", "cx-orig", o.orig));
+                const dl = this.cxEl("dl", "cx-kv");
+                for (const [k, v, full] of (o.kv || [])) {
+                    if (v == null || v === "") continue;
+                    dl.appendChild(this.cxEl("dt", "", k));
+                    const dd = this.cxEl("dd", "", String(v));
+                    if (full) dd.title = full;
+                    dl.appendChild(dd);
+                }
+                box.appendChild(dl);
+                if (o.extra) box.appendChild(o.extra);
+                const acts = this.cxEl("div", "cx-acts");
+                const eb = this.cxEl("button", "cx-btn cx-btn-pri", "수정");
+                eb.type = "button";
+                eb.onclick = o.onEdit;
+                const db = this.cxEl("button", "cx-btn cx-btn-dng", "삭제");
+                db.type = "button";
+                db.onclick = o.onDel;
+                acts.appendChild(eb);
+                acts.appendChild(db);
+                box.appendChild(acts);
+                return box;
+            },
+
+            // 한 줄 요약 행. 반환: { el, selected } (selected = 넓은 화면에서 이전에 골라 둔 행이면 true)
+            cxRow(ns, id, lead, title, metaNodes, bodyFn) {
+                const row = this.cxEl("div", "cx-row");
+                row.dataset.id = String(id);
+                const head = this.cxEl("button", "cx-row-h");
+                head.type = "button";
+                head.appendChild(lead);
+                const mid = this.cxEl("div", "cx-mid");
+                mid.appendChild(this.cxEl("div", "cx-t", title));
+                const m = this.cxEl("div", "cx-m");
+                for (const n of metaNodes) if (n) m.appendChild(n);
+                mid.appendChild(m);
+                head.appendChild(mid);
+                const chev = this.cxEl("span", "cx-chev", "›");
+                chev.setAttribute("aria-hidden", "true");
+                head.appendChild(chev);
+                row.appendChild(head);
+                const body = this.cxEl("div", "cx-row-b");
+                row.appendChild(body);
+                row.dataset.open = "false";
+                head.setAttribute("aria-expanded", "false");
+
+                const wide = this.cxWide();
+                let selected = false;
+                if (wide && this.ui.sel[ns] === String(id)) {
+                    selected = true;
+                    row.setAttribute("aria-selected", "true");
+                } else if (!wide && this.ui.open[ns] === String(id)) {
+                    row.dataset.open = "true";
+                    head.setAttribute("aria-expanded", "true");
+                    body.appendChild(bodyFn());
+                }
+                head.onclick = () => {
+                    const sid = String(id);
+                    if (this.cxWide()) {
+                        this.ui.sel[ns] = sid;
+                        row.parentElement.querySelectorAll('.cx-row[aria-selected="true"]').forEach((r) => r.setAttribute("aria-selected", "false"));
+                        row.setAttribute("aria-selected", "true");
+                        this.cxFillDetail(ns, title, bodyFn);
+                        return;
+                    }
+                    const open = row.dataset.open !== "true";
+                    row.parentElement.querySelectorAll('.cx-row[data-open="true"]').forEach((r) => {
+                        r.dataset.open = "false";
+                        const h = r.querySelector(".cx-row-h");
+                        if (h) h.setAttribute("aria-expanded", "false");
+                    });
+                    this.ui.open[ns] = open ? sid : null;
+                    if (open) {
+                        row.dataset.open = "true";
+                        head.setAttribute("aria-expanded", "true");
+                        if (!body.firstChild) body.appendChild(bodyFn());
+                    }
+                };
+                return { el: row, selected, bodyFn, title };
+            },
+
+            cxFillDetail(ns, title, bodyFn) {
+                const d = this.cxDetailEl(ns);
+                if (!d) return;
+                d.textContent = "";
+                d.appendChild(this.cxEl("div", "cx-dt", title));
+                d.appendChild(bodyFn());
+            },
+
+            // 렌더 끝에서 호출 — 넓은 화면에서 골라 둔 행이 아직 있으면 상세를 다시 채우고, 없으면 비운다
+            cxFinish(ns, rows) {
+                if (!this.cxWide()) return;
+                const hit = rows.find((r) => r.selected);
+                if (hit) this.cxFillDetail(ns, hit.title, hit.bodyFn);
+                else { this.ui.sel[ns] = null; this.cxClearDetail(ns); }
+            },
+
+            cxKstToday() { return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); },
+
+            // ── 소식 · 트윗 탭 상단 도구줄 / 구분 탭 전환 ──
+            cxTweets() {
+                const out = [];
+                const src = (this.data.tweets && this.data.tweets.tweets) || {};
+                for (const [unit, list] of Object.entries(src)) {
+                    for (const t of (Array.isArray(list) ? list : [list])) if (t) out.push({ unit, tweet: t });
+                }
+                out.sort((a, b) => Date.parse(b.tweet.posted_at || b.tweet.received_at || 0) - Date.parse(a.tweet.posted_at || a.tweet.received_at || 0));
+                return out;
+            },
+
+            renderContentTools() {
+                const u = this.ui;
+                const host = document.getElementById("ct-tools");
+                if (!host) return;
+                const cn = {
+                    banners: ((this.data.banners && this.data.banners.banners) || []).length,
+                    notices: ((this.data.notices && this.data.notices.notices) || []).length,
+                    tweets: this.cxTweets().length,
+                };
+                const unitOpts = [["all", "전체"]].concat(Object.keys(this.channels || {}).filter((k) => this.cxUnitColor(k) !== "#9a9a9a")
+                    .map((k) => [k, (this.channels[k] || {}).name_ko || k]));
+                let chips = null;
+                if (u.sub === "notices") {
+                    chips = this.cxChips([["all", "전체"], ["live", "라이브예고"], ["release", "음반·굿즈"], ["platform", "타 플랫폼"], ["etc", "기타"]], u.nCat,
+                        (k) => { u.nCat = k; u.limit.notices = 8; u.open.n = null; u.sel.n = null; this.renderContentAll(); });
+                } else if (u.sub === "tweets") {
+                    chips = this.cxChips(unitOpts, u.tUnit,
+                        (k) => { u.tUnit = k; u.limit.tweets = 8; u.open.t = null; u.sel.t = null; this.renderContentAll(); }, true);
+                }
+                this.cxTools(host, {
+                    seg: [{ key: "banners", label: "행사", count: cn.banners }, { key: "notices", label: "소식", count: cn.notices }, { key: "tweets", label: "트윗", count: cn.tweets }],
+                    segCur: u.sub,
+                    onSeg: (k) => { u.sub = k; window.scrollTo({ top: 0 }); this.renderContentAll(); },
+                    chips,
+                    hasSearch: u.sub !== "banners",
+                    q: u.qc,
+                    searchOn: u.searchC,
+                    onSearch: () => { u.searchC = !u.searchC; this.renderContentTools(); },
+                    onQ: (v) => { u.qc = v; u.limit.notices = 8; u.limit.tweets = 8; this.renderContentList(); },
+                });
+            },
+
+            renderContentList() {
+                const sub = this.ui.sub;
+                for (const [k, id] of [["banners", "banners-list"], ["notices", "notices-list"], ["tweets", "tweets-list"]]) {
+                    const el = document.getElementById(id);
+                    if (el) el.hidden = k !== sub;
+                }
+                if (sub === "banners") this.renderBanners();
+                else if (sub === "notices") this.renderNotices();
+                else this.renderTweets();
+            },
+
+            renderContentAll() {
+                this.renderContentTools();
+                this.renderContentList();
+            },
+
+            // ── 예고 탭 상단 도구줄 ──
+            renderPreviewTools() {
+                const u = this.ui;
+                const host = document.getElementById("pv-tools");
+                if (!host) return;
+                const unitOpts = [["all", "전체"]].concat(Object.keys(this.channels || {}).filter((k) => this.cxUnitColor(k) !== "#9a9a9a")
+                    .map((k) => [k, (this.channels[k] || {}).name_ko || k]));
+                this.cxTools(host, {
+                    chips: this.cxChips(unitOpts, u.pUnit, (k) => { u.pUnit = k; u.open.p = null; u.sel.p = null; this.renderPreviewTools(); this.renderPreview(); }, true),
+                    hasSearch: true,
+                    q: u.qp,
+                    searchOn: u.searchP,
+                    onSearch: () => { u.searchP = !u.searchP; this.renderPreviewTools(); },
+                    onQ: (v) => { u.qp = v; this.renderPreview(); },
+                });
+            },
+
             renderPreview() {
                 const container = document.getElementById("preview-list");
                 container.classList.remove("loading");
                 container.textContent = "";
+                const u = this.ui;
 
                 if (!this.data.preview || !this.data.preview.items) {
-                    const p = document.createElement("p");
-                    p.textContent = "데이터 없음";
-                    container.appendChild(p);
+                    container.appendChild(this.cxEmpty("데이터 없음"));
+                    this.cxClearDetail("p");
+                    return;
+                }
+                const q = u.qp.trim().toLowerCase();
+                const items = this.data.preview.items.filter((it) =>
+                    (u.pUnit === "all" || it.channel_key === u.pUnit || (it.collab_with || []).includes(u.pUnit)) &&
+                    (!q || [it.title_ko, it.title, it.video_id].join("\n").toLowerCase().includes(q)));
+                if (!items.length) {
+                    container.appendChild(this.cxEmpty("조건에 맞는 예고가 없습니다."));
+                    this.cxClearDetail("p");
                     return;
                 }
 
-                // 채널별로 그룹화
-                const byChannel = {};
-                for (const item of this.data.preview.items) {
-                    const key = item.channel_key;
-                    if (!byChannel[key]) {
-                        byChannel[key] = [];
-                    }
-                    byChannel[key].push(item);
+                const ORDER = ["live", "watching", "upcoming", "announced", "end"];
+                const LABEL = { live: "라이브 중", watching: "곧 시작", upcoming: "방송 예정", announced: "예고", end: "종료" };
+                const groups = {};
+                for (const it of items) {
+                    const st = ORDER.includes(it.state) ? it.state : "end";
+                    (groups[st] = groups[st] || []).push(it);
                 }
-
-                // 채널 순서대로 렌더링
-                const channelOrder = this.data.preview.channel_order || [];
-                for (const key of channelOrder) {
-                    if (!byChannel[key]) continue;
-
-                    const h3 = document.createElement("h3");
-                    const chInfo = this.channels[key] || {};
-                    h3.textContent = chInfo.name_ko || key;
-                    container.appendChild(h3);
-
-                    for (const item of byChannel[key]) {
-                        const div = document.createElement("div");
-                        div.className = "list-item";
-
-                        const title = document.createElement("div");
-                        title.className = "list-item-title";
-
-                        const badge = document.createElement("span");
-                        badge.className = `badge ${this.stateBadge(item.state)}`;
-                        badge.textContent = item.state.toUpperCase();
-                        title.appendChild(badge);
-
-                        // (v4a) 합동: 팬 화면은 참여 멤버 레인마다 펼치지만, 여기선 수정·삭제 대상이
-                        // 1건임이 보이도록 주 레인에 1줄만 두고 참여 멤버를 배지로 적는다
+                const rows = [];
+                for (const st of ORDER) {
+                    const list = groups[st];
+                    if (!list) continue;
+                    list.sort((a, b) => Date.parse(a.scheduled_start || a.live_start || 0) - Date.parse(b.scheduled_start || b.live_start || 0));
+                    container.appendChild(this.cxSect(`${LABEL[st]} · ${list.length}건`));
+                    for (const item of list) {
+                        const key = item.channel_key;
+                        const who = (this.channels[key] || {}).name_ko || key;
+                        const lead = this.cxEl("span", "cx-av", who.slice(0, 1));
+                        lead.style.setProperty("--c", this.cxUnitColor(key));
+                        const metas = [this.cxEl("span", `badge ${this.stateBadge(item.state)}`, (item.state || "").toUpperCase()),
+                            this.cxEl("span", "", `${who} · ${this.formatTime(item.scheduled_start || item.live_start)}`)];
                         const collab = item.collab_with || [];
-                        if (collab.length || item.kind === "collab") {
-                            const cb = document.createElement("span");
-                            cb.className = "badge badge-collab";
+                        if (collab.length || item.kind === "collab") metas.push(this.cxEl("span", "badge badge-collab", item.host === "group" ? "그룹 합동" : "합동"));
+                        if (item.membership) metas.push(this.cxEl("span", "badge badge-collab", "회원 전용"));
+                        const title = item.title_ko || item.title || "제목 없음";
+                        const bodyFn = () => {
                             const names = [key, ...collab].map((k) => (this.channels[k] || {}).name_ko || k);
-                            cb.textContent = (item.host === "group" ? "그룹 채널 합동 · " : "합동 · ") + names.join("·");
-                            title.appendChild(cb);
-                        }
-
-                        if (item.membership) {
-                            const mb = document.createElement("span");
-                            mb.className = "badge badge-collab";
-                            mb.textContent = "회원 전용";
-                            title.appendChild(mb);
-                        }
-
-                        // 제목: 번역 우선, 원문은 아래 줄
-                        const titleSpan = document.createElement("span");
-                        titleSpan.textContent = item.title_ko || item.title || "제목 없음";
-                        titleSpan.style.marginLeft = "0.5rem";
-                        title.appendChild(titleSpan);
-                        if (item.title_ko && item.title && item.title_ko !== item.title) {
-                            const orig = document.createElement("div");
-                            orig.className = "list-item-sub";
-                            orig.textContent = item.title;
-                            title.appendChild(orig);
-                        }
-
-                        const meta = document.createElement("div");
-                        meta.className = "list-item-meta";
-                        meta.textContent = this.formatTime(item.scheduled_start || item.live_start) +
-                            (item.video_id ? ` · ${item.video_id}` : "");
-
-                        const actions = document.createElement("div");
-                        actions.className = "list-item-actions";
-
-                        const editBtn = document.createElement("button");
-                        editBtn.textContent = "수정";
-                        editBtn.style.backgroundColor = "var(--color-accent)";
-                        editBtn.onclick = () => this.editPreview(item);
-                        actions.appendChild(editBtn);
-
-                        const delBtn = document.createElement("button");
-                        delBtn.textContent = "삭제";
-                        delBtn.className = "danger";
-                        delBtn.onclick = () => this.deletePreview(item);
-                        actions.appendChild(delBtn);
-
-                        div.appendChild(title);
-                        div.appendChild(meta);
-                        div.appendChild(actions);
-                        container.appendChild(div);
+                            return this.cxBody({
+                                orig: item.title_ko && item.title && item.title_ko !== item.title ? item.title : "",
+                                kv: [["방송", this.formatTime(item.scheduled_start || item.live_start)],
+                                    ["상태", (item.state || "").toUpperCase()],
+                                    ["영상", item.video_id || "없음"],
+                                    ["멤버", collab.length ? names.join(" · ") + (item.host === "group" ? " (그룹 채널)" : "") : ""],
+                                    ["회원 전용", item.membership ? "예" : ""],
+                                    ["출처", item.source || ""]],
+                                onEdit: () => this.editPreview(item),
+                                onDel: () => this.deletePreview(item),
+                            });
+                        };
+                        const r = this.cxRow("p", item.id, lead, title, metas, bodyFn);
+                        rows.push(r);
+                        container.appendChild(r.el);
                     }
                 }
+                this.cxFinish("p", rows);
             },
 
             // (v4a) 수정 창 제목 칸 — 원문(+번역 버튼) / 한글 / 팬 화면 미리보기(메인 UI 와 같은 "한글　—　원문" 마퀴).
@@ -2685,9 +3036,7 @@
                     } catch (e) {
                         this.data.banners = { banners: [] };
                     }
-                    this.renderBanners();
-                    this.renderNotices();
-                    this.renderTweets();
+                    this.renderContentAll();
                 } catch (e) {
                     console.error("소식/트윗 로드 실패", e);
                 }
@@ -2725,57 +3074,38 @@
                 container.textContent = "";
                 const list = (this.data.banners && this.data.banners.banners) || [];
                 if (!list.length) {
-                    const p = document.createElement("p");
-                    p.textContent = "올라온 행사가 없습니다 (게임 계정 글에서 시작·종료일이 모두 확인되면 자동으로 올라옵니다)";
-                    container.appendChild(p);
+                    container.appendChild(this.cxEmpty("올라온 행사가 없습니다 (게임 계정 글에서 시작·종료일이 모두 확인되면 자동으로 올라옵니다)"));
+                    this.cxClearDetail("b");
                     return;
                 }
-                const LABEL = { live: "진행 중", announced: "예정", hold: "보류", done: "종료(자정까지 표시)", pending: "대기(시작을 모르거나 종료일 없이 이미 시작해 화면엔 안 보임)", gone: "종료(곧 정리)" };
+                const LABEL = { live: "진행 중", announced: "예정", hold: "보류", done: "종료", pending: "대기", gone: "종료(곧 정리)" };
+                const LONG = { done: "종료(자정까지 표시)", pending: "대기(시작을 모르거나 종료일 없이 이미 시작해 화면엔 안 보임)" };
                 const now = Date.now();
+                const rows = [];
                 for (const b of list) {
                     const st = this.bannerState(b, now);
-                    const div = document.createElement("div");
-                    div.className = "list-item";
-
-                    const title = document.createElement("div");
-                    title.className = "list-item-title";
-                    title.textContent = b.name_ko || b.name_ja || "이름 없음";
-                    if (b.name_ko && b.name_ja && b.name_ko !== b.name_ja) {
-                        const orig = document.createElement("div");
-                        orig.className = "list-item-sub";
-                        orig.textContent = b.name_ja;
-                        title.appendChild(orig);
-                    }
-
-                    const meta = document.createElement("div");
-                    meta.className = "list-item-meta";
-                    const hold = b.hold ? `보류 표시 ~ ${this.kstText(b.hold.until).slice(0, 10)}` : "";
-                    meta.textContent = [LABEL[st], `${this.kstText(b.start_at)} ~ ${this.kstText(b.end_at)} (KST)`, hold,
-                        `이미지 ${(b.image_urls || []).length}장`].filter(Boolean).join(" · ");
-                    div.appendChild(title);
-                    div.appendChild(meta);
-
-                    for (const g of (b.gachas || [])) {
-                        const gl = document.createElement("div");
-                        gl.className = "list-item-meta";
-                        gl.textContent = `가챠 · ${g.title_ko || g.title_ja}` + ((g.image_urls || []).length ? ` · 이미지 ${g.image_urls.length}장` : "");
-                        div.appendChild(gl);
-                    }
-
-                    const actions = document.createElement("div");
-                    actions.className = "list-item-actions";
-                    const editBtn = document.createElement("button");
-                    editBtn.textContent = "수정";
-                    editBtn.onclick = () => this.editBanner(b);
-                    actions.appendChild(editBtn);
-                    const delBtn = document.createElement("button");
-                    delBtn.textContent = "삭제";
-                    delBtn.className = "danger";
-                    delBtn.onclick = () => this.deleteBanner(b);
-                    actions.appendChild(delBtn);
-                    div.appendChild(actions);
-                    container.appendChild(div);
+                    const title = b.name_ko || b.name_ja || "이름 없음";
+                    const lead = this.cxEl("span", `badge ${st === "live" ? "badge-live" : st === "announced" ? "badge-announced" : "badge-end"}`, LABEL[st] || st);
+                    const metas = [this.cxEl("span", "", `${this.kstText(b.start_at).slice(5, 16)} ~ ${this.kstText(b.end_at).slice(5, 16)}`)];
+                    if (b.hold) metas.push(this.cxEl("span", "badge badge-collab", "보류"));
+                    const bodyFn = () => {
+                        const gachas = (b.gachas || []).map((g) => g.title_ko || g.title_ja).filter(Boolean);
+                        return this.cxBody({
+                            orig: b.name_ko && b.name_ja && b.name_ko !== b.name_ja ? b.name_ja : "",
+                            kv: [["상태", LONG[st] || LABEL[st] || st],
+                                ["기간", `${this.kstText(b.start_at)} ~ ${this.kstText(b.end_at)} (KST)`],
+                                ["보류", b.hold ? `~ ${this.kstText(b.hold.until).slice(0, 10)}` : ""],
+                                ["이미지", `${(b.image_urls || []).length}장`],
+                                ["가챠", gachas.join(" / ")]],
+                            onEdit: () => this.editBanner(b),
+                            onDel: () => this.deleteBanner(b),
+                        });
+                    };
+                    const r = this.cxRow("b", b.id, lead, title, metas, bodyFn);
+                    rows.push(r);
+                    container.appendChild(r.el);
                 }
+                this.cxFinish("b", rows);
             },
 
             // 행사 수정 창 — 「행사」 영역과 「가챠」 영역을 같은 모양의 패널로 나눈다(머리 배지 · 제목 · 기간 같은 순서). 행사 패널에만 이미지 링크 · 보류 해제가 있다.
@@ -3004,120 +3334,127 @@
                 const container = document.getElementById("notices-list");
                 container.classList.remove("loading");
                 container.textContent = "";
+                const u = this.ui;
+                const CAT = { live: "라이브예고", release: "음반·굿즈", platform: "타 플랫폼", etc: "기타" };
 
-                if (!this.data.notices || !this.data.notices.notices) {
-                    const p = document.createElement("p");
-                    p.textContent = "소식 없음";
-                    container.appendChild(p);
+                const all = (this.data.notices && this.data.notices.notices) || [];
+                if (!all.length) {
+                    container.appendChild(this.cxEmpty("소식 없음"));
+                    this.cxClearDetail("n");
+                    return;
+                }
+                const q = u.qc.trim().toLowerCase();
+                const items = all.filter((n) => (u.nCat === "all" || n.category === u.nCat) &&
+                    (!q || [n.title_ko, n.title, n.body_ko].join("\n").toLowerCase().includes(q)));
+                if (!items.length) {
+                    container.appendChild(this.cxEmpty("조건에 맞는 소식이 없습니다."));
+                    this.cxClearDetail("n");
                     return;
                 }
 
-                for (const notice of this.data.notices.notices) {
-                    const div = document.createElement("div");
-                    div.className = "list-item";
+                const today = this.cxKstToday();
+                const dated = (n) => /^\d{4}-\d{2}-\d{2}/.test(n.date || "");
+                const diff = (n) => Math.round((Date.parse(n.date.slice(0, 10)) - Date.parse(today)) / 86400000);
+                const current = items.filter((n) => !dated(n) || n.date.slice(0, 10) >= today)
+                    .sort((a, b) => (dated(a) ? a.date : "9999").localeCompare(dated(b) ? b.date : "9999"));
+                const past = items.filter((n) => dated(n) && n.date.slice(0, 10) < today)
+                    .sort((a, b) => b.date.localeCompare(a.date));
+                const groups = [
+                    [`오늘 · ${today.slice(5).replace("-", "/")}`, current.filter((n) => dated(n) && diff(n) === 0)],
+                    ["이번 주", current.filter((n) => dated(n) && diff(n) > 0 && diff(n) <= 7)],
+                    ["그 이후", current.filter((n) => dated(n) && diff(n) > 7)],
+                    ["날짜 없음", current.filter((n) => !dated(n))],
+                ];
 
-                    const title = document.createElement("div");
-                    title.className = "list-item-title";
-                    title.textContent = notice.title_ko || notice.title || "제목 없음";
-                    if (notice.title_ko && notice.title && notice.title_ko !== notice.title) {
-                        const orig = document.createElement("div");
-                        orig.className = "list-item-sub";
-                        orig.textContent = notice.title;
-                        title.appendChild(orig);
-                    }
+                const rows = [];
+                const addRow = (n) => {
+                    const lead = this.cxEl("span", "badge badge-end", dated(n) ? n.date.slice(5, 10).replace("-", "/") : "—");
+                    const metas = [this.cxEl("span", "badge badge-end", CAT[n.category] || "기타")];
+                    const title = n.title_ko || n.title || "제목 없음";
+                    const bodyFn = () => {
+                        let full = n.url || "";
+                        try { full = decodeURI(full); } catch (e) { /* 원문 그대로 */ }
+                        const extra = n.body_ko ? this.cxEl("div", "cx-orig", n.body_ko) : null;
+                        return this.cxBody({
+                            orig: n.title_ko && n.title && n.title_ko !== n.title ? n.title : "",
+                            extra,
+                            kv: [["날짜", n.date || "날짜 없음"], ["시각", n.time || ""], ["분류", CAT[n.category] || "기타"],
+                                ["주소", n.url ? this.displayUrl(n.url, 60) : "", full],
+                                ["트윗", n.tweet_url || ""]],
+                            onEdit: () => this.editNotice(n),
+                            onDel: () => this.deleteNotice(n),
+                        });
+                    };
+                    const r = this.cxRow("n", n.id, lead, title, metas, bodyFn);
+                    rows.push(r);
+                    container.appendChild(r.el);
+                };
 
-                    const meta = document.createElement("div");
-                    meta.className = "list-item-meta";
-                    meta.textContent = [notice.date || "날짜 없음", notice.category,
-                                        notice.url && this.displayUrl(notice.url)]
-                        .filter(Boolean).join(" · ");
-                    if (notice.url) {
-                        let full = notice.url;
-                        try { full = decodeURI(notice.url); } catch (e) { /* 원문 그대로 */ }
-                        meta.title = full;
-                    }
-
-                    const actions = document.createElement("div");
-                    actions.className = "list-item-actions";
-
-                    const editBtn = document.createElement("button");
-                    editBtn.textContent = "수정";
-                    editBtn.onclick = () => this.editNotice(notice);
-                    actions.appendChild(editBtn);
-
-                    const delBtn = document.createElement("button");
-                    delBtn.textContent = "삭제";
-                    delBtn.className = "danger";
-                    delBtn.onclick = () => this.deleteNotice(notice);
-                    actions.appendChild(delBtn);
-
-                    div.appendChild(title);
-                    div.appendChild(meta);
-                    div.appendChild(actions);
-                    container.appendChild(div);
+                let shown = 0;
+                const lim = u.limit.notices;
+                const total = current.length;
+                for (const [label, list] of groups) {
+                    if (!list.length || shown >= lim) continue;
+                    const part = list.slice(0, lim - shown);
+                    shown += part.length;
+                    container.appendChild(this.cxSect(`${label} · ${list.length}건`));
+                    part.forEach(addRow);
                 }
+                if (shown < total) container.appendChild(this.cxMore(total - shown, () => { u.limit.notices += 8; this.renderNotices(); }));
+                if (past.length) {
+                    container.appendChild(this.cxSect(`지난 소식 · ${past.length}건`, u.pastOpen ? "접기" : "펼치기",
+                        () => { u.pastOpen = !u.pastOpen; this.renderNotices(); }));
+                    if (u.pastOpen) past.forEach(addRow);
+                }
+                this.cxFinish("n", rows);
             },
+
 
             renderTweets() {
                 const container = document.getElementById("tweets-list");
                 container.classList.remove("loading");
                 container.textContent = "";
+                const u = this.ui;
 
-                if (!this.data.tweets || !this.data.tweets.tweets) {
-                    const p = document.createElement("p");
-                    p.textContent = "트윗 없음";
-                    container.appendChild(p);
+                const all = this.cxTweets();
+                if (!all.length) {
+                    container.appendChild(this.cxEmpty("트윗 없음"));
+                    this.cxClearDetail("t");
+                    return;
+                }
+                const q = u.qc.trim().toLowerCase();
+                const items = all.filter(({ unit, tweet }) => (u.tUnit === "all" || unit === u.tUnit) &&
+                    (!q || [tweet.text_ko, tweet.text].join("\n").toLowerCase().includes(q)));
+                if (!items.length) {
+                    container.appendChild(this.cxEmpty("조건에 맞는 트윗이 없습니다."));
+                    this.cxClearDetail("t");
                     return;
                 }
 
-                for (const [unit, tweetList] of Object.entries(this.data.tweets.tweets)) {
-                    const h4 = document.createElement("h4");
-                    const chName = this.channels[unit]?.name_ko || unit;
-                    h4.textContent = chName;
-                    container.appendChild(h4);
-
-                    for (const tweet of (Array.isArray(tweetList) ? tweetList : [tweetList])) {
-                        if (!tweet) continue;
-
-                        const div = document.createElement("div");
-                        div.className = "list-item";
-
-                        const title = document.createElement("div");
-                        title.className = "list-item-title";
-                        title.textContent = (tweet.text_ko || tweet.text || "(본문 없음)").substring(0, 140);
-                        if (tweet.text_ko && tweet.text) {
-                            const orig = document.createElement("div");
-                            orig.className = "list-item-sub";
-                            orig.textContent = tweet.text.substring(0, 140);
-                            title.appendChild(orig);
-                        }
-
-                        const meta = document.createElement("div");
-                        meta.className = "list-item-meta";
-                        // 트윗 항목엔 created_at 이 없다 — 받은 시각(received_at)
-                        meta.textContent = `받음 ${this.formatTime(tweet.received_at)}` +
-                            (tweet.text_ko ? "" : " · 번역 없음");
-
-                        const actions = document.createElement("div");
-                        actions.className = "list-item-actions";
-
-                        const editBtn = document.createElement("button");
-                        editBtn.textContent = "수정";
-                        editBtn.onclick = () => this.editTweet(unit, tweet);
-                        actions.appendChild(editBtn);
-
-                        const delBtn = document.createElement("button");
-                        delBtn.textContent = "삭제";
-                        delBtn.className = "danger";
-                        delBtn.onclick = () => this.deleteTweet(unit, tweet);
-                        actions.appendChild(delBtn);
-
-                        div.appendChild(title);
-                        div.appendChild(meta);
-                        div.appendChild(actions);
-                        container.appendChild(div);
-                    }
+                container.appendChild(this.cxSect(`최근 트윗 · ${items.length}건`));
+                const rows = [];
+                const part = items.slice(0, u.limit.tweets);
+                for (const { unit, tweet } of part) {
+                    const who = (this.channels[unit] || {}).name_ko || unit;
+                    const lead = this.cxEl("span", "cx-av", who.slice(0, 1));
+                    lead.style.setProperty("--c", this.cxUnitColor(unit));
+                    const when = this.formatTime(tweet.posted_at || tweet.received_at);
+                    const metas = [this.cxEl("span", "", `${who} · ${when}`)];
+                    if (!tweet.text_ko) metas.push(this.cxEl("span", "badge badge-announced", "번역 없음"));
+                    const title = (tweet.text_ko || tweet.text || "(본문 없음)").substring(0, 140);
+                    const bodyFn = () => this.cxBody({
+                        orig: tweet.text || "",
+                        kv: [["작성", who], [tweet.posted_at ? "게시" : "받음", when], ["번역", tweet.text_ko ? "있음" : "없음"],
+                            ["주소", tweet.url ? this.displayUrl(tweet.url, 60) : "", tweet.url || ""]],
+                        onEdit: () => this.editTweet(unit, tweet),
+                        onDel: () => this.deleteTweet(unit, tweet),
+                    });
+                    const r = this.cxRow("t", tweet.id, lead, title, metas, bodyFn);
+                    rows.push(r);
+                    container.appendChild(r.el);
                 }
+                if (part.length < items.length) container.appendChild(this.cxMore(items.length - part.length, () => { u.limit.tweets += 8; this.renderTweets(); }));
+                this.cxFinish("t", rows);
             },
 
             editNotice(notice) {
