@@ -311,7 +311,7 @@ class LLMClient:
         logger.warning("participation: 5회 모두 실패 — None (호출부 미등록 처리)")
         return None
 
-    def announces_own_broadcast(self, text_ja: str) -> bool | None:
+    def announces_own_broadcast(self, text_ja: str, unit_name: str | None = None) -> bool | None:
         """
         (v3.6) 트윗 원문이 작성자 본인이 추후 진행할 방송을 예고하는 글인지 최종 확인.
 
@@ -323,6 +323,7 @@ class LLMClient:
 
         Args:
             text_ja: 트윗 원문(원어 그대로)
+            unit_name: 작성자(유닛) 이름 — 프롬프트에 넣어 "이 사람의 유튜브 방송"으로 좁힌다
 
         Returns:
             True/False 또는 5회 모두 실패 시 None
@@ -332,9 +333,17 @@ class LLMClient:
             return None
 
         masked_text, _mapping = _mask_glossary(text_ja or "")
+        who = f"{unit_name}의" if unit_name else "작성자 본인의"
+        # (v4.0.7) 스크리닝을 타이트하게 — 09-29 미야코 「10/11は #バンドリ13thライブ」(후기 + 공연 날짜)가 통과했다.
         prompt = (
             f"다음은 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
-            f"질문: 작성자는 추후 진행할 방송을 예고하는 글을 썼니? JSON 포맷만 출력.\n\n"
+            f"질문: 이 글은 {who} 유튜브 방송(라이브·프리미어)을 앞으로 진행하겠다고 알리는 예고인가? "
+            f"아래에 해당하면 전부 false 로 답한다(스크리닝).\n"
+            f"- 이미 끝난 방송의 후기·감사 인사·회고 (예: 「配信ありがとうございました」)\n"
+            f"- {who} 유튜브 방송이 아닌 것: 라이브 공연·콘서트·이벤트·발매·굿즈·게임/애니 소식·타 플랫폼 방송\n"
+            f"- 날짜가 나와도 그 날짜가 {who} 유튜브 방송 일정이 아닌 경우 (공연 날짜, 발매일, 마감일 등)\n"
+            f"- 다른 사람의 방송 홍보, 잡담, 시각·일정이 불분명한 「また配信します」 수준의 언급\n"
+            f"{who} 유튜브 방송을 하겠다는 것이 글에서 분명할 때만 true. 애매하면 false. JSON 포맷만 출력.\n\n"
             f'{{"announces": <true 또는 false>}}'
         )
 
