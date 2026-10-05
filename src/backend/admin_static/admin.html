@@ -493,7 +493,7 @@
             font-size: 0.8rem;
             color: var(--color-text-muted);
         }
-        .tl-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.35rem; }
+        .tl-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-width: 6rem; } /* 「번역 → 번역 중 + 회전 아이콘」으로 글자가 바뀌어도 폭이 변하지 않게 */
         .tl-btn .spinner {
             display: none;
             width: 0.85rem;
@@ -615,7 +615,8 @@
         /* 로딩 상태 */
         [hidden] { display: none !important; }
 
-        .loading {
+        /* 목록 자리표시(「로드 중…」) 전용 — 버튼이 쓰는 loading 클래스(번역 중 등)는 제외해야 버튼이 부풀지 않는다 */
+        .loading:not(button) {
             text-align: center;
             padding: 2rem;
             color: var(--color-text-muted);
@@ -968,7 +969,9 @@
         .cx-chip { flex: none; background: var(--color-bg-secondary); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: 99px;
             min-height: 34px; padding: 0 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 500; }
         .cx-chip[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); background: rgba(6, 182, 212, 0.12); }
-        .cx-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, #9a9a9a); flex: none; display: inline-block; }
+        .cx-ico { width: 22px; height: 22px; border-radius: 50%; background: var(--c, #333) center / cover no-repeat; flex: none; display: inline-block; }
+        .cx-ico.lg { width: 30px; height: 30px; }
+        .cx-chip:has(.cx-ico), .ing-card .chip:has(.cx-ico), #pick-body .chip:has(.cx-ico) { padding-left: 0.35rem; display: inline-flex; align-items: center; gap: 0.4rem; }
         .cx-sbtn { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; background: var(--color-bg-secondary); border: 1px solid var(--color-border); }
         .cx-sbtn[aria-pressed="true"] { border-color: var(--color-accent); }
         .cx-search { width: 100%; }
@@ -992,7 +995,6 @@
         .cx-row[data-open="true"] .cx-row-b { display: block; }
         .cx-row .badge { padding: 1px 8px; font-size: 0.7rem; border-radius: 99px; white-space: nowrap; }
         .cx-row .badge-collab { margin-left: 0; }
-        .cx-av { width: 28px; height: 28px; border-radius: 50%; background: var(--c, #9a9a9a); color: #111; font-weight: 700; font-size: 0.8rem; display: grid; place-items: center; }
         .cx-body { display: grid; gap: 0.5rem; padding-top: 0.6rem; }
         .cx-orig { color: var(--color-text-muted); font-size: 0.85rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow-y: auto; }
         .cx-kv { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.25rem 0.6rem; margin: 0; font-size: 0.85rem; }
@@ -1022,6 +1024,13 @@
             .cx-top { display: none !important; }
         }
         @media (prefers-reduced-motion: reduce) { .cx-chev { transition: none; } }
+        /* (v4.0.8) 쓰기 요청 대기 — 누른 버튼 가운데에 회전 아이콘, 글자는 숨겨 버튼 폭은 그대로 */
+        button.is-busy-rel { position: relative; }
+        button.is-busy { color: transparent !important; overflow: hidden; padding-block: 0; padding-inline: 0; box-sizing: border-box; pointer-events: none; cursor: progress; }
+        button.is-busy::after { content: ""; position: absolute; left: 50%; top: 50%; width: 1.05em; height: 1.05em; margin: -0.525em 0 0 -0.525em;
+            border: 2px solid var(--busy-c, #fff); border-right-color: transparent; border-radius: 50%; animation: cx-spin 0.7s linear infinite; }
+        @keyframes cx-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { button.is-busy::after { animation-duration: 2s; } }
 </style>
 </head>
 <body>
@@ -1400,12 +1409,24 @@
                     console.error("채널 정보 로드 실패", e);
                 }
 
+                this.cxEnsureAvatars();   // 멤버 아이콘(채널 프로필)용 — 비동기, 늦게 와도 cxPaintIcons 가 채운다
+
                 // 탭 네비게이션
                 document.querySelectorAll(".tab-btn").forEach((btn) => {
                     btn.addEventListener("click", (e) => {
                         this.switchTab(e.currentTarget.dataset.tab);
                     });
                 });
+
+                // (v4.0.8) 누른 버튼 기록(대기 표시용) + 대기 중인 버튼의 중복 클릭 차단
+                this._trail = [];
+                document.addEventListener("click", (e) => {
+                    const b = e.target.closest && e.target.closest("button");
+                    if (!b) return;
+                    if (b.classList.contains("is-busy")) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+                    this._trail.unshift({ el: b, t: Date.now() });
+                    if (this._trail.length > 4) this._trail.length = 4;
+                }, true);
 
                 // (v4.0.8) 화면 폭이 좁음↔넓음을 넘나들면 목록을 다시 그린다(펼침 ↔ 상세창) · 맨 위로 버튼
                 window.matchMedia("(min-width: 960px)").addEventListener("change", () => {
@@ -1520,30 +1541,74 @@
                 setTimeout(() => toast.remove(), 3000);
             },
 
-            async apiCall(method, endpoint, body) {
-                const opts = {
-                    method,
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
+            // (v4.0.8) 쓰기(POST) 요청이 끝날 때까지 누른 버튼에 대기 표시(회전 아이콘 + 중복 클릭 차단).
+            // 누른 버튼은 capture 클릭 기록(_trail)으로 찾는다 — 삭제처럼 「행 버튼 → 확인 팝업 → 확인」 흐름은
+            // 팝업이 닫힌 뒤엔 확인 버튼이 안 보이므로, 지금 보이는 가장 최근 버튼(= 행의 삭제 버튼)에 표시한다.
+            cxTriggerBtn() {
+                const t = this._trail || [];
+                if (!t.length || Date.now() - t[0].t > 5000) return null;
+                const hit = t.find((x) => x.el.isConnected && x.el.getClientRects().length > 0);
+                return hit ? hit.el : null;
+            },
+
+            cxBusyStart(btn) {
+                // 자체 대기 표시(.loading + 안쪽 .spinner)를 쓰는 버튼(번역 · 되돌리기 등)은 겹치지 않게 건너뛴다
+                if (!btn || btn.matches(".tl-btn, .fllm-row button") || btn.classList.contains("loading")) return () => {};
+                let on = false;
+                const prev = { w: btn.style.width, h: btn.style.height };
+                const timer = setTimeout(() => {   // 120ms 안에 끝나는 요청엔 깜빡임 없이
+                    if (!btn.isConnected || btn.classList.contains("loading")) return;
+                    on = true;
+                    const cs = getComputedStyle(btn);
+                    const r = btn.getBoundingClientRect();
+                    btn.style.setProperty("--busy-c", cs.color);
+                    // 표시 중에도 버튼 크기가 변하지 않게 지금 크기로 고정, 위치 기준이 필요하면(static 일 때만) relative
+                    btn.style.width = r.width + "px";
+                    btn.style.height = r.height + "px";
+                    if (cs.position === "static") btn.classList.add("is-busy-rel");
+                    btn.classList.add("is-busy");
+                    btn.setAttribute("aria-busy", "true");
+                }, 120);
+                return () => {
+                    clearTimeout(timer);
+                    if (!on) return;
+                    btn.classList.remove("is-busy", "is-busy-rel");
+                    btn.removeAttribute("aria-busy");
+                    btn.style.removeProperty("--busy-c");
+                    btn.style.width = prev.w;
+                    btn.style.height = prev.h;
                 };
+            },
 
-                if (body) {
-                    opts.body = JSON.stringify(body);
+            async apiCall(method, endpoint, body) {
+                const endBusy = method === "POST" ? this.cxBusyStart(this.cxTriggerBtn()) : null;
+                try {
+                    const opts = {
+                        method,
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                    };
+
+                    if (body) {
+                        opts.body = JSON.stringify(body);
+                    }
+
+                    if (method === "POST") {
+                        opts.headers["X-CSRF-Token"] = this.csrfToken;
+                    }
+
+                    const resp = await fetch(`/admin/api${endpoint}`, opts);
+                    const data = await resp.json();
+
+                    if (!resp.ok) {
+                        throw new Error(data.error || "요청 실패");
+                    }
+
+                    return data;
+                } finally {
+                    if (endBusy) endBusy();
                 }
-
-                if (method === "POST") {
-                    opts.headers["X-CSRF-Token"] = this.csrfToken;
-                }
-
-                const resp = await fetch(`/admin/api${endpoint}`, opts);
-                const data = await resp.json();
-
-                if (!resp.ok) {
-                    throw new Error(data.error || "요청 실패");
-                }
-
-                return data;
             },
 
             // ─────────────────────────────────────────────────────────────────────
@@ -1721,6 +1786,41 @@
                 return { arale: "#f59e0b", yuno: "#38bdf8", nonoka: "#f472b6", ritsu: "#a78bfa", miyako: "#4ade80" }[key] || "#9a9a9a";
             },
 
+            // 멤버 아이콘 — 메인 화면 레인 헤더와 같은 채널 프로필(preview.json channels[key].avatar, =s88).
+            // 아직 못 받았으면 멤버 색 원으로 두었다가 받으면 cxPaintIcons 가 이미지로 바꾼다. size: "" | "lg"
+            cxAvatarUrl(key) {
+                const ch = this.data.preview && this.data.preview.channels && this.data.preview.channels[key];
+                return ch && typeof ch.avatar === "string" ? ch.avatar.replace(/=s\d+/, "=s88") : "";
+            },
+
+            cxUnitIcon(key, size) {
+                const e = this.cxEl("span", "cx-ico" + (size ? " " + size : ""));
+                e.dataset.unit = key;
+                e.setAttribute("aria-hidden", "true");
+                e.style.setProperty("--c", this.cxUnitColor(key));
+                const url = this.cxAvatarUrl(key);
+                if (url) e.style.backgroundImage = `url("${url}")`;
+                return e;
+            },
+
+            cxPaintIcons() {
+                document.querySelectorAll(".cx-ico[data-unit]").forEach((e) => {
+                    const url = this.cxAvatarUrl(e.dataset.unit);
+                    if (url) e.style.backgroundImage = `url("${url}")`;
+                });
+            },
+
+            // 아바타 URL 은 preview.json 에 있다 — 예고 탭을 거치지 않고 다른 탭을 먼저 열어도 되게 한 번만 받아 온다
+            async cxEnsureAvatars() {
+                if (this._avatarReq || (this.data.preview && this.data.preview.channels)) return;
+                this._avatarReq = true;
+                try {
+                    const pv = await this.apiCall("GET", "/list_preview");
+                    if (!this.data.preview) this.data.preview = pv;
+                    this.cxPaintIcons();
+                } catch (e) { /* 색 원으로 계속 */ }
+            },
+
             cxChips(options, cur, onPick, withDot) {
                 const box = this.cxEl("div", "cx-chips");
                 box.setAttribute("role", "group");
@@ -1728,11 +1828,7 @@
                     const b = this.cxEl("button", "cx-chip");
                     b.type = "button";
                     b.setAttribute("aria-pressed", String(cur === key));
-                    if (withDot && key !== "all") {
-                        const d = this.cxEl("span", "cx-dot");
-                        d.style.setProperty("--c", this.cxUnitColor(key));
-                        b.appendChild(d);
-                    }
+                    if (withDot && key !== "all") b.appendChild(this.cxUnitIcon(key));
                     b.appendChild(document.createTextNode(label));
                     b.onclick = () => onPick(key);
                     box.appendChild(b);
@@ -1931,6 +2027,7 @@
                 const u = this.ui;
                 const host = document.getElementById("ct-tools");
                 if (!host) return;
+                this.cxEnsureAvatars();
                 const cn = {
                     banners: ((this.data.banners && this.data.banners.banners) || []).length,
                     notices: ((this.data.notices && this.data.notices.notices) || []).length,
@@ -2029,8 +2126,7 @@
                     for (const item of list) {
                         const key = item.channel_key;
                         const who = (this.channels[key] || {}).name_ko || key;
-                        const lead = this.cxEl("span", "cx-av", who.slice(0, 1));
-                        lead.style.setProperty("--c", this.cxUnitColor(key));
+                        const lead = this.cxUnitIcon(key, "lg");
                         const metas = [this.cxEl("span", `badge ${this.stateBadge(item.state)}`, (item.state || "").toUpperCase()),
                             this.cxEl("span", "", `${who} · ${this.formatTime(item.scheduled_start || item.live_start)}`)];
                         const collab = item.collab_with || [];
@@ -2287,7 +2383,11 @@
                     cb.value = k;
                     cb.checked = collabSet.has(k);
                     lab.appendChild(cb);
-                    lab.appendChild(document.createTextNode(" " + nameOf(k)));
+                    const ic = this.cxUnitIcon(k);
+                    ic.style.verticalAlign = "middle";
+                    ic.style.margin = "0 0.35rem 0 0.15rem";
+                    lab.appendChild(ic);
+                    lab.appendChild(document.createTextNode(nameOf(k)));
                     members.appendChild(lab);
                 }
                 collabCheck.onchange = () => {
@@ -2474,7 +2574,8 @@
                     const b = document.createElement("button");
                     b.type = "button";
                     b.className = "chip" + (opts.main && !extra ? " main" : "");
-                    b.textContent = label;
+                    if (key) b.appendChild(this.cxUnitIcon(key));
+                    b.appendChild(document.createTextNode(label));
                     b.setAttribute("aria-pressed", String(isOn(key)));
                     if (opts.disabled && opts.disabled(key)) b.disabled = true;
                     b.addEventListener("click", () => onClick(key));
@@ -2635,7 +2736,8 @@
                     const b = document.createElement("button");
                     b.type = "button";
                     b.className = "chip";
-                    b.textContent = n;
+                    b.appendChild(this.cxUnitIcon(k));
+                    b.appendChild(document.createTextNode(n));
                     b.setAttribute("aria-pressed", String(suggested.has(k)));
                     b.addEventListener("click", () => {
                         this.pickSel.has(k) ? this.pickSel.delete(k) : this.pickSel.add(k);
@@ -3436,8 +3538,7 @@
                 const part = items.slice(0, u.limit.tweets);
                 for (const { unit, tweet } of part) {
                     const who = (this.channels[unit] || {}).name_ko || unit;
-                    const lead = this.cxEl("span", "cx-av", who.slice(0, 1));
-                    lead.style.setProperty("--c", this.cxUnitColor(unit));
+                    const lead = this.cxUnitIcon(unit, "lg");
                     const when = this.formatTime(tweet.posted_at || tweet.received_at);
                     const metas = [this.cxEl("span", "", `${who} · ${when}`)];
                     if (!tweet.text_ko) metas.push(this.cxEl("span", "badge badge-announced", "번역 없음"));
