@@ -147,8 +147,8 @@ function tagsFor(entry, state) {
 
 function placeholderThumb(cls, ch) {
   const d = el("div", `${cls} tt-ph`);
-  const a = el("span", "lane__avatar tt-ph__ava");
-  if (ch && ch.avatar) a.style.backgroundImage = `url("${avatarSized(ch.avatar, 88)}")`;
+  const a = el("span", "tt-ava tt-ph__ava");
+  if (ch && ch.avatar) a.style.backgroundImage = `url("${avatarSized(ch.avatar, 176)}")`;
   d.appendChild(a);
   return d;
 }
@@ -199,8 +199,8 @@ function showCardPop(entry, state, owner, pin, ctx) {
   if (it.thumbnail && !it.membership) img.style.backgroundImage = `url("${it.thumbnail}")`;
   else {
     img.classList.add("tt-ph");
-    const pa = el("span", "lane__avatar tt-ph__ava");
-    if (ch.avatar) pa.style.backgroundImage = `url("${avatarSized(ch.avatar, 88)}")`;
+    const pa = el("span", "tt-ava tt-ph__ava");
+    if (ch.avatar) pa.style.backgroundImage = `url("${avatarSized(ch.avatar, 176)}")`;
     img.appendChild(pa);
   }
   cpop.appendChild(img);
@@ -210,9 +210,9 @@ function showCardPop(entry, state, owner, pin, ctx) {
   const keys = itemKeys(it, ctx.order);
   const faces = el("span", "tt-faces");
   for (const k of keys) {
-    const a = el("span", "lane__avatar tt-face");
+    const a = el("span", "tt-face");
     const c = ctx.channels[k];
-    if (c && c.avatar) a.style.backgroundImage = `url("${avatarSized(c.avatar, 88)}")`;
+    if (c && c.avatar) a.style.backgroundImage = `url("${avatarSized(c.avatar, 176)}")`;
     faces.appendChild(a);
   }
   nm.append(faces, el("b", "", keys.map((k) => shortName(ctx.channels[k])).join(" · ") || shortName(ch)));
@@ -360,7 +360,7 @@ export function buildTimetable(ctx) {
     lane.dataset.channel = key;
     const header = el("header", "lane__header tt__who");
     const avatar = el("span", "lane__avatar");
-    if (ch.avatar) avatar.style.backgroundImage = `url("${avatarSized(ch.avatar, 88)}")`;
+    if (ch.avatar) avatar.style.backgroundImage = `url("${avatarSized(ch.avatar, 176)}")`;
     const nm = el("span", "tt__nm");
     nm.append(el("b", "", shortName(ch)), el("small", "", `${mine.length}건`));
     header.append(avatar, nm);
@@ -464,9 +464,9 @@ function todayCard(entry, state, ctx, big, laneKey) {
       const nm = el("div", "tcard__collab", "");
       const faces = el("span", "tt-faces");
       for (const k of others) {
-        const f = el("span", "lane__avatar tt-face");
+        const f = el("span", "tt-face");
         const c = ctx.channels[k];
-        if (c && c.avatar) f.style.backgroundImage = `url("${avatarSized(c.avatar, 88)}")`;
+        if (c && c.avatar) f.style.backgroundImage = `url("${avatarSized(c.avatar, 176)}")`;
         faces.appendChild(f);
       }
       nm.appendChild(faces);                    // 아이콘만 (이름 글자 없음). 합동 글자는 날짜 옆 태그
@@ -562,8 +562,8 @@ export function buildFoldButton(counts, ctx, opts = {}) {
       const ch = ctx.channels[key];
       if (!ch) continue;
       const s = el("span");
-      const av = el("span", "lane__avatar tt-face");
-      if (ch.avatar) av.style.backgroundImage = `url("${avatarSized(ch.avatar, 88)}")`;
+      const av = el("span", "tt-face");
+      if (ch.avatar) av.style.backgroundImage = `url("${avatarSized(ch.avatar, 176)}")`;
       s.append(av, document.createTextNode(String(counts.byKey[key] || 0)));
       cn.appendChild(s);
     }

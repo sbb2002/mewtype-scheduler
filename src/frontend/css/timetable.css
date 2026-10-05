@@ -44,6 +44,15 @@
 .tt-tag--mem { background: #2f6f4f; color: #dff7e8; }
 .tt-tag--end { background: #444; color: #ddd; }
 
+/* 카드·팝업 안의 멤버 동그라미 (레인 헤더 아바타 .lane__avatar 와 별개 — 트윗 배지 로직이 건드리지 않게) */
+.tt-ava,
+.tt-face {
+  flex: none;
+  border: 2px solid var(--lane-color, var(--color-border));
+  border-radius: 50%;
+  background: #111 center / cover no-repeat;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
 .tt-faces { display: inline-flex; }
 .tt-face {
   width: 20px;
@@ -112,7 +121,7 @@
 .tt__tick.is-midnight,
 .tt__tick.is-midnight b { color: var(--color-late); }   /* 자정 + 익일 날짜 */
 
-/* 왼쪽 멤버 칸 = 기존 레인 헤더와 같은 그라데이션. 편지 배지(.lane__tw)는 tweets.js 가 이 헤더에 붙인다. */
+/* 왼쪽 멤버 칸 = 기존 레인 헤더와 같은 그라데이션. 트윗 알림 배지(.lane__tw)는 tweets.js 가 이 헤더에 붙인다. */
 .tt__lane {
   height: 78px;
   border: 0;
@@ -131,7 +140,7 @@
   gap: 10px;
 }
 .tt__who .lane__avatar { width: 40px; height: 40px; }
-.tt__who .lane__tw { left: 38px; top: 10px; }
+.tt__who .lane__tw { left: 35px; top: calc(50% - 27.5px); }   /* 40px 아바타 기준 같은 비율(가로 87.5% · 세로 6%) */
 .tt__nm { position: relative; display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .tt__nm b { font-size: 0.84rem; white-space: nowrap; }
 .tt__nm small { font-size: 0.68rem; color: var(--color-text-muted); }

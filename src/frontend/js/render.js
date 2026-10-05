@@ -547,7 +547,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
       boardEl.appendChild(lane);
     }
   }
-  for (const key of order) sampleLaneColor(avatarSized(channels[key].avatar, 88), boardEl.querySelector(`.lane[data-channel="${key}"]`));
+  for (const key of order) sampleLaneColor(avatarSized(channels[key].avatar, 176), boardEl.querySelector(`.lane[data-channel="${key}"]`));
 
   wireFold(boardEl);
   syncFold(boardEl);
@@ -597,6 +597,7 @@ mqlPhone.addEventListener("change", () => {
 
 function clearCarousel(boardEl) {
   boardEl.querySelectorAll(".lane--clone").forEach((n) => n.remove());
+  boardEl.querySelectorAll(".lane").forEach((l) => { l.classList.remove("lane--active"); l.inert = false; });
   boardEl.classList.remove("board--carousel");
   if (boardEl._carouselCleanup) { boardEl._carouselCleanup(); boardEl._carouselCleanup = null; }
   const dots = document.getElementById("pager-dots");
@@ -656,10 +657,21 @@ function initMobileCarousel(boardEl) {
     return bi;
   };
 
+  // (v4.1.0) 지금 보고 있는 레인만 동작한다 — 좌우에 비쳐 보이는 레인의 스크롤바 · 클릭(트윗 배지 · 카드 · 펼치기 버튼)이
+  // 의도치 않게 반응하지 않게 inert 로 동작만 막는다(겉모양 · 스크롤바 표시는 그대로 — 바꾸면 카드 폭이 움찔거린다). 옆 레인은 드래그/스와이프의 시작점으로는 쓸 수 있다(보드가 받음).
+  let markedDi = -1;
+  const markActive = () => {
+    const di = currentDom();
+    if (di === markedDi) return;
+    markedDi = di;
+    slides().forEach((s, i) => { const on = i === di; s.classList.toggle("lane--active", on); s.inert = !on; });
+  };
+
   activeIdx = ((activeIdx % n) + n) % n;
   jumpReal(activeIdx);                                  // 즉시
-  requestAnimationFrame(() => jumpReal(activeIdx));     // 레이아웃 후
-  setTimeout(() => jumpReal(activeIdx), 60);            // 스냅 보정 후 (rAF 미실행 대비)
+  markActive();
+  requestAnimationFrame(() => { jumpReal(activeIdx); markActive(); });     // 레이아웃 후
+  setTimeout(() => { jumpReal(activeIdx); markActive(); }, 60);            // 스냅 보정 후 (rAF 미실행 대비)
 
   // 도트 인디케이터
   const dots = document.getElementById("pager-dots");
@@ -694,6 +706,7 @@ function initMobileCarousel(boardEl) {
   // 스크롤: active 갱신 + 클론에 닿으면 멈춘 뒤 반대편 실제 슬라이드로 순간이동
   let settle = null;
   const onScroll = () => {
+    markActive();
     const di = currentDom();
     let real = di - 1;
     if (real < 0) real = n - 1;
