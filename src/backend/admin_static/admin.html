@@ -1024,6 +1024,12 @@
             .cx-top { display: none !important; }
         }
         @media (prefers-reduced-motion: reduce) { .cx-chev { transition: none; } }
+        /* (v4.0.8) 쓰기 요청 대기 — 누른 버튼 가운데에 회전 아이콘, 글자는 숨겨 버튼 폭은 그대로 */
+        button.is-busy { position: relative; color: transparent !important; pointer-events: none; cursor: progress; }
+        button.is-busy::after { content: ""; position: absolute; left: 50%; top: 50%; width: 1.05em; height: 1.05em; margin: -0.525em 0 0 -0.525em;
+            border: 2px solid var(--busy-c, #fff); border-right-color: transparent; border-radius: 50%; animation: cx-spin 0.7s linear infinite; }
+        @keyframes cx-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { button.is-busy::after { animation-duration: 2s; } }
 </style>
 </head>
 <body>
@@ -1409,6 +1415,16 @@
                     });
                 });
 
+                // (v4.0.8) 누른 버튼 기록(대기 표시용) + 대기 중인 버튼의 중복 클릭 차단
+                this._trail = [];
+                document.addEventListener("click", (e) => {
+                    const b = e.target.closest && e.target.closest("button");
+                    if (!b) return;
+                    if (b.classList.contains("is-busy")) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+                    this._trail.unshift({ el: b, t: Date.now() });
+                    if (this._trail.length > 4) this._trail.length = 4;
+                }, true);
+
                 // (v4.0.8) 화면 폭이 좁음↔넓음을 넘나들면 목록을 다시 그린다(펼침 ↔ 상세창) · 맨 위로 버튼
                 window.matchMedia("(min-width: 960px)").addEventListener("change", () => {
                     this.ui.open = {};
@@ -1522,30 +1538,63 @@
                 setTimeout(() => toast.remove(), 3000);
             },
 
-            async apiCall(method, endpoint, body) {
-                const opts = {
-                    method,
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
+            // (v4.0.8) 쓰기(POST) 요청이 끝날 때까지 누른 버튼에 대기 표시(회전 아이콘 + 중복 클릭 차단).
+            // 누른 버튼은 capture 클릭 기록(_trail)으로 찾는다 — 삭제처럼 「행 버튼 → 확인 팝업 → 확인」 흐름은
+            // 팝업이 닫힌 뒤엔 확인 버튼이 안 보이므로, 지금 보이는 가장 최근 버튼(= 행의 삭제 버튼)에 표시한다.
+            cxTriggerBtn() {
+                const t = this._trail || [];
+                if (!t.length || Date.now() - t[0].t > 5000) return null;
+                const hit = t.find((x) => x.el.isConnected && x.el.getClientRects().length > 0);
+                return hit ? hit.el : null;
+            },
+
+            cxBusyStart(btn) {
+                if (!btn) return () => {};
+                let on = false;
+                const timer = setTimeout(() => {   // 120ms 안에 끝나는 요청엔 깜빡임 없이
+                    on = true;
+                    btn.style.setProperty("--busy-c", getComputedStyle(btn).color);
+                    btn.classList.add("is-busy");
+                    btn.setAttribute("aria-busy", "true");
+                }, 120);
+                return () => {
+                    clearTimeout(timer);
+                    if (!on) return;
+                    btn.classList.remove("is-busy");
+                    btn.removeAttribute("aria-busy");
+                    btn.style.removeProperty("--busy-c");
                 };
+            },
 
-                if (body) {
-                    opts.body = JSON.stringify(body);
+            async apiCall(method, endpoint, body) {
+                const endBusy = method === "POST" ? this.cxBusyStart(this.cxTriggerBtn()) : null;
+                try {
+                    const opts = {
+                        method,
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                    };
+
+                    if (body) {
+                        opts.body = JSON.stringify(body);
+                    }
+
+                    if (method === "POST") {
+                        opts.headers["X-CSRF-Token"] = this.csrfToken;
+                    }
+
+                    const resp = await fetch(`/admin/api${endpoint}`, opts);
+                    const data = await resp.json();
+
+                    if (!resp.ok) {
+                        throw new Error(data.error || "요청 실패");
+                    }
+
+                    return data;
+                } finally {
+                    if (endBusy) endBusy();
                 }
-
-                if (method === "POST") {
-                    opts.headers["X-CSRF-Token"] = this.csrfToken;
-                }
-
-                const resp = await fetch(`/admin/api${endpoint}`, opts);
-                const data = await resp.json();
-
-                if (!resp.ok) {
-                    throw new Error(data.error || "요청 실패");
-                }
-
-                return data;
             },
 
             // ─────────────────────────────────────────────────────────────────────
