@@ -968,6 +968,8 @@
         .cx-chip { flex: none; background: var(--color-bg-secondary); color: var(--color-text-muted); border: 1px solid var(--color-border); border-radius: 99px;
             min-height: 34px; padding: 0 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 500; }
         .cx-chip[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); background: rgba(6, 182, 212, 0.12); }
+        .cx-ico { width: 22px; height: 22px; border-radius: 50%; background: #333 center / cover no-repeat; flex: none; display: inline-block; }
+        .cx-chip:has(.cx-ico) { padding-left: 0.35rem; }
         .cx-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, #9a9a9a); flex: none; display: inline-block; }
         .cx-sbtn { flex: none; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; background: var(--color-bg-secondary); border: 1px solid var(--color-border); }
         .cx-sbtn[aria-pressed="true"] { border-color: var(--color-accent); }
@@ -1721,6 +1723,31 @@
                 return { arale: "#f59e0b", yuno: "#38bdf8", nonoka: "#f472b6", ritsu: "#a78bfa", miyako: "#4ade80" }[key] || "#9a9a9a";
             },
 
+            // 멤버 아이콘 — 메인 화면 레인 헤더와 같은 채널 프로필(preview.json channels[key].avatar, =s88). 아직 못 받았으면 색 점
+            cxUnitIcon(key) {
+                const ch = this.data.preview && this.data.preview.channels && this.data.preview.channels[key];
+                const url = ch && typeof ch.avatar === "string" ? ch.avatar.replace(/=s\d+/, "=s88") : "";
+                const e = this.cxEl("span", url ? "cx-ico" : "cx-dot");
+                if (url) {
+                    e.style.backgroundImage = `url("${url}")`;
+                    e.setAttribute("aria-hidden", "true");
+                } else {
+                    e.style.setProperty("--c", this.cxUnitColor(key));
+                }
+                return e;
+            },
+
+            // 소식 · 트윗 탭을 먼저 열면 preview.json(아바타 URL)이 아직 없다 — 한 번만 받아 와 도구줄을 다시 그린다
+            async cxEnsureAvatars() {
+                if (this._avatarReq || (this.data.preview && this.data.preview.channels)) return;
+                this._avatarReq = true;
+                try {
+                    const pv = await this.apiCall("GET", "/list_preview");
+                    if (!this.data.preview) this.data.preview = pv;
+                    if (this.currentTab === "content") this.renderContentTools();
+                } catch (e) { /* 색 점으로 계속 */ }
+            },
+
             cxChips(options, cur, onPick, withDot) {
                 const box = this.cxEl("div", "cx-chips");
                 box.setAttribute("role", "group");
@@ -1728,11 +1755,7 @@
                     const b = this.cxEl("button", "cx-chip");
                     b.type = "button";
                     b.setAttribute("aria-pressed", String(cur === key));
-                    if (withDot && key !== "all") {
-                        const d = this.cxEl("span", "cx-dot");
-                        d.style.setProperty("--c", this.cxUnitColor(key));
-                        b.appendChild(d);
-                    }
+                    if (withDot && key !== "all") b.appendChild(this.cxUnitIcon(key));
                     b.appendChild(document.createTextNode(label));
                     b.onclick = () => onPick(key);
                     box.appendChild(b);
@@ -1931,6 +1954,7 @@
                 const u = this.ui;
                 const host = document.getElementById("ct-tools");
                 if (!host) return;
+                this.cxEnsureAvatars();
                 const cn = {
                     banners: ((this.data.banners && this.data.banners.banners) || []).length,
                     notices: ((this.data.notices && this.data.notices.notices) || []).length,
