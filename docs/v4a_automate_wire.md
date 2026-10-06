@@ -124,6 +124,10 @@
     - message: "prod FAIL block=" ++ prod_fail_block ++ " " ++ prod_fail_type ++ ": " ++ prod_fail_msg ++ " tag=" ++ coalesce(nx["pde_noti_tag"], nx["chime.slot_key"], "-")
     - go to end
 
+
+### disconnected(deprecated) ###
+[41] log append                                     ← 삭제 후보: [50] · [52] 으로 대체
+                                                       (nx 전체 덤프가 필요하면 [46] 이 이미 남긴다)
 # ── v4a (로컬 PC, Tailscale) ──
 
 [51] failure catch                                ← 신규 (재시도는 이 블록의 retry limit 으로 — 별도 반복 블록 없음)
@@ -162,8 +166,3 @@
 [54] log append                                   ← 신규: v4a 전송 실패(재시도까지 모두 실패)
     - message: "v4a FAIL retry=" ++ v4a_retry ++ " block=" ++ v4a_fail_block ++ " " ++ v4a_fail_type ++ ": " ++ v4a_fail_msg ++ " tag=" ++ coalesce(nx["pde_noti_tag"], nx["chime.slot_key"], "-")
     - go to end
-
-
-## disconnected(deprecated)
-[41] log append                                     ← 삭제 후보: [50] · [52] 으로 대체
-                                                       (nx 전체 덤프가 필요하면 [46] 이 이미 남긴다)
