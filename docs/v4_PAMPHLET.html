@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>뮤타입 스케줄러 v4 — 한눈에</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --panel:#17181c; --panel2:#1e2024; --ink:#e9e9ea; --dim:#9a9ca2;
+    --faint:#6b6d73; --line:#2c2e33; --cyan:#cbf7f5; --cyan-soft:rgba(203,247,245,.13);
+    --rose:#a85f7d; --live:#ff4d4d; --sched:#8b9ab0; --collab:#8b7cc9;
+    --f-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:52px 24px 88px}
+  h2{margin:60px 0 6px;font-size:.8rem;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--cyan)}
+  h2+.sub{margin:0 0 22px;color:var(--dim);font-size:.9rem}
+  code{font-family:var(--f-mono);font-size:.86em}
+  .mono{font-family:var(--f-mono)}
+
+  /* hero */
+  .hero{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, rgba(203,247,245,.07), transparent 55%), var(--panel);
+    padding:34px 30px}
+  .hero .eyebrow{margin:0 0 12px;font-family:var(--f-mono);font-size:.72rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan)}
+  .hero h1{margin:0 0 12px;font-size:1.9rem;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+  .hero p{margin:0;max-width:56ch;color:var(--dim)}
+  .units{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .unit{font-family:var(--f-mono);font-size:.74rem;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim)}
+  .unit b{color:var(--ink);font-weight:500}
+
+  /* scenario diagram */
+  .diagram{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .scn-tabs{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .scn-tab{flex:1 1 auto;min-width:120px;padding:11px 12px;font:inherit;font-size:.82rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .scn-tab:last-child{border-right:0}
+  .scn-tab:hover{color:var(--ink)}
+  .scn-tab[aria-selected="true"]{color:#0c1416;background:var(--cyan);font-weight:600}
+  .cmd-row{display:flex;flex-wrap:wrap;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line);background:#15161a}
+  .cmd-row[hidden]{display:none}
+  .cmd{font-family:var(--f-mono);font-size:.74rem;padding:4px 9px;border-radius:6px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);cursor:pointer;transition:.12s}
+  .cmd:hover{color:var(--ink)}
+  .cmd[aria-selected="true"]{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-soft)}
+  .stage{padding:20px 18px 8px;background:#0d0e11}
+  svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2;transition:opacity .25s,stroke .25s}
+  svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg .node .nt{font-size:12px;font-weight:600;fill:var(--ink)}
+  svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg .edge{fill:none;stroke:#3a3d44;stroke-width:1.6;transition:opacity .25s,stroke .25s}
+  svg .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg.dimming .node{opacity:.28}
+  svg.dimming .edge{opacity:.14}
+  svg.dimming .elabel{opacity:0}
+  svg .node.hot{opacity:1}
+  svg .node.hot rect{stroke:var(--cyan);stroke-width:1.8}
+  svg .node.hot text{fill:var(--ink)}
+  svg .node.hot .ns{fill:var(--dim)}
+  svg .edge.hot{opacity:.5;stroke:#4a525c}
+  svg .edge.hot~.elabel{opacity:.9}
+  @keyframes flow{to{stroke-dashoffset:-20}}
+  /* input → output 경로 = 직선 점선. 패킷이 이 선을 탄다. nodes 아래에 그려짐 */
+  svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+    stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
+  svg.dimming .route-line{opacity:.75}
+  svg .packet-halo{fill:var(--cyan);opacity:.2}
+  svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  @media (prefers-reduced-motion:reduce){svg .route-line{animation:none}}
+  @media (prefers-reduced-motion:reduce){
+    svg .edge.hot{animation:none}
+    #packet{opacity:0!important}
+  }
+  .scn-cap{padding:14px 20px 20px;color:var(--ink);font-size:.92rem}
+  .scn-cap b{color:var(--cyan);font-weight:600}
+  .boundary{fill:rgba(255,90,90,.05);stroke:#7a3b3b;stroke-width:1.3;stroke-dasharray:5 4}
+  .boundary-t{fill:#9b5b5b;font-family:var(--f-mono);font-size:9px}
+
+  /* states */
+  .states{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .st{font-family:var(--f-mono);font-size:.76rem;padding:6px 12px;border-radius:8px;
+    border:1px solid var(--line);color:var(--dim);background:var(--panel);cursor:pointer;transition:.15s}
+  .st:hover{color:var(--ink)}
+  .st[aria-selected="true"]{border-color:var(--cyan);color:var(--ink);background:var(--cyan-soft)}
+  .st-arrow{color:var(--faint);align-self:center;font-size:.8rem}
+  .st-detail{display:flex;gap:18px;align-items:center;border:1px solid var(--line);
+    border-radius:12px;background:var(--panel);padding:18px}
+  .st-detail .card{flex:none}
+  .st-detail p{margin:0;color:var(--dim);font-size:.92rem}
+  .st-detail p b{color:var(--ink);font-weight:600;display:block;margin-bottom:3px;font-size:.95rem}
+
+  /* feature grid */
+  .feats{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media (max-width:820px){.feats{grid-template-columns:1fr}}
+  .feat{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:18px;overflow:hidden}
+  .feat h3{margin:0 0 3px;font-size:.98rem}
+  .feat .fh{margin:0 0 14px;color:var(--dim);font-size:.84rem}
+  .feat .demo{background:#0d0e11;border:1px solid var(--line);border-radius:10px;padding:12px}
+
+  /* mini board */
+  .lane{max-width:260px;margin:0 auto;background:#161616;border:1px solid #333;border-radius:8px;overflow:hidden;font-size:13px}
+  .lane__hd{position:relative;display:flex;align-items:center;gap:8px;padding:10px;overflow:hidden}
+  .lane__hd::before{content:"";position:absolute;inset:0;background:linear-gradient(to right,rgba(168,95,125,.5),transparent 72%)}
+  .lane__av{position:relative;width:40px;height:40px;border-radius:50%;flex:none;border:2px solid var(--rose);
+    background:radial-gradient(circle at 33% 30%,#e7aec0,var(--rose) 74%)}
+  .lane__nm{position:relative;flex:1;min-width:0}
+  .lane__nm b{display:block;font-size:.82rem;color:#e8e8e8}
+  .lane__nm span{font-size:.64rem;color:#999}
+  .lane__rail{position:relative;flex:none;display:flex;flex-direction:column;gap:6px;padding-left:8px;border-left:1px solid #333}
+  .lane__rail i{width:16px;height:16px;color:#8b8d93}
+  .lane__live{margin:10px;height:70px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    background:#2a1416;transition:background .3s}
+  .lane__live[data-on="1"]{background:#a01f1a}
+  .lane__live .off{font-size:.72rem;font-weight:700;letter-spacing:.15em;color:#ff8a8a;opacity:.8}
+  .lane__live .lc{width:calc(100% - 16px);background:#161616;border:2px solid var(--live);border-radius:6px;padding:6px 8px}
+  .lane__live .lc b{color:#fff;font-size:.72rem}
+  .lane__live .lc span{display:block;color:var(--live);font-size:.68rem;font-weight:700}
+  .bkts{padding:0 10px 10px}
+  .bkt{padding-top:10px;border-top:1px solid #333}
+  .bkt:first-child{border-top:0}
+  .bkt h4{margin:0 0 5px;font-size:.66rem;font-weight:700;letter-spacing:.03em;color:#999}
+  .card{border:1px dashed color-mix(in srgb,var(--sched) 55%,#333);border-radius:8px;background:#161616;
+    opacity:.9;padding:6px 8px;display:flex;gap:7px;align-items:center;font-size:.72rem}
+  .card+.card{margin-top:6px}
+  .card .ico{font-size:1.1rem;filter:saturate(.85)}
+  .card b{color:#e8e8e8;font-weight:500}
+  .card span{color:#999}
+  .card--up{border-style:solid;border-color:#2f4f5a;opacity:1}
+  .card--collab{border-style:solid;border-color:color-mix(in srgb,var(--collab) 55%,#333);box-shadow:inset 3px 0 0 var(--collab);opacity:.95}
+  .toggle{margin-top:12px;font:inherit;font-size:.78rem;padding:6px 12px;border-radius:7px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+  .toggle:hover{border-color:var(--cyan)}
+
+  /* tweet thread */
+  .thread{max-width:250px;margin:0 auto;background:var(--rose);color:#fff;border-radius:12px;padding:4px 5px 6px}
+  .thread__hd{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;font-size:12px;font-weight:700}
+  .thread__hd button{font:inherit;font-weight:700;font-size:11px;padding:3px 7px;border-radius:6px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;cursor:pointer}
+  .thread__sc{display:flex;flex-direction:column;gap:10px;padding:3px 8px 5px;max-height:200px;overflow-y:auto}
+  .grp{display:flex;flex-direction:column;gap:3px}
+  .msg{align-self:flex-start;max-width:92%;background:rgba(255,255,255,.17);border-radius:11px;
+    border-top-left-radius:4px;padding:6px 10px;font-size:12px;line-height:1.45}
+  .grp .msg+.msg{border-top-left-radius:11px}
+  .gt{align-self:flex-end;font-size:10px;opacity:.72}
+
+  /* notice ticker */
+  .ticker{display:flex;align-items:center;gap:10px;background:#161616;border:1px solid #333;border-radius:8px;padding:9px 12px;font-size:.8rem}
+  .ticker .lamp{width:8px;height:8px;border-radius:50%;background:var(--live);flex:none;animation:blink 1.4s steps(1) infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .ticker .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ddd}
+  .ticker .tag{font-family:var(--f-mono);font-size:.64rem;color:var(--faint);flex:none}
+
+  /* badge on avatar */
+  .tw-badge{position:absolute;left:28px;top:-4px;width:15px;height:15px;color:var(--cyan)}
+  .tw-count{position:absolute;left:24px;top:-9px;min-width:14px;height:14px;padding:0 3px;display:grid;
+    place-items:center;font-size:9px;font-weight:700;color:#0c1a1a;background:var(--cyan);border-radius:999px;border:1.5px solid #161616}
+
+  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.8rem;font-family:var(--f-mono)}
+  .foot a{color:var(--dim)}
+
+  /* ── (v3.6) 개인 트윗 예고 판정 트리 — 설계 검토용 서브다이어그램 ── */
+  :root{
+    --reg:#8fe3ae; --reg-soft:rgba(143,227,174,.12);
+    --skip:#8a7a7f; --notice:#e6bd72; --notice-soft:rgba(230,189,114,.13);
+  }
+  .before-after{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 22px}
+  .ba{flex:1 1 260px;border:1px solid var(--line);border-radius:10px;padding:13px 15px;background:var(--panel)}
+  .ba .k{font-family:var(--f-mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;display:block}
+  .ba.before .k{color:var(--skip)}
+  .ba.after .k{color:var(--reg)}
+  .ba p{color:var(--dim);font-size:.87rem;margin:0}
+  .ba b{color:var(--ink);font-weight:500}
+  .tabs2{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .tab2{flex:1 1 auto;min-width:112px;padding:10px 9px;font:inherit;font-size:.77rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .tab2:last-child{border-right:0}
+  .tab2:hover{color:var(--ink)}
+  .tab2[aria-selected="true"]{color:#0c1614;background:var(--cyan);font-weight:600}
+  .tab2 .n{display:block;font-family:var(--f-mono);font-size:.6rem;opacity:.7;margin-bottom:1px}
+  .stage2-scroll{overflow-x:auto;background:#0d0e11}
+  .stage2{padding:22px 18px 6px;min-width:900px}
+  #svg2{width:100%;height:auto;display:block}
+  svg#svg2, svg.tree-svg .node rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.3;transition:opacity .25s,stroke .25s,fill .25s}
+  svg#svg2, svg.tree-svg .node text{fill:var(--dim);font-family:var(--f-sans);transition:fill .25s}
+  svg#svg2, svg.tree-svg .node .nt{font-size:12.5px;font-weight:600;fill:var(--ink)}
+  svg#svg2, svg.tree-svg .node .ns{font-size:9px;fill:var(--faint)}
+  svg#svg2, svg.tree-svg .edge{fill:none;stroke:#3a3d44;stroke-width:1.5;transition:opacity .25s,stroke .25s}
+  svg#svg2, svg.tree-svg .elabel{fill:var(--faint);font-family:var(--f-mono);font-size:8.5px}
+  svg#svg2, svg.tree-svg.dimming .node{opacity:.26}
+  svg#svg2, svg.tree-svg.dimming .edge{opacity:.13}
+  svg#svg2, svg.tree-svg.dimming .elabel{opacity:0}
+  svg#svg2, svg.tree-svg .node.hot{opacity:1}
+  svg#svg2, svg.tree-svg .node.hot rect{stroke:var(--cyan);stroke-width:1.9}
+  svg#svg2, svg.tree-svg .node.hot text{fill:var(--ink)}
+  svg#svg2, svg.tree-svg .node.hot .ns{fill:var(--dim)}
+  svg#svg2, svg.tree-svg .edge.hot{opacity:.55;stroke:#4a525c}
+  svg#svg2, svg.tree-svg .edge.hot ~ .elabel{opacity:.95}
+  svg#svg2, svg.tree-svg .node.k-reg rect{stroke:color-mix(in srgb,var(--reg) 55%,var(--line))}
+  svg#svg2, svg.tree-svg .node.k-reg.hot rect{fill:var(--reg-soft);stroke:var(--reg)}
+  svg#svg2, svg.tree-svg .node.k-reg .nt{fill:color-mix(in srgb,var(--reg) 70%,var(--ink))}
+  svg#svg2, svg.tree-svg .node.k-skip rect{stroke-dasharray:3 3}
+  svg#svg2, svg.tree-svg .node.k-skip.hot rect{stroke:var(--skip)}
+  svg#svg2, svg.tree-svg .node.k-notice.hot rect{fill:var(--notice-soft);stroke:var(--notice)}
+  svg#svg2, svg.tree-svg .node.k-notice .nt{fill:color-mix(in srgb,var(--notice) 75%,var(--ink))}
+  svg#svg2, svg.tree-svg .node.k-ext rect{stroke-dasharray:4 3}
+  svg#svg2, svg.tree-svg .route-line{fill:none;stroke:var(--cyan);stroke-width:1.7;stroke-linecap:round;
+    stroke-dasharray:4 6;opacity:0;transition:opacity .25s;animation:flow 1s linear infinite}
+  svg#svg2, svg.tree-svg.dimming .route-line{opacity:.8}
+  svg#svg2, svg.tree-svg .packet-halo{fill:var(--cyan);opacity:.22}
+  svg#svg2, svg.tree-svg .packet-dot{fill:var(--cyan);filter:drop-shadow(0 0 4px rgba(203,247,245,.95))}
+  @media (prefers-reduced-motion:reduce){
+    svg#svg2, svg.tree-svg .route-line{animation:none}
+    #packet2{opacity:0!important}
+  }
+  .cap2{padding:14px 20px 8px;color:var(--ink);font-size:.92rem;border-top:1px solid var(--line)}
+  .cap2 b{color:var(--cyan);font-weight:600}
+  .example2{margin:10px 20px 18px;padding:10px 13px;border-left:2px solid var(--line);
+    background:var(--panel2);border-radius:0 8px 8px 0}
+  .example2 .tag{display:block;font-family:var(--f-mono);font-size:.64rem;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .example2 p{color:var(--dim);font-size:.83rem;white-space:pre-wrap;line-height:1.55;margin:0}
+  .legend2{display:flex;flex-wrap:wrap;gap:16px;padding:13px 20px 18px;border-top:1px solid var(--line);
+    font-size:.76rem;color:var(--dim)}
+  .legend2 span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:13px;height:13px;border-radius:4px;border:1.4px solid var(--line);flex:none}
+  .sw.reg{border-color:var(--reg);background:var(--reg-soft)}
+  .sw.skip{border-color:var(--skip);border-style:dashed}
+  .sw.notice{border-color:var(--notice);background:var(--notice-soft)}
+  .sw.ext{border-color:var(--dim);border-style:dashed}
+
+  /* ───────── v4 추가 스타일 ───────── */
+  :root{ --ok:#8fe3ae; --warn:#e6bd72; --grey:#5d6068; }
+  h2 .vtag{margin-left:8px;font-family:var(--f-mono);font-size:.64rem;letter-spacing:.04em;color:var(--faint);text-transform:none}
+  .note{margin:14px 0 0;padding:11px 14px;border-left:2px solid var(--warn);background:var(--panel);
+    border-radius:0 8px 8px 0;color:var(--dim);font-size:.85rem}
+  .note b{color:var(--ink);font-weight:600}
+  svg .node.k-new rect{stroke:color-mix(in srgb,var(--ok) 60%,var(--line))}
+  svg .node.k-new .nt{fill:color-mix(in srgb,var(--ok) 70%,var(--ink))}
+  svg .node.k-new.hot rect{fill:rgba(143,227,174,.1);stroke:var(--ok)}
+
+  /* 비교표 */
+  .cmp{width:100%;border-collapse:collapse;font-size:.86rem;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+  .cmp th,.cmp td{padding:10px 13px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+  .cmp th{font-family:var(--f-mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--panel2);font-weight:500}
+  .cmp tr:last-child td{border-bottom:0}
+  .cmp td:first-child{color:var(--ink);white-space:nowrap}
+  .cmp td{color:var(--dim)}
+  .cmp td b{color:var(--ink);font-weight:500}
+  .cmp .v3{color:var(--skip)}
+  .cmp .v4{color:var(--ok)}
+  .scroll-x{overflow-x:auto}
+
+  /* 브랜치 카드 */
+  .brs{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .br{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px 16px}
+  .br h3{margin:0 0 3px;font-family:var(--f-mono);font-size:.9rem;color:var(--cyan)}
+  .br .who{margin:0 0 8px;color:var(--faint);font-size:.74rem;font-family:var(--f-mono)}
+  .br p{margin:0;color:var(--dim);font-size:.84rem}
+  .br code{color:var(--ink)}
+
+  /* 타임테이블 목업 */
+  .tt{background:#0d0e11;border:1px solid var(--line);border-radius:10px;padding:12px;overflow-x:auto}
+  .tt-in{min-width:640px}
+  .tt-axis{position:relative;height:20px;margin-left:92px;border-bottom:1px solid #333}
+  .tt-axis span{position:absolute;top:0;transform:translateX(-50%);font-family:var(--f-mono);font-size:.62rem;color:var(--faint)}
+  .tt-axis span.mid{color:var(--cyan)}
+  .tt-row{display:flex;align-items:stretch;border-bottom:1px solid #222;min-height:44px}
+  .tt-who{width:92px;flex:none;position:relative;display:flex;align-items:center;gap:7px;padding:4px 6px;font-size:.74rem;color:#e8e8e8}
+  .tt-who::before{content:"";position:absolute;inset:0;background:linear-gradient(to right,var(--lc),transparent 80%);opacity:.5}
+  .tt-who i,.tt-who b{position:relative}
+  .tt-who i{width:24px;height:24px;border-radius:50%;background:var(--lc);border:2px solid var(--lc);flex:none;filter:brightness(1.25)}
+  .tt-who b{font-weight:500;font-size:.72rem}
+  .tt-track{position:relative;flex:1;background:repeating-linear-gradient(to right,transparent 0,transparent calc(12.5% - 1px),#1c1d21 calc(12.5% - 1px),#1c1d21 12.5%)}
+  .tt-past{position:absolute;top:0;bottom:0;left:0;background:rgba(0,0,0,.35);pointer-events:none}
+  .tt-now{position:absolute;top:0;bottom:0;width:0;border-left:1.5px solid var(--live);z-index:3}
+  .tt-blk{position:absolute;top:5px;bottom:5px;border-radius:6px;padding:3px 7px;font-size:.66rem;line-height:1.25;overflow:hidden;
+    background:#1b2a30;border:1px solid #2f4f5a;color:#d8e6ea;white-space:nowrap;text-overflow:ellipsis;z-index:2}
+  .tt-blk small{display:block;font-family:var(--f-mono);font-size:.58rem;color:var(--dim)}
+  .tt-blk.live{background:#3a1416;border-color:var(--live);color:#fff}
+  .tt-blk.live small{color:#ff9a9a}
+  .tt-blk.live::after{content:"LIVE";position:absolute;right:5px;top:3px;font-family:var(--f-mono);font-size:.54rem;font-weight:700;color:#fff;background:var(--live);padding:0 4px;border-radius:3px}
+  .tt-blk.ended{background:#202125;border-color:#34363b;color:#7d7f86}
+  .tt-blk.soon{border-color:var(--warn)}
+  .tt-blk.collab{box-shadow:inset 3px 0 0 var(--collab)}
+  .tt-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px;font-size:.78rem;color:var(--dim)}
+  .tt-ctrl input[type=range]{flex:1;min-width:200px;accent-color:var(--cyan)}
+  .tt-ctrl output{font-family:var(--f-mono);color:var(--cyan);min-width:92px}
+  .legend3{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:.72rem;color:var(--dim)}
+  .legend3 span{display:inline-flex;align-items:center;gap:6px}
+  .legend3 i{width:14px;height:10px;border-radius:3px;border:1px solid #2f4f5a;background:#1b2a30;display:inline-block}
+  .legend3 i.l{background:#3a1416;border-color:var(--live)}
+  .legend3 i.e{background:#202125;border-color:#34363b}
+  .legend3 i.s{border-color:var(--warn)}
+
+  /* 모바일 오늘 카드 */
+  .mtc{max-width:270px;margin:0 auto;border:1px solid #333;border-radius:10px;background:#161616;overflow:hidden;font-size:.74rem}
+  .mtc__img{height:92px;position:relative;background:linear-gradient(135deg,#27313a,#1a1d22)}
+  .mtc__img .pill{position:absolute;right:7px;top:7px;font-family:var(--f-mono);font-size:.6rem;font-weight:700;padding:1px 7px;border-radius:999px;background:#444;color:#ddd}
+  .mtc__img .pill.live{background:var(--live);color:#fff}
+  .mtc__img .pill.lock{left:7px;right:auto;background:#2b2b2f}
+  .mtc__bd{display:flex;align-items:center;gap:10px;padding:10px 11px}
+  .mtc__tx{flex:1;min-width:0}
+  .mtc__tx b{display:block;color:#eee;font-weight:600;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mtc__tx span{color:#999;font-size:.68rem}
+  .ring{--p:0;--c:var(--cyan);width:46px;height:46px;border-radius:50%;flex:none;position:relative;
+    background:conic-gradient(var(--c) calc(var(--p)*1%), #2a2c31 0)}
+  .ring::before{content:"";position:absolute;inset:4px;border-radius:50%;background:#161616}
+  .ring span{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font-size:.54rem;line-height:1.15;color:#ddd;z-index:1}
+  .ring.live{--c:var(--live)}
+  .ring.ended{--c:#6b6d73}
+  .seg3{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px}
+  .seg3 button{font:inherit;font-size:.74rem;padding:5px 12px;background:var(--panel2);color:var(--dim);border:0;border-right:1px solid var(--line);cursor:pointer}
+  .seg3 button:last-child{border-right:0}
+  .seg3 button[aria-selected="true"]{background:var(--cyan);color:#0c1614;font-weight:600}
+
+  /* 동그라미 알림 배지 */
+  .bdg-demo{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .av{position:relative;width:44px;height:44px;border-radius:50%;border:2px solid var(--rose);
+    background:radial-gradient(circle at 33% 30%,#e7aec0,var(--rose) 74%)}
+  .dot{position:absolute;left:30px;top:-5px;min-width:15px;height:15px;border-radius:999px;display:grid;place-items:center;
+    font-size:9px;font-weight:700;color:#0c1a1a;background:var(--cyan);border:1.5px solid #161616}
+  .dot.empty{background:transparent;border:2px solid var(--cyan);width:13px;min-width:13px;height:13px}
+
+  .fold{margin-top:10px}
+  .fold button{font:inherit;font-size:.76rem;padding:6px 12px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);cursor:pointer}
+  .fold-list{display:none;margin-top:8px}
+  .fold-list.open{display:block}
+  .fold .card{opacity:1}
+
+  .tabs-adm{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .adm{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px 14px}
+  .adm h3{margin:0 0 4px;font-size:.88rem}
+  .adm p{margin:0;color:var(--dim);font-size:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section class="hero">
+    <p class="eyebrow">夢限大みゅーたいぷ · scheduler v4.1</p>
+    <h1>누가 · 언제 · 지금 라이브인지 · 어디로 가면 되는지</h1>
+    <p>유튜브 방송인 5명의 예약 방송·라이브 상태를 한 사이트에 모아 보여주는 반응형 정적 웹사이트.
+      서버 상시 가동 없음 — 무료 인프라(Cloud Run scale-to-zero · GitHub · Vercel)만.
+      v4 는 <b>처리 로직을 v4a 시험판 그대로 정식 배포</b>(2026-10-04)한 것이고, v4.1.0(2026-10-05)은 <b>메인 화면을 오늘 타임테이블로</b> 바꾼 프론트 개편이다.</p>
+    <div class="units">
+      <span class="unit"><b>아라레</b> 仲町あられ</span>
+      <span class="unit"><b>유노</b> 千石ユノ</span>
+      <span class="unit"><b>노노카</b> 宮永ののか</span>
+      <span class="unit"><b>리츠</b> 峰月律</span>
+      <span class="unit"><b>미야코</b> 藤都子</span>
+    </div>
+  </section>
+
+  <p class="note"><b>이 문서의 기준</b> — 2026-10-06, <code>main</code> (v4.0 배포 + v4.1.0 병합 <code>3a5eb2b</code>) 의 코드를 직접 읽어 쓴 것.
+    v4.2.0(「CD + 음표 &gt;」 버튼)은 동작이 없는 자리만 있어 <b>이 문서에 넣지 않았다</b>. 이전 판은 <code>v3_pamphlet.html</code>(devpapers).
+    개인 트윗 예고 판정 트리 · 소식 판정 트리 · 트윗 인입 경로(v3.6~v3.7)는 v3 팜플렛의 도식이 여전히 뼈대이므로 여기서 반복하지 않는다 — 달라진 판정 규칙만 아래 「판정 로직」 절에 적었다.</p>
+
+  <h2>시나리오별 흐름 <span class="vtag">v4.0 배선</span></h2>
+  <p class="sub">탭을 누르면 그 신호가 어디를 거쳐 사이트에 닿는지 표시됩니다. 초록 테두리 = v4 에서 새로 생긴 구성요소.</p>
+  <div class="diagram">
+    <div class="scn-tabs" role="tablist">
+      <button class="scn-tab" role="tab" aria-selected="true"  data-scn="poll">정기 수집</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="wake">정밀 확인 (wake)</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="relay">업스트림 알림</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="ops">운영자 조작</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-scn="report">일일 리포트</button>
+    </div>
+    <div class="cmd-row" id="relayRow" hidden aria-label="업스트림 알림 세부">
+      <button class="cmd" data-relay="personal" aria-selected="true">멤버 개인 트윗</button>
+      <button class="cmd" data-relay="bdp">공식 일일 스케줄</button>
+      <button class="cmd" data-relay="ytnotif">YouTube 앱 알림</button>
+      <button class="cmd" data-relay="game">게임 계정 · 행사 배너</button>
+    </div>
+    <div class="cmd-row" id="opsRow" hidden aria-label="운영자 조작 세부">
+      <button class="cmd" data-ops="admin" aria-selected="true">관리 페이지 /admin</button>
+      <button class="cmd" data-ops="tgstatus">/status · /list</button>
+      <button class="cmd" data-ops="tgpause">/pause · /resume</button>
+      <button class="cmd" data-ops="tgadmin">/admin (로그인 링크)</button>
+    </div>
+    <div class="stage">
+      <svg id="svg" viewBox="0 0 940 640" role="img" aria-label="v4 아키텍처 흐름도">
+        <!-- 배포·운영 경계 -->
+        <rect class="boundary" x="206" y="206" width="494" height="262" rx="10"/>
+        <text class="boundary-t" x="214" y="220">배포·운영 경계 — 우리 코드 (Cloud Run 2서비스 + GitHub 저장소)</text>
+
+        <!-- edges -->
+        <path id="e_op_tg"  class="edge" d="M440,50 L330,86" marker-end="url(#ah)"/>
+        <text class="elabel" x="352" y="62">비상 명령</text>
+        <path id="e_op_adm" class="edge" d="M500,50 L610,86" marker-end="url(#ah)"/>
+        <text class="elabel" x="560" y="62">웹 조작</text>
+        <path id="e_tg_ctrl" class="edge" d="M270,126 L290,248" marker-end="url(#ah)"/>
+        <text class="elabel" x="198" y="190">webhook · DM</text>
+        <path id="e_adm_ctrl" class="edge" d="M640,126 L380,248" marker-end="url(#ah)"/>
+        <text class="elabel" x="560" y="176">접수 서비스가 서빙</text>
+        <path id="e_push_up" class="edge" d="M84,198 L84,248" marker-end="url(#ah)"/>
+        <path id="e_up_ctrl" class="edge" d="M152,276 L224,276" marker-end="url(#ah)"/>
+        <text class="elabel" x="150" y="268">POST /ingest</text>
+        <path id="e_ctrl_be" class="edge" d="M394,276 L500,276" marker-end="url(#ah)"/>
+        <text class="elabel" x="402" y="268">/write · OIDC</text>
+        <text class="elabel" x="402" y="290">(동기 또는 Tasks)</text>
+        <path id="e_sch_be" class="edge" d="M786,192 L670,254" marker-end="url(#ah)"/>
+        <text class="elabel" x="690" y="214">/tick /wake · OIDC</text>
+        <path id="e_yt_be" class="edge" d="M786,340 L670,296" marker-end="url(#ah)"/>
+        <text class="elabel" x="690" y="334">RSS · videos.list</text>
+        <path id="e_llm_ctrl" class="edge" d="M160,356 L250,304" marker-end="url(#ah)" stroke-dasharray="4 4"/>
+        <text class="elabel" x="130" y="338">경계 밖 → 안</text>
+        <path id="e_ctrl_db" class="edge" d="M330,304 L500,390" marker-end="url(#ah)" stroke-dasharray="4 4"/>
+        <text class="elabel" x="372" y="352">읽기 (read)</text>
+        <path id="e_be_db"  class="edge" d="M585,304 L585,384" marker-end="url(#ah)"/>
+        <text class="elabel" x="591" y="348">커밋 (write)</text>
+        <path id="e_db_fe"  class="edge" d="M562,438 L562,494" marker-end="url(#ah)"/>
+        <text class="elabel" x="568" y="470">raw JSON · 75초</text>
+        <path id="e_fe_fan" class="edge" d="M562,540 L562,584" marker-end="url(#ah)"/>
+        <text class="elabel" x="568" y="566">사이트 표시</text>
+
+        <path id="routeLine" class="route-line" d=""/>
+        <g id="packet" opacity="0">
+          <circle class="packet-halo" r="11"/>
+          <circle class="packet-dot" r="5"/>
+          <animateMotion id="pkMove" dur="3s" begin="indefinite" repeatCount="indefinite"
+            calcMode="linear" path="M0,0"/>
+        </g>
+
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+          </marker>
+        </defs>
+
+        <!-- nodes -->
+        <g class="node" id="n_op" transform="translate(404,12)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="18" text-anchor="middle">운영자</text>
+          <text class="ns" x="66" y="30" text-anchor="middle">사용자</text></g>
+        <g class="node" id="n_tg" transform="translate(180,88)">
+          <rect width="180" height="40" rx="8"/><text class="nt" x="90" y="18" text-anchor="middle">Telegram</text>
+          <text class="ns" x="90" y="31" text-anchor="middle">알림 + 비상 명령 · 서드파티</text></g>
+        <g class="node k-new" id="n_adm" transform="translate(540,88)">
+          <rect width="200" height="40" rx="8"/><text class="nt" x="100" y="18" text-anchor="middle">관리 페이지 · /admin</text>
+          <text class="ns" x="100" y="31" text-anchor="middle">일회용 링크로 로그인 · 7탭</text></g>
+        <g class="node" id="n_push" transform="translate(18,160)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">X·YouTube 푸시</text>
+          <text class="ns" x="66" y="29" text-anchor="middle">서드파티 알림</text></g>
+        <g class="node" id="n_up" transform="translate(18,248)">
+          <rect width="132" height="40" rx="8"/><text class="nt" x="66" y="17" text-anchor="middle">업스트림 시스템</text>
+          <text class="ns" x="66" y="30" text-anchor="middle">운영자 폰 · Automate</text></g>
+        <g class="node" id="n_ctrl" transform="translate(224,248)">
+          <rect width="170" height="56" rx="8"/><text class="nt" x="85" y="22" text-anchor="middle">접수 서비스</text>
+          <text class="ns" x="85" y="36" text-anchor="middle">mewtype-telegram</text>
+          <text class="ns" x="85" y="48" text-anchor="middle">/ingest · /telegram · /admin</text></g>
+        <g class="node" id="n_be" transform="translate(500,248)">
+          <rect width="170" height="56" rx="8"/><text class="nt" x="85" y="22" text-anchor="middle">쓰기 서비스</text>
+          <text class="ns" x="85" y="36" text-anchor="middle">mewtype-backend · 직렬화</text>
+          <text class="ns" x="85" y="48" text-anchor="middle">/tick /wake /write /monitor</text></g>
+        <g class="node" id="n_sch" transform="translate(786,160)">
+          <rect width="136" height="40" rx="8"/><text class="nt" x="68" y="17" text-anchor="middle">Scheduler / Tasks</text>
+          <text class="ns" x="68" y="30" text-anchor="middle">GCP · 트리거</text></g>
+        <g class="node" id="n_yt" transform="translate(786,320)">
+          <rect width="136" height="40" rx="8"/><text class="nt" x="68" y="17" text-anchor="middle">YouTube Data API</text>
+          <text class="ns" x="68" y="30" text-anchor="middle">RSS + videos.list</text></g>
+        <g class="node" id="n_llm" transform="translate(8,330)">
+          <rect width="160" height="52" rx="8" stroke-dasharray="4 4"/><text class="nt" x="80" y="18" text-anchor="middle">외부 LLM · Groq</text>
+          <text class="ns" x="80" y="31" text-anchor="middle">판정·번역·제목추출·비전 OCR</text>
+          <text class="ns" x="80" y="43" text-anchor="middle" style="opacity:.7">서드파티</text></g>
+        <g class="node k-new" id="n_db" transform="translate(470,384)">
+          <rect width="190" height="54" rx="8"/><text class="nt" x="95" y="22" text-anchor="middle">데이터 저장소 · GitHub</text>
+          <text class="ns" x="95" y="36" text-anchor="middle">data · ops · monitoring 브랜치</text>
+          <text class="ns" x="95" y="47" text-anchor="middle">JSON 커밋 = write</text></g>
+        <g class="node" id="n_fe" transform="translate(470,494)">
+          <rect width="190" height="46" rx="8"/><text class="nt" x="95" y="20" text-anchor="middle">프론트엔드 · Vercel</text>
+          <text class="ns" x="95" y="33" text-anchor="middle">정적 · 폴링 렌더 (오늘 타임테이블)</text></g>
+        <g class="node" id="n_fan" transform="translate(496,584)">
+          <rect width="132" height="38" rx="8"/><text class="nt" x="66" y="16" text-anchor="middle">팬</text>
+          <text class="ns" x="66" y="29" text-anchor="middle">사용자</text></g>
+      </svg>
+    </div>
+    <p class="scn-cap" id="scnCap"></p>
+    <p class="scn-cap" style="opacity:.85"><b>쓰기 경로는 하나</b> — <code>data</code> 브랜치는 HEAD 단위로 충돌(409)하므로 콘텐츠 커밋은 전부 쓰기 서비스 <code>POST /write</code>
+      (<code>concurrency=1 · max-instances=1</code>)가 한 줄로 서서 처리한다. 접수 서비스는 결과가 필요한 쓰기는 <code>/write</code> 를 동기 호출(429/503 만 지수 백오프 재시도),
+      결과가 필요 없는 작업은 Cloud Tasks 에 적재해 같은 <code>/write</code> 로 보낸다(5번째 시도에서 유실 큐 + DM 후 중단).
+      외부 호출(LLM · videos.list · vxtwitter · 비전)은 접수 서비스가 먼저 하고, <code>/write</code> 잡은 <b>커밋만</b> 한다.</p>
+  </div>
+
+  <h2>v3 → v4 · 무엇이 달라졌나</h2>
+  <p class="sub">배선(서비스 이름 · URL · Scheduler · webhook)은 그대로다. 달라진 것은 안쪽 판정 규칙, 운영 방식, 저장 위치, 화면.</p>
+  <div class="scroll-x">
+  <table class="cmp">
+    <thead><tr><th>항목</th><th>v3 (v3.8.10)</th><th>v4 (v4.0 → v4.1.0)</th></tr></thead>
+    <tbody>
+      <tr><td>운영 조작</td><td class="v3">텔레그램 명령 격자 <code>/list /ingest /edit /del /undo /translate × preview|notice|tweet</code> + 마법사 대화</td>
+        <td class="v4"><b>관리 페이지 <code>/admin</code></b> 7탭. 텔레그램은 알림 + <code>/status /pause /resume /list /admin</code> 만</td></tr>
+      <tr><td>watching 진입</td><td class="v3">예정 3분 전</td><td class="v4">영상 있는 예고는 <b>20분 전</b>, YouTube 「30분 전」 알림이 오면 더 일찍(<code>yt_tunein</code>)</td></tr>
+      <tr><td>URL 없는 예고</td><td class="v3">assumed-live 폴백으로 추정</td><td class="v4">추정 폐지. 시작 <b>+2분에 <code>search.list</code> 1회</b>, 예고 <b>+1시간</b> 안에 live 못 오르면 <code>out</code></td></tr>
+      <tr><td>끝난 방송</td><td class="v3">end 30분 뒤 <code>none</code></td><td class="v4">이름이 <code>out</code> (저장 안 되는 아카이브 이관 신호). end 창 안에서 같은 영상이 다시 live 면 <b>live 로 복구</b></td></tr>
+      <tr><td>그룹 공식 채널 영상</td><td class="v3">영상이 뜨면 5인 합동으로 자동 팬아웃 (노래 영상도 올라옴)</td>
+        <td class="v4"><b>근거가 있을 때만</b> 올림. RSS 는 개인 5채널만. 프리미어(그룹 채널 녹화 공개)는 방송 카드에서 제외</td></tr>
+      <tr><td>LLM 판단</td><td class="v3">판정하고 끝</td><td class="v4">판단을 기록하고 <b>반려 → LLM 재판단 / 사용자 판단</b> 으로 이어감 (7종)</td></tr>
+      <tr><td>게임 계정 글</td><td class="v3">소식으로 올라감</td><td class="v4"><b>행사 배너</b> 판정으로만 (소식 란 맨 위 행사 카드)</td></tr>
+      <tr><td>운영 상태 저장</td><td class="v3"><code>data</code> 브랜치에 같이</td><td class="v4"><b><code>ops</code> 브랜치</b> 분리 (+ 원문 보존은 <code>monitoring</code> 브랜치 <code>raw/</code>)</td></tr>
+      <tr><td>메인 화면</td><td class="v3">5열 레인 + ON-AIR 존 + 오늘/7일 이내/7일 이후 버킷</td><td class="v4"><b>오늘 타임테이블</b>(PC) · 오늘 카드(모바일) + 「이후 예고」 펼치기 <span style="color:var(--faint)">(v4.1.0)</span></td></tr>
+      <tr><td>트윗 알림 배지</td><td class="v3">봉투 아이콘 + 숫자</td><td class="v4"><b>동그라미만</b> (빈 원 = 1건, 숫자 원 = 2건 이상, 모두 읽음 = 표시 없음)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>데이터 저장소 · 브랜치 3개 <span class="vtag">mewtype-scheduler-data</span></h2>
+  <p class="sub">GitHub Contents API 의 충돌 단위가 브랜치 HEAD 라서, 쓰는 주체가 다른 것은 브랜치를 나눈다. 프론트는 <code>data</code> 만 읽는다.</p>
+  <div class="brs">
+    <div class="br"><h3>data</h3><p class="who">프론트가 읽음 · /write 가 단독 기록</p>
+      <p><code>preview.json</code> · <code>preview_archive.json</code> · <code>notices.json</code> · <code>tweets.json</code> · <code>banners.json</code> 등 팬 화면 데이터.</p></div>
+    <div class="br"><h3>ops</h3><p class="who">운영 상태 (v4 신설)</p>
+      <p><code>control.json</code>(일시정지 등) · <code>admin_state.json</code> · LLM 판단 기록 · 그룹 영상 확인 대기 · 프리미어 기록 · 작업 이력 · 로그인 nonce.</p></div>
+    <div class="br"><h3>monitoring</h3><p class="who">로그 전용 (v3.9~)</p>
+      <p>이벤트 로그 · 일별 스냅샷 · 유실 원문 큐 · 원문 보존 <code>raw/YYYY-MM-DD.jsonl</code>(KST 06:00 경계). <code>data</code> HEAD 와 경합하지 않게 하는 것이 존재 이유.</p></div>
+  </div>
+
+  <h2>6단계 상태 모델 <span class="vtag">v4a 규칙</span></h2>
+  <p class="sub">한 방송이 <code>preview.json</code> 안에서 지나는 생애. 클릭. (<code>statemachine.derive</code> 의 규칙을 그대로 옮김)</p>
+  <div class="states" id="states">
+    <button class="st" data-st="0" aria-selected="true">announced</button><span class="st-arrow">→</span>
+    <button class="st" data-st="1">upcoming</button><span class="st-arrow">→</span>
+    <button class="st" data-st="2">watching</button><span class="st-arrow">→</span>
+    <button class="st" data-st="3">live</button><span class="st-arrow">↔</span>
+    <button class="st" data-st="4">end</button><span class="st-arrow">→</span>
+    <button class="st" data-st="5">out</button>
+  </div>
+  <div class="st-detail" id="stDetail"></div>
+
+  <h2>판정 로직 · v4 에서 바뀐 규칙</h2>
+  <p class="sub">처리 로직은 v4a 시험판(결정 D1~D34)을 그대로 정식화한 것. 아래는 팬 화면에 영향이 큰 것만 추렸다.</p>
+  <div class="brs">
+    <div class="br"><h3>그룹 영상 = 근거가 있을 때만</h3><p class="who">xrelay · telegram_app</p>
+      <p>근거 = 글의 <b>정식 이름</b> · <b>인원 표현</b>(全員 · 全体配信 · 5名/5人) · (멤버 트윗이면) 영상 제목의 정식 이름 · <b>첨부 이미지 OCR</b>.
+        그룹 명의(夢限大みゅーたいぷ · #ゆめみた)만으론 근거가 아니다. 근거가 없으면 예고에 올리지 않고 <b>「참여 멤버 확인 대기」</b>에 적고 DM —
+        관리 페이지에서 멤버를 고르거나, 같은 영상 URL 을 담은 뒤 공지에서 근거가 나오면 자동 확정.</p></div>
+    <div class="br"><h3>프리미어는 카드로 안 올림</h3><p class="who">preview_build.is_group_release</p>
+      <p>그룹 공식 채널의 <b>녹화 영상 공개(프리미어)</b>는 방송이 아니라 노래 · 뮤비라서 방송 카드에서 제외하고 <code>ops</code> 의 <code>video_releases.json</code> 에 기록만 한다.
+        멤버 개인 채널의 프리미어(퀴즈 · 기념 영상)는 카드로 올린다.</p></div>
+    <div class="br"><h3>공식 글 = @BDP_yumemita 가 직접 쓴 것만</h3><p class="who">telegram_app._official_skip_reason</p>
+      <p>소식 · 공식 스케줄 판정 전에 리트윗 · 작성자 불일치를 걸러낸다. 게임 계정(バンドリ！アワーノーツ) 글은 소식이 아니라 <b>행사 배너</b> 판정으로 간다.</p></div>
+    <div class="br"><h3>같은 방송 판정 ±45분</h3><p class="who">preview.match_item (v3.8.10 이후 유지)</p>
+      <p>같은 채널의 예고를 같은 방송으로 합치는 시각 창. 영상 없는 예고끼리는 채널 페이지 URL 로 합치지 않고, 한쪽이 시각 미정이면 같은 JST 날짜끼리 합친다(D30).</p></div>
+    <div class="br"><h3>트윗 수명 = 게시 시각 + 48h</h3><p class="who">xtweet.parse</p>
+      <p>X Snowflake 에서 게시 시각을 읽어 <code>expires_at</code> 을 정한다(모르면 받은 시각 기준). 48시간 지난 트윗은 올리지 않고, 관리 페이지에서 투입하면 경고창이 뜬다.</p></div>
+    <div class="br"><h3>LLM 판단 반려</h3><p class="who">telegram_app._llm_review</p>
+      <p>방송 취소 · 게스트 · 본인 예고 · 참여 · OCR 멤버 · 소식 중복 · 행사 배너 7종의 판단을 <code>ops</code> 에 남긴다. 작업 탭에서 <b>반려</b>하면 그 판단이 한 변경만 되돌리고,
+        <b>LLM 재판단</b>(힌트 포함) 또는 <b>사용자 판단</b>(선택지 강제 주입)으로 이어진다.</p></div>
+  </div>
+
+  <h2>관리 페이지 · 7탭 <span class="vtag">/admin</span></h2>
+  <p class="sub">접수 서비스가 서빙한다. 로그인은 텔레그램 <code>/admin</code> 이 보내는 일회용 링크(<code>SameSite=Lax</code> 세션 쿠키).</p>
+  <div class="tabs-adm">
+    <div class="adm"><h3>🗓 예고</h3><p>예고 목록 · 수정(합동 멤버 · 회원 전용 · 원문/한글 제목) · 삭제 · 그룹 영상 확인 대기 카드.</p></div>
+    <div class="adm"><h3>📰 소식 · 트윗</h3><p>행사 / 소식 / 트윗 구분 탭. 소식 · 트윗 수정(트윗은 한글 번역만) · 삭제.</p></div>
+    <div class="adm"><h3>📥 원문 투입</h3><p>자동(URL 하나) / 수동(값 직접). 미리보기 → 확인 후 반영 2단계.</p></div>
+    <div class="adm"><h3>⚙️ 작업</h3><p>Cloud Tasks 예약 · 이벤트 로그 · <b>LLM 판단</b> 기록(반려 · 재판단).</p></div>
+    <div class="adm"><h3>📦 유실 원문</h3><p>쓰기 실패로 남은 원문 큐를 확인하고 한 건씩 재투입(48시간 지난 멤버 트윗은 경고).</p></div>
+    <div class="adm"><h3>🎛 운영</h3><p>일시정지 · 재개, 텔레그램 알림 레벨, 매일 멤버 현황 DM 켜기/끄기.</p></div>
+    <div class="adm"><h3>📊 리포트</h3><p>전 기간 모니터링 타임라인 · 백엔드 상태 막대. 오늘만 실시간, 지난 날짜는 스냅샷.</p></div>
+  </div>
+
+  <h2>메인 화면 · 오늘 타임테이블 <span class="vtag">v4.1.0</span></h2>
+  <p class="sub">실제 사이트 요소를 축약한 목업(예시 데이터). 슬라이더로 「지금」을 움직여 보세요 — 방송 블록이 예정 → 방송 중 → 종료(회색)로 바뀝니다.</p>
+  <div class="feats" style="grid-template-columns:1fr">
+    <div class="feat">
+      <h3>PC · 편성 레일</h3>
+      <p class="fh">가로 축은 항상 <b>KST 06:00 ~ 익일 06:00</b>(모니터링의 하루 경계와 같음). 멤버 5행에 방송 블록. 방송 중은 LIVE, 오늘 이미 끝난 방송은 회색(실제 시작~종료 길이),
+        종료 시각을 모르는 예고는 고정 폭. 블록은 호버/클릭하면 카드 팝업이 뜨고, 영상 이동은 팝업의 이미지 · 버튼으로만.</p>
+      <div class="demo">
+        <div class="tt"><div class="tt-in" id="ttIn"></div></div>
+        <div class="tt-ctrl">
+          <label for="nowR">지금</label>
+          <input type="range" id="nowR" min="360" max="1800" step="15" value="1260">
+          <output id="nowO"></output>
+        </div>
+        <div class="legend3"><span><i></i>예정</span><span><i class="s"></i>1시간 이내 시작</span><span><i class="l"></i>방송 중</span><span><i class="e"></i>종료</span><span>보라 줄 = 합동</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="feats" style="margin-top:18px">
+    <div class="feat">
+      <h3>모바일 · 오늘 카드</h3>
+      <p class="fh">1명씩 가로 슬라이드(스냅 · 무한 회전, 마우스 드래그도 가능) 유지. 레인 = 네임플레이트 + <b>오늘 카드</b> + ▼ 「이후 예고」 펼치기.
+        지금 보는 레인만 동작하고 옆 레인은 <code>inert</code>.</p>
+      <div class="demo">
+        <div class="seg3" id="mtcSeg" role="tablist">
+          <button role="tab" aria-selected="true" data-m="up">예정</button>
+          <button role="tab" aria-selected="false" data-m="live">방송 중</button>
+          <button role="tab" aria-selected="false" data-m="end">종료</button>
+        </div>
+        <div class="mtc" id="mtc"></div>
+        <p class="fh" style="margin:12px 0 0">링은 상태마다 다르다: 예정 = 시작까지 남은 시간, 방송 중 = <b>경과 링</b>(12시에서 시계방향으로 60분 채움 → 다음 60분 같은 방향으로 비움, 반복),
+          종료 = 방송 시간(회색). 합동 카드는 이미지 왼쪽 위에 참여 멤버 아바타만, 회원 전용은 🔒 알약.</p>
+      </div>
+    </div>
+
+    <div class="feat">
+      <h3>트윗 알림 · 동그라미 배지</h3>
+      <p class="fh">봉투 아이콘을 없애고 같은 크기의 원 하나로 정리. PC 는 타임테이블 왼쪽 멤버 칸에만, 모바일은 레인 네임플레이트에 붙는다(「이후 예고」 열에는 없음).</p>
+      <div class="demo">
+        <div class="seg3" id="bdgSeg" role="tablist">
+          <button role="tab" aria-selected="false" data-b="0">모두 읽음</button>
+          <button role="tab" aria-selected="true" data-b="1">안 읽음 1건</button>
+          <button role="tab" aria-selected="false" data-b="3">안 읽음 3건</button>
+        </div>
+        <div class="bdg-demo"><div class="av" id="bdgAv"></div><span class="fh" style="margin:0" id="bdgTx"></span></div>
+
+        <h3 style="margin:22px 0 3px;font-size:.98rem">이후 예고 펼치기</h3>
+        <p class="fh">구간 밖(익일 06:00 이후)과 시각 미정 예고를 기간 구분 없이 모아 타임테이블 아래 ▼ 버튼으로 펼친다. 0건이면 버튼도 목록도 숨김.</p>
+        <div class="fold">
+          <button id="foldBtn">▼ 이후 예고 2건 펼치기</button>
+          <div class="fold-list" id="foldList">
+            <div class="card"><span class="ico">📺</span><span><b>【雑談】サンプル配信</b><br><span>10/09 (금) 21:00 · 아라레</span></span></div>
+            <div class="card"><span class="ico">📺</span><span><b>【歌枠】時刻未定</b><br><span>시각 미정 · 노노카</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>소식 티커 · 행사 배너</h2>
+  <p class="sub">소식 란은 접힘/펼침 + 5초 순환 티커는 그대로. v4 에서 펼침 맨 위에 <b>행사 카드</b>가 생겼다.</p>
+  <div class="feats">
+    <div class="feat">
+      <h3>소식 티커</h3>
+      <p class="fh">방송 외 이벤트(라이브 · 음반 · 굿즈 · 타 플랫폼). 제목과 본문은 번역되어(<code>title_ko</code> · <code>body_ko</code>) 저장된다.</p>
+      <div class="demo"><div class="ticker"><span class="lamp"></span><span class="txt" id="tkTxt">『無限大フェス 2026』 대형 합동 라이브 — 10/12 토쿄</span><span class="tag" id="tkTag">LIVE</span></div></div>
+    </div>
+    <div class="feat">
+      <h3>행사 배너 (게임 계정)</h3>
+      <p class="fh">게임 계정 글을 <code>llm.banner_judge</code> → <code>banners.apply_judgement</code> 로 판정해 <code>banners.json</code> 에 올린다. 개최 전 공지는 종료일을 몰라도 올리고,
+        모든 일정이 끝나도 그날 자정(KST)까지 회색 「종료」로 남는다. 이미지는 X 트윗의 행사 키비주얼만 쓴다.</p>
+      <div class="demo"><div class="card card--up" style="opacity:1"><span class="ico">🎪</span><span><b>(예시) 행사 이름</b><br><span>개최 10/12 ~ 10/26 · 진행 막대 · 종료 일정 박스</span></span></div></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    작성 2026-10-06 · 기준 <code>main</code> (v4.0 배포 <code>mewtype-backend-00124-wj5</code> · <code>mewtype-telegram-00089-q2d</code> + v4.1.0 병합 <code>3a5eb2b</code>).
+    그림 속 목업의 방송 · 제목 · 시각은 모두 예시이며 실데이터가 아니다. 판정 상수(20분 · 2분 · 1시간 · 30분 · 5/10분)는 <code>src/backend/statemachine.py</code>, 화면 규칙은
+    <code>src/frontend/js/timetable.js</code>·<code>render.js</code> 에서 확인했다.<br>
+    상세: <code>docs/SPEC.md</code> · <code>docs/VERSION.md</code> · <code>docs/TERMINOLOGY.md</code> · 이전 판 <code>v3_pamphlet.html</code>(devpapers).
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var SVG = document.getElementById("svg");
+
+  var NC = {
+    op:[470,31], tg:[270,108], adm:[640,108], push:[84,179], up:[84,268], ctrl:[309,276],
+    be:[585,276], sch:[854,180], yt:[854,340], llm:[88,356], db:[565,411],
+    fe:[565,517], fan:[562,603]
+  };
+
+  var SCN = {
+    poll: {e:["e_sch_be","e_yt_be","e_be_db","e_db_fe","e_fe_fan"],
+      r:["sch","be","yt","be","db","fe","fan"],
+      c:"<b>정기 수집</b> — Cloud Scheduler 가 <code>/tick</code> 을 부른다. 기준 수집은 매일 JST 06:00, 안전망 수집은 <b>10분 간격</b>. RSS(개인 5채널만) + <code>videos.list</code> 로 상태를 다시 판정하고 "
+        + "<code>preview.json</code> 을 재구성, 번역이 비어 있는 항목은 같은 실행에서 말단 번역 sweep 으로 채운다. 바뀐 것만 커밋 → 사이트가 최대 몇 분 뒤 반영(raw CDN 캐시 5분)."},
+    wake: {e:["e_sch_be","e_yt_be","e_be_db","e_db_fe","e_fe_fan"],
+      r:["sch","be","yt","be","db","fe","fan"],
+      c:"<b>정밀 확인 (wake)</b> — 영상이 있는 예정 방송마다 Cloud Tasks 가 <code>/wake</code> 로 백엔드를 콕 찍어 깨운다. 시작 <b>20분 전</b>부터 watching(3분 간격), 방송 시작~60분은 10분, 이후 5분, "
+        + "종료 후 30분 창은 5분 간격. 예고를 삭제하면 그 영상의 예약된 확인을 Cloud Tasks 에서도 지운다. 접수 서비스도 Tasks 설정을 받아 <b>알림 직후 즉시 확인</b> 예약이 가능해졌다(v3 에선 불발)."}
+  };
+
+  var RELAY = {
+    personal: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
+      c:"<b>멤버 개인 트윗</b> — 게시자 표시명으로 5인을 가려 vxtwitter 로 원문을 복원하고(폰 알림은 잘리기 쉬움), LLM 번역을 붙여 편지 배지 스레드에 쌓는다(수명 = 게시 시각 + 48h). "
+        + "글에 <b>유튜브 URL</b>이 있으면 <code>videos.list</code> 로 사실을 확정해 예고로 등록(본인/타멤버/그룹 채널 갈래), URL 이 없으면 텍스트 예고 후보를 LLM 으로 최종 확인한다. "
+        + "리트윗(<code>@핸들:</code> · 작성자 불일치)은 예고 판정에서 건너뛴다. 커밋은 <code>/write</code>."},
+    bdp: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
+      c:"<b>공식 일일 스케줄</b> — @BDP_yumemita 가 <b>직접 쓴</b> 글만 받는다(리트윗 · 타 계정 제외). 정규식 파서(<code>xrelay</code>)가 줄 단위로 읽고, 합동 줄은 LLM 이 게스트를 재확인한다. "
+        + "5인 합동은 <b>근거(이름 · 全員 등 · 이미지 OCR)</b>가 있을 때만 확정 — 없으면 「참여 멤버 확인 대기」로 보낸다(그림의 LLM 점선은 OCR · 게스트 확인 때만 탄다)."},
+    ytnotif: {e:["e_push_up","e_up_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      r:["push","up","ctrl","be","db","fe","fan"],
+      c:"<b>YouTube 앱 알림</b> — 업스트림이 <code>source=yt</code> 폼으로 중계한다. 접수 서비스가 <code>yt_notif</code> 작업을 쓰기 서비스에 보내면 해당 영상을 즉시 재확인(reconcile)하고, "
+        + "「30분 전」 알림이면 watching 에 일찍 들여보낸다(<code>yt_tunein</code>). 회원 전용 라이브는 API 로 못 찾아 알림이 오면 live 로 직행한다."},
+    game: {e:["e_push_up","e_up_ctrl","e_llm_ctrl","e_ctrl_be","e_be_db","e_db_fe","e_fe_fan"],
+      r:["push","up","ctrl","llm","ctrl","be","db","fe","fan"],
+      c:"<b>게임 계정 · 행사 배너</b> — 게임 계정(<code>config/channels.json</code> 의 <code>game_accounts</code>) 글은 소식이 아니라 LLM <code>banner_judge</code> 로 행사 · 가챠를 판정해 "
+        + "<code>banners.json</code> 에 반영한다. 개최 기간이 이미지에만 있으면 비전(OCR)으로 읽어 한 번 더 판정(2단계). 판단은 작업 탭 「LLM 판단」에 남아 반려할 수 있다. 일반 방송 외 소식은 같은 경로로 제목 추출 · 번역 후 <code>notices.json</code>."}
+  };
+
+  var OPS = {
+    admin: {e:["e_op_adm","e_adm_ctrl","e_ctrl_be","e_be_db"],
+      r:["op","adm","ctrl","be","db"],
+      c:"<b>관리 페이지</b> — 운영자가 웹에서 조작(예고 수정 · 원문 투입 · 반려 …). 페이지는 접수 서비스가 서빙하고, 값이 바뀌는 조작은 미리보기 → 확정 뒤 <code>/write</code> 로 커밋된다. 운영 상태는 <code>ops</code> 브랜치."},
+    tgstatus: {e:["e_op_tg","e_tg_ctrl"],
+      r:["op","tg","ctrl","db","ctrl","tg","op"],
+      c:"<b>/status · /list</b> — 상태 카운트 · 항목 목록을 <b>읽어서</b> DM 회신. 쓰기 없음."},
+    tgpause: {e:["e_op_tg","e_tg_ctrl"],
+      r:["op","tg","ctrl","db"],
+      c:"<b>/pause · /resume</b> — 일시정지 플래그(<code>control.json</code>)를 <code>ops</code> 에 기록. 정지 중엔 정기 수집 · wake 가 핑만 하고 no-op. <code>/resume</code> 은 백엔드 수집을 즉시 호출해 밀린 상태를 재판정한다."},
+    tgadmin: {e:["e_op_tg","e_tg_ctrl"],
+      r:["op","tg","ctrl","tg","op"],
+      c:"<b>/admin</b> — 관리 페이지 일회용 로그인 링크를 DM 으로 받는다(링크 미리보기가 링크를 소모하지 않도록 v4.0.1 에서 고침)."}
+  };
+
+  var REPORT = {r:["sch","be","db"],
+    c:"<b>일일 리포트</b> — 매일 KST 06:10 <code>/monitor</code> 가 전일 스냅샷(<code>monitoring/days/</code>)과 전 기간 요약(<code>summary.json</code>)을 찍는다. 운영 탭의 「멤버 현황 DM」이 켜져 있으면 「오늘의 멤버 현황」 텍스트만 DM 으로 간다. "
+      + "관리 페이지 리포트 탭이 이것을 읽어 타임라인으로 보여준다(오늘만 실시간 계산)."};
+
+  var capEl = document.getElementById("scnCap");
+  var routeEl = document.getElementById("routeLine");
+  var packet = document.getElementById("packet");
+  var pkMove = document.getElementById("pkMove");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function routePath(keys){
+    var p = keys.map(function(k){ return NC[k]; });
+    return "M" + p[0][0] + "," + p[0][1] + p.slice(1).map(function(q){ return " L" + q[0] + "," + q[1]; }).join("");
+  }
+  function routeLen(keys){
+    var L = 0;
+    for (var i = 1; i < keys.length; i++){ var a = NC[keys[i-1]], b = NC[keys[i]]; L += Math.hypot(b[0]-a[0], b[1]-a[1]); }
+    return L;
+  }
+  function uniq(a){ return a.filter(function(x,i){ return a.indexOf(x)===i; }); }
+
+  function paint(route, capHTML){
+    SVG.classList.add("dimming");
+    SVG.querySelectorAll(".hot").forEach(function(el){ el.classList.remove("hot"); });
+    uniq(route).forEach(function(k){ var el = document.getElementById("n_" + k); if (el) el.classList.add("hot"); });
+    capEl.innerHTML = capHTML;
+    var d = routePath(route);
+    routeEl.setAttribute("d", d);
+    pkMove.setAttribute("path", d);
+    pkMove.setAttribute("dur", Math.max(2.4, Math.min(5.2, routeLen(route) / 300)).toFixed(1) + "s");
+    if (reduceMotion){ packet.setAttribute("opacity", "0"); return; }
+    packet.setAttribute("opacity", "1");
+    try { pkMove.beginElement(); } catch(e){}
+  }
+
+  function bindRow(rowId, attr, table, cur){
+    var row = document.getElementById(rowId);
+    function apply(key){
+      row.querySelectorAll(".cmd").forEach(function(b){ b.setAttribute("aria-selected", b.dataset[attr] === key ? "true" : "false"); });
+      paint(table[key].r, table[key].c);
+      cur.v = key;
+    }
+    row.querySelectorAll(".cmd").forEach(function(b){ b.addEventListener("click", function(){ apply(b.dataset[attr]); }); });
+    return apply;
+  }
+  var curRelay = {v:"personal"}, curOps = {v:"admin"};
+  var applyRelay = bindRow("relayRow", "relay", RELAY, curRelay);
+  var applyOps = bindRow("opsRow", "ops", OPS, curOps);
+  var relayRow = document.getElementById("relayRow"), opsRow = document.getElementById("opsRow");
+
+  function applyScn(key){
+    relayRow.hidden = true; opsRow.hidden = true;
+    if (key === "relay"){ relayRow.hidden = false; applyRelay(curRelay.v); return; }
+    if (key === "ops"){ opsRow.hidden = false; applyOps(curOps.v); return; }
+    if (key === "report"){ paint(REPORT.r, REPORT.c); return; }
+    paint(SCN[key].r, SCN[key].c);
+  }
+  document.querySelectorAll(".scn-tab").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".scn-tab").forEach(function(x){ x.setAttribute("aria-selected","false"); });
+      b.setAttribute("aria-selected","true");
+      applyScn(b.dataset.scn);
+    });
+  });
+  applyScn("poll");
+
+  /* ── 상태 모델 (statemachine.derive 규칙) ── */
+  var ST = [
+    ["announced","예고","영상(video_id)이 아직 없거나 정보 일부만 있는 예고. X 릴레이 · 개인 트윗 · 수동 등록에서 생성. <b>영상 없는 예고</b>는 시작 +2분에 search.list 1회로 URL 을 찾아보고, 예고 시각 +1시간까지 live 로 못 오르면 out. 예정 시각이 지나 120분 넘게 조용하면 watching 으로 돌아가지 않고 머문다(late-hold).","card card--up"],
+    ["upcoming","예정","날짜 · 시각 · 제목 · 영상 URL 이 모두 모임(D14). 정식 방송 카드. 시작 <b>20분 전</b>이 되면 watching 으로 올라간다.","card card--up"],
+    ["watching","대기","시작 20분 전 진입(YouTube 「30분 전」 알림이면 더 일찍). 3분 간격으로 라이브 여부만 확인. 시작 120분이 지나도 못 오르면 영상 있는 예고는 upcoming 으로 되돌림(assumed-live 폴백은 폐지). 예정이 20분보다 먼 미래로 밀리면 다시 대기로 되돌린다.","card card--up"],
+    ["live","방송 중","실제 라이브. 시작~60분은 10분, 이후 5분 간격으로 확인. 회원 전용은 API 로 못 찾아 유튜브 알림이 오면 직행. 확인이 「아님」으로 명시되면 end — 「미확인」은 end 로 보지 않는다.","card"],
+    ["end","방송 종료","30분 관찰 창(5분 간격). 같은 영상이 다시 live 로 관측되면 <b>live 로 복구</b>(D6), 예고 스트림으로 재등장하면 upcoming.","card"],
+    ["out","내려감","end 30분 경과 등 → <code>preview_archive.json</code> 으로 이관되고 <code>preview.json</code> 에서는 제거. v3 의 <code>none</code> 과 같은 자리지만 파일에 저장되는 상태가 아니라 이관 신호의 이름(D7).","card"]
+  ];
+  var stD = document.getElementById("stDetail");
+  function showSt(i){
+    var s = ST[i], live = i===3, endc = i===4;
+    stD.innerHTML =
+      '<div class="'+s[3]+'" style="min-width:150px;opacity:1;'+(live?'border-style:solid;border-color:#5a2020':'')+'">'+
+        '<span class="ico">'+(live?'🔴':endc?'⏹':i<2?'📺':i===5?'📦':'👀')+'</span>'+
+        '<span><b style="display:block;color:#e8e8e8">'+s[0]+'</b><span style="color:#999">'+s[1]+'</span></span>'+
+      '</div><p><b>'+s[1]+' · '+s[0]+'</b>'+s[2]+'</p>';
+    document.querySelectorAll("#states .st").forEach(function(b){ b.setAttribute("aria-selected", b.dataset.st==String(i) ? "true":"false"); });
+  }
+  document.querySelectorAll("#states .st").forEach(function(b){ b.addEventListener("click", function(){ showSt(+b.dataset.st); }); });
+  showSt(0);
+
+  /* ── 타임테이블 목업 (축: KST 06:00 = 360분 ~ 익일 06:00 = 1800분) ── */
+  var AX0 = 360, AX1 = 1800, SPAN = AX1 - AX0, FIXED_H = 5.7 * 60;   // 종료 모르는 예고 = 고정 폭(실제 W_FIXED 210px/888px 비율)
+  var MEMBERS = [
+    ["아라레","#a85f7d"],["유노","#5d8fa8"],["노노카","#8a7fc0"],["리츠","#6fa58a"],["미야코","#b8905a"]
+  ];
+  /* [행, 시작분, 끝분(없으면 null=종료 시각 모름), 제목, 합동?] — 전부 예시 */
+  var BLK = [
+    [0, 600, 720, "【雑談】朝の配信", 0],
+    [0, 1320, null, "【歌枠】夜ふかしカラオケ", 0],
+    [1, 780, 900, "【ゲーム】サンプル実況", 0],
+    [1, 1200, null, "【コラボ】5人合同サンプル", 1],
+    [2, 1050, 1170, "【料理】お昼ごはん", 0],
+    [3, 1230, 1380, "【雑談】夜の雑談", 0],
+    [3, 1200, null, "【コラボ】5人合同サンプル", 1],
+    [4, 1500, null, "【深夜】作業配信", 0]
+  ];
+  var nowR = document.getElementById("nowR"), nowO = document.getElementById("nowO"), ttIn = document.getElementById("ttIn");
+  function fmt(min){
+    var d = min >= 1440 ? min - 1440 : min, h = Math.floor(d / 60), m = d % 60;
+    return (min >= 1440 ? "익일 " : "") + String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0");
+  }
+  function pct(min){ return ((min - AX0) / SPAN * 100); }
+  function drawTT(){
+    var now = +nowR.value;
+    nowO.textContent = fmt(now);
+    var h = '<div class="tt-axis">';
+    for (var t = 360; t <= 1800; t += 180){
+      h += '<span class="' + (t === 1440 ? 'mid' : '') + '" style="left:' + pct(t).toFixed(2) + '%">' + (t === 1440 ? "자정" : fmt(t).replace("익일 ","")) + '</span>';
+    }
+    h += '</div>';
+    MEMBERS.forEach(function(m, ri){
+      h += '<div class="tt-row"><div class="tt-who" style="--lc:' + m[1] + '"><i></i><b>' + m[0] + '</b></div><div class="tt-track">';
+      h += '<div class="tt-past" style="width:' + Math.max(0, pct(now)).toFixed(2) + '%"></div>';
+      BLK.forEach(function(b){
+        if (b[0] !== ri) return;
+        var st = b[1], en = b[2], known = en != null, end = known ? en : st + FIXED_H;
+        var cls = "tt-blk", sub;
+        if (known && now >= en){ cls += " ended"; sub = fmt(st) + " ~ " + fmt(en); }
+        else if (now >= st){ cls += " live"; sub = fmt(st) + " ~ 방송 중 " + (now - st) + "분"; }
+        else { sub = fmt(st) + (known ? " ~ " + fmt(en) : ""); if (st - now <= 60) cls += " soon"; }
+        if (b[4]) cls += " collab";
+        h += '<div class="' + cls + '" style="left:' + pct(st).toFixed(2) + '%;width:' + ((end - st) / SPAN * 100).toFixed(2) + '%"><span class="ti"></span><small>' + sub + '</small></div>';
+      });
+      h += '<div class="tt-now" style="left:' + pct(now).toFixed(2) + '%"></div></div></div>';
+    });
+    ttIn.innerHTML = h;
+    /* 제목은 textContent 로 (목업이지만 실제 사이트와 같은 규칙) */
+    var k = 0;
+    MEMBERS.forEach(function(m, ri){
+      BLK.forEach(function(b){ if (b[0] === ri){ ttIn.querySelectorAll(".tt-blk .ti")[k++].textContent = b[3]; } });
+    });
+  }
+  nowR.addEventListener("input", drawTT);
+  drawTT();
+
+  /* ── 모바일 오늘 카드 ── */
+  var mtc = document.getElementById("mtc");
+  var M = {
+    up:  {pill:"예정", live:false, p:70, ring:"", txt:"<span>2시간<br>후</span>", date:"10/07 (수) 21:00", cls:""},
+    live:{pill:"LIVE", live:true,  p:38, ring:"live", txt:"<span>23분<br>방송중</span>", date:"10/07 (수) 21:00 ~", cls:"live"},
+    end: {pill:"종료", live:false, p:100, ring:"ended", txt:"<span>96분<br>방송</span>", date:"10/07 (수) 21:00 ~ 22:36", cls:"end"}
+  };
+  function drawM(k){
+    var m = M[k];
+    mtc.textContent = "";
+    var img = document.createElement("div"); img.className = "mtc__img";
+    var pill = document.createElement("span"); pill.className = "pill" + (m.live ? " live" : ""); pill.textContent = m.pill; img.appendChild(pill);
+    var bd = document.createElement("div"); bd.className = "mtc__bd";
+    var tx = document.createElement("div"); tx.className = "mtc__tx";
+    var b = document.createElement("b"); b.textContent = "【歌枠】夜ふかしカラオケ (예시)";
+    var s = document.createElement("span"); s.textContent = m.date;
+    tx.appendChild(b); tx.appendChild(s);
+    var ring = document.createElement("div"); ring.className = "ring " + m.ring; ring.style.setProperty("--p", m.p); ring.innerHTML = m.txt;
+    bd.appendChild(tx); bd.appendChild(ring);
+    mtc.appendChild(img); mtc.appendChild(bd);
+    document.querySelectorAll("#mtcSeg button").forEach(function(x){ x.setAttribute("aria-selected", x.dataset.m === k ? "true" : "false"); });
+  }
+  document.querySelectorAll("#mtcSeg button").forEach(function(x){ x.addEventListener("click", function(){ drawM(x.dataset.m); }); });
+  drawM("up");
+
+  /* ── 동그라미 배지 ── */
+  var bdgAv = document.getElementById("bdgAv"), bdgTx = document.getElementById("bdgTx");
+  function drawB(n){
+    var old = bdgAv.querySelector(".dot"); if (old) old.remove();
+    if (n > 0){
+      var d = document.createElement("span");
+      d.className = "dot" + (n === 1 ? " empty" : "");
+      if (n > 1) d.textContent = String(n);
+      bdgAv.appendChild(d);
+    }
+    bdgTx.textContent = n === 0 ? "모두 읽음 — 표시 없음(테두리도 안 남김)" : n === 1 ? "안 읽음 1건 — 빈 원" : "안 읽음 " + n + "건 — 숫자 원";
+    document.querySelectorAll("#bdgSeg button").forEach(function(x){ x.setAttribute("aria-selected", x.dataset.b === String(n) ? "true" : "false"); });
+  }
+  document.querySelectorAll("#bdgSeg button").forEach(function(x){ x.addEventListener("click", function(){ drawB(+x.dataset.b); }); });
+  drawB(1);
+
+  /* ── 이후 예고 펼치기 ── */
+  var foldBtn = document.getElementById("foldBtn"), foldList = document.getElementById("foldList");
+  foldBtn.addEventListener("click", function(){
+    var open = foldList.classList.toggle("open");
+    foldBtn.textContent = open ? "▲ 이후 예고 접기" : "▼ 이후 예고 2건 펼치기";
+  });
+
+  /* ── 소식 티커 ── */
+  var TK = [["『無限大フェス 2026』 대형 합동 라이브 — 10/12 토쿄","LIVE"],["1st EP「ゆめのつづき」 발매 — 10/25","음반"],["아크릴 스탠드 4종 예약 개시 — BOOTH","굿즈"]];
+  var tkTxt = document.getElementById("tkTxt"), tkTag = document.getElementById("tkTag"), ti = 0;
+  setInterval(function(){ ti = (ti+1) % TK.length; tkTxt.textContent = TK[ti][0]; tkTag.textContent = TK[ti][1]; }, 3200);
+})();
+</script>
+</body>
+</html>
