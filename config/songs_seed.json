@@ -1,0 +1,524 @@
+{
+  "songs": [
+    {
+      "date": "2023-11-28",
+      "id": "BI71vana4VI",
+      "kind": "cover",
+      "reading": "きみがとびおりるのならば",
+      "title": "君が飛び降りるのならば",
+      "who": "arale"
+    },
+    {
+      "date": "2023-12-08",
+      "id": "LXYyBjnbQys",
+      "kind": "cover",
+      "reading": "ゆきとき",
+      "title": "ユキトキ",
+      "who": "nonoka"
+    },
+    {
+      "date": "2023-12-15",
+      "id": "ivfYQxQBiXQ",
+      "kind": "cover",
+      "reading": "",
+      "title": "CH4NGE",
+      "who": "yuno"
+    },
+    {
+      "date": "2023-12-22",
+      "id": "tdZgnk1nEG4",
+      "kind": "cover",
+      "reading": "",
+      "title": "PARTY☆NIGHT（D-POP version）",
+      "who": "miyako"
+    },
+    {
+      "date": "2023-12-28",
+      "id": "i-cgqBosaDw",
+      "kind": "cover",
+      "reading": "",
+      "title": "決戦スピリット",
+      "who": "ritsu"
+    },
+    {
+      "date": "2024-01-21",
+      "id": "bLIW2klD4Ms",
+      "kind": "cover",
+      "reading": "たえまなくあいいろ",
+      "title": "絶え間なく藍色",
+      "who": "yuno"
+    },
+    {
+      "date": "2024-01-26",
+      "id": "_WXK_IB4cck",
+      "kind": "cover",
+      "reading": "",
+      "title": "TOMORROW",
+      "who": "miyako"
+    },
+    {
+      "date": "2024-02-07",
+      "id": "gZe2UGwld2E",
+      "kind": "cover",
+      "reading": "",
+      "title": "ティアドロップス",
+      "who": "ritsu"
+    },
+    {
+      "date": "2024-02-14",
+      "id": "PsPtBzaevyA",
+      "kind": "cover",
+      "reading": "",
+      "title": "スイートマジック",
+      "who": "nonoka"
+    },
+    {
+      "date": "2024-02-26",
+      "id": "7R1DMU0qa00",
+      "kind": "cover",
+      "reading": "",
+      "title": "地球最後の告白を",
+      "who": "arale"
+    },
+    {
+      "date": "2024-04-17",
+      "id": "2TtYsm1HDx8",
+      "kind": "cover",
+      "reading": "",
+      "title": "少年よ我に帰れ",
+      "who": "nonoka"
+    },
+    {
+      "date": "2024-04-19",
+      "id": "ZcY2a1DyVAo",
+      "kind": "cover",
+      "reading": "",
+      "title": "パラレルラルラ",
+      "who": "arale"
+    },
+    {
+      "date": "2024-04-26",
+      "id": "XEzZRDCZBSc",
+      "kind": "cover",
+      "reading": "ときをかけるしょうじょ",
+      "title": "時をかける少女",
+      "who": "miyako"
+    },
+    {
+      "date": "2024-05-03",
+      "id": "tZzToEEZjgo",
+      "kind": "cover",
+      "reading": "なでんな",
+      "title": "撫でんな",
+      "who": "yuno"
+    },
+    {
+      "date": "2024-05-10",
+      "id": "FhaynKrmQro",
+      "kind": "cover",
+      "reading": "",
+      "title": "ロウワー",
+      "who": "ritsu"
+    },
+    {
+      "date": "2024-05-19",
+      "id": "_jU3f42nbGs",
+      "kind": "cover",
+      "reading": "",
+      "title": "インキャのキャキャキャ",
+      "who": "group"
+    },
+    {
+      "date": "2024-05-24",
+      "id": "OsJPJo4uKBc",
+      "kind": "cover",
+      "reading": "よもすがらきみおもふ",
+      "title": "夜もすがら君想ふ",
+      "who": "arale"
+    },
+    {
+      "date": "2024-06-07",
+      "id": "yLj0VCQC8qE",
+      "kind": "cover",
+      "reading": "",
+      "title": "ハッピー☆マテリアル",
+      "who": "miyako"
+    },
+    {
+      "date": "2024-06-15",
+      "id": "3M5YaHlpMjY",
+      "kind": "cover",
+      "reading": "じれんま",
+      "title": "ジレンマ",
+      "who": "arale"
+    },
+    {
+      "date": "2024-06-29",
+      "id": "9Ba8G_i4dAg",
+      "kind": "cover",
+      "reading": "",
+      "title": "なにやってもうまくいかない",
+      "who": "yuno"
+    },
+    {
+      "date": "2024-07-06",
+      "id": "WS4flpVYkLg",
+      "kind": "cover",
+      "reading": "",
+      "title": "glow",
+      "who": "arale"
+    },
+    {
+      "date": "2024-07-20",
+      "id": "RzgsdgCkFjU",
+      "kind": "cover",
+      "reading": "",
+      "title": "元気を出して",
+      "who": "miyako"
+    },
+    {
+      "date": "2024-07-27",
+      "id": "eI-BW0Bcq4g",
+      "kind": "cover",
+      "reading": "",
+      "title": "メンタルチェンソー",
+      "who": "arale"
+    },
+    {
+      "date": "2024-08-11",
+      "id": "FvLSUJ35qmE",
+      "kind": "cover",
+      "reading": "",
+      "title": "ハイドアンド・シーク",
+      "who": "ritsu"
+    },
+    {
+      "date": "2024-08-16",
+      "id": "d6n4WHEtAgE",
+      "kind": "cover",
+      "reading": "",
+      "title": "ホシアイ",
+      "who": "arale"
+    },
+    {
+      "date": "2024-08-23",
+      "id": "Gc7vzpnIYSU",
+      "kind": "cover",
+      "reading": "",
+      "title": "マーシャル・マキシマイザー",
+      "who": "yuno"
+    },
+    {
+      "date": "2024-09-14",
+      "id": "QmYpqqTvVHc",
+      "kind": "cover",
+      "reading": "",
+      "title": "エイリアンエイリアン",
+      "who": "group"
+    },
+    {
+      "date": "2024-09-19",
+      "id": "RGByUSGhQgE",
+      "kind": "cover",
+      "reading": "つばさをください",
+      "title": "翼をください",
+      "who": "miyako"
+    },
+    {
+      "date": "2024-10-20",
+      "id": "0makuFTnChs",
+      "kind": "cover",
+      "reading": "",
+      "title": "フォニイ",
+      "who": "arale"
+    },
+    {
+      "date": "2024-10-27",
+      "id": "zFsTGz60TLY",
+      "kind": "original",
+      "reading": "",
+      "title": "新人類は仮想世界の夢を見るか?",
+      "who": "group"
+    },
+    {
+      "date": "2024-11-05",
+      "id": "4MPXhnbf29o",
+      "kind": "cover",
+      "reading": "",
+      "title": "ZEAL of proud",
+      "who": "yuno"
+    },
+    {
+      "date": "2024-12-01",
+      "id": "YHfBJMxWSec",
+      "kind": "cover",
+      "reading": "",
+      "title": "不可解",
+      "who": "ritsu"
+    },
+    {
+      "date": "2024-12-18",
+      "id": "fyc4aGZ9C18",
+      "kind": "cover",
+      "reading": "",
+      "title": "One Last Kiss",
+      "who": "nonoka"
+    },
+    {
+      "date": "2024-12-24",
+      "id": "SI8q0trRdOE",
+      "kind": "original",
+      "reading": "",
+      "title": "コミュ着火Fire!",
+      "who": "group"
+    },
+    {
+      "date": "2024-12-26",
+      "id": "UWHzX6SpizM",
+      "kind": "cover",
+      "reading": "",
+      "title": "YoU kNOw the overture",
+      "who": "yuno"
+    },
+    {
+      "date": "2025-01-29",
+      "id": "xjGwcPHPAo8",
+      "kind": "cover",
+      "reading": "",
+      "title": "繰り返し一粒",
+      "who": "yuno"
+    },
+    {
+      "date": "2025-02-06",
+      "id": "oD74b35UNVc",
+      "kind": "original",
+      "reading": "",
+      "title": "TRASH LIFE",
+      "who": "group"
+    },
+    {
+      "date": "2025-02-27",
+      "id": "_iX9WOOierg",
+      "kind": "original",
+      "reading": "",
+      "title": "限界現実サバイブ天使",
+      "who": "group"
+    },
+    {
+      "date": "2025-02-27",
+      "id": "xosxYF29mvk",
+      "kind": "original",
+      "reading": "",
+      "title": "エンプティパペット",
+      "who": "group"
+    },
+    {
+      "date": "2025-02-27",
+      "id": "3WpaXoun2Tc",
+      "kind": "original",
+      "reading": "",
+      "title": "ビッグマウス",
+      "who": "group"
+    },
+    {
+      "date": "2025-02-27",
+      "id": "XYCI2LzEnZA",
+      "kind": "original",
+      "reading": "こはく",
+      "title": "コハク",
+      "who": "group"
+    },
+    {
+      "date": "2025-02-27",
+      "id": "J_zCYMoy1Cw",
+      "kind": "original",
+      "reading": "",
+      "title": "✞animaるパーティ✞開催中✞",
+      "who": "group"
+    },
+    {
+      "date": "2025-02-27",
+      "id": "vS2MCoSUEVs",
+      "kind": "original",
+      "reading": "",
+      "title": "夢現妄想世界",
+      "who": "group"
+    },
+    {
+      "date": "2025-04-16",
+      "id": "mKiBvYqfBfk",
+      "kind": "original",
+      "reading": "てれぱしー",
+      "title": "テレパシー",
+      "who": "group"
+    },
+    {
+      "date": "2025-04-29",
+      "id": "a1-SB-tFYmI",
+      "kind": "original",
+      "reading": "",
+      "title": "Hi-Vision",
+      "who": "group"
+    },
+    {
+      "date": "2025-05-02",
+      "id": "n4AUKXIjNeo",
+      "kind": "cover",
+      "reading": "",
+      "title": "KiLLKiSS",
+      "who": "group"
+    },
+    {
+      "date": "2025-07-04",
+      "id": "yHMLvqxh2PQ",
+      "kind": "cover",
+      "reading": "",
+      "title": "ミルククラウン・オン・ソーネチカ",
+      "who": "nonoka"
+    },
+    {
+      "date": "2025-07-22",
+      "id": "fDnYCRzvCco",
+      "kind": "original",
+      "reading": "",
+      "title": "Dream Voyage",
+      "who": "group"
+    },
+    {
+      "date": "2025-08-01",
+      "id": "e15grxDKfF8",
+      "kind": "cover",
+      "reading": "",
+      "title": "経験値上昇中☆",
+      "who": "miyako"
+    },
+    {
+      "date": "2025-08-15",
+      "id": "QMcU8T8wOd4",
+      "kind": "original",
+      "reading": "",
+      "title": "グラディエント",
+      "who": "group"
+    },
+    {
+      "date": "2025-08-15",
+      "id": "D7M1eAnroZE",
+      "kind": "cover",
+      "reading": "",
+      "title": "GURU",
+      "who": "ritsu"
+    },
+    {
+      "date": "2025-09-02",
+      "id": "KD-EeGTr53I",
+      "kind": "original",
+      "reading": "まよなかゆうえんち",
+      "title": "真夜中遊園地",
+      "who": "group"
+    },
+    {
+      "date": "2025-09-02",
+      "id": "g9fpSuTbouI",
+      "kind": "original",
+      "reading": "",
+      "title": "LET'Sあちあちトレーニング！",
+      "who": "group"
+    },
+    {
+      "date": "2025-09-07",
+      "id": "gJqvYYkdkC8",
+      "kind": "original",
+      "reading": "",
+      "title": "チューニング",
+      "who": "group"
+    },
+    {
+      "date": "2025-11-03",
+      "id": "a6oOosacMxc",
+      "kind": "original",
+      "reading": "",
+      "title": "Calling",
+      "who": "group"
+    },
+    {
+      "date": "2025-11-14",
+      "id": "uaAIGOd9Qv0",
+      "kind": "cover",
+      "reading": "",
+      "title": "ELECT",
+      "who": "arale"
+    },
+    {
+      "date": "2025-12-23",
+      "id": "fSa8XH8d-T4",
+      "kind": "original",
+      "reading": "あいのむげん",
+      "title": "アイの夢限",
+      "who": "group"
+    },
+    {
+      "date": "2025-12-23",
+      "id": "qnHJDWgLkvw",
+      "kind": "original",
+      "reading": "",
+      "title": "みゅーたんとミュータント",
+      "who": "group"
+    },
+    {
+      "date": "2025-12-23",
+      "id": "DvZohC30iOw",
+      "kind": "original",
+      "reading": "",
+      "title": "どんがらがっしゃん",
+      "who": "group"
+    },
+    {
+      "date": "2026-05-12",
+      "id": "jr_xt37IcRc",
+      "kind": "original",
+      "reading": "ちょうわくせいXへのたび",
+      "title": "超惑星Xへの旅",
+      "who": "group"
+    },
+    {
+      "date": "2026-05-12",
+      "id": "xzkEK0GF7fw",
+      "kind": "original",
+      "reading": "",
+      "title": "やわやわNERD 超FreQuency",
+      "who": "group"
+    },
+    {
+      "date": "2026-06-21",
+      "id": "4XbNBhZuBoA",
+      "kind": "original",
+      "reading": "これはぼくたちのせいぞんのあらすじ",
+      "title": "これはぼくたちの生存のあらすじ",
+      "who": "group"
+    },
+    {
+      "date": "2026-07-09",
+      "id": "XbqG3T4MGJE",
+      "kind": "cover",
+      "reading": "",
+      "title": "等身大あんりみてっど",
+      "who": "arale"
+    },
+    {
+      "date": "2026-09-22",
+      "id": "1_WyE1U0f4E",
+      "kind": "cover",
+      "reading": "おりおんをなぞる",
+      "title": "オリオンをなぞる",
+      "who": "group"
+    },
+    {
+      "date": "2026-09-23",
+      "id": "ekZUC5KaJFw",
+      "kind": "cover",
+      "reading": "",
+      "title": "オリオンをなぞる",
+      "who": "group"
+    }
+  ]
+}

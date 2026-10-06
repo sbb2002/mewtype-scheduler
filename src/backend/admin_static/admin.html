@@ -5412,7 +5412,8 @@
                     } else {
                         const P = S.preview || { new: [], skipped: [] };
                         prev.appendChild(this.cxEl("div", "sd-dry", `▸ 미리보기입니다 — 아무것도 쓰지 않았습니다. 실제 등록은 정기 수집(10분마다)이 합니다. (조회 ${this.formatTime(S.now)} · RSS ${feed ? feed.entry_count : 0}건)`));
-                        if (!S.seeded) prev.appendChild(this.sgBox("warn", "시드 전이라 비교할 곡 목록이 없어 등록 예정 · 건너뜀을 계산하지 못했습니다. data 브랜치에 songs.json 을 올린 뒤 다시 확인하세요."));
+                        if (!S.seeded && P.baseline === "seed") prev.appendChild(this.sgBox("warn", "시드 전 — 시드할 곡 목록(assets/songs.json 과 같은 사본) 기준 미리보기입니다. 시드 직후 첫 정기 수집이 아래 등록 예정 곡을 한꺼번에 등록합니다."));
+                        else if (!S.seeded) prev.appendChild(this.sgBox("warn", "시드 전이라 비교할 곡 목록이 없어 등록 예정 · 건너뜀을 계산하지 못했습니다. data 브랜치에 songs.json 을 올린 뒤 다시 확인하세요."));
                         prev.appendChild(this.cxEl("h4", "", `등록 예정 ${P.new.length}곡`));
                         for (const n of P.new) {
                             const row = this.cxEl("div", "sd-row");

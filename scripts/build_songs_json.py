@@ -52,4 +52,6 @@ for x in sorted(d, key=lambda s: s['published_at']):
 assert len({o['id'] for o in out}) == len(out)
 text = json.dumps({'songs': out}, ensure_ascii=False, indent=2, sort_keys=True) + chr(10)
 open(dst, 'w', encoding='utf-8', newline=chr(10)).write(text)
+# 백엔드(Cloud Run 이미지는 src/frontend 를 제외)가 시드 전 미리보기 기준으로 쓰는 사본
+open(ROOT / 'config' / 'songs_seed.json', 'w', encoding='utf-8', newline=chr(10)).write(text)
 print(len(out), sum(1 for o in out if o['reading']), sum(1 for o in out if o['who'] == ''))

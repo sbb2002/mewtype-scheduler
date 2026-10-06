@@ -612,6 +612,15 @@ _fetch_feed = songs_mod.fetch_feed_entries   # 테스트가 바꿔 끼운다(네
 SONG_EVENT_DAYS = 7                          # 신곡 현황의 최근 이벤트 읽는 일수(현행 이벤트 로그 그대로 읽음 — 새 보관 정책 없음)
 
 
+def _seed_baseline() -> dict | None:
+    """시드 전 미리보기 기준 — `config/songs_seed.json`(scripts/build_songs_json.py 가 assets/songs.json 과 같은 내용으로 만든 사본)."""
+    try:
+        from pathlib import Path
+        return json.loads((Path(__file__).resolve().parents[2] / "config" / "songs_seed.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _songs_doc() -> dict | None:
     doc, _ = _store().read_json(songs_mod.SONGS_PATH)
     return doc
@@ -656,8 +665,11 @@ def songs_status() -> dict:
                           "latest_published": latest.get("published") if latest else None, "latest_title": latest.get("title") if latest else None, "error": err})
         entries_by_who.append((f.get("who") or "group", entries))
     preview = {"new": [], "skipped": []}
-    if doc is not None:
-        d = songs_mod.norm_doc(doc)
+    base = doc if doc is not None else _seed_baseline()   # 시드 전에는 시드 사본 기준(첫 tick 이 등록할 곡 미리보기)
+    if doc is None and base is not None:
+        preview["baseline"] = "seed"
+    if base is not None:
+        d = songs_mod.norm_doc(base)
         seen_ids = {r.get("id") for r in d["seen"]}
         pool = list(d["songs"])
         for who, entries in entries_by_who:
