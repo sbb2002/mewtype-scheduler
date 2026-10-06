@@ -75,7 +75,13 @@ def _carry_collab(broadcast: dict, prev_entry: dict | None) -> None:
 
     실물 broadcast 의 channel_key(방송 주체)는 제외하고 나머지를 collab_with 로.
     """
-    if not prev_entry or not prev_entry.get("collab_with"):
+    if not prev_entry:
+        return
+    # (v4.0.8) 회원 전용 예고(자리표시)가 실물에 흡수되면 회원 전용도 이어받는다 — API 로 만든 실물은 membership=False
+    # 라, 안 이으면 20:00 회원 방송에 태그가 없었다(2026-10-06 리츠). 이미 True 인 실물은 그대로.
+    if prev_entry.get("membership") and not broadcast.get("membership"):
+        broadcast["membership"] = True
+    if not prev_entry.get("collab_with"):
         return
     chain = [prev_entry.get("channel_key"), *(prev_entry.get("collab_with") or [])]
     others = [k for k in chain if k and k != broadcast.get("channel_key")]
@@ -315,13 +321,16 @@ def build_preview(
         # host="group"(出演情報, 외부 이벤트)은 예외 — TTL 로만 소멸.
         if announced_ss and _host != "group":
             _chans = {item.get("channel_key"), *(item.get("collab_with") or [])}
-            _hit = next(
+            # (v4.0.8) 창 안 실물이 여럿이면 시각이 가장 가까운 것 — 처음 만난 것을 고르면 영상 처리 순서에 따라
+            # 회원 전용 · 합동 정보가 옆 방송(예: 20:00 회원 자리표시 → 20:30 일반 영상)으로 넘어갔다
+            _hit = min(
                 (it for it in items
                  if it.get("video_id")
                  and it.get("channel_key") in _chans
                  and it.get("scheduled_start")
                  and abs(_age_sec(it["scheduled_start"], announced_ss)) <= SCHEDULED_SUPERSEDE_SEC),
-                None,
+                key=lambda it: abs(_age_sec(it["scheduled_start"], announced_ss)),
+                default=None,
             )
             if _hit is not None:
                 _carry_collab(_hit, item)  # _hit 은 items 안의 참조 → 제자리 갱신
@@ -1034,6 +1043,67 @@ if __name__ == "__main__":
     pv17o, _t, _w, gone17 = build_preview(channels_cfg_g, {}, pv17m, "2026-09-29T13:00:00Z", search_fn=miss)
     assert pv17o["items"] == [] and len(gone17) == 1, (pv17o["items"], gone17)
     print("  (v4a D4) URL 없는 예고: +2분 검색 1회(찾으면 video_id+즉시 wake), 못 찾으면 +1시간 out")
+
+    # (v4.0.8) 회원 전용 자리표시가 실물에 흡수되면 membership 이어받기
+    _real = {"channel_key": "ritsu", "membership": False, "collab_with": None}
+    _carry_collab(_real, {"channel_key": "ritsu", "membership": True, "collab_with": None})
+    assert _real["membership"] is True and not _real.get("collab_with") and "kind" not in _real, _real
+    _real2 = {"channel_key": "ritsu", "membership": True}
+    _carry_collab(_real2, {"channel_key": "ritsu", "membership": False})
+    assert _real2["membership"] is True                                           # 이미 True 인 실물은 그대로
+    _real3 = {"channel_key": "arale", "membership": False}
+    _carry_collab(_real3, {"channel_key": "ritsu", "membership": False, "collab_with": ["arale", "yuno"]})
+    assert _real3["membership"] is False and _real3["collab_with"] == ["ritsu", "yuno"] and _real3["kind"] == "collab"
+    print("  (v4.0.8) _carry_collab: 회원 전용 이어받기, 합동 이관 종전대로")
+
+    # (v4.0.8) 2-b 흡수 대상 = 창 안에서 시각이 가장 가까운 실물 — 영상 처리 순서와 무관해야 한다
+    _ph = {"id": "ph_mem", "channel_key": "arale", "state": "announced", "video_id": None, "membership": True,
+           "source": "x-relay", "info_source": "x-relay", "host": None, "collab_with": None,
+           "scheduled_start": "2026-09-09T13:00:00Z", "expires_at": "2026-09-09T18:00:00Z"}
+    def _v(vid, ss):
+        return types.SimpleNamespace(video_id=vid, channel_id="UCWfF0DB6m_t2CE3KcOOOX7g", title=vid,
+                                     thumbnail="th", live_state="upcoming", scheduled_start=ss,
+                                     actual_start=None, actual_end=None, concurrent_viewers=None)
+    for _order in (("MEM", "NORM"), ("NORM", "MEM")):
+        _vs = {"MEM": _v("MEM", "2026-09-09T13:00:00Z"), "NORM": _v("NORM", "2026-09-09T13:30:00Z")}
+        _pv, _t, _w, _g = build_preview(channels_cfg, {k: _vs[k] for k in _order},
+                                        dict(preview.default_preview(), items=[dict(_ph)]), now_iso)
+        _mem = {i["video_id"]: i["membership"] for i in _pv["items"]}
+        assert _mem == {"MEM": True, "NORM": False}, (_order, _mem)
+    print("  (v4.0.8) 2-b: 회원 자리표시는 가장 가까운 실물(20:00)로 — 30분 뒤 일반 영상 불변, 순서 무관")
+
+    # (v4.0.8) 기존 예고(영상 有) × 공식 스케줄 한 줄에 끼어든 신규 예고 — 회원/일반 4조합 × 신규 앞/뒤 × 유입 순서 2가지.
+    # 2026-10-06 리츠(기존 21:00 일반 + 신규 20:00 회원, 「【メン限】20:00～／🎮21:00～ 峰月律」)가 첫 조합.
+    from . import xrelay as _xr
+    _cfg_r = {"channel_order": ["ritsu"], "channels": {"ritsu": {"channel_id": "UCritsu", "handle": "ritsu_yumemita"}}}
+    _Z = {"20:00": "11:00", "21:00": "12:00"}
+    def _vr(vid, hm):
+        return types.SimpleNamespace(video_id=vid, channel_id="UCritsu", title=vid, thumbnail="th",
+                                     live_state="upcoming", scheduled_start=f"2026-10-06T{_Z[hm]}:00Z",
+                                     actual_start=None, actual_end=None, concurrent_viewers=None)
+    _n = 0
+    for _ex_mem, _new_mem in ((False, True), (True, False), (True, True), (False, False)):
+        for _ex_hm, _new_hm in (("21:00", "20:00"), ("20:00", "21:00")):
+            _line = "／".join(("【メン限】" if _m else "🎮") + f"{_hm}～"
+                             for _hm, _m in sorted([(_ex_hm, _ex_mem), (_new_hm, _new_mem)])) + " 峰月律"
+            _rows = _xr.parse_bdp_schedule("10/6(火)の配信スケジュール\n" + _line + "\n", "2026-10-06T09:04:10Z")
+            _ex = {"id": "pvEX", "channel_key": "ritsu", "state": "upcoming", "video_id": "EX", "membership": _ex_mem,
+                   "source": "api", "info_source": "api", "host": None, "collab_with": None, "title": "EX",
+                   "thumbnail": "th", "url": "u", "scheduled_start": f"2026-10-06T{_Z[_ex_hm]}:00Z",
+                   "first_seen": "2026-10-01T00:00:00Z", "state_since": "2026-10-01T00:00:00Z",
+                   "last_updated": "2026-10-06T09:00:00Z"}
+            _vs = {"EX": _vr("EX", _ex_hm), "NEW": _vr("NEW", _new_hm)}
+            for _flow in ("schedule→video", "video→schedule"):
+                if _flow == "schedule→video":
+                    _its, _ = _xr.merge_announced([_ex], _rows, "2026-10-06T09:04:10Z")
+                    _its = build_preview(_cfg_r, _vs, {"items": _its}, "2026-10-06T09:40:02Z")[0]["items"]
+                else:
+                    _its = build_preview(_cfg_r, _vs, {"items": [_ex]}, "2026-10-06T09:00:02Z")[0]["items"]
+                    _its, _ = _xr.merge_announced(_its, _rows, "2026-10-06T09:04:10Z")
+                _got = {i.get("video_id") or "placeholder": i["membership"] for i in _its}
+                assert _got == {"EX": _ex_mem, "NEW": _new_mem}, (_line, _flow, _got)
+                _n += 1
+    print(f"  (v4.0.8) 기존 × 신규 회원/일반 4조합 · 신규 앞/뒤 · 유입 순서 2가지 — {_n}건 membership 기대대로")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 17개 self-test scenarios passed ✓ (v4a)")

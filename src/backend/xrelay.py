@@ -267,7 +267,16 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
         key, collab = (ALL_KEYS[0], list(ALL_KEYS[1:])) if whole else _names(line)
         if not key:
             continue
-        membership = "メン限" in line
+        # (v4.0.8) 한 줄에 시각이 여럿(「【メン限】20:00～／🎮21:00～ 峰月律」)이면 メン限 이 걸린 시각만 회원 전용 —
+        # 줄 단위로 판정하면 21:00 일반 방송까지 회원 전용이 됐다(2026-10-06 리츠). 어느 구간에도 없고 줄 뒤쪽
+        # (마지막 시각 뒤)에만 있으면 종전처럼 줄 전체에 적용.
+        line_membership = "メン限" in line
+        seg_membership = [
+            "メン限" in line[(times[j - 1].end() if j > 0 else 0):tm.start()]
+            for j, tm in enumerate(times)
+        ]
+        if len(times) == 1 or not any(seg_membership):
+            seg_membership = [line_membership] * len(times)
         line_has_collab = bool(collab) or "×" in line
         # (v2.6) 합동방송이라도 공용 채널이 아니라 참여 멤버 1명의 개인 채널에서 하는 경우가
         # 잦다. 공식 트윗은 그럴 때도 영상/채널 URL 을 함께 준다 → 그걸 진실로 삼는다.
@@ -305,7 +314,7 @@ def parse_bdp_schedule(text: str, now_iso: str) -> list[dict]:
                 now_iso=now_iso,
                 first_seen=now_iso,
                 kind=kind,
-                membership=membership,
+                membership=seg_membership[i],
                 collab_with=collab or None,
                 url=video_url,
                 video_id=video_id,
@@ -1117,5 +1126,18 @@ if __name__ == "__main__":
     assert changed3 is False, "빈 inc_list → changed=False"
     assert len(merged3) == len(prev), "기존 그대로"
     print("[OK] merge_announced  (empty list → changed=False)")
+
+    # (v4.0.8) 한 줄에 시각 여럿 — メン限 이 걸린 시각만 회원 전용 (2026-10-06 리츠 실제 트윗)
+    _t = ("／\n🛸#ゆめみた\n10/6(火)の配信スケジュール🌟\n＼\n\n"
+          "【メン限】20:00～／🎮21:00～ 峰月律\nhttps://www.youtube.com/@ritsu_yumemita\n\n"
+          "🎮20:30～ 宮永ののか\nhttps://www.youtube.com/@nonoka_yumemita\n\n"
+          "【メン限】23:00～ 千石ユノ\nhttps://www.youtube.com/@yuno_yumemita\n")
+    _rows = {(r["channel_key"], r["scheduled_start"][11:16]): r["membership"]
+             for r in parse_bdp_schedule(_t, NOW)}
+    assert _rows[("ritsu", "11:00")] is True and _rows[("ritsu", "12:00")] is False, _rows   # 20:00 회원 / 21:00 일반
+    assert _rows[("nonoka", "11:30")] is False and _rows[("yuno", "14:00")] is True, _rows   # 한 시각 줄은 종전대로
+    _t2 = _t.replace("【メン限】20:00～／🎮21:00～ 峰月律", "20:00～／🎮21:00～ 【メン限】峰月律")  # 시각 뒤에만 있으면 줄 전체
+    assert [r["membership"] for r in parse_bdp_schedule(_t2, NOW) if r["channel_key"] == "ritsu"] == [True, True]
+    print("[OK] parse_bdp_schedule  (줄 안 시각별 メン限 — 20:00 회원 · 21:00 일반, 한 시각 줄 불변)")
 
     print("\nSUCCESS: xrelay v3 self-test 통과")
