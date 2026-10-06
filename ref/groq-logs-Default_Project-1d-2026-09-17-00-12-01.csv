@@ -1,0 +1,43 @@
+request_id,created_at,status_code,time_to_first_token,time_to_completion,model,api_key_id,project_id,input_tokens,input_non_cached_tokens,input_cached_tokens,input_audio_seconds,output_tokens
+req_01m2ncfjtae7mrg4mkxv8jdmg5,1789571615562,200,0.197072,0.29892,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,222,222,0,0,49
+req_01m2ncf9nkevrsxw7cf5rjhvdq,1789571606195,200,0.089678,0.27853,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,198,198,0,0,88
+req_01m2nbq2p2ezc92h17a3eaz4vg,1789570812610,200,2.835196,3.072814,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,307,307,0,0,113
+req_01m2n89esne71t4x19ev5y665c,1789567220533,200,4.150764,4.356712,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,237,237,0,0,97
+req_01m2n76xmdesxbpxrjyer82eny,1789566088845,200,0.219802,0.307015,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,165,165,0,0,42
+req_01m2n76v5feh7ah0g43wkkw3vb,1789566086319,200,0.193561,0.279426,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,165,165,0,0,42
+req_01m2n76tyxeypajnv5sjk5exmh,1789566086109,200,0.263232,0.497875,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,164,164,0,0,111
+req_01m2n5v27ce8e9e4tt1qcqcbc9,1789564651756,200,0.548926,0.658588,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,225,225,0,0,52
+req_01m2n3bah5ekq8e3eqzze5b3p9,1789562038821,200,0.080894,0.377836,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,242,242,0,0,140
+req_01m2n3b9n2e3fabap0xtnkrb0v,1789562037922,200,0.149011,0.237708,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,143,143,0,0,43
+req_01m2n1szk5excbq5z1dqbs93mq,1789560421989,200,0.077941,0.353813,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,256,256,0,0,131
+req_01m2n1sytse6frcej53j9av6zp,1789560421209,200,0.146222,0.382761,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,153,153,0,0,113
+req_01m2n1dgzreact56040xv6z8sn,1789560013816,200,4.222235,4.366224,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,176,176,0,0,69
+req_01m2n1de6neewtd31s6e9mv4hs,1789560010965,200,2.58458,2.7256970000000003,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,185,185,0,0,68
+req_01m2n042kgebqastv6j8tegpv2,1789558655600,200,0.291079,0.433841,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,204,204,0,0,70
+req_01m2n0411ve2yt1wxk6wqcjteb,1789558654011,200,0.191835,0.33728,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,204,204,0,0,70
+req_01m2n03z8be31tgcczb8gdtwe6,1789558652171,200,0.283695,0.615784,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,249,249,0,0,160
+req_01m2n03ycqeabtp5hw8nwp9bzj,1789558651287,200,0.023912,0.334141,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,265,265,0,0,150
+req_01m2mzywbfe75sd10htrqbgetf,1789558485359,200,0.562752,2.094312,openai/gpt-oss-20b,key_01kx8qcvjxffg875zpr4m2rwxf,project_01kx8pkfb9f65r8n8em6mddhz9,3648,3648,0,0,1449
+req_01m2mzpyhkegyrt7vbyffe96d8,1789558225459,200,0.203555,0.411302,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,216,216,0,0,99
+req_01m2mz0nejewcsa7dgfhvtja5v,1789557495250,200,0.529681,1.9674420000000001,openai/gpt-oss-20b,key_01kx8qcvjxffg875zpr4m2rwxf,project_01kx8pkfb9f65r8n8em6mddhz9,3642,3642,0,0,1095
+req_01m2mypvmme2fbd777m531vj3m,1789557173908,200,0.137518,0.411151,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,230,230,0,0,131
+req_01m2myps61ekhtbnwzpmc3gtrs,1789557171393,200,0.140596,0.412265,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,230,230,0,0,131
+req_01m2myps50earapmw11d1htmy6,1789557171360,200,0.164853,0.43504,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,354,354,0,0,123
+req_01m2my0s0peph86s95f6bfn64h,1789556450326,200,0.185373,0.416707,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,320,320,0,0,110
+req_01m2mx6qngedkbfzgcg1w5w49z,1789555596976,200,0.19822,0.313565,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,141,141,0,0,56
+req_01m2mw559yeztvydxe4gc64e2n,1789554496830,200,0.081063,0.438239,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,270,270,0,0,165
+req_01m2mw546ne7ds1vj11t1evd0p,1789554495701,200,0.354719,0.735117,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,182,182,0,0,179
+req_01m2mvqeave888khg1ja757egp,1789554047323,200,0.188364,0.488978,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,257,257,0,0,145
+req_01m2mvqdkxexytrs15963d9wp9,1789554046589,200,0.149806,0.314339,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,179,179,0,0,78
+req_01m2mhmd95ebtvh9w38fpmwyjb,1789543462181,200,0.129983,0.417245,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,256,256,0,0,131
+req_01m2mhmbarenzvv3ntmsxttw8b,1789543460184,200,0.243752,0.523509,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,256,256,0,0,131
+req_01m2mhmb34eb59g0qywnhbs7ed,1789543459940,200,0.081337,0.255142,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,184,184,0,0,82
+req_01m2mdn3qsej7t4cn8nyeq66p7,1789539290873,200,0.151853,0.553786,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,318,318,0,0,191
+req_01m2mctdqtegctvhvvwf7p1sht,1789538416378,200,0.210638,0.626802,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,171,171,0,0,190
+req_01m2mctay0ex0b0m505rxhyfgt,1789538413504,200,0.272674,0.757327,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,301,301,0,0,228
+req_01m2m9cb83epp8sr6qxm70g8mp,1789534809347,404,0,0.003279,llama-3.3-70b-versatile,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,0,0,0,0,0,"{\"code\":\"model_not_found\",\"message\":\"The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.\",\"param\":\"\",\"type\":\"invalid_request_error\"}"
+req_01m2m9cance3gb445899ngnwk0,1789534808748,400,0.06554,0.485619,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,301,301,0,0,200,"{\"code\":\"json_validate_failed\",\"message\":\"Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.\",\"param\":\"\",\"type\":\"invalid_request_error\"}"
+req_01m2m53tedennrqzrqt9qsrjsy,1789530335693,200,0.138775,0.416374,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,242,242,0,0,133
+req_01m2kvp4sgeztawncw862sanhs,1789520450352,200,0.259369,0.541036,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,385,385,0,0,134
+req_01m2kvk5fgewjtgbrn5ty3wb09,1789520352752,404,0,0.004711,llama-3.3-70b-versatile,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,0,0,0,0,0,"{\"code\":\"model_not_found\",\"message\":\"The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.\",\"param\":\"\",\"type\":\"invalid_request_error\"}"
+req_01m2kvk4x9ednr8bzpvfpvc17y,1789520352169,400,0.053058,0.472824,openai/gpt-oss-120b,key_01m20rkcwcetbt580s18ahk72t,project_01kx8pkfb9f65r8n8em6mddhz9,338,338,0,0,200,"{\"code\":\"json_validate_failed\",\"message\":\"Failed to generate JSON. Please adjust your prompt. See 'failed_generation' for more details.\",\"param\":\"\",\"type\":\"invalid_request_error\"}"

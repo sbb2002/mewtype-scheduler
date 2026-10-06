@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>쓰기 충돌과 대응안</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --panel:#17181c; --panel2:#1e2024; --ink:#e9e9ea; --dim:#9a9ca2;
+    --faint:#6b6d73; --line:#2c2e33; --cyan:#cbf7f5; --cyan-soft:rgba(203,247,245,.13);
+    --f-sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+    --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --ok:#8fe3ae; --ok-soft:rgba(143,227,174,.14);
+    --bad:#ff6b6b; --bad-soft:rgba(255,107,107,.14);
+    --warn:#e6bd72; --warn-soft:rgba(230,189,114,.14);
+    --info:var(--cyan); --info-soft:var(--cyan-soft);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-sans);
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:40px 16px 80px}
+  h2{margin:52px 0 6px;font-size:.8rem;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--cyan)}
+  h2+.sub{margin:0 0 20px;color:var(--dim);font-size:.9rem}
+  h3{margin:0 0 8px;font-size:.98rem;color:var(--ink)}
+  code{font-family:var(--f-mono);font-size:.86em;background:rgba(255,255,255,.06);
+    padding:1px 5px;border-radius:4px}
+  .mono{font-family:var(--f-mono)}
+  p{overflow-wrap:break-word}
+
+  /* hero */
+  .hero{border:1px solid var(--line);border-radius:16px;background:
+    radial-gradient(120% 140% at 0% 0%, rgba(203,247,245,.07), transparent 55%), var(--panel);
+    padding:28px 22px}
+  .hero .eyebrow{margin:0 0 12px;font-family:var(--f-mono);font-size:.7rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--cyan)}
+  .hero h1{margin:0 0 12px;font-size:1.55rem;font-weight:700;letter-spacing:-.01em;text-wrap:balance;
+    line-height:1.35}
+  .hero p{margin:0;max-width:60ch;color:var(--dim)}
+  .hero .date{margin-top:14px;font-family:var(--f-mono);font-size:.72rem;color:var(--faint)}
+
+  /* before/after style callout boxes (기본 규칙 설명) */
+  .rules{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 8px}
+  .rule{flex:1 1 260px;border:1px solid var(--line);border-radius:10px;padding:13px 15px;background:var(--panel)}
+  .rule .k{font-family:var(--f-mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:6px;display:block}
+  .rule p{color:var(--dim);font-size:.87rem;margin:0}
+  .rule b{color:var(--ink);font-weight:500}
+
+  /* top-level tabs (사고재현 / B안 / A-1안) */
+  .diagram{border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .scn-tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .scn-tab{flex:1 1 auto;min-width:120px;padding:12px 10px;font:inherit;font-size:.82rem;
+    color:var(--dim);background:none;border:0;border-right:1px solid var(--line);cursor:pointer;
+    text-align:center;transition:color .15s,background .15s}
+  .scn-tab:last-child{border-right:0}
+  .scn-tab:hover{color:var(--ink)}
+  .scn-tab[aria-selected="true"]{color:#0c1416;background:var(--cyan);font-weight:600}
+  .scn-tab .n{display:block;font-family:var(--f-mono);font-size:.62rem;opacity:.75;margin-bottom:1px}
+
+  .panel{padding:18px 16px 6px}
+  .panel[hidden]{display:none}
+  .panel-head{margin:0 0 4px;font-size:1rem;font-weight:600;color:var(--ink)}
+  .panel-sub{margin:0 0 16px;color:var(--dim);font-size:.86rem}
+
+  /* controls */
+  .ctrl-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+  .btn{font:inherit;font-size:.78rem;padding:6px 13px;border-radius:7px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink);cursor:pointer;transition:.12s}
+  .btn:hover{border-color:var(--cyan)}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn:disabled:hover{border-color:var(--line)}
+  .pos{font-family:var(--f-mono);font-size:.72rem;color:var(--faint);margin-left:auto}
+  .reduced-note{font-family:var(--f-mono);font-size:.68rem;color:var(--faint)}
+
+  /* stats strip */
+  .stats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+  .stat{font-family:var(--f-mono);font-size:.72rem;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim);background:var(--panel2)}
+  .stat b{color:var(--ink);font-weight:600}
+  .stat.warn-tone{border-color:var(--bad);color:var(--bad)}
+  .stat.ok-tone{border-color:var(--ok);color:var(--ok)}
+
+  /* ledger (vertical event timeline) */
+  .ledger{position:relative;padding:6px 14px 6px 30px;background:#0d0e11;border:1px solid var(--line);
+    border-radius:10px}
+  .ledger::before{content:"";position:absolute;left:16px;top:20px;bottom:20px;width:2px;background:var(--line)}
+  .lrow{position:relative;margin:14px 0;opacity:0;transform:translateY(8px);
+    transition:opacity .35s ease,transform .35s ease}
+  .lrow.show{opacity:1;transform:none}
+  .lrow::after{content:"";position:absolute;left:-22px;top:9px;width:11px;height:11px;border-radius:50%;
+    background:var(--panel2);border:2px solid var(--line);transition:border-color .2s,background .2s}
+  .lrow.k-ok::after{border-color:var(--ok)}
+  .lrow.show.k-ok::after{background:var(--ok-soft)}
+  .lrow.k-conflict::after,.lrow.k-conflict-repeat::after{border-color:var(--bad)}
+  .lrow.show.k-conflict::after,.lrow.show.k-conflict-repeat::after{background:var(--bad-soft)}
+  .lrow.k-warn::after{border-color:var(--warn)}
+  .lrow.show.k-warn::after{background:var(--warn-soft)}
+  .lrow.k-direct::after{border-color:var(--warn)}
+  .lrow.show.k-direct::after{background:var(--warn-soft)}
+  .lrow.k-retry::after{border-color:var(--warn)}
+  .lrow.show.k-retry::after{background:var(--warn-soft)}
+  .lrow.k-lost::after{border-color:var(--bad);background:var(--bad)}
+  .lrow.k-arrive::after{border-color:var(--info)}
+  .lrow.show.k-arrive::after{background:var(--info-soft)}
+  .lrow.k-prep::after,.lrow.k-slow::after,.lrow.k-queue::after{border-color:var(--info)}
+  .lrow.show.k-prep::after,.lrow.show.k-slow::after,.lrow.show.k-queue::after{background:var(--info-soft)}
+  .lrow.k-safe::after{border-color:var(--ok);background:var(--ok)}
+  .lrow.active .lrow-card{border-color:var(--cyan)}
+  .lrow-card{border:1px solid var(--line);border-radius:9px;background:var(--panel);padding:9px 11px;
+    transition:border-color .2s}
+  .lrow-hd{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:3px}
+  .lrow-time{font-family:var(--f-mono);font-size:.72rem;color:var(--faint)}
+  .lrow-actor{font-size:.82rem;font-weight:600;color:var(--ink)}
+  .lrow-action{font-size:.86rem;color:var(--ink);margin-bottom:2px}
+  .lrow-note{margin:4px 0 0;color:var(--dim);font-size:.82rem;line-height:1.55}
+  .lrow-note code{white-space:normal}
+  .pill{font-family:var(--f-mono);font-size:.64rem;padding:2px 8px;border-radius:999px;
+    border:1px solid var(--line);color:var(--dim);margin-left:auto}
+  .pill.k-ok{color:var(--ok);border-color:var(--ok)}
+  .pill.k-conflict,.pill.k-conflict-repeat{color:var(--bad);border-color:var(--bad)}
+  .pill.k-warn{color:var(--warn);border-color:var(--warn)}
+  .pill.k-direct{color:var(--warn);border-color:var(--warn)}
+  .pill.k-retry{color:var(--warn);border-color:var(--warn)}
+  .pill.k-lost{color:var(--bad);border-color:var(--bad);background:var(--bad-soft);font-weight:700}
+  .pill.k-arrive{color:var(--info);border-color:var(--info)}
+  .pill.k-prep,.pill.k-slow,.pill.k-queue{color:var(--info);border-color:var(--info)}
+  .pill.k-safe{color:var(--ok);border-color:var(--ok);background:var(--ok-soft);font-weight:700}
+  .lrow-mini{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .mchip{font-family:var(--f-mono);font-size:.68rem;padding:4px 9px;border-radius:7px;
+    border:1px dashed var(--line);color:var(--dim);background:var(--panel2)}
+  .lrow-divider{border:none;background:none;padding:2px 0 2px 0;color:var(--faint);
+    font-family:var(--f-mono);font-size:.72rem;text-align:left}
+
+  .tabcap{margin:16px 0 4px;padding:13px 15px;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel2);color:var(--ink);font-size:.88rem;line-height:1.65}
+  .tabcap b{color:var(--cyan);font-weight:600}
+  .note-flag{display:inline-block;font-family:var(--f-mono);font-size:.66rem;letter-spacing:.04em;
+    color:var(--warn);border:1px solid var(--warn);border-radius:999px;padding:2px 9px;margin:6px 0 14px}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:16px 0 4px;font-size:.76rem;color:var(--dim)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:50%;border:2px solid var(--line);flex:none}
+  .sw.ok{border-color:var(--ok)}
+  .sw.conflict{border-color:var(--bad)}
+  .sw.warn{border-color:var(--warn)}
+  .sw.lost{border-color:var(--bad);background:var(--bad)}
+  .sw.info{border-color:var(--info)}
+
+  /* secondary panel: 현재 배포된 큐 구조 (tab1) */
+  .subhead{margin:34px 0 4px;font-size:.86rem;font-weight:600;color:var(--ink);
+    border-top:1px solid var(--line);padding-top:22px}
+  .subhead .tag{display:inline-block;font-family:var(--f-mono);font-size:.62rem;color:var(--faint);
+    border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:middle}
+  .queue-wrap{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;margin-top:12px}
+  .queue-svg-box{flex:0 0 auto;width:220px;max-width:100%}
+  .queue-svg-box svg{width:100%;height:auto;display:block}
+  .qnode rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.3}
+  .qnode text{fill:var(--dim);font-family:var(--f-sans)}
+  .qnode .qt{font-size:11px;font-weight:600;fill:var(--ink)}
+  .qnode .qs{font-size:7.5px;fill:var(--faint)}
+  .qnode.ok rect{stroke:var(--ok)}
+  .qnode.llm rect{stroke:var(--warn);fill:var(--warn-soft)}
+  .qnode.wait rect{stroke-dasharray:3 3;opacity:.55}
+  .qnode.wait.pulse{animation:qpulse 1.6s ease-in-out infinite}
+  @keyframes qpulse{0%,100%{opacity:.4}50%{opacity:.85}}
+  @media (prefers-reduced-motion:reduce){.qnode.wait.pulse{animation:none;opacity:.55}}
+  .qedge{stroke:#3a3d44;stroke-width:1.5;marker-end:url(#ahq)}
+  .problems{flex:1 1 260px;display:flex;flex-direction:column;gap:12px}
+  .pcard{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:13px 15px}
+  .pcard .ptag{font-family:var(--f-mono);font-size:.66rem;color:var(--warn);letter-spacing:.05em;
+    text-transform:uppercase;display:block;margin-bottom:6px}
+  .pcard p{margin:0;color:var(--dim);font-size:.85rem;line-height:1.6}
+  .pcard b{color:var(--ink);font-weight:500}
+  .figs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .fig{font-family:var(--f-mono);font-size:.68rem;padding:3px 8px;border-radius:6px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .footnote{margin-top:6px;font-size:.78rem;color:var(--faint)}
+
+  /* 한계 박스 (A-1) */
+  .limit{margin-top:18px;padding:14px 16px;border:1px solid var(--warn);border-radius:10px;
+    background:var(--warn-soft)}
+  .limit .lt{font-family:var(--f-mono);font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--warn);display:block;margin-bottom:6px}
+  .limit p{margin:0;color:var(--ink);font-size:.87rem;line-height:1.65}
+
+  .foot{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);
+    font-size:.78rem;font-family:var(--f-mono);line-height:1.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section class="hero">
+    <p class="eyebrow">mewtype-scheduler · data 쓰기 충돌</p>
+    <h1>data 브랜치는 "읽은 뒤 끼어든 커밋"이 있으면 쓰기를 거절한다</h1>
+    <p>여러 <code>/ingest</code> 요청이 겹치면 뒤차의 PUT이 409로 튕긴다 — 2026-09-16 노노카 트윗
+      유실 사고의 원인이었다. 실제 재현, 검토했다 기각한 방안, 채택된 방안(A-1) 순으로 애니메이션으로
+      본다.</p>
+    <p class="date">기준일 2026-09-17 · 수치·시각은 실측 로그·커밋 이력 기준, 추정치는 본문에 표시</p>
+  </section>
+
+  <h2>충돌이 왜 나는가</h2>
+  <p class="sub">아래 두 규칙만 이해하면 이후 애니메이션이 왜 그렇게 흘러가는지 보인다.</p>
+  <div class="rules">
+    <div class="rule"><span class="k">규칙 1 · 충돌 판정</span>
+      <p>GitHub Contents API의 PUT은 <b>"내가 읽었던 브랜치 상태"</b>를 기준으로 커밋한다. 그 사이
+        <b>다른 파일이라도</b> 같은 브랜치에 커밋이 하나 생기면 409 Conflict. 실제 로그:
+        <code>tweets.json: PUT 409 Conflict ... is at 3fde310… but expected 64b6e38…</code></p></div>
+    <div class="rule"><span class="k">규칙 2 · 요청 1건 ≠ 커밋 1개</span>
+      <p>소식 트윗 1건 인입 = <code>notice added</code> + <code>undo snapshot</code>(admin_state.json)
+        + <code>monitor notice</code>(이벤트 로그) 등 여러 커밋. 개인 트윗 1건 = <code>tweet added</code>
+        (+sweep/archive) + <code>monitor tweet</code>. 커밋이 늘수록 겹칠 기회도 늘어난다.</p></div>
+  </div>
+
+  <h2>재현과 대응안</h2>
+  <p class="sub">탭을 눌러 순서대로 재생하거나, 단계 버튼으로 하나씩 넘겨볼 수 있습니다.</p>
+
+  <div class="diagram">
+    <div class="scn-tabs" role="tablist">
+      <button class="scn-tab" role="tab" aria-selected="true"  data-tab="incident"><span class="n">01</span>사고 재현 (큐 도입 전)</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-tab="planb"><span class="n">02</span>B안과 문제점</button>
+      <button class="scn-tab" role="tab" aria-selected="false" data-tab="a1"><span class="n">03</span>A-1안 (채택)</button>
+    </div>
+
+    <!-- ============ TAB 1: 사고 재현 ============ -->
+    <div class="panel" id="panel-incident" role="tabpanel">
+      <p class="panel-head">2026-09-16 20:12 KST(=11:12 UTC) — 노노카 트윗 유실 실제 재현</p>
+      <p class="panel-sub">쓰기 큐 도입 <b>전</b> 구조. 정기 tick 은 3시간 간격이던 시절 — 커밋 이력·이벤트
+        로그 실측 그대로.</p>
+
+      <div class="ctrl-row" id="ctrl-incident">
+        <button class="btn" data-act="restart">⟲ 처음부터</button>
+        <button class="btn" data-act="prev">◀ 이전</button>
+        <button class="btn" data-act="next">다음 ▶</button>
+        <button class="btn" data-act="play">▶ 재생</button>
+        <button class="btn" data-act="pause">❚❚ 일시정지</button>
+        <span class="pos" id="pos-incident">0 / 0</span>
+      </div>
+      <p class="reduced-note" id="reduced-incident" hidden>모션 최소화 설정이 감지되어 자동 재생을 껐습니다 — 단계 버튼으로 넘기세요.</p>
+
+      <div class="stats" id="stats-incident"></div>
+      <div class="ledger" id="ledger-incident"></div>
+
+      <div class="legend">
+        <span><i class="sw ok"></i>PUT 성공(커밋)</span>
+        <span><i class="sw conflict"></i>409 Conflict</span>
+        <span><i class="sw warn"></i>모니터 로그 커밋(실패 사실 기록 / 재시도 후 성공)</span>
+        <span><i class="sw lost"></i>최종 유실</span>
+        <span><i class="sw info"></i>동시 도착</span>
+      </div>
+
+      <div class="tabcap"><b>요약.</b> 백엔드는 11:00:12 이후 12분째 조용했다. 그런데 유실은 백엔드 때문이
+        아니었다 — 11:12:50 같은 초에 도착한 다른 두 <code>/ingest</code> 요청(공식 트윗 A·B)이 제어
+        채널 안에서 연달아 커밋하는 사이, 노노카 트윗의 PUT만 두 번 다 409로 튕겨 <code>tweets.json</code>
+        커밋이 한 번도 만들어지지 못했다. (각 409 의 충돌 상대, 두 <code>monitor relay</code> 커밋이
+        A·B 중 어느 쪽 것인지는 로그로 특정되지 않아 "추정"으로 표시했다.)</div>
+
+      <div class="subhead">지금 배포된 쓰기 큐(2026-09-17, 커밋 <code>b07d7b5</code>) — 구조와 남은 문제
+        <span class="tag">정적 다이어그램</span></div>
+      <p class="panel-sub">제어 채널의 콘텐츠 쓰기 14종을 백엔드 <code>POST /write</code> 로 보내 백엔드가
+        한 번에 하나씩 처리하도록 바꿨다. 콘텐츠 커밋끼리는 줄을 서지만, 문제가 둘 남아 있다.</p>
+
+      <div class="queue-wrap">
+        <div class="queue-svg-box">
+          <svg viewBox="0 0 220 400" role="img" aria-label="백엔드 단일 처리 줄 다이어그램">
+            <defs>
+              <marker id="ahq" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="#3a3d44"/>
+              </marker>
+            </defs>
+            <path class="qedge" d="M110,40 L110,54"/>
+            <path class="qedge" d="M110,94 L110,108"/>
+            <path class="qedge" d="M110,148 L110,162"/>
+            <path class="qedge" d="M110,252 L110,266"/>
+            <path class="qedge" d="M110,306 L110,320"/>
+
+            <g class="qnode ok" transform="translate(10,0)"><rect width="200" height="40" rx="8"/>
+              <text class="qt" x="100" y="17" text-anchor="middle">/tick</text>
+              <text class="qs" x="100" y="30" text-anchor="middle">정기 · 짧음</text></g>
+            <g class="qnode ok" transform="translate(10,54)"><rect width="200" height="40" rx="8"/>
+              <text class="qt" x="100" y="17" text-anchor="middle">/wake</text>
+              <text class="qs" x="100" y="30" text-anchor="middle">정밀 폴링 · 짧음</text></g>
+            <g class="qnode ok" transform="translate(10,108)"><rect width="200" height="40" rx="8"/>
+              <text class="qt" x="100" y="17" text-anchor="middle">/write : 소식</text>
+              <text class="qs" x="100" y="30" text-anchor="middle">평소 중앙값 0.5초</text></g>
+            <g class="qnode llm" transform="translate(10,162)"><rect width="200" height="90" rx="8"/>
+              <text class="qt" x="100" y="20" text-anchor="middle">/write : 개인 트윗</text>
+              <text class="qs" x="100" y="34" text-anchor="middle">vxtwitter·videos.list·Groq 그대로 실행</text>
+              <text class="qs" x="100" y="47" text-anchor="middle">Groq 1회 최대 ≈63초 · 폴백 포함 ≈126초</text>
+              <text class="qs" x="100" y="60" text-anchor="middle">반복판정 함수 최악 ≈630초</text>
+              <text class="qs" x="100" y="73" text-anchor="middle">/write 타임아웃 60초 · gunicorn 120초</text>
+              <text class="qs" x="100" y="84" text-anchor="middle" style="fill:var(--warn)">← 이 안에서 /tick·/wake 도 대기</text></g>
+            <g class="qnode wait pulse" transform="translate(10,266)"><rect width="200" height="40" rx="8"/>
+              <text class="qt" x="100" y="17" text-anchor="middle">/tick (대기 중)</text>
+              <text class="qs" x="100" y="30" text-anchor="middle">앞이 안 끝나야 처리</text></g>
+            <g class="qnode wait pulse" transform="translate(10,320)"><rect width="200" height="40" rx="8"/>
+              <text class="qt" x="100" y="17" text-anchor="middle">/wake (대기 중)</text>
+              <text class="qs" x="100" y="30" text-anchor="middle">앞이 안 끝나야 처리</text></g>
+          </svg>
+        </div>
+        <div class="problems">
+          <div class="pcard">
+            <span class="ptag">문제 (a)</span>
+            <p>백엔드는 <code>concurrency=1 · max-instances=1</code>이라 요청을 한 번에 하나씩만
+              처리한다. 그런데 잡 안에서 느린 외부 호출(vxtwitter 원문 조회·YouTube
+              <code>videos.list</code>·외부 LLM 번역/참여판정/예고확인/비전 OCR)이 <b>그대로</b> 돈다.
+              이 동안 <code>/tick</code>·<code>/wake</code>도 뒤에서 기다린다 — 평소엔 문제없다
+              (/write 중앙값 0.5초, Groq 중앙값 0.43초), 외부 장애가 겹칠 때만 같이 막히는 구조다.</p>
+            <div class="figs">
+              <span class="fig">모델당 최대 ≈63초</span>
+              <span class="fig">메인→폴백 ≈126초</span>
+              <span class="fig">5회 판정 최악 ≈630초</span>
+              <span class="fig">/write 타임아웃 60초</span>
+              <span class="fig">gunicorn 120초</span>
+            </div>
+          </div>
+          <div class="pcard">
+            <span class="ptag">문제 (b)</span>
+            <p>모니터 로그(<code>monitoring/events-*.jsonl</code>)·<code>admin_state.json</code>
+              (undo·마법사)·<code>control.json</code> 쓰기는 여전히 제어 채널이 <b>직접</b> 커밋한다.
+              큐를 우회하므로 이들끼리, 또는 이들과 큐 잡 사이의 409 충돌 가능성이 남아 있다.</p>
+          </div>
+        </div>
+      </div>
+      <p class="footnote">(참고) 이 배포에는 <code>/ingest</code> 개인 트윗 경로가 변수 버그로 500을
+        내는 별도 장애가 있다 — 여기서는 다루지 않음.</p>
+    </div>
+
+    <!-- ============ TAB 2: B안 ============ -->
+    <div class="panel" id="panel-planb" role="tabpanel" hidden>
+      <p class="panel-head">B안 — 모니터 로그 줄이기 + 재시도 2→5회 + 지터(0.3~1.5초)</p>
+      <p class="panel-sub">검토했다가 기각한 방안. 같은 폭주 상황을 다시 재생한다.</p>
+      <span class="note-flag">예시 시나리오 — 실측 아님, 개념 설명용 (확률 수치는 측정하지 않음)</span>
+
+      <div class="ctrl-row" id="ctrl-planb">
+        <button class="btn" data-act="restart">⟲ 처음부터</button>
+        <button class="btn" data-act="prev">◀ 이전</button>
+        <button class="btn" data-act="next">다음 ▶</button>
+        <button class="btn" data-act="play">▶ 재생</button>
+        <button class="btn" data-act="pause">❚❚ 일시정지</button>
+        <span class="pos" id="pos-planb">0 / 0</span>
+      </div>
+      <p class="reduced-note" id="reduced-planb" hidden>모션 최소화 설정이 감지되어 자동 재생을 껐습니다 — 단계 버튼으로 넘기세요.</p>
+
+      <div class="stats" id="stats-planb"></div>
+      <div class="ledger" id="ledger-planb"></div>
+
+      <div class="legend">
+        <span><i class="sw ok"></i>PUT 성공(커밋)</span>
+        <span><i class="sw conflict"></i>409 · 지터 후 재시도</span>
+        <span><i class="sw lost"></i>재시도 소진 → 유실</span>
+        <span><i class="sw info"></i>동시 도착</span>
+      </div>
+
+      <div class="tabcap"><b>기각 사유.</b> 사고 원인은 백엔드 커밋 밀도가 아니라 <b>동시 <code>/ingest</code>
+        폭주</b> 자체였다. 모니터 로그를 줄여도 콘텐츠 커밋 + undo 스냅샷 커밋은 그대로 남고, 업스트림이
+        알림을 한꺼번에 보내는 구조도 바뀌지 않는다. 재시도를 늘리면 대부분 붙지만, 다 소진하는 경우가
+        여전히 있을 수 있다 — "절대 안 겹친다"는 보장은 없다.</div>
+    </div>
+
+    <!-- ============ TAB 3: A-1안 ============ -->
+    <div class="panel" id="panel-a1" role="tabpanel" hidden>
+      <p class="panel-head">A-1안 (채택) — 판단은 제어 채널, 커밋만 백엔드</p>
+      <p class="panel-sub">큐는 유지하되, 느린 준비 작업과 짧은 커밋 작업을 분리한다.</p>
+
+      <div class="ctrl-row" id="ctrl-a1">
+        <button class="btn" data-act="restart">⟲ 처음부터</button>
+        <button class="btn" data-act="prev">◀ 이전</button>
+        <button class="btn" data-act="next">다음 ▶</button>
+        <button class="btn" data-act="play">▶ 재생</button>
+        <button class="btn" data-act="pause">❚❚ 일시정지</button>
+        <span class="pos" id="pos-a1">0 / 0</span>
+      </div>
+      <p class="reduced-note" id="reduced-a1" hidden>모션 최소화 설정이 감지되어 자동 재생을 껐습니다 — 단계 버튼으로 넘기세요.</p>
+
+      <div class="stats" id="stats-a1"></div>
+      <div class="ledger" id="ledger-a1"></div>
+
+      <div class="legend">
+        <span><i class="sw info"></i>병렬 준비(읽기 전용/로컬 판정, 충돌 없음)</span>
+        <span><i class="sw ok"></i>백엔드 대기열 처리(콘텐츠 커밋)</span>
+        <span><i class="sw warn"></i>제어 채널 직접 커밋(큐 우회, 잔여 위험)</span>
+      </div>
+
+      <div class="tabcap"><b>요약.</b> vxtwitter·<code>videos.list</code>·외부 LLM 호출은 제어 채널
+        (동시 처리 80건)이 요청마다 병렬로 먼저 끝낸다 — 읽기 전용이거나 로컬 판정이라 충돌이 없다.
+        콘텐츠(결과)는 <code>/write</code>에 실어 보내 백엔드가 한 줄로 순서대로 커밋하므로, 콘텐츠
+        커밋끼리는 서로 409를 만들지 않는다. 다만 모니터 로그(<code>monitor notice</code>/
+        <code>monitor relay</code> 등)는 이번 범위(A-1)에서도 제어 채널이 직접 커밋한다 — 이 직접
+        커밋들끼리, 또는 큐 잡과 부딪힐 가능성은 남는다(아래 "남는 한계" 참고).</div>
+
+      <div class="limit">
+        <span class="lt">남는 한계 (A-1 범위 밖)</span>
+        <p>모니터 로그·<code>admin_state.json</code>(undo·마법사)·<code>control.json</code>은 이번
+          범위에서도 여전히 제어 채널이 직접 커밋한다. 이들과 큐 잡의 커밋이 부딪힐 가능성은 남는다
+          (잡은 충돌 시 최신 상태를 다시 읽어 <b>1회만</b> 재시도). 모든 쓰기를 큐로 옮기는 A-2는
+          이번엔 채택하지 않았다.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="foot">
+    ref/write_queue_animation.html · 사실 근거: 실제 커밋 이력·이벤트 로그(2026-09-16 20:12 KST)·
+    소스 코드(handlers.py / writeclient.py / telegram_app.py) · 배포 커밋 b07d7b5<br>
+    수치를 새로 만들지 않았습니다 — 로그로 특정 불가한 부분(409 의 충돌 상대, relay 커밋의
+    요청 귀속)은 본문에 "추정"/"미기록"으로 표시했습니다.
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var REDUCED = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  function el(tag, cls, html){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+
+  var KIND_LABEL = {
+    ok: "성공", conflict: "409", "conflict-repeat": "409×5", warn: "로그",
+    lost: "유실", arrive: "동시 도착", prep: "준비 중", slow: "지연",
+    queue: "대기열 전송", safe: "무충돌", direct: "직접 커밋(제어채널)",
+    retry: "409→재시도 성공"
+  };
+
+  /* ── 원장(ledger) 렌더러 — 세로 타임라인. 프레임 인덱스만큼 위에서부터 카드 노출 ── */
+  function buildLedger(container, rows){
+    container.innerHTML = "";
+    var rowEls = rows.map(function (r){
+      var row = el("div", "lrow k-" + (r.kind || "ok"));
+      var card;
+      if (r.divider){
+        card = el("div", "lrow-divider", r.note || "");
+      } else if (r.group){
+        card = el("div", "lrow-card");
+        var hd = el("div", "lrow-hd",
+          (r.t ? '<span class="lrow-time">' + r.t + "</span>" : "") +
+          '<span class="pill k-' + (r.kind || "arrive") + '">' + (KIND_LABEL[r.kind] || "") + "</span>");
+        card.appendChild(hd);
+        if (r.action) card.appendChild(el("div", "lrow-action", r.action));
+        var mini = el("div", "lrow-mini");
+        (r.detail || []).forEach(function (d){ mini.appendChild(el("div", "mchip", d)); });
+        card.appendChild(mini);
+        if (r.note) card.appendChild(el("p", "lrow-note", r.note));
+      } else {
+        card = el("div", "lrow-card");
+        var hd2 = el("div", "lrow-hd",
+          (r.t ? '<span class="lrow-time">' + r.t + "</span>" : "") +
+          (r.actor ? '<span class="lrow-actor">' + r.actor + "</span>" : "") +
+          '<span class="pill k-' + (r.kind || "ok") + '">' + (KIND_LABEL[r.kind] || "") + "</span>");
+        card.appendChild(hd2);
+        if (r.action) card.appendChild(el("div", "lrow-action", r.action));
+        if (r.note) card.appendChild(el("p", "lrow-note", r.note));
+      }
+      row.appendChild(card);
+      container.appendChild(row);
+      return row;
+    });
+    return rowEls;
+  }
+
+  /* ── 재생기 — frame = -1(아무것도 안 보임) .. n-1(전부 보임) ── */
+  function makePlayer(cfg){
+    var rowEls = buildLedger(cfg.ledgerEl, cfg.rows);
+    var n = cfg.rows.length;
+    var frame = -1;
+    var timer = null;
+
+    function render(){
+      rowEls.forEach(function (rEl, i){
+        rEl.classList.toggle("show", i <= frame);
+        rEl.classList.toggle("active", i === frame);
+      });
+      cfg.posEl.textContent = (frame + 1) + " / " + n;
+      cfg.statsEl.innerHTML = cfg.statsFn(cfg.rows, frame);
+      cfg.prevBtn.disabled = frame <= -1;
+      cfg.nextBtn.disabled = frame >= n - 1;
+      if (cfg.playBtn) cfg.playBtn.disabled = frame >= n - 1 && !timer;
+    }
+    function stop(){ if (timer){ clearInterval(timer); timer = null; } render(); }
+    function next(){ if (frame < n - 1){ frame++; render(); } else stop(); }
+    function prev(){ if (frame > -1){ frame--; render(); } }
+    function restart(){ stop(); frame = -1; render(); }
+    function play(){
+      if (REDUCED || timer) return;
+      if (frame >= n - 1) frame = -1;
+      render();
+      timer = setInterval(function (){
+        if (frame >= n - 1){ stop(); return; }
+        next();
+      }, 1500);
+    }
+
+    cfg.nextBtn.addEventListener("click", function (){ stop(); next(); });
+    cfg.prevBtn.addEventListener("click", function (){ stop(); prev(); });
+    cfg.restartBtn.addEventListener("click", restart);
+    if (REDUCED){
+      if (cfg.playBtn) cfg.playBtn.style.display = "none";
+      if (cfg.pauseBtn) cfg.pauseBtn.style.display = "none";
+      cfg.reducedNoteEl.hidden = false;
+    } else {
+      cfg.playBtn.addEventListener("click", play);
+      cfg.pauseBtn.addEventListener("click", stop);
+    }
+    render();
+    return { next: next, prev: prev, restart: restart };
+  }
+
+  function statPill(label, value, tone){
+    return '<span class="stat' + (tone ? " " + tone + "-tone" : "") + '"><b>' + value + "</b> " + label + "</span>";
+  }
+
+  /* ================= TAB 1 데이터: 사고 재현 (fact 3) ================= */
+  var rowsIncident = [
+    { divider: true, t: "11:00:12", note: "⋯ 백엔드 마지막 커밋(정기 monitor tick) · 이후 12분간 무커밋 ⋯" },
+    { group: true, kind: "arrive", t: "11:12:50",
+      action: "업스트림(운영자 폰 Automate) → 제어 채널 /ingest, 같은 초에 3건 도착",
+      detail: ["공식 트윗 A (소식 + 스케줄 처리)", "공식 트윗 B (소식 아님 · mode: none)", "노노카 개인 트윗"],
+      note: "제어 채널은 이 셋을 동시에 처리하기 시작한다(이벤트 로그 실측 — 3건 모두 ts=11:12:50: relay 2건 · notice 1건 · tweet 1건이 남는다. relay 가 2건인 건 공식 트윗 A·B 각각이 소식 판정 후 스케줄 파싱 단계에서도 relay 로그를 남기기 때문 — 개인 트윗은 이 경로를 안 탄다. 11:12:50.7 경 vxtwitter 원문 조회 3건(트윗 id 3개)이 찍혀 있어 3건 구성을 뒷받침한다)." },
+    { kind: "ok", t: "11:12:52", actor: "공식 트윗 A 또는 B (추정 — 로그로 특정 불가)",
+      action: "data 브랜치 PUT 성공",
+      note: "커밋 <code>monitor relay</code> — 공식 트윗 A·B 모두 relay 이벤트를 남기므로, 이 커밋이 둘 중 어느 쪽 것인지는 로그로 구분되지 않는다. HEAD 가 한 칸 앞으로 이동." },
+    { kind: "ok", t: "11:12:53", actor: "공식 트윗 A (소식 판정)",
+      action: "notices.json PUT 성공",
+      note: "커밋 <code>notice added</code> — HEAD 다시 이동." },
+    { kind: "conflict", t: "11:12:53.2", actor: "노노카 개인 트윗",
+      action: "tweets.json PUT 시도 #1",
+      note: "409 — 로그 <code>tweet: tweets.json 충돌 — 재시도</code>. 충돌 상대 커밋은 로그로 특정 불가." },
+    { kind: "ok", t: "11:12:55", actor: "공식 트윗 A 후속 커밋",
+      action: "undo 스냅샷 커밋",
+      note: "같은 요청이 admin_state.json 도 함께 바꾼다(규칙 2) — 커밋이 하나 더, HEAD 또 이동." },
+    { kind: "conflict", t: "11:12:55.8", actor: "노노카 개인 트윗",
+      action: "tweets.json PUT 시도 #2",
+      note: "409 Conflict — <code>tweets.json: PUT 409 Conflict ... is at 3fde310… but expected 64b6e38…</code>. 재시도 2회 모두 실패 — tweets.json 커밋은 끝내 만들어지지 않는다." },
+    { kind: "ok", t: "11:12:56", actor: "공식 트윗 A 모니터",
+      action: "모니터 로그 커밋",
+      note: "커밋 <code>monitor notice</code> — HEAD 다시 이동." },
+    { kind: "retry", t: "11:12:57.6", actor: "모니터 로그(공통)",
+      action: "monitoring/events-*.jsonl PUT 409 → 재시도로 성공",
+      note: "로그 <code>monitor_log: 충돌 — 재시도: monitoring/events-2026-09-16.jsonl: PUT 409 Conflict</code> — 모니터 로그 커밋끼리도 서로 부딪힌다. 이번엔 재시도로 살아남았다 — 노노카 트윗은 같은 2회 재시도를 다 쓰고도 실패했다." },
+    { kind: "warn", t: "11:12:58", actor: "노노카 개인 트윗 모니터",
+      action: "모니터 로그 커밋(오류 기록)",
+      note: "커밋 <code>monitor tweet</code>. 이벤트 로그: <code>tweet · err · \"mode: error (exception)\"</code> — 이 커밋은 '실패했다'는 사실의 기록일 뿐, tweets.json 자체는 아니다." },
+    { kind: "ok", t: "11:12:59", actor: "나머지 공식 트윗(A 또는 B, 위와 다른 쪽으로 추정)",
+      action: "data 브랜치 PUT 성공",
+      note: "커밋 <code>monitor relay</code>." },
+    { kind: "lost", t: "결과",
+      action: "❌ 노노카 트윗 유실",
+      note: "약 7초 동안 커밋 6개(공식 트윗 A·B 관련 5건 + 노노카 오류기록 1건)가 만들어졌지만 그중 tweets.json 은 하나도 없다. 유실 순간 충돌 상대는 백엔드가 아니라, 제어 채널 안에서 동시에 처리되던 다른 /ingest 요청들의 커밋이었다." }
+  ];
+
+  function statsIncident(rows, frame){
+    var commits = 0, conflicts = 0;
+    for (var i = 0; i <= frame; i++){
+      var r = rows[i];
+      if (r.kind === "ok" || r.kind === "warn") commits++;
+      if (r.kind === "conflict" || r.kind === "conflict-repeat" || r.kind === "retry") conflicts++;
+    }
+    var lost = frame >= rows.length - 1;
+    return statPill("data 커밋", commits) +
+      statPill("409 충돌", conflicts, conflicts ? "warn" : "") +
+      statPill("tweets.json 커밋", lost ? "0 (유실)" : "0", "warn");
+  }
+
+  /* ================= TAB 2 데이터: B안 (fact 5) ================= */
+  var rowsPlanB = [
+    { group: true, kind: "arrive", t: "T+0.0s",
+      action: "같은 폭주 재현 — 모니터 로그 '실행 1회=커밋 최대 1개'로 축소 · 재시도 2→5회 · 지터 0.3~1.5초 추가",
+      detail: ["공식 트윗 A (소식)", "공식 트윗 B (소식 아님)", "노노카 개인 트윗"],
+      note: "예시 구성 — 실측이 아니라 검토했던 방안을 그대로 재생한 것." },
+    { kind: "ok", actor: "공식 트윗 A", action: "PUT 성공(콘텐츠 커밋: notice added + undo snapshot)",
+      note: "모니터 로그는 '실행 1회=최대 1개'로 줄었지만, 콘텐츠 커밋(notice added, undo snapshot) 자체는 그대로 남는다." },
+    { kind: "ok", actor: "공식 트윗 B", action: "모니터 로그 커밋(콘텐츠 커밋 없음)",
+      note: "B 는 애초에 콘텐츠 커밋이 없다 — relay 모니터 로그 하나만 남는다." },
+    { kind: "conflict", actor: "노노카 개인 트윗", action: "tweets.json PUT 시도 #1",
+      note: "409 — 방금 공식 트윗 A 의 콘텐츠 커밋과 충돌(예시). 재시도 전 0.3~1.5초 지터 대기." },
+    { kind: "conflict", actor: "노노카 개인 트윗", action: "재시도 #2",
+      note: "이번엔 공식 트윗 B 의 모니터 커밋과 충돌(예시). 다시 지터 대기." },
+    { kind: "ok", actor: "노노카 개인 트윗", action: "재시도 #3 — 성공",
+      note: "이번엔 그 사이 아무도 끼어들지 않아 성공. 재시도를 늘리면 이런 식으로 대부분 몇 번 안에 붙는다." },
+    { divider: true, note: "— 그러나, 같은 폭주 구간에 다섯 번째 요청(예시)이 끼어드는 경우 —" },
+    { kind: "conflict-repeat", actor: "다섯 번째 요청(예시 · 콘텐츠 커밋 있음)", action: "PUT 시도 #1~#5 모두 409",
+      note: "매 재시도 순간마다 공교롭게 다른 요청의 커밋이 막 들어와, 5번 모두 충돌. 지터를 넣어도 '겹칠 기회 자체'가 사라진 건 아니라 줄었을 뿐이다." },
+    { kind: "lost", t: "결과", action: "재시도 5회 소진 → 결과는 사고와 동일(유실)",
+      note: "사고 원인은 '백엔드 커밋 밀도'가 아니라 '동시 /ingest 폭주' 자체였다. 모니터 로그를 줄여도 콘텐츠 커밋 + undo 커밋은 남고, 업스트림이 알림을 한꺼번에 보내는 구조도 그대로다. 확률은 측정하지 않았다 — \"절대 안 겹친다\"는 보장은 없다." }
+  ];
+
+  function statsPlanB(rows, frame){
+    var commits = 0, conflicts = 0, resolved = null;
+    for (var i = 0; i <= frame; i++){
+      var r = rows[i];
+      if (r.kind === "ok") commits++;
+      if (r.kind === "conflict") conflicts++;
+      if (r.kind === "conflict-repeat") conflicts += 5;
+      if (r.kind === "lost") resolved = "lost";
+    }
+    return statPill("콘텐츠 커밋", commits) +
+      statPill("409 재시도", conflicts, conflicts > 5 ? "warn" : "") +
+      (resolved ? statPill("결과", "유실", "warn") : statPill("결과", "진행 중"));
+  }
+
+  /* ================= TAB 3 데이터: A-1안 (fact 6) ================= */
+  var rowsA1 = [
+    { group: true, kind: "arrive", t: "T+0.0s",
+      action: "같은 폭주 재현 — 판단은 제어 채널, 커밋만 백엔드",
+      detail: ["공식 트윗 A (소식)", "공식 트윗 B (소식 아님)", "노노카 개인 트윗"] },
+    { kind: "prep", action: "제어 채널이 3건을 병렬로 '준비' 시작",
+      note: "모든 요청은 /ingest 진입 직후 트윗 id 가 있으면 vxtwitter 원문 조회를 먼저 한다(공식 트윗 B 포함). 공식 트윗 A는 이후 LLM 제목추출·중복판정 + (크로스오버 계정일 때만) 비전 OCR, 노노카는 번역 LLM, 공식 트윗 B는 스케줄 파싱만(추가 외부 LLM 없음) — 읽기 전용·로컬 판정이라 서로 충돌하지 않는다. 제어 채널은 동시 처리 80건까지 감당한다." },
+    { kind: "slow", actor: "노노카 개인 트윗", action: "준비 단계가 가장 오래 걸림",
+      note: "번역 LLM 호출이 느려지는 경우 이 요청만 제어 채널 쪽에서 기다린다 — 아직 백엔드에는 아무 것도 보내지 않았다." },
+    { kind: "direct", actor: "공식 트윗 B", action: "제어 채널이 monitor relay 직접 커밋",
+      note: "B 는 콘텐츠 커밋이 없다(스케줄 대기열 확인 잡 <code>ingest_queue_drain</code> 만 /write 를 한 번 거치고, 보통 커밋은 없음) — 외부 LLM 이 없어 먼저 끝난다. 이 monitor relay 커밋은 A-1 에서도 여전히 제어 채널이 직접 만든다(남는 한계)." },
+    { kind: "queue", actor: "공식 트윗 A", action: "준비 완료 → 커밋 전용 잡을 POST /write 로 전송",
+      note: "notice 판정 결과(제목·중복 여부)만 인자로 담아 보낸다. 백엔드는 이걸 한 줄로 받는다." },
+    { kind: "ok", actor: "공식 트윗 A", action: "백엔드 /write 처리 — notice 커밋 + undo 스냅샷",
+      note: "read → merge → PUT, 한 번에. 평소 수준(중앙값 0.5초)." },
+    { kind: "direct", actor: "공식 트윗 A", action: "제어 채널이 monitor notice · monitor relay 직접 커밋",
+      note: "이 두 로그 커밋은 A-1 에서도 큐를 타지 않고 제어 채널이 직접 만든다 — 남는 한계. (A 도 B 와 마찬가지로 <code>ingest_queue_drain</code> 대기열 확인 잡을 한 번 거친다.)" },
+    { kind: "queue", actor: "노노카 개인 트윗", action: "준비 완료 → 커밋 전용 잡을 POST /write 로 전송",
+      note: "vxtwitter 로 복원한 원문·번역문만 인자로 담아 보낸다." },
+    { kind: "ok", actor: "노노카 개인 트윗", action: "백엔드 /write 처리 — tweets.json 커밋 + monitor tweet 기록",
+      note: "이번엔 tweets.json 커밋과 그 성공 로그가 같은 백엔드 잡 안에서 함께 만들어진다. 제어 채널에서 오래 기다렸을 뿐, 백엔드 줄에 도착한 뒤에는 다른 콘텐츠 잡과 똑같이 한 번에 처리된다 — 다른 콘텐츠 잡과 충돌하지 않는다." },
+    { kind: "prep", actor: "노노카 개인 트윗", action: "이후 예고 판정은 제어 채널에서 계속",
+      note: "유튜브 URL 이 있으면 videos.list·참여판정 LLM, URL 이 없으면 예고확인 LLM — tweets.json 커밋 잡이 끝난 뒤 진행되며, 등록할 게 있으면 다시 커밋 전용 잡으로 /write 에 보낸다." },
+    { kind: "safe", t: "결과", action: "콘텐츠 커밋 2건(공식 트윗 A · 노노카) 모두 성공, 서로 409 없음",
+      note: "콘텐츠 커밋끼리는 한 줄로 서서 서로 409 를 만들지 않는다. 다만 제어 채널의 직접 모니터 커밋(B의 relay, A의 notice/relay 로그)이 큐 잡과 부딪힐 수는 있다 — 잡은 충돌 시 최신 상태를 재조회해 1회만 재시도한다." }
+  ];
+
+  function statsA1(rows, frame){
+    var backendCommits = 0, directCommits = 0;
+    for (var i = 0; i <= frame; i++){
+      if (rows[i].kind === "ok") backendCommits++;
+      if (rows[i].kind === "direct") directCommits++;
+    }
+    return statPill("백엔드 큐 커밋", backendCommits, "ok") +
+      statPill("콘텐츠 커밋 간 409", 0, "ok") +
+      statPill("제어채널 직접 커밋", directCommits) +
+      statPill("병렬 준비", "≤3건 동시");
+  }
+
+  /* ── 초기화 ── */
+  function initPlayer(key, rows, statsFn){
+    var root = document.getElementById("ctrl-" + key);
+    makePlayer({
+      rows: rows,
+      ledgerEl: document.getElementById("ledger-" + key),
+      posEl: document.getElementById("pos-" + key),
+      statsEl: document.getElementById("stats-" + key),
+      reducedNoteEl: document.getElementById("reduced-" + key),
+      restartBtn: root.querySelector('[data-act="restart"]'),
+      prevBtn: root.querySelector('[data-act="prev"]'),
+      nextBtn: root.querySelector('[data-act="next"]'),
+      playBtn: root.querySelector('[data-act="play"]'),
+      pauseBtn: root.querySelector('[data-act="pause"]'),
+      statsFn: statsFn
+    });
+  }
+
+  initPlayer("incident", rowsIncident, statsIncident);
+  initPlayer("planb", rowsPlanB, statsPlanB);
+  initPlayer("a1", rowsA1, statsA1);
+
+  /* ── 상단 탭 전환 ── */
+  var tabBtns = document.querySelectorAll(".scn-tabs .scn-tab");
+  var panels = {
+    incident: document.getElementById("panel-incident"),
+    planb: document.getElementById("panel-planb"),
+    a1: document.getElementById("panel-a1")
+  };
+  tabBtns.forEach(function (btn){
+    btn.addEventListener("click", function (){
+      tabBtns.forEach(function (b){ b.setAttribute("aria-selected", String(b === btn)); });
+      Object.keys(panels).forEach(function (k){ panels[k].hidden = (k !== btn.dataset.tab); });
+    });
+  });
+})();
+</script>
+</body>
+</html>
