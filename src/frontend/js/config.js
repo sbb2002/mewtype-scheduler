@@ -42,6 +42,9 @@ export const ARCHIVE_URL = getDataUrl(
   "/data/preview_archive.json"
 );
 
+// (v4.2.0) 플레이어 곡 목록 — 프론트에 같이 배포되는 정적 파일(원본 ref/player/songs_release.json). data 저장소를 거치지 않는다.
+export const SONGS_URL = "assets/songs.json";
+
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;

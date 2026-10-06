@@ -921,7 +921,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **js/render.js** — `renderBoard(boardEl, preview, nowMs, archive)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시. **v4.1.0**: PC = 타임테이블 + 이후 예고, 모바일 = 1명씩 슬라이드),
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
 - **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
-  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로, PC 는 `main.js` 가 `body` 맨 앞에 `#player-bar` 줄을 만들어 `.player-btn--top` 으로 붙인다(소식 막대 바로 위, 소식 막대 · 타임테이블과 왼쪽 선 일치, 모바일은 CSS 로 숨김). 클릭 시 `mew:player-open` 이벤트만 발행(동작은 미정).
+  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로, PC 는 `main.js` 가 `body` 맨 앞에 `#player-bar` 줄을 만들어 `.player-btn--top` 으로 붙인다(소식 막대 바로 위, 소식 막대 · 타임테이블과 왼쪽 선 일치, 모바일은 CSS 로 숨김). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다.
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
@@ -940,6 +940,26 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   전부 읽음. 메시지가 많아도 말풍선(헤더 포함)이 화면 세로 2/3을 넘지 않도록 내부 스크롤 영역
   높이를 `calc(66.6vh - 44px)` 로 고정(css). `한/日` 토글은 헤더에 1개(전역 `mew:tllang`), 원문(X)
   링크는 메시지별(`.ori`). 만료·404 면 안 뜸.
+- **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
+
+### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
+
+「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 프론트에 같이 배포되는 정적 파일 `assets/songs.json`
+(`SONGS_URL`, 원본 `ref/player/songs_release.json` — 65곡: `{id(video_id), title, kind(solo|original|cover), who(멤버 키|group), date, bpm, key, reading(가나 독음, 없으면 "")}`).
+data 저장소 · 백엔드는 거치지 않는다. 사용자 별칭만 이 브라우저 `localStorage`(`mew:player:aliases`)에 저장된다.
+
+- **재생**: YouTube IFrame Player API(`https://www.youtube.com/iframe_api`, 처음 열 때 로드)의 임베드 프레임만 쓴다. **광고 건너뛰기 없음** — 광고는 프레임 안에서 YouTube 가 처리.
+  (개발자 정책 III.I.5 광고 수정·차단 금지 · III.I.9 백그라운드 플레이어 금지 · 필수 최소 기능 200×200, 프레임 앞 오버레이 금지.)
+  오류(임베드 제한 등)면 「YouTube 에서 보기」 링크를 보여준다.
+- **한 곡 재생**: 곡이 끝나면 다음 곡으로 **넘어가지 않고 멈춘다**(`cueVideoById` 로 첫 화면 복귀). 반복(한 곡)을 켜면 처음부터 다시 재생. 이전·다음 버튼은 현재 검색·정렬 결과 순서(셔플이면 무작위).
+- **팝업 ↔ 플로팅**: 프레임 요소(`.mp-frame`)는 한 번 만들고 **옮기지 않는다**(옮기면 iframe 이 다시 로드돼 재생이 끊김). 팝업이 열려 있으면 JS 가 재생부 자리(`.mp-slot`)에 맞춰 위치·크기를 주고,
+  내리면 `.is-float`(오른쪽 아래, 356×200 — 높이 200 이 최소 요건) 로 남는다. 손잡이 줄(`.mp-grip`)은 프레임 **바깥 위**에 붙는다 — 끌어서 이동 · 더블클릭 = 팝업으로 · ▴ 열기 · ✕ 정지하고 치움.
+  프레임은 재생을 한 번이라도 시작했을 때만 남는다. 모바일은 하단 도트 띠(푸터 45 + 도트 44) 위, PC 는 고정 푸터 위.
+- **검색**(`songs.js`): 곡명 · 독음(가나 + 자동 변환한 한글) · 사용자 별칭을 한 번에 부분 일치. 대소문자 · 전각 무시, 가타카나 = 히라가나, 한글은 초성 평음화(ㅋ=ㄱ ㅌ=ㄷ ㅍ=ㅂ ㅊ=ㅈ)로 표기 차이를 흡수.
+  가나 → 한글 변환은 외래어 표기법을 단순화한 것(`kanaToHangul`: 어두 か·た행 가·다, ん=ㄴ · っ=ㅅ 받침, 장음 생략, 조사 は 도 글자 그대로 「하」). 부른 사람 · 종류 · 날짜는 검색 대상 아님(종류는 필터 버튼).
+- **정렬**: 이름순(독음 있으면 독음, 없으면 곡명, `localeCompare("ja")`) · 날짜순(같은 날은 곡명순). 기본 날짜 내림차순.
+- **z-index**: 도트 띠 25 < 플로팅 프레임 45 < 디스클레이머 팝업(`#foot`) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
+- selfcheck: `songs.selfcheck.mjs`(변환 · 정규화 · 검색 · 정렬 · 강조 구간 29건). **보류**: 곡명 한글 해석 검색.
 
 ---
 

@@ -1,11 +1,11 @@
 // playerbtn.js — (v4.2.0) 「CD + 음표 >」 아이콘 버튼.
 // 모바일: 하단 멤버 아이콘(#pager-dots) 줄의 맨 왼쪽 / PC: 화면 좌상단(고정).
-// 아직 동작(눌렀을 때 열리는 것)은 정해지지 않아 버튼만 만든다 — 연결할 곳은 아래 PLAYER_BUTTON_EVENT.
+// 눌렀을 때의 동작은 아래 PLAYER_BUTTON_EVENT 를 main.js 가 받아 player.js(openPlayer)를 여는 것.
 // 아이콘은 createElementNS 로만 그린다(innerHTML 금지 규칙).
 
 const NS = "http://www.w3.org/2000/svg";
 export const PLAYER_BUTTON_LABEL = "음악 · 플레이어";
-export const PLAYER_BUTTON_EVENT = "mew:player-open";   // 클릭 시 document 로 발행 — 나중에 여는 쪽이 이 이벤트를 받는다
+export const PLAYER_BUTTON_EVENT = "mew:player-open";   // 클릭 시 document 로 발행 — main.js 가 받아 플레이어 팝업을 연다
 
 function svgEl(tag, attrs) {
   const e = document.createElementNS(NS, tag);

@@ -47,6 +47,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
+> 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
+>
 > **프론트 v4.1.0 (2026-10-05)**: 예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 **오늘 타임테이블**(PC) / **오늘 카드 + 이후 예고 펼치기**(모바일 1명씩 슬라이드)로 대체 —
 > `docs/SPEC.md` 「타임테이블 · 이후 예고」, 요약 `docs/VERSION.md`. 아래 저장소 구조의 `lane__live` · 버킷 서술은 v4.0 까지의 모습이다.
 >
@@ -405,7 +408,8 @@ src/
   frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
                        #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
-    css/{reset,layout,card,timetable,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
+    css/{reset,layout,card,timetable,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
+    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 65곡 — 정적 배포(원본 ref/player/songs_release.json)
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수
@@ -414,6 +418,9 @@ src/
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
+      playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
+      player.js        # (v4.2.0) 플레이어 팝업 + 플로팅 YouTube 프레임(IFrame API). main.js 가 첫 클릭 때 동적 import
+      songs.js         # (v4.2.0) 곡 검색 정규화 · 가나→한글 독음 · 필터/정렬 — 순수 (songs.selfcheck.mjs)
       main.js          # DOMContentLoaded → poll(스케줄) + pollNotices + pollTweets + 카운트다운 틱
                        #   (v3.7) 모니터 페이지 이스터에그 진입(PC 키 입력 / 모바일 풋터 버전 15탭)
     monitor.html       # (v3.7) monitoring/latest.html(데이터 저장소 raw URL)을 iframe 으로 표시. noindex
