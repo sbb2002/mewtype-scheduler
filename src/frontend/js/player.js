@@ -10,7 +10,7 @@
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
 
 import { fetchPreview } from "./api.js";
-import { SONGS_URL, FALLBACK_CHANNELS } from "./config.js";
+import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
 import { KIND_LABEL, prepareSong, viewSongs, matchRange } from "./songs.js";
 
 const ALIAS_KEY = "mew:player:aliases";   // localStorage — 사용자 별칭 { video_id: [별칭...] }. 이 브라우저에만 저장된다.
@@ -129,8 +129,10 @@ function writeAliases() {
 
 function loadSongs() {
   if (loadPromise) return loadPromise;
-  loadPromise = fetchPreview(SONGS_URL).then((r) => {
-    if (!r.ok || !r.data || !Array.isArray(r.data.songs)) { st.loadError = true; loadPromise = null; return; }
+  const valid = (r) => r.ok && r.data && Array.isArray(r.data.songs);
+  // data 브랜치 songs.json(신곡 자동 등록) 우선, 없으면 정적 파일
+  loadPromise = fetchPreview(SONGS_URL).then((r) => (valid(r) ? r : fetchPreview(SONGS_FALLBACK_URL))).then((r) => {
+    if (!valid(r)) { st.loadError = true; loadPromise = null; return; }
     st.loadError = false;
     st.aliases = readAliases();
     st.raw = r.data.songs;
@@ -355,7 +357,7 @@ function paintStage() {
   if (s) {
     const m = memberOf(s.who);
     if (m) el.sMeta.append(h("span", { class: "mp-dot", style: `--mc:${m.color}` }), `${m.name} · `);
-    el.sMeta.append(`${KIND_LABEL[s.kind] || s.kind} · ${s.date} · BPM ${s.bpm} · ${s.key}`);
+    el.sMeta.append(`${KIND_LABEL[s.kind] || s.kind} · ${s.date}`);
     if (s.reading) el.sMeta.append(` · ${s.reading} · ${s.readingKo}`);
   }
   el.err.hidden = !st.error;
@@ -392,7 +394,7 @@ function paintGrip() {
 }
 
 function paintTools() {
-  el.kinds.replaceChildren(...[["all", "전체"], ["solo", "솔로"], ["original", "오리지널"], ["cover", "커버"]].map(([k, l]) =>
+  el.kinds.replaceChildren(...[["all", "전체"], ["original", "오리지널"], ["cover", "커버"]].map(([k, l]) =>
     h("button", { type: "button", "aria-pressed": String(st.kind === k), text: l, on: { click: () => { st.kind = k; paintTools(); paintList(); } } })));
   const arrow = st.dir === "asc" ? " ↑" : " ↓";
   el.sort.replaceChildren(h("span", { text: "정렬" }), ...[["name", "이름순"], ["date", "날짜순"]].map(([k, l]) =>

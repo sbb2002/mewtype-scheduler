@@ -903,6 +903,18 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **남는 한계**: 모니터 로그(notice/relay/ops)·`admin_state.json` 마법사 단계·`control.json`·`/translate`·
   `/monitor` 의 `latest.html` 은 여전히 제어 채널이 직접 커밋 → 큐 잡과 409 가능(잡은 최신 재조회 후 1회 재시도).
 
+### 8.15 신곡 자동 감지 — `songs.py` + `handlers._detect_new_songs` (v4.2.0)
+
+곡은 그룹 공식 채널이 아니라 음원 자동 생성 채널 **`Mugendai MewType - Topic`**(`UCeXzCxZsDcaF5xI68fK5owA`)에 올라온다 — 방송이 아니라 `preview.json` · FSM(`preview_build`)과 무관하므로
+방송 파이프라인에 끼우지 않고 별도 경로로 둔다. `config/channels.json` 최상위 `song_feeds`(`channels` 와 별개 키 — 방송 쪽이 읽지 않음)에 채널을 둔다.
+- **감지**: 매 `/tick`(light 10분 · baseline 06:00 JST — 실제 배포 Cloud Scheduler 값, wake 제외)에서 `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json`(data 브랜치)과 비교. 새 곡이 있을 때만 쓰기.
+- **규칙**(운영자 결정 2026-10-06): ① **곡명이 이미 데이터에 있으면 등록 안 함**(영상 ID 가 달라도 — 앨범마다 같은 곡이 새 영상으로 올라온다) · 곡명 비교는 NFKC · 대소문자 · 공백 · 꼬리표 무시
+  ② 제목 끝 **「(Cover)」**(대소문자 · 전각 괄호 무관)가 있으면 `cover`, 없으면 `original`. 다른 표기(「(Solo)」 등)에 대한 규칙은 두지 않는다 ③ `feat.` 곡은 등록 안 함
+  ④ 같은 곡명이 한 묶음에 여럿이면 먼저 올라온 영상 하나만 ⑤ `who="group"`, `date`=공개 시각의 KST 날짜, `reading=""`(독음은 RSS 에 없음 — 따로 채움), `added_at`=등록 시각.
+- **안전**: `songs.json` 이 없으면 새로 만들지 않고 건너뜀(시드 전). 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다**(예외 격리). tick 결과 `songs` 키에 `{added|skipped}`.
+- 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음. 모니터 이벤트 로그에는 아직 남기지 않는다(`log.info` 만).
+- self-test: `python -m src.backend.songs`(분류 · 곡명 키 · 실제 RSS 발췌 `fixtures/topic_feed.sample.xml` 로 감지 · 멱등 23건), `python -m src.backend.handlers`(`_detect_new_songs` 가짜 gh).
+
 ---
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
@@ -944,9 +956,16 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
 
-「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 프론트에 같이 배포되는 정적 파일 `assets/songs.json`
-(`SONGS_URL`, 원본 `ref/player/songs_release.json` — 65곡: `{id(video_id), title, kind(solo|original|cover), who(멤버 키|group), date, bpm, key, reading(가나 독음, 없으면 "")}`).
-data 저장소 · 백엔드는 거치지 않는다. 사용자 별칭만 이 브라우저 `localStorage`(`mew:player:aliases`)에 저장된다.
+「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 **data 브랜치 `songs.json`**(`SONGS_URL` — 신곡 자동 감지가 등록, 아래 §8.15)을 먼저 읽고,
+없으면(시드 전 · 로컬 개발) 프론트에 같이 배포되는 정적 `assets/songs.json`(`SONGS_FALLBACK_URL`, `scripts/build_songs_json.py` 로 생성)으로 폴백한다.
+곡 레코드: `{id(video_id), title, kind(original|cover), who(멤버 키|group), date, reading(가나 독음, 없으면 ""), added_at?(자동 등록분)}` — YouTube 에서 얻는 값만. **솔로 구분은 없다**(솔로도 cover — 운영자 결정 2026-10-06, 정규 규칙은 제목 끝 「(Cover)」 하나뿐).
+BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필요하고 플레이어가 쓰지 않아 **일부러 제외**. 사용자 별칭만 이 브라우저 `localStorage`(`mew:player:aliases`)에 저장된다.
+
+**곡 데이터의 출처와 갱신**: 초기 데이터(시드)는 BPM 프로젝트(`bandori-playlist-maker-data` 저장소 `origin/data` 의 `data/songs_master.csv`)의 곡 목록에 YouTube 업로드 시각을 붙인
+`ref/player/songs_release.json`(65곡, 조사 보고 `docs/yumemita_player/REPORT.md` @devpapers)에서 `python scripts/build_songs_json.py` 로 만든 `assets/songs.json` 이다.
+출시일(`date`)은 **공식 발매일이 아니라 영상 업로드 시각**(KST 날짜)이다 — 토픽 채널 음원은 MV 공개일과 다를 수 있다. 이후 신곡은 BPM 프로젝트의 `/update-new-songs` 와 **무관하게**
+백엔드 tick 이 토픽 채널 RSS 에서 자동 감지해 data 브랜치 `songs.json` 에 등록한다(§8.15). **운영 전 시드 필요**: data 브랜치에 `songs.json` 이 없으면 자동 등록은 아무것도 하지 않는다 —
+`assets/songs.json` 을 data 브랜치 `songs.json` 으로 올려 시드한다(운영자 작업, 아직 하지 않음).
 
 - **재생**: YouTube IFrame Player API(`https://www.youtube.com/iframe_api`, 처음 열 때 로드)의 임베드 프레임만 쓴다. **광고 건너뛰기 없음** — 광고는 프레임 안에서 YouTube 가 처리.
   (개발자 정책 III.I.5 광고 수정·차단 금지 · III.I.9 백그라운드 플레이어 금지 · 필수 최소 기능 200×200, 프레임 앞 오버레이 금지.)
@@ -959,7 +978,21 @@ data 저장소 · 백엔드는 거치지 않는다. 사용자 별칭만 이 브�
   가나 → 한글 변환은 외래어 표기법을 단순화한 것(`kanaToHangul`: 어두 か·た행 가·다, ん=ㄴ · っ=ㅅ 받침, 장음 생략, 조사 は 도 글자 그대로 「하」). 부른 사람 · 종류 · 날짜는 검색 대상 아님(종류는 필터 버튼).
 - **정렬**: 이름순(독음 있으면 독음, 없으면 곡명, `localeCompare("ja")`) · 날짜순(같은 날은 곡명순). 기본 날짜 내림차순.
 - **z-index**: 도트 띠 25 < 플로팅 프레임 45 < 디스클레이머 팝업(`#foot`) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
-- selfcheck: `songs.selfcheck.mjs`(변환 · 정규화 · 검색 · 정렬 · 강조 구간 29건). **보류**: 곡명 한글 해석 검색.
+- selfcheck: `songs.selfcheck.mjs`(변환 · 정규화 · 검색 · 정렬 · 강조 구간 · 종류 30건). **보류**: 곡명 한글 해석 검색.
+
+**확인 필요 · 미정 (2026-10-06 구현 시점)** — 임의로 넘겨짚지 않고 남겨 둔 것:
+1. **시드 · 첫 실행**: data 브랜치에 `songs.json` 이 없어서 자동 등록이 아직 동작하지 않는다(시드 전 = 건너뜀). 시드 뒤 **첫 tick 은 토픽 RSS 최근 15건 중 곡명이 없는 곡을 한꺼번에 등록**한다 —
+   2026-10-06 RSS 기준 10곡(`TearJerker` · `Face The Next` · `一番のひかり` · `うちゅうのふしぎ` · `夢はトゥルーエンド！` · `in my words` · `愛は衝動` · `にこいちミライ` · `唱`(cover) · `夢我夢中`).
+   BPM 보고서가 「분류 불명 9곡」으로 보류했던 곡들이 규칙대로 original 로 들어가므로, 시드 전에 포함해도 되는지 운영자 확인이 필요하다. 신곡에 필요한 값은 RSS 만으로 얻는다(제목 · 공개 시각 · 구분) — `videos.list` 쿼터 0.
+2. **독음 15곡은 예시 — 운영자 검수 필요**. 나머지 50곡은 독음이 없어 독음(가나·한글) 검색이 안 된다. 채우는 방법(직접 입력 / 자동 생성)은 미정. `scripts/build_songs_json.py` 의 `READ` 에 있다.
+3. **이름순 정렬 한계**: 독음이 있으면 독음, 없으면 곡명(한자 · 기호 포함)으로 정렬해 섞여 보인다. 독음이 전 곡에 채워지면 해소.
+4. **미분류 9곡 · `feat.`**: 미분류 9곡 중 토픽 채널에 있는 곡은 위 1항대로 자동 등록 대상이다. `feat.` 곡은 자동 등록 · 시드에서 모두 제외(`songs.py` · `build_songs_json.py`). 피드 15건을 넘는 버스트는 아직 고려하지 않았다.
+5. **미검증(헤드리스 Chrome 에서 영상이 검은 화면이라 못 본 것)**: 실제 영상 재생 · 임베드 제한 영상의 오류 안내(`onError`) · 재생/일시정지 상태 동기화(`onStateChange`) · 모바일 실제 터치(손잡이 드래그 · 더블탭 → 팝업). 실기기 확인 필요.
+6. **정책 해석**: 「팝업을 내려도 재생 유지」를 위해 프레임을 항상 보이게 두는 것은 III.I.9(백그라운드 플레이어 금지)와 최소 200×200 요건의 **원문을 근거로 한 해석**이다. 플로팅 프레임의 허용 여부를 YouTube 에 문의해 확인한 것은 아니다.
+7. **✕(정지하고 치우기) 버튼**은 목업에 없던 추가 기능이다 — 플로팅 프레임이 높이 200px 로 화면을 계속 차지해 치울 방법이 필요하다고 판단. 유지 여부는 운영자 확인.
+8. **새 용어 미등재**: 「플로팅 프레임」 · 「별칭」 · 「독음」 · 「손잡이 줄」 은 `docs/TERMINOLOGY.md` 에 아직 없다(임의로 추가하지 않음 — 운영자와 정한 뒤 등재).
+9. **멤버 표시 분류 규칙**: 곡의 `who` 는 업로드 채널명으로 정한다(멤버 이름 일·영문 모두 인식, 「`Yuno Sengoku - Topic`」 같은 자동 생성 토픽 채널 포함, 그 밖은 `group`). 멤버별 곡 수는 그룹 28 · 아라레 11 · 유노 8 · 미야코 7 · 리츠 6 · 노노카 5.
+   한 곡이 여러 멤버의 곡인지(참여 멤버)는 데이터에 없다.
 
 ---
 

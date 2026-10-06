@@ -1,7 +1,7 @@
 // songs.js — (v4.2.0) 플레이어 곡 목록의 순수 로직: 검색 정규화 · 가나→한글 독음 변환 · 필터/정렬. DOM · 네트워크 접근 없음.
 // 곡 데이터는 assets/songs.json (원본: ref/player/songs_release.json). 사용자 별칭은 player.js 가 localStorage 로 관리해 여기에 넘긴다.
 
-export const KIND_LABEL = { solo: "솔로", original: "오리지널", cover: "커버" };
+export const KIND_LABEL = { original: "오리지널", cover: "커버" };   // 솔로 구분 없음 — 솔로도 커버(운영자 결정 2026-10-06)
 
 // ── 독음(가나) → 한글 ────────────────────────────────────────────────
 // 외래어 표기법을 단순화한 것: 어두 か·た행은 가·다, 어중은 카·타. ん=ㄴ 받침, っ=ㅅ 받침,

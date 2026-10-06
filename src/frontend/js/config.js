@@ -42,8 +42,13 @@ export const ARCHIVE_URL = getDataUrl(
   "/data/preview_archive.json"
 );
 
-// (v4.2.0) 플레이어 곡 목록 — 프론트에 같이 배포되는 정적 파일(원본 ref/player/songs_release.json). data 저장소를 거치지 않는다.
-export const SONGS_URL = "assets/songs.json";
+// (v4.2.0) 플레이어 곡 목록. 신곡 자동 감지(백엔드 tick, src/backend/songs.py)가 data 브랜치 songs.json 에 곡을 등록하므로 그쪽을 먼저 읽고,
+// 없으면(시드 전 · 로컬 개발) 프론트에 같이 배포되는 정적 파일(scripts/build_songs_json.py 로 생성)로 폴백한다.
+export const SONGS_URL = getDataUrl(
+  "https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/songs.json",
+  "/data/songs.json"
+);
+export const SONGS_FALLBACK_URL = "assets/songs.json";
 
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;

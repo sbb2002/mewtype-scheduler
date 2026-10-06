@@ -48,7 +48,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
 > **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
-> 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
+> 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 토픽 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
 >
 > **프론트 v4.1.0 (2026-10-05)**: 예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 **오늘 타임테이블**(PC) / **오늘 카드 + 이후 예고 펼치기**(모바일 1명씩 슬라이드)로 대체 —
 > `docs/SPEC.md` 「타임테이블 · 이후 예고」, 요약 `docs/VERSION.md`. 아래 저장소 구조의 `lane__live` · 버킷 서술은 v4.0 까지의 모습이다.
@@ -409,7 +409,7 @@ src/
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
                        #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
     css/{reset,layout,card,timetable,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
-    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 65곡 — 정적 배포(원본 ref/player/songs_release.json)
+    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 65곡 — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수
@@ -551,6 +551,8 @@ src/
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
                        #        (v3.1.4) parse_live_now — 즉시개시 공지(配信開始+온전한 URL) → video_id
                        #        포함 announced 즉시 반영. 그룹 명의만 있으면 host="group" 5인 팬아웃
+    songs.py           # (v4.2.0) 신곡 자동 감지 — 토픽 채널 RSS → 곡명이 없으면 data 브랜치 songs.json 에 등록((Cover)=cover · feat. 제외). 순수 + RSS 조회.
+                       #        handlers._detect_new_songs 가 tick 마다 호출(예외 격리). config/channels.json `song_feeds`. self-test: python -m src.backend.songs
     xtweet.py          # (v2.8) android.title 라우팅(route_by_title) + tweets.json/tweet_archive.json
                        #        계약(parse·merge_tweet·sweep_expired) — 순수. 개인 5인 트윗 전용 파이프라인
                        #        (v2.8.1) parse_schedule(예고 게이트) · merge_personal_schedule(같은 방송 upsert)

@@ -18,6 +18,7 @@ from . import preview as preview_mod
 from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
+from . import songs as songs_mod
 from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_events
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
@@ -262,6 +263,48 @@ def _should_log_run(
     )
 
 
+def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.fetch_feed_entries) -> dict:
+    """(v4.2.0) 토픽 채널 RSS(쿼터 0)에서 새 곡을 찾아 `songs.json` 에 등록한다. 방송 파이프라인과 무관한 별도 경로.
+
+    규칙은 songs.py 머리말 참고(곡명이 이미 있으면 건너뜀 · (Cover)/(Solo)=cover · feat. 제외). 새 곡이 있을 때만 쓰기가 일어난다.
+    `songs.json` 이 data 브랜치에 없으면(시드 전) 아무것도 하지 않는다 — 임의로 새로 만들지 않는다.
+    쓰기 충돌(409)은 다음 tick(10분 뒤)이 같은 RSS 로 다시 계산하므로 그대로 둔다. **어떤 실패도 tick 을 막지 않는다.**
+    반환: {"added": [곡명...]} 또는 {"skipped": 사유}.
+    """
+    try:
+        feeds = channels_cfg.get(songs_mod.SONG_FEEDS_KEY) or []
+        if not feeds:
+            return {"skipped": "no_feeds"}
+        entries_by_who: list[tuple[str, list[dict]]] = []
+        for f in feeds:
+            if f.get("channel_id"):
+                entries_by_who.append((f.get("who") or "group", fetch(f["channel_id"])))
+        if not any(e for _, e in entries_by_who):
+            return {"skipped": "no_entries"}
+        doc, sha = gh.read_json(songs_mod.SONGS_PATH)
+        if doc is None:
+            log.warning("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
+            return {"skipped": "no_songs_json"}
+        existing = list(doc.get("songs") or [])
+        additions: list[dict] = []
+        for who, entries in entries_by_who:
+            additions += songs_mod.find_new_songs(entries, existing + additions, who=who, now_iso=now_iso)
+        if not additions:
+            return {"added": []}
+        names = ", ".join(a["title"] for a in additions)
+        try:
+            gh.write_json(songs_mod.SONGS_PATH, songs_mod.merge_songs(doc, additions), prev_sha=sha,
+                          message=f"data: 신곡 {len(additions)}곡 등록 ({names}) {now_iso}")
+        except ConflictError:
+            log.warning("songs.json 쓰기 충돌 — 다음 tick 에서 다시 시도")
+            return {"skipped": "conflict"}
+        log.info("신곡 등록: %s", names)
+        return {"added": [a["title"] for a in additions]}
+    except Exception:  # noqa: BLE001
+        log.warning("신곡 감지 실패 — tick 은 계속", exc_info=True)
+        return {"skipped": "error"}
+
+
 _VIDEO_RELEASES_PATH = "video_releases.json"
 _VIDEO_RELEASES_MAX = 300
 
@@ -326,6 +369,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     _pv0, _ = gh.read_json("preview.json")
     _pv0 = _pv0 or preview_mod.default_preview()
 
+    songs_result: dict = {"skipped": "wake"}
     candidates: set[str] = set(_tracked_unresolved_ids(_pv0))
     if woken_video_id:
         candidates.add(woken_video_id)
@@ -337,6 +381,8 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         rss_map = fetch_all_rss_video_ids(rss_ids)
         for ids in rss_map.values():
             candidates.update(ids)
+        # (v4.2.0) 토픽 채널 RSS 로 신곡 감지 — 방송 후보(candidates)와 별개
+        songs_result = _detect_new_songs(gh, channels_cfg, now_iso)
 
     yt = YouTubeClient(cfg.youtube_api_key)
     avatars: dict[str, str] = {}
@@ -496,6 +542,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         state_counts[it.get("state", "?")] = state_counts.get(it.get("state", "?"), 0) + 1
 
     result = {
+        "songs": songs_result,
         "mode": mode,
         "woken": woken_video_id,
         "candidates": len(candidates),
@@ -796,4 +843,44 @@ if __name__ == "__main__":
     assert _out2[0]["info_at"] == _snow, "info_at 미갱신"
     print("[OK] xtweet.apply_overrides: API 승 (API 변경 60초 초과)")
 
+    # (v4.2.0) 신곡 자동 감지 — _detect_new_songs (가짜 gh · 가짜 RSS)
+    class _FakeGH:
+        def __init__(self, doc, conflict=False):
+            self.doc, self.conflict, self.written = doc, conflict, None
+
+        def read_json(self, path):
+            return (self.doc, "sha1") if self.doc is not None else (None, None)
+
+        def write_json(self, path, data, *, prev_sha, message):
+            if self.conflict:
+                raise ConflictError("409")
+            self.written = (path, data, message)
+            return True, "sha2"
+
+    _feeds_cfg = {songs_mod.SONG_FEEDS_KEY: [{"key": "topic", "channel_id": "UCtopic", "who": "group"}]}
+    _rss = [
+        {"video_id": "NEWSONG0001", "title": "新しい曲", "published": "2026-10-10T11:00:00+00:00", "description": ""},
+        {"video_id": "NEWCOVER002", "title": "誰かの曲 (Cover)", "published": "2026-10-10T12:00:00+00:00", "description": ""},
+        {"video_id": "OLDSONG0003", "title": "既にある曲", "published": "2026-09-01T11:00:00+00:00", "description": ""},
+        {"video_id": "FEATSONG004", "title": "コラボ (feat. X)", "published": "2026-10-10T13:00:00+00:00", "description": ""},
+    ]
+    _doc = {"songs": [{"id": "x1", "title": "既にある曲", "kind": "original", "who": "group", "date": "2026-09-01", "reading": ""}]}
+    _g = _FakeGH(dict(_doc))
+    _r = _detect_new_songs(_g, _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss)
+    assert _r == {"added": ["新しい曲", "誰かの曲"]}, _r
+    assert _g.written and [x["title"] for x in _g.written[1]["songs"]] == ["既にある曲", "新しい曲", "誰かの曲"], "등록: 기존 곡 뒤에 덧붙임"
+    assert [x["kind"] for x in _g.written[1]["songs"][1:]] == ["original", "cover"], "kind: 표기 없음=original · (Cover)=cover"
+    assert "feat" not in " ".join(x["title"] for x in _g.written[1]["songs"]), "feat. 곡 제외"
+    _g2 = _FakeGH(dict(_g.written[1]))
+    assert _detect_new_songs(_g2, _feeds_cfg, "2026-10-10T14:10:00Z", fetch=lambda cid: _rss) == {"added": []} and _g2.written is None, "재실행: 새 곡 없으면 쓰기 안 함"
+    assert _detect_new_songs(_FakeGH(None), _feeds_cfg, "t", fetch=lambda cid: _rss) == {"skipped": "no_songs_json"}, "songs.json 없으면 건너뜀(임의 생성 안 함)"
+    assert _detect_new_songs(_FakeGH(dict(_doc), conflict=True), _feeds_cfg, "t", fetch=lambda cid: _rss) == {"skipped": "conflict"}, "쓰기 충돌 → 다음 tick 재시도"
+    assert _detect_new_songs(_FakeGH(dict(_doc)), {}, "t", fetch=lambda cid: _rss) == {"skipped": "no_feeds"}, "피드 설정 없으면 건너뜀"
+    assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "t", fetch=lambda cid: []) == {"skipped": "no_entries"}, "RSS 실패(빈 목록)면 건너뜀"
+
+    def _boom(cid):
+        raise RuntimeError("boom")
+
+    assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "t", fetch=_boom) == {"skipped": "error"}, "예외도 tick 을 막지 않음"
+    print("[OK] _detect_new_songs: 등록 · 멱등 · feat 제외 · 시드 전/충돌/실패 격리")
     print("SUCCESS: handlers self-test 통과")

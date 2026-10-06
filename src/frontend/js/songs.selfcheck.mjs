@@ -49,6 +49,7 @@ const byDateDesc = viewSongs(prep, opts);
 assert(byDateDesc[0].date >= byDateDesc[byDateDesc.length - 1].date, "날짜 내림차순");
 assert(viewSongs(prep, { ...opts, dir: "asc" })[0].date === "2023-11-28", "날짜 오름차순 첫 곡 = 가장 오래된 곡");
 assert(viewSongs(prep, { ...opts, kind: "cover" }).every((s) => s.kind === "cover"), "종류 필터");
+assert(prep.every((s) => s.kind === "cover" || s.kind === "original"), "종류는 original / cover 둘뿐(solo 없음)");
 const byName = viewSongs(prep, { ...opts, sortBy: "name", dir: "asc" });
 assert(byName.length === 65, "이름순 정렬은 곡을 잃지 않음");
 assert(prep.length === 65 && prep[0].date === "2023-11-28", "원본 배열은 건드리지 않음");
