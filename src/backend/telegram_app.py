@@ -104,6 +104,7 @@ from . import monitor_snapshot
 from . import statemachine
 from . import writeclient
 from . import llm
+from . import songs                        # (v4.2.0) 곡 목록 관리 · 신곡 반려
 from . import storage                      # (v4a) store 팩토리 — 로컬/깃허브 + ops 라우팅
 from . import flowtrace                    # (v4a) 흐름 기록(관리 페이지 작업 탭) — 로컬 전용
 from .control import (
@@ -4650,6 +4651,8 @@ def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
         return {"applied": [], "skipped": skipped, "restored_video_ids": [], "review_only": True}
     if u.get("type") == "restore_banner":
         return _undo_banner_action(gh, e, action_id, now_iso)
+    if u.get("type") == "remove_song":   # (v4.2.0) 신곡 자동 등록 반려 — 지우고 재등록 차단
+        return _undo_song_action(gh, e, action_id, now_iso)
     if u.get("type") == "restore_notice":
         return _undo_notice_action(gh, e, action_id, now_iso)
     applied, skipped, restored = [], [], []
@@ -4949,9 +4952,158 @@ def _run_part(gh, e, inp, mode, dec, now_iso, ctx) -> str:
     return _review_summaries(ctx, gh) or "판정 결과: 등록 안 함 (변경 없음)"
 
 
+# ─── (v4.2.0) 신곡 · 곡 관리 ──────────────────────────────────────────────────────────────────
+# 곡 목록 `songs.json`(data 브랜치)의 관리 조작 — 어드민 음반 탭(수정 · 삭제 · 직접 추가 · 차단 해제 · 독음 재작성)과 작업 탭 반려.
+# 쓰기는 `/write` 직렬화(writers kind `song_edit`)를 거치고, 외부 LLM(독음)은 호출부(admin_api)가 먼저 불러 결과만 넘긴다(A-1).
+# **삭제 · 반려는 항상 `rejected` 에 넣는다** — 안 넣으면 RSS 최근 15건에 곡이 남아 있는 동안 다음 tick 이 다시 등록한다.
+_SONGS_PATH = songs.SONGS_PATH
+
+
+def _song_whos() -> list[str]:
+    """곡의 `who` 로 쓸 수 있는 값 — 멤버 키들 + group."""
+    return list(_load_channels_config().get("channel_order") or []) + ["group"]
+
+
+def _song_event(gh, now_iso: str, action: str, detail: str, **kw) -> None:
+    _log_event_safe(gh, now_iso, "song", RESULT_OK, who="group", via="ops", detail=detail, action=action, **kw)
+
+
+def _song_edit_commit(gh, op: str, now_iso: str, *, id: str | None = None, patch: dict | None = None, rec: dict | None = None,
+                      force: bool = False, ident: str | None = None, reading: str | None = None, by: str = "admin") -> dict:
+    """(적용 큐 · /write) 곡 관리 한 건. op = edit | delete | add | unblock | regen_reading. sha 충돌은 다시 읽어 최대 4회.
+    거절은 예외가 아니라 {"error": 사유} 로 돌려준다(적용 큐가 재시도 끝에 「실패 작업」으로 남기지 않게).
+    성공은 {"ok": True, "song"?, "unblocked"?}."""
+    whos = _song_whos()
+    for _try in range(4):
+        doc, sha = gh.read_json(_SONGS_PATH)
+        if doc is None:
+            return {"error": "songs.json 이 없습니다 — 시드 전입니다"}
+        extra: dict = {}
+        song = None
+        if op == "edit":
+            p = patch or {}
+            if "who" in p and p["who"] not in whos:
+                return {"error": "부른 사람이 올바르지 않습니다"}
+            new, song, err = songs.edit_song(doc, id or "", p, now_iso)
+            msg, ev = f"곡 수정 {song and song.get('title')}", ("edited", f"곡 수정 · {song and song.get('title')}")
+        elif op == "delete":
+            new, song = songs.delete_song(doc, id or "", now_iso, by)
+            err = None if song else "목록에 없는 곡입니다"
+            msg, ev = f"곡 삭제 {song and song.get('title')}", ("deleted", f"곡 삭제(재등록 차단) · {song and song.get('title')}")
+        elif op == "add":
+            new, song, err = songs.add_song(doc, rec or {}, now_iso, force=force, whos=whos)
+            msg, ev = f"곡 추가 {song and song.get('title')}", ("added_manual", f"곡 직접 추가 · {song and song.get('title')}")
+        elif op == "unblock":
+            new, gone = songs.unblock(doc, ident or "")
+            err = None if gone else "차단 목록에 없습니다"
+            extra["unblocked"] = gone
+            msg, ev = f"차단 해제 {ident}", ("unblocked", f"차단 해제 · {', '.join(g.get('title') or g.get('id') or '' for g in gone)}")
+        elif op == "regen_reading":
+            new = songs.norm_doc(doc)
+            song = next((x for x in new["songs"] if x.get("id") == id), None)
+            err = None if song else "목록에 없는 곡입니다"
+            if song is not None:
+                song["reading_manual"] = False
+                if reading:
+                    song["reading"], song["needs_reading"] = reading, False
+                    song.pop("needs_reading", None)
+                else:   # LLM 이 못 썼다 — 다음 tick 이 다시 시도하게 표시만
+                    song["needs_reading"] = True
+                song["edited_at"] = now_iso
+            msg, ev = f"독음 재작성 {id}", ("reading_regen", f"독음 다시 만들기 · {song and song.get('title')} → {reading or '(실패 — 다음 정기 수집에서 재시도)'}")
+        else:
+            return {"error": f"알 수 없는 곡 관리 동작({op})"}
+        if err:
+            return {"error": err}
+        try:
+            gh.write_json(_SONGS_PATH, new, prev_sha=sha, message=f"data: {msg} {now_iso}")
+        except ConflictError:
+            continue
+        _song_event(gh, now_iso, ev[0], ev[1], video_id=(song or {}).get("id") or id or "", title=(song or {}).get("title") or "")
+        out = {"ok": True, "song": song}
+        out.update(extra)
+        return out
+    return {"error": "songs.json 쓰기 충돌이 계속됨 — 잠시 뒤 다시 시도하세요"}
+
+
+def _undo_song_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
+    """(적용 큐) `remove_song` 반려 — 자동 등록한 곡을 목록에서 지우고 재등록을 막는다(`rejected`).
+    **그때 등록한 그대로일 때만**: 운영자가 그 뒤 곡을 수정했으면(`edited_at` 이 등록 시각 이후) 덮어 지우지 않고 건너뜀 —
+    이미 다시 반려한 곡 · 이미 없는 곡도 건너뜀."""
+    u = e.get("undo") or {}
+    applied, skipped = [], []
+    for _try in range(4):
+        applied, skipped = [], []
+        doc, sha = gh.read_json(_SONGS_PATH)
+        if doc is None:
+            return {"error": "songs.json 이 없습니다", "applied": [], "skipped": []}
+        d = songs.norm_doc(doc)
+        s = next((x for x in d["songs"] if x.get("id") == u.get("id")), None)
+        if s is None:
+            skipped.append(f"{u.get('title') or u.get('id')} — 이미 목록에 없음")
+        elif (s.get("edited_at") or "") > (u.get("added_at") or ""):
+            skipped.append(f"{s.get('title')} — 등록 뒤 운영자가 수정함 (지우려면 음반 탭에서 삭제)")
+        else:
+            new = songs.reject_song(d, s, now_iso, by="반려")
+            try:
+                gh.write_json(_SONGS_PATH, new, prev_sha=sha, message=f"data: 신곡 반려 {s.get('title')} {now_iso}")
+            except ConflictError:
+                continue
+            applied.append(f"지움 + 재등록 차단 {s.get('title')}")
+            _song_event(gh, now_iso, "rejected", f"신곡 반려(목록에서 지움 · 재등록 차단) · {s.get('title')}", video_id=s.get("id"), title=s.get("title"))
+        break
+    _llm_mark_undone(gh, action_id, now_iso, applied, skipped)
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": []}
+
+
+def _song_review_rec(inp: dict, dec: dict, *, default_kind: str = "original") -> dict:
+    """사용자 판단 → 곡 레코드. 입력 스냅샷(RSS 항목)에서 기본값을 채우고 운영자가 고른 값(제목 · 구분 · 부른 사람 · 날짜)을 덮는다."""
+    raw_title = inp.get("title") or ""
+    return {"id": inp.get("video_id") or "", "title": (dec.get("title") or songs.clean_title(raw_title)).strip(),
+            "kind": dec.get("kind") or songs.classify(raw_title) or default_kind, "who": dec.get("who") or "group",
+            "date": dec.get("date") or songs.kst_date(inp.get("published") or "")}
+
+
+def _run_song_register(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    """반려된 신곡 등록 → 사용자 판단 = 다른 값(제목 · 구분 · 부른 사람 · 날짜)으로 다시 등록. 규칙 판단이라 LLM 재판단은 없다."""
+    if mode != "user":
+        raise ValueError("신곡 등록은 규칙 기반 판단이라 LLM 재판단이 없습니다 — 사용자 판단으로 다시 등록하세요")
+    if dec.get("choice") == "skip":
+        _user_noop(gh, e, f"신곡 — 사용자 판단: 등록 안 함 · {inp.get('title') or ''}", now_iso)
+        return "사용자 판단: 등록 안 함 (차단 유지)"
+    rec = _song_review_rec(inp, dec)
+    res = _song_edit_commit(gh, "add", now_iso, rec=rec, force=True)
+    if res.get("error"):
+        raise ValueError(res["error"])
+    s = res["song"]
+    _llm_record(gh, "song_register", s.get("who") or "group", f"사용자 판단으로 신곡 등록 · {s['title']} ({'커버' if s['kind'] == 'cover' else '오리지널'})",
+                "운영자가 정한 값으로 다시 등록", undo={"type": "remove_song", "id": s["id"], "title": s["title"], "added_at": now_iso},
+                now_iso=now_iso, input=inp)
+    return f"「{s['title']}」 {s['kind']} · {s['who']} 로 등록"
+
+
+def _run_song_skip(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    """곡명 중복으로 등록 안 한 곡 → 사용자 판단 = 강제 등록(제목 · 구분 · 부른 사람) 또는 그대로 둠."""
+    if mode != "user":
+        raise ValueError("곡명 중복 건너뜀은 규칙 기반 판단이라 LLM 재판단이 없습니다 — 사용자 판단으로 강제 등록하세요")
+    if dec.get("choice") != "register":
+        _user_noop(gh, e, f"곡명 중복 — 사용자 판단: 등록 안 함 · {inp.get('title') or ''}", now_iso)
+        return "사용자 판단: 등록 안 함 (변경 없음)"
+    rec = _song_review_rec(inp, dec)
+    res = _song_edit_commit(gh, "add", now_iso, rec=rec, force=True)
+    if res.get("error"):
+        raise ValueError(res["error"])
+    s = res["song"]
+    _llm_record(gh, "song_register", s.get("who") or "group", f"사용자 판단으로 강제 등록 · {s['title']} ({'커버' if s['kind'] == 'cover' else '오리지널'})",
+                "곡명이 같아도 다른 곡이라고 운영자가 판단", undo={"type": "remove_song", "id": s["id"], "title": s["title"], "added_at": now_iso},
+                now_iso=now_iso, input=inp)
+    return f"「{s['title']}」 {s['kind']} · {s['who']} 로 강제 등록"
+
+
 _REVIEW_RUNNERS = {
     "banner_judge": _run_banner, "broadcast_change": _run_change, "collab_guest": _run_collab,
     "duplicate_notice": _run_notice, "ocr_members": _run_ocr, "own_broadcast": _run_own, "participation": _run_part,
+    "song_register": _run_song_register, "song_skip": _run_song_skip,   # (v4.2.0) 규칙 판단 — 사용자 판단만(LLM 재판단 없음)
 }
 
 
@@ -5020,6 +5172,12 @@ def _llm_review_options(gh, action_id: str) -> dict:
                           for n in (nj or {}).get("notices") or []]
     elif e.get("kind") == "collab_guest":
         out["guest_keys"] = list(inp.get("guest_keys") or [])
+    elif e.get("kind") in ("song_register", "song_skip"):
+        out["kinds"] = [{"key": "original", "name": "오리지널"}, {"key": "cover", "name": "커버"}]
+        out["whos"] = out["members"] + [{"key": "group", "name": "그룹"}]
+        out["defaults"] = _song_review_rec(inp, {})
+        out["dup_of"] = inp.get("dup_of")
+        out["rejudge"] = False   # 규칙 판단 — LLM 재판단 없음
     elif e.get("kind") == "ocr_members":
         ent = _group_pending_items(gh).get(inp.get("video_id") or "") or {}
         out["suggested"] = list(ent.get("suggested") or [])

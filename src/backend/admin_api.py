@@ -20,6 +20,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from . import apply, enrich, storage
+from . import songs as songs_mod
 
 log = logging.getLogger("backend.admin_api")
 
@@ -601,6 +602,161 @@ def dismiss_group_pending(video_id: str) -> dict:
     if res.get("ok") and not (res.get("result") or {}).get("removed"):
         res = _err("확인 대기 목록에 없습니다")
     return _record("dismiss_group_pending", video_id, "", res)
+
+
+# ── (v4.2.0) 음반 탭 — 곡 목록 · 곡 관리 · 신곡 감지 상태 ─────────────────────────────────────────
+# 곡 목록은 data 브랜치 `songs.json`(신곡 자동 감지가 등록). 수정 · 삭제 · 직접 추가 · 차단 해제 · 독음 다시 만들기는 `/write` 직렬화(writers kind
+# `song_edit`)로 반영하고, **삭제는 항상 재등록 차단(rejected)** 이다. 외부 LLM(독음)은 여기서 먼저 불러 결과만 넘긴다. 계약: ref/v4.2_admin_api_contract.md
+
+_fetch_feed = songs_mod.fetch_feed_entries   # 테스트가 바꿔 끼운다(네트워크 없이)
+SONG_EVENT_DAYS = 7                          # 신곡 현황의 최근 이벤트 읽는 일수(현행 이벤트 로그 그대로 읽음 — 새 보관 정책 없음)
+
+
+def _songs_doc() -> dict | None:
+    doc, _ = _store().read_json(songs_mod.SONGS_PATH)
+    return doc
+
+
+def _song_row(s: dict) -> dict:
+    """곡 한 줄 + 한글 독음 미리보기(`reading_ko`)."""
+    return dict(s, reading_ko=songs_mod.kana_to_hangul(s.get("reading") or ""))
+
+
+def list_songs() -> dict:
+    """음반 탭 목록: {"seeded", "songs": [...], "rejected": [...], "counts": {...}}. seeded=False 면 data 브랜치에 songs.json 이 없음(시드 전)."""
+    doc = _songs_doc()
+    if doc is None:
+        return {"seeded": False, "songs": [], "rejected": [],
+                "counts": {"total": 0, "no_reading": 0, "needs_reading": 0, "auto": 0, "manual": 0, "rejected": 0}}
+    d = songs_mod.norm_doc(doc)
+    rows = [_song_row(s) for s in d["songs"]]
+    return {"seeded": True, "songs": rows, "rejected": list(reversed(d["rejected"])),
+            "counts": {"total": len(rows), "no_reading": sum(1 for s in rows if not s.get("reading")),
+                       "needs_reading": sum(1 for s in rows if s.get("needs_reading")),
+                       "auto": sum(1 for s in rows if s.get("added_at") and not s.get("manual")),
+                       "manual": sum(1 for s in rows if s.get("manual")), "rejected": len(d["rejected"])}}
+
+
+def songs_status() -> dict:
+    """신곡 감지 현황 — 시드 여부 · **지금 RSS 조회**(쿼터 0) · 등록 예정/건너뜀 미리보기(dry-run, 쓰기 없음) · 최근 `song` 이벤트.
+    RSS 가 조용히 실패하면 tick 쪽에서는 시간당 1건의 degraded 이벤트뿐이라, 평소 상태 확인은 이 조회가 맡는다."""
+    doc = _songs_doc()
+    cfg = channels()
+    feeds_out, entries_by_who = [], []
+    for f in cfg.get(songs_mod.SONG_FEEDS_KEY) or []:
+        if not f.get("channel_id"):
+            continue
+        try:
+            entries = _fetch_feed(f["channel_id"])
+            err = None if entries else "RSS 가 비어 있거나 조회에 실패했습니다"
+        except Exception as e:  # noqa: BLE001
+            entries, err = [], f"{type(e).__name__}: {str(e)[:120]}"
+        latest = max(entries, key=lambda x: x.get("published") or "") if entries else None
+        feeds_out.append({"key": f.get("key"), "name": f.get("name"), "channel_id": f["channel_id"], "ok": bool(entries), "entry_count": len(entries),
+                          "latest_published": latest.get("published") if latest else None, "latest_title": latest.get("title") if latest else None, "error": err})
+        entries_by_who.append((f.get("who") or "group", entries))
+    preview = {"new": [], "skipped": []}
+    if doc is not None:
+        d = songs_mod.norm_doc(doc)
+        seen_ids = {r.get("id") for r in d["seen"]}
+        pool = list(d["songs"])
+        for who, entries in entries_by_who:
+            new, skipped = songs_mod.find_new_songs(entries, pool, who=who, rejected=d["rejected"])
+            pool += new
+            preview["new"] += [{k: n.get(k) for k in ("id", "title", "kind", "who", "date")} for n in new]
+            preview["skipped"] += [{"video_id": s["entry"]["video_id"], "title": s["entry"]["title"], "reason": s["reason"], "dup_of": s["dup_of"],
+                                    "recorded": s["entry"]["video_id"] in seen_ids} for s in skipped]
+    events = [e for e in _cloud_events(SONG_EVENT_DAYS) if e.get("flow") == "song"][:40]
+    songs_rows = (doc or {}).get("songs") or []
+    return {"seeded": doc is not None, "song_count": len(songs_rows), "no_reading": sum(1 for s in songs_rows if not s.get("reading")),
+            "needs_reading": sum(1 for s in songs_rows if s.get("needs_reading")), "rejected_count": len((doc or {}).get("rejected") or []),
+            "feeds": feeds_out, "preview": preview, "events": events, "now": _now_iso()}
+
+
+def _song_res(res: dict) -> dict:
+    """적용 큐 결과의 {"error"} 를 실패 응답으로 바꾼다(작업 자체는 성공이므로 _submit 은 ok 로 돌려준다)."""
+    if res.get("ok") and (res.get("result") or {}).get("error"):
+        return _err(res["result"]["error"])
+    return res
+
+
+def edit_song(song_id: str, patch: dict | None = None, **fields) -> dict:
+    """곡 수정 — patch(또는 키워드) = title · reading · kind · who · date 중 바꿀 것. 독음을 직접 고치면 LLM 이 덮지 않는다(reading_manual),
+    독음을 비우면 LLM 이 다음 정기 수집에서 다시 쓴다."""
+    p = dict(patch or {}, **fields)
+    res = _song_res(_submit("song_edit", {"op": "edit", "now_iso": _now_iso(), "id": song_id, "patch": p}))
+    return _record("edit_song", song_id, ", ".join(sorted(p)), res)
+
+
+def delete_song(song_id: str) -> dict:
+    """곡 삭제 = 목록에서 지우고 **재등록 차단**(rejected). RSS 가 계속 읽어도 되살아나지 않는다."""
+    res = _song_res(_submit("song_edit", {"op": "delete", "now_iso": _now_iso(), "id": song_id}))
+    return _record("delete_song", song_id, "", res)
+
+
+def unblock_song(ident: str) -> dict:
+    """차단 해제 — ident = 차단 목록의 영상 ID 또는 곡명 키(name_key). 해제하면 다음 정기 수집에서 RSS 에 남은 곡이 다시 등록될 수 있다."""
+    res = _song_res(_submit("song_edit", {"op": "unblock", "now_iso": _now_iso(), "ident": ident}))
+    return _record("unblock_song", ident, "", res)
+
+
+def add_song(video: str = "", title: str = "", kind: str = "", who: str = "", date: str = "", reading: str = "", force: bool = False) -> dict:
+    """곡 직접 추가. video = YouTube URL 또는 11자 영상 ID(필수). 제목 · 날짜는 비우면 채워 본다 — ① 토픽 채널 RSS ② YouTube API(videos.list, 쿼터 1).
+    둘 다 안 되면 운영자가 title · date 를 직접 넣어야 한다. kind 를 비우면 제목 끝 (Cover) 로 판정. 곡명이 같은 곡이 있으면 force=True 일 때만 추가.
+    차단돼 있던 곡이면 차단도 함께 풀린다. 독음을 비우면 LLM 이 다음 정기 수집에서 쓴다."""
+    vid = songs_mod.parse_video_id(video)
+    if not vid:
+        return _err("YouTube URL 또는 영상 ID(11자)를 입력하세요")
+    title, date = (title or "").strip(), (date or "").strip()
+    filled = ""
+    if not title or not date:
+        meta = None
+        for f in channels().get(songs_mod.SONG_FEEDS_KEY) or []:
+            try:
+                hit = next((e for e in _fetch_feed(f.get("channel_id") or "") if e["video_id"] == vid), None)
+            except Exception:  # noqa: BLE001
+                hit = None
+            if hit:
+                meta, filled = {"title": hit["title"], "published": hit["published"]}, "RSS"
+                break
+        if meta is None:
+            from .config import load_config
+            meta = songs_mod.fetch_video_meta(vid, load_config().youtube_api_key)
+            filled = "YouTube API" if meta else ""
+        if meta:
+            title = title or meta["title"]
+            date = date or songs_mod.kst_date(meta["published"])
+    if not title or not date:
+        return _err("영상의 제목 · 날짜를 자동으로 가져오지 못했습니다 — 곡명과 날짜(YYYY-MM-DD)를 직접 입력하세요")
+    rec = {"id": vid, "title": title, "kind": kind or None, "who": who or "group", "date": date, "reading": reading or ""}
+    res = _song_res(_submit("song_edit", {"op": "add", "now_iso": _now_iso(), "rec": rec, "force": bool(force)}))
+    if res.get("ok") and filled:
+        res["result"] = dict(res.get("result") or {}, filled_by=filled)
+    return _record("add_song", vid, title[:60], res)
+
+
+def regenerate_song_reading(song_id: str) -> dict:
+    """독음 다시 만들기 — 외부 LLM 이 곡명으로 독음을 새로 쓴다(직접 고쳐 둔 독음도 덮는다). LLM 이 실패하면 `needs_reading` 으로 표시만 하고
+    오류를 돌려준다(다음 정기 수집에서 자동 재시도)."""
+    doc = _songs_doc()
+    if doc is None:
+        return _err("songs.json 이 없습니다 — 시드 전입니다")
+    s = next((x for x in doc.get("songs") or [] if x.get("id") == song_id), None)
+    if s is None:
+        return _err("목록에 없는 곡입니다")
+    from .config import load_config
+    from .handlers import _make_llm
+    cfg = load_config()
+    reading = None
+    if cfg.groq_api_key:
+        llm_c = _make_llm(cfg)
+        reading = llm_c.song_reading(s.get("title") or "") if llm_c else None
+    res = _song_res(_submit("song_edit", {"op": "regen_reading", "now_iso": _now_iso(), "id": song_id, "reading": reading}))
+    if res.get("ok") and not reading:
+        res = _err("독음을 만들지 못했습니다 (LLM 응답 없음 · 키 없음) — 다음 정기 수집에서 다시 시도합니다")
+    elif res.get("ok"):
+        res["result"] = dict(res.get("result") or {}, reading=reading, reading_ko=songs_mod.kana_to_hangul(reading))
+    return _record("regenerate_song_reading", song_id, (reading or "")[:60], res)
 
 
 def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None = None,
@@ -1265,6 +1421,7 @@ ADMIN_FLOW_LABELS = {
     "set_paused": "일시정지 · 재개", "set_log_level": "알림 레벨", "set_monitor_auto": "멤버 현황 DM",
     "resolve_group_pending": "그룹 영상 확인 대기 · 확정", "dismiss_group_pending": "그룹 영상 확인 대기 · 무시",
     "undo_llm_action": "LLM 판단 반려", "rejudge_llm_action": "LLM 판단 재판단", "decide_llm_action": "LLM 판단 · 사용자 판단",
+    "edit_song": "곡 수정", "delete_song": "곡 삭제", "add_song": "곡 직접 추가", "regenerate_song_reading": "독음 다시 만들기", "unblock_song": "곡 차단 해제",
 }
 
 
@@ -1293,6 +1450,14 @@ def describe_target(name: str, body: dict) -> str:
             e = _t()._group_pending_items(_store()).get(body.get("video_id") or "") or {}
             who = "·".join(names.get(k, k) for k in (body.get("members") or []))
             return " · ".join(x for x in ((e.get("title") or "")[:40], body.get("video_id") or "", who) if x)
+        if name in ("edit_song", "delete_song", "regenerate_song_reading"):
+            doc = _songs_doc() or {}
+            s = next((x for x in doc.get("songs") or [] if x.get("id") == body.get("song_id")), {})
+            return (s.get("title") or body.get("song_id") or "")[:60]
+        if name == "add_song":
+            return (body.get("title") or body.get("video") or "")[:60]
+        if name == "unblock_song":
+            return str(body.get("ident") or "")[:60]
         if name in ("edit_preview", "delete_preview"):
             key = body.get("item_id") or body.get("key")
             it = next((i for i in list_preview().get("items", []) if i.get("id") == key), None)
@@ -1358,7 +1523,7 @@ _AUTO_LABEL = {
     "tweet_del_commit": "트윗 삭제",
     # (2026-10-01) 내부 이름(llm_action 등)이 그대로 보이던 작업들
     "manual_preview": "수동 예고 반영", "tweet_edit_commit": "트윗 수정 반영", "video_release": "프리미어 기록",
-    "group_pending": "그룹 영상 확인 대기", "llm_action": "LLM 판단 기록",
+    "group_pending": "그룹 영상 확인 대기", "llm_action": "LLM 판단 기록", "song_edit": "곡 관리",
 }
 
 
@@ -1445,6 +1610,8 @@ def jobs_overview() -> dict:
                 pending_tl.append(f"트윗 · {names.get(unit, unit)} 「{(tw.get('text') or '')[:30]}」")
 
     flows = _cloud_flows(names) if cloud else flowtrace.list_flows()
+    if not cloud:   # 로컬 시험판: 신곡 판단 기록(tick 이 llm_actions 에 직접 남김)도 흐름에 보이게
+        flows = flows + [f for f in _cloud_flows(names) if any((x.get("kind") or "").startswith("song_") for x in f.get("llm") or [])]
     return {"flows": flows, "scheduled": scheduled, "periodic": periodic, "auto": auto,
             "pending_tl": pending_tl, "enrich_pending": len(enrich.pending()),
             "now": _now_status(pv, names, flowtrace, scheduled=scheduled if cloud else None),
@@ -1492,7 +1659,7 @@ def _cloud_events(days: int = 2) -> list[dict]:
 
 
 _FLOW_KO = {"tick": "정기 수집", "wake": "방송 확인", "preview": "예고", "tweet": "개인 트윗", "relay": "공식 스케줄",
-            "notice": "소식", "upstream": "업스트림 알림", "cmd": "운영자 명령", "banner": "행사 배너"}
+            "notice": "소식", "upstream": "업스트림 알림", "cmd": "운영자 명령", "banner": "행사 배너", "song": "신곡"}
 
 
 def _cloud_auto(names: dict) -> list[dict]:
@@ -1517,8 +1684,8 @@ def _cloud_flows(names: dict) -> list[dict]:
             "id": "llm-" + e["id"], "cat": "x", "kind": "LLM 판단", "t0": e.get("ts"), "updated": e.get("ts"),
             "desc": " · ".join(p for p in (who, e.get("summary") or "") if p),
             "status": "ok", "reason": e.get("reason") or "",
-            "stages": [{"n": "접수", "s": "done", "x": "알림 · 관리 페이지", "note": ""},
-                       {"n": "LLM 판단", "s": "done", "x": "Groq", "note": (e.get("summary") or "")[:60]},
+            "stages": [{"n": "접수", "s": "done", "x": "RSS" if str(e.get("kind") or "").startswith("song_") else "알림 · 관리 페이지", "note": ""},
+                       {"n": "LLM 판단", "s": "done", "x": "규칙" if e.get("by") == "rule" else "Groq", "note": (e.get("summary") or "")[:60]},
                        {"n": "반영", "s": "done", "x": "data 쓰기", "note": ""}],
             "llm": [{"id": e["id"], "kind": e.get("kind"), "summary": e.get("summary"), "undo": bool(e.get("undo"))}],
         })
@@ -1609,6 +1776,7 @@ API_FUNCTIONS: tuple[str, ...] = (
     "ingest_notice_manual", "ingest_tweet_manual", "edit_notice", "edit_tweet", "delete_notice", "delete_tweet",
     "retry_lost", "set_paused", "set_log_level", "set_monitor_auto",
     "translate_text", "jobs_overview",
+    "list_songs", "songs_status", "edit_song", "delete_song", "add_song", "regenerate_song_reading", "unblock_song",
 )
 
 
@@ -1683,3 +1851,150 @@ if __name__ == "__main__":
         assert [m["id"] for m in list_tweets()["tweets"]["arale"]] == ["2"]
         assert delete_tweet("arale", "2")["ok"] and "arale" not in list_tweets()["tweets"], "마지막이면 유닛 제거"
     print("[PASS] admin_api self-test: 읽기 · 충돌 · 수정 · 운영 설정(ops) · 삭제 · 이력")
+
+    # ═══ (v4.2.0) 곡 관리 · 신곡 감지 통합 흐름 — 로컬 저장소 · 가짜 RSS · 가짜 LLM ═══
+    from . import handlers as _h
+
+    class _LLM:
+        disabled = False
+
+        def __init__(self, fail=()):
+            self.fail, self.calls = set(fail), []
+
+        def song_reading(self, title):
+            self.calls.append(title)
+            return None if title in self.fail else "よみ-" + title
+
+    with tempfile.TemporaryDirectory() as d2:
+        os.environ.update({"V4A_RUNTIME": "local", "LOCAL_DATA_DIR": d2, "ALLOW_UNAUTH": "1", "GROQ_API_KEY": "x", "YOUTUBE_API_KEY": ""})
+        gh = _store()
+        feeds_cfg = channels()
+        rss = [
+            {"video_id": "NEWSONG0001", "title": "新しい曲", "published": "2026-10-10T11:00:00+00:00", "description": ""},
+            {"video_id": "COVERSONG02", "title": "誰かの曲 (Cover)", "published": "2026-10-10T12:00:00+00:00", "description": ""},
+            {"video_id": "DUPLICATE03", "title": "既にある曲 (Cover)", "published": "2026-10-10T12:30:00+00:00", "description": ""},
+            {"video_id": "FEATSONG004", "title": "コラボ (feat. X)", "published": "2026-10-10T13:00:00+00:00", "description": ""},
+        ]
+        _fetch_feed = lambda cid: rss  # noqa: E731 — 모듈 전역을 바꿔 끼운다(위 정의는 이 블록에서만 덮어씀)
+        globals()["_fetch_feed"] = _fetch_feed
+        evs: list = []
+        tick = lambda now, llm=None: _h._detect_new_songs(gh, feeds_cfg, now, fetch=lambda cid: rss, llm=llm, log_events_fn=evs.extend)  # noqa: E731
+
+        # 시드 전
+        assert list_songs()["seeded"] is False and songs_status()["seeded"] is False, "시드 전 상태"
+        assert tick("2026-01-01T00:00:00Z") == {"skipped": "no_songs_json"}
+        assert edit_song("x", {"title": "t"})["ok"] is False, "시드 전 수정은 거절"
+        gh.write_json("songs.json", {"songs": [
+            {"id": "OLDSONG0003", "title": "既にある曲", "kind": "original", "who": "group", "date": "2026-09-01", "reading": "きぞん"},
+            {"id": "OLDSONG0009", "title": "もう一曲", "kind": "cover", "who": "arale", "date": "2026-09-02", "reading": ""}]},
+            prev_sha=None, message="seed")
+        ls = list_songs()
+        assert ls["seeded"] and ls["counts"]["total"] == 2 and ls["counts"]["no_reading"] == 1 and ls["songs"][0]["reading_ko"] == "기존", "목록 · 카운트 · 한글 독음"
+        # 현황(dry-run) — 쓰기 없이 등록 예정 · 건너뜀
+        st = songs_status()
+        assert st["feeds"][0]["ok"] and st["feeds"][0]["entry_count"] == 4 and st["feeds"][0]["latest_title"] == "コラボ (feat. X)", st["feeds"]
+        assert [n["title"] for n in st["preview"]["new"]] == ["新しい曲", "誰かの曲"], st["preview"]
+        assert {s["reason"] for s in st["preview"]["skipped"]} == {"name_dup", "feat"}, st["preview"]["skipped"]
+        assert list_songs()["counts"]["total"] == 2, "dry-run 은 쓰지 않는다"
+
+        # 감지 → 즉시 등록 · 판단 기록
+        llm0 = _LLM()
+        r = tick("2026-01-01T00:00:00Z", llm0)
+        assert r["added"] == ["新しい曲", "誰かの曲"] and r["dups"] == ["既にある曲"] and r["readings"] == 2, r
+        acts = list_llm_actions()["items"]
+        reg = [a for a in acts if a["kind"] == "song_register"]
+        skip = [a for a in acts if a["kind"] == "song_skip"]
+        assert len(reg) == 2 and len(skip) == 1 and all(a["by"] == "rule" for a in acts), [a["kind"] for a in acts]
+        new_act = next(a for a in reg if a["undo"]["id"] == "NEWSONG0001")
+        assert any(e["action"] == "added" and e["action_id"] == new_act["id"] for e in evs), "이벤트 ↔ 판단 기록 연결"
+
+        # 반려 → 재감지해도 재등록 안 됨
+        u = undo_llm_action(new_act["id"])
+        assert u["ok"], u
+        assert all(s["id"] != "NEWSONG0001" for s in list_songs()["songs"]) and list_songs()["rejected"][0]["id"] == "NEWSONG0001", "반려: 지움 + rejected"
+        assert tick("2026-01-01T00:10:00Z", _LLM()) == {"added": []}, "반려한 곡은 RSS 에 남아 있어도 다시 안 올라옴"
+        assert undo_llm_action(new_act["id"])["ok"] is False, "이미 반려한 판단"
+        # 규칙 판단은 LLM 재판단 없음 · 사용자 판단 = 다른 값으로 다시 등록
+        assert rejudge_llm_action(new_act["id"])["ok"] is False, "LLM 재판단 지원 안 함"
+        opts = llm_review_options(new_act["id"])
+        assert opts["kind"] == "song_register" and opts["defaults"]["kind"] == "original" and any(w["key"] == "group" for w in opts["whos"]), opts
+        dres = decide_llm_action(new_act["id"], {"choice": "register", "kind": "cover", "who": "arale", "title": "新しい曲"})
+        assert dres["ok"], dres
+        s1 = next(s for s in list_songs()["songs"] if s["id"] == "NEWSONG0001")
+        assert s1["kind"] == "cover" and s1["who"] == "arale" and list_songs()["rejected"] == [], "사용자 판단: 다른 값으로 재등록 · 차단 해제됨"
+        assert tick("2026-01-01T00:20:00Z", _LLM())["added"] == [], "재등록한 곡은 다시 감지 안 됨"
+
+        # 곡명 중복 건너뜀 → 사용자 판단 = 강제 등록
+        skip_act = skip[0]
+        assert undo_llm_action(skip_act["id"])["ok"], "검토용 판단 반려 = 표시만(롤백 없음)"
+        fo = decide_llm_action(skip_act["id"], {"choice": "register", "kind": "cover", "who": "group"})
+        assert fo["ok"] and any(s["id"] == "DUPLICATE03" and s["title"] == "既にある曲" for s in list_songs()["songs"]), fo
+
+        # 삭제 → 차단 → 차단 해제 → 재등록
+        assert delete_song("COVERSONG02")["ok"] and any(r["id"] == "COVERSONG02" for r in list_songs()["rejected"]), "삭제는 재등록 차단"
+        assert delete_song("COVERSONG02")["ok"] is False, "없는 곡 삭제 거절"
+        assert tick("2026-01-01T00:30:00Z", _LLM())["added"] == [], "삭제한 곡은 되살아나지 않음"
+        ub = unblock_song("COVERSONG02")
+        assert ub["ok"] and list_songs()["rejected"] == [], ub
+        assert tick("2026-01-01T00:40:00Z", _LLM())["added"] == ["誰かの曲"], "차단 해제 뒤 다시 감지"
+        assert unblock_song("COVERSONG02")["ok"] is False, "차단 목록에 없음"
+
+        # 수정 · 검증
+        ed = edit_song("OLDSONG0009", {"reading": "もうひとつ", "kind": "original"})
+        assert ed["ok"], ed
+        s9 = next(s for s in list_songs()["songs"] if s["id"] == "OLDSONG0009")
+        assert s9["reading"] == "もうひとつ" and s9["reading_manual"] is True and s9["kind"] == "original" and s9["edited_at"], s9
+        assert edit_song("OLDSONG0009", {"kind": "solo"})["ok"] is False and edit_song("OLDSONG0009", {"who": "nobody"})["ok"] is False, "잘못된 값 거절"
+        assert edit_song("OLDSONG0009", {"title": "既にある曲"})["ok"] is False, "곡명 중복으로 바뀌는 수정 거절"
+        assert edit_song("없는곡", {"title": "x"})["ok"] is False
+
+        # 직접 추가 — RSS 에서 제목 · 날짜 채움 / 중복 · force / 형식 오류 / 직접 입력
+        rss.append({"video_id": "MANUALSONG1", "title": "手動の曲", "published": "2026-10-12T00:00:00+00:00", "description": ""})
+        ad = add_song("https://youtu.be/MANUALSONG1", who="yuno")
+        assert ad["ok"] and ad["result"]["filled_by"] == "RSS" and ad["result"]["song"]["title"] == "手動の曲" and ad["result"]["song"]["date"] == "2026-10-12", ad
+        assert ad["result"]["song"]["manual"] is True and ad["result"]["song"]["needs_reading"] is True
+        assert add_song("MANUALSONG1")["ok"] is False, "이미 있는 영상"
+        assert add_song("ZZZZZZZZZZZ")["ok"] is False and "직접 입력" in add_song("ZZZZZZZZZZZ")["error"], "자동으로 못 가져오면 직접 입력 요구"
+        assert add_song("ZZZZZZZZZZZ", title="手動の曲", date="2026-10-13")["ok"] is False, "곡명 중복은 force 없이 거절"
+        assert add_song("ZZZZZZZZZZZ", title="手動の曲", date="2026-10-13", force=True)["ok"], "force 면 추가"
+        assert add_song("not a url")["ok"] is False and add_song("YYYYYYYYYYY", title="a", date="2026/10/13")["ok"] is False
+
+        # LLM 독음 — 실패하면 needs_reading → 다음 tick 재시도, 직접 고친 독음은 안 덮음, 다시 만들기(재요청)
+        rss.append({"video_id": "FAILREAD001", "title": "読めない曲", "published": "2026-10-13T00:00:00+00:00", "description": ""})
+        llm_f = _LLM(fail=["読めない曲"])
+        assert tick("2026-01-01T01:00:00Z", llm_f)["added"] == ["読めない曲"]
+        f = next(s for s in list_songs()["songs"] if s["id"] == "FAILREAD001")
+        assert f["reading"] == "" and f["needs_reading"] is True, "LLM 실패 → 빈 독음 + needs_reading"
+        llm_ok = _LLM()
+        r2 = tick("2026-01-01T01:10:00Z", llm_ok)
+        assert r2.get("readings", 0) >= 1 and next(s for s in list_songs()["songs"] if s["id"] == "FAILREAD001")["reading"] == "よみ-読めない曲", r2
+        assert "もうひとつ" not in str(llm_ok.calls) and "もう一曲" not in llm_ok.calls, "직접 고친 독음은 LLM 이 안 건드림"
+        _orig_make = _h._make_llm
+        _h._make_llm = lambda cfg: _LLM()
+        try:
+            rg = regenerate_song_reading("OLDSONG0009")
+            assert rg["ok"] and rg["result"]["reading"] == "よみ-もう一曲" and rg["result"]["reading_ko"], rg
+            assert next(s for s in list_songs()["songs"] if s["id"] == "OLDSONG0009")["reading_manual"] is False, "다시 만들기: 직접 고친 독음도 LLM 값으로"
+            _h._make_llm = lambda cfg: _LLM(fail=["もう一曲"])
+            rg2 = regenerate_song_reading("OLDSONG0009")
+            assert rg2["ok"] is False and next(s for s in list_songs()["songs"] if s["id"] == "OLDSONG0009")["needs_reading"] is True, "LLM 실패 → 오류 + needs_reading(다음 tick 재시도)"
+        finally:
+            _h._make_llm = _orig_make
+        assert regenerate_song_reading("없는곡")["ok"] is False
+
+        # 반려 vs 운영자 수정 — 수정했으면 덮어 지우지 않음
+        rss.append({"video_id": "EDITEDSONG1", "title": "直した曲", "published": "2026-10-14T00:00:00+00:00", "description": ""})
+        tick("2026-01-01T02:00:00Z", _LLM())
+        edit_song("EDITEDSONG1", {"who": "ritsu"})
+        act_e = next(a for a in list_llm_actions()["items"] if a["kind"] == "song_register" and a["undo"].get("id") == "EDITEDSONG1")
+        ue = undo_llm_action(act_e["id"])
+        assert ue["ok"] is False and "수정" in ue["error"] and any(s["id"] == "EDITEDSONG1" for s in list_songs()["songs"]), ue
+
+        # 조작 이력 · 라벨
+        acts_h = [x["action"] for x in list_history()]
+        assert {"edit_song", "delete_song", "add_song", "unblock_song", "regenerate_song_reading"} <= set(acts_h), acts_h
+        assert all(k in ADMIN_FLOW_LABELS for k in ("edit_song", "delete_song", "add_song", "unblock_song", "regenerate_song_reading"))
+        assert _FLOW_KO["song"] == "신곡" and all(k in API_FUNCTIONS for k in ("list_songs", "songs_status", "edit_song", "delete_song", "add_song", "regenerate_song_reading", "unblock_song"))
+        fl = jobs_overview()["flows"]
+        assert any(f.get("llm") and f["llm"][0]["kind"].startswith("song_") for f in fl), "작업 탭 흐름에 신곡 판단이 보임"
+    print("[PASS] admin_api self-test: 곡 관리 · 신곡 감지 통합(감지 · 반려 · 재등록 차단 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 재시도/재요청)")

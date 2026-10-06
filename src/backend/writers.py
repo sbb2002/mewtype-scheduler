@@ -89,6 +89,11 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         # (v4a) 프리미어(녹화 영상 공개) 기록 (ops video_releases.json)
         "video_release": lambda gh, a: __import__("src.backend.handlers", fromlist=["x"]).record_video_releases(
             gh, a.get("entries") or [], a["now_iso"]),
+        # (v4.2.0) 곡 관리 — 수정 · 삭제(+재등록 차단) · 직접 추가 · 차단 해제 · 독음 재작성 (data songs.json)
+        "song_edit": lambda gh, a: t._song_edit_commit(
+            gh, a["op"], a["now_iso"], id=a.get("id"), patch=a.get("patch"), rec=a.get("rec"),
+            force=bool(a.get("force")), ident=a.get("ident"), reading=a.get("reading"), by=a.get("by") or "admin",
+        ),
         # (v4a) 그룹 영상 「참여 멤버 확인 대기」 추가 · 제거 (ops group_pending.json)
         "group_pending": lambda gh, a: t._group_pending_commit(
             gh, a["op"], a["now_iso"], entries=a.get("entries"), video_ids=a.get("video_ids"),

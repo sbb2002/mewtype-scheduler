@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"></head><body>
+<title>어드민 신곡 · 음반 목업</title>
+<!--
+  v4.2 어드민 신곡 감지 · 음반 · 현황 탭 목업 (예시 데이터 — 실제 값 아님)
+  현행 src/backend/admin_static/admin.html 의 토큰 · 클래스(.tab-btn .ing-subtab .cx-* .flow .fllm-row .gp-card .now-tile .modal)를 그대로 따른다.
+  컴포넌트 명세는 페이지 맨 아래 「컴포넌트 명세」 참고.
+-->
+<style>
+/* 레이아웃: 현행 어드민 — 상단 탭(≤640px 하단 고정 탭 바) · 탭 안 세부 탭 · 목록(.cx-row) + PC 우측 상세(.cx-detail) / 모바일 바닥 시트 */
+:root{
+  --color-bg:#0f0f0f;--color-bg-secondary:#1a1a1a;--color-text:#e8e8e8;--color-text-muted:#999;--color-border:#333;
+  --color-live:#ff0000;--color-accent:#06b6d4;--gap:1rem;--page-pad:clamp(1rem,4vw,3rem);
+  --ok:#3ecf8e;--fail:#ff5d5d;--run:#f5b83d;--wait:#7c8aa0;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scrollbar-color:var(--color-border) transparent}
+body{background:var(--color-bg);color:var(--color-text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:14px;line-height:1.5;margin:0;padding:var(--page-pad)}
+h1{margin:0 0 1.5rem;font-size:1.5rem}h2{margin:1.5rem 0 1rem;font-size:1.2rem}h3{margin:1rem 0 .5rem;font-size:1rem}
+input,select,textarea{background:var(--color-bg-secondary);border:1px solid var(--color-border);color:var(--color-text);padding:.5rem;border-radius:4px;font-family:inherit;font-size:inherit;width:100%;max-width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--color-accent);box-shadow:0 0 0 2px rgba(6,182,212,.2)}
+input[type=radio],input[type=checkbox]{width:auto;accent-color:var(--color-accent)}
+button{background:var(--color-accent);border:none;color:var(--color-bg);cursor:pointer;padding:.5rem 1rem;border-radius:4px;font-size:.9rem;font-weight:600;transition:opacity .2s;font-family:inherit}
+button:hover{opacity:.9}button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,.tab-btn:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
+.mock-note{border:1px dashed var(--color-border);border-radius:8px;padding:.5rem .8rem;margin:0 0 1rem;font-size:.8rem;color:var(--color-text-muted)}
+.mock-note b{color:var(--color-text);font-weight:600}
+
+/* 탭 */
+.tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;border-bottom:1px solid var(--color-border);flex-wrap:wrap}
+.tab-btn{background:none;border:none;color:var(--color-text-muted);cursor:pointer;padding:.75rem 1rem;font-size:.9rem;border-bottom:2px solid transparent;font-weight:400}
+.tab-btn i{display:none;font-style:normal}
+.tab-btn:hover{color:var(--color-text)}
+.tab-btn.active{color:var(--color-accent);border-bottom-color:var(--color-accent)}
+.tab-btn .new{font-size:.62rem;background:rgba(6,182,212,.2);color:var(--color-accent);border-radius:99px;padding:0 .4rem;margin-left:.3rem;vertical-align:middle}
+.tab-content{display:none}.tab-content.active{display:block}
+.sub-content{display:none}.sub-content.active{display:block}
+
+/* 세부 탭 (현행 .ing-subtab 그대로) */
+.ing-subtabs{display:flex;gap:4px;border-bottom:1px solid var(--color-border);margin-bottom:1.25rem}
+.ing-subtab{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;margin-bottom:-1px;color:var(--color-text-muted);padding:.6rem 1rem;display:flex;gap:.5rem;align-items:baseline;font-weight:400}
+.ing-subtab b{font-weight:600;color:var(--color-text)}.ing-subtab small{font-size:.74rem}
+.ing-subtab:hover{opacity:1}.ing-subtab:hover b{color:var(--color-accent)}
+.ing-subtab[aria-selected="true"]{border-bottom-color:var(--color-accent)}
+.ing-subtab[aria-selected="true"] b,.ing-subtab[aria-selected="true"] small{color:var(--color-accent)}
+
+/* 배지 · 칩 */
+.badge{display:inline-block;padding:1px 8px;border-radius:99px;font-size:.7rem;font-weight:600;white-space:nowrap}
+.badge-announced{background:rgba(124,138,160,.3);color:rgb(180,192,212)}
+.badge-watching{background:rgba(6,182,212,.3);color:rgb(100,200,220)}
+.badge-upcoming{background:rgba(139,92,246,.3);color:rgb(196,181,253)}
+.badge-auto{background:rgba(62,207,142,.18);color:var(--ok)}
+.badge-manual{background:rgba(236,72,153,.22);color:rgb(249,168,212)}
+.badge-llm{background:rgba(167,139,250,.2);color:#c4b5fd}
+.badge-warn{background:rgba(245,184,61,.2);color:#f5b83d}
+.badge-bad{background:rgba(255,93,93,.18);color:var(--fail)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font:inherit;font-size:.8rem;font-weight:400;color:var(--color-text-muted);background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:999px;padding:3px 11px}
+.chip[aria-pressed="true"]{color:var(--color-text);border-color:var(--color-accent)}
+.btn-ghost{background:none;color:var(--color-text-muted);font-weight:400;border:1px solid var(--color-border)}
+.btn-ghost:hover{color:var(--color-text)}
+.btn-line{background:none;color:var(--color-accent);border:1px solid var(--color-accent)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--mc,#666);margin-right:.25rem}
+
+/* 지금 상태 타일 (작업 탭의 .now-tile 재사용) */
+.now-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.now-tile{background:var(--color-bg-secondary);border:1px solid var(--color-border);border-left:3px solid var(--ok);border-radius:6px;padding:8px 12px;display:grid;gap:2px;align-content:start}
+.now-tile.warn{border-left-color:var(--run)}.now-tile.bad{border-left-color:var(--fail)}.now-tile.idle{border-left-color:var(--wait)}
+.now-tile .lbl{font-size:.75rem;color:var(--color-text-muted)}.now-tile .val{font-weight:600}.now-tile .sub{font-size:.78rem;color:var(--color-text-muted);overflow-wrap:anywhere}
+
+/* 감지 상태 카드 (확인 대기 카드 .gp-card 와 같은 모양, 색은 accent) */
+.sd-card{border:1px solid rgba(6,182,212,.4);background:rgba(6,182,212,.05);border-radius:10px;padding:.9rem 1rem;margin-bottom:1.25rem;display:grid;gap:.7rem}
+.sd-head{display:flex;justify-content:space-between;align-items:baseline;gap:.6rem;flex-wrap:wrap}
+.sd-head h3{margin:0;font-size:.95rem;color:var(--color-accent)}
+.sd-head p{margin:.2rem 0 0;font-size:.8rem;color:var(--color-text-muted)}
+.sd-prev{display:grid;gap:.5rem}
+.sd-prev h4{margin:.3rem 0 .1rem;font-size:.82rem;color:var(--color-text-muted);font-weight:600}
+.sd-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .8rem;align-items:center;background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:.5rem .8rem}
+.sd-row .t{font-weight:600;overflow-wrap:anywhere}.sd-row .m{font-size:.78rem;color:var(--color-text-muted);overflow-wrap:anywhere}
+.sd-dry{font-size:.78rem;color:#f5b83d}
+
+/* 목록 UI (현행 .cx-*) */
+.cx-tools{position:sticky;top:0;z-index:20;background:var(--color-bg);border-bottom:1px solid var(--color-border);padding:.5rem 0 .45rem;display:grid;gap:.45rem;margin-bottom:.25rem}
+.cx-seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--color-border);border-radius:10px;overflow:hidden}
+.cx-seg button{background:none;border:0;border-radius:0;color:var(--color-text-muted);min-height:40px;padding:.2rem .5rem;display:flex;justify-content:center;align-items:center;gap:.4rem;font-weight:500}
+.cx-seg button+button{border-left:1px solid var(--color-border)}
+.cx-seg button[aria-selected="true"]{background:rgba(6,182,212,.12);color:var(--color-accent);font-weight:700}
+.cx-cnt{font-size:.72rem;padding:0 .4rem;border-radius:99px;background:#262626;color:var(--color-text-muted)}
+.cx-seg button[aria-selected="true"] .cx-cnt{background:rgba(6,182,212,.22);color:var(--color-accent)}
+.cx-toolrow{display:flex;gap:.5rem;align-items:center;min-width:0}
+.cx-chips{display:flex;gap:.4rem;overflow-x:auto;flex:1;min-width:0;padding-block:2px;scrollbar-width:none}
+.cx-chips::-webkit-scrollbar{display:none}
+.cx-chip{flex:none;background:var(--color-bg-secondary);color:var(--color-text-muted);border:1px solid var(--color-border);border-radius:99px;min-height:34px;padding:0 .8rem;display:inline-flex;align-items:center;gap:.4rem;font-weight:500}
+.cx-chip[aria-pressed="true"]{border-color:var(--color-accent);color:var(--color-accent);background:rgba(6,182,212,.12)}
+.cx-split{display:block}.cx-list{min-width:0}.cx-detail{display:none}
+.cx-row{background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:10px;margin-bottom:.4rem;overflow:hidden}
+.cx-row[aria-selected="true"]{border-color:var(--color-accent)}
+.cx-row-h{width:100%;text-align:left;background:none;border:0;border-radius:0;color:inherit;padding:.6rem .75rem;min-height:44px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.6rem;align-items:start;font-weight:400}
+.cx-row-h:hover{background:rgba(255,255,255,.03)}
+.cx-t{font-weight:600;overflow-wrap:anywhere}
+.cx-m{color:var(--color-text-muted);font-size:.78rem;display:flex;flex-wrap:wrap;align-items:center;gap:.15rem .5rem;margin-top:.15rem}
+.cx-acts{display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap}
+.cx-btn{flex:1;min-height:44px;border-radius:8px;white-space:nowrap}
+.cx-btn-pri{background:var(--color-accent);color:#04222a}
+.cx-btn-dng{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.45)}
+.cx-empty{text-align:center;color:var(--color-text-muted);padding:2rem 1rem;border:1px dashed var(--color-border);border-radius:10px;margin-top:.6rem}
+.cx-ph{color:var(--color-text-muted);text-align:center;padding:2.5rem .5rem}
+.cx-dt{font-weight:700;margin-bottom:.4rem;overflow-wrap:anywhere}
+.cx-detail-in{display:grid;gap:.7rem}
+@media(min-width:960px){
+  .cx-split{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:1rem;align-items:start}
+  .cx-detail{display:block;position:sticky;top:.6rem;margin-top:.7rem;background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:12px;padding:.9rem;max-height:calc(100vh - 2rem);overflow-y:auto}
+}
+
+/* 폼 */
+.fld{display:grid;gap:.25rem}
+.fld>label,.ing-lbl{font-size:.8rem;color:var(--color-text-muted);font-weight:400}
+.fld .hint{font-size:.74rem;color:var(--color-text-muted)}
+.fld .ko{font-size:.82rem;color:#c4b5fd}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.rd-row{display:flex;gap:.4rem}.rd-row input{flex:1}
+.rd-row button{white-space:nowrap}
+.opt-row{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.85rem}.opt-row label{display:flex;gap:.35rem;align-items:center;color:var(--color-text)}
+.spin{display:inline-block;width:.8rem;height:.8rem;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:.3rem}
+@keyframes sp{to{transform:rotate(360deg)}}
+.warnbox{background:rgba(245,184,61,.1);border:1px solid rgba(245,184,61,.4);color:#f5b83d;border-radius:8px;padding:.5rem .75rem;font-size:.82rem}
+.infobox{background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.35);color:#7fe0f0;border-radius:8px;padding:.5rem .75rem;font-size:.82rem}
+
+/* 모달 (모바일 = 바닥 시트) */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;align-items:center;justify-content:center;padding:1rem}
+.modal.open{display:flex}
+.modal-content{background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:12px;width:100%;max-width:480px;max-height:92dvh;overflow-y:auto;padding:1.1rem}
+.modal-header{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:.8rem}
+.modal-header h3{margin:0}
+.modal-actions{display:flex;gap:.5rem;margin-top:.9rem}
+.toast{position:fixed;right:1rem;bottom:1rem;z-index:1000;background:#222;border:1px solid var(--color-border);border-radius:8px;padding:.6rem .9rem;max-width:min(22rem,calc(100vw - 2rem));box-shadow:0 6px 20px rgba(0,0,0,.5);display:none;font-size:.85rem}
+.toast.on{display:block}
+
+/* 작업 탭 — 흐름 · LLM 판단 (현행 .flow .fllm-row) */
+.jobs-sec{display:grid;gap:10px;margin-bottom:28px;align-content:start}
+.jobs-sec h2{margin:0;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.jobs-sec h2 small{font-size:.8rem;color:var(--color-text-muted);font-weight:400}
+.flows{display:grid;gap:6px;align-content:start}
+.flow{display:grid;grid-template-columns:5.6rem 1fr auto;gap:4px 14px;align-items:center;background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:6px;padding:10px 12px;cursor:pointer;text-align:left;color:inherit;font:inherit;width:100%;font-weight:400}
+.flow:hover{border-color:#4a4a4a}.flow.sel{border-color:var(--color-accent);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.flow .t{font-family:ui-monospace,Consolas,monospace;font-size:.8rem;color:var(--color-text-muted)}
+.flow .what{min-width:0}.flow .what .k,.flow .what .d{display:block}.flow .what .k{font-size:.78rem;color:var(--color-text-muted)}
+.flow .what .d{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow .st{font-size:.8rem;text-align:right;white-space:nowrap}
+.s-ok{color:var(--ok)}.s-warn{color:var(--run)}.s-fail{color:var(--fail)}
+.fdetail{border:1px solid var(--color-accent);border-top:0;border-radius:0 0 6px 6px;background:var(--color-bg-secondary);padding:.7rem;margin-top:-6px;display:none}
+.fdetail.open{display:block}
+.fllm{display:grid;gap:8px}
+.fllm-row{border:1px solid rgba(167,139,250,.45);background:rgba(167,139,250,.07);border-radius:8px;padding:10px 12px;display:grid;gap:4px}
+.fllm-row .h{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.fllm-row .k{font-size:.75rem;color:#c4b5fd;font-weight:700}
+.fllm-row .s{font-weight:600;overflow-wrap:anywhere}
+.fllm-row .r{font-size:.8rem;color:var(--color-text-muted);overflow-wrap:anywhere}
+.fllm-row .r ul{margin:.2rem 0 0;padding-left:1.1rem}
+.fllm-row .st{font-size:.78rem;color:var(--color-text-muted)}
+.fllm-row button{justify-self:start;background:rgba(167,139,250,.2);color:#ddd6fe;border:1px solid rgba(167,139,250,.6)}
+.fllm-row.undone{border-color:rgba(245,184,61,.6);background:rgba(245,184,61,.07)}
+.fllm-row.undone .k{color:#f5b83d}.fllm-row .st.done{color:#f5b83d}.fllm-row .st.fu{color:var(--ok);font-weight:600}
+.badge-rv{font-size:.7rem;padding:1px 8px;border-radius:999px;background:rgba(245,184,61,.2);color:#f5b83d;font-weight:700}
+.fllm-row .act{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.fllm-row .act .note{font-size:.78rem;color:var(--color-text-muted);flex:1 1 220px;min-width:0}
+.fllm-row details{font-size:.78rem;color:var(--color-text-muted)}
+.fllm-row details pre{background:var(--color-bg);border-radius:6px;padding:.5rem;overflow:auto;margin:.3rem 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.child{margin-left:1rem;border-left:2px solid var(--color-border);padding-left:.7rem}
+
+/* 리포트 타임플롯라인 */
+.rp-wrap{background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:10px;padding:.8rem;overflow-x:auto;position:relative}
+.rp-legend{display:flex;gap:1rem;flex-wrap:wrap;font-size:.78rem;color:var(--color-text-muted);margin:.5rem 0}
+.rp-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:.3rem}
+.rp-tip{position:fixed;z-index:400;pointer-events:none;background:#222;border:1px solid var(--color-border);border-radius:8px;padding:.5rem .7rem;font-size:.8rem;max-width:20rem;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.rp-hl rect.band{fill:rgba(6,182,212,.07);stroke:rgba(6,182,212,.4);stroke-dasharray:3 3}
+
+/* 명세 */
+.spec{margin-top:2.5rem;border-top:1px solid var(--color-border);padding-top:1rem}
+.spec table{width:100%;border-collapse:collapse;margin:.5rem 0 1rem;font-size:.8rem}
+.spec th,.spec td{padding:.45rem .6rem;text-align:left;border-bottom:1px solid var(--color-border);vertical-align:top;overflow-wrap:anywhere}
+.spec th{background:var(--color-bg-secondary)}
+.spec code{font-family:ui-monospace,Consolas,monospace;font-size:.78rem;color:#7fe0f0}
+.spec-scroll{overflow-x:auto}
+
+@media(max-width:640px){
+  :root{--nav-h:3.6rem}
+  body{padding:.75rem .75rem calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 1rem);overflow-x:hidden}
+  h1{font-size:1.05rem;margin:0 0 .6rem}h2{font-size:1.05rem;margin:.9rem 0 .6rem}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:200;margin:0;gap:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;background:var(--color-bg-secondary);border-top:1px solid var(--color-border);border-bottom:0;padding:0 0 env(safe-area-inset-bottom,0px)}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab-btn{flex:1 0 auto;min-width:3.2rem;height:var(--nav-h);padding:.35rem .2rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:.68rem;font-weight:500;white-space:nowrap;border-bottom:0;border-top:2px solid transparent}
+  .tab-btn i{display:block;font-size:1.15rem;line-height:1;filter:grayscale(1) opacity(.7)}
+  .tab-btn.active{border-top-color:var(--color-accent);background:rgba(6,182,212,.08)}.tab-btn.active i{filter:none}
+  .tab-btn .new{display:none}
+  input,select,textarea{font-size:16px;padding:.65rem .7rem}button{min-height:44px}
+  .chip{min-height:38px;padding:.35rem .9rem;font-size:.86rem}
+  .ing-subtab{flex:1;flex-direction:column;align-items:center;gap:0;padding:.55rem .5rem;min-height:48px}
+  .modal{align-items:flex-end;padding:0}
+  .modal-content{max-width:none;border-radius:16px 16px 0 0;border-bottom:0;padding:1rem 1rem calc(1rem + env(safe-area-inset-bottom,0px))}
+  .modal-actions button{flex:1}
+  .toast{bottom:calc(var(--nav-h) + .6rem);left:.75rem;right:.75rem;max-width:none}
+  .flow{grid-template-columns:4.6rem 1fr}.flow .st{grid-column:2;text-align:left}
+  .frow{grid-template-columns:1fr}
+  .mock-note{font-size:.76rem}
+}
+</style>
+
+<h1>뮤타입 방송 스케줄 — 관리 페이지 <small style="font-size:.7rem;color:var(--color-text-muted);font-weight:400">v4.2 목업 · 예시 데이터</small></h1>
+<div class="mock-note"><b>목업입니다.</b> 저장 · 삭제 · 반려는 이 화면 안에서만 반영됩니다. PC 폭 / 모바일 폭(≤640px, 하단 탭 바)을 창 크기로 바꿔 보세요. <b>새로 생기거나 바뀌는 곳</b>은 탭 이름 옆 「신설」 · 「변경」 표시와 각 영역의 점선 안내를 참고하세요.</div>
+
+<div class="tabs" role="tablist" id="main-tabs">
+  <button class="tab-btn active" data-tab="status"><i aria-hidden="true">🗓</i><span>현황<span class="new">신설</span></span></button>
+  <button class="tab-btn" data-tab="songs"><i aria-hidden="true">💿</i><span>음반<span class="new">신설</span></span></button>
+  <button class="tab-btn" data-tab="ingest"><i aria-hidden="true">📥</i><span>원문 투입</span></button>
+  <button class="tab-btn" data-tab="jobs"><i aria-hidden="true">⚙️</i><span>작업<span class="new">변경</span></span></button>
+  <button class="tab-btn" data-tab="lost"><i aria-hidden="true">📦</i><span>유실 원문</span></button>
+  <button class="tab-btn" data-tab="control"><i aria-hidden="true">🎛</i><span>운영</span></button>
+  <button class="tab-btn" data-tab="report"><i aria-hidden="true">📊</i><span>리포트<span class="new">변경</span></span></button>
+</div>
+
+<!-- ═════════ 현황 (기존 예고 / 소식·트윗 탭을 세부 탭으로) ═════════ -->
+<div class="tab-content active" id="status-tab">
+  <div class="ing-subtabs" role="tablist" aria-label="현황 구분" id="status-subtabs">
+    <button type="button" class="ing-subtab" role="tab" aria-selected="true" data-sub="preview"><b>예고</b><small>방송 스케줄</small></button>
+    <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-sub="notice"><b>소식</b><small>행사 배너 포함</small></button>
+    <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-sub="tweet"><b>트윗</b><small>멤버 개인</small></button>
+  </div>
+  <div class="mock-note">기존 <code>#preview-tab</code> · <code>#content-tab</code> 의 요소 id · 렌더 함수는 그대로 두고 <code>#status-tab</code> 래퍼 + 세부 탭 전환만 얹습니다. 아래는 축약 샘플입니다.</div>
+
+  <div class="sub-content active" id="sub-preview">
+    <section class="sd-card" style="border-color:rgba(245,184,61,.45);background:rgba(245,184,61,.06)">
+      <div class="sd-head"><div><h3 style="color:#f5b83d">그룹 영상 — 참여 멤버 확인 대기 <span style="font-size:.8rem">1</span></h3><p>(기존 카드 그대로 — 예고 세부 탭 맨 위)</p></div></div>
+    </section>
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">【歌枠】リクエスト歌枠</div><div class="cx-m"><span class="dot" style="--mc:#ff7b9c"></span>아라레 · 10/06 21:00 <span class="badge badge-announced">예고</span></div></div></div></div>
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">【ゲーム】ホラーゲーム実況</div><div class="cx-m"><span class="dot" style="--mc:#5cc3e6"></span>유노 · 10/06 22:30 <span class="badge badge-watching">임박</span></div></div></div></div>
+  </div>
+  <div class="sub-content" id="sub-notice">
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">🎪 행사 배너 — 「アイの奔流 AtoZ」 챌린지 라이브 <span class="badge badge-upcoming">진행 중</span></div><div class="cx-m">행사 배너 · 10/08 20:59까지 · 소식 위에 함께 표시</div></div></div></div>
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">アイの奔流 AtoZ チャレンジライブ開催</div><div class="cx-m">소식 · @BDP_yumemita · 10/08</div></div></div></div>
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">5th Single リリース記念ムービー公開</div><div class="cx-m">소식 · @BDP_yumemita · 09/30</div></div></div></div>
+    <div class="mock-note" style="margin-top:.6rem">지금 「소식 · 트윗」 탭의 칩(소식 / 트윗 / 배너)이 하던 구분을 세부 탭이 대신합니다 — <b>배너는 소식 세부 탭에 함께</b>.</div>
+  </div>
+  <div class="sub-content" id="sub-tweet">
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">ゆめみた新曲『夢我夢中』登場です✨</div><div class="cx-m"><span class="dot" style="--mc:#b88cf0"></span>미야코 · 09/24 22:45</div></div></div></div>
+    <div class="cx-row"><div class="cx-row-h"><div><div class="cx-t">月曜日に新曲リリース…！</div><div class="cx-m"><span class="dot" style="--mc:#ff7b9c"></span>아라레 · 09/24 23:18</div></div></div></div>
+  </div>
+</div>
+
+<!-- ═════════ 음반 (신설) ═════════ -->
+<div class="tab-content" id="songs-tab">
+  <section class="sd-card" id="sd-card" aria-labelledby="sd-h">
+    <div class="sd-head">
+      <div><h3 id="sd-h">🎵 신곡 감지 상태</h3><p>토픽 채널 RSS(쿼터 0)를 tick 마다 읽어, 곡명이 없는 곡을 즉시 등록합니다.</p></div>
+      <div class="chips"><button class="btn-line" id="sd-check">지금 확인</button></div>
+    </div>
+    <div class="now-grid" id="sd-tiles"></div>
+    <div class="sd-prev" id="sd-prev" hidden></div>
+  </section>
+
+  <div class="cx-tools" id="sg-tools">
+    <div class="cx-seg" role="tablist" id="sg-seg">
+      <button role="tab" aria-selected="true" data-seg="list">곡 목록 <span class="cx-cnt" id="cnt-list">0</span></button>
+      <button role="tab" aria-selected="false" data-seg="blocked">차단 목록 <span class="cx-cnt" id="cnt-blocked">0</span></button>
+    </div>
+    <div class="cx-toolrow" id="sg-filters">
+      <input class="cx-search" type="search" id="sg-q" placeholder="곡명 · 독음(가나·한글) · 별칭 검색" aria-label="곡 검색" style="flex:1;min-width:0">
+      <button class="btn-line" id="sg-add" style="flex:none">＋ 곡 추가</button>
+    </div>
+    <div class="cx-toolrow" id="sg-chiprow">
+      <div class="cx-chips" id="sg-chips"></div>
+      <select id="sg-sort" aria-label="정렬" style="width:auto;flex:none"><option value="date-desc">날짜 ↓</option><option value="date-asc">날짜 ↑</option><option value="name">이름순</option></select>
+    </div>
+  </div>
+
+  <div class="cx-split">
+    <div class="cx-list"><div id="sg-list"></div></div>
+    <aside class="cx-detail" id="sg-detail"><div class="cx-ph">곡을 고르면 여기서 수정 · 삭제합니다</div></aside>
+  </div>
+</div>
+
+<!-- ═════════ 원문 투입 · 유실 원문 · 운영 (변경 없음) ═════════ -->
+<div class="tab-content" id="ingest-tab"><div class="cx-empty">원문 투입 — 변경 없음</div></div>
+<div class="tab-content" id="lost-tab"><div class="cx-empty">유실 원문 — 변경 없음</div></div>
+<div class="tab-content" id="control-tab"><div class="cx-empty">운영 — 변경 없음 (신곡 감지는 기존 일시정지 스위치를 따릅니다)</div></div>
+
+<!-- ═════════ 작업 ═════════ -->
+<div class="tab-content" id="jobs-tab">
+  <div class="jobs-sec">
+    <h2>최근 흐름 <small>알림 · 관리 조작 · 방송 확인 1건이 한 줄. 누르면 상세</small></h2>
+    <div class="chips" id="jobs-filter">
+      <button class="chip" data-f="all" aria-pressed="false">전체</button>
+      <button class="chip" data-f="llm" aria-pressed="true">LLM 판단</button>
+    </div>
+    <div class="mock-note" style="margin:0"><b>변경점</b>: 「LLM 판단」 필터에 신곡 판단 기록 두 종류(<code>song_register</code> · <code>song_skip</code>)가 함께 나옵니다. 용어는 그대로 둡니다. 이 두 종류는 LLM 이 판단하는 것이 아니라 규칙 판단이라 <b>「재판단」 버튼이 없습니다</b>.</div>
+    <div class="flows" id="flows"></div>
+  </div>
+</div>
+
+<!-- ═════════ 리포트 ═════════ -->
+<div class="tab-content" id="report-tab">
+  <h2 style="margin-top:0">모니터링 리포트 <small style="font-size:.8rem;color:var(--color-text-muted);font-weight:400">2026-10-06 (KST 06:00 ~ 익일 06:00) · 예시</small></h2>
+  <div class="mock-note"><b>변경점</b>: 「업스트림 감지」 아래, 「백엔드 상태」 위에 <b>「🎵 신곡 감지」 점 레인</b> 한 줄. 점 색 = 결과(등록 · 건너뜀 · 실패). 점에 올리거나 누르면 상세.</div>
+  <div class="rp-legend"><span><i style="background:var(--ok)"></i>등록 ok</span><span><i style="background:var(--run)"></i>건너뜀(검토 대상)</span><span><i style="background:var(--fail)"></i>실패</span><span><i style="background:#7c8aa0"></i>그 밖의 레인 점</span></div>
+  <div class="rp-wrap"><svg id="rp-svg" role="img" aria-label="타임플롯라인"></svg></div>
+  <div class="rp-tip" id="rp-tip"></div>
+  <div class="infobox" style="margin-top:.8rem" id="rp-pin">점을 누르면 상세가 여기에 고정됩니다.</div>
+</div>
+
+<!-- ═════════ 모달 ═════════ -->
+<div class="modal" id="m-add" role="dialog" aria-modal="true" aria-labelledby="m-add-h">
+  <div class="modal-content">
+    <div class="modal-header"><h3 id="m-add-h">곡 직접 추가</h3><button class="btn-ghost" data-close aria-label="닫기">✕</button></div>
+    <div style="display:grid;gap:.8rem">
+      <div class="fld"><label for="ad-url">YouTube URL</label>
+        <div class="rd-row"><input id="ad-url" type="text" placeholder="https://youtu.be/…"><button class="btn-line" id="ad-fetch">불러오기</button></div>
+        <span class="hint" id="ad-hint">제목 · 공개 날짜를 자동으로 채워 봅니다. 실패하면 직접 입력하세요. (예: youtu.be/Fp2a-MhCFVw)</span></div>
+      <div class="fld"><label for="ad-title">곡명 <span style="color:var(--color-accent)">*</span></label><input id="ad-title" type="text"></div>
+      <div class="frow">
+        <div class="fld"><label for="ad-kind">종류</label><select id="ad-kind"><option value="original">original</option><option value="cover">cover</option></select></div>
+        <div class="fld"><label for="ad-who">멤버</label><select id="ad-who"></select></div>
+      </div>
+      <div class="fld"><label for="ad-date">날짜</label><input id="ad-date" type="date"></div>
+      <div class="fld"><label for="ad-reading">독음(가나)</label><input id="ad-reading" type="text" placeholder="비워 두면 LLM 이 작성합니다">
+        <span class="hint">비우면 등록 직후 외부 LLM(Groq)이 독음을 작성하고, 「LLM 작성」 표시가 붙습니다. 나중에 직접 고치거나 다시 만들 수 있습니다.</span></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" data-close>취소</button><button id="ad-save" class="cx-btn-pri">추가</button></div>
+  </div>
+</div>
+
+<div class="modal" id="m-confirm" role="dialog" aria-modal="true" aria-labelledby="m-confirm-h">
+  <div class="modal-content" style="max-width:440px">
+    <div class="modal-header"><h3 id="m-confirm-h">확인</h3><button class="btn-ghost" data-close aria-label="닫기">✕</button></div>
+    <div id="m-confirm-body" style="display:grid;gap:.6rem"></div>
+    <div class="modal-actions"><button class="btn-ghost" data-close>취소</button><button id="m-confirm-ok" class="cx-btn-dng">확인</button></div>
+  </div>
+</div>
+
+<div class="modal" id="m-force" role="dialog" aria-modal="true" aria-labelledby="m-force-h">
+  <div class="modal-content">
+    <div class="modal-header"><h3 id="m-force-h">사용자 판단 — 강제 등록</h3><button class="btn-ghost" data-close aria-label="닫기">✕</button></div>
+    <div style="display:grid;gap:.8rem">
+      <div class="infobox" id="fc-info"></div>
+      <div class="fld"><label>종류</label><div class="opt-row"><label><input type="radio" name="fc-kind" value="original" checked>original</label><label><input type="radio" name="fc-kind" value="cover">cover</label></div></div>
+      <div class="fld"><label for="fc-who">멤버</label><select id="fc-who"></select></div>
+      <span class="hint" style="font-size:.76rem;color:var(--color-text-muted)">독음은 등록 직후 LLM 이 작성합니다.</span>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" data-close>취소</button><button id="fc-ok" class="cx-btn-pri">강제 등록</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<!-- ═════════ 컴포넌트 명세 ═════════ -->
+<section class="spec" id="spec">
+  <h2 style="margin-top:0">컴포넌트 명세</h2>
+  <p style="color:var(--color-text-muted)">제안 element id / class · 호출 API · 모바일 동작. 기존 id 는 모두 유지하고 래퍼 · 새 id 만 추가합니다.</p>
+  <h3>1. 탭 구조</h3>
+  <div class="spec-scroll"><table><tr><th>영역</th><th>id / class</th><th>동작 · API</th><th>모바일</th></tr>
+    <tr><td>탭 바</td><td><code>.tabs</code> 안 <code>.tab-btn[data-tab]</code></td><td><code>data-tab</code>: <code>status</code>(신설, 기존 <code>preview</code> · <code>content</code> 대체) · <code>songs</code>(신설) · ingest · jobs · lost · control · report. 7개 유지</td><td>하단 고정 탭 바(기존), 아이콘 🗓 현황 · 💿 음반</td></tr>
+    <tr><td>현황 래퍼</td><td><code>#status-tab</code> &gt; <code>#status-subtabs .ing-subtab[data-sub]</code></td><td>세부 탭 <code>preview | notice | tweet</code>. 기존 <code>#preview-tab</code> 내용 → <code>#sub-preview</code>, <code>#content-tab</code> 내용 → <code>#sub-notice</code>(소식+배너) / <code>#sub-tweet</code>. 기존 id(<code>#preview-list</code> <code>#notices-list</code> <code>#banners-list</code> <code>#tweets-list</code> <code>#grp-pending</code>)와 렌더 함수 유지. 칩(소식/트윗/배너)이 하던 전환은 세부 탭 클릭이 <code>ctKind</code> 를 설정</td><td>세부 탭 2열 flex(기존 .ing-subtab 모바일 규칙)</td></tr>
+  </table></div>
+  <h3>2. 음반 탭</h3>
+  <div class="spec-scroll"><table><tr><th>영역</th><th>id / class</th><th>API</th><th>모바일</th></tr>
+    <tr><td>신곡 감지 상태 카드</td><td><code>#sd-card.sd-card</code> · 타일 <code>#sd-tiles .now-tile</code>(시드 · 곡 수 · 독음 없음 · RSS · 마지막 확인) · 미리보기 <code>#sd-prev</code></td><td>읽기 <code>songs_status</code> → <code>{seeded, count, no_reading, rss:{ok,latest_at,count}, last_event, would_add[], would_skip[{title,reason,same_as}]}</code>. 「지금 확인」 = 같은 API 재호출(쓰기 없음 · dry-run)</td><td>타일 1~2열 그리드, 미리보기 행 세로 쌓임</td></tr>
+    <tr><td>구분 · 도구</td><td><code>#sg-tools.cx-tools</code> · <code>#sg-seg .cx-seg</code>(곡 목록 | 차단 목록) · <code>#sg-q</code> · <code>#sg-chips .cx-chip</code>(전체 · 오리지널 · 커버 · 독음 없음) · <code>#sg-sort</code> · <code>#sg-add</code></td><td>클라이언트 필터(<code>list_songs</code> 결과). 독음 없음 = <code>reading==""</code></td><td>sticky 도구줄, 칩 가로 스크롤</td></tr>
+    <tr><td>곡 목록</td><td><code>#sg-list .cx-row</code>(<code>[data-id]</code>) · 배지 <code>.badge-auto</code>(자동 등록) · <code>.badge-manual</code>(직접 추가) · <code>.badge-llm</code>(독음 LLM 작성) · <code>.badge-warn</code>(독음 생성 중 · 없음)</td><td>읽기 <code>list_songs</code> → <code>{songs[], rejected[], seeded}</code></td><td>행 = 한 줄 요약, 누르면 바닥 시트(<code>#m-edit</code>, 현 목업은 상세를 같은 모달 모양으로)</td></tr>
+    <tr><td>상세 편집</td><td><code>#sg-detail.cx-detail</code>(PC 우측 380px) · 필드 <code>#ed-title #ed-reading #ed-ko #ed-kind #ed-who #ed-date</code> · <code>#ed-regen</code> · <code>#ed-save</code> · <code>#ed-del</code></td><td>쓰기 <code>edit_song {id, title?, reading?, kind?, who?, date?}</code> · <code>delete_song {id}</code>(곡 제거 + <code>rejected</code> 추가) · <code>regenerate_song_reading {id}</code>(LLM 재요청 — 비동기, 응답 <code>{reading}</code> 또는 실패). 한글 독음은 입력 중 클라이언트에서 변환(<code>kanaToHangul</code> 규칙 동일)해 미리보기</td><td>바닥 시트(<code>.modal</code>), 하단 sticky 액션</td></tr>
+    <tr><td>곡 직접 추가</td><td><code>#m-add</code> · <code>#ad-url #ad-fetch #ad-title #ad-kind #ad-who #ad-date #ad-reading #ad-save</code></td><td>쓰기 <code>add_song {id?, url?, title, kind, who, date, reading?}</code>. URL 자동 채움은 <code>songs_status</code> 와 같은 서비스에서 RSS/영상 조회(실패 시 직접 입력). 독음 비우면 LLM 작성 대기 상태로 등록</td><td>바닥 시트</td></tr>
+    <tr><td>차단 목록</td><td><code>#sg-seg[data-seg=blocked]</code> → <code>#sg-list .cx-row.blocked</code> · 버튼 <code>.unblock</code></td><td>읽기 <code>list_songs.rejected[]</code> <code>{id,name_key,title,reason(삭제|반려),ts}</code>. 쓰기 <code>unblock_song {id}</code> → <code>rejected</code> 에서 제거(곡은 복원하지 않음, 다음 감지 때 다시 등록될 수 있음)</td><td>같은 목록 UI</td></tr>
+  </table></div>
+  <h3>3. 작업 탭</h3>
+  <div class="spec-scroll"><table><tr><th>영역</th><th>id / class</th><th>API</th><th>모바일</th></tr>
+    <tr><td>흐름 줄</td><td>기존 <code>.flow</code> · 필터 <code>#jobs-filter .chip[data-f=llm]</code>(「LLM 판단」 그대로)</td><td>읽기 기존 <code>jobs_overview</code>/<code>list_llm_actions</code> — 새 kind <code>song_register</code> · <code>song_skip</code> 포함</td><td>기존과 동일</td></tr>
+    <tr><td>판단 상세</td><td>기존 <code>.fllm-row</code>(+<code>.undone</code>) · 근거 펼침 <code>details.fllm-input</code></td><td>반려 <code>undo_llm_action {action_id}</code>(song_register: 곡 제거 + 차단, song_skip: 표시만 반려) · 사용자 판단 <code>llm_review_options {action_id}</code> → 선택지(종류 · 멤버) · <code>decide_llm_action {action_id, decision:{kind, who}}</code>(강제 등록). <b>LLM 재판단 버튼은 두 kind 에 없음</b></td><td>기존과 동일, 사용자 판단은 바닥 시트(<code>#m-force</code>)</td></tr>
+  </table></div>
+  <h3>4. 리포트 타임플롯라인</h3>
+  <div class="spec-scroll"><table><tr><th>영역</th><th>id / key</th><th>데이터</th><th>모바일</th></tr>
+    <tr><td>신곡 감지 레인</td><td><code>LANES</code> 에 <code>{key:"song", label:"신곡 감지", icon:"🎵", type:"point", rows:["song"]}</code> (업스트림 감지 다음 · 백엔드 상태 앞) · <code>buildRows</code> 에 <code>CURRENT_DAY.song</code> 행(lane:"신곡 감지")</td><td>이벤트 <code>flow="song"</code>: <code>{ts, result(ok|degraded|err), who, detail, video_id, title, kind}</code> → <code>_song_json</code> → <code>day.song[{t, tone, d, title, kind}]</code>. 점 색 = tone(ok 초록 · degraded 노랑 · err 빨강). 옛 스냅샷엔 키가 없으므로 <code>Array.isArray</code> 가드</td><td>기존 좁은 화면 규칙(rowH 축소)</td></tr>
+  </table></div>
+  <h3>5. 바뀌는 점 요약</h3>
+  <ul style="color:var(--color-text-muted);line-height:1.8">
+    <li>추가 id: <code>#status-tab #status-subtabs #sub-preview #sub-notice #sub-tweet</code> · <code>#songs-tab #sd-card #sd-tiles #sd-prev #sg-tools #sg-seg #sg-q #sg-chips #sg-sort #sg-add #sg-list #sg-detail #m-add #m-force</code>. 기존 <code>#preview-tab</code> · <code>#content-tab</code> 은 래퍼 안으로 이동(요소 · 내부 id 유지, 탭 id 만 상위 구조로 대체 — 코드에서 <code>switchTab("preview"|"content")</code> 호출부는 <code>"status"</code> + 세부 탭 지정으로 변경).</li>
+    <li><code>read_functions</code> 화이트리스트에 <code>list_songs</code> · <code>songs_status</code>, 쓰기 목록에 <code>edit_song delete_song add_song regenerate_song_reading unblock_song</code>.</li>
+    <li>작업 탭 · 리포트: 새 컴포넌트 없음 — 기존 UI 에 새 kind / 새 레인만 추가.</li>
+  </ul>
+</section>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const MEM={arale:['아라레','#ff7b9c'],yuno:['유노','#5cc3e6'],nonoka:['노노카','#f0c04a'],ritsu:['리츠','#6fd39e'],miyako:['미야코','#b88cf0'],group:['그룹','#999999']};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+/* 가나 → 한글 독음 (src/frontend/js/songs.js 의 규칙과 동일, 목업용 축약) */
+const HB={あ:'아',い:'이',う:'우',え:'에',お:'오',か:'카',き:'키',く:'쿠',け:'케',こ:'코',さ:'사',し:'시',す:'스',せ:'세',そ:'소',た:'타',ち:'치',つ:'츠',て:'테',と:'토',な:'나',に:'니',ぬ:'누',ね:'네',の:'노',は:'하',ひ:'히',ふ:'후',へ:'헤',ほ:'호',ま:'마',み:'미',む:'무',め:'메',も:'모',や:'야',ゆ:'유',よ:'요',ら:'라',り:'리',る:'루',れ:'레',ろ:'로',わ:'와',を:'오',が:'가',ぎ:'기',ぐ:'구',げ:'게',ご:'고',ざ:'자',じ:'지',ず:'즈',ぜ:'제',ぞ:'조',だ:'다',ぢ:'지',づ:'즈',で:'데',ど:'도',ば:'바',び:'비',ぶ:'부',べ:'베',ぼ:'보',ぱ:'파',ぴ:'피',ぷ:'푸',ぺ:'페',ぽ:'포'};
+const HC={き:['캬','큐','쿄'],し:['샤','슈','쇼'],ち:['차','추','초'],に:['냐','뉴','뇨'],ひ:['햐','휴','효'],み:['먀','뮤','묘'],り:['랴','류','료']};
+const HI={카:'가',키:'기',쿠:'구',케:'게',코:'고',타:'다',치:'지',츠:'즈',테:'데',토:'도'};
+function k2h(src){const t=(src||'').replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-96));let o='',st=true;const L=()=>o.charCodeAt(o.length-1),hg=c=>c>=0xac00&&c<=0xd7a3,nb=c=>hg(c)&&(c-0xac00)%28===0;
+ for(let i=0;i<t.length;){const c=t[i],n=t[i+1];
+  if(HC[c]&&n&&'ゃゅょ'.includes(n)){o+=HC[c]['ゃゅょ'.indexOf(n)];i+=2;st=false;continue}
+  if(c==='ん'){if(nb(L()))o=o.slice(0,-1)+String.fromCharCode(L()+4);i++;continue}
+  if(c==='っ'){if(nb(L()))o=o.slice(0,-1)+String.fromCharCode(L()+19);i++;continue}
+  if(c==='ー'){i++;continue}
+  if(c==='う'&&hg(L())){const v=Math.floor(((L()-0xac00)%588)/28);if([8,12,13,17].includes(v)){i++;continue}}
+  if(HB[c]){let s=HB[c];if(st&&HI[s])s=HI[s];o+=s;st=false;i++;continue}
+  o+=c;st=/\s/.test(c);i++}return o}
+
+/* ── 예시 데이터 (src/frontend/assets/songs.json 발췌 + 신곡 예시) ── */
+let seq=1;
+const S=(id,title,kind,who,date,reading,o={})=>Object.assign({id,title,kind,who,date,reading,rs:reading?'ok':'none',origin:'seed'},o);
+let songs=[
+ S('Fp2a-MhCFVw','夢我夢中','original','group','2026-09-27','むがむちゅう',{rs:'llm',origin:'auto',added:'10/06 03:10'}),
+ S('YYdkkXGOTdY','唱','cover','group','2026-09-16','',{rs:'pending',origin:'auto',added:'10/06 03:10'}),
+ S('TedsUWY90Vs','うちゅうのふしぎ','original','group','2026-08-13','うちゅうのふしぎ',{rs:'llm',origin:'auto',added:'10/06 03:10'}),
+ S('tRS9u2YlqdM','愛は衝動','original','group','2026-09-10','',{rs:'fail',origin:'auto',added:'10/06 03:10'}),
+ S('T8ynAJWmPtM','TearJerker','original','group','2026-07-30','てあじゃーかー',{rs:'llm',origin:'auto',added:'10/06 03:10'}),
+ S('1_WyE1U0f4E','オリオンをなぞる','cover','group','2026-09-23','おりおんをなぞる'),
+ S('KD-EeGTr53I','真夜中遊園地','original','group','2025-09-02','まよなかゆうえんち'),
+ S('XYCI2LzEnZA','コハク','original','group','2025-02-27','こはく'),
+ S('mKiBvYqfBfk','テレパシー','original','group','2025-04-16','てれぱしー'),
+ S('4MPXhnbf29o','ZEAL of proud','cover','yuno','2024-11-05',''),
+ S('LXYyBjnbQys','ユキトキ','cover','nonoka','2023-12-08','ゆきとき'),
+ S('BI71vana4VI','君が飛び降りるのならば','cover','arale','2023-11-28','きみがとびおりるのならば'),
+ S('OsJPJo4uKBc','夜もすがら君想ふ','cover','arale','2024-05-24','よもすがらきみおもふ'),
+ S('7R1DMU0qa00','地球最後の告白を','cover','arale','2024-02-26',''),
+];
+let rejected=[
+ {id:'zPieTviOC54',title:'うちゅうのふしぎ',reason:'삭제',ts:'10/05 21:14',note:'같은 곡명의 다른 영상(9/29) — 삭제하자 RSS 에서 다시 등록되는 것을 막음'},
+ {id:'W3_XJnrC9Jw',title:'愛は衝動',reason:'반려',ts:'10/04 18:02',note:'작업 탭에서 반려'},
+];
+let sel=null,seg='list',chip='all',query='',sortv='date-desc',statusSeeded=true;
+const kindLbl={original:'original',cover:'cover'};
+
+/* ── 탭 ── */
+function openTab(name){$$('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));$$('.tab-content').forEach(t=>t.classList.toggle('active',t.id===name+'-tab'));if(name==='report')drawReport()}
+$$('.tab-btn').forEach(b=>b.addEventListener('click',()=>openTab(b.dataset.tab)));
+$$('#status-subtabs .ing-subtab').forEach(b=>b.addEventListener('click',()=>{$$('#status-subtabs .ing-subtab').forEach(x=>x.setAttribute('aria-selected',x===b));$$('.sub-content').forEach(c=>c.classList.toggle('active',c.id==='sub-'+b.dataset.sub))}));
+let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),3200)}
+function openModal(id){$('#'+id).classList.add('open')}function closeModals(){$$('.modal').forEach(m=>m.classList.remove('open'))}
+$$('.modal').forEach(m=>{m.addEventListener('mousedown',e=>{if(e.target===m)closeModals()});m.addEventListener('click',e=>{if(e.target.closest('[data-close]'))closeModals()})});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModals()});
+function fillWho(sel_,val){sel_.innerHTML=Object.entries(MEM).map(([k,v])=>`<option value="${k}"${k===val?' selected':''}>${v[0]}</option>`).join('')}
+fillWho($('#ad-who'),'group');fillWho($('#fc-who'),'group');
+
+/* ── 신곡 감지 상태 카드 ── */
+function tiles(){
+ const nr=songs.filter(s=>!s.reading).length;
+ const T=[['시드',statusSeeded?'완료':'필요',statusSeeded?'data 브랜치 songs.json 있음':'songs.json 없음 → 자동 등록 대기',statusSeeded?'':'bad'],
+ ['곡 수',songs.length+'곡','자동 등록 '+songs.filter(s=>s.origin==='auto').length+' · 직접 추가 '+songs.filter(s=>s.origin==='manual').length,''],
+ ['독음 없음',nr+'곡',nr?'LLM 생성 대기 · 실패 포함':'모두 입력됨',nr?'warn':''],
+ ['RSS','정상','토픽 채널 · 최신 항목 09/29 20:04 KST · 15건',''],
+ ['마지막 확인','03:10 KST','10분 전 · 등록 10곡 (첫 실행)','idle']];
+ $('#sd-tiles').innerHTML=T.map(t=>`<div class="now-tile ${t[3]}"><span class="lbl">${t[0]}</span><span class="val">${t[1]}</span><span class="sub">${t[2]}</span></div>`).join('')}
+$('#sd-check').addEventListener('click',()=>{
+ const b=$('#sd-check');b.innerHTML='<span class="spin"></span>RSS 조회 중…';b.disabled=true;
+ setTimeout(()=>{b.textContent='지금 확인';b.disabled=false;const P=$('#sd-prev');P.hidden=false;
+  P.innerHTML=`<div class="sd-dry">▸ 미리보기입니다 — 아무것도 쓰지 않았습니다. 실제 등록은 tick 이 합니다. (조회 10/06 03:21:08 KST · RSS 15건)</div>
+  <h4>등록 예정 2곡</h4>
+  <div class="sd-row"><div><div class="t">一番のひかり <span class="badge badge-auto">original</span></div><div class="m">9YjehFo3hAw · 2026-08-06 · 제목 끝 (Cover) 없음 → original · feat. 아님 · 독음은 등록 직후 LLM 이 작성</div></div></div>
+  <div class="sd-row"><div><div class="t">in my words <span class="badge badge-auto">original</span></div><div class="m">YzKXbj8mCY8 · 2026-09-10 · 독음은 등록 직후 LLM 이 작성</div></div></div>
+  <h4>건너뜀 3건</h4>
+  <div class="sd-row"><div><div class="t">うちゅうのふしぎ <span class="badge badge-warn">곡명 중복</span></div><div class="m">zPieTviOC54 · 목록의 「うちゅうのふしぎ」(TedsUWY90Vs)와 같은 곡명</div></div></div>
+  <div class="sd-row"><div><div class="t">Duet (feat. X) <span class="badge badge-warn">feat.</span></div><div class="m">FEATSONG004 · feat. 곡은 등록하지 않음</div></div></div>
+  <div class="sd-row"><div><div class="t">愛は衝動 <span class="badge badge-bad">차단됨</span></div><div class="m">W3_XJnrC9Jw · 차단 목록에 있음(10/04 반려) — 차단 해제 전에는 등록되지 않음</div></div></div>`;},900)});
+
+/* ── 곡 목록 ── */
+function chipsDraw(){const C=[['all','전체'],['original','오리지널'],['cover','커버'],['noread','독음 없음']];
+ $('#sg-chips').innerHTML=C.map(c=>`<button class="cx-chip" aria-pressed="${chip===c[0]}" data-c="${c[0]}">${c[1]}${c[0]==='noread'?' <span class="cx-cnt">'+songs.filter(s=>!s.reading).length+'</span>':''}</button>`).join('');
+ $$('#sg-chips .cx-chip').forEach(b=>b.addEventListener('click',()=>{chip=b.dataset.c;drawList()}))}
+function filtered(){const q=query.trim().toLowerCase();
+ let L=songs.filter(s=>chip==='all'||(chip==='noread'?!s.reading:s.kind===chip));
+ if(q)L=L.filter(s=>(s.title+' '+s.reading+' '+k2h(s.reading)).toLowerCase().includes(q));
+ const f={ 'date-desc':(a,b)=>a.date<b.date?1:-1,'date-asc':(a,b)=>a.date<b.date?-1:1,name:(a,b)=>(a.reading||a.title).localeCompare(b.reading||b.title,'ja')}[sortv];return L.sort(f)}
+function rdBadge(s){return {ok:'',llm:'<span class="badge badge-llm">독음 LLM 작성</span>',pending:'<span class="badge badge-warn"><span class="spin"></span>독음 생성 중</span>',fail:'<span class="badge badge-bad">독음 생성 실패</span>',none:'<span class="badge badge-warn">독음 없음</span>'}[s.rs]||''}
+function drawList(){
+ $('#cnt-list').textContent=songs.length;$('#cnt-blocked').textContent=rejected.length;chipsDraw();tiles();
+ $('#sg-filters').style.display=seg==='list'?'':'none';$('#sg-chiprow').style.display=seg==='list'?'':'none';
+ const box=$('#sg-list');
+ if(seg==='blocked'){
+  box.innerHTML=(rejected.length?`<div class="infobox" style="margin:.5rem 0">삭제 · 반려한 곡의 영상 ID · 곡명이 여기 들어가 자동 감지가 다시 등록하지 않습니다. 차단을 풀면 <b>다음 감지(최대 10분 뒤)에 다시 등록될 수 있습니다</b>(RSS 최근 15건에 남아 있는 동안).</div>`:'')+
+  (rejected.length?rejected.map(r=>`<div class="cx-row blocked" data-id="${r.id}"><div class="cx-row-h" style="grid-template-columns:minmax(0,1fr) auto;cursor:default"><div><div class="cx-t">${esc(r.title)} <span class="badge badge-bad">${r.reason}</span></div><div class="cx-m"><span class="mono">${r.id}</span><span>${r.ts}</span></div><div class="cx-m">${esc(r.note)}</div></div><button class="btn-line unblock" data-id="${r.id}">차단 해제</button></div></div>`).join(''):'<div class="cx-empty">차단된 곡이 없습니다</div>');
+  $$('.unblock').forEach(b=>b.addEventListener('click',()=>confirmUnblock(b.dataset.id)));return}
+ const L=filtered();
+ box.innerHTML=L.length?L.map(s=>{const m=MEM[s.who];return `<div class="cx-row" data-id="${s.id}" aria-selected="${sel===s.id}"><button class="cx-row-h" data-id="${s.id}"><div style="min-width:0"><div class="cx-t">${esc(s.title)}</div><div class="cx-m"><span><span class="dot" style="--mc:${m[1]}"></span>${m[0]}</span><span class="badge badge-announced">${kindLbl[s.kind]}</span><span class="mono">${s.date}</span>${s.origin==='auto'?'<span class="badge badge-auto">자동 등록 '+s.added+'</span>':''}${s.origin==='manual'?'<span class="badge badge-manual">직접 추가</span>':''}${rdBadge(s)}</div>${s.reading?`<div class="cx-m"><span>${esc(s.reading)}</span><span style="color:#c4b5fd">${esc(k2h(s.reading))}</span></div>`:''}</div></button></div>`}).join(''):'<div class="cx-empty">조건에 맞는 곡이 없습니다</div>';
+ $$('#sg-list .cx-row-h').forEach(b=>b.addEventListener('click',()=>pick(b.dataset.id)))}
+$$('#sg-seg button').forEach(b=>b.addEventListener('click',()=>{seg=b.dataset.seg;$$('#sg-seg button').forEach(x=>x.setAttribute('aria-selected',x===b));drawList()}));
+$('#sg-q').addEventListener('input',e=>{query=e.target.value;drawList()});
+$('#sg-sort').addEventListener('change',e=>{sortv=e.target.value;drawList()});
+
+/* ── 상세 편집 (PC = 우측 패널, 모바일 = 바닥 시트) ── */
+const isNarrow=()=>matchMedia('(max-width:959px)').matches;
+function editorHTML(s){const w=Object.entries(MEM).map(([k,v])=>`<option value="${k}"${k===s.who?' selected':''}>${v[0]}</option>`).join('');
+ return `<div class="cx-detail-in" data-id="${s.id}">
+  <div class="cx-dt">${esc(s.title)} <span class="badge ${s.origin==='auto'?'badge-auto':s.origin==='manual'?'badge-manual':'badge-announced'}">${s.origin==='auto'?'자동 등록':s.origin==='manual'?'직접 추가':'기존'}</span></div>
+  <div class="fld"><label for="ed-title">곡명</label><input id="ed-title" type="text" value="${esc(s.title)}"></div>
+  <div class="fld"><label for="ed-reading">독음(가나) ${rdBadge(s)}</label>
+   <div class="rd-row"><input id="ed-reading" type="text" value="${esc(s.reading)}" placeholder="${s.rs==='pending'?'LLM 이 작성 중…':'비어 있음'}"><button class="btn-line" id="ed-regen" title="외부 LLM(Groq)에 독음을 다시 요청합니다">↻ 독음 다시 만들기</button></div>
+   <span class="ko" id="ed-ko">한글 독음 미리보기: ${esc(k2h(s.reading))||'—'}</span>
+   <span class="hint">직접 고쳐 저장하면 「LLM 작성」 표시가 사라집니다. 다시 만들기는 현재 입력을 덮어쓰기 전에 확인합니다.</span></div>
+  <div class="frow"><div class="fld"><label for="ed-kind">종류</label><select id="ed-kind"><option value="original"${s.kind==='original'?' selected':''}>original</option><option value="cover"${s.kind==='cover'?' selected':''}>cover</option></select></div>
+   <div class="fld"><label for="ed-who">멤버</label><select id="ed-who">${w}</select></div></div>
+  <div class="fld"><label for="ed-date">날짜 <span class="hint">(YouTube 업로드 KST 날짜)</span></label><input id="ed-date" type="date" value="${s.date}"></div>
+  <div class="fld"><label>영상</label><a href="#" onclick="return false" style="color:var(--color-accent);overflow-wrap:anywhere">youtu.be/${s.id} ↗</a></div>
+  <div class="cx-acts"><button class="cx-btn cx-btn-pri" id="ed-save">저장</button><button class="cx-btn cx-btn-dng" id="ed-del">삭제</button></div>
+  <div class="hint" style="font-size:.74rem;color:var(--color-text-muted)">삭제하면 이 곡이 <b>차단 목록</b>에 들어가 자동 감지가 다시 등록하지 않습니다.</div></div>`}
+function pick(id){sel=id;const s=songs.find(x=>x.id===id);if(!s)return;
+ if(isNarrow()){$('#m-edit')||mkEditModal();$('#m-edit-body').innerHTML=editorHTML(s);openModal('m-edit')}else{$('#sg-detail').innerHTML=editorHTML(s)}
+ bindEditor(s);drawList()}
+function mkEditModal(){const d=document.createElement('div');d.className='modal';d.id='m-edit';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.innerHTML='<div class="modal-content"><div class="modal-header"><h3>곡 수정</h3><button class="btn-ghost" data-close aria-label="닫기">✕</button></div><div id="m-edit-body"></div></div>';document.body.appendChild(d);d.addEventListener('mousedown',e=>{if(e.target===d)closeModals()});d.addEventListener('click',e=>{if(e.target.closest('[data-close]'))closeModals()})}
+function bindEditor(s){const root=isNarrow()?$('#m-edit-body'):$('#sg-detail');const q=x=>root.querySelector(x);
+ q('#ed-reading').addEventListener('input',e=>{q('#ed-ko').textContent='한글 독음 미리보기: '+(k2h(e.target.value)||'—')});
+ q('#ed-regen').addEventListener('click',()=>{const b=q('#ed-regen'),inp=q('#ed-reading');b.disabled=true;b.innerHTML='<span class="spin"></span>LLM 요청 중…';
+  setTimeout(()=>{const fake={'唱':'しょう','愛は衝動':'あいはしょうどう','ZEAL of proud':'ぜーるおぶぷらうど','地球最後の告白を':'ちきゅうさいごのこくはくを'}[s.title]||s.reading||'よみがな';
+   inp.value=fake;q('#ed-ko').textContent='한글 독음 미리보기: '+k2h(fake);b.disabled=false;b.textContent='↻ 독음 다시 만들기';toast('LLM 이 독음을 다시 만들었습니다 — 저장해야 반영됩니다')},1300)});
+ q('#ed-save').addEventListener('click',()=>{const r=q('#ed-reading').value.trim();Object.assign(s,{title:q('#ed-title').value.trim()||s.title,kind:q('#ed-kind').value,who:q('#ed-who').value,date:q('#ed-date').value,reading:r});
+  s.rs=r?(r===s._llm?'llm':'ok'):'none';if(r)s.rs='ok';closeModals();toast('저장했습니다 · '+s.title+' (edit_song)');drawList();if(!isNarrow())$('#sg-detail').innerHTML=editorHTML(s),bindEditor(s)});
+ q('#ed-del').addEventListener('click',()=>{$('#m-confirm-h').textContent='곡 삭제';$('#m-confirm-body').innerHTML=`<div><b>${esc(s.title)}</b>을(를) 목록에서 지웁니다.</div><div class="warnbox">이 곡은 <b>차단 목록</b>에 들어가, RSS 에 남아 있어도 자동 감지가 다시 등록하지 않습니다. 차단 목록에서 언제든 풀 수 있습니다.</div>`;$('#m-confirm-ok').textContent='삭제';
+  $('#m-confirm-ok').onclick=()=>{songs=songs.filter(x=>x.id!==s.id);rejected.unshift({id:s.id,title:s.title,reason:'삭제',ts:'10/06 03:25',note:'음반 탭에서 삭제'});sel=null;closeModals();$('#sg-detail').innerHTML='<div class="cx-ph">곡을 고르면 여기서 수정 · 삭제합니다</div>';toast('삭제했습니다 · 차단 목록에 추가 (delete_song)');drawList()};openModal('m-confirm')})}
+function confirmUnblock(id){const r=rejected.find(x=>x.id===id);$('#m-confirm-h').textContent='차단 해제';
+ $('#m-confirm-body').innerHTML=`<div><b>${esc(r.title)}</b> (${r.id})의 차단을 풉니다.</div><div class="warnbox">곡은 복원되지 않습니다. 이 영상이 아직 RSS 최근 15건에 있으면 <b>다음 감지(최대 10분 뒤)에 다시 등록</b>될 수 있습니다.</div>`;$('#m-confirm-ok').textContent='차단 해제';
+ $('#m-confirm-ok').onclick=()=>{rejected=rejected.filter(x=>x.id!==id);closeModals();toast('차단을 풀었습니다 (unblock_song)');drawList()};openModal('m-confirm')}
+
+/* ── 곡 직접 추가 ── */
+$('#sg-add').addEventListener('click',()=>{['ad-url','ad-title','ad-reading','ad-date'].forEach(i=>$('#'+i).value='');$('#ad-kind').value='original';$('#ad-who').value='group';$('#ad-hint').textContent='제목 · 공개 날짜를 자동으로 채워 봅니다. 실패하면 직접 입력하세요. (예: youtu.be/Fp2a-MhCFVw)';openModal('m-add')});
+$('#ad-fetch').addEventListener('click',()=>{const u=$('#ad-url').value.trim(),b=$('#ad-fetch');if(!u){$('#ad-hint').textContent='URL 을 입력하세요.';return}
+ b.innerHTML='<span class="spin"></span>';b.disabled=true;setTimeout(()=>{b.textContent='불러오기';b.disabled=false;
+  if(/Fp2a-MhCFVw/.test(u)){$('#ad-title').value='夢我夢中';$('#ad-date').value='2026-09-27';$('#ad-hint').textContent='✓ 자동으로 채웠습니다 (제목 · 업로드 KST 날짜). 종류 · 멤버를 확인하세요.'}
+  else if(/youtu\.?be|youtube\.com/.test(u)){$('#ad-hint').innerHTML='<span style="color:#f5b83d">자동 채움에 실패했습니다 (영상 조회 불가 · 비공개 · 쿼터). 직접 입력하세요.</span>'}
+  else{$('#ad-hint').innerHTML='<span style="color:var(--fail)">YouTube URL 형식이 아닙니다.</span>'}},800)});
+$('#ad-save').addEventListener('click',()=>{const t=$('#ad-title').value.trim();if(!t){$('#ad-hint').innerHTML='<span style="color:var(--fail)">곡명을 입력하세요.</span>';return}
+ const dup=songs.find(s=>s.title===t);if(dup&&!confirm0(t)){return}
+ const r=$('#ad-reading').value.trim();const m=($('#ad-url').value.match(/(?:youtu\.be\/|v=)([\w-]{11})/)||[])[1]||('manual'+(seq++));
+ songs.unshift(S(m,t,$('#ad-kind').value,$('#ad-who').value,$('#ad-date').value||'2026-10-06',r,{origin:'manual',rs:r?'ok':'pending'}));
+ closeModals();toast('추가했습니다 · '+t+(r?'':' — 독음은 LLM 이 작성합니다')+' (add_song)');drawList();
+ if(!r)setTimeout(()=>{const s=songs.find(x=>x.id===m);if(s&&s.rs==='pending'){s.reading='よみがな(예시)';s.rs='llm';drawList()}},2500)});
+function confirm0(t){$('#ad-hint').innerHTML='<span style="color:#f5b83d">같은 곡명이 이미 목록에 있습니다 — 한 번 더 누르면 그대로 추가합니다.</span>';if(confirm0.t===t){confirm0.t=null;return true}confirm0.t=t;return false}
+
+/* ── 작업 탭: LLM 판단(신곡 2종) ── */
+const flowsData=[
+ {id:'a1',t:'03:10',kind:'song_register',who:'group',title:'夢我夢中',vid:'Fp2a-MhCFVw',sum:'신곡 등록 · 夢我夢中 (original)',state:'live',
+  reason:['곡명 「夢我夢中」이 목록에 없음 (비교 키 むがむちゅう… 64곡과 불일치)','제목 끝 「(Cover)」 없음 → original','feat. 표기 없음','차단 목록에 없음'],
+  input:'video_id: Fp2a-MhCFVw\ntitle: 夢我夢中\npublished: 2026-09-27T11:00:19+00:00\ndescription: Provided to YouTube by Virgin Music Group … Released on: 2026-09-28 …'},
+ {id:'a2',t:'03:10',kind:'song_register',who:'group',title:'唱',vid:'YYdkkXGOTdY',sum:'신곡 등록 · 唱 (cover)',state:'live',
+  reason:['곡명 「唱」이 목록에 없음','제목 끝 「(Cover)」 있음 → cover (표시 이름은 꼬리표를 뗀 「唱」)','feat. 표기 없음'],
+  input:'video_id: YYdkkXGOTdY\ntitle: 唱 (Cover)\npublished: 2026-09-16T11:04:11+00:00'},
+ {id:'a3',t:'03:10',kind:'song_skip',who:'group',title:'うちゅうのふしぎ',vid:'zPieTviOC54',sum:'등록 안 함 · うちゅうのふしぎ — 곡명 중복',state:'live',
+  reason:['곡명이 목록의 「うちゅうのふしぎ」(TedsUWY90Vs, 2026-08-13)와 같음 → 영상 ID 가 달라도 등록하지 않음','같은 곡명의 다른 곡(앨범 · 커버 · 원곡 구분)이라면 「반려 → 사용자 판단」으로 강제 등록'],
+  input:'video_id: zPieTviOC54\ntitle: うちゅうのふしぎ\npublished: 2026-09-29T11:03:28+00:00',same:'TedsUWY90Vs'},
+ {id:'b1',t:'02:41',kind:'broadcast_change',who:'miyako',title:'',sum:'방송 취소 판단 · 아님',state:'review',reason:['글에 취소 · 변경 표현이 없음'],input:'(기존 판단 — 변경 없음)',legacy:true}];
+let fstate={},openFlow=null;
+function flowsDraw(){const F=$('#flows');F.innerHTML=flowsData.map(f=>{const st=fstate[f.id]||{};const label=f.kind==='song_register'?'신곡 등록':f.kind==='song_skip'?'신곡 등록 안 함':'LLM 판단';
+  const status=st.undone?'<span class="s-warn">반려됨</span>':st.forced?'<span class="s-ok">강제 등록됨</span>':'<span class="s-ok">완료</span>';
+  return `<div><button class="flow${openFlow===f.id?' sel':''}" data-id="${f.id}"><span class="t">${f.t}</span><span class="what"><span class="k">LLM 판단 · ${label}</span><span class="d">${esc(f.sum)}</span></span><span class="st">${status}</span></button><div class="fdetail${openFlow===f.id?' open':''}">${openFlow===f.id?flowDetail(f,st):''}</div></div>`}).join('');
+ $$('.flow').forEach(b=>b.addEventListener('click',()=>{openFlow=openFlow===b.dataset.id?null:b.dataset.id;flowsDraw()}));
+ $$('[data-undo]').forEach(b=>b.addEventListener('click',()=>undo(b.dataset.undo)));$$('[data-force]').forEach(b=>b.addEventListener('click',()=>force(b.dataset.force)))}
+function flowDetail(f,st){
+ if(f.legacy)return '<div class="fllm"><div class="fllm-row"><div class="h"><span class="k">방송 취소 판단</span></div><div class="s">'+esc(f.sum)+'</div><div class="r">(기존 판단 종류 — 이 목업에서는 변경 없음. 재판단 · 사용자 판단 버튼은 기존대로 있습니다.)</div></div></div>';
+ const isReg=f.kind==='song_register',isSkip=f.kind==='song_skip';
+ return `<div class="fllm"><div class="fllm-row${st.undone?' undone':''}"><div class="h"><span class="k">${isReg?'신곡 등록 · song_register':'신곡 등록 안 함 · song_skip'}</span>${st.undone?'<span class="badge-rv">반려됨</span>':''}</div>
+  <div class="s">${esc(f.sum)}</div>
+  <div class="r"><b>근거(규칙 점검)</b><ul>${f.reason.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+  <details class="fllm-input"><summary>입력 스냅샷 (RSS 항목)</summary><pre>${esc(f.input)}</pre></details>
+  <div class="st ${st.undone?'done':''}">${st.undone?(isReg?'반려됨 — 곡을 목록에서 지우고 차단 목록에 추가했습니다':'반려됨 — 등록 안 함 판단을 반려했습니다'):isReg?'등록됨 · 반려하면 곡을 지우고 차단합니다 (그 사이 수정했다면 건너뜀)':'등록하지 않음 · 검토용 (롤백할 변경 없음)'}</div>
+  ${!st.undone?`<button data-undo="${f.id}">↩ 반려</button>`:''}
+  ${st.undone&&isSkip&&!st.forced?`<div class="act"><button data-force="${f.id}">사용자 판단 → 강제 등록</button><span class="note">LLM 재판단은 없습니다(규칙 판단). 종류 · 멤버를 골라 같은 곡명이어도 등록합니다.</span></div>`:''}
+  ${st.undone&&isReg?`<div class="act"><span class="note">다른 값으로 다시 등록하려면 음반 탭에서 「＋ 곡 추가」(차단 해제 후)를 쓰세요.</span></div>`:''}
+  ${st.forced?'<div class="st fu">사용자 판단 → 강제 등록함 ('+esc(st.forced)+')</div>':''}</div></div>`}
+function undo(id){const f=flowsData.find(x=>x.id===id);fstate[id]=Object.assign(fstate[id]||{},{undone:true});
+ if(f.kind==='song_register'){const s=songs.find(x=>x.id===f.vid);if(s){songs=songs.filter(x=>x.id!==f.vid);rejected.unshift({id:f.vid,title:f.title,reason:'반려',ts:'10/06 03:30',note:'작업 탭에서 반려'});}toast('반려했습니다 · 곡을 지우고 차단 목록에 추가 (undo_llm_action)')}else toast('반려했습니다 (undo_llm_action)');
+ flowsDraw();drawList()}
+let forceId=null;
+function force(id){forceId=id;const f=flowsData.find(x=>x.id===id);$('#fc-info').innerHTML='<b>'+esc(f.title)+'</b> — 곡명 중복으로 등록하지 않은 영상('+f.vid+')을 강제로 등록합니다.';openModal('m-force')}
+$('#fc-ok').addEventListener('click',()=>{const f=flowsData.find(x=>x.id===forceId),k=document.querySelector('[name=fc-kind]:checked').value,w=$('#fc-who').value;
+ songs.unshift(S(f.vid,f.title,k,w,'2026-09-29','',{origin:'auto',rs:'pending',added:'10/06 03:32'}));fstate[forceId].forced=k+' · '+MEM[w][0];closeModals();toast('강제 등록했습니다 · '+f.title+' (decide_llm_action)');flowsDraw();drawList();
+ setTimeout(()=>{const s=songs.find(x=>x.id===f.vid);if(s&&s.rs==='pending'){s.reading='うちゅうのふしぎ';s.rs='llm';drawList()}},2500)});
+$$('#jobs-filter .chip').forEach(c=>c.addEventListener('click',()=>{$$('#jobs-filter .chip').forEach(x=>x.setAttribute('aria-pressed',x===c))}));
+
+/* ── 리포트 타임플롯라인 ── */
+function drawReport(){
+ const svg=$('#rp-svg'),W=Math.max(760,svg.parentElement.clientWidth-8),LBL=150,PAD=14,H0=34;
+ const lanes=[['🎯 트리거','tr',34],['💬 운영자 명령','cmd',34],['🛰️ 업스트림 감지','up',34],['🎵 신곡 감지','song',40],['🖥️ 백엔드 상태','hl',34],['🎬 preview','pv',34],['📰 소식','nt',34],['💌 개인 트윗','tw',34]];
+ const x=(h)=>LBL+(W-LBL-PAD)*(h/24); /* h = 06:00 기준 경과 시 */
+ let y=H0,out='',rows={};
+ lanes.forEach(l=>{rows[l[1]]=y+l[2]/2;
+  if(l[1]==='song')out+=`<rect class="band" x="${LBL-4}" y="${y+2}" width="${W-LBL-PAD+8}" height="${l[2]-4}" rx="6" fill="rgba(6,182,212,.07)" stroke="rgba(6,182,212,.45)" stroke-dasharray="3 3"/><text x="${W-PAD-4}" y="${y+12}" text-anchor="end" font-size="9" fill="#06b6d4">신설 레인</text>`;
+  out+=`<text x="${LBL-10}" y="${y+l[2]/2+4}" text-anchor="end" font-size="12" fill="${l[1]==='song'?'#06b6d4':'#999'}">${l[0]}</text><line x1="${LBL}" x2="${W-PAD}" y1="${y+l[2]}" y2="${y+l[2]}" stroke="#2a2a2a" stroke-dasharray="2 4"/>`;y+=l[2]});
+ const Ht=y+26;
+ for(let h=0;h<=24;h+=3){const hh=(6+h)%24;out+=`<line x1="${x(h)}" x2="${x(h)}" y1="${H0-6}" y2="${y}" stroke="#2a2a2a"/><text x="${x(h)}" y="${H0-12}" text-anchor="${h===24?'end':'middle'}" font-size="10" fill="#999" class="mono">${String(hh).padStart(2,'0')}:00</text>`}
+ /* 백엔드 상태 막대 */
+ out+=`<rect x="${x(0)}" y="${rows.hl-6}" width="${x(24)-x(0)}" height="12" rx="3" fill="#3ecf8e" opacity=".55"/><rect x="${x(14.6)}" y="${rows.hl-6}" width="${x(15.1)-x(14.6)}" height="12" fill="#ff5d5d" opacity=".8"/>`;
+ const dots=[];const P=(lane,h,c,tip)=>dots.push({lane,h,c,tip});
+ for(let h=0;h<24;h+=1/6){if(Math.abs(h-0.0)<1e-9||Math.round(h*6)%6===0)P('tr',h,'#7c8aa0','정기수집 light tick')}
+ [[1.2,'아라레 · 개인 트윗'],[9.5,'공식 스케줄 알림'],[15.3,'유노 · 개인 트윗'],[18.1,'미야코 · 개인 트윗']].forEach(a=>P('up',a[0],'#7c8aa0','업스트림 알림 · '+a[1]));
+ P('cmd',8.2,'#7c8aa0','/list');P('cmd',16.4,'#7c8aa0','/status');
+ [[3,'아라레'],[4.4,'유노'],[7.5,'리츠'],[12.2,'미야코'],[20.3,'노노카']].forEach(a=>P('tw',a[0],'#7c8aa0','개인 트윗 · '+a[1]));P('nt',6.7,'#7c8aa0','소식 added');P('nt',17.3,'#7c8aa0','소식 updated');
+ /* 신곡 감지 이벤트 */
+ const E=[
+  [0.17,'ok','등록 · 夢我夢中','original · who=group · date 2026-09-27\nRSS 15건 중 새 곡 1 · 독음 LLM 작성 대기','Fp2a-MhCFVw'],
+  [0.17,'ok','등록 · 唱','cover · who=group · date 2026-09-16 (제목 끝 (Cover))','YYdkkXGOTdY'],
+  [0.18,'skip','건너뜀 · うちゅうのふしぎ','곡명 중복 — 「うちゅうのふしぎ」(TedsUWY90Vs)와 같은 곡명','zPieTviOC54'],
+  [5.0,'fail','RSS 조회 실패','토픽 채널 RSS HTTP 500 · 시간당 1회만 기록','—'],
+  [11.5,'ok','등록 · 一番のひかり','original · who=group · date 2026-08-06','9YjehFo3hAw'],
+  [15.4,'skip','건너뜀 · Duet (feat. X)','feat. 곡은 등록하지 않음','FEATSONG004']];
+ E.forEach(e=>P('song',e[0],{ok:'#3ecf8e',skip:'#f5b83d',fail:'#ff5d5d'}[e[1]],e));
+ dots.forEach((d,i)=>{const isSong=d.lane==='song';const cx=x(d.h)+(isSong&&d.h<0.3?(i%3)*9:0);
+  out+=`<circle class="dt" data-i="${i}" cx="${cx}" cy="${rows[d.lane]}" r="${isSong?6:3.2}" fill="${d.c}" ${isSong?`stroke="#0f0f0f" stroke-width="1.5" style="cursor:pointer"`:'opacity=".85"'}/>`});
+ svg.setAttribute('viewBox',`0 0 ${W} ${Ht}`);svg.setAttribute('width',W);svg.setAttribute('height',Ht);svg.innerHTML=out;
+ const tip=$('#rp-tip');
+ svg.querySelectorAll('.dt').forEach(c=>{const d=dots[+c.dataset.i];if(d.lane!=='song')return;
+  const html=()=>`<b>${esc(d.tip[2])}</b><br><span style="color:#999">${esc(d.tip[3]).replace(/\n/g,'<br>')}</span><br><span class="mono" style="color:#999">${d.tip[4]} · ${String((6+Math.floor(d.h))%24).padStart(2,'0')}:${String(Math.round((d.h%1)*60)).padStart(2,'0')} KST</span>`;
+  c.addEventListener('mouseenter',e=>{tip.innerHTML=html();tip.style.display='block'});c.addEventListener('mousemove',e=>{tip.style.left=Math.min(innerWidth-330,e.clientX+14)+'px';tip.style.top=(e.clientY+14)+'px'});c.addEventListener('mouseleave',()=>tip.style.display='none');
+  c.addEventListener('click',()=>{$('#rp-pin').innerHTML=html()})})}
+window.addEventListener('resize',()=>{if($('#report-tab').classList.contains('active'))drawReport()});
+
+drawList();flowsDraw();
+})();
+</script>
+
+</body></html>

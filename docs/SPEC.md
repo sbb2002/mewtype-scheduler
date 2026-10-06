@@ -903,17 +903,43 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **남는 한계**: 모니터 로그(notice/relay/ops)·`admin_state.json` 마법사 단계·`control.json`·`/translate`·
   `/monitor` 의 `latest.html` 은 여전히 제어 채널이 직접 커밋 → 큐 잡과 409 가능(잡은 최신 재조회 후 1회 재시도).
 
-### 8.15 신곡 자동 감지 — `songs.py` + `handlers._detect_new_songs` (v4.2.0)
+### 8.15 신곡 자동 감지 · 곡 관리 — `songs.py` + `handlers._detect_new_songs` + 어드민 음반 탭 API (v4.2.0)
 
 곡은 그룹 공식 채널이 아니라 음원 자동 생성 채널 **`Mugendai MewType - Topic`**(`UCeXzCxZsDcaF5xI68fK5owA`)에 올라온다 — 방송이 아니라 `preview.json` · FSM(`preview_build`)과 무관하므로
 방송 파이프라인에 끼우지 않고 별도 경로로 둔다. `config/channels.json` 최상위 `song_feeds`(`channels` 와 별개 키 — 방송 쪽이 읽지 않음)에 채널을 둔다.
-- **감지**: 매 `/tick`(light 10분 · baseline 06:00 JST — 실제 배포 Cloud Scheduler 값, wake 제외)에서 `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json`(data 브랜치)과 비교. 새 곡이 있을 때만 쓰기.
-- **규칙**(운영자 결정 2026-10-06): ① **곡명이 이미 데이터에 있으면 등록 안 함**(영상 ID 가 달라도 — 앨범마다 같은 곡이 새 영상으로 올라온다) · 곡명 비교는 NFKC · 대소문자 · 공백 · 꼬리표 무시
+
+**곡 문서 `songs.json`**(data 브랜치) = `{"songs": [...], "rejected": [...], "seen": [...]}` — 프론트 플레이어는 `songs` 만 읽는다.
+- 곡: `{id(video_id), title, kind(original|cover), who, date, reading, added_at?, manual?, edited_at?, needs_reading?, reading_manual?}`.
+  `needs_reading` = 외부 LLM 독음을 아직 못 채운 곡(다음 tick 이 재시도) · `reading_manual` = 운영자가 직접 정한 독음(LLM 이 덮지 않음) · `edited_at` = 운영자 수정 시각(반려가 덮어 지우지 않는 근거).
+- `rejected`: 삭제 · 반려한 곡 `{id, name_key, title, ts, by}`. **RSS 최근 15건에 곡이 남아 있어도 다시 등록되지 않게 한다**(영상 ID · 곡명 키 둘 다). 차단 해제 가능(최대 500건).
+- `seen`: 이미 판단 기록을 남긴 「곡명 중복 건너뜀」 `{id, reason, ts}`(같은 건너뜀을 tick 마다 다시 기록하지 않게, 최근 200건).
+
+**감지**(매 `/tick` — light 10분 · baseline 06:00 JST, 실제 배포 Cloud Scheduler 값 · wake 제외): `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json` 과 비교해 **즉시 등록**(승인 대기 없음).
+- **규칙**(운영자 결정 2026-10-06): ① **곡명이 이미 있으면 등록 안 함**(영상 ID 가 달라도 — 앨범마다 같은 곡이 새 영상으로 올라온다) · 곡명 비교는 NFKC · 대소문자 · 공백 · 꼬리표 무시
   ② 제목 끝 **「(Cover)」**(대소문자 · 전각 괄호 무관)가 있으면 `cover`, 없으면 `original`. 다른 표기(「(Solo)」 등)에 대한 규칙은 두지 않는다 ③ `feat.` 곡은 등록 안 함
-  ④ 같은 곡명이 한 묶음에 여럿이면 먼저 올라온 영상 하나만 ⑤ `who="group"`, `date`=공개 시각의 KST 날짜, `reading=""`(독음은 RSS 에 없음 — 따로 채움), `added_at`=등록 시각.
-- **안전**: `songs.json` 이 없으면 새로 만들지 않고 건너뜀(시드 전). 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다**(예외 격리). tick 결과 `songs` 키에 `{added|skipped}`.
-- 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음. 모니터 이벤트 로그에는 아직 남기지 않는다(`log.info` 만).
-- self-test: `python -m src.backend.songs`(분류 · 곡명 키 · 실제 RSS 발췌 `fixtures/topic_feed.sample.xml` 로 감지 · 멱등 23건), `python -m src.backend.handlers`(`_detect_new_songs` 가짜 gh).
+  ④ 같은 곡명이 한 묶음에 여럿이면 먼저 올라온 영상 하나만 ⑤ 반려 목록(`rejected`)에 있는 영상 · 곡명은 등록 안 함 ⑥ `who="group"`, `date`=공개 시각의 KST 날짜.
+  건너뜀 사유는 `name_dup`(어느 곡과 같은지 `dup_of`) · `feat` · `id_dup` · `rejected` 로 구분해 돌려준다(`find_new_songs` → `(새 곡, 건너뜀)`).
+- **독음은 외부 LLM(Groq)이 쓴다**(`llm.song_reading` — 일본어는 히라가나, 영문 곡명은 가타카나 발음. 가나 · 영숫자 외 응답은 버림). 실패하면 `reading=""` + `needs_reading=True` 로 남아
+  **이후 tick 이 재시도**(tick 당 최대 3건, 신곡 + 재시도 합산). 운영자가 독음을 직접 고치면 `reading_manual` 이 돼 LLM 이 덮지 않고, 독음을 비우거나 「독음 다시 만들기」를 하면 LLM 이 다시 쓴다.
+- **판단 기록 · 이벤트**: 등록 1곡 = `llm_actions.json`(ops) 기록 `song_register`(`by="rule"`, undo = `{type:"remove_song", id, title, added_at}`, input = RSS 항목 스냅샷),
+  곡명 중복 건너뜀 1건 = `song_skip`(검토용, undo 없음, `seen` 으로 한 번만). 둘 다 작업 탭 「LLM 판단」에 보이고 반려할 수 있다. 모니터 이벤트 `flow="song"`
+  (`action` = added · skipped · reading · rss_empty — 어드민 조작은 `via="ops"` 로 edited · deleted · added_manual · unblocked · rejected · reading_regen)가 같은 이벤트 로그(보관 · 스냅샷 · 리포트 전 기간)에 쌓여 리포트 타임라인 「🎵 신곡 감지」 레인에 점으로 나온다.
+  RSS 가 비어 있으면(조회 실패 포함) 그 시간의 첫 tick(분 < 10)에만 degraded 이벤트 1건 — 시간당 1회. 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
+- **쓰기 경로**: 감지 쪽은 tick 안에서 gh 로 **직접** 쓴다(`/write` 자기 호출은 `concurrency=1` 교착 — `record_video_releases` 와 같은 방식; 한 tick 에 songs.json 1번 + 판단 기록 1번(배치) + 이벤트 1번 이하,
+  기록은 songs.json 쓰기 **성공 뒤에만**). 어드민 편집은 `/write` 직렬화(writers kind `song_edit` → `telegram_app._song_edit_commit`, sha 충돌 재시도 4회). 외부 LLM 호출은 호출부가 먼저(A-1).
+- **안전**: `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다.** 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음.
+
+**어드민 화면**(`admin_static/admin.html`, 목업 `ref/v4.2_admin_mockup.html`): **현황 탭**(세부 탭 예고 | 소식 | 트윗 — 소식 세부 탭은 행사 배너 + 소식이 한 목록 칸, 행사(b)·소식(n)은 상세창을 같이 쓰므로 선택 · 펼침을 목록 칸 전체 기준으로 하나만 유지) ·
+**음반 탭**(신곡 감지 상태 카드 · 곡 목록 · 수정 · 삭제 · 직접 추가 · 차단 목록/해제 — 시드 전에는 쓰기 버튼 비활성) · 작업 탭 신곡 판단(`llmKindLabel` · `undoDescribe` · `buildDecideForm` 신곡 양식, 재판단 버튼 없음).
+곡 직접 추가는 제목 · 날짜를 비워 두면 `add_song` 이 RSS → YouTube API 순으로 채운다(별도 「불러오기」 호출 없음).
+
+**어드민 API**(`admin_api` · 계약 `ref/v4.2_admin_api_contract.md`): 읽기 `list_songs`(곡 · 차단 목록 · 카운트 · 한글 독음 미리보기) · `songs_status`(시드 여부 · **지금 RSS 조회**(쿼터 0) · 등록 예정/건너뜀 dry-run · 최근 `song` 이벤트 7일),
+쓰기 `edit_song` · `delete_song`(= 삭제 + 재등록 차단) · `add_song`(YouTube URL/ID → RSS → videos.list 순으로 제목 · 날짜를 채워 보고, 안 되면 직접 입력 · 곡명 중복은 force) · `unblock_song` · `regenerate_song_reading`(독음 다시 만들기).
+**작업 탭 반려**: `song_register` 반려 = 목록에서 지우고 `rejected` 에 추가(그때 등록한 그대로일 때만 — 운영자가 그 뒤 수정했으면 건너뜀) → 사용자 판단 = 다른 값(제목 · 구분 · 부른 사람 · 날짜)으로 다시 등록.
+`song_skip` 반려 → 사용자 판단 = **강제 등록**(곡명이 같아도 다른 곡). 규칙 판단이라 **LLM 재판단은 없다**(`llm_review_options.rejudge=false`, 요청하면 오류).
+- self-test: `python -m src.backend.songs`(60건 — 분류 · 곡명 키 · 실제 RSS 발췌 `fixtures/topic_feed.sample.xml` 감지 · 건너뜀 사유 · 삭제 · 차단 · 해제 · 수정 · 직접 추가 · 독음 채우기 · 가나→한글),
+  `python -m src.backend.handlers`(`_detect_new_songs` 가짜 gh · 가짜 LLM — 등록 · 판단 기록 · 이벤트 · 멱등 · 반려 재등록 차단 · LLM 재시도 · 시드 전/충돌/예외),
+  `python -m src.backend.admin_api`(로컬 저장소 통합 흐름 — 감지 → 반려 → 재감지 안 됨 → 사용자 판단 재등록 → 삭제 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 실패 재시도 · 재요청).
 
 ---
 
@@ -956,7 +982,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
 
-「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 **data 브랜치 `songs.json`**(`SONGS_URL` — 신곡 자동 감지가 등록, 아래 §8.15)을 먼저 읽고,
+「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 **data 브랜치 `songs.json`**(`SONGS_URL` — 신곡 자동 감지가 등록, 어드민 음반 탭에서 수정 · 삭제 · 직접 추가, 아래 §8.15)을 먼저 읽고,
 없으면(시드 전 · 로컬 개발) 프론트에 같이 배포되는 정적 `assets/songs.json`(`SONGS_FALLBACK_URL`, `scripts/build_songs_json.py` 로 생성)으로 폴백한다.
 곡 레코드: `{id(video_id), title, kind(original|cover), who(멤버 키|group), date, reading(가나 독음, 없으면 ""), added_at?(자동 등록분)}` — YouTube 에서 얻는 값만. **솔로 구분은 없다**(솔로도 cover — 운영자 결정 2026-10-06, 정규 규칙은 제목 끝 「(Cover)」 하나뿐).
 BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필요하고 플레이어가 쓰지 않아 **일부러 제외**. 사용자 별칭만 이 브라우저 `localStorage`(`mew:player:aliases`)에 저장된다.

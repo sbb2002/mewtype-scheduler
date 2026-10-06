@@ -551,8 +551,11 @@ src/
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
                        #        (v3.1.4) parse_live_now — 즉시개시 공지(配信開始+온전한 URL) → video_id
                        #        포함 announced 즉시 반영. 그룹 명의만 있으면 host="group" 5인 팬아웃
-    songs.py           # (v4.2.0) 신곡 자동 감지 — 토픽 채널 RSS → 곡명이 없으면 data 브랜치 songs.json 에 등록((Cover)=cover · feat. 제외). 순수 + RSS 조회.
-                       #        handlers._detect_new_songs 가 tick 마다 호출(예외 격리). config/channels.json `song_feeds`. self-test: python -m src.backend.songs
+    songs.py           # (v4.2.0) 신곡 자동 감지 + 곡 관리 순수 로직 — 토픽 채널 RSS → 곡명이 없으면 data 브랜치 songs.json 에 즉시 등록((Cover)=cover · feat. 제외),
+                       #        songs.json = {songs, rejected(삭제·반려 재등록 차단), seen}. 독음은 외부 LLM(llm.song_reading), 실패하면 needs_reading → 다음 tick 재시도.
+                       #        handlers._detect_new_songs 가 tick 마다 호출(예외 격리 · 판단 기록 song_register/song_skip · 이벤트 flow="song").
+                       #        어드민 API(list_songs · songs_status · edit_song · delete_song · add_song · unblock_song · regenerate_song_reading) = admin_api,
+                       #        쓰기 = writers kind song_edit → telegram_app._song_edit_commit. config/channels.json `song_feeds`. self-test: python -m src.backend.songs
     xtweet.py          # (v2.8) android.title 라우팅(route_by_title) + tweets.json/tweet_archive.json
                        #        계약(parse·merge_tweet·sweep_expired) — 순수. 개인 5인 트윗 전용 파이프라인
                        #        (v2.8.1) parse_schedule(예고 게이트) · merge_personal_schedule(같은 방송 upsert)
