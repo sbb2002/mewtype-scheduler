@@ -3819,6 +3819,14 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
                         detail=f"url-schedule skip: 이미 끝난 방송 {video_id}")
         return True
 
+    if info.live_state == "none":
+        # (v4.0.10) 평범한 업로드 영상(라이브·예정이 아님)은 예고에 올리지 않는다 — 방송이 아니라 라이브 추적도 못 하고
+        # 예정 시각도 없어 팬 화면에 「시간 미정」 카드로 남았다(2026-10-07 유노 「TearJerkerを弾いてみたよ」 연주 영상).
+        log.info("URL 확정 예고: %s 는 일반 업로드 영상(live_state=none) — 예고에 안 올림", video_id)
+        _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via,
+                        detail=f"url-schedule skip: 일반 업로드 영상 {video_id}")
+        return True
+
     if preview_build.is_group_release(info, channels_cfg):
         # (v4a) 그룹 채널 프리미어(녹화 영상 공개 — 노래 · 뮤비 · 커버 등)는 방송 예고로 올리지 않는다. 歌枠 같은 노래 생방송은 해당 없음.
         # 멤버 개인 채널 프리미어는 방송 카드로 올린다(2026-10-01 운영자 결정)
@@ -7321,6 +7329,16 @@ if __name__ == "__main__":
         ) is True
         assert not ((g11e.store.get(_PREVIEW_PATH) or {}).get("items") or []), g11e.store.get(_PREVIEW_PATH)
         print("[OK] _maybe_url_confirmed_schedule (이미 끝난 방송 URL → 예고에 안 올림 — 10-03 인용 휴방 글 재현)")
+
+        # (v4.0.10) 평범한 업로드 영상(live_state=none, 예정 시각·종료 기록 없음) URL — 예고에 안 올림. 10-07 유노 연주 영상 재현.
+        g11u = _FakeGH()
+        _FakeYouTubeClient._RESP = {"4uLjfoE58mU": _FakeVideoInfo("4uLjfoE58mU", "UC_yuno", "TearJerkerを弾いてみたよ", "none")}
+        assert _maybe_url_confirmed_schedule(
+            g11u, "TearJerkerを弾いてみたよ🎸\nhttps://www.youtube.com/watch?v=4uLjfoE58mU", "yuno",
+            "2026-10-07T11:06:36Z", _CFG6,
+        ) is True
+        assert not ((g11u.store.get(_PREVIEW_PATH) or {}).get("items") or []), g11u.store.get(_PREVIEW_PATH)
+        print("[OK] _maybe_url_confirmed_schedule (일반 업로드 영상 URL → 예고에 안 올림 — 10-07 유노 연주 영상 재현)")
 
         # (v3.8.6) _confirm_relay_rows_collab — 공식 계정 일일 스케줄(× 콜라보)도
         # 이름 매치만으론 확정 안 하고 무조건 LLM 재확인
