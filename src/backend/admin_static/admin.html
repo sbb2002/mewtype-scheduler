@@ -2640,7 +2640,7 @@
             previewUrlTakesDetect() {
                 const url = (document.getElementById("a-turl").value || "").trim();
                 if (/youtu\.be\/|youtube\.com\/(watch|live|shorts)/i.test(url)) return false;
-                const m = url.match(/^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([^/?#\s]+)\/status/i);
+                const m = url.match(/^(?:https?:\/\/)?(?:www\.|mobile\.)?(?:x|twitter)\.com\/([^/?#\s]+)\/status/i);
                 if (!m) return true;
                 const author = m[1].toLowerCase();
                 return !Object.values(this.channels || {}).some((c) => c.is_group && (c.handle || "").toLowerCase() === author);

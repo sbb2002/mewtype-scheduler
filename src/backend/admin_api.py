@@ -720,7 +720,7 @@ def ingest_tweet_raw(raw: str, *, unit: str, confirm: bool) -> dict:
     return _record("ingest_tweet", unit, raw[:60], res)
 
 
-_TWEET_URL_RE = re.compile(r"^https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/([^/?#\s]+)/status(?:es)?/(\d{6,25})")
+_TWEET_URL_RE = re.compile(r"^(?:https?://)?(?:www\.|mobile\.)?(?:x|twitter)\.com/([^/?#\s]+)/status(?:es)?/(\d{6,25})")
 TWEET_TOO_OLD_MSG = "게시된지 48시간이 지난 트윗입니다."
 
 
