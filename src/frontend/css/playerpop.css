@@ -120,6 +120,7 @@ html.mp-lock { overflow: hidden; }
 .mp-tog[aria-pressed="true"] { border-color: var(--mp-accent); color: var(--mp-accent); }
 .mp-ico { width: 18px; height: 18px; display: block; }
 .mp-ico--s { width: 16px; height: 16px; flex: none; }
+.mp-ico--rpt { width: 26px; height: 26px; }   /* 반복 버튼 — 안의 「1」·「A」 글자가 잘 읽히도록 다른 아이콘(18px)보다 크게 */
 .mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.76rem; color: var(--color-late); }
 .mp-err[hidden] { display: none; }
 .mp-err a { text-decoration: underline; }

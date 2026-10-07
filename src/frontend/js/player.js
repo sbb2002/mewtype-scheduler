@@ -317,7 +317,7 @@ function build() {
   el.track = h("div", { class: "mp-track", role: "slider", "aria-label": "재생 위치", tabindex: "0", on: { click: onTrackClick, keydown: onTrackKey } }, el.fill);
   el.bPlay = h("button", { type: "button", class: "mp-main", on: { click: togglePlay } });
   el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => { st.shuffle = !st.shuffle; paintControls(); } } }, icon("shuffle"));
-  el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => { st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls(); } } }, icon("repeat"));
+  el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => { st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls(); } } }, icon("repeat", "mp-ico mp-ico--rpt"));
   el.err = h("div", { class: "mp-err", role: "status", hidden: true });
   el.qCount = h("span", { class: "mp-q__count" });
   el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
