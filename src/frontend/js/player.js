@@ -6,14 +6,15 @@
 //  - 프레임은 숨기지 않는다(백그라운드 재생 금지). 팝업을 내리면 같은 프레임이 플로팅으로 남는다. 크기는 항상 200×200 이상.
 //  - 프레임 위에는 아무것도 덮지 않는다. 끌기 · 더블클릭용 손잡이 줄은 프레임 바깥(위)에 따로 붙는다.
 //  - 프레임 요소는 한 번 만들면 옮기지 않는다(옮기면 iframe 이 다시 로드돼 재생이 끊긴다). 팝업 ↔ 플로팅은 CSS 위치만 바꾼다.
-// 곡이 끝나면 다음 곡으로 넘어가지 않고 멈춘다. 반복이 켜져 있으면 같은 곡을 처음부터 다시 재생한다.
+// 재생목록: 목록의 곡을 누르면 재생목록에 순서대로 쌓이고(같은 곡도 여러 번 쌓인다), 재생은 1번부터 순서대로 이어진다.
+// 곡이 끝나면 재생목록의 다음 곡으로 넘어가고, 마지막이면 멈춘다. 재생목록 밖의 곡은 끝나면 멈춘다(추천 영상으로 넘어가지 않게 처음 화면으로 되돌림).
+// 반복(BPM 과 같은 3단계): 꺼짐 → 한 곡(같은 곡 처음부터) → 전체(마지막 곡 뒤에 1번으로).
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
 
 import { fetchPreview } from "./api.js";
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
-import { KIND_LABEL, prepareSong, viewSongs, matchRange } from "./songs.js";
+import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange } from "./songs.js";
 
-const ALIAS_KEY = "mew:player:aliases";   // localStorage — 사용자 별칭 { video_id: [별칭...] }. 이 브라우저에만 저장된다.
 const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에서 높이 200 이 되는 값)
 const FLOAT_H = 200;                      // 플로팅 프레임 높이 — YouTube 임베드 최소 200×200 을 채운다
 const MIN_SLOT_H = 200;                   // 팝업 안 프레임 최소 높이 (좁은 화면에서도 200 이상)
@@ -22,19 +23,19 @@ const NS = "http://www.w3.org/2000/svg";
 const st = {
   raw: [],
   songs: [],          // prepareSong 결과
-  aliases: {},
   loadError: false,
   query: "",
   kind: "all",
   sortBy: "date",
   dir: "desc",
-  editing: null,      // 별칭 편집 중인 곡 id
   curId: null,
   playing: false,
   started: false,     // 한 번이라도 재생을 시작했는가 — 팝업을 내린 뒤 플로팅 프레임을 남길지 결정
   popOpen: false,
   shuffle: false,
-  repeat: false,
+  repeat: "off",      // "off" | "one" | "all" — 버튼을 누를 때마다 순환 (BPM 과 같다)
+  queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
+  qi: -1,             // 지금 곡의 재생목록 위치(0부터). -1 = 지금 곡이 재생목록에서 고른 것이 아님 — 같은 곡이 여럿일 수 있어 id 가 아니라 위치로 센다
   fpos: null,         // 플로팅 프레임을 끌어 옮긴 위치 {x,y}. null 이면 CSS 기본(오른쪽 아래)
   pos: 0,
   dur: 0,
@@ -96,10 +97,11 @@ function icon(name, cls = "mp-ico") {
     p.setAttribute("fill", "currentColor");
     svg.append(p);
   }
-  if (name === "repeat") {   // 반복 화살표 안의 "1" — 한 곡 반복
+  if (name === "repeat") {   // 반복 화살표 안의 글자 — 한 곡 "1" · 전체 "A" (paintControls 가 채운다)
     const t = document.createElementNS(NS, "text");
+    t.setAttribute("class", "mp-rpt");
     t.setAttribute("x", "12"); t.setAttribute("y", "15"); t.setAttribute("font-size", "7"); t.setAttribute("font-weight", "700");
-    t.setAttribute("text-anchor", "middle"); t.setAttribute("fill", "currentColor"); t.textContent = "1";
+    t.setAttribute("text-anchor", "middle"); t.setAttribute("fill", "currentColor"); t.textContent = "";
     svg.append(t);
   }
   return svg;
@@ -115,18 +117,6 @@ const fmt = (t) => {
 };
 
 // ── 데이터 ───────────────────────────────────────────────────────────
-function readAliases() {
-  try {
-    const v = JSON.parse(localStorage.getItem(ALIAS_KEY) || "{}");
-    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
-  } catch (e) {
-    return {};
-  }
-}
-function writeAliases() {
-  try { localStorage.setItem(ALIAS_KEY, JSON.stringify(st.aliases)); } catch (e) { /* 저장 불가(사생활 보호 모드 등)면 이번 방문에만 유효 */ }
-}
-
 function loadSongs() {
   if (loadPromise) return loadPromise;
   const valid = (r) => r.ok && r.data && Array.isArray(r.data.songs);
@@ -134,9 +124,8 @@ function loadSongs() {
   loadPromise = fetchPreview(SONGS_URL).then((r) => (valid(r) ? r : fetchPreview(SONGS_FALLBACK_URL))).then((r) => {
     if (!valid(r)) { st.loadError = true; loadPromise = null; return; }
     st.loadError = false;
-    st.aliases = readAliases();
     st.raw = r.data.songs;
-    st.songs = st.raw.map((s) => prepareSong(s, st.aliases[s.id] || []));
+    st.songs = st.raw.map((s) => prepareSong(s));
   });
   return loadPromise;
 }
@@ -210,7 +199,9 @@ function onYtState(e) {
   if (e.data === S.PLAYING || e.data === S.BUFFERING) { st.playing = true; st.started = true; st.error = null; }
   else if (e.data === S.PAUSED || e.data === S.CUED) st.playing = false;
   else if (e.data === S.ENDED) {
-    if (st.repeat) { yt.seekTo(0, true); yt.playVideo(); return; }
+    if (st.repeat === "one") { yt.seekTo(0, true); yt.playVideo(); return; }
+    if (st.qi >= 0 && st.qi + 1 < st.queue.length) { playQueueAt(st.qi + 1); return; }   // 재생목록의 다음 곡
+    if (st.qi >= 0 && st.repeat === "all") { playQueueAt(0); return; }                    // 마지막 뒤에 1번으로
     st.playing = false;
     st.pos = 0;
     yt.cueVideoById(st.curId);   // 처음 화면으로 되돌려 멈춘다 — 끝 화면의 추천 영상으로 넘어가지 않게
@@ -229,8 +220,10 @@ function startTick() {
 }
 
 /** 곡 선택. autoplay=true 면 바로 재생(사용자 조작 직후에만), false 면 첫 화면만 불러 둔다. */
-function selectSong(id, autoplay) {
+/** qi = 이 곡의 재생목록 위치(재생목록에서 고른 경우). 아니면 -1. */
+function selectSong(id, autoplay, qi = -1) {
   st.curId = id;
+  st.qi = qi;
   st.pos = 0;
   st.dur = 0;
   st.error = null;
@@ -242,7 +235,9 @@ function selectSong(id, autoplay) {
 }
 
 function togglePlay() {
-  if (!st.curId) return;
+  if (!st.curId && !st.queue.length) return;
+  // 재생목록이 있는데 지금 곡이 그 안에 없으면 1번부터 시작한다(멈춰 있을 때만 — 재생 중 일시정지는 그대로)
+  if (st.queue.length && !st.playing && st.qi < 0) { playQueueAt(0); return; }
   st.started = true;
   if (yt && ytReady) {
     if (st.playing) yt.pauseVideo();
@@ -254,6 +249,17 @@ function togglePlay() {
 }
 
 function go(dir) {
+  if (st.queue.length) {   // 재생목록이 있으면 그 안에서 이동 (셔플이면 무작위)
+    const q = st.queue;
+    let next;
+    if (st.shuffle && q.length > 1) {
+      do { next = Math.floor(Math.random() * q.length); } while (next === st.qi);
+    } else {
+      next = st.qi < 0 ? 0 : (st.qi + dir + q.length) % q.length;
+    }
+    playQueueAt(next);
+    return;
+  }
   const list = view();
   if (!list.length) return;
   let next;
@@ -264,6 +270,32 @@ function go(dir) {
     next = i < 0 ? list[0] : list[(i + dir + list.length) % list.length];
   }
   selectSong(next.id, true);
+}
+
+// ── 재생목록 ─────────────────────────────────────────────────────────
+/** 곡 누름 — 재생목록 맨 뒤에 쌓는다(같은 곡을 또 눌러도 또 쌓인다 — 빠지지 않음). **재생목록이 비어 있다가 처음 들어가는 곡은 쌓이면서 바로 재생한다**(누른 직후라 자동 재생이 막히지 않는다). 이후 곡은 쌓기만 한다. */
+function addToQueue(id) {
+  st.queue.push(id);
+  if (st.queue.length === 1) { selectSong(id, true, 0); return; }
+  paint();
+}
+/** 재생목록의 i 번째 곡으로 이동 · 재생. */
+function playQueueAt(i) {
+  if (i < 0 || i >= st.queue.length) return;
+  selectSong(st.queue[i], true, i);
+}
+/** i 번째 항목을 뺀다. 지금 곡이 빠지면 그 곡은 끝까지 재생되고 거기서 멈춘다(재생목록에서 고른 곡이 아니게 됨). */
+function removeFromQueue(i) {
+  if (i < 0 || i >= st.queue.length) return;
+  st.queue.splice(i, 1);
+  if (i < st.qi) st.qi -= 1;
+  else if (i === st.qi) st.qi = -1;
+  paint();
+}
+function clearQueue() {
+  st.queue = [];
+  st.qi = -1;
+  paint();
 }
 
 // ── 화면 구성 ────────────────────────────────────────────────────────
@@ -278,25 +310,33 @@ function build() {
   el.slot = h("div", { class: "mp-slot" });   // 프레임이 이 자리 위에 겹쳐 놓인다
   el.sTitle = h("div", { class: "mp-song__title" });
   el.sMeta = h("div", { class: "mp-song__meta" });
+  el.sKo = h("div", { class: "mp-song__ko" });
   el.cur = h("span", { class: "mp-mono", text: "0:00" });
   el.dur = h("span", { class: "mp-mono", text: "0:00" });
   el.fill = h("i");
   el.track = h("div", { class: "mp-track", role: "slider", "aria-label": "재생 위치", tabindex: "0", on: { click: onTrackClick, keydown: onTrackKey } }, el.fill);
   el.bPlay = h("button", { type: "button", class: "mp-main", on: { click: togglePlay } });
   el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => { st.shuffle = !st.shuffle; paintControls(); } } }, icon("shuffle"));
-  el.bRepeat = h("button", { type: "button", class: "mp-tog", "aria-label": "현재 곡 반복", title: "현재 곡 반복", on: { click: () => { st.repeat = !st.repeat; paintControls(); } } }, icon("repeat"));
+  el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => { st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls(); } } }, icon("repeat"));
   el.err = h("div", { class: "mp-err", role: "status", hidden: true });
+  el.qCount = h("span", { class: "mp-q__count" });
+  el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
+  el.qList = h("ol", { class: "mp-q__list" });
+  el.qBox = h("section", { class: "mp-q", "aria-label": "재생목록" },
+    h("div", { class: "mp-q__head" }, h("strong", { text: "재생목록" }), el.qCount, el.qClear),
+    el.qList,
+  );
   const stage = h("section", { class: "mp-stage" },
     el.slot,
-    h("div", { class: "mp-song" }, el.sTitle, el.sMeta),
+    h("div", { class: "mp-song" }, el.sTitle, el.sMeta, el.sKo),
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
     h("div", { class: "mp-ctl" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat),
     el.err,
-    h("p", { class: "mp-note", text: "선택한 곡만 재생하고 끝나면 멈춥니다. 반복을 켜면 처음부터 다시 재생합니다. 광고는 YouTube 가 프레임 안에서 직접 보여줍니다." }),
+    el.qBox,
   );
 
   // 목록부
-  el.q = h("input", { id: "mp-q", type: "search", placeholder: "곡명 · 독음(가나·한글) · 별칭 검색", autocomplete: "off", "aria-label": "곡 검색", on: { input: (e) => { st.query = e.target.value; paintList(); } } });
+  el.q = h("input", { id: "mp-q", type: "search", placeholder: "곡명 · 독음(가나·한글) 검색", autocomplete: "off", "aria-label": "곡 검색", on: { input: (e) => { st.query = e.target.value; paintList(); } } });
   el.kinds = h("div", { class: "mp-chips", role: "group", "aria-label": "종류" });
   el.sort = h("div", { class: "mp-sort", role: "group", "aria-label": "정렬" });
   el.list = h("ul", { class: "mp-list" });
@@ -318,7 +358,9 @@ function build() {
 
   // 플로팅 프레임 — 한 번 만들고 옮기지 않는다
   el.ytTarget = h("div");
-  el.gTitle = h("span", { class: "mp-grip__title" });
+  el.gName = h("span", { class: "mp-grip__name" });
+  el.gPos = h("span", { class: "mp-grip__pos" });   // 재생목록에서 고른 곡이면 「(n/m)」
+  el.gTitle = h("span", { class: "mp-grip__title" }, el.gName, el.gPos);
   el.grip = h("div", { class: "mp-grip", title: "끌어서 이동 · 더블클릭하면 팝업으로" },
     h("span", { class: "mp-grip__dots", "aria-hidden": "true", text: "⠿" }),
     el.gTitle,
@@ -345,6 +387,7 @@ function build() {
 function paint() {
   paintStage();
   paintControls();
+  paintQueue();
   paintList();
   paintGrip();
   layoutFrame();
@@ -352,13 +395,13 @@ function paint() {
 
 function paintStage() {
   const s = curSong();
-  el.sTitle.textContent = s ? s.title : "곡을 고르세요";
+  el.sTitle.replaceChildren(s ? s.title : "곡을 고르세요", ...(s && isNewSong(s) ? [" ", newPill()] : []));
   el.sMeta.replaceChildren();
+  el.sKo.textContent = s ? displayKo(s) : "";
   if (s) {
     const m = memberOf(s.who);
     if (m) el.sMeta.append(h("span", { class: "mp-dot", style: `--mc:${m.color}` }), `${m.name} · `);
     el.sMeta.append(`${KIND_LABEL[s.kind] || s.kind} · ${s.date}`);
-    if (s.reading) el.sMeta.append(` · ${s.reading} · ${s.readingKo}`);
   }
   el.err.hidden = !st.error;
   el.err.replaceChildren();
@@ -385,16 +428,43 @@ function paintControls() {
   el.bPlay.replaceChildren(icon(st.playing ? "pause" : "play"));
   el.bPlay.setAttribute("aria-label", st.playing ? "일시정지" : "재생");
   el.bShuffle.setAttribute("aria-pressed", String(st.shuffle));
-  el.bRepeat.setAttribute("aria-pressed", String(st.repeat));
+  const rp = st.repeat;
+  el.bRepeat.setAttribute("aria-pressed", String(rp !== "off"));
+  const lab = rp === "off" ? "반복 (꺼짐) — 누르면 한 곡 반복" : rp === "one" ? "한 곡 반복 (켜짐) — 누르면 전체 반복" : "전체 반복 (켜짐) — 누르면 끄기";
+  el.bRepeat.setAttribute("aria-label", lab);
+  el.bRepeat.title = lab;
+  const t = el.bRepeat.querySelector(".mp-rpt");
+  if (t) t.textContent = rp === "one" ? "1" : rp === "all" ? "A" : "";
+}
+
+function paintQueue() {
+  if (!built) return;
+  el.qCount.textContent = st.queue.length ? `${st.queue.length}곡` : "";
+  el.qClear.hidden = !st.queue.length;
+  if (!st.queue.length) {
+    el.qList.replaceChildren(h("li", { class: "mp-q__empty", text: "오른쪽 목록에서 곡을 누르면 여기에 쌓입니다. 재생은 1번부터 순서대로 이어집니다." }));
+    return;
+  }
+  el.qList.replaceChildren(...st.queue.map((id, i) => {
+    const s = st.songs.find((x) => x.id === id);
+    if (!s) return null;
+    const cur = i === st.qi;   // 같은 곡이 여러 번 있어도 위치로 구분
+    return h("li", { class: "mp-q__item" + (cur ? " is-cur" : "") },
+      h("button", { type: "button", class: "mp-q__main", "aria-current": cur ? "true" : null, on: { click: () => playQueueAt(i) } },
+        h("span", { class: "mp-mono mp-q__n", text: cur && st.playing ? "▶" : String(i + 1) }),
+        h("span", { class: "mp-q__title", text: s.title })),
+      h("button", { type: "button", class: "mp-q__x", "aria-label": `${s.title} 재생목록에서 빼기`, title: "빼기", text: "✕", on: { click: () => removeFromQueue(i) } }));
+  }));
 }
 
 function paintGrip() {
   const s = curSong();
-  el.gTitle.textContent = s ? s.title : "";
+  el.gName.textContent = s ? s.title : "";
+  el.gPos.textContent = s && st.qi >= 0 ? ` (${st.qi + 1}/${st.queue.length})` : "";
 }
 
 function paintTools() {
-  el.kinds.replaceChildren(...[["all", "전체"], ["original", "오리지널"], ["cover", "커버"]].map(([k, l]) =>
+  el.kinds.replaceChildren(...[["all", "전체"], ["original", "오리지널"], ["cover", "커버"], ["new", "신곡"]].map(([k, l]) =>
     h("button", { type: "button", "aria-pressed": String(st.kind === k), text: l, on: { click: () => { st.kind = k; paintTools(); paintList(); } } })));
   const arrow = st.dir === "asc" ? " ↑" : " ↓";
   el.sort.replaceChildren(h("span", { text: "정렬" }), ...[["name", "이름순"], ["date", "날짜순"]].map(([k, l]) =>
@@ -432,6 +502,11 @@ function paintList() {
   el.count.textContent = st.songs.length ? `${list.length} / ${st.songs.length}곡 · 독음 ${st.songs.filter((s) => s.reading).length}곡 입력됨` : "";
 }
 
+/** 최근 7일 안에 등록된 곡 표시 — 곡 줄 · 재생 중 곡 제목 옆. */
+function newPill() {
+  return h("span", { class: "mp-new", text: "NEW" });
+}
+
 function songRow(s, i, q) {
   const cur = s.id === st.curId;
   const m = memberOf(s.who);
@@ -440,37 +515,15 @@ function songRow(s, i, q) {
     m ? h("span", { text: m.name }) : null,
     h("span", { text: KIND_LABEL[s.kind] || s.kind }),
     h("span", { class: "mp-mono", text: s.date }),
-    s.reading ? h("em", {}, ...highlight(s.reading, q)) : null,
-    s.readingKo ? h("em", {}, ...highlight(s.readingKo, q)) : null,
-    ...s.aliases.map((a) => h("span", { class: "mp-alias" }, "#", ...highlight(a, q))),
   );
-  const main = h("button", { type: "button", class: "mp-item__main", "aria-current": cur ? "true" : null, on: { click: () => selectSong(s.id, true) } },
+  const qns = st.queue.flatMap((x, k) => (x === s.id ? [k + 1] : []));   // 재생목록에서의 번호들(같은 곡이 여러 번일 수 있다)
+  if (qns.length) sub.append(h("span", { class: "mp-q-badge", text: `재생목록 ${qns.join("·")}번` }));
+  const main = h("button", { type: "button", class: "mp-item__main", "aria-current": cur ? "true" : null, title: "재생목록에 추가", on: { click: () => addToQueue(s.id) } },
     h("span", { class: "mp-item__n mp-mono", text: cur && st.playing ? "▶" : String(i + 1) }),
-    h("span", { class: "mp-item__body" }, h("span", { class: "mp-item__title" }, ...highlight(s.title, q)), sub),
+    h("span", { class: "mp-item__body" }, h("span", { class: "mp-item__title" }, ...highlight(s.title, q), ...(isNewSong(s) ? [" ", newPill()] : [])), sub,
+      displayKo(s) ? h("span", { class: "mp-item__ko" }, ...highlight(displayKo(s), q)) : null),
   );
-  const li = h("li", { class: "mp-item" + (cur ? " is-cur" : "") }, main,
-    h("button", { type: "button", class: "mp-edit", "aria-label": `${s.title} 별칭 편집`, text: "✎ 별칭", on: { click: () => { st.editing = st.editing === s.id ? null : s.id; paintList(); } } }));
-  if (st.editing === s.id) li.append(aliasEditor(s));
-  return li;
-}
-
-function aliasEditor(s) {
-  const input = h("input", { class: "mp-alias-in", type: "text", value: s.aliases.join(", "), placeholder: "별칭 (쉼표로 구분)", "aria-label": `${s.title} 별칭` });
-  const save = () => {
-    const arr = input.value.split(",").map((x) => x.trim()).filter(Boolean);
-    if (arr.length) st.aliases[s.id] = arr; else delete st.aliases[s.id];
-    writeAliases();
-    const idx = st.songs.findIndex((x) => x.id === s.id);
-    st.songs[idx] = prepareSong(st.raw.find((r) => r.id === s.id), arr);
-    st.editing = null;
-    paintList();
-  };
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); save(); }
-    else if (e.key === "Escape") { e.stopPropagation(); st.editing = null; paintList(); }
-  });
-  setTimeout(() => input.focus(), 0);
-  return h("div", { class: "mp-alias-edit" }, input, h("button", { type: "button", class: "mp-edit", text: "저장", on: { click: save } }));
+  return h("li", { class: "mp-item" + (cur ? " is-cur" : "") }, main);
 }
 
 // ── 프레임 배치 ──────────────────────────────────────────────────────
@@ -576,7 +629,6 @@ export async function openPlayer() {
 export function closePlayer() {
   if (!built || !st.popOpen) return;
   st.popOpen = false;
-  st.editing = null;
   el.scrim.hidden = true;
   document.documentElement.classList.remove("mp-lock");
   layoutFrame();

@@ -2,6 +2,7 @@
    PC = 소식 막대 바로 위 줄(#player-bar > .player-btn--top, 소식 막대와 왼쪽 선 일치). 아이콘은 js/playerbtn.js (currentColor). 다크 단일 테마 — 색은 명시적으로. */
 
 .player-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -14,6 +15,28 @@
   color: var(--color-text-muted);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+/* 신곡 NEW 배지 — 최근 7일 안에 등록된 곡이 있으면 <html data-new-song>(playerbtn.js)이 켠다. 버튼이 다시 그려져도 속성만 보고 그려진다 */
+html[data-new-song] .player-btn::after {
+  content: "NEW";
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: linear-gradient(110deg, #e5384a 38%, #ff9aa5 50%, #e5384a 62%) 0 0 / 260% 100%;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+  animation: player-new-shine 2.6s linear infinite, player-new-pulse 1.8s ease-in-out infinite;
+}
+@keyframes player-new-shine { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+@keyframes player-new-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 56, 74, 0.55); } 50% { box-shadow: 0 0 0 4px rgba(229, 56, 74, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-new-song] .player-btn::after { animation: none; background: #e5384a; }
 }
 .player-btn svg {
   display: block;

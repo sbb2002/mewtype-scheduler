@@ -2,7 +2,7 @@ import { fetchPreview } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
 import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
-import { createPlayerButton, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
+import { createPlayerButton, initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
@@ -213,6 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
   playerBar.id = "player-bar";
   playerBar.appendChild(createPlayerButton("player-btn--top"));
   document.body.prepend(playerBar);
+  initNewSongBadge();   // 최근 7일 안에 등록된 신곡이 있으면 CD 버튼에 NEW
   // (v4.2.0) 「CD + 음표 >」 버튼 → 플레이어 팝업. 처음 눌렀을 때만 모듈을 불러온다(YouTube API 도 그때 로드).
   document.addEventListener(PLAYER_BUTTON_EVENT, () => {
     import("./player.js").then((m) => m.openPlayer()).catch((e) => console.error("[player]", e));

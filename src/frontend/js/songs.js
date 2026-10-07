@@ -37,6 +37,7 @@ export function kanaToHangul(src) {
     const c = t[i];
     const n = t[i + 1];
     if (H_COMBO[c] && n && "ゃゅょ".includes(n)) { out += H_COMBO[c]["ゃゅょ".indexOf(n)]; i += 2; atStart = false; continue; }
+    if ("ぁぃぅぇぉ".includes(c)) { i++; continue; }   // 작은 모음(トゥ · フェ …) — 앞 글자 모음을 바꾸는 글자라 한글에선 지운다(ト+ゥ → 토)
     if (c === "ん") { if (hasNoBatchim(last())) out = out.slice(0, -1) + String.fromCharCode(last() + 4); i++; continue; }
     if (c === "っ") { if (hasNoBatchim(last())) out = out.slice(0, -1) + String.fromCharCode(last() + 19); i++; continue; }
     if (c === "ー") { i++; continue; }
@@ -82,6 +83,21 @@ export function prepareSong(raw, aliases = []) {
   };
 }
 
+/** 화면에 보여 줄 한글 음차 — 곡명에 일본어(가나·한자)가 있고 독음이 있는 곡만. 영문 곡명 · 독음 없는 곡은 빈 문자열. */
+export function displayKo(song) {
+  return /[぀-ヿ㐀-鿿]/.test(song.title || "") ? song.readingKo || "" : "";
+}
+
+/** 새로 등록된 곡인가(곡 하나) / 있는가(목록). — 곡의 `added_at`(신곡 자동 등록 시각)이 지금부터 `days`일(기본 7일) 안이면 true.
+ *  발매일(`date`)이 아니라 **목록에 올라온 시각** 기준이다(운영자 결정 2026-10-07). 시드 곡은 `added_at` 이 없어 해당 없음. */
+export function isNewSong(song, nowMs = Date.now(), days = 7) {
+  const t = Date.parse(song && song.added_at);
+  return Number.isFinite(t) && nowMs - t < days * 86400000 && nowMs - t > -300000;   // 시계 오차 5분까지 허용
+}
+export function hasNewSong(songs, nowMs = Date.now(), days = 7) {
+  return (songs || []).some((s) => isNewSong(s, nowMs, days));
+}
+
 /** 검색어가 곡명 · 독음(가나/한글) · 별칭 중 하나라도 부분 일치하는가. 빈 검색어는 전부 통과. */
 export function matches(song, query) {
   const q = normalize(String(query || "").trim());
@@ -90,17 +106,24 @@ export function matches(song, query) {
   return n.title.includes(q) || n.reading.includes(q) || n.readingKo.includes(q) || n.aliases.some((a) => a.includes(q));
 }
 
-/** 종류 필터 + 검색 + 정렬. sortBy: "date" | "name", dir: "asc" | "desc". 원본 배열은 건드리지 않는다. */
+/** 종류 필터 + 검색 + 정렬. sortBy: "date" | "name", dir: "asc" | "desc". 원본 배열은 건드리지 않는다.
+ *  **신곡(최근 7일 안에 등록된 곡)은 어떤 정렬이든 항상 맨 위에, 최신 순**(발매일 내림차순 → 등록 시각 → 곡명)으로 나온다. 나머지는 고른 정렬대로. */
 export function viewSongs(songs, { query = "", kind = "all", sortBy = "date", dir = "desc" } = {}) {
   const sign = dir === "asc" ? 1 : -1;
-  const list = songs.filter((s) => (kind === "all" || s.kind === kind) && matches(s, query));
-  list.sort((a, b) => {
+  const now = Date.now();
+  const byKind = (s) => kind === "all" || (kind === "new" ? isNewSong(s, now) : s.kind === kind);   // "new" = 최근 7일 안에 등록된 신곡
+  const list = songs.filter((s) => byKind(s) && matches(s, query));
+  const newest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
+    || String(b.added_at || "").localeCompare(String(a.added_at || ""))
+    || a.title.localeCompare(b.title, "ja");
+  const fresh = list.filter((s) => isNewSong(s, now)).sort(newest);
+  const rest = list.filter((s) => !isNewSong(s, now)).sort((a, b) => {
     const byName = (a.reading || a.title).localeCompare(b.reading || b.title, "ja");
     if (sortBy === "name") return sign * byName;
     const byDate = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
     return byDate !== 0 ? sign * byDate : a.title.localeCompare(b.title, "ja");   // 같은 날 공개된 곡은 곡명순으로 고정
   });
-  return list;
+  return [...fresh, ...rest];
 }
 
 /** text 안에서 query 가 일치하는 구간 [start, end) 를 돌려준다. 정규화로 글자 수가 달라지는 텍스트는 null (강조 생략). */

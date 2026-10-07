@@ -3,6 +3,10 @@
 // 눌렀을 때의 동작은 아래 PLAYER_BUTTON_EVENT 를 main.js 가 받아 player.js(openPlayer)를 여는 것.
 // 아이콘은 createElementNS 로만 그린다(innerHTML 금지 규칙).
 
+import { fetchPreview } from "./api.js";
+import { SONGS_URL, SONGS_FALLBACK_URL } from "./config.js";
+import { hasNewSong } from "./songs.js";
+
 const NS = "http://www.w3.org/2000/svg";
 export const PLAYER_BUTTON_LABEL = "음악 · 플레이어";
 export const PLAYER_BUTTON_EVENT = "mew:player-open";   // 클릭 시 document 로 발행 — main.js 가 받아 플레이어 팝업을 연다
@@ -30,12 +34,33 @@ function icon() {
  * @param {string} cls 추가 클래스 (위치/크기는 CSS 가 정한다)
  * @returns {HTMLButtonElement}
  */
+let hasNew = false;   // 최근 7일 안에 등록된 신곡이 있는가 — 켜지면 <html data-new-song> + 버튼 접근성 이름에 반영
+
+function applyNew() {
+  if (hasNew) document.documentElement.setAttribute("data-new-song", "");
+  else document.documentElement.removeAttribute("data-new-song");
+  const label = hasNew ? `${PLAYER_BUTTON_LABEL} (신곡 NEW)` : PLAYER_BUTTON_LABEL;
+  for (const b of document.querySelectorAll(".player-btn")) { b.setAttribute("aria-label", label); b.title = label; }
+}
+
+/** 곡 목록(data 브랜치 songs.json, 없으면 정적 파일)을 한 번 읽어 NEW 배지를 켠다. 실패하면 조용히 배지 없음. 버튼이 다시 그려져도 CSS 가 속성을 보고 배지를 그린다. */
+export async function initNewSongBadge() {
+  try {
+    let r = await fetchPreview(SONGS_URL);
+    if (!(r.ok && r.data && Array.isArray(r.data.songs))) r = await fetchPreview(SONGS_FALLBACK_URL);
+    if (!(r.ok && r.data && Array.isArray(r.data.songs))) return;
+    hasNew = hasNewSong(r.data.songs);
+    applyNew();
+  } catch (e) { /* 배지는 부가 기능 — 실패해도 버튼은 그대로 */ }
+}
+
 export function createPlayerButton(cls = "") {
   const b = document.createElement("button");
   b.type = "button";
   b.className = ("player-btn " + cls).trim();
-  b.setAttribute("aria-label", PLAYER_BUTTON_LABEL);
-  b.title = PLAYER_BUTTON_LABEL;
+  const label = hasNew ? `${PLAYER_BUTTON_LABEL} (신곡 NEW)` : PLAYER_BUTTON_LABEL;
+  b.setAttribute("aria-label", label);
+  b.title = label;
   b.appendChild(icon());
   b.addEventListener("click", () => document.dispatchEvent(new CustomEvent(PLAYER_BUTTON_EVENT)));
   return b;
