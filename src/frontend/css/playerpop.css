@@ -169,7 +169,6 @@ html.mp-lock { overflow: hidden; }
 
 /* ── 모바일 탭 (곡 목록 | 재생목록) — PC 에서는 탭 바 숨김, 패널은 2열 그리드에 그대로 놓인다 ── */
 .mp-tabs { display: flex; flex: none; border-bottom: 1px solid var(--color-border); background: var(--color-bg-secondary); }
-.mp-tabs[hidden] { display: none; }
 .mp-pop .mp-tab {
   flex: 1; min-width: 0; padding: 11px 8px;
   border: 0; border-bottom: 2px solid transparent; border-radius: 0;
@@ -185,12 +184,16 @@ html.mp-lock { overflow: hidden; }
 }
 .mp-badge.pulse { animation: mp-badge-pulse 0.5s ease-out; }
 @keyframes mp-badge-pulse { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
-.mp-panels { display: contents; }   /* PC: 목록부 · 재생목록 패널이 .mp-pop__body 의 열에 그대로 놓인다 */
-.mp-qpanel { display: flex; flex-direction: column; min-height: 0; }
+/* 오른쪽(PC) / 아래(모바일) 한 칸 = 탭 바 + 패널(곡 목록 | 재생목록). 한쪽만 보여 서로 밀지 않는다. */
+.mp-side { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mp-panels { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.mp-qpanel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.mp-qpanel .mp-q { flex: 1; border-radius: 0; margin: 0; }
+.mp-q__list { flex: 1; max-height: none; }   /* 재생목록 탭: 칸을 채우고 그 안에서 스크롤 */
 .mp-qpanel[hidden], .mp-lib[hidden] { display: none; }
 
 /* ── 목록부 ───────────────────────────────────────────────────────── */
-.mp-lib { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mp-lib { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .mp-tools { display: grid; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--color-border); }
 .mp-search {
   display: flex;
@@ -261,16 +264,14 @@ html.mp-lock { overflow: hidden; }
 /* ── PC 하단 도크 (≥768px) — 팝업 본체를 모달 대신 메인 화면 맨 아래에 상시 표시 ── */
 #player-dock {
   max-width: var(--content-max);
-  min-height: 640px;                              /* 모듈을 불러오기 전에도 자리를 잡아 스크롤 위치가 튀지 않게 */
+  min-height: 700px;                              /* 모듈을 불러오기 전에도 자리를 잡아 스크롤 위치가 튀지 않게 */
   margin-inline: auto;
   padding: 0 var(--page-pad) calc(var(--mp-foot) + 24px);   /* 아래는 고정 푸터 높이만큼 비운다 */
 }
 #player-dock[hidden] { display: none; }
-.mp-pop--dock { width: 100%; height: 640px; box-shadow: none; }
-/* 도크는 모달(920px)보다 훨씬 넓어 재생부가 16:9 로 커지면(폭 709 → 높이 399) 곡 정보 · 컨트롤에 밀려 재생목록 칸이 14px 로 찌그러졌다.
-   재생부 폭을 제한해(16:9 → 높이 ≤ 236) 재생목록이 쓸 높이를 남긴다. 재생목록은 최소 높이도 보장. 프레임은 slot 크기를 그대로 따라간다. */
-.mp-pop--dock .mp-slot { width: min(100%, 420px); margin-inline: auto; }
-.mp-pop--dock .mp-q { min-height: 150px; }
+.mp-pop--dock { width: 100%; height: 700px; box-shadow: none; }
+/* v4.2.2: 재생목록이 오른쪽 탭으로 빠져 왼쪽 칸은 영상 · 곡 정보 · 컨트롤뿐이다 — 재생부를 칸 폭 가득(최대 720px) 쓴다. v4.2.1 의 폭 420px 제한은 폐지. */
+.mp-pop--dock .mp-slot { max-width: 720px; margin-inline: auto; }
 .mp-pop--dock .mp-x { display: none; }          /* 내리기 버튼 — 도크는 내릴 수 없다 */
 
 .mp-frame.is-float {
@@ -329,17 +330,15 @@ html.mp-lock { overflow: hidden; }
   .mp-scrim.is-open .mp-pop { transform: none; }
   /* 본문은 스크롤하지 않는다. 재생부는 위에 고정(flex none), 아래 탭 패널 한 칸만 남은 높이를 받아 그 안에서 스크롤 */
   .mp-pop__body { display: flex; flex-direction: column; overflow: hidden; }
+  .mp-side { flex: 1; }
   .mp-stage { flex: none; gap: 6px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--color-border); overflow: visible; }
-  .mp-panels { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-  .mp-lib { flex: 1; height: auto; }
+  .mp-lib { height: auto; }
   .mp-lib .mp-tools { gap: 6px; padding: 8px 12px; }
   .mp-lib .mp-count { padding: 4px 12px; }
   /* 곡 목록 탭: 검색 · 필터(.mp-tools)까지 곡 줄과 한 덩어리로 스크롤한다 — 고정 높이가 모자란 폰(세로 700px 대)에서도 곡 줄이 보이게 */
   .mp-lib { overflow-y: auto; overscroll-behavior: contain; }
   .mp-lib .mp-list { flex: none; overflow: visible; }
   .mp-lib .mp-tools { border-top: 0; }
-  .mp-qpanel { flex: 1; }
-  .mp-q__list { flex: 1; max-height: none; }   /* 재생목록 탭: 칸을 채우고 그 안에서 스크롤 */
   .mp-frame.is-float { bottom: calc(var(--m-foot, 45px) + var(--m-dots, 44px) + 8px); }
 }
 

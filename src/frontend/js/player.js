@@ -20,8 +20,6 @@ const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에
 const FLOAT_H = 200;                      // 플로팅 프레임 높이 — YouTube 임베드 최소 200×200 을 채운다
 const MIN_SLOT_H = 200;                   // 팝업 안 프레임 최소 높이 (좁은 화면에서도 200 이상)
 const NS = "http://www.w3.org/2000/svg";
-const NARROW_MQ = typeof matchMedia === "function" ? matchMedia("(max-width: 767px)") : null;   // 모바일 레이아웃 기준 — playerpop.css 의 @media 와 같은 값
-const isNarrow = () => !!(NARROW_MQ && NARROW_MQ.matches);
 
 const st = {
   raw: [],
@@ -359,7 +357,6 @@ function build() {
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
     h("div", { class: "mp-ctl" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat),
     el.err,
-    el.qBox,
   );
 
   // 목록부
@@ -377,17 +374,18 @@ function build() {
     el.count,
   );
 
-  // 모바일 탭 — 곡 목록 | 재생목록(배지 = 재생목록 곡 수). PC 에서는 탭 바가 숨고 두 패널은 원래 자리(stage · 목록부)로 돌아간다(placeQueue).
+  // 탭 — 곡 목록 | 재생목록(배지 = 재생목록 곡 수). 모바일 · PC 공통(v4.2.2). 재생부(stage)는 영상 · 곡 정보 · 컨트롤만 갖고, 목록 둘은 오른쪽(PC) / 아래(모바일) 한 칸을 탭으로 나눠 쓴다.
   el.badge = h("span", { class: "mp-badge", text: "0" });
   el.tabSongs = h("button", { type: "button", class: "mp-tab", role: "tab", id: "mp-tab-songs", "aria-controls": "mp-panel-songs", on: { click: () => setTab("songs"), keydown: onTabKey } }, "곡 목록");
   el.tabQueue = h("button", { type: "button", class: "mp-tab", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", on: { click: () => setTab("queue"), keydown: onTabKey } }, "재생목록 ", el.badge);
-  el.tabBar = h("div", { class: "mp-tabs", role: "tablist", "aria-label": "곡 목록 또는 재생목록", hidden: true }, el.tabSongs, el.tabQueue);
-  el.qPanel = h("div", { class: "mp-qpanel", id: "mp-panel-queue", hidden: true });
+  el.tabBar = h("div", { class: "mp-tabs", role: "tablist", "aria-label": "곡 목록 또는 재생목록" }, el.tabSongs, el.tabQueue);
+  el.qPanel = h("div", { class: "mp-qpanel", id: "mp-panel-queue", hidden: true }, el.qBox);
   el.panels = h("div", { class: "mp-panels" }, el.lib, el.qPanel);
+  el.side = h("div", { class: "mp-side" }, el.tabBar, el.panels);
 
   el.pop = h("div", { class: "mp-pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "mp-title" },
     h("div", { class: "mp-pop__head" }, el.titleEl, el.closeBtn),
-    el.body = h("div", { class: "mp-pop__body" }, el.stage, el.tabBar, el.panels),
+    el.body = h("div", { class: "mp-pop__body" }, el.stage, el.side),
   );
   el.scrim = h("div", { class: "mp-scrim", id: "player-pop", hidden: true, on: { mousedown: (e) => { if (e.target === el.scrim) closePlayer(); } } }, el.pop);
 
@@ -418,38 +416,22 @@ function build() {
   window.addEventListener("resize", () => { clampFloat(); layoutFrame(); });
   el.body.addEventListener("scroll", () => { if (st.popOpen) layoutFrame(); }, { passive: true });   // 모바일 모달은 본문이 스크롤된다 — 프레임이 재생부 자리를 따라가게
   if (typeof ResizeObserver === "function") new ResizeObserver(layoutFrame).observe(el.slot);
-  if (NARROW_MQ) {
-    if (NARROW_MQ.addEventListener) NARROW_MQ.addEventListener("change", placeQueue);
-    else NARROW_MQ.addListener(placeQueue);
-  }
-  placeQueue();
-}
-
-/** 재생목록(el.qBox) · 탭 패널 자리를 화면 폭에 맞춘다. 모바일: qBox 를 재생목록 탭 패널로 옮김 · PC: stage 맨 끝(원래 자리)으로 되돌림.
- *  요소만 옮긴다(새로 만들지 않음). el.frame(영상 iframe)은 건드리지 않는다. */
-function placeQueue() {
-  if (!built) return;
-  if (isNarrow()) { if (el.qBox.parentNode !== el.qPanel) el.qPanel.append(el.qBox); }
-  else if (el.qBox.parentNode !== el.stage) el.stage.append(el.qBox);
   paintTabs();
-  layoutFrame();
 }
 
-/** 탭 상태 반영 — 모바일에서는 선택된 탭의 패널만 보인다. PC 에서는 탭 바 · 패널 숨김 상태를 모두 풀어 둔다. */
+/** 탭 상태 반영 — 선택된 탭의 패널만 보인다(모바일 · PC 공통). */
 function paintTabs() {
   if (!built) return;
-  const narrow = isNarrow();
   const songs = st.tab !== "queue";
-  el.tabBar.hidden = !narrow;
   el.tabSongs.setAttribute("aria-selected", String(songs));
   el.tabQueue.setAttribute("aria-selected", String(!songs));
   el.tabSongs.tabIndex = songs ? 0 : -1;
   el.tabQueue.tabIndex = songs ? -1 : 0;
-  el.lib.hidden = narrow && !songs;
-  el.qPanel.hidden = !narrow || songs;
+  el.lib.hidden = !songs;
+  el.qPanel.hidden = songs;
   for (const [p, t] of [[el.lib, el.tabSongs], [el.qPanel, el.tabQueue]]) {
-    if (narrow) { p.setAttribute("role", "tabpanel"); p.setAttribute("aria-labelledby", t.id); }
-    else { p.removeAttribute("role"); p.removeAttribute("aria-labelledby"); }
+    p.setAttribute("role", "tabpanel");
+    p.setAttribute("aria-labelledby", t.id);
   }
 }
 
