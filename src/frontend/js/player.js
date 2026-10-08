@@ -374,7 +374,7 @@ function build() {
 
   el.pop = h("div", { class: "mp-pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "mp-title" },
     h("div", { class: "mp-pop__head" }, el.titleEl, el.closeBtn),
-    h("div", { class: "mp-pop__body" }, stage, lib),
+    el.body = h("div", { class: "mp-pop__body" }, stage, lib),
   );
   el.scrim = h("div", { class: "mp-scrim", id: "player-pop", hidden: true, on: { mousedown: (e) => { if (e.target === el.scrim) closePlayer(); } } }, el.pop);
 
@@ -403,6 +403,7 @@ function build() {
   el.scrim.addEventListener("keydown", trapFocus);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && st.popOpen) closePlayer(); });
   window.addEventListener("resize", () => { clampFloat(); layoutFrame(); });
+  el.body.addEventListener("scroll", () => { if (st.popOpen) layoutFrame(); }, { passive: true });   // 모바일 모달은 본문이 스크롤된다 — 프레임이 재생부 자리를 따라가게
   if (typeof ResizeObserver === "function") new ResizeObserver(layoutFrame).observe(el.slot);
 }
 
@@ -550,6 +551,13 @@ function songRow(s, i, q) {
 }
 
 // ── 프레임 배치 ──────────────────────────────────────────────────────
+/** 모달 본문이 스크롤될 때 재생부(프레임)가 본문 영역 밖으로 삐져나가 헤더 · 목록을 덮지 않게 자른다. */
+function bodyClip(r) {
+  const b = el.body.getBoundingClientRect();
+  const top = Math.min(r.height, Math.max(0, b.top - r.top));
+  const bottom = Math.min(r.height, Math.max(0, r.bottom - b.bottom));
+  return top || bottom ? `inset(${top}px 0 ${bottom}px 0)` : "none";
+}
 let slotCss = "";   // 마지막으로 slot 위에 준 스타일 — 같으면 다시 쓰지 않는다(dockSync 가 매 프레임 부른다)
 function layoutFrame() {
   if (!built) return;
@@ -566,7 +574,7 @@ function layoutFrame() {
     f.classList.toggle("is-dock", !!st.dock);
     const css = st.dock
       ? `position:absolute;left:${r.left + scrollX}px;top:${r.top + scrollY}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`
-      : `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+      : `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto;clip-path:${bodyClip(r)}`;
     if (css !== slotCss) { f.style.cssText = css; slotCss = css; }
   } else {
     slotCss = "";

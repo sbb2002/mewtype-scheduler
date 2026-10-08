@@ -293,7 +293,9 @@ html.mp-lock { overflow: hidden; }
 @media (max-width: 767px) {
   .mp-scrim { align-items: flex-end; padding: 0; }
   .mp-pop { height: 94%; border-radius: 14px 14px 0 0; }
-  .mp-pop__body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  /* 세로가 길어지면(재생부 + 곡 정보 + 재생목록 + 곡 목록) 본문 전체가 스크롤된다. 곡 목록은 고정 높이 안에서 따로 스크롤 */
+  .mp-pop__body { grid-template-columns: 1fr; grid-template-rows: auto auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; }
+  .mp-lib { height: min(75dvh, 560px); }
   .mp-stage { gap: 8px; padding: 10px 14px; border-right: 0; border-bottom: 1px solid var(--color-border); overflow: visible; }
   .mp-frame.is-float { bottom: calc(var(--m-foot, 45px) + var(--m-dots, 44px) + 8px); }
 }
