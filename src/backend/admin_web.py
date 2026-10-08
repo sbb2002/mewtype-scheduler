@@ -356,6 +356,8 @@ h1{color:#ff6b6b}</style></head>
             "channels",
             "list_group_pending",
             "list_llm_actions",
+            "list_songs",
+            "songs_status",
         }
 
         if name not in read_functions:
@@ -422,6 +424,11 @@ h1{color:#ff6b6b}</style></head>
             "rejudge_llm_action",
             "decide_llm_action",
             "llm_review_options",      # 선택지 조회지만 action_id 인자가 필요해 POST
+            "edit_song",
+            "delete_song",
+            "add_song",
+            "regenerate_song_reading",
+            "unblock_song",
         }
 
         if name not in write_functions:

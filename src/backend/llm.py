@@ -327,6 +327,55 @@ class LLMClient:
             logger.warning(f"notice_title: JSON 파싱 실패 — {e}")
             return None
 
+    def song_reading(self, title: str) -> str | None:
+        """(v4.2.0) 곡명의 독음(읽는 법)을 히라가나로. 라틴 문자 곡명은 가타카나 발음으로(검색은 가타카나 = 히라가나로 정규화됨).
+
+        신곡 자동 등록(`handlers._detect_new_songs`) · 독음 재요청(`admin_api.regenerate_song_reading`)이 쓴다.
+        Returns: 독음 문자열. 키 없음 · 호출 실패 · 빈 응답 · 이상한 응답(가나 · 공백 · 기호 외 글자만 있는 등)이면 None —
+        호출부가 `needs_reading` 으로 남겨 다음 tick 에 재시도한다.
+        """
+        if self.disabled or not (title or "").strip():
+            return None
+        prompt = (
+            "다음은 일본 음악 그룹의 곡명이다. 이 곡명을 일본어로 읽는 법(독음)을 가나로만 적어라. "
+            "한자 · 숫자 · 기호는 읽는 소리 그대로 히라가나로, 알파벳 · 영어 곡명은 일본어식 발음의 가타카나로 적는다. "
+            "띄어쓰기 · 괄호 · 느낌표 등 기호는 모두 빼고 이어서 적는다. 의미 설명 · 번역 · 따옴표 없이 JSON 만 출력.\n\n"
+            f"곡명: {title}\n\n"
+            "출력:\n"
+            '{"reading": "<가나 독음>"}'
+        )
+        schema = {
+            "name": "song_reading",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {"reading": {"type": "string"}},
+                "required": ["reading"],
+                "additionalProperties": False,
+            },
+        }
+        prompt = _with_hint(prompt)
+        response = self._call_groq(self.model, prompt, json_schema=schema)
+        if not response:
+            response = self._call_groq(self.fallback, prompt, json_schema=schema)
+        if not response:
+            logger.warning("song_reading: 두 모델 모두 실패/빈 응답 (%r)", title)
+            return None
+        try:
+            result = json.loads(_strip_json_fence(response))
+        except json.JSONDecodeError as e:
+            logger.warning("song_reading: JSON 파싱 실패 — %s", e)
+            return None
+        reading = result.get("reading") if isinstance(result, dict) else None
+        if not isinstance(reading, str):
+            return None
+        reading = re.sub(r"\s+", "", reading)
+        # 가나(+장음 ー ・ 중점)와 영숫자만 허용 — 한글 번역이나 설명이 섞여 오면 버린다
+        if not reading or len(reading) > 120 or not re.fullmatch(r"[ぁ-ゖァ-ヺー・ヽヾゝゞA-Za-z0-9]+", reading):
+            logger.warning("song_reading: 가나가 아닌 응답 버림 (%r → %r)", title, reading)
+            return None
+        return reading
+
     def participation(self, text_ja: str, *, member_name: str) -> bool | None:
         """
         (v3.6) 트윗 원문이 `member_name` 이 직접 출연·참여하는 콘텐츠를 가리키는지 판정.
@@ -1592,6 +1641,36 @@ if __name__ == "__main__":
     assert test_client.model == DEFAULT_MODEL, f"model should be {DEFAULT_MODEL}, got {test_client.model}"
     assert test_client.fallback == FALLBACK_MODEL, f"fallback should be {FALLBACK_MODEL}, got {test_client.fallback}"
     print(f"✓ LLMClient(api_key): model={DEFAULT_MODEL}, fallback={FALLBACK_MODEL}")
+
+    # ──── (v4.2.0) song_reading ────
+    print("\n[v4.2.0] song_reading — 곡명 독음(가나)")
+    print("-" * 70)
+
+    class _ReadingSession:
+        def __init__(self, contents):
+            self.contents = list(contents)
+            self.calls = 0
+        def post(self, url, **kwargs):
+            self.calls += 1
+            c = self.contents.pop(0) if self.contents else ""
+            class R:
+                status_code = 200
+                def json(self_inner):
+                    return {"choices": [{"message": {"content": c}}]}
+            return R()
+
+    _s = _ReadingSession(['{"reading": "ゆめがむちゅう"}'])
+    assert LLMClient("k", session=_s).song_reading("夢我夢中") == "ゆめがむちゅう"
+    print("✓ 정상 응답 → 가나 독음")
+    assert LLMClient("k", session=_ReadingSession(['{"reading": "ふぇいす ざ ねくすと"}'])).song_reading("Face The Next") == "ふぇいすざねくすと"
+    print("✓ 공백 제거")
+    assert LLMClient("k", session=_ReadingSession(['{"reading": "꿈이 꿈중"}'])).song_reading("夢我夢中") is None
+    print("✓ 한글(번역) 응답은 버림 → None")
+    _s2 = _ReadingSession(["", '{"reading": "ふぇいす"}'])
+    assert LLMClient("k", session=_s2).song_reading("Face") == "ふぇいす" and _s2.calls == 2
+    print("✓ 메인 모델 빈 응답 → 폴백 모델")
+    assert LLMClient("").song_reading("夢我夢中") is None and LLMClient("k", session=_ReadingSession([])).song_reading("  ") is None
+    print("✓ 키 없음 · 빈 제목 → None")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")

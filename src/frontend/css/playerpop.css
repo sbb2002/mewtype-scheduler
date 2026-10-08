@@ -1,0 +1,346 @@
+/* playerpop.css — (v4.2.0) 플레이어 팝업 · 플로팅 프레임. 마크업 · 동작은 js/player.js. 다크 단일 테마 — 색은 reset.css 토큰 + 아래 --mp-* 를 쓴다.
+   z-index: 도트 띠 25 < 플로팅 프레임 45 < 디스클레이머 팝업(#foot) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
+   프레임(.mp-frame)은 한 번 만들고 옮기지 않는다 — 팝업일 땐 JS 가 .mp-slot 자리에 맞춰 위치를 주고, 내리면 .is-float 로 CSS 위치(오른쪽 아래)를 쓴다. */
+
+:root {
+  --mp-accent: #a99be6;
+  --mp-accent-fg: #121018;
+  --mp-panel-2: #242429;
+  --mp-float-w: 356px;
+  --mp-float-h: 200px;   /* YouTube 임베드 최소 200×200 */
+  --mp-foot: 45px;       /* 고정 푸터(#foot) 높이 — 플로팅 프레임이 푸터에 가려지지 않게 */
+}
+
+html.mp-lock { overflow: hidden; }
+
+.mp-mono { font-family: ui-monospace, "DM Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+/* ── 팝업 ─────────────────────────────────────────────────────────── */
+.mp-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.mp-scrim[hidden] { display: none; }
+
+.mp-pop {
+  width: min(920px, 100%);
+  height: min(680px, calc(100% - 8px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  color: var(--color-text);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.mp-pop button { color: inherit; }
+.mp-pop :focus-visible,
+.mp-frame :focus-visible { outline: 2px solid var(--mp-accent); outline-offset: 2px; }
+
+.mp-pop__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+.mp-pop__title { flex: 1; min-width: 0; font-size: 0.9rem; font-weight: 700; }
+.mp-x {
+  padding: 5px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+.mp-x:hover { border-color: var(--color-text-muted); }
+
+.mp-pop__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* ── 재생부 ───────────────────────────────────────────────────────── */
+.mp-stage {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+.mp-slot {                       /* 프레임이 이 위에 겹쳐 놓인다. 최소 높이 = 임베드 최소 크기 */
+  flex: none;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 200px;
+  border-radius: 8px;
+  background: #000;
+}
+.mp-song__title { font-size: 1.1rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.mp-song__ko { margin-top: 2px; font-size: 0.74rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mp-song__meta { margin-top: 4px; font-size: 0.74rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mp-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: var(--mc, var(--color-text-muted));
+  vertical-align: baseline;
+}
+.mp-bar { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 0.7rem; color: var(--color-text-muted); }
+.mp-track {
+  position: relative;
+  height: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--mp-panel-2);
+  cursor: pointer;
+  touch-action: none;   /* 터치로 끌 때 페이지 스크롤이 가로채지 않게 */
+}
+.mp-track::before { content: ""; position: absolute; inset: -10px 0; }   /* 끌기 · 누르기 영역을 위아래로 넓힌다 */
+.mp-track.is-drag { cursor: grabbing; }
+.mp-track i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 4px; background: var(--mp-accent); }
+.mp-ctl { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.mp-btn, .mp-tog, .mp-main {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--mp-panel-2);
+}
+.mp-main { width: 50px; height: 50px; background: var(--mp-accent); border-color: var(--mp-accent); color: var(--mp-accent-fg) !important; }
+.mp-tog[aria-pressed="true"] { border-color: var(--mp-accent); color: var(--mp-accent); }
+.mp-ico { width: 18px; height: 18px; display: block; }
+.mp-ico--s { width: 16px; height: 16px; flex: none; }
+.mp-ico--rpt { width: 26px; height: 26px; }   /* 반복 버튼 — 안의 「1」·「A」 글자가 잘 읽히도록 다른 아이콘(18px)보다 크게 */
+.mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.76rem; color: var(--color-late); }
+.mp-err[hidden] { display: none; }
+.mp-err a { text-decoration: underline; }
+/* 재생목록 — 움푹 패인 우물. 바탕을 패널보다 어둡게 + 안쪽 위 그림자(빛이 위에서 와서 윗벽이 그늘짐) + 아래 테두리 바깥의 얇은 밝은 선(패인 가장자리에 걸린 빛). */
+.mp-q {
+  display: flex; flex-direction: column; min-height: 0; flex: 1;
+  padding: 8px 6px 6px 10px;
+  border-radius: 10px;
+  background: #0e0e11;
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.75),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.mp-q__head { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px 0; font-size: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.mp-q__count { color: var(--color-text-muted); font-size: 0.7rem; }
+.mp-q__head .mp-link { margin-left: auto; font-size: 0.7rem; }
+.mp-q__list { list-style: none; margin: 4px 0 0; padding: 0; overflow-y: auto; min-height: 0; max-height: 220px; display: grid; grid-auto-rows: max-content; }
+.mp-q__empty { padding: 10px 4px; font-size: 0.7rem; line-height: 1.5; color: var(--color-text-muted); }
+.mp-q__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 6px; }
+.mp-q__item:hover { background: var(--mp-panel-2); }
+.mp-q__item.is-cur { background: color-mix(in srgb, var(--mp-accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--mp-accent); }
+.mp-q__main { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 8px; text-align: left; color: var(--color-text); font-size: 0.78rem; min-width: 0; }
+.mp-q__n { text-align: right; font-size: 0.7rem; color: var(--color-text-muted); }
+.mp-q__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-q__x { padding: 4px 8px; margin-right: 4px; font-size: 0.7rem; color: var(--color-text-muted); }
+.mp-q__x:hover { color: var(--color-text); }
+/* NEW 알약 — 빛이 지나가는 광택 + 은은한 맥박(번쩍임이 아니라 숨쉬듯). 움직임 줄이기 설정이면 멈춘다 */
+.mp-new {
+  display: inline-block; vertical-align: 1px; padding: 0 5px; border-radius: 999px; color: #fff;
+  font-size: 0.6rem; font-weight: 700; line-height: 1.5; letter-spacing: 0.03em;
+  background: linear-gradient(110deg, #e5384a 38%, #ff9aa5 50%, #e5384a 62%) 0 0 / 260% 100%;
+  animation: mp-new-shine 2.6s linear infinite, mp-new-pulse 1.8s ease-in-out infinite;
+}
+@keyframes mp-new-shine { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+@keyframes mp-new-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 56, 74, 0.55); } 50% { box-shadow: 0 0 0 4px rgba(229, 56, 74, 0); } }
+/* 곡 줄의 「재생목록 N번 / N번 외 K」 — 글자 수가 고정 상한이라 곡 줄 폭을 늘리지 못한다(긴 번호 목록은 툴팁 · aria-label 로만) */
+.mp-q-badge {
+  display: inline-block; flex: none; max-width: 100%; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--mp-accent);
+}
+
+/* ── 모바일 탭 (곡 목록 | 재생목록) — PC 에서는 탭 바 숨김, 패널은 2열 그리드에 그대로 놓인다 ── */
+.mp-tabs { display: flex; flex: none; border-bottom: 1px solid var(--color-border); background: var(--color-bg-secondary); }
+.mp-tabs[hidden] { display: none; }
+.mp-pop .mp-tab {
+  flex: 1; min-width: 0; padding: 11px 8px;
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: transparent;
+  font-size: 0.84rem; font-weight: 600; color: var(--color-text-muted);
+}
+.mp-pop .mp-tab[aria-selected="true"] { color: var(--color-text); border-bottom-color: var(--mp-accent); }
+.mp-pop .mp-tab:focus-visible { outline: 2px solid var(--mp-accent); outline-offset: -3px; }
+.mp-badge {
+  display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 6px; margin-left: 5px;
+  border-radius: 999px; background: var(--mp-accent); color: var(--mp-accent-fg);
+  font-size: 0.68rem; font-weight: 700; font-variant-numeric: tabular-nums; vertical-align: 1px;
+}
+.mp-badge.pulse { animation: mp-badge-pulse 0.5s ease-out; }
+@keyframes mp-badge-pulse { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+.mp-panels { display: contents; }   /* PC: 목록부 · 재생목록 패널이 .mp-pop__body 의 열에 그대로 놓인다 */
+.mp-qpanel { display: flex; flex-direction: column; min-height: 0; }
+.mp-qpanel[hidden], .mp-lib[hidden] { display: none; }
+
+/* ── 목록부 ───────────────────────────────────────────────────────── */
+.mp-lib { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.mp-tools { display: grid; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--color-border); }
+.mp-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+}
+.mp-search:focus-within { border-color: var(--mp-accent); }
+.mp-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 16px;               /* iOS 입력 시 확대 방지 */
+}
+.mp-row2 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; font-size: 0.75rem; color: var(--color-text-muted); }
+.mp-chips, .mp-sort { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mp-chips button, .mp-sort button {
+  padding: 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.mp-sort button { border-radius: 6px; padding: 3px 8px; }
+.mp-chips button[aria-pressed="true"] { border-color: var(--mp-accent); color: var(--mp-accent); background: color-mix(in srgb, var(--mp-accent) 12%, transparent); }
+.mp-sort button[aria-pressed="true"] { border-color: var(--mp-accent); color: var(--color-text); }
+
+.mp-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px; display: grid; grid-auto-rows: max-content; }
+.mp-item { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; border: 1px solid transparent; border-radius: 8px; }
+.mp-item:hover { background: var(--mp-panel-2); }
+.mp-item.is-cur { background: color-mix(in srgb, var(--mp-accent) 14%, transparent); border-color: color-mix(in srgb, var(--mp-accent) 40%, transparent); }
+.mp-item__main { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: center; padding: 8px; text-align: left; color: var(--color-text); min-width: 0; }
+.mp-item__n { text-align: right; font-size: 1.15rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
+.mp-item__body { display: block; min-width: 0; }
+.mp-item__title { display: block; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+.mp-item__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 2px; font-size: 0.7rem; color: var(--color-text-muted); }
+.mp-item__ko { display: block; margin-top: 1px; font-size: 0.7rem; color: var(--color-text-muted); }
+.mp-item__sub em { font-style: normal; }
+.mp-item__sub .mp-dot { margin-right: -4px; }
+.mp-item mark { border-radius: 2px; background: color-mix(in srgb, var(--mp-accent) 35%, transparent); color: inherit; }
+.mp-empty { padding: 28px 12px; text-align: center; color: var(--color-text-muted); }
+.mp-link { text-decoration: underline; color: var(--mp-accent); }
+.mp-count { padding: 6px 14px; border-top: 1px solid var(--color-border); font-size: 0.7rem; color: var(--color-text-muted); }
+
+/* ── 프레임 (팝업 안 / 플로팅) ────────────────────────────────────── */
+.mp-frame {
+  position: fixed;
+  z-index: 810;                  /* 팝업 안: 배경(800) 위 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+}
+.mp-frame[hidden] { display: none; }
+.mp-yt { position: relative; flex: 1; min-height: 0; }
+.mp-yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.mp-frame:not(.is-float) .mp-grip { display: none; }
+.mp-frame.is-dock { z-index: 40; }   /* PC 도크: 고정 푸터(50)와 디스클레이머 팝업 아래로 — 페이지를 스크롤하면 푸터 밑으로 들어간다 */
+
+/* ── PC 하단 도크 (≥768px) — 팝업 본체를 모달 대신 메인 화면 맨 아래에 상시 표시 ── */
+#player-dock {
+  max-width: var(--content-max);
+  min-height: 640px;                              /* 모듈을 불러오기 전에도 자리를 잡아 스크롤 위치가 튀지 않게 */
+  margin-inline: auto;
+  padding: 0 var(--page-pad) calc(var(--mp-foot) + 24px);   /* 아래는 고정 푸터 높이만큼 비운다 */
+}
+#player-dock[hidden] { display: none; }
+.mp-pop--dock { width: 100%; height: 640px; box-shadow: none; }
+.mp-pop--dock .mp-x { display: none; }           /* 내리기 버튼 — 도크는 내릴 수 없다 */
+
+.mp-frame.is-float {
+  z-index: 45;
+  right: 16px;
+  bottom: calc(var(--mp-foot) + 16px);
+  width: min(var(--mp-float-w), calc(100vw - 32px));
+  min-width: 200px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-bg-secondary);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.mp-frame.is-float .mp-yt { flex: none; height: var(--mp-float-h); background: #000; }
+
+/* 손잡이 줄 — 프레임 "위"에 따로 붙는다(프레임을 덮지 않음). 끌기 · 더블클릭 = 팝업 열기 */
+.mp-grip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 6px 0 8px;
+  background: var(--mp-panel-2);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  cursor: grab;
+  touch-action: none;           /* 손잡이를 끌 때 페이지가 스크롤되지 않게 */
+  user-select: none;
+}
+.mp-grip:active { cursor: grabbing; }
+.mp-grip__title { flex: 1; min-width: 0; display: flex; align-items: baseline; color: var(--color-text); }
+.mp-grip__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-grip__pos { flex: none; margin-left: 5px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--color-text-muted); }
+.mp-grip__btns { display: flex; gap: 4px; }
+.mp-gbtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  font-size: 0.7rem;
+}
+.mp-gbtn .mp-ico { width: 11px; height: 11px; }
+
+/* ── 모바일: 바텀 시트 · 하단 도트 띠(푸터 45 + 도트 44) 위로 플로팅 프레임 ── */
+@media (max-width: 767px) {
+  .mp-scrim { align-items: flex-end; padding: 0; background: rgba(0, 0, 0, 0); transition: background 0.32s ease; }
+  .mp-scrim.is-open { background: rgba(0, 0, 0, 0.6); }
+  /* 토스트처럼 아래에서 올라온다. 닫을 땐 is-open 이 빠지며 반대로 내려간다 (js/player.js openPlayer · closePlayer) */
+  .mp-pop { height: 94%; border-radius: 14px 14px 0 0; transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .mp-scrim.is-open .mp-pop { transform: none; }
+  /* 본문은 스크롤하지 않는다. 재생부는 위에 고정(flex none), 아래 탭 패널 한 칸만 남은 높이를 받아 그 안에서 스크롤 */
+  .mp-pop__body { display: flex; flex-direction: column; overflow: hidden; }
+  .mp-stage { flex: none; gap: 6px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--color-border); overflow: visible; }
+  .mp-panels { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .mp-lib { flex: 1; height: auto; }
+  .mp-lib .mp-tools { gap: 6px; padding: 8px 12px; }
+  .mp-lib .mp-count { padding: 4px 12px; }
+  /* 곡 목록 탭: 검색 · 필터(.mp-tools)까지 곡 줄과 한 덩어리로 스크롤한다 — 고정 높이가 모자란 폰(세로 700px 대)에서도 곡 줄이 보이게 */
+  .mp-lib { overflow-y: auto; overscroll-behavior: contain; }
+  .mp-lib .mp-list { flex: none; overflow: visible; }
+  .mp-lib .mp-tools { border-top: 0; }
+  .mp-qpanel { flex: 1; }
+  .mp-q__list { flex: 1; max-height: none; }   /* 재생목록 탭: 칸을 채우고 그 안에서 스크롤 */
+  .mp-frame.is-float { bottom: calc(var(--m-foot, 45px) + var(--m-dots, 44px) + 8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-frame, .mp-scrim, .mp-pop { transition: none !important; }
+  .mp-new { animation: none; background: #e5384a; }
+  .mp-badge.pulse { animation: none; }
+}

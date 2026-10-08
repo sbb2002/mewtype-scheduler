@@ -6,6 +6,7 @@ Cloud Tasks(`tasks`)로 나간다. v2 의 `pending.json` 은 폐지 — FSM 이 
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +19,7 @@ from . import preview as preview_mod
 from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
+from . import songs as songs_mod
 from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_events
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
@@ -262,6 +264,157 @@ def _should_log_run(
     )
 
 
+def _song_event(now_iso: str, result: str, detail: str, **extra) -> dict:
+    return {"ts": now_iso, "flow": "song", "result": result, "who": extra.pop("who", "group"), "detail": detail, **extra}
+
+
+def _song_action_entry(kind: str, now_iso: str, summary: str, reason: str, *, undo: dict | None, input: dict, who: str = "group") -> dict:
+    """신곡 판단 기록 1건(llm_actions.json). LLM 이 아니라 규칙이 낸 판단이라 `by="rule"`."""
+    import uuid
+    return {"id": "llm_" + uuid.uuid4().hex[:10], "ts": now_iso, "kind": kind, "who": who, "summary": summary[:200],
+            "reason": reason[:300], "undo": undo, "undone": None, "flow_id": None, "input": input, "followup": None,
+            "parent_id": None, "by": "rule"}
+
+
+def _record_song_actions(gh, entries: list[dict], now_iso: str) -> list[str]:
+    """판단 기록을 **한 번의 쓰기**로 llm_actions.json(ops 브랜치)에 덧붙인다. tick 안에서는 `/write` 자기 호출(교착)을 쓰지 않고
+    gh 로 직접 쓴다(`record_video_releases` 와 같은 방식). 실패해도 예외를 던지지 않는다. 반환: 기록한 id 들."""
+    if not entries:
+        return []
+    from . import telegram_app as _t
+
+    try:
+        for _try in range(3):
+            cur, sha = gh.read_json(_t._LLM_ACTIONS_PATH)
+            items = list((cur or {}).get("items") or []) + entries
+            try:
+                gh.write_json(_t._LLM_ACTIONS_PATH, {"items": items[-_t._LLM_ACTIONS_MAX:]}, prev_sha=sha,
+                              message=f"ops: 신곡 판단 기록 +{len(entries)} {now_iso}")
+                return [e["id"] for e in entries]
+            except ConflictError:
+                continue
+        log.warning("신곡 판단 기록 쓰기 충돌이 계속됨")
+    except Exception:  # noqa: BLE001
+        log.warning("신곡 판단 기록 실패", exc_info=True)
+    return []
+
+
+def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.fetch_feed_entries, llm=None,
+                      log_events_fn=None, record_fn=None) -> dict:
+    """(v4.2.0) 토픽 채널 RSS(쿼터 0)에서 새 곡을 찾아 `songs.json` 에 **즉시 등록**한다. 방송 파이프라인과 무관한 별도 경로.
+
+    규칙은 songs.py 머리말 참고(곡명이 이미 있으면 건너뜀 · (Cover)=cover · feat. 제외 · 반려(삭제)한 곡은 다시 등록 안 함).
+    - 새 곡의 독음은 외부 LLM 이 쓴다(`llm.song_reading`). 실패하면 `needs_reading` 으로 남겨 **이후 tick 이 재시도**(tick 당 최대 3건).
+    - 등록 1곡 = 판단 기록 `song_register`(반려하면 목록에서 지우고 재등록 차단) · 곡명 중복 건너뜀 1건 = `song_skip`(검토용, `seen` 으로 한 번만)
+      — 둘 다 작업 탭 「LLM 판단」에 보이고, 모니터 이벤트 `flow="song"` 은 리포트 타임라인에 보인다.
+    - `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산(기록은 쓰기 성공 뒤에만 남김 — 중복 기록 없음).
+    - RSS 가 비어 있으면(조회 실패 포함) 그 시간대 첫 tick(분 < 10)에만 degraded 이벤트 1건 — 시간당 1회.
+    **어떤 실패도 tick 을 막지 않는다.** 반환: {"added": [곡명...], "dups"?: [...], "readings"?: n} 또는 {"skipped": 사유}.
+    """
+    try:
+        feeds = channels_cfg.get(songs_mod.SONG_FEEDS_KEY) or []
+        if not feeds:
+            return {"skipped": "no_feeds"}
+        entries_by_who: list[tuple[str, list[dict]]] = []
+        for f in feeds:
+            if f.get("channel_id"):
+                entries_by_who.append((f.get("who") or "group", fetch(f["channel_id"])))
+        if log_events_fn is None:
+            log_events_fn = lambda ev: log_events(gh, now_iso, ev)  # noqa: E731
+        events: list[dict] = []
+        empty_feed = not any(e for _, e in entries_by_who)
+        if empty_feed and now_iso[14:16].isdigit() and int(now_iso[14:16]) < 10:
+            events.append(_song_event(now_iso, RESULT_DEGRADED, "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
+        doc, sha = gh.read_json(songs_mod.SONGS_PATH)
+        if doc is None:
+            log.warning("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
+            _safe_log_song_events(log_events_fn, events)
+            return {"skipped": "no_songs_json"}
+        new_doc = songs_mod.norm_doc(doc)
+        before = json.dumps(new_doc, sort_keys=True, ensure_ascii=False)
+        additions: list[dict] = []
+        skipped_all: list[dict] = []
+        seen_ids = {r.get("id") for r in new_doc["seen"]}
+        for who, entries in entries_by_who:
+            add, skip = songs_mod.find_new_songs(entries, new_doc["songs"] + additions, who=who, now_iso=now_iso,
+                                                 rejected=new_doc["rejected"])
+            additions += add
+            skipped_all += skip
+        if additions:
+            new_doc = songs_mod.merge_songs(new_doc, additions)
+        dups = [s for s in skipped_all if s["reason"] == songs_mod.REASON_NAME_DUP and s["entry"]["video_id"] not in seen_ids]
+        if dups:
+            new_doc = songs_mod.mark_seen(new_doc, [(s["entry"]["video_id"], s["reason"]) for s in dups], now_iso)
+        # 독음 — 새 곡 + 이전에 실패한 곡(needs_reading)을 tick 당 상한만큼
+        filled: list[str] = []
+        reader = llm.song_reading if (llm is not None and not getattr(llm, "disabled", True)) else None
+        if reader is not None:
+            try:
+                new_doc, filled = songs_mod.fill_readings(new_doc, reader)
+            except Exception:  # noqa: BLE001
+                log.warning("신곡 독음 작성 실패 — 다음 tick 에서 재시도", exc_info=True)
+        if json.dumps(new_doc, sort_keys=True, ensure_ascii=False) == before:
+            _safe_log_song_events(log_events_fn, events)
+            return {"added": []}
+        names = ", ".join(a["title"] for a in additions) or (f"독음 {len(filled)}건" if filled else "곡명 중복 기록")
+        try:
+            gh.write_json(songs_mod.SONGS_PATH, new_doc, prev_sha=sha,
+                          message=f"data: 신곡 {len(additions)}곡 등록 ({names}) {now_iso}" if additions else f"data: 신곡 목록 갱신 ({names}) {now_iso}")
+        except ConflictError:
+            log.warning("songs.json 쓰기 충돌 — 다음 tick 에서 다시 시도")
+            return {"skipped": "conflict"}
+        # ── 쓰기 성공 뒤에만 기록 · 이벤트 ──
+        by_id = {s["id"]: s for s in new_doc["songs"]}
+        actions: list[dict] = []
+        for a in additions:
+            src = next((e for _, es in entries_by_who for e in es if e["video_id"] == a["id"]), {})
+            kind_ko = "커버" if a["kind"] == "cover" else "오리지널"
+            actions.append(_song_action_entry(
+                "song_register", now_iso, f"신곡 등록 · {a['title']} ({kind_ko})",
+                f"곡명 「{a['title']}」이 목록에 없음 · 제목 끝 (Cover) {'있음 → cover' if a['kind'] == 'cover' else '없음 → original'} · feat. 아님 · 반려한 곡 아님",
+                undo={"type": "remove_song", "id": a["id"], "title": a["title"], "added_at": now_iso},
+                input=songs_mod._entry_snapshot(src) if src else {"video_id": a["id"], "title": a["title"]}, who=a.get("who") or "group"))
+            events.append(_song_event(now_iso, RESULT_OK, f"신곡 등록 · {a['title']} · {a['kind']}", action="added",
+                                      video_id=a["id"], title=a["title"], kind=a["kind"], who=a.get("who") or "group"))
+        for s in dups:
+            e = s["entry"]
+            dup = s.get("dup_of") or {}
+            actions.append(_song_action_entry(
+                "song_skip", now_iso, f"곡명 중복 · 등록 안 함 · {songs_mod.clean_title(e['title'])}",
+                f"「{songs_mod.clean_title(e['title'])}」와 같은 곡명이 이미 있음 ({dup.get('title') or ''} · {dup.get('id') or ''}) — 다른 곡이면 강제 등록",
+                undo=None, input=dict(s["snapshot"], dup_of=dup)))
+            events.append(_song_event(now_iso, RESULT_OK, f"곡명 중복으로 등록 안 함 · {songs_mod.clean_title(e['title'])}", action="skipped",
+                                      reason="name_dup", video_id=e["video_id"], title=songs_mod.clean_title(e["title"])))
+        for sid in filled:
+            sg = by_id.get(sid) or {}
+            events.append(_song_event(now_iso, RESULT_OK, f"독음 작성 · {sg.get('title')} → {sg.get('reading')}", action="reading", video_id=sid,
+                                      title=sg.get("title")))
+        ids = (record_fn or (lambda es: _record_song_actions(gh, es, now_iso)))(actions)
+        if ids and len(ids) == len(actions):
+            for ev, act in zip([e for e in events if e.get("action") == "added"], [x for x in actions if x["kind"] == "song_register"]):
+                ev["action_id"] = act["id"]
+        _safe_log_song_events(log_events_fn, events)
+        log.info("신곡 등록: %s", names)
+        out: dict = {"added": [a["title"] for a in additions]}
+        if dups:
+            out["dups"] = [songs_mod.clean_title(s["entry"]["title"]) for s in dups]
+        if filled:
+            out["readings"] = len(filled)
+        return out
+    except Exception:  # noqa: BLE001
+        log.warning("신곡 감지 실패 — tick 은 계속", exc_info=True)
+        return {"skipped": "error"}
+
+
+def _safe_log_song_events(fn, events: list[dict]) -> None:
+    if not events:
+        return
+    try:
+        fn(events)
+    except Exception:  # noqa: BLE001
+        log.warning("신곡 모니터 로그 실패", exc_info=True)
+
+
 _VIDEO_RELEASES_PATH = "video_releases.json"
 _VIDEO_RELEASES_MAX = 300
 
@@ -326,6 +479,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     _pv0, _ = gh.read_json("preview.json")
     _pv0 = _pv0 or preview_mod.default_preview()
 
+    songs_result: dict = {"skipped": "wake"}
     candidates: set[str] = set(_tracked_unresolved_ids(_pv0))
     if woken_video_id:
         candidates.add(woken_video_id)
@@ -337,6 +491,8 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         rss_map = fetch_all_rss_video_ids(rss_ids)
         for ids in rss_map.values():
             candidates.update(ids)
+        # (v4.2.0) 토픽 채널 RSS 로 신곡 감지 — 방송 후보(candidates)와 별개
+        songs_result = _detect_new_songs(gh, channels_cfg, now_iso, llm=_make_llm(cfg))
 
     yt = YouTubeClient(cfg.youtube_api_key)
     avatars: dict[str, str] = {}
@@ -496,6 +652,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         state_counts[it.get("state", "?")] = state_counts.get(it.get("state", "?"), 0) + 1
 
     result = {
+        "songs": songs_result,
         "mode": mode,
         "woken": woken_video_id,
         "candidates": len(candidates),
@@ -796,4 +953,108 @@ if __name__ == "__main__":
     assert _out2[0]["info_at"] == _snow, "info_at 미갱신"
     print("[OK] xtweet.apply_overrides: API 승 (API 변경 60초 초과)")
 
+    # (v4.2.0) 신곡 자동 감지 — _detect_new_songs (가짜 gh · 가짜 RSS · 가짜 LLM)
+    class _FakeGH:
+        """경로별 {data, sha} 를 가진 가짜 저장소(songs.json · llm_actions.json). conflict=True 면 songs.json 쓰기가 409."""
+
+        def __init__(self, songs_doc, conflict=False):
+            self.files = {}
+            if songs_doc is not None:
+                self.files["songs.json"] = [songs_doc, 1]
+            self.conflict, self.writes = conflict, []
+
+        def read_json(self, path):
+            f = self.files.get(path)
+            return (json.loads(json.dumps(f[0])), f"sha{f[1]}") if f else (None, None)
+
+        def write_json(self, path, data, *, prev_sha, message):
+            if self.conflict and path == "songs.json":
+                raise ConflictError("409")
+            cur = self.files.get(path)
+            self.files[path] = [json.loads(json.dumps(data)), (cur[1] + 1) if cur else 1]
+            self.writes.append((path, message))
+            return True, "new"
+
+    class _FakeLLM:
+        disabled = False
+
+        def __init__(self, fail_titles=()):
+            self.fail, self.calls = set(fail_titles), []
+
+        def song_reading(self, title):
+            self.calls.append(title)
+            return None if title in self.fail else "よみ" + title
+
+    _feeds_cfg = {songs_mod.SONG_FEEDS_KEY: [{"key": "topic", "channel_id": "UCtopic", "who": "group"}]}
+    _rss = [
+        {"video_id": "NEWSONG0001", "title": "新しい曲", "published": "2026-10-10T11:00:00+00:00", "description": "d"},
+        {"video_id": "NEWCOVER002", "title": "誰かの曲 (Cover)", "published": "2026-10-10T12:00:00+00:00", "description": ""},
+        {"video_id": "OLDSONG0003", "title": "既にある曲", "published": "2026-09-01T11:00:00+00:00", "description": ""},
+        {"video_id": "OLDSONG0004", "title": "既にある曲 (Cover)", "published": "2026-10-10T12:30:00+00:00", "description": ""},
+        {"video_id": "FEATSONG005", "title": "コラボ (feat. X)", "published": "2026-10-10T13:00:00+00:00", "description": ""},
+    ]
+    _doc = {"songs": [{"id": "OLDSONG0003", "title": "既にある曲", "kind": "original", "who": "group", "date": "2026-09-01", "reading": "きぞん"}]}
+    _evs: list = []
+    _g = _FakeGH(dict(_doc))
+    _llm = _FakeLLM()
+    _r = _detect_new_songs(_g, _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss, llm=_llm, log_events_fn=_evs.extend)
+    assert _r == {"added": ["新しい曲", "誰かの曲"], "dups": ["既にある曲"], "readings": 2}, _r
+    _sd = _g.files["songs.json"][0]
+    assert [x["title"] for x in _sd["songs"]] == ["既にある曲", "新しい曲", "誰かの曲"], "등록: 기존 곡 뒤에 덧붙임"
+    assert [x["kind"] for x in _sd["songs"][1:]] == ["original", "cover"], "kind: 표기 없음=original · (Cover)=cover"
+    assert "feat" not in " ".join(x["title"] for x in _sd["songs"]), "feat. 곡 제외"
+    assert _sd["songs"][1]["reading"] == "よみ新しい曲" and "needs_reading" not in _sd["songs"][1], "독음: LLM 이 작성 → needs_reading 해제"
+    assert [r["id"] for r in _sd["seen"]] == ["OLDSONG0004"], "곡명 중복 건너뜀은 seen 에 한 번 기록"
+    _acts = _g.files["llm_actions.json"][0]["items"]
+    assert [a["kind"] for a in _acts] == ["song_register", "song_register", "song_skip"], [a["kind"] for a in _acts]
+    assert _acts[0]["undo"] == {"type": "remove_song", "id": "NEWSONG0001", "title": "新しい曲", "added_at": "2026-10-10T14:00:00Z"} and _acts[0]["input"]["video_id"] == "NEWSONG0001", "판단 기록: undo · 입력 스냅샷"
+    assert _acts[2]["undo"] is None and _acts[2]["input"]["dup_of"]["id"] == "OLDSONG0003", "song_skip: 검토용(undo 없음) · dup_of"
+    assert [(e["action"], e["result"]) for e in _evs] == [("added", "ok"), ("added", "ok"), ("skipped", "ok"), ("reading", "ok"), ("reading", "ok")], [e["action"] for e in _evs]
+    assert all(e["flow"] == "song" for e in _evs) and _evs[0]["action_id"] == _acts[0]["id"], "이벤트: flow=song · 판단 기록 id 연결"
+    assert len([w for w in _g.writes if w[0] == "songs.json"]) == 1 and len([w for w in _g.writes if w[0] == "llm_actions.json"]) == 1, "쓰기: songs.json 1번 + 판단 기록 1번"
+    # 재실행 — 변화 없으면 쓰기 · 기록 없음, 건너뜀은 다시 기록 안 함
+    _g2 = _FakeGH(_sd)
+    _evs2: list = []
+    assert _detect_new_songs(_g2, _feeds_cfg, "2026-10-10T14:10:00Z", fetch=lambda cid: _rss, llm=_FakeLLM(), log_events_fn=_evs2.extend) == {"added": []}
+    assert not _g2.writes and not _evs2, "재실행: 새 곡 없으면 쓰기 · 이벤트 없음 (건너뜀 중복 기록 없음)"
+    # 삭제(반려)한 곡은 RSS 에 남아 있어도 재등록 안 됨
+    _sd3 = songs_mod.delete_song(_sd, "NEWSONG0001", "2026-10-10T15:00:00Z")[0]
+    _g3 = _FakeGH(_sd3)
+    assert _detect_new_songs(_g3, _feeds_cfg, "2026-10-10T15:10:00Z", fetch=lambda cid: _rss, llm=_FakeLLM(), log_events_fn=lambda e: None) == {"added": []} and not _g3.writes, "삭제한 곡은 재등록 안 됨(rejected)"
+    # LLM 실패 → needs_reading 유지 → 다음 tick 재시도
+    _g4 = _FakeGH(dict(_doc))
+    _l4 = _FakeLLM(fail_titles=["新しい曲"])
+    _r4 = _detect_new_songs(_g4, _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss[:1], llm=_l4, log_events_fn=lambda e: None)
+    assert _r4 == {"added": ["新しい曲"]} and _g4.files["songs.json"][0]["songs"][1]["needs_reading"] is True and _g4.files["songs.json"][0]["songs"][1]["reading"] == "", "LLM 실패 → reading 빈 값 + needs_reading"
+    _l4b = _FakeLLM()
+    _r4b = _detect_new_songs(_g4, _feeds_cfg, "2026-10-10T14:10:00Z", fetch=lambda cid: _rss[:1], llm=_l4b, log_events_fn=lambda e: None)
+    assert _r4b == {"added": [], "readings": 1} and _g4.files["songs.json"][0]["songs"][1]["reading"] == "よみ新しい曲", "다음 tick: needs_reading 곡 재시도 → 채움"
+    # 운영자가 독음을 직접 고친 곡은 LLM 이 덮지 않음
+    _g5 = _FakeGH(songs_mod.edit_song(_g4.files["songs.json"][0], "NEWSONG0001", {"reading": "しゅどう"}, "t")[0])
+    _l5 = _FakeLLM()
+    assert _detect_new_songs(_g5, _feeds_cfg, "t2", fetch=lambda cid: _rss[:1], llm=_l5, log_events_fn=lambda e: None) == {"added": []} and not _l5.calls, "reading_manual 은 LLM 호출 안 함"
+
+    # LLM 키 없음(disabled) → 등록은 되고 독음은 needs_reading
+    class _Off:
+        disabled = True
+
+    _g6 = _FakeGH(dict(_doc))
+    assert _detect_new_songs(_g6, _feeds_cfg, "t", fetch=lambda cid: _rss[:1], llm=_Off(), log_events_fn=lambda e: None) == {"added": ["新しい曲"]} and _g6.files["songs.json"][0]["songs"][1]["needs_reading"] is True, "LLM 비활성이어도 등록 · 독음은 대기"
+    assert _detect_new_songs(_FakeGH(None), _feeds_cfg, "t", fetch=lambda cid: _rss, log_events_fn=lambda e: None) == {"skipped": "no_songs_json"}, "songs.json 없으면 건너뜀(임의 생성 안 함)"
+    _g7 = _FakeGH(dict(_doc), conflict=True)
+    assert _detect_new_songs(_g7, _feeds_cfg, "t", fetch=lambda cid: _rss, llm=_FakeLLM(), log_events_fn=lambda e: None) == {"skipped": "conflict"} and "llm_actions.json" not in _g7.files, "쓰기 충돌 → 다음 tick 재시도 · 판단 기록은 남기지 않음"
+    assert _detect_new_songs(_FakeGH(dict(_doc)), {}, "t", fetch=lambda cid: _rss) == {"skipped": "no_feeds"}, "피드 설정 없으면 건너뜀"
+    # RSS 비어 있음 — 시간당 1회(분 < 10)만 degraded 이벤트
+    _e8: list = []
+    assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:05:00Z", fetch=lambda cid: [], log_events_fn=_e8.extend) == {"added": []}
+    assert len(_e8) == 1 and _e8[0]["result"] == "degraded" and _e8[0]["action"] == "rss_empty", "RSS 비어 있음: 시간 첫 tick 에 degraded 1건"
+    _e9: list = []
+    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:25:00Z", fetch=lambda cid: [], log_events_fn=_e9.extend)
+    assert _e9 == [], "RSS 비어 있음: 같은 시간의 다른 tick 은 기록 안 함(스팸 방지)"
+
+    def _boom(cid):
+        raise RuntimeError("boom")
+
+    assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "t", fetch=_boom) == {"skipped": "error"}, "예외도 tick 을 막지 않음"
+    print("[OK] _detect_new_songs: 등록 · 판단 기록 · 이벤트 · 멱등 · 반려 재등록 차단 · LLM 독음 재시도 · 시드 전/충돌/실패 격리")
     print("SUCCESS: handlers self-test 통과")

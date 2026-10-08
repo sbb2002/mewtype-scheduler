@@ -283,7 +283,7 @@ _KIND_LABEL = {
     "notice_edit_commit": "소식 수정 반영", "notice_del_commit": "소식 삭제", "tweet_del_commit": "트윗 삭제",
     "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리", "apply_banner": "행사 배너 반영", "banner_sweep": "지난 행사 정리",
     "banner_edit_commit": "행사 수정", "banner_del_commit": "행사 삭제", "snapshot": "일일 스냅샷",
-    "group_pending": "그룹 영상 확인 대기",
+    "group_pending": "그룹 영상 확인 대기", "song_edit": "곡 관리",
 }
 
 

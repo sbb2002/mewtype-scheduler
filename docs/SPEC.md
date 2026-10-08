@@ -903,6 +903,44 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **남는 한계**: 모니터 로그(notice/relay/ops)·`admin_state.json` 마법사 단계·`control.json`·`/translate`·
   `/monitor` 의 `latest.html` 은 여전히 제어 채널이 직접 커밋 → 큐 잡과 409 가능(잡은 최신 재조회 후 1회 재시도).
 
+### 8.15 신곡 자동 감지 · 곡 관리 — `songs.py` + `handlers._detect_new_songs` + 어드민 음반 탭 API (v4.2.0)
+
+곡은 그룹 공식 채널이 아니라 음원 자동 생성 채널 **`Mugendai MewType - Topic`**(`UCeXzCxZsDcaF5xI68fK5owA`)에 올라온다 — 방송이 아니라 `preview.json` · FSM(`preview_build`)과 무관하므로
+방송 파이프라인에 끼우지 않고 별도 경로로 둔다. `config/channels.json` 최상위 `song_feeds`(`channels` 와 별개 키 — 방송 쪽이 읽지 않음)에 채널을 둔다.
+
+**곡 문서 `songs.json`**(data 브랜치) = `{"songs": [...], "rejected": [...], "seen": [...]}` — 프론트 플레이어는 `songs` 만 읽는다.
+- 곡: `{id(video_id), title, kind(original|cover), who, date, reading, added_at?, manual?, edited_at?, needs_reading?, reading_manual?}`.
+  `needs_reading` = 외부 LLM 독음을 아직 못 채운 곡(다음 tick 이 재시도) · `reading_manual` = 운영자가 직접 정한 독음(LLM 이 덮지 않음) · `edited_at` = 운영자 수정 시각(반려가 덮어 지우지 않는 근거).
+- `rejected`: 삭제 · 반려한 곡 `{id, name_key, title, ts, by}`. **RSS 최근 15건에 곡이 남아 있어도 다시 등록되지 않게 한다**(영상 ID · 곡명 키 둘 다). 차단 해제 가능(최대 500건).
+- `seen`: 이미 판단 기록을 남긴 「곡명 중복 건너뜀」 `{id, reason, ts}`(같은 건너뜀을 tick 마다 다시 기록하지 않게, 최근 200건).
+
+**감지**(매 `/tick` — light 10분 · baseline 06:00 JST, 실제 배포 Cloud Scheduler 값 · wake 제외): `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json` 과 비교해 **즉시 등록**(승인 대기 없음).
+- **규칙**(운영자 결정 2026-10-06): ① **곡명이 이미 있으면 등록 안 함**(영상 ID 가 달라도 — 앨범마다 같은 곡이 새 영상으로 올라온다) · 곡명 비교는 NFKC · 대소문자 · 공백 · 꼬리표 무시
+  ② 제목 끝 **「(Cover)」**(대소문자 · 전각 괄호 무관)가 있으면 `cover`, 없으면 `original`. 다른 표기(「(Solo)」 등)에 대한 규칙은 두지 않는다 ③ `feat.` 곡은 등록 안 함
+  ④ 같은 곡명이 한 묶음에 여럿이면 먼저 올라온 영상 하나만 ⑤ 반려 목록(`rejected`)에 있는 영상 · 곡명은 등록 안 함 ⑥ `who="group"`, `date`=공개 시각의 KST 날짜.
+  건너뜀 사유는 `name_dup`(어느 곡과 같은지 `dup_of`) · `feat` · `id_dup` · `rejected` 로 구분해 돌려준다(`find_new_songs` → `(새 곡, 건너뜀)`).
+- **독음은 외부 LLM(Groq)이 쓴다**(`llm.song_reading` — 일본어는 히라가나, 영문 곡명은 가타카나 발음. 가나 · 영숫자 외 응답은 버림). 실패하면 `reading=""` + `needs_reading=True` 로 남아
+  **이후 tick 이 재시도**(tick 당 최대 3건, 신곡 + 재시도 합산). 운영자가 독음을 직접 고치면 `reading_manual` 이 돼 LLM 이 덮지 않고, 독음을 비우거나 「독음 다시 만들기」를 하면 LLM 이 다시 쓴다.
+- **판단 기록 · 이벤트**: 등록 1곡 = `llm_actions.json`(ops) 기록 `song_register`(`by="rule"`, undo = `{type:"remove_song", id, title, added_at}`, input = RSS 항목 스냅샷),
+  곡명 중복 건너뜀 1건 = `song_skip`(검토용, undo 없음, `seen` 으로 한 번만). 둘 다 작업 탭 「LLM 판단」에 보이고 반려할 수 있다. 모니터 이벤트 `flow="song"`
+  (`action` = added · skipped · reading · rss_empty — 어드민 조작은 `via="ops"` 로 edited · deleted · added_manual · unblocked · rejected · reading_regen)가 같은 이벤트 로그(보관 · 스냅샷 · 리포트 전 기간)에 쌓여 리포트 타임라인 「🎵 신곡 감지」 레인에 점으로 나온다.
+  RSS 가 비어 있으면(조회 실패 포함) 그 시간의 첫 tick(분 < 10)에만 degraded 이벤트 1건 — 시간당 1회. 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
+- **쓰기 경로**: 감지 쪽은 tick 안에서 gh 로 **직접** 쓴다(`/write` 자기 호출은 `concurrency=1` 교착 — `record_video_releases` 와 같은 방식; 한 tick 에 songs.json 1번 + 판단 기록 1번(배치) + 이벤트 1번 이하,
+  기록은 songs.json 쓰기 **성공 뒤에만**). 어드민 편집은 `/write` 직렬화(writers kind `song_edit` → `telegram_app._song_edit_commit`, sha 충돌 재시도 4회). 외부 LLM 호출은 호출부가 먼저(A-1).
+- **안전**: `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다.** 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음.
+
+**어드민 화면**(`admin_static/admin.html`, 목업 `ref/v4.2_admin_mockup.html`): **현황 탭**(세부 탭 예고 | 소식 | 트윗 — 소식 세부 탭은 행사 배너 + 소식이 한 목록 칸, 행사(b)·소식(n)은 상세창을 같이 쓰므로 선택 · 펼침을 목록 칸 전체 기준으로 하나만 유지) ·
+**음반 탭**(신곡 감지 상태 카드 · 곡 목록 · 수정 · 삭제 · 직접 추가 · 차단 목록/해제 — 시드 전에는 쓰기 버튼 비활성) · 작업 탭 신곡 판단(`llmKindLabel` · `undoDescribe` · `buildDecideForm` 신곡 양식, 재판단 버튼 없음).
+곡 직접 추가는 제목 · 날짜를 비워 두면 `add_song` 이 RSS → YouTube API 순으로 채운다(별도 「불러오기」 호출 없음).
+
+**어드민 API**(`admin_api` · 계약 `ref/v4.2_admin_api_contract.md`): 읽기 `list_songs`(곡 · 차단 목록 · 카운트 · 한글 독음 미리보기) · `songs_status`(시드 여부 · **지금 RSS 조회**(쿼터 0) · 등록 예정/건너뜀 dry-run · 최근 `song` 이벤트 7일),
+쓰기 `edit_song` · `delete_song`(= 삭제 + 재등록 차단) · `add_song`(YouTube URL/ID → RSS → videos.list 순으로 제목 · 날짜를 채워 보고, 안 되면 직접 입력 · 곡명 중복은 force) · `unblock_song` · `regenerate_song_reading`(독음 다시 만들기).
+**작업 탭 반려**: `song_register` 반려 = 목록에서 지우고 `rejected` 에 추가(그때 등록한 그대로일 때만 — 운영자가 그 뒤 수정했으면 건너뜀) → 사용자 판단 = 다른 값(제목 · 구분 · 부른 사람 · 날짜)으로 다시 등록.
+`song_skip` 반려 → 사용자 판단 = **강제 등록**(곡명이 같아도 다른 곡). 규칙 판단이라 **LLM 재판단은 없다**(`llm_review_options.rejudge=false`, 요청하면 오류).
+- self-test: `python -m src.backend.songs`(60건 — 분류 · 곡명 키 · 실제 RSS 발췌 `fixtures/topic_feed.sample.xml` 감지 · 건너뜀 사유 · 삭제 · 차단 · 해제 · 수정 · 직접 추가 · 독음 채우기 · 가나→한글),
+  `python -m src.backend.handlers`(`_detect_new_songs` 가짜 gh · 가짜 LLM — 등록 · 판단 기록 · 이벤트 · 멱등 · 반려 재등록 차단 · LLM 재시도 · 시드 전/충돌/예외),
+  `python -m src.backend.admin_api`(로컬 저장소 통합 흐름 — 감지 → 반려 → 재감지 안 됨 → 사용자 판단 재등록 → 삭제 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 실패 재시도 · 재요청).
+
 ---
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
@@ -920,6 +958,10 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **js/api.js** — `fetchPreview(url)`: AbortController + `FETCH_TIMEOUT_MS`, `cache:"no-store"`. `{ok,data|error}`.
 - **js/render.js** — `renderBoard(boardEl, preview, nowMs, archive)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시. **v4.1.0**: PC = 타임테이블 + 이후 예고, 모바일 = 1명씩 슬라이드),
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
+- **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
+  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로 붙인다. **PC(≥768px)는 버튼이 없다** — 플레이어가 `#player-dock`(보드 아래)에 상시 표시된다(아래). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다(모바일 모달).
+  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
+    프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
@@ -938,6 +980,59 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   전부 읽음. 메시지가 많아도 말풍선(헤더 포함)이 화면 세로 2/3을 넘지 않도록 내부 스크롤 영역
   높이를 `calc(66.6vh - 44px)` 로 고정(css). `한/日` 토글은 헤더에 1개(전역 `mew:tllang`), 원문(X)
   링크는 메시지별(`.ori`). 만료·404 면 안 뜸.
+- **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
+
+### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
+
+「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 **data 브랜치 `songs.json`**(`SONGS_URL` — 신곡 자동 감지가 등록, 어드민 음반 탭에서 수정 · 삭제 · 직접 추가, 아래 §8.15)을 먼저 읽고,
+없으면(시드 전 · 로컬 개발) 프론트에 같이 배포되는 정적 `assets/songs.json`(`SONGS_FALLBACK_URL`, `scripts/build_songs_json.py` 로 생성)으로 폴백한다.
+곡 레코드: `{id(video_id), title, kind(original|cover), who(멤버 키|group), date, reading(가나 독음, 없으면 ""), added_at?(자동 등록분)}` — YouTube 에서 얻는 값만. **솔로 구분은 없다**(솔로도 cover — 운영자 결정 2026-10-06, 정규 규칙은 제목 끝 「(Cover)」 하나뿐).
+BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필요하고 플레이어가 쓰지 않아 **일부러 제외**. (별칭 기능은 2026-10-07 에 없앴다 — 곡 줄의 「✎ 별칭」 버튼 · `localStorage` 저장 모두 제거.)
+
+**곡 데이터의 출처와 갱신**: 초기 데이터(시드)는 BPM 프로젝트(`bandori-playlist-maker-data` 저장소 `origin/data` 의 `data/songs_master.csv`)의 곡 목록에 YouTube 업로드 시각을 붙인
+`ref/player/songs_release.json`(65곡, 조사 보고 `docs/yumemita_player/REPORT.md` @devpapers)에서 `python scripts/build_songs_json.py` 로 만든 `assets/songs.json` 이다.
+출시일(`date`)은 **공식 발매일이 아니라 영상 업로드 시각**(KST 날짜)이다 — 토픽 채널 음원은 MV 공개일과 다를 수 있다. 이후 신곡은 BPM 프로젝트의 `/update-new-songs` 와 **무관하게**
+백엔드 tick 이 토픽 채널 RSS 에서 자동 감지해 data 브랜치 `songs.json` 에 등록한다(§8.15). **운영 전 시드 필요**: data 브랜치에 `songs.json` 이 없으면 자동 등록은 아무것도 하지 않는다 —
+`assets/songs.json` 을 data 브랜치 `songs.json` 으로 올려 시드한다(운영자 작업, 아직 하지 않음).
+
+- **재생**: YouTube IFrame Player API(`https://www.youtube.com/iframe_api`, 처음 열 때 로드)의 임베드 프레임만 쓴다. **광고 건너뛰기 없음** — 광고는 프레임 안에서 YouTube 가 처리.
+  (개발자 정책 III.I.5 광고 수정·차단 금지 · III.I.9 백그라운드 플레이어 금지 · 필수 최소 기능 200×200, 프레임 앞 오버레이 금지.)
+  오류(임베드 제한 등)면 「YouTube 에서 보기」 링크를 보여준다.
+- **재생목록**(2026-10-07~08): 오른쪽 곡 목록의 곡을 **누르면 재생목록(재생부 아래 「재생목록」 칸 — 움푹 패인 우물 모양)의 맨 뒤에 쌓인다. 같은 곡을 또 눌러도 또 쌓인다(빠지지 않음, 곡 줄에는 「재생목록 1·3번」)**.
+  **재생목록이 비어 있다가 처음 들어가는 곡은 쌓이면서 바로 재생**하고, 이후 곡은 쌓기만 한다. 재생 버튼은 멈춰 있고 지금 곡이 재생목록에서 고른 것이 아니면 1번부터 시작한다.
+  같은 곡이 여러 번 있을 수 있어 「지금 곡」은 곡 id 가 아니라 **재생목록 위치(`st.qi`, 0부터, -1 = 재생목록에서 고른 곡이 아님)** 로 추적한다. 재생목록 칸의 곡을 누르면 그 위치로 이동·재생, ✕ 로 빼기(지금 곡을 빼면 끝까지 재생 후 멈춤), 「비우기」로 전체 삭제.
+  곡이 끝나면 **재생목록의 다음 위치로 넘어가고, 마지막이면 멈춘다**(`cueVideoById` 로 첫 화면 복귀 — 추천 영상으로 안 넘어가게). 재생목록이 비어 있으면 한 곡만 재생하고 멈춘다.
+  이전·다음 버튼은 재생목록이 있으면 그 안에서(끝에서 처음으로 순환, 셔플이면 무작위), 없으면 현재 검색·정렬 결과 순서. 재생목록은 저장하지 않는다(새로고침하면 비워짐).
+  플로팅 상태의 손잡이 줄 제목은 재생목록에서 고른 곡이면 「<곡명> (n/m)」(곡명만 말줄임, `(n/m)` 은 항상 보임).
+- **반복**(BPM 프로젝트 `playbar.js` 와 같은 3단계, 2026-10-07): 반복 버튼을 누를 때마다 **꺼짐 → 한 곡 → 전체 → 꺼짐**. 한 곡 = 같은 곡을 처음부터 다시(버튼 안 글자 「1」), 전체 = 재생목록 마지막 곡 뒤에 1번으로(「A」).
+  자동 넘김과 순환은 **재생목록 안의 곡**에만 적용된다(재생목록 밖 곡은 전체 반복이어도 끝나면 멈춤).
+- **팝업 ↔ 플로팅**: 프레임 요소(`.mp-frame`)는 한 번 만들고 **옮기지 않는다**(옮기면 iframe 이 다시 로드돼 재생이 끊김). 팝업이 열려 있으면 JS 가 재생부 자리(`.mp-slot`)에 맞춰 위치·크기를 주고,
+  내리면 `.is-float`(오른쪽 아래, 356×200 — 높이 200 이 최소 요건) 로 남는다. 손잡이 줄(`.mp-grip`)은 프레임 **바깥 위**에 붙는다 — 끌어서 이동 · 더블클릭 = 팝업으로 · ▴ 열기 · ✕ 정지하고 치움.
+  프레임은 재생을 한 번이라도 시작했을 때만 남는다. 모바일은 하단 도트 띠(푸터 45 + 도트 44) 위, PC 는 고정 푸터 위.
+- **신곡 NEW**(2026-10-08): 곡의 **발매일(`date`) +14일까지**(그날 포함, KST)가 신곡이다(`songs.js isNewSong`). 발매일 전 날짜는 신곡이 아니다. 등록 시각(`added_at`)은 쓰지 않는다 — 2026-10-08 오전까지는 `added_at` 기준 7일이었으나 발매일 +14일로 바꿨다(운영자 결정). 시드 곡도 최근 14일 안에 발매됐으면 신곡이다.
+  첫 시드 후 첫 tick 에 한꺼번에 등록되는 과거 곡(10곡)도 모두 신곡이 된다. 표시: ① CD 버튼 오른쪽 위 `NEW` 배지(`playerbtn.js initNewSongBadge` 가 페이지 로드 때 곡 목록을 읽어 `<html data-new-song>` 를 켜고 CSS 가 PC · 모바일 버튼에 그림) ② 곡 줄 · 재생 중 곡 제목 옆 `NEW` 알약 ③ 필터 「신곡」 버튼(신곡만).
+  **신곡은 정렬과 무관하게 항상 목록 맨 위, 최신 순**(발매일 내림차순 → 등록 시각 → 곡명) — 나머지만 고른 정렬대로. NEW 표시에는 광택 + 맥박 애니메이션(움직임 줄이기 설정이면 멈춤).
+- **한글 음차 표시**(2026-10-07): 곡명에 일본어(가나·한자)가 있고 독음이 있는 곡만, 곡 줄과 재생 중 곡 정보의 **날짜 줄 아래**에 한글 음차를 한 줄 보인다(`songs.js displayKo`). 영문 곡명 · 독음 없는 곡은 표시 없음. **가나 독음 자체는 화면에 보이지 않는다**(검색 · 이름순 정렬에만 쓴다).
+  변환(`kanaToHangul`)은 단순화 규칙이다 — 조사 は 도 「하」, 작은 모음(ゥ ェ …)은 지운다(`トゥ`→토).
+- **검색**(`songs.js`): 곡명 · 독음(가나 + 자동 변환한 한글)을 한 번에 부분 일치. 대소문자 · 전각 무시, 가타카나 = 히라가나, 한글은 초성 평음화(ㅋ=ㄱ ㅌ=ㄷ ㅍ=ㅂ ㅊ=ㅈ)로 표기 차이를 흡수.
+  가나 → 한글 변환은 외래어 표기법을 단순화한 것(`kanaToHangul`: 어두 か·た행 가·다, ん=ㄴ · っ=ㅅ 받침, 장음 생략, 조사 は 도 글자 그대로 「하」). 부른 사람 · 종류 · 날짜는 검색 대상 아님(종류는 필터 버튼).
+- **정렬**: 이름순(독음 있으면 독음, 없으면 곡명, `localeCompare("ja")`) · 날짜순(같은 날은 곡명순). 기본 날짜 내림차순.
+- **z-index**: 도트 띠 25 < 플로팅 프레임 45 < 디스클레이머 팝업(`#foot`) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
+- selfcheck: `songs.selfcheck.mjs`(변환 · 정규화 · 검색 · 정렬 · 강조 구간 · 종류 30건). **보류**: 곡명 한글 해석 검색.
+
+**확인 필요 · 미정 (2026-10-06 구현 시점)** — 임의로 넘겨짚지 않고 남겨 둔 것:
+1. **시드 · 첫 실행**: data 브랜치에 `songs.json` 이 없어서 자동 등록이 아직 동작하지 않는다(시드 전 = 건너뜀). 시드 뒤 **첫 tick 은 토픽 RSS 최근 15건 중 곡명이 없는 곡을 한꺼번에 등록**한다 —
+   2026-10-06 RSS 기준 10곡(`TearJerker` · `Face The Next` · `一番のひかり` · `うちゅうのふしぎ` · `夢はトゥルーエンド！` · `in my words` · `愛は衝動` · `にこいちミライ` · `唱`(cover) · `夢我夢中`).
+   BPM 보고서가 「분류 불명 9곡」으로 보류했던 곡들이 규칙대로 original 로 들어가므로, 시드 전에 포함해도 되는지 운영자 확인이 필요하다. 신곡에 필요한 값은 RSS 만으로 얻는다(제목 · 공개 시각 · 구분) — `videos.list` 쿼터 0.
+2. **독음 15곡은 예시 — 운영자 검수 필요**. 나머지 50곡은 독음이 없어 독음(가나·한글) 검색이 안 된다. 채우는 방법(직접 입력 / 자동 생성)은 미정. `scripts/build_songs_json.py` 의 `READ` 에 있다.
+3. **이름순 정렬 한계**: 독음이 있으면 독음, 없으면 곡명(한자 · 기호 포함)으로 정렬해 섞여 보인다. 독음이 전 곡에 채워지면 해소.
+4. **미분류 9곡 · `feat.`**: 미분류 9곡 중 토픽 채널에 있는 곡은 위 1항대로 자동 등록 대상이다. `feat.` 곡은 자동 등록 · 시드에서 모두 제외(`songs.py` · `build_songs_json.py`). 피드 15건을 넘는 버스트는 아직 고려하지 않았다.
+5. **미검증(헤드리스 Chrome 에서 영상이 검은 화면이라 못 본 것)**: 실제 영상 재생 · 임베드 제한 영상의 오류 안내(`onError`) · 재생/일시정지 상태 동기화(`onStateChange`) · 모바일 실제 터치(손잡이 드래그 · 더블탭 → 팝업). 실기기 확인 필요.
+6. **정책 해석**: 「팝업을 내려도 재생 유지」를 위해 프레임을 항상 보이게 두는 것은 III.I.9(백그라운드 플레이어 금지)와 최소 200×200 요건의 **원문을 근거로 한 해석**이다. 플로팅 프레임의 허용 여부를 YouTube 에 문의해 확인한 것은 아니다.
+7. **✕(정지하고 치우기) 버튼**은 목업에 없던 추가 기능이다 — 플로팅 프레임이 높이 200px 로 화면을 계속 차지해 치울 방법이 필요하다고 판단. 유지 여부는 운영자 확인.
+8. **새 용어 미등재**: 「플로팅 프레임」 · 「별칭」 · 「독음」 · 「손잡이 줄」 은 `docs/TERMINOLOGY.md` 에 아직 없다(임의로 추가하지 않음 — 운영자와 정한 뒤 등재).
+9. **멤버 표시 분류 규칙**: 곡의 `who` 는 업로드 채널명으로 정한다(멤버 이름 일·영문 모두 인식, 「`Yuno Sengoku - Topic`」 같은 자동 생성 토픽 채널 포함, 그 밖은 `group`). 멤버별 곡 수는 그룹 28 · 아라레 11 · 유노 8 · 미야코 7 · 리츠 6 · 노노카 5.
+   한 곡이 여러 멤버의 곡인지(참여 멤버)는 데이터에 없다.
 
 ---
 

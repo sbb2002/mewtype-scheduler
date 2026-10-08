@@ -1038,14 +1038,63 @@
         .cx-chips[data-r="1"] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
         .cx-chips[data-l="1"] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent); }
         .cx-chips[data-l="1"][data-r="1"] { -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+
+        /* ── (v4.2.0) 현황 탭 세부 구분(예고 | 소식 | 트윗) — 안쪽 #preview-tab · #content-tab 은 id 그대로 두고 pane 으로만 쓴다 ── */
+        .sub-pane { display: none; }
+        .sub-pane.active { display: block; }
+
+        /* ── (v4.2.0) 음반 탭 — 신곡 감지 상태 카드 · 곡 목록 · 편집 · 차단 목록. 목업 ref/v4.2_admin_mockup.html ── */
+        #songs-tab { --ok: #3ecf8e; --fail: #ff5d5d; --run: #f5b83d; --wait: #7c8aa0; }
+        .sg-badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; background: rgba(124, 138, 160, 0.3); color: rgb(180, 192, 212); }
+        .sg-badge.auto { background: rgba(62, 207, 142, 0.18); color: var(--ok); }
+        .sg-badge.manual { background: rgba(236, 72, 153, 0.22); color: rgb(249, 168, 212); }
+        .sg-badge.llm { background: rgba(167, 139, 250, 0.2); color: #c4b5fd; }
+        .sg-badge.warn { background: rgba(245, 184, 61, 0.2); color: #f5b83d; }
+        .sg-badge.bad { background: rgba(255, 93, 93, 0.18); color: var(--fail); }
+        .sd-card { border: 1px solid rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.05); border-radius: 10px; padding: 0.9rem 1rem; margin-bottom: 1.25rem; display: grid; gap: 0.7rem; }
+        .sd-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+        .sd-head h3 { margin: 0; font-size: 0.95rem; color: var(--color-accent); }
+        .sd-head p { margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--color-text-muted); }
+        .sd-prev { display: grid; gap: 0.5rem; }
+        .sd-prev h4 { margin: 0.3rem 0 0.1rem; font-size: 0.82rem; color: var(--color-text-muted); font-weight: 600; }
+        .sd-row { display: grid; gap: 0.2rem; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem 0.8rem; }
+        .sd-row .t { font-weight: 600; overflow-wrap: anywhere; }
+        .sd-row .m { font-size: 0.78rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
+        .sd-dry { font-size: 0.78rem; color: #f5b83d; }
+        .sd-ev { font-size: 0.8rem; color: var(--color-text-muted); }
+        .sd-ev summary { cursor: pointer; }
+        .sd-ev-row { display: grid; grid-template-columns: 6.2rem 1fr; gap: 0.6rem; padding: 3px 0; border-top: 1px solid var(--color-border); }
+        .sd-ev-row .t { font-family: ui-monospace, Consolas, monospace; font-size: 0.76rem; }
+        .sd-ev-row.degraded { color: #f5b83d; }
+        .sd-ev-row.err { color: var(--fail); }
+        .sg-toolrow { display: flex; gap: 0.5rem; align-items: center; min-width: 0; }
+        .sg-toolrow select { width: auto; flex: none; }
+        .sg-toolrow .sg-grow { flex: 1; min-width: 0; }
+        .sg-box { background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.35); color: #7fe0f0; border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.82rem; }
+        .sg-box.warn { background: rgba(245, 184, 61, 0.1); border-color: rgba(245, 184, 61, 0.4); color: #f5b83d; }
+        .sg-form { display: grid; gap: 0.7rem; }
+        .sg-fld { display: grid; gap: 0.25rem; }
+        .sg-fld > label { font-size: 0.8rem; color: var(--color-text-muted); font-weight: 400; margin: 0; }
+        .sg-fld .hint { font-size: 0.74rem; color: var(--color-text-muted); }
+        .sg-fld .ko { font-size: 0.82rem; color: #c4b5fd; }
+        .sg-frow { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+        .sg-rd { display: flex; gap: 0.4rem; }
+        .sg-rd input { flex: 1; min-width: 0; }
+        .sg-rd button { white-space: nowrap; }
+        .sg-err { color: var(--fail); font-size: 0.82rem; }
+        .sg-link { color: var(--color-accent); overflow-wrap: anywhere; }
+        .sg-spin { display: inline-block; width: 0.8rem; height: 0.8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: sg-sp 0.7s linear infinite; vertical-align: -2px; margin-right: 0.3rem; }
+        @keyframes sg-sp { to { transform: rotate(360deg); } }
+        .sg-blocked-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; }
+        @media (max-width: 640px) { .sg-frow { grid-template-columns: 1fr; } .sg-blocked-row { grid-template-columns: 1fr; } .sg-blocked-row button { width: 100%; } }
 </style>
 </head>
 <body>
     <h1>뮤타입 방송 스케줄 — 관리 페이지</h1>
 
     <div class="tabs">
-        <button class="tab-btn active" data-tab="preview"><i aria-hidden="true">🗓</i><span>예고</span></button>
-        <button class="tab-btn" data-tab="content"><i aria-hidden="true">📰</i><span>소식 · 트윗</span></button>
+        <button class="tab-btn active" data-tab="status"><i aria-hidden="true">🗓</i><span>현황</span></button>
+        <button class="tab-btn" data-tab="songs"><i aria-hidden="true">💿</i><span>음반</span></button>
         <button class="tab-btn" data-tab="ingest"><i aria-hidden="true">📥</i><span>원문 투입</span></button>
         <button class="tab-btn" data-tab="jobs"><i aria-hidden="true">⚙️</i><span>작업</span></button>
         <button class="tab-btn" data-tab="lost"><i aria-hidden="true">📦</i><span>유실 원문</span></button>
@@ -1053,8 +1102,16 @@
         <button class="tab-btn" data-tab="report"><i aria-hidden="true">📊</i><span>리포트</span></button>
     </div>
 
-    <!-- ════ 탭: 예고 ════ -->
-    <div class="tab-content active" id="preview-tab">
+    <!-- ════ 탭: 현황 (v4.2.0 — 예고 · 소식 · 트윗을 세부 탭으로 묶음. 안쪽 #preview-tab · #content-tab 의 id 와 내부 구조는 그대로) ════ -->
+    <div class="tab-content active" id="status-tab">
+    <div class="ing-subtabs" role="tablist" aria-label="현황 구분" id="status-subtabs">
+        <button type="button" class="ing-subtab" role="tab" aria-selected="true" data-sub="preview"><b>예고</b><small>방송 스케줄</small></button>
+        <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-sub="notice"><b>소식</b><small>행사 배너 포함</small></button>
+        <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-sub="tweet"><b>트윗</b><small>멤버 개인</small></button>
+    </div>
+
+    <!-- ──── 세부 탭: 예고 ──── -->
+    <div class="sub-pane active" id="preview-tab">
         <section class="gp-card" id="grp-pending" hidden aria-labelledby="gp-h">
             <div class="gp-head">
                 <h3 id="gp-h">그룹 영상 — 참여 멤버 확인 대기 <span class="gp-count" id="gp-count"></span></h3>
@@ -1067,6 +1124,41 @@
         <div class="cx-split">
             <div class="cx-list"><div id="preview-list" class="loading">로드 중...</div></div>
             <aside class="cx-detail" id="pv-detail"></aside>
+        </div>
+    </div>
+
+    <!-- ──── 세부 탭: 소식(행사 배너 포함) · 트윗 — 한 목록 영역을 쓰고 상단 세부 탭이 ui.sub 를 정한다 ──── -->
+    <div class="sub-pane" id="content-tab">
+        <div class="cx-tools" id="ct-tools"></div>
+        <div class="cx-split">
+            <div class="cx-list">
+                <div id="banners-list" class="loading" hidden>로드 중...</div>
+                <div id="notices-list" class="loading">로드 중...</div>
+                <div id="tweets-list" class="loading" hidden>로드 중...</div>
+            </div>
+            <aside class="cx-detail" id="ct-detail"></aside>
+        </div>
+    </div>
+    </div><!-- /#status-tab -->
+
+    <!-- ════ 탭: 음반 (v4.2.0 — 신곡 감지 상태 · 곡 관리 · 직접 추가 · 차단 목록. API 계약 ref/v4.2_admin_api_contract.md) ════ -->
+    <div class="tab-content" id="songs-tab">
+        <section class="sd-card" id="sd-card" aria-labelledby="sd-h">
+            <div class="sd-head">
+                <div>
+                    <h3 id="sd-h">🎵 신곡 감지 상태</h3>
+                    <p>토픽 채널 RSS(쿼터 0)를 정기 수집마다 읽어, 곡명이 없는 곡을 즉시 등록합니다. 「지금 확인」은 읽기만 하고 아무것도 쓰지 않습니다.</p>
+                </div>
+                <button type="button" class="btn-line" id="sd-check">지금 확인</button>
+            </div>
+            <div class="now-grid" id="sd-tiles"></div>
+            <div class="sd-prev" id="sd-prev" hidden></div>
+            <details class="sd-ev" id="sd-ev" hidden><summary>최근 신곡 기록 <span id="sd-ev-n"></span></summary><div id="sd-ev-list"></div></details>
+        </section>
+        <div class="cx-tools" id="sg-tools"></div>
+        <div class="cx-split">
+            <div class="cx-list"><div id="sg-list" class="loading">로드 중...</div></div>
+            <aside class="cx-detail" id="sg-detail"></aside>
         </div>
     </div>
 
@@ -1231,19 +1323,6 @@
         </div>
     </div>
 
-    <!-- ════ 탭: 소식 · 트윗 ════ -->
-    <div class="tab-content" id="content-tab">
-        <div class="cx-tools" id="ct-tools"></div>
-        <div class="cx-split">
-            <div class="cx-list">
-                <div id="banners-list" class="loading" hidden>로드 중...</div>
-                <div id="notices-list" class="loading">로드 중...</div>
-                <div id="tweets-list" class="loading" hidden>로드 중...</div>
-            </div>
-            <aside class="cx-detail" id="ct-detail"></aside>
-        </div>
-    </div>
-
     <!-- ════ 탭: 작업 ════ -->
     <div class="tab-content" id="jobs-tab">
         <section class="jobs-sec" aria-labelledby="h-now">
@@ -1356,6 +1435,17 @@
         </div>
     </div>
 
+    <!-- ════ 곡 수정(좁은 화면) · 곡 직접 추가 팝업 (v4.2.0 — 좁은 화면에서는 바닥 시트) ════ -->
+    <div class="modal" id="song-modal" role="dialog" aria-modal="true" aria-labelledby="song-modal-title">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="song-modal-title">곡</h3>
+                <button type="button" onclick="app.closeSongModal()" aria-label="닫기">&times;</button>
+            </div>
+            <div id="song-modal-body"></div>
+        </div>
+    </div>
+
     <!-- ════ 확인 팝업 (삭제 · 되돌리기 등 — 브라우저 confirm 대신 수정 팝업과 같은 UI) ════ -->
     <div class="modal modal--confirm" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
         <div class="modal-content">
@@ -1376,9 +1466,49 @@
         // 앱 상태 · 헬퍼
         // ═══════════════════════════════════════════════════════════════════════════
 
+        // (v4.2.0) 가나 → 한글 독음 — src/frontend/js/songs.js 의 kanaToHangul 과 같은 규칙(음반 탭 편집창의 「한글 독음 미리보기」용).
+        // 외래어 표기법을 단순화한 것: 어두 か·た행은 가·다, 어중은 카·타. ん=ㄴ 받침, っ=ㅅ 받침, 장음(ー · お/ゆ단 뒤의 う)은 생략.
+        const sgKanaToHangul = (() => {
+            const BASE = {
+                あ: "아", い: "이", う: "우", え: "에", お: "오", か: "카", き: "키", く: "쿠", け: "케", こ: "코",
+                さ: "사", し: "시", す: "스", せ: "세", そ: "소", た: "타", ち: "치", つ: "츠", て: "테", と: "토",
+                な: "나", に: "니", ぬ: "누", ね: "네", の: "노", は: "하", ひ: "히", ふ: "후", へ: "헤", ほ: "호",
+                ま: "마", み: "미", む: "무", め: "메", も: "모", や: "야", ゆ: "유", よ: "요",
+                ら: "라", り: "리", る: "루", れ: "레", ろ: "로", わ: "와", を: "오",
+                が: "가", ぎ: "기", ぐ: "구", げ: "게", ご: "고", ざ: "자", じ: "지", ず: "즈", ぜ: "제", ぞ: "조",
+                だ: "다", ぢ: "지", づ: "즈", で: "데", ど: "도", ば: "바", び: "비", ぶ: "부", べ: "베", ぼ: "보",
+                ぱ: "파", ぴ: "피", ぷ: "푸", ぺ: "페", ぽ: "포",
+            };
+            const COMBO = {
+                き: ["캬", "큐", "쿄"], し: ["샤", "슈", "쇼"], ち: ["차", "추", "초"], に: ["냐", "뉴", "뇨"],
+                ひ: ["햐", "휴", "효"], み: ["먀", "뮤", "묘"], り: ["랴", "류", "료"], ぎ: ["갸", "규", "교"],
+                じ: ["자", "주", "조"], び: ["뱌", "뷰", "뵤"], ぴ: ["퍄", "퓨", "표"],
+            };
+            const INIT = { 카: "가", 키: "기", 쿠: "구", 케: "게", 코: "고", 타: "다", 치: "지", 츠: "즈", 테: "데", 토: "도" };
+            const OU = new Set([8, 12, 13, 17]);
+            const isHg = (c) => c >= 0xac00 && c <= 0xd7a3;
+            const noBat = (c) => isHg(c) && (c - 0xac00) % 28 === 0;
+            return (src) => {
+                const t = String(src || "").replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 96));
+                let out = "", atStart = true;
+                const last = () => out.charCodeAt(out.length - 1);
+                for (let i = 0; i < t.length;) {
+                    const c = t[i], n = t[i + 1];
+                    if (COMBO[c] && n && "ゃゅょ".includes(n)) { out += COMBO[c]["ゃゅょ".indexOf(n)]; i += 2; atStart = false; continue; }
+                    if (c === "ん") { if (noBat(last())) out = out.slice(0, -1) + String.fromCharCode(last() + 4); i++; continue; }
+                    if (c === "っ") { if (noBat(last())) out = out.slice(0, -1) + String.fromCharCode(last() + 19); i++; continue; }
+                    if (c === "ー") { i++; continue; }
+                    if (c === "う" && isHg(last()) && OU.has(Math.floor(((last() - 0xac00) % 588) / 28))) { i++; continue; }
+                    if (BASE[c]) { let s = BASE[c]; if (atStart && INIT[s]) s = INIT[s]; out += s; atStart = false; i++; continue; }
+                    out += c; atStart = /\s/.test(c); i++;
+                }
+                return out;
+            };
+        })();
+
         const app = {
             csrfToken: null,
-            currentTab: "preview",
+            currentTab: "status",
             data: {
                 preview: null,
                 notices: null,
@@ -1391,8 +1521,10 @@
             ing: { mode: "auto", kind: "preview", host: "arale", collab: new Set(), thost: "arale" },
             channels: {},
             // (v4.0.8) 목록 UI 상태 — 구분 탭 · 필터 · 검색 · 더 보기 · 펼침/선택 행(탭별 ns: b 행사 · n 소식 · t 트윗 · p 예고)
-            ui: { sub: "notices", nCat: "all", tUnit: "all", pUnit: "all", qc: "", qp: "", searchC: false, searchP: false,
+            ui: { sub: "notices", statusSub: "preview", nCat: "all", tUnit: "all", pUnit: "all", qc: "", qp: "", searchC: false, searchP: false,
                   limit: { notices: 8, tweets: 8 }, pastOpen: false, open: {}, sel: {} },
+            // (v4.2.0) 음반 탭 상태 — list = list_songs 응답, status = songs_status 응답, showPrev = 「지금 확인」 미리보기를 보이는 중
+            sg: { seg: "list", chip: "all", sort: "date-desc", q: "", searchOn: false, sel: null, list: null, status: null, showPrev: false, checking: false },
 
             async init() {
                 // CSRF 토큰 가져오기
@@ -1439,14 +1571,20 @@
                 window.matchMedia("(min-width: 960px)").addEventListener("change", () => {
                     this.ui.open = {};
                     this.ui.sel = {};
-                    if (this.currentTab === "content") this.renderContentAll();
-                    else if (this.currentTab === "preview" && this.data.preview) this.renderPreview();
+                    if (this.currentTab === "status") {
+                        if (this.ui.statusSub === "preview") { if (this.data.preview) this.renderPreview(); }
+                        else this.renderContentAll();
+                    } else if (this.currentTab === "songs") {
+                        this.closeSongModal();
+                        this.sg.sel = null;
+                        if (this.sg.list) this.renderSongsAll();
+                    }
                 });
                 const topBtn = document.getElementById("cx-top");
                 if (topBtn) {
                     topBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
                     window.addEventListener("scroll", () => {
-                        topBtn.classList.toggle("on", window.scrollY > 500 && (this.currentTab === "content" || this.currentTab === "preview"));
+                        topBtn.classList.toggle("on", window.scrollY > 500 && (this.currentTab === "status" || this.currentTab === "songs"));
                     }, { passive: true });
                 }
 
@@ -1487,8 +1625,16 @@
                 document.getElementById("t-tl").addEventListener("click", (e) => this.translateInto("t-text", "t-text-ko", e.currentTarget));
                 this.updateIngestForm();
 
+                // (v4.2.0) 현황 세부 탭(예고 | 소식 | 트윗)
+                document.querySelectorAll("#status-subtabs .ing-subtab").forEach((b) => b.addEventListener("click", () => {
+                    this.showStatusSub(b.dataset.sub);
+                }));
+                // 음반 탭 — 「지금 확인」 · 「＋ 곡 추가」 는 목록 도구줄을 다시 그릴 때마다 생기므로 거기서 연결한다
+                document.getElementById("sd-check").addEventListener("click", () => this.checkSongsNow());
+                document.getElementById("song-modal").addEventListener("mousedown", (ev) => { if (ev.target.id === "song-modal") this.closeSongModal(); });
+
                 // 초기 탭 로드
-                this.switchTab("preview");
+                this.switchTab("status");
             },
 
             switchTab(tabName) {
@@ -1508,13 +1654,29 @@
                 });
 
                 // 탭별 데이터 로드
-                if (tabName === "preview") this.loadPreview();
-                else if (tabName === "content") this.loadNoticesAndTweets();
+                if (tabName === "status") this.showStatusSub(this.ui.statusSub || "preview");
+                else if (tabName === "songs") this.loadSongs();
                 else if (tabName === "jobs") this.loadJobs();
                 else if (tabName === "lost") this.loadLost();
                 else if (tabName === "control") this.loadControl();
                 else if (tabName === "report") {
                     document.getElementById("report-frame").src = "/monitor-live";  // 열 때마다 최신
+                }
+            },
+
+            // (v4.2.0) 현황 탭 세부 탭 전환. 소식 = 행사 배너 + 소식(ui.sub "notices"), 트윗 = ui.sub "tweets". 기존 목록 렌더 함수를 그대로 쓴다.
+            showStatusSub(sub) {
+                this.ui.statusSub = sub;
+                document.querySelectorAll("#status-subtabs .ing-subtab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === sub)));
+                document.getElementById("preview-tab").classList.toggle("active", sub === "preview");
+                document.getElementById("content-tab").classList.toggle("active", sub !== "preview");
+                if (sub === "preview") {
+                    this.loadPreview();
+                } else {
+                    this.ui.sub = sub === "tweet" ? "tweets" : "notices";
+                    this.ui.open.n = this.ui.open.b = this.ui.open.t = null;
+                    this.ui.sel.n = this.ui.sel.b = this.ui.sel.t = null;
+                    this.loadNoticesAndTweets();
                 }
             },
 
@@ -2016,13 +2178,15 @@
                     const sid = String(id);
                     if (this.cxWide()) {
                         this.ui.sel[ns] = sid;
-                        row.parentElement.querySelectorAll('.cx-row[aria-selected="true"]').forEach((r) => r.setAttribute("aria-selected", "false"));
+                        if (ns === "b") this.ui.sel.n = null; else if (ns === "n") this.ui.sel.b = null;   // 행사 · 소식은 상세창 하나를 같이 쓴다
+                        (row.closest(".cx-list") || row.parentElement).querySelectorAll('.cx-row[aria-selected="true"]').forEach((r) => r.setAttribute("aria-selected", "false"));
                         row.setAttribute("aria-selected", "true");
                         this.cxFillDetail(ns, title, bodyFn);
                         return;
                     }
                     const open = row.dataset.open !== "true";
-                    row.parentElement.querySelectorAll('.cx-row[data-open="true"]').forEach((r) => {
+                    if (open && ns === "b") this.ui.open.n = null; else if (open && ns === "n") this.ui.open.b = null;
+                    (row.closest(".cx-list") || row.parentElement).querySelectorAll('.cx-row[data-open="true"]').forEach((r) => {
                         r.dataset.open = "false";
                         const h = r.querySelector(".cx-row-h");
                         if (h) h.setAttribute("aria-expanded", "false");
@@ -2050,7 +2214,12 @@
                 if (!this.cxWide()) return;
                 const hit = rows.find((r) => r.selected);
                 if (hit) this.cxFillDetail(ns, hit.title, hit.bodyFn);
-                else { this.ui.sel[ns] = null; this.cxClearDetail(ns); }
+                else {
+                    this.ui.sel[ns] = null;
+                    // 행사(b)와 소식(n)은 상세창(ct-detail)을 같이 쓴다 — 짝이 골라 둔 행이 있으면 그쪽이 채운 상세를 지우지 않는다
+                    const mate = ns === "b" ? "n" : ns === "n" ? "b" : null;
+                    if (!(mate && this.ui.sel[mate])) this.cxClearDetail(ns);
+                }
             },
 
             cxKstToday() { return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10); },
@@ -2071,11 +2240,6 @@
                 const host = document.getElementById("ct-tools");
                 if (!host) return;
                 this.cxEnsureAvatars();
-                const cn = {
-                    banners: ((this.data.banners && this.data.banners.banners) || []).length,
-                    notices: ((this.data.notices && this.data.notices.notices) || []).length,
-                    tweets: this.cxTweets().length,
-                };
                 const unitOpts = [["all", "전체"]].concat(Object.keys(this.channels || {}).filter((k) => this.cxUnitColor(k) !== "#9a9a9a")
                     .map((k) => [k, (this.channels[k] || {}).name_ko || k]));
                 let chips = null;
@@ -2086,12 +2250,10 @@
                     chips = this.cxChips(unitOpts, u.tUnit,
                         (k) => { u.tUnit = k; u.limit.tweets = 8; u.open.t = null; u.sel.t = null; this.renderContentAll(); }, true);
                 }
+                // (v4.2.0) 행사 | 소식 | 트윗 구분 탭은 없앴다 — 상단 현황 세부 탭(소식 = 행사 배너 + 소식, 트윗)이 대신한다
                 this.cxTools(host, {
-                    seg: [{ key: "banners", label: "행사", count: cn.banners }, { key: "notices", label: "소식", count: cn.notices }, { key: "tweets", label: "트윗", count: cn.tweets }],
-                    segCur: u.sub,
-                    onSeg: (k) => { u.sub = k; window.scrollTo({ top: 0 }); this.renderContentAll(); },
                     chips,
-                    hasSearch: u.sub !== "banners",
+                    hasSearch: true,
                     q: u.qc,
                     searchOn: u.searchC,
                     onSearch: () => { u.searchC = !u.searchC; this.renderContentTools(); },
@@ -2101,13 +2263,17 @@
 
             renderContentList() {
                 const sub = this.ui.sub;
+                // (v4.2.0) 소식 세부 탭 = 행사 배너(있을 때만) + 소식. 트윗 세부 탭 = 트윗
+                const bannerCount = ((this.data.banners && this.data.banners.banners) || []).length;
+                const show = { banners: sub === "notices" && bannerCount > 0, notices: sub === "notices", tweets: sub === "tweets" };
                 for (const [k, id] of [["banners", "banners-list"], ["notices", "notices-list"], ["tweets", "tweets-list"]]) {
                     const el = document.getElementById(id);
-                    if (el) el.hidden = k !== sub;
+                    if (el) el.hidden = !show[k];
                 }
-                if (sub === "banners") this.renderBanners();
-                else if (sub === "notices") this.renderNotices();
-                else this.renderTweets();
+                if (sub === "notices" && !bannerCount) this.ui.sel.b = null;
+                if (show.banners) this.renderBanners();
+                if (show.notices) this.renderNotices();
+                if (show.tweets) this.renderTweets();
             },
 
             renderContentAll() {
@@ -4302,7 +4468,8 @@
             llmKindLabel(kind) {
                 const KIND = { broadcast_change: "방송 취소 · 변경", own_broadcast: "본인 예고 확인", participation: "외부 채널 참여",
                     collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복",
-                    banner_judge: "행사 배너", user_review: "사용자 판단" };
+                    banner_judge: "행사 배너", user_review: "사용자 판단",
+                    song_register: "신곡 등록", song_skip: "신곡 등록 안 함" };
                 return KIND[kind] || kind;
             },
 
@@ -4320,6 +4487,7 @@
 
             // 반려하면 무엇이 일어나는지 — 판단 종류별로 버튼 옆 · 확인 팝업에 적는다(백엔드 `_llm_undo` / `banners.restore` 의 undo 종류와 같다)
             undoDescribe(e) {
+                if (e.kind === "song_skip") return "곡명 중복으로 등록하지 않은 검토용 판단입니다 — 표시만 「반려됨」으로 바뀌고, 이어서 「사용자 판단」으로 같은 곡명이어도 강제 등록할 수 있습니다.";
                 if (!e.undo) return "롤백할 변경이 없는 검토용 판단입니다 — 표시만 「반려됨」으로 바뀌고, 이어서 LLM 재판단 · 사용자 판단을 고를 수 있습니다.";
                 const u = e.undo || {};
                 switch (u.type) {
@@ -4334,6 +4502,7 @@
                     case "replace_items": return "그 판단으로 합쳐진 예고를 합치기 전 상태로 되돌립니다.";
                     case "remove_guests": return "그 판단이 더한 합동 게스트를 뺍니다(예고는 남습니다).";
                     case "restore_notice": return "그 판단으로 「같은 소식」에 병합된 글을 떼어 기존 소식을 병합 전 모습으로 돌립니다.";
+                    case "remove_song": return "그 판단이 등록한 곡을 목록에서 지우고 재등록 차단 목록에 넣습니다(등록 뒤 운영자가 수정한 곡은 건너뜁니다).";
                     default: return "그 판단이 데이터에 한 변경을 원래대로 돌립니다.";
                 }
             },
@@ -4393,7 +4562,10 @@
                     r.textContent = `근거: ${e.reason}`;
                     row.appendChild(r);
                 }
-                const SUPPORTED = ["banner_judge", "broadcast_change", "collab_guest", "duplicate_notice", "ocr_members", "own_broadcast", "participation"];
+                const SUPPORTED = ["banner_judge", "broadcast_change", "collab_guest", "duplicate_notice", "ocr_members", "own_broadcast", "participation",
+                    "song_register", "song_skip"];
+                // 신곡 판단 두 종류는 LLM 이 아니라 규칙이 낸 판단이라 LLM 재판단 버튼이 없다(사용자 판단만)
+                const NO_REJUDGE = ["song_register", "song_skip"];
                 const acts = document.createElement("div");
                 acts.className = "acts";
                 const st = document.createElement("div");
@@ -4416,12 +4588,15 @@
                     if (!fu) {
                         const ok = SUPPORTED.includes(e.kind);
                         const noInput = !e.input;
-                        acts.appendChild(this.llmAct("LLM 재판단",
+                        if (!NO_REJUDGE.includes(e.kind)) acts.appendChild(this.llmAct("LLM 재판단",
                             noInput ? "입력 원문이 기록되지 않은 옛 기록이라 쓸 수 없습니다."
                                     : "기록해 둔 입력으로 LLM 이 같은 판정을 다시 합니다(「이전 판정이 반려됐다」 힌트 포함). 결과는 새 판단으로 이어집니다.",
                             (b, label) => this.rejudgeLlm(e, f, b, label),
                             { disabled: !ok || noInput, title: !ok ? "이 종류는 지원하지 않습니다" : "입력 원문이 기록되지 않은 옛 기록 — 사용자 판단만 가능합니다" }));
-                        acts.appendChild(this.llmAct("사용자 판단", "LLM 대신 내가 결과를 직접 정합니다. 같은 반영 경로를 타고 새 판단으로 이어집니다.",
+                        acts.appendChild(this.llmAct("사용자 판단", NO_REJUDGE.includes(e.kind)
+                                ? (e.kind === "song_skip" ? "규칙 판단이라 LLM 재판단은 없습니다. 종류 · 멤버를 골라 같은 곡명이어도 강제 등록할 수 있습니다."
+                                                           : "규칙 판단이라 LLM 재판단은 없습니다. 다른 값(곡명 · 종류 · 멤버 · 날짜)으로 다시 등록하거나 등록하지 않을 수 있습니다.")
+                                : "LLM 대신 내가 결과를 직접 정합니다. 같은 반영 경로를 타고 새 판단으로 이어집니다.",
                             (b) => this.decideLlm(e, f, b), { disabled: !ok, title: "이 종류는 지원하지 않습니다" }));
                         row.appendChild(acts);
                     } else {
@@ -4646,6 +4821,30 @@
                     wrap.appendChild(mk("div", "list-item-sub", "등록은 파서가 글에서 뽑은 날짜 · 시각으로 합니다(읽지 못하면 오류). 고치려면 예고 탭 수정."));
                     return { get: () => ({ choice: getC() }), validate: () => "" };
                 }
+                if (kind === "song_register" || kind === "song_skip") {
+                    const d = opt.defaults || {};
+                    const isSkip = kind === "song_skip";
+                    if (isSkip && opt.dup_of) wrap.appendChild(mk("div", "list-item-sub", `이 곡과 같은 곡명이 이미 있습니다: ${opt.dup_of.title} (${opt.dup_of.id})`));
+                    const sub = mk("div");
+                    const titleIn = input("text", "곡명", d.title || "");
+                    const kindSel = document.createElement("select");
+                    for (const k of opt.kinds || []) kindSel.appendChild(new Option(k.name, k.key));
+                    kindSel.value = d.kind || "original";
+                    const whoSel = document.createElement("select");
+                    for (const w of opt.whos || []) whoSel.appendChild(new Option(w.name, w.key));
+                    whoSel.value = d.who || "group";
+                    const dateIn = input("date", "", d.date || "");
+                    field("곡명", titleIn, sub); field("종류", kindSel, sub); field("멤버", whoSel, sub); field("날짜 (YouTube 업로드 KST 날짜)", dateIn, sub);
+                    sub.appendChild(mk("div", "list-item-sub", "독음은 등록 직후 다음 정기 수집에서 LLM 이 작성합니다(음반 탭에서 직접 고치거나 다시 만들 수 있음)."));
+                    const getC = seg([["register", isSkip ? "강제 등록" : "다른 값으로 다시 등록"], ["skip", isSkip ? "그대로 둠(등록 안 함)" : "등록 안 함(차단 유지)"]], "register", (v) => { sub.hidden = v !== "register"; });
+                    wrap.appendChild(sub);
+                    return {
+                        get: () => getC() === "register"
+                            ? { choice: "register", title: titleIn.value.trim(), kind: kindSel.value, who: whoSel.value, date: dateIn.value }
+                            : { choice: "skip" },
+                        validate: () => getC() === "register" && !titleIn.value.trim() ? "곡명을 입력하세요" : "",
+                    };
+                }
                 if (kind === "participation") {
                     const getC = seg([["register", "참여로 등록(LLM 확인 생략)"], ["skip", "참여 아님"]], "register", () => {});
                     wrap.appendChild(mk("div", "list-item-sub", "영상 정보는 다시 조회합니다(조회 실패 · 삭제된 영상이면 오류)."));
@@ -4754,6 +4953,7 @@
                     retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
                     set_monitor_auto: "멤버 현황 DM",
                     undo_llm_action: "↩ LLM 판단 반려", rejudge_llm_action: "LLM 판단 재판단", decide_llm_action: "LLM 판단 · 사용자 판단", dismiss_group_pending: "참여 멤버 확인 대기 무시",
+                    edit_song: "곡 수정", delete_song: "곡 삭제", add_song: "곡 직접 추가", unblock_song: "곡 차단 해제", regenerate_song_reading: "독음 다시 만들기",
                 };
                 if (!items.length) {
                     const r = document.createElement("div");
@@ -5079,6 +5279,628 @@
                 } catch (e) {
                     this.showToast(`오류: ${e.message}`, "error");
                 }
+            },
+
+            // ─────────────────────────────────────────────────────────────────────
+            // (v4.2.0) 음반 탭 — 신곡 감지 상태 · 곡 관리(수정 · 삭제 · 직접 추가) · 차단 목록
+            //   읽기 list_songs / songs_status, 쓰기 edit_song · delete_song · add_song · regenerate_song_reading · unblock_song
+            //   (API 계약 ref/v4.2_admin_api_contract.md · 목업 ref/v4.2_admin_mockup.html).
+            //   삭제한 곡은 재등록 차단 목록(rejected)으로 가서, 정기 수집이 RSS 를 다시 읽어도 되살아나지 않는다.
+            //   차단 해제 = 곡을 되살리는 것이 아니라 「다음 정기 수집에서 RSS 최근 15건에 아직 있으면 다시 등록될 수 있게」 푸는 것.
+            //   songs.json 이 data 브랜치에 없는(시드 전) 동안은 모든 쓰기가 막히므로 쓰기 버튼을 비활성화하고 안내한다.
+            // ─────────────────────────────────────────────────────────────────────
+
+            SG_MEMBERS: ["arale", "yuno", "nonoka", "ritsu", "miyako"],
+            SG_REASON: { name_dup: "곡명 중복", feat: "feat.", id_dup: "이미 있는 영상", rejected: "차단됨" },
+
+            sgSeeded() { return !!(this.sg.list && this.sg.list.seeded); },
+            sgKindLabel(k) { return k === "cover" ? "커버" : k === "original" ? "오리지널" : (k || "—"); },
+            sgWhoName(key) {
+                if (key === "group") return "그룹";
+                const ch = (this.channels || {})[key];
+                return ch && ch.name_ko ? String(ch.name_ko).split(" ").pop() : (key || "—");
+            },
+            sgWhoOptions() { return [["group", "그룹"]].concat(this.SG_MEMBERS.map((k) => [k, this.sgWhoName(k)])); },
+
+            // 검색용 정규화 — 대소문자 · 전각 무시, 가타카나 = 히라가나
+            sgNorm(x) {
+                return String(x || "").normalize("NFKC").toLowerCase().replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 96));
+            },
+
+            sgMono(text) {
+                const e = this.cxEl("span", "", text);
+                e.style.fontFamily = "ui-monospace, Consolas, monospace";
+                return e;
+            },
+
+            sgBox(kind, text) { return this.cxEl("div", "sg-box" + (kind ? " " + kind : ""), text); },
+
+            async sgPost(endpoint, body) {
+                try {
+                    const r = await this.apiCall("POST", endpoint, body);
+                    return r && typeof r === "object" ? r : { ok: false, error: "응답이 없습니다" };
+                } catch (e) {
+                    return { ok: false, error: e.message };
+                }
+            },
+
+            // 누르는 동안 버튼에 회전 표시 + 중복 클릭 차단. 돌려주는 함수를 부르면 원래대로
+            sgBusy(btn, text) {
+                const orig = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = "";
+                btn.append(this.cxEl("span", "sg-spin"), text);
+                return () => { btn.disabled = false; btn.textContent = orig; };
+            },
+
+            async loadSongs() {
+                const box = document.getElementById("sg-list");
+                if (!this.sg.list) {
+                    box.className = "loading";
+                    box.textContent = "로드 중...";
+                }
+                try {
+                    this.sg.list = await this.apiCall("GET", "/list_songs");
+                } catch (e) {
+                    box.className = "";
+                    box.textContent = "";
+                    box.appendChild(this.cxEmpty(`곡 목록을 불러오지 못했습니다 — ${e.message}`));
+                    return;
+                }
+                this.renderSongsAll();
+                this.loadSongsStatus();      // RSS 를 지금 조회(~1초) — 목록은 기다리지 않는다
+            },
+
+            async loadSongsStatus() {
+                try {
+                    this.sg.status = await this.apiCall("GET", "/songs_status");
+                } catch (e) {
+                    this.sg.status = { error: e.message };
+                }
+                this.renderSongCard();
+            },
+
+            // 「지금 확인」 — RSS 를 지금 조회해 등록 예정 · 건너뜀을 미리 본다(읽기만, 아무것도 쓰지 않음)
+            async checkSongsNow() {
+                if (this.sg.checking) return;
+                this.sg.checking = true;
+                this.sg.showPrev = true;
+                this.renderSongCard();
+                await this.loadSongsStatus();
+                this.sg.checking = false;
+                this.renderSongCard();
+            },
+
+            renderSongCard() {
+                const L = this.sg.list, S = this.sg.status;
+                const btn = document.getElementById("sd-check");
+                btn.disabled = !!this.sg.checking;
+                btn.textContent = "";
+                if (this.sg.checking) btn.append(this.cxEl("span", "sg-spin"), "RSS 조회 중…");
+                else btn.textContent = "지금 확인";
+
+                const tiles = document.getElementById("sd-tiles");
+                tiles.textContent = "";
+                const tile = (cls, lbl, val, sub) => {
+                    const t = this.cxEl("div", "now-tile" + (cls ? " " + cls : ""));
+                    t.append(this.cxEl("span", "lbl", lbl), this.cxEl("span", "val", val), this.cxEl("span", "sub", sub || ""));
+                    tiles.appendChild(t);
+                };
+                const c = (L && L.counts) || {};
+                const seeded = L ? !!L.seeded : null;
+                tile(seeded === false ? "bad" : "", "시드", seeded == null ? "—" : seeded ? "완료" : "필요",
+                    seeded === false ? "data 브랜치 songs.json 이 없습니다 — 시드 전에는 자동 등록 · 곡 관리가 동작하지 않습니다" : "data 브랜치 songs.json 있음");
+                tile("", "곡 수", `${c.total || 0}곡`, `자동 등록 ${c.auto || 0} · 직접 추가 ${c.manual || 0} · 차단 ${c.rejected || 0}`);
+                tile(c.no_reading ? "warn" : "", "독음 없음", `${c.no_reading || 0}곡`,
+                    c.needs_reading ? `LLM 대기 ${c.needs_reading}곡 (다음 정기 수집이 작성)` : (c.no_reading ? "직접 넣거나 「독음 다시 만들기」" : "모두 입력됨"));
+                const feed = S && !S.error ? (S.feeds || [])[0] : null;
+                if (!S) tile("idle", "RSS", "조회 중…", "");
+                else if (S.error) tile("bad", "RSS", "조회 실패", S.error);
+                else if (!feed) tile("warn", "RSS", "설정 없음", "config/channels.json 의 song_feeds 에 채널이 없습니다");
+                else if (feed.ok) tile("", "RSS", "정상", `${feed.name || "토픽 채널"} · 최신 ${this.formatTime(feed.latest_published)} · ${feed.entry_count}건`);
+                else tile("bad", "RSS", "실패 · 비어 있음", feed.error || "");
+                const ev = S && !S.error ? (S.events || [])[0] : null;
+                tile("idle", "최근 기록", ev ? this.formatTime(ev.ts) : "없음", ev ? (ev.detail || "") : "최근 7일 안에 신곡 기록이 없습니다");
+
+                // 지금 확인 미리보기 · 최근 기록
+                const prev = document.getElementById("sd-prev");
+                prev.textContent = "";
+                prev.hidden = !(this.sg.showPrev && S);
+                if (!prev.hidden) {
+                    if (S.error) {
+                        prev.appendChild(this.sgBox("warn", `조회하지 못했습니다 — ${S.error}`));
+                    } else {
+                        const P = S.preview || { new: [], skipped: [] };
+                        prev.appendChild(this.cxEl("div", "sd-dry", `▸ 미리보기입니다 — 아무것도 쓰지 않았습니다. 실제 등록은 정기 수집(10분마다)이 합니다. (조회 ${this.formatTime(S.now)} · RSS ${feed ? feed.entry_count : 0}건)`));
+                        if (!S.seeded && P.baseline === "seed") prev.appendChild(this.sgBox("warn", "시드 전 — 시드할 곡 목록(assets/songs.json 과 같은 사본) 기준 미리보기입니다. 시드 직후 첫 정기 수집이 아래 등록 예정 곡을 한꺼번에 등록합니다."));
+                        else if (!S.seeded) prev.appendChild(this.sgBox("warn", "시드 전이라 비교할 곡 목록이 없어 등록 예정 · 건너뜀을 계산하지 못했습니다. data 브랜치에 songs.json 을 올린 뒤 다시 확인하세요."));
+                        prev.appendChild(this.cxEl("h4", "", `등록 예정 ${P.new.length}곡`));
+                        for (const n of P.new) {
+                            const row = this.cxEl("div", "sd-row");
+                            const t = this.cxEl("div", "t", n.title);
+                            t.appendChild(this.cxEl("span", "sg-badge auto", this.sgKindLabel(n.kind)));
+                            row.append(t, this.cxEl("div", "m", `${n.id} · ${n.date} · ${this.sgWhoName(n.who)} · 독음은 등록 직후 다음 정기 수집에서 LLM 이 작성`));
+                            prev.appendChild(row);
+                        }
+                        if (!P.new.length) prev.appendChild(this.cxEl("div", "sd-ev", "지금 정기 수집이 돌아도 새로 등록할 곡이 없습니다."));
+                        prev.appendChild(this.cxEl("h4", "", `건너뜀 ${P.skipped.length}건`));
+                        for (const k of P.skipped) {
+                            const row = this.cxEl("div", "sd-row");
+                            const t = this.cxEl("div", "t", k.title);
+                            t.appendChild(this.cxEl("span", "sg-badge " + (k.reason === "rejected" ? "bad" : "warn"), this.SG_REASON[k.reason] || k.reason));
+                            let m = k.video_id;
+                            if (k.dup_of) m += ` · 목록의 「${k.dup_of.title}」(${k.dup_of.id})와 같은 곡명`;
+                            if (k.reason === "name_dup") m += k.recorded ? " · 작업 탭에 판단 기록이 있음(반려 → 사용자 판단으로 강제 등록)" : " · 정기 수집이 돌면 작업 탭에 판단 기록이 남음";
+                            if (k.reason === "rejected") m += " · 차단 목록에 있음 — 차단 해제 전에는 등록되지 않음";
+                            if (k.reason === "feat") m += " · feat. 곡은 등록하지 않음";
+                            row.append(t, this.cxEl("div", "m", m));
+                            prev.appendChild(row);
+                        }
+                        if (!P.skipped.length) prev.appendChild(this.cxEl("div", "sd-ev", "건너뛴 항목이 없습니다."));
+                    }
+                }
+                const evBox = document.getElementById("sd-ev");
+                const evs = S && !S.error ? (S.events || []) : [];
+                evBox.hidden = !evs.length;
+                document.getElementById("sd-ev-n").textContent = evs.length ? `(최근 7일 · ${evs.length}건)` : "";
+                const evList = document.getElementById("sd-ev-list");
+                evList.textContent = "";
+                for (const e of evs.slice(0, 12)) {
+                    const r = this.cxEl("div", "sd-ev-row" + (e.result === "degraded" || e.result === "err" ? " " + e.result : ""));
+                    r.append(this.cxEl("span", "t", this.formatTime(e.ts)), this.cxEl("span", "", `${e.detail || e.action || ""}${e.via === "ops" ? " · 운영자" : ""}`));
+                    evList.appendChild(r);
+                }
+            },
+
+            renderSongsAll(opts) {
+                this.renderSongCard();
+                this.renderSongTools();
+                this.renderSongList(opts);
+            },
+
+            renderSongTools() {
+                const g = this.sg, L = g.list || {};
+                const songs = L.songs || [], rejected = L.rejected || [];
+                const host = document.getElementById("sg-tools");
+                const noRead = songs.filter((s) => !s.reading).length;
+                const chips = g.seg === "list"
+                    ? this.cxChips([["all", "전체"], ["original", "오리지널"], ["cover", "커버"], ["noread", `독음 없음 ${noRead}`]], g.chip, (k) => { g.chip = k; this.renderSongTools(); this.renderSongList(); })
+                    : null;
+                this.cxTools(host, {
+                    seg: [{ key: "list", label: "곡 목록", count: songs.length }, { key: "blocked", label: "차단 목록", count: rejected.length }],
+                    segCur: g.seg,
+                    onSeg: (k) => { g.seg = k; g.sel = null; this.closeSongModal(); this.renderSongTools(); this.renderSongList(); },
+                    chips,
+                    hasSearch: g.seg === "list",
+                    q: g.q,
+                    searchOn: g.searchOn,
+                    onSearch: () => { g.searchOn = !g.searchOn; this.renderSongTools(); },
+                    onQ: (v) => { g.q = v; this.renderSongList(); },
+                });
+                const q = host.querySelector(".cx-search");
+                if (q) q.placeholder = "곡명 · 독음(가나 · 한글) 검색";
+                if (g.seg === "list") {
+                    const row = this.cxEl("div", "sg-toolrow");
+                    const sort = document.createElement("select");
+                    sort.setAttribute("aria-label", "정렬");
+                    for (const [v, t] of [["date-desc", "날짜 ↓"], ["date-asc", "날짜 ↑"], ["name", "이름순"]]) sort.appendChild(new Option(t, v));
+                    sort.value = g.sort;
+                    sort.onchange = () => { g.sort = sort.value; this.renderSongList(); };
+                    const add = this.cxEl("button", "btn-line", "＋ 곡 추가");
+                    add.type = "button";
+                    add.id = "sg-add";
+                    add.disabled = !this.sgSeeded();
+                    if (add.disabled) add.title = "시드 전에는 곡을 추가할 수 없습니다";
+                    add.onclick = () => this.sgOpenAdd();
+                    const grow = this.cxEl("span", "sg-grow");
+                    row.append(sort, grow, add);
+                    host.appendChild(row);
+                    document.documentElement.style.setProperty("--cx-th", host.offsetHeight + "px");
+                }
+            },
+
+            sgFiltered() {
+                const g = this.sg;
+                const q = this.sgNorm(g.q.trim());
+                let list = ((g.list && g.list.songs) || []).filter((s) =>
+                    g.chip === "all" || (g.chip === "noread" ? !s.reading : s.kind === g.chip));
+                if (q) list = list.filter((s) => this.sgNorm([s.title, s.reading, s.reading_ko].join(" ")).includes(q));
+                const by = {
+                    "date-desc": (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.title.localeCompare(b.title, "ja")),
+                    "date-asc": (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.title.localeCompare(b.title, "ja")),
+                    name: (a, b) => (a.reading || a.title).localeCompare(b.reading || b.title, "ja"),
+                }[g.sort];
+                return list.sort(by);
+            },
+
+            sgLead(who) {
+                if (who && who !== "group") return this.cxUnitIcon(who, "lg");
+                const e = this.cxEl("span", "cx-ico lg");
+                e.setAttribute("aria-hidden", "true");
+                e.style.setProperty("--c", "#8b7cc9");
+                return e;
+            },
+
+            // 곡 한 줄의 배지들 — 등록 출처 · 독음 상태
+            sgBadges(s) {
+                const out = [];
+                const b = (cls, text) => out.push(this.cxEl("span", "sg-badge " + cls, text));
+                if (s.manual) b("manual", "직접 추가");
+                else if (s.added_at) b("auto", `자동 등록 ${this.formatTime(s.added_at)}`);
+                if (s.needs_reading) b("warn", "독음 생성 대기");
+                else if (!s.reading) b("warn", "독음 없음");
+                else if (s.reading_manual) b("", "독음 직접 입력");
+                else if (s.added_at || s.manual) b("llm", "독음 LLM 작성");
+                return out;
+            },
+
+            sgRow(s) {
+                const row = this.cxEl("div", "cx-row");
+                row.dataset.id = s.id;
+                if (this.sg.sel === s.id && this.cxWide()) row.setAttribute("aria-selected", "true");
+                const head = this.cxEl("button", "cx-row-h");
+                head.type = "button";
+                head.appendChild(this.sgLead(s.who));
+                const mid = this.cxEl("div", "cx-mid");
+                mid.appendChild(this.cxEl("div", "cx-t", s.title));
+                const m = this.cxEl("div", "cx-m");
+                m.append(this.cxEl("span", "", this.sgWhoName(s.who)), this.cxEl("span", "sg-badge", this.sgKindLabel(s.kind)), this.sgMono(s.date || ""), ...this.sgBadges(s));
+                mid.appendChild(m);
+                if (s.reading) {
+                    const r = this.cxEl("div", "cx-m");
+                    const ko = this.cxEl("span", "", s.reading_ko || sgKanaToHangul(s.reading));
+                    ko.style.color = "#c4b5fd";
+                    r.append(this.cxEl("span", "", s.reading), ko);
+                    mid.appendChild(r);
+                }
+                head.appendChild(mid);
+                head.onclick = () => this.sgOpen(s, row);
+                row.appendChild(head);
+                return row;
+            },
+
+            renderSongList(opts) {
+                const g = this.sg, L = g.list;
+                const box = document.getElementById("sg-list");
+                box.className = "";
+                box.textContent = "";
+                if (!L) return;
+                if (!L.seeded) {
+                    box.appendChild(this.sgBox("warn", "data 브랜치에 songs.json 이 아직 없습니다(시드 전) — 곡 목록 · 수정 · 삭제 · 직접 추가는 시드 뒤에 동작합니다. 위 「지금 확인」으로 RSS 상태를 먼저 볼 수 있습니다."));
+                    this.sgClearDetail();
+                    return;
+                }
+                if (g.seg === "blocked") {
+                    this.renderBlocked(box);
+                    this.sgClearDetail();
+                    return;
+                }
+                const list = this.sgFiltered();
+                if (!list.length) {
+                    box.appendChild(this.cxEmpty(g.q.trim() || g.chip !== "all" ? "조건에 맞는 곡이 없습니다." : "곡이 없습니다."));
+                    this.sgClearDetail();
+                    return;
+                }
+                for (const s of list) box.appendChild(this.sgRow(s));
+                if (opts && opts.keepDetail) return;
+                if (this.cxWide()) {
+                    const cur = g.sel ? (L.songs || []).find((x) => x.id === g.sel) : null;
+                    if (cur) this.sgFillDetail(cur);
+                    else this.sgClearDetail();
+                }
+            },
+
+            renderBlocked(box) {
+                const rejected = (this.sg.list && this.sg.list.rejected) || [];
+                if (!rejected.length) {
+                    box.appendChild(this.cxEmpty("차단된 곡이 없습니다."));
+                    return;
+                }
+                box.appendChild(this.sgBox("", "삭제 · 반려한 곡의 영상 ID · 곡명이 여기 들어가 정기 수집이 다시 등록하지 않습니다. 차단을 풀면 곡을 되살리는 것이 아니라, 다음 정기 수집(최대 10분 뒤)에 RSS 최근 15건에 아직 있으면 다시 등록될 수 있게 됩니다."));
+                for (const r of rejected) {
+                    const row = this.cxEl("div", "cx-row");
+                    row.dataset.id = r.id;
+                    const inner = this.cxEl("div", "cx-row-h sg-blocked-row");
+                    inner.style.cursor = "default";
+                    const mid = this.cxEl("div", "cx-mid");
+                    const t = this.cxEl("div", "cx-t", r.title || r.name_key || r.id);
+                    t.append(" ", this.cxEl("span", "sg-badge bad", r.by === "반려" ? "반려" : "삭제"));
+                    const m = this.cxEl("div", "cx-m");
+                    m.append(this.sgMono(r.id), this.cxEl("span", "", this.formatTime(r.ts)));
+                    if (r.name_key && r.name_key !== r.title) m.appendChild(this.cxEl("span", "", `곡명 키 ${r.name_key}`));
+                    mid.append(t, m);
+                    const b = this.cxEl("button", "btn-line", "차단 해제");
+                    b.type = "button";
+                    b.onclick = () => this.sgUnblock(r, b);
+                    inner.append(mid, b);
+                    row.appendChild(inner);
+                    box.appendChild(row);
+                }
+            },
+
+            sgClearDetail() {
+                const d = document.getElementById("sg-detail");
+                if (!d) return;
+                d.textContent = "";
+                d.appendChild(this.cxEl("div", "cx-ph", "곡을 고르면 여기서 수정 · 삭제합니다."));
+            },
+
+            sgFillDetail(s) {
+                const d = document.getElementById("sg-detail");
+                d.textContent = "";
+                d.appendChild(this.cxEl("div", "cx-dt", s.title));
+                d.appendChild(this.sgEditor(s));
+            },
+
+            // 곡을 누르면: 넓은 화면 = 오른쪽 상세창, 좁은 화면 = 바닥 시트
+            sgOpen(s, row) {
+                this.sg.sel = s.id;
+                if (this.cxWide()) {
+                    document.querySelectorAll("#sg-list .cx-row[aria-selected=\"true\"]").forEach((r) => r.setAttribute("aria-selected", "false"));
+                    if (row) row.setAttribute("aria-selected", "true");
+                    this.sgFillDetail(s);
+                } else {
+                    this.openSongModal("곡 수정", this.sgEditor(s));
+                }
+            },
+
+            openSongModal(title, el) {
+                document.getElementById("song-modal-title").textContent = title;
+                const body = document.getElementById("song-modal-body");
+                body.textContent = "";
+                body.appendChild(el);
+                document.getElementById("song-modal").classList.add("active");
+            },
+
+            closeSongModal() {
+                const m = document.getElementById("song-modal");
+                if (!m) return;
+                m.classList.remove("active");
+                document.getElementById("song-modal-body").textContent = "";
+            },
+
+            // 폼 조각 — { wrap, input }
+            sgField(label, input, hint, forId) {
+                const w = this.cxEl("div", "sg-fld");
+                const l = this.cxEl("label", "", label);
+                if (forId) { input.id = forId; l.htmlFor = forId; }
+                w.append(l, input);
+                if (hint) w.appendChild(this.cxEl("span", "hint", hint));
+                return w;
+            },
+
+            sgInput(type, value, placeholder) {
+                const i = document.createElement("input");
+                i.type = type;
+                if (value) i.value = value;
+                if (placeholder) i.placeholder = placeholder;
+                i.autocomplete = "off";
+                return i;
+            },
+
+            sgSelect(options, value) {
+                const s = document.createElement("select");
+                for (const [v, t] of options) s.appendChild(new Option(t, v));
+                s.value = value;
+                return s;
+            },
+
+            // 곡 수정 양식. 저장은 바뀐 항목만 patch 로 보낸다(독음을 고치면 직접 입력이 되어 LLM 이 덮지 않음, 비우면 LLM 이 다시 씀)
+            sgEditor(s) {
+                const writable = this.sgSeeded();
+                const root = this.cxEl("div", "sg-form");
+                const badges = this.cxEl("div", "cx-m");
+                for (const b of this.sgBadges(s)) badges.appendChild(b);
+                root.appendChild(badges);
+
+                const titleIn = this.sgInput("text", s.title);
+                root.appendChild(this.sgField("곡명", titleIn));
+
+                const rdIn = this.sgInput("text", s.reading || "", s.needs_reading ? "LLM 이 작성 대기 중" : "비어 있음");
+                const ko = this.cxEl("span", "ko");
+                const updKo = () => { ko.textContent = "한글 독음 미리보기: " + (sgKanaToHangul(rdIn.value) || "—"); };
+                rdIn.oninput = updKo;
+                updKo();
+                const regen = this.cxEl("button", "btn-line", "↻ 독음 다시 만들기");
+                regen.type = "button";
+                regen.title = "외부 LLM(Groq)에 독음을 다시 요청합니다";
+                regen.disabled = !writable;
+                const rdRow = this.cxEl("div", "sg-rd");
+                rdRow.append(rdIn, regen);
+                const rdW = this.cxEl("div", "sg-fld");
+                rdW.append(this.cxEl("label", "", "독음(가나)"), rdRow, ko,
+                    this.cxEl("span", "hint", "직접 고쳐 저장하면 「직접 입력」이 되어 LLM 이 덮어쓰지 않습니다. 비워서 저장하면 다음 정기 수집에서 LLM 이 다시 씁니다. 「다시 만들기」는 지금 독음(직접 고친 것 포함)을 덮어쓰고 바로 저장합니다."));
+                root.appendChild(rdW);
+
+                const kindSel = this.sgSelect([["original", "오리지널"], ["cover", "커버"]], s.kind);
+                const whoSel = this.sgSelect(this.sgWhoOptions(), s.who || "group");
+                const row2 = this.cxEl("div", "sg-frow");
+                row2.append(this.sgField("종류", kindSel), this.sgField("멤버", whoSel));
+                root.appendChild(row2);
+                const dateIn = this.sgInput("date", s.date);
+                root.appendChild(this.sgField("날짜", dateIn, "YouTube 업로드 시각의 KST 날짜 — 공식 발매일이 아닙니다."));
+
+                const link = this.cxEl("a", "sg-link", `youtu.be/${s.id} ↗`);
+                link.href = `https://youtu.be/${encodeURIComponent(s.id)}`;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                const lw = this.cxEl("div", "sg-fld");
+                lw.append(this.cxEl("label", "", "영상"), link);
+                root.appendChild(lw);
+
+                const err = this.cxEl("div", "sg-err");
+                err.setAttribute("role", "alert");
+                err.hidden = true;
+                const fail = (msg) => { err.textContent = msg; err.hidden = !msg; };
+                root.appendChild(err);
+
+                const acts = this.cxEl("div", "cx-acts");
+                const save = this.cxEl("button", "cx-btn cx-btn-pri", "저장");
+                const del = this.cxEl("button", "cx-btn cx-btn-dng", "삭제");
+                save.type = del.type = "button";
+                save.disabled = del.disabled = !writable;
+                acts.append(save, del);
+                root.appendChild(acts);
+                root.appendChild(this.cxEl("div", "hint", writable
+                    ? "삭제하면 이 곡이 차단 목록에 들어가 정기 수집이 같은 곡을 다시 등록하지 않습니다(차단 목록에서 풀 수 있음)."
+                    : "시드 전(data 브랜치에 songs.json 없음)에는 수정 · 삭제할 수 없습니다."));
+                const hintEl = root.lastChild;
+                hintEl.style.fontSize = "0.74rem";
+                hintEl.style.color = "var(--color-text-muted)";
+
+                save.onclick = async () => {
+                    fail("");
+                    const patch = {};
+                    const t = titleIn.value.trim();
+                    if (!t) return fail("곡명을 입력하세요.");
+                    if (t !== s.title) patch.title = t;
+                    const rd = rdIn.value.trim();
+                    if (rd !== (s.reading || "")) patch.reading = rd;
+                    if (kindSel.value !== s.kind) patch.kind = kindSel.value;
+                    if (whoSel.value !== (s.who || "group")) patch.who = whoSel.value;
+                    if (dateIn.value && dateIn.value !== s.date) patch.date = dateIn.value;
+                    if (!Object.keys(patch).length) return fail("바꾼 항목이 없습니다.");
+                    const done = this.sgBusy(save, "저장 중…");
+                    const r = await this.sgPost("/edit_song", { song_id: s.id, patch });
+                    done();
+                    if (!r.ok) return fail(r.error || "저장하지 못했습니다.");
+                    this.showToast(`저장했습니다 — ${t}`);
+                    this.closeSongModal();
+                    await this.sgReload();
+                };
+
+                del.onclick = async () => {
+                    fail("");
+                    const ok = await this.confirmModal({
+                        title: "곡 삭제",
+                        message: `${s.title}\n\n목록에서 지웁니다.\n· 이 곡은 차단 목록에 들어가, 정기 수집이 RSS 를 다시 읽어도 같은 곡이 다시 등록되지 않습니다.\n· 차단 목록에서 언제든 풀 수 있습니다(풀면 다음 정기 수집에서 다시 등록될 수 있음).`,
+                        okText: "삭제", danger: true,
+                    });
+                    if (!ok) return;
+                    const done = this.sgBusy(del, "삭제 중…");
+                    const r = await this.sgPost("/delete_song", { song_id: s.id });
+                    done();
+                    if (!r.ok) return fail(r.error || "삭제하지 못했습니다.");
+                    this.showToast("삭제했습니다 — 차단 목록에 추가했습니다");
+                    this.sg.sel = null;
+                    this.closeSongModal();
+                    await this.sgReload();
+                };
+
+                regen.onclick = async () => {
+                    fail("");
+                    const ok = await this.confirmModal({
+                        title: "독음 다시 만들기",
+                        message: `${s.title}\n\n외부 LLM(Groq)에 독음을 다시 요청합니다(수 초).\n· 지금 독음${s.reading ? `「${s.reading}」` : ""}은 직접 고친 것이라도 덮어쓰고 바로 저장합니다.\n· 아래 다른 입력란에서 아직 저장하지 않은 수정은 그대로 둡니다.`,
+                        okText: "다시 만들기",
+                    });
+                    if (!ok) return;
+                    const done = this.sgBusy(regen, "LLM 요청 중…");
+                    const r = await this.sgPost("/regenerate_song_reading", { song_id: s.id });
+                    done();
+                    if (!r.ok) return fail(r.error || "독음을 만들지 못했습니다.");
+                    const res = r.result || {};
+                    const reading = res.reading != null ? res.reading : ((res.song || {}).reading || "");
+                    rdIn.value = reading;
+                    updKo();
+                    // 이 편집 창이 기준으로 삼는 값도 새 독음으로 — 안 그러면 다음 저장이 이 독음을 「직접 고친 값」으로 보낸다
+                    s.reading = reading;
+                    s.needs_reading = false;
+                    s.reading_manual = false;
+                    this.showToast(`독음을 다시 만들었습니다 — ${reading || "(비어 있음)"}`);
+                    await this.sgReload({ keepDetail: true });
+                };
+                return root;
+            },
+
+            // 쓰기 뒤 — 목록을 다시 읽어 그린다(상태 카드의 곡 수 · 독음 없음도 같이). 좁은 화면 시트가 열려 있으면 호출 전에 닫을 것
+            async sgReload(opts) {
+                try {
+                    this.sg.list = await this.apiCall("GET", "/list_songs");
+                } catch (e) {
+                    this.showToast(`목록을 다시 읽지 못했습니다: ${e.message}`, "error");
+                    return;
+                }
+                this.renderSongsAll(opts);
+            },
+
+            // 곡 직접 추가 — URL(또는 11자 ID)만 있으면 되고, 제목 · 날짜는 비워 두면 추가할 때 서버가 RSS → YouTube API 순으로 채운다
+            sgOpenAdd() {
+                if (!this.sgSeeded()) return;
+                const root = this.cxEl("div", "sg-form");
+                const url = this.sgInput("text", "", "https://youtu.be/… 또는 11자 영상 ID");
+                root.appendChild(this.sgField("YouTube URL", url, "제목 · 날짜를 비워 두면 추가할 때 자동으로 가져옵니다(실패하면 직접 입력하라는 안내가 나옵니다).", "ad-url"));
+                const title = this.sgInput("text", "", "비워 두면 자동");
+                root.appendChild(this.sgField("곡명", title, "", "ad-title"));
+                const kindSel = this.sgSelect([["", "자동 판정(제목 끝 (Cover) 유무)"], ["original", "오리지널"], ["cover", "커버"]], "");
+                const whoSel = this.sgSelect(this.sgWhoOptions(), "group");
+                const row2 = this.cxEl("div", "sg-frow");
+                row2.append(this.sgField("종류", kindSel, "", "ad-kind"), this.sgField("멤버", whoSel, "", "ad-who"));
+                root.appendChild(row2);
+                const date = this.sgInput("date", "");
+                root.appendChild(this.sgField("날짜", date, "비워 두면 자동(YouTube 업로드 KST 날짜).", "ad-date"));
+                const reading = this.sgInput("text", "", "비워 두면 LLM 이 작성");
+                root.appendChild(this.sgField("독음(가나)", reading, "비우면 등록 뒤 다음 정기 수집에서 외부 LLM(Groq)이 작성합니다. 나중에 직접 고치거나 다시 만들 수 있습니다.", "ad-reading"));
+                const err = this.cxEl("div", "sg-err");
+                err.setAttribute("role", "alert");
+                err.hidden = true;
+                const fail = (msg) => { err.textContent = msg; err.hidden = !msg; };
+                root.appendChild(err);
+                const acts = this.cxEl("div", "cx-acts");
+                const cancel = this.cxEl("button", "cx-btn btn-ghost", "취소");
+                const ok = this.cxEl("button", "cx-btn cx-btn-pri", "추가");
+                cancel.type = ok.type = "button";
+                cancel.onclick = () => this.closeSongModal();
+                acts.append(cancel, ok);
+                root.appendChild(acts);
+
+                const submit = async (force) => {
+                    fail("");
+                    const v = url.value.trim();
+                    if (!v) { fail("YouTube URL 또는 영상 ID(11자)를 입력하세요."); url.focus(); return; }
+                    const body = { video: v };
+                    if (title.value.trim()) body.title = title.value.trim();
+                    if (kindSel.value) body.kind = kindSel.value;
+                    if (whoSel.value) body.who = whoSel.value;
+                    if (date.value) body.date = date.value;
+                    if (reading.value.trim()) body.reading = reading.value.trim();
+                    if (force) body.force = true;
+                    const done = this.sgBusy(ok, "추가 중…");
+                    const r = await this.sgPost("/add_song", body);
+                    done();
+                    if (!r.ok) {
+                        // 곡명 중복은 한 번 더 확인 — 같은 곡명이어도 다른 곡이면 강제로 추가
+                        if (!force && /강제로 추가/.test(r.error || "")) {
+                            const yes = await this.confirmModal({ title: "같은 곡명이 이미 있습니다", message: `${r.error}\n\n그래도 별도 곡으로 추가할까요?`, okText: "그래도 추가" });
+                            if (yes) await submit(true);
+                            return;
+                        }
+                        fail(r.error || "추가하지 못했습니다.");
+                        return;
+                    }
+                    const res = r.result || {};
+                    this.showToast(`추가했습니다 — ${(res.song || {}).title || ""}${res.filled_by ? ` (제목 · 날짜를 ${res.filled_by}에서 가져옴)` : ""}`);
+                    this.closeSongModal();
+                    await this.sgReload();
+                };
+                ok.onclick = () => submit(false);
+                this.openSongModal("곡 직접 추가", root);
+                url.focus();
+            },
+
+            async sgUnblock(r, btn) {
+                const yes = await this.confirmModal({
+                    title: "차단 해제",
+                    message: `${r.title || r.name_key || r.id} (${r.id})\n\n이 곡의 재등록 차단을 풉니다.\n· 곡을 되살리지는 않습니다.\n· 다음 정기 수집(최대 10분 뒤)에 이 영상이 RSS 최근 15건에 아직 있으면 다시 자동 등록될 수 있습니다.\n· 바로 넣고 싶으면 「＋ 곡 추가」를 쓰세요.`,
+                    okText: "차단 해제",
+                });
+                if (!yes) return;
+                const done = this.sgBusy(btn, "해제 중…");
+                const res = await this.sgPost("/unblock_song", { ident: r.id });
+                done();
+                if (!res.ok) { this.showToast(res.error || "차단을 풀지 못했습니다.", "error"); return; }
+                this.showToast("차단을 풀었습니다 — 다음 정기 수집에서 다시 등록될 수 있습니다");
+                await this.sgReload();
             },
 
             // ─────────────────────────────────────────────────────────────────────

@@ -365,6 +365,7 @@ function _apply() {
     for (const lane of _lanes(ck)) {
       const avatar = lane.querySelector(".lane__avatar");
       if (!avatar) continue;
+      avatar.classList.toggle("has-tweet", !!(list && list.length));   // 트윗이 있으면(읽음 여부 무관) 아바타에 푸른 링
       let badge = lane.querySelector(".lane__tw");
       if (!list || !list.length) {
         if (badge) badge.remove();
