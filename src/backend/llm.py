@@ -38,6 +38,13 @@ _REPEAT_RE = re.compile(r"^(.{1,6}?)\1{7,}")
 # 어디서든, 여러 군데 흩어져 나타나도 전부 잡는다(§translate 참고).
 _STRETCH_RE = re.compile(r"[ーｰ〜～]{2,}")
 
+# 느낌표·물음표 4회+ 연속 — "ゲットしました！！！！…(80개)" 같은 감정 표현. 문장 중간에 끼면
+# _REPEAT_RE(맨 앞 한정) 가 못 잡아 모델이 `!` 를 max_tokens 끝까지 찍는 루프에 빠지고
+# (실측 2026-10-07 리츠: 87자 입력 → 7493자 출력), 환각 가드에 매번 걸린다. 번역 전에 3개로
+# 접고 번역 뒤 원래 개수로 되펼친다(_collapse_punct_runs / _restore_punct_runs).
+_PUNCT_RUN_RE = re.compile(r"[！!]{4,}|[？?]{4,}")
+_PUNCT_OUT_RE = re.compile(r"[！!]{3,}|[？?]{3,}")
+
 # 고정 번역 용어집 — LLM 이 호출마다 다르게 옮기는 고유명사를 여기 등록하면 항상 이 값으로
 # 고정된다(2026-09-13, 그룹명이 "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 매번 달라지던
 # 문제). preview/notice/tweet 번역 전부 이 용어집을 거친다 — 입력에서 원문을 자리표시자로
@@ -171,6 +178,33 @@ def _normalize_stretch(text: str) -> str:
     단어·고유명사·URL 이 깨진다(실측 확인 후 표적 축소).
     """
     return _STRETCH_RE.sub(lambda m: m.group(0)[0], text)
+
+
+def _punct_class(ch: str) -> str:
+    return "!" if ch in "！!" else "?"
+
+
+def _collapse_punct_runs(text: str) -> "tuple[str, list[tuple[str, int]]]":
+    """！/？ 4회+ 연속을 3개로 접고 (종류, 원래 개수) 목록을 순서대로 돌려준다."""
+    runs: "list[tuple[str, int]]" = []
+
+    def _fold(m: "re.Match[str]") -> str:
+        runs.append((_punct_class(m.group(0)[0]), len(m.group(0))))
+        return m.group(0)[:3]
+
+    return _PUNCT_RUN_RE.sub(_fold, text), runs
+
+
+def _restore_punct_runs(text: str, runs: "list[tuple[str, int]]") -> str:
+    """번역문의 ！/？ 3회+ 군집을 접기 전 개수로 되펼친다. 군집 수·종류 순서가 입력과
+    안 맞으면(모델이 합치거나 쪼갠 경우) 추측하지 않고 접힌 채로 둔다."""
+    if not runs:
+        return text
+    found = _PUNCT_OUT_RE.findall(text)
+    if len(found) != len(runs) or any(_punct_class(f[0]) != r[0] for f, r in zip(found, runs)):
+        return text
+    it = iter(runs)
+    return _PUNCT_OUT_RE.sub(lambda m: m.group(0)[0] * next(it)[1], text)
 
 
 class LLMClient:
@@ -736,10 +770,13 @@ class LLMClient:
             return None
 
         text_ja = _normalize_stretch(text_ja or "")
+        text_ja, punct_runs = _collapse_punct_runs(text_ja)
         m = _REPEAT_RE.match(text_ja)
         if m:
-            return self._translate_repeated(text_ja, m)
-        return self._translate_once(text_ja)
+            out = self._translate_repeated(text_ja, m)
+        else:
+            out = self._translate_once(text_ja)
+        return _restore_punct_runs(out, punct_runs) if out else out
 
     def _translate_repeated(self, text_ja: str, m: "re.Match[str]") -> str | None:
         """짧은 단위(1~6자)가 8회 이상 연속 반복되는 구간을 압축 번역 후 재조립."""
@@ -1289,6 +1326,32 @@ if __name__ == "__main__":
     result = llm_bc_fail.broadcast_change_targets("계속 깨진 응답", bc_cands, "09/30(화) 18:00")
     assert result is None, result
     print("✓ broadcast_change_targets: 5회 모두 실패 → None (호출부 미반영 처리)")
+
+    # ──── 시나리오 8f: ！ 연속 접기/되펼치기 (2026-10-07 리츠 트윗) ────
+    print("\n[시나리오 8f] 느낌표 4회+ 연속 접기 → 번역 → 개수 복원")
+    real = "無事に、完凸峰月律をゲットしました" + "！" * 80 + "\n編み込み赤ちゃんだ" + "！" * 8
+    folded, runs = _collapse_punct_runs(real)
+    assert runs == [("!", 80), ("!", 8)] and len(folded) < 40, (runs, len(folded))
+    assert _collapse_punct_runs("すごい！！！")[1] == []            # 3개 이하는 그대로
+    ko = "무사히 얻었습니다!!!\n뜨개질 아기다!!!"
+    restored = _restore_punct_runs(ko, runs)
+    assert restored == "무사히 얻었습니다" + "!" * 80 + "\n뜨개질 아기다" + "!" * 8, restored
+    assert _restore_punct_runs("합쳐졌다!!!", runs) == "합쳐졌다!!!"   # 군집 수 불일치 → 추측 안 함
+
+    class BangLoopSession:
+        """실측 재현 — 입력에 ！ 4개+ 가 있으면 `!` 폭주, 접힌 입력이면 정상 번역."""
+        def post(self, url, **kwargs):
+            c = kwargs["json"]["messages"][0]["content"]
+            reply = ("번역" + "!" * 3000) if "！！！！" in c else "무사히 얻었습니다!!!"
+            class R:
+                status_code = 200
+                def json(self_inner):
+                    return {"choices": [{"message": {"content": reply}}]}
+            return R()
+
+    got = LLMClient("test-key", session=BangLoopSession()).translate("無事にゲットしました" + "！" * 80)
+    assert got == "무사히 얻었습니다" + "!" * 80, got
+    print("✓ ！ 80개 트윗: 접어서 번역 → 80개로 복원 (폭주 입력 재현 세션 통과)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
     print("\n[시나리오 9] translate 반복 압축 (의성어 8회+ 연속반복)")
