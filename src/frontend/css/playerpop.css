@@ -291,8 +291,11 @@ html.mp-lock { overflow: hidden; }
 
 /* ── 모바일: 바텀 시트 · 하단 도트 띠(푸터 45 + 도트 44) 위로 플로팅 프레임 ── */
 @media (max-width: 767px) {
-  .mp-scrim { align-items: flex-end; padding: 0; }
-  .mp-pop { height: 94%; border-radius: 14px 14px 0 0; }
+  .mp-scrim { align-items: flex-end; padding: 0; background: rgba(0, 0, 0, 0); transition: background 0.32s ease; }
+  .mp-scrim.is-open { background: rgba(0, 0, 0, 0.6); }
+  /* 토스트처럼 아래에서 올라온다. 닫을 땐 is-open 이 빠지며 반대로 내려간다 (js/player.js openPlayer · closePlayer) */
+  .mp-pop { height: 94%; border-radius: 14px 14px 0 0; transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .mp-scrim.is-open .mp-pop { transform: none; }
   /* 세로가 길어지면(재생부 + 곡 정보 + 재생목록 + 곡 목록) 본문 전체가 스크롤된다. 곡 목록은 고정 높이 안에서 따로 스크롤 */
   .mp-pop__body { grid-template-columns: 1fr; grid-template-rows: auto auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; }
   .mp-lib { height: min(75dvh, 560px); }
@@ -301,6 +304,6 @@ html.mp-lock { overflow: hidden; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mp-frame, .mp-scrim { transition: none; }
+  .mp-frame, .mp-scrim, .mp-pop { transition: none !important; }
   .mp-new { animation: none; background: #e5384a; }
 }

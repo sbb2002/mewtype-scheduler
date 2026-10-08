@@ -33,6 +33,7 @@ const st = {
   playing: false,
   started: false,     // 한 번이라도 재생을 시작했는가 — 팝업을 내린 뒤 플로팅 프레임을 남길지 결정
   popOpen: false,
+  closing: false,     // 모바일 시트가 내려가는 중 — 끝날 때까지 프레임은 재생부 자리를 따른다
   dock: null,         // PC 하단 도크 컨테이너(#player-dock). 있으면 팝업 본체가 거기 상시 표시된다
   slotVisible: false, // 도크의 재생부가 화면에 보이는가
   shuffle: false,
@@ -563,7 +564,7 @@ function layoutFrame() {
   if (!built) return;
   const f = el.frame;
   // slot 위에 겹치는 때: 모달 팝업이 열려 있거나, PC 하단 도크의 재생부가 화면에 보일 때. 도크가 화면 밖이면 재생 중인 프레임은 플로팅으로 남는다.
-  const inSlot = st.dock ? st.slotVisible : st.popOpen;
+  const inSlot = st.dock ? st.slotVisible : (st.popOpen || st.closing);
   const show = inSlot || st.started;
   f.hidden = !show;
   if (!show) return;
@@ -611,6 +612,7 @@ export async function mountDock(container) {
   build();
   if (st.dock === container) return;
   if (st.popOpen) closePlayer();
+  finishClose();
   st.dock = container;
   container.append(el.pop);
   el.pop.classList.add("mp-pop--dock");
@@ -736,25 +738,58 @@ async function retryLoad() {
   paintList();
 }
 
+const SHEET_MS = 320;   // 모바일 바텀 시트 슬라이드 시간 — playerpop.css 의 transition 과 맞춘다
+let closeTimer = 0;
+let followRaf = 0;
+let followUntil = 0;
+/** 시트가 미끄러지는 동안 프레임이 재생부 자리를 매 프레임 따라가게 한다. */
+function followFrame(ms) {
+  followUntil = performance.now() + ms;
+  if (followRaf) return;
+  const step = () => {
+    followRaf = 0;
+    layoutFrame();
+    if (performance.now() < followUntil) followRaf = requestAnimationFrame(step);
+  };
+  followRaf = requestAnimationFrame(step);
+}
+/** 닫는 애니메이션이 끝났을 때(또는 곧바로 다시 열거나 도크로 바뀔 때) 시트를 실제로 치운다. */
+function finishClose() {
+  clearTimeout(closeTimer);
+  closeTimer = 0;
+  if (!st.closing) return;
+  st.closing = false;
+  el.scrim.hidden = true;
+  layoutFrame();
+}
+
 export async function openPlayer() {
   build();
   if (st.dock) { st.dock.scrollIntoView({ behavior: "smooth", block: "end" }); return; }   // PC: 플로팅 프레임의 ▴ · 더블클릭 = 하단 도크로 이동
   if (st.popOpen) return;
+  clearTimeout(closeTimer);
+  st.closing = false;
   lastFocus = document.activeElement;
   st.popOpen = true;
   el.scrim.hidden = false;
+  void el.scrim.offsetWidth;                 // 시작 상태(아래쪽)를 먼저 확정해야 transition 이 돈다
+  el.scrim.classList.add("is-open");         // 아래에서 위로 슬라이드 (모바일, css)
   document.documentElement.classList.add("mp-lock");
   layoutFrame();
+  followFrame(SHEET_MS + 80);
   await prepareContent();
-  requestAnimationFrame(() => { layoutFrame(); el.closeBtn.focus(); });
+  requestAnimationFrame(() => { layoutFrame(); el.closeBtn.focus({ preventScroll: true }); });
 }
 
 export function closePlayer() {
   if (!built || !st.popOpen) return;
   st.popOpen = false;
-  el.scrim.hidden = true;
+  st.closing = true;                         // 내려가는 동안은 프레임이 계속 재생부를 따라간다
+  el.scrim.classList.remove("is-open");
   document.documentElement.classList.remove("mp-lock");
-  layoutFrame();
+  followFrame(SHEET_MS + 80);
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(finishClose, SHEET_MS + 40);
   if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
 }
 
