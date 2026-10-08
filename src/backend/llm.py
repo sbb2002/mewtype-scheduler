@@ -49,6 +49,9 @@ _PUNCT_OUT_RE = re.compile(r"[！!]{3,}|[？?]{3,}")
 # 폭주 루프(실측: 46자 입력 → 7715자 출력 → 환각 가드 → None). 문장부호와 달리 번역하면
 # 글자가 바뀌므로(ぁ→아) 개수를 복원하지 않고 5개로만 접는다. 구분선 기호(･ ━ 등)·이모지·
 # 영문은 폭주 사례가 없고 번역문에 그대로 남아야 해서(스케줄 트윗 `🩵 ･････ 🩵`) 대상 아님.
+# 접은 구간은 번역문에서 `ㅏㅏㅏㅏㅏ` 같은 단독 모음 자모로 나오기 쉬워 부자연스러우므로
+# (기뻐요ㅏㅏㅏㅏㅏ) `~` 하나로 바꾼다(기뻐요~) — 늘려쓰기 느낌만 남기는 단순 처리.
+_JAMO_VOWEL_RUN_RE = re.compile(r"[ㅏ-ㅣ]{2,}")
 _KANA_RUN_RE = re.compile(r"([ぁ-ゖァ-ヺｦ-ﾟ一-龥々])\1{7,}")
 
 # 고정 번역 용어집 — LLM 이 호출마다 다르게 옮기는 고유명사를 여기 등록하면 항상 이 값으로
@@ -777,13 +780,17 @@ class LLMClient:
 
         text_ja = _normalize_stretch(text_ja or "")
         text_ja, punct_runs = _collapse_punct_runs(text_ja)
-        text_ja = _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, text_ja)
+        text_ja, n_kana = _KANA_RUN_RE.subn(lambda m: m.group(1) * 5, text_ja)
         m = _REPEAT_RE.match(text_ja)
         if m:
             out = self._translate_repeated(text_ja, m)
         else:
             out = self._translate_once(text_ja)
-        return _restore_punct_runs(out, punct_runs) if out else out
+        if not out:
+            return out
+        if n_kana:
+            out = _JAMO_VOWEL_RUN_RE.sub("~", out)
+        return _restore_punct_runs(out, punct_runs)
 
     def _translate_repeated(self, text_ja: str, m: "re.Match[str]") -> str | None:
         """짧은 단위(1~6자)가 8회 이상 연속 반복되는 구간을 압축 번역 후 재조립."""
@@ -1361,6 +1368,17 @@ if __name__ == "__main__":
     assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "うれしい" + "ぁ" * 40 + "です") == "うれしい" + "ぁ" * 5 + "です"
     assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "🩵 " + "･" * 21 + " 🩵") == "🩵 " + "･" * 21 + " 🩵"   # 구분선은 불변
     assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "ななななななな") == "ななななななな"           # 7회는 미달
+    assert _JAMO_VOWEL_RUN_RE.sub("~", "기뻐요ㅏㅏㅏㅏㅏ!") == "기뻐요~!"
+    assert _JAMO_VOWEL_RUN_RE.sub("~", "ㅋㅋㅋ 웃겨") == "ㅋㅋㅋ 웃겨"        # 자음(ㅋ)·완성형은 불변
+    class KanaSession:
+        def post(self, url, **kwargs):
+            class R:
+                status_code = 200
+                def json(self_inner):
+                    return {"choices": [{"message": {"content": "기뻐요ㅏㅏㅏㅏㅏ!!!"}}]}
+            return R()
+    got = LLMClient("test-key", session=KanaSession()).translate("うれしい" + "ぁ" * 40 + "です" + "！" * 21)
+    assert got == "기뻐요~" + "!" * 21, got
     print("✓ ！ 80개 트윗: 접어서 번역 → 80개로 복원 (폭주 입력 재현 세션 통과)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
