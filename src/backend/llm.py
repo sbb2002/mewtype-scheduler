@@ -50,8 +50,29 @@ _PUNCT_OUT_RE = re.compile(r"[！!]{3,}|[？?]{3,}")
 # 글자가 바뀌므로(ぁ→아) 개수를 복원하지 않고 5개로만 접는다. 구분선 기호(･ ━ 등)·이모지·
 # 영문은 폭주 사례가 없고 번역문에 그대로 남아야 해서(스케줄 트윗 `🩵 ･････ 🩵`) 대상 아님.
 # 접은 구간은 번역문에서 `ㅏㅏㅏㅏㅏ` 같은 단독 모음 자모로 나오기 쉬워 부자연스러우므로
-# (기뻐요ㅏㅏㅏㅏㅏ) `~` 하나로 바꾼다(기뻐요~) — 늘려쓰기 느낌만 남기는 단순 처리.
+# (기뻐요ㅏㅏㅏㅏㅏ) `~` 로 바꾼다. 개수는 원문 연속 개수 그대로(ぁ×40 → ~×40) — 자모 군집
+# 수가 접은 구간 수와 같을 때만 순서대로 대응시키고, 안 맞으면 추측 없이 `~` 하나씩.
 _JAMO_VOWEL_RUN_RE = re.compile(r"[ㅏ-ㅣ]{2,}")
+
+
+def _fold_kana_runs(text: str) -> "tuple[str, list[int]]":
+    """가나·한자 1글자 8회+ 연속을 5개로 접고 원래 개수 목록을 순서대로 돌려준다."""
+    counts: "list[int]" = []
+
+    def _fold(m: "re.Match[str]") -> str:
+        counts.append(len(m.group(0)))
+        return m.group(1) * 5
+
+    return _KANA_RUN_RE.sub(_fold, text), counts
+
+
+def _jamo_runs_to_tilde(text: str, counts: "list[int]") -> str:
+    """번역문의 단독 모음 자모 군집을 `~` 로 — 군집 수 == 접은 구간 수면 원래 개수만큼."""
+    found = _JAMO_VOWEL_RUN_RE.findall(text)
+    if len(found) != len(counts):
+        return _JAMO_VOWEL_RUN_RE.sub("~", text)
+    it = iter(counts)
+    return _JAMO_VOWEL_RUN_RE.sub(lambda m: "~" * next(it), text)
 _KANA_RUN_RE = re.compile(r"([ぁ-ゖァ-ヺｦ-ﾟ一-龥々])\1{7,}")
 
 # 고정 번역 용어집 — LLM 이 호출마다 다르게 옮기는 고유명사를 여기 등록하면 항상 이 값으로
@@ -780,7 +801,7 @@ class LLMClient:
 
         text_ja = _normalize_stretch(text_ja or "")
         text_ja, punct_runs = _collapse_punct_runs(text_ja)
-        text_ja, n_kana = _KANA_RUN_RE.subn(lambda m: m.group(1) * 5, text_ja)
+        text_ja, kana_counts = _fold_kana_runs(text_ja)
         m = _REPEAT_RE.match(text_ja)
         if m:
             out = self._translate_repeated(text_ja, m)
@@ -788,8 +809,8 @@ class LLMClient:
             out = self._translate_once(text_ja)
         if not out:
             return out
-        if n_kana:
-            out = _JAMO_VOWEL_RUN_RE.sub("~", out)
+        if kana_counts:
+            out = _jamo_runs_to_tilde(out, kana_counts)
         return _restore_punct_runs(out, punct_runs)
 
     def _translate_repeated(self, text_ja: str, m: "re.Match[str]") -> str | None:
@@ -1368,8 +1389,11 @@ if __name__ == "__main__":
     assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "うれしい" + "ぁ" * 40 + "です") == "うれしい" + "ぁ" * 5 + "です"
     assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "🩵 " + "･" * 21 + " 🩵") == "🩵 " + "･" * 21 + " 🩵"   # 구분선은 불변
     assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "ななななななな") == "ななななななな"           # 7회는 미달
-    assert _JAMO_VOWEL_RUN_RE.sub("~", "기뻐요ㅏㅏㅏㅏㅏ!") == "기뻐요~!"
-    assert _JAMO_VOWEL_RUN_RE.sub("~", "ㅋㅋㅋ 웃겨") == "ㅋㅋㅋ 웃겨"        # 자음(ㅋ)·완성형은 불변
+    assert _jamo_runs_to_tilde("기뻐요ㅏㅏㅏㅏㅏ!", [40]) == "기뻐요" + "~" * 40 + "!"
+    assert _jamo_runs_to_tilde("ㅏㅏㅏ와 ㅡㅡㅡ", [9, 12]) == "~" * 9 + "와 " + "~" * 12   # 순서 대응
+    assert _jamo_runs_to_tilde("ㅏㅏㅏ와 ㅡㅡㅡ", [9]) == "~와 ~"                      # 수 불일치 → 하나씩
+    assert _jamo_runs_to_tilde("ㅋㅋㅋ 웃겨", [9]) == "ㅋㅋㅋ 웃겨"                      # 자음(ㅋ)·완성형은 불변
+    assert _fold_kana_runs("うれしい" + "ぁ" * 40 + "です") == ("うれしい" + "ぁ" * 5 + "です", [40])
     class KanaSession:
         def post(self, url, **kwargs):
             class R:
@@ -1378,7 +1402,7 @@ if __name__ == "__main__":
                     return {"choices": [{"message": {"content": "기뻐요ㅏㅏㅏㅏㅏ!!!"}}]}
             return R()
     got = LLMClient("test-key", session=KanaSession()).translate("うれしい" + "ぁ" * 40 + "です" + "！" * 21)
-    assert got == "기뻐요~" + "!" * 21, got
+    assert got == "기뻐요" + "~" * 40 + "!" * 21, got
     print("✓ ！ 80개 트윗: 접어서 번역 → 80개로 복원 (폭주 입력 재현 세션 통과)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
