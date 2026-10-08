@@ -364,7 +364,8 @@ a.tt-pop__img { cursor: pointer; }
 
 /* 이후 예고 목록 — 펼친 상태(#board.board--later-open)에서만 보인다 */
 .tt-later { display: none; }
-.board--later-open .tt-later {
+.board--later-open .tt-later,
+.tt-later.is-closing {   /* is-closing: 접는 애니메이션이 끝날 때까지 display 유지 (js/render.js toggleLater) */
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--gap);
@@ -377,7 +378,8 @@ a.tt-pop__img { cursor: pointer; }
   gap: var(--gap);
   padding: var(--gap);
 }
-.board--later-open .lane__later { display: flex; }
+.board--later-open .lane__later,
+.lane__later.is-closing { display: flex; }
 .lane__later .lane__item { flex: none; }
 .lane__later-none {
   margin: 0;

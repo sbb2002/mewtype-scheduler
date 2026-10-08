@@ -476,13 +476,50 @@ function syncFold(boardEl) {
   const open = boardEl.classList.contains("board--later-open");
   boardEl.querySelectorAll(".tt-fold").forEach((b) => b.setAttribute("aria-expanded", String(open)));
 }
+
+/* 펼치기 · 접기 애니메이션 — 높이 · 위아래 여백 · 투명도를 0 ↔ 자연 높이로 움직인다.
+   PC 는 목록 전체(.tt-later), 모바일은 각 레인의 목록(.lane__later, 캐러셀 클론 포함). 접을 땐 클래스가 빠져도 display 가
+   유지되도록 is-closing 을 먼저 붙인다(안 그러면 높이를 재기 전에 사라진다). 움직임 줄이기 설정이면 애니메이션 없이 바로 전환. */
+const FOLD_MS = 280;
+const FOLD_PROPS = ["height", "marginTop", "paddingTop", "paddingBottom"];
+function toggleLater(boardEl) {
+  const opening = !boardEl.classList.contains("board--later-open");
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const sel = boardEl.classList.contains("board--tt") ? ".tt-later" : ".lane__later";
+  const targets = reduced ? [] : [...boardEl.querySelectorAll(sel)];
+  for (const t of targets) {
+    if (t.__foldDone) t.__foldDone();   // 진행 중이던 애니메이션은 즉시 마무리
+    if (!opening) t.classList.add("is-closing");
+  }
+  boardEl.classList.toggle("board--later-open");
+  syncFold(boardEl);
+  for (const t of targets) {
+    const cs = getComputedStyle(t);
+    const full = { height: t.offsetHeight, marginTop: parseFloat(cs.marginTop) || 0, paddingTop: parseFloat(cs.paddingTop) || 0, paddingBottom: parseFloat(cs.paddingBottom) || 0 };
+    if (!full.height) { t.classList.remove("is-closing"); continue; }   // 화면에 안 그려지는 목록(빈 레인 등)은 건너뜀
+    const set = (v, op) => { for (const p of FOLD_PROPS) t.style[p] = `${v ? full[p] : 0}px`; t.style.opacity = op; };
+    t.style.boxSizing = "border-box";
+    t.style.overflow = "hidden";
+    set(!opening, opening ? "0" : "1");
+    t.getBoundingClientRect();   // 시작 값 확정 (reflow)
+    t.style.transition = [...FOLD_PROPS.map((p) => p.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase())), "opacity"].map((p) => `${p} ${FOLD_MS}ms ease`).join(", ");
+    set(opening, opening ? "1" : "0");
+    const done = () => {
+      clearTimeout(timer);
+      t.style.cssText = "";
+      t.classList.remove("is-closing");
+      delete t.__foldDone;
+    };
+    const timer = setTimeout(done, FOLD_MS + 40);
+    t.__foldDone = done;
+  }
+}
 function wireFold(boardEl) {
   if (foldWired) return;
   foldWired = true;
   boardEl.addEventListener("click", (e) => {
     if (!e.target.closest(".tt-fold")) return;
-    boardEl.classList.toggle("board--later-open");
-    syncFold(boardEl);
+    toggleLater(boardEl);
   });
 }
 
