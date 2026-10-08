@@ -35,7 +35,8 @@ const st = {
   shuffle: false,
   repeat: "off",      // "off" | "one" | "all" — 버튼을 누를 때마다 순환 (BPM 과 같다)
   queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
-  qi: -1,             // 지금 곡의 재생목록 위치(0부터). -1 = 지금 곡이 재생목록에서 고른 것이 아님 — 같은 곡이 여럿일 수 있어 id 가 아니라 위치로 센다
+  played: new Set(),  // 셔플 한 바퀴 동안 이미 재생한 재생목록 위치들 — 남은 곡 중에서만 무작위로 고른다
+  qi: -1,           // 지금 곡의 재생목록 위치(0부터). -1 = 지금 곡이 재생목록에서 고른 것이 아님 — 같은 곡이 여럿일 수 있어 id 가 아니라 위치로 센다
   fpos: null,         // 플로팅 프레임을 끌어 옮긴 위치 {x,y}. null 이면 CSS 기본(오른쪽 아래)
   pos: 0,
   dur: 0,
@@ -200,7 +201,11 @@ function onYtState(e) {
   else if (e.data === S.PAUSED || e.data === S.CUED) st.playing = false;
   else if (e.data === S.ENDED) {
     if (st.repeat === "one") { yt.seekTo(0, true); yt.playVideo(); return; }
-    if (st.qi >= 0 && st.qi + 1 < st.queue.length) { playQueueAt(st.qi + 1); return; }   // 재생목록의 다음 곡
+    if (st.shuffle && st.qi >= 0) {   // 셔플 — 아직 안 들은 곡 중 무작위, 다 들었으면 전체 반복일 때만 새 바퀴
+      const n = pickShuffle();
+      if (n >= 0) { playQueueAt(n); return; }
+      if (st.repeat === "all") { playQueueAt(pickShuffle(true)); return; }
+    } else if (st.qi >= 0 && st.qi + 1 < st.queue.length) { playQueueAt(st.qi + 1); return; }   // 재생목록의 다음 곡
     if (st.qi >= 0 && st.repeat === "all") { playQueueAt(0); return; }                    // 마지막 뒤에 1번으로
     st.playing = false;
     st.pos = 0;
@@ -213,6 +218,7 @@ function startTick() {
   if (tickTimer) return;
   tickTimer = setInterval(() => {
     if (!yt || !ytReady || typeof yt.getCurrentTime !== "function") return;
+    if (trackDrag) return;   // 끄는 중엔 재생 위치로 덮어쓰지 않는다
     st.pos = yt.getCurrentTime() || 0;
     st.dur = yt.getDuration() || 0;
     paintProgress();
@@ -252,8 +258,9 @@ function go(dir) {
   if (st.queue.length) {   // 재생목록이 있으면 그 안에서 이동 (셔플이면 무작위)
     const q = st.queue;
     let next;
-    if (st.shuffle && q.length > 1) {
-      do { next = Math.floor(Math.random() * q.length); } while (next === st.qi);
+    if (st.shuffle) {
+      next = pickShuffle();
+      if (next < 0) next = pickShuffle(true);   // 한 바퀴를 다 들었으면 새 바퀴
     } else {
       next = st.qi < 0 ? 0 : (st.qi + dir + q.length) % q.length;
     }
@@ -279,21 +286,33 @@ function addToQueue(id) {
   if (st.queue.length === 1) { selectSong(id, true, 0); return; }
   paint();
 }
+/** 셔플로 다음에 틀 재생목록 위치. 이번 바퀴에 아직 안 튼 곡 중 무작위 — 없으면 -1.
+ *  newRound=true 면 바퀴를 새로 시작해(지금 곡만 들은 것으로) 남은 곡 중에서 고른다(곡이 하나뿐이면 그 곡). */
+function pickShuffle(newRound = false) {
+  if (newRound) st.played = new Set(st.qi >= 0 ? [st.qi] : []);
+  const rest = [];
+  for (let k = 0; k < st.queue.length; k++) if (!st.played.has(k) && k !== st.qi) rest.push(k);
+  if (rest.length) return rest[Math.floor(Math.random() * rest.length)];
+  return newRound && st.queue.length ? (st.qi >= 0 ? st.qi : 0) : -1;
+}
 /** 재생목록의 i 번째 곡으로 이동 · 재생. */
 function playQueueAt(i) {
   if (i < 0 || i >= st.queue.length) return;
+  st.played.add(i);
   selectSong(st.queue[i], true, i);
 }
 /** i 번째 항목을 뺀다. 지금 곡이 빠지면 그 곡은 끝까지 재생되고 거기서 멈춘다(재생목록에서 고른 곡이 아니게 됨). */
 function removeFromQueue(i) {
   if (i < 0 || i >= st.queue.length) return;
   st.queue.splice(i, 1);
+  st.played = new Set([...st.played].filter((k) => k !== i).map((k) => (k > i ? k - 1 : k)));   // 위치가 한 칸씩 당겨진다
   if (i < st.qi) st.qi -= 1;
   else if (i === st.qi) st.qi = -1;
   paint();
 }
 function clearQueue() {
   st.queue = [];
+  st.played = new Set();
   st.qi = -1;
   paint();
 }
@@ -314,9 +333,9 @@ function build() {
   el.cur = h("span", { class: "mp-mono", text: "0:00" });
   el.dur = h("span", { class: "mp-mono", text: "0:00" });
   el.fill = h("i");
-  el.track = h("div", { class: "mp-track", role: "slider", "aria-label": "재생 위치", tabindex: "0", on: { click: onTrackClick, keydown: onTrackKey } }, el.fill);
+  el.track = h("div", { class: "mp-track", role: "slider", "aria-label": "재생 위치", tabindex: "0", on: { keydown: onTrackKey } }, el.fill);
   el.bPlay = h("button", { type: "button", class: "mp-main", on: { click: togglePlay } });
-  el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => { st.shuffle = !st.shuffle; paintControls(); } } }, icon("shuffle"));
+  el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => { st.shuffle = !st.shuffle; st.played = new Set(st.qi >= 0 ? [st.qi] : []); paintControls(); } } }, icon("shuffle"));
   el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => { st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls(); } } }, icon("repeat", "mp-ico mp-ico--rpt"));
   el.err = h("div", { class: "mp-err", role: "status", hidden: true });
   el.qCount = h("span", { class: "mp-q__count" });
@@ -377,6 +396,7 @@ function build() {
   document.body.append(el.scrim, el.frame);
 
   initGripDrag();
+  initTrackDrag();
   el.scrim.addEventListener("keydown", trapFocus);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && st.popOpen) closePlayer(); });
   window.addEventListener("resize", () => { clampFloat(); layoutFrame(); });
@@ -579,9 +599,39 @@ function seekTo(ratio) {
   st.pos = Math.min(Math.max(0, ratio), 1) * st.dur;
   paintProgress();
 }
-function onTrackClick(e) {
+/** 타임바 끌기 — 끄는 동안은 화면(바 · 현재 시간)만 따라가고, 놓을 때 한 번만 해당 시간으로 이동한다. 단순 클릭도 같은 경로. */
+let trackDrag = null;   // 끄는 중이면 {id, ratio}
+const trackRatio = (e) => {
   const r = el.track.getBoundingClientRect();
-  seekTo((e.clientX - r.left) / r.width);
+  return r.width > 0 ? Math.min(Math.max(0, (e.clientX - r.left) / r.width), 1) : 0;
+};
+function previewDrag(ratio) {
+  trackDrag.ratio = ratio;
+  st.pos = ratio * st.dur;
+  paintProgress();
+}
+function initTrackDrag() {
+  el.track.addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || !(st.dur > 0)) return;
+    trackDrag = { id: e.pointerId, ratio: 0 };
+    el.track.setPointerCapture(e.pointerId);
+    el.track.classList.add("is-drag");
+    previewDrag(trackRatio(e));
+    e.preventDefault();
+  });
+  el.track.addEventListener("pointermove", (e) => {
+    if (trackDrag && e.pointerId === trackDrag.id) previewDrag(trackRatio(e));
+  });
+  const end = (commit) => (e) => {
+    if (!trackDrag || e.pointerId !== trackDrag.id) return;
+    const ratio = trackDrag.ratio;
+    trackDrag = null;
+    el.track.classList.remove("is-drag");
+    if (commit) seekTo(ratio);
+    else paintProgress();   // 취소 — 다음 tick 이 실제 위치로 되돌린다
+  };
+  el.track.addEventListener("pointerup", end(true));
+  el.track.addEventListener("pointercancel", end(false));
 }
 function onTrackKey(e) {
   if (!(st.dur > 0)) return;
