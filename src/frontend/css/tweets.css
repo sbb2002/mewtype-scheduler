@@ -490,7 +490,7 @@ body.tw-modal-open .tw-toast {
   .lane__thread__xcard, .lane__thread__msg, .lane__bubble, .lane__bubble.tl-off { transition: none !important; }
 }
 
-/* 트윗이 있는 멤버의 아바타 = 푸르고 얇은 링 (읽음 여부와 무관, PC 타임테이블 왼쪽 칸 · 모바일 레인 헤더 공통). tweets.js _apply 가 .has-tweet 을 켠다 */
+/* 트윗이 있는 멤버의 아바타 = 얇은 링(색 = 안 읽음 숫자 배지 .lane__tw 와 같은 #ccfbfa) (읽음 여부와 무관, PC 타임테이블 왼쪽 칸 · 모바일 레인 헤더 공통). tweets.js _apply 가 .has-tweet 을 켠다 */
 .lane__avatar.has-tweet {
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 2.5px #3b9eff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 2.5px #ccfbfa;
 }
