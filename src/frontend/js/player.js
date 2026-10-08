@@ -20,6 +20,8 @@ const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에
 const FLOAT_H = 200;                      // 플로팅 프레임 높이 — YouTube 임베드 최소 200×200 을 채운다
 const MIN_SLOT_H = 200;                   // 팝업 안 프레임 최소 높이 (좁은 화면에서도 200 이상)
 const NS = "http://www.w3.org/2000/svg";
+const NARROW_MQ = typeof matchMedia === "function" ? matchMedia("(max-width: 767px)") : null;   // 모바일 레이아웃 기준 — playerpop.css 의 @media 와 같은 값
+const isNarrow = () => !!(NARROW_MQ && NARROW_MQ.matches);
 
 const st = {
   raw: [],
@@ -36,6 +38,7 @@ const st = {
   closing: false,     // 모바일 시트가 내려가는 중 — 끝날 때까지 프레임은 재생부 자리를 따른다
   dock: null,         // PC 하단 도크 컨테이너(#player-dock). 있으면 팝업 본체가 거기 상시 표시된다
   slotVisible: false, // 도크의 재생부가 화면에 보이는가
+  tab: "songs",       // 모바일 아래 영역 탭 — "songs" | "queue" (팝업을 다시 열어도 유지). PC 에서는 안 쓴다
   shuffle: false,
   repeat: "off",      // "off" | "one" | "all" — 버튼을 누를 때마다 순환 (BPM 과 같다)
   queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
@@ -287,8 +290,9 @@ function go(dir) {
 /** 곡 누름 — 재생목록 맨 뒤에 쌓는다(같은 곡을 또 눌러도 또 쌓인다 — 빠지지 않음). **재생목록이 비어 있다가 처음 들어가는 곡은 쌓이면서 바로 재생한다**(누른 직후라 자동 재생이 막히지 않는다). 이후 곡은 쌓기만 한다. */
 function addToQueue(id) {
   st.queue.push(id);
-  if (st.queue.length === 1) { selectSong(id, true, 0); return; }
-  paint();
+  if (st.queue.length === 1) selectSong(id, true, 0);
+  else paint();
+  pulseBadge();   // 추가됐음을 배지로 알린다 — 탭은 그대로(곡 목록)
 }
 /** 셔플로 다음에 틀 재생목록 위치. 이번 바퀴에 아직 안 튼 곡 중 무작위 — 없으면 -1.
  *  newRound=true 면 바퀴를 새로 시작해(지금 곡만 들은 것으로) 남은 곡 중에서 고른다(곡이 하나뿐이면 그 곡). */
@@ -349,7 +353,7 @@ function build() {
     h("div", { class: "mp-q__head" }, h("strong", { text: "재생목록" }), el.qCount, el.qClear),
     el.qList,
   );
-  const stage = h("section", { class: "mp-stage" },
+  el.stage = h("section", { class: "mp-stage" },
     el.slot,
     h("div", { class: "mp-song" }, el.sTitle, el.sMeta, el.sKo),
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
@@ -364,7 +368,7 @@ function build() {
   el.sort = h("div", { class: "mp-sort", role: "group", "aria-label": "정렬" });
   el.list = h("ul", { class: "mp-list" });
   el.count = h("div", { class: "mp-count" });
-  const lib = h("section", { class: "mp-lib" },
+  el.lib = h("section", { class: "mp-lib", id: "mp-panel-songs" },
     h("div", { class: "mp-tools" },
       h("label", { class: "mp-search" }, icon("search", "mp-ico mp-ico--s"), el.q),
       h("div", { class: "mp-row2" }, el.kinds, el.sort),
@@ -373,9 +377,17 @@ function build() {
     el.count,
   );
 
+  // 모바일 탭 — 곡 목록 | 재생목록(배지 = 재생목록 곡 수). PC 에서는 탭 바가 숨고 두 패널은 원래 자리(stage · 목록부)로 돌아간다(placeQueue).
+  el.badge = h("span", { class: "mp-badge", text: "0" });
+  el.tabSongs = h("button", { type: "button", class: "mp-tab", role: "tab", id: "mp-tab-songs", "aria-controls": "mp-panel-songs", on: { click: () => setTab("songs"), keydown: onTabKey } }, "곡 목록");
+  el.tabQueue = h("button", { type: "button", class: "mp-tab", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", on: { click: () => setTab("queue"), keydown: onTabKey } }, "재생목록 ", el.badge);
+  el.tabBar = h("div", { class: "mp-tabs", role: "tablist", "aria-label": "곡 목록 또는 재생목록", hidden: true }, el.tabSongs, el.tabQueue);
+  el.qPanel = h("div", { class: "mp-qpanel", id: "mp-panel-queue", hidden: true });
+  el.panels = h("div", { class: "mp-panels" }, el.lib, el.qPanel);
+
   el.pop = h("div", { class: "mp-pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "mp-title" },
     h("div", { class: "mp-pop__head" }, el.titleEl, el.closeBtn),
-    el.body = h("div", { class: "mp-pop__body" }, stage, lib),
+    el.body = h("div", { class: "mp-pop__body" }, el.stage, el.tabBar, el.panels),
   );
   el.scrim = h("div", { class: "mp-scrim", id: "player-pop", hidden: true, on: { mousedown: (e) => { if (e.target === el.scrim) closePlayer(); } } }, el.pop);
 
@@ -406,6 +418,61 @@ function build() {
   window.addEventListener("resize", () => { clampFloat(); layoutFrame(); });
   el.body.addEventListener("scroll", () => { if (st.popOpen) layoutFrame(); }, { passive: true });   // 모바일 모달은 본문이 스크롤된다 — 프레임이 재생부 자리를 따라가게
   if (typeof ResizeObserver === "function") new ResizeObserver(layoutFrame).observe(el.slot);
+  if (NARROW_MQ) {
+    if (NARROW_MQ.addEventListener) NARROW_MQ.addEventListener("change", placeQueue);
+    else NARROW_MQ.addListener(placeQueue);
+  }
+  placeQueue();
+}
+
+/** 재생목록(el.qBox) · 탭 패널 자리를 화면 폭에 맞춘다. 모바일: qBox 를 재생목록 탭 패널로 옮김 · PC: stage 맨 끝(원래 자리)으로 되돌림.
+ *  요소만 옮긴다(새로 만들지 않음). el.frame(영상 iframe)은 건드리지 않는다. */
+function placeQueue() {
+  if (!built) return;
+  if (isNarrow()) { if (el.qBox.parentNode !== el.qPanel) el.qPanel.append(el.qBox); }
+  else if (el.qBox.parentNode !== el.stage) el.stage.append(el.qBox);
+  paintTabs();
+  layoutFrame();
+}
+
+/** 탭 상태 반영 — 모바일에서는 선택된 탭의 패널만 보인다. PC 에서는 탭 바 · 패널 숨김 상태를 모두 풀어 둔다. */
+function paintTabs() {
+  if (!built) return;
+  const narrow = isNarrow();
+  const songs = st.tab !== "queue";
+  el.tabBar.hidden = !narrow;
+  el.tabSongs.setAttribute("aria-selected", String(songs));
+  el.tabQueue.setAttribute("aria-selected", String(!songs));
+  el.tabSongs.tabIndex = songs ? 0 : -1;
+  el.tabQueue.tabIndex = songs ? -1 : 0;
+  el.lib.hidden = narrow && !songs;
+  el.qPanel.hidden = !narrow || songs;
+  for (const [p, t] of [[el.lib, el.tabSongs], [el.qPanel, el.tabQueue]]) {
+    if (narrow) { p.setAttribute("role", "tabpanel"); p.setAttribute("aria-labelledby", t.id); }
+    else { p.removeAttribute("role"); p.removeAttribute("aria-labelledby"); }
+  }
+}
+
+function setTab(t) {
+  st.tab = t;
+  paintTabs();
+}
+
+/** 탭 바 키보드 — 좌우 화살표로 옮기며 포커스도 따라간다(WAI-ARIA 탭 패턴). */
+function onTabKey(e) {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const t = st.tab === "songs" ? "queue" : "songs";
+  setTab(t);
+  (t === "songs" ? el.tabSongs : el.tabQueue).focus();
+}
+
+/** 재생목록에 곡이 쌓이면 배지를 한 번 맥박 — 클래스를 뗐다 다시 붙여 같은 애니메이션을 다시 돌린다. */
+function pulseBadge() {
+  if (!built) return;
+  el.badge.classList.remove("pulse");
+  void el.badge.offsetWidth;
+  el.badge.classList.add("pulse");
 }
 
 // ── 그리기 ───────────────────────────────────────────────────────────
@@ -464,6 +531,7 @@ function paintControls() {
 
 function paintQueue() {
   if (!built) return;
+  el.badge.textContent = String(st.queue.length);
   el.qCount.textContent = st.queue.length ? `${st.queue.length}곡` : "";
   el.qClear.hidden = !st.queue.length;
   if (!st.queue.length) {
@@ -542,7 +610,11 @@ function songRow(s, i, q) {
     h("span", { class: "mp-mono", text: s.date }),
   );
   const qns = st.queue.flatMap((x, k) => (x === s.id ? [k + 1] : []));   // 재생목록에서의 번호들(같은 곡이 여러 번일 수 있다)
-  if (qns.length) sub.append(h("span", { class: "mp-q-badge", text: `재생목록 ${qns.join("·")}번` }));
+  if (qns.length) {   // 글자 수 상한: 1번이면 「N번」, 여럿이면 「N번 외 K」(N = 가장 앞 번호). 전체 번호는 툴팁 · 접근성 이름으로만
+    const all = `재생목록 ${qns.join("·")}번`;
+    const label = qns.length === 1 ? `재생목록 ${qns[0]}번` : `재생목록 ${qns[0]}번 외 ${qns.length - 1}`;
+    sub.append(h("span", { class: "mp-q-badge", title: all, role: "img", "aria-label": all, text: label }));
+  }
   const main = h("button", { type: "button", class: "mp-item__main", "aria-current": cur ? "true" : null, title: "재생목록에 추가", on: { click: () => addToQueue(s.id) } },
     h("span", { class: "mp-item__n mp-mono", text: cur && st.playing ? "▶" : String(i + 1) }),
     h("span", { class: "mp-item__body" }, h("span", { class: "mp-item__title" }, ...highlight(s.title, q), ...(isNewSong(s) ? [" ", newPill()] : [])), sub,
