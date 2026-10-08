@@ -267,7 +267,11 @@ html.mp-lock { overflow: hidden; }
 }
 #player-dock[hidden] { display: none; }
 .mp-pop--dock { width: 100%; height: 640px; box-shadow: none; }
-.mp-pop--dock .mp-x { display: none; }           /* 내리기 버튼 — 도크는 내릴 수 없다 */
+/* 도크는 모달(920px)보다 훨씬 넓어 재생부가 16:9 로 커지면(폭 709 → 높이 399) 곡 정보 · 컨트롤에 밀려 재생목록 칸이 14px 로 찌그러졌다.
+   재생부 폭을 제한해(16:9 → 높이 ≤ 236) 재생목록이 쓸 높이를 남긴다. 재생목록은 최소 높이도 보장. 프레임은 slot 크기를 그대로 따라간다. */
+.mp-pop--dock .mp-slot { width: min(100%, 420px); margin-inline: auto; }
+.mp-pop--dock .mp-q { min-height: 150px; }
+.mp-pop--dock .mp-x { display: none; }          /* 내리기 버튼 — 도크는 내릴 수 없다 */
 
 .mp-frame.is-float {
   z-index: 45;
