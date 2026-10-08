@@ -235,7 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
   pollNotices();
   pollTweets();
   pollBanners();
-  initNewSongBadge();   // 최근 7일 안에 등록된 신곡이 있으면 CD 버튼(모바일)에 NEW
+  initNewSongBadge();   // 발매일 +14일 안의 신곡이 있으면 CD 버튼(모바일)에 NEW
   // (v4.2.0) 모바일: 하단 아이콘 줄의 「CD + 음표 >」 버튼 → 플레이어 팝업. 처음 눌렀을 때만 모듈을 불러온다(YouTube API 도 그때 로드).
   document.addEventListener(PLAYER_BUTTON_EVENT, () => {
     import("./player.js").then((m) => { playerMod = m; m.openPlayer(); }).catch((e) => console.error("[player]", e));

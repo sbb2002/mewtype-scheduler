@@ -527,7 +527,7 @@ function paintList() {
   el.count.textContent = st.songs.length ? `${list.length} / ${st.songs.length}곡 · 독음 ${st.songs.filter((s) => s.reading).length}곡 입력됨` : "";
 }
 
-/** 최근 7일 안에 등록된 곡 표시 — 곡 줄 · 재생 중 곡 제목 옆. */
+/** 발매일 +14일 안의 곡 표시 — 곡 줄 · 재생 중 곡 제목 옆. */
 function newPill() {
   return h("span", { class: "mp-new", text: "NEW" });
 }

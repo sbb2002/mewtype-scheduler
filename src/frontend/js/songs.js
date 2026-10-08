@@ -88,13 +88,13 @@ export function displayKo(song) {
   return /[぀-ヿ㐀-鿿]/.test(song.title || "") ? song.readingKo || "" : "";
 }
 
-/** 새로 등록된 곡인가(곡 하나) / 있는가(목록). — 곡의 `added_at`(신곡 자동 등록 시각)이 지금부터 `days`일(기본 7일) 안이면 true.
- *  발매일(`date`)이 아니라 **목록에 올라온 시각** 기준이다(운영자 결정 2026-10-07). 시드 곡은 `added_at` 이 없어 해당 없음. */
-export function isNewSong(song, nowMs = Date.now(), days = 7) {
-  const t = Date.parse(song && song.added_at);
-  return Number.isFinite(t) && nowMs - t < days * 86400000 && nowMs - t > -300000;   // 시계 오차 5분까지 허용
+/** 신곡인가(곡 하나) / 있는가(목록). — 곡의 **발매일(`date`)** 부터 `days`일(기본 14일) 뒤까지(그날 포함, KST 기준) true.
+ *  발매일 전(미래 날짜)은 신곡이 아니다. 이전(~2026-10-08)엔 등록 시각 `added_at` 기준 7일이었으나 발매일 +14일로 바꿨다(운영자 결정 2026-10-08). */
+export function isNewSong(song, nowMs = Date.now(), days = 14) {
+  const t = Date.parse(`${song && song.date}T00:00:00+09:00`);
+  return Number.isFinite(t) && nowMs >= t - 300000 && nowMs < t + (days + 1) * 86400000;   // 시계 오차 5분까지 허용
 }
-export function hasNewSong(songs, nowMs = Date.now(), days = 7) {
+export function hasNewSong(songs, nowMs = Date.now(), days = 14) {
   return (songs || []).some((s) => isNewSong(s, nowMs, days));
 }
 
@@ -107,11 +107,11 @@ export function matches(song, query) {
 }
 
 /** 종류 필터 + 검색 + 정렬. sortBy: "date" | "name", dir: "asc" | "desc". 원본 배열은 건드리지 않는다.
- *  **신곡(최근 7일 안에 등록된 곡)은 어떤 정렬이든 항상 맨 위에, 최신 순**(발매일 내림차순 → 등록 시각 → 곡명)으로 나온다. 나머지는 고른 정렬대로. */
+ *  **신곡(발매일 +14일 안의 곡)은 어떤 정렬이든 항상 맨 위에, 최신 순**(발매일 내림차순 → 등록 시각 → 곡명)으로 나온다. 나머지는 고른 정렬대로. */
 export function viewSongs(songs, { query = "", kind = "all", sortBy = "date", dir = "desc" } = {}) {
   const sign = dir === "asc" ? 1 : -1;
   const now = Date.now();
-  const byKind = (s) => kind === "all" || (kind === "new" ? isNewSong(s, now) : s.kind === kind);   // "new" = 최근 7일 안에 등록된 신곡
+  const byKind = (s) => kind === "all" || (kind === "new" ? isNewSong(s, now) : s.kind === kind);   // "new" = 발매일 +14일 안의 신곡
   const list = songs.filter((s) => byKind(s) && matches(s, query));
   const newest = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)
     || String(b.added_at || "").localeCompare(String(a.added_at || ""))

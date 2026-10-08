@@ -15,7 +15,7 @@
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
-/* 신곡 NEW 배지 — 최근 7일 안에 등록된 곡이 있으면 <html data-new-song>(playerbtn.js)이 켠다. 버튼이 다시 그려져도 속성만 보고 그려진다 */
+/* 신곡 NEW 배지 — 발매일 +14일 안의 곡이 있으면 <html data-new-song>(playerbtn.js)이 켠다. 버튼이 다시 그려져도 속성만 보고 그려진다 */
 html[data-new-song] .player-btn::after {
   content: "NEW";
   position: absolute;

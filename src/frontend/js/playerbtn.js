@@ -34,7 +34,7 @@ function icon() {
  * @param {string} cls 추가 클래스 (위치/크기는 CSS 가 정한다)
  * @returns {HTMLButtonElement}
  */
-let hasNew = false;   // 최근 7일 안에 등록된 신곡이 있는가 — 켜지면 <html data-new-song> + 버튼 접근성 이름에 반영
+let hasNew = false;   // 발매일 +14일 안의 신곡이 있는가 — 켜지면 <html data-new-song> + 버튼 접근성 이름에 반영
 
 function applyNew() {
   if (hasNew) document.documentElement.setAttribute("data-new-song", "");

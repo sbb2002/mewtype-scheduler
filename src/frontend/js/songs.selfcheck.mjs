@@ -50,14 +50,15 @@ assert(displayKo(prepareSong({ title: "愛は衝動", reading: "あいはしょ�
 assert(displayKo(prepareSong({ title: "TearJerker", reading: "てあじゃーかー" })) === "", "영문 곡명은 음차 표시 안 함");
 assert(displayKo(prepareSong({ title: "夢我夢中", reading: "" })) === "", "독음 없으면 표시 안 함");
 
-// ── NEW 배지 ──
-const NOW = Date.parse("2026-10-10T00:00:00Z");
-assert(hasNewSong([{ added_at: "2026-10-07T14:30:00Z" }], NOW), "등록 3일 뒤 → NEW");
-assert(!hasNewSong([{ added_at: "2026-10-02T23:59:00Z" }], NOW), "등록 7일 넘으면 NEW 없음");
-assert(hasNewSong([{ added_at: "2026-10-03T00:01:00Z" }], NOW), "7일 안쪽 경계 → NEW");
-assert(!hasNewSong([{ title: "시드 곡" }, { added_at: "" }, { added_at: "x" }], NOW) && !hasNewSong([], NOW) && !hasNewSong(null, NOW), "added_at 없음 · 이상한 값 · 빈 목록 → NEW 없음");
-
-assert(isNewSong({ added_at: "2026-10-07T14:30:00Z" }, NOW) && !isNewSong({ title: "시드" }, NOW), "곡 하나 단위 NEW 판정");
+// ── NEW 배지 (발매일 +14일, 그날 포함 · KST) ──
+const NOW = Date.parse("2026-10-10T00:00:00Z");   // = KST 10-10 09:00
+assert(hasNewSong([{ date: "2026-10-05" }], NOW), "발매 5일 뒤 → NEW");
+assert(hasNewSong([{ date: "2026-09-26" }], NOW), "발매일 +14일째(KST 10-10) → 아직 NEW");
+assert(!hasNewSong([{ date: "2026-09-25" }], NOW), "발매일 +15일째 → NEW 없음");
+assert(!hasNewSong([{ date: "2026-10-12" }], NOW), "발매일 전(미래 날짜) → NEW 아님");
+assert(!hasNewSong([{ title: "날짜 없음" }, { date: "" }, { date: "x" }], NOW) && !hasNewSong([], NOW) && !hasNewSong(null, NOW), "date 없음 · 이상한 값 · 빈 목록 → NEW 없음");
+assert(isNewSong({ date: "2026-10-05" }, NOW) && !isNewSong({ title: "시드" }, NOW), "곡 하나 단위 NEW 판정");
+assert(!isNewSong({ date: "2026-10-05", added_at: "2026-10-09T00:00:00Z" }, Date.parse("2026-10-30T00:00:00Z")), "기준은 added_at 이 아니라 발매일");
 
 // ── 필터 · 정렬 ──
 const opts = { query: "", kind: "all", sortBy: "date", dir: "desc" };
@@ -71,17 +72,22 @@ assert(byName.length === 64, "이름순 정렬은 곡을 잃지 않음");
 assert(prep.length === 64 && prep[0].date === "2023-11-28", "원본 배열은 건드리지 않음");
 
 // ── 신곡 필터 ──
-const withNew = [{ ...prep[0], added_at: new Date().toISOString() }, ...prep.slice(1)];
-assert(viewSongs(withNew, { ...opts, kind: "new" }).length === 1 && viewSongs(prep, { ...opts, kind: "new" }).length === 0, "신곡 필터 = 최근 등록 곡만");
+const ymd = (daysAgo) => new Date(Date.now() + 9 * 3600e3 - daysAgo * 86400e3).toISOString().slice(0, 10);   // KST 날짜
+const baseNew = viewSongs(prep, { ...opts, kind: "new" }).length;   // 시드 곡 중 최근 14일 발매가 이미 있을 수 있다
+const withNew = [{ ...prep[0], date: ymd(0) }, ...prep.slice(1)];
+assert(viewSongs(withNew, { ...opts, kind: "new" }).length === baseNew + 1, "신곡 필터 = 발매일 +14일 안의 곡만");
+assert(viewSongs([{ ...prep[0], date: ymd(15) }], { ...opts, kind: "new" }).length === 0, "발매 15일 전 곡은 신곡 아님");
 
 // ── 신곡은 항상 맨 위 · 최신순 ──
-const nowIso = new Date().toISOString();
-const mixed = prep.map((s) => (s.title === "ユキトキ" ? { ...s, date: "2026-10-01", added_at: nowIso } : s.title === "ジレンマ" ? { ...s, date: "2026-10-05", added_at: nowIso } : s));
+const mixed = prep.map((s) => (s.title === "ユキトキ" ? { ...s, date: ymd(4) } : s.title === "ジレンマ" ? { ...s, date: ymd(1) } : s));
 for (const o of [{ sortBy: "date", dir: "desc" }, { sortBy: "date", dir: "asc" }, { sortBy: "name", dir: "asc" }]) {
   const v = viewSongs(mixed, { query: "", kind: "all", ...o });
-  assert(v[0].title === "ジレンマ" && v[1].title === "ユキトキ", `신곡은 정렬(${o.sortBy} ${o.dir})과 무관하게 맨 위 · 최신순`);
+  const k = v.filter((s) => isNewSong(s)).length;
+  assert(v.slice(0, k).every((s) => isNewSong(s)) && v.slice(k).every((s) => !isNewSong(s)), `신곡은 정렬(${o.sortBy} ${o.dir})과 무관하게 맨 위`);
+  assert(v.findIndex((s) => s.title === "ジレンマ") < v.findIndex((s) => s.title === "ユキトキ") && v.findIndex((s) => s.title === "ユキトキ") < k, `신곡끼리는 최신순 (${o.sortBy} ${o.dir})`);
 }
-assert(JSON.stringify(viewSongs(mixed, { ...opts, kind: "new" }).map((s) => s.title)) === JSON.stringify(["ジレンマ", "ユキトキ"]), "신곡 필터도 최신순");
+const nv = viewSongs(mixed, { ...opts, kind: "new" }).map((s) => s.title);
+assert(nv.indexOf("ジレンマ") < nv.indexOf("ユキトキ") && nv.includes("ユキトキ"), "신곡 필터도 최신순");
 
 // ── 강조 구간 ──
 assert(JSON.stringify(matchRange("ユキトキ", "きと")) === "[1,3]", "강조 구간 (가타카나 ↔ 히라가나)");
