@@ -45,6 +45,12 @@ _STRETCH_RE = re.compile(r"[ーｰ〜～]{2,}")
 _PUNCT_RUN_RE = re.compile(r"[！!]{4,}|[？?]{4,}")
 _PUNCT_OUT_RE = re.compile(r"[！!]{3,}|[？?]{3,}")
 
+# 같은 가나·한자 1글자가 8회+ 연속 — "うれしいぁぁぁ…(40개)" 처럼 문장 중간에 끼면 위와 같은
+# 폭주 루프(실측: 46자 입력 → 7715자 출력 → 환각 가드 → None). 문장부호와 달리 번역하면
+# 글자가 바뀌므로(ぁ→아) 개수를 복원하지 않고 5개로만 접는다. 구분선 기호(･ ━ 등)·이모지·
+# 영문은 폭주 사례가 없고 번역문에 그대로 남아야 해서(스케줄 트윗 `🩵 ･････ 🩵`) 대상 아님.
+_KANA_RUN_RE = re.compile(r"([ぁ-ゖァ-ヺｦ-ﾟ一-龥々])\1{7,}")
+
 # 고정 번역 용어집 — LLM 이 호출마다 다르게 옮기는 고유명사를 여기 등록하면 항상 이 값으로
 # 고정된다(2026-09-13, 그룹명이 "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 매번 달라지던
 # 문제). preview/notice/tweet 번역 전부 이 용어집을 거친다 — 입력에서 원문을 자리표시자로
@@ -771,6 +777,7 @@ class LLMClient:
 
         text_ja = _normalize_stretch(text_ja or "")
         text_ja, punct_runs = _collapse_punct_runs(text_ja)
+        text_ja = _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, text_ja)
         m = _REPEAT_RE.match(text_ja)
         if m:
             out = self._translate_repeated(text_ja, m)
@@ -1351,6 +1358,9 @@ if __name__ == "__main__":
 
     got = LLMClient("test-key", session=BangLoopSession()).translate("無事にゲットしました" + "！" * 80)
     assert got == "무사히 얻었습니다" + "!" * 80, got
+    assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "うれしい" + "ぁ" * 40 + "です") == "うれしい" + "ぁ" * 5 + "です"
+    assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "🩵 " + "･" * 21 + " 🩵") == "🩵 " + "･" * 21 + " 🩵"   # 구분선은 불변
+    assert _KANA_RUN_RE.sub(lambda m: m.group(1) * 5, "ななななななな") == "ななななななな"           # 7회는 미달
     print("✓ ！ 80개 트윗: 접어서 번역 → 80개로 복원 (폭주 입력 재현 세션 통과)")
 
     # ──── 시나리오 9: translate 반복 압축 (버그리포트 20260913 #3) ────
