@@ -1,5 +1,6 @@
 // player.js — (v4.2.0) 유메미타 플레이어: 팝업(재생부 + 검색·정렬·목록) · 팝업을 내린 뒤의 플로팅 프레임.
-// 열기는 playerbtn.js 가 발행하는 `mew:player-open` 이벤트 → main.js 가 이 모듈을 지연 import 해 openPlayer() 를 부른다.
+// 모바일: 열기는 playerbtn.js 가 발행하는 `mew:player-open` 이벤트 → main.js 가 이 모듈을 지연 import 해 openPlayer() 를 부른다.
+// PC(≥768px): 버튼 없이 메인 화면 맨 아래 도크(#player-dock)에 팝업 본체를 상시 표시(mountDock). 도크가 화면 밖이면 재생 중인 프레임은 플로팅으로 남는다.
 //
 // 설계 원칙 (YouTube API 정책 — 개발자 정책 III.I.5 · III.I.7 · III.I.9, 필수 최소 기능):
 //  - 재생은 YouTube IFrame Player API 의 임베드 프레임만 쓴다. 광고는 프레임 안에서 YouTube 가 처리 — 건너뛰기를 대신하지 않는다.
@@ -32,6 +33,8 @@ const st = {
   playing: false,
   started: false,     // 한 번이라도 재생을 시작했는가 — 팝업을 내린 뒤 플로팅 프레임을 남길지 결정
   popOpen: false,
+  dock: null,         // PC 하단 도크 컨테이너(#player-dock). 있으면 팝업 본체가 거기 상시 표시된다
+  slotVisible: false, // 도크의 재생부가 화면에 보이는가
   shuffle: false,
   repeat: "off",      // "off" | "one" | "all" — 버튼을 누를 때마다 순환 (BPM 과 같다)
   queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
@@ -547,21 +550,90 @@ function songRow(s, i, q) {
 }
 
 // ── 프레임 배치 ──────────────────────────────────────────────────────
+let slotCss = "";   // 마지막으로 slot 위에 준 스타일 — 같으면 다시 쓰지 않는다(dockSync 가 매 프레임 부른다)
 function layoutFrame() {
   if (!built) return;
   const f = el.frame;
-  const show = st.popOpen || st.started;
+  // slot 위에 겹치는 때: 모달 팝업이 열려 있거나, PC 하단 도크의 재생부가 화면에 보일 때. 도크가 화면 밖이면 재생 중인 프레임은 플로팅으로 남는다.
+  const inSlot = st.dock ? st.slotVisible : st.popOpen;
+  const show = inSlot || st.started;
   f.hidden = !show;
   if (!show) return;
-  if (st.popOpen) {
-    // 팝업 안: 재생부 자리(slot) 위에 겹친다. 손잡이 줄은 숨김.
+  if (inSlot) {
+    // 재생부 자리(slot) 위에 겹친다. 손잡이 줄은 숨김. 도크는 페이지와 같이 스크롤되도록 문서 좌표(absolute)로 둔다.
     const r = el.slot.getBoundingClientRect();
     f.classList.remove("is-float");
-    f.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+    f.classList.toggle("is-dock", !!st.dock);
+    const css = st.dock
+      ? `position:absolute;left:${r.left + scrollX}px;top:${r.top + scrollY}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`
+      : `left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;right:auto;bottom:auto`;
+    if (css !== slotCss) { f.style.cssText = css; slotCss = css; }
   } else {
+    slotCss = "";
+    f.classList.remove("is-dock");
     f.classList.add("is-float");
     f.style.cssText = st.fpos ? `left:${st.fpos.x}px;top:${st.fpos.y}px;right:auto;bottom:auto` : "";
   }
+}
+
+// ── PC 하단 도크 ─────────────────────────────────────────────────────
+// PC 에서는 팝업을 모달로 띄우지 않고 메인 화면 맨 아래(#player-dock)에 붙여 둔다. 모바일은 기존 모달 그대로.
+let dockRaf = 0;
+let slotIO = null;
+function dockSync() {   // 도크의 재생부가 보이는 동안 레이아웃이 밀려도(보드 재렌더 등) 프레임이 자리를 따라가게 한다
+  dockRaf = 0;
+  if (!st.dock || !st.slotVisible) return;
+  layoutFrame();
+  dockRaf = requestAnimationFrame(dockSync);
+}
+async function prepareContent() {
+  paintTools();
+  paintList();
+  if (!st.songs.length) {
+    await loadSongs();
+    paintTools();
+  }
+  // 처음 열면 가장 최근 곡의 첫 화면만 불러 둔다 — 재생은 사용자가 누를 때 시작
+  if (!st.curId && st.songs.length) selectSong(viewSongs(st.songs, { sortBy: "date", dir: "desc" })[0].id, false);
+  else paint();
+}
+
+/** PC: 팝업 본체를 container 안으로 옮겨 상시 표시한다. 여러 번 불러도 안전. */
+export async function mountDock(container) {
+  build();
+  if (st.dock === container) return;
+  if (st.popOpen) closePlayer();
+  st.dock = container;
+  container.append(el.pop);
+  el.pop.classList.add("mp-pop--dock");
+  el.pop.setAttribute("role", "region");
+  el.pop.removeAttribute("aria-modal");
+  if (typeof IntersectionObserver === "function") {
+    slotIO = new IntersectionObserver(([e]) => {
+      st.slotVisible = e.isIntersecting;
+      layoutFrame();
+      if (st.slotVisible && !dockRaf) dockRaf = requestAnimationFrame(dockSync);
+    });
+    slotIO.observe(el.slot);
+  } else {
+    st.slotVisible = true;
+    dockRaf = requestAnimationFrame(dockSync);
+  }
+  layoutFrame();
+  await prepareContent();
+}
+
+/** 모바일로 넘어가면 팝업 본체를 모달 배경으로 되돌린다. */
+export function unmountDock() {
+  if (!built || !st.dock) return;
+  if (slotIO) { slotIO.disconnect(); slotIO = null; }
+  st.dock = null;
+  st.slotVisible = false;
+  el.scrim.append(el.pop);
+  el.pop.classList.remove("mp-pop--dock");
+  el.pop.setAttribute("role", "dialog");
+  el.pop.setAttribute("aria-modal", "true");
+  layoutFrame();
 }
 
 function clampFloat() {
@@ -658,21 +730,14 @@ async function retryLoad() {
 
 export async function openPlayer() {
   build();
+  if (st.dock) { st.dock.scrollIntoView({ behavior: "smooth", block: "end" }); return; }   // PC: 플로팅 프레임의 ▴ · 더블클릭 = 하단 도크로 이동
   if (st.popOpen) return;
   lastFocus = document.activeElement;
   st.popOpen = true;
   el.scrim.hidden = false;
   document.documentElement.classList.add("mp-lock");
-  paintTools();
-  paintList();
   layoutFrame();
-  if (!st.songs.length) {
-    await loadSongs();
-    paintTools();
-  }
-  // 처음 열면 가장 최근 곡의 첫 화면만 불러 둔다 — 재생은 사용자가 누를 때 시작
-  if (!st.curId && st.songs.length) selectSong(viewSongs(st.songs, { sortBy: "date", dir: "desc" })[0].id, false);
-  else paint();
+  await prepareContent();
   requestAnimationFrame(() => { layoutFrame(); el.closeBtn.focus(); });
 }
 

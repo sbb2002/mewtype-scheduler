@@ -229,6 +229,18 @@ html.mp-lock { overflow: hidden; }
 .mp-yt { position: relative; flex: 1; min-height: 0; }
 .mp-yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .mp-frame:not(.is-float) .mp-grip { display: none; }
+.mp-frame.is-dock { z-index: 40; }   /* PC 도크: 고정 푸터(50)와 디스클레이머 팝업 아래로 — 페이지를 스크롤하면 푸터 밑으로 들어간다 */
+
+/* ── PC 하단 도크 (≥768px) — 팝업 본체를 모달 대신 메인 화면 맨 아래에 상시 표시 ── */
+#player-dock {
+  max-width: var(--content-max);
+  min-height: 640px;                              /* 모듈을 불러오기 전에도 자리를 잡아 스크롤 위치가 튀지 않게 */
+  margin-inline: auto;
+  padding: 0 var(--page-pad) calc(var(--mp-foot) + 24px);   /* 아래는 고정 푸터 높이만큼 비운다 */
+}
+#player-dock[hidden] { display: none; }
+.mp-pop--dock { width: 100%; height: 640px; box-shadow: none; }
+.mp-pop--dock .mp-x { display: none; }           /* 내리기 버튼 — 도크는 내릴 수 없다 */
 
 .mp-frame.is-float {
   z-index: 45;

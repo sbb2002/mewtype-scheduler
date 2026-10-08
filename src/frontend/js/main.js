@@ -2,7 +2,7 @@ import { fetchPreview } from "./api.js";
 import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
 import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
-import { createPlayerButton, initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
+import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
@@ -200,6 +200,33 @@ function initMonitorTapEasterEgg() {
   });
 }
 
+// (v4.2.0) PC 하단 플레이어 도크 — ≥768px 에서만 보이고, 모바일로 넘어가면 팝업 본체를 모달로 되돌린다.
+let playerMod = null;
+let dockIO = null;
+function syncPlayerDock() {
+  const dock = document.getElementById("player-dock");
+  if (!dock) return;
+  if (!window.matchMedia("(min-width: 768px)").matches) {
+    dock.hidden = true;
+    if (dockIO) { dockIO.disconnect(); dockIO = null; }
+    if (playerMod) playerMod.unmountDock();
+    return;
+  }
+  dock.hidden = false;
+  if (playerMod) { playerMod.mountDock(dock).catch((e) => console.error("[player]", e)); return; }
+  if (dockIO) return;
+  const load = () => {
+    if (dockIO) { dockIO.disconnect(); dockIO = null; }
+    import("./player.js").then((m) => {
+      playerMod = m;
+      if (window.matchMedia("(min-width: 768px)").matches) return m.mountDock(dock);
+    }).catch((e) => console.error("[player]", e));
+  };
+  if (typeof IntersectionObserver !== "function") { load(); return; }
+  dockIO = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) load(); }, { rootMargin: "400px 0px" });
+  dockIO.observe(dock);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initMonitorEasterEgg();
   initMonitorTapEasterEgg();
@@ -208,16 +235,14 @@ document.addEventListener("DOMContentLoaded", () => {
   pollNotices();
   pollTweets();
   pollBanners();
-  // (v4.2.0) PC: 소식 막대 바로 위, 소식 막대·타임테이블과 왼쪽 선을 맞춘 줄에 둔다 (모바일은 CSS 로 숨김 — 하단 멤버 아이콘 줄에 따로 있음)
-  const playerBar = document.createElement("div");
-  playerBar.id = "player-bar";
-  playerBar.appendChild(createPlayerButton("player-btn--top"));
-  document.body.prepend(playerBar);
-  initNewSongBadge();   // 최근 7일 안에 등록된 신곡이 있으면 CD 버튼에 NEW
-  // (v4.2.0) 「CD + 음표 >」 버튼 → 플레이어 팝업. 처음 눌렀을 때만 모듈을 불러온다(YouTube API 도 그때 로드).
+  initNewSongBadge();   // 최근 7일 안에 등록된 신곡이 있으면 CD 버튼(모바일)에 NEW
+  // (v4.2.0) 모바일: 하단 아이콘 줄의 「CD + 음표 >」 버튼 → 플레이어 팝업. 처음 눌렀을 때만 모듈을 불러온다(YouTube API 도 그때 로드).
   document.addEventListener(PLAYER_BUTTON_EVENT, () => {
-    import("./player.js").then((m) => m.openPlayer()).catch((e) => console.error("[player]", e));
+    import("./player.js").then((m) => { playerMod = m; m.openPlayer(); }).catch((e) => console.error("[player]", e));
   });
+  // PC: 버튼 없이 메인 화면 맨 아래 도크에 플레이어를 둔다. 도크가 화면 근처로 오면 그때 모듈을 불러온다(안 내려가 보면 YouTube 도 안 부른다).
+  syncPlayerDock();
+  if (window.matchMedia) window.matchMedia("(min-width: 768px)").addEventListener("change", syncPlayerDock);
   initDisclaimerRotator();
   positionDisclaimerPopup();
   window.addEventListener("resize", positionDisclaimerPopup);

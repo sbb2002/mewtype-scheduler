@@ -28,7 +28,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
   `render.js` · `main.js` · `index.html` 수정).
   - **모바일**: 하단 멤버 아이콘 줄(`#pager-dots`)의 **화면 왼쪽 끝**(가장자리 여백 1rem)에 알약형 버튼(`.player-btn--dock`, 높이 26px, 절대 위치 — 멤버 아이콘은 그대로 가운데).
   - **디스클레이머 팝업**: `#foot` z-index 20 → 50. 하단 도트 띠(25) · 플레이어 버튼(40) 위에 팝업이 항상 맨 위로 뜬다(트윗 시트 900 보다는 아래).
-  - **PC**: **소식 막대 바로 위 줄**(`#player-bar` > `.player-btn--top`)에 소식 막대 · 타임테이블과 **왼쪽 선을 맞춰** 둔다(보드와 같은 최대 폭 · 좌우 패딩). 고정 배치가 아니라 스크롤하면 함께 올라간다.
+  - **PC**: 버튼 없음 — 플레이어 팝업을 모달로 띄우지 않고 **메인 화면 맨 아래 도크**(`#player-dock`)에 상시 표시(도크가 화면 근처에 올 때 지연 로드). 재생부가 화면 밖이면 재생 중 프레임은 플로팅으로 남는다. (초기 안은 소식 막대 위 `#player-bar` 버튼이었으나 폐기)
   - 아이콘은 같은 SVG(`createElementNS`, `currentColor`): CD(바깥 원 · 가운데 구멍 · 빛 반사) + 음표 + `>`.
   - **플레이어 구현**: 버튼 클릭(`mew:player-open`) → `main.js` 가 `player.js` 를 처음 눌렀을 때만 import → 팝업. 상세는 `docs/SPEC.md` 「플레이어 (v4.2.0)」.
     - 곡 목록 `assets/songs.json`(65곡, 프론트 정적 배포) · 순수 로직 `js/songs.js`(검색 정규화 · 가나→한글 독음 · 필터/정렬) · UI `js/player.js` · 스타일 `css/playerpop.css`. selfcheck `songs.selfcheck.mjs`.

@@ -959,7 +959,9 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **js/render.js** — `renderBoard(boardEl, preview, nowMs, archive)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시. **v4.1.0**: PC = 타임테이블 + 이후 예고, 모바일 = 1명씩 슬라이드),
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
 - **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
-  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로, PC 는 `main.js` 가 `body` 맨 앞에 `#player-bar` 줄을 만들어 `.player-btn--top` 으로 붙인다(소식 막대 바로 위, 소식 막대 · 타임테이블과 왼쪽 선 일치, 모바일은 CSS 로 숨김). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다.
+  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로 붙인다. **PC(≥768px)는 버튼이 없다** — 플레이어가 `#player-dock`(보드 아래)에 상시 표시된다(아래). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다(모바일 모달).
+  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
+    프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
