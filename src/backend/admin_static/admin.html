@@ -1000,6 +1000,7 @@
         .cx-kv { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 0.25rem 0.6rem; margin: 0; font-size: 0.85rem; }
         .cx-kv dt { color: var(--color-text-muted); }
         .cx-kv dd { margin: 0; overflow-wrap: anywhere; }
+        .cx-kv dd a { color: var(--color-accent); text-decoration: underline; }
         .cx-acts { display: flex; gap: 0.5rem; margin-top: 0.25rem; }
         .cx-btn { flex: 1; min-height: 44px; border-radius: 8px; }
         .cx-btn-pri { background: var(--color-accent); border-color: var(--color-accent); color: #04222a; font-weight: 600; }
@@ -2123,7 +2124,23 @@
                 for (const [k, v, full] of (o.kv || [])) {
                     if (v == null || v === "") continue;
                     dl.appendChild(this.cxEl("dt", "", k));
-                    const dd = this.cxEl("dd", "", String(v));
+                    // 값이 {href, text} 이면 새 탭 링크(http/https 만 — 그 밖은 글자로만)
+                    let dd;
+                    if (typeof v === "object" && v.href) {
+                        dd = this.cxEl("dd", "", "");
+                        if (/^https?:\/\//i.test(v.href)) {
+                            const a = document.createElement("a");
+                            a.href = v.href;
+                            a.target = "_blank";
+                            a.rel = "noopener noreferrer";
+                            a.textContent = v.text || v.href;
+                            dd.appendChild(a);
+                        } else {
+                            dd.textContent = v.text || v.href;
+                        }
+                    } else {
+                        dd = this.cxEl("dd", "", String(v));
+                    }
                     if (full) dd.title = full;
                     dl.appendChild(dd);
                 }
@@ -2351,7 +2368,9 @@
                                     ["영상", item.video_id || "없음"],
                                     ["멤버", collab.length ? names.join(" · ") + (item.host === "group" ? " (그룹 채널)" : "") : ""],
                                     ["회원 전용", item.membership ? "예" : ""],
-                                    ["출처", item.source || ""]],
+                                    ["출처", item.source || ""],
+                                    // 처음 알린 트윗(v4.0.4 부터 저장) — 이전 항목이나 API/수동 등록분은 없음
+                                    ["출처 트윗", item.src_url ? { href: item.src_url, text: "트윗 열기 ↗" } : "", item.src_url || ""]],
                                 onEdit: () => this.editPreview(item),
                                 onDel: () => this.deletePreview(item),
                             });
