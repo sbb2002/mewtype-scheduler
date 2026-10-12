@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자동제어 관리</title>
+<style>
+  :root { --bg:#0f0f0f; --bg2:#1a1a1a; --bg3:#232323; --text:#e8e8e8; --muted:#999; --border:#333; --accent:#06b6d4;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --pad:clamp(.75rem,3vw,2rem); }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; margin:0;
+         padding:var(--pad); padding-bottom:5.5rem; }
+  h1 { font-size:1.15rem; margin:0; }
+  h2 { font-size:1rem; margin:1.2rem 0 .5rem; }
+  .top { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.8rem; }
+  .grow { flex:1; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:.9rem 1rem; margin-bottom:.7rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:.7rem; }
+  .muted { color:var(--muted); } .small { font-size:12px; }
+  button, select { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.5rem .8rem;
+                   font-size:14px; min-height:40px; cursor:pointer; }
+  button.pri { background:var(--accent); color:#001318; border-color:var(--accent); font-weight:600; }
+  button.bad { background:#3a1414; border-color:#6b2020; }
+  button:disabled { opacity:.5; cursor:default; }
+  .pill { display:inline-block; padding:.05rem .55rem; border-radius:999px; font-size:12px; border:1px solid var(--border); background:var(--bg3); }
+  .ok { color:var(--ok); border-color:#1d5b34; } .warn { color:var(--warn); border-color:#6b4a0a; } .bad { color:var(--bad); border-color:#6b2020; }
+  .sev-CRITICAL { color:#fff; background:#b91c1c; border-color:#b91c1c; } .sev-ERROR { color:var(--bad); }
+  .sev-WARN { color:var(--warn); } .sev-INFO, .sev-DEBUG, .sev-TRACE { color:var(--muted); }
+  .bar { height:10px; background:var(--bg3); border-radius:6px; overflow:hidden; margin:.3rem 0 .15rem; }
+  .bar > i { display:block; height:100%; background:var(--ok); transition:width .4s; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:.15rem .8rem; }
+  .kv b { color:var(--muted); font-weight:400; }
+  table { width:100%; border-collapse:collapse; margin:.4rem 0; }
+  th, td { border-bottom:1px solid var(--border); padding:.3rem .5rem; text-align:left; vertical-align:top; word-break:break-word; }
+  th { color:var(--muted); font-weight:500; } th.n { text-align:right; }
+  td.n { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:var(--bg2); border-top:1px solid var(--border); z-index:5; }
+  nav button { flex:1; border:0; border-radius:0; background:none; min-height:52px; color:var(--muted); font-size:13px; }
+  nav button.on { color:var(--accent); font-weight:600; }
+  section { display:none; } section.on { display:block; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:10; display:none; padding:1rem; overflow:auto; }
+  .modal.on { display:block; }
+  .modal .box { background:var(--bg2); border:1px solid var(--border); border-radius:12px; max-width:900px; margin:0 auto; padding:1rem 1.2rem; }
+  .md h1 { font-size:1.15rem; } .md h2 { font-size:1.02rem; border-bottom:1px solid var(--border); padding-bottom:.2rem; }
+  .md h3 { font-size:.95rem; color:var(--muted); } .md pre { background:#111; border:1px solid var(--border); border-radius:8px; padding:.6rem;
+    overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; } .md code { background:#111; padding:0 .25rem; border-radius:4px; }
+  .md table { font-size:13px; } .md ul { padding-left:1.2rem; }
+  .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:4.5rem; background:#111; border:1px solid var(--border);
+           padding:.5rem 1rem; border-radius:8px; z-index:20; display:none; max-width:90vw; }
+  @media (min-width: 720px) { nav { position:static; border:1px solid var(--border); border-radius:10px; margin-bottom:.8rem; } body { padding-bottom:var(--pad); } }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>🤖 자동제어 관리</h1><span id="stage" class="pill"></span><span class="grow"></span>
+  <span class="muted small" id="clock"></span>
+</div>
+
+<div class="card" id="usage">
+  <div class="row"><b>구독 사용량</b><span class="grow"></span><span class="muted small" id="u-age"></span>
+    <button id="u-refresh" class="pri" title="가장 작은 호출 1회로 지금 값을 읽습니다(사용량을 아주 조금 소모)">지금 조회</button></div>
+  <div id="u-body"><span class="muted">아직 측정값 없음 — “지금 조회”를 누르거나 첫 분석 뒤에 표시됩니다.</span></div>
+</div>
+
+<nav id="tabs">
+  <button data-t="status" class="on">현황</button><button data-t="errors">에러</button><button data-t="reports">보고서</button>
+  <button data-t="fixes">수정</button><button data-t="control">제어</button>
+</nav>
+
+<section id="status" class="on"><div class="grid" id="st-grid"></div></section>
+<section id="errors">
+  <div class="row" id="sev-filter"></div>
+  <div id="err-list"></div>
+  <div class="row"><button id="log-toggle">WARN 이하 기록 보기</button></div>
+  <div id="log-list"></div>
+</section>
+<section id="reports"><div id="rep-list"></div></section>
+<section id="fixes"><div id="fix-list"></div></section>
+<section id="control">
+  <div class="card"><b>수신기 분석</b><p class="muted small">정지하면 새 ERROR 이상 에러를 분석·수정하지 않고 기록만 합니다(<code>rx/PAUSE</code>).</p>
+    <div class="row"><span id="c-rx"></span><span class="grow"></span><button id="b-rx"></button></div></div>
+  <div class="card"><b>발신기 발신</b><p class="muted small">정지하면 CRITICAL 을 제외한 에러 봉투 발신이 멈춥니다.</p>
+    <div class="row"><span id="c-pub"></span><span class="grow"></span>
+      <select id="pub-ttl"><option value="">시간 제한 없음</option><option value="900">15분</option><option value="3600">1시간</option></select>
+      <button id="b-pub"></button></div></div>
+  <div class="card"><b>발신 레벨</b><p class="muted small">기본은 WARN. INFO · DEBUG · TRACE 는 지정한 시간이 지나면 자동으로 WARN 으로 돌아갑니다.</p>
+    <div class="row"><span id="c-level"></span><span class="grow"></span>
+      <select id="lv"><option>ERROR</option><option selected>WARN</option><option>INFO</option><option>DEBUG</option><option>TRACE</option></select>
+      <select id="lv-ttl"><option value="900">15분</option><option value="3600" selected>1시간</option><option value="14400">4시간</option><option value="">제한 없음</option></select>
+      <button id="b-lv" class="pri">적용</button></div></div>
+  <div class="card"><b>최근 제어 결과</b><div id="ctl-list" class="small muted">-</div></div>
+</section>
+
+<div class="modal" id="modal"><div class="box"><div class="row"><b id="m-title"></b><span class="grow"></span>
+  <button id="m-close">닫기</button></div><div class="md" id="m-body"></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+let CSRF = '', TAB = 'status', SEV = '', SHOWLOG = false;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const kst = (iso, d = true) => { if (!iso) return '-'; const t = new Date(iso.length < 20 ? iso : iso); if (isNaN(t)) return iso;
+  const k = new Date(t.getTime() + 9 * 3600e3); const p = n => String(n).padStart(2, '0');
+  return (d ? `${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())} ` : '') + `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}:${p(k.getUTCSeconds())}`; };
+const kstEpoch = (e, d) => e ? kst(new Date(e * 1000).toISOString(), d) + ' KST' : '-';
+const pct = v => { const x = v * 100; return Math.abs(x - Math.round(x)) < 1e-6 ? Math.round(x) + '%' : x.toFixed(2) + '%'; };
+const rel = s => s == null ? '-' : s < 60 ? `${Math.round(s)}초 전` : s < 3600 ? `${Math.round(s / 60)}분 전` : `${(s / 3600).toFixed(1)}시간 전`;
+const until = e => { const s = e - Date.now() / 1000; return s <= 0 ? '곧' : s < 3600 ? `${Math.round(s / 60)}분 후` : `${(s / 3600).toFixed(1)}시간 후`; };
+function toast(m) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
+async function api(path, body) {
+  const o = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': CSRF }, body: JSON.stringify(body) };
+  const r = await fetch(path, o);
+  if (r.status === 401) { location.href = '/login'; throw new Error('401'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || j.msg || r.status);
+  return j;
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function pill(text, cls) { return el('span', 'pill ' + (cls || ''), text); }
+
+/* 마크다운(안전: 먼저 escape 후 제한된 태그만 생성) */
+function md(src) {
+  const lines = esc(src).split('\n'); let out = '', i = 0;
+  const inl = s => s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) { let b = []; i++; while (i < lines.length && !lines[i].startsWith('```')) b.push(lines[i++]); i++; out += '<pre>' + b.join('\n') + '</pre>'; continue; }
+    let m;
+    if ((m = l.match(/^(#{1,3}) (.*)/))) { out += `<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`; i++; continue; }
+    if (l.startsWith('|')) { let rows = []; while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+      const cell = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const body = rows.filter(r => !/^\|[\s:|-]+\|$/.test(r)); out += '<table>' + body.map((r, k) => '<tr>' + cell(r).map(c => k === 0 ? `<th>${inl(c)}</th>` : `<td>${inl(c)}</td>`).join('') + '</tr>').join('') + '</table>'; continue; }
+    if (/^\s*- /.test(l)) { let li = []; while (i < lines.length && /^\s*- /.test(lines[i])) li.push(lines[i++].replace(/^\s*- /, '')); out += '<ul>' + li.map(x => `<li>${inl(x)}</li>`).join('') + '</ul>'; continue; }
+    out += l.trim() ? `<p>${inl(l)}</p>` : ''; i++;
+  }
+  return out;
+}
+async function openReport(name) {
+  try { const j = await api('/api/report/' + encodeURIComponent(name)); $('#m-title').textContent = name; $('#m-body').innerHTML = md(j.text); $('#modal').classList.add('on'); }
+  catch (e) { toast('보고서를 열 수 없음: ' + e.message); }
+}
+
+/* 사용량 */
+function renderUsage(u) {
+  const b = $('#u-body'); b.textContent = '';
+  if (!u) { b.append(el('span', 'muted', '아직 측정값 없음 — “지금 조회”를 누르거나 첫 분석 뒤에 표시됩니다.')); $('#u-age').textContent = ''; return; }
+  const row = (label, v, reset) => { const d = el('div'); const t = el('div', 'row'); t.append(el('b', '', label), el('span', '', `${pct(v)} 사용 · 남음 ${pct(1 - v)}`), el('span', 'grow'),
+      el('span', 'muted small', `초기화 ${kstEpoch(reset, label.includes('주간'))} (${until(reset)})`));
+    const bar = el('div', 'bar'); const f = el('i'); f.style.width = Math.min(100, v * 100) + '%'; f.style.background = v >= .85 ? 'var(--bad)' : v >= .6 ? 'var(--warn)' : 'var(--ok)'; bar.append(f); d.append(t, bar); return d; };
+  if (u.five != null) b.append(row('세션(5시간)', u.five, u.reset5));
+  if (u.seven != null) b.append(row('주간(7일)', u.seven, u.reset7));
+  b.append(el('div', 'muted small', '같은 계정의 다른 세션 사용분 포함 · 서버가 1%p 단위로 알려 줍니다'));
+  $('#u-age').textContent = `측정 ${rel(u.age)}`;
+}
+$('#u-refresh').onclick = async () => { const b = $('#u-refresh'); b.disabled = true; b.textContent = '조회 중…';
+  try { const j = await api('/api/usage/refresh', {}); renderUsage(j.usage); toast(j.msg); } catch (e) { toast('실패: ' + e.message); }
+  b.disabled = false; b.textContent = '지금 조회'; };
+
+/* 현황 */
+function card(title) { const c = el('div', 'card'); c.append(el('b', '', title)); return c; }
+function kv(c, pairs) { const g = el('div', 'kv'); pairs.forEach(([k, v]) => { g.append(el('b', '', k)); const s = el('span'); if (v instanceof Node) s.append(v); else s.textContent = v; g.append(s); }); c.append(g); }
+async function loadStatus() {
+  const s = await api('/api/status'); $('#stage').textContent = `${s.stage}단계`; renderUsage(s.usage);
+  $('#clock').textContent = kst(s.now) + ' KST';
+  const g = $('#st-grid'); g.textContent = '';
+  let c = card('발신기'); kv(c, [['생존', pill(s.publisher.alive ? '정상' : '신호 없음', s.publisher.alive ? 'ok' : 'bad')], ['마지막 신호', rel(s.publisher.age)],
+    ['레벨', s.publisher.level || '-'], ['발신 정지', s.publisher.paused ? '예' : '아니오'], ['pid', s.publisher.pid ?? '-'],
+    ['누적', s.publisher.counters ? Object.entries(s.publisher.counters).map(([k, v]) => `${k} ${v}`).join(' · ') : '-']]); g.append(c);
+  c = card('수신기'); kv(c, [['분석', pill(s.rx_paused ? '정지됨' : '동작 중', s.rx_paused ? 'warn' : 'ok')], ['오늘 분석', `${s.receiver.calls_today} / ${s.receiver.daily_cap}`],
+    ['오늘 수정 시도', `${s.receiver.fixes_today} / ${s.receiver.fix_cap}`], ['발신기 소실 알림', s.lost_alerted ? '발송됨' : '없음'], ['pid', s.receiver.pid]]); g.append(c);
+  c = card('버스 큐'); kv(c, [['inbox', s.queue.inbox], ['처리 중', s.queue.processing], ['완료', s.queue.done], ['dead', s.queue.dead]]); g.append(c);
+  c = card('러너'); kv(c, [['pid', s.runner.pid ?? '-'], ['건강', pill(s.runner.healthy ? '정상' : (s.runner.healthy === false ? '응답 없음' : '확인 불가'), s.runner.healthy ? 'ok' : 'bad')],
+    ['포트', s.runner.port ?? '-'], ['작업 브랜치 HEAD', s.head]]); g.append(c);
+  c = card('수정·적용 정책'); kv(c, [['로컬 적용·재시작', s.apply_local ? '켜짐' : '꺼짐(커밋까지만)'], ['적용 브랜치', s.apply_branch], ['원격 푸시', '안 함']]); g.append(c);
+  c = card('모델 배정'); kv(c, [['분석·명세·검증·검토', s.models.analysis], ['코드 수정', s.models.code]]); g.append(c);
+  $('#c-rx').textContent = s.rx_paused ? '현재: 정지됨' : '현재: 동작 중'; $('#b-rx').textContent = s.rx_paused ? '분석 재개' : '분석 정지'; $('#b-rx').dataset.on = s.rx_paused ? '' : '1';
+  $('#c-pub').textContent = s.publisher.paused ? '현재: 발신 정지' : '현재: 발신 중'; $('#b-pub').textContent = s.publisher.paused ? '발신 재개' : '발신 정지'; $('#b-pub').dataset.on = s.publisher.paused ? '' : '1';
+  $('#c-level').textContent = `현재: ${s.publisher.level || '-'}`;
+}
+
+/* 에러 */
+const SEVS = ['', 'CRITICAL', 'ERROR', 'WARN', 'INFO'];
+function buildFilter() { const f = $('#sev-filter'); f.textContent = ''; SEVS.forEach(v => { const b = el('button', v === SEV ? 'pri' : '', v || '전체'); b.onclick = () => { SEV = v; buildFilter(); loadErrors(); }; f.append(b); }); }
+async function loadErrors() {
+  const j = await api('/api/errors?sev=' + SEV + (SHOWLOG ? '&log=1' : '')); const l = $('#err-list'); l.textContent = '';
+  if (!j.errors.length) l.append(el('div', 'muted', '기록된 에러가 없습니다.'));
+  j.errors.forEach(e => { const c = el('div', 'card'); const r = el('div', 'row'); r.append(pill(e.sev, 'sev-' + e.sev), el('b', '', e.where), el('span', 'grow'), el('span', 'muted small', `누적 ${e.count}건 · ${kst(e.last)} KST`)); c.append(r);
+    c.append(el('div', 'small', e.msg)); const r2 = el('div', 'row small'); r2.append(el('span', 'muted', e.sig));
+    if (e.verdict) r2.append(pill({ confirmed: '원인 확정', unknown: '원인 불명', ignored: '무시 가능' }[e.verdict] || e.verdict, e.verdict === 'confirmed' ? 'ok' : ''));
+    if (e.fix_status) r2.append(pill('수정: ' + e.fix_status)); if (e.suppressed) r2.append(el('span', 'muted', `쿨다운 생략 ${e.suppressed}건`));
+    if (e.report) { const b = el('button', '', '보고서'); b.onclick = () => openReport(e.report); r2.append(el('span', 'grow'), b); } c.append(r2); l.append(c); });
+  const ll = $('#log-list'); ll.textContent = '';
+  if (SHOWLOG) { const t = el('table'); t.append(Object.assign(el('tr'), { innerHTML: '<th>시각(KST)</th><th>심각도</th><th>메시지</th><th>비고</th>' }));
+    j.log.forEach(x => { const tr = el('tr'); [kst(x.ts), x.severity, x.msg + (x.occ > 1 ? ` (×${x.occ})` : ''), x.note || ''].forEach(v => tr.append(el('td', '', v))); t.append(tr); }); ll.append(t); }
+}
+$('#log-toggle').onclick = () => { SHOWLOG = !SHOWLOG; $('#log-toggle').textContent = SHOWLOG ? '기록 숨기기' : 'WARN 이하 기록 보기'; loadErrors(); };
+
+/* 보고서 · 수정 */
+async function loadReports() { const j = await api('/api/reports'); const l = $('#rep-list'); l.textContent = '';
+  if (!j.reports.length) l.append(el('div', 'muted', '보고서가 아직 없습니다.'));
+  j.reports.forEach(r => { const c = el('div', 'card'); const row = el('div', 'row'); row.append(el('b', '', r.title || r.name), el('span', 'grow'), el('span', 'muted small', kst(r.mtime) + ' KST'));
+    const b = el('button', '', '열기'); b.onclick = () => openReport(r.name); row.append(b); c.append(row, el('div', 'muted small', r.name)); l.append(c); }); }
+async function loadFixes() { const j = await api('/api/fixes'); const l = $('#fix-list'); l.textContent = '';
+  if (!j.fixes.length) l.append(el('div', 'muted', '자동 수정 이력이 아직 없습니다. (분석이 “원인 확정”일 때만 수정을 시도합니다)'));
+  j.fixes.forEach(f => { const c = el('div', 'card'); const r = el('div', 'row'); r.append(pill(f.fix_status, ['applied', 'committed', 'applied_no_restart'].includes(f.fix_status) ? 'ok' : (['guard_fail', 'error', 'reverted'].includes(f.fix_status) ? 'bad' : 'warn')),
+      el('b', '', f.patch_summary || '-'), el('span', 'grow'), el('span', 'muted small', kst(f.ts) + ' KST')); c.append(r);
+    const k = el('div', 'small'); k.textContent = `${f.signature} · ${f.fix_version || ''} · ${f.fix_branch || '브랜치 없음'} · 커밋 ${f.commit_before} → ${f.commit_after || f.commit_before} · 금지 자원 확인 ${f.guard_ok ? '통과' : '실패'} · 적용 ${f.applied ? '예' : '아니오'} · 재시작 ${f.restarted ? '예' : '아니오'}`; c.append(k);
+    if ((f.files_changed || []).length) { const t = el('table'); t.append(Object.assign(el('tr'), { innerHTML: '<th>파일</th><th class="n">+</th><th class="n">−</th>' }));
+      f.files_changed.forEach(x => { const tr = el('tr'); tr.append(el('td', '', x.path), el('td', 'n', '+' + x.added), el('td', 'n', '−' + x.deleted)); t.append(tr); });
+      const tr = el('tr'); tr.append(el('td', '', `합계 ${f.files_changed.length}개`), el('td', 'n', '+' + f.lines_added), el('td', 'n', '−' + f.lines_deleted)); tr.style.fontWeight = '600'; t.append(tr); c.append(t); }
+    const b = el('button', '', '보고서'); b.onclick = () => openReport(f.report); c.append(b); l.append(c); }); }
+
+/* 제어 */
+async function loadCtl() { const j = await api('/api/ctl'); const d = $('#ctl-list'); d.textContent = '';
+  if (j.pending.length) d.append(el('div', '', '대기 중: ' + j.pending.join(', ')));
+  if (!j.done.length && !j.pending.length) d.textContent = '-';
+  j.done.forEach(x => d.append(el('div', '', `${kst(x.at)} · ${x.cmd} ${x.args ? JSON.stringify(x.args) : ''} → ${x.applied ? '적용됨' : '실패'} · ${x.detail || ''}`))); }
+async function act(fn, ok) { try { const j = await fn(); toast(ok || j.msg || '완료'); await loadStatus(); setTimeout(loadCtl, 6000); loadCtl(); } catch (e) { toast('실패: ' + e.message); } }
+$('#b-rx').onclick = () => { const on = $('#b-rx').dataset.on === '1'; if (confirm(on ? '새 에러 분석·수정을 정지할까요?' : '분석을 재개할까요?')) act(() => api('/api/rx/pause', { on }), on ? '분석 정지' : '분석 재개'); };
+$('#b-pub').onclick = () => { const on = $('#b-pub').dataset.on === '1'; if (confirm(on ? '발신기 발신을 정지할까요? (CRITICAL 제외)' : '발신을 재개할까요?')) act(() => api('/api/pub/pause', { on, ttl_sec: on ? ($('#pub-ttl').value || null) : null }), '제어 봉투를 보냈습니다(발신기가 5초 안에 처리)'); };
+$('#b-lv').onclick = () => { const lv = $('#lv').value, ttl = $('#lv-ttl').value; if (confirm(`발신 레벨을 ${lv}(으)로 바꿀까요?` + (ttl ? ` ${ttl / 60}분 뒤 자동 복귀` : ''))) act(() => api('/api/pub/level', { level: lv, ttl_sec: ttl ? +ttl : null }), '제어 봉투를 보냈습니다(발신기가 5초 안에 처리)'); };
+
+/* 탭 · 갱신 */
+function show(t) { TAB = t; $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
+$$('#tabs button').forEach(b => b.onclick = () => show(b.dataset.t));
+$('#m-close').onclick = () => $('#modal').classList.remove('on');
+$('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); };
+async function refresh() { try { await loadStatus(); if (TAB === 'errors') await loadErrors(); if (TAB === 'reports') await loadReports(); if (TAB === 'fixes') await loadFixes(); if (TAB === 'control') await loadCtl(); } catch (e) { if (e.message !== '401') toast('불러오기 실패: ' + e.message); } }
+(async () => { try { CSRF = (await api('/api/me')).csrf; } catch (e) { return; } buildFilter(); refresh(); setInterval(refresh, 10000); })();
+</script>
+</body>
+</html>

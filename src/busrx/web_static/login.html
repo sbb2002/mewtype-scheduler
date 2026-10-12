@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자동제어 관리 — 로그인</title>
+<style>
+  :root { --bg:#0f0f0f; --bg2:#1a1a1a; --text:#e8e8e8; --muted:#999; --border:#333; --accent:#06b6d4; }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; margin:0;
+         min-height:100vh; display:grid; place-items:center; padding:1rem; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:1.5rem; max-width:380px; width:100%; }
+  h1 { font-size:1.15rem; margin:0 0 .5rem; }
+  p { color:var(--muted); margin:.25rem 0 1rem; }
+  button { background:var(--accent); color:#001318; border:0; border-radius:8px; padding:.8rem 1rem; font-size:16px; font-weight:600;
+           width:100%; cursor:pointer; min-height:44px; }
+  button:disabled { opacity:.5; }
+  #msg { margin-top:.9rem; min-height:1.4em; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🤖 자동제어 관리</h1>
+  <p>텔레그램으로 로그인 링크(5분 · 1회용)를 보냅니다. 링크를 이 기기에서 열어 주세요.</p>
+  <button id="go">텔레그램으로 로그인 링크 받기</button>
+  <div id="msg"></div>
+</div>
+<script>
+  const btn = document.getElementById('go'), msg = document.getElementById('msg');
+  btn.onclick = async () => {
+    btn.disabled = true; msg.textContent = '요청 중…';
+    try {
+      const r = await fetch('/login/request', { method: 'POST' });
+      const j = await r.json();
+      msg.textContent = j.msg || (j.ok ? '전송했습니다' : '실패');
+    } catch (e) { msg.textContent = '요청 실패: ' + e; }
+    setTimeout(() => { btn.disabled = false; }, 20000);
+  };
+</script>
+</body>
+</html>

@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -84,6 +85,9 @@ class Config:
     budget_verify: float = 0.8
     budget_review: float = 0.8
     fix_daily_cap: int = 3
+    web_port: int = 8789
+    web_enabled: bool = True
+    usage_probe_min_sec: int = 120      # 사용량 조회(소형 호출) 최소 간격
     report_format: str = "md"            # md = 마크다운 파일 | json = JSON 파일 | both = 둘 다 (텔레그램에는 짧은 캡션 + 파일)
     apply_local: bool = True              # 수정이 통과하면 러너 작업 브랜치에 ff-only 적용 + 재시작 (원격 푸시는 안 함)
     apply_branch: str = "v4.3-fullauto"
@@ -125,7 +129,8 @@ def config_from_env() -> Config:
         stage=int(g("RX_STAGE", "2")), model_analysis=g("RX_MODEL_ANALYSIS", MODEL_ANALYSIS),
         model_code=g("RX_MODEL_CODE", MODEL_CODE), apply_local=g("RX_APPLY_LOCAL", "1") != "0",
         apply_branch=g("RX_APPLY_BRANCH", "v4.3-fullauto"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
-        fix_daily_cap=int(g("RX_FIX_DAILY", "3")), report_format=g("RX_REPORT_FORMAT", "md"),
+        fix_daily_cap=int(g("RX_FIX_DAILY", "3")), report_format=g("RX_REPORT_FORMAT", "md"), web_port=int(g("RX_WEB_PORT", "8789")),
+        web_enabled=g("RX_WEB", "1") != "0",
         budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
         cooldown_error=int(g("RX_COOLDOWN_ERROR", "3600")), cooldown_critical=int(g("RX_COOLDOWN_CRITICAL", "300")),
         daily_cap=int(g("RX_DAILY_CALLS", "20")))
@@ -238,6 +243,7 @@ class Receiver:
             (cfg.bus_dir / d).mkdir(parents=True, exist_ok=True)
         self.state_path = cfg.rx / "state.json"
         self.state = self._load_state()
+        self._state_lock = threading.RLock()  # 관리 페이지(다른 스레드)와 상태 파일 쓰기 경합 방지
         self._last_hb = 0.0
 
     # 상태
@@ -251,11 +257,13 @@ class Receiver:
         s.setdefault("calls", {})
         s.setdefault("lost_alerted", False)
         s.setdefault("cap_notified", "")
+        s.setdefault("meta", {})
         return s
 
     def _save(self) -> None:
-        self.state["seen"] = self.state["seen"][-5000:]
-        _jwrite(self.state_path, self.state)
+        with self._state_lock:
+            self.state["seen"] = self.state["seen"][-5000:]
+            _jwrite(self.state_path, self.state)
 
     def _today(self) -> str:
         return dt.datetime.fromtimestamp(self.now(), KST).strftime("%Y-%m-%d")
@@ -345,6 +353,63 @@ class Receiver:
             self._save()
         return len(items)
 
+    # ── 관리 페이지용 ──────────────────────────────
+    def _touch_meta(self, sig: str, envs: list[dict], top: dict) -> None:
+        m = self.state["meta"].setdefault(sig, {"count": 0, "first": min(e["ts"] for e in envs)})
+        m["count"] += len(envs) + sum(e.get("occurrences", 0) for e in envs)
+        m["last"] = max(e["ts"] for e in envs)
+        if E.rank(top["severity"]) >= E.rank(m.get("sev", "TRACE")):
+            m["sev"] = top["severity"]
+        ex = envs[0]
+        m["where"] = ex.get("logger") or (ex.get("event") or {}).get("flow") or "?"
+        m["msg"] = redact(ex["message"])[:240]
+        if len(self.state["meta"]) > 300:  # 오래된 것부터 정리
+            for k, _ in sorted(self.state["meta"].items(), key=lambda kv: kv[1].get("last", ""))[:50]:
+                self.state["meta"].pop(k, None)
+
+    def _remember_usage(self) -> None:
+        u = USAGE.last()
+        if u and u.get("five") is not None:
+            self.state["usage_now"] = {"five": u["five"], "seven": u.get("seven"), "reset5": u.get("reset5"),
+                                       "reset7": u.get("reset7"), "t": time.time()}
+            self._save()
+
+    def usage_now(self) -> dict | None:
+        return self.state.get("usage_now")
+
+    def probe_usage(self, force: bool = False) -> tuple[dict | None, str]:
+        """가장 작은 호출(Haiku, 도구 없음)로 현재 구독 사용률을 새로 읽는다. 사용량을 조금 소모하므로 최소 간격을 둔다."""
+        cur = self.usage_now()
+        if cur and not force and time.time() - cur.get("t", 0) < self.cfg.usage_probe_min_sec:
+            return cur, f"최근 {int(time.time() - cur['t'])}초 전 값 재사용(최소 간격 {self.cfg.usage_probe_min_sec}초)"
+        try:
+            run_claude(self.cfg, model=self.cfg.model_code, prompt="ok 라고만 답해", cwd=self.cfg.rx, tools="",
+                       budget=0.05, timeout=90)
+        except Exception as e:  # noqa: BLE001
+            return cur, f"조회 실패: {type(e).__name__}: {str(e)[:120]}"
+        self._remember_usage()
+        return self.usage_now(), "조회 완료"
+
+    def set_pause(self, on: bool) -> bool:
+        f = self.cfg.rx / "PAUSE"
+        if on:
+            f.write_text(E.iso(self.now()), encoding="utf-8")
+        else:
+            f.unlink(missing_ok=True)
+        return self.paused()
+
+    def send_ctl(self, cmd: str, args: dict | None = None) -> tuple[bool, str]:
+        """발신기에 제어 봉투(mew.ctl/1)를 보낸다. 처리 결과는 ctl/done 에서 확인."""
+        env = {"schema": "mew.ctl/1", "id": E.new_id(), "ts": E.iso(self.now()), "target": "publisher", "cmd": cmd,
+               "issued_by": "dashboard"}
+        if args:
+            env["args"] = args
+        errs = validate(env)
+        if errs:
+            return False, "; ".join(errs)
+        self.spool.put("ctl/inbox", f"{env['ts'].replace('-', '').replace(':', '')}_{env['id']}", env)
+        return True, env["id"]
+
     def _dead(self, p: Path, why: str) -> None:
         try:
             dst = self.spool.move(p, "err/dead")
@@ -361,6 +426,7 @@ class Receiver:
     def _handle_group(self, sig: str, members: list[tuple[Path, dict]]) -> None:
         envs = [e for _, e in members]
         top = max(envs, key=lambda e: E.rank(e["severity"]))
+        self._touch_meta(sig, envs, top)
         if E.rank(top["severity"]) < E.rank("ERROR"):  # WARN 이하: 기록만
             for e in envs:
                 self._logline(sig, e)
@@ -387,6 +453,8 @@ class Receiver:
                 self.tg.send(f"⚠️ 분석 일일 상한({self.cfg.daily_cap}회) 도달 — 오늘은 새 에러를 분석하지 않고 기록만 합니다.")
             return
         st["last_call"] = self.now()
+        for e in envs:
+            self._logline(sig, e, "분석함")
         self.state["calls"][today] = self.state["calls"].get(today, 0) + 1
         self.state["calls"] = dict(sorted(self.state["calls"].items())[-14:])
         self._save()
@@ -414,6 +482,7 @@ class Receiver:
             fix = self._autofix(sig, result, snap, before)
         after = git_head(self.cfg.repo)
         usage = usage_summary(mark, self.state.get("usage_last"))
+        self._remember_usage()
         if usage and usage.get("five") is not None:
             self.state["usage_last"] = {"five": usage["five"], "reset5": usage["reset5"], "t": time.time()}
             self._save()
@@ -525,6 +594,9 @@ class Receiver:
         rid = E.new_id()
         stem = f"{ts.replace('-', '').replace(':', '')}_{sig}"
         (self.cfg.rx / "reports" / f"{stem}.md").write_text(md, encoding="utf-8")
+        mt = self.state["meta"].setdefault(sig, {})
+        mt.update(report=f"{stem}.md", verdict=result["verdict"], fix_status=(fix.status if fix is not None else ""),
+                  report_ts=ts)
         report = {"schema": "mew.report/1", "id": rid, "ts": ts, "signature": sig, "severity": top["severity"],
                   "verdict": result["verdict"], "summary": result["summary"][:2000], "cause": result["cause"][:4000],
                   "evidence": result["evidence"], "proposed_action": result["proposed_action"][:2000],
@@ -580,6 +652,7 @@ def main(argv=None) -> int:
     ap.add_argument("--env", default=str(ROOT / ".env.local"))
     ap.add_argument("--once", action="store_true", help="inbox 를 한 번 처리하고 종료")
     ap.add_argument("--no-telegram", action="store_true")
+    ap.add_argument("--no-web", action="store_true", help="자동제어 관리 페이지를 켜지 않음")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     load_env_file(Path(args.env))
@@ -590,5 +663,9 @@ def main(argv=None) -> int:
     tg = Telegram("" if args.no_telegram else cfg.token, cfg.chat_id)
     if not tg.enabled:
         log.warning("텔레그램 비활성(토큰/채팅 ID 없음 또는 --no-telegram) — 보고는 rx/reports 에만 남는다")
-    Receiver(cfg, tg).run(once=args.once)
+    rx = Receiver(cfg, tg)
+    if cfg.web_enabled and not args.once and not args.no_web:
+        from .web import start_web
+        start_web(rx, cfg, tg)
+    rx.run(once=args.once)
     return 0
