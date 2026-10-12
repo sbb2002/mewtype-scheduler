@@ -25,6 +25,8 @@ import flask
 
 from src.bus import envelope as E
 
+from .autofix import PRESETS
+from .policy import ACTIONS, SEVERITIES, defaults
 from .status import build_status, usage_view
 
 log = logging.getLogger("busrx.web")
@@ -223,7 +225,31 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
     def usage():
         return flask.jsonify(usage=_usage_view())
 
+    @app.get("/api/policy")
+    def policy_get():
+        return flask.jsonify(policy=rx.policy.all(), defaults=defaults(cfg), severities=list(SEVERITIES), actions=ACTIONS,
+                             presets={k: v["name"] for k, v in PRESETS.items()}, stage=cfg.stage)
+
+    @app.get("/api/runs")
+    def runs():
+        out = []
+        for p in sorted((cfg.rx / "runs").glob("*.json"), reverse=True)[:40]:
+            d = _read_json(p)
+            if d:
+                out.append(d)
+        return flask.jsonify(runs=out)
+
     # ── 쓰기 API (CSRF 필수) ─────────────────────────
+    @app.post("/api/policy")
+    def policy_set():
+        d = flask.request.get_json(silent=True) or {}
+        if d.get("reset"):
+            return flask.jsonify(ok=True, policy=rx.policy.reset("dashboard"))
+        pol, errs = rx.policy.save(d.get("policy") or {}, "dashboard")
+        if errs:
+            return flask.jsonify(ok=False, errors=errs, policy=pol), 400
+        return flask.jsonify(ok=True, policy=pol)
+
     @app.post("/api/usage/refresh")
     def usage_refresh():
         u, msg = rx.probe_usage()

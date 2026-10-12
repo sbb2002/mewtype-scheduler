@@ -58,7 +58,7 @@ def build_status(rx, cfg, now: float) -> dict:
                   "fixes_today": rx.state.get("fixes", {}).get(today, 0), "fix_cap": cfg.fix_daily_cap},
         queue={k: rx.spool.count(f"err/{k}") for k in ("inbox", "processing", "done", "dead")},
         runner={"pid": runner.get("pid"), "port": runner.get("port"), "healthy": healthy},
-        lost_alerted=rx.state.get("lost_alerted", False), usage=usage_view(rx, now))
+        lost_alerted=rx.state.get("lost_alerted", False), usage=usage_view(rx, now), policy=rx.policy.all())
 
 
 def _kst(epoch, with_date: bool) -> str:
@@ -83,6 +83,19 @@ def usage_text(u: dict | None) -> list[str]:
     return out
 
 
+def policy_line(pol: dict | None) -> str:
+    if not pol:
+        return ""
+    from .autofix import PRESETS
+    name = {"off": "끔", "analyze": "분석", "fix": "수정"}
+    parts = []
+    for sev in ("CRITICAL", "ERROR", "WARN"):
+        p = pol.get(sev)
+        if p:
+            parts.append(f"{sev} {name[p['action']]}" + (f"({PRESETS[p['preset']]['name'].split('(')[0]})" if p["action"] == "fix" else ""))
+    return "정책: " + " · ".join(parts)
+
+
 def status_text(s: dict) -> str:
     p, r = s["publisher"], s["receiver"]
     run = s["runner"]
@@ -95,5 +108,5 @@ def status_text(s: dict) -> str:
         + (f" (pid {run['pid']})" if run.get("pid") else ""),
         f"오늘 분석 {r['calls_today']}/{r['daily_cap']} · 수정 시도 {r['fixes_today']}/{r['fix_cap']} · inbox {s['queue']['inbox']}",
         f"로컬 적용 {'켜짐' if s['apply_local'] else '꺼짐'} · 브랜치 {s['apply_branch']} · HEAD {s['head']}",
-        "", *usage_text(s["usage"])]
+        policy_line(s.get("policy")), "", *usage_text(s["usage"])]
     return "\n".join(lines)

@@ -48,6 +48,14 @@
   .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:4.5rem; background:#111; border:1px solid var(--border);
            padding:.5rem 1rem; border-radius:8px; z-index:20; display:none; max-width:90vw; }
+  .chain { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem; margin:.5rem 0; }
+  .arrow { color:var(--muted); }
+  .blk { min-height:auto; padding:.4rem .6rem; text-align:left; display:flex; flex-direction:column; gap:.1rem; border-width:2px; }
+  .blk b { font-size:13px; } .blk span { font-size:11px; color:var(--muted); }
+  .blk.st-ok { border-color:var(--ok); } .blk.st-fail { border-color:var(--bad); background:#2a1414; }
+  .blk.st-skipped { border-style:dashed; opacity:.6; } .blk.st-stop, .blk.st-held { border-color:var(--warn); }
+  .run-note { font-size:12px; color:var(--muted); min-height:1.2em; }
+  input[type=number] { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.4rem; width:5rem; min-height:40px; }
   @media (min-width: 720px) { nav { position:static; border:1px solid var(--border); border-radius:10px; margin-bottom:.8rem; } body { padding-bottom:var(--pad); } }
 </style>
 </head>
@@ -76,7 +84,7 @@
   <div id="log-list"></div>
 </section>
 <section id="reports"><div id="rep-list"></div></section>
-<section id="fixes"><div id="fix-list"></div></section>
+<section id="fixes"><h2>파이프라인 실행 기록</h2><div id="run-list"></div><h2>자동 수정 이력</h2><div id="fix-list"></div></section>
 <section id="control">
   <div class="card"><b>수신기 분석</b><p class="muted small">정지하면 새 ERROR 이상 에러를 분석·수정하지 않고 기록만 합니다(<code>rx/PAUSE</code>).</p>
     <div class="row"><span id="c-rx"></span><span class="grow"></span><button id="b-rx"></button></div></div>
@@ -89,6 +97,11 @@
       <select id="lv"><option>ERROR</option><option selected>WARN</option><option>INFO</option><option>DEBUG</option><option>TRACE</option></select>
       <select id="lv-ttl"><option value="900">15분</option><option value="3600" selected>1시간</option><option value="14400">4시간</option><option value="">제한 없음</option></select>
       <button id="b-lv" class="pri">적용</button></div></div>
+  <div class="card"><b>에러 레벨별 자동 대응</b>
+    <p class="muted small">심각도마다 기록 · 분석 · 수정 파이프라인 시작 여부와 프리셋을 정합니다. 저장하면 다음 에러부터 바로 적용됩니다(재시작 불필요). WARN 이하는 “수정까지”를 선택할 수 없습니다.</p>
+    <table><thead><tr><th>레벨</th><th>기록</th><th>동작</th><th>파이프라인</th><th>쿨다운(분)</th></tr></thead><tbody id="pol-body"></tbody></table>
+    <div id="pol-warn" class="small" style="color:var(--warn)"></div>
+    <div class="row"><button id="pol-save" class="pri">정책 저장</button><button id="pol-reset">기본값으로</button><span class="grow"></span><span class="muted small" id="pol-note"></span></div></div>
   <div class="card"><b>최근 제어 결과</b><div id="ctl-list" class="small muted">-</div></div>
 </section>
 
@@ -201,7 +214,7 @@ async function loadReports() { const j = await api('/api/reports'); const l = $(
   if (!j.reports.length) l.append(el('div', 'muted', '보고서가 아직 없습니다.'));
   j.reports.forEach(r => { const c = el('div', 'card'); const row = el('div', 'row'); row.append(el('b', '', r.title || r.name), el('span', 'grow'), el('span', 'muted small', kst(r.mtime) + ' KST'));
     const b = el('button', '', '열기'); b.onclick = () => openReport(r.name); row.append(b); c.append(row, el('div', 'muted small', r.name)); l.append(c); }); }
-async function loadFixes() { const j = await api('/api/fixes'); const l = $('#fix-list'); l.textContent = '';
+async function loadFixes() { loadRuns(); const j = await api('/api/fixes'); const l = $('#fix-list'); l.textContent = '';
   if (!j.fixes.length) l.append(el('div', 'muted', '자동 수정 이력이 아직 없습니다. (분석이 “원인 확정”일 때만 수정을 시도합니다)'));
   j.fixes.forEach(f => { const c = el('div', 'card'); const r = el('div', 'row'); r.append(pill(f.fix_status, ['applied', 'committed', 'applied_no_restart'].includes(f.fix_status) ? 'ok' : (['guard_fail', 'error', 'reverted'].includes(f.fix_status) ? 'bad' : 'warn')),
       el('b', '', f.patch_summary || '-'), el('span', 'grow'), el('span', 'muted small', kst(f.ts) + ' KST')); c.append(r);
@@ -221,8 +234,51 @@ $('#b-rx').onclick = () => { const on = $('#b-rx').dataset.on === '1'; if (confi
 $('#b-pub').onclick = () => { const on = $('#b-pub').dataset.on === '1'; if (confirm(on ? '발신기 발신을 정지할까요? (CRITICAL 제외)' : '발신을 재개할까요?')) act(() => api('/api/pub/pause', { on, ttl_sec: on ? ($('#pub-ttl').value || null) : null }), '제어 봉투를 보냈습니다(발신기가 5초 안에 처리)'); };
 $('#b-lv').onclick = () => { const lv = $('#lv').value, ttl = $('#lv-ttl').value; if (confirm(`발신 레벨을 ${lv}(으)로 바꿀까요?` + (ttl ? ` ${ttl / 60}분 뒤 자동 복귀` : ''))) act(() => api('/api/pub/level', { level: lv, ttl_sec: ttl ? +ttl : null }), '제어 봉투를 보냈습니다(발신기가 5초 안에 처리)'); };
 
+/* 에러 레벨별 정책 */
+let POL = null, PMETA = null;
+async function loadPolicy() { const j = await api('/api/policy'); POL = j.policy; PMETA = j; renderPolicy(); }
+function renderPolicy() {
+  const body = $('#pol-body'); body.textContent = ''; const refs = {}; let built = false;
+  PMETA.severities.forEach(sev => { const p = POL[sev], low = ['WARN', 'INFO', 'DEBUG', 'TRACE'].includes(sev); const tr = el('tr'); const r = refs[sev] = {};
+    const c0 = el('td'); c0.append(pill(sev, 'sev-' + sev)); tr.append(c0);
+    const c1 = el('td'); r.rec = el('input'); r.rec.type = 'checkbox'; r.rec.checked = p.record; c1.append(r.rec); tr.append(c1);
+    const c2 = el('td'); r.act = el('select'); Object.entries(PMETA.actions).forEach(([k, v]) => { if (k === 'fix' && low) return; const o = el('option', '', v); o.value = k; r.act.append(o); }); r.act.value = p.action; c2.append(r.act); tr.append(c2);
+    const c3 = el('td'); r.pre = el('select'); Object.entries(PMETA.presets).forEach(([k, v]) => { const o = el('option', '', v); o.value = k; r.pre.append(o); }); r.pre.value = p.preset; c3.append(r.pre); tr.append(c3);
+    const c4 = el('td'); r.cd = el('input'); r.cd.type = 'number'; r.cd.min = 0; r.cd.value = Math.round(p.cooldown_sec / 60); c4.append(r.cd); tr.append(c4);
+    const sync = () => { r.pre.disabled = r.act.value !== 'fix'; r.cd.disabled = r.act.value === 'off'; if (built) warn(); }; r.act.onchange = sync; sync(); body.append(tr); });
+  built = true;
+  function warn() { const w = []; PMETA.severities.forEach(sev => { const a = refs[sev].act.value;
+      if (sev === 'CRITICAL' && a === 'off') w.push('CRITICAL 을 끄면 서버 정지급 에러도 자동 대응하지 않습니다.');
+      if (['WARN', 'INFO', 'DEBUG', 'TRACE'].includes(sev) && a !== 'off') w.push(`${sev} 를 분석하면 구독 사용량이 늘어납니다(반복 에러는 쿨다운 안에서 1회).`); });
+    if (PMETA.stage < 2) w.push('수신기가 1단계(RX_STAGE=1)라서 “수정까지”를 골라도 분석만 합니다.'); $('#pol-warn').textContent = w.join(' '); }
+  renderPolicy.refs = refs; warn();
+}
+$('#pol-save').onclick = async () => { const refs = renderPolicy.refs, out = {};
+  PMETA.severities.forEach(sev => { const r = refs[sev]; out[sev] = { record: r.rec.checked, action: r.act.value, preset: r.pre.value, cooldown_sec: Math.max(0, Math.round(+r.cd.value * 60)) }; });
+  if (!confirm('에러 레벨별 정책을 저장할까요? 다음 에러부터 적용됩니다.')) return;
+  try { const j = await api('/api/policy', { policy: out }); POL = j.policy; toast('정책 저장됨'); $('#pol-note').textContent = '저장됨 ' + new Date().toLocaleTimeString(); renderPolicy(); }
+  catch (e) { toast('저장 실패: ' + e.message); } };
+$('#pol-reset').onclick = async () => { if (!confirm('기본 정책(CRITICAL 긴급 수정 · ERROR 표준 수정 · WARN 이하 끔)으로 되돌릴까요?')) return;
+  try { const j = await api('/api/policy', { reset: true }); POL = j.policy; toast('기본값으로 되돌림'); renderPolicy(); } catch (e) { toast('실패: ' + e.message); } };
+
+/* 파이프라인 실행 기록(블록 도식) */
+const ST = { ok: '통과', fail: '실패', skipped: '건너뜀', stop: '중단', held: '보류' };
+function chain(steps, noteEl) {
+  const w = el('div', 'chain');
+  steps.forEach((s, i) => { if (i) w.append(el('span', 'arrow', '→'));
+    const b = el('button', 'blk st-' + s.status); b.append(el('b', '', s.name), el('span', '', (ST[s.status] || s.status) + (s.sec != null ? ` · ${s.sec}초` : '') + (s.cost ? ` · $${s.cost}` : '')));
+    b.onclick = () => { noteEl.textContent = `${s.name} — ${ST[s.status] || s.status}${s.model ? ' · ' + s.model : ''}${s.note ? ' · ' + s.note : ''}`; }; w.append(b); });
+  return w;
+}
+async function loadRuns() { const j = await api('/api/runs'); const l = $('#run-list'); l.textContent = '';
+  if (!j.runs.length) l.append(el('div', 'muted', '아직 실행 기록이 없습니다.'));
+  j.runs.slice(0, 15).forEach(r => { const c = el('div', 'card'); const h = el('div', 'row'); h.append(pill(r.severity, 'sev-' + r.severity), el('b', '', r.sig), el('span', 'grow'),
+      el('span', 'muted small', `${r.action || '-'}${r.preset && r.action === 'fix' ? ' · ' + r.preset : ''} · ${kst(r.ts)} KST`)); c.append(h);
+    const note = el('div', 'run-note', '블록을 누르면 단계 결과가 표시됩니다.'); c.append(chain(r.steps || [], note), note);
+    if (r.report) { const b = el('button', '', '보고서'); b.onclick = () => openReport(r.report); c.append(b); } l.append(c); }); }
+
 /* 탭 · 갱신 */
-function show(t) { TAB = t; $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
+function show(t) { TAB = t; if (t === 'control') loadPolicy(); $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
 $$('#tabs button').forEach(b => b.onclick = () => show(b.dataset.t));
 $('#m-close').onclick = () => $('#modal').classList.remove('on');
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); };

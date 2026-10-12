@@ -34,8 +34,9 @@ from src.bus.conform import validate
 from src.bus.redact import redact
 from src.bus.spool import Spool
 
-from .autofix import AutoFix, FixResult
+from .autofix import PRESETS, AutoFix, FixResult
 from .claude import MODEL_ANALYSIS, MODEL_CODE, USAGE, pct, run_claude, usage_md, usage_summary
+from .policy import Policy
 from .restart import restart_runner
 
 log = logging.getLogger("busrx")
@@ -242,10 +243,11 @@ class Receiver:
         self.cfg, self.tg, self.now = cfg, tg, now
         self.spool = Spool(cfg.bus_dir)
         self.spool.ensure()
-        for d in ("rx", "rx/reports", "rx/work", "rx/snap"):
+        for d in ("rx", "rx/reports", "rx/work", "rx/snap", "rx/runs"):
             (cfg.bus_dir / d).mkdir(parents=True, exist_ok=True)
         self.state_path = cfg.rx / "state.json"
         self.state = self._load_state()
+        self.policy = Policy(cfg.rx / "policy.json", cfg)  # 레벨별 자동 대응 정책(관리 페이지에서 수정)
         self._state_lock = threading.RLock()  # 관리 페이지(다른 스레드)와 상태 파일 쓰기 경합 방지
         self._last_hb = 0.0
 
@@ -430,15 +432,15 @@ class Receiver:
         envs = [e for _, e in members]
         top = max(envs, key=lambda e: E.rank(e["severity"]))
         self._touch_meta(sig, envs, top)
-        if E.rank(top["severity"]) < E.rank("ERROR"):  # WARN 이하: 기록만
-            for e in envs:
-                self._logline(sig, e)
+        pol = self.policy.get(top["severity"])  # 이 심각도의 정책: record · action(off/analyze/fix) · preset · cooldown_sec
+        if pol["action"] == "off":
+            if pol["record"]:
+                for e in envs:
+                    self._logline(sig, e)
             return
-        crit = top["severity"] == "CRITICAL"
         st = self.state["sigs"].setdefault(sig, {"count": 0, "suppressed": 0, "last_call": 0})
         st["count"] += len(envs)
-        cooldown = self.cfg.cooldown_critical if crit else self.cfg.cooldown_error
-        if self.now() - st["last_call"] < cooldown:
+        if self.now() - st["last_call"] < pol["cooldown_sec"]:
             st["suppressed"] += len(envs)
             for e in envs:
                 self._logline(sig, e, "쿨다운 중 — 분석 생략")
@@ -461,13 +463,15 @@ class Receiver:
         self.state["calls"][today] = self.state["calls"].get(today, 0) + 1
         self.state["calls"] = dict(sorted(self.state["calls"].items())[-14:])
         self._save()
-        self._analyze_and_report(sig, envs, top, st)
+        self._analyze_and_report(sig, envs, top, st, pol)
 
     # 분석
-    def _analyze_and_report(self, sig: str, envs: list[dict], top: dict, st: dict) -> None:
+    def _analyze_and_report(self, sig: str, envs: list[dict], top: dict, st: dict, pol: dict | None = None) -> None:
+        pol = pol or self.policy.get(top["severity"])
         before = git_head(self.cfg.repo)
         result, cost, err, snap, fix = None, None, "", None, None
         mark = USAGE.mark()  # 이 처리에서 쓴 구독 사용량을 재기 위한 기준점
+        t_a = time.time()
         try:
             snap = self._snapshot(before)
             work = self.cfg.rx / "work" / sig
@@ -481,17 +485,24 @@ class Receiver:
         except Exception as e:  # noqa: BLE001
             err = f"{type(e).__name__}: {e}"
             log.exception("분석 실패: %s", sig)
-        if result and result["verdict"] == "confirmed" and self.cfg.stage >= 2 and snap is not None:
-            fix = self._autofix(sig, result, snap, before)
+        steps = [{"id": "analysis", "name": "분석(Sonnet)", "status": "ok" if result else "fail", "sec": round(time.time() - t_a, 1),
+                  "note": (result["verdict"] if result else err)[:300], "model": self.cfg.model_analysis,
+                  "cost": round(cost, 4) if cost else None}]
+        if result and result["verdict"] == "confirmed" and pol["action"] == "fix" and self.cfg.stage >= 2 and snap is not None:
+            fix = self._autofix(sig, result, snap, before, pol["preset"])
+            steps += fix.steps
+        elif result and result["verdict"] == "confirmed":
+            why = "정책이 '분석만'" if pol["action"] != "fix" else "수신기가 1단계(RX_STAGE=1)"
+            steps.append({"id": "spec", "name": "명세서(Sonnet)", "status": "skipped", "sec": None, "note": why, "model": "", "cost": None})
         after = git_head(self.cfg.repo)
         usage = usage_summary(mark, self.state.get("usage_last"))
         self._remember_usage()
         if usage and usage.get("five") is not None:
             self.state["usage_last"] = {"five": usage["five"], "reset5": usage["reset5"], "t": time.time()}
             self._save()
-        self._report(sig, envs, top, st, result, cost, err, before, after, fix, usage)
+        self._report(sig, envs, top, st, result, cost, err, before, after, fix, usage, steps, pol)
 
-    def _autofix(self, sig: str, analysis: dict, snap: Path, base: str) -> FixResult:
+    def _autofix(self, sig: str, analysis: dict, snap: Path, base: str, preset: str = "standard") -> FixResult:
         today = self._today()
         used = self.state.setdefault("fixes", {}).get(today, 0)
         if used >= self.cfg.fix_daily_cap:
@@ -501,7 +512,7 @@ class Receiver:
         seq = self.state["patch_seq"] = self.state.get("patch_seq", 0) + 1
         self._save()
         af = AutoFix(self.cfg, restarter=self._restart)
-        res = af.run(sig, analysis, snap, base, seq)
+        res = af.run(sig, analysis, snap, base, seq, preset)
         if res.status == "committed":
             res = af.apply_and_restart(res)
         return res
@@ -545,7 +556,7 @@ class Receiver:
         return data, cost
 
     # 보고 — 텔레그램에는 짧은 캡션 + 마크다운(또는 JSON) 파일. 본문 메시지로 길게 보내지 않는다.
-    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None, usage=None) -> None:
+    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None, usage=None, steps=None, pol=None) -> None:
         if result is None:
             result = {"verdict": "unknown", "summary": f"분석 실패 — {err[:70]}", "cause": err,
                       "evidence": [], "proposed_action": "분석을 다시 시도하거나 로그를 직접 확인"}
@@ -605,12 +616,21 @@ class Receiver:
                   "evidence": result["evidence"], "proposed_action": result["proposed_action"][:2000],
                   "source_ids": [e["id"] for e in envs][:50], "stage": self.cfg.stage, "patch_summary": patch_summary,
                   "commit_before": before, "commit_after": after, "cost_usd": cost,
-                  "usage": usage}
+                  "usage": usage, "steps": steps or []}
         if fix is not None:
             report.update(fix_status=fix.status, fix_branch=fix.branch, fix_version=fix.version,
                           files_changed=[{"path": p, "added": a_, "deleted": d_} for a_, d_, p in fix.files],
                           lines_added=fix.tot[1], lines_deleted=fix.tot[2], guard_ok=fix.guard_ok,
                           applied=fix.applied, restarted=fix.restarted, fix_cost_usd=round(fix.cost, 4))
+        run = {"ts": ts, "sig": sig, "severity": top["severity"], "verdict": result["verdict"], "report": f"{stem}.md",
+               "action": (pol or {}).get("action"), "preset": (pol or {}).get("preset"), "steps": steps or [],
+               "title": patch_summary, "fix_status": fix.status if fix is not None else "", "branch": fix.branch if fix is not None else "",
+               "files": [{"path": p_, "added": a_, "deleted": d_} for a_, d_, p_ in (fix.files if fix is not None else [])],
+               "usage": usage, "commit_before": before, "commit_after": after}
+        try:
+            (self.cfg.rx / "runs" / f"{stem}.json").write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:
+            log.exception("실행 기록 저장 실패")
         errs = validate(report)
         if errs:
             log.error("보고 봉투가 스키마에 부적합: %s", errs)

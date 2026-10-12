@@ -143,7 +143,7 @@ def main() -> int:
     def calls():
         return [json.loads(x) for x in slog.read_text(encoding="utf-8").splitlines()] if slog.exists() else []
 
-    def run_fix(mode="", restart=fake_restart, apply_branch="v4.3-fullauto", seq=1):
+    def run_fix(mode="", restart=fake_restart, apply_branch="v4.3-fullauto", seq=1, preset="standard"):
         reset()
         cfg.extra_env["STUB_MODE"] = mode
         cfg.apply_branch = apply_branch
@@ -151,7 +151,7 @@ def main() -> int:
         snap = rx._snapshot(head)
         af = AutoFix(cfg, restarter=restart)
         analysis = {"verdict": "confirmed", "summary": "calc.add 가 뺄셈", "cause": "add 가 a-b", "evidence": [], "proposed_action": ""}
-        res = af.run("sig-test", analysis, snap, head, seq)
+        res = af.run("sig-test", analysis, snap, head, seq, preset)
         if res.status == "committed":
             res = af.apply_and_restart(res)
         return res, head
@@ -192,6 +192,12 @@ def main() -> int:
     check(sh(repo, "rev-parse", "main") == full0 and sh(repo, "rev-parse", "data") == full0, "S1 main · data 브랜치 불변")
     check("auto/" in sh(repo, "branch", "--list", "auto/*"), "S1 수정 브랜치(auto/…)가 로컬에 남음")
     check("local-only" in (repo / ".env.local").read_text(encoding="utf-8"), "S1 환경 파일 불변")
+    run = json.loads(sorted((bus / "rx" / "runs").glob("*.json"))[-1].read_text(encoding="utf-8"))
+    ids = [s["id"] for s in run["steps"]]
+    check(ids == ["analysis", "spec", "worktree", "implement", "guard", "tests", "verify", "review", "commit", "protected", "apply", "restart"]
+          and all(s["status"] == "ok" for s in run["steps"]) and run["action"] == "fix" and run["preset"] == "standard",
+          "S1 실행 기록(runs): 단계 순서 · 모두 통과 · 정책(fix/표준)")
+    check(run["steps"][3]["model"] == "claude-haiku-5-5" and run["steps"][1]["model"] == "claude-sonnet-5-5", "S1 실행 기록에 단계별 모델")
 
     # S2) 금지 경로 → 폐기
     res, head = run_fix("forbidden")
@@ -243,6 +249,18 @@ def main() -> int:
     # S11) 적용 브랜치 불일치
     res, head = run_fix("", apply_branch="other")
     check(res.status == "held" and git_head(repo) == head, "S11 러너 브랜치가 기대와 다르면 적용 보류")
+    # S13) 긴급 프리셋: 검증·검토 건너뜀(가드는 그대로), 변경 모듈 self-test 만
+    n_before = len(calls())
+    res, head = run_fix("", preset="urgent")
+    purposes = [x["purpose"] for x in calls()[n_before:]]
+    sk = {s["id"]: s["status"] for s in res.steps}
+    check(res.status == "applied" and "verify" not in purposes and "review" not in purposes and purposes.count("implement") == 1,
+          "S13 긴급 프리셋: 검증 · 독립 검토 호출 없이 적용")
+    check(sk["verify"] == "skipped" and sk["review"] == "skipped" and sk["guard"] == "ok" and sk["protected"] == "ok", "S13 검증/검토는 건너뜀, 가드·보호 확인은 그대로")
+    res, head = run_fix("prod", preset="urgent")
+    check(res.status == "guard_fail" and any("Vercel" in g for g in res.guard_notes), "S13 긴급 프리셋에서도 금지 자원 가드는 동작")
+    res, head = run_fix("forbidden", preset="urgent")
+    check(res.status == "guard_fail" and any("금지 경로" in g for g in res.guard_notes), "S13 긴급 프리셋에서도 금지 경로 가드는 동작")
     # S12) 적용 끔
     cfg.apply_local = False
     res, head = run_fix("")

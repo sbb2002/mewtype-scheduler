@@ -54,6 +54,13 @@ RULES_COMMON = """\
 - 한국어 주석 · 기존 코드 스타일을 따른다."""
 
 
+# 파이프라인 프리셋 — 가드(금지 자원 확인)와 보호 대상 불변 확인은 모든 프리셋에서 항상 켜져 있다(잠금).
+PRESETS = {
+    "standard": {"name": "표준(충분한 검증)", "verify": True, "review": True, "core_tests": True},
+    "urgent": {"name": "긴급(최소 검증)", "verify": False, "review": False, "core_tests": False},
+}
+
+
 @dataclass
 class FixResult:
     status: str = "none"          # none|not_fixable|guard_fail|tests_fail|rejected|error|committed|applied|applied_no_restart|reverted|held
@@ -75,6 +82,14 @@ class FixResult:
     note: str = ""
     models: str = ""
     cost: float = 0.0
+    preset: str = "standard"
+    steps: list = field(default_factory=list)   # 단계별 실행 기록 [{id, name, status, sec, note, model, cost}]
+
+    def step(self, sid: str, name: str, status: str, t0: float | None = None, note: str = "", model: str = "",
+             cost: float | None = None) -> None:
+        """status: ok | fail | skipped | stop(여기서 의도적으로 멈춤) | held"""
+        self.steps.append({"id": sid, "name": name, "status": status, "sec": round(time.time() - t0, 1) if t0 else None,
+                           "note": (note or "")[:300], "model": model, "cost": round(cost, 4) if cost else None})
 
     @property
     def tot(self):
@@ -172,7 +187,7 @@ class AutoFix:
     def _module_of(path: str) -> str | None:
         return path[:-3].replace("/", ".") if path.endswith(".py") and not path.endswith("__init__.py") else None
 
-    def _gates(self, wt: Path, snap: Path, base: str, secrets: list[str]):
+    def _gates(self, wt: Path, snap: Path, base: str, secrets: list[str], core: bool = True):
         """(files, hard 위반, soft 위반, 테스트 요약, diff). hard = 경로 · 금지 자원 · 비밀값 · 디스클레이머 → 수정 라운드 없이 폐기."""
         _git(wt, "add", "-A", "--", ".", ":!**/__pycache__/**", ":!*.pyc")  # 바이트코드는 변경으로 치지 않는다
         files = guard.numstat(wt, base)
@@ -189,7 +204,7 @@ class AutoFix:
                            env=clean_env({"PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}))
         if r.returncode != 0:
             soft.append("문법 오류: " + (r.stdout + r.stderr)[-200:])
-        mods = sorted({m for m in (self._module_of(p) for _, _, p in files) if m} | set(self.cfg.core_tests))
+        mods = sorted({m for m in (self._module_of(p) for _, _, p in files) if m} | (set(self.cfg.core_tests) if core else set()))
         after = self._tests(wt, mods)
         before = self._tests(snap, mods)
         for m, (ok, tail) in after.items():
@@ -214,16 +229,21 @@ class AutoFix:
                                 budget=self.cfg.budget_code, system="너는 지정된 명세서만 구현하는 개발자다. 범위를 넓히지 않는다.")
         return cost or 0.0
 
-    def _verify_calls(self, wt: Path, fixdir: Path, analysis: dict, spec_md: str, diff: str, tests: str):
+    def _verify_calls(self, wt: Path, fixdir: Path, analysis: dict, spec_md: str, diff: str, tests: str,
+                      do_verify: bool = True, do_review: bool = True):
         (fixdir / "change.diff").write_text(diff, encoding="utf-8")
         common = (f"{RULES_COMMON}\n- 변경 diff: {fixdir / 'change.diff'} (읽어라). 현재 작업 폴더는 수정이 반영된 워크트리다.\n"
                   f"- 기계 검사 결과: {tests}\n\n## 원인 분석\n{json.dumps(analysis, ensure_ascii=False)}\n")
-        v, c1, _ = run_claude(self.cfg, model=self.cfg.model_analysis, cwd=wt, tools="Read,Grep,Glob",
+        v, c1 = None, 0.0
+        if do_verify:
+          v, c1, _ = run_claude(self.cfg, model=self.cfg.model_analysis, cwd=wt, tools="Read,Grep,Glob",
                               add_dirs=(fixdir,), schema=VERIFY_SCHEMA, budget=self.cfg.budget_verify,
                               prompt="[[PURPOSE:verify]]\n수정이 아래 명세서와 원인 분석에 맞는지 검증하라. 명세서에 없는 변경 · 누락 · "
                                      "회귀 위험이 있으면 approve=false 와 issues 에 근거(파일:줄)를 적어라.\n" + common + "\n## 명세서\n" + spec_md,
                               system="너는 코드 검증자다. 증명되지 않은 우려는 issues 에 '추정'이라고 표시한다.")
-        r, c2, _ = run_claude(self.cfg, model=self.cfg.model_analysis, cwd=wt, tools="Read,Grep,Glob",
+        r, c2 = None, 0.0
+        if do_review:
+          r, c2, _ = run_claude(self.cfg, model=self.cfg.model_analysis, cwd=wt, tools="Read,Grep,Glob",
                               add_dirs=(fixdir,), schema=REVIEW_SCHEMA, budget=self.cfg.budget_review,
                               prompt="[[PURPOSE:review]]\n(독립 검토) 아래 원인 분석을 근거로 이 diff 만 보고 적대적으로 검토하라: 원인과 무관한 변경, "
                                      "부작용, 운영 자원(원격 main/data, Vercel, GCP URL, 운영 텔레그램 번호, GitHub 저장소) 접촉 가능성, 기존 동작 훼손.\n"
@@ -232,9 +252,9 @@ class AutoFix:
         return v, r, (c1 or 0.0) + (c2 or 0.0)
 
     # ── 본 파이프라인 ──────────────────────────────
-    def run(self, sig: str, analysis: dict, snap: Path, base: str, seq: int) -> FixResult:
+    def run(self, sig: str, analysis: dict, snap: Path, base: str, seq: int, preset: str = "standard") -> FixResult:
         cfg = self.cfg
-        res = FixResult(base=base, seq=seq, version=f"v4.3.{seq}",
+        res = FixResult(base=base, seq=seq, version=f"v4.3.{seq}", preset=preset if preset in PRESETS else "standard",
                         models=f"{cfg.model_code}(구현) · {cfg.model_analysis}(명세·검증·검토)")
         fixdir = cfg.rx / "fix" / sig
         fixdir.mkdir(parents=True, exist_ok=True)
@@ -244,6 +264,7 @@ class AutoFix:
         branch = f"auto/{sig}-{seq}"
         try:
             # 1) 명세서 (Sonnet, 읽기 전용)
+            t0 = time.time()
             spec, c, _ = run_claude(
                 cfg, model=cfg.model_analysis, cwd=snap, tools="Read,Grep,Glob", schema=SPEC_SCHEMA, budget=cfg.budget_spec,
                 prompt="[[PURPOSE:spec]]\n아래 원인 분석을 바탕으로 코드 수정 명세서를 작성하라. 이 에러가 소스 코드를 고쳐서 해결되는 것이 아니거나 "
@@ -252,11 +273,13 @@ class AutoFix:
                        f"{RULES_COMMON}\n\n## 원인 분석\n{json.dumps(analysis, ensure_ascii=False)}",
                 system="너는 변경 명세서 작성자다. 코드를 고치지 않는다. 증명되지 않은 것은 쓰지 않는다.")
             res.cost += c or 0.0
+            res.step("spec", "명세서(Sonnet)", "ok" if spec else "fail", t0, model=cfg.model_analysis, cost=c)
             if not spec:
                 raise RuntimeError("명세서 결과 없음")
             res.title = spec["title"].strip()[:100]
             if not spec["fixable"]:
                 res.status, res.note = "not_fixable", spec["why_not"].strip()[:300] or "코드 수정 대상 아님"
+                res.steps[-1].update(status="stop", note=res.note)
                 res.guard_ok = True
                 return res
             spec_md = (f"# {res.title}\n\n## 변경 계획\n" + "\n".join(f"- `{x['file']}`: {x['change']}" for x in spec["change_plan"])
@@ -264,26 +287,52 @@ class AutoFix:
             (fixdir / "SPEC.md").write_text(spec_md, encoding="utf-8")
 
             # 2) 워크트리 + 구현 (Haiku) + 기계 검사 + 검증 + 검토 (+ 1회 수정 라운드)
+            t0 = time.time()
             _git(cfg.repo, "worktree", "add", "-q", "-b", branch, str(wt), base)
             res.branch = branch
+            res.step("worktree", "수정 브랜치 · 워크트리", "ok", t0, note=branch)
+            pr = PRESETS[res.preset]
             feedback = ""
             for attempt in range(2):
-                res.cost += self._implement(wt, spec_md, feedback)
-                files, hard, soft, tests, diff = self._gates(wt, snap, base, secrets)
+                t0 = time.time()
+                c_i = self._implement(wt, spec_md, feedback)
+                res.cost += c_i
+                res.step("implement" if attempt == 0 else "revise", "구현(Haiku)" if attempt == 0 else "수정 라운드(Haiku)", "ok", t0,
+                         model=cfg.model_code, cost=c_i)
+                t0 = time.time()
+                files, hard, soft, tests, diff = self._gates(wt, snap, base, secrets, core=pr["core_tests"])
                 res.files, res.tests = [tuple(f) for f in files], tests
                 (fixdir / f"attempt{attempt}.diff").write_text(diff, encoding="utf-8")
+                res.step("guard", "가드: 금지 자원 확인", "fail" if hard else "ok", t0, note="; ".join(hard)[:250])
+                res.step("tests", "문법 · self-test" + ("" if pr["core_tests"] else "(변경 모듈만)"),
+                         "skipped" if hard else ("fail" if soft else "ok"), None, note=(tests if not soft else "; ".join(soft)))
                 judged = []
                 if not hard and not soft:
-                    v, r, c = self._verify_calls(wt, fixdir, analysis, spec_md, diff, tests)
-                    res.cost += c
-                    res.verify = ("승인" if v and v["approve"] else "반려") + (f"({v['summary'][:60]})" if v else "")
-                    res.review = ("승인" if r and r["approve"] else "반려") + (f"({r['summary'][:60]})" if r else "")
-                    if not v or not v["approve"]:
-                        judged += [f"검증자: {x}" for x in (v or {}).get("issues", ["결과 없음"])]
-                    if not r or not r["approve"]:
-                        judged += [f"검토자: {x}" for x in (r or {}).get("concerns", ["결과 없음"])]
-                    if r and r.get("touches_prod_resources"):
-                        hard = hard + ["검토자: 운영 자원 접촉 가능성 지적"]
+                    t1 = time.time()
+                    v = r = None
+                    if pr["verify"] or pr["review"]:
+                        v, r, c = self._verify_calls(wt, fixdir, analysis, spec_md, diff, tests, do_verify=pr["verify"], do_review=pr["review"])
+                        res.cost += c
+                    if pr["verify"]:
+                        res.verify = ("승인" if v and v["approve"] else "반려") + (f"({v['summary'][:60]})" if v else "")
+                        res.step("verify", "검증(Sonnet)", "ok" if v and v["approve"] else "fail", t1, model=cfg.model_analysis,
+                                 note=(v or {}).get("summary", ""))
+                        if not v or not v["approve"]:
+                            judged += [f"검증자: {x}" for x in (v or {}).get("issues", ["결과 없음"])]
+                    else:
+                        res.verify = "건너뜀(프리셋)"
+                        res.step("verify", "검증(Sonnet)", "skipped", None, note=f"{pr['name']} 프리셋")
+                    if pr["review"]:
+                        res.review = ("승인" if r and r["approve"] else "반려") + (f"({r['summary'][:60]})" if r else "")
+                        res.step("review", "독립 검토(Sonnet)", "ok" if r and r["approve"] else "fail", t1, model=cfg.model_analysis,
+                                 note=(r or {}).get("summary", ""))
+                        if not r or not r["approve"]:
+                            judged += [f"검토자: {x}" for x in (r or {}).get("concerns", ["결과 없음"])]
+                        if r and r.get("touches_prod_resources"):
+                            hard = hard + ["검토자: 운영 자원 접촉 가능성 지적"]
+                    else:
+                        res.review = "건너뜀(프리셋)"
+                        res.step("review", "독립 검토(Sonnet)", "skipped", None, note=f"{pr['name']} 프리셋")
                 if not hard and not soft and not judged:
                     break
                 if hard or attempt == 1:  # 금지 자원 위반은 수정 라운드 없이 폐기, 일반 문제는 1회까지 되돌려 수정
@@ -303,11 +352,15 @@ class AutoFix:
                    f"분석: {sig}\n작성: {cfg.model_code} · 명세/검증/검토: {cfg.model_analysis}\n\n"
                    "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
             (fixdir / "commit_msg.txt").write_text(msg, encoding="utf-8")
+            t0 = time.time()
             _git(wt, "commit", "-q", "-F", str(fixdir / "commit_msg.txt"))
             res.head = _git(wt, "rev-parse", "--short", "HEAD").strip()
             res.status = "committed"
+            res.step("commit", "로컬 브랜치 커밋", "ok", t0, note=f"{res.base} → {res.head}")
             # 4) 보호 대상 불변 확인
+            t0 = time.time()
             post = guard.snapshot_diff(before_snap, guard.protected_snapshot(cfg.repo))
+            res.step("protected", "보호 대상 불변 확인", "fail" if post else "ok", t0, note="; ".join(post))
             if post:
                 res.status, res.guard_notes, res.guard_ok = "guard_fail", post, False
                 return res
@@ -340,27 +393,35 @@ class AutoFix:
             return res
         if not cfg.apply_local:
             res.note = "로컬 브랜치에만 커밋됨 (RX_APPLY_LOCAL=0 — 러너에 적용하지 않음)"
+            res.step("apply", "러너 브랜치에 적용", "skipped", None, note="RX_APPLY_LOCAL=0")
             return res
         cur = _git(repo, "branch", "--show-current").strip()
         if cur != cfg.apply_branch or cur in guard.PROTECTED_BRANCHES:
+            res.step("apply", "러너 브랜치에 적용", "held", None, note="작업 브랜치 불일치")
             res.status, res.note = "held", f"적용 보류 — 러너 작업 브랜치가 {cur!r} (기대 {cfg.apply_branch!r})"
             return res
         head_now = _git(repo, "rev-parse", "--short", "HEAD").strip()
         if head_now != res.base:
+            res.step("apply", "러너 브랜치에 적용", "held", None, note="HEAD 이동")
             res.status, res.note = "held", f"적용 보류 — 러너 브랜치 HEAD({head_now})가 수정 base({res.base})와 다름"
             return res
         dirty = {ln[3:].strip().strip('"') for ln in _git(repo, "status", "--porcelain", "--untracked-files=no").splitlines()}
         overlap = sorted(dirty & {p for _, _, p in res.files})
         if overlap:
+            res.step("apply", "러너 브랜치에 적용", "held", None, note="미커밋 변경과 겹침")
             res.status, res.note = "held", f"적용 보류 — 미커밋 변경과 겹침: {', '.join(overlap[:3])}"
             return res
         try:
             _git(repo, "merge", "--ff-only", "-q", res.branch)
         except Exception as e:  # noqa: BLE001
+            res.step("apply", "러너 브랜치에 적용", "held", None, note="ff 불가")
             res.status, res.note = "held", f"적용 보류 — ff 적용 실패: {str(e)[:120]}"
             return res
         res.applied = True
+        res.step("apply", "러너 브랜치에 적용", "ok", None, note=f"{cfg.apply_branch} ff-only")
+        t0 = time.time()
         ok, note = self.restarter(cfg) if self.restarter else (False, "재시작 함수 없음")
+        res.step("restart", "러너 재시작 + 건강 확인", "skipped" if "생략" in note else ("ok" if ok else "fail"), t0, note=note)
         if "생략" in note:  # 러너가 안 떠 있던 경우 — 적용만
             res.status, res.note = "applied_no_restart", f"로컬 브랜치에 적용됨 · {note}"
             return res
@@ -369,8 +430,10 @@ class AutoFix:
             return res
         # 건강 확인 실패 → 자동 되돌림
         try:
+            t0 = time.time()
             _git(repo, "revert", "--no-edit", "HEAD")
             ok2, note2 = self.restarter(cfg)
+            res.step("revert", "자동 revert + 재시작", "ok" if ok2 else "fail", t0, note=note2)
             res.status, res.applied, res.restarted = "reverted", False, ok2
             res.note = f"적용 후 러너가 건강하지 않아 자동 revert ({note}) → 재시작 {'성공' if ok2 else '실패'}"
         except Exception as e:  # noqa: BLE001
