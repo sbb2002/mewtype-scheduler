@@ -1,4 +1,4 @@
-"""에러 버스 수신기 — 1단계: 분석 · 보고 전용 (코드를 고치지 않는다).
+"""에러 버스 수신기 — 1단계(분석 · 보고) + 2단계(자동 수정 · 로컬 브랜치 커밋 · 러너 재시작).
 
 규약: docs/BUS_PROTOCOL.md. 발신기 코드를 모르고 규약(봉투 · 폴더)만으로 동작한다.
 흐름: err/inbox → processing → (ERROR 이상이면) 읽기 전용 스냅샷에서 `claude -p` 분석 → 보고(텔레그램 + report/inbox) → done.
@@ -33,10 +33,13 @@ from src.bus.conform import validate
 from src.bus.redact import redact
 from src.bus.spool import Spool
 
+from .autofix import AutoFix, FixResult
+from .claude import MODEL_ANALYSIS, MODEL_CODE, run_claude
+from .restart import restart_runner
+
 log = logging.getLogger("busrx")
 ROOT = Path(__file__).resolve().parents[2]
 KST = dt.timezone(dt.timedelta(hours=9))
-STAGE = 1
 STAGE_PATCH_NOTE = "패치 없음 — 1단계(분석 전용, 코드 수정 권한 없음)"
 TG_LIMIT = 3500  # 텔레그램 4096 은 UTF-16 코드 유닛 기준 — 여유를 둔다
 HB_LOST_SEC = 120
@@ -72,8 +75,22 @@ class Config:
     token: str = ""
     chat_id: str = ""
     claude_cmd: list = field(default_factory=lambda: [shutil.which("claude") or "claude"])
-    model: str = ""
+    stage: int = 2                        # 1 = 분석 · 보고만, 2 = + 자동 수정(로컬 브랜치 커밋)
+    model_analysis: str = MODEL_ANALYSIS  # 분석 · 명세서 · 검증 · 이중 검토 (Sonnet 5.5)
+    model_code: str = MODEL_CODE          # 코드 수정 · 구현 (Haiku 5.5)
     budget_usd: float = 1.0
+    budget_spec: float = 0.8
+    budget_code: float = 1.5
+    budget_verify: float = 0.8
+    budget_review: float = 0.8
+    fix_daily_cap: int = 3
+    apply_local: bool = True              # 수정이 통과하면 러너 작업 브랜치에 ff-only 적용 + 재시작 (원격 푸시는 안 함)
+    apply_branch: str = "v4.3-fullauto"
+    runner_dir: Path = ROOT
+    test_python: str = sys.executable
+    core_tests: list = field(default_factory=lambda: [
+        "src.backend.preview", "src.backend.statemachine", "src.backend.preview_build", "src.backend.xtweet",
+        "src.backend.xrelay", "src.backend.notices"])
     timeout_sec: int = 600
     cooldown_error: int = 3600
     cooldown_critical: int = 300
@@ -104,7 +121,11 @@ def config_from_env() -> Config:
     g = os.environ.get
     return Config(
         bus_dir=Path(g("MEW_BUS_DIR", "")), token=g("TELEGRAM_BOT_TOKEN", ""), chat_id=g("TELEGRAM_CHAT_ID", ""),
-        model=g("RX_MODEL", ""), budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
+        stage=int(g("RX_STAGE", "2")), model_analysis=g("RX_MODEL_ANALYSIS", MODEL_ANALYSIS),
+        model_code=g("RX_MODEL_CODE", MODEL_CODE), apply_local=g("RX_APPLY_LOCAL", "1") != "0",
+        apply_branch=g("RX_APPLY_BRANCH", "v4.3-fullauto"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
+        fix_daily_cap=int(g("RX_FIX_DAILY", "3")),
+        budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
         cooldown_error=int(g("RX_COOLDOWN_ERROR", "3600")), cooldown_critical=int(g("RX_COOLDOWN_CRITICAL", "300")),
         daily_cap=int(g("RX_DAILY_CALLS", "20")))
 
@@ -273,6 +294,8 @@ class Receiver:
             return
         except Exception:
             return
+        if self.now() < self.state.get("restart_until", 0):
+            return  # 수신기가 러너를 재시작하는 중
         if age > HB_LOST_SEC and not self.state["lost_alerted"]:
             self.state["lost_alerted"] = True
             self._save()
@@ -371,7 +394,7 @@ class Receiver:
     # 분석
     def _analyze_and_report(self, sig: str, envs: list[dict], top: dict, st: dict) -> None:
         before = git_head(self.cfg.repo)
-        result, cost, err = None, None, ""
+        result, cost, err, snap, fix = None, None, "", None, None
         try:
             snap = self._snapshot(before)
             work = self.cfg.rx / "work" / sig
@@ -385,8 +408,30 @@ class Receiver:
         except Exception as e:  # noqa: BLE001
             err = f"{type(e).__name__}: {e}"
             log.exception("분석 실패: %s", sig)
+        if result and result["verdict"] == "confirmed" and self.cfg.stage >= 2 and snap is not None:
+            fix = self._autofix(sig, result, snap, before)
         after = git_head(self.cfg.repo)
-        self._report(sig, envs, top, st, result, cost, err, before, after)
+        self._report(sig, envs, top, st, result, cost, err, before, after, fix)
+
+    def _autofix(self, sig: str, analysis: dict, snap: Path, base: str) -> FixResult:
+        today = self._today()
+        used = self.state.setdefault("fixes", {}).get(today, 0)
+        if used >= self.cfg.fix_daily_cap:
+            return FixResult(status="none", base=base, note=f"자동 수정 일일 상한({self.cfg.fix_daily_cap}회) 도달 — 수정 생략")
+        self.state["fixes"][today] = used + 1
+        self.state["fixes"] = dict(sorted(self.state["fixes"].items())[-14:])
+        seq = self.state["patch_seq"] = self.state.get("patch_seq", 0) + 1
+        self._save()
+        af = AutoFix(self.cfg, restarter=self._restart)
+        res = af.run(sig, analysis, snap, base, seq)
+        if res.status == "committed":
+            res = af.apply_and_restart(res)
+        return res
+
+    def _restart(self, cfg) -> tuple[bool, str]:
+        self.state["restart_until"] = self.now() + 240  # 재시작 중 발신기 소실 오경보 방지
+        self._save()
+        return restart_runner(cfg.runner_dir, python="", bus_dir=cfg.bus_dir)
 
     def _snapshot(self, commit: str) -> Path:
         d = self.cfg.rx / "snap" / commit
@@ -408,41 +453,21 @@ class Receiver:
 
     def _run_claude(self, snap: Path, work: Path, sig: str, top: dict, commit: str) -> tuple[dict, float | None]:
         prompt = (
-            f"에러 분석 요청 (시그니처 {sig}, 최고 심각도 {top['severity']}).\n"
+            f"[[PURPOSE:analysis]]\n에러 분석 요청 (시그니처 {sig}, 최고 심각도 {top['severity']}).\n"
             f"- 현재 작업 폴더는 커밋 {commit} 의 읽기 전용 소스 스냅샷이다.\n"
             f"- 발신기가 보낸 에러 봉투 묶음: {work / 'logs.json'} (먼저 읽어라).\n"
             f"- 에러가 발생한 커밋: {top.get('source', {}).get('commit', '?')}\n"
             f"- 작업 트리의 미커밋 변경 파일: {git_dirty(self.cfg.repo)}개 (스냅샷에는 안 보인다 — 코드가 로그와 안 맞으면 이 가능성을 고려)\n"
             "logs.json 의 에러가 어디서 왜 나는지 소스에서 찾아 분석하고, 지정된 JSON 스키마로만 답하라.")
-        cmd = list(self.cfg.claude_cmd) + [
-            "-p", "--output-format", "json", "--tools", "Read,Grep,Glob", "--add-dir", str(work),
-            "--no-session-persistence", "--disable-slash-commands", "--strict-mcp-config",
-            "--max-budget-usd", str(self.cfg.budget_usd), "--append-system-prompt", SYSTEM_RULES,
-            "--json-schema", json.dumps(RESULT_SCHEMA)]
-        if self.cfg.model:
-            cmd += ["--model", self.cfg.model]
-        keep = ("PATH", "SYSTEMROOT", "SystemRoot", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOME", "TEMP", "TMP",
-                "USERNAME", "COMSPEC", "PATHEXT", "WINDIR", "PROGRAMFILES", "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH")
-        env = {k: v for k, v in os.environ.items() if k in keep or k.startswith(("ANTHROPIC_", "CLAUDE_"))}
-        env.update(self.cfg.extra_env)
-        r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                           timeout=self.cfg.timeout_sec, cwd=snap, env=env)
-        if r.returncode != 0:
-            raise RuntimeError(f"claude 종료코드 {r.returncode}: {(r.stderr or r.stdout)[-300:]}")
-        outer = json.loads(r.stdout)
-        if outer.get("is_error"):
-            raise RuntimeError(f"claude 오류 응답: {str(outer.get('result'))[:300]}")
-        data = outer.get("structured_output")
-        if not isinstance(data, dict):
-            txt = outer.get("result") or ""
-            m = re.search(r"\{.*\}", txt, re.S)
-            data = json.loads(m.group(0)) if m else None
+        data, cost, _ = run_claude(self.cfg, model=self.cfg.model_analysis, prompt=prompt, cwd=snap,
+                                   tools="Read,Grep,Glob", add_dirs=(work,), schema=RESULT_SCHEMA,
+                                   budget=self.cfg.budget_usd, system=SYSTEM_RULES)
         if not isinstance(data, dict) or data.get("verdict") not in ("confirmed", "unknown", "ignored"):
             raise RuntimeError("분석 결과가 스키마에 맞지 않음")
-        return data, outer.get("total_cost_usd")
+        return data, cost
 
     # 보고
-    def _report(self, sig, envs, top, st, result, cost, err, before, after) -> None:
+    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None) -> None:
         if result is None:
             result = {"verdict": "unknown", "summary": f"분석 실패 — {err[:70]}", "cause": err,
                       "evidence": [], "proposed_action": "분석을 다시 시도하거나 로그를 직접 확인"}
@@ -461,13 +486,19 @@ class Receiver:
                     "── 수신 로그(발신기) ──",
                     f"{what}: {redact(ex['message'])[:n]}"] + [redact(t)[:n] for t in tbl]
 
-        patch_line = [f"── 패치 ──", f"{STAGE_PATCH_NOTE}",
-                      f"커밋: {before} → {after}" + (" (변경 없음)" if before == after else "")]
+        if fix is not None:
+            patch_line, patch_full = fix.lines(with_files=10), fix.lines(with_files=500)
+            patch_summary = fix.summary_line()
+            after = fix.head or after
+        else:
+            note = STAGE_PATCH_NOTE if self.cfg.stage < 2 else "패치 없음 — 수정 대상 아님(원인 미확정/무시 가능)"
+            patch_line = patch_full = ["── 패치 ──", note, f"커밋: {before} → {after}" + (" (변경 없음)" if before == after else "")]
+            patch_summary = note
         ana = ["── 분석 ──", f"판정: {verdict_ko} — {result['summary']}"]
         detail = ["", "원인: " + result["cause"], "근거:"] + [f"  - {x}" for x in result["evidence"]] + \
                  ["제안(미적용): " + result["proposed_action"]]
         short = "\n".join(head(160) + ana + patch_line)
-        full = "\n".join(head(400) + ana + detail + patch_line)
+        full = "\n".join(head(400) + ana + detail + patch_full)
         ts = E.iso(self.now())
         rid = E.new_id()
         fname = f"{ts.replace('-', '').replace(':', '')}_{sig}.md"
@@ -478,8 +509,13 @@ class Receiver:
         report = {"schema": "mew.report/1", "id": rid, "ts": ts, "signature": sig, "severity": top["severity"],
                   "verdict": result["verdict"], "summary": result["summary"][:2000], "cause": result["cause"][:4000],
                   "evidence": result["evidence"], "proposed_action": result["proposed_action"][:2000],
-                  "source_ids": [e["id"] for e in envs][:50], "stage": STAGE, "patch_summary": STAGE_PATCH_NOTE,
+                  "source_ids": [e["id"] for e in envs][:50], "stage": self.cfg.stage, "patch_summary": patch_summary,
                   "commit_before": before, "commit_after": after, "cost_usd": cost}
+        if fix is not None:
+            report.update(fix_status=fix.status, fix_branch=fix.branch, fix_version=fix.version,
+                          files_changed=[{"path": p, "added": a_, "deleted": d_} for a_, d_, p in fix.files],
+                          lines_added=fix.tot[1], lines_deleted=fix.tot[2], guard_ok=fix.guard_ok,
+                          applied=fix.applied, restarted=fix.restarted, fix_cost_usd=round(fix.cost, 4))
         errs = validate(report)
         if errs:
             log.error("보고 봉투가 스키마에 부적합: %s", errs)
@@ -493,7 +529,7 @@ class Receiver:
 
     # 루프
     def run(self, once: bool = False) -> None:
-        log.info("수신기 시작: %s (stage %d)", self.cfg.bus_dir, STAGE)
+        log.info("수신기 시작: %s (stage %d, 분석 %s / 구현 %s)", self.cfg.bus_dir, self.cfg.stage, self.cfg.model_analysis, self.cfg.model_code)
         n = self.recover()
         if n:
             log.info("processing 에 남은 %d건을 inbox 로 되돌림", n)
@@ -511,7 +547,7 @@ class Receiver:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="에러 버스 수신기 (1단계: 분석 · 보고 전용)")
+    ap = argparse.ArgumentParser(description="에러 버스 수신기 (1단계 분석·보고 + 2단계 자동 수정)")
     ap.add_argument("--env", default=str(ROOT / ".env.local"))
     ap.add_argument("--once", action="store_true", help="inbox 를 한 번 처리하고 종료")
     ap.add_argument("--no-telegram", action="store_true")

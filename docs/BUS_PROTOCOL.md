@@ -163,8 +163,8 @@
 
 ### 9-1. 보고 봉투의 확장 필드 (수신기 구현 `src/busrx/`, 1단계)
 
-`mew.report/1` 에 수신기가 추가로 싣는 필드(모르는 필드는 무시되므로 하위 호환): `stage`(자동 대응 단계) · `patch_summary`(패치 1줄 요약 —
-1단계는 "패치 없음") · `commit_before` / `commit_after`(분석 전 · 후 저장소 HEAD 단축 해시, 1단계는 항상 같음) · `cost_usd`.
+`mew.report/1` 에 수신기가 추가로 싣는 필드(모르는 필드는 무시되므로 하위 호환): `stage`(자동 대응 단계) · `patch_summary`(패치 1줄 요약) ·
+`commit_before` / `commit_after`(분석 전 → 수정 후 커밋. 1단계는 같은 값) · `cost_usd`. 2단계는 추가로 `fix_status` · `fix_branch` · `fix_version` · `files_changed[{path,added,deleted}]` · `lines_added` · `lines_deleted` · `guard_ok` · `applied` · `restarted` · `fix_cost_usd` (`docs/AUTOFIX.md` §5).
 텔레그램 보고에는 **수신 로그 · 분석 판정 · 패치 1줄 요약 · 커밋 이전 → 이후** 가 반드시 들어가며, 전체 텍스트가 3500(UTF-16) 이하면 한 메시지로,
 넘으면 요약 메시지(위 항목 모두 포함) + 전체 보고서 `.md` 파일로 보낸다.
 
@@ -187,7 +187,7 @@
   `jsonschema` 가 없어도 돌아가는 최소 검증기이며, 수신기는 자기 쪽 검증기(예: `jsonschema`)로 같은 스키마를 써도 된다.
 - 발신기 self-test: `python -m src.bus.publisher` (마스킹 · 임계값 · 묶음 · 제어 · DEBUG/TRACE · pause · 상한 · 원자성 확인).
 
-## 11-1. 수신기 구현 (1단계: 분석 · 보고 전용)
+## 11-1. 수신기 구현 (1단계: 분석 · 보고 / 2단계: 자동 수정 — 2단계는 `docs/AUTOFIX.md`)
 
 `python -m src.busrx [--once] [--no-telegram] [--env FILE]` — 직접 터미널에서 켠다. `python -m src.busrx.selftest` 로 스텁 기반 self-test.
 
@@ -196,6 +196,8 @@
 - 시그니처별 쿨다운(ERROR 1시간 · CRITICAL 5분), 하루 호출 상한(`RX_DAILY_CALLS`, 기본 20), `rx/PAUSE` 파일로 정지.
 - WARN 이하는 `rx/log.jsonl` 에 기록만 한다. 발신기 소실(§7)은 텔레그램으로 알린다(복구 시 알림).
 - 알려진 한계: 스냅샷은 HEAD 커밋 기준이라 **미커밋 변경은 분석에 보이지 않는다**(프롬프트에 미커밋 변경 파일 수를 알린다).
+- **2단계**(기본값, `RX_STAGE=2`): 분석이 `confirmed` 이면 명세서(Sonnet) → 구현(Haiku 5.5) → 가드 · 테스트 → 검증 · 이중 검토(Sonnet 5.5) → **로컬 브랜치 커밋 → 러너 적용 · 재시작**. 원격 푸시 · main 병합 없음. 전체 규칙은 `docs/AUTOFIX.md`.
+- 분석 · 명세서 · 검증 · 검토 = `claude-sonnet-5-5`, 코드 수정 = `claude-haiku-5-5` (운영자 결정 2026-10-12).
 
 ## 12. 발신기 구현 위치 (이 저장소)
 

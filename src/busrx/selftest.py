@@ -65,7 +65,7 @@ def main() -> int:
     os.environ["STUB_LOG"] = str(tmp / "stub.log")
     os.environ["GROQ_API_KEY"] = "must-not-leak-1234567890"
     clock = [1_800_000_000.0]
-    cfg = Config(bus_dir=bus, claude_cmd=[sys.executable, str(stub)], cooldown_error=3600, cooldown_critical=300,
+    cfg = Config(bus_dir=bus, stage=1, claude_cmd=[sys.executable, str(stub)], cooldown_error=3600, cooldown_critical=300,
                  daily_cap=3, batch_wait_sec=0,
                  extra_env={"STUB_LOG": str(tmp / "stub.log")})
     tg = FakeTG()
