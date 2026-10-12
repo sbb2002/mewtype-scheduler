@@ -57,6 +57,13 @@ class UsageLog:
 USAGE = UsageLog()
 
 
+def pct(v: float, sign: bool = False, scale: float = 100.0) -> str:
+    """0~1 비율을 % 로. 값이 정확히 1%p 단위(서버가 지금 주는 정밀도)이면 정수, 더 잘게 오면 소수 둘째 자리까지."""
+    x = v * scale
+    whole = abs(x - round(x)) < 1e-6
+    return (f"{x:+.0f}" if sign else f"{x:.0f}") + "%" if whole else (f"{x:+.2f}" if sign else f"{x:.2f}") + "%"
+
+
 def _kst(epoch, with_date: bool) -> str:
     try:
         d = dt.datetime.fromtimestamp(int(epoch), KST)
@@ -84,13 +91,28 @@ def usage_lines(u: dict | None) -> list[str]:
     if not u:
         return out + ["사용량 정보 없음 (구독 인증이 아니거나 호출 전 실패)"]
     if u.get("five") is not None:
-        s = f"세션(5시간): {u['five'] * 100:.0f}% 사용 · 남음 {100 - u['five'] * 100:.0f}% · 초기화 {_kst(u['reset5'], False)}"
+        s = f"세션(5시간): {pct(u['five'])} 사용 · 남음 {pct(100 - u['five'] * 100, scale=1)} · 초기화 {_kst(u['reset5'], False)}"
         if u.get("delta_five") is not None:
-            s += f" · 이번 처리 {u['delta_five'] * 100:+.0f}%p"
+            s += f" · 이번 처리 {pct(u['delta_five'], sign=True)}p"
         out.append(s)
     if u.get("seven") is not None:
-        out.append(f"주간(7일): {u['seven'] * 100:.0f}% 사용 · 남음 {100 - u['seven'] * 100:.0f}% · 초기화 {_kst(u['reset7'], True)}")
+        out.append(f"주간(7일): {pct(u['seven'])} 사용 · 남음 {pct(100 - u['seven'] * 100, scale=1)} · 초기화 {_kst(u['reset7'], True)}")
     out.append("(사용률은 같은 계정의 다른 세션 사용분을 포함한 값 · 1%p 단위로 갱신)")
+    return out
+
+
+def usage_md(u: dict | None) -> list[str]:
+    if not u:
+        return ["- 사용량 정보 없음 (구독 인증이 아니거나 호출 전 실패)"]
+    out = []
+    if u.get("five") is not None:
+        s = f"- **세션(5시간)**: {pct(u['five'])} 사용 · 남음 {pct(100 - u['five'] * 100, scale=1)} · 초기화 {_kst(u['reset5'], False)}"
+        if u.get("delta_five") is not None:
+            s += f" · 이번 처리 {pct(u['delta_five'], sign=True)}p"
+        out.append(s)
+    if u.get("seven") is not None:
+        out.append(f"- **주간(7일)**: {pct(u['seven'])} 사용 · 남음 {pct(100 - u['seven'] * 100, scale=1)} · 초기화 {_kst(u['reset7'], True)}")
+    out.append("- _사용률은 같은 계정의 다른 세션 사용분을 포함한 값이며 1%p 단위로 갱신됩니다._")
     return out
 
 

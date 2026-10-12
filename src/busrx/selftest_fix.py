@@ -163,18 +163,22 @@ def main() -> int:
     rx.spool.put("err/inbox", f"{env['ts'].replace('-', '').replace(':', '')}_{env['id']}", env)
     cfg.extra_env["STUB_MODE"] = ""
     check(rx.step() == 1, "S1 ERROR 봉투 처리")
-    m = tg.msgs[-1]
+    def rep_text():  # 텔레그램으로 간 마지막 보고: 캡션 + 첨부 파일 내용
+        f = tg.files[-1]
+        return f[2] + "\n" + f[1]
+
+    m = rep_text()
     new_head = sh(repo, "rev-parse", "--short", "HEAD")
     check(new_head != base0, "S1 러너 작업 브랜치가 수정 커밋으로 전진(ff 적용)")
     check("a + b" in (repo / "src" / "backend" / "calc.py").read_text(encoding="utf-8"), "S1 러너 작업 폴더에 수정 반영")
     check(len(restarts) == 1, "S1 적용 후 러너 재시작 1회")
-    check("calc.add 가 뺄셈을 하던 오류 수정" in m and "(v4.3.1)" in m, "S1 텔레그램: 패치 1줄 요약 + 버전")
-    check("변경 합계: 파일 1개" in m and "src/backend/calc.py  +" in m, "S1 텔레그램: 파일별 +/− 와 합계")
+    check("calc.add 가 뺄셈을 하던 오류 수정" in m and "(`v4.3.1`)" in m, "S1 텔레그램: 패치 1줄 요약 + 버전")
+    check("합계 1개 파일 · +" in m and "| `src/backend/calc.py` | +" in m and "| **합계 (1개)** |" in m, "S1 텔레그램: 파일별 +/− 와 합계")
     check(f"커밋: {base0} → {new_head}" in m, "S1 텔레그램: 커밋 이전 → 이후(수정 커밋)")
-    check("금지 자원 확인: 통과" in m and "Vercel" in m and "GCP" in m and "텔레그램 번호" in m, "S1 텔레그램: 금지 자원 확인 항목 명시")
+    check("금지 자원 확인**: ✅ 통과" in m and "Vercel" in m and "GCP" in m and "텔레그램 번호" in m, "S1 텔레그램: 금지 자원 확인 항목 명시")
     check("claude-haiku-5-5(구현)" in m and "claude-sonnet-5-5" in m, "S1 텔레그램: 모델 배정 표시")
     check("검증자: 승인" in m and "검토자: 승인" in m and "러너 재시작" in m, "S1 검증 · 검토 · 재시작 결과 표시")
-    check("세션(5시간):" in m and "주간(7일): 54% 사용 · 남음 46%" in m and "이번 처리 +" in m, "S1 사용량(세션 · 주간 · 이번 처리) 표시")
+    check("세션(5시간)**:" in m and "주간(7일)**: 54% 사용 · 남음 46%" in m and "이번 처리 +" in m, "S1 사용량(세션 · 주간 · 이번 처리) 표시")
     rep = [json.loads(p.read_text(encoding="utf-8")) for p in rx.spool.list("report/inbox")][-1]
     check(rep["usage"]["seven"] == 0.54 and rep["usage"]["calls_seen"] >= 4 and rep["usage"]["delta_five"] > 0, "S1 report 봉투에 usage 기록")
     check(rep["files_changed"][0]["path"] == "src/backend/calc.py" and rep["lines_added"] >= 1 and rep["applied"] and rep["guard_ok"]

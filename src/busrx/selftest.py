@@ -93,12 +93,16 @@ def main() -> int:
     e1 = env("YouTube API error: 403 key=SECRETKEY99", tb="Traceback...\nRuntimeError: YouTube API error: 403")
     put(e1)
     check(rx.step() == 1, "ERROR 봉투 1건 처리")
-    m = tg.msgs[-1]
+    def rep_text():  # 텔레그램으로 간 마지막 보고: 캡션 + 첨부 파일 내용
+        f = tg.files[-1]
+        return f[2] + "\n" + f[1]
+
+    m = rep_text()
     check("403" in m and "SECRETKEY99" not in m, "텔레그램에 수신 로그 표시 + 비밀값 마스킹")
     check(STAGE_PATCH_NOTE in m, "텔레그램에 패치 1줄 요약(1단계: 패치 없음) 표시")
     check(f"커밋: {head} → {head} (변경 없음)" in m, "텔레그램에 커밋 이전→이후 표시")
     check("스텁 분석 한 줄" in m and "원인 확정" in m, "분석 판정 · 한 줄 요약 표시")
-    check("세션(5시간): 4" in m and "남음 5" in m and "초기화 15:00 KST" in m and "주간(7일): 54% 사용 · 남음 46%" in m,
+    check("세션(5시간)**: 4" in m and "남음 5" in m and "초기화 15:00 KST" in m and "주간(7일)**: 54% 사용 · 남음 46%" in m,
           "사용량: 세션(5시간) 사용·남음·초기화 + 주간 사용·남음 표시")
     check("이번 처리 +" in m, "사용량: 이번 처리에서 쓴 세션 사용률(%p) 표시")
     rep = [json.loads(p.read_text(encoding="utf-8")) for p in sp.list("report/inbox")]
@@ -138,15 +142,15 @@ def main() -> int:
     cfg.extra_env["STUB_BIG"] = "4000"
     put(env("다른 에러 하나", logger="src.backend.other"))
     rx.step()
-    check(tg.files and "전체 보고서" in tg.files[-1][2] and STAGE_PATCH_NOTE in tg.msgs[-1]
-          and f"커밋: {head} → {head}" in tg.msgs[-1], "길면 요약 메시지(패치 · 커밋 포함) + 전체 보고서 파일")
+    check(len(tg.files[-1][1]) > 4000 and STAGE_PATCH_NOTE in tg.files[-1][2] and f"커밋: {head} → {head}" in tg.files[-1][2]
+          and len(tg.files[-1][2]) < 900, "긴 보고도 텔레그램에는 짧은 캡션(패치 · 커밋) + 전체 마크다운 파일")
     cfg.extra_env.pop("STUB_BIG")
 
     # 7) claude 실패 → 분석 실패 보고(원인 불명)
     cfg.extra_env["STUB_FAIL"] = "1"
     put(env("또 다른 에러", logger="src.backend.third"))
     rx.step()
-    check("분석 실패" in tg.msgs[-1] and "원인 불명" in tg.msgs[-1], "claude 실패 시 '분석 실패/원인 불명'으로 보고")
+    check("분석 실패" in rep_text() and "원인 불명" in rep_text(), "claude 실패 시 '분석 실패/원인 불명'으로 보고")
     cfg.extra_env.pop("STUB_FAIL")
 
     # 8) 일일 상한(3회) 도달

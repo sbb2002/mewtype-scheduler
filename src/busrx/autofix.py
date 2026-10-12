@@ -115,6 +115,36 @@ class FixResult:
         return out
 
 
+    def md_lines(self) -> list[str]:
+        """마크다운 보고용 패치 구간."""
+        n, a, d = self.tot
+        status_ko = {"none": "수정 안 함", "not_fixable": "수정 대상 아님", "guard_fail": "가드 실패 — 폐기", "tests_fail": "테스트 실패 — 폐기",
+                     "rejected": "검증/검토 반려 — 폐기", "error": "오류", "committed": "로컬 커밋됨", "held": "적용 보류(브랜치는 보존)",
+                     "applied": "적용 + 러너 재시작 완료", "applied_no_restart": "적용됨 (러너 미실행이라 재시작 생략)",
+                     "reverted": "적용 후 건강 확인 실패 — 자동 revert"}.get(self.status, self.status)
+        out = [f"- **요약**: {self.summary_line()}" + (f" (`{self.version}`)" if self.version else ""), f"- **상태**: {status_ko}"]
+        if self.status == "not_fixable":
+            out.append(f"- **사유**: {self.note}")
+        if self.files:
+            out += ["", f"### 변경 파일 — 합계 {n}개 파일 · +{a} −{d} (총 {a + d}줄)", "", "| 파일 | + | − |", "|---|---:|---:|"]
+            out += [f"| `{p}` | +{pa} | −{pd} |" for pa, pd, p in self.files]
+            out += [f"| **합계 ({n}개)** | **+{a}** | **−{d}** |", ""]
+        if self.branch:
+            out.append(f"- 브랜치: `{self.branch}` (로컬 전용, 원격 푸시 없음)")
+        if self.models:
+            out.append(f"- 작성·검증: {self.models}")
+        if self.tests:
+            out.append(f"- 테스트: {self.tests}")
+        if self.verify or self.review:
+            out.append(f"- 검증자: {self.verify or '-'} · 검토자: {self.review or '-'}" + (f" · 수정 라운드 {self.revisions}회" if self.revisions else ""))
+        out.append(f"- **금지 자원 확인**: {'✅ 통과' if self.guard_ok else '❌ 실패'} — {guard.CHECKED_ITEMS}")
+        out += [f"  - ⚠️ {g}" for g in self.guard_notes[:10]]
+        out.append(f"- **커밋**: `{self.base}` → `{self.head or self.base}`" + ("" if self.head else " (커밋 없음)"))
+        if self.note and self.status != "not_fixable":
+            out.append(f"- **결과**: {self.note}")
+        return out
+
+
 def _git(repo: Path, *args: str, check: bool = True) -> str:
     return guard._git(repo, *args, check=check)
 

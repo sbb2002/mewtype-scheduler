@@ -34,7 +34,7 @@ from src.bus.redact import redact
 from src.bus.spool import Spool
 
 from .autofix import AutoFix, FixResult
-from .claude import MODEL_ANALYSIS, MODEL_CODE, USAGE, run_claude, usage_lines, usage_summary
+from .claude import MODEL_ANALYSIS, MODEL_CODE, USAGE, pct, run_claude, usage_md, usage_summary
 from .restart import restart_runner
 
 log = logging.getLogger("busrx")
@@ -84,6 +84,7 @@ class Config:
     budget_verify: float = 0.8
     budget_review: float = 0.8
     fix_daily_cap: int = 3
+    report_format: str = "md"            # md = 마크다운 파일 | json = JSON 파일 | both = 둘 다 (텔레그램에는 짧은 캡션 + 파일)
     apply_local: bool = True              # 수정이 통과하면 러너 작업 브랜치에 ff-only 적용 + 재시작 (원격 푸시는 안 함)
     apply_branch: str = "v4.3-fullauto"
     runner_dir: Path = ROOT
@@ -124,7 +125,7 @@ def config_from_env() -> Config:
         stage=int(g("RX_STAGE", "2")), model_analysis=g("RX_MODEL_ANALYSIS", MODEL_ANALYSIS),
         model_code=g("RX_MODEL_CODE", MODEL_CODE), apply_local=g("RX_APPLY_LOCAL", "1") != "0",
         apply_branch=g("RX_APPLY_BRANCH", "v4.3-fullauto"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
-        fix_daily_cap=int(g("RX_FIX_DAILY", "3")),
+        fix_daily_cap=int(g("RX_FIX_DAILY", "3")), report_format=g("RX_REPORT_FORMAT", "md"),
         budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
         cooldown_error=int(g("RX_COOLDOWN_ERROR", "3600")), cooldown_critical=int(g("RX_COOLDOWN_CRITICAL", "300")),
         daily_cap=int(g("RX_DAILY_CALLS", "20")))
@@ -471,7 +472,7 @@ class Receiver:
             raise RuntimeError("분석 결과가 스키마에 맞지 않음")
         return data, cost
 
-    # 보고
+    # 보고 — 텔레그램에는 짧은 캡션 + 마크다운(또는 JSON) 파일. 본문 메시지로 길게 보내지 않는다.
     def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None, usage=None) -> None:
         if result is None:
             result = {"verdict": "unknown", "summary": f"분석 실패 — {err[:70]}", "cause": err,
@@ -481,37 +482,49 @@ class Receiver:
         extra = sum(e.get("occurrences", 0) for e in envs)
         icon = "🚨" if top["severity"] == "CRITICAL" else "❗"
         ex = envs[0]
-        what = ex.get("logger") or (ex.get("event") or {}).get("flow") or "?"
-        tbl = [ln for ln in (ex.get("traceback") or "").strip().splitlines() if ln.strip()][-2:]
-
-        def head(n: int) -> list[str]:
-            return [f"{icon} [{top['severity']}] {sig} · 수신 {len(envs)}건" + (f" (+반복 요약 {extra}회)" if extra else "")
-                    + f" · 이 시그니처 누적 {st['count']}건",
-                    f"시각 {kst(first)} ~ {kst(last)} KST · 발생 커밋 {ex.get('source', {}).get('commit', '?')}",
-                    "── 수신 로그(발신기) ──",
-                    f"{what}: {redact(ex['message'])[:n]}"] + [redact(t)[:n] for t in tbl]
-
         if fix is not None:
-            patch_line, patch_full = fix.lines(with_files=10), fix.lines(with_files=500)
+            patch_md = fix.md_lines()
             patch_summary = fix.summary_line()
             after = fix.head or after
         else:
             note = STAGE_PATCH_NOTE if self.cfg.stage < 2 else "패치 없음 — 수정 대상 아님(원인 미확정/무시 가능)"
-            patch_line = patch_full = ["── 패치 ──", note, f"커밋: {before} → {after}" + (" (변경 없음)" if before == after else "")]
+            patch_md = [f"- **요약**: {note}", f"- **커밋**: `{before}` → `{after}`" + (" (변경 없음)" if before == after else "")]
             patch_summary = note
-        ana = ["── 분석 ──", f"판정: {verdict_ko} — {result['summary']}"]
-        detail = ["", "원인: " + result["cause"], "근거:"] + [f"  - {x}" for x in result["evidence"]] + \
-                 ["제안(미적용): " + result["proposed_action"]]
-        ublock = usage_lines(usage)
-        short = "\n".join(head(160) + ana + patch_line + ublock)
-        full = "\n".join(head(400) + ana + detail + patch_full + ublock)
+        commit_txt = f"{before} → {after}" + (" (변경 없음)" if before == after else "")
+        safe_envs = [{k: (redact(v) if isinstance(v, str) else v) for k, v in e.items()} for e in envs[:20]]
+        msgs = []
+        for e in envs:
+            m_ = redact(e["message"])[:300]
+            if m_ not in msgs:
+                msgs.append(m_)
+        tb = redact(ex.get("traceback") or "").strip()
+        log_block = [f"{ex.get('logger') or (ex.get('event') or {}).get('flow') or '?'}: {redact(ex['message'])[:600]}"]
+        if tb:
+            log_block += ["", tb[-2500:]]
+        if len(msgs) > 1:
+            log_block += ["", "같은 묶음의 다른 메시지:"] + [f"- {x}" for x in msgs[1:6]]
+        md = "\n".join([
+            f"# {icon} [{top['severity']}] {sig} — {verdict_ko}", "",
+            "| 항목 | 값 |", "|---|---|",
+            f"| 심각도 | {top['severity']} |",
+            f"| 시각 | {kst(first)} ~ {kst(last)} KST |",
+            f"| 수신 | {len(envs)}건" + (f" (+반복 요약 {extra}회)" if extra else "") + f" · 이 시그니처 누적 {st['count']}건 |",
+            f"| 발생 커밋 | `{ex.get('source', {}).get('commit', '?')}` |",
+            f"| 커밋 이전 → 이후 | `{commit_txt}` |", "",
+            "## 1. 수신 로그 (발신기)", "", "```text", *log_block, "```", "",
+            f"## 2. 분석 — {self.cfg.model_analysis}", "",
+            f"**판정**: {verdict_ko} — {result['summary']}", "",
+            "### 원인", "", result["cause"], "",
+            "### 근거", "", *([f"- {x}" for x in result["evidence"]] or ["- (없음)"]), "",
+            "### 제안 (미적용)", "", result["proposed_action"], "",
+            "## 3. 패치", "", *patch_md, "",
+            "## 4. 구독 사용량", "", *usage_md(usage), "",
+            "## 5. 수신 봉투 원문", "", "```json", json.dumps(safe_envs, ensure_ascii=False, indent=1), "```", "",
+            f"_분석 비용(API 환산 추정): ${cost}_" if cost is not None else "", ""])
         ts = E.iso(self.now())
         rid = E.new_id()
-        fname = f"{ts.replace('-', '').replace(':', '')}_{sig}.md"
-        md = full + "\n\n## 수신 봉투 원문\n```json\n" + json.dumps(
-            [{k: (redact(v) if isinstance(v, str) else v) for k, v in e.items()} for e in envs[:20]],
-            ensure_ascii=False, indent=1) + "\n```\n" + (f"\n분석 비용: ${cost}\n" if cost is not None else "")
-        (self.cfg.rx / "reports" / fname).write_text(md, encoding="utf-8")
+        stem = f"{ts.replace('-', '').replace(':', '')}_{sig}"
+        (self.cfg.rx / "reports" / f"{stem}.md").write_text(md, encoding="utf-8")
         report = {"schema": "mew.report/1", "id": rid, "ts": ts, "signature": sig, "severity": top["severity"],
                   "verdict": result["verdict"], "summary": result["summary"][:2000], "cause": result["cause"][:4000],
                   "evidence": result["evidence"], "proposed_action": result["proposed_action"][:2000],
@@ -527,12 +540,21 @@ class Receiver:
         if errs:
             log.error("보고 봉투가 스키마에 부적합: %s", errs)
         else:
-            self.spool.put("report/inbox", f"{ts.replace('-', '').replace(':', '')}_{rid}", report)
-        if u16len(full) <= TG_LIMIT:
-            self.tg.send(full)
-        else:
-            self.tg.send(short if u16len(short) <= TG_LIMIT else short[:TG_LIMIT // 2])
-            self.tg.send_file(fname, md, caption=f"{sig} 전체 보고서")
+            self.spool.put("report/inbox", f"{stem.split('_')[0]}_{rid}", report)
+        # 텔레그램: 짧은 캡션(핵심만) + 파일
+        u5 = pct(usage['five']) if usage and usage.get("five") is not None else "?"
+        u7 = pct(usage['seven']) if usage and usage.get("seven") is not None else "?"
+        caption = (f"{icon} [{top['severity']}] {sig} · {verdict_ko}\n패치: {patch_summary[:120]}\n커밋: {commit_txt}\n"
+                   f"사용량 세션 {u5} · 주간 {u7} (자세한 내용은 첨부 파일)")
+        fmt = self.cfg.report_format
+        sent = False
+        if fmt in ("md", "both"):
+            sent = self.tg.send_file(f"{stem}.md", md, caption=caption)
+        if fmt in ("json", "both"):
+            body = json.dumps(dict(report, logs=safe_envs, patch_markdown=patch_md), ensure_ascii=False, indent=1)
+            sent = self.tg.send_file(f"{stem}.json", body, caption=caption if fmt == "json" else f"{sig} (JSON)") or sent
+        if not sent and self.tg.enabled:
+            self.tg.send(caption + "\n(파일 전송 실패 — 수신기 rx/reports 폴더 참고)")
 
     # 루프
     def run(self, once: bool = False) -> None:
