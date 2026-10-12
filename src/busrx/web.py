@@ -25,6 +25,8 @@ import flask
 
 from src.bus import envelope as E
 
+from .status import build_status, usage_view
+
 log = logging.getLogger("busrx.web")
 STATIC = Path(__file__).parent / "web_static"
 SESSION_SEC = 12 * 3600
@@ -144,36 +146,11 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
 
     # ── 읽기 API ─────────────────────────────────────
     def _usage_view():
-        u = rx.usage_now()
-        if not u:
-            return None
-        return dict(u, age=int(now() - u.get("t", now())))
+        return usage_view(rx, now())
 
     @app.get("/api/status")
     def status():
-        t = now()
-        pub = _read_json(bus / "hb" / "publisher.json") or {}
-        age = _age(pub.get("ts", ""), t)
-        runner = _read_json(cfg.runner_dir / "_local" / "ops" / "runner.json") or {}
-        healthy = None
-        if runner.get("port"):
-            try:
-                with urllib.request.urlopen(f"http://127.0.0.1:{runner['port']}/healthz-local", timeout=1.5) as r:
-                    healthy = json.loads(r.read().decode()).get("ok") is True
-            except Exception:
-                healthy = False
-        today = rx._today()
-        cnt = {k: rx.spool.count(f"err/{k}") for k in ("inbox", "processing", "done", "dead")}
-        head = subprocess.run(["git", "-C", str(cfg.repo), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-        return flask.jsonify(
-            now=E.iso(t), stage=cfg.stage, models={"analysis": cfg.model_analysis, "code": cfg.model_code},
-            rx_paused=rx.paused(), apply_local=cfg.apply_local, apply_branch=cfg.apply_branch, head=head,
-            publisher={"alive": age is not None and age <= HB_LOST_SEC, "age": None if age is None else int(age),
-                       "level": pub.get("level"), "paused": pub.get("paused"), "counters": pub.get("counters"), "pid": pub.get("pid")},
-            receiver={"pid": os.getpid(), "calls_today": rx.state["calls"].get(today, 0), "daily_cap": cfg.daily_cap,
-                      "fixes_today": rx.state.get("fixes", {}).get(today, 0), "fix_cap": cfg.fix_daily_cap},
-            queue=cnt, runner={"pid": runner.get("pid"), "port": runner.get("port"), "healthy": healthy},
-            lost_alerted=rx.state.get("lost_alerted", False), usage=_usage_view())
+        return flask.jsonify(build_status(rx, cfg, now()))
 
     @app.get("/api/errors")
     def errors():
@@ -296,6 +273,7 @@ def start_web(rx, cfg, tg):
     base = os.environ.get("RX_WEB_BASE", "").strip().rstrip("/") or f"http://{ip or '127.0.0.1'}:{cfg.web_port}"
     app = create_app(rx, cfg, tg, secret, base)
     servers = []
+    ctx = {"secret": secret, "base": base, "servers": servers}
     for host in dict.fromkeys(["127.0.0.1"] + ([ip] if ip else [])):
         try:
             srv = make_server(host, cfg.web_port, app, threaded=True)
@@ -305,4 +283,4 @@ def start_web(rx, cfg, tg):
         threading.Thread(target=srv.serve_forever, name=f"rx-web-{host}", daemon=True).start()
         servers.append(srv)
         log.info("자동제어 관리 페이지: http://%s:%s/", host, cfg.web_port)
-    return servers
+    return ctx

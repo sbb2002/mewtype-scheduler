@@ -86,6 +86,8 @@ class Config:
     budget_review: float = 0.8
     fix_daily_cap: int = 3
     web_port: int = 8789
+    ctl_token: str = ""       # 수신기 전용 텔레그램 봇 토큰(RX_TELEGRAM_BOT_TOKEN) — 있으면 알림·보고·DM 명령을 이 봇으로
+    ctl_chat_id: str = ""     # 그 봇의 허용 chat id(RX_TELEGRAM_CHAT_ID)
     web_enabled: bool = True
     usage_probe_min_sec: int = 120      # 사용량 조회(소형 호출) 최소 간격
     report_format: str = "md"            # md = 마크다운 파일 | json = JSON 파일 | both = 둘 다 (텔레그램에는 짧은 캡션 + 파일)
@@ -131,6 +133,7 @@ def config_from_env() -> Config:
         apply_branch=g("RX_APPLY_BRANCH", "v4.3-fullauto"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
         fix_daily_cap=int(g("RX_FIX_DAILY", "3")), report_format=g("RX_REPORT_FORMAT", "md"), web_port=int(g("RX_WEB_PORT", "8789")),
         web_enabled=g("RX_WEB", "1") != "0",
+        ctl_token=g("RX_TELEGRAM_BOT_TOKEN", "").strip(), ctl_chat_id=g("RX_TELEGRAM_CHAT_ID", "").strip(),
         budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
         cooldown_error=int(g("RX_COOLDOWN_ERROR", "3600")), cooldown_critical=int(g("RX_COOLDOWN_CRITICAL", "300")),
         daily_cap=int(g("RX_DAILY_CALLS", "20")))
@@ -660,12 +663,23 @@ def main(argv=None) -> int:
     if not str(cfg.bus_dir) or str(cfg.bus_dir) == ".":
         log.error("MEW_BUS_DIR 가 없다 — %s 확인", args.env)
         return 2
-    tg = Telegram("" if args.no_telegram else cfg.token, cfg.chat_id)
+    use_ctl = bool(cfg.ctl_token and cfg.ctl_chat_id) and not args.no_telegram
+    if use_ctl:
+        tg = Telegram(cfg.ctl_token, cfg.ctl_chat_id)  # 알림 · 보고 · 명령 모두 수신기 전용 봇
+        log.info("텔레그램: 수신기 전용 봇 사용 (명령 수신 켜짐)")
+    else:
+        tg = Telegram("" if args.no_telegram else cfg.token, cfg.chat_id)
     if not tg.enabled:
         log.warning("텔레그램 비활성(토큰/채팅 ID 없음 또는 --no-telegram) — 보고는 rx/reports 에만 남는다")
     rx = Receiver(cfg, tg)
+    web_ctx = None
     if cfg.web_enabled and not args.once and not args.no_web:
         from .web import start_web
-        start_web(rx, cfg, tg)
+        web_ctx = start_web(rx, cfg, tg)
+    if use_ctl and not args.once:
+        from .bot import start_bot
+        start_bot(rx, cfg, tg, web_ctx, cfg.ctl_token, cfg.ctl_chat_id)
+    elif not args.once and not args.no_telegram:
+        log.warning("RX_TELEGRAM_BOT_TOKEN/RX_TELEGRAM_CHAT_ID 가 없어 DM 명령(/ctl 등)은 꺼짐 — 알림만 기존 봇으로 보냄")
     rx.run(once=args.once)
     return 0
