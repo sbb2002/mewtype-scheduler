@@ -633,7 +633,7 @@ class Receiver:
                 if res.status == "committed":
                     res = af.apply_and_restart(res)
                 ok = res.status in ("committed", "applied", "applied_no_restart")
-                self.proposals.update(pid, status="done" if ok else "failed", result={
+                self.proposals.update(pid, status="done" if ok else ("held" if res.status == "held" else "failed"), result={
                     "fix_status": res.status, "branch": res.branch, "head": res.head, "base": base, "stale_base": stale, "note": res.note,
                     "files": [{"path": p_, "added": a_, "deleted": d_} for a_, d_, p_ in res.files]})
                 steps = [{"id": "analysis", "name": "분석(Sonnet)", "status": "ok", "sec": None, "note": "confirmed", "model": self.cfg.model_analysis, "cost": None},

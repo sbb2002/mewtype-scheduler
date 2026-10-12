@@ -4,6 +4,7 @@
   pending(승인 대기) → approved→running(실행 중) → done / failed
   pending → replanning(반려 후 재계획 중) → pending(새 판)  /  failed(재계획 실패)
   pending → declined(거절 — 아무것도 하지 않음)
+  pending → approved→running → held(파이프라인은 통과했으나 적용 보류 — 미커밋 변경과 겹침 등, 수정 브랜치는 보존)
   running · replanning 중에 수신기가 꺼지면 다음 기동 때 interrupted 로 표시
 """
 from __future__ import annotations

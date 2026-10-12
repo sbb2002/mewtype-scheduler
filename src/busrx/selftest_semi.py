@@ -193,6 +193,18 @@ def main() -> int:
     check(wait(lambda: rx.proposals.get(pid3)["status"] in ("done", "failed")), "코드가 바뀐 뒤 승인한 계획도 실행됨")
     check(rx.proposals.get(pid3)["result"]["stale_base"] is True, "base 가 바뀌었음을 결과에 기록(현재 코드 기준으로 실행)")
 
+    # 8-b) 적용 보류(미커밋 변경과 겹침)는 실패가 아니라 held
+    sh(repo, "reset", "-q", "--hard", head0)  # 결함이 있는 초기 상태로 되돌려 구현이 실제 변경을 만들게 한다
+    feed("보류될 계획", "src.backend.heldcase")
+    pid_h = rx.proposals.list()[0]["id"]
+    f_calc = repo / "src" / "backend" / "calc.py"
+    f_calc.write_text(f_calc.read_text(encoding="utf-8") + "\n# 운영자의 미커밋 편집\n", encoding="utf-8")
+    rx.proposal_approve(pid_h)
+    check(wait(lambda: rx.proposals.get(pid_h)["status"] in ("done", "failed", "held")) and rx.proposals.get(pid_h)["status"] == "held"
+          and rx.proposals.get(pid_h)["result"]["fix_status"] == "held" and "미커밋" in rx.proposals.get(pid_h)["result"]["note"],
+          "미커밋 변경과 겹쳐 적용이 보류되면 계획안 상태는 failed 가 아니라 held")
+    sh(repo, "checkout", "--", "src/backend/calc.py")
+
     # 9) 재계획 상한 · 중단 복구
     feed("재계획 상한", "src.backend.maxrp")
     pid4 = rx.proposals.list()[0]["id"]

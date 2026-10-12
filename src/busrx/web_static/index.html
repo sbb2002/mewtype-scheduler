@@ -401,7 +401,7 @@ function setBadge(n) { const b = $('#nav-apr'); b.textContent = '승인'; if (n)
 
 /* 패치 계획 승인(반자동) */
 let APR_ALL = false, APR_SIG = '';
-const APR_ST = { pending: ['승인 대기', 'warn'], running: ['실행 중', ''], done: ['완료', 'ok'], failed: ['실패', 'bad'], declined: ['거절됨', ''], replanning: ['재계획 중', ''], interrupted: ['중단됨', 'bad'] };
+const APR_ST = { pending: ['승인 대기', 'warn'], running: ['실행 중', ''], done: ['완료', 'ok'], failed: ['실패', 'bad'], declined: ['거절됨', ''], replanning: ['재계획 중', ''], interrupted: ['중단됨', 'bad'], held: ['적용 보류', 'warn'] };
 $('#apr-pending').onclick = () => { APR_ALL = false; $('#apr-pending').classList.add('pri'); $('#apr-all').classList.remove('pri'); APR_SIG = ''; loadApprovals(); };
 $('#apr-all').onclick = () => { APR_ALL = true; $('#apr-all').classList.add('pri'); $('#apr-pending').classList.remove('pri'); APR_SIG = ''; loadApprovals(); };
 async function openPlan(id, rev) { try { const j = await api('/api/proposals/' + id); $('#m-title').textContent = `패치 계획 파일 — rev ${rev}`; $('#m-body').innerHTML = md(j.plan_texts[String(rev)] || '(없음)'); $('#modal').classList.add('on'); } catch (e) { toast('열 수 없음: ' + e.message); } }
