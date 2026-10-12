@@ -26,13 +26,15 @@ import flask
 from src.bus import envelope as E
 
 from . import pipelines
-from .policy import ACTIONS, SEVERITIES, defaults
+from .policy import ACTIONS, MODES, SEVERITIES, defaults
+from .proposals import MAX_REPLANS
 from .status import build_status, usage_view
 
 log = logging.getLogger("busrx.web")
 STATIC = Path(__file__).parent / "web_static"
 SESSION_SEC = 12 * 3600
 TOKEN_SEC = 300
+PID_RE = re.compile(r"^[0-9A-HJKMNP-TV-Z]{26}$")
 REPORT_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z_[A-Za-z0-9._-]+\.md$")
 HB_LOST_SEC = 120
 
@@ -240,6 +242,20 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         return flask.jsonify(pipelines=pipelines.all_pipelines(cfg), catalog=cat, locked_order=pipelines.LOCKED_ORDER,
                              param_rules=rules, models=list(pipelines.ALLOWED_MODELS), used_by=used)
 
+    @app.get("/api/proposals")
+    def proposals_list():
+        head = subprocess.run(["git", "-C", str(cfg.repo), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+        return flask.jsonify(proposals=rx.proposals.list(40), pending=rx.proposals.pending_count(), head_now=head, max_replans=MAX_REPLANS)
+
+    @app.get("/api/proposals/<pid>")
+    def proposal_get(pid: str):
+        if not PID_RE.match(pid):
+            return flask.jsonify(error="잘못된 id"), 400
+        p = rx.proposals.get(pid)
+        if not p:
+            return flask.jsonify(error="없음"), 404
+        return flask.jsonify(proposal=p, plan_texts={str(x["rev"]): rx.proposals.plan_text(pid, x["rev"]) for x in p["plans"]})
+
     @app.get("/api/runs")
     def runs():
         out = []
@@ -272,6 +288,33 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         if not pipelines.delete_custom(cfg, pid):
             return flask.jsonify(ok=False, errors=["삭제할 수 없음(내장 프리셋이거나 존재하지 않음)"]), 400
         return flask.jsonify(ok=True)
+
+    @app.post("/api/mode")
+    def mode_set():
+        m, errs = rx.policy.set_mode(str((flask.request.get_json(silent=True) or {}).get("mode") or ""), "dashboard")
+        if errs:
+            return flask.jsonify(ok=False, errors=errs), 400
+        return flask.jsonify(ok=True, mode=m, label=MODES[m])
+
+    def _decision(pid: str, fn):
+        if not PID_RE.match(pid):
+            return flask.jsonify(ok=False, errors=["잘못된 id"]), 400
+        ok, msg = fn()
+        return flask.jsonify(ok=ok, msg=msg, errors=[] if ok else [msg]), (200 if ok else (400 if "사유" in msg else 409))
+
+    @app.post("/api/proposals/<pid>/approve")
+    def proposal_approve(pid: str):
+        return _decision(pid, lambda: rx.proposal_approve(pid, "dashboard"))
+
+    @app.post("/api/proposals/<pid>/replan")
+    def proposal_replan(pid: str):
+        reason = str((flask.request.get_json(silent=True) or {}).get("reason") or "")
+        return _decision(pid, lambda: rx.proposal_replan(pid, reason, "dashboard"))
+
+    @app.post("/api/proposals/<pid>/decline")
+    def proposal_decline(pid: str):
+        note = str((flask.request.get_json(silent=True) or {}).get("note") or "")
+        return _decision(pid, lambda: rx.proposal_decline(pid, note, "dashboard"))
 
     @app.post("/api/reset")
     def reset_settings():

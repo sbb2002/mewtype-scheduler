@@ -37,6 +37,7 @@ from src.bus.spool import Spool
 from .autofix import PRESETS, AutoFix, FixResult
 from .claude import MODEL_ANALYSIS, MODEL_CODE, USAGE, pct, run_claude, usage_md, usage_summary
 from .policy import Policy
+from .proposals import MAX_REPLANS, Proposals
 from .restart import restart_runner
 
 log = logging.getLogger("busrx")
@@ -247,6 +248,8 @@ class Receiver:
             (cfg.bus_dir / d).mkdir(parents=True, exist_ok=True)
         self.state_path = cfg.rx / "state.json"
         self.state = self._load_state()
+        self.proposals = Proposals(cfg.rx / "proposals")  # 반자동 모드의 패치 계획안
+        self._pipe_lock = threading.RLock()  # 분석 · 수정 파이프라인은 한 번에 하나만(메인 루프와 승인 실행 스레드가 겹치지 않게)
         self.policy = Policy(cfg.rx / "policy.json", cfg)  # 레벨별 자동 대응 정책(관리 페이지에서 수정)
         self._state_lock = threading.RLock()  # 관리 페이지(다른 스레드)와 상태 파일 쓰기 경합 방지
         self._last_hb = 0.0
@@ -432,6 +435,10 @@ class Receiver:
         envs = [e for _, e in members]
         top = max(envs, key=lambda e: E.rank(e["severity"]))
         self._touch_meta(sig, envs, top)
+        if self.policy.mode() == "off":  # 자동제어 끔 — 아무 분석 · 수정도 하지 않고 기록만
+            for e in envs:
+                self._logline(sig, e, "자동제어 꺼짐 — 분석 생략")
+            return
         pol = self.policy.get(top["severity"])  # 이 심각도의 정책: record · action(off/analyze/fix) · preset · cooldown_sec
         if pol["action"] == "off":
             if pol["record"]:
@@ -467,7 +474,12 @@ class Receiver:
 
     # 분석
     def _analyze_and_report(self, sig: str, envs: list[dict], top: dict, st: dict, pol: dict | None = None) -> None:
+        with self._pipe_lock:
+            self._analyze_and_report_locked(sig, envs, top, st, pol)
+
+    def _analyze_and_report_locked(self, sig: str, envs: list[dict], top: dict, st: dict, pol: dict | None = None) -> None:
         pol = pol or self.policy.get(top["severity"])
+        prop = None
         before = git_head(self.cfg.repo)
         result, cost, err, snap, fix = None, None, "", None, None
         mark = USAGE.mark()  # 이 처리에서 쓴 구독 사용량을 재기 위한 기준점
@@ -489,8 +501,12 @@ class Receiver:
                   "note": (result["verdict"] if result else err)[:300], "model": self.cfg.model_analysis,
                   "cost": round(cost, 4) if cost else None}]
         if result and result["verdict"] == "confirmed" and pol["action"] == "fix" and self.cfg.stage >= 2 and snap is not None:
-            fix = self._autofix(sig, result, snap, before, pol["preset"])
-            steps += fix.steps
+            if self.policy.mode() == "semi":  # 반자동: 계획안만 만들고 사람의 결정을 기다린다
+                prop, psteps = self._propose(sig, result, snap, before, pol, envs, top)
+                steps += psteps
+            else:
+                fix = self._autofix(sig, result, snap, before, pol["preset"])
+                steps += fix.steps
         elif result and result["verdict"] == "confirmed":
             why = "정책이 '분석만'" if pol["action"] != "fix" else "수신기가 1단계(RX_STAGE=1)"
             steps.append({"id": "spec", "name": "명세서(Sonnet)", "status": "skipped", "sec": None, "note": why, "model": "", "cost": None})
@@ -500,7 +516,7 @@ class Receiver:
         if usage and usage.get("five") is not None:
             self.state["usage_last"] = {"five": usage["five"], "reset5": usage["reset5"], "t": time.time()}
             self._save()
-        self._report(sig, envs, top, st, result, cost, err, before, after, fix, usage, steps, pol)
+        self._report(sig, envs, top, st, result, cost, err, before, after, fix, usage, steps, pol, prop)
 
     def _autofix(self, sig: str, analysis: dict, snap: Path, base: str, preset: str = "standard") -> FixResult:
         today = self._today()
@@ -516,6 +532,122 @@ class Receiver:
         if res.status == "committed":
             res = af.apply_and_restart(res)
         return res
+
+    # ── 반자동 모드: 패치 계획안 → 사람의 승인 · 반려(재계획) · 거절 ──
+    def _error_summary(self, sig: str, envs: list[dict], top: dict) -> dict:
+        ex = envs[0]
+        meta = self.state["meta"].get(sig, {})
+        return {"sig": sig, "severity": top["severity"], "where": ex.get("logger") or (ex.get("event") or {}).get("flow") or "?",
+                "message": redact(ex["message"])[:400], "traceback": redact(ex.get("traceback") or "")[-1200:],
+                "count": meta.get("count", len(envs)), "first": min(e["ts"] for e in envs), "last": max(e["ts"] for e in envs),
+                "source_commit": ex.get("source", {}).get("commit", "?"),
+                "envs": [{k: (redact(v) if isinstance(v, str) else v) for k, v in e.items()} for e in envs[:3]]}
+
+    def _propose(self, sig, analysis, snap, base, pol, envs, top):
+        """계획안을 만들어 저장하고 알린다. (계획안 | None, 단계 기록). 수정 대상이 아니면 None(분석 보고만)."""
+        plan, res = AutoFix(self.cfg).plan(sig, analysis, snap, base, pol["preset"])
+        steps = list(res.steps)
+        if plan is None or not plan.get("fixable"):
+            return None, steps
+        prop = self.proposals.create(sig=sig, severity=top["severity"], base=base, preset=pol["preset"],
+                                     error=self._error_summary(sig, envs, top), analysis=analysis, plan=plan)
+        steps.append({"id": "approval", "name": "사용자 승인 대기", "status": "held", "sec": None, "note": "관리 페이지 승인 탭에서 결정",
+                      "model": "", "cost": None})
+        self._notify_proposal(prop)
+        return prop, steps
+
+    def _notify_proposal(self, prop: dict, replan: bool = False) -> None:
+        plan = prop["plans"][-1]
+        e = prop["error"]
+        caption = (f"📝 패치 계획 {'재작성' if replan else '승인 대기'} (rev {plan['rev']})\n[{prop['severity']}] {e['where']}\n에러: {e['message'][:110]}\n"
+                   f"계획: {plan['title']}\n→ /ctl 로 관리 페이지 '승인' 탭에서 승인 · 반려(재계획) · 거절")
+        text = self.proposals.plan_text(prop["id"], plan["rev"]) or ""
+        self.tg.send_file(f"plan_{prop['sig']}_rev{plan['rev']}.md", text, caption=caption)
+
+    def proposal_approve(self, pid: str, by: str = "dashboard") -> tuple[bool, str]:
+        prop, st = self.proposals.begin(pid, ("pending",), "approve", by, status="running")
+        if prop is None:
+            return False, "계획안이 없음" if st is None else f"승인할 수 없는 상태입니다: {st}"
+        self.tg.send(f"✅ 패치 계획 승인: {prop['plans'][-1]['title']} — 파이프라인 실행을 시작합니다")
+        threading.Thread(target=self._run_approved, args=(pid,), name="rx-approve", daemon=True).start()
+        return True, "승인됨 — 파이프라인을 실행합니다(완료되면 텔레그램으로 보고)"
+
+    def proposal_decline(self, pid: str, note: str = "", by: str = "dashboard") -> tuple[bool, str]:
+        prop, st = self.proposals.begin(pid, ("pending",), "decline", by, note, status="declined")
+        if prop is None:
+            return False, "계획안이 없음" if st is None else f"거절할 수 없는 상태입니다: {st}"
+        s = self.state["sigs"].setdefault(prop["sig"], {"count": 0, "suppressed": 0, "last_call": 0})
+        s["last_call"] = self.now()  # 쿨다운 동안 같은 에러를 다시 제안하지 않음
+        self._save()
+        self.tg.send(f"🚫 패치 계획 거절: {prop['plans'][-1]['title']} — 아무 변경도 하지 않았습니다")
+        return True, "거절됨 — 아무 변경도 하지 않았습니다"
+
+    def proposal_replan(self, pid: str, reason: str, by: str = "dashboard") -> tuple[bool, str]:
+        reason = (reason or "").strip()
+        if len(reason) < 3:
+            return False, "반려 사유를 입력하세요(3자 이상) — 재계획의 근거가 됩니다"
+        cur = self.proposals.get(pid)
+        if cur and len(cur["plans"]) - 1 >= MAX_REPLANS:
+            return False, f"재계획은 최대 {MAX_REPLANS}회까지입니다 — 승인하거나 거절하세요"
+        prop, st = self.proposals.begin(pid, ("pending",), "replan", by, reason, status="replanning")
+        if prop is None:
+            return False, "계획안이 없음" if st is None else f"반려할 수 없는 상태입니다: {st}"
+        threading.Thread(target=self._run_replan, args=(pid, reason), name="rx-replan", daemon=True).start()
+        return True, "반려됨 — 사유를 반영해 계획을 다시 작성합니다(1~2분)"
+
+    def _run_replan(self, pid: str, reason: str) -> None:
+        with self._pipe_lock:
+            prop = self.proposals.get(pid)
+            try:
+                snap = self._snapshot(prop["base"])
+                prev = self.proposals.plan_text(pid, prop["plans"][-1]["rev"]) or ""
+                plan, _res = AutoFix(self.cfg).plan(prop["sig"], prop["analysis"], snap, prop["base"], prop["preset"], prev, reason)
+                if plan and plan.get("fixable"):
+                    new = self.proposals.add_revision(pid, plan, reason)
+                    self._notify_proposal(new, replan=True)
+                else:
+                    why = (plan or {}).get("why_not") or "재계획에 실패했습니다"
+                    self.proposals.decide(pid, "replan_failed", "receiver", why, status="pending")
+                    self.tg.send(f"⚠️ 재계획 실패: {why[:200]} — 기존 계획은 그대로 대기 중입니다(승인/거절 가능)")
+            except Exception as e:  # noqa: BLE001
+                log.exception("재계획 실패: %s", pid)
+                self.proposals.decide(pid, "replan_failed", "receiver", f"{type(e).__name__}: {str(e)[:150]}", status="pending")
+                self.tg.send("⚠️ 재계획 중 오류 — 기존 계획은 그대로 대기 중입니다")
+
+    def _run_approved(self, pid: str) -> None:
+        with self._pipe_lock:
+            mark = USAGE.mark()
+            prop = self.proposals.get(pid)
+            try:
+                plan = prop["plans"][-1]
+                base = git_head(self.cfg.repo)
+                snap = self._snapshot(base)
+                stale = base != prop["base"]
+                plan_in = {"title": plan["title"], "spec_md": self.proposals.plan_text(pid, plan["rev"]) or "", "rev": plan["rev"]}
+                today = self._today()
+                self.state.setdefault("fixes", {})[today] = self.state.get("fixes", {}).get(today, 0) + 1
+                seq = self.state["patch_seq"] = self.state.get("patch_seq", 0) + 1
+                self._save()
+                af = AutoFix(self.cfg, restarter=self._restart)
+                res = af.run(prop["sig"], prop["analysis"], snap, base, seq, prop["preset"], plan=plan_in)
+                if res.status == "committed":
+                    res = af.apply_and_restart(res)
+                ok = res.status in ("committed", "applied", "applied_no_restart")
+                self.proposals.update(pid, status="done" if ok else "failed", result={
+                    "fix_status": res.status, "branch": res.branch, "head": res.head, "base": base, "stale_base": stale, "note": res.note,
+                    "files": [{"path": p_, "added": a_, "deleted": d_} for a_, d_, p_ in res.files]})
+                steps = [{"id": "analysis", "name": "분석(Sonnet)", "status": "ok", "sec": None, "note": "confirmed", "model": self.cfg.model_analysis, "cost": None},
+                         {"id": "approval", "name": "사용자 승인", "status": "ok", "sec": None, "note": f"계획 rev {plan['rev']} 승인" + (" · 코드가 바뀐 뒤 승인(base 재설정)" if stale else ""),
+                          "model": "", "cost": None}] + res.steps
+                err = prop["error"]
+                usage = usage_summary(mark, self.state.get("usage_last"))
+                self._remember_usage()
+                self._report(prop["sig"], err["envs"], {"severity": prop["severity"]}, {"count": err["count"]}, prop["analysis"], None, "",
+                             base, git_head(self.cfg.repo), res, usage, steps, {"action": "fix", "preset": prop["preset"]}, None)
+            except Exception as e:  # noqa: BLE001
+                log.exception("승인된 계획 실행 실패: %s", pid)
+                self.proposals.update(pid, status="failed", result={"fix_status": "error", "note": f"{type(e).__name__}: {str(e)[:200]}"})
+                self.tg.send(f"⚠️ 승인된 계획 실행 중 오류: {type(e).__name__}: {str(e)[:150]}")
 
     def _restart(self, cfg) -> tuple[bool, str]:
         self.state["restart_until"] = self.now() + 240  # 재시작 중 발신기 소실 오경보 방지
@@ -556,7 +688,7 @@ class Receiver:
         return data, cost
 
     # 보고 — 텔레그램에는 짧은 캡션 + 마크다운(또는 JSON) 파일. 본문 메시지로 길게 보내지 않는다.
-    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None, usage=None, steps=None, pol=None) -> None:
+    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None, usage=None, steps=None, pol=None, prop=None) -> None:
         if result is None:
             result = {"verdict": "unknown", "summary": f"분석 실패 — {err[:70]}", "cause": err,
                       "evidence": [], "proposed_action": "분석을 다시 시도하거나 로그를 직접 확인"}
@@ -569,6 +701,11 @@ class Receiver:
             patch_md = fix.md_lines()
             patch_summary = fix.summary_line()
             after = fix.head or after
+        elif prop is not None:
+            plan = prop["plans"][-1]
+            patch_md = ["- **요약**: 패치 계획 작성됨 — **승인 대기(반자동 모드)**", f"- **계획**: {plan['title']} (rev {plan['rev']})",
+                        "- **결정**: 관리 페이지 '승인' 탭에서 승인 · 반려(재계획) · 거절 (텔레그램 `/ctl`)", f"- **커밋**: `{before}` → `{after}` (변경 없음)"]
+            patch_summary = f"패치 계획 승인 대기: {plan['title']}"
         else:
             note = STAGE_PATCH_NOTE if self.cfg.stage < 2 else "패치 없음 — 수정 대상 아님(원인 미확정/무시 가능)"
             patch_md = [f"- **요약**: {note}", f"- **커밋**: `{before}` → `{after}`" + (" (변경 없음)" if before == after else "")]
@@ -617,6 +754,8 @@ class Receiver:
                   "source_ids": [e["id"] for e in envs][:50], "stage": self.cfg.stage, "patch_summary": patch_summary,
                   "commit_before": before, "commit_after": after, "cost_usd": cost,
                   "usage": usage, "steps": steps or []}
+        if prop is not None:
+            report.update(fix_status="awaiting_approval", proposal_id=prop["id"])
         if fix is not None:
             report.update(fix_status=fix.status, fix_branch=fix.branch, fix_version=fix.version,
                           files_changed=[{"path": p, "added": a_, "deleted": d_} for a_, d_, p in fix.files],
@@ -624,7 +763,8 @@ class Receiver:
                           applied=fix.applied, restarted=fix.restarted, fix_cost_usd=round(fix.cost, 4))
         run = {"ts": ts, "sig": sig, "severity": top["severity"], "verdict": result["verdict"], "report": f"{stem}.md",
                "action": (pol or {}).get("action"), "preset": (pol or {}).get("preset"), "steps": steps or [],
-               "title": patch_summary, "fix_status": fix.status if fix is not None else "", "branch": fix.branch if fix is not None else "",
+               "title": patch_summary, "fix_status": fix.status if fix is not None else ("awaiting_approval" if prop is not None else ""),
+               "proposal_id": prop["id"] if prop is not None else None, "branch": fix.branch if fix is not None else "",
                "files": [{"path": p_, "added": a_, "deleted": d_} for a_, d_, p_ in (fix.files if fix is not None else [])],
                "usage": usage, "commit_before": before, "commit_after": after}
         try:
@@ -655,6 +795,9 @@ class Receiver:
     def run(self, once: bool = False) -> None:
         log.info("수신기 시작: %s (stage %d, 분석 %s / 구현 %s)", self.cfg.bus_dir, self.cfg.stage, self.cfg.model_analysis, self.cfg.model_code)
         n = self.recover()
+        k = self.proposals.recover()
+        if k:
+            log.info("처리 중 종료됐던 계획안 %d건을 interrupted 로 표시", k)
         if n:
             log.info("processing 에 남은 %d건을 inbox 로 되돌림", n)
         while True:

@@ -58,7 +58,8 @@ def build_status(rx, cfg, now: float) -> dict:
                   "fixes_today": rx.state.get("fixes", {}).get(today, 0), "fix_cap": cfg.fix_daily_cap},
         queue={k: rx.spool.count(f"err/{k}") for k in ("inbox", "processing", "done", "dead")},
         runner={"pid": runner.get("pid"), "port": runner.get("port"), "healthy": healthy},
-        lost_alerted=rx.state.get("lost_alerted", False), usage=usage_view(rx, now), policy=rx.policy.all())
+        lost_alerted=rx.state.get("lost_alerted", False), usage=usage_view(rx, now), policy=rx.policy.all(),
+        mode=rx.policy.mode(), proposals_pending=rx.proposals.pending_count())
 
 
 def _kst(epoch, with_date: bool) -> str:
@@ -100,7 +101,8 @@ def status_text(s: dict) -> str:
     p, r = s["publisher"], s["receiver"]
     run = s["runner"]
     lines = [
-        f"🤖 자동제어 현황 · {s['stage']}단계",
+        f"🤖 자동제어 현황 · {s['stage']}단계 · 모드 {({'auto': '자동', 'semi': '반자동', 'off': '끔'}).get(s.get('mode'), '?')}"
+        + (f" · 승인 대기 {s['proposals_pending']}건" if s.get("proposals_pending") else ""),
         f"수신기 분석: {'⏸ 정지됨' if s['rx_paused'] else '▶ 동작 중'}",
         f"발신기: {'정상' if p['alive'] else '⚠️ 신호 없음'}" + (f" · 레벨 {p['level']}" if p.get("level") else "")
         + (" · 발신 정지" if p.get("paused") else "") + (f" · {p['age']}초 전" if p.get("age") is not None else ""),

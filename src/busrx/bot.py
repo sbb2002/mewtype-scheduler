@@ -23,7 +23,7 @@ from .status import build_status, status_text, usage_text
 
 log = logging.getLogger("busrx.bot")
 
-HELP = ("🤖 자동제어 명령\n/ctl — 관리 페이지 로그인 링크\n/auto — 현황 요약\n/usage — 구독 사용량 조회\n"
+HELP = ("🤖 자동제어 명령\n/ctl — 관리 페이지 로그인 링크\n/auto — 현황 요약\n/usage — 구독 사용량 조회\n/automode [auto|semi|off] — 동작 모드 보기/바꾸기\n"
         "/autopause — 분석 정지\n/autoresume — 분석 재개")
 
 
@@ -51,8 +51,9 @@ class BotCommands:
             log.warning("허용되지 않은 채팅의 명령 무시 (chat %s)", (msg.get("chat") or {}).get("id"))
             return None
         cmd = text.split()[0].split("@")[0].lower()
+        self._args = text.split()[1:]
         fn = {"/ctl": self._ctl, "/auto": self._auto, "/autopause": self._pause, "/autoresume": self._resume,
-              "/usage": self._usage, "/help": self._help, "/start": self._help}.get(cmd)
+              "/usage": self._usage, "/automode": self._mode, "/help": self._help, "/start": self._help}.get(cmd)
         if fn is None:
             self.tg.send("알 수 없는 명령입니다.\n\n" + HELP)
             return cmd
@@ -62,6 +63,16 @@ class BotCommands:
             log.exception("명령 처리 실패: %s", cmd)
             self.tg.send(f"⚠️ {cmd} 처리 실패: {type(e).__name__}: {str(e)[:120]}")
         return cmd
+
+    def _mode(self):
+        from .policy import MODES
+        arg = (self._args[0].lower() if getattr(self, "_args", None) else "")
+        if not arg:
+            cur = self.rx.policy.mode()
+            self.tg.send(f"현재 동작 모드: {MODES[cur]}({cur})\n바꾸려면 /automode auto | semi | off\n- auto 자동: 전부 자동 패치\n- semi 반자동: 패치 계획을 만들어 승인을 기다림\n- off 끔: 자동제어 동작 안 함(기록만)")
+            return
+        m, errs = self.rx.policy.set_mode(arg, "telegram")
+        self.tg.send(f"✅ 동작 모드를 {MODES[m]}({m})(으)로 바꿨습니다." if not errs else f"⚠️ {errs[0]}")
 
     def _help(self):
         self.tg.send(HELP)

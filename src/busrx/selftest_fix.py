@@ -45,8 +45,9 @@ def out(d):
 if purpose == "analysis":
     out({"verdict": "confirmed", "summary": "calc.add 가 뺄셈", "cause": "add 가 a-b 를 반환", "evidence": ["src/backend/calc.py:2 — a - b"],
          "proposed_action": "a + b 로 수정"})
-elif purpose == "spec":
-    out({"fixable": mode != "notfixable", "why_not": "외부 서비스 일시 오류라 코드 수정 대상 아님", "title": "calc.add 가 뺄셈을 하던 오류 수정",
+elif purpose in ("spec", "replan"):
+    out({"fixable": mode != "notfixable", "why_not": "외부 서비스 일시 오류라 코드 수정 대상 아님",
+         "title": "calc.add 가 뺄셈을 하던 오류 수정" + (" (사용자 지적 반영 재계획)" if purpose == "replan" else ""),
          "change_plan": [{"file": "src/backend/calc.py", "change": "a - b 를 a + b 로"}], "test_plan": "self-test", "risk": "낮음"})
 elif purpose in ("implement", "revise"):
     if mode == "syntax_then_fix" and purpose == "implement":

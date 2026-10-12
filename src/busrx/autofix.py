@@ -201,20 +201,22 @@ class AutoFix:
                                 system="너는 지정된 명세서만 구현하는 개발자다. 범위를 넓히지 않는다.")
         return cost or 0.0
 
-    def _b_spec(self, cx) -> bool:
+    def _b_spec(self, cx, feedback: str = "", prev_md: str = "") -> bool:
         """명세서 — 수정 대상이 아니면 False(파이프라인 중단)."""
         cfg, res, pl = self.cfg, cx.res, cx.pl
         model = pl.param("spec", "model", cfg.model_analysis)
+        extra = (f"\n\n## 이전에 제안한 계획\n{prev_md}\n\n## 사용자의 반려 사유(반드시 반영해 계획을 다시 세워라)\n{feedback}") if feedback else ""
         t0 = time.time()
         spec, c, _ = run_claude(
             cfg, model=model, cwd=cx.snap, tools="Read,Grep,Glob", schema=SPEC_SCHEMA, budget=pl.param("spec", "budget", cfg.budget_spec),
-            prompt="[[PURPOSE:spec]]\n아래 원인 분석을 바탕으로 코드 수정 명세서를 작성하라. 이 에러가 소스 코드를 고쳐서 해결되는 것이 아니거나 "
+            prompt=("[[PURPOSE:replan]]\n(재계획) " if feedback else "[[PURPOSE:spec]]\n") + "아래 원인 분석을 바탕으로 코드 수정 명세서를 작성하라. 이 에러가 소스 코드를 고쳐서 해결되는 것이 아니거나 "
                    "(외부 서비스의 일시 오류, 설정/운영 문제, 허용 경로 밖 수정 필요) 원인이 불확실하면 fixable=false 와 why_not 을 적어라. "
                    "title 은 커밋 제목으로 쓸 한국어 한 줄(70자 이내), change_plan 은 파일별 구체 변경, test_plan 은 검증 방법.\n"
-                   f"{RULES_COMMON}\n\n## 원인 분석\n{json.dumps(cx.analysis, ensure_ascii=False)}",
+                   f"{RULES_COMMON}\n\n## 원인 분석\n{json.dumps(cx.analysis, ensure_ascii=False)}" + extra,
             system="너는 변경 명세서 작성자다. 코드를 고치지 않는다. 증명되지 않은 것은 쓰지 않는다.")
         res.cost += c or 0.0
-        res.step("spec", "명세서(Sonnet)", "ok" if spec else "fail", t0, model=model, cost=c)
+        res.step("spec", "재계획(Sonnet)" if feedback else "명세서(Sonnet)", "ok" if spec else "fail", t0, model=model, cost=c)
+        cx.spec = spec
         if not spec:
             raise RuntimeError("명세서 결과 없음")
         res.title = spec["title"].strip()[:100]
@@ -227,6 +229,33 @@ class AutoFix:
                       + f"\n\n## 테스트 계획\n{spec['test_plan']}\n\n## 위험\n{spec['risk']}\n")
         (cx.fixdir / "SPEC.md").write_text(cx.spec_md, encoding="utf-8")
         return True
+
+    def plan(self, sig: str, analysis: dict, snap: Path, base: str, preset: str = "standard", prev_md: str = "",
+             feedback: str = "") -> tuple[dict | None, FixResult]:
+        """패치 계획만 작성한다(코드는 건드리지 않음) — 반자동 모드에서 사람이 승인 · 반려 · 거절하도록 보여 줄 계획안.
+        반환 (plan | None, 단계 기록이 든 FixResult). plan = {fixable, title, change_plan, test_plan, risk, spec_md, why_not}."""
+        cfg = self.cfg
+        pl = pipelines.resolve(cfg, preset)
+        res = FixResult(base=base, preset=pl.id)
+        fixdir = cfg.rx / "fix" / sig
+        fixdir.mkdir(parents=True, exist_ok=True)
+
+        class Cx:
+            pass
+
+        cx = Cx()
+        cx.__dict__.update(sig=sig, analysis=analysis, snap=snap, base=base, fixdir=fixdir, pl=pl, res=res, spec_md="", spec=None)
+        try:
+            ok = self._b_spec(cx, feedback, prev_md)
+        except Exception as e:  # noqa: BLE001
+            log.exception("계획 작성 실패: %s", sig)
+            res.status, res.note = "error", f"{type(e).__name__}: {str(e)[:200]}"
+            return None, res
+        if not ok:
+            return {"fixable": False, "why_not": res.note, "title": res.title, "change_plan": [], "test_plan": "", "risk": "", "spec_md": ""}, res
+        s = cx.spec
+        return {"fixable": True, "why_not": "", "title": res.title, "change_plan": s["change_plan"], "test_plan": s["test_plan"],
+                "risk": s["risk"], "spec_md": cx.spec_md}, res
 
     def _b_worktree(self, cx) -> None:
         t0 = time.time()
@@ -353,7 +382,8 @@ class AutoFix:
         return True
 
     # ── 본 파이프라인 (블록 엔진) ───────────────────
-    def run(self, sig: str, analysis: dict, snap: Path, base: str, seq: int, preset: str = "standard") -> FixResult:
+    def run(self, sig: str, analysis: dict, snap: Path, base: str, seq: int, preset: str = "standard", plan: dict | None = None) -> FixResult:
+        """plan 이 있으면(반자동에서 사람이 승인한 계획) 명세서 단계를 다시 하지 않고 그 계획으로 구현부터 진행한다."""
         cfg = self.cfg
         pl = pipelines.resolve(cfg, preset)
         res = FixResult(base=base, seq=seq, version=f"v4.3.{seq}", preset=pl.id,
@@ -376,7 +406,12 @@ class AutoFix:
             # 1) 사전 블록: 명세서 → 워크트리
             for b in pl.phase("pre"):
                 if b["id"] == "spec":
-                    if not self._b_spec(cx):
+                    if plan:
+                        res.title = plan["title"]
+                        cx.spec_md = plan["spec_md"]
+                        (fixdir / "SPEC.md").write_text(cx.spec_md, encoding="utf-8")
+                        res.step("spec", "명세서(승인된 계획)", "ok", None, note=f"사용자가 승인한 계획 rev {plan.get('rev', '?')}")
+                    elif not self._b_spec(cx):
                         return res
                 elif b["id"] == "worktree":
                     self._b_worktree(cx)

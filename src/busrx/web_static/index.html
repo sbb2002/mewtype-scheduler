@@ -58,6 +58,11 @@
   .blk.sel { box-shadow:0 0 0 2px var(--accent); } .blk.off { opacity:.45; border-style:dashed; } .blk.lock { border-color:#5b5b5b; }
   .chip-add { border-style:dashed; color:var(--muted); min-height:34px; padding:.2rem .6rem; }
   .err { color:var(--bad); } .good { color:var(--ok); } .wr { color:var(--warn); }
+  .mode-btn { flex:1; min-width:6rem; text-align:left; border-width:2px; padding:.5rem .7rem; }
+  .mode-btn.on { border-color:var(--accent); background:#0a2a30; } .mode-btn small { display:block; color:var(--muted); font-size:11px; }
+  textarea { width:100%; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.5rem; min-height:4rem; font:inherit; }
+  .apr-sec { border-top:1px solid var(--border); margin-top:.6rem; padding-top:.5rem; } .apr-sec h4 { margin:.1rem 0 .3rem; font-size:13px; color:var(--muted); font-weight:500; }
+  #nav-apr .bd { background:var(--bad); color:#fff; border-radius:999px; font-size:11px; padding:0 .4rem; margin-left:.3rem; }
   .run-note { font-size:12px; color:var(--muted); min-height:1.2em; }
   input[type=number] { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.4rem; width:5rem; min-height:40px; }
   @media (min-width: 720px) { nav { position:static; border:1px solid var(--border); border-radius:10px; margin-bottom:.8rem; } body { padding-bottom:var(--pad); } }
@@ -77,7 +82,7 @@
 
 <nav id="tabs">
   <button data-t="status" class="on">현황</button><button data-t="errors">에러</button><button data-t="reports">보고서</button>
-  <button data-t="fixes">수정</button><button data-t="pipelines">조립</button><button data-t="control">제어</button>
+  <button data-t="fixes">수정</button><button data-t="approvals" id="nav-apr">승인</button><button data-t="pipelines">조립</button><button data-t="control">제어</button>
 </nav>
 
 <section id="status" class="on"><div class="grid" id="st-grid"></div></section>
@@ -89,6 +94,13 @@
 </section>
 <section id="reports"><div id="rep-list"></div></section>
 <section id="fixes"><h2>파이프라인 실행 기록</h2><div id="run-list"></div><h2>자동 수정 이력</h2><div id="fix-list"></div></section>
+<section id="approvals">
+  <div class="card"><b>패치 계획 승인</b>
+    <p class="muted small">반자동 모드에서 에러를 분석한 뒤 만든 <b>패치 계획안</b>입니다. 에러 요약과 계획을 확인하고 <b>승인</b>(파이프라인 실행) · <b>반려</b>(사유를 적어 재계획) · <b>거절</b>(아무것도 하지 않음)을 정하세요.
+    모드는 <b>제어</b> 탭에서 바꿉니다.</p>
+    <div class="row"><button id="apr-pending" class="pri">대기 중</button><button id="apr-all">전체 이력</button><span class="grow"></span><span class="muted small" id="apr-note"></span></div></div>
+  <div id="apr-list"></div>
+</section>
 <section id="pipelines">
   <div class="card"><b>파이프라인 조립</b>
     <p class="muted small">블록을 끼워 맞춰 자동 수정 파이프라인을 만듭니다. 🔒 잠금 블록(가드 · 보호 확인 등)은 빼거나 끄거나 순서를 바꿀 수 없습니다. 저장한 파이프라인은 <b>제어</b> 탭의 에러 레벨별 정책에서 고를 수 있습니다.</p>
@@ -103,6 +115,9 @@
     <div class="row"><button id="pl-save" class="pri">저장</button><button id="pl-revert">편집 취소(원래대로)</button><span class="grow"></span><button id="pl-reset-all" class="bad">사용자 정의 전부 삭제(내장만 남김)</button><span class="muted small" id="pl-note"></span></div></div>
 </section>
 <section id="control">
+  <div class="card"><b>동작 모드</b>
+    <p class="muted small">자동제어가 에러에 어떻게 반응할지 정하는 전체 스위치입니다. 에러 레벨별 세부 동작은 아래 정책 표에서 정합니다.</p>
+    <div class="row" id="mode-btns"></div><div class="muted small" id="mode-desc" style="margin-top:.4rem"></div></div>
   <div class="card"><b>수신기 분석</b><p class="muted small">정지하면 새 ERROR 이상 에러를 분석·수정하지 않고 기록만 합니다(<code>rx/PAUSE</code>).</p>
     <div class="row"><span id="c-rx"></span><span class="grow"></span><button id="b-rx"></button></div></div>
   <div class="card"><b>발신기 발신</b><p class="muted small">정지하면 CRITICAL 을 제외한 에러 봉투 발신이 멈춥니다.</p>
@@ -194,7 +209,7 @@ $('#u-refresh').onclick = async () => { const b = $('#u-refresh'); b.disabled = 
 function card(title) { const c = el('div', 'card'); c.append(el('b', '', title)); return c; }
 function kv(c, pairs) { const g = el('div', 'kv'); pairs.forEach(([k, v]) => { g.append(el('b', '', k)); const s = el('span'); if (v instanceof Node) s.append(v); else s.textContent = v; g.append(s); }); c.append(g); }
 async function loadStatus() {
-  const s = await api('/api/status'); $('#stage').textContent = `${s.stage}단계`; renderUsage(s.usage);
+  const s = await api('/api/status'); $('#stage').textContent = `${s.stage}단계 · ${MODEKO[s.mode] || '?'}`; renderMode(s.mode); setBadge(s.proposals_pending); renderUsage(s.usage);
   $('#clock').textContent = kst(s.now) + ' KST';
   const g = $('#st-grid'); g.textContent = '';
   let c = card('발신기'); kv(c, [['생존', pill(s.publisher.alive ? '정상' : '신호 없음', s.publisher.alive ? 'ok' : 'bad')], ['마지막 신호', rel(s.publisher.age)],
@@ -373,12 +388,61 @@ $('#pl-reset-all').onclick = async () => { if (!confirm('사용자 정의 파이
 $('#reset-all').onclick = async () => { if (!confirm('정책과 사용자 정의 파이프라인을 모두 원래대로 되돌릴까요?')) return; if (!confirm('정말 초기화할까요? 되돌릴 수 없습니다(변경 이력 파일에는 남습니다).')) return;
   const j = await doReset('all', '정책과 파이프라인을 초기화했습니다'); if (j) $('#reset-note').textContent = `정책 기본값 · 사용자 정의 ${j.pipelines_removed}개 삭제 · ${new Date().toLocaleTimeString()}`; };
 
+/* 동작 모드(자동/반자동/끔) */
+const MODEKO = { auto: '자동', semi: '반자동', off: '끔' };
+const MODEINFO = { auto: ['자동', '기본 — 에러를 분석하고 전부 자동으로 패치합니다(정책에 따라).'], semi: ['반자동', '분석 후 패치 계획안만 만들고, 승인 탭에서 사람이 승인 · 반려(재계획) · 거절합니다.'], off: ['끔', '자동제어가 동작하지 않습니다 — 에러는 기록만 합니다(발신기 소실 알림 · 이 페이지는 계속 동작).'] };
+let CURMODE = null;
+function renderMode(m) { CURMODE = m; const b = $('#mode-btns'); b.textContent = '';
+  ['auto', 'semi', 'off'].forEach(k => { const btn = el('button', 'mode-btn' + (k === m ? ' on' : '')); btn.append(el('b', '', MODEINFO[k][0] + (k === m ? ' ✓' : '')), el('small', '', MODEINFO[k][1].split(' — ')[0].split('. ')[0])); btn.onclick = () => setMode(k); b.append(btn); });
+  $('#mode-desc').textContent = m ? MODEINFO[m][1] : ''; }
+async function setMode(m) { if (m === CURMODE) return; if (!confirm(`동작 모드를 '${MODEINFO[m][0]}'(으)로 바꿀까요?\n${MODEINFO[m][1]}`)) return;
+  try { const j = await api('/api/mode', { mode: m }); toast(`동작 모드: ${j.label}`); loadStatus(); } catch (e) { toast('모드 변경 실패: ' + e.message); } }
+function setBadge(n) { const b = $('#nav-apr'); b.textContent = '승인'; if (n) b.append(el('span', 'bd', String(n))); }
+
+/* 패치 계획 승인(반자동) */
+let APR_ALL = false, APR_SIG = '';
+const APR_ST = { pending: ['승인 대기', 'warn'], running: ['실행 중', ''], done: ['완료', 'ok'], failed: ['실패', 'bad'], declined: ['거절됨', ''], replanning: ['재계획 중', ''], interrupted: ['중단됨', 'bad'] };
+$('#apr-pending').onclick = () => { APR_ALL = false; $('#apr-pending').classList.add('pri'); $('#apr-all').classList.remove('pri'); APR_SIG = ''; loadApprovals(); };
+$('#apr-all').onclick = () => { APR_ALL = true; $('#apr-all').classList.add('pri'); $('#apr-pending').classList.remove('pri'); APR_SIG = ''; loadApprovals(); };
+async function openPlan(id, rev) { try { const j = await api('/api/proposals/' + id); $('#m-title').textContent = `패치 계획 파일 — rev ${rev}`; $('#m-body').innerHTML = md(j.plan_texts[String(rev)] || '(없음)'); $('#modal').classList.add('on'); } catch (e) { toast('열 수 없음: ' + e.message); } }
+async function decide(id, action, body, okmsg) { try { const j = await api(`/api/proposals/${id}/${action}`, body || {}); toast(j.msg || okmsg); APR_SIG = ''; loadApprovals(); loadStatus(); } catch (e) { toast('실패: ' + e.message); } }
+async function loadApprovals() {
+  const j = await api('/api/proposals'); setBadge(j.pending);
+  const items = j.proposals.filter(p => APR_ALL || ['pending', 'running', 'replanning'].includes(p.status));
+  const sig = JSON.stringify([items, j.head_now]); const active = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
+  if (sig === APR_SIG || active) return; APR_SIG = sig;   // 입력 중이거나 바뀐 게 없으면 다시 그리지 않음
+  const l = $('#apr-list'); l.textContent = ''; $('#apr-note').textContent = `대기 ${j.pending}건`;
+  if (!items.length) l.append(el('div', 'muted', APR_ALL ? '이력이 없습니다.' : '승인 대기 중인 계획이 없습니다.'));
+  items.forEach(p => { const c = el('div', 'card'); const plan = p.plans[p.plans.length - 1], e = p.error, st = APR_ST[p.status] || [p.status, ''];
+    const h = el('div', 'row'); h.append(pill(p.severity, 'sev-' + p.severity), el('b', '', e.where), pill(st[0], st[1]), pill('계획 rev ' + plan.rev, ''), el('span', 'grow'), el('span', 'muted small', kst(p.created) + ' KST')); c.append(h);
+    const s1 = el('div', 'apr-sec'); s1.append(el('h4', '', '에러 요약'), el('div', 'small', e.message), el('div', 'muted small', `누적 ${e.count}건 · ${kst(e.first)} ~ ${kst(e.last)} KST · 발생 커밋 ${e.source_commit}`)); c.append(s1);
+    const s2 = el('div', 'apr-sec'); s2.append(el('h4', '', '원인 분석(Sonnet)'), el('div', 'small', p.analysis.summary)); if (p.analysis.cause) s2.append(el('div', 'muted small', p.analysis.cause)); c.append(s2);
+    const s3 = el('div', 'apr-sec'); s3.append(el('h4', '', '패치 계획 요약')); s3.append(el('div', 'small', el('b', '', plan.title).textContent));
+    const ul = el('ul', 'small'); plan.change_plan.forEach(x => ul.append(el('li', '', `${x.file}: ${x.change}`))); s3.append(ul);
+    s3.append(el('div', 'muted small', '테스트 계획: ' + plan.test_plan), el('div', 'muted small', '위험: ' + plan.risk));
+    if (plan.feedback) s3.append(el('div', 'small', '↩ 반영한 반려 사유: ' + plan.feedback));
+    if (j.head_now && p.base !== j.head_now && p.status === 'pending') s3.append(el('div', 'wr small', `⚠️ 계획을 만든 뒤 코드가 바뀌었습니다(${p.base} → ${j.head_now}). 승인하면 현재 코드 기준으로 실행됩니다.`));
+    c.append(s3);
+    if (p.status === 'pending') { const r = el('div', 'row apr-sec'); const f = el('button', '', '계획 파일 보기'); f.onclick = () => openPlan(p.id, plan.rev);
+      const ok = el('button', 'pri', '승인'); ok.onclick = () => { if (confirm(`이 계획을 승인할까요?\n'${plan.title}'\n파이프라인(구현 → 가드 → 검증 …)을 실행하고 통과하면 로컬 브랜치에 커밋/적용합니다.`)) decide(p.id, 'approve', {}, '승인됨'); };
+      const rp = el('button', '', '반려(재계획)'); const dc = el('button', 'bad', '거절');
+      const box = el('div', 'apr-sec'); box.style.display = 'none'; const ta = el('textarea'); ta.placeholder = '반려 사유 (예: tests 도 같이 고쳐 주세요 / 이 파일은 건드리지 마세요)'; const go = el('button', 'pri', '재계획 요청'); box.append(ta, go);
+      rp.onclick = () => { box.style.display = box.style.display === 'none' ? 'block' : 'none'; if (box.style.display === 'block') ta.focus(); };
+      go.onclick = () => { if (ta.value.trim().length < 3) { toast('반려 사유를 3자 이상 입력하세요'); return; } decide(p.id, 'replan', { reason: ta.value.trim() }, '재계획 요청됨'); };
+      dc.onclick = () => { if (confirm('이 계획을 거절할까요? 아무 변경도 하지 않으며, 같은 에러는 쿨다운 동안 다시 제안하지 않습니다.')) decide(p.id, 'decline', {}, '거절됨'); };
+      r.append(f, ok, rp, el('span', 'grow'), dc); c.append(r, box); }
+    else { const r = el('div', 'row apr-sec'); const f = el('button', '', '계획 파일 보기'); f.onclick = () => openPlan(p.id, plan.rev); r.append(f); c.append(r); }
+    if (p.result) { const rs = el('div', 'apr-sec small'); const fl = p.result.files || []; rs.textContent = `결과: ${p.result.fix_status}${p.result.branch ? ' · ' + p.result.branch : ''}${fl.length ? ` · 파일 ${fl.length}개 +${fl.reduce((a, x) => a + x.added, 0)} −${fl.reduce((a, x) => a + x.deleted, 0)}` : ''}${p.result.note ? ' · ' + p.result.note : ''}`; c.append(rs); }
+    if (p.decisions.length) { const d = el('div', 'muted small'); d.textContent = '이력: ' + p.decisions.map(x => `${kst(x.ts, false)} ${x.action}${x.note ? '(' + x.note.slice(0, 40) + ')' : ''}`).join(' → '); c.append(d); }
+    l.append(c); });
+}
+
 /* 탭 · 갱신 */
-function show(t) { TAB = t; if (t === 'control') loadPolicy(); if (t === 'pipelines') loadPipelines(); $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
+function show(t) { TAB = t; if (t === 'approvals') loadApprovals(); if (t === 'control') loadPolicy(); if (t === 'pipelines') loadPipelines(); $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
 $$('#tabs button').forEach(b => b.onclick = () => show(b.dataset.t));
 $('#m-close').onclick = () => $('#modal').classList.remove('on');
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); };
-async function refresh() { try { await loadStatus(); if (TAB === 'errors') await loadErrors(); if (TAB === 'reports') await loadReports(); if (TAB === 'fixes') await loadFixes(); if (TAB === 'control') await loadCtl(); } catch (e) { if (e.message !== '401') toast('불러오기 실패: ' + e.message); } }
+async function refresh() { try { await loadStatus(); if (TAB === 'errors') await loadErrors(); if (TAB === 'reports') await loadReports(); if (TAB === 'fixes') await loadFixes(); if (TAB === 'approvals') await loadApprovals(); if (TAB === 'control') await loadCtl(); } catch (e) { if (e.message !== '401') toast('불러오기 실패: ' + e.message); } }
 (async () => { try { CSRF = (await api('/api/me')).csrf; } catch (e) { return; } buildFilter(); refresh(); setInterval(refresh, 10000); })();
 </script>
 </body>

@@ -20,6 +20,8 @@ from . import pipelines
 SEVERITIES = E.SEVERITIES  # CRITICAL ERROR WARN INFO DEBUG TRACE
 ACTIONS = {"off": "끔(기록만)", "analyze": "분석만", "fix": "수정까지"}
 COOLDOWN_MAX = 7 * 86400
+# 동작 모드(전체): auto = 전부 자동 패치(기본) / semi = 분석 후 패치 계획안을 만들어 사람의 승인 · 반려(재계획) · 거절을 기다림 / off = 자동제어 동작 안 함(기록만)
+MODES = {"auto": "자동", "semi": "반자동", "off": "끔"}
 
 
 def defaults(cfg) -> dict:
@@ -75,6 +77,25 @@ class Policy:
         self.path, self.cfg = path, cfg
         self._cache: dict | None = None
         self._mtime = -1.0
+        self._mode = "auto"
+
+    def mode(self) -> str:
+        self.all()
+        return self._mode
+
+    def set_mode(self, mode: str, who: str = "dashboard") -> tuple[str, list[str]]:
+        if mode not in MODES:
+            return self.mode(), [f"mode 는 {list(MODES)} 중 하나"]
+        old = self.mode()
+        levels = self.all()
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"levels": levels, "mode": mode, "saved_at": E.iso(time.time())}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.path)
+        self._cache = None
+        if old != mode:
+            with (self.path.parent / "policy_history.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": E.iso(time.time()), "by": who, "mode": {"from": old, "to": mode}}, ensure_ascii=False) + "\n")
+        return self.mode(), []
 
     def all(self) -> dict:
         try:
@@ -94,6 +115,8 @@ class Policy:
                     data = json.loads(self.path.read_text(encoding="utf-8"))
                 except Exception:
                     data = None
+            md = data.get("mode") if isinstance(data, dict) else None
+            self._mode = md if md in MODES else "auto"
             pol, errs = validate((data or {}).get("levels", {}) if isinstance(data, dict) else {}, base, pipelines.all_pipelines(self.cfg))
             if errs:  # 손상 · 부분 오류가 있으면 오류 항목만 기본값 유지(validate 가 걸러냄)
                 pass
@@ -109,7 +132,7 @@ class Policy:
             return self.all(), errs
         old = self.all()
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"levels": new, "saved_at": E.iso(time.time())}, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.write_text(json.dumps({"levels": new, "mode": self.mode(), "saved_at": E.iso(time.time())}, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self.path)
         changed = {s: {"from": old[s], "to": new[s]} for s in new if new[s] != old[s]}
         if changed:
