@@ -164,7 +164,7 @@
 ### 9-1. 보고 봉투의 확장 필드 (수신기 구현 `src/busrx/`, 1단계)
 
 `mew.report/1` 에 수신기가 추가로 싣는 필드(모르는 필드는 무시되므로 하위 호환): `stage`(자동 대응 단계) · `patch_summary`(패치 1줄 요약) ·
-`commit_before` / `commit_after`(분석 전 → 수정 후 커밋. 1단계는 같은 값) · `cost_usd`. 2단계는 추가로 `fix_status` · `fix_branch` · `fix_version` · `files_changed[{path,added,deleted}]` · `lines_added` · `lines_deleted` · `guard_ok` · `applied` · `restarted` · `fix_cost_usd` (`docs/AUTOFIX.md` §5).
+`commit_before` / `commit_after`(분석 전 → 수정 후 커밋. 1단계는 같은 값) · `cost_usd`. 2단계는 추가로 `fix_status` · `fix_branch` · `fix_version` · `files_changed[{path,added,deleted}]` · `lines_added` · `lines_deleted` · `guard_ok` · `applied` · `restarted` · `fix_cost_usd` · `usage`{five,seven,reset5,reset7,delta_five,calls_seen — 사용률 0~1, 초기화는 epoch} (`docs/AUTOFIX.md` §5).
 텔레그램 보고에는 **수신 로그 · 분석 판정 · 패치 1줄 요약 · 커밋 이전 → 이후** 가 반드시 들어가며, 전체 텍스트가 3500(UTF-16) 이하면 한 메시지로,
 넘으면 요약 메시지(위 항목 모두 포함) + 전체 보고서 `.md` 파일로 보낸다.
 

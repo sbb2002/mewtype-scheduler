@@ -69,9 +69,9 @@
 ## 5. 텔레그램 보고 (2단계)
 
 항상 포함: ① 수신 로그(발신기) ② 분석 판정 · 한 줄 요약 ③ **패치 한 줄 요약 + 버전** ④ **변경 합계(파일 N개 · +A −D · 총 줄수)와 파일별 +/−**
-⑤ 브랜치(로컬) · 모델 배정 ⑥ 테스트 결과 · 검증자/검토자 판정 · 수정 라운드 수 ⑦ **금지 자원 확인 결과** ⑧ **커밋 이전 → 이후**(base → 수정 커밋) ⑨ 적용 · 재시작 · revert 결과.
+⑤ 브랜치(로컬) · 모델 배정 ⑥ 테스트 결과 · 검증자/검토자 판정 · 수정 라운드 수 ⑦ **금지 자원 확인 결과** ⑧ **커밋 이전 → 이후**(base → 수정 커밋) ⑨ 적용 · 재시작 · revert 결과 ⑩ **구독 사용량**(세션 5시간 사용·남음·초기화 시각·이번 처리 +%p, 주간 7일 사용·남음·초기화 시각).
 전체가 3500(UTF-16) 이하면 한 메시지, 넘으면 요약(위 항목 포함, 파일은 10개까지) + 전체 보고서 `.md`(파일 전부). report 봉투에는 `files_changed[]` ·
-`lines_added/deleted` · `guard_ok` · `applied` · `restarted` · `fix_status` · `fix_branch` 가 추가로 실린다.
+`lines_added/deleted` · `usage`(세션·주간 사용률) · `guard_ok` · `applied` · `restarted` · `fix_status` · `fix_branch` 가 추가로 실린다.
 
 ## 6. 설정 (환경 변수 · `src/busrx/receiver.py` `Config`)
 
@@ -82,3 +82,11 @@
 
 `python -m src.busrx.selftest`(1단계) · `python -m src.busrx.selftest_fix`(2단계: 임시 git 저장소 + 가짜 claude · 가짜 재시작으로 S1~S12 · 가드 단위) · `python -m src.bus.conform`.
 실제 `claude -p` 로 확인한 것: 두 모델 ID 호출 가능, Haiku 의 `--permission-mode acceptEdits` 파일 수정 동작. **실제 러너 종료 · 재기동은 아직 실물로 시험하지 않았다**(가짜 재시작으로만).
+
+## 8. 구독 사용량 표시 (2026-10-12 운영자 요청)
+
+텔레그램 보고마다 `── 사용량(구독) ──` 구간을 붙인다: **세션(5시간)** 사용률 · 남음 · 초기화 시각(KST) · **이번 처리에서 늘어난 %p**, **주간(7일)** 사용률 · 남음 · 초기화 시각.
+- 출처: `claude -p --output-format stream-json --verbose` 가 호출마다 내보내는 `rate_limit_event` 의 `unifiedWindows.five_hour / seven_day` (`utilization` 0~1, `resetsAt` epoch).
+  구독(claude.ai 로그인) 인증일 때만 있고, 없으면 "사용량 정보 없음"으로 표시.
+- 한계: 사용률은 **같은 계정의 다른 세션(사람이 쓰는 Claude Code 포함) 사용분을 포함한 값**이고 1%p 단위로 갱신되어, 작은 처리는 +0~1%p 로 보인다.
+  "이번 처리" 증가분은 직전 보고 이후(15분 이내, 같은 5시간 창)의 값을 기준선으로 하고 없으면 이번 처리의 첫 이벤트를 기준으로 한다.

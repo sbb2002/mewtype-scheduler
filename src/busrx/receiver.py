@@ -34,7 +34,7 @@ from src.bus.redact import redact
 from src.bus.spool import Spool
 
 from .autofix import AutoFix, FixResult
-from .claude import MODEL_ANALYSIS, MODEL_CODE, run_claude
+from .claude import MODEL_ANALYSIS, MODEL_CODE, USAGE, run_claude, usage_lines, usage_summary
 from .restart import restart_runner
 
 log = logging.getLogger("busrx")
@@ -395,6 +395,7 @@ class Receiver:
     def _analyze_and_report(self, sig: str, envs: list[dict], top: dict, st: dict) -> None:
         before = git_head(self.cfg.repo)
         result, cost, err, snap, fix = None, None, "", None, None
+        mark = USAGE.mark()  # 이 처리에서 쓴 구독 사용량을 재기 위한 기준점
         try:
             snap = self._snapshot(before)
             work = self.cfg.rx / "work" / sig
@@ -411,7 +412,11 @@ class Receiver:
         if result and result["verdict"] == "confirmed" and self.cfg.stage >= 2 and snap is not None:
             fix = self._autofix(sig, result, snap, before)
         after = git_head(self.cfg.repo)
-        self._report(sig, envs, top, st, result, cost, err, before, after, fix)
+        usage = usage_summary(mark, self.state.get("usage_last"))
+        if usage and usage.get("five") is not None:
+            self.state["usage_last"] = {"five": usage["five"], "reset5": usage["reset5"], "t": time.time()}
+            self._save()
+        self._report(sig, envs, top, st, result, cost, err, before, after, fix, usage)
 
     def _autofix(self, sig: str, analysis: dict, snap: Path, base: str) -> FixResult:
         today = self._today()
@@ -467,7 +472,7 @@ class Receiver:
         return data, cost
 
     # 보고
-    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None) -> None:
+    def _report(self, sig, envs, top, st, result, cost, err, before, after, fix=None, usage=None) -> None:
         if result is None:
             result = {"verdict": "unknown", "summary": f"분석 실패 — {err[:70]}", "cause": err,
                       "evidence": [], "proposed_action": "분석을 다시 시도하거나 로그를 직접 확인"}
@@ -497,8 +502,9 @@ class Receiver:
         ana = ["── 분석 ──", f"판정: {verdict_ko} — {result['summary']}"]
         detail = ["", "원인: " + result["cause"], "근거:"] + [f"  - {x}" for x in result["evidence"]] + \
                  ["제안(미적용): " + result["proposed_action"]]
-        short = "\n".join(head(160) + ana + patch_line)
-        full = "\n".join(head(400) + ana + detail + patch_full)
+        ublock = usage_lines(usage)
+        short = "\n".join(head(160) + ana + patch_line + ublock)
+        full = "\n".join(head(400) + ana + detail + patch_full + ublock)
         ts = E.iso(self.now())
         rid = E.new_id()
         fname = f"{ts.replace('-', '').replace(':', '')}_{sig}.md"
@@ -510,7 +516,8 @@ class Receiver:
                   "verdict": result["verdict"], "summary": result["summary"][:2000], "cause": result["cause"][:4000],
                   "evidence": result["evidence"], "proposed_action": result["proposed_action"][:2000],
                   "source_ids": [e["id"] for e in envs][:50], "stage": self.cfg.stage, "patch_summary": patch_summary,
-                  "commit_before": before, "commit_after": after, "cost_usd": cost}
+                  "commit_before": before, "commit_after": after, "cost_usd": cost,
+                  "usage": usage}
         if fix is not None:
             report.update(fix_status=fix.status, fix_branch=fix.branch, fix_version=fix.version,
                           files_changed=[{"path": p, "added": a_, "deleted": d_} for a_, d_, p in fix.files],

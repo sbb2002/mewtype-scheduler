@@ -17,6 +17,15 @@ from .receiver import STAGE_PATCH_NOTE, Config, Receiver, git_head, signature
 STUB = r'''
 import json, os, sys
 prompt = sys.stdin.read()
+_n = os.path.join(os.path.dirname(os.environ["STUB_LOG"]), "util.txt")
+try:
+    u = int(open(_n).read())
+except Exception:
+    u = 45
+u += 1
+open(_n, "w").write(str(u))
+print(json.dumps({"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": {
+    "five_hour": {"utilization": u / 100, "resetsAt": 1791784800}, "seven_day": {"utilization": 0.54, "resetsAt": 1791799200}}}}))
 log = {"argv": sys.argv[1:], "cwd": os.getcwd(), "env_has_secret": any(k in os.environ for k in
        ("GROQ_API_KEY", "YOUTUBE_API_KEY", "TELEGRAM_BOT_TOKEN", "GITHUB_TOKEN")),
        "has_dotenv": os.path.exists(".env.local"), "has_git": os.path.exists(".git"),
@@ -89,6 +98,9 @@ def main() -> int:
     check(STAGE_PATCH_NOTE in m, "텔레그램에 패치 1줄 요약(1단계: 패치 없음) 표시")
     check(f"커밋: {head} → {head} (변경 없음)" in m, "텔레그램에 커밋 이전→이후 표시")
     check("스텁 분석 한 줄" in m and "원인 확정" in m, "분석 판정 · 한 줄 요약 표시")
+    check("세션(5시간): 4" in m and "남음 5" in m and "초기화 15:00 KST" in m and "주간(7일): 54% 사용 · 남음 46%" in m,
+          "사용량: 세션(5시간) 사용·남음·초기화 + 주간 사용·남음 표시")
+    check("이번 처리 +" in m, "사용량: 이번 처리에서 쓴 세션 사용률(%p) 표시")
     rep = [json.loads(p.read_text(encoding="utf-8")) for p in sp.list("report/inbox")]
     check(len(rep) == 1 and rep[0]["commit_before"] == head and rep[0]["verdict"] == "confirmed", "report/inbox 에 mew.report/1 기록")
     check(sp.count("err/inbox") == 0 and sp.count("err/done") == 1, "처리된 봉투는 done 으로 이동")

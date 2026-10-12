@@ -20,6 +20,15 @@ from .receiver import Config, Receiver, git_head
 STUB = r'''
 import json, os, re, sys
 prompt = sys.stdin.read()
+_n = os.path.join(os.path.dirname(os.environ["STUB_LOG"]), "util.txt")
+try:
+    u = int(open(_n).read())
+except Exception:
+    u = 45
+u += 1
+open(_n, "w").write(str(u))
+print(json.dumps({"type": "rate_limit_event", "rate_limit_info": {"unifiedWindows": {
+    "five_hour": {"utilization": u / 100, "resetsAt": 1791784800}, "seven_day": {"utilization": 0.54, "resetsAt": 1791799200}}}}))
 argv = sys.argv[1:]
 purpose = (re.search(r"\[\[PURPOSE:(\w+)\]\]", prompt) or [None, "?"])[1]
 def arg(name):
@@ -165,7 +174,9 @@ def main() -> int:
     check("금지 자원 확인: 통과" in m and "Vercel" in m and "GCP" in m and "텔레그램 번호" in m, "S1 텔레그램: 금지 자원 확인 항목 명시")
     check("claude-haiku-5-5(구현)" in m and "claude-sonnet-5-5" in m, "S1 텔레그램: 모델 배정 표시")
     check("검증자: 승인" in m and "검토자: 승인" in m and "러너 재시작" in m, "S1 검증 · 검토 · 재시작 결과 표시")
+    check("세션(5시간):" in m and "주간(7일): 54% 사용 · 남음 46%" in m and "이번 처리 +" in m, "S1 사용량(세션 · 주간 · 이번 처리) 표시")
     rep = [json.loads(p.read_text(encoding="utf-8")) for p in rx.spool.list("report/inbox")][-1]
+    check(rep["usage"]["seven"] == 0.54 and rep["usage"]["calls_seen"] >= 4 and rep["usage"]["delta_five"] > 0, "S1 report 봉투에 usage 기록")
     check(rep["files_changed"][0]["path"] == "src/backend/calc.py" and rep["lines_added"] >= 1 and rep["applied"] and rep["guard_ok"]
           and rep["commit_after"] == new_head, "S1 report 봉투에 파일별 변경 · 합계 · 적용 · 가드 · 커밋 기록")
     c = calls()
