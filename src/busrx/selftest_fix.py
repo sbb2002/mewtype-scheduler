@@ -14,6 +14,7 @@ from pathlib import Path
 from src.bus import envelope as E
 
 from . import guard
+from . import pipelines as P
 from .autofix import AutoFix
 from .receiver import Config, Receiver, git_head
 
@@ -261,6 +262,59 @@ def main() -> int:
     check(res.status == "guard_fail" and any("Vercel" in g for g in res.guard_notes), "S13 긴급 프리셋에서도 금지 자원 가드는 동작")
     res, head = run_fix("forbidden", preset="urgent")
     check(res.status == "guard_fail" and any("금지 경로" in g for g in res.guard_notes), "S13 긴급 프리셋에서도 금지 경로 가드는 동작")
+    # S14~S18) 사용자 정의 파이프라인(블록 조립)대로 엔진이 도는지
+    import copy as _copy
+
+    def pl(**over):
+        b = _copy.deepcopy(P.BUILTIN["standard"]["blocks"])
+        for x in b:
+            if x["id"] in over:
+                x.update(over[x["id"]])
+        return b
+
+    sw = pl()
+    vi, ri = [x["id"] for x in sw].index("verify"), [x["id"] for x in sw].index("review")
+    sw[vi], sw[ri] = sw[ri], sw[vi]
+    check(P.save_custom(cfg, "swap", "검토 먼저", sw) == [], "S14 준비: 검토를 검증보다 먼저 놓은 파이프라인 저장")
+    res, head = run_fix("", preset="swap")
+    ids = [s["id"] for s in res.steps]
+    check(res.status == "applied" and ids.index("review") < ids.index("verify") < ids.index("commit"), "S14 엔진이 조립된 순서대로 실행(검토 → 검증 → 커밋)")
+    check(res.preset == "swap", "S14 결과에 사용한 파이프라인 id 기록")
+
+    P.save_custom(cfg, "norev", "라운드 없음", pl(implement={"params": {"max_revisions": 0}}))
+    n_before = len(calls())
+    res, head = run_fix("syntax_then_fix", preset="norev")
+    purposes = [x["purpose"] for x in calls()[n_before:]]
+    check(res.status == "tests_fail" and "revise" not in purposes and res.revisions == 0 and git_head(repo) == head and not res.head,
+          "S15 max_revisions=0: 문법 오류 첫 시도에서 수정 라운드 없이 폐기")
+    P.save_custom(cfg, "twice", "라운드 2회", pl(implement={"params": {"max_revisions": 2}}))
+    res, head = run_fix("syntax_then_fix", preset="twice")
+    check(res.status == "applied" and res.revisions == 1, "S15 max_revisions=2: 수정 라운드를 쓰면 통과(1회 사용)")
+
+    P.save_custom(cfg, "noapply", "커밋까지만", pl(apply={"enabled": False}, restart={"enabled": False}))
+    r_before = len(restarts)
+    res, head = run_fix("", preset="noapply")
+    sk = {s["id"]: s for s in res.steps}
+    check(res.status == "committed" and not res.applied and git_head(repo) == head and len(restarts) == r_before
+          and sk["apply"]["status"] == "skipped" and "파이프라인에서 끔" in sk["apply"]["note"] and sh(repo, "branch", "--list", "auto/*"),
+          "S16 적용 블록 끔: 로컬 커밋까지만, 러너 브랜치 · 재시작 불변")
+    P.save_custom(cfg, "norestart", "적용만", pl(restart={"enabled": False}))
+    res, head = run_fix("", preset="norestart")
+    check(res.status == "applied_no_restart" and res.applied and not res.restarted and len(restarts) == r_before
+          and "a + b" in (repo / "src" / "backend" / "calc.py").read_text(encoding="utf-8"), "S17 재시작 블록 끔: 적용은 하고 러너는 재시작하지 않음")
+
+    P.save_custom(cfg, "bare", "검증 없음", pl(verify={"enabled": False}, review={"enabled": False}))
+    n_before = len(calls())
+    res, head = run_fix("", preset="bare")
+    purposes = [x["purpose"] for x in calls()[n_before:]]
+    sk = {s["id"]: s for s in res.steps}
+    check(res.status == "applied" and "verify" not in purposes and "review" not in purposes and sk["guard"]["status"] == "ok" and sk["protected"]["status"] == "ok",
+          "S18 검증 · 검토를 끈 사용자 정의도 가드 · 보호 확인은 그대로")
+    res, head = run_fix("prod", preset="bare")
+    check(res.status == "guard_fail" and any("Vercel" in g for g in res.guard_notes), "S18 검증 없는 파이프라인에서도 금지 자원 가드 동작")
+    # 존재하지 않는 id 는 표준으로 안전하게
+    res, head = run_fix("", preset="없는파이프라인")
+    check(res.preset == "standard" and res.status == "applied", "S18 없는 파이프라인 id 는 표준으로 대체")
     # S12) 적용 끔
     cfg.apply_local = False
     res, head = run_fix("")

@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import guard
+from . import guard, pipelines
 from .claude import clean_env, run_claude
 
 log = logging.getLogger("busrx.autofix")
@@ -55,10 +55,7 @@ RULES_COMMON = """\
 
 
 # 파이프라인 프리셋 — 가드(금지 자원 확인)와 보호 대상 불변 확인은 모든 프리셋에서 항상 켜져 있다(잠금).
-PRESETS = {
-    "standard": {"name": "표준(충분한 검증)", "verify": True, "review": True, "core_tests": True},
-    "urgent": {"name": "긴급(최소 검증)", "verify": False, "review": False, "core_tests": False},
-}
+PRESETS = {k: {"name": v["name"]} for k, v in pipelines.BUILTIN.items()}  # 내장 프리셋 이름(조회용). 정의 · 검증은 pipelines.py
 
 
 @dataclass
@@ -83,6 +80,8 @@ class FixResult:
     models: str = ""
     cost: float = 0.0
     preset: str = "standard"
+    apply_on: bool = True        # 파이프라인의 적용 · 재시작 블록 켜짐 여부(apply_and_restart 가 참조)
+    restart_on: bool = True
     steps: list = field(default_factory=list)   # 단계별 실행 기록 [{id, name, status, sec, note, model, cost}]
 
     def step(self, sid: str, name: str, status: str, t0: float | None = None, note: str = "", model: str = "",
@@ -187,24 +186,96 @@ class AutoFix:
     def _module_of(path: str) -> str | None:
         return path[:-3].replace("/", ".") if path.endswith(".py") and not path.endswith("__init__.py") else None
 
-    def _gates(self, wt: Path, snap: Path, base: str, secrets: list[str], core: bool = True):
-        """(files, hard 위반, soft 위반, 테스트 요약, diff). hard = 경로 · 금지 자원 · 비밀값 · 디스클레이머 → 수정 라운드 없이 폐기."""
-        _git(wt, "add", "-A", "--", ".", ":!**/__pycache__/**", ":!*.pyc")  # 바이트코드는 변경으로 치지 않는다
-        files = guard.numstat(wt, base)
-        diff = _git(wt, "diff", "--cached", base)
+    # ── 블록 구현 (pipelines.BLOCKS 의 id 와 1:1) ────────
+    def _implement(self, wt: Path, spec_md: str, feedback: str = "", model: str = "", budget: float | None = None) -> float:
+        purpose = "revise" if feedback else "implement"
+        prompt = (f"[[PURPOSE:{purpose}]]\n명세서대로 현재 작업 폴더(깨끗한 git 워크트리)의 코드를 수정하라.\n\n{RULES_COMMON}\n"
+                  "- Bash 가 없다 — 명령 실행은 하지 않는다(테스트는 수신기가 따로 돌린다).\n"
+                  "- 버그를 재현하는 검사를 해당 모듈의 `if __name__ == \"__main__\":` self-test 에 추가하거나 보강한다.\n"
+                  "- 끝나면 무엇을 바꿨는지 3줄 이내로 요약한다.\n\n## 명세서\n" + spec_md)
+        if feedback:
+            prompt += "\n\n## 이전 시도에 대한 지적(반드시 반영)\n" + feedback
+        _, cost, _ = run_claude(self.cfg, model=model or self.cfg.model_code, prompt=prompt, cwd=wt,
+                                tools="Read,Grep,Glob,Edit,Write", permission_mode="acceptEdits",
+                                budget=budget if budget is not None else self.cfg.budget_code,
+                                system="너는 지정된 명세서만 구현하는 개발자다. 범위를 넓히지 않는다.")
+        return cost or 0.0
+
+    def _b_spec(self, cx) -> bool:
+        """명세서 — 수정 대상이 아니면 False(파이프라인 중단)."""
+        cfg, res, pl = self.cfg, cx.res, cx.pl
+        model = pl.param("spec", "model", cfg.model_analysis)
+        t0 = time.time()
+        spec, c, _ = run_claude(
+            cfg, model=model, cwd=cx.snap, tools="Read,Grep,Glob", schema=SPEC_SCHEMA, budget=pl.param("spec", "budget", cfg.budget_spec),
+            prompt="[[PURPOSE:spec]]\n아래 원인 분석을 바탕으로 코드 수정 명세서를 작성하라. 이 에러가 소스 코드를 고쳐서 해결되는 것이 아니거나 "
+                   "(외부 서비스의 일시 오류, 설정/운영 문제, 허용 경로 밖 수정 필요) 원인이 불확실하면 fixable=false 와 why_not 을 적어라. "
+                   "title 은 커밋 제목으로 쓸 한국어 한 줄(70자 이내), change_plan 은 파일별 구체 변경, test_plan 은 검증 방법.\n"
+                   f"{RULES_COMMON}\n\n## 원인 분석\n{json.dumps(cx.analysis, ensure_ascii=False)}",
+            system="너는 변경 명세서 작성자다. 코드를 고치지 않는다. 증명되지 않은 것은 쓰지 않는다.")
+        res.cost += c or 0.0
+        res.step("spec", "명세서(Sonnet)", "ok" if spec else "fail", t0, model=model, cost=c)
+        if not spec:
+            raise RuntimeError("명세서 결과 없음")
+        res.title = spec["title"].strip()[:100]
+        if not spec["fixable"]:
+            res.status, res.note = "not_fixable", spec["why_not"].strip()[:300] or "코드 수정 대상 아님"
+            res.steps[-1].update(status="stop", note=res.note)
+            res.guard_ok = True
+            return False
+        cx.spec_md = (f"# {res.title}\n\n## 변경 계획\n" + "\n".join(f"- `{x['file']}`: {x['change']}" for x in spec["change_plan"])
+                      + f"\n\n## 테스트 계획\n{spec['test_plan']}\n\n## 위험\n{spec['risk']}\n")
+        (cx.fixdir / "SPEC.md").write_text(cx.spec_md, encoding="utf-8")
+        return True
+
+    def _b_worktree(self, cx) -> None:
+        t0 = time.time()
+        _git(self.cfg.repo, "worktree", "add", "-q", "-b", cx.branch, str(cx.wt), cx.base)
+        cx.res.branch = cx.branch
+        cx.res.step("worktree", "수정 브랜치 · 워크트리", "ok", t0, note=cx.branch)
+
+    def _b_implement(self, cx, attempt: int) -> None:
+        cfg, res, pl = self.cfg, cx.res, cx.pl
+        model = pl.param("implement", "model", cfg.model_code)
+        t0 = time.time()
+        c = self._implement(cx.wt, cx.spec_md, cx.feedback, model, pl.param("implement", "budget"))
+        res.cost += c
+        res.step("implement" if attempt == 0 else "revise", "구현(Haiku)" if attempt == 0 else "수정 라운드(Haiku)", "ok", t0, model=model, cost=c)
+
+    def _b_guard(self, cx, attempt: int) -> None:
+        """변경 수집 + 금지 자원 · 경로 · 비밀값 · 디스클레이머 검사 (hard 위반이면 수정 라운드 없이 폐기)."""
+        res = cx.res
+        t0 = time.time()
+        _git(cx.wt, "add", "-A", "--", ".", ":!**/__pycache__/**", ":!*.pyc")  # 바이트코드는 변경으로 치지 않는다
+        files = guard.numstat(cx.wt, cx.base)
+        cx.diff = _git(cx.wt, "diff", "--cached", cx.base)
+        res.files = [tuple(f) for f in files]
+        (cx.fixdir / f"attempt{attempt}.diff").write_text(cx.diff, encoding="utf-8")
+        (cx.fixdir / "change.diff").write_text(cx.diff, encoding="utf-8")
         if not files:
-            return files, [], ["변경 사항이 없음"], "", diff
-        hard = guard.path_violations([p for _, _, p in files]) + guard.content_violations(diff, secrets)
-        soft: list[str] = []
-        py_files = [p for _, _, p in files if p.endswith(".py") and (wt / p).exists()]
-        syntax = ("import sys\nfor f in sys.argv[1:]:\n"
-                  "    compile(open(f, encoding='utf-8').read(), f, 'exec')\n")
+            cx.soft.append("변경 사항이 없음")
+            res.step("guard", "가드: 금지 자원 확인", "ok", t0, note="변경 없음")
+            return
+        cx.hard += guard.path_violations([p for _, _, p in files]) + guard.content_violations(cx.diff, cx.secrets)
+        res.step("guard", "가드: 금지 자원 확인", "fail" if cx.hard else "ok", t0, note="; ".join(cx.hard)[:250])
+
+    def _b_tests(self, cx) -> None:
+        res, pl = cx.res, cx.pl
+        core = bool(pl.param("tests", "core", True))
+        label = "문법 · self-test" + ("" if core else "(변경 모듈만)")
+        if cx.hard or not res.files:
+            res.step("tests", label, "skipped", None, note="앞 단계 실패" if cx.hard else "변경 없음")
+            return
+        wt, snap = cx.wt, cx.snap
+        py_files = [p for _, _, p in res.files if p.endswith(".py") and (wt / p).exists()]
+        syntax = ("import sys\nfor f in sys.argv[1:]:\n    compile(open(f, encoding='utf-8').read(), f, 'exec')\n")
         r = subprocess.run([self.cfg.test_python, "-B", "-c", syntax, *py_files], cwd=wt, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=180,
                            env=clean_env({"PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}))
+        soft: list[str] = []
         if r.returncode != 0:
             soft.append("문법 오류: " + (r.stdout + r.stderr)[-200:])
-        mods = sorted({m for m in (self._module_of(p) for _, _, p in files) if m} | (set(self.cfg.core_tests) if core else set()))
+        mods = sorted({m for m in (self._module_of(p) for _, _, p in res.files) if m} | (set(self.cfg.core_tests) if core else set()))
         after = self._tests(wt, mods)
         before = self._tests(snap, mods)
         for m, (ok, tail) in after.items():
@@ -213,159 +284,135 @@ class AutoFix:
         n_ok = sum(1 for ok, _ in after.values() if ok)
         n_ok_b = sum(1 for ok, _ in before.values() if ok)
         pre_fail = [m for m, (ok, _) in after.items() if not ok and not before.get(m, (True,))[0]]
-        summ = f"self-test {n_ok}/{len(after)} 통과 (변경 전 {n_ok_b}/{len(before)})" +                (f" · 변경 무관 기존 실패 {len(pre_fail)}건" if pre_fail else "")
-        return files, hard, soft, summ, diff
+        res.tests = f"self-test {n_ok}/{len(after)} 통과 (변경 전 {n_ok_b}/{len(before)})" + (f" · 변경 무관 기존 실패 {len(pre_fail)}건" if pre_fail else "")
+        cx.soft += soft
+        res.step("tests", label, "fail" if soft else "ok", None, note="; ".join(soft) if soft else res.tests)
 
-    def _implement(self, wt: Path, spec_md: str, feedback: str = "") -> float:
-        purpose = "revise" if feedback else "implement"
-        prompt = (f"[[PURPOSE:{purpose}]]\n명세서대로 현재 작업 폴더(깨끗한 git 워크트리)의 코드를 수정하라.\n\n{RULES_COMMON}\n"
-                  "- Bash 가 없다 — 명령 실행은 하지 않는다(테스트는 수신기가 따로 돌린다).\n"
-                  "- 버그를 재현하는 검사를 해당 모듈의 `if __name__ == \"__main__\":` self-test 에 추가하거나 보강한다.\n"
-                  "- 끝나면 무엇을 바꿨는지 3줄 이내로 요약한다.\n\n## 명세서\n" + spec_md)
-        if feedback:
-            prompt += "\n\n## 이전 시도에 대한 지적(반드시 반영)\n" + feedback
-        _, cost, _ = run_claude(self.cfg, model=self.cfg.model_code, prompt=prompt, cwd=wt,
-                                tools="Read,Grep,Glob,Edit,Write", permission_mode="acceptEdits",
-                                budget=self.cfg.budget_code, system="너는 지정된 명세서만 구현하는 개발자다. 범위를 넓히지 않는다.")
-        return cost or 0.0
+    def _b_check(self, cx, bid: str, enabled: bool) -> None:
+        """검증(verify) / 독립 검토(review) — 읽기 전용 Sonnet 호출. 켜짐 여부 · 모델 · 예산은 파이프라인 설정."""
+        cfg, res, pl = self.cfg, cx.res, cx.pl
+        name = pipelines.BLOCKS[bid]["name"]
+        if cx.hard or cx.soft:
+            res.step(bid, name, "skipped", None, note="앞 단계 실패")
+            return
+        if not enabled:
+            setattr(res, "verify" if bid == "verify" else "review", f"건너뜀({pl.name})")
+            res.step(bid, name, "skipped", None, note=f"{pl.name} 파이프라인에서 끔")
+            return
+        model = pl.param(bid, "model", cfg.model_analysis)
+        budget = pl.param(bid, "budget", cfg.budget_verify if bid == "verify" else cfg.budget_review)
+        common = (f"{RULES_COMMON}\n- 변경 diff: {cx.fixdir / 'change.diff'} (읽어라). 현재 작업 폴더는 수정이 반영된 워크트리다.\n"
+                  f"- 기계 검사 결과: {res.tests}\n\n## 원인 분석\n{json.dumps(cx.analysis, ensure_ascii=False)}\n")
+        t0 = time.time()
+        if bid == "verify":
+            v, c, _ = run_claude(cfg, model=model, cwd=cx.wt, tools="Read,Grep,Glob", add_dirs=(cx.fixdir,), schema=VERIFY_SCHEMA, budget=budget,
+                                 prompt="[[PURPOSE:verify]]\n수정이 아래 명세서와 원인 분석에 맞는지 검증하라. 명세서에 없는 변경 · 누락 · "
+                                        "회귀 위험이 있으면 approve=false 와 issues 에 근거(파일:줄)를 적어라.\n" + common + "\n## 명세서\n" + cx.spec_md,
+                                 system="너는 코드 검증자다. 증명되지 않은 우려는 issues 에 '추정'이라고 표시한다.")
+            res.cost += c or 0.0
+            res.verify = ("승인" if v and v["approve"] else "반려") + (f"({v['summary'][:60]})" if v else "")
+            res.step("verify", name, "ok" if v and v["approve"] else "fail", t0, model=model, cost=c, note=(v or {}).get("summary", ""))
+            if not v or not v["approve"]:
+                cx.judged += [f"검증자: {x}" for x in (v or {}).get("issues", ["결과 없음"])]
+        else:
+            r, c, _ = run_claude(cfg, model=model, cwd=cx.wt, tools="Read,Grep,Glob", add_dirs=(cx.fixdir,), schema=REVIEW_SCHEMA, budget=budget,
+                                 prompt="[[PURPOSE:review]]\n(독립 검토) 아래 원인 분석을 근거로 이 diff 만 보고 적대적으로 검토하라: 원인과 무관한 변경, "
+                                        "부작용, 운영 자원(원격 main/data, Vercel, GCP URL, 운영 텔레그램 번호, GitHub 저장소) 접촉 가능성, 기존 동작 훼손.\n" + common,
+                                 system="너는 독립 검토자다. 이전 단계의 판단에 동조하지 말고 스스로 diff 를 읽고 판단한다.")
+            res.cost += c or 0.0
+            res.review = ("승인" if r and r["approve"] else "반려") + (f"({r['summary'][:60]})" if r else "")
+            res.step("review", name, "ok" if r and r["approve"] else "fail", t0, model=model, cost=c, note=(r or {}).get("summary", ""))
+            if not r or not r["approve"]:
+                cx.judged += [f"검토자: {x}" for x in (r or {}).get("concerns", ["결과 없음"])]
+            if r and r.get("touches_prod_resources"):
+                cx.hard.append("검토자: 운영 자원 접촉 가능성 지적")
 
-    def _verify_calls(self, wt: Path, fixdir: Path, analysis: dict, spec_md: str, diff: str, tests: str,
-                      do_verify: bool = True, do_review: bool = True):
-        (fixdir / "change.diff").write_text(diff, encoding="utf-8")
-        common = (f"{RULES_COMMON}\n- 변경 diff: {fixdir / 'change.diff'} (읽어라). 현재 작업 폴더는 수정이 반영된 워크트리다.\n"
-                  f"- 기계 검사 결과: {tests}\n\n## 원인 분석\n{json.dumps(analysis, ensure_ascii=False)}\n")
-        v, c1 = None, 0.0
-        if do_verify:
-          v, c1, _ = run_claude(self.cfg, model=self.cfg.model_analysis, cwd=wt, tools="Read,Grep,Glob",
-                              add_dirs=(fixdir,), schema=VERIFY_SCHEMA, budget=self.cfg.budget_verify,
-                              prompt="[[PURPOSE:verify]]\n수정이 아래 명세서와 원인 분석에 맞는지 검증하라. 명세서에 없는 변경 · 누락 · "
-                                     "회귀 위험이 있으면 approve=false 와 issues 에 근거(파일:줄)를 적어라.\n" + common + "\n## 명세서\n" + spec_md,
-                              system="너는 코드 검증자다. 증명되지 않은 우려는 issues 에 '추정'이라고 표시한다.")
-        r, c2 = None, 0.0
-        if do_review:
-          r, c2, _ = run_claude(self.cfg, model=self.cfg.model_analysis, cwd=wt, tools="Read,Grep,Glob",
-                              add_dirs=(fixdir,), schema=REVIEW_SCHEMA, budget=self.cfg.budget_review,
-                              prompt="[[PURPOSE:review]]\n(독립 검토) 아래 원인 분석을 근거로 이 diff 만 보고 적대적으로 검토하라: 원인과 무관한 변경, "
-                                     "부작용, 운영 자원(원격 main/data, Vercel, GCP URL, 운영 텔레그램 번호, GitHub 저장소) 접촉 가능성, 기존 동작 훼손.\n"
-                                     + common,
-                              system="너는 독립 검토자다. 이전 단계의 판단에 동조하지 말고 스스로 diff 를 읽고 판단한다.")
-        return v, r, (c1 or 0.0) + (c2 or 0.0)
+    def _b_commit(self, cx) -> None:
+        cfg, res = self.cfg, cx.res
+        msg = (f"fix({res.version}): {res.title or '자동 수정'}\n\n원인: {cx.analysis.get('cause', '')[:300]}\n"
+               f"분석: {cx.sig}\n작성: {cfg.model_code} · 명세/검증/검토: {cfg.model_analysis}\n파이프라인: {cx.pl.name}\n\n"
+               "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
+        (cx.fixdir / "commit_msg.txt").write_text(msg, encoding="utf-8")
+        t0 = time.time()
+        _git(cx.wt, "commit", "-q", "-F", str(cx.fixdir / "commit_msg.txt"))  # Haiku 는 git 을 못 쓴다 — 수신기가 직접 커밋
+        res.head = _git(cx.wt, "rev-parse", "--short", "HEAD").strip()
+        res.status = "committed"
+        res.step("commit", "로컬 브랜치 커밋", "ok", t0, note=f"{res.base} → {res.head}")
 
-    # ── 본 파이프라인 ──────────────────────────────
+    def _b_protected(self, cx) -> bool:
+        """보호 대상(main · data · 원격 ref · 원격 설정 · 환경 파일) 불변 확인. 위반이면 False."""
+        res = cx.res
+        t0 = time.time()
+        post = guard.snapshot_diff(cx.before_snap, guard.protected_snapshot(self.cfg.repo))
+        res.step("protected", "보호 대상 불변 확인", "fail" if post else "ok", t0, note="; ".join(post))
+        if post:
+            res.status, res.guard_notes, res.guard_ok = "guard_fail", post, False
+            return False
+        res.guard_ok = True
+        res.guard_notes = []
+        return True
+
+    # ── 본 파이프라인 (블록 엔진) ───────────────────
     def run(self, sig: str, analysis: dict, snap: Path, base: str, seq: int, preset: str = "standard") -> FixResult:
         cfg = self.cfg
-        res = FixResult(base=base, seq=seq, version=f"v4.3.{seq}", preset=preset if preset in PRESETS else "standard",
-                        models=f"{cfg.model_code}(구현) · {cfg.model_analysis}(명세·검증·검토)")
+        pl = pipelines.resolve(cfg, preset)
+        res = FixResult(base=base, seq=seq, version=f"v4.3.{seq}", preset=pl.id,
+                        models=f"{pl.param('implement', 'model', cfg.model_code)}(구현) · {pl.param('verify', 'model', cfg.model_analysis)}(명세·검증·검토)",
+                        apply_on=pl.enabled("apply"), restart_on=pl.enabled("restart"))
         fixdir = cfg.rx / "fix" / sig
         fixdir.mkdir(parents=True, exist_ok=True)
-        before_snap = guard.protected_snapshot(cfg.repo)
-        secrets = guard.secret_values(cfg.repo / ".env.local")
         wt = fixdir / f"wt{seq}"
         branch = f"auto/{sig}-{seq}"
+        before_snap = guard.protected_snapshot(cfg.repo)
+
+        class Cx:  # 블록들이 공유하는 실행 문맥
+            pass
+
+        cx = Cx()
+        cx.__dict__.update(sig=sig, analysis=analysis, snap=snap, base=base, wt=wt, fixdir=fixdir, branch=branch, pl=pl, res=res,
+                           secrets=guard.secret_values(cfg.repo / ".env.local"), before_snap=before_snap, spec_md="", feedback="",
+                           diff="", hard=[], soft=[], judged=[])
         try:
-            # 1) 명세서 (Sonnet, 읽기 전용)
-            t0 = time.time()
-            spec, c, _ = run_claude(
-                cfg, model=cfg.model_analysis, cwd=snap, tools="Read,Grep,Glob", schema=SPEC_SCHEMA, budget=cfg.budget_spec,
-                prompt="[[PURPOSE:spec]]\n아래 원인 분석을 바탕으로 코드 수정 명세서를 작성하라. 이 에러가 소스 코드를 고쳐서 해결되는 것이 아니거나 "
-                       "(외부 서비스의 일시 오류, 설정/운영 문제, 허용 경로 밖 수정 필요) 원인이 불확실하면 fixable=false 와 why_not 을 적어라. "
-                       "title 은 커밋 제목으로 쓸 한국어 한 줄(70자 이내), change_plan 은 파일별 구체 변경, test_plan 은 검증 방법.\n"
-                       f"{RULES_COMMON}\n\n## 원인 분석\n{json.dumps(analysis, ensure_ascii=False)}",
-                system="너는 변경 명세서 작성자다. 코드를 고치지 않는다. 증명되지 않은 것은 쓰지 않는다.")
-            res.cost += c or 0.0
-            res.step("spec", "명세서(Sonnet)", "ok" if spec else "fail", t0, model=cfg.model_analysis, cost=c)
-            if not spec:
-                raise RuntimeError("명세서 결과 없음")
-            res.title = spec["title"].strip()[:100]
-            if not spec["fixable"]:
-                res.status, res.note = "not_fixable", spec["why_not"].strip()[:300] or "코드 수정 대상 아님"
-                res.steps[-1].update(status="stop", note=res.note)
-                res.guard_ok = True
-                return res
-            spec_md = (f"# {res.title}\n\n## 변경 계획\n" + "\n".join(f"- `{x['file']}`: {x['change']}" for x in spec["change_plan"])
-                       + f"\n\n## 테스트 계획\n{spec['test_plan']}\n\n## 위험\n{spec['risk']}\n")
-            (fixdir / "SPEC.md").write_text(spec_md, encoding="utf-8")
-
-            # 2) 워크트리 + 구현 (Haiku) + 기계 검사 + 검증 + 검토 (+ 1회 수정 라운드)
-            t0 = time.time()
-            _git(cfg.repo, "worktree", "add", "-q", "-b", branch, str(wt), base)
-            res.branch = branch
-            res.step("worktree", "수정 브랜치 · 워크트리", "ok", t0, note=branch)
-            pr = PRESETS[res.preset]
-            feedback = ""
-            for attempt in range(2):
-                t0 = time.time()
-                c_i = self._implement(wt, spec_md, feedback)
-                res.cost += c_i
-                res.step("implement" if attempt == 0 else "revise", "구현(Haiku)" if attempt == 0 else "수정 라운드(Haiku)", "ok", t0,
-                         model=cfg.model_code, cost=c_i)
-                t0 = time.time()
-                files, hard, soft, tests, diff = self._gates(wt, snap, base, secrets, core=pr["core_tests"])
-                res.files, res.tests = [tuple(f) for f in files], tests
-                (fixdir / f"attempt{attempt}.diff").write_text(diff, encoding="utf-8")
-                res.step("guard", "가드: 금지 자원 확인", "fail" if hard else "ok", t0, note="; ".join(hard)[:250])
-                res.step("tests", "문법 · self-test" + ("" if pr["core_tests"] else "(변경 모듈만)"),
-                         "skipped" if hard else ("fail" if soft else "ok"), None, note=(tests if not soft else "; ".join(soft)))
-                judged = []
-                if not hard and not soft:
-                    t1 = time.time()
-                    v = r = None
-                    if pr["verify"] or pr["review"]:
-                        v, r, c = self._verify_calls(wt, fixdir, analysis, spec_md, diff, tests, do_verify=pr["verify"], do_review=pr["review"])
-                        res.cost += c
-                    if pr["verify"]:
-                        res.verify = ("승인" if v and v["approve"] else "반려") + (f"({v['summary'][:60]})" if v else "")
-                        res.step("verify", "검증(Sonnet)", "ok" if v and v["approve"] else "fail", t1, model=cfg.model_analysis,
-                                 note=(v or {}).get("summary", ""))
-                        if not v or not v["approve"]:
-                            judged += [f"검증자: {x}" for x in (v or {}).get("issues", ["결과 없음"])]
-                    else:
-                        res.verify = "건너뜀(프리셋)"
-                        res.step("verify", "검증(Sonnet)", "skipped", None, note=f"{pr['name']} 프리셋")
-                    if pr["review"]:
-                        res.review = ("승인" if r and r["approve"] else "반려") + (f"({r['summary'][:60]})" if r else "")
-                        res.step("review", "독립 검토(Sonnet)", "ok" if r and r["approve"] else "fail", t1, model=cfg.model_analysis,
-                                 note=(r or {}).get("summary", ""))
-                        if not r or not r["approve"]:
-                            judged += [f"검토자: {x}" for x in (r or {}).get("concerns", ["결과 없음"])]
-                        if r and r.get("touches_prod_resources"):
-                            hard = hard + ["검토자: 운영 자원 접촉 가능성 지적"]
-                    else:
-                        res.review = "건너뜀(프리셋)"
-                        res.step("review", "독립 검토(Sonnet)", "skipped", None, note=f"{pr['name']} 프리셋")
-                if not hard and not soft and not judged:
+            # 1) 사전 블록: 명세서 → 워크트리
+            for b in pl.phase("pre"):
+                if b["id"] == "spec":
+                    if not self._b_spec(cx):
+                        return res
+                elif b["id"] == "worktree":
+                    self._b_worktree(cx)
+            # 2) 반복 블록: 구현 → 가드 → 테스트 → (검증 · 독립 검토 — 파이프라인에 정해진 순서). 문제가 있으면 수정 라운드로 되돌아간다
+            cycle = pl.phase("cycle")
+            max_rev = int(pl.param("implement", "max_revisions", 1))
+            for attempt in range(max_rev + 1):
+                cx.hard, cx.soft, cx.judged = [], [], []
+                for b in cycle:
+                    bid = b["id"]
+                    if bid == "implement":
+                        self._b_implement(cx, attempt)
+                    elif bid == "guard":
+                        self._b_guard(cx, attempt)
+                    elif bid == "tests":
+                        self._b_tests(cx)
+                    elif bid in ("verify", "review"):
+                        self._b_check(cx, bid, b["enabled"])
+                if not cx.hard and not cx.soft and not cx.judged:
                     break
-                if hard or attempt == 1:  # 금지 자원 위반은 수정 라운드 없이 폐기, 일반 문제는 1회까지 되돌려 수정
-                    res.guard_notes = hard + soft + judged
-                    res.guard_ok = not hard
-                    res.status = "guard_fail" if hard else ("tests_fail" if soft else "rejected")
+                if cx.hard or attempt == max_rev:  # 금지 자원 위반은 수정 라운드 없이 폐기, 일반 문제는 라운드 수만큼 되돌려 수정
+                    res.guard_notes = cx.hard + cx.soft + cx.judged
+                    res.guard_ok = not cx.hard
+                    res.status = "guard_fail" if cx.hard else ("tests_fail" if cx.soft else "rejected")
                     res.revisions = attempt
-                    (fixdir / "failed.diff").write_text(diff, encoding="utf-8")
+                    (fixdir / "failed.diff").write_text(cx.diff, encoding="utf-8")
                     return res
-                feedback = "\n".join(f"- {p}" for p in soft + judged)
-                res.revisions = 1
-            if not res.title:
-                res.title = "자동 수정"
-
-            # 3) 로컬 브랜치 커밋 (수신기가 직접 — Haiku 는 git 을 못 쓴다)
-            msg = (f"fix({res.version}): {res.title}\n\n원인: {analysis.get('cause', '')[:300]}\n"
-                   f"분석: {sig}\n작성: {cfg.model_code} · 명세/검증/검토: {cfg.model_analysis}\n\n"
-                   "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
-            (fixdir / "commit_msg.txt").write_text(msg, encoding="utf-8")
-            t0 = time.time()
-            _git(wt, "commit", "-q", "-F", str(fixdir / "commit_msg.txt"))
-            res.head = _git(wt, "rev-parse", "--short", "HEAD").strip()
-            res.status = "committed"
-            res.step("commit", "로컬 브랜치 커밋", "ok", t0, note=f"{res.base} → {res.head}")
-            # 4) 보호 대상 불변 확인
-            t0 = time.time()
-            post = guard.snapshot_diff(before_snap, guard.protected_snapshot(cfg.repo))
-            res.step("protected", "보호 대상 불변 확인", "fail" if post else "ok", t0, note="; ".join(post))
-            if post:
-                res.status, res.guard_notes, res.guard_ok = "guard_fail", post, False
-                return res
-            res.guard_ok = True
-            res.guard_notes = []
+                cx.feedback = "\n".join(f"- {p}" for p in cx.soft + cx.judged)
+                res.revisions = attempt + 1
+            # 3) 사후 블록: 로컬 커밋 → 보호 대상 불변 확인 (적용 · 재시작은 apply_and_restart 가 같은 파이프라인 설정으로 이어서 수행)
+            for b in pl.phase("post"):
+                if b["id"] == "commit":
+                    self._b_commit(cx)
+                elif b["id"] == "protected":
+                    if not self._b_protected(cx):
+                        return res
             return res
         except Exception as e:  # noqa: BLE001
             log.exception("자동 수정 실패: %s", sig)
@@ -390,6 +437,10 @@ class AutoFix:
     def apply_and_restart(self, res: FixResult) -> FixResult:
         cfg, repo = self.cfg, self.cfg.repo
         if res.status != "committed":
+            return res
+        if not res.apply_on:
+            res.note = "로컬 브랜치에만 커밋됨 (파이프라인에서 '적용' 블록을 끔)"
+            res.step("apply", "러너 브랜치에 적용", "skipped", None, note="파이프라인에서 끔")
             return res
         if not cfg.apply_local:
             res.note = "로컬 브랜치에만 커밋됨 (RX_APPLY_LOCAL=0 — 러너에 적용하지 않음)"
@@ -419,6 +470,10 @@ class AutoFix:
             return res
         res.applied = True
         res.step("apply", "러너 브랜치에 적용", "ok", None, note=f"{cfg.apply_branch} ff-only")
+        if not res.restart_on:  # 적용만 하고 러너는 재시작하지 않음(다음에 운영자가 재시작할 때 반영)
+            res.step("restart", "러너 재시작 + 건강 확인", "skipped", None, note="파이프라인에서 끔")
+            res.status, res.note = "applied_no_restart", "로컬 브랜치에 적용됨 · 파이프라인에서 재시작을 끔(다음 러너 재시작 때 반영)"
+            return res
         t0 = time.time()
         ok, note = self.restarter(cfg) if self.restarter else (False, "재시작 함수 없음")
         res.step("restart", "러너 재시작 + 건강 확인", "skipped" if "생략" in note else ("ok" if ok else "fail"), t0, note=note)

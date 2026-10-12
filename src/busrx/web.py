@@ -25,7 +25,7 @@ import flask
 
 from src.bus import envelope as E
 
-from .autofix import PRESETS
+from . import pipelines
 from .policy import ACTIONS, SEVERITIES, defaults
 from .status import build_status, usage_view
 
@@ -228,7 +228,7 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
     @app.get("/api/policy")
     def policy_get():
         return flask.jsonify(policy=rx.policy.all(), defaults=defaults(cfg), severities=list(SEVERITIES), actions=ACTIONS,
-                             presets={k: v["name"] for k, v in PRESETS.items()}, stage=cfg.stage)
+                             presets={k: v["name"] for k, v in pipelines.presets_view(cfg).items()}, stage=cfg.stage)
 
     @app.get("/api/runs")
     def runs():

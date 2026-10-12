@@ -15,7 +15,7 @@ from pathlib import Path
 
 from src.bus import envelope as E
 
-from .autofix import PRESETS
+from . import pipelines
 
 SEVERITIES = E.SEVERITIES  # CRITICAL ERROR WARN INFO DEBUG TRACE
 ACTIONS = {"off": "끔(기록만)", "analyze": "분석만", "fix": "수정까지"}
@@ -29,10 +29,11 @@ def defaults(cfg) -> dict:
     return d
 
 
-def validate(raw: dict, base: dict) -> tuple[dict, list[str]]:
+def validate(raw: dict, base: dict, presets=None) -> tuple[dict, list[str]]:
     """raw(사용자 입력)를 base 위에 덮어 검증. (정리된 전체 정책, 오류 목록)"""
     out = {s: dict(v) for s, v in base.items()}
     errs: list[str] = []
+    presets = list(presets) if presets is not None else list(pipelines.BUILTIN)
     if not isinstance(raw, dict):
         return out, ["정책이 객체가 아님"]
     for sev, row in raw.items():
@@ -54,8 +55,8 @@ def validate(raw: dict, base: dict) -> tuple[dict, list[str]]:
             else:
                 cur["action"] = row["action"]
         if "preset" in row:
-            if row["preset"] not in PRESETS:
-                errs.append(f"{sev}: preset 은 {list(PRESETS)} 중 하나")
+            if row["preset"] not in presets:
+                errs.append(f"{sev}: preset 은 {presets} 중 하나")
             else:
                 cur["preset"] = row["preset"]
         if "cooldown_sec" in row:
@@ -88,7 +89,7 @@ class Policy:
                     data = json.loads(self.path.read_text(encoding="utf-8"))
                 except Exception:
                     data = None
-            pol, errs = validate((data or {}).get("levels", {}) if isinstance(data, dict) else {}, base)
+            pol, errs = validate((data or {}).get("levels", {}) if isinstance(data, dict) else {}, base, pipelines.all_pipelines(self.cfg))
             if errs:  # 손상 · 부분 오류가 있으면 오류 항목만 기본값 유지(validate 가 걸러냄)
                 pass
             self._cache, self._mtime = pol, m
@@ -98,7 +99,7 @@ class Policy:
         return self.all().get(sev) or defaults(self.cfg)["TRACE"]
 
     def save(self, raw: dict, who: str = "dashboard") -> tuple[dict, list[str]]:
-        new, errs = validate(raw, self.all())
+        new, errs = validate(raw, self.all(), pipelines.all_pipelines(self.cfg))
         if errs:
             return self.all(), errs
         old = self.all()
