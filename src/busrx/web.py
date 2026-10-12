@@ -230,6 +230,16 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         return flask.jsonify(policy=rx.policy.all(), defaults=defaults(cfg), severities=list(SEVERITIES), actions=ACTIONS,
                              presets={k: v["name"] for k, v in pipelines.presets_view(cfg).items()}, stage=cfg.stage)
 
+    @app.get("/api/pipelines")
+    def pipelines_get():
+        cat = {k: {"name": v["name"], "phase": v["phase"], "locked": v["locked"], "needs": v["needs"]} for k, v in pipelines.BLOCKS.items()}
+        rules = {b: {k: (list(r) if isinstance(r, tuple) else r) for k, r in rs.items()} for b, rs in pipelines.PARAM_RULES.items()}
+        used: dict[str, list[str]] = {}
+        for sev, p in rx.policy.all().items():
+            used.setdefault(p["preset"], []).append(sev)
+        return flask.jsonify(pipelines=pipelines.all_pipelines(cfg), catalog=cat, locked_order=pipelines.LOCKED_ORDER,
+                             param_rules=rules, models=list(pipelines.ALLOWED_MODELS), used_by=used)
+
     @app.get("/api/runs")
     def runs():
         out = []
@@ -240,6 +250,43 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         return flask.jsonify(runs=out)
 
     # ── 쓰기 API (CSRF 필수) ─────────────────────────
+    @app.post("/api/pipelines/validate")
+    def pipelines_validate():
+        d = flask.request.get_json(silent=True) or {}
+        return flask.jsonify(errors=pipelines.validate({"id": "x", "blocks": d.get("blocks")}))
+
+    @app.post("/api/pipelines")
+    def pipelines_save():
+        d = flask.request.get_json(silent=True) or {}
+        errs = pipelines.save_custom(cfg, str(d.get("id") or ""), str(d.get("name") or ""), d.get("blocks"))
+        if errs:
+            return flask.jsonify(ok=False, errors=errs), 400
+        return flask.jsonify(ok=True)
+
+    @app.post("/api/pipelines/delete")
+    def pipelines_delete():
+        pid = str((flask.request.get_json(silent=True) or {}).get("id") or "")
+        users = [s for s, p in rx.policy.all().items() if p["preset"] == pid]
+        if users:
+            return flask.jsonify(ok=False, errors=[f"정책이 사용 중이라 삭제할 수 없음: {', '.join(users)} — 제어 탭에서 다른 파이프라인으로 바꾼 뒤 삭제하세요"]), 409
+        if not pipelines.delete_custom(cfg, pid):
+            return flask.jsonify(ok=False, errors=["삭제할 수 없음(내장 프리셋이거나 존재하지 않음)"]), 400
+        return flask.jsonify(ok=True)
+
+    @app.post("/api/reset")
+    def reset_settings():
+        """what = policy | pipelines | all — 에러 레벨별 정책 / 사용자 정의 파이프라인 / 둘 다 원래대로."""
+        what = (flask.request.get_json(silent=True) or {}).get("what")
+        if what not in ("policy", "pipelines", "all"):
+            return flask.jsonify(ok=False, errors=["what 은 policy | pipelines | all"]), 400
+        out = {}
+        if what in ("policy", "all"):
+            rx.policy.reset("dashboard")
+            out["policy_reset"] = True
+        if what in ("pipelines", "all"):
+            out["pipelines_removed"] = pipelines.reset_custom(cfg, "dashboard")
+        return flask.jsonify(ok=True, policy=rx.policy.all(), **out)
+
     @app.post("/api/policy")
     def policy_set():
         d = flask.request.get_json(silent=True) or {}

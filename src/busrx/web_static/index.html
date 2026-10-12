@@ -54,6 +54,10 @@
   .blk b { font-size:13px; } .blk span { font-size:11px; color:var(--muted); }
   .blk.st-ok { border-color:var(--ok); } .blk.st-fail { border-color:var(--bad); background:#2a1414; }
   .blk.st-skipped { border-style:dashed; opacity:.6; } .blk.st-stop, .blk.st-held { border-color:var(--warn); }
+  input[type=text] { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.4rem .6rem; min-height:40px; font-size:14px; flex:1; min-width:8rem; }
+  .blk.sel { box-shadow:0 0 0 2px var(--accent); } .blk.off { opacity:.45; border-style:dashed; } .blk.lock { border-color:#5b5b5b; }
+  .chip-add { border-style:dashed; color:var(--muted); min-height:34px; padding:.2rem .6rem; }
+  .err { color:var(--bad); } .good { color:var(--ok); } .wr { color:var(--warn); }
   .run-note { font-size:12px; color:var(--muted); min-height:1.2em; }
   input[type=number] { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.4rem; width:5rem; min-height:40px; }
   @media (min-width: 720px) { nav { position:static; border:1px solid var(--border); border-radius:10px; margin-bottom:.8rem; } body { padding-bottom:var(--pad); } }
@@ -73,7 +77,7 @@
 
 <nav id="tabs">
   <button data-t="status" class="on">현황</button><button data-t="errors">에러</button><button data-t="reports">보고서</button>
-  <button data-t="fixes">수정</button><button data-t="control">제어</button>
+  <button data-t="fixes">수정</button><button data-t="pipelines">조립</button><button data-t="control">제어</button>
 </nav>
 
 <section id="status" class="on"><div class="grid" id="st-grid"></div></section>
@@ -85,6 +89,19 @@
 </section>
 <section id="reports"><div id="rep-list"></div></section>
 <section id="fixes"><h2>파이프라인 실행 기록</h2><div id="run-list"></div><h2>자동 수정 이력</h2><div id="fix-list"></div></section>
+<section id="pipelines">
+  <div class="card"><b>파이프라인 조립</b>
+    <p class="muted small">블록을 끼워 맞춰 자동 수정 파이프라인을 만듭니다. 🔒 잠금 블록(가드 · 보호 확인 등)은 빼거나 끄거나 순서를 바꿀 수 없습니다. 저장한 파이프라인은 <b>제어</b> 탭의 에러 레벨별 정책에서 고를 수 있습니다.</p>
+    <div class="row"><select id="pl-select"></select><button id="pl-new">표준에서 새로 만들기</button><button id="pl-clone">복제</button><button id="pl-del" class="bad">삭제</button></div></div>
+  <div class="card" id="pl-editor">
+    <div class="row"><input type="text" id="pl-name" placeholder="이름 (예: 신중 — 검토 먼저)" maxlength="40"><input type="text" id="pl-id" placeholder="id (소문자·숫자·-_)" maxlength="32"><span id="pl-badge"></span></div>
+    <div class="muted small" id="pl-ro" style="margin:.4rem 0"></div>
+    <div class="chain" id="pl-chain"></div>
+    <div class="row small" id="pl-palette"></div>
+    <div class="card" id="pl-detail" style="background:var(--bg3)"></div>
+    <div id="pl-msg" class="small"></div>
+    <div class="row"><button id="pl-save" class="pri">저장</button><button id="pl-revert">편집 취소(원래대로)</button><span class="grow"></span><button id="pl-reset-all" class="bad">사용자 정의 전부 삭제(내장만 남김)</button><span class="muted small" id="pl-note"></span></div></div>
+</section>
 <section id="control">
   <div class="card"><b>수신기 분석</b><p class="muted small">정지하면 새 ERROR 이상 에러를 분석·수정하지 않고 기록만 합니다(<code>rx/PAUSE</code>).</p>
     <div class="row"><span id="c-rx"></span><span class="grow"></span><button id="b-rx"></button></div></div>
@@ -102,6 +119,9 @@
     <table><thead><tr><th>레벨</th><th>기록</th><th>동작</th><th>파이프라인</th><th>쿨다운(분)</th></tr></thead><tbody id="pol-body"></tbody></table>
     <div id="pol-warn" class="small" style="color:var(--warn)"></div>
     <div class="row"><button id="pol-save" class="pri">정책 저장</button><button id="pol-reset">기본값으로</button><span class="grow"></span><span class="muted small" id="pol-note"></span></div></div>
+  <div class="card"><b>자동제어 설정 초기화</b>
+    <p class="muted small">에러 레벨별 정책을 기본값(CRITICAL 긴급 수정 · ERROR 표준 수정 · WARN 이하 끔)으로 되돌리고, 사용자 정의 파이프라인을 모두 지워 내장 프리셋(표준 · 긴급)만 남깁니다. 수신기 정지(PAUSE) · 발신 레벨 같은 일시 설정은 건드리지 않습니다.</p>
+    <div class="row"><button id="reset-all" class="bad">정책 + 파이프라인 전체 초기화</button><span class="muted small" id="reset-note"></span></div></div>
   <div class="card"><b>최근 제어 결과</b><div id="ctl-list" class="small muted">-</div></div>
 </section>
 
@@ -277,8 +297,84 @@ async function loadRuns() { const j = await api('/api/runs'); const l = $('#run-
     const note = el('div', 'run-note', '블록을 누르면 단계 결과가 표시됩니다.'); c.append(chain(r.steps || [], note), note);
     if (r.report) { const b = el('button', '', '보고서'); b.onclick = () => openReport(r.report); c.append(b); } l.append(c); }); }
 
+/* 파이프라인 조립 (레고식) */
+const CANON = ['spec', 'worktree', 'implement', 'guard', 'tests', 'verify', 'review', 'commit', 'protected', 'apply', 'restart'];
+let PLS = {}, CAT = {}, RULES = {}, MODELS = [], USED = {}, ED = null, SELIDX = -1, PLSEL = 'standard', PL_ERRS = [], VTIMER = null;
+const clone = o => JSON.parse(JSON.stringify(o));
+async function loadPipelines() { const j = await api('/api/pipelines'); PLS = j.pipelines; CAT = j.catalog; RULES = j.param_rules; MODELS = j.models; USED = j.used_by;
+  const s = $('#pl-select'); s.textContent = ''; Object.values(PLS).forEach(p => { const o = el('option', '', p.name + (p.builtin ? ' [내장]' : '') + (USED[p.id] ? ` · 정책 ${USED[p.id].join('/')}` : '')); o.value = p.id; s.append(o); });
+  selectPl(PLSEL in PLS ? PLSEL : 'standard'); }
+function selectPl(id) { PLSEL = id; $('#pl-select').value = id; const p = PLS[id]; ED = { id: p.id, name: p.name, builtin: !!p.builtin, isNew: false, blocks: clone(p.blocks) }; SELIDX = -1; renderEditor(); }
+$('#pl-select').onchange = e => selectPl(e.target.value);
+$('#pl-new').onclick = () => { ED = { id: '', name: '', builtin: false, isNew: true, blocks: clone(PLS.standard.blocks) }; SELIDX = -1; renderEditor(); };
+$('#pl-clone').onclick = () => { ED = { id: '', name: (ED.name || '') + ' 복사', builtin: false, isNew: true, blocks: clone(ED.blocks) }; SELIDX = -1; renderEditor(); };
+$('#pl-del').onclick = async () => { if (ED.builtin || ED.isNew) return; if (!confirm(`'${ED.name}' 파이프라인을 삭제할까요?`)) return;
+  try { await api('/api/pipelines/delete', { id: ED.id }); toast('삭제됨'); PLSEL = 'standard'; loadPipelines(); } catch (e) { toast('삭제 실패: ' + e.message); } };
+$('#pl-name').oninput = e => { ED.name = e.target.value; scheduleValidate(); };
+$('#pl-id').oninput = e => { ED.id = e.target.value.trim(); scheduleValidate(); };
+const ro = () => ED.builtin;
+function paramSummary(b) { const p = b.params || {}, out = []; if (p.max_revisions != null) out.push(`라운드 ${p.max_revisions}`); if (p.core === false) out.push('변경 모듈만'); if (p.core === true) out.push('핵심 포함');
+  if (p.model) out.push(p.model.includes('haiku') ? 'Haiku' : 'Sonnet'); return out.join(' · '); }
+function renderEditor() {
+  $('#pl-name').value = ED.name; $('#pl-id').value = ED.id; $('#pl-name').disabled = ro(); $('#pl-id').disabled = !ED.isNew;
+  $('#pl-badge').textContent = ''; $('#pl-badge').append(pill(ED.builtin ? '내장(읽기 전용)' : (ED.isNew ? '새 파이프라인' : '사용자 정의'), ED.builtin ? 'warn' : 'ok'));
+  $('#pl-ro').textContent = ED.builtin ? '내장 프리셋은 수정할 수 없습니다. 위의 “복제”로 복사본을 만들어 편집하세요.' : '';
+  $('#pl-del').disabled = ED.builtin || ED.isNew;
+  const chain = $('#pl-chain'); chain.textContent = '';
+  ED.blocks.forEach((b, i) => { if (i) chain.append(el('span', 'arrow', '→')); const locked = CAT[b.id].locked, btn = el('button', 'blk' + (i === SELIDX ? ' sel' : '') + (!b.enabled ? ' off' : '') + (locked ? ' lock' : ''));
+    btn.append(el('b', '', (locked ? '🔒 ' : '') + CAT[b.id].name), el('span', '', (b.enabled ? '' : '꺼짐 · ') + paramSummary(b))); btn.onclick = () => { SELIDX = i; renderEditor(); }; chain.append(btn); });
+  const pal = $('#pl-palette'); pal.textContent = ''; const have = new Set(ED.blocks.map(b => b.id)); const missing = CANON.filter(id => !have.has(id) && !CAT[id].locked);
+  if (missing.length && !ro()) { pal.append(el('span', 'muted', '추가할 수 있는 블록:')); missing.forEach(id => { const b = el('button', 'chip-add', '+ ' + CAT[id].name); b.onclick = () => addBlock(id); pal.append(b); }); }
+  renderDetail(); $('#pl-save').disabled = ro() || PL_ERRS.length > 0 || !ED.id || !ED.name; scheduleValidate();
+}
+function addBlock(id) { const idx = CANON.indexOf(id); let at = ED.blocks.findIndex(b => CANON.indexOf(b.id) > idx); if (at < 0) at = ED.blocks.length; ED.blocks.splice(at, 0, { id, enabled: true, params: {} }); SELIDX = at; renderEditor(); }
+function move(i, d) { const j = i + d; if (j < 0 || j >= ED.blocks.length) return; [ED.blocks[i], ED.blocks[j]] = [ED.blocks[j], ED.blocks[i]]; SELIDX = j; renderEditor(); }
+function renderDetail() {
+  const d = $('#pl-detail'); d.textContent = ''; if (SELIDX < 0 || !ED.blocks[SELIDX]) { d.append(el('span', 'muted small', '블록을 누르면 설정이 나옵니다.')); return; }
+  const b = ED.blocks[SELIDX], c = CAT[b.id], r = RULES[b.id] || {}; const h = el('div', 'row'); h.append(el('b', '', c.name), el('span', 'grow'));
+  h.append(pill({ pre: '사전', cycle: '반복(구현→검사)', post: '사후' }[c.phase], ''));
+  if (c.locked) h.append(pill('🔒 잠금 — 빼거나 끄거나 순서를 바꿀 수 없음', 'warn'));
+  d.append(h);
+  if (!c.locked && !ro()) { const row = el('div', 'row'); const t = el('button', '', b.enabled ? '끄기' : '켜기'); t.onclick = () => { b.enabled = !b.enabled; renderEditor(); };
+    const up = el('button', '', '▲'), dn = el('button', '', '▼'), rm = el('button', 'bad', '빼기'); up.onclick = () => move(SELIDX, -1); dn.onclick = () => move(SELIDX, 1);
+    rm.onclick = () => { ED.blocks.splice(SELIDX, 1); SELIDX = -1; renderEditor(); }; row.append(t, up, dn, rm); d.append(row); }
+  const pr = el('div', 'row small'); const set = (k, v) => { b.params = b.params || {}; b.params[k] = v; renderEditor(); };
+  if (r.max_revisions) { pr.append(el('span', '', '수정 라운드'), sel([0, 1, 2, 3].map(String), String((b.params || {}).max_revisions ?? 1), v => set('max_revisions', +v))); }
+  if (r.model) { pr.append(el('span', '', '모델'), sel(MODELS, (b.params || {}).model || '', v => { if (v) set('model', v); else { delete b.params.model; renderEditor(); } }, true)); }
+  if (r.budget) { const n = el('input'); n.type = 'number'; n.step = '0.1'; n.min = r.budget[0]; n.max = r.budget[1]; n.placeholder = '기본'; n.value = (b.params || {}).budget ?? '';
+    n.onchange = () => { if (n.value === '') { delete b.params.budget; } else { b.params = b.params || {}; b.params.budget = +n.value; } renderEditor(); }; pr.append(el('span', '', '비용 상한($)'), n); }
+  if (b.id === 'tests') { const cb = el('input'); cb.type = 'checkbox'; cb.checked = (b.params || {}).core !== false; cb.onchange = () => set('core', cb.checked); pr.append(cb, el('span', '', '핵심 모듈 테스트도 실행(끄면 변경 모듈만)')); }
+  Array.from(pr.querySelectorAll('select,input')).forEach(x => x.disabled = ro()); if (pr.children.length) d.append(pr);
+  d.append(el('div', 'muted small', ({ spec: '원인 분석으로 수정 명세서를 작성합니다. 수정 대상이 아니면 여기서 멈춥니다.', worktree: '깨끗한 git 워크트리와 수정 브랜치를 만듭니다.',
+    implement: '명세서대로 코드를 고칩니다(셸 없음). 문제가 있으면 정해진 라운드 수만큼 되돌아와 고칩니다.', guard: '운영 자원(원격 main/data · Vercel · GCP · 텔레그램 번호) 접촉과 금지 경로 수정을 기계적으로 검사합니다.',
+    tests: '문법 검사와 self-test 를 변경 전·후로 비교합니다.', verify: '수정이 명세서와 원인 분석에 맞는지 읽기 전용으로 검증합니다.', review: '새 맥락의 독립 검토자가 diff 만 보고 부작용 · 운영 자원 접촉을 적대적으로 봅니다.',
+    commit: '수신기가 로컬 브랜치에 커밋합니다(원격 푸시 없음).', protected: 'main · data · 원격 ref · 원격 설정 · 환경 파일이 그대로인지 확인합니다.',
+    apply: '러너 작업 브랜치에 ff-only 로 적용합니다.', restart: '러너를 재시작하고 건강 확인에 실패하면 자동으로 되돌립니다.' })[b.id] || ''));
+}
+function sel(opts, cur, on, withDefault) { const s = el('select'); if (withDefault) { const o = el('option', '', '기본'); o.value = ''; s.append(o); } opts.forEach(v => { const o = el('option', '', v); o.value = v; s.append(o); }); s.value = cur; s.onchange = () => on(s.value); return s; }
+function scheduleValidate() { clearTimeout(VTIMER); VTIMER = setTimeout(runValidate, 250); }
+async function runValidate() { try { const j = await api('/api/pipelines/validate', { blocks: ED.blocks }); PL_ERRS = j.errors; } catch (e) { PL_ERRS = ['검증 요청 실패: ' + e.message]; }
+  const m = $('#pl-msg'); m.textContent = ''; const warn = [];
+  const en = id => ED.blocks.some(b => b.id === id && b.enabled);
+  if (!en('verify') && !en('review')) warn.push('⚠️ 검증 · 독립 검토가 모두 없습니다 — 코드 검토 없이 커밋·적용됩니다(가드와 보호 확인은 유지).');
+  if (en('apply') && !en('restart')) warn.push('ℹ️ 재시작이 없어 적용된 코드는 다음 러너 재시작 때 반영됩니다.');
+  if (PL_ERRS.length) PL_ERRS.forEach(e => m.append(el('div', 'err', '✗ ' + e))); else m.append(el('div', 'good', '✓ 조립 규칙을 모두 통과했습니다'));
+  warn.forEach(w => m.append(el('div', 'wr', w)));
+  $('#pl-save').disabled = ro() || PL_ERRS.length > 0 || !ED.id || !ED.name; }
+$('#pl-save').onclick = async () => { if (!confirm(`'${ED.name}' (${ED.id}) 파이프라인을 저장할까요?`)) return;
+  try { await api('/api/pipelines', { id: ED.id, name: ED.name, blocks: ED.blocks }); toast('저장됨 — 제어 탭의 정책에서 고를 수 있습니다'); PLSEL = ED.id; await loadPipelines(); $('#pl-note').textContent = '저장됨 ' + new Date().toLocaleTimeString(); }
+  catch (e) { toast('저장 실패: ' + e.message); } };
+
+/* 초기화 버튼 */
+$('#pl-revert').onclick = () => { if (ED.isNew) { ED = { id: '', name: '', builtin: false, isNew: true, blocks: clone(PLS.standard.blocks) }; SELIDX = -1; renderEditor(); toast('새 파이프라인을 표준 상태로 되돌렸습니다'); } else { selectPl(ED.id); toast('저장된 상태로 되돌렸습니다'); } };
+async function doReset(what, msg) { try { const j = await api('/api/reset', { what }); toast(msg); POL = j.policy; if (TAB === 'control') loadPolicy(); if (TAB === 'pipelines') { PLSEL = 'standard'; loadPipelines(); } return j; } catch (e) { toast('초기화 실패: ' + e.message); } }
+$('#pl-reset-all').onclick = async () => { if (!confirm('사용자 정의 파이프라인을 모두 삭제하고 내장 프리셋(표준 · 긴급)만 남길까요?\n정책이 삭제된 파이프라인을 가리키고 있으면 그 레벨은 기본 프리셋으로 돌아갑니다.')) return;
+  const j = await doReset('pipelines', '사용자 정의 파이프라인을 모두 삭제했습니다'); if (j) $('#pl-note').textContent = `삭제 ${j.pipelines_removed}개`; };
+$('#reset-all').onclick = async () => { if (!confirm('정책과 사용자 정의 파이프라인을 모두 원래대로 되돌릴까요?')) return; if (!confirm('정말 초기화할까요? 되돌릴 수 없습니다(변경 이력 파일에는 남습니다).')) return;
+  const j = await doReset('all', '정책과 파이프라인을 초기화했습니다'); if (j) $('#reset-note').textContent = `정책 기본값 · 사용자 정의 ${j.pipelines_removed}개 삭제 · ${new Date().toLocaleTimeString()}`; };
+
 /* 탭 · 갱신 */
-function show(t) { TAB = t; if (t === 'control') loadPolicy(); $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
+function show(t) { TAB = t; if (t === 'control') loadPolicy(); if (t === 'pipelines') loadPipelines(); $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t)); refresh(); }
 $$('#tabs button').forEach(b => b.onclick = () => show(b.dataset.t));
 $('#m-close').onclick = () => $('#modal').classList.remove('on');
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); };

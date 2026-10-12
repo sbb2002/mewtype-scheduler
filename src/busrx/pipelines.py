@@ -208,6 +208,16 @@ def _write(cfg, pls: dict) -> None:
     os.replace(tmp, p)
 
 
+def reset_custom(cfg, who: str = "dashboard") -> int:
+    """사용자 정의 파이프라인을 모두 지우고 내장 프리셋(표준 · 긴급)만 남긴다. 지운 개수. (정책이 가리키던 id 는 정책 로드 때 기본 프리셋으로 대체됨)"""
+    import time
+    n = len(load_custom(cfg))
+    _path(cfg).unlink(missing_ok=True)
+    with (cfg.rx / "pipelines_history.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "by": who, "reset": True, "removed": n}, ensure_ascii=False) + "\n")
+    return n
+
+
 def presets_view(cfg) -> dict[str, dict]:
     """정책 · 화면용 요약 {id: {name, builtin}}."""
     return {k: {"name": v["name"], "builtin": bool(v.get("builtin"))} for k, v in all_pipelines(cfg).items()}

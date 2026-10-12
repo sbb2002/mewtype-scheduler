@@ -78,13 +78,18 @@ class Policy:
 
     def all(self) -> dict:
         try:
-            m = self.path.stat().st_mtime
+            m0 = self.path.stat().st_mtime
         except FileNotFoundError:
-            m = -2.0
+            m0 = -2.0
+        try:  # 사용자 정의 파이프라인이 바뀌면(삭제 · 초기화) 정책이 가리키는 id 를 다시 검증해야 한다
+            m1 = (self.cfg.rx / "pipelines.json").stat().st_mtime
+        except FileNotFoundError:
+            m1 = -2.0
+        m = (m0, m1)
         if self._cache is None or m != self._mtime:
             base = defaults(self.cfg)
             data = None
-            if m >= 0:
+            if m0 >= 0:
                 try:
                     data = json.loads(self.path.read_text(encoding="utf-8"))
                 except Exception:
