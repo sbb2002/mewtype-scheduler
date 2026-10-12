@@ -47,6 +47,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.3-fullauto (2026-10-12, 브랜치 `v4.3-fullauto` — 실험 · 미배포)**: 에러 자동 대응 파이프라인의 첫 조각 **에러 버스 발신기**. 러너의 로그 · 이벤트를
+> 봉투(`mew.err/1`)로 `MEW_BUS_DIR` 공유 폴더에 내보내고(`src/bus/`), 별도 세션의 **수신기**(`claude -p`)가 가져가 분석한다. 두 쪽은 서로의 코드를 모르고
+> `docs/BUS_PROTOCOL.md` + `docs/bus/schema/*.json` 만 공유한다. 심각도 6단계(CRITICAL/ERROR/WARN/INFO/DEBUG/TRACE) · 묶음 · 제어 봉투(`set_level`/`pause`) 포함.
+> `MEW_BUS_DIR` 이 없으면 발신기는 비활성이라 운영 경로에 영향이 없다. 수신기 · 자동 패치 · 자동 병합은 **미구현**(운영자 승인 전). 용어는 `docs/TERMINOLOGY.md` 「에러 버스 용어」.
+> **수신기 1단계(분석 · 보고 전용) 구현**: `python -m src.busrx`(`src/busrx/`) — 읽기 전용 스냅샷에서 `claude -p` 분석, 텔레그램 보고에 수신 로그 · 패치 1줄 · 커밋 이전→이후 표시.
+> 점검: `python -m src.bus.conform`(규약 예제) · `python -m src.bus.publisher`(발신기) · `python -m src.busrx.selftest`(수신기).
+>
 > **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
 > 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 토픽 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
 >

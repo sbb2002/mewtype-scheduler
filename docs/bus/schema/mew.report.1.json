@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mew.report/1",
+  "title": "보고 봉투 (수신기 → 운영자)",
+  "type": "object",
+  "required": ["schema", "id", "ts", "signature", "verdict", "summary"],
+  "properties": {
+    "schema": {"const": "mew.report/1"},
+    "id": {"type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"},
+    "ts": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"},
+    "signature": {"type": "string", "maxLength": 128},
+    "severity": {"enum": ["CRITICAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"]},
+    "verdict": {"enum": ["confirmed", "unknown", "ignored"]},
+    "summary": {"type": "string", "maxLength": 2000},
+    "cause": {"type": "string", "maxLength": 4000},
+    "evidence": {"type": "array", "items": {"type": "string"}},
+    "proposed_action": {"type": "string", "maxLength": 2000},
+    "source_ids": {"type": "array", "items": {"type": "string"}},
+    "pr_url": {"type": "string", "maxLength": 512}
+  },
+  "additionalProperties": true
+}

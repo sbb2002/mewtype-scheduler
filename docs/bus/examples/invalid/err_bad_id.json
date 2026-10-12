@@ -1,0 +1,1 @@
+{"schema": "mew.err/1", "id": "short", "ts": "2026-10-12T04:40:50Z", "source": {"env": "local", "service": "runner"}, "kind": "log", "severity": "ERROR", "message": "id 형식 위반"}

@@ -1,0 +1,15 @@
+{
+  "first_ts": "2026-10-12T04:40:48Z",
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EH",
+  "kind": "log",
+  "last_ts": "2026-10-12T04:41:41Z",
+  "logger": "src.collector.rss",
+  "message": "Failed to fetch RSS for channel UC*: 404 Client Error: Not Found",
+  "occurrences": 4,
+  "redacted": true,
+  "schema": "mew.err/1",
+  "severity": "WARN",
+  "source": {"env": "local", "service": "runner"},
+  "ts": "2026-10-12T04:41:48Z",
+  "untrusted": ["message"]
+}

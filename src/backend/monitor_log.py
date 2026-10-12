@@ -101,6 +101,13 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
         if result not in _VALID_RESULTS:
             raise ValueError(f"result must be one of {_VALID_RESULTS}, got {result!r}")
 
+    # (v4.3) 에러 버스 발신기 훅 — MEW_BUS_DIR 없으면 no-op, 어떤 경우도 예외를 던지지 않는다
+    try:
+        from src.bus import on_events as _bus_on_events
+        _bus_on_events(events)
+    except Exception:
+        pass
+
     # 줄 생성 — 각 줄을 {"ts": now_iso, "who": "", "detail": "", **ev} 로 만들어
     # 기존 log_event 줄 형식(ts/who/detail 항상 존재)과 같게 한다.
     # 원소에 ts가 있으면 그 값이 우선(현재 동작 유지).

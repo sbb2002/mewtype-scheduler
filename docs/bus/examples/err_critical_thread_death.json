@@ -1,0 +1,13 @@
+{
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EJ",
+  "kind": "log",
+  "logger": "uncaught.thread",
+  "message": "처리되지 않은 예외로 스레드 q-apply 종료",
+  "redacted": true,
+  "schema": "mew.err/1",
+  "severity": "CRITICAL",
+  "source": {"env": "local", "service": "runner"},
+  "traceback": "Traceback (most recent call last):\n  ...",
+  "ts": "2026-10-12T04:50:00Z",
+  "untrusted": ["message", "traceback"]
+}

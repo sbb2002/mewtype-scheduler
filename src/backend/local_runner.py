@@ -274,6 +274,9 @@ def main(argv=None) -> int:
     load_env_file(Path(args.env))
     for k, v in _DEFAULTS.items():
         os.environ.setdefault(k, v)
+    if not args.check:
+        from src.bus import install as _bus_install  # (v4.3) 에러 버스 발신기 — MEW_BUS_DIR 있을 때만 동작
+        _bus_install(service="runner")
     if not os.environ.get("LOCAL_BIND", "").strip():
         ip = detect_tailscale_ip()
         if ip:
