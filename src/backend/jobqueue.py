@@ -344,7 +344,7 @@ class LocalQueue:
                     self._save_jobs()
                     self._condition.notify_all()
 
-                logger.warning(
+                logger.info(
                     f"Job {job_id} failed (attempt {attempt}), "
                     f"retrying in {backoff}s: {exc}"
                 )

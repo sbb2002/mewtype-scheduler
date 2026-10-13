@@ -93,7 +93,7 @@ def create_blueprint(
             payload_json = base64.urlsafe_b64decode(payload_b64).decode()
             return json.loads(payload_json)
         except Exception as e:
-            logger.debug(f"토큰 검증 실패: {e}")
+            logger.info(f"로그인 링크 토큰 검증 실패 — 거부(정상 동작): {e}")
             return None
 
     def _verify_session() -> Optional[dict]:

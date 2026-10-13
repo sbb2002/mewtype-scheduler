@@ -191,7 +191,7 @@ def _make_task_queue(cfg):
             invoker_sa=cfg.invoker_sa,
         )
     except Exception as e:  # noqa: BLE001 — 로컬/부트스트랩 허용
-        log.warning("TaskQueue 비활성 (%s) — enqueue 건너뜀", e)
+        log.info("TaskQueue 비활성 (%s) — enqueue 건너뜀", e)
         return None
 
 
@@ -327,7 +327,7 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
             events.append(_song_event(now_iso, RESULT_WARN, "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
         doc, sha = gh.read_json(songs_mod.SONGS_PATH)
         if doc is None:
-            log.warning("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
+            log.error("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
             _safe_log_song_events(log_events_fn, events)
             return {"skipped": "no_songs_json"}
         new_doc = songs_mod.norm_doc(doc)
@@ -547,7 +547,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                         kept.append(it)
                 new_preview["items"] = kept
             except Exception:  # noqa: BLE001
-                log.warning("suppress/edit_lock 반영 실패 — 무시", exc_info=True)
+                log.error("suppress/edit_lock 반영 실패 — 무시", exc_info=True)
 
         # 실질 변화 없으면 generated_at 도 건드리지 않는다 — volatile 필드까지 동결해서
         # gh.write_json 이 완전한 무변화로 보고 커밋 자체를 건너뛰게 한다(v3.2.2).
@@ -619,13 +619,13 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 enqueued += 1
             except Exception as e:  # noqa: BLE001
                 enqueue_errors.append(f"{vid}: {e}")
-                log.error("enqueue 실패 %s @ %s: %s", vid, when, e)
+                log.warning("enqueue 실패 %s @ %s: %s", vid, when, e)
         for when in sched_wakes:
             try:
                 tq.enqueue_tick("light", when)
             except Exception as e:  # noqa: BLE001
                 enqueue_errors.append(f"sched tick {when}: {e}")
-                log.error("scheduled wake tick enqueue 실패 @ %s: %s", when, e)
+                log.warning("scheduled wake tick enqueue 실패 @ %s: %s", when, e)
         if newly_ended:
             recheck_at = (
                 datetime.now(timezone.utc) + timedelta(seconds=_POST_END_RECHECK_SEC)
@@ -634,7 +634,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 tq.enqueue_tick("light", recheck_at)
             except Exception as e:  # noqa: BLE001
                 enqueue_errors.append(f"post-end tick: {e}")
-                log.error("post-end tick enqueue 실패: %s", e)
+                log.warning("post-end tick enqueue 실패: %s", e)
 
     # ── LLM 번역 재시도 sweep (needs_tl 행) — 정기 tick 에서만 ──
     # (v4a) 로컬 시험판: 가공 큐(q-enrich)에 적재 → 수집 후 적용 큐로 반영. 여기서는 기다리지 않는다.
@@ -711,6 +711,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
                 "item_id": ev.get("id"),
                 "title": ev.get("title"),
                 "assumed_live": ev.get("assumed_live", False),
+                "no_bus": quality == RESULT_WARN,   # 같은 사건(예약 실패)을 enqueue 실패 로그(WARN)가 이미 버스로 보냄
             })
 
         # tick/wake 이벤트는 변화가 있을 때만 포함

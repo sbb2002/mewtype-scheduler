@@ -855,7 +855,7 @@ null`, 10분 캐시). 오늘 이후 날짜는 400. 모두 CORS `*`, 실패 시 5
 `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
 (v3.8.9) 제어 채널 웹훅 `/telegram` 은 요청마다 모니터 로그 `flow="cmd"` 1줄(`who`=명령어, `detail`=원문 120자 —
 `/` 로 시작 안 하는 후속 입력은 12자 이하 한 줄만, 그 외 글자 수만, `reply`=마지막 응답 DM 첫 줄, `result`=응답
-DM 문구 기반 근사: 예외·⚠️/❌ → err, "사용법"·응답 누락 → warn(구 degraded), 그 외 ok) → 웹 monitor 타임라인 "💬 운영자
+DM 문구 기반 근사: 예외·⚠️/❌ → err, 응답 누락(안전망 DM) → warn(구 degraded), "사용법" 안내는 정상 응답이라 ok, 그 외 ok) → 웹 monitor 타임라인 "💬 운영자
 명령" 행(트리거와 백엔드 상태 사이).
 (v3.8.9) `POST /ingest` 는 알림 1건마다(403 제외) 모니터 로그 `flow="upstream"` 1줄(`source`=x|yt, `who`=
 `android.title`, `detail`=응답 본문에서 읽은 갈래, `result`=HTTP 4xx/5xx 또는 ok=false → err, 그 외 ok) → 웹 monitor

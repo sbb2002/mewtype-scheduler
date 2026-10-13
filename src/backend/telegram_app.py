@@ -878,7 +878,7 @@ def _load_channels_config() -> dict:
         with open("config/channels.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        log.warning(f"Failed to load config/channels.json: {e}")
+        log.error(f"Failed to load config/channels.json: {e}")
         return {"channels": {}}
 
 
@@ -891,8 +891,8 @@ def _cmd_event_fields(text: str, has_file: bool, replies: list, raised: bool, sa
     - who: 명령어(`/del` 등). `/` 로 시작 안 하면 대화형 후속 입력(`/del` 확인 y/N, 마법사 응답,
       원문 붙여넣기) → "(후속 입력)". 원문은 공개 data 저장소에 남으므로 **후속 입력 내용은 저장
       안 함** — 짧은 확인 응답(y/N 등, 12자 이하 한 줄)만 남기고 나머지는 글자 수만.
-    - result: 처리 중 예외 또는 응답 DM 이 ⚠️/❌ 로 시작 → err. 안전망 발동(응답 누락) 또는
-      "사용법" 안내 → warn. 그 외 ok. **응답 DM 문구로 판정하는 근사**다 — 핸들러가 결과를
+    - result: 처리 중 예외 또는 응답 DM 이 ⚠️/❌ 로 시작 → err. 안전망 발동(응답 누락) → warn.
+      "사용법" 안내는 잘못된 입력에 대한 정상 응답이라 ok. 그 외 ok. **응답 DM 문구로 판정하는 근사**다 — 핸들러가 결과를
       반환하지 않아서(DM 으로만 알림) 이 방법을 쓴다. 판정 근거가 된 응답 요약을 reply 에 같이 둔다.
     - reply: 마지막 응답 DM 의 첫 줄(태그 제거, 100자). 진행 중 안내("⏳ …") 뒤 최종 결과가
       마지막에 오는 흐름이 많아 마지막 것을 쓴다.
@@ -911,7 +911,7 @@ def _cmd_event_fields(text: str, has_file: bool, replies: list, raised: bool, sa
     firsts = [html.unescape(_CMD_TAG_RE.sub("", r)).strip().split("\n", 1)[0] for r in replies]
     if raised or any(f.startswith(("⚠️", "❌")) for f in firsts):
         result = RESULT_ERR
-    elif safety_net or any(f.startswith("사용법") for f in firsts):
+    elif safety_net:                       # 응답 누락을 안전망 DM 이 대신함 = 설계된 폴백
         result = RESULT_WARN
     else:
         result = RESULT_OK
@@ -1392,7 +1392,7 @@ def _download_telegram_file(file_id: str) -> Optional[str]:
         if not file_path:
             return None
         if (info.get("file_size") or 0) > _INGEST_FILE_MAX_BYTES:
-            log.warning("ingest file too large: %s bytes", info.get("file_size"))
+            log.info("ingest file too large: %s bytes", info.get("file_size"))
             return None
         fr = requests.get(
             f"https://api.telegram.org/file/bot{token}/{file_path}", timeout=15
@@ -1435,7 +1435,7 @@ def _handle_ingest_followup(
                 prev_sha=sh, message=f"data: pending_ingest 슬롯 정리 {now_iso}",
             )
         except Exception:
-            log.exception("pending_ingest 슬롯 정리 실패")
+            log.warning("pending_ingest 슬롯 정리 실패", exc_info=True)
 
     # 1) 만료 — 취소 안내만 하고 이 메시지는 정상 디스패치로 흘려보낸다.
     if admin.pending_ingest_expired(pending, now_iso):
@@ -1497,7 +1497,7 @@ def _channel_key_by_video(video_id: str) -> str | None:
     try:
         info = YouTubeClient(api_key).videos_list([video_id]).get(video_id)
     except Exception:
-        log.exception("videos.list 실패 (수동 /ingest 채널 판별)")
+        log.warning("videos.list 실패 (수동 /ingest 채널 판별)", exc_info=True)
         return None
     if not info or not info.channel_id:
         return None
@@ -1631,7 +1631,7 @@ def _handle_member_followup(gh, channels_cfg: dict, now_iso: str, text: str) -> 
                 prev_sha=sh, message=f"data: pending_member 슬롯 정리 {now_iso}",
             )
         except Exception:
-            log.exception("pending_member 슬롯 정리 실패")
+            log.warning("pending_member 슬롯 정리 실패", exc_info=True)
 
     if admin.pending_member_expired(pending, now_iso):
         _clear()
@@ -2114,7 +2114,7 @@ def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
                           admin.clear_pending_notice(st or admin.default_admin_state()),
                           prev_sha=sh, message=f"data: pending_notice 정리 {now_iso}")
         except Exception:
-            log.exception("pending_notice 정리 실패")
+            log.warning("pending_notice 정리 실패", exc_info=True)
 
     if admin.pending_notice_expired(pending, now_iso):
         _clear()
@@ -2380,7 +2380,7 @@ def _handle_notice_edit_followup(gh, now_iso: str, text: str) -> bool:
                           admin.clear_pending_notice_edit(st or admin.default_admin_state()),
                           prev_sha=sh, message=f"data: pending_notice_edit 정리 {now_iso}")
         except Exception:
-            log.exception("pending_notice_edit 정리 실패")
+            log.warning("pending_notice_edit 정리 실패", exc_info=True)
 
     if admin.pending_notice_edit_expired(pending, now_iso):
         _clear()
@@ -2530,7 +2530,7 @@ def _inline_translate(text: str) -> Optional[str]:
         with quiet_failures():      # 실패하면 호출부가 needs_tl 이벤트(WARN)로 기록하므로 LLM 쪽 최종 실패 줄은 INFO
             return llm.translate(text) or None
     except Exception:
-        log.exception("인라인 번역 실패")
+        log.warning("인라인 번역 실패", exc_info=True)
         return None
 
 
@@ -2545,7 +2545,7 @@ def _inline_notice_title(body: str):
     try:
         return llm.notice_title(body) or None
     except Exception:
-        log.exception("인라인 소식 제목/번역 실패")
+        log.warning("인라인 소식 제목/번역 실패", exc_info=True)
         return None
 
 
@@ -2571,7 +2571,7 @@ def _inline_notice_dup_check(parsed: dict, prev: dict) -> str | None:
     try:
         return llm.duplicate_notice(parsed.get("body_raw") or parsed.get("title") or "", candidates)
     except Exception:
-        log.exception("소식 중복판정 실패")
+        log.warning("소식 중복판정 실패", exc_info=True)
         return None
 
 
@@ -3457,7 +3457,7 @@ def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
         from . import apply
         apply.enqueue_reconcile(video_id=video_id, run_at_iso=schedule_time_iso)
     except Exception:  # noqa: BLE001
-        log.debug("즉시 확인 예약 실패 (다음 light tick 에서 회수)", exc_info=True)
+        log.warning("즉시 확인 예약 실패 (다음 light tick 에서 회수)", exc_info=True)
 
 
 def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
@@ -4439,7 +4439,7 @@ def _make_llm_client():
             or llm.FALLBACK_MODEL,
         )
     except Exception:
-        log.exception("LLMClient 생성 실패")
+        log.warning("LLMClient 생성 실패", exc_info=True)
         return None
 
 
@@ -4457,7 +4457,7 @@ def _make_vision_client():
             or vision.FALLBACK_VISION_MODEL,
         )
     except Exception:
-        log.exception("VisionClient 생성 실패")
+        log.warning("VisionClient 생성 실패", exc_info=True)
         return None
 
 
@@ -5402,7 +5402,7 @@ def _maybe_tag_cast_participants(parsed: dict, tag: str | None) -> None:
         return
     names = vc.cast_names(image_url=media[0])
     if not names:
-        log.info("cast OCR: 이름 판독 실패 (tweet %s)", tid)
+        log.warning("cast OCR: 이름 판독 실패 (tweet %s)", tid)
         return
     matched: list[str] = []
     for name in names:
@@ -6181,7 +6181,7 @@ if _FLASK_AVAILABLE:
         received_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "").strip()
 
         if webhook_secret and received_secret != webhook_secret:
-            log.warning(f"Invalid webhook secret")
+            log.info("웹훅 시크릿 불일치 — 요청 거부(정상 동작)")
             return jsonify({"ok": False}), 200  # 항상 200
 
         # 2. chat_id 검증
@@ -6191,7 +6191,7 @@ if _FLASK_AVAILABLE:
         msg_chat_id = str(message.get("chat", {}).get("id", ""))
 
         if chat_id and msg_chat_id != chat_id:
-            log.warning(f"Invalid chat_id: {msg_chat_id} != {chat_id}")
+            log.info("허가되지 않은 chat_id %s — 요청 거부(정상 동작)", msg_chat_id)
             return jsonify({"ok": False}), 200  # 항상 200
 
         # 3. 명령 파싱
@@ -6235,7 +6235,7 @@ if _FLASK_AVAILABLE:
 
             gh = storage.make_store("data")      # (v4) 로컬 · 클라우드 공통 (ops 라우팅 포함)
             if gh is None:
-                log.warning("GitHub config missing")
+                log.error("GitHub config missing")
                 _send_telegram("⚠️ GitHub 설정 누락")
                 return _done(False)
             channels_cfg = _load_channels_config()
@@ -6265,7 +6265,7 @@ if _FLASK_AVAILABLE:
                                           admin.clear_pending_undo(_st2 or admin.default_admin_state()),
                                           prev_sha=_sh2, message=f"data: /undo 확인 만료 {now_utc}")
                         except Exception:
-                            log.exception("pending_undo 만료 정리 실패")
+                            log.warning("pending_undo 만료 정리 실패", exc_info=True)
                         _send_telegram("🚫 undo 확인 시간(60초)이 지나 자동 취소되었습니다.")
                     elif _is_yn:
                         _handle_undo_confirm(gh, now_utc, yes=_low in ("y", "yes"))
@@ -6500,7 +6500,7 @@ if _FLASK_AVAILABLE:
         secret = os.environ.get("INGEST_SECRET", "").strip()
         got = request.headers.get("X-Ingest-Secret", "").strip()
         if not secret or got != secret:
-            log.warning("ingest: bad or missing secret")
+            log.info("ingest: 시크릿 불일치·누락 — 요청 거부(정상 동작)")
             flowtrace.mark("접수", "fail", "인증 실패 (403)")
             flowtrace.finish("인증 실패 — 보낸 쪽의 X-Ingest-Secret 헤더가 이 서버 값과 다릅니다. "
                              "원문을 받기 전에 거절해서 유실 원문 큐에도 남지 않습니다.")
@@ -6788,7 +6788,7 @@ if _FLASK_AVAILABLE:
                     writeclient.call_write("group_pending", gh=gh, op="remove", now_iso=now_iso,
                                            video_ids=_grp_resolved, label="그룹 영상 확인 대기 해제")
                 except Exception:  # noqa: BLE001
-                    log.exception("그룹 영상 확인 대기 해제 실패")
+                    log.warning("그룹 영상 확인 대기 해제 실패", exc_info=True)
 
             summary = xrelay.summary_text(rows, channels_cfg)
             if tweet_url:
@@ -6922,7 +6922,7 @@ if __name__ == "__main__":
     assert _cmd_event_fields("/list", False, ["⏳ 조회 중", "⚠️ 오류: x"], False, False)["result"] == "err"
     assert _cmd_event_fields("/list", False, ["📋 목록"], True, False)["result"] == "err", "예외 → err"
     _u = _cmd_event_fields("/ingest tweet", False, ["사용법: /ingest tweet &lt;유닛&gt;"], False, False)
-    assert _u["result"] == "warn" and _u["reply"] == "사용법: /ingest tweet <유닛>", _u
+    assert _u["result"] == "ok" and _u["reply"] == "사용법: /ingest tweet <유닛>", _u
     _s = _cmd_event_fields("/del preview", False, [], False, True)
     assert _s["result"] == "warn" and "응답 누락" in _s["reply"]
     assert _cmd_event_fields("y", False, ["✅ 삭제됨"], False, False)["detail"] == "y"

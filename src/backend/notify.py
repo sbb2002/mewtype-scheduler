@@ -135,7 +135,7 @@ class Telegram:
             resp.raise_for_status()
             return True
         except Exception as exc:
-            logger.warning(f"Telegram send failed: {exc}")
+            logger.error(f"Telegram send failed: {exc}")
             return False
 
     def send_document(
@@ -176,7 +176,7 @@ class Telegram:
             resp.raise_for_status()
             return True
         except Exception as exc:
-            logger.warning(f"Telegram send_document failed: {exc}")
+            logger.error(f"Telegram send_document failed: {exc}")
             return False
 
 
