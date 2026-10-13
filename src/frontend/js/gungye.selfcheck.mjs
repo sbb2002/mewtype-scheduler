@@ -1,7 +1,7 @@
 /**
  * gungye.js 순수 헬퍼 자동 테스트 (v4.3.0). node gungye.selfcheck.mjs — DOM 접근 함수는 호출하지 않는다.
  */
-import { lateStage, waitLabel, isGungyeTarget, MAX_LATE_MS } from "./gungye.js";
+import { lateStage, waitLabel, isGungyeTarget, pickVariant, GUNGYE_RATE, MAX_LATE_MS } from "./gungye.js";
 
 let n = 0;
 function assert(cond, msg) {
@@ -32,5 +32,12 @@ assert(waitLabel(-5) === "00:00", "음수는 00:00");
 assert(isGungyeTarget({ channel_key: "nonoka" }), "노노카 본인 예고");
 assert(!isGungyeTarget({ channel_key: "arale", collab_with: ["nonoka"] }), "다른 멤버가 호스트인 합동은 대상 아님");
 assert(!isGungyeTarget(null), "null 안전");
+
+assert(GUNGYE_RATE === 0.1, "궁예 확률 10%");
+assert(pickVariant(0) === "gungye" && pickVariant(0.0999) === "gungye", "난수 0~0.1 미만 = 궁예");
+assert(pickVariant(0.1) === "king" && pickVariant(0.999) === "king", "난수 0.1 이상 = 국왕");
+let gy = 0;
+for (let i = 0; i < 10000; i++) if (pickVariant(i / 10000) === "gungye") gy++;
+assert(gy === 1000, "균등 난수 1만 개 중 궁예 정확히 10%");
 
 console.log(`\n✅ 모두 통과: ${n}/${n}`);

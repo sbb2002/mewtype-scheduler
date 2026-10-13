@@ -47,8 +47,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **프론트 v4.3.0 (2026-10-13)**: 노노카 지각 이스터에그 「관심법」 — 노노카 본인 예고가 예정 시각을 넘기면 모바일 오늘 카드 · PC 예고 팝업을 궁예 콘셉트(후광 · 눈 · 대기 시간 카운트업 ·
-> 라이브 전환 시 「미륵 강림」)로 꾸민다. `js/gungye.js` · `css/gungye.css`, 상세 `docs/SPEC.md` 「노노카 지각 이스터에그 (v4.3.0)」, 요약 `docs/VERSION.md`.
+> **프론트 v4.3.0 (2026-10-13)**: 노노카 지각 이스터에그 — 노노카 본인 예고가 예정 시각을 넘기면 모바일 오늘 카드 · PC 예고 팝업을 꾸민다. 연출은 **국왕 90% / 궁예 10%**
+> (왕관 · 레드카펫 / 후광 · 눈 · 관심법. 페이지를 연 뒤 처음 지각을 본 순간 뽑아 유지), 대기 시간 카운트업, 라이브 전환 시 강림 연출. `js/gungye.js` · `css/gungye.css`,
+> 상세 `docs/SPEC.md` 「노노카 지각 이스터에그 (v4.3.0)」, 요약 `docs/VERSION.md`.
 >
 > **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
 > 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 토픽 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
@@ -418,7 +419,7 @@ src/
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수
       api.js           # fetchSchedule(url): AbortController 타임아웃, {ok,data|error} (notices 도 재사용)
       render.js        # renderBoard / renderFooter / updateCountdowns
-      gungye.js        # (v4.3.0) 노노카 지각 이스터에그 「관심법」 — timetable.js 가 모바일 오늘 카드 · PC 팝업에 호출 (gungye.selfcheck.mjs)
+      gungye.js        # (v4.3.0) 노노카 지각 이스터에그(국왕 90% · 궁예 10%) — timetable.js 가 모바일 오늘 카드 · PC 팝업에 호출 (gungye.selfcheck.mjs)
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
