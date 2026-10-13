@@ -438,8 +438,7 @@ function manualPanel(e) {
   const r = el('div', 'row apr-sec'); const an = el('button', 'pri', busy ? '처리 중…' : '분석'); const fx = el('button', 'go', busy ? '처리 중…' : '분석 + 수정');
   an.disabled = fx.disabled = busy || off;
   an.onclick = () => { if (confirm('이 에러를 지금 분석할까요? (Sonnet 호출 1회 — 구독 사용량이 소모됩니다)')) manualRun(e.sig, false); };
-  fx.onclick = () => { if (confirm('이 에러를 분석하고, 원인이 확정되면 수정까지 진행할까요?
-' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true); };
+  fx.onclick = () => { if (confirm('이 에러를 분석하고, 원인이 확정되면 수정까지 진행할까요? ' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true); };
   r.append(an, fx); if (off) r.append(el('span', 'muted small', "동작 모드가 '끔'이라 실행할 수 없습니다.")); c.append(r);
   return c;
 }
