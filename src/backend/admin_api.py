@@ -648,7 +648,7 @@ def list_songs() -> dict:
 
 def songs_status() -> dict:
     """신곡 감지 현황 — 시드 여부 · **지금 RSS 조회**(쿼터 0) · 등록 예정/건너뜀 미리보기(dry-run, 쓰기 없음) · 최근 `song` 이벤트.
-    RSS 가 조용히 실패하면 tick 쪽에서는 시간당 1건의 degraded 이벤트뿐이라, 평소 상태 확인은 이 조회가 맡는다."""
+    RSS 가 조용히 실패하면 tick 쪽에서는 시간당 1건의 warn 이벤트뿐이라, 평소 상태 확인은 이 조회가 맡는다."""
     doc = _songs_doc()
     cfg = channels()
     feeds_out, entries_by_who = [], []

@@ -1,8 +1,0 @@
-{
-  "args": {"level": "TRACE", "ttl_sec": 600},
-  "cmd": "set_level",
-  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7ER",
-  "issued_by": "operator",
-  "schema": "mew.ctl/1",
-  "ts": "2026-10-12T05:19:00Z"
-}

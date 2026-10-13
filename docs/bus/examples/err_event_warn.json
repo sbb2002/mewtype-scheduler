@@ -1,0 +1,13 @@
+{
+  "context": {"channel_key": "group"},
+  "event": {"detail": "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", "flow": "song", "result": "warn", "who": "group"},
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EG",
+  "kind": "event",
+  "message": "[song] warn: 토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함",
+  "redacted": true,
+  "schema": "mew.err/1",
+  "severity": "WARN",
+  "source": {"env": "local", "service": "runner"},
+  "ts": "2026-10-12T04:41:02Z",
+  "untrusted": ["message", "event.detail"]
+}

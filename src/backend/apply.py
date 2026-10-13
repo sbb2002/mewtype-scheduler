@@ -435,7 +435,7 @@ def run_snapshot() -> dict:
             gh_monitor.write_text("monitoring/latest.html", monitor_report.render_html(report), prev_sha=None,
                                   message=f"data: monitor latest {yday}")
         except Exception:  # noqa: BLE001
-            log.exception("snapshot: latest.html 실패 (DM 은 계속)")
+            log.warning("snapshot: latest.html 실패 (DM 은 계속)", exc_info=True)
     control, _ = gh.read_json("control.json")
     if get_monitor_auto(control or default_control()):
         result["dm"] = notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id).send(

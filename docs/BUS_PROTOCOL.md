@@ -20,18 +20,24 @@
 - 발신기는 서비스를 **절대 방해하지 않는다** — 발신 실패는 삼키고 카운터로만 남긴다.
 - 버스 폴더는 환경 변수 `MEW_BUS_DIR` 로 지정한다. **없으면 발신기는 아무 것도 하지 않는다.**
 
-## 1. 심각도 (6단계)
+## 1. 심각도 (5단계)
 
-운영자 정의(2026-10-12). 봉투의 `severity` 는 아래 여섯 중 하나다(위에서 아래로 낮아짐). 파이썬 `logging` 의 이름 `WARNING` 은 **`WARN`** 으로 쓴다.
+운영자 정의(2026-10-13 개정, 이전 6단계의 `TRACE` 는 폐기). 봉투의 `severity` 는 아래 다섯 중 하나다(위에서 아래로 낮아짐). 파이썬 `logging` 의 이름 `WARNING` 은 **`WARN`** 으로 쓴다.
 
-| 심각도 | 의미 | 수신기의 기본 반응 (규약 권고) |
+| 심각도 | 정의 | 수신기의 기본 반응 (규약 권고) |
 |---|---|---|
-| `CRITICAL` | 서버가 멈추거나 죽는 현상 | 즉각 패치 + 최소 동작 검증 후 신속 배포, 이후 안정성 검증 |
-| `ERROR` | 폴백 · 예외 처리 때문에 **의도대로 동작하지 못함**. 서버는 살아 있음 | 패치 + 충분한 검증 후 배포 시작 |
-| `WARN` | 의도대로 동작했으나 API 변경 등으로 **추후 동작하지 않을 수 있다**는 경고성 | 로그만 남김 (반응 없음) |
-| `INFO` | 결과물 등에 대한 정보 | 반응 없음. 사람 관리자의 요청이 있을 때만 발신 · 기록 (§6 `set_level`) |
-| `DEBUG` | 사람 관리자나 Claude 가 파악을 위해 **임시로 넣은** 디버깅 로그 | 반응 없음. 요청이 있을 때만 발신 · 기록 |
-| `TRACE` | 일반적인 상황에서 로직이 **실행되고 완료됨**을 파악하기 위한 로그 | 반응 없음. 요청이 있을 때만 발신 · 기록 |
+| `CRITICAL` | 에러로 인해 **러너(서버)가 뻗어 기능이 불능 상태**에 빠진 경우 | 즉각 패치 + 최소 동작 검증 후 신속 배포, 이후 안정성 검증 |
+| `ERROR` | **정의된 폴백이 아닌 의도되지 않은 동작**으로 수행된 경우. 또는 폴백이 구성돼 있어도 **의도한 기능의 출력이 끝까지 나오지 못해 해당 서비스를 유저에게 제공하지 못한 경우** | 패치 + 충분한 검증 후 배포 시작 |
+| `WARN` | 정의된 기능이 정상적으로 수행되지 못했으나, **의도대로 폴백으로 수행되어 서비스는 제공된** 경우 | 로그만 남김 (정책으로 "분석만"까지 선택 가능) |
+| `INFO` | 정의된 기능이 의도대로 **정상적으로 수행된** 경우 (409 충돌 재시도 끝에 성공한 경우 포함) | 반응 없음. 사람 관리자의 요청이 있을 때만 발신 · 기록 (§6 `set_level`) |
+| `DEBUG` | 사용자 정의 등 **필요에 따라** 남기는 로그 | 반응 없음. 요청이 있을 때만 발신 · 기록 |
+
+판정 규칙:
+
+- **한 사건에는 한 등급만** 붙인다. 결과를 아는 가장 바깥 계층이 등급을 정하고, 안쪽 계층의 재시도 · 중간 실패는 `INFO` 이하로 남긴다.
+- **폴백**은 코드에 명시된 대체 경로를 뜻한다(예: 모델 A 실패 → 모델 B, 번역 실패 → 원문 표시 후 다음 tick 재시도). "실패했지만 그냥 넘어감"은 폴백이 아니다.
+- 폴백이 있어도 **유저에게 보여 줘야 할 결과가 끝내 만들어지지 못하면**(예: 트윗이 등록되지 않음) `ERROR` 다.
+- 재시도는 폴백이 아니다. 재시도로 성공하면 `INFO`, 재시도가 소진되어 대체 경로로 갔다면 그 대체 경로의 결과로 `WARN`/`ERROR` 를 정한다.
 
 > 배포 · 병합을 자동으로 할지는 이 규약 밖이다 — 운영자가 범위를 정한다(현재 운영 규칙: 배포 · 병합은 운영자 결정).
 
@@ -43,18 +49,17 @@
 | 파이썬 `logging` | `ERROR` | `ERROR` |
 | 파이썬 `logging` | `WARNING` | `WARN` |
 | 파이썬 `logging` | `INFO` | `INFO` |
-| 파이썬 `logging` | `DEBUG` (10 이상 20 미만) | `DEBUG` |
-| 파이썬 `logging` | 10 미만 — 파이썬에 TRACE 가 없어 **레벨 5** 를 `TRACE` 로 등록(`src.bus.TRACE`) | `TRACE` |
+| 파이썬 `logging` | `DEBUG` 및 그 미만 | `DEBUG` |
 | 처리되지 않은 예외 | 프로세스 종료 (`sys.excepthook`) · 스레드 종료 (`threading.excepthook`) | `CRITICAL` (`logger` = `uncaught.process` / `uncaught.thread`) |
-| 이벤트 로그(`monitor_log`) | `result` = `err` 또는 `degraded` | `ERROR` |
-| 이벤트 로그 | `result` = `ok` | `TRACE` (정상 완료 = "로직이 실행되고 완료됨", 운영자 결정 2026-10-12) |
+| 이벤트 로그(`monitor_log`) | `result` = `err` | `ERROR` |
+| 이벤트 로그 | `result` = `warn` (옛 기록 값 `degraded` 는 `warn` 으로 취급) | `WARN` |
+| 이벤트 로그 | `result` = `ok` | `INFO` |
 
-- `err`/`degraded` 는 이 저장소 이벤트 로그의 `result` 값(`ok`/`degraded`/`err`)이다. `degraded` = 폴백 · 스킵으로 의도대로
-  못 한 것, `err` = 실패. 둘 다 위 정의상 `ERROR` 다.
+- `ok`/`warn`/`err` 는 이 저장소 이벤트 로그의 `result` 값이며 위 정의를 그대로 따른다(`warn` = 폴백으로 수행, `err` = 폴백이 아니거나 서비스 제공 실패).
 - **발신기가 알 수 없는 `CRITICAL`**: 발신기 프로세스 자체가 죽으면 발신할 수 없다. 이 경우는 **수신기가 `hb/publisher.json` 의
   `ts` 가 120초 넘게 갱신되지 않는 것을 감지**해 스스로 `CRITICAL`(발신기 소실)로 취급한다(§7).
-- 기본 발신 임계값은 **`WARN`** (WARN · ERROR · CRITICAL 발신, INFO · DEBUG · TRACE 미발신). `MEW_BUS_LEVEL` 환경 변수 또는 제어 봉투로 바꾼다.
-- **DEBUG · TRACE 를 켜면(§6)** 러너의 루트 로거 레벨이 일시적으로 낮아져 `logger.debug()` / `logger.log(TRACE, …)` 가 핸들러에 닿는다.
+- 기본 발신 임계값은 **`WARN`** (WARN · ERROR · CRITICAL 발신, INFO · DEBUG 미발신). `MEW_BUS_LEVEL` 환경 변수 또는 제어 봉투로 바꾼다.
+- **DEBUG 를 켜면(§6)** 러너의 루트 로거 레벨이 일시적으로 낮아져 `logger.debug()` 가 핸들러에 닿는다.
   콘솔 등 기존 핸들러는 원래 레벨로 묶어 두어 화면 출력은 그대로이고, 레벨이 복귀하면 로거 · 핸들러 레벨을 원복한다.
   (루트가 아니라 **자체 레벨이 지정된 로거**는 영향받지 않는다. 켜는 동안 분당 발신 상한에 걸린 것은 `dropped` 로 센다.)
 
@@ -94,7 +99,7 @@
 | `message` | ✔ | 한 줄 요약 (최대 4000자) |
 | `logger` | | 로거 이름 (`kind=log`) |
 | `traceback` | | 파이썬 트레이스백 (최대 8000자) |
-| `event` | | `{flow, result: ok\|degraded\|err, who?, detail?}` (`kind=event`) |
+| `event` | | `{flow, result: ok\|warn\|err, who?, detail?}` (`kind=event`) |
 | `context` | | 소량의 스칼라 맥락 (최대 20키) |
 | `occurrences` | | 묶음 요약 봉투 전용 — **첫 건 이후의 반복 횟수** (§5) |
 | `first_ts`, `last_ts` | | 묶음 요약 봉투 전용 — 묶인 구간 |
@@ -130,14 +135,14 @@
 
 | `cmd` | `args` | 효과 |
 |---|---|---|
-| `set_level` | `level`: `ERROR`\|`WARN`\|`INFO`\|`DEBUG`\|`TRACE`, `ttl_sec`?: 1~86400 | 발신 임계값 변경. `ttl_sec` 가 있으면 그 뒤 **기본 레벨로 자동 복귀**. 상세 레벨(`INFO`·`DEBUG`·`TRACE`)은 `ttl_sec` 가 없으면 3600초 — 항상 자동 복귀 |
+| `set_level` | `level`: `ERROR`\|`WARN`\|`INFO`\|`DEBUG`, `ttl_sec`?: 1~86400 | 발신 임계값 변경. `ttl_sec` 가 있으면 그 뒤 **기본 레벨로 자동 복귀**. 상세 레벨(`INFO`·`DEBUG`)은 `ttl_sec` 가 없으면 3600초 — 항상 자동 복귀 |
 | `pause` | `ttl_sec`? | `CRITICAL` 을 제외한 발신 중지(억제 건수는 `counters.suppressed`). `ttl_sec` 뒤 자동 재개 |
 | `resume` | — | `pause` 해제 |
 | `ping` | — | `hb/publisher.json` 즉시 갱신 |
 
 - `target` 이 비었거나 `publisher` · `*` 이면 발신기 몫이다. 다른 값이면 발신기는 **건드리지 않고** 둔다.
 - 검증에 실패한 봉투는 `applied=false` 와 사유를 `ctl/done` 에 남긴다.
-- `set_level INFO`/`DEBUG`/`TRACE` 가 "사람 관리자의 요청에 따라 상세 로그를 남기는" 수단이다 — 평소에는 보내지 않는다.
+- `set_level INFO`/`DEBUG` 가 "사람 관리자의 요청에 따라 상세 로그를 남기는" 수단이다 — 평소에는 보내지 않는다.
 
 ## 7. 생존 신호 `mew.hb/1`
 
@@ -178,14 +183,14 @@
 | 발신기(러너 핸들러) | `LogEntry` → 봉투 변환 어댑터 (수신기 쪽에 둠) |
 
 변환 규칙(§1-1)과 봉투 필드는 그대로다. 단 Cloud Logging 로그는 파이썬 `logging` 레코드가 아니므로 `severity` 는 `LogEntry.severity`
-(`CRITICAL`/`ALERT`/`EMERGENCY` → `CRITICAL`, `ERROR` → `ERROR`, `WARNING` → `WARN`, `NOTICE`/`INFO` → `INFO`, `DEBUG` → `DEBUG`; Cloud Logging 에는 TRACE 가 없다)에서 가져온다.
+(`CRITICAL`/`ALERT`/`EMERGENCY` → `CRITICAL`, `ERROR` → `ERROR`, `WARNING` → `WARN`, `NOTICE`/`INFO` → `INFO`, `DEBUG` → `DEBUG`)에서 가져온다.
 
 ## 11. 적합성 검사 (서로의 코드를 몰라도 되게 하는 장치)
 
 - 스키마(단일 기준): `docs/bus/schema/*.json` · 정상 예제 `docs/bus/examples/*.json` · 위반 예제 `docs/bus/examples/invalid/*.json`.
 - `python -m src.bus.conform` — 예제 전체를 검증 (정상은 통과, 위반은 실패해야 통과). `python -m src.bus.conform FILE...` 로 임의 파일 검증.
   `jsonschema` 가 없어도 돌아가는 최소 검증기이며, 수신기는 자기 쪽 검증기(예: `jsonschema`)로 같은 스키마를 써도 된다.
-- 발신기 self-test: `python -m src.bus.publisher` (마스킹 · 임계값 · 묶음 · 제어 · DEBUG/TRACE · pause · 상한 · 원자성 확인).
+- 발신기 self-test: `python -m src.bus.publisher` (마스킹 · 임계값 · 묶음 · 제어 · DEBUG · pause · 상한 · 원자성 확인).
 
 ## 11-1. 수신기 구현 (1단계: 분석 · 보고 / 2단계: 자동 수정 — 2단계는 `docs/AUTOFIX.md`)
 
@@ -211,4 +216,4 @@
 | `src/backend/monitor_log.py` | `log_events()` 첫머리에서 `src.bus.on_events` 호출 (실패 무시) |
 | `src/backend/local_runner.py` | 시작 시 `src.bus.install()` (`--check` 에서는 생략) |
 
-환경 변수: `MEW_BUS_DIR`(필수, 없으면 비활성) · `MEW_ENV`(`local`\|`stage`\|`prod`, 기본 `local`) · `MEW_BUS_LEVEL`(`ERROR`\|`WARN`\|`INFO`\|`DEBUG`\|`TRACE`, 기본 `WARN`).
+환경 변수: `MEW_BUS_DIR`(필수, 없으면 비활성) · `MEW_ENV`(`local`\|`stage`\|`prod`, 기본 `local`) · `MEW_BUS_LEVEL`(`ERROR`\|`WARN`\|`INFO`\|`DEBUG`, 기본 `WARN`).

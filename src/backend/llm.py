@@ -1013,10 +1013,11 @@ class LLMClient:
                     )
                     return None
             except requests.Timeout:
-                logger.warning(f"Groq: 타임아웃 (attempt {attempt+1}/3)")
-                if attempt < len(delays) - 1:
+                if attempt < len(delays) - 1:   # 재시도 중 — 정상 경로의 일부 (INFO). 소진되면 WARN
+                    logger.info(f"Groq: 타임아웃 (attempt {attempt+1}/3) — 재시도")
                     time.sleep(delay)
                     continue
+                logger.warning(f"Groq: 타임아웃 — 재시도 소진 (3/3)")
                 return None
             except requests.RequestException as e:
                 logger.warning(f"Groq: 네트워크 오류 — {e}")

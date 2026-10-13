@@ -49,7 +49,7 @@ def main() -> int:
     d = defaults(cfg)
     check(d["CRITICAL"]["action"] == "fix" and d["CRITICAL"]["preset"] == "urgent" and d["CRITICAL"]["cooldown_sec"] == 300, "기본: CRITICAL = 수정 · 긴급 프리셋 · 쿨다운 5분")
     check(d["ERROR"]["action"] == "fix" and d["ERROR"]["preset"] == "standard" and d["ERROR"]["cooldown_sec"] == 3600, "기본: ERROR = 수정 · 표준 프리셋 · 쿨다운 1시간")
-    check(all(d[s]["action"] == "off" and d[s]["record"] for s in ("WARN", "INFO", "DEBUG", "TRACE")), "기본: WARN 이하 = 끔(기록만)")
+    check(all(d[s]["action"] == "off" and d[s]["record"] for s in ("WARN", "INFO", "DEBUG")), "기본: WARN 이하 = 끔(기록만)")
 
     # 2) 검증 규칙
     _, errs = validate({"WARN": {"action": "fix"}}, d)

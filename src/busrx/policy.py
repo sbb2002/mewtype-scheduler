@@ -3,7 +3,7 @@
 저장: `<버스>/rx/policy.json` (관리 페이지에서 수정 → 수신기가 다음 에러부터 바로 반영, 재시작 불필요). 변경 이력: `rx/policy_history.jsonl`.
 기본값은 운영자 정의(2026-10-12)를 따른다:
   CRITICAL = 즉각 패치 + 최소 동작 검증(긴급 프리셋)  /  ERROR = 패치 + 충분한 검증(표준 프리셋)
-  WARN = 로그만  /  INFO · DEBUG · TRACE = 반응 없음
+  WARN = 로그만  /  INFO · DEBUG = 반응 없음
 안전 규칙: WARN 이하는 "수정" 불가(기록 · 분석까지만).
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ from src.bus import envelope as E
 
 from . import pipelines
 
-SEVERITIES = E.SEVERITIES  # CRITICAL ERROR WARN INFO DEBUG TRACE
+SEVERITIES = E.SEVERITIES  # CRITICAL ERROR WARN INFO DEBUG
 ACTIONS = {"off": "끔(기록만)", "analyze": "분석만", "fix": "수정까지"}
 COOLDOWN_MAX = 7 * 86400
 # 동작 모드(전체): auto = 전부 자동 패치(기본) / semi = 분석 후 패치 계획안을 만들어 사람의 승인 · 반려(재계획) · 거절을 기다림 / off = 자동제어 동작 안 함(기록만)
@@ -124,7 +124,7 @@ class Policy:
         return {s: dict(v) for s, v in self._cache.items()}
 
     def get(self, sev: str) -> dict:
-        return self.all().get(sev) or defaults(self.cfg)["TRACE"]
+        return self.all().get(sev) or defaults(self.cfg)["DEBUG"]
 
     def save(self, raw: dict, who: str = "dashboard") -> tuple[dict, list[str]]:
         new, errs = validate(raw, self.all(), pipelines.all_pipelines(self.cfg))

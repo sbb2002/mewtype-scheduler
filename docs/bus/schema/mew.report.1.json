@@ -9,7 +9,7 @@
     "id": {"type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"},
     "ts": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"},
     "signature": {"type": "string", "maxLength": 128},
-    "severity": {"enum": ["CRITICAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"]},
+    "severity": {"enum": ["CRITICAL", "ERROR", "WARN", "INFO", "DEBUG"]},
     "verdict": {"enum": ["confirmed", "unknown", "ignored"]},
     "summary": {"type": "string", "maxLength": 2000},
     "cause": {"type": "string", "maxLength": 4000},

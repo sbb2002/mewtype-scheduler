@@ -12,8 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
-SEVERITIES = ("CRITICAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE")
-_RANK = {"CRITICAL": 60, "ERROR": 50, "WARN": 40, "INFO": 30, "DEBUG": 20, "TRACE": 10}
+SEVERITIES = ("CRITICAL", "ERROR", "WARN", "INFO", "DEBUG")
+_RANK = {"CRITICAL": 60, "ERROR": 50, "WARN": 40, "INFO": 30, "DEBUG": 20}
 
 MSG_MAX = 4000
 TB_MAX = 8000
@@ -21,7 +21,7 @@ _CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 def rank(sev: str) -> int:
-    return _RANK[sev]
+    return _RANK.get(sev, _RANK["DEBUG"])  # 폐기된 TRACE 등 알 수 없는 값은 DEBUG 로 취급
 
 
 def new_id(now: float | None = None) -> str:

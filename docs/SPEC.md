@@ -537,7 +537,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   노랑 구간 「이벤트 종료까지 D-n」 · 빨강 구간 「가챠 종료까지 n시간」(60분 안이면 분). 평소(청록)는 말풍선 없이 날짜 줄 끝에 칩 문구, 개최 전은 「개최까지 D-n」 말풍선(종료일 미정이면 칩 문구).
 - 행사 판정: `llm.banner_judge(text, posted_kst, active)` → `{action: none|upsert|hold|cancel, banner_ref, event, gacha, image_for, reason}`.
   시각은 LLM 이 JST 문자열로 주고 코드가 UTC 로 바꾼다. 코드가 형식 · 순서 · 참조 id 를 **검증**한 뒤에만 반영(`banners.apply_judgement`).
-  LLM 5회 실패 → 등록하지 않음(소식과 반대 기본값) + monitor `degraded`.
+  LLM 5회 실패 → 등록하지 않음(소식과 반대 기본값) + monitor `err`(서비스 제공 실패 — 구 이름 degraded).
 - 되돌리기: `_llm_record(kind="banner_judge", undo={"type":"restore_banner", …})` — 변경 전 항목 스냅샷으로 복원, 새로 만든 항목이면 삭제.
 - 소식과의 중복 방지: 게임 계정 글은 소식 경로를 타지 않고, 다른 계정 글이라도 활성 · 보관 행사의 `match_keys` 가 본문에 들어 있으면 소식으로 올리지 않는다(`banners.covers_text`).
 
@@ -855,7 +855,7 @@ null`, 10분 캐시). 오늘 이후 날짜는 400. 모두 CORS `*`, 실패 시 5
 `@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
 (v3.8.9) 제어 채널 웹훅 `/telegram` 은 요청마다 모니터 로그 `flow="cmd"` 1줄(`who`=명령어, `detail`=원문 120자 —
 `/` 로 시작 안 하는 후속 입력은 12자 이하 한 줄만, 그 외 글자 수만, `reply`=마지막 응답 DM 첫 줄, `result`=응답
-DM 문구 기반 근사: 예외·⚠️/❌ → err, "사용법"·응답 누락 → degraded, 그 외 ok) → 웹 monitor 타임라인 "💬 운영자
+DM 문구 기반 근사: 예외·⚠️/❌ → err, "사용법"·응답 누락 → warn(구 degraded), 그 외 ok) → 웹 monitor 타임라인 "💬 운영자
 명령" 행(트리거와 백엔드 상태 사이).
 (v3.8.9) `POST /ingest` 는 알림 1건마다(403 제외) 모니터 로그 `flow="upstream"` 1줄(`source`=x|yt, `who`=
 `android.title`, `detail`=응답 본문에서 읽은 갈래, `result`=HTTP 4xx/5xx 또는 ok=false → err, 그 외 ok) → 웹 monitor
@@ -924,7 +924,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **판단 기록 · 이벤트**: 등록 1곡 = `llm_actions.json`(ops) 기록 `song_register`(`by="rule"`, undo = `{type:"remove_song", id, title, added_at}`, input = RSS 항목 스냅샷),
   곡명 중복 건너뜀 1건 = `song_skip`(검토용, undo 없음, `seen` 으로 한 번만). 둘 다 작업 탭 「LLM 판단」에 보이고 반려할 수 있다. 모니터 이벤트 `flow="song"`
   (`action` = added · skipped · reading · rss_empty — 어드민 조작은 `via="ops"` 로 edited · deleted · added_manual · unblocked · rejected · reading_regen)가 같은 이벤트 로그(보관 · 스냅샷 · 리포트 전 기간)에 쌓여 리포트 타임라인 「🎵 신곡 감지」 레인에 점으로 나온다.
-  RSS 가 비어 있으면(조회 실패 포함) 그 시간의 첫 tick(분 < 10)에만 degraded 이벤트 1건 — 시간당 1회. 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
+  RSS 가 비어 있으면(조회 실패 포함) 그 시간의 첫 tick(분 < 10)에만 warn(구 degraded) 이벤트 1건 — 시간당 1회. 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
 - **쓰기 경로**: 감지 쪽은 tick 안에서 gh 로 **직접** 쓴다(`/write` 자기 호출은 `concurrency=1` 교착 — `record_video_releases` 와 같은 방식; 한 tick 에 songs.json 1번 + 판단 기록 1번(배치) + 이벤트 1번 이하,
   기록은 songs.json 쓰기 **성공 뒤에만**). 어드민 편집은 `/write` 직렬화(writers kind `song_edit` → `telegram_app._song_edit_commit`, sha 충돌 재시도 4회). 외부 LLM 호출은 호출부가 먼저(A-1).
 - **안전**: `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다.** 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음.

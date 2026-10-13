@@ -20,7 +20,7 @@ from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
 from . import songs as songs_mod
-from .monitor_log import RESULT_DEGRADED, RESULT_ERR, RESULT_OK, log_events
+from .monitor_log import RESULT_WARN, RESULT_ERR, RESULT_OK, log_events
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
 from .preview_build import build_archive_appends, build_preview
@@ -308,7 +308,7 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
     - 등록 1곡 = 판단 기록 `song_register`(반려하면 목록에서 지우고 재등록 차단) · 곡명 중복 건너뜀 1건 = `song_skip`(검토용, `seen` 으로 한 번만)
       — 둘 다 작업 탭 「LLM 판단」에 보이고, 모니터 이벤트 `flow="song"` 은 리포트 타임라인에 보인다.
     - `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산(기록은 쓰기 성공 뒤에만 남김 — 중복 기록 없음).
-    - RSS 가 비어 있으면(조회 실패 포함) 그 시간대 첫 tick(분 < 10)에만 degraded 이벤트 1건 — 시간당 1회.
+    - RSS 가 비어 있으면(조회 실패 포함) 그 시간대 첫 tick(분 < 10)에만 warn 이벤트 1건 — 시간당 1회.
     **어떤 실패도 tick 을 막지 않는다.** 반환: {"added": [곡명...], "dups"?: [...], "readings"?: n} 또는 {"skipped": 사유}.
     """
     try:
@@ -324,7 +324,7 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
         events: list[dict] = []
         empty_feed = not any(e for _, e in entries_by_who)
         if empty_feed and now_iso[14:16].isdigit() and int(now_iso[14:16]) < 10:
-            events.append(_song_event(now_iso, RESULT_DEGRADED, "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
+            events.append(_song_event(now_iso, RESULT_WARN, "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
         doc, sha = gh.read_json(songs_mod.SONGS_PATH)
         if doc is None:
             log.warning("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
@@ -591,7 +591,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         except ConflictError as e:
             if _attempt == 2:
                 raise
-            log.warning("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
+            log.info("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
 
     # ── (v4a) 수집에서 뺀 그룹 채널 프리미어(녹화 영상 공개) 기록 · 있던 예고를 뺐으면 모니터 로그 ──
     if _premieres:
@@ -694,7 +694,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         preview_events = _preview_log_events(_pv0.get("items"), new_preview.get("items", []), gone_items)
         enqueue_error_vids = {vid for vid in wakes if any(e.startswith(f"{vid}:") for e in enqueue_errors)}
         for ev in preview_events:
-            quality = RESULT_DEGRADED if ev.get("video_id") in enqueue_error_vids else RESULT_OK
+            quality = RESULT_WARN if ev.get("video_id") in enqueue_error_vids else RESULT_OK
             events.append({
                 "ts": now_iso,
                 "flow": "preview",
@@ -1044,10 +1044,10 @@ if __name__ == "__main__":
     _g7 = _FakeGH(dict(_doc), conflict=True)
     assert _detect_new_songs(_g7, _feeds_cfg, "t", fetch=lambda cid: _rss, llm=_FakeLLM(), log_events_fn=lambda e: None) == {"skipped": "conflict"} and "llm_actions.json" not in _g7.files, "쓰기 충돌 → 다음 tick 재시도 · 판단 기록은 남기지 않음"
     assert _detect_new_songs(_FakeGH(dict(_doc)), {}, "t", fetch=lambda cid: _rss) == {"skipped": "no_feeds"}, "피드 설정 없으면 건너뜀"
-    # RSS 비어 있음 — 시간당 1회(분 < 10)만 degraded 이벤트
+    # RSS 비어 있음 — 시간당 1회(분 < 10)만 warn 이벤트
     _e8: list = []
     assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:05:00Z", fetch=lambda cid: [], log_events_fn=_e8.extend) == {"added": []}
-    assert len(_e8) == 1 and _e8[0]["result"] == "degraded" and _e8[0]["action"] == "rss_empty", "RSS 비어 있음: 시간 첫 tick 에 degraded 1건"
+    assert len(_e8) == 1 and _e8[0]["result"] == "warn" and _e8[0]["action"] == "rss_empty", "RSS 비어 있음: 시간 첫 tick 에 warn 1건"
     _e9: list = []
     _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:25:00Z", fetch=lambda cid: [], log_events_fn=_e9.extend)
     assert _e9 == [], "RSS 비어 있음: 같은 시간의 다른 tick 은 기록 안 함(스팸 방지)"

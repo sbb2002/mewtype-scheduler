@@ -366,7 +366,7 @@ class Receiver:
         m = self.state["meta"].setdefault(sig, {"count": 0, "first": min(e["ts"] for e in envs)})
         m["count"] += len(envs) + sum(e.get("occurrences", 0) for e in envs)
         m["last"] = max(e["ts"] for e in envs)
-        if E.rank(top["severity"]) >= E.rank(m.get("sev", "TRACE")):
+        if E.rank(top["severity"]) >= E.rank(m.get("sev", "DEBUG")):
             m["sev"] = top["severity"]
         ex = envs[0]
         m["where"] = ex.get("logger") or (ex.get("event") or {}).get("flow") or "?"

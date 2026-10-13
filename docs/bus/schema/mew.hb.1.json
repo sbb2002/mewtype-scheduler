@@ -10,7 +10,7 @@
     "ts": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"},
     "pid": {"type": "integer"},
     "env": {"enum": ["local", "stage", "prod"]},
-    "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"]},
+    "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG"]},
     "paused": {"type": "boolean"},
     "counters": {"type": "object"}
   },

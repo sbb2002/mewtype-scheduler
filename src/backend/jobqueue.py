@@ -271,7 +271,7 @@ class LocalQueue:
                 # 잡 실행 (lock 바깥에서)
                 self._execute_job(next_job_id, job_dict)
         except Exception as e:
-            logger.exception(f"Worker {threading.current_thread().name} crashed: {e}")
+            logger.critical(f"Worker {threading.current_thread().name} crashed — 이 큐의 작업 처리가 멈춤: {e}", exc_info=True)
 
     def _execute_job(self, job_id: str, job_dict: dict) -> None:
         """

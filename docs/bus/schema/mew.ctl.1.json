@@ -13,7 +13,7 @@
     "args": {
       "type": "object",
       "properties": {
-        "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"]},
+        "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG"]},
         "ttl_sec": {"type": "integer", "minimum": 1, "maximum": 86400}
       }
     },

@@ -25,7 +25,7 @@
   .pill { display:inline-block; padding:.05rem .55rem; border-radius:999px; font-size:12px; border:1px solid var(--border); background:var(--bg3); }
   .ok { color:var(--ok); border-color:#1d5b34; } .warn { color:var(--warn); border-color:#6b4a0a; } .bad { color:var(--bad); border-color:#6b2020; }
   .sev-CRITICAL { color:#fff; background:#b91c1c; border-color:#b91c1c; } .sev-ERROR { color:var(--bad); }
-  .sev-WARN { color:var(--warn); } .sev-INFO, .sev-DEBUG, .sev-TRACE { color:var(--muted); }
+  .sev-WARN { color:var(--warn); } .sev-INFO, .sev-DEBUG { color:var(--muted); }
   .bar { height:10px; background:var(--bg3); border-radius:6px; overflow:hidden; margin:.3rem 0 .15rem; }
   .bar > i { display:block; height:100%; background:var(--ok); transition:width .4s; }
   .kv { display:grid; grid-template-columns:auto 1fr; gap:.15rem .8rem; }
@@ -124,9 +124,9 @@
     <div class="row"><span id="c-pub"></span><span class="grow"></span>
       <select id="pub-ttl"><option value="">시간 제한 없음</option><option value="900">15분</option><option value="3600">1시간</option></select>
       <button id="b-pub"></button></div></div>
-  <div class="card"><b>발신 레벨</b><p class="muted small">기본은 WARN. INFO · DEBUG · TRACE 는 지정한 시간이 지나면 자동으로 WARN 으로 돌아갑니다.</p>
+  <div class="card"><b>발신 레벨</b><p class="muted small">기본은 WARN. INFO · DEBUG 는 지정한 시간이 지나면 자동으로 WARN 으로 돌아갑니다.</p>
     <div class="row"><span id="c-level"></span><span class="grow"></span>
-      <select id="lv"><option>ERROR</option><option selected>WARN</option><option>INFO</option><option>DEBUG</option><option>TRACE</option></select>
+      <select id="lv"><option>ERROR</option><option selected>WARN</option><option>INFO</option><option>DEBUG</option></select>
       <select id="lv-ttl"><option value="900">15분</option><option value="3600" selected>1시간</option><option value="14400">4시간</option><option value="">제한 없음</option></select>
       <button id="b-lv" class="pri">적용</button></div></div>
   <div class="card"><b>에러 레벨별 자동 대응</b>
@@ -274,7 +274,7 @@ let POL = null, PMETA = null;
 async function loadPolicy() { const j = await api('/api/policy'); POL = j.policy; PMETA = j; renderPolicy(); }
 function renderPolicy() {
   const body = $('#pol-body'); body.textContent = ''; const refs = {}; let built = false;
-  PMETA.severities.forEach(sev => { const p = POL[sev], low = ['WARN', 'INFO', 'DEBUG', 'TRACE'].includes(sev); const tr = el('tr'); const r = refs[sev] = {};
+  PMETA.severities.forEach(sev => { const p = POL[sev], low = ['WARN', 'INFO', 'DEBUG'].includes(sev); const tr = el('tr'); const r = refs[sev] = {};
     const c0 = el('td'); c0.append(pill(sev, 'sev-' + sev)); tr.append(c0);
     const c1 = el('td'); r.rec = el('input'); r.rec.type = 'checkbox'; r.rec.checked = p.record; c1.append(r.rec); tr.append(c1);
     const c2 = el('td'); r.act = el('select'); Object.entries(PMETA.actions).forEach(([k, v]) => { if (k === 'fix' && low) return; const o = el('option', '', v); o.value = k; r.act.append(o); }); r.act.value = p.action; c2.append(r.act); tr.append(c2);
@@ -284,7 +284,7 @@ function renderPolicy() {
   built = true;
   function warn() { const w = []; PMETA.severities.forEach(sev => { const a = refs[sev].act.value;
       if (sev === 'CRITICAL' && a === 'off') w.push('CRITICAL 을 끄면 서버 정지급 에러도 자동 대응하지 않습니다.');
-      if (['WARN', 'INFO', 'DEBUG', 'TRACE'].includes(sev) && a !== 'off') w.push(`${sev} 를 분석하면 구독 사용량이 늘어납니다(반복 에러는 쿨다운 안에서 1회).`); });
+      if (['WARN', 'INFO', 'DEBUG'].includes(sev) && a !== 'off') w.push(`${sev} 를 분석하면 구독 사용량이 늘어납니다(반복 에러는 쿨다운 안에서 1회).`); });
     if (PMETA.stage < 2) w.push('수신기가 1단계(RX_STAGE=1)라서 “수정까지”를 골라도 분석만 합니다.'); $('#pol-warn').textContent = w.join(' '); }
   renderPolicy.refs = refs; warn();
 }

@@ -126,7 +126,7 @@ def _write_json_retry(gh, path: str, data: dict, message: str) -> None:
         except ConflictError:
             if attempt == 1:
                 raise
-            logger.warning("monitor_snapshot: %s 충돌 — 재시도", path)
+            logger.info("monitor_snapshot: %s 충돌 — 재시도", path)
 
 
 def read_summary(gh) -> tuple[dict, bool]:

@@ -24,12 +24,10 @@ COALESCE_WINDOW_SEC = 60      # 같은 시그니처는 첫 건만 즉시 보내�
 RATE_MAX_PER_MIN = 60         # 분당 발신 상한(CRITICAL 제외)
 CTL_POLL_SEC = 5
 HB_SEC = 30
-VERBOSE_DEFAULT_TTL = 3600    # set_level INFO/DEBUG/TRACE 에 ttl 이 없을 때(상세 레벨은 항상 자동 복귀)
-TRACE_LEVELNO = 5             # 파이썬 logging 에는 TRACE 가 없어 5 로 등록: log.log(TRACE_LEVELNO, ...)
+VERBOSE_DEFAULT_TTL = 3600    # set_level INFO/DEBUG 에 ttl 이 없을 때(상세 레벨은 항상 자동 복귀)
 
-_LEVELS = ("ERROR", "WARN", "INFO", "DEBUG", "TRACE")
-_VERBOSE = ("INFO", "DEBUG", "TRACE")
-logging.addLevelName(TRACE_LEVELNO, "TRACE")
+_LEVELS = ("ERROR", "WARN", "INFO", "DEBUG")
+_VERBOSE = ("INFO", "DEBUG")
 _UC = re.compile(r"UC[\w-]{22}")
 _HEX = re.compile(r"\b[0-9a-fA-F]{8,}\b")
 _NUM = re.compile(r"\d+")
@@ -55,7 +53,7 @@ def _level_to_sev(levelno: int) -> str | None:
         return "INFO"
     if levelno >= logging.DEBUG:
         return "DEBUG"
-    return "TRACE"
+    return "DEBUG"  # DEBUG(10) 미만도 DEBUG (TRACE 는 폐기)
 
 
 class Publisher:
@@ -156,7 +154,10 @@ class Publisher:
     def on_events(self, events: list[dict]) -> None:
         for ev in events:
             result = ev.get("result")
-            sev = "ERROR" if result in ("err", "degraded") else "TRACE"
+            if result == "degraded":      # 옛 기록 값 — warn 으로 통일
+                result = "warn"
+            # err = ERROR · warn(구 degraded) = WARN · ok = INFO (docs/BUS_PROTOCOL.md §1-1)
+            sev = "ERROR" if result == "err" else ("WARN" if result in ("warn", "degraded") else "INFO")
             flow = str(ev.get("flow", ""))
             detail = str(ev.get("detail", ""))
             ctx = {k: v for k, v in ev.items()
@@ -176,10 +177,10 @@ class Publisher:
             self.paused, self._paused_until = False, None
 
     def _sync_logging(self) -> None:
-        """DEBUG/TRACE 발신 중에는 루트 로거 레벨을 낮춰 debug 로그가 핸들러까지 오게 하고,
+        """DEBUG 발신 중에는 루트 로거 레벨을 낮춰 debug 로그가 핸들러까지 오게 하고,
         기존 핸들러(콘솔 등)는 원래 루트 레벨로 묶어 출력은 그대로 둔다. 레벨이 내려오면 원복."""
         root = logging.getLogger()
-        want = {"TRACE": TRACE_LEVELNO, "DEBUG": logging.DEBUG}.get(self.level)
+        want = logging.DEBUG if self.level == "DEBUG" else None
         if want is not None:
             if self._saved_root is None:
                 orig = root.level or logging.WARNING
@@ -219,7 +220,7 @@ class Publisher:
             if cmd == "set_level":
                 lvl = args.get("level")
                 if lvl not in _LEVELS:
-                    return False, "level 은 ERROR/WARN/INFO/DEBUG/TRACE"
+                    return False, "level 은 ERROR/WARN/INFO/DEBUG"
                 ttl = args.get("ttl_sec") or (VERBOSE_DEFAULT_TTL if lvl in _VERBOSE else None)
                 if ttl:
                     self.level, self._level_until = lvl, now + min(int(ttl), 86400)
@@ -409,7 +410,7 @@ if __name__ == "__main__":
     pub.emit(kind="log", severity="INFO", message="자세히2", logger="t.e")
     check(pub.level == "WARN" and len(inbox()) == n1 + 1, "ttl 만료 후 WARN 으로 복귀")
 
-    # 4-b) DEBUG/TRACE: 단계 순서 · 루트 로거 레벨 조정 · 원복
+    # 4-b) DEBUG: 단계 순서 · 루트 로거 레벨 조정 · 원복
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     sp.put("ctl/inbox", "c1b", {"schema": "mew.ctl/1", "id": E.new_id(), "ts": E.iso(now[0]), "cmd": "set_level",
@@ -418,19 +419,14 @@ if __name__ == "__main__":
     check(pub.level == "DEBUG" and root.level == logging.DEBUG, "set_level DEBUG → 루트 로거 DEBUG 로 낮춤")
     n1b = len(inbox())
     pub.emit(kind="log", severity="DEBUG", message="디버그 로그", logger="t.dbg")
-    pub.emit(kind="log", severity="TRACE", message="트레이스 로그", logger="t.trc")
     got_b = inbox()[n1b:]
-    check(len(got_b) == 1 and got_b[0]["severity"] == "DEBUG" and not validate(got_b[0]),
-          "DEBUG 레벨에서 DEBUG 발신 · TRACE 는 미발신")
+    check(len(got_b) == 1 and got_b[0]["severity"] == "DEBUG" and not validate(got_b[0]), "DEBUG 레벨에서 DEBUG 발신")
     sp.put("ctl/inbox", "c1c", {"schema": "mew.ctl/1", "id": E.new_id(), "ts": E.iso(now[0]), "cmd": "set_level",
                                 "args": {"level": "TRACE", "ttl_sec": 100}})
     pub.poll_ctl()
-    n1c = len(inbox())
-    pub.emit(kind="log", severity="TRACE", message="트레이스 로그2", logger="t.trc2")
-    check(root.level == TRACE_LEVELNO and len(inbox()) == n1c + 1 and inbox()[-1]["severity"] == "TRACE"
-          and not validate(inbox()[-1]), "TRACE 레벨에서 TRACE 발신")
-    check(_level_to_sev(logging.DEBUG) == "DEBUG" and _level_to_sev(TRACE_LEVELNO) == "TRACE"
-          and _level_to_sev(logging.WARNING) == "WARN", "logging 레벨 → 심각도 변환(DEBUG · TRACE · WARN)")
+    check(pub.level == "DEBUG" and sp.count("ctl/inbox") == 0, "폐기된 TRACE 레벨 요청은 거부되고 현재 레벨 유지")
+    check(_level_to_sev(logging.DEBUG) == "DEBUG" and _level_to_sev(5) == "DEBUG" and _level_to_sev(logging.WARNING) == "WARN",
+          "logging 레벨 → 심각도 변환(DEBUG 미만도 DEBUG · WARN)")
     now[0] += 101
     pub.emit(kind="log", severity="INFO", message="만료 확인", logger="t.exp")
     check(pub.level == "WARN" and root.level == logging.INFO, "ttl 만료 후 루트 로거 레벨 원복")
@@ -456,11 +452,15 @@ if __name__ == "__main__":
 
     # 7) 이벤트 훅
     n3 = len(inbox())
-    pub.on_events([{"flow": "song", "result": "degraded", "who": "group", "detail": "RSS 비어 있음", "ts": "x"},
-                   {"flow": "tick", "result": "ok", "detail": "정상"}])
+    pub.on_events([{"flow": "song", "result": "warn", "who": "group", "detail": "RSS 비어 있음", "ts": "x"},
+                   {"flow": "tick", "result": "ok", "detail": "정상"},
+                   {"flow": "tweet", "result": "err", "detail": "반영 실패"}])
     got = inbox()[n3:]
-    check(len(got) == 1 and got[0]["severity"] == "ERROR" and got[0]["kind"] == "event" and not validate(got[0]),
-          "이벤트 degraded→ERROR 발신 · ok→TRACE(기본 미발신)")
+    check(len(got) == 2 and [g["severity"] for g in got] == ["WARN", "ERROR"] and all(g["kind"] == "event" and not validate(g) for g in got),
+          "이벤트 warn→WARN · err→ERROR 발신, ok→INFO(기본 미발신)")
+    n3b = len(inbox())
+    pub.on_events([{"flow": "song", "result": "degraded", "detail": "옛 기록 값"}])
+    check(len(inbox()) == n3b + 1 and inbox()[-1]["severity"] == "WARN", "옛 result 값 degraded 는 warn 으로 취급(WARN)")
 
     # 8) 로깅 핸들러 · traceback
     lg = logging.getLogger("selftest.handler")
