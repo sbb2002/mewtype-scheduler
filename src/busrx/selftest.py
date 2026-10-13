@@ -180,6 +180,27 @@ def main() -> int:
     rx.heartbeat()
     check("발신기 복구" in tg.msgs[-1] and (bus / "hb" / "receiver.json").exists(), "복구 알림 + receiver hb 기록")
 
+    # 10-b) 동작 모드 끔 — 발신기 소실 · 복구 알림도 보내지 않는다
+    stale = json.dumps({"schema": "mew.hb/1", "role": "publisher", "ts": E.iso(clock[0] - 300), "pid": 1})
+    fresh = json.dumps({"schema": "mew.hb/1", "role": "publisher", "ts": E.iso(clock[0]), "pid": 1})
+    rx.policy.set_mode("off")
+    n_msg = len(tg.msgs)
+    (bus / "hb" / "publisher.json").write_text(stale, encoding="utf-8")
+    rx._last_hb = 0
+    rx.heartbeat()
+    check(len(tg.msgs) == n_msg and not rx.state["lost_alerted"], "끔 모드: 발신기 소실 알림 없음(상태도 안 바꿈)")
+    rx.policy.set_mode("auto")
+    rx._last_hb = 0
+    rx.heartbeat()
+    check("발신기 소실" in tg.msgs[-1], "끔 → 자동으로 돌아왔을 때 아직 소실이면 그때 알림")
+    rx.policy.set_mode("off")
+    n_msg = len(tg.msgs)
+    (bus / "hb" / "publisher.json").write_text(fresh, encoding="utf-8")
+    rx._last_hb = 0
+    rx.heartbeat()
+    check(len(tg.msgs) == n_msg and not rx.state["lost_alerted"], "끔 모드: 복구 알림 없이 상태만 정리")
+    rx.policy.set_mode("auto")
+
     # 11) 재시작 복구
     p = sp.put("err/processing", "stuck_" + E.new_id(), env("stuck"))
     check(rx.recover() == 1 and sp.count("err/inbox") == 1, "processing 에 남은 봉투를 inbox 로 복구")

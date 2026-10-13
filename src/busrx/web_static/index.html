@@ -390,7 +390,7 @@ $('#reset-all').onclick = async () => { if (!confirm('정책과 사용자 정의
 
 /* 동작 모드(자동/반자동/끔) */
 const MODEKO = { auto: '자동', semi: '반자동', off: '끔' };
-const MODEINFO = { auto: ['자동', '기본 — 에러를 분석하고 전부 자동으로 패치합니다(정책에 따라).'], semi: ['반자동', '분석 후 패치 계획안만 만들고, 승인 탭에서 사람이 승인 · 반려(재계획) · 거절합니다.'], off: ['끔', '자동제어가 동작하지 않습니다 — 에러는 기록만 합니다(발신기 소실 알림 · 이 페이지는 계속 동작).'] };
+const MODEINFO = { auto: ['자동', '기본 — 에러를 분석하고 전부 자동으로 패치합니다(정책에 따라).'], semi: ['반자동', '분석 후 패치 계획안만 만들고, 승인 탭에서 사람이 승인 · 반려(재계획) · 거절합니다.'], off: ['끔', '자동제어가 동작하지 않습니다 — 에러는 기록만 하고 알림(발신기 소실 포함)도 보내지 않습니다. 이 페이지와 텔레그램 명령은 계속 동작합니다.'] };
 let CURMODE = null;
 function renderMode(m) { CURMODE = m; const b = $('#mode-btns'); b.textContent = '';
   ['auto', 'semi', 'off'].forEach(k => { const btn = el('button', 'mode-btn' + (k === m ? ' on' : '')); btn.append(el('b', '', MODEINFO[k][0] + (k === m ? ' ✓' : '')), el('small', '', MODEINFO[k][1].split(' — ')[0].split('. ')[0])); btn.onclick = () => setMode(k); b.append(btn); });

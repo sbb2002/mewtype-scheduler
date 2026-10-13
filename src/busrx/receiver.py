@@ -313,7 +313,10 @@ class Receiver:
             return
         if self.now() < self.state.get("restart_until", 0):
             return  # 수신기가 러너를 재시작하는 중
+        quiet = self.policy.mode() == "off"  # 동작 모드 끔 — 알림도 보내지 않는다(소실이 이어지면 모드를 켠 뒤 알림)
         if age > HB_LOST_SEC and not self.state["lost_alerted"]:
+            if quiet:
+                return
             self.state["lost_alerted"] = True
             self._save()
             self.tg.send(f"🚨 [CRITICAL] 발신기 소실 — hb/publisher.json 이 {int(age)}초째 갱신되지 않음\n"
@@ -322,7 +325,8 @@ class Receiver:
         elif age <= HB_LOST_SEC and self.state["lost_alerted"]:
             self.state["lost_alerted"] = False
             self._save()
-            self.tg.send("✅ 발신기 복구 — hb/publisher.json 갱신 재개")
+            if not quiet:
+                self.tg.send("✅ 발신기 복구 — hb/publisher.json 갱신 재개")
 
     # 한 번 훑기: 새 봉투를 읽어 시그니처별로 묶고 처리. 처리한 봉투 수를 돌려준다
     def step(self) -> int:
