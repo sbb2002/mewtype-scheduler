@@ -427,8 +427,8 @@ function logBody(e, run, prop) {
 }
 
 /* 수동 분석 · 수정: 정책이 WARN 이하를 자동 처리하지 않을 때 사람이 직접 누른다 */
-async function manualRun(sig, fix, saved) {
-  try { const j = await api(saved ? '/api/manual_fix' : '/api/manual', { sig, fix }); toast(j.msg || '시작했습니다'); await loadControl(); }
+async function manualRun(sig, fix, saved, note) {
+  try { const j = await api(saved ? '/api/manual_fix' : '/api/manual', saved ? { sig, note: note || '' } : { sig, fix }); toast(j.msg || '시작했습니다'); await loadControl(); }
   catch (er) { toast('실패: ' + er.message); }
 }
 function manualPanel(e) {
@@ -440,10 +440,15 @@ function manualPanel(e) {
   an.onclick = () => { if (confirm('이 에러를 지금 분석할까요? (Sonnet 호출 1회 — 구독 사용량이 소모됩니다)')) manualRun(e.sig, false); };
   fx.onclick = () => { if (confirm('이 에러를 분석하고, 원인이 확정되면 수정까지 진행할까요? ' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true); };
   const sv = (CD.fixable || []).includes(e.sig);
-  if (sv) { const sf = el('button', 'go', busy ? '처리 중…' : '이 분석으로 수정'); sf.disabled = busy || off; sf.title = '보고서의 분석을 그대로 쓰고 재분석 없이 수정만 진행합니다';
-    sf.onclick = () => { if (confirm('보고서에서 확인한 분석으로 수정만 진행할까요? (재분석 없음) ' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true, true); };
-    r.append(sf); }
-  r.append(an, fx); if (off) r.append(el('span', 'muted small', "동작 모드가 '끔'이라 실행할 수 없습니다.")); c.append(r);
+  r.append(an, fx);
+  if (sv) {
+    const box = el('div', 'apr-sec'); const ta = el('textarea'); ta.placeholder = '수정 지시(선택) — 예: 연속 실패할 때만 경고하고 재시도 간격을 늘리세요'; ta.rows = 2;
+    const sf = el('button', 'go', busy ? '처리 중…' : '이 분석으로 수정'); sf.disabled = busy || off;
+    sf.title = '분석 보고서를 읽은 뒤 판정과 관계없이 수정을 진행합니다(재분석 없음)';
+    sf.onclick = () => { if (confirm('보고서를 확인했고 수정을 진행할까요? (재분석 없음, 판정이 무시 가능 · 원인 불명이어도 진행) ' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true, true, ta.value); };
+    box.append(el('div', 'muted small', '보고서를 읽고 수정하기로 했다면 아래에서 진행합니다. 지시문은 구현 단계에 그대로 전달됩니다.'), ta, sf); c.append(r, box);
+  } else c.append(r);
+  if (off) r.append(el('span', 'muted small', "동작 모드가 '끔'이라 실행할 수 없습니다."));
   return c;
 }
 

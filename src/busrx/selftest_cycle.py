@@ -188,12 +188,11 @@ def main() -> int:
     check(c.post("/api/manual", json={"sig": "../x"}, headers=h).status_code == 400, "API: 잘못된 시그니처는 400")
     check(c.post("/api/manual", json={"sig": sg}).status_code == 403, "API: CSRF 없으면 403")
     check("manualPanel" in html and "/api/manual" in html, "화면: 수동 분석 · 수정 패널")
-    check(rx.saved_analysis(sg) is None, "원인 불명(unknown) 분석은 '이 분석으로 수정' 대상이 아님")
-    rf = max((cfg.rx / "runs").glob("*.json"), key=lambda p_: p_.stat().st_mtime)  # 가짜 claude 는 unknown 만 내므로 확정으로 고쳐 시험
-    rd = json.loads(rf.read_text(encoding="utf-8")); rd["analysis"]["verdict"] = "confirmed"
-    rf.write_text(json.dumps(rd, ensure_ascii=False), encoding="utf-8")
     sa = rx.saved_analysis(sg)
-    check(sa is not None and sa["analysis"]["verdict"] == "confirmed" and sg in rx.fixable_sigs(), "분석 결과가 실행 기록에 저장돼 '이 분석으로 수정' 대상이 됨")
+    check(sa is not None and sa["analysis"]["verdict"] == "unknown" and sg in rx.fixable_sigs(), "판정이 원인 불명이어도 분석이 저장돼 '이 분석으로 수정' 대상이 됨(사람이 읽고 결정)")
+    rf = max((cfg.rx / "runs").glob("*.json"), key=lambda p_: p_.stat().st_mtime)
+    rd = json.loads(rf.read_text(encoding="utf-8")); rd.pop("analysis"); rf.write_text(json.dumps(rd, ensure_ascii=False), encoding="utf-8")
+    check(rx.saved_analysis(sg) is not None, "실행 기록에 분석이 없는 옛 기록도 보고 봉투에서 복원")
     ok, msg = rx.manual_fix(sg)
     check(not ok and "1단계" in msg, "1단계에서는 저장된 분석으로도 수정 불가: " + msg)
     check(c.post("/api/manual_fix", json={"sig": sg}, headers=h).status_code == 409, "API: manual_fix 거부는 409")

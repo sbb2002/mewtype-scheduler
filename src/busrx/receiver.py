@@ -486,10 +486,25 @@ class Receiver:
             out.setdefault(d.get("sig"), d)
         return out
 
-    @staticmethod
-    def _usable_analysis(d: dict | None) -> dict | None:
-        a = (d or {}).get("analysis")
-        if not a or a.get("verdict") != "confirmed":
+    def _analysis_from_report(self, sig: str, ts: str) -> dict | None:
+        """실행 기록에 분석이 없는 옛 기록 — 같은 시각의 보고 봉투(report/inbox)에서 복원."""
+        for p in self.spool.list("report/inbox")[-400:]:
+            if not p.name.startswith(ts.replace("-", "").replace(":", "")):
+                continue
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            if d.get("signature") == sig and all(k in d for k in ("verdict", "summary", "cause", "evidence", "proposed_action")):
+                return {k: d[k] for k in ("verdict", "summary", "cause", "evidence", "proposed_action")}
+        return None
+
+    def _usable_analysis(self, d: dict | None) -> dict | None:
+        """수정 버튼에 쓸 분석: 판정(확정 · 불명 · 무시)과 무관하게 있으면 쓴다 — 읽고 수정할지는 사람이 정한다."""
+        if not d:
+            return None
+        a = d.get("analysis") or (self._analysis_from_report(d.get("sig"), d.get("ts") or "") if d.get("ts") else None)
+        if not a:
             return None
         if d.get("fix_status") in ("applied", "applied_no_restart", "committed", "awaiting_approval"):
             return None  # 이미 수정됐거나 승인 대기 중
@@ -503,7 +518,7 @@ class Receiver:
     def fixable_sigs(self) -> list[str]:
         return [s for s, d in self._latest_runs().items() if s and self._usable_analysis(d)]
 
-    def manual_fix(self, sig: str, who: str = "dashboard") -> tuple[bool, str]:
+    def manual_fix(self, sig: str, who: str = "dashboard", note: str = "") -> tuple[bool, str]:
         """저장된 분석 결과로 재분석 없이 수정만 진행(자동: 파이프라인 실행 · 반자동: 계획안 → 승인 대기)."""
         if self.policy.mode() == "off":
             return False, "동작 모드가 '끔'입니다 — 자동·반자동으로 바꾼 뒤 실행하세요"
@@ -511,7 +526,7 @@ class Receiver:
             return False, "수신기가 1단계(RX_STAGE=1)라 수정은 할 수 없습니다"
         sa = self.saved_analysis(sig)
         if not sa:
-            return False, "수정에 쓸 확정된 분석이 없습니다(분석 전이거나 원인 미확정, 또는 이미 수정·승인 대기 중)"
+            return False, "수정에 쓸 분석이 없습니다(분석 전이거나, 이미 수정·승인 대기 중)"
         with self._manual_lock:
             if sig in self._manual_busy:
                 return False, "이 에러는 이미 수동 처리 중입니다"
@@ -519,11 +534,15 @@ class Receiver:
             if not envs:
                 return False, "이 에러의 원본 기록(err/done)을 찾을 수 없습니다"
             self._manual_busy.add(sig)
-        threading.Thread(target=self._run_manual_fix, args=(sig, envs, sa["analysis"], who), name="rx-manual-fix", daemon=True).start()
+        threading.Thread(target=self._run_manual_fix, args=(sig, envs, sa["analysis"], who, (note or "").strip()[:500]), name="rx-manual-fix", daemon=True).start()
         return True, "저장된 분석으로 수정을 시작했습니다 — 완료되면 보고서가 갱신됩니다"
 
-    def _run_manual_fix(self, sig: str, envs: list[dict], analysis: dict, who: str) -> None:
+    def _run_manual_fix(self, sig: str, envs: list[dict], analysis: dict, who: str, note: str = "") -> None:
         try:
+            # 사람이 보고서를 읽고 수정하기로 했다 — 판정이 '무시 가능 · 원인 불명'이어도 수정 대상으로 확정하고, 지시문이 있으면 구현의 근거로 넘긴다
+            analysis = dict(analysis, verdict="confirmed", operator_decision="운영자가 보고서를 확인한 뒤 수정을 지시함(원래 판정: %s)" % analysis.get("verdict"))
+            if note:
+                analysis["operator_directive"] = note
             with self._pipe_lock:
                 top = max(envs, key=lambda e: E.rank(e["severity"]))
                 pol = dict(self.policy.get(top["severity"]))
@@ -533,7 +552,7 @@ class Receiver:
                 before = git_head(self.cfg.repo)
                 mark = USAGE.mark()
                 snap = self._snapshot(before)
-                steps = [{"id": "analysis", "name": "분석(저장된 결과 재사용)", "status": "ok", "sec": None, "note": "confirmed",
+                steps = [{"id": "analysis", "name": "분석(저장된 결과 재사용)", "status": "ok", "sec": None, "note": "운영자 지시로 수정 진행" + (f" — {note[:80]}" if note else ""),
                           "model": self.cfg.model_analysis, "cost": None}]
                 prop = fix = None
                 if self.policy.mode() == "semi":
