@@ -53,9 +53,9 @@ def main() -> int:
 
     # 2) 검증 규칙
     _, errs = validate({"WARN": {"action": "fix"}}, d)
-    check(any("WARN" in e and "수정" in e for e in errs), "WARN 이하는 '수정까지' 거부")
+    check(not errs and validate({"WARN": {"action": "fix"}}, d)[0]["WARN"]["action"] == "fix", "WARN 이하도 '수정까지' 허용")
     for bad in ({"ERROR": {"action": "delete"}}, {"ERROR": {"preset": "mystery"}}, {"ERROR": {"cooldown_sec": -1}},
-                {"ERROR": {"cooldown_sec": "5"}}, {"ERROR": {"record": "yes"}}, {"NOPE": {"action": "off"}}, {"INFO": {"action": "fix"}}):
+                {"ERROR": {"cooldown_sec": "5"}}, {"ERROR": {"record": "yes"}}, {"NOPE": {"action": "off"}}, {"INFO": {"action": "mystery"}}):
         check(validate(bad, d)[1], f"잘못된 입력 거부: {json.dumps(bad, ensure_ascii=False)}")
     ok, errs = validate({"WARN": {"action": "analyze", "cooldown_sec": 60}}, d)
     check(not errs and ok["WARN"]["action"] == "analyze" and ok["ERROR"] == d["ERROR"], "정상 입력은 해당 칸만 바뀜")
@@ -124,8 +124,11 @@ def main() -> int:
     check(c.post("/api/policy", json={"policy": {}}).status_code == 403, "CSRF 없는 정책 저장은 403")
     r = c.post("/api/policy", json={"policy": {"CRITICAL": {"preset": "standard", "cooldown_sec": 120}}}, headers=h)
     check(r.status_code == 200 and rx.policy.get("CRITICAL")["preset"] == "standard" and rx.policy.get("CRITICAL")["cooldown_sec"] == 120, "정책 저장 → 수신기에 즉시 반영")
-    r = c.post("/api/policy", json={"policy": {"WARN": {"action": "fix"}}}, headers=h)
-    check(r.status_code == 400 and r.get_json()["errors"] and rx.policy.get("WARN")["action"] == "analyze", "검증 실패(WARN 수정)는 400 + 저장 안 됨")
+    r = c.post("/api/policy", json={"policy": {"WARN": {"action": "delete"}}}, headers=h)
+    check(r.status_code == 400 and r.get_json()["errors"] and rx.policy.get("WARN")["action"] == "analyze", "검증 실패는 400 + 저장 안 됨")
+    r = c.post("/api/policy", json={"policy": {"WARN": {"action": "fix", "preset": "standard"}}}, headers=h)
+    check(r.status_code == 200 and rx.policy.get("WARN")["action"] == "fix", "WARN 수정까지 저장 가능")
+    c.post("/api/policy", json={"policy": {"WARN": {"action": "analyze"}}}, headers=h)
     r = c.post("/api/policy", json={"reset": True}, headers=h)
     check(r.get_json()["policy"]["CRITICAL"]["preset"] == "urgent" and r.get_json()["policy"]["WARN"]["action"] == "off", "기본값으로 되돌리기")
     runs = c.get("/api/runs").get_json()["runs"]

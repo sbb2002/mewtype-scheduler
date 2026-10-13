@@ -4,7 +4,7 @@
 기본값은 운영자 정의(2026-10-12)를 따른다:
   CRITICAL = 즉각 패치 + 최소 동작 검증(긴급 프리셋)  /  ERROR = 패치 + 충분한 검증(표준 프리셋)
   WARN = 로그만  /  INFO · DEBUG = 반응 없음
-안전 규칙: WARN 이하는 "수정" 불가(기록 · 분석까지만).
+모든 심각도에서 "수정까지"를 고를 수 있다(2026-10-13 운영자 결정 — 이전에는 WARN 이하 수정 불가였음). 수정 일일 상한 · 가드 · 보호확인은 심각도와 무관하게 그대로 적용된다.
 """
 from __future__ import annotations
 
@@ -67,8 +67,6 @@ def validate(raw: dict, base: dict, presets=None) -> tuple[dict, list[str]]:
                 errs.append(f"{sev}: cooldown_sec 는 0~{COOLDOWN_MAX} 정수")
             else:
                 cur["cooldown_sec"] = c
-        if E.rank(sev) < E.rank("ERROR") and cur["action"] == "fix":
-            errs.append(f"{sev}: WARN 이하는 '수정까지'를 허용하지 않음(기록·분석만)")
     return out, errs
 
 

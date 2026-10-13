@@ -130,7 +130,7 @@
       <select id="lv-ttl"><option value="900">15분</option><option value="3600" selected>1시간</option><option value="14400">4시간</option><option value="">제한 없음</option></select>
       <button id="b-lv" class="pri">적용</button></div></div>
   <div class="card"><b>에러 레벨별 자동 대응</b>
-    <p class="muted small">심각도마다 기록 · 분석 · 수정 파이프라인 시작 여부와 프리셋을 정합니다. 저장하면 다음 에러부터 바로 적용됩니다(재시작 불필요). WARN 이하는 “수정까지”를 선택할 수 없습니다.</p>
+    <p class="muted small">심각도마다 기록 · 분석 · 수정 파이프라인 시작 여부와 프리셋을 정합니다. 저장하면 다음 에러부터 바로 적용됩니다(재시작 불필요). WARN 이하도 “수정까지”를 고를 수 있지만 외부 요인 에러(RSS 404 등)에도 수정을 시도하니 신중히 쓰세요.</p>
     <table><thead><tr><th>레벨</th><th>기록</th><th>동작</th><th>파이프라인</th><th>쿨다운(분)</th></tr></thead><tbody id="pol-body"></tbody></table>
     <div id="pol-warn" class="small" style="color:var(--warn)"></div>
     <div class="row"><button id="pol-save" class="pri">정책 저장</button><button id="pol-reset">기본값으로</button><span class="grow"></span><span class="muted small" id="pol-note"></span></div></div>
@@ -277,14 +277,15 @@ function renderPolicy() {
   PMETA.severities.forEach(sev => { const p = POL[sev], low = ['WARN', 'INFO', 'DEBUG'].includes(sev); const tr = el('tr'); const r = refs[sev] = {};
     const c0 = el('td'); c0.append(pill(sev, 'sev-' + sev)); tr.append(c0);
     const c1 = el('td'); r.rec = el('input'); r.rec.type = 'checkbox'; r.rec.checked = p.record; c1.append(r.rec); tr.append(c1);
-    const c2 = el('td'); r.act = el('select'); Object.entries(PMETA.actions).forEach(([k, v]) => { if (k === 'fix' && low) return; const o = el('option', '', v); o.value = k; r.act.append(o); }); r.act.value = p.action; c2.append(r.act); tr.append(c2);
+    const c2 = el('td'); r.act = el('select'); Object.entries(PMETA.actions).forEach(([k, v]) => { const o = el('option', '', v); o.value = k; r.act.append(o); }); r.act.value = p.action; c2.append(r.act); tr.append(c2);
     const c3 = el('td'); r.pre = el('select'); Object.entries(PMETA.presets).forEach(([k, v]) => { const o = el('option', '', v); o.value = k; r.pre.append(o); }); r.pre.value = p.preset; c3.append(r.pre); tr.append(c3);
     const c4 = el('td'); r.cd = el('input'); r.cd.type = 'number'; r.cd.min = 0; r.cd.value = Math.round(p.cooldown_sec / 60); c4.append(r.cd); tr.append(c4);
     const sync = () => { r.pre.disabled = r.act.value !== 'fix'; r.cd.disabled = r.act.value === 'off'; if (built) warn(); }; r.act.onchange = sync; sync(); body.append(tr); });
   built = true;
   function warn() { const w = []; PMETA.severities.forEach(sev => { const a = refs[sev].act.value;
       if (sev === 'CRITICAL' && a === 'off') w.push('CRITICAL 을 끄면 서버 정지급 에러도 자동 대응하지 않습니다.');
-      if (['WARN', 'INFO', 'DEBUG'].includes(sev) && a !== 'off') w.push(`${sev} 를 분석하면 구독 사용량이 늘어납니다(반복 에러는 쿨다운 안에서 1회).`); });
+      if (['WARN', 'INFO', 'DEBUG'].includes(sev) && a === 'analyze') w.push(`${sev} 를 분석하면 구독 사용량이 늘어납니다(반복 에러는 쿨다운 안에서 1회).`);
+      if (['WARN', 'INFO', 'DEBUG'].includes(sev) && a === 'fix') w.push(`${sev} 를 “수정까지”로 두면 외부 요인(API 오류 · 404 등)에도 수정을 시도하고 하루 수정 횟수 상한을 쓰게 됩니다.`); });
     if (PMETA.stage < 2) w.push('수신기가 1단계(RX_STAGE=1)라서 “수정까지”를 골라도 분석만 합니다.'); $('#pol-warn').textContent = w.join(' '); }
   renderPolicy.refs = refs; warn();
 }
