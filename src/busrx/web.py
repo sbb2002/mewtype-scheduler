@@ -320,6 +320,15 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         ok, msg = rx.manual_fix(sig, "dashboard", str(d.get("note") or ""))
         return flask.jsonify(ok=ok, msg=msg, errors=[] if ok else [msg]), (200 if ok else 409)
 
+    @app.post("/api/human_clear")
+    def human_clear():
+        """Control 탭 「조치 완료」 — 사람 조치 필요 표시를 풀고 같은 에러를 다시 감시한다."""
+        sig = str((flask.request.get_json(silent=True) or {}).get("sig") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", sig):
+            return flask.jsonify(ok=False, errors=["잘못된 시그니처"]), 400
+        ok, msg = rx.human_clear(sig, "dashboard")
+        return flask.jsonify(ok=ok, msg=msg, errors=[] if ok else [msg]), (200 if ok else 409)
+
     @app.post("/api/cycle")
     def cycle_set():
         r = rx.change_cycle(str((flask.request.get_json(silent=True) or {}).get("cycle") or ""), "dashboard")

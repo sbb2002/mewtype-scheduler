@@ -60,7 +60,7 @@ def build_status(rx, cfg, now: float) -> dict:
         runner={"pid": runner.get("pid"), "port": runner.get("port"), "healthy": healthy},
         lost_alerted=rx.state.get("lost_alerted", False), usage=usage_view(rx, now), policy=rx.policy.all(),
         mode=rx.policy.mode(), cycle=rx.policy.cycle(), proposals_pending=rx.proposals.pending_count(),
-        hold=dict(rx.queue_info(), next_run=(None if rx.next_run_epoch() is None else E.iso(rx.next_run_epoch()))))
+        human=rx.human_sigs(), hold=dict(rx.queue_info(), next_run=(None if rx.next_run_epoch() is None else E.iso(rx.next_run_epoch()))))
 
 
 def _kst(epoch, with_date: bool) -> str:

@@ -57,6 +57,8 @@ RESULT_SCHEMA = {
         "evidence": {"type": "array", "items": {"type": "string"}},
         "proposed_action": {"type": "string"},
         "impact": {"type": "string"},
+        "needs_human": {"type": "boolean"},
+        "human_action": {"type": "string"},
     },
 }
 
@@ -76,7 +78,11 @@ SYSTEM_RULES = """너는 에러 분석기다. 이 세션은 읽기 전용 스냅
    외부 서비스 탓이라도 코드가 흡수할 수 있으면 그 방법을 적는다.
 7. impact 는 1~2문장: 이 에러가 서비스에 주는 영향 + 빈도 평가. 영향이 없다고 쓸 때는 그렇게 판단한 호출부 근거를 함께 쓴다.
 8. proposed_action 은 제안일 뿐이다 — 이 단계에서는 어떤 변경도 하지 않는다.
-9. 최종 답은 verdict · summary · cause · evidence · proposed_action · impact **여섯 필드를 모두** 채운 JSON 이다. 제안할 것이 없으면 proposed_action 에 "조치 불필요"와 이유를 쓴다."""
+9. 최종 답은 verdict · summary · cause · evidence · proposed_action · impact · needs_human **필드를 모두** 채운 JSON 이다(human_action 은 needs_human=true 일 때). 제안할 것이 없으면 proposed_action 에 "조치 불필요"와 이유를 쓴다.
+10. **사람의 결정 · 자격이 필요한 문제는 코드로 풀지 않는다.** 어떤 외부 서비스(LLM · YouTube · GitHub · 텔레그램 · 트윗 변환 등)든 원인이 인증(401 · 403 · invalid key · expired token) ·
+    결제/요금제(402 · payment required · billing · 유료 전환 · plan) · 쿼터 소진(quota exceeded · rate limit 이 지속) · 계정 · 정책 변경 · 엔드포인트/모델 폐지라면
+    needs_human=true 로 하고, human_action 에 사람이 해야 할 일(키 갱신 · 요금제 선택 · 공급자 교체 여부 결정 · 새 토큰 발급 등)을 구체적으로 쓴다.
+    이때 proposed_action 은 코드 수정 제안이 아니라 사람이 할 일이다 — 공급자를 바꾸는 코드를 제안하지 말 것. 코드 버그나 일시적 장애(코드가 흡수 가능)는 needs_human=false."""
 
 
 # ── 설정 ──────────────────────────────────────────────
@@ -112,6 +118,7 @@ class Config:
     cooldown_error: int = 3600
     cooldown_critical: int = 300
     daily_cap: int = 20
+    human_ttl_sec: int = 86400  # '사람 조치 필요' 표시 후 같은 에러를 다시 분석하기까지(조치 완료 버튼으로 먼저 풀 수 있음)
     poll_sec: float = 5.0
     extra_env: dict = field(default_factory=dict)  # 테스트용: claude 서브프로세스에 추가로 넘길 환경 변수
     batch_wait_sec: float = 8.0   # 첫 봉투를 본 뒤 이 시간 모아서 묶는다(폭주를 한 호출로)
@@ -146,7 +153,7 @@ def config_from_env() -> Config:
         ctl_token=g("RX_TELEGRAM_BOT_TOKEN", "").strip(), ctl_chat_id=g("RX_TELEGRAM_CHAT_ID", "").strip(),
         budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
         cooldown_error=int(g("RX_COOLDOWN_ERROR", "3600")), cooldown_critical=int(g("RX_COOLDOWN_CRITICAL", "300")),
-        daily_cap=int(g("RX_DAILY_CALLS", "20")))
+        daily_cap=int(g("RX_DAILY_CALLS", "20")), human_ttl_sec=int(g("RX_HUMAN_TTL", "86400")))
 
 
 # ── 순수 헬퍼 ─────────────────────────────────────────
@@ -492,6 +499,43 @@ class Receiver:
                 "last_24h_by_hour_kst": dict(sorted(buckets.items())), "last_24h_total": sum(buckets.values()),
                 "note": "건수는 수신기가 처리한 봉투 기준(같은 메시지의 반복 요약 포함)"}
 
+    # ── 사람 조치 필요: 외부 서비스의 인증 · 결제 · 쿼터 · 계정 문제는 자동 수정 대상이 아니다 ──
+    def human_flag(self, sig: str) -> dict | None:
+        """표시가 살아 있으면 {since, until, reason, action}, 없거나 만료됐으면 None."""
+        h = self.state["meta"].get(sig, {}).get("human")
+        if not h:
+            return None
+        if self.now() >= h.get("until_epoch", 0):
+            self.state["meta"][sig].pop("human", None)
+            self._save()
+            return None
+        return h
+
+    def _flag_human(self, sig: str, result: dict, top: dict) -> None:
+        m = self.state["meta"].setdefault(sig, {})
+        first = not m.get("human")
+        m["human"] = {"since": E.iso(self.now()), "until_epoch": self.now() + self.cfg.human_ttl_sec,
+                      "reason": result["summary"][:300], "action": (result.get("human_action") or "")[:500]}
+        self._save()
+        if first:
+            ttl_h = max(1, self.cfg.human_ttl_sec // 3600)
+            self.tg.send(f"🙋 사람 조치 필요 — [{top['severity']}] {sig}\n원인: {result['summary'][:150]}\n"
+                         f"할 일: {(result.get('human_action') or '보고서 참고')[:300]}\n"
+                         f"자동 수정 대상이 아니며 같은 에러는 최대 {ttl_h}시간 재분석하지 않습니다. 조치 후 관리 페이지 Control 탭에서 \"조치 완료\"를 누르세요.")
+
+    def human_clear(self, sig: str, who: str = "dashboard") -> tuple[bool, str]:
+        m = self.state["meta"].get(sig)
+        if not m or not m.get("human"):
+            return False, "사람 조치 필요 표시가 없습니다"
+        m.pop("human", None)
+        self._save()
+        self.state["sigs"].setdefault(sig, {"count": 0, "suppressed": 0, "last_call": 0})["last_call"] = 0  # 바로 다시 분석 가능
+        self._save()
+        return True, "조치 완료 — 이 에러를 다시 감시합니다(다음 발생 때 새로 분석)"
+
+    def human_sigs(self) -> list[str]:
+        return [s for s in list(self.state["meta"]) if self.human_flag(s)]
+
     def _collect_envs(self, sig: str) -> list[dict]:
         envs: list[dict] = []
         for p in reversed(self.spool.list("err/done")[-600:]):  # 최신 파일부터
@@ -526,7 +570,7 @@ class Receiver:
             except Exception:  # noqa: BLE001
                 continue
             if d.get("signature") == sig and all(k in d for k in ("verdict", "summary", "cause", "evidence", "proposed_action")):
-                return {k: d[k] for k in ("verdict", "summary", "cause", "evidence", "proposed_action", "impact") if k in d}
+                return {k: d[k] for k in ("verdict", "summary", "cause", "evidence", "proposed_action", "impact", "needs_human", "human_action") if k in d}
         return None
 
     def _usable_analysis(self, d: dict | None) -> dict | None:
@@ -732,6 +776,12 @@ class Receiver:
             return
         st = self.state["sigs"].setdefault(sig, {"count": 0, "suppressed": 0, "last_call": 0})
         st["count"] += len(envs)
+        hm = self.human_flag(sig)
+        if hm:  # 사람이 결정할 문제로 판정된 에러 — 같은 에러를 반복 분석 · 수정하지 않는다(구독 사용량 보호)
+            st["suppressed"] += len(envs)
+            for e in envs:
+                self._logline(sig, e, "사람 조치 필요 — 재분석 생략")
+            return
         batch = self.policy.cycle() != "event" and top["severity"] != "CRITICAL"  # 묶음 주기: 한 주기에 같은 종류는 한 번이라 쿨다운 대신 주기가 간격을 정함
         if not batch and self.now() - st["last_call"] < pol["cooldown_sec"]:
             st["suppressed"] += len(envs)
@@ -787,7 +837,11 @@ class Receiver:
         steps = [{"id": "analysis", "name": "분석(Sonnet)", "status": "ok" if result else "fail", "sec": round(time.time() - t_a, 1),
                   "note": (result["verdict"] if result else err)[:300], "model": self.cfg.model_analysis,
                   "cost": round(cost, 4) if cost else None}]
-        if result and result["verdict"] == "confirmed" and pol["action"] == "fix" and self.cfg.stage >= 2 and snap is not None:
+        if result and result.get("needs_human"):  # 인증 · 결제 · 쿼터 · 계정 등 — 코드가 아니라 사람이 결정할 일: 수정 · 계획안 없이 표시하고 알린다
+            self._flag_human(sig, result, top)
+            steps.append({"id": "human", "name": "사람 조치 필요", "status": "held", "sec": None,
+                          "note": (result.get("human_action") or result["summary"])[:200], "model": "", "cost": None})
+        elif result and result["verdict"] == "confirmed" and pol["action"] == "fix" and self.cfg.stage >= 2 and snap is not None:
             if self.policy.mode() == "semi":  # 반자동: 계획안만 만들고 사람의 결정을 기다린다
                 prop, psteps = self._propose(sig, result, snap, before, pol, envs, top)
                 steps += psteps
@@ -1024,6 +1078,7 @@ class Receiver:
             "### 원인", "", result["cause"], "",
             "### 근거", "", *([f"- {x}" for x in result["evidence"]] or ["- (없음)"]), "",
             *(["### 서비스 영향 · 빈도", "", result["impact"], ""] if result.get("impact") else []),
+            *(["### 🙋 사람이 결정할 일 (자동 수정 대상 아님)", "", result.get("human_action") or "(분석기가 구체적 행동을 적지 않음)", ""] if result.get("needs_human") else []),
             "### 제안 (미적용)", "", result["proposed_action"], "",
             "## 3. 패치", "", *patch_md, "",
             "## 4. 구독 사용량", "", *usage_md(usage), "",
@@ -1040,6 +1095,7 @@ class Receiver:
                   "verdict": result["verdict"], "summary": result["summary"][:2000], "cause": result["cause"][:4000],
                   "evidence": result["evidence"], "proposed_action": result["proposed_action"][:2000],
                   **({"impact": result["impact"][:1000]} if result.get("impact") else {}),
+                  **({"needs_human": True, "human_action": (result.get("human_action") or "")[:1000]} if result.get("needs_human") else {}),
                   "source_ids": [e["id"] for e in envs][:50], "stage": self.cfg.stage, "patch_summary": patch_summary,
                   "commit_before": before, "commit_after": after, "cost_usd": cost,
                   "usage": usage, "steps": steps or []}
@@ -1056,7 +1112,7 @@ class Receiver:
                "proposal_id": prop["id"] if prop is not None else None, "branch": fix.branch if fix is not None else "",
                "files": [{"path": p_, "added": a_, "deleted": d_} for a_, d_, p_ in (fix.files if fix is not None else [])],
                "usage": usage, "commit_before": before, "commit_after": after,
-               "analysis": {k: result[k] for k in ("verdict", "summary", "cause", "evidence", "proposed_action", "impact") if k in result}}  # 나중에 '이 분석으로 수정'이 재사용
+               "analysis": {k: result[k] for k in ("verdict", "summary", "cause", "evidence", "proposed_action", "impact", "needs_human", "human_action") if k in result}}  # 나중에 '이 분석으로 수정'이 재사용
         try:
             (self.cfg.rx / "runs" / f"{stem}.json").write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
         except Exception:

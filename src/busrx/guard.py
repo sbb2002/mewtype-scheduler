@@ -117,6 +117,56 @@ def content_violations(diff_text: str, secrets: list[str]) -> list[str]:
     return bad
 
 
+# ── 새 외부 의존성 금지 — 공급자 교체 · 새 키 요구는 사람이 정할 일 (운영자 지시 2026-10-13) ──
+# 수정이 코드에 **없던 외부 호스트**(다른 API 공급자 주소)나 **없던 환경변수 이름**(새 API 키)을 끌어들이면 hard 위반.
+# 요금제 · 인증 · 쿼터 문제를 코드로 풀겠다며 공급자를 바꾸는 패치가 키도 없이 적용돼 서비스가 조용히 죽는 것을 막는다.
+URL_HOST_RE = re.compile(r"https?://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,})(?=[/:?#\s\"'`)>\]}]|$)")
+ENV_NAME_RE = re.compile(r"""(?:os\.environ(?:\.get)?\s*[\[(]\s*|os\.getenv\s*\(\s*|getenv\s*\(\s*)["']([A-Za-z][A-Za-z0-9_]{2,})["']""")
+SAFE_HOSTS = {"example.com", "example.org", "example.net", "localhost"}  # 시험 · 문서용 예시 주소
+SCAN_SUFFIXES = (".py", ".json", ".html", ".md", ".txt", ".sh", ".yml", ".yaml")
+
+
+def known_externals(root: Path) -> tuple[set[str], set[str]]:
+    """기준 스냅샷(수정 전 코드)에 이미 있는 외부 호스트 · 환경변수 이름."""
+    hosts: set[str] = set()
+    envs: set[str] = set()
+    for sub in ("src", "config", "deploy"):
+        base = root / sub
+        if not base.exists():
+            continue
+        for f in base.rglob("*"):
+            if not f.is_file() or f.suffix not in SCAN_SUFFIXES or "__pycache__" in f.parts:
+                continue
+            try:
+                txt = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            hosts.update(h.lower() for h in URL_HOST_RE.findall(txt))
+            envs.update(ENV_NAME_RE.findall(txt))
+    return hosts, envs
+
+
+def external_additions(diff_text: str, known_hosts: set[str], known_envs: set[str]) -> list[str]:
+    """추가된 줄에서 기준 코드에 없던 외부 호스트 · 환경변수 이름. 주석만 있는 줄은 보지 않는다(문서 링크)."""
+    add, _ = added_removed_lines(diff_text)
+    bad: list[str] = []
+    seen: set[str] = set()
+    for ln in add:
+        code = ln.strip()
+        if code.startswith("#") or code.startswith("//"):
+            continue
+        for h in URL_HOST_RE.findall(ln):
+            h = h.lower()
+            if h not in known_hosts and h not in SAFE_HOSTS and ("host:" + h) not in seen:
+                seen.add("host:" + h)
+                bad.append(f"새 외부 호스트 추가(공급자 교체·새 API 는 사람이 결정): {h}")
+        for e in ENV_NAME_RE.findall(ln):
+            if e not in known_envs and ("env:" + e) not in seen:
+                seen.add("env:" + e)
+                bad.append(f"새 환경변수 이름 추가(새 키가 필요한 변경은 사람이 결정): {e}")
+    return bad
+
+
 # ── 저장소 불변 확인 (수정 전 · 후 스냅샷 비교) ─────────
 def env_files_hash(repo: Path) -> str:
     h = hashlib.sha1()
@@ -152,4 +202,4 @@ def snapshot_diff(before: dict, after: dict) -> list[str]:
     return bad
 
 
-CHECKED_ITEMS = "원격 main · data 브랜치 · 원격 URL · Vercel 주소 · GCP 서버 URL · 텔레그램 번호/토큰 · 환경 파일 · 디스클레이머"
+CHECKED_ITEMS = "원격 main · data 브랜치 · 원격 URL · Vercel 주소 · GCP 서버 URL · 텔레그램 번호/토큰 · 환경 파일 · 디스클레이머 · 새 외부 호스트/환경변수"

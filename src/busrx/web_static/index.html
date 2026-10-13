@@ -347,6 +347,7 @@ async function loadControl() {
   setBadge(p.pending); renderControl(false);
 }
 function rowState(e, run, prop) {
+  if (e.human) return ['사람 조치 필요', 'warn'];
   if (prop && prop.status === 'pending') return ['승인 대기', 'warn'];
   if (prop && ['running', 'replanning'].includes(prop.status)) return APR_ST[prop.status];
   if (prop && prop.status === 'declined') return ['거절됨', ''];
@@ -361,15 +362,15 @@ function rowState(e, run, prop) {
 function renderControl(force) {
   if (!CD) return;
   const typing = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
-  const sig = JSON.stringify([CD.errors.map(x => [x.sig, x.count, x.last, x.verdict, x.fix_status]), Object.values(CD.runs).map(x => [x.ts, x.fix_status]), Object.values(CD.props).map(x => [x.id, x.status, x.plans.length]), CD.busy, CD.fixable, OPEN, CF, SHOWLOG]);
+  const sig = JSON.stringify([CD.errors.map(x => [x.sig, x.count, x.last, x.verdict, x.fix_status, x.human && x.human.since]), Object.values(CD.runs).map(x => [x.ts, x.fix_status]), Object.values(CD.props).map(x => [x.id, x.status, x.plans.length]), CD.busy, CD.fixable, OPEN, CF, SHOWLOG]);
   if (!force && (sig === CSIG || typing)) return; CSIG = sig;
   const f = $('#ctl-filter'); f.textContent = '';
   const nPend = CD.errors.filter(x => CD.props[x.sig] && CD.props[x.sig].status === 'pending').length;
-  [['', '전체', CD.errors.length], ['CRITICAL', 'CRITICAL', 0], ['ERROR', 'ERROR', 0], ['WARN', 'WARN', 0], ['__pending', '승인 대기', nPend]].forEach(([k, label, n]) => {
-    const cnt = k === '' || k === '__pending' ? n : CD.errors.filter(x => x.sev === k).length;
-    const b = el('button', CF === k ? 'on' : '', `${label} ${cnt}`); if (k === '__pending' && cnt) b.style.color = 'var(--warn)'; b.onclick = () => { CF = k; renderControl(true); }; f.append(b); });
+  [['', '전체', CD.errors.length], ['CRITICAL', 'CRITICAL', 0], ['ERROR', 'ERROR', 0], ['WARN', 'WARN', 0], ['__pending', '승인 대기', nPend], ['__human', '사람 조치 필요', 0]].forEach(([k, label, n]) => {
+    const cnt = k === '' || k === '__pending' ? n : k === '__human' ? CD.errors.filter(x => x.human).length : CD.errors.filter(x => x.sev === k).length;
+    const b = el('button', CF === k ? 'on' : '', `${label} ${cnt}`); if ((k === '__pending' || k === '__human') && cnt) b.style.color = 'var(--warn)'; b.onclick = () => { CF = k; renderControl(true); }; f.append(b); });
   const l = $('#ctl-list'); l.textContent = '';
-  const rows = CD.errors.filter(x => !CF ? true : CF === '__pending' ? (CD.props[x.sig] && CD.props[x.sig].status === 'pending') : x.sev === CF);
+  const rows = CD.errors.filter(x => !CF ? true : CF === '__pending' ? (CD.props[x.sig] && CD.props[x.sig].status === 'pending') : CF === '__human' ? !!x.human : x.sev === CF);
   if (!rows.length) l.append(el('div', 'muted', '기록된 에러가 없습니다.'));
   rows.slice(0, 100).forEach(e => l.append(logRow(e)));
   const ll = $('#log-list'); ll.textContent = '';
@@ -421,7 +422,7 @@ function logBody(e, run, prop) {
   } else if (run) {
     p3.append(el('div', 'muted small', run.action === 'fix' ? '분석만 했습니다(수정 대상이 아니거나 원인이 확정되지 않았습니다).' : '정책이 “분석만”이라 수정 파이프라인을 시작하지 않았습니다.'));
   } else p3.append(el('div', 'muted small', '수정 파이프라인을 시작하지 않았습니다.'));
-  b.append(p1, p2, p3, approvalPanel(e, prop));
+  b.append(p1, p2, p3, e.human ? humanPanel(e) : approvalPanel(e, prop));
   if (['WARN', 'INFO', 'DEBUG'].includes(e.sev)) b.append(manualPanel(e));
   return b;
 }
@@ -450,6 +451,18 @@ function manualPanel(e) {
   } else c.append(r);
   if (off) r.append(el('span', 'muted small', "동작 모드가 '끔'이라 실행할 수 없습니다."));
   return c;
+}
+
+/* 사람 조치 필요: 외부 서비스의 인증 · 결제 · 쿼터 · 계정 문제 — 자동 수정 대상이 아니다 */
+async function humanClear(sig) { try { const j = await api('/api/human_clear', { sig }); toast(j.msg || '해제했습니다'); await loadControl(); } catch (er) { toast('실패: ' + er.message); } }
+function humanPanel(e) {
+  const h = e.human, c = el('div', 'pn'); c.append(el('h3', '', '사람 조치 필요'));
+  c.append(el('div', 'wr small', '이 에러는 코드가 아니라 사람이 결정해야 하는 문제(키 · 요금제 · 쿼터 · 계정 · 공급자 선택 등)로 판정돼 자동 수정 · 계획안을 만들지 않습니다.'));
+  c.append(kv([['판정 시각', kst(h.since) + ' KST'], ['원인', h.reason || '-'], ['사람이 할 일', h.action || '보고서 참고']]));
+  c.append(el('div', 'muted small', '같은 에러는 표시가 풀리거나 만료되기 전까지 다시 분석하지 않습니다(구독 사용량 보호).'));
+  const r = el('div', 'row apr-sec'); const b = el('button', 'go', '조치 완료 — 다시 감시');
+  b.onclick = () => { if (confirm('키 교체 · 요금제 · 공급자 선택 등 조치를 마쳤습니까? 표시를 풀고 같은 에러가 다시 나면 새로 분석합니다.')) humanClear(e.sig); };
+  r.append(b); c.append(r); return c;
 }
 
 /* 승인 결재: 반자동 모드의 패치 계획안 — 승인 · 재분석(반려 사유) · 거절 */

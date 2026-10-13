@@ -58,6 +58,8 @@ elif purpose in ("implement", "revise"):
         open(CALC, "w", encoding="utf-8").write(GOOD)
     elif mode == "prod":
         open(CALC, "w", encoding="utf-8").write(GOOD + "URL = 'https://mewtype-schduler.vercel.app/x'\n")
+    elif mode == "newprovider":
+        open(CALC, "w", encoding="utf-8").write("import os\n" + GOOD + "URL = 'https://api.openrouter.ai/v1/chat'\nKEY = os.environ.get('OPENROUTER_API_KEY')\n")
     else:
         open(CALC, "w", encoding="utf-8").write(GOOD)
     print(json.dumps({"result": "수정 완료", "total_cost_usd": 0.02, "is_error": False}))
@@ -208,6 +210,11 @@ def main() -> int:
     # S3) 운영 자원(Vercel 주소) 추가
     res, head = run_fix("prod")
     check(res.status == "guard_fail" and any("Vercel" in g for g in res.guard_notes), "S3 Vercel 주소 추가는 가드가 폐기")
+    # S3b) 공급자 교체(새 외부 호스트 + 새 환경변수 이름) → 폐기 (운영자 지시 2026-10-13)
+    res, head = run_fix("newprovider")
+    check(res.status == "guard_fail" and any("새 외부 호스트" in g for g in res.guard_notes) and any("새 환경변수" in g for g in res.guard_notes),
+          "S3b 새 외부 호스트 · 환경변수 이름(공급자 교체)을 끌어들이는 수정은 가드가 폐기")
+    check(git_head(repo) == head and not sh(repo, "branch", "--list", "auto/*"), "S3b 폐기 시 커밋 · 브랜치 없음")
     # S4) 수정 라운드 1회 (첫 시도 문법 오류 → 지적 반영)
     n_before = len(calls())
     res, head = run_fix("syntax_then_fix")
