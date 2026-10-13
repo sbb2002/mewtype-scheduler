@@ -1,7 +1,7 @@
-"""수신기 전용 텔레그램 봇 — DM 명령으로 자동제어를 다룬다 (러너 봇과 **별개의 봇**, 별개의 getUpdates 폴링).
+"""수신기 전용 텔레그램 봇 — DM 명령으로 자동 대응을 다룬다 (러너 봇과 **별개의 봇**, 별개의 getUpdates 폴링).
 
 명령(허용된 chat id 의 개인 대화에서만):
-  /ctl         자동제어 관리 페이지 로그인 링크(5분 · 1회) 전송
+  /ctl         자동 대응 관리 페이지 로그인 링크(5분 · 1회) 전송
   /auto        현황 요약 (단계 · 정지 여부 · 발신기/러너 · 오늘 호출 · 구독 사용량)
   /autopause   수신기 분석 정지 (rx/PAUSE)
   /autoresume  수신기 분석 재개
@@ -23,7 +23,7 @@ from .status import build_status, status_text, usage_text
 
 log = logging.getLogger("busrx.bot")
 
-HELP = ("🤖 자동제어 명령\n/ctl — 관리 페이지 로그인 링크\n/auto — 현황 요약\n/usage — 구독 사용량 조회\n/automode [auto|semi|off] — 동작 모드 보기/바꾸기\n"
+HELP = ("🤖 자동 대응 명령\n/ctl — 관리 페이지 로그인 링크\n/auto — 현황 요약\n/usage — 구독 사용량 조회\n/automode [auto|semi|off] — 동작 모드 보기/바꾸기\n"
         "/autopause — 분석 정지\n/autoresume — 분석 재개")
 
 
@@ -69,7 +69,7 @@ class BotCommands:
         arg = (self._args[0].lower() if getattr(self, "_args", None) else "")
         if not arg:
             cur = self.rx.policy.mode()
-            self.tg.send(f"현재 동작 모드: {MODES[cur]}({cur})\n바꾸려면 /automode auto | semi | off\n- auto 자동: 전부 자동 패치\n- semi 반자동: 패치 계획을 만들어 승인을 기다림\n- off 끔: 자동제어 동작 안 함(기록만)")
+            self.tg.send(f"현재 동작 모드: {MODES[cur]}({cur})\n바꾸려면 /automode auto | semi | off\n- auto 자동: 전부 자동 패치\n- semi 반자동: 패치 계획을 만들어 승인을 기다림\n- off 끔: 자동 대응 동작 안 함(기록만)")
             return
         r = self.rx.change_mode(arg, None, "telegram")
         if r.get("needs_queue"):
@@ -86,7 +86,7 @@ class BotCommands:
             return
         from .web import make_token
         tok = make_token(self.web["secret"], self.now())
-        self.tg.send(f"🔐 자동제어 관리 페이지 로그인 링크 (5분 · 1회용)\n{self.web['base']}/auth?t={tok}")
+        self.tg.send(f"🔐 자동 대응 관리 페이지 로그인 링크 (5분 · 1회용)\n{self.web['base']}/auth?t={tok}")
 
     def _auto(self):
         self.tg.send(status_text(build_status(self.rx, self.cfg, self.now())))

@@ -1,4 +1,4 @@
-"""자동제어 관리 페이지 self-test — Flask 테스트 클라이언트 + 가짜 claude · 가짜 텔레그램 (네트워크 · 모델 호출 없음).
+"""자동 대응 관리 페이지 self-test — Flask 테스트 클라이언트 + 가짜 claude · 가짜 텔레그램 (네트워크 · 모델 호출 없음).
 
     python -m src.busrx.selftest_web
 """

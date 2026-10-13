@@ -1,4 +1,4 @@
-"""자동제어 관리 페이지 — 수신기 프로세스 안에서 **별도 포트**(기본 8789)로 동작한다 (러너 어드민 페이지와 독립).
+"""자동 대응 관리 페이지 — 수신기 프로세스 안에서 **별도 포트**(기본 8789)로 동작한다 (러너 어드민 페이지와 독립).
 
 읽기: 현황 · 에러 · 보고서 · 수정 이력 · 구독 사용량(세션/주간).  쓰기(1차): 수신기 분석 정지/재개, 발신기 발신 정지/재개, 발신 레벨 변경.
 로그인: 텔레그램 일회용 링크(5분, 1회) — 서명 키 `ADMIN_SECRET`. 세션 쿠키 HttpOnly+SameSite=Lax, 쓰기 요청은 CSRF 헤더 필수.
@@ -123,7 +123,7 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
             return flask.jsonify(ok=False, msg="잠시 후 다시 시도하세요(20초 간격)"), 429
         last_req[0] = now()
         tok = make_token(secret, now())
-        sent = tg.send(f"🔐 자동제어 관리 페이지 로그인 링크 (5분 · 1회용)\n{base_url}/auth?t={tok}") if tg.enabled else False
+        sent = tg.send(f"🔐 자동 대응 관리 페이지 로그인 링크 (5분 · 1회용)\n{base_url}/auth?t={tok}") if tg.enabled else False
         if not sent:
             return flask.jsonify(ok=False, msg="텔레그램 전송 실패 — 봇 설정 확인"), 502
         return flask.jsonify(ok=True, msg="텔레그램으로 로그인 링크를 보냈습니다")
@@ -421,7 +421,7 @@ def start_web(rx, cfg, tg):
     from werkzeug.serving import make_server
     secret = os.environ.get("ADMIN_SECRET", "").strip()
     if not secret:
-        log.warning("ADMIN_SECRET 이 없어 자동제어 관리 페이지를 켜지 않음")
+        log.warning("ADMIN_SECRET 이 없어 자동 대응 관리 페이지를 켜지 않음")
         return None
     ip = _tailscale_ip()
     base = os.environ.get("RX_WEB_BASE", "").strip().rstrip("/") or f"http://{ip or '127.0.0.1'}:{cfg.web_port}"
@@ -436,5 +436,5 @@ def start_web(rx, cfg, tg):
             continue
         threading.Thread(target=srv.serve_forever, name=f"rx-web-{host}", daemon=True).start()
         servers.append(srv)
-        log.info("자동제어 관리 페이지: http://%s:%s/", host, cfg.web_port)
+        log.info("자동 대응 관리 페이지: http://%s:%s/", host, cfg.web_port)
     return ctx

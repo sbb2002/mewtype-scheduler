@@ -20,7 +20,7 @@ from . import pipelines
 SEVERITIES = E.SEVERITIES  # CRITICAL ERROR WARN INFO DEBUG
 ACTIONS = {"off": "끔(기록만)", "analyze": "분석만", "fix": "수정까지"}
 COOLDOWN_MAX = 7 * 86400
-# 동작 모드(전체): auto = 전부 자동 패치(기본) / semi = 분석 후 패치 계획안을 만들어 사람의 승인 · 반려(재계획) · 거절을 기다림 / off = 자동제어 동작 안 함(기록만)
+# 동작 모드(전체): auto = 전부 자동 패치(기본) / semi = 분석 후 패치 계획안을 만들어 사람의 승인 · 반려(재계획) · 거절을 기다림 / off = 자동 대응 동작 안 함(기록만)
 MODES = {"auto": "자동", "semi": "반자동", "off": "끔"}
 # 동작 주기(모드가 자동 · 반자동일 때): event = 에러가 오는 대로 / h1 · h3 = 정해진 시각(KST 정시, 3시간은 0 · 3 · 6 … 시)에 쌓인 에러를 같은 종류끼리 묶어 한 번씩.
 # CRITICAL 은 주기와 관계없이 항상 즉시 처리한다.

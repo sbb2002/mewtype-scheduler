@@ -101,7 +101,7 @@ def main() -> int:
     # 2) 끔: 아무것도 하지 않고 기록만
     pol.set_mode("off")
     feed("모드 끔 에러", "src.backend.off1")
-    check(purposes() == [] and not tg.files and any(json.loads(x).get("note") == "자동제어 꺼짐 — 분석 생략"
+    check(purposes() == [] and not tg.files and any(json.loads(x).get("note") == "자동 대응 꺼짐 — 분석 생략"
                                                     for x in (cfg.rx / "log.jsonl").read_text(encoding="utf-8").splitlines()), "끔: claude 호출 · 보고 없음, 기록만 남김")
     check(sh(repo, "rev-parse", "--short", "HEAD") == head0, "끔: 저장소 불변")
 

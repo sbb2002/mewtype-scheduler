@@ -102,7 +102,7 @@ def status_text(s: dict) -> str:
     p, r = s["publisher"], s["receiver"]
     run = s["runner"]
     lines = [
-        f"🤖 자동제어 현황 · {s['stage']}단계 · 모드 {({'auto': '자동', 'semi': '반자동', 'off': '끔'}).get(s.get('mode'), '?')}"
+        f"🤖 자동 대응 현황 · {s['stage']}단계 · 모드 {({'auto': '자동', 'semi': '반자동', 'off': '끔'}).get(s.get('mode'), '?')}"
         + (f" · 승인 대기 {s['proposals_pending']}건" if s.get("proposals_pending") else ""),
         f"수신기 분석: {'⏸ 정지됨' if s['rx_paused'] else '▶ 동작 중'}",
         f"발신기: {'정상' if p['alive'] else '⚠️ 신호 없음'}" + (f" · 레벨 {p['level']}" if p.get("level") else "")

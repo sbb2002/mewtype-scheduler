@@ -77,7 +77,7 @@ def main() -> int:
     # 3) /auto 현황 · /usage · 정지/재개
     h.handle(msg("/auto"))
     m = tg.msgs[-1]
-    check("자동제어 현황" in m and "1단계" in m and "수신기 분석: ▶ 동작 중" in m and "오늘 분석 0/20" in m, "/auto: 단계 · 분석 상태 · 오늘 호출")
+    check("자동 대응 현황" in m and "1단계" in m and "수신기 분석: ▶ 동작 중" in m and "오늘 분석 0/20" in m, "/auto: 단계 · 분석 상태 · 오늘 호출")
     check("사용량: 아직 측정값 없음" in m, "/auto: 측정 전에는 안내")
     h.handle(msg("/usage"))
     m = tg.msgs[-1]

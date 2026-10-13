@@ -764,9 +764,9 @@ class Receiver:
         envs = [e for _, e in members]
         top = max(envs, key=lambda e: E.rank(e["severity"]))
         self._touch_meta(sig, envs, top)
-        if self.policy.mode() == "off":  # 자동제어 끔 — 아무 분석 · 수정도 하지 않고 기록만
+        if self.policy.mode() == "off":  # 자동 대응 끔 — 아무 분석 · 수정도 하지 않고 기록만
             for e in envs:
-                self._logline(sig, e, "자동제어 꺼짐 — 분석 생략")
+                self._logline(sig, e, "자동 대응 꺼짐 — 분석 생략")
             return
         pol = self.policy.get(top["severity"])  # 이 심각도의 정책: record · action(off/analyze/fix) · preset · cooldown_sec
         if pol["action"] == "off":
@@ -1165,7 +1165,7 @@ def main(argv=None) -> int:
     ap.add_argument("--env", default=str(ROOT / ".env.local"))
     ap.add_argument("--once", action="store_true", help="inbox 를 한 번 처리하고 종료")
     ap.add_argument("--no-telegram", action="store_true")
-    ap.add_argument("--no-web", action="store_true", help="자동제어 관리 페이지를 켜지 않음")
+    ap.add_argument("--no-web", action="store_true", help="자동 대응 관리 페이지를 켜지 않음")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     load_env_file(Path(args.env))
