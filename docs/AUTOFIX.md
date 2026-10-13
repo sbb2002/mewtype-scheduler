@@ -27,7 +27,7 @@
 ```
 
 - 분석이 `unknown`/`ignored` 이거나 명세서가 `fixable=false`(외부 서비스 일시 오류 등)이면 **코드를 고치지 않고** 그 사유를 보고한다.
-- 하루 수정 시도 상한 `RX_FIX_DAILY`(기본 3). 수정 호출은 Pro 사용 한도를 소모한다.
+- 하루 수정 시도 상한은 없다(2026-10-13 운영자 결정 — 시도 횟수는 기록만). 수정 호출은 Pro 사용 한도를 소모한다.
 - 구현(Haiku)은 **셸 도구가 없다**(`Read,Grep,Glob,Edit,Write` + `acceptEdits`). git · 테스트 실행은 수신기가 한다. Haiku 는 git 을 쓰지 못한다.
 - 검증 · 검토는 읽기 전용(`Read,Grep,Glob`). 검토자는 명세서 · 검증 결과를 보지 않고 원인 분석과 diff 만 본다.
 - 수정 라운드는 1회: 문법 오류 · self-test 회귀 · 검증/검토 반려는 지적 사항을 Haiku 에 되돌려 다시 시도하고, 그래도 안 되면 폐기한다.
@@ -79,7 +79,7 @@
 
 ## 6. 설정 (환경 변수 · `src/busrx/receiver.py` `Config`)
 
-`RX_STAGE`(기본 2, 1 이면 분석 · 보고만) · `RX_MODEL_ANALYSIS`(기본 `claude-sonnet-5-5`) · `RX_MODEL_CODE`(기본 `claude-haiku-5-5`) · `RX_FIX_DAILY`(3) ·
+`RX_STAGE`(기본 2, 1 이면 분석 · 보고만) · `RX_MODEL_ANALYSIS`(기본 `claude-sonnet-5-5`) · `RX_MODEL_CODE`(기본 `claude-haiku-5-5`) ·
 `RX_APPLY_LOCAL`(1) · `RX_APPLY_BRANCH`(`v4.3-fullauto`) · `RX_RUNNER_DIR`(이 저장소) · `RX_BUDGET_USD` 등 호출별 비용 상한. 정지: `mewtype-bus/rx/PAUSE` 파일.
 
 ## 7. 점검

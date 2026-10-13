@@ -104,7 +104,7 @@ def main() -> int:
 
     # 화면 파일
     html = (Path(__file__).parent / "web_static" / "index.html").read_text(encoding="utf-8")
-    check(all(x in html for x in ('data-t="pipelines"', 'id="pl-chain"', 'id="pl-detail"', 'id="pl-save"', "/api/pipelines/validate", "🔒", 'id="pl-revert"', 'id="pl-reset-all"', 'id="reset-all"', "/api/reset")), "화면: 조립 탭 · 블록 도식 · 설정 패널 · 실시간 검증 호출")
+    check(all(x in html for x in ('data-t="settings"', 'id="pl-chain"', 'id="pl-detail"', 'id="pl-save"', "/api/pipelines/validate", "🔒", 'id="pl-revert"', 'id="pl-reset-all"', 'id="reset-all"', "/api/reset")), "화면: 조립 탭 · 블록 도식 · 설정 패널 · 실시간 검증 호출")
     print("모두 통과")
     return 0
 

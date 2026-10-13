@@ -145,8 +145,8 @@ def main() -> int:
 
     # 9) 화면 파일 점검
     html = (Path(__file__).parent / "web_static" / "index.html").read_text(encoding="utf-8")
-    check(all(x in html for x in ('data-t="status"', 'data-t="errors"', 'data-t="reports"', 'data-t="fixes"', 'data-t="control"', 'id="usage"')),
-          "화면: 현황 · 에러 · 보고서 · 수정 · 제어 탭과 상단 사용량 영역")
+    check(all(x in html for x in ('data-t="overview"', 'data-t="control"', 'data-t="settings"', 'id="usage"', 'id="ctl-list"', 'id="hc-grid"')),
+          "화면: Overview · Control · Settings 탭과 상단 사용량 영역")
     check("세션(5시간)" in html and "주간(7일)" in html, "화면: 세션/주간 사용량 표시 문구")
     check(c.get("/").status_code == 200 and "Content-Security-Policy" in c.get("/").headers, "인증 후 / 제공 + CSP 헤더")
     print("모두 통과")

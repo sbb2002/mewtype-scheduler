@@ -14,7 +14,7 @@
       "type": "object",
       "properties": {
         "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG"]},
-        "ttl_sec": {"type": "integer", "minimum": 1, "maximum": 86400}
+        "ttl_sec": {"type": "integer", "minimum": 0, "maximum": 86400}
       }
     },
     "issued_by": {"type": "string", "maxLength": 64}

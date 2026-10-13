@@ -136,7 +136,7 @@ def main() -> int:
     st = c.get("/api/status").get_json()
     check(st["policy"]["ERROR"]["action"] == "fix", "현황에 정책 포함")
     html = (Path(__file__).parent / "web_static" / "index.html").read_text(encoding="utf-8")
-    check('id="pol-body"' in html and 'id="run-list"' in html and "에러 레벨별 자동 대응" in html, "화면: 정책 표 · 파이프라인 도식 영역")
+    check('id="pol-body"' in html and "<th>발신(러너)</th>" in html and "로그 레벨별 대응 정책" in html and "function chain(" in html, "화면: 정책 표(발신 열 포함) · 파이프라인 도식")
     print("모두 통과")
     return 0
 

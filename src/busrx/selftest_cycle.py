@@ -156,6 +156,9 @@ def main() -> int:
     check(c.post("/api/cycle", json={"cycle": "x"}, headers=h).status_code == 400, "API: 잘못된 주기는 400")
     check(c.post("/api/cycle", json={"cycle": "h1"}).status_code == 403, "API: CSRF 없는 주기 변경은 403")
 
+    html = (Path(__file__).parent / "web_static" / "index.html").read_text(encoding="utf-8")
+    check(all(x in html for x in ('id="cyc-btns"', 'id="dlgov"', "/api/cycle", "needs_queue", "'process'", "'discard'")), "화면: 동작 주기 카드 · 대기열 팝업")
+
     # 10) 정책 초기화는 주기도 기본값으로
     pol.reset("test")
     check(pol.cycle() == "event" and pol.mode() == "auto", "정책 초기화 → 모드 자동 · 주기 이벤트마다")

@@ -221,7 +221,11 @@ class Publisher:
                 lvl = args.get("level")
                 if lvl not in _LEVELS:
                     return False, "level 은 ERROR/WARN/INFO/DEBUG"
-                ttl = args.get("ttl_sec") or (VERBOSE_DEFAULT_TTL if lvl in _VERBOSE else None)
+                raw_ttl = args.get("ttl_sec")
+                if raw_ttl == 0:       # 0 = 자동 복귀 없이 항상 유지(러너를 재시작하면 환경 변수 기본값으로 돌아간다)
+                    ttl = None
+                else:
+                    ttl = raw_ttl or (VERBOSE_DEFAULT_TTL if lvl in _VERBOSE else None)
                 if ttl:
                     self.level, self._level_until = lvl, now + min(int(ttl), 86400)
                     self._sync_logging()
@@ -430,6 +434,17 @@ if __name__ == "__main__":
     now[0] += 101
     pub.emit(kind="log", severity="INFO", message="만료 확인", logger="t.exp")
     check(pub.level == "WARN" and root.level == logging.INFO, "ttl 만료 후 루트 로거 레벨 원복")
+
+    # 4-c) ttl_sec 0 = 항상 유지(만료 없음)
+    sp.put("ctl/inbox", "c1d", {"schema": "mew.ctl/1", "id": E.new_id(), "ts": E.iso(now[0]), "cmd": "set_level",
+                                "args": {"level": "INFO", "ttl_sec": 0}})
+    pub.poll_ctl()
+    now[0] += 90000
+    pub.emit(kind="log", severity="INFO", message="항상 유지 확인", logger="t.keep")
+    check(pub.level == "INFO" and inbox()[-1]["message"] == "항상 유지 확인", "ttl_sec 0: 자동 복귀 없이 INFO 유지")
+    sp.put("ctl/inbox", "c1e", {"schema": "mew.ctl/1", "id": E.new_id(), "ts": E.iso(now[0]), "cmd": "set_level", "args": {"level": "WARN"}})
+    pub.poll_ctl()
+    check(pub.level == "WARN", "WARN 으로 되돌림")
 
     # 5) pause: ERROR 억제 · CRITICAL 통과
     sp.put("ctl/inbox", "c2", {"schema": "mew.ctl/1", "id": E.new_id(), "ts": E.iso(now[0]), "cmd": "pause"})

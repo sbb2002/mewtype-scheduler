@@ -135,7 +135,7 @@
 
 | `cmd` | `args` | 효과 |
 |---|---|---|
-| `set_level` | `level`: `ERROR`\|`WARN`\|`INFO`\|`DEBUG`, `ttl_sec`?: 1~86400 | 발신 임계값 변경. `ttl_sec` 가 있으면 그 뒤 **기본 레벨로 자동 복귀**. 상세 레벨(`INFO`·`DEBUG`)은 `ttl_sec` 가 없으면 3600초 — 항상 자동 복귀 |
+| `set_level` | `level`: `ERROR`\|`WARN`\|`INFO`\|`DEBUG`, `ttl_sec`?: 0~86400 | 발신 임계값 변경. `ttl_sec` 가 있으면 그 뒤 **기본 레벨로 자동 복귀**. 상세 레벨(`INFO`·`DEBUG`)은 `ttl_sec` 가 없으면 3600초 — 자동 복귀. **`ttl_sec: 0` = 자동 복귀 없이 항상 유지**(러너를 재시작하면 `MEW_BUS_LEVEL` 기본값으로 돌아감) |
 | `pause` | `ttl_sec`? | `CRITICAL` 을 제외한 발신 중지(억제 건수는 `counters.suppressed`). `ttl_sec` 뒤 자동 재개 |
 | `resume` | — | `pause` 해제 |
 | `ping` | — | `hb/publisher.json` 즉시 갱신 |

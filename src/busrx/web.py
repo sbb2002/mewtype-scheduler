@@ -370,8 +370,8 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
     def pub_level():
         d = flask.request.get_json(silent=True) or {}
         args = {"level": d.get("level")}
-        if d.get("ttl_sec"):
-            args["ttl_sec"] = int(d["ttl_sec"])
+        if d.get("ttl_sec") is not None:
+            args["ttl_sec"] = int(d["ttl_sec"])   # 0 = 항상 유지(자동 복귀 없음)
         ok, msg = rx.send_ctl("set_level", args)
         return flask.jsonify(ok=ok, msg=msg), (200 if ok else 400)
 
