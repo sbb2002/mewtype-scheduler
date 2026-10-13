@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import guard, pipelines
+from . import guard, testver, pipelines
 from .claude import clean_env, run_claude
 
 log = logging.getLogger("busrx.autofix")
@@ -65,6 +65,7 @@ class FixResult:
     title: str = ""
     seq: int = 0
     version: str = ""
+    patch_head: str = ""   # 패치 커밋(버전 기록 커밋 바로 아래) — 자동 revert 대상
     branch: str = ""
     base: str = ""
     head: str = ""
@@ -362,15 +363,28 @@ class AutoFix:
 
     def _b_commit(self, cx) -> None:
         cfg, res = self.cfg, cx.res
+        res.version = testver.next_patch(cx.wt)  # 테스트판 버전(vT) — 커밋까지 간 수정만 번호를 쓴다(docs/VERSION_vT.md)
         msg = (f"fix({res.version}): {res.title or '자동 수정'}\n\n원인: {cx.analysis.get('cause', '')[:300]}\n"
                f"분석: {cx.sig}\n작성: {cfg.model_code} · 명세/검증/검토: {cfg.model_analysis}\n파이프라인: {cx.pl.name}\n\n"
                "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
         (cx.fixdir / "commit_msg.txt").write_text(msg, encoding="utf-8")
         t0 = time.time()
         _git(cx.wt, "commit", "-q", "-F", str(cx.fixdir / "commit_msg.txt"))  # Haiku 는 git 을 못 쓴다 — 수신기가 직접 커밋
-        res.head = _git(cx.wt, "rev-parse", "--short", "HEAD").strip()
+        patch_head = _git(cx.wt, "rev-parse", "--short", "HEAD").strip()
+        res.head = patch_head
+        res.patch_head = patch_head
         res.status = "committed"
-        res.step("commit", "로컬 브랜치 커밋", "ok", t0, note=f"{res.base} → {res.head}")
+        note = f"{res.base} → {patch_head} ({res.version})"
+        try:  # 버전 기록은 별도 커밋(패치 diff 를 깨끗하게 유지) — 구현 모델이 아니라 수신기가 쓴다
+            testver.record(cx.wt, res.version, title=res.title or "자동 수정", sig=cx.sig, cause=cx.analysis.get("summary") or cx.analysis.get("cause", ""),
+                           files=list(res.files), base=res.base, head=patch_head, branch=cx.branch, preset=cx.pl.name, origin=cx.origin)
+            _git(cx.wt, "add", testver.FILE)
+            _git(cx.wt, "commit", "-q", "-m", f"docs({res.version}): 버전 기록\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
+            res.head = _git(cx.wt, "rev-parse", "--short", "HEAD").strip()
+            note += f" + 버전 기록 → {res.head}"
+        except Exception as e:  # noqa: BLE001 — 기록 실패가 수정 자체를 막지는 않는다(번호는 커밋에 이미 있음)
+            note += f" · 버전 기록 실패: {type(e).__name__}"
+        res.step("commit", "로컬 브랜치 커밋", "ok", t0, note=note)
 
     def _b_protected(self, cx) -> bool:
         """보호 대상(main · data · 원격 ref · 원격 설정 · 환경 파일) 불변 확인. 위반이면 False."""
@@ -390,7 +404,7 @@ class AutoFix:
         """plan 이 있으면(반자동에서 사람이 승인한 계획) 명세서 단계를 다시 하지 않고 그 계획으로 구현부터 진행한다."""
         cfg = self.cfg
         pl = pipelines.resolve(cfg, preset)
-        res = FixResult(base=base, seq=seq, version=f"v4.3.{seq}", preset=pl.id,
+        res = FixResult(base=base, seq=seq, version="", preset=pl.id,
                         models=f"{pl.param('implement', 'model', cfg.model_code)}(구현) · {pl.param('verify', 'model', cfg.model_analysis)}(명세·검증·검토)",
                         apply_on=pl.enabled("apply"), restart_on=pl.enabled("restart"))
         fixdir = cfg.rx / "fix" / sig
@@ -405,7 +419,8 @@ class AutoFix:
         cx = Cx()
         cx.__dict__.update(sig=sig, analysis=analysis, snap=snap, base=base, wt=wt, fixdir=fixdir, branch=branch, pl=pl, res=res,
                            secrets=guard.secret_values(cfg.repo / ".env.local"), before_snap=before_snap, spec_md="", feedback="",
-                           diff="", hard=[], soft=[], judged=[])
+                           diff="", hard=[], soft=[], judged=[],
+                           origin=("반자동 승인" if plan else ("운영자 수동 지시" if analysis.get("operator_decision") else "자동")))
         try:
             # 1) 사전 블록: 명세서 → 워크트리
             for b in pl.phase("pre"):
@@ -525,7 +540,14 @@ class AutoFix:
         # 건강 확인 실패 → 자동 되돌림
         try:
             t0 = time.time()
-            _git(repo, "revert", "--no-edit", "HEAD")
+            # 버전 기록 커밋은 남기고 패치 커밋만 되돌린다(두 커밋은 서로 다른 파일) — 기록에는 revert 표시를 덧붙인다
+            _git(repo, "revert", "--no-edit", res.patch_head or "HEAD")
+            try:
+                testver.mark_reverted(repo, res.version, "적용 후 러너 건강 확인 실패 → 자동 revert (이 번호는 결번)")
+                _git(repo, "add", testver.FILE)
+                _git(repo, "commit", "-q", "-m", f"docs({res.version}): revert 표시\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
+            except Exception:  # noqa: BLE001 — 표시 실패가 되돌리기 자체를 막지는 않는다
+                pass
             ok2, note2 = self.restarter(cfg)
             res.step("revert", "자동 revert + 재시작", "ok" if ok2 else "fail", t0, note=note2)
             res.status, res.applied, res.restarted = "reverted", False, ok2

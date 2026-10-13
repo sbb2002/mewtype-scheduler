@@ -109,7 +109,7 @@ def main() -> int:
 
     # 6) 수정 이력 (수정 필드가 있는 report 봉투)
     rep = {"schema": "mew.report/1", "id": E.new_id(), "ts": "2026-10-12T06:00:00Z", "signature": "sig-x", "verdict": "confirmed", "summary": "s",
-           "patch_summary": "calc 수정", "fix_status": "applied", "fix_branch": "auto/sig-x-1", "fix_version": "v4.3.1", "guard_ok": True,
+           "patch_summary": "calc 수정", "fix_status": "applied", "fix_branch": "auto/sig-x-1", "fix_version": "vT1.0.1", "guard_ok": True,
            "applied": True, "restarted": True, "commit_before": "aaaa111", "commit_after": "bbbb222", "lines_added": 3, "lines_deleted": 1,
            "files_changed": [{"path": "src/backend/calc.py", "added": 3, "deleted": 1}]}
     check(not validate(rep), "수정 이력용 report 봉투가 스키마에 적합")

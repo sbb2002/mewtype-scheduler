@@ -13,7 +13,7 @@ from pathlib import Path
 
 from src.bus import envelope as E
 
-from . import guard
+from . import guard, testver
 from . import pipelines as P
 from .autofix import AutoFix
 from .receiver import Config, Receiver, git_head
@@ -111,6 +111,8 @@ def main() -> int:
     (repo / "src" / "backend" / "calc.py").write_text(CALC_BAD, encoding="utf-8")
     (repo / ".env.local").write_text("TELEGRAM_BOT_TOKEN=local-only-token-value\n", encoding="utf-8")
     (repo / ".gitignore").write_text(".env.local\n", encoding="utf-8")
+    (repo / "docs").mkdir()
+    (repo / "docs" / "VERSION_vT.md").write_text("# t\n" + testver.MARK + "\n\n## vT1.0.0 — 기준선\n", encoding="utf-8")
     sh(repo, "init", "-q", "-b", "v4.3-fullauto")
     sh(repo, "config", "user.name", "t")
     sh(repo, "config", "user.email", "t@t")
@@ -176,7 +178,12 @@ def main() -> int:
     check(new_head != base0, "S1 러너 작업 브랜치가 수정 커밋으로 전진(ff 적용)")
     check("a + b" in (repo / "src" / "backend" / "calc.py").read_text(encoding="utf-8"), "S1 러너 작업 폴더에 수정 반영")
     check(len(restarts) == 1, "S1 적용 후 러너 재시작 1회")
-    check("calc.add 가 뺄셈을 하던 오류 수정" in m and "(`v4.3.1`)" in m, "S1 텔레그램: 패치 1줄 요약 + 버전")
+    check("calc.add 가 뺄셈을 하던 오류 수정" in m and "(`vT1.0.1`)" in m, "S1 텔레그램: 패치 1줄 요약 + 테스트판 버전(vT1.0.1)")
+    vt = (repo / "docs" / "VERSION_vT.md").read_text(encoding="utf-8")
+    check(testver.latest(repo) == (1, 0, 1) and "핫픽스 (자동)" in vt and "`src/backend/calc.py`" in vt and "calc.add 가 뺄셈을 하던 오류 수정" in vt,
+          "S1 버전 기록: docs/VERSION_vT.md 맨 위에 vT1.0.1 항목(핫픽스·자동·파일·제목)")
+    check(sh(repo, "log", "-2", "--format=%s").splitlines()[0].startswith("docs(vT1.0.1): 버전 기록") and sh(repo, "log", "-2", "--format=%s").splitlines()[1].startswith("fix(vT1.0.1):"),
+          "S1 커밋 2개: 패치 커밋 + 별도 버전 기록 커밋")
     check("합계 1개 파일 · +" in m and "| `src/backend/calc.py` | +" in m and "| **합계 (1개)** |" in m, "S1 텔레그램: 파일별 +/− 와 합계")
     check(f"커밋: {base0} → {new_head}" in m, "S1 텔레그램: 커밋 이전 → 이후(수정 커밋)")
     check("금지 자원 확인**: ✅ 통과" in m and "Vercel" in m and "GCP" in m and "텔레그램 번호" in m, "S1 텔레그램: 금지 자원 확인 항목 명시")
@@ -220,6 +227,22 @@ def main() -> int:
     res, head = run_fix("syntax_then_fix")
     impl = [x for x in calls()[n_before:] if x["purpose"] in ("implement", "revise")]
     check(res.status == "applied" and res.revisions == 1 and [x["purpose"] for x in impl] == ["implement", "revise"], "S4 컴파일 실패 → Haiku 수정 라운드 1회 후 통과")
+    # S4b) 버전 번호: 커밋까지 간 수정만 번호를 쓴다 — 초기화 없이 연속 실행(적용 → 폐기 → 적용)
+    def run_seq(mode, seq):
+        cfg.extra_env["STUB_MODE"] = mode
+        head_ = git_head(repo)
+        af_ = AutoFix(cfg, restarter=fake_restart)
+        an_ = {"verdict": "confirmed", "summary": "calc.add 가 뺄셈", "cause": "add 가 a-b", "evidence": [], "proposed_action": ""}
+        r_ = af_.run("sig-test", an_, rx._snapshot(head_), head_, seq, "standard")
+        if r_.status == "committed":
+            r_ = af_.apply_and_restart(r_)
+        return r_
+    reset()
+    r1 = run_seq("", 1)
+    r2 = run_seq("forbidden", 2)   # 가드가 폐기 — 번호를 쓰지 않는다
+    r3 = run_seq("", 3)            # 이미 수정된 코드라 변경 없음일 수 있어 아래에서 상태로만 확인
+    check(r1.version == "vT1.0.1" and r2.status == "guard_fail" and r2.version == "", "S4b 첫 수정은 vT1.0.1, 폐기된 시도는 버전 없음")
+    check(testver.latest(repo) == (1, 0, 1) and r3.version == "", "S4b 폐기 · 변경 없음 시도가 번호를 소모하지 않음(최신은 그대로 vT1.0.1)")
     # S5) 검토자 반려 2회 → 미적용
     res, head = run_fix("review_reject")
     check(res.status == "rejected" and not res.head and git_head(repo) == head, "S5 검토자 반려가 반복되면 커밋 없이 종료")
@@ -250,8 +273,11 @@ def main() -> int:
 
     res, head = run_fix("", restart=flaky)
     txt = (repo / "src" / "backend" / "calc.py").read_text(encoding="utf-8")
-    check(res.status == "reverted" and "a - b" in txt and len(seq_calls) == 2 and "Revert" in sh(repo, "log", "-1", "--format=%s"),
+    check(res.status == "reverted" and "a - b" in txt and len(seq_calls) == 2 and "Revert" in sh(repo, "log", "-3", "--format=%s"),
           "S9 건강 확인 실패 시 자동 revert + 재시작")
+    vt9 = (repo / "docs" / "VERSION_vT.md").read_text(encoding="utf-8")
+    check(testver.latest(repo) == (1, 0, 1) and "⚠️ 적용 후 러너 건강 확인 실패" in vt9 and testver.next_patch(repo) == "vT1.0.2",
+          "S9 자동 revert 시 버전 기록은 남기고 revert 표시(결번) — 다음 번호는 vT1.0.2")
     # S10) 러너가 안 떠 있으면 적용만
     res, head = run_fix("", restart=lambda c: (False, "러너가 실행 중이 아님 — 재시작 생략"))
     check(res.status == "applied_no_restart" and res.applied and not res.restarted, "S10 러너 미실행이면 재시작 생략하고 적용만")
