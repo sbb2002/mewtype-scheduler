@@ -49,7 +49,7 @@ HB_LOST_SEC = 120
 
 RESULT_SCHEMA = {
     "type": "object",
-    "required": ["verdict", "summary", "cause", "evidence", "proposed_action"],
+    "required": ["verdict", "summary", "cause", "evidence"],  # proposed_action · impact 는 지침으로 요구하되 빠져도 분석이 통째로 실패하지 않게 선택 필드
     "properties": {
         "verdict": {"enum": ["confirmed", "unknown", "ignored"]},
         "summary": {"type": "string"},
@@ -75,7 +75,8 @@ SYSTEM_RULES = """너는 에러 분석기다. 이 세션은 읽기 전용 스냅
    무해하다고 하지 말고, 코드로 줄일 수 있는 개선(재시도 · 백오프 · 로그 수준 조정 등)을 proposed_action 에 구체적으로 제안한다.
    외부 서비스 탓이라도 코드가 흡수할 수 있으면 그 방법을 적는다.
 7. impact 는 1~2문장: 이 에러가 서비스에 주는 영향 + 빈도 평가. 영향이 없다고 쓸 때는 그렇게 판단한 호출부 근거를 함께 쓴다.
-8. proposed_action 은 제안일 뿐이다 — 이 단계에서는 어떤 변경도 하지 않는다."""
+8. proposed_action 은 제안일 뿐이다 — 이 단계에서는 어떤 변경도 하지 않는다.
+9. 최종 답은 verdict · summary · cause · evidence · proposed_action · impact **여섯 필드를 모두** 채운 JSON 이다. 제안할 것이 없으면 proposed_action 에 "조치 불필요"와 이유를 쓴다."""
 
 
 # ── 설정 ──────────────────────────────────────────────
@@ -970,6 +971,7 @@ class Receiver:
                                    budget=self.cfg.budget_usd, system=SYSTEM_RULES)
         if not isinstance(data, dict) or data.get("verdict") not in ("confirmed", "unknown", "ignored"):
             raise RuntimeError("분석 결과가 스키마에 맞지 않음")
+        data.setdefault("proposed_action", "(분석기가 제안을 적지 않음)")
         return data, cost
 
     # 보고 — 텔레그램에는 짧은 캡션 + 마크다운(또는 JSON) 파일. 본문 메시지로 길게 보내지 않는다.
