@@ -10,7 +10,7 @@ import os
 import time
 from pathlib import Path
 
-DIRS = ("err/inbox", "err/processing", "err/done", "err/dead", "ctl/inbox", "ctl/done", "report/inbox", "hb", ".tmp")
+DIRS = ("err/inbox", "err/hold", "err/processing", "err/done", "err/dead", "ctl/inbox", "ctl/done", "report/inbox", "hb", ".tmp")
 INBOX_CAP = 500  # 수신기가 안 가져가면 쌓이지 않게 — 넘으면 새 메시지를 버리고 dropped 로 센다
 
 

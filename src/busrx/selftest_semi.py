@@ -61,7 +61,7 @@ def main() -> int:
     stub.write_text(STUB, encoding="utf-8")
     slog = tmp / "stub.log"
     cfg = Config(bus_dir=bus, repo=repo, runner_dir=repo, claude_cmd=[sys.executable, str(stub)], batch_wait_sec=0, stage=2,
-                 test_python=sys.executable, core_tests=[], daily_cap=99, fix_daily_cap=99, cooldown_error=0, cooldown_critical=0,
+                 test_python=sys.executable, core_tests=[], daily_cap=99, cooldown_error=0, cooldown_critical=0,
                  extra_env={"STUB_LOG": str(slog), "STUB_MODE": ""})
     tg = FakeTG()
     rx = Receiver(cfg, tg)

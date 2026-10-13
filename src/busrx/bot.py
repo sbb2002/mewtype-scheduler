@@ -71,8 +71,11 @@ class BotCommands:
             cur = self.rx.policy.mode()
             self.tg.send(f"현재 동작 모드: {MODES[cur]}({cur})\n바꾸려면 /automode auto | semi | off\n- auto 자동: 전부 자동 패치\n- semi 반자동: 패치 계획을 만들어 승인을 기다림\n- off 끔: 자동제어 동작 안 함(기록만)")
             return
-        m, errs = self.rx.policy.set_mode(arg, "telegram")
-        self.tg.send(f"✅ 동작 모드를 {MODES[m]}({m})(으)로 바꿨습니다." if not errs else f"⚠️ {errs[0]}")
+        r = self.rx.change_mode(arg, None, "telegram")
+        if r.get("needs_queue"):
+            self.tg.send(f"⚠️ 묶음 주기로 처리를 기다리는 에러가 {r['count']}건({r['types']}종류) 있습니다. 먼저 처리할지 버릴지 정해야 하므로 관리 페이지(/ctl)에서 모드를 바꿔 주세요.")
+            return
+        self.tg.send(f"✅ 동작 모드를 {MODES[r['mode']]}({r['mode']})(으)로 바꿨습니다." if r.get("ok") else f"⚠️ {(r.get('errors') or ['실패'])[0]}")
 
     def _help(self):
         self.tg.send(HELP)

@@ -22,6 +22,10 @@ ACTIONS = {"off": "끔(기록만)", "analyze": "분석만", "fix": "수정까지
 COOLDOWN_MAX = 7 * 86400
 # 동작 모드(전체): auto = 전부 자동 패치(기본) / semi = 분석 후 패치 계획안을 만들어 사람의 승인 · 반려(재계획) · 거절을 기다림 / off = 자동제어 동작 안 함(기록만)
 MODES = {"auto": "자동", "semi": "반자동", "off": "끔"}
+# 동작 주기(모드가 자동 · 반자동일 때): event = 에러가 오는 대로 / h1 · h3 = 정해진 시각(KST 정시, 3시간은 0 · 3 · 6 … 시)에 쌓인 에러를 같은 종류끼리 묶어 한 번씩.
+# CRITICAL 은 주기와 관계없이 항상 즉시 처리한다.
+CYCLES = {"event": "이벤트 발생 시마다", "h1": "1시간마다", "h3": "3시간마다"}
+CYCLE_SEC = {"h1": 3600, "h3": 10800}
 
 
 def defaults(cfg) -> dict:
@@ -76,20 +80,37 @@ class Policy:
         self._cache: dict | None = None
         self._mtime = -1.0
         self._mode = "auto"
+        self._cycle = "event"
 
     def mode(self) -> str:
         self.all()
         return self._mode
 
+    def cycle(self) -> str:
+        self.all()
+        return self._cycle
+
+    def _write(self, levels: dict, mode: str, cycle: str) -> None:
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"levels": levels, "mode": mode, "cycle": cycle, "saved_at": E.iso(time.time())}, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.path)
+        self._cache = None
+
+    def set_cycle(self, cycle: str, who: str = "dashboard") -> tuple[str, list[str]]:
+        if cycle not in CYCLES:
+            return self.cycle(), [f"cycle 은 {list(CYCLES)} 중 하나"]
+        old = self.cycle()
+        self._write(self.all(), self.mode(), cycle)
+        if old != cycle:
+            with (self.path.parent / "policy_history.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"ts": E.iso(time.time()), "by": who, "cycle": {"from": old, "to": cycle}}, ensure_ascii=False) + "\n")
+        return self.cycle(), []
+
     def set_mode(self, mode: str, who: str = "dashboard") -> tuple[str, list[str]]:
         if mode not in MODES:
             return self.mode(), [f"mode 는 {list(MODES)} 중 하나"]
         old = self.mode()
-        levels = self.all()
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"levels": levels, "mode": mode, "saved_at": E.iso(time.time())}, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.path)
-        self._cache = None
+        self._write(self.all(), mode, self.cycle())
         if old != mode:
             with (self.path.parent / "policy_history.jsonl").open("a", encoding="utf-8") as f:
                 f.write(json.dumps({"ts": E.iso(time.time()), "by": who, "mode": {"from": old, "to": mode}}, ensure_ascii=False) + "\n")
@@ -115,6 +136,8 @@ class Policy:
                     data = None
             md = data.get("mode") if isinstance(data, dict) else None
             self._mode = md if md in MODES else "auto"
+            cy = data.get("cycle") if isinstance(data, dict) else None
+            self._cycle = cy if cy in CYCLES else "event"
             pol, errs = validate((data or {}).get("levels", {}) if isinstance(data, dict) else {}, base, pipelines.all_pipelines(self.cfg))
             if errs:  # 손상 · 부분 오류가 있으면 오류 항목만 기본값 유지(validate 가 걸러냄)
                 pass
@@ -129,9 +152,7 @@ class Policy:
         if errs:
             return self.all(), errs
         old = self.all()
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"levels": new, "mode": self.mode(), "saved_at": E.iso(time.time())}, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.path)
+        self._write(new, self.mode(), self.cycle())
         changed = {s: {"from": old[s], "to": new[s]} for s in new if new[s] != old[s]}
         if changed:
             with (self.path.parent / "policy_history.jsonl").open("a", encoding="utf-8") as f:

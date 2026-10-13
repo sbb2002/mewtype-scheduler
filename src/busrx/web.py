@@ -26,7 +26,7 @@ import flask
 from src.bus import envelope as E
 
 from . import pipelines
-from .policy import ACTIONS, MODES, SEVERITIES, defaults
+from .policy import ACTIONS, MODES, SEVERITIES, defaults, CYCLES
 from .proposals import MAX_REPLANS
 from .status import build_status, usage_view
 
@@ -230,7 +230,8 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
     @app.get("/api/policy")
     def policy_get():
         return flask.jsonify(policy=rx.policy.all(), defaults=defaults(cfg), severities=list(SEVERITIES), actions=ACTIONS,
-                             presets={k: v["name"] for k, v in pipelines.presets_view(cfg).items()}, stage=cfg.stage)
+                             presets={k: v["name"] for k, v in pipelines.presets_view(cfg).items()}, stage=cfg.stage,
+                             cycle=rx.policy.cycle(), cycles=CYCLES)
 
     @app.get("/api/pipelines")
     def pipelines_get():
@@ -291,10 +292,18 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
 
     @app.post("/api/mode")
     def mode_set():
-        m, errs = rx.policy.set_mode(str((flask.request.get_json(silent=True) or {}).get("mode") or ""), "dashboard")
-        if errs:
-            return flask.jsonify(ok=False, errors=errs), 400
-        return flask.jsonify(ok=True, mode=m, label=MODES[m])
+        d = flask.request.get_json(silent=True) or {}
+        r = rx.change_mode(str(d.get("mode") or ""), d.get("queue"), "dashboard")
+        if r.get("needs_queue"):
+            return flask.jsonify(r), 409          # 묶음 대기열이 있다 — 먼저 처리(process) / 버림(discard) 중 하나를 골라 다시 요청
+        if not r.get("ok"):
+            return flask.jsonify(r), 400
+        return flask.jsonify(r)
+
+    @app.post("/api/cycle")
+    def cycle_set():
+        r = rx.change_cycle(str((flask.request.get_json(silent=True) or {}).get("cycle") or ""), "dashboard")
+        return flask.jsonify(r), (200 if r.get("ok") else 400)
 
     def _decision(pid: str, fn):
         if not PID_RE.match(pid):

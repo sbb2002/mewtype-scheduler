@@ -123,7 +123,7 @@ def main() -> int:
     stub.write_text(STUB, encoding="utf-8")
     slog = tmp / "stub.log"
     cfg = Config(bus_dir=bus, repo=repo, runner_dir=repo, claude_cmd=[sys.executable, str(stub)], batch_wait_sec=0,
-                 test_python=sys.executable, core_tests=[], daily_cap=50, fix_daily_cap=50, cooldown_error=0,
+                 test_python=sys.executable, core_tests=[], daily_cap=50, cooldown_error=0,
                  extra_env={"STUB_LOG": str(slog)})
     tg = FakeTG()
     clock = [1_800_000_000.0]

@@ -55,11 +55,12 @@ def build_status(rx, cfg, now: float) -> dict:
         publisher={"alive": age is not None and age <= HB_LOST_SEC, "age": None if age is None else int(age),
                    "level": pub.get("level"), "paused": pub.get("paused"), "counters": pub.get("counters"), "pid": pub.get("pid")},
         receiver={"pid": os.getpid(), "calls_today": rx.state["calls"].get(today, 0), "daily_cap": cfg.daily_cap,
-                  "fixes_today": rx.state.get("fixes", {}).get(today, 0), "fix_cap": cfg.fix_daily_cap},
+                  "fixes_today": rx.state.get("fixes", {}).get(today, 0)},
         queue={k: rx.spool.count(f"err/{k}") for k in ("inbox", "processing", "done", "dead")},
         runner={"pid": runner.get("pid"), "port": runner.get("port"), "healthy": healthy},
         lost_alerted=rx.state.get("lost_alerted", False), usage=usage_view(rx, now), policy=rx.policy.all(),
-        mode=rx.policy.mode(), proposals_pending=rx.proposals.pending_count())
+        mode=rx.policy.mode(), cycle=rx.policy.cycle(), proposals_pending=rx.proposals.pending_count(),
+        hold=dict(rx.queue_info(), next_run=(None if rx.next_run_epoch() is None else E.iso(rx.next_run_epoch()))))
 
 
 def _kst(epoch, with_date: bool) -> str:
@@ -108,7 +109,7 @@ def status_text(s: dict) -> str:
         + (" · 발신 정지" if p.get("paused") else "") + (f" · {p['age']}초 전" if p.get("age") is not None else ""),
         f"러너: {'정상' if run['healthy'] else ('⚠️ 응답 없음' if run['healthy'] is False else '확인 불가')}"
         + (f" (pid {run['pid']})" if run.get("pid") else ""),
-        f"오늘 분석 {r['calls_today']}/{r['daily_cap']} · 수정 시도 {r['fixes_today']}/{r['fix_cap']} · inbox {s['queue']['inbox']}",
+        f"오늘 분석 {r['calls_today']}/{r['daily_cap']} · 수정 시도 {r['fixes_today']} · inbox {s['queue']['inbox']}",
         f"로컬 적용 {'켜짐' if s['apply_local'] else '꺼짐'} · 브랜치 {s['apply_branch']} · HEAD {s['head']}",
         policy_line(s.get("policy")), "", *usage_text(s["usage"])]
     return "\n".join(lines)

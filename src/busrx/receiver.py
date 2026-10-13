@@ -36,7 +36,7 @@ from src.bus.spool import Spool
 
 from .autofix import PRESETS, AutoFix, FixResult
 from .claude import MODEL_ANALYSIS, MODEL_CODE, USAGE, pct, run_claude, usage_md, usage_summary
-from .policy import Policy
+from .policy import Policy, CYCLES, CYCLE_SEC, MODES
 from .proposals import MAX_REPLANS, Proposals
 from .restart import restart_runner
 
@@ -86,7 +86,6 @@ class Config:
     budget_code: float = 1.5
     budget_verify: float = 0.8
     budget_review: float = 0.8
-    fix_daily_cap: int = 3
     web_port: int = 8789
     ctl_token: str = ""       # 수신기 전용 텔레그램 봇 토큰(RX_TELEGRAM_BOT_TOKEN) — 있으면 알림·보고·DM 명령을 이 봇으로
     ctl_chat_id: str = ""     # 그 봇의 허용 chat id(RX_TELEGRAM_CHAT_ID)
@@ -133,7 +132,7 @@ def config_from_env() -> Config:
         stage=int(g("RX_STAGE", "2")), model_analysis=g("RX_MODEL_ANALYSIS", MODEL_ANALYSIS),
         model_code=g("RX_MODEL_CODE", MODEL_CODE), apply_local=g("RX_APPLY_LOCAL", "1") != "0",
         apply_branch=g("RX_APPLY_BRANCH", "v4.3-fullauto"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
-        fix_daily_cap=int(g("RX_FIX_DAILY", "3")), report_format=g("RX_REPORT_FORMAT", "md"), web_port=int(g("RX_WEB_PORT", "8789")),
+        report_format=g("RX_REPORT_FORMAT", "md"), web_port=int(g("RX_WEB_PORT", "8789")),
         web_enabled=g("RX_WEB", "1") != "0",
         ctl_token=g("RX_TELEGRAM_BOT_TOKEN", "").strip(), ctl_chat_id=g("RX_TELEGRAM_CHAT_ID", "").strip(),
         budget_usd=float(g("RX_BUDGET_USD", "1.0")), timeout_sec=int(g("RX_TIMEOUT_SEC", "600")),
@@ -250,6 +249,7 @@ class Receiver:
         self.state = self._load_state()
         self.proposals = Proposals(cfg.rx / "proposals")  # 반자동 모드의 패치 계획안
         self._pipe_lock = threading.RLock()  # 분석 · 수정 파이프라인은 한 번에 하나만(메인 루프와 승인 실행 스레드가 겹치지 않게)
+        self._step_lock = threading.RLock()
         self.policy = Policy(cfg.rx / "policy.json", cfg)  # 레벨별 자동 대응 정책(관리 페이지에서 수정)
         self._state_lock = threading.RLock()  # 관리 페이지(다른 스레드)와 상태 파일 쓰기 경합 방지
         self._last_hb = 0.0
@@ -329,12 +329,23 @@ class Receiver:
                 self.tg.send("✅ 발신기 복구 — hb/publisher.json 갱신 재개")
 
     # 한 번 훑기: 새 봉투를 읽어 시그니처별로 묶고 처리. 처리한 봉투 수를 돌려준다
-    def step(self) -> int:
+    # flush=True 면 보류 폴더(err/hold)의 묶음 대기분도 함께 처리한다.
+    def step(self, flush: bool = False) -> int:
+        with self._step_lock:
+            return self._step(flush)
+
+    def _hold_enabled(self) -> bool:
+        """묶음 주기(1시간 · 3시간)에서는 CRITICAL 이 아닌 에러를 처리하지 않고 err/hold 에 모아 둔다."""
+        return self.policy.mode() != "off" and self.policy.cycle() != "event"
+
+    def _step(self, flush: bool = False) -> int:
         files = self.spool.list("err/inbox")
-        if not files:
+        held = self.spool.list("err/hold") if flush else []
+        if not files and not held:
             return 0
+        hold_on = self._hold_enabled() and not flush
         items: list[tuple[Path, dict]] = []
-        for p in files:
+        for p in files + held:
             try:
                 env = json.loads(p.read_text(encoding="utf-8"))
             except Exception as e:  # noqa: BLE001
@@ -346,6 +357,9 @@ class Receiver:
                 continue
             if env["id"] in self.state["seen"]:
                 self.spool.move(p, "err/done")
+                continue
+            if hold_on and env["severity"] != "CRITICAL" and p.parent.name == "inbox":
+                self.spool.move(p, "err/hold")  # 다음 정시에 같은 종류끼리 묶어 처리
                 continue
             items.append((self.spool.move(p, "err/processing"), env))
         groups: dict[str, list[tuple[Path, dict]]] = {}
@@ -364,6 +378,86 @@ class Receiver:
                     pass
             self._save()
         return len(items)
+
+    # ── 동작 주기: 묶음 대기열 ──
+    def _slot(self, cycle: str) -> int:
+        return int((self.now() + 9 * 3600) // CYCLE_SEC[cycle])  # KST 정시 기준 구간 번호
+
+    def next_run_epoch(self) -> float | None:
+        cyc = self.policy.cycle()
+        if cyc == "event" or self.policy.mode() == "off":
+            return None
+        return (self._slot(cyc) + 1) * CYCLE_SEC[cyc] - 9 * 3600
+
+    def queue_info(self) -> dict:
+        """묶음 주기에서 처리를 기다리는 에러: 건수와 종류(시그니처) 수."""
+        files = self.spool.list("err/hold")
+        sigs = set()
+        for p in files:
+            try:
+                sigs.add(signature(json.loads(p.read_text(encoding="utf-8"))))
+            except Exception:  # noqa: BLE001
+                pass
+        return {"count": len(files), "types": len(sigs)}
+
+    def _maybe_flush(self) -> None:
+        """정시가 되면(또는 주기를 '이벤트마다'로 바꿨으면) 쌓인 에러를 한꺼번에 처리한다."""
+        cyc, mode = self.policy.cycle(), self.policy.mode()
+        if mode == "off":
+            return
+        if cyc == "event":
+            self.state["batch_cycle"] = "event"
+            if self.spool.count("err/hold"):
+                self.step(flush=True)
+            return
+        slot = self._slot(cyc)
+        if self.state.get("batch_cycle") != cyc:  # 주기를 바꾼 직후 — 다음 정시까지 기다린다
+            self.state["batch_cycle"], self.state["batch_slot"] = cyc, slot
+            self._save()
+            return
+        if self.state.get("batch_slot") != slot:
+            self.state["batch_slot"] = slot
+            self._save()
+            if self.spool.count("err/hold"):
+                self.step(flush=True)
+
+    def discard_held(self, why: str) -> int:
+        n = 0
+        with self._step_lock:
+            for p in self.spool.list("err/hold"):
+                try:
+                    env = json.loads(p.read_text(encoding="utf-8"))
+                    self._logline(signature(env), env, why)
+                except Exception:  # noqa: BLE001
+                    pass
+                self.spool.move(p, "err/done")
+                n += 1
+        return n
+
+    def change_mode(self, mode: str, queue: str | None = None, who: str = "dashboard") -> dict:
+        """동작 모드 변경. 묶음 대기열이 있으면 queue 결정이 필요하다: process = 먼저 처리, discard = 버림."""
+        if mode not in MODES:
+            return {"ok": False, "errors": [f"mode 는 {list(MODES)} 중 하나"]}
+        cur = self.policy.mode()
+        q = self.queue_info()
+        if q["count"] and mode != cur:
+            if queue not in ("process", "discard"):
+                return {"ok": False, "needs_queue": True, **q}
+            if queue == "process":
+                self.step(flush=True)  # 지금(옛 모드)의 방식으로 먼저 처리
+            else:
+                self.discard_held("모드 변경으로 대기 중이던 에러를 버림")
+        new, errs = self.policy.set_mode(mode, who)
+        if errs:
+            return {"ok": False, "errors": errs}
+        return {"ok": True, "mode": new, "label": MODES[new], "queue": queue if q["count"] and mode != cur else None, **q}
+
+    def change_cycle(self, cycle: str, who: str = "dashboard") -> dict:
+        new, errs = self.policy.set_cycle(cycle, who)
+        if errs:
+            return {"ok": False, "errors": errs}
+        self._maybe_flush()  # '이벤트마다'로 돌아오면 쌓인 것을 바로 처리, 묶음끼리 바꾸면 다음 정시부터
+        return {"ok": True, "cycle": new, "label": CYCLES[new]}
 
     # ── 관리 페이지용 ──────────────────────────────
     def _touch_meta(self, sig: str, envs: list[dict], top: dict) -> None:
@@ -451,7 +545,8 @@ class Receiver:
             return
         st = self.state["sigs"].setdefault(sig, {"count": 0, "suppressed": 0, "last_call": 0})
         st["count"] += len(envs)
-        if self.now() - st["last_call"] < pol["cooldown_sec"]:
+        batch = self.policy.cycle() != "event" and top["severity"] != "CRITICAL"  # 묶음 주기: 한 주기에 같은 종류는 한 번이라 쿨다운 대신 주기가 간격을 정함
+        if not batch and self.now() - st["last_call"] < pol["cooldown_sec"]:
             st["suppressed"] += len(envs)
             for e in envs:
                 self._logline(sig, e, "쿨다운 중 — 분석 생략")
@@ -524,9 +619,7 @@ class Receiver:
 
     def _autofix(self, sig: str, analysis: dict, snap: Path, base: str, preset: str = "standard") -> FixResult:
         today = self._today()
-        used = self.state.setdefault("fixes", {}).get(today, 0)
-        if used >= self.cfg.fix_daily_cap:
-            return FixResult(status="none", base=base, note=f"자동 수정 일일 상한({self.cfg.fix_daily_cap}회) 도달 — 수정 생략")
+        used = self.state.setdefault("fixes", {}).get(today, 0)  # 오늘 시도 횟수는 기록만 한다(일일 상한 없음 — 2026-10-13 운영자 결정)
         self.state["fixes"][today] = used + 1
         self.state["fixes"] = dict(sorted(self.state["fixes"].items())[-14:])
         seq = self.state["patch_seq"] = self.state.get("patch_seq", 0) + 1
@@ -807,6 +900,7 @@ class Receiver:
         while True:
             try:
                 self.heartbeat()
+                self._maybe_flush()
                 if self.spool.list("err/inbox"):
                     time.sleep(self.cfg.batch_wait_sec if not once else 0)
                     self.step()
