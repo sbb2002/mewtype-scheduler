@@ -108,7 +108,7 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
     # (v4.3) 에러 버스 발신기 훅 — MEW_BUS_DIR 없으면 no-op, 어떤 경우도 예외를 던지지 않는다
     try:
         from src.bus import on_events as _bus_on_events
-        _bus_on_events(events)
+        _bus_on_events([e for e in events if not e.get("no_bus")])   # no_bus = 같은 사건을 예외 로그(traceback)가 이미 버스로 보냄
     except Exception:
         pass
 
@@ -122,7 +122,7 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
         who = ev.get("who", "")
         detail = ev.get("detail", "")
         # ts/who/detail 제외한 나머지 필드들
-        extra = {k: v for k, v in ev.items() if k not in ("ts", "who", "detail")}
+        extra = {k: v for k, v in ev.items() if k not in ("ts", "who", "detail", "no_bus")}
         line = json.dumps(
             {"ts": ts, "who": who, "detail": detail, **extra},
             ensure_ascii=False, sort_keys=True,

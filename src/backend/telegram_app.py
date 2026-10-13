@@ -764,7 +764,7 @@ def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
         log.exception("Error handling /pause")
         _send_telegram(f"⚠️ 오류: /pause 처리 실패\n{str(e)[:100]}")
         try:
-            log_event(gh, now_iso, "ops", RESULT_ERR, who="/pause", detail=str(e)[:150])
+            log_event(gh, now_iso, "ops", RESULT_ERR, no_bus=True, who="/pause", detail=str(e)[:150])
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(ops /pause)")
 
@@ -867,7 +867,7 @@ def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None
         log.exception("Error handling /resume")
         _send_telegram(f"⚠️ 오류: /resume 처리 실패\n{str(e)[:100]}")
         try:
-            log_event(gh, now_iso, "ops", RESULT_ERR, who="/resume", detail=str(e)[:150])
+            log_event(gh, now_iso, "ops", RESULT_ERR, no_bus=True, who="/resume", detail=str(e)[:150])
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(ops /resume)")
 
@@ -2031,7 +2031,7 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
     except Exception:
         log.exception("personal tweet 반영 실패")
         try:
-            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)", via=via)
+            log_event(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key, detail="mode: error (exception)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
         return {"mode": "error", "n_thread": 0, "needs_tl": False}
@@ -2499,7 +2499,7 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         _dm_lost_raw("auto notice 호출 실패", raw, title=title or "", kind="notice",
                     tag=tag, gh=gh)
         try:
-            log_event(gh, now_iso, "notice", RESULT_ERR, detail="mode: error (exception)", via="ingest")
+            log_event(gh, now_iso, "notice", RESULT_ERR, no_bus=True, detail="mode: error (exception)", via="ingest")
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(notice)")
         return "error"
@@ -2526,7 +2526,9 @@ def _inline_translate(text: str) -> Optional[str]:
     if llm is None:
         return None
     try:
-        return llm.translate(text) or None
+        from .llm import quiet_failures
+        with quiet_failures():      # 실패하면 호출부가 needs_tl 이벤트(WARN)로 기록하므로 LLM 쪽 최종 실패 줄은 INFO
+            return llm.translate(text) or None
     except Exception:
         log.exception("인라인 번역 실패")
         return None
@@ -2778,7 +2780,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         _dm_lost_raw("personal tweet write 호출 실패", raw, title=title or "",
                     kind="personal_tweet", channel_key=channel_key, tag=tag, gh=gh)
         try:
-            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+            log_event(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key,
                       detail="mode: error (/write 호출 실패)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
@@ -2843,7 +2845,7 @@ def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str 
                 log.info("URL 확정 예고: preview.json 충돌 — 재시도")
     except Exception:
         log.exception("URL 확정 예고 반영 실패")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=host_key,
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=host_key,
                   detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
         return {"changed": False, "error": True}
 
@@ -2887,7 +2889,7 @@ def _commit_yt_member_live(gh, live: dict, now_iso: str, *, via: str = "ingest")
                 log.info("회원 전용 라이브: preview.json 충돌 — 재시도")
     except Exception:
         log.exception("회원 전용 라이브 반영 실패")
-        _log_event_safe(gh, now_iso, "relay", RESULT_ERR, who=ck,
+        _log_event_safe(gh, now_iso, "relay", RESULT_ERR, no_bus=True, who=ck,
                         detail="mode: yt-member-live write 실패", via=via)
         return {"changed": False, "mode": "error", "error": True}
 
@@ -3195,7 +3197,7 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
         flowtrace.annotate(banner="error")
         log.exception("행사 배너 반영 실패")
         _dm_lost_raw("행사 배너 반영 호출 실패", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
-        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, who=acct, via="ingest", detail="banner: error (exception)")
+        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, no_bus=True, who=acct, via="ingest", detail="banner: error (exception)")
         return {"ok": True, "banner": "error"}, 200
     mode = result.get("mode") or "none"
     flowtrace.annotate(banner=mode)
@@ -3492,7 +3494,7 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
         return []
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not groq_key:
-        log.warning("GROQ_API_KEY 없음 — 게스트 언급 콜라보 판정 스킵, 미추가")
+        log.info("GROQ_API_KEY 없음 — 게스트 언급 콜라보 판정 스킵, 미추가")
         _log_event_safe(gh, now_iso, flow, RESULT_ERR, who=host_key,
                   detail="collab-guest skip: GROQ_API_KEY 미설정 — 게스트 미추가", via=via)
         return []
@@ -3506,7 +3508,7 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
     confirmed = LLMClient(groq_key).collab_partners(
         text, host_name=host_name, candidate_names=candidate_names)
     if confirmed is None:
-        log.warning("게스트 언급 콜라보 판정: LLM 5회 모두 실패 — 미추가")
+        log.info("게스트 언급 콜라보 판정: LLM 5회 모두 실패 — 미추가")
         _log_event_safe(gh, now_iso, flow, RESULT_ERR, who=host_key,
                   detail="collab-guest skip: collab_partners() 5회 모두 실패 — 미추가", via=via)
         return []
@@ -3694,7 +3696,7 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
     # 삭제는 `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다)
     plan = _detect_broadcast_change(raw, channel_key, now_iso, items)
     if plan is None:
-        log.warning("방송 취소/변경 판정: LLM 사용 불가 또는 5회 모두 실패 — 미반영")
+        log.info("방송 취소/변경 판정: LLM 사용 불가 또는 5회 모두 실패 — 미반영")
         _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                         detail="broadcast-change skip: 판정 실패(GROQ 키 없음 또는 5회 모두 실패)", via=via)
         return
@@ -3726,7 +3728,7 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
                                 "to": plan["when_iso"]})
         except Exception:
             log.exception("방송 취소/변경 반영 실패")
-            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key,
                             detail=f"broadcast-change write 실패 — 취소/변경 유실 ({iid})", via=via)
     if removed or changes:
         # (v4a) 예고를 내리거나 옮기게 한 글도 원문 보존(D19 확장, 2026-10-01 운영자 결정) — tweets.json 은 48h 뒤 사라진다.
@@ -3794,14 +3796,14 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
 
     api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not api_key:
-        log.warning("YOUTUBE_API_KEY 없음 — URL 확정 예고 스킵, 텍스트 파싱으로 폴백")
+        log.info("YOUTUBE_API_KEY 없음 — URL 확정 예고 스킵, 텍스트 파싱으로 폴백")
         _log_event_safe(gh, now_iso, "tweet", RESULT_WARN, who=channel_key,
                   detail="url-schedule skip: YOUTUBE_API_KEY 미설정 — 텍스트 파싱 폴백", via=via)
         return False
     try:
         info = YouTubeClient(api_key).videos_list([video_id]).get(video_id)
     except Exception:
-        log.warning("videos.list 실패 (URL 확정 예고) — 텍스트 파싱으로 폴백", exc_info=True)
+        log.info("videos.list 실패 (URL 확정 예고) — 텍스트 파싱으로 폴백", exc_info=True)
         _log_event_safe(gh, now_iso, "tweet", RESULT_WARN, who=channel_key,
                   detail="url-schedule skip: videos.list 실패 — 텍스트 파싱 폴백", via=via)
         return False
@@ -3904,7 +3906,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         groq_key = os.environ.get("GROQ_API_KEY", "").strip()
         _fpart = _review_forced("part") is True       # 사용자 판단 — 참여로 등록(LLM 확인만 건너뜀)
         if not groq_key and not _fpart:
-            log.warning("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
+            log.info("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
             _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                       detail="url-schedule skip: GROQ_API_KEY 미설정 — 참여판정 불가, 미등록", via=via)
             return True
@@ -3913,7 +3915,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         ok = True if _fpart else LLMClient(groq_key).participation(raw, member_name=author_name)
         if ok is None:
             # LLM 5회 재시도 모두 실패(infra) — "무관하다고 확인됨"과는 다르다, monitor 에 남긴다.
-            log.warning("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
+            log.info("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
             _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                       detail="url-schedule skip: participation() 5회 모두 실패 — 미등록", via=via)
             return True
@@ -3943,7 +3945,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         changed = res.get("changed", False)
     except Exception:
         log.exception("URL 확정 예고: /write 호출 실패")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key,
                   detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
         return True
 
@@ -4081,7 +4083,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     _fown = _review_forced("own") is True       # 사용자 판단 — 예고로 등록(LLM 최종 확인만 건너뜀)
     if not groq_key and not _fown:
-        log.warning("GROQ_API_KEY 없음 — 텍스트 예고 최종 확인 불가, 미등록(안전한 실패)")
+        log.info("GROQ_API_KEY 없음 — 텍스트 예고 최종 확인 불가, 미등록(안전한 실패)")
         _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                         detail="text-schedule skip: GROQ_API_KEY 미설정 — 최종확인 불가, 미등록", via=via)
         return
@@ -4089,7 +4091,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
     confirmed = True if _fown else LLMClient(groq_key).announces_own_broadcast(raw, unit_name=name)
     if confirmed is None:
         # LLM 5회 재시도 모두 실패(infra) — "예고 아님"으로 확인된 것과는 다르다, monitor 에 남긴다.
-        log.warning("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
+        log.info("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
         _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                         detail="text-schedule skip: announces_own_broadcast() 5회 모두 실패 — 미등록", via=via)
         return
@@ -6816,7 +6818,7 @@ if _FLASK_AVAILABLE:
                         kind="ingest", tag=x_tag, gh=gh)
             if gh is not None:
                 try:
-                    log_event(gh, now_iso, "relay", RESULT_ERR, detail=f"mode: error · {str(e)[:100]}", via="ingest")
+                    log_event(gh, now_iso, "relay", RESULT_ERR, no_bus=True, detail=f"mode: error · {str(e)[:100]}", via="ingest")
                 except Exception:  # noqa: BLE001
                     log.warning("monitor_log 기록 실패(relay)")
             return jsonify({"ok": False, "error": str(e)}), 200
