@@ -175,7 +175,7 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
                 except ValueError:
                     pass
             tail.reverse()
-        return flask.jsonify(errors=rows[:200], log=tail)
+        return flask.jsonify(errors=rows[:200], log=tail, manual_busy=rx.manual_busy())
 
     @app.get("/api/reports")
     def reports():
@@ -299,6 +299,16 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         if not r.get("ok"):
             return flask.jsonify(r), 400
         return flask.jsonify(r)
+
+    @app.post("/api/manual")
+    def manual_run():
+        """Control 탭 버튼: 기록만/분석만 정책인 에러(주로 WARN)를 사람이 분석 또는 분석 + 수정."""
+        d = flask.request.get_json(silent=True) or {}
+        sig = str(d.get("sig") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", sig) or sig not in rx.state["meta"]:
+            return flask.jsonify(ok=False, errors=["알 수 없는 에러 시그니처"]), 400
+        ok, msg = rx.manual_run(sig, bool(d.get("fix")), "dashboard")
+        return flask.jsonify(ok=ok, msg=msg, errors=[] if ok else [msg]), (200 if ok else 409)
 
     @app.post("/api/cycle")
     def cycle_set():

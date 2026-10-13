@@ -250,6 +250,8 @@ class Receiver:
         self.proposals = Proposals(cfg.rx / "proposals")  # 반자동 모드의 패치 계획안
         self._pipe_lock = threading.RLock()  # 분석 · 수정 파이프라인은 한 번에 하나만(메인 루프와 승인 실행 스레드가 겹치지 않게)
         self._step_lock = threading.RLock()
+        self._manual_lock = threading.Lock()
+        self._manual_busy: set[str] = set()
         self.policy = Policy(cfg.rx / "policy.json", cfg)  # 레벨별 자동 대응 정책(관리 페이지에서 수정)
         self._state_lock = threading.RLock()  # 관리 페이지(다른 스레드)와 상태 파일 쓰기 경합 방지
         self._last_hb = 0.0
@@ -458,6 +460,61 @@ class Receiver:
             return {"ok": False, "errors": errs}
         self._maybe_flush()  # '이벤트마다'로 돌아오면 쌓인 것을 바로 처리, 묶음끼리 바꾸면 다음 정시부터
         return {"ok": True, "cycle": new, "label": CYCLES[new]}
+
+    # ── 수동 분석 · 수정: 정책이 '기록만/분석만'인 에러(주로 WARN 이하)를 사람이 눌러 처리 ──
+    def manual_run(self, sig: str, fix: bool, who: str = "dashboard") -> tuple[bool, str]:
+        """관리 페이지 버튼: 이미 처리된 시그니처의 최근 에러를 모아 분석(fix=False) 또는 분석 + 수정(fix=True)한다.
+        쿨다운 · 묶음 주기는 건너뛰고, 모드(끔 불가) · 1단계 · 일일 분석 상한 · 동시 실행은 그대로 지킨다.
+        반자동 모드에서는 수정이 계획안 → 승인 대기로 이어진다."""
+        if self.policy.mode() == "off":
+            return False, "동작 모드가 '끔'입니다 — 자동·반자동으로 바꾼 뒤 실행하세요"
+        if fix and self.cfg.stage < 2:
+            return False, "수신기가 1단계(RX_STAGE=1)라 수정은 할 수 없습니다 — 분석만 가능"
+        today = self._today()
+        if self.state["calls"].get(today, 0) >= self.cfg.daily_cap:
+            return False, f"분석 일일 상한({self.cfg.daily_cap}회)에 도달했습니다"
+        with self._manual_lock:
+            if sig in self._manual_busy:
+                return False, "이 에러는 이미 수동 처리 중입니다"
+            envs = []
+            for p in reversed(self.spool.list("err/done")[-600:]):  # 최신 파일부터
+                try:
+                    env = json.loads(p.read_text(encoding="utf-8"))
+                    if isinstance(env, dict) and not validate(env) and signature(env) == sig:
+                        envs.append(env)
+                except Exception:  # noqa: BLE001
+                    continue
+                if len(envs) >= 20:
+                    break
+            if not envs:
+                return False, "이 에러의 원본 기록(err/done)을 찾을 수 없습니다 — 새로 발생해야 분석할 수 있습니다"
+            self._manual_busy.add(sig)
+        threading.Thread(target=self._run_manual, args=(sig, envs, fix, who), name="rx-manual", daemon=True).start()
+        return True, ("분석 후 수정을 시작했습니다" if fix else "분석을 시작했습니다") + " — 1~3분 뒤 보고서가 표시됩니다"
+
+    def _run_manual(self, sig: str, envs: list[dict], fix: bool, who: str) -> None:
+        try:
+            top = max(envs, key=lambda e: E.rank(e["severity"]))
+            pol = dict(self.policy.get(top["severity"]))
+            pol["action"] = "fix" if fix else "analyze"
+            st = self.state["sigs"].setdefault(sig, {"count": 0, "suppressed": 0, "last_call": 0})
+            st["last_call"] = self.now()
+            today = self._today()
+            self.state["calls"][today] = self.state["calls"].get(today, 0) + 1
+            for e in envs[:1]:
+                self._logline(sig, e, f"수동 {'분석 + 수정' if fix else '분석'}({who})")
+            self._save()
+            self._analyze_and_report(sig, envs, top, st, pol)
+        except Exception:  # noqa: BLE001
+            log.exception("수동 처리 실패: %s", sig)
+            self.tg.send(f"⚠️ 수동 {'분석 + 수정' if fix else '분석'} 중 오류 — 로그를 확인하세요")
+        finally:
+            with self._manual_lock:
+                self._manual_busy.discard(sig)
+
+    def manual_busy(self) -> list[str]:
+        with self._manual_lock:
+            return sorted(self._manual_busy)
 
     # ── 관리 페이지용 ──────────────────────────────
     def _touch_meta(self, sig: str, envs: list[dict], top: dict) -> None:

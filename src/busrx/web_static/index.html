@@ -343,7 +343,7 @@ async function loadControl() {
   const [e, r, p] = await Promise.all([api('/api/errors?log=1'), api('/api/runs'), api('/api/proposals')]);
   const runs = {}; (r.runs || []).forEach(x => { if (!runs[x.sig]) runs[x.sig] = x; });              // 최신순
   const props = {}; (p.proposals || []).forEach(x => { const c = props[x.sig]; if (!c || (x.status === 'pending' && c.status !== 'pending')) props[x.sig] = x; });
-  CD = { errors: e.errors || [], tail: e.log || [], runs, props, head: p.head_now, pending: p.pending };
+  CD = { errors: e.errors || [], tail: e.log || [], runs, props, head: p.head_now, pending: p.pending, busy: e.manual_busy || [] };
   setBadge(p.pending); renderControl(false);
 }
 function rowState(e, run, prop) {
@@ -361,7 +361,7 @@ function rowState(e, run, prop) {
 function renderControl(force) {
   if (!CD) return;
   const typing = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
-  const sig = JSON.stringify([CD.errors.map(x => [x.sig, x.count, x.last, x.verdict, x.fix_status]), Object.values(CD.runs).map(x => [x.ts, x.fix_status]), Object.values(CD.props).map(x => [x.id, x.status, x.plans.length]), OPEN, CF, SHOWLOG]);
+  const sig = JSON.stringify([CD.errors.map(x => [x.sig, x.count, x.last, x.verdict, x.fix_status]), Object.values(CD.runs).map(x => [x.ts, x.fix_status]), Object.values(CD.props).map(x => [x.id, x.status, x.plans.length]), CD.busy, OPEN, CF, SHOWLOG]);
   if (!force && (sig === CSIG || typing)) return; CSIG = sig;
   const f = $('#ctl-filter'); f.textContent = '';
   const nPend = CD.errors.filter(x => CD.props[x.sig] && CD.props[x.sig].status === 'pending').length;
@@ -422,7 +422,26 @@ function logBody(e, run, prop) {
     p3.append(el('div', 'muted small', run.action === 'fix' ? '분석만 했습니다(수정 대상이 아니거나 원인이 확정되지 않았습니다).' : '정책이 “분석만”이라 수정 파이프라인을 시작하지 않았습니다.'));
   } else p3.append(el('div', 'muted small', '수정 파이프라인을 시작하지 않았습니다.'));
   b.append(p1, p2, p3, approvalPanel(e, prop));
+  if (['WARN', 'INFO', 'DEBUG'].includes(e.sev)) b.append(manualPanel(e));
   return b;
+}
+
+/* 수동 분석 · 수정: 정책이 WARN 이하를 자동 처리하지 않을 때 사람이 직접 누른다 */
+async function manualRun(sig, fix) {
+  try { const j = await api('/api/manual', { sig, fix }); toast(j.msg || '시작했습니다'); await loadControl(); }
+  catch (er) { toast('실패: ' + er.message); }
+}
+function manualPanel(e) {
+  const c = el('div', 'pn'); c.append(el('h3', '', '수동 분석 · 수정'));
+  const busy = (CD.busy || []).includes(e.sig), off = STATUS && STATUS.mode === 'off';
+  c.append(el('div', 'muted small', `${e.sev} 는 정책에 따라 자동으로 처리되지 않을 수 있습니다. 버튼을 누르면 쿨다운 · 동작 주기와 관계없이 이 에러의 최근 기록으로 지금 처리합니다.` + (STATUS && STATUS.mode === 'semi' ? ' 반자동이라 수정은 계획안을 만든 뒤 승인 대기로 넘어갑니다.' : '')));
+  const r = el('div', 'row apr-sec'); const an = el('button', 'pri', busy ? '처리 중…' : '분석'); const fx = el('button', 'go', busy ? '처리 중…' : '분석 + 수정');
+  an.disabled = fx.disabled = busy || off;
+  an.onclick = () => { if (confirm('이 에러를 지금 분석할까요? (Sonnet 호출 1회 — 구독 사용량이 소모됩니다)')) manualRun(e.sig, false); };
+  fx.onclick = () => { if (confirm('이 에러를 분석하고, 원인이 확정되면 수정까지 진행할까요?
+' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true); };
+  r.append(an, fx); if (off) r.append(el('span', 'muted small', "동작 모드가 '끔'이라 실행할 수 없습니다.")); c.append(r);
+  return c;
 }
 
 /* 승인 결재: 반자동 모드의 패치 계획안 — 승인 · 재분석(반려 사유) · 거절 */

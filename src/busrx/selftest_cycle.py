@@ -12,7 +12,7 @@ from pathlib import Path
 
 from src.bus import envelope as E
 
-from .receiver import Config, Receiver
+from .receiver import Config, Receiver, signature
 from .selftest_web import STUB, FakeTG
 from .web import create_app, make_token
 
@@ -158,6 +158,36 @@ def main() -> int:
 
     html = (Path(__file__).parent / "web_static" / "index.html").read_text(encoding="utf-8")
     check(all(x in html for x in ('id="cyc-btns"', 'id="dlgov"', "/api/cycle", "needs_queue", "'process'", "'discard'")), "화면: 동작 주기 카드 · 대기열 팝업")
+
+    # 9-2) 수동 분석 · 수정 버튼 — 정책이 '끔'인 WARN 을 사람이 눌러 처리
+    pol.set_mode("auto")
+    rx.change_cycle("event")
+    pol.save({"WARN": {"action": "off", "record": True}})
+    w = env("WARN", "수동 대상 경고", "src.backend.cyc_manual")
+    n5 = ncalls()
+    feed(w)
+    check(ncalls() == n5, "정책 '끔'인 WARN 은 분석하지 않음")
+    sg = signature(w)
+    ok, msg = rx.manual_run(sg, False)
+    for _ in range(100):
+        if not rx.manual_busy():
+            break
+        time.sleep(0.1)
+    check(ok and ncalls() == n5 + 1 and not rx.manual_busy(), "수동 분석: 정책과 무관하게 지금 분석 1회")
+    ok, msg = rx.manual_run("없는-시그니처", False)
+    check(not ok, "원본 기록이 없는 시그니처는 거부: " + msg)
+    pol.set_mode("off")
+    check(not rx.manual_run(sg, False)[0], "끔 모드에서는 수동 실행도 거부")
+    pol.set_mode("auto")
+    r = c.post("/api/manual", json={"sig": sg, "fix": False}, headers=h)
+    check(r.status_code == 200 and r.get_json()["ok"], "API: 수동 분석 요청")
+    for _ in range(100):
+        if not rx.manual_busy():
+            break
+        time.sleep(0.1)
+    check(c.post("/api/manual", json={"sig": "../x"}, headers=h).status_code == 400, "API: 잘못된 시그니처는 400")
+    check(c.post("/api/manual", json={"sig": sg}).status_code == 403, "API: CSRF 없으면 403")
+    check("manualPanel" in html and "/api/manual" in html, "화면: 수동 분석 · 수정 패널")
 
     # 10) 정책 초기화는 주기도 기본값으로
     pol.reset("test")
