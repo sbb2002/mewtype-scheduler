@@ -205,6 +205,14 @@ def main() -> int:
         js.write_text(_re.search(r"<script>(.*)</script>", html, _re.S).group(1), encoding="utf-8")
         check(subprocess.run(["node", "--check", str(js)], capture_output=True).returncode == 0, "화면: 페이지 스크립트 구문 검사(node --check)")
 
+    # 9-3) 분석기 입력: 발생 빈도 · 지침
+    from .receiver import SYSTEM_RULES, RESULT_SCHEMA
+    fq = rx._frequency(sg)
+    check(fq["last_24h_total"] >= 1 and fq["last_24h_by_hour_kst"] and fq["total_seen"], "분석기 입력에 시간대별 발생 빈도(KST)가 들어감")
+    check(all(x in SYSTEM_RULES for x in ("frequency", "impact", "WARN =", "드물고 영향이 없다고 증명")) and "impact" in RESULT_SCHEMA["properties"], "분석 지침: 빈도 · 서비스 영향 확인 + 무시는 증명될 때만 + 로그 등급 정의")
+    lg = json.loads(next((cfg.rx / "work" / sg).glob("logs.json")).read_text(encoding="utf-8"))
+    check("frequency" in lg, "work/logs.json 에 frequency 포함")
+
     # 10) 정책 초기화는 주기도 기본값으로
     pol.reset("test")
     check(pol.cycle() == "event" and pol.mode() == "auto", "정책 초기화 → 모드 자동 · 주기 이벤트마다")
