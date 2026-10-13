@@ -175,7 +175,7 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
                 except ValueError:
                     pass
             tail.reverse()
-        return flask.jsonify(errors=rows[:200], log=tail, manual_busy=rx.manual_busy())
+        return flask.jsonify(errors=rows[:200], log=tail, manual_busy=rx.manual_busy(), fixable=rx.fixable_sigs())
 
     @app.get("/api/reports")
     def reports():
@@ -308,6 +308,15 @@ def create_app(rx, cfg, tg, secret: str, base_url: str, now=time.time) -> flask.
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", sig) or sig not in rx.state["meta"]:
             return flask.jsonify(ok=False, errors=["알 수 없는 에러 시그니처"]), 400
         ok, msg = rx.manual_run(sig, bool(d.get("fix")), "dashboard")
+        return flask.jsonify(ok=ok, msg=msg, errors=[] if ok else [msg]), (200 if ok else 409)
+
+    @app.post("/api/manual_fix")
+    def manual_fix():
+        """저장된 분석으로 재분석 없이 수정만."""
+        sig = str((flask.request.get_json(silent=True) or {}).get("sig") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", sig) or sig not in rx.state["meta"]:
+            return flask.jsonify(ok=False, errors=["알 수 없는 에러 시그니처"]), 400
+        ok, msg = rx.manual_fix(sig, "dashboard")
         return flask.jsonify(ok=ok, msg=msg, errors=[] if ok else [msg]), (200 if ok else 409)
 
     @app.post("/api/cycle")

@@ -462,6 +462,96 @@ class Receiver:
         return {"ok": True, "cycle": new, "label": CYCLES[new]}
 
     # ── 수동 분석 · 수정: 정책이 '기록만/분석만'인 에러(주로 WARN 이하)를 사람이 눌러 처리 ──
+    def _collect_envs(self, sig: str) -> list[dict]:
+        envs: list[dict] = []
+        for p in reversed(self.spool.list("err/done")[-600:]):  # 최신 파일부터
+            try:
+                env = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(env, dict) and not validate(env) and signature(env) == sig:
+                    envs.append(env)
+            except Exception:  # noqa: BLE001
+                continue
+            if len(envs) >= 20:
+                break
+        return envs
+
+    def _latest_runs(self) -> dict[str, dict]:
+        """시그니처별 가장 최근 실행 기록(최근 80개 파일만 본다)."""
+        out: dict[str, dict] = {}
+        for p in sorted((self.cfg.rx / "runs").glob("*.json"), reverse=True)[:80]:
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            out.setdefault(d.get("sig"), d)
+        return out
+
+    @staticmethod
+    def _usable_analysis(d: dict | None) -> dict | None:
+        a = (d or {}).get("analysis")
+        if not a or a.get("verdict") != "confirmed":
+            return None
+        if d.get("fix_status") in ("applied", "applied_no_restart", "committed", "awaiting_approval"):
+            return None  # 이미 수정됐거나 승인 대기 중
+        return a
+
+    def saved_analysis(self, sig: str) -> dict | None:
+        """이 시그니처의 가장 최근 실행 기록이 원인 확정 + 아직 수정 전이면 그 분석 결과."""
+        a = self._usable_analysis(self._latest_runs().get(sig))
+        return {"analysis": a} if a else None
+
+    def fixable_sigs(self) -> list[str]:
+        return [s for s, d in self._latest_runs().items() if s and self._usable_analysis(d)]
+
+    def manual_fix(self, sig: str, who: str = "dashboard") -> tuple[bool, str]:
+        """저장된 분석 결과로 재분석 없이 수정만 진행(자동: 파이프라인 실행 · 반자동: 계획안 → 승인 대기)."""
+        if self.policy.mode() == "off":
+            return False, "동작 모드가 '끔'입니다 — 자동·반자동으로 바꾼 뒤 실행하세요"
+        if self.cfg.stage < 2:
+            return False, "수신기가 1단계(RX_STAGE=1)라 수정은 할 수 없습니다"
+        sa = self.saved_analysis(sig)
+        if not sa:
+            return False, "수정에 쓸 확정된 분석이 없습니다(분석 전이거나 원인 미확정, 또는 이미 수정·승인 대기 중)"
+        with self._manual_lock:
+            if sig in self._manual_busy:
+                return False, "이 에러는 이미 수동 처리 중입니다"
+            envs = self._collect_envs(sig)
+            if not envs:
+                return False, "이 에러의 원본 기록(err/done)을 찾을 수 없습니다"
+            self._manual_busy.add(sig)
+        threading.Thread(target=self._run_manual_fix, args=(sig, envs, sa["analysis"], who), name="rx-manual-fix", daemon=True).start()
+        return True, "저장된 분석으로 수정을 시작했습니다 — 완료되면 보고서가 갱신됩니다"
+
+    def _run_manual_fix(self, sig: str, envs: list[dict], analysis: dict, who: str) -> None:
+        try:
+            with self._pipe_lock:
+                top = max(envs, key=lambda e: E.rank(e["severity"]))
+                pol = dict(self.policy.get(top["severity"]))
+                pol["action"] = "fix"
+                st = self.state["sigs"].setdefault(sig, {"count": 0, "suppressed": 0, "last_call": 0})
+                self._logline(sig, envs[0], f"수동 수정 — 저장된 분석 재사용({who})")
+                before = git_head(self.cfg.repo)
+                mark = USAGE.mark()
+                snap = self._snapshot(before)
+                steps = [{"id": "analysis", "name": "분석(저장된 결과 재사용)", "status": "ok", "sec": None, "note": "confirmed",
+                          "model": self.cfg.model_analysis, "cost": None}]
+                prop = fix = None
+                if self.policy.mode() == "semi":
+                    prop, ps = self._propose(sig, analysis, snap, before, pol, envs, top)
+                    steps += ps
+                else:
+                    fix = self._autofix(sig, analysis, snap, before, pol["preset"])
+                    steps += fix.steps
+                usage = usage_summary(mark, self.state.get("usage_last"))
+                self._remember_usage()
+                self._report(sig, envs, top, st, analysis, None, "", before, git_head(self.cfg.repo), fix, usage, steps, pol, prop)
+        except Exception:  # noqa: BLE001
+            log.exception("수동 수정 실패: %s", sig)
+            self.tg.send("⚠️ 수동 수정 중 오류 — 로그를 확인하세요")
+        finally:
+            with self._manual_lock:
+                self._manual_busy.discard(sig)
+
     def manual_run(self, sig: str, fix: bool, who: str = "dashboard") -> tuple[bool, str]:
         """관리 페이지 버튼: 이미 처리된 시그니처의 최근 에러를 모아 분석(fix=False) 또는 분석 + 수정(fix=True)한다.
         쿨다운 · 묶음 주기는 건너뛰고, 모드(끔 불가) · 1단계 · 일일 분석 상한 · 동시 실행은 그대로 지킨다.
@@ -476,16 +566,7 @@ class Receiver:
         with self._manual_lock:
             if sig in self._manual_busy:
                 return False, "이 에러는 이미 수동 처리 중입니다"
-            envs = []
-            for p in reversed(self.spool.list("err/done")[-600:]):  # 최신 파일부터
-                try:
-                    env = json.loads(p.read_text(encoding="utf-8"))
-                    if isinstance(env, dict) and not validate(env) and signature(env) == sig:
-                        envs.append(env)
-                except Exception:  # noqa: BLE001
-                    continue
-                if len(envs) >= 20:
-                    break
+            envs = self._collect_envs(sig)
             if not envs:
                 return False, "이 에러의 원본 기록(err/done)을 찾을 수 없습니다 — 새로 발생해야 분석할 수 있습니다"
             self._manual_busy.add(sig)
@@ -920,7 +1001,8 @@ class Receiver:
                "title": patch_summary, "fix_status": fix.status if fix is not None else ("awaiting_approval" if prop is not None else ""),
                "proposal_id": prop["id"] if prop is not None else None, "branch": fix.branch if fix is not None else "",
                "files": [{"path": p_, "added": a_, "deleted": d_} for a_, d_, p_ in (fix.files if fix is not None else [])],
-               "usage": usage, "commit_before": before, "commit_after": after}
+               "usage": usage, "commit_before": before, "commit_after": after,
+               "analysis": {k: result[k] for k in ("verdict", "summary", "cause", "evidence", "proposed_action")}}  # 나중에 '이 분석으로 수정'이 재사용
         try:
             (self.cfg.rx / "runs" / f"{stem}.json").write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
         except Exception:
