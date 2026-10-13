@@ -11,8 +11,10 @@
 //  tickTimetable(boardEl, nowMs)       → 1분 틱: 지금 선 · 링 갱신. 오늘 구간이 끝났으면 true(재렌더 필요)
 //  applyTimetableMarquees(boardEl)     → 블록 제목이 넘치면 한 줄 무한 흐름
 //  closeCardPop()                      → 블록 카드 팝업 닫기
+//  (v4.3.0) 노노카 지각 이스터에그 — 모바일 오늘 카드 · PC 팝업에 gungye.js 가 후광/눈/문구를 얹는다
 
 import { formatKST } from "./time.js";
+import { isGungyeTarget, noteLate, decorateLate, decorateArrival } from "./gungye.js";
 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
@@ -228,6 +230,10 @@ function showCardPop(entry, state, owner, pin, ctx) {
     body.appendChild(el("span", "tt-pop__none", "아직 영상 링크가 없습니다"));
   }
   cpop.appendChild(body);
+  if (isGungyeTarget(it)) {                       // (v4.3.0) 노노카 지각 / 강림 연출
+    if (state === "upcoming") decorateLate(cpop, img, cpop, it, entry.start, ctx.nowMs);
+    else if (state === "live") decorateArrival(cpop, img, cpop, it);
+  }
   cpop.addEventListener("mouseenter", () => clearTimeout(cpopTimer));
   cpop.addEventListener("mouseleave", () => {
     if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
@@ -319,6 +325,7 @@ function layoutRow(entries, ctx) {
 
 export function buildTimetable(ctx) {
   wirePopOnce();
+  noteLate(ctx.upcoming, ctx.nowMs);
   const sec = el("section", "tt");
   const nLive = ctx.live.length, nEnded = ctx.ended.length;
   const head = el("div", "tt__head");
@@ -521,12 +528,17 @@ function todayCard(entry, state, ctx, big, laneKey) {
     if (state === "ended") paintCycleRing(ring, (entry.end - entry.start) / 60000);
   }
   a.appendChild(body);
+  if (laneKey === "nonoka" && isGungyeTarget(it)) {   // (v4.3.0) 노노카 본인 레인의 본인 예고만
+    if (state === "upcoming") decorateLate(a, th, a, it, entry.start, ctx.nowMs);
+    else if (state === "live") decorateArrival(a, th, a, it);
+  }
   if (state === "upcoming") updateRing(a, ctx.nowMs);
   else if (state === "live") updateLiveRing(a, ctx.nowMs);
   return a;
 }
 
 export function buildTodayCards(ctx, key) {
+  noteLate(ctx.upcoming, ctx.nowMs);
   const has = (e) => itemKeys(e.item, ctx.order).includes(key);
   const mE = ctx.ended.filter(has), mL = ctx.live.filter(has), mU = ctx.upcoming.filter(has);
   const sec = el("section", "tt-today");

@@ -964,6 +964,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
     프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
+- **js/gungye.js** + **css/gungye.css** — (v4.3.0) 노노카 지각 이스터에그 「관심법」. 아래 「노노카 지각 이스터에그 (v4.3.0)」. selfcheck: `gungye.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
   **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어
@@ -981,6 +982,26 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   높이를 `calc(66.6vh - 44px)` 로 고정(css). `한/日` 토글은 헤더에 1개(전역 `mew:tllang`), 원문(X)
   링크는 메시지별(`.ori`). 만료·404 면 안 뜸.
 - **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
+
+### 노노카 지각 이스터에그 (v4.3.0) — `gungye.js` · `css/gungye.css`
+
+노노카 **본인 예고**(`item.channel_key === "nonoka"`)가 예정 시각을 넘겼는데 아직 라이브가 아니면(`classify` 의 `upcoming` = announced · upcoming · watching,
+시각 미정은 `later` 라 제외) 카드를 궁예 「관심법」 콘셉트로 꾸민다. **모바일 = 노노카 레인의 오늘 카드(`todayCard`)**, **PC = 블록 예고 팝업(`showCardPop`)**.
+다른 멤버가 호스트인 합동(`channel_key` ≠ nonoka)과 이후 예고 목록은 대상 아님. 지각 시간 = `now − scheduled_start`, **3시간을 넘으면 꾸미지 않는다**(예고는 +3h 에 정리됨).
+
+| 지각 | 변화 | 문구 |
+|---|---|---|
+| 0~5분 | 금빛 후광 | 짐이 곧 오리라 |
+| 5~15분 | 숨 쉬는 후광 + 감긴 눈 + 금색 테두리 | 관심법 발동 중… |
+| 15분~ | 눈이 떠지고 PC 는 눈동자가 마우스를 따라감(터치 기기는 좌우로 훑음) + 「미륵 강림까지 +MM:SS」(1초 카운트업) | 관심법으로 보니 그대, 또 새로고침을 하고 있구나 |
+| 같은 지각을 다시 방문 | 15분~ 단계 문구만 교체 | 또 왔느냐. 그대의 불충이 보이느니라 |
+| 라이브 전환 | 이 페이지에서 지각을 **본 경우만** 3.8초 연출(후광 섬광 · 금빛 파티클 · 감긴 눈) 뒤 한 줄로 정리 | 미륵이 강림하셨도다! → 미륵 강림 · 신하 대기 +MM:SS |
+
+- 마크업은 `gungye.js` 가 `createElement` 로만 만든다(`.gy-halo` · `.gy-eye` · `.gy-msg` · `.gy-spark`). 루트(`.tcard` / `.tt-pop`)의 `data-gy-stage` = `1|2|3|arrive|live`.
+- 단계 전환 · 카운터는 `startTicker` 의 1초 틱이 `[data-gy-id]` 루트를 갱신하고, 루트가 화면에서 사라지면 틱이 스스로 멈춘다(`renderBoard` 재구성 · 팝업 닫기).
+- 「다시 방문」 판정 = `localStorage` `mew:gy:<item.id>`(15분~ 단계를 본 시각, 24시간 지나면 무효). 저장소가 막혀도 동작(첫 방문 문구).
+- 라이브 전환 연출은 메모리(`seen`)에 지각 기록이 있을 때만 — 페이지를 라이브가 된 뒤에 처음 열면 연출 없음. `item.id` 가 중간에 바뀌면(예: 영상 확정으로 합쳐짐) 연출은 생략된다.
+- `prefers-reduced-motion` 이면 애니메이션 · 파티클 끔. 시각 확정 데이터는 CDN 캐시(최대 ~5분) · 수집 주기(10분)만큼 지연되므로 실제 라이브 시작 직후 몇 분은 「지각」으로 보일 수 있다 — 0~5분 단계 문구를 순한 것으로 둔 이유.
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
 
