@@ -1015,7 +1015,7 @@ class Receiver:
             "| 항목 | 값 |", "|---|---|",
             f"| 심각도 | {top['severity']} |",
             f"| 시각 | {kst(first)} ~ {kst(last)} KST |",
-            f"| 수신 | {len(envs)}건" + (f" (+반복 요약 {extra}회)" if extra else "") + f" · 이 시그니처 누적 {st['count']}건 |",
+            f"| 수신 | {len(envs)}건" + (f" (+반복 요약 {extra}회)" if extra else "") + f" · 이 시그니처 누적 {self.state['meta'].get(sig, {}).get('count', st['count'])}건 |",
             f"| 발생 커밋 | `{ex.get('source', {}).get('commit', '?')}` |",
             f"| 커밋 이전 → 이후 | `{commit_txt}` |", "",
             "## 1. 수신 로그 (발신기)", "", "```text", *log_block, "```", "",
