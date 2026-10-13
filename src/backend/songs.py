@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
-from ..collector.rss import fetch_feed_text
+from ..collector.rss import cached_feed_text, fetch_feed_text, poller_active
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,10 @@ def parse_feed_entries(xml_text: str) -> list[dict]:
 
 def fetch_feed_entries(channel_id: str, *, timeout: float = 10.0, session: Optional[requests.Session] = None) -> list[dict]:
     """채널 RSS 를 가져와 parse_feed_entries. 실패하면 [] — 재시도 · 지속 실패 휴지 · WARN 간격은 collector.rss 와 공용."""
-    text = fetch_feed_text(channel_id, timeout=timeout, session=session, fail_msg="곡 RSS 조회 실패 ({cid})")
+    if poller_active():  # 시차 폴러가 받아 둔 캐시를 읽는다(틱은 네트워크를 쓰지 않는다)
+        text = cached_feed_text(channel_id)
+    else:
+        text = fetch_feed_text(channel_id, timeout=timeout, session=session, fail_msg="곡 RSS 조회 실패 ({cid})")
     if text is None:
         return []
     try:

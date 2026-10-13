@@ -134,6 +134,66 @@ def fetch_feed_text(channel_id: str, *, timeout: float = 10.0, session: Optional
     return None
 
 
+# ── 시차 폴링 (로컬 러너) ─────────────────────────────────────────────────────
+# 틱마다 6개 채널을 1~2분 안에 몰아 요청하면 YouTube 쪽 제한(404·500)에 걸릴 수 있다는 가설에 따라, 별도 스레드가
+# 채널마다 STAGGER_SEC(1분)씩 어긋나게 PERIOD_SEC(10분)당 한 번씩 받아 캐시에 둔다. 틱은 캐시만 읽는다(네트워크 없음).
+# 폴러가 켜져 있지 않으면(Cloud Run 등) 기존처럼 틱이 직접 요청한다.
+PERIOD_SEC = 600
+STAGGER_SEC = 60
+_CACHE: dict[str, dict] = {}
+_POLLER_ON = False
+
+
+def poller_active() -> bool:
+    return _POLLER_ON
+
+
+def cached_feed_text(channel_id: str) -> Optional[str]:
+    """폴러가 마지막으로 받은 본문(없으면 None). 실패한 폴링은 이전 본문을 지우지 않는다."""
+    with _LOCK:
+        c = _CACHE.get(channel_id)
+        return c["text"] if c else None
+
+
+def next_slot(now: float, index: int, count: int, *, period: int = PERIOD_SEC, stagger: int = STAGGER_SEC) -> float:
+    """index 번째 채널의 다음 폴링 시각(epoch). 마지막 채널이 격자(period 배수)보다 1분 앞에 끝나도록 앞쪽에 배치해,
+    격자 시각에 도는 틱이 방금 받은 데이터를 읽게 한다. (period=600, count=6 → 격자 앞 6~1분 사이 매분 한 채널)"""
+    off = (period - (count - index) * stagger) % period
+    base = now - (now % period) + off
+    while base <= now:
+        base += period
+    return base
+
+
+def poll_loop(channel_ids: list[str], stop: threading.Event, *, now=None, period: int = PERIOD_SEC, stagger: int = STAGGER_SEC) -> None:
+    """채널마다 시차를 두고 RSS 를 받아 캐시한다. 시작하자마자 stagger 간격으로 한 바퀴 돌아 캐시를 채운다."""
+    global _POLLER_ON
+    clock = now or _clock
+    n = len(channel_ids)
+    due = {cid: clock() + i * stagger for i, cid in enumerate(channel_ids)}
+    _POLLER_ON = True
+    logger.info("RSS 폴러 시작: 채널 %d개, %d초 주기, %d초 간격", n, period, stagger)
+    session = requests.Session()
+    try:
+        while not stop.is_set() and due:
+            cid, when = min(due.items(), key=lambda kv: kv[1])
+            if stop.wait(max(0.0, when - clock())):
+                break
+            text = fetch_feed_text(cid, session=session)
+            if text is not None:
+                with _LOCK:
+                    _CACHE[cid] = {"text": text, "at": clock()}
+            due[cid] = next_slot(clock() + period // 2, channel_ids.index(cid), n, period=period, stagger=stagger)  # 시작 직후 한 바퀴가 격자와 겹쳐 연달아 두 번 받지 않게 최소 반 주기 뒤
+    finally:
+        _POLLER_ON = False
+
+
+def start_poller(channel_ids: list[str], stop: threading.Event) -> threading.Thread:
+    th = threading.Thread(target=poll_loop, args=(list(channel_ids), stop), name="rss-poller", daemon=True)
+    th.start()
+    return th
+
+
 def fetch_rss_video_ids(
     channel_id: str,
     *,
@@ -173,6 +233,16 @@ def fetch_all_rss_video_ids(channel_id_by_key: dict[str, str]) -> dict[str, list
     result = {}
 
     # Reuse one session for all requests
+    if _POLLER_ON:  # 폴러가 시차를 두고 받아 둔 캐시만 읽는다 — 틱은 YouTube 에 요청하지 않는다
+        for key, channel_id in channel_id_by_key.items():
+            text = cached_feed_text(channel_id)
+            try:
+                result[key] = _parse_rss(text) if text else []
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Error processing RSS for channel {channel_id}: {e}")
+                result[key] = []
+        return result
+
     with requests.Session() as session:
         for key, channel_id in channel_id_by_key.items():
             result[key] = fetch_rss_video_ids(channel_id, session=session)
@@ -326,6 +396,32 @@ if __name__ == "__main__":
             globals()["_sleep"], globals()["_clock"] = saved_sleep, saved_clock
             logger.removeHandler(cap)
             _STATE.clear()
+
+        # I. 시차 폴링 격자: 6채널이 격자 앞 6~1분에 매분 하나씩, 끝 채널은 격자 1분 전
+        g = 1_000_200  # 600 의 배수
+        slots = [next_slot(g - 400, i, 6) - g for i in range(6)]
+        assert slots == [-360, -300, -240, -180, -120, -60], f"I1: {slots}"
+        assert next_slot(g - 59, 5, 6) - g == 540, "I2: 지난 슬롯은 다음 주기로"
+        assert len({round(s) for s in slots}) == 6, "I3: 채널마다 시각이 다름"
+
+        # J. 폴러가 켜져 있으면 fetch_all 은 캐시만 읽고 네트워크를 쓰지 않는다
+        _CACHE.clear()
+        _CACHE["UCj1"] = {"text": xml_content, "at": 0}
+        globals()["_POLLER_ON"] = True
+        try:
+            class _NoNet:
+                def get(self, *a, **k):
+                    raise AssertionError("폴러 모드에서 틱이 네트워크를 호출함")
+            saved = requests.Session
+            requests.Session = _NoNet  # type: ignore[assignment,misc]
+            try:
+                out = fetch_all_rss_video_ids({"a": "UCj1", "b": "UCj2"})
+            finally:
+                requests.Session = saved
+            assert out["a"] == expected_ids and out["b"] == [], f"J: {out}"
+        finally:
+            globals()["_POLLER_ON"] = False
+            _CACHE.clear()
 
         print("SUCCESS: RSS retry test passed")
 

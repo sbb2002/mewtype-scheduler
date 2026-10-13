@@ -123,6 +123,17 @@ def next_fire_times(now: datetime) -> dict[str, datetime]:
     return {"light": light, "baseline": _daily(6, 0), "snapshot": _daily(6, 10)}
 
 
+def _start_rss_poller(stop: threading.Event) -> None:
+    """RSS 를 채널마다 1분씩 어긋나게 받는 폴러(개인 채널 + 곡 토픽 채널). 그룹 공식 채널은 RSS 대상이 아니다."""
+    from ..collector import rss
+    from ..collector.config import load_channels
+
+    cfg = load_channels()
+    ids = [v["channel_id"] for v in cfg["channels"].values() if not v.get("is_group")]
+    ids += [s["channel_id"] for s in cfg.get("song_feeds") or [] if s.get("channel_id")]
+    rss.start_poller(ids, stop)
+
+
 def scheduler_loop(stop: threading.Event) -> None:
     """정기 잡을 적용 큐에 적재 — 실행 자체는 q-apply 가 한다(정기 reconcile 도 작업과 한 줄로 선다)."""
     from . import apply
@@ -303,6 +314,7 @@ def main(argv=None) -> int:
         return 3
     if not args.no_scheduler:
         threading.Thread(target=scheduler_loop, args=(stop,), name="scheduler", daemon=True).start()
+        _start_rss_poller(stop)
     if not args.no_telegram:
         start_tg_poll(app, stop)
     _write_runner_info(scheduler=not args.no_scheduler, telegram=not args.no_telegram)

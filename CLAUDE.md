@@ -435,6 +435,8 @@ src/
     main.py            # v1 오케스트레이션 (python -m src.collector.main [light|deep])
     config.py          # config/channels.json + YOUTUBE_API_KEY 로드
     rss.py             # 채널 RSS → videoId 발견 (쿼터 0)
+                       #   (v4.3) 재시도(404·429·5xx·타임아웃 1초·3초) + 지속 실패 채널 휴지(10/30/60분, WARN 시간당 1회, 복구 INFO)
+                       #   + 로컬 러너는 `poll_loop` 스레드가 채널마다 1분씩 어긋나게(10분 주기, 격자 앞 6~1분) 받아 캐시 — 틱은 캐시만 읽음
     youtube.py         # YouTube Data API v3 (videos.list / search.list), VideoInfo
     reconcile.py       # 상태 판정 + 이전 스냅샷 대비 diff — 순수 함수
     store.py           # schedule.json / archive.json 로드·저장 (변경 시에만 기록)
