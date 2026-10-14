@@ -68,19 +68,25 @@ def parse_feed_entries(xml_text: str) -> list[dict]:
     return out
 
 
-def fetch_feed_entries(channel_id: str, *, timeout: float = 10.0, session: Optional[requests.Session] = None) -> list[dict]:
-    """채널 RSS 를 가져와 parse_feed_entries. 실패하면 [] — 재시도 · 지속 실패 휴지 · WARN 간격은 collector.rss 와 공용."""
+def fetch_feed_result(channel_id: str, *, timeout: float = 10.0, session: Optional[requests.Session] = None) -> Optional[list[dict]]:
+    """채널 RSS 를 가져와 parse_feed_entries. **조회 실패(재시도 후 · 휴지 중 · 해석 실패)는 None**, 응답이 정상이면 목록(비어 있어도 [])
+    — 실패(WARN)와 "응답은 정상인데 항목 0개"(INFO)를 호출자가 구분한다. 재시도 · 지속 실패 휴지 · WARN 간격은 collector.rss 와 공용."""
     if poller_active():  # 시차 폴러가 받아 둔 캐시를 읽는다(틱은 네트워크를 쓰지 않는다)
         text = cached_feed_text(channel_id)
     else:
         text = fetch_feed_text(channel_id, timeout=timeout, session=session, fail_msg="곡 RSS 조회 실패 ({cid})")
     if text is None:
-        return []
+        return None
     try:
         return parse_feed_entries(text)
     except Exception as e:  # noqa: BLE001
         log.warning("곡 RSS 해석 실패 (%s): %s", channel_id, e)
-        return []
+        return None
+
+
+def fetch_feed_entries(channel_id: str, *, timeout: float = 10.0, session: Optional[requests.Session] = None) -> list[dict]:
+    """fetch_feed_result 의 목록 전용 판 — 실패하면 [] (관리 페이지처럼 실패와 빈 응답을 구분할 필요 없는 호출용)."""
+    return fetch_feed_result(channel_id, timeout=timeout, session=session) or []
 
 
 def classify(title: str) -> str:

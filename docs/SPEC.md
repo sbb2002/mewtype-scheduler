@@ -924,7 +924,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - **판단 기록 · 이벤트**: 등록 1곡 = `llm_actions.json`(ops) 기록 `song_register`(`by="rule"`, undo = `{type:"remove_song", id, title, added_at}`, input = RSS 항목 스냅샷),
   곡명 중복 건너뜀 1건 = `song_skip`(검토용, undo 없음, `seen` 으로 한 번만). 둘 다 작업 탭 「LLM 판단」에 보이고 반려할 수 있다. 모니터 이벤트 `flow="song"`
   (`action` = added · skipped · reading · rss_empty — 어드민 조작은 `via="ops"` 로 edited · deleted · added_manual · unblocked · rejected · reading_regen)가 같은 이벤트 로그(보관 · 스냅샷 · 리포트 전 기간)에 쌓여 리포트 타임라인 「🎵 신곡 감지」 레인에 점으로 나온다.
-  RSS 가 비어 있으면(조회 실패 포함) 그 시간의 첫 tick(분 < 10)에만 warn(구 degraded) 이벤트 1건 — 시간당 1회. 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
+  RSS 조회 실패는 WARN(`collector.rss` 가 시간당 1회 남김 — YouTube 쪽 RSS 공급 불안정이 원인으로 파악됨, 감지 쪽은 중복 기록 안 함). 응답이 정상인데 항목이 0개이거나 새 곡이 없는 것은 의도된 상태라 INFO(이벤트 없음 — 0개일 때만 그 시간 첫 tick 에 로그 1줄). `rss_empty` 는 이 변경 전 이벤트에만 남아 있다(2026-10-14, 테스트판). 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
 - **쓰기 경로**: 감지 쪽은 tick 안에서 gh 로 **직접** 쓴다(`/write` 자기 호출은 `concurrency=1` 교착 — `record_video_releases` 와 같은 방식; 한 tick 에 songs.json 1번 + 판단 기록 1번(배치) + 이벤트 1번 이하,
   기록은 songs.json 쓰기 **성공 뒤에만**). 어드민 편집은 `/write` 직렬화(writers kind `song_edit` → `telegram_app._song_edit_commit`, sha 충돌 재시도 4회). 외부 LLM 호출은 호출부가 먼저(A-1).
 - **안전**: `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다.** 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음.

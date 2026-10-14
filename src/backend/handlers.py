@@ -299,7 +299,7 @@ def _record_song_actions(gh, entries: list[dict], now_iso: str) -> list[str]:
     return []
 
 
-def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.fetch_feed_entries, llm=None,
+def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.fetch_feed_result, llm=None,
                       log_events_fn=None, record_fn=None) -> dict:
     """(v4.2.0) 토픽 채널 RSS(쿼터 0)에서 새 곡을 찾아 `songs.json` 에 **즉시 등록**한다. 방송 파이프라인과 무관한 별도 경로.
 
@@ -308,7 +308,8 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
     - 등록 1곡 = 판단 기록 `song_register`(반려하면 목록에서 지우고 재등록 차단) · 곡명 중복 건너뜀 1건 = `song_skip`(검토용, `seen` 으로 한 번만)
       — 둘 다 작업 탭 「LLM 판단」에 보이고, 모니터 이벤트 `flow="song"` 은 리포트 타임라인에 보인다.
     - `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산(기록은 쓰기 성공 뒤에만 남김 — 중복 기록 없음).
-    - RSS 가 비어 있으면(조회 실패 포함) 그 시간대 첫 tick(분 < 10)에만 warn 이벤트 1건 — 시간당 1회.
+    - 로그 등급: RSS 조회 실패는 WARN(collector.rss 가 시간당 1회 남김 — 여기서는 따로 안 남김, YouTube 쪽 RSS 공급 불안정이 원인).
+      응답이 정상(200)인데 항목이 0개이거나 새 곡이 없는 것은 의도된 상태라 INFO(0개일 때만 그 시간대 첫 tick, 분 < 10 에 INFO 1줄).
     **어떤 실패도 tick 을 막지 않는다.** 반환: {"added": [곡명...], "dups"?: [...], "readings"?: n} 또는 {"skipped": 사유}.
     """
     try:
@@ -322,9 +323,10 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
         if log_events_fn is None:
             log_events_fn = lambda ev: log_events(gh, now_iso, ev)  # noqa: E731
         events: list[dict] = []
-        empty_feed = not any(e for _, e in entries_by_who)
-        if empty_feed and now_iso[14:16].isdigit() and int(now_iso[14:16]) < 10:
-            events.append(_song_event(now_iso, RESULT_WARN, "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
+        # None = 조회 실패(이미 WARN 으로 기록됨 — 여기서 중복 기록 안 함). [] = 응답은 정상인데 항목 0개 → INFO
+        entries_by_who = [(who, es) for who, es in entries_by_who if es is not None]
+        if entries_by_who and not any(e for _, e in entries_by_who) and now_iso[14:16].isdigit() and int(now_iso[14:16]) < 10:
+            log.info("곡 토픽 채널 RSS 응답은 정상이나 항목이 0개 — 신곡 없음")
         doc, sha = gh.read_json(songs_mod.SONGS_PATH)
         if doc is None:
             log.error("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
@@ -1045,13 +1047,13 @@ if __name__ == "__main__":
     _g7 = _FakeGH(dict(_doc), conflict=True)
     assert _detect_new_songs(_g7, _feeds_cfg, "t", fetch=lambda cid: _rss, llm=_FakeLLM(), log_events_fn=lambda e: None) == {"skipped": "conflict"} and "llm_actions.json" not in _g7.files, "쓰기 충돌 → 다음 tick 재시도 · 판단 기록은 남기지 않음"
     assert _detect_new_songs(_FakeGH(dict(_doc)), {}, "t", fetch=lambda cid: _rss) == {"skipped": "no_feeds"}, "피드 설정 없으면 건너뜀"
-    # RSS 비어 있음 — 시간당 1회(분 < 10)만 warn 이벤트
+    # 응답 정상 + 항목 0개 = INFO(WARN 이벤트 없음) · 조회 실패(None) = 여기서 이벤트 없음(WARN 은 collector.rss 가 따로 남김)
     _e8: list = []
     assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:05:00Z", fetch=lambda cid: [], log_events_fn=_e8.extend) == {"added": []}
-    assert len(_e8) == 1 and _e8[0]["result"] == "warn" and _e8[0]["action"] == "rss_empty", "RSS 비어 있음: 시간 첫 tick 에 warn 1건"
+    assert _e8 == [], "응답 정상 + 항목 0개: warn 이벤트 안 남김(INFO 로그만)"
     _e9: list = []
-    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:25:00Z", fetch=lambda cid: [], log_events_fn=_e9.extend)
-    assert _e9 == [], "RSS 비어 있음: 같은 시간의 다른 tick 은 기록 안 함(스팸 방지)"
+    assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:05:00Z", fetch=lambda cid: None, log_events_fn=_e9.extend) == {"added": []}
+    assert _e9 == [], "조회 실패(None): 이벤트 중복 기록 안 함"
 
     def _boom(cid):
         raise RuntimeError("boom")
