@@ -47,6 +47,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.2.4 (2026-10-14, 핫픽스)**: 트윗 · 영상 제목 **번역 프롬프트 교체**(`llm.py` `_translate_prompt` — 일본어 글자 남기지 않기 · `配信`=방송 · 멤버 이름 표 · `ゆめみた`=유메미타) +
+> **부분 번역 WARN**(`_residual_kana`, 번역문에 가나가 남으면 `translate: 부분 번역 의심` WARN — 저장은 그대로). 멤버 이름 표는 `config/channels.json` 의 `call_names`(짧은 호칭)를 쓴다.
+> 요약 · 한계 `docs/VERSION.md` v4.2.4. (테스트판 `v4.3-fullauto` 는 번호 체계가 별개 — `vT1.0.1`.)
+>
 > **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
 > 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 토픽 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
 >

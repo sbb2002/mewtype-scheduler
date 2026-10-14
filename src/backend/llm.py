@@ -8,6 +8,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import requests
 import contextvars
@@ -133,6 +134,88 @@ def _unmask_glossary(text: str, mapping: list[tuple[str, str, str]], *, to: str)
         logger.warning("unmask_glossary: 잔여 GLOSSARY 토큰 %d개 제거 — %r", n, text)
         text = re.sub(r"\s{2,}", " ", cleaned).strip()
     return text
+
+
+# (2026-10-14) 번역 프롬프트 · 부분 번역 감시.
+# 배경: 옛 프롬프트의 "고유명사는 보존" 한 줄을 모델이 万バズ · ラーメン · リリース 같은 일반어 · 외래어에까지
+# 적용해 일본어가 섞인 채 저장됐고(부분 번역), 성공 응답이라 로그도 INFO 뿐이었다. 또 配信 을 배송으로 옮기는 오역이
+# 27건 있었다(ref/translation_audit_2026-10-14.md). 규칙을 구체화하고 멤버 이름 표를 함께 준다.
+_CHANNELS_PATH = Path(__file__).resolve().parents[2] / "config" / "channels.json"
+_member_cache: "tuple[str, list[str]] | None" = None
+
+
+def _member_info() -> "tuple[str, list[str]]":
+    """(프롬프트용 멤버 이름 줄, 가나 검사에서 뺄 이름 목록) — config/channels.json 에서 만든다.
+    짧은 호칭(call_names)까지 줘야 みやこ 같은 호칭을 다른 멤버로 오역하지 않는다. 읽기 실패 시 빈 값."""
+    global _member_cache
+    if _member_cache is not None:
+        return _member_cache
+    line_parts: list[str] = []
+    keep: list[str] = []
+    try:
+        cfg = json.loads(_CHANNELS_PATH.read_text(encoding="utf-8"))
+        for k in cfg.get("channel_order", []):
+            ch = (cfg.get("channels") or {}).get(k) or {}
+            xn = (ch.get("x_names") or [None])[0]
+            ko = ch.get("name_ko")
+            if not xn or not ko:
+                continue
+            calls = "·".join(ch.get("call_names") or [])
+            line_parts.append(f"{xn}({calls})={ko}" if calls else f"{xn}={ko}")
+            keep += [*(ch.get("x_names") or []), *(ch.get("call_names") or [])]
+    except Exception as e:
+        logger.warning("translate: 멤버 이름 표를 못 읽음(%s) — 이름 표 없이 진행", e)
+    _member_cache = (", ".join(line_parts), keep)
+    return _member_cache
+
+
+def _translate_prompt(masked_text: str) -> str:
+    names_line, _ = _member_info()
+    names_rule = (
+        f"5. 멤버 이름(괄호는 짧은 호칭): {names_line}. 호칭만 나오면 해당 멤버의 이름으로 옮긴다"
+        f"(みやこ=미야코, ののか=노노카 …). 서로 바꾸지 말 것. "
+        if names_line else "5. "
+    )
+    return (
+        "너는 일본 버추얼 유튜버 그룹 「무겐다이 뮤타입(夢限大みゅーたいぷ)」의 한국 팬 사이트 번역가다. "
+        "아래 일본어 트윗/영상 제목을 자연스러운 한국어로 번역하라.\n"
+        "규칙:\n"
+        "1. 번역문만 출력한다(설명·주석·원문 병기 금지). 줄바꿈·이모지·기호·URL·@멘션은 그대로 둔다.\n"
+        "2. 일본어 글자(히라가나·가타카나·한자)를 번역문에 남기지 않는다. 은어·신조어·인터넷 용어·외래어·음식/상품명·의성어·애칭도 "
+        "뜻이 통하게 한국어로 번역하거나, 번역이 어려운 고유한 이름은 한국어 독음으로 적는다. "
+        "(예: 万バズ→1만 버즈, ラーメン→라멘, リリース→릴리스, ついに→드디어, ありがとう→고마워)\n"
+        "3. 원문 그대로 두는 것: URL, @멘션, #해시태그, 「」『』 괄호와 그 안의 작품·곡 제목(괄호 모양도 바꾸지 말 것), "
+        "@@GLOSSARY0@@ 같은 토큰(절대 번역·수정 금지).\n"
+        "4. 방송 용어: 配信=방송(배송 아님), 配信予定/配信よてい=방송 예정, 〈配信のおしらせ〉=〈방송 안내〉, 歌枠=노래 방송, "
+        "雑談=잡담, 朝活=아침 활동, 切り抜き=클립, メン限=멤버십 한정, 弾き語り=기타 치며 노래하기, 振り返り=회고.\n"
+        + names_rule
+        + "그 밖의 사람·지명·가게명은 일본어 발음대로 한국어 독음으로 적고, 호칭 さん·ちゃん·くん은 씨·짱·군으로 옮긴다.\n"
+        "6. 그룹 애칭 「ゆめみた」는 항상 '유메미타'로 음차한다(꿈, 꿈꾸다 등으로 번역하지 말 것). 「ゆめ∞みた」는 '유메∞미타'.\n\n"
+        f"일본어:\n{masked_text}"
+    )
+
+
+_SPECIAL_SPACE_RE = re.compile("[    ]")
+_KANA_RE = re.compile("[぀-ヿ]")
+
+
+def _clean_translation(text: str) -> str:
+    """모델이 섞는 특수 공백(U+202F 좁은 줄바꿈 금지 공백 등)을 일반 공백으로."""
+    return _SPECIAL_SPACE_RE.sub(" ", text)
+
+
+def _residual_kana(ko_text: str) -> list[str]:
+    """번역문에 남은 히라가나·가타카나(부분 번역 의심). 일부러 원문으로 두는 것은 뺀다:
+    URL · 해시태그 · 「」『』 안 · 괄호(이모티콘) 안 · 멤버 이름/호칭 · 용어집 원문 · ゆめみた · 장음/기호류."""
+    s = re.sub(r"https?://\S+", "", ko_text)
+    s = re.sub(r"[#＃]\S+", "", s)
+    s = re.sub(r"「[^」]*」|『[^』]*』", "", s)
+    s = re.sub(r"\([^)]*\)|（[^）]*）", "", s)
+    keep = [*_member_info()[1], *GLOSSARY.keys(), "ゆめみた", "ユメミタ", "ゆめ∞みた"]
+    for w in sorted(keep, key=len, reverse=True):
+        s = s.replace(w, "")
+    s = re.sub(r"[ー〜・ｰヮ゜]", "", s)
+    return _KANA_RE.findall(s)
 
 
 # Groq structured outputs (strict) — gpt-oss-120b/20b·qwen3.8-27b 지원.
@@ -907,12 +990,7 @@ class LLMClient:
     def _translate_once(self, text_ja: str) -> str | None:
         """단발 번역 호출(메인→폴백 모델) + 환각 가드. 반복 압축 없이 그대로 1회 요청."""
         masked_text, mapping = _mask_glossary(text_ja)
-        prompt = (
-            f"다음 일본어 텍스트를 자연스러운 한국어로 번역하라. "
-            f"고유명사는 보존. 번역문만 출력 (설명 제외). "
-            f"@@GLOSSARY0@@ 같은 토큰은 절대 번역·수정하지 말고 그대로 출력에 남겨라.\n\n"
-            f"일본어:\n{masked_text}"
-        )
+        prompt = _translate_prompt(masked_text)
 
         response = self._call_groq(self.model, prompt)
         if not response:
@@ -930,7 +1008,16 @@ class LLMClient:
             )
             return None
 
-        return _unmask_glossary(response.strip(), mapping, to="ko")
+        result = _clean_translation(_unmask_glossary(response.strip(), mapping, to="ko"))
+
+        # 부분 번역 감시 — 성공 응답이라 다른 로그가 없으므로 여기서 WARN 으로 남긴다(저장은 그대로 한다).
+        left = _residual_kana(result)
+        if left:
+            logger.warning(
+                "translate: 부분 번역 의심 — 번역문에 일본어 가나 %d자 잔존 %r (input=%d자, 번역=%r)",
+                len(left), "".join(left)[:20], len(text_ja), result[:80],
+            )
+        return result
 
     def _call_groq(
         self, model: str, prompt: str, *, json_schema: "dict | None" = None
