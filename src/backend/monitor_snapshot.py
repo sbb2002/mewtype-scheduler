@@ -126,7 +126,7 @@ def _write_json_retry(gh, path: str, data: dict, message: str) -> None:
         except ConflictError:
             if attempt == 1:
                 raise
-            logger.warning("monitor_snapshot: %s 충돌 — 재시도", path)
+            logger.info("monitor_snapshot: %s 충돌 — 재시도", path)
 
 
 def read_summary(gh) -> tuple[dict, bool]:
@@ -138,7 +138,7 @@ def read_summary(gh) -> tuple[dict, bool]:
 
 def read_day(gh, date_kst: str) -> dict | None:
     data, _sha = gh.read_json(day_path(date_kst))
-    return data
+    return monitor_report.normalize_day(data)   # 옛 스냅샷의 degraded → warn
 
 
 def run_daily(gh, *, today_bucket: str, now_iso: str, healthchecks_api_key: str,

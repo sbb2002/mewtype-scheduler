@@ -47,6 +47,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.3.0 (2026-10-15, 기능)**: **에러 버스 발신기**(`src/bus/` — `MEW_BUS_DIR` 없으면 no-op, 배포판은 미설정) + **로그 등급 5단계 재분류**(CRITICAL · ERROR · WARN · INFO · DEBUG — 폴백이 정의된 실패 · 재시도 중 실패는 INFO) +
+> 모니터 이벤트 `result` **`degraded` → `warn`**(저장된 옛 이벤트 · `monitoring/days` 옛 스냅샷은 읽을 때 `normalize_event`/`normalize_day` 로 치환, 저장 데이터는 안 고침). 자동 대응 수신기 · RSS 재시도/휴지/시차 폴러는 제외. 요약 `docs/VERSION.md` v4.3.0.
+>
 > **v4.2.4 (2026-10-14, 핫픽스)**: 트윗 · 영상 제목 **번역 프롬프트 교체**(`llm.py` `_translate_prompt` — 일본어 글자 남기지 않기 · `配信`=방송 · 멤버 이름 표 · `ゆめみた`=유메미타) +
 > **부분 번역 WARN**(`_residual_kana`, 번역문에 가나가 남으면 `translate: 부분 번역 의심` WARN — 저장은 그대로). 멤버 이름 표는 `config/channels.json` 의 `call_names`(짧은 호칭)를 쓴다.
 > 요약 · 한계 `docs/VERSION.md` v4.2.4. (테스트판 `v4.3-fullauto` 는 번호 체계가 별개 — `vT1.0.1`.)

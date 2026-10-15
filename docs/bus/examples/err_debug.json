@@ -1,0 +1,12 @@
+{
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EP",
+  "kind": "log",
+  "logger": "src.backend.handlers",
+  "message": "candidates=77 rss_ids=5 (임시 디버그)",
+  "redacted": true,
+  "schema": "mew.err/1",
+  "severity": "DEBUG",
+  "source": {"env": "local", "service": "runner"},
+  "ts": "2026-10-12T05:20:00Z",
+  "untrusted": ["message"]
+}

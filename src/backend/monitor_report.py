@@ -33,7 +33,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from .monitor_log import DAY_START_HOUR, _monitor_gh, bucket_date_kst
+from .monitor_log import DAY_START_HOUR, _monitor_gh, bucket_date_kst, normalize_event
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,9 @@ def parse_events(text: str) -> list[dict]:
         if not line:
             continue
         try:
-            events.append(json.loads(line))
+            ev = json.loads(line)
+            normalize_event(ev)  # 옛 기록 값 degraded → warn
+            events.append(ev)
         except json.JSONDecodeError:
             logger.warning("monitor_report: 손상된 줄 건너뜀: %r", line[:120])
     return events
@@ -126,7 +128,7 @@ def _derive_upstream(grouped: dict) -> list[dict]:
     `/ingest` 한 요청이 남기는 기록 규칙(telegram_app 코드 기준)으로 알림 1건을 센다 — 같은 초에
     여러 알림이 몰리는 일이 실제로 있어(2026-09-20 01:29:53Z 에 멤버 4명 트윗 + 공식 1건) "같은 ts =
     한 요청"으로는 묶을 수 없다:
-      - 개인 트윗: 요청 하나가 tweet 기록을 여러 줄(부가 degraded + 최종) 남기지만 모두 같은 ts·같은
+      - 개인 트윗: 요청 하나가 tweet 기록을 여러 줄(부가 warn + 최종) 남기지만 모두 같은 ts·같은
         멤버 → (ts, who) 하나 = 알림 1건.
       - 공식(X): 요청마다 최종 relay 기록(`mode: none|added…|error…`)이 정확히 1줄 → 1건. 같은 ts 의
         소식(notice) 기록은 그 알림에 붙인다(공식이 없으면 소식만으로 1건 — 점검(ECHO) 중 요청 등).
@@ -203,7 +205,7 @@ def _derive_cmd(grouped: dict) -> list[dict]:
     for ts, items in sorted(by_ts.items()):
         cmd = items[0][0]
         tones = [e.get("result", "ok") for _, e in items]
-        tone = "err" if "err" in tones else "degraded" if "degraded" in tones else "ok"
+        tone = "err" if "err" in tones else "warn" if "warn" in tones else "ok"
         detail = " / ".join(filter(None, (str(e.get("detail", "")) for _, e in items))) or cmd
         out.append({"t": _kst_hm(ts), "cmd": cmd, "tone": tone, "d": detail[:200], "reply": "", "derived": True})
     return out
@@ -388,6 +390,22 @@ def attach_details(day: dict, lk: dict) -> dict:
         if t:
             e["info"] = {"orig": t.get("text"), "ko": t.get("text_ko"),
                          "x": t.get("url") or (f"https://x.com/i/status/{t['id']}" if t.get("id") else None)}
+    return day
+
+
+def normalize_day(day: dict | None) -> dict | None:
+    """저장된 옛 스냅샷(monitoring/days/*.json)의 tone · 구간 q 값 `degraded` 를 `warn` 으로 읽는다(저장 데이터는 고치지 않음).
+    스냅샷은 이벤트 로그를 거치지 않고 계산된 값이 그대로 저장돼 있어 `normalize_event` 가 닿지 않는다."""
+    if not isinstance(day, dict):
+        return day
+    for key in ("relay", "notice", "tweet", "song", "cmd", "upstream"):
+        for e in day.get(key) or []:
+            if isinstance(e, dict) and e.get("tone") == "degraded":
+                e["tone"] = "warn"
+    for v in day.get("preview") or []:
+        for sg in (v.get("segs") or []) if isinstance(v, dict) else []:
+            if isinstance(sg, dict) and sg.get("q") == "degraded":
+                sg["q"] = "warn"
     return day
 
 
@@ -931,7 +949,7 @@ _TEMPLATE = r"""<!doctype html>
   .tooltip .tt-h{color:var(--muted); font:11px var(--mono); margin-bottom:5px}
   .tooltip .tt-title{font-size:.82rem; color:var(--ink); margin-bottom:3px; font-weight:600}
   .tooltip .tt-raw{font-family:var(--mono); font-size:.76rem; margin-bottom:3px}
-  .tooltip .tt-raw.ok{color:var(--ok)} .tooltip .tt-raw.err{color:var(--err)} .tooltip .tt-raw.degraded{color:#f5c344}
+  .tooltip .tt-raw.ok{color:var(--ok)} .tooltip .tt-raw.err{color:var(--err)} .tooltip .tt-raw.warn{color:#f5c344}
   .tooltip .tt-d{color:var(--muted)}
   /* (v3.8.5a) 합동 live 구간 — 막대 위 아이콘 + 팝업 안 참여 멤버 목록 */
   .tl-collab-icon{border-radius:3px}
@@ -1074,9 +1092,9 @@ const STATE = {
 // 고쳐지기 전에 기록된 이벤트) 'null' 문자열이 그대로 노출되던 것 방지. 새로 기록되는
 // 이벤트는 항상 값이 있다(handlers.py/telegram_app.py 쪽 수정).
 function stateLabel(s){ return (STATE[s] || {}).label || "상태 미상"; }
-const OK = "#7CB342", ERR = "#e5484d", DEGRADED = "#f5c344";
-const TONE_COLOR = { ok:OK, degraded:DEGRADED, err:ERR };
-const TONE_LABEL = { ok:"정상", degraded:"부분 실패", err:"에러" };
+const OK = "#7CB342", ERR = "#e5484d", WARNC = "#f5c344";
+const TONE_COLOR = { ok:OK, warn:WARNC, err:ERR, degraded:WARNC };   // degraded = 옛 값(warn 과 같은 뜻) 방어용 별칭
+const TONE_LABEL = { ok:"정상", warn:"경고(폴백)", err:"에러", degraded:"경고(폴백)" };
 const MEMBER_KO = { arale:"아라레", yuno:"유노", nonoka:"노노카", ritsu:"리츠", miyako:"미야코" };
 // (v3.5.4) 타임라인 라벨 서브칸 -- 텍스트("노노카" 등) 대신 멤버 얼굴 도트아이콘(누끼딴
 // 40x40 PNG, base64). 텍스트보다 폭이 좁아 라벨 칸 전체 폭을 줄일 수 있다.
@@ -1256,13 +1274,13 @@ function renderStats(){
   const tonePoint = [...RELAY, ...NOTICE, ...TWEET];
   const previewSegs = PREVIEW.flatMap(v => v.segs);
   const errors = boolPoint.filter(e => !e.ok).length + tonePoint.filter(e => e.tone === "err").length;
-  const degraded = tonePoint.filter(e => e.tone === "degraded").length + previewSegs.filter(sg => sg.q === "degraded").length;
+  const warns = tonePoint.filter(e => e.tone === "warn").length + previewSegs.filter(sg => sg.q === "warn").length;
   const previewFails = previewSegs.filter(sg => sg.q === "err").length;
   const ytUsed = TICKS.reduce((s,e) => s + (e.quota||0), 0);
   const tiles = [
     { v: boolPoint.length + tonePoint.length + previewSegs.length, s: "총 이벤트" },
     { v: errors + previewFails, s: "에러 발생", err: true },
-    { v: degraded, s: "부분 실패(degraded)" },
+    { v: warns, s: "경고(WARN)" },
     { v: `${ytUsed} / 10,000`, s: "YouTube quota(기록된 실행)" },
   ];
   document.getElementById("statList").innerHTML = tiles.map(t =>
@@ -1293,14 +1311,14 @@ function renderStats(){
   `;
 }
 
-const activeTones = new Set(["ok","degraded","err"]);
+const activeTones = new Set(["ok","warn","err"]);
 const legendEl = document.getElementById("legend");
-[["ok","정상",OK],["degraded","부분 실패",DEGRADED],["err","에러",ERR]].forEach(([key,label,color]) => {
+[["ok","정상",OK],["warn","경고(폴백)",WARNC],["err","에러",ERR]].forEach(([key,label,color]) => {
   const btn = document.createElement("button");
   btn.innerHTML = `<i style="background:${color}"></i>${label}`;
   btn.addEventListener("click", () => {
     if (activeTones.has(key)) activeTones.delete(key); else activeTones.add(key);
-    if (activeTones.size === 0) ["ok","degraded","err"].forEach(k => activeTones.add(k));
+    if (activeTones.size === 0) ["ok","warn","err"].forEach(k => activeTones.add(k));
     btn.classList.toggle("off", !activeTones.has(key));
     renderTimeline(); renderTable();
   });
@@ -1322,7 +1340,7 @@ function resultChipsHtml(keys){
     `<span class="lg-chip"><i style="background:${TONE_COLOR[k]}"></i>${TONE_LABEL[k]}</span>`
   ).join("") + `</div>`;
 }
-function toneChipsHtml(){ return resultChipsHtml(["ok","degraded","err"]); }
+function toneChipsHtml(){ return resultChipsHtml(["ok","warn","err"]); }
 function laneLegendHtml(key){
   if (key === "trigger") return `<div class="lg-title">🎯 트리거</div>` +
     `<div class="lg-sub">4가지 트리거(🎛️ 운영자 제어·🕒 정기수집·📡 라이브 감지·📥 업스트림 알림) 를 짧은 세로` +
@@ -1354,7 +1372,7 @@ function laneLegendHtml(key){
   if (key === "song") return `<div class="lg-title">🎵 신곡 감지</div>` +
     `<div class="lg-sub">토픽 채널 RSS(10분마다 정기 수집)에서 새 곡을 찾아 곡 목록에 즉시 등록한 기록 1건 = 점 1개. 곡명 중복으로 등록하지 않은 경우 · 독음(LLM) 작성 ·` +
     ` RSS 가 비어 있을 때(시간당 1회)도 점으로 남는다. 운영자의 곡 수정 · 삭제 · 직접 추가 · 차단 해제 · 반려도 같은 줄에 나온다(팝업에 「운영자」 표시).` +
-    ` 점 색 = 결과(RSS 이상은 부분 실패).</div>` + toneChipsHtml();
+    ` 점 색 = 결과(RSS 이상은 경고).</div>` + toneChipsHtml();
   if (key === "notice") return `<div class="lg-title">소식</div><div class="lg-sub">공식 계정의 방송 외 이벤트 게시물 처리 결과.</div>` + toneChipsHtml();
   if (key === "tweet") return `<div class="lg-title">개인 트윗</div><div class="lg-sub">멤버 개인 트윗 처리 결과.</div>` + toneChipsHtml();
   if (key === "cmd") return `<div class="lg-title">💬 운영자 명령</div>` +
@@ -1395,7 +1413,7 @@ const LANES = [
   { key:"preview", label:"preview",     icon:"🎬", type:"bar",   rows: ROWS_MEMBERS },
   { key:"notice",  label:"소식",        icon:"📰", type:"point", rows:["notice"] },
   { key:"tweet",   label:"개인 트윗",   icon:"💌", type:"point", rows: ROWS_MEMBERS },
-  // (v4.2.0) 토픽 채널 RSS 신곡 자동 감지 + 운영자 곡 관리 — 점 색 = 결과(등록 정상 · RSS 이상 degraded · 실패 err)
+  // (v4.2.0) 토픽 채널 RSS 신곡 자동 감지 + 운영자 곡 관리 — 점 색 = 결과(등록 정상 · RSS 이상 warn · 실패 err)
   { key:"song",    label:"신곡 감지",   icon:"🎵", type:"point", rows:["song"] },
 ];
 const TRIGGER_GLYPH = { ops:"🎛️", tick:"🕒", wake:"📡", ingest:"📥" };
@@ -2402,9 +2420,15 @@ function fetchDay(dateStr){
       document.getElementById("lede").textContent = dateStr + " 상세를 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.";
     });
 }
+// (v4.3) 옛 스냅샷의 tone/q 값 degraded 는 warn 과 같은 뜻 — 서버(normalize_day)가 못 거른 경우의 방어
+function normDegraded(day){
+  ["relay","notice","tweet","song","cmd","upstream"].forEach(k => (day[k] || []).forEach(e => { if (e.tone === "degraded") e.tone = "warn"; }));
+  (day.preview || []).forEach(v => (v.segs || []).forEach(sg => { if (sg.q === "degraded") sg.q = "warn"; }));
+  return day;
+}
 function loadDay(dateStr, opts){
   const skipTimeline = !!(opts && opts.skipTimeline);
-  const day = REPORT.days[dateStr];
+  const day = REPORT.days[dateStr] && normDegraded(REPORT.days[dateStr]);
   if (!day) { if (grassClickable(dateStr)) fetchDay(dateStr); return; }
   dayLoading = null;
   currentDate = dateStr;
@@ -2745,7 +2769,7 @@ if __name__ == "__main__":
         '{"ts":"2026-09-15T22:15:00Z","flow":"wake","result":"err","who":"v1","detail":"enqueue fail"}\n'
         '{"ts":"2026-09-15T23:00:00Z","flow":"ops","result":"ok","who":"/pause","detail":"control.json 커밋"}\n'
         '{"ts":"2026-09-15T23:30:00Z","flow":"ops","result":"ok","who":"/resume","detail":"재개"}\n'
-        '{"ts":"2026-09-15T21:10:00Z","flow":"notice","result":"degraded","who":"","detail":"mode: added, needs_tl=true"}\n'
+        '{"ts":"2026-09-15T21:10:00Z","flow":"notice","result":"warn","who":"","detail":"mode: added, needs_tl=true"}\n'
         '{"ts":"2026-09-15T21:20:00Z","flow":"relay","result":"ok","who":"","detail":"mode: added"}\n'
         '{"ts":"2026-09-15T21:30:00Z","flow":"tweet","result":"ok","who":"arale","detail":"mode: added"}\n'
         '{"ts":"2026-09-15T09:00:00Z","flow":"preview","result":"ok","who":"arale","detail":"upcoming→watching",'
@@ -2767,8 +2791,17 @@ if __name__ == "__main__":
     print("[OK] _ops_json")
 
     notice = _tone_json(grouped["notice"])
-    assert notice[0]["tone"] == "degraded"
+    assert notice[0]["tone"] == "warn"
     print("[OK] _tone_json")
+
+    # (v4.3) 옛 스냅샷 normalize_day — degraded → warn (relay/song/cmd/upstream/notice/tweet tone, preview segs q)
+    _old = {"relay": [{"tone": "degraded"}], "song": [{"tone": "degraded"}], "cmd": [{"tone": "degraded"}], "upstream": [{"tone": "ok"}],
+            "notice": [{"tone": "degraded"}], "tweet": [{"tone": "err"}],
+            "preview": [{"segs": [{"s": "x", "q": "degraded"}, {"s": "y"}]}]}
+    normalize_day(_old)
+    assert [_old[k][0]["tone"] for k in ("relay", "song", "cmd", "upstream", "notice", "tweet")] == ["warn", "warn", "warn", "ok", "warn", "err"], _old
+    assert _old["preview"][0]["segs"][0]["q"] == "warn" and normalize_day(None) is None
+    print("[OK] normalize_day")
 
     # ── _preview_json: from_state 있는 첫 이벤트 → 선행 세그먼트("06:00"=하루 시작), 없으면 생략 ──
     preview = _preview_json(grouped["preview"], now_hm="12:00")
@@ -2979,14 +3012,14 @@ if __name__ == "__main__":
          "action": "added", "video_id": "NEWSONG0001", "title": "新しい曲", "action_id": "llm_x"},
         {"ts": "2026-09-15T02:00:00Z", "flow": "song", "result": "ok", "who": "group", "detail": "곡명 중복으로 등록 안 함 · 既にある曲", "action": "skipped",
          "reason": "name_dup", "video_id": "DUP00000001", "title": "既にある曲"},
-        {"ts": "2026-09-15T03:00:00Z", "flow": "song", "result": "degraded", "who": "group", "detail": "RSS 비어 있음", "action": "rss_empty"},
+        {"ts": "2026-09-15T03:00:00Z", "flow": "song", "result": "warn", "who": "group", "detail": "RSS 비어 있음", "action": "rss_empty"},
         {"ts": "2026-09-15T04:00:00Z", "flow": "song", "result": "ok", "who": "group", "via": "ops", "detail": "곡 삭제(재등록 차단) · 新しい曲", "action": "deleted",
          "video_id": "NEWSONG0001", "title": "新しい曲"},
         {"ts": "2026-09-15T05:00:00Z", "flow": "tick", "result": "ok", "who": "", "detail": "d", "mode": "light", "quota": 2},
     ])
     ds = build_day_from_text("2026-09-15", song_text, now_hm=None, down_ranges=None, vercel_deploys=None)
     assert [(e["t"], e["action"], e["tone"], e["ops"]) for e in ds["song"]] == [
-        ("11:00", "added", "ok", False), ("11:00", "skipped", "ok", False), ("12:00", "rss_empty", "degraded", False), ("13:00", "deleted", "ok", True)], ds["song"]
+        ("11:00", "added", "ok", False), ("11:00", "skipped", "ok", False), ("12:00", "rss_empty", "warn", False), ("13:00", "deleted", "ok", True)], ds["song"]
     assert ds["song"][0]["label"] == "신곡 등록" and ds["song"][0]["title"] == "新しい曲" and ds["song"][0]["vid"] == "NEWSONG0001", ds["song"][0]
     assert day_trigger_count(ds) == 1, "신곡 이벤트는 트리거 수에 안 넣음(tick 1건만)"
     assert build_day_from_text("2026-09-15", "", now_hm=None, down_ranges=None, vercel_deploys=None)["song"] == [], "이벤트 없으면 빈 목록"
@@ -2996,11 +3029,11 @@ if __name__ == "__main__":
 
     # (v3.8.9) 옛 로그 복원 — 같은 초에 몰린 알림 분리 · 부가/백필 기록 제외 · 실제 기록 이후는 복원 안 함
     old = [
-        {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "degraded", "who": "miyako", "detail": "llm skip", "via": "ingest"},
+        {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "warn", "who": "miyako", "detail": "llm skip", "via": "ingest"},
         {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "ok", "who": "miyako", "detail": "mode: added", "via": "ingest"},
         {"ts": "2026-09-20T01:29:53Z", "flow": "tweet", "result": "ok", "who": "ritsu", "detail": "mode: added", "via": "ingest"},
         {"ts": "2026-09-20T01:29:53Z", "flow": "relay", "result": "ok", "detail": "mode: none", "via": "ingest"},
-        {"ts": "2026-09-20T01:29:53Z", "flow": "relay", "result": "degraded", "detail": "collab-guest skip: x", "via": "ingest"},
+        {"ts": "2026-09-20T01:29:53Z", "flow": "relay", "result": "warn", "detail": "collab-guest skip: x", "via": "ingest"},
         {"ts": "2026-09-20T02:00:00Z", "flow": "notice", "result": "ok", "detail": "mode: added", "via": "ingest"},
         {"ts": "2026-09-20T02:00:00Z", "flow": "relay", "result": "ok", "detail": "mode: none", "via": "ingest"},
         {"ts": "2026-09-20T03:00:00Z", "flow": "relay", "result": "ok", "who": "yuno", "detail": "mode: yt-member-live live", "via": "ingest"},

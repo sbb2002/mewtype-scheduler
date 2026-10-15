@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mew.hb/1",
+  "title": "생존 신호",
+  "type": "object",
+  "required": ["schema", "role", "ts", "pid"],
+  "properties": {
+    "schema": {"const": "mew.hb/1"},
+    "role": {"enum": ["publisher", "receiver"]},
+    "ts": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"},
+    "pid": {"type": "integer"},
+    "env": {"enum": ["local", "stage", "prod"]},
+    "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG"]},
+    "paused": {"type": "boolean"},
+    "counters": {"type": "object"}
+  },
+  "additionalProperties": true
+}

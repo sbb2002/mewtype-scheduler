@@ -1,0 +1,14 @@
+{
+  "context": {},
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EF",
+  "kind": "log",
+  "logger": "src.backend.handlers",
+  "message": "YouTube API error: 403 Client Error: Forbidden for url: https://www.googleapis.com/youtube/v3/videos?key=***&part=snippet",
+  "redacted": true,
+  "schema": "mew.err/1",
+  "severity": "ERROR",
+  "source": {"commit": "41c81d4", "env": "local", "host": "desktop-68v1g6c", "service": "runner"},
+  "traceback": "Traceback (most recent call last):\n  ...\nRuntimeError: YouTube API error: 403",
+  "ts": "2026-10-12T04:40:50Z",
+  "untrusted": ["message", "traceback"]
+}

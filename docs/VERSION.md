@@ -24,6 +24,20 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
+- **v4.3.0** (기능, 2026-10-15 배포) — **에러 버스 발신기 + 로그 등급 5단계 재분류 + 이벤트 결과값 `degraded` → `warn`**. 이번 패치에 실린 것: ① 에러 버스 발신기(`src/bus/`) ② 로그 등급 5단계 재분류 ③ `degraded` → `warn` 치환(저장된 옛 이벤트 · 옛 스냅샷은 읽을 때 치환). 테스트판(`v4.3-fullauto`)에서
+  **자동 대응 수신기(`src/busrx/`)를 제외한** 부분만 배포판으로 가져왔다. 수신기는 이 코드에서 import 하지 않으므로 나중에 붙여도 된다.
+  - `src/bus/` — 발신기. 환경변수 `MEW_BUS_DIR` 이 **없으면 `install()` 이 `None` 을 돌려주고 아무것도 붙이지 않는다**(배포판은 설정하지 않음 = 동작 변화 없음).
+    있으면 루트 로거 핸들러 · 미처리 예외 훅 · 모니터 이벤트(`monitor_log.log_events` 의 `on_events` 훅)를 폴더 스풀 봉투(`mew.err/1` 등)로 내보낸다.
+    봉투 스키마 · 예시는 `docs/bus/`(발신기 self-test · 제어 메시지 검증이 읽는다 — Docker 이미지에는 `docs/` 가 없어 배포 서비스에서 버스를 켜려면 이미지 변경이 필요).
+  - 로그 등급 5단계(CRITICAL · ERROR · WARN · INFO · DEBUG)로 `warning`/`error` 재분류 — 폴백이 정의된 실패 · 재시도 중인 실패는 INFO, 사람이 봐야 하는 것만 WARN 이상.
+    같은 사건을 이벤트와 예외 로그가 둘 다 남기는 곳은 `no_bus=True` 로 중복 발신을 막는다. 기능 동작은 바꾸지 않는다(로그 · 이벤트 기록만).
+  - 이벤트 `result` 값 `degraded` → **`warn`**. 쓰기: `RESULT_DEGRADED` 제거 → `RESULT_WARN`, `log_events` 가 옛 값을 받아도 `warn` 으로 저장.
+    읽기: 저장된 옛 줄(`monitoring` 브랜치)은 **고치지 않고** `monitor_log.normalize_event` 로 읽을 때 치환 — `monitor_report.parse_events`(웹 monitor · 일별 스냅샷 공용),
+    `admin_api._cloud_events`(관리 페이지). 프론트(웹 monitor JS · 관리 페이지 CSS · 칩 · 집계 라벨 「부분 실패」 → 「경고」)도 `warn` 기준.
+  - **옛 스냅샷도 같은 방식으로 치환**: 지난 날짜 화면은 `monitoring/days/*.json` 스냅샷을 로그를 거치지 않고 그대로 읽어 `tone`/구간 `q` 값 `degraded` 가 남는다(실제 데이터 기준 신곡·트윗·소식 36곳, 방치하면 점이 색 없이 흐리게 보임). `monitor_report.normalize_day`(← `monitor_snapshot.read_day`)가 읽을 때 `warn` 으로 바꾸고, 웹 monitor JS `normDegraded` 가 방어로 한 번 더 바꾼다. 저장된 스냅샷 파일은 고치지 않는다.
+  - 같이 바뀐 동작 둘: `/ingest` 「사용법」 안내 명령 로그가 `degraded` → `ok`(잘못된 입력에 대한 정상 응답), 곡 토픽 RSS 가 비면 이벤트 `warn`(시간당 1회, 이름만 바뀜).
+  - **이번 버전에 넣지 않은 것**: RSS 재시도 · 지속 실패 휴지 · 시차 폴러(`collector/rss.py`, `songs.py` 의 `fetch_feed_result`) — 검증 전이라 보류.
+
 - **v4.2.4** (핫픽스, 2026-10-14) — **트윗 · 영상 제목 번역 프롬프트 교체 + 부분 번역 WARN**. 계기: 유노 트윗 「なんで万バズしてるんですか」가
   `왜 万バズ하고 있는 건가요`로 일본어가 섞인 채 반영됐는데 로그가 INFO(`Groq ok`) 뿐이었다. 배포판 데이터 975쌍 점검에서 같은 부분 번역 약 40건,
   `配信`→`배송` 오역 27건, 멤버 이름 반쪽 한글화(`仲町あ라레`) 6건이 확인됐다(점검 · 시험 기록은 devpapers 브랜치 `ref/translation_*`).

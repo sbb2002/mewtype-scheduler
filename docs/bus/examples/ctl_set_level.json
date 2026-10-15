@@ -1,0 +1,9 @@
+{
+  "args": {"level": "INFO", "ttl_sec": 3600},
+  "cmd": "set_level",
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EK",
+  "issued_by": "operator",
+  "schema": "mew.ctl/1",
+  "target": "publisher",
+  "ts": "2026-10-12T05:00:00Z"
+}

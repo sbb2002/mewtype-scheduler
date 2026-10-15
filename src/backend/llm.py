@@ -25,6 +25,23 @@ def _with_hint(prompt: str) -> str:
 
 logger = logging.getLogger(__name__)
 
+# 호출부가 같은 사건을 자기 기록(monitor 이벤트 등)으로 남기는 경로에서는 번역 최종 실패 줄을 INFO 로 낮춘다 — 한 사건에 한 기록만.
+_QUIET: contextvars.ContextVar[bool] = contextvars.ContextVar("llm_quiet", default=False)
+
+
+class quiet_failures:
+    """with quiet_failures(): … — 이 안에서 LLM 최종 실패 로그를 WARN 이 아니라 INFO 로 남긴다(호출부가 직접 기록하므로)."""
+    def __enter__(self):
+        self._tok = _QUIET.set(True)
+
+    def __exit__(self, *exc):
+        _QUIET.reset(self._tok)
+        return False
+
+
+def _fail_log(msg: str, *args) -> None:
+    (logger.info if _QUIET.get() else logger.warning)(msg, *args)
+
 DEFAULT_MODEL = "openai/gpt-oss-120b"
 # llama-3.3-70b-versatile 는 이 Groq 계정에서 404 (2026-09 라인업 변경). 같은 계열
 # gpt-oss-20b 로 폴백 — 작고 빠르며 지시이행 동일.
@@ -323,6 +340,8 @@ def _restore_punct_runs(text: str, runs: "list[tuple[str, int]]") -> str:
 class LLMClient:
     """Groq 외부 LLM 클라이언트."""
 
+    _last_err: str = ""   # 마지막 Groq 호출 실패 원인(최종 실패 로그 한 줄에 넣기 위함)
+
     def __init__(
         self,
         api_key: str,
@@ -498,13 +517,13 @@ class LLMClient:
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"participation: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"participation: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
             if isinstance(result, dict) and isinstance(result.get("participates"), bool):
                 return result["participates"]
-            logger.warning(f"participation: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+            logger.info(f"participation: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
-        logger.warning("participation: 5회 모두 실패 — None (호출부 미등록 처리)")
+        logger.info("participation: 5회 모두 실패 — None (호출부 미등록 처리) — 호출부가 기록")
         return None
 
     def announces_own_broadcast(self, text_ja: str, unit_name: str | None = None) -> bool | None:
@@ -553,13 +572,13 @@ class LLMClient:
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"announces_own_broadcast: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"announces_own_broadcast: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
             if isinstance(result, dict) and isinstance(result.get("announces"), bool):
                 return result["announces"]
-            logger.warning(f"announces_own_broadcast: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+            logger.info(f"announces_own_broadcast: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
-        logger.warning("announces_own_broadcast: 5회 모두 실패 — None (호출부 미등록 처리)")
+        logger.info("announces_own_broadcast: 5회 모두 실패 — None (호출부 미등록 처리) — 호출부가 기록")
         return None
 
     def collab_partners(self, text_ja: str, *, host_name: str,
@@ -628,13 +647,13 @@ class LLMClient:
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"collab_partners: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"collab_partners: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
             if isinstance(result, dict) and isinstance(result.get("collab_with"), list):
                 return [n for n in result["collab_with"] if n in candidate_names]
-            logger.warning(f"collab_partners: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+            logger.info(f"collab_partners: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
-        logger.warning("collab_partners: 5회 모두 실패 — None (호출부 미추가 처리)")
+        logger.info("collab_partners: 5회 모두 실패 — None (호출부 미추가 처리) — 호출부가 기록")
         return None
 
     def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str) -> dict | None:
@@ -700,7 +719,7 @@ class LLMClient:
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"broadcast_change_targets: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"broadcast_change_targets: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
             if (isinstance(result, dict) and result.get("action") in ("del", "edit", "none")
                     and isinstance(result.get("target_ids"), list)):
@@ -708,8 +727,8 @@ class LLMClient:
                         "target_ids": [str(x) for x in result["target_ids"]],
                         "when": result.get("when"),
                         "reason": str(result.get("reason") or "").strip()[:200]}
-            logger.warning(f"broadcast_change_targets: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
-        logger.warning("broadcast_change_targets: 5회 모두 실패 — None (호출부 미반영 처리)")
+            logger.info(f"broadcast_change_targets: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+        logger.info("broadcast_change_targets: 5회 모두 실패 — None (호출부 미반영 처리) — 호출부가 기록")
         return None
 
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
@@ -769,12 +788,12 @@ class LLMClient:
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"duplicate_notice: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"duplicate_notice: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
             if isinstance(result, dict) and "duplicate_of" in result:
                 dup = result["duplicate_of"]
                 return dup if dup in ids else None
-            logger.warning(f"duplicate_notice: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+            logger.info(f"duplicate_notice: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
         logger.warning("duplicate_notice: 5회 모두 실패 — None (신규로 등록)")
         return None
@@ -886,10 +905,10 @@ class LLMClient:
             try:
                 r = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.warning(f"banner_judge: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"banner_judge: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
             if not isinstance(r, dict) or r.get("action") not in ("none", "upsert", "hold", "cancel"):
-                logger.warning(f"banner_judge: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
+                logger.info(f"banner_judge: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
                 continue
             ev = None
             if r.get("event_name_ja") or r.get("event_start_jst") or r.get("event_end_jst"):
@@ -909,7 +928,7 @@ class LLMClient:
                     "event": ev, "gacha": ga, "image_for": r.get("image_for") or "none", "image_roles": roles,
                     "reason": (r.get("reason") or "").strip()[:200]}
 
-        logger.warning("banner_judge: 5회 모두 실패 — None (등록하지 않음)")
+        logger.info("banner_judge: 5회 모두 실패 — None (등록하지 않음) — 호출부가 기록")
         return None
 
     def translate(self, text_ja: str) -> str | None:
@@ -993,21 +1012,22 @@ class LLMClient:
         prompt = _translate_prompt(masked_text)
 
         response = self._call_groq(self.model, prompt)
+        main_err, used_fallback = self._last_err, False
         if not response:
-            logger.warning("translate: 메인 모델 실패/빈 응답, fallback 시도")
+            used_fallback = True
             response = self._call_groq(self.fallback, prompt)
 
         if not response:
-            logger.warning("translate: 폴백도 실패")
+            _fail_log("translate: 메인·폴백 모델 모두 실패 → 번역 없음 (원인: %s / %s)", main_err, self._last_err)
             return None
 
         # 환각 가드
         if self._is_hallucination(response, masked_text):
-            logger.warning(
-                f"translate: 환각 가드 발동 (input={len(text_ja)}, output={len(response)})"
-            )
+            _fail_log("translate: 환각 가드 발동 → 번역 없음 (input=%d, output=%d)", len(text_ja), len(response))
             return None
 
+        if used_fallback:   # 정의된 폴백(보조 모델)으로 수행됨 — WARN 1건
+            logger.warning("translate: 메인 모델 실패(%s) → 폴백 모델로 수행", main_err)
         result = _clean_translation(_unmask_glossary(response.strip(), mapping, to="ko"))
 
         # 부분 번역 감시 — 성공 응답이라 다른 로그가 없으므로 여기서 WARN 으로 남긴다(저장은 그대로 한다).
@@ -1080,7 +1100,8 @@ class LLMClient:
                             (content or "")[:160],
                         )
                         return content
-                    logger.warning(f"Groq: 예상 응답 구조 없음 {data}")
+                    self._last_err = "응답 구조 없음"
+                    logger.info(f"Groq: 예상 응답 구조 없음 {data}")
                     return None
                 elif resp.status_code in (429, 500, 502, 503, 504):
                     if attempt < len(delays) - 1:
@@ -1090,23 +1111,28 @@ class LLMClient:
                         time.sleep(delay)
                         continue
                     else:
-                        logger.warning(
+                        self._last_err = f"HTTP {resp.status_code} 백오프 소진"
+                        logger.info(
                             f"Groq {resp.status_code}: 백오프 소진 ({attempt+1}/3)"
                         )
                         return None
                 else:
-                    logger.warning(
+                    self._last_err = f"HTTP {resp.status_code}"
+                    logger.info(
                         f"Groq {resp.status_code}: {resp.text[:200]}"
                     )
                     return None
             except requests.Timeout:
-                logger.warning(f"Groq: 타임아웃 (attempt {attempt+1}/3)")
-                if attempt < len(delays) - 1:
+                if attempt < len(delays) - 1:   # 재시도 중 — 정상 경로의 일부 (INFO). 소진되면 WARN
+                    logger.info(f"Groq: 타임아웃 (attempt {attempt+1}/3) — 재시도")
                     time.sleep(delay)
                     continue
+                self._last_err = "타임아웃 재시도 소진"
+                logger.info("Groq: 타임아웃 — 재시도 소진 (3/3)")
                 return None
             except requests.RequestException as e:
-                logger.warning(f"Groq: 네트워크 오류 — {e}")
+                self._last_err = f"네트워크 오류 {type(e).__name__}"
+                logger.info(f"Groq: 네트워크 오류 — {e}")
                 return None
 
         return None

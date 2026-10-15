@@ -1,0 +1,1 @@
+{"schema": "mew.err/1", "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EF", "ts": "2026-10-12T04:40:50Z", "source": {"env": "local", "service": "runner"}, "kind": "log", "severity": "WARNING", "message": "WARN 이 아니라 WARNING"}
