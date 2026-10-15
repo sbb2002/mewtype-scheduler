@@ -34,6 +34,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
   - 이벤트 `result` 값 `degraded` → **`warn`**. 쓰기: `RESULT_DEGRADED` 제거 → `RESULT_WARN`, `log_events` 가 옛 값을 받아도 `warn` 으로 저장.
     읽기: 저장된 옛 줄(`monitoring` 브랜치)은 **고치지 않고** `monitor_log.normalize_event` 로 읽을 때 치환 — `monitor_report.parse_events`(웹 monitor · 일별 스냅샷 공용),
     `admin_api._cloud_events`(관리 페이지). 프론트(웹 monitor JS · 관리 페이지 CSS · 칩 · 집계 라벨 「부분 실패」 → 「경고」)도 `warn` 기준.
+  - **옛 스냅샷도 같은 방식으로 치환**: 지난 날짜 화면은 `monitoring/days/*.json` 스냅샷을 로그를 거치지 않고 그대로 읽어 `tone`/구간 `q` 값 `degraded` 가 남는다(실제 데이터 기준 신곡·트윗·소식 36곳, 방치하면 점이 색 없이 흐리게 보임). `monitor_report.normalize_day`(← `monitor_snapshot.read_day`)가 읽을 때 `warn` 으로 바꾸고, 웹 monitor JS `normDegraded` 가 방어로 한 번 더 바꾼다. 저장된 스냅샷 파일은 고치지 않는다.
   - 같이 바뀐 동작 둘: `/ingest` 「사용법」 안내 명령 로그가 `degraded` → `ok`(잘못된 입력에 대한 정상 응답), 곡 토픽 RSS 가 비면 이벤트 `warn`(시간당 1회, 이름만 바뀜).
   - **이번 버전에 넣지 않은 것**: RSS 재시도 · 지속 실패 휴지 · 시차 폴러(`collector/rss.py`, `songs.py` 의 `fetch_feed_result`) — 검증 전이라 보류.
 
