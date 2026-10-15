@@ -47,13 +47,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.3-fullauto (2026-10-12, 브랜치 `v4.3-fullauto` — 실험 · 미배포)**: 에러 자동 대응 파이프라인의 첫 조각 **에러 버스 발신기**. 러너의 로그 · 이벤트를
+> **에러 버스 테스트판 (2026-10-12, 옛 이름 v4.3-fullauto → 2026-10-15 개명, 브랜치 `test-fullauto-hotfix` — 실험 · 미배포)**: 에러 자동 대응 파이프라인의 첫 조각 **에러 버스 발신기**. 러너의 로그 · 이벤트를
 > 봉투(`mew.err/1`)로 `MEW_BUS_DIR` 공유 폴더에 내보내고(`src/bus/`), 별도 세션의 **수신기**(`claude -p`)가 가져가 분석한다. 두 쪽은 서로의 코드를 모르고
 > `docs/BUS_PROTOCOL.md` + `docs/bus/schema/*.json` 만 공유한다. 심각도 5단계(CRITICAL/ERROR/WARN/INFO/DEBUG — 정의 · 판정 규칙은 `docs/BUS_PROTOCOL.md` §1) · 묶음 · 제어 봉투(`set_level`/`pause`) 포함.
 > `MEW_BUS_DIR` 이 없으면 발신기는 비활성이라 운영 경로에 영향이 없다. **자동 병합은 하지 않는다**(원격 푸시도 운영자 요청 시에만). 용어는 `docs/TERMINOLOGY.md` 「에러 버스 용어」.
 > **수신기**: 1단계(분석 · 보고) + **2단계 자동 수정**(`docs/AUTOFIX.md`) — 확정된 원인에 대해 Haiku 5.5 가 수정, Sonnet 5.5 가 명세 · 검증 · 이중 검토, 가드(금지 자원 확인) 통과 시 **로컬 브랜치에만 커밋** 후 러너 적용 · 재시작(건강 확인 실패 시 자동 revert). 원격 푸시 · main 병합 없음. 실행 `python -m src.busrx`.
 > 점검: `python -m src.bus.conform` · `python -m src.bus.publisher`(발신기) · `python -m src.busrx.selftest`(수신기 1단계) · `python -m src.busrx.selftest_fix`(2단계) · `python -m src.busrx.selftest_web`(관리 페이지). **자동 대응 관리 페이지**(`docs/BUS_DASHBOARD.md`)는 수신기와 같이 `:8789` 로 뜬다(어드민과 별개) — 세션/주간 구독 사용량 표시 포함. 수신기 전용 텔레그램 봇으로 DM 명령(`/ctl` `/auto` `/usage` `/autopause` `/autoresume`) — `RX_TELEGRAM_BOT_TOKEN`/`RX_TELEGRAM_CHAT_ID` 필요, 점검 `python -m src.busrx.selftest_bot`. 에러 레벨별 정책(`rx/policy.json`)·파이프라인 프리셋(표준/긴급)·단계별 실행 기록은 `docs/BUS_DASHBOARD.md`, 점검 `python -m src.busrx.selftest_policy`. 파이프라인은 블록 목록(`src/busrx/pipelines.py`, 잠금 블록 · 사용자 정의 `rx/pipelines.json`)대로 엔진이 실행 — `docs/AUTOFIX.md` §9, 점검 `python -m src.busrx.selftest_pipeline`. 파이프라인 **조립 탭**(블록 끼우기 · 실시간 규칙 검증 · 초기화 버튼)은 `docs/BUS_DASHBOARD.md`, 점검 `python -m src.busrx.selftest_builder`. **동작 모드(자동/반자동/끔)**·패치 계획 승인 탭·`/automode` 는 `docs/BUS_DASHBOARD.md`, 시험용 결함 모듈 `src/backend/fault_lab*.py`(영구 보존, 일부러 버그 있음), 점검 `python -m src.busrx.selftest_semi`.
-> **테스트판 버전(2026-10-13)**: 브랜치 `v4.3-fullauto` 는 `vT1.0.0` 부터 별도 번호를 쓴다 — 자동 대응이 커밋한 수정은 핫픽스(패치 번호)로 `docs/VERSION_vT.md` 에 수신기가 기록한다(배포판 `docs/VERSION.md` 와 별개).
+> **테스트판 버전(2026-10-13)**: 브랜치 `test-fullauto-hotfix` 는 `vT1.0.0` 부터 별도 번호를 쓴다 — 자동 대응이 커밋한 수정은 핫픽스(패치 번호)로 `docs/VERSION_vT.md` 에 수신기가 기록한다(배포판 `docs/VERSION.md` 와 별개).
 > **세션 인계**: 진행 중 시험 · 보류 결정 · 다음 확인 목록은 `docs/HANDOFF_2026-10-13.md` 를 먼저 읽을 것.
 >
 > **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는

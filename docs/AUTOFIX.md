@@ -1,6 +1,6 @@
-# 자동 수정 (AUTOFIX) — 수신기 2단계, v4.3-fullauto
+# 자동 수정 (AUTOFIX) — 수신기 2단계, test-fullauto-hotfix
 
-> 브랜치 `v4.3-fullauto` 전용 실험 (2026-10-12 운영자 결정). `main` · 운영에는 반영되지 않았다.
+> 브랜치 `test-fullauto-hotfix` 전용 실험 (2026-10-12 운영자 결정). `main` · 운영에는 반영되지 않았다.
 > 1단계(분석 · 보고)는 `docs/BUS_PROTOCOL.md` §11-1, 이 문서는 **2단계(수정안 작성 → 검증 → 로컬 브랜치 커밋 → 러너 적용 · 재시작)**.
 
 ## 1. 운영자 결정 (그대로 기록)
@@ -61,7 +61,7 @@
 
 ## 4. 적용과 재시작
 
-- 적용 = 러너가 쓰는 작업 폴더(`RX_RUNNER_DIR`, 기본 이 저장소)의 **작업 브랜치(`RX_APPLY_BRANCH`, 기본 `v4.3-fullauto`)에 `git merge --ff-only auto/…`**.
+- 적용 = 러너가 쓰는 작업 폴더(`RX_RUNNER_DIR`, 기본 이 저장소)의 **작업 브랜치(`RX_APPLY_BRANCH`, 기본 `test-fullauto-hotfix`)에 `git merge --ff-only auto/…`**.
   main · data 에는 절대 하지 않는다. 원격 푸시도 하지 않는다.
 - 다음이면 **적용을 보류**하고 브랜치만 남긴다(보고서에 사유): 현재 브랜치가 작업 브랜치가 아님 · HEAD 가 수정 base 와 다름 · **미커밋 변경이 수정 파일과 겹침** · ff 불가.
   `RX_APPLY_LOCAL=0` 이면 항상 로컬 브랜치 커밋까지만.
@@ -81,7 +81,7 @@
 ## 6. 설정 (환경 변수 · `src/busrx/receiver.py` `Config`)
 
 `RX_STAGE`(기본 2, 1 이면 분석 · 보고만) · `RX_MODEL_ANALYSIS`(기본 `claude-sonnet-5-5`) · `RX_MODEL_CODE`(기본 `claude-haiku-5-5`) ·
-`RX_APPLY_LOCAL`(1) · `RX_APPLY_BRANCH`(`v4.3-fullauto`) · `RX_RUNNER_DIR`(이 저장소) · `RX_BUDGET_USD` 등 호출별 비용 상한. 정지: `mewtype-bus/rx/PAUSE` 파일.
+`RX_APPLY_LOCAL`(1) · `RX_APPLY_BRANCH`(`test-fullauto-hotfix`) · `RX_RUNNER_DIR`(이 저장소) · `RX_BUDGET_USD` 등 호출별 비용 상한. 정지: `mewtype-bus/rx/PAUSE` 파일.
 
 ## 7. 점검
 

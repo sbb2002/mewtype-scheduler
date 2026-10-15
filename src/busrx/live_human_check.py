@@ -58,7 +58,7 @@ def main() -> int:
     repo = tmp / "repo"
     subprocess.run(["git", "clone", "--local", "--no-hardlinks", "-q", str(ROOT), str(repo)], check=True)
     # 시험 중인 작업본(미커밋 포함)을 복제본에 그대로 반영 — 분석기가 읽는 코드가 현재 코드와 같도록
-    br = subprocess.run(["git", "-C", str(ROOT), "branch", "--show-current"], capture_output=True, text=True).stdout.strip() or "v4.3-fullauto"
+    br = subprocess.run(["git", "-C", str(ROOT), "branch", "--show-current"], capture_output=True, text=True).stdout.strip() or "test-fullauto-hotfix"
     subprocess.run(["git", "-C", str(repo), "checkout", "-q", "-B", br], check=True)
     cfg = Config(bus_dir=tmp / "bus", repo=repo, stage=2, apply_local=True, apply_branch=br, runner_dir=tmp / "runner",
                  batch_wait_sec=0, cooldown_error=0, cooldown_critical=0)

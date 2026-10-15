@@ -108,7 +108,7 @@ class Config:
     usage_probe_min_sec: int = 120      # 사용량 조회(소형 호출) 최소 간격
     report_format: str = "md"            # md = 마크다운 파일 | json = JSON 파일 | both = 둘 다 (텔레그램에는 짧은 캡션 + 파일)
     apply_local: bool = True              # 수정이 통과하면 러너 작업 브랜치에 ff-only 적용 + 재시작 (원격 푸시는 안 함)
-    apply_branch: str = "v4.3-fullauto"
+    apply_branch: str = "test-fullauto-hotfix"
     runner_dir: Path = ROOT
     test_python: str = sys.executable
     core_tests: list = field(default_factory=lambda: [
@@ -147,7 +147,7 @@ def config_from_env() -> Config:
         bus_dir=Path(g("MEW_BUS_DIR", "")), token=g("TELEGRAM_BOT_TOKEN", ""), chat_id=g("TELEGRAM_CHAT_ID", ""),
         stage=int(g("RX_STAGE", "2")), model_analysis=g("RX_MODEL_ANALYSIS", MODEL_ANALYSIS),
         model_code=g("RX_MODEL_CODE", MODEL_CODE), apply_local=g("RX_APPLY_LOCAL", "1") != "0",
-        apply_branch=g("RX_APPLY_BRANCH", "v4.3-fullauto"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
+        apply_branch=g("RX_APPLY_BRANCH", "test-fullauto-hotfix"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
         report_format=g("RX_REPORT_FORMAT", "md"), web_port=int(g("RX_WEB_PORT", "8789")),
         web_enabled=g("RX_WEB", "1") != "0",
         ctl_token=g("RX_TELEGRAM_BOT_TOKEN", "").strip(), ctl_chat_id=g("RX_TELEGRAM_CHAT_ID", "").strip(),

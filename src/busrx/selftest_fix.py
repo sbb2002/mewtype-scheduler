@@ -113,7 +113,7 @@ def main() -> int:
     (repo / ".gitignore").write_text(".env.local\n", encoding="utf-8")
     (repo / "docs").mkdir()
     (repo / "docs" / "VERSION_vT.md").write_text("# t\n" + testver.MARK + "\n\n## vT1.0.0 — 기준선\n", encoding="utf-8")
-    sh(repo, "init", "-q", "-b", "v4.3-fullauto")
+    sh(repo, "init", "-q", "-b", "test-fullauto-hotfix")
     sh(repo, "config", "user.name", "t")
     sh(repo, "config", "user.email", "t@t")
     sh(repo, "add", "-A")
@@ -139,7 +139,7 @@ def main() -> int:
         return True, "러너 재시작(1초)"
 
     def reset():
-        sh(repo, "checkout", "-q", "-f", "v4.3-fullauto")
+        sh(repo, "checkout", "-q", "-f", "test-fullauto-hotfix")
         sh(repo, "reset", "-q", "--hard", full0)
         for b in sh(repo, "branch", "--list", "auto/*").split():
             sh(repo, "branch", "-D", b.strip("* "))
@@ -149,7 +149,7 @@ def main() -> int:
     def calls():
         return [json.loads(x) for x in slog.read_text(encoding="utf-8").splitlines()] if slog.exists() else []
 
-    def run_fix(mode="", restart=fake_restart, apply_branch="v4.3-fullauto", seq=1, preset="standard"):
+    def run_fix(mode="", restart=fake_restart, apply_branch="test-fullauto-hotfix", seq=1, preset="standard"):
         reset()
         cfg.extra_env["STUB_MODE"] = mode
         cfg.apply_branch = apply_branch

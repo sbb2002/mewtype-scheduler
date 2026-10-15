@@ -49,7 +49,7 @@ def main() -> int:
         (repo / d / "__init__.py").write_text("", encoding="utf-8")
     (repo / "src" / "backend" / "calc.py").write_text(CALC_BAD, encoding="utf-8")
     (repo / ".gitignore").write_text(".env.local\n", encoding="utf-8")
-    sh(repo, "init", "-q", "-b", "v4.3-fullauto")
+    sh(repo, "init", "-q", "-b", "test-fullauto-hotfix")
     sh(repo, "config", "user.name", "t")
     sh(repo, "config", "user.email", "t@t")
     sh(repo, "add", "-A")
