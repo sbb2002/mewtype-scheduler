@@ -118,7 +118,7 @@ from .control import (
     set_monitor_auto,
 )
 from .gh_store import ConflictError, GitHubStore
-from .monitor_log import (RESULT_DEGRADED, RESULT_ERR, RESULT_OK, _monitor_gh,
+from .monitor_log import (RESULT_WARN, RESULT_ERR, RESULT_OK, _monitor_gh,
                           bucket_date_kst, log_event)
 
 # admin_state.json 경로 (v2.5 — /list /del /ingest /undo 수동 관리 명령)
@@ -333,7 +333,7 @@ def _save_undo(gh: GitHubStore, *, action: str, prev_content: dict, new_sha, now
             message=f"data: undo snapshot ({action}) {now_iso}",
         )
     except Exception:
-        log.exception("undo 스냅샷 저장 실패 (무시 — /undo 만 이번 건 불가해짐)")
+        log.warning("undo 스냅샷 저장 실패 (무시 — /undo 만 이번 건 불가해짐)", exc_info=True)
 
 
 def _build_status_text(now_iso: str, gh: GitHubStore, channels_cfg: dict) -> str:
@@ -718,7 +718,7 @@ def _handle_monitor(gh: GitHubStore, now_iso: str, arg: str) -> None:
                     message=f"data: monitor latest (manual) {result['date']}",
                 )
             except Exception:
-                log.exception("monitor: latest.html 커밋 실패 (DM은 계속 진행)")
+                log.warning("monitor: latest.html 커밋 실패 (DM은 계속 진행)", exc_info=True)
         ok = _send_telegram_document(
             filename,
             html.encode("utf-8"),
@@ -764,7 +764,7 @@ def _handle_pause(gh: GitHubStore, now_iso: str) -> None:
         log.exception("Error handling /pause")
         _send_telegram(f"⚠️ 오류: /pause 처리 실패\n{str(e)[:100]}")
         try:
-            log_event(gh, now_iso, "ops", RESULT_ERR, who="/pause", detail=str(e)[:150])
+            log_event(gh, now_iso, "ops", RESULT_ERR, no_bus=True, who="/pause", detail=str(e)[:150])
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(ops /pause)")
 
@@ -859,7 +859,7 @@ def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None
             _send_telegram("▶️ 재개 완료 (동기화 상태 확인 불가).")
 
         try:
-            log_event(gh, now_iso, "ops", RESULT_OK if tick_result else RESULT_DEGRADED, who="/resume",
+            log_event(gh, now_iso, "ops", RESULT_OK if tick_result else RESULT_WARN, who="/resume",
                       detail="control.json 커밋 + heal 즉시 호출" + ("" if tick_result else " (heal 호출 응답 확인 불가)"))
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(ops /resume)")
@@ -867,7 +867,7 @@ def _handle_resume(gh: GitHubStore, now_iso: str, main_service_url: str) -> None
         log.exception("Error handling /resume")
         _send_telegram(f"⚠️ 오류: /resume 처리 실패\n{str(e)[:100]}")
         try:
-            log_event(gh, now_iso, "ops", RESULT_ERR, who="/resume", detail=str(e)[:150])
+            log_event(gh, now_iso, "ops", RESULT_ERR, no_bus=True, who="/resume", detail=str(e)[:150])
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(ops /resume)")
 
@@ -878,7 +878,7 @@ def _load_channels_config() -> dict:
         with open("config/channels.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        log.warning(f"Failed to load config/channels.json: {e}")
+        log.error(f"Failed to load config/channels.json: {e}")
         return {"channels": {}}
 
 
@@ -891,8 +891,8 @@ def _cmd_event_fields(text: str, has_file: bool, replies: list, raised: bool, sa
     - who: 명령어(`/del` 등). `/` 로 시작 안 하면 대화형 후속 입력(`/del` 확인 y/N, 마법사 응답,
       원문 붙여넣기) → "(후속 입력)". 원문은 공개 data 저장소에 남으므로 **후속 입력 내용은 저장
       안 함** — 짧은 확인 응답(y/N 등, 12자 이하 한 줄)만 남기고 나머지는 글자 수만.
-    - result: 처리 중 예외 또는 응답 DM 이 ⚠️/❌ 로 시작 → err. 안전망 발동(응답 누락) 또는
-      "사용법" 안내 → degraded. 그 외 ok. **응답 DM 문구로 판정하는 근사**다 — 핸들러가 결과를
+    - result: 처리 중 예외 또는 응답 DM 이 ⚠️/❌ 로 시작 → err. 안전망 발동(응답 누락) → warn.
+      "사용법" 안내는 잘못된 입력에 대한 정상 응답이라 ok. 그 외 ok. **응답 DM 문구로 판정하는 근사**다 — 핸들러가 결과를
       반환하지 않아서(DM 으로만 알림) 이 방법을 쓴다. 판정 근거가 된 응답 요약을 reply 에 같이 둔다.
     - reply: 마지막 응답 DM 의 첫 줄(태그 제거, 100자). 진행 중 안내("⏳ …") 뒤 최종 결과가
       마지막에 오는 흐름이 많아 마지막 것을 쓴다.
@@ -911,8 +911,8 @@ def _cmd_event_fields(text: str, has_file: bool, replies: list, raised: bool, sa
     firsts = [html.unescape(_CMD_TAG_RE.sub("", r)).strip().split("\n", 1)[0] for r in replies]
     if raised or any(f.startswith(("⚠️", "❌")) for f in firsts):
         result = RESULT_ERR
-    elif safety_net or any(f.startswith("사용법") for f in firsts):
-        result = RESULT_DEGRADED
+    elif safety_net:                       # 응답 누락을 안전망 DM 이 대신함 = 설계된 폴백
+        result = RESULT_WARN
     else:
         result = RESULT_OK
     reply = firsts[-1][:100] if firsts else ""
@@ -1050,7 +1050,7 @@ def _merge_rows_into_schedule(gh, rows, now_iso, message, action: str | None = N
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("ingest: preview.json 충돌 — 재계산 후 재시도")
+            log.info("ingest: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action or message, prev_content=prev or {}, new_sha=new_sha, now_iso=now_iso)
         _log_preview_diff(gh, (prev or {}).get("items"), items, now_iso)
@@ -1109,7 +1109,7 @@ def _commit_manual_preview(gh, item: dict, now_iso: str) -> dict:
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("수동 예고: preview.json 충돌 — 재계산 후 재시도")
+            log.info("수동 예고: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=f"admin 수동 예고 {item.get('channel_key')}", prev_content=prev or {},
                    new_sha=new_sha, now_iso=now_iso)
@@ -1146,7 +1146,7 @@ def _remove_broadcast(gh, snapshot: dict, now_iso: str, action: str) -> bool:
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("del: preview.json 충돌 — 재계산 후 재시도")
+            log.info("del: preview.json 충돌 — 재계산 후 재시도")
     if changed:
         _save_undo(gh, action=action, prev_content=prev, new_sha=new_sha, now_iso=now_iso)
         # (v4a) 그 영상에 예약돼 있던 확인도 지운다 — 남겨 두면 그 확인이 영상을 다시 불러와 예고를 되살렸다(2026-09-30 검증)
@@ -1218,7 +1218,7 @@ def _ingest_queue_drain(gh, now_iso: str) -> tuple[int, int]:
             prev_sha=sha, message=f"data: ingest queue drained ({applied}) {now_iso}",
         )
     except Exception:
-        log.exception("ingest queue clear 실패 (다음 ingest 에서 재시도)")
+        log.warning("ingest queue clear 실패 (다음 ingest 에서 재시도)", exc_info=True)
     return applied, total_rows
 
 
@@ -1392,7 +1392,7 @@ def _download_telegram_file(file_id: str) -> Optional[str]:
         if not file_path:
             return None
         if (info.get("file_size") or 0) > _INGEST_FILE_MAX_BYTES:
-            log.warning("ingest file too large: %s bytes", info.get("file_size"))
+            log.info("ingest file too large: %s bytes", info.get("file_size"))
             return None
         fr = requests.get(
             f"https://api.telegram.org/file/bot{token}/{file_path}", timeout=15
@@ -1435,7 +1435,7 @@ def _handle_ingest_followup(
                 prev_sha=sh, message=f"data: pending_ingest 슬롯 정리 {now_iso}",
             )
         except Exception:
-            log.exception("pending_ingest 슬롯 정리 실패")
+            log.warning("pending_ingest 슬롯 정리 실패", exc_info=True)
 
     # 1) 만료 — 취소 안내만 하고 이 메시지는 정상 디스패치로 흘려보낸다.
     if admin.pending_ingest_expired(pending, now_iso):
@@ -1497,7 +1497,7 @@ def _channel_key_by_video(video_id: str) -> str | None:
     try:
         info = YouTubeClient(api_key).videos_list([video_id]).get(video_id)
     except Exception:
-        log.exception("videos.list 실패 (수동 /ingest 채널 판별)")
+        log.warning("videos.list 실패 (수동 /ingest 채널 판별)", exc_info=True)
         return None
     if not info or not info.channel_id:
         return None
@@ -1631,7 +1631,7 @@ def _handle_member_followup(gh, channels_cfg: dict, now_iso: str, text: str) -> 
                 prev_sha=sh, message=f"data: pending_member 슬롯 정리 {now_iso}",
             )
         except Exception:
-            log.exception("pending_member 슬롯 정리 실패")
+            log.warning("pending_member 슬롯 정리 실패", exc_info=True)
 
     if admin.pending_member_expired(pending, now_iso):
         _clear()
@@ -1949,7 +1949,7 @@ def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict |
         except ConflictError:
             if _try == 2:
                 raise
-            log.warning("notice: notices.json 충돌 — 재시도")
+            log.info("notice: notices.json 충돌 — 재시도")
             continue
         if mode in ("added", "updated"):
             _save_undo(gh, action=f"소식 {mode} ({(parsed.get('title') or '')[:30]})",
@@ -2021,7 +2021,7 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
                 import random
                 wait_ms = (_CONFLICT_RETRY_BASE_MS * (2 ** _try) +
                            random.randint(0, _CONFLICT_RETRY_JITTER_MAX_MS))
-                log.warning("tweet: tweets.json 충돌(%d/%d) — %dms 후 재시도: %s",
+                log.info("tweet: tweets.json 충돌(%d/%d) — %dms 후 재시도: %s",
                            _try + 1, _CONFLICT_RETRY_COUNT, wait_ms, e)
                 time.sleep(wait_ms / 1000.0)
                 continue
@@ -2031,7 +2031,7 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
     except Exception:
         log.exception("personal tweet 반영 실패")
         try:
-            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key, detail="mode: error (exception)", via=via)
+            log_event(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key, detail="mode: error (exception)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
         return {"mode": "error", "n_thread": 0, "needs_tl": False}
@@ -2039,7 +2039,7 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
     needs_tl = bool(row and (row.get("needs_tl") or (row.get("quote") or {}).get("needs_tl")))
     try:
         log_event(
-            gh, now_iso, "tweet", RESULT_DEGRADED if needs_tl else RESULT_OK,
+            gh, now_iso, "tweet", RESULT_WARN if needs_tl else RESULT_OK,
             who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
             tweet_id=(row or {}).get("id"),   # (v4.0.4) 리포트 팝업이 원문 · 번역 · X url 을 찾는 열쇠
         )
@@ -2069,7 +2069,7 @@ def _notice_sweep(gh, now_iso: str) -> int:
                       message=f"data: notice archive sweep {now_iso}")
         return len(moved)
     except Exception:
-        log.exception("notice sweep 실패 (무시)")
+        log.warning("notice sweep 실패 (무시)", exc_info=True)
         return 0
 
 
@@ -2114,7 +2114,7 @@ def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
                           admin.clear_pending_notice(st or admin.default_admin_state()),
                           prev_sha=sh, message=f"data: pending_notice 정리 {now_iso}")
         except Exception:
-            log.exception("pending_notice 정리 실패")
+            log.warning("pending_notice 정리 실패", exc_info=True)
 
     if admin.pending_notice_expired(pending, now_iso):
         _clear()
@@ -2348,7 +2348,7 @@ def _notice_edit_commit(gh, nid: str, patch: dict, now_iso: str) -> dict:
         except ConflictError:
             if _try == 2:
                 raise
-            log.warning("notice-edit: notices.json 충돌 — 재시도")
+            log.info("notice-edit: notices.json 충돌 — 재시도")
             continue
         _save_undo(gh, action=f"소식 편집 ({nid})", prev_content=prevn or {},
                    new_sha=nsha, now_iso=now_iso, path=_NOTICES_PATH)
@@ -2380,7 +2380,7 @@ def _handle_notice_edit_followup(gh, now_iso: str, text: str) -> bool:
                           admin.clear_pending_notice_edit(st or admin.default_admin_state()),
                           prev_sha=sh, message=f"data: pending_notice_edit 정리 {now_iso}")
         except Exception:
-            log.exception("pending_notice_edit 정리 실패")
+            log.warning("pending_notice_edit 정리 실패", exc_info=True)
 
     if admin.pending_notice_edit_expired(pending, now_iso):
         _clear()
@@ -2499,7 +2499,7 @@ def _maybe_auto_notice(raw: str, now_iso: str, *, tag=None, title=None) -> str:
         _dm_lost_raw("auto notice 호출 실패", raw, title=title or "", kind="notice",
                     tag=tag, gh=gh)
         try:
-            log_event(gh, now_iso, "notice", RESULT_ERR, detail="mode: error (exception)", via="ingest")
+            log_event(gh, now_iso, "notice", RESULT_ERR, no_bus=True, detail="mode: error (exception)", via="ingest")
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(notice)")
         return "error"
@@ -2526,9 +2526,11 @@ def _inline_translate(text: str) -> Optional[str]:
     if llm is None:
         return None
     try:
-        return llm.translate(text) or None
+        from .llm import quiet_failures
+        with quiet_failures():      # 실패하면 호출부가 needs_tl 이벤트(WARN)로 기록하므로 LLM 쪽 최종 실패 줄은 INFO
+            return llm.translate(text) or None
     except Exception:
-        log.exception("인라인 번역 실패")
+        log.warning("인라인 번역 실패", exc_info=True)
         return None
 
 
@@ -2543,7 +2545,7 @@ def _inline_notice_title(body: str):
     try:
         return llm.notice_title(body) or None
     except Exception:
-        log.exception("인라인 소식 제목/번역 실패")
+        log.warning("인라인 소식 제목/번역 실패", exc_info=True)
         return None
 
 
@@ -2569,7 +2571,7 @@ def _inline_notice_dup_check(parsed: dict, prev: dict) -> str | None:
     try:
         return llm.duplicate_notice(parsed.get("body_raw") or parsed.get("title") or "", candidates)
     except Exception:
-        log.exception("소식 중복판정 실패")
+        log.warning("소식 중복판정 실패", exc_info=True)
         return None
 
 
@@ -2778,7 +2780,7 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         _dm_lost_raw("personal tweet write 호출 실패", raw, title=title or "",
                     kind="personal_tweet", channel_key=channel_key, tag=tag, gh=gh)
         try:
-            log_event(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+            log_event(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key,
                       detail="mode: error (/write 호출 실패)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
@@ -2840,10 +2842,10 @@ def _url_confirmed_commit(gh, video_id: str, new_item: dict, next_check_at: str 
             except ConflictError:
                 if attempt == 2:
                     raise
-                log.warning("URL 확정 예고: preview.json 충돌 — 재시도")
+                log.info("URL 확정 예고: preview.json 충돌 — 재시도")
     except Exception:
         log.exception("URL 확정 예고 반영 실패")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=host_key,
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=host_key,
                   detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
         return {"changed": False, "error": True}
 
@@ -2884,10 +2886,10 @@ def _commit_yt_member_live(gh, live: dict, now_iso: str, *, via: str = "ingest")
             except ConflictError:
                 if attempt == 2:
                     raise
-                log.warning("회원 전용 라이브: preview.json 충돌 — 재시도")
+                log.info("회원 전용 라이브: preview.json 충돌 — 재시도")
     except Exception:
         log.exception("회원 전용 라이브 반영 실패")
-        _log_event_safe(gh, now_iso, "relay", RESULT_ERR, who=ck,
+        _log_event_safe(gh, now_iso, "relay", RESULT_ERR, no_bus=True, who=ck,
                         detail="mode: yt-member-live write 실패", via=via)
         return {"changed": False, "mode": "error", "error": True}
 
@@ -3120,7 +3122,7 @@ def _commit_banner(gh, prepared: dict | None, now_iso: str) -> dict:
         except ConflictError:
             if _try == 3:
                 raise
-            log.warning("banner: banners.json 충돌 — 재시도")
+            log.info("banner: banners.json 충돌 — 재시도")
             continue
         return res
     return {"mode": "error", "detail": "충돌이 계속됨", "id": None, "shown": False, "undo": None, "moved": 0}
@@ -3183,7 +3185,7 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
     if prepared.get("failed"):
         flowtrace.annotate(banner="llm_failed")
         flowtrace.mark("행사 판정", "fail", prepared["failed"])
-        _log_event_safe(gh, now_iso, "notice", RESULT_DEGRADED, who=acct, via="ingest",
+        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, who=acct, via="ingest",
                         detail=f"banner skip: {prepared['failed']}")
         _dm_lost_raw("행사 판정 LLM 실패 — 올리지 않음", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
         return {"ok": True, "banner": "llm_failed", "detail": prepared["failed"]}, 200
@@ -3195,7 +3197,7 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
         flowtrace.annotate(banner="error")
         log.exception("행사 배너 반영 실패")
         _dm_lost_raw("행사 배너 반영 호출 실패", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
-        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, who=acct, via="ingest", detail="banner: error (exception)")
+        _log_event_safe(gh, now_iso, "notice", RESULT_ERR, no_bus=True, who=acct, via="ingest", detail="banner: error (exception)")
         return {"ok": True, "banner": "error"}, 200
     mode = result.get("mode") or "none"
     flowtrace.annotate(banner=mode)
@@ -3455,7 +3457,7 @@ def _enqueue_wake_now(video_id: str, schedule_time_iso: str) -> None:
         from . import apply
         apply.enqueue_reconcile(video_id=video_id, run_at_iso=schedule_time_iso)
     except Exception:  # noqa: BLE001
-        log.debug("즉시 확인 예약 실패 (다음 light tick 에서 회수)", exc_info=True)
+        log.warning("즉시 확인 예약 실패 (다음 light tick 에서 회수)", exc_info=True)
 
 
 def _log_event_safe(gh, now_iso: str, flow: str, result: str, **kw) -> None:
@@ -3492,8 +3494,8 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
         return []
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     if not groq_key:
-        log.warning("GROQ_API_KEY 없음 — 게스트 언급 콜라보 판정 스킵, 미추가")
-        _log_event_safe(gh, now_iso, flow, RESULT_DEGRADED, who=host_key,
+        log.info("GROQ_API_KEY 없음 — 게스트 언급 콜라보 판정 스킵, 미추가")
+        _log_event_safe(gh, now_iso, flow, RESULT_ERR, who=host_key,
                   detail="collab-guest skip: GROQ_API_KEY 미설정 — 게스트 미추가", via=via)
         return []
 
@@ -3506,8 +3508,8 @@ def _confirm_llm_collab_guests(gh, text: str, *, host_key: str, guest_keys: list
     confirmed = LLMClient(groq_key).collab_partners(
         text, host_name=host_name, candidate_names=candidate_names)
     if confirmed is None:
-        log.warning("게스트 언급 콜라보 판정: LLM 5회 모두 실패 — 미추가")
-        _log_event_safe(gh, now_iso, flow, RESULT_DEGRADED, who=host_key,
+        log.info("게스트 언급 콜라보 판정: LLM 5회 모두 실패 — 미추가")
+        _log_event_safe(gh, now_iso, flow, RESULT_ERR, who=host_key,
                   detail="collab-guest skip: collab_partners() 5회 모두 실패 — 미추가", via=via)
         return []
     if status is not None:
@@ -3694,8 +3696,8 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
     # 삭제는 `/del` terminate 와 동일(삭제 + 영상 URL 12h 재등록 차단 — 안 하면 다음 수집이 되살린다)
     plan = _detect_broadcast_change(raw, channel_key, now_iso, items)
     if plan is None:
-        log.warning("방송 취소/변경 판정: LLM 사용 불가 또는 5회 모두 실패 — 미반영")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+        log.info("방송 취소/변경 판정: LLM 사용 불가 또는 5회 모두 실패 — 미반영")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                         detail="broadcast-change skip: 판정 실패(GROQ 키 없음 또는 5회 모두 실패)", via=via)
         return
     # 근거는 "없음"이어도 남긴다 — 놓친 취소를 나중에 확인하고 프롬프트를 조정하는 자료(2026-09-30 운영자 요청)
@@ -3726,7 +3728,7 @@ def _maybe_broadcast_change(gh, raw: str, channel_key: str, now_iso: str,
                                 "to": plan["when_iso"]})
         except Exception:
             log.exception("방송 취소/변경 반영 실패")
-            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key,
                             detail=f"broadcast-change write 실패 — 취소/변경 유실 ({iid})", via=via)
     if removed or changes:
         # (v4a) 예고를 내리거나 옮기게 한 글도 원문 보존(D19 확장, 2026-10-01 운영자 결정) — tweets.json 은 48h 뒤 사라진다.
@@ -3794,15 +3796,15 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
 
     api_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if not api_key:
-        log.warning("YOUTUBE_API_KEY 없음 — URL 확정 예고 스킵, 텍스트 파싱으로 폴백")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+        log.info("YOUTUBE_API_KEY 없음 — URL 확정 예고 스킵, 텍스트 파싱으로 폴백")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_WARN, who=channel_key,
                   detail="url-schedule skip: YOUTUBE_API_KEY 미설정 — 텍스트 파싱 폴백", via=via)
         return False
     try:
         info = YouTubeClient(api_key).videos_list([video_id]).get(video_id)
     except Exception:
-        log.exception("videos.list 실패 (URL 확정 예고) — 텍스트 파싱으로 폴백")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+        log.info("videos.list 실패 (URL 확정 예고) — 텍스트 파싱으로 폴백", exc_info=True)
+        _log_event_safe(gh, now_iso, "tweet", RESULT_WARN, who=channel_key,
                   detail="url-schedule skip: videos.list 실패 — 텍스트 파싱 폴백", via=via)
         return False
     if info is None or not info.channel_id:
@@ -3904,8 +3906,8 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         groq_key = os.environ.get("GROQ_API_KEY", "").strip()
         _fpart = _review_forced("part") is True       # 사용자 판단 — 참여로 등록(LLM 확인만 건너뜀)
         if not groq_key and not _fpart:
-            log.warning("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
-            _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+            log.info("GROQ_API_KEY 없음 — 외부 채널 URL 참여판정 스킵")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                       detail="url-schedule skip: GROQ_API_KEY 미설정 — 참여판정 불가, 미등록", via=via)
             return True
         author_name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
@@ -3913,8 +3915,8 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         ok = True if _fpart else LLMClient(groq_key).participation(raw, member_name=author_name)
         if ok is None:
             # LLM 5회 재시도 모두 실패(infra) — "무관하다고 확인됨"과는 다르다, monitor 에 남긴다.
-            log.warning("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
-            _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+            log.info("URL 확정 예고: 외부 채널 + LLM 참여판정 5회 모두 실패 — 미등록")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                       detail="url-schedule skip: participation() 5회 모두 실패 — 미등록", via=via)
             return True
         if ok is not True:
@@ -3943,7 +3945,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
         changed = res.get("changed", False)
     except Exception:
         log.exception("URL 확정 예고: /write 호출 실패")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key,
                   detail="url-schedule write 실패 — 확정된 정보가 유실됨", via=via)
         return True
 
@@ -4081,16 +4083,16 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
     _fown = _review_forced("own") is True       # 사용자 판단 — 예고로 등록(LLM 최종 확인만 건너뜀)
     if not groq_key and not _fown:
-        log.warning("GROQ_API_KEY 없음 — 텍스트 예고 최종 확인 불가, 미등록(안전한 실패)")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+        log.info("GROQ_API_KEY 없음 — 텍스트 예고 최종 확인 불가, 미등록(안전한 실패)")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                         detail="text-schedule skip: GROQ_API_KEY 미설정 — 최종확인 불가, 미등록", via=via)
         return
     from .llm import LLMClient
     confirmed = True if _fown else LLMClient(groq_key).announces_own_broadcast(raw, unit_name=name)
     if confirmed is None:
         # LLM 5회 재시도 모두 실패(infra) — "예고 아님"으로 확인된 것과는 다르다, monitor 에 남긴다.
-        log.warning("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
-        _log_event_safe(gh, now_iso, "tweet", RESULT_DEGRADED, who=channel_key,
+        log.info("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
+        _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
                         detail="text-schedule skip: announces_own_broadcast() 5회 모두 실패 — 미등록", via=via)
         return
     if confirmed is not True:
@@ -4145,7 +4147,7 @@ def _tweet_sweep(gh, now_iso: str) -> int:
                       message=f"data: tweet archive sweep {now_iso}")
         return len(removed)
     except Exception:
-        log.exception("tweet sweep 실패 (무시)")
+        log.warning("tweet sweep 실패 (무시)", exc_info=True)
         return 0
 
 
@@ -4437,7 +4439,7 @@ def _make_llm_client():
             or llm.FALLBACK_MODEL,
         )
     except Exception:
-        log.exception("LLMClient 생성 실패")
+        log.warning("LLMClient 생성 실패", exc_info=True)
         return None
 
 
@@ -4455,7 +4457,7 @@ def _make_vision_client():
             or vision.FALLBACK_VISION_MODEL,
         )
     except Exception:
-        log.exception("VisionClient 생성 실패")
+        log.warning("VisionClient 생성 실패", exc_info=True)
         return None
 
 
@@ -5400,7 +5402,7 @@ def _maybe_tag_cast_participants(parsed: dict, tag: str | None) -> None:
         return
     names = vc.cast_names(image_url=media[0])
     if not names:
-        log.info("cast OCR: 이름 판독 실패 (tweet %s)", tid)
+        log.warning("cast OCR: 이름 판독 실패 (tweet %s)", tid)
         return
     matched: list[str] = []
     for name in names:
@@ -5619,7 +5621,7 @@ def _tweet_edit_commit(gh, unit: str, tweet_id: str, text_ko: str, now_iso: str)
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("트윗 수정: tweets.json 충돌 — 재시도")
+            log.info("트윗 수정: tweets.json 충돌 — 재시도")
             continue
         _save_undo(gh, action=f"admin 트윗 수정 {unit}", prev_content=prev, new_sha=nsha,
                    now_iso=now_iso, path=_TWEETS_PATH)
@@ -5932,7 +5934,7 @@ def _apply_preview_edit(gh, now_iso: str, ctx: dict) -> None:
         except ConflictError:
             if _try == 2:
                 raise
-            log.warning("/edit preview: 충돌 — 재시도")
+            log.info("/edit preview: 충돌 — 재시도")
     _op_clear(gh, now_iso, release_lock_id=pid)
     msg = f"✏️ 예고 편집 반영 ({', '.join(patch)}). /undo 로 되돌릴 수 있습니다."
     if "state" in patch:
@@ -5987,7 +5989,7 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
             except ConflictError:
                 if attempt == 2:
                     raise
-                log.warning("/edit preview→out: 충돌 — 재시도")
+                log.info("/edit preview→out: 충돌 — 재시도")
         try:
             arch, arch_sha = gh.read_json(_PREVIEW_ARCHIVE_PATH)
             arch = dict(arch or {"items": []})
@@ -6035,7 +6037,7 @@ def _activate_state_edit(gh, item: dict, now_iso: str) -> str:
         except ConflictError:
             if attempt == 2:
                 raise
-            log.warning("/edit preview FSM 재판정: 충돌 — 재시도")
+            log.info("/edit preview FSM 재판정: 충돌 — 재시도")
     if gone2 is not None:
         try:
             arch, arch_sha = gh.read_json(_PREVIEW_ARCHIVE_PATH)
@@ -6179,7 +6181,7 @@ if _FLASK_AVAILABLE:
         received_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "").strip()
 
         if webhook_secret and received_secret != webhook_secret:
-            log.warning(f"Invalid webhook secret")
+            log.info("웹훅 시크릿 불일치 — 요청 거부(정상 동작)")
             return jsonify({"ok": False}), 200  # 항상 200
 
         # 2. chat_id 검증
@@ -6189,7 +6191,7 @@ if _FLASK_AVAILABLE:
         msg_chat_id = str(message.get("chat", {}).get("id", ""))
 
         if chat_id and msg_chat_id != chat_id:
-            log.warning(f"Invalid chat_id: {msg_chat_id} != {chat_id}")
+            log.info("허가되지 않은 chat_id %s — 요청 거부(정상 동작)", msg_chat_id)
             return jsonify({"ok": False}), 200  # 항상 200
 
         # 3. 명령 파싱
@@ -6233,7 +6235,7 @@ if _FLASK_AVAILABLE:
 
             gh = storage.make_store("data")      # (v4) 로컬 · 클라우드 공통 (ops 라우팅 포함)
             if gh is None:
-                log.warning("GitHub config missing")
+                log.error("GitHub config missing")
                 _send_telegram("⚠️ GitHub 설정 누락")
                 return _done(False)
             channels_cfg = _load_channels_config()
@@ -6263,7 +6265,7 @@ if _FLASK_AVAILABLE:
                                           admin.clear_pending_undo(_st2 or admin.default_admin_state()),
                                           prev_sha=_sh2, message=f"data: /undo 확인 만료 {now_utc}")
                         except Exception:
-                            log.exception("pending_undo 만료 정리 실패")
+                            log.warning("pending_undo 만료 정리 실패", exc_info=True)
                         _send_telegram("🚫 undo 확인 시간(60초)이 지나 자동 취소되었습니다.")
                     elif _is_yn:
                         _handle_undo_confirm(gh, now_utc, yes=_low in ("y", "yes"))
@@ -6498,7 +6500,7 @@ if _FLASK_AVAILABLE:
         secret = os.environ.get("INGEST_SECRET", "").strip()
         got = request.headers.get("X-Ingest-Secret", "").strip()
         if not secret or got != secret:
-            log.warning("ingest: bad or missing secret")
+            log.info("ingest: 시크릿 불일치·누락 — 요청 거부(정상 동작)")
             flowtrace.mark("접수", "fail", "인증 실패 (403)")
             flowtrace.finish("인증 실패 — 보낸 쪽의 X-Ingest-Secret 헤더가 이 서버 값과 다릅니다. "
                              "원문을 받기 전에 거절해서 유실 원문 큐에도 남지 않습니다.")
@@ -6563,7 +6565,7 @@ if _FLASK_AVAILABLE:
                     title, _load_channels_config(), test_titles=_test_titles
                 )
             except Exception:
-                log.exception("route_by_title 실패 — official 로 폴백")
+                log.warning("route_by_title 실패 — official 로 폴백", exc_info=True)
                 _route = "official"
             flowtrace.mark("분류", "done", {"test": "테스트 부계정 (ECHO)", "official": "공식 · 그 외 → 소식 · 스케줄 판정"}
                            .get(_route, f"개인 5인 → {_route}"))
@@ -6749,7 +6751,7 @@ if _FLASK_AVAILABLE:
                 # 대기열 반영이 있었으면(=실제 scheduled 변경) scheduled, 아니면 잡음성 ingest.
                 _auto_dm(gh, "announced" if drained else "ingest", msg)   # (v4a) 옛 이름 scheduled → announced
                 try:
-                    log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
+                    log_event(gh, now_iso, "relay", RESULT_ERR if failed else RESULT_OK,
                               detail=f"mode: none · 인식 실패 {len(failed)}줄" if failed else "mode: none", via="ingest")
                 except Exception:  # noqa: BLE001
                     log.warning("monitor_log 기록 실패(relay)")
@@ -6786,7 +6788,7 @@ if _FLASK_AVAILABLE:
                     writeclient.call_write("group_pending", gh=gh, op="remove", now_iso=now_iso,
                                            video_ids=_grp_resolved, label="그룹 영상 확인 대기 해제")
                 except Exception:  # noqa: BLE001
-                    log.exception("그룹 영상 확인 대기 해제 실패")
+                    log.warning("그룹 영상 확인 대기 해제 실패", exc_info=True)
 
             summary = xrelay.summary_text(rows, channels_cfg)
             if tweet_url:
@@ -6802,7 +6804,7 @@ if _FLASK_AVAILABLE:
                 summary += "\n\n↩️ /undo 로 되돌릴 수 있습니다."
             _auto_dm(gh, "announced", summary)   # 공식 일일 스케줄 → announced 행 반영 (v4a: 옛 이름 scheduled 라 안 나가던 것)
             try:
-                log_event(gh, now_iso, "relay", RESULT_DEGRADED if failed else RESULT_OK,
+                log_event(gh, now_iso, "relay", RESULT_ERR if failed else RESULT_OK,
                           detail=f"mode: added · 파싱 {len(rows)}건" + (f" · 실패 {len(failed)}줄" if failed else ""), via="ingest")
             except Exception:  # noqa: BLE001
                 log.warning("monitor_log 기록 실패(relay)")
@@ -6816,7 +6818,7 @@ if _FLASK_AVAILABLE:
                         kind="ingest", tag=x_tag, gh=gh)
             if gh is not None:
                 try:
-                    log_event(gh, now_iso, "relay", RESULT_ERR, detail=f"mode: error · {str(e)[:100]}", via="ingest")
+                    log_event(gh, now_iso, "relay", RESULT_ERR, no_bus=True, detail=f"mode: error · {str(e)[:100]}", via="ingest")
                 except Exception:  # noqa: BLE001
                     log.warning("monitor_log 기록 실패(relay)")
             return jsonify({"ok": False, "error": str(e)}), 200
@@ -6920,14 +6922,14 @@ if __name__ == "__main__":
     assert _cmd_event_fields("/list", False, ["⏳ 조회 중", "⚠️ 오류: x"], False, False)["result"] == "err"
     assert _cmd_event_fields("/list", False, ["📋 목록"], True, False)["result"] == "err", "예외 → err"
     _u = _cmd_event_fields("/ingest tweet", False, ["사용법: /ingest tweet &lt;유닛&gt;"], False, False)
-    assert _u["result"] == "degraded" and _u["reply"] == "사용법: /ingest tweet <유닛>", _u
+    assert _u["result"] == "ok" and _u["reply"] == "사용법: /ingest tweet <유닛>", _u
     _s = _cmd_event_fields("/del preview", False, [], False, True)
-    assert _s["result"] == "degraded" and "응답 누락" in _s["reply"]
+    assert _s["result"] == "warn" and "응답 누락" in _s["reply"]
     assert _cmd_event_fields("y", False, ["✅ 삭제됨"], False, False)["detail"] == "y"
     _long = _cmd_event_fields("긴 원문 트윗 내용입니다 " * 5, False, ["✅"], False, False)
     assert _long["who"] == "(후속 입력)" and "기록 안 함" in _long["detail"] and "트윗" not in _long["detail"], _long
     assert _cmd_event_fields("", True, ["✅"], False, False)["detail"] == "(파일 첨부)"
-    print("[OK] _cmd_event_fields: ok/err/degraded 판정 · 응답 요약 · 후속 입력 내용 비기록")
+    print("[OK] _cmd_event_fields: ok/err/warn 판정 · 응답 요약 · 후속 입력 내용 비기록")
 
     # (v3.8.9) 업스트림 감지 — 응답 본문으로 갈래·결과 판정
     _U = _upstream_event_fields
@@ -7327,10 +7329,10 @@ if __name__ == "__main__":
         globals()["YouTubeClient"] = _FakeYouTubeClient
         print("[OK] _maybe_url_confirmed_schedule (videos.list 예외 → False, 텍스트 파싱 폴백)")
 
-        # (v3.6) 조용히 스킵하지 않고 monitor 이벤트 로그에 degraded 로 남기는지 확인
+        # (v3.6) 조용히 스킵하지 않고 monitor 이벤트 로그에 warn 로 남기는지 확인
         _ev_log = next((v for k, v in g6b.store.items() if k.startswith("monitoring/events-")), "")
-        assert '"result": "degraded"' in _ev_log and "videos.list" in _ev_log, _ev_log
-        print("[OK] _maybe_url_confirmed_schedule (폴백 사유를 monitor 이벤트 로그에 degraded 로 기록)")
+        assert '"result": "warn"' in _ev_log and "videos.list" in _ev_log, _ev_log
+        print("[OK] _maybe_url_confirmed_schedule (폴백 사유를 monitor 이벤트 로그에 warn 로 기록)")
 
         # 같은 상황을 _maybe_nonyt_url_notice 로 잘못 흘려보내 소식으로 오분류하지 않는지 확인
         assert _maybe_nonyt_url_notice(
@@ -7660,8 +7662,8 @@ if __name__ == "__main__":
             assert not (g13.store.get(_PREVIEW_PATH) or {}).get("items")
             print("[OK] _maybe_personal_schedule (GROQ_API_KEY 없음 → 미등록, 안전한 실패)")
             _ev13 = next((v for k, v in g13.store.items() if k.startswith("monitoring/events-")), "")
-            assert '"result": "degraded"' in _ev13 and "GROQ_API_KEY" in _ev13, _ev13
-            print("[OK] _maybe_personal_schedule (GROQ_API_KEY 없음도 monitor 이벤트 로그에 degraded 로 기록)")
+            assert '"result": "err"' in _ev13 and "GROQ_API_KEY" in _ev13, _ev13
+            print("[OK] _maybe_personal_schedule (GROQ_API_KEY 없음도 monitor 이벤트 로그에 err 로 기록)")
         finally:
             _llm_mod.LLMClient = _orig_llm_cls
             globals()["_make_gh"] = _orig_make_gh
@@ -7750,7 +7752,7 @@ if __name__ == "__main__":
             assert gbc5.store[_PREVIEW_PATH]["items"] == [_NONOKA_ITEM]
             print("[OK] _maybe_broadcast_change (配信 키워드 없음 → 스킵)")
 
-            # GROQ_API_KEY 없음 → 안전한 실패(미반영) + degraded 로그
+            # GROQ_API_KEY 없음 → 안전한 실패(미반영) + err 로그
             del os.environ["GROQ_API_KEY"]
             gbc6 = _FakeGH()
             gbc6.store[_PREVIEW_PATH] = {"items": [dict(_NONOKA_ITEM)]}
@@ -7758,8 +7760,8 @@ if __name__ == "__main__":
                                     "nonoka", "2026-09-22T12:30:00Z", _CFG_BC)
             assert gbc6.store[_PREVIEW_PATH]["items"] == [_NONOKA_ITEM]
             _ev_bc6 = next((v for k, v in gbc6.store.items() if k.startswith("monitoring/events-")), "")
-            assert '"result": "degraded"' in _ev_bc6 and "GROQ" in _ev_bc6, _ev_bc6
-            print("[OK] _maybe_broadcast_change (GROQ_API_KEY 없음 → 미반영, degraded 로그)")
+            assert '"result": "err"' in _ev_bc6 and "GROQ" in _ev_bc6, _ev_bc6
+            print("[OK] _maybe_broadcast_change (GROQ_API_KEY 없음 → 미반영, err 로그)")
         finally:
             _llm_mod5.LLMClient = _orig_llm_cls5
             os.environ.clear()

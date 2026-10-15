@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mew.ctl/1",
+  "title": "제어 봉투 (수신기 → 발신기)",
+  "type": "object",
+  "required": ["schema", "id", "ts", "cmd"],
+  "properties": {
+    "schema": {"const": "mew.ctl/1"},
+    "id": {"type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"},
+    "ts": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?Z$"},
+    "target": {"type": "string", "maxLength": 64},
+    "cmd": {"enum": ["set_level", "pause", "resume", "ping"]},
+    "args": {
+      "type": "object",
+      "properties": {
+        "level": {"enum": ["ERROR", "WARN", "INFO", "DEBUG"]},
+        "ttl_sec": {"type": "integer", "minimum": 0, "maximum": 86400}
+      }
+    },
+    "issued_by": {"type": "string", "maxLength": 64}
+  },
+  "additionalProperties": true
+}

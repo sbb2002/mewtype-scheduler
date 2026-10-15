@@ -129,7 +129,7 @@ def post_write(kind: str, args: dict, *, main_url: str | None = None) -> dict:
                     _MAX_BACKOFF_SEC,
                 )
                 wait = backoff + random.uniform(0, _JITTER_SEC)
-                log.warning("/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
+                log.info("/write HTTP %d, 재시도 %d/%d, %.2f초 대기",
                             resp.status_code, retry, _MAX_RETRIES, wait)
                 time.sleep(wait)
                 continue

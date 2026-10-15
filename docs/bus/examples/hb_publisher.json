@@ -1,0 +1,10 @@
+{
+  "counters": {"coalesced": 12, "dropped": 0, "sent": 3},
+  "env": "local",
+  "level": "WARN",
+  "paused": false,
+  "pid": 13480,
+  "role": "publisher",
+  "schema": "mew.hb/1",
+  "ts": "2026-10-12T04:41:30Z"
+}

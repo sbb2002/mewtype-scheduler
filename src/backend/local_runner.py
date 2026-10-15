@@ -274,6 +274,9 @@ def main(argv=None) -> int:
     load_env_file(Path(args.env))
     for k, v in _DEFAULTS.items():
         os.environ.setdefault(k, v)
+    if not args.check:
+        from src.bus import install as _bus_install  # (v4.3) 에러 버스 발신기 — MEW_BUS_DIR 있을 때만 동작
+        _bus_install(service="runner")
     if not os.environ.get("LOCAL_BIND", "").strip():
         ip = detect_tailscale_ip()
         if ip:
@@ -285,7 +288,7 @@ def main(argv=None) -> int:
              os.environ["LOCAL_PORT"], os.environ.get("ADMIN_BASE_URL") or "LOCAL_BIND")
     missing = check_config()
     if missing:
-        log.error("필수 설정 누락: %s — %s 에 넣으세요", ", ".join(missing), args.env)
+        log.critical("필수 설정 누락 — 러너 기동 불가: %s — %s 에 넣으세요", ", ".join(missing), args.env)
         return 2
     log.info("V4A_RUNTIME=%s LOCAL_DATA_DIR=%s", os.environ["V4A_RUNTIME"], os.environ["LOCAL_DATA_DIR"])
     if args.check:
@@ -296,6 +299,7 @@ def main(argv=None) -> int:
     app = build_app()
     servers = serve(app, stop)
     if not servers:
+        log.critical("모든 주소 바인딩 실패 — 러너 기동 불가(포트 %s)", os.environ["LOCAL_PORT"])
         return 3
     if not args.no_scheduler:
         threading.Thread(target=scheduler_loop, args=(stop,), name="scheduler", daemon=True).start()

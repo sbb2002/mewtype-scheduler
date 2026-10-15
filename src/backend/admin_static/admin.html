@@ -1066,7 +1066,7 @@
         .sd-ev summary { cursor: pointer; }
         .sd-ev-row { display: grid; grid-template-columns: 6.2rem 1fr; gap: 0.6rem; padding: 3px 0; border-top: 1px solid var(--color-border); }
         .sd-ev-row .t { font-family: ui-monospace, Consolas, monospace; font-size: 0.76rem; }
-        .sd-ev-row.degraded { color: #f5b83d; }
+        .sd-ev-row.warn { color: #f5b83d; }
         .sd-ev-row.err { color: var(--fail); }
         .sg-toolrow { display: flex; gap: 0.5rem; align-items: center; min-width: 0; }
         .sg-toolrow select { width: auto; flex: none; }
@@ -5465,7 +5465,7 @@
                 const evList = document.getElementById("sd-ev-list");
                 evList.textContent = "";
                 for (const e of evs.slice(0, 12)) {
-                    const r = this.cxEl("div", "sd-ev-row" + (e.result === "degraded" || e.result === "err" ? " " + e.result : ""));
+                    const r = this.cxEl("div", "sd-ev-row" + (e.result === "err" ? " err" : (e.result === "warn" || e.result === "degraded" ? " warn" : "")));
                     r.append(this.cxEl("span", "t", this.formatTime(e.ts)), this.cxEl("span", "", `${e.detail || e.action || ""}${e.via === "ops" ? " · 운영자" : ""}`));
                     evList.appendChild(r);
                 }

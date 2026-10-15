@@ -1,0 +1,12 @@
+{
+  "evidence": ["curl 20회 중 200 11 / 404 8 / 500 1", "응답 Server 헤더 = YouTube RSS Feeds server"],
+  "id": "01K7Z3M4Q8R2T5V9X0B1C6D7EN",
+  "proposed_action": "원인 확정 전 코드 변경 없음. 호출 빈도별 성공률 실험 필요",
+  "schema": "mew.report/1",
+  "severity": "WARN",
+  "signature": "rss-fetch-404",
+  "source_ids": ["01K7Z3M4Q8R2T5V9X0B1C6D7EH"],
+  "summary": "RSS 조회 간헐 실패 — 원인 불명",
+  "ts": "2026-10-12T05:10:00Z",
+  "verdict": "unknown"
+}

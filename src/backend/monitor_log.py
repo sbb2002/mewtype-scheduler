@@ -4,8 +4,10 @@
 그대로 구현한다. 공통 필드 ts/flow/result/who/detail + 흐름별 추가 필드(kwargs로 받아
 그대로 실어 보냄) — CSV처럼 모든 흐름이 같은 컬럼을 가질 필요가 없어 JSONL을 쓴다.
 
-result 는 ok/degraded/err 셋 중 하나 — 성공/실패로 미리 뭉치지 않고 각 파이프라인이
-실제로 반환한 raw mode/상태(detail)는 그대로 두되, 필터링용으로 이 3톤만 별도 태깅한다.
+result 는 ok/warn/err 셋 중 하나 — 로그 심각도 정의(docs/BUS_PROTOCOL.md §1)를 따른다:
+ok = 정상(INFO) · warn = 정상 수행은 못 했지만 정의된 폴백으로 수행되어 서비스는 제공됨(WARN) ·
+err = 폴백이 아니거나 서비스 제공 실패(ERROR). 각 파이프라인이 실제로 반환한 raw mode/상태(detail)는
+그대로 두고, 필터링용으로 이 3톤만 별도 태깅한다. 옛 기록의 값 `degraded` 는 warn 과 같은 뜻으로 읽는다.
 
 파일: monitoring/events-YYYY-MM-DD.jsonl (KST 날짜 기준 — 대시보드 "하루" 경계와 맞춤).
 백엔드 상태(4색)는 여기서 기록하지 않는다 — healthchecks.io API에서 그때그때 조회.
@@ -34,9 +36,16 @@ KST = timezone(timedelta(hours=9))
 DAY_START_HOUR = 6
 
 RESULT_OK = "ok"
-RESULT_DEGRADED = "degraded"
+RESULT_WARN = "warn"
 RESULT_ERR = "err"
-_VALID_RESULTS = {RESULT_OK, RESULT_DEGRADED, RESULT_ERR}
+_VALID_RESULTS = {RESULT_OK, RESULT_WARN, RESULT_ERR}
+
+
+def normalize_event(ev):
+    """저장된 옛 기록의 result `degraded` 를 `warn` 으로 읽는다(저장 데이터는 고치지 않음). 이벤트 로그를 읽는 모든 곳이 이 함수를 거친다."""
+    if isinstance(ev, dict) and ev.get("result") == "degraded":
+        ev["result"] = RESULT_WARN
+    return ev
 
 # (v3.9) GitHub Contents API 409 충돌 재시도 설정
 _CONFLICT_RETRY_COUNT = 5  # 최대 재시도 횟수
@@ -85,7 +94,7 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
 
     빈 리스트면 GitHub을 건드리지 않고 반환.
     각 원소는 {"flow", "result", "who"?, "detail"?, ...추가필드}.
-    result는 ok/degraded/err 검증. ConflictError는 기존과 같은 2회 재시도.
+    result는 ok/warn/err 검증. ConflictError는 기존과 같은 2회 재시도.
     로그는 monitoring 브랜치에 append되므로 data 브랜치 쓰기와 충돌하지 않는다.
     커밋 메시지: n==1 이면 "data: monitor {flow} {now_iso}",
                 n>1 이면 "data: monitor {첫 flow}(+{n-1}) {now_iso}"
@@ -95,11 +104,19 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
     if not events:
         return
 
-    # 모든 이벤트의 result 검증
+    # 모든 이벤트의 result 검증 (옛 이름 degraded 는 warn 으로 바꿔 받는다)
     for ev in events:
+        normalize_event(ev)
         result = ev.get("result")
         if result not in _VALID_RESULTS:
             raise ValueError(f"result must be one of {_VALID_RESULTS}, got {result!r}")
+
+    # (v4.3) 에러 버스 발신기 훅 — MEW_BUS_DIR 없으면 no-op, 어떤 경우도 예외를 던지지 않는다
+    try:
+        from src.bus import on_events as _bus_on_events
+        _bus_on_events([e for e in events if not e.get("no_bus")])   # no_bus = 같은 사건을 예외 로그(traceback)가 이미 버스로 보냄
+    except Exception:
+        pass
 
     # 줄 생성 — 각 줄을 {"ts": now_iso, "who": "", "detail": "", **ev} 로 만들어
     # 기존 log_event 줄 형식(ts/who/detail 항상 존재)과 같게 한다.
@@ -111,7 +128,7 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
         who = ev.get("who", "")
         detail = ev.get("detail", "")
         # ts/who/detail 제외한 나머지 필드들
-        extra = {k: v for k, v in ev.items() if k not in ("ts", "who", "detail")}
+        extra = {k: v for k, v in ev.items() if k not in ("ts", "who", "detail", "no_bus")}
         line = json.dumps(
             {"ts": ts, "who": who, "detail": detail, **extra},
             ensure_ascii=False, sort_keys=True,
@@ -141,7 +158,7 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
             # 지수 백오프 + 지터
             wait_ms = (_CONFLICT_RETRY_BASE_MS * (2 ** attempt) +
                        random.randint(0, _CONFLICT_RETRY_JITTER_MAX_MS))
-            logger.warning("monitor_log: 배치 충돌(%d/%d) — %dms 후 재시도: %s",
+            logger.info("monitor_log: 배치 충돌(%d/%d) — %dms 후 재시도: %s",
                           attempt + 1, _CONFLICT_RETRY_COUNT, wait_ms, e)
             time.sleep(wait_ms / 1000.0)
 
@@ -195,7 +212,7 @@ def push_lost(gh, item: dict) -> None:
             # 지수 백오프 + 지터
             wait_ms = (_CONFLICT_RETRY_BASE_MS * (2 ** attempt) +
                        random.randint(0, _CONFLICT_RETRY_JITTER_MAX_MS))
-            logger.warning("lost_queue: 409 충돌(%d/%d) — %dms 후 재시도: %s",
+            logger.info("lost_queue: 409 충돌(%d/%d) — %dms 후 재시도: %s",
                           attempt + 1, _CONFLICT_RETRY_COUNT, wait_ms, e)
             time.sleep(wait_ms / 1000.0)
         except Exception as e:
@@ -238,7 +255,7 @@ def write_lost(gh, items: list, sha: str | None, message: str) -> None:
             # 지수 백오프 + 지터
             wait_ms = (_CONFLICT_RETRY_BASE_MS * (2 ** attempt) +
                        random.randint(0, _CONFLICT_RETRY_JITTER_MAX_MS))
-            logger.warning("lost_queue write: 충돌(%d/%d) — %dms 후 재시도: %s",
+            logger.info("lost_queue write: 충돌(%d/%d) — %dms 후 재시도: %s",
                           attempt + 1, _CONFLICT_RETRY_COUNT, wait_ms, e)
             time.sleep(wait_ms / 1000.0)
 
@@ -306,20 +323,20 @@ if __name__ == "__main__":
     print("✓ log_event: 빈 파일에 첫 줄 append")
 
     # 검증 3: 두 번째 이벤트가 같은 파일에 누적(덮어쓰기 아님)
-    log_event(gh, "2026-09-16T00:10:00Z", "notice", RESULT_DEGRADED, who="",
+    log_event(gh, "2026-09-16T00:10:00Z", "notice", RESULT_WARN, who="",
               detail="mode: added, needs_tl=true")
     lines = [ln for ln in sess.content.strip().split("\n") if ln]
     assert len(lines) == 2
-    assert json.loads(lines[1])["result"] == "degraded"
+    assert json.loads(lines[1])["result"] == "warn"
     print("✓ log_event: 같은 날짜 파일에 계속 append(누적)")
 
     # 검증 4: 잘못된 result 값은 거부
     try:
-        log_event(gh, "2026-09-16T00:11:00Z", "tick", "warn")
+        log_event(gh, "2026-09-16T00:11:00Z", "tick", "fail")
         assert False, "잘못된 result 는 ValueError 여야 함"
     except ValueError:
         pass
-    print("✓ log_event: result는 ok/degraded/err 만 허용")
+    print("✓ log_event: result는 ok/warn/err 만 허용")
 
     # 검증 5: log_events 배치 — 3건 → PUT 1회, 3줄 누적
     sess2 = _FakeSess()
@@ -327,7 +344,7 @@ if __name__ == "__main__":
     events = [
         {"flow": "tick", "result": RESULT_OK, "ts": "2026-09-16T00:05:00Z", "quota": 10},
         {"flow": "preview", "result": RESULT_OK, "ts": "2026-09-16T00:05:10Z", "video_id": "v1"},
-        {"flow": "preview", "result": RESULT_DEGRADED, "ts": "2026-09-16T00:05:20Z", "video_id": "v2"},
+        {"flow": "preview", "result": RESULT_WARN, "ts": "2026-09-16T00:05:20Z", "video_id": "v2"},
     ]
     log_events(gh2, "2026-09-16T00:05:00Z", events)
     assert sess2.put_calls == 1, f"PUT은 정확히 1회여야 함, 실제 {sess2.put_calls}회"
@@ -369,7 +386,7 @@ if __name__ == "__main__":
     log_events(gh5, "2026-09-16T00:09:00Z", [
         {"flow": "tick", "result": RESULT_OK},
         {"flow": "preview", "result": RESULT_OK},
-        {"flow": "preview", "result": RESULT_DEGRADED},
+        {"flow": "preview", "result": RESULT_WARN},
     ])
     assert sess5.last_message == "data: monitor tick(+2) 2026-09-16T00:09:00Z", \
         f"n==3 메시지 형식 오류: {sess5.last_message!r}"
@@ -521,7 +538,7 @@ if __name__ == "__main__":
         conflict_gh_5 = _ConflictGh(n_conflicts=5)
         try:
             log_events(conflict_gh_5, "2026-09-25T10:01:00Z", [
-                {"flow": "notice", "result": RESULT_DEGRADED}
+                {"flow": "notice", "result": RESULT_WARN}
             ])
             assert False, "5회 충돌 후 raise 예상"
         except _ConflictError:
