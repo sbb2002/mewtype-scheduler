@@ -393,6 +393,22 @@ def attach_details(day: dict, lk: dict) -> dict:
     return day
 
 
+def normalize_day(day: dict | None) -> dict | None:
+    """저장된 옛 스냅샷(monitoring/days/*.json)의 tone · 구간 q 값 `degraded` 를 `warn` 으로 읽는다(저장 데이터는 고치지 않음).
+    스냅샷은 이벤트 로그를 거치지 않고 계산된 값이 그대로 저장돼 있어 `normalize_event` 가 닿지 않는다."""
+    if not isinstance(day, dict):
+        return day
+    for key in ("relay", "notice", "tweet", "song", "cmd", "upstream"):
+        for e in day.get(key) or []:
+            if isinstance(e, dict) and e.get("tone") == "degraded":
+                e["tone"] = "warn"
+    for v in day.get("preview") or []:
+        for sg in (v.get("segs") or []) if isinstance(v, dict) else []:
+            if isinstance(sg, dict) and sg.get("q") == "degraded":
+                sg["q"] = "warn"
+    return day
+
+
 def refresh_detail_parts(day: dict, text: str | None) -> dict:
     """지난 날짜 스냅샷(v4.0.4 이전에 저장 — 구간에 항목 열쇠가 없음)의 예고 · 소식 · 트윗 부분을 이벤트 로그로
     다시 만든다. 나머지(백엔드 상태 · 외부 조회 · 트리거)는 스냅샷 값 그대로."""
@@ -1077,8 +1093,8 @@ const STATE = {
 // 이벤트는 항상 값이 있다(handlers.py/telegram_app.py 쪽 수정).
 function stateLabel(s){ return (STATE[s] || {}).label || "상태 미상"; }
 const OK = "#7CB342", ERR = "#e5484d", WARNC = "#f5c344";
-const TONE_COLOR = { ok:OK, warn:WARNC, err:ERR };
-const TONE_LABEL = { ok:"정상", warn:"경고(폴백)", err:"에러" };
+const TONE_COLOR = { ok:OK, warn:WARNC, err:ERR, degraded:WARNC };   // degraded = 옛 값(warn 과 같은 뜻) 방어용 별칭
+const TONE_LABEL = { ok:"정상", warn:"경고(폴백)", err:"에러", degraded:"경고(폴백)" };
 const MEMBER_KO = { arale:"아라레", yuno:"유노", nonoka:"노노카", ritsu:"리츠", miyako:"미야코" };
 // (v3.5.4) 타임라인 라벨 서브칸 -- 텍스트("노노카" 등) 대신 멤버 얼굴 도트아이콘(누끼딴
 // 40x40 PNG, base64). 텍스트보다 폭이 좁아 라벨 칸 전체 폭을 줄일 수 있다.
@@ -2404,9 +2420,15 @@ function fetchDay(dateStr){
       document.getElementById("lede").textContent = dateStr + " 상세를 불러오지 못했습니다. 잠시 뒤 다시 눌러 주세요.";
     });
 }
+// (v4.3) 옛 스냅샷의 tone/q 값 degraded 는 warn 과 같은 뜻 — 서버(normalize_day)가 못 거른 경우의 방어
+function normDegraded(day){
+  ["relay","notice","tweet","song","cmd","upstream"].forEach(k => (day[k] || []).forEach(e => { if (e.tone === "degraded") e.tone = "warn"; }));
+  (day.preview || []).forEach(v => (v.segs || []).forEach(sg => { if (sg.q === "degraded") sg.q = "warn"; }));
+  return day;
+}
 function loadDay(dateStr, opts){
   const skipTimeline = !!(opts && opts.skipTimeline);
-  const day = REPORT.days[dateStr];
+  const day = REPORT.days[dateStr] && normDegraded(REPORT.days[dateStr]);
   if (!day) { if (grassClickable(dateStr)) fetchDay(dateStr); return; }
   dayLoading = null;
   currentDate = dateStr;
@@ -2771,6 +2793,15 @@ if __name__ == "__main__":
     notice = _tone_json(grouped["notice"])
     assert notice[0]["tone"] == "warn"
     print("[OK] _tone_json")
+
+    # (v4.3) 옛 스냅샷 normalize_day — degraded → warn (relay/song/cmd/upstream/notice/tweet tone, preview segs q)
+    _old = {"relay": [{"tone": "degraded"}], "song": [{"tone": "degraded"}], "cmd": [{"tone": "degraded"}], "upstream": [{"tone": "ok"}],
+            "notice": [{"tone": "degraded"}], "tweet": [{"tone": "err"}],
+            "preview": [{"segs": [{"s": "x", "q": "degraded"}, {"s": "y"}]}]}
+    normalize_day(_old)
+    assert [_old[k][0]["tone"] for k in ("relay", "song", "cmd", "upstream", "notice", "tweet")] == ["warn", "warn", "warn", "ok", "warn", "err"], _old
+    assert _old["preview"][0]["segs"][0]["q"] == "warn" and normalize_day(None) is None
+    print("[OK] normalize_day")
 
     # ── _preview_json: from_state 있는 첫 이벤트 → 선행 세그먼트("06:00"=하루 시작), 없으면 생략 ──
     preview = _preview_json(grouped["preview"], now_hm="12:00")
