@@ -47,6 +47,11 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.3.2 (핫픽스, 브랜치 `hotfix/live-membership-probe` — 미배포)**: **방송 중 회원 전용 전환 감지**. `videos.list` 에 회원 전용 필드가 없어, 일반 공개로 시작했다가 방송 중
+> 회원 전용으로 바뀐 영상이 `membership=False` 로 남던 것(2026-10-16 아라레) — wake 가 깨운 영상이 `live` + `membership=False` 일 때만 채널 streams 탭을 yt-dlp(쿠키 불필요)로
+> 읽어 `availability == subscriber_only` 면 `membership=True`(`handlers._probe_live_membership`). tick 에서는 안 부름 · 올리기만 하고 내리지 않음 · 실패는 격리. 라이브 종료 판정은 그대로 API.
+> 상세 `docs/SPEC.md` 「방송 중 회원 전용 전환 감지 (v4.3.2)」, 요약 `docs/VERSION.md`.
+>
 > **v4.3.1 (2026-10-16, 기능 — 번호는 운영자 결정으로 v4.3 의 핫픽스 자리)**: **노노카 지각 이스터에그 「국왕 납시오」** — 프론트만(`js/king.js` · `css/king.css` · `king.selfcheck.mjs` + `timetable.js` 3곳 연결 + `index.html` css 링크, 백엔드 · 데이터 변경 없음).
 > 노노카 본인 방송이 예정 시각을 넘기면 지각 5단계(~3 · 3~5 · 5~10 · 10~20 · 20분~)로 은빛 장식(왕관 · 장막 · 신하 · 레드카펫 · 졸음)이 쌓이고, 대신(왕보다 낮고 신하(시청자)보다 높은 신분)이 하오체로 사정을 고한다. 1분 이상 늦게 시작해 라이브가 되면 입장 연출(왕관 은빛 → 금빛 + 후광),
 > `actual_start + 3분`까지 유지한 뒤 평소 라이브 모습으로 복귀 — 3분 안에 접속한 사람도 입장 연출을 본다. 표시 = 모바일 오늘 카드 · PC 블록 팝업(무대 + 대신의 말) · PC 블록(작은 신호). 노노카 행/레인에만 붙는다.
