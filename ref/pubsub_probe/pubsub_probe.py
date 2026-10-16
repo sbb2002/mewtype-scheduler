@@ -16,7 +16,7 @@ from pathlib import Path
 PORT = 8795
 HUB = "https://pubsubhubbub.appspot.com/subscribe"
 OUT = Path(__file__).with_name("pubsub_probe.log")
-CFG = json.loads(Path(r"C:/Users/user/Documents/myprojects/mewtype-scheduler-v43/config/channels.json").read_text(encoding="utf-8"))
+CFG = json.loads(Path(r"C:/Users/user/Documents/myprojects/mewtype-scheduler-test-fullauto-hotfix/config/channels.json").read_text(encoding="utf-8"))
 CHANNELS = {k: v["channel_id"] for k, v in CFG["channels"].items()}
 CHANNELS.update({"topic:" + s["key"]: s["channel_id"] for s in CFG.get("song_feeds") or []})
 SECRET = secrets.token_urlsafe(12)
