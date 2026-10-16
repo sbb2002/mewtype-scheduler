@@ -28,7 +28,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
-- **v4.3.2** (핫픽스, 개발 중 — 미배포, 브랜치 `hotfix/live-membership-probe`) — **방송 중 회원 전용 전환 감지**. 계기: 2026-10-16 아라레가 일반 공개로 시작한 영상(`NETX7vJNdW8`)을 방송 중 회원 전용으로 바꿨는데, `videos.list` 에 회원 전용 필드가 없고 시작 알림이 일반 `sub_start` 라 `membership=False` 로 남았다(이벤트 로그 13:34:55Z 로 확인).
+- **v4.3.2** (핫픽스, 2026-10-17 배포 — `mewtype-backend` 리비전 00148, 브랜치 `hotfix/live-membership-probe`, 실서비스 첫 동작은 다음 live 방송에서 확인) — **방송 중 회원 전용 전환 감지**. 계기: 2026-10-16 아라레가 일반 공개로 시작한 영상(`NETX7vJNdW8`)을 방송 중 회원 전용으로 바꿨는데, `videos.list` 에 회원 전용 필드가 없고 시작 알림이 일반 `sub_start` 라 `membership=False` 로 남았다(이벤트 로그 13:34:55Z 로 확인).
   - `handlers._probe_live_membership`: **wake** 가 깨운 영상이 `live` 이고 `membership=False` 일 때만 그 채널 streams 탭을 `ytdlp_probe.list_streams`(쿠키 불필요)로 읽어 같은 `video_id` 의 `availability == subscriber_only` 면 `membership=True`. tick 에서는 안 부른다. 올리기만 하고 내리지 않는다(풀림 미반영 — 표본 부족). 조회 실패 · 목록에 영상 없음은 무영향(`try/except` 격리), 외부 호출은 커밋 재시도 루프 밖 1회, 올리면 monitor 이벤트 1건. 라이브 종료 판정은 그대로 API.
   - 실측(2026-10-16): 같은 영상이 flat 목록에서 `live_status=is_live` · `availability=subscriber_only`. 단일 영상 조회(`watch?v=`)는 회원 전용이라 쿠키 없이 실패 → 목록 방식만 쓴다.
   - 검증: `python -m src.backend.handlers` self-test(조회 조건 · 격리). 실서비스 동작은 미확인 — 아라레 방송 종료 관찰 뒤 배포 예정.

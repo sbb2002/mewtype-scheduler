@@ -47,7 +47,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.3.2 (핫픽스, 브랜치 `hotfix/live-membership-probe` — 미배포)**: **방송 중 회원 전용 전환 감지**. `videos.list` 에 회원 전용 필드가 없어, 일반 공개로 시작했다가 방송 중
+> **v4.3.2 (핫픽스, 브랜치 `hotfix/live-membership-probe`, 2026-10-17 `mewtype-backend` 리비전 00148 배포 — 실서비스 첫 동작은 다음 live 방송에서 확인)**: **방송 중 회원 전용 전환 감지**. `videos.list` 에 회원 전용 필드가 없어, 일반 공개로 시작했다가 방송 중
 > 회원 전용으로 바뀐 영상이 `membership=False` 로 남던 것(2026-10-16 아라레) — wake 가 깨운 영상이 `live` + `membership=False` 일 때만 채널 streams 탭을 yt-dlp(쿠키 불필요)로
 > 읽어 `availability == subscriber_only` 면 `membership=True`(`handlers._probe_live_membership`). tick 에서는 안 부름 · 올리기만 하고 내리지 않음 · 실패는 격리. 라이브 종료 판정은 그대로 API.
 > 상세 `docs/SPEC.md` 「방송 중 회원 전용 전환 감지 (v4.3.2)」, 요약 `docs/VERSION.md`.
