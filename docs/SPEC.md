@@ -302,6 +302,45 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
   시각 미정(`time_tbd`)은 타임테이블에 놓을 수 없어 이후 예고로 간다.
 - 자체 점검: `node src/frontend/js/timetable.selfcheck.mjs`(순수 함수 `dayWindow` · `classify` · `itemKeys`).
 
+### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
+
+노노카 본인 방송(`item.channel_key == "nonoka"`, `time_tbd` 아님)이 예정 시각을 넘기면 타임테이블 · 오늘 카드에 장식이 붙는다. 백엔드 · 데이터 계약 변경 없음 — 기존 `preview.json` 필드(`channel_key` · `scheduled_start` · `actual_start` · `time_tbd` · `video_id`)만 읽는다.
+
+**판정** `king.phaseOf(item, state, nowMs)` (순수 — DOM 없음). `state` 는 `timetable.classify` 의 분류(`upcoming` | `live` | `ended`).
+
+| 입력 | 결과 |
+|---|---|
+| `upcoming` 이고 `late = now − scheduled_start` 가 0 초과 ~ 3시간(`MAX_LATE_MS`) | `{phase:"wait", stage, late}` — `lateStage(late)`: ~3분 1 · 3~5분 2 · 5~10분 3 · 10~20분 4 · 20분~ 5 (경계는 이상/미만) |
+| `live` 이고 `actual_start − scheduled_start ≥ 1분`(`ARRIVE_MIN_LATE_MS`) 이고 `now − actual_start < 3분`(`HOLD_MS`) | `{phase:"live", waited, since}` |
+| 그 밖(대상 아님 · 종료 · `actual_start` 없음 · 1분 미만 지각 · 3분 경과) | `null` → 장식 없음 / 걷어냄 |
+
+**장식 root 와 클래스** — `king.js` 가 root 요소에 붙이고 `root.dataset.king`(`"card"`·`"popup"`·`"block"`) · `root.__king`(상태 객체)을 둔다.
+`.k-on` 장식 중 · `.k-s1`~`.k-s5` 지각 단계(누적) · `.k-arrive` 입장 연출 중(`ARRIVE_MS` 3.8초) · `.k-live` 입장 후 유지 중. `finish()` 가 3분이 지나면 클래스 · 추가한 노드 · 바꾼 글자를 모두 원복한다(보드를 다시 그리지 않고 제자리에서).
+
+| 위치 | 함수 · root | 삽입 | 호출 지점 |
+|---|---|---|---|
+| 모바일 오늘 카드 | `decorateCard(a, th, main, entry, state)` · `a.tcard`(`.k-card`) | `th`(`.tcard__th`) **첫 자식**으로 무대 `.kg-scene`(LIVE · 합동 알약보다 아래), `main`(`.tcard__main`) 끝에 `.king-msg` | `timetable.todayCard` — `laneKey === "nonoka"` |
+| PC 블록 팝업 | `decoratePopup(pop, img, body, entry, state)` · `.tt-pop`(`.k-pop`) | `img`(`.tt-pop__img`) 첫 자식 `.kg-scene`, `body` 끝 `.king-msg` | `showCardPop(..., rowKey)` — 노노카 행의 블록에서 연 팝업만. 높이를 재기 **전에** 장식(위치 계산이 높이에 의존) |
+| PC 타임테이블 블록 | `decorateBlock(blk, entry, state)` · `.tt-blk`(`.k-blk`) | `.tt-blk__th` 안에 `.kb-crown`(왕관 + 후광 + 궤도 별) · `.kb-zz` · `.kb-flare` · `.kb-sparks`, 블록 끝에 `.kb-carpet` 띠. `.tt-blk__rel`(「지각」 자리) 글자 교체 | `blockEl(..., rowKey)` — `buildTimetable` 이 행 키(`key`)를 넘김 |
+
+`rowKey`/`laneKey` 가 `"nonoka"`(`king.KING_KEY`)가 아니면 아무것도 붙지 않는다 — 노노카가 게스트인 다른 멤버의 합동 방송 · 노노카 방송이 다른 행에 팬아웃된 블록은 대상 아님. 영상 없는 예고 블록은 레인 색 자리표시 위 아바타 동그라미 **윗부분**에 왕관이 얹히도록 `.k-blk .tt-blk__th.tt-ph` 를 아래쪽 정렬(`padding-bottom: 2px`)한다.
+
+**PC 블록 글자**(`blockLabel`): 1~2단계 「행차 준비」 · 3~5단계 「대기 +MM:SS」(1초마다 갱신), 걷어내면 원래 글자.
+
+**색 약속**: 입장 전 = 은빛(`--k-silver*`), 왕관은 움직이지 않음. 입장 순간부터 = 금빛 — 왕관 은빛 층(`.kg-cs`)이 금빛 층(`.kg-cg`)으로 크로스페이드 + 후광(`.kg-halo`) · 궤도 별(`.kg-orbit`) · 금빛 광선(`.kg-rays.kg-gold`) · 광택(`.kg-sweep`). `.k-on.k-arrive/.k-live` 가 `--k-trim`·`--k-glow` 를 금색으로 바꾼다. PC 블록은 아바타가 주인공이라 후광(최대 불투명도 .22~.3) · 발광 · 별(.45)을 약하게 한다.
+
+**입장 연출은 페이지당 항목마다 한 번**: `played` Map(키 = `video_id`‖`id`‖`scheduled_start`)이 연출을 시작한 시각을 기억한다. 보드를 다시 그려 새 root 가 만들어져도 이미 정착한 뒤라면 곧바로 「입장 후」 모습(`.k-live`), 3.8초 안이면 입장 연출을 다시 보여준다. `.k-arrive` 는 장막이 닫힌 상태에서 열리는 전환이 보이도록 **두 프레임 뒤**에 붙이고, 정착 타이머(`ARRIVE_MS`)는 클래스가 실제로 붙은 순간부터 잰다.
+
+**1초 틱**(`ensureTicker`, 장식 root 가 있을 때만 돌고 없으면 멈춤): `[data-king]` 전부에 대해 `phaseOf` 를 다시 계산 — `wait` 이면 단계 변경 · 카운터(`.king-count`) · 블록 글자 갱신, `null` 이면 `finish`, `live` 인데 `arrive` 가 `ARRIVE_MS + 3초` 넘게 정착하지 못했으면(탭이 숨겨져 프레임이 안 돈 경우) 정착시킨다. 시계는 클라이언트 시각이다.
+
+**말** `king.speech(kind, stage, waitedMs)`: 머리말 「대신이 고하오」 + 본문. 대신은 왕보다 낮고 신하(시청자)보다 높은 신분이라 왕은 「전하」, 시청자는 「그대들」, 하오체. 3단계부터 「그대들이 기다린 시간」 + 카운터(`+MM:SS`). 입장 = 「전하 납시오!」 + 기다린 시간, 이후 = 「전하께서 납시었소. 그대들이 기다린 시간은 MM:SS, 그 충심을 기억하겠소.」. 문구 전체는 `king.js speech` 가 기준.
+
+**모션 줄이기**(`prefers-reduced-motion`): CSS 가 `.k-on` 안의 애니메이션 · 전환을 끄고, `king.js` 는 입장 연출을 건너뛰고 곧바로 「입장 후」 모습으로 간다(코드 작성 · 단위 검증만, 실제 화면 확인은 안 함).
+
+**XSS**: 무대 · 왕관 · 말 모두 `createElement`/`createElementNS` + `textContent`(`innerHTML` 금지).
+
+자체 점검: `node src/frontend/js/king.selfcheck.mjs`(44개 — 대상 · 단계 경계 · `phaseOf`(지각 1분 · 3분 경계 · 시계 오차) · 말 · 블록 글자). DOM 함수는 호출하지 않는다.
+
 ### 렌더 규칙
 
 - 전체 재렌더(폴링마다 `#board` 재구성). `updateCountdowns()` 는 DOM 재구성 없이 `.card__rel` 텍스트만
@@ -964,6 +1003,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
     프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
+- **js/king.js** + **css/king.css** — (v4.3.1) 노노카 지각 이스터에그. 위 「노노카 지각 이스터에그 (v4.3.1)」. `timetable.js` 가 `decorateBlock` · `decoratePopup` · `decorateCard` 를 호출. selfcheck: `king.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
   **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어

@@ -47,6 +47,11 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.3.1 (2026-10-16, 기능 — 번호는 운영자 결정으로 v4.3 의 핫픽스 자리)**: **노노카 지각 이스터에그 「국왕 납시오」** — 프론트만(`js/king.js` · `css/king.css` · `king.selfcheck.mjs` + `timetable.js` 3곳 연결 + `index.html` css 링크, 백엔드 · 데이터 변경 없음).
+> 노노카 본인 방송이 예정 시각을 넘기면 지각 5단계(~3 · 3~5 · 5~10 · 10~20 · 20분~)로 은빛 장식(왕관 · 장막 · 신하 · 레드카펫 · 졸음)이 쌓이고, 대신(왕보다 낮고 신하(시청자)보다 높은 신분)이 하오체로 사정을 고한다. 1분 이상 늦게 시작해 라이브가 되면 입장 연출(왕관 은빛 → 금빛 + 후광),
+> `actual_start + 3분`까지 유지한 뒤 평소 라이브 모습으로 복귀 — 3분 안에 접속한 사람도 입장 연출을 본다. 표시 = 모바일 오늘 카드 · PC 블록 팝업(무대 + 대신의 말) · PC 블록(작은 신호). 노노카 행/레인에만 붙는다.
+> 상세 `docs/SPEC.md` 「노노카 지각 이스터에그 (v4.3.1)」, 요약 `docs/VERSION.md`. 옛 `easteregg/nonoka-lateshow`(`gungye.js` 국왕/궁예 변형)는 폐기. 미확인: 입장 연출 중간 프레임 · 모션 줄이기 · 운영의 실제 지각 방송(첫 실사용 때 확인).
+>
 > **v4.3.0 (2026-10-15, 기능)**: **에러 버스 발신기**(`src/bus/` — `MEW_BUS_DIR` 없으면 no-op, 배포판은 미설정) + **로그 등급 5단계 재분류**(CRITICAL · ERROR · WARN · INFO · DEBUG — 폴백이 정의된 실패 · 재시도 중 실패는 INFO) +
 > 모니터 이벤트 `result` **`degraded` → `warn`**(저장된 옛 이벤트 · `monitoring/days` 옛 스냅샷은 읽을 때 `normalize_event`/`normalize_day` 로 치환, 저장 데이터는 안 고침). 자동 대응 수신기 · RSS 재시도/휴지/시차 폴러는 제외. 요약 `docs/VERSION.md` v4.3.0.
 >
@@ -54,7 +59,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **부분 번역 WARN**(`_residual_kana`, 번역문에 가나가 남으면 `translate: 부분 번역 의심` WARN — 저장은 그대로). 멤버 이름 표는 `config/channels.json` 의 `call_names`(짧은 호칭)를 쓴다.
 > 요약 · 한계 `docs/VERSION.md` v4.2.4. (테스트판 `v4.3-fullauto` 는 번호 체계가 별개 — `vT1.0.1`.)
 >
-> **프론트 v4.2.0 (2026-10-06, 브랜치 `feat/v4.2.0-player-button` — 미배포)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
+> **프론트 v4.2.0 (2026-10-06 개발 · 2026-10-08 main 머지 `60af093`, 브랜치 `feat/v4.2.0-player-button`)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
 > 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 토픽 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
 >
 > **프론트 v4.1.0 (2026-10-05)**: 예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 **오늘 타임테이블**(PC) / **오늘 카드 + 이후 예고 펼치기**(모바일 1명씩 슬라이드)로 대체 —
@@ -415,7 +420,7 @@ src/
   frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
                        #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
-    css/{reset,layout,card,timetable,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
+    css/{reset,layout,card,timetable,king,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
     assets/songs.json  # (v4.2.0) 플레이어 곡 목록 65곡 — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
@@ -424,6 +429,7 @@ src/
       render.js        # renderBoard / renderFooter / updateCountdowns
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
+      king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출 · 입장 후 3분 유지 · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
       playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
       player.js        # (v4.2.0) 플레이어 팝업 + 플로팅 YouTube 프레임(IFrame API). main.js 가 첫 클릭 때 동적 import
