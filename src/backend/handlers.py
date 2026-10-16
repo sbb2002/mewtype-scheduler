@@ -175,6 +175,33 @@ def _stable_view(preview: dict) -> dict:
     }
 
 
+def _probe_live_membership(prev_preview: dict, woken_video_id: str | None, channels_cfg: dict) -> set[str]:
+    """(v4.3.2) wake 가 깨운 영상이 live 이고 membership=False 면 채널 streams 탭(yt-dlp, 쿠키 불필요)으로 회원 전용 여부를 확인.
+
+    videos.list 에는 회원 전용 필드가 없어, 일반 공개로 시작했다가 방송 중 회원 전용으로 바뀐 영상이 membership=False 로
+    남았다(2026-10-16 아라레). subscriber_only 가 확인된 video_id 집합을 돌려준다 — 올리기만 하고 내리지는 않는다.
+    실패 · 목록에 영상 없음은 빈 집합(호출부 무영향). tick 에서는 부르지 않는다.
+    """
+    if not woken_video_id:
+        return set()
+    item = next((it for it in (prev_preview or {}).get("items", [])
+                 if it.get("video_id") == woken_video_id), None)
+    if not item or item.get("state") != "live" or item.get("membership"):
+        return set()
+    cid = ((channels_cfg.get("channels") or {}).get(item.get("channel_key")) or {}).get("channel_id")
+    if not cid:
+        return set()
+    try:
+        from . import ytdlp_probe
+        entries = ytdlp_probe.list_streams(cid)
+    except Exception as e:  # noqa: BLE001
+        log.warning("live 회원 전용 확인(yt-dlp) 실패 — 건너뜀: %s", str(e)[:160])
+        return set()
+    return {woken_video_id} if any(
+        e.get("id") == woken_video_id and e.get("availability") == "subscriber_only" for e in entries
+    ) else set()
+
+
 def _make_task_queue(cfg):
     # (v4a) 로컬 시험판: Cloud Tasks 대신 적용 큐에 reconcile(범위) 적재 (원칙 ③)
     if storage.is_local():
@@ -500,6 +527,8 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         avatars = yt.channels_list(list(id_by_key.values()))
 
     videos = yt.videos_list(sorted(candidates)) if candidates else {}
+    # (v4.3.2) 방송 중 회원 전용 전환 감지 — 외부 호출이라 커밋 재시도 루프 밖에서 1회만
+    member_up = _probe_live_membership(_pv0, woken_video_id, channels_cfg)
 
     # ── 커밋 루프 (최대 2회, ConflictError 재계산 재시도). RSS/YT 는 위에서 1회, videos 재사용. ──
     prev_preview = _pv0
@@ -514,6 +543,10 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             channels_cfg, videos, prev_preview, now_iso, avatars=avatars,
             search_fn=lambda ck: _search_live_first(yt, id_by_key, ck), skipped=_premieres,
         )
+
+        for it in new_preview.get("items", []):
+            if it.get("video_id") in member_up and it.get("state") == "live":
+                it["membership"] = True
 
         # ── 트윗·릴레이 예고 시각 override 재적용 (알려진 지연: wakes 는 override 전 시각 기준) ──
         try:
@@ -592,6 +625,15 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             if _attempt == 2:
                 raise
             log.info("write 충돌 — 최신 상태로 재계산 후 재시도: %s", e)
+
+    if member_up:
+        try:
+            log_events(gh, now_iso, [{
+                "ts": now_iso, "flow": "preview", "result": RESULT_OK, "who": "", "video_id": v,
+                "detail": f"방송 중 회원 전용 전환 감지 → membership=True · {v}",
+            } for v in sorted(member_up)])
+        except Exception:  # noqa: BLE001
+            log.warning("회원 전용 전환 모니터 로그 실패", exc_info=True)
 
     # ── (v4a) 수집에서 뺀 그룹 채널 프리미어(녹화 영상 공개) 기록 · 있던 예고를 뺐으면 모니터 로그 ──
     if _premieres:
@@ -1058,4 +1100,35 @@ if __name__ == "__main__":
 
     assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "t", fetch=_boom) == {"skipped": "error"}, "예외도 tick 을 막지 않음"
     print("[OK] _detect_new_songs: 등록 · 판단 기록 · 이벤트 · 멱등 · 반려 재등록 차단 · LLM 독음 재시도 · 시드 전/충돌/실패 격리")
+
+    # (v4.3.2) wake 때 live 항목의 회원 전용 전환 감지
+    from . import ytdlp_probe as _yp
+    _orig_ls = _yp.list_streams
+    _pvm = {"items": [
+        {"video_id": "LIVEPUB", "channel_key": "arale", "state": "live", "membership": False},
+        {"video_id": "LIVEMEM", "channel_key": "arale", "state": "live", "membership": True},
+        {"video_id": "UPC", "channel_key": "arale", "state": "upcoming", "membership": False},
+    ]}
+    _ccfg = {"channels": {"arale": {"channel_id": "UCx"}}}
+    _calls: list = []
+    def _ls(cid, **kw):
+        _calls.append(cid)
+        return [{"id": "LIVEPUB", "availability": "subscriber_only"}, {"id": "UPC", "availability": "subscriber_only"}]
+    _yp.list_streams = _ls
+    try:
+        assert _probe_live_membership(_pvm, "LIVEPUB", _ccfg) == {"LIVEPUB"}, "live+공개 → subscriber_only 면 올림"
+        _n = len(_calls)
+        assert _probe_live_membership(_pvm, None, _ccfg) == set() and len(_calls) == _n, "tick(깨운 영상 없음)은 조회 안 함"
+        assert _probe_live_membership(_pvm, "LIVEMEM", _ccfg) == set() and len(_calls) == _n, "이미 membership 이면 조회 안 함"
+        assert _probe_live_membership(_pvm, "UPC", _ccfg) == set() and len(_calls) == _n, "live 아니면 조회 안 함"
+        _yp.list_streams = lambda cid, **kw: [{"id": "LIVEPUB", "availability": None}]
+        assert _probe_live_membership(_pvm, "LIVEPUB", _ccfg) == set(), "일반 공개면 올리지 않음"
+        _yp.list_streams = lambda cid, **kw: [{"id": "OTHER", "availability": "subscriber_only"}]
+        assert _probe_live_membership(_pvm, "LIVEPUB", _ccfg) == set(), "목록에 영상 없음 → 변화 없음"
+        def _bad(cid, **kw): raise RuntimeError("yt-dlp down")
+        _yp.list_streams = _bad
+        assert _probe_live_membership(_pvm, "LIVEPUB", _ccfg) == set(), "조회 실패 격리"
+    finally:
+        _yp.list_streams = _orig_ls
+    print("[OK] _probe_live_membership: wake+live+공개만 조회 · subscriber_only 확인 시 올림 · 실패/부재 격리")
     print("SUCCESS: handlers self-test 통과")
