@@ -13,6 +13,7 @@
 //  closeCardPop()                      → 블록 카드 팝업 닫기
 
 import { formatKST } from "./time.js";
+import { KING_KEY, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
@@ -178,7 +179,7 @@ function rangeLabel(entry, state) {
   return hm(entry.start);
 }
 
-function showCardPop(entry, state, owner, pin, ctx) {
+function showCardPop(entry, state, owner, pin, ctx, rowKey) {
   if (cpop && cpopOwner === owner) {
     if (pin) { if (cpopPinned) closeCardPop(); else cpopPinned = true; }
     return;
@@ -228,6 +229,7 @@ function showCardPop(entry, state, owner, pin, ctx) {
     body.appendChild(el("span", "tt-pop__none", "아직 영상 링크가 없습니다"));
   }
   cpop.appendChild(body);
+  if (rowKey === KING_KEY) decoratePopup(cpop, img, body, entry, state);   // (v4.3.1) 노노카 행의 팝업에만 — 높이가 정해진 뒤 위치를 재므로 여기서
   cpop.addEventListener("mouseenter", () => clearTimeout(cpopTimer));
   cpop.addEventListener("mouseleave", () => {
     if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
@@ -256,7 +258,7 @@ function wirePopOnce() {
 }
 
 /* ── PC 편성 레일 ─────────────────────────────────────────────────── */
-function blockEl(entry, state, ctx, geo) {
+function blockEl(entry, state, ctx, geo, rowKey) {
   const it = entry.item;
   const b = el("div", `tt-blk tt-blk--${state}`);
   if (isCollab(it)) b.classList.add("tt-blk--collab");
@@ -286,14 +288,15 @@ function blockEl(entry, state, ctx, geo) {
   tx.appendChild(n);
   b.appendChild(tx);
 
-  b.addEventListener("click", (e) => { e.stopPropagation(); showCardPop(entry, state, b, true, ctx); });
+  b.addEventListener("click", (e) => { e.stopPropagation(); showCardPop(entry, state, b, true, ctx, rowKey); });
   b.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showCardPop(entry, state, b, true, ctx); }
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showCardPop(entry, state, b, true, ctx, rowKey); }
   });
-  b.addEventListener("mouseenter", () => { clearTimeout(cpopTimer); showCardPop(entry, state, b, false, ctx); });
+  b.addEventListener("mouseenter", () => { clearTimeout(cpopTimer); showCardPop(entry, state, b, false, ctx, rowKey); });
   b.addEventListener("mouseleave", () => {
     if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
   });
+  if (rowKey === KING_KEY) decorateBlock(b, entry, state);   // (v4.3.1) 노노카 본인 행의 블록에만
   return b;
 }
 
@@ -370,7 +373,7 @@ export function buildTimetable(ctx) {
     const track = el("div", "tt__track");
     track.dataset.channel = key;               // sampleLaneColor 가 --lane-color 를 채운다
     if (!mine.length) track.appendChild(el("div", "tt__empty", "오늘 예정 없음"));
-    for (const g of layoutRow(mine, ctx)) track.appendChild(blockEl(g.entry, g.state, ctx, g));
+    for (const g of layoutRow(mine, ctx)) track.appendChild(blockEl(g.entry, g.state, ctx, g, key));
     grid.appendChild(track);
   }
 
@@ -521,6 +524,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
     if (state === "ended") paintCycleRing(ring, (entry.end - entry.start) / 60000);
   }
   a.appendChild(body);
+  if (laneKey === KING_KEY) decorateCard(a, th, main, entry, state);   // (v4.3.1) 노노카 레인의 카드에만
   if (state === "upcoming") updateRing(a, ctx.nowMs);
   else if (state === "live") updateLiveRing(a, ctx.nowMs);
   return a;
