@@ -396,6 +396,16 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - `next_check_at` 은 반환 직전 `[now+60s, now+MAX_TASK_HORIZON_SEC]` 클램프. **저장 안 함** — `handlers` 가
   video_id 있는 watching/live/end 아이템의 `next_check_at` 만 `wakes` 로 받아 Cloud Tasks `/wake` enqueue.
 
+### 방송 중 회원 전용 전환 감지 (v4.3.2) — `handlers._probe_live_membership`
+
+- 배경: `videos.list` 응답에는 회원 전용 여부가 없다. 회원 전용 표시(`membership`)는 트윗 문구 · 회원 전용 시작 YouTube 알림 · 예고 자리표시 흡수로만 켜졌으므로,
+  일반 공개로 시작했다가 방송 중 회원 전용으로 바뀐 영상은 `False` 로 남았다(2026-10-16 아라레 `NETX7vJNdW8` — 시작 알림이 일반 `sub_start`).
+- 동작: **`/wake`** 가 깨운 `video_id` 의 아이템이 `state=="live"` 이고 `membership` 이 거짓일 때만, 그 채널 streams 탭을 `ytdlp_probe.list_streams`(yt-dlp flat, 쿠키 불필요)로 읽는다.
+  같은 `video_id` 항목의 `availability == "subscriber_only"` 면 `membership=True` 로 올린다. `/tick` 에서는 호출하지 않는다.
+- 규칙: 올리기만 하고 내리지 않는다(풀림 미반영 — 표본 부족). 조회 실패 · 목록에 영상 없음은 빈 결과 → 아무것도 바꾸지 않는다(`try/except` 격리, 로그 경고). 외부 호출은 커밋 재시도 루프 밖에서 1회.
+  올렸으면 monitor 이벤트 1건(`flow="preview"`, 「방송 중 회원 전용 전환 감지」). 라이브 종료 판정은 변경 없음(API `videos.list`).
+- 실측(2026-10-16): 같은 영상이 flat 목록에서 `live_status=is_live` · `availability=subscriber_only`. 단일 영상 조회(`watch?v=`)는 회원 전용이라 쿠키 없이 실패하므로 목록 방식만 쓴다.
+
 ---
 
 ## 6. 계약 F — `control.json` (data 브랜치 루트)
