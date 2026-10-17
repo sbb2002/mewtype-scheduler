@@ -117,12 +117,25 @@
 .bnr__arrow:hover:not(:disabled) { border-color: #888; color: #fff; }
 .bnr__arrow:disabled { opacity: 0.3; cursor: default; }
 .bnr__tab:focus-visible, .bnr__arrow:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.bnr__dots { display: none; }   /* 점 표시는 모바일만 */
 
 /* 모바일: 이미지를 맨 위에 가로로 꽉 채우고(16:9) 절취선은 가로로, 텍스트 · 가챠 · 종료 박스 · 진행 막대는 그 아래 */
 @media (max-width: 640px) {
   .bnr { grid-template-columns: 1fr; }
-  .bnr__tabbar { display: none; }                                      /* (v4.4) 모바일은 탭 없이 카드를 전부 세로로 쌓는다 */
-  .bnr.has-tabs > .bnr__card:not([data-active="true"]) { display: flex; }
+  /* (v4.3.6) 모바일도 탭 + 카드 1장. 화살표 대신 탭 줄을 가로 스와이프(터치) · 드래그(마우스)하고, 다음 탭이 살짝 보이게 탭 폭을 58% 로 */
+  .bnr__arrow { display: none; }
+  .bnr__tabbar { position: relative; }
+  .bnr__tabbar::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 28px; pointer-events: none; border-radius: 0 10px 10px 0;
+    background: linear-gradient(90deg, transparent, var(--bnr-surface)); transition: opacity 0.2s; }
+  .bnr__tabbar.at-end::after { opacity: 0; }
+  .bnr__tabvp { overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; padding: 1px; cursor: grab; }
+  .bnr__tabvp::-webkit-scrollbar { display: none; }
+  .bnr__tabvp.is-drag { scroll-snap-type: none; cursor: grabbing; user-select: none; }
+  .bnr__tabtrack { position: relative; transform: none; transition: none; }
+  .bnr__tab { flex: 0 0 min(58%, 220px); scroll-snap-align: start; min-height: 44px; align-content: center; }
+  .bnr__dots { display: flex; justify-content: center; gap: 6px; }
+  .bnr__dots i { width: 6px; height: 6px; border-radius: 50%; background: #4a4e56; }
+  .bnr__dots i.on { background: #fff; }
   .bnr__card { flex-direction: column; }
   .bnr__left { width: 100%; }
   .bnr__mid { width: auto; height: 0; border-left: 0; border-top: 2px dashed rgba(255, 255, 255, 0.3); margin: 0 12px; }

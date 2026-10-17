@@ -47,6 +47,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.3.6 (핫픽스, 브랜치 `hotfix/banner-tabs-mobile`, 2026-10-18, 프론트만)**: **행사 배너 탭을 모바일에도 적용** — 탭 + 카드 1장, 화살표 대신 탭 줄 스와이프(터치) · 드래그(마우스) + 점 표시. `banners.js` · `banners.css`, 상세 `docs/SPEC.md` 계약 J 「탭 + 카드 1장」, 요약 `docs/VERSION.md`. 실기기 터치 미확인. 같은 버전: 모바일 오늘 카드 upcoming 타이머 링을 live 링과 같은 2단 표기(「n시간 / 시작까지」 · 1시간 미만 「n분 / 시작까지」)로.
+>
 > **v4.3.5 (핫픽스, 브랜치 `hotfix/banner-tabs`, 2026-10-17, 프론트만)**: **행사 배너 = PC 에서 탭 + 카드 1장** — 탭 순서 시작 시각순 · 처음 열리는 탭 가장 급한 행사 · 탭 3개 초과 시 좌우 화살표. 모바일은 카드 전부 세로(변경 없음). `banners.js` · `banners.css` · `notices.js`, 상세 `docs/SPEC.md` 계약 J 「탭 + 카드 1장」, 요약 `docs/VERSION.md`.
 >
 > **v4.3.4 (핫픽스, 브랜치 `hotfix/nameplate-bubble`, 2026-10-17, 프론트만)**: **네임플레이트(아바타 · 편지 배지 · 이름) 클릭 = 트윗 말풍선** — YouTube 이동 제거(우측 레일 YT · X 버튼이 담당). 트윗 없으면 무반응. `render.js` · `tweets.js` · `layout.css`, 상세 `docs/SPEC.md` 「레인 헤더」, 요약 `docs/VERSION.md`.
