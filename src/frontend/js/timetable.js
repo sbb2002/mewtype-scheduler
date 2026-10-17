@@ -427,7 +427,9 @@ function updateRing(card, nowMs) {
   const min = Math.max(0, Math.round((start - nowMs) / 60000));
   ring.style.setProperty("--p", String(ringPct(start, nowMs)));
   ring.style.setProperty("--rc", min < 60 && start >= nowMs ? "var(--color-late)" : "var(--lane-color, var(--color-sched))");
-  ring.querySelector("span").textContent = start >= nowMs ? relShort(min) : "지각";
+  const b = ring.querySelector("b"), sm = ring.querySelector("small");   // 방송 중 링과 같은 2단: 「n시간 / 시작까지」(1시간 미만은 「n분」), 지나면 「지각」
+  b.textContent = start >= nowMs ? (min < 60 ? `${min}분` : `${Math.floor(min / 60)}시간`) : "지각";
+  sm.textContent = start >= nowMs ? "시작까지" : "";
   card.classList.toggle("tcard--soon", start >= nowMs && start - nowMs < SOON_MS);
 }
 
@@ -511,8 +513,10 @@ function todayCard(entry, state, ctx, big, laneKey) {
   main.appendChild(el("div", "tcard__ti", titleText(it, ctx)));
   body.appendChild(main);
   if (state === "upcoming") {                 // 남은 시간 링은 이미지가 아니라 제목 영역 오른쪽에
-    const ring = el("div", "tcard__ring");
-    ring.appendChild(el("span"));
+    const ring = el("div", "tcard__ring tcard__ring--up");
+    const t = el("span");
+    t.append(el("b"), el("small"));
+    ring.appendChild(t);
     body.appendChild(ring);
   } else if (state === "live" || (state === "ended" && entry.end)) {
     // 방송 중 = 경과 링 ("N분" + "방송중"), 종료 = 끝난 순간에 멈춘 같은 링 (회색, "N분" + "방송")

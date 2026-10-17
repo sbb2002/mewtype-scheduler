@@ -298,6 +298,7 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 오늘 카드 제목(`.tcard__ti`)은 한 줄 + 넘치면 기존 카드와 같은 marquee(`render.js applyMarquees`).
 마우스 드래그(`pointerType=="mouse"`)로도 넘길 수 있다 — 드래그 중 `#board.board--dragging`(스냅 해제), 놓으면 가장 가까운 유닛으로 `goDom`; 5px 넘게 끌었으면 그 클릭은 무시.
 
+- 모바일 오늘 카드 타이머 링(v4.3.6): 예고(upcoming) = 큰 글자 「n시간」(1시간 이상, 내림) · 「n분」(1시간 미만) + 작은 글자 「시작까지」, 시작 시각이 지나면 「지각」. 방송 중 링(「N분 / 방송중」)과 같은 2단 구조 · 글꼴(`.tcard__ring--up` = `.tcard__ring--live` 와 스타일 공유). PC 블록의 `relShort` 표기는 별개.
 - 갱신: `updateCountdowns` → `timetable.tickTimetable` 이 지금 선 · 링을 1분마다 옮기고, **오늘 구간이 끝나면(`nowMs >= boardEl.__ttDe`) `true`** 를 돌려 `main.js` 가 재렌더. 데이터는 75초 폴링(`poll`)이 바꿈.
 - 종료 블록용 `preview_archive.json`(`config.ARCHIVE_URL`)은 `main.js pollArchive` 가 따로 폴링 — 404 여도 보드는 그려지고 종료는 preview 의 `end` 상태만 나온다.
 - 한계(의도): 예고 항목에는 **종료 시각 필드가 없어** 예정 블록은 고정 폭이다. 종료 길이는 끝난 방송(`end` · 아카이브)에서만 알 수 있다.

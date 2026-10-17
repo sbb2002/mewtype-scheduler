@@ -480,11 +480,11 @@ a.tt-pop__img { cursor: pointer; }
 .tcard__ring--live.is-erase {
   background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.1) calc(var(--p, 0) * 1%), var(--rcol) 0);
 }
-.tcard__ring--live span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
-.tcard__ring--live b { font-size: 0.74rem; font-weight: 600; }
-.tcard__ring--live small { font-size: 0.5rem; color: var(--color-text-muted); }
-.tcard--big .tcard__ring--live b { font-size: 0.82rem; }
-.tcard--big .tcard__ring--live small { font-size: 0.56rem; }
+.tcard__ring--live span, .tcard__ring--up span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
+.tcard__ring--live b, .tcard__ring--up b { font-size: 0.74rem; font-weight: 600; }
+.tcard__ring--live small, .tcard__ring--up small { font-size: 0.5rem; color: var(--color-text-muted); white-space: nowrap; }
+.tcard--big .tcard__ring--live b, .tcard--big .tcard__ring--up b { font-size: 0.82rem; }
+.tcard--big .tcard__ring--live small, .tcard--big .tcard__ring--up small { font-size: 0.56rem; }
 @media (prefers-reduced-motion: reduce) {
   .tcard__ring { transition: none; }
 }
