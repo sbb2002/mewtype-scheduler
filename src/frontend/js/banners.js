@@ -59,7 +59,7 @@ function _remain(label, target, now, hoursOnly) {
 export function bannerInfo(b, now) {
   const start = _ms(b.start_at), end = _ms(b.end_at);
   const hold = b.hold ? _ms(b.hold.until) : null;
-  const base = { st: "gone", pct: 0, bubble: "", chip: "", eps: [], early: null, late: null };
+  const base = { st: "gone", pct: 0, bubble: "", chip: "", eps: [], early: null, late: null, start };
   if (start == null || (end == null && !b.hold && now >= start)) return Object.assign(base, { st: "pending" });
   if (b.hold) return hold == null || now >= hold ? base : Object.assign(base, { st: "hold" });
   if (end == null) {                                           // 개최 전 · 종료일 미정 — 시작 일시를 먼저 알려준다
@@ -95,6 +95,9 @@ export function visibleBanners(data, now) {
 }
 
 const STATE_LABEL = { hold: "보류", sched: "예정", live: "진행 중", warn: "진행 중", urgent: "진행 중", done: "종료" };
+const RANK = { urgent: 0, warn: 1, live: 2, sched: 3, done: 4, hold: 5 };   // 처음 열 탭을 고르는 순서(급한 순). 탭 줄 자체의 순서는 시작 시각순(visibleBanners)
+const TAB_VISIBLE = 3;                                                      // 탭이 한 번에 보이는 개수 — 넘으면 좌우 화살표로 한 칸씩 이동
+const _sel = { id: null, off: 0 };
 
 function _titles(ko, ja, cls) {
   const main = ko || ja || "";
@@ -142,7 +145,7 @@ function _prog(info) {
     bubble + `<div class="bnr__bar${info.cutPct != null ? " has-cut" : ""}"><i></i></div>${cut}<div class="bnr__knob"></div></div>`;
 }
 
-function _card(b, now) {
+function _card(b, now, active) {
   const info = bannerInfo(b, now);
   const imgs = (b.image_urls || []).filter((u) => typeof u === "string" && /^https?:\/\//.test(u));
   const left = imgs.length
@@ -154,7 +157,7 @@ function _card(b, now) {
   const chip = info.chip ? ` <span class="bnr__chip">· ${_esc(info.chip)}</span>` : "";
   const ends = info.st === "hold" ? "" : `<div class="bnr__ends">${_endBoxes(b, info, now)}</div>`;
   return (
-    `<article class="bnr__card" data-st="${info.st}" data-id="${_esc(b.id)}">` + bg + left +
+    `<article class="bnr__card" data-st="${info.st}" data-id="${_esc(b.id)}"${active ? ' data-active="true"' : ""}>` + bg + left +
       `<div class="bnr__right">` +
         `<div class="bnr__eyebrow">행사</div>` + _titles(b.name_ko, b.name_ja) +
         `<div class="bnr__dates">${_period(b, info)}${chip}</div>` +
@@ -164,8 +167,50 @@ function _card(b, now) {
   );
 }
 
+// 탭 줄의 남은 시간 문구 — 카드 안의 말풍선 · 칩과 같은 기준(달력 D-n, 당일은 시간 · 분)
+function _tabRemain(info, now) {
+  if (info.st === "hold") return "개최 보류";
+  if (info.st === "done") return "모두 종료";
+  if (info.st === "sched") {
+    const n = _dd(info.start, now);
+    return n > 0 ? `D-${n} 개최` : `${Math.max(1, Math.ceil((info.start - now) / HOUR))}시간 뒤 개최`;
+  }
+  const e = info.st === "urgent" ? info.late : info.early, left = e.t - now, n = _dd(e.t, now);
+  const who = e.label === "가챠" ? "가챠" : "행사";
+  if (left < HOUR) return `${who} ${Math.max(1, Math.ceil(left / MIN))}분 뒤 종료`;
+  if (info.st === "urgent" || n <= 0) return `${who} ${Math.ceil(left / HOUR)}시간 뒤 종료`;
+  return `${who} D-${n} 종료`;
+}
+
+function _tab(b, info, now, sel) {
+  return `<button class="bnr__tab" role="tab" type="button" data-st="${info.st}" aria-selected="${sel}" tabindex="${sel ? 0 : -1}">` +
+    `<span class="bnr__tabtop"><i></i>${_esc(STATE_LABEL[info.st] || "")} · ${_esc(_tabRemain(info, now))}</span>` +
+    `<span class="bnr__tabname">${_esc(b.name_ko || b.name_ja || "")}</span></button>`;
+}
+
+// PC 는 탭 줄 + 선택한 카드 1장(나머지는 CSS 로 숨김), 모바일(≤640px)은 탭 줄을 숨기고 카드를 전부 세로로 쌓는다.
+// 선택은 모듈 상태(_sel)에 둬서 폴링으로 다시 그려져도 유지한다. 처음 · 선택한 행사가 사라졌을 때는 가장 급한 행사(RANK).
 export function bannerHTML(list, now) {
-  return `<div class="bnr">` + list.map((b) => _card(b, now)).join("") + `</div>`;
+  const infos = list.map((b) => bannerInfo(b, now));
+  let idx = list.findIndex((b) => b.id === _sel.id);
+  if (idx < 0) {
+    idx = 0;
+    infos.forEach((i, k) => { if ((RANK[i.st] ?? 9) < (RANK[infos[idx].st] ?? 9)) idx = k; });
+    _sel.off = 0;
+  }
+  _sel.id = list[idx].id;
+  const maxOff = Math.max(0, list.length - TAB_VISIBLE);
+  if (idx < _sel.off) _sel.off = idx;
+  if (idx >= _sel.off + TAB_VISIBLE) _sel.off = idx - TAB_VISIBLE + 1;
+  _sel.off = Math.max(0, Math.min(maxOff, _sel.off));
+  const many = list.length > TAB_VISIBLE;
+  const bar = list.length < 2 ? "" :
+    `<div class="bnr__tabbar" role="tablist">` +
+      (many ? `<button class="bnr__arrow" type="button" data-d="-1" aria-label="이전 행사 탭"${_sel.off <= 0 ? " disabled" : ""}>‹</button>` : "") +
+      `<div class="bnr__tabvp"><div class="bnr__tabtrack" style="--off:${_sel.off}">${list.map((b, k) => _tab(b, infos[k], now, k === idx)).join("")}</div></div>` +
+      (many ? `<button class="bnr__arrow" type="button" data-d="1" aria-label="다음 행사 탭"${_sel.off >= maxOff ? " disabled" : ""}>›</button>` : "") +
+    `</div>`;
+  return `<div class="bnr${bar ? " has-tabs" : ""}">` + bar + list.map((b, k) => _card(b, now, k === idx)).join("") + `</div>`;
 }
 
 // 배너가 바뀌었는지 비교하는 서명 — 상태 · 말풍선 · 칩 · 진행률(정수)이 바뀌면 다시 그린다
@@ -193,6 +238,45 @@ function _shiftBubbles(scope) {
   });
 }
 
+// 탭 · 화살표 동작 — 다시 그리지 않고 선택 표시 · 카드 노출 · 탭 줄 위치만 바꾼다(선택은 _sel 에 보존).
+// 카드 높이가 바뀌므로 소식 목록이 펼침 높이를 다시 재도록 이벤트를 올린다.
+function _wireTabs(scope) {
+  scope.querySelectorAll(".bnr.has-tabs").forEach((root) => {
+    const tabs = Array.from(root.querySelectorAll(".bnr__tab")), cards = Array.from(root.querySelectorAll(".bnr__card"));
+    const track = root.querySelector(".bnr__tabtrack"), prev = root.querySelector('.bnr__arrow[data-d="-1"]'), next = root.querySelector('.bnr__arrow[data-d="1"]');
+    const maxOff = Math.max(0, tabs.length - TAB_VISIBLE);
+    const paint = (focus) => {
+      const idx = Math.max(0, cards.findIndex((c) => c.dataset.id === _sel.id));
+      tabs.forEach((t, k) => { t.setAttribute("aria-selected", String(k === idx)); t.tabIndex = k === idx ? 0 : -1; });
+      cards.forEach((c, k) => { if (k === idx) c.setAttribute("data-active", "true"); else c.removeAttribute("data-active"); });
+      track.style.setProperty("--off", _sel.off);
+      if (prev) prev.disabled = _sel.off <= 0;
+      if (next) next.disabled = _sel.off >= maxOff;
+      if (focus) tabs[idx].focus();
+      _shiftBubbles(root);
+      root.dispatchEvent(new CustomEvent("mew:banners-resize", { bubbles: true }));
+    };
+    const select = (k, focus) => {
+      if (k < 0 || k >= cards.length) return;
+      _sel.id = cards[k].dataset.id;
+      if (k < _sel.off) _sel.off = k;
+      if (k >= _sel.off + TAB_VISIBLE) _sel.off = k - TAB_VISIBLE + 1;
+      paint(focus);
+    };
+    tabs.forEach((t, k) => {
+      t.addEventListener("click", () => select(k, false));
+      t.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") { e.preventDefault(); select(k + 1, true); }
+        else if (e.key === "ArrowLeft") { e.preventDefault(); select(k - 1, true); }
+      });
+    });
+    root.querySelectorAll(".bnr__arrow").forEach((a) => a.addEventListener("click", () => {
+      _sel.off = Math.max(0, Math.min(maxOff, _sel.off + Number(a.dataset.d)));
+      paint(false);
+    }));
+  });
+}
+
 // 흐린 배경 이미지 지정 · 이미지 로드 실패 시 이미지 칸만 숨김 · 여러 장이면 5초 머문 뒤 다음 이미지가 오른쪽으로 밀려 들어옴
 // (항상 같은 방향, 무한 반복, 호버 중엔 멈춤, 움직임 줄이기 설정이면 고정).
 export function mountBannerMotion(scope) {
@@ -203,6 +287,7 @@ export function mountBannerMotion(scope) {
     if (u) bg.style.backgroundImage = `url("${encodeURI(u)}")`;
   });
   _shiftBubbles(scope);
+  _wireTabs(scope);
   if (window.ResizeObserver) {
     const ro = new ResizeObserver(() => _shiftBubbles(scope));
     scope.querySelectorAll(".bnr__prog").forEach((p) => ro.observe(p));

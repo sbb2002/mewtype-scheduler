@@ -18,7 +18,7 @@
 
 .ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft, #2a2a2a); }
 
-.bnr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 10px; }
+.bnr { display: grid; grid-template-columns: 1fr; gap: 10px; }   /* (v4.4) PC 는 탭으로 고른 카드 1장만 보인다 — 아래 .has-tabs */
 
 /* 상태 → 색 토큰 */
 .bnr__card { --acc: var(--bnr-live); --acc-soft: var(--bnr-live-soft); --fill: var(--bnr-fill-live); }
@@ -33,7 +33,7 @@
 .bnr__bg { position: absolute; inset: -24px; z-index: -2; background-size: cover; background-position: center; filter: blur(24px) saturate(1.25); transform: scale(1.1); opacity: 0.6; }
 .bnr__card:has(.bnr__bg)::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(15, 15, 15, 0.45), rgba(15, 15, 15, 0.82)); }
 
-.bnr__left { flex: none; width: min(44%, 300px); padding: 12px; display: grid; align-items: center; }
+.bnr__left { flex: none; width: min(42%, 440px); padding: 12px; display: grid; align-items: center; }
 .bnr__img { position: relative; overflow: hidden; border-radius: 6px; background: #000; aspect-ratio: 16 / 9; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55); }
 .bnr__img[hidden] { display: none; }
 .bnr__img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; will-change: transform; }   /* 16:9 그대로, 잘리지 않게 */
@@ -94,11 +94,37 @@
 .bnr__card[data-st="sched"] .bnr__bd { color: #0d1117; }
 .bnr__bubble::after { content: ""; position: absolute; bottom: -7px; left: -6px; border: 6px solid transparent; border-top-color: var(--fill); border-bottom: 0; }
 
+/* (v4.4) 탭 줄 + 선택한 카드 1장 — PC. 탭이 3개 넘으면 좌우 화살표로 한 칸씩 이동. 선택한 카드 외에는 숨긴다(모바일은 아래에서 전부 보임) */
+.bnr.has-tabs { gap: 8px; }
+.bnr.has-tabs > .bnr__card:not([data-active="true"]) { display: none; }
+.bnr__tabbar { display: flex; align-items: stretch; gap: 8px; }
+.bnr__tabvp { flex: 1; min-width: 0; overflow: hidden; }
+.bnr__tabtrack { --off: 0; display: flex; gap: 8px; transform: translateX(calc(var(--off) * -1 * ((100% - 16px) / 3 + 8px))); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.bnr__tab { all: unset; box-sizing: border-box; cursor: pointer; flex: 0 0 calc((100% - 16px) / 3); min-width: 0; display: grid; gap: 1px; padding: 7px 12px; border-radius: 10px;
+  background: var(--color-bg-secondary); border: 1px solid var(--bnr-line); --acc: var(--bnr-live); }
+.bnr__tab[data-st="sched"]  { --acc: var(--bnr-sched); }
+.bnr__tab[data-st="warn"]   { --acc: var(--bnr-warn); }
+.bnr__tab[data-st="urgent"] { --acc: var(--bnr-urgent); }
+.bnr__tab[data-st="hold"]   { --acc: var(--bnr-hold); }
+.bnr__tab[data-st="done"]   { --acc: var(--bnr-done); }
+.bnr__tab:hover { border-color: color-mix(in srgb, var(--acc) 60%, var(--bnr-line)); }
+.bnr__tab[aria-selected="true"] { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, var(--color-bg-secondary)); }
+.bnr__tabtop { display: flex; align-items: center; gap: 7px; font-size: 0.7rem; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden; }
+.bnr__tabtop i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
+.bnr__tabname { font-size: 0.86rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bnr__arrow { all: unset; box-sizing: border-box; cursor: pointer; flex: none; width: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 1.3rem; line-height: 1;
+  color: #d9d9d9; background: var(--color-bg-secondary); border: 1px solid var(--bnr-line); }
+.bnr__arrow:hover:not(:disabled) { border-color: #888; color: #fff; }
+.bnr__arrow:disabled { opacity: 0.3; cursor: default; }
+.bnr__tab:focus-visible, .bnr__arrow:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
 /* 모바일: 이미지를 맨 위에 가로로 꽉 채우고(16:9) 절취선은 가로로, 텍스트 · 가챠 · 종료 박스 · 진행 막대는 그 아래 */
 @media (max-width: 640px) {
   .bnr { grid-template-columns: 1fr; }
+  .bnr__tabbar { display: none; }                                      /* (v4.4) 모바일은 탭 없이 카드를 전부 세로로 쌓는다 */
+  .bnr.has-tabs > .bnr__card:not([data-active="true"]) { display: flex; }
   .bnr__card { flex-direction: column; }
   .bnr__left { width: 100%; }
   .bnr__mid { width: auto; height: 0; border-left: 0; border-top: 2px dashed rgba(255, 255, 255, 0.3); margin: 0 12px; }
 }
-@media (prefers-reduced-motion: reduce) { .bnr__img img { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .bnr__img img, .bnr__tabtrack { transition: none; } }

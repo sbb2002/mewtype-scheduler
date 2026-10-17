@@ -230,6 +230,8 @@ export function renderNotices(section, data) {
   _st.setOpen = setOpen;
 
   tgl.addEventListener("click", () => setOpen(!_st.open));
+  // (v4.4) 행사 배너 탭을 바꾸면 카드 높이가 달라지므로 펼침 높이를 다시 잰다
+  if (listEl) listEl.addEventListener("mew:banners-resize", () => { if (_st.open) applyListHeight(); });
 
   show(_st.open ? 0 : _st.idx % N, false);
   if (_st.open && listEl) {
