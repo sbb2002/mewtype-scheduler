@@ -13,12 +13,38 @@
 /* ── 공통 ─────────────────────────────────────────────────────────── */
 .tt__head {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 0.2rem 0.8rem;
   margin: 0 0 0.5rem;
 }
+.tt__head > :last-child { margin-left: auto; }   /* 제목 · 메타만 있으면 메타가, 보기 방식 탭이 있으면 탭이 오른쪽 끝 */
+
+/* ── 보기 방식 탭 [테이블 | 카드] (v4.4.0, PC 전용 — 모바일은 탭 없음) ── */
+.vt {
+  align-self: center;
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-bg-secondary);
+}
+.vt__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 13px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.vt__btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.vt__btn:hover { color: var(--color-text); }
+.vt__btn[aria-selected="true"] { background: #2b2f38; color: var(--color-text); box-shadow: inset 0 0 0 1px #46505f; }
+.vt__btn:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
 .tt__title {
   margin: 0;
   font-size: 0.95rem;
@@ -386,6 +412,41 @@ a.tt-pop__img { cursor: pointer; }
   font-size: 0.78rem;
   color: var(--color-text-muted);
   opacity: 0.7;
+}
+
+/* ── PC 카드 보기 (v4.4.0) — 모바일 레인(네임플레이트 + 오늘 카드)을 5열로 ─────────────────────
+   펼치기 전에는 5인 레인의 세로 길이가 같다: 오늘 카드 영역 = 카드 2장 + 다음 카드가 살짝 보이는 높이(넘치면 영역 안 스크롤).
+   카드 높이 = 썸네일 16:9(레인 폭 기준 cqw) + 본문 고정 높이(--bh). 펼치기 버튼은 보드 아래 하나 — 5인 전원의 이후 예고를 함께 연다. */
+.tt--cards .cards-board {
+  --pad: 16px;
+  --bh: 78px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--gap);
+  align-items: start;
+}
+.board--cards .lane { container-type: inline-size; min-width: 0; }
+.cards-board .tt-today {
+  --ch: calc((100cqw - 2 * var(--pad) - 2px) * 0.5625 + var(--bh) + 2px);
+  height: calc(34px + 2 * var(--pad) + 2 * var(--ch) + 12px + 30px);
+  padding: var(--pad);
+  overflow-y: auto;
+  flex: none;
+}
+.cards-board .tcard__body { height: var(--bh); padding: 10px 12px; }
+.cards-board .tcard__main { overflow: hidden; }
+.cards-board .tcard__when { flex-wrap: nowrap; overflow: hidden; }
+@media (max-width: 1100px) {
+  .tt--cards .cards-board { --pad: 11.2px; --bh: 72px; }
+  .cards-board .lane__header { padding: 0.65rem 0.7rem; }
+  .cards-board .lane__avatar { width: 38px; height: 38px; }
+  .cards-board .lane__name-orig { display: none; }
+  .cards-board .tcard__body { padding: 8px 9px; gap: 6px; }
+  .cards-board .tcard__ring { width: 40px; height: 40px; }
+  .cards-board .tcard--big .tcard__ring { width: 44px; height: 44px; }
+  .cards-board .tcard__ti { font-size: 0.82rem; }
+  .cards-board .tcard--big .tcard__ti { font-size: 0.9rem; }
+  .cards-board .tcard__when { font-size: 0.72rem; }
 }
 
 /* ── 모바일: 한 명씩 슬라이드(현행) 안의 오늘 카드 · 펼치기 ──────────── */

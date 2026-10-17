@@ -305,6 +305,18 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
   시각 미정(`time_tbd`)은 타임테이블에 놓을 수 없어 이후 예고로 간다.
 - 자체 점검: `node src/frontend/js/timetable.selfcheck.mjs`(순수 함수 `dayWindow` · `classify` · `itemKeys`).
 
+### PC 보기 방식 · 카드 보기 (v4.4.0) — `render.js` · `timetable.js` · `css/timetable.css`
+
+PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「오늘 예고」 머리줄(`.tt__head`, `timetable.buildBoardHead`) 오른쪽 끝에 붙는다. 모바일은 탭 없음.
+
+- **저장**: `localStorage["mew.board.view"]` = `"table"`(기본) | `"cards"`. 읽기 · 쓰기 모두 `try/catch` — 못 쓰면 모듈 변수(`viewOverride`)로 이번 세션만 유지. 탭 클릭 → `setViewMode` → `document` 에 `mew:view-change`(`VIEW_CHANGE_EVENT`) → `main.js` 가 `paintBoard()`(보드 재렌더 + 편지 배지 재적용). 재렌더 뒤 키보드 포커스는 새 선택 탭으로 되돌린다(`boardEl.__focusTab`). 탭은 ←/→ 키로도 바꾼다(`role=tablist` · `aria-selected`).
+- **테이블 보기** = 위 「타임테이블 · 이후 예고」 그대로(`#board.board--tt`).
+- **카드 보기** = `#board.board--tt.board--cards` > `section.tt.tt--cards` > 머리줄 + `.cards-board`(5열 그리드, `align-items:start`) + `.tt-fold`.
+  레인 = `section.lane[data-channel]` > `buildHeader`(기존 네임플레이트) + `buildTodayCards(ctx, key, {compact:true})`(모바일과 같은 오늘 카드) + `buildLaterList`(`.lane__later`, 접힘). `data-no-badge` 없음 → 편지 배지 · 말풍선 · 노노카 이스터에그가 모바일 레인과 같은 경로로 동작.
+- **펼치기 전 세로 고정**: `.board--cards .lane` 은 `container-type:inline-size`; `.cards-board .tt-today` 높이 = `34px + 2·pad + 2·카드높이 + 12px + 30px`(카드 2장 + 다음 카드가 살짝 보임), 넘치면 `overflow-y:auto`. 카드높이 = `(100cqw − 2·pad − 2px)·9/16 + --bh + 2px`, `.tcard__body{height:--bh}`(78px, ≤1100px 에서 pad 11.2px · bh 72px). 날짜줄은 줄바꿈 없이 한 줄.
+- **이후 예고 펼치기**: 단일 `.tt-fold`(`buildFoldButton(counts, ctx, {perMember:true})`)가 `#board.board--later-open` 을 토글 → 5개 `.lane__later` 가 동시에 열리고 닫힌다. `toggleLater` 의 애니메이션 대상 선택자는 `board--cards` 이면 `.lane__later`(테이블 보기는 `.tt-later`). 이후 예고가 전체 0건이면 버튼 없음(레인별 「이후 예고 없음」 문구는 `buildLaterList` 기본).
+- 펼침 상태(`board--later-open`)는 보기 방식을 바꿔도 `#board` 에 남는다.
+
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
 
 노노카 본인 방송(`item.channel_key == "nonoka"`, `time_tbd` 아님)이 예정 시각을 넘기면 타임테이블 · 오늘 카드에 장식이 붙는다. 백엔드 · 데이터 계약 변경 없음 — 기존 `preview.json` 필드(`channel_key` · `scheduled_start` · `actual_start` · `time_tbd` · `video_id`)만 읽는다.

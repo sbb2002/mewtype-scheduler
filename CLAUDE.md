@@ -47,6 +47,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.4.0 (기능, 브랜치 `feat/board-view-toggle`, 2026-10-18, 프론트만)**: **PC 보기 방식 탭 [테이블 | 카드]** — 「오늘 예고」 머리줄 오른쪽 탭, 선택은 `localStorage` `mew.board.view` 로 저장. 카드 보기 = 모바일 레인을 5열 나란히(펼치기 전 5인 레인 높이 동일) + 보드 아래 단일 「이후 예고 펼치기」 버튼이 5인 전원에게 동작. 소식 · 플레이어 위치 그대로. `render.js` · `timetable.js` · `main.js` · `css/timetable.css`, 상세 `docs/SPEC.md` 「PC 보기 방식 · 카드 보기 (v4.4.0)」, 요약 `docs/VERSION.md`. 좁은 PC 폭(768~1100px) · 실데이터 미확인.
+>
 > **v4.3.6 (핫픽스, 브랜치 `hotfix/banner-tabs-mobile`, 2026-10-18, 프론트만)**: **행사 배너 탭을 모바일에도 적용** — 탭 + 카드 1장, 화살표 대신 탭 줄 스와이프(터치) · 드래그(마우스) + 점 표시. `banners.js` · `banners.css`, 상세 `docs/SPEC.md` 계약 J 「탭 + 카드 1장」, 요약 `docs/VERSION.md`. 실기기 터치 미확인. 같은 버전: 모바일 오늘 카드 upcoming 타이머 링을 live 링과 같은 2단 표기(「n시간 / 시작까지」 · 1시간 미만 「n분 / 시작까지」)로.
 >
 > **v4.3.5 (핫픽스, 브랜치 `hotfix/banner-tabs`, 2026-10-17, 프론트만)**: **행사 배너 = PC 에서 탭 + 카드 1장** — 탭 순서 시작 시각순 · 처음 열리는 탭 가장 급한 행사 · 탭 3개 초과 시 좌우 화살표. 모바일은 카드 전부 세로(변경 없음). `banners.js` · `banners.css` · `notices.js`, 상세 `docs/SPEC.md` 계약 J 「탭 + 카드 1장」, 요약 `docs/VERSION.md`.
