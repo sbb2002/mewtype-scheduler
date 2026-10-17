@@ -209,7 +209,8 @@ export function bannerHTML(list, now) {
       (many ? `<button class="bnr__arrow" type="button" data-d="-1" aria-label="이전 행사 탭"${_sel.off <= 0 ? " disabled" : ""}>‹</button>` : "") +
       `<div class="bnr__tabvp"><div class="bnr__tabtrack" style="--off:${_sel.off}">${list.map((b, k) => _tab(b, infos[k], now, k === idx)).join("")}</div></div>` +
       (many ? `<button class="bnr__arrow" type="button" data-d="1" aria-label="다음 행사 탭"${_sel.off >= maxOff ? " disabled" : ""}>›</button>` : "") +
-    `</div>`;
+    `</div>` +
+    `<div class="bnr__dots" aria-hidden="true">${list.map((_, k) => `<i${k === idx ? ' class="on"' : ""}></i>`).join("")}</div>`;
   return `<div class="bnr${bar ? " has-tabs" : ""}">` + bar + list.map((b, k) => _card(b, now, k === idx)).join("") + `</div>`;
 }
 
@@ -240,19 +241,53 @@ function _shiftBubbles(scope) {
 
 // 탭 · 화살표 동작 — 다시 그리지 않고 선택 표시 · 카드 노출 · 탭 줄 위치만 바꾼다(선택은 _sel 에 보존).
 // 카드 높이가 바뀌므로 소식 목록이 펼침 높이를 다시 재도록 이벤트를 올린다.
+// 모바일(≤640px)은 화살표 대신 탭 줄 자체를 가로 스크롤(손가락 스와이프 · 마우스 드래그)한다 — 탭을 고르면 그 탭이 보이게 스크롤.
+const _mobile = () => !!(window.matchMedia && window.matchMedia("(max-width: 640px)").matches);
+
+function _wireTabScroll(root) {
+  const vp = root.querySelector(".bnr__tabvp"), bar = root.querySelector(".bnr__tabbar");
+  if (!vp || !bar) return;
+  const edge = () => bar.classList.toggle("at-end", vp.scrollLeft + vp.clientWidth >= vp.scrollWidth - 4);
+  vp.addEventListener("scroll", edge, { passive: true });
+  edge();
+  let down = null, moved = false;   // 마우스 드래그 — 터치는 브라우저 기본 스크롤이 처리
+  vp.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0 || !_mobile()) return;
+    down = { x: e.clientX, left: vp.scrollLeft }; moved = false;
+  });
+  vp.addEventListener("pointermove", (e) => {
+    if (!down) return;
+    const dx = e.clientX - down.x;
+    if (!moved && Math.abs(dx) < 5) return;
+    if (!moved) { moved = true; vp.classList.add("is-drag"); vp.setPointerCapture(e.pointerId); }
+    vp.scrollLeft = down.left - dx;
+  });
+  const end = () => { if (!down) return; down = null; vp.classList.remove("is-drag"); };
+  vp.addEventListener("pointerup", end);
+  vp.addEventListener("pointercancel", end);
+  vp.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);   // 드래그 끝의 클릭은 탭 선택으로 안 친다
+}
+
 function _wireTabs(scope) {
   scope.querySelectorAll(".bnr.has-tabs").forEach((root) => {
     const tabs = Array.from(root.querySelectorAll(".bnr__tab")), cards = Array.from(root.querySelectorAll(".bnr__card"));
     const track = root.querySelector(".bnr__tabtrack"), prev = root.querySelector('.bnr__arrow[data-d="-1"]'), next = root.querySelector('.bnr__arrow[data-d="1"]');
+    const vp = root.querySelector(".bnr__tabvp"), dots = Array.from(root.querySelectorAll(".bnr__dots i"));
     const maxOff = Math.max(0, tabs.length - TAB_VISIBLE);
+    _wireTabScroll(root);
     const paint = (focus) => {
       const idx = Math.max(0, cards.findIndex((c) => c.dataset.id === _sel.id));
       tabs.forEach((t, k) => { t.setAttribute("aria-selected", String(k === idx)); t.tabIndex = k === idx ? 0 : -1; });
       cards.forEach((c, k) => { if (k === idx) c.setAttribute("data-active", "true"); else c.removeAttribute("data-active"); });
+      dots.forEach((d, k) => d.classList.toggle("on", k === idx));
       track.style.setProperty("--off", _sel.off);
+      if (_mobile()) {
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        vp.scrollTo({ left: tabs[idx].offsetLeft, behavior: reduce ? "auto" : "smooth" });   // track 이 position:relative 라 offsetLeft 가 track 기준
+      }
       if (prev) prev.disabled = _sel.off <= 0;
       if (next) next.disabled = _sel.off >= maxOff;
-      if (focus) tabs[idx].focus();
+      if (focus) tabs[idx].focus({ preventScroll: true });
       _shiftBubbles(root);
       root.dispatchEvent(new CustomEvent("mew:banners-resize", { bubbles: true }));
     };
@@ -274,6 +309,8 @@ function _wireTabs(scope) {
       _sel.off = Math.max(0, Math.min(maxOff, _sel.off + Number(a.dataset.d)));
       paint(false);
     }));
+    const i0 = cards.findIndex((c) => c.dataset.id === _sel.id);
+    if (_mobile() && i0 > 0) vp.scrollLeft = tabs[i0].offsetLeft;   // 다시 그려진 뒤에도 고른 탭이 보이게
   });
 }
 
