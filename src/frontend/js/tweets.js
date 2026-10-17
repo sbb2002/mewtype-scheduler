@@ -572,7 +572,8 @@ function _wire() {
     if (!lane || lane.hasAttribute("data-no-badge")) return;
     const ck = lane.dataset.channel;
     if (!_visible(_st.data)[ck]) return;                 // 트윗 없음 → 유튜브 그대로
-    if (!e.target.closest(".lane__tw, .lane__avatar")) return;  // 이름·레일 등 → 그대로
+    // (v4.3.4) 네임플레이트(아바타·편지 배지·이름)는 말풍선 전용 — YouTube/X 이동은 우측 레일 버튼이 맡는다
+    if (!e.target.closest(".lane__tw, .lane__avatar, .lane__link, .tt__nm")) return;  // 레일 등 → 그대로
     e.preventDefault();
     e.stopPropagation();
     if (_mobile()) { _openToast(ck); return; }

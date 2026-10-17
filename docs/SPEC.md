@@ -231,11 +231,13 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 
 ### 레인 헤더 (`lane__header`) — v3.0.2
 
-`<a class="lane__link">`(아바타 `lane__avatar` + `lane__meta`) **+** `<nav class="lane__nav">`
+`<div class="lane__link" role="button" tabindex="0">`(아바타 `lane__avatar` + `lane__meta`) **+** `<nav class="lane__nav">`
 (우측 세로 레일: `lane__nav-btn lane__nav-yt` = `channel_url`, `lane__nav-btn lane__nav-x` =
 `https://x.com/<handle>`). 헤더는 `display:flex` (tweets.css 가 layout.css override).
-아바타는 트윗 있으면 `tweets.js` 가 말풍선 토글로 가로채고, 없으면 `.lane__link` 대로 YouTube.
-이름 글자·레일은 항상 채널 이동. SVG 아이콘은 `render.js svgIcon()`(`createElementNS`).
+**(v4.3.4)** 네임플레이트(아바타 · 편지 배지 · 이름 = PC 타임테이블 `tt__nm` 포함)는 이동 링크가 아니라
+`tweets.js` 가 클릭을 위임 처리하는 **말풍선 토글**(PC 고정 패널 / 모바일 토스트)이다 — 트윗이 없으면 아무 일도 없다
+(v4.3.3 까지는 `<a>` 라 이름 · 트윗 없는 아바타가 YouTube 로 이동). 채널 이동은 우측 레일 버튼만.
+이후 예고 열(`data-no-badge`)의 헤더는 말풍선 대상이 아니다. SVG 아이콘은 `render.js svgIcon()`(`createElementNS`).
 
 ### 카드 클래스 매핑 (state → class)
 
