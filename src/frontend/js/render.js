@@ -2,9 +2,24 @@ import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
 import {
-  avatarSized, classify, itemKeys, buildTimetable, buildTodayCards, buildFoldButton,
+  avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
 } from "./timetable.js";
+
+/* ── 보기 방식 (v4.4.0, PC 전용) — "table"(오늘 타임테이블) | "cards"(5인 카드 열) ──────────────
+   선택은 이 브라우저의 localStorage 에 저장돼 다음 방문에도 유지된다. 저장소를 못 쓰면(차단 · 시크릿 창) 기본값(테이블). */
+const VIEW_KEY = "mew.board.view";
+export const VIEW_CHANGE_EVENT = "mew:view-change";   // main.js 가 받아 보드를 다시 그린다
+export function getViewMode() {
+  try { return localStorage.getItem(VIEW_KEY) === "cards" ? "cards" : "table"; } catch { return "table"; }
+}
+function setViewMode(v) {
+  try { localStorage.setItem(VIEW_KEY, v); } catch { /* 저장 실패해도 이번 세션에는 적용 */ }
+  viewOverride = v;
+  document.dispatchEvent(new CustomEvent(VIEW_CHANGE_EVENT));
+}
+let viewOverride = null;   // 저장소를 못 쓰는 환경에서도 이번 세션 동안은 선택이 유지되게
+const currentView = () => viewOverride || getViewMode();
 
 const DAY_MS = 86400000;
 
@@ -487,7 +502,7 @@ const FOLD_PROPS = ["height", "marginTop", "paddingTop", "paddingBottom"];
 function toggleLater(boardEl) {
   const opening = !boardEl.classList.contains("board--later-open");
   const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const sel = boardEl.classList.contains("board--tt") ? ".tt-later" : ".lane__later";
+  const sel = boardEl.classList.contains("board--tt") && !boardEl.classList.contains("board--cards") ? ".tt-later" : ".lane__later";
   const targets = reduced ? [] : [...boardEl.querySelectorAll(sel)];
   for (const t of targets) {
     if (t.__foldDone) t.__foldDone();   // 진행 중이던 애니메이션은 즉시 마무리
@@ -556,9 +571,32 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
   const counts = { total: cls.later.length, byKey: Object.fromEntries(order.map((k) => [k, (laterBy[k] || []).length])) };
 
   const phone = mqlPhone.matches;
+  const cards = !phone && currentView() === "cards";
   boardEl.classList.toggle("board--tt", !phone);
+  boardEl.classList.toggle("board--cards", cards);
+  ctx.view = cards ? "cards" : "table";
+  ctx.onViewChange = phone ? null : (v) => { boardEl.__focusTab = true; setViewMode(v); };
 
-  if (!phone) {
+  if (cards) {
+    // 카드 보기: 모바일 레인(네임플레이트 + 오늘 카드)을 5열로 나란히. 펼치기 버튼은 하나이고 5인 전원의 이후 예고를 함께 연다.
+    const sec = document.createElement("section");
+    sec.className = "tt tt--cards";
+    sec.appendChild(buildBoardHead(ctx));
+    const grid = document.createElement("div");
+    grid.className = "cards-board";
+    for (const key of order) {
+      const lane = document.createElement("section");
+      lane.className = "lane";
+      lane.dataset.channel = key;
+      lane.appendChild(buildHeader(channels[key]));
+      lane.appendChild(buildTodayCards(ctx, key, { compact: true }));
+      lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
+      grid.appendChild(lane);
+    }
+    sec.appendChild(grid);
+    if (counts.total) sec.appendChild(buildFoldButton(counts, ctx, { perMember: true }));
+    boardEl.appendChild(sec);
+  } else if (!phone) {
     boardEl.appendChild(buildTimetable(ctx));
     if (counts.total) boardEl.appendChild(buildFoldButton(counts, ctx, { perMember: true }));   // 이후 예고가 0건이면 버튼도 목록도 없다
     const later = document.createElement("div");
@@ -595,6 +633,11 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
   applyMarquees(boardEl);
   carouselBoard = boardEl;
   initMobileCarousel(boardEl);
+  if (boardEl.__focusTab) {   // 탭을 눌러 다시 그렸다면 키보드 포커스를 새 탭으로 되돌린다
+    boardEl.__focusTab = false;
+    const t = boardEl.querySelector('.vt__btn[aria-selected="true"]');
+    if (t) t.focus();
+  }
 }
 
 /* 제목이 카드 폭을 넘치면 흐르는 marquee 로 전환 (PC). 줄바꿈되는 모바일은

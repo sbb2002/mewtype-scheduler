@@ -320,16 +320,67 @@ function layoutRow(entries, ctx) {
   return items;
 }
 
-export function buildTimetable(ctx) {
-  wirePopOnce();
-  const sec = el("section", "tt");
+/* ── 보기 방식 탭 [테이블 | 카드] (v4.4.0, PC 전용) ───────────────────── */
+const VIEW_TABS = [
+  { view: "table", label: "테이블", icon: ["M1.5 4a1.5 1.5 0 0 1 1.5-1.5h10A1.5 1.5 0 0 1 14.5 4v8a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 12z", "M1.5 6.5h13M1.5 10h13M6 6.5v7"] },
+  { view: "cards", label: "카드", icon: ["M2.5 2h1.4a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z", "M7.3 2h1.4a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H7.3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z", "M12.1 2h1.4a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-1.4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"] },
+];
+function tabIcon(paths) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  for (const d of paths) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d);
+    svg.appendChild(p);
+  }
+  return svg;
+}
+export function buildViewTabs(current, onSelect) {
+  const box = el("div", "vt");
+  box.setAttribute("role", "tablist");
+  box.setAttribute("aria-label", "보기 방식");
+  const btns = VIEW_TABS.map(({ view, label, icon }) => {
+    const b = el("button", "vt__btn");
+    b.type = "button";
+    b.setAttribute("role", "tab");
+    b.dataset.view = view;
+    const on = view === current;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+    b.append(tabIcon(icon), document.createTextNode(label));
+    return b;
+  });
+  btns.forEach((b, i) => {
+    b.addEventListener("click", () => { if (b.dataset.view !== current) onSelect(b.dataset.view); });
+    b.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const n = btns[(i + (e.key === "ArrowRight" ? 1 : btns.length - 1)) % btns.length];
+      if (n.dataset.view !== current) onSelect(n.dataset.view);
+    });
+  });
+  box.append(...btns);
+  return box;
+}
+
+/* 「오늘 예고」 머리줄 — 테이블 · 카드 보기 공용. 오른쪽 끝에 보기 방식 탭 (ctx.view · ctx.onViewChange) */
+export function buildBoardHead(ctx) {
   const nLive = ctx.live.length, nEnded = ctx.ended.length;
   const head = el("div", "tt__head");
   head.appendChild(el("h2", "tt__title", "오늘 예고"));
   head.appendChild(el("span", "tt__meta",
     `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · 예정 ${ctx.upcoming.length}건` +
     (nLive ? ` · 방송 중 ${nLive}건` : "") + (nEnded ? ` · 종료 ${nEnded}건` : "")));
-  sec.appendChild(head);
+  if (ctx.onViewChange) head.appendChild(buildViewTabs(ctx.view, ctx.onViewChange));
+  return head;
+}
+
+export function buildTimetable(ctx) {
+  wirePopOnce();
+  const sec = el("section", "tt");
+  sec.appendChild(buildBoardHead(ctx));
 
   const scroll = el("div", "tt__scroll");
   const grid = el("div", "tt__grid");
@@ -534,14 +585,15 @@ function todayCard(entry, state, ctx, big, laneKey) {
   return a;
 }
 
-export function buildTodayCards(ctx, key) {
+export function buildTodayCards(ctx, key, opts = {}) {
   const has = (e) => itemKeys(e.item, ctx.order).includes(key);
   const mE = ctx.ended.filter(has), mL = ctx.live.filter(has), mU = ctx.upcoming.filter(has);
   const sec = el("section", "tt-today");
   const head = el("div", "tt__head");
   head.appendChild(el("h2", "tt__title", "오늘 예고"));
   head.appendChild(el("span", "tt__meta",
-    `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · 예정 ${mU.length}` + (mL.length ? ` · 방송 중 ${mL.length}` : "") + (mE.length ? ` · 종료 ${mE.length}` : "")));
+    // 카드 보기(opts.compact)는 날짜 · 구간이 보드 머리줄에 이미 있어 건수만 — 5열이라 좁다
+    (opts.compact ? "" : `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · `) + `예정 ${mU.length}` + (mL.length ? ` · 방송 중 ${mL.length}` : "") + (mE.length ? ` · 종료 ${mE.length}` : "")));
   sec.appendChild(head);
   const all = [
     ...mE.map((entry) => ({ entry, state: "ended" })),

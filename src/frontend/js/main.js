@@ -1,5 +1,5 @@
 import { fetchPreview } from "./api.js";
-import { renderBoard, renderFooter, updateCountdowns } from "./render.js";
+import { renderBoard, renderFooter, updateCountdowns, VIEW_CHANGE_EVENT } from "./render.js";
 import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
 import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
@@ -263,6 +263,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (updateCountdowns(board) && lastSchedule) paintBoard();
     try { refreshBanners(notice); } catch (e) { /* D-day · 상태 갱신 실패는 무시 */ }
   }, COUNTDOWN_TICK_MS);
+
+  // (v4.4.0) PC 보기 방식 탭(테이블 ↔ 카드)을 누르면 보드를 다시 그린다(편지 배지 재적용 포함).
+  document.addEventListener(VIEW_CHANGE_EVENT, () => { if (lastSchedule) paintBoard(); });
 
   // 모바일↔PC 경계(767px)를 넘으면 화면 구성(타임테이블 ↔ 한 명씩 슬라이드)이 달라지므로 재렌더.
   if (window.matchMedia) {
