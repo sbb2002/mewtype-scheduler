@@ -254,6 +254,27 @@ def _times(obj: dict | None, now: datetime) -> tuple[dict | None, str | None]:
     return {"start_at": start, "end_at": end, "start_time_tbd": tbd}, None
 
 
+def _gacha_host(lst: list[dict], ga: dict, now: datetime, now_iso: str) -> dict | None:
+    """행사 칸 없이 온 가챠(판정이 banner_ref 도 안 준 경우)가 딸릴 행사 — 가챠 시작이 그 행사 기간 안(시작 1시간 전 허용)인 것.
+
+    여러 개면 시작 시각이 가장 가까운 행사. 없으면 None(→ 호출부가 가챠를 단독 행사로 올린다).
+    """
+    gt, err = _times(ga, now)
+    gs = _parse_iso((gt or {}).get("start_at")) if not err else None
+    if gs is None:
+        return None
+    best = None
+    for b in lst:
+        if derive(b, now_iso)[0] == "gone":
+            continue
+        bs, be = _parse_iso(b.get("start_at")), full_end(b)
+        if bs is None or gs < bs - timedelta(hours=1) or (be is not None and gs > be):
+            continue
+        if best is None or abs(gs - bs) < abs(gs - _parse_iso(best["start_at"])):
+            best = b
+    return best
+
+
 def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     """행사 판정 1건을 반영한다. 반환:
 
@@ -290,6 +311,19 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
         if ga is None:
             ga = {"title_ja": ev["name_ja"], "title_ko": ev.get("name_ko"), "start_jst": ev.get("start_jst"), "end_jst": ev.get("end_jst")}
         ev = None
+
+    # 2026-10-17 운영자 결정(v4.3.3): 밴드 · 멤버와 무관하게 행사 · 가챠는 전부 올린다. 판정이 가챠만 주고 행사 칸도 banner_ref 도 비운
+    # 경우(실측: 같은 날 시작하는 가챠 글) — 기간이 겹치는 행사에 딸리고, 어느 행사에도 안 맞는 단독 가챠는 가챠 제목을 이름으로 한 새 행사로 올린다.
+    # 판정이 가챠 제목을 행사 칸에도 그대로 넣는 경우(실측: 같은 글 3회 중 2회)도 같은 가챠 단독 글로 본다.
+    if (action == "upsert" and ga and (ga.get("title_ja") or "").strip() and not target
+            and (not (ev and (ev.get("name_ja") or "").strip()) or name_key(ev["name_ja"]) == name_key(ga["title_ja"]))):
+        target = _gacha_host(lst, ga, now, now_iso)
+        if target is not None:
+            ev = None
+        else:
+            ev = {"name_ja": ga["title_ja"], "name_ko": ga.get("title_ko"), "start_jst": ga.get("start_jst") or (ev or {}).get("start_jst"),
+                  "end_jst": ga.get("end_jst") or (ev or {}).get("end_jst"), "permanent": False}
+            ga = None
 
     def snapshot(b):
         return copy.deepcopy(b) if b else None
@@ -369,7 +403,13 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
         title_ja = ga["title_ja"].strip()
         gk = name_key(title_ja)
         g = next((x for x in target["gachas"] if name_key(x.get("title_ja")) == gk), None)
-        if g is None:
+        if gk == name_key(target.get("name_ja")):          # 가챠 자체가 행사 카드인 경우(단독 가챠) — 새 기간은 카드에 반영, 하위 블록은 안 만든다
+            if gt["start_at"]:
+                target["start_at"], target["start_time_tbd"] = gt["start_at"], (bool(gt["start_time_tbd"]) or None)
+            if gt["end_at"]:
+                target["end_at"] = gt["end_at"]
+            g = None
+        elif g is None:
             if len(target["gachas"]) < MAX_GACHAS:
                 g = {"id": _gacha_id(title_ja), "title_ja": title_ja, "title_ko": (ga.get("title_ko") or "").strip() or None,
                      "image_urls": [], "start_at": gt["start_at"], "end_at": gt["end_at"]}
@@ -574,6 +614,28 @@ if __name__ == "__main__":
                               "image_roles": ["gacha"], "image_for": "gacha", "reason": ""}, P("333", ["https://x/g.jpg"]), N)
     g0 = r2["banners"]["banners"][0]["gachas"][0]
     assert r2["mode"] == "updated" and g0["image_urls"] == [] and g0["end_at"] == "2026-10-09T02:59:00Z", r2     # 가챠 이미지는 안 씀, 기간은 갱신
+
+    # (v4.3.3) 행사 칸 · banner_ref 없이 온 가챠 — 기간이 겹치는 행사에 딸리고, 어느 행사에도 안 맞으면 가챠 제목이 이름인 단독 행사로 올린다
+    gonly = {"title_ja": "差し込む光、始まりのとき", "title_ko": "비치는 빛, 시작의 때", "start_jst": "2026-09-30 18:00", "end_jst": None}
+    rg = apply_judgement(P1, {"action": "upsert", "banner_ref": None, "event": None, "gacha": gonly, "image_for": "none", "reason": ""}, P("g1"), N)
+    assert rg["mode"] == "updated" and rg["id"] == b["id"] and len(rg["banners"]["banners"]) == 1, rg
+    assert [x["title_ja"] for x in rg["banners"]["banners"][0]["gachas"]] == [GA["title_ja"].strip(), "差し込む光、始まりのとき"], rg
+    rg2 = apply_judgement(P1, {"action": "upsert", "banner_ref": None, "gacha": gonly, "image_for": "none", "reason": "",
+                               "event": {"name_ja": gonly["title_ja"], "name_ko": gonly["title_ko"], "start_jst": None, "end_jst": None, "permanent": False}}, P("g1b"), N)
+    assert rg2["mode"] == "updated" and rg2["id"] == b["id"] and len(rg2["banners"]["banners"][0]["gachas"]) == 2, rg2     # 가챠 제목을 행사 칸에도 넣은 판정
+    alone = dict(gonly, title_ja="はじめてを奏でる光彩讃歌ガチャ", start_jst="2026-10-18 15:00")
+    ra = apply_judgement(P1, {"action": "upsert", "banner_ref": None, "event": None, "gacha": alone, "image_for": "none", "reason": ""}, P("g2"), "2026-10-17T09:06:00Z")
+    assert ra["mode"] == "added" and len(ra["banners"]["banners"]) == 2, ra          # 행사(10-08 종료)와 안 겹침 → 단독 행사
+    ab = next(x for x in ra["banners"]["banners"] if x["id"] == ra["id"])
+    assert ab["name_ja"] == "はじめてを奏でる光彩讃歌ガチャ" and ab["gachas"] == [] and ab["start_at"] == "2026-10-18T06:00:00Z" and ab["end_at"] is None
+    assert derive(ab, "2026-10-17T09:06:00Z") == ("announced", "")                    # 종료일 몰라도 개최 전엔 올림
+    # 단독 가챠에 종료일이 뒤늦게 들어오면 카드 기간에 반영(하위 블록 안 만듦)
+    rb = apply_judgement(ra["banners"], {"action": "upsert", "banner_ref": ab["id"], "event": None, "gacha": dict(alone, end_jst="2026-10-25 14:59"),
+                                         "image_for": "none", "reason": ""}, P("g3"), "2026-10-18T06:00:00Z")
+    bb = next(x for x in rb["banners"]["banners"] if x["id"] == ab["id"])
+    assert rb["mode"] == "updated" and bb["end_at"] == "2026-10-25T05:59:00Z" and bb["gachas"] == [], rb
+    # 시작도 모르는 가챠는 행사로 만들 수 없음 → 올리지 않음
+    assert apply_judgement(default_banners(), {"action": "upsert", "event": None, "gacha": dict(alone, start_jst=None), "image_for": "none", "reason": ""}, P("g4"), N)["mode"] == "invalid"
 
     # 종료일 없음 · 상시 · 120일 초과 → 안 올림
     noend = dict(EV, end_jst=None)
