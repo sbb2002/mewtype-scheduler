@@ -321,13 +321,15 @@ function buildHeader(channelData) {
   const header = document.createElement("header");
   header.className = "lane__header";
 
-  // .lane__link = 아바타 + 이름 (YouTube 채널로 이동). 아바타는 tweets.js 가
-  // 트윗 있을 때 말풍선 토글로 가로챈다(없으면 이 앵커대로 YouTube).
-  const link = document.createElement("a");
+  // .lane__link = 아바타 + 이름 (v4.3.4: 이동 링크가 아니라 트윗 말풍선 토글 — tweets.js 가
+  // 클릭을 위임 처리한다. 트윗이 없으면 아무 일도 없다. YouTube/X 이동은 아래 우측 레일.)
+  const link = document.createElement("div");
   link.className = "lane__link";
-  link.href = channelData.channel_url || "#";
-  link.target = "_blank";
-  link.rel = "noopener";
+  link.setAttribute("role", "button");
+  link.tabIndex = 0;
+  link.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); link.click(); }
+  });
 
   const avatar = document.createElement("span");
   avatar.className = "lane__avatar";

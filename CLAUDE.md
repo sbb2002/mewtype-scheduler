@@ -47,6 +47,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.3.4 (핫픽스, 브랜치 `hotfix/nameplate-bubble`, 2026-10-17, 프론트만)**: **네임플레이트(아바타 · 편지 배지 · 이름) 클릭 = 트윗 말풍선** — YouTube 이동 제거(우측 레일 YT · X 버튼이 담당). 트윗 없으면 무반응. `render.js` · `tweets.js` · `layout.css`, 상세 `docs/SPEC.md` 「레인 헤더」, 요약 `docs/VERSION.md`.
+>
 > **v4.3.3 (핫픽스, 브랜치 `hotfix/banner-all-bands`, 2026-10-17)**: **행사 배너 · 가챠를 밴드와 무관하게 전부 올린다** — `llm.banner_judge` 의 「夢限大 직접 출연만」 필터 제거, 가챠만 온 판정은
 > `banners.apply_judgement` 가 기간이 겹치는 행사에 딸리거나(`_gacha_host`) 단독 행사로 올린다. 사이드스로 가챠 · 「Shake Your 魂, Baby!!」 소급 반영(data 커밋 `57642f0`). 2026-10-17 `mewtype-backend` 리비전 00150 · `mewtype-telegram` 00108 배포(롤백 = 00148 · 00107) — 실서비스 첫 동작은 다음 행사 · 가챠 글에서 확인. 상세 `docs/VERSION.md`.
 >

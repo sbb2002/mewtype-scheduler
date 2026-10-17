@@ -114,6 +114,8 @@ body {
   gap: 0.6rem;
   transition: opacity 0.2s;
 }
+.lane__link { cursor: pointer; }
+.lane--later .lane__link { cursor: default; }   /* 이후 예고 열은 말풍선 대상 아님(data-no-badge) */
 .lane__link:hover {
   opacity: 0.85;
 }
