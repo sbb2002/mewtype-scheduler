@@ -587,6 +587,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - 행사 판정: `llm.banner_judge(text, posted_kst, active)` → `{action: none|upsert|hold|cancel, banner_ref, event, gacha, image_for, reason}`.
   시각은 LLM 이 JST 문자열로 주고 코드가 UTC 로 바꾼다. 코드가 형식 · 순서 · 참조 id 를 **검증**한 뒤에만 반영(`banners.apply_judgement`).
   LLM 5회 실패 → 등록하지 않음(소식과 반대 기본값) + monitor `degraded`.
+- **대상 (v4.3.3)**: 게임 계정이 알리는 행사 · 가챠 **전부**(밴드 · 멤버 무관). 일반 공지만 `none`. 가챠만 온 판정은 `apply_judgement` 가 결정적으로 처리 — 기간이 겹치는 행사에 딸리고, 없으면 가챠 제목을 이름으로 한 단독 행사(`_gacha_host`).
 - 되돌리기: `_llm_record(kind="banner_judge", undo={"type":"restore_banner", …})` — 변경 전 항목 스냅샷으로 복원, 새로 만든 항목이면 삭제.
 - 소식과의 중복 방지: 게임 계정 글은 소식 경로를 타지 않고, 다른 계정 글이라도 활성 · 보관 행사의 `match_keys` 가 본문에 들어 있으면 소식으로 올리지 않는다(`banners.covers_text`).
 
