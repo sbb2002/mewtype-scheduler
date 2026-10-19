@@ -6,7 +6,9 @@
 //
 // 표시 상태는 저장값이 아니라 현재 시각으로 파생한다(백엔드 banners.derive 와 같은 규칙):
 //   hold(보류) · sched(개최 전, 종료일을 몰라도 올림) · live · warn(먼저 끝나는 종료 3일(달력) 전부터, 노랑) ·
-//   urgent(먼저 끝나는 종료를 넘김 — 늦은 종료만 남음, 빨강) · done(모두 종료, 그날 자정까지 회색 「종료」) · gone/pending(안 보임)
+//   urgent(먼저 끝나는 종료를 넘김 — 늦은 종료만 남음, 빨강. 남은 시간은 보통 카드처럼 D-n, 당일만 시간 · 분 — v4.6.0) ·
+//   done(모두 종료, 그날 자정까지 회색 「종료」) · gone/pending(안 보임)
+// 행사 · 가챠 중 어느 쪽이 먼저 끝나도 같은 규칙이다(prima aurora 는 가챠가 먼저 — 점선 뒤 25일이 빨강 + 「행사 종료까지 D-n」).
 // 진행 막대 = 시작 → **늦게 끝나는 종료**를 100%로, 먼저 끝나는 종료 시점에 점선(항상 막대 위, 막대 세로 폭 안), 점선~100% 는 /// 무늬.
 // 말풍선 꼬리는 막대의 현재 위치. D-n 은 한국 시간 달력 날짜 차이. 이미지는 X 트윗의 행사 키비주얼 링크만 쓴다(가챠 이미지 없음).
 
@@ -42,16 +44,16 @@ const _dd = (target, now) => Math.floor((target + OFF) / DAY) - Math.floor((now 
 function _endpoints(b) {
   const out = [];
   const add = (label, t) => { if (t != null && !out.some((o) => o.t === t)) out.push({ label, t }); };
-  add("이벤트", _ms(b.end_at));
+  add("행사", _ms(b.end_at));
   (b.gachas || []).forEach((g) => add("가챠", _ms(g.end_at)));
   return out.sort((a, c) => a.t - c.t);
 }
 
-// hoursOnly(빨강 구간): 달력 D-n 대신 항상 시간(60분 안이면 분)으로 — 「가챠 종료까지 n시간」
-function _remain(label, target, now, hoursOnly) {
+// 달력 D-n, 당일은 시간(60분 안이면 분). (v4.6.0) 빨강 구간도 같은 규칙 — 전엔 항상 시간이라 점선 뒤가 길면 「588시간」이 됐다
+function _remain(label, target, now) {
   const left = target - now, n = _dd(target, now);
   if (left < HOUR) return `${label} 종료까지 ${Math.max(1, Math.ceil(left / MIN))}분`;
-  if (hoursOnly || n <= 0) return `${label} 종료까지 ${Math.ceil(left / HOUR)}시간`;
+  if (n <= 0) return `${label} 종료까지 ${Math.ceil(left / HOUR)}시간`;
   return `${label} 종료까지 D-${n}`;
 }
 
@@ -80,7 +82,7 @@ export function bannerInfo(b, now) {
     const t = before < HOUR ? `개최까지 ${Math.max(1, Math.ceil(before / MIN))}분` : bd <= 0 ? `개최까지 ${Math.ceil(before / HOUR)}시간` : `개최까지 D-${bd}`;
     return Object.assign(info, { st: "sched", pct: 0, bubble: t });
   }
-  if (eps.length > 1 && now >= early.t) return Object.assign(info, { st: "urgent", bubble: _remain(late.label, late.t, now, true) });
+  if (eps.length > 1 && now >= early.t) return Object.assign(info, { st: "urgent", bubble: _remain(late.label, late.t, now) });
   if (_dd(early.t, now) <= 3) return Object.assign(info, { st: "warn", bubble: _remain(early.label, early.t, now) });
   return Object.assign(info, { st: "live", chip: _remain(early.label, early.t, now) });
 }
@@ -124,7 +126,7 @@ function _period(b, info) {
 // 종료 일정 박스 — 행사 종료 + (가챠마다) 가챠 종료. 가챠에 자체 종료가 없으면 행사와 같은 시각을 그대로 적는다.
 function _endBoxes(b, info, now) {
   const evEnd = _ms(b.end_at);
-  const boxes = [{ label: "행사 종료", t: evEnd, who: "이벤트" }];
+  const boxes = [{ label: "행사 종료", t: evEnd, who: "행사" }];
   (b.gachas || []).forEach((g) => boxes.push({ label: "가챠 종료", t: _ms(g.end_at) ?? evEnd, who: "가챠" }));
   return boxes.map((x) => {
     let cls = "";
@@ -142,7 +144,7 @@ function _prog(info) {
   const cut = info.cutPct != null ? `<div class="bnr__cut"></div>` : "";
   const bubble = info.bubble ? `<div class="bnr__bubble"><div class="bnr__bd">${_esc(info.bubble)}</div></div>` : "";
   return `<div class="bnr__prog${info.bubble ? " has-bubble" : ""}" style="--pct:${info.pct.toFixed(2)}%;--cut:${(info.cutPct ?? 100).toFixed(2)}%">` +
-    bubble + `<div class="bnr__bar${info.cutPct != null ? " has-cut" : ""}"><i></i></div>${cut}<div class="bnr__knob"></div></div>`;
+    bubble + `<div class="bnr__bar${info.cutPct != null ? " has-cut" : ""}"><i></i></div>${cut}</div>`;   // (v4.6.0) 동그란 손잡이 없앰 — 채움 끝이 현재 위치
 }
 
 function _card(b, now, active) {
@@ -176,9 +178,9 @@ function _tabRemain(info, now) {
     return n > 0 ? `D-${n} 개최` : `${Math.max(1, Math.ceil((info.start - now) / HOUR))}시간 뒤 개최`;
   }
   const e = info.st === "urgent" ? info.late : info.early, left = e.t - now, n = _dd(e.t, now);
-  const who = e.label === "가챠" ? "가챠" : "행사";
+  const who = e.label;
   if (left < HOUR) return `${who} ${Math.max(1, Math.ceil(left / MIN))}분 뒤 종료`;
-  if (info.st === "urgent" || n <= 0) return `${who} ${Math.ceil(left / HOUR)}시간 뒤 종료`;
+  if (n <= 0) return `${who} ${Math.ceil(left / HOUR)}시간 뒤 종료`;
   return `${who} D-${n} 종료`;
 }
 

@@ -1,4 +1,4 @@
-/* player.css — (v4.2.0) 「CD + 음표 >」 버튼. 모바일 전용 = 하단 멤버 아이콘 줄 맨 왼쪽(.player-btn--dock). PC 는 버튼 없이 하단 도크. 아이콘은 js/playerbtn.js (currentColor). 다크 단일 테마 — 색은 명시적으로. */
+/* player.css — (v4.2.0) 「CD + 음표 >」 버튼. 모바일 전용 = 하단 멤버 아이콘 줄 맨 왼쪽(.player-btn--dock). PC 는 버튼 없이 하단 도크. 아이콘은 js/playerbtn.js (currentColor). 색은 layout.css 토큰(밝게 = theme.css). */
 
 .player-btn {
   position: relative;
@@ -45,7 +45,7 @@ html[data-new-song] .player-btn::after {
 .player-btn:hover {
   color: var(--color-text);
   border-color: var(--color-text-muted);
-  background: #232323;
+  background: var(--color-hover);
 }
 .player-btn:focus-visible {
   outline: 2px solid var(--color-text-muted);

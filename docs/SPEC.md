@@ -611,8 +611,12 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - **표시 상태(`banners.derive` · 프론트 `bannerInfo` 가 같은 규칙)**: `hold`(보류) · `announced`/`sched`(개최 전 — **종료일을 몰라도 올린다**, 시작 일시를 굵게 먼저 알림, 종료는 「미정」) · `live` ·
   `warn`(먼저 끝나는 종료까지 **달력 기준 D-3 이내**, 노랑) · `urgent`(먼저 끝나는 종료를 넘김, 늦은 종료만 남음, 빨강) · `done`(행사 · 가챠 모두 종료 — **종료일 자정(KST)까지 회색 「종료」로 표시**) ·
   `gone`(자정 뒤 — 내림) · `pending`(시작을 모르거나, 종료를 모르는데 이미 시작 — 안 올림). **D-n 은 한국 시간 달력 날짜 차이**(시간 올림 아님), 종료 당일은 남은 시간(60분 안이면 분).
-- **진행 막대**: 시작 → 행사 · 가챠 중 **늦은 종료를 100%**로, 먼저 끝나는 종료 시점에 점선(항상 막대 위, 막대 세로 폭 안), 점선~100% 는 `///` 무늬. 말풍선 꼬리는 막대의 현재 위치:
-  노랑 구간 「이벤트 종료까지 D-n」 · 빨강 구간 「가챠 종료까지 n시간」(60분 안이면 분). 평소(청록)는 말풍선 없이 날짜 줄 끝에 칩 문구, 개최 전은 「개최까지 D-n」 말풍선(종료일 미정이면 칩 문구).
+- **진행 막대**: 시작 → 행사 · 가챠 중 **늦은 종료를 100%**로, 먼저 끝나는 종료 시점에 점선(막대 세로 폭 안), 점선~100% 는 `///` 무늬. 말풍선 꼬리는 막대의 현재 위치(채움 끝):
+  노랑 구간 「(먼저 끝나는 쪽) 종료까지 D-n」 · 빨강 구간 「(늦게 끝나는 쪽) 종료까지 D-n」 — 두 구간 모두 달력 D-n, 종료 당일만 시간(60분 안이면 분).
+  평소(청록)는 말풍선 없이 날짜 줄 끝에 칩 문구, 개최 전은 「개최까지 D-n」 말풍선(종료일 미정이면 칩 문구).
+  행사 · 가챠 중 **어느 쪽이 먼저 끝나도 같은 규칙**이다 — 영화 「prima aurora」 공개 기념(10/16~11/19, 가챠만 10/25 까지)은 가챠가 먼저 끝나 점선 뒤 25일이 빨강 + 「행사 종료까지 D-n」.
+  **(v4.6.0 변경)** ① 빨강 구간 문구가 항상 「n시간」이던 것을 D-n 으로(점선 뒤가 길면 「588시간」이 됐다) ② 「이벤트」 표기를 「행사」로 통일 ③ 모양 — 동그란 손잡이를 없애고 둥근 막대(12px) 하나,
+  `///` 무늬는 지난 구간(채움) 위에도 보이고, 점선은 막대 위아래로 삐져나오지 않으면서 밝은 칸 / 어두운 칸이 번갈아 어느 바탕에서도 보인다. 디자인 = 목업 아티팩트 「v4.6.0 테마 목업」(진행 막대 상태별).
 - 행사 판정: `llm.banner_judge(text, posted_kst, active)` → `{action: none|upsert|hold|cancel, banner_ref, event, gacha, image_for, reason}`.
   시각은 LLM 이 JST 문자열로 주고 코드가 UTC 로 바꾼다. 코드가 형식 · 순서 · 참조 id 를 **검증**한 뒤에만 반영(`banners.apply_judgement`).
   LLM 5회 실패 → 등록하지 않음(소식과 반대 기본값) + monitor `degraded`.
@@ -1074,13 +1078,28 @@ YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 
-- **index.html**: `<head>` 에 `<meta name="color-scheme" content="dark">` + 5개 css +
-  `<script type="module" src="js/main.js">`. body 는 `#notice` + `#board` + `#foot`.
-- **다크 전용 테마.** `reset.css :root { color-scheme: dark }` + 위 메타로 브라우저 자동
-  어둡게(삼성 인터넷·Chrome Android force-dark)를 끈다 — 선언이 없으면 기기 다크 모드에서
-  투명 섞기 색(헤더 그라데이션·트윗 말풍선)이 이중 처리돼 뭉개진다. 라이트/다크 분기 CSS 없음.
-- **css/**: `reset` · `layout`(`#board` ≥1100px `grid-template-columns:repeat(5,1fr)`, <1100px 가로 스크롤) ·
-  `card`(6상태 클래스 §3, mobile @media 파일 끝) · `notices` · `tweets`.
+- **index.html**: `<head>` 에 `<meta name="color-scheme" content="dark light">` + 테마 결정 인라인 스크립트(아래) + css(맨 끝 `theme.css`) +
+  Vercel Web Analytics(아래) + `<script type="module" src="js/main.js">`. body 는 `#notice` + `#board` + `#player-dock` + `#pager-dots` + `#foot`.
+- **밝게 / 어둡게 테마 (v4.6.0 — 그 전엔 어둡게 전용).** 테마 = `<html data-theme="light|dark">`.
+  - **처음 정하기**: head 인라인 스크립트가 CSS 보다 먼저 정한다(첫 화면이 다른 테마로 깜빡이지 않게) — 저장된 선택(`localStorage` `theme`)이 있으면 그것,
+    없으면 기기 설정(`prefers-color-scheme: light` 면 밝게, 그 밖은 어둡게). 저장소를 못 쓰는 환경(시크릿 모드 등)은 기기 설정만 따른다.
+  - **전환 버튼**(`js/theme.js` `themeButton`): 소식 막대(`.ntc__bar`)의 **마지막 칸**(▾ 오른쪽, 같은 높이 · 같은 세로 구분선). 아이콘 = 지금 테마(어둡게 = 달, 밝게 = 해 — BPM 테마 토글과 같은 방식).
+    누르면 반대 테마로 바꾸고 그 선택을 저장(다음 방문에도 유지). 버튼은 한 번만 만들고 `notices.js` 가 막대를 다시 그릴 때마다(75초 폴링 · 소식 0건 막대 포함) 같은 버튼을 옮겨 붙인다.
+    소식 막대 · 펼친 목록 폭은 v4.5.x 와 같다(버튼이 막대 안 한 칸을 쓰고 티커 글자 자리만 그만큼 줄어든다, 모바일은 ▾ · 전환 두 칸을 2.25rem 으로 좁힘).
+  - **기기 설정 따라가기**: 한 번도 직접 고르지 않았으면 기기 설정이 바뀔 때 화면도 따라 바뀐다(`initTheme`). 직접 고른 뒤에는 그 선택이 우선.
+  - **색**: 각 css 의 `:root` 토큰이 어둡게 값(기본), `css/theme.css` 의 `:root[data-theme="light"]` 가 밝게 값으로 덮는다(디자인 = 목업 아티팩트 「v4.6.0 테마 목업」 밝게 A — BPM 톤:
+    배경 #f5f4fb · 카드 #fff · 글자 #232436). 멤버 레인 색(아바타 평균색) · 트윗 말풍선(멤버 색) · 썸네일 위 덮개는 두 테마 공통.
+    X 공식 카드도 같은 테마로 불러오고(`tweets.js` `_embedSrc` 의 `theme=`), 테마를 바꾸면 열린 카드를 다시 불러온다(`mew:theme` 이벤트).
+    노노카 지각 이스터에그(`king.css`)는 그림 장면이라 두 테마 공통.
+  - 바꾸는 순간에만 배경 · 글자 · 테두리 색이 0.3초에 걸쳐 바뀐다(`html.theme-anim`, 움직임 줄이기 설정이면 즉시).
+  - **브라우저 자동 어둡게(삼성 인터넷 · Chrome Android force-dark)는 계속 끈다** — `color-scheme` 메타가 dark 를 포함하고 `:root` 의 `color-scheme` 이 테마를 따른다.
+    선언이 없으면 기기 다크 모드에서 투명 섞기 색(헤더 그라데이션 · 트윗 말풍선)이 이중 처리돼 뭉개진다.
+- **방문 통계 (v4.5.4, v4.6.0 Claude 접속 제외)**: Vercel Web Analytics 스크립트. **주소에 `?va=claude` 가 붙은 탭은 통계를 보내지 않는다** — 공식 `beforeSend`(null 반환)로 막고,
+  표시는 그 탭의 `sessionStorage`(`va-skip`)에 남아 같은 탭에서 새로고침 · 이동해도 계속 빠진다. 같은 브라우저의 다른 탭(운영자 접속)은 그대로 집계된다.
+  Claude 가 운영 사이트를 브라우저로 열 때 이 표시를 붙인다(CLAUDE.md). 그 전(10-16 · 10-19, Chrome 접속 4회)은 집계에 들어가 있다.
+- **css/**: `reset` · `layout`(`#board` ≥1100px `grid-template-columns:repeat(5,1fr)`, <1100px 가로 스크롤 · 공통 색 토큰) ·
+  `card`(6상태 클래스 §3, mobile @media 파일 끝) · `timetable` · `king` · `player` · `playerpop` · `notices` · `banners` · `tweets` · `theme`(v4.6.0, 맨 끝 — 밝게 값 · 전환 버튼).
+- **js/theme.js** — (v4.6.0) 위 「밝게 / 어둡게 테마」. `themeButton()` · `initTheme()` · `currentTheme()` · `THEME_EVENT`(`mew:theme`).
 - **js/config.js** — `PREVIEW_URL`(raw githubusercontent data/preview.json), `ARCHIVE_URL`(v4.1.0), `NOTICES_URL`, `TWEETS_URL`,
   `POLL_MS=75000`, `COUNTDOWN_TICK_MS=60000`, `FETCH_TIMEOUT_MS=8000`, `FALLBACK_CHANNEL_ORDER`, `FALLBACK_CHANNELS`.
 - **js/time.js** — 계약 D. 순수, DOM 접근 없음. selfcheck: `time.selfcheck.mjs`.

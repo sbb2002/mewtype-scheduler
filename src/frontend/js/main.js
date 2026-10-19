@@ -3,6 +3,7 @@ import { renderBoard, renderFooter, updateCountdowns, VIEW_CHANGE_EVENT } from "
 import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
 import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
+import { initTheme } from "./theme.js";
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
 
 const board = document.getElementById("board");
@@ -228,6 +229,7 @@ function syncPlayerDock() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  initTheme();   // (v4.6.0) 밝게/어둡게 — 직접 고른 적 없으면 기기 설정 변경을 따라간다. 버튼은 소식 막대 마지막 칸(notices.js)
   initMonitorEasterEgg();
   initMonitorTapEasterEgg();
   poll();

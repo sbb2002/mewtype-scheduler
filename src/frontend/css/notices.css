@@ -1,4 +1,4 @@
-/* notices.css — 예고판 상단 "소식" 티커 (v2.7). layout.css 토큰 재사용, 다크 단일.
+/* notices.css — 예고판 상단 "소식" 티커 (v2.7). layout.css 토큰 재사용. 아래 --ntc-* 는 어둡게 값(밝게 = theme.css).
    목업: docs/plan/v2_7_notice_board_mockup.html */
 
 :root {
@@ -11,6 +11,8 @@
   --ntc-cat-platform: #4fa89c;             /* 타 플랫폼 — teal */
   --ntc-cat-etc: var(--color-sched);       /* 기타 — 슬레이트 */
   --ntc-dsoon: #e08a2e;                    /* D-7 이내 — 주황 */
+  --ntc-lamp-off: #3a1414;                 /* 오늘 소식 없을 때 램프 */
+  --ntc-shadow: rgba(0, 0, 0, 0.55);
   --ntc-item-h: 2.2rem;
   --ntc-col-date: 62px;
   --ntc-col-badge: 58px;
@@ -50,7 +52,7 @@
 .ntc.is-open .ntc__tag { color: var(--color-text); border-right: none; }
 .ntc__lamp {
   flex: none; width: 7px; height: 7px; border-radius: 50%;
-  background: #3a1414;
+  background: var(--ntc-lamp-off);
 }
 .ntc.has-today .ntc__lamp {
   background: var(--color-live);
@@ -159,7 +161,7 @@
   opacity: 0; visibility: hidden;
   border: 1px solid var(--ntc-border-soft); border-top: none;
   border-radius: 0 0 6px 6px; background: var(--color-bg-secondary);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 14px 32px var(--ntc-shadow);
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
               opacity 0.2s ease,
               visibility 0s linear 0.3s;

@@ -1,4 +1,4 @@
-/* playerpop.css — (v4.2.0) 플레이어 팝업 · 플로팅 프레임. 마크업 · 동작은 js/player.js. 다크 단일 테마 — 색은 reset.css 토큰 + 아래 --mp-* 를 쓴다.
+/* playerpop.css — (v4.2.0) 플레이어 팝업 · 플로팅 프레임. 마크업 · 동작은 js/player.js. 색은 layout.css 토큰 + 아래 --mp-* (어둡게 값, 밝게 = theme.css).
    z-index: 도트 띠 25 < 플로팅 프레임 45 < 디스클레이머 팝업(#foot) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
    프레임(.mp-frame)은 한 번 만들고 옮기지 않는다 — 팝업일 땐 JS 가 .mp-slot 자리에 맞춰 위치를 주고, 내리면 .is-float 로 CSS 위치(오른쪽 아래)를 쓴다. */
 
@@ -6,6 +6,11 @@
   --mp-accent: #a99be6;
   --mp-accent-fg: #121018;
   --mp-panel-2: #242429;
+  --mp-well: #0e0e11;                     /* 재생목록 우물 바탕 · 그늘 · 가장자리 빛 */
+  --mp-well-sh1: rgba(0, 0, 0, 0.75);
+  --mp-well-sh2: rgba(0, 0, 0, 0.55);
+  --mp-well-hi: rgba(255, 255, 255, 0.07);
+  --mp-well-line: rgba(255, 255, 255, 0.06);
   --mp-float-w: 356px;
   --mp-float-h: 200px;   /* YouTube 임베드 최소 200×200 */
   --mp-foot: 45px;       /* 고정 푸터(#foot) 높이 — 플로팅 프레임이 푸터에 가려지지 않게 */
@@ -132,13 +137,13 @@ html.mp-lock { overflow: hidden; }
   display: flex; flex-direction: column; min-height: 0; flex: 1;
   padding: 8px 6px 6px 10px;
   border-radius: 10px;
-  background: #0e0e11;
+  background: var(--mp-well);
   box-shadow:
-    inset 0 3px 8px rgba(0, 0, 0, 0.75),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
-    0 1px 0 rgba(255, 255, 255, 0.07);
+    inset 0 3px 8px var(--mp-well-sh1),
+    inset 0 0 0 1px var(--mp-well-sh2),
+    0 1px 0 var(--mp-well-hi);
 }
-.mp-q__head { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px 0; font-size: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.mp-q__head { display: flex; align-items: center; gap: 8px; padding: 0 4px 6px 0; font-size: 0.8rem; border-bottom: 1px solid var(--mp-well-line); }
 .mp-q__count { color: var(--color-text-muted); font-size: 0.7rem; }
 .mp-q__head .mp-link { margin-left: auto; font-size: 0.7rem; }
 .mp-q__list { list-style: none; margin: 4px 0 0; padding: 0; overflow-y: auto; min-height: 0; max-height: 220px; display: grid; grid-auto-rows: max-content; }

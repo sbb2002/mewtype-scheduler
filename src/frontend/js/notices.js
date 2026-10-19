@@ -5,6 +5,7 @@
 // 계속 돌린다. 만료(expires_at 지남) 소식은 프론트에서도 숨긴다(백엔드 sweep 지연 대비).
 
 import { visibleBanners, bannerHTML, bannerSig, mountBannerMotion, stopBannerMotion } from "./banners.js";   // (v4a) 펼친 목록 맨 위 행사 배너
+import { themeButton } from "./theme.js";   // (v4.6.0) 막대 마지막 칸 = 밝게/어둡게 전환 버튼 (다시 그려도 같은 버튼을 옮겨 붙인다)
 
 const CAT_KO = { live: "라이브예고", release: "음반·굿즈", platform: "타 플랫폼", etc: "기타" };
 const SITE_ICON = {
@@ -132,6 +133,7 @@ export function renderNotices(section, data) {
           `<div class="ntc__ticker"><span class="ntc__empty">새 소식이 없습니다</span></div>` +
           `<button class="ntc__tgl" type="button" disabled aria-disabled="true" aria-label="소식 없음">▾</button>` +
         `</div>`;
+      section.querySelector(".ntc__bar").appendChild(themeButton());
       section.dataset.empty = "1";
     }
     return;
@@ -161,6 +163,7 @@ export function renderNotices(section, data) {
       (_st.bn.length ? `<li class="ntc__banners">${bannerHTML(_st.bn, Date.now())}</li>` : "") +
       list.map((n) => "<li>" + _itemHTML(n) + "</li>").join("") +
     `</ul>`;
+  section.querySelector(".ntc__bar").appendChild(themeButton());
 
   const track = section.querySelector(".ntc__track");
   const ticker = section.querySelector(".ntc__ticker");

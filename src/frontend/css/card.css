@@ -47,7 +47,7 @@
 }
 
 .card__thumb-wrap:has(.card__thumb--broken) {
-  background-color: #444444;
+  background-color: var(--color-img-broken);
 }
 
 /* Badge - LIVE/announced/watching 배지 */
@@ -72,7 +72,7 @@
 
 .card__badge--announced {
   background: color-mix(in srgb, var(--color-sched, #7c8aa0) 26%, transparent);
-  color: color-mix(in srgb, var(--color-sched, #7c8aa0) 72%, #fff);
+  color: color-mix(in srgb, var(--color-sched, #7c8aa0) 72%, var(--color-tint-ink));
   box-shadow: none;
   text-transform: none;
   letter-spacing: 0.02em;
@@ -81,7 +81,7 @@
 
 .card__badge--watching {
   background: color-mix(in srgb, var(--color-upcoming, #06b6d4) 26%, transparent);
-  color: color-mix(in srgb, var(--color-upcoming, #06b6d4) 72%, #fff);
+  color: color-mix(in srgb, var(--color-upcoming, #06b6d4) 72%, var(--color-tint-ink));
   box-shadow: none;
   text-transform: none;
   letter-spacing: 0.02em;
@@ -90,7 +90,7 @@
 
 .card__badge--end {
   background: color-mix(in srgb, var(--color-text-muted, #8a8f98) 26%, transparent);
-  color: color-mix(in srgb, var(--color-text-muted, #8a8f98) 85%, #fff);
+  color: color-mix(in srgb, var(--color-text-muted, #8a8f98) 85%, var(--color-tint-ink));
   box-shadow: none;
   text-transform: none;
   letter-spacing: 0.02em;
@@ -187,7 +187,7 @@
   padding: 0.08rem 0.42rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--color-late) 18%, transparent);
-  color: color-mix(in srgb, var(--color-late) 82%, #fff);
+  color: color-mix(in srgb, var(--color-late) 82%, var(--color-tint-ink));
 }
 
 /* ── announced (v3 예고) — 정보 일부만 확정 ──
@@ -226,7 +226,7 @@
   border-color: color-mix(in srgb, var(--color-live) 45%, var(--color-border));
 }
 .card--sched-live .card__rel {
-  color: color-mix(in srgb, var(--color-live) 65%, #fff);
+  color: color-mix(in srgb, var(--color-live) 65%, var(--color-tint-ink));
   font-weight: 600;
 }
 
@@ -250,7 +250,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, #8b7cc9 12%, var(--color-bg));
+  background: color-mix(in srgb, var(--color-collab) 12%, var(--color-bg));
 }
 
 /* ── 합동방송 — renderBoard 가 참여 멤버 전원 레인에 같은 카드를 팬아웃.
@@ -271,7 +271,7 @@
 }
 .card__badge--collab {
   background: color-mix(in srgb, var(--color-collab, #8b7cc9) 28%, transparent);
-  color: color-mix(in srgb, var(--color-collab, #8b7cc9) 58%, #fff);
+  color: color-mix(in srgb, var(--color-collab, #8b7cc9) 58%, var(--color-tint-ink));
   box-shadow: none;
   text-transform: none;
   letter-spacing: 0.02em;
