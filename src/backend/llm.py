@@ -271,6 +271,7 @@ _PARTICIPATION_SCHEMA = {
 # 실제로 등록하기 전 마지막으로 묻는 확인. 실측(2026-09-16, 아라레 후기 트윗): 정규식은
 # "配信"·"2時間"·"9/24" 를 각각 문맥 없이 따로 캐치해 오탐 후보를 만들지만, 이 질문을
 # 그대로 던지면 LLM 은 "이건 후기지 예고가 아니다"라고 정확히 답한다.
+# (v4.5.5) 근거 필수 — evidence(원문 그대로 복사한 구절) · reason(한 문장). 원문에 없는 근거 · 빈 근거는 받지 않고 다시 묻는다.
 _ANNOUNCE_SCHEMA = {
     "name": "announces_own_broadcast",
     "strict": True,
@@ -278,11 +279,27 @@ _ANNOUNCE_SCHEMA = {
         "type": "object",
         "properties": {
             "announces": {"type": "boolean"},
+            "evidence": {"type": "string"},
+            "reason": {"type": "string"},
         },
-        "required": ["announces"],
+        "required": ["announces", "evidence", "reason"],
         "additionalProperties": False,
     },
 }
+
+
+def _norm_quote(t: str) -> str:
+    """근거 구절 대조용 — NFKC 후 글자(L*) · 숫자(N*)만 남긴다. 공백 · 기호 · 장식 문자(❑ ━ ┊ ～ 이모지 등)는 LLM 이 옮겨 적으며
+    바꾸거나 빼기 쉬워(실측: 아라레 「❑ ━━━ 配信予定 ━━━ ❑ ┊ 10/15(木) 6:30~┊」 5회 모두 불일치) 비교에서 뺀다."""
+    import unicodedata
+    t = unicodedata.normalize("NFKC", t or "")
+    return "".join(c for c in t if unicodedata.category(c)[0] in ("L", "N"))
+
+
+def evidence_in_text(evidence: str, text: str) -> bool:
+    """(v4.5.5) LLM 이 낸 근거 구절이 원문에 실제로 있나(정규화 후 부분 문자열). 2자 미만은 근거로 보지 않는다."""
+    e = _norm_quote(evidence)
+    return len(e) >= 2 and e in _norm_quote(text)
 
 
 def _strip_json_fence(text: str) -> str:
@@ -531,39 +548,51 @@ class LLMClient:
         (v3.6) 트윗 원문이 작성자 본인이 추후 진행할 방송을 예고하는 글인지 최종 확인.
 
         URL 없는 개인 트윗 경로(3-2)의 마지막 관문 — 정규식 게이트+날짜/시각 추출까지
-        통과한 후보에 대해서만 호출된다(비용 절감). "作成者는 추후 진행할 방송을 예고하는
-        글을 썼니?"를 그대로 물어 문맥으로 판정 — 후기·잡담 속 우연한 날짜/시각 오합성을
-        정규식 대신 여기서 걸러낸다. 최대 5회 시도, 5회 모두 실패하면 None(안전한 실패 —
-        호출부는 미등록 처리).
+        통과한 후보에 대해서만 호출된다(비용 절감). 최대 5회 시도, 5회 모두 실패하면 None(안전한 실패 — 호출부는 미등록 처리).
+
+        (v4.5.5) **근거 필수** — 판정마다 `evidence`(원문에서 그대로 복사한 구절) · `reason`(한 문장)을 받는다.
+        근거가 비었거나 원문에 없는 구절이면 그 판정을 받지 않고 「근거가 없었다」는 안내를 붙여 다시 묻는다(5회 안에서).
+        통과한 근거는 `self.last_reason` 에 남는다(호출부가 LLM 판단 기록에 적는다).
+        프롬프트도 다시 썼다 — 2026-10-06~19 판정 10건 중 9건이 틀렸다(「グッズ紹介」 「#APEX」 「13thライブ振り返り」 「朝活」 처럼
+        방송 **주제**에 걸려 진짜 예고를 false 로, 「配信延期します」(연기 공지)를 true 로). 주제는 따지지 않고, 플랫폼이 없으면
+        본인 유튜브 방송으로 보며, 연기 · 취소 · 휴방 · 후기는 false 로 분명히 적었다.
 
         Args:
             text_ja: 트윗 원문(원어 그대로)
-            unit_name: 작성자(유닛) 이름 — 프롬프트에 넣어 "이 사람의 유튜브 방송"으로 좁힌다
+            unit_name: 작성자(유닛) 이름
 
         Returns:
-            True/False 또는 5회 모두 실패 시 None
+            True/False 또는 5회 모두 실패(응답 없음 · 근거 없음 포함) 시 None
         """
+        self.last_reason = ""
         if self.disabled:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
 
         masked_text, _mapping = _mask_glossary(text_ja or "")
-        who = f"{unit_name}의" if unit_name else "작성자 본인의"
-        # (v4.0.7) 스크리닝을 타이트하게 — 09-29 미야코 「10/11は #バンドリ13thライブ」(후기 + 공연 날짜)가 통과했다.
-        prompt = (
-            f"다음은 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
-            f"질문: 이 글은 {who} 유튜브 방송(라이브·프리미어)을 앞으로 진행하겠다고 알리는 예고인가? "
-            f"아래에 해당하면 전부 false 로 답한다(스크리닝).\n"
-            f"- 이미 끝난 방송의 후기·감사 인사·회고 (예: 「配信ありがとうございました」)\n"
-            f"- {who} 유튜브 방송이 아닌 것: 라이브 공연·콘서트·이벤트·발매·굿즈·게임/애니 소식·타 플랫폼 방송\n"
-            f"- 날짜가 나와도 그 날짜가 {who} 유튜브 방송 일정이 아닌 경우 (공연 날짜, 발매일, 마감일 등)\n"
-            f"- 다른 사람의 방송 홍보, 잡담, 시각·일정이 불분명한 「また配信します」 수준의 언급\n"
-            f"{who} 유튜브 방송을 하겠다는 것이 글에서 분명할 때만 true. 애매하면 false. JSON 포맷만 출력.\n\n"
-            f'{{"announces": <true 또는 false>}}'
+        who = unit_name or "작성자"
+        base = (
+            f"다음은 {who}(작성자)가 쓴 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
+            "질문: 이 글은 작성자가 앞으로 직접 할 방송(配信 — 라이브 · 프리미어)의 일정을 알리는 예고인가?\n\n"
+            "판단 기준:\n"
+            "- 「配信」 「配信のおしらせ」 「配信告知」 「配信予定」 「配信よてい」 처럼 작성자 자신의 방송을 알리는 표현과 "
+            "앞으로의 날짜 · 시각(本日 · 今夜 · 明日 · 10/19 22:30～ · あさ7:00 등)이 함께 있으면 예고다 → true.\n"
+            "- 방송 **주제는 따지지 않는다**. 게임(APEX 등) · 잡담 · 노래(歌枠) · 굿즈 소개 · 라이브(공연) 회고 · 발표(おしらせ) · "
+            "아침 방송(朝活) · 네일 · 작업 방송 모두 방송이면 true. 「グッズ」 「13thライブ」 「#APEX」 같은 단어가 있다는 이유로 false 하지 않는다.\n"
+            "- 플랫폼이 적혀 있지 않으면 작성자의 유튜브 방송으로 본다. 「URLは直前」 「縦型配信」 「サムネなし」 「30分くらい」 같은 안내는 예고의 일부다.\n"
+            "- false 인 경우: 이미 끝난 방송의 후기 · 감사 인사(「配信ありがとうございました」), 방송 **연기 · 취소 · 휴방** 공지"
+            "(「延期」 「中止」 「お休み」 — 예정됐던 방송을 미루거나 안 한다는 글. **새 날짜가 함께 적혀 있어도 false** — 일정 변경은 다른 판정이 처리한다), "
+            "방송이 아닌 일정 그 자체(공연 · 이벤트 출연 · 발매 · 굿즈 판매), "
+            "다른 사람의 방송 홍보, 다른 플랫폼이 적힌 방송(ニコ生 · Twitch · ツイキャス · SHOWROOM · bilibili 등), "
+            "날짜 · 시각 없이 「また配信します」 정도의 언급.\n\n"
+            "JSON 만 출력한다:\n"
+            "- announces: true 또는 false\n"
+            "- evidence: 판단의 근거가 된 원문 구절을 **원문 그대로 복사**한다(예: 「10/19 22:30～」 「配信延期します」). 원문에 없는 말을 쓰지 않는다.\n"
+            "- reason: 왜 그렇게 판단했는지 한국어 한 문장."
         )
-
+        base = _with_hint(base)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다(한 번만)
+        prompt = base
         for attempt in range(1, 6):
-            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
             response = self._call_groq(self.model, prompt, json_schema=_ANNOUNCE_SCHEMA)
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_ANNOUNCE_SCHEMA)
@@ -574,11 +603,19 @@ class LLMClient:
             except json.JSONDecodeError:
                 logger.info(f"announces_own_broadcast: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
-            if isinstance(result, dict) and isinstance(result.get("announces"), bool):
-                return result["announces"]
-            logger.info(f"announces_own_broadcast: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+            if not (isinstance(result, dict) and isinstance(result.get("announces"), bool)):
+                logger.info(f"announces_own_broadcast: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
+                continue
+            ev, why = str(result.get("evidence") or "").strip(), str(result.get("reason") or "").strip()
+            if len(why) < 5 or not evidence_in_text(ev, masked_text):
+                logger.info(f"announces_own_broadcast: 근거 없음 · 원문에 없는 근거 — 다시 묻는다 (attempt {attempt}/5) — {result!r}")
+                prompt = (base + "\n\n주의: 바로 전 답은 근거가 없거나 원문에 없는 구절을 근거로 들어 받지 않았다. "
+                          "evidence 에는 위 원문에 실제로 있는 구절을 그대로 복사하고, reason 에 판단 이유를 한 문장으로 적어라.")
+                continue
+            self.last_reason = f"{why} (근거: 「{ev}」)"
+            return result["announces"]
 
-        logger.info("announces_own_broadcast: 5회 모두 실패 — None (호출부 미등록 처리) — 호출부가 기록")
+        logger.info("announces_own_broadcast: 5회 모두 실패(응답 · 근거) — None (호출부 미등록 처리) — 호출부가 기록")
         return None
 
     def collab_partners(self, text_ja: str, *, host_name: str,
@@ -1419,16 +1456,30 @@ if __name__ == "__main__":
     print("-" * 70)
     assert _ANNOUNCE_SCHEMA["strict"] is True
     assert _ANNOUNCE_SCHEMA["schema"]["additionalProperties"] is False
+    assert set(_ANNOUNCE_SCHEMA["schema"]["required"]) == {"announces", "evidence", "reason"}
 
     llm_announce_yes = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"announces": true}')
+        "test-key", session=ParticipationSession(0, '{"announces": true, "evidence": "明日22時から歌枠", "reason": "내일 22시 노래 방송 예고다."}')
     )
     result = llm_announce_yes.announces_own_broadcast("明日22時から歌枠やります🎤")
     assert result is True, result
-    print("✓ announces_own_broadcast: 진짜 예고 → True")
+    assert "근거: 「明日22時から歌枠」" in llm_announce_yes.last_reason, llm_announce_yes.last_reason
+    print("✓ announces_own_broadcast: 진짜 예고 → True (근거 기록)")
+
+    # (v4.5.5) 근거가 비었거나 원문에 없는 구절이면 받지 않고 다시 묻는다 — 5회 모두 그러면 None
+    llm_announce_noev = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"announces": false, "evidence": "", "reason": ""}')
+    )
+    assert llm_announce_noev.announces_own_broadcast("〈配信のおしらせ〉\n10/19 22:30～") is None
+    llm_announce_fake = LLMClient(
+        "test-key", session=ParticipationSession(0, '{"announces": false, "evidence": "配信ありがとうございました", "reason": "후기다."}')
+    )
+    assert llm_announce_fake.announces_own_broadcast("〈配信のおしらせ〉\n10/19 22:30～") is None, "원문에 없는 근거는 받지 않음"
+    assert evidence_in_text("「10/19 22:30～」", "〈配信のおしらせ〉\n10/19 22:30～ #おしらせ") and not evidence_in_text("x", "abc")
+    print("✓ announces_own_broadcast: 근거 없음 · 지어낸 근거 → 다시 묻기(5회 모두면 None)")
 
     llm_announce_recap = LLMClient(
-        "test-key", session=ParticipationSession(0, '{"announces": false}')
+        "test-key", session=ParticipationSession(0, '{"announces": false, "evidence": "配信\\nありがとうございました", "reason": "끝난 방송의 후기다."}')
     )
     result = llm_announce_recap.announces_own_broadcast(
         "#アワーノーツ 先行プレイ配信\nありがとうございました！"

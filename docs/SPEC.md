@@ -702,7 +702,7 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
     def notice_title(body_no_date_url, *, lang_hint="ja") -> {"title_ja","title_ko"} | None
     def translate(text_ja) -> str | None
     def participation(text_ja, *, member_name) -> bool | None          # (v3.6) 외부 채널 URL 참여판정
-    def announces_own_broadcast(text_ja) -> bool | None                # (v3.6) 텍스트 예고 최종확인
+    def announces_own_broadcast(text_ja, unit_name) -> bool | None     # (v3.6) 텍스트 예고 최종확인 (v4.5.5 근거 필수 · last_reason)
     def duplicate_notice(new_text, candidates) -> str | None           # (v3.7) 같은 날짜 소식 의미 중복판정
 ```
 
@@ -711,6 +711,11 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 - api_key 비면 disabled → 모든 호출 None. `_call_groq`: 429/5xx·타임아웃(20초) → 1초·2초 대기하며 최대 3회 시도,
   그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. `participation`·`announces_own_broadcast`·
   `duplicate_notice` 는 유효한 JSON 을 받을 때까지 (메인→폴백) 쌍을 최대 5회 반복.
+- **(v4.5.5) `announces_own_broadcast` 근거 필수**: 출력 `{announces, evidence, reason}` — `evidence` = 원문에서 그대로 복사한 구절, `reason` = 한 문장.
+  근거가 비었거나(reason 5자 미만) 원문에 없는 구절이면(`llm.evidence_in_text` — NFKC 후 글자 · 숫자만 비교, 기호 · 장식 문자 무시) **그 판정을 받지 않고**
+  「바로 전 답은 근거가 없었다」를 붙여 다시 묻는다(5회 안, 5회 모두 그러면 None → 미등록 + monitor err). 통과한 근거는 `last_reason` →
+  LLM 판단 기록(`own_broadcast`)의 reason 「… (근거: 「…」)」. 프롬프트: 방송 **주제는 따지지 않음**(게임 · 굿즈 소개 · 라이브 회고 · 발표 · 朝活 등),
+  플랫폼이 없으면 본인 유튜브 방송, false = 후기 · 감사 · **연기 · 취소 · 휴방(새 날짜가 있어도 — 일정 변경은 `broadcast_change_targets` 가 처리)** · 방송 아닌 일정 · 타인 홍보 · 타 플랫폼 · 날짜 없는 언급.
 - (v3.7.1) 제어 채널의 `telegram_app._make_llm_client()` 도 기본값을 이 두 상수로 쓴다(환경변수
   `GROQ_MODEL`/`GROQ_MODEL_FALLBACK` 이 있으면 우선). 이전엔 폴백 기본값이 404 모델이었다.
 - 환각 가드: 출력 비었거나 입력 길이 3배 초과 → None (기본선, 배포 후 실측 보강).
