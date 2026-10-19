@@ -49,7 +49,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.5.3 (핫픽스, 브랜치 `hotfix/banner-date-evidence`, 2026-10-19, 백엔드)**: **행사 배너가 근거 없는 날짜로 기존 일정을 덮지 않게.** 이미 있는 날짜를 바꿀 때 새 날짜가 글 본문 · 이미지 OCR 에 적혀 있어야 반영(`banners.date_evidenced`),
+> **v4.5.3 (핫픽스, 브랜치 `hotfix/banner-date-evidence`, 2026-10-19 배포 — `mewtype-backend` 00156 · `mewtype-telegram` 00111, 백엔드)**: **행사 배너가 근거 없는 날짜로 기존 일정을 덮지 않게.** 이미 있는 날짜를 바꿀 때 새 날짜가 글 본문 · 이미지 OCR 에 적혀 있어야 반영(`banners.date_evidenced`),
 > 날짜만 값(「10月18日より」)은 같은 날의 시각 값을 덮지 않음, 판정 LLM 목록에 가챠 기간 표시, 프롬프트에 「적힌 날짜만」. 계기: 10-19 날짜 없는 가챠 소개 글 3건이 가챠 기간을 행사 종료 · 00:00 으로 덮음(데이터는 복구). 가챠 종료와 행사 종료 관계는 고정 규칙 아님(공지 · 이미지 기준). 상세 `docs/SPEC.md` 계약 J, 요약 `docs/VERSION.md`.
 >
 > **v4.5.2 (핫픽스, 브랜치 `hotfix/websub-burst`, 2026-10-19 배포 — `mewtype-backend` 00154 · `mewtype-telegram` 00110, 백엔드)**: **PubSub 알림이 몰릴 때(버스트)의 경합 제거.** ① 접수 서비스는 알림을 받으면 **예약만 하고 커밋 없이 응답** — 수신 기록 `flow=websub action=notify` 는 확인을 처리하는 쓰기 서비스가 남긴다(같은 영상 10분 안 반복은 한 줄의 `count`, `monitor_log` `merge_key`).
