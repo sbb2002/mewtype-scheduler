@@ -49,12 +49,12 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.5.0 (기능, 브랜치 `feat/pubsub-websub`, 2026-10-19, 백엔드 — 미배포)**: **PubSub(WebSub*) 수신 — 방송 발견 · 신곡 등록을 RSS 폴링에서 푸시로.**
+> **v4.5.0 (기능, 브랜치 `feat/pubsub-websub`, 2026-10-19 배포 — `mewtype-backend` 00152 · `mewtype-telegram` 00109, `WEBSUB_REPLACE_RSS=0` 이중 운영 중)**: **PubSub(WebSub*) 수신 — 방송 발견 · 신곡 등록을 RSS 폴링에서 푸시로.**
 > * PubSub(WebSub) = 허브가 YouTube 채널 피드 변경을 우리 주소로 POST 해 주는 푸시 방식(웹소켓 아님, GCP Cloud Pub/Sub 과 다름). 시험 결과: 신규 영상 알림 약 64초, 누락 0건, 낮 수신 확인, 종료 신호는 안 옴(종료 감지는 wake 그대로).
 > * 멤버 5채널 알림 → 영상 ID 로 즉시 + 2분 뒤 wake 예약. **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널) 알림 → 본문 항목을 `find_new_songs` 에 그대로 넣어 신곡 등록(`song_push`).
 >   인증 = 구독 때 준 `hub.secret`(Secret `WEBSUB_SECRET`)의 `X-Hub-Signature` HMAC. 구독 갱신 = `POST /websub-renew`(매일 KST 06:20, 임대 5일) — 허브 검증 GET 이 `flow=websub action=verify` 로 남는다.
 > * 스위치 `WEBSUB_REPLACE_RSS`(기본 0 = 알림 + 폴링 이중 운영): 1 이면 10분 light 틱의 RSS · 신곡 감지 생략, 일일 baseline 만 안전망. 코드 `src/backend/websub.py`, 상세 `docs/SPEC.md` §8.16, 요약 `docs/VERSION.md`.
-> * 미검증: 허브가 서명 헤더를 실제로 붙이는지 · 뮤타입 음원 채널의 푸시 · 콜드스타트 시 검증 응답 시간. 배포 순서 · 롤백은 VERSION.md.
+> * 배포 때 확인: 구독 6개 허브 검증 통과(임대 5일) · 허브에 서명 키 등록. 미검증: 실제 알림에 서명 헤더가 붙는지(첫 실알림) · 뮤타입 음원 채널의 푸시 · 콜드스타트 시 검증 응답 시간. 배포 순서 · 롤백은 VERSION.md.
 >
 > **v4.4.0 (기능, 브랜치 `feat/board-view-toggle`, 2026-10-18, 프론트만)**: **PC 보기 방식 탭 [테이블 | 카드]** — 「오늘 예고」 머리줄 오른쪽 탭, 선택은 `localStorage` `mew.board.view` 로 저장. 카드 보기 = 모바일 레인을 5열 나란히(펼치기 전 5인 레인 높이 동일) + 보드 아래 단일 「이후 예고 펼치기」 버튼이 5인 전원에게 동작. 소식 · 플레이어 위치 그대로. `render.js` · `timetable.js` · `main.js` · `css/timetable.css`, 상세 `docs/SPEC.md` 「PC 보기 방식 · 카드 보기 (v4.4.0)」, 요약 `docs/VERSION.md`. 좁은 PC 폭(768~1100px) · 실데이터 미확인.
 >
