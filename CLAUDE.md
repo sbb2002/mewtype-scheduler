@@ -49,7 +49,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.5.7 (핫픽스, 브랜치 `hotfix/halfwidth-kana-disclaimer-hover`, 2026-10-19, 백엔드 + 프론트)**: ① **반각 가타카나 번역** — 「🍭ﾍﾟﾛｷｬﾝ」 처럼 모델이 번역 없이 남기던 반각 가나를 번역 전 전각화 + 프롬프트 규칙 + 잔존 검사 반각 포함 + 가나 잔존 시 1회 재요청(`llm.py`). ② **하단 디스클레이머 팝업은 호버 2초 유지 시에만**(포커스는 즉시, `main.js` · `css/layout.css`). 상세 `docs/SPEC.md` 「번역」·「프론트 풋터」, 요약 `docs/VERSION.md`.
+> **v4.5.7 (핫픽스, 브랜치 `hotfix/halfwidth-kana-disclaimer-hover`, 2026-10-19, 백엔드 + 프론트)**: ① **반각 가타카나 번역** — 「🍭ﾍﾟﾛｷｬﾝ」 처럼 모델이 번역 없이 남기던 반각 가나를 번역 전 전각화 + 프롬프트 규칙 + 잔존 검사 반각 포함 + 가나 잔존 시 1회 재요청(`llm.py`). ② **하단 디스클레이머 팝업은 호버 2초 유지 시에만**(포커스는 즉시, `main.js` · `css/layout.css`). 상세 `docs/SPEC.md` 「번역」·「프론트 풋터」, 요약 `docs/VERSION.md`. **배포 완료**(`mewtype-backend` 00160 · `mewtype-telegram` 00113, 롤백 = 00158 · 00112 / 프론트 main `8d0b525`). 실서비스 첫 동작 · 모바일 실기기는 미확인.
 >
 > **v4.5.6 (핫픽스, 브랜치 `hotfix/player-omakase-tt-countdown`, 2026-10-19, 프론트만)**: ① **플레이어 「🎁 랜덤플리 오마카세」** — 컨트롤 오른쪽 버튼 → 말풍선 [전체/오리지널/커버] → 그 종류 모든 곡을 무작위로 재생목록에 덮어써 재생 + 0.62초 뒤섞임 연출 + 5초 쿨타임(오른쪽 → 왼쪽으로 걷히는 막, `player.js` · `css/playerpop.css`).
 > ② **타임테이블 예고 블록 문구** — 「22:30 1.5h」 → 「방송시작까지 1.5시간」(60분 미만 「n분」, 지나면 「지각」) + 블록 안 3줄 고정 높이 정렬 + 예정 블록 폭 210→250(`timetable.js` · `css/timetable.css`). 상세 `docs/SPEC.md` 「타임테이블」·「플레이어」, 요약 `docs/VERSION.md`. 미확인: 모바일 실기기 · 밝게 테마.
