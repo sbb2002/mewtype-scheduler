@@ -299,14 +299,15 @@ body {
 }
 .fdisc__list a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }   /* 링크임을 알린다 */
 .fdisc__list li + li { border-top: 1px solid var(--color-border); }
-.fdisc:hover .fdisc__list,
+/* (v4.5.7) 마우스 호버는 2초 유지돼야 열린다(main.js initDisclaimerHover 가 .is-open 을 붙인다). 포커스(클릭 · 키보드 · 터치 탭)는 바로 열린다. */
+.fdisc.is-open .fdisc__list,
 .fdisc:focus .fdisc__list,
 .fdisc:focus-within .fdisc__list {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
 }
-.fdisc:hover .fdisc__cur,
+.fdisc.is-open .fdisc__cur,
 .fdisc:focus .fdisc__cur,
 .fdisc:focus-within .fdisc__cur {
   opacity: 0.25;   /* 펼쳐지면 순환 문구는 흐리게 — 시선이 목록 쪽으로 */

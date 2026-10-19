@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -200,7 +201,9 @@ def _translate_prompt(masked_text: str) -> str:
         "1. 번역문만 출력한다(설명·주석·원문 병기 금지). 줄바꿈·이모지·기호·URL·@멘션은 그대로 둔다.\n"
         "2. 일본어 글자(히라가나·가타카나·한자)를 번역문에 남기지 않는다. 은어·신조어·인터넷 용어·외래어·음식/상품명·의성어·애칭도 "
         "뜻이 통하게 한국어로 번역하거나, 번역이 어려운 고유한 이름은 한국어 독음으로 적는다. "
-        "(예: 万バズ→1만 버즈, ラーメン→라멘, リリース→릴리스, ついに→드디어, ありがとう→고마워)\n"
+        "(예: 万バズ→1만 버즈, ラーメン→라멘, リリース→릴리스, ついに→드디어, ありがとう→고마워) "
+        "이모지 옆에 붙은 짧은 가타카나 단어·말장난·줄임말(예: 🍭ペロキャン)도 예외 없이 처리한다 — 뜻이 분명하면 뜻으로, 불분명하면 "
+        "한국어 독음으로 적는다(ペロキャン→페로캔).\n"
         "3. 원문 그대로 두는 것: URL, @멘션, #해시태그, 「」『』 괄호와 그 안의 작품·곡 제목(괄호 모양도 바꾸지 말 것), "
         "@@GLOSSARY0@@ 같은 토큰(절대 번역·수정 금지).\n"
         "4. 방송 용어: 配信=방송(배송 아님), 配信予定/配信よてい=방송 예정, 〈配信のおしらせ〉=〈방송 안내〉, 歌枠=노래 방송, "
@@ -213,7 +216,15 @@ def _translate_prompt(masked_text: str) -> str:
 
 
 _SPECIAL_SPACE_RE = re.compile("[    ]")
-_KANA_RE = re.compile("[぀-ヿ]")
+_KANA_RE = re.compile("[぀-ヿｦ-ﾟ]")   # (v4.5.7) 반각 가나(U+FF66~FF9F)도 일본어 글자로 본다 — 전엔 전각만 봐서 「ﾍﾟﾛｷｬﾝ」 이 남아도 경고가 없었다
+_HALFWIDTH_KANA_RUN_RE = re.compile("[ｦ-ﾟ]+")
+
+
+def _widen_halfwidth_kana(text: str) -> str:
+    """반각 가나 구간만 전각으로(NFKC) — 「ﾍﾟﾛｷｬﾝ」→「ペロキャン」. 모델이 반각 표기를 이모티콘 · 효과음처럼 보고
+    번역하지 않고 그대로 두는 일을 막는다(2026-10-19 미야코 트윗, 번역 3/3 잔존 재현). ！ ～ 같은 다른 전각/반각 문자는 건드리지 않는다.
+    모델에 보내는 문장에만 쓰고 저장되는 원문(text)은 그대로다."""
+    return _HALFWIDTH_KANA_RUN_RE.sub(lambda m: unicodedata.normalize("NFKC", m.group()), text)
 
 
 def _clean_translation(text: str) -> str:
@@ -991,7 +1002,8 @@ class LLMClient:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
 
-        text_ja = _normalize_stretch(text_ja or "")
+        text_ja = _widen_halfwidth_kana(text_ja or "")
+        text_ja = _normalize_stretch(text_ja)
         text_ja, punct_runs = _collapse_punct_runs(text_ja)
         text_ja, kana_counts = _fold_kana_runs(text_ja)
         m = _REPEAT_RE.match(text_ja)
@@ -1074,11 +1086,31 @@ class LLMClient:
         # 부분 번역 감시 — 성공 응답이라 다른 로그가 없으므로 여기서 WARN 으로 남긴다(저장은 그대로 한다).
         left = _residual_kana(result)
         if left:
+            retry = self._retranslate_residual(masked_text, prompt, result, left, mapping)   # (v4.5.7) 남은 글자를 짚어 1회 재요청
+            if retry is not None:
+                result, left = retry, _residual_kana(retry)
+        if left:
             logger.warning(
                 "translate: 부분 번역 의심 — 번역문에 일본어 가나 %d자 잔존 %r (input=%d자, 번역=%r)",
                 len(left), "".join(left)[:20], len(text_ja), result[:80],
             )
         return result
+
+    def _retranslate_residual(self, masked_text: str, prompt: str, prev: str, left: "list[str]", mapping) -> "str | None":
+        """부분 번역(가나 잔존) 1회 재요청. 이전 번역과 남은 글자를 알려 주고 전체를 다시 받는다.
+        재요청이 실패 · 환각이거나 가나가 줄지 않으면 None(= 이전 결과 유지)."""
+        again = (
+            f"{prompt}\n\n이전 번역에 일본어 글자({''.join(dict.fromkeys(left))})가 남아 있다. "
+            f"남은 부분을 한국어로 번역하거나 한국어 독음으로 적어, 번역문 전체를 다시 출력하라(설명 금지).\n이전 번역: {prev}"
+        )
+        response = self._call_groq(self.model, again) or self._call_groq(self.fallback, again)
+        if not response or self._is_hallucination(response, masked_text):
+            return None
+        retry = _clean_translation(_unmask_glossary(response.strip(), mapping, to="ko"))
+        if len(_residual_kana(retry)) >= len(left):
+            return None
+        logger.info("translate: 가나 잔존 %d자 → 재요청으로 %d자", len(left), len(_residual_kana(retry)))
+        return retry
 
     def _call_groq(
         self, model: str, prompt: str, *, json_schema: "dict | None" = None
@@ -1839,6 +1871,22 @@ if __name__ == "__main__":
     print("✓ 메인 모델 빈 응답 → 폴백 모델")
     assert LLMClient("").song_reading("夢我夢中") is None and LLMClient("k", session=_ReadingSession([])).song_reading("  ") is None
     print("✓ 키 없음 · 빈 제목 → None")
+
+    # ──── (v4.5.7) 반각 가나 번역 ────
+    print("\n[v4.5.7] 반각 가나 — 전각 변환 · 잔존 검사 · 1회 재요청")
+    print("-" * 70)
+    assert _widen_halfwidth_kana("🍭ﾍﾟﾛｷｬﾝ ﾊｯ！！ あしたﾏﾃﾞ") == "🍭ペロキャン ハッ！！ あしたマデ"
+    assert _widen_halfwidth_kana("かわいい ＃みるみやこ ～ ！") == "かわいい ＃みるみやこ ～ ！", "반각 가나 밖은 불변"
+    print("✓ 반각 가나 구간만 전각으로 (！ ～ 등은 그대로)")
+    assert _residual_kana("🎃🍭🐶ﾍﾟﾛｷｬﾝ") and not _residual_kana("🎃🍭🐶페로캔 #ﾐﾙﾐﾔｺ")
+    print("✓ 번역문에 남은 반각 가나도 감시 (해시태그 안은 제외)")
+    _s3 = _ReadingSession(["🍭ﾍﾟﾛｷｬﾝ", "🍭페로캔"])   # 1차: 반각이 남은 번역 → 재요청이 고침
+    assert LLMClient("k", session=_s3).translate("🍭ペロキャン") == "🍭페로캔" and _s3.calls == 2
+    _s4 = _ReadingSession(["🍭ペロキャン", "🍭ペロキャン"])   # 재요청도 못 고침 → 이전 결과 유지(저장은 그대로)
+    assert LLMClient("k", session=_s4).translate("🍭ペロキャン") == "🍭ペロキャン" and _s4.calls == 2
+    _s5 = _ReadingSession(["🍭페로캔"])                       # 처음부터 깨끗하면 재요청 없음
+    assert LLMClient("k", session=_s5).translate("🍭ペロキャン") == "🍭페로캔" and _s5.calls == 1
+    print("✓ 가나 잔존 → 1회 재요청(고치면 채택 · 못 고치면 유지 · 깨끗하면 호출 1회)")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")
