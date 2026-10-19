@@ -89,6 +89,60 @@ def _monitor_gh(gh):
     return GitHubStore(gh.token, gh.repo, branch, session=gh.session, timeout=gh.timeout)
 
 
+MERGE_WINDOW_SEC = 600      # (v4.5.2) merge_key 이벤트를 기존 줄에 합치는 시간 창
+_MERGE_SCAN_LINES = 400     # 합칠 줄을 찾을 때 파일 끝에서 거슬러 볼 줄 수
+
+
+def _apply_merges(text: str, merges: list[dict]) -> tuple[str, list[str]]:
+    """(v4.5.2) merge_key 이벤트를 기존 텍스트에 반영 — (바뀐 기존 텍스트, 새로 붙일 줄들).
+
+    같은 merge_key 의 줄(이번에 새로 붙일 줄 먼저, 다음은 기존 파일 끝에서 _MERGE_SCAN_LINES 줄 안)이 있고 그 줄의 마지막 시각
+    (`last_ts` 또는 `ts`)이 MERGE_WINDOW_SEC 안이면 그 줄의 `count` 를 올리고 `last_ts` · `detail` 등을 새 값으로 바꾼다(첫 `ts` 유지).
+    없으면 count=1 로 새 줄."""
+    if not merges:
+        return text, []
+    rows = text.split("\n") if text else []
+    fresh: list[dict] = []          # 이번 호출에서 새로 붙일 줄(dict)
+
+    def _within(prev: dict, ts: str) -> bool:
+        try:
+            gap = (datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+                   - datetime.strptime(prev.get("last_ts") or prev["ts"], "%Y-%m-%dT%H:%M:%SZ")).total_seconds()
+        except (KeyError, ValueError):
+            return False
+        return 0 <= gap <= MERGE_WINDOW_SEC
+
+    def _bump(prev: dict, m: dict) -> None:
+        prev.update({k: v for k, v in m.items() if k not in ("ts", "count")})
+        prev["count"] = int(prev.get("count") or 1) + 1
+        prev["last_ts"] = m["ts"]
+
+    for m in merges:
+        hit = next((f for f in reversed(fresh) if f.get("merge_key") == m["merge_key"]), None)
+        if hit is not None and _within(hit, m["ts"]):
+            _bump(hit, m)
+            continue
+        if hit is None:
+            for i in range(len(rows) - 1, max(-1, len(rows) - 1 - _MERGE_SCAN_LINES), -1):
+                if not rows[i].strip():
+                    continue
+                try:
+                    prev = json.loads(rows[i])
+                except ValueError:
+                    continue
+                if prev.get("merge_key") != m["merge_key"]:
+                    continue
+                if _within(prev, m["ts"]):
+                    _bump(prev, m)
+                    rows[i] = json.dumps(prev, ensure_ascii=False, sort_keys=True)
+                    hit = prev
+                break
+            if hit is not None:
+                continue
+        fresh.append({**m, "count": 1})
+    return "\n".join(rows), [json.dumps(f, ensure_ascii=False, sort_keys=True) for f in fresh]
+
+
 def log_events(gh, now_iso: str, events: list[dict]) -> None:
     """gh(GitHubStore)로 오늘자 이벤트 로그에 여러 줄 append(배치).
 
@@ -121,19 +175,21 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
     # 줄 생성 — 각 줄을 {"ts": now_iso, "who": "", "detail": "", **ev} 로 만들어
     # 기존 log_event 줄 형식(ts/who/detail 항상 존재)과 같게 한다.
     # 원소에 ts가 있으면 그 값이 우선(현재 동작 유지).
+    # (v4.5.2) `merge_key` 가 있는 이벤트는 같은 키의 줄이 MERGE_WINDOW_SEC 안에 이미 있으면 새 줄 대신 그 줄의 count 를 올린다
+    # (PubSub 같은 영상 반복 알림 — 한 줄로 처리하는 쓰기 서비스에서만 쓴다. 접수 서비스처럼 동시에 쓰면 합치기가 경합한다).
     path = event_path(now_iso)
-    lines = []
+    lines, merges = [], []
     for ev in events:
         ts = ev.get("ts") or now_iso
         who = ev.get("who", "")
         detail = ev.get("detail", "")
         # ts/who/detail 제외한 나머지 필드들
         extra = {k: v for k, v in ev.items() if k not in ("ts", "who", "detail", "no_bus")}
-        line = json.dumps(
-            {"ts": ts, "who": who, "detail": detail, **extra},
-            ensure_ascii=False, sort_keys=True,
-        )
-        lines.append(line)
+        row = {"ts": ts, "who": who, "detail": detail, **extra}
+        if ev.get("merge_key"):
+            merges.append(row)
+            continue
+        lines.append(json.dumps(row, ensure_ascii=False, sort_keys=True))
 
     # 커밋 메시지 생성
     first_flow = events[0].get("flow", "unknown")
@@ -148,7 +204,9 @@ def log_events(gh, now_iso: str, events: list[dict]) -> None:
     # 한 번 읽고 모든 줄을 이어붙여 한 번 쓰기, 충돌 시 5회까지 재시도
     for attempt in range(_CONFLICT_RETRY_COUNT):
         text, sha = monitor_gh.read_text(path)
-        new_text = (text or "") + "\n".join(lines) + "\n"
+        body, extra_lines = _apply_merges(text or "", merges)
+        new_lines = lines + extra_lines
+        new_text = body + ("\n".join(new_lines) + "\n" if new_lines else "")
         try:
             monitor_gh.write_text(path, new_text, prev_sha=sha, message=message)
             return
@@ -550,5 +608,28 @@ if __name__ == "__main__":
         globals()["_CONFLICT_RETRY_COUNT"] = _orig_retry_count
         globals()["_CONFLICT_RETRY_BASE_MS"] = _orig_retry_base
         globals()["_CONFLICT_RETRY_JITTER_MAX_MS"] = _orig_retry_jitter
+
+    # (v4.5.2) merge_key — 같은 키는 10분 안이면 한 줄의 count 로 묶임(이번 배치 안 · 기존 파일 모두), 창을 넘기면 새 줄
+    def _mk(ts, vid="V1", detail="d"):
+        return {"ts": ts, "who": "ritsu", "detail": detail, "flow": "websub", "result": "ok", "action": "notify",
+                "video_id": vid, "merge_key": f"websub-notify:{vid}"}
+    base_txt = json.dumps({"ts": "2026-10-20T00:00:00Z", "flow": "tick", "who": "", "detail": "x", "result": "ok"}) + "\n"
+    body, new = _apply_merges(base_txt, [_mk("2026-10-20T00:01:00Z"), _mk("2026-10-20T00:02:00Z", detail="두 번째"),
+                                         _mk("2026-10-20T00:02:00Z", vid="V2")])
+    assert body == base_txt and len(new) == 2, (body, new)
+    r1 = json.loads(new[0])
+    assert r1["count"] == 2 and r1["ts"] == "2026-10-20T00:01:00Z" and r1["last_ts"] == "2026-10-20T00:02:00Z" and r1["detail"] == "두 번째"
+    assert json.loads(new[1])["count"] == 1 and json.loads(new[1])["video_id"] == "V2"
+    txt2 = body + "\n".join(new) + "\n"
+    body2, new2 = _apply_merges(txt2, [_mk("2026-10-20T00:09:00Z")])          # 기존 줄(마지막 00:02)과 7분 → 합침
+    assert new2 == [] and json.loads(body2.splitlines()[1])["count"] == 3 and body2.endswith("\n")
+    body3, new3 = _apply_merges(body2, [_mk("2026-10-20T00:20:00Z")])         # 마지막 00:09 와 11분 → 새 줄
+    assert body3 == body2 and len(new3) == 1 and json.loads(new3[0])["count"] == 1
+    fs = _FakeSess(txt2)
+    fs.put_calls = 1    # 빈 파일(404) 취급 방지
+    log_events(GitHubStore("tok", "o/r", "data", session=fs), "2026-10-20T00:05:00Z", [_mk("2026-10-20T00:05:00Z", vid="V2")])
+    after = [json.loads(ln) for ln in fs.content.splitlines()]
+    assert len(after) == 3 and after[2]["count"] == 2, "log_events 경로에서도 기존 줄에 합침(새 줄 없음)"
+    print("[OK] merge_key: 배치 안 · 기존 파일 합치기, 10분 창, log_events 경로")
 
     print("\nSUCCESS: monitor_log.py self-test 통과 (mock + lost_queue)")

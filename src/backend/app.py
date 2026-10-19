@@ -2,7 +2,7 @@
 
 라우트:
   POST /tick      — Cloud Scheduler (body: {"mode": "baseline"|"light"})
-  POST /wake      — Cloud Tasks     (body: {"video_id": "..."})
+  POST /wake      — Cloud Tasks     (body: {"video_id": "...", "websub"?: {who, title, attempt}} — (v4.5.2) PubSub 알림이 시작한 확인)
   POST /write     — mewtype-telegram (body: {"kind": "...", "args": {...}}). GitHub data
                     브랜치 콘텐츠 쓰기 전담 — 이 서비스가 `--concurrency=1
                     --max-instances=1` 이라 여기로 들어오는 모든 요청(이 라우트 포함)이
@@ -83,11 +83,13 @@ def _wake():
         _authorize()
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
-    video_id = (request.get_json(silent=True) or {}).get("video_id")
+    body = request.get_json(silent=True) or {}
+    video_id = body.get("video_id")
     if not video_id:
         return jsonify({"error": "video_id required"}), 400
+    websub = body.get("websub") if isinstance(body.get("websub"), dict) else None   # (v4.5.2) PubSub 알림으로 시작한 확인
     try:
-        return jsonify(handlers.wake(video_id))
+        return jsonify(handlers.wake(video_id, websub=websub))
     except Exception as e:  # noqa: BLE001
         log.exception("wake 실패")
         _alert(f"/wake video_id={video_id}", e)

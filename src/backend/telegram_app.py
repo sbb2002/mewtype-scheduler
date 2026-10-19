@@ -6910,15 +6910,25 @@ if _FLASK_AVAILABLE:
         from . import apply, websub
         from .monitor_log import log_events
 
-        def _wake(vid: str, when: str) -> None:
-            # enqueue_reconcile 은 실패해도 None 을 돌려줄 뿐 예외를 안 던진다 — 여기서는 실패를 알려야 허브가 알림을 다시 보낸다(503)
-            if not apply.enqueue_reconcile(video_id=vid, run_at_iso=when):
+        def _wake(vid: str, when: str, meta: dict | None = None) -> None:
+            # (v4.5.2) PubSub 전용 속도 제한 큐(WEBSUB_QUEUE)에 예약 — 버스트가 쓰기 서비스를 쉬지 않고 붙잡지 않게.
+            # 실패는 예외로 알려야 허브가 알림을 다시 보낸다(503). 큐 설정이 없으면(로컬 시험판 등) 기존 즉시 확인 경로로.
+            tq = websub.task_queue()
+            if tq is not None:
+                tq.enqueue_wake(vid, when, meta)
+            elif not apply.enqueue_reconcile(video_id=vid, run_at_iso=when):
                 raise RuntimeError(f"즉시 확인 예약 실패({vid})")
+
+        def _submit(kind: str, args: dict):
+            tq = websub.task_queue()
+            if tq is not None:
+                return {"queued": True, "job_id": tq.enqueue_write(kind, args)}
+            return apply.submit(kind, args, wait=False)
 
         websub.register_callbacks(
             app, load_cfg=_load_channels_config, make_gh=_make_gh,
             enqueue_wake=_wake,
-            submit=lambda kind, args: apply.submit(kind, args, wait=False),
+            submit=_submit,
             log_events_fn=log_events,
             now_iso_fn=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )

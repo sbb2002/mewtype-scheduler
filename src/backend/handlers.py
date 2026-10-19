@@ -450,13 +450,15 @@ def _safe_log_song_events(fn, events: list[dict]) -> None:
         log.warning("신곡 모니터 로그 실패", exc_info=True)
 
 
-def detect_songs_from_push(gh, entries: list[dict], now_iso: str, *, channels_cfg: dict | None = None, llm=None) -> dict:
+def detect_songs_from_push(gh, entries: list[dict], now_iso: str, *, channels_cfg: dict | None = None, llm=None,
+                           who: str = "song-topic") -> dict:
     """(v4.5.0) PubSub 알림이 알려 준 뮤타입 음원 채널 영상(곡) 항목으로 신곡을 등록한다 — `/write` 작업 `song_push` 의 본체.
 
     알림 본문(서명 검증을 통과한 항목: video_id · title · published)을 RSS 항목 대신 `_detect_new_songs` 에 그대로 넣는다 — 등록 규칙 ·
     판단 기록 · 이벤트 · 독음 작성이 RSS 경로와 같다(`via="push"`). 곡명이 이미 있으면 건너뛰므로 같은 알림이 여러 번 와도 한 번만 등록된다.
     쓰기 충돌 · 예외, 또는 독음 작성 실패(`needs_reading` 이 남음)면 **예외를 던져** Cloud Tasks 가 재시도하게 한다(최대 5회) —
-    RSS 경로는 다음 틱이 재시도했지만 push 는 틱이 없기 때문이다. 재시도해도 안 되면 일일 baseline 이 마지막 안전망."""
+    RSS 경로는 다음 틱이 재시도했지만 push 는 틱이 없기 때문이다. 재시도해도 안 되면 일일 baseline 이 마지막 안전망.
+    (v4.5.2) 알림 수신 기록(`flow=websub action=notify`)도 여기서 남긴다 — 접수 서비스는 커밋하지 않는다(버스트 때 경합)."""
     cfg = None
     if channels_cfg is None:
         channels_cfg = load_channels()
@@ -471,7 +473,40 @@ def detect_songs_from_push(gh, entries: list[dict], now_iso: str, *, channels_cf
     pending = [s.get("title") for s in songs_mod.norm_doc(doc or {})["songs"] if s.get("needs_reading")]
     if pending and not getattr(llm, "disabled", True):
         raise RuntimeError(f"독음 작성 재시도 필요: {', '.join(str(p) for p in pending[:3])}")
+    added = set(res.get("added") or [])
+    _safe_log_song_events(lambda evs: log_events(gh, now_iso, evs), [
+        websub_mod.notify_event(now_iso, who, e.get("video_id") or "", e.get("title") or "",
+                                f"알림 수신 · {e.get('video_id')} · " + ("신곡 등록" if (e.get("title") or "") in added else "등록할 곡 없음(이미 있음 · 제외 대상)"))
+        for e in entries if e.get("video_id")])
     return res
+
+
+def _websub_followup(websub: dict, video_id: str, videos: dict, new_preview: dict, now_iso: str, enqueue_errors: list,
+                     *, make_queue=None) -> dict:
+    """(v4.5.2) PubSub 알림으로 시작한 확인의 마무리 — 수신 기록 이벤트를 만들고, API 가 아직 그 영상을 모르면(신규 영상 반영 지연)
+    첫 확인일 때만 `WAKE_RETRY_SEC` 뒤 재확인을 PubSub 큐에 건다. 예전(v4.5.0)엔 접수 서비스가 알림마다 「즉시 + 2분 뒤」 두 번을
+    무조건 걸었다 — 버스트 때 쓰기 서비스를 두 배로 붙잡아 트윗 저장이 밀렸다(스테이징 실측, VERSION.md v4.5.2)."""
+    attempt = int(websub.get("attempt") or 1)
+    who, title = websub.get("who") or "", websub.get("title") or ""
+    if video_id in (videos or {}):
+        item = next((it for it in new_preview.get("items", []) if it.get("video_id") == video_id), None)
+        state = f"예고 {item.get('state')}" if item else "방송 아님(일반 영상 · 종료 등)"
+        return websub_mod.notify_event(now_iso, who, video_id, title, f"알림 수신 · {video_id} · {state}")
+    if attempt >= 2:
+        return websub_mod.notify_event(now_iso, who, video_id, title, f"알림 수신 · {video_id} · 재확인에도 API 에 없음(비공개 · 삭제 등)",
+                                       result=RESULT_WARN)
+    when = (datetime.strptime(now_iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            + timedelta(seconds=websub_mod.WAKE_RETRY_SEC)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        tq = (make_queue or websub_mod.task_queue)()
+        if tq is None:
+            raise RuntimeError("Cloud Tasks 설정 없음")
+        tq.enqueue_wake(video_id, when, {"websub": dict(websub, attempt=2)})
+        detail = f"알림 수신 · {video_id} · API 미반영 → {websub_mod.WAKE_RETRY_SEC // 60}분 뒤 재확인"
+    except Exception as e:  # noqa: BLE001
+        enqueue_errors.append(f"{video_id}: websub 재확인 예약 실패 {e}")
+        detail = f"알림 수신 · {video_id} · API 미반영, 재확인 예약 실패 — 다음 정기 수집이 회수"
+    return websub_mod.notify_event(now_iso, who, video_id, title, detail)
 
 
 def _poll_plan(mode: str, is_wake: bool, replace_rss: bool) -> tuple[bool, bool]:
@@ -527,7 +562,7 @@ def record_video_releases(gh, entries: list[dict], now_iso: str) -> dict:
     return {"added": []}
 
 
-def _run(mode: str, woken_video_id: str | None) -> dict:
+def _run(mode: str, woken_video_id: str | None, websub: dict | None = None) -> dict:
     cfg = load_config()
     now_iso = _now_iso()
     is_wake = woken_video_id is not None
@@ -697,6 +732,7 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
 
     # ── Cloud Tasks enqueue ──
     enqueued, enqueue_errors = 0, []
+    ws_event = _websub_followup(websub, woken_video_id, videos, new_preview, now_iso, enqueue_errors) if websub else None
     wakes = _wakes_within_horizon(wakes, now_iso)
     sched_wakes = _scheduled_wake_times(new_preview, now_iso)
     newly_ended = any("→end" in t for t in transitions)
@@ -820,6 +856,8 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
             }
             events.insert(0, run_event)  # tick/wake을 맨 앞에
 
+        if ws_event:
+            events.append(ws_event)   # (v4.5.2) PubSub 수신 기록 — 변화 없는 확인이어도 남긴다(같은 영상 10분 안 반복은 count)
         log_events(gh, now_iso, events)
     except Exception as e:  # noqa: BLE001
         log.warning("monitor_log 기록 실패: %s", e)
@@ -839,10 +877,10 @@ def tick(mode: str) -> dict:
     return result
 
 
-def wake(video_id: str) -> dict:
-    """Cloud Tasks 진입점. 단일 방송 wake."""
-    log.info("wake start video_id=%s", video_id)
-    result = _run("wake", video_id)
+def wake(video_id: str, websub: dict | None = None) -> dict:
+    """Cloud Tasks 진입점. 단일 방송 wake. (v4.5.2) `websub` = PubSub 알림으로 시작한 확인의 정보(who · title · attempt)."""
+    log.info("wake start video_id=%s websub=%s", video_id, bool(websub))
+    result = _run("wake", video_id, websub=websub)
     log.info("wake done: %s", result)
     return result
 
@@ -1199,6 +1237,28 @@ if __name__ == "__main__":
     assert _poll_plan("baseline", False, True) == (True, True), "대체 모드: 일일 baseline 은 안전망으로 유지"
     assert _poll_plan("wake", True, False) == (False, False) and _poll_plan("wake", True, True) == (False, False), "wake 는 원래 폴링 안 함"
     print("[OK] PubSub: via 표기 · baseline 발견 warn(푸시 누락) · 푸시 신곡 등록(채널 필터 · 멱등 · 충돌/독음 실패 재시도) · RSS 폴링 분기")
+
+    # (v4.5.2) PubSub 확인 마무리 — API 가 알면 기록만, 모르면 첫 확인일 때만 2분 뒤 재확인(PubSub 큐), 두 번째도 없으면 warn
+    class _FQ:
+        def __init__(self, fail=False):
+            self.calls, self.fail = [], fail
+        def enqueue_wake(self, vid, when, extra=None):
+            if self.fail:
+                raise RuntimeError("tasks down")
+            self.calls.append((vid, when, extra))
+    _ws = {"who": "ritsu", "title": "t", "attempt": 1}
+    _npv = {"items": [{"video_id": "VID00000001", "state": "upcoming"}]}
+    _q1, _errs = _FQ(), []
+    _e = _websub_followup(_ws, "VID00000001", {"VID00000001": object()}, _npv, "2026-10-20T00:00:00Z", _errs, make_queue=lambda: _q1)
+    assert _q1.calls == [] and "예고 upcoming" in _e["detail"] and _e["merge_key"] == "websub-notify:VID00000001" and not _errs
+    _e = _websub_followup(_ws, "VIDNOTYET01", {}, _npv, "2026-10-20T00:00:00Z", _errs, make_queue=lambda: _q1)
+    assert _q1.calls == [("VIDNOTYET01", "2026-10-20T00:02:00Z", {"websub": {"who": "ritsu", "title": "t", "attempt": 2}})], _q1.calls
+    assert "2분 뒤 재확인" in _e["detail"] and _e["result"] == "ok"
+    _e = _websub_followup(dict(_ws, attempt=2), "VIDNOTYET01", {}, _npv, "2026-10-20T00:02:00Z", _errs, make_queue=lambda: _q1)
+    assert len(_q1.calls) == 1 and _e["result"] == "warn", "두 번째 확인에도 없으면 더 걸지 않고 warn"
+    _e = _websub_followup(_ws, "VIDNOTYET02", {}, _npv, "2026-10-20T00:00:00Z", _errs, make_queue=lambda: _FQ(fail=True))
+    assert _errs and "예약 실패" in _e["detail"], "재확인 예약 실패는 enqueue_errors 로(실행 기록 err)"
+    print("[OK] PubSub 확인 마무리(v4.5.2): 수신 기록 · API 미반영일 때만 재확인 1회 · 실패 처리")
 
     # (v4.3.2) wake 때 live 항목의 회원 전용 전환 감지
     from . import ytdlp_probe as _yp

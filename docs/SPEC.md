@@ -24,7 +24,7 @@
 | 저장 | **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`(Vercel 비연결). Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋 |
 | 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
 | 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` + (v4.5.0) PubSub 콜백 `/websub/<이름>` |
-| PubSub(WebSub) | (v4.5.0) 허브가 멤버 5채널 · 뮤타입 음원 채널의 변경을 `mewtype-telegram` 으로 POST → 즉시 wake / 신곡 등록. 구독 일일 갱신은 `mewtype-backend` `/websub-renew`. §8.16 |
+| PubSub(WebSub) | (v4.5.0) 허브가 멤버 5채널 · 뮤타입 음원 채널의 변경을 `mewtype-telegram` 으로 POST → 즉시 wake / 신곡 등록(v4.5.2 — PubSub 전용 큐 `mewtype-websub` 로 예약, 수신 기록은 쓰기 서비스). 구독 일일 갱신은 `mewtype-backend` `/websub-renew`. §8.16 |
 | 외부 LLM | **Groq**(선택) — notice 제목 추출·의미 중복판정 + notice/개인트윗/방송 제목 번역 + 개인 예고 판정(참여·예고확인). 키 없으면 원문 노출 폴백 |
 | 업스트림 시스템 | 운영자 폰 Automate — X·YouTube 푸시알림을 `POST /ingest` 로 중계(코드베이스 밖) |
 
@@ -1022,7 +1022,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 
 ---
 
-### 8.16 PubSub(WebSub) 수신 — `websub.py` + `handlers.detect_songs_from_push` (v4.5.0)
+### 8.16 PubSub(WebSub) 수신 — `websub.py` + `handlers.detect_songs_from_push` (v4.5.0, 버스트 대비 v4.5.2)
 
 YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수정)을 허브(`pubsubhubbub.appspot.com`)가 우리 주소로 **POST** 해 준다 — RSS 폴링 없이 약 1분 안에 발견.
 (WebSub = 옛 PubSubHubbub, 웹훅 방식. GCP Cloud Pub/Sub 과는 다른 서비스.) 시험 결과 · 설계 배경 `ref/pubsub_probe/PUBSUB_VS_POLLING.md`.
@@ -1034,16 +1034,25 @@ YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수
 - `GET /websub/<이름>` — 허브 검증. `hub.mode`(subscribe|unsubscribe) · `hub.topic`(우리 채널의 피드 주소) · `hub.challenge` 를 확인하고 challenge 를 그대로 돌려준다. 이벤트 `action=verify` 기록.
 - `POST /websub/<이름>` — 알림(Atom). **인증 = `X-Hub-Signature`**(`<algo>=<hex>`, `hub.secret` 으로 만든 본문 HMAC — sha1/256/384/512, 상수 시간 비교). 서명이 없거나 틀리면 **2xx 로 받고 무시**
   (WebSub 규약 — 허브 재시도 방지), 이벤트 `action=reject` 는 프로세스당 10분에 한 번만. 비밀 `WEBSUB_SECRET`(Secret Manager) 이 없으면 503.
-  - 멤버 채널 → **영상 ID 만** 쓴다: 즉시 + 2분 뒤 두 번 `apply.enqueue_reconcile(video_id)`(= Cloud Tasks `/wake`, 이름이 영상 ID + 분이라 같은 알림은 흡수; 신규 영상은 API 반영이 늦을 수 있어 한 번 더). 판정은 wake 의 `videos.list` 가 한다 — 알림 본문은 판정에 안 쓴다.
-  - 뮤타입 음원 채널 → 본문 항목(`video_id` · `title` · `published`, RSS 항목과 같은 필드)을 쓰기 작업 `song_push` 로 적재(`apply.submit(wait=False)`) → `handlers.detect_songs_from_push` → `_detect_new_songs(via="push")`.
+  - 멤버 채널 → **영상 ID 만** 쓴다: **즉시 확인 1건**을 PubSub 전용 큐(`WEBSUB_QUEUE`, 아래)에 예약(Cloud Tasks `/wake`, 본문에 `websub: {who, title, attempt:1}`. 이름이 영상 ID + 분이라 같은 분의 같은 알림은 흡수). 판정은 wake 의 `videos.list` 가 한다 — 알림 본문은 판정에 안 쓴다.
+    (v4.5.2) 「2분 뒤 한 번 더」는 쓰기 서비스가 건다 — 첫 확인에서 `videos.list` 가 그 영상을 아직 모를 때만(신규 영상 반영 지연) `WAKE_RETRY_SEC`(120초) 뒤 `attempt:2` 를 같은 큐에 예약하고, 두 번째에도 없으면 더 걸지 않고 warn 으로 기록(`handlers._websub_followup`). v4.5.0 은 접수 서비스가 알림마다 두 번을 무조건 걸었다.
+  - 뮤타입 음원 채널 → 본문 항목(`video_id` · `title` · `published`, RSS 항목과 같은 필드)을 쓰기 작업 `song_push` 로 PubSub 전용 큐에 적재 → `handlers.detect_songs_from_push` → `_detect_new_songs(via="push")`.
     곡명이 이미 있으면 건너뛰므로 같은 알림이 여러 번 와도 한 번만 등록. 쓰기 충돌 · 독음 작성 실패는 예외로 던져 Cloud Tasks 가 재시도(최대 5회), 그래도 안 되면 일일 baseline 이 안전망.
-  - 예약 · 적재가 실패하면 **503** 으로 응답해 허브가 알림을 다시 보내게 한다(이벤트 `notify_fail`). 삭제 알림(tombstone)은 기록만(`deleted`). 항목의 채널 ID 가 구독 채널과 다르면 무시.
+  - 예약 · 적재가 실패하면 **503** 으로 응답해 허브가 알림을 다시 보내게 한다(이벤트 `notify_fail`). 삭제 알림(tombstone)은 서비스 로그로만 남긴다. 항목의 채널 ID 가 구독 채널과 다르면 무시.
+  - (v4.5.2) **알림 POST 는 커밋 없이 응답한다** — 수신 기록 `notify` 는 그 확인(또는 `song_push`)을 처리하는 **쓰기 서비스**가 남긴다. 쓰기 서비스는 한 번에 하나만 처리하므로 `monitoring` 브랜치 커밋이 서로 부딪히지 않는다.
+    v4.5.0 은 접수 서비스가 알림마다 커밋해, 10건 이상이 몰리면 같은 이벤트 파일에 동시 커밋이 몰려 충돌 · 응답 지연(최대 약 25초) · 기록 유실이 났다(스테이징 실측, `docs/VERSION.md` v4.5.2).
+    접수 쪽 커밋은 드문 경우(서명 불일치 `reject` — 10분에 한 번 · 예약 실패 `notify_fail`)만 남았다.
+
+**PubSub 전용 큐 `WEBSUB_QUEUE`**(v4.5.2, 운영 `mewtype-websub` · 스테이징 `mewtype-websub-stage`, `deploy/setup.sh` 가 만든다): 동시 1건 · 초당 0.2건(5초에 1건) · 쓰기 서비스가 바빠 거절(429)하면 5초부터 다시(최대 20회).
+쓰기 서비스(동시 1건)가 PubSub 확인으로 쉬지 않고 바빠지지 않게 해 그 틈으로 접수 서비스의 동기 쓰기(트윗 저장 등)가 들어가게 하려는 것. 단 Cloud Tasks 가 순간 허용량(burst)을 10 으로 자동 설정해 **처음 10건 정도는 제한 없이 연달아** 나간다(실측: 12건이 약 3.5초 간격) —
+버스트 개선의 대부분은 큐 속도보다 접수 커밋 제거와 확인 횟수 절반에서 왔다. 큐가 없으면(env 미설정 · 로컬 시험판) 기본 큐로 예약한다. 예고를 지울 때의 예약 취소(`apply.cancel_video_checks`)는 이 큐의 `wake-<영상>-` 도 지운다.
 
 **구독 갱신**(쓰기 서비스 `POST /websub-renew`, Cloud Scheduler 매일 KST 06:20, OIDC): 6개(멤버 5 + 뮤타입 음원 채널 1) 구독 전부 `hub.mode=subscribe`(`hub.verify=async` · `hub.lease_seconds=432000`=5일 · `hub.secret`)를 다시 보낸다(멱등 — 임대 갱신).
 허브가 곧바로 검증 GET 을 보내고 콜백이 `verify` 를 기록한다 — **`verify` 가 로그에 보이면 구독이 살아 있다**. 갱신 잡은 갱신 **전에** 최근 3일 `flow=websub` 이벤트를 읽어 `verify` 가
 36시간 넘게 없는 구독을 찾아 DM 한다(이전 `renew` 기록이 없으면 첫 실행이라 판정 불가). 요청 실패(202/204 아님)도 DM. 결과는 이벤트 `action=renew`(문제가 있으면 warn).
 
-**모니터 이벤트 `flow="websub"`**: `verify` · `notify`(영상 ID · 제목) · `renew` · `reject` · `notify_fail` · `deleted`. 웹 monitor 리포트에는 아직 레인이 없다(이벤트 로그 파일에서 본다).
+**모니터 이벤트 `flow="websub"`**: `verify` · `notify`(영상 ID · 제목 · 확인 결과 — 쓰기 서비스가 기록, v4.5.2) · `renew` · `reject` · `notify_fail`. 웹 monitor 리포트에는 아직 레인이 없다(이벤트 로그 파일에서 본다).
+(v4.5.2) `notify` 는 `merge_key`(`websub-notify:<영상>`)로 **같은 영상이 10분 안에 또 오면 새 줄 대신 기존 줄의 `count` 를 올리고 `last_ts` · `detail` 을 갱신**한다(`monitor_log._apply_merges`). 같은 분의 반복은 Cloud Tasks 이름 중복으로 확인 자체가 1번이라 count 에도 1번으로 잡힌다(매 알림은 접수 서비스 Cloud Run 로그 「PubSub 알림」 줄).
 `flow="song"` 의 `added` 이벤트에 `via`(tick|baseline|push)가 붙는다 — **`WEBSUB_REPLACE_RSS=1` 인데 `via=baseline` 으로 곡이 등록되면 푸시가 못 잡았다는 뜻이라 warn** (추가 감시 없이 푸시 실패를 알아채는 장치).
 
 **RSS 대체 스위치 `WEBSUB_REPLACE_RSS`**(쓰기 서비스 env, 기본 0): 0 = 알림도 받고 폴링도 그대로(이중 운영 · 롤백). 1 = 10분 light 틱이 RSS · 신곡 감지를 생략하고(`handlers._poll_plan`),
@@ -1188,16 +1197,16 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 `deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
 - `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**,
-  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)). 멱등.
+  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)) + (v4.5.2) PubSub 전용 큐 `WEBSUB_QUEUE`(기본 `mewtype-websub`, 동시 1 · 초당 0.2). 멱등.
 - `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
   + secrets/env. `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN` 은 Secret 이 있을 때만 마운트(v3.7.1 — 전엔
   healthchecks Secret 을 무조건 마운트해 새 프로젝트에서 첫 배포가 실패). 배포 후 `SERVICE_URL` env 재설정.
-  (v4.5.0) `WEBSUB_SECRET`(Secret, 있을 때만) · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL — 배포 때 조회, 접수 서비스를 **먼저** 배포) · `WEBSUB_REPLACE_RSS`(기본 0) env.
+  (v4.5.0) `WEBSUB_SECRET`(Secret, 있을 때만) · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL — 배포 때 조회, 접수 서비스를 **먼저** 배포) · `WEBSUB_REPLACE_RSS`(기본 0) · (v4.5.2) `WEBSUB_QUEUE`(PubSub 확인 재예약용) env.
 - `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`*/10 * * * *` Etc/UTC, v3.6) /
   `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`) / (v4.5.0) `mewtype-websub-renew`(`20 6 * * *` Asia/Seoul → `/websub-renew`). OIDC.
 - `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
   `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
-  (조건부) + `INGEST_YT_ENABLED` env. (v4.5.0) `WEBSUB_SECRET`(조건부 — 없으면 `/websub/*` 는 503). (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
+  (조건부) + `INGEST_YT_ENABLED` env. (v4.5.0) `WEBSUB_SECRET`(조건부 — 없으면 `/websub/*` 는 503) · (v4.5.2) `WEBSUB_QUEUE`(알림 확인 · 신곡 등록 예약 큐 — 큐가 없으면 예약 실패 → 503 이라 `setup.sh` 로 **먼저** 만든다). (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
   `YT_COOKIES_FILE` env(회원 전용 라이브 yt-dlp 조회용, 없어도 동작). **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
 - `telegram_webhook.sh` — `setWebhook`.
 
