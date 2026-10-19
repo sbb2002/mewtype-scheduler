@@ -20,6 +20,7 @@ from .config import load_config
 from .control import default_control, get_log_level, is_paused
 from .gh_store import ConflictError, GitHubStore
 from . import songs as songs_mod
+from . import websub as websub_mod
 from .monitor_log import RESULT_WARN, RESULT_ERR, RESULT_OK, log_events
 from .notify import Telegram, diff_events, summary_text
 from .notify import allows as notify_allows
@@ -327,8 +328,13 @@ def _record_song_actions(gh, entries: list[dict], now_iso: str) -> list[str]:
 
 
 def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.fetch_feed_entries, llm=None,
-                      log_events_fn=None, record_fn=None) -> dict:
-    """(v4.2.0) 토픽 채널 RSS(쿼터 0)에서 새 곡을 찾아 `songs.json` 에 **즉시 등록**한다. 방송 파이프라인과 무관한 별도 경로.
+                      log_events_fn=None, record_fn=None, via: str = "tick") -> dict:
+    """(v4.2.0) 뮤타입 음원 채널(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널) RSS(쿼터 0)에서 새 곡을 찾아
+    `songs.json` 에 **즉시 등록**한다. 방송 파이프라인과 무관한 별도 경로.
+
+    (v4.5.0) `via` = 발견 경로 — "tick"(10분 틱 RSS) · "baseline"(일일 baseline RSS) · "push"(PubSub 알림, `fetch` 가 알림 본문 항목을 돌려준다).
+    PubSub 대체 모드(`websub.replaces_rss()`)에서 baseline 이 곡을 새로 등록했다면 푸시가 못 잡았다는 뜻이라 그 이벤트를 warn 으로 남긴다
+    (추가 감시 없이 푸시 실패를 알아채는 장치). push 경로는 RSS 조회가 아니므로 「RSS 가 비어 있음」 이벤트를 내지 않는다.
 
     규칙은 songs.py 머리말 참고(곡명이 이미 있으면 건너뜀 · (Cover)=cover · feat. 제외 · 반려(삭제)한 곡은 다시 등록 안 함).
     - 새 곡의 독음은 외부 LLM 이 쓴다(`llm.song_reading`). 실패하면 `needs_reading` 으로 남겨 **이후 tick 이 재시도**(tick 당 최대 3건).
@@ -350,8 +356,8 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
             log_events_fn = lambda ev: log_events(gh, now_iso, ev)  # noqa: E731
         events: list[dict] = []
         empty_feed = not any(e for _, e in entries_by_who)
-        if empty_feed and now_iso[14:16].isdigit() and int(now_iso[14:16]) < 10:
-            events.append(_song_event(now_iso, RESULT_WARN, "토픽 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
+        if empty_feed and via != "push" and now_iso[14:16].isdigit() and int(now_iso[14:16]) < 10:
+            events.append(_song_event(now_iso, RESULT_WARN, "뮤타입 음원 채널 RSS 가 비어 있음(조회 실패 가능) — 신곡 감지 못 함", action="rss_empty"))
         doc, sha = gh.read_json(songs_mod.SONGS_PATH)
         if doc is None:
             log.error("songs.json 이 없음 — 신곡 등록 건너뜀(data 브랜치에 시드 필요)")
@@ -401,8 +407,10 @@ def _detect_new_songs(gh, channels_cfg: dict, now_iso: str, *, fetch=songs_mod.f
                 f"곡명 「{a['title']}」이 목록에 없음 · 제목 끝 (Cover) {'있음 → cover' if a['kind'] == 'cover' else '없음 → original'} · feat. 아님 · 반려한 곡 아님",
                 undo={"type": "remove_song", "id": a["id"], "title": a["title"], "added_at": now_iso},
                 input=songs_mod._entry_snapshot(src) if src else {"video_id": a["id"], "title": a["title"]}, who=a.get("who") or "group"))
-            events.append(_song_event(now_iso, RESULT_OK, f"신곡 등록 · {a['title']} · {a['kind']}", action="added",
-                                      video_id=a["id"], title=a["title"], kind=a["kind"], who=a.get("who") or "group"))
+            missed_push = via == "baseline" and websub_mod.replaces_rss()
+            events.append(_song_event(now_iso, RESULT_WARN if missed_push else RESULT_OK,
+                                      f"신곡 등록 · {a['title']} · {a['kind']}" + (" · PubSub 알림 없이 baseline 이 발견" if missed_push else ""),
+                                      action="added", via=via, video_id=a["id"], title=a["title"], kind=a["kind"], who=a.get("who") or "group"))
         for s in dups:
             e = s["entry"]
             dup = s.get("dup_of") or {}
@@ -440,6 +448,42 @@ def _safe_log_song_events(fn, events: list[dict]) -> None:
         fn(events)
     except Exception:  # noqa: BLE001
         log.warning("신곡 모니터 로그 실패", exc_info=True)
+
+
+def detect_songs_from_push(gh, entries: list[dict], now_iso: str, *, channels_cfg: dict | None = None, llm=None) -> dict:
+    """(v4.5.0) PubSub 알림이 알려 준 뮤타입 음원 채널 영상(곡) 항목으로 신곡을 등록한다 — `/write` 작업 `song_push` 의 본체.
+
+    알림 본문(서명 검증을 통과한 항목: video_id · title · published)을 RSS 항목 대신 `_detect_new_songs` 에 그대로 넣는다 — 등록 규칙 ·
+    판단 기록 · 이벤트 · 독음 작성이 RSS 경로와 같다(`via="push"`). 곡명이 이미 있으면 건너뛰므로 같은 알림이 여러 번 와도 한 번만 등록된다.
+    쓰기 충돌 · 예외, 또는 독음 작성 실패(`needs_reading` 이 남음)면 **예외를 던져** Cloud Tasks 가 재시도하게 한다(최대 5회) —
+    RSS 경로는 다음 틱이 재시도했지만 push 는 틱이 없기 때문이다. 재시도해도 안 되면 일일 baseline 이 마지막 안전망."""
+    cfg = None
+    if channels_cfg is None:
+        channels_cfg = load_channels()
+    if llm is None:
+        cfg = load_config()
+        llm = _make_llm(cfg)
+    res = _detect_new_songs(gh, channels_cfg, now_iso, fetch=lambda cid: [dict(e) for e in entries if e.get("channel_id") in (None, "", cid)],
+                            llm=llm, via="push")
+    if res.get("skipped") in ("conflict", "error"):
+        raise RuntimeError(f"신곡 등록 재시도 필요: {res['skipped']}")
+    doc, _ = gh.read_json(songs_mod.SONGS_PATH)
+    pending = [s.get("title") for s in songs_mod.norm_doc(doc or {})["songs"] if s.get("needs_reading")]
+    if pending and not getattr(llm, "disabled", True):
+        raise RuntimeError(f"독음 작성 재시도 필요: {', '.join(str(p) for p in pending[:3])}")
+    return res
+
+
+def _poll_plan(mode: str, is_wake: bool, replace_rss: bool) -> tuple[bool, bool]:
+    """(v4.5.0) 이 실행이 RSS(멤버 채널)를 조회하는가 · 신곡 감지(뮤타입 음원 채널 RSS)를 하는가.
+
+    wake 는 둘 다 안 한다(원래도 그랬다). PubSub 이 RSS 를 대체하는 모드(`WEBSUB_REPLACE_RSS=1`)에서는 일일 baseline 만 RSS · 신곡 감지를 하고
+    10분 light 틱은 이미 추적 중인 영상의 재확인만 한다(발견은 PubSub 알림 · 업스트림 트윗이 맡는다)."""
+    if is_wake:
+        return False, False
+    if replace_rss and mode != "baseline":
+        return False, False
+    return True, True
 
 
 _VIDEO_RELEASES_PATH = "video_releases.json"
@@ -510,7 +554,10 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
     candidates: set[str] = set(_tracked_unresolved_ids(_pv0))
     if woken_video_id:
         candidates.add(woken_video_id)
-    if not is_wake:
+    do_rss, do_songs = _poll_plan(mode, is_wake, websub_mod.replaces_rss())
+    if not is_wake and not do_rss:
+        songs_result = {"skipped": "websub"}   # (v4.5.0) PubSub 대체 모드의 light 틱 — RSS · 신곡 감지 생략
+    if do_rss:
         # (v4a) RSS 는 **개인 유닛 채널만** — 그룹 공식 채널(@BDP_yumemita)을 돌리면 5th 싱글 뮤비 같은 노래 영상이 5인 합동
         # 방송으로 팬아웃돼 올라왔다(2026-09-30). 그룹 채널 영상은 트윗·수동 입력(참여 멤버 선택)으로만 올린다.
         # id_by_key 자체는 그대로 둔다 — 이미 추적 중인 영상의 enrich(videos.list)·아바타는 그룹 채널도 필요.
@@ -518,8 +565,9 @@ def _run(mode: str, woken_video_id: str | None) -> dict:
         rss_map = fetch_all_rss_video_ids(rss_ids)
         for ids in rss_map.values():
             candidates.update(ids)
-        # (v4.2.0) 토픽 채널 RSS 로 신곡 감지 — 방송 후보(candidates)와 별개
-        songs_result = _detect_new_songs(gh, channels_cfg, now_iso, llm=_make_llm(cfg))
+        # (v4.2.0) 뮤타입 음원 채널 RSS 로 신곡 감지 — 방송 후보(candidates)와 별개
+        if do_songs:
+            songs_result = _detect_new_songs(gh, channels_cfg, now_iso, llm=_make_llm(cfg), via="baseline" if mode == "baseline" else "tick")
 
     yt = YouTubeClient(cfg.youtube_api_key)
     avatars: dict[str, str] = {}
@@ -1100,6 +1148,57 @@ if __name__ == "__main__":
 
     assert _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "t", fetch=_boom) == {"skipped": "error"}, "예외도 tick 을 막지 않음"
     print("[OK] _detect_new_songs: 등록 · 판단 기록 · 이벤트 · 멱등 · 반려 재등록 차단 · LLM 독음 재시도 · 시드 전/충돌/실패 격리")
+
+    # (v4.5.0) PubSub — 발견 경로(via) 표기 · baseline 이 곡을 발견하면 푸시 누락 warn · 푸시 신곡 등록 · RSS 폴링 분기
+    import os as _os
+    _evv: list = []
+    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss[:1], llm=_FakeLLM(), log_events_fn=_evv.extend, via="tick")
+    assert _evv[0]["action"] == "added" and _evv[0]["via"] == "tick" and _evv[0]["result"] == "ok", "via 표기"
+    _os.environ.pop("WEBSUB_REPLACE_RSS", None)
+    _evv.clear()
+    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss[:1], llm=_FakeLLM(), log_events_fn=_evv.extend, via="baseline")
+    assert _evv[0]["result"] == "ok", "PubSub 대체 모드가 아니면 baseline 발견은 정상"
+    _os.environ["WEBSUB_REPLACE_RSS"] = "1"
+    _evv.clear()
+    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss[:1], llm=_FakeLLM(), log_events_fn=_evv.extend, via="baseline")
+    assert _evv[0]["result"] == "warn" and "PubSub 알림 없이" in _evv[0]["detail"] and _evv[0]["via"] == "baseline", "대체 모드의 baseline 발견 = 푸시 누락 warn"
+    _evv.clear()
+    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:00:00Z", fetch=lambda cid: _rss[:1], llm=_FakeLLM(), log_events_fn=_evv.extend, via="push")
+    assert _evv[0]["result"] == "ok" and _evv[0]["via"] == "push", "push 로 등록한 곡은 정상"
+    _os.environ.pop("WEBSUB_REPLACE_RSS", None)
+    _evv.clear()
+    _detect_new_songs(_FakeGH(dict(_doc)), _feeds_cfg, "2026-10-10T14:05:00Z", fetch=lambda cid: [], log_events_fn=_evv.extend, via="push")
+    assert _evv == [], "push 경로는 「RSS 비어 있음」 이벤트를 내지 않는다"
+
+    _log_events_orig, _pe = log_events, []
+    log_events = lambda _g_, _n_, evs: _pe.extend(evs)   # noqa: E731 — detect_songs_from_push 의 기본 이벤트 기록을 가로챔
+    _pushed = [{"video_id": "NEWSONG0001", "channel_id": "UCtopic", "title": "新しい曲", "published": "2026-10-10T11:00:00+00:00", "description": ""},
+               {"video_id": "OTHERCH0001", "channel_id": "UCother", "title": "다른 채널 곡", "published": "2026-10-10T11:00:00+00:00", "description": ""}]
+    _gp = _FakeGH(dict(_doc))
+    _rp = detect_songs_from_push(_gp, _pushed, "2026-10-10T11:01:00Z", channels_cfg=_feeds_cfg, llm=_FakeLLM())
+    assert _rp == {"added": ["新しい曲"], "readings": 1}, _rp
+    assert [s["title"] for s in _gp.files["songs.json"][0]["songs"]] == ["既にある曲", "新しい曲"], "다른 채널 항목은 무시"
+    assert _pe[0]["via"] == "push" and _pe[0]["video_id"] == "NEWSONG0001"
+    assert detect_songs_from_push(_gp, _pushed, "2026-10-10T11:02:00Z", channels_cfg=_feeds_cfg, llm=_FakeLLM()) == {"added": []}, "같은 알림이 또 와도 한 번만 등록(멱등)"
+    for _bad, _why in ((_FakeGH(dict(_doc), conflict=True), "쓰기 충돌"),):
+        try:
+            detect_songs_from_push(_bad, _pushed, "2026-10-10T11:01:00Z", channels_cfg=_feeds_cfg, llm=_FakeLLM())
+            raise AssertionError(f"{_why} 이면 재시도하도록 예외를 던져야 함")
+        except RuntimeError:
+            pass
+    try:
+        detect_songs_from_push(_FakeGH(dict(_doc)), _pushed, "2026-10-10T11:01:00Z", channels_cfg=_feeds_cfg, llm=_FakeLLM(fail_titles=["新しい曲"]))
+        raise AssertionError("독음 작성 실패면 재시도하도록 예외를 던져야 함")
+    except RuntimeError as _e:
+        assert "독음" in str(_e)
+    assert detect_songs_from_push(_FakeGH(dict(_doc)), _pushed, "2026-10-10T11:01:00Z", channels_cfg=_feeds_cfg, llm=_Off()) == {"added": ["新しい曲"]}, \
+        "LLM 비활성이면 독음 대기로 두고 재시도하지 않음"
+    log_events = _log_events_orig
+    assert _poll_plan("light", False, False) == (True, True) and _poll_plan("baseline", False, False) == (True, True), "기본: 전부 폴링"
+    assert _poll_plan("light", False, True) == (False, False), "대체 모드: light 틱은 RSS · 신곡 생략"
+    assert _poll_plan("baseline", False, True) == (True, True), "대체 모드: 일일 baseline 은 안전망으로 유지"
+    assert _poll_plan("wake", True, False) == (False, False) and _poll_plan("wake", True, True) == (False, False), "wake 는 원래 폴링 안 함"
+    print("[OK] PubSub: via 표기 · baseline 발견 warn(푸시 누락) · 푸시 신곡 등록(채널 필터 · 멱등 · 충돌/독음 실패 재시도) · RSS 폴링 분기")
 
     # (v4.3.2) wake 때 live 항목의 회원 전용 전환 감지
     from . import ytdlp_probe as _yp

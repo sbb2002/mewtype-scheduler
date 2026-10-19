@@ -21,7 +21,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **애매하거나 확인이 안 되는 부분은 상의 없이 임의로 넘겨짚지 않는다.** 불확실하면 질문하거나
   "확인 필요"로 명시해 둔다.
 - **용어는 `docs/TERMINOLOGY.md` 기준을 따른다.** 코드/문서 간 표현이 갈리면 그 문서를
-  기준으로 맞추고, 거기 없는 새 용어가 필요하면 임의로 정하지 말고 사용자와 상의 후 추가한다.
+  기준으로 맞추고, 거기 없는 새 용어가 필요하면 **쓰되 그 자리에서 뜻을 함께 적는다**(2026-10-19 운영자 확정) —
+  괄호로 풀이하거나 「OOO*」 로 쓰고 아래에 「* OOO = 한 줄 설명」 을 단다. 설명 없이 새 이름을 정해 쓰지 않는다
+  (이름을 설명 없이 정해 놓고 넘어간 일이 있었다 — 「토픽 채널」 → 운영자가 「뮤타입 음원 채널」 로 확정). 쓴 용어는 `docs/TERMINOLOGY.md` 에 올려 둔다.
   이 파일(`CLAUDE.md`) 자체도 코드 변경 시 같이 갱신 — 오래된 서술이 남으면 그 자체가 사용자를
   오도하는 이해용 문서가 된다.
 
@@ -47,6 +49,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.5.0 (기능, 브랜치 `feat/pubsub-websub`, 2026-10-19, 백엔드 — 미배포)**: **PubSub(WebSub*) 수신 — 방송 발견 · 신곡 등록을 RSS 폴링에서 푸시로.**
+> * PubSub(WebSub) = 허브가 YouTube 채널 피드 변경을 우리 주소로 POST 해 주는 푸시 방식(웹소켓 아님, GCP Cloud Pub/Sub 과 다름). 시험 결과: 신규 영상 알림 약 64초, 누락 0건, 낮 수신 확인, 종료 신호는 안 옴(종료 감지는 wake 그대로).
+> * 멤버 5채널 알림 → 영상 ID 로 즉시 + 2분 뒤 wake 예약. **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널) 알림 → 본문 항목을 `find_new_songs` 에 그대로 넣어 신곡 등록(`song_push`).
+>   인증 = 구독 때 준 `hub.secret`(Secret `WEBSUB_SECRET`)의 `X-Hub-Signature` HMAC. 구독 갱신 = `POST /websub-renew`(매일 KST 06:20, 임대 5일) — 허브 검증 GET 이 `flow=websub action=verify` 로 남는다.
+> * 스위치 `WEBSUB_REPLACE_RSS`(기본 0 = 알림 + 폴링 이중 운영): 1 이면 10분 light 틱의 RSS · 신곡 감지 생략, 일일 baseline 만 안전망. 코드 `src/backend/websub.py`, 상세 `docs/SPEC.md` §8.16, 요약 `docs/VERSION.md`.
+> * 미검증: 허브가 서명 헤더를 실제로 붙이는지 · 뮤타입 음원 채널의 푸시 · 콜드스타트 시 검증 응답 시간. 배포 순서 · 롤백은 VERSION.md.
+>
 > **v4.4.0 (기능, 브랜치 `feat/board-view-toggle`, 2026-10-18, 프론트만)**: **PC 보기 방식 탭 [테이블 | 카드]** — 「오늘 예고」 머리줄 오른쪽 탭, 선택은 `localStorage` `mew.board.view` 로 저장. 카드 보기 = 모바일 레인을 5열 나란히(펼치기 전 5인 레인 높이 동일) + 보드 아래 단일 「이후 예고 펼치기」 버튼이 5인 전원에게 동작. 소식 · 플레이어 위치 그대로. `render.js` · `timetable.js` · `main.js` · `css/timetable.css`, 상세 `docs/SPEC.md` 「PC 보기 방식 · 카드 보기 (v4.4.0)」, 요약 `docs/VERSION.md`. 좁은 PC 폭(768~1100px) · 실데이터 미확인.
 >
 > **v4.3.6 (핫픽스, 브랜치 `hotfix/banner-tabs-mobile`, 2026-10-18, 프론트만)**: **행사 배너 탭을 모바일에도 적용** — 탭 + 카드 1장, 화살표 대신 탭 줄 스와이프(터치) · 드래그(마우스) + 점 표시. `banners.js` · `banners.css`, 상세 `docs/SPEC.md` 계약 J 「탭 + 카드 1장」, 요약 `docs/VERSION.md`. 실기기 터치 미확인. 같은 버전: 모바일 오늘 카드 upcoming 타이머 링을 live 링과 같은 2단 표기(「n시간 / 시작까지」 · 1시간 미만 「n분 / 시작까지」)로.
@@ -76,7 +85,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > 요약 · 한계 `docs/VERSION.md` v4.2.4. (테스트판 `v4.3-fullauto` 는 번호 체계가 별개 — `vT1.0.1`.)
 >
 > **프론트 v4.2.0 (2026-10-06 개발 · 2026-10-08 main 머지 `60af093`, 브랜치 `feat/v4.2.0-player-button`)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
-> 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 토픽 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
+> 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 뮤타입 음원 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
 >
 > **프론트 v4.1.0 (2026-10-05)**: 예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 **오늘 타임테이블**(PC) / **오늘 카드 + 이후 예고 펼치기**(모바일 1명씩 슬라이드)로 대체 —
 > `docs/SPEC.md` 「타임테이블 · 이후 예고」, 요약 `docs/VERSION.md`. 아래 저장소 구조의 `lane__live` · 버킷 서술은 v4.0 까지의 모습이다.
@@ -413,8 +422,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) 2서비스 — 메인 `mewtype-backend`
-  (`concurrency=1 · max-instances=1`) + 제어 채널 `mewtype-telegram`(텔레그램 웹훅·`/ingest`). 정기 트리거
-  **Cloud Scheduler** 3잡(baseline JST 06:00 / light 10분(v3.6, 구 3h) / monitor KST 06:10) + 방송별 정밀
+  (`concurrency=1 · max-instances=1`) + 제어 채널 `mewtype-telegram`(텔레그램 웹훅·`/ingest`·(v4.5.0) PubSub 콜백 `/websub/<이름>`). 정기 트리거
+  **Cloud Scheduler** 4잡(baseline JST 06:00 / light 10분(v3.6, 구 3h) / monitor KST 06:10 / (v4.5.0) websub-renew KST 06:20) + 방송별 정밀
   wake **Cloud Tasks**. 리전 `asia-northeast1`.
 - **저장** = **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`
   (`docs/plan/data_repo_migration.md`). Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
@@ -437,7 +446,7 @@ src/
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
                        #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
     css/{reset,layout,card,timetable,king,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
-    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 65곡 — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
+    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 64곡(조사 원본 65곡 − 중복 1건) — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수
@@ -465,6 +474,8 @@ src/
                        #   /monitor(Scheduler, v3.8.9: 모니터링 스냅샷 + 멤버 현황 텍스트 DM) · `/` 헬스체크(GFE 가 /healthz 가로챔)
     handlers.py        # (v3) tick/wake → preview_build → (v3.7.1) apply_overrides → preview.json 커밋
                        #   + LLM 말단 번역(needs_tl sweep) + (v3.7.1) 모니터 로그 실행당 1커밋·무변화 스킵
+    websub.py          # (v4.5.0) PubSub(WebSub) 수신 — 알림 파싱 · X-Hub-Signature 검증 · 구독/일일 갱신(`renew`) · 끊긴 구독 점검 ·
+                       #        콜백 라우트(`register_callbacks` → 접수 서비스 `/websub/<이름>`). 상세 SPEC §8.16
     writers.py         # (v3.7) /write 잡 kind → telegram_app 커밋 함수 매핑(지연 import).
                        #   (v3.7.1 A-1) 잡은 커밋 전용 — 외부 호출은 제어 채널에서 준비해 인자로 넘김
     writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출(OIDC, 60초). MAIN_SERVICE_URL 없으면 로컬 디스패치
@@ -580,7 +591,7 @@ src/
                        #        (v2.5.1) unparsed_lines(인식 실패 줄) · (v2.6) _SKIP_LINE_RE(全員/비-YT)
                        #        (v3.1.4) parse_live_now — 즉시개시 공지(配信開始+온전한 URL) → video_id
                        #        포함 announced 즉시 반영. 그룹 명의만 있으면 host="group" 5인 팬아웃
-    songs.py           # (v4.2.0) 신곡 자동 감지 + 곡 관리 순수 로직 — 토픽 채널 RSS → 곡명이 없으면 data 브랜치 songs.json 에 즉시 등록((Cover)=cover · feat. 제외),
+    songs.py           # (v4.2.0) 신곡 자동 감지 + 곡 관리 순수 로직 — 뮤타입 음원 채널 RSS(+ v4.5.0 PubSub 알림 `detect_songs_from_push`) → 곡명이 없으면 data 브랜치 songs.json 에 즉시 등록((Cover)=cover · feat. 제외),
                        #        songs.json = {songs, rejected(삭제·반려 재등록 차단), seen}. 독음은 외부 LLM(llm.song_reading), 실패하면 needs_reading → 다음 tick 재시도.
                        #        handlers._detect_new_songs 가 tick 마다 호출(예외 격리 · 판단 기록 song_register/song_skip · 이벤트 flow="song").
                        #        어드민 API(list_songs · songs_status · edit_song · delete_song · add_song · unblock_song · regenerate_song_reading) = admin_api,
@@ -644,6 +655,7 @@ python -m src.collector.youtube      # _video_from_item 매핑 확인
 python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.writers        # (v3.7) /write 잡 kind 레지스트리
 python -m src.backend.writeclient    # (v3.7) MAIN_SERVICE_URL 없을 때 로컬 디스패치
+python -m src.backend.websub         # (v4.5.0) PubSub 파싱 · 서명 · 구독/갱신 · 끊긴 구독 판정 · 콜백 라우트(Flask 테스트 클라이언트)
 python -m src.backend.handlers       # _scheduled_wake_times·_preview_log_events·(v3.7.1) _should_log_run·apply_overrides 연결
 python -m src.backend.preview        # (v3) preview.json 계약 — match_item/sort/promote_state
 python -m src.backend.statemachine   # (v3) FSM 파생 derive() — 0.2 전이표 시나리오
@@ -668,9 +680,9 @@ python -m src.backend.monitor_report # (v3.5) parse_events/그룹핑/preview 세
 python -m src.backend.monitor_snapshot # (v3.8.9) 백필 날짜 선정·요약·멤버 현황 DM 텍스트·run_daily 멱등 (mock)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
-bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY 포함)
+bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY · (v4.5.0) WEBSUB_SECRET 포함)
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
-bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor 스케줄러 잡 (URL 불변이면 생략 가능)
+bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor / (v4.5.0) mewtype-websub-renew 스케줄러 잡 (URL 불변이면 생략 가능)
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스
 # writers.py·telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 # 전체 전환(v→v) 절차·롤백: docs/plan/v3_golive.md
@@ -688,6 +700,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 10분(v3.6, 구 3h)) 을 OIDC 로 호출.
    `/tick` = RSS + `videos.list` 배치 1회 → (v3) `preview_build` → `preview.json` 재구성.
    FSM 은 저장 없이 파생 — `pending.json` 은 v3 에서 없다.
+   (v4.5.0) env `WEBSUB_REPLACE_RSS=1` 이면 light 틱은 RSS · 신곡 감지를 생략하고 이미 추적 중인 영상만 재확인한다 — 새 영상 발견은
+   PubSub 알림(`mewtype-telegram` `/websub/<이름>` → 즉시 wake)이 맡고, 일일 baseline 이 RSS 안전망. `docs/SPEC.md` §8.16.
 2. video_id 있는 예정 방송마다 **Cloud Tasks** 에 wake 태스크 enqueue (v3 FSM: `scheduled_start − 3분`).
    도달 시 `POST /wake {video_id}` → 라이브 여부 확인 → 다음 체크 재예약
    (watching 3분 / live 시작~+60분 10분 · +60분 이후 5분(v3.7.1, 구 3분) / end 창 5분).

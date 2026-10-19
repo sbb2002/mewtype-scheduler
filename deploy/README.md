@@ -39,6 +39,22 @@
   → `/ingest` 가 저장 없이 받은 원문·파싱결과만 DM 회신. 푸시 알림이 잘리지 않고
   엔트리 전부 오는지 확인되면 `INGEST_DRY_RUN=0` 으로 되돌리고 재배포.
 
+### v4.5.0 — PubSub(WebSub) 수신 (`mewtype-telegram` `/websub/<이름>` + `mewtype-backend` `/websub-renew`)
+
+허브(`pubsubhubbub.appspot.com`)가 멤버 5채널 · 뮤타입 음원 채널의 변경을 접수 서비스로 POST → 방송 발견 · 신곡 등록을 RSS 폴링 대신 푸시로. 설계 `docs/SPEC.md` §8.16.
+
+배포 순서(운영자 결정 · 한 번에 하나씩):
+1. `bash deploy/setup.sh` — Secret `WEBSUB_SECRET`(허브 서명 키) 생성. 값이 없으면 임의 생성(운영자가 알 필요 없음).
+2. `bash deploy/deploy_telegram.sh` — 콜백 `GET/POST /websub/<이름>` + 서명 검증. **먼저** 해야 다음 단계가 콜백 주소를 안다.
+3. `bash deploy/deploy.sh` — 쓰기 서비스에 `WEBSUB_SECRET` · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL, 배포 때 자동 조회) · `WEBSUB_REPLACE_RSS`(기본 0) 주입.
+4. `bash deploy/scheduler.sh` — `mewtype-websub-renew`(매일 KST 06:20 → `POST /websub-renew`).
+5. 갱신 잡을 한 번 수동 실행(`gcloud scheduler jobs run mewtype-websub-renew --location asia-northeast1`) → 이벤트 로그(`monitoring` 브랜치 `monitoring/events-*.jsonl`)에
+   `"flow": "websub"` · `"action": "verify"` 가 6개(멤버 5 + 음원 1) 뜨면 구독 성공.
+6. **이중 운영 관찰**(`WEBSUB_REPLACE_RSS=0` — 알림도 받고 폴링도 그대로): `action=notify` 가 새 영상마다 찍히고, 첫 실알림에서 `action=reject`(서명 헤더 없음)가 **안** 뜨는지 확인.
+7. 문제 없으면 `env.sh` 에 `export WEBSUB_REPLACE_RSS=1` 후 `deploy.sh` — light 틱이 RSS · 신곡 감지를 생략(일일 baseline 만 안전망). `--set-env-vars` 는 매번 전체를 다시 쓰므로 env.sh 에 둬야 다음 배포에도 유지된다.
+
+롤백: `WEBSUB_REPLACE_RSS=0` 으로 재배포하면 폴링이 즉시 복귀. 완전 철회는 `mewtype-websub-renew` 잡을 삭제(구독은 5일 안에 자연 만료, 그동안 콜백은 알림을 받아도 폴링과 중복될 뿐 무해).
+
 ### 배포 순서 (v2.1)
 
 ```bash

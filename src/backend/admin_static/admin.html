@@ -1148,7 +1148,7 @@
             <div class="sd-head">
                 <div>
                     <h3 id="sd-h">🎵 신곡 감지 상태</h3>
-                    <p>토픽 채널 RSS(쿼터 0)를 정기 수집마다 읽어, 곡명이 없는 곡을 즉시 등록합니다. 「지금 확인」은 읽기만 하고 아무것도 쓰지 않습니다.</p>
+                    <p>뮤타입 음원 채널의 새 영상을 PubSub 알림으로 받아 곡명이 없는 곡을 즉시 등록하고, 정기 수집이 RSS(쿼터 0)로 한 번 더 확인합니다. 「지금 확인」은 RSS 를 읽기만 하고 아무것도 쓰지 않습니다.</p>
                 </div>
                 <button type="button" class="btn-line" id="sd-check">지금 확인</button>
             </div>
@@ -5416,7 +5416,7 @@
                 if (!S) tile("idle", "RSS", "조회 중…", "");
                 else if (S.error) tile("bad", "RSS", "조회 실패", S.error);
                 else if (!feed) tile("warn", "RSS", "설정 없음", "config/channels.json 의 song_feeds 에 채널이 없습니다");
-                else if (feed.ok) tile("", "RSS", "정상", `${feed.name || "토픽 채널"} · 최신 ${this.formatTime(feed.latest_published)} · ${feed.entry_count}건`);
+                else if (feed.ok) tile("", "RSS", "정상", `${feed.name || "뮤타입 음원 채널"} · 최신 ${this.formatTime(feed.latest_published)} · ${feed.entry_count}건`);
                 else tile("bad", "RSS", "실패 · 비어 있음", feed.error || "");
                 const ev = S && !S.error ? (S.events || [])[0] : null;
                 tile("idle", "최근 기록", ev ? this.formatTime(ev.ts) : "없음", ev ? (ev.detail || "") : "최근 7일 안에 신곡 기록이 없습니다");

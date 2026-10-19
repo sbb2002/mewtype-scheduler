@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns="http://www.w3.org/2005/Atom"><link rel="hub" href="https://pubsubhubbub.appspot.com"/><link rel="self" href="https://www.youtube.com/xml/feeds/videos.xml?channel_id=UCxc0MrPoACKTFlV24GqX2sg"/><title>YouTube video feed</title><updated>2026-10-16T14:02:40.993458882+00:00</updated><entry>
+  <id>yt:video:4Qg5SkkDuMI</id>
+  <yt:videoId>4Qg5SkkDuMI</yt:videoId>
+  <yt:channelId>UCxc0MrPoACKTFlV24GqX2sg</yt:channelId>
+  <title>【ぽんこつ社】峰月社長と商品開発会議【峰月律/ゆめみた】</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=4Qg5SkkDuMI"/>
+  <author>
+   <name> 峰月律-Minetsuki Ritsu- / 夢限大みゅーたいぷ</name>
+   <uri>https://www.youtube.com/channel/UCxc0MrPoACKTFlV24GqX2sg</uri>
+  </author>
+  <published>2026-10-15T13:34:11+00:00</published>
+  <updated>2026-10-16T14:02:40.993458882+00:00</updated>
+ </entry></feed>

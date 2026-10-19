@@ -1,6 +1,6 @@
-"""신곡 자동 감지 (v4.2.0) — 토픽 채널 RSS 에서 새 곡을 찾아 곡 목록(`songs.json`)에 등록한다. 순수 로직 + RSS 조회.
+"""신곡 자동 감지 (v4.2.0) — 뮤타입 음원 채널(아래 배경 참고) RSS · PubSub 알림에서 새 곡을 찾아 곡 목록(`songs.json`)에 등록한다. 순수 로직 + RSS 조회.
 
-배경: 곡은 그룹 공식 채널이 아니라 음원 자동 생성 채널(`Mugendai MewType - Topic`)에 올라온다. 이 채널은 방송이 아니라
+배경: 곡은 그룹 공식 채널이 아니라 뮤타입 음원 채널(YouTube 가 음원 배포로 자동 만든 `Mugendai MewType - Topic` 채널)에 올라온다. 이 채널은 방송이 아니라
 `preview.json` · FSM 과 무관하므로 방송 파이프라인(`preview_build`)에 끼우지 않고 별도 경로로 둔다(`handlers._detect_new_songs`).
 RSS 는 쿼터 0 이고, 새 곡이 있을 때만 쓰기가 일어난다.
 
@@ -485,7 +485,7 @@ if __name__ == "__main__":
 
     # 병합 · 멱등
     merged = merge_songs({"songs": existing}, new)
-    ok(len(merged["songs"]) == len(existing) + len(new) and len(existing) == 65, "병합: 원본 불변 · 곡 수 증가")
+    ok(len(merged["songs"]) == len(existing) + len(new) and len(existing) == 64, "병합: 원본 불변 · 곡 수 증가")   # 시드 64곡(10-08 중복 「オリオンをなぞる」 1건 제거)
     ok(find_new_songs(entries, merged["songs"])[0] == [], "병합 뒤 재실행하면 새 곡 없음(멱등)")
     ok(merge_songs(None, new)["songs"] == new and merge_songs(None, new)["rejected"] == [], "문서가 없으면 새로 만듦(rejected · seen 빈 목록)")
 

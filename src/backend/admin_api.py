@@ -713,7 +713,7 @@ def unblock_song(ident: str) -> dict:
 
 
 def add_song(video: str = "", title: str = "", kind: str = "", who: str = "", date: str = "", reading: str = "", force: bool = False) -> dict:
-    """곡 직접 추가. video = YouTube URL 또는 11자 영상 ID(필수). 제목 · 날짜는 비우면 채워 본다 — ① 토픽 채널 RSS ② YouTube API(videos.list, 쿼터 1).
+    """곡 직접 추가. video = YouTube URL 또는 11자 영상 ID(필수). 제목 · 날짜는 비우면 채워 본다 — ① 뮤타입 음원 채널 RSS ② YouTube API(videos.list, 쿼터 1).
     둘 다 안 되면 운영자가 title · date 를 직접 넣어야 한다. kind 를 비우면 제목 끝 (Cover) 로 판정. 곡명이 같은 곡이 있으면 force=True 일 때만 추가.
     차단돼 있던 곡이면 차단도 함께 풀린다. 독음을 비우면 LLM 이 다음 정기 수집에서 쓴다."""
     vid = songs_mod.parse_video_id(video)

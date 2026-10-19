@@ -28,6 +28,18 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
+- **v4.5.0** (기능, 2026-10-19, 백엔드 — 브랜치 `feat/pubsub-websub`, **미배포**) — **PubSub(WebSub*) 수신: 방송 발견 · 신곡 등록을 RSS 폴링에서 푸시로**.
+  * PubSub(WebSub) = 허브가 채널 피드 변경을 우리 주소로 POST 해 주는 푸시 방식(웹소켓 아님, GCP Cloud Pub/Sub 과 다른 서비스). 2026-10-13~19 시험(`ref/pubsub_probe/`): 신규 영상 알림이 게시 후 약 64초(폴링 104초~15분), 누락 0건, 낮(KST 10시대) 수신 확인. 종료 신호는 안 와서 종료 감지는 wake(`videos.list`) 그대로.
+  * **방송 발견**: 멤버 5채널 알림 → 영상 ID 만 뽑아 즉시 + 2분 뒤 wake 예약(판정은 `videos.list`). **신곡**: 뮤타입 음원 채널(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널)의 알림 본문(영상 ID · 곡명 · 공개 시각)을 그대로 `find_new_songs` 에 넣어 등록(`song_push` 작업, 충돌 · 독음 실패는 재시도).
+  * **인증**: 구독 때 `hub.secret`(Secret `WEBSUB_SECRET`)을 허브에 주고 알림의 `X-Hub-Signature` HMAC 을 검증한다. 틀리거나 없으면 2xx 로 받고 무시(WebSub 규약) + 이벤트 `reject`.
+  * **구독 유지**: 쓰기 서비스 `POST /websub-renew`(Cloud Scheduler 매일 KST 06:20)가 6개 구독(멤버 5 + 뮤타입 음원 채널)을 임대 5일로 갱신. 허브 검증 GET 을 이벤트 `flow=websub action=verify` 로 남기고, 36시간 넘게 검증이 없거나 요청이 실패한 구독이 있으면 DM.
+  * **RSS 대체 스위치 `WEBSUB_REPLACE_RSS`**(기본 0 = 알림 + 폴링 이중 운영): 1 이면 10분 light 틱이 RSS · 신곡 감지를 생략, **일일 baseline 만 안전망**. 켠 상태에서 baseline 이 곡을 새로 등록하면(`via=baseline`) 푸시가 못 잡은 것이라 warn 이벤트로 남는다.
+  * 용어 정리: 「토픽 채널」 → **뮤타입 음원 채널**(운영자 확정, `docs/TERMINOLOGY.md`). 새 용어는 쓰되 그 자리에서 뜻을 적는 규칙을 TERMINOLOGY.md · CLAUDE.md 에 추가.
+  * 코드: `websub.py`(파싱 · 서명 · 구독 · 갱신 · 콜백 라우트) · `handlers.py`(`_poll_plan` · `detect_songs_from_push` · `_detect_new_songs(via=)`) · `writers.py` `song_push` · `app.py` `/websub-renew` · `telegram_app.py` 콜백 등록 · `deploy/*`(Secret `WEBSUB_SECRET` · 콜백 주소 · 스케줄러 잡). 상세 `docs/SPEC.md` §8.16.
+  * **배포 순서(운영자 결정)**: `setup.sh`(Secret) → `deploy_telegram.sh` → `deploy.sh`(콜백 주소 조회) → `scheduler.sh`(갱신 잡) → 갱신 잡 1회 실행해 `verify` 확인 → 알림 + 폴링 이중 운영 관찰 → `WEBSUB_REPLACE_RSS=1`. 롤백 = `WEBSUB_REPLACE_RSS=0` 재배포(폴링 복귀), 완전 철회 = 갱신 잡 삭제(5일 뒤 구독 자연 만료) + 콜백 무시.
+  * **검증하지 못한 것**: ① 허브가 서명 헤더를 실제로 붙이는지(시험기는 서명 없이 구독) — 첫 실알림 때 `reject`(서명 헤더 없음)가 보이면 틀린 가정, ② 뮤타입 음원 채널이 푸시를 보내는지(시험 기간 신곡 없음 — baseline 안전망이 받아 주고 `via=baseline` warn 으로 드러남), ③ 허브 최대 임대 · 재시도 정책, ④ 실제 Cloud Run 콜드스타트에서 허브 검증 응답 시간. 자동 시험(`python -m src.backend.websub` · `handlers`)은 가짜 의존성으로 통과.
+  * **같이 고친 것(핫픽스 — 신곡 감지 self-test)**: `python -m src.backend.songs` 가 v4.2.0 병합(10-08) 때부터 main 에서 실패하고 있었다. self-test 가 시드 `assets/songs.json` 을 「65곡」으로 고정해 확인하는데, 10-08 `7b48b49` 에서 두 번 들어 있던 「オリオンをなぞる」 1건(`ekZUC5KaJFw`)을 지워 64곡이 됐다(배포된 v4.2.0 도 64곡). 실제 기능(신곡 감지 · 등록 · 플레이어)은 문제없었지만, 이 단언에서 멈추느라 **뒤쪽 감지 규칙 검사(새 곡 감지 · 커버 구분 · 이미 있는 곡명 제외 · 병합 멱등 등)가 10-08 부터 한 번도 실행되지 않았다**. 기댓값을 64 로 고쳐 60개 전부 통과. 「65곡」 서술도 정정(`CLAUDE.md` · `docs/SPEC.md` · 이 문서 v4.2.0 항목 — 65곡은 조사 원본 `ref/player/songs_release.json` 의 수).
+  * **회귀 확인(10-19)**: main(`d75a1e9`)과 이 브랜치에 같은 검사를 돌려 비교 — 모듈 self-test 42개(위 `songs` 외 전부 양쪽 통과, 이 브랜치는 `websub` 추가) · 프론트 selfcheck 5개 · 검증 하네스 `ref/v4a/verify/harness.py` 80/80 · `harness_b.py` 117/117 · `harness_c.py` 52/52 양쪽 동일, 서비스 라우트는 기존 13개 그대로 + 새 3개. `WEBSUB_REPLACE_RSS` 미설정이면 틱의 RSS · 신곡 감지 동작이 이전과 같다(달라진 점은 신곡 등록 이벤트의 `via` 필드뿐). `banner_scenarios.py` 는 실제 Groq 키가 필요해 돌리지 않았다.
 - **v4.4.0** (기능, 2026-10-18, 프론트만 — Vercel `main` 자동 배포, 브랜치 `feat/board-view-toggle`) — **PC 보기 방식 선택: [테이블 | 카드] 탭**. 「오늘 예고」 머리줄 오른쪽 끝의 탭으로 PC 화면을 기존 **오늘 타임테이블**(기본) 또는 **카드 보기**로 바꾼다. 선택은 브라우저 `localStorage` 키 `mew.board.view`(`table` | `cards`)에 저장돼 다음 방문에도 유지된다(저장소를 못 쓰면 이번 세션만 유지, 기본은 테이블). 모바일(<768px)은 탭 없이 기존 1명씩 슬라이드 그대로.
   - **카드 보기** = 모바일 레인(네임플레이트 + 오늘 카드)을 **5열로 나란히**(5인 전원이 한 화면). 오늘 카드(`todayCard` — 썸네일 · 합동 아이콘 · LIVE/종료/🔒 알약 · 카운트다운 링 · 제목 marquee) 그대로 재사용. 레인 안 날짜 · 구간 문구는 보드 머리줄과 중복이라 건수만(`buildTodayCards(ctx, key, {compact:true})`).
   - **펼치기 전 5인 레인 세로 길이 고정**: 오늘 카드 영역 높이 = 카드 2장 + 다음 카드가 살짝 보이는 값(넘치면 영역 안 스크롤), 카드 높이 = 썸네일 16:9(레인 폭 기준 `cqw`) + 본문 고정 높이(`--bh` 78px, ≤1100px 에서 72px). 한 레인만 카드가 많거나 적어도 5열 높이가 같다.
@@ -69,7 +81,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
     읽기: 저장된 옛 줄(`monitoring` 브랜치)은 **고치지 않고** `monitor_log.normalize_event` 로 읽을 때 치환 — `monitor_report.parse_events`(웹 monitor · 일별 스냅샷 공용),
     `admin_api._cloud_events`(관리 페이지). 프론트(웹 monitor JS · 관리 페이지 CSS · 칩 · 집계 라벨 「부분 실패」 → 「경고」)도 `warn` 기준.
   - **옛 스냅샷도 같은 방식으로 치환**: 지난 날짜 화면은 `monitoring/days/*.json` 스냅샷을 로그를 거치지 않고 그대로 읽어 `tone`/구간 `q` 값 `degraded` 가 남는다(실제 데이터 기준 신곡·트윗·소식 36곳, 방치하면 점이 색 없이 흐리게 보임). `monitor_report.normalize_day`(← `monitor_snapshot.read_day`)가 읽을 때 `warn` 으로 바꾸고, 웹 monitor JS `normDegraded` 가 방어로 한 번 더 바꾼다. 저장된 스냅샷 파일은 고치지 않는다.
-  - 같이 바뀐 동작 둘: `/ingest` 「사용법」 안내 명령 로그가 `degraded` → `ok`(잘못된 입력에 대한 정상 응답), 곡 토픽 RSS 가 비면 이벤트 `warn`(시간당 1회, 이름만 바뀜).
+  - 같이 바뀐 동작 둘: `/ingest` 「사용법」 안내 명령 로그가 `degraded` → `ok`(잘못된 입력에 대한 정상 응답), 뮤타입 음원 채널 RSS 가 비면 이벤트 `warn`(시간당 1회, 이름만 바뀜).
   - **이번 버전에 넣지 않은 것**: RSS 재시도 · 지속 실패 휴지 · 시차 폴러(`collector/rss.py`, `songs.py` 의 `fetch_feed_result`) — 검증 전이라 보류.
 
 - **v4.2.4** (핫픽스, 2026-10-14) — **트윗 · 영상 제목 번역 프롬프트 교체 + 부분 번역 WARN**. 계기: 유노 트윗 「なんで万バズしてるんですか」가
@@ -102,11 +114,11 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
   - **PC**: 버튼 없음 — 플레이어 팝업을 모달로 띄우지 않고 **메인 화면 맨 아래 도크**(`#player-dock`)에 상시 표시(도크가 화면 근처에 올 때 지연 로드). 재생부가 화면 밖이면 재생 중 프레임은 플로팅으로 남는다. (초기 안은 소식 막대 위 `#player-bar` 버튼이었으나 폐기)
   - 아이콘은 같은 SVG(`createElementNS`, `currentColor`): CD(바깥 원 · 가운데 구멍 · 빛 반사) + 음표 + `>`.
   - **플레이어 구현**: 버튼 클릭(`mew:player-open`) → `main.js` 가 `player.js` 를 처음 눌렀을 때만 import → 팝업. 상세는 `docs/SPEC.md` 「플레이어 (v4.2.0)」.
-    - 곡 목록 `assets/songs.json`(65곡, 프론트 정적 배포) · 순수 로직 `js/songs.js`(검색 정규화 · 가나→한글 독음 · 필터/정렬) · UI `js/player.js` · 스타일 `css/playerpop.css`. selfcheck `songs.selfcheck.mjs`.
+    - 곡 목록 `assets/songs.json`(64곡 — 조사 원본 65곡에서 중복 1건 제거, 프론트 정적 배포. 2026-10-19 v4.5.0 에서 「65곡」 표기 정정) · 순수 로직 `js/songs.js`(검색 정규화 · 가나→한글 독음 · 필터/정렬) · UI `js/player.js` · 스타일 `css/playerpop.css`. selfcheck `songs.selfcheck.mjs`.
     - **YouTube 임베드 재생만**(IFrame Player API). 광고 건너뛰기는 만들지 않는다 — 개발자 정책(III.I.5 광고 수정·차단 금지, III.I.9 백그라운드 플레이어 금지)과 필수 최소 기능(200×200, 프레임 앞 오버레이 금지)을 따른다.
     - **한 곡 재생**: 끝나면 다음 곡으로 넘어가지 않고 멈춤, 반복(한 곡)을 켜면 다시 재생. 이전·다음은 현재 검색·정렬 순서(셔플 가능).
     - **팝업을 내려도 재생 유지**: 같은 프레임을 옮기지 않고 CSS 로 팝업 자리 ↔ 오른쪽 아래 플로팅(356×200)으로 바꾼다. 프레임 바깥 위 손잡이 줄에 끌기 · 더블클릭(팝업으로) · 이전/다음 · 열기 · ✕(정지).
-    - **신곡 자동 감지**(백엔드 `src/backend/songs.py` + `handlers._detect_new_songs`, `config/channels.json` `song_feeds`): tick 마다 토픽 채널 RSS(쿼터 0)에서 새 곡을 찾아 data 브랜치 `songs.json` 에 등록.
+    - **신곡 자동 감지**(백엔드 `src/backend/songs.py` + `handlers._detect_new_songs`, `config/channels.json` `song_feeds`): tick 마다 뮤타입 음원 채널 RSS(쿼터 0)에서 새 곡을 찾아 data 브랜치 `songs.json` 에 등록.
       곡명이 이미 있으면 건너뜀 · 제목 끝 「(Cover)」=cover, 아니면 original(솔로 규칙 없음) · `feat.` 제외. 프론트는 data 브랜치 `songs.json` 을 먼저 읽고 없으면 `assets/songs.json` 폴백.
       **독음은 외부 LLM(Groq)이 작성**(`llm.song_reading`, 실패하면 `needs_reading` → 다음 tick 재시도, 운영자가 직접 고치면 LLM 이 덮지 않음). 삭제 · 반려한 곡은 `rejected` 로 **재등록 차단**(차단 해제 가능).
       **백엔드 구현**: 어드민 API `list_songs` · `songs_status`(지금 RSS 조회 · dry-run) · `edit_song` · `delete_song` · `add_song`(직접 추가) · `unblock_song` · `regenerate_song_reading`(독음 다시 만들기) — 계약 `ref/v4.2_admin_api_contract.md`.
