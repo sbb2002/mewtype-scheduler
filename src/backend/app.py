@@ -17,6 +17,7 @@
                     스냅샷은 monitor_auto 와 무관(웹 monitor 가 의존). v3.8.8 까지의
                     일간/월간/연간 HTML 리포트 자동 DM 은 폐지 — 전 기간은 웹 monitor 에서,
                     필요하면 /monitor 명령으로 수동 생성.
+  POST /websub-renew — Cloud Scheduler (매일, body 없음). (v4.5.0) PubSub(WebSub) 구독 일일 갱신 + 끊긴 구독 점검(`websub.renew`).
   GET  /          — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
@@ -145,6 +146,36 @@ def _monitor():
     except Exception as e:  # noqa: BLE001
         log.exception("monitor 실패")
         _alert("/monitor", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.post("/websub-renew")
+def _websub_renew():
+    """(v4.5.0) PubSub(WebSub) 구독 일일 갱신 — Cloud Scheduler. 멤버 5채널 + 뮤타입 음원 채널을 다시 구독 요청하고(임대 5일),
+    지난 허브 검증 기록으로 끊긴 구독을 찾는다. 콜백(허브 검증 · 알림 수신)은 접수 서비스 `mewtype-telegram` 이 받는다."""
+    try:
+        _authorize()
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    try:
+        import os
+        from datetime import datetime, timezone
+
+        from ..collector.config import load_channels
+        from . import storage, websub
+        from .gh_store import GitHubStore
+
+        cfg = _cfg()
+        gh = storage.make_store("data") or GitHubStore(cfg.github_token, cfg.github_repo, cfg.data_branch)
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        tg = notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id)
+        return jsonify(websub.renew(
+            gh, now_iso, load_channels(), os.environ.get("WEBSUB_CALLBACK_BASE", "").strip(),
+            os.environ.get("WEBSUB_SECRET", "").strip(), send_dm=tg.send,
+        ))
+    except Exception as e:  # noqa: BLE001
+        log.exception("websub-renew 실패")
+        _alert("/websub-renew", e)
         return jsonify({"error": str(e)}), 500
 
 

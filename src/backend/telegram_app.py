@@ -6904,6 +6904,27 @@ if _FLASK_AVAILABLE:
 
     _register_admin_cloud()
 
+    def _register_websub() -> None:
+        """(v4.5.0) PubSub(WebSub) 콜백 `GET/POST /websub/<name>` 등록 — 허브 검증 · 알림 수신. 구독 갱신은 쓰기 서비스(`/websub-renew`)가 한다.
+        알림은 서명(`X-Hub-Signature`)을 확인한 뒤 멤버 채널이면 영상 ID 로 즉시 확인(wake)을 예약하고, 뮤타입 음원 채널이면 신곡 등록 작업을 적재한다."""
+        from . import apply, websub
+        from .monitor_log import log_events
+
+        def _wake(vid: str, when: str) -> None:
+            # enqueue_reconcile 은 실패해도 None 을 돌려줄 뿐 예외를 안 던진다 — 여기서는 실패를 알려야 허브가 알림을 다시 보낸다(503)
+            if not apply.enqueue_reconcile(video_id=vid, run_at_iso=when):
+                raise RuntimeError(f"즉시 확인 예약 실패({vid})")
+
+        websub.register_callbacks(
+            app, load_cfg=_load_channels_config, make_gh=_make_gh,
+            enqueue_wake=_wake,
+            submit=lambda kind, args: apply.submit(kind, args, wait=False),
+            log_events_fn=log_events,
+            now_iso_fn=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+
+    _register_websub()
+
 
 if __name__ == "__main__":
     import sys

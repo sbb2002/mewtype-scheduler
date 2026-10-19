@@ -53,4 +53,8 @@ upsert_job mewtype-light "*/10 * * * *" "Etc/UTC" '{"mode":"light"}'
 echo "=== Monitor (1일 1회 KST 06:10 — baseline tick 완료 후) — 매일 전일 스냅샷, control.json monitor_auto 켜져 있으면 멤버 현황 텍스트 DM(v3.8.9) ==="
 upsert_job mewtype-monitor "10 6 * * *" "Asia/Seoul" '{}' "/monitor"
 
+# (v4.5.0) PubSub(WebSub) 구독 일일 갱신 — 임대는 5일이지만 매일 갱신해 하루 안에 끊김을 알아챈다(허브 검증 기록으로 점검, 끊기면 DM).
+echo "=== WebSub 구독 갱신 (1일 1회 KST 06:20) ==="
+upsert_job mewtype-websub-renew "20 6 * * *" "Asia/Seoul" '{}' "/websub-renew"
+
 echo "=== 스케줄러 설정 완료 ==="

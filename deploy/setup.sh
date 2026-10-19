@@ -143,4 +143,8 @@ create_secret VERCEL_TOKEN "Vercel API 토큰 (/monitor 배포 시도 수 조회
 # (v4) 관리 페이지 로그인 링크 서명 키 — 값이 없으면 임의 생성(운영자가 알 필요 없음)
 create_secret "${ADMIN_SECRET_NAME:-ADMIN_SECRET}" "관리 페이지 서명 키" "${ADMIN_SECRET:-$(python -c 'import secrets;print(secrets.token_hex(32))')}"
 
+# (v4.5.0) PubSub(WebSub) 허브 서명 키 — 구독 때 허브에 넘기는 hub.secret. 접수 서비스가 알림의 X-Hub-Signature 를 검증하고
+# 쓰기 서비스가 구독 갱신에 쓴다. 값이 없으면 임의 생성(운영자가 알 필요 없음).
+create_secret WEBSUB_SECRET "PubSub 서명 키" "${WEBSUB_SECRET:-$(python -c 'import secrets;print(secrets.token_hex(24))')}"
+
 echo "=== 셋업 완료 ==="

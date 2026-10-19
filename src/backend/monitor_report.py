@@ -1370,7 +1370,7 @@ function laneLegendHtml(key){
     ` 행을 함께 본다. v3.8.9 이전은 기존 로그(자동 인입 기록)에서 복원 — 무시·점검(ECHO)처럼 로그가 없던` +
     ` 알림과 자동/수동 구분이 안 되는 옛 소식 기록은 생략.</div>` + resultChipsHtml(["ok","err"]);
   if (key === "song") return `<div class="lg-title">🎵 신곡 감지</div>` +
-    `<div class="lg-sub">토픽 채널 RSS(10분마다 정기 수집)에서 새 곡을 찾아 곡 목록에 즉시 등록한 기록 1건 = 점 1개. 곡명 중복으로 등록하지 않은 경우 · 독음(LLM) 작성 ·` +
+    `<div class="lg-sub">뮤타입 음원 채널(PubSub 알림 · 정기 수집 RSS)에서 새 곡을 찾아 곡 목록에 즉시 등록한 기록 1건 = 점 1개. 곡명 중복으로 등록하지 않은 경우 · 독음(LLM) 작성 ·` +
     ` RSS 가 비어 있을 때(시간당 1회)도 점으로 남는다. 운영자의 곡 수정 · 삭제 · 직접 추가 · 차단 해제 · 반려도 같은 줄에 나온다(팝업에 「운영자」 표시).` +
     ` 점 색 = 결과(RSS 이상은 경고).</div>` + toneChipsHtml();
   if (key === "notice") return `<div class="lg-title">소식</div><div class="lg-sub">공식 계정의 방송 외 이벤트 게시물 처리 결과.</div>` + toneChipsHtml();
@@ -1413,7 +1413,7 @@ const LANES = [
   { key:"preview", label:"preview",     icon:"🎬", type:"bar",   rows: ROWS_MEMBERS },
   { key:"notice",  label:"소식",        icon:"📰", type:"point", rows:["notice"] },
   { key:"tweet",   label:"개인 트윗",   icon:"💌", type:"point", rows: ROWS_MEMBERS },
-  // (v4.2.0) 토픽 채널 RSS 신곡 자동 감지 + 운영자 곡 관리 — 점 색 = 결과(등록 정상 · RSS 이상 warn · 실패 err)
+  // (v4.2.0) 뮤타입 음원 채널 신곡 자동 감지 + 운영자 곡 관리 — 점 색 = 결과(등록 정상 · RSS 이상 warn · 실패 err)
   { key:"song",    label:"신곡 감지",   icon:"🎵", type:"point", rows:["song"] },
 ];
 const TRIGGER_GLYPH = { ops:"🎛️", tick:"🕒", wake:"📡", ingest:"📥" };

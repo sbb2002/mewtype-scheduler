@@ -979,7 +979,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 
 ### 8.15 신곡 자동 감지 · 곡 관리 — `songs.py` + `handlers._detect_new_songs` + 어드민 음반 탭 API (v4.2.0)
 
-곡은 그룹 공식 채널이 아니라 음원 자동 생성 채널 **`Mugendai MewType - Topic`**(`UCeXzCxZsDcaF5xI68fK5owA`)에 올라온다 — 방송이 아니라 `preview.json` · FSM(`preview_build`)과 무관하므로
+곡은 그룹 공식 채널이 아니라 **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 채널 「`Mugendai MewType - Topic`」, `UCeXzCxZsDcaF5xI68fK5owA`)에 올라온다 — 방송이 아니라 `preview.json` · FSM(`preview_build`)과 무관하므로
 방송 파이프라인에 끼우지 않고 별도 경로로 둔다. `config/channels.json` 최상위 `song_feeds`(`channels` 와 별개 키 — 방송 쪽이 읽지 않음)에 채널을 둔다.
 
 **곡 문서 `songs.json`**(data 브랜치) = `{"songs": [...], "rejected": [...], "seen": [...]}` — 프론트 플레이어는 `songs` 만 읽는다.
@@ -988,7 +988,7 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
 - `rejected`: 삭제 · 반려한 곡 `{id, name_key, title, ts, by}`. **RSS 최근 15건에 곡이 남아 있어도 다시 등록되지 않게 한다**(영상 ID · 곡명 키 둘 다). 차단 해제 가능(최대 500건).
 - `seen`: 이미 판단 기록을 남긴 「곡명 중복 건너뜀」 `{id, reason, ts}`(같은 건너뜀을 tick 마다 다시 기록하지 않게, 최근 200건).
 
-**감지**(매 `/tick` — light 10분 · baseline 06:00 JST, 실제 배포 Cloud Scheduler 값 · wake 제외): `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json` 과 비교해 **즉시 등록**(승인 대기 없음).
+**감지**(① 매 `/tick` — light 10분 · baseline 06:00 JST, 실제 배포 Cloud Scheduler 값 · wake 제외. ② (v4.5.0) PubSub 알림 — 아래 §8.16. `WEBSUB_REPLACE_RSS=1` 이면 light 틱은 건너뛰고 baseline 만): `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json` 과 비교해 **즉시 등록**(승인 대기 없음).
 - **규칙**(운영자 결정 2026-10-06): ① **곡명이 이미 있으면 등록 안 함**(영상 ID 가 달라도 — 앨범마다 같은 곡이 새 영상으로 올라온다) · 곡명 비교는 NFKC · 대소문자 · 공백 · 꼬리표 무시
   ② 제목 끝 **「(Cover)」**(대소문자 · 전각 괄호 무관)가 있으면 `cover`, 없으면 `original`. 다른 표기(「(Solo)」 등)에 대한 규칙은 두지 않는다 ③ `feat.` 곡은 등록 안 함
   ④ 같은 곡명이 한 묶음에 여럿이면 먼저 올라온 영상 하나만 ⑤ 반려 목록(`rejected`)에 있는 영상 · 곡명은 등록 안 함 ⑥ `who="group"`, `date`=공개 시각의 KST 날짜.
@@ -1016,6 +1016,36 @@ GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로
   `python -m src.backend.admin_api`(로컬 저장소 통합 흐름 — 감지 → 반려 → 재감지 안 됨 → 사용자 판단 재등록 → 삭제 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 실패 재시도 · 재요청).
 
 ---
+
+### 8.16 PubSub(WebSub) 수신 — `websub.py` + `handlers.detect_songs_from_push` (v4.5.0)
+
+YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수정)을 허브(`pubsubhubbub.appspot.com`)가 우리 주소로 **POST** 해 준다 — RSS 폴링 없이 약 1분 안에 발견.
+(WebSub = 옛 PubSubHubbub, 웹훅 방식. GCP Cloud Pub/Sub 과는 다른 서비스.) 시험 결과 · 설계 배경 `ref/pubsub_probe/PUBSUB_VS_POLLING.md`.
+
+**구독 대상**(`websub.subscriptions`): 멤버 5명의 채널 + 뮤타입 음원 채널(`song_feeds`). 그룹 공식 채널은 RSS 와 같은 이유로 제외(노래 영상이 합동 방송으로 올라옴).
+구독 이름 = 멤버 키(`arale` …) · `song-<song_feeds.key>`. 콜백 주소 = `<접수 서비스 URL>/websub/<이름>`.
+
+**콜백**(접수 서비스 `mewtype-telegram`, `websub.register_callbacks`):
+- `GET /websub/<이름>` — 허브 검증. `hub.mode`(subscribe|unsubscribe) · `hub.topic`(우리 채널의 피드 주소) · `hub.challenge` 를 확인하고 challenge 를 그대로 돌려준다. 이벤트 `action=verify` 기록.
+- `POST /websub/<이름>` — 알림(Atom). **인증 = `X-Hub-Signature`**(`<algo>=<hex>`, `hub.secret` 으로 만든 본문 HMAC — sha1/256/384/512, 상수 시간 비교). 서명이 없거나 틀리면 **2xx 로 받고 무시**
+  (WebSub 규약 — 허브 재시도 방지), 이벤트 `action=reject` 는 프로세스당 10분에 한 번만. 비밀 `WEBSUB_SECRET`(Secret Manager) 이 없으면 503.
+  - 멤버 채널 → **영상 ID 만** 쓴다: 즉시 + 2분 뒤 두 번 `apply.enqueue_reconcile(video_id)`(= Cloud Tasks `/wake`, 이름이 영상 ID + 분이라 같은 알림은 흡수; 신규 영상은 API 반영이 늦을 수 있어 한 번 더). 판정은 wake 의 `videos.list` 가 한다 — 알림 본문은 판정에 안 쓴다.
+  - 뮤타입 음원 채널 → 본문 항목(`video_id` · `title` · `published`, RSS 항목과 같은 필드)을 쓰기 작업 `song_push` 로 적재(`apply.submit(wait=False)`) → `handlers.detect_songs_from_push` → `_detect_new_songs(via="push")`.
+    곡명이 이미 있으면 건너뛰므로 같은 알림이 여러 번 와도 한 번만 등록. 쓰기 충돌 · 독음 작성 실패는 예외로 던져 Cloud Tasks 가 재시도(최대 5회), 그래도 안 되면 일일 baseline 이 안전망.
+  - 예약 · 적재가 실패하면 **503** 으로 응답해 허브가 알림을 다시 보내게 한다(이벤트 `notify_fail`). 삭제 알림(tombstone)은 기록만(`deleted`). 항목의 채널 ID 가 구독 채널과 다르면 무시.
+
+**구독 갱신**(쓰기 서비스 `POST /websub-renew`, Cloud Scheduler 매일 KST 06:20, OIDC): 6개(멤버 5 + 뮤타입 음원 채널 1) 구독 전부 `hub.mode=subscribe`(`hub.verify=async` · `hub.lease_seconds=432000`=5일 · `hub.secret`)를 다시 보낸다(멱등 — 임대 갱신).
+허브가 곧바로 검증 GET 을 보내고 콜백이 `verify` 를 기록한다 — **`verify` 가 로그에 보이면 구독이 살아 있다**. 갱신 잡은 갱신 **전에** 최근 3일 `flow=websub` 이벤트를 읽어 `verify` 가
+36시간 넘게 없는 구독을 찾아 DM 한다(이전 `renew` 기록이 없으면 첫 실행이라 판정 불가). 요청 실패(202/204 아님)도 DM. 결과는 이벤트 `action=renew`(문제가 있으면 warn).
+
+**모니터 이벤트 `flow="websub"`**: `verify` · `notify`(영상 ID · 제목) · `renew` · `reject` · `notify_fail` · `deleted`. 웹 monitor 리포트에는 아직 레인이 없다(이벤트 로그 파일에서 본다).
+`flow="song"` 의 `added` 이벤트에 `via`(tick|baseline|push)가 붙는다 — **`WEBSUB_REPLACE_RSS=1` 인데 `via=baseline` 으로 곡이 등록되면 푸시가 못 잡았다는 뜻이라 warn** (추가 감시 없이 푸시 실패를 알아채는 장치).
+
+**RSS 대체 스위치 `WEBSUB_REPLACE_RSS`**(쓰기 서비스 env, 기본 0): 0 = 알림도 받고 폴링도 그대로(이중 운영 · 롤백). 1 = 10분 light 틱이 RSS · 신곡 감지를 생략하고(`handlers._poll_plan`),
+이미 추적 중인 영상의 재확인만 한다. **일일 baseline(JST 06:00)은 RSS · 신곡 감지를 그대로 해 안전망**으로 남는다. 켜기 전에 `verify` 기록으로 구독이 살아 있는지 확인할 것.
+
+**검증되지 않은 가정**: ① 허브가 `hub.secret` 을 준 구독의 알림에 `X-Hub-Signature` 를 실제로 보내는지(시험기는 서명 없이 구독해 헤더를 기록한 적이 없다 — 첫 실알림에서 `reject`(헤더 없음)가 뜨면 이 가정이 틀린 것),
+② 허브가 허용하는 최대 임대, ③ 허브의 재시도 정책, ④ 뮤타입 음원 채널(자동 생성 채널)이 푸시를 실제로 보내는지(시험 기간 신곡 없음). ④ 는 baseline 안전망이 받아 주고 `via=baseline` warn 으로 드러난다.
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 
@@ -1066,8 +1096,8 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 
 **곡 데이터의 출처와 갱신**: 초기 데이터(시드)는 BPM 프로젝트(`bandori-playlist-maker-data` 저장소 `origin/data` 의 `data/songs_master.csv`)의 곡 목록에 YouTube 업로드 시각을 붙인
 `ref/player/songs_release.json`(65곡, 조사 보고 `docs/yumemita_player/REPORT.md` @devpapers)에서 `python scripts/build_songs_json.py` 로 만든 `assets/songs.json` 이다.
-출시일(`date`)은 **공식 발매일이 아니라 영상 업로드 시각**(KST 날짜)이다 — 토픽 채널 음원은 MV 공개일과 다를 수 있다. 이후 신곡은 BPM 프로젝트의 `/update-new-songs` 와 **무관하게**
-백엔드 tick 이 토픽 채널 RSS 에서 자동 감지해 data 브랜치 `songs.json` 에 등록한다(§8.15). **운영 전 시드 필요**: data 브랜치에 `songs.json` 이 없으면 자동 등록은 아무것도 하지 않는다 —
+출시일(`date`)은 **공식 발매일이 아니라 영상 업로드 시각**(KST 날짜)이다 — 뮤타입 음원 채널의 음원은 MV 공개일과 다를 수 있다. 이후 신곡은 BPM 프로젝트의 `/update-new-songs` 와 **무관하게**
+백엔드가 뮤타입 음원 채널(PubSub 알림 · 일일 RSS 확인)에서 자동 감지해 data 브랜치 `songs.json` 에 등록한다(§8.15). **운영 전 시드 필요**: data 브랜치에 `songs.json` 이 없으면 자동 등록은 아무것도 하지 않는다 —
 `assets/songs.json` 을 data 브랜치 `songs.json` 으로 올려 시드한다(운영자 작업, 아직 하지 않음).
 
 - **재생**: YouTube IFrame Player API(`https://www.youtube.com/iframe_api`, 처음 열 때 로드)의 임베드 프레임만 쓴다. **광고 건너뛰기 없음** — 광고는 프레임 안에서 YouTube 가 처리.
@@ -1098,17 +1128,17 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 - selfcheck: `songs.selfcheck.mjs`(변환 · 정규화 · 검색 · 정렬 · 강조 구간 · 종류 30건). **보류**: 곡명 한글 해석 검색.
 
 **확인 필요 · 미정 (2026-10-06 구현 시점)** — 임의로 넘겨짚지 않고 남겨 둔 것:
-1. **시드 · 첫 실행**: data 브랜치에 `songs.json` 이 없어서 자동 등록이 아직 동작하지 않는다(시드 전 = 건너뜀). 시드 뒤 **첫 tick 은 토픽 RSS 최근 15건 중 곡명이 없는 곡을 한꺼번에 등록**한다 —
+1. **시드 · 첫 실행**: data 브랜치에 `songs.json` 이 없어서 자동 등록이 아직 동작하지 않는다(시드 전 = 건너뜀). 시드 뒤 **첫 tick 은 뮤타입 음원 채널 RSS 최근 15건 중 곡명이 없는 곡을 한꺼번에 등록**한다 —
    2026-10-06 RSS 기준 10곡(`TearJerker` · `Face The Next` · `一番のひかり` · `うちゅうのふしぎ` · `夢はトゥルーエンド！` · `in my words` · `愛は衝動` · `にこいちミライ` · `唱`(cover) · `夢我夢中`).
    BPM 보고서가 「분류 불명 9곡」으로 보류했던 곡들이 규칙대로 original 로 들어가므로, 시드 전에 포함해도 되는지 운영자 확인이 필요하다. 신곡에 필요한 값은 RSS 만으로 얻는다(제목 · 공개 시각 · 구분) — `videos.list` 쿼터 0.
 2. **독음 15곡은 예시 — 운영자 검수 필요**. 나머지 50곡은 독음이 없어 독음(가나·한글) 검색이 안 된다. 채우는 방법(직접 입력 / 자동 생성)은 미정. `scripts/build_songs_json.py` 의 `READ` 에 있다.
 3. **이름순 정렬 한계**: 독음이 있으면 독음, 없으면 곡명(한자 · 기호 포함)으로 정렬해 섞여 보인다. 독음이 전 곡에 채워지면 해소.
-4. **미분류 9곡 · `feat.`**: 미분류 9곡 중 토픽 채널에 있는 곡은 위 1항대로 자동 등록 대상이다. `feat.` 곡은 자동 등록 · 시드에서 모두 제외(`songs.py` · `build_songs_json.py`). 피드 15건을 넘는 버스트는 아직 고려하지 않았다.
+4. **미분류 9곡 · `feat.`**: 미분류 9곡 중 뮤타입 음원 채널에 있는 곡은 위 1항대로 자동 등록 대상이다. `feat.` 곡은 자동 등록 · 시드에서 모두 제외(`songs.py` · `build_songs_json.py`). 피드 15건을 넘는 버스트는 아직 고려하지 않았다.
 5. **미검증(헤드리스 Chrome 에서 영상이 검은 화면이라 못 본 것)**: 실제 영상 재생 · 임베드 제한 영상의 오류 안내(`onError`) · 재생/일시정지 상태 동기화(`onStateChange`) · 모바일 실제 터치(손잡이 드래그 · 더블탭 → 팝업). 실기기 확인 필요.
 6. **정책 해석**: 「팝업을 내려도 재생 유지」를 위해 프레임을 항상 보이게 두는 것은 III.I.9(백그라운드 플레이어 금지)와 최소 200×200 요건의 **원문을 근거로 한 해석**이다. 플로팅 프레임의 허용 여부를 YouTube 에 문의해 확인한 것은 아니다.
 7. **✕(정지하고 치우기) 버튼**은 목업에 없던 추가 기능이다 — 플로팅 프레임이 높이 200px 로 화면을 계속 차지해 치울 방법이 필요하다고 판단. 유지 여부는 운영자 확인.
 8. **새 용어 미등재**: 「플로팅 프레임」 · 「별칭」 · 「독음」 · 「손잡이 줄」 은 `docs/TERMINOLOGY.md` 에 아직 없다(임의로 추가하지 않음 — 운영자와 정한 뒤 등재).
-9. **멤버 표시 분류 규칙**: 곡의 `who` 는 업로드 채널명으로 정한다(멤버 이름 일·영문 모두 인식, 「`Yuno Sengoku - Topic`」 같은 자동 생성 토픽 채널 포함, 그 밖은 `group`). 멤버별 곡 수는 그룹 28 · 아라레 11 · 유노 8 · 미야코 7 · 리츠 6 · 노노카 5.
+9. **멤버 표시 분류 규칙**: 곡의 `who` 는 업로드 채널명으로 정한다(멤버 이름 일·영문 모두 인식, 「`Yuno Sengoku - Topic`」 같은 자동 생성 아티스트 채널 포함, 그 밖은 `group`). 멤버별 곡 수는 그룹 28 · 아라레 11 · 유노 8 · 미야코 7 · 리츠 6 · 노노카 5.
    한 곡이 여러 멤버의 곡인지(참여 멤버)는 데이터에 없다.
 
 ---

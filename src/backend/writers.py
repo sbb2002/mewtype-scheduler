@@ -94,6 +94,9 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             gh, a["op"], a["now_iso"], id=a.get("id"), patch=a.get("patch"), rec=a.get("rec"),
             force=bool(a.get("force")), ident=a.get("ident"), reading=a.get("reading"), by=a.get("by") or "admin",
         ),
+        # (v4.5.0) PubSub 알림이 알려 준 뮤타입 음원 채널 신곡 등록 — 알림 본문 항목으로 `_detect_new_songs` (via=push)
+        "song_push": lambda gh, a: __import__("src.backend.handlers", fromlist=["x"]).detect_songs_from_push(
+            gh, a.get("entries") or [], a["now_iso"]),
         # (v4a) 그룹 영상 「참여 멤버 확인 대기」 추가 · 제거 (ops group_pending.json)
         "group_pending": lambda gh, a: t._group_pending_commit(
             gh, a["op"], a["now_iso"], entries=a.get("entries"), video_ids=a.get("video_ids"),
@@ -123,7 +126,7 @@ if __name__ == "__main__":
         "notice_del_commit", "notice_edit_commit", "personal_tweet", "tweet_sweep",
         "tweet_del_commit", "tweet_edit_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain", "group_pending", "video_release", "llm_action",
-        "apply_banner", "banner_sweep", "banner_edit_commit", "banner_del_commit",
+        "apply_banner", "banner_sweep", "banner_edit_commit", "banner_del_commit", "song_edit", "song_push",
     }
     missing = expected - set(reg)
     assert not missing, f"registry missing kinds: {missing}"

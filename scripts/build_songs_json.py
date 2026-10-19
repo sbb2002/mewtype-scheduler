@@ -28,7 +28,7 @@ def who(ch):
     ch = ch or ''
     for k, key in (('あられ', 'arale'), ('ユノ', 'yuno'), ('ののか', 'nonoka'), ('律', 'ritsu'), ('都子', 'miyako'),
                    ('Arale', 'arale'), ('Yuno', 'yuno'), ('Nonoka', 'nonoka'), ('Ritsu', 'ritsu'), ('Miyako', 'miyako')):
-        if k in ch:   # 「Yuno Sengoku - Topic」 같은 자동 생성 토픽 채널은 영문 이름
+        if k in ch:   # 「Yuno Sengoku - Topic」 같은 자동 생성 아티스트 채널은 영문 이름
             return key
     if ch:
         return 'group'   # 夢限大みゅーたいぷ(그룹 공식) 채널
