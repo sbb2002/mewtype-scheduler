@@ -49,6 +49,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.5.6 (핫픽스, 브랜치 `hotfix/player-omakase-tt-countdown`, 2026-10-19, 프론트만)**: ① **플레이어 「🎁 랜덤플리 오마카세」** — 컨트롤 오른쪽 버튼 → 말풍선 [전체/오리지널/커버] → 그 종류 모든 곡을 무작위로 재생목록에 덮어써 재생 + 0.62초 뒤섞임 연출 + 5초 쿨타임(오른쪽 → 왼쪽으로 걷히는 막, `player.js` · `css/playerpop.css`).
+> ② **타임테이블 예고 블록 문구** — 「22:30 1.5h」 → 「방송시작까지 1.5시간」(60분 미만 「n분」, 지나면 「지각」) + 블록 안 3줄 고정 높이 정렬 + 예정 블록 폭 210→250(`timetable.js` · `css/timetable.css`). 상세 `docs/SPEC.md` 「타임테이블」·「플레이어」, 요약 `docs/VERSION.md`. 미확인: 모바일 실기기 · 밝게 테마.
+>
 > **v4.5.5 (핫픽스, 브랜치 `hotfix/own-broadcast-reason`, 2026-10-19 배포 — `mewtype-backend` 00158 · `mewtype-telegram` 00112, 백엔드)**: **URL 없는 본인 예고 판정(`llm.announces_own_broadcast`) — 근거 필수 + 프롬프트 재작성.** 출력에 `evidence`(원문 그대로 복사) · `reason` 을 받고, 근거가 없거나 원문에 없으면 그 판정을 버리고 다시 묻는다(5회).
 > 방송 주제(게임 · 굿즈 소개 · 라이브 회고 · 朝活)로 거르지 않고, 플랫폼 없으면 본인 유튜브 방송, 연기 · 취소는 새 날짜가 있어도 false. 계기: 판정 기록 10건 중 9건 오판(10-19 유노 「〈配信のおしらせ〉 10/19 22:30～」 미등록). 실제 LLM 회귀 22/22. 상세 `docs/SPEC.md` §(llm.py), 요약 `docs/VERSION.md`.
 >

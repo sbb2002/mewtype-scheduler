@@ -244,30 +244,35 @@
   width: 98px;
   background: var(--color-img) center / cover no-repeat;
 }
+/* 블록 안 3줄 = ① 시각 · 태그 ② 카운트다운 ③ 제목 — 줄마다 고정 높이라 태그 유무 · 상태와 무관하게 같은 줄이 같은 높이에 놓인다 */
 .tt-blk__tx {
   flex: 1;
   min-width: 0;
-  padding: 4px 8px 4px 0;
+  padding: 7px 8px 0 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 1px;
+  justify-content: flex-start;
+  gap: 0;
 }
 .tt-blk__t {
   display: flex;
   gap: 6px;
   align-items: center;
+  height: 18px;
   white-space: nowrap;
   font-size: 0.76rem;
   font-variant-numeric: tabular-nums;
 }
-.tt-blk__rel { font-size: 0.66rem; color: var(--color-text-muted); }
+.tt-blk__rel, .tt-blk__sp { height: 15px; line-height: 15px; font-size: 0.66rem; white-space: nowrap; }
+.tt-blk__rel { color: var(--color-text-muted); }
+.tt-blk--soon .tt-blk__rel, .tt-blk__rel.is-late { color: var(--color-late); }
 /* 제목: 한 줄. 넘치면 무한 marquee (timetable.js applyTimetableMarquees 가 is-marquee 를 켠다) */
 .tt-blk__n {
   overflow: hidden;
   white-space: nowrap;
   font-size: 0.72rem;
-  line-height: 1.4;
+  height: 20px;
+  line-height: 20px;
 }
 .tt-blk__trk { display: inline-flex; }
 .tt-blk__trk > span { flex: none; padding-right: 2.5rem; }
