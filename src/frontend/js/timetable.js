@@ -22,7 +22,7 @@ const DAY_START_HOUR = 6;                  // monitor_log.DAY_START_HOUR 와 같
 const LATE_ENDED_MIN = 10 * 60000;         // 종료 기록으로 인정하는 최소/최대 방송 길이
 const LATE_ENDED_MAX = 12 * HOUR_MS;
 const TRACK_PX = 888;                      // 블록 위치·폭을 환산하는 기준 트랙 폭 (실제 폭에 비례)
-const W_FIXED = 210;                       // 종료 시각을 모르는 블록의 고정 폭
+const W_FIXED = 250;                       // 종료 시각을 모르는 블록의 고정 폭 (「방송시작까지 n.n시간」이 들어가는 폭)
 const W_MIN = 16;                          // 아무리 좁아도 이만큼은 보인다
 const SOON_MS = HOUR_MS;                   // 1시간 이내 시작 = 노랑 강조
 
@@ -50,7 +50,8 @@ function mdw(ms) {
   return `${p.month}/${p.day}(${p.weekday})`;
 }
 const ymd = (ms) => _ymd.format(new Date(ms));
-const relShort = (min) => (min < 60 ? `${min}분` : `${(min / 60).toFixed(min % 60 ? 1 : 0)}h`);
+/* 예고 블록 2번째 줄 — 카드 도넛 타이머와 같은 규칙(60분 미만 = 분 정수 · 이상 = 시간, 소수 한 자리 · 정각이면 정수) */
+const startsIn = (min) => `방송시작까지 ${min < 60 ? `${min}분` : `${(min / 60).toFixed(min % 60 ? 1 : 0)}시간`}`;
 function durLabel(ms) {
   const m = Math.round(ms / 60000);
   return m < 60 ? `${m}분` : `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ""}`;
@@ -276,12 +277,13 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   const head = el("div", "tt-blk__t");
   if (state === "live") head.appendChild(el("span", "tt-tag tt-tag--live", "LIVE"));
   else head.appendChild(el("span", "tt-blk__time", entry.end ? `${hm(entry.start)}~${hm(entry.end)}` : hm(entry.start)));
-  if (state === "upcoming") {
-    const min = Math.max(0, Math.round((entry.start - ctx.nowMs) / 60000));
-    head.appendChild(el("span", "tt-blk__rel", entry.start >= ctx.nowMs ? relShort(min) : "지각"));
-  }
   for (const t of tagsFor(entry, state)) head.appendChild(t);
   tx.appendChild(head);
+  if (state === "upcoming") {   // 2번째 줄 (king.js 가 「지각」 자리로 쓴다). 라이브 · 종료 블록은 빈 줄(.tt-blk__sp)로 제목 높이를 맞춘다
+    const min = Math.max(0, Math.round((entry.start - ctx.nowMs) / 60000));
+    const late = entry.start < ctx.nowMs;
+    tx.appendChild(el("div", "tt-blk__rel" + (late ? " is-late" : ""), late ? "지각" : startsIn(min)));
+  } else tx.appendChild(el("div", "tt-blk__sp"));
   const n = el("div", "tt-blk__n");
   const trk = el("span", "tt-blk__trk");
   trk.appendChild(el("span", "", titleText(it, ctx)));

@@ -42,6 +42,8 @@ const st = {
   queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
   played: new Set(),  // 셔플 한 바퀴 동안 이미 재생한 재생목록 위치들 — 남은 곡 중에서만 무작위로 고른다
   qi: -1,           // 지금 곡의 재생목록 위치(0부터). -1 = 지금 곡이 재생목록에서 고른 것이 아님 — 같은 곡이 여럿일 수 있어 id 가 아니라 위치로 센다
+  omaOpen: false,     // 랜덤플리 오마카세 말풍선이 열려 있는가
+  omaBusy: false,     // 뒤섞임 연출 + 5초 쿨타임 중 — 버튼 잠금
   fpos: null,         // 플로팅 프레임을 끌어 옮긴 위치 {x,y}. null 이면 CSS 기본(오른쪽 아래)
   pos: 0,
   dur: 0,
@@ -323,6 +325,58 @@ function clearQueue() {
   paint();
 }
 
+// ── 랜덤플리 오마카세 ────────────────────────────────────────────────
+const OMA_LABEL = "랜덤플리 오마카세";
+const OMA_COOLDOWN_MS = 5000;   // 연타 방지 — 칩을 고른 시점부터 5초 (BPM 오마카세와 같다)
+const OMA_ROLL_MS = 620;        // 뒤섞임 연출 길이 (css .mp-oma.rolling 과 맞춘다)
+
+function setOmaLabel(text) {
+  el.omaT.replaceChildren(...[...text].map((c) => h("i", { text: c })));   // 글자마다 span — 뒤섞을 때 글자 단위로 움직인다
+}
+function omaPool(kind) { return kind === "all" ? st.songs : st.songs.filter((s) => s.kind === kind); }
+function openOma() {
+  if (st.omaBusy || !st.songs.length) return;
+  for (const k of Object.keys(el.omaCount)) el.omaCount[k].textContent = `${omaPool(k).length}곡`;
+  st.omaOpen = true;
+  el.omaBub.hidden = false;
+  el.oma.setAttribute("aria-expanded", "true");
+}
+function closeOma() {
+  st.omaOpen = false;
+  el.omaBub.hidden = true;
+  el.oma.setAttribute("aria-expanded", "false");
+}
+function toggleOma() { st.omaOpen ? closeOma() : openOma(); }
+
+/** 고른 종류의 모든 곡을 무작위 순서로 재생목록에 넣고(기존 재생목록은 덮어씀) 1번부터 재생한다. 재생은 클릭 직후(사용자 조작 안)에 시작해야 자동 재생이 막히지 않는다. */
+function omakase(kind) {
+  const pool = omaPool(kind);
+  closeOma();
+  if (st.omaBusy || !pool.length) return;
+  st.omaBusy = true;
+  const ids = pool.map((s) => s.id);
+  for (let i = ids.length - 1; i > 0; i--) {   // Fisher–Yates
+    const j = Math.floor(Math.random() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  st.queue = ids;
+  st.played = new Set();
+  st.qi = -1;
+  playQueueAt(0);
+  setTab("queue");   // 만든 재생목록을 바로 보여준다 (모바일 탭 — PC 는 두 칸이 같이 보여 영향 없음)
+  pulseBadge();
+  // 연출: 뒤섞임 → 5초 쿨타임 파이
+  const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.oma.disabled = true;
+  el.oma.classList.remove("rolling");
+  void el.oma.offsetWidth;                      // 연속 실행에서도 애니메이션이 처음부터
+  el.oma.classList.add("rolling", "cooldown");
+  let timer = 0;
+  if (!calm) timer = setInterval(() => setOmaLabel([...OMA_LABEL].sort(() => Math.random() - 0.5).join("")), 70);
+  setTimeout(() => { clearInterval(timer); setOmaLabel(OMA_LABEL); el.oma.classList.remove("rolling"); }, OMA_ROLL_MS);
+  setTimeout(() => { st.omaBusy = false; el.oma.classList.remove("cooldown"); paintControls(); }, OMA_COOLDOWN_MS);
+}
+
 // ── 화면 구성 ────────────────────────────────────────────────────────
 function build() {
   if (built) return;
@@ -343,6 +397,19 @@ function build() {
   el.bPlay = h("button", { type: "button", class: "mp-main", on: { click: togglePlay } });
   el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => { st.shuffle = !st.shuffle; st.played = new Set(st.qi >= 0 ? [st.qi] : []); paintControls(); } } }, icon("shuffle"));
   el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => { st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls(); } } }, icon("repeat", "mp-ico mp-ico--rpt"));
+  // 랜덤플리 오마카세 — 버튼 + 말풍선(전체/오리지널/커버)
+  el.omaT = h("span", { class: "mp-oma__t" });
+  el.oma = h("button", { type: "button", class: "mp-oma", "aria-haspopup": "dialog", "aria-expanded": "false", on: { click: toggleOma } }, h("span", { class: "mp-oma__e", "aria-hidden": "true", text: "🎁" }), el.omaT);
+  setOmaLabel(OMA_LABEL);
+  el.omaCount = {};
+  el.omaBub = h("div", { class: "mp-bubble", role: "dialog", "aria-label": "랜덤플리 종류", hidden: true },
+    h("div", { class: "mp-bubble__h", text: "어떤 곡으로 섞을까요?" }),
+    h("div", { class: "mp-bubble__chips" }, ...[["all", "전체"], ["original", "오리지널"], ["cover", "커버"]].map(([k, l]) => {
+      el.omaCount[k] = h("small");
+      return h("button", { type: "button", class: "mp-chip", on: { click: () => omakase(k) } }, l, el.omaCount[k]);
+    })),
+  );
+  el.omaWrap = h("div", { class: "mp-oma-wrap" }, el.omaBub, el.oma);
   el.err = h("div", { class: "mp-err", role: "status", hidden: true });
   el.qCount = h("span", { class: "mp-q__count" });
   el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
@@ -355,7 +422,7 @@ function build() {
     el.slot,
     h("div", { class: "mp-song" }, el.sTitle, el.sMeta, el.sKo),
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
-    h("div", { class: "mp-ctl" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat),
+    h("div", { class: "mp-ctl" }, h("div", { class: "mp-grp" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat), el.omaWrap),
     el.err,
   );
 
@@ -412,7 +479,8 @@ function build() {
   initGripDrag();
   initTrackDrag();
   el.scrim.addEventListener("keydown", trapFocus);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && st.popOpen) closePlayer(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && st.omaOpen) { closeOma(); return; } if (e.key === "Escape" && st.popOpen) closePlayer(); });
+  document.addEventListener("click", (e) => { if (st.omaOpen && !el.omaWrap.contains(e.target)) closeOma(); });
   window.addEventListener("resize", () => { clampFloat(); layoutFrame(); });
   el.body.addEventListener("scroll", () => { if (st.popOpen) layoutFrame(); }, { passive: true });   // 모바일 모달은 본문이 스크롤된다 — 프레임이 재생부 자리를 따라가게
   if (typeof ResizeObserver === "function") new ResizeObserver(layoutFrame).observe(el.slot);
@@ -501,6 +569,7 @@ function paintProgress() {
 function paintControls() {
   el.bPlay.replaceChildren(icon(st.playing ? "pause" : "play"));
   el.bPlay.setAttribute("aria-label", st.playing ? "일시정지" : "재생");
+  el.oma.disabled = st.omaBusy || !st.songs.length;
   el.bShuffle.setAttribute("aria-pressed", String(st.shuffle));
   const rp = st.repeat;
   el.bRepeat.setAttribute("aria-pressed", String(rp !== "off"));
