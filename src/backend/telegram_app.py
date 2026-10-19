@@ -3072,6 +3072,7 @@ def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str,
     # 새 사실이 없다고 본 글이라도 이미 올라 있는 행사 · 가챠 이름이 본문에 있으면 이미지 속 기간이 바뀌었을 수 있다(실측: 09-30 가챠 개최 글의
     # 이미지에만 가챠 종료일이 10/9 로 늘어난 것이 적혀 있었다) — 그 경우에도 이미지를 읽는다.
     related = j.get("action") == "none" and banners.covers_text(banners.active(prev, now_iso), raw)
+    ocr = None
     if media and (j.get("action") == "upsert" or related):
         ocr = _ocr_banner_images(media)
         if ocr:
@@ -3085,7 +3086,10 @@ def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str,
             tid = xtweet._tweet_id(tag) or ""
         except Exception:  # noqa: BLE001
             tid = ""
-    return {"judgement": j, "post": {"tweet_id": tid, "media": media}}
+    # (v4.5.3) 날짜 근거 — 반영 쪽(banners.apply_judgement)이 이미 있는 날짜를 바꿀 때 이 글자(본문 + 이미지 OCR)에 그 날짜가 있는지 본다
+    evidence = "\n".join([raw or ""] + [str(o.get("text") or "") for o in (ocr or []) if isinstance(o, dict)])
+    posted_at, _ = banners.parse_jst(posted)
+    return {"judgement": j, "post": {"tweet_id": tid, "media": media, "text": evidence, "posted_at": posted_at}}
 
 
 def _banners_rw(gh):

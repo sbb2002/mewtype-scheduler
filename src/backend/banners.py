@@ -193,7 +193,10 @@ def for_llm(prev: dict, now_iso: str) -> list[dict]:
     """`llm.banner_judge` 의 active 인자 — 대기 포함 활성 행사를 JST 문자열로."""
     return [{"id": b["id"], "name_ja": b.get("name_ja"), "start_jst": to_jst(b.get("start_at")),
              "end_jst": to_jst(b.get("end_at")), "hold": bool(b.get("hold")),
-             "gachas": [g.get("title_ja") for g in b.get("gachas") or []]} for b in active(prev, now_iso)]
+             "gachas": [g.get("title_ja") for g in b.get("gachas") or []],
+             # (v4.5.3) 가챠 기간도 보여 준다 — 전엔 제목만 줘서, 날짜 없는 가챠 소개 글에 LLM 이 행사 기간을 가챠 기간으로 옮겨 적었다
+             "gacha_periods": [f'{g.get("title_ja")} {to_jst(g.get("start_at")) or "?"}~{to_jst(g.get("end_at")) or "?"}'
+                               for g in b.get("gachas") or []]} for b in active(prev, now_iso)]
 
 
 def visible(prev: dict, now_iso: str) -> list[dict]:
@@ -251,7 +254,8 @@ def _times(obj: dict | None, now: datetime) -> tuple[dict | None, str | None]:
             return None, "종료가 시작보다 앞섬"
         if (e - s).days > MAX_EVENT_DAYS:
             return None, f"기간 {(e - s).days}일 — 상시화 의심(>{MAX_EVENT_DAYS}일)"
-    return {"start_at": start, "end_at": end, "start_time_tbd": tbd}, None
+    end_date_only = bool(e_raw) and (_JST_RE.match(e_raw) or [None] * 6)[4] is None
+    return {"start_at": start, "end_at": end, "start_time_tbd": tbd, "end_date_only": end_date_only}, None
 
 
 def _gacha_host(lst: list[dict], ga: dict, now: datetime, now_iso: str) -> dict | None:
@@ -275,6 +279,27 @@ def _gacha_host(lst: list[dict], ga: dict, now: datetime, now_iso: str) -> dict 
     return best
 
 
+_DAY_WORDS = {"本日": 0, "今日": 0, "今夜": 0, "このあと": 0, "この後": 0, "まもなく": 0, "明日": 1, "あす": 1, "あした": 1}
+
+
+def date_evidenced(iso: str | None, text: str, ref_iso: str | None) -> bool:
+    """(v4.5.3) 이 시각(UTC ISO)의 **JST 날짜**가 글 · 이미지 글자에 실제로 적혀 있나 — 「10月28日」 「10/28」 「10.28」 표기,
+    또는 상대 표현(本日 · 今日 · 明日 …)이 글 게시 시각(ref_iso) 기준으로 그 날짜를 가리킬 때."""
+    dt = _parse_iso(iso)
+    if dt is None:
+        return False
+    jd = dt.astimezone(_JST)
+    t = unicodedata.normalize("NFKC", text or "")
+    m, d = jd.month, jd.day
+    if re.search(rf"(?<!\d)0?{m}\s*月\s*0?{d}\s*日", t) or re.search(rf"(?<!\d)0?{m}\s*[/.]\s*0?{d}(?!\d)", t):
+        return True
+    ref = _parse_iso(ref_iso)
+    if ref is not None:
+        rd = ref.astimezone(_JST).date()
+        return any(w in t and rd + timedelta(days=off) == jd.date() for w, off in _DAY_WORDS.items())
+    return False
+
+
 def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     """행사 판정 1건을 반영한다. 반환:
 
@@ -282,6 +307,11 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
 
     mode ∈ added · updated · held · cancelled · none · dup · invalid · skip_permanent
     shown: 이 반영 뒤 그 행사가 화면에 올라가는가(대기면 False).  post = {"tweet_id": str, "media": [url…]}.  `prev` 는 바꾸지 않는다(사본).
+
+    (v4.5.3) post 에 "text"(글 본문 + 이미지 OCR 글자)가 있으면 **이미 있는 날짜를 바꿀 때 근거를 확인**한다 — 새 날짜가 그 글자에
+    적혀 있지 않으면(`date_evidenced`) 바꾸지 않는다. 날짜만 아는 값(「10月18日より」)이 같은 날의 시각까지 아는 값을 덮지도 않는다.
+    비어 있던 날짜를 채우는 것 · 새 행사 · 운영자 판단(텍스트 없음)은 그대로. 계기: 2026-10-19 날짜 없는 가챠 소개 글 3건이 가챠 기간을
+    행사 기간(종료 10/26)과 「10月18日」 00:00 으로 덮었다(정답 10/18 15:00 ~ 10/28 14:59).
     """
     now = _parse_iso(now_iso)
     cur = copy.deepcopy(prev or default_banners())
@@ -289,9 +319,30 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     out = {"banners": cur, "archive_add": [], "mode": "none", "detail": "", "undo": None, "id": None, "shown": False}
     tid = str(post.get("tweet_id") or "")
 
+    ev_text = post.get("text") if isinstance(post.get("text"), str) else None
+    ref_iso = post.get("posted_at") or now_iso
+    ignored: list[str] = []                  # 근거가 없어 바꾸지 않은 날짜(상세 문구에 남긴다)
+
     def done(mode, detail, **kw):
+        if ignored and mode in ("updated", "none"):
+            detail = (detail + " · " if detail else "") + "근거 없는 날짜 변경 무시: " + ", ".join(ignored)
         out.update(mode=mode, detail=detail, **kw)
         return out
+
+    def change_ok(label: str, old: str | None, new: str | None, date_only: bool) -> bool:
+        """이미 있는 날짜(old)를 new 로 바꿔도 되나. 비어 있던 값 채우기는 허용."""
+        if not new or new == old:
+            return False
+        if not old:
+            return True
+        od, nd = _parse_iso(old), _parse_iso(new)
+        if date_only and od and nd and od.astimezone(_JST).date() == nd.astimezone(_JST).date():
+            ignored.append(f"{label} {to_jst(new)}(날짜만 — 기존 {to_jst(old)} 유지)")
+            return False
+        if ev_text is not None and not date_evidenced(new, ev_text, ref_iso):
+            ignored.append(f"{label} {to_jst(new)}(글 · 이미지에 없음 — 기존 {to_jst(old)} 유지)")
+            return False
+        return True
 
     if not isinstance(j, dict) or j.get("action") not in ACTIONS:
         return done("invalid", "판정 형식 오류")
@@ -384,10 +435,10 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
         if ev.get("name_ko") and not target.get("name_ko"):
             target["name_ko"] = ev["name_ko"].strip()
         dated = False
-        if et["start_at"] and et["start_at"] != target.get("start_at"):
+        if change_ok("행사 시작", target.get("start_at"), et["start_at"], bool(et["start_time_tbd"])):
             target["start_at"], target["start_time_tbd"] = et["start_at"], (bool(et["start_time_tbd"]) or None)
             dated = True
-        if et["end_at"] and et["end_at"] != target.get("end_at"):
+        if change_ok("행사 종료", target.get("end_at"), et["end_at"], bool(et.get("end_date_only"))):
             target["end_at"] = et["end_at"]
             dated = True
         if target.get("end_at") and target.get("start_at") and _parse_iso(target["end_at"]) < _parse_iso(target["start_at"]):
@@ -399,14 +450,14 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     if ga and (ga.get("title_ja") or "").strip():
         gt, gerr = _times(ga, now)
         if gerr:
-            gt = {"start_at": None, "end_at": None, "start_time_tbd": False}
+            gt = {"start_at": None, "end_at": None, "start_time_tbd": False, "end_date_only": False}
         title_ja = ga["title_ja"].strip()
         gk = name_key(title_ja)
         g = next((x for x in target["gachas"] if name_key(x.get("title_ja")) == gk), None)
         if gk == name_key(target.get("name_ja")):          # 가챠 자체가 행사 카드인 경우(단독 가챠) — 새 기간은 카드에 반영, 하위 블록은 안 만든다
-            if gt["start_at"]:
+            if change_ok("가챠 시작", target.get("start_at"), gt["start_at"], bool(gt["start_time_tbd"])):
                 target["start_at"], target["start_time_tbd"] = gt["start_at"], (bool(gt["start_time_tbd"]) or None)
-            if gt["end_at"]:
+            if change_ok("가챠 종료", target.get("end_at"), gt["end_at"], bool(gt.get("end_date_only"))):
                 target["end_at"] = gt["end_at"]
             g = None
         elif g is None:
@@ -417,9 +468,9 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
         else:
             if ga.get("title_ko") and not g.get("title_ko"):
                 g["title_ko"] = ga["title_ko"].strip()
-            if gt["start_at"]:
+            if change_ok("가챠 시작", g.get("start_at"), gt["start_at"], bool(gt["start_time_tbd"])):
                 g["start_at"] = gt["start_at"]
-            if gt["end_at"]:
+            if change_ok("가챠 종료", g.get("end_at"), gt["end_at"], bool(gt.get("end_date_only"))):
                 g["end_at"] = gt["end_at"]
     else:
         g = None
@@ -756,4 +807,39 @@ if __name__ == "__main__":
     assert cq and gq["banners"][0]["gachas"][0]["start_at"] is None and gq["banners"][0]["gachas"][0]["end_at"] is None
     assert edit_banner(P1, b["id"], {"gachas_period": {gid: {"start_at": "2026-10-09T00:00:00Z", "end_at": "2026-10-08T00:00:00Z"}}}, N)[2] is not None
     assert edit_banner(P1, b["id"], {"gachas_period": {gid: {"end_at": "not-a-date"}}}, N)[2] is not None
+
+    # (v4.5.3) 2026-10-19 실측 재현 — 날짜 없는 가챠 소개 글의 판정이 가챠 기간을 행사 종료 · 「10月18日」 00:00 으로 덮던 것
+    NOW = "2026-10-19T03:05:52Z"
+    SH = {"banners": [{"id": "bn_16b9bd4d", "name_ja": "Shake Your 魂, Baby!!", "name_ko": "Shake Your 영혼, Baby!!",
+                       "start_at": "2026-10-18T06:00:00Z", "end_at": "2026-10-26T05:59:00Z", "start_time_tbd": None, "hold": None,
+                       "gachas": [{"id": "gc_e33a9595", "title_ja": "はじめてを奏でる光彩讃歌ガチャ", "title_ko": "광채 찬가 가챠", "image_urls": [],
+                                   "start_at": "2026-10-18T06:00:00Z", "end_at": "2026-10-28T05:59:00Z"}],
+                       "image_urls": [], "match_keys": ["shakeyour魂baby"], "src_ids": ["1"], "first_seen": NOW, "last_updated": NOW}]}
+    intro = "10月18日より開催中🎉\n「はじめてを奏でる光彩讃歌ガチャ」\n\n新登場したSSRメンバー、須賀 蕾叶を紹介✌️"
+    jw = {"action": "upsert", "banner_ref": "bn_16b9bd4d", "event": None,
+          "gacha": {"title_ja": "はじめてを奏でる光彩讃歌ガチャ", "start_jst": "2026-10-18", "end_jst": "2026-10-26 14:59"}}
+    rw = apply_judgement(SH, jw, {"tweet_id": "2112016385584812434", "text": intro, "posted_at": NOW}, NOW)
+    gw = rw["banners"]["banners"][0]["gachas"][0]
+    assert (gw["start_at"], gw["end_at"]) == ("2026-10-18T06:00:00Z", "2026-10-28T05:59:00Z"), gw
+    assert "근거 없는 날짜 변경 무시" in rw["detail"] and "10-26 14:59" in rw["detail"] and "날짜만" in rw["detail"], rw["detail"]
+    # 텍스트가 없어도(운영자 판단 · 옛 호출) 날짜만 값이 같은 날의 시각을 덮지는 않는다
+    rw2 = apply_judgement(SH, dict(jw, gacha=dict(jw["gacha"], end_jst=None)), {"tweet_id": "9"}, NOW)
+    assert rw2["banners"]["banners"][0]["gachas"][0]["start_at"] == "2026-10-18T06:00:00Z"
+    # 근거가 글 · 이미지에 있으면 바꾼다(연장 공지) — 이미지 OCR 글자도 근거
+    ext = intro + "\n" + "開催期間 10月18日 15:00 ~ 10月30日 14:59"
+    re_ = apply_judgement(SH, dict(jw, gacha=dict(jw["gacha"], start_jst=None, end_jst="2026-10-30 14:59")),
+                          {"tweet_id": "10", "text": ext, "posted_at": NOW}, NOW)
+    assert re_["banners"]["banners"][0]["gachas"][0]["end_at"] == "2026-10-30T05:59:00Z" and "무시" not in re_["detail"]
+    # 행사 날짜도 같은 규칙 — 근거 없는 종료 변경은 무시, 상대 표현(本日)은 게시일로 근거 인정
+    je = {"action": "upsert", "banner_ref": "bn_16b9bd4d", "gacha": None,
+          "event": {"name_ja": "Shake Your 魂, Baby!!", "start_jst": "2026-10-19 18:00", "end_jst": "2026-10-27 14:59"}}
+    rv = apply_judgement(SH, je, {"tweet_id": "11", "text": "本日18:00より開催！「Shake Your 魂, Baby!!」", "posted_at": NOW}, NOW)
+    bv = rv["banners"]["banners"][0]
+    assert bv["start_at"] == "2026-10-19T09:00:00Z" and bv["end_at"] == "2026-10-26T05:59:00Z", (bv["start_at"], bv["end_at"])
+    # 비어 있던 날짜 채우기 · 새 행사는 근거 확인 없이(「明日15:00より」 같은 글로 새 행사를 올리는 기존 동작)
+    assert date_evidenced("2026-10-27T05:59:00Z", "～10/27(火)14:59まで", None) and not date_evidenced("2026-10-27T05:59:00Z", "11/27", None)
+    assert date_evidenced("2026-10-20T06:00:00Z", "明日15:00より", "2026-10-19T03:00:00Z")
+    fl2 = for_llm(SH, NOW)
+    assert fl2[0]["gacha_periods"] == ["はじめてを奏でる光彩讃歌ガチャ 2026-10-18 15:00~2026-10-28 14:59"], fl2
+    print("[OK] (v4.5.3) 날짜 근거 확인 · 날짜만 값의 시각 덮어쓰기 차단 · 가챠 기간 판정 목록 표시")
     print("[PASS] banners self-test (시각 · 이름 키 · 반영 · 보류/재개 · 취소/되돌리기 · sweep · 소식 겹침 · 수정)")

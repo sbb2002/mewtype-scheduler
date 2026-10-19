@@ -823,7 +823,7 @@ class LLMClient:
         masked, mapping = _mask_glossary(text or "")
         act_lines = "\n".join(
             f'- id="{a["id"]}" 이름={a.get("name_ja")} 기간={a.get("start_jst")}~{a.get("end_jst")}'
-            f'{" (보류 중)" if a.get("hold") else ""} 가챠={",".join(a.get("gachas") or []) or "없음"}'
+            f'{" (보류 중)" if a.get("hold") else ""} 가챠={" / ".join(a.get("gacha_periods") or a.get("gachas") or []) or "없음"}'
             for a in active) or "(없음)"
         rules = [
             "게임 「バンドリ！ アワーノーツ」 공식 계정 글이 하나 들어왔다. 이 글이 팬 사이트의 「행사 배너」에 무엇을 해야 하는지 판정하라.",
@@ -841,9 +841,11 @@ class LLMClient:
             "「このあと18:00より」 같은 상대 표현은 글 게시 시각의 날짜 + 그 시각으로 계산한다. "
             "「~10月8日(木)20:59まで」 의 종료는 그 날짜 20:59.",
             "- 「開催」 「開始」 처럼 지금 막 열렸다는 글인데 시작 시각이 글에 없고 기존 행사 목록에도 없으면 event_start_jst 는 글 게시 시각으로 둔다.",
-            "- 가챠 글은 반드시 upsert 한다. 가챠 시작 시각이 현재 배너 목록 행사의 기간 안이면(같이 열리는 가챠) banner_ref 에 그 행사 id 를 주고 gacha_* 를 채운다. "
+            "- 가챠 글은 반드시 upsert 한다(이미 목록에 있는 가챠를 소개만 하는 글도 — 이때 새로 알게 된 것이 없으면 gacha_* 날짜는 null). 가챠 시작 시각이 현재 배너 목록 행사의 기간 안이면(같이 열리는 가챠) banner_ref 에 그 행사 id 를 주고 gacha_* 를 채운다. "
             "어느 행사에도 딸리지 않는 가챠(단독 가챠)는 banner_ref=null 로 하고 가챠 제목을 event_name_ja · event_name_ko 에 넣어 새 행사로 올리며 gacha_* 도 같이 채운다.",
             "- 가챠 정보가 글에 있으면 gacha_* 를 채우고 없으면 null. 가챠에 자체 개최기간이 있으면(이미지 포함) 행사와 달라도 그대로 gacha_start_jst · gacha_end_jst 에 준다. 자체 기간이 없으면 null(행사와 같다는 뜻).",
+            "- 날짜 · 시각은 **이 글(이미지 글자 포함)에 적힌 것만** 쓴다. 현재 배너 목록의 행사 기간 · 다른 가챠 기간을 옮겨 적거나 추측하지 않는다 — "
+            "「10月18日より開催中」처럼 시각 없이 날짜만 있는 표현으로 이미 아는 시작 시각을 바꾸지 않는다(그 경우 null).",
             "- 이름 · 제목은 일본어 원문 그대로(name_ja · title_ja)와 자연스러운 한국어 번역(name_ko · title_ko)을 둘 다 준다. "
             "「」 같은 괄호는 원문 그대로 둔다. @@GLOSSARY0@@ 같은 토큰은 그대로 둔다.",
             "- image_for: 글 첨부 이미지가 행사 소개면 event, 가챠 소개면 gacha, 아니면 none.",
