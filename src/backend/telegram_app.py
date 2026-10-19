@@ -4092,16 +4092,18 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
                         detail="text-schedule skip: GROQ_API_KEY 미설정 — 최종확인 불가, 미등록", via=via)
         return
     from .llm import LLMClient
-    confirmed = True if _fown else LLMClient(groq_key).announces_own_broadcast(raw, unit_name=name)
+    _own_llm = None if _fown else LLMClient(groq_key)
+    confirmed = True if _fown else _own_llm.announces_own_broadcast(raw, unit_name=name)
+    _own_reason = "사용자 판단" if _fown else (getattr(_own_llm, "last_reason", "") or "")   # (v4.5.5) LLM 근거 — 판단 기록에 남긴다
     if confirmed is None:
         # LLM 5회 재시도 모두 실패(infra) — "예고 아님"으로 확인된 것과는 다르다, monitor 에 남긴다.
         log.info("텍스트 예고 후보 — LLM 최종 확인 5회 모두 실패 → 미등록")
         _log_event_safe(gh, now_iso, "tweet", RESULT_ERR, who=channel_key,
-                        detail="text-schedule skip: announces_own_broadcast() 5회 모두 실패 — 미등록", via=via)
+                        detail="text-schedule skip: announces_own_broadcast() 5회 모두 실패(응답 · 근거 없음) — 미등록", via=via)
         return
     if confirmed is not True:
         log.info("텍스트 예고 후보 — LLM 최종 확인 미통과(%s) → 미등록", confirmed)
-        _llm_record(gh, "own_broadcast", channel_key, f"본인 방송 예고 아님 — {raw[:60]}", now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
+        _llm_record(gh, "own_broadcast", channel_key, f"본인 방송 예고 아님 — {raw[:60]}", _own_reason, now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
         return
 
     try:                                  # 되돌리기용 — 합쳐질 기존 항목(있으면)의 합치기 전 모습
@@ -4120,7 +4122,7 @@ def _maybe_personal_schedule(raw: str, *, tag: str | None, channel_key: str,
         return
     when = "시간 미정" if row.get("time_tbd") else xrelay._jst_hm(row.get("scheduled_start")) + " JST"
     if changed:
-        _llm_record(gh, "own_broadcast", channel_key, f"본인 예고로 등록 — {when} · {raw[:40]}",
+        _llm_record(gh, "own_broadcast", channel_key, f"본인 예고로 등록 — {when} · {raw[:40]}", _own_reason,
                     undo=({"type": "replace_items", "items": [_pre]} if _pre
                           else {"type": "remove_items", "items": [{"id": row.get("id")}]}), now_iso=now_iso, input=_inp(raw, channel_key=channel_key, tag=tag, quote=quote))
     link = row.get("url") or ""
