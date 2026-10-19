@@ -446,7 +446,7 @@ src/
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
                        #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
     css/{reset,layout,card,timetable,king,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
-    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 65곡 — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
+    assets/songs.json  # (v4.2.0) 플레이어 곡 목록 64곡(조사 원본 65곡 − 중복 1건) — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
       time.js          # UTC→KST 포맷, 상대시간 라벨 — 순수 함수

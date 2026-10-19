@@ -485,7 +485,7 @@ if __name__ == "__main__":
 
     # 병합 · 멱등
     merged = merge_songs({"songs": existing}, new)
-    ok(len(merged["songs"]) == len(existing) + len(new) and len(existing) == 65, "병합: 원본 불변 · 곡 수 증가")
+    ok(len(merged["songs"]) == len(existing) + len(new) and len(existing) == 64, "병합: 원본 불변 · 곡 수 증가")   # 시드 64곡(10-08 중복 「オリオンをなぞる」 1건 제거)
     ok(find_new_songs(entries, merged["songs"])[0] == [], "병합 뒤 재실행하면 새 곡 없음(멱등)")
     ok(merge_songs(None, new)["songs"] == new and merge_songs(None, new)["rejected"] == [], "문서가 없으면 새로 만듦(rejected · seen 빈 목록)")
 

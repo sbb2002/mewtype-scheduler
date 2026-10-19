@@ -1096,7 +1096,7 @@ YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수
 BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필요하고 플레이어가 쓰지 않아 **일부러 제외**. (별칭 기능은 2026-10-07 에 없앴다 — 곡 줄의 「✎ 별칭」 버튼 · `localStorage` 저장 모두 제거.)
 
 **곡 데이터의 출처와 갱신**: 초기 데이터(시드)는 BPM 프로젝트(`bandori-playlist-maker-data` 저장소 `origin/data` 의 `data/songs_master.csv`)의 곡 목록에 YouTube 업로드 시각을 붙인
-`ref/player/songs_release.json`(65곡, 조사 보고 `docs/yumemita_player/REPORT.md` @devpapers)에서 `python scripts/build_songs_json.py` 로 만든 `assets/songs.json` 이다.
+`ref/player/songs_release.json`(65곡, 조사 보고 `docs/yumemita_player/REPORT.md` @devpapers)에서 `python scripts/build_songs_json.py` 로 만든 `assets/songs.json` 이다(64곡 — 두 번 들어 있던 「オリオンをなぞる」 중 `ekZUC5KaJFw` 1건을 2026-10-08 에 직접 지웠다. `config/songs_seed.json` 도 같음).
 출시일(`date`)은 **공식 발매일이 아니라 영상 업로드 시각**(KST 날짜)이다 — 뮤타입 음원 채널의 음원은 MV 공개일과 다를 수 있다. 이후 신곡은 BPM 프로젝트의 `/update-new-songs` 와 **무관하게**
 백엔드가 뮤타입 음원 채널(PubSub 알림 · 일일 RSS 확인)에서 자동 감지해 data 브랜치 `songs.json` 에 등록한다(§8.15). **운영 전 시드 필요**: data 브랜치에 `songs.json` 이 없으면 자동 등록은 아무것도 하지 않는다 —
 `assets/songs.json` 을 data 브랜치 `songs.json` 으로 올려 시드한다(운영자 작업, 아직 하지 않음).
