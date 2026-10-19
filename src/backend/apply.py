@@ -197,6 +197,16 @@ def cancel_video_checks(video_id: str | None, reason: str = "예고 삭제") -> 
         except Exception:  # noqa: BLE001
             log.warning("예약된 확인 취소 실패(%s)", video_id, exc_info=True)
             return 0
+        # (v4.5.2) PubSub 전용 큐(WEBSUB_QUEUE)에 걸린 확인 · 재확인도 지운다
+        import os
+        ws_queue = os.environ.get("WEBSUB_QUEUE", "").strip()
+        if ws_queue and ws_queue != tq.queue:
+            try:
+                from . import tasks
+                wq = tasks.from_env(ws_queue)
+                n += wq.delete_by_prefix(f"wake-{video_id}-") if wq is not None else 0
+            except Exception:  # noqa: BLE001
+                log.warning("PubSub 큐의 예약된 확인 취소 실패(%s)", video_id, exc_info=True)
         if n:
             log.info("예약된 확인 %d건 취소 (%s · %s)", n, video_id, reason)
         return n

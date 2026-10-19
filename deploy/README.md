@@ -39,6 +39,13 @@
   → `/ingest` 가 저장 없이 받은 원문·파싱결과만 DM 회신. 푸시 알림이 잘리지 않고
   엔트리 전부 오는지 확인되면 `INGEST_DRY_RUN=0` 으로 되돌리고 재배포.
 
+### v4.5.2 — PubSub 버스트 대비 (PubSub 전용 큐 `mewtype-websub`)
+
+순서: ① 큐 생성(`setup.sh` 의 해당 부분과 같은 명령 — `setup.sh` 전체는 기존 큐 설정까지 다시 쓰므로 필요한 것만):
+`gcloud tasks queues create mewtype-websub --location=asia-northeast1 --max-concurrent-dispatches=1 --max-dispatches-per-second=0.2 --max-attempts=20 --min-backoff=5s --max-backoff=300s`
+② `deploy.sh`(쓰기 서비스 — 새 `/wake` 본문 · 재확인을 먼저 이해해야 한다) ③ `deploy_telegram.sh`(접수 서비스 — 큐가 없으면 알림 예약이 실패해 503).
+롤백 = 두 서비스를 이전 리비전으로(큐는 남겨 둬도 무해). 스테이징: `env.stage.sh` 의 `WEBSUB_QUEUE=mewtype-websub-stage`.
+
 ### v4.5.0 — PubSub(WebSub) 수신 (`mewtype-telegram` `/websub/<이름>` + `mewtype-backend` `/websub-renew`)
 
 허브(`pubsubhubbub.appspot.com`)가 멤버 5채널 · 뮤타입 음원 채널의 변경을 접수 서비스로 POST → 방송 발견 · 신곡 등록을 RSS 폴링 대신 푸시로. 설계 `docs/SPEC.md` §8.16.

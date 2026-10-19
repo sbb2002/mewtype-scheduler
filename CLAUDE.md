@@ -49,11 +49,14 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.5.2 (핫픽스, 브랜치 `hotfix/websub-burst`, 2026-10-19, 백엔드)**: **PubSub 알림이 몰릴 때(버스트)의 경합 제거.** ① 접수 서비스는 알림을 받으면 **예약만 하고 커밋 없이 응답** — 수신 기록 `flow=websub action=notify` 는 확인을 처리하는 쓰기 서비스가 남긴다(같은 영상 10분 안 반복은 한 줄의 `count`, `monitor_log` `merge_key`).
+> ② 예약은 **PubSub 전용 큐**(`mewtype-websub`, env `WEBSUB_QUEUE` — 동시 1건 · 5초에 1건)로. ③ 「2분 뒤 재확인」은 첫 확인에서 API 가 아직 그 영상을 모를 때만 쓰기 서비스가 건다(`handlers._websub_followup`). 스테이징 실측(알림 12건 동시 + 트윗 3건): 수신 기록 유실 2→0 · 접수 응답 최대 약 25초→2초 · 확인 24→12회 · 트윗 저장 거절 1→0. 상세 `docs/SPEC.md` §8.16, 요약 `docs/VERSION.md`.
+>
 > **v4.5.1 (핫픽스, 브랜치 `hotfix/king-leave-fade`, 2026-10-19, 프론트만)**: **노노카 지각 이스터에그 입장 후 유지 3분 → 1분 + 1.2초에 걸쳐 서서히 복귀**(`.k-leave` — 무대 · 왕관 · 카펫 띠가 옅어지고 대신의 말 칸이 접힘, 모션 줄이기면 바로 제거). 10-16 에 만들어 로컬 `main` 에만 병합(`f0f6e38`)되고 푸시되지 않았던 조정(`b70adeb`)을 최신 `main` 위로 옮긴 것. `king.js` · `css/king.css` · `king.selfcheck.mjs`(46개) · `timetable.js`(위쪽 팝업 위치 기록 1줄), 상세 `docs/SPEC.md` 「노노카 지각 이스터에그」, 요약 `docs/VERSION.md`.
 >
 > **v4.5.0 (기능, 브랜치 `feat/pubsub-websub`, 2026-10-19 배포 — `mewtype-backend` 00152 · `mewtype-telegram` 00109, `WEBSUB_REPLACE_RSS=0` 이중 운영 중)**: **PubSub(WebSub*) 수신 — 방송 발견 · 신곡 등록을 RSS 폴링에서 푸시로.**
 > * PubSub(WebSub) = 허브가 YouTube 채널 피드 변경을 우리 주소로 POST 해 주는 푸시 방식(웹소켓 아님, GCP Cloud Pub/Sub 과 다름). 시험 결과: 신규 영상 알림 약 64초, 누락 0건, 낮 수신 확인, 종료 신호는 안 옴(종료 감지는 wake 그대로).
-> * 멤버 5채널 알림 → 영상 ID 로 즉시 + 2분 뒤 wake 예약. **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널) 알림 → 본문 항목을 `find_new_songs` 에 그대로 넣어 신곡 등록(`song_push`).
+> * 멤버 5채널 알림 → 영상 ID 로 즉시 wake 예약(v4.5.2 부터 PubSub 전용 큐 · 「2분 뒤 재확인」은 API 가 아직 모를 때만 쓰기 서비스가 건다). **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널) 알림 → 본문 항목을 `find_new_songs` 에 그대로 넣어 신곡 등록(`song_push`).
 >   인증 = 구독 때 준 `hub.secret`(Secret `WEBSUB_SECRET`)의 `X-Hub-Signature` HMAC. 구독 갱신 = `POST /websub-renew`(매일 KST 06:20, 임대 5일) — 허브 검증 GET 이 `flow=websub action=verify` 로 남는다.
 > * 스위치 `WEBSUB_REPLACE_RSS`(기본 0 = 알림 + 폴링 이중 운영): 1 이면 10분 light 틱의 RSS · 신곡 감지 생략, 일일 baseline 만 안전망. 코드 `src/backend/websub.py`, 상세 `docs/SPEC.md` §8.16, 요약 `docs/VERSION.md`.
 > * 배포 때 확인: 구독 6개 허브 검증 통과(임대 5일) · 허브에 서명 키 등록. 미검증: 실제 알림에 서명 헤더가 붙는지(첫 실알림) · 뮤타입 음원 채널의 푸시 · 콜드스타트 시 검증 응답 시간. 배포 순서 · 롤백은 VERSION.md.
@@ -682,7 +685,7 @@ python -m src.backend.monitor_report # (v3.5) parse_events/그룹핑/preview 세
 python -m src.backend.monitor_snapshot # (v3.8.9) 백필 날짜 선정·요약·멤버 현황 DM 텍스트·run_daily 멱등 (mock)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
-bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY · (v4.5.0) WEBSUB_SECRET 포함)
+bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY · (v4.5.0) WEBSUB_SECRET · (v4.5.2) PubSub 전용 큐 mewtype-websub 포함)
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
 bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor / (v4.5.0) mewtype-websub-renew 스케줄러 잡 (URL 불변이면 생략 가능)
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스

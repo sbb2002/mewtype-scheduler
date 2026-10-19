@@ -107,6 +107,18 @@ else
     --max-concurrent-dispatches=1
 fi
 
+# (v4.5.2) PubSub 전용 큐 — 알림이 몰려도 확인 · 신곡 등록을 5초에 1건으로 흘려, 쓰기 서비스(동시 1건)가 쉬지 않고 바빠지지 않게 한다
+#          (그 틈으로 트윗 저장 등 접수 서비스의 동기 쓰기가 들어간다). 쓰기 서비스가 바빠 거절(429)하면 5초부터 다시 시도.
+WEBSUB_QUEUE="${WEBSUB_QUEUE:-mewtype-websub}"
+_WSQ_OPTS=(--max-concurrent-dispatches=1 --max-dispatches-per-second=0.2 --max-attempts=20 --min-backoff=5s --max-backoff=300s)
+if gcloud tasks queues describe "$WEBSUB_QUEUE" --location="$GCP_LOCATION" &>/dev/null; then
+  echo "✓ $WEBSUB_QUEUE 큐 이미 존재 — 설정 갱신"
+  gcloud tasks queues update "$WEBSUB_QUEUE" --location="$GCP_LOCATION" "${_WSQ_OPTS[@]}"
+else
+  echo "생성 중: $WEBSUB_QUEUE"
+  gcloud tasks queues create "$WEBSUB_QUEUE" --location="$GCP_LOCATION" "${_WSQ_OPTS[@]}"
+fi
+
 echo "=== Secret Manager 시크릿 생성 ==="
 
 # 시크릿 생성 헬퍼: env 에 값이 있으면 그대로 쓰고, 없으면 프롬프트.

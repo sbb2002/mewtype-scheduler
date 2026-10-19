@@ -96,16 +96,17 @@ def _build_task(
     return task_dict
 
 
-def from_env() -> "TaskQueue | None":
+def from_env(queue: str | None = None) -> "TaskQueue | None":
     """(v4) 환경변수로 TaskQueue 구성 — 접수 서비스 · 쓰기 서비스 공용. 대상은 쓰기 서비스
-    (접수: `MAIN_SERVICE_URL`, 쓰기 서비스 자신: `SERVICE_URL`). 값이 모자라면 None."""
+    (접수: `MAIN_SERVICE_URL`, 쓰기 서비스 자신: `SERVICE_URL`). 값이 모자라면 None.
+    (v4.5.2) `queue` 를 주면 `TASKS_QUEUE` 대신 그 큐(예: PubSub 전용 속도 제한 큐 `WEBSUB_QUEUE`)."""
     import os
 
     target = (os.environ.get("MAIN_SERVICE_URL", "").strip() or os.environ.get("SERVICE_URL", "").strip()).rstrip("/")
     vals = {
         "project": os.environ.get("GCP_PROJECT", "").strip(),
         "location": os.environ.get("GCP_LOCATION", "").strip(),
-        "queue": os.environ.get("TASKS_QUEUE", "").strip(),
+        "queue": (queue or os.environ.get("TASKS_QUEUE", "")).strip(),
         "target_url": target,
         "invoker_sa": os.environ.get("INVOKER_SA", "").strip(),
     }
@@ -156,15 +157,16 @@ class TaskQueue:
         else:
             self.client = client
 
-    def enqueue_wake(self, video_id: str, schedule_time_iso: str) -> str:
+    def enqueue_wake(self, video_id: str, schedule_time_iso: str, extra: dict | None = None) -> str:
         """Cloud Tasks 큐에 방송별 wake 태스크(`POST /wake {video_id}`) 등록.
 
+        (v4.5.2) `extra` 는 본문에 더할 값 — PubSub 알림으로 시작한 확인의 `websub` 정보(채널 · 제목 · 몇 번째 확인).
         Returns: 생성된 task.name (AlreadyExists 시 유추 name).
         Raises: RuntimeError.
         """
         return self._enqueue(
             path="/wake",
-            body={"video_id": video_id},
+            body={"video_id": video_id, **(extra or {})},
             name_key=f"wake-{video_id}",
             schedule_time_iso=schedule_time_iso,
         )

@@ -13,6 +13,10 @@
   - 구독 임대는 5일(432000초)이고 매일 갱신한다(`renew`). 갱신 때마다 허브가 검증 요청(GET)을 보내고, 그 기록(`action=verify`)이
     구독이 살아 있다는 신호다. 36시간 넘게 검증이 없는 채널은 갱신 잡이 DM 으로 알린다.
   - 모니터 이벤트 `flow="websub"`: `verify`(허브 검증) · `notify`(알림 수신) · `renew`(일일 갱신) · `reject`(서명 불일치).
+  - (v4.5.2) 버스트 대비: 접수 서비스는 알림을 받으면 **예약만 하고 바로 응답**한다 — `notify` 기록은 쓰기 서비스가 그 확인을 처리하면서
+    남긴다(한 줄로 처리되므로 `monitoring` 브랜치 커밋 경합이 없다. 같은 영상이 10분 안에 또 오면 기존 줄의 `count` 를 올린다).
+    예약은 PubSub 전용 큐(`WEBSUB_QUEUE`, 5초에 1건)로 보내 쓰기 서비스가 쉬지 않고 바빠지지 않게 하고(그 틈으로 트윗 저장 등 동기 쓰기가 들어간다),
+    「2분 뒤 한 번 더」 확인은 첫 확인에서 API 가 아직 그 영상을 모를 때만 쓰기 서비스가 건다. 실측 근거: VERSION.md v4.5.2.
 
 RSS 폴링을 PubSub 으로 대체할지는 env `WEBSUB_REPLACE_RSS=1` 로 정한다(`replaces_rss()`) — 켜면 10분 light 틱이 RSS · 신곡 호출을 생략하고
 일일 baseline 만 안전망으로 남긴다. 끄면 알림이 와도 폴링이 그대로 돌아 두 경로가 함께 동작한다(이중 운영 · 롤백).
@@ -53,6 +57,20 @@ _HASHES = {"sha1": hashlib.sha1, "sha256": hashlib.sha256, "sha384": hashlib.sha
 def replaces_rss() -> bool:
     """PubSub 이 RSS 폴링(10분 틱의 RSS · 신곡 호출)을 대체하는 모드인가 — env `WEBSUB_REPLACE_RSS`."""
     return os.environ.get("WEBSUB_REPLACE_RSS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def task_queue():
+    """(v4.5.2) PubSub 이 시작하는 작업(확인 · 신곡 등록)을 넣을 Cloud Tasks 큐 — env `WEBSUB_QUEUE`(속도 제한 큐).
+    없으면 기본 큐(`TASKS_QUEUE`)로 — 속도 제한만 빠지고 동작은 같다. 클라우드 설정이 없으면 None."""
+    from . import tasks
+    return tasks.from_env(os.environ.get("WEBSUB_QUEUE", "").strip() or None)
+
+
+def notify_event(now_iso: str, who: str, video_id: str, title: str, detail: str, result: str = "ok") -> dict:
+    """(v4.5.2) 알림 수신 기록 — 쓰기 서비스가 확인 · 신곡 등록을 처리하면서 남긴다. 같은 영상이 10분 안에 또 오면
+    `monitor_log.log_events` 가 새 줄 대신 기존 줄의 `count` 를 올린다(`merge_key`)."""
+    return {"ts": now_iso, "flow": "websub", "result": result, "who": who, "action": "notify", "video_id": video_id,
+            "title": (title or "")[:80], "detail": detail, "merge_key": f"websub-notify:{video_id}"}
 
 
 def topic_url(channel_id: str) -> str:
@@ -254,9 +272,12 @@ _last_reject_log = [0.0]
 def register_callbacks(app, *, load_cfg, make_gh, enqueue_wake, submit, log_events_fn, now_iso_fn, secret_fn=None) -> None:
     """`GET/POST /websub/<name>` 등록 — 허브 검증(GET)과 알림(POST).
 
-    load_cfg() → channels.json 딕트, make_gh() → data store 또는 None, enqueue_wake(video_id, when_iso) → 즉시 확인 예약,
+    load_cfg() → channels.json 딕트, make_gh() → data store 또는 None, enqueue_wake(video_id, when_iso, meta) → 즉시 확인 예약,
     submit(kind, args) → 쓰기 서비스 작업 적재, log_events_fn(gh, now_iso, events), now_iso_fn() → UTC ISO.
-    모두 주입받는다(self-test 는 가짜를 넣는다)."""
+    모두 주입받는다(self-test 는 가짜를 넣는다).
+
+    (v4.5.2) 알림(POST)은 예약만 하고 **커밋 없이** 응답한다 — 수신 기록(`notify`)은 쓰기 서비스가 남긴다. 접수 쪽에서 커밋하는 것은
+    드문 경우(서명 불일치 — 10분에 한 번 · 예약 실패)뿐이다. 삭제 알림(tombstone)은 서비스 로그로만 남긴다."""
     from flask import Response, request
     from .monitor_log import RESULT_OK, RESULT_WARN, RESULT_ERR
 
@@ -304,27 +325,20 @@ def register_callbacks(app, *, load_cfg, make_gh, enqueue_wake, submit, log_even
             return Response("", status=204)
         parsed = parse_notification(body.decode("utf-8", "replace"))
         entries = [e for e in parsed["entries"] if e["channel_id"] == sub["channel_id"]]
-        events = [{"ts": now, "flow": "websub", "result": RESULT_OK, "who": name, "action": "notify", "video_id": e["video_id"],
-                   "title": e["title"][:80], "detail": f"알림 수신 · {e['video_id']}"} for e in entries]
-        if parsed["deleted"]:
-            events.append({"ts": now, "flow": "websub", "result": RESULT_OK, "who": name, "action": "deleted",
-                           "detail": "삭제 알림 " + ",".join(parsed["deleted"][:5])})
-        status = 204
+        log.info("PubSub 알림 name=%s videos=%s deleted=%s", name, [e["video_id"] for e in entries], parsed["deleted"][:5])
         try:
             if entries and sub["kind"] == "member":
-                later = (_parse_ts(now) + timedelta(seconds=WAKE_RETRY_SEC)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 for e in entries:
-                    enqueue_wake(e["video_id"], now)     # 방송이면 바로 카드로, 아니면 아무 변화 없음
-                    enqueue_wake(e["video_id"], later)   # API 반영이 늦은 신규 영상 대비 한 번 더
+                    # 방송이면 바로 카드로, 아니면 아무 변화 없음. 「2분 뒤 한 번 더」는 쓰기 서비스가 API 미반영일 때만 건다(v4.5.2)
+                    enqueue_wake(e["video_id"], now, {"websub": {"who": name, "title": e["title"][:80], "attempt": 1}})
             elif entries and sub["kind"] == "song":
-                submit("song_push", {"entries": entries, "now_iso": now})
+                submit("song_push", {"entries": entries, "now_iso": now, "who": name})
         except Exception as e:  # noqa: BLE001
             log.exception("PubSub 알림 처리 실패 name=%s", name)
-            events.append({"ts": now, "flow": "websub", "result": RESULT_ERR, "who": name, "action": "notify_fail",
-                           "detail": f"알림 처리 실패(허브가 재시도) — {type(e).__name__}: {str(e)[:120]}"})
-            status = 503      # 2xx 가 아니면 허브가 나중에 다시 보낸다
-        _log(events)
-        return Response("", status=status)
+            _log([{"ts": now, "flow": "websub", "result": RESULT_ERR, "who": name, "action": "notify_fail",
+                   "detail": f"알림 처리 실패(허브가 재시도) — {type(e).__name__}: {str(e)[:120]}"}])
+            return Response("", status=503)      # 2xx 가 아니면 허브가 나중에 다시 보낸다
+        return Response("", status=204)
 
 
 # ── self-test ────────────────────────────────────────────────────────────────────
@@ -433,10 +447,10 @@ if __name__ == "__main__":
     wakes, writes, evs = [], [], []
     state = {"fail": False}
 
-    def _enqueue(vid, when):
+    def _enqueue(vid, when, meta=None):
         if state["fail"]:
             raise RuntimeError("Cloud Tasks 장애")
-        wakes.append((vid, when))
+        wakes.append((vid, when, meta))
 
     def _submit(kind, args):
         writes.append((kind, args))
@@ -451,11 +465,12 @@ if __name__ == "__main__":
     assert r.status_code == 200 and r.get_data(as_text=True) == "abc"
     assert evs[-1]["action"] == "verify" and evs[-1]["who"] == "arale" and evs[-1]["lease"] == "432000"
     assert c.get("/websub/arale", query_string={"hub.mode": "subscribe", "hub.topic": topic_url("UCzzz"), "hub.challenge": "abc"}).status_code == 404
-    # 멤버 알림(서명 정상) → 즉시 + 2분 뒤 확인 예약, 영상 ID 만 사용
+    # 멤버 알림(서명 정상) → 즉시 확인 1건만 예약(+ PubSub 정보), 영상 ID 만 사용. (v4.5.2) 접수 쪽은 기록 커밋 없음
+    n_ev = len(evs)
     r = c.post("/websub/ritsu", data=raw, headers=sig)
     assert r.status_code == 204
-    assert wakes == [("4Qg5SkkDuMI", "2026-10-20T00:00:00Z"), ("4Qg5SkkDuMI", "2026-10-20T00:02:00Z")], wakes
-    assert evs[-1]["action"] == "notify" and evs[-1]["video_id"] == "4Qg5SkkDuMI" and not writes
+    assert wakes == [("4Qg5SkkDuMI", "2026-10-20T00:00:00Z", {"websub": {"who": "ritsu", "title": "【ぽんこつ社】峰月社長と商品開発会議【峰月律/ゆめみた】", "attempt": 1}})], wakes
+    assert len(evs) == n_ev and not writes, "알림 수신은 접수 서비스에서 커밋하지 않는다(쓰기 서비스가 기록)"
     # 서명 불일치 · 헤더 없음 → 204 로 받고 무시(예약 없음), 이벤트는 10분에 한 번
     n = len(wakes)
     assert c.post("/websub/ritsu", data=raw, headers={"X-Hub-Signature": "sha1=" + "0" * 40}).status_code == 204
@@ -469,11 +484,15 @@ if __name__ == "__main__":
     sraw = song_xml.encode("utf-8")
     r = c.post("/websub/song-topic", data=sraw, headers={"X-Hub-Signature": "sha1=" + hmac.new(b"s3cret", sraw, hashlib.sha1).hexdigest()})
     assert r.status_code == 204 and writes[0][0] == "song_push" and writes[0][1]["entries"][0]["video_id"] == "SONGVIDEO01"
-    assert writes[0][1]["now_iso"] == "2026-10-20T00:00:00Z" and len(wakes) == n
-    # 삭제 알림 — 예약 · 적재 없이 기록만
+    assert writes[0][1]["now_iso"] == "2026-10-20T00:00:00Z" and writes[0][1]["who"] == "song-topic" and len(wakes) == n
+    # 삭제 알림 — 예약 · 적재 · 커밋 없이 서비스 로그만
     traw = tomb.encode("utf-8")
+    n_ev = len(evs)
     assert c.post("/websub/arale", data=traw, headers={"X-Hub-Signature": "sha1=" + hmac.new(b"s3cret", traw, hashlib.sha1).hexdigest()}).status_code == 204
-    assert evs[-1]["action"] == "deleted" and len(wakes) == n and len(writes) == 1
+    assert len(evs) == n_ev and len(wakes) == n and len(writes) == 1
+    # notify_event — 쓰기 서비스가 남기는 수신 기록(같은 영상은 merge_key 로 묶임)
+    ne = notify_event("2026-10-20T00:00:00Z", "ritsu", "4Qg5SkkDuMI", "t" * 100, "알림 수신")
+    assert ne["action"] == "notify" and ne["merge_key"] == "websub-notify:4Qg5SkkDuMI" and len(ne["title"]) == 80
     # 예약 실패 → 503(허브가 재시도) + err 이벤트
     state["fail"] = True
     assert c.post("/websub/ritsu", data=raw, headers=sig).status_code == 503 and evs[-1]["action"] == "notify_fail" and evs[-1]["result"] == "err"

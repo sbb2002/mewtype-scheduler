@@ -96,7 +96,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         ),
         # (v4.5.0) PubSub 알림이 알려 준 뮤타입 음원 채널 신곡 등록 — 알림 본문 항목으로 `_detect_new_songs` (via=push)
         "song_push": lambda gh, a: __import__("src.backend.handlers", fromlist=["x"]).detect_songs_from_push(
-            gh, a.get("entries") or [], a["now_iso"]),
+            gh, a.get("entries") or [], a["now_iso"], who=a.get("who") or "song-topic"),
         # (v4a) 그룹 영상 「참여 멤버 확인 대기」 추가 · 제거 (ops group_pending.json)
         "group_pending": lambda gh, a: t._group_pending_commit(
             gh, a["op"], a["now_iso"], entries=a.get("entries"), video_ids=a.get("video_ids"),

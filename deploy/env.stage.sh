@@ -4,6 +4,7 @@
 export SERVICE_NAME="mewtype-backend-stage"
 export TELEGRAM_SERVICE="mewtype-telegram-stage"
 export TASKS_QUEUE="mewtype-wake-stage"
+export WEBSUB_QUEUE="mewtype-websub-stage"   # (v4.5.2) PubSub 전용 속도 제한 큐
 export DATA_BRANCH="data-stage"
 export MONITOR_BRANCH="monitoring-stage"
 export OPS_BRANCH="ops-stage"
