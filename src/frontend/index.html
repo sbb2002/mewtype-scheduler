@@ -19,6 +19,12 @@
   <link rel="stylesheet" href="css/notices.css">
   <link rel="stylesheet" href="css/banners.css">
   <link rel="stylesheet" href="css/tweets.css">
+  <!-- (v4.5.4) Vercel Web Analytics — 쿠키 없는 익명 방문 통계(하단 디스클레이머에 고지). 정적 HTML 방식이라 패키지 없이 스크립트만.
+       /_vercel/insights/* 경로는 Vercel 이 배포에 붙여 준다(프로젝트에서 Analytics 활성화 — 2026-09-07). 로컬 서버에선 404 라 수집 안 됨 -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
   <section id="notice" hidden aria-label="소식"></section>
@@ -38,6 +44,7 @@
           <li>표시되는 정보는 멤버·공식 계정이 공개적으로 게시한 내용만을 정리한 것입니다.</li>
           <li>Groq을 통해 AI 번역 서비스가 함께 제공됩니다. 만약 정확한 정보가 필요하시면 공식 채널을 통해 교차검증하시길 권장합니다.</li>
           <li>트윗은 X 공식 임베드로 표시되며 번역은 비공식 팬 번역입니다.</li>
+          <li>서비스 개선을 위해 Vercel Web Analytics로 익명 방문 통계(방문 페이지·유입 경로·국가·기기 및 브라우저 종류)를 수집합니다. 쿠키를 사용하지 않으며 개인을 식별할 수 있는 정보는 저장하지 않습니다.</li>
           <li>삭제 요청이 있으면 예고 없이 서비스가 중단될 수 있습니다. 문의·삭제 요청은 <a href="https://github.com/sbb2002/mewtype-scheduler/issues" target="_blank" rel="noopener">GitHub Issues</a>로 받습니다.</li>
         </ul>
       </div>
