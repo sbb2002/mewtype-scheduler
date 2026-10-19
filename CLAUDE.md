@@ -49,7 +49,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.5.2 (핫픽스, 브랜치 `hotfix/websub-burst`, 2026-10-19, 백엔드)**: **PubSub 알림이 몰릴 때(버스트)의 경합 제거.** ① 접수 서비스는 알림을 받으면 **예약만 하고 커밋 없이 응답** — 수신 기록 `flow=websub action=notify` 는 확인을 처리하는 쓰기 서비스가 남긴다(같은 영상 10분 안 반복은 한 줄의 `count`, `monitor_log` `merge_key`).
+> **v4.5.2 (핫픽스, 브랜치 `hotfix/websub-burst`, 2026-10-19 배포 — `mewtype-backend` 00154 · `mewtype-telegram` 00110, 백엔드)**: **PubSub 알림이 몰릴 때(버스트)의 경합 제거.** ① 접수 서비스는 알림을 받으면 **예약만 하고 커밋 없이 응답** — 수신 기록 `flow=websub action=notify` 는 확인을 처리하는 쓰기 서비스가 남긴다(같은 영상 10분 안 반복은 한 줄의 `count`, `monitor_log` `merge_key`).
 > ② 예약은 **PubSub 전용 큐**(`mewtype-websub`, env `WEBSUB_QUEUE` — 동시 1건 · 5초에 1건)로. ③ 「2분 뒤 재확인」은 첫 확인에서 API 가 아직 그 영상을 모를 때만 쓰기 서비스가 건다(`handlers._websub_followup`). 스테이징 실측(알림 12건 동시 + 트윗 3건): 수신 기록 유실 2→0 · 접수 응답 최대 약 25초→2초 · 확인 24→12회 · 트윗 저장 거절 1→0. 상세 `docs/SPEC.md` §8.16, 요약 `docs/VERSION.md`.
 >
 > **v4.5.1 (핫픽스, 브랜치 `hotfix/king-leave-fade`, 2026-10-19, 프론트만)**: **노노카 지각 이스터에그 입장 후 유지 3분 → 1분 + 1.2초에 걸쳐 서서히 복귀**(`.k-leave` — 무대 · 왕관 · 카펫 띠가 옅어지고 대신의 말 칸이 접힘, 모션 줄이기면 바로 제거). 10-16 에 만들어 로컬 `main` 에만 병합(`f0f6e38`)되고 푸시되지 않았던 조정(`b70adeb`)을 최신 `main` 위로 옮긴 것. `king.js` · `css/king.css` · `king.selfcheck.mjs`(46개) · `timetable.js`(위쪽 팝업 위치 기록 1줄), 상세 `docs/SPEC.md` 「노노카 지각 이스터에그」, 요약 `docs/VERSION.md`.
