@@ -1,128 +1,170 @@
 # 夢限大みゅーたいぷ 방송 예고판
 
-> **프로젝트:** 夢限大みゅーたいぷ 5인 유튜브 방송인의 예약/라이브 방송을 한곳에서 시간순으로 보여주는 정적 웹사이트
+> **프로젝트:** 夢限大みゅーたいぷ(무겐다이 뮤타입) 소속 유튜브 방송인 5명의 **예약 방송 · 라이브 상태**를 한곳에서 보여주는 반응형 정적 웹사이트.
+> 팬이 들어오면 누가 언제 방송하는지, 지금 라이브 중인지, 어느 주소로 가면 되는지 한눈에 확인한다.
+> 비공식 팬 메이드 · 비영리 프로젝트이며 관련 권리는 각 권리사에 있다.
 
-**현재 버전: v2.7.1** — 버전별 구현 내역은 [docs/VERSION.md](./docs/VERSION.md)
+**현재 버전: v4.6.0 (프론트 · 2026-10-19) + 핫픽스 v4.5.7** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md)
+🌐 운영 사이트: <https://mewtype-schduler.vercel.app/> (주소의 `schduler` 오타는 옛 이름이 그대로 남은 것 — 프로젝트 · 저장소 이름은 `mewtype-scheduler`)
 
-📋 [PRD](./docs/beta_version/PRD.md) | 📦 [구현 명세](./docs/SPEC.md)
-
-> **브랜치 `v4a` — 로컬 시험판 (미배포).** 별도 테스트 기기에서 돌리는 방법: [ref/v4a/v4a_local_runbook.md](./ref/v4a/v4a_local_runbook.md) ·
-> 검증 결과: [ref/v4a/v4a_verify_report.md](./ref/v4a/v4a_verify_report.md) · 관측 흐름: `ref/v4a/v4a_verify_flow.html`
+📦 [구현 명세 (docs/SPEC.md)](./docs/SPEC.md) | 🗣 [용어 기준 (docs/TERMINOLOGY.md)](./docs/TERMINOLOGY.md) | 🔀 [ingest 흐름 (docs/INGEST_FLOW.md)](./docs/INGEST_FLOW.md) | 🧭 작업 지침 [CLAUDE.md](./CLAUDE.md)
 
 ---
 
-## 구조
+## 화면 (프론트엔드)
+
+| 기능 | 설명 |
+|---|---|
+| **오늘 타임테이블** | PC = 멤버별 가로 편성 레일(KST 06:00~익일 06:00) 위에 예고 · 라이브 · 종료 블록. 호버 = 카드 팝업, 예고 블록은 「방송시작까지 n시간/n분」. 보기 방식 탭 [테이블 \| 카드]. 모바일 = 멤버 1명씩 슬라이드하는 오늘 카드(카운트다운 링) |
+| **이후 예고** | 오늘 구간 밖 · 시각 미정 예고를 펼쳐 보는 목록 |
+| **소식 · 행사 배너** | 방송 외 이벤트 티커(`#notice`, 번역 포함)와 게임 행사 · 가챠 배너 카드(D-n 진행 막대) |
+| **멤버 트윗 말풍선** | 멤버 아바타의 편지 배지 → X 공식 트윗 카드 + 한국어 번역 말풍선 |
+| **유메미타 플레이어** | 곡 목록(검색 · 독음 · 신곡)과 YouTube 임베드 재생, 재생목록 · 셔플 · 반복, **랜덤플리 오마카세**(전체/오리지널/커버를 무작위로 재생목록에 넣어 재생) |
+| **밝게 / 어둡게** | 소식 막대 마지막 칸의 해/달 버튼, 기기 설정을 따라감 |
+| **하단 디스클레이머** | 비공식 · 번역 안내 · 방문 통계 고지. 마우스를 2초 올리면 전체 팝업(포커스는 바로) |
+| 이스터에그 | 노노카 지각 연출(`king.js`), 운영 모니터 페이지 진입(`monitor.html`) |
+
+데이터는 모두 `data` 저장소의 JSON(`preview.json` · `notices.json` · `tweets.json` · `banners.json` · `songs.json` 등)을 75초마다 fetch한다.
+`raw.githubusercontent.com` 캐시 때문에 최대 약 5분 지연되는 것은 의도된 트레이드오프다.
+
+---
+
+## 동작 방식 (백엔드)
+
+서버를 상시 가동하지 않는다. 무료 인프라만 쓴다.
+
+```
+ 업스트림(운영자 폰 Automate)      YouTube PubSub 알림       Cloud Scheduler            Cloud Tasks
+  X · YouTube 앱 알림 중계             (WebSub 푸시)       (baseline · light 10분 ·       (방송별 정밀 wake)
+          │                                 │              monitor · websub-renew)            │
+          ▼                                 ▼                         ▼                      ▼
+   mewtype-telegram (제어 채널, 공개)  ──────────────►  mewtype-backend (수집 · 판정, concurrency=1)
+   텔레그램 webhook · /ingest · /websub                  /tick · /wake · /write · /monitor
+          │  쓰기는 /write 로 직렬화                              │
+          └──────────────────────► GitHub Contents API ◄────────┘
+                                   저장소 mewtype-scheduler-data (data · monitoring 브랜치)
+                                            │ raw.githubusercontent.com
+                                            ▼
+                               프론트엔드 (Vercel, src/frontend)
+```
+
+- **수집/판정**: Cloud Run 두 서비스 — `mewtype-backend`(`/tick` `/wake` `/write` `/monitor`)와 `mewtype-telegram`(텔레그램 webhook · 업스트림 `/ingest` · PubSub 콜백). 리전 `asia-northeast1`.
+  YouTube RSS · Data API로 발견한 방송을 6상태(`none` `announced` `upcoming` `watching` `live` `end`) FSM으로 `preview.json` 에 재구성한다(상태는 저장하지 않고 항목에서 파생).
+- **번역/판정 LLM**: Groq(`gpt-oss-120b`, 폴백 `gpt-oss-20b`)가 트윗 · 소식 · 방송 제목 번역, 본인 예고 · 행사 판정 등을 맡는다. 번역에 일본어가 남으면 1회 재요청하고, 반각 가타카나는 전각으로 바꿔 보낸다(v4.5.7).
+- **새 방송 발견**: 10분마다 RSS 폴링 + YouTube PubSub 알림(WebSub). 방송 시작/종료는 방송별 Cloud Tasks wake가 추적한다.
+- **저장**: 별도 저장소 `sbb2002/mewtype-scheduler-data` 의 `data` 브랜치(서비스 데이터) · `monitoring` 브랜치(이벤트 로그). 변경분만 GitHub Contents API로 커밋한다.
+- **운영 도구**: 텔레그램 봇(`/status` `/pause` `/resume` `/list` `/admin` 등)과 운영 모니터 리포트(`monitor_report` · `monitor_snapshot`).
+- **프론트**: Vercel 정적 호스팅(빌드 없음). `main` 브랜치만 배포하고 `data`/`devpapers`/`monitoring` 등은 배포에서 제외한다(`src/frontend/vercel.json`).
+
+> `src/collector/` 와 `.github/workflows/collect.yml`(`workflow_dispatch` 전용)은 **v1 수집기의 잔재**다. 순수 모듈 일부는 백엔드가 가져다 쓰지만, 단독 실행 결과는 현행 사이트에 반영되지 않는다.
+
+---
+
+## 저장소 구조
 
 ```
 mewtype-scheduler/
 ├── src/
-│   ├── frontend/               # Vercel 정적 호스팅
-│   │   ├── index.html
-│   │   ├── css/
-│   │   └── js/
-│   └── collector/              # 데이터 수집 (Python)
-│       ├── main.py
-│       ├── rss.py
-│       ├── youtube.py
-│       ├── reconcile.py
-│       ├── store.py
-│       └── requirements.txt
-├── config/
-│   └── channels.json           # 5채널 메타데이터
-├── .github/workflows/
-│   └── collect.yml             # 매시간 수집 자동화
-└── data 브랜치                  # schedule.json + archive.json (GitHub Actions가 생성)
+│   ├── frontend/          # Vercel 정적 호스팅 (Root Directory = src/frontend)
+│   │   ├── index.html · monitor.html · vercel.json
+│   │   ├── css/           # layout · timetable · card · notices · banners · tweets · player* · king · theme …
+│   │   ├── js/            # main · render · timetable · notices · banners · tweets · player · songs · theme · king …
+│   │   │                  #   + *.selfcheck.mjs (브라우저 없이 도는 단위 점검)
+│   │   └── assets/songs.json   # 플레이어 곡 목록 시드
+│   ├── backend/           # Cloud Run 서비스 (Flask + gunicorn): app · telegram_app · handlers · preview_build ·
+│   │                      #   statemachine · llm · xtweet · xrelay · xnotice · banners · songs · websub · gh_store …
+│   ├── collector/         # v1 순수 모듈 (rss · youtube · reconcile) — 백엔드가 재사용
+│   └── bus/               # 에러 버스 발신기 (MEW_BUS_DIR 없으면 no-op)
+├── config/channels.json   # 5채널 메타 단일 소스 (핸들 · 채널 ID · 한글명 · X 표시명 · 호칭)
+├── deploy/                # gcloud 배포 스크립트 (setup · deploy · deploy_telegram · scheduler · telegram_webhook) + README
+├── docs/                  # SPEC · TERMINOLOGY · VERSION · INGEST_FLOW … (그 외 배경자료는 devpapers 브랜치)
+├── fixtures/              # 프론트 · 파서 테스트용 샘플 데이터
+├── scripts/               # 일회성 보조 스크립트
+└── Dockerfile             # 두 Cloud Run 서비스가 공유 (엔트리포인트만 다름)
 ```
 
----
-
-## 동작 방식
-
-1. **GitHub Actions**가 매시간(UTC 0분) cron으로 실행되거나 수동 트리거 시 호출
-2. **수집기**(Python)가 YouTube RSS 피드 + YouTube Data API v3로 5채널의 예약/라이브 상태 조회
-3. 데이터가 변경되면 `data` 브랜치에 `schedule.json` + `archive.json`으로 커밋
-4. **프론트엔드**는 `raw.githubusercontent.com`에서 `schedule.json`을 매 60~90초마다 fetch해 화면에 렌더
+브랜치: `main`(배포 대상) · `data`(데이터 저장소 쪽) · `devpapers`(개발 배경 문서 · 자동 생성 모니터 HTML — Vercel 배포 트리거 밖).
+작업 브랜치 이름에는 버전 번호를 쓰지 않는다(`hotfix/<이름>` · `test/<이름>`).
 
 ---
 
 ## 로컬 실행
 
-### 수집기 (Bash/PowerShell)
-
-```bash
-# Linux/macOS
-pip install -r src/collector/requirements.txt
-DATA_DIR=./_data YOUTUBE_API_KEY=xxxx python -m src.collector.main light
-```
-
-```powershell
-# PowerShell
-pip install -r src/collector/requirements.txt
-$env:DATA_DIR = "./_data"; $env:YOUTUBE_API_KEY = "xxxx"; python -m src.collector.main light
-```
-
-이 명령은 `_data/schedule.json`과 `_data/archive.json`을 생성합니다.
-
 ### 프론트엔드
 
-정적 서버는 **저장소 루트**에서 실행합니다 (fixture 상대경로 `../../fixtures/...`가 서버 루트 밖으로 나가지 않도록):
+정적 서버는 **저장소 루트**에서 실행한다(fixture 상대경로 `../../fixtures/...` 가 서버 루트 밖으로 나가지 않도록).
 
 ```bash
 python -m http.server 8099
-# 브라우저에서 http://localhost:8099/src/frontend/ 접속
+# http://localhost:8099/src/frontend/
 ```
 
-**개발 중**: `src/frontend/js/config.js`의 `DATA_URL`을 `../../fixtures/schedule.sample.json`로 임시 변경해 테스트 데이터로 확인할 수 있습니다.
+로컬 호스트에서는 운영 `data` 저장소의 실데이터를 그대로 읽는다. 샘플 데이터로 보려면 `src/frontend/js/config.js` 의 `PREVIEW_URL` 을
+`../../fixtures/preview.sample.json` 으로 임시 교체한다(주석 처리된 줄 있음). 브라우저가 이전 스크립트를 캐시할 수 있으니 확인 땐 강력 새로고침(Ctrl+Shift+R).
+
+### 점검 (테스트 프레임워크 없음 — 모듈마다 self-test)
+
+```bash
+# 프론트 (Node)
+node src/frontend/js/king.selfcheck.mjs && node src/frontend/js/songs.selfcheck.mjs
+node src/frontend/js/timetable.selfcheck.mjs && node src/frontend/js/render.selfcheck.mjs && node src/frontend/js/time.selfcheck.mjs
+
+# 백엔드 (네트워크 불필요, Windows 콘솔은 PYTHONIOENCODING=utf-8 권장)
+python -m src.backend.llm            # 번역 · 판정 프롬프트 · 가나 잔존 재요청 등
+python -m src.backend.preview_build  # 6상태 재구성
+python -m src.backend.statemachine   # FSM
+python -m src.backend.xtweet         # 개인 트윗 파서
+python -m src.backend.websub         # PubSub 수신
+```
+
+전체 목록은 [CLAUDE.md](./CLAUDE.md) 「명령」 절 참고. 실제 LLM 호출 점검은 `GROQ_API_KEY` 가 있을 때만 가능하다.
+
+### 백엔드 로컬 시험 러너
+
+`python -m src.backend.local_runner` 는 클라우드 없이 PC 에서 백엔드를 돌려 보는 시험용 러너다(저장은 `_local/`). 방법과 검증 기록은
+[ref/v4a/v4a_local_runbook.md](./ref/v4a/v4a_local_runbook.md).
 
 ---
 
 ## 배포
 
-### Vercel (프론트엔드)
+### 프론트엔드 — Vercel (자동)
 
-1. GitHub 저장소를 Vercel에 연결
-2. **Root Directory**: `src/frontend`
-3. **Build Command**: (없음 — 정적 HTML/CSS/JS)
-4. 배포 완료
+- Vercel 프로젝트 Root Directory = `src/frontend`, Build Command 없음.
+- **`main` 브랜치에 푸시하면 자동 배포**된다(다른 브랜치는 `vercel.json` 으로 제외). 하루 배포 횟수 한도가 있어 봇이 커밋하는 브랜치는 반드시 배포에서 빼야 한다.
+- 방문 통계는 Vercel Web Analytics(쿠키 없음 · 익명 집계)이며 하단 디스클레이머에 고지한다.
 
-### data 브랜치 최초 부트스트랩
+### 백엔드 — Cloud Run (수동 스크립트)
 
-첫 워크플로 실행 전에 `data` 브랜치를 미리 생성하려면:
+gcloud 로그인과 `deploy/env.sh`(루트 `.env` 매핑, git 제외)가 필요하다. 상세 · 롤백은 [deploy/README.md](./deploy/README.md).
 
 ```bash
-git switch --orphan data
-git commit --allow-empty -m "init data"
-git push -u origin data
-git switch main
+bash deploy/setup.sh                                   # API · SA · IAM · Cloud Tasks 큐 · Secret (멱등)
+bash deploy/deploy.sh                                  # mewtype-backend
+bash deploy/scheduler.sh                               # Scheduler 잡 (URL 불변이면 생략 가능)
+bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # mewtype-telegram
 ```
 
-워크플로가 실행되면서 자동으로 생성되므로 선택사항입니다.
+`llm.py` · `telegram_app.py` 처럼 **두 서비스가 공유하는 코드를 바꾸면 `deploy.sh` 와 `deploy_telegram.sh` 를 둘 다** 실행한다.
+`--source .` 배포는 로컬 작업 트리를 올리므로, 배포 전에 `origin/main` 과 동기화됐는지 먼저 확인한다.
 
----
+### Secret / 환경 변수 (값은 저장소에 없음)
 
-## 설정
-
-### GitHub Secrets
-
-저장소 Settings → Secrets and variables → Actions 에서 다음 설정:
-
-| 이름 | 값 |
-|---|---|
-| `YOUTUBE_API_KEY` | YouTube Data API v3 키 |
-
-워크플로가 매시간 이 키로 YouTube API를 호출해 방송 정보를 수집합니다.
+Secret Manager: `GROQ_API_KEY`(번역 · 판정 LLM) · `WEBSUB_SECRET`(PubSub 서명) · `VERCEL_TOKEN`(모니터 리포트의 배포 시도 수) · GitHub 데이터 저장소용 fine-grained PAT · 텔레그램 봇 토큰 · 업스트림 인증 비밀.
+`YOUTUBE_API_KEY` 는 YouTube Data API 호출에 쓴다. 이름과 주입 방식은 `deploy/` 스크립트와 `deploy/README.md` 에 있다.
 
 ---
 
 ## 파일 설명
 
-- `config/channels.json`: 모니터링할 5개 채널의 메타데이터 (유튜브 핸들, 채널 ID, 한글명 등)
-- `src/collector/requirements.txt`: Python 의존성 (`requests>=2.31` 만 사용)
-- `.github/workflows/collect.yml`: 매시간 수집 + `data` 브랜치 커밋 자동화
-- `fixtures/`: 개발/테스트용 샘플 데이터
+- `config/channels.json`: 5개 채널의 메타데이터 단일 소스(채널 추가 · 변경은 여기만). 그룹 공식 채널 · 뮤타입 음원 채널(`song_feeds`) · 게임 계정(`game_accounts`)도 여기서 관리한다.
+- `docs/SPEC.md`: 데이터 계약(preview · notices · tweets · banners …)과 백엔드 · 프론트 모듈 명세.
+- `docs/TERMINOLOGY.md`: 문서 · 코드 간 용어 기준. 새 용어는 뜻을 함께 적어 여기에 올린다.
+- `docs/VERSION.md`: 버전별 추가 · 변경 · 제거 요약(내림차순).
 
 ---
 
-## 라이센스
+## 라이센스 · 고지
 
-공개 메타데이터 활용. YouTube 썸네일은 `i.ytimg.com` 핫링크 사용.
+공개 메타데이터를 활용한다. YouTube 썸네일은 `i.ytimg.com` 핫링크를 쓰고, 트윗은 X 공식 임베드로 표시한다. 번역은 비공식 팬 번역이며 AI(Groq)가 만든다.
+삭제 · 문의 요청은 [GitHub Issues](https://github.com/sbb2002/mewtype-scheduler/issues) 로 받는다.

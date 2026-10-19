@@ -116,6 +116,27 @@ function initDisclaimerRotator() {
   cur.classList.add("is-marquee");
 }
 
+/** (v4.5.7) 디스클레이머 팝업 — 마우스를 2초 올려 둬야 연다(스치기만 해서는 안 열림). 열린 뒤에는 .fdisc 나 팝업 위에 있는 동안 유지하고,
+ * 벗어나면 0.3초 뒤 닫는다(.fdisc 와 팝업 사이 틈을 지나 안의 링크로 갈 수 있게). 포커스(클릭 · 키보드 · 터치 탭)는 CSS(:focus-within)가 바로 연다. */
+function initDisclaimerHover() {
+  const fdisc = document.querySelector(".fdisc");
+  if (!fdisc) return;
+  const OPEN_MS = 2000, CLOSE_MS = 300;
+  let openT = 0, closeT = 0;
+  fdisc.addEventListener("pointerenter", (e) => {
+    if (e.pointerType === "touch") return;   // 터치는 호버가 없다 — 탭(포커스)으로 연다
+    clearTimeout(closeT);
+    if (!fdisc.classList.contains("is-open")) openT = setTimeout(() => fdisc.classList.add("is-open"), OPEN_MS);
+  });
+  fdisc.addEventListener("pointerleave", () => {
+    clearTimeout(openT);
+    closeT = setTimeout(() => fdisc.classList.remove("is-open"), CLOSE_MS);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { clearTimeout(openT); fdisc.classList.remove("is-open"); }
+  });
+}
+
 /** 팝업(.fdisc__list) 가로 폭을 "업데이트 시각 오른쪽 끝 ~ 버전(♾️) 왼쪽 끝"에 맞춤.
  * PC 레이아웃 전용(모바일은 화면 중앙 고정폭 — css 미디어쿼리가 따로 덮어씀). */
 function positionDisclaimerPopup() {
@@ -246,6 +267,7 @@ document.addEventListener("DOMContentLoaded", () => {
   syncPlayerDock();
   if (window.matchMedia) window.matchMedia("(min-width: 768px)").addEventListener("change", syncPlayerDock);
   initDisclaimerRotator();
+  initDisclaimerHover();
   positionDisclaimerPopup();
   window.addEventListener("resize", positionDisclaimerPopup);
   const fdiscEl = document.querySelector(".fdisc");
