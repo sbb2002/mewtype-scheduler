@@ -87,7 +87,7 @@ async function poll() {
   }
 }
 
-/** 하단 디스클레이머 — 5개 항목을 끊김(개별 전환) 없이 하나로 이어붙여 천천히
+/** 하단 디스클레이머 — 항목 전부(개수 무관 — v4.5.4 에 방문 통계 고지가 더해져 8개)를 끊김(개별 전환) 없이 하나로 이어붙여 천천히
  * 연속 marquee 로 흘린다. 정적 콘텐츠(폴링 대상 아님) — 한 번만 초기화. */
 function initDisclaimerRotator() {
   const cur = document.querySelector(".fdisc__cur");

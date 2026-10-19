@@ -49,6 +49,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.5.4 (핫픽스, 브랜치 `hotfix/web-analytics`, 2026-10-19, 프론트만)**: **방문 통계 — Vercel Web Analytics 스크립트 + 하단 디스클레이머 고지.** `index.html` `<head>` 에 정적 HTML 방식 스크립트(`window.va` 큐 + `/_vercel/insights/script.js`, 패키지 없음).
+> 프로젝트의 Analytics 는 2026-09-07 에 이미 켜져 있었지만 스크립트가 없어 수집되지 않았다. 쿠키 없음 · 익명 집계(방문 페이지 · 유입 경로 · 국가 · 기기 및 브라우저 종류). 무료 플랜 월 50,000건(넘으면 과금 없이 수집 중지) · 1개월 보관. 운영자 전용 `monitor.html` 은 제외. 요약 `docs/VERSION.md`.
+>
 > **v4.5.3 (핫픽스, 브랜치 `hotfix/banner-date-evidence`, 2026-10-19 배포 — `mewtype-backend` 00156 · `mewtype-telegram` 00111, 백엔드)**: **행사 배너가 근거 없는 날짜로 기존 일정을 덮지 않게.** 이미 있는 날짜를 바꿀 때 새 날짜가 글 본문 · 이미지 OCR 에 적혀 있어야 반영(`banners.date_evidenced`),
 > 날짜만 값(「10月18日より」)은 같은 날의 시각 값을 덮지 않음, 판정 LLM 목록에 가챠 기간 표시, 프롬프트에 「적힌 날짜만」. 계기: 10-19 날짜 없는 가챠 소개 글 3건이 가챠 기간을 행사 종료 · 00:00 으로 덮음(데이터는 복구). 가챠 종료와 행사 종료 관계는 고정 규칙 아님(공지 · 이미지 기준). 상세 `docs/SPEC.md` 계약 J, 요약 `docs/VERSION.md`.
 >
@@ -436,8 +439,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **저장** = **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`
   (`docs/plan/data_repo_migration.md`). Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
 - **프론트** = **Vercel** 정적 호스팅. 배포 주소 `https://mewtype-schduler.vercel.app/`
-  (레포명은 `mewtype-scheduler` 로 고쳤지만 Vercel 프로젝트/도메인은 옛 오타 `mewtype-schduler`
-  그대로 — 헷갈리지 말 것). `main` 브랜치 푸시 시 자동 배포(`vercel.json` 은 `data` 브랜치만
+  (레포명과 Vercel 프로젝트 이름은 `mewtype-scheduler` 로 고쳐졌지만 **도메인은 옛 오타 `mewtype-schduler.vercel.app`
+  그대로** — 헷갈리지 말 것. 2026-10-19 Vercel API 로 확인: 프로젝트 `mewtype-scheduler`(`prj_3CjMc3VJmYbQUqMNtJqDKSnyqWAB`),
+  별칭 `mewtype-schduler.vercel.app` · `mewtype-scheduler-sbb2002.vercel.app`). (v4.5.4) 방문 통계 = Vercel Web Analytics(쿠키 없음, 대시보드 프로젝트 → Analytics). `main` 브랜치 푸시 시 자동 배포(`vercel.json` 은 `data` 브랜치만
   배포 제외). (v1 의 GitHub Actions 수집기는 `src/collector/` + `collect.yml`
   `workflow_dispatch` 로 남아 있지만 **실행해도 현행 사이트엔 반영 안 됨** — v1 `schedule.json` 을 코드
   저장소의 `data` 브랜치에 push 하는데, 프론트는 데이터 저장소의 `preview.json` 을 읽는다.)
