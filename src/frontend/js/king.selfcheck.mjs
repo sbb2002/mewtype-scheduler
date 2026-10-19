@@ -1,7 +1,7 @@
 /**
  * king.js 순수 로직 자동 테스트 (v4.3.1). node king.selfcheck.mjs 로 실행. 프레임워크 없음. (DOM 함수는 호출하지 않는다)
  */
-import { KING_KEY, ARRIVE_MS, HOLD_MS, MAX_LATE_MS, kingTarget, lateStage, mmss, phaseOf, speech, blockLabel } from "./king.js";
+import { KING_KEY, ARRIVE_MS, HOLD_MS, LEAVE_MS, MAX_LATE_MS, kingTarget, lateStage, mmss, phaseOf, speech, blockLabel } from "./king.js";
 
 let n = 0;
 function assert(cond, msg) {
@@ -41,17 +41,19 @@ assert(phaseOf(item(), "upcoming", t0 - MIN) === null, "예정 시각 전에는 
 assert(phaseOf(item({ channel_key: "arale" }), "upcoming", t0 + MIN) === null, "다른 멤버는 null");
 assert(phaseOf(item(), "ended", t0 + MIN) === null, "종료 상태는 null");
 
-// ── 국면: 라이브 = 지각 후 입장, 입장 후 3분까지만
+// ── 국면: 라이브 = 지각 후 입장, 입장 후 1분까지만
 const live = (lateMin) => item({ actual_start: new Date(t0 + lateMin * MIN).toISOString() });
 p = phaseOf(live(8), "live", t0 + 8 * MIN + 5000);
 assert(p && p.phase === "live" && p.waited === 8 * MIN && p.since === 5000, "8분 늦게 입장 → live, 기다린 시간 8분");
-assert(phaseOf(live(8), "live", t0 + 8 * MIN + HOLD_MS - 1) !== null, "입장 후 2분59초까지는 유지");
-assert(phaseOf(live(8), "live", t0 + 8 * MIN + HOLD_MS) === null, "입장 후 3분이 되면 평소 모습(null)");
+assert(phaseOf(live(8), "live", t0 + 8 * MIN + HOLD_MS - 1) !== null, "입장 후 59초까지는 유지");
+assert(phaseOf(live(8), "live", t0 + 8 * MIN + HOLD_MS) === null, "입장 후 1분이 되면 평소 모습(null — 틱이 복귀 연출을 시작)");
 assert(phaseOf(live(0.5), "live", t0 + 40000) === null, "30초만 늦은 입장은 연출 없음(1분 미만)");
 assert(phaseOf(live(1), "live", t0 + MIN + 1000) !== null, "정확히 1분 늦은 입장부터 연출");
 assert(phaseOf(item(), "live", t0 + 5 * MIN) === null, "actual_start 없는 라이브는 null");
 assert(phaseOf(live(8), "live", t0 + 8 * MIN - 10000).since === 0, "시계가 느려 입장 전으로 보여도 since 는 0");
 assert(ARRIVE_MS < HOLD_MS, "입장 연출은 유지 시간 안에 끝난다");
+assert(HOLD_MS === 60000, "입장 후 유지 시간은 1분");
+assert(LEAVE_MS === 1200, "복귀 연출은 1.2초(king.css --k-leave 와 같은 값)");
 
 // ── 대신의 말: 단계마다 있고, 카운터는 3단계부터
 for (let s = 1; s <= 5; s++) assert(speech("wait", s).length > 0, `${s}단계 말이 있다`);

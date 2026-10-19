@@ -320,6 +320,8 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
 
+> (v4.5.1) 입장 후 유지 3분 → **1분**, 그 뒤 즉시 제거 → **1.2초에 걸쳐 서서히 복귀**(`.k-leave`). 아래 표 · 클래스 설명은 v4.5.1 기준.
+
 노노카 본인 방송(`item.channel_key == "nonoka"`, `time_tbd` 아님)이 예정 시각을 넘기면 타임테이블 · 오늘 카드에 장식이 붙는다. 백엔드 · 데이터 계약 변경 없음 — 기존 `preview.json` 필드(`channel_key` · `scheduled_start` · `actual_start` · `time_tbd` · `video_id`)만 읽는다.
 
 **판정** `king.phaseOf(item, state, nowMs)` (순수 — DOM 없음). `state` 는 `timetable.classify` 의 분류(`upcoming` | `live` | `ended`).
@@ -327,11 +329,13 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 | 입력 | 결과 |
 |---|---|
 | `upcoming` 이고 `late = now − scheduled_start` 가 0 초과 ~ 3시간(`MAX_LATE_MS`) | `{phase:"wait", stage, late}` — `lateStage(late)`: ~3분 1 · 3~5분 2 · 5~10분 3 · 10~20분 4 · 20분~ 5 (경계는 이상/미만) |
-| `live` 이고 `actual_start − scheduled_start ≥ 1분`(`ARRIVE_MIN_LATE_MS`) 이고 `now − actual_start < 3분`(`HOLD_MS`) | `{phase:"live", waited, since}` |
-| 그 밖(대상 아님 · 종료 · `actual_start` 없음 · 1분 미만 지각 · 3분 경과) | `null` → 장식 없음 / 걷어냄 |
+| `live` 이고 `actual_start − scheduled_start ≥ 1분`(`ARRIVE_MIN_LATE_MS`) 이고 `now − actual_start < 1분`(`HOLD_MS`) | `{phase:"live", waited, since}` |
+| 그 밖(대상 아님 · 종료 · `actual_start` 없음 · 1분 미만 지각 · 입장 후 1분 경과) | `null` → 장식 없음 / 복귀 연출 후 걷어냄 |
 
 **장식 root 와 클래스** — `king.js` 가 root 요소에 붙이고 `root.dataset.king`(`"card"`·`"popup"`·`"block"`) · `root.__king`(상태 객체)을 둔다.
-`.k-on` 장식 중 · `.k-s1`~`.k-s5` 지각 단계(누적) · `.k-arrive` 입장 연출 중(`ARRIVE_MS` 3.8초) · `.k-live` 입장 후 유지 중. `finish()` 가 3분이 지나면 클래스 · 추가한 노드 · 바꾼 글자를 모두 원복한다(보드를 다시 그리지 않고 제자리에서).
+`.k-on` 장식 중 · `.k-s1`~`.k-s5` 지각 단계(누적) · `.k-arrive` 입장 연출 중(`ARRIVE_MS` 3.8초) · `.k-live` 입장 후 유지 중 · `.k-leave` 복귀 연출 중(`.k-live` 와 함께 붙음, `LEAVE_MS` 1.2초). 1초 틱이 입장 후 1분(`phaseOf` 가 `null`)을 감지하면 `leave()` 가 `.k-leave` 를 붙이고(모션 줄이기면 바로 `finish()`), 1.2초 뒤 `finish()` 가 클래스 · 추가한 노드 · 바꾼 글자를 모두 원복한다(보드를 다시 그리지 않고 제자리에서).
+
+**복귀 연출(`.k-leave`)** — 무대(`.kg-scene`)는 썸네일 위에 겹쳐 있어 투명해지면(1.2초) 아래의 평소 썸네일이 드러난다. 대신의 말 칸(`.king-msg`)은 0.5초에 옅어지고 1초에 걸쳐 접힌다(`leave()` 가 현재 높이를 `max-height` 인라인 px 로 고정한 뒤 `.k-leave` 가 0 으로 — 접힘 끝의 `margin-top −4px` 는 카드 `.tcard__main` · 팝업 `.tt-pop__body` 의 `gap 4px` 보정). 블록의 왕관 · 카펫 띠도 옅어진다. 카드 오른쪽 도넛(`.tcard__ring`)은 장식이 아니라 건드리지 않으며, 말 칸이 접히는 동안 세로 중앙 정렬에 따라 제자리로 올라온다. 장식은 링크 요소의 자손이고 `pointer-events:none` 이라 연출 중에도 클릭은 영상 링크로 이어진다. 블록 위쪽에 놓인 팝업은 `timetable.js` 가 `data-anchor-bottom` 에 아래 가장자리를 적어 두고 `king.js repin()` 이 줄어드는 동안 블록에 붙여 둔다.
 
 | 위치 | 함수 · root | 삽입 | 호출 지점 |
 |---|---|---|---|
@@ -355,7 +359,7 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 
 **XSS**: 무대 · 왕관 · 말 모두 `createElement`/`createElementNS` + `textContent`(`innerHTML` 금지).
 
-자체 점검: `node src/frontend/js/king.selfcheck.mjs`(44개 — 대상 · 단계 경계 · `phaseOf`(지각 1분 · 3분 경계 · 시계 오차) · 말 · 블록 글자). DOM 함수는 호출하지 않는다.
+자체 점검: `node src/frontend/js/king.selfcheck.mjs`(46개 — 대상 · 단계 경계 · `phaseOf`(지각 1분 · 입장 후 1분 경계 · 시계 오차) · 유지 · 복귀 시간 상수 · 말 · 블록 글자). DOM 함수는 호출하지 않는다.
 
 ### 렌더 규칙
 

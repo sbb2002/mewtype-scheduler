@@ -244,6 +244,7 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey) {
   cpop.style.width = `${w}px`;
   cpop.style.left = `${left}px`;
   cpop.style.top = `${below ? r.bottom + scrollY + 8 : r.top + scrollY - h - 8}px`;
+  if (!below) cpop.dataset.anchorBottom = String(r.top + scrollY - 8);   // (king.js) 위쪽에 놓인 팝업이 줄어들어도 블록에 붙어 있게 아래 가장자리를 기록
 }
 
 function wirePopOnce() {
