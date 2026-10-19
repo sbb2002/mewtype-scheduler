@@ -19,11 +19,12 @@
 | 역할 | 수단 |
 |---|---|
 | 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
-| 정기 트리거 | **Cloud Scheduler** 3잡 — baseline JST 06:00 / light 10분(v3.6, 구 3h) → `POST /tick`, monitor KST 06:10 → `POST /monitor` (OIDC) |
+| 정기 트리거 | **Cloud Scheduler** 4잡 — baseline JST 06:00 / light 10분(v3.6, 구 3h) → `POST /tick`, monitor KST 06:10 → `POST /monitor`, (v4.5.0) websub-renew KST 06:20 → `POST /websub-renew` (OIDC) |
 | 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
 | 저장 | **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`(Vercel 비연결). Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋 |
 | 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
-| 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` |
+| 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` + (v4.5.0) PubSub 콜백 `/websub/<이름>` |
+| PubSub(WebSub) | (v4.5.0) 허브가 멤버 5채널 · 뮤타입 음원 채널의 변경을 `mewtype-telegram` 으로 POST → 즉시 wake / 신곡 등록. 구독 일일 갱신은 `mewtype-backend` `/websub-renew`. §8.16 |
 | 외부 LLM | **Groq**(선택) — notice 제목 추출·의미 중복판정 + notice/개인트윗/방송 제목 번역 + 개인 예고 판정(참여·예고확인). 키 없으면 원문 노출 폴백 |
 | 업스트림 시스템 | 운영자 폰 Automate — X·YouTube 푸시알림을 `POST /ingest` 로 중계(코드베이스 밖) |
 
@@ -805,7 +806,7 @@ tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `
 `_run(mode, woken_video_id)` 흐름:
 1. **control 가드**: `is_paused` 면 healthcheck 핑만 + `{"paused": True}` 반환.
 2. `_pv0 = preview.json` 읽기 → 후보 video_id = `_tracked_unresolved_ids(_pv0)`(video_id 있고 state ∈
-   announced~end) ∪ woken ∪ (tick 이면) RSS 전부.
+   announced~end) ∪ woken ∪ (tick 이면) RSS 전부 — (v4.5.0) `WEBSUB_REPLACE_RSS=1` 의 light 틱은 RSS 를 빼고 추적 중인 영상만(`handlers._poll_plan`).
 3. `YouTubeClient` — `channels_list`(baseline 만), `videos_list(sorted(후보))`.
 4. **커밋 루프 (최대 2회, ConflictError 재계산)**:
    a. `prev_preview` / `prev_archive` + sha 재읽기.
@@ -1164,6 +1165,7 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 | 2 | `videos.list` 일시 누락·"공개→회원전용" 전환을 즉시 removed 처리 | `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 유예 | `preview_build.py` |
 | 3 | 방송 종료 직후 시작하는 짧은 다음 방송을 (당시) 3h tick 간격에 놓침 | `→end` 전이 시 `now+20분` 후속 `light` tick 1개(분버킷 dedupe). v3.6 light 10분 이후엔 겹치지만 유지 | `handlers.py` |
 | 4 | video_id 못 얻은 채 예정 시각 지난 announced/upcoming | `assumed_live` + `now − ss ≥ 90분` → `none` (FSM) | `statemachine.py` |
+| 5 | (v4.5.0) PubSub 알림이 안 와서(허브 장애 · 구독 끊김) 새 영상을 못 찾음 | 일일 baseline RSS 가 안전망(대체 모드에서도 유지) · 구독 갱신 잡이 허브 검증 기록으로 끊긴 구독 DM · 음원 채널은 `via=baseline` warn | `websub.py`, `handlers.py` |
 
 **커버 못 하는 것**: 회원 전용 방송은 RSS·`search.list` 에 안 떠서 발견 불가 — `INGEST_YT_ENABLED` +
 업스트림 YouTube 알림 중계가 유일한 경로(트리거 조건 미충족 — `docs/plan/v3_draft.md`).
@@ -1182,15 +1184,16 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 `deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
 - `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**,
-  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가)). 멱등.
+  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)). 멱등.
 - `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
   + secrets/env. `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN` 은 Secret 이 있을 때만 마운트(v3.7.1 — 전엔
   healthchecks Secret 을 무조건 마운트해 새 프로젝트에서 첫 배포가 실패). 배포 후 `SERVICE_URL` env 재설정.
+  (v4.5.0) `WEBSUB_SECRET`(Secret, 있을 때만) · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL — 배포 때 조회, 접수 서비스를 **먼저** 배포) · `WEBSUB_REPLACE_RSS`(기본 0) env.
 - `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`*/10 * * * *` Etc/UTC, v3.6) /
-  `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`). OIDC.
+  `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`) / (v4.5.0) `mewtype-websub-renew`(`20 6 * * *` Asia/Seoul → `/websub-renew`). OIDC.
 - `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
   `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
-  (조건부) + `INGEST_YT_ENABLED` env. (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
+  (조건부) + `INGEST_YT_ENABLED` env. (v4.5.0) `WEBSUB_SECRET`(조건부 — 없으면 `/websub/*` 는 503). (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
   `YT_COOKIES_FILE` env(회원 전용 라이브 yt-dlp 조회용, 없어도 동작). **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
 - `telegram_webhook.sh` — `setWebhook`.
 

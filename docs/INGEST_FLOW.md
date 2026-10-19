@@ -5,6 +5,9 @@
 신설은 없다. 그 뒤 `_ingest()`(`src/backend/telegram_app.py`)가 들어온 텍스트를 **소식**·**스케줄**·
 **버림**으로 분기한다.
 
+> v4.5.0: **PubSub(WebSub) 알림은 `/ingest` 를 타지 않는다** — 허브가 `mewtype-telegram` 의 별도 콜백 `POST /websub/<이름>` 으로 보내고(서명 `X-Hub-Signature` 검증),
+> 멤버 채널이면 영상 ID 로 즉시 wake, 뮤타입 음원 채널이면 신곡 등록으로 간다. 이 문서의 소식 · 스케줄 · 개인 트윗 분기와 무관 → `docs/SPEC.md` §8.16.
+
 > v2.8(개인 트윗)에서 3↔4 노드 사이에 `android.title` 분기가 추가됨 → `docs/plan/v2_8_personal_tweets.md`.
 > v2.8.1: 개인 5인 분기가 배지(`tweets.json`) + **`parse_schedule` → `scheduled` 승격**(`schedule.json`) 둘 다 수행 → `docs/plan/v2_8_1_personal_schedule.md`.
 > v3.1: `tweets.json` `tweets[ck]` 가 **배열(스레드, 최신이 뒤)** — `xtweet.merge_thread` 가 append·id중복 dedup·정렬·상한 초과분 아카이브(`rolled`). 예고 여부와 무관하게 본인 글은 스레드에 실린다. (상한은 v3.5.3 부터 `MAX_THREAD`=50.)

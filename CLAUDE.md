@@ -422,8 +422,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 
 서버 상시 가동 없음. 무료 인프라만 사용:
 - **수집/판정** = **Cloud Run**(scale-to-zero, `src/backend/`) 2서비스 — 메인 `mewtype-backend`
-  (`concurrency=1 · max-instances=1`) + 제어 채널 `mewtype-telegram`(텔레그램 웹훅·`/ingest`). 정기 트리거
-  **Cloud Scheduler** 3잡(baseline JST 06:00 / light 10분(v3.6, 구 3h) / monitor KST 06:10) + 방송별 정밀
+  (`concurrency=1 · max-instances=1`) + 제어 채널 `mewtype-telegram`(텔레그램 웹훅·`/ingest`·(v4.5.0) PubSub 콜백 `/websub/<이름>`). 정기 트리거
+  **Cloud Scheduler** 4잡(baseline JST 06:00 / light 10분(v3.6, 구 3h) / monitor KST 06:10 / (v4.5.0) websub-renew KST 06:20) + 방송별 정밀
   wake **Cloud Tasks**. 리전 `asia-northeast1`.
 - **저장** = **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`
   (`docs/plan/data_repo_migration.md`). Cloud Run 이 GitHub Contents API(fine-grained PAT)로 커밋.
@@ -680,9 +680,9 @@ python -m src.backend.monitor_report # (v3.5) parse_events/그룹핑/preview 세
 python -m src.backend.monitor_snapshot # (v3.8.9) 백필 날짜 선정·요약·멤버 현황 DM 텍스트·run_daily 멱등 (mock)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md)
-bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY 포함)
+bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등. GROQ_API_KEY · (v4.5.0) WEBSUB_SECRET 포함)
 bash deploy/deploy.sh         # mewtype-backend 재배포 → SERVICE_URL 확정
-bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor 스케줄러 잡 (URL 불변이면 생략 가능)
+bash deploy/scheduler.sh      # mewtype-light / mewtype-baseline / mewtype-monitor / (v4.5.0) mewtype-websub-renew 스케줄러 잡 (URL 불변이면 생략 가능)
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # webhook 서비스
 # writers.py·telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 # 전체 전환(v→v) 절차·롤백: docs/plan/v3_golive.md
@@ -700,6 +700,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 1. **Cloud Scheduler** 가 `POST /tick` (baseline JST 06:00 / light 매 10분(v3.6, 구 3h)) 을 OIDC 로 호출.
    `/tick` = RSS + `videos.list` 배치 1회 → (v3) `preview_build` → `preview.json` 재구성.
    FSM 은 저장 없이 파생 — `pending.json` 은 v3 에서 없다.
+   (v4.5.0) env `WEBSUB_REPLACE_RSS=1` 이면 light 틱은 RSS · 신곡 감지를 생략하고 이미 추적 중인 영상만 재확인한다 — 새 영상 발견은
+   PubSub 알림(`mewtype-telegram` `/websub/<이름>` → 즉시 wake)이 맡고, 일일 baseline 이 RSS 안전망. `docs/SPEC.md` §8.16.
 2. video_id 있는 예정 방송마다 **Cloud Tasks** 에 wake 태스크 enqueue (v3 FSM: `scheduled_start − 3분`).
    도달 시 `POST /wake {video_id}` → 라이브 여부 확인 → 다음 체크 재예약
    (watching 3분 / live 시작~+60분 10분 · +60분 이후 5분(v3.7.1, 구 3분) / end 창 5분).
