@@ -44,7 +44,7 @@
 순서: ① 큐 생성(`setup.sh` 의 해당 부분과 같은 명령 — `setup.sh` 전체는 기존 큐 설정까지 다시 쓰므로 필요한 것만):
 `gcloud tasks queues create mewtype-websub --location=asia-northeast1 --max-concurrent-dispatches=1 --max-dispatches-per-second=0.2 --max-attempts=20 --min-backoff=5s --max-backoff=300s`
 ② `deploy.sh`(쓰기 서비스 — 새 `/wake` 본문 · 재확인을 먼저 이해해야 한다) ③ `deploy_telegram.sh`(접수 서비스 — 큐가 없으면 알림 예약이 실패해 503).
-롤백 = 두 서비스를 이전 리비전으로(큐는 남겨 둬도 무해). 스테이징: `env.stage.sh` 의 `WEBSUB_QUEUE=mewtype-websub-stage`.
+롤백 = 두 서비스를 이전 리비전 `mewtype-backend-00152-x42` · `mewtype-telegram-00109-m2b` 로(명령은 아래 「롤백」 절, 큐는 남겨 둬도 무해). 스테이징: `env.stage.sh` 의 `WEBSUB_QUEUE=mewtype-websub-stage`.
 
 ### v4.5.0 — PubSub(WebSub) 수신 (`mewtype-telegram` `/websub/<이름>` + `mewtype-backend` `/websub-renew`)
 
@@ -137,13 +137,30 @@ bash deploy/scheduler.sh
 
 ## 롤백
 
-이전 리비전으로 되돌리기:
+이전 리비전으로 트래픽을 돌린다(이미지 재빌드 없음, 몇 초 안에 반영). **리비전 이름을 직접 써야 한다** — gcloud 에 「직전 리비전」 키워드는 없다
+(2026-10-19 까지 여기 적혀 있던 `--to-revisions PREVIOUS=100` 은 동작하지 않는 명령이었다).
 
 ```bash
-gcloud run services update-traffic "$SERVICE_NAME" \
-  --region "$GCP_LOCATION" \
-  --to-revisions PREVIOUS=100
+# 1) 되돌릴 리비전 이름 찾기 — 최근 것부터. 버전별 배포 리비전은 docs/VERSION.md 의 「배포 …」 표기에도 있다
+gcloud run revisions list --service mewtype-backend  --region asia-northeast1 --limit 5
+gcloud run revisions list --service mewtype-telegram --region asia-northeast1 --limit 5
+
+# 2) 그 리비전으로 트래픽 100% (서비스마다. 예: v4.5.2 → v4.5.1 상태)
+gcloud run services update-traffic mewtype-backend  --region asia-northeast1 --to-revisions mewtype-backend-00152-x42=100
+gcloud run services update-traffic mewtype-telegram --region asia-northeast1 --to-revisions mewtype-telegram-00109-m2b=100
+
+# 3) 확인 — 트래픽이 그 리비전 100% 인지
+gcloud run services describe mewtype-backend --region asia-northeast1 --format='value(status.traffic)'
 ```
+
+- **`mewtype-backend` 는 배포마다 리비전이 2개 생긴다** — `deploy.sh` 가 먼저 `SERVICE_URL=https://placeholder.invalid` 로 올린 뒤 실제 URL 로 한 번 더 갱신하기 때문.
+  앞의 것(예: `00153-8dm`)은 인증 대상 주소가 틀려 모든 `/tick` · `/wake` · `/write` 를 403 으로 거절하므로 **절대 그쪽으로 되돌리지 않는다**.
+  `docs/VERSION.md` 에 적힌 리비전(뒤의 것)을 쓰거나 `gcloud run revisions describe <리비전> --region asia-northeast1 --format=json` 의 `SERVICE_URL` 로 확인.
+- 두 서비스 공통 코드(`writers.py` · `telegram_app.py` · `websub.py` 등)가 바뀐 버전이면 **두 서비스를 함께** 되돌린다.
+- 롤백하면 트래픽이 그 리비전에 고정된다. 고쳐서 다시 배포한 뒤에는 새 리비전이 트래픽을 받는지 3) 으로 확인하고,
+  고정이 남아 있으면 `gcloud run services update-traffic <서비스> --region asia-northeast1 --to-latest` 로 최신 리비전에 돌린다.
+- 리비전만 되돌리고 `main` 코드는 그대로이므로 다음 `deploy.sh` 는 다시 새 코드를 올린다 — 코드까지 되돌릴 거면 병합 커밋을 revert 한 뒤 배포.
+- 버전별 특수 사항은 위의 버전 절을 본다(예: v4.5.0 은 `WEBSUB_REPLACE_RSS=0` 재배포만으로 폴링 복귀).
 
 ## 로그 확인
 
