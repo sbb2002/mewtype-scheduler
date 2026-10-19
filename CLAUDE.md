@@ -49,7 +49,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **v4.5.5 (핫픽스, 브랜치 `hotfix/own-broadcast-reason`, 2026-10-19, 백엔드)**: **URL 없는 본인 예고 판정(`llm.announces_own_broadcast`) — 근거 필수 + 프롬프트 재작성.** 출력에 `evidence`(원문 그대로 복사) · `reason` 을 받고, 근거가 없거나 원문에 없으면 그 판정을 버리고 다시 묻는다(5회).
+> **v4.5.5 (핫픽스, 브랜치 `hotfix/own-broadcast-reason`, 2026-10-19 배포 — `mewtype-backend` 00158 · `mewtype-telegram` 00112, 백엔드)**: **URL 없는 본인 예고 판정(`llm.announces_own_broadcast`) — 근거 필수 + 프롬프트 재작성.** 출력에 `evidence`(원문 그대로 복사) · `reason` 을 받고, 근거가 없거나 원문에 없으면 그 판정을 버리고 다시 묻는다(5회).
 > 방송 주제(게임 · 굿즈 소개 · 라이브 회고 · 朝活)로 거르지 않고, 플랫폼 없으면 본인 유튜브 방송, 연기 · 취소는 새 날짜가 있어도 false. 계기: 판정 기록 10건 중 9건 오판(10-19 유노 「〈配信のおしらせ〉 10/19 22:30～」 미등록). 실제 LLM 회귀 22/22. 상세 `docs/SPEC.md` §(llm.py), 요약 `docs/VERSION.md`.
 >
 > **v4.5.4 (핫픽스, 브랜치 `hotfix/web-analytics`, 2026-10-19, 프론트만)**: **방문 통계 — Vercel Web Analytics 스크립트 + 하단 디스클레이머 고지.** `index.html` `<head>` 에 정적 HTML 방식 스크립트(`window.va` 큐 + `/_vercel/insights/script.js`, 패키지 없음).
