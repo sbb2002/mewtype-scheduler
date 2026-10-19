@@ -1,7 +1,8 @@
 /* king.css — (v4.3.1) 노노카 지각 이스터에그 「국왕 납시오」. 로직 · 단계 정의는 js/king.js 머리말.
    장식이 붙은 요소(root = PC 블록 .tt-blk / PC 팝업 .tt-pop / 모바일 카드 .tcard)에 king.js 가 클래스를 붙인다:
      .k-on  장식 중      .k-s1~.k-s5  지각 단계(누적)      .k-arrive  입장 연출 중      .k-live  입장 후 유지 중
-   색 약속: 입장 전 = 은빛(가만히), 입장 순간부터 = 금빛 + 후광 + 움직임. 입장 후 3분이 지나면 king.js 가 장식을 모두 걷어낸다.
+     .k-leave  복귀 연출 중(.k-live 와 함께 붙음 — 1.2초 동안 서서히 걷어냄, 파일 끝 「복귀 연출」)
+   색 약속: 입장 전 = 은빛(가만히), 입장 순간부터 = 금빛 + 후광 + 움직임. 입장 후 1분이 지나면 .k-leave 로 서서히 걷어낸 뒤 king.js 가 장식을 지운다.
    모션 성격 Premium: 이징 하나(--k-ease), 지속 시간 0.28 / 0.56 / 1.2초.
    무대는 .kg-*, PC 블록의 작은 장식은 .kb-*, 대신의 말은 .king-*. */
 
@@ -11,6 +12,7 @@
   --k-in: cubic-bezier(.3, 0, 1, 1);
   --k-std: .56s;
   --k-slow: 1.2s;
+  --k-leave: 1.2s;                          /* 복귀 연출 길이 — king.js LEAVE_MS 와 같게 */
   --k-silver: #c3cad8;
   --k-silver-hi: #e8ecf4;
   --k-silver-lo: #6f7787;
@@ -28,7 +30,7 @@
 }
 
 /* ───────── 무대 (모바일 카드 · PC 팝업의 썸네일 자리를 덮는다) ───────── */
-.kg-scene { position: absolute; inset: 0; overflow: hidden; background: #0e0a17; isolation: isolate; z-index: 1; }   /* 모바일 카드: LIVE · 합동 아이콘(z-index 1, 뒤에 붙음)이 위 */
+.kg-scene { position: absolute; inset: 0; overflow: hidden; background: #0e0a17; isolation: isolate; z-index: 1; transition: opacity var(--k-leave) var(--k-ease) .1s; }   /* 모바일 카드: LIVE · 합동 아이콘(z-index 1, 뒤에 붙음)이 위 */
 .k-pop .tt-pop__img { position: relative; }
 .k-pop .kg-scene { z-index: 2; }                                                    /* 팝업: 자리표시 아바타(z-index 1)를 덮는다 */
 .kg-scene > * { position: absolute; pointer-events: none; }
@@ -145,7 +147,7 @@
 @keyframes kg-burst { 0% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3); } }
 
 /* ───────── 대신의 말 ───────── */
-.king-msg { min-height: 7.2rem; display: grid; align-content: start; gap: 2px; margin-top: 6px; }
+.king-msg { min-height: 7.2rem; display: grid; align-content: start; gap: 2px; margin-top: 6px; transition: opacity .5s var(--k-ease), max-height 1s var(--k-ease) .15s, min-height 1s var(--k-ease) .15s, margin-top 1s var(--k-ease) .15s, padding-top 1s var(--k-ease) .15s, border-top-width 1s var(--k-ease) .15s; }
 .king-msg > * { animation: king-in .4s var(--k-out) both; }
 .king-msg > *:nth-child(2) { animation-delay: .08s; }
 .king-msg > *:nth-child(3) { animation-delay: .16s; }
@@ -210,6 +212,16 @@
 @keyframes kb-flare { 0% { opacity: 0; transform: scale(.2); } 20% { opacity: .3; } 100% { opacity: 0; transform: scale(2.6); } }
 .kb-sparks i { position: absolute; left: 50%; top: 40%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: var(--k-gold-hi); box-shadow: 0 0 4px var(--k-gold); opacity: 0; z-index: 3; pointer-events: none; }
 .k-arrive .kb-sparks i { animation: kg-burst .9s var(--k-out) calc(.74s + var(--j) * 25ms) both; }
+
+/* ───────── 복귀 연출: 입장 후 1분이 지나면 king.js leave() 가 .k-leave 를 붙인다 ─────────
+   무대는 썸네일 위에 겹쳐 있어, 투명해지면 아래의 평소 썸네일(LIVE 표시 포함)이 드러난다(교차 전환).
+   대신의 말은 먼저 옅어지고 칸이 접힌다 — max-height 시작값은 king.js 가 현재 높이(px)로 인라인 지정한다.
+   접힐 때 아래 여백도 같이 없애야 마지막에 튀지 않는다: 카드 .tcard__main · 팝업 .tt-pop__body 의 gap 은 둘 다 4px 이라 margin-top 을 −4px 로.
+   카드 오른쪽 도넛(.tcard__ring)은 body 세로 중앙에 있어, 칸이 접히는 동안 제자리로 부드럽게 올라온다. */
+.k-leave .kg-scene { opacity: 0; }
+.k-leave .king-msg { opacity: 0; max-height: 0 !important; min-height: 0; margin-top: -4px; padding-top: 0; border-top-width: 0; overflow: hidden; }
+.k-leave .kb-crown { opacity: 0; transition: opacity var(--k-leave) var(--k-ease), transform var(--k-slow) var(--k-out), filter var(--k-slow) var(--k-ease); }
+.k-leave .kb-carpet { opacity: 0; transition: opacity var(--k-leave) var(--k-ease), transform 1.4s var(--k-out); }
 
 /* 모션 줄이기: 연출 없이 최종 모습만 (king.js 도 입장 연출을 건너뛰고 바로 「입장 후」 모습으로) */
 @media (prefers-reduced-motion: reduce) {

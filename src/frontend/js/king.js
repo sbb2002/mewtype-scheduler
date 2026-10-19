@@ -1,7 +1,7 @@
 // king.js — (v4.3.1) 노노카 지각 이스터에그 「국왕 납시오」.
 // 노노카 본인 방송이 예정 시각을 넘기면 왕이 자리를 비운 궁이 차려지고, 대신(왕보다 낮고 신하보다 높은 신분)이
-// 신하(시청자)들에게 사정을 대신 고한다. 방송이 시작되면(라이브 전환) 입장 연출을 재생하고, 입장 후 3분 동안 이 연출을 유지한 뒤
-// 평소의 라이브 모습으로 돌아간다. 설계 시안: 「국왕 행차 연출」 아티팩트.
+// 신하(시청자)들에게 사정을 대신 고한다. 방송이 시작되면(라이브 전환) 입장 연출을 재생하고, 입장 후 1분 동안 이 연출을 유지한 뒤
+// 1.2초에 걸쳐 서서히 평소의 라이브 모습으로 돌아간다(무대·장식이 옅어지고 대신의 말 칸이 접힘). 설계 시안: 「국왕 행차 연출」 아티팩트.
 //
 //  표시 위치 3곳 — timetable.js 가 호출한다 (노노카 본인 방송이고 노노카 행/레인일 때만):
 //    decorateBlock(blockEl, entry, state)                  PC 타임테이블 블록: 썸네일 위 왕관 · 카펫 띠 · 상태 글자
@@ -9,8 +9,9 @@
 //    decorateCard(cardEl, thumbEl, mainEl, entry, state)   모바일 오늘 카드: 무대 전체 + 대신의 말
 //
 //  단계(예정 시각 + 지각 시간): 1 ~3분 · 2 3~5분 · 3 5~10분 · 4 10~20분 · 5 20분~
-//  시계 기준: 지각 = 지금 − scheduled_start / 입장 연출 대상 = actual_start − scheduled_start ≥ 1분 / 연출 유지 = actual_start + 3분.
-//   → 입장 후 3분 안에 접속한 사람은 누구나 입장 연출을 본다(접속 시점부터 처음 한 번 재생, 남은 시간만큼 유지).
+//  시계 기준: 지각 = 지금 − scheduled_start / 입장 연출 대상 = actual_start − scheduled_start ≥ 1분 / 연출 유지 = actual_start + 1분.
+//   → 입장 후 1분 안에 접속한 사람은 누구나 입장 연출을 본다(접속 시점부터 처음 한 번 재생, 남은 시간만큼 유지).
+//   유지가 끝나면(phaseOf 가 null) 틱이 leave() 로 .k-leave 를 붙여 LEAVE_MS 동안 서서히 걷어낸 뒤 finish() 로 장식 DOM 을 지운다.
 // 데이터는 textContent/createElement 로만 주입(XSS 방어, innerHTML 금지) — timetable.js 와 같은 규칙.
 // 장식은 보드를 다시 그릴 때마다(데이터 폴링 · 1분 틱 재렌더) 새로 만들어지므로, 상태는 DOM 이 아니라 시각(scheduled_start / actual_start)으로 계산한다.
 //
@@ -19,7 +20,8 @@
 export const KING_KEY = "nonoka";
 const MIN = 60000;
 export const ARRIVE_MS = 3800;              // 입장 연출 길이(그 뒤 「입장 후」 모습으로 정착)
-export const HOLD_MS = 3 * MIN;             // 입장 후 연출 유지 시간(이 뒤 평소 라이브 모습)
+export const HOLD_MS = MIN;                 // 입장 후 연출 유지 시간(이 뒤 서서히 평소 라이브 모습으로) — (v4.5.1) 3분 → 1분
+export const LEAVE_MS = 1200;               // (v4.5.1) 복귀(퇴장) 연출 길이 — king.css 의 --k-leave(1.2s) 와 같아야 한다
 export const MAX_LATE_MS = 3 * 3600000;     // 예고는 예정 시각 + 3h 안에 정리되므로 그 이상은 꾸미지 않음
 export const ARRIVE_MIN_LATE_MS = MIN;      // 이만큼 이상 늦게 시작해야 「지각 후 입장」 연출을 한다
 const STAGE_EDGES = [3 * MIN, 5 * MIN, 10 * MIN, 20 * MIN];   // 1단계 끝 · 2단계 끝 · 3단계 끝 · 4단계 끝
@@ -281,18 +283,39 @@ function settle(root, waited) {
   if (k.msg) writeMsg(root, speech("live", 0, waited), waited);
 }
 
+/* 팝업이 블록 위쪽에 놓였으면(timetable.js 가 data-anchor-bottom 에 문서 좌표의 아래 가장자리를 적어 둔다) 높이가 줄어도 블록에 붙어 있게 top 을 다시 맞춘다 */
+function repin(root) {
+  const a = parseFloat(root.dataset.anchorBottom);
+  if (isFinite(a)) root.style.top = `${a - root.offsetHeight}px`;
+}
+
 /* 연출을 걷어내고 평소 모습으로 */
 function finish(root) {
   const k = root.__king;
   if (!k) return;
   if (k.label) k.label.textContent = k.labelOrig;
   for (const n of k.nodes) n.remove();
-  root.classList.remove("k-on", "k-arrive", "k-live", "k-s1", "k-s2", "k-s3", "k-s4", "k-s5", "k-blk", "k-card", "k-pop");
+  root.classList.remove("k-on", "k-arrive", "k-live", "k-leave", "k-s1", "k-s2", "k-s3", "k-s4", "k-s5", "k-blk", "k-card", "k-pop");
   delete root.dataset.king;
   delete root.__king;
+  repin(root);
 }
 
-/* ── 1초 틱: 단계 전환 · 대기 시간 카운터 · 3분 뒤 걷어내기. 꾸밀 대상이 화면에 없으면 스스로 멈춘다 ─── */
+/* 연출을 서서히 걷어낸다: .k-leave 로 무대 · 장식이 옅어지고 대신의 말 칸이 접힌 뒤(king.css) 장식 DOM 을 지운다.
+   모션 줄이기 설정이면 바로 지운다. 링크 · 도넛 등 장식이 아닌 요소는 건드리지 않으므로 클릭 · 카운트다운은 그대로다 */
+function leave(root) {
+  const k = root.__king;
+  if (!k || k.leaving) return;
+  k.leaving = true;
+  if (reduceMotion()) { finish(root); return; }
+  if (k.msg) { k.msg.style.maxHeight = `${k.msg.offsetHeight}px`; void k.msg.offsetHeight; }   // 접히기 시작 높이를 px 로 고정해야 max-height 전환이 된다
+  root.classList.add("k-leave");
+  const follow = () => { if (root.isConnected && root.__king === k) { repin(root); requestAnimationFrame(follow); } };
+  follow();
+  setTimeout(() => { if (root.__king === k) finish(root); }, LEAVE_MS + 150);
+}
+
+/* ── 1초 틱: 단계 전환 · 대기 시간 카운터 · 1분 뒤 걷어내기(leave). 꾸밀 대상이 화면에 없으면 스스로 멈춘다 ─── */
 let timer = 0;
 function ensureTicker() {
   if (timer) return;
@@ -304,7 +327,7 @@ function ensureTicker() {
       const k = root.__king;
       if (!k) continue;
       const p = phaseOf(k.item, k.state, now);
-      if (!p) { finish(root); continue; }
+      if (!p) { leave(root); continue; }
       if (p.phase === "live") {
         // 탭이 숨겨져 프레임이 안 돌면 arrive 가 안 붙은 채 남을 수 있어, 충분히 지나면 그냥 정착시킨다
         if (k.mode === "arrive" && now - k.startedAt > ARRIVE_MS + 3000) settle(root, p.waited);

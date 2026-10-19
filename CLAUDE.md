@@ -49,6 +49,8 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
+> **v4.5.1 (핫픽스, 브랜치 `hotfix/king-leave-fade`, 2026-10-19, 프론트만)**: **노노카 지각 이스터에그 입장 후 유지 3분 → 1분 + 1.2초에 걸쳐 서서히 복귀**(`.k-leave` — 무대 · 왕관 · 카펫 띠가 옅어지고 대신의 말 칸이 접힘, 모션 줄이기면 바로 제거). 10-16 에 만들어 로컬 `main` 에만 병합(`f0f6e38`)되고 푸시되지 않았던 조정(`b70adeb`)을 최신 `main` 위로 옮긴 것. `king.js` · `css/king.css` · `king.selfcheck.mjs`(46개) · `timetable.js`(위쪽 팝업 위치 기록 1줄), 상세 `docs/SPEC.md` 「노노카 지각 이스터에그」, 요약 `docs/VERSION.md`.
+>
 > **v4.5.0 (기능, 브랜치 `feat/pubsub-websub`, 2026-10-19 배포 — `mewtype-backend` 00152 · `mewtype-telegram` 00109, `WEBSUB_REPLACE_RSS=0` 이중 운영 중)**: **PubSub(WebSub*) 수신 — 방송 발견 · 신곡 등록을 RSS 폴링에서 푸시로.**
 > * PubSub(WebSub) = 허브가 YouTube 채널 피드 변경을 우리 주소로 POST 해 주는 푸시 방식(웹소켓 아님, GCP Cloud Pub/Sub 과 다름). 시험 결과: 신규 영상 알림 약 64초, 누락 0건, 낮 수신 확인, 종료 신호는 안 옴(종료 감지는 wake 그대로).
 > * 멤버 5채널 알림 → 영상 ID 로 즉시 + 2분 뒤 wake 예약. **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 「Mugendai MewType - Topic」 채널) 알림 → 본문 항목을 `find_new_songs` 에 그대로 넣어 신곡 등록(`song_push`).
@@ -454,7 +456,7 @@ src/
       render.js        # renderBoard / renderFooter / updateCountdowns
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
-      king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출 · 입장 후 3분 유지 · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
+      king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출 · 입장 후 1분 유지 후 1.2초에 걸쳐 서서히 복귀(v4.5.1, 이전 3분 유지 후 즉시 제거) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
       playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
       player.js        # (v4.2.0) 플레이어 팝업 + 플로팅 YouTube 프레임(IFrame API). main.js 가 첫 클릭 때 동적 import
