@@ -1,5 +1,5 @@
 /* timetable.css — (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기.
-   예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 대체한다. 다크 단일 테마 — 색은 명시적으로.
+   예고판(5열 레인 + ON-AIR + 오늘/7일 이내/7일 이후 버킷)을 대체한다. 색은 layout.css 토큰(밝게 = theme.css).
    --lane-color 는 render.js sampleLaneColor 가 아바타 평균색으로 채운다. 계약·화면: docs/SPEC.md "타임테이블". */
 
 /* PC: 5열 그리드를 풀고 타임테이블 → 펼치기 버튼 → 이후 예고 열 순서로 쌓는다 */
@@ -43,7 +43,7 @@
 }
 .vt__btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .vt__btn:hover { color: var(--color-text); }
-.vt__btn[aria-selected="true"] { background: #2b2f38; color: var(--color-text); box-shadow: inset 0 0 0 1px #46505f; }
+.vt__btn[aria-selected="true"] { background: var(--color-raised); color: var(--color-text); box-shadow: inset 0 0 0 1px var(--color-raised-edge); }
 .vt__btn:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
 .tt__title {
   margin: 0;
@@ -62,13 +62,13 @@
   border-radius: 3px;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  background: #3a3f48;
-  color: #d6dbe3;
+  background: var(--color-tag-bg);
+  color: var(--color-tag-fg);
 }
 .tt-tag--live { background: var(--color-live); color: var(--color-live-text); }
 .tt-tag--collab { background: var(--color-collab); color: #fff; }
-.tt-tag--mem { background: #2f6f4f; color: #dff7e8; }
-.tt-tag--end { background: #444; color: #ddd; }
+.tt-tag--mem { background: var(--color-tag-mem-bg); color: var(--color-tag-mem-fg); }
+.tt-tag--end { background: var(--color-ended-edge); color: var(--color-tag-fg); }
 
 /* 카드·팝업 안의 멤버 동그라미 (레인 헤더 아바타 .lane__avatar 와 별개 — 트윗 배지 로직이 건드리지 않게) */
 .tt-ava,
@@ -76,7 +76,7 @@
   flex: none;
   border: 2px solid var(--lane-color, var(--color-border));
   border-radius: 50%;
-  background: #111 center / cover no-repeat;
+  background: var(--color-img) center / cover no-repeat;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 .tt-faces { display: inline-flex; }
@@ -94,8 +94,8 @@
   display: grid;
   place-items: center;
   background: linear-gradient(135deg,
-    color-mix(in srgb, var(--lane-color, #555) 55%, #000),
-    color-mix(in srgb, var(--lane-color, #555) 14%, #141414));
+    color-mix(in srgb, var(--lane-color, #555) 55%, var(--color-ph-deep)),
+    color-mix(in srgb, var(--lane-color, #555) 14%, var(--color-ph-base)));
 }
 .tt-ph__ava {
   position: relative;
@@ -151,7 +151,7 @@
 .tt__lane {
   height: 78px;
   border: 0;
-  border-bottom: 1px dashed #2a2a2a;
+  border-bottom: 1px dashed var(--color-line-soft);
   border-radius: 0;
   background: none;
 }
@@ -174,8 +174,8 @@
 .tt__track {
   position: relative;
   height: 78px;
-  border-bottom: 1px dashed #2a2a2a;
-  background-image: repeating-linear-gradient(to right, #262626 0 1px, transparent 1px calc(100% / 8));
+  border-bottom: 1px dashed var(--color-line-soft);
+  background-image: repeating-linear-gradient(to right, var(--color-grid) 0 1px, transparent 1px calc(100% / 8));
 }
 .tt__empty {
   position: absolute;
@@ -183,7 +183,7 @@
   display: flex;
   align-items: center;
   font-size: 0.72rem;
-  color: #5d5d5d;
+  color: var(--color-text-faint);
 }
 
 /* 지금 선 · 지난 구간 음영 · 자정 점선 (위치는 render/timetable.js 가 % 로 채움) */
@@ -192,7 +192,7 @@
   inset: 0 0 0 124px;
   pointer-events: none;
 }
-.tt__past { position: absolute; top: 36px; bottom: 0; left: 0; background: rgba(0, 0, 0, 0.3); }
+.tt__past { position: absolute; top: 36px; bottom: 0; left: 0; background: var(--color-past); }
 .tt__now {
   position: absolute;
   top: 36px;
@@ -242,7 +242,7 @@
 .tt-blk__th {
   flex: none;
   width: 98px;
-  background: #111 center / cover no-repeat;
+  background: var(--color-img) center / cover no-repeat;
 }
 .tt-blk__tx {
   flex: 1;
@@ -282,12 +282,12 @@
   background: color-mix(in srgb, var(--color-live) 18%, var(--color-bg-secondary));
 }
 .tt-blk--ended {
-  border-color: #444;
+  border-color: var(--color-ended-edge);
   background: color-mix(in srgb, #8a8a8a 12%, var(--color-bg-secondary));
 }
 .tt-blk--ended .tt-blk__th { filter: grayscale(0.7) brightness(0.72); }
 .tt-blk--ended .tt-blk__t,
-.tt-blk--ended .tt-blk__n { color: #a8a8a8; }
+.tt-blk--ended .tt-blk__n { color: var(--color-ended); }
 .tt-blk--soon { box-shadow: 0 0 0 1.5px var(--color-late) inset; }
 .tt-blk--collab { border-style: dashed; }
 
@@ -307,7 +307,7 @@
   border-radius: 2px;
   vertical-align: -1px;
 }
-.tt-lg--end { background: #555; }
+.tt-lg--end { background: var(--color-ended-mark); }
 .tt-lg--live { border: 2px solid var(--color-live); }
 .tt-lg--soon { box-shadow: 0 0 0 1.5px var(--color-late) inset; }
 .tt-lg--collab { border: 1px dashed var(--color-collab); }
@@ -320,12 +320,12 @@
   border-radius: 12px;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 10px 30px var(--shadow-pop);
 }
 .tt-pop__img {
   display: block;
   aspect-ratio: 16 / 9;
-  background: #111 center / cover no-repeat;
+  background: var(--color-img) center / cover no-repeat;
 }
 a.tt-pop__img { cursor: pointer; }
 .tt-pop--ended .tt-pop__img { filter: grayscale(0.65) brightness(0.8); }
@@ -363,7 +363,7 @@ a.tt-pop__img { cursor: pointer; }
   font-size: 0.86rem;
   font-weight: 500;
 }
-.tt-fold:hover { background: #232323; }
+.tt-fold:hover { background: var(--color-hover); }
 .tt-fold:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 2px; }
 .tt-fold__tri {
   width: 0;
@@ -473,11 +473,11 @@ a.tt-pop__img { cursor: pointer; }
 }
 .tcard--live { border: 2px solid var(--color-live); }
 .tcard--soon { border-color: var(--color-late); }
-.tcard--ended { color: #a8a8a8; }
+.tcard--ended { color: var(--color-ended); }
 .tcard__th {
   position: relative;
   aspect-ratio: 16 / 9;
-  background: #111 center / cover no-repeat;
+  background: var(--color-img) center / cover no-repeat;
 }
 .tcard__th::before {
   content: "";
@@ -528,18 +528,18 @@ a.tt-pop__img { cursor: pointer; }
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: conic-gradient(var(--rc, var(--color-sched)) calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.1) 0);
+  background: conic-gradient(var(--rc, var(--color-sched)) calc(var(--p, 0) * 1%), var(--color-ring-track) 0);
   transition: --p 0.6s linear;
 }
 /* 방송 중: 12시부터 시계방향으로 60분 채우고 → 다음 60분은 같은 방향으로 비운다 */
 .tcard__ring--live { --rcol: var(--color-live); }
 .tcard__ring--ended { --rcol: #8a8a8a; }            /* 종료 = 끝난 순간에 멈춘 회색 링 */
-.tcard--ended .tcard__ring b { color: #a8a8a8; }
+.tcard--ended .tcard__ring b { color: var(--color-ended); }
 .tcard__ring--live.is-fill {
-  background: conic-gradient(from 0deg, var(--rcol) calc(var(--p, 0) * 1%), rgba(255, 255, 255, 0.1) 0);
+  background: conic-gradient(from 0deg, var(--rcol) calc(var(--p, 0) * 1%), var(--color-ring-track) 0);
 }
 .tcard__ring--live.is-erase {
-  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.1) calc(var(--p, 0) * 1%), var(--rcol) 0);
+  background: conic-gradient(from 0deg, var(--color-ring-track) calc(var(--p, 0) * 1%), var(--rcol) 0);
 }
 .tcard__ring--live span, .tcard__ring--up span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
 .tcard__ring--live b, .tcard__ring--up b { font-size: 0.74rem; font-weight: 600; }
@@ -576,7 +576,7 @@ a.tt-pop__img { cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 .tcard__when b { color: var(--color-text); font-weight: 500; }
-.tcard--ended .tcard__when b { color: #a8a8a8; }
+.tcard--ended .tcard__when b { color: var(--color-ended); }
 /* 제목: 한 줄. 넘치면 render.js applyMarquees 가 .card__title--marquee 로 바꿔 무한히 흐르게 한다 */
 .tcard__ti { font-size: 0.9rem; font-weight: 700; line-height: 1.4; overflow: hidden; white-space: nowrap; }
 .tcard:hover .card__title-track { animation-play-state: paused; }

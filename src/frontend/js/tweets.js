@@ -13,6 +13,7 @@
 // 안 읽은 메시지 2건+ 이면 배지에 카운트. 만료·404·빈 파일이면 배지 안 뜬다.
 
 import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
+import { currentTheme, THEME_EVENT } from "./theme.js";
 
 // 원문 링크 아이콘 = X (notice 의 x path 재활용).
 const X_SVG = '<svg class="src__ic" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg>';
@@ -208,9 +209,16 @@ function _wireEmbedResize() {
   });
 }
 function _isNumId(id) { return /^[0-9]{5,25}$/.test(String(id || "")); }
-function _embedSrc(id) {
-  return "https://platform.twitter.com/embed/Tweet.html?id=" + id + "&theme=dark&dnt=true&lang=ko&hideThread=true&frame=false";
+function _embedSrc(id) {   // (v4.6.0) X 카드도 사이트 테마(밝게/어둡게)로 불러온다
+  return "https://platform.twitter.com/embed/Tweet.html?id=" + id + "&theme=" + currentTheme() + "&dnt=true&lang=ko&hideThread=true&frame=false";
 }
+// 테마를 바꾸면 이미 열린 X 카드도 같은 테마로 다시 불러온다(카드 높이는 다시 받은 resize 신호로 맞춰진다)
+document.addEventListener(THEME_EVENT, () => {
+  for (const f of document.querySelectorAll("iframe.lane__thread__embed")) {
+    const id = f.parentElement && f.parentElement.dataset.id;
+    if (id) f.src = _embedSrc(id);
+  }
+});
 function _loadCard(wrap) {
   if (wrap.querySelector("iframe")) return;
   _wireEmbedResize();

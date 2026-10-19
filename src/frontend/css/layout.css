@@ -19,6 +19,29 @@
   --card-h: 210px;
   --scrollbar: var(--color-border);
   --scrollbar-hover: var(--color-text-muted);
+  /* (v4.6.0) 테마마다 달라지는 보조 색 — 여기 값이 어둡게(기본), 밝게는 css/theme.css 가 덮는다 */
+  --color-text-faint: #5d5d5d;           /* 「오늘 예고 없음」 같은 아주 옅은 글자 */
+  --color-line-soft: #2a2a2a;            /* 타임테이블 칸 점선 · 소식 칸 구분선 */
+  --color-grid: #262626;                 /* 타임테이블 3시간 눈금 */
+  --color-hover: #232323;                /* 버튼 위에 올렸을 때 바탕 */
+  --color-hover-veil: rgba(255, 255, 255, 0.06);
+  --color-raised: #2b2f38;               /* 고른 탭 바탕 */
+  --color-raised-edge: #46505f;
+  --color-img: #111111;                  /* 썸네일 · 아바타 이미지 자리 */
+  --color-img-broken: #444444;
+  --color-tag-bg: #3a3f48;
+  --color-tag-fg: #d6dbe3;
+  --color-tag-mem-bg: #2f6f4f;           /* 회원 전용 태그 */
+  --color-tag-mem-fg: #dff7e8;
+  --color-ended: #a8a8a8;                /* 끝난 방송 글자 */
+  --color-ended-edge: #444444;
+  --color-ended-mark: #555555;
+  --color-past: rgba(0, 0, 0, 0.3);      /* 타임테이블 지난 구간 음영 */
+  --color-ring-track: rgba(255, 255, 255, 0.1);
+  --color-ph-deep: #000000;              /* 썸네일 없는 예고 자리표시 그라데이션 */
+  --color-ph-base: #141414;
+  --color-tint-ink: #ffffff;             /* 색을 옅게 깐 배지 글자 = color-mix(색, 이 값) */
+  --shadow-pop: rgba(0, 0, 0, 0.6);
 }
 
 html {

@@ -98,6 +98,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **부분 번역 WARN**(`_residual_kana`, 번역문에 가나가 남으면 `translate: 부분 번역 의심` WARN — 저장은 그대로). 멤버 이름 표는 `config/channels.json` 의 `call_names`(짧은 호칭)를 쓴다.
 > 요약 · 한계 `docs/VERSION.md` v4.2.4. (테스트판 `v4.3-fullauto` 는 번호 체계가 별개 — `vT1.0.1`.)
 >
+> **프론트 v4.6.0 (2026-10-19, 브랜치 `feat/v4.6.0-theme`)**: **밝게 / 어둡게 전환**(소식 막대 마지막 칸의 해/달 버튼 · 처음 = 저장된 선택 → 기기 설정 · `js/theme.js` · 밝게 값 `css/theme.css`) —
+> 이제 사이트는 「다크 전용」이 아니다(아래 저장구조의 「다크 단일」 서술은 v4.5.x 까지). + 행사 배너 점선 뒤 문구 D-n · 진행 막대 손잡이 제거 · 주소 `?va=claude` 탭 통계 제외. 요약 `docs/VERSION.md`, 상세 `docs/SPEC.md` §9 · 계약 J.
+>
 > **프론트 v4.2.0 (2026-10-06 개발 · 2026-10-08 main 머지 `60af093`, 브랜치 `feat/v4.2.0-player-button`)**: 「CD + 음표 >」 버튼으로 여는 **YouTube 곡 플레이어**(팝업 · 팝업을 내려도 재생이 이어지는
 > 플로팅 프레임 · 곡명/독음(가나·한글)/별칭 검색 · 이름순/날짜순 · 한 곡 재생 + 반복). 광고 건너뛰기는 만들지 않는다(개발자 정책). 신곡은 뮤타입 음원 채널 RSS 에서 tick 이 자동 감지해 data 브랜치 `songs.json` 에 등록한다(미배포 · 시드 필요). `docs/SPEC.md` 「플레이어 (v4.2.0)」, 요약 `docs/VERSION.md`.
 >
@@ -459,8 +462,9 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 src/
   frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
     index.html         # #notice(v2.7 소식) + #board + #foot 스켈레톤, <script type="module">
-                       #   <meta name="color-scheme" content="dark"> — 다크 전용, 브라우저 force-dark 끔
-    css/{reset,layout,card,timetable,king,player,playerpop,notices,tweets}.css   # 다크 단일 테마 (reset.css :root color-scheme:dark)
+                       #   <meta name="color-scheme" content="dark light"> — 브라우저 force-dark 끔. (v4.6.0) head 인라인 스크립트가 CSS 전에 data-theme 결정
+                       #   (v4.6.0) 주소 ?va=claude 탭은 Vercel Web Analytics beforeSend 로 통계 제외
+    css/{reset,layout,card,timetable,king,player,playerpop,notices,banners,tweets,theme}.css   # (v4.6.0) 각 :root 토큰 = 어둡게, theme.css(맨 끝) = 밝게 값 + 전환 버튼
     assets/songs.json  # (v4.2.0) 플레이어 곡 목록 64곡(조사 원본 65곡 − 중복 1건) — 시드 · 폴백(원본 ref/player/songs_release.json, scripts/build_songs_json.py). 신곡은 data 브랜치 songs.json
     js/                # ES 모듈, 상대 import
       config.js        # 상수 (DATA_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널 메타)
@@ -468,7 +472,8 @@ src/
       api.js           # fetchSchedule(url): AbortController 타임아웃, {ok,data|error} (notices 도 재사용)
       render.js        # renderBoard / renderFooter / updateCountdowns
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
-      notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee)
+      notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
+      theme.js         # (v4.6.0) 밝게/어둡게 전환 버튼 · 저장(localStorage "theme") · 기기 설정 따라가기 · mew:theme 이벤트(X 카드 테마)
       king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출 · 입장 후 1분 유지 후 1.2초에 걸쳐 서서히 복귀(v4.5.1, 이전 3분 유지 후 즉시 제거) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
       playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
@@ -829,6 +834,9 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
   설정을 bigText 우선으로 고치는 게 진짜 근본 수정이지만 `docs/AUTOMATE_MANUAL.md` 상 아직
   미확인 — 다음에 알림 리스너 Expression 을 만지게 되면 이 문서부터 먼저 볼 것.
 - 코드 주석·문서·커밋 메시지는 한국어.
+- **Claude 가 운영 사이트(`mewtype-schduler.vercel.app`)를 브라우저로 열 때는 주소에 `?va=claude` 를 붙인다** (v4.6.0, 2026-10-19 사용자 요청) —
+  그 탭은 Vercel Web Analytics 로 보내지 않아 방문 통계에 안 섞인다(탭 단위, 같은 탭에서 이동 · 새로고침해도 유지). 새 탭을 열 때마다 다시 붙일 것.
+  curl · WebFetch 는 페이지 스크립트를 실행하지 않아 원래 집계에 안 들어간다. 로컬 서버(127.0.0.1)도 통계 스크립트가 404 라 해당 없음.
 - **버전 표기 — 후속 패치는 `vX.Y.Z[a-z]`** (2026-09-23 사용자 확정): vX.Y.Z 의 후속 패치가 생기면 새 번호를
   올리지 않고 v3.8.9 → v3.8.9a → v3.8.9b … 로 붙인다. 커밋 메시지(`fix(v3.8.9a): …`)·PR 제목·코드 주석·문서
   (`docs/VERSION.md` 항목 등) 모두 같은 표기. "vX.Y.Z 후속" 같은 다른 표기를 임의로 만들지 말 것. 후속 순서는 푸시된
