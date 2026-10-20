@@ -497,12 +497,10 @@ src/
                        #   (v3.7) 모니터 페이지 이스터에그 진입(PC 키 입력 / 모바일 풋터 버전 15탭)
     monitor.html       # (v3.7) monitoring/latest.html(데이터 저장소 raw URL)을 iframe 으로 표시. noindex
   collector/           # v1 순수 모듈 — 백엔드가 config · rss · youtube 를 import 재사용.
-                       #   reconcile · store 는 v1 잔재(현행 무의존). v1 실행기 main.py 는 2026-10-20 삭제
+                       #   v1 실행기 main.py · reconcile.py · store.py · requirements.txt 는 2026-10-20 삭제
     config.py          # config/channels.json + YOUTUBE_API_KEY 로드
     rss.py             # 채널 RSS → videoId 발견 (쿼터 0)
     youtube.py         # YouTube Data API v3 (videos.list / search.list), VideoInfo
-    reconcile.py       # 상태 판정 + 이전 스냅샷 대비 diff — 순수 함수
-    store.py           # schedule.json / archive.json 로드·저장 (변경 시에만 기록)
   backend/             # Cloud Run 서비스 (Flask + gunicorn). v3.0.
     app.py             # 메인 라우트 /tick(Scheduler) /wake(Cloud Tasks) /write(v3.7, 제어 채널 쓰기 큐)
                        #   /monitor(Scheduler, v3.8.9: 모니터링 스냅샷 + 멤버 현황 텍스트 DM) · `/` 헬스체크(GFE 가 /healthz 가로챔)
@@ -681,7 +679,6 @@ devpapers 브랜치 (v3.3)  # docs/ 중 개발 시 상시 참조 안 하는 문�
 # 모듈 self-test (네트워크 불필요) — PYTHONIOENCODING=utf-8 권장(Windows 콘솔)
 python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 assert
 python -m src.collector.youtube      # _video_from_item 매핑 확인
-python -m src.collector.reconcile    # build_schedule 시나리오 → count=2, ['ended','removed']
 python -m src.backend.writers        # (v3.7) /write 잡 kind 레지스트리
 python -m src.backend.writeclient    # (v3.7) MAIN_SERVICE_URL 없을 때 로컬 디스패치
 python -m src.backend.websub         # (v4.5.0) PubSub 파싱 · 서명 · 구독/갱신 · 끊긴 구독 판정 · 콜백 라우트(Flask 테스트 클라이언트)
@@ -786,13 +783,9 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
    `_maybe_nonyt_url_notice`(소식 이관)가 먼저 가로챈다. 이 경로까지 온 후보도 등록 직전
    `LLMClient.announces_own_broadcast()` 최종 확인을 거친다. 상세: 위 v3.6 델타 상자.
 
-### 수집 로직 (`main.py` → `reconcile.build_schedule`)
-- **후보 집합** = RSS로 발견한 최근 videoId ∪ 이전 `schedule.json`의 미해결(upcoming/live) videoId
-  ∪ (deep 모드면) `search.list?eventType=upcoming` 결과.
-- `videos.list` 로 일괄 enrich → `snippet.liveBroadcastContent` 로 분기:
-  `upcoming`/`live` 는 `schedule.json` 에 유지, `none` 은 이전에 추적 중이었으면 `archive.json` 으로
-  이관(`ended`/`canceled`), 후보에서 아예 사라졌으면 `removed`.
-- `schedule.json` 정렬: `live` 우선 → `scheduled_start` 오름차순.
+### 수집 로직
+- 현행 수집 · 상태 판정은 `src/backend/preview_build.py`(v1 `reconcile.build_schedule` 의 포크, 6상태) — 위 데이터 흐름 1~2 · `docs/SPEC.md` §8.
+  v1 수집기(`collector/main.py` → `reconcile.build_schedule` → `schedule.json`)는 2026-10-20 삭제(옛 코드는 git 이력 · 태그 `v4.6.0` 이전).
 - 시각은 전부 UTC ISO(`Z`)로 저장, KST 변환은 **프론트 `time.js` 담당**.
 
 ### 계약 (변경 시 `docs/SPEC.md` 먼저 수정)

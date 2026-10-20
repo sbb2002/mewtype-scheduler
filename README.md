@@ -56,7 +56,7 @@
 - **운영 도구**: 텔레그램 봇(`/status` `/pause` `/resume` `/list` `/admin` 등)과 운영 모니터 리포트(`monitor_report` · `monitor_snapshot`).
 - **프론트**: Vercel 정적 호스팅(빌드 없음). `main` 브랜치만 배포하고 `devpapers` 등 나머지 브랜치는 배포에서 제외한다(`src/frontend/vercel.json`).
 
-> `src/collector/` 는 **v1 수집기의 잔재**다. `config` · `rss` · `youtube` 는 백엔드가 가져다 쓴다. v1 실행기(`main.py` + GitHub Actions `collect.yml`)와 그 결과를 받던 이 저장소의 `data` 브랜치는 2026-10-20 에 지웠다(기록 = 태그 `archive/data-2026-09-15`).
+> `src/collector/` 는 **v1 수집기의 잔재**다. `config` · `rss` · `youtube` 는 백엔드가 가져다 쓴다. v1 실행기(`main.py` · `reconcile` · `store` + GitHub Actions `collect.yml`)와 그 결과를 받던 이 저장소의 `data` 브랜치는 2026-10-20 에 지웠다(기록 = 태그 `archive/data-2026-09-15`).
 
 ---
 
