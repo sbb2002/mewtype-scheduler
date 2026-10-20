@@ -135,6 +135,8 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
       "src_url": "https://x.com/i/status/…", // (v4.0.4, 선택) 이 예고를 처음 알린 트윗(공식 스케줄 · 본인 예고 · URL 확정).
                                            //   비어 있을 때만 채운다. 리포트 팝업 X url · announced at(트윗 ID 게시 시각). 프론트 미사용
       "api_start_seen": null,              // 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정) 트윗값 대신 API 승
+      "announced_start": null,             // (v4.5.8, 선택) 이 실물에 흡수된 영상 없는 예고(자리표시)의 scheduled_start — 여럿이면 가장 이른 것,
+                                           //   시각 미정 예고는 안 넘김. preview_build._carry_collab 이 채운다. 프론트 king.js 의 지각 기준(약속 시각)
 
       "assumed_live": false,               // video_id 없이 scheduled_start 지남 → 프론트 "방송 중(추정)"
       "first_seen": "2026-09-08T09:00:00Z",
@@ -171,7 +173,7 @@ data 브랜치             # preview.json + preview_archive.json + control.json 
 `xrelay`/`xtweet` 가 `collab_with` 채운 `announced` 아이템을 참여 유닛 전부에 fan-out.
 url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레인이 아니라 url 추적. `preview_build` 가
 참여자(`channel_key` ∪ `collab_with`) 중 아무 채널에나 실물 ±45분(`SCHEDULED_SUPERSEDE_SEC`, v3.8.10 — 구 ±4h) 안에 뜨면 supersede 하고
-`_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관. `host=="group"` 은 supersede 면제.
+`_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관(+ (v4.0.8) 회원 전용 · (v4.5.8) 예고 시각 `announced_start` — 합동이 아니어도). `host=="group"` 은 supersede 면제.
 프론트 `render.js` 가 union 레인에 `.card--collab` 팬아웃. 상세: `docs/old/v2/v2_4_collab.md` §8.
 
 ### 1-3-1. 그룹 공식 채널(`@BDP_yumemita`) 폴링 — v3.1.4
@@ -315,26 +317,34 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 - **테이블 보기** = 위 「타임테이블 · 이후 예고」 그대로(`#board.board--tt`).
 - **카드 보기** = `#board.board--tt.board--cards` > `section.tt.tt--cards` > 머리줄 + `.cards-board`(5열 그리드, `align-items:start`) + `.tt-fold`.
   레인 = `section.lane[data-channel]` > `buildHeader`(기존 네임플레이트) + `buildTodayCards(ctx, key, {compact:true})`(모바일과 같은 오늘 카드) + `buildLaterList`(`.lane__later`, 접힘). `data-no-badge` 없음 → 편지 배지 · 말풍선 · 노노카 이스터에그가 모바일 레인과 같은 경로로 동작.
-- **펼치기 전 세로 고정**: `.board--cards .lane` 은 `container-type:inline-size`; `.cards-board .tt-today` 높이 = `34px + 2·pad + 2·카드높이 + 12px + 30px`(카드 2장 + 다음 카드가 살짝 보임), 넘치면 `overflow-y:auto`. 카드높이 = `(100cqw − 2·pad − 2px)·9/16 + --bh + 2px`, `.tcard__body{height:--bh}`(78px, ≤1100px 에서 pad 11.2px · bh 72px). 날짜줄은 줄바꿈 없이 한 줄.
+- **펼치기 전 세로 고정**: `.board--cards .lane` 은 `container-type:inline-size`; `.cards-board .tt-today` 높이 = `34px + 2·pad + 2·카드높이 + 12px + 30px`(카드 2장 + 다음 카드가 살짝 보임), 넘치면 `overflow-y:auto`. 카드높이 = `(100cqw − 2·pad − 2px)·9/16 + --bh + 2px`, `.tcard__body{height:--bh}`(78px, ≤1100px 에서 pad 11.2px · bh 72px). 날짜줄은 줄바꿈 없이 한 줄. (v4.5.8) 노노카 지각 이스터에그가 붙은 카드(`.k-card`)만 본문이 `height:auto; min-height:--bh` 로 늘어나고 대신의 말 글자를 줄인다(`king.css`) — 고정 높이에 잘려 안 보였다.
 - **이후 예고 펼치기**: 단일 `.tt-fold`(`buildFoldButton(counts, ctx, {perMember:true})`)가 `#board.board--later-open` 을 토글 → 5개 `.lane__later` 가 동시에 열리고 닫힌다. `toggleLater` 의 애니메이션 대상 선택자는 `board--cards` 이면 `.lane__later`(테이블 보기는 `.tt-later`). 이후 예고가 전체 0건이면 버튼 없음(레인별 「이후 예고 없음」 문구는 `buildLaterList` 기본).
 - 펼침 상태(`board--later-open`)는 보기 방식을 바꿔도 `#board` 에 남는다.
 
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
 
-> (v4.5.1) 입장 후 유지 3분 → **1분**, 그 뒤 즉시 제거 → **1.2초에 걸쳐 서서히 복귀**(`.k-leave`). 아래 표 · 클래스 설명은 v4.5.1 기준.
+> (v4.5.1) 입장 후 유지 3분 → **1분**, 그 뒤 즉시 제거 → **1.2초에 걸쳐 서서히 복귀**(`.k-leave`).
+> **(v4.5.8) 라이브 입장 연출 기준 변경(운영자 결정)** — 「`actual_start` + 1분 안」 대신 **지각한 방송이 라이브인 동안은 무조건**: 페이지가 그 방송을 라이브로
+> 처음 그릴 때 입장 연출을 한 번 재생하고, 끝나면 바로 서서히 평소 라이브 카드로. 「입장 후 1분 유지」 구간과 그 말은 없앴다. 지각은 **약속 시각**\* 기준.
+> 계기(2026-10-20): ① 화면이 라이브를 알게 되는 건 백엔드 감지(0.3~6분, 10-14~10-20 16건 실측) + raw CDN 캐시(최대 5분) + 폴링(75초) 뒤라 1분 창이 거의 늘 지나 있었다.
+> ② 20:00 영상 없는 예고가 20:26 에 바로 시작한 영상(별개 항목)에 흡수되며 실물 `scheduled_start` 가 20:26:26 이라 지각이 17초로 계산됐다.
+> \* 약속 시각 = `scheduled_start` 와 `announced_start`(흡수된 예고 시각, 백엔드가 넘김 — §1-3) 중 이른 것.
+> 같은 버전: PC 카드 보기(v4.4.0)에서 대신의 말이 고정 높이 본문에 잘려 안 보이던 것 — 노노카 카드만 본문이 늘어나고 글자를 줄인다(`king.css` 「PC 카드 보기」). 아래 표 · 클래스 설명은 v4.5.8 기준.
 
-노노카 본인 방송(`item.channel_key == "nonoka"`, `time_tbd` 아님)이 예정 시각을 넘기면 타임테이블 · 오늘 카드에 장식이 붙는다. 백엔드 · 데이터 계약 변경 없음 — 기존 `preview.json` 필드(`channel_key` · `scheduled_start` · `actual_start` · `time_tbd` · `video_id`)만 읽는다.
+노노카 본인 방송(`item.channel_key == "nonoka"`, `time_tbd` 아님)이 예정 시각을 넘기면 타임테이블 · 오늘 카드에 장식이 붙는다. `preview.json` 필드 `channel_key` · `scheduled_start` · `actual_start` · `time_tbd` · `video_id` 와 (v4.5.8) `announced_start` 를 읽는다.
 
-**판정** `king.phaseOf(item, state, nowMs)` (순수 — DOM 없음). `state` 는 `timetable.classify` 의 분류(`upcoming` | `live` | `ended`).
+**판정** `king.phaseOf(item, state, nowMs, playedAt)` (순수 — DOM 없음). `state` 는 `timetable.classify` 의 분류(`upcoming` | `live` | `ended`), `playedAt` = 이 페이지가 그 항목의 입장 연출을 시작한 시각(아직이면 없음).
 
 | 입력 | 결과 |
 |---|---|
 | `upcoming` 이고 `late = now − scheduled_start` 가 0 초과 ~ 3시간(`MAX_LATE_MS`) | `{phase:"wait", stage, late}` — `lateStage(late)`: ~3분 1 · 3~5분 2 · 5~10분 3 · 10~20분 4 · 20분~ 5 (경계는 이상/미만) |
-| `live` 이고 `actual_start − scheduled_start ≥ 1분`(`ARRIVE_MIN_LATE_MS`) 이고 `now − actual_start < 1분`(`HOLD_MS`) | `{phase:"live", waited, since}` |
-| 그 밖(대상 아님 · 종료 · `actual_start` 없음 · 1분 미만 지각 · 입장 후 1분 경과) | `null` → 장식 없음 / 복귀 연출 후 걷어냄 |
+| `live` 이고 `actual_start − 약속 시각(promisedStart) ≥ 1분`(`ARRIVE_MIN_LATE_MS`) 이고, 아직 재생 안 했거나(`playedAt` 없음) 재생한 지 `ARRIVE_MS`(3.8초) 안 | `{phase:"live", waited, since}` — `actual_start` 뒤 시간 제한 없음 |
+| 그 밖(대상 아님 · 종료 · `actual_start` 없음 · 1분 미만 지각 · 이 페이지에서 이미 재생함) | `null` → 장식 없음 / 복귀 연출 후 걷어냄 |
+
+예고(`upcoming`)의 지각은 화면에 보이는 `scheduled_start` 기준이다(`announced_start` 는 안 씀 — 카드 링 「시작까지」와 어긋나지 않게).
 
 **장식 root 와 클래스** — `king.js` 가 root 요소에 붙이고 `root.dataset.king`(`"card"`·`"popup"`·`"block"`) · `root.__king`(상태 객체)을 둔다.
-`.k-on` 장식 중 · `.k-s1`~`.k-s5` 지각 단계(누적) · `.k-arrive` 입장 연출 중(`ARRIVE_MS` 3.8초) · `.k-live` 입장 후 유지 중 · `.k-leave` 복귀 연출 중(`.k-live` 와 함께 붙음, `LEAVE_MS` 1.2초). 1초 틱이 입장 후 1분(`phaseOf` 가 `null`)을 감지하면 `leave()` 가 `.k-leave` 를 붙이고(모션 줄이기면 바로 `finish()`), 1.2초 뒤 `finish()` 가 클래스 · 추가한 노드 · 바꾼 글자를 모두 원복한다(보드를 다시 그리지 않고 제자리에서).
+`.k-on` 장식 중 · `.k-s1`~`.k-s5` 지각 단계(누적) · `.k-arrive` 입장 연출 중(`ARRIVE_MS` 3.8초) · `.k-live` 금빛 「입장 후」 모습(v4.5.8 부터 모션 줄이기 · 재생 도중 다시 그려진 경우만) · `.k-leave` 복귀 연출 중(`.k-arrive` 또는 `.k-live` 와 함께 붙음, `LEAVE_MS` 1.2초). 입장 연출이 끝나면(`.k-arrive` 를 붙이고 `ARRIVE_MS` 뒤 — 1초 틱도 `phaseOf` 가 `null` 이면 같은 일을 한다) `leave()` 가 `.k-leave` 를 붙이고(모션 줄이기면 바로 `finish()`), 1.2초 뒤 `finish()` 가 클래스 · 추가한 노드 · 바꾼 글자를 모두 원복한다(보드를 다시 그리지 않고 제자리에서).
 
 **복귀 연출(`.k-leave`)** — 무대(`.kg-scene`)는 썸네일 위에 겹쳐 있어 투명해지면(1.2초) 아래의 평소 썸네일이 드러난다. 대신의 말 칸(`.king-msg`)은 0.5초에 옅어지고 1초에 걸쳐 접힌다(`leave()` 가 현재 높이를 `max-height` 인라인 px 로 고정한 뒤 `.k-leave` 가 0 으로 — 접힘 끝의 `margin-top −4px` 는 카드 `.tcard__main` · 팝업 `.tt-pop__body` 의 `gap 4px` 보정). 블록의 왕관 · 카펫 띠도 옅어진다. 카드 오른쪽 도넛(`.tcard__ring`)은 장식이 아니라 건드리지 않으며, 말 칸이 접히는 동안 세로 중앙 정렬에 따라 제자리로 올라온다. 장식은 링크 요소의 자손이고 `pointer-events:none` 이라 연출 중에도 클릭은 영상 링크로 이어진다. 블록 위쪽에 놓인 팝업은 `timetable.js` 가 `data-anchor-bottom` 에 아래 가장자리를 적어 두고 `king.js repin()` 이 줄어드는 동안 블록에 붙여 둔다.
 
@@ -350,17 +360,18 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 
 **색 약속**: 입장 전 = 은빛(`--k-silver*`), 왕관은 움직이지 않음. 입장 순간부터 = 금빛 — 왕관 은빛 층(`.kg-cs`)이 금빛 층(`.kg-cg`)으로 크로스페이드 + 후광(`.kg-halo`) · 궤도 별(`.kg-orbit`) · 금빛 광선(`.kg-rays.kg-gold`) · 광택(`.kg-sweep`). `.k-on.k-arrive/.k-live` 가 `--k-trim`·`--k-glow` 를 금색으로 바꾼다. PC 블록은 아바타가 주인공이라 후광(최대 불투명도 .22~.3) · 발광 · 별(.45)을 약하게 한다.
 
-**입장 연출은 페이지당 항목마다 한 번**: `played` Map(키 = `video_id`‖`id`‖`scheduled_start`)이 연출을 시작한 시각을 기억한다. 보드를 다시 그려 새 root 가 만들어져도 이미 정착한 뒤라면 곧바로 「입장 후」 모습(`.k-live`), 3.8초 안이면 입장 연출을 다시 보여준다. `.k-arrive` 는 장막이 닫힌 상태에서 열리는 전환이 보이도록 **두 프레임 뒤**에 붙이고, 정착 타이머(`ARRIVE_MS`)는 클래스가 실제로 붙은 순간부터 잰다.
+**입장 연출은 페이지당 항목마다 한 번**: `played` Map(키 = `video_id`‖`id`‖`scheduled_start`)이 연출을 시작한 시각을 기억한다. 보드를 다시 그려 새 root 가 만들어져도 이미 재생이 끝났으면 장식 없음(평소 라이브 카드), 3.8초 안이면 입장 연출을 다시 보여준다. 새로 접속(새로고침)하면 `played` 가 비어 다시 재생한다 — 라이브인 동안 언제 들어와도 입장 연출을 먼저 본다. `.k-arrive` 는 장막이 닫힌 상태에서 열리는 전환이 보이도록 **두 프레임 뒤**에 붙이고, 걷어내기 타이머(`ARRIVE_MS`)는 클래스가 실제로 붙은 순간부터 잰다.
+(v4.5.8) **탭이 숨겨져 있으면(`document.hidden`) 재생하지 않고 기다린다**(`k.mode = "await"`, `played` 기록 안 함) — 백그라운드 탭이 폴링으로 라이브를 받았을 때 아무도 안 보는 사이 끝나지 않게. 1초 틱이 탭이 보이는 순간 재생을 시작한다.
 
-**1초 틱**(`ensureTicker`, 장식 root 가 있을 때만 돌고 없으면 멈춤): `[data-king]` 전부에 대해 `phaseOf` 를 다시 계산 — `wait` 이면 단계 변경 · 카운터(`.king-count`) · 블록 글자 갱신, `null` 이면 `finish`, `live` 인데 `arrive` 가 `ARRIVE_MS + 3초` 넘게 정착하지 못했으면(탭이 숨겨져 프레임이 안 돈 경우) 정착시킨다. 시계는 클라이언트 시각이다.
+**1초 틱**(`ensureTicker`, 장식 root 가 있을 때만 돌고 없으면 멈춤): `[data-king]` 전부에 대해 `phaseOf` 를 다시 계산 — `wait` 이면 단계 변경 · 카운터(`.king-count`) · 블록 글자 갱신, `null` 이면 `leave`(복귀 연출), `live` 이고 `await` 이면 재생 시작. 시계는 클라이언트 시각이다.
 
-**말** `king.speech(kind, stage, waitedMs)`: 머리말 「대신이 고하오」 + 본문. 대신은 왕보다 낮고 신하(시청자)보다 높은 신분이라 왕은 「전하」, 시청자는 「그대들」, 하오체. 3단계부터 「그대들이 기다린 시간」 + 카운터(`+MM:SS`). 입장 = 「전하 납시오!」 + 기다린 시간, 이후 = 「전하께서 납시었소. 그대들이 기다린 시간은 MM:SS, 그 충심을 기억하겠소.」. 문구 전체는 `king.js speech` 가 기준.
+**말** `king.speech(kind, stage, waitedMs)`: 머리말 「대신이 고하오」 + 본문. 대신은 왕보다 낮고 신하(시청자)보다 높은 신분이라 왕은 「전하」, 시청자는 「그대들」, 하오체. 3단계부터 「그대들이 기다린 시간」 + 카운터(`+MM:SS`). 입장 = 「전하 납시오!」 + 「그대들이 +MM:SS 기다린 끝에 납시었소!」(기다린 시간 = `actual_start − 약속 시각`). (v4.5.8 전의 입장 후 말 「…그 충심을 기억하겠소.」는 유지 구간과 함께 없앴다.) 문구 전체는 `king.js speech` 가 기준.
 
-**모션 줄이기**(`prefers-reduced-motion`): CSS 가 `.k-on` 안의 애니메이션 · 전환을 끄고, `king.js` 는 입장 연출을 건너뛰고 곧바로 「입장 후」 모습으로 간다(코드 작성 · 단위 검증만, 실제 화면 확인은 안 함).
+**모션 줄이기**(`prefers-reduced-motion`): CSS 가 `.k-on` 안의 애니메이션 · 전환을 끄고, `king.js` 는 입장 연출을 건너뛰고 「입장 후」 모습(`.k-live`)을 `ARRIVE_MS` 동안 보인 뒤 바로 걷어낸다(코드 작성 · 단위 검증만, 실제 화면 확인은 안 함).
 
 **XSS**: 무대 · 왕관 · 말 모두 `createElement`/`createElementNS` + `textContent`(`innerHTML` 금지).
 
-자체 점검: `node src/frontend/js/king.selfcheck.mjs`(46개 — 대상 · 단계 경계 · `phaseOf`(지각 1분 · 입장 후 1분 경계 · 시계 오차) · 유지 · 복귀 시간 상수 · 말 · 블록 글자). DOM 함수는 호출하지 않는다.
+자체 점검: `node src/frontend/js/king.selfcheck.mjs`(48개 — 대상 · 단계 경계 · `phaseOf`(지각 1분 · 라이브인 동안 시간 제한 없음 · 재생 후 `ARRIVE_MS` 경계 · `announced_start` 약속 시각 · 시계 오차) · 복귀 시간 상수 · 말 · 블록 글자). DOM 함수는 호출하지 않는다.
 
 ### 렌더 규칙
 

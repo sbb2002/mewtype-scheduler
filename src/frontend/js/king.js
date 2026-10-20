@@ -1,6 +1,6 @@
 // king.js — (v4.3.1) 노노카 지각 이스터에그 「국왕 납시오」.
 // 노노카 본인 방송이 예정 시각을 넘기면 왕이 자리를 비운 궁이 차려지고, 대신(왕보다 낮고 신하보다 높은 신분)이
-// 신하(시청자)들에게 사정을 대신 고한다. 방송이 시작되면(라이브 전환) 입장 연출을 재생하고, 입장 후 1분 동안 이 연출을 유지한 뒤
+// 신하(시청자)들에게 사정을 대신 고한다. 방송이 시작되면(라이브 전환) 입장 연출을 재생하고, 끝나면 곧바로
 // 1.2초에 걸쳐 서서히 평소의 라이브 모습으로 돌아간다(무대·장식이 옅어지고 대신의 말 칸이 접힘). 설계 시안: 「국왕 행차 연출」 아티팩트.
 //
 //  표시 위치 3곳 — timetable.js 가 호출한다 (노노카 본인 방송이고 노노카 행/레인일 때만):
@@ -9,9 +9,15 @@
 //    decorateCard(cardEl, thumbEl, mainEl, entry, state)   모바일 오늘 카드: 무대 전체 + 대신의 말
 //
 //  단계(예정 시각 + 지각 시간): 1 ~3분 · 2 3~5분 · 3 5~10분 · 4 10~20분 · 5 20분~
-//  시계 기준: 지각 = 지금 − scheduled_start / 입장 연출 대상 = actual_start − scheduled_start ≥ 1분 / 연출 유지 = actual_start + 1분.
-//   → 입장 후 1분 안에 접속한 사람은 누구나 입장 연출을 본다(접속 시점부터 처음 한 번 재생, 남은 시간만큼 유지).
-//   유지가 끝나면(phaseOf 가 null) 틱이 leave() 로 .k-leave 를 붙여 LEAVE_MS 동안 서서히 걷어낸 뒤 finish() 로 장식 DOM 을 지운다.
+//  시계 기준: 지각 = 지금 − scheduled_start
+//            입장 연출 대상 = actual_start − 약속 시각 ≥ 1분 (약속 시각 = scheduled_start 와 announced_start 중 이른 것 — (v4.5.8)
+//              영상 없는 예고가 실물에 흡수되면 실물 scheduled_start 는 YouTube 값이라, 백엔드가 예고 시각을 announced_start 로 넘긴다)
+//   (v4.5.8 운영자 결정) 지각한 방송이 라이브인 동안에는 **시각과 상관없이 무조건** — 이 페이지가 그 방송을 라이브로 처음 그릴 때
+//   (접속 · 열어 둔 화면이 라이브를 받음) 입장 연출(ARRIVE_MS)을 한 번 재생하고, 끝나면 바로 leave() 로 .k-leave 를 붙여 LEAVE_MS 동안
+//   서서히 걷어낸 뒤 finish() 로 장식 DOM 을 지운다(= 평소 라이브 카드). 같은 페이지에서 다시 그려져도 재생하지 않는다(played).
+//   전(v4.3.1~v4.5.7)엔 actual_start + 1분(v4.5.1 전 3분) 안에서만 연출했는데, 화면이 라이브를 알게 되는 건 백엔드 감지(0.3~6분) +
+//   raw CDN 캐시(최대 5분) + 폴링(75초) 뒤라 그 창이 거의 늘 지나 있어 입장 연출이 나오지 않았다(2026-10-20).
+//   탭이 숨겨져 있는 동안엔 시작하지 않고(k.mode "await") 탭이 보일 때 시작한다.
 // 데이터는 textContent/createElement 로만 주입(XSS 방어, innerHTML 금지) — timetable.js 와 같은 규칙.
 // 장식은 보드를 다시 그릴 때마다(데이터 폴링 · 1분 틱 재렌더) 새로 만들어지므로, 상태는 DOM 이 아니라 시각(scheduled_start / actual_start)으로 계산한다.
 //
@@ -19,8 +25,7 @@
 
 export const KING_KEY = "nonoka";
 const MIN = 60000;
-export const ARRIVE_MS = 3800;              // 입장 연출 길이(그 뒤 「입장 후」 모습으로 정착)
-export const HOLD_MS = MIN;                 // 입장 후 연출 유지 시간(이 뒤 서서히 평소 라이브 모습으로) — (v4.5.1) 3분 → 1분
+export const ARRIVE_MS = 3800;              // 입장 연출 길이 — (v4.5.8) 끝나면 바로 서서히 평소 라이브 모습으로(전엔 「입장 후」 모습을 actual_start + 1분까지 유지)
 export const LEAVE_MS = 1200;               // (v4.5.1) 복귀(퇴장) 연출 길이 — king.css 의 --k-leave(1.2s) 와 같아야 한다
 export const MAX_LATE_MS = 3 * 3600000;     // 예고는 예정 시각 + 3h 안에 정리되므로 그 이상은 꾸미지 않음
 export const ARRIVE_MIN_LATE_MS = MIN;      // 이만큼 이상 늦게 시작해야 「지각 후 입장」 연출을 한다
@@ -46,13 +51,20 @@ export function mmss(ms) {
   return `${m < 10 ? "0" : ""}${m}:${r < 10 ? "0" : ""}${r}`;
 }
 
+/** (v4.5.8) 약속 시각(ms) = scheduled_start 와 announced_start(흡수된 예고의 시각) 중 이른 것 */
+export function promisedStart(item) {
+  const sched = Date.parse(item.scheduled_start);
+  const ann = Date.parse(item.announced_start);
+  return isFinite(ann) && ann < sched ? ann : sched;
+}
+
 /**
- * 이 항목이 지금 어떤 국면인가.
- *  { phase: "wait", stage, late }                       예정 시각이 지난 예고(upcoming)
- *  { phase: "live", waited, since }                     지각 후 입장한 라이브, 입장 후 HOLD_MS 안
+ * 이 항목이 지금 어떤 국면인가. playedAt = 이 페이지가 이 항목의 입장 연출을 시작한 시각(아직이면 undefined)
+ *  { phase: "wait", stage, late }                       예정 시각이 지난 예고(upcoming) — 지각은 화면에 보이는 scheduled_start 기준
+ *  { phase: "live", waited, since }                     약속 시각보다 1분 이상 늦게 입장한 라이브 — 아직 재생 안 했거나 재생한 지 ARRIVE_MS 안
  *  null                                                  연출 대상 아님 / 끝남
  */
-export function phaseOf(item, state, nowMs) {
+export function phaseOf(item, state, nowMs, playedAt) {
   if (!kingTarget(item)) return null;
   const sched = Date.parse(item.scheduled_start);
   if (!isFinite(sched)) return null;
@@ -64,10 +76,10 @@ export function phaseOf(item, state, nowMs) {
   if (state === "live") {
     const actual = Date.parse(item.actual_start);
     if (!isFinite(actual)) return null;
-    const waited = actual - sched;
+    const waited = actual - promisedStart(item);
     if (waited < ARRIVE_MIN_LATE_MS) return null;
     const since = Math.max(0, nowMs - actual);
-    if (since >= HOLD_MS) return null;
+    if (playedAt != null && nowMs - playedAt >= ARRIVE_MS) return null;   // (v4.5.8) 이 페이지에서 한 번 재생했으면 끝
     return { phase: "live", waited, since };
   }
   return null;
@@ -76,7 +88,6 @@ export function phaseOf(item, state, nowMs) {
 /** 대신의 말. 조각: ["k", 머리말] ["b", 굵은 글, "big"?] ["s", 작은 글] ["c"](대기 시간 카운터) */
 export function speech(kind, stage, waitedMs) {
   if (kind === "arrive") return [["k", KICK], ["b", "전하 납시오!", "big"], ["s", `그대들이 +${mmss(waitedMs)} 기다린 끝에 납시었소!`]];
-  if (kind === "live") return [["s", `전하께서 납시었소. 그대들이 기다린 시간은 ${mmss(waitedMs)}, 그 충심을 기억하겠소.`]];
   if (stage === 1) return [["k", KICK], ["b", "전하께서 곧 납시오~"]];
   if (stage === 2) return [["k", KICK], ["b", "전하께서 곧 행차할 것이오!"], ["s", "잠시 대기들 하시오!"]];
   if (stage === 3) return [["k", KICK], ["b", "행차가 길어지는구려. 자리를 뜨지 마시오!"], ["s", "그대들이 기다린 시간"], ["c"]];
@@ -230,7 +241,7 @@ function setStage(root, stage) {
 }
 
 function begin(root, kind, entry, state) {
-  const p = phaseOf(entry.item, state, Date.now());
+  const p = phaseOf(entry.item, state, Date.now(), played.get(keyOf(entry.item)));
   if (!p) return null;
   root.__king = { kind, item: entry.item, state, mode: null, stage: 0, nodes: [], msg: null, count: null, label: null, labelOrig: "" };
   root.dataset.king = kind;
@@ -249,38 +260,32 @@ function applyPhase(root, p) {
     if (k.label) k.label.textContent = blockLabel(p.stage, p.late);
     return;
   }
-  // 라이브(입장 후 연출 유지 구간)
+  // 라이브(지각 후 입장) — (v4.5.8) 이 페이지에서 처음 그릴 때 입장 연출을 한 번 재생하고 끝나면 바로 걷어낸다
   if (k.mode === "arrive" || k.mode === "live") return;
   const key = keyOf(k.item);
   const now = Date.now();
-  if (!played.has(key)) played.set(key, now);
-  const arriving = !reduceMotion() && now - played.get(key) < ARRIVE_MS;
   k.stage = 3;
   setStage(root, 3);                         // 장막 · 신하 · 카펫이 갖춰진 상태에서 입장
   if (k.label) k.label.textContent = k.labelOrig;
+  // (v4.5.8) 탭이 숨겨져 있으면 재생을 미룬다 — 백그라운드 탭에서 폴링으로 라이브를 받았을 때 아무도 안 보는 사이 끝나 버리지 않게.
+  // 틱이 탭이 보이는 순간 다시 부른다
+  if (!played.has(key) && typeof document !== "undefined" && document.hidden) { k.mode = "await"; return; }
+  if (!played.has(key)) played.set(key, now);
+  const arriving = !reduceMotion() && now - played.get(key) < ARRIVE_MS;
   if (arriving) {
     k.mode = "arrive";
-    k.startedAt = now;
-    // 두 프레임 뒤에 arrive 를 붙여야 장막이 닫힌 상태에서 열리는 전환이 보인다. 정착 타이머는 클래스가 실제로 붙은 순간부터 잰다
+    // 두 프레임 뒤에 arrive 를 붙여야 장막이 닫힌 상태에서 열리는 전환이 보인다. 걷어내기 타이머는 클래스가 실제로 붙은 순간부터 잰다
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!root.isConnected || !root.__king || root.__king.mode !== "arrive") return;
+      if (!root.isConnected || root.__king !== k || k.mode !== "arrive") return;
       root.classList.add("k-arrive");
-      setTimeout(() => settle(root, p.waited), ARRIVE_MS);
+      setTimeout(() => { if (root.isConnected && root.__king === k) leave(root); }, ARRIVE_MS);
     }));
-    if (k.msg) writeMsg(root, speech("arrive", 0, p.waited), p.waited);
   } else {
+    // 모션 줄이기(또는 재생 도중 다시 그려짐 — 재생 시작 후 ARRIVE_MS 안) — 금빛 「입장 후」 모습을 남은 시간만 보이고 틱이 걷어낸다
     k.mode = "live";
     root.classList.add("k-live");
-    if (k.msg) writeMsg(root, speech("live", 0, p.waited), p.waited);
   }
-}
-function settle(root, waited) {
-  const k = root.__king;
-  if (!root.isConnected || !k || k.mode !== "arrive") return;
-  k.mode = "live";
-  root.classList.remove("k-arrive");
-  root.classList.add("k-live");
-  if (k.msg) writeMsg(root, speech("live", 0, waited), waited);
+  if (k.msg) writeMsg(root, speech("arrive", 0, p.waited), p.waited);
 }
 
 /* 팝업이 블록 위쪽에 놓였으면(timetable.js 가 data-anchor-bottom 에 문서 좌표의 아래 가장자리를 적어 둔다) 높이가 줄어도 블록에 붙어 있게 top 을 다시 맞춘다 */
@@ -315,7 +320,7 @@ function leave(root) {
   setTimeout(() => { if (root.__king === k) finish(root); }, LEAVE_MS + 150);
 }
 
-/* ── 1초 틱: 단계 전환 · 대기 시간 카운터 · 1분 뒤 걷어내기(leave). 꾸밀 대상이 화면에 없으면 스스로 멈춘다 ─── */
+/* ── 1초 틱: 단계 전환 · 대기 시간 카운터 · 입장 연출 뒤 걷어내기(leave — 보통은 입장 타이머가 먼저 부른다). 꾸밀 대상이 화면에 없으면 스스로 멈춘다 ─── */
 let timer = 0;
 function ensureTicker() {
   if (timer) return;
@@ -326,11 +331,10 @@ function ensureTicker() {
     for (const root of roots) {
       const k = root.__king;
       if (!k) continue;
-      const p = phaseOf(k.item, k.state, now);
+      const p = phaseOf(k.item, k.state, now, played.get(keyOf(k.item)));
       if (!p) { leave(root); continue; }
       if (p.phase === "live") {
-        // 탭이 숨겨져 프레임이 안 돌면 arrive 가 안 붙은 채 남을 수 있어, 충분히 지나면 그냥 정착시킨다
-        if (k.mode === "arrive" && now - k.startedAt > ARRIVE_MS + 3000) settle(root, p.waited);
+        if (k.mode === "await") applyPhase(root, p);   // (v4.5.8) 숨겨진 탭에서 미뤄 둔 입장 연출 — 탭이 보이면 시작
       } else {
         applyPhase(root, p);
         if (k.count) k.count.textContent = `+${mmss(p.late)}`;

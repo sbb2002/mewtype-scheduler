@@ -81,6 +81,14 @@ def _carry_collab(broadcast: dict, prev_entry: dict | None) -> None:
     # 라, 안 이으면 20:00 회원 방송에 태그가 없었다(2026-10-06 리츠). 이미 True 인 실물은 그대로.
     if prev_entry.get("membership") and not broadcast.get("membership"):
         broadcast["membership"] = True
+    # (v4.5.8) 자리표시의 예고 시각을 실물에 announced_start 로 남긴다 — 실물 scheduled_start 는 YouTube 값이라, 「20:00 예고 →
+    # 20:26 에 바로 시작한 영상」이면 프론트(king.js)가 지각을 17초로 재서 노노카 입장 연출이 안 나왔다(2026-10-20).
+    # 프론트는 지각 기준을 min(scheduled_start, announced_start) 로 잡는다. 시각 미정 예고는 날짜뿐이라 넘기지 않고, 여러 번 흡수되면 가장 이른 것.
+    ann = prev_entry.get("scheduled_start")
+    if ann and not prev_entry.get("time_tbd"):
+        cur = broadcast.get("announced_start")
+        if not cur or _age_sec(ann, cur) > 0:
+            broadcast["announced_start"] = ann
     if not prev_entry.get("collab_with"):
         return
     chain = [prev_entry.get("channel_key"), *(prev_entry.get("collab_with") or [])]
@@ -657,7 +665,42 @@ if __name__ == "__main__":
     assert arale_item["video_id"] == "arale_up"
     assert arale_item["collab_with"] == ["nonoka"], f"Got {arale_item.get('collab_with')}"
     assert arale_item["kind"] == "collab"
+    assert arale_item.get("announced_start") == "2026-09-09T13:00:00Z", f"Got {arale_item.get('announced_start')}"
     print(f"  supersede: announced collab → upcoming real, collab_with transferred")
+
+    print("\n" + "=" * 70)
+    print("✓ Test 6c: (v4.5.8) 자리표시 예고 시각 → 실물 announced_start (2026-10-20 노노카 20:00 예고 → 20:26 바로 시작 — 테스트 채널은 yuno)")
+    print("=" * 70)
+    videos_6c = {
+        "nono_live": types.SimpleNamespace(
+            video_id="nono_live", channel_id=channels_cfg["channels"]["yuno"]["channel_id"],
+            title="弾き語り", thumbnail="https://i.ytimg.com/vi/nono_live/mqdefault.jpg",
+            live_state="live", scheduled_start="2026-09-09T11:26:26Z", actual_start="2026-09-09T11:26:43Z",
+            actual_end=None, concurrent_viewers=100,
+        ),
+    }
+    prev_6c = preview.default_preview()
+    prev_6c["items"] = [
+        preview.make_item(channel_key="yuno", state="announced", source="x-relay", now_iso=now_iso,
+                          id="pv_nono_ann", scheduled_start="2026-09-09T11:00:00Z", first_seen=now_iso),
+    ]
+    new_6c, _t, _w, _g = build_preview(channels_cfg, videos_6c, prev_6c, now_iso)
+    assert len(new_6c["items"]) == 1, new_6c["items"]
+    it_6c = new_6c["items"][0]
+    assert it_6c["video_id"] == "nono_live" and it_6c["scheduled_start"] == "2026-09-09T11:26:26Z"
+    assert it_6c.get("announced_start") == "2026-09-09T11:00:00Z", it_6c.get("announced_start")
+    # 다음 tick(자리표시 없음)에도 유지
+    new_6c2, _t, _w, _g = build_preview(channels_cfg, videos_6c, new_6c, now_iso)
+    assert new_6c2["items"][0].get("announced_start") == "2026-09-09T11:00:00Z"
+    # 시각 미정 예고는 넘기지 않음
+    prev_6c_tbd = preview.default_preview()
+    prev_6c_tbd["items"] = [
+        preview.make_item(channel_key="yuno", state="announced", source="personal", now_iso=now_iso,
+                          id="pv_nono_tbd", scheduled_start="2026-09-09T11:00:00Z", time_tbd=True, first_seen=now_iso),
+    ]
+    new_6c3, _t, _w, _g = build_preview(channels_cfg, videos_6c, prev_6c_tbd, now_iso)
+    assert all(not it.get("announced_start") for it in new_6c3["items"]), new_6c3["items"]
+    print(f"  announced_start=11:00Z carried (scheduled_start 11:26:26Z 그대로), time_tbd 예고는 안 넘김")
 
     print("\n" + "=" * 70)
     print("✓ Test 6b: (v3.8.10) 그룹 방송 3h 뒤 아라레 개인 예고는 supersede 안 됨")
