@@ -4,7 +4,7 @@
 > 팬이 들어오면 누가 언제 방송하는지, 지금 라이브 중인지, 어느 주소로 가면 되는지 한눈에 확인한다.
 > 비공식 팬 메이드 · 비영리 프로젝트이며 관련 권리는 각 권리사에 있다.
 
-**현재 버전: v4.6.0 (프론트 · 2026-10-19) + 핫픽스 v4.5.7** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md)
+**현재 버전: v4.6.0 (프론트 · 2026-10-19) + 핫픽스 v4.5.7** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md), 버전마다 git 태그 `vX.Y.Z`([Tags](https://github.com/sbb2002/mewtype-scheduler/tags))
 🌐 운영 사이트: <https://mewtype-schduler.vercel.app/> (주소의 `schduler` 오타는 옛 이름이 그대로 남은 것 — 프로젝트 · 저장소 이름은 `mewtype-scheduler`)
 
 📦 [구현 명세 (docs/SPEC.md)](./docs/SPEC.md) | 🗣 [용어 기준 (docs/TERMINOLOGY.md)](./docs/TERMINOLOGY.md) | 🔀 [ingest 흐름 (docs/INGEST_FLOW.md)](./docs/INGEST_FLOW.md) | 🧭 작업 지침 [CLAUDE.md](./CLAUDE.md)
@@ -85,6 +85,11 @@ mewtype-scheduler/
 
 브랜치: `main`(배포 대상) · `data`(데이터 저장소 쪽) · `devpapers`(개발 배경 문서 · 자동 생성 모니터 HTML — Vercel 배포 트리거 밖).
 작업 브랜치 이름에는 버전 번호를 쓰지 않는다(`hotfix/<이름>` · `test/<이름>`).
+버전은 **태그**로 남긴다 — 버전이 `main` 에 들어온 병합 커밋에 `vX.Y.Z` 주석 태그를 붙이고, 이 README 맨 위 「현재 버전」 줄도 같이 고친다
+(절차: [CLAUDE.md](./CLAUDE.md) 「주의점」 **버전 올릴 때 할 일**). 어떤 커밋의 버전은 `git describe --tags <커밋>`.
+
+로컬 워크트리는 메인 저장소 옆 `mewtype-scheduler-worktrees/<큰 버전>/<브랜치 이름의 / 를 - 로>` 에 둔다
+(예: `hotfix/web-analytics` → `mewtype-scheduler-worktrees/v4/hotfix-web-analytics`, `main` · `devpapers` 는 `mewtype-scheduler-worktrees/` 바로 아래).
 
 ---
 
