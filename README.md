@@ -90,7 +90,7 @@ mewtype-scheduler/
 어떤 커밋의 버전은 `git describe --tags <커밋>`.
 
 로컬 워크트리는 메인 저장소 옆 `mewtype-scheduler-worktrees/<큰 버전>/<브랜치 이름의 / 를 - 로>` 에 둔다
-(예: `hotfix/web-analytics` → `mewtype-scheduler-worktrees/v4/hotfix-web-analytics`, `main` · `devpapers` 는 `mewtype-scheduler-worktrees/` 바로 아래).
+(예: `hotfix/web-analytics` → `mewtype-scheduler-worktrees/v4/hotfix-web-analytics`, `main` 은 메인 저장소 폴더 `mewtype-scheduler/` 자체, `devpapers` 는 `mewtype-scheduler-worktrees/devpapers`).
 
 ---
 
@@ -128,7 +128,7 @@ python -m src.backend.websub         # PubSub 수신
 ### 백엔드 로컬 시험 러너
 
 `python -m src.backend.local_runner` 는 클라우드 없이 PC 에서 백엔드를 돌려 보는 시험용 러너다(저장은 `_local/`). 방법과 검증 기록은
-[ref/v4a/v4a_local_runbook.md](./ref/v4a/v4a_local_runbook.md).
+[ref/v4a/v4a_local_runbook.md](https://github.com/sbb2002/mewtype-scheduler/blob/devpapers/ref/v4a/v4a_local_runbook.md) (`devpapers` 브랜치).
 
 ---
 

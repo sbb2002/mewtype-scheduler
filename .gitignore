@@ -25,3 +25,8 @@ ref/www.youtube.com_cookies.txt
 _local/
 .env.local
 ref/v4a/verify/results_c.json
+
+# 운영자 PC 의 Claude 스킬 설치분(npx skills add) — 앱 운영과 무관, main 에 안 올림
+.agents/
+.claude/
+skills-lock.json

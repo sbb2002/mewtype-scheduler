@@ -40,6 +40,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > 참고). 아래 경로 표기(`docs/xxx`)는 어느 브랜치 것이든 그대로 유효 — `git show
 > origin/devpapers:docs/ARCHITECTURE.md` 식으로 조회. 용어는 `docs/TERMINOLOGY.md`
 > "`devpapers` 브랜치" 항목 참고.
+> **`ref/`(작업 기록 · 설계 메모 · 실험 자료 · 목업 · 캡처)도 `devpapers` 에서만 관리한다** (2026-10-20 사용자 확정) — `main` 에는 두지 않는다.
+> 새 자료는 `devpapers` 워크트리(`mewtype-scheduler-worktrees/devpapers`)의 `ref/` 에 넣어 커밋한다. 코드 주석 · 문서의 `ref/xxx` 표기도
+> 위와 같이 어느 브랜치 것이든 유효 — `git show origin/devpapers:ref/v4a/v4a_impl_plan.md`. `scripts/build_songs_json.py` 의 입력
+> `ref/player/songs_release.json` 도 `devpapers` 에 있으니 돌릴 땐 먼저 꺼내 둔다(`git show origin/devpapers:ref/player/songs_release.json > ref/player/songs_release.json`).
 
 - 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md` (devpapers)
 - **용어 기준 (세션 간 표현 일관성): `docs/TERMINOLOGY.md`** — 프론트엔드/백엔드/업스트림 시스템/외부 LLM 등.
@@ -872,10 +876,11 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
   4. **이 파일 상단 상자 맨 위 「현재 버전」 줄** + 그 버전 항목.
   5. **`docs/VERSION.md` 「버전별 상세」** 항목(머지 커밋 · 배포 리비전 포함).
 - **로컬 워크트리 배치** (2026-10-20 사용자 확정, 여러 PC 공통) — 원격 브랜치 구조와 무관하게 로컬 폴더만 정한다.
-  메인 저장소(`mewtype-scheduler/`)는 제자리에 두고, 그 밖의 워크트리는 형제 폴더
+  메인 저장소(`mewtype-scheduler/`)는 제자리에서 **`main` 을 체크아웃**하고(2026-10-20 — 한 브랜치는 한 폴더에서만 열 수 있다), 그 밖의 워크트리는 형제 폴더
   `mewtype-scheduler-worktrees/<큰 버전>/<브랜치 이름에서 / 를 - 로>` 에 만든다:
   `git worktree add ../mewtype-scheduler-worktrees/v4/hotfix-xxx hotfix/xxx`.
   - 접두사는 브랜치 것 그대로(`feat-` · `hotfix-` · `test-` · `docs-` · `deprecated-`).
   - 큰 버전 = 그 작업이 들어갈 줄기(지금 `main` = v4). 브랜치 이름에 버전이 없어도 `v4/`, v5 가 시작되면 그때부터 `v5/`.
-  - 버전 줄기 밖의 장기 브랜치(`main` · `devpapers`)는 `mewtype-scheduler-worktrees/` 바로 아래.
+  - 버전 줄기 밖의 장기 브랜치 `devpapers` 는 `mewtype-scheduler-worktrees/devpapers` (`main` 은 위처럼 메인 저장소 폴더).
+  - `.agents/` · `.claude/` · `skills-lock.json`(운영자 PC 의 Claude 스킬 설치분 — `npx skills add`)은 앱 운영과 무관해 `.gitignore` 로 뺀다.
   - 병합이 끝난 워크트리는 지운다(`git worktree remove`). 다른 PC 에서 이어 할 땐 같은 규칙으로 그 브랜치만 다시 펼친다.
