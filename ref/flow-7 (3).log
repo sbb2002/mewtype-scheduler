@@ -1,0 +1,215 @@
+09-06 17:36:57.320 I 47@6: HTTP request
+09-06 17:36:59.495 U 47@11: android.title: null, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text as String: , android.progress as Int: -1, android.progressMax as Int: 100, SBrowser.NotificationBundleIconIdExtra as Int: 2131231201, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788683817309, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 1000302, android.progressIndeterminate as Boolean: 1, android.remoteInputHistory: null, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: DownloadNotificationService
+09-06 17:36:59.496 I 47@2: Notification posted?
+09-06 17:37:10.010 I 47@2: Notification posted?
+09-06 17:37:10.443 I 47@2: Notification posted?
+09-06 17:37:10.448 I 47@2: Notification posted?
+09-06 17:40:43.231 I 47@6: HTTP request
+09-06 17:40:45.230 U 47@11: android.reduced.images as Boolean: 1, android.textLines as CharSequenceArray: , pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$InboxStyle, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788684043205, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096518938976993572
+09-06 17:40:45.233 I 47@2: Notification posted?
+09-06 17:42:18.185 I 47@6: HTTP request
+09-06 17:42:20.341 U 47@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: irr88r, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: irr88r, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788684138151, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096519341575721125
+09-06 17:42:20.345 I 47@2: Notification posted?
+09-06 17:44:57.130 I 47@6: HTTP request
+09-06 17:44:59.180 U 47@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 28u3hw, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 28u3hw, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788684297095, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096520003743011001
+09-06 17:44:59.181 I 47@2: Notification posted?
+09-06 17:45:03.653 I 47@2: Notification posted?
+09-06 17:45:04.674 I 47@2: Notification posted?
+09-06 17:45:04.686 I 47@2: Notification posted?
+09-06 17:45:04.691 I 47@2: Notification posted?
+09-06 17:45:42.270 I 47@6: HTTP request
+09-06 17:45:44.395 U 47@11: android.reduced.images as Boolean: 1, android.textLines as CharSequenceArray: , pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$InboxStyle, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788684342233, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096520197767340033
+09-06 17:45:44.396 I 47@2: Notification posted?
+09-06 17:46:32.589 I 47@2: Notification posted?
+09-06 17:46:32.595 I 47@2: Notification posted?
+09-06 17:47:03.955 I 47@6: HTTP request
+09-06 17:47:16.225 U 47@11: android.title as String: X, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$MediaStyle, android.showChronometer as Boolean: 0, android.text as String: x.com/yuno_yumemita/status/2096520101378015597, android.progress as Int: 0, android.progressMax as Int: 0, android.showWhen as Boolean: 0, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788684423938, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 2131429325, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, android.compactActions as IntArray: 0, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag: null
+09-06 17:47:16.227 I 47@2: Notification posted?
+09-06 17:47:17.662 I 47@2: Notification posted?
+09-06 18:13:12.990 I 47@2: Stopped by user
+09-06 18:19:12.173 I 48@1: Flow beginning
+09-06 18:19:12.174 I 48@2: Notification posted?
+09-06 18:19:52.764 I 48@12: Expression true?
+09-06 18:19:52.766 I 48@2: Notification posted?
+09-06 18:19:52.774 I 48@12: Expression true?
+09-06 18:19:52.775 I 48@13: Variable set
+09-06 18:19:52.775 I 48@6: HTTP request
+09-06 18:19:55.964 U 48@11: test1
+09-06 18:19:55.965 I 48@2: Notification posted?
+09-06 18:20:18.296 I 48@12: Expression true?
+09-06 18:20:18.300 I 48@2: Notification posted?
+09-06 18:20:19.072 I 48@2: Notification posted?
+09-06 18:20:19.266 I 48@12: Expression true?
+09-06 18:20:19.267 I 48@2: Notification posted?
+09-06 18:20:19.279 I 48@12: Expression true?
+09-06 18:20:19.280 I 48@2: Notification posted?
+09-06 18:20:20.080 I 48@2: Notification posted?
+09-06 18:20:20.280 I 48@12: Expression true?
+09-06 18:20:20.281 I 48@13: Variable set
+09-06 18:20:20.282 I 48@6: HTTP request
+09-06 18:20:22.321 U 48@11: 파일 다운로드 완료
+09-06 18:20:22.322 I 48@2: Notification posted?
+09-06 18:20:43.927 I 48@12: Expression true?
+09-06 18:20:43.929 I 48@13: Variable set
+09-06 18:20:43.929 I 48@6: HTTP request
+09-06 18:20:45.946 U 48@11: test3
+09-06 18:20:45.949 I 48@2: Notification posted?
+09-06 18:20:47.166 I 48@2: Notification posted?
+09-06 18:20:47.173 I 48@2: Notification posted?
+09-06 18:20:47.176 I 48@2: Notification posted?
+09-06 18:20:55.497 I 48@12: Expression true?
+09-06 18:20:55.497 I 48@2: Notification posted?
+09-06 18:20:55.509 I 48@12: Expression true?
+09-06 18:20:55.510 I 48@13: Variable set
+09-06 18:20:55.510 I 48@6: HTTP request
+09-06 18:21:07.780 U 48@11: test4
+09-06 18:21:07.781 I 48@2: Notification posted?
+09-06 18:21:09.024 I 48@12: Expression true?
+09-06 18:21:09.025 I 48@13: Variable set
+09-06 18:21:09.025 I 48@6: HTTP request
+09-06 18:21:11.010 U 48@11: test5
+09-06 18:21:11.011 I 48@2: Notification posted?
+09-06 18:21:35.981 I 48@12: Expression true?
+09-06 18:21:35.982 I 48@13: Variable set
+09-06 18:21:35.982 I 48@6: HTTP request
+09-06 18:21:37.997 U 48@11: test6
+yunochiiiiii
+09-06 18:21:37.999 I 48@2: Notification posted?
+09-06 18:21:41.400 I 48@2: Notification posted?
+09-06 18:21:41.683 I 48@2: Notification posted?
+09-06 18:21:41.938 I 48@2: Notification posted?
+09-06 18:21:41.944 I 48@2: Notification posted?
+09-06 18:21:43.499 I 48@2: Notification posted?
+09-06 18:21:43.757 I 48@2: Notification posted?
+09-06 18:21:43.767 I 48@2: Notification posted?
+09-06 18:23:02.087 I 48@2: Stopped by user
+09-06 18:23:38.101 I 49@1: Flow beginning
+09-06 18:23:38.102 I 49@2: Notification posted?
+09-06 18:23:59.967 I 49@12: Expression true?
+09-06 18:23:59.968 I 49@2: Notification posted?
+09-06 18:23:59.979 I 49@12: Expression true?
+09-06 18:23:59.979 I 49@13: Variable set
+09-06 18:23:59.980 I 49@6: HTTP request
+09-06 18:24:01.995 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test01, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test01, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686639928, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096529833870479645
+09-06 18:24:01.997 I 49@2: Notification posted?
+09-06 18:24:20.114 I 49@12: Expression true?
+09-06 18:24:20.115 I 49@13: Variable set
+09-06 18:24:20.115 I 49@6: HTTP request
+09-06 18:24:22.125 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test02
+jsut newline text, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test02
+jsut newline text, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686660087, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096529921338495107
+09-06 18:24:22.126 I 49@2: Notification posted?
+09-06 18:24:28.219 I 49@12: Expression true?
+09-06 18:24:28.219 I 49@13: Variable set
+09-06 18:24:28.220 I 49@6: HTTP request
+09-06 18:24:31.264 U 49@11: android.title: null, android.reduced.images as Boolean: 1, android.subText as String: 100%, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text as String: 155.6KB/155.6KB, android.progress as Int: 100, android.progressMax as Int: 100, SBrowser.NotificationBundleIconIdExtra as Int: 2131231201, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788686668200, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 1000304, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: DownloadNotificationService
+09-06 18:24:31.265 I 49@2: Notification posted?
+09-06 18:24:59.826 I 49@12: Expression true?
+09-06 18:24:59.828 I 49@13: Variable set
+09-06 18:24:59.828 I 49@6: HTTP request
+09-06 18:25:12.235 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test03, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test03, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686699792, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096530085432225964
+09-06 18:25:12.238 I 49@2: Notification posted?
+09-06 18:25:20.469 I 49@12: Expression true?
+09-06 18:25:20.470 I 49@13: Variable set
+09-06 18:25:20.470 I 49@6: HTTP request
+09-06 18:25:22.481 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test05, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test05, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686720430, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096530173793570983
+09-06 18:25:22.482 I 49@2: Notification posted?
+09-06 18:25:48.123 I 49@12: Expression true?
+09-06 18:25:48.126 I 49@13: Variable set
+09-06 18:25:48.126 I 49@6: HTTP request
+09-06 18:25:50.220 U 49@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: test06
+newline text w/ yunochiiiii, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: test06
+newline text w/ yunochiiiii, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788686748082, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096530287262159202
+09-06 18:25:50.221 I 49@2: Notification posted?
+09-06 19:39:43.422 I 49@2: Notification posted?
+09-06 19:39:43.434 I 49@2: Notification posted?
+09-06 19:39:43.438 I 49@2: Notification posted?
+09-06 19:39:43.442 I 49@2: Notification posted?
+09-06 19:39:43.447 I 49@2: Notification posted?
+09-06 19:39:43.450 I 49@2: Notification posted?
+09-06 19:39:43.452 I 49@2: Notification posted?
+09-06 19:39:44.504 I 49@2: Notification posted?
+09-06 19:59:54.677 I 49@12: Expression true?
+09-06 19:59:54.691 I 49@2: Notification posted?
+09-06 19:59:54.731 I 49@12: Expression true?
+09-06 19:59:54.732 I 49@13: Variable set
+09-06 19:59:54.732 I 49@6: HTTP request
+09-06 20:00:07.393 U 49@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @BM_ECHOES: ／
+　ご来場ありがとうございました‼️
+＼
+
+🌏9/6(日)開催🌏
+BM-ECHOES FESTIVAL 2026 DAY2
+📍Zepp Nagoya
+
+🌟出演
+青木陽菜・夢限大みゅーたいぷ
+Guest Act：西尾夕香
+
+ご来場いただいた皆さまありがとうございました！
+
+感想は #BMFES_2026_DAY2 でお待ちしています💫 pic.x.com/pTVNbKmVyf, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @BM_ECHOES: ／
+　ご来場ありがとうございました‼️
+＼
+
+🌏9/6(日)開催🌏
+BM-ECHOES FESTIVAL 2026 DAY2
+📍Zepp Nagoya
+
+🌟出演
+青木陽菜・夢限大みゅーたいぷ
+Guest Act：西尾夕香
+
+ご来場いただいた皆さまありがとうございました！
+
+感想は #BMFES_2026_DAY2 でお待ちしています💫 pic.x.com/pTVNbKmVyf, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788692394596, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096552878769152326
+09-06 20:00:07.395 I 49@2: Notification posted?
+09-06 20:12:51.873 I 49@12: Expression true?
+09-06 20:12:51.876 I 49@13: Variable set
+09-06 20:12:51.876 I 49@6: HTTP request
+09-06 20:12:54.092 U 49@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: ＼🛸ありがとうございました🛸／
+
+🌏BM-ECHOES FESTIVAL 2026🌏
+🐔DAY2🐔
+
+ご来場ありがとうございました❣️
+
+#BMFES_2026_DAY2 をつけて
+感想お待ちしています🌟
+
+来週にはアニメ最終回を迎えます❕
+引き続き、夢限大みゅーたいぷへの
+ご声援をよろしくお願いいたします✨
+
+#ゆめみた, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: ＼🛸ありがとうございました🛸／
+
+🌏BM-ECHOES FESTIVAL 2026🌏
+🐔DAY2🐔
+
+ご来場ありがとうございました❣️
+
+#BMFES_2026_DAY2 をつけて
+感想お待ちしています🌟
+
+来週にはアニメ最終回を迎えます❕
+引き続き、夢限大みゅーたいぷへの
+ご声援をよろしくお願いいたします✨
+
+#ゆめみた, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788693171822, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096556194928468287
+09-06 20:12:54.093 I 49@2: Notification posted?
+09-06 20:28:41.638 I 49@2: Notification posted?
+09-06 20:28:41.647 I 49@2: Notification posted?
+09-06 20:28:41.651 I 49@2: Notification posted?
+09-06 20:28:41.654 I 49@2: Notification posted?
+09-06 20:28:41.657 I 49@2: Notification posted?
+09-06 20:28:41.661 I 49@2: Notification posted?
+09-06 20:28:41.665 I 49@2: Notification posted?
+09-06 20:29:36.009 I 49@2: Stopped by user
+09-06 20:29:36.995 I 50@1: Flow beginning
+09-06 20:29:36.996 I 50@2: Notification posted?
+09-06 20:56:48.787 I 50@12: Expression true?
+09-06 20:56:48.790 I 50@13: Variable set
+09-06 20:56:48.791 I 50@6: HTTP request
+09-06 20:57:02.365 U 50@11: android.title as String: 모든 이미지 저장, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text as String: 0/2, android.progress as Int: 0, android.progressMax as Int: 2, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788695808767, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 990099, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag: null
+09-06 20:57:02.367 I 50@2: Notification posted?
+09-06 21:01:57.396 I 50@2: Notification posted?

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>핫픽스 목업 — 랜덤플리 오마카세 · 예고 블록 문구</title>
+<!-- 사이트 실제 CSS 를 그대로 불러 쓴다 (토큰 · .tt-blk · .mp-*). 아래 <style id="proposal"> 만 이번 패치의 제안 CSS. -->
+<link rel="stylesheet" href="../src/frontend/css/reset.css">
+<link rel="stylesheet" href="../src/frontend/css/layout.css">
+<link rel="stylesheet" href="../src/frontend/css/timetable.css">
+<link rel="stylesheet" href="../src/frontend/css/playerpop.css">
+<link rel="stylesheet" href="../src/frontend/css/theme.css">
+<style>
+  body { padding: 20px 24px 60px; max-width: 980px; margin: 0 auto; font-family: system-ui, "Noto Sans KR", sans-serif; }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  h2 { font-size: 1rem; margin: 34px 0 6px; padding-top: 14px; border-top: 1px solid var(--color-border); }
+  p.note { margin: 4px 0 12px; font-size: .8rem; color: var(--color-text-muted); line-height: 1.55; }
+  .cap { font-size: .72rem; color: var(--color-text-muted); margin: 14px 0 6px; font-weight: 700; letter-spacing: .02em; }
+  .cap em { font-style: normal; color: var(--color-late); }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-start; }
+  .cell { display: flex; flex-direction: column; gap: 4px; }
+  .cell > small { font-size: .68rem; color: var(--color-text-muted); }
+  .slot { position: relative; width: 270px; height: 78px; background: var(--color-bg-secondary); border: 1px dashed var(--color-line-soft); border-radius: 6px; }
+  .slot .tt-blk { left: 4px; top: 7px; }
+  .slot.n210 .tt-blk { width: 210px; }
+  .slot.n250 .tt-blk { width: 250px; }
+  .lane-a { --lane-color: #d98aa5; } .lane-b { --lane-color: #7fb6e6; } .lane-c { --lane-color: #8fd19e; }
+  .lane-d { --lane-color: #e6c36a; } .lane-e { --lane-color: #b79be6; }
+  .tt-blk--soon { box-shadow: 0 0 0 1.5px var(--color-late) inset; }
+  .guide { position: relative; }
+
+  /* ───────── 패치 2 제안 CSS ───────── */
+  /* 블록 안을 항상 3줄(시각 · 카운트다운 · 제목) 고정 높이로 — 태그 유무 · 상태와 무관하게 같은 줄이 같은 높이에 놓인다 */
+  .after .tt-blk__tx { justify-content: flex-start; gap: 0; padding: 7px 8px 0 0; }
+  .after .tt-blk__t { height: 18px; line-height: 18px; }
+  .after .tt-blk__rel { display: block; height: 15px; line-height: 15px; font-size: .66rem; white-space: nowrap; color: var(--color-text-muted); }
+  .after .tt-blk--soon .tt-blk__rel { color: var(--color-late); }
+  .after .tt-blk__rel.is-late { color: var(--color-late); }
+  .after .tt-blk__n { height: 20px; line-height: 20px; }
+  .guide-lines { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed rgba(255,80,120,.55); pointer-events: none; }
+
+  /* ───────── 패치 1 제안 CSS ───────── */
+  .mp-demo { width: 440px; padding: 14px; background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 14px; }
+  .mp-demo.narrow { width: 340px; }
+  .mp-demo .mp-ctl { justify-content: space-between; flex-wrap: wrap; row-gap: 10px; }
+  .mp-grp { display: flex; align-items: center; gap: 6px; }
+  .mp-demo .mp-ctl { column-gap: 8px; }
+  .mp-oma-wrap { position: relative; margin-left: auto; }
+  .mp-demo.narrow .mp-oma-wrap { flex: 1 0 100%; }
+  .mp-demo.narrow .mp-oma { width: 100%; justify-content: center; }
+  .mp-oma {
+    position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px;
+    height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 20px;
+    background: var(--mp-panel-2); color: var(--color-text); font-size: .74rem; font-weight: 700; white-space: nowrap; cursor: pointer;
+  }
+  .mp-oma:hover:not(:disabled) { border-color: var(--mp-accent); color: var(--mp-accent); }
+  .mp-oma:disabled { cursor: default; }
+  .mp-oma__e { display: inline-block; font-size: 1.05rem; line-height: 1; }
+  .mp-oma__t { display: inline-flex; }
+  .mp-oma__t i { font-style: normal; display: inline-block; white-space: pre; }
+  /* 뒤섞임: 버튼이 좌우로 흔들리고 상자가 굴러가며, 글자는 JS 가 순서를 섞는다 */
+  .mp-oma.rolling { animation: mp-oma-shake .62s ease; border-color: var(--mp-accent); color: var(--mp-accent); }
+  .mp-oma.rolling .mp-oma__e { animation: mp-oma-spin .62s cubic-bezier(.4,.1,.3,1); }
+  .mp-oma.rolling .mp-oma__t i { animation: mp-oma-jit .16s steps(2) infinite; }
+  .mp-oma.rolling .mp-oma__t i:nth-child(odd) { animation-delay: -.08s; }
+  @keyframes mp-oma-shake { 0%{transform:translateX(0) rotate(0)} 15%{transform:translateX(-4px) rotate(-3deg)} 30%{transform:translateX(4px) rotate(3deg)} 45%{transform:translateX(-3px) rotate(-2deg)} 60%{transform:translateX(3px) rotate(2deg)} 80%{transform:translateX(-1px) rotate(-1deg)} 100%{transform:none} }
+  @keyframes mp-oma-spin { to { transform: rotate(720deg) scale(1.15); } }
+  @keyframes mp-oma-jit { 0%{transform:translateY(-2px) rotate(-6deg)} 100%{transform:translateY(2px) rotate(6deg)} }
+  /* 쿨타임: BPM 오마카세와 같은 시계방향 5초 파이 */
+  @property --mp-cd { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+  .mp-oma.cooldown::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: conic-gradient(transparent var(--mp-cd), rgba(0,0,0,.55) var(--mp-cd));
+    animation: mp-oma-wipe 5s linear forwards;
+  }
+  @keyframes mp-oma-wipe { from { --mp-cd: 0%; } to { --mp-cd: 100%; } }
+  @media (prefers-reduced-motion: reduce) {
+    .mp-oma.rolling, .mp-oma.rolling .mp-oma__e, .mp-oma.rolling .mp-oma__t i { animation: none; }
+    .mp-oma.cooldown::after { animation: none; background: none; }
+  }
+  /* 말풍선 */
+  .mp-bubble {
+    position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 5; width: 224px; padding: 10px 10px 11px;
+    background: var(--color-raised); border: 1px solid var(--color-raised-edge); border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  }
+  .mp-bubble[hidden] { display: none; }
+  .mp-bubble::after { content: ""; position: absolute; right: 40px; top: 100%; width: 10px; height: 10px; margin-top: -5px;
+    background: var(--color-raised); border: solid var(--color-raised-edge); border-width: 0 1px 1px 0; transform: rotate(45deg); }
+  .mp-demo.narrow .mp-bubble { right: 50%; transform: translateX(50%); }
+  .mp-demo.narrow .mp-bubble::after { right: calc(50% - 5px); }
+  .mp-bubble__h { font-size: .7rem; color: var(--color-text-muted); margin: 0 2px 8px; }
+  .mp-bubble__chips { display: flex; gap: 6px; }
+  .mp-chip { flex: 1; padding: 7px 0; border: 1px solid var(--color-border); border-radius: 8px; background: var(--mp-panel-2); font-size: .78rem; font-weight: 600; cursor: pointer; }
+  .mp-chip:hover { border-color: var(--mp-accent); color: var(--mp-accent); }
+  .mp-chip small { display: block; font-size: .62rem; font-weight: 400; color: var(--color-text-muted); margin-top: 1px; }
+  .mp-demo .stage-pad { height: 44px; }
+  .stat { margin-top: 10px; font-size: .72rem; color: var(--color-text-muted); min-height: 1.2em; }
+  .stat b { color: var(--mp-accent); }
+  button.replay { margin-top: 8px; padding: 5px 11px; border: 1px solid var(--color-border); border-radius: 8px; font-size: .74rem; color: var(--color-text); background: transparent; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>핫픽스 목업 (v4.5.6 예정)</h1>
+<p class="note">사이트의 실제 CSS(<code>timetable.css</code> · <code>playerpop.css</code> · 토큰)를 그대로 불러온 뒤, 이번 패치의 <b>제안 CSS</b>만 이 파일에 덧붙였습니다. 아직 <code>src/</code> 는 수정하지 않았습니다. 실제 데이터가 아니라 모양을 보기 위한 가짜 값입니다.</p>
+
+<!-- ════════════════ 패치 2 ════════════════ -->
+<h2>패치 2. 타임테이블 예고 블록</h2>
+<p class="note">표기 규칙 — 시작 전 60분 이상: <b>방송시작까지 1.5시간</b>(정각이면 <b>2시간</b>) · 60분 미만: <b>방송시작까지 40분</b>(정수) · 시각 지남: <b>지각</b>.
+블록 안은 항상 <b>① 시각+태그 ② 카운트다운 ③ 제목</b> 3줄을 고정 높이로 두어, 블록마다 같은 줄이 같은 높이에 놓이게 합니다(점선 = 줄 기준선).</p>
+
+<div class="cap">현재 (22:30 1.5h) — 태그 유무에 따라 줄 높이가 제각각, 블록 폭 210px</div>
+<div class="row">
+  <div class="cell"><div class="slot n210 lane-a"><div class="tt-blk tt-blk--upcoming" ><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span>22:30</span><span class="tt-blk__rel">1.5h</span><span class="tt-tag tt-tag--ann">예고</span></div><div class="tt-blk__n">잡담 방송 예고</div></div></div></div><small>예고 · 태그 있음</small></div>
+  <div class="cell"><div class="slot n210 lane-b"><div class="tt-blk tt-blk--upcoming"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span>23:00</span><span class="tt-blk__rel">2h</span></div><div class="tt-blk__n">【ゲーム】新作を遊ぶ！</div></div></div></div><small>영상 있음 · 태그 없음 (제목이 위로 떠 있음)</small></div>
+  <div class="cell"><div class="slot n210 lane-c"><div class="tt-blk tt-blk--upcoming tt-blk--soon"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span>21:10</span><span class="tt-blk__rel">40분</span><span class="tt-tag tt-tag--collab">합동</span><span class="tt-tag tt-tag--mem">회원 전용</span></div><div class="tt-blk__n">合同企画</div></div></div></div><small>태그 2개 — 한 줄에 못 들어가 잘림</small></div>
+</div>
+
+<div class="cap">변경 후 <em>(제안)</em> — 블록 폭 250px(<code>W_FIXED</code> 210→250), 3줄 고정</div>
+<div class="row after">
+  <div class="cell"><div class="slot n250 lane-a guide"><div class="tt-blk tt-blk--upcoming"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">22:30</span><span class="tt-tag tt-tag--ann">예고</span></div><span class="tt-blk__rel">방송시작까지 1.5시간</span><div class="tt-blk__n">잡담 방송 예고</div></div></div></div><small>60분 이상 · 소수 한 자리</small></div>
+  <div class="cell"><div class="slot n250 lane-b"><div class="tt-blk tt-blk--upcoming"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">23:00</span></div><span class="tt-blk__rel">방송시작까지 2시간</span><div class="tt-blk__n">【ゲーム】新作を遊ぶ！</div></div></div></div><small>정각이면 정수 (태그 없어도 줄 높이 같음)</small></div>
+  <div class="cell"><div class="slot n250 lane-c"><div class="tt-blk tt-blk--upcoming tt-blk--soon"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">21:10</span><span class="tt-tag tt-tag--collab">합동</span><span class="tt-tag tt-tag--mem">회원 전용</span></div><span class="tt-blk__rel">방송시작까지 40분</span><div class="tt-blk__n">合同企画</div></div></div></div><small>60분 미만 · 분 정수 · 노랑 강조</small></div>
+  <div class="cell"><div class="slot n250 lane-d"><div class="tt-blk tt-blk--upcoming"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">20:00</span><span class="tt-tag tt-tag--ann">예고</span></div><span class="tt-blk__rel is-late">지각</span><div class="tt-blk__n">雑談</div></div></div></div><small>시각 지남</small></div>
+  <div class="cell"><div class="slot n250 lane-e"><div class="tt-blk tt-blk--live"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-tag tt-tag--live">LIVE</span></div><span class="tt-blk__rel"></span><div class="tt-blk__n">歌枠 配信中</div></div></div></div><small>라이브 — 2줄은 비워 제목 높이 유지</small></div>
+  <div class="cell"><div class="slot n250 lane-a"><div class="tt-blk tt-blk--ended"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">17:00~19:10</span><span class="tt-tag tt-tag--end">종료</span></div><span class="tt-blk__rel"></span><div class="tt-blk__n">ゲーム実況</div></div></div></div><small>종료 — 동일</small></div>
+</div>
+
+<div class="cap">줄 높이 비교 — 위 3개(제안)를 나란히 놓고 같은 y 에 점선을 그은 모습</div>
+<div class="row after" style="position:relative;width:850px">
+  <div class="lane-a slot n250"><div class="tt-blk tt-blk--upcoming"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">22:30</span><span class="tt-tag tt-tag--ann">예고</span></div><span class="tt-blk__rel">방송시작까지 1.5시간</span><div class="tt-blk__n">잡담 방송 예고</div></div></div></div>
+  <div class="lane-b slot n250"><div class="tt-blk tt-blk--upcoming"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">23:00</span></div><span class="tt-blk__rel">방송시작까지 2시간</span><div class="tt-blk__n">【ゲーム】新作を遊ぶ！</div></div></div></div>
+  <div class="lane-c slot n250"><div class="tt-blk tt-blk--upcoming tt-blk--soon"><div class="tt-blk__th tt-ph"><span class="tt-ava tt-ph__ava"></span></div><div class="tt-blk__tx"><div class="tt-blk__t"><span class="tt-blk__time">21:10</span><span class="tt-tag tt-tag--collab">합동</span><span class="tt-tag tt-tag--mem">회원 전용</span></div><span class="tt-blk__rel">방송시작까지 40분</span><div class="tt-blk__n">合同企画</div></div></div></div>
+  <span class="guide-lines" style="top:29px"></span><span class="guide-lines" style="top:46px"></span><span class="guide-lines" style="top:68px"></span>
+</div>
+
+<!-- ════════════════ 패치 1 ════════════════ -->
+<h2>패치 1. 플레이어 「🎁 랜덤플리 오마카세」</h2>
+<p class="note">컨트롤러(셔플 · 이전 · 재생 · 다음 · 반복) 오른쪽에 버튼을 둡니다. 누르면 <b>말풍선(전체 / 오리지널 / 커버)</b> → 칩 선택 → <b>뒤섞임 애니메이션(0.6초)</b> → 재생목록 교체·재생 → <b>5초 쿨타임 파이</b>.
+아래 첫 번째 패널은 직접 눌러볼 수 있습니다(곡 수는 가짜 값). 이모지는 「랜덤박스」로 🎁 를 썼고 다른 것으로 바꿔도 됩니다.</p>
+
+<div class="row">
+  <div class="cell">
+    <div class="cap">직접 눌러보기 (PC 폭 440px)</div>
+    <div class="mp-demo" id="live">
+      <div class="mp-ctl">
+        <div class="mp-grp">
+          <button type="button" class="mp-tog" aria-label="셔플"><svg class="mp-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 7h4l10 10h4v2h-5L6 9H3zM3 15h3l2-2 1.4 1.4L7 17H3zM17 7h4v2h-4L14 12l-1.4-1.4z"/></svg></button>
+          <button type="button" class="mp-btn" aria-label="이전"><svg class="mp-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h2v16H6zM20 4v16L9 12z"/></svg></button>
+          <button type="button" class="mp-main" aria-label="재생"><svg class="mp-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg></button>
+          <button type="button" class="mp-btn" aria-label="다음"><svg class="mp-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M16 4h2v16h-2zM4 4v16l11-8z"/></svg></button>
+          <button type="button" class="mp-tog" aria-label="반복"><svg class="mp-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2z"/></svg></button>
+        </div>
+        <div class="mp-oma-wrap">
+          <div class="mp-bubble" hidden role="dialog" aria-label="랜덤플리 종류">
+            <div class="mp-bubble__h">어떤 곡으로 섞을까요?</div>
+            <div class="mp-bubble__chips">
+              <button type="button" class="mp-chip" data-k="all">전체<small>64곡</small></button>
+              <button type="button" class="mp-chip" data-k="original">오리지널<small>41곡</small></button>
+              <button type="button" class="mp-chip" data-k="cover">커버<small>23곡</small></button>
+            </div>
+          </div>
+          <button type="button" class="mp-oma"><span class="mp-oma__e">🎁</span><span class="mp-oma__t"></span></button>
+        </div>
+      </div>
+      <div class="stat" id="stat">버튼을 눌러보세요.</div>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="cap">정지 화면 ① 기본 · ② 말풍선 · ③ 쿨타임 중(40%)</div>
+    <div class="mp-demo" style="width:440px">
+      <div class="mp-ctl"><div class="mp-grp"><span class="mp-tog"></span><span class="mp-btn"></span><span class="mp-main"></span><span class="mp-btn"></span><span class="mp-tog"></span></div>
+        <div class="mp-oma-wrap"><button class="mp-oma" type="button"><span class="mp-oma__e">🎁</span><span class="mp-oma__t">랜덤플리 오마카세</span></button></div></div>
+    </div>
+    <div class="mp-demo" style="width:440px;margin-top:70px">
+      <div class="mp-ctl"><div class="mp-grp"><span class="mp-tog"></span><span class="mp-btn"></span><span class="mp-main"></span><span class="mp-btn"></span><span class="mp-tog"></span></div>
+        <div class="mp-oma-wrap">
+          <div class="mp-bubble"><div class="mp-bubble__h">어떤 곡으로 섞을까요?</div><div class="mp-bubble__chips"><span class="mp-chip">전체<small>64곡</small></span><span class="mp-chip">오리지널<small>41곡</small></span><span class="mp-chip">커버<small>23곡</small></span></div></div>
+          <button class="mp-oma" type="button"><span class="mp-oma__e">🎁</span><span class="mp-oma__t">랜덤플리 오마카세</span></button></div></div>
+    </div>
+    <div class="mp-demo" style="width:440px;margin-top:12px">
+      <div class="mp-ctl"><div class="mp-grp"><span class="mp-tog"></span><span class="mp-btn"></span><span class="mp-main"></span><span class="mp-btn"></span><span class="mp-tog"></span></div>
+        <div class="mp-oma-wrap"><button class="mp-oma cooldown" disabled type="button" style="--mp-cd:40%"><span class="mp-oma__e">🎁</span><span class="mp-oma__t">랜덤플리 오마카세</span></button></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="cap">모바일 폭(340px) — 한 줄에 안 들어가면 컨트롤러 아래 줄 전체 폭으로 내려갑니다</div>
+<div class="mp-demo narrow">
+  <div class="mp-ctl"><div class="mp-grp"><span class="mp-tog"></span><span class="mp-btn"></span><span class="mp-main"></span><span class="mp-btn"></span><span class="mp-tog"></span></div>
+    <div class="mp-oma-wrap"><button class="mp-oma" type="button"><span class="mp-oma__e">🎁</span><span class="mp-oma__t">랜덤플리 오마카세</span></button></div></div>
+</div>
+
+<script>
+  const LABEL = "랜덤플리 오마카세";
+  const wrap = document.getElementById("live");
+  const btn = wrap.querySelector(".mp-oma"), txt = btn.querySelector(".mp-oma__t");
+  const bub = wrap.querySelector(".mp-bubble"), stat = document.getElementById("stat");
+  const KO = { all: "전체", original: "오리지널", cover: "커버" }, N = { all: 64, original: 41, cover: 23 };
+  let busy = false;
+  const paint = (s) => { txt.textContent = ""; for (const ch of s) { const i = document.createElement("i"); i.textContent = ch; txt.appendChild(i); } };
+  paint(LABEL);
+  document.querySelectorAll(".mp-oma__t").forEach((t) => { if (!t.children.length && !t.textContent) {} });
+  btn.addEventListener("click", (e) => { e.stopPropagation(); if (busy) return; bub.hidden = !bub.hidden; });
+  document.addEventListener("click", (e) => { if (!bub.contains(e.target)) bub.hidden = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") bub.hidden = true; });
+  bub.addEventListener("click", (e) => {
+    const c = e.target.closest(".mp-chip"); if (!c || busy) return;
+    busy = true; bub.hidden = true; btn.disabled = true;
+    const k = c.dataset.k, t0 = Date.now(); stat.innerHTML = "섞는 중…";
+    btn.classList.remove("rolling"); void btn.offsetWidth; btn.classList.add("rolling");
+    const chars = [...LABEL];
+    const timer = setInterval(() => { paint(chars.slice().sort(() => Math.random() - .5).join("")); }, 70);   // 글자 순서를 계속 섞는다
+    setTimeout(() => {
+      clearInterval(timer); paint(LABEL); btn.classList.remove("rolling");
+      stat.innerHTML = `<b>${KO[k]}</b> ${N[k]}곡을 무작위 순서로 재생목록에 넣고 재생합니다 (기존 재생목록은 덮어씀)`;
+      btn.classList.add("cooldown");   // 쿨타임은 클릭 시점부터 5초
+      setTimeout(() => { btn.classList.remove("cooldown"); btn.disabled = false; busy = false; }, Math.max(0, 5000 - (Date.now() - t0)));
+    }, 620);
+  });
+  // 정지 화면용 버튼들도 글자 span 으로 맞춘다
+  document.querySelectorAll(".mp-demo:not(#live) .mp-oma__t").forEach((t) => { const s = t.textContent; t.textContent = ""; for (const ch of s) { const i = document.createElement("i"); i.textContent = ch; t.appendChild(i); } });
+  // 쿨타임 정지 화면: 40% 에서 멈춤
+  document.querySelectorAll('.mp-oma.cooldown[style*="--mp-cd"]').forEach((b) => { b.style.setProperty("--x", 0); b.classList.add("frozen"); });
+</script>
+<style>
+  .mp-oma.cooldown.frozen::after { animation: none; }
+</style>
+</body>
+</html>
