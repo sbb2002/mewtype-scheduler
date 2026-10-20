@@ -1,0 +1,191 @@
+diff --git a/src/backend/admin_static/admin.html b/src/backend/admin_static/admin.html
+index 8746cb0..74c4866 100644
+--- a/src/backend/admin_static/admin.html
++++ b/src/backend/admin_static/admin.html
+@@ -4783,10 +4783,10 @@
+                     field("행사 이름 — 원문", ja, sub); field("행사 이름 — 한글", ko, sub);
+                     field("시작 (KST, 모르면 비움)", st, sub); field("종료 (KST, 필수 — 종료일 없는 행사는 올리지 않습니다)", en, sub);
+                     sub.hidden = true;
+-                    const getC = seg([["skip", "올리지 않음"], ["register", "행사로 올림(직접 입력)"]], "skip", (v) => { sub.hidden = v !== "register"; });
++                    const getC = seg([["skip", "올리지 않음"], ["register", "행사로 올림(직접 입력)"], ["notice", "소식으로 올림"]], "skip", (v) => { sub.hidden = v !== "register"; });
+                     wrap.appendChild(sub);
+                     return {
+-                        get: () => getC() === "register" ? { choice: "register", name_ja: ja.value, name_ko: ko.value, start: st.value, end: en.value } : { choice: "skip" },
++                        get: () => getC() === "register" ? { choice: "register", name_ja: ja.value, name_ko: ko.value, start: st.value, end: en.value } : { choice: getC() === "notice" ? "notice" : "skip" },
+                         validate: () => getC() === "register" && !en.value ? "종료 일시를 입력하세요" : (getC() === "register" && !(ja.value.trim() || ko.value.trim()) ? "행사 이름을 입력하세요" : ""),
+                     };
+                 }
+diff --git a/src/backend/llm.py b/src/backend/llm.py
+index 763efef..afca194 100644
+--- a/src/backend/llm.py
++++ b/src/backend/llm.py
+@@ -857,11 +857,12 @@ class LLMClient:
+             이미지에만 있는 경우가 실측으로 확인됨). 주면 이미지마다 용도(image_roles)도 판정한다.
+ 
+         Returns:
+-            {"action": none|upsert|hold|cancel, "banner_ref": id|None,
++            {"action": none|upsert|hold|cancel|notice, "banner_ref": id|None,
+              "event": {"name_ja","name_ko","start_jst","end_jst","permanent"}|None,
+              "gacha": {"title_ja","title_ko","start_jst","end_jst"}|None,
+              "image_for": event|gacha|none, "image_roles": [event|gacha|none …], "reason": str}
+             5회 모두 실패하면 None(호출부가 등록하지 않음 — 잘못 올라간 배너가 더 눈에 띄므로 소식과 반대 기본값).
++            (v4.5.9) action=notice = 게임 밖 콜라보 · 행사(게임 안 이벤트 스토리 · 가챠 없음) — 배너가 아니라 일반 소식으로(호출부가 소식 파이프라인에 넘김).
+         시각은 JST 문자열로 받고, 검증 · UTC 변환은 `banners.apply_judgement` 가 한다.
+         """
+         if self.disabled:
+@@ -875,10 +876,15 @@ class LLMClient:
+             for a in active) or "(없음)"
+         rules = [
+             "게임 「バンドリ！ アワーノーツ」 공식 계정 글이 하나 들어왔다. 이 글이 팬 사이트의 「행사 배너」에 무엇을 해야 하는지 판정하라.",
+-            "행사 = 게임 안 기간 한정 이벤트(예: 챌린지 라이브). 가챠 = 행사와 함께 오는 뽑기.",
++            "행사 = 게임 안 기간 한정 이벤트 — 게임 안에 이벤트 스토리 · 이벤트 보상 · 가챠가 있는 것(예: 챌린지 라이브). 가챠 = 행사와 함께 오는 뽑기.",
+             "대상 = 이 게임이 알리는 행사 · 가챠 전부다. 어느 밴드 · 멤버가 나오는지는 따지지 않는다(夢限大みゅーたいぷ 가 아니어도 올린다).",
+             "규칙:",
+-            "- 점검 · 사과 · 보상 배포 · 불편 안내 · 로그인 보너스 · 생방송 안내 · 곡 추가 · 업데이트 안내 같은 일반 공지(행사 · 가챠가 아닌 글) → action=none. 출연 밴드 · 멤버를 이유로 none 으로 하지 않는다.",
++            "- 게임 운영 공지(점검 · 사과 · 보상 배포 · 불편 안내 · 로그인 보너스 · 곡 · MV 추가 · 업데이트 · 밸런스 조정 · 이벤트 공략 안내)와 "
++            "방송 안내(생방송 · 정보 방송 · 새 방송 프로그램 · 배信 결정) → action=none. 출연 밴드 · 멤버를 이유로 none 으로 하지 않는다.",
++            "- 배너(upsert)는 **글(이미지 글자 포함)에 게임 안 이벤트 · 가챠임이 드러날 때만** — 「チャレンジライブイベント」 「イベント報酬」 「イベントpt」 「ガチャ」 「ゲーム内」 「イベントストーリー」 「(밴드 이름)初イベント」 「イベント「제목」予告」 같은 표현이 있을 때 · 캐릭터 줄거리를 소개하는 이벤트 예고도 게임 안 이벤트다. "
++            "그런 표현 없이 「A×『BanG Dream! Our Notes』」 처럼 외부 기업 · 철도 · 지자체 · 카페 · 매장 · 영화와 손잡은 콜라보, 오프라인 이벤트 · 토크쇼 · 사인회 · 전시 · 스탬프 랠리, "
++            "광고 게재, 굿즈 · 특전 · 시리얼 코드 배포, 캠페인 → action=notice(배너가 아니라 일반 소식으로 올린다 — 이미 열리고 있다는 현장 소식 · 광고 게재 중 안내도 notice). "
++            "보이스 드라마 · 토크 무비 · 승차 특전처럼 콜라보에 딸린 콘텐츠가 있어도, 게임 안 이벤트 · 가챠라고 적혀 있지 않으면 notice 다. notice 일 때 event_* · gacha_* 는 null.",
+             "- 현재 배너 목록의 행사와 같은 행사인데 새 사실(기간 · 가챠 · 곡)이 없고 「이 후 18:00 개최」 같은 당일 재공지 · 참여 독려뿐 → none.",
+             "- 단, 당일 재공지라도 글이 알리는 개최 시각이 현재 배너 목록의 시작 시각과 다르면 새 사실(시작 변경)이므로 upsert 하고 event_start_jst 에 새 시각을 준다.",
+             "- 새 행사 또는 기존 행사의 새 사실(개최일 · 종료일 · 가챠 · 신곡) → upsert. 기존 행사면 banner_ref 에 그 id.",
+@@ -908,6 +914,12 @@ class LLMClient:
+         else:
+             rules.append("- image_roles 는 빈 배열 [] 로 준다.")
+         rules += [
++            "- post_kind: 글의 종류를 먼저 하나 고른다 — game_event(게임 안 기간 한정 이벤트 · 그 예고 · 진행 중 안내 · 이벤트 스토리 예고 · 줄거리 · 「初イベント」 소개 · 보상 · 遊び方) · gacha(가챠) · "
++            "game_notice(게임 운영 공지: 점검 · 사과 · 보상 배포 · 불편 · 로그인 보너스 — 라이브 · 영화 「開催記念」 「公開記念」 로그인 보너스도 여기 · 곡 · MV 추가 · 업데이트 · 밸런스 · 시리얼 코드 사용 안내) · "
++            "broadcast(생방송 · 정보 방송 · 방송 프로그램 안내) · "
++            "outside(외부 기업 · 철도 · 영화 등과의 게임 밖 콜라보 · 오프라인 행사 · 토크쇼 · 사인회 · 광고 게재 · 굿즈 · 특전 · 캠페인 — 게임 안 이벤트 · 가챠라는 말이 없는 것. "
++            "밴드 · 캐릭터 이야기를 소개하는 이벤트 예고는 outside 가 아니라 game_event) · other. "
++            "action 은 post_kind 와 맞아야 한다: outside → notice, game_notice · broadcast · other → none.",
+             "- reason 에 판정 근거를 한국어 한 문장으로 쓴다.",
+             "JSON 포맷만 출력.",
+         ]
+@@ -926,7 +938,8 @@ class LLMClient:
+             "schema": {
+                 "type": "object",
+                 "properties": {
+-                    "action": {"type": "string", "enum": ["none", "upsert", "hold", "cancel"]},
++                    "post_kind": {"type": "string", "enum": ["game_event", "gacha", "game_notice", "broadcast", "outside", "other"]},
++                    "action": {"type": "string", "enum": ["none", "upsert", "hold", "cancel", "notice"]},
+                     "banner_ref": {"type": ["string", "null"], "enum": [*ids, None]},
+                     "event_name_ja": nstr, "event_name_ko": nstr,
+                     "event_start_jst": nstr, "event_end_jst": nstr,
+@@ -937,7 +950,7 @@ class LLMClient:
+                     "image_roles": {"type": "array", "items": {"type": "string", "enum": ["event", "gacha", "none"]}},
+                     "reason": {"type": "string"},
+                 },
+-                "required": ["action", "banner_ref", "event_name_ja", "event_name_ko", "event_start_jst", "event_end_jst",
++                "required": ["post_kind", "action", "banner_ref", "event_name_ja", "event_name_ko", "event_start_jst", "event_end_jst",
+                              "permanent", "gacha_title_ja", "gacha_title_ko", "gacha_start_jst", "gacha_end_jst",
+                              "image_for", "image_roles", "reason"],
+                 "additionalProperties": False,
+@@ -959,24 +972,31 @@ class LLMClient:
+             except json.JSONDecodeError:
+                 logger.info(f"banner_judge: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                 continue
+-            if not isinstance(r, dict) or r.get("action") not in ("none", "upsert", "hold", "cancel"):
++            if not isinstance(r, dict) or r.get("action") not in ("none", "upsert", "hold", "cancel", "notice"):
+                 logger.info(f"banner_judge: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
+                 continue
++            # (v4.5.9) 「소식으로」는 글 종류로 정한다 — action 만 물으면 같은 글에도 실행마다 흔들렸다(실측 13건 중 9~13건 일치).
++            # 게임 밖 콜라보 · 행사(outside)면 notice, 운영 공지 · 방송 안내 · 그 밖(game_notice · broadcast · other)이 notice 로 오면 none.
++            pk = r.get("post_kind")
++            if pk == "outside" and r["action"] in ("none", "upsert"):
++                r["action"] = "notice"
++            elif r["action"] == "notice" and pk != "outside":
++                r["action"] = "none"
+             ev = None
+-            if r.get("event_name_ja") or r.get("event_start_jst") or r.get("event_end_jst"):
++            if r["action"] != "notice" and (r.get("event_name_ja") or r.get("event_start_jst") or r.get("event_end_jst")):
+                 ev = {"name_ja": _u(r.get("event_name_ja"), "ja"), "name_ko": _u(r.get("event_name_ko"), "ko"),
+                       "start_jst": r.get("event_start_jst"), "end_jst": r.get("event_end_jst"),
+                       "permanent": bool(r.get("permanent"))}
+             elif r.get("permanent"):
+                 ev = {"name_ja": None, "name_ko": None, "start_jst": None, "end_jst": None, "permanent": True}
+             ga = None
+-            if r.get("gacha_title_ja"):
++            if r["action"] != "notice" and r.get("gacha_title_ja"):
+                 ga = {"title_ja": _u(r.get("gacha_title_ja"), "ja"), "title_ko": _u(r.get("gacha_title_ko"), "ko"),
+                       "start_jst": r.get("gacha_start_jst"), "end_jst": r.get("gacha_end_jst")}
+             roles = [x if x in ("event", "gacha", "none") else "none" for x in (r.get("image_roles") or [])]
+             if n_img and len(roles) != n_img:
+                 roles = []                       # 장수가 안 맞으면 쓰지 않는다(호출부가 image_for 로 대신 정함)
+-            return {"action": r["action"], "banner_ref": r.get("banner_ref") if r.get("banner_ref") in ids else None,
++            return {"action": r["action"], "post_kind": pk, "banner_ref": r.get("banner_ref") if r.get("banner_ref") in ids else None,
+                     "event": ev, "gacha": ga, "image_for": r.get("image_for") or "none", "image_roles": roles,
+                     "reason": (r.get("reason") or "").strip()[:200]}
+ 
+diff --git a/src/backend/telegram_app.py b/src/backend/telegram_app.py
+index e43dd80..a816907 100644
+--- a/src/backend/telegram_app.py
++++ b/src/backend/telegram_app.py
+@@ -2970,6 +2970,7 @@ _BANNER_VERDICT = {
+     "dup": "행사 배너 — 이미 반영한 글",
+     "invalid": "행사 배너 — 판정 값 검증 실패(올리지 않음)",
+     "skip_permanent": "행사 배너 — 상시화된 행사(올리지 않음)",
++    "notice": "행사 배너 아님 — 게임 밖 콜라보 · 행사라 소식으로",   # (v4.5.9)
+     "error": "행사 배너 — 반영 실패",
+     "llm_failed": "행사 배너 — 판정 LLM 실패(올리지 않음)",
+ }
+@@ -3194,6 +3195,18 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
+         _dm_lost_raw("행사 판정 LLM 실패 — 올리지 않음", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
+         return {"ok": True, "banner": "llm_failed", "detail": prepared["failed"]}, 200
+     j = prepared["judgement"]
++    if j.get("action") == "notice":
++        # (v4.5.9 운영자 결정) 게임 밖 콜라보 · 행사(게임 안 이벤트 스토리 · 가챠 없음 — 예: 2026-10-20 JR 도카이 × Our Notes 「推し旅」)는
++        # 행사 배너가 아니라 일반 소식으로. 소식 파이프라인(제목 추출 · 번역 · 중복 판정)을 그대로 탄다. 배너 쪽은 바꾸지 않으므로 되돌릴 데이터가 없다(검토용 기록) —
++        # 잘못 올라간 소식은 관리 페이지 소식 탭에서 지운다.
++        flowtrace.mark("행사 판정", "done", "게임 밖 콜라보 · 행사 → 소식으로")
++        nmode = _maybe_auto_notice(raw, now_iso, tag=x_tag, title=title)
++        _llm_record(gh, "banner_judge", acct, f"{_BANNER_VERDICT['notice']} (소식 {nmode})",
++                    j.get("reason") or "", undo=None, now_iso=now_iso,
++                    input=_inp(raw, tag=x_tag, acct=acct, media=(prepared.get("post") or {}).get("media")))
++        _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=acct, via="ingest",
++                        detail=f"banner mode: notice · 소식 {nmode}"[:200])
++        return {"ok": True, "banner": "notice", "detail": f"소식 {nmode}"}, 200
+     try:
+         result = writeclient.call_write("apply_banner", gh=gh, prepared=prepared, now_iso=now_iso,
+                                         label=_banner_label(prepared))
+@@ -4820,7 +4833,10 @@ def _need_cfg_name(channel_key: str) -> tuple[dict, str, str]:
+ def _run_banner(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+     raw, tag = inp.get("raw") or "", inp.get("tag") or ""
+     acct = inp.get("acct") or e.get("who") or ""
+-    if mode == "user":
++    if mode == "user" and dec.get("choice") == "notice":     # (v4.5.9) 게임 밖 콜라보 · 행사 → 소식으로
++        ctx["forced"]["banner"] = {"action": "notice", "banner_ref": None, "event": None, "gacha": None,
++                                   "image_for": "none", "image_roles": [], "reason": "사용자 판단 — 소식으로"}
++    elif mode == "user":
+         if dec.get("choice") != "register":
+             _user_noop(gh, e, "행사 배너 — 사용자 판단: 올리지 않음", now_iso)
+             return "사용자 판단: 올리지 않음 (변경 없음)"
+@@ -7050,6 +7066,26 @@ if __name__ == "__main__":
+     assert _game_account(None, "夢限大みゅーたいぷ", _gcfg) is None and _game_account(None, "", _gcfg) is None
+     assert _game_account({"author": "bang_dream_on"}, "", {"game_accounts": {}}) is None
+ 
++    # (v4.5.9) 행사 판정 notice = 게임 밖 콜라보 · 행사 → 배너를 안 건드리고 소식 파이프라인으로
++    _saved = (_prepare_banner, _maybe_auto_notice, _llm_record, _log_event_safe, writeclient.call_write)
++    _calls = []
++    try:
++        _prepare_banner = lambda *a, **k: {"judgement": {"action": "notice", "banner_ref": None, "event": None, "gacha": None,
++                                                         "image_for": "none", "image_roles": [], "reason": "JR 콜라보"},
++                                           "post": {"tweet_id": "1", "media": []}}
++        _maybe_auto_notice = lambda raw, now_iso, tag=None, title=None: _calls.append(("notice", raw)) or "added"
++        _llm_record = lambda gh, kind, who, summary, reason, **k: _calls.append(("llm", kind, summary, k.get("undo")))
++        _log_event_safe = lambda *a, **k: None
++        writeclient.call_write = lambda *a, **k: (_ for _ in ()).throw(AssertionError("배너 쓰기를 부르면 안 된다"))
++        _nb, _nc = _banner_ingest_core("📢#推し旅 コラボ開催決定！", "", None, "p#1", "バンドリ！アワーノーツ",
++                                       "2026-10-20T05:44:00Z", object(), "bang_dream_on")
++    finally:
++        _prepare_banner, _maybe_auto_notice, _llm_record, _log_event_safe, writeclient.call_write = _saved
++    assert _nc == 200 and _nb["banner"] == "notice" and _nb["detail"] == "소식 added", _nb
++    assert _calls[0] == ("notice", "📢#推し旅 コラボ開催決定！"), _calls
++    assert _calls[1][1] == "banner_judge" and "소식" in _calls[1][2] and _calls[1][3] is None, _calls   # 검토용 기록(되돌릴 데이터 없음)
++    print("  ✓ (v4.5.9) 행사 판정 notice → 소식 파이프라인 · 배너 쓰기 없음")
++
+     class _MemGH:
+         """read_json/write_json 만 흉내 내는 메모리 저장소(sha = 쓰기 횟수)."""
+         def __init__(self):
