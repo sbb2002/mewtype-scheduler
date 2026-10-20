@@ -1,0 +1,995 @@
+09-07 09:24:51.063 I 51@2: Resumed after restart
+09-07 09:24:51.064 I 51@2: Notification posted?
+09-07 09:25:21.871 I 51@12: Expression true?
+09-07 09:25:21.871 I 51@2: Notification posted?
+09-07 09:25:21.874 I 51@12: Expression true?
+09-07 09:25:21.874 I 51@2: Notification posted?
+09-07 09:27:47.624 I 51@2: Notification posted?
+09-07 09:27:47.631 I 51@2: Notification posted?
+09-07 10:31:33.449 I 51@12: Expression true?
+09-07 10:31:33.451 I 51@2: Notification posted?
+09-07 10:31:33.461 I 51@12: Expression true?
+09-07 10:31:33.464 I 51@13: Variable set
+09-07 10:31:33.466 I 51@6: HTTP request
+09-07 10:31:48.845 F 51@6: java.net.SocketException: Socket closed
+09-07 10:31:48.914 I 51@6: Stopped by failure
+09-07 10:47:07.514 I 52@1: Flow beginning
+09-07 10:47:07.514 I 52@2: Notification posted?
+09-07 10:50:40.058 I 52@2: Stopped by user
+09-07 10:50:40.805 I 53@1: Flow beginning
+09-07 10:50:40.805 I 53@2: Notification posted?
+09-07 10:50:46.972 I 53@2: Notification posted?
+09-07 10:50:46.986 I 53@2: Notification posted?
+09-07 10:50:46.990 I 53@2: Notification posted?
+09-07 10:56:57.775 I 53@12: Expression true?
+09-07 10:56:57.776 I 53@2: Notification posted?
+09-07 10:56:57.782 I 53@12: Expression true?
+09-07 10:56:57.783 I 53@13: Variable set
+09-07 10:56:57.783 I 53@6: HTTP request
+09-07 10:57:02.987 U 53@11: android.title as String: jehy, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 1, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 1, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788746217749, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096779719727624611
+09-07 10:57:02.989 I 53@2: Notification posted?
+09-07 10:57:17.704 I 53@2: Notification posted?
+09-07 10:57:17.712 I 53@2: Notification posted?
+09-07 12:00:57.201 I 53@12: Expression true?
+09-07 12:00:57.204 I 53@2: Notification posted?
+09-07 12:00:57.218 I 53@12: Expression true?
+09-07 12:00:57.219 I 53@13: Variable set
+09-07 12:00:57.219 I 53@6: HTTP request
+09-07 12:01:12.173 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 💜配信よてい💜
+今夜9/7(月)20:00~歌枠🔥
+
+【歌枠】臨兵闘ｼｬ！皆陣烈在…… ＃アニメゆめみた
+🔗youtube.com/live/iWWGpo, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 💜配信よてい💜
+今夜9/7(月)20:00~歌枠🔥
+
+【歌枠】臨兵闘ｼｬ！皆陣烈在…… ＃アニメゆめみた
+🔗youtube.com/live/iWWGpo, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788750057146, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096795604856836521
+09-07 12:01:12.174 I 53@2: Notification posted?
+09-07 12:53:57.353 I 53@2: Notification posted?
+09-07 12:53:57.379 I 53@2: Notification posted?
+09-07 12:54:21.219 I 53@12: Expression true?
+09-07 12:54:21.220 I 53@2: Notification posted?
+09-07 12:54:21.986 I 53@2: Notification posted?
+09-07 12:54:22.204 I 53@12: Expression true?
+09-07 12:54:22.205 I 53@2: Notification posted?
+09-07 12:54:22.996 I 53@2: Notification posted?
+09-07 12:54:23.195 I 53@12: Expression true?
+09-07 12:54:23.195 I 53@2: Notification posted?
+09-07 12:54:44.781 I 53@12: Expression true?
+09-07 12:54:44.785 I 53@2: Notification posted?
+09-07 12:54:44.800 I 53@12: Expression true?
+09-07 12:54:44.800 I 53@2: Notification posted?
+09-07 12:54:44.804 I 53@12: Expression true?
+09-07 12:54:44.804 I 53@2: Notification posted?
+09-07 12:54:45.541 I 53@2: Notification posted?
+09-07 12:54:45.545 I 53@2: Notification posted?
+09-07 12:54:45.736 I 53@12: Expression true?
+09-07 12:54:45.737 I 53@2: Notification posted?
+09-07 12:54:45.747 I 53@12: Expression true?
+09-07 12:54:45.748 I 53@2: Notification posted?
+09-07 12:54:46.548 I 53@2: Notification posted?
+09-07 12:54:46.750 I 53@12: Expression true?
+09-07 12:54:46.751 I 53@2: Notification posted?
+09-07 12:55:10.358 I 53@2: Notification posted?
+09-07 12:55:10.375 I 53@2: Notification posted?
+09-07 12:55:10.381 I 53@2: Notification posted?
+09-07 13:06:28.821 I 53@12: Expression true?
+09-07 13:06:28.823 I 53@2: Notification posted?
+09-07 13:06:29.615 I 53@2: Notification posted?
+09-07 13:06:29.826 I 53@12: Expression true?
+09-07 13:06:29.827 I 53@2: Notification posted?
+09-07 13:06:30.622 I 53@2: Notification posted?
+09-07 13:06:30.826 I 53@12: Expression true?
+09-07 13:06:30.826 I 53@2: Notification posted?
+09-07 13:08:17.041 I 53@12: Expression true?
+09-07 13:08:17.041 I 53@2: Notification posted?
+09-07 13:08:17.048 I 53@12: Expression true?
+09-07 13:08:17.048 I 53@2: Notification posted?
+09-07 13:08:17.053 I 53@12: Expression true?
+09-07 13:08:17.053 I 53@2: Notification posted?
+09-07 13:08:17.057 I 53@12: Expression true?
+09-07 13:08:17.058 I 53@2: Notification posted?
+09-07 13:08:17.821 I 53@2: Notification posted?
+09-07 13:08:17.828 I 53@2: Notification posted?
+09-07 13:08:18.018 I 53@12: Expression true?
+09-07 13:08:18.018 I 53@2: Notification posted?
+09-07 13:08:18.036 I 53@12: Expression true?
+09-07 13:08:18.037 I 53@2: Notification posted?
+09-07 13:08:18.831 I 53@2: Notification posted?
+09-07 13:08:19.036 I 53@12: Expression true?
+09-07 13:08:19.037 I 53@2: Notification posted?
+09-07 14:34:08.196 I 53@2: Notification posted?
+09-07 14:34:08.210 I 53@2: Notification posted?
+09-07 14:34:08.220 I 53@2: Notification posted?
+09-07 14:49:26.233 I 53@12: Expression true?
+09-07 14:49:26.238 I 53@2: Notification posted?
+09-07 14:49:26.251 I 53@12: Expression true?
+09-07 14:49:26.252 I 53@13: Variable set
+09-07 14:49:26.252 I 53@6: HTTP request
+09-07 14:49:33.931 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: ꒰ １週間 #りつの配信予定 🐻꒱   
+
+今週も！よろしくお願いします！, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: ꒰ １週間 #りつの配信予定 🐻꒱   
+
+今週も！よろしくお願いします！, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788760166196, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096838223867875575
+09-07 14:49:33.933 I 53@2: Notification posted?
+09-07 14:50:26.306 I 53@2: Notification posted?
+09-07 14:50:26.311 I 53@2: Notification posted?
+09-07 15:03:01.501 I 53@12: Expression true?
+09-07 15:03:01.502 I 53@2: Notification posted?
+09-07 15:03:01.524 I 53@12: Expression true?
+09-07 15:03:01.525 I 53@13: Variable set
+09-07 15:03:01.525 I 53@6: HTTP request
+09-07 15:03:08.632 U 53@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @bang_dream_info: ／
+9/10(木)23:00~ 最終回 放送💫
+TVアニメ「バンドリ！ ゆめ∞みた」
+＼
+
+🛸＿＿＿＿＿
+
+＃13
+夢限大みゅーたいぷ
+
+＿＿＿＿＿＿🛸
+
+TOKYO MXほかにて放送＆
+ABEMA/Prime Video/dアニメストア/Hulu/U-NEXTほかにて地上波同時配信✨
+
+anime.bang-dream.com/yumemita/onair
+
+どうぞお見逃しなく！
+
+#バンドリ x.com/bang_dream_inf…, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @bang_dream_info: ／
+9/10(木)23:00~ 最終回 放送💫
+TVアニメ「バンドリ！ ゆめ∞みた」
+＼
+
+🛸＿＿＿＿＿
+
+＃13
+夢限大みゅーたいぷ
+
+＿＿＿＿＿＿🛸
+
+TOKYO MXほかにて放送＆
+ABEMA/Prime Video/dアニメストア/Hulu/U-NEXTほかにて地上波同時配信✨
+
+anime.bang-dream.com/yumemita/onair
+
+どうぞお見逃しなく！
+
+#バンドリ x.com/bang_dream_inf…, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788760981497, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096841331595518017
+09-07 15:03:08.633 I 53@2: Notification posted?
+09-07 15:04:57.338 I 53@12: Expression true?
+09-07 15:04:57.341 I 53@13: Variable set
+09-07 15:04:57.341 I 53@6: HTTP request
+09-07 15:05:02.118 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 【配信予定】 
+🩵 ･･････････････････････ 🩵
+
+　19：00
+【写真あり】イベント・ライブ振り返り雑談
+
+youtube.com/live/HkjQ3HJau…
+
+🩵 ････････････････････, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 【配信予定】 
+🩵 ･･････････････････････ 🩵
+
+　19：00
+【写真あり】イベント・ライブ振り返り雑談
+
+youtube.com/live/HkjQ3HJau…
+
+🩵 ････････････････････, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788761097286, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096842131654799680
+09-07 15:05:02.118 I 53@2: Notification posted?
+09-07 15:14:03.559 I 53@12: Expression true?
+09-07 15:14:03.560 I 53@13: Variable set
+09-07 15:14:03.560 I 53@6: HTTP request
+09-07 15:14:08.793 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: こっち見てきた, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: こっち見てきた, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788761643519, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096844373338337435
+09-07 15:14:08.794 I 53@2: Notification posted?
+09-07 15:30:14.685 I 53@2: Notification posted?
+09-07 15:30:15.424 I 53@2: Notification posted?
+09-07 15:30:16.151 I 53@2: Notification posted?
+09-07 15:30:16.159 I 53@2: Notification posted?
+09-07 17:03:53.689 I 53@12: Expression true?
+09-07 17:03:53.692 I 53@2: Notification posted?
+09-07 17:03:53.709 I 53@12: Expression true?
+09-07 17:03:53.710 I 53@13: Variable set
+09-07 17:03:53.710 I 53@6: HTTP request
+09-07 17:04:02.801 U 53@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: ＼入金期間本日21:00まで／
+
+🛸#バンドリ13thライブ
+DAY2 : 夢限大みゅーたいぷ
+「DIMENSIONAL OVERLAP」🛸
+at 東京ガーデンシアター
+
+プレイガイド先行でご当選された方の入金期間は
+【本日21:00】まで⏰
+
+ご入金がまだの方はお忘れなく🙇‍♀️
+
+▼ライブ詳細
+bang-dream.com/events/13th-li…
+
+#ゆめみた, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: ＼入金期間本日21:00まで／
+
+🛸#バンドリ13thライブ
+DAY2 : 夢限大みゅーたいぷ
+「DIMENSIONAL OVERLAP」🛸
+at 東京ガーデンシアター
+
+プレイガイド先行でご当選された方の入金期間は
+【本日21:00】まで⏰
+
+ご入金がまだの方はお忘れなく🙇‍♀️
+
+▼ライブ詳細
+bang-dream.com/events/13th-li…
+
+#ゆめみた, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788768233632, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096871096783900855
+09-07 17:04:02.802 I 53@2: Notification posted?
+09-07 17:34:05.609 I 53@12: Expression true?
+09-07 17:34:05.611 I 53@13: Variable set
+09-07 17:34:05.611 I 53@6: HTTP request
+09-07 17:34:13.785 U 53@11: android.title as String: 仲町あられ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @comic_growl: ◤✨カバーイラスト公開＆予約受付中✨◢
+10月8日発売決定
+『BanG Dream! ゆめ∞みた あられ∞あらぶレーション』第1巻！
+
+アニメゆめみたをあられなるままにコミカライズ!!
+紙コミックスにはヴァイスシュヴァルツの特典カードつき！
+
+comic-growl.com/store_items/21… pic.x.com/6nnF7TTBNw, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @comic_growl: ◤✨カバーイラスト公開＆予約受付中✨◢
+10月8日発売決定
+『BanG Dream! ゆめ∞みた あられ∞あらぶレーション』第1巻！
+
+アニメゆめみたをあられなるままにコミカライズ!!
+紙コミックスにはヴァイスシュヴァルツの特典カードつき！
+
+comic-growl.com/store_items/21… pic.x.com/6nnF7TTBNw, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788770045564, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096878830866850034
+09-07 17:34:13.787 I 53@2: Notification posted?
+09-07 17:40:41.009 I 53@12: Expression true?
+09-07 17:40:41.014 I 53@13: Variable set
+09-07 17:40:41.014 I 53@6: HTTP request
+09-07 17:40:45.444 U 53@11: android.title as String: 宮永ののか🐰🩹, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @BUSHIM_ongaku: 【今日は何の日？】
+
+1年前の2025年9月7日
+夢限大みゅーたいぷ 4th LIVE 「アンロック・ザ・フューチャー」（会場：TACHIKAWA STAGE GARDEN）を開催しました。
+
+#夢限大みゅーたいぷ
+#バンドリ
+
+▼本公演は1st Album「プログレス サイン」Blu-ray付き限定盤に収録！
+bushiroad-music.com/musics/brmm-10… pic.x.com/XPqafBH3n4, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @BUSHIM_ongaku: 【今日は何の日？】
+
+1年前の2025年9月7日
+夢限大みゅーたいぷ 4th LIVE 「アンロック・ザ・フューチャー」（会場：TACHIKAWA STAGE GARDEN）を開催しました。
+
+#夢限大みゅーたいぷ
+#バンドリ
+
+▼本公演は1st Album「プログレス サイン」Blu-ray付き限定盤に収録！
+bushiroad-music.com/musics/brmm-10… pic.x.com/XPqafBH3n4, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788770440980, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096881201860809159
+09-07 17:40:45.447 I 53@2: Notification posted?
+09-07 17:50:08.149 I 53@12: Expression true?
+09-07 17:50:08.153 I 53@2: Notification posted?
+09-07 17:50:08.638 I 53@12: Expression true?
+09-07 17:50:08.643 I 53@2: Notification posted?
+09-07 17:53:29.134 I 53@12: Expression true?
+09-07 17:53:29.137 I 53@2: Notification posted?
+09-07 17:53:30.302 I 53@12: Expression true?
+09-07 17:53:30.303 I 53@2: Notification posted?
+09-07 17:53:30.804 I 53@12: Expression true?
+09-07 17:53:30.805 I 53@2: Notification posted?
+09-07 17:53:36.572 I 53@12: Expression true?
+09-07 17:53:36.573 I 53@2: Notification posted?
+09-07 17:53:37.072 I 53@12: Expression true?
+09-07 17:53:37.073 I 53@2: Notification posted?
+09-07 17:53:37.581 I 53@12: Expression true?
+09-07 17:53:37.582 I 53@2: Notification posted?
+09-07 17:53:43.066 I 53@12: Expression true?
+09-07 17:53:43.067 I 53@2: Notification posted?
+09-07 17:53:43.551 I 53@12: Expression true?
+09-07 17:53:43.552 I 53@2: Notification posted?
+09-07 17:57:03.536 I 53@12: Expression true?
+09-07 17:57:03.536 I 53@2: Notification posted?
+09-07 17:57:04.851 I 53@12: Expression true?
+09-07 17:57:04.851 I 53@2: Notification posted?
+09-07 17:57:05.303 I 53@12: Expression true?
+09-07 17:57:05.304 I 53@2: Notification posted?
+09-07 17:57:14.835 I 53@12: Expression true?
+09-07 17:57:14.836 I 53@2: Notification posted?
+09-07 17:57:15.312 I 53@12: Expression true?
+09-07 17:57:15.313 I 53@2: Notification posted?
+09-07 18:00:01.632 I 53@12: Expression true?
+09-07 18:00:01.638 I 53@13: Variable set
+09-07 18:00:01.642 I 53@6: HTTP request
+09-07 18:00:13.282 U 53@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: ＼チケットプレイガイド先行開始📢／
+
+💪集え！#ゆめみた筋トレ部 
+　～輝け！上腕二頭筋～💪
+
+日程：11月21日(土)
+会場：GARDEN 新木場 FACTORY
+
+🎫お申し込みはこちら
+eplus.jp/yumemita_kinnt…
+
+昼の部・夜の部
+どちらもお見逃しなく✨
+
+#バンド, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: ＼チケットプレイガイド先行開始📢／
+
+💪集え！#ゆめみた筋トレ部 
+　～輝け！上腕二頭筋～💪
+
+日程：11月21日(土)
+会場：GARDEN 新木場 FACTORY
+
+🎫お申し込みはこちら
+eplus.jp/yumemita_kinnt…
+
+昼の部・夜の部
+どちらもお見逃しなく✨
+
+#バンド, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788771601567, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096886188376273312
+09-07 18:00:13.285 I 53@2: Notification posted?
+09-07 18:01:48.948 I 53@12: Expression true?
+09-07 18:01:48.956 I 53@2: Notification posted?
+09-07 18:01:51.459 I 53@2: Notification posted?
+09-07 18:03:33.483 I 53@12: Expression true?
+09-07 18:03:33.486 I 53@2: Notification posted?
+09-07 18:03:33.943 I 53@12: Expression true?
+09-07 18:03:33.945 I 53@2: Notification posted?
+09-07 18:03:34.461 I 53@12: Expression true?
+09-07 18:03:34.461 I 53@2: Notification posted?
+09-07 18:03:39.592 I 53@12: Expression true?
+09-07 18:03:39.596 I 53@2: Notification posted?
+09-07 18:03:40.119 I 53@12: Expression true?
+09-07 18:03:40.120 I 53@2: Notification posted?
+09-07 18:03:46.047 I 53@12: Expression true?
+09-07 18:03:46.048 I 53@2: Notification posted?
+09-07 18:03:46.517 I 53@12: Expression true?
+09-07 18:03:46.518 I 53@2: Notification posted?
+09-07 18:07:43.992 I 53@12: Expression true?
+09-07 18:07:43.994 I 53@2: Notification posted?
+09-07 18:07:45.057 I 53@12: Expression true?
+09-07 18:07:45.057 I 53@2: Notification posted?
+09-07 18:07:45.545 I 53@12: Expression true?
+09-07 18:07:45.546 I 53@2: Notification posted?
+09-07 18:07:51.018 I 53@12: Expression true?
+09-07 18:07:51.019 I 53@2: Notification posted?
+09-07 18:07:51.505 I 53@12: Expression true?
+09-07 18:07:51.506 I 53@2: Notification posted?
+09-07 18:07:52.071 I 53@12: Expression true?
+09-07 18:07:52.073 I 53@2: Notification posted?
+09-07 18:07:58.696 I 53@12: Expression true?
+09-07 18:07:58.696 I 53@2: Notification posted?
+09-07 18:07:59.172 I 53@12: Expression true?
+09-07 18:07:59.173 I 53@2: Notification posted?
+09-07 18:11:14.659 I 53@12: Expression true?
+09-07 18:11:14.660 I 53@2: Notification posted?
+09-07 18:11:15.527 I 53@12: Expression true?
+09-07 18:11:15.530 I 53@2: Notification posted?
+09-07 18:11:16.024 I 53@12: Expression true?
+09-07 18:11:16.025 I 53@2: Notification posted?
+09-07 18:11:24.011 I 53@12: Expression true?
+09-07 18:11:24.011 I 53@2: Notification posted?
+09-07 18:11:24.495 I 53@12: Expression true?
+09-07 18:11:24.498 I 53@2: Notification posted?
+09-07 18:13:42.703 I 53@12: Expression true?
+09-07 18:13:42.706 I 53@2: Notification posted?
+09-07 18:13:43.974 I 53@12: Expression true?
+09-07 18:13:43.975 I 53@2: Notification posted?
+09-07 18:13:44.510 I 53@12: Expression true?
+09-07 18:13:44.511 I 53@2: Notification posted?
+09-07 18:13:50.012 I 53@12: Expression true?
+09-07 18:13:50.012 I 53@2: Notification posted?
+09-07 18:13:50.514 I 53@12: Expression true?
+09-07 18:13:50.515 I 53@2: Notification posted?
+09-07 18:13:51.053 I 53@12: Expression true?
+09-07 18:13:51.054 I 53@2: Notification posted?
+09-07 18:13:56.389 I 53@12: Expression true?
+09-07 18:13:56.390 I 53@2: Notification posted?
+09-07 18:13:56.902 I 53@12: Expression true?
+09-07 18:13:56.903 I 53@2: Notification posted?
+09-07 18:17:36.512 I 53@12: Expression true?
+09-07 18:17:36.514 I 53@2: Notification posted?
+09-07 18:17:37.831 I 53@12: Expression true?
+09-07 18:17:37.832 I 53@2: Notification posted?
+09-07 18:17:38.333 I 53@12: Expression true?
+09-07 18:17:38.334 I 53@2: Notification posted?
+09-07 18:17:43.972 I 53@12: Expression true?
+09-07 18:17:43.972 I 53@2: Notification posted?
+09-07 18:17:44.458 I 53@12: Expression true?
+09-07 18:17:44.459 I 53@2: Notification posted?
+09-07 18:21:18.314 I 53@12: Expression true?
+09-07 18:21:18.318 I 53@2: Notification posted?
+09-07 18:21:18.323 I 53@12: Expression true?
+09-07 18:21:18.324 I 53@2: Notification posted?
+09-07 18:21:18.341 I 53@12: Expression true?
+09-07 18:21:18.342 I 53@2: Notification posted?
+09-07 18:21:18.351 I 53@12: Expression true?
+09-07 18:21:18.351 I 53@2: Notification posted?
+09-07 18:21:24.313 I 53@2: Notification posted?
+09-07 18:22:08.145 I 53@12: Expression true?
+09-07 18:22:08.150 I 53@2: Notification posted?
+09-07 18:22:08.651 I 53@12: Expression true?
+09-07 18:22:08.653 I 53@2: Notification posted?
+09-07 18:22:09.156 I 53@12: Expression true?
+09-07 18:22:09.157 I 53@2: Notification posted?
+09-07 18:22:48.661 I 53@12: Expression true?
+09-07 18:22:48.666 I 53@2: Notification posted?
+09-07 18:22:51.135 I 53@12: Expression true?
+09-07 18:22:51.136 I 53@2: Notification posted?
+09-07 18:22:51.140 I 53@12: Expression true?
+09-07 18:22:51.141 I 53@2: Notification posted?
+09-07 18:22:51.143 I 53@2: Notification posted?
+09-07 18:24:41.590 I 53@2: Notification posted?
+09-07 18:24:41.609 I 53@2: Notification posted?
+09-07 18:24:41.615 I 53@2: Notification posted?
+09-07 18:24:41.619 I 53@2: Notification posted?
+09-07 18:24:41.625 I 53@2: Notification posted?
+09-07 18:24:41.631 I 53@2: Notification posted?
+09-07 18:24:41.636 I 53@2: Notification posted?
+09-07 19:08:52.929 I 53@12: Expression true?
+09-07 19:08:52.932 I 53@2: Notification posted?
+09-07 19:08:52.967 I 53@12: Expression true?
+09-07 19:08:52.967 I 53@13: Variable set
+09-07 19:08:52.968 I 53@6: HTTP request
+09-07 19:09:02.040 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 配信はじめます！
+YouTubeは、ゲーミングサムネイルからちゃんとしたサムネイルにすり変わりました。, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 配信はじめます！
+YouTubeは、ゲーミングサムネイルからちゃんとしたサムネイルにすり変わりました。, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788775732890, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096901511838371854
+09-07 19:09:02.041 I 53@2: Notification posted?
+09-07 19:46:03.292 I 53@2: Notification posted?
+09-07 19:46:03.320 I 53@2: Notification posted?
+09-07 20:05:24.410 I 53@12: Expression true?
+09-07 20:05:24.414 I 53@2: Notification posted?
+09-07 20:05:24.423 I 53@12: Expression true?
+09-07 20:05:24.424 I 53@13: Variable set
+09-07 20:05:24.425 I 53@6: HTTP request
+09-07 20:05:31.336 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: はじまる🔥, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: はじまる🔥, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788779124376, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096916469829521437
+09-07 20:05:31.339 I 53@2: Notification posted?
+09-07 20:09:01.214 I 53@2: Notification posted?
+09-07 20:09:01.228 I 53@2: Notification posted?
+09-07 20:46:51.088 I 53@12: Expression true?
+09-07 20:46:51.092 I 53@2: Notification posted?
+09-07 20:46:51.195 I 53@12: Expression true?
+09-07 20:46:51.196 I 53@13: Variable set
+09-07 20:46:51.196 I 53@6: HTTP request
+09-07 20:46:56.323 U 53@11: android.title as String: 宮永ののか🐰🩹, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @bang_dream_1242: 🙋‍♀️まもなく20:30〜🎙
+#ニッポン放送
+📻「話しTARINAI！キズナラジオ！」
+
+🎙夢限大みゅーたいぷ 宮永ののかさん
+🎙夢限大みゅーたいぷ 藤都子さん
+
+愛美さんが、2人をゲストに迎えて恒例企画「ゆめみたシンクロチャレンジ」に挑戦します✨
+#バンドリキズナラジオ
+radiko.jp/share/?sid=LFR… pic.x.com/eYcArJUkO4, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @bang_dream_1242: 🙋‍♀️まもなく20:30〜🎙
+#ニッポン放送
+📻「話しTARINAI！キズナラジオ！」
+
+🎙夢限大みゅーたいぷ 宮永ののかさん
+🎙夢限大みゅーたいぷ 藤都子さん
+
+愛美さんが、2人をゲストに迎えて恒例企画「ゆめみたシンクロチャレンジ」に挑戦します✨
+#バンドリキズナラジオ
+radiko.jp/share/?sid=LFR… pic.x.com/eYcArJUkO4, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788781611074, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096928083089715371
+09-07 20:46:56.325 I 53@2: Notification posted?
+09-07 21:12:00.751 I 53@12: Expression true?
+09-07 21:12:00.754 I 53@13: Variable set
+09-07 21:12:00.755 I 53@6: HTTP request
+09-07 21:12:05.989 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 臨
+兵
+闘
+ｼｬ！
+皆
+陣
+烈
+在
+ぜ～～～～～～～～～～～～～ん！
+⠀
+🔥セトリ🔥
+限界現実サバイブ天使
+LET'Sあちあちトレーニング！
+悪霊さんいらっしゃい！！
+レッツゴー!陰陽師
+＃みるみやこ, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 臨
+兵
+闘
+ｼｬ！
+皆
+陣
+烈
+在
+ぜ～～～～～～～～～～～～～ん！
+⠀
+🔥セトリ🔥
+限界現実サバイブ天使
+LET'Sあちあちトレーニング！
+悪霊さんいらっしゃい！！
+レッツゴー!陰陽師
+＃みるみやこ, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788783120694, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096934335773552951
+09-07 21:12:05.990 I 53@2: Notification posted?
+09-07 21:12:51.284 I 53@12: Expression true?
+09-07 21:12:51.285 I 53@13: Variable set
+09-07 21:12:51.285 I 53@6: HTTP request
+09-07 21:12:56.321 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: #バンドリキズナラジオ
+先週に引き続きののちゃんと一緒に出演させていただいております✨🐰🐶✨
+あ～かいぶもございますのでお聴きのがしなく♪, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: #バンドリキズナラジオ
+先週に引き続きののちゃんと一緒に出演させていただいております✨🐰🐶✨
+あ～かいぶもございますのでお聴きのがしなく♪, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788783171256, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096934716201173039
+09-07 21:12:56.322 I 53@2: Notification posted?
+09-07 21:23:29.412 I 53@12: Expression true?
+09-07 21:23:29.413 I 53@13: Variable set
+09-07 21:23:29.413 I 53@6: HTTP request
+09-07 21:23:34.587 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 🔥#ゆめみた筋トレ部 🔥
+奇跡の筋トレ部イベント第2回
+チケットプレイガイド先行がはじまりました❣
+
+筋トレダンスをみんなにやらせ
+みんなでいい汗流すイベント！
+ぽまえら、あちあちに、なりたいよなぁ？
+
+あつまえ～～～～～～❤️‍🔥
+🦆🦆🦆🦆🦆💨💨💨💨💨, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 🔥#ゆめみた筋トレ部 🔥
+奇跡の筋トレ部イベント第2回
+チケットプレイガイド先行がはじまりました❣
+
+筋トレダンスをみんなにやらせ
+みんなでいい汗流すイベント！
+ぽまえら、あちあちに、なりたいよなぁ？
+
+あつまえ～～～～～～❤️‍🔥
+🦆🦆🦆🦆🦆💨💨💨💨💨, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788783809391, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096937034321711205
+09-07 21:23:34.588 I 53@2: Notification posted?
+09-07 21:24:56.915 I 53@12: Expression true?
+09-07 21:24:56.918 I 53@13: Variable set
+09-07 21:24:56.918 I 53@6: HTTP request
+09-07 21:25:02.772 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @comic_growl: ◤✨カバーイラスト公開＆予約受付中✨◢
+10月8日発売決定
+『BanG Dream! ゆめ∞みた あられ∞あらぶレーション』第1巻！
+
+アニメゆめみたをあられなるままにコミカライズ!!
+紙コミックスにはヴァイスシュヴァルツの特典カードつき！
+
+comic-growl.com/store_items/21… pic.x.com/6nnF7TTBNw, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @comic_growl: ◤✨カバーイラスト公開＆予約受付中✨◢
+10月8日発売決定
+『BanG Dream! ゆめ∞みた あられ∞あらぶレーション』第1巻！
+
+アニメゆめみたをあられなるままにコミカライズ!!
+紙コミックスにはヴァイスシュヴァルツの特典カードつき！
+
+comic-growl.com/store_items/21… pic.x.com/6nnF7TTBNw, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788783896880, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096937760217326056
+09-07 21:25:02.773 I 53@2: Notification posted?
+09-07 21:41:30.613 I 53@12: Expression true?
+09-07 21:41:30.617 I 53@13: Variable set
+09-07 21:41:30.617 I 53@6: HTTP request
+09-07 21:41:38.951 U 53@11: android.title as String: 宮永ののか🐰🩹, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @bang_dream_1242: #ニッポン放送 「話しTARINAI！キズナラジオ！」  
+
+🙋‍♀️お聴き頂きありがとうございました🎵
+
+OA後でもradikoのアーカイブが聴けます👇
+radiko.jp/share/?sid=LFR…
+
+#バンドリキズナラジオ での感想ポストもよろしくお願いします😊 pic.x.com/DxYvfxTt0H, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @bang_dream_1242: #ニッポン放送 「話しTARINAI！キズナラジオ！」  
+
+🙋‍♀️お聴き頂きありがとうございました🎵
+
+OA後でもradikoのアーカイブが聴けます👇
+radiko.jp/share/?sid=LFR…
+
+#バンドリキズナラジオ での感想ポストもよろしくお願いします😊 pic.x.com/DxYvfxTt0H, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788784890547, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096941927199646029
+09-07 21:41:38.953 I 53@2: Notification posted?
+09-07 21:54:53.084 I 53@12: Expression true?
+09-07 21:54:53.086 I 53@13: Variable set
+09-07 21:54:53.087 I 53@6: HTTP request
+09-07 21:55:02.808 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 【配信予定】 
+🩵 ･･････････････････････ 🩵
+
+9/8(火)　21:00-
+
+【チラズアート新作ホラゲー続き！雪かきだけで終わらせない
+
+youtube.com/live/bgzve7Y7S…
+
+🩵 ････････････････････, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 【配信予定】 
+🩵 ･･････････････････････ 🩵
+
+9/8(火)　21:00-
+
+【チラズアート新作ホラゲー続き！雪かきだけで終わらせない
+
+youtube.com/live/bgzve7Y7S…
+
+🩵 ････････････････････, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788785693004, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096945292105199795
+09-07 21:55:02.811 I 53@2: Notification posted?
+09-07 22:02:17.173 I 53@2: Notification posted?
+09-07 22:02:17.194 I 53@2: Notification posted?
+09-07 22:02:17.201 I 53@2: Notification posted?
+09-07 22:02:17.208 I 53@2: Notification posted?
+09-07 22:02:17.221 I 53@2: Notification posted?
+09-07 22:02:17.228 I 53@2: Notification posted?
+09-07 22:02:17.233 I 53@2: Notification posted?
+09-07 22:02:17.238 I 53@2: Notification posted?
+09-07 22:02:17.244 I 53@2: Notification posted?
+09-07 22:02:17.254 I 53@2: Notification posted?
+09-07 22:08:11.735 I 53@12: Expression true?
+09-07 22:08:11.740 I 53@2: Notification posted?
+09-07 22:08:11.753 I 53@12: Expression true?
+09-07 22:08:11.754 I 53@13: Variable set
+09-07 22:08:11.755 I 53@6: HTTP request
+09-07 22:08:20.314 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 4thライブから1年経ったんだ、
+アニメ発表されたり、顔出しアンロックされたり、また新たなゆめみたがスタートした日でもありました。
+成長コンテンツゆめみた、これからもずっとすくすくのびのび、走ります！
+そしてインスタに1st衣装りつ載せました(,,- -,,)
+instagram.com/p/Dc_K4zEygNN/…, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 4thライブから1年経ったんだ、
+アニメ発表されたり、顔出しアンロックされたり、また新たなゆめみたがスタートした日でもありました。
+成長コンテンツゆめみた、これからもずっとすくすくのびのび、走ります！
+そしてインスタに1st衣装りつ載せました(,,- -,,)
+instagram.com/p/Dc_K4zEygNN/…, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788786491679, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096948641303064937
+09-07 22:08:20.316 I 53@2: Notification posted?
+09-07 22:11:01.924 I 53@12: Expression true?
+09-07 22:11:01.931 I 53@13: Variable set
+09-07 22:11:01.932 I 53@6: HTTP request
+09-07 22:11:07.143 U 53@11: android.title as String: 峰月律, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 4thライブから1年経ったんだ、
+アニメ発表されたり、顔出しアンロックされたり、また新たなゆめみたがスタートした日でもありました。
+成長コンテンツゆめみた、これからもずっとすくすくのびのび、走ります！
+そしてインスタに1st衣装りつ載せました(,,- -,,)
+
+ instagram.com/p/Dc_K4zEygNN/…, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 4thライブから1年経ったんだ、
+アニメ発表されたり、顔出しアンロックされたり、また新たなゆめみたがスタートした日でもありました。
+成長コンテンツゆめみた、これからもずっとすくすくのびのび、走ります！
+そしてインスタに1st衣装りつ載せました(,,- -,,)
+
+ instagram.com/p/Dc_K4zEygNN/…, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788786661872, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096949357354578194
+09-07 22:11:07.143 I 53@2: Notification posted?
+09-07 22:32:17.994 I 53@2: Notification posted?
+09-07 22:32:18.032 I 53@2: Notification posted?
+09-07 22:32:18.040 I 53@2: Notification posted?
+09-07 22:40:47.519 I 53@12: Expression true?
+09-07 22:40:47.521 I 53@2: Notification posted?
+09-07 22:40:47.532 I 53@12: Expression true?
+09-07 22:40:47.533 I 53@13: Variable set
+09-07 22:40:47.533 I 53@6: HTTP request
+09-07 22:40:56.199 U 53@11: android.title as String: 藤都子, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @240y_k: 昨日の余韻～
+#BMFES_2026_day2 pic.x.com/5lZa0D1Fw0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @240y_k: 昨日の余韻～
+#BMFES_2026_day2 pic.x.com/5lZa0D1Fw0, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788788447484, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2096956845671997598
+09-07 22:40:56.201 I 53@2: Notification posted?
+09-07 22:41:58.510 I 53@12: Expression true?
+09-07 22:41:58.513 I 53@2: Notification posted?
+09-07 22:41:59.285 I 53@2: Notification posted?
+09-07 22:41:59.503 I 53@12: Expression true?
+09-07 22:41:59.503 I 53@2: Notification posted?
+09-07 22:42:00.286 I 53@2: Notification posted?
+09-07 22:42:00.486 I 53@12: Expression true?
+09-07 22:42:00.486 I 53@2: Notification posted?
+09-07 22:42:40.991 I 53@2: Notification posted?
+09-07 22:42:45.662 I 53@2: Notification posted?
+09-07 22:42:45.666 I 53@2: Notification posted?
+09-07 22:48:24.090 I 53@12: Expression true?
+09-07 22:48:24.094 I 53@2: Notification posted?
+09-07 22:48:24.105 I 53@12: Expression true?
+09-07 22:48:24.107 I 53@13: Variable set
+09-07 22:48:24.108 I 53@6: HTTP request
+09-07 22:48:39.430 F 53@6: java.net.SocketException: Socket closed
+09-07 22:48:39.500 I 53@6: Stopped by failure
+09-08 09:48:31.773 I 54@1: Flow beginning
+09-08 09:48:31.774 I 54@2: Notification posted?
+09-08 10:07:37.552 I 54@12: Expression true?
+09-08 10:07:37.556 I 54@2: Notification posted?
+09-08 10:07:38.530 I 54@12: Expression true?
+09-08 10:07:38.531 I 54@2: Notification posted?
+09-08 10:07:39.534 I 54@12: Expression true?
+09-08 10:07:39.534 I 54@2: Notification posted?
+09-08 10:07:40.358 I 54@2: Notification posted?
+09-08 10:07:40.566 I 54@12: Expression true?
+09-08 10:07:40.567 I 54@2: Notification posted?
+09-08 10:07:41.369 I 54@2: Notification posted?
+09-08 10:07:41.565 I 54@12: Expression true?
+09-08 10:07:41.565 I 54@2: Notification posted?
+09-08 10:27:10.185 I 54@12: Expression true?
+09-08 10:27:10.187 I 54@2: Notification posted?
+09-08 10:27:10.192 I 54@12: Expression true?
+09-08 10:27:10.193 I 54@2: Notification posted?
+09-08 10:27:11.363 I 54@2: Notification posted?
+09-08 10:37:13.301 I 54@12: Expression true?
+09-08 10:37:13.304 I 54@13: Variable set
+09-08 10:37:13.304 I 54@6: HTTP request
+09-08 10:37:17.218 U 54@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @bang_dream_info: 【お便り募集✉】
+ 
+「#バンドリTVLIVE 2026」では
+皆様からのお便りを募集中✉✨
+ 
+第331回にご出演のキャストさんへのメッセージをお送りください❣
+皆様からのメール、お待ちしています🎵
+ 
+メールはこちらから👇
+bang-dream.com/news/2392/
+#バンドリ #バンドリTVLIVE, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @bang_dream_info: 【お便り募集✉】
+ 
+「#バンドリTVLIVE 2026」では
+皆様からのお便りを募集中✉✨
+ 
+第331回にご出演のキャストさんへのメッセージをお送りください❣
+皆様からのメール、お待ちしています🎵
+ 
+メールはこちらから👇
+bang-dream.com/news/2392/
+#バンドリ #バンドリTVLIVE, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788831433267, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097137139200995754
+09-08 10:37:17.220 I 54@2: Notification posted?
+09-08 11:06:41.946 I 54@2: Notification posted?
+09-08 12:04:23.367 I 54@12: Expression true?
+09-08 12:04:23.370 I 54@13: Variable set
+09-08 12:04:23.370 I 54@6: HTTP request
+09-08 12:04:35.348 U 54@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @bang_dream_info: ／
+TVアニメ「バンドリ！ ゆめ∞みた」
+#13 のあらすじ&先行カット公開✨
+＼
+
+#13「夢限大みゅーたいぷ」
+anime.bang-dream.com/yumemita/story/
+
+毎週木曜23:00より
+TOKYO MXほか各局＆
+各配信プラットフォームにて放送・配信中🛸
+お見逃しなく👀💫
+
+#バンドリ #アニメゆめみた, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @bang_dream_info: ／
+TVアニメ「バンドリ！ ゆめ∞みた」
+#13 のあらすじ&先行カット公開✨
+＼
+
+#13「夢限大みゅーたいぷ」
+anime.bang-dream.com/yumemita/story/
+
+毎週木曜23:00より
+TOKYO MXほか各局＆
+各配信プラットフォームにて放送・配信中🛸
+お見逃しなく👀💫
+
+#バンドリ #アニメゆめみた, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788836663342, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097158897920544777
+09-08 12:04:35.350 I 54@2: Notification posted?
+09-08 12:27:06.225 I 54@12: Expression true?
+09-08 12:27:06.228 I 54@13: Variable set
+09-08 12:27:06.229 I 54@6: HTTP request
+09-08 12:27:14.310 U 54@11: android.title as String: 宮永ののか🐰🩹, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: やっぴー🎶, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: やっぴー🎶, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788838026173, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097162797763412235
+09-08 12:27:14.311 I 54@2: Notification posted?
+09-08 12:38:21.519 I 54@12: Expression true?
+09-08 12:38:21.519 I 54@2: Notification posted?
+09-08 12:44:47.247 I 54@12: Expression true?
+09-08 12:44:47.252 I 54@2: Notification posted?
+09-08 12:44:48.014 I 54@2: Notification posted?
+09-08 12:44:48.223 I 54@12: Expression true?
+09-08 12:44:48.223 I 54@2: Notification posted?
+09-08 12:44:49.019 I 54@2: Notification posted?
+09-08 12:44:49.221 I 54@12: Expression true?
+09-08 12:44:49.222 I 54@2: Notification posted?
+09-08 12:45:02.139 I 54@12: Expression true?
+09-08 12:45:02.140 I 54@2: Notification posted?
+09-08 12:45:02.145 I 54@12: Expression true?
+09-08 12:45:02.146 I 54@2: Notification posted?
+09-08 12:45:02.150 I 54@12: Expression true?
+09-08 12:45:02.151 I 54@2: Notification posted?
+09-08 12:45:02.920 I 54@2: Notification posted?
+09-08 12:45:02.926 I 54@2: Notification posted?
+09-08 12:45:03.122 I 54@12: Expression true?
+09-08 12:45:03.123 I 54@2: Notification posted?
+09-08 12:45:03.137 I 54@12: Expression true?
+09-08 12:45:03.138 I 54@2: Notification posted?
+09-08 12:45:03.936 I 54@2: Notification posted?
+09-08 12:45:04.127 I 54@12: Expression true?
+09-08 12:45:04.128 I 54@2: Notification posted?
+09-08 12:45:29.431 I 54@2: Notification posted?
+09-08 12:45:29.437 I 54@2: Notification posted?
+09-08 12:45:29.443 I 54@2: Notification posted?
+09-08 12:45:31.458 I 54@2: Notification posted?
+09-08 12:45:31.462 I 54@2: Notification posted?
+09-08 12:45:31.467 I 54@2: Notification posted?
+09-08 12:45:31.471 I 54@2: Notification posted?
+09-08 12:45:31.474 I 54@2: Notification posted?
+09-08 13:15:40.206 I 54@12: Expression true?
+09-08 13:15:40.209 I 54@2: Notification posted?
+09-08 13:15:40.227 I 54@12: Expression true?
+09-08 13:15:40.228 I 54@13: Variable set
+09-08 13:15:40.231 I 54@6: HTTP request
+09-08 13:15:49.872 U 54@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: @bang_dream_info: 【#アニメゆめみた 一挙配信中📢】
+
+ABEMAにてTVアニメ「バンドリ！ ゆめ∞みた」#1~#12 一挙無料配信中❣
+
+ご視聴はこちら👇
+abema.go.link/enQ7B
+
+📅9/10(木)23:00~
+📢最終回
+「夢限大みゅーたいぷ」放送📢
+
+これまでのストーリーの振り返りにも、ぜひご覧ください🛸✨
+
+#バンドリ pic.x.com/JT4QhY0XRy, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: @bang_dream_info: 【#アニメゆめみた 一挙配信中📢】
+
+ABEMAにてTVアニメ「バンドリ！ ゆめ∞みた」#1~#12 一挙無料配信中❣
+
+ご視聴はこちら👇
+abema.go.link/enQ7B
+
+📅9/10(木)23:00~
+📢最終回
+「夢限大みゅーたいぷ」放送📢
+
+これまでのストーリーの振り返りにも、ぜひご覧ください🛸✨
+
+#バンドリ pic.x.com/JT4QhY0XRy, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788840940155, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097176410188333150
+09-08 13:15:49.874 I 54@2: Notification posted?
+09-08 14:51:39.057 I 54@12: Expression true?
+09-08 14:51:39.063 I 54@13: Variable set
+09-08 14:51:39.063 I 54@6: HTTP request
+09-08 14:51:54.284 F 54@6: java.net.SocketException: Socket closed
+09-08 14:51:54.332 I 54@6: Stopped by failure
+09-08 15:18:37.496 I 55@1: Flow beginning
+09-08 15:18:37.496 I 55@2: Notification posted?
+09-08 15:19:16.197 I 55@2: Stopped by user
+09-08 15:20:28.285 I 56@1: Flow beginning
+09-08 15:20:28.285 I 56@2: Notification posted?
+09-08 17:04:13.546 I 56@2: Stopped by user
+09-08 17:04:15.867 I 57@1: Flow beginning
+09-08 17:04:15.868 I 57@2: Notification posted?
+09-08 17:04:24.264 I 57@2: Stopped by user
+09-08 17:04:29.169 I 58@1: Flow beginning
+09-08 17:04:29.170 I 58@2: Notification posted?
+09-08 17:24:43.288 I 58@2: Stopped by user
+09-08 17:24:44.880 I 59@1: Flow beginning
+09-08 17:24:44.880 I 59@2: Notification posted?
+09-08 17:37:13.998 U 59@11: android.reduced.images as Boolean: 1, android.textLines as CharSequenceArray: , pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$InboxStyle, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788856633929, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097241029607088337
+09-08 17:37:13.999 I 59@12: Expression true?
+09-08 17:37:14.000 I 59@2: Notification posted?
+09-08 17:37:14.006 U 59@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: ／
+🛸夢限大みゅーたいぷ
+9/8(火)の配信スケジュール🌟
+＼
+
+🎮21:00～ 峰月律
+youtube.com/watch?v=bgzve7…
+
+🎮22:00～ 千石ユノ
+youtube.com/@yuno_yumemita
+
+🎤23:30～ 仲町あられ
+youtube.com/@arale_yumemita
+
+☀明日朝7:00～ 峰月律
+youtube.com/@ritsu_yumemi, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: ／
+🛸夢限大みゅーたいぷ
+9/8(火)の配信スケジュール🌟
+＼
+
+🎮21:00～ 峰月律
+youtube.com/watch?v=bgzve7…
+
+🎮22:00～ 千石ユノ
+youtube.com/@yuno_yumemita
+
+🎤23:30～ 仲町あられ
+youtube.com/@arale_yumemita
+
+☀明日朝7:00～ 峰月律
+youtube.com/@ritsu_yumemi, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788856633942, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097241029607088337
+09-08 17:37:14.007 I 59@12: Expression true?
+09-08 17:37:14.007 I 59@13: Variable set
+09-08 17:37:14.007 I 59@6: HTTP request
+09-08 17:37:21.937 I 59@2: Notification posted?
+09-08 18:00:02.438 U 59@11: android.title as String: 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: ＼チケット一般発売決定📢／
+
+10/11(日)開催
+🛸#バンドリ13thライブ
+DAY2 : 夢限大みゅーたいぷ
+「DIMENSIONAL OVERLAP」🛸
+
+⏰受付期間
+9/10(木) 21:00〜
+※先着順・上限数に達し次第終了
+
+🔗詳細はこちら
+bang-dream.com/events/13th-li…
+
+この機会をお見逃しなく✨, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: ＼チケット一般発売決定📢／
+
+10/11(日)開催
+🛸#バンドリ13thライブ
+DAY2 : 夢限大みゅーたいぷ
+「DIMENSIONAL OVERLAP」🛸
+
+⏰受付期間
+9/10(木) 21:00〜
+※先着順・上限数に達し次第終了
+
+🔗詳細はこちら
+bang-dream.com/events/13th-li…
+
+この機会をお見逃しなく✨, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788858002343, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#1tweet-2097248577848271016
+09-08 18:00:02.446 I 59@12: Expression true?
+09-08 18:00:02.449 I 59@13: Variable set
+09-08 18:00:02.450 I 59@6: HTTP request
+09-08 18:00:18.310 F 59@6: java.net.SocketException: Socket closed
+09-08 18:00:18.318 I 59@6: Stopped by failure
+09-08 18:21:17.534 I 60@1: Flow beginning
+09-08 18:21:17.536 I 60@2: Notification posted?
+09-08 18:40:28.427 I 60@2: Notification posted?
+09-08 18:40:28.440 I 60@2: Notification posted?
+09-08 18:40:28.445 I 60@2: Notification posted?
+09-08 18:40:28.450 I 60@2: Notification posted?
+09-08 19:16:25.466 I 60@2: Stopped by user
+09-08 19:17:10.667 I 61@1: Flow beginning
+09-08 19:17:10.667 I 61@2: Notification posted?
+09-08 19:18:03.807 I 61@2: Stopped by user
+09-08 19:18:25.709 I 62@1: Flow beginning
+09-08 19:18:25.710 I 62@2: Notification posted?
+09-08 19:21:52.481 U 62@11: android.reduced.images as Boolean: 1, android.textLines as CharSequenceArray: , pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$InboxStyle, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788862912443, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#010171
+09-08 19:21:52.486 I 62@12: Expression true?
+09-08 19:21:52.487 I 62@2: Notification posted?
+09-08 19:21:52.530 U 62@11: android.title as String: 青木陽菜, android.reduced.images as Boolean: 1, android.subText as String: x.com, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.text as String: 9月5日は高千穂ステラちゃんのお誕生日でした❣️
+スーちゃんおめでとう🎀🩵✨
+
+11月は久しぶりにシークフェルトのみんなに会えます！！楽しみだ🥳🥳
+..., android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as String: 9月5日は高千穂ステラちゃんのお誕生日でした❣️
+スーちゃんおめでとう🎀🩵✨
+
+11月は久しぶりにシークフェルトのみんなに会えます！！楽しみだ🥳🥳
+..., pde_first_expanded_time_ms as Long: 0, pde_enqueued_time_ms as Long: 1788862912462, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: -1, pde_noti_pkg as String: com.sec.android.app.sbrowser, pde_noti_tag as String: p#https://x.com/#010171
+09-08 19:21:52.532 I 62@12: Expression true?
+09-08 19:21:52.533 I 62@2: Notification posted?
+09-08 19:22:31.852 I 62@2: Stopped by user
+09-08 19:27:27.944 I 63@1: Flow beginning
+09-08 19:27:27.945 I 63@2: Notification posted?
+09-08 19:27:27.953 I 64@17: Flow beginning
+09-08 19:27:27.953 I 64@18: Notification posted?
+09-08 19:27:36.990 I 64@0: Stopped at end
+09-08 19:30:16.901 I 63@2: Stopped by user
+09-08 19:30:32.397 I 65@1: Flow beginning
+09-08 19:30:32.397 I 65@2: Notification posted?
+09-08 19:30:32.408 I 66@17: Flow beginning
+09-08 19:30:32.409 I 66@18: Notification posted?
+09-08 19:31:13.255 U 66@19: android.title as String: 다운로드 중 : bang_dream-20260908-193112-000-resize, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text: null, android.progress as Int: 100, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788863473240, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 202, android.progressIndeterminate as Boolean: 1, android.remoteInputHistory: null, pde_noti_pkg as String: com.dcinside.app.android, pde_noti_tag: null
+09-08 19:31:13.261 I 66@18: Notification posted?
+09-08 19:31:13.417 I 66@18: Notification posted?
+09-08 19:31:13.625 U 66@19: android.title as String: 다운로드 : 나기마호, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.showChronometer as Boolean: 0, android.text as String: /내장 메모리/Download/bang_dream-20260908-193112-000-resize.jpg, android.progress as Int: 0, androidx.core.app.extra.COMPAT_TEMPLATE as String: androidx.core.app.NotificationCompat$BigTextStyle, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, android.bigText as String: /내장 메모리/Download/bang_dream-20260908-193112-000-resize.jpg, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788863473614, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 200, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.dcinside.app.android, pde_noti_tag: null
+09-08 19:31:13.627 I 66@18: Notification posted?
+09-08 19:32:23.081 I 65@2: Stopped by user
+09-08 19:32:23.092 I 66@18: Stopped by user
+09-08 19:32:35.925 I 67@1: Flow beginning
+09-08 19:32:35.925 I 67@2: Notification posted?
+09-08 19:32:35.932 I 68@17: Flow beginning
+09-08 19:32:35.933 I 68@18: Notification posted?
+09-08 19:33:20.587 I 67@0: Stopped at end
+09-08 20:30:59.665 U 68@19: android.title: null, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text: null, android.progress as Int: 0, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788867059581, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: 1611430723::SUMMARY::3337484090864764516, android.shortCriticalText: null
+09-08 20:30:59.677 I 68@18: Notification posted?
+09-08 20:30:59.691 U 68@19: android.title as CharSequence: 🔴 30분 후에 峰月律-Minetsuki Ritsu- / 夢限大み... 실시간 스트림 시청하기, android.reduced.images as Boolean: 1, chime.slot_key as String: bgzve7Y7S50, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigPictureStyle, android.showChronometer as Boolean: 0, android.text as CharSequence: 【チラズアート新作「雪葬」＃2】雪かきだけで終わらせない【峰月律/ゆめみた】, android.progress as Int: 0, androidx.core.app.extra.COMPAT_TEMPLATE as String: androidx.core.app.NotificationCompat$BigPictureStyle, android.progressMax as Int: 0, chime.account_name_hash as Int: 1611430723, chime.thread_id as String: a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:536ba428805e0000, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788867059595, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, android.pictureIcon: null, chime.richCollapsedView as Int: 1, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: bgzve7Y7S50::12f0bd2b-1837-4b1f-9e79-6a4b50244186, android.title.big as CharSequence: 🔴 30분 후에 峰月律-Minetsuki Ritsu- / 夢限大み... 실시간 스트림 시청하기, android.shortCriticalText: null, android.showBigPictureWhenCollapsed as Boolean: 1
+09-08 20:30:59.692 I 68@18: Notification posted?
+09-08 21:23:13.057 I 68@18: Notification posted?
+09-08 21:23:13.090 I 68@18: Notification posted?
+09-08 21:23:13.207 U 68@19: android.title: null, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text: null, android.progress as Int: 0, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788870193199, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: 1611430723::SUMMARY::10316219764532940327, android.shortCriticalText: null
+09-08 21:23:13.212 I 68@18: Notification posted?
+09-08 21:23:13.321 U 68@19: android.title as CharSequence: 🔴 【チラズアート新作「雪葬」＃2】雪かきだけで終わらせない【峰月律/ゆめみた】, android.reduced.images as Boolean: 1, chime.slot_key as String: bgzve7Y7S50, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigTextStyle, android.showChronometer as Boolean: 0, android.text as CharSequence: 峰月律-Minetsuki Ritsu- / 夢限大みゅーたいぷ 실시간 스트리밍 시작, android.progress as Int: 0, androidx.core.app.extra.COMPAT_TEMPLATE as String: androidx.core.app.NotificationCompat$BigTextStyle, android.progressMax as Int: 0, chime.account_name_hash as Int: 1611430723, chime.thread_id as String: a:NOTIFICATION_TYPE_LIVESTREAM_REMINDER:14e3012e805e0000, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.bigText as CharSequence: 峰月律-Minetsuki Ritsu- / 夢限大みゅーたいぷ 실시간 스트리밍 시작, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788870193212, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: bgzve7Y7S50::12f0bd2b-1837-4b1f-9e79-6a4b50244186, android.title.big as CharSequence: 🔴 【チラズアート新作「雪葬」＃2】雪かきだけで終わらせない【峰月律/ゆめみた】, android.shortCriticalText: null
+09-08 21:23:13.322 I 68@18: Notification posted?
+09-08 22:06:00.205 U 68@19: android.title: null, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text: null, android.progress as Int: 0, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788872760159, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: 1611430723::SUMMARY::9128361769554181529, android.shortCriticalText: null
+09-08 22:06:00.211 I 68@18: Notification posted?
+09-08 22:06:00.232 U 68@19: android.title as CharSequence: 🔴 千石ユノ -Sengoku Yuno- / 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, chime.slot_key as String: 2eigVMdk3Pg, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigPictureStyle, android.showChronometer as Boolean: 0, android.text as CharSequence: 【 #バイオ7 】3回目のバイオ7！怖さマシマシ【 #千石ユノ / #バンドリ 】, android.progress as Int: 0, androidx.core.app.extra.COMPAT_TEMPLATE as String: androidx.core.app.NotificationCompat$BigPictureStyle, android.progressMax as Int: 0, chime.account_name_hash as Int: 1611430723, chime.thread_id as String: a:NOTIFICATION_TYPE_SUBSCRIPTION_LIVESTREAM_START:04971ca8205e0000, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788872760172, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, android.pictureIcon: null, chime.richCollapsedView as Int: 1, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: 2eigVMdk3Pg::44e5e067-a823-4e7b-a1f6-4e6ecf6b9532, android.title.big as CharSequence: 🔴 千石ユノ -Sengoku Yuno- / 夢限大みゅーたいぷ, android.shortCriticalText: null, android.showBigPictureWhenCollapsed as Boolean: 1
+09-08 22:06:00.233 I 68@18: Notification posted?
+09-08 22:06:24.221 I 68@18: Notification posted?
+09-08 22:06:24.229 I 68@18: Notification posted?
+09-08 23:00:12.130 U 68@19: android.title: null, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text: null, android.progress as Int: 0, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788876012096, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: 1611430723::SUMMARY::4781934059790777376, android.shortCriticalText: null
+09-08 23:00:12.137 I 68@18: Notification posted?
+09-08 23:00:12.147 U 68@19: android.title as CharSequence: 🔴 30분 후에 仲町あられ -Nakamachi Arale- / 夢限... 실시간 스트림 시청하기, android.reduced.images as Boolean: 1, chime.slot_key as String: Pi7kwM-bS6w, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigPictureStyle, android.showChronometer as Boolean: 0, android.text as CharSequence: 【🟡すやバラ歌枠】ドヨドヨな夜をスヨスヨな夜に…アコギと共に【 仲町あられ / 夢限大みゅーたいぷ 】, android.progress as Int: 0, androidx.core.app.extra.COMPAT_TEMPLATE as String: androidx.core.app.NotificationCompat$BigPictureStyle, android.progressMax as Int: 0, chime.account_name_hash as Int: 1611430723, chime.thread_id as String: a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:b3f8c0a1a05e0000, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788876012109, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, android.pictureIcon: null, chime.richCollapsedView as Int: 1, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: Pi7kwM-bS6w::8ac0153a-2d11-40b6-a6c3-8a8f5738acaa, android.title.big as CharSequence: 🔴 30분 후에 仲町あられ -Nakamachi Arale- / 夢限... 실시간 스트림 시청하기, android.shortCriticalText: null, android.showBigPictureWhenCollapsed as Boolean: 1
+09-08 23:00:12.148 I 68@18: Notification posted?
+09-08 23:33:38.366 I 68@18: Notification posted?
+09-08 23:33:38.380 I 68@18: Notification posted?
+09-08 23:33:38.526 U 68@19: android.title: null, android.reduced.images as Boolean: 1, android.subText: null, pde_first_shown_time_ms as Long: 0, android.showChronometer as Boolean: 0, android.text: null, android.progress as Int: 0, android.progressMax as Int: 0, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788878018496, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: 1611430723::SUMMARY::10795409133588876794, android.shortCriticalText: null
+09-08 23:33:38.527 I 68@18: Notification posted?
+09-08 23:33:38.537 U 68@19: android.title as CharSequence: 🔴 仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ, android.reduced.images as Boolean: 1, chime.slot_key as String: Pi7kwM-bS6w, android.subText: null, pde_first_shown_time_ms as Long: 0, android.template as String: android.app.Notification$BigPictureStyle, android.showChronometer as Boolean: 0, android.text as CharSequence: 【🟡すやバラ歌枠】ドヨドヨな夜をスヨスヨな夜に…アコギと共に【 仲町あられ / 夢限大みゅーたいぷ 】, android.progress as Int: 0, androidx.core.app.extra.COMPAT_TEMPLATE as String: androidx.core.app.NotificationCompat$BigPictureStyle, android.progressMax as Int: 0, chime.account_name_hash as Int: 1611430723, chime.thread_id as String: a:NOTIFICATION_TYPE_SUBSCRIPTION_LIVESTREAM_START:d1b94d6a855e0000, android.showWhen as Boolean: 1, pde_noti_action_clicked_count as Int: 0, android.largeIcon: null, pde_first_expanded_time_ms as Long: 0, android.infoText: null, pde_enqueued_time_ms as Long: 1788878018511, pde_noti_clicked_count as Int: 0, pde_noti_id as Int: 0, android.progressIndeterminate as Boolean: 0, android.remoteInputHistory: null, android.pictureIcon: null, chime.richCollapsedView as Int: 1, pde_noti_pkg as String: com.google.android.youtube, pde_noti_tag as String: Pi7kwM-bS6w::8ac0153a-2d11-40b6-a6c3-8a8f5738acaa, android.title.big as CharSequence: 🔴 仲町あられ -Nakamachi Arale- / 夢限大みゅーたいぷ, android.shortCriticalText: null, android.showBigPictureWhenCollapsed as Boolean: 1
+09-08 23:33:38.539 I 68@18: Notification posted?
+09-09 01:13:26.469 I 68@18: Notification posted?
+09-09 01:13:26.490 I 68@18: Notification posted?
+09-09 01:13:27.055 I 68@18: Notification posted?
+09-09 01:13:27.060 I 68@18: Notification posted?
+09-09 07:35:01.484 I 68@18: Resumed after restart
+09-09 07:35:01.485 I 68@18: Notification posted?
+09-09 08:56:47.022 I 68@18: Notification posted?
+09-09 08:56:47.038 I 68@18: Notification posted?
