@@ -33,8 +33,8 @@ v2 백엔드는 Cloud Run **scale-to-zero** HTTP 서비스다. 요청이 올 때
 - Cloud Run concurrency=1 이라 처리 중이면 429 → 스케줄러가 재시도
   (`--max-retry-attempts=3`, backoff 30~300s).
 
-> GitHub Actions `.github/workflows/collect.yml` 은 cron이 제거됐고 `workflow_dispatch`
-> 수동 전용(break-glass)이다. 평소 스케줄에 관여하지 않는다.
+> GitHub Actions `.github/workflows/collect.yml`(v1 수집기)은 v2 에서 cron 이 제거되고 `workflow_dispatch`
+> 수동 전용(break-glass)으로 남았다가, 한 번도 실행되지 않은 채 2026-10-20 삭제됐다(PR #71). 스케줄에 관여하는 Actions 는 없다.
 
 ### 1.1 종료후 재확인 tick (백투백 방송 대비)
 
