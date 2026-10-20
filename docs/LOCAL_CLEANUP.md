@@ -35,7 +35,7 @@ myprojects/
 ```bash
 cd myprojects/mewtype-scheduler
 git fetch --all --prune
-git log --branches --not --remotes --oneline --decorate   # 어느 원격에도 없는 로컬 커밋
+git log --branches --not --remotes --tags --oneline --decorate   # 어느 원격 · 태그에도 없는 로컬 커밋 (--tags 없으면 옛 data 브랜치 커밋이 쏟아진다)
 git stash list                                              # 잊힌 stash
 ```
 
@@ -145,3 +145,21 @@ PC 별로 다른 결정(보관소 이름, 남겨 둔 워크트리 등)은 그 PC
   로컬 전용 `feat/king-leave-fade`(`b70adeb`, 같은 내용이 `main` 에 반영돼 있어 브랜치 · 워크트리 삭제),
   stash 「v3 docs WIP」(09-10 중단본 — 현행판으로 대체됐지만 기록 가치가 있어 `devpapers` `ref/v3_docs_wip_2026-09-10/` 에 보관 후 삭제, `a411bb6`).
 - 같은 날 `main` 에 들어간 규칙: PR #68 · #69 · #70(버전 태그 · README 현재 버전 · 워크트리 배치 · `ref/` 는 devpapers · 스킬 설치분 gitignore).
+
+## 두 번째 정리 기록 (2026-10-20, 데스크톱 · `pyworks/` 아래)
+
+- 배치: 이 PC 는 `myprojects/` 가 아니라 `Documents/pyworks/` 아래이고 `pyworks` 자체가 git 저장소다. 형제 폴더(`-worktrees` · `-localdata`)는
+  거기서 미추적으로 보인다(메인 폴더 `mewtype-scheduler/` 도 원래 미추적이라 같은 취급, `pyworks/.gitignore` 는 안 고침).
+- 안 올린 커밋: `feat/v2.0-realtime-backend`(`c9c011d`, `docs/PLAN-realtime-backend.md` — 어디에도 없던 v2.0 계획 문서) ·
+  `feat/v3.8.0b-tweet-embed`(`842e625`, 기각된 A 방식 잔재 제거) → 원격 `deprecated/v2.0-realtime-backend` · `deprecated/v3.8.0b-tweet-embed` 로 보관 후 로컬 삭제.
+  로컬 `data` 브랜치는 태그 `archive/data-2026-09-15` 와 같은 커밋이라 삭제 — `git log --branches --not --remotes` 만 쓰면 이 브랜치의 data 커밋
+  수백 개가 「안 올린 커밋」으로 나오므로 **`--tags` 도 붙여** 태그에 든 커밋을 뺀다.
+- 워크트리: 메인 폴더 하나뿐이었음 → `devpapers` 워크트리 새로 만듦(`pyworks/mewtype-scheduler-worktrees/devpapers`).
+- 미추적 자료: `ref/` 15개(캡처 9 · csv · 목업 · 메모 · `push_monitor.html` · `flow-7 (3)`/`(5).log`)를 `devpapers` 로(`78f49a0` —
+  커밋 메시지의 「노트북」은 잘못 쓴 것, 실제는 데스크톱). `ref/v3b_*` 3개는 `ref/v3b/` 에 같은 내용이 있어 삭제.
+  `flow-11` · `flow-17` · `flow-7 (4)` 로그 5개는 해시는 다르지만 `devpapers` 에 있는 더 긴 같은 로그의 **앞부분**(기록이 끝나기 전 중간 사본)이라
+  `cmp -n` 으로 확인 후 삭제 — 해시 대조에서 「다름 · 없음」이 나와도 Automate 로그는 이렇게 포함 관계일 수 있다.
+- 시험 데이터: 메인 폴더 `.env.local` · `_local/` · `_local_runner.log`(09-29~30) · `data/`(10-07 data 파일 사본) · `ref/v4a/verify` 결과를
+  `mewtype-scheduler-localdata/main-0930/` 로(md5 52개 대조, README 있음). `.venv` · `__pycache__` 삭제.
+- 브랜치: `main` 병합분 52개 `-d`, 미병합이지만 원격 `deprecated/*` · 태그와 해시가 같은 6개 `-D`. `refactor/v3b-wiring`(자체 커밋 없음, `main` 과 같음)은 남김.
+- 남긴 git 제외 파일: `.env` · `deploy/env.sh`(배포 비밀값) · `.vercel/` · `fixtures/awarnoutz_cast.jpg`(비전 self-test).
