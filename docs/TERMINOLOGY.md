@@ -28,8 +28,8 @@
   표기는 `monitoring` 브랜치로 통일.
 - **`devpapers` 브랜치** — 개발 중 상시 참조하지 않는 문서(배경자료·구버전 기록·운영자용
   설명자료 등)를 모아두는 GitHub 브랜치. `docs/`에서 개발 시 계속 쓰는 4개
-  (`SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md`)만 `main`에 남기고 나머지가
-  여기 있다. `PUSH_MONITOR.html`처럼 자동으로 시간마다 갱신·커밋되는 문서도 여기 둔다 —
+  (`SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md`)와 그 뒤 더해진 `v4_AUTOMATE_WIRE.md`·`v4_PAMPHLET.html`·`bus/`
+  만 `main`에 남기고 나머지가 여기 있다. `PUSH_MONITOR.html`처럼 자동으로 시간마다 갱신·커밋되는 문서도 여기 둔다 —
   `data` 브랜치와 같은 이유로 Vercel 배포 트리거에서 제외돼 있다(`vercel.json`). **"docs
   브랜치"라고 부르지 말 것** — `docs/` 폴더명과 헷갈린다.
 - **메인 콘텐츠** — preview(방송예고) · tweet(개인 트윗) · notice(공식 소식) 3종.

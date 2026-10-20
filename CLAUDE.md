@@ -31,11 +31,12 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 정작 해결하려던 "이해 병목"을 더 위험한 형태로 재생산한다.
 
 > **문서 위치 (2026-09-14 정리)**: `docs/` 아래 이 파일에서부터 가리키는 경로들 중
-> `SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md` 넷만 `main`에 있다. 그 외
+> `SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md` 넷과, 그 뒤 더해진 `v4_AUTOMATE_WIRE.md`(폰 Automate 배선도) ·
+> `v4_PAMPHLET.html`(v4 한눈에 보기, 둘 다 2026-10-06) · `bus/`(에러 버스 봉투 스키마 · 예시 — 발신기 self-test 가 읽는다, v4.3.0)만 `main`에 있다. 그 외
 > (`beta_version/`·`old/`·`plan/`·`ARCHITECTURE.md`·`SCHEDULE.md`·`AUTOMATE_MANUAL.md`·
 > `IDEA.md`·`SECURITY.md`·`bug_report/`·`v2_4_flow.png`·`v3_pamphlet.html` 등, 개발 중
 > 상시 참조하기보다 배경자료·구버전 기록·운영자용 설명자료에 가까운 것들)는 전부
-> **`devpapers` 브랜치**로 옮겨졌다 — `data` 브랜치와 같은 이유(자동 생성되는
+> **`devpapers` 브랜치**로 옮겨졌다 — (당시 코드 저장소에 있던, 2026-10-20 삭제) `data` 브랜치와 같은 이유(자동 생성되는
 > `PUSH_MONITOR.html` 시간별 갱신 커밋이 Vercel 배포 트리거에 안 걸리게, `vercel.json`
 > 참고). 아래 경로 표기(`docs/xxx`)는 어느 브랜치 것이든 그대로 유효 — `git show
 > origin/devpapers:docs/ARCHITECTURE.md` 식으로 조회. 용어는 `docs/TERMINOLOGY.md`
