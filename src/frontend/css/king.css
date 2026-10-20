@@ -1,8 +1,8 @@
 /* king.css — (v4.3.1) 노노카 지각 이스터에그 「국왕 납시오」. 로직 · 단계 정의는 js/king.js 머리말.
    장식이 붙은 요소(root = PC 블록 .tt-blk / PC 팝업 .tt-pop / 모바일 카드 .tcard)에 king.js 가 클래스를 붙인다:
-     .k-on  장식 중      .k-s1~.k-s5  지각 단계(누적)      .k-arrive  입장 연출 중      .k-live  입장 후 유지 중
-     .k-leave  복귀 연출 중(.k-live 와 함께 붙음 — 1.2초 동안 서서히 걷어냄, 파일 끝 「복귀 연출」)
-   색 약속: 입장 전 = 은빛(가만히), 입장 순간부터 = 금빛 + 후광 + 움직임. 입장 후 1분이 지나면 .k-leave 로 서서히 걷어낸 뒤 king.js 가 장식을 지운다.
+     .k-on  장식 중      .k-s1~.k-s5  지각 단계(누적)      .k-arrive  입장 연출 중      .k-live  금빛 「입장 후」 모습(v4.5.8 부터 모션 줄이기 · 재생 중 다시 그려진 경우만)
+     .k-leave  복귀 연출 중(.k-arrive 또는 .k-live 와 함께 붙음 — 1.2초 동안 서서히 걷어냄, 파일 끝 「복귀 연출」)
+   색 약속: 입장 전 = 은빛(가만히), 입장 순간부터 = 금빛 + 후광 + 움직임. (v4.5.8) 입장 연출이 끝나면 바로 .k-leave 로 서서히 걷어낸 뒤 king.js 가 장식을 지운다(.k-live 는 모션 줄이기 · 재생 중 다시 그려진 경우만).
    모션 성격 Premium: 이징 하나(--k-ease), 지속 시간 0.28 / 0.56 / 1.2초.
    무대는 .kg-*, PC 블록의 작은 장식은 .kb-*, 대신의 말은 .king-*. */
 
@@ -166,6 +166,16 @@
 .k-pop .king-msg b.king-big { font-size: 1.35rem; }
 .k-pop .king-msg small { font-size: 0.74rem; }
 .k-pop .king-count { font-size: 1.6rem; }
+/* (v4.5.8) PC 카드 보기(v4.4.0, 5열): 카드 본문이 고정 높이(--bh, timetable.css)라 대신의 말이 잘려 안 보였다 — 노노카 카드만 본문이 늘어나게 하고
+   (레인의 오늘 카드 영역은 높이 고정 · 넘치면 영역 안 스크롤) 글자는 좁은 폭(제목 칸 약 150px)에 맞게 줄인다.
+   최소 높이는 :not(.k-leave) — 복귀 연출의 min-height 0 전환을 막지 않게 */
+.cards-board .tcard.k-card .tcard__body { height: auto; min-height: var(--bh); }
+.cards-board .tcard.k-card:not(.k-leave) .king-msg { min-height: 5.6rem; }
+.cards-board .k-card .king-kick { font-size: 0.66rem; }
+.cards-board .k-card .king-msg b { font-size: 0.82rem; line-height: 1.35; }
+.cards-board .k-card .king-msg b.king-big { font-size: 1.12rem; }
+.cards-board .k-card .king-msg small { font-size: 0.7rem; line-height: 1.45; }
+.cards-board .k-card .king-count { font-size: 1.3rem; }
 
 /* 모바일 오늘 카드: 단계가 오르면 테두리가 은빛으로 (입장 후 LIVE 테두리는 사이트 그대로) */
 .tcard.k-s2 { border-color: var(--k-silver-lo); }
@@ -213,7 +223,7 @@
 .kb-sparks i { position: absolute; left: 50%; top: 40%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: var(--k-gold-hi); box-shadow: 0 0 4px var(--k-gold); opacity: 0; z-index: 3; pointer-events: none; }
 .k-arrive .kb-sparks i { animation: kg-burst .9s var(--k-out) calc(.74s + var(--j) * 25ms) both; }
 
-/* ───────── 복귀 연출: 입장 후 1분이 지나면 king.js leave() 가 .k-leave 를 붙인다 ─────────
+/* ───────── 복귀 연출: 입장 연출이 끝나면(v4.5.8, 전엔 입장 후 1분) king.js leave() 가 .k-leave 를 붙인다 ─────────
    무대는 썸네일 위에 겹쳐 있어, 투명해지면 아래의 평소 썸네일(LIVE 표시 포함)이 드러난다(교차 전환).
    대신의 말은 먼저 옅어지고 칸이 접힌다 — max-height 시작값은 king.js 가 현재 높이(px)로 인라인 지정한다.
    접힐 때 아래 여백도 같이 없애야 마지막에 튀지 않는다: 카드 .tcard__main · 팝업 .tt-pop__body 의 gap 은 둘 다 4px 이라 margin-top 을 −4px 로.

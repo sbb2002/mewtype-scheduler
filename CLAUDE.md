@@ -54,8 +54,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.7** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.5.7`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.8** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.5.8`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+>
+> **v4.5.8 (핫픽스, 브랜치 `hotfix/king-arrive`, 2026-10-20, 백엔드 + 프론트 — 미배포)**: **노노카 지각 이스터에그 라이브 입장 연출 · 카드 보기 글자.** ① 백엔드 — 영상 없는 예고(자리표시)가 실물에 흡수될 때 예고 시각을
+> 실물 `announced_start` 로 남김(`preview_build._carry_collab`). 10-20 「20:00 예고 → 20:26 바로 시작한 영상」이 지각 17초로 계산돼 입장 연출이 빠졌다. ② 프론트(운영자 결정) — 지각한 방송이 라이브인 동안은 **시각 제한 없이** 페이지가 그 방송을 라이브로
+> 처음 그릴 때 입장 연출을 한 번 보이고 바로 평소 라이브 카드로(옛 `actual_start + 1분` 창은 화면이 라이브를 알기 전에 지나 거의 늘 안 나왔다). 지각 = `actual_start − 약속 시각`(`scheduled_start` · `announced_start` 중 이른 것), 숨긴 탭은 보일 때 재생.
+> ③ PC 카드 보기에서 노노카 카드만 본문이 늘어나고 대신의 말 글자를 줄임(고정 높이에 잘려 안 보였다). `king.js` · `king.css` · `king.selfcheck.mjs`(48개), 상세 `docs/SPEC.md` 「노노카 지각 이스터에그」, 요약 `docs/VERSION.md`. 미확인: 모바일 실기기 · 밝게 테마 · 실서비스 첫 동작.
 >
 > **v4.5.7 (핫픽스, 브랜치 `hotfix/halfwidth-kana-disclaimer-hover`, 2026-10-19, 백엔드 + 프론트)**: ① **반각 가타카나 번역** — 「🍭ﾍﾟﾛｷｬﾝ」 처럼 모델이 번역 없이 남기던 반각 가나를 번역 전 전각화 + 프롬프트 규칙 + 잔존 검사 반각 포함 + 가나 잔존 시 1회 재요청(`llm.py`). ② **하단 디스클레이머 팝업은 호버 2초 유지 시에만**(포커스는 즉시, `main.js` · `css/layout.css`). 상세 `docs/SPEC.md` 「번역」·「프론트 풋터」, 요약 `docs/VERSION.md`. **배포 완료**(`mewtype-backend` 00160 · `mewtype-telegram` 00113, 롤백 = 00158 · 00112 / 프론트 main `8d0b525`). 실서비스 첫 동작 · 모바일 실기기는 미확인.
 >
@@ -488,7 +493,7 @@ src/
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
       theme.js         # (v4.6.0) 밝게/어둡게 전환 버튼 · 저장(localStorage "theme") · 기기 설정 따라가기 · mew:theme 이벤트(X 카드 테마)
-      king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출 · 입장 후 1분 유지 후 1.2초에 걸쳐 서서히 복귀(v4.5.1, 이전 3분 유지 후 즉시 제거) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
+      king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출(v4.5.8 — 지각한 방송이 라이브인 동안 페이지마다 한 번, 끝나면 바로 1.2초에 걸쳐 평소 라이브 카드로) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
       playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
       player.js        # (v4.2.0) 플레이어 팝업 + 플로팅 YouTube 프레임(IFrame API). main.js 가 첫 클릭 때 동적 import
