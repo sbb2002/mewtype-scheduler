@@ -86,7 +86,8 @@ mewtype-scheduler/
 브랜치: `main`(배포 대상) · `data`(데이터 저장소 쪽) · `devpapers`(개발 배경 문서 · 자동 생성 모니터 HTML — Vercel 배포 트리거 밖).
 작업 브랜치 이름에는 버전 번호를 쓰지 않는다(`hotfix/<이름>` · `test/<이름>`).
 버전은 **태그**로 남긴다 — 버전이 `main` 에 들어온 병합 커밋에 `vX.Y.Z` 주석 태그를 붙이고, 이 README 맨 위 「현재 버전」 줄도 같이 고친다
-(절차: [CLAUDE.md](./CLAUDE.md) 「주의점」 **버전 올릴 때 할 일**). 어떤 커밋의 버전은 `git describe --tags <커밋>`.
+(절차: [CLAUDE.md](./CLAUDE.md) 「주의점」 **버전 올릴 때 할 일**). 태그 → 커밋 · 브랜치 대조는 [docs/VERSION.md](./docs/VERSION.md) 맨 위 「버전 태그 대조표」,
+어떤 커밋의 버전은 `git describe --tags <커밋>`.
 
 로컬 워크트리는 메인 저장소 옆 `mewtype-scheduler-worktrees/<큰 버전>/<브랜치 이름의 / 를 - 로>` 에 둔다
 (예: `hotfix/web-analytics` → `mewtype-scheduler-worktrees/v4/hotfix-web-analytics`, `main` · `devpapers` 는 `mewtype-scheduler-worktrees/` 바로 아래).
