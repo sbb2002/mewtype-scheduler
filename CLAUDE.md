@@ -459,10 +459,11 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **프론트** = **Vercel** 정적 호스팅. 배포 주소 `https://mewtype-schduler.vercel.app/`
   (레포명과 Vercel 프로젝트 이름은 `mewtype-scheduler` 로 고쳐졌지만 **도메인은 옛 오타 `mewtype-schduler.vercel.app`
   그대로** — 헷갈리지 말 것. 2026-10-19 Vercel API 로 확인: 프로젝트 `mewtype-scheduler`(`prj_3CjMc3VJmYbQUqMNtJqDKSnyqWAB`),
-  별칭 `mewtype-schduler.vercel.app` · `mewtype-scheduler-sbb2002.vercel.app`). (v4.5.4) 방문 통계 = Vercel Web Analytics(쿠키 없음, 대시보드 프로젝트 → Analytics). `main` 브랜치 푸시 시 자동 배포(`vercel.json` 은 `data` 브랜치만
-  배포 제외). (v1 의 GitHub Actions 수집기는 `src/collector/` + `collect.yml`
-  `workflow_dispatch` 로 남아 있지만 **실행해도 현행 사이트엔 반영 안 됨** — v1 `schedule.json` 을 코드
-  저장소의 `data` 브랜치에 push 하는데, 프론트는 데이터 저장소의 `preview.json` 을 읽는다.)
+  별칭 `mewtype-schduler.vercel.app` · `mewtype-scheduler-sbb2002.vercel.app`). (v4.5.4) 방문 통계 = Vercel Web Analytics(쿠키 없음, 대시보드 프로젝트 → Analytics). `main` 브랜치 푸시 시 자동 배포(`vercel.json` 은 `main` 만 배포, 나머지 브랜치는 전부 제외).
+  (v1 의 GitHub Actions 수집기 `src/collector/main.py` + `collect.yml` 은 v2 부터 수동 실행 전용 「break-glass」로 남아 있었지만 한 번도
+  실행되지 않았고, 2026-10-20 운영자 결정으로 삭제했다. 그 결과물을 받던 **코드 저장소의 `data` 브랜치**(09-14 데이터 저장소 이전 전까지의
+  v1~v3 데이터, 08-30~09-15)도 같은 날 삭제 — 기록은 태그 `archive/data-2026-09-15` 로 남겼다:
+  `git show archive/data-2026-09-15:preview.json`. 지금 `data` 브랜치라고 하면 **데이터 저장소의 것**이다.)
 
 ## 저장소 구조
 
@@ -494,8 +495,8 @@ src/
       main.js          # DOMContentLoaded → poll(스케줄) + pollNotices + pollTweets + 카운트다운 틱
                        #   (v3.7) 모니터 페이지 이스터에그 진입(PC 키 입력 / 모바일 풋터 버전 15탭)
     monitor.html       # (v3.7) monitoring/latest.html(데이터 저장소 raw URL)을 iframe 으로 표시. noindex
-  collector/           # v1 순수 모듈 — v2 백엔드가 import 재사용. main.py 는 break-glass 전용
-    main.py            # v1 오케스트레이션 (python -m src.collector.main [light|deep])
+  collector/           # v1 순수 모듈 — 백엔드가 config · rss · youtube 를 import 재사용.
+                       #   reconcile · store 는 v1 잔재(현행 무의존). v1 실행기 main.py 는 2026-10-20 삭제
     config.py          # config/channels.json + YOUTUBE_API_KEY 로드
     rss.py             # 채널 RSS → videoId 발견 (쿼터 0)
     youtube.py         # YouTube Data API v3 (videos.list / search.list), VideoInfo
@@ -648,8 +649,8 @@ config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handl
                        #   channel_order 밖(전용 레인 없음), RSS/API 폴링만
 fixtures/              # preview/notices/tweets.sample.json(프론트), rss_arale.xml(파싱 테스트),
                        #   vxtwitter.sample.json. schedule.sample.json 은 v1/v2 잔재
-.github/workflows/collect.yml   # v2: workflow_dispatch 전용 (정기 cron 제거됨)
-data 브랜치 (v3)        # preview.json + preview_archive.json + control.json
+data 브랜치 (v3)        # 데이터 저장소(mewtype-scheduler-data)의 브랜치 — 코드 저장소에는 없다(2026-10-20 삭제)
+                       # preview.json + preview_archive.json + control.json
                        #   + notices.json / notice_archive.json (소식, +title_ko)
                        #   + tweets.json / tweet_archive.json (개인 트윗, +text_ko)
                        #   + admin_state.json (계약 G′ — pending_op/edit_lock/suppress/undo 슬롯)
@@ -676,11 +677,6 @@ devpapers 브랜치 (v3.3)  # docs/ 중 개발 시 상시 참조 안 하는 문�
 ## 명령
 
 ```bash
-# 수집기 로컬 실행 (API 키 필요)
-pip install -r src/collector/requirements.txt          # requests 만
-DATA_DIR=./_data YOUTUBE_API_KEY=xxxx python -m src.collector.main light   # 또는 deep
-# PowerShell: $env:DATA_DIR="./_data"; $env:YOUTUBE_API_KEY="xxxx"; python -m src.collector.main light
-
 # 모듈 self-test (네트워크 불필요) — PYTHONIOENCODING=utf-8 권장(Windows 콘솔)
 python -m src.collector.rss          # fixtures/rss_arale.xml 파싱, 15개 assert
 python -m src.collector.youtube      # _video_from_item 매핑 확인
@@ -832,8 +828,6 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
   `status.url` (배포마다 `SERVICE_URL` env 재설정). `mewtype-telegram` 은 INVOKER_SA 로 실행해야
   `/resume` 의 메인 `/tick` 호출이 통과 (메인 `oidc.verify_request` 가 caller email 검사).
 - gcloud `--args` 는 값이 `-` 로 시작하면 `--args=...` 형태로 붙여야 함 (공백 쓰면 플래그로 오인).
-- (v1 break-glass) GitHub Actions cron 은 정각 보장 안 됨(3~15분, 드물게 1h 지연/누락).
-  `date -u +%H` 는 `08`/`09` 를 8진수로 파싱하므로 산술 시 `$(( 10#$H ... ))` 필수.
 - **업스트림(운영자 폰 Automate) 구조적 한계 — 긴 트윗 원문 잘림.** 안드로이드 알림은
   "축약본"(`contentText`)과 "전체본"(`bigText`) 두 필드가 있는데, Automate 의 알림 리스너가
   다루는 값이 축약본으로 좁혀지는 경우가 있다. 이땐 말줄임표(…)도 인코딩 손상도 없이
