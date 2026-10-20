@@ -89,7 +89,7 @@ mewtype-scheduler/
 (절차: [CLAUDE.md](./CLAUDE.md) 「주의점」 **버전 올릴 때 할 일**). 어떤 커밋의 버전은 `git describe --tags <커밋>`.
 
 로컬 워크트리는 메인 저장소 옆 `mewtype-scheduler-worktrees/<큰 버전>/<브랜치 이름의 / 를 - 로>` 에 둔다
-(예: `hotfix/web-analytics` → `mewtype-scheduler-worktrees/v4/hotfix-web-analytics`, `main` · `devpapers` 는 `mewtype-scheduler-worktrees/` 바로 아래).
+(예: `hotfix/web-analytics` → `mewtype-scheduler-worktrees/v4/hotfix-web-analytics`, `main` 은 메인 저장소 폴더 `mewtype-scheduler/` 자체, `devpapers` 는 `mewtype-scheduler-worktrees/devpapers`).
 
 ---
 

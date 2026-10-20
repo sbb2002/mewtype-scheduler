@@ -873,10 +873,11 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
   3. **이 파일 상단 상자 맨 위 「현재 버전」 줄** + 그 버전 항목.
   4. **`docs/VERSION.md`** 항목(머지 커밋 · 배포 리비전 포함).
 - **로컬 워크트리 배치** (2026-10-20 사용자 확정, 여러 PC 공통) — 원격 브랜치 구조와 무관하게 로컬 폴더만 정한다.
-  메인 저장소(`mewtype-scheduler/`)는 제자리에 두고, 그 밖의 워크트리는 형제 폴더
+  메인 저장소(`mewtype-scheduler/`)는 제자리에서 **`main` 을 체크아웃**하고(2026-10-20 — 한 브랜치는 한 폴더에서만 열 수 있다), 그 밖의 워크트리는 형제 폴더
   `mewtype-scheduler-worktrees/<큰 버전>/<브랜치 이름에서 / 를 - 로>` 에 만든다:
   `git worktree add ../mewtype-scheduler-worktrees/v4/hotfix-xxx hotfix/xxx`.
   - 접두사는 브랜치 것 그대로(`feat-` · `hotfix-` · `test-` · `docs-` · `deprecated-`).
   - 큰 버전 = 그 작업이 들어갈 줄기(지금 `main` = v4). 브랜치 이름에 버전이 없어도 `v4/`, v5 가 시작되면 그때부터 `v5/`.
-  - 버전 줄기 밖의 장기 브랜치(`main` · `devpapers`)는 `mewtype-scheduler-worktrees/` 바로 아래.
+  - 버전 줄기 밖의 장기 브랜치 `devpapers` 는 `mewtype-scheduler-worktrees/devpapers` (`main` 은 위처럼 메인 저장소 폴더).
+  - `.agents/` · `.claude/` · `skills-lock.json`(운영자 PC 의 Claude 스킬 설치분 — `npx skills add`)은 앱 운영과 무관해 `.gitignore` 로 뺀다.
   - 병합이 끝난 워크트리는 지운다(`git worktree remove`). 다른 PC 에서 이어 할 땐 같은 규칙으로 그 브랜치만 다시 펼친다.
