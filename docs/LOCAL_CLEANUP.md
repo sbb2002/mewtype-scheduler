@@ -141,4 +141,7 @@ PC 별로 다른 결정(보관소 이름, 남겨 둔 워크트리 등)은 그 PC
   `docs/` → `ref/` 로 옮기다 멈춘 문서 3개는 `devpapers` 의 원래 경로로, 빈 `gcloud` 파일 삭제.
 - 시험 데이터: `v4a` 워크트리의 `.env.local` · `_local/` · 검증 결과를 `mewtype-scheduler-localdata/v4a/` 로.
 - 브랜치: 원격에서 지워진 19개(전부 `main` 병합분) 삭제.
+- 1단계를 건너뛰고 시작했다가 문서 작성 뒤 뒤늦게 확인한 것 2건(→ 1단계를 먼저 할 것):
+  로컬 전용 `feat/king-leave-fade`(`b70adeb`, 같은 내용이 `main` 에 반영돼 있어 브랜치 · 워크트리 삭제),
+  stash 「v3 docs WIP」(09-10 중단본 — 현행판으로 대체됐지만 기록 가치가 있어 `devpapers` `ref/v3_docs_wip_2026-09-10/` 에 보관 후 삭제, `a411bb6`).
 - 같은 날 `main` 에 들어간 규칙: PR #68 · #69 · #70(버전 태그 · README 현재 버전 · 워크트리 배치 · `ref/` 는 devpapers · 스킬 설치분 gitignore).
