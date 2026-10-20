@@ -1,0 +1,135 @@
+diff --git a/docs/TERMINOLOGY.md b/docs/TERMINOLOGY.md
+index 2fcac7a..3fc5322 100644
+--- a/docs/TERMINOLOGY.md
++++ b/docs/TERMINOLOGY.md
+@@ -13,5 +13,10 @@
+ ## 관련 용어 (위 항목에 딸린 것)
+ 
+ - **`POST /ingest`** — 업스트림 시스템이 중계한 푸시알림 텍스트를 백엔드가 받는 공개 엔드포인트. transport 추상화 경계 — 입력 소스가 바뀌어도 이 이후 스키마는 불변.
++- **OIDC** (OpenID Connect) — Cloud Scheduler·Cloud Tasks 가 백엔드 `/tick`·`/wake` 를 호출할 때 붙이는 서명된 신원 토큰(ID token, JWT). 서비스 계정 명의로 Google 이 발급하고, 토큰의 audience 는 Cloud Run 서비스 URL(배포마다 `SERVICE_URL` env 재설정). 백엔드 `oidc.py` 가 서명·audience·호출자 이메일을 검증해 정규 트리거 외의 호출을 401 로 차단. 쓰지 말 것: API 키, 시크릿 헤더(그건 `/ingest` 의 `X-Ingest-Secret` 쪽).
+ - **`data` 브랜치** — 백엔드가 상태를 커밋하는 GitHub 브랜치. 코드 없음, JSON 만.
+ - **메인 콘텐츠** — preview(방송예고) · tweet(개인 트윗) · notice(공식 소식) 3종.
++- **상태 (`state`)** — preview 아이템의 생애주기 단계. `preview.json` 의 `state` 필드이자
++  `/list preview` · `/status` 의 표기 기준. 값: `announced`(v2 `scheduled` 리네임) → `upcoming`
++  → `watching`(신설) → `live` ↔ `end`(신설) → none(파일에서 삭제). 상세: `docs/plan/v3_backend_surgery.md`.
++  쓰지 말 것: 예고레벨, 단계레벨, phase.
+diff --git a/docs/plan/v3_backend_surgery.md b/docs/plan/v3_backend_surgery.md
+index efb524e..8e70942 100644
+--- a/docs/plan/v3_backend_surgery.md
++++ b/docs/plan/v3_backend_surgery.md
+@@ -14,8 +14,9 @@
+     * upcoming : 기존의 upcoming. 방송 예고가 감지 + 정확한 날짜 + 시간 + 제목 + 썸네일 + url 모두를 파악한 경우 이 단계로 승격할 수 있음. 최신 예고 정보가 이와 다르면 최신 예고 정보로 갱신.
+         - **유튜브 앱 알림 경로**: `LIVESTREAM_TUNEIN`(예정−30분) 알림 한 건으로 5필드가 다 채워진다 —
+           `chime.slot_key`=video_id(온전한 11자) → url + 썸네일(`i.ytimg.com/vi/<id>/mqdefault.jpg`),
+-          `android.text`=제목, 날짜=당일, 시간=**알림 도착 + 30분**(파생값. 정확 ISO 아님 →
+-          provenance 를 남기고 이후 `REMINDER`/watching 이 정정). 즉 시작 전 승격 기회가 확정적으로 1회 온다.
++          제목=`android.text`(TUNEIN 한정 — 알림 종류별 제목 필드는 아래 업스트림 §1 표), 날짜=당일,
++          시간=**알림 도착 + 30분**(파생값. 정확 ISO 아님 → provenance 를 남기고 이후 `REMINDER`/watching
++          이 정정). 즉 시작 전 승격 기회가 확정적으로 1회 온다.
+         - 트윗 경로 예고(`announced`)에 이미지가 딸려 있으면 vxtwitter unfurl 로 썸네일을 얻어
+           이 승격 조건의 "썸네일"을 만족시킨다(아래 업스트림 절 참조).
+     * watching : 신설 단계. announced 또는 upcoming 상태에서 파악된 날짜/시간으로부터 3분 전 지금과 같이 모니터링하여 live 시작 시까지 관찰하는 단계. 
+@@ -60,22 +61,42 @@
+ 
+ ### 1. 유튜브 앱 알림 중계 추가
+ - 업스트림 폰 플로우에 유튜브 앱(`com.google.android.youtube`) 알림도 받는 플로우를 추가.
+-  현재는 로깅만(HTTP 스텝 없음, `ref/flow-7 (4).log` 09-08 19:32~). 관찰 결과 payload 는 아래를 준다:
++  현재는 로깅만(HTTP 스텝 없음). `ref/flow-7 (2).log` 09-08 20:30~23:33 에 개인 5인 중 3명
++  (ritsu/yuno/arale) 공개방송 알림이 실제로 잡힘 — 아래 payload 확정:
+     - `chime.slot_key` = **video_id (온전한 11자)** — 트윗 경로의 잘린 URL 문제를 우회. 이게 핵심.
+-    - `pde_noti_tag` = `<video_id>::<uuid>` (SUMMARY 항목은 `<hash>::SUMMARY::<n>` → 버림)
+-    - `android.text` = 방송 제목(풀텍스트). `android.title` 은 잘림("🔴 30분 후에 …") — 쓰지 말 것.
+-    - `chime.thread_id` 접두어로 알림 종류: `NOTIFICATION_TYPE_LIVESTREAM_TUNEIN`(예정−30분),
+-      `..._LIVESTREAM_REMINDER`(=예약분 시작), `..._SUBSCRIPTION_LIVESTREAM_START`(구독 채널 시작).
++      실측: `bgzve7Y7S50`(ritsu), `2eigVMdk3Pg`(yuno), `Pi7kwM-bS6w`(arale).
++    - `pde_noti_tag` = `<video_id>::<uuid>` (SUMMARY 항목은 `<account_hash>::SUMMARY::<n>` → 버림)
++    - `chime.thread_id` 접두어로 알림 종류(3종 다 실관측):
++      `a:NOTIFICATION_TYPE_LIVESTREAM_TUNEIN:…`(예정−30분),
++      `a:NOTIFICATION_TYPE_LIVESTREAM_REMINDER:…`(=예약분 시작),
++      `a:NOTIFICATION_TYPE_SUBSCRIPTION_LIVESTREAM_START:…`(구독 채널 시작).
++    - **제목이 오는 필드가 알림 종류마다 다르다** (문서 초안의 "`android.text`=제목"은 TUNEIN 한정):
++      | thread_id | 제목 필드 | 참고 |
++      |---|---|---|
++      | `TUNEIN` | `android.text` | `android.title`=`"🔴 30분 후에 <채널>… 시청하기"`(잘림) |
++      | `REMINDER` | **`android.title`** (=`android.title.big`) | `android.text`=`"<채널>… 실시간 스트리밍 시작"`(제목 아님) |
++      | `SUBSCRIPTION_LIVESTREAM_START` | `android.text` | `android.title`=`"🔴 <채널명>"` |
++      → 파서는 thread_id 로 종류 분기 후 제목 필드를 고른다. 앞에 붙는 `🔴 ` 접두어·`【…】` 는 정리.
+     - `android.subText` = `null` (트윗 릴레이는 `x.com` → 라우팅 시 이걸로 X/YT 구분 가능).
+-    - 이미지: `android.largeIcon`/`android.pictureIcon` 는 `null` (`android.reduced.images=1` 로 비트맵 제거됨).
++      YouTube 알림의 `android.title` 은 `as CharSequence`, X 는 `as String` (Automate expression 타입 주의).
++    - `android.template` = `BigPictureStyle`(TUNEIN/START) / `BigTextStyle`(REMINDER).
++      `android.largeIcon`/`android.pictureIcon` 는 `null` (`android.reduced.images=1` 로 비트맵 제거).
+       썸네일은 video_id 로 조립 (`i.ytimg.com/vi/<id>/mqdefault.jpg` — 항상 존재·16:9·검은띠 없음).
++    - `chime.account_name_hash` = 계정 식별 정수(로그상 `1611430723` 고정).
++    - **TUNEIN 타이밍 검증**: ritsu TUNEIN 20:30:59 → 실제 시작(REMINDER) 21:23:13 (예정 21:00 대비 23분 지각).
++      arale TUNEIN 23:00:12 → 트윗 예고 `23:30～`. "알림 도착 + 30분" 파생값 규칙 유효, watching/REMINDER 가 정정.
++    - **노이즈**: `com.dcinside.app.android` 다운로드 알림, `InboxStyle` 빈 알림(`android.textLines` 공백),
++      `pde_noti_tag` 가 `p#https://x.com/#010171` 처럼 snowflake 없이 오는 경우 → `pde_noti_pkg` 1차 필터 필수.
+ - 용도:
+     - **video_id 확보** → 공개 방송은 정규 파이프라인(videos.list/reconcile/watching)이 그대로 처리.
+     - `announced → upcoming` 승격(위 Preview board 절). `TUNEIN` 이 예정−30분이라 시작 전 승격이 확정적.
++    - **§1 시나리오 실증**: 09-08 17:37 `@BDP_yumemita` 스케줄 트윗의 `watch?v=bgzve7…`(잘림)
++      ↔ 20:30 TUNEIN 알림 `bgzve7Y7S50`(풀 id) 을 머지하면 예고가 완성된다.
+     - 회원전용: videos.list 는 404 → API wake 사이클을 태우지 말고, 알림만으로 카드 구성 +
+       video_id 없는 assumed-live 90분 폴백에 의존. 프론트에 "회원전용" 배지.
+-- **미확인 (모니터링 중)**: 회원전용 방송 알림이 실제로 오는지 + payload 가 위와 동일한지.
+-  대상 채널(개인 5인) 알림 샘플도 아직 없음 — 로그 나오면 확인 후 확정.
++- **미확인 (모니터링 중)**: **회원전용 방송 알림이 실제로 오는지 + payload 가 위와 동일한지** —
++  `ref/flow-7 (2).log` 관측분은 전부 공개방송. 이게 v3 착수 트리거(`v3_draft.md` §트리거). 나머지
++  payload 는 확정.
+ 
+ ### 2. vxtwitter unfurl 도입
+ - 업스트림이 트윗을 릴레이할 때 이미 `pde_noti_tag` 에서 트윗 Snowflake id 를 뽑고 있음
+@@ -112,6 +133,15 @@
+ - notice에서의 활용 : 날짜/시간, url을 정규표현식을 이용하여 우선 파싱 -> 원문에서 날짜/시간, url 제거 후 제목을 파싱. 번역도 함께 제공 에정.
+ - tweet에서의 활용 : 개인 유닛 5명의 트윗을 받았다면 이를 번역하도록 함. 사용자는 말풍선 또는 메시지 창에서 토글버튼을 통해 원문-번역으로 볼 수 있음.
+ 
++## 자동 vs 수동 — translate 호출 시점
++- **스케줄/알림 트리거로 실행되는 자동 로직**(`/tick`·`/wake`·`/ingest`): 파이프라인 **마지막에**
++  translate 를 건다 — preview=제목, notice=제목, tweet=본문. 결과는 대상 행에 원문+번역 both 저장.
++- **운영자 텔레그램 명령**(`/ingest`·`/edit` 등)으로 만든/고친 항목: **translate 안 한다.**
++  운영자가 직접 판단해 별도로 `/translate [contents]` 를 실행(`v3_telegram_controller.md`). 이유:
++  수동 입력은 운영자가 이미 내용을 아는 상태라 자동 번역이 불필요하거나 방해가 될 수 있음.
++- 어느 경로든 번역은 원문을 **덮지 않고** 병렬 필드로 저장(프론트 토글용). 계약 필드는
++  `preview.json`/`notices.json`/`tweets.json` 각 스키마에 `*_ko`(또는 `title_ko`/`text_ko`) 로 추가.
++
+ ## 모델 선정 (2026-09-09)
+ 
+ - **주 모델: `openai/gpt-oss-120b`** — 형제 프로젝트 bandori-playlist-maker 에서 쓰던 것 그대로.
+diff --git a/docs/plan/v3_draft.md b/docs/plan/v3_draft.md
+index cf32c7e..e46e1ed 100644
+--- a/docs/plan/v3_draft.md
++++ b/docs/plan/v3_draft.md
+@@ -77,9 +77,14 @@
+       상태를 `preview.json` 에 올림. 상세: `v3_backend_surgery.md` "v3 데이터 스키마".
+ - [x] `scheduled` → `announced` 리네임 + `watching`/`end` 추가 시 data 처리 →
+       콜드 스타트로 결정(마이그레이션 없음). 위 "확정된 결정 2" 참조.
+-- [ ] 텔레그램 현행→v3 명령어 대응표 (`/notice-*` 4개, `/notice-edit` 마법사,
+-      `pending_*` 슬롯 5종 → `/list /ingest /edit /del /undo × contents` 로 어떻게 접히는지).
+-      **→ 다른 세션에서 작업 예정 (현행 기능과 거의 동일).**
++- [x] 텔레그램 현행→v3 명령어 대응표 → `docs/plan/v3_telegram_controller.md` 로 확정.
++      `/notice-*` 4개·`pending_*` 슬롯 5종이 `/list /ingest /edit /del /undo × {preview|notice|tweet}`
++      로 접힘. `/status` v3 재구성, 아이템 단위 편집 락(전체 pause 안 씀), 단계별 60초 타임아웃,
++      `/del (terminate/y/N)` — `terminate` = url 12h 재진입 차단(`admin_state.suppress`) 포함.
++- [x] translate 호출 시점 = **자동 로직(`/tick`·`/wake`·`/ingest`)만** 파이프라인 끝에서
++      preview 제목·notice 제목·tweet 본문 번역. **텔레그램 수동 명령은 번역 안 함** — 운영자가
++      `/translate [contents]` 로 직접. 원문+번역 both 저장. 상세: `v3_backend_surgery.md`
++      "자동 vs 수동 — translate 호출 시점".
+ - [x] `/edit -i` → `/edit` 에 흡수 (별도 명령 아님). 상세는 텔레그램 대응표 작업 때.
+ - [x] 외부LLM(Groq) 도입 **확정**. 모델 `openai/gpt-oss-120b`(폴백 llama-3.3-70b), 작업 큐.
+       번역 실패/환각 폴백은 모델별 실측 후 확정(기본선 = 원문 노출).
+@@ -92,5 +97,14 @@
+ 
+ - 컨테이너 뷰 아키텍처 그림: `docs/plan/v3_ARCH_DIAGRAM.png` (점선 = 배포·운영 경계).
+   용어는 `docs/TERMINOLOGY.md` 와 일치.
++- 흐름 그림:
++  `v3_TELEGRAM_FLOW.png` / `v3_SCHEDULE_FLOW.png` — `v3_ARCH_DIAGRAM.png` 와 같은 박스 배치를
++  재활용하되, 해당 기능에 관여 안 하는 박스는 반투명, 쓰는 화살표만 진하게, 안 쓰는 연결은
++  옅은 실선(화살촉 없음)으로 표시. `v3_STATE_MACHINE.png` — 예고 6상태 생애주기·파생 규칙.
++  재생성: `python docs/plan/v3_flow_diagrams.py` (matplotlib · Malgun Gothic).
++  이전 버전(직접 그린 흐름도)은 `docs/plan/backup/` 에 보관.
+ - 착수 조건 미충족 시에도 선행 실험(YouTube 알림 문구 수집)은 진행 가능 — v3 코드가 아님.
++  진행 상황(2026-09-09): `ref/flow-7 (2).log` 에서 개인 5인 중 3명(ritsu/yuno/arale) **공개방송**
++  YouTube 알림 payload 확정(`v3_backend_surgery.md` §1). 트리거 대상인 **회원전용 알림은 아직 미관측** →
++  트리거 여전히 미충족.
+ - v3 는 v2 와 비호환 가능성이 높아 메이저 버전 업으로 잡음.

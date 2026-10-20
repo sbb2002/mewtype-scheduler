@@ -1,0 +1,110 @@
+# v3 초안 — 착수 보류 상태
+
+이 문서는 v3 "백엔드 수술"의 **결정 로그**다. 기능 상세는 `v3_backend_surgery.md`.
+
+## 상태: 착수 안 함 (의도적 보류)
+
+현재 v2 를 **일부러 그대로 유지**한다. 아래 조건이 충족되면 그때 v3 착수:
+
+> **착수 트리거**: YouTube 회원전용 방송이 폰 푸시알림으로 도달하는 것이 확인되고,
+> 그 알림 텍스트로 회원전용 방송을 실사용 가능한 수준으로 표시할 수 있다고 판단될 때.
+
+트리거 전까지 v3 브랜치는 설계 문서만 쌓는다. 코드 변경 없음.
+
+### 트리거 검증 방법 (선행 실험, v3 코드 아님)
+1. 폰 Automate `[notification posted?]` 필터에 YouTube 앱 추가.
+2. 회원전용 방송 시작 시 오는 알림 텍스트를 며칠간 로그로 수집 (한/일 문구 샘플).
+3. 확인할 것: 알림에 videoId / URL / 시각이 실리는가? 채널·제목만 오는가?
+4. 채널·제목만 와도 "회원전용 방송 중" 표시로 쓸만하면 → 트리거 충족.
+
+---
+
+## 확정된 결정
+
+### 1. 입력 소스 = 업스트림 시스템(폰 Automate 플로우) 유지
+
+용어: **업스트림 시스템** = 운영자 폰의 Automate 플로우. 푸시알림을 `POST /ingest` 로
+중계하는, 백엔드 앞단의 1st-party 노드(코드베이스 밖이라 런타임 관측·버전관리 불가).
+
+트윗 수집 방식으로 폴링 / 웹훅 / 업스트림 시스템을 비교한 결과 업스트림 유지:
+
+| | 업스트림 시스템 | X API 폴링 | X 웹훅 (Account Activity v2) |
+|---|---|---|---|
+| 비용 | **$0** | 월 $20~40 | 월 $30~50 (표본 부족, 오차 큼) |
+| 정시성 | 즉시 | 폴링 주기만큼 지연 | 즉시 |
+| 미디어(이미지/영상) | ✗ | ✓ | ✓ |
+| 트윗 id·시각 정확도 | 파싱 의존 | ✓ | ✓ |
+| 커버리지 | 폰에 푸시 뜬 것만 | 전체 | 전체 |
+| 회원전용 영상 | ✗ | ✗ | ✗ |
+| 폭주 비용 리스크 | 없음 | 있음 (크레딧 순삭) | 있음 |
+
+- **폴링**: 정시성 손해가 큼.
+- **웹훅**: Account Activity API v2 도 이벤트 전달마다 과금. RT·리플·좋아요 등
+  필터로 버릴 이벤트까지 다 받고 돈을 냄 (계정 단위 all-or-nothing, 서버측 필터 없음).
+- X API 는 2026-02 부터 pay-per-use (post read $0.005 / post create $0.015, 링크 포함 $0.20,
+  월 200만 read 상한). 구 Basic $200/월·Pro $5,000/월 티어는 폐지·강제 이관됨.
+- 전환 명분은 **미디어 + 정확도** 뿐인데, 그게 v3 필수 요구가 아니면 업스트림 유지가 우세.
+  미디어가 꼭 필요한 개별 항목만 트윗 URL 로 보강 (무료 CDN).
+
+### 2. 데이터 브랜치 재구성은 입력 소스 결정과 분리
+
+- 데이터 스키마는 **상태 모델**(announced/watching/live/end…)의 산출물이지,
+  트윗이 어떻게 들어오냐의 산출물이 아님.
+- `/ingest` 엔드포인트가 transport 추상화 경계 — 업스트림이든 API 든 같은 텍스트가 들어와
+  같은 파서·저장 계층을 탐. 입력 소스를 나중에 갈아끼워도 스키마 불변.
+- 따라서 v3 착수 시 데이터 처리를 먼저 해도 안전. **콜드 스타트** — 기존 데이터는 `.old/` 로
+  치우고 v3 스키마 파일을 빈 상태에서 새로 쓴다(기존 행 일괄 치환/마이그레이션 스크립트 없음).
+  안정화 확인 후 쓸만한 old 데이터 백필은 별건. 상세: `v3_backend_surgery.md` "데이터 전환".
+
+### 3. 회원전용 영상 = 업스트림 시스템으로 YouTube 알림 중계 (열화 표시)
+
+트리거 충족 시 구현. 정보가 열화된 상태로만 표시:
+
+- `schedule.json` 행: `source: "yt-notif"`, `membership: true`, `video_id` 없음, `thumbnail` 없음.
+- 상태머신이 이 행은 **API 확인을 건너뜀** (`videos.list` 가 회원전용은 응답 안 줌).
+  `watching` 스킵, 알림 오면 바로 `live`.
+- **종료 판정 불가** → 시간 기반 폴백: 알림 후 N시간(예: 3h) 무신호면 `end` 강등,
+  이후 30분 규칙으로 `none`. 나중에 아카이브가 RSS 로 뜨면 확정.
+- 프론트: `.card--membership` — 썸네일 자리에 자물쇠 아이콘, 카운트다운 대신
+  "회원전용 방송 중" 표기.
+- 스키마엔 지금이라도 `membership` 플래그 **자리만 예약** 가능 (값은 미채움).
+
+---
+
+## 미결 항목 (v3 착수 전 결정)
+
+- [x] `pending.json`(계약 E) 흡수 → **폐지 확정**. FSM 을 파생으로 돌리고 `watching`/`end`
+      상태를 `preview.json` 에 올림. 상세: `v3_backend_surgery.md` "v3 데이터 스키마".
+- [x] `scheduled` → `announced` 리네임 + `watching`/`end` 추가 시 data 처리 →
+      콜드 스타트로 결정(마이그레이션 없음). 위 "확정된 결정 2" 참조.
+- [x] 텔레그램 현행→v3 명령어 대응표 → `docs/plan/v3_telegram_controller.md` 로 확정.
+      `/notice-*` 4개·`pending_*` 슬롯 5종이 `/list /ingest /edit /del /undo × {preview|notice|tweet}`
+      로 접힘. `/status` v3 재구성, 아이템 단위 편집 락(전체 pause 안 씀), 단계별 60초 타임아웃,
+      `/del (terminate/y/N)` — `terminate` = url 12h 재진입 차단(`admin_state.suppress`) 포함.
+- [x] translate 호출 시점 = **자동 로직(`/tick`·`/wake`·`/ingest`)만** 파이프라인 끝에서
+      preview 제목·notice 제목·tweet 본문 번역. **텔레그램 수동 명령은 번역 안 함** — 운영자가
+      `/translate [contents]` 로 직접. 원문+번역 both 저장. 상세: `v3_backend_surgery.md`
+      "자동 vs 수동 — translate 호출 시점".
+- [x] `/edit -i` → `/edit` 에 흡수 (별도 명령 아님). 상세는 텔레그램 대응표 작업 때.
+- [x] 외부LLM(Groq) 도입 **확정**. 모델 `openai/gpt-oss-120b`(폴백 llama-3.3-70b), 작업 큐.
+      번역 실패/환각 폴백은 모델별 실측 후 확정(기본선 = 원문 노출).
+      상세: `v3_backend_surgery.md` "모델 선정" / "LLM 작업 큐".
+- [x] `watching` 지각 120분 초과 시 강등 대상 = `announced` (url 은 살림).
+
+---
+
+## 참고
+
+- 컨테이너 뷰 아키텍처 그림: `docs/plan/v3_ARCH_DIAGRAM.png` (점선 = 배포·운영 경계).
+  용어는 `docs/TERMINOLOGY.md` 와 일치.
+- 흐름 그림:
+  `v3_TELEGRAM_FLOW.png` / `v3_SCHEDULE_FLOW.png` — `v3_ARCH_DIAGRAM.png` 와 같은 박스 배치를
+  재활용하되, 해당 기능에 관여 안 하는 박스는 반투명, 쓰는 화살표만 진하게, 안 쓰는 연결은
+  옅은 실선(화살촉 없음)으로 표시. `v3_STATE_MACHINE.png` — 예고 6상태 생애주기·파생 규칙.
+  재생성: `python docs/plan/v3_flow_diagrams.py` (matplotlib · Malgun Gothic).
+  이전 버전(직접 그린 흐름도)은 `docs/plan/backup/` 에 보관.
+- 착수 조건 미충족 시에도 선행 실험(YouTube 알림 문구 수집)은 진행 가능 — v3 코드가 아님.
+  진행 상황(2026-09-09): `ref/flow-7 (2).log` 에서 개인 5인 중 3명(ritsu/yuno/arale) **공개방송**
+  YouTube 알림 payload 확정(`v3_backend_surgery.md` §1). 트리거 대상인 **회원전용 알림은 아직 미관측** →
+  트리거 여전히 미충족.
+- v3 는 v2 와 비호환 가능성이 높아 메이저 버전 업으로 잡음.
