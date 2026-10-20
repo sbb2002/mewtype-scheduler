@@ -42,8 +42,8 @@ src/
       tweets.js        # 유닛 아바타 편지 배지 (+ text_ko 원문↔번역 토글 버튼)
       main.js          # DOMContentLoaded → poll(preview) + pollNotices + pollTweets + 카운트다운 틱
   collector/           # v1 순수 모듈 — config/rss/youtube 는 v3 백엔드가 import 재사용.
-    rss.py youtube.py  #   (reconcile.py·store.py 는 v1 잔재, v3 무의존. v1 실행기 main.py 는 2026-10-20 삭제)
-    config.py reconcile.py store.py
+    rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
+    config.py
   backend/             # v3 Cloud Run 서비스
     app.py             # /tick(Scheduler) /wake(Cloud Tasks) /write(제어 채널) /monitor(Scheduler) · `/` 헬스체크
     handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 + LLM 번역 sweep + 모니터 로그(실행당 최대 1커밋)
@@ -652,7 +652,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   actual_start, actual_end, concurrent_viewers`), `YouTubeClient`(`videos_list` / `search_upcoming` /
   `channels_list`, `quota_used` 카운터).
 - `config.py` — `load_channels()`, `channel_url(handle)`.
-- `reconcile.py`/`store.py` — v1 잔재. v3 무의존. (v1 실행기 `main.py` 와 GitHub Actions `collect.yml` 은 2026-10-20 삭제 — 한 번도 수동 실행된 적 없고, 결과를 받던 코드 저장소 `data` 브랜치도 같은 날 삭제, 기록 = 태그 `archive/data-2026-09-15`.)
+- (삭제) `reconcile.py`/`store.py` — v1 잔재, v3 무의존이라 2026-10-20 삭제(현행 판정은 포크한 `preview_build.py`). v1 실행기 `main.py` 와 GitHub Actions `collect.yml` 도 같은 날 삭제 — 한 번도 수동 실행된 적 없고, 결과를 받던 코드 저장소 `data` 브랜치도 같은 날 삭제, 기록 = 태그 `archive/data-2026-09-15`.
 
 ### 8.1 `preview.py` (순수 — 네트워크·파일·시계 금지, `now_iso` 인자)
 
