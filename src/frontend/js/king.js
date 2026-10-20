@@ -31,6 +31,7 @@ export const MAX_LATE_MS = 3 * 3600000;     // 예고는 예정 시각 + 3h 안�
 export const ARRIVE_MIN_LATE_MS = MIN;      // 이만큼 이상 늦게 시작해야 「지각 후 입장」 연출을 한다
 const STAGE_EDGES = [3 * MIN, 5 * MIN, 10 * MIN, 20 * MIN];   // 1단계 끝 · 2단계 끝 · 3단계 끝 · 4단계 끝
 const KICK = "대신이 고하오";
+export const KING_RING_LATE = ["행차", "준비 중"];   // (v4.5.8) 오늘 카드 예정 링이 시작 시각을 넘겼을 때 「지각」 대신 쓰는 2단 글자(timetable.updateRing)
 
 /* ── 순수 로직 ─────────────────────────────────────────────────────── */
 export function kingTarget(item) {

@@ -13,7 +13,7 @@
 //  closeCardPop()                      → 블록 카드 팝업 닫기
 
 import { formatKST } from "./time.js";
-import { KING_KEY, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
+import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
@@ -474,17 +474,26 @@ function positionNow(grid, nowMs) {
 function ringPct(startMs, nowMs) {
   return Math.max(0, Math.min(100, Math.round((1 - (startMs - nowMs) / DAY_MS) * 100)));
 }
+/* 예정 링: 1시간 넘게 남으면 24시간 기준으로 차오른다(레인 색). (v4.5.8) 1시간 이내는 분 단위 — 가득 찬 노랑 링이 남은 분에 맞춰
+   12시부터 시계방향으로 비워져 0분에 빈 링(.is-min, --p = 남은 비율). 시작 시각이 지나면 빈 링 + 「지각」(.is-late).
+   노노카 지각 이스터에그가 붙은 카드(data-king)는 「지각」 대신 king.js 의 KING_RING_LATE. */
 function updateRing(card, nowMs) {
   const start = Number(card.dataset.start);
   const ring = card.querySelector(".tcard__ring");
   if (!ring || !isFinite(start)) return;
-  const min = Math.max(0, Math.round((start - nowMs) / 60000));
-  ring.style.setProperty("--p", String(ringPct(start, nowMs)));
-  ring.style.setProperty("--rc", min < 60 && start >= nowMs ? "var(--color-late)" : "var(--lane-color, var(--color-sched))");
-  const b = ring.querySelector("b"), sm = ring.querySelector("small");   // 방송 중 링과 같은 2단: 「n시간 / 시작까지」(1시간 미만은 「n분」), 지나면 「지각」
-  b.textContent = start >= nowMs ? (min < 60 ? `${min}분` : `${Math.floor(min / 60)}시간`) : "지각";
-  sm.textContent = start >= nowMs ? "시작까지" : "";
-  card.classList.toggle("tcard--soon", start >= nowMs && start - nowMs < SOON_MS);
+  const left = start - nowMs;
+  const min = Math.max(0, Math.round(left / 60000));
+  const late = left < 0;
+  const minute = !late && left <= HOUR_MS;
+  ring.classList.toggle("is-min", minute);
+  ring.classList.toggle("is-late", late);
+  ring.style.setProperty("--p", late ? "0" : minute ? ((left / HOUR_MS) * 100).toFixed(2) : String(ringPct(start, nowMs)));
+  ring.style.setProperty("--rc", minute ? "var(--color-late)" : "var(--lane-color, var(--color-sched))");
+  const b = ring.querySelector("b"), sm = ring.querySelector("small");   // 방송 중 링과 같은 2단: 「n시간 / 시작까지」(1시간 이내는 「n분」), 지나면 「지각」
+  const [lateB, lateS] = card.dataset.king ? KING_RING_LATE : ["지각", ""];
+  b.textContent = late ? lateB : minute ? `${min}분` : `${Math.floor(min / 60)}시간`;
+  sm.textContent = late ? lateS : "시작까지";
+  card.classList.toggle("tcard--soon", !late && left < SOON_MS);
 }
 
 /* 방송 중 경과 링: 12시부터 시계방향으로 60분간 채워지고, 다음 60분은 같은 방향으로 비워진다(2시간 주기 반복).
