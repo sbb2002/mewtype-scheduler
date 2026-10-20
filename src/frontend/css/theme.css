@@ -103,6 +103,17 @@
   --mp-well-line: rgba(35, 36, 54, 0.08);
 }
 
+/* (v4.5.8) 밝게: 노노카 지각 이스터에그의 카드 · 팝업 본문 글자와 테두리(king.css 토큰). 은빛 · 연금색은 밝은 바탕에서 안 보여 진한 쇠색 · 진한 금색으로.
+   무대 그림(.kg-scene)은 자체 어두운 배경이라 두 테마 공통 */
+:root[data-theme="light"] .k-on {
+  --k-ink-kick: #5b6476;
+  --k-ink: #2f3445;
+  --k-ink-gold-kick: #8f6312;
+  --k-ink-gold: #8a5a00;
+  --k-edge-lo: #a9afbf;
+  --k-edge: #6f7787;
+}
+
 /* 밝게: 행사 배너 상태 딱지는 진한 상태색 위 흰 글자 */
 :root[data-theme="light"] .bnr__card .bnr__state { color: #ffffff; }
 

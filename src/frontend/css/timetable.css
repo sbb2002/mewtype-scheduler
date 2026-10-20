@@ -537,6 +537,9 @@ a.tt-pop__img { cursor: pointer; }
   transition: --p 0.6s linear;
 }
 /* 방송 중: 12시부터 시계방향으로 60분 채우고 → 다음 60분은 같은 방향으로 비운다 */
+/* (v4.5.8) 예정 링 1시간 이내: 12시부터 시계방향으로 빈칸이 늘어나 0분에 빈 링(--p = 남은 비율, 방송 중 링의 「비우기」와 같은 방향) */
+.tcard__ring--up.is-min { background: conic-gradient(var(--color-ring-track) calc((100 - var(--p, 0)) * 1%), var(--rc, var(--color-late)) 0); }
+.tcard__ring--up.is-late b { color: var(--color-late); }   /* 시작 시각 지남 = 빈 링 + 노랑 글자 */
 .tcard__ring--live { --rcol: var(--color-live); }
 .tcard__ring--ended { --rcol: #8a8a8a; }            /* 종료 = 끝난 순간에 멈춘 회색 링 */
 .tcard--ended .tcard__ring b { color: var(--color-ended); }
