@@ -40,6 +40,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > 참고). 아래 경로 표기(`docs/xxx`)는 어느 브랜치 것이든 그대로 유효 — `git show
 > origin/devpapers:docs/ARCHITECTURE.md` 식으로 조회. 용어는 `docs/TERMINOLOGY.md`
 > "`devpapers` 브랜치" 항목 참고.
+> **`ref/`(작업 기록 · 설계 메모 · 실험 자료 · 목업 · 캡처)도 `devpapers` 에서만 관리한다** (2026-10-20 사용자 확정) — `main` 에는 두지 않는다.
+> 새 자료는 `devpapers` 워크트리(`mewtype-scheduler-worktrees/devpapers`)의 `ref/` 에 넣어 커밋한다. 코드 주석 · 문서의 `ref/xxx` 표기도
+> 위와 같이 어느 브랜치 것이든 유효 — `git show origin/devpapers:ref/v4a/v4a_impl_plan.md`. `scripts/build_songs_json.py` 의 입력
+> `ref/player/songs_release.json` 도 `devpapers` 에 있으니 돌릴 땐 먼저 꺼내 둔다(`git show origin/devpapers:ref/player/songs_release.json > ref/player/songs_release.json`).
 
 - 요구사항·설계 배경: `docs/beta_version/PRD.md`, 인터뷰 원본 `docs/beta_version/INTERVIEW*.md` (devpapers)
 - **용어 기준 (세션 간 표현 일관성): `docs/TERMINOLOGY.md`** — 프론트엔드/백엔드/업스트림 시스템/외부 LLM 등.
