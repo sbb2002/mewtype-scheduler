@@ -54,9 +54,9 @@
 - **새 방송 발견**: 10분마다 RSS 폴링 + YouTube PubSub 알림(WebSub). 방송 시작/종료는 방송별 Cloud Tasks wake가 추적한다.
 - **저장**: 별도 저장소 `sbb2002/mewtype-scheduler-data` 의 `data` 브랜치(서비스 데이터) · `monitoring` 브랜치(이벤트 로그). 변경분만 GitHub Contents API로 커밋한다.
 - **운영 도구**: 텔레그램 봇(`/status` `/pause` `/resume` `/list` `/admin` 등)과 운영 모니터 리포트(`monitor_report` · `monitor_snapshot`).
-- **프론트**: Vercel 정적 호스팅(빌드 없음). `main` 브랜치만 배포하고 `data`/`devpapers`/`monitoring` 등은 배포에서 제외한다(`src/frontend/vercel.json`).
+- **프론트**: Vercel 정적 호스팅(빌드 없음). `main` 브랜치만 배포하고 `devpapers` 등 나머지 브랜치는 배포에서 제외한다(`src/frontend/vercel.json`).
 
-> `src/collector/` 와 `.github/workflows/collect.yml`(`workflow_dispatch` 전용)은 **v1 수집기의 잔재**다. 순수 모듈 일부는 백엔드가 가져다 쓰지만, 단독 실행 결과는 현행 사이트에 반영되지 않는다.
+> `src/collector/` 는 **v1 수집기의 잔재**다. `config` · `rss` · `youtube` 는 백엔드가 가져다 쓴다. v1 실행기(`main.py` + GitHub Actions `collect.yml`)와 그 결과를 받던 이 저장소의 `data` 브랜치는 2026-10-20 에 지웠다(기록 = 태그 `archive/data-2026-09-15`).
 
 ---
 
@@ -73,7 +73,7 @@ mewtype-scheduler/
 │   │   └── assets/songs.json   # 플레이어 곡 목록 시드
 │   ├── backend/           # Cloud Run 서비스 (Flask + gunicorn): app · telegram_app · handlers · preview_build ·
 │   │                      #   statemachine · llm · xtweet · xrelay · xnotice · banners · songs · websub · gh_store …
-│   ├── collector/         # v1 순수 모듈 (rss · youtube · reconcile) — 백엔드가 재사용
+│   ├── collector/         # v1 순수 모듈 — config · rss · youtube 는 백엔드가 재사용
 │   └── bus/               # 에러 버스 발신기 (MEW_BUS_DIR 없으면 no-op)
 ├── config/channels.json   # 5채널 메타 단일 소스 (핸들 · 채널 ID · 한글명 · X 표시명 · 호칭)
 ├── deploy/                # gcloud 배포 스크립트 (setup · deploy · deploy_telegram · scheduler · telegram_webhook) + README

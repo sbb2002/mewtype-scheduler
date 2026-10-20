@@ -16,7 +16,8 @@
 ## 관련 용어 (위 항목에 딸린 것)
 
 - **`POST /ingest`** — 업스트림 시스템이 중계한 푸시알림 텍스트를 백엔드가 받는 공개 엔드포인트. transport 추상화 경계 — 입력 소스가 바뀌어도 이 이후 스키마는 불변.
-- **`data` 브랜치** — 백엔드가 상태를 커밋하는 GitHub 브랜치. 코드 없음, JSON 만.
+- **`data` 브랜치** — 백엔드가 상태를 커밋하는 GitHub 브랜치. 코드 없음, JSON 만. 2026-09-14 부터 **데이터 저장소**(`mewtype-scheduler-data`)에 있다.
+  코드 저장소에 있던 옛 `data` 브랜치(v1~v3, ~09-15)는 2026-10-20 삭제 — 기록은 태그 `archive/data-2026-09-15`.
 - **`monitoring` 브랜치** (v3.9) — 데이터 저장소의 **로그 전용** 브랜치. 이벤트 로그
   (`monitoring/events-*.jsonl`)·모니터 스냅샷(`latest.html`)·유실 원문 큐(`lost_queue.json`)가
   여기 쌓인다. `data` 에서 분기해 만들어 과거 로그를 히스토리째 승계했다. **분리한 이유**는
@@ -27,8 +28,8 @@
   표기는 `monitoring` 브랜치로 통일.
 - **`devpapers` 브랜치** — 개발 중 상시 참조하지 않는 문서(배경자료·구버전 기록·운영자용
   설명자료 등)를 모아두는 GitHub 브랜치. `docs/`에서 개발 시 계속 쓰는 4개
-  (`SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md`)만 `main`에 남기고 나머지가
-  여기 있다. `PUSH_MONITOR.html`처럼 자동으로 시간마다 갱신·커밋되는 문서도 여기 둔다 —
+  (`SPEC.md`·`TERMINOLOGY.md`·`VERSION.md`·`INGEST_FLOW.md`)와 그 뒤 더해진 `v4_AUTOMATE_WIRE.md`·`v4_PAMPHLET.html`·`bus/`
+  만 `main`에 남기고 나머지가 여기 있다. `PUSH_MONITOR.html`처럼 자동으로 시간마다 갱신·커밋되는 문서도 여기 둔다 —
   `data` 브랜치와 같은 이유로 Vercel 배포 트리거에서 제외돼 있다(`vercel.json`). **"docs
   브랜치"라고 부르지 말 것** — `docs/` 폴더명과 헷갈린다.
 - **메인 콘텐츠** — preview(방송예고) · tweet(개인 트윗) · notice(공식 소식) 3종.
