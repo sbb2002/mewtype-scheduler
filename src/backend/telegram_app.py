@@ -3023,19 +3023,38 @@ def _filter_banner_roles(roles: list[str], ocr: list[dict]) -> list[str]:
     return out
 
 
-def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
-    """행사 · 가챠 소개 카드 이미지의 글자를 비전으로 읽는다 — [{"idx": 1부터, "text": 글자|None}]. 비전 불가면 []."""
+# (v4.5.9) 이미지 판독 예비 — 관리 페이지에서 허가한 판독(Cloud Vision 등) 글자를 다시 처리할 때 주입한다.
+# _OCR_OVERRIDE = {"engine": "cloud_vision"|…, "texts": {이미지 URL: 글자}} · _OCR_RECHECK = 같은 글을 다시 반영(「이미 반영한 글」 검사를 건너뜀)
+_OCR_OVERRIDE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("ocr_override", default=None)
+_OCR_RECHECK: contextvars.ContextVar[bool] = contextvars.ContextVar("ocr_recheck", default=False)
+
+
+def _ocr_banner_images_ex(media: list[str], limit: int = 4) -> tuple[list[dict], bool]:
+    """(v4.5.9) `_ocr_banner_images` + 실패 여부 — (판독 목록, 한 장이라도 호출이 실패했나). 「글자 없음」은 실패가 아니다.
+    `_OCR_OVERRIDE` 가 있으면 비전을 부르지 않고 그 글자를 쓴다."""
+    urls = list(media or [])[:limit]
+    ov = _OCR_OVERRIDE.get()
+    if ov is not None:
+        out = [{"idx": i, "text": (ov.get("texts") or {}).get(u)} for i, u in enumerate(urls, start=1)]
+        return (out if any(o["text"] for o in out) else []), False
     vc = _make_vision_client()
-    if vc is None or not media:
-        return []
-    out = []
-    for i, url in enumerate(list(media)[:limit], start=1):
+    if vc is None or not urls:
+        return [], False
+    out, failed = [], False
+    for i, url in enumerate(urls, start=1):
         try:
             out.append({"idx": i, "text": vc.read_card(image_url=url)})
+            failed = failed or bool(getattr(vc, "last_failed", False))
         except Exception:  # noqa: BLE001
             log.warning("행사 배너 이미지 OCR 실패 (%s)", url, exc_info=True)
             out.append({"idx": i, "text": None})
-    return out if any(o["text"] for o in out) else []
+            failed = True
+    return (out if any(o["text"] for o in out) else []), failed
+
+
+def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
+    """행사 · 가챠 소개 카드 이미지의 글자를 비전으로 읽는다 — [{"idx": 1부터, "text": 글자|None}]. 비전 불가면 []."""
+    return _ocr_banner_images_ex(media, limit)[0]
 
 
 def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str, gh) -> dict:
@@ -3073,8 +3092,10 @@ def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str,
     # 이미지에만 가챠 종료일이 10/9 로 늘어난 것이 적혀 있었다) — 그 경우에도 이미지를 읽는다.
     related = j.get("action") == "none" and banners.covers_text(banners.active(prev, now_iso), raw)
     ocr = None
-    if media and (j.get("action") == "upsert" or related):
-        ocr = _ocr_banner_images(media)
+    ocr_failed = False
+    ov = _OCR_OVERRIDE.get()
+    if media and (j.get("action") == "upsert" or related or ov is not None):
+        ocr, ocr_failed = _ocr_banner_images_ex(media)
         if ocr:
             j2 = llm_client.banner_judge(raw, posted, active, images_ocr=ocr)
             if j2 is not None:
@@ -3089,7 +3110,13 @@ def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str,
     # (v4.5.3) 날짜 근거 — 반영 쪽(banners.apply_judgement)이 이미 있는 날짜를 바꿀 때 이 글자(본문 + 이미지 OCR)에 그 날짜가 있는지 본다
     evidence = "\n".join([raw or ""] + [str(o.get("text") or "") for o in (ocr or []) if isinstance(o, dict)])
     posted_at, _ = banners.parse_jst(posted)
-    return {"judgement": j, "post": {"tweet_id": tid, "media": media, "text": evidence, "posted_at": posted_at}}
+    if ov is not None:
+        j["reason"] = f"[이미지 판독 {ov.get('engine') or ''}] " + (j.get("reason") or "")
+    out = {"judgement": j, "post": {"tweet_id": tid, "media": media, "text": evidence, "posted_at": posted_at,
+                                    "recheck": bool(_OCR_RECHECK.get())}}
+    if ocr_failed:
+        out["ocr_failed"] = _groq_vision_reason()      # (v4.5.9) 커밋 뒤 「이미지 판독 대기」에 적는다
+    return out
 
 
 def _banners_rw(gh):
@@ -3111,7 +3138,9 @@ def _commit_banner(gh, prepared: dict | None, now_iso: str) -> dict:
     for _try in range(1, 4):
         prev, psha, arc, asha = _banners_rw(gh)
         swept, arc2, moved = banners.sweep(prev, arc, now_iso)
-        r = banners.apply_judgement(swept, prepared["judgement"], prepared.get("post") or {}, now_iso)
+        post = prepared.get("post") or {}
+        # (v4.5.9) 이미지 판독 예비로 다시 처리하는 글은 이미 한 번 반영됐으므로 「이미 반영한 글」 검사를 건너뛴다
+        r = banners.apply_judgement(swept, prepared["judgement"], post, now_iso, check_dup=not post.get("recheck"))
         new_a = dict(arc2)
         if r["archive_add"]:
             new_a["banners"] = list(new_a.get("banners") or []) + r["archive_add"]
@@ -3216,6 +3245,13 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
         _auto_dm(gh, "banner", f"🎴 <b>행사 배너</b> — {html.escape(_BANNER_VERDICT.get(mode, mode))}\n"
                               f"{html.escape(result.get('detail') or '')}\n"
                               f"<i>{html.escape((j.get('reason') or '')[:120])}</i>")
+    if prepared.get("ocr_failed"):
+        # (v4.5.9) 이미지를 못 읽은 채 본문만으로 처리했다 — 운영자가 관리 페이지에서 예비 판독(Cloud Vision)을 허가할 수 있게 적는다
+        _record_ocr_pending(gh, {
+            "kind": "banner", "acct": acct, "tag": x_tag, "tweet_url": _tweet_url_from_tag(x_tag) if x_tag else None,
+            "raw": raw, "media": list((prepared.get("post") or {}).get("media") or []), "reason": prepared["ocr_failed"],
+            "current": f"{_BANNER_VERDICT.get(mode, mode)} — {(result.get('detail') or '')[:120]}",
+        }, now_iso)
     return {"ok": True, "banner": mode, "detail": result.get("detail") or ""}, 200
 
 
@@ -3878,7 +3914,7 @@ def _maybe_url_confirmed_schedule(gh, raw: str, channel_key: str, now_iso: str,
                 "video_id": video_id, "url": f"https://www.youtube.com/watch?v={video_id}", "title": info.title,
                 "scheduled_start": info.scheduled_start or info.actual_start or now_iso, "kind": "member_tweet",
                 "ocr": ocr_state, "suggested": [], "source": channel_key,
-                "tweet_url": _tweet_url_from_tag(tag) if tag else None,
+                "tweet_url": _tweet_url_from_tag(tag) if tag else None, "media": list(_ocr_media or []),
             }], now_iso)
             return True
         host_key, collab_with = members[0], (members[1:] or None)
@@ -4470,17 +4506,20 @@ def _make_vision_client():
 def _ocr_cast_keys(media: list[str] | None, limit: int = 4) -> tuple[list[str], str]:
     """(v4a) 트윗 첨부 이미지를 비전 OCR 로 읽어 참여 멤버(5인 key)를 제안한다(관리 페이지 참여 멤버 선택 팝업용).
     출연진 패널이 아닌 이미지는 건너뛰고 앞에서 `limit` 장까지 본다. 반환 (keys, 상태) — 상태:
-    ok(멤버 판독) · none(이미지는 있으나 판독 실패/매칭 없음) · no_image · unavailable(키·모델 없음)."""
+    ok(멤버 판독) · none(이미지는 있으나 못 읽음/매칭 없음) · failed(v4.5.9 — 비전 호출 실패: 429 · 5xx 등) · no_image · unavailable(키·모델 없음)."""
     if not media:
         return [], "no_image"
     vc = _make_vision_client()
     if vc is None or xrelay is None:
         return [], "unavailable"
+    failed = False
     for url in list(media)[:limit]:
         try:
             names = vc.cast_names(image_url=url)
+            failed = failed or bool(getattr(vc, "last_failed", False))
         except Exception:  # noqa: BLE001
             log.warning("cast OCR 실패 (%s)", url, exc_info=True)
+            failed = True
             continue
         if not names:
             continue
@@ -4492,7 +4531,7 @@ def _ocr_cast_keys(media: list[str] | None, limit: int = 4) -> tuple[list[str], 
         if matched:
             log.info("cast OCR(관리 페이지): %s → %s", names, matched)
             return [k for k in xrelay.ALL_KEYS if k in matched], "ok"
-    return [], "none"
+    return [], ("failed" if failed else "none")
 
 
 # ─── (v4a) LLM 판단 기록 · 되돌리기 (2026-09-30 운영자 요청) ─────────────────────────────────────────────
@@ -5327,7 +5366,180 @@ def _record_group_pending(gh, entries: list[dict], now_iso: str) -> list[str]:
         _log_event_safe(gh, now_iso, "relay", RESULT_OK, who=e.get("source") or "group",
                         detail=f"group-video pending {e.get('video_id')} · {e.get('kind') or ''} · OCR {e.get('ocr') or '-'}",
                         via="ingest")
+        if e.get("ocr") == "failed" and e.get("media"):
+            # (v4.5.9) 이미지를 못 읽어 참여 멤버를 못 정했다 — 예비 판독 허가 대기에도 적는다
+            _record_ocr_pending(gh, {
+                "kind": "cast_group", "acct": e.get("source") or "group", "video_id": e.get("video_id"),
+                "title": e.get("title"), "tweet_url": e.get("tweet_url"), "media": list(e.get("media") or [])[:4],
+                "reason": _groq_vision_reason(), "current": "글에 멤버 근거가 없어 예고에 안 올림 → 예고 탭 「참여 멤버 확인 대기」",
+            }, now_iso)
     return added
+
+
+# ── (v4.5.9) 이미지 판독 대기 — Groq 비전이 이미지를 못 읽은 글(행사 배너 · 그룹 영상 참여 멤버). 2026-10-21 운영자 결정 ──
+# 자동 경로는 지금처럼 본문만으로 처리를 계속하고, 여기에 적어 DM 으로 알린다. 운영자가 관리 페이지 작업 탭에서 허가하면
+# 예비 판독(Google Cloud Vision, `cloudvision.py` — 월 900건 상한, 이 파일의 `usage` 가 카운터)으로 읽어 같은 경로를 다시 탄다.
+# 자동으로 Cloud Vision 을 부르지 않는다. 48시간 지나면 대기에서 빠진다(본문만으로 처리한 결과는 남는다).
+_OCR_PENDING_PATH = "ocr_pending.json"
+_OCR_PENDING_KEEP_SEC = 48 * 3600
+_OCR_DM_GAP_SEC = 3600            # 실패가 이어져도 DM 은 1시간에 한 번만
+
+
+def _groq_vision_reason() -> str:
+    st = vision.groq_vision_state() if vision is not None and hasattr(vision, "groq_vision_state") else {}
+    return "Groq 비전 일일 한도(429)" if st.get("blocked") else "Groq 비전 호출 실패"
+
+
+def _ocr_pending_doc(gh) -> dict:
+    try:
+        cur, _ = gh.read_json(_OCR_PENDING_PATH)
+    except Exception:  # noqa: BLE001
+        log.warning("ocr_pending 읽기 실패", exc_info=True)
+        cur = None
+    return cur or {"items": [], "usage": {}, "groq": None, "last_dm_at": None}
+
+
+def _ocr_pending_alive(e: dict, now_iso: str) -> bool:
+    try:
+        made = datetime.fromisoformat((e.get("created_at") or now_iso).replace("Z", "+00:00"))
+        now = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return True
+    return (now - made).total_seconds() < _OCR_PENDING_KEEP_SEC
+
+
+def _ocr_pending_commit(gh, op: str, now_iso: str, entry: dict | None = None, item_id: str | None = None,
+                        patch: dict | None = None, n: int = 0, cap: int | None = None) -> dict:
+    """(v4.5.9, 적용 큐) 이미지 판독 대기 쓰기. op:
+    add(같은 글 · 같은 영상이면 갱신) → {"id", "added"} · update(item_id, patch) · remove(item_id) ·
+    reserve(n, cap — 이번 달 Cloud Vision 사용량에 n 을 먼저 더한다, 넘으면 거절) → {"ok", "used", "cap"} ·
+    dm_mark(마지막 DM 뒤 1시간 지났으면 시각을 적고 send=True) → {"send", "pending", "images", "used"}. 48시간 지난 항목은 함께 정리."""
+    import uuid
+    month = now_iso[:7]
+    for _try in range(4):
+        cur, sha = gh.read_json(_OCR_PENDING_PATH)
+        before = copy.deepcopy(cur or {})
+        doc = copy.deepcopy(cur or {})
+        doc.setdefault("usage", {})
+        items = [dict(e) for e in doc.get("items") or [] if _ocr_pending_alive(e, now_iso)]
+        res: dict = {}
+        if op == "add":
+            en = dict(entry or {})
+            key = (en.get("kind"), en.get("video_id") or en.get("tag") or "")
+            hit = next((e for e in items if (e.get("kind"), e.get("video_id") or e.get("tag") or "") == key and e.get("status") == "pending"), None)
+            if hit:
+                hit.update({k: v for k, v in en.items() if v is not None}, last_seen=now_iso)
+                res = {"id": hit["id"], "added": False}
+            else:
+                en.update(id="ocr_" + uuid.uuid4().hex[:8], status="pending", created_at=now_iso, last_seen=now_iso)
+                items.append(en)
+                res = {"id": en["id"], "added": True}
+            doc["groq"] = {"state": en.get("reason") or "", "at": now_iso}
+        elif op == "update":
+            hit = next((e for e in items if e.get("id") == item_id), None)
+            if hit is None:
+                return {"ok": False, "error": "대기 목록에 없습니다"}
+            hit.update(patch or {})
+            res = {"ok": True}
+        elif op == "remove":
+            n0 = len(items)
+            items = [e for e in items if e.get("id") != item_id]
+            res = {"removed": n0 - len(items)}
+        elif op == "reserve":
+            used = int((doc["usage"].get(month) or 0))
+            lim = int(cap if cap is not None else 900)
+            if n <= 0 or used + n > lim:
+                return {"ok": False, "used": used, "cap": lim}
+            doc["usage"][month] = used + n
+            res = {"ok": True, "used": used + n, "cap": lim}
+        elif op == "dm_mark":
+            last = doc.get("last_dm_at")
+            gap_ok = True
+            if last:
+                try:
+                    gap_ok = (datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+                              - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() >= _OCR_DM_GAP_SEC
+                except ValueError:
+                    gap_ok = True
+            pend = [e for e in items if e.get("status") == "pending"]
+            res = {"send": gap_ok, "pending": len(pend), "images": sum(len(e.get("media") or []) for e in pend),
+                   "used": int(doc["usage"].get(month) or 0)}
+            if gap_ok:
+                doc["last_dm_at"] = now_iso
+        else:
+            raise ValueError(f"ocr_pending op: {op}")
+        doc["items"] = items
+        if doc == before:
+            return res
+        try:
+            gh.write_json(_OCR_PENDING_PATH, doc, prev_sha=sha, message=f"ops: 이미지 판독 대기 {op} {now_iso}")
+            return res
+        except ConflictError:
+            continue
+    raise RuntimeError("ocr_pending 쓰기 충돌이 계속됨")
+
+
+def _record_ocr_pending(gh, entry: dict, now_iso: str) -> None:
+    """(v4.5.9) 이미지 판독 대기에 적고, 1시간에 한 번 DM. 실패해도 본 처리에는 영향 없음."""
+    try:
+        r = writeclient.call_write("ocr_pending", gh=gh, op="add", now_iso=now_iso, entry=entry, label="이미지 판독 대기")
+        flowtrace.mark("이미지 판독", "fail", f"{entry.get('reason') or ''} — 작업 탭 「이미지 판독 대기」")
+        _log_event_safe(gh, now_iso, "notice", RESULT_WARN, who=entry.get("acct") or "",
+                        detail=f"ocr pending {entry.get('kind')} · {entry.get('reason')} · {r.get('id')}"[:200], via="ingest")
+        m = writeclient.call_write("ocr_pending", gh=gh, op="dm_mark", now_iso=now_iso, label="이미지 판독 대기 알림")
+        if m.get("send"):
+            # 운영자 허가가 필요한 알림이라 알림 레벨과 무관하게 보낸다(그룹 영상 확인 대기와 같음)
+            _send_telegram(
+                "🖼 <b>이미지 판독 실패 — 허가가 필요합니다</b>\n"
+                f"{html.escape(entry.get('reason') or 'Groq 비전 실패')} · 대기 {m.get('pending')}건(이미지 {m.get('images')}장)\n"
+                "본문만으로 먼저 처리해 두었습니다. 관리 페이지 작업 탭 「이미지 판독 대기」에서 Cloud Vision 판독을 허가하세요."
+                f" (이번 달 Cloud Vision {m.get('used')} / 900건)", silent=False)
+    except Exception:  # noqa: BLE001
+        log.exception("이미지 판독 대기 기록 실패")
+
+
+def _cast_keys_from_texts(texts: list[str | None]) -> list[str]:
+    """(v4.5.9) 판독 글자(여러 장)에서 5인 **정식 이름**(`xrelay.FORMAL_NAME_TO_KEY`)으로 참여 멤버 key — 공백 차이(「宮永 ののか」)는 무시.
+    Cloud Vision 은 이미지의 모든 글자를 돌려주므로 짧은 이름표(`NAME_TO_KEY` — 「律」 등)는 다른 낱말에 걸려 쓰지 않는다. 곡 크레디트 줄은 뺀다."""
+    if xrelay is None:
+        return []
+    lines = [ln for t in texts or [] if t for ln in t.splitlines() if not xrelay._CREDIT_LINE_RE.search(ln)]
+    blob = re.sub(r"[\s　]+", "", "\n".join(lines))
+    found = {key for token, key in xrelay.FORMAL_NAME_TO_KEY if token in blob}
+    return [k for k in xrelay.ALL_KEYS if k in found]
+
+
+def _ocr_fallback_apply(gh, entry: dict, texts: list | None, now_iso: str, engine: str) -> str:
+    """(v4.5.9) 허가된 판독으로 그 글을 다시 처리한다. texts = 이미지 순서대로 글자(None = Groq 로 다시 읽기). 결과 한 줄."""
+    media = list(entry.get("media") or [])
+    if entry.get("kind") == "banner":
+        ov = None if texts is None else {"engine": engine, "texts": {u: t for u, t in zip(media, texts) if t}}
+        t1, t2 = _OCR_OVERRIDE.set(ov), _OCR_RECHECK.set(True)
+        try:
+            body, _ = _banner_ingest_core(entry.get("raw") or "", "", {"media": media}, entry.get("tag") or "", "",
+                                          now_iso, gh, entry.get("acct") or "")
+        finally:
+            _OCR_OVERRIDE.reset(t1)
+            _OCR_RECHECK.reset(t2)
+        return (f"{_BANNER_VERDICT.get(body.get('banner'), body.get('banner') or body.get('ignored') or '?')}"
+                + (f" — {body.get('detail')}" if body.get("detail") else ""))[:300]
+    if entry.get("kind") == "cast_group":
+        if texts is None:
+            members, st = _ocr_cast_keys(media)
+            if st == "failed":
+                return "Groq 비전이 또 실패했습니다"
+        else:
+            members = _cast_keys_from_texts(texts)
+        vid = entry.get("video_id") or ""
+        if not members:
+            return "이미지에서 5인 이름을 찾지 못했습니다 — 예고 탭에서 직접 고르세요"
+        names = "·".join(members)
+        if vid not in _group_pending_items(gh):
+            return f"이미지에서 찾은 멤버: {names} (이 영상은 이미 확인 대기에 없습니다 — 확정됐거나 지났음)"
+        writeclient.call_write("group_pending", gh=gh, op="add", now_iso=now_iso, label="그룹 영상 확인 대기 · OCR 제안",
+                               entries=[{"video_id": vid, "suggested": members, "ocr": engine}])
+        return f"이미지에서 찾은 멤버: {names} → 예고 탭 「참여 멤버 확인 대기」에 미리 체크해 두었습니다(확정은 예고 탭에서)"
+    return f"알 수 없는 종류: {entry.get('kind')}"
 
 
 def _resolve_group_videos(gh, raw: str, rows: list[dict], now_iso: str, *, media: list | None,
@@ -5366,7 +5578,7 @@ def _resolve_group_videos(gh, raw: str, rows: list[dict], now_iso: str, *, media
             if vid in pending:
                 resolved.append(vid)
             continue
-        new_pending.append(dict(c, suggested=[], ocr=ocr.get("state"), tweet_url=tweet_url, source="group"))
+        new_pending.append(dict(c, suggested=[], ocr=ocr.get("state"), tweet_url=tweet_url, source="group", media=list(media or [])))
     ev, _basis = xrelay.members_evidence(raw)
     for m in xrelay.YT_VIDEO_RE.finditer(xrelay.normalize(raw)):
         vid = m.group(1)
@@ -7117,6 +7329,83 @@ if __name__ == "__main__":
     assert _filter_banner_roles(["event"], [{"text": "x"}, {"text": "y"}]) == ["event"]       # 장수가 안 맞으면 그대로
 
     print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제)")
+
+    # ── (v4.5.9) 이미지 판독 대기 — Groq 비전 실패 → 대기 기록 · 허가된 판독으로 다시 처리 ──
+    _ogh = _MemGH()
+    _on = "2026-10-21T06:00:00Z"
+    _a = _ocr_pending_commit(_ogh, "add", _on, entry={"kind": "banner", "tag": "p#t-1", "media": ["u1", "u2"], "reason": "Groq 비전 일일 한도(429)"})
+    _b = _ocr_pending_commit(_ogh, "add", _on, entry={"kind": "banner", "tag": "p#t-1", "media": ["u1", "u2"], "reason": "Groq 비전 일일 한도(429)"})
+    assert _a["added"] and not _b["added"] and _a["id"] == _b["id"] and len(_ogh.f[_OCR_PENDING_PATH]["items"]) == 1, "같은 글은 한 줄"
+    assert _ocr_pending_commit(_ogh, "reserve", _on, n=2, cap=3) == {"ok": True, "used": 2, "cap": 3}
+    assert _ocr_pending_commit(_ogh, "reserve", _on, n=2, cap=3)["ok"] is False and _ogh.f[_OCR_PENDING_PATH]["usage"]["2026-10"] == 2, "상한 넘으면 거절 · 카운터 그대로"
+    assert _ocr_pending_commit(_ogh, "dm_mark", _on)["send"] and not _ocr_pending_commit(_ogh, "dm_mark", "2026-10-21T06:30:00Z")["send"]
+    assert _ocr_pending_commit(_ogh, "dm_mark", "2026-10-21T07:01:00Z")["send"], "DM 은 1시간에 한 번"
+    _ocr_pending_commit(_ogh, "update", _on, item_id=_a["id"], patch={"status": "done"})
+    _ocr_pending_commit(_ogh, "dm_mark", "2026-10-23T07:00:00Z")      # 48시간 지난 항목은 정리
+    assert _ogh.f[_OCR_PENDING_PATH]["items"] == [], _ogh.f[_OCR_PENDING_PATH]
+    print("[OK] (v4.5.9) 이미지 판독 대기 저장 — 같은 글 한 줄 · 월 상한 예약 · DM 1시간 간격 · 48시간 정리")
+    assert _cast_keys_from_texts(["イベントガチャ紹介\n「千石 ユノ」「宮永ののか」がSSRメンバーとして登場!"]) == ["yuno", "nonoka"]
+    assert _cast_keys_from_texts(["旋律の向こうへ ユノ"]) == [] and _cast_keys_from_texts(["作詞：仲町あられ"]) == [], "짧은 이름 · 크레디트 줄은 근거 아님"
+    print("[OK] (v4.5.9) 판독 글자 → 5인 정식 이름 대조")
+
+    class _FailVC:
+        last_failed = False
+        def read_card(self, image_url):
+            self.last_failed = True
+            return None
+    class _BJLLM:
+        def __init__(self):
+            self.ocr_seen = []
+        def banner_judge(self, raw, posted, active, images_ocr=None):
+            self.ocr_seen.append(images_ocr)
+            end = "2026-10-26 14:59" if images_ocr else None
+            return {"action": "upsert", "banner_ref": None, "image_for": "none", "image_roles": [], "reason": "새 행사",
+                    "event": {"name_ja": "Shake Your 魂, Baby!!", "name_ko": "셰이크", "start_jst": "2026-10-18 15:00", "end_jst": end, "permanent": False},
+                    "gacha": None}
+    _saved_ocr = (_make_llm_client, _make_vision_client, _send_telegram)
+    _sent = []
+    try:
+        _llm1 = _BJLLM()
+        _make_llm_client, _make_vision_client = (lambda: _llm1), (lambda: _FailVC())
+        _send_telegram = lambda text, silent=False, no_preview=False: _sent.append(text) or True
+        _sgh = _MemGH()
+        _raw = "明日15:00より開催🎉\nチャレンジライブイベント「Shake Your 魂, Baby!!」"
+        _body, _ = _banner_ingest_core(_raw, "", {"media": ["https://x/sh.jpg"]}, "p#https://x.com/#1tweet-2111381718116540885", "",
+                                       "2026-10-17T09:00:00Z", _sgh, "bang_dream_on")
+        assert _body["banner"] == "added", _body
+        assert _sgh.f[_BANNERS_PATH]["banners"][0]["end_at"] is None, "이미지를 못 읽어 종료 미정"
+        _pend = _sgh.f[_OCR_PENDING_PATH]["items"]
+        assert len(_pend) == 1 and _pend[0]["kind"] == "banner" and _pend[0]["media"] == ["https://x/sh.jpg"] and "추가" in _pend[0]["current"], _pend
+        assert any("이미지 판독 실패" in x for x in _sent), _sent
+        # 허가된 판독(Cloud Vision 글자)으로 다시 처리 — 같은 글이라도 다시 반영(dup 아님), 빠진 종료일이 채워진다
+        _summary = _ocr_fallback_apply(_sgh, _pend[0], ["イベント\n開催期間：10月18日 15:00 ～ 10月26日 14:59"], "2026-10-17T09:30:00Z", "Cloud Vision")
+        _bn = _sgh.f[_BANNERS_PATH]["banners"]
+        assert len(_bn) == 1 and _bn[0]["end_at"] == "2026-10-26T05:59:00Z" and "갱신" in _summary, (_summary, _bn)
+        assert _llm1.ocr_seen[-1] and "10月26日" in _llm1.ocr_seen[-1][0]["text"], "판독 글자가 판정에 들어감"
+        assert len(_sgh.f[_OCR_PENDING_PATH]["items"]) == 1, "다시 처리할 때는 대기에 또 적지 않는다"
+        assert any("[이미지 판독 Cloud Vision]" in (x.get("reason") or "") for x in _sgh.f[_LLM_ACTIONS_PATH]["items"])
+    finally:
+        _make_llm_client, _make_vision_client, _send_telegram = _saved_ocr
+    print("[OK] (v4.5.9) 행사 배너 — 비전 실패 → 본문만으로 처리 + 대기 + DM · 허가된 판독으로 다시 처리(종료일 채움)")
+
+    # 그룹 영상 — 이미지를 못 읽어 확인 대기로 간 영상도 이미지 판독 대기에 적히고, 허가된 판독의 이름이 확인 대기의 제안 멤버로 들어간다
+    _saved_tg = _send_telegram
+    try:
+        _send_telegram = lambda text, silent=False, no_preview=False: True
+        _cgh = _MemGH()
+        _record_group_pending(_cgh, [{"video_id": "VID1", "url": "https://www.youtube.com/watch?v=VID1", "title": "サイン会", "kind": "official",
+                                      "scheduled_start": "2026-10-22T10:00:00Z", "ocr": "failed", "suggested": [], "source": "group",
+                                      "tweet_url": "https://x.com/i/status/1", "media": ["https://x/cast.jpg"]}], _on)
+        _cp = _cgh.f[_OCR_PENDING_PATH]["items"]
+        assert len(_cp) == 1 and _cp[0]["kind"] == "cast_group" and _cp[0]["video_id"] == "VID1", _cp
+        assert "media" not in _cgh.f[_GROUP_PENDING_PATH]["items"][0], "확인 대기 파일에는 이미지 목록을 안 남긴다"
+        _cs = _ocr_fallback_apply(_cgh, _cp[0], ["出演\n仲町あられ　千石ユノ"], _on, "Cloud Vision")
+        assert _cgh.f[_GROUP_PENDING_PATH]["items"][0]["suggested"] == ["arale", "yuno"] and "미리 체크" in _cs, (_cs, _cgh.f[_GROUP_PENDING_PATH])
+        _record_group_pending(_cgh, [{"video_id": "VID2", "url": "u", "title": "t", "ocr": "none", "suggested": [], "media": ["https://x/y.jpg"]}], _on)
+        assert len(_cgh.f[_OCR_PENDING_PATH]["items"]) == 1, "못 읽음(none)은 대기에 안 적는다 — 호출 실패만"
+    finally:
+        _send_telegram = _saved_tg
+    print("[OK] (v4.5.9) 그룹 영상 — 비전 실패만 대기 · 허가된 판독 이름 → 확인 대기 제안 멤버")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}

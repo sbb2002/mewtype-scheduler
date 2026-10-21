@@ -604,6 +604,80 @@ def dismiss_group_pending(video_id: str) -> dict:
     return _record("dismiss_group_pending", video_id, "", res)
 
 
+# ── (v4.5.9) 작업 탭 — 이미지 판독 대기 (Groq 비전이 못 읽은 이미지 → 운영자 허가 → Cloud Vision) ─────────────────
+# 2026-10-21 운영자 결정: Cloud Vision 은 여기서 운영자가 누를 때만 부른다. 이미지 1장 = 1건, 월 900건(무료 1,000)에서 막는다.
+
+def list_ocr_pending() -> dict:
+    """(v4.5.9) 이미지 판독 대기 목록 + 이번 달 Cloud Vision 사용량 + Groq 비전 상태(마지막 실패)."""
+    t = _t()
+    from . import cloudvision
+    now = _now_iso()
+    doc = t._ocr_pending_doc(_store())
+    items = [e for e in doc.get("items") or [] if t._ocr_pending_alive(e, now)]
+    items.sort(key=lambda e: e.get("created_at") or "", reverse=True)
+    month = now[:7]
+    groq = dict(doc.get("groq") or {})
+    try:
+        st = t.vision.groq_vision_state() if t.vision is not None else {}
+    except Exception:  # noqa: BLE001
+        st = {}
+    groq["blocked_here"] = bool(st.get("blocked"))
+    return {"items": items, "usage": {"month": month, "used": int((doc.get("usage") or {}).get(month) or 0),
+                                      "cap": cloudvision.MONTHLY_CAP, "free": 1000},
+            "groq": groq, "pending": sum(1 for e in items if e.get("status") == "pending")}
+
+
+def read_ocr_pending(item_id: str, engine: str = "cloud") -> dict:
+    """(v4.5.9) 대기 1건을 읽고 그 글을 다시 처리한다. engine = cloud(Cloud Vision — 월 사용량을 먼저 예약) · groq(Groq 로 다시)."""
+    t = _t()
+    from . import cloudvision
+    now = _now_iso()
+    gh = _store()
+    entry = next((e for e in t._ocr_pending_doc(gh).get("items") or [] if e.get("id") == item_id), None)
+    if entry is None or not t._ocr_pending_alive(entry, now):
+        return _err("대기 목록에 없습니다 (48시간이 지났거나 지웠음)")
+    if entry.get("status") != "pending":
+        return _err("이미 처리한 항목입니다")
+    urls = list(entry.get("media") or [])
+    if not urls:
+        return _err("이미지가 없습니다")
+    texts = None
+    if engine == "cloud":
+        res = _submit("ocr_pending", {"op": "reserve", "now_iso": now, "n": len(urls), "cap": cloudvision.MONTHLY_CAP})
+        rv = res.get("result") or {}
+        if not res.get("ok") or not rv.get("ok"):
+            return _err(f"이번 달 Cloud Vision 상한에 닿았습니다 ({rv.get('used')} / {rv.get('cap')}건) — 다음 달까지 쓸 수 없습니다"
+                        if res.get("ok") else res.get("error") or "사용량 예약 실패")
+        texts = cloudvision.read_texts(urls)
+        if not any(texts):
+            _submit("ocr_pending", {"op": "update", "now_iso": now, "item_id": item_id,
+                                    "patch": {"note": f"Cloud Vision 이 글자를 읽지 못함 ({len(urls)}건 사용) — {now}"}})
+            return _record("read_ocr_pending", item_id, "Cloud Vision 판독 실패",
+                           _err(f"Cloud Vision 이 글자를 읽지 못했습니다 ({len(urls)}건 사용됨) — 다시 시도하거나 무시하세요"))
+        eng = "Cloud Vision"
+    elif engine == "groq":
+        eng = "Groq"
+    else:
+        return _err(f"알 수 없는 판독: {engine}")
+    try:
+        summary = t._ocr_fallback_apply(gh, entry, texts, now, eng)
+    except Exception as e:  # noqa: BLE001
+        return _record("read_ocr_pending", item_id, "", _err(f"다시 처리 실패: {type(e).__name__}: {str(e)[:200]}"))
+    preview = "\n".join(f"이미지 {i}  {(tx or '').replace(chr(10), ' / ')[:160]}" for i, tx in enumerate(texts or [], start=1) if tx)
+    _submit("ocr_pending", {"op": "update", "now_iso": now, "item_id": item_id,
+                            "patch": {"status": "done", "done_at": now, "engine": eng, "result": summary,
+                                      "units": len(urls) if engine == "cloud" else 0, "ocr_preview": preview[:700]}})
+    return _record("read_ocr_pending", item_id, summary, _ok({"result": summary, "engine": eng, "ocr_preview": preview}))
+
+
+def dismiss_ocr_pending(item_id: str) -> dict:
+    """(v4.5.9) 이미지 판독 대기에서 뺀다(읽지 않음 · 처리한 항목 치우기). 본문만으로 처리한 결과는 그대로."""
+    res = _submit("ocr_pending", {"op": "remove", "now_iso": _now_iso(), "item_id": item_id})
+    if res.get("ok") and not (res.get("result") or {}).get("removed"):
+        res = _err("대기 목록에 없습니다")
+    return _record("dismiss_ocr_pending", item_id, "", res)
+
+
 # ── (v4.2.0) 음반 탭 — 곡 목록 · 곡 관리 · 신곡 감지 상태 ─────────────────────────────────────────
 # 곡 목록은 data 브랜치 `songs.json`(신곡 자동 감지가 등록). 수정 · 삭제 · 직접 추가 · 차단 해제 · 독음 다시 만들기는 `/write` 직렬화(writers kind
 # `song_edit`)로 반영하고, **삭제는 항상 재등록 차단(rejected)** 이다. 외부 LLM(독음)은 여기서 먼저 불러 결과만 넘긴다. 계약: ref/v4.2_admin_api_contract.md
@@ -1432,6 +1506,7 @@ ADMIN_FLOW_LABELS = {
     "delete_notice": "소식 삭제", "delete_tweet": "트윗 삭제", "retry_lost": "유실 원문 재투입",
     "set_paused": "일시정지 · 재개", "set_log_level": "알림 레벨", "set_monitor_auto": "멤버 현황 DM",
     "resolve_group_pending": "그룹 영상 확인 대기 · 확정", "dismiss_group_pending": "그룹 영상 확인 대기 · 무시",
+    "read_ocr_pending": "이미지 판독 · 허가", "dismiss_ocr_pending": "이미지 판독 대기 · 무시",
     "undo_llm_action": "LLM 판단 반려", "rejudge_llm_action": "LLM 판단 재판단", "decide_llm_action": "LLM 판단 · 사용자 판단",
     "edit_song": "곡 수정", "delete_song": "곡 삭제", "add_song": "곡 직접 추가", "regenerate_song_reading": "독음 다시 만들기", "unblock_song": "곡 차단 해제",
 }
@@ -1458,6 +1533,10 @@ def describe_target(name: str, body: dict) -> str:
         if name == "undo_llm_action":
             e = next((x for x in _t()._llm_actions_read(_store()) if x.get("id") == body.get("action_id")), {})
             return (e.get("summary") or body.get("action_id") or "")[:60]
+        if name in ("read_ocr_pending", "dismiss_ocr_pending"):
+            e = next((x for x in _t()._ocr_pending_doc(_store()).get("items") or [] if x.get("id") == body.get("item_id")), {})
+            what = (e.get("raw") or e.get("title") or "").replace("\n", " ")[:40]
+            return " · ".join(x for x in (what, f"이미지 {len(e.get('media') or [])}장", body.get("engine") or "") if x)
         if name in ("resolve_group_pending", "dismiss_group_pending"):
             e = _t()._group_pending_items(_store()).get(body.get("video_id") or "") or {}
             who = "·".join(names.get(k, k) for k in (body.get("members") or []))
