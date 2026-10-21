@@ -6,7 +6,7 @@ banners.json
   { "generated_at": "...Z",
     "banners": [ { id, name_ja, name_ko, match_keys[], image_urls[], start_at, end_at, start_time_tbd?,
                    hold: null | {anchor, until}, gachas: [ {id, title_ja, title_ko, image_urls[], start_at, end_at} ],
-                   src_ids[], first_seen, last_updated } ] }
+                   src_ids[], first_seen, last_updated, gacha_only? } ] }      # gacha_only = (v4.5.9) 가챠 단독 배너
 banners_archive.json  { "banners": [ <banner + archived_at, archived_reason> ] }
 
 원칙
@@ -190,7 +190,7 @@ def to_jst(iso: str | None) -> str | None:
 
 
 def for_llm(prev: dict, now_iso: str) -> list[dict]:
-    """`llm.banner_judge` 의 active 인자 — 대기 포함 활성 행사를 JST 문자열로."""
+    """(옛 `llm.banner_judge` 의 active 인자 — v4.5.9 부터 판정에 안 쓴다) 대기 포함 활성 행사를 JST 문자열로."""
     return [{"id": b["id"], "name_ja": b.get("name_ja"), "start_jst": to_jst(b.get("start_at")),
              "end_jst": to_jst(b.get("end_at")), "hold": bool(b.get("hold")),
              "gachas": [g.get("title_ja") for g in b.get("gachas") or []],
@@ -300,7 +300,7 @@ def date_evidenced(iso: str | None, text: str, ref_iso: str | None) -> bool:
     return False
 
 
-def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
+def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup: bool = True) -> dict:
     """행사 판정 1건을 반영한다. 반환:
 
       {"banners": 새 목록(dict), "archive_add": [보관할 항목], "mode": str, "detail": str, "undo": dict|None, "id": str|None}
@@ -312,6 +312,9 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     적혀 있지 않으면(`date_evidenced`) 바꾸지 않는다. 날짜만 아는 값(「10月18日より」)이 같은 날의 시각까지 아는 값을 덮지도 않는다.
     비어 있던 날짜를 채우는 것 · 새 행사 · 운영자 판단(텍스트 없음)은 그대로. 계기: 2026-10-19 날짜 없는 가챠 소개 글 3건이 가챠 기간을
     행사 기간(종료 10/26)과 「10月18日」 00:00 으로 덮었다(정답 10/18 15:00 ~ 10/28 14:59).
+
+    (v4.5.9) check_dup=False — 한 글에서 나온 여러 반영(`apply_post`)의 두 번째부터는 「이미 반영한 글」 검사를 건너뛴다(글 단위 검사는 apply_post 가 먼저 한다).
+    j["gacha_only"] = True 면 새 행사에 `gacha_only` 표시(이벤트 없이 열린 가챠 단독 배너 — `plan_post` 2순위).
     """
     now = _parse_iso(now_iso)
     cur = copy.deepcopy(prev or default_banners())
@@ -349,7 +352,7 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     action = j["action"]
     if action == "none":
         return done("none", (j.get("reason") or "")[:120])
-    if tid and any(tid in (b.get("src_ids") or []) for b in lst):
+    if check_dup and tid and any(tid in (b.get("src_ids") or []) for b in lst):
         return done("dup", "이미 반영한 글")        # 같은 글 재전송(폰 재시도)은 건드리지 않는다
 
     ev = j.get("event") if isinstance(j.get("event"), dict) else None
@@ -423,6 +426,8 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
                   "match_keys": [], "image_urls": [], "start_at": et["start_at"], "end_at": et["end_at"],
                   "start_time_tbd": bool(et["start_time_tbd"]) or None, "hold": None, "gachas": [], "src_ids": [],
                   "first_seen": now_iso, "last_updated": now_iso}
+        if j.get("gacha_only"):
+            target["gacha_only"] = True
         if any(b.get("id") == target["id"] for b in lst):          # 이름 키가 같은데 못 찾은 경우(방어)
             target = next(b for b in lst if b["id"] == target["id"])
             is_new = False
@@ -504,8 +509,199 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
                 undo={"type": "restore_banner", "id": target["id"], "before": before})
 
 
+# ── (v4.5.9) 글 1건 → 반영 계획 — 2026-10-21 운영자 확정 기준 ─────────────────────────────
+# LLM 은 「게임 안/밖」(llm.banner_scope)과 「이벤트 · 가챠 옮겨 적기」(llm.banner_extract)만 하고, 배너를 어떻게 할지는 여기서 코드가 정한다.
+#   1순위 인게임 이벤트(게임 속 인물들의 스토리가 있는 이벤트) — 가챠는 같은 글의 이벤트, 아니면 시작 시각이 같은 이벤트에 딸린다.
+#   2순위 이벤트 없이 다른 행사로 열린 한시 가챠 — 가챠 단독 배너(`gacha_only`).
+#   미션 · 로그인 보너스 등은 추출 단계에서 빠진다(버림). 게임 밖 행사는 소식(호출부).
+#   새 배너는 **시작 일자가 글 · 이미지 글자에 적혀 있을 때만**(종료는 나중 글 · 이미지로 채운다).
+#   같은 이벤트를 별도 배너로 올리지 않는다 — 이름(포함 관계까지) 또는 같은 시작 시각의 이벤트 배너가 있으면 그 배너를 갱신한다.
+
+def _similar(a: str | None, b: str | None) -> bool:
+    ka, kb = name_key(a), name_key(b)
+    return bool(ka and kb) and (ka == kb or (min(len(ka), len(kb)) >= _MIN_KEY_LEN and (ka in kb or kb in ka)))
+
+
+def plan_post(prev: dict, items: list[dict], text: str, posted_at: str | None, now_iso: str,
+              image_roles: list[str] | None = None) -> list[dict]:
+    """추출 항목 → 반영 단계 목록 [{"desc": 설명, "j": apply_judgement 판정 | None, "merge": (가챠 단독 배너 id, 이벤트 이름) | None}].
+
+    j 가 None 이고 merge 도 없으면 「버림」(desc 에 이유). `text` = 본문 + 이미지 글자 — 날짜 근거 확인(`date_evidenced`)에 쓴다.
+    image_roles 는 첫 이벤트 단계에만 붙인다(키비주얼은 이벤트 배너에만 — 가챠 이미지는 안 쓴다, 2026-10-02 운영자 결정).
+    """
+    lst = active(prev, now_iso)
+    ref_iso = posted_at or now_iso
+
+    def evid(v, end=False):
+        iso = parse_jst(v, end=end)[0] if v else None
+        return v if iso and date_evidenced(iso, text or "", ref_iso) else None
+
+    def find(title):
+        for b in lst:
+            if _similar(title, b.get("name_ja")):
+                return b, None
+            for g in b.get("gachas") or []:
+                if _similar(title, g.get("title_ja")):
+                    return b, g
+        return None, None
+
+    def event_at(s_iso, date_only=False):
+        """시작이 같은 이벤트 배너. 날짜만 아는 값(「10月18日より開催中」)이면 시작 날짜(JST)가 같은 이벤트."""
+        if not s_iso:
+            return None
+        day = _parse_iso(s_iso).astimezone(_JST).date()
+        return next((b for b in lst if not b.get("gacha_only") and b.get("start_at") and (
+            b["start_at"] == s_iso or (date_only and _parse_iso(b["start_at"]).astimezone(_JST).date() == day))), None)
+
+    steps: list[dict] = []
+    made: list[str] = []                  # 이 글이 새로 만든 이벤트 이름
+    roles_left = list(image_roles or [])
+
+    def step(desc, j=None, merge=None):
+        steps.append({"desc": desc, "j": j, "merge": merge})
+
+    for it in [i for i in items if i.get("kind") == "event"] + [i for i in items if i.get("kind") == "gacha"]:
+        t = (it.get("title_ja") or "").strip()
+        if not t:
+            continue
+        ko = it.get("title_ko") or None
+        s, e = evid(it.get("start_jst")), evid(it.get("end_jst"), end=True)
+        s_iso, s_tbd = parse_jst(s) if s else (None, False)
+        when = f"{s or '시작?'} ~ {e or '종료?'}"
+        b, g = find(t)
+        is_event = it["kind"] == "event"
+        if b is None and is_event and s_iso:
+            b = event_at(s_iso, s_tbd)
+            if b is not None:
+                step(f"이벤트 「{t}」 — 이름은 다르지만 시작이 같은 이벤트 배너 「{b.get('name_ja')}」로 봄")
+        status = it.get("status") or "normal"
+        if status in ("postponed", "cancelled"):
+            if b is None:
+                step(f"{'이벤트' if is_event else '가챠'} 「{t}」 {'보류' if status == 'postponed' else '취소'} — 대상 배너 없음(버림)")
+            else:
+                act = "hold" if status == "postponed" else "cancel"
+                step(f"「{b.get('name_ja')}」 {'보류 표시' if act == 'hold' else '취소로 내림'}", {"action": act, "banner_ref": b["id"], "event": None, "gacha": None})
+            continue
+        if is_event:
+            ev = {"name_ja": t, "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}
+            j = None
+            if b is not None and not b.get("gacha_only"):
+                j = {"action": "upsert", "banner_ref": b["id"], "event": dict(ev, name_ja=b.get("name_ja")), "gacha": None}
+                step(f"이벤트 「{t}」({when}) 기존 배너 갱신", j)
+            elif s:
+                j = {"action": "upsert", "banner_ref": None, "event": ev, "gacha": None}
+                step(f"이벤트 「{t}」({when}) 새 배너", j)
+                made.append(t)
+                for x in lst:            # 먼저 가챠 단독으로 올라 있던 같은 시작의 가챠 → 이 이벤트 밑으로
+                    if x.get("gacha_only") and x.get("start_at") == s_iso:
+                        step(f"가챠 단독 배너 「{x.get('name_ja')}」 → 이벤트 「{t}」 밑으로", merge=(x["id"], t))
+            else:
+                step(f"이벤트 「{t}」 버림 — 시작 일자가 적혀 있지 않고 같은 이벤트 배너도 없음")
+            if j is not None and roles_left:
+                j["image_roles"], roles_left = roles_left, []
+            continue
+        ga = {"title_ja": t, "title_ko": ko, "start_jst": s, "end_jst": e}
+        if b is not None:
+            if b.get("gacha_only"):
+                step(f"가챠 「{t}」({when}) 가챠 단독 배너 갱신", {"action": "upsert", "banner_ref": b["id"], "event": {
+                    "name_ja": b.get("name_ja"), "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None})
+            else:
+                step(f"가챠 「{t}」({when}) 「{b.get('name_ja')}」의 가챠 갱신", {"action": "upsert", "banner_ref": b["id"], "event": None,
+                     "gacha": dict(ga, title_ja=(g or {}).get("title_ja") or t)})
+        elif made:
+            step(f"가챠 「{t}」({when}) 같은 글의 이벤트 「{made[0]}」에 붙임",
+                 {"action": "upsert", "banner_ref": make_id(made[0]), "event": None, "gacha": ga})
+        elif s_iso and event_at(s_iso, s_tbd) is not None:
+            h = event_at(s_iso, s_tbd)
+            step(f"가챠 「{t}」({when}) 시작이 같은 이벤트 「{h.get('name_ja')}」에 붙임",
+                 {"action": "upsert", "banner_ref": h["id"], "event": None, "gacha": ga})
+        elif s and not s_tbd:
+            step(f"가챠 「{t}」({when}) 붙을 이벤트 없음 → 가챠 단독 배너", {"action": "upsert", "banner_ref": None, "gacha_only": True,
+                 "event": {"name_ja": t, "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None})
+        elif s:
+            # 날짜만 있는 가챠(「10月18日より開催中」 — 소개 · 재공지 글)로는 가챠 단독 배너를 새로 만들지 않는다(개최 공지에는 시각이 있다)
+            step(f"가챠 「{t}」 버림 — 시작이 날짜만({s})이고 같은 날 시작하는 이벤트 · 같은 가챠 배너도 없음")
+        else:
+            step(f"가챠 「{t}」 버림 — 시작 일자가 적혀 있지 않고 붙을 배너도 없음")
+    return steps
+
+
+_MODE_RANK = ("added", "cancelled", "held", "updated")
+
+
+def apply_post(prev: dict, steps: list[dict], post: dict, now_iso: str) -> dict:
+    """`plan_post` 단계들을 차례로 반영한다 — 반환 형식은 `apply_judgement` 와 같다(mode 는 가장 큰 변화, detail 은 단계별 결과를 이음).
+
+    undo = {"type": "restore_banner", "items": [단계별 되돌리기 …]} — `restore` 가 거꾸로 풀어 한 번에 되돌린다.
+    같은 글(tweet_id)을 이미 반영했으면 아무것도 안 하고 dup.
+    """
+    cur = copy.deepcopy(prev or default_banners())
+    tid = str(post.get("tweet_id") or "")
+    out = {"banners": cur, "archive_add": [], "mode": "none", "detail": "", "undo": None, "id": None, "shown": False}
+    if tid and any(tid in (b.get("src_ids") or []) for b in cur.get("banners") or []):
+        out.update(mode="dup", detail="이미 반영한 글")
+        return out
+    modes, details, undos = [], [], []
+    for st in steps:
+        if st.get("merge"):
+            gid, ename = st["merge"]
+            lst = cur["banners"]
+            gb = next((x for x in lst if x.get("id") == gid), None)
+            host = next((x for x in lst if x.get("id") == make_id(ename)), None)
+            if gb is None or host is None:
+                details.append(st["desc"] + " — 건너뜀(대상 없음)")
+                continue
+            undos += [{"type": "restore_banner", "id": gid, "before": copy.deepcopy(gb), "was_removed": True},
+                      {"type": "restore_banner", "id": host["id"], "before": copy.deepcopy(host)}]
+            if not any(name_key(x.get("title_ja")) == name_key(gb.get("name_ja")) for x in host.get("gachas") or []):
+                host.setdefault("gachas", []).append({"id": _gacha_id(gb.get("name_ja") or ""), "title_ja": gb.get("name_ja"),
+                                                      "title_ko": gb.get("name_ko"), "image_urls": [],
+                                                      "start_at": gb.get("start_at"), "end_at": gb.get("end_at")})
+            host["src_ids"] = (list(host.get("src_ids") or []) + [x for x in gb.get("src_ids") or [] if x not in (host.get("src_ids") or [])])[-20:]
+            host["match_keys"] = _keys(host)
+            host["last_updated"] = now_iso
+            lst.remove(gb)
+            modes.append("updated")
+            details.append(st["desc"])
+            continue
+        if st.get("j") is None:
+            details.append(st["desc"])
+            continue
+        r = apply_judgement(cur, st["j"], post, now_iso, check_dup=False)
+        modes.append(r["mode"])
+        details.append(f"{st['desc']} → {r['mode']}" + (f" ({r['detail']})" if r["mode"] in ("invalid", "none") and r["detail"] else ""))
+        if r["mode"] in _MODE_RANK:
+            cur = r["banners"]
+            out["archive_add"] += r["archive_add"]
+            if r["undo"]:
+                undos.append(r["undo"])
+            out["id"] = out["id"] or r["id"]
+            out["shown"] = out["shown"] or r["shown"]
+    mode = next((m for m in _MODE_RANK if m in modes), None) or next((m for m in modes if m not in ("none",)), "none")
+    if mode in _MODE_RANK:
+        cur["banners"] = sorted(cur.get("banners") or [], key=lambda b: (b.get("start_at") or "", b.get("id") or ""))
+        cur["generated_at"] = now_iso
+    out.update(banners=cur, mode=mode, detail=" · ".join(details)[:400] or "뽑을 이벤트 · 가챠 없음",
+               undo={"type": "restore_banner", "items": undos} if undos else None)
+    return out
+
+
 def restore(prev: dict, undo: dict, archive: dict, now_iso: str) -> tuple[dict, dict, str]:
-    """되돌리기. 반환 (banners, archive, 결과 문구). 사본을 돌려준다."""
+    """되돌리기. 반환 (banners, archive, 결과 문구). 사본을 돌려준다.
+
+    (v4.5.9) undo["items"](한 글이 여러 배너를 바꾼 경우 — `apply_post`)면 거꾸로 하나씩 풀고, 하나라도 풀리면 「되돌림」."""
+    if isinstance(undo.get("items"), list):
+        cur, arc, msgs = prev, archive, []
+        for u in reversed(undo["items"]):
+            cur, arc, m = _restore_one(cur, u, arc, now_iso)
+            msgs.append(m)
+        return cur, arc, "되돌림" if "되돌림" in msgs else (msgs[0] if msgs else "되돌릴 것 없음")
+    return _restore_one(prev, undo, archive, now_iso)
+
+
+def _restore_one(prev: dict, undo: dict, archive: dict, now_iso: str) -> tuple[dict, dict, str]:
+    """배너 하나 되돌리기. was_archived = 취소로 보관된 것 되살림 · (v4.5.9) was_removed = 다른 배너에 합쳐져 사라진 것 되살림 ·
+    before=None = 새로 만든 것 지움 · 그 밖 = before 로 바꿈."""
     cur = copy.deepcopy(prev or default_banners())
     arc = copy.deepcopy(archive or default_archive())
     bid, before = undo.get("id"), undo.get("before")
@@ -520,6 +716,12 @@ def restore(prev: dict, undo: dict, archive: dict, now_iso: str) -> tuple[dict, 
         if hit is None or before is None:
             return cur, arc, "보관에 없음"
         arc["banners"] = [r for r in rows if r is not hit]
+        lst.append(before)
+    elif undo.get("was_removed"):
+        if now_row:
+            return cur, arc, "이미 활성에 있음"
+        if before is None:
+            return cur, arc, "되살릴 내용 없음"
         lst.append(before)
     elif before is None:
         if not now_row:
@@ -842,4 +1044,64 @@ if __name__ == "__main__":
     fl2 = for_llm(SH, NOW)
     assert fl2[0]["gacha_periods"] == ["はじめてを奏でる光彩讃歌ガチャ 2026-10-18 15:00~2026-10-28 14:59"], fl2
     print("[OK] (v4.5.3) 날짜 근거 확인 · 날짜만 값의 시각 덮어쓰기 차단 · 가챠 기간 판정 목록 표시")
+
+    # (v4.5.9) plan_post · apply_post — 2026-10-21 운영자 확정 기준(실측 14건 재현 실험의 축약)
+    def run(state, items, text, now, tid, roles=None):
+        stp = plan_post(state, items, text, now, now, roles)
+        return apply_post(state, stp, {"tweet_id": tid, "media": [], "text": text, "posted_at": now}, now), stp
+    def ev(t, s=None, e=None, kind="event", status="normal"):
+        return {"kind": kind, "status": status, "title_ja": t, "title_ko": None, "start_jst": s, "end_jst": e, "period_evidence": ""}
+    T1 = "2026-10-17T09:00:00Z"
+    sh_txt = "明日15:00より開催🎉\nチャレンジライブイベント「Shake Your 魂, Baby!!」\nイベント\n開催期間：10月18日 15:00 ～ 10月26日 14:59"
+    r1, _ = run(default_banners(), [ev("Shake Your 魂, Baby!!", "2026-10-18 15:00", "2026-10-26 14:59")], sh_txt, T1, "101")
+    assert r1["mode"] == "added" and len(r1["banners"]["banners"]) == 1 and r1["undo"]["items"], r1
+    S1 = r1["banners"]
+    assert apply_post(S1, plan_post(S1, [ev("Shake Your 魂, Baby!!")], sh_txt, T1, T1), {"tweet_id": "101"}, T1)["mode"] == "dup"
+    # 스토리 예고(날짜 없음) — 새 배너를 만들지 않고 같은 배너
+    r2, _ = run(S1, [ev("Shake Your 魂, Baby!!")], "✌️一家Dumb Rock!初イベント✌️\n「Shake Your 魂, Baby!!」予告", T1, "102")
+    assert len(r2["banners"]["banners"]) == 1 and r2["mode"] in ("updated", "none"), r2
+    # 가챠 글 — 시작이 같은 이벤트에 딸린다(기간이 겹치는 것만으로는 안 붙인다)
+    g_txt = "明日15:00より開催✨\n「はじめてを奏でる光彩讃歌ガチャ」\n開催期間：10月18日15:00～10月28日14:59まで"
+    r3, _ = run(r2["banners"], [ev("はじめてを奏でる光彩讃歌ガチャ", "2026-10-18 15:00", "2026-10-28 14:59", kind="gacha")], g_txt, T1, "103")
+    b3 = r3["banners"]["banners"]
+    assert len(b3) == 1 and b3[0]["gachas"][0]["end_at"] == "2026-10-28T05:59:00Z", b3
+    # SSR 소개(「10月18日より開催中」 날짜만) — 가챠 시작 15:00 을 덮지 않고, 새 배너도 없다
+    T2 = "2026-10-19T03:00:00Z"
+    r4, _ = run(r3["banners"], [ev("はじめてを奏でる光彩讃歌ガチャ", "2026-10-18", kind="gacha")], "10月18日より開催中🎉\n「はじめてを奏でる光彩讃歌ガチャ」", T2, "104")
+    assert len(r4["banners"]["banners"]) == 1 and r4["banners"]["banners"][0]["gachas"][0]["start_at"] == "2026-10-18T06:00:00Z"
+    # 이름이 조금 달라도(포함 관계) · 이름이 달라도 시작이 같으면 같은 이벤트 — 별도 배너 안 만듦
+    r5, _ = run(S1, [ev("Shake Your 魂", "2026-10-18 15:00")], "明日15:00より開催 「Shake Your 魂」", T1, "105")
+    assert len(r5["banners"]["banners"]) == 1, r5
+    r5b, st5b = run(S1, [ev("一家Dumb Rock!初イベント", "2026-10-18 15:00")], "明日15:00より開催 一家Dumb Rock!初イベント", T1, "106")
+    assert len(r5b["banners"]["banners"]) == 1 and "시작이 같은" in st5b[0]["desc"], st5b
+    # 날짜 없는 새 이벤트 · 붙을 데 없는 날짜 없는 가챠 → 버림(배너 그대로)
+    r6, st6 = run(default_banners(), [ev("新イベント"), ev("新ガチャ", kind="gacha")], "新イベント 新ガチャ", T1, "107")
+    assert r6["mode"] == "none" and not r6["banners"]["banners"] and all(s["j"] is None for s in st6), st6
+    # 2순위 — 붙을 이벤트가 없는 한시 가챠(Ave Mujica) → 가챠 단독 배너(gacha_only). 기간 겹치는 サイドスロー(시작 10/9)에는 안 붙는다
+    T3 = "2026-10-15T13:42:53Z"
+    side = apply_post(default_banners(), plan_post(default_banners(), [ev("お願い、サイドスロー", "2026-10-09 15:00", "2026-10-17 14:59")],
+                      "開催期間：10月9日 15:00～10月17日 14:59", T3, T3), {"tweet_id": "200"}, T3)["banners"]
+    av_txt = "公開記念 Ave Mujicaピックアップガチャ\n開催期間\n10月16日 15:00 ～ 10月25日 23:59"
+    r7, _ = run(side, [ev("Ave Mujicaピックアップガチャ", "2026-10-16 15:00", "2026-10-25 23:59", kind="gacha")], av_txt, T3, "201")
+    av = next(b for b in r7["banners"]["banners"] if b["name_ja"].startswith("Ave"))
+    assert av.get("gacha_only") and av["end_at"] == "2026-10-25T14:59:00Z" and not av["gachas"], av
+    assert not next(b for b in r7["banners"]["banners"] if b["name_ja"].startswith("お願い"))["gachas"]
+    # 가챠 단독이 먼저 오고 같은 시작의 이벤트가 뒤에 오면 → 이벤트 배너 밑으로 합친다 · 되돌리기는 한 번에
+    G0 = run(default_banners(), [ev("光彩讃歌ガチャ", "2026-10-18 15:00", "2026-10-28 14:59", kind="gacha")], g_txt, T1, "300")[0]["banners"]
+    r8, st8 = run(G0, [ev("Shake Your 魂, Baby!!", "2026-10-18 15:00", "2026-10-26 14:59")], sh_txt, T1, "301", roles=["event"])
+    b8 = r8["banners"]["banners"]
+    assert len(b8) == 1 and b8[0]["name_ja"] == "Shake Your 魂, Baby!!" and b8[0]["gachas"][0]["title_ja"] == "光彩讃歌ガチャ", b8
+    assert not b8[0].get("gacha_only") and "300" in b8[0]["src_ids"] and any(s["merge"] for s in st8)
+    back, _a, msg = restore(r8["banners"], r8["undo"], default_archive(), T1)
+    assert msg == "되돌림" and [b["name_ja"] for b in back["banners"]] == ["光彩讃歌ガチャ"] and back["banners"][0]["gacha_only"], back
+    # 날짜만 있는 가챠 소개(「10月18日より開催中」)가 가챠 글보다 먼저 와도 — 같은 날 시작하는 이벤트에 붙고, 붙을 데 없으면 새 배너를 만들지 않는다
+    ssr = "10月18日より開催中🎉\n「はじめてを奏でる光彩讃歌ガチャ」"
+    r10, _ = run(S1, [ev("はじめてを奏でる光彩讃歌ガチャ", "2026-10-18", kind="gacha")], ssr, T2, "500")
+    assert len(r10["banners"]["banners"]) == 1 and r10["banners"]["banners"][0]["gachas"][0]["title_ja"] == "はじめてを奏でる光彩讃歌ガチャ", r10
+    r11, st11 = run(default_banners(), [ev("はじめてを奏でる光彩讃歌ガチャ", "2026-10-18", kind="gacha")], ssr, T2, "501")
+    assert r11["mode"] == "none" and not r11["banners"]["banners"] and "날짜만" in st11[0]["desc"], st11
+    # 취소 공지 → 그 배너를 내린다
+    r9, _ = run(S1, [ev("Shake Your 魂, Baby!!", status="cancelled")], "「Shake Your 魂, Baby!!」開催中止のお知らせ", T1, "400")
+    assert r9["mode"] == "cancelled" and not r9["banners"]["banners"] and r9["archive_add"], r9
+    print("[OK] (v4.5.9) plan_post · apply_post — 1순위 이벤트 · 같은 시작 가챠 · 2순위 가챠 단독 · 중복 배너 방지 · 합치기 · 버림 · 묶음 되돌리기")
     print("[PASS] banners self-test (시각 · 이름 키 · 반영 · 보류/재개 · 취소/되돌리기 · sweep · 소식 겹침 · 수정)")

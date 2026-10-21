@@ -4783,10 +4783,10 @@
                     field("행사 이름 — 원문", ja, sub); field("행사 이름 — 한글", ko, sub);
                     field("시작 (KST, 모르면 비움)", st, sub); field("종료 (KST, 필수 — 종료일 없는 행사는 올리지 않습니다)", en, sub);
                     sub.hidden = true;
-                    const getC = seg([["skip", "올리지 않음"], ["register", "행사로 올림(직접 입력)"]], "skip", (v) => { sub.hidden = v !== "register"; });
+                    const getC = seg([["skip", "올리지 않음"], ["register", "행사로 올림(직접 입력)"], ["notice", "소식으로 올림"]], "skip", (v) => { sub.hidden = v !== "register"; });
                     wrap.appendChild(sub);
                     return {
-                        get: () => getC() === "register" ? { choice: "register", name_ja: ja.value, name_ko: ko.value, start: st.value, end: en.value } : { choice: "skip" },
+                        get: () => getC() === "register" ? { choice: "register", name_ja: ja.value, name_ko: ko.value, start: st.value, end: en.value } : { choice: getC() === "notice" ? "notice" : "skip" },
                         validate: () => getC() === "register" && !en.value ? "종료 일시를 입력하세요" : (getC() === "register" && !(ja.value.trim() || ko.value.trim()) ? "행사 이름을 입력하세요" : ""),
                     };
                 }

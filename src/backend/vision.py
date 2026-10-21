@@ -15,7 +15,7 @@ Automate 는 텍스트 알림만 중계하므로, 이미지 속 이름은 텍스
 일반 텍스트 LLM(`llm.py`, gpt-oss 계열)보다 이 두 비전 모델은 무료 티어 TPM/OTPM
 한도가 훨씬 낮다(실측: qwen3.6-27b 는 thinking 모드가 길면 출력 토큰 한도에
 쉽게 걸림) — 그래서 항상 `reasoning_effort:"none"` + 짧은 `max_tokens` 로 호출하고,
-메인 모델이 실패(429/5xx/타임아웃/파싱 실패)하면 즉시 폴백 모델로 1회만 재시도한다
+메인 모델이 실패(429/5xx/타임아웃/파싱 실패)하면 폴백 모델이 있을 때 1회만 재시도한다(v4.5.9 부터 기본 폴백 없음)
 (llm.py 처럼 같은 모델에 지수 백오프 3회를 하지 않음 — 한도가 낮아 오히려 폴백
 모델로 빨리 넘어가는 게 유리).
 
@@ -33,7 +33,10 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_VISION_MODEL = "qwen/qwen3.8-27b"
-FALLBACK_VISION_MODEL = "qwen/qwen3.6-27b"
+# (v4.5.9) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
+# 옛 폴백 qwen/qwen3.6-27b 는 model_not_found(404)다(10-02 부터). env GROQ_VISION_MODEL_FALLBACK 로 줄 수는 있다.
+FALLBACK_VISION_MODEL = ""
+MAX_IMAGES_PER_REQUEST = 3      # (v4.5.9) qwen3.8-27b — 요청당 이미지 최대 3장, 장당 입력 2048 토큰(Groq 문서)
 
 # "N. <이름>" 형식 한 줄씩 — 프롬프트가 강제하는 출력 포맷.
 _NAME_LINE_RE = re.compile(r"^\s*\d+\.\s*(.+?)\s*$", re.MULTILINE)
@@ -49,6 +52,17 @@ _CARD_PROMPT = (
     "2. 제목 · 개최기간(開催期間의 날짜와 시각) · 본문 문장을 포함한다. 로고 · 저작권 표기 · 장식 글자는 건너뛴다.\n"
     "3. 최대 10줄. 글자가 거의 없는 이미지는 보이는 것만 적고, 하나도 없으면 NONE 한 단어만 출력한다."
 )
+
+# (v4.5.9) 여러 장을 한 요청으로 — 이미지마다 [이미지 k] 머리줄을 달게 해 나눈다.
+_CARDS_PROMPT = (
+    "이미지 {n}장이 순서대로 붙어 있다. 각 이미지에 보이는 일본어 글자를 위에서 아래 순서로 줄 단위로 그대로 옮겨 적어라.\n"
+    "규칙:\n"
+    "1. 이미지마다 첫 줄에 [이미지 k] (k = 1부터) 를 쓰고 그 아래에 옮겨 적는다.\n"
+    "2. 실제로 보이는 글자만 적는다. 번역 · 발음 · 설명을 추가하지 않는다. 확실하지 않은 글자는 ? 로 쓴다.\n"
+    "3. 제목 · 개최기간(開催期間의 날짜와 시각) · 본문 문장을 포함한다. 로고 · 저작권 표기 · 장식 글자는 건너뛴다.\n"
+    "4. 이미지마다 최대 10줄. 글자가 하나도 없으면 그 이미지는 NONE 한 단어만 적는다."
+)
+_CARD_HEAD_RE = re.compile(r"\[\s*이미지\s*(\d+)\s*\]")
 
 _CAST_PROMPT = (
     "이 이미지가 여러 인물 사진이 나란히 배치되고 그 아래마다 이름이 적힌 "
@@ -123,7 +137,7 @@ class VisionClient:
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
             }
 
-        for model in (self.model, self.fallback):
+        for model in self._models():
             text = self._call(model, image_content)
             if text is None:
                 continue  # 호출 실패(429/5xx/네트워크) — 다음 모델로
@@ -149,7 +163,7 @@ class VisionClient:
         # 실측(2026-10-02): 이 계정에서 쓸 수 있는 비전 모델은 qwen/qwen3.8-27b 하나뿐이고(폴백 qwen3.6 은 404),
         # 분당 입력 토큰 한도(ITPM 7000)가 낮아 한 글의 이미지 3~4장을 연달아 읽으면 429 가 난다 → 429 는 안내된 시간만큼
         # 기다렸다 같은 모델을 다시 부른다(최대 3회, 한 번에 15초 상한). 폴백은 메인이 429 가 아닌 이유로 실패했을 때만.
-        for model in (self.model, self.fallback):
+        for model in self._models():
             for attempt in range(3):
                 self._retry_after = None
                 text = self._call(model, content, prompt=_CARD_PROMPT, max_tokens=500)
@@ -159,7 +173,7 @@ class VisionClient:
                 break
             if text is None:
                 if self._retry_after is not None:
-                    return None          # 한도에 계속 막힘 — 폴백(없는 모델)으로 넘기지 않는다
+                    return None          # 한도에 계속 막힘 — 폴백으로 넘기지 않는다
                 continue
             text = text.strip()
             if not text or text.upper() == _NONE_MARKER:
@@ -167,7 +181,45 @@ class VisionClient:
             return text[:800]
         return None
 
-    def _call(self, model: str, image_content: dict, *, prompt: str = _CAST_PROMPT, max_tokens: int = 300) -> str | None:
+    def _models(self) -> list[str]:
+        return [m for m in (self.model, self.fallback) if m]
+
+    def read_cards(self, image_urls: list[str]) -> list[str | None]:
+        """(v4.5.9) `read_card` 의 여러 장 판 — 이미지 3장(`MAX_IMAGES_PER_REQUEST`)씩 한 요청으로 읽는다. 이미지마다 글자 | None.
+
+        한 장씩 부르던 것을 묶어 요청 수를 줄인다(토큰은 장당 2048 그대로라 분당 입력 한도 7000 에는 3장이 거의 끝).
+        429 는 안내된 시간만큼 기다렸다 같은 모델로 다시(최대 3회, 한 번에 15초 상한), 폴백은 429 가 아닌 실패일 때만.
+        """
+        urls = [u for u in (image_urls or []) if isinstance(u, str) and u]
+        out: list[str | None] = []
+        if self.disabled or not urls:
+            return [None] * len(urls)
+        for k in range(0, len(urls), MAX_IMAGES_PER_REQUEST):
+            chunk = urls[k:k + MAX_IMAGES_PER_REQUEST]
+            if len(chunk) == 1:
+                out.append(self.read_card(image_url=chunk[0]))
+                continue
+            content = [{"type": "image_url", "image_url": {"url": u}} for u in chunk]
+            prompt = _CARDS_PROMPT.replace("{n}", str(len(chunk)))
+            text = None
+            for model in self._models():
+                for attempt in range(3):
+                    self._retry_after = None
+                    text = self._call(model, content, prompt=prompt, max_tokens=500 * len(chunk))
+                    if text is None and self._retry_after is not None and attempt < 2:
+                        time.sleep(min(self._retry_after + 0.5, 15.0))
+                        continue
+                    break
+                if text is not None or self._retry_after is not None:
+                    break
+            parts = _CARD_HEAD_RE.split(text or "")
+            got = {int(parts[i]): parts[i + 1].strip() for i in range(1, len(parts) - 1, 2)}
+            for i in range(len(chunk)):
+                t = got.get(i + 1)
+                out.append(None if not t or t.upper() == _NONE_MARKER else t[:800])
+        return out
+
+    def _call(self, model: str, image_content: "dict | list[dict]", *, prompt: str = _CAST_PROMPT, max_tokens: int = 300) -> str | None:
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -178,7 +230,7 @@ class VisionClient:
             "messages": [
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": prompt}, image_content],
+                    "content": [{"type": "text", "text": prompt}] + (image_content if isinstance(image_content, list) else [image_content]),
                 }
             ],
             "temperature": 0,
@@ -273,20 +325,23 @@ if __name__ == "__main__":
     # ── 시나리오 5: 메인 429 → 폴백 성공 ──
     sess2 = FakeSession({
         DEFAULT_VISION_MODEL: (429, "rate limited"),
-        FALLBACK_VISION_MODEL: (200, "1. 宮永 ののか\n2. 渡瀬 結月"),
+        "fb-model": (200, "1. 宮永 ののか\n2. 渡瀬 結月"),
     })
-    vc2 = VisionClient("test-key", session=sess2)
+    vc2 = VisionClient("test-key", session=sess2, fallback="fb-model")
     names2 = vc2.cast_names(image_url="https://example.com/cast.jpg")
     assert names2 == ["宮永 ののか", "渡瀬 結月"], names2
-    assert sess2.calls == [DEFAULT_VISION_MODEL, FALLBACK_VISION_MODEL], sess2.calls
+    assert sess2.calls == [DEFAULT_VISION_MODEL, "fb-model"], sess2.calls
     print("[OK] 메인 429 → 즉시 폴백 1회 → 성공")
 
     # ── 시나리오 6: 둘 다 실패 → None ──
     sess3 = FakeSession({})  # 둘 다 500
     vc3 = VisionClient("test-key", session=sess3)
     assert vc3.cast_names(image_url="https://example.com/cast.jpg") is None
-    assert sess3.calls == [DEFAULT_VISION_MODEL, FALLBACK_VISION_MODEL], sess3.calls
-    print("[OK] 메인·폴백 둘 다 실패 → None")
+    assert sess3.calls == [DEFAULT_VISION_MODEL], sess3.calls       # (v4.5.9) 기본은 폴백 없음
+    sess3b = FakeSession({})
+    assert VisionClient("test-key", session=sess3b, fallback="fb-model").cast_names(image_url="https://example.com/cast.jpg") is None
+    assert sess3b.calls == [DEFAULT_VISION_MODEL, "fb-model"], sess3b.calls
+    print("[OK] 메인 실패 → (폴백 없으면 끝 · 있으면 1회) → None")
 
     # ── 시나리오 7: image_bytes → data URI 인코딩 ──
     sess4 = FakeSession({DEFAULT_VISION_MODEL: (200, "1. 宮永 ののか")})
@@ -311,6 +366,27 @@ if __name__ == "__main__":
     vc_none2 = VisionClient("test-key", session=sess_none2)
     assert vc_none2.cast_names(image_url="https://example.com/x.jpg") is None
     print("[OK] NONE 판정: 대소문자·공백 무시")
+
+    # ── (v4.5.9) read_cards — 3장씩 한 요청, [이미지 k] 로 나눔 ──
+    class CardSession:
+        def __init__(self, replies):
+            self.replies, self.calls = list(replies), []
+
+        def post(self, url, *, json, headers, timeout):
+            self.calls.append(sum(1 for c in json["messages"][0]["content"] if c["type"] == "image_url"))
+            c = self.replies.pop(0)
+
+            class R:
+                status_code = 200
+                text = ""
+
+                def json(self):
+                    return {"choices": [{"message": {"content": c}}]}
+            return R()
+    cs = CardSession(["[이미지 1]\nイベント\n開催期間 9月28日\n[이미지 2]\nNONE\n[이미지 3]\nガチャ紹介", "あらすじ"])
+    got = VisionClient("k", session=cs).read_cards(["u1", "u2", "u3", "u4"])
+    assert got == ["イベント\n開催期間 9月28日", None, "ガチャ紹介", "あらすじ"] and cs.calls == [3, 1], (got, cs.calls)
+    print("[OK] read_cards: 4장 → 요청 2번(3장 + 1장) · 이미지별 글자 · NONE → None")
 
     print("\nSUCCESS: vision.py self-test 통과 (mock)")
 
