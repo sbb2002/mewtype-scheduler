@@ -1150,6 +1150,35 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 **작업 탭 구성 (v4.5.9, 운영자가 고른 시안 D — 아티팩트 「작업 탭 재구성 시안」)**: ① 요약 카드 3장(확인 필요 · 시스템 = 지금 상태 타일 중 가장 나쁜 것 · 다음 예정 = 첫 예약 + 예약 · 번역 대기 · 오늘 실패, 누르면 그 하위 탭) ② 하위 탭 [타임라인 · 확인 필요 · 예약·대기 · 시스템 상태](`#jobs-tab[data-sub]`) ③ 타임라인 = 흐름(경로 재생) · 자동 처리(배포판 = 이벤트 로그) · 내 조작(`list_history`)을 시간순 한 줄로, 시간대 머리줄(「오늘 16시」)로 묶고 칩 [전체 · 알림 · 방송 확인 · 자동 처리 · 내 조작 · LLM 판단 · 멈춤·진행 중 · 실패만]. 로컬은 관리 조작도 흐름이 되므로 흐름에 관리 조작이 있으면 내 조작은 빼 겹치지 않게 한다. 흐름을 누르면 PC 넓은 화면(≥1100px)은 오른쪽 상세, 좁으면 그 줄 아래로 펼침. 옛 「최근 자동 처리」 · 「내가 한 조작」 칸은 타임라인으로 합쳤다.
 - **배포**: `vision.googleapis.com` 활성화 · 접수 서비스 실행 계정(INVOKER_SA)에 `roles/serviceusage.serviceUsageConsumer`(`deploy/setup.sh`). 키 없음(서비스 계정 인증).
 
+### 8.18 외부 LLM(Groq) 한도 — RPM · RPD · TPM · TPD (2026-10-21 공식 문서 확인)
+
+출처: Groq 공식 문서 「Rate Limits」 https://console.groq.com/docs/rate-limits (2026-10-21 확인 — 값은 바뀔 수 있으니 실측 · 운영 판단 전에 다시 볼 것).
+
+- **한도는 조직(organization) 단위**다(문서: 「Rate limits apply at the organization level, not individual users」). API 키가 몇 개든 운영 서비스(`mewtype-backend` · `mewtype-telegram`) ·
+  로컬 실측 · 다른 세션이 **같은 한도를 나눠 쓴다** — 실측이 한도를 쓰면 운영 번역 · 판정이 429 로 실패한다(2026-10-21 두 번 실제로 일어남).
+- 한도 종류(문서 정의): **RPM** 분당 요청 · **RPD** 하루 요청 · **TPM** 분당 토큰 · **TPD** 하루 토큰 (ASH/ASD 는 음성 — 이 앱은 안 씀).
+- 이 앱이 쓰는 모델의 문서 표 값(문서 표기 그대로):
+
+  | 모델 | 용도 | RPM | RPD | TPM | TPD |
+  |---|---|---|---|---|---|
+  | `openai/gpt-oss-120b` | 번역 · 제목 추출 · 판정(주) | 30 | 1K | 8K | 200K |
+  | `openai/gpt-oss-20b` | 같은 용도(폴백) | 30 | 1K | 8K | 200K |
+  | `qwen/qwen3.8-27b` | 비전(이미지 글자 · 출연진) | 30 | 1K | 8K | 200K |
+
+  문서에는 「Free Plan Limits」 · 「Developer Plan Limits」 탭이 있는데 표 값은 한 벌만 보이고 문서가 이를 Developer 기본값이라고 한다 — **이 계정이 어느 플랜인지, 무료 플랜 값이 같은지는 확인 필요.**
+  2026-10-21 실측 응답 헤더(`gpt-oss-120b`): `x-ratelimit-limit-requests: 1000` · `x-ratelimit-limit-tokens: 8000` — 표의 RPD · TPM 과 같다. 비전 TPD 200,000 은 같은 날 429 본문
+  (「tokens per day (TPD): Limit 200000」)으로도 확인됐다.
+- **응답 헤더**(문서): 모든 응답에 붙는다 — `x-ratelimit-limit-requests` / `x-ratelimit-remaining-requests` / `x-ratelimit-reset-requests` = **RPD**,
+  `x-ratelimit-limit-tokens` / `x-ratelimit-remaining-tokens` / `x-ratelimit-reset-tokens` = **TPM**. `retry-after`(초)는 429 일 때만.
+  **TPD 와 RPM 은 헤더에 없다** — 남은 하루 토큰은 429 본문(「tokens per day (TPD) … Used …」)으로만 알 수 있다. 그래서 짧은 확인 요청 1건이 200 이어도 하루 토큰이 남았다는 뜻은 아니다
+  (2026-10-21: 확인 요청 200 직후 판정 요청이 전부 429).
+- 리셋 시각: 문서에 없음. 실측 헤더 `x-ratelimit-reset-requests: 20m9.6s` 처럼 남은 시간이 나온다(고정 자정 리셋이 아닌 것으로 보임 — 확인 필요).
+- **이 앱의 재시도가 요청을 곱한다**(코드 확인): `llm.LLMClient._call_groq` 는 429 · 5xx 에 같은 모델로 3회(1초 · 2초 대기), 판정 함수(`notice_timing` · `banner_scope` · `banner_extract` ·
+  `announces_own_broadcast` 등)는 주 모델 → 폴백 모델을 묶어 최대 5회 다시 묻는다 → **한도에 걸린 판정 1건이 최대 30번 요청**한다(10-21 소급 드라이런: 판정 9건에 429 288번).
+  429 본문은 로그에 남지 않아 RPM · TPD 중 무엇에 걸렸는지 로그로는 알 수 없다. 비전(`vision.py`)만 v4.5.9 부터 일일 한도 429 를 기다리지 않고 1시간 호출을 멈춘다.
+- **실측 · 드라이런 규칙**(2026-10-21 운영자 지시): Groq 를 부르는 실측 · 드라이런 · 스크립트는 **목적 · 예상 호출 수 · 멈출 기준을 먼저 말하고 승인**받는다. 표본은 최소로 한 번만,
+  목적이 확인되면 멈추고, **첫 429 에서 멈춘다**. 프롬프트를 고칠 때는 바꿀 문장을 먼저 보여 준다.
+
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 
 - **index.html**: `<head>` 에 `<meta name="color-scheme" content="dark light">` + 테마 결정 인라인 스크립트(아래) + css(맨 끝 `theme.css`) +
