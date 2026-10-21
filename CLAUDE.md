@@ -54,15 +54,16 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.9** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.5.9`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.10** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.5.10`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.5.10 (핫픽스, 브랜치 `hotfix/game-collab-notice`, 2026-10-21, 백엔드만 — 미배포)**: **행사 판정을 기준부터 다시.** 기준(10-21 운영자 확정) = 1순위 **인게임 이벤트**(게임 속 인물들의 스토리가 있는 이벤트) + 시작이 같은 가챠 ·
+> **v4.5.10 (핫픽스, 브랜치 `hotfix/game-collab-notice`, 2026-10-21, 백엔드만 — 배포 완료 `mewtype-backend` 00166 · `mewtype-telegram` 00116, 롤백 = 00164 · 00115 / 병합 `96a1e94`)**: **행사 판정을 기준부터 다시.** 기준(10-21 운영자 확정) = 1순위 **인게임 이벤트**(게임 속 인물들의 스토리가 있는 이벤트) + 시작이 같은 가챠 ·
 > 2순위 **가챠 단독 배너**(이벤트 없이 다른 행사로 열린 한시 가챠, `gacha_only`) · **게임 밖 행사** = 소식 · 미션 · 로그인 보너스 등 = 버림. 시작 일자만 확정되면 올리고(종료는 나중에), 같은 이벤트를 별도 배너로 올리지 않는다.
 > `llm.banner_judge` 삭제 → `llm.banner_scope`(게임 안/밖, 근거 구절 필수) + `llm.banner_extract`(이벤트 · 가챠를 적힌 그대로, 날짜마다 자기 근거 구절 · 「イベント」 표지) → `banners.plan_post` · `apply_post`(코드가 갱신 · 새 배너 · 붙이기 · 버림을 정함, 묶음 되돌리기).
 > 이미지 글자는 본문이 정본 · 보조, 비전은 3장씩 한 요청(`vision.read_cards`) · 예비 모델(404 인 qwen3.6-27b) 제거. 계기: 10-20 JR 콜라보 「推し旅」가 배너로 올라감 · 1차 패치가 Ave Mujica 가챠를 サイドスロー 에 붙임. 상세 `docs/SPEC.md` 계약 J 「행사 판정」, 요약 `docs/VERSION.md`, 경위 devpapers `ref/v4.5.9/`.
 > **v4.5.9 이미지 판독 예비는 새 흐름에 옮겨 붙였다**: `_prepare_banner` 가 게임 안 글의 이미지를 `_ocr_banner_images_ex`(→ `vision.read_cards`)로 읽고 호출이 실패하면 `ocr_failed` →
 > 커밋 뒤 「이미지 판독 대기」 · 허가된 판독 글자(`_OCR_OVERRIDE`)가 있으면 비전 대신 그 글자 · 다시 반영(`_OCR_RECHECK`)이면 `apply_post(check_dup=False)`. `read_cards` 도 일일 한도 429 는 바로 실패 + `last_failed`.
+> 소급(10-21): JR 「推し旅」 배너 → 소식, 영화 Ave Mujica 公開記念 배너 → 가챠 단독 배너 「Ave Mujicaピックアップガチャ」(LLM 판단 반려 → 새 판정 재판단, 상세 VERSION).
 >
 > **v4.5.9 (핫픽스, 브랜치 `hotfix/ocr-fallback`, 2026-10-21, 백엔드 + 관리 페이지 — 배포 완료 `mewtype-backend` 00164 · `mewtype-telegram` 00115, 롤백 = 00162 · 00114 / 병합 `685168f`)**: **이미지 판독 예비 — 운영자 허가 시에만 Cloud Vision.** Groq 비전(qwen3.8-27b)이 이미지를 못 읽으면(429 · 5xx)
 > 자동 경로는 본문만으로 처리를 계속하고 ops `ocr_pending.json` 「이미지 판독 대기」에 적어 DM(1시간에 한 번) → 관리 페이지 **작업 탭 「확인 필요」**(탭 배지 · 첫 입장 팝업 「지금 확인하기」, 「다시 보지 않기」는 그 로그인 동안만)에서 허가하면 Google Cloud Vision(`cloudvision.py`)으로 읽어
