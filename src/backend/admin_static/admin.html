@@ -877,10 +877,42 @@
         .ocr-row .a > button { white-space: nowrap; }
         .ocr-row .a .ghost { background: none; color: var(--color-text-muted); border: 1px solid var(--color-border); }
         .ocr-foot { margin: 0; font-size: 0.78rem; color: var(--color-text-muted); }
-        /* (v4.5.10) 작업 탭 보기 — [전체 | 확인 필요]. 확인 필요 = 운영자 허가가 필요한 것만(지금은 이미지 판독 대기) */
+        /* (v4.5.10, D안) 작업 탭 — 요약 카드 3장 + 하위 탭 4개(타임라인 · 확인 필요 · 예약·대기 · 시스템 상태) + 타임라인 · 오른쪽 상세 */
         #jobs-view { margin-bottom: 1rem; }
-        #jobs-tab.attn-only > .jobs-sec, #jobs-tab.attn-only > .jobs-grid2 { display: none; }
-        #jobs-tab.attn-only #ocr-pending .ocr-row.done { display: none; }
+        #jobs-tab .jpane { display: none; }
+        #jobs-tab[data-sub="timeline"] .jpane[data-pane="timeline"], #jobs-tab[data-sub="attn"] .jpane[data-pane="attn"],
+        #jobs-tab[data-sub="sched"] .jpane[data-pane="sched"], #jobs-tab[data-sub="status"] .jpane[data-pane="status"] { display: grid; }
+        .jsum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+        .jsum-card { text-align: left; font: inherit; color: inherit; background: var(--color-bg-secondary); border: 1px solid var(--color-border);
+            border-radius: 10px; padding: 12px 16px; display: grid; gap: 4px; cursor: pointer; min-height: 44px; min-width: 0; }
+        .jsum-card:hover { border-color: #4a4a4a; }
+        .jsum-card.attn.on { background: rgba(245, 184, 61, 0.08); border-color: rgba(245, 184, 61, 0.55); }
+        .jsum-card .lbl { font-size: 0.75rem; color: var(--color-text-muted); }
+        .jsum-card.attn.on .lbl { color: #f5b83d; font-weight: 700; }
+        .jsum-card b { font-size: 1.1rem; display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; }
+        .jsum-card b span, #sum-next { overflow: hidden; text-overflow: ellipsis; }
+        .jsum-card .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
+        .jsum-card .dot.warn { background: var(--run); } .jsum-card .dot.bad { background: var(--fail); }
+        .jsum-card .sub { font-size: 0.78rem; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        #attn-empty { margin: 0.5rem 0 1rem; padding: 1.2rem; text-align: center; color: var(--color-text-muted);
+            border: 1px dashed var(--color-border); border-radius: 10px; font-size: 0.88rem; }
+        .tl-split { grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+        .tl-split .flows { max-height: min(46rem, 72vh); }
+        .fd-side { position: sticky; top: 1rem; }
+        .fd-side .fwrap { grid-template-rows: 1fr; opacity: 1; }
+        .fd-side .fwrap .fdetail { border-radius: 8px; }
+        .fd-side .fchain { flex-wrap: wrap; row-gap: 8px; min-width: 0; }
+        .tl-hour { font-size: 0.75rem; color: var(--color-text-muted); padding: 8px 2px 0; }
+        .flow.static { cursor: default; grid-template-columns: 5.6rem 1fr auto; }
+        .flow.static:hover { border-color: var(--color-border); }
+        .chip-fail[aria-pressed="true"] { border-color: var(--fail); color: var(--fail); }
+        @media (min-width: 1100px) { .tl-split .flow.sel { border-radius: 6px; } }
+        @media (max-width: 1099px) { .tl-split { grid-template-columns: 1fr; } .fd-side { display: none; } }
+        @media (max-width: 640px) {
+            .jsum { gap: 8px; } .jsum-card { padding: 10px; } .jsum-card .sub { display: none; } .jsum-card b { font-size: 1rem; }
+            #jobs-view { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); } #jobs-view .ing-subtab small { display: none; }
+            #jobs-view .ing-subtab { padding-left: 2px; padding-right: 2px; } #jobs-view .ing-subtab b { font-size: 0.8rem; white-space: nowrap; letter-spacing: -0.02em; }
+        }
         #attn-empty { margin: 0.5rem 0 1rem; padding: 1.2rem; text-align: center; color: var(--color-text-muted);
             border: 1px dashed var(--color-border); border-radius: 10px; font-size: 0.88rem; }
         @media (max-width: 640px) { .ocr-stat { grid-template-columns: 1fr; } .ocr-row { grid-template-columns: 1fr; } .ocr-row .a { min-width: 0; } }
@@ -1363,85 +1395,91 @@
     </div>
 
     <!-- ════ 탭: 작업 ════ -->
-    <div class="tab-content" id="jobs-tab">
-        <!-- (v4.5.10) 보기 — 전체 / 확인 필요(운영자 허가가 필요한 작업만). 첫 입장 팝업 「지금 확인하기」가 확인 필요로 연다 -->
+    <div class="tab-content" id="jobs-tab" data-sub="timeline">
+        <!-- (v4.5.10, D안) 요약 카드 3장 — 누르면 아래 하위 탭으로. 하위 탭 = 필요한 것만, 타임라인 = 흐름 · 자동 처리 · 내 조작을 시간순 한 줄로 -->
+        <section class="jsum" aria-label="작업 요약">
+            <button type="button" class="jsum-card attn" data-go="attn" id="sum-attn-card"><span class="lbl">확인 필요</span><b id="sum-attn">—</b><span class="sub" id="sum-attn-sub"></span></button>
+            <button type="button" class="jsum-card" data-go="status"><span class="lbl">시스템</span><b><i class="dot" id="sum-sys-dot"></i><span id="sum-sys">—</span></b><span class="sub" id="sum-sys-sub"></span></button>
+            <button type="button" class="jsum-card" data-go="sched"><span class="lbl">다음 예정</span><b id="sum-next">—</b><span class="sub" id="sum-next-sub"></span></button>
+        </section>
         <div class="ing-subtabs" role="tablist" aria-label="작업 보기" id="jobs-view">
-            <button type="button" class="ing-subtab" role="tab" aria-selected="true" data-view="all"><b>전체</b><small>흐름 · 예약 · 기록</small></button>
+            <button type="button" class="ing-subtab" role="tab" aria-selected="true" data-view="timeline"><b>타임라인</b><small>무슨 일이 있었나</small></button>
             <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-view="attn"><b>확인 필요 <span class="tab-badge" id="attn-badge" hidden></span></b><small>허가가 필요한 작업</small></button>
+            <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-view="sched"><b>예약 · 대기</b><small>다음 확인 · 번역 대기</small></button>
+            <button type="button" class="ing-subtab" role="tab" aria-selected="false" data-view="status"><b>시스템 상태</b><small>서버 · 봇 · 큐 · 마지막 알림</small></button>
         </div>
-        <p id="attn-empty" hidden>지금 확인할 작업이 없습니다.</p>
-        <!-- (v4.5.10) 이미지 판독 대기 — Groq 비전이 이미지를 못 읽은 글. 허가하면 Cloud Vision 으로 읽어 다시 처리한다. 없으면 숨김 -->
-        <section class="gp-card" id="ocr-pending" hidden aria-labelledby="ocr-h">
-            <div class="ocr-head">
-                <div class="gp-head">
-                    <h3 id="ocr-h">이미지 판독 대기 <span class="gp-count" id="ocr-count"></span></h3>
-                    <p>Groq 비전이 이미지를 읽지 못한 글입니다. 이미지 없이 본문만으로 먼저 처리해 두었습니다.
-                        이미지를 읽으면 다시 판정해 빠진 정보(개최기간 · 참여 멤버)를 채웁니다. Cloud Vision 은 허가한 것만 읽고, 이미지 1장이 1건입니다.</p>
+
+        <!-- 확인 필요 — (v4.5.10) 이미지 판독 대기. Groq 비전이 못 읽은 글 → 허가하면 Cloud Vision 으로 읽어 다시 처리 -->
+        <div class="jpane" data-pane="attn">
+            <p id="attn-empty" hidden>지금 확인할 작업이 없습니다.</p>
+            <section class="gp-card" id="ocr-pending" hidden aria-labelledby="ocr-h">
+                <div class="ocr-head">
+                    <div class="gp-head">
+                        <h3 id="ocr-h">이미지 판독 대기 <span class="gp-count" id="ocr-count"></span></h3>
+                        <p>Groq 비전이 이미지를 읽지 못한 글입니다. 이미지 없이 본문만으로 먼저 처리해 두었습니다.
+                            이미지를 읽으면 다시 판정해 빠진 정보(개최기간 · 참여 멤버)를 채웁니다. Cloud Vision 은 허가한 것만 읽고, 이미지 1장이 1건입니다.</p>
+                    </div>
+                    <button type="button" id="ocr-all">모두 Cloud Vision 으로 읽기</button>
                 </div>
-                <button type="button" id="ocr-all">모두 Cloud Vision 으로 읽기</button>
-            </div>
-            <div class="ocr-stat">
-                <div><span>Groq 비전 (qwen/qwen3.8-27b)</span><b id="ocr-groq"></b><span id="ocr-groq-sub"></span></div>
-                <div><span>Cloud Vision 이번 달 사용</span><b id="ocr-usage"></b><div class="ocr-bar"><i id="ocr-bar"></i></div></div>
-            </div>
-            <div class="gp-list" id="ocr-list"></div>
-            <p class="ocr-foot">48시간이 지나면 대기에서 빠집니다. 읽지 않아도 본문만으로 처리한 결과는 그대로 남습니다.
-                다시 판정한 행사 배너는 아래 「최근 흐름 → LLM 판단」에서 반려할 수 있습니다.</p>
-        </section>
-
-        <section class="jobs-sec" aria-labelledby="h-now">
-            <h2 id="h-now">지금 상태 <small id="now-at"></small></h2>
-            <div class="now-grid" id="now-grid"></div>
-        </section>
-
-        <section class="jobs-sec" aria-labelledby="h-flows">
-            <h2 id="h-flows">최근 흐름 <small>알림 · 관리 조작 · 방송 확인 1건이 한 줄. 누르면 경로를 재생합니다 · 탭을 열어 두면 5초마다 갱신</small></h2>
-            <div class="chips" role="group" aria-label="흐름 필터" id="flow-chips">
-                <button class="chip" data-f="all" aria-pressed="true">전체</button>
-                <button class="chip" data-f="attn" aria-pressed="false">멈춤 · 진행 중</button>
-                <button class="chip" data-f="x" aria-pressed="false">X 알림</button>
-                <button class="chip" data-f="yt" aria-pressed="false">YouTube 알림</button>
-                <button class="chip" data-f="admin" aria-pressed="false">관리 조작</button>
-                <button class="chip" data-f="wake" aria-pressed="false">방송 확인</button>
-                <button class="chip" data-f="llm" aria-pressed="false">LLM 판단</button>
-            </div>
-            <div class="flows" id="flows"><div class="jempty">로드 중...</div></div>
-            <div id="fd-holder" hidden><div class="fwrap" id="fwrap"><div class="fwrap-in">
-            <div class="fdetail" id="fdetail" aria-live="polite">
-                <div class="fdetail-head">
-                    <div><div class="ttl" id="fd-ttl"></div><div class="sub" id="fd-sub"></div></div>
-                    <button type="button" id="fd-replay">다시 재생</button>
+                <div class="ocr-stat">
+                    <div><span>Groq 비전 (qwen/qwen3.8-27b)</span><b id="ocr-groq"></b><span id="ocr-groq-sub"></span></div>
+                    <div><span>Cloud Vision 이번 달 사용</span><b id="ocr-usage"></b><div class="ocr-bar"><i id="ocr-bar"></i></div></div>
                 </div>
-                <div class="fchart"><div class="fchain" id="fd-chain"></div></div>
-                <div class="freason" id="fd-reason"></div>
-                <div class="fllm" id="fd-llm" hidden></div>
-            </div>
-            </div></div></div>
-        </section>
+                <div class="gp-list" id="ocr-list"></div>
+                <p class="ocr-foot">48시간이 지나면 대기에서 빠집니다. 읽지 않아도 본문만으로 처리한 결과는 그대로 남습니다.
+                    다시 판정한 행사 배너는 「타임라인 → LLM 판단」에서 반려할 수 있습니다.</p>
+            </section>
+        </div>
 
-        <div class="jobs-grid2">
+        <!-- 타임라인 — 흐름(경로 재생) · 자동 처리(이벤트 로그) · 내 조작을 시간순으로. PC 넓은 화면은 오른쪽에 상세, 좁으면 줄 아래로 펼침 -->
+        <div class="jpane tl-split" data-pane="timeline">
+            <section class="jobs-sec" aria-labelledby="h-flows">
+                <h2 id="h-flows">타임라인 <small id="tl-count"></small></h2>
+                <div class="chips" role="group" aria-label="타임라인 필터" id="flow-chips">
+                    <button class="chip" data-f="all" aria-pressed="true">전체</button>
+                    <button class="chip" data-f="notice" aria-pressed="false">알림</button>
+                    <button class="chip" data-f="wake" aria-pressed="false">방송 확인</button>
+                    <button class="chip" data-f="auto" aria-pressed="false">자동 처리</button>
+                    <button class="chip" data-f="mine" aria-pressed="false">내 조작</button>
+                    <button class="chip" data-f="llm" aria-pressed="false">LLM 판단</button>
+                    <button class="chip" data-f="attn" aria-pressed="false">멈춤 · 진행 중</button>
+                    <button class="chip chip-fail" data-f="fail" aria-pressed="false">실패만</button>
+                </div>
+                <div class="flows" id="flows"><div class="jempty">로드 중...</div></div>
+                <div id="fd-holder" hidden><div class="fwrap" id="fwrap"><div class="fwrap-in">
+                <div class="fdetail" id="fdetail" aria-live="polite">
+                    <div class="fdetail-head">
+                        <div><div class="ttl" id="fd-ttl"></div><div class="sub" id="fd-sub"></div></div>
+                        <button type="button" id="fd-replay">다시 재생</button>
+                    </div>
+                    <div class="fchart"><div class="fchain" id="fd-chain"></div></div>
+                    <div class="freason" id="fd-reason"></div>
+                    <div class="fllm" id="fd-llm" hidden></div>
+                </div>
+                </div></div></div>
+            </section>
+            <aside class="fd-side" id="fd-side" aria-label="선택한 흐름">
+                <p class="jempty" id="fd-side-empty">왼쪽 타임라인에서 흐름(경로 막대가 있는 줄)을 누르면 여기서 경로를 재생합니다.</p>
+            </aside>
+        </div>
+
+        <!-- 예약 · 대기 -->
+        <div class="jpane jobs-grid2" data-pane="sched">
             <section class="jobs-sec" aria-labelledby="h-sched">
-                <h2 id="h-sched">예정된 확인 <small>방송마다 잡힌 다음 확인</small></h2>
+                <h2 id="h-sched">예정된 확인 <small>방송마다 잡힌 다음 확인 · 정기 수집</small></h2>
                 <div class="jlist" id="jobs-sched"></div>
             </section>
-            <section class="jobs-sec" aria-labelledby="h-auto">
-                <h2 id="h-auto">최근 자동 처리 <small>끝난 작업</small></h2>
-                <div class="chips" role="group" aria-label="자동 처리 필터">
-                    <button class="chip" id="auto-all" aria-pressed="true">전체</button>
-                    <button class="chip" id="auto-fail" aria-pressed="false">실패만</button>
-                </div>
-                <div class="jlist" id="jobs-auto"></div>
-            </section>
-        </div>
-
-        <div class="jobs-grid2">
             <section class="jobs-sec" aria-labelledby="h-tl">
                 <h2 id="h-tl">번역 대기</h2>
                 <div id="jobs-tl"></div>
             </section>
-            <section class="jobs-sec" aria-labelledby="h-mine">
-                <h2 id="h-mine">내가 한 조작 <small>관리 페이지에서 한 수정 · 삭제 · 투입 · 설정</small></h2>
-                <div class="jlist" id="jobs-history"></div>
+        </div>
+
+        <!-- 시스템 상태 -->
+        <div class="jpane" data-pane="status">
+            <section class="jobs-sec" aria-labelledby="h-now">
+                <h2 id="h-now">시스템 상태 <small id="now-at"></small></h2>
+                <div class="now-grid" id="now-grid"></div>
             </section>
         </div>
     </div>
@@ -2016,7 +2054,7 @@
                 this.renderAttnEmpty();
                 const box = document.getElementById("ocr-pending");
                 box.hidden = !items.length;
-                if (!items.length) return;
+                if (!items.length) { this.renderJobsSummary(); return; }
                 const imgs = pend.reduce((n, e) => n + (e.media || []).length, 0);
                 document.getElementById("ocr-count").textContent = pend.length ? `${pend.length}건 · 이미지 ${imgs}장` : "모두 처리함";
                 const u = d.usage || {};
@@ -2037,14 +2075,16 @@
                 const list = document.getElementById("ocr-list");
                 list.textContent = "";
                 for (const e of items) list.appendChild(this.renderOcrRow(e, groqLocked, used, cap));
+                this.renderJobsSummary();
             },
 
-            // (v4.5.10) 작업 탭 보기 — all(전체) · attn(확인 필요: 허가가 필요한 작업만)
+            // (v4.5.10, D안) 작업 탭 하위 탭 — timeline · attn(확인 필요: 허가가 필요한 작업) · sched(예약 · 대기) · status(시스템 상태)
             setJobsView(view) {
-                this.jobsView = view === "attn" ? "attn" : "all";
-                document.getElementById("jobs-tab").classList.toggle("attn-only", this.jobsView === "attn");
+                this.jobsView = ["timeline", "attn", "sched", "status"].includes(view) ? view : "timeline";
+                document.getElementById("jobs-tab").dataset.sub = this.jobsView;
                 document.querySelectorAll("#jobs-view .ing-subtab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === this.jobsView)));
                 this.renderAttnEmpty();
+                if (this.jobsView === "timeline") this.placeFlowDetail();
             },
 
             renderAttnEmpty() {
@@ -4375,13 +4415,13 @@
                         this.llmActions = this.llmActions || {};
                     }
                     this.jobs = data;
+                    this.histItems = hist || [];
                     this.bindJobsControls();
                     this.renderNow(data.now || {});
                     this.renderFlows();
                     this.renderSched(data);
-                    this.renderAuto();
                     this.renderPendingTl(data);
-                    this.renderHistory(hist || []);
+                    this.renderJobsSummary();
                     // 선택한 흐름이 갱신됐으면 상세도 갱신(재생 없이 현재 상태로)
                     const cur = (data.flows || []).find((f) => f.id === this.flowSel);
                     if (cur && JSON.stringify(cur) !== this.flowSelSnap) this.showFlow(cur, false);
@@ -4396,7 +4436,6 @@
                 if (this.jobsBound) return;
                 this.jobsBound = true;
                 this.flowFilter = "all";
-                this.autoFailOnly = false;
                 document.querySelectorAll("#flow-chips .chip").forEach((c) => {
                     c.addEventListener("click", () => {
                         this.flowFilter = c.dataset.f;
@@ -4404,14 +4443,9 @@
                         this.renderFlows();
                     });
                 });
-                const setAuto = (fail) => {
-                    this.autoFailOnly = fail;
-                    document.getElementById("auto-all").setAttribute("aria-pressed", String(!fail));
-                    document.getElementById("auto-fail").setAttribute("aria-pressed", String(fail));
-                    this.renderAuto();
-                };
-                document.getElementById("auto-all").addEventListener("click", () => setAuto(false));
-                document.getElementById("auto-fail").addEventListener("click", () => setAuto(true));
+                // (v4.5.10) 요약 카드 → 하위 탭 · 화면 폭이 바뀌면 상세 위치(오른쪽 ↔ 줄 아래)를 다시 정한다
+                document.querySelectorAll("#jobs-tab .jsum-card").forEach((c) => c.addEventListener("click", () => this.setJobsView(c.dataset.go)));
+                window.matchMedia("(min-width: 1100px)").addEventListener("change", () => this.placeFlowDetail());
                 document.getElementById("fd-replay").addEventListener("click", () => {
                     const f = ((this.jobs || {}).flows || []).find((x) => x.id === this.flowSel);
                     if (f) this.showFlow(f, true);
@@ -4431,7 +4465,10 @@
                     const h = Math.floor(m / 60);
                     return h < 24 ? `${h}시간 ${m % 60}분 전` : `${Math.floor(h / 24)}일 전`;
                 };
+                this.nowLevels = [];
+                this.nowAgo = ago;
                 const tile = (label, val, sub, level) => {
+                    this.nowLevels.push({ label, val, level: level || "ok" });
                     const d = document.createElement("div");
                     d.className = "now-tile" + (level && level !== "ok" ? " " + level : "");
                     const a = document.createElement("div");
@@ -4518,26 +4555,114 @@
                 return { icon, text };
             },
 
+            // (v4.5.10, D안) 타임라인 — 흐름(경로 재생) · 자동 처리(이벤트 로그) · 내 조작을 시간순 한 줄로, 시간대 머리줄로 묶는다.
+            // 배포판의 흐름은 LLM 판단뿐이라 처리 기록은 자동 처리 · 내 조작에 있다. 로컬은 관리 조작도 흐름이 되므로 내 조작은 흐름이 없을 때만 넣는다.
+            timelineRows() {
+                const J = this.jobs || {};
+                const rows = [];
+                for (const f of J.flows || []) {
+                    rows.push({ type: "flow", ts: f.t0, f, cat: f.cat, fail: f.status === "fail", busy: f.status !== "ok",
+                                llm: (f.llm || []).length > 0, mine: f.cat === "admin" });
+                }
+                for (const a of J.auto || []) rows.push({ type: "auto", ts: a.ts, a, fail: !a.ok });
+                if (!(J.flows || []).some((f) => f.cat === "admin")) {
+                    for (const h of this.histItems || []) rows.push({ type: "mine", ts: h.ts, h, fail: !h.ok, mine: true });
+                }
+                rows.sort((x, y) => String(y.ts || "").localeCompare(String(x.ts || "")));
+                return rows;
+            },
+
+            tlHour(iso) {
+                const d = new Date(iso);
+                if (isNaN(d)) return "";
+                const day = (x) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+                const today = new Date(), yest = new Date(Date.now() - 86400000);
+                const label = day(d) === day(today) ? "오늘" : day(d) === day(yest) ? "어제" : `${d.getMonth() + 1}/${d.getDate()}`;
+                return `${label} ${String(d.getHours()).padStart(2, "0")}시`;
+            },
+
+            histLabel(h) {
+                const LABEL = {
+                    edit_preview: "예고 수정", delete_preview: "예고 삭제", ingest_preview: "원문 투입 · 예고",
+                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정", edit_banner: "행사 수정", delete_banner: "행사 삭제", edit_tweet: "트윗 수정",
+                    delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
+                    retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
+                    set_monitor_auto: "멤버 현황 DM",
+                    undo_llm_action: "↩ LLM 판단 반려", rejudge_llm_action: "LLM 판단 재판단", decide_llm_action: "LLM 판단 · 사용자 판단", dismiss_group_pending: "참여 멤버 확인 대기 무시",
+                    edit_song: "곡 수정", delete_song: "곡 삭제", add_song: "곡 직접 추가", unblock_song: "곡 차단 해제", regenerate_song_reading: "독음 다시 만들기",
+                    read_ocr_pending: "이미지 판독 · 허가", dismiss_ocr_pending: "이미지 판독 대기 무시",
+                };
+                return `${LABEL[h.action] || h.action}${h.summary ? " · " + h.summary : ""}`;
+            },
+
             renderFlows() {
                 const box = document.getElementById("flows");
                 const keepScroll = box.scrollTop;                       // 5초 갱신마다 다시 그려도 보던 위치 유지
                 requestAnimationFrame(() => { box.scrollTop = keepScroll; });
                 document.getElementById("fd-holder").appendChild(document.getElementById("fwrap"));   // 비우기 전에 펼침 영역 대피
                 box.textContent = "";
-                const flows = ((this.jobs || {}).flows || []).filter((f) =>
-                    this.flowFilter === "all" || !this.flowFilter ? true
-                        : this.flowFilter === "attn" ? f.status !== "ok"
-                        : this.flowFilter === "llm" ? (f.llm || []).length > 0 : f.cat === this.flowFilter);
-                if (!flows.length) {
+                const F = this.flowFilter || "all";
+                const all = this.timelineRows();
+                const rows = all.filter((r) =>
+                    F === "all" ? true
+                        : F === "notice" ? r.type === "flow" && (r.cat === "x" || r.cat === "yt")
+                        : F === "wake" ? r.type === "flow" && r.cat === "wake"
+                        : F === "auto" ? r.type === "auto"
+                        : F === "mine" ? !!r.mine
+                        : F === "llm" ? !!r.llm
+                        : F === "attn" ? r.type === "flow" && r.busy && !r.fail
+                        : F === "fail" ? r.fail : true);
+                const todayKey = new Date().toDateString();
+                const today = all.filter((r) => new Date(r.ts).toDateString() === todayKey);
+                document.getElementById("tl-count").textContent =
+                    `오늘 ${today.length}건 · 실패 ${today.filter((r) => r.fail).length} · 흐름을 누르면 경로를 재생합니다 · 5초마다 갱신`;
+                if (!rows.length) {
                     const e = document.createElement("div");
                     e.className = "jempty";
-                    e.textContent = (this.jobs || {}).runtime === "cloud"
-                        ? "배포판에서는 LLM 판단만 여기 한 줄씩 남습니다(반려 · 재판단 · 사용자 판단). 그 밖의 처리는 아래 「최근 자동 처리」(이벤트 로그)에서 보세요."
-                        : "기록된 흐름이 없습니다 — 알림이 들어오거나 관리 페이지에서 조작하면 여기 쌓입니다.";
+                    e.textContent = F === "all" ? "기록이 없습니다 — 알림이 들어오거나 관리 페이지에서 조작하면 여기 쌓입니다." : "이 필터에 맞는 기록이 없습니다.";
                     box.appendChild(e);
+                    this.placeFlowDetail();
                     return;
                 }
-                for (const f of flows.slice(0, 60)) {
+                let lastHour = null;
+                for (const r of rows.slice(0, 120)) {
+                    const hour = this.tlHour(r.ts);
+                    if (hour !== lastHour) {
+                        const hd = document.createElement("div");
+                        hd.className = "tl-hour";
+                        hd.textContent = hour;
+                        box.appendChild(hd);
+                        lastHour = hour;
+                    }
+                    box.appendChild(r.type === "flow" ? this.flowButton(r.f) : this.staticRow(r));
+                }
+                this.placeFlowDetail();
+            },
+
+            // 자동 처리 · 내 조작 한 줄(경로가 없어 누르지 않는다)
+            staticRow(r) {
+                const d = document.createElement("div");
+                d.className = "flow static";
+                const t = document.createElement("div");
+                t.className = "t";
+                t.textContent = this.formatTime(r.ts);
+                const what = document.createElement("div");
+                what.className = "what";
+                const k = document.createElement("div");
+                k.className = "k";
+                k.textContent = r.type === "auto" ? "자동 처리" : "내 조작";
+                const dd = document.createElement("div");
+                dd.className = "d";
+                dd.textContent = r.type === "auto" ? (r.a.text || "—") : this.histLabel(r.h);
+                what.append(k, dd);
+                const st = document.createElement("div");
+                st.className = "st " + (r.fail ? "s-fail" : "s-ok");
+                st.textContent = r.fail ? `✕ ${r.type === "mine" ? (r.h.error || "실패") : "실패"}`.slice(0, 40) : "✓";
+                d.append(t, what, st);
+                return d;
+            },
+
+            flowButton(f) {
                     const b = document.createElement("button");
                     b.type = "button";
                     b.className = "flow" + (f.id === this.flowSel ? " sel" : "");
@@ -4585,16 +4710,45 @@
                     b.append(t, what, st, bar);
                     b.dataset.id = f.id;
                     b.addEventListener("click", () => this.toggleFlow(f));
-                    box.appendChild(b);
+                    return b;
+            },
+
+            // (v4.5.10) 요약 카드 3장 — 확인 필요 · 시스템(지금 상태 타일 중 가장 나쁜 것) · 다음 예정
+            renderJobsSummary() {
+                const pend = ((this.ocr && this.ocr.items) || []).filter((e) => e.status === "pending");
+                const imgs = pend.reduce((n, e) => n + (e.media || []).length, 0);
+                document.getElementById("sum-attn-card").classList.toggle("on", pend.length > 0);
+                document.getElementById("sum-attn").textContent = pend.length ? `${pend.length}건` : "없음";
+                document.getElementById("sum-attn-sub").textContent = pend.length ? `이미지 판독 대기 · ${imgs}장 — 허가하러 가기` : "허가가 필요한 작업이 없습니다";
+                const lv = this.nowLevels || [];
+                if (lv.length) {
+                    const bad = lv.filter((x) => x.level === "bad"), warn = lv.filter((x) => x.level === "warn");
+                    document.getElementById("sum-sys-dot").className = "dot" + (bad.length ? " bad" : warn.length ? " warn" : "");
+                    document.getElementById("sum-sys").textContent = bad.length ? `문제 ${bad.length} · ${bad[0].label}` : warn.length ? `주의 ${warn.length} · ${warn[0].label}` : "모두 정상";
+                    const n = ((this.jobs || {}).now) || {};
+                    const up = n.upstream || {};
+                    const ago = this.nowAgo || (() => "");
+                    document.getElementById("sum-sys-sub").textContent = [
+                        up.x ? `X ${ago(up.x.ts)}` : "X 오늘 없음", up.yt ? `YouTube ${ago(up.yt.ts)}` : "YouTube 오늘 없음",
+                        (n.live || []).length ? `라이브 ${n.live.length}` : "라이브 없음"].join(" · ");
                 }
-                this.placeFlowDetail();
+                const J = this.jobs || {};
+                const sc = J.scheduled || [];
+                const nx = sc[0];
+                document.getElementById("sum-next").textContent = nx ? `${this.formatTime(nx.run_at)} · ${nx.what}` : "예정된 확인 없음";
+                const todayKey = new Date().toDateString();
+                const failToday = this.timelineRows().filter((r) => r.fail && new Date(r.ts).toDateString() === todayKey).length;
+                document.getElementById("sum-next-sub").textContent = `예약 ${sc.length} · 번역 대기 ${(J.pending_tl || []).length} · 오늘 실패 ${failToday}`;
             },
 
             // 펼침 영역을 선택된 줄 바로 아래에 둔다(다시 그릴 때마다 목록이 비워지므로 매번 다시 꽂음). 줄이 없으면 보관함으로
             placeFlowDetail() {
                 const wrap = document.getElementById("fwrap");
                 const row = this.flowSel ? [...document.querySelectorAll("#flows .flow")].find((x) => x.dataset.id === this.flowSel) : null;
-                if (row) row.after(wrap);
+                const wide = window.matchMedia("(min-width: 1100px)").matches;     // (v4.5.10) PC 넓은 화면 = 오른쪽 상세
+                document.getElementById("fd-side-empty").hidden = !!(wide && row);
+                if (row && wide) document.getElementById("fd-side").appendChild(wrap);
+                else if (row) row.after(wrap);
                 else document.getElementById("fd-holder").appendChild(wrap);
                 return row;
             },
@@ -4623,7 +4777,7 @@
                     this.showFlow(f, true);
                     void wrap.offsetHeight;                   // 닫힌 상태를 한 번 그린 것으로 확정해야 전환이 걸린다
                     wrap.classList.add("open");
-                    setTimeout(() => { if (row && wrap.classList.contains("open")) wrap.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 330);
+                    setTimeout(() => { if (row && wrap.classList.contains("open") && !window.matchMedia("(min-width: 1100px)").matches) wrap.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 330);
                 };
                 if (wasOpen) {                                // 다른 줄이 펼쳐져 있었음 → 먼저 접고 옮긴다
                     mark();
@@ -5191,32 +5345,6 @@
                 if (!box.children.length) row("—", "예정된 확인 없음", "");
             },
 
-            renderAuto() {
-                const box = document.getElementById("jobs-auto");
-                this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
-                box.textContent = "";
-                const list = ((this.jobs || {}).auto || []).filter((a) => !this.autoFailOnly || !a.ok).slice(0, 30);
-                if (!list.length) {
-                    const r = document.createElement("div");
-                    r.className = "jrow";
-                    r.textContent = this.autoFailOnly ? "실패한 작업이 없습니다" : "기록 없음";
-                    box.appendChild(r);
-                    return;
-                }
-                for (const a of list) {
-                    const r = document.createElement("div");
-                    r.className = "jrow";
-                    const t = document.createElement("div");
-                    t.className = "t";
-                    t.textContent = this.formatTime(a.ts);
-                    const b = document.createElement("div");
-                    if (!a.ok) b.className = "s-fail";
-                    b.textContent = (a.ok ? "✓ " : "✕ ") + a.text;
-                    r.append(t, b);
-                    box.appendChild(r);
-                }
-            },
-
             renderPendingTl(data) {
                 const box = document.getElementById("jobs-tl");
                 this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
@@ -5239,45 +5367,6 @@
                     l.appendChild(r);
                 }
                 box.appendChild(l);
-            },
-
-            // 내가 한 조작: {id, ts, action, target, summary, ok, error, job_id} (admin_api.list_history)
-            renderHistory(items) {
-                const box = document.getElementById("jobs-history");
-                this.keepScroll(box);                                   // 5초 갱신마다 다시 그려도 보던 위치 유지
-                box.textContent = "";
-                const LABEL = {
-                    edit_preview: "예고 수정", delete_preview: "예고 삭제", ingest_preview: "원문 투입 · 예고",
-                    ingest_notice: "원문 투입 · 소식", ingest_tweet: "URL 투입 · 트윗", edit_notice: "소식 수정", edit_banner: "행사 수정", delete_banner: "행사 삭제", edit_tweet: "트윗 수정",
-                    delete_notice: "소식 삭제", delete_tweet: "트윗 삭제", translate: "번역",
-                    retry_lost: "유실 원문 재투입", set_paused: "일시정지 · 재개", set_log_level: "알림 레벨",
-                    set_monitor_auto: "멤버 현황 DM",
-                    undo_llm_action: "↩ LLM 판단 반려", rejudge_llm_action: "LLM 판단 재판단", decide_llm_action: "LLM 판단 · 사용자 판단", dismiss_group_pending: "참여 멤버 확인 대기 무시",
-                    edit_song: "곡 수정", delete_song: "곡 삭제", add_song: "곡 직접 추가", unblock_song: "곡 차단 해제", regenerate_song_reading: "독음 다시 만들기",
-                };
-                if (!items.length) {
-                    const r = document.createElement("div");
-                    r.className = "jrow";
-                    r.textContent = "아직 없음";
-                    box.appendChild(r);
-                    return;
-                }
-                for (const h of items) {
-                    const r = document.createElement("div");
-                    r.className = "jrow";
-                    const t = document.createElement("div");
-                    t.className = "t";
-                    t.textContent = this.formatTime(h.ts);
-                    const b = document.createElement("div");
-                    const m = document.createElement("div");
-                    m.textContent = `${LABEL[h.action] || h.action}${h.summary ? " · " + h.summary : ""}`;
-                    const s2 = document.createElement("div");
-                    s2.className = "m" + (h.ok ? "" : " s-fail");
-                    s2.textContent = h.ok ? "✓ 반영 · 되돌리기는 아직 없음" : `✕ ${h.error || "실패"}`;
-                    b.append(m, s2);
-                    r.append(t, b);
-                    box.appendChild(r);
-                }
             },
 
             // ─────────────────────────────────────────────────────────────────────
