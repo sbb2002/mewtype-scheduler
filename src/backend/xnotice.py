@@ -47,17 +47,10 @@ _RE_RELEASE = re.compile(
     r"CD|アルバム|EP|シングル|ダウンロード|フェア"
 )
 
-# ── 후기(recap) 키워드 ──────────────────────────────────────────────────
-_RE_RECAP = re.compile(
-    r"ありがとうございました|御礼|お礼|お疲れ(?:様|さま)|無事終了|振り返り|"
-    r"感想は|感想お待ち|ご来場|終演|閉幕"
-)
-# ── 회고·기념일 마커 (이벤트 아님. `今日は何の日？` / `N年前` / `去年` 등) ──────────
-#   is_recap 로 취급 → 지난 날짜면 merge_notice 가 skip. 미래 예고엔 안 붙는 표현만.
-_RE_RETRO = re.compile(
-    r"今日は何の日|何の日\s*[?？]|(?:[0-9０-９]+|一|二|三|四|五|六|七|八|九|十|数)\s*年前|"
-    r"去年の|昨年の|一昨年|懐かし|思い出|あの日"
-)
+# ── 후기(recap) 판정 ──────────────────────────────────────────────────
+# (v4.6.2) 정규식(ありがとうございました · 今日は何の日 …)으로 후기를 거르던 _RE_RECAP · _RE_RETRO 를 없앴다 — 2026-10-21 운영자 결정:
+# 지난 일의 소감 · 보고는 규칙이 아니라 LLM 으로(`llm.notice_timing` → `notices.timing_decision`, telegram_app._prepare_notice).
+# 소감 글은 행사 당일에 올라오거나 다음 일정 날짜를 담고 있어 「날짜가 지났나」 규칙으로는 걸리지 않았다(FM802 출연 감사 등).
 
 # ── 사이트 판별 ────────────────────────────────────────────────────────
 _URL_RE = re.compile(r"https?://[^\s　]+")
@@ -423,7 +416,7 @@ def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None 
         "url": url,
         "tweet_url": (f"https://x.com/i/status/{_tweet_id(tag)}" if _tweet_id(tag) else None),
         "src_handle": _src_handle(t, title),
-        "is_recap": bool(_RE_RECAP.search(t) or _RE_RETRO.search(t)),
+        "is_recap": False,                 # (v4.6.2) 정규식 판정 없앰 — 필드는 호환용으로만 남김
         "anchor_a": anchor_a,
         "anchor_b": anchor_b,
         "title_slug": _title_slug(headline),
@@ -477,13 +470,13 @@ if __name__ == "__main__":
     assert r3["date"] == "2026-09-23" and r3["time"] == "22:00", r3
     print("[OK] S3  bilibili 전원 (platform, space id anchor_a)")
 
-    # S4: 후기 트윗 — 날짜 있음 + ありがとう → is_recap
+    # S4: 후기 트윗 — 날짜는 그대로 뽑는다(후기 판정은 v4.6.2 부터 LLM 시점 판정이 한다)
     S4 = ("🌏9/6(日)開催🌏\nBM-ECHOES FESTIVAL 2026 DAY2\nご来場ありがとうございました❣️\n"
           "感想は #BMFES_2026_DAY2 でお待ちしています")
     r4 = parse(S4, NOW)
-    assert r4 and r4["is_recap"] is True and r4["date"] == "2026-09-06", r4
+    assert r4 and r4["is_recap"] is False and r4["date"] == "2026-09-06", r4
     assert r4["id"].startswith("n"), "tag 없음 → 합성 id"
-    print("[OK] S4  후기 트윗 (is_recap, 날짜, 합성 id)")
+    print("[OK] S4  후기 트윗 (날짜, 합성 id — 정규식 후기 판정 없음)")
 
     # S5/S6: 스케줄·출연 → None
     assert parse("8/30(日) 配信スケジュール\n🎮11:00〜 宮永ののか", NOW) is None
@@ -521,17 +514,16 @@ if __name__ == "__main__":
     print("[OK] _join_shout_titles")
 
     # S10: 회고글 (`今日は何の日？` + `1年前の2025年9月7日` + `開催しました`)
-    #      → 명시 연도(2025) 사용 + is_recap → merge_notice 가 skip
+    #      → 명시 연도(2025) 사용 → 지난 날짜라 merge_notice 가 skip(날짜 안전장치 — 정규식 후기 판정과 무관)
     S10 = ("【今日は何の日？】\n\n1年前の2025年9月7日\n"
            "夢限大みゅーたいぷ 4th LIVE 「アンロック・ザ・フューチャー」（会場：TACHIKAWA "
            "STAGE GARDEN）を開催しました。\n\n#バンドリ")
     r10 = parse(S10, NOW, tag="p#x#1tweet-2096773253834723388")
     assert r10 and r10["date"] == "2025-09-07", r10          # _infer_year 아님, 본문 연도
-    assert r10["is_recap"] is True, r10
     from .notices import merge_notice as _mn, default_notices as _dn, default_archive as _da
     _, _, _ch, _m = _mn(_dn(), r10, NOW, archive=_da())
     assert not _ch and _m == "skip", (_ch, _m)               # 지난 날짜 → 예고판에 안 올림
-    print("[OK] S10  회고글 (명시 연도 2025 + is_recap → skip)")
+    print("[OK] S10  회고글 (명시 연도 2025 → 지난 날짜 skip)")
 
     # S11: 명시 연도 파싱 변형 — `2026/9/13` / `2026年9月13日`
     assert _pick_event_date("2026/9/13 21:00〜 配信", DT(2026, 9, 1))[0] == "2026-09-13"

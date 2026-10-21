@@ -526,6 +526,15 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   ._maybe_tag_cast_participants`가 `_apply_notice` 파싱 직후 채운다(tweet id 없음·이미지
   없음·OCR 실패·매칭 없음이면 그냥 비워둠 — 일반 소식으로 정상 표시, 무회귀). 프론트는 아직
   이 필드를 읽지 않음(추후 UI 확장 여지).
+- **소식 시점 판정** (v4.6.2, 2026-10-21 · 10-22 운영자 결정): 지난 일의 소감 · 감사 · 현장 보고는 소식으로 올리지 않는다(규칙이 아니라 LLM). `telegram_app._prepare_notice` 가 `xnotice.parse` 직후
+  `_notice_timing` → `llm.notice_timing(text, posted_jst)` = `{kind: announce|report, subject, subject_date(YYYY-MM-DD|null), evidence[], next_lines[], reason}`(근거 · 다음 일정 줄은 원문 그대로 — 아니면 다시 묻기 5회,
+  24시 이상 표기는 다음 날로) → `notices.timing_decision(verdict, 게시일)`: announce = 올림 · report 이고 그 일의 날짜가 게시일과 같거나 뒤, 또는 날짜 미상 = 올리되 `expires_at` 을 게시일 다음 00:00 KST 로 ·
+  report 이고 게시일보다 앞 = 안 올림, `next_lines` 가 있으면 그 줄만 다시 `xnotice.parse` 해서 올림 · 판정 실패 = 올림. 게시일 = 트윗 id(Snowflake), 없으면 지금.
+  **판정을 부르지 않는 경우**(Groq 를 아끼려고): 이미 본 트윗(활성 · 보관 소식의 `seen_ids` — `_notice_already_seen`, 커밋에서 어차피 「dup」) · `timing="off"`(관리 페이지 원문 투입 확정 · 텔레그램 수동 소식 — 운영자가 정한 글).
+  `timing="show"`(관리 페이지 원문 투입 미리보기)는 판정만 결과에 붙이고(`prepared["timing"]`, 미리보기 경고) 확정하면 그대로 올린다.
+  판단 기록 kind `notice_timing`: 안 올림 · 다음 일정만 = 검토용(undo 없음 → 반려 뒤 재판단 · 사용자 판단 「소식으로 올림」(강제 announce) / 「올리지 않음」), 실패 = `undo {type: remove_notice, id}`(반려하면 그 소식을 보관함으로, 다른 소식에 합쳐졌으면 건너뜀).
+  옛 정규식 후기 판정(`xnotice._RE_RECAP` · `_RE_RETRO` → `is_recap`, `merge_notice` 의 「후기 + 지난 날짜 → seen_ids 만」)은 없앴다 — `is_recap` 은 호환용 `False`. 「지난 날짜의 새 소식 = skip」은 날짜 안전장치로 남김.
+  소급(이미 올라간 소감 글 정리)은 코드에 넣지 않았다 — 10-22 해당 1건(FM802 출연 감사)을 data 브랜치에서 직접 보관함으로 옮김(`archived_reason: recap`).
 - **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
 - `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
 - `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
@@ -647,7 +656,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   - ③ 커밋 때(`_commit_banner`, 지금 배너 상태로) `banners.plan_post` → `apply_post`:
     이벤트 = 이름(포함 관계까지, `_similar`) 또는 **같은 시작 시각**의 이벤트 배너가 있으면 그 배너 갱신, 없고 시작 일자가 적혀 있으면 새 배너(종료는 나중 글 · 이미지로 채움 — 개최 전 공지는 종료 미정으로 표시),
     시작도 기존 배너도 없으면 버림 — **같은 이벤트를 별도 배너로 올리지 않는다**(운영자 요구).
-    가챠 = 같은 이름의 가챠 · 가챠 단독 배너 갱신 → 같은 글의 이벤트 → **시작 시각이 같은 이벤트**(날짜만이면 같은 날 시작) → 시각까지 있는 시작이면 가챠 단독 배너(`gacha_only`) → 그 밖 버림.
+    가챠 = 같은 이름의 가챠 · 가챠 단독 배너 갱신 → 같은 글의 이벤트 → **시작 시각이 같은 이벤트**(날짜만이면 같은 날 시작) → 시각까지 있는 시작 **+ 종료가 적혀 있으면** 가챠 단독 배너(`gacha_only`) → 그 밖 버림((v4.6.2 운영자 결정) 종료가 없는 가챠 = 상시 가챠일 수 있어 가챠 단독 배너로 올리지 않는다 — 행사 배너는 한정 기간의 이벤트 + 가챠를 보여 주는 곳. 이벤트 배너는 그대로 시작만으로 올린다).
     기간이 겹치는 것만으로는 붙이지 않는다(옛 `_gacha_host` — 영화 기념 Ave Mujica 가챠가 サイドスロー 에 붙었다). 가챠 단독 배너가 먼저 있고 같은 시작의 이벤트가 오면 이벤트 밑으로 합친다.
     (v4.5.11) 가챠 단독 배너도 이미지를 쓴다 — 이벤트 단계가 없는 글이면 이미지 용도를 가챠 단독 단계에 넘기고, 배너에 이미지가 아직 없을 때만 용도 none 을 뺀 이미지를 붙인다(판정이 없으면 걸린 이미지 그대로).
     프론트는 가챠 단독 배너를 「가챠」로 적고(카드 머리 · 종료 박스 · 말풍선 · 탭) 카드 · 탭에 종류 배지(행사 / 가챠)를 붙인다.
@@ -752,8 +761,8 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 - Groq REST (`https://api.groq.com/openai/v1/chat/completions`). `reasoning_effort="low"`, `temperature=0`.
   구조화 출력이 필요한 호출만 `response_format: json_schema`(strict), `translate` 는 자유 텍스트.
 - api_key 비면 disabled → 모든 호출 None. `_call_groq`: 5xx·타임아웃(20초) → 1초·2초 대기하며 최대 3회 시도,
-  그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. 판정 함수 7개(`participation` · `announces_own_broadcast` ·
-  `collab_partners` · `broadcast_change_targets` · `duplicate_notice` · `banner_scope` · `banner_extract`)는 **답이 틀렸을 때만**(JSON 깨짐 · 필드 없음 · 근거 없음)
+  그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. 판정 함수 8개(`participation` · `announces_own_broadcast` ·
+  `collab_partners` · `broadcast_change_targets` · `duplicate_notice` · `banner_scope` · `banner_extract` · (v4.6.2) `notice_timing`)는 **답이 틀렸을 때만**(JSON 깨짐 · 필드 없음 · 근거 없음)
   (메인→폴백) 쌍을 최대 5회 다시 묻는다.
 - **(v4.6.1) 429 — 다시 보내지 않고 그 모델을 한동안 막는다.** `_call_groq` 가 429 를 받으면 재시도 · 대기 없이 None 을 돌려주고, 그 프로세스에서 그 모델을
   일일 한도(429 본문에 `per day` · `(TPD)` · `(RPD)`)면 1시간(`DAILY_BLOCK_SEC`), 분당 한도면 Groq 가 알려 준 대기 시간(`retry-after` 헤더 → 본문 「try again in …」 →

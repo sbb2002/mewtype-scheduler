@@ -3508,6 +3508,19 @@
                         w.textContent = `⚠️ 중복 후보 — 기존 소식 ${pv.dup_id} 와 같은 내용일 수 있습니다`;
                         box.appendChild(w);
                     }
+                    // (v4.6.2) 소식 시점 판정 — 수동 투입은 보여 주기만 하고, 확정하면 그대로 올린다
+                    const tm = pv && pv.timing;
+                    if (tm && (tm.action === "drop" || tm.action === "next" || tm.action === "today" || tm.action === "failed")) {
+                        const w = document.createElement("div");
+                        w.className = "pv-warn";
+                        const ev = ((tm.verdict && tm.verdict.evidence) || []).slice(0, 3).map((x) => `「${x}」`).join(" ");
+                        const msg = { drop: "지난 일의 소감 · 보고로 보입니다 — 자동 인입이면 올리지 않습니다",
+                                      next: "지난 일의 소감 · 보고로 보입니다 — 자동 인입이면 뒤에 붙은 다음 일정만 올립니다",
+                                      today: "오늘 있는 일에 대한 글로 보입니다 — 자동 인입이면 오늘 자정(KST)에 내립니다",
+                                      failed: "소식 시점 판정에 실패했습니다" }[tm.action];
+                        w.textContent = `⚠️ ${msg}` + (tm.why ? ` · ${tm.why}` : "") + (ev ? ` · 근거 ${ev}` : "") + " (확정하면 그대로 올립니다)";
+                        box.appendChild(w);
+                    }
                 } else {
                     const p = (pv && pv.parsed) || {};
                     head(`${nameOf(pv && pv.unit)} 트윗 1건이 반영됩니다`);
@@ -4921,7 +4934,7 @@
             //   반려 = 그 판단이 데이터에 한 변경만 원래대로 돌리는 롤백(같은 글을 다시 판정하지 않음). 이름만 바꾼 이전 「되돌리기」와 같은 동작.
             llmKindLabel(kind) {
                 const KIND = { broadcast_change: "방송 취소 · 변경", own_broadcast: "본인 예고 확인", participation: "외부 채널 참여",
-                    collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복",
+                    collab_guest: "합동 게스트", ocr_members: "이미지 OCR 참여 멤버", duplicate_notice: "소식 중복", notice_timing: "소식 시점(소감 · 보고)",
                     banner_judge: "행사 배너", user_review: "사용자 판단",
                     song_register: "신곡 등록", song_skip: "신곡 등록 안 함" };
                 return KIND[kind] || kind;
@@ -5016,7 +5029,7 @@
                     r.textContent = `근거: ${e.reason}`;
                     row.appendChild(r);
                 }
-                const SUPPORTED = ["banner_judge", "broadcast_change", "collab_guest", "duplicate_notice", "ocr_members", "own_broadcast", "participation",
+                const SUPPORTED = ["banner_judge", "broadcast_change", "collab_guest", "duplicate_notice", "notice_timing", "ocr_members", "own_broadcast", "participation",
                     "song_register", "song_skip"];
                 // 신곡 판단 두 종류는 LLM 이 아니라 규칙이 낸 판단이라 LLM 재판단 버튼이 없다(사용자 판단만)
                 const NO_REJUDGE = ["song_register", "song_skip"];
@@ -5247,6 +5260,10 @@
                     const host = e.who;
                     const getG = checks(members.filter((m) => m.value !== host), [], wrap);
                     return { get: () => ({ choice: "set", guests: getG() }), validate: () => "" };
+                }
+                if (kind === "notice_timing") {      // (v4.6.2) 소식 시점 — 지난 일의 소감 · 보고라 안 올린 글을 운영자가 정한다
+                    const getC = seg([["post", "소식으로 올림"], ["skip", "올리지 않음"]], "post", () => {});
+                    return { get: () => ({ choice: getC() }), validate: () => "" };
                 }
                 if (kind === "duplicate_notice") {
                     const sub = mk("div");

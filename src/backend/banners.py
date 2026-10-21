@@ -627,12 +627,15 @@ def plan_post(prev: dict, items: list[dict], text: str, posted_at: str | None, n
             h = event_at(s_iso, s_tbd)
             step(f"가챠 「{t}」({when}) 시작이 같은 이벤트 「{h.get('name_ja')}」에 붙임",
                  {"action": "upsert", "banner_ref": h["id"], "event": None, "gacha": ga})
-        elif s and not s_tbd:
+        elif s and not s_tbd and e:
+            # (v4.6.2 운영자 결정) 가챠 단독 배너는 한정 기간(시작 · 종료)이 둘 다 적힌 글에서만 새로 만든다 — 상시 가챠는 올리지 않는다
             gj = {"action": "upsert", "banner_ref": None, "gacha_only": True,
                   "event": {"name_ja": t, "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None}
             if roles_left and not made:
                 gj["image_roles"], roles_left = roles_left, []      # (v4.5.11) 가챠 단독 배너도 이미지를 쓴다
             step(f"가챠 「{t}」({when}) 붙을 이벤트 없음 → 가챠 단독 배너", gj)
+        elif s and not s_tbd:
+            step(f"가챠 「{t}」 버림 — 붙을 이벤트가 없고 종료가 적혀 있지 않음(한정 기간이 없는 가챠는 가챠 단독 배너로 올리지 않는다)")
         elif s:
             # 날짜만 있는 가챠(「10月18日より開催中」 — 소개 · 재공지 글)로는 가챠 단독 배너를 새로 만들지 않는다(개최 공지에는 시각이 있다)
             step(f"가챠 「{t}」 버림 — 시작이 날짜만({s})이고 같은 날 시작하는 이벤트 · 같은 가챠 배너도 없음")
@@ -1127,6 +1130,14 @@ if __name__ == "__main__":
     _r9 = run_img(side, avg, av_txt, T3, "214", ["https://x/av.jpg"], ["gacha"])
     _r10 = run_img(_r9["banners"], avg, av_txt, T3, "215", ["https://x/ssr.jpg"], ["gacha"])
     assert _img(_r10) == ["https://x/av.jpg"], "이미 이미지가 있으면 뒤 글의 가챠 이미지로 바꾸지 않는다"
+    # (v4.6.2) 종료가 적혀 있지 않은 가챠(상시 가챠일 수 있음)는 붙을 이벤트가 없으면 가챠 단독 배너로 올리지 않는다
+    pm_txt = "新ガチャ「常設メンバーガチャ」開催！\n開始日時：11月1日 15:00～"
+    r_pm, st_pm = run(default_banners(), [ev("常設メンバーガチャ", "2026-11-01 15:00", None, kind="gacha")], pm_txt, T1, "250")
+    assert not r_pm["banners"]["banners"] and any("종료가 적혀 있지 않음" in x["desc"] for x in st_pm), st_pm
+    pm2_txt = "新ガチャ「限定ピックアップガチャ」開催！\n開催期間：11月1日 15:00～11月10日 14:59"
+    r_pm2, _ = run(default_banners(), [ev("限定ピックアップガチャ", "2026-11-01 15:00", "2026-11-10 14:59", kind="gacha")], pm2_txt, T1, "251")
+    assert len(r_pm2["banners"]["banners"]) == 1 and r_pm2["banners"]["banners"][0].get("gacha_only"), r_pm2
+    print("[OK] (v4.6.2) 가챠 단독 배너 = 시작 · 종료가 둘 다 적힌 가챠만(상시 가챠 제외)")
     # 가챠 단독이 먼저 오고 같은 시작의 이벤트가 뒤에 오면 → 이벤트 배너 밑으로 합친다 · 되돌리기는 한 번에
     G0 = run(default_banners(), [ev("光彩讃歌ガチャ", "2026-10-18 15:00", "2026-10-28 14:59", kind="gacha")], g_txt, T1, "300")[0]["banners"]
     r8, st8 = run(G0, [ev("Shake Your 魂, Baby!!", "2026-10-18 15:00", "2026-10-26 14:59")], sh_txt, T1, "301", roles=["event"])
