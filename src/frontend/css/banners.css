@@ -38,6 +38,9 @@
   --bnr-arrow-hover: #888888;
   --bnr-dot: #4a4e56;
   --bnr-dot-on: #ffffff;
+  /* (v4.5.11) 배너 종류 배지 — 행사(이벤트) = 하늘, 가챠 = 분홍. 상태 색(청록 · 노랑 · 빨강 · 슬레이트)과 겹치지 않게 */
+  --bnr-kind-event: #7ea6ff; --bnr-kind-event-ink: #0b1430;
+  --bnr-kind-gacha: #ff8ccf; --bnr-kind-gacha-ink: #3a0723;
 }
 
 /* 기기 · 브라우저의 색 변환에 흔들리지 않게 (테마는 color-scheme 을 따라간다 — theme.css) */
@@ -75,7 +78,20 @@
 .bnr__mid { flex: none; width: 0; border-left: 2px dashed var(--bnr-cutline); margin: 12px 0; }   /* 절취선 */
 .bnr__right { flex: 1; min-width: 0; padding: 12px 14px; display: grid; gap: 5px; align-content: center; }
 
-.bnr__eyebrow { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; color: var(--bnr-eyebrow); }
+.bnr__eyebrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; color: var(--bnr-eyebrow); }
+/* (v4.5.11) 종류 배지 — 카드 머리 · 탭 이름 앞 · 딸린 가챠 블록 */
+.bnr__kind { --k: var(--bnr-kind-event); --k-ink: var(--bnr-kind-event-ink); display: inline-block; font-style: normal; font-weight: 800; letter-spacing: 0.06em;
+  padding: 1px 8px; border-radius: 999px; background: var(--k); color: var(--k-ink); }
+.bnr__kind[data-kind="gacha"] { --k: var(--bnr-kind-gacha); --k-ink: var(--bnr-kind-gacha-ink); }
+.bnr__eyebrow .bnr__kind { font-size: 0.74rem; padding: 2px 10px; }
+.bnr__kindnote { font-weight: 600; letter-spacing: 0.02em; color: var(--bnr-kind-gacha); }
+.bnr__card { box-shadow: inset 4px 0 0 var(--bnr-kind-event); }
+.bnr__card[data-kind="gacha"] { box-shadow: inset 4px 0 0 var(--bnr-kind-gacha); }
+/* (v4.5.11 A안, 2026-10-21 운영자 선택) 종류를 색으로 — 카드 테두리 · 진행 막대 채움 · 종료 박스 윗선 · 딸린 가챠 패널 · 고른 탭은 종류 색(행사 = 하늘 · 가챠 = 분홍).
+   진행 상태(진행 중 · 곧 종료 · 종료 임박)는 이미지 위 상태 표시 · 말풍선 · 탭 머리 글자가 그대로 상태 색으로 보인다. 보류 · 종료 카드는 상태 색(앰버 · 회색) 유지 */
+.bnr__card[data-kind="event"] { border-color: color-mix(in srgb, var(--bnr-kind-event) 45%, var(--bnr-line)); --bar-fill: var(--bnr-kind-event); }
+.bnr__card[data-kind="gacha"] { border-color: color-mix(in srgb, var(--bnr-kind-gacha) 45%, var(--bnr-line)); --bar-fill: var(--bnr-kind-gacha); }
+.bnr__card[data-st="hold"], .bnr__card[data-st="done"] { --bar-fill: var(--fill); }
 .bnr__name { font-size: 1.1rem; font-weight: 600; line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; text-wrap: balance; }
 .bnr__card[data-st="done"] .bnr__name { color: var(--bnr-done-name); }
 .bnr__orig { font-size: 0.72rem; line-height: 1.35; color: var(--bnr-orig); opacity: 0.92; overflow-wrap: anywhere; }   /* 원제 — 작고 희미하게 */
@@ -86,16 +102,20 @@
 
 /* 딸린 가챠 — 날짜 텍스트 바로 아래, 행사 안에 포함된 유리 패널 */
 .bnr__glass { margin-top: 4px; padding: 8px 10px 8px 12px; display: grid; gap: 1px; border-radius: 8px; backdrop-filter: blur(6px);
-  background: var(--bnr-glass); border: 1px solid var(--bnr-glass-edge); border-left: 3px solid color-mix(in srgb, var(--acc) 70%, transparent); }
+  background: color-mix(in srgb, var(--bnr-kind-gacha) 8%, var(--bnr-glass)); border: 1px solid color-mix(in srgb, var(--bnr-kind-gacha) 35%, var(--bnr-glass-edge));
+  border-left: 3px solid var(--bnr-kind-gacha); }   /* (v4.5.11 A안) 딸린 가챠 = 가챠 색 */
 .bnr__name--sub { font-size: 0.9rem; }
 .bnr__tagline { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; color: var(--bnr-tagline); }
 .bnr__tagline i { font-style: normal; padding: 0 6px; margin-right: 6px; border-radius: 3px; background: var(--bnr-tag-bg); color: var(--bnr-tag-fg); }
+.bnr__tagline i.bnr__kind { padding: 0 7px; border-radius: 999px; background: var(--k); color: var(--k-ink); }
 
 /* 종료 일정 박스 — 행사 종료 / 가챠 종료 */
 .bnr__ends { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: 4px; }
 .bnr__end { padding: 5px 9px; border-radius: 7px; background: var(--bnr-end-bg); border: 1px solid var(--bnr-end-edge); backdrop-filter: blur(6px); }
 .bnr__end small { display: block; font-size: 0.62rem; letter-spacing: 0.08em; color: var(--bnr-eyebrow); }
 .bnr__end b { font-size: 0.8rem; font-weight: 600; color: var(--bnr-end-ink); font-variant-numeric: tabular-nums; }
+.bnr__end[data-kind="event"] { border-top: 3px solid var(--bnr-kind-event); }   /* (v4.5.11 A안) 어느 쪽 종료인지 윗선 색으로 */
+.bnr__end[data-kind="gacha"] { border-top: 3px solid var(--bnr-kind-gacha); }
 .bnr__end.is-hot { border-color: color-mix(in srgb, var(--acc) 60%, transparent); }
 .bnr__end.is-hot b { color: var(--acc); }
 .bnr__end.is-tbd b { color: var(--bnr-quiet); font-weight: 400; }
@@ -111,9 +131,12 @@
 .bnr__bar { position: relative; z-index: 1; height: 12px; border-radius: 999px; overflow: hidden;
   background-color: var(--bnr-track); background-image: linear-gradient(var(--bnr-track), var(--bnr-track)); box-shadow: inset 0 0 0 1px var(--bnr-bar-edge); }
 .bnr__bar i { position: absolute; left: 0; top: 0; bottom: 0; z-index: 1; display: block; width: var(--pct); border-radius: 999px;
-  background-color: var(--fill); background-image: linear-gradient(var(--fill), var(--fill)); }
+  background-color: var(--bar-fill, var(--fill)); background-image: linear-gradient(var(--bar-fill, var(--fill)), var(--bar-fill, var(--fill))); }
 .bnr__bar.has-cut::before { content: ""; position: absolute; left: var(--cut); right: 0; top: 0; bottom: 0; z-index: 2;
-  background: repeating-linear-gradient(135deg, var(--bnr-hatch) 0 3px, transparent 3px 8px); }
+  background: repeating-linear-gradient(135deg, var(--hatch, var(--bnr-hatch)) 0 3px, transparent 3px 8px); }
+.bnr__prog[data-late="gacha"] { --hatch: color-mix(in srgb, var(--bnr-kind-gacha) 70%, transparent); }   /* (v4.5.11 A안) 늦게 끝나는 쪽 색 */
+.bnr__prog[data-late="event"] { --hatch: color-mix(in srgb, var(--bnr-kind-event) 70%, transparent); }
+.bnr__card[data-st="hold"] .bnr__prog, .bnr__card[data-st="done"] .bnr__prog { --hatch: var(--bnr-hatch); }
 .bnr__cut { position: absolute; bottom: 0; height: 12px; width: 3px; left: var(--cut); margin-left: -1.5px; z-index: 3; pointer-events: none;
   background: repeating-linear-gradient(to bottom, var(--bnr-cut) 0 3px, var(--bnr-cut-edge) 3px 5px); }
 .bnr__bubble { position: absolute; bottom: 20px; left: var(--pct); z-index: 4; width: 0; }
@@ -138,9 +161,12 @@
 .bnr__tab[data-st="done"]   { --acc: var(--bnr-done); }
 .bnr__tab:hover { border-color: color-mix(in srgb, var(--acc) 60%, var(--bnr-line)); }
 .bnr__tab[aria-selected="true"] { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, var(--color-bg-secondary)); }
+.bnr__tab[data-kind="event"][aria-selected="true"] { border-color: var(--bnr-kind-event); background: color-mix(in srgb, var(--bnr-kind-event) 12%, var(--color-bg-secondary)); }   /* (v4.5.11 A안) */
+.bnr__tab[data-kind="gacha"][aria-selected="true"] { border-color: var(--bnr-kind-gacha); background: color-mix(in srgb, var(--bnr-kind-gacha) 12%, var(--color-bg-secondary)); }
 .bnr__tabtop { display: flex; align-items: center; gap: 7px; font-size: 0.7rem; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden; }
 .bnr__tabtop i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
 .bnr__tabname { font-size: 0.86rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bnr__tabname .bnr__kind { font-size: 0.66rem; padding: 0 6px; margin-right: 6px; vertical-align: 1px; }
 .bnr__arrow { all: unset; box-sizing: border-box; cursor: pointer; flex: none; width: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 1.3rem; line-height: 1;
   color: var(--bnr-arrow); background: var(--color-bg-secondary); border: 1px solid var(--bnr-line); }
 .bnr__arrow:hover:not(:disabled) { border-color: var(--bnr-arrow-hover); color: var(--color-text); }

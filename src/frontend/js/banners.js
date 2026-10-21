@@ -11,6 +11,8 @@
 // 행사 · 가챠 중 어느 쪽이 먼저 끝나도 같은 규칙이다(prima aurora 는 가챠가 먼저 — 점선 뒤 25일이 빨강 + 「행사 종료까지 D-n」).
 // 진행 막대 = 시작 → **늦게 끝나는 종료**를 100%로, 먼저 끝나는 종료 시점에 점선(항상 막대 위, 막대 세로 폭 안), 점선~100% 는 /// 무늬.
 // 말풍선 꼬리는 막대의 현재 위치. D-n 은 한국 시간 달력 날짜 차이. 이미지는 X 트윗의 행사 키비주얼 링크만 쓴다(가챠 이미지 없음).
+// (v4.5.11) 가챠 단독 배너(gacha_only — 인게임 이벤트 없이 열린 한시 가챠)는 「행사」가 아니라 「가챠」로 적고, 카드 · 탭에 종류 배지(행사 / 가챠)를
+// 색으로 구분해 붙인다. 가챠 단독 배너는 가챠 이미지도 쓴다(백엔드가 붙임).
 
 const IMG_SLIDE_MS = 5000;      // 이미지가 여러 장이면 5초 머문 뒤 다음 이미지가 오른쪽으로 밀려 들어온다(한쪽 방향, 무한 반복)
 const SLIDE_MS = 650;
@@ -38,13 +40,16 @@ function _stamp(ms, withTime) {
   const p = _parts(ms);
   return `${p.m}.${p.d}(${p.w})` + (withTime ? ` ${p.hh}:${p.mm}` : "");
 }
+// (v4.5.11) 배너 종류 — 이벤트 배너 = 「행사」, 가챠 단독 배너 = 「가챠」
+const _kind = (b) => (b && b.gacha_only ? "gacha" : "event");
+const KIND_LABEL = { event: "행사", gacha: "가챠" };
 const _dd = (target, now) => Math.floor((target + OFF) / DAY) - Math.floor((now + OFF) / DAY);   // 달력 기준 D-n(당일 = 0)
 
 // 행사 종료 + 가챠 자체 종료(없으면 행사와 같음)를 시각 순으로. 같은 시각은 하나로 합친다.
 function _endpoints(b) {
   const out = [];
   const add = (label, t) => { if (t != null && !out.some((o) => o.t === t)) out.push({ label, t }); };
-  add("행사", _ms(b.end_at));
+  add(KIND_LABEL[_kind(b)], _ms(b.end_at));
   (b.gachas || []).forEach((g) => add("가챠", _ms(g.end_at)));
   return out.sort((a, c) => a.t - c.t);
 }
@@ -109,7 +114,7 @@ function _titles(ko, ja, cls) {
 
 function _gachaBlocks(b) {
   return (b.gachas || []).map((g) =>
-    `<div class="bnr__glass"><div class="bnr__tagline"><i>가챠</i>함께 진행</div>${_titles(g.title_ko, g.title_ja, "bnr__name--sub")}</div>`
+    `<div class="bnr__glass"><div class="bnr__tagline"><i class="bnr__kind" data-kind="gacha">가챠</i>함께 진행</div>${_titles(g.title_ko, g.title_ja, "bnr__name--sub")}</div>`
   ).join("");
 }
 
@@ -123,10 +128,11 @@ function _period(b, info) {
   return end == null ? `${_esc(s)} 개최 · 종료일 미정` : `${_esc(s)} ~ ${_esc(_stamp(end, true))} 종료`;
 }
 
-// 종료 일정 박스 — 행사 종료 + (가챠마다) 가챠 종료. 가챠에 자체 종료가 없으면 행사와 같은 시각을 그대로 적는다.
+// 종료 일정 박스 — 행사(가챠 단독 배너면 가챠) 종료 + (가챠마다) 가챠 종료. 가챠에 자체 종료가 없으면 행사와 같은 시각을 그대로 적는다.
 function _endBoxes(b, info, now) {
   const evEnd = _ms(b.end_at);
-  const boxes = [{ label: "행사 종료", t: evEnd, who: "행사" }];
+  const k = KIND_LABEL[_kind(b)];
+  const boxes = [{ label: `${k} 종료`, t: evEnd, who: k }];
   (b.gachas || []).forEach((g) => boxes.push({ label: "가챠 종료", t: _ms(g.end_at) ?? evEnd, who: "가챠" }));
   return boxes.map((x) => {
     let cls = "";
@@ -135,7 +141,7 @@ function _endBoxes(b, info, now) {
     else if (info.st === "warn" && info.early && x.t === info.early.t) cls = "is-hot";
     else if (info.st === "urgent" && info.late && x.t === info.late.t) cls = "is-hot";
     const txt = x.t == null ? "미정" : _stamp(x.t, true);
-    return `<div class="bnr__end ${cls}"><small>${_esc(x.label)}</small><b>${_esc(txt)}</b></div>`;
+    return `<div class="bnr__end ${cls}" data-kind="${x.who === "가챠" ? "gacha" : "event"}"><small>${_esc(x.label)}</small><b>${_esc(txt)}</b></div>`;
   }).join("");
 }
 
@@ -143,7 +149,8 @@ function _prog(info) {
   if (info.st === "hold" || info.st === "pending" || !info.eps.length) return "";
   const cut = info.cutPct != null ? `<div class="bnr__cut"></div>` : "";
   const bubble = info.bubble ? `<div class="bnr__bubble"><div class="bnr__bd">${_esc(info.bubble)}</div></div>` : "";
-  return `<div class="bnr__prog${info.bubble ? " has-bubble" : ""}" style="--pct:${info.pct.toFixed(2)}%;--cut:${(info.cutPct ?? 100).toFixed(2)}%">` +
+  const late = info.late && info.late.label === "가챠" ? "gacha" : "event";     // (v4.5.11 A안) 점선 뒤 /// 무늬 = 늦게 끝나는 쪽의 종류 색
+  return `<div class="bnr__prog${info.bubble ? " has-bubble" : ""}" data-late="${late}" style="--pct:${info.pct.toFixed(2)}%;--cut:${(info.cutPct ?? 100).toFixed(2)}%">` +
     bubble + `<div class="bnr__bar${info.cutPct != null ? " has-cut" : ""}"><i></i></div>${cut}</div>`;   // (v4.6.0) 동그란 손잡이 없앰 — 채움 끝이 현재 위치
 }
 
@@ -159,9 +166,9 @@ function _card(b, now, active) {
   const chip = info.chip ? ` <span class="bnr__chip">· ${_esc(info.chip)}</span>` : "";
   const ends = info.st === "hold" ? "" : `<div class="bnr__ends">${_endBoxes(b, info, now)}</div>`;
   return (
-    `<article class="bnr__card" data-st="${info.st}" data-id="${_esc(b.id)}"${active ? ' data-active="true"' : ""}>` + bg + left +
+    `<article class="bnr__card" data-st="${info.st}" data-kind="${_kind(b)}" data-id="${_esc(b.id)}"${active ? ' data-active="true"' : ""}>` + bg + left +
       `<div class="bnr__right">` +
-        `<div class="bnr__eyebrow">행사</div>` + _titles(b.name_ko, b.name_ja) +
+        `<div class="bnr__eyebrow"><span class="bnr__kind" data-kind="${_kind(b)}">${KIND_LABEL[_kind(b)]}</span>${b.gacha_only ? `<span class="bnr__kindnote">이벤트 없이 열린 한정 가챠</span>` : ""}</div>` + _titles(b.name_ko, b.name_ja) +
         `<div class="bnr__dates">${_period(b, info)}${chip}</div>` +
         _gachaBlocks(b) + ends + _prog(info) +
       `</div>` +
@@ -185,9 +192,9 @@ function _tabRemain(info, now) {
 }
 
 function _tab(b, info, now, sel) {
-  return `<button class="bnr__tab" role="tab" type="button" data-st="${info.st}" aria-selected="${sel}" tabindex="${sel ? 0 : -1}">` +
+  return `<button class="bnr__tab" role="tab" type="button" data-st="${info.st}" data-kind="${_kind(b)}" aria-selected="${sel}" tabindex="${sel ? 0 : -1}">` +
     `<span class="bnr__tabtop"><i></i>${_esc(STATE_LABEL[info.st] || "")} · ${_esc(_tabRemain(info, now))}</span>` +
-    `<span class="bnr__tabname">${_esc(b.name_ko || b.name_ja || "")}</span></button>`;
+    `<span class="bnr__tabname"><i class="bnr__kind" data-kind="${_kind(b)}">${KIND_LABEL[_kind(b)]}</i>${_esc(b.name_ko || b.name_ja || "")}</span></button>`;
 }
 
 // PC 는 탭 줄 + 선택한 카드 1장(나머지는 CSS 로 숨김), 모바일(≤640px)은 탭 줄을 숨기고 카드를 전부 세로로 쌓는다.

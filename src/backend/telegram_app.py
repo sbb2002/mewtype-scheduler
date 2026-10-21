@@ -4897,8 +4897,9 @@ def _run_banner(gh, e, inp, mode, dec, now_iso, ctx) -> str:
         def jst(s):
             s = (s or "").strip()
             return s[:16].replace("T", " ") if s else None
-        if not jst(dec.get("end")):
-            raise ValueError("종료 일시를 입력하세요 (종료일 없는 행사는 올리지 않습니다)")
+        # (v4.5.11 운영자 결정) 자동 판정처럼 시작 일자만으로도 올린다 — 종료는 뒤이은 글(이름 · 같은 시작 시각으로 같은 배너)이 채운다
+        if not (jst(dec.get("start")) or jst(dec.get("end"))):
+            raise ValueError("시작 또는 종료 일시를 입력하세요")
         ctx["forced"]["banner"] = {
             "action": "upsert", "banner_ref": None,
             "event": {"name_ja": name_ja or name_ko, "name_ko": name_ko or None, "start_jst": jst(dec.get("start")),
