@@ -1106,6 +1106,16 @@ if __name__ == "__main__":
     av = next(b for b in r7["banners"]["banners"] if b["name_ja"].startswith("Ave"))
     assert av.get("gacha_only") and av["end_at"] == "2026-10-25T14:59:00Z" and not av["gachas"], av
     assert not next(b for b in r7["banners"]["banners"] if b["name_ja"].startswith("お願い"))["gachas"]
+    # (v4.5.11) 관리 페이지에서 시작만으로 수동 등록한 행사 → 뒤이은 글이 이름(또는 같은 시작 시각)으로 같은 배너를 찾아 종료일을 채운다
+    T5 = "2026-11-01T03:00:00Z"
+    man = apply_judgement(default_banners(), {"action": "upsert", "banner_ref": None, "event": {"name_ja": "星降る夜のセレナーデ", "name_ko": None,
+                          "start_jst": "2026-11-05 15:00", "end_jst": None, "permanent": False}, "gacha": None, "reason": "사용자 판단"}, {"tweet_id": ""}, T5)
+    assert man["mode"] == "added" and man["banners"]["banners"][0]["end_at"] is None, man
+    m_txt = "チャレンジライブイベント「星降る夜のセレナーデ」\n開催期間：11月5日 15:00 ～ 11月13日 14:59"
+    m1, _ = run(man["banners"], [ev("星降る夜のセレナーデ", "2026-11-05 15:00", "2026-11-13 14:59")], m_txt, T5, "401")
+    assert len(m1["banners"]["banners"]) == 1 and m1["banners"]["banners"][0]["end_at"] == "2026-11-13T05:59:00Z", m1
+    m2, _ = run(man["banners"], [ev("夜空のセレナーデ", "2026-11-05 15:00", "2026-11-13 14:59")], m_txt.replace("星降る夜", "夜空"), T5, "402")
+    assert len(m2["banners"]["banners"]) == 1 and m2["banners"]["banners"][0]["end_at"] == "2026-11-13T05:59:00Z", ("이름이 달라도 같은 시작이면 채운다", m2)
     # (v4.5.11) 가챠 단독 배너도 이미지를 쓴다 — 용도 gacha · event 는 붙이고 none(소개 카드)은 빼고, 판정이 없으면 그대로. 이미 있으면 안 바꾼다
     def run_img(state, items, text, now, tid, media, roles):
         return apply_post(state, plan_post(state, items, text, now, now, roles), {"tweet_id": tid, "media": media, "text": text, "posted_at": now}, now)
