@@ -930,12 +930,13 @@ def ingest_notice_raw(raw: str, *, confirm: bool) -> dict:
     raw = (raw or "").strip()
     now = _now_iso()
     gh = _store()
-    prepared = t._prepare_notice(raw, now, gh=gh) if raw else None
+    # (v4.5.12) 운영자 수동 투입 — 시점 판정(소감 · 보고인가)은 미리보기에 보여 주기만 하고 확정하면 그대로 올린다
+    prepared = t._prepare_notice(raw, now, gh=gh, timing="show") if raw else None
     if not prepared:
         return _err("소식으로 인식되지 않았습니다 (리트윗 · 스케줄 형식 · 날짜 없음 등)")
     if not confirm:
         return {"ok": True, "preview": {"parsed": prepared.get("parsed"), "tl": prepared.get("tl"),
-                                        "dup_id": prepared.get("dup_id")},
+                                        "dup_id": prepared.get("dup_id"), "timing": prepared.get("timing")},
                 "note": "중복이면 dup_id 에 기존 소식 id"}
     apply.submit("notice_sweep", {"now_iso": now}, wait=True)
     res = _submit("apply_notice", {"prepared": prepared, "now_iso": now})

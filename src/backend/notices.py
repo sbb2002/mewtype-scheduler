@@ -137,12 +137,10 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
     # 2) 활성 소식에서 같은 그룹
     for i, n in enumerate(notices):
         if _same_group(n, incoming):
-            if incoming.get("is_recap") and past:
-                notices[i] = _merge_fields(n, {"id": tid}, now_iso)   # seen_ids 만
-                mode = "recap"
-            else:
-                notices[i] = _merge_fields(n, incoming, now_iso)
-                mode = "updated"
+            # (v4.5.12) 정규식 「후기」 표시(is_recap)로 거르던 분기는 없앴다 — 소감 · 보고는 준비 단계의 LLM 시점 판정
+            # (`timing_decision`)이 병합 전에 막는다(2026-10-21 운영자 결정: 규칙이 아니라 LLM 으로).
+            notices[i] = _merge_fields(n, incoming, now_iso)
+            mode = "updated"
             out = dict(prev); out["notices"] = _sorted(notices); out["generated_at"] = now_iso
             return out, arch, True, mode
 
@@ -165,6 +163,33 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
     notices.append(_new_row(incoming, now_iso))
     out = dict(prev); out["notices"] = _sorted(notices); out["generated_at"] = now_iso
     return out, arch, True, "added"
+
+
+def _next_midnight_utc(day_jst: str) -> str:
+    """JST 날짜(YYYY-MM-DD) 다음 날 00:00 JST 를 UTC ISO 로."""
+    d = datetime.fromisoformat(day_jst).replace(tzinfo=_JST) + timedelta(days=1)
+    return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def timing_decision(verdict: dict | None, posted_date: str) -> dict:
+    """(v4.5.12) 소식 시점 판정(`llm.notice_timing`) → 올릴지. 2026-10-21 운영자 결정:
+    지난 일의 소감 · 보고는 안 올림 · 오늘 있는 일에 대한 글은 오늘 자정(KST)까지 · 소감에 붙은 다음 일정은 그 부분만 · 판정 실패면 올림(실패 기록).
+    posted_date = 게시일(JST YYYY-MM-DD). 반환 {"action": post|today|next|drop|failed, "until": UTC ISO|None, "next_text": str|None, "why": str}.
+    """
+    out = {"action": "post", "until": None, "next_text": None, "why": ""}
+    if not verdict:
+        return dict(out, action="failed", why="시점 판정 실패 — 올림")
+    if verdict.get("kind") != "report":
+        return dict(out, why="앞으로 · 지금 기간 중인 일을 알리는 글")
+    sd = verdict.get("subject_date")
+    subj = (verdict.get("subject") or "").strip()
+    if not sd or sd >= posted_date:
+        return dict(out, action="today", until=_next_midnight_utc(posted_date),
+                    why=f"오늘 있는 일({subj or '?'})에 대한 글 — 오늘 자정까지")
+    nx = "\n".join(verdict.get("next_lines") or []).strip()
+    if nx:
+        return dict(out, action="next", next_text=nx, why=f"지난 일({subj or '?'} · {sd})의 소감 — 다음 일정만 올림")
+    return dict(out, action="drop", why=f"지난 일({subj or '?'} · {sd})의 소감 · 보고 — 안 올림")
 
 
 def merge_into(prev: dict, target_id: str, incoming: dict, now_iso: str) -> tuple[dict, bool]:
@@ -329,6 +354,21 @@ if __name__ == "__main__":
     assert ch and m == "recap" and len(n3["notices"]) == 0, m
     assert "31" in a3["notices"][0]["seen_ids"]
     print("[OK] 아카이브 그룹 후속 → recap (부활 안 함)")
+
+    # (v4.5.12) 활성 소식과 같은 그룹이면 is_recap 이어도 갱신(정규식 후기 분기 없앰 — 소감은 준비 단계 LLM 판정이 막는다)
+    _, _, ch, m = merge_notice({"notices": [inc(id="50", url="https://x.jp/a")]}, inc(id="51", url="https://x.jp/a", date="2026-09-06", is_recap=True), NOW)
+    assert ch and m == "updated", m
+    # (v4.5.12) 시점 판정 → 올릴지
+    TD = "2026-10-11"
+    assert timing_decision({"kind": "announce"}, TD)["action"] == "post"
+    assert timing_decision(None, TD)["action"] == "failed"
+    t1 = timing_decision({"kind": "report", "subject": "13th LIVE", "subject_date": "2026-10-11", "next_lines": []}, TD)
+    assert t1["action"] == "today" and t1["until"] == "2026-10-11T15:00:00Z", t1           # 오늘 자정(KST)까지
+    assert timing_decision({"kind": "report", "subject_date": None, "next_lines": []}, TD)["action"] == "today", "날짜를 모르면 오늘 일로"
+    assert timing_decision({"kind": "report", "subject_date": "2026-10-10", "next_lines": []}, TD)["action"] == "drop"
+    t4 = timing_decision({"kind": "report", "subject_date": "2026-09-20", "next_lines": ["次回は9/27(日)開催", "https://x.jp/t"]}, TD)
+    assert t4["action"] == "next" and t4["next_text"] == "次回は9/27(日)開催\nhttps://x.jp/t", t4
+    print("[OK] (v4.5.12) timing_decision — 알림 올림 · 오늘 일 자정까지 · 지난 일 안 올림 · 다음 일정만 · 실패 올림")
 
     # sweep
     S = {"generated_at": None, "notices": [

@@ -49,6 +49,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
             t._commit_notice(gh, a.get("prepared"), a["now_iso"]),
         )),
         "notice_sweep": lambda gh, a: {"moved": t._notice_sweep(gh, a["now_iso"])},
+        "notice_recap_archive": lambda gh, a: t._notice_recap_archive(gh, a["ids"], a["now_iso"]),   # (v4.5.12) 소식 소급 — 소감 · 보고 보관
         # (v4a) 행사 배너 — 판정 커밋 · 정리 · 관리 페이지 수정/삭제
         "apply_banner": lambda gh, a: t._commit_banner(gh, a.get("prepared"), a["now_iso"]),
         "banner_sweep": lambda gh, a: {"moved": t._banner_sweep(gh, a["now_iso"])},
@@ -132,7 +133,7 @@ if __name__ == "__main__":
         "tweet_del_commit", "tweet_edit_commit", "url_confirmed_commit", "yt_member_live_commit", "undo_restore",
         "apply_preview_edit", "ingest_queue_push", "ingest_queue_drain", "group_pending", "video_release", "llm_action",
         "apply_banner", "banner_sweep", "banner_edit_commit", "banner_del_commit", "song_edit", "song_push",
-        "ocr_pending",
+        "ocr_pending", "notice_recap_archive",
     }
     missing = expected - set(reg)
     assert not missing, f"registry missing kinds: {missing}"

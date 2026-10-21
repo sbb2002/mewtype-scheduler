@@ -1750,19 +1750,95 @@ _NOTICE_PROMPT = (
 )
 
 
-def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) -> dict | None:
+def _notice_timing(raw: str, tag: str | None, now_iso: str) -> dict:
+    """(v4.5.12) 소식 시점 판정 — LLM(`llm.notice_timing`)이 알림/보고 · 그 일의 날짜 · 다음 일정 줄을 옮겨 적고, 올릴지는 코드(`notices.timing_decision`).
+    반환 {"verdict", "decision", "posted"(JST 문자열), "llm"(LLM 을 불렀나), "forced"(사용자 판단 값)}."""
+    posted = ""
+    try:
+        posted = _banner_posted_jst(tag, now_iso) if banners is not None else ""
+    except Exception:  # noqa: BLE001
+        posted = ""
+    if not posted:
+        posted = (datetime.fromisoformat(now_iso.replace("Z", "+00:00")) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")
+    fv = _review_forced("notice_timing", _NOFORCE)       # 사용자 판단 — 운영자가 정한 판정으로 LLM 을 건너뛴다
+    verdict, called = None, False
+    if fv is not _NOFORCE:
+        verdict = fv
+    else:
+        client = _make_llm_client()
+        if client is not None and hasattr(client, "notice_timing"):
+            called = True
+            try:
+                verdict = client.notice_timing(raw, posted)
+            except Exception:  # noqa: BLE001
+                log.warning("소식 시점 판정 호출 실패", exc_info=True)
+                verdict = None
+    dec = notices.timing_decision(verdict, posted[:10])
+    return {"verdict": verdict, "decision": dec, "posted": posted, "llm": called, "forced": fv is not _NOFORCE}
+
+
+def _apply_notice_timing(parsed: dict, tm: dict, raw: str, now_iso: str, *, tag=None, title=None, gh=None) -> dict | None:
+    """(v4.5.12) 시점 판정 결과를 소식 항목에 반영 — 올릴 항목(dict) | None(안 올림). 2026-10-21 운영자 결정:
+    지난 일의 소감 · 보고는 안 올림 · 오늘 있는 일은 오늘 자정(KST)까지 · 소감에 붙은 다음 일정은 그 부분만 · 판정 실패면 올리고 실패 기록(관리 페이지 「LLM 판단」)."""
+    d, v = tm["decision"], tm.get("verdict") or {}
+    act = d["action"]
+    inp = _inp(raw, tag=tag, title=title)
+    ev = " · ".join(f"「{e[:40]}」" for e in (v.get("evidence") or [])[:3])
+    why = f"{d['why']}" + (f" / {v.get('reason')}" if v.get("reason") else "") + (f" (근거: {ev})" if ev else "")
+    head = (parsed.get("title") or "")[:40]
+    if act == "post":
+        return parsed
+    if act == "today":
+        if not parsed.get("expires_at") or parsed["expires_at"] > d["until"]:
+            parsed = dict(parsed, expires_at=d["until"])
+        flowtrace.mark("소식 시점", "done", d["why"])
+        return parsed
+    if act == "failed":
+        if tm.get("llm") and gh is not None:
+            _llm_record(gh, "notice_timing", "notice", f"소식 시점 판정 실패 — 올림 · {head}", d["why"],
+                        undo={"type": "remove_notice", "id": parsed.get("id")}, now_iso=now_iso, input=inp)
+            _log_event_safe(gh, now_iso, "notice", RESULT_WARN, via="ingest", detail=f"notice timing: LLM 5회 실패 — 올림 · {head}"[:200])
+        return parsed
+    if act == "next":
+        p2 = xnotice.parse(d["next_text"], now_iso, tag=tag, title=title)
+        if p2:
+            if gh is not None:
+                _llm_record(gh, "notice_timing", "notice", f"지난 일의 소감 — 다음 일정만 소식으로 · {(p2.get('title') or '')[:40]}", why,
+                            undo=None, now_iso=now_iso, input=inp)
+            flowtrace.mark("소식 시점", "done", d["why"])
+            return p2
+        d = dict(d, why=d["why"] + " (다음 일정 줄이 소식 형식이 아님)")
+    # drop — 지난 일의 소감 · 보고
+    if gh is not None:
+        _llm_record(gh, "notice_timing", "notice", f"소감 · 보고라 소식으로 안 올림 — {head}", why, undo=None, now_iso=now_iso, input=inp)
+        _log_event_safe(gh, now_iso, "notice", RESULT_OK, via="ingest", detail=f"notice skip: {d['why']}"[:200])
+    flowtrace.mark("소식 시점", "skip", d["why"])
+    return None
+
+
+def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, timing: str = "gate") -> dict | None:
     """(WP-3a) 소식 준비 (제어 채널에서 실행).
 
     외부 호출(비전 OCR·LLM) + 중복판정까지 한 뒤 결과를 반환.
     반환: {"parsed": dict, "tl": dict|None, "dup_id": str|None, "body_src": str|None, "body_ko": str|None} | None
     (v4.0.5) body_ko = 본문(body_raw) 한글 번역 — 실제로 올라가거나 본문이 바뀌는 소식일 때만 번역한다.
     실패(None)면 저장 뒤 번역 sweep(`enrich.collect`)이 body_ko 가 빈 행을 다시 번역한다.
+    (v4.5.12) timing = "gate"(자동 인입 — 시점 판정으로 지난 일의 소감 · 보고를 거름) | "show"(운영자 수동 투입 — 판정만 붙이고 그대로 올림).
+    반환 dict 의 "timing" = {"action", "why", "verdict"} (관리 페이지 미리보기 표시용).
     """
     if xnotice is None or notices is None:
         return None
     parsed = xnotice.parse(raw, now_iso, tag=tag, title=title)
     if not parsed:
         return None
+
+    # 0. (v4.5.12) 시점 판정 — 지난 일의 소감 · 보고는 소식으로 올리지 않는다(LLM 판정, 올릴지는 코드). 제목 · 번역 LLM 보다 먼저
+    tm = _notice_timing(raw, tag, now_iso)
+    if timing != "show":
+        parsed = _apply_notice_timing(parsed, tm, raw, now_iso, tag=tag, title=title, gh=gh)
+        if parsed is None:
+            return None
+    timing_info = {"action": tm["decision"]["action"], "why": tm["decision"]["why"], "verdict": tm.get("verdict")}
 
     # 1. 크로스오버 출연진 비전 OCR
     _maybe_tag_cast_participants(parsed, tag)
@@ -1823,6 +1899,7 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None) ->
         "dup_id": dup_id,
         "body_src": body_src,
         "body_ko": body_ko,
+        "timing": timing_info,
     }
 
 
@@ -2146,8 +2223,8 @@ def _handle_notice_followup(gh, now_iso: str, message: dict, text: str) -> bool:
     _clear()
     _send_telegram("📥 접수했습니다. 반영 중…")
 
-    # 준비 단계: 파싱 + LLM + 중복판정
-    prepared = _prepare_notice(raw, now_iso, gh=gh)
+    # 준비 단계: 파싱 + LLM + 중복판정 — (v4.5.12) 운영자 수동 투입이라 시점 판정은 붙이기만 한다
+    prepared = _prepare_notice(raw, now_iso, gh=gh, timing="show")
     if prepared is None:
         _notice_result_dm("none", None, raw)
         return True
@@ -4706,6 +4783,90 @@ def _undo_notice_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
     return {"applied": applied, "skipped": skipped, "restored_video_ids": []}
 
 
+def _undo_notice_timing(gh, e: dict, action_id: str, now_iso: str) -> dict:
+    """(v4.5.12, 적용 큐) 소식 시점 판정 반려.
+    remove_notice = 판정 실패로 그냥 올린 소식을 내린다(보관함으로, 다른 소식에 합쳐졌으면 건너뜀) ·
+    restore_notice_row = 소급으로 보관함에 옮긴 소식을 다시 올린다(이미 올라와 있으면 건너뜀)."""
+    u = e.get("undo") or {}
+    applied, skipped = [], []
+    for _try in range(1, 4):
+        applied, skipped = [], []
+        cur, sha = gh.read_json(_NOTICES_PATH)
+        arc, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
+        cur, arc = cur or notices.default_notices(), arc or notices.default_archive()
+        rows, arows = list(cur.get("notices") or []), list(arc.get("notices") or [])
+        if u.get("type") == "remove_notice":
+            row = next((n for n in rows if n.get("id") == u.get("id")), None)
+            if row is None:
+                merged = any(u.get("id") in (n.get("seen_ids") or []) for n in rows)
+                skipped.append("다른 소식에 합쳐짐 — 소식 탭에서 직접" if merged else "그 소식이 이미 없음")
+                break
+            rows.remove(row)
+            arows.append(dict(row, archived_at=now_iso, archived_reason="llm_review"))
+            applied.append(f"소식 내림 — {(row.get('title_ko') or row.get('title') or '')[:30]}")
+        else:   # restore_notice_row
+            snap = u.get("before") or {}
+            if not snap.get("id") or any(n.get("id") == snap["id"] for n in rows):
+                skipped.append("이미 소식에 있음" if snap.get("id") else "되살릴 모습이 기록되지 않음")
+                break
+            rows.append({k: v for k, v in snap.items() if k not in ("archived_at", "archived_reason")})
+            arows = [n for n in arows if not (n.get("id") == snap["id"] and n.get("archived_reason") == "recap")]
+            applied.append(f"소식 되살림 — {(snap.get('title_ko') or snap.get('title') or '')[:30]}")
+        try:
+            gh.write_json(_NOTICES_PATH, dict(cur, notices=notices._sorted(rows), generated_at=now_iso), prev_sha=sha,
+                          message=f"data: 소식 시점 판단 반려 {action_id} {now_iso}")
+            gh.write_json(_NOTICE_ARCHIVE_PATH, dict(arc, notices=arows), prev_sha=asha,
+                          message=f"data: 소식 시점 판단 반려 {action_id} {now_iso} (archive)")
+        except ConflictError:
+            if _try == 3:
+                raise
+            continue
+        break
+    _llm_mark_undone(gh, action_id, now_iso, applied, skipped)
+    _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=e.get("who") or "", via="ops",
+                    detail=f"LLM 판단 반려 notice_timing · {'; '.join(applied) or '; '.join(skipped) or '변화 없음'}")
+    return {"applied": applied, "skipped": skipped, "restored_video_ids": []}
+
+
+def _notice_recap_archive(gh, ids: list[str], now_iso: str) -> dict:
+    """(v4.5.12, 적용 큐) 소급 — 지난 일의 소감 · 보고로 판정된 활성 소식을 보관함으로(archived_reason=recap, 지우지 않음). 옮긴 행 스냅샷 반환."""
+    for _try in range(1, 4):
+        cur, sha = gh.read_json(_NOTICES_PATH)
+        arc, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
+        cur, arc = cur or notices.default_notices(), arc or notices.default_archive()
+        rows = list(cur.get("notices") or [])
+        moved = [n for n in rows if n.get("id") in set(ids or [])]
+        if not moved:
+            return {"moved": []}
+        keep = [n for n in rows if n not in moved]
+        arows = list(arc.get("notices") or []) + [dict(n, archived_at=now_iso, archived_reason="recap") for n in moved]
+        try:
+            gh.write_json(_NOTICES_PATH, dict(cur, notices=keep, generated_at=now_iso), prev_sha=sha,
+                          message=f"data: 소식 소급 — 소감 · 보고 {len(moved)}건 보관 {now_iso}")
+            gh.write_json(_NOTICE_ARCHIVE_PATH, dict(arc, notices=arows), prev_sha=asha,
+                          message=f"data: 소식 소급 — 소감 · 보고 {len(moved)}건 보관 {now_iso} (archive)")
+            return {"moved": moved}
+        except ConflictError:
+            if _try == 3:
+                raise
+    return {"moved": []}
+
+
+def _run_notice_timing(gh, e, inp, mode, dec, now_iso, ctx) -> str:
+    """(v4.5.12) 소식 시점 판정 반려 뒤 — 재판단(같은 글로 시점 판정부터 다시) · 사용자 판단(소식으로 올림 / 올리지 않음)."""
+    if mode == "user":
+        if dec.get("choice") == "post":
+            ctx["forced"]["notice_timing"] = {"kind": "announce", "subject": "", "subject_date": None, "evidence": [],
+                                              "next_lines": [], "reason": "사용자 판단 — 소식으로 올림"}
+        elif dec.get("choice") == "skip":
+            _user_noop(gh, e, "소식 시점 — 사용자 판단: 올리지 않음", now_iso)
+            return "사용자 판단: 올리지 않음 (변경 없음)"
+        else:
+            raise ValueError("「소식으로 올림」 또는 「올리지 않음」을 고르세요")
+    res = _maybe_auto_notice(inp.get("raw") or "", now_iso, tag=inp.get("tag"), title=inp.get("title"))
+    return f"소식 판정: {_NOTICE_VERDICT.get(res, res)}" + ((" — " + _review_summaries(ctx, gh)) if ctx.get("new_ids") else "")
+
+
 def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
     """(적용 큐) LLM 판단 되돌리기. undo 종류:
     restore_items(지운 예고 되살림 + 재등록 차단 해제) · restore_fields(바꾼 값 되돌림 — 지금 값이 그때 바꾼 값일 때만) ·
@@ -4734,6 +4895,8 @@ def _llm_undo(gh, action_id: str, now_iso: str) -> dict:
         return _undo_song_action(gh, e, action_id, now_iso)
     if u.get("type") == "restore_notice":
         return _undo_notice_action(gh, e, action_id, now_iso)
+    if u.get("type") in ("remove_notice", "restore_notice_row"):   # (v4.5.12) 소식 시점 판정
+        return _undo_notice_timing(gh, e, action_id, now_iso)
     applied, skipped, restored = [], [], []
     t = u.get("type")
 
@@ -5185,7 +5348,7 @@ def _run_song_skip(gh, e, inp, mode, dec, now_iso, ctx) -> str:
 
 _REVIEW_RUNNERS = {
     "banner_judge": _run_banner, "broadcast_change": _run_change, "collab_guest": _run_collab,
-    "duplicate_notice": _run_notice, "ocr_members": _run_ocr, "own_broadcast": _run_own, "participation": _run_part,
+    "duplicate_notice": _run_notice, "notice_timing": _run_notice_timing, "ocr_members": _run_ocr, "own_broadcast": _run_own, "participation": _run_part,
     "song_register": _run_song_register, "song_skip": _run_song_skip,   # (v4.2.0) 규칙 판단 — 사용자 판단만(LLM 재판단 없음)
 }
 
@@ -7503,6 +7666,63 @@ if __name__ == "__main__":
     finally:
         _send_telegram = _saved_tg
     print("[OK] (v4.5.9) 그룹 영상 — 비전 실패만 대기 · 허가된 판독 이름 → 확인 대기 제안 멤버")
+
+    # ── (v4.5.12) 소식 시점 판정 — 지난 일의 소감 · 보고는 안 올림 · 오늘 일은 자정까지 · 다음 일정만 · 실패면 올림 + 기록 ──
+    class _TLLM:
+        def __init__(self, v):
+            self.v, self.n = v, 0
+        def notice_timing(self, raw, posted):
+            self.n += 1
+            return self.v
+    _saved_nt = _make_llm_client
+    _NOW_T = "2026-10-11T12:00:00Z"            # 게시일(KST) = 10-11
+    _raw_t = "🛸 #バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n10/11(土)開催\nご来場・ご視聴ありがとうございました❣"
+    _pt = xnotice.parse(_raw_t, _NOW_T)
+    try:
+        _tg = _MemGH()
+        _make_llm_client = lambda: _TLLM({"kind": "report", "subject": "13thライブ DAY2", "subject_date": "2026-10-10",
+                                          "evidence": ["ご来場・ご視聴ありがとうございました❣"], "next_lines": [], "reason": "끝난 라이브 감사"})
+        _tm = _notice_timing(_raw_t, None, _NOW_T)
+        assert _tm["decision"]["action"] == "drop" and _tm["posted"].startswith("2026-10-11"), _tm
+        assert _apply_notice_timing(_pt, _tm, _raw_t, _NOW_T, gh=_tg) is None
+        _la = _tg.f[_LLM_ACTIONS_PATH]["items"]
+        assert _la[-1]["kind"] == "notice_timing" and _la[-1]["undo"] is None and "안 올림" in _la[-1]["summary"], _la[-1]
+        assert _prepare_notice(_raw_t, _NOW_T, gh=None) is None, "자동 인입은 소감이면 준비 단계에서 끝"
+        # 오늘 일 — 올리되 오늘 자정(KST)에 내린다
+        _make_llm_client = lambda: _TLLM({"kind": "report", "subject": "13thライブ DAY2", "subject_date": "2026-10-11",
+                                          "evidence": ["ご来場・ご視聴ありがとうございました❣"], "next_lines": [], "reason": "오늘 라이브"})
+        _p_today = _apply_notice_timing(_pt, _notice_timing(_raw_t, None, _NOW_T), _raw_t, _NOW_T, gh=_tg)
+        assert _p_today and _p_today["expires_at"] == "2026-10-11T15:00:00Z", _p_today
+        # 지난 일의 소감 + 다음 일정 → 다음 일정만
+        _raw_n = "🎨「藤都子展〜16歳〜」開催記念お渡し会🎨\nご参加いただき、ありがとうございました✨\n次回は10/25(日)BanG Dream! STOREにてお渡し会を開催！\nhttps://bushiroad-music.com/topics/22656/"
+        _make_llm_client = lambda: _TLLM({"kind": "report", "subject": "お渡し会", "subject_date": "2026-10-04",
+                                          "evidence": ["ご参加いただき、ありがとうございました✨"],
+                                          "next_lines": ["次回は10/25(日)BanG Dream! STOREにてお渡し会を開催！", "https://bushiroad-music.com/topics/22656/"],
+                                          "reason": "지난 행사 감사 + 다음 회차"})
+        _p_next = _apply_notice_timing(xnotice.parse(_raw_n, _NOW_T), _notice_timing(_raw_n, None, _NOW_T), _raw_n, _NOW_T, gh=_tg)
+        assert _p_next and _p_next["date"] == "2026-10-25" and "ありがとう" not in (_p_next.get("body_raw") or ""), _p_next
+        # 판정 실패 — 올리고, 반려하면 내릴 수 있게 기록
+        _make_llm_client = lambda: _TLLM(None)
+        _p_fail = _apply_notice_timing(_pt, _notice_timing(_raw_t, None, _NOW_T), _raw_t, _NOW_T, gh=_tg)
+        assert _p_fail is _pt
+        _fe = _tg.f[_LLM_ACTIONS_PATH]["items"][-1]
+        assert "실패" in _fe["summary"] and _fe["undo"] == {"type": "remove_notice", "id": _pt["id"]}, _fe
+        # 반려(remove_notice) — 올라간 소식을 보관함으로
+        _tg.f[_NOTICES_PATH] = {"notices": [dict(_pt)]}
+        _ur = _undo_notice_timing(_tg, _fe, _fe["id"], _NOW_T)
+        assert _ur["applied"] and not _tg.f[_NOTICES_PATH]["notices"] and _tg.f[_NOTICE_ARCHIVE_PATH]["notices"][-1]["archived_reason"] == "llm_review", _ur
+        # 소급 보관 + 반려(restore_notice_row) — 되살림
+        _tg.f[_NOTICES_PATH] = {"notices": [dict(_pt)]}
+        _mv = _notice_recap_archive(_tg, [_pt["id"]], _NOW_T)["moved"]
+        assert len(_mv) == 1 and not _tg.f[_NOTICES_PATH]["notices"] and _tg.f[_NOTICE_ARCHIVE_PATH]["notices"][-1]["archived_reason"] == "recap"
+        _re = {"id": "llm_retro1", "who": "notice", "undo": {"type": "restore_notice_row", "before": _mv[0]}}
+        _tg.f[_LLM_ACTIONS_PATH]["items"].append(dict(_re, kind="notice_timing", ts=_NOW_T, summary="소급"))
+        _rr = _undo_notice_timing(_tg, _re, "llm_retro1", _NOW_T)
+        assert _rr["applied"] and _tg.f[_NOTICES_PATH]["notices"][0]["id"] == _pt["id"], _rr
+        assert not any(n.get("archived_reason") == "recap" and n.get("id") == _pt["id"] for n in _tg.f[_NOTICE_ARCHIVE_PATH]["notices"])
+    finally:
+        _make_llm_client = _saved_nt
+    print("[OK] (v4.5.12) 소식 시점 판정 — 소감 안 올림 · 오늘 일 자정까지 · 다음 일정만 · 실패 올림 + 기록 · 반려(내림 · 되살림) · 소급 보관")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}

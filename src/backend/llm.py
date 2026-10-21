@@ -372,6 +372,23 @@ def _near_event_word(title: str, full: str) -> bool:
 
 
 # (v4.5.10) 행사 판정 2단계 — 1단계 = 게임 안/밖(근거 구절 목록), 2단계 = 이벤트 · 가챠 옮겨 적기. 배너 처리는 코드(banners.plan_post).
+_NOTICE_TIMING_SCHEMA = {
+    "name": "notice_timing",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string", "enum": ["announce", "report"]},
+            "subject": {"type": "string"},
+            "subject_date": {"type": ["string", "null"]},
+            "evidence": {"type": "array", "items": {"type": "string"}},
+            "next_lines": {"type": "array", "items": {"type": "string"}},
+            "reason": {"type": "string"},
+        },
+        "required": ["kind", "subject", "subject_date", "evidence", "next_lines", "reason"],
+        "additionalProperties": False,
+    },
+}
 _BANNER_SCOPE_SCHEMA = {
     "name": "banner_scope",
     "strict": True,
@@ -877,6 +894,63 @@ class LLMClient:
                         "reason": str(result.get("reason") or "").strip()[:200]}
             logger.info(f"broadcast_change_targets: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
         logger.info("broadcast_change_targets: 5회 모두 실패 — None (호출부 미반영 처리) — 호출부가 기록")
+        return None
+
+    def notice_timing(self, text: str, posted_jst: str) -> dict | None:
+        """
+        (v4.5.12) 소식 시점 판정 — 이 글이 **앞으로 / 지금 기간 중인 일을 알리는 글(announce)**인지, **이미 있었거나 지금 막 열리고 있는
+        특정 일에 대한 감사 · 소감 · 현장 보고 · 회고(report)**인지 묻는다. 올릴지는 코드(`notices.timing_decision`)가 정한다 —
+        report 이고 그 일의 날짜가 게시일보다 앞이면 안 올림, 게시일과 같으면 그날 자정까지, 소감에 붙은 다음 일정(next_lines)은 그 부분만 소식으로.
+        2026-10-21 운영자 결정: 지난 행사의 소감은 소식으로 올리지 않는다 · 규칙(정규식)이 아니라 LLM 으로 판단한다.
+        **근거 필수** — evidence · next_lines 는 원문에서 그대로 복사한 줄 목록. 비었거나 원문에 없으면 다시 묻는다(5회).
+        Returns: {"kind": "announce"|"report", "subject": str, "subject_date": "YYYY-MM-DD"|None, "evidence": [...], "next_lines": [...],
+                  "reason": str} — 5회 모두 실패하면 None(호출부가 올리고 실패 기록을 남긴다).
+        """
+        if self.disabled:
+            return None
+        base = _with_hint(
+            "아래는 X(트위터) 글이다. 게시 시각: " + (posted_jst or "?") + " (일본 시간).\n"
+            "이 글이 무엇을 알리는지 판단하라.\n"
+            "- announce: 앞으로 있을 일(행사 개최 · 발매 · 판매 · 접수 · 방송 · 출연 · 배포 예정)을 알리거나, 지금 기간 중이라 팬이 찾아가거나 "
+            "이용할 수 있는 것(판매 중 · 방영 중 · 게시 중 · 접수 중 · 배포 중 · 개최 중인 전시)을 알리는 글.\n"
+            "- report: 이미 있었거나 지금 막 열리고 있는 **특정 일**(라이브 · 방송 · 출연 · 이벤트 · 사인회 · 토크쇼 · 점검 등)에 대한 "
+            "감사 · 소감 · 현장 보고(「始まりました」 「終了しました」) · 종료 보고, 또는 과거를 돌아보는 회고(今日は何の日 · N年前).\n"
+            "subject = report 면 그 일의 이름(원문 표기), announce 면 알리는 것의 이름.\n"
+            "subject_date = report 면 그 일이 열린 날짜(일본 시간 YYYY-MM-DD). 글에 날짜가 있으면 그 날짜, 本日 · 今日 · 今夜 · 本番 직후 인사면 게시일, "
+            "昨日 · 昨夜면 게시일 전날, 회고면 그 옛날 날짜. 알 수 없으면 null. announce 면 null.\n"
+            "next_lines = report 글 안에 **다른 앞으로의 일정**(다음 회차 · 다음 행사 · 발매 · 수령 기한 등)을 알리는 줄이 있으면 그 줄들을 "
+            "원문에서 한 줄씩 그대로 복사(날짜 · 장소 · 링크 줄 포함). 없거나 announce 면 [].\n"
+            "evidence = 판단 근거가 된 구절들 — 글에서 한 줄씩 **그대로 복사**한다(바꾸거나 여러 줄을 이어 붙이지 말 것).\n"
+            "reason = 판단 이유 한국어 한 문장.\nJSON 으로만 답하라.\n\n글:\n" + (text or ""))
+        prompt = base
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=_NOTICE_TIMING_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=_NOTICE_TIMING_SCHEMA)
+            if not response:
+                continue
+            try:
+                r = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.info(f"notice_timing: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if not isinstance(r, dict) or r.get("kind") not in ("announce", "report"):
+                logger.info(f"notice_timing: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
+                continue
+            ev = [str(e).strip() for e in (r.get("evidence") or []) if str(e).strip()]
+            nx = [str(e).strip() for e in (r.get("next_lines") or []) if str(e).strip()] if r["kind"] == "report" else []
+            why = str(r.get("reason") or "").strip()
+            sd = r.get("subject_date") if r["kind"] == "report" else None
+            bad_date = sd is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(sd))
+            if (not ev or len(why) < 5 or bad_date or not all(evidence_in_text(e, text or "") for e in ev)
+                    or not all(evidence_in_text(e, text or "") for e in nx)):
+                logger.info(f"notice_timing: 근거 없음 · 원문에 없는 구절 · 날짜 형식 — 다시 묻는다 (attempt {attempt}/5) — {r!r}")
+                prompt = (base + "\n\n주의: 바로 전 답은 근거가 없거나 원문에 없는 구절을 들었거나 날짜 형식이 틀려 받지 않았다. "
+                          "evidence · next_lines 의 각 구절은 위 글에 실제로 있는 한 줄을 그대로 복사하고, subject_date 는 YYYY-MM-DD 또는 null.")
+                continue
+            return {"kind": r["kind"], "subject": str(r.get("subject") or "").strip()[:80], "subject_date": sd,
+                    "evidence": ev, "next_lines": nx, "reason": why[:200]}
+        logger.info("notice_timing: 5회 모두 실패(응답 · 근거) — None (호출부가 올리고 실패 기록)")
         return None
 
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
