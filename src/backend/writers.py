@@ -101,7 +101,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         "group_pending": lambda gh, a: t._group_pending_commit(
             gh, a["op"], a["now_iso"], entries=a.get("entries"), video_ids=a.get("video_ids"),
         ),
-        # (v4.5.10) 이미지 판독 대기 — 추가 · 갱신 · 제거 · Cloud Vision 월 사용량 예약 · DM 간격 (ops ocr_pending.json)
+        # (v4.5.9) 이미지 판독 대기 — 추가 · 갱신 · 제거 · Cloud Vision 월 사용량 예약 · DM 간격 (ops ocr_pending.json)
         "ocr_pending": lambda gh, a: t._ocr_pending_commit(
             gh, a["op"], a["now_iso"], entry=a.get("entry"), item_id=a.get("item_id"), patch=a.get("patch"),
             n=int(a.get("n") or 0), cap=a.get("cap"),

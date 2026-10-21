@@ -349,7 +349,7 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup:
     action = j["action"]
     if action == "none":
         return done("none", (j.get("reason") or "")[:120])
-    # (v4.5.10) check_dup=False — 이미지 판독 예비(Cloud Vision)로 같은 글을 다시 반영할 때(`telegram_app._ocr_fallback_apply`)
+    # (v4.5.9) check_dup=False — 이미지 판독 예비(Cloud Vision)로 같은 글을 다시 반영할 때(`telegram_app._ocr_fallback_apply`)
     if check_dup and tid and any(tid in (b.get("src_ids") or []) for b in lst):
         return done("dup", "이미 반영한 글")        # 같은 글 재전송(폰 재시도)은 건드리지 않는다
 

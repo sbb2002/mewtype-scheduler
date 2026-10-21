@@ -73,7 +73,7 @@ for SA in "$RUNTIME_SA" "$INVOKER_SA"; do
   done
 done
 
-# (v4.5.10) 이미지 판독 예비(Cloud Vision) — 관리 페이지(mewtype-telegram, INVOKER_SA)가 운영자 허가 때만 부른다.
+# (v4.5.9) 이미지 판독 예비(Cloud Vision) — 관리 페이지(mewtype-telegram, INVOKER_SA)가 운영자 허가 때만 부른다.
 # 호출에 할당량 프로젝트 헤더를 붙이므로 serviceusage.services.use 가 필요하다. 월 900건 상한은 앱이 센다(ops ocr_pending.json).
 gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
   --member="serviceAccount:$INVOKER_SA" \

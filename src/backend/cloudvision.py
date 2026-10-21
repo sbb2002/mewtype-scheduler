@@ -1,4 +1,4 @@
-"""(v4.5.10) Google Cloud Vision 글자 판독(TEXT_DETECTION) — Groq 비전(`vision.py`, qwen3.8-27b)이 이미지를 못 읽었을 때의 예비.
+"""(v4.5.9) Google Cloud Vision 글자 판독(TEXT_DETECTION) — Groq 비전(`vision.py`, qwen3.8-27b)이 이미지를 못 읽었을 때의 예비.
 
 **운영자가 관리 페이지(작업 탭 「이미지 판독 대기」)에서 허가한 것만 부른다** — 자동 경로에서는 절대 부르지 않는다(2026-10-21 운영자 결정).
 계기: 같은 날 실험이 Groq 비전 일일 토큰(200,000)을 거의 다 써서 운영 OCR 이 막힐 뻔했다.

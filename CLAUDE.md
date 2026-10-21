@@ -57,12 +57,12 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.8** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.5.8`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.5.10 (핫픽스 — 번호 잠정, 브랜치 `hotfix/ocr-fallback`, 2026-10-21, 백엔드 + 관리 페이지 — 미배포)**: **이미지 판독 예비 — 운영자 허가 시에만 Cloud Vision.** Groq 비전(qwen3.8-27b)이 이미지를 못 읽으면(429 · 5xx)
+> **v4.5.9 (핫픽스, 브랜치 `hotfix/ocr-fallback`, 2026-10-21, 백엔드 + 관리 페이지 — 미배포)**: **이미지 판독 예비 — 운영자 허가 시에만 Cloud Vision.** Groq 비전(qwen3.8-27b)이 이미지를 못 읽으면(429 · 5xx)
 > 자동 경로는 본문만으로 처리를 계속하고 ops `ocr_pending.json` 「이미지 판독 대기」에 적어 DM(1시간에 한 번) → 관리 페이지 **작업 탭 「확인 필요」**(탭 배지 · 첫 입장 팝업 「지금 확인하기」, 「다시 보지 않기」는 그 로그인 동안만)에서 허가하면 Google Cloud Vision(`cloudvision.py`)으로 읽어
 > 같은 경로를 다시 탄다(행사 배너 재판정 · 그룹 영상 확인 대기 제안 멤버). Cloud Vision 은 자동으로 부르지 않고, 월 900건(무료 1,000)을 앱이 세어 막는다. 일일 한도 429 는 재시도 없이 1시간 호출 중단.
 > 비전 기본 폴백(404 인 qwen3.6-27b) 제거. 계기: 10-21 실험이 같은 키의 Groq 비전 일일 토큰을 거의 다 써 운영 OCR 이 막힐 뻔함. 상세 `docs/SPEC.md` §8.17, 요약 `docs/VERSION.md`.
 > 같은 브랜치에서 **작업 탭 재구성(시안 D)**: 요약 카드 3장 + 하위 탭 [타임라인 · 확인 필요 · 예약·대기 · 시스템 상태] + 흐름 · 자동 처리 · 내 조작을 합친 시간순 타임라인(PC 오른쪽 상세). SPEC §8.17.
-> 배포 때: `deploy/setup.sh`(vision API · INVOKER_SA serviceUsageConsumer) 먼저, 그다음 두 서비스 재배포. 행사 판정 재설계(`hotfix/game-collab-notice`, v4.5.9)와 같은 곳(`_prepare_banner`)을 고쳐 병합 때 맞춰야 한다.
+> 배포 때: `deploy/setup.sh`(vision API · INVOKER_SA serviceUsageConsumer) 먼저, 그다음 두 서비스 재배포. 행사 판정 재설계(`hotfix/game-collab-notice`, v4.5.10 으로 번호 변경)와 같은 곳(`_prepare_banner`)을 고쳐 병합 때 맞춰야 한다.
 >
 > **v4.5.8 (핫픽스, 브랜치 `hotfix/king-arrive`, 2026-10-20, 백엔드 + 프론트 — 배포 완료 `mewtype-backend` 00162 · `mewtype-telegram` 00114, 롤백 = 00160 · 00113 / 프론트 main `a5fca00` · 추가분 `bc05ec3`)**: **노노카 지각 이스터에그 라이브 입장 연출 · 카드 보기 글자.** ① 백엔드 — 영상 없는 예고(자리표시)가 실물에 흡수될 때 예고 시각을
 > 실물 `announced_start` 로 남김(`preview_build._carry_collab`). 10-20 「20:00 예고 → 20:26 바로 시작한 영상」이 지각 17초로 계산돼 입장 연출이 빠졌다. ② 프론트(운영자 결정) — 지각한 방송이 라이브인 동안은 **시각 제한 없이** 페이지가 그 방송을 라이브로
@@ -542,8 +542,8 @@ src/
     ytdlp_probe.py     # (v3.7.3) 회원 전용 라이브 video_id/URL — yt-dlp 로 채널 streams 탭 조회(쿠키 선택)
     vxtwitter.py       # (v3) 트윗 unfurl — 잘린 URL·이미지 복원 (api.vxtwitter.com)
     vision.py          # (v3.2) Groq 비전 OCR — 크로스오버 공지 이미지 속 출연진 이름 판독
-                       #        (qwen/qwen3.8-27b — v4.5.10 부터 폴백 없음, 옛 qwen3.6-27b 는 404). 실패 시 None
-    cloudvision.py     # (v4.5.10) Google Cloud Vision 글자 판독 — Groq 비전이 못 읽은 이미지의 예비. 관리 페이지에서 운영자가 허가할 때만(월 900건 상한, SPEC §8.17)
+                       #        (qwen/qwen3.8-27b — v4.5.9 부터 폴백 없음, 옛 qwen3.6-27b 는 404). 실패 시 None
+    cloudvision.py     # (v4.5.9) Google Cloud Vision 글자 판독 — Groq 비전이 못 읽은 이미지의 예비. 관리 페이지에서 운영자가 허가할 때만(월 900건 상한, SPEC §8.17)
     #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)
                        #        (v3.3) read_text/write_text — HTML 등 비-JSON 파일용

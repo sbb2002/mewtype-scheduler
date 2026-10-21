@@ -604,11 +604,11 @@ def dismiss_group_pending(video_id: str) -> dict:
     return _record("dismiss_group_pending", video_id, "", res)
 
 
-# ── (v4.5.10) 작업 탭 — 이미지 판독 대기 (Groq 비전이 못 읽은 이미지 → 운영자 허가 → Cloud Vision) ─────────────────
+# ── (v4.5.9) 작업 탭 — 이미지 판독 대기 (Groq 비전이 못 읽은 이미지 → 운영자 허가 → Cloud Vision) ─────────────────
 # 2026-10-21 운영자 결정: Cloud Vision 은 여기서 운영자가 누를 때만 부른다. 이미지 1장 = 1건, 월 900건(무료 1,000)에서 막는다.
 
 def list_ocr_pending() -> dict:
-    """(v4.5.10) 이미지 판독 대기 목록 + 이번 달 Cloud Vision 사용량 + Groq 비전 상태(마지막 실패)."""
+    """(v4.5.9) 이미지 판독 대기 목록 + 이번 달 Cloud Vision 사용량 + Groq 비전 상태(마지막 실패)."""
     t = _t()
     from . import cloudvision
     now = _now_iso()
@@ -628,7 +628,7 @@ def list_ocr_pending() -> dict:
 
 
 def read_ocr_pending(item_id: str, engine: str = "cloud") -> dict:
-    """(v4.5.10) 대기 1건을 읽고 그 글을 다시 처리한다. engine = cloud(Cloud Vision — 월 사용량을 먼저 예약) · groq(Groq 로 다시)."""
+    """(v4.5.9) 대기 1건을 읽고 그 글을 다시 처리한다. engine = cloud(Cloud Vision — 월 사용량을 먼저 예약) · groq(Groq 로 다시)."""
     t = _t()
     from . import cloudvision
     now = _now_iso()
@@ -671,7 +671,7 @@ def read_ocr_pending(item_id: str, engine: str = "cloud") -> dict:
 
 
 def dismiss_ocr_pending(item_id: str) -> dict:
-    """(v4.5.10) 이미지 판독 대기에서 뺀다(읽지 않음 · 처리한 항목 치우기). 본문만으로 처리한 결과는 그대로."""
+    """(v4.5.9) 이미지 판독 대기에서 뺀다(읽지 않음 · 처리한 항목 치우기). 본문만으로 처리한 결과는 그대로."""
     res = _submit("ocr_pending", {"op": "remove", "now_iso": _now_iso(), "item_id": item_id})
     if res.get("ok") and not (res.get("result") or {}).get("removed"):
         res = _err("대기 목록에 없습니다")

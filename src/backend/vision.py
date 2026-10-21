@@ -33,12 +33,12 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_VISION_MODEL = "qwen/qwen3.8-27b"
-# (v4.5.10) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
+# (v4.5.9) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
 # 옛 폴백 qwen/qwen3.6-27b 는 model_not_found(404)다(10-02 부터). env GROQ_VISION_MODEL_FALLBACK 로 줄 수는 있다.
 # Groq 가 못 읽을 때의 예비는 다른 서비스(Google Cloud Vision, `cloudvision.py`)이고, 운영자가 관리 페이지에서 허가할 때만 쓴다.
 FALLBACK_VISION_MODEL = ""
 
-# (v4.5.10) 일일 한도(TPD · RPD) 429 — 같은 날 다시 불러도 풀리지 않는다. 받으면 이 프로세스에서 한동안 Groq 비전을 아예 부르지 않는다
+# (v4.5.9) 일일 한도(TPD · RPD) 429 — 같은 날 다시 불러도 풀리지 않는다. 받으면 이 프로세스에서 한동안 Groq 비전을 아예 부르지 않는다
 # (2026-10-21: 실험이 일일 토큰 200,000 을 거의 다 써서 운영 OCR 이 막힐 뻔했다 — 429 를 기다리며 재시도하면 시간만 쓴다).
 DAILY_BLOCK_SEC = 3600
 _DAILY_BLOCK: dict = {"until": 0.0, "since": None, "detail": ""}
@@ -113,7 +113,7 @@ class VisionClient:
         self.timeout = timeout
         self.disabled = not self.api_key
         self._retry_after: float | None = None     # 마지막 _call 이 429 로 막혔을 때 기다릴 초(read_card 가 사용)
-        # (v4.5.10) 마지막 호출 결과 — 「못 읽음(글자 없음 · NONE)」과 「실패(429 · 5xx · 네트워크)」를 가른다.
+        # (v4.5.9) 마지막 호출 결과 — 「못 읽음(글자 없음 · NONE)」과 「실패(429 · 5xx · 네트워크)」를 가른다.
         # last_failed = 마지막 cast_names · read_card 가 실패로 끝났나, last_error = 마지막 _call 실패 사유(daily_limit · rate · http NNN · network · parse)
         self.last_failed = False
         self.last_error: str | None = None
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     sess3 = FakeSession({})  # 둘 다 500
     vc3 = VisionClient("test-key", session=sess3)
     assert vc3.cast_names(image_url="https://example.com/cast.jpg") is None
-    assert sess3.calls == [DEFAULT_VISION_MODEL] and vc3.last_failed, sess3.calls       # (v4.5.10) 기본은 폴백 없음 · 실패로 표시
+    assert sess3.calls == [DEFAULT_VISION_MODEL] and vc3.last_failed, sess3.calls       # (v4.5.9) 기본은 폴백 없음 · 실패로 표시
     sess3b = FakeSession({})
     assert VisionClient("test-key", session=sess3b, fallback="fb-model").cast_names(image_url="https://example.com/cast.jpg") is None
     assert sess3b.calls == [DEFAULT_VISION_MODEL, "fb-model"], sess3b.calls
@@ -366,7 +366,7 @@ if __name__ == "__main__":
 
     assert vc_none.last_failed is False, "NONE 은 실패가 아니라 못 읽음"
 
-    # ── (v4.5.10) 일일 한도 429 — 재시도 · 대기 없이 실패, 이후 한동안 호출 자체를 안 한다 ──
+    # ── (v4.5.9) 일일 한도 429 — 재시도 · 대기 없이 실패, 이후 한동안 호출 자체를 안 한다 ──
     class DailySession:
         def __init__(self):
             self.calls = 0
@@ -390,7 +390,7 @@ if __name__ == "__main__":
     assert vd.cast_names(image_url="https://x/b.jpg") is None and vd.last_failed and ds.calls == 1, "막혀 있는 동안 호출 안 함"
     assert groq_vision_state()["blocked"] and groq_vision_state()["since"]
     _DAILY_BLOCK.update(until=0.0, since=None, detail="")
-    print("[OK] (v4.5.10) 일일 한도 429 → 즉시 실패 · 1시간 호출 중단 · 상태 표시")
+    print("[OK] (v4.5.9) 일일 한도 429 → 즉시 실패 · 1시간 호출 중단 · 상태 표시")
 
     print("\nSUCCESS: vision.py self-test 통과 (mock)")
 
