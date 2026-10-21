@@ -54,10 +54,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.6.2 (핫픽스, 2026-10-22)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.6.2`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.6.3 (핫픽스, 2026-10-22)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.6.3`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.6.3 (핫픽스, 브랜치 `hotfix/notice-next-lines`, 2026-10-22, 백엔드만 — 미배포)**: 소식 시점 판정에서 **보고 + 다음 일정 줄 = 그 일의 날짜와 상관없이 다음 일정만 올림**
+> **v4.6.3 (핫픽스, 브랜치 `hotfix/notice-next-lines`, 2026-10-22, 백엔드만 — 배포 완료 `mewtype-backend` 00172 · `mewtype-telegram` 00119, 롤백 = 00170 · 00118 / 병합 `1f1df50`(PR #80))**: 소식 시점 판정에서 **보고 + 다음 일정 줄 = 그 일의 날짜와 상관없이 다음 일정만 올림**
 > (v4.6.2 는 오늘 일이면 글 전체를 오늘 자정에 내려 다음 회차 안내까지 사라졌다 — 실측 5th 싱글 릴리즈 이벤트 감사 + 「次回は10/4」). `notices.timing_decision`. 요약 `docs/VERSION.md`.
 >
 > **v4.6.2 (핫픽스, 브랜치 `hotfix/notice-timing`, 2026-10-22, v4.6.1 위, 백엔드만 — 배포 완료 `mewtype-backend` 00170 · `mewtype-telegram` 00118, 롤백 = 00168 · 00117 / 병합 `2d8f735`(PR #79))**: **소식 시점 판정 + 상시 가챠 제외.** 지난 행사의 감사 · 소감 · 현장 보고 글은 소식으로 안 올림
