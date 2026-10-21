@@ -141,7 +141,7 @@ function _endBoxes(b, info, now) {
     else if (info.st === "warn" && info.early && x.t === info.early.t) cls = "is-hot";
     else if (info.st === "urgent" && info.late && x.t === info.late.t) cls = "is-hot";
     const txt = x.t == null ? "미정" : _stamp(x.t, true);
-    return `<div class="bnr__end ${cls}"><small>${_esc(x.label)}</small><b>${_esc(txt)}</b></div>`;
+    return `<div class="bnr__end ${cls}" data-kind="${x.who === "가챠" ? "gacha" : "event"}"><small>${_esc(x.label)}</small><b>${_esc(txt)}</b></div>`;
   }).join("");
 }
 
@@ -149,7 +149,8 @@ function _prog(info) {
   if (info.st === "hold" || info.st === "pending" || !info.eps.length) return "";
   const cut = info.cutPct != null ? `<div class="bnr__cut"></div>` : "";
   const bubble = info.bubble ? `<div class="bnr__bubble"><div class="bnr__bd">${_esc(info.bubble)}</div></div>` : "";
-  return `<div class="bnr__prog${info.bubble ? " has-bubble" : ""}" style="--pct:${info.pct.toFixed(2)}%;--cut:${(info.cutPct ?? 100).toFixed(2)}%">` +
+  const late = info.late && info.late.label === "가챠" ? "gacha" : "event";     // (v4.5.11 A안) 점선 뒤 /// 무늬 = 늦게 끝나는 쪽의 종류 색
+  return `<div class="bnr__prog${info.bubble ? " has-bubble" : ""}" data-late="${late}" style="--pct:${info.pct.toFixed(2)}%;--cut:${(info.cutPct ?? 100).toFixed(2)}%">` +
     bubble + `<div class="bnr__bar${info.cutPct != null ? " has-cut" : ""}"><i></i></div>${cut}</div>`;   // (v4.6.0) 동그란 손잡이 없앰 — 채움 끝이 현재 위치
 }
 
