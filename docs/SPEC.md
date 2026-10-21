@@ -526,6 +526,13 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   ._maybe_tag_cast_participants`가 `_apply_notice` 파싱 직후 채운다(tweet id 없음·이미지
   없음·OCR 실패·매칭 없음이면 그냥 비워둠 — 일반 소식으로 정상 표시, 무회귀). 프론트는 아직
   이 필드를 읽지 않음(추후 UI 확장 여지).
+- **소식 시점 판정** (v4.5.12, 2026-10-21 운영자 결정): 지난 일의 소감 · 감사 · 현장 보고는 소식으로 올리지 않는다(규칙이 아니라 LLM). `telegram_app._prepare_notice` 가 `xnotice.parse` 직후
+  `_notice_timing` → `llm.notice_timing(text, posted_jst)` = `{kind: announce|report, subject, subject_date(YYYY-MM-DD|null), evidence[], next_lines[], reason}`(근거 · 다음 일정 줄은 원문 그대로 — 아니면 다시 묻기 5회,
+  24시 이상 표기는 다음 날로) → `notices.timing_decision(verdict, 게시일)`: announce = 올림 · report 이고 그 일의 날짜가 게시일과 같거나 뒤, 또는 날짜 미상 = 올리되 `expires_at` 을 게시일 다음 00:00 KST 로 ·
+  report 이고 게시일보다 앞 = 안 올림, `next_lines` 가 있으면 그 줄만 다시 `xnotice.parse` 해서 올림 · 판정 실패 = 올림. 게시일 = 트윗 id(Snowflake), 없으면 지금.
+  `timing="show"`(관리 페이지 원문 투입 · 텔레그램 수동 소식)는 판정만 결과에 붙이고(`prepared["timing"]`, 미리보기 표시) 그대로 올린다.
+  판단 기록 kind `notice_timing`: 안 올림 · 다음 일정만 = 검토용(undo 없음 → 반려 뒤 재판단 · 사용자 판단 「소식으로 올림」(강제 announce) / 「올리지 않음」), 실패 = `undo {type: remove_notice, id}`(반려하면 그 소식을 보관함으로, 다른 소식에 합쳐졌으면 건너뜀). 소급 = `_notice_recap_archive`(쓰기 작업 `notice_recap_archive`, 보관 사유 `recap`) + `undo {type: restore_notice_row, before}`.
+  옛 정규식 후기 판정(`xnotice._RE_RECAP` · `_RE_RETRO` → `is_recap`, `merge_notice` 의 「후기 + 지난 날짜 → seen_ids 만」)은 없앴다 — `is_recap` 은 호환용 `False`. 「지난 날짜의 새 소식 = skip」은 날짜 안전장치로 남김.
 - **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
 - `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
 - `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
