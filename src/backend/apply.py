@@ -294,6 +294,7 @@ _KIND_LABEL = {
     "apply_translation": "번역 반영", "notice_sweep": "지난 소식 정리", "apply_banner": "행사 배너 반영", "banner_sweep": "지난 행사 정리",
     "banner_edit_commit": "행사 수정", "banner_del_commit": "행사 삭제", "snapshot": "일일 스냅샷",
     "group_pending": "그룹 영상 확인 대기", "song_edit": "곡 관리", "song_push": "신곡 등록(PubSub)",
+    "ocr_pending": "이미지 판독 대기",
 }
 
 

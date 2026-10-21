@@ -33,10 +33,28 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_VISION_MODEL = "qwen/qwen3.8-27b"
-# (v4.5.10) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
+# (v4.5.9) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
 # 옛 폴백 qwen/qwen3.6-27b 는 model_not_found(404)다(10-02 부터). env GROQ_VISION_MODEL_FALLBACK 로 줄 수는 있다.
+# Groq 가 못 읽을 때의 예비는 다른 서비스(Google Cloud Vision, `cloudvision.py`)이고, 운영자가 관리 페이지에서 허가할 때만 쓴다.
 FALLBACK_VISION_MODEL = ""
 MAX_IMAGES_PER_REQUEST = 3      # (v4.5.10) qwen3.8-27b — 요청당 이미지 최대 3장, 장당 입력 2048 토큰(Groq 문서)
+
+# (v4.5.9) 일일 한도(TPD · RPD) 429 — 같은 날 다시 불러도 풀리지 않는다. 받으면 이 프로세스에서 한동안 Groq 비전을 아예 부르지 않는다
+# (2026-10-21: 실험이 일일 토큰 200,000 을 거의 다 써서 운영 OCR 이 막힐 뻔했다 — 429 를 기다리며 재시도하면 시간만 쓴다).
+DAILY_BLOCK_SEC = 3600
+_DAILY_BLOCK: dict = {"until": 0.0, "since": None, "detail": ""}
+
+
+def groq_vision_state() -> dict:
+    """{"blocked": bool, "since": ISO | None, "detail": 429 본문 앞부분} — 관리 페이지 표시용(이 프로세스 기준)."""
+    return {"blocked": time.time() < _DAILY_BLOCK["until"], "since": _DAILY_BLOCK["since"], "detail": _DAILY_BLOCK["detail"]}
+
+
+def _block_daily(detail: str) -> None:
+    from datetime import datetime, timezone
+    _DAILY_BLOCK["until"] = time.time() + DAILY_BLOCK_SEC
+    _DAILY_BLOCK["since"] = _DAILY_BLOCK["since"] or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _DAILY_BLOCK["detail"] = (detail or "")[:200]
 
 # "N. <이름>" 형식 한 줄씩 — 프롬프트가 강제하는 출력 포맷.
 _NAME_LINE_RE = re.compile(r"^\s*\d+\.\s*(.+?)\s*$", re.MULTILINE)
@@ -107,6 +125,10 @@ class VisionClient:
         self.timeout = timeout
         self.disabled = not self.api_key
         self._retry_after: float | None = None     # 마지막 _call 이 429 로 막혔을 때 기다릴 초(read_card 가 사용)
+        # (v4.5.9) 마지막 호출 결과 — 「못 읽음(글자 없음 · NONE)」과 「실패(429 · 5xx · 네트워크)」를 가른다.
+        # last_failed = 마지막 cast_names · read_card 가 실패로 끝났나, last_error = 마지막 _call 실패 사유(daily_limit · rate · http NNN · network · parse)
+        self.last_failed = False
+        self.last_error: str | None = None
 
     def cast_names(
         self, *, image_url: str | None = None, image_bytes: bytes | None = None
@@ -137,9 +159,12 @@ class VisionClient:
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
             }
 
+        self.last_failed = False
         for model in self._models():
             text = self._call(model, image_content)
             if text is None:
+                if self.last_error == "daily_limit":
+                    break               # 일일 한도 — 폴백도 같은 조직 한도일 수 있어 더 부르지 않는다
                 continue  # 호출 실패(429/5xx/네트워크) — 다음 모델로
             if text.strip().upper() == _NONE_MARKER:
                 # 출연진 패널이 아니라고 모델이 확신 — 이건 애매한 실패가 아니라
@@ -150,7 +175,9 @@ class VisionClient:
             if names:
                 return names
             logger.warning("vision: %s 응답에서 이름 파싱 실패 (%r)", model, text[:200])
+            return None                 # 답은 왔다(못 읽음) — 실패가 아니다
 
+        self.last_failed = True
         return None
 
     def read_card(self, *, image_url: str) -> str | None:
@@ -160,6 +187,7 @@ class VisionClient:
         if self.disabled or not image_url:
             return None
         content = {"type": "image_url", "image_url": {"url": image_url}}
+        self.last_failed = False
         # 실측(2026-10-02): 이 계정에서 쓸 수 있는 비전 모델은 qwen/qwen3.8-27b 하나뿐이고(폴백 qwen3.6 은 404),
         # 분당 입력 토큰 한도(ITPM 7000)가 낮아 한 글의 이미지 3~4장을 연달아 읽으면 429 가 난다 → 429 는 안내된 시간만큼
         # 기다렸다 같은 모델을 다시 부른다(최대 3회, 한 번에 15초 상한). 폴백은 메인이 429 가 아닌 이유로 실패했을 때만.
@@ -167,18 +195,22 @@ class VisionClient:
             for attempt in range(3):
                 self._retry_after = None
                 text = self._call(model, content, prompt=_CARD_PROMPT, max_tokens=500)
+                if text is None and self.last_error == "daily_limit":
+                    break                # 일일 한도 — 기다려도 안 풀린다
                 if text is None and self._retry_after is not None and attempt < 2:
                     time.sleep(min(self._retry_after + 0.5, 15.0))
                     continue
                 break
             if text is None:
-                if self._retry_after is not None:
-                    return None          # 한도에 계속 막힘 — 폴백으로 넘기지 않는다
+                if self._retry_after is not None or self.last_error == "daily_limit":
+                    self.last_failed = True
+                    return None          # 한도에 막힘 — 폴백으로 넘기지 않는다
                 continue
             text = text.strip()
             if not text or text.upper() == _NONE_MARKER:
                 return None
             return text[:800]
+        self.last_failed = True
         return None
 
     def _models(self) -> list[str]:
@@ -189,15 +221,20 @@ class VisionClient:
 
         한 장씩 부르던 것을 묶어 요청 수를 줄인다(토큰은 장당 2048 그대로라 분당 입력 한도 7000 에는 3장이 거의 끝).
         429 는 안내된 시간만큼 기다렸다 같은 모델로 다시(최대 3회, 한 번에 15초 상한), 폴백은 429 가 아닌 실패일 때만.
+        (v4.5.9 이미지 판독 예비와 맞춤) 일일 한도 429 는 기다리지 않고 바로 실패, 한 묶음이라도 호출이 실패하면 `last_failed=True`
+        (「글자 없음」은 실패가 아니다) — 호출부가 「이미지 판독 대기」에 적는다.
         """
         urls = [u for u in (image_urls or []) if isinstance(u, str) and u]
         out: list[str | None] = []
+        self.last_failed = False
         if self.disabled or not urls:
             return [None] * len(urls)
+        failed = False
         for k in range(0, len(urls), MAX_IMAGES_PER_REQUEST):
             chunk = urls[k:k + MAX_IMAGES_PER_REQUEST]
             if len(chunk) == 1:
                 out.append(self.read_card(image_url=chunk[0]))
+                failed = failed or self.last_failed
                 continue
             content = [{"type": "image_url", "image_url": {"url": u}} for u in chunk]
             prompt = _CARDS_PROMPT.replace("{n}", str(len(chunk)))
@@ -206,17 +243,22 @@ class VisionClient:
                 for attempt in range(3):
                     self._retry_after = None
                     text = self._call(model, content, prompt=prompt, max_tokens=500 * len(chunk))
+                    if text is None and self.last_error == "daily_limit":
+                        break                # 일일 한도 — 기다려도 안 풀린다
                     if text is None and self._retry_after is not None and attempt < 2:
                         time.sleep(min(self._retry_after + 0.5, 15.0))
                         continue
                     break
-                if text is not None or self._retry_after is not None:
+                if text is not None or self._retry_after is not None or self.last_error == "daily_limit":
                     break
+            if text is None:
+                failed = True
             parts = _CARD_HEAD_RE.split(text or "")
             got = {int(parts[i]): parts[i + 1].strip() for i in range(1, len(parts) - 1, 2)}
             for i in range(len(chunk)):
                 t = got.get(i + 1)
                 out.append(None if not t or t.upper() == _NONE_MARKER else t[:800])
+        self.last_failed = failed
         return out
 
     def _call(self, model: str, image_content: "dict | list[dict]", *, prompt: str = _CAST_PROMPT, max_tokens: int = 300) -> str | None:
@@ -237,15 +279,26 @@ class VisionClient:
             "max_tokens": max_tokens,
             "reasoning_effort": "none",
         }
+        self.last_error = None
+        if time.time() < _DAILY_BLOCK["until"]:
+            self.last_error = "daily_limit"   # 일일 한도에 막혀 있는 동안은 부르지 않는다
+            return None
         try:
             resp = self.session.post(url, json=payload, headers=headers, timeout=self.timeout)
         except requests.RequestException as e:
             logger.warning("vision: %s 네트워크 오류 — %s", model, e)
+            self.last_error = "network"
             return None
 
         if resp.status_code != 200:
             logger.warning("vision: %s %s %s", model, resp.status_code, resp.text[:200])
+            self.last_error = f"http {resp.status_code}"
+            if resp.status_code == 429 and re.search(r"per day|\(TPD\)|\(RPD\)", resp.text or ""):
+                self.last_error = "daily_limit"
+                _block_daily(resp.text or "")
+                return None
             if resp.status_code == 429:
+                self.last_error = "rate"
                 m = re.search(r"try again in ([0-9.]+)\s*(ms|s)", resp.text or "")
                 ra = resp.headers.get("retry-after") if getattr(resp, "headers", None) else None
                 try:
@@ -260,6 +313,7 @@ class VisionClient:
             content = data["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError) as e:
             logger.warning("vision: %s 응답 파싱 실패 — %s", model, e)
+            self.last_error = "parse"
             return None
 
         logger.info("vision ok model=%s out=%r", model, (content or "")[:200])
@@ -337,11 +391,11 @@ if __name__ == "__main__":
     sess3 = FakeSession({})  # 둘 다 500
     vc3 = VisionClient("test-key", session=sess3)
     assert vc3.cast_names(image_url="https://example.com/cast.jpg") is None
-    assert sess3.calls == [DEFAULT_VISION_MODEL], sess3.calls       # (v4.5.10) 기본은 폴백 없음
+    assert sess3.calls == [DEFAULT_VISION_MODEL] and vc3.last_failed, sess3.calls       # (v4.5.9) 기본은 폴백 없음 · 실패로 표시
     sess3b = FakeSession({})
     assert VisionClient("test-key", session=sess3b, fallback="fb-model").cast_names(image_url="https://example.com/cast.jpg") is None
     assert sess3b.calls == [DEFAULT_VISION_MODEL, "fb-model"], sess3b.calls
-    print("[OK] 메인 실패 → (폴백 없으면 끝 · 있으면 1회) → None")
+    print("[OK] 메인 실패 → (폴백 없으면 끝 · 있으면 1회) → None + last_failed")
 
     # ── 시나리오 7: image_bytes → data URI 인코딩 ──
     sess4 = FakeSession({DEFAULT_VISION_MODEL: (200, "1. 宮永 ののか")})
@@ -367,6 +421,41 @@ if __name__ == "__main__":
     assert vc_none2.cast_names(image_url="https://example.com/x.jpg") is None
     print("[OK] NONE 판정: 대소문자·공백 무시")
 
+    assert vc_none.last_failed is False, "NONE 은 실패가 아니라 못 읽음"
+
+    # ── (v4.5.9) 일일 한도 429 — 재시도 · 대기 없이 실패, 이후 한동안 호출 자체를 안 한다 ──
+    class DailySession:
+        def __init__(self):
+            self.calls = 0
+
+        def post(self, url, *, json, headers, timeout):
+            self.calls += 1
+
+            class R:
+                status_code = 429
+                text = 'Rate limit reached for model `qwen/qwen3.8-27b` ... on tokens per day (TPD): Limit 200000, Used 199000'
+                headers = {}
+
+                def json(self):
+                    return {}
+            return R()
+    ds = DailySession()
+    vd = VisionClient("test-key", session=ds)
+    t0 = time.time()
+    assert vd.read_card(image_url="https://x/a.jpg") is None and vd.last_failed and vd.last_error == "daily_limit"
+    assert ds.calls == 1 and time.time() - t0 < 1.0, (ds.calls, "일일 한도는 기다리지 않는다")
+    assert vd.cast_names(image_url="https://x/b.jpg") is None and vd.last_failed and ds.calls == 1, "막혀 있는 동안 호출 안 함"
+    assert groq_vision_state()["blocked"] and groq_vision_state()["since"]
+    assert vd.read_cards(["https://x/c.jpg", "https://x/d.jpg"]) == [None, None] and vd.last_failed and ds.calls == 1, \
+        "(v4.5.10) read_cards 도 막혀 있는 동안 호출 안 함 · 실패로 표시"
+    _DAILY_BLOCK.update(until=0.0, since=None, detail="")
+    ds2 = DailySession()
+    vd2 = VisionClient("test-key", session=ds2)
+    t0 = time.time()
+    assert vd2.read_cards(["https://x/e.jpg", "https://x/f.jpg"]) == [None, None] and vd2.last_failed and ds2.calls == 1 and time.time() - t0 < 1.0, \
+        "(v4.5.10) read_cards 묶음 요청도 일일 한도 429 는 기다리지 않는다"
+    _DAILY_BLOCK.update(until=0.0, since=None, detail="")
+    print("[OK] (v4.5.9) 일일 한도 429 → 즉시 실패 · 1시간 호출 중단 · 상태 표시")
     # ── (v4.5.10) read_cards — 3장씩 한 요청, [이미지 k] 로 나눔 ──
     class CardSession:
         def __init__(self, replies):
@@ -384,7 +473,9 @@ if __name__ == "__main__":
                     return {"choices": [{"message": {"content": c}}]}
             return R()
     cs = CardSession(["[이미지 1]\nイベント\n開催期間 9月28日\n[이미지 2]\nNONE\n[이미지 3]\nガチャ紹介", "あらすじ"])
-    got = VisionClient("k", session=cs).read_cards(["u1", "u2", "u3", "u4"])
+    vcs = VisionClient("k", session=cs)
+    got = vcs.read_cards(["u1", "u2", "u3", "u4"])
+    assert vcs.last_failed is False, "NONE 이 섞여도 실패가 아니다"
     assert got == ["イベント\n開催期間 9月28日", None, "ガチャ紹介", "あらすじ"] and cs.calls == [3, 1], (got, cs.calls)
     print("[OK] read_cards: 4장 → 요청 2번(3장 + 1장) · 이미지별 글자 · NONE → None")
 

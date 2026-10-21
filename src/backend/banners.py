@@ -352,6 +352,7 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup:
     action = j["action"]
     if action == "none":
         return done("none", (j.get("reason") or "")[:120])
+    # (v4.5.9) check_dup=False — 이미지 판독 예비(Cloud Vision)로 같은 글을 다시 반영할 때(`telegram_app._ocr_fallback_apply`)
     if check_dup and tid and any(tid in (b.get("src_ids") or []) for b in lst):
         return done("dup", "이미 반영한 글")        # 같은 글 재전송(폰 재시도)은 건드리지 않는다
 
@@ -629,16 +630,17 @@ def plan_post(prev: dict, items: list[dict], text: str, posted_at: str | None, n
 _MODE_RANK = ("added", "cancelled", "held", "updated")
 
 
-def apply_post(prev: dict, steps: list[dict], post: dict, now_iso: str) -> dict:
+def apply_post(prev: dict, steps: list[dict], post: dict, now_iso: str, *, check_dup: bool = True) -> dict:
     """`plan_post` 단계들을 차례로 반영한다 — 반환 형식은 `apply_judgement` 와 같다(mode 는 가장 큰 변화, detail 은 단계별 결과를 이음).
 
     undo = {"type": "restore_banner", "items": [단계별 되돌리기 …]} — `restore` 가 거꾸로 풀어 한 번에 되돌린다.
-    같은 글(tweet_id)을 이미 반영했으면 아무것도 안 하고 dup.
+    같은 글(tweet_id)을 이미 반영했으면 아무것도 안 하고 dup. (v4.5.9) check_dup=False — 이미지 판독 예비(Cloud Vision)로
+    같은 글을 다시 반영할 때(`telegram_app._ocr_fallback_apply`)는 이 검사를 건너뛴다.
     """
     cur = copy.deepcopy(prev or default_banners())
     tid = str(post.get("tweet_id") or "")
     out = {"banners": cur, "archive_add": [], "mode": "none", "detail": "", "undo": None, "id": None, "shown": False}
-    if tid and any(tid in (b.get("src_ids") or []) for b in cur.get("banners") or []):
+    if check_dup and tid and any(tid in (b.get("src_ids") or []) for b in cur.get("banners") or []):
         out.update(mode="dup", detail="이미 반영한 글")
         return out
     modes, details, undos = [], [], []
@@ -1057,6 +1059,10 @@ if __name__ == "__main__":
     assert r1["mode"] == "added" and len(r1["banners"]["banners"]) == 1 and r1["undo"]["items"], r1
     S1 = r1["banners"]
     assert apply_post(S1, plan_post(S1, [ev("Shake Your 魂, Baby!!")], sh_txt, T1, T1), {"tweet_id": "101"}, T1)["mode"] == "dup"
+    # (v4.5.10 · v4.5.9 이미지 판독 예비) 다시 반영(check_dup=False)이면 같은 글이라도 계획대로 반영 — 이미지에서 읽은 종료일을 채운다
+    _rc = apply_post(S1, plan_post(S1, [ev("Shake Your 魂, Baby!!", None, "2026-10-26 14:59")], sh_txt, T1, T1), {"tweet_id": "101"}, T1,
+                     check_dup=False)
+    assert _rc["mode"] != "dup", _rc
     # 스토리 예고(날짜 없음) — 새 배너를 만들지 않고 같은 배너
     r2, _ = run(S1, [ev("Shake Your 魂, Baby!!")], "✌️一家Dumb Rock!初イベント✌️\n「Shake Your 魂, Baby!!」予告", T1, "102")
     assert len(r2["banners"]["banners"]) == 1 and r2["mode"] in ("updated", "none"), r2
