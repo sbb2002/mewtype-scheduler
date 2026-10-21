@@ -54,10 +54,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.8** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.5.8`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.9** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.5.9`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.5.9 (핫픽스, 브랜치 `hotfix/ocr-fallback`, 2026-10-21, 백엔드 + 관리 페이지 — 미배포)**: **이미지 판독 예비 — 운영자 허가 시에만 Cloud Vision.** Groq 비전(qwen3.8-27b)이 이미지를 못 읽으면(429 · 5xx)
+> **v4.5.9 (핫픽스, 브랜치 `hotfix/ocr-fallback`, 2026-10-21, 백엔드 + 관리 페이지 — 배포 완료 `mewtype-backend` 00164 · `mewtype-telegram` 00115, 롤백 = 00162 · 00114 / 병합 `685168f`)**: **이미지 판독 예비 — 운영자 허가 시에만 Cloud Vision.** Groq 비전(qwen3.8-27b)이 이미지를 못 읽으면(429 · 5xx)
 > 자동 경로는 본문만으로 처리를 계속하고 ops `ocr_pending.json` 「이미지 판독 대기」에 적어 DM(1시간에 한 번) → 관리 페이지 **작업 탭 「확인 필요」**(탭 배지 · 첫 입장 팝업 「지금 확인하기」, 「다시 보지 않기」는 그 로그인 동안만)에서 허가하면 Google Cloud Vision(`cloudvision.py`)으로 읽어
 > 같은 경로를 다시 탄다(행사 배너 재판정 · 그룹 영상 확인 대기 제안 멤버). Cloud Vision 은 자동으로 부르지 않고, 월 900건(무료 1,000)을 앱이 세어 막는다. 일일 한도 429 는 재시도 없이 1시간 호출 중단.
 > 비전 기본 폴백(404 인 qwen3.6-27b) 제거. 계기: 10-21 실험이 같은 키의 Groq 비전 일일 토큰을 거의 다 써 운영 OCR 이 막힐 뻔함. 상세 `docs/SPEC.md` §8.17, 요약 `docs/VERSION.md`.
