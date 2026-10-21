@@ -83,6 +83,8 @@
   --bnr-end-ink: #232436;
   --bnr-quiet: #8a8ea3;
   --bnr-arrow: #5c6075;
+  --bnr-kind-event: #2f5bd3; --bnr-kind-event-ink: #ffffff;   /* (v4.5.11) 종류 배지 — 밝게 */
+  --bnr-kind-gacha: #c2307f; --bnr-kind-gacha-ink: #ffffff;
   --bnr-arrow-hover: #8a8ea3;
   --bnr-dot: #cfcae3;
   --bnr-dot-on: #232436;

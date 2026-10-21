@@ -487,7 +487,14 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup:
     # (비전 실패 등) 안 붙인다 — 잘못된 이미지가 올라가는 것보다 이미지가 없는 쪽이 낫다.
     media = [u for u in (post.get("media") or []) if isinstance(u, str)]
     roles = j.get("image_roles") if isinstance(j.get("image_roles"), list) else []
-    if media and len(roles) == len(media):
+    if target.get("gacha_only"):
+        # (v4.5.11 운영자 결정) 가챠 단독 배너는 이벤트 키비주얼이 없으니 가챠 이미지를 쓴다 — 이미지가 아직 없을 때만(가챠 소개 카드가 쌓이지 않게).
+        # 용도 판정이 있으면 none(소개 카드 · 캡처)만 빼고, 판정이 없으면(비전 실패 등) 걸린 이미지를 그대로 쓴다.
+        if media and not target.get("image_urls"):
+            imgs = [u for u, r in zip(media, roles) if r != "none"] if len(roles) == len(media) else list(media)
+            if imgs:
+                target["image_urls"] = _merge_images([], imgs)
+    elif media and len(roles) == len(media):
         ev_imgs = [u for u, r in zip(media, roles) if r == "event"]
         if ev_imgs:
             target["image_urls"] = _merge_images(target.get("image_urls"), ev_imgs)
@@ -529,6 +536,7 @@ def plan_post(prev: dict, items: list[dict], text: str, posted_at: str | None, n
 
     j 가 None 이고 merge 도 없으면 「버림」(desc 에 이유). `text` = 본문 + 이미지 글자 — 날짜 근거 확인(`date_evidenced`)에 쓴다.
     image_roles 는 첫 이벤트 단계에만 붙인다(키비주얼은 이벤트 배너에만 — 가챠 이미지는 안 쓴다, 2026-10-02 운영자 결정).
+    (v4.5.11) 이벤트 단계가 없으면 가챠 단독 배너 단계에 붙인다(가챠 단독 배너는 가챠 이미지를 쓴다 — `apply_judgement`).
     """
     lst = active(prev, now_iso)
     ref_iso = posted_at or now_iso
@@ -604,8 +612,11 @@ def plan_post(prev: dict, items: list[dict], text: str, posted_at: str | None, n
         ga = {"title_ja": t, "title_ko": ko, "start_jst": s, "end_jst": e}
         if b is not None:
             if b.get("gacha_only"):
-                step(f"가챠 「{t}」({when}) 가챠 단독 배너 갱신", {"action": "upsert", "banner_ref": b["id"], "event": {
-                    "name_ja": b.get("name_ja"), "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None})
+                gj = {"action": "upsert", "banner_ref": b["id"], "event": {
+                    "name_ja": b.get("name_ja"), "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None}
+                if roles_left and not made:
+                    gj["image_roles"], roles_left = roles_left, []
+                step(f"가챠 「{t}」({when}) 가챠 단독 배너 갱신", gj)
             else:
                 step(f"가챠 「{t}」({when}) 「{b.get('name_ja')}」의 가챠 갱신", {"action": "upsert", "banner_ref": b["id"], "event": None,
                      "gacha": dict(ga, title_ja=(g or {}).get("title_ja") or t)})
@@ -617,8 +628,11 @@ def plan_post(prev: dict, items: list[dict], text: str, posted_at: str | None, n
             step(f"가챠 「{t}」({when}) 시작이 같은 이벤트 「{h.get('name_ja')}」에 붙임",
                  {"action": "upsert", "banner_ref": h["id"], "event": None, "gacha": ga})
         elif s and not s_tbd:
-            step(f"가챠 「{t}」({when}) 붙을 이벤트 없음 → 가챠 단독 배너", {"action": "upsert", "banner_ref": None, "gacha_only": True,
-                 "event": {"name_ja": t, "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None})
+            gj = {"action": "upsert", "banner_ref": None, "gacha_only": True,
+                  "event": {"name_ja": t, "name_ko": ko, "start_jst": s, "end_jst": e, "permanent": False}, "gacha": None}
+            if roles_left and not made:
+                gj["image_roles"], roles_left = roles_left, []      # (v4.5.11) 가챠 단독 배너도 이미지를 쓴다
+            step(f"가챠 「{t}」({when}) 붙을 이벤트 없음 → 가챠 단독 배너", gj)
         elif s:
             # 날짜만 있는 가챠(「10月18日より開催中」 — 소개 · 재공지 글)로는 가챠 단독 배너를 새로 만들지 않는다(개최 공지에는 시각이 있다)
             step(f"가챠 「{t}」 버림 — 시작이 날짜만({s})이고 같은 날 시작하는 이벤트 · 같은 가챠 배너도 없음")
@@ -1092,6 +1106,17 @@ if __name__ == "__main__":
     av = next(b for b in r7["banners"]["banners"] if b["name_ja"].startswith("Ave"))
     assert av.get("gacha_only") and av["end_at"] == "2026-10-25T14:59:00Z" and not av["gachas"], av
     assert not next(b for b in r7["banners"]["banners"] if b["name_ja"].startswith("お願い"))["gachas"]
+    # (v4.5.11) 가챠 단독 배너도 이미지를 쓴다 — 용도 gacha · event 는 붙이고 none(소개 카드)은 빼고, 판정이 없으면 그대로. 이미 있으면 안 바꾼다
+    def run_img(state, items, text, now, tid, media, roles):
+        return apply_post(state, plan_post(state, items, text, now, now, roles), {"tweet_id": tid, "media": media, "text": text, "posted_at": now}, now)
+    avg = [ev("Ave Mujicaピックアップガチャ", "2026-10-16 15:00", "2026-10-25 23:59", kind="gacha")]
+    _img = lambda r: next(b for b in r["banners"]["banners"] if b["name_ja"].startswith("Ave"))["image_urls"]
+    assert _img(run_img(side, avg, av_txt, T3, "211", ["https://x/av.jpg"], ["gacha"])) == ["https://x/av.jpg"]
+    assert _img(run_img(side, avg, av_txt, T3, "212", ["https://x/av.jpg"], [])) == ["https://x/av.jpg"], "용도 판정이 없으면 그대로 쓴다"
+    assert _img(run_img(side, avg, av_txt, T3, "213", ["https://x/card.jpg"], ["none"])) == [], "소개 카드(none)는 안 쓴다"
+    _r9 = run_img(side, avg, av_txt, T3, "214", ["https://x/av.jpg"], ["gacha"])
+    _r10 = run_img(_r9["banners"], avg, av_txt, T3, "215", ["https://x/ssr.jpg"], ["gacha"])
+    assert _img(_r10) == ["https://x/av.jpg"], "이미 이미지가 있으면 뒤 글의 가챠 이미지로 바꾸지 않는다"
     # 가챠 단독이 먼저 오고 같은 시작의 이벤트가 뒤에 오면 → 이벤트 배너 밑으로 합친다 · 되돌리기는 한 번에
     G0 = run(default_banners(), [ev("光彩讃歌ガチャ", "2026-10-18 15:00", "2026-10-28 14:59", kind="gacha")], g_txt, T1, "300")[0]["banners"]
     r8, st8 = run(G0, [ev("Shake Your 魂, Baby!!", "2026-10-18 15:00", "2026-10-26 14:59")], sh_txt, T1, "301", roles=["event"])
