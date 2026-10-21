@@ -751,9 +751,17 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
 
 - Groq REST (`https://api.groq.com/openai/v1/chat/completions`). `reasoning_effort="low"`, `temperature=0`.
   구조화 출력이 필요한 호출만 `response_format: json_schema`(strict), `translate` 는 자유 텍스트.
-- api_key 비면 disabled → 모든 호출 None. `_call_groq`: 429/5xx·타임아웃(20초) → 1초·2초 대기하며 최대 3회 시도,
-  그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. `participation`·`announces_own_broadcast`·
-  `duplicate_notice` 는 유효한 JSON 을 받을 때까지 (메인→폴백) 쌍을 최대 5회 반복.
+- api_key 비면 disabled → 모든 호출 None. `_call_groq`: 5xx·타임아웃(20초) → 1초·2초 대기하며 최대 3회 시도,
+  그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. 판정 함수 7개(`participation` · `announces_own_broadcast` ·
+  `collab_partners` · `broadcast_change_targets` · `duplicate_notice` · `banner_scope` · `banner_extract`)는 **답이 틀렸을 때만**(JSON 깨짐 · 필드 없음 · 근거 없음)
+  (메인→폴백) 쌍을 최대 5회 다시 묻는다.
+- **(v4.5.12) 429 — 다시 보내지 않고 그 모델을 한동안 막는다.** `_call_groq` 가 429 를 받으면 재시도 · 대기 없이 None 을 돌려주고, 그 프로세스에서 그 모델을
+  일일 한도(429 본문에 `per day` · `(TPD)` · `(RPD)`)면 1시간(`DAILY_BLOCK_SEC`), 분당 한도면 Groq 가 알려 준 대기 시간(`retry-after` 헤더 → 본문 「try again in …」 →
+  없으면 60초, 1~600초) 동안 부르지 않는다(`_RATE_BLOCK`, 상태 = `llm.rate_block_state()`). 막힌 모델은 요청 없이 바로 None.
+  판정 함수의 다시 묻기도 호출 실패(429 · 5xx · 네트워크 · 막힘)면 바로 끝낸다 — 판정 1건이 보내는 요청은 429 일 때 모델마다 1번(전엔 최대 30번 =
+  다시 묻기 5회 × 두 모델 × `_call_groq` 3번). 모델별로 막는 이유: 한도가 모델마다 따로인지 공식 문서로 확인하지 못해, 주 모델이 막혀도 폴백 모델은 한 번 불러 본다.
+  호출이 막혀 실패한 경우의 처리는 원래 실패와 같다(번역 = `needs_tl` 로 다음 수집 때 다시 · 판정 = 각 호출부의 실패 처리). 같은 방식의 비전 쪽 차단은 §8.17.
+  계기: 2026-10-21 실측 스크립트 · 운영 재시도가 겹쳐 운영 번역이 429 로 실패(Cloud Run 「Groq 429 … 재시도」 72줄 · 「번역 없음」 12줄, 22:10~23:40 KST).
 - **(v4.5.5) `announces_own_broadcast` 근거 필수**: 출력 `{announces, evidence, reason}` — `evidence` = 원문에서 그대로 복사한 구절, `reason` = 한 문장.
   근거가 비었거나(reason 5자 미만) 원문에 없는 구절이면(`llm.evidence_in_text` — NFKC 후 글자 · 숫자만 비교, 기호 · 장식 문자 무시) **그 판정을 받지 않고**
   「바로 전 답은 근거가 없었다」를 붙여 다시 묻는다(5회 안, 5회 모두 그러면 None → 미등록 + monitor err). 통과한 근거는 `last_reason` →

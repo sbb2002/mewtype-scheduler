@@ -48,6 +48,55 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 # gpt-oss-20b 로 폴백 — 작고 빠르며 지시이행 동일.
 FALLBACK_MODEL = "openai/gpt-oss-20b"
 
+# (v4.5.12) Groq 429 — 받으면 그 모델로는 다시 보내지 않고 한동안 이 프로세스에서 그 모델을 아예 부르지 않는다.
+# 전엔 429 에도 `_call_groq` 가 1 · 2 · 4초 뒤 다시 보내고(3번), 판정 함수가 응답이 없어도 다시 묻기를 5회 돌려
+# 판정 1건에 최대 30요청(5 × 두 모델 × 3번)이 나갔다 — 분당 · 일일 한도는 몇 초 뒤에 풀리지 않으니 429 만 키웠다(2026-10-21).
+# 막는 시간: 일일 한도(TPD · RPD — 429 본문에 「per day」)면 1시간, 분당 한도면 Groq 가 알려 준 대기 시간(retry-after 헤더 ·
+# 본문 「try again in …」, 없으면 60초). `vision.py` 의 v4.5.9 일일 차단과 같은 방식.
+# 모델별로 막는다 — 한도가 모델마다 따로인지 공식 문서로 확인하지 못해, 주 모델이 막혀도 폴백 모델은 한 번 불러 본다(그것도 429 면 같이 막힌다).
+DAILY_BLOCK_SEC = 3600
+MINUTE_BLOCK_DEFAULT_SEC = 60
+MINUTE_BLOCK_MAX_SEC = 600
+_RATE_BLOCK: dict = {}      # model → {"until": epoch 초, "since": ISO, "kind": "daily" | "minute", "detail": 429 본문 앞부분}
+
+
+def rate_block_state() -> dict:
+    """지금 막혀 있는 모델 → {"kind", "since", "until"(ISO), "detail"} (이 프로세스 기준)."""
+    from datetime import datetime, timezone
+    now = time.time()
+    return {m: {"kind": b["kind"], "since": b["since"], "detail": b["detail"],
+                "until": datetime.fromtimestamp(b["until"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+            for m, b in _RATE_BLOCK.items() if now < b["until"]}
+
+
+def _blocked(model: str) -> "dict | None":
+    b = _RATE_BLOCK.get(model)
+    return b if b and time.time() < b["until"] else None
+
+
+def _block_model(model: str, kind: str, sec: float, detail: str) -> None:
+    from datetime import datetime, timezone
+    prev = _blocked(model)
+    _RATE_BLOCK[model] = {"until": time.time() + sec, "kind": kind, "detail": (detail or "")[:200],
+                          "since": prev["since"] if prev else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+def _retry_after_sec(resp) -> "float | None":
+    """429 응답이 알려 준 대기 시간(초) — retry-after 헤더, 없으면 본문 「try again in 2m59.5s」 · 「7.66s」 · 「500ms」."""
+    headers = getattr(resp, "headers", None) or {}
+    try:
+        ra = headers.get("retry-after")
+        if ra:
+            return float(ra)
+    except (TypeError, ValueError, AttributeError):
+        pass
+    m = re.search(r"try again in ([0-9hms.]+)", getattr(resp, "text", "") or "")
+    if not m:
+        return None
+    unit = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001}
+    sec = sum(float(n) * unit[u] for n, u in re.findall(r"([0-9.]+)(ms|h|m|s)", m.group(1)) if n.strip("."))
+    return sec or None
+
 # 짧은 단위(1~6자)가 8회 이상 연속 반복 — "もぐもぐもぐ…" 같은 의성어 트윗.
 # translate() 가 이 패턴이면 반복 그대로 LLM 에 보내지 않고 압축한다(§translate 참고).
 _REPEAT_RE = re.compile(r"^(.{1,6}?)\1{7,}")
@@ -612,7 +661,7 @@ class LLMClient:
 
         URL 우선 ingest 경로에서, 걸려있는 유튜브 URL 의 채널이 우리 5인/공식 채널이
         아닐 때만 호출된다(외부 채널 콜라보 오탐 방지 게이트). 제대로 된 JSON 응답을
-        받을 때까지 최대 5회 시도(모델별 429/5xx 백오프는 `_call_groq` 담당) — 5회 모두
+        받을 때까지 최대 5회 시도(5xx 백오프는 `_call_groq` 담당, v4.5.12 부터 호출 실패 · 429 면 다시 묻지 않고 바로) — 5회 모두
         실패하면 None 을 반환하고, 호출부는 등록하지 않는 쪽(안전한 실패)으로 처리한다.
 
         Args:
@@ -641,7 +690,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_PARTICIPATION_SCHEMA)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -651,7 +700,7 @@ class LLMClient:
                 return result["participates"]
             logger.info(f"participation: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
-        logger.info("participation: 5회 모두 실패 — None (호출부 미등록 처리) — 호출부가 기록")
+        logger.info("participation: 호출 실패 또는 5회 모두 실패 — None (호출부 미등록 처리) — 호출부가 기록")
         return None
 
     def announces_own_broadcast(self, text_ja: str, unit_name: str | None = None) -> bool | None:
@@ -708,7 +757,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_ANNOUNCE_SCHEMA)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -726,7 +775,7 @@ class LLMClient:
             self.last_reason = f"{why} (근거: 「{ev}」)"
             return result["announces"]
 
-        logger.info("announces_own_broadcast: 5회 모두 실패(응답 · 근거) — None (호출부 미등록 처리) — 호출부가 기록")
+        logger.info("announces_own_broadcast: 호출 실패 또는 5회 모두 실패(응답 · 근거) — None (호출부 미등록 처리) — 호출부가 기록")
         return None
 
     def collab_partners(self, text_ja: str, *, host_name: str,
@@ -791,7 +840,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -801,7 +850,7 @@ class LLMClient:
                 return [n for n in result["collab_with"] if n in candidate_names]
             logger.info(f"collab_partners: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
-        logger.info("collab_partners: 5회 모두 실패 — None (호출부 미추가 처리) — 호출부가 기록")
+        logger.info("collab_partners: 호출 실패 또는 5회 모두 실패 — None (호출부 미추가 처리) — 호출부가 기록")
         return None
 
     def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str) -> dict | None:
@@ -863,7 +912,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -876,7 +925,7 @@ class LLMClient:
                         "when": result.get("when"),
                         "reason": str(result.get("reason") or "").strip()[:200]}
             logger.info(f"broadcast_change_targets: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
-        logger.info("broadcast_change_targets: 5회 모두 실패 — None (호출부 미반영 처리) — 호출부가 기록")
+        logger.info("broadcast_change_targets: 호출 실패 또는 5회 모두 실패 — None (호출부 미반영 처리) — 호출부가 기록")
         return None
 
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
@@ -932,7 +981,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -943,7 +992,7 @@ class LLMClient:
                 return dup if dup in ids else None
             logger.info(f"duplicate_notice: 예상 필드 부재 (attempt {attempt}/5) — {result!r}")
 
-        logger.warning("duplicate_notice: 5회 모두 실패 — None (신규로 등록)")
+        logger.warning("duplicate_notice: 호출 실패 또는 5회 모두 실패 — None (신규로 등록)")
         return None
 
     def banner_scope(self, text: str) -> dict | None:
@@ -976,7 +1025,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_BANNER_SCOPE_SCHEMA)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 r = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -993,7 +1042,7 @@ class LLMClient:
                           "evidence 의 각 구절은 위 글에 실제로 있는 한 줄을 그대로 복사하라.")
                 continue
             return {"scope": r["scope"], "evidence": ev, "reason": why[:200]}
-        logger.info("banner_scope: 5회 모두 실패(응답 · 근거) — None (올리지 않음) — 호출부가 기록")
+        logger.info("banner_scope: 호출 실패 또는 5회 모두 실패(응답 · 근거) — None (올리지 않음) — 호출부가 기록")
         return None
 
     def banner_extract(self, text: str, posted_jst: str, images_ocr: list[dict] | None = None) -> dict | None:
@@ -1052,7 +1101,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_BANNER_EXTRACT_SCHEMA)
             if not response:
-                continue
+                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 r = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -1099,7 +1148,7 @@ class LLMClient:
             if dropped:
                 why += f" (이벤트 표지 없음 — 뺌: {', '.join(dropped)[:60]})"
             return {"items": items, "image_roles": roles if n_img and len(roles) == n_img else [], "reason": why[:200]}
-        logger.info("banner_extract: 5회 모두 실패 — None (올리지 않음) — 호출부가 기록")
+        logger.info("banner_extract: 호출 실패 또는 5회 모두 실패 — None (올리지 않음) — 호출부가 기록")
         return None
 
     def translate(self, text_ja: str) -> str | None:
@@ -1271,7 +1320,14 @@ class LLMClient:
                 "json_schema": json_schema,
             }
 
-        # ponytail: 지수 백오프 3회 (1s/2s/4s)
+        # (v4.5.12) 429 로 막혀 있는 모델이면 보내지 않는다(위 _RATE_BLOCK)
+        blk = _blocked(model)
+        if blk:
+            self._last_err = f"Groq {'일일' if blk['kind'] == 'daily' else '분당'} 한도로 호출 멈춤 중 ({int(blk['until'] - time.time())}초 남음)"
+            logger.info("Groq: %s — %s 요청 안 보냄", self._last_err, model)
+            return None
+
+        # ponytail: 지수 백오프 3회 (1s/2s/4s) — 5xx · 타임아웃만. 429 는 다시 보내지 않는다(v4.5.12)
         delays = [1.0, 2.0, 4.0]
 
         for attempt, delay in enumerate(delays):
@@ -1295,7 +1351,19 @@ class LLMClient:
                     self._last_err = "응답 구조 없음"
                     logger.info(f"Groq: 예상 응답 구조 없음 {data}")
                     return None
-                elif resp.status_code in (429, 500, 502, 503, 504):
+                elif resp.status_code == 429:
+                    body = getattr(resp, "text", "") or ""
+                    daily = bool(re.search(r"per day|\(TPD\)|\(RPD\)", body))
+                    if daily:
+                        kind, sec = "daily", float(DAILY_BLOCK_SEC)
+                    else:
+                        kind, sec = "minute", min(max(_retry_after_sec(resp) or MINUTE_BLOCK_DEFAULT_SEC, 1.0), MINUTE_BLOCK_MAX_SEC)
+                    _block_model(model, kind, sec, body)
+                    self._last_err = f"HTTP 429 {'일일' if daily else '분당'} 한도"
+                    logger.warning("Groq 429 (%s 한도) — %s 를 %d초 동안 부르지 않음: %s",
+                                   "일일" if daily else "분당", model, int(sec), body[:200])
+                    return None
+                elif resp.status_code in (500, 502, 503, 504):
                     if attempt < len(delays) - 1:
                         logger.info(
                             f"Groq {resp.status_code}: {delay}초 후 재시도 (attempt {attempt+1}/3)"
@@ -1421,58 +1489,96 @@ if __name__ == "__main__":
     assert result.get("title_ko") == "신정 이벤트"
     print("✓ 정상 응답 파싱: title_ja/title_ko 추출됨")
 
-    # ──── 시나리오 3: 429 → 백오프 → 폴백 ────
-    print("\n[시나리오 3] 429 → 백오프 → 폴백")
+    # ──── 시나리오 3: (v4.5.12) 429 → 다시 보내지 않고 그 모델을 한동안 막음 ────
+    print("\n[시나리오 3] 429 → 재시도 없음 · 모델별 차단 · 판정 다시 묻기 중단")
     print("-" * 70)
 
-    class Fake429Then200Session:
-        def __init__(self):
-            self.call_count = 0
+    class Fake429Session:
+        """모델별로 응답을 정한다 — {model: (status, body, headers)}. 보낸 요청 수를 모델별로 센다."""
+        def __init__(self, plan):
+            self.plan, self.sent = plan, {}
 
         def post(self, url, **kwargs):
-            self.call_count += 1
+            model = kwargs["json"]["model"]
+            self.sent[model] = self.sent.get(model, 0) + 1
+            status, body, hdr = self.plan[model]
+
             class FakeResp:
                 pass
-
             resp = FakeResp()
-            # 첫 3회는 429, 4회차는 200
-            if self.call_count <= 3:
-                resp.status_code = 429
-                resp.text = "Rate limited"
-            else:
-                resp.status_code = 200
-                resp.text = '{"choices":[{"message":{"content":"fallback response"}}]}'
-
-            def json_method():
-                if self.call_count <= 3:
-                    return {}
-                return {
-                    "choices": [
-                        {
-                            "message": {"content": "fallback response"}
-                        }
-                    ]
-                }
-
-            resp.json = json_method
+            resp.status_code, resp.headers = status, hdr
+            resp.text = body if isinstance(body, str) else json.dumps(body)
+            resp.json = lambda: body
             return resp
 
-    session_429 = Fake429Then200Session()
-    llm_429 = LLMClient("test-key", session=session_429)
+    _ok = lambda c: {"choices": [{"message": {"content": c}}]}
+    _RPM = ("Rate limit reached for model `x` in organization `o` service tier `on_demand` on requests per minute (RPM): "
+            "Limit 30, Used 30, Requested 1. Please try again in 7.5s.")
+    _TPD = ("Rate limit reached for model `x` on tokens per day (TPD): Limit 200000, Used 199990, Requested 900. "
+            "Please try again in 6m12.3s.")
 
-    # 메인 모델에서 3번 백오프 후 실패 → None 반환
-    result = llm_429._call_groq(DEFAULT_MODEL, "test")
-    assert result is None, "429 3회 후 None 기대"
-    call_count_after_main = session_429.call_count
-    print(f"✓ 메인 모델: {call_count_after_main}회 호출 후 None 반환")
+    # 분당 429 — 1번만 보내고 retry-after 만큼 막는다. 막힌 동안은 요청을 안 보낸다
+    _RATE_BLOCK.clear()
+    s3 = Fake429Session({DEFAULT_MODEL: (429, _RPM, {"retry-after": "8"}), FALLBACK_MODEL: (200, _ok("폴백 응답"), {})})
+    c3 = LLMClient("test-key", session=s3)
+    _t = time.monotonic()
+    assert c3._call_groq(DEFAULT_MODEL, "test") is None and s3.sent[DEFAULT_MODEL] == 1, s3.sent
+    assert time.monotonic() - _t < 0.5, "429 에 sleep 하지 않는다"
+    assert _blocked(DEFAULT_MODEL)["kind"] == "minute" and 7 < _RATE_BLOCK[DEFAULT_MODEL]["until"] - time.time() <= 8.1
+    assert c3._call_groq(DEFAULT_MODEL, "test") is None and s3.sent[DEFAULT_MODEL] == 1, "막힌 동안은 안 보냄"
+    assert "멈춤 중" in c3._last_err, c3._last_err
+    assert c3._call_groq(FALLBACK_MODEL, "test") == "폴백 응답", "폴백 모델은 따로 — 한 번 불러 본다"
+    assert set(rate_block_state()) == {DEFAULT_MODEL}
+    print("✓ 분당 429: 요청 1회 · sleep 없음 · retry-after 동안 차단 · 폴백은 별도")
 
-    # 다시 시도하면 (새로운 세션)
-    session_429_fallback = Fake429Then200Session()
-    llm_429_fb = LLMClient("test-key", session=session_429_fallback)
-    result = llm_429_fb._call_groq(FALLBACK_MODEL, "test")
-    # 첫 3회가 429로 끝나고 4회차가 200이면
-    assert result == "fallback response" or result is None, "fallback 호출 결과"
-    print(f"✓ 폴백 모델 호출 완료 (총 {session_429_fallback.call_count}회)")
+    # 일일 429 — 1시간 차단(본문의 「6m12s」 보다 길게 — 일일 한도는 몇 분 뒤에도 거의 안 풀린다)
+    _RATE_BLOCK.clear()
+    s3d = Fake429Session({DEFAULT_MODEL: (429, _TPD, {}), FALLBACK_MODEL: (429, _TPD, {})})
+    c3d = LLMClient("test-key", session=s3d)
+    assert c3d._call_groq(DEFAULT_MODEL, "test") is None
+    b3 = _blocked(DEFAULT_MODEL)
+    assert b3["kind"] == "daily" and b3["until"] - time.time() > DAILY_BLOCK_SEC - 5, b3
+    print("✓ 일일 429(TPD): 1시간 차단")
+
+    # 판정 함수 — 두 모델 다 429 면 다시 묻지 않고 바로 None. 요청은 모델마다 1번(전엔 최대 30번)
+    _RATE_BLOCK.clear()
+    s3j = Fake429Session({DEFAULT_MODEL: (429, _RPM, {}), FALLBACK_MODEL: (429, _RPM, {})})
+    assert LLMClient("test-key", session=s3j).participation("원문", member_name="노노카") is None
+    assert s3j.sent == {DEFAULT_MODEL: 1, FALLBACK_MODEL: 1}, s3j.sent
+    assert _blocked(DEFAULT_MODEL)["until"] - time.time() <= MINUTE_BLOCK_DEFAULT_SEC + 1, "대기 시간이 없으면 60초"
+    # 막힌 동안 다른 판정 · 번역은 요청을 하나도 안 보낸다
+    assert LLMClient("test-key", session=s3j).banner_scope("글") is None
+    assert LLMClient("test-key", session=s3j).translate("こんにちは") is None
+    assert s3j.sent == {DEFAULT_MODEL: 1, FALLBACK_MODEL: 1}, s3j.sent
+    print("✓ 판정: 두 모델 429 → 요청 2회로 끝 · 막힌 동안 다른 판정 · 번역 요청 0회")
+
+    # 차단이 풀리면 다시 보낸다
+    _RATE_BLOCK[DEFAULT_MODEL]["until"] = time.time() - 1
+    s3j.plan[DEFAULT_MODEL] = (200, _ok('{"participates": true}'), {})
+    assert LLMClient("test-key", session=s3j).participation("원문", member_name="노노카") is True
+    print("✓ 차단 시간이 지나면 다시 호출")
+
+    # 대기 시간 읽기
+    class _R:
+        def __init__(self, text, headers=None):
+            self.text, self.headers = text, headers or {}
+    assert _retry_after_sec(_R("", {"retry-after": "12"})) == 12.0
+    assert abs(_retry_after_sec(_R("Please try again in 2m59.5s.")) - 179.5) < 1e-6
+    assert abs(_retry_after_sec(_R("Please try again in 500ms")) - 0.5) < 1e-6
+    assert _retry_after_sec(_R("Rate limited")) is None
+    print("✓ 대기 시간: retry-after 헤더 · 「try again in …」(분 · 초 · ms)")
+
+    # 5xx 는 전처럼 백오프 재시도(한도와 무관) — 다만 sleep 은 테스트에서 빼고 센다
+    _RATE_BLOCK.clear()
+    _saved_sleep, time.sleep = time.sleep, (lambda s: None)
+    try:
+        s5 = Fake429Session({DEFAULT_MODEL: (503, "busy", {})})
+        assert LLMClient("test-key", session=s5)._call_groq(DEFAULT_MODEL, "test") is None and s5.sent[DEFAULT_MODEL] == 3
+        assert not _blocked(DEFAULT_MODEL), "5xx 는 차단하지 않음"
+    finally:
+        time.sleep = _saved_sleep
+    print("✓ 5xx: 백오프 3회(차단 없음)")
+    _RATE_BLOCK.clear()
 
     # ──── 시나리오 4: JSON 파싱 실패 ────
     print("\n[시나리오 4] JSON 파싱 실패")
