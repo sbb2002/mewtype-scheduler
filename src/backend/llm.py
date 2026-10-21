@@ -314,7 +314,7 @@ def evidence_in_text(evidence: str, text: str) -> bool:
 
 
 def _banner_title(title: str, text: str) -> str:
-    """(v4.5.9) 행사 · 가챠 제목 정리 — 「…」 로 감싼 부분이 있으면 그 안쪽만(「チャレンジライブイベント「アイの奔流 AtoZ」」 → アイの奔流 AtoZ),
+    """(v4.5.10) 행사 · 가챠 제목 정리 — 「…」 로 감싼 부분이 있으면 그 안쪽만(「チャレンジライブイベント「アイの奔流 AtoZ」」 → アイの奔流 AtoZ),
     본문에 대소문자 · 전각/반각만 다르게 있으면 본문 표기(비전이 「shake your 魂」 처럼 읽어도 본문 「Shake Your 魂」 으로). 본문 우선(2026-10-21 운영자 지시)."""
     import unicodedata
     t = (title or "").strip()
@@ -333,7 +333,7 @@ _DAY_WORDS_JA = {"本日": 0, "今日": 0, "今夜": 0, "このあと": 0, "こ�
 
 
 def _jst_in_evidence(value: str | None, evidence: str, posted_jst: str) -> bool:
-    """(v4.5.9) "YYYY-MM-DD[ HH:MM]" 값이 **그 값의 근거 구절**에 적혀 있나 — 날짜(10月7日 · 10/7 · 2026.10.7 · 明日 등 게시일 기준 상대 표현)와,
+    """(v4.5.10) "YYYY-MM-DD[ HH:MM]" 값이 **그 값의 근거 구절**에 적혀 있나 — 날짜(10月7日 · 10/7 · 2026.10.7 · 明日 등 게시일 기준 상대 표현)와,
     시각이 있으면 시각(20:59 · 15時)까지. 다른 항목의 기간을 빌려 쓴 값(실측: AtoZ 가챠 종료에 이벤트 종료 10/7 을 옮김)을 거른다."""
     import datetime as _dt
     import unicodedata
@@ -358,7 +358,7 @@ def _jst_in_evidence(value: str | None, evidence: str, posted_jst: str) -> bool:
 
 
 def _near_event_word(title: str, full: str) -> bool:
-    """(v4.5.9) 인게임 이벤트 표지 — 제목 앞 40자 · 뒤 20자 안에 「イベント」가 있나(본문 · 이미지 글자).
+    """(v4.5.10) 인게임 이벤트 표지 — 제목 앞 40자 · 뒤 20자 안에 「イベント」가 있나(본문 · 이미지 글자).
     실측: 「BanG Dream! 13th☆LIVE「DIMENSIONAL OVERLAP」開催記念 ミッションパス」 의 라이브(공연) 이름을 이벤트로 뽑은 일이 있었다."""
     import unicodedata
     f = unicodedata.normalize("NFKC", full or "").casefold()
@@ -371,7 +371,7 @@ def _near_event_word(title: str, full: str) -> bool:
     return False
 
 
-# (v4.5.9) 행사 판정 2단계 — 1단계 = 게임 안/밖(근거 구절 목록), 2단계 = 이벤트 · 가챠 옮겨 적기. 배너 처리는 코드(banners.plan_post).
+# (v4.5.10) 행사 판정 2단계 — 1단계 = 게임 안/밖(근거 구절 목록), 2단계 = 이벤트 · 가챠 옮겨 적기. 배너 처리는 코드(banners.plan_post).
 _BANNER_SCOPE_SCHEMA = {
     "name": "banner_scope",
     "strict": True,
@@ -948,7 +948,7 @@ class LLMClient:
 
     def banner_scope(self, text: str) -> dict | None:
         """
-        (v4.5.9) 행사 판정 1단계 — 게임 계정(`bang_dream_on`) 글이 알리는 것이 **게임 앱 안의 일**인지 **게임 앱 밖의 일**인지만 묻는다.
+        (v4.5.10) 행사 판정 1단계 — 게임 계정(`bang_dream_on`) 글이 알리는 것이 **게임 앱 안의 일**인지 **게임 앱 밖의 일**인지만 묻는다.
 
         2026-10-21 운영자 확정 기준: 게임 밖 행사(타 기업 · 장소 콜라보 · 오프라인 행사 · 굿즈 등 유저 대상 일반 행사) = 소식,
         게임 안의 일 = 2단계(`banner_extract`)로 이벤트 · 가챠를 뽑아 코드가 배너를 정한다. 전엔 한 번의 판정에 「행사인가 · 무엇을 할까 ·
@@ -998,7 +998,7 @@ class LLMClient:
 
     def banner_extract(self, text: str, posted_jst: str, images_ocr: list[dict] | None = None) -> dict | None:
         """
-        (v4.5.9) 행사 판정 2단계 — 게임 안의 일을 알리는 글에서 **인게임 이벤트**와 **가챠**만 적힌 그대로 뽑는다(판단은 코드 — `banners.plan_post`).
+        (v4.5.10) 행사 판정 2단계 — 게임 안의 일을 알리는 글에서 **인게임 이벤트**와 **가챠**만 적힌 그대로 뽑는다(판단은 코드 — `banners.plan_post`).
 
         인게임 이벤트 = 게임 속 인물들의 스토리가 있는 이벤트(챌린지 라이브 등). 미션 · 로그인 보너스 · 캠페인 · 시리얼 코드는 뽑지 않는다(버림 —
         2026-10-21 운영자 결정: 이 앱은 유메미타 활동 소식이 목적이라 게임 잡소식을 채우지 않는다).
@@ -2007,8 +2007,8 @@ if __name__ == "__main__":
     assert LLMClient("k", session=_s5).translate("🍭ペロキャン") == "🍭페로캔" and _s5.calls == 1
     print("✓ 가나 잔존 → 1회 재요청(고치면 채택 · 못 고치면 유지 · 깨끗하면 호출 1회)")
 
-    # ──── (v4.5.9) 행사 판정 2단계 — banner_scope(게임 안/밖, 근거 목록) · banner_extract(이벤트 · 가챠 옮겨 적기) ────
-    print("\n[v4.5.9] banner_scope · banner_extract")
+    # ──── (v4.5.10) 행사 판정 2단계 — banner_scope(게임 안/밖, 근거 목록) · banner_extract(이벤트 · 가챠 옮겨 적기) ────
+    print("\n[v4.5.10] banner_scope · banner_extract")
     print("-" * 70)
     _jr = "📢#推し旅 コラボ開催決定！🚅\nJR東海×『BanG Dream! Our Notes』\n\n・東海道新幹線乗車特典"
     _ss = _ReadingSession([

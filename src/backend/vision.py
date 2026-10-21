@@ -15,7 +15,7 @@ Automate 는 텍스트 알림만 중계하므로, 이미지 속 이름은 텍스
 일반 텍스트 LLM(`llm.py`, gpt-oss 계열)보다 이 두 비전 모델은 무료 티어 TPM/OTPM
 한도가 훨씬 낮다(실측: qwen3.6-27b 는 thinking 모드가 길면 출력 토큰 한도에
 쉽게 걸림) — 그래서 항상 `reasoning_effort:"none"` + 짧은 `max_tokens` 로 호출하고,
-메인 모델이 실패(429/5xx/타임아웃/파싱 실패)하면 폴백 모델이 있을 때 1회만 재시도한다(v4.5.9 부터 기본 폴백 없음)
+메인 모델이 실패(429/5xx/타임아웃/파싱 실패)하면 폴백 모델이 있을 때 1회만 재시도한다(v4.5.10 부터 기본 폴백 없음)
 (llm.py 처럼 같은 모델에 지수 백오프 3회를 하지 않음 — 한도가 낮아 오히려 폴백
 모델로 빨리 넘어가는 게 유리).
 
@@ -33,10 +33,10 @@ import requests
 logger = logging.getLogger(__name__)
 
 DEFAULT_VISION_MODEL = "qwen/qwen3.8-27b"
-# (v4.5.9) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
+# (v4.5.10) 폴백 없음 — Groq 비전 문서(2026-10-21 확인)의 모델은 qwen/qwen3.8-27b 와 제한 프리뷰 meta-models/muse-spark-open 뿐이고,
 # 옛 폴백 qwen/qwen3.6-27b 는 model_not_found(404)다(10-02 부터). env GROQ_VISION_MODEL_FALLBACK 로 줄 수는 있다.
 FALLBACK_VISION_MODEL = ""
-MAX_IMAGES_PER_REQUEST = 3      # (v4.5.9) qwen3.8-27b — 요청당 이미지 최대 3장, 장당 입력 2048 토큰(Groq 문서)
+MAX_IMAGES_PER_REQUEST = 3      # (v4.5.10) qwen3.8-27b — 요청당 이미지 최대 3장, 장당 입력 2048 토큰(Groq 문서)
 
 # "N. <이름>" 형식 한 줄씩 — 프롬프트가 강제하는 출력 포맷.
 _NAME_LINE_RE = re.compile(r"^\s*\d+\.\s*(.+?)\s*$", re.MULTILINE)
@@ -53,7 +53,7 @@ _CARD_PROMPT = (
     "3. 최대 10줄. 글자가 거의 없는 이미지는 보이는 것만 적고, 하나도 없으면 NONE 한 단어만 출력한다."
 )
 
-# (v4.5.9) 여러 장을 한 요청으로 — 이미지마다 [이미지 k] 머리줄을 달게 해 나눈다.
+# (v4.5.10) 여러 장을 한 요청으로 — 이미지마다 [이미지 k] 머리줄을 달게 해 나눈다.
 _CARDS_PROMPT = (
     "이미지 {n}장이 순서대로 붙어 있다. 각 이미지에 보이는 일본어 글자를 위에서 아래 순서로 줄 단위로 그대로 옮겨 적어라.\n"
     "규칙:\n"
@@ -185,7 +185,7 @@ class VisionClient:
         return [m for m in (self.model, self.fallback) if m]
 
     def read_cards(self, image_urls: list[str]) -> list[str | None]:
-        """(v4.5.9) `read_card` 의 여러 장 판 — 이미지 3장(`MAX_IMAGES_PER_REQUEST`)씩 한 요청으로 읽는다. 이미지마다 글자 | None.
+        """(v4.5.10) `read_card` 의 여러 장 판 — 이미지 3장(`MAX_IMAGES_PER_REQUEST`)씩 한 요청으로 읽는다. 이미지마다 글자 | None.
 
         한 장씩 부르던 것을 묶어 요청 수를 줄인다(토큰은 장당 2048 그대로라 분당 입력 한도 7000 에는 3장이 거의 끝).
         429 는 안내된 시간만큼 기다렸다 같은 모델로 다시(최대 3회, 한 번에 15초 상한), 폴백은 429 가 아닌 실패일 때만.
@@ -337,7 +337,7 @@ if __name__ == "__main__":
     sess3 = FakeSession({})  # 둘 다 500
     vc3 = VisionClient("test-key", session=sess3)
     assert vc3.cast_names(image_url="https://example.com/cast.jpg") is None
-    assert sess3.calls == [DEFAULT_VISION_MODEL], sess3.calls       # (v4.5.9) 기본은 폴백 없음
+    assert sess3.calls == [DEFAULT_VISION_MODEL], sess3.calls       # (v4.5.10) 기본은 폴백 없음
     sess3b = FakeSession({})
     assert VisionClient("test-key", session=sess3b, fallback="fb-model").cast_names(image_url="https://example.com/cast.jpg") is None
     assert sess3b.calls == [DEFAULT_VISION_MODEL, "fb-model"], sess3b.calls
@@ -367,7 +367,7 @@ if __name__ == "__main__":
     assert vc_none2.cast_names(image_url="https://example.com/x.jpg") is None
     print("[OK] NONE 판정: 대소문자·공백 무시")
 
-    # ── (v4.5.9) read_cards — 3장씩 한 요청, [이미지 k] 로 나눔 ──
+    # ── (v4.5.10) read_cards — 3장씩 한 요청, [이미지 k] 로 나눔 ──
     class CardSession:
         def __init__(self, replies):
             self.replies, self.calls = list(replies), []

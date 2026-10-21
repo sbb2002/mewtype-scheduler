@@ -2970,7 +2970,7 @@ _BANNER_VERDICT = {
     "dup": "행사 배너 — 이미 반영한 글",
     "invalid": "행사 배너 — 판정 값 검증 실패(올리지 않음)",
     "skip_permanent": "행사 배너 — 상시화된 행사(올리지 않음)",
-    "notice": "행사 배너 아님 — 게임 밖 콜라보 · 행사라 소식으로",   # (v4.5.9)
+    "notice": "행사 배너 아님 — 게임 밖 콜라보 · 행사라 소식으로",   # (v4.5.10)
     "error": "행사 배너 — 반영 실패",
     "llm_failed": "행사 배너 — 판정 LLM 실패(올리지 않음)",
 }
@@ -3027,7 +3027,7 @@ def _filter_banner_roles(roles: list[str], ocr: list[dict]) -> list[str]:
 def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
     """행사 · 가챠 소개 카드 이미지의 글자를 비전으로 읽는다 — [{"idx": 1부터, "text": 글자|None}]. 비전 불가면 [].
 
-    (v4.5.9) 3장씩 한 요청(`vision.read_cards` — qwen3.8-27b 는 요청당 이미지 3장까지)."""
+    (v4.5.10) 3장씩 한 요청(`vision.read_cards` — qwen3.8-27b 는 요청당 이미지 3장까지)."""
     vc = _make_vision_client()
     if vc is None or not media:
         return []
@@ -3042,7 +3042,7 @@ def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
 
 
 def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str, gh) -> dict:
-    """(제어 채널) 행사 판정 준비 — 외부 LLM 2단계(v4.5.9). 배너를 어떻게 할지는 커밋 때 코드가 정한다(`banners.plan_post`).
+    """(제어 채널) 행사 판정 준비 — 외부 LLM 2단계(v4.5.10). 배너를 어떻게 할지는 커밋 때 코드가 정한다(`banners.plan_post`).
 
     2026-10-21 운영자 확정 기준: 1순위 인게임 이벤트(게임 속 인물들의 스토리가 있는 이벤트) + 가챠 · 2순위 이벤트 없이 다른 행사로 열린 한시 가챠 ·
     게임 밖 행사 = 소식 · 미션 · 로그인 보너스 등 = 버림. ① `llm.banner_scope` 게임 안/밖(근거 필수) → 밖이면 notice(호출부가 소식으로)
@@ -3119,7 +3119,7 @@ def _commit_banner(gh, prepared: dict | None, now_iso: str) -> dict:
         swept, arc2, moved = banners.sweep(prev, arc, now_iso)
         post = prepared.get("post") or {}
         if prepared.get("items") is not None:
-            # (v4.5.9) 반영 계획은 커밋 때 지금 배너 상태로 세운다(준비와 커밋 사이에 다른 글이 배너를 바꿨을 수 있다)
+            # (v4.5.10) 반영 계획은 커밋 때 지금 배너 상태로 세운다(준비와 커밋 사이에 다른 글이 배너를 바꿨을 수 있다)
             steps = banners.plan_post(swept, prepared["items"], post.get("text") or "", post.get("posted_at"), now_iso,
                                       prepared.get("image_roles") or [])
             r = banners.apply_post(swept, steps, post, now_iso)
@@ -3208,7 +3208,7 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
         return {"ok": True, "banner": "llm_failed", "detail": prepared["failed"]}, 200
     j = prepared["judgement"]
     if j.get("action") == "notice":
-        # (v4.5.9 운영자 결정) 게임 밖 콜라보 · 행사(게임 안 이벤트 스토리 · 가챠 없음 — 예: 2026-10-20 JR 도카이 × Our Notes 「推し旅」)는
+        # (v4.5.10 운영자 결정) 게임 밖 콜라보 · 행사(게임 안 이벤트 스토리 · 가챠 없음 — 예: 2026-10-20 JR 도카이 × Our Notes 「推し旅」)는
         # 행사 배너가 아니라 일반 소식으로. 소식 파이프라인(제목 추출 · 번역 · 중복 판정)을 그대로 탄다. 배너 쪽은 바꾸지 않으므로 되돌릴 데이터가 없다(검토용 기록) —
         # 잘못 올라간 소식은 관리 페이지 소식 탭에서 지운다.
         flowtrace.mark("행사 판정", "done", "게임 밖 콜라보 · 행사 → 소식으로")
@@ -3260,7 +3260,7 @@ def _undo_banner_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
         prev, psha, arc, asha = _banners_rw(gh)
         new_b, new_a, msg = banners.restore(prev, u, arc, now_iso)
         if msg == "되돌림":
-            # (v4.5.9) 한 글이 여러 배너를 바꾼 경우 undo["items"] — 이름을 다 적는다(새로 만든 것은 before 가 없어 id)
+            # (v4.5.10) 한 글이 여러 배너를 바꾼 경우 undo["items"] — 이름을 다 적는다(새로 만든 것은 before 가 없어 id)
             names = dict.fromkeys(((x.get("before") or {}).get("name_ko") or (x.get("before") or {}).get("name_ja") or x.get("id") or "")
                                   for x in (u.get("items") if isinstance(u.get("items"), list) else [u]))
             applied.append(f"행사 배너 되돌림 — {', '.join(n for n in names if n)}")
@@ -4848,7 +4848,7 @@ def _need_cfg_name(channel_key: str) -> tuple[dict, str, str]:
 def _run_banner(gh, e, inp, mode, dec, now_iso, ctx) -> str:
     raw, tag = inp.get("raw") or "", inp.get("tag") or ""
     acct = inp.get("acct") or e.get("who") or ""
-    if mode == "user" and dec.get("choice") == "notice":     # (v4.5.9) 게임 밖 콜라보 · 행사 → 소식으로
+    if mode == "user" and dec.get("choice") == "notice":     # (v4.5.10) 게임 밖 콜라보 · 행사 → 소식으로
         ctx["forced"]["banner"] = {"action": "notice", "banner_ref": None, "event": None, "gacha": None,
                                    "image_for": "none", "image_roles": [], "reason": "사용자 판단 — 소식으로"}
     elif mode == "user":
@@ -7081,7 +7081,7 @@ if __name__ == "__main__":
     assert _game_account(None, "夢限大みゅーたいぷ", _gcfg) is None and _game_account(None, "", _gcfg) is None
     assert _game_account({"author": "bang_dream_on"}, "", {"game_accounts": {}}) is None
 
-    # (v4.5.9) 행사 판정 notice = 게임 밖 콜라보 · 행사 → 배너를 안 건드리고 소식 파이프라인으로
+    # (v4.5.10) 행사 판정 notice = 게임 밖 콜라보 · 행사 → 배너를 안 건드리고 소식 파이프라인으로
     _saved = (_prepare_banner, _maybe_auto_notice, _llm_record, _log_event_safe, writeclient.call_write)
     _calls = []
     try:
@@ -7099,7 +7099,7 @@ if __name__ == "__main__":
     assert _nc == 200 and _nb["banner"] == "notice" and _nb["detail"] == "소식 added", _nb
     assert _calls[0] == ("notice", "📢#推し旅 コラボ開催決定！"), _calls
     assert _calls[1][1] == "banner_judge" and "소식" in _calls[1][2] and _calls[1][3] is None, _calls   # 검토용 기록(되돌릴 데이터 없음)
-    print("  ✓ (v4.5.9) 행사 판정 notice → 소식 파이프라인 · 배너 쓰기 없음")
+    print("  ✓ (v4.5.10) 행사 판정 notice → 소식 파이프라인 · 배너 쓰기 없음")
 
     class _MemGH:
         """read_json/write_json 만 흉내 내는 메모리 저장소(sha = 쓰기 횟수)."""
@@ -7167,7 +7167,7 @@ if __name__ == "__main__":
     assert _filter_banner_roles(["event", "event", "gacha"], _ocr) == ["none", "event", "gacha"]
     assert _filter_banner_roles(["event"], [{"text": "x"}, {"text": "y"}]) == ["event"]       # 장수가 안 맞으면 그대로
 
-    # (v4.5.9) 2단계 판정 — 게임 안/밖(banner_scope) → 이벤트 · 가챠 옮겨 적기(banner_extract) → 커밋 때 plan_post · apply_post
+    # (v4.5.10) 2단계 판정 — 게임 안/밖(banner_scope) → 이벤트 · 가챠 옮겨 적기(banner_extract) → 커밋 때 plan_post · apply_post
     class _FakeLLM:
         def __init__(self, scope, items, roles=None):
             self.scope, self.items, self.roles, self.calls = scope, items, roles or [], []
@@ -7213,7 +7213,7 @@ if __name__ == "__main__":
     _ur2 = _llm_undo(_bgh4, "llm_t2", "2026-10-17T09:10:00Z")
     assert _ur2["applied"] and not _bgh4.f[_BANNERS_PATH]["banners"][0]["gachas"], _ur2      # 가챠만 빠지고 이벤트 배너는 남음
 
-    print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제 · v4.5.9 2단계 판정)")
+    print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제 · v4.5.10 2단계 판정)")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}

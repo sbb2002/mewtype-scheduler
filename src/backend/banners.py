@@ -6,7 +6,7 @@ banners.json
   { "generated_at": "...Z",
     "banners": [ { id, name_ja, name_ko, match_keys[], image_urls[], start_at, end_at, start_time_tbd?,
                    hold: null | {anchor, until}, gachas: [ {id, title_ja, title_ko, image_urls[], start_at, end_at} ],
-                   src_ids[], first_seen, last_updated, gacha_only? } ] }      # gacha_only = (v4.5.9) 가챠 단독 배너
+                   src_ids[], first_seen, last_updated, gacha_only? } ] }      # gacha_only = (v4.5.10) 가챠 단독 배너
 banners_archive.json  { "banners": [ <banner + archived_at, archived_reason> ] }
 
 원칙
@@ -190,7 +190,7 @@ def to_jst(iso: str | None) -> str | None:
 
 
 def for_llm(prev: dict, now_iso: str) -> list[dict]:
-    """(옛 `llm.banner_judge` 의 active 인자 — v4.5.9 부터 판정에 안 쓴다) 대기 포함 활성 행사를 JST 문자열로."""
+    """(옛 `llm.banner_judge` 의 active 인자 — v4.5.10 부터 판정에 안 쓴다) 대기 포함 활성 행사를 JST 문자열로."""
     return [{"id": b["id"], "name_ja": b.get("name_ja"), "start_jst": to_jst(b.get("start_at")),
              "end_jst": to_jst(b.get("end_at")), "hold": bool(b.get("hold")),
              "gachas": [g.get("title_ja") for g in b.get("gachas") or []],
@@ -313,7 +313,7 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup:
     비어 있던 날짜를 채우는 것 · 새 행사 · 운영자 판단(텍스트 없음)은 그대로. 계기: 2026-10-19 날짜 없는 가챠 소개 글 3건이 가챠 기간을
     행사 기간(종료 10/26)과 「10月18日」 00:00 으로 덮었다(정답 10/18 15:00 ~ 10/28 14:59).
 
-    (v4.5.9) check_dup=False — 한 글에서 나온 여러 반영(`apply_post`)의 두 번째부터는 「이미 반영한 글」 검사를 건너뛴다(글 단위 검사는 apply_post 가 먼저 한다).
+    (v4.5.10) check_dup=False — 한 글에서 나온 여러 반영(`apply_post`)의 두 번째부터는 「이미 반영한 글」 검사를 건너뛴다(글 단위 검사는 apply_post 가 먼저 한다).
     j["gacha_only"] = True 면 새 행사에 `gacha_only` 표시(이벤트 없이 열린 가챠 단독 배너 — `plan_post` 2순위).
     """
     now = _parse_iso(now_iso)
@@ -509,7 +509,7 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup:
                 undo={"type": "restore_banner", "id": target["id"], "before": before})
 
 
-# ── (v4.5.9) 글 1건 → 반영 계획 — 2026-10-21 운영자 확정 기준 ─────────────────────────────
+# ── (v4.5.10) 글 1건 → 반영 계획 — 2026-10-21 운영자 확정 기준 ─────────────────────────────
 # LLM 은 「게임 안/밖」(llm.banner_scope)과 「이벤트 · 가챠 옮겨 적기」(llm.banner_extract)만 하고, 배너를 어떻게 할지는 여기서 코드가 정한다.
 #   1순위 인게임 이벤트(게임 속 인물들의 스토리가 있는 이벤트) — 가챠는 같은 글의 이벤트, 아니면 시작 시각이 같은 이벤트에 딸린다.
 #   2순위 이벤트 없이 다른 행사로 열린 한시 가챠 — 가챠 단독 배너(`gacha_only`).
@@ -689,7 +689,7 @@ def apply_post(prev: dict, steps: list[dict], post: dict, now_iso: str) -> dict:
 def restore(prev: dict, undo: dict, archive: dict, now_iso: str) -> tuple[dict, dict, str]:
     """되돌리기. 반환 (banners, archive, 결과 문구). 사본을 돌려준다.
 
-    (v4.5.9) undo["items"](한 글이 여러 배너를 바꾼 경우 — `apply_post`)면 거꾸로 하나씩 풀고, 하나라도 풀리면 「되돌림」."""
+    (v4.5.10) undo["items"](한 글이 여러 배너를 바꾼 경우 — `apply_post`)면 거꾸로 하나씩 풀고, 하나라도 풀리면 「되돌림」."""
     if isinstance(undo.get("items"), list):
         cur, arc, msgs = prev, archive, []
         for u in reversed(undo["items"]):
@@ -700,7 +700,7 @@ def restore(prev: dict, undo: dict, archive: dict, now_iso: str) -> tuple[dict, 
 
 
 def _restore_one(prev: dict, undo: dict, archive: dict, now_iso: str) -> tuple[dict, dict, str]:
-    """배너 하나 되돌리기. was_archived = 취소로 보관된 것 되살림 · (v4.5.9) was_removed = 다른 배너에 합쳐져 사라진 것 되살림 ·
+    """배너 하나 되돌리기. was_archived = 취소로 보관된 것 되살림 · (v4.5.10) was_removed = 다른 배너에 합쳐져 사라진 것 되살림 ·
     before=None = 새로 만든 것 지움 · 그 밖 = before 로 바꿈."""
     cur = copy.deepcopy(prev or default_banners())
     arc = copy.deepcopy(archive or default_archive())
@@ -1045,7 +1045,7 @@ if __name__ == "__main__":
     assert fl2[0]["gacha_periods"] == ["はじめてを奏でる光彩讃歌ガチャ 2026-10-18 15:00~2026-10-28 14:59"], fl2
     print("[OK] (v4.5.3) 날짜 근거 확인 · 날짜만 값의 시각 덮어쓰기 차단 · 가챠 기간 판정 목록 표시")
 
-    # (v4.5.9) plan_post · apply_post — 2026-10-21 운영자 확정 기준(실측 14건 재현 실험의 축약)
+    # (v4.5.10) plan_post · apply_post — 2026-10-21 운영자 확정 기준(실측 14건 재현 실험의 축약)
     def run(state, items, text, now, tid, roles=None):
         stp = plan_post(state, items, text, now, now, roles)
         return apply_post(state, stp, {"tweet_id": tid, "media": [], "text": text, "posted_at": now}, now), stp
@@ -1103,5 +1103,5 @@ if __name__ == "__main__":
     # 취소 공지 → 그 배너를 내린다
     r9, _ = run(S1, [ev("Shake Your 魂, Baby!!", status="cancelled")], "「Shake Your 魂, Baby!!」開催中止のお知らせ", T1, "400")
     assert r9["mode"] == "cancelled" and not r9["banners"]["banners"] and r9["archive_add"], r9
-    print("[OK] (v4.5.9) plan_post · apply_post — 1순위 이벤트 · 같은 시작 가챠 · 2순위 가챠 단독 · 중복 배너 방지 · 합치기 · 버림 · 묶음 되돌리기")
+    print("[OK] (v4.5.10) plan_post · apply_post — 1순위 이벤트 · 같은 시작 가챠 · 2순위 가챠 단독 · 중복 배너 방지 · 합치기 · 버림 · 묶음 되돌리기")
     print("[PASS] banners self-test (시각 · 이름 키 · 반영 · 보류/재개 · 취소/되돌리기 · sweep · 소식 겹침 · 수정)")
