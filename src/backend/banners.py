@@ -300,7 +300,7 @@ def date_evidenced(iso: str | None, text: str, ref_iso: str | None) -> bool:
     return False
 
 
-def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
+def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str, *, check_dup: bool = True) -> dict:
     """행사 판정 1건을 반영한다. 반환:
 
       {"banners": 새 목록(dict), "archive_add": [보관할 항목], "mode": str, "detail": str, "undo": dict|None, "id": str|None}
@@ -349,7 +349,8 @@ def apply_judgement(prev: dict, j: dict, post: dict, now_iso: str) -> dict:
     action = j["action"]
     if action == "none":
         return done("none", (j.get("reason") or "")[:120])
-    if tid and any(tid in (b.get("src_ids") or []) for b in lst):
+    # (v4.5.10) check_dup=False — 이미지 판독 예비(Cloud Vision)로 같은 글을 다시 반영할 때(`telegram_app._ocr_fallback_apply`)
+    if check_dup and tid and any(tid in (b.get("src_ids") or []) for b in lst):
         return done("dup", "이미 반영한 글")        # 같은 글 재전송(폰 재시도)은 건드리지 않는다
 
     ev = j.get("event") if isinstance(j.get("event"), dict) else None

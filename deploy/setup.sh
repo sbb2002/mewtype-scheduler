@@ -13,7 +13,8 @@ gcloud services enable \
   cloudscheduler.googleapis.com \
   secretmanager.googleapis.com \
   artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com
+  cloudbuild.googleapis.com \
+  vision.googleapis.com
 
 echo "=== 서비스계정 생성 ==="
 # Runtime SA
@@ -71,6 +72,14 @@ for SA in "$RUNTIME_SA" "$INVOKER_SA"; do
       --quiet 2>/dev/null || true
   done
 done
+
+# (v4.5.10) 이미지 판독 예비(Cloud Vision) — 관리 페이지(mewtype-telegram, INVOKER_SA)가 운영자 허가 때만 부른다.
+# 호출에 할당량 프로젝트 헤더를 붙이므로 serviceusage.services.use 가 필요하다. 월 900건 상한은 앱이 센다(ops ocr_pending.json).
+gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
+  --member="serviceAccount:$INVOKER_SA" \
+  --role="roles/serviceusage.serviceUsageConsumer" \
+  --condition=None \
+  --quiet 2>/dev/null || true
 
 # secretmanager.secretAccessor 역할 (RUNTIME_SA = 메인, INVOKER_SA = mewtype-telegram 실행 계정)
 for SA in "$RUNTIME_SA" "$INVOKER_SA"; do

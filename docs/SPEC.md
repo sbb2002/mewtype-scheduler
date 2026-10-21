@@ -522,7 +522,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   - 수동 소식 입력(`ingest_notice_manual`)은 본문 = 제목이라 한글 제목을 넣으면 그대로 `body_ko`.
 - **`participants`** (v3.2, 선택 필드): 크로스오버 공식 계정(`_CAST_LOOKUP_HANDLES`, 현재
   `bang_dream_on`) 소식만 대상 — 첨부 이미지를 `vision.py`(Groq 비전 OCR, `qwen/qwen3.8-27b`
-  주+`qwen/qwen3.6-27b` 폴백)로 읽어 5인 중 출연이 확인된 `channel_key` 배열. `telegram_app
+  — v4.5.10 부터 폴백 없음)로 읽어 5인 중 출연이 확인된 `channel_key` 배열. `telegram_app
   ._maybe_tag_cast_participants`가 `_apply_notice` 파싱 직후 채운다(tweet id 없음·이미지
   없음·OCR 실패·매칭 없음이면 그냥 비워둠 — 일반 소식으로 정상 표시, 무회귀). 프론트는 아직
   이 필드를 읽지 않음(추후 UI 확장 여지).
@@ -1093,6 +1093,28 @@ YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수
 
 **검증되지 않은 가정**: ① 허브가 `hub.secret` 을 준 구독의 알림에 `X-Hub-Signature` 를 실제로 보내는지(시험기는 서명 없이 구독해 헤더를 기록한 적이 없다 — 첫 실알림에서 `reject`(헤더 없음)가 뜨면 이 가정이 틀린 것),
 ② 허브가 허용하는 최대 임대, ③ 허브의 재시도 정책, ④ 뮤타입 음원 채널(자동 생성 채널)이 푸시를 실제로 보내는지(시험 기간 신곡 없음). ④ 는 baseline 안전망이 받아 주고 `via=baseline` warn 으로 드러난다.
+
+### 8.17 이미지 판독 대기 · 예비 판독(Cloud Vision) — `cloudvision.py` + `telegram_app._ocr_pending_*` + 관리 페이지 작업 탭 (v4.5.10)
+
+Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면**(429 · 5xx · 네트워크 — 「글자 없음 · NONE」은 실패가 아님) 자동 경로는 지금처럼 본문만으로 처리를 계속하고,
+그 글을 **이미지 판독 대기**(ops `ocr_pending.json`)에 적어 운영자에게 DM 한다. 운영자가 관리 페이지 작업 탭 맨 위 「이미지 판독 대기」 카드에서 허가하면
+**예비 판독 = Google Cloud Vision 텍스트 감지**로 읽어 같은 경로를 다시 탄다. **Cloud Vision 은 자동으로 부르지 않는다**(2026-10-21 운영자 결정).
+계기: 2026-10-21 실험이 같은 키(조직 단위 한도)의 Groq 비전 일일 토큰 200,000 을 193,767 까지 써서 운영 OCR 이 막힐 뻔했다. Groq 비전에는 쓸 수 있는 다른 모델이 없다
+(문서상 qwen3.8-27b 와 제한 프리뷰뿐, 옛 폴백 qwen3.6-27b 는 404 — 기본 폴백 제거).
+
+- **대상**: 행사 카드 OCR(`_prepare_banner` → `kind=banner`) · 그룹 영상 참여 멤버 OCR(`_ocr_cast_keys` 상태 `failed` → `_record_group_pending` → `kind=cast_group`).
+  소식 참여 멤버 OCR(`_maybe_tag_cast_participants`)은 제외 — 대상 계정(`bang_dream_on`) 글이 v4a 부터 소식 경로를 안 타고, `participants` 도 화면에서 안 쓴다.
+- **일일 한도 429**: `vision._call` 이 본문의 `per day` · `(TPD)` · `(RPD)` 를 보면 재시도 · 대기 없이 실패하고, 그 프로세스에서 1시간(`DAILY_BLOCK_SEC`) 동안 Groq 비전을 부르지 않는다(`groq_vision_state`).
+- **ops `ocr_pending.json`** = `{items[], usage{"YYYY-MM": 건수}, groq{state, at}, last_dm_at}`. 항목 = `{id, kind, status: pending|done, acct, tag|video_id, tweet_url, raw|title,
+  media[], reason, current(본문만으로 처리한 결과), created_at, last_seen, (처리 뒤) done_at, engine, units, result, ocr_preview, note}`. 같은 글 · 같은 영상의 대기는 한 줄(갱신).
+  48시간 지나면 정리. 쓰기 = 적용 큐 작업 `ocr_pending`(`_ocr_pending_commit` op add · update · remove · reserve · dm_mark). DM 은 1시간에 한 번(`_OCR_DM_GAP_SEC`), 알림 레벨과 무관.
+- **월 상한**: Cloud Vision 에는 월 할당량이 없어(분당만) 앱이 센다 — 허가 때 `reserve`(이미지 수만큼 이번 달 `usage` 에 먼저 더함, `cloudvision.MONTHLY_CAP`=900 을 넘으면 거절) 뒤에 호출.
+  요금(2026-10-21 공식): 이미지 1장 = 1단위, 월 1,000단위 무료, 넘으면 1,000단위당 $1.50.
+- **허가 뒤 다시 처리**(`_ocr_fallback_apply`): 행사 배너 = 판독 글자를 `_OCR_OVERRIDE` 로 주입해 `_banner_ingest_core` 를 다시 돌린다(같은 글이라도 `recheck` 로 「이미 반영한 글」 검사를 건너뜀 —
+  `apply_judgement(check_dup=False)`, 판단 기록 사유에 「[이미지 판독 Cloud Vision]」, 반려 가능). 그룹 영상 = 판독 글자에서 5인 **정식 이름**(`xrelay.FORMAL_NAME_TO_KEY`, 곡 크레디트 줄 제외)을
+  찾아 확인 대기 항목의 제안 멤버로 넣는다(확정은 지금처럼 예고 탭). 「Groq 로 다시」(마지막 실패 1시간 뒤부터)는 같은 처리를 Groq 비전으로.
+- **관리 API**: `list_ocr_pending`(읽기) · `read_ocr_pending(item_id, engine=cloud|groq)` · `dismiss_ocr_pending(item_id)`. 작업 탭 버튼 배지 = 대기 건수(1분마다 갱신).
+- **배포**: `vision.googleapis.com` 활성화 · 접수 서비스 실행 계정(INVOKER_SA)에 `roles/serviceusage.serviceUsageConsumer`(`deploy/setup.sh`). 키 없음(서비스 계정 인증).
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 

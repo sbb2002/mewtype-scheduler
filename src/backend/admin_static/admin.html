@@ -846,6 +846,38 @@
         .gp-row .a button { white-space: nowrap; }
         .gp-row .a .ghost { background: none; color: var(--color-text-muted); border: 1px solid var(--color-border); }
         @media (max-width: 640px) { .gp-row { grid-template-columns: 1fr; } .gp-row .a button { flex: 1; } }
+        /* (v4.5.10) 작업 탭 — 이미지 판독 대기(Groq 비전이 못 읽은 이미지 → 운영자 허가 → Cloud Vision) */
+        .tab-badge { display: inline-block; margin-left: 0.35rem; background: #f5b83d; color: #1a1300; font-size: 0.68rem; font-weight: 700;
+            border-radius: 999px; padding: 0 0.42rem; line-height: 1.35; vertical-align: 1px; }
+        .ocr-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+        .ocr-stat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+        .ocr-stat > div { background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.6rem 0.8rem;
+            display: grid; gap: 0.2rem; font-size: 0.8rem; color: var(--color-text-muted); }
+        .ocr-stat b { color: var(--color-text); font-size: 0.92rem; }
+        .ocr-stat b.bad { color: #ff7a7a; }
+        .ocr-bar { height: 6px; background: #2a2a2a; border-radius: 999px; overflow: hidden; }
+        .ocr-bar > i { display: block; height: 6px; background: #3ecf8e; }
+        .ocr-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.5rem 0.9rem; align-items: start;
+            background: var(--color-bg-secondary); border: 1px solid var(--color-border); border-radius: 8px; padding: 0.7rem 0.85rem; }
+        .ocr-row.done { border-color: rgba(62, 207, 142, 0.55); }
+        .ocr-thumbs { display: flex; gap: 0.35rem; }
+        .ocr-thumbs a { display: block; width: 56px; height: 56px; border-radius: 6px; overflow: hidden; border: 1px solid var(--color-border); background: #262626; }
+        .ocr-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ocr-row .k { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; font-size: 0.75rem; color: var(--color-text-muted); }
+        .ocr-chip { font-weight: 700; border: 1px solid currentColor; border-radius: 999px; padding: 0 0.5rem; }
+        .ocr-chip.banner { color: #5fb7c9; } .ocr-chip.cast_group { color: #b48cff; } .ocr-chip.ok { color: #3ecf8e; }
+        .ocr-row .t { font-weight: 600; overflow-wrap: anywhere; margin-top: 0.15rem; }
+        .ocr-row .m { font-size: 0.78rem; color: var(--color-text-muted); overflow-wrap: anywhere; margin-top: 0.15rem; }
+        .ocr-row .m .warn { color: #f5b83d; }
+        .ocr-row pre { margin: 0.35rem 0 0; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 0.45rem 0.6rem;
+            font: inherit; font-size: 0.76rem; color: #b5b5b5; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .ocr-row .a { display: grid; gap: 0.35rem; min-width: 11rem; }
+        .ocr-row .a .two { display: flex; gap: 0.35rem; }
+        .ocr-row .a .two button { flex: 1; white-space: nowrap; }
+        .ocr-row .a > button { white-space: nowrap; }
+        .ocr-row .a .ghost { background: none; color: var(--color-text-muted); border: 1px solid var(--color-border); }
+        .ocr-foot { margin: 0; font-size: 0.78rem; color: var(--color-text-muted); }
+        @media (max-width: 640px) { .ocr-stat { grid-template-columns: 1fr; } .ocr-row { grid-template-columns: 1fr; } .ocr-row .a { min-width: 0; } }
         #pick-body { display: grid; gap: 0.75rem; }
         #pick-body .pick-video { font-weight: 600; overflow-wrap: anywhere; }
         #pick-body .pick-help { font-size: 0.82rem; color: var(--color-text-muted); }
@@ -1097,7 +1129,7 @@
         <button class="tab-btn active" data-tab="status"><i aria-hidden="true">🗓</i><span>현황</span></button>
         <button class="tab-btn" data-tab="songs"><i aria-hidden="true">💿</i><span>음반</span></button>
         <button class="tab-btn" data-tab="ingest"><i aria-hidden="true">📥</i><span>원문 투입</span></button>
-        <button class="tab-btn" data-tab="jobs"><i aria-hidden="true">⚙️</i><span>작업</span></button>
+        <button class="tab-btn" data-tab="jobs"><i aria-hidden="true">⚙️</i><span>작업<span class="tab-badge" id="jobs-badge" hidden></span></span></button>
         <button class="tab-btn" data-tab="lost"><i aria-hidden="true">📦</i><span>유실 원문</span></button>
         <button class="tab-btn" data-tab="control"><i aria-hidden="true">🎛</i><span>운영</span></button>
         <button class="tab-btn" data-tab="report"><i aria-hidden="true">📊</i><span>리포트</span></button>
@@ -1326,6 +1358,25 @@
 
     <!-- ════ 탭: 작업 ════ -->
     <div class="tab-content" id="jobs-tab">
+        <!-- (v4.5.10) 이미지 판독 대기 — Groq 비전이 이미지를 못 읽은 글. 허가하면 Cloud Vision 으로 읽어 다시 처리한다. 없으면 숨김 -->
+        <section class="gp-card" id="ocr-pending" hidden aria-labelledby="ocr-h">
+            <div class="ocr-head">
+                <div class="gp-head">
+                    <h3 id="ocr-h">이미지 판독 대기 <span class="gp-count" id="ocr-count"></span></h3>
+                    <p>Groq 비전이 이미지를 읽지 못한 글입니다. 이미지 없이 본문만으로 먼저 처리해 두었습니다.
+                        이미지를 읽으면 다시 판정해 빠진 정보(개최기간 · 참여 멤버)를 채웁니다. Cloud Vision 은 허가한 것만 읽고, 이미지 1장이 1건입니다.</p>
+                </div>
+                <button type="button" id="ocr-all">모두 Cloud Vision 으로 읽기</button>
+            </div>
+            <div class="ocr-stat">
+                <div><span>Groq 비전 (qwen/qwen3.8-27b)</span><b id="ocr-groq"></b><span id="ocr-groq-sub"></span></div>
+                <div><span>Cloud Vision 이번 달 사용</span><b id="ocr-usage"></b><div class="ocr-bar"><i id="ocr-bar"></i></div></div>
+            </div>
+            <div class="gp-list" id="ocr-list"></div>
+            <p class="ocr-foot">48시간이 지나면 대기에서 빠집니다. 읽지 않아도 본문만으로 처리한 결과는 그대로 남습니다.
+                다시 판정한 행사 배너는 아래 「최근 흐름 → LLM 판단」에서 반려할 수 있습니다.</p>
+        </section>
+
         <section class="jobs-sec" aria-labelledby="h-now">
             <h2 id="h-now">지금 상태 <small id="now-at"></small></h2>
             <div class="now-grid" id="now-grid"></div>
@@ -1634,6 +1685,11 @@
                 document.getElementById("sd-check").addEventListener("click", () => this.checkSongsNow());
                 document.getElementById("song-modal").addEventListener("mousedown", (ev) => { if (ev.target.id === "song-modal") this.closeSongModal(); });
 
+                // (v4.5.10) 이미지 판독 대기 — 작업 탭 배지는 어느 탭에 있든 1분마다 갱신
+                document.getElementById("ocr-all").addEventListener("click", () => this.readAllOcr());
+                this.loadOcrPending();
+                this.ocrTimer = setInterval(() => { if (this.currentTab !== "jobs") this.loadOcrPending(); }, 60000);
+
                 // 초기 탭 로드
                 this.switchTab("status");
             },
@@ -1924,6 +1980,168 @@
                 document.getElementById("confirm-modal").classList.remove("active");
                 if (r) r(yes ? { checked: !!(this._confirmCheck && this._confirmCheck.checked),
                                  data: this._confirmForm && this._confirmForm.get ? this._confirmForm.get() : undefined } : null);
+            },
+
+            // (v4.5.10) 이미지 판독 대기 — 목록 · 배지. 판독 중인 동안은 다시 그리지 않는다(버튼 상태 유지)
+            async loadOcrPending() {
+                if (this.ocrBusy) return;
+                let d = { items: [], usage: {}, groq: {}, pending: 0 };
+                try {
+                    d = await this.apiCall("GET", "/list_ocr_pending");
+                } catch (e) {
+                    console.error("이미지 판독 대기 로드 실패", e);
+                    return;
+                }
+                this.ocr = d;
+                const items = d.items || [];
+                const pend = items.filter((e) => e.status === "pending");
+                const badge = document.getElementById("jobs-badge");
+                badge.hidden = !pend.length;
+                badge.textContent = pend.length ? String(pend.length) : "";
+                const box = document.getElementById("ocr-pending");
+                box.hidden = !items.length;
+                if (!items.length) return;
+                const imgs = pend.reduce((n, e) => n + (e.media || []).length, 0);
+                document.getElementById("ocr-count").textContent = pend.length ? `${pend.length}건 · 이미지 ${imgs}장` : "모두 처리함";
+                const u = d.usage || {};
+                const used = u.used || 0, cap = u.cap || 900;
+                document.getElementById("ocr-usage").textContent = `${used} / ${cap}건 (무료 ${u.free || 1000} · ${cap}에서 막음)`;
+                document.getElementById("ocr-bar").style.width = `${Math.min(100, Math.round((used / cap) * 100))}%`;
+                const g = d.groq || {};
+                const gEl = document.getElementById("ocr-groq");
+                gEl.textContent = g.state ? `${g.state} — ${this.formatTime(g.at)}` : "정상";
+                gEl.className = g.state ? "bad" : "";
+                const groqLocked = this.ocrGroqLocked(g);
+                document.getElementById("ocr-groq-sub").textContent = g.state
+                    ? (groqLocked ? "마지막 실패 1시간 뒤부터 「Groq 로 다시」를 쓸 수 있습니다" : "「Groq 로 다시」를 쓸 수 있습니다") : "";
+                const all = document.getElementById("ocr-all");
+                all.hidden = pend.length < 2;
+                all.textContent = `모두 Cloud Vision 으로 읽기 · ${imgs}건`;
+                all.disabled = used + imgs > cap;
+                const list = document.getElementById("ocr-list");
+                list.textContent = "";
+                for (const e of items) list.appendChild(this.renderOcrRow(e, groqLocked, used, cap));
+            },
+
+            ocrGroqLocked(g) {
+                if (!g || !g.at) return false;
+                return Date.now() - new Date(g.at).getTime() < 3600 * 1000;
+            },
+
+            renderOcrRow(e, groqLocked, used, cap) {
+                const mk = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; };
+                const row = mk("article", "ocr-row" + (e.status === "done" ? " done" : ""));
+                const th = mk("div", "ocr-thumbs");
+                (e.media || []).forEach((u, i) => {
+                    const a = mk("a");
+                    a.href = u; a.target = "_blank"; a.rel = "noopener";
+                    a.setAttribute("aria-label", `이미지 ${i + 1} 새 창에서 보기`);
+                    const img = mk("img");
+                    img.src = u; img.alt = ""; img.loading = "lazy";
+                    a.appendChild(img);
+                    th.appendChild(a);
+                });
+                const info = mk("div");
+                const k = mk("div", "k");
+                const KIND = { banner: "행사 배너", cast_group: "그룹 영상 참여 멤버" };
+                if (e.status === "done") k.appendChild(mk("span", "ocr-chip ok", `읽음 · ${e.engine || ""}${e.units ? ` ${e.units}건` : ""}`));
+                k.appendChild(mk("span", `ocr-chip ${e.kind}`, KIND[e.kind] || e.kind));
+                k.appendChild(mk("span", "", [e.acct ? `@${e.acct}` : "", this.formatTime(e.created_at)].filter(Boolean).join(" · ")));
+                const title = (e.raw || e.title || "").split("\n").filter(Boolean).slice(0, 2).join(" ") || "(본문 없음)";
+                info.append(k, mk("div", "t", title.slice(0, 120)));
+                if (e.status === "done") {
+                    info.appendChild(mk("div", "m", `다시 처리: ${e.result || ""}`));
+                    if (e.ocr_preview) info.appendChild(mk("pre", "", e.ocr_preview));
+                } else {
+                    const now = mk("div", "m");
+                    now.append("지금: ", mk("span", "warn", e.current || "본문만으로 처리함"));
+                    info.appendChild(now);
+                    const why = mk("div", "m", `실패: ${e.reason || "Groq 비전 실패"}${e.note ? ` · ${e.note}` : ""} · `);
+                    if (e.tweet_url) { const a = mk("a", "", "원문 보기"); a.href = e.tweet_url; a.target = "_blank"; a.rel = "noopener"; why.appendChild(a); }
+                    info.appendChild(why);
+                }
+                const act = mk("div", "a");
+                if (e.status === "done") {
+                    const clear = mk("button", "ghost", "목록에서 치우기");
+                    clear.type = "button";
+                    clear.addEventListener("click", () => this.dismissOcr(e, true));
+                    act.appendChild(clear);
+                } else {
+                    const n = (e.media || []).length;
+                    const cv = mk("button", "", `Cloud Vision 으로 읽기 · ${n}건`);
+                    cv.type = "button";
+                    cv.disabled = used + n > cap;
+                    if (cv.disabled) cv.title = "이번 달 상한에 닿아 쓸 수 없습니다";
+                    cv.addEventListener("click", () => this.readOcr(e, "cloud"));
+                    const two = mk("div", "two");
+                    const gq = mk("button", "ghost", "Groq 로 다시");
+                    gq.type = "button";
+                    gq.disabled = groqLocked;
+                    gq.addEventListener("click", () => this.readOcr(e, "groq"));
+                    const ig = mk("button", "ghost", "무시");
+                    ig.type = "button";
+                    ig.addEventListener("click", () => this.dismissOcr(e, false));
+                    two.append(gq, ig);
+                    act.append(cv, two);
+                }
+                row.append(th, info, act);
+                return row;
+            },
+
+            async readOcr(e, engine, skipConfirm) {
+                const n = (e.media || []).length;
+                const u = (this.ocr && this.ocr.usage) || {};
+                const used = u.used || 0, cap = u.cap || 900;
+                if (!skipConfirm) {
+                    const title = (e.raw || e.title || "").split("\n").filter(Boolean)[0] || "";
+                    const msg = engine === "cloud"
+                        ? `「${title.slice(0, 60)}」 글의 이미지 ${n}장을 Google Cloud Vision 으로 읽습니다.\n\n` +
+                          `이번에 쓰는 건수: ${n}건\n읽은 뒤 이번 달: ${used + n} / ${cap}건 (무료 ${u.free || 1000}건 안)\n\n` +
+                          `읽은 글자로 다시 처리합니다. 행사 배너는 판정을 다시 하고(Groq 텍스트 모델) 결과가 「LLM 판단」에 남아 반려할 수 있습니다. ` +
+                          `그룹 영상은 찾은 멤버를 예고 탭 「참여 멤버 확인 대기」에 미리 체크만 합니다.`
+                        : `「${title.slice(0, 60)}」 글의 이미지 ${n}장을 Groq 비전으로 다시 읽습니다. 또 실패하면 그대로 대기에 남습니다.`;
+                    if (!(await this.confirmModal({ title: engine === "cloud" ? "Cloud Vision 으로 이미지 읽기" : "Groq 로 다시 읽기",
+                                                     message: msg, okText: engine === "cloud" ? `${n}건 읽기` : "다시 읽기" }))) return false;
+                }
+                this.ocrBusy = true;
+                let ok = false;
+                try {
+                    const r = await this.apiCall("POST", "/read_ocr_pending", { item_id: e.id, engine });
+                    ok = !!r.ok;
+                    this.showToast(r.ok ? `읽음 — ${(r.result || {}).result || ""}`.slice(0, 120) : (r.error || "실패"), r.ok ? "success" : "error");
+                } catch (err) {
+                    this.showToast(`실패: ${err.message}`, "error");
+                } finally {
+                    this.ocrBusy = false;
+                }
+                await this.loadOcrPending();
+                return ok;
+            },
+
+            async readAllOcr() {
+                const pend = ((this.ocr && this.ocr.items) || []).filter((e) => e.status === "pending");
+                const n = pend.reduce((s, e) => s + (e.media || []).length, 0);
+                const u = (this.ocr && this.ocr.usage) || {};
+                if (!pend.length) return;
+                if (!(await this.confirmModal({ title: "모두 Cloud Vision 으로 읽기",
+                        message: `대기 ${pend.length}건의 이미지 ${n}장을 Google Cloud Vision 으로 읽습니다.\n\n이번에 쓰는 건수: ${n}건\n` +
+                                 `읽은 뒤 이번 달: ${(u.used || 0) + n} / ${u.cap || 900}건\n\n한 건씩 차례로 처리합니다.`,
+                        okText: `${n}건 읽기` }))) return;
+                for (const e of pend) {
+                    if (!(await this.readOcr(e, "cloud", true))) break;      // 하나라도 실패하면 멈춘다(상한 · 인증 문제)
+                }
+            },
+
+            async dismissOcr(e, done) {
+                if (!done && !(await this.confirmModal({ title: "이미지 판독 대기에서 빼기",
+                        message: "이 글의 이미지는 읽지 않습니다. 본문만으로 처리한 결과는 그대로 남습니다.", okText: "빼기", danger: true }))) return;
+                try {
+                    const r = await this.apiCall("POST", "/dismiss_ocr_pending", { item_id: e.id });
+                    if (!r.ok) this.showToast(r.error || "실패", "error");
+                } catch (err) {
+                    this.showToast(`실패: ${err.message}`, "error");
+                }
+                this.loadOcrPending();
             },
 
             async dismissGroupPending(e) {
@@ -4084,6 +4302,7 @@
             // ─────────────────────────────────────────────────────────────────────
 
             async loadJobs() {
+                this.loadOcrPending();
                 try {
                     const data = await this.apiCall("GET", "/jobs_overview");
                     const hist = await this.apiCall("GET", "/list_history?limit=50");
