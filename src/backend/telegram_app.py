@@ -1803,11 +1803,16 @@ def _apply_notice_timing(parsed: dict, tm: dict, raw: str, now_iso: str, *, tag=
         p2 = xnotice.parse(d["next_text"], now_iso, tag=tag, title=title)
         if p2:
             if gh is not None:
-                _llm_record(gh, "notice_timing", "notice", f"지난 일의 소감 — 다음 일정만 소식으로 · {(p2.get('title') or '')[:40]}", why,
+                _llm_record(gh, "notice_timing", "notice", f"소감 — 다음 일정만 소식으로 · {(p2.get('title') or '')[:40]}", why,
                             undo=None, now_iso=now_iso, input=inp)
             flowtrace.mark("소식 시점", "done", d["why"])
             return p2
         d = dict(d, why=d["why"] + " (다음 일정 줄이 소식 형식이 아님)")
+        if d.get("until"):      # (v4.6.3) 오늘 일의 소감이면 다음 일정 줄을 못 읽어도 전처럼 오늘 자정까지 올린다
+            if not parsed.get("expires_at") or parsed["expires_at"] > d["until"]:
+                parsed = dict(parsed, expires_at=d["until"])
+            flowtrace.mark("소식 시점", "done", d["why"])
+            return parsed
     # drop — 지난 일의 소감 · 보고
     if gh is not None:
         _llm_record(gh, "notice_timing", "notice", f"소감 · 보고라 소식으로 안 올림 — {head}", why, undo=None, now_iso=now_iso, input=inp)
@@ -7690,6 +7695,16 @@ if __name__ == "__main__":
                                           "reason": "지난 행사 감사 + 다음 회차"})
         _p_next = _apply_notice_timing(xnotice.parse(_raw_n, _NOW_T), _notice_timing(_raw_n, None, _NOW_T), _raw_n, _NOW_T, gh=_tg)
         assert _p_next and _p_next["date"] == "2026-10-25" and "ありがとう" not in (_p_next.get("body_raw") or ""), _p_next
+        # (v4.6.3) 오늘 일(날짜 모름)의 소감 + 다음 일정 → 다음 일정만(자정에 내리지 않음) · 다음 일정 줄이 소식 형식이 아니면 전처럼 오늘 자정까지
+        _make_llm_client = lambda: _TLLM({"kind": "report", "subject": "お渡し会", "subject_date": None,
+                                          "evidence": ["ご参加いただき、ありがとうございました✨"],
+                                          "next_lines": ["次回は10/25(日)BanG Dream! STOREにてお渡し会を開催！"], "reason": "오늘 행사 감사 + 다음 회차"})
+        _p_tn = _apply_notice_timing(xnotice.parse(_raw_n, _NOW_T), _notice_timing(_raw_n, None, _NOW_T), _raw_n, _NOW_T, gh=_tg)
+        assert _p_tn and _p_tn["date"] == "2026-10-25" and (_p_tn.get("expires_at") or "") > "2026-10-11T15:00:00Z", _p_tn
+        _make_llm_client = lambda: _TLLM({"kind": "report", "subject": "お渡し会", "subject_date": None,
+                                          "evidence": ["ご参加いただき、ありがとうございました✨"], "next_lines": ["お楽しみに✨"], "reason": "오늘 행사 감사"})
+        _p_tf = _apply_notice_timing(xnotice.parse(_raw_n, _NOW_T), _notice_timing(_raw_n, None, _NOW_T), _raw_n, _NOW_T, gh=_tg)
+        assert _p_tf and _p_tf["expires_at"] == "2026-10-11T15:00:00Z", _p_tf
         # 판정 실패 — 올리고, 반려하면 내릴 수 있게 기록
         _make_llm_client = lambda: _TLLM(None)
         _p_fail = _apply_notice_timing(_pt, _notice_timing(_raw_t, None, _NOW_T), _raw_t, _NOW_T, gh=_tg)
