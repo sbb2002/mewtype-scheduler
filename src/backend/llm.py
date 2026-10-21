@@ -48,7 +48,7 @@ DEFAULT_MODEL = "openai/gpt-oss-120b"
 # gpt-oss-20b 로 폴백 — 작고 빠르며 지시이행 동일.
 FALLBACK_MODEL = "openai/gpt-oss-20b"
 
-# (v4.5.12) Groq 429 — 받으면 그 모델로는 다시 보내지 않고 한동안 이 프로세스에서 그 모델을 아예 부르지 않는다.
+# (v4.6.1) Groq 429 — 받으면 그 모델로는 다시 보내지 않고 한동안 이 프로세스에서 그 모델을 아예 부르지 않는다.
 # 전엔 429 에도 `_call_groq` 가 1 · 2 · 4초 뒤 다시 보내고(3번), 판정 함수가 응답이 없어도 다시 묻기를 5회 돌려
 # 판정 1건에 최대 30요청(5 × 두 모델 × 3번)이 나갔다 — 분당 · 일일 한도는 몇 초 뒤에 풀리지 않으니 429 만 키웠다(2026-10-21).
 # 막는 시간: 일일 한도(TPD · RPD — 429 본문에 「per day」)면 1시간, 분당 한도면 Groq 가 알려 준 대기 시간(retry-after 헤더 ·
@@ -661,7 +661,7 @@ class LLMClient:
 
         URL 우선 ingest 경로에서, 걸려있는 유튜브 URL 의 채널이 우리 5인/공식 채널이
         아닐 때만 호출된다(외부 채널 콜라보 오탐 방지 게이트). 제대로 된 JSON 응답을
-        받을 때까지 최대 5회 시도(5xx 백오프는 `_call_groq` 담당, v4.5.12 부터 호출 실패 · 429 면 다시 묻지 않고 바로) — 5회 모두
+        받을 때까지 최대 5회 시도(5xx 백오프는 `_call_groq` 담당, v4.6.1 부터 호출 실패 · 429 면 다시 묻지 않고 바로) — 5회 모두
         실패하면 None 을 반환하고, 호출부는 등록하지 않는 쪽(안전한 실패)으로 처리한다.
 
         Args:
@@ -690,7 +690,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_PARTICIPATION_SCHEMA)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -757,7 +757,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_ANNOUNCE_SCHEMA)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -840,7 +840,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -912,7 +912,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -981,7 +981,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=schema)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 result = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -1025,7 +1025,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_BANNER_SCOPE_SCHEMA)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 r = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -1101,7 +1101,7 @@ class LLMClient:
             if not response:
                 response = self._call_groq(self.fallback, prompt, json_schema=_BANNER_EXTRACT_SCHEMA)
             if not response:
-                break   # (v4.5.12) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
+                break   # (v4.6.1) 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다 — 다시 묻기는 답이 틀렸을 때만
             try:
                 r = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
@@ -1320,14 +1320,14 @@ class LLMClient:
                 "json_schema": json_schema,
             }
 
-        # (v4.5.12) 429 로 막혀 있는 모델이면 보내지 않는다(위 _RATE_BLOCK)
+        # (v4.6.1) 429 로 막혀 있는 모델이면 보내지 않는다(위 _RATE_BLOCK)
         blk = _blocked(model)
         if blk:
             self._last_err = f"Groq {'일일' if blk['kind'] == 'daily' else '분당'} 한도로 호출 멈춤 중 ({int(blk['until'] - time.time())}초 남음)"
             logger.info("Groq: %s — %s 요청 안 보냄", self._last_err, model)
             return None
 
-        # ponytail: 지수 백오프 3회 (1s/2s/4s) — 5xx · 타임아웃만. 429 는 다시 보내지 않는다(v4.5.12)
+        # ponytail: 지수 백오프 3회 (1s/2s/4s) — 5xx · 타임아웃만. 429 는 다시 보내지 않는다(v4.6.1)
         delays = [1.0, 2.0, 4.0]
 
         for attempt, delay in enumerate(delays):
@@ -1489,7 +1489,7 @@ if __name__ == "__main__":
     assert result.get("title_ko") == "신정 이벤트"
     print("✓ 정상 응답 파싱: title_ja/title_ko 추출됨")
 
-    # ──── 시나리오 3: (v4.5.12) 429 → 다시 보내지 않고 그 모델을 한동안 막음 ────
+    # ──── 시나리오 3: (v4.6.1) 429 → 다시 보내지 않고 그 모델을 한동안 막음 ────
     print("\n[시나리오 3] 429 → 재시도 없음 · 모델별 차단 · 판정 다시 묻기 중단")
     print("-" * 70)
 

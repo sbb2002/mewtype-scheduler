@@ -755,7 +755,7 @@ class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, sessio
   그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. 판정 함수 7개(`participation` · `announces_own_broadcast` ·
   `collab_partners` · `broadcast_change_targets` · `duplicate_notice` · `banner_scope` · `banner_extract`)는 **답이 틀렸을 때만**(JSON 깨짐 · 필드 없음 · 근거 없음)
   (메인→폴백) 쌍을 최대 5회 다시 묻는다.
-- **(v4.5.12) 429 — 다시 보내지 않고 그 모델을 한동안 막는다.** `_call_groq` 가 429 를 받으면 재시도 · 대기 없이 None 을 돌려주고, 그 프로세스에서 그 모델을
+- **(v4.6.1) 429 — 다시 보내지 않고 그 모델을 한동안 막는다.** `_call_groq` 가 429 를 받으면 재시도 · 대기 없이 None 을 돌려주고, 그 프로세스에서 그 모델을
   일일 한도(429 본문에 `per day` · `(TPD)` · `(RPD)`)면 1시간(`DAILY_BLOCK_SEC`), 분당 한도면 Groq 가 알려 준 대기 시간(`retry-after` 헤더 → 본문 「try again in …」 →
   없으면 60초, 1~600초) 동안 부르지 않는다(`_RATE_BLOCK`, 상태 = `llm.rate_block_state()`). 막힌 모델은 요청 없이 바로 None.
   판정 함수의 다시 묻기도 호출 실패(429 · 5xx · 네트워크 · 막힘)면 바로 끝낸다 — 판정 1건이 보내는 요청은 429 일 때 모델마다 1번(전엔 최대 30번 =
