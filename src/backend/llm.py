@@ -313,6 +313,106 @@ def evidence_in_text(evidence: str, text: str) -> bool:
     return len(e) >= 2 and e in _norm_quote(text)
 
 
+def _banner_title(title: str, text: str) -> str:
+    """(v4.5.10) 행사 · 가챠 제목 정리 — 「…」 로 감싼 부분이 있으면 그 안쪽만(「チャレンジライブイベント「アイの奔流 AtoZ」」 → アイの奔流 AtoZ),
+    본문에 대소문자 · 전각/반각만 다르게 있으면 본문 표기(비전이 「shake your 魂」 처럼 읽어도 본문 「Shake Your 魂」 으로). 본문 우선(2026-10-21 운영자 지시)."""
+    import unicodedata
+    t = (title or "").strip()
+    m = re.search(r"「([^「」]+)」", t)
+    if m:
+        t = m.group(1).strip()
+    t = t.strip("「」『』 　")
+    if not t:
+        return t
+    r = unicodedata.normalize("NFKC", text or "")
+    i = r.casefold().find(unicodedata.normalize("NFKC", t).casefold())
+    return r[i:i + len(unicodedata.normalize("NFKC", t))] if i >= 0 else t
+
+
+_DAY_WORDS_JA = {"本日": 0, "今日": 0, "今夜": 0, "このあと": 0, "この後": 0, "明日": 1, "あす": 1, "あした": 1}
+
+
+def _jst_in_evidence(value: str | None, evidence: str, posted_jst: str) -> bool:
+    """(v4.5.10) "YYYY-MM-DD[ HH:MM]" 값이 **그 값의 근거 구절**에 적혀 있나 — 날짜(10月7日 · 10/7 · 2026.10.7 · 明日 등 게시일 기준 상대 표현)와,
+    시각이 있으면 시각(20:59 · 15時)까지. 다른 항목의 기간을 빌려 쓴 값(실측: AtoZ 가챠 종료에 이벤트 종료 10/7 을 옮김)을 거른다."""
+    import datetime as _dt
+    import unicodedata
+    m = re.match(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?\s*$", value or "")
+    if not m:
+        return False
+    t = unicodedata.normalize("NFKC", evidence or "")
+    mo, d = int(m.group(2)), int(m.group(3))
+    ok = bool(re.search(rf"(?<!\d)0?{mo}\s*月\s*0?{d}\s*日", t) or re.search(rf"(?<!\d)0?{mo}\s*[/.]\s*0?{d}(?!\d)", t))
+    if not ok:
+        pm = re.match(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})", posted_jst or "")
+        if pm:
+            base = _dt.date(int(pm.group(1)), int(pm.group(2)), int(pm.group(3)))
+            want = _dt.date(int(m.group(1)), mo, d)
+            ok = any(w in t and base + _dt.timedelta(days=off) == want for w, off in _DAY_WORDS_JA.items())
+    if not ok:
+        return False
+    if m.group(4) is not None:
+        h, mi = int(m.group(4)), m.group(5)
+        return bool(re.search(rf"(?<!\d)0?{h}\s*:\s*{mi}(?!\d)", t) or (mi == "00" and re.search(rf"(?<!\d)0?{h}\s*時", t)))
+    return True
+
+
+def _near_event_word(title: str, full: str) -> bool:
+    """(v4.5.10) 인게임 이벤트 표지 — 제목 앞 40자 · 뒤 20자 안에 「イベント」가 있나(본문 · 이미지 글자).
+    실측: 「BanG Dream! 13th☆LIVE「DIMENSIONAL OVERLAP」開催記念 ミッションパス」 의 라이브(공연) 이름을 이벤트로 뽑은 일이 있었다."""
+    import unicodedata
+    f = unicodedata.normalize("NFKC", full or "").casefold()
+    k = unicodedata.normalize("NFKC", title or "").casefold()
+    i = f.find(k) if k else -1
+    while i >= 0:
+        if "イベント" in f[max(0, i - 40):i + len(k) + 20]:
+            return True
+        i = f.find(k, i + 1)
+    return False
+
+
+# (v4.5.10) 행사 판정 2단계 — 1단계 = 게임 안/밖(근거 구절 목록), 2단계 = 이벤트 · 가챠 옮겨 적기. 배너 처리는 코드(banners.plan_post).
+_BANNER_SCOPE_SCHEMA = {
+    "name": "banner_scope",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["in_game", "outside"]},
+            "evidence": {"type": "array", "items": {"type": "string"}},
+            "reason": {"type": "string"},
+        },
+        "required": ["scope", "evidence", "reason"],
+        "additionalProperties": False,
+    },
+}
+_BANNER_EXTRACT_SCHEMA = {
+    "name": "banner_extract",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "items": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["event", "gacha"]},
+                    "status": {"type": "string", "enum": ["normal", "postponed", "cancelled"]},
+                    "title_ja": {"type": "string"}, "title_ko": {"type": "string"},
+                    "start_jst": {"type": ["string", "null"]}, "start_evidence": {"type": "string"},
+                    "end_jst": {"type": ["string", "null"]}, "end_evidence": {"type": "string"},
+                },
+                "required": ["kind", "status", "title_ja", "title_ko", "start_jst", "start_evidence", "end_jst", "end_evidence"],
+                "additionalProperties": False,
+            }},
+            "image_roles": {"type": "array", "items": {"type": "string", "enum": ["event", "gacha", "none"]}},
+            "reason": {"type": "string"},
+        },
+        "required": ["items", "image_roles", "reason"],
+        "additionalProperties": False,
+    },
+}
+
+
 def _strip_json_fence(text: str) -> str:
     """```json ... ``` 펜스나 앞뒤 잡텍스트를 벗겨 JSON 본체만 남긴다."""
     t = (text or "").strip()
@@ -846,141 +946,160 @@ class LLMClient:
         logger.warning("duplicate_notice: 5회 모두 실패 — None (신규로 등록)")
         return None
 
-    def banner_judge(self, text: str, posted_jst: str, active: list[dict],
-                     images_ocr: list[dict] | None = None) -> dict | None:
+    def banner_scope(self, text: str) -> dict | None:
         """
-        (v4a) 행사 판정 — 게임 계정(`bang_dream_on`) 글 1건이 「행사 배너」에 무엇을 해야 하는지.
+        (v4.5.10) 행사 판정 1단계 — 게임 계정(`bang_dream_on`) 글이 알리는 것이 **게임 앱 안의 일**인지 **게임 앱 밖의 일**인지만 묻는다.
 
-        active: [{"id", "name_ja", "start_jst", "end_jst", "hold": bool, "gachas": [제목…]}, …] — 지금 배너에 올라 있는 행사.
-        posted_jst: 글 게시 시각 "YYYY-MM-DD HH:MM"(일본 표준시 JST).
-        images_ocr: [{"idx": 1, "text": "이미지 속 글자 또는 None"}, …] — 첨부 이미지를 비전으로 읽은 글자(개최기간이 본문이 아니라
-            이미지에만 있는 경우가 실측으로 확인됨). 주면 이미지마다 용도(image_roles)도 판정한다.
+        2026-10-21 운영자 확정 기준: 게임 밖 행사(타 기업 · 장소 콜라보 · 오프라인 행사 · 굿즈 등 유저 대상 일반 행사) = 소식,
+        게임 안의 일 = 2단계(`banner_extract`)로 이벤트 · 가챠를 뽑아 코드가 배너를 정한다. 전엔 한 번의 판정에 「행사인가 · 무엇을 할까 ·
+        소식인가」를 다 물어 같은 글에도 실행마다 답이 흔들렸고, 행사 정의를 좁히자 가챠 글이 엉뚱한 행사에 붙었다(ref/v4.5.9).
 
-        Returns:
-            {"action": none|upsert|hold|cancel, "banner_ref": id|None,
-             "event": {"name_ja","name_ko","start_jst","end_jst","permanent"}|None,
-             "gacha": {"title_ja","title_ko","start_jst","end_jst"}|None,
-             "image_for": event|gacha|none, "image_roles": [event|gacha|none …], "reason": str}
-            5회 모두 실패하면 None(호출부가 등록하지 않음 — 잘못 올라간 배너가 더 눈에 띄므로 소식과 반대 기본값).
-        시각은 JST 문자열로 받고, 검증 · UTC 변환은 `banners.apply_judgement` 가 한다.
+        **근거 필수**(v4.5.5 와 같은 방식) — evidence = 원문에서 그대로 복사한 구절 목록. 비었거나 원문에 없는 구절이 있으면 다시 묻는다.
+        구절 하나로 받으면 떨어진 두 줄을 이어 붙여 「원문에 없음」으로 계속 실패했다(실측 JR 콜라보 글 3/3) — 그래서 목록.
+
+        Returns: {"scope": "in_game"|"outside", "evidence": [구절…], "reason": str} — 5회 모두 실패하면 None(호출부가 올리지 않음).
         """
         if self.disabled:
             return None
-        ids = [a["id"] for a in active]
-        n_img = len(images_ocr or [])
-        masked, mapping = _mask_glossary(text or "")
-        act_lines = "\n".join(
-            f'- id="{a["id"]}" 이름={a.get("name_ja")} 기간={a.get("start_jst")}~{a.get("end_jst")}'
-            f'{" (보류 중)" if a.get("hold") else ""} 가챠={" / ".join(a.get("gacha_periods") or a.get("gachas") or []) or "없음"}'
-            for a in active) or "(없음)"
-        rules = [
-            "게임 「バンドリ！ アワーノーツ」 공식 계정 글이 하나 들어왔다. 이 글이 팬 사이트의 「행사 배너」에 무엇을 해야 하는지 판정하라.",
-            "행사 = 게임 안 기간 한정 이벤트(예: 챌린지 라이브). 가챠 = 행사와 함께 오는 뽑기.",
-            "대상 = 이 게임이 알리는 행사 · 가챠 전부다. 어느 밴드 · 멤버가 나오는지는 따지지 않는다(夢限大みゅーたいぷ 가 아니어도 올린다).",
-            "규칙:",
-            "- 점검 · 사과 · 보상 배포 · 불편 안내 · 로그인 보너스 · 생방송 안내 · 곡 추가 · 업데이트 안내 같은 일반 공지(행사 · 가챠가 아닌 글) → action=none. 출연 밴드 · 멤버를 이유로 none 으로 하지 않는다.",
-            "- 현재 배너 목록의 행사와 같은 행사인데 새 사실(기간 · 가챠 · 곡)이 없고 「이 후 18:00 개최」 같은 당일 재공지 · 참여 독려뿐 → none.",
-            "- 단, 당일 재공지라도 글이 알리는 개최 시각이 현재 배너 목록의 시작 시각과 다르면 새 사실(시작 변경)이므로 upsert 하고 event_start_jst 에 새 시각을 준다.",
-            "- 새 행사 또는 기존 행사의 새 사실(개최일 · 종료일 · 가챠 · 신곡) → upsert. 기존 행사면 banner_ref 에 그 id.",
-            "- 상시화된 행사(종료 없이 상시 운영 · 常設 · 常時開催) → permanent=true, action=none.",
-            "- 개최가 보류 · 중단되어 새 날짜가 없다 → hold(banner_ref 필수). 새 날짜가 공지되면 upsert 로 새 기간을 준다.",
-            "- 행사 취소 · 조기 종료 → cancel(banner_ref 필수).",
-            "- 시각은 일본 표준시(JST) 문자열 \"YYYY-MM-DD HH:MM\"(날짜만 알면 \"YYYY-MM-DD\"), 모르면 null. 연도가 없으면 글 게시 시각 기준으로 정한다. "
-            "「このあと18:00より」 같은 상대 표현은 글 게시 시각의 날짜 + 그 시각으로 계산한다. "
-            "「~10月8日(木)20:59まで」 의 종료는 그 날짜 20:59.",
-            "- 「開催」 「開始」 처럼 지금 막 열렸다는 글인데 시작 시각이 글에 없고 기존 행사 목록에도 없으면 event_start_jst 는 글 게시 시각으로 둔다.",
-            "- 가챠 글은 반드시 upsert 한다(이미 목록에 있는 가챠를 소개만 하는 글도 — 이때 새로 알게 된 것이 없으면 gacha_* 날짜는 null). 가챠 시작 시각이 현재 배너 목록 행사의 기간 안이면(같이 열리는 가챠) banner_ref 에 그 행사 id 를 주고 gacha_* 를 채운다. "
-            "어느 행사에도 딸리지 않는 가챠(단독 가챠)는 banner_ref=null 로 하고 가챠 제목을 event_name_ja · event_name_ko 에 넣어 새 행사로 올리며 gacha_* 도 같이 채운다.",
-            "- 가챠 정보가 글에 있으면 gacha_* 를 채우고 없으면 null. 가챠에 자체 개최기간이 있으면(이미지 포함) 행사와 달라도 그대로 gacha_start_jst · gacha_end_jst 에 준다. 자체 기간이 없으면 null(행사와 같다는 뜻).",
-            "- 날짜 · 시각은 **이 글(이미지 글자 포함)에 적힌 것만** 쓴다. 현재 배너 목록의 행사 기간 · 다른 가챠 기간을 옮겨 적거나 추측하지 않는다 — "
-            "「10月18日より開催中」처럼 시각 없이 날짜만 있는 표현으로 이미 아는 시작 시각을 바꾸지 않는다(그 경우 null).",
-            "- 이름 · 제목은 일본어 원문 그대로(name_ja · title_ja)와 자연스러운 한국어 번역(name_ko · title_ko)을 둘 다 준다. "
-            "「」 같은 괄호는 원문 그대로 둔다. @@GLOSSARY0@@ 같은 토큰은 그대로 둔다.",
-            "- image_for: 글 첨부 이미지가 행사 소개면 event, 가챠 소개면 gacha, 아니면 none.",
-        ]
-        if n_img:
-            rules += [
-                f"- 첨부 이미지가 {n_img}장 있고 아래에 이미지 속 글자(OCR, 오독 가능)가 있다. 글 본문에 개최기간이 없으면 이미지 속 개최기간을 쓴다. 본문과 이미지가 다르면 본문이 우선.",
-                f"- image_roles: 이미지 {n_img}장 각각의 용도를 이미지 순서대로 {n_img}개 준다. **행사의 키비주얼 그 자체**(행사 로고 · 일러스트 · 개최기간 · 저작권 표기만 있는 온전한 그림)만 event 로 한다. "
-                "「初回イベント情報」 「イベントガチャ紹介」 「あらすじ紹介」 처럼 제목 막대와 설명문이 붙은 소개 카드, 방송 화면 캡처, 멤버 일러스트 소개, 보상 소개는 none. "
-                "가챠 이미지는 gacha(팬 사이트는 가챠 이미지를 쓰지 않지만 구분은 한다).",
-            ]
-        else:
-            rules.append("- image_roles 는 빈 배열 [] 로 준다.")
-        rules += [
-            "- reason 에 판정 근거를 한국어 한 문장으로 쓴다.",
-            "JSON 포맷만 출력.",
-        ]
-        ocr_block = ""
-        if n_img:
-            ocr_block = "\n첨부 이미지 속 글자(OCR):\n" + "\n".join(
-                f"이미지{o.get('idx')}: {(o.get('text') or '(글자 없음)').strip()}" for o in images_ocr) + "\n"
-        prompt = (
-            "\n".join(rules)
-            + f"\n\n글 게시 시각(JST): {posted_jst}\n현재 배너 목록:\n{act_lines}\n\n글:\n{masked}\n{ocr_block}"
-        )
-        nstr = {"type": ["string", "null"]}
-        schema = {
-            "name": "banner_judge",
-            "strict": True,
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "action": {"type": "string", "enum": ["none", "upsert", "hold", "cancel"]},
-                    "banner_ref": {"type": ["string", "null"], "enum": [*ids, None]},
-                    "event_name_ja": nstr, "event_name_ko": nstr,
-                    "event_start_jst": nstr, "event_end_jst": nstr,
-                    "permanent": {"type": "boolean"},
-                    "gacha_title_ja": nstr, "gacha_title_ko": nstr,
-                    "gacha_start_jst": nstr, "gacha_end_jst": nstr,
-                    "image_for": {"type": "string", "enum": ["event", "gacha", "none"]},
-                    "image_roles": {"type": "array", "items": {"type": "string", "enum": ["event", "gacha", "none"]}},
-                    "reason": {"type": "string"},
-                },
-                "required": ["action", "banner_ref", "event_name_ja", "event_name_ko", "event_start_jst", "event_end_jst",
-                             "permanent", "gacha_title_ja", "gacha_title_ko", "gacha_start_jst", "gacha_end_jst",
-                             "image_for", "image_roles", "reason"],
-                "additionalProperties": False,
-            },
-        }
-
-        def _u(v, to):
-            return _unmask_glossary(v, mapping, to=to).strip() if isinstance(v, str) and v.strip() else None
-
+        base = _with_hint(
+            "게임 「BanG Dream! Our Notes(バンドリ！ アワーノーツ)」 공식 계정 글이다. "
+            "이 글이 알리는 것이 **게임 앱 안에서 하는 일**인지 **게임 앱 밖의 일**인지만 판단하라.\n"
+            "- in_game: 플레이어가 게임 앱 안에서 하는 것 — 이벤트 · 이벤트 스토리 · 가챠 · 미션 · 로그인 보너스 · 보상 · 곡 추가 · 업데이트 · 점검. "
+            "영화 · 라이브 등을 기념하는 것이라도 게임 안에서 하는 것이면 in_game.\n"
+            "- outside: 게임 앱 밖에서 하는 것 — 타 기업 · 장소와의 콜라보(카페 · 철도 · 매장), 오프라인 행사 · 토크쇼 · 사인회 · 전시, "
+            "굿즈 · 음반 · 특전, 광고 게재, 방송 · 영상 공개, 생방송 프로그램.\n"
+            "evidence = 판단 근거가 된 구절들 — 글에서 한 줄씩 **그대로 복사**한다(바꾸거나 여러 줄을 이어 붙이지 말 것). "
+            "reason = 판단 이유 한국어 한 문장.\nJSON 으로만 답하라.\n\n글:\n" + (text or ""))
+        prompt = base
         for attempt in range(1, 6):
-            prompt = _with_hint(prompt)   # (v4a) 재판단이면 「반려됐다」 힌트를 앞에 붙인다
-            response = self._call_groq(self.model, prompt, json_schema=schema)
+            response = self._call_groq(self.model, prompt, json_schema=_BANNER_SCOPE_SCHEMA)
             if not response:
-                response = self._call_groq(self.fallback, prompt, json_schema=schema)
+                response = self._call_groq(self.fallback, prompt, json_schema=_BANNER_SCOPE_SCHEMA)
             if not response:
                 continue
             try:
                 r = json.loads(_strip_json_fence(response))
             except json.JSONDecodeError:
-                logger.info(f"banner_judge: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                logger.info(f"banner_scope: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
                 continue
-            if not isinstance(r, dict) or r.get("action") not in ("none", "upsert", "hold", "cancel"):
-                logger.info(f"banner_judge: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
+            if not isinstance(r, dict) or r.get("scope") not in ("in_game", "outside"):
+                logger.info(f"banner_scope: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
                 continue
-            ev = None
-            if r.get("event_name_ja") or r.get("event_start_jst") or r.get("event_end_jst"):
-                ev = {"name_ja": _u(r.get("event_name_ja"), "ja"), "name_ko": _u(r.get("event_name_ko"), "ko"),
-                      "start_jst": r.get("event_start_jst"), "end_jst": r.get("event_end_jst"),
-                      "permanent": bool(r.get("permanent"))}
-            elif r.get("permanent"):
-                ev = {"name_ja": None, "name_ko": None, "start_jst": None, "end_jst": None, "permanent": True}
-            ga = None
-            if r.get("gacha_title_ja"):
-                ga = {"title_ja": _u(r.get("gacha_title_ja"), "ja"), "title_ko": _u(r.get("gacha_title_ko"), "ko"),
-                      "start_jst": r.get("gacha_start_jst"), "end_jst": r.get("gacha_end_jst")}
-            roles = [x if x in ("event", "gacha", "none") else "none" for x in (r.get("image_roles") or [])]
-            if n_img and len(roles) != n_img:
-                roles = []                       # 장수가 안 맞으면 쓰지 않는다(호출부가 image_for 로 대신 정함)
-            return {"action": r["action"], "banner_ref": r.get("banner_ref") if r.get("banner_ref") in ids else None,
-                    "event": ev, "gacha": ga, "image_for": r.get("image_for") or "none", "image_roles": roles,
-                    "reason": (r.get("reason") or "").strip()[:200]}
+            ev = [str(e).strip() for e in (r.get("evidence") or []) if str(e).strip()]
+            why = str(r.get("reason") or "").strip()
+            if not ev or len(why) < 5 or not all(evidence_in_text(e, text or "") for e in ev):
+                logger.info(f"banner_scope: 근거 없음 · 원문에 없는 근거 — 다시 묻는다 (attempt {attempt}/5) — {r!r}")
+                prompt = (base + "\n\n주의: 바로 전 답은 근거가 없거나 원문에 없는 구절을 근거로 들어 받지 않았다. "
+                          "evidence 의 각 구절은 위 글에 실제로 있는 한 줄을 그대로 복사하라.")
+                continue
+            return {"scope": r["scope"], "evidence": ev, "reason": why[:200]}
+        logger.info("banner_scope: 5회 모두 실패(응답 · 근거) — None (올리지 않음) — 호출부가 기록")
+        return None
 
-        logger.info("banner_judge: 5회 모두 실패 — None (등록하지 않음) — 호출부가 기록")
+    def banner_extract(self, text: str, posted_jst: str, images_ocr: list[dict] | None = None) -> dict | None:
+        """
+        (v4.5.10) 행사 판정 2단계 — 게임 안의 일을 알리는 글에서 **인게임 이벤트**와 **가챠**만 적힌 그대로 뽑는다(판단은 코드 — `banners.plan_post`).
+
+        인게임 이벤트 = 게임 속 인물들의 스토리가 있는 이벤트(챌린지 라이브 등). 미션 · 로그인 보너스 · 캠페인 · 시리얼 코드는 뽑지 않는다(버림 —
+        2026-10-21 운영자 결정: 이 앱은 유메미타 활동 소식이 목적이라 게임 잡소식을 채우지 않는다).
+        **본문이 정본**, 이미지 글자(`images_ocr`, 비전 OCR)는 본문에 없는 정보(주로 개최기간)를 채우는 보조(2026-10-21 운영자 지시).
+        제목 · 기간 근거가 본문 · 이미지 글자에 없으면 다시 묻는다. 제목은 본문 표기로 맞추고(`_banner_title`) 「…」 안쪽만 남긴다.
+
+        Returns:
+            {"items": [{"kind": "event"|"gacha", "status": "normal"|"postponed"|"cancelled", "title_ja", "title_ko",
+                        "start_jst", "end_jst", "period_evidence"} …],     # 날짜는 "YYYY-MM-DD HH:MM" | "YYYY-MM-DD" | None
+                        # 날짜는 자기 근거 구절(start/end_evidence)에 적혀 있을 때만 남는다(`_jst_in_evidence`, 3회 다시 묻고도 안 되면 그 날짜만 비움).
+                        # event 는 제목 근처에 「イベント」가 있을 때만(`_near_event_word`) — 공연 · 영화 이름 거르기.
+             "image_roles": [event|gacha|none …] (이미지 수와 같을 때만, 아니면 []), "reason": str}
+            5회 모두 실패하면 None.
+        """
+        if self.disabled:
+            return None
+        ocr = [o for o in (images_ocr or []) if isinstance(o, dict)]
+        n_img = len(ocr)
+        ocr_txt = "".join(f"\n이미지 글자 {o.get('idx')}:\n{(o.get('text') or '(글자 없음)').strip()}\n" for o in ocr)
+        full = (text or "") + "\n" + ocr_txt
+        rules = [
+            "게임 공식 계정 글(본문)과 첨부 이미지에서 읽은 글자(이미지 글자)다. 이 글이 알리는 **인게임 이벤트**와 **가챠**만 **적힌 그대로** 뽑아라. "
+            "판단하지 말고 옮겨 적기만 한다.",
+            "- event = 게임 속 인물들의 스토리가 있는 인게임 이벤트(예: チャレンジライブイベント「…」, ○○初イベント「…」予告). "
+            "gacha = 「…ガチャ」 또는 ガチャ「…」.",
+            "- 미션 · 미션패스 · 로그인 보너스 · 기념 캠페인 · 시리얼 코드 · 곡 추가 · 보상 소개 자체는 뽑지 않는다"
+            "(이벤트 · 가챠 이름이 함께 적혀 있으면 그 이벤트 · 가챠는 뽑는다). 뽑을 것이 없으면 items 는 빈 배열.",
+            "- **본문이 정본이다.** 이미지 글자는 본문에 없는 정보(주로 개최기간)를 채우는 보조다. 같은 정보가 둘 다 있으면 본문의 표기 · 값을 쓴다. "
+            "이미지 글자는 판독 오류가 있을 수 있다.",
+            "- title_ja: 「」 안에 적힌 이름만 그대로(앞뒤의 「チャレンジライブイベント」 같은 꾸밈말 · 이모지 제외) — 본문에 있으면 본문 표기. "
+            "이름이 적혀 있지 않으면 그 항목은 뽑지 않는다. title_ko: 자연스러운 한국어 번역.",
+            "- status: 보통 normal. 개최가 보류 · 연기되어 새 날짜가 없다 → postponed. 취소 · 조기 종료 → cancelled.",
+            "- start_jst / end_jst: \"YYYY-MM-DD HH:MM\"(시각을 모르면 \"YYYY-MM-DD\"). 연도가 없으면 게시일 기준. "
+            "「明日15:00」 같은 상대 표현은 게시 시각 기준으로 계산. 「~10月8日(木)20:59まで」의 종료는 그 날짜 20:59. "
+            "**본문 · 이미지 글자에 적혀 있지 않은 날짜는 null.** 다른 항목의 기간을 빌려 쓰지 말 것.",
+            "- start_evidence / end_evidence: **그 항목의** 시작 · 종료 날짜(와 시각)가 적힌 구절을 본문(없으면 이미지 글자)에서 그대로 복사(날짜가 null 이면 빈 문자열). "
+            "이벤트와 가챠의 기간이 따로 적혀 있으면 각자 자기 구절을 쓴다(가챠 기간은 가챠 소개 쪽).",
+            "- 실제 공연(○th☆LIVE 등) · 영화 · 방송의 이름은 event 가 아니다.",
+        ]
+        if n_img:
+            rules.append(f"- image_roles: 이미지 {n_img}장 각각의 용도를 순서대로 {n_img}개. **이벤트 키비주얼 그 자체**(로고 · 일러스트 · 개최기간 · 저작권 표기만 있는 "
+                         "온전한 그림)만 event. 「初回イベント情報」 「ガチャ紹介」 「あらすじ紹介」 처럼 제목 막대와 설명문이 붙은 소개 카드 · 방송 캡처 · "
+                         "멤버 소개 · 보상 소개는 none, 가챠 이미지는 gacha.")
+        else:
+            rules.append("- image_roles 는 빈 배열 [].")
+        rules += ["- reason: 무엇을 뽑았는지(또는 왜 없는지) 한국어 한 문장.", "JSON 으로만 답하라."]
+        base = _with_hint("\n".join(rules) + f"\n\n게시 시각(JST): {posted_jst}\n본문:\n{text or ''}\n{ocr_txt}")
+        prompt = base
+        for attempt in range(1, 6):
+            response = self._call_groq(self.model, prompt, json_schema=_BANNER_EXTRACT_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=_BANNER_EXTRACT_SCHEMA)
+            if not response:
+                continue
+            try:
+                r = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.info(f"banner_extract: JSON 파싱 실패 (attempt {attempt}/5) — {response!r}")
+                continue
+            if not isinstance(r, dict) or not isinstance(r.get("items"), list):
+                logger.info(f"banner_extract: 예상 필드 부재 (attempt {attempt}/5) — {r!r}")
+                continue
+            items, bad, dropped = [], None, []
+            for it in r["items"]:
+                if not isinstance(it, dict) or it.get("kind") not in ("event", "gacha"):
+                    bad = f"항목 형식 {it!r}"[:80]
+                    break
+                title = _banner_title(str(it.get("title_ja") or ""), text or "")
+                if not evidence_in_text(title, full):
+                    bad = f"제목 「{title[:20]}」 원문에 없음"
+                    break
+                if it["kind"] == "event" and not _near_event_word(title, full):
+                    dropped.append(title)          # 공연 · 영화 이름 — 다시 묻지 않고 뺀다
+                    continue
+                dates = {}
+                for side in ("start", "end"):
+                    v = (str(it.get(f"{side}_jst") or "").strip() or None)
+                    ev = str(it.get(f"{side}_evidence") or "").strip()
+                    if v and not (ev and evidence_in_text(ev, full) and _jst_in_evidence(v, ev, posted_jst)):
+                        if attempt <= 3:
+                            bad = f"「{title[:20]}」 {'시작' if side == 'start' else '종료'} {v} 가 근거 구절 「{ev[:30]}」 에 없음"
+                            break
+                        v = None                   # 끝까지 근거가 없으면 그 날짜만 비운다(지어낸 날짜보다 빈 날짜가 낫다)
+                    dates[side] = (v, ev if v else "")
+                if bad:
+                    break
+                items.append({"kind": it["kind"], "status": it.get("status") if it.get("status") in ("normal", "postponed", "cancelled") else "normal",
+                              "title_ja": title, "title_ko": (str(it.get("title_ko") or "").strip() or None),
+                              "start_jst": dates["start"][0], "end_jst": dates["end"][0],
+                              "period_evidence": " / ".join(x for x in (dates["start"][1], dates["end"][1]) if x)})
+            if bad:
+                logger.info(f"banner_extract: {bad} — 다시 묻는다 (attempt {attempt}/5)")
+                prompt = (base + f"\n\n주의: 바로 전 답은 받지 않았다({bad}). 제목 · start_evidence · end_evidence 는 위 본문 · 이미지 글자에 실제로 있는 글자를 "
+                          "그대로 복사하고, 날짜는 그 구절에 적힌 것만 써라(다른 항목의 기간을 빌려 쓰지 말 것).")
+                continue
+            roles = [x if x in ("event", "gacha", "none") else "none" for x in (r.get("image_roles") or [])]
+            why = str(r.get("reason") or "").strip()
+            if dropped:
+                why += f" (이벤트 표지 없음 — 뺌: {', '.join(dropped)[:60]})"
+            return {"items": items, "image_roles": roles if n_img and len(roles) == n_img else [], "reason": why[:200]}
+        logger.info("banner_extract: 5회 모두 실패 — None (올리지 않음) — 호출부가 기록")
         return None
 
     def translate(self, text_ja: str) -> str | None:
@@ -1887,6 +2006,50 @@ if __name__ == "__main__":
     _s5 = _ReadingSession(["🍭페로캔"])                       # 처음부터 깨끗하면 재요청 없음
     assert LLMClient("k", session=_s5).translate("🍭ペロキャン") == "🍭페로캔" and _s5.calls == 1
     print("✓ 가나 잔존 → 1회 재요청(고치면 채택 · 못 고치면 유지 · 깨끗하면 호출 1회)")
+
+    # ──── (v4.5.10) 행사 판정 2단계 — banner_scope(게임 안/밖, 근거 목록) · banner_extract(이벤트 · 가챠 옮겨 적기) ────
+    print("\n[v4.5.10] banner_scope · banner_extract")
+    print("-" * 70)
+    _jr = "📢#推し旅 コラボ開催決定！🚅\nJR東海×『BanG Dream! Our Notes』\n\n・東海道新幹線乗車特典"
+    _ss = _ReadingSession([
+        '{"scope": "outside", "evidence": ["JR東海×『BanG Dream! Our Notes』ここだけ"], "reason": "철도 콜라보다."}',   # 원문에 없는 구절 → 거절
+        '{"scope": "outside", "evidence": ["JR東海×『BanG Dream! Our Notes』", "東海道新幹線乗車特典"], "reason": "철도 콜라보다."}'])
+    _r = LLMClient("k", session=_ss).banner_scope(_jr)
+    assert _r and _r["scope"] == "outside" and len(_r["evidence"]) == 2 and _ss.calls == 2, _r
+    assert LLMClient("k", session=_ReadingSession(['{"scope": "in_game", "evidence": [], "reason": "게임 안 이벤트다."}'] * 10)).banner_scope("x") is None
+    print("✓ banner_scope: 원문에 없는 근거 · 빈 근거는 다시 묻기")
+    _txt = "明日15:00より開催🎉\nチャレンジライブイベント「Shake Your 魂, Baby!!」"
+    _ocr = [{"idx": 1, "text": "イベント\nshake your 魂, Baby!!\n開催期間：10月18日 15:00 ～ 10月26日 14:59"}]
+    _ex = LLMClient("k", session=_ReadingSession([
+        '{"items": [{"kind": "event", "status": "normal", "title_ja": "チャレンジライブイベント「shake your 魂, Baby!!」", "title_ko": "셰이크", '
+        '"start_jst": "2026-10-18 15:00", "start_evidence": "明日15:00より開催", "end_jst": "2026-10-26 14:59", '
+        '"end_evidence": "開催期間：10月18日 15:00 ～ 10月26日 14:59"}], "image_roles": ["event"], "reason": "이벤트 1건."}']))
+    _r = _ex.banner_extract(_txt, "2026-10-17 18:00", _ocr)
+    assert _r["items"][0]["title_ja"] == "Shake Your 魂, Baby!!", _r      # 「」 안쪽만 + 본문 표기(대소문자)
+    assert _r["items"][0]["end_jst"] == "2026-10-26 14:59" and _r["image_roles"] == ["event"], _r
+    assert _banner_title("ガチャ「差し込む光、始まりのとき」", "ガチャ「差し込む光、始まりのとき」") == "差し込む光、始まりのとき"
+    _bad = LLMClient("k", session=_ReadingSession([
+        '{"items": [{"kind": "gacha", "status": "normal", "title_ja": "없는 가챠", "title_ko": "", "start_jst": null, "end_jst": null, '
+        '"start_evidence": "", "end_evidence": ""}], "image_roles": [], "reason": "."}'] * 10))
+    assert _bad.banner_extract(_txt, "2026-10-17 18:00") is None, "원문에 없는 제목은 받지 않음"
+    _none = LLMClient("k", session=_ReadingSession(['{"items": [], "image_roles": ["event", "none"], "reason": "미션 안내라 없음."}']))
+    assert _none.banner_extract("限定ミッション", "2026-10-15 22:43", _ocr) == {"items": [], "image_roles": [], "reason": "미션 안내라 없음."}
+    # 남의 기간을 빌린 날짜(근거 구절에 없음) — 3회까지 다시 묻고, 그래도면 그 날짜만 비운다
+    _borrow = ('{"items": [{"kind": "gacha", "status": "normal", "title_ja": "ワタシが主役のサイバーナイトガチャ", "title_ko": "", '
+               '"start_jst": "2026-09-28 15:00", "start_evidence": "9月28日(月)15:00より", "end_jst": "2026-10-07 20:59", "end_evidence": "9月28日(月)15:00より"}], '
+               '"image_roles": [], "reason": "."}')
+    _at = "9月28日(月)15:00よりチャレンジライブイベント「アイの奔流 AtoZ」\nイベントガチャ「ワタシが主役のサイバーナイトガチャ」"
+    _sb = _ReadingSession([_borrow] * 5)
+    _r = LLMClient("k", session=_sb).banner_extract(_at, "2026-09-24 22:08")
+    assert _r["items"][0]["start_jst"] == "2026-09-28 15:00" and _r["items"][0]["end_jst"] is None and _sb.calls == 4, (_r, _sb.calls)
+    assert _jst_in_evidence("2026-10-09 15:00", "明日15:00より開催", "2026-10-08 21:04") and not _jst_in_evidence("2026-10-09 16:00", "明日15:00より", "2026-10-08 21:04")
+    assert _jst_in_evidence("2026-11-30", "2026.11.30 - 2027.2.28", "2026-10-20 14:42") and _jst_in_evidence("2026-10-18 15:00", "10月18日 15時から", "")
+    # 공연 이름(「イベント」 표지 없음)은 event 로 받지 않는다
+    _live = LLMClient("k", session=_ReadingSession(['{"items": [{"kind": "event", "status": "normal", "title_ja": "DIMENSIONAL OVERLAP", "title_ko": "", '
+                                                   '"start_jst": null, "start_evidence": "", "end_jst": null, "end_evidence": ""}], "image_roles": [], "reason": "."}']))
+    _r = _live.banner_extract("BanG Dream! 13th☆LIVE\n「DIMENSIONAL OVERLAP」\n開催記念 ミッションパス🛸", "2026-10-11 21:02")
+    assert _r["items"] == [] and "이벤트 표지 없음" in _r["reason"], _r
+    print("✓ banner_extract: 「」 안쪽 · 본문 표기 · 근거 없는 제목 거절 · 이미지 수 안 맞는 용도 버림 · 남의 기간 빌림 거름 · 공연 이름 거름")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")

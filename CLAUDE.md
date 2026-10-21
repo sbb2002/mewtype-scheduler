@@ -57,12 +57,19 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.6.0 (프론트, 2026-10-19) + 핫픽스 v4.5.9** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.5.9`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
+> **v4.5.10 (핫픽스, 브랜치 `hotfix/game-collab-notice`, 2026-10-21, 백엔드만 — 미배포)**: **행사 판정을 기준부터 다시.** 기준(10-21 운영자 확정) = 1순위 **인게임 이벤트**(게임 속 인물들의 스토리가 있는 이벤트) + 시작이 같은 가챠 ·
+> 2순위 **가챠 단독 배너**(이벤트 없이 다른 행사로 열린 한시 가챠, `gacha_only`) · **게임 밖 행사** = 소식 · 미션 · 로그인 보너스 등 = 버림. 시작 일자만 확정되면 올리고(종료는 나중에), 같은 이벤트를 별도 배너로 올리지 않는다.
+> `llm.banner_judge` 삭제 → `llm.banner_scope`(게임 안/밖, 근거 구절 필수) + `llm.banner_extract`(이벤트 · 가챠를 적힌 그대로, 날짜마다 자기 근거 구절 · 「イベント」 표지) → `banners.plan_post` · `apply_post`(코드가 갱신 · 새 배너 · 붙이기 · 버림을 정함, 묶음 되돌리기).
+> 이미지 글자는 본문이 정본 · 보조, 비전은 3장씩 한 요청(`vision.read_cards`) · 예비 모델(404 인 qwen3.6-27b) 제거. 계기: 10-20 JR 콜라보 「推し旅」가 배너로 올라감 · 1차 패치가 Ave Mujica 가챠를 サイドスロー 에 붙임. 상세 `docs/SPEC.md` 계약 J 「행사 판정」, 요약 `docs/VERSION.md`, 경위 devpapers `ref/v4.5.9/`.
+> **v4.5.9 이미지 판독 예비는 새 흐름에 옮겨 붙였다**: `_prepare_banner` 가 게임 안 글의 이미지를 `_ocr_banner_images_ex`(→ `vision.read_cards`)로 읽고 호출이 실패하면 `ocr_failed` →
+> 커밋 뒤 「이미지 판독 대기」 · 허가된 판독 글자(`_OCR_OVERRIDE`)가 있으면 비전 대신 그 글자 · 다시 반영(`_OCR_RECHECK`)이면 `apply_post(check_dup=False)`. `read_cards` 도 일일 한도 429 는 바로 실패 + `last_failed`.
+>
 > **v4.5.9 (핫픽스, 브랜치 `hotfix/ocr-fallback`, 2026-10-21, 백엔드 + 관리 페이지 — 배포 완료 `mewtype-backend` 00164 · `mewtype-telegram` 00115, 롤백 = 00162 · 00114 / 병합 `685168f`)**: **이미지 판독 예비 — 운영자 허가 시에만 Cloud Vision.** Groq 비전(qwen3.8-27b)이 이미지를 못 읽으면(429 · 5xx)
 > 자동 경로는 본문만으로 처리를 계속하고 ops `ocr_pending.json` 「이미지 판독 대기」에 적어 DM(1시간에 한 번) → 관리 페이지 **작업 탭 「확인 필요」**(탭 배지 · 첫 입장 팝업 「지금 확인하기」, 「다시 보지 않기」는 그 로그인 동안만)에서 허가하면 Google Cloud Vision(`cloudvision.py`)으로 읽어
 > 같은 경로를 다시 탄다(행사 배너 재판정 · 그룹 영상 확인 대기 제안 멤버). Cloud Vision 은 자동으로 부르지 않고, 월 900건(무료 1,000)을 앱이 세어 막는다. 일일 한도 429 는 재시도 없이 1시간 호출 중단.
 > 비전 기본 폴백(404 인 qwen3.6-27b) 제거. 계기: 10-21 실험이 같은 키의 Groq 비전 일일 토큰을 거의 다 써 운영 OCR 이 막힐 뻔함. 상세 `docs/SPEC.md` §8.17, 요약 `docs/VERSION.md`.
 > 같은 브랜치에서 **작업 탭 재구성(시안 D)**: 요약 카드 3장 + 하위 탭 [타임라인 · 확인 필요 · 예약·대기 · 시스템 상태] + 흐름 · 자동 처리 · 내 조작을 합친 시간순 타임라인(PC 오른쪽 상세). SPEC §8.17.
-> 배포 때: `deploy/setup.sh`(vision API · INVOKER_SA serviceUsageConsumer) 먼저, 그다음 두 서비스 재배포. 행사 판정 재설계(`hotfix/game-collab-notice`, v4.5.10 으로 번호 변경)와 같은 곳(`_prepare_banner`)을 고쳐 병합 때 맞춰야 한다.
+> 배포 때: `deploy/setup.sh`(vision API · INVOKER_SA serviceUsageConsumer) 먼저, 그다음 두 서비스 재배포. 행사 판정 재설계(`hotfix/game-collab-notice`)는 v4.5.10 으로 번호를 바꿔 이 위에 병합(아래 v4.5.10 항목).
 >
 > **v4.5.8 (핫픽스, 브랜치 `hotfix/king-arrive`, 2026-10-20, 백엔드 + 프론트 — 배포 완료 `mewtype-backend` 00162 · `mewtype-telegram` 00114, 롤백 = 00160 · 00113 / 프론트 main `a5fca00` · 추가분 `bc05ec3`)**: **노노카 지각 이스터에그 라이브 입장 연출 · 카드 보기 글자.** ① 백엔드 — 영상 없는 예고(자리표시)가 실물에 흡수될 때 예고 시각을
 > 실물 `announced_start` 로 남김(`preview_build._carry_collab`). 10-20 「20:00 예고 → 20:26 바로 시작한 영상」이 지각 17초로 계산돼 입장 연출이 빠졌다. ② 프론트(운영자 결정) — 지각한 방송이 라이브인 동안은 **시각 제한 없이** 페이지가 그 방송을 라이브로
@@ -436,7 +443,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 >     영상 URL 이 있으면 `videos.list` 로, 없으면 본문 예고 파싱(게시 시각 기준)의 `expires_at` 으로 판단. 공식 계정 원문(소식 경로)은 대상 아님.
 >     (운영자는 「live 종료 + 20분」이라 했으나 코드의 end 창이 30분이라 30분으로 맞춤 — 운영자 확인 10-01.)
 >   - **행사 배너**(2026-10-02, v4a 만): 게임 계정(`config/channels.json` `game_accounts` — `bang_dream_on`, 표시명 バンドリ！アワーノーツ)의 글은 소식 · 스케줄이 아니라
-    **행사 판정**(`llm.banner_judge` → `banners.apply_judgement`)으로만 간다 → 소식 란 펼침 맨 위 **행사 카드**(안에 딸린 가챠 하위 블록, `banners.json`, 프론트 `js/banners.js` · `css/banners.css`).
+    **행사 판정**(`llm.banner_judge` → `banners.apply_judgement` — v4.5.10 부터 `llm.banner_scope` · `banner_extract` → `banners.plan_post` · `apply_post`, 위 v4.5.10 항목)으로만 간다 → 소식 란 펼침 맨 위 **행사 카드**(안에 딸린 가챠 하위 블록, `banners.json`, 프론트 `js/banners.js` · `css/banners.css`).
     **개최 전 공지는 종료일을 몰라도 올림**(시작 일시를 먼저 알림), 시작한 뒤에도 종료일 없는 행사 · 상시화 행사는 안 올림(대기로 저장), 개최 보류는 `mm.dd(보류)` + 15일,
     디자인 = 흐린 이미지 배경 + 절취선 카드(종료 일정 박스 두 칸 · 진행 막대: 늦은 종료 100% · 먼저 끝나는 종료는 점선 · 점선 이후 `///` · 달력 D-3 부터 노랑 · 점선을 넘으면 빨강 · 말풍선 꼬리는 현재 위치),
     **모두 종료돼도 그날 자정(KST)까지 회색 「종료」로 표시**,
@@ -543,6 +550,7 @@ src/
     vxtwitter.py       # (v3) 트윗 unfurl — 잘린 URL·이미지 복원 (api.vxtwitter.com)
     vision.py          # (v3.2) Groq 비전 OCR — 크로스오버 공지 이미지 속 출연진 이름 판독
                        #        (qwen/qwen3.8-27b — v4.5.9 부터 폴백 없음, 옛 qwen3.6-27b 는 404). 실패 시 None
+                       #        (v4a) read_card 행사 카드 글자 · (v4.5.10) read_cards 3장씩 한 요청
     cloudvision.py     # (v4.5.9) Google Cloud Vision 글자 판독 — Groq 비전이 못 읽은 이미지의 예비. 관리 페이지에서 운영자가 허가할 때만(월 900건 상한, SPEC §8.17)
     #  (삭제됨) pending.py — v3 는 FSM 을 preview 아이템에서 파생하므로 불필요
     gh_store.py        # GitHub Contents API read/write (직렬화 규칙 store.py 와 동일)

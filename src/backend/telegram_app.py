@@ -2970,6 +2970,7 @@ _BANNER_VERDICT = {
     "dup": "행사 배너 — 이미 반영한 글",
     "invalid": "행사 배너 — 판정 값 검증 실패(올리지 않음)",
     "skip_permanent": "행사 배너 — 상시화된 행사(올리지 않음)",
+    "notice": "행사 배너 아님 — 게임 밖 콜라보 · 행사라 소식으로",   # (v4.5.10)
     "error": "행사 배너 — 반영 실패",
     "llm_failed": "행사 배너 — 판정 LLM 실패(올리지 않음)",
 }
@@ -3030,8 +3031,8 @@ _OCR_RECHECK: contextvars.ContextVar[bool] = contextvars.ContextVar("ocr_recheck
 
 
 def _ocr_banner_images_ex(media: list[str], limit: int = 4) -> tuple[list[dict], bool]:
-    """(v4.5.9) `_ocr_banner_images` + 실패 여부 — (판독 목록, 한 장이라도 호출이 실패했나). 「글자 없음」은 실패가 아니다.
-    `_OCR_OVERRIDE` 가 있으면 비전을 부르지 않고 그 글자를 쓴다."""
+    """(v4.5.9) `_ocr_banner_images` + 실패 여부 — (판독 목록, 호출이 실패했나). 「글자 없음」은 실패가 아니다.
+    `_OCR_OVERRIDE` 가 있으면 비전을 부르지 않고 그 글자를 쓴다. (v4.5.10) 3장씩 한 요청(`vision.read_cards` — qwen3.8-27b 는 요청당 이미지 3장까지)."""
     urls = list(media or [])[:limit]
     ov = _OCR_OVERRIDE.get()
     if ov is not None:
@@ -3040,15 +3041,13 @@ def _ocr_banner_images_ex(media: list[str], limit: int = 4) -> tuple[list[dict],
     vc = _make_vision_client()
     if vc is None or not urls:
         return [], False
-    out, failed = [], False
-    for i, url in enumerate(urls, start=1):
-        try:
-            out.append({"idx": i, "text": vc.read_card(image_url=url)})
-            failed = failed or bool(getattr(vc, "last_failed", False))
-        except Exception:  # noqa: BLE001
-            log.warning("행사 배너 이미지 OCR 실패 (%s)", url, exc_info=True)
-            out.append({"idx": i, "text": None})
-            failed = True
+    try:
+        texts = vc.read_cards(urls)
+        failed = bool(getattr(vc, "last_failed", False))
+    except Exception:  # noqa: BLE001
+        log.warning("행사 배너 이미지 OCR 실패 (%d장)", len(urls), exc_info=True)
+        texts, failed = [None] * len(urls), True
+    out = [{"idx": i, "text": t} for i, t in enumerate(texts, start=1)]
     return (out if any(o["text"] for o in out) else []), failed
 
 
@@ -3058,9 +3057,15 @@ def _ocr_banner_images(media: list[str], limit: int = 4) -> list[dict]:
 
 
 def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str, gh) -> dict:
-    """(제어 채널) 행사 판정 준비 — 현재 배너를 읽고 외부 LLM 을 1회 부른다.
+    """(제어 채널) 행사 판정 준비 — 외부 LLM 2단계(v4.5.10). 배너를 어떻게 할지는 커밋 때 코드가 정한다(`banners.plan_post`).
 
-    반환: {"judgement": dict, "post": {tweet_id, media}} | {"failed": 사유}. 실패 땐 등록하지 않는다.
+    2026-10-21 운영자 확정 기준: 1순위 인게임 이벤트(게임 속 인물들의 스토리가 있는 이벤트) + 가챠 · 2순위 이벤트 없이 다른 행사로 열린 한시 가챠 ·
+    게임 밖 행사 = 소식 · 미션 · 로그인 보너스 등 = 버림. ① `llm.banner_scope` 게임 안/밖(근거 필수) → 밖이면 notice(호출부가 소식으로)
+    ② 안이면 첨부 이미지 글자를 읽고(본문이 정본, 이미지는 보조) `llm.banner_extract` 로 이벤트 · 가챠를 옮겨 적는다.
+    전엔 판정 1회에 「행사인가 · 무엇을 할까 · 기존 어느 배너인가」를 다 물어 같은 글에도 답이 흔들렸다(경위 ref/v4.5.9).
+
+    반환: {"judgement": 요약(action · reason · event · gacha — 기록 · 라벨용), "items": [...], "image_roles": [...], "post": {...}}
+          · 사용자 판단(강제값)이면 {"judgement": 판정, "post": ...}(items 없음 — 옛 단일 판정 경로) · {"failed": 사유}. 실패 땐 등록하지 않는다.
     """
     fj = _review_forced("banner")        # 사용자 판단 — 운영자가 정한 판정으로 LLM 을 건너뛴다
     if fj is not None:
@@ -3074,46 +3079,43 @@ def _prepare_banner(raw: str, tag: str | None, vx_ex: dict | None, now_iso: str,
     llm_client = _make_llm_client()
     if llm_client is None:
         return {"failed": "LLM 비활성(GROQ_API_KEY 없음)"}
-    try:
-        prev, _ = gh.read_json(_BANNERS_PATH)
-    except Exception:  # noqa: BLE001
-        log.warning("행사 배너 준비: banners.json 읽기 실패", exc_info=True)
-        prev = None
-    prev = prev or banners.default_banners()
     posted = _banner_posted_jst(tag, now_iso)
-    active = banners.for_llm(prev, now_iso)
+    posted_at, _ = banners.parse_jst(posted)
     media = list((vx_ex or {}).get("media") or [])[:4]      # OCR · 용도 판정과 장수를 맞춘다
-    j = llm_client.banner_judge(raw, posted, active)
-    if j is None:
-        return {"failed": "LLM 판정 5회 실패"}
-    # 2단계 — 글만으로 행사 정보가 있다고 본 판정에 한해, 첨부 이미지 속 글자(개최기간은 이미지에만 있는 경우가 실측으로 있었다)를
-    # 비전으로 읽어 다시 판정한다. 무관한 글(대부분)은 비전 호출이 없다. 읽기 실패 · 재판정 실패면 1단계 판정을 그대로 쓴다.
-    # 새 사실이 없다고 본 글이라도 이미 올라 있는 행사 · 가챠 이름이 본문에 있으면 이미지 속 기간이 바뀌었을 수 있다(실측: 09-30 가챠 개최 글의
-    # 이미지에만 가챠 종료일이 10/9 로 늘어난 것이 적혀 있었다) — 그 경우에도 이미지를 읽는다.
-    related = j.get("action") == "none" and banners.covers_text(banners.active(prev, now_iso), raw)
-    ocr = None
-    ocr_failed = False
-    ov = _OCR_OVERRIDE.get()
-    if media and (j.get("action") == "upsert" or related or ov is not None):
-        ocr, ocr_failed = _ocr_banner_images_ex(media)
-        if ocr:
-            j2 = llm_client.banner_judge(raw, posted, active, images_ocr=ocr)
-            if j2 is not None:
-                j = j2
-            j["image_roles"] = _filter_banner_roles(j.get("image_roles") or [], ocr)
     tid = ""
     if xtweet is not None and tag:
         try:
             tid = xtweet._tweet_id(tag) or ""
         except Exception:  # noqa: BLE001
             tid = ""
-    # (v4.5.3) 날짜 근거 — 반영 쪽(banners.apply_judgement)이 이미 있는 날짜를 바꿀 때 이 글자(본문 + 이미지 OCR)에 그 날짜가 있는지 본다
-    evidence = "\n".join([raw or ""] + [str(o.get("text") or "") for o in (ocr or []) if isinstance(o, dict)])
-    posted_at, _ = banners.parse_jst(posted)
+    sc = llm_client.banner_scope(raw)
+    if sc is None:
+        return {"failed": "LLM 판정(게임 안/밖) 5회 실패"}
+    why = f"{'게임 밖' if sc['scope'] == 'outside' else '게임 안'} — {sc['reason']} (근거: 「{'」 「'.join(e[:40] for e in sc['evidence'][:3])}」)"
+    if sc["scope"] == "outside":
+        return {"judgement": {"action": "notice", "banner_ref": None, "event": None, "gacha": None, "reason": why[:300]},
+                "post": {"tweet_id": tid, "media": media}}
+    # (v4.5.9) 이미지 판독 예비 — 허가된 판독 글자가 주입돼 있으면 비전을 부르지 않고 그 글자를 쓰고, 비전 호출이 실패하면 커밋 뒤 「이미지 판독 대기」에 적는다
+    ov = _OCR_OVERRIDE.get()
+    ocr, ocr_failed = _ocr_banner_images_ex(media) if media else ([], False)
+    ex = llm_client.banner_extract(raw, posted, ocr)
+    if ex is None:
+        return {"failed": "LLM 판정(이벤트 · 가챠 옮겨 적기) 5회 실패"}
+    items = ex["items"]
+    first_ev = next((i for i in items if i["kind"] == "event"), None)
+    first_ga = next((i for i in items if i["kind"] == "gacha"), None)
+    j = {"action": "upsert" if items else "none", "banner_ref": None,
+         "event": {"name_ja": first_ev["title_ja"]} if first_ev else None,
+         "gacha": {"title_ja": first_ga["title_ja"]} if first_ga else None,
+         "reason": f"{why} / {ex['reason'] or ('이벤트 · 가챠 없음' if not items else '')}"[:300]}
     if ov is not None:
         j["reason"] = f"[이미지 판독 {ov.get('engine') or ''}] " + (j.get("reason") or "")
-    out = {"judgement": j, "post": {"tweet_id": tid, "media": media, "text": evidence, "posted_at": posted_at,
-                                    "recheck": bool(_OCR_RECHECK.get())}}
+    # (v4.5.3) 날짜 근거 — 반영 쪽(banners.plan_post · apply_judgement)이 날짜를 쓸 때 이 글자(본문 + 이미지 OCR)에 그 날짜가 있는지 본다
+    evidence = "\n".join([raw or ""] + [str(o.get("text") or "") for o in ocr if isinstance(o, dict)])
+    roles = _filter_banner_roles(ex.get("image_roles") or [], ocr) if ocr else []
+    out = {"judgement": j, "items": items, "image_roles": roles,
+           "post": {"tweet_id": tid, "media": media, "text": evidence, "posted_at": posted_at,
+                    "recheck": bool(_OCR_RECHECK.get())}}
     if ocr_failed:
         out["ocr_failed"] = _groq_vision_reason()      # (v4.5.9) 커밋 뒤 「이미지 판독 대기」에 적는다
     return out
@@ -3140,7 +3142,14 @@ def _commit_banner(gh, prepared: dict | None, now_iso: str) -> dict:
         swept, arc2, moved = banners.sweep(prev, arc, now_iso)
         post = prepared.get("post") or {}
         # (v4.5.9) 이미지 판독 예비로 다시 처리하는 글은 이미 한 번 반영됐으므로 「이미 반영한 글」 검사를 건너뛴다
-        r = banners.apply_judgement(swept, prepared["judgement"], post, now_iso, check_dup=not post.get("recheck"))
+        recheck = bool(post.get("recheck"))
+        if prepared.get("items") is not None:
+            # (v4.5.10) 반영 계획은 커밋 때 지금 배너 상태로 세운다(준비와 커밋 사이에 다른 글이 배너를 바꿨을 수 있다)
+            steps = banners.plan_post(swept, prepared["items"], post.get("text") or "", post.get("posted_at"), now_iso,
+                                      prepared.get("image_roles") or [])
+            r = banners.apply_post(swept, steps, post, now_iso, check_dup=not recheck)
+        else:
+            r = banners.apply_judgement(swept, prepared["judgement"], post, now_iso, check_dup=not recheck)
         new_a = dict(arc2)
         if r["archive_add"]:
             new_a["banners"] = list(new_a.get("banners") or []) + r["archive_add"]
@@ -3223,6 +3232,18 @@ def _banner_ingest_core(raw: str, phone_raw: str, vx_ex: dict | None, x_tag: str
         _dm_lost_raw("행사 판정 LLM 실패 — 올리지 않음", raw, title=title or "", kind="route", tag=x_tag, gh=gh)
         return {"ok": True, "banner": "llm_failed", "detail": prepared["failed"]}, 200
     j = prepared["judgement"]
+    if j.get("action") == "notice":
+        # (v4.5.10 운영자 결정) 게임 밖 콜라보 · 행사(게임 안 이벤트 스토리 · 가챠 없음 — 예: 2026-10-20 JR 도카이 × Our Notes 「推し旅」)는
+        # 행사 배너가 아니라 일반 소식으로. 소식 파이프라인(제목 추출 · 번역 · 중복 판정)을 그대로 탄다. 배너 쪽은 바꾸지 않으므로 되돌릴 데이터가 없다(검토용 기록) —
+        # 잘못 올라간 소식은 관리 페이지 소식 탭에서 지운다.
+        flowtrace.mark("행사 판정", "done", "게임 밖 콜라보 · 행사 → 소식으로")
+        nmode = _maybe_auto_notice(raw, now_iso, tag=x_tag, title=title)
+        _llm_record(gh, "banner_judge", acct, f"{_BANNER_VERDICT['notice']} (소식 {nmode})",
+                    j.get("reason") or "", undo=None, now_iso=now_iso,
+                    input=_inp(raw, tag=x_tag, acct=acct, media=(prepared.get("post") or {}).get("media")))
+        _log_event_safe(gh, now_iso, "notice", RESULT_OK, who=acct, via="ingest",
+                        detail=f"banner mode: notice · 소식 {nmode}"[:200])
+        return {"ok": True, "banner": "notice", "detail": f"소식 {nmode}"}, 200
     try:
         result = writeclient.call_write("apply_banner", gh=gh, prepared=prepared, now_iso=now_iso,
                                         label=_banner_label(prepared))
@@ -3271,7 +3292,10 @@ def _undo_banner_action(gh, e: dict, action_id: str, now_iso: str) -> dict:
         prev, psha, arc, asha = _banners_rw(gh)
         new_b, new_a, msg = banners.restore(prev, u, arc, now_iso)
         if msg == "되돌림":
-            applied.append(f"행사 배너 되돌림 — {((u.get('before') or {}).get('name_ko') or (u.get('before') or {}).get('name_ja') or u.get('id'))}")
+            # (v4.5.10) 한 글이 여러 배너를 바꾼 경우 undo["items"] — 이름을 다 적는다(새로 만든 것은 before 가 없어 id)
+            names = dict.fromkeys(((x.get("before") or {}).get("name_ko") or (x.get("before") or {}).get("name_ja") or x.get("id") or "")
+                                  for x in (u.get("items") if isinstance(u.get("items"), list) else [u]))
+            applied.append(f"행사 배너 되돌림 — {', '.join(n for n in names if n)}")
             try:
                 _banners_write(gh, new_b, psha, new_a, arc, asha, f"data: 행사 배너 LLM 판단 되돌리기 {action_id} {now_iso}")
             except ConflictError:
@@ -4859,7 +4883,10 @@ def _need_cfg_name(channel_key: str) -> tuple[dict, str, str]:
 def _run_banner(gh, e, inp, mode, dec, now_iso, ctx) -> str:
     raw, tag = inp.get("raw") or "", inp.get("tag") or ""
     acct = inp.get("acct") or e.get("who") or ""
-    if mode == "user":
+    if mode == "user" and dec.get("choice") == "notice":     # (v4.5.10) 게임 밖 콜라보 · 행사 → 소식으로
+        ctx["forced"]["banner"] = {"action": "notice", "banner_ref": None, "event": None, "gacha": None,
+                                   "image_for": "none", "image_roles": [], "reason": "사용자 판단 — 소식으로"}
+    elif mode == "user":
         if dec.get("choice") != "register":
             _user_noop(gh, e, "행사 배너 — 사용자 판단: 올리지 않음", now_iso)
             return "사용자 판단: 올리지 않음 (변경 없음)"
@@ -7262,6 +7289,26 @@ if __name__ == "__main__":
     assert _game_account(None, "夢限大みゅーたいぷ", _gcfg) is None and _game_account(None, "", _gcfg) is None
     assert _game_account({"author": "bang_dream_on"}, "", {"game_accounts": {}}) is None
 
+    # (v4.5.10) 행사 판정 notice = 게임 밖 콜라보 · 행사 → 배너를 안 건드리고 소식 파이프라인으로
+    _saved = (_prepare_banner, _maybe_auto_notice, _llm_record, _log_event_safe, writeclient.call_write)
+    _calls = []
+    try:
+        _prepare_banner = lambda *a, **k: {"judgement": {"action": "notice", "banner_ref": None, "event": None, "gacha": None,
+                                                         "image_for": "none", "image_roles": [], "reason": "JR 콜라보"},
+                                           "post": {"tweet_id": "1", "media": []}}
+        _maybe_auto_notice = lambda raw, now_iso, tag=None, title=None: _calls.append(("notice", raw)) or "added"
+        _llm_record = lambda gh, kind, who, summary, reason, **k: _calls.append(("llm", kind, summary, k.get("undo")))
+        _log_event_safe = lambda *a, **k: None
+        writeclient.call_write = lambda *a, **k: (_ for _ in ()).throw(AssertionError("배너 쓰기를 부르면 안 된다"))
+        _nb, _nc = _banner_ingest_core("📢#推し旅 コラボ開催決定！", "", None, "p#1", "バンドリ！アワーノーツ",
+                                       "2026-10-20T05:44:00Z", object(), "bang_dream_on")
+    finally:
+        _prepare_banner, _maybe_auto_notice, _llm_record, _log_event_safe, writeclient.call_write = _saved
+    assert _nc == 200 and _nb["banner"] == "notice" and _nb["detail"] == "소식 added", _nb
+    assert _calls[0] == ("notice", "📢#推し旅 コラボ開催決定！"), _calls
+    assert _calls[1][1] == "banner_judge" and "소식" in _calls[1][2] and _calls[1][3] is None, _calls   # 검토용 기록(되돌릴 데이터 없음)
+    print("  ✓ (v4.5.10) 행사 판정 notice → 소식 파이프라인 · 배너 쓰기 없음")
+
     class _MemGH:
         """read_json/write_json 만 흉내 내는 메모리 저장소(sha = 쓰기 횟수)."""
         def __init__(self):
@@ -7328,7 +7375,53 @@ if __name__ == "__main__":
     assert _filter_banner_roles(["event", "event", "gacha"], _ocr) == ["none", "event", "gacha"]
     assert _filter_banner_roles(["event"], [{"text": "x"}, {"text": "y"}]) == ["event"]       # 장수가 안 맞으면 그대로
 
-    print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제)")
+    # (v4.5.10) 2단계 판정 — 게임 안/밖(banner_scope) → 이벤트 · 가챠 옮겨 적기(banner_extract) → 커밋 때 plan_post · apply_post
+    class _FakeLLM:
+        def __init__(self, scope, items, roles=None):
+            self.scope, self.items, self.roles, self.calls = scope, items, roles or [], []
+        def banner_scope(self, raw):
+            self.calls.append("scope")
+            return {"scope": self.scope, "evidence": ["x"], "reason": "테스트 판단"}
+        def banner_extract(self, raw, posted, ocr):
+            self.calls.append(("extract", len(ocr)))
+            return {"items": self.items, "image_roles": self.roles, "reason": "뽑음"}
+    class _FakeVC:
+        def __init__(self, texts):
+            self.texts, self.calls = texts, 0
+        def read_cards(self, urls):
+            self.calls += 1
+            return self.texts[:len(urls)]
+    _saved_mk = (_make_llm_client, _make_vision_client)
+    try:
+        _fl = _FakeLLM("outside", [])
+        _make_llm_client, _make_vision_client = (lambda: _fl), (lambda: (_ for _ in ()).throw(AssertionError("게임 밖 글은 이미지를 안 읽는다")))
+        _p = _prepare_banner("JR東海×『BanG Dream! Our Notes』", "p#https://x.com/#1tweet-2112419038190281019", {"media": ["https://x/jr.jpg"]}, _bnow, _MemGH())
+        assert _p["judgement"]["action"] == "notice" and "items" not in _p and _fl.calls == ["scope"], _p
+        _shi = [{"kind": "event", "status": "normal", "title_ja": "Shake Your 魂, Baby!!", "title_ko": "셰이크 유어 혼, 베이비!!",
+                 "start_jst": "2026-10-18 15:00", "end_jst": "2026-10-26 14:59", "period_evidence": "開催期間：10月18日 15:00 ～ 10月26日 14:59"}]
+        _fl2, _vc2 = _FakeLLM("in_game", _shi, ["event"]), _FakeVC(["イベント\nshake your 魂, Baby!!\n開催期間：10月18日 15:00 ～ 10月26日 14:59"])
+        _make_llm_client, _make_vision_client = (lambda: _fl2), (lambda: _vc2)
+        _p2 = _prepare_banner("明日15:00より開催🎉\nチャレンジライブイベント「Shake Your 魂, Baby!!」", "p#https://x.com/#1tweet-2111381718116540885",
+                              {"media": ["https://x/sh.jpg"]}, "2026-10-17T09:00:00Z", _MemGH())
+        assert _p2["items"] == _shi and _p2["image_roles"] == ["event"] and _vc2.calls == 1 and "10月26日" in _p2["post"]["text"], _p2
+        assert _p2["judgement"]["event"]["name_ja"] == "Shake Your 魂, Baby!!" and _banner_label(_p2).endswith("Shake Your 魂, Baby!!")
+    finally:
+        _make_llm_client, _make_vision_client = _saved_mk
+    _bgh4 = _MemGH()
+    _r4 = _commit_banner(_bgh4, _p2, "2026-10-17T09:00:00Z")
+    _b4 = _bgh4.f[_BANNERS_PATH]["banners"]
+    assert _r4["mode"] == "added" and len(_b4) == 1 and _b4[0]["image_urls"] == ["https://x/sh.jpg"] and _b4[0]["end_at"] == "2026-10-26T05:59:00Z", (_r4, _b4)
+    _ga = dict(_p2, items=[{"kind": "gacha", "status": "normal", "title_ja": "はじめてを奏でる光彩讃歌ガチャ", "title_ko": None,
+                            "start_jst": "2026-10-18 15:00", "end_jst": "2026-10-28 14:59", "period_evidence": ""}], image_roles=[],
+               post={"tweet_id": "2111383213222359442", "media": [], "posted_at": "2026-10-17T09:06:02Z",
+                     "text": "明日15:00より開催✨「はじめてを奏でる光彩讃歌ガチャ」\n開催期間：10月18日15:00～10月28日14:59まで"})
+    _r5 = _commit_banner(_bgh4, _ga, "2026-10-17T09:06:02Z")
+    assert _r5["mode"] == "updated" and len(_bgh4.f[_BANNERS_PATH]["banners"]) == 1 and _bgh4.f[_BANNERS_PATH]["banners"][0]["gachas"], _r5
+    _bgh4.f[_LLM_ACTIONS_PATH] = {"items": [{"id": "llm_t2", "ts": _bnow, "kind": "banner_judge", "who": "bang_dream_on", "undo": _r5["undo"], "undone": None}]}
+    _ur2 = _llm_undo(_bgh4, "llm_t2", "2026-10-17T09:10:00Z")
+    assert _ur2["applied"] and not _bgh4.f[_BANNERS_PATH]["banners"][0]["gachas"], _ur2      # 가챠만 빠지고 이벤트 배너는 남음
+
+    print("[OK] 행사 배너 (게임 계정 판별 · 커밋 · dup · 정리 · 되돌리기 · 수정/삭제 · v4.5.10 2단계 판정)")
 
     # ── (v4.5.9) 이미지 판독 대기 — Groq 비전 실패 → 대기 기록 · 허가된 판독으로 다시 처리 ──
     _ogh = _MemGH()
@@ -7350,18 +7443,21 @@ if __name__ == "__main__":
 
     class _FailVC:
         last_failed = False
-        def read_card(self, image_url):
+        def read_cards(self, urls):      # (v4.5.10) 3장씩 묶어 읽기 — 실패면 last_failed
             self.last_failed = True
-            return None
+            return [None] * len(urls)
     class _BJLLM:
+        # (v4.5.10) 2단계 판정(banner_scope → banner_extract) — 이미지 글자가 있으면 종료일까지 옮겨 적는다
         def __init__(self):
             self.ocr_seen = []
-        def banner_judge(self, raw, posted, active, images_ocr=None):
-            self.ocr_seen.append(images_ocr)
-            end = "2026-10-26 14:59" if images_ocr else None
-            return {"action": "upsert", "banner_ref": None, "image_for": "none", "image_roles": [], "reason": "새 행사",
-                    "event": {"name_ja": "Shake Your 魂, Baby!!", "name_ko": "셰이크", "start_jst": "2026-10-18 15:00", "end_jst": end, "permanent": False},
-                    "gacha": None}
+        def banner_scope(self, raw):
+            return {"scope": "in_game", "evidence": ["チャレンジライブイベント"], "reason": "게임 안 이벤트"}
+        def banner_extract(self, raw, posted, ocr):
+            self.ocr_seen.append(ocr)
+            end = "2026-10-26 14:59" if any("10月26日" in (o.get("text") or "") for o in ocr or []) else None
+            return {"items": [{"kind": "event", "status": "normal", "title_ja": "Shake Your 魂, Baby!!", "title_ko": "셰이크",
+                               "start_jst": "2026-10-18 15:00", "end_jst": end, "period_evidence": ""}],
+                    "image_roles": [], "reason": "새 행사"}
     _saved_ocr = (_make_llm_client, _make_vision_client, _send_telegram)
     _sent = []
     try:
