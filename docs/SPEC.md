@@ -529,7 +529,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - **소식 시점 판정** (v4.6.2, 2026-10-21 · 10-22 운영자 결정): 지난 일의 소감 · 감사 · 현장 보고는 소식으로 올리지 않는다(규칙이 아니라 LLM). `telegram_app._prepare_notice` 가 `xnotice.parse` 직후
   `_notice_timing` → `llm.notice_timing(text, posted_jst)` = `{kind: announce|report, subject, subject_date(YYYY-MM-DD|null), evidence[], next_lines[], reason}`(근거 · 다음 일정 줄은 원문 그대로 — 아니면 다시 묻기 5회,
   24시 이상 표기는 다음 날로) → `notices.timing_decision(verdict, 게시일)`: announce = 올림 · report 이고 그 일의 날짜가 게시일과 같거나 뒤, 또는 날짜 미상 = 올리되 `expires_at` 을 게시일 다음 00:00 KST 로 ·
-  report 이고 게시일보다 앞 = 안 올림, `next_lines` 가 있으면 그 줄만 다시 `xnotice.parse` 해서 올림 · 판정 실패 = 올림. 게시일 = 트윗 id(Snowflake), 없으면 지금.
+  report 이고 게시일보다 앞 = 안 올림 · (v4.6.3) report 이고 `next_lines` 가 있으면 **그 일의 날짜와 상관없이** 그 줄만 다시 `xnotice.parse` 해서 올림(그 줄이 소식 형식이 아니면 오늘 일은 오늘 자정까지, 지난 일은 안 올림) · 판정 실패 = 올림. 게시일 = 트윗 id(Snowflake), 없으면 지금.
   **판정을 부르지 않는 경우**(Groq 를 아끼려고): 이미 본 트윗(활성 · 보관 소식의 `seen_ids` — `_notice_already_seen`, 커밋에서 어차피 「dup」) · `timing="off"`(관리 페이지 원문 투입 확정 · 텔레그램 수동 소식 — 운영자가 정한 글).
   `timing="show"`(관리 페이지 원문 투입 미리보기)는 판정만 결과에 붙이고(`prepared["timing"]`, 미리보기 경고) 확정하면 그대로 올린다.
   판단 기록 kind `notice_timing`: 안 올림 · 다음 일정만 = 검토용(undo 없음 → 반려 뒤 재판단 · 사용자 판단 「소식으로 올림」(강제 announce) / 「올리지 않음」), 실패 = `undo {type: remove_notice, id}`(반려하면 그 소식을 보관함으로, 다른 소식에 합쳐졌으면 건너뜀).

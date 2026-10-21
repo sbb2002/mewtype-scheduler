@@ -173,7 +173,7 @@ def _next_midnight_utc(day_jst: str) -> str:
 
 def timing_decision(verdict: dict | None, posted_date: str) -> dict:
     """(v4.6.2) 소식 시점 판정(`llm.notice_timing`) → 올릴지. 2026-10-21 운영자 결정:
-    지난 일의 소감 · 보고는 안 올림 · 오늘 있는 일에 대한 글은 오늘 자정(KST)까지 · 소감에 붙은 다음 일정은 그 부분만 · 판정 실패면 올림(실패 기록).
+    지난 일의 소감 · 보고는 안 올림 · 오늘 있는 일에 대한 글은 오늘 자정(KST)까지 · 소감에 붙은 다음 일정은 그 부분만(v4.6.3 부터 오늘 일의 소감이어도) · 판정 실패면 올림(실패 기록).
     posted_date = 게시일(JST YYYY-MM-DD). 반환 {"action": post|today|next|drop|failed, "until": UTC ISO|None, "next_text": str|None, "why": str}.
     """
     out = {"action": "post", "until": None, "next_text": None, "why": ""}
@@ -183,12 +183,17 @@ def timing_decision(verdict: dict | None, posted_date: str) -> dict:
         return dict(out, why="앞으로 · 지금 기간 중인 일을 알리는 글")
     sd = verdict.get("subject_date")
     subj = (verdict.get("subject") or "").strip()
-    if not sd or sd >= posted_date:
-        return dict(out, action="today", until=_next_midnight_utc(posted_date),
-                    why=f"오늘 있는 일({subj or '?'})에 대한 글 — 오늘 자정까지")
+    past = bool(sd) and sd < posted_date
     nx = "\n".join(verdict.get("next_lines") or []).strip()
     if nx:
-        return dict(out, action="next", next_text=nx, why=f"지난 일({subj or '?'} · {sd})의 소감 — 다음 일정만 올림")
+        # (v4.6.3 운영자 결정) 다음 일정 줄이 있으면 그 일의 날짜와 상관없이 다음 일정만 올린다 — 오늘 일의 감사 + 다음 회차 안내가
+        # 「오늘 자정까지」로 통째로 내려가 다음 회차 안내까지 사라지던 것(10-22 실측: 5th 싱글 릴리즈 이벤트 감사 + 「次回は10/4」).
+        # until = 다음 일정 줄이 소식 형식이 아닐 때 대신 쓸 「오늘 자정까지」(오늘 일일 때만, 지난 일이면 None = 안 올림)
+        return dict(out, action="next", next_text=nx, until=None if past else _next_midnight_utc(posted_date),
+                    why=(f"지난 일({subj or '?'} · {sd})" if past else f"오늘 있는 일({subj or '?'})") + "의 소감 — 다음 일정만 올림")
+    if not past:
+        return dict(out, action="today", until=_next_midnight_utc(posted_date),
+                    why=f"오늘 있는 일({subj or '?'})에 대한 글 — 오늘 자정까지")
     return dict(out, action="drop", why=f"지난 일({subj or '?'} · {sd})의 소감 · 보고 — 안 올림")
 
 
@@ -367,8 +372,14 @@ if __name__ == "__main__":
     assert timing_decision({"kind": "report", "subject_date": None, "next_lines": []}, TD)["action"] == "today", "날짜를 모르면 오늘 일로"
     assert timing_decision({"kind": "report", "subject_date": "2026-10-10", "next_lines": []}, TD)["action"] == "drop"
     t4 = timing_decision({"kind": "report", "subject_date": "2026-09-20", "next_lines": ["次回は9/27(日)開催", "https://x.jp/t"]}, TD)
-    assert t4["action"] == "next" and t4["next_text"] == "次回は9/27(日)開催\nhttps://x.jp/t", t4
+    assert t4["action"] == "next" and t4["next_text"] == "次回は9/27(日)開催\nhttps://x.jp/t" and t4["until"] is None, t4
     print("[OK] (v4.6.2) timing_decision — 알림 올림 · 오늘 일 자정까지 · 지난 일 안 올림 · 다음 일정만 · 실패 올림")
+    # (v4.6.3) 오늘 일(또는 날짜 모름)의 소감 + 다음 일정 → 다음 일정만(전엔 「오늘 자정까지」로 통째로 내려가 다음 일정도 사라졌다)
+    for _sd in ("2026-10-11", None):
+        t5 = timing_decision({"kind": "report", "subject": "リリースイベント", "subject_date": _sd,
+                              "next_lines": ["次回は、10/4(日)ヨドバシカメラマルチメディアAkiba 様にて開催❕"]}, TD)
+        assert t5["action"] == "next" and t5["until"] == "2026-10-11T15:00:00Z" and "오늘 있는 일" in t5["why"], t5
+    print("[OK] (v4.6.3) timing_decision — 오늘 일의 소감 + 다음 일정 → 다음 일정만(줄을 못 읽으면 오늘 자정까지)")
 
     # sweep
     S = {"generated_at": None, "notices": [
