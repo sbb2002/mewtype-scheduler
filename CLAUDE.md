@@ -524,10 +524,10 @@ src/
       api.js           # fetchSchedule(url): AbortController 타임아웃, {ok,data|error} (notices 도 재사용)
       render.js        # renderBoard / renderFooter / updateCountdowns
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
-      notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
+      notices.js       # (v2.7) renderNotices(#notice, data) — 소식판. (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 15.5px 한 줄, 소식 팝업 카드(PC 호버/클릭) · 시트(모바일). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
       theme.js         # (v4.6.0) 밝게/어둡게 전환 버튼 · 저장(localStorage "theme") · 기기 설정 따라가기 · mew:theme 이벤트(X 카드 테마)
       king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출(v4.5.8 — 지각한 방송이 라이브인 동안 페이지마다 한 번, 끝나면 바로 1.2초에 걸쳐 평소 라이브 카드로) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
-      tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
+      tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트. (v4.6.4) X 카드 export(makeXCard · loadXCards · stopXCards — 소식 팝업 카드가 씀)
       playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
       player.js        # (v4.2.0) 플레이어 팝업 + 플로팅 YouTube 프레임(IFrame API). main.js 가 첫 클릭 때 동적 import
       songs.js         # (v4.2.0) 곡 검색 정규화 · 가나→한글 독음 · 필터/정렬 — 순수 (songs.selfcheck.mjs)
