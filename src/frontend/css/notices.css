@@ -1,23 +1,30 @@
-/* notices.css — 예고판 상단 "소식" 티커 (v2.7). layout.css 토큰 재사용. 아래 --ntc-* 는 어둡게 값(밝게 = theme.css).
-   목업: docs/plan/v2_7_notice_board_mockup.html */
+/* notices.css — 예고판 상단 「소식」 막대 (v2.7 → v4.6.4 개편). layout.css 토큰 재사용. 아래 --ntc-* 는 어둡게 값(밝게 = theme.css).
+   (v4.6.4) 디자인 = 운영자 승인 시안 — PC 는 날짜별 묶음, 모바일(≤767px)은 분류 칩 막대 + 카드. 제목은 둘 다 15.5px 한 줄(넘치면 …).
+   소식 줄 · 카드를 누르면 「소식 팝업 카드」(PC = 줄 옆 팝업 .ntc__pop, 모바일 = 아래 시트 .ntc-sheet). 마크업은 js/notices.js. */
 
 :root {
   --ntc-surface2: #202225;
   --ntc-hover: #202226;
   --ntc-faint: #6f6f6f;
   --ntc-border-soft: #2a2a2a;
-  --ntc-cat-live: var(--color-late);      /* 라이브 예고 — 앰버 */
-  --ntc-cat-release: var(--color-collab);  /* 음반·굿즈 — 바이올렛 */
-  --ntc-cat-platform: #4fa89c;             /* 타 플랫폼 — teal */
-  --ntc-cat-etc: var(--color-sched);       /* 기타 — 슬레이트 */
+  --ntc-focus: #4fa89c;                    /* 키보드 포커스 테두리 */
   --ntc-dsoon: #e08a2e;                    /* D-7 이내 — 주황 */
+  --ntc-today-bg: #d91c2a;                 /* TODAY — 빨강 바탕 흰 글자 */
+  --ntc-today-fg: #ffffff;
   --ntc-lamp-off: #3a1414;                 /* 오늘 소식 없을 때 램프 */
   --ntc-shadow: rgba(0, 0, 0, 0.55);
-  --ntc-item-h: 2.2rem;
-  --ntc-col-date: 62px;
-  --ntc-col-badge: 58px;
-  --ntc-col-time: 74px;
-  --ntc-col-src: 122px;
+  --ntc-accent: #b3a6ec;                   /* 고정된 팝업 테두리 · 팝업 링크 */
+  --ntc-scrim: rgba(0, 0, 0, 0.55);        /* 모바일 시트 뒤 배경 */
+  /* (v4.6.4) 분류 6색 — 아이콘 · 칩 · 분류 이름 */
+  --ntc-cat-live: #f27bb5;                 /* 라이브 */
+  --ntc-cat-event: #3fc1ad;                /* 행사 */
+  --ntc-cat-broadcast: #63a9f5;            /* 방송출연 */
+  --ntc-cat-goods: #ad97f5;                /* 음원·굿즈·출판 */
+  --ntc-cat-game: #8bd06f;                 /* 게임 */
+  --ntc-cat-etc: #a3abbd;                  /* 기타 */
+  --ntc-item-h: 2.2rem;                    /* 접힌 막대 높이 — 모바일 layout.css --m-notice 가 이 높이를 전제로 한다 */
+  --ntc-ja: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
 #notice.ntc {
@@ -28,6 +35,30 @@
 }
 #notice[hidden] { display: none; }
 
+/* ── 분류 → 색 (모바일 시트는 #notice 밖 body 에 붙으므로 같이) ── */
+:is(.ntc, .ntc-sheet) [data-cat] { --c: var(--ntc-cat-etc); }
+:is(.ntc, .ntc-sheet) [data-cat="live"]      { --c: var(--ntc-cat-live); }
+:is(.ntc, .ntc-sheet) [data-cat="event"]     { --c: var(--ntc-cat-event); }
+:is(.ntc, .ntc-sheet) [data-cat="broadcast"] { --c: var(--ntc-cat-broadcast); }
+:is(.ntc, .ntc-sheet) [data-cat="goods"]     { --c: var(--ntc-cat-goods); }
+:is(.ntc, .ntc-sheet) [data-cat="game"]      { --c: var(--ntc-cat-game); }
+:is(.ntc, .ntc-sheet) [data-cat="all"]       { --c: var(--color-text); }
+
+/* ── 아이콘 ── */
+.ntc__ic {
+  flex: none; width: 16px; height: 16px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.ntc__ic--fill { fill: currentColor; stroke: none; }
+.ntc__cat {
+  display: inline-grid; place-items: center; flex: none;
+  width: 24px; height: 24px; border-radius: 7px;
+  color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent);
+}
+.ntc__cat--lg { width: 36px; height: 36px; border-radius: 10px; }
+.ntc__cat--lg .ntc__ic { width: 20px; height: 20px; }
+
+/* ── 막대 ── */
 .ntc__bar {
   display: flex;
   align-items: stretch;
@@ -37,8 +68,7 @@
   border: 1px solid var(--ntc-border-soft);
   border-radius: 6px;
 }
-/* 펼쳐도 막대 자체는 한 줄 그대로 — 아래 예고 영역을 밀지 않는다.
-   전체 목록은 .ntc__list 가 오버레이로 뜬다. */
+/* 펼쳐도 막대 자체는 한 줄 그대로 — 아래 예고 영역을 밀지 않는다. 전체 목록은 .ntc__list 가 오버레이로 뜬다. */
 .ntc.is-open .ntc__bar { border-bottom: 1px solid var(--ntc-border-soft); border-radius: 6px 6px 0 0; }
 
 .ntc__tag {
@@ -62,8 +92,17 @@
   0%, 100% { opacity: 1; box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-live) 60%, transparent); }
   50%      { opacity: 0.22; box-shadow: 0 0 0 0 transparent; }
 }
-.ntc__all { font-weight: 400; color: var(--ntc-faint); margin-left: 0.35rem; }
+.ntc__all { font-weight: 400; letter-spacing: 0; color: var(--color-text-muted); margin-left: 0.35rem; }
 .ntc__all[hidden] { display: none; }
+
+/* PC 막대 왼쪽 요약 「오늘 n · 7일 안 n」 */
+.ntc__sum {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 12px; font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap;
+  border-right: 1px solid var(--ntc-border-soft);
+}
+.ntc__sum b { color: var(--color-text); font-variant-numeric: tabular-nums; }
+.ntc.is-open .ntc__sum { display: none; }
 
 .ntc__ticker { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 .ntc__empty {
@@ -76,6 +115,15 @@
 .ntc__track { display: block; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 .ntc.is-open .ntc__ticker { display: none; }
 
+/* PC 티커 한 줄: [D-day] [분류 아이콘] [제목] [날짜 (요일) 시각] */
+.ntc__trow {
+  display: grid; grid-template-columns: auto 24px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  height: var(--ntc-item-h); padding: 0 12px;
+}
+.ntc__trow .ntc__ttl { font-size: 14.5px; cursor: pointer; }   /* 누르면 목록을 펼치고 그 소식 팝업을 고정 */
+.ntc__trow .ntc__ttl[data-pin]:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ntc__when { font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
 .ntc__tgl {
   flex: none; width: 2.9rem;
   display: grid; place-items: center;
@@ -85,83 +133,54 @@
   cursor: pointer;
 }
 .ntc__tgl:hover { color: var(--color-text); background: var(--ntc-surface2); }
-.ntc__tgl:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: -2px; }
+.ntc__tgl:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
 .ntc.is-open .ntc__tgl { margin-left: auto; }
 
-/* ── 한 줄: [날짜] [D-DAY] [시각] [이름] [출처] ── */
-.ntc__item {
-  display: grid;
-  grid-template-columns: var(--ntc-col-date) var(--ntc-col-badge) var(--ntc-col-time) minmax(0, 1fr) var(--ntc-col-src);
-  align-items: center;
-  gap: 0.6rem;
-  height: var(--ntc-item-h);
-  padding: 0 0.8rem;
-}
-.ntc__item[data-cat="live"]     { --c: var(--ntc-cat-live); }
-.ntc__item[data-cat="release"]  { --c: var(--ntc-cat-release); }
-.ntc__item[data-cat="platform"] { --c: var(--ntc-cat-platform); }
-.ntc__item[data-cat="etc"]      { --c: var(--ntc-cat-etc); }
-
-.ntc__date, .ntc__time {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  font-size: 0.72rem; color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums; white-space: nowrap;
-}
-.ntc__date { justify-self: end; }
-.ntc__ic { flex: none; width: 13px; height: 13px; color: var(--ntc-faint); }
-.ntc__src .ntc__ic { width: 14px; height: 14px; }
-.ntc__date time, .ntc__time time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ntc__date.is-none, .ntc__time.is-none { color: var(--color-border); }
-
-.ntc__badge {
-  justify-self: center;
-  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.02em;
+/* ── D-day 배지: TODAY = 빨강 바탕 흰 글자, D-7 이내 = 주황, 그 밖 = 회색 ── */
+.ntc__dd {
+  display: inline-block; flex: none; font-size: 12px; font-weight: 700; line-height: 1.35;
   font-variant-numeric: tabular-nums; white-space: nowrap; text-align: center;
-  color: var(--d, var(--ntc-faint));
-  border: 1px solid color-mix(in srgb, var(--d, var(--ntc-faint)) 45%, transparent);
-  background: color-mix(in srgb, var(--d, var(--ntc-faint)) 12%, transparent);
-  border-radius: 3px;
-  padding: 0.09rem 0.32rem;
+  padding: 2px 7px; border-radius: 4px;
 }
-.ntc__badge.d-today { --d: var(--color-live); }
-.ntc__badge.d-soon  { --d: var(--ntc-dsoon); }
-.ntc__badge.d-far   { --d: var(--ntc-faint); }
-.ntc__badge.d-none  { border-color: transparent; background: transparent; color: var(--color-border); }
+.ntc__dd.d-today { background: var(--ntc-today-bg); color: var(--ntc-today-fg); }
+.ntc__dd.d-soon  { color: var(--ntc-dsoon); background: color-mix(in srgb, var(--ntc-dsoon) 12%, transparent);
+                   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ntc-dsoon) 55%, transparent); }
+.ntc__dd.d-far   { color: var(--color-text-muted); box-shadow: inset 0 0 0 1px var(--color-border); }
+.ntc__dd.d-none  { color: var(--color-text-muted); }
 
-.ntc__title { min-width: 0; overflow: hidden; display: block; text-decoration: none; color: inherit; }
-.ntc__title:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: 2px; border-radius: 2px; }
-.ntc__title-in {
-  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP",
-               -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  font-size: 0.83rem; white-space: nowrap; display: inline-flex;
-  transition: opacity 0.15s;
+/* ── 제목 · 출처 ── */
+.ntc__ttl {
+  display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: var(--color-text); text-decoration: none; word-break: keep-all; overflow-wrap: anywhere;
 }
-.ntc__title:hover .ntc__title-in { text-decoration: underline; }
-.ntc__title.is-marquee .ntc__title-in { animation: ntc-mq var(--dur, 14s) linear infinite; }
-.ntc__title.is-marquee .ntc__title-in .seg { padding-right: 3rem; }
-.ntc__item:hover .ntc__title.is-marquee .ntc__title-in,
-.ntc__track:not(.is-live) .ntc__title.is-marquee .ntc__title-in { animation-play-state: paused; }
-@keyframes ntc-mq { to { transform: translateX(-50%); } }
+.ntc__ttl:lang(ja) { font-family: var(--ntc-ja); }
+.ntc__ttl:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: 2px; border-radius: 2px; }
+
+/* 소식 줄 · 카드 = 팝업(시트)을 여는 버튼 */
+.ntc__gi, .ntc__card { cursor: pointer; }
+.ntc__gi:hover, .ntc__gi.is-on, .ntc__card:hover { background: var(--ntc-hover); }
+.ntc__gi:focus-visible, .ntc__card:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
 
 .ntc__src {
-  display: inline-flex; align-items: center; gap: 0.3rem; justify-self: end;
-  font-size: 0.7rem; color: var(--color-text-muted); text-decoration: none; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--color-text-muted); text-decoration: none; white-space: nowrap;
 }
-.ntc__src:hover { color: var(--color-text); }
-.ntc__src:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: 2px; border-radius: 2px; }
-.ntc__src .nm { font-variant-numeric: tabular-nums; }
+.ntc__src .ntc__ic { width: 13px; height: 13px; }
+a.ntc__src:hover { color: var(--color-text); }
+.ntc__src:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: 2px; border-radius: 2px; }
 
 /* ── 펼친 목록 — 오버레이. 아래 예고 영역 위에 떠서 레이아웃을 안 민다.
+   순서 = 행사 배너(.ntc__banners) → 분류 줄(.ntc__hd, 스크롤해도 위에 붙음) → 소식(.ntc__body).
    max-height 는 JS(applyListHeight)가 실측 px 로 넣어 스르륵 슬라이드. ── */
 .ntc__list {
-  list-style: none; margin: 0; padding: 0;
   position: absolute; top: 100%; left: var(--page-pad); right: var(--page-pad);
-  z-index: 30;
+  z-index: 42;   /* (v4.6.4) PC 플레이어 도크(40) 위 — 30 이면 펼친 목록이 도크의 YouTube 화면 밑으로 들어갔다. 플로팅 프레임(45) · 푸터(50) 아래 */
   max-height: 0; overflow: hidden;
   opacity: 0; visibility: hidden;
   border: 1px solid var(--ntc-border-soft); border-top: none;
   border-radius: 0 0 6px 6px; background: var(--color-bg-secondary);
   box-shadow: 0 14px 32px var(--ntc-shadow);
+  font-size: 14px; line-height: 1.45;
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
               opacity 0.2s ease,
               visibility 0s linear 0.3s;
@@ -172,28 +191,197 @@
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
               opacity 0.2s ease;
 }
-.ntc__list .ntc__item { position: relative; border-top: 1px solid var(--ntc-border-soft); padding-left: calc(0.8rem + 3px); }
-.ntc__list .ntc__item:hover { background: var(--ntc-hover); }
-.ntc__list .ntc__item::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c);
+
+.ntc__hd {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+  padding: 10px 14px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--ntc-border-soft);
+}
+.ntc__none { padding: 36px 16px; text-align: center; color: var(--color-text-muted); }
+
+/* 언어 전환 [한글 | 원문] */
+.ntc__seg {
+  flex: none; margin-left: auto; display: inline-flex; padding: 2px; white-space: nowrap;
+  border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-bg);
+}
+.ntc__seg button {
+  border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; padding: 4px 13px; border-radius: 999px;
+}
+.ntc__seg button:hover { color: var(--color-text); }
+.ntc__seg button[aria-pressed="true"] { background: var(--color-raised); color: var(--color-text); box-shadow: inset 0 0 0 1px var(--color-raised-edge); }
+.ntc__seg button:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: 1px; }
+
+/* ── PC 분류 칩 (둥근 칩) ── */
+.ntc__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ntc__chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border-radius: 999px; border: 1px solid var(--color-border); background: transparent;
+  color: var(--color-text); font: inherit; font-size: 13.5px; cursor: pointer;
+}
+.ntc__chip .ntc__ic { color: var(--c); }
+.ntc__chip .n { color: var(--color-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ntc__chip:hover { background: var(--ntc-hover); }
+.ntc__chip[aria-selected="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); font-weight: 700; }
+.ntc__chip[data-cat="all"][aria-selected="true"] { background: var(--color-raised); border-color: var(--color-raised-edge); }
+.ntc__chip:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: 2px; }
+
+/* ── PC 날짜별 묶음: [날짜 칸 「10/24 (토) TODAY」] [소식 줄: 시각 · 분류 아이콘 · 제목(두 줄까지) / 분류 이름 · 이날까지 · X 핸들] ── */
+.ntc__grp { display: grid; grid-template-columns: 172px minmax(0, 1fr); }
+.ntc__grp + .ntc__grp { border-top: 1px solid var(--ntc-border-soft); }
+.ntc__gdate {
+  display: flex; align-items: center; gap: 6px; align-self: start;
+  padding: 11px 14px 0 16px;
+  position: sticky; top: var(--ntc-hd-h, 0px);
+}
+.ntc__gdate .d { font-size: 17px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.ntc__gdate .d.is-none { font-size: 14px; color: var(--color-text-muted); }
+.ntc__gdate .w { font-size: 13px; color: var(--color-text-muted); }
+.ntc__gdate .ntc__dd { margin-left: auto; }
+.ntc__gitems { display: grid; border-left: 1px solid var(--ntc-border-soft); }
+.ntc__gi { display: grid; grid-template-columns: 58px 26px minmax(0, 1fr); gap: 12px; align-items: start; padding: 10px 16px; min-width: 0; }
+.ntc__gi .ntc__cat { width: 26px; height: 26px; }
+.ntc__gi + .ntc__gi { border-top: 1px dashed var(--ntc-border-soft); }
+.ntc__time { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 1px; }
+.ntc__time.is-none { color: var(--color-text-muted); font-weight: 400; }
+.ntc__gbody { min-width: 0; display: grid; gap: 3px; }
+.ntc__gi .ntc__ttl { font-size: 15.5px; font-weight: 600; line-height: 22px; }   /* 한 줄 — 넘치면 … (전체 제목은 팝업 카드) */
+.ntc__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--color-text-muted); }
+.ntc__cn { color: var(--c); font-weight: 700; }
+.ntc__until {
+  font-size: 12px; font-weight: 700; padding: 0 6px; border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--color-border); color: var(--color-text-muted);
 }
 
-/* ── 모바일: 소식 글자·날짜 컬럼 제거, 출처는 아이콘만 ── */
+/* ── 모바일 ≤767px — 시안 ③: 접힌 막대 = 분류별 건수 칩, 펼침 = 밑줄 탭 7칸 + 카드 1열 ── */
 @media (max-width: 767px) {
   #notice.ntc { padding: 0 var(--m-pad, 1rem); margin-top: var(--gap); }
   .ntc__list { left: var(--m-pad, 1rem); right: var(--m-pad, 1rem); }
   .ntc__label { display: none; }
-  .ntc__item {
-    grid-template-columns: var(--ntc-col-badge) 60px minmax(0, 1fr) 24px;
-    gap: 0.42rem;
+
+  /* 접힌 막대의 분류 칩 — 움직이지 않음. 칩이 많아 넘치면 가로로 밀어 본다 */
+  .ntc__chipbar {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; padding: 0 8px;
+    overflow-x: auto; scrollbar-width: none;
   }
-  .ntc__date { display: none; }
-  .ntc__src .nm { display: none; }
+  .ntc__chipbar::-webkit-scrollbar { display: none; }
+  .ntc.is-open .ntc__chipbar { visibility: hidden; }
+  .ntc__cchip {
+    flex: none; display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 7px;
+    border: 0; border-radius: 999px; cursor: pointer;
+    color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent);
+    font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .ntc__cchip:hover { background: color-mix(in srgb, var(--c) 26%, transparent); }
+  .ntc__cchip .ntc__ic { width: 14px; height: 14px; }
+  .ntc__cchip:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
+
+  /* 펼친 머리: 「전체 n건」 + 언어 전환 / 밑줄 탭 7칸 */
+  .ntc__hd { padding: 8px 12px 0; row-gap: 4px; }
+  .ntc__hd2 { display: flex; align-items: center; gap: 12px; width: 100%; }
+  .ntc__count { font-size: 13px; color: var(--color-text-muted); }
+  .ntc__utabs { width: 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin-bottom: -1px; }   /* 0건 분류는 숨기므로 칸 수가 바뀐다 — 남은 칸이 폭을 나눠 쓴다 */
+  .ntc__utab {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 8px; min-width: 0;
+    border: 0; border-bottom: 3px solid transparent; background: transparent; cursor: pointer;
+    color: var(--color-text-muted); font: inherit; font-size: 12.5px;
+  }
+  .ntc__utab .ntc__ic { width: 18px; height: 18px; color: var(--c); }
+  .ntc__utab .all { font-size: 13px; font-weight: 700; line-height: 18px; }
+  .ntc__utab .n { font-variant-numeric: tabular-nums; }
+  .ntc__utab:hover { color: var(--color-text); }
+  .ntc__utab[aria-selected="true"] { color: var(--color-text); font-weight: 700; border-bottom-color: var(--c); }
+  .ntc__utab:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
+
+  /* 카드 1열: [분류 아이콘 36px] [제목 한 줄 / D-day · 분류 이름 · 날짜(요일) · 시각] — 제목 15.5px 한 줄, 넘치면 … */
+  .ntc__cards { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .ntc__card {
+    display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 10px; align-items: start;
+    padding: 11px 12px; border-bottom: 1px solid var(--ntc-border-soft); min-width: 0;
+  }
+  .ntc__card:last-child { border-bottom: 0; }
+  .ntc__cbody { min-width: 0; display: grid; gap: 2px; }
+  .ntc__card .ntc__ttl { font-size: 15.5px; font-weight: 600; line-height: 22px; }
+  .ntc__card .ntc__meta { flex-wrap: nowrap; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ntc__card .ntc__dd { font-size: 12px; padding: 1px 6px; }
 }
 
+/* ── 소식 팝업 카드 — PC 팝업(.ntc__pop) · 모바일 시트(.ntc-sheet) 공용 내용 ── */
+.ntc-card__hd { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px 8px 0 14px; }
+.ntc-card__cn { font-size: 13px; font-weight: 700; color: var(--c); white-space: nowrap; }
+.ntc-card__when, .ntc-card__h { font-size: 13px; color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ntc-card__h { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ntc-card__sp { flex: 1; }
+.ntc-card__x {
+  flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px;
+  border: 0; background: transparent; color: var(--color-text-muted); font: inherit; font-size: 16px; cursor: pointer;
+}
+.ntc-card__x:hover { background: var(--ntc-hover); color: var(--color-text); }
+.ntc-card__x:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
+.ntc-card__tt { margin: 6px 14px 0; font-size: 17px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; word-break: keep-all; color: var(--color-text); }
+.ntc-card__tt:lang(ja) { font-family: var(--ntc-ja); }
+.ntc-card__cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; padding: 10px 14px 12px; }
+.ntc-card__cols.no-x { grid-template-columns: minmax(0, 1fr); }
+.ntc-card__body {
+  margin: 0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text);
+}   /* 높이 제한 없음 — 팝업(.ntc__pop-in) · 시트 하나만 스크롤한다(스크롤 칸이 겹치지 않게) */
+.ntc-card__body.is-note { color: var(--color-text-muted); }
+.ntc-card__cols .lane__thread__xcard { width: 100%; min-width: 260px; }   /* X 카드는 250px 미만이면 안 그려진다(tweets.css 실측) */
+.ntc-card__links { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0 14px 14px; font-size: 13px; }
+.ntc-card__links a { color: var(--ntc-accent); text-decoration: none; }
+.ntc-card__links a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ntc-card__links a:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: 2px; border-radius: 2px; }
+
+/* PC 팝업 — #notice 안 · 펼친 목록(42) 위. 위치 · 최대 높이(--pop-max) · 꼬리 위치(--tail-x)는 JS(_popPlace) */
+.ntc__pop {
+  position: absolute; z-index: 43; left: 0; top: 0;
+  width: min(600px, calc(100% - 16px));
+  background: var(--color-bg-secondary); color: var(--color-text);
+  border: 1px solid var(--color-border); border-radius: 12px;
+  box-shadow: 0 16px 36px var(--ntc-shadow);
+  font-size: 14px; line-height: 1.5;
+  opacity: 0; visibility: hidden; transform: translateY(4px); pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
+}
+.ntc__pop.up { transform: translateY(-4px); }
+.ntc__pop.is-open { opacity: 1; visibility: visible; transform: none; pointer-events: auto; transition: opacity 0.16s ease, transform 0.16s ease; }
+.ntc__pop.is-pinned { border-color: var(--ntc-accent); }
+.ntc__pop-in { max-height: var(--pop-max, 560px); overflow-y: auto; border-radius: inherit; }
+.ntc__pop::before {   /* 꼬리 — 소식 제목 쪽을 가리킨다 */
+  content: ""; position: absolute; top: -7px; left: var(--tail-x, 40px); width: 12px; height: 12px;
+  background: var(--color-bg-secondary); border-left: 1px solid var(--color-border); border-top: 1px solid var(--color-border);
+  transform: rotate(45deg);
+}
+.ntc__pop.up::before { top: auto; bottom: -7px; transform: rotate(225deg); }
+.ntc__pop.is-pinned::before { border-color: var(--ntc-accent); }
+
+/* 모바일 시트 — body 에 붙음. 배경 900 · 시트 901(트윗 시트와 같은 층) */
+.ntc-scrim {
+  position: fixed; inset: 0; z-index: 900; background: var(--ntc-scrim);
+  opacity: 0; pointer-events: none; transition: opacity 0.24s ease;
+}
+.ntc-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 901;
+  max-height: 85vh; max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--color-bg-secondary); color: var(--color-text);
+  border-radius: 16px 16px 0 0; box-shadow: 0 -10px 30px var(--ntc-shadow);
+  font-size: 14px; line-height: 1.5;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  transform: translateY(102%); visibility: hidden;
+  transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.26s;
+}
+body.ntc-sheet-open { overflow: hidden; }
+body.ntc-sheet-open .ntc-scrim { opacity: 1; pointer-events: auto; }
+body.ntc-sheet-open .ntc-sheet { transform: none; visibility: visible; transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1); }
+.ntc-sheet__grab { width: 40px; height: 4px; border-radius: 2px; background: var(--color-border); margin: 8px auto 0; }
+.ntc-sheet .ntc-card__cols { grid-template-columns: minmax(0, 1fr); }
+
 @media (prefers-reduced-motion: reduce) {
+  .ntc__pop, .ntc__pop.is-open, .ntc__pop.up { transition: none; transform: none; }
+  .ntc-scrim, .ntc-sheet, body.ntc-sheet-open .ntc-sheet { transition: none; }
   .ntc__track { transition: none; }
-  .ntc__title.is-marquee .ntc__title-in { animation: none; }
   .ntc.has-today .ntc__lamp { animation: none; opacity: 1; }
   .ntc__list, .ntc.is-open .ntc__list { transition: opacity 0.15s ease; }
 }
