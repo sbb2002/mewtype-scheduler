@@ -142,8 +142,39 @@ def _ratio(a, b):
     return None if b == 0 else a / b
 
 
+BETA = 0.5   # F-beta — beta < 1 이면 precision(FP 적음)을 더 무겁게. 0.5 = precision 을 recall 의 2배로(운영자: FP 가 신뢰를 더 깎음)
+
+
+def _fbeta(p, r, beta):
+    if p is None or r is None or (p == 0 and r == 0):
+        return None if p is None or r is None else 0.0
+    b2 = beta * beta
+    return (1 + b2) * p * r / (b2 * p + r)
+
+
+def _metrics(ns, G, P):
+    """분류마다 2x2 혼동행렬 + precision · recall · accuracy · F1 · F0.5, 분류 간 혼동표, 기준 분류의 정답 수 가중 평균."""
+    per = {}
+    for c in LABELS:
+        tp = sum(1 for n in ns if c in G[n] and c in P[n]); fp = sum(1 for n in ns if c not in G[n] and c in P[n])
+        fn = sum(1 for n in ns if c in G[n] and c not in P[n]); tn = len(ns) - tp - fp - fn
+        p, r = _ratio(tp, tp + fp), _ratio(tp, tp + fn)
+        m = {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "support": tp + fn,
+             "precision": p, "recall": r, "accuracy": _ratio(tp + tn, len(ns)), "f1": _fbeta(p, r, 1.0), f"f{BETA}": _fbeta(p, r, BETA),
+             "fp_n": [n for n in ns if c not in G[n] and c in P[n]], "fn_n": [n for n in ns if c in G[n] and c not in P[n]]}
+        if c in PASS:
+            m["pass"] = all(m[k] is not None and m[k] >= PASS[c] for k in ("precision", "recall", "accuracy"))
+        per[c] = m
+    sup = sum(per[c]["support"] for c in PASS)
+    avg = {k: sum((per[c][k] or 0) * per[c]["support"] for c in PASS) / sup for k in ("precision", "recall", "f1", f"f{BETA}")}
+    cross = {r: {c: sum(1 for n in ns if r in G[n] and c in P[n]) for c in LABELS} for r in LABELS}
+    return per, avg, cross
+
+
 def score(variant, outdir=None):
-    """분류마다 2x2 혼동행렬(TP · FP · FN · TN) + precision · recall · accuracy, 분류 간 혼동표, 글별 결과를 outdir 에 남긴다."""
+    """채점 → outdir 에 score_<안>.json · .md.
+    「분류」 = 모델이 고른 분류 그대로. 「실효」 = 사용자에게 보이는 결과 — B 안의 related=false 는 소식이 안 올라가므로
+    그 글의 분류가 하나도 없는 것(etc 도 아님)으로 친다(A 안은 두 값이 같다)."""
     outdir = outdir or HERE
     gold = {g["n"]: g for g in json.load(open(os.path.join(HERE, "gold.json"), encoding="utf-8"))}
     pred = {}
@@ -153,42 +184,46 @@ def score(variant, outdir=None):
     ns = [n for n in gold if n in pred]
     G = {n: set(gold[n]["gold"]) or {"etc"} for n in ns}
     P = {n: set(pred[n]["cats"]) or {"etc"} for n in ns}
-
-    per = {}
-    for c in LABELS:
-        tp = sum(1 for n in ns if c in G[n] and c in P[n]); fp = sum(1 for n in ns if c not in G[n] and c in P[n])
-        fn = sum(1 for n in ns if c in G[n] and c not in P[n]); tn = len(ns) - tp - fp - fn
-        m = {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "support": tp + fn,
-             "precision": _ratio(tp, tp + fp), "recall": _ratio(tp, tp + fn), "accuracy": _ratio(tp + tn, len(ns)),
-             "fp_n": [n for n in ns if c not in G[n] and c in P[n]], "fn_n": [n for n in ns if c in G[n] and c not in P[n]]}
-        if c in PASS:
-            m["pass"] = all(m[k] is not None and m[k] >= PASS[c] for k in ("precision", "recall", "accuracy"))
-        per[c] = m
-    # 분류 간 혼동표: 행 = 정답 분류, 열 = 판정 분류, 값 = 그 정답을 가진 글 중 그 판정이 붙은 글 수(복수 분류라 행 합 ≠ 행 글 수)
-    cross = {r: {c: sum(1 for n in ns if r in G[n] and c in P[n]) for c in LABELS} for r in LABELS}
+    dropped = [n for n in ns if pred[n].get("related") is False]
+    PE = {n: (set() if n in dropped else P[n]) for n in ns}
+    views = {"분류": _metrics(ns, G, P), "실효": _metrics(ns, G, PE)}
     exact = sum(1 for n in ns if G[n] == P[n])
-    items = [{"n": n, "gold": sorted(G[n]), "pred": sorted(P[n]), "exact": G[n] == P[n],
+    items = [{"n": n, "gold": sorted(G[n]), "pred": sorted(P[n]), "exact": G[n] == P[n], "dropped": n in dropped,
               "related": pred[n].get("related"), "reason": pred[n].get("reason"), "evidence": pred[n].get("evidence"),
               "title": gold[n]["title"]} for n in ns]
-    res = {"variant": variant, "n_items": len(ns), "exact": exact, "pass_rule": PASS,
-           "passed": all(per[c]["pass"] for c in PASS), "per_label": per, "cross": cross, "items": items}
+    res = {"variant": variant, "n_items": len(ns), "exact": exact, "dropped": dropped, "pass_rule": PASS, "beta": BETA,
+           "views": {k: {"per_label": v[0], "weighted_avg": v[1], "cross": v[2],
+                         "passed": all(v[0][c]["pass"] for c in PASS)} for k, v in views.items()},
+           "items": items}
     json.dump(res, open(os.path.join(outdir, f"score_{variant}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
     pc = lambda v: "—" if v is None else f"{v * 100:.1f}%"
-    md = [f"# {variant}안 채점 — {len(ns)}건, 분류 완전 일치 {exact}/{len(ns)}, 합격 {'PASS' if res['passed'] else 'FAIL'}", "",
-          "| 분류 | 정답 수 | TP | FP | FN | TN | precision | recall | accuracy | 기준 | 판정 | 빠뜨림(FN) | 잘못 붙임(FP) |",
-          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
-    for c in LABELS:
-        m = per[c]
-        md.append(f"| {c} | {m['support']} | {m['tp']} | {m['fp']} | {m['fn']} | {m['tn']} | {pc(m['precision'])} | {pc(m['recall'])} | "
-                  f"{pc(m['accuracy'])} | {pc(PASS.get(c))} | {('PASS' if m['pass'] else 'FAIL') if 'pass' in m else '(제외)'} | "
-                  f"{' '.join('#%d' % n for n in m['fn_n'])} | {' '.join('#%d' % n for n in m['fp_n'])} |")
-    md += ["", "분류 간 혼동표 (행 = 정답, 열 = 판정, 복수 분류라 한 글이 여러 칸에 들어감)", "",
-           "| 정답 \\ 판정 | " + " | ".join(LABELS) + " |", "|---" * (len(LABELS) + 1) + "|"]
-    md += [f"| {r} | " + " | ".join(str(cross[r][c]) for c in LABELS) + " |" for r in LABELS]
-    md += ["", "틀린 글", ""]
-    md += [f"- #{i['n']} 정답 {'+'.join(i['gold'])} / 판정 {'+'.join(i['pred'])}"
-           + (f" / related={i['related']}" if i["related"] is not None else "") + f" — {i['reason']}" for i in items if not i["exact"]]
+    fb = f"f{BETA}"
+    md = [f"# {variant}안 채점 — {len(ns)}건, 분류 완전 일치 {exact}/{len(ns)}"
+          + (f", 소식 아님으로 버림 {len(dropped)}건({' '.join('#%d' % n for n in dropped)})" if dropped else ""), ""]
+    for vname, (per, avg, cross) in views.items():
+        if vname == "실효" and not dropped:
+            continue
+        passed = all(per[c]["pass"] for c in PASS)
+        md += [f"## {vname} — 합격 {'PASS' if passed else 'FAIL'}" + (" (버린 글 = 분류 없음으로 계산)" if vname == "실효" else ""), "",
+               f"| 분류 | 정답 수 | TP | FP | FN | TN | precision | recall | accuracy | F1 | F{BETA} | 기준 | 판정 | 빠뜨림(FN) | 잘못 붙임(FP) |",
+               "|---" * 15 + "|"]
+        for c in LABELS:
+            m = per[c]
+            md.append(f"| {c} | {m['support']} | {m['tp']} | {m['fp']} | {m['fn']} | {m['tn']} | {pc(m['precision'])} | {pc(m['recall'])} | "
+                      f"{pc(m['accuracy'])} | {pc(m['f1'])} | {pc(m[fb])} | {pc(PASS.get(c))} | "
+                      f"{('PASS' if m['pass'] else 'FAIL') if 'pass' in m else '(제외)'} | "
+                      f"{' '.join('#%d' % n for n in m['fn_n'])} | {' '.join('#%d' % n for n in m['fp_n'])} |")
+        md += ["", f"기준 4분류(etc 제외) 정답 수 가중 평균 — precision {pc(avg['precision'])} · recall {pc(avg['recall'])} · "
+                   f"F1 {pc(avg['f1'])} · **F{BETA} {pc(avg[fb])}**"
+                   + (f" — 이 평균엔 버린 소식이 안 잡힌다: 소식 자체 누락 {len(dropped)}/{len(ns)}" if vname == "실효" else ""), "",
+               "분류 간 혼동표 (행 = 정답, 열 = 판정, 복수 분류라 한 글이 여러 칸에 들어감)", "",
+               "| 정답 \\ 판정 | " + " | ".join(LABELS) + " |", "|---" * (len(LABELS) + 1) + "|"]
+        md += [f"| {r} | " + " | ".join(str(cross[r][c]) for c in LABELS) + " |" for r in LABELS]
+        md.append("")
+    md += ["틀린 글", ""]
+    md += [f"- #{i['n']} 정답 {'+'.join(i['gold'])} / 판정 {'+'.join(i['pred'])}" + (" / **소식 아님으로 버림**" if i["dropped"] else "")
+           + f" — {i['reason']}" for i in items if not i["exact"] or i["dropped"]]
     open(os.path.join(outdir, f"score_{variant}.md"), "w", encoding="utf-8").write("\n".join(md) + "\n")
     print("\n".join(md))
 

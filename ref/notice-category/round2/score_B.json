@@ -2,121 +2,280 @@
  "variant": "B",
  "n_items": 36,
  "exact": 32,
+ "dropped": [
+  1,
+  6,
+  51
+ ],
  "pass_rule": {
   "live": 1.0,
   "event": 0.95,
   "goods": 0.95,
   "broadcast": 0.95
  },
- "passed": false,
- "per_label": {
-  "live": {
-   "tp": 6,
-   "fp": 0,
-   "fn": 1,
-   "tn": 29,
-   "support": 7,
-   "precision": 1.0,
-   "recall": 0.8571428571428571,
-   "accuracy": 0.9722222222222222,
-   "fp_n": [],
-   "fn_n": [
-    50
-   ],
-   "pass": false
+ "beta": 0.5,
+ "views": {
+  "분류": {
+   "per_label": {
+    "live": {
+     "tp": 6,
+     "fp": 0,
+     "fn": 1,
+     "tn": 29,
+     "support": 7,
+     "precision": 1.0,
+     "recall": 0.8571428571428571,
+     "accuracy": 0.9722222222222222,
+     "f1": 0.923076923076923,
+     "f0.5": 0.9677419354838709,
+     "fp_n": [],
+     "fn_n": [
+      50
+     ],
+     "pass": false
+    },
+    "event": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 0,
+     "tn": 29,
+     "support": 7,
+     "precision": 1.0,
+     "recall": 1.0,
+     "accuracy": 1.0,
+     "f1": 1.0,
+     "f0.5": 1.0,
+     "fp_n": [],
+     "fn_n": [],
+     "pass": true
+    },
+    "goods": {
+     "tp": 17,
+     "fp": 1,
+     "fn": 0,
+     "tn": 18,
+     "support": 17,
+     "precision": 0.9444444444444444,
+     "recall": 1.0,
+     "accuracy": 0.9722222222222222,
+     "f1": 0.9714285714285714,
+     "f0.5": 0.9550561797752809,
+     "fp_n": [
+      10
+     ],
+     "fn_n": [],
+     "pass": false
+    },
+    "broadcast": {
+     "tp": 12,
+     "fp": 0,
+     "fn": 2,
+     "tn": 22,
+     "support": 14,
+     "precision": 1.0,
+     "recall": 0.8571428571428571,
+     "accuracy": 0.9444444444444444,
+     "f1": 0.923076923076923,
+     "f0.5": 0.9677419354838709,
+     "fp_n": [],
+     "fn_n": [
+      15,
+      16
+     ],
+     "pass": false
+    },
+    "etc": {
+     "tp": 3,
+     "fp": 0,
+     "fn": 0,
+     "tn": 33,
+     "support": 3,
+     "precision": 1.0,
+     "recall": 1.0,
+     "accuracy": 1.0,
+     "f1": 1.0,
+     "f0.5": 1.0,
+     "fp_n": [],
+     "fn_n": []
+    }
+   },
+   "weighted_avg": {
+    "precision": 0.9790123456790124,
+    "recall": 0.9333333333333333,
+    "f1": 0.9533089133089132,
+    "f0.5": 0.9679674600298014
+   },
+   "cross": {
+    "live": {
+     "live": 6,
+     "event": 0,
+     "goods": 4,
+     "broadcast": 1,
+     "etc": 0
+    },
+    "event": {
+     "live": 0,
+     "event": 7,
+     "goods": 6,
+     "broadcast": 0,
+     "etc": 0
+    },
+    "goods": {
+     "live": 3,
+     "event": 6,
+     "goods": 17,
+     "broadcast": 0,
+     "etc": 0
+    },
+    "broadcast": {
+     "live": 0,
+     "event": 2,
+     "goods": 2,
+     "broadcast": 12,
+     "etc": 0
+    },
+    "etc": {
+     "live": 0,
+     "event": 0,
+     "goods": 0,
+     "broadcast": 0,
+     "etc": 3
+    }
+   },
+   "passed": false
   },
-  "event": {
-   "tp": 7,
-   "fp": 0,
-   "fn": 0,
-   "tn": 29,
-   "support": 7,
-   "precision": 1.0,
-   "recall": 1.0,
-   "accuracy": 1.0,
-   "fp_n": [],
-   "fn_n": [],
-   "pass": true
-  },
-  "goods": {
-   "tp": 17,
-   "fp": 1,
-   "fn": 0,
-   "tn": 18,
-   "support": 17,
-   "precision": 0.9444444444444444,
-   "recall": 1.0,
-   "accuracy": 0.9722222222222222,
-   "fp_n": [
-    10
-   ],
-   "fn_n": [],
-   "pass": false
-  },
-  "broadcast": {
-   "tp": 12,
-   "fp": 0,
-   "fn": 2,
-   "tn": 22,
-   "support": 14,
-   "precision": 1.0,
-   "recall": 0.8571428571428571,
-   "accuracy": 0.9444444444444444,
-   "fp_n": [],
-   "fn_n": [
-    15,
-    16
-   ],
-   "pass": false
-  },
-  "etc": {
-   "tp": 3,
-   "fp": 0,
-   "fn": 0,
-   "tn": 33,
-   "support": 3,
-   "precision": 1.0,
-   "recall": 1.0,
-   "accuracy": 1.0,
-   "fp_n": [],
-   "fn_n": []
-  }
- },
- "cross": {
-  "live": {
-   "live": 6,
-   "event": 0,
-   "goods": 4,
-   "broadcast": 1,
-   "etc": 0
-  },
-  "event": {
-   "live": 0,
-   "event": 7,
-   "goods": 6,
-   "broadcast": 0,
-   "etc": 0
-  },
-  "goods": {
-   "live": 3,
-   "event": 6,
-   "goods": 17,
-   "broadcast": 0,
-   "etc": 0
-  },
-  "broadcast": {
-   "live": 0,
-   "event": 2,
-   "goods": 2,
-   "broadcast": 12,
-   "etc": 0
-  },
-  "etc": {
-   "live": 0,
-   "event": 0,
-   "goods": 0,
-   "broadcast": 0,
-   "etc": 3
+  "실효": {
+   "per_label": {
+    "live": {
+     "tp": 6,
+     "fp": 0,
+     "fn": 1,
+     "tn": 29,
+     "support": 7,
+     "precision": 1.0,
+     "recall": 0.8571428571428571,
+     "accuracy": 0.9722222222222222,
+     "f1": 0.923076923076923,
+     "f0.5": 0.9677419354838709,
+     "fp_n": [],
+     "fn_n": [
+      50
+     ],
+     "pass": false
+    },
+    "event": {
+     "tp": 7,
+     "fp": 0,
+     "fn": 0,
+     "tn": 29,
+     "support": 7,
+     "precision": 1.0,
+     "recall": 1.0,
+     "accuracy": 1.0,
+     "f1": 1.0,
+     "f0.5": 1.0,
+     "fp_n": [],
+     "fn_n": [],
+     "pass": true
+    },
+    "goods": {
+     "tp": 17,
+     "fp": 1,
+     "fn": 0,
+     "tn": 18,
+     "support": 17,
+     "precision": 0.9444444444444444,
+     "recall": 1.0,
+     "accuracy": 0.9722222222222222,
+     "f1": 0.9714285714285714,
+     "f0.5": 0.9550561797752809,
+     "fp_n": [
+      10
+     ],
+     "fn_n": [],
+     "pass": false
+    },
+    "broadcast": {
+     "tp": 12,
+     "fp": 0,
+     "fn": 2,
+     "tn": 22,
+     "support": 14,
+     "precision": 1.0,
+     "recall": 0.8571428571428571,
+     "accuracy": 0.9444444444444444,
+     "f1": 0.923076923076923,
+     "f0.5": 0.9677419354838709,
+     "fp_n": [],
+     "fn_n": [
+      15,
+      16
+     ],
+     "pass": false
+    },
+    "etc": {
+     "tp": 0,
+     "fp": 0,
+     "fn": 3,
+     "tn": 33,
+     "support": 3,
+     "precision": null,
+     "recall": 0.0,
+     "accuracy": 0.9166666666666666,
+     "f1": null,
+     "f0.5": null,
+     "fp_n": [],
+     "fn_n": [
+      1,
+      6,
+      51
+     ]
+    }
+   },
+   "weighted_avg": {
+    "precision": 0.9790123456790124,
+    "recall": 0.9333333333333333,
+    "f1": 0.9533089133089132,
+    "f0.5": 0.9679674600298014
+   },
+   "cross": {
+    "live": {
+     "live": 6,
+     "event": 0,
+     "goods": 4,
+     "broadcast": 1,
+     "etc": 0
+    },
+    "event": {
+     "live": 0,
+     "event": 7,
+     "goods": 6,
+     "broadcast": 0,
+     "etc": 0
+    },
+    "goods": {
+     "live": 3,
+     "event": 6,
+     "goods": 17,
+     "broadcast": 0,
+     "etc": 0
+    },
+    "broadcast": {
+     "live": 0,
+     "event": 2,
+     "goods": 2,
+     "broadcast": 12,
+     "etc": 0
+    },
+    "etc": {
+     "live": 0,
+     "event": 0,
+     "goods": 0,
+     "broadcast": 0,
+     "etc": 0
+    }
+   },
+   "passed": false
   }
  },
  "items": [
@@ -129,6 +288,7 @@
     "etc"
    ],
    "exact": true,
+   "dropped": true,
    "related": false,
    "reason": "밴드리! 유메미타와 관련된 멤버가 등장하지 않고 애니메이션 최종회 리포스트 캠페인만 안내하므로 분류 없음이며, 관련도 false이다.",
    "evidence": [],
@@ -143,6 +303,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버 5명이 출연하는 TV LIVE 방송이므로 broadcast에 해당한다.",
    "evidence": [
@@ -160,6 +321,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버 전원이 생중계되는 TV LIVE 방송 안내이므로 broadcast이다.",
    "evidence": [
@@ -182,6 +344,7 @@
     "etc"
    ],
    "exact": true,
+   "dropped": true,
    "related": false,
    "reason": "애니메이션 최종회 방송 시작 안내이며 멤버가 직접 출연하지 않아 broadcast가 아니고, 기타 분류도 해당되지 않는다.",
    "evidence": [],
@@ -196,6 +359,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버 인터뷰가 실린 잡지掲載 소식은 goods에 해당한다.",
    "evidence": [
@@ -214,6 +378,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버 인터뷰와 포스터가 실린 잡지掲載이므로 goods이다.",
    "evidence": [
@@ -232,6 +397,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버와 감독의 인터뷰가 실린 잡지掲載이므로 goods에 해당한다.",
    "evidence": [
@@ -251,6 +417,7 @@
     "live"
    ],
    "exact": false,
+   "dropped": false,
    "related": true,
    "reason": "꿈한대밴드의 라이브 공연 티켓 판매 안내이며, 티켓은 goods이면서 live 이벤트이기도 하다.",
    "evidence": [
@@ -271,6 +438,7 @@
     "live"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "13번째 라이브 공연의 티켓 선행 판매 안내이며, 티켓은 goods이면서 live 이벤트이다.",
    "evidence": [
@@ -289,6 +457,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "꿈한대밴드가 애니메이션을 동시에 시청하는 생방송을 진행하므로 broadcast에 해당한다.",
    "evidence": [
@@ -306,6 +475,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "밴드가 TV 애니메이션 동시 시청 생중계에 출연하므로 broadcast에 해당한다.",
    "evidence": [
@@ -325,6 +495,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "싱글 발매 기념 인터넷 사인회는 오프라인 행사이며, 싱글 자체가 굿즈이므로 event와 goods 모두 해당한다.",
    "evidence": [
@@ -345,6 +516,7 @@
     "goods"
    ],
    "exact": false,
+   "dropped": false,
    "related": true,
    "reason": "싱글 발매 기념 사인회 개최 안내이며, 싱글은 굿즈이므로 event와 goods 두 카테고리에 포함된다.",
    "evidence": [
@@ -365,6 +537,7 @@
     "goods"
    ],
    "exact": false,
+   "dropped": false,
    "related": true,
    "reason": "위와 동일하게 싱글 발매 기념 사인회이며, 싱글은 굿즈이므로 event와 goods 모두 해당한다.",
    "evidence": [
@@ -382,6 +555,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버들이 라디오 프로그램에 게스트로 출연해 애니메이션 감상회를 진행하므로 broadcast에 해당한다.",
    "evidence": [
@@ -399,6 +573,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "밴드 전체가 라디오 프로그램에 출연한 내용이므로 broadcast에 해당한다.",
    "evidence": [
@@ -416,6 +591,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버의 생일 굿즈 판매 안내이므로 goods에 해당한다.",
    "evidence": [
@@ -433,6 +609,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "밴드 멤버들이 라디오 프로그램을 진행하는 방송이므로 broadcast에 해당한다.",
    "evidence": [
@@ -452,6 +629,7 @@
     "live"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "프리 라이브 개최 안내와 현장 굿즈 판매 안내가 포함돼 live와 goods 모두 해당한다.",
    "evidence": [
@@ -471,6 +649,7 @@
     "live"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "프리 라이브 개최와 CD 예약 판매 안내가 있어 live와 goods 두 분류에 해당한다.",
    "evidence": [
@@ -488,6 +667,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버가 커버 영상을 공개한 것으로 음원·영상 발매에 해당해 goods이다.",
    "evidence": [
@@ -505,6 +685,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "디지털 음원 발매 안내이므로 goods에 해당한다.",
    "evidence": [
@@ -522,6 +703,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "유튜브 생중계 방송 안내이므로 broadcast이다.",
    "evidence": [
@@ -539,6 +721,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버가 출연하는 TV 특집 방송 안내이므로 broadcast이다.",
    "evidence": [
@@ -556,6 +739,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "멤버의 생일 기념 유튜브 실시간 스트리밍 방송이므로 broadcast이다.",
    "evidence": [
@@ -575,6 +759,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "싱글 발매와 함께 진행되는 리리스 이벤트이며 CD 판매 등 굿즈가 포함돼 event와 goods 두 분류에 해당한다.",
    "evidence": [
@@ -592,6 +777,7 @@
     "live"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "라이브 공연 티켓 판매 안내이므로 live에 해당한다.",
    "evidence": [
@@ -611,6 +797,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "シングルのリリースイベントはオフラインイベントであり、同時にシングル販売に関わるためgoodsにも該当する。",
    "evidence": [
@@ -628,6 +815,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "楽曲のデジタル配信開始は音源販売にあたるためgoodsに分類される。",
    "evidence": [
@@ -645,6 +833,7 @@
     "broadcast"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "メンバーがラジオ番組に出演する情報は放送に該当する。",
    "evidence": [
@@ -662,6 +851,7 @@
     "live"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "ライブイベントでのステージ出演情報なのでliveに該当する。",
    "evidence": [
@@ -680,6 +870,7 @@
     "broadcast"
    ],
    "exact": false,
+   "dropped": false,
    "related": true,
    "reason": "YouTubeでの生配信は放送に該当する。",
    "evidence": [
@@ -697,6 +888,7 @@
     "etc"
    ],
    "exact": true,
+   "dropped": true,
    "related": false,
    "reason": "アニメ放送はメンバーの出演ではなく作品自体の配信なのでbroadcastに該当しない。",
    "evidence": [
@@ -713,6 +905,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "コミックスの発売は物販にあたるためgoodsに分類される。",
    "evidence": [
@@ -732,6 +925,7 @@
     "goods"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "シングルのリリースイベントはオフラインイベントであり、同時に特典グッズの配布があるためgoodsにも該当する。",
    "evidence": [
@@ -749,6 +943,7 @@
     "event"
    ],
    "exact": true,
+   "dropped": false,
    "related": true,
    "reason": "展覧会とお渡し会はオフラインイベントに該当する。",
    "evidence": [
