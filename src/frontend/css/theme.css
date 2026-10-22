@@ -47,10 +47,18 @@
   --ntc-hover: #f5f3fc;
   --ntc-faint: #8a8ea3;
   --ntc-border-soft: #e4e1ee;
-  --ntc-cat-platform: #2f8c80;
-  --ntc-dsoon: #c46a12;
+  --ntc-focus: #2f8c80;
+  --ntc-dsoon: #a85a0c;   /* (v4.6.4) D-7 이내 — 밝은 바탕 대비(AA)용 진한 주황 */
+  --ntc-cat-live: #b02a6f;   /* (v4.6.4) 분류 6색 — 밝게 */
+  --ntc-cat-event: #13786b;
+  --ntc-cat-broadcast: #1d64ad;
+  --ntc-cat-goods: #6247c0;
+  --ntc-cat-game: #3a7a26;
+  --ntc-cat-etc: #586174;
   --ntc-lamp-off: #f0d6d8;
   --ntc-shadow: rgba(40, 30, 80, 0.16);
+  --ntc-accent: #6b5bc4;   /* (v4.6.4) 고정 팝업 테두리 · 팝업 링크 */
+  --ntc-scrim: rgba(20, 18, 40, 0.38);   /* (v4.6.4) 모바일 시트 뒤 배경 */
 
   /* banners.css */
   --bnr-surface: #f0eefa;
@@ -137,7 +145,7 @@
 @media (max-width: 767px) {
   .ntc__tgl, .ntc__theme { width: 2.25rem; }
 }
-.ntc__theme:focus-visible { outline: 2px solid var(--ntc-cat-platform); outline-offset: -2px; }
+.ntc__theme:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
 /* 해 · 달을 같은 자리에 겹쳐 두고 바꿔 보인다(BPM 테마 토글과 같은 방식). 아이콘 = 지금 테마 */
 .ntc__theme svg {
   grid-area: 1 / 1;

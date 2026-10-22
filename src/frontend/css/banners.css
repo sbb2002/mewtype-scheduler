@@ -46,7 +46,7 @@
 /* 기기 · 브라우저의 색 변환에 흔들리지 않게 (테마는 color-scheme 을 따라간다 — theme.css) */
 .bnr, .bnr * { color-scheme: inherit; forced-color-adjust: none; }
 
-.ntc__list > li.ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft); }
+.ntc__list > .ntc__banners { padding: 12px var(--m-pad, 0.8rem); background: var(--bnr-surface); border-bottom: 1px solid var(--ntc-border-soft); }   /* (v4.6.4) 소식 목록이 ul → div 로 바뀌어 li 를 뺐다 */
 
 .bnr { display: grid; grid-template-columns: 1fr; gap: 10px; }   /* (v4.4) PC 는 탭으로 고른 카드 1장만 보인다 — 아래 .has-tabs */
 
@@ -173,6 +173,11 @@
 .bnr__arrow:disabled { opacity: 0.3; cursor: default; }
 .bnr__tab:focus-visible, .bnr__arrow:focus-visible { outline: 2px solid var(--color-text); outline-offset: 2px; }
 .bnr__dots { display: none; }   /* 점 표시는 모바일만 */
+
+/* (v4.6.4) 카드 좌우 드래그 — 손가락 스와이프 · 마우스 드래그로 옆 배너(banners.js _wireCardDrag). 세로 스크롤은 브라우저에 맡긴다.
+   배너가 2개 이상(.has-tabs)일 때만. 끄는 동안 카드가 손을 따라 움직이고(transform 은 JS), 글자 선택 · 이미지 끌기는 막는다 */
+.bnr.has-tabs > .bnr__card { touch-action: pan-y; cursor: grab; }
+.bnr.has-tabs > .bnr__card.is-drag { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 
 /* 모바일: 이미지를 맨 위에 가로로 꽉 채우고(16:9) 절취선은 가로로, 텍스트 · 가챠 · 종료 박스 · 진행 막대는 그 아래 */
 @media (max-width: 640px) {

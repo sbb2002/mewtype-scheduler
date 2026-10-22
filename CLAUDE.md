@@ -57,6 +57,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.6.3 (핫픽스, 2026-10-22)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.6.3`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
+> **v4.6.4 (핫픽스, 브랜치 `hotfix/notice-board`, 2026-10-22, 프론트 + 백엔드 버그 수정 2건 — 미병합 · 미배포)**: **소식판 개편 + 행사 배너 드래그.** 분류 탭(6분류, 0건 숨김 — 저장 값은 아직 옛 4종이라 화면에서 바꿔 읽음) ·
+> 제목 15.5px 한 줄 + 말줄임(marquee 제거) · 소식을 가리키거나 누르면 **소식 팝업 카드**(PC 호버/클릭 고정 · 모바일 아래 시트 — 트윗 말풍선과 같은 동작, 번역 본문 + X 공식 카드, 원문 본문은 안 그림) ·
+> 행사 배너 카드 좌우 드래그 · PC → 모바일 폭 전환 때 `render.js` 캐러셀 NotFoundError(기존 버그). 백엔드: 소식 병합 때 한글 제목이 옛 글 것으로 남던 버그 · 게임 계정 소식 출처 표기. LLM 짧은 제목 · 6분류는 품질 미달로 다음 핫픽스. 상세 `docs/SPEC.md` 「소식판 (v4.6.4)」 · 계약 H, 요약 `docs/VERSION.md`.
+>
 > **v4.6.3 (핫픽스, 브랜치 `hotfix/notice-next-lines`, 2026-10-22, 백엔드만 — 배포 완료 `mewtype-backend` 00172 · `mewtype-telegram` 00119, 롤백 = 00170 · 00118 / 병합 `1f1df50`(PR #80))**: 소식 시점 판정에서 **보고 + 다음 일정 줄 = 그 일의 날짜와 상관없이 다음 일정만 올림**
 > (v4.6.2 는 오늘 일이면 글 전체를 오늘 자정에 내려 다음 회차 안내까지 사라졌다 — 실측 5th 싱글 릴리즈 이벤트 감사 + 「次回は10/4」). `notices.timing_decision`. 요약 `docs/VERSION.md`.
 >
@@ -520,10 +524,10 @@ src/
       api.js           # fetchSchedule(url): AbortController 타임아웃, {ok,data|error} (notices 도 재사용)
       render.js        # renderBoard / renderFooter / updateCountdowns
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
-      notices.js       # (v2.7) renderNotices(#notice, data) — 소식 티커 (접힘/펼침/5초 순환/램프/marquee). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
+      notices.js       # (v2.7) renderNotices(#notice, data) — 소식판. (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 15.5px 한 줄, 소식 팝업 카드(PC 호버/클릭) · 시트(모바일). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
       theme.js         # (v4.6.0) 밝게/어둡게 전환 버튼 · 저장(localStorage "theme") · 기기 설정 따라가기 · mew:theme 이벤트(X 카드 테마)
       king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출(v4.5.8 — 지각한 방송이 라이브인 동안 페이지마다 한 번, 끝나면 바로 1.2초에 걸쳐 평소 라이브 카드로) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
-      tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트
+      tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트. (v4.6.4) X 카드 export(makeXCard · loadXCards · stopXCards — 소식 팝업 카드가 씀)
       playerbtn.js     # (v4.2.0) 「CD + 음표 >」 버튼 — 클릭 시 mew:player-open 발행
       player.js        # (v4.2.0) 플레이어 팝업 + 플로팅 YouTube 프레임(IFrame API). main.js 가 첫 클릭 때 동적 import
       songs.js         # (v4.2.0) 곡 검색 정규화 · 가나→한글 독음 · 필터/정렬 — 순수 (songs.selfcheck.mjs)

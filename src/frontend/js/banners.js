@@ -277,6 +277,81 @@ function _wireTabScroll(root) {
   vp.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);   // 드래그 끝의 클릭은 탭 선택으로 안 친다
 }
 
+// (v4.6.4) 카드 좌우 드래그 — 보이는 카드(.bnr__card[data-active])에서 손가락 스와이프 · 마우스 드래그로 옆 배너로 넘긴다.
+// 수평 이동이 세로보다 클 때만 드래그로 본다(세로는 목록 스크롤 — CSS touch-action: pan-y). 끄는 동안 카드가 손을 따라 움직이고,
+// 폭의 15% 이상 끌었거나 빠르게 튕기면 넘어간다(왼쪽으로 끌면 다음). 처음 · 끝에서 더 못 가는 쪽은 고무줄처럼 저항만.
+// 넘길 때는 탭과 같은 select 를 써서 탭 · 점 · 탭 줄 위치 · 펼침 높이 재측정이 그대로 따라온다. 드래그 끝의 click 은 무시.
+// 움직임 줄이기 설정이면 되돌아가기 · 들어오기 애니메이션 없이 바로 바꾼다. (_wireTabs 가 배너 2개 이상일 때만 부른다)
+const DRAG_START = 8;      // px — 이만큼 움직여야 방향(가로/세로)을 판정
+const DRAG_RATIO = 0.15;   // 카드 폭의 15% 이상 끌면 넘김
+const FLICK_V = 0.5;       // px/ms — 이보다 빠르게 튕기면 짧게 끌어도 넘김
+const FLICK_MIN = 24;      // px — 튕기기로 칠 최소 이동
+
+function _wireCardDrag(root, cards, select) {
+  const reduce = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const ease = "cubic-bezier(.2,.8,.2,1)";
+  const cur = () => Math.max(0, cards.findIndex((c) => c.dataset.id === _sel.id));
+  let d = null, suppress = false;
+
+  root.addEventListener("pointerdown", (e) => {
+    const card = e.target.closest(".bnr__card");
+    if (!card || card.parentElement !== root || card.dataset.active !== "true") return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    d = { id: e.pointerId, x0: e.clientX, y0: e.clientY, card, w: card.getBoundingClientRect().width || 1,
+          drag: false, dx: 0, pts: [{ x: e.clientX, t: e.timeStamp }] };
+  });
+  root.addEventListener("pointermove", (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+    if (!d.drag) {
+      if (Math.abs(dx) < DRAG_START && Math.abs(dy) < DRAG_START) return;
+      if (Math.abs(dx) <= Math.abs(dy)) { d = null; return; }   // 세로가 크면 스크롤에 맡긴다
+      d.drag = true;
+      d.card.classList.add("is-drag");
+      try { d.card.setPointerCapture(e.pointerId); } catch (_) { /* 이미 놓았으면 무시 */ }
+      const sel = window.getSelection && window.getSelection();
+      if (sel) sel.removeAllRanges();
+    }
+    e.preventDefault();
+    const k = cur();
+    const edge = (dx > 0 && k === 0) || (dx < 0 && k === cards.length - 1);
+    d.dx = dx;
+    const shown = edge ? (dx * 0.3) / (1 + Math.abs(dx) / d.w) : dx;   // 끝에서는 고무줄 — 끈 거리보다 훨씬 덜 움직인다
+    d.card.style.transform = `translateX(${shown.toFixed(1)}px)`;
+    d.pts.push({ x: e.clientX, t: e.timeStamp });
+    if (d.pts.length > 5) d.pts.shift();
+  });
+  const end = (e, cancel) => {
+    if (!d || e.pointerId !== d.id) return;
+    const g = d;
+    d = null;
+    if (!g.drag) return;
+    g.card.classList.remove("is-drag");
+    suppress = true;                                   // 바로 뒤따르는 click 은 무시(아래 캡처 리스너)
+    setTimeout(() => { suppress = false; }, 0);
+    const p0 = g.pts[0], p1 = g.pts[g.pts.length - 1];
+    const v = p1.t > p0.t ? (p1.x - p0.x) / (p1.t - p0.t) : 0;
+    const k = cur(), dir = g.dx < 0 ? 1 : -1, to = k + dir;
+    const flick = Math.abs(v) >= FLICK_V && Math.abs(g.dx) >= FLICK_MIN && Math.sign(v) === Math.sign(g.dx);
+    const go = !cancel && to >= 0 && to < cards.length && (Math.abs(g.dx) >= g.w * DRAG_RATIO || flick);
+    const from = g.card.style.transform || "translateX(0px)";
+    g.card.style.transform = "";
+    if (!go) {                                         // 제자리로 되돌아감
+      if (!reduce()) g.card.animate([{ transform: from }, { transform: "translateX(0px)" }], { duration: 200, easing: ease });
+      return;
+    }
+    select(to, false);
+    if (!reduce()) {                                   // 새 카드가 끈 방향 반대쪽에서 들어온다
+      const off = dir * Math.min(g.w * 0.35, 140);
+      cards[to].animate([{ transform: `translateX(${off}px)`, opacity: 0.35 }, { transform: "translateX(0px)", opacity: 1 }],
+        { duration: 240, easing: ease });
+    }
+  };
+  root.addEventListener("pointerup", (e) => end(e, false));
+  root.addEventListener("pointercancel", (e) => end(e, true));
+  root.addEventListener("click", (e) => { if (suppress) { e.stopPropagation(); e.preventDefault(); suppress = false; } }, true);
+}
+
 function _wireTabs(scope) {
   scope.querySelectorAll(".bnr.has-tabs").forEach((root) => {
     const tabs = Array.from(root.querySelectorAll(".bnr__tab")), cards = Array.from(root.querySelectorAll(".bnr__card"));
@@ -318,6 +393,7 @@ function _wireTabs(scope) {
       _sel.off = Math.max(0, Math.min(maxOff, _sel.off + Number(a.dataset.d)));
       paint(false);
     }));
+    _wireCardDrag(root, cards, select);
     const i0 = cards.findIndex((c) => c.dataset.id === _sel.id);
     if (_mobile() && i0 > 0) vp.scrollLeft = tabs[i0].offsetLeft;   // 다시 그려진 뒤에도 고른 탭이 보이게
   });

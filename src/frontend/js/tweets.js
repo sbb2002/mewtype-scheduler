@@ -635,6 +635,18 @@ function _wire() {
   });
 }
 
+/* ── (v4.6.4) 소식 팝업 카드(notices.js)도 같은 X 공식 카드를 쓴다 ─────────
+   카드 만들기 · 불러오기 · 정리만 내보낸다 — 테마 전환 · 높이 신호(iframe.lane__thread__embed) · 15초 실패 링크는 트윗과 같은 코드가 처리한다. */
+/** X 카드 자리(숫자 id 면 임베드 자리, 아니면 「X에서 원문 보기」 링크). href = 원문 트윗 주소 */
+export function makeXCard(id, href) { return _xCard({ id, url: href || "" }); }
+/** root 안의 X 카드 자리를 지금 불러온다(iframe 생성) */
+export function loadXCards(root) {
+  if (!root) return;
+  root.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard);
+}
+/** root 안의 X 카드 iframe 을 지운다(닫을 때) */
+export function stopXCards(root) { _stopCards(root); }
+
 /* ── public ─────────────────────────────────────────────────────── */
 export function renderTweets(boardEl, data) {
   _st.board = boardEl;

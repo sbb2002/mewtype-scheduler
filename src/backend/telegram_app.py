@@ -1851,6 +1851,10 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
     parsed = xnotice.parse(raw, now_iso, tag=tag, title=title)
     if not parsed:
         return None
+    # (v4.6.4) 게임 계정 글(게임 밖 콜라보 · 행사 → 소식, v4.5.10)의 출처를 그 계정으로 — 전엔 xnotice 기본값 @BDP_yumemita 로 적혔다
+    _gh = _game_account_handle(title)
+    if _gh:
+        parsed["src_handle"] = "@" + _gh
 
     # 0. (v4.6.2) 시점 판정 — 지난 일의 소감 · 보고는 소식으로 올리지 않는다(LLM 판정, 올릴지는 코드). 제목 · 번역 LLM 보다 먼저.
     #    이미 본 트윗(활성 · 보관 소식의 seen_ids)이면 부르지 않는다 — 커밋에서 어차피 「dup」 으로 끝난다(같은 글이 다시 와도 Groq 를 안 쓰게).
@@ -2029,12 +2033,16 @@ def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict |
         row = next((n for n in new_n.get("notices", [])
                     if parsed.get("id") == n.get("id")
                     or parsed.get("id") in (n.get("seen_ids") or [])), None)
-        if row and not row.get("title_ko"):
+        if row:
             if tl and tl.get("title_ko"):
+                # (v4.6.4) 기존 행에 합쳐진 경우(updated)에도 덮는다 — 합칠 때 원문 제목 · 본문은 새 글 것으로 바뀌는데(notices._merge_fields)
+                # 전엔 한글 제목만 옛 글 것으로 남아 원문과 뜻이 다른 한글 제목이 보였다(10-22 실측 약 15건).
                 row["title"] = tl.get("title_ja") or row.get("title")
                 row["title_ko"] = tl["title_ko"]
                 row.pop("needs_tl", None)
-            else:
+            elif mode == "updated" or not row.get("title_ko"):
+                # 판정 실패 — 합쳐진 행의 옛 한글 제목은 새 원문과 안 맞으므로 비우고 다음 번역 sweep 이 다시 채운다(그동안은 원문 제목)
+                row["title_ko"] = None
                 row["needs_tl"] = True
         # (v4.0.5) 본문 번역 — 번역한 본문이 지금 행의 본문과 같을 때만(없으면 번역 sweep 이 채움)
         if row and prepared.get("body_ko") and row.get("body_raw") == prepared.get("body_src"):
@@ -3090,6 +3098,16 @@ def _game_account(vx_ex: dict | None, title: str | None, cfg: dict | None = None
         return next((k for k, v in ga.items() if (v.get("handle") or k).lower() == author), None)
     t = (title or "").strip()
     return next((k for k, v in ga.items() if t and t in (v.get("x_names") or [])), None) if t else None
+
+
+def _game_account_handle(title: str | None, cfg: dict | None = None) -> str | None:
+    """(v4.6.4) 알림 표시명이 게임 계정이면 그 X 핸들(@ 없이), 아니면 None — 소식 출처 표기용."""
+    try:
+        c = cfg if cfg is not None else _load_channels_config()
+        k = _game_account(None, title, c)
+        return ((c.get("game_accounts") or {}).get(k) or {}).get("handle") or k if k else None
+    except Exception:
+        return None
 
 
 def _banner_posted_jst(tag: str | None, now_iso: str) -> str:
@@ -7442,6 +7460,8 @@ if __name__ == "__main__":
     assert _game_account(None, "バンドリ！アワーノーツ", _gcfg) == "bang_dream_on"                  # 조회 실패 → 표시명
     assert _game_account(None, "夢限大みゅーたいぷ", _gcfg) is None and _game_account(None, "", _gcfg) is None
     assert _game_account({"author": "bang_dream_on"}, "", {"game_accounts": {}}) is None
+    assert _game_account_handle("バンドリ！アワーノーツ", _gcfg) == "bang_dream_on"     # (v4.6.4) 소식 출처 표기
+    assert _game_account_handle("夢限大みゅーたいぷ", _gcfg) is None and _game_account_handle(None, _gcfg) is None
 
     # (v4.5.10) 행사 판정 notice = 게임 밖 콜라보 · 행사 → 배너를 안 건드리고 소식 파이프라인으로
     _saved = (_prepare_banner, _maybe_auto_notice, _llm_record, _log_event_safe, writeclient.call_write)
@@ -9078,6 +9098,21 @@ if __name__ == "__main__":
         n2 = gh_test.store[_NOTICES_PATH]
         assert n2.get("notices") and len(n2["notices"]) == 1, "중복 병합 후에도 1건만"
         print("[OK] WP-3a: _commit_notice(dup_id=존재하는_id) → updated")
+
+        # (v4.6.4) 병합된 행의 한글 제목 — 새 글의 제목 추출 결과로 덮는다 · 추출 실패면 옛 한글 제목을 비우고 needs_tl
+        _row = n2["notices"][0]
+        _row["title_ko"] = "옛 글 제목"
+        gh_test.store[_NOTICES_PATH] = n2
+        _p = copy.deepcopy(prep_test2); _p["parsed"] = dict(_p["parsed"], id="9900000000000000001"); _p["dup_id"] = added_id
+        _p["tl"] = {"title_ja": "新しい題", "title_ko": "새 글 제목"}
+        _commit_notice(gh_test, _p, "2026-09-17T13:40:00Z")
+        _r = gh_test.store[_NOTICES_PATH]["notices"][0]
+        assert _r["title_ko"] == "새 글 제목" and _r["title"] == "新しい題" and not _r.get("needs_tl"), _r
+        _p2 = copy.deepcopy(_p); _p2["parsed"] = dict(_p["parsed"], id="9900000000000000002"); _p2["tl"] = None
+        _commit_notice(gh_test, _p2, "2026-09-17T13:50:00Z")
+        _r = gh_test.store[_NOTICES_PATH]["notices"][0]
+        assert _r["title_ko"] is None and _r.get("needs_tl") is True, _r
+        print("[OK] v4.6.4: 병합된 소식의 한글 제목 = 새 글 기준(추출 실패면 비우고 needs_tl)")
 
         # (c-iii) dup_id 없는 id → added (세 번째 원문)
         # LLM 임시 복구 (prep_test3 생성)
