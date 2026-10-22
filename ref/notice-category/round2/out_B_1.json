@@ -1,0 +1,37 @@
+{
+ "variant": "B",
+ "batch": 1,
+ "ns": [
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  20,
+  21
+ ],
+ "sec": 2.9,
+ "usage": {
+  "queue_time": 0.01157851,
+  "prompt_tokens": 1958,
+  "prompt_time": 0.076598079,
+  "completion_tokens": 1278,
+  "completion_time": 2.662214566,
+  "total_tokens": 3236,
+  "total_time": 2.738812645,
+  "completion_tokens_details": {
+   "reasoning_tokens": 258
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "993",
+  "x-ratelimit-remaining-tokens": "4739",
+  "x-ratelimit-reset-requests": "10m4.8s",
+  "x-ratelimit-reset-tokens": "24.457s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 12,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"本日生配信！アニメゆめみた 同時視聴 #13\",\n        \"夢限大みゅーたいぷ 5名と アニメを同時視聴！\"\n      ],\n      \"reason\": \"꿈한대밴드가 애니메이션을 동시에 시청하는 생방송을 진행하므로 broadcast에 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 13,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"TVアニメ「バンドリ！ ゆめ∞みた」 同時視聴配信 #13 開始\",\n        \"出演:夢限大みゅーたいぷ\"\n      ],\n      \"reason\": \"밴드가 TV 애니메이션 동시 시청 생중계에 출연하므로 broadcast에 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 14,\n      \"cats\": [\"event\", \"goods\"],\n      \"evidence\": [\n        \"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\",\n        \"リリース記念 インターネットサイン会🖋\"\n      ],\n      \"reason\": \"싱글 발매 기념 인터넷 사인회는 오프라인 행사이며, 싱글 자체가 굿즈이므로 event와 goods 모두 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 15,\n      \"cats\": [\"event\", \"goods\"],\n      \"evidence\": [\n        \"夢限大みゅーたいぷ 5th Single リリース記念サイン会開催！\",\n        \"リリース記念 インターネットサイン会🖋\"\n      ],\n      \"reason\": \"싱글 발매 기념 사인회 개최 안내이며, 싱글은 굿즈이므로 event와 goods 두 카테고리에 포함된다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 16,\n      \"cats\": [\"event\", \"goods\"],\n      \"evidence\": [\n        \"夢限大みゅーたいぷ 5th Single リリース記念サイン会開催！\",\n        \"リリース記念 インターネットサイン会🖋\"\n      ],\n      \"reason\": \"위와 동일하게 싱글 발매 기념 사인회이며, 싱글은 굿즈이므로 event와 goods 모두 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 17,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"FM802『802 Palette』で夢限大みゅーたいぷアニメ感想会開催\",\n        \"ゲストは #夢限大みゅーたいぷ🛸 メンバー5人揃ってお迎えします！\"\n      ],\n      \"reason\": \"멤버들이 라디오 프로그램에 게스트로 출연해 애니메이션 감상회를 진행하므로 broadcast에 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 18,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"FM802「802 Palette」に ＼📻出演ありがとうございました📻／\",\n        \"FM802「802 Palette」に 夢限大みゅーたいぷ全員で 出演させていただきました❣\"\n      ],\n      \"reason\": \"밴드 전체가 라디오 프로그램에 출연한 내용이므로 broadcast에 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 20,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"💛仲町あられ バースデーグッズ2026💛\",\n        \"ブシロード オンラインストアにて受注販売❣\"\n      ],\n      \"reason\": \"멤버의 생일 굿즈 판매 안내이므로 goods에 해당한다.\",\n      \"related\": true\n    },\n    {\n      \"n\": 21,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"本日配信開始！夢限大みゅーたいぷの『ゆめ∞みたラジオ』#12\",\n        \"宮永ののか・峰月律・藤都子が出演🎉\"\n      ],\n      \"reason\": \"밴드 멤버들이 라디오 프로그램을 진행하는 방송이므로 broadcast에 해당한다.\",\n      \"related\": true\n    }\n  ]\n}"
+}

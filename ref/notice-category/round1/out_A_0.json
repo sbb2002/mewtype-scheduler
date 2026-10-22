@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  1,
+  2,
+  3,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "sec": 2.5,
+ "usage": {
+  "queue_time": 0.270629993,
+  "prompt_tokens": 1986,
+  "prompt_time": 0.114643482,
+  "completion_tokens": 927,
+  "completion_time": 1.93779798,
+  "total_tokens": 2913,
+  "total_time": 2.052441462,
+  "completion_tokens_details": {
+   "reasoning_tokens": 187
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "999",
+  "x-ratelimit-remaining-tokens": "4888",
+  "x-ratelimit-reset-requests": "1m26.4s",
+  "x-ratelimit-reset-tokens": "23.34s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 1,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"리포스트 캠페인은 방송 자체가 아니라 방송 기념 이벤트이며, 정의된 카테고리에 해당하지 않는다.\"\n    },\n    {\n      \"n\": 2,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"バンドリ！TV LIVE 2026 #331 夢限大みゅーたいぷ 5名出演\",\n        \"📺本日22:03頃〜\",\n        \"「バンドリ！TV LIVE 2026」＃331\"\n      ],\n      \"reason\": \"멤버들이 TV LIVE 방송에 출연한다는 내용으로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 3,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"バンドリ！TV LIVE 2026 生配信のお知らせ\",\n        \"このあと22:03頃〜生配信📺✨\",\n        \"「バンドリ！TV LIVE 2026」＃331\"\n      ],\n      \"reason\": \"생방송(생중계) 진행을 알리는 트윗으로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 6,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"『バンドリ！ ゆめ∞みた』最終回放送開始のお知らせ\",\n        \"本日23:00より放送・配信開始🌟\"\n      ],\n      \"reason\": \"애니메이션 최종회 방영 시작을 알리는 내용으로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 7,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"잡지 실린 기사·대담에 관한 내용으로 정의된 카테고리에 포함되지 않는다.\"\n    },\n    {\n      \"n\": 8,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"잡지 실린 인터뷰·포스터 소개이며, 카테고스에 해당하지 않는다.\"\n    },\n    {\n      \"n\": 9,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"잡지 실린 좌담회 기사이며, 정의된 분류에 해당하지 않는다.\"\n    },\n    {\n      \"n\": 10,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"バンドリ13thライブ DAY 夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」チケット販売開始\",\n        \"🛸#バンドリ13thライブ\",\n        \"DAY2 : 夢限大みゅーたいぷ\",\n        \"「DIMENSIONAL OVERLAP」🛸\"\n      ],\n      \"reason\": \"공연 티켓 판매 안내이므로 라이브 공연에 해당한다.\"\n    },\n    {\n      \"n\": 11,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"BanG Dream! 13th LIVE 先行通販開始\",\n        \"先行通販がこのあと15時00分より開始です！\",\n        \"なお法被のみは17時00分より通販開始です。\"\n      ],\n      \"reason\": \"공연 관련 굿즈(법희) 선행 판매 안내이므로 굿즈에 해당한다.\"\n    }\n  ]\n}"
+}

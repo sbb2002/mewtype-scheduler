@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  35,
+  39,
+  40,
+  48,
+  50,
+  51,
+  52,
+  54,
+  57
+ ],
+ "sec": 4.3,
+ "usage": {
+  "queue_time": 0.554772234,
+  "prompt_tokens": 1955,
+  "prompt_time": 0.556986613,
+  "completion_tokens": 1421,
+  "completion_time": 2.989271226,
+  "total_tokens": 3376,
+  "total_time": 3.546257839,
+  "completion_tokens_details": {
+   "reasoning_tokens": 322
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "995",
+  "x-ratelimit-remaining-tokens": "5052",
+  "x-ratelimit-reset-requests": "7m12s",
+  "x-ratelimit-reset-tokens": "22.11s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 35,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"9月21日(月･祝)にanimate hall BLACK（アニメイト池袋本店 北館9F）にて開催予定の【夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント】につきまして、台風25号の接近に伴い、…開催を中止させていただくこととなりました。\"\n      ],\n      \"reason\": \"리리스를 알리는 오프라인 행사(리리ース 이벤트)의 취소 안내이므로 event에 해당한다.\"\n    },\n    {\n      \"n\": 39,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"オリオンをなぞる(Cover) デジタルリリース開始\",\n        \"各音楽配信サービスにてデジタルリリース🎉\",\n        \"MVも本日20時に公開予定ですので、\"\n      ],\n      \"reason\": \"디지털 음원 및 MV 공개는 판매·발매 안내이므로 goods에 해당한다.\"\n    },\n    {\n      \"n\": 40,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"鷲崎健のヨルナイト×ヨルナイト ラジオ出演！峰月律と千石ユノが登場\",\n        \"「鷲崎健のヨルナイト×ヨルナイト」\",\n        \"⏰:9月23日(水) 21時〜\",\n        \"📺:https://ch.nicovideo.jp/yonayona\"\n      ],\n      \"reason\": \"멤버들이 라디오 프로그램에 출연하는 방송 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 48,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"BanG Dream! 第13回ライブ\",\n        \"夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」\",\n        \"9/24(…\"\n      ],\n      \"reason\": \"밴드리 라이브 공연에 참여하는 내용이므로 live에 해당한다.\"\n    },\n    {\n      \"n\": 50,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"このあと生配信開始\",\n        \"#アニメゆめみた 放送記念フリーライブ\",\n        \"YouTube「バンドリちゃんねる☆」にて全編無料配信📹\",\n        \"アーカイブはございません⚠\"\n      ],\n      \"reason\": \"유튜브에서 실시간으로 진행되는 무료 라이브 스트리밍은 방송에 해당한다.\"\n    },\n    {\n      \"n\": 51,\n      \"cats\": [],\n      \"evidence\": [\n        \"ABEMAにてTVアニメ「バンドリ！ ゆめ∞みた」全話無料配信中\",\n        \"TVアニメ「バンドリ！ ゆめ∞みた」全話無料配信中❣\"\n      ],\n      \"reason\": \"애니메이션 자체의 무료 스트리밍은 멤버 출연 방송이 아니므로 분류되지 않는다.\"\n    },\n    {\n      \"n\": 52,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"コミックス発売決定！\",\n        \"9月25日(金)発売📚\",\n        \"藤都子が描く漫画 #マジるる の コミックスが発売決定🎊\"\n      ],\n      \"reason\": \"만화 커믹스 발매 및 예약 안내는 물품 판매이므로 goods에 해당한다.\"\n    },\n    {\n      \"n\": 54,\n      \"cats\": [\"event\", \"goods\"],\n      \"evidence\": [\n        \"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\",\n        \"夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベントが…開催✨\",\n        \"5F特設レジにて17時30分より開催予定の特典お渡し会の参加券と特典券も配布中👀…\"\n      ],\n      \"reason\": \"타워레코드에서 열리는 리리ース 이벤트는 오프라인 행사이며, 특전 제공이 포함돼 goods 요소도 있다.\"\n    },\n    {\n      \"n\": 57,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"🎨「藤都子展〜16歳〜」\",\n        \"開催記念お渡し会🎨\",\n        \"次回は9/27(日)BanG Dream! STOREにてお渡し会を開催！\"\n      ],\n      \"reason\": \"전시와 기념 핸드아웃 회는 오프라인 행사이므로 event에 해당한다.\"\n    }\n  ]\n}"
+}

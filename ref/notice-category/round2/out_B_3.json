@@ -1,0 +1,37 @@
+{
+ "variant": "B",
+ "batch": 3,
+ "ns": [
+  35,
+  39,
+  40,
+  48,
+  50,
+  51,
+  52,
+  54,
+  57
+ ],
+ "sec": 3.8,
+ "usage": {
+  "queue_time": 0.356420012,
+  "prompt_tokens": 2001,
+  "prompt_time": 0.418815682,
+  "completion_tokens": 1365,
+  "completion_time": 2.866130532,
+  "total_tokens": 3366,
+  "total_time": 3.284946214,
+  "completion_tokens_details": {
+   "reasoning_tokens": 334
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "991",
+  "x-ratelimit-remaining-tokens": "5552",
+  "x-ratelimit-reset-requests": "12m57.599s",
+  "x-ratelimit-reset-tokens": "18.36s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 35,\n      \"cats\": [\n        \"event\",\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"9月21日(月･祝)にanimate hall BLACK（アニメイト池袋本店 北館9F）にて開催予定の【夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント】につきまして、台風25号の接近に伴い、…開催を中止させていただくこととなりました。\",\n        \"リリースイベント\"\n      ],\n      \"reason\": \"シングルのリリースイベントはオフラインイベントであり、同時にシングル販売に関わるためgoodsにも該当する。\",\n      \"related\": true\n    },\n    {\n      \"n\": 39,\n      \"cats\": [\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"オリオンをなぞる(Cover) デジタルリリース開始\",\n        \"各音楽配信サービスにてデジタルリリース🎉\"\n      ],\n      \"reason\": \"楽曲のデジタル配信開始は音源販売にあたるためgoodsに分類される。\",\n      \"related\": true\n    },\n    {\n      \"n\": 40,\n      \"cats\": [\n        \"broadcast\"\n      ],\n      \"evidence\": [\n        \"鷲崎健のヨルナイト×ヨルナイト ラジオ出演！峰月律と千石ユノが登場\",\n        \"⏰:9月23日(水) 21時〜\"\n      ],\n      \"reason\": \"メンバーがラジオ番組に出演する情報は放送に該当する。\",\n      \"related\": true\n    },\n    {\n      \"n\": 48,\n      \"cats\": [\n        \"live\"\n      ],\n      \"evidence\": [\n        \"BanG Dream! 第13回ライブ\",\n        \"夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」\"\n      ],\n      \"reason\": \"ライブイベントでのステージ出演情報なのでliveに該当する。\",\n      \"related\": true\n    },\n    {\n      \"n\": 50,\n      \"cats\": [\n        \"broadcast\"\n      ],\n      \"evidence\": [\n        \"このあと生配信開始\",\n        \"YouTube「バンドリちゃんねる☆」にて全編無料配信📹\"\n      ],\n      \"reason\": \"YouTubeでの生配信は放送に該当する。\",\n      \"related\": true\n    },\n    {\n      \"n\": 51,\n      \"cats\": [],\n      \"evidence\": [\n        \"ABEMAにてTVアニメ「バンドリ！ ゆめ∞みた」全話無料配信中\"\n      ],\n      \"reason\": \"アニメ放送はメンバーの出演ではなく作品自体の配信なのでbroadcastに該当しない。\",\n      \"related\": false\n    },\n    {\n      \"n\": 52,\n      \"cats\": [\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"コミックス発売決定！\",\n        \"藤都子が描く漫画 #マジるる の コミックスが発売決定\"\n      ],\n      \"reason\": \"コミックスの発売は物販にあたるためgoodsに分類される。\",\n      \"related\": true\n    },\n    {\n      \"n\": 54,\n      \"cats\": [\n        \"event\",\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\",\n        \"5F特設レジにて17時30分より開催予定の特典お渡し会の参加券と特典券も配布中\"\n      ],\n      \"reason\": \"シングルのリリースイベントはオフラインイベントであり、同時に特典グッズの配布があるためgoodsにも該当する。\",\n      \"related\": true\n    },\n    {\n      \"n\": 57,\n      \"cats\": [\n        \"event\"\n      ],\n      \"evidence\": [\n        \"「藤都子展〜16歳〜」　開催記念お渡し会\",\n        \"次回は9/27(日)BanG Dream! STOREにてお渡し会を開催！\"\n      ],\n      \"reason\": \"展覧会とお渡し会はオフラインイベントに該当する。\",\n      \"related\": true\n    }\n  ]\n}"
+}

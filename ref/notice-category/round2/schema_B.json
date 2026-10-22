@@ -1,0 +1,56 @@
+{
+ "name": "notice_categories",
+ "strict": true,
+ "schema": {
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+   "results"
+  ],
+  "properties": {
+   "results": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "n",
+      "cats",
+      "evidence",
+      "reason",
+      "related"
+     ],
+     "properties": {
+      "n": {
+       "type": "integer"
+      },
+      "cats": {
+       "type": "array",
+       "items": {
+        "type": "string",
+        "enum": [
+         "live",
+         "event",
+         "goods",
+         "broadcast"
+        ]
+       }
+      },
+      "evidence": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "reason": {
+       "type": "string"
+      },
+      "related": {
+       "type": "boolean"
+      }
+     }
+    }
+   }
+  }
+ }
+}

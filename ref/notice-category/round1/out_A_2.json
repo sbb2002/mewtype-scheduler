@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  30,
+  31
+ ],
+ "sec": 3.1,
+ "usage": {
+  "queue_time": 0.414635058,
+  "prompt_tokens": 1973,
+  "prompt_time": 0.181581703,
+  "completion_tokens": 1115,
+  "completion_time": 2.347088913,
+  "total_tokens": 3088,
+  "total_time": 2.528670616,
+  "completion_tokens_details": {
+   "reasoning_tokens": 251
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "997",
+  "x-ratelimit-remaining-tokens": "316",
+  "x-ratelimit-reset-requests": "4m19.2s",
+  "x-ratelimit-reset-tokens": "57.63s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 22,\n      \"cats\": [\n        \"live\",\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"放送記念フリーライブ 「新宿着陸計画」\",\n        \"会場でのグッズ物販の詳細を公開🛍❕\"\n      ],\n      \"reason\": \"프리 라이브 공연 안내와 현장 굿즈 판매 안내가 포함돼 있어 live와 goods에 해당한다.\"\n    },\n    {\n      \"n\": 23,\n      \"cats\": [\n        \"live\",\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"放送記念フリーライブ 「新宿着陸計画」\",\n        \"会場でのCD予約販売の詳細を公開💿❕\"\n      ],\n      \"reason\": \"프리 라이브 공연 안내와 현장 CD 예약 판매 안내가 있어 live와 goods에 해당한다.\"\n    },\n    {\n      \"n\": 24,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"커버 영상 및 일러스트 소개만으로는 라이브·오프라인 행사·굿즈·방송에 해당되지 않는다.\"\n    },\n    {\n      \"n\": 25,\n      \"cats\": [\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"楽曲情報：夢限大みゅーたいぷ 「唱(Cover)」 デジタルリリース開始\",\n        \"各音楽配信サービスにてデジタルリリース🎉\"\n      ],\n      \"reason\": \"음원 디지털 발매 안내이므로 goods에 해당한다.\"\n    },\n    {\n      \"n\": 26,\n      \"cats\": [\n        \"broadcast\"\n      ],\n      \"evidence\": [\n        \"「バンドリ！TV LIVE 2026」\",\n        \"YouTube で生配信📺✨\"\n      ],\n      \"reason\": \"TV LIVE 생중계 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 27,\n      \"cats\": [\n        \"broadcast\"\n      ],\n      \"evidence\": [\n        \"アニメ女心研究所特別放送決定！\",\n        \"TOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組\"\n      ],\n      \"reason\": \"특별 방송 프로그램 방영 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 28,\n      \"cats\": [\n        \"broadcast\"\n      ],\n      \"evidence\": [\n        \"藤都子生誕記念配信がまもなく始まります\",\n        \"🔗配信はこちら https://www.youtube.com/live/MNocXlK5P8s\"\n      ],\n      \"reason\": \"생일 기념 유튜브 실시간 스트리밍 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 30,\n      \"cats\": [\n        \"event\",\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"5th Single 「これはぼくたちの生存のあらすじ」 リリースイベント\",\n        \"💿詳細はこちら https://bushiroad-music.com/topics/22079/\"\n      ],\n      \"reason\": \"싱글 발매와 함께 진행되는 리리스 이벤트이며 CD 판매 안내가 포함돼 있어 event와 goods에 해당한다.\"\n    },\n    {\n      \"n\": 31,\n      \"cats\": [\n        \"live\"\n      ],\n      \"evidence\": [\n        \"チケット一般発売中 📢 #バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\",\n        \"🎫ご購入はこちら https://eplus.jp/13th-live-day2/\"\n      ],\n      \"reason\": \"13th 라이브 공연 티켓 판매 안내이므로 live에 해당한다.\"\n    }\n  ]\n}"
+}
