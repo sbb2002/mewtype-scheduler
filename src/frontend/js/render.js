@@ -694,6 +694,10 @@ function initMobileCarousel(boardEl) {
   const reals = [...boardEl.querySelectorAll(".lane")];
   const n = reals.length;
   if (n < 2) return;
+  // (v4.6.4) 레인이 모두 보드 직속일 때만(= 모바일 구성) 만든다. PC → 모바일로 폭이 바뀌면 이 파일의 경계 리스너(mqlPhone)가
+  // main.js 의 다시 그리기보다 먼저 돌아, 아직 PC 구성(레인이 .tt-later 등 안쪽)인 보드에 복제를 끼우다 insertBefore NotFoundError 가 났다.
+  // 여기서 돌아가면 바로 뒤 main.js 의 paintBoard → renderBoard 가 모바일 구성으로 다시 그리며 이 함수를 다시 부른다.
+  if (reals.some((l) => l.parentElement !== boardEl)) return;
 
   boardEl.classList.add("board--carousel");
 
