@@ -143,7 +143,7 @@ def _ratio(a, b):
 
 
 # 채택 규칙(2026-10-23 운영자): 2차 A 안이 합격선 — 이보다 높은 안 중 가장 높은 것을 채택, 몇 번 시험해도 없으면 2차 A 안 채택.
-# 「높다」의 비교 지표 = 기준 4분류 정답 수 가중 F0.5(FP 를 무겁게) — 운영자 확인 필요.
+# 「높다」의 비교 지표 = 기준 4분류 정답 수 가중 F0.5(FP 를 무겁게) + 라이브공연(live) FP 는 1건도 안 됨(운영자 확정).
 BASELINE_F05 = 0.97295  # round2/score_A.json views.분류.weighted_avg.f0.5 (precision 100% · recall 88.9% · FP 0 · FN 5)
 BETA = 0.5   # F-beta — beta < 1 이면 precision(FP 적음)을 더 무겁게. 0.5 = precision 을 recall 의 2배로(운영자: FP 가 신뢰를 더 깎음)
 
@@ -219,7 +219,9 @@ def score(variant, outdir=None):
                       f"{' '.join('#%d' % n for n in m['fn_n'])} | {' '.join('#%d' % n for n in m['fp_n'])} |")
         md += ["", f"기준 4분류(etc 제외) 정답 수 가중 평균 — precision {pc(avg['precision'])} · recall {pc(avg['recall'])} · "
                    f"F1 {pc(avg['f1'])} · **F{BETA} {pc(avg[fb])}** (기준선 2차 A {pc(BASELINE_F05)} 대비 "
-                   f"{(avg[fb] - BASELINE_F05) * 100:+.1f}%p)"
+                   f"{(avg[fb] - BASELINE_F05) * 100:+.1f}%p)", "",
+               f"**채택 후보: {'예' if avg[fb] > BASELINE_F05 and per['live']['fp'] == 0 else '아니오'}** "
+               f"(가중 F{BETA} 가 기준선보다 높고 live FP 0 — 지금 live FP {per['live']['fp']})"
                    + (f" — 이 평균엔 버린 소식이 안 잡힌다: 소식 자체 누락 {len(dropped)}/{len(ns)}" if vname == "실효" else ""), "",
                "분류 간 혼동표 (행 = 정답, 열 = 판정, 복수 분류라 한 글이 여러 칸에 들어감)", "",
                "| 정답 \\ 판정 | " + " | ".join(LABELS) + " |", "|---" * (len(LABELS) + 1) + "|"]
