@@ -132,24 +132,65 @@ def run(variant, no):
     print(json.dumps({"usage": out["usage"], "ratelimit": hdr, "sec": out["sec"], "cum": used()}, ensure_ascii=False))
 
 
-def score(variant):
+# 합격 기준(2026-10-23 운영자): 라이브공연 100%, 기타 제외 나머지 95% 이상 — 드랍 여부와 상관없이(드랍 3건은 정답표에서 이미 뺌).
+# precision · recall · accuracy 를 모두 본다. 세 지표 모두에 기준을 적용하는지는 운영자 확인 필요 — 지금은 셋 다 넘어야 PASS 로 계산.
+PASS = {"live": 1.0, "event": 0.95, "goods": 0.95, "broadcast": 0.95}
+LABELS = CATS + ["etc"]          # etc = 고른 분류 없음(코드가 기타로)
+
+
+def _ratio(a, b):
+    return None if b == 0 else a / b
+
+
+def score(variant, outdir=None):
+    """분류마다 2x2 혼동행렬(TP · FP · FN · TN) + precision · recall · accuracy, 분류 간 혼동표, 글별 결과를 outdir 에 남긴다."""
+    outdir = outdir or HERE
     gold = {g["n"]: g for g in json.load(open(os.path.join(HERE, "gold.json"), encoding="utf-8"))}
     pred = {}
-    for f in sorted(glob.glob(os.path.join(HERE, f"out_{variant}_*.json"))):
+    for f in sorted(glob.glob(os.path.join(outdir, f"out_{variant}_*.json"))):
         for r in json.loads(json.load(open(f, encoding="utf-8"))["content"])["results"]:
             pred[r["n"]] = r
-    ok = 0; rows = []
-    for n, g in gold.items():
-        if n not in pred:
-            continue
-        p = sorted(set(pred[n]["cats"]))
-        hit = p == g["gold"]
-        ok += hit
-        if not hit or (variant == "B" and not pred[n].get("related", True)):
-            rows.append((n, g["gold"] or ["etc"], p or ["etc"], pred[n].get("related"), pred[n]["reason"], g["title"][:40]))
-    print(f"{variant}: 완전 일치 {ok}/{len(pred)}")
-    for r in rows:
-        print(" #%d 정답=%s 판정=%s related=%s | %s | %s" % r)
+    ns = [n for n in gold if n in pred]
+    G = {n: set(gold[n]["gold"]) or {"etc"} for n in ns}
+    P = {n: set(pred[n]["cats"]) or {"etc"} for n in ns}
+
+    per = {}
+    for c in LABELS:
+        tp = sum(1 for n in ns if c in G[n] and c in P[n]); fp = sum(1 for n in ns if c not in G[n] and c in P[n])
+        fn = sum(1 for n in ns if c in G[n] and c not in P[n]); tn = len(ns) - tp - fp - fn
+        m = {"tp": tp, "fp": fp, "fn": fn, "tn": tn, "support": tp + fn,
+             "precision": _ratio(tp, tp + fp), "recall": _ratio(tp, tp + fn), "accuracy": _ratio(tp + tn, len(ns)),
+             "fp_n": [n for n in ns if c not in G[n] and c in P[n]], "fn_n": [n for n in ns if c in G[n] and c not in P[n]]}
+        if c in PASS:
+            m["pass"] = all(m[k] is not None and m[k] >= PASS[c] for k in ("precision", "recall", "accuracy"))
+        per[c] = m
+    # 분류 간 혼동표: 행 = 정답 분류, 열 = 판정 분류, 값 = 그 정답을 가진 글 중 그 판정이 붙은 글 수(복수 분류라 행 합 ≠ 행 글 수)
+    cross = {r: {c: sum(1 for n in ns if r in G[n] and c in P[n]) for c in LABELS} for r in LABELS}
+    exact = sum(1 for n in ns if G[n] == P[n])
+    items = [{"n": n, "gold": sorted(G[n]), "pred": sorted(P[n]), "exact": G[n] == P[n],
+              "related": pred[n].get("related"), "reason": pred[n].get("reason"), "evidence": pred[n].get("evidence"),
+              "title": gold[n]["title"]} for n in ns]
+    res = {"variant": variant, "n_items": len(ns), "exact": exact, "pass_rule": PASS,
+           "passed": all(per[c]["pass"] for c in PASS), "per_label": per, "cross": cross, "items": items}
+    json.dump(res, open(os.path.join(outdir, f"score_{variant}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+    pc = lambda v: "—" if v is None else f"{v * 100:.1f}%"
+    md = [f"# {variant}안 채점 — {len(ns)}건, 분류 완전 일치 {exact}/{len(ns)}, 합격 {'PASS' if res['passed'] else 'FAIL'}", "",
+          "| 분류 | 정답 수 | TP | FP | FN | TN | precision | recall | accuracy | 기준 | 판정 | 빠뜨림(FN) | 잘못 붙임(FP) |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for c in LABELS:
+        m = per[c]
+        md.append(f"| {c} | {m['support']} | {m['tp']} | {m['fp']} | {m['fn']} | {m['tn']} | {pc(m['precision'])} | {pc(m['recall'])} | "
+                  f"{pc(m['accuracy'])} | {pc(PASS.get(c))} | {('PASS' if m['pass'] else 'FAIL') if 'pass' in m else '(제외)'} | "
+                  f"{' '.join('#%d' % n for n in m['fn_n'])} | {' '.join('#%d' % n for n in m['fp_n'])} |")
+    md += ["", "분류 간 혼동표 (행 = 정답, 열 = 판정, 복수 분류라 한 글이 여러 칸에 들어감)", "",
+           "| 정답 \\ 판정 | " + " | ".join(LABELS) + " |", "|---" * (len(LABELS) + 1) + "|"]
+    md += [f"| {r} | " + " | ".join(str(cross[r][c]) for c in LABELS) + " |" for r in LABELS]
+    md += ["", "틀린 글", ""]
+    md += [f"- #{i['n']} 정답 {'+'.join(i['gold'])} / 판정 {'+'.join(i['pred'])}"
+           + (f" / related={i['related']}" if i["related"] is not None else "") + f" — {i['reason']}" for i in items if not i["exact"]]
+    open(os.path.join(outdir, f"score_{variant}.md"), "w", encoding="utf-8").write("\n".join(md) + "\n")
+    print("\n".join(md))
 
 
 if __name__ == "__main__":
@@ -162,5 +203,5 @@ if __name__ == "__main__":
             print(k, len(b), "chars", len(p), "≈tok", int(len(p) / 1.2))
     elif cmd == "run":
         run(sys.argv[2], int(sys.argv[3]))
-    elif cmd == "score":
-        score(sys.argv[2])
+    elif cmd == "score":   # score A [결과 폴더 — 기본 이 폴더]
+        score(sys.argv[2], os.path.join(HERE, sys.argv[3]) if len(sys.argv) > 3 else None)
