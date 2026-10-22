@@ -144,7 +144,7 @@ def _ratio(a, b):
 
 # 채택 규칙(2026-10-23 운영자): 2차 A 안이 합격선 — 이보다 높은 안 중 가장 높은 것을 채택, 몇 번 시험해도 없으면 2차 A 안 채택.
 # 「높다」의 비교 지표 = 기준 4분류 정답 수 가중 F0.5(FP 를 무겁게) + 라이브공연(live) FP 는 1건도 안 됨(운영자 확정).
-BASELINE_F05 = 0.97295  # round2/score_A.json views.분류.weighted_avg.f0.5 (precision 100% · recall 88.9% · FP 0 · FN 5)
+BASELINE_F05 = 0.9729522520998929  # round2/score_A.json views.분류.weighted_avg.f0.5 (precision 100% · recall 88.9% · FP 0 · FN 5)
 BETA = 0.5   # F-beta — beta < 1 이면 precision(FP 적음)을 더 무겁게. 0.5 = precision 을 recall 의 2배로(운영자: FP 가 신뢰를 더 깎음)
 
 
