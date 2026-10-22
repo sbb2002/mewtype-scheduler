@@ -38,7 +38,7 @@ src/
       time.js          # UTC→KST 포맷 · 상대시간(D-n·절대표기) · elapsedLabel — 순수
       api.js           # fetchPreview(url): AbortController 타임아웃, {ok,data|error}
       render.js        # renderBoard / renderFooter / updateCountdowns — preview.items(state) 기반
-      notices.js       # 소식 티커 (title_ko 있으면 [번역]—[원문] 순 marquee)
+      notices.js       # 소식판 — (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 한 줄, 소식 팝업 카드/시트
       tweets.js        # 유닛 아바타 편지 배지 (+ text_ko 원문↔번역 토글 버튼)
       main.js          # DOMContentLoaded → poll(preview) + pollNotices + pollTweets + 카운트다운 틱
   collector/           # v1 순수 모듈 — config/rss/youtube 는 v3 백엔드가 import 재사용.
@@ -542,6 +542,15 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - **자동 인입 시 LLM 제목추출·번역** (v3.1.2): `_apply_notice` 가 병합 직후 `llm.notice_title(body_for_llm)` 을
   1회 호출해 `title`(정제된 일본어)·`title_ko` 채움. 실패하면 `needs_tl=true` → 다음 `/tick` 의
   `_translate_sweep` 가 재시도. 운영자 `/translate notice` 는 즉시. (트윗 v3.0.1 인라인 번역과 동일 구조)
+  **(v4.6.4) 기존 소식에 합쳐질 때(updated)도 제목을 새 글 기준으로**: `_merge_fields` 가 원문 제목 · 본문을 새 글 것으로 덮는데, 전엔 한글 제목이 이미 있으면
+  새 추출 결과를 버려 **원문과 뜻이 다른 한글 제목**이 남았다(10-22 실측 약 15건 — 예: 본문은 筋トレ部, 한글 제목은 RESONEXT). 이제 `_commit_notice` 가
+  추출 결과(`tl`)가 있으면 합쳐진 행에도 `title` · `title_ko` 를 덮고, 추출이 실패했으면 옛 한글 제목을 비우고(`None`) `needs_tl` — 다음 번역 sweep 이 다시 채우고 그동안 프론트는 원문 제목.
+  이미 잘못 남아 있는 행은 이 수정으로 바뀌지 않는다(다음 병합 때부터).
+- **출처 표기** (v4.6.4): 게임 계정(`config/channels.json` `game_accounts`) 글이 소식이 되면(v4.5.10 게임 밖 행사) `src_handle` = 그 계정(`@bang_dream_on`).
+  `_prepare_notice` 가 알림 표시명으로 판별(`_game_account_handle`). 전엔 `xnotice._src_handle` 기본값 `@BDP_yumemita` 로 적혔다.
+- **분류(`category`)는 아직 옛 정규식 4종**(live · release · platform · etc, `xnotice._category`). 프론트(v4.6.4 소식판)는 6분류 탭으로 **바꿔 읽는다**: `live` → 방송출연(옛 「라이브예고」는 실제로
+  대부분 방송) · `release` → 음원·굿즈·출판 · `platform` · `etc` · 모르는 값 → 기타. 새 6분류 값(`live`=오프라인 라이브 · `event` · `broadcast` · `goods` · `game` · `etc`)을 백엔드가 쓰기 시작하면(소식 판독 핫픽스 —
+  다음 버전) 이 바꿔 읽기 표를 같이 바꿔야 한다(옛 `live` 와 새 `live` 의 뜻이 다르다).
 - `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed, mode∈added|updated|recap|dup|skip)`.
   지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브. `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko` · v4.0.5 `body_ko`) 만 대입.
 
@@ -634,6 +643,9 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   **모바일(≤640px, v4.3.6)도 탭 + 카드 1장**. 화살표(`.bnr__arrow`)는 숨기고 탭 줄(`.bnr__tabvp`)을 가로 스크롤한다 — 터치는 브라우저 기본 스와이프(`overflow-x:auto` + `scroll-snap-type:x mandatory`), 마우스는 `banners.js` `_wireTabScroll` 의 포인터 드래그(5px 넘게 움직이면 드래그, 드래그 끝의 클릭은 탭 선택으로 치지 않음).
   탭 폭 `min(58%, 220px)`(다음 탭이 살짝 보이게), 높이 44px 이상, 오른쪽 끝 흐림(`.bnr__tabbar::after`)은 끝에 닿으면(`.at-end`) 사라진다. 탭 줄 아래 점 표시(`.bnr__dots`)로 현재 위치를 알린다(모바일만). 탭을 고르면 그 탭이 보이게 스크롤(`scrollTo`, 움직임 줄이기면 즉시), 다시 그려질 때도 고른 탭 위치로 맞춘다. PC 의 3개 단위 화살표 이동(`TAB_VISIBLE`)은 PC 전용.
   이미지 칸 폭 `min(42%, 440px)`(전엔 `min(44%, 300px)`).
+  **배너 드래그 (v4.6.4)**: 배너가 2개 이상이면 카드 영역을 좌우로 끌어(손가락 · 마우스, PC · 모바일) 옆 배너로 넘긴다(`banners.js` `_wireCardDrag`). 가로 이동이 세로보다 클 때만 드래그,
+  카드 폭의 15%(`DRAG_RATIO`) 이상 끌거나 빠르게 튕기면(`FLICK_V` 0.5px/ms) 넘김 — 왼쪽으로 끌면 다음. 넘길 때는 탭 선택과 같은 `select` 를 써서 탭 · 점 · 탭 줄 · 펼침 높이가 따라온다.
+  처음/끝에서는 저항만(고무줄), `touch-action: pan-y`(세로 스크롤 유지), 드래그 끝의 클릭은 무시, 움직임 줄이기면 애니메이션 없이 바로.
 - **표시 상태(`banners.derive` · 프론트 `bannerInfo` 가 같은 규칙)**: `hold`(보류) · `announced`/`sched`(개최 전 — **종료일을 몰라도 올린다**, 시작 일시를 굵게 먼저 알림, 종료는 「미정」) · `live` ·
   `warn`(먼저 끝나는 종료까지 **달력 기준 D-3 이내**, 노랑) · `urgent`(먼저 끝나는 종료를 넘김, 늦은 종료만 남음, 빨강) · `done`(행사 · 가챠 모두 종료 — **종료일 자정(KST)까지 회색 「종료」로 표시**) ·
   `gone`(자정 뒤 — 내림) · `pending`(시작을 모르거나, 종료를 모르는데 이미 시작 — 안 올림). **D-n 은 한국 시간 달력 날짜 차이**(시간 올림 아님), 종료 당일은 남은 시간(60분 안이면 분).
@@ -1205,8 +1217,8 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   bfcache 복원) 리스너로 포그라운드 복귀 시 `poll`+`pollNotices`+`pollTweets` 즉시 재실행.
   없으면 복귀 직후 오래된 `lastSchedule` 로 카운트다운을 계산해 이미 끝난 방송이
   "OOO시간 지각"처럼 잘못 보이다가 다음 정기 poll(최대 `POLL_MS`) 이 돼야 정정됐음.
-- **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 티커. `title_ko` 있으면
-  제목을 `[번역]　—　[원문]` 순으로 한 줄에 이어 marquee(길이 넘칠 때 순환). 없으면 원문만.
+- **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 소식판. 아래 「소식판 (v4.6.4)」.
+  (v4.6.3 까지: 한 줄 티커 + 펼친 목록, 제목을 `[번역]　—　[원문]` 으로 이어 marquee — v4.6.4 에서 없앰.)
 - **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 트윗 알림 배지 — **동그라미만**(v4.1.0: 같은 크기의 원 — 안 읽음 1건 = 빈 원, 2건+ = 숫자 원, 모두 읽음 = 표시 없음(테두리도 안 남김). 봉투 아이콘 제거). 배지 클릭/호버 → **메신저형 스레드**: PC `.lane__bubble` 패널 / 모바일
   `.tw-toast` 시트에 **`expires_at`(24h)이 안 지난 메시지 최대 50건**을 최신이 아래로 스택
   (v3.5.3 — 이전엔 유닛당 최근 5개 고정. v3.5.3~v3.7.1 은 12시간 창을 따로 걸어 밤에 온 트윗이 다음날 낮에 전부 사라졌음 → v3.7.2 에서 제거),
@@ -1215,6 +1227,31 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   높이를 `calc(66.6vh - 44px)` 로 고정(css). `한/日` 토글은 헤더에 1개(전역 `mew:tllang`), 원문(X)
   링크는 메시지별(`.ori`). 만료·404 면 안 뜸.
 - **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
+
+### 소식판 (v4.6.4) — `notices.js` · `css/notices.css`
+
+2026-10-22 운영자 확정(시안 아티팩트 「소식 팝업 카드」 · 「소식판 시안」). 경계 = 767px(이하 모바일).
+- **PC = 날짜별 묶음**: 접힌 막대 = [소식] [오늘 n · 7일 안 n] [5초마다 넘어가는 티커] [▾] [테마]. 티커 한 줄 = D-day · 분류 아이콘 · 제목 · 날짜(요일) 시각.
+  **티커 제목을 누르면 링크로 가지 않고** 목록을 펼쳐 그 소식 팝업을 고정해 연다. 펼침 = 행사 배너 → 분류 칩(스크롤해도 위에 붙음) + [한글 | 원문] → 날짜 묶음
+  (날짜 칸 한 줄 「10/24 (토) [D-day]」, 소식 줄 = 시각 · 분류 아이콘 · 제목 / 분류 이름 · 이날까지 · 출처). 날짜 없는 소식은 「날짜 미정」 묶음.
+- **모바일 = 칩 + 카드**: 접힌 막대 = 움직이지 않는 분류별 건수 칩(누르면 그 분류로 펼침). 펼침 = 「분류 n건」 + [한글 | 원문] / 밑줄 탭 / 카드 1열
+  ([분류 아이콘] [제목 / D-day · 분류 · 날짜(요일) · 시각]).
+- **제목**: PC · 모바일 모두 **15.5px 한 줄, 넘치면 말줄임(…)**. marquee · 글꼴 줄이기 없음(10-22 운영자 결정 — 글꼴 크기가 들쭉날쭉하고 marquee 가 많아 읽기 어려웠다).
+  잘린 제목 전체는 소식 팝업 카드에서 본다.
+- **분류 탭**(`CATS` · `CAT_READ`): [전체] + 6분류(라이브 · 행사 · 방송출연 · 음원·굿즈·출판 · 게임 · 기타), 0건 분류는 숨김(전체는 항상, 고른 분류가 0건이 되면 전체로).
+  저장 값은 아직 옛 4종이라 바꿔 읽는다 — 계약 H 「분류」.
+- **언어**: [한글 | 원문] 한 번에 한 언어, 기본 한글, `localStorage` `mew.notice.lang`(트윗 번역 설정과 별개). 한글 제목이 없으면 원문.
+- **소식 팝업 카드** — 트윗 말풍선과 같은 방식:
+  - PC: 소식 줄 **호버 = 잠깐 열림**(팝업으로 옮겨도 유지 · 떠나면 닫힘, 닫기는 160ms 미룸), **클릭 = 고정**(한 번에 1개, 같은 줄 다시 클릭 · ✕ · Esc · 바깥 클릭으로 닫힘, 고정 중 호버 무시).
+    `.ntc__pop`(#notice 안 · 목록 밖, z-index 43 — 펼친 목록 42 · 플레이어 도크 40 위). 아래 공간이 모자라면 위로, 화면 안으로 맞춤, 꼬리, 목록 스크롤 · 창 크기 변화에 따라감.
+  - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). ✕ · 배경 · Esc 로 닫힘, 열린 동안 body 스크롤 잠금. 시트 안을 눌러도 소식 목록은 안 닫힌다.
+  - 내용: 분류 · D-day · 날짜(요일, 마감이면 〜) · 시각 · 출처 / 전체 제목(언어 전환 따름) / **번역 본문(`body_ko`, 없으면 「번역 준비 중…」)** / **X 공식 트윗 카드** / 「자세히 보기 ↗」(`url`) · 「원문 트윗 ↗」(`tweet_url`, http(s)만).
+    **원문 모드에서도 본문 원문(`body_raw`)은 우리가 그리지 않는다**(v3.8.0 법률 자문 — 원문 · 이미지는 X 카드가 보여 준다, 트윗 말풍선과 같은 원칙). PC = 본문 | X 카드(280px) 2열, 모바일 = 1열.
+  - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 말풍선 코드 재사용 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.
+  - 소식 줄 · 카드는 링크가 아니라 버튼(`role=button` · `tabindex=0` · `aria-haspopup=dialog`, Enter/Space 로 열기, 키보드로 닫으면 포커스가 그 줄로).
+  - 75초 폴링으로 다시 그릴 때: 고정 팝업 · 시트는 같은 소식이 남아 있으면 유지(내용이 바뀌면 다시 채움), 없으면 닫음. 호버 팝업은 닫음.
+- **펼친 목록 높이**: 행사 배너 + 분류 줄 + 소식 영역(`LIST_CAP` PC 420 · 모바일 460px 상한), 전체는 화면 높이 70% 상한. 펼친 목록 z-index 42(v4.6.3 까지 30 — PC 플레이어 도크(40)의 YouTube 화면 밑으로 들어가던 것을 고침).
+- 데이터 주입: 템플릿 + `_esc` · `_attr` 이스케이프(v2 부터의 방식 그대로), 링크는 http(s)만.
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
 
