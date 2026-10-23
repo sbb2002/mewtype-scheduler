@@ -54,10 +54,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.6.4 (핫픽스, 2026-10-22)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.6.4`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.7.0 (기능, 2026-10-23)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.7.0`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.7.0 (기능, 브랜치 `feat/notice-categories`, 2026-10-23, 백엔드 + 프론트 + 관리 페이지 — 병합 · 배포 대기(운영자 결정), 현재 버전은 아직 v4.6.4)**: **소식 분류 6종(LLM) + 라이브공연 탭 공연별 묶음.**
+> **v4.7.0 (기능, 브랜치 `feat/notice-categories`, 2026-10-23, 백엔드 + 프론트 + 관리 페이지 — 배포 완료 `mewtype-backend` 00176 · `mewtype-telegram` 00121, 롤백 = 00174 · 00120 / 병합 `1ed68a8`(PR #82))**: **소식 분류 6종(LLM) + 라이브공연 탭 공연별 묶음.**
 > `categories` 목록(라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿, Our Notes · 기타는 단독) — `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 필수) + 코드 규칙(게임 계정 = Our Notes · 리포스트 = 기타 · 없음 = 기타).
 > 라이브공연이면 `llm.live_info` 로 공연 이름 · 공연일 → 라이브공연 탭 [공연별 | 날짜순], 공연별 = 공연일 타일 · 공연일 기준 D-day. 기존 소식은 다시 판정 안 함(옛 `category` 바꿔 읽기). 프롬프트 개량은 핫픽스로.
 > 상세 `docs/SPEC.md` 계약 H 「분류 `categories`」 · 「라이브공연 탭 — 공연별 묶음」, 요약 `docs/VERSION.md`, 시험 기록 devpapers `ref/notice-category/`.
