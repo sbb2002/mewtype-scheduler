@@ -4,15 +4,19 @@ python -I -X utf8 notice_cat_exp.py build                  # data/ → gold.json
 python -I -X utf8 notice_cat_exp.py dry A|B                # 프롬프트 크기 · 예상 토큰만
 python -I -X utf8 notice_cat_exp.py run A|B BATCH_NO X.env # 묶음 하나만 실제 호출(오류 · 429면 STOP 파일 남기고 멈춤)
 python -I -X utf8 notice_cat_exp.py score A|B              # 이 폴더의 out_*.json 채점
+python -I -X utf8 notice_cat_exp.py runall A X.env.local   # (3차) 전 묶음을 차례로 — 한도 헤더 확인 · 75초 이상 간격 · 오류면 STOP
 """
 import glob, json, os, sys, time, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENV = sys.argv[-1] if sys.argv[-1].endswith(".env") else None   # run 은 마지막 인자로 .env 경로(GROQ_API_KEY)
+ENV = sys.argv[-1] if ".env" in os.path.basename(sys.argv[-1]) else None   # run 은 마지막 인자로 .env · .env.local 경로(GROQ_API_KEY)
 CATS = ["live", "event", "goods", "broadcast"]
 BATCH = 9
 BUDGET = 20000          # 3차(10-24~) 상한 — A안 4묶음 ≈ 13.5k. (10-23: 1차 약 12k + 2차 26,832)
 # 호출은 묶음 하나씩, 사이 75초 이상(분당 한도 TPM 8,000 — 1차에 연달아 보내 429)
+OUT = os.path.join(HERE, "round3")   # (3차) 응답 · STOP · 예산 계산을 이 폴더로(1 · 2차는 끝난 뒤 손으로 옮겼다)
+GAP = 75                # 요청 사이 최소 초
+MIN_RPD_LEFT = 100      # 일일 요청 잔량이 한도의 10% 미만이면 멈춤(운영과 같은 키)
 
 # 복수 분류 맞춤(2026-10-23 운영자 확정): 공연 굿즈 = live+goods, CD 발매 기념 행사 = event+goods
 MULTI = {11: ["live", "goods"], 22: ["live", "goods"], 23: ["live", "goods"],
@@ -62,6 +66,14 @@ HEAD = (
     "- broadcast (방송): 유메미타 멤버가 출연하는 방송 — 유튜브 생방송 · 동시 시청 · 생일 방송, 「バンドリ！TV LIVE」, 라디오, "
     "TV · 니코니코 프로그램 출연, 멤버가 나오는 행사의 생중계(「様子を生配信」). 공연의 유튜브 생중계는 live 와 broadcast 둘 다. "
     "애니메이션 「ゆめ∞みた」의 방영 · 방송 시작 · 배신 · 몰아보기 안내는 멤버가 출연하는 방송이 아니므로 broadcast 가 아니다.\n"
+    # (3차) 2차 A 가 빠뜨린 경계를 일반화한 예시로 — 정답표 글을 그대로 넣지 않는다(점수가 부풀므로)
+    "경계 예시 — 한 글이 둘 이상에 걸치는 일이 많다. 분류 하나를 고른 뒤에도 나머지 분류를 하나씩 다시 확인해 빠뜨리지 말 것.\n"
+    "- 공연 이름이 붙은 굿즈의 판매 · 선행 판매 · 통판 · 사후 통판 안내(「○th LIVE 先行通販開始」 「ライブグッズ 事後通販」) → live, goods. "
+    "다른 밴드와 함께하는 공연이어도 유메미타가 나오면 같다. (공연 티켓 판매는 goods 가 아니라 live 만.)\n"
+    "- CD 발매 기념 릴리즈 이벤트 · 사인회 · お渡し会의 개최 · 중지 · 참가 감사 · 다음 회차 안내(「○th Single リリースイベント」) → event, goods.\n"
+    "- 팬 · 영상 제작자 등 다른 사람이 만든 유메미타 커버곡 영상 · MV 를 리포스트하거나 소개하는 글(「covered by 夢限大みゅーたいぷ」) → goods. "
+    "만든 사람이 외부여도, 판매가 아니어도 같다.\n"
+    "- 공연(프리 라이브 포함)을 유튜브 등으로 생중계(「フリーライブ … YouTubeにて生配信」 「全編無料配信」) → live, broadcast.\n"
 )
 HEAD_B = ("- related: 유메미타(멤버 포함)가 전혀 나오지 않고 다른 밴드 · 다른 작품만 다루는 글이면 false, 아니면 true.\n")
 TAIL = ("evidence = 판단 근거가 된 구절들 — 글에서 한 줄씩 그대로 복사(바꾸지 말 것).\n"
@@ -95,13 +107,14 @@ def batches():
 
 def used():
     tot = 0
-    for f in glob.glob(os.path.join(HERE, "out_*.json")):
+    for f in glob.glob(os.path.join(OUT, "out_*.json")):
         tot += (json.load(open(f, encoding="utf-8")).get("usage") or {}).get("total_tokens", 0)
     return tot
 
 
 def run(variant, no):
-    if os.path.exists(os.path.join(HERE, "STOP")):
+    os.makedirs(OUT, exist_ok=True)
+    if os.path.exists(os.path.join(OUT, "STOP")):
         sys.exit("STOP 파일 있음 — 이전에 429/오류로 멈춤")
     if used() >= BUDGET:
         sys.exit(f"예산 {BUDGET} 도달 — 멈춤")
@@ -124,12 +137,48 @@ def run(variant, no):
         d = json.load(r)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")[:600]
-        open(os.path.join(HERE, "STOP"), "w", encoding="utf-8").write(f"{e.code} {body}")
+        open(os.path.join(OUT, "STOP"), "w", encoding="utf-8").write(f"{e.code} {body}")
         sys.exit(f"HTTP {e.code} — 멈춤: {body}")
     out = {"variant": variant, "batch": no, "ns": [g["n"] for g in b], "sec": round(time.time() - t0, 1),
            "usage": d.get("usage"), "ratelimit": hdr, "content": d["choices"][0]["message"]["content"]}
-    json.dump(out, open(os.path.join(HERE, f"out_{variant}_{no}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(json.dumps({"usage": out["usage"], "ratelimit": hdr, "sec": out["sec"], "cum": used()}, ensure_ascii=False))
+    json.dump(out, open(os.path.join(OUT, f"out_{variant}_{no}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(json.dumps({"usage": out["usage"], "ratelimit": hdr, "sec": out["sec"], "cum": used()}, ensure_ascii=False), flush=True)
+    return out
+
+
+def _secs(v):
+    """x-ratelimit-reset-* 값(「1m26.4s」 · 「22.485s」 · 「500ms」) → 초."""
+    import re
+    t = 0.0
+    for num, unit in re.findall(r"([0-9.]+)(ms|h|m|s)", v or ""):
+        t += float(num) * {"ms": 0.001, "s": 1, "m": 60, "h": 3600}[unit]
+    return t
+
+
+def runall(variant):
+    """(3차) 전 묶음을 하나씩. 요청 사이 GAP 초 이상 + 분당 토큰 잔량이 다음 요청 예상량 + 10% 미만이면 reset 만큼 더 기다림,
+    일일 요청 잔량이 MIN_RPD_LEFT 미만 · 예산 초과 · HTTP 오류(429 포함)면 재시도 없이 멈춤. 일일 토큰(TPD)은 헤더에 없어 누적(used)으로만 센다."""
+    bs = batches()
+    for no in range(len(bs)):
+        if os.path.exists(os.path.join(OUT, f"out_{variant}_{no}.json")):
+            print(f"묶음 {no} 이미 있음 — 건너뜀", flush=True)
+            continue
+        need = int(len(prompt(variant, bs[no])) / 1.2) + 1500   # 입력 어림 + 출력 여유
+        if used() + need > BUDGET:
+            sys.exit(f"예산 {BUDGET} 넘음(누적 {used()} + 예상 {need}) — 멈춤")
+        h = run(variant, no)["ratelimit"]
+        rpd_left = int(h.get("x-ratelimit-remaining-requests", "0"))
+        if rpd_left < MIN_RPD_LEFT:
+            open(os.path.join(OUT, "STOP"), "w", encoding="utf-8").write(f"일일 요청 잔량 {rpd_left} < {MIN_RPD_LEFT}")
+            sys.exit(f"일일 요청 잔량 {rpd_left} — 멈춤")
+        if no == len(bs) - 1:
+            break
+        nxt = int(len(prompt(variant, bs[no + 1])) / 1.2) + 1500
+        wait = GAP
+        if int(h.get("x-ratelimit-remaining-tokens", "0")) < nxt * 1.1:
+            wait = max(wait, _secs(h.get("x-ratelimit-reset-tokens")) + 5)
+        print(f"다음 묶음까지 {wait:.0f}초 대기", flush=True)
+        time.sleep(wait)
 
 
 # 합격 기준(2026-10-23 운영자): 라이브공연 100%, 기타 제외 나머지 95% 이상 — 드랍 여부와 상관없이(드랍 3건은 정답표에서 이미 뺌).
@@ -244,5 +293,7 @@ if __name__ == "__main__":
             print(k, len(b), "chars", len(p), "≈tok", int(len(p) / 1.2))
     elif cmd == "run":
         run(sys.argv[2], int(sys.argv[3]))
+    elif cmd == "runall":
+        runall(sys.argv[2])
     elif cmd == "score":   # score A [결과 폴더 — 기본 이 폴더]
         score(sys.argv[2], os.path.join(HERE, sys.argv[3]) if len(sys.argv) > 3 else None)

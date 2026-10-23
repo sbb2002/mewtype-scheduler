@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  30,
+  31
+ ],
+ "sec": 3.2,
+ "usage": {
+  "queue_time": 0.321802224,
+  "prompt_tokens": 2349,
+  "prompt_time": 0.104534751,
+  "completion_tokens": 1247,
+  "completion_time": 2.60444906,
+  "total_tokens": 3596,
+  "total_time": 2.708983811,
+  "completion_tokens_details": {
+   "reasoning_tokens": 459
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "997",
+  "x-ratelimit-remaining-tokens": "5138",
+  "x-ratelimit-reset-requests": "4m19.2s",
+  "x-ratelimit-reset-tokens": "21.465s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 22,\n      \"cats\": [\"live\", \"goods\"],\n      \"evidence\": [\n        \"放送記念フリーライブ 「新宿着陸計画」\",\n        \"会場でのグッズ物販の詳細を公開🛍❕\"\n      ],\n      \"reason\": \"프리 라이브 공연이며 현장 굿즈 판매 안내가 포함돼 live와 goods 모두 해당\"\n    },\n    {\n      \"n\": 23,\n      \"cats\": [\"live\", \"goods\"],\n      \"evidence\": [\n        \"放送記念フリーライブ 「新宿着陸計画」\",\n        \"会場でのCD予約販売の詳細を公開💿❕\"\n      ],\n      \"reason\": \"프리 라이브 공연과 CD 예약 판매 안내가 있어 live와 goods 모두 해당\"\n    },\n    {\n      \"n\": 24,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"唱【 covered by 夢限大みゅーたいぷ】\"\n      ],\n      \"reason\": \"멤버가 커버한 영상·이미지를 리포스트한 것으로 판매와는 무관하지만 goods에 해당\"\n    },\n    {\n      \"n\": 25,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"楽曲情報：夢限大みゅーたいぷ 「唱(Cover)」 デジタルリリース開始\"\n      ],\n      \"reason\": \"디지털 음원(커버곡) 출시 안내이므로 goods\"\n    },\n    {\n      \"n\": 26,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"「バンドリ！TV LIVE 2026」\",\n        \"YouTube で生配信📺✨\"\n      ],\n      \"reason\": \"TV LIVE 프로그램의 유튜브 생중계 안내이므로 broadcast\"\n    },\n    {\n      \"n\": 27,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"TOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組\",\n        \"『ぱーてぃーちゃんのアニメ女心 研究所』の放送が決定\"\n      ],\n      \"reason\": \"멤버가 출연하는 TV 특집 프로그램 방송 안내이므로 broadcast\"\n    },\n    {\n      \"n\": 28,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"藤都子生誕記念配信がまもなく始まります！\",\n        \"🔗配信はこちら https://www.youtube.com/live/MNocXlK5P8s\"\n      ],\n      \"reason\": \"멤버 생일 기념 유튜브 생중계이므로 broadcast\"\n    },\n    {\n      \"n\": 30,\n      \"cats\": [\"event\", \"goods\"],\n      \"evidence\": [\n        \"5th Single 「これはぼくたちの生存のあらすじ」 リリースイベント\",\n        \"💿詳細はこちら\"\n      ],\n      \"reason\": \"싱글 발매 기념 이벤트와 CD 판매 안내가 함께 있어 event와 goods 모두 해당\"\n    },\n    {\n      \"n\": 31,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"チケット一般発売中 📢 #バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\"\n      ],\n      \"reason\": \"공연 티켓 판매 안내이므로 live\"\n    }\n  ]\n}"
+}

@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  1,
+  2,
+  3,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "sec": 3.4,
+ "usage": {
+  "queue_time": 0.21541561,
+  "prompt_tokens": 2362,
+  "prompt_time": 0.124215247,
+  "completion_tokens": 1336,
+  "completion_time": 2.809968848,
+  "total_tokens": 3698,
+  "total_time": 2.934184095,
+  "completion_tokens_details": {
+   "reasoning_tokens": 297
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "999",
+  "x-ratelimit-remaining-tokens": "5156",
+  "x-ratelimit-reset-requests": "1m26.4s",
+  "x-ratelimit-reset-tokens": "21.33s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 1,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"애니메이션 최종회 방송 기념 캠페인으로, 밴드 멤버와 공연·상품·방송과 관련된 내용이 없으므로 해당 없음\"\n    },\n    {\n      \"n\": 2,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"バンドリ！TV LIVE 2026 #331 夢限大みゅーたいぷ 5名出演\",\n        \"📺本日22:03頃〜\",\n        \"「バンドリ！TV LIVE 2026」＃331\"\n      ],\n      \"reason\": \"밴드 멤버가 TV LIVE 방송에 출연한다는 안내이므로 방송에 해당\"\n    },\n    {\n      \"n\": 3,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"バンドリ！TV LIVE 2026 生配信のお知らせ\",\n        \"このあと22:03頃〜生配信📺✨\",\n        \"「バンドリ！TV LIVE 2026」＃331\",\n        \"出演者\",\n        \"仲町あられ\",\n        \"宮永ののか\",\n        \"峰月律\",\n        \"藤都子\",\n        \"千石ユノ\"\n      ],\n      \"reason\": \"밴드 멤버들의 생중계 방송 안내이므로 방송에 해당\"\n    },\n    {\n      \"n\": 6,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"애니메이션 최종회 방송 시작 안내이며, 밴드 멤버 출연이나 상품·공연과 무관하므로 해당 없음\"\n    },\n    {\n      \"n\": 7,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"本日9/10(木)発売 #アニメージュ 様10月号にて\",\n        \"TVアニメ「バンドリ！ ゆめ∞みた」を取り上げていただきました✨\",\n        \"宮永ののかさん×藤都子さん×千石ユノさん×佐内瑠奈さんの対談を掲載！\"\n      ],\n      \"reason\": \"밴드가 잡지에 실린다는 소식으로, 잡지掲載은 goods에 해당\"\n    },\n    {\n      \"n\": 8,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"本日9/10(木)発売の #アニメディア 10月号にて\",\n        \"TVアニメ「バンドリ！ ゆめ∞みた」を取り上げていただきました👀\",\n        \"宮永ののかさん×藤都子さん×千石ユノさんのインタビューを掲載！\",\n        \"千石ユノ描き下ろしポスターも収録💫\"\n      ],\n      \"reason\": \"잡지에 인터뷰·포스터가 실린다는 내용으로 goods에 해당\"\n    },\n    {\n      \"n\": 9,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"本日9/10(木)発売の #ニュータイプ 10月号にて\",\n        \"TVアニメ「バンドリ！ ゆめ∞みた」を取り上げていただきました✨\",\n        \"夢限大みゅーたいぷ キャスト5人×梅津朋美監督の座談会インタビューをたっぷり掲載！\"\n      ],\n      \"reason\": \"잡지에 인터뷰가 실린다는 안내이므로 goods에 해당\"\n    },\n    {\n      \"n\": 10,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"バンドリ13thライブ DAY 夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」チケット販売開始\",\n        \"🛸#バンドリ13thライブ\",\n        \"DAY2 : 夢限大みゅーたいぷ\",\n        \"「DIMENSIONAL OVERLAP」🛸\",\n        \"🎫ご購入はこちら\"\n      ],\n      \"reason\": \"공연 티켓 판매 안내이므로 live에 해당\"\n    },\n    {\n      \"n\": 11,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"BanG Dream! 13th LIVE 先行通販開始\",\n        \"先行通販がこのあと15時00分より開始です！\",\n        \"なお法被のみは17時00分より通販開始です。\",\n        \"#ゆめみた\"\n      ],\n      \"reason\": \"공연 관련 굿즈(법복 등) 선행 판매 안내이므로 goods에 해당\"\n    }\n  ]\n}"
+}
