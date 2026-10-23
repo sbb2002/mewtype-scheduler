@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  35,
+  39,
+  40,
+  48,
+  50,
+  51,
+  52,
+  54,
+  57
+ ],
+ "sec": 3.3,
+ "usage": {
+  "queue_time": 0.360462901,
+  "prompt_tokens": 2352,
+  "prompt_time": 0.254711143,
+  "completion_tokens": 1202,
+  "completion_time": 2.511179378,
+  "total_tokens": 3554,
+  "total_time": 2.765890521,
+  "completion_tokens_details": {
+   "reasoning_tokens": 306
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "993",
+  "x-ratelimit-remaining-tokens": "5139",
+  "x-ratelimit-reset-requests": "10m4.8s",
+  "x-ratelimit-reset-tokens": "21.457s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 35,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"リリースイベント】につきまして、台風25号の接近に伴い…開催を中止させていただくこととなりました。\"\n      ],\n      \"reason\": \"싱글 발매와 연계된 리리스 이벤트 취소 안내이므로 오프라인 행사에 해당한다.\"\n    },\n    {\n      \"n\": 39,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"オリオンをなぞる(Cover) デジタルリリース開始\",\n        \"各音楽配信サービスにてデジタルリリース🎉\"\n      ],\n      \"reason\": \"디지털 음원(커버곡) 출시 안내이므로 굿즈에 해당한다.\"\n    },\n    {\n      \"n\": 40,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"鷲崎健のヨルナイト×ヨルナイト ラジオ出演！峰月律と千石ユノが登場\",\n        \"放送をおたのしみに🎧‼\"\n      ],\n      \"reason\": \"라디오 방송 출연 안내이므로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 48,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"BanG Dream! 第13回ライブ\",\n        \"夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」\"\n      ],\n      \"reason\": \"밴드리 라이브 공연에 Dreammitap이 출연하는 내용이므로 라이브에 해당한다.\"\n    },\n    {\n      \"n\": 50,\n      \"cats\": [\"live\", \"broadcast\"],\n      \"evidence\": [\n        \"このあと生配信開始\",\n        \"#アニメゆめみた 放送記念フリーライブ\",\n        \"YouTube「バンドリちゃんねる☆」にて全編無料配信📹\"\n      ],\n      \"reason\": \"프리 라이브를 유튜브에서 실시간 중계하므로 라이브와 방송 모두에 해당한다.\"\n    },\n    {\n      \"n\": 51,\n      \"cats\": [],\n      \"evidence\": [\n        \"ABEMAにてTVアニメ「バンドリ！ ゆめ∞みた」全話無料配信中\"\n      ],\n      \"reason\": \"애니메이션 자체의 방송이며 멤버가 출연하는 내용이 아니므로 해당 분류에 포함되지 않는다.\"\n    },\n    {\n      \"n\": 52,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"コミックス発売決定！\",\n        \"9月25日(金)発売📚\",\n        \"藤都子が描く漫画 #マジるる の コミックスが発売決定\"\n      ],\n      \"reason\": \"만화 커믹스 발매 안내이므로 굿즈에 해당한다.\"\n    },\n    {\n      \"n\": 54,\n      \"cats\": [\"event\", \"goods\"],\n      \"evidence\": [\n        \"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\",\n        \"5F特設レジにて17時30分より開催予定の特典お渡し会の参加券と特典券も配布中\"\n      ],\n      \"reason\": \"싱글 발매와 연계된 리리스 이벤트이며 특전(굿즈) 배포가 포함돼 행사와 굿즈 모두에 해당한다.\"\n    },\n    {\n      \"n\": 57,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"「藤都子展〜16歳〜」開催記念お渡し会\",\n        \"次回は9/27(日)BanG Dream! STOREにてお渡し会を開催！\"\n      ],\n      \"reason\": \"전시와 핸드아웃을 포함한 오프라인 행사이므로 이벤트에 해당한다.\"\n    }\n  ]\n}"
+}
