@@ -1863,8 +1863,11 @@ def _notice_categories(parsed: dict, raw: str, tag, now_iso: str, *, game_handle
         posted = ""
     if not posted:
         posted = (datetime.fromisoformat(now_iso.replace("Z", "+00:00")) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")
+    # 공연 이름 · 공연일은 원문(body_raw)으로 — body_for_llm 은 날짜 · URL 을 지운 본문이라(「12/24(木)開催」 → 「(木)開催」)
+    #   공연일을 끝내 못 찾았다(10-23 소급 판정에서 발견). 원문이 없을 때만 분류에 쓴 본문으로.
+    live_text = parsed.get("body_raw") or raw or text
     try:
-        info = client.live_info(text, posted)
+        info = client.live_info(live_text, posted)
     except Exception:  # noqa: BLE001
         log.warning("공연 이름 판정 호출 실패", exc_info=True)
         info = None
@@ -8022,15 +8025,18 @@ if __name__ == "__main__":
             return self.cats
         def live_info(self, text, posted):
             self.calls.append(("live", posted[:10]))
+            self.live_text = text
             return self.info
     _saved_cl = _make_llm_client
     try:
         _c = _CLLM(["live", "goods"], {"name": "RESONEXT", "date": "2026-12-24", "reason": "."})
         _make_llm_client = lambda: _c
-        _pc = {"body_for_llm": "12/24(木)開催 「RESONEXT」 グッズ"}
-        _notice_categories(_pc, "12/24(木)開催 「RESONEXT」 グッズ", None, "2026-10-02T03:00:00Z")
+        # body_for_llm 은 실제로 날짜가 지워져 있다 — 공연 이름 · 공연일은 원문(body_raw)으로 물어야 한다
+        _pc = {"body_for_llm": "(木)開催 「RESONEXT」 グッズ", "body_raw": "12/24(木)開催\n「RESONEXT」 グッズ"}
+        _notice_categories(_pc, "12/24(木)開催\n「RESONEXT」 グッズ", None, "2026-10-02T03:00:00Z")
         assert _pc["categories"] == ["live", "goods"] and _pc["live_name"] == "RESONEXT" and _pc["live_date"] == "2026-12-24", _pc
         assert _c.calls == ["cat", ("live", "2026-10-02")], _c.calls
+        assert "12/24" in _c.live_text, f"공연일 판정은 원문으로: {_c.live_text!r}"
         _c = _CLLM(["goods"])
         _make_llm_client = lambda: _c
         _pc = {}
