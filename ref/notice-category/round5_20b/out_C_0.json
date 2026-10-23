@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 0,
+ "ns": [
+  1,
+  2,
+  3,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "sec": 2.4,
+ "usage": {
+  "queue_time": 0.211916989,
+  "prompt_tokens": 2231,
+  "prompt_time": 0.111997999,
+  "completion_tokens": 1524,
+  "completion_time": 1.802016123,
+  "total_tokens": 3755,
+  "total_time": 1.914014122,
+  "completion_tokens_details": {
+   "reasoning_tokens": 28
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "983",
+  "x-ratelimit-remaining-tokens": "5572",
+  "x-ratelimit-reset-requests": "24m28.8s",
+  "x-ratelimit-reset-tokens": "18.21s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 1,\n      \"subject\": \"TV 애니메이션 최종회 방영 기념 리포스트 캠페인 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"리포스트 캠페인 자체는 방송, 이벤트, 굿즈, 라이브와 관련된 안내가 아님\"\n    },\n    {\n      \"n\": 2,\n      \"subject\": \"TV LIVE 2026에서 夢限大みゅーたいぷ 5명이 출연하는 생방송 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"「バンドリ！TV LIVE 2026」＃331 夢限大みゅーたいぷ 5名が出演\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"配信URLはこちら youtube.com/live/ri2_BimgJ…\"\n      },\n      \"reason\": \"라이브 공연이 아니라 생방송이므로 live은 아니고 broadcast는 예\"\n    },\n    {\n      \"n\": 3,\n      \"subject\": \"TV LIVE 2026 생방송에 夢限大みゅーたいぷ 멤버들이 출연한다는 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"「バンドリ！TV LIVE 2026」＃331 出演者 仲町あられ 宮永ののか 峰月律 藤都子 千石ユノ\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"YouTube で生配信 youtube.com/live/ri2_BimgJ…\"\n      },\n      \"reason\": \"생방송이므로 broadcast는 예, live은 예(라이브 공연이 아니라 생방송이지만 live 카테고리에는 포함되지 않음) → 실제로 live은 false\"\n    },\n    {\n      \"n\": 6,\n      \"subject\": \"TV 애니메이션 최종회 방영 및 시청 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"「バンドリ！ ゆめ∞みた」最終回📢 本日23:00より放送・配信開始\"\n      },\n      \"reason\": \"방영 및 시청 안내이므로 방송에 해당\"\n    },\n    {\n      \"n\": 7,\n      \"subject\": \"TV 애니메이션이 잡지에 실린 인터뷰 및 대화 내용 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"잡지 기사 내용이므로 해당 카테고리 모두 아니며, 굿즈나 방송이 아님\"\n    },\n    {\n      \"n\": 8,\n      \"subject\": \"TV 애니메이션이 잡지에 실린 인터뷰 및 포스터 소개 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"잡지 기사이므로 해당 카테고리 모두 아니며, 굿즈나 방송이 아님\"\n    },\n    {\n      \"n\": 9,\n      \"subject\": \"TV 애니메이션이 잡지에 실린 인터뷰 및 토론 내용 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"잡지 기사이므로 해당 카테고리 모두 아니며, 굿즈나 방송이 아님\"\n    },\n    {\n      \"n\": 10,\n      \"subject\": \"13th 라이브 DAY 夢限大みゅーたいぷ 티켓 판매 시작 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"バンドリ13thライブ DAY 夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」チケット販売開始\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"라이브 공연 티켓 판매 안내이므로 live은 예, 나머지는 아니며 broadcast는 아니고 goods는 티켓이 아니므로 false\"\n    },\n    {\n      \"n\": 11,\n      \"subject\": \"13th LIVE 선행 통신 판매 시작 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"BanG Dream! 13th☆LIVE at 東京ガーデンシアター 先行通販がこのあと15時00分より開始です\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"라이브 공연 티켓 판매 안내이므로 live은 예, 나머지는 아니며 broadcast는 아니고 goods는 티켓이 아니므로 false\"\n    }\n  ]\n}"
+}

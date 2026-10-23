@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  30,
+  31
+ ],
+ "sec": 2.0,
+ "usage": {
+  "queue_time": 0.273467746,
+  "prompt_tokens": 2349,
+  "prompt_time": 0.12636144,
+  "completion_tokens": 1157,
+  "completion_time": 1.463261503,
+  "total_tokens": 3506,
+  "total_time": 1.589622943,
+  "completion_tokens_details": {
+   "reasoning_tokens": 362
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "969",
+  "x-ratelimit-remaining-tokens": "5388",
+  "x-ratelimit-reset-requests": "44m38.4s",
+  "x-ratelimit-reset-tokens": "19.59s"
+ },
+ "content": "{\"results\":[{\"n\":22,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」 放送記念フリーライブ 「新宿着陸計画」\",\"会場でのグッズ物販の詳細を公開🛍❕\"],\"reason\":\"무료 라이브 공연이 진행되며 현장에서 굿즈 판매가 안내되었으므로 live와 goods 두 카테고리 모두 적용된다.\"},{\"n\":23,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」放送記念フリーライブ「新宿着陸計画」開催\",\"会場でのCD予約販売の詳細を公開💿❕\"],\"reason\":\"무료 라이브 공연이 진행되며 현장에서 CD 판매가 안내되었으므로 live와 goods 두 카테고리 모두 적용된다.\"},{\"n\":24,\"cats\":[\"goods\"],\"evidence\":[\"唱【 covered by 夢限大みゅーたいぷ】 https://youtu.be/5kvQmIzJ8ZA?si=zZxrudAnFQa9R6Ag\"],\"reason\":\"외부 제작자가 만든 커버 영상이 리포스트되었으므로 goods 카테고리만 적용된다.\"},{\"n\":25,\"cats\":[\"goods\"],\"evidence\":[\"楽曲情報：夢限大みゅーたいぷ 「唱(Cover)」 デジタルリリース開始\",\"MVも本日21時に公開予定です\"],\"reason\":\"디지털 음원과 MV 공개가 안내되었으므로 goods 카테고리만 적용된다.\"},{\"n\":26,\"cats\":[\"broadcast\"],\"evidence\":[\"RT @bang_dream_info: このあと22:03頃〜生配信📺✨\",\"YouTube で生配信📺✨\"],\"reason\":\"YouTube에서 생방송이 진행되는 내용이므로 broadcast 카테고리만 적용된다.\"},{\"n\":27,\"cats\":[\"broadcast\"],\"evidence\":[\"TOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組\",\"夢限大みゅーたいぷ（藤都子、峰月律）\"],\"reason\":\"방송 프로그램에 夢限大みゅーたいぷ 멤버가 출연한 내용이므로 broadcast 카테고리만 적용된다.\"},{\"n\":28,\"cats\":[\"broadcast\"],\"evidence\":[\"藤都子生誕記念配信がまもなく始まります\",\"配信はこちら https://www.youtube.com/live/MNocXlK5P8s\"],\"reason\":\"YouTube에서 진행되는 생방송이므로 broadcast 카테고리만 적용된다.\"},{\"n\":30,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリースイベント\",\"ご参加・ご声援いただき、ありがとうございました\"],\"reason\":\"리리리즈 이벤트가 개최되며, 해당 이벤트에서 음원 및 굿즈가 판매되는 내용이 포함되므로 event와 goods 두 카테고리 모두 적용된다.\"},{\"n\":31,\"cats\":[\"live\"],\"evidence\":[\"チケット一般発売中 📢 #バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\",\"ご購入はこちら https://eplus.jp/13th-live-day2/\"],\"reason\":\"일반 티켓 판매가 안내되었으므로 live 카테고리만 적용된다.\"}]}"
+}

@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  62,
+  64,
+  70,
+  77,
+  78,
+  80,
+  83,
+  87,
+  97
+ ],
+ "sec": 1.6,
+ "usage": {
+  "queue_time": 0.398497444,
+  "prompt_tokens": 2175,
+  "prompt_time": 0.128406853,
+  "completion_tokens": 759,
+  "completion_time": 0.85662349,
+  "total_tokens": 2934,
+  "total_time": 0.985030343,
+  "completion_tokens_details": {
+   "reasoning_tokens": 233
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "995",
+  "x-ratelimit-remaining-tokens": "5593",
+  "x-ratelimit-reset-requests": "7m12s",
+  "x-ratelimit-reset-tokens": "18.052s"
+ },
+ "content": "{\"results\":[{\"n\":62,\"cats\":[\"goods\"],\"evidence\":[\"サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ\",\"オリジナル「スマホ壁紙」をプレゼント\"],\"reason\":\"사전 예약 캠페인으로 스티커·굿즈 제공이므로 goods\"},{\"n\":64,\"cats\":[\"broadcast\"],\"evidence\":[\"ゆめみた 全員集合！ バンドリ！アワーノーツ リリース記念生配信\",\"生配信まであと1⃣時間\"],\"reason\":\"온라인 생방송이므로 broadcast\"},{\"n\":70,\"cats\":[\"goods\"],\"evidence\":[\"リリース記念ムービー公開決定\",\"本日21:00よりプレミア公開\"],\"reason\":\"뮤비 공개는 굿즈에 해당\"},{\"n\":77,\"cats\":[\"goods\"],\"evidence\":[\"プレミア公開 動画を投稿します〜ののちゃんクイズ\",\"10/1 18:00〜プレミア公開\"],\"reason\":\"동영상 공개는 굿즈\"},{\"n\":78,\"cats\":[\"broadcast\"],\"evidence\":[\"ゆめみた 東京公演 FINAL ライブ映像 同時視聴生配信\",\"ライブ映像 同時視聴生配信\"],\"reason\":\"라이브 영상 생중계이므로 broadcast\"},{\"n\":80,\"cats\":[],\"evidence\":[\"アニメ『ゆめみた』がTOKYO MXで週2回再放送決定！\",\"再放送が決定\"],\"reason\":\"멤버가 출연하지 않는 재방송이므로 분류 없음\"},{\"n\":83,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"#バンドリ13thライブ DAY 夢限大みゅーたいぷ\",\"当日のグッズ販売情報を公開しました\"],\"reason\":\"공연과 동시에 굿즈 판매 안내이므로 live와 goods\"},{\"n\":87,\"cats\":[\"event\"],\"evidence\":[\"リリースイベントにつきまして\",\"夢限大みゅーたいぷ 5th Singleリリースイベント\"],\"reason\":\"오프라인 리리리즈 이벤트이므로 event\"},{\"n\":97,\"cats\":[\"goods\"],\"evidence\":[\"チケット特典引き換えのお知らせ\",\"チケットのグッズ引換券にて実施いたします\"],\"reason\":\"티켓 특전 교환은 굿즈에 해당\"}]}"
+}

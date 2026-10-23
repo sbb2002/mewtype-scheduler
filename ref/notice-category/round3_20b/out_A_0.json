@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  1,
+  2,
+  3,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "sec": 1.9,
+ "usage": {
+  "queue_time": 0.478488486,
+  "prompt_tokens": 2362,
+  "prompt_time": 0.184090369,
+  "completion_tokens": 688,
+  "completion_time": 0.948669095,
+  "total_tokens": 3050,
+  "total_time": 1.132759464,
+  "completion_tokens_details": {
+   "reasoning_tokens": 158
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "971",
+  "x-ratelimit-remaining-tokens": "4579",
+  "x-ratelimit-reset-requests": "41m45.6s",
+  "x-ratelimit-reset-tokens": "25.657s"
+ },
+ "content": "{\"results\":[{\"n\":1,\"cats\":[],\"evidence\":[],\"reason\":\"아니오, 애니메이션 방영에 대한 리포스트 캠페인이며 멤버가 출연하지 않음.\"},{\"n\":2,\"cats\":[\"broadcast\"],\"evidence\":[\"バンドリ！TV LIVE 2026 #331 夢限大みゅーたいぷ 5名出演\"],\"reason\":\"TV LIVE 방송에 멤버가 출연했으나 공연이 아님.\"},{\"n\":3,\"cats\":[\"broadcast\"],\"evidence\":[\"バンドリ！TV LIVE 2026 生配信のお知らせ\",\"YouTube で生配信\"],\"reason\":\"YouTube 생중계 방송이므로 broadcast.\"},{\"n\":6,\"cats\":[],\"evidence\":[],\"reason\":\"애니메이션 방영 시작 알림이며 멤버 출연 없음.\"},{\"n\":7,\"cats\":[\"goods\"],\"evidence\":[\"『バンドリ！ ゆめ∞みた』が雑誌掲載！対談特集\",\"本日9/10(木)発売 #アニメージュ 様10月号にて\"],\"reason\":\"잡지에 실린 내용이므로 goods.\"},{\"n\":8,\"cats\":[\"goods\"],\"evidence\":[\"TVアニメ『バンドリ！ ゆめ∞みた』が雑誌掲載！インタビューとポスター紹介\",\"本日9/10(木)発売の #アニメディア 10月号にて\"],\"reason\":\"잡지에 실린 인터뷰 및 포스터 소개이므로 goods.\"},{\"n\":9,\"cats\":[\"goods\"],\"evidence\":[\"バンドリ！ ゆめ∞みたがニュータイプ10月号に掲載\",\"本日9/10(木)発売の #ニュータイプ 10月号にて\"],\"reason\":\"잡지에 실린 인터뷰이므로 goods.\"},{\"n\":10,\"cats\":[\"live\"],\"evidence\":[\"バンドリ13thライブ DAY 夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」チケット販売開始\",\"チケット一般発売中\"],\"reason\":\"티켓 판매는 live 공연에 해당.\"},{\"n\":11,\"cats\":[\"live\"],\"evidence\":[\"BanG Dream! 13th LIVE 先行通販開始\",\"先行通販がこのあと15時00分より開始です\"],\"reason\":\"티켓 사전 판매는 live 공연에 해당.\"}]}"
+}

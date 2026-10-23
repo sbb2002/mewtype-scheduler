@@ -24,6 +24,9 @@ BATCH = 9
 BUDGET = 20000          # 회차(OUT 폴더)별 상한 — A안 4묶음 ≈ 14.5k. (10-23: 1차 약 12k + 2차 26,832 + 3차 14,403)
 # 호출은 묶음 하나씩, 사이 75초 이상(분당 한도 TPM 8,000 — 1차에 연달아 보내 429)
 OUT = os.path.join(HERE, "round4")   # 응답 · STOP · 예산 계산을 이 폴더로(1 · 2차는 끝난 뒤 손으로 옮겼다, 3차 = round3)
+# (10-23) 모델 바꿔 돌리기 — env EXP_MODEL(기본 openai/gpt-oss-120b). 120b 가 아니면 출력 폴더 이름 끝에 _<짧은 이름>(예: holdout_20b/r5 · round2_20b)
+MODEL = os.environ.get("EXP_MODEL", "openai/gpt-oss-120b")
+TAG = "" if MODEL == "openai/gpt-oss-120b" else "_" + MODEL.split("-")[-1]
 GOLD = os.path.join(HERE, "gold.json")   # 정답표 — 검증 세트 명령(h*)은 gold_holdout.json 으로 바꾼다
 HEAD_OVERRIDE = None    # 검증 세트 명령은 그 회차에 실제로 보낸 프롬프트 머리(roundN/prompt_A_batch0.txt)를 그대로 쓴다
 GAP = 75                # 요청 사이 최소 초
@@ -187,7 +190,7 @@ def run(variant, no):
             key = line.split("=", 1)[1].strip().strip('"').strip("'")
     b = batches()[no]
     p = prompt(variant, b)
-    payload = {"model": "openai/gpt-oss-120b", "messages": [{"role": "user", "content": p}], "temperature": 0,
+    payload = {"model": MODEL, "messages": [{"role": "user", "content": p}], "temperature": 0,
                "reasoning_effort": "low", "max_tokens": 6000,
                "response_format": {"type": "json_schema", "json_schema": schema(variant)}}
     req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=json.dumps(payload).encode(),
@@ -202,7 +205,7 @@ def run(variant, no):
         body = e.read().decode("utf-8", "replace")[:600]
         open(os.path.join(OUT, "STOP"), "w", encoding="utf-8").write(f"{e.code} {body}")
         sys.exit(f"HTTP {e.code} — 멈춤: {body}")
-    out = {"variant": variant, "batch": no, "ns": [g["n"] for g in b], "sec": round(time.time() - t0, 1),
+    out = {"model": MODEL, "variant": variant, "batch": no, "ns": [g["n"] for g in b], "sec": round(time.time() - t0, 1),
            "usage": d.get("usage"), "ratelimit": hdr, "content": d["choices"][0]["message"]["content"]}
     json.dump(out, open(os.path.join(OUT, f"out_{variant}_{no}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps({"usage": out["usage"], "ratelimit": hdr, "sec": out["sec"], "cum": used()}, ensure_ascii=False), flush=True)
@@ -224,8 +227,8 @@ def compare5(ds):
                 pred[r["n"]] = r
         return pred
 
-    rounds = ([("2차", "round2", "A"), ("3차", "round3", "A"), ("4차", "round4", "A"), ("5차", "round5", "C")] if ds != "2" else
-              [("2차", "holdout/r2", "A"), ("3차", "holdout/r3", "A"), ("4차", "holdout/r4", "A"), ("5차", "holdout/r5", "C")])
+    rounds = ([(f"{n}차", f"round{n}{TAG}", v) for n, v in ((2, "A"), (3, "A"), (4, "A"), (5, "C"))] if ds != "2" else
+              [(f"{n}차", f"holdout{TAG}/r{n}", v) for n, v in ((2, "A"), (3, "A"), (4, "A"), (5, "C"))])
     views = [("전체", list(gold))] + ([("리포스트 표시 뺀 것", [n for n in gold if not RT.match(gold[n]["body"] or "")])] if ds != "2" else [])
     lines = []
     for vname, keep in views:
@@ -275,7 +278,7 @@ def _holdout(r):
     GOLD = os.path.join(HERE, "gold_holdout.json")
     t = open(os.path.join(HERE, f"round{r}", "prompt_A_batch0.txt"), encoding="utf-8").read()
     HEAD_OVERRIDE = t[:t.index("\n--- 글 n=")]
-    OUT = os.path.join(HERE, "holdout", f"r{r}")
+    OUT = os.path.join(HERE, "holdout" + TAG, f"r{r}")
 
 
 def _secs(v):
@@ -434,9 +437,9 @@ if __name__ == "__main__":
         ds = sys.argv[2]
         if ds == "2":
             GOLD = os.path.join(HERE, "gold_holdout.json")
-            OUT = os.path.join(HERE, "holdout", "r5")
+            OUT = os.path.join(HERE, "holdout" + TAG, "r5")
         else:
-            OUT = os.path.join(HERE, "round5")
+            OUT = os.path.join(HERE, "round5" + TAG)
         if cmd == "dry5":
             for k, b in enumerate(batches()):
                 p = prompt("C", b)
@@ -447,6 +450,17 @@ if __name__ == "__main__":
             if glob.glob(os.path.join(OUT, "out_C_*.json")):
                 score("C", OUT)
             compare5(ds)
+    elif cmd in ("d1run", "d1score"):   # 1차 정답표(36건)를 N차 프롬프트 머리로 — 다른 모델 비교용(120b 응답은 이미 roundN/)
+        r = sys.argv[2]
+        t = open(os.path.join(HERE, f"round{r}", "prompt_A_batch0.txt"), encoding="utf-8").read()
+        HEAD_OVERRIDE = t[:t.index("\n--- 글 n=")]
+        OUT = os.path.join(HERE, f"round{r}{TAG}")
+        if not TAG:
+            sys.exit("120b 응답은 이미 roundN/ 에 있다 — EXP_MODEL 을 다른 모델로")
+        if cmd == "d1run":
+            runall("A")
+        else:
+            score("A", OUT)
     elif cmd == "hbuild":
         hbuild()
     elif cmd in ("hdry", "hrun", "hscore"):

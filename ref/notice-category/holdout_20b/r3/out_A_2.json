@@ -1,0 +1,41 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  109,
+  114,
+  117,
+  118,
+  119,
+  120,
+  122,
+  125,
+  127
+ ],
+ "sec": 2.6,
+ "usage": {
+  "queue_time": 0.408675682,
+  "prompt_tokens": 2151,
+  "prompt_time": 0.646757711,
+  "completion_tokens": 833,
+  "completion_time": 1.367701176,
+  "total_tokens": 2984,
+  "total_time": 2.014458887,
+  "prompt_tokens_details": {
+   "cached_tokens": 512
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 364
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "985",
+  "x-ratelimit-remaining-tokens": "5118",
+  "x-ratelimit-reset-requests": "21m36s",
+  "x-ratelimit-reset-tokens": "21.615s"
+ },
+ "content": "{\"results\":[{\"n\":109,\"cats\":[\"event\"],\"evidence\":[\"コラボ風呂💜みやこの湯ですぞ💜\"],\"reason\":\"공연이 아닌 스파 협업 행사이므로 event에 해당\"},{\"n\":114,\"cats\":[\"broadcast\"],\"evidence\":[\"千石ユノ生誕記念配信を バースデー当日に実施\",\"千石ユノ 個人YouTubeチャンネルにて配信\"],\"reason\":\"유튜브 생방송이므로 broadcast에 해당\"},{\"n\":117,\"cats\":[\"event\"],\"evidence\":[\"新潟グランプリに千石ユノの出演が決定\"],\"reason\":\"오프라인 행사에 참가하는 것으로 event에 해당\"},{\"n\":118,\"cats\":[\"live\"],\"evidence\":[\"チケット一般発売 明日開始\",\"11/21(土)開催\"],\"reason\":\"티켓 판매 및 공연 일정이므로 live에 해당\"},{\"n\":119,\"cats\":[\"live\"],\"evidence\":[\"集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜\",\"プレイガイド先行 本日受付終了\"],\"reason\":\"이벤트 티켓 사전 판매이므로 live에 해당\"},{\"n\":120,\"cats\":[\"event\"],\"evidence\":[\"スペシャルトークショーを実施\"],\"reason\":\"토크쇼 행사이므로 event에 해당\"},{\"n\":122,\"cats\":[\"event\"],\"evidence\":[\"千石ユノ主催DJイベント\",\"YUNO’s PARTY Lv.3\"],\"reason\":\"DJ 이벤트는 오프라인 행사이므로 event에 해당\"},{\"n\":125,\"cats\":[\"goods\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」 Blu-ray 上下巻\",\"同時購入キャンペーンも開催中\"],\"reason\":\"Blu-ray 판매이므로 goods에 해당\"},{\"n\":127,\"cats\":[\"live\"],\"evidence\":[\"チケット一般発売 明日開始\",\"12/24(木)開催\",\"NAKAMACHI ARALE LIVE 2026\"],\"reason\":\"티켓 판매 및 공연 일정이므로 live에 해당\"}]}"
+}

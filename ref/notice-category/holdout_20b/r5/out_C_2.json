@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 2,
+ "ns": [
+  109,
+  114,
+  117,
+  118,
+  119,
+  120,
+  122,
+  125,
+  127
+ ],
+ "sec": 2.4,
+ "usage": {
+  "queue_time": 0.159701043,
+  "prompt_tokens": 2020,
+  "prompt_time": 0.157580835,
+  "completion_tokens": 1766,
+  "completion_time": 1.9057303349999999,
+  "total_tokens": 3786,
+  "total_time": 2.06331117,
+  "completion_tokens_details": {
+   "reasoning_tokens": 692
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "997",
+  "x-ratelimit-remaining-tokens": "5792",
+  "x-ratelimit-reset-requests": "4m19.2s",
+  "x-ratelimit-reset-tokens": "16.56s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 109,\n      \"subject\": \"藤都子 프로필 및 콜라보 욕조 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"프로필과 콜라보 욕조에 관한 내용이지만 공연, 이벤트, 굿즈, 방송 안내가 아님\"\n    },\n    {\n      \"n\": 114,\n      \"subject\": \"千石ユノ 생일 스트리밍 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": true, \"evidence\": \"千石ユノ 個人YouTubeチャンネルにて配信！\" },\n      \"reason\": \"YouTube 개인 채널에서 생일 스트리밍을 진행한다는 내용\"\n    },\n    {\n      \"n\": 117,\n      \"subject\": \"千石ユノ 신가와 그랑프리 출연 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": true, \"evidence\": \"新潟グランプリに千石ユノの出演が決定\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"멤버가 오프라인 행사에 출연한다는 내용\"\n    },\n    {\n      \"n\": 118,\n      \"subject\": \"筋トレ부 티켓 일반 판매 안내\",\n      \"live\": { \"yes\": true, \"evidence\": \"チケット一般発売 明日開始\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"티켓 판매 시작 안내\"\n    },\n    {\n      \"n\": 119,\n      \"subject\": \"筋ト레부 티켓 신청 안내\",\n      \"live\": { \"yes\": true, \"evidence\": \"プレイガイド先行 本日受付終了\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"티켓 신청 마감 안내\"\n    },\n    {\n      \"n\": 120,\n      \"subject\": \"애니메이션 스페셜 토크쇼 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": true, \"evidence\": \"スペシャルトークショーを実施\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"멤버가 참여하는 토크쇼가 개최된다\"\n    },\n    {\n      \"n\": 122,\n      \"subject\": \"YUNO’s PARTY Lv.3 개최 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": true, \"evidence\": \"千石ユノ主催DJイベント\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"DJ 이벤트 개최 안내\"\n    },\n    {\n      \"n\": 125,\n      \"subject\": \"Blu-ray 출시 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": true, \"evidence\": \"Blu-ray 上下巻\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"Blu-ray 판매 안내\"\n    },\n    {\n      \"n\": 127,\n      \"subject\": \"NAKAMACHI ARALE LIVE 티켓 판매 안내\",\n      \"live\": { \"yes\": true, \"evidence\": \"チケット一般発売 明日開始\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"티켓 판매 시작 안내\"\n    }\n  ]\n}"
+}

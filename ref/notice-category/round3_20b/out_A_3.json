@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  35,
+  39,
+  40,
+  48,
+  50,
+  51,
+  52,
+  54,
+  57
+ ],
+ "sec": 1.8,
+ "usage": {
+  "queue_time": 0.342455001,
+  "prompt_tokens": 2246,
+  "prompt_time": 0.114019646,
+  "completion_tokens": 1069,
+  "completion_time": 1.160936305,
+  "total_tokens": 3315,
+  "total_time": 1.274955951,
+  "completion_tokens_details": {
+   "reasoning_tokens": 481
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "968",
+  "x-ratelimit-remaining-tokens": "5498",
+  "x-ratelimit-reset-requests": "46m4.8s",
+  "x-ratelimit-reset-tokens": "18.764s"
+ },
+ "content": "{\"results\":[{\"n\":35,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"9月21日(月･祝)にanimate hall BLACK（アニメイト池袋本店 北館9F）にて開催予定の【夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント】につきまして、台風25号の接近に伴い、お客様とメンバーの安全を最優先に考慮した結果、誠に残念ながら開催を中止させていただくこととなりました。\"],\"reason\":\"리리ース 이벤트가 취소되었으므로 이벤트와 해당 상품(리리ース 이벤트) 관련이므로 goods 포함\"},{\"n\":39,\"cats\":[\"goods\"],\"evidence\":[\"オリオンをなぞる(Cover) デジタルリリース開始\",\"MVも本日20時に公開予定ですので、\"],\"reason\":\"디지털 리리ース와 MV 공개는 음원·굿즈에 해당\"},{\"n\":40,\"cats\":[\"broadcast\"],\"evidence\":[\"鷲崎健のヨルナイト×ヨルナイト ラジオ出演！峰月律と千石ユノが登場\"],\"reason\":\"라디오 방송에 출연하므로 방송\"},{\"n\":48,\"cats\":[\"live\"],\"evidence\":[\"BanG Dream! 13th☆LIVE\"],\"reason\":\"BanG Dream! 13th LIVE는 공연이므로 live\"},{\"n\":50,\"cats\":[\"live\",\"broadcast\"],\"evidence\":[\"このあと生配信開始\",\"YouTube「バンドリちゃんねる☆」にて全編無料配信\"],\"reason\":\"YouTube 생중계는 live와 broadcast 모두에 해당\"},{\"n\":51,\"cats\":[],\"evidence\":[],\"reason\":\"애니메이션 방영은 멤버 출연이 아니므로 분류 없음\"},{\"n\":52,\"cats\":[\"goods\"],\"evidence\":[\"コミックス発売決定！\",\"9月25日(金)発売\"],\"reason\":\"만화 출시가 음원·굿즈에 해당\"},{\"n\":54,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\"],\"reason\":\"리리ース 이벤트는 이벤트이며, 해당 장소에서 상품이 제공되므로 goods\"},{\"n\":57,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"藤都子展〜16歳〜開催記念お渡し会\"],\"reason\":\"전시와 기념 사인회는 이벤트이며, 사인회는 굿즈 제공이므로 goods\"}]}"
+}

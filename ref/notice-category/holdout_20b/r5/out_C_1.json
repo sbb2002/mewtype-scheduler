@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 1,
+ "ns": [
+  98,
+  99,
+  100,
+  102,
+  103,
+  104,
+  105,
+  107,
+  108
+ ],
+ "sec": 3.7,
+ "usage": {
+  "queue_time": 1.148421669,
+  "prompt_tokens": 2124,
+  "prompt_time": 0.238550081,
+  "completion_tokens": 1747,
+  "completion_time": 2.138016827,
+  "total_tokens": 3871,
+  "total_time": 2.376566908,
+  "completion_tokens_details": {
+   "reasoning_tokens": 539
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "998",
+  "x-ratelimit-remaining-tokens": "5735",
+  "x-ratelimit-reset-requests": "2m52.8s",
+  "x-ratelimit-reset-tokens": "16.987s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 98,\n      \"subject\": \"13thライブ DAY DIMENSIONAL OVERLAP 공연에 참석해 주셔서 감사합니다.\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"글은 공연에 대한 감사 메시지만 포함하고 있어, 공연, 이벤트, 굿즈, 방송 안내가 아님.\"\n    },\n    {\n      \"n\": 99,\n      \"subject\": \"13thライブ DAY 夢限大みゅーたいぷ 세트리스트 재생목록 공개\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"세트리스트 재생목록은 음악 스트리밍 서비스에 공개된 것이며, 공연, 이벤트, 굿즈, 방송 안내가 아님.\"\n    },\n    {\n      \"n\": 100,\n      \"subject\": \"13thライブ DAY 夢限大みゅーたいぷ CD 판매 및 추첨 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": true, \"evidence\": \"CD販売情報💿 会場での販売詳細と抽選会のお知らせ\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"CD 판매 및 추첨이 굿즈 안내이므로 goods에 해당.\"\n    },\n    {\n      \"n\": 102,\n      \"subject\": \"13thライブ DAY 夢ノ結唱 MEW 체험회 개최\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": true, \"evidence\": \"「夢ノ結唱 MEW 体験会情報」\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"체험회는 오프라인 행사이므로 event에 해당.\"\n    },\n    {\n      \"n\": 103,\n      \"subject\": \"13thライブ DAY 夢限大みゅーたいぷ 개장 예정 안내\",\n      \"live\": { \"yes\": true, \"evidence\": \"お早めのご整列をお願いします…開場:16:30予定\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"공연 개장 시간 안내이므로 live에 해당.\"\n    },\n    {\n      \"n\": 104,\n      \"subject\": \"2027년 YMMTric COUNTER POINT 라이브 투어 개최 결정\",\n      \"live\": { \"yes\": true, \"evidence\": \"LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"라이브 투어 개최 소식이므로 live에 해당.\"\n    },\n    {\n      \"n\": 105,\n      \"subject\": \"バンドリ!TV LIVE 2026 생방송 시작 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": true, \"evidence\": \"「バンドリ！TV LIVE 2026」配信開始\" },\n      \"reason\": \"방송 생중계 안내이므로 broadcast에 해당.\"\n    },\n    {\n      \"n\": 107,\n      \"subject\": \"13thライブ DAY 아카이브 티켓 판매 시작\",\n      \"live\": { \"yes\": true, \"evidence\": \"アーカイブ配信チケットが本日21時まで発売中\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": false, \"evidence\": \"\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"아카이브 티켓 판매 안내이므로 live에 해당.\"\n    },\n    {\n      \"n\": 108,\n      \"subject\": \"藤都子 생일 굿즈 판매 종료 안내\",\n      \"live\": { \"yes\": false, \"evidence\": \"\" },\n      \"event\": { \"yes\": false, \"evidence\": \"\" },\n      \"goods\": { \"yes\": true, \"evidence\": \"藤都子 バースデーグッズ2026 受付終了\" },\n      \"broadcast\": { \"yes\": false, \"evidence\": \"\" },\n      \"reason\": \"굿즈 판매 종료 안내이므로 goods에 해당.\"\n    }\n  ]\n}"
+}

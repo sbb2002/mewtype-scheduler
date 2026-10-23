@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 1,
+ "ns": [
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  20,
+  21
+ ],
+ "sec": 1.4,
+ "usage": {
+  "queue_time": 0.211927625,
+  "prompt_tokens": 1912,
+  "prompt_time": 0.109137223,
+  "completion_tokens": 776,
+  "completion_time": 0.861359491,
+  "total_tokens": 2688,
+  "total_time": 0.970496714,
+  "completion_tokens_details": {
+   "reasoning_tokens": 261
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "978",
+  "x-ratelimit-remaining-tokens": "5866",
+  "x-ratelimit-reset-requests": "31m40.8s",
+  "x-ratelimit-reset-tokens": "16.004s"
+ },
+ "content": "{\"results\":[{\"n\":12,\"cats\":[\"broadcast\"],\"evidence\":[\"本日生配信！アニメゆめみた 同時視聴 #13\"],\"reason\":\"멤버가 함께 애니메이션을 시청하는 생방송이므로 방송에 해당.\"},{\"n\":13,\"cats\":[\"broadcast\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」 同時視聴配信 #13 開始\"],\"reason\":\"멤버가 참여한 TV 애니메이션 시청 생방송이므로 방송.\"},{\"n\":14,\"cats\":[\"event\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\"],\"reason\":\"인터넷 사인회는 오프라인 행사가 아니지만 멤버가 참여하는 행사이므로 event.\"},{\"n\":15,\"cats\":[\"event\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\"],\"reason\":\"인터넷 사인회 자체가 event이며, 생방송은 부가적이지만 event에 포함.\"},{\"n\":16,\"cats\":[\"event\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\"],\"reason\":\"같은 사인회 이벤트이므로 event.\"},{\"n\":17,\"cats\":[\"broadcast\"],\"evidence\":[\"FM802『802 Palette』で夢限大みゅーたいぷアニメ感想会開催\"],\"reason\":\"FM 라디오 프로그램에 출연한 방송이므로 broadcast.\"},{\"n\":18,\"cats\":[\"broadcast\"],\"evidence\":[\"FM802「802 Palette」に 夢限大みゅーたいぷ全員で 出演させていただきました\"],\"reason\":\"라디오 출연은 방송에 해당.\"},{\"n\":20,\"cats\":[\"goods\"],\"evidence\":[\"仲町あられ バースデーグッズ2026\"],\"reason\":\"굿즈 판매 안내이므로 goods.\"},{\"n\":21,\"cats\":[\"broadcast\"],\"evidence\":[\"本日配信開始！夢限大みゅーたいぷの『ゆめ∞みたラジオ』#12\"],\"reason\":\"라디오 방송이므로 broadcast.\"}]}"
+}

@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 3,
+ "ns": [
+  35,
+  39,
+  40,
+  48,
+  50,
+  51,
+  52,
+  54,
+  57
+ ],
+ "sec": 2.3,
+ "usage": {
+  "queue_time": 0.336842083,
+  "prompt_tokens": 2115,
+  "prompt_time": 0.141351904,
+  "completion_tokens": 1455,
+  "completion_time": 1.5977324689999999,
+  "total_tokens": 3570,
+  "total_time": 1.7390843729999999,
+  "completion_tokens_details": {
+   "reasoning_tokens": 10
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "980",
+  "x-ratelimit-remaining-tokens": "5618",
+  "x-ratelimit-reset-requests": "28m48s",
+  "x-ratelimit-reset-tokens": "17.865s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 35,\n      \"subject\": \"9월 21일 애니메이트 히카리에서 예정된 5th 싱글 발매 이벤트가 중단되었습니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"9月21日(月･祝)にanimate hall BLACK（アニメイト池袋本店 北館9F）にて開催予定の【夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント】\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"글은 리리리즈 이벤트가 취소되었다는 안내이며, 이벤트 자체가 중단된 사실을 알린다.\"\n    },\n    {\n      \"n\": 39,\n      \"subject\": \"『오리온을 따라가다(Cover)』 디지털 리리리즈가 시작되었습니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"各音楽配信サービスにてデジタルリリース\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"글은 디지털 음원 배포를 알리는 내용이다.\"\n    },\n    {\n      \"n\": 40,\n      \"subject\": \"9월 23일 21시, 피노와 치노가 참여한 라디오 방송이 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"「鷲崎健のヨルナイト×ヨルナイト」\"\n      },\n      \"reason\": \"글은 라디오 방송 일정과 참여자를 안내한다.\"\n    },\n    {\n      \"n\": 48,\n      \"subject\": \"BanG Dream! 13th LIVE에서 유메미타가 공연합니다.\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"글은 라이브 공연에 대한 정보를 제공한다.\"\n    },\n    {\n      \"n\": 50,\n      \"subject\": \"YouTube에서 무료 생방송이 시작됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"YouTube「バンドリちゃんねる☆」にて全編無料配信\"\n      },\n      \"reason\": \"글은 생방송 일정과 플랫폼을 안내한다.\"\n    },\n    {\n      \"n\": 51,\n      \"subject\": \"ABEMA에서 TV 애니 'BanG Dream! 유메∞미타'가 무료로 방영 중입니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"ABEMAにてTVアニメ「バンドリ！ ゆめ∞みた」全話無料配信中\"\n      },\n      \"reason\": \"글은 애니메이션 방영 정보를 제공한다.\"\n    },\n    {\n      \"n\": 52,\n      \"subject\": \"藤都子가 그린 만화 '마지컬 피지컬☆쿠루루'가 9월 25일에 발매됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"コミックス発売決定\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"글은 만화(굿즈) 발매를 알린다.\"\n    },\n    {\n      \"n\": 54,\n      \"subject\": \"타워레코드 닛키토치 파르코에서 5th 싱글 발매 이벤트가 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"글은 오프라인 이벤트(리리리즈 이벤트) 개최를 안내한다.\"\n    },\n    {\n      \"n\": 57,\n      \"subject\": \"藤都子 전시회가 9월 27일에 BanG Dream! STORE에서 개최됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"ご参加・ご声援いただき、ありがとうございました\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"글은 전시회(오프라인 행사) 개최를 알린다.\"\n    }\n  ]\n}"
+}

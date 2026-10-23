@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 1,
+ "ns": [
+  98,
+  99,
+  100,
+  102,
+  103,
+  104,
+  105,
+  107,
+  108
+ ],
+ "sec": 1.3,
+ "usage": {
+  "queue_time": 0.278908085,
+  "prompt_tokens": 1964,
+  "prompt_time": 0.125326464,
+  "completion_tokens": 636,
+  "completion_time": 0.690370154,
+  "total_tokens": 2600,
+  "total_time": 0.815696618,
+  "completion_tokens_details": {
+   "reasoning_tokens": 157
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "994",
+  "x-ratelimit-remaining-tokens": "4289",
+  "x-ratelimit-reset-requests": "8m38.4s",
+  "x-ratelimit-reset-tokens": "27.832s"
+ },
+ "content": "{\"results\":[{\"n\":98,\"cats\":[\"live\"],\"evidence\":[\"13thライブ DAY DIMENSIONAL OVERLAP\"],\"reason\":\"공연이 진행된 라이브 공연에 대한 안내이므로 live 분류\"},{\"n\":99,\"cats\":[\"goods\"],\"evidence\":[\"セットリプレイリスト公開中\",\"各音楽配信サービスにて公開しました\"],\"reason\":\"디지털 재생목록 공개는 음원·굿즈에 해당\"} ,{\"n\":100,\"cats\":[\"goods\"],\"evidence\":[\"CD販売情報💿 会場での販売詳細と抽選会のお知らせ\",\"会場でのCD販売の詳細はこちら\"],\"reason\":\"CD 판매 안내이므로 goods 분류\"} ,{\"n\":102,\"cats\":[\"event\"],\"evidence\":[\"「夢ノ結唱 MEW アルファー版」体験会を実施\",\"会場内、夢ノ結唱ブースにて\"],\"reason\":\"공연이 아닌 부스 체험 행사이므로 event\"} ,{\"n\":103,\"cats\":[\"live\"],\"evidence\":[\"お早めのご整列をお願いします\",\"まもなく開場\"],\"reason\":\"공연 개막 안내이므로 live\"} ,{\"n\":104,\"cats\":[\"live\"],\"evidence\":[\"LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定\",\"チケット最速先行はこのあと21時〜受付開始\"],\"reason\":\"투어 공연 공지이므로 live\"} ,{\"n\":105,\"cats\":[\"broadcast\"],\"evidence\":[\"「バンドリ！TV LIVE 2026」\",\"生配信\"],\"reason\":\"방송 생중계 안내이므로 broadcast\"} ,{\"n\":107,\"cats\":[\"broadcast\"],\"evidence\":[\"アーカイブ配信チケットが 本日21時まで発売中\",\"ライブ初披露の「うちゅうのふしぎ」\"],\"reason\":\"아카이브 방송 티켓 판매이므로 broadcast\"} ,{\"n\":108,\"cats\":[\"goods\"],\"evidence\":[\"藤都子バースデーグッズ受付終了のお知らせ\",\"受注販売\"],\"reason\":\"굿즈 판매 안내이므로 goods\"}]}"
+}

@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  109,
+  114,
+  117,
+  118,
+  119,
+  120,
+  122,
+  125,
+  127
+ ],
+ "sec": 1.2,
+ "usage": {
+  "queue_time": 0.357060088,
+  "prompt_tokens": 1860,
+  "prompt_time": 0.129308908,
+  "completion_tokens": 450,
+  "completion_time": 0.502535645,
+  "total_tokens": 2310,
+  "total_time": 0.631844553,
+  "completion_tokens_details": {
+   "reasoning_tokens": 11
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "993",
+  "x-ratelimit-remaining-tokens": "5859",
+  "x-ratelimit-reset-requests": "10m4.8s",
+  "x-ratelimit-reset-tokens": "16.057s"
+ },
+ "content": "{\"results\":[{\"n\":109,\"cats\":[],\"evidence\":[],\"reason\":\"글은 콜라보 스파 링크와 프로필 소개만으로 공연, 이벤트, 굿즈, 방송이 없음.\"},{\"n\":114,\"cats\":[\"broadcast\"],\"evidence\":[\"千石ユノ生誕記念配信を\",\"バースデー当日に実施\"],\"reason\":\"YouTube 개인 채널에서 생방송 진행.\"},{\"n\":117,\"cats\":[\"event\"],\"evidence\":[\"新潟グランプリに千石ユノの出演が決定\"],\"reason\":\"오프라인 행사에 출연 예정.\"},{\"n\":118,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"チケット一般発売 明日開始\",\"11/21(土)開催\"],\"reason\":\"티켓 판매로 공연(라이브)과 동시에 굿즈(티켓) 판매.\"},{\"n\":119,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"集え！#ゆめみた筋トレ部\",\"プレイガイド先行 本日受付終了\"],\"reason\":\"티켓 신청으로 공연(라이브)과 굿즈(티켓) 판매.\"},{\"n\":120,\"cats\":[\"event\"],\"evidence\":[\"アニメ・スタいしかわ 2026\",\"スペシャルトークショーを実施\"],\"reason\":\"오프라인 토크쇼 행사.\"},{\"n\":122,\"cats\":[\"event\"],\"evidence\":[\"千石ユノ主催DJイベント\",\"開催決定\"],\"reason\":\"DJ 이벤트는 오프라인 행사.\"},{\"n\":125,\"cats\":[\"goods\"],\"evidence\":[\"Blu-ray 上下巻\",\"同時購入キャンペーンも開催中\"],\"reason\":\"Blu‑ray 판매 및 특전 안내.\"},{\"n\":127,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"チケット一般発売 明日開始\",\"12/24(木)開催\"],\"reason\":\"티켓 판매로 공연(라이브)과 굿즈(티켓) 판매.\"}]}"
+}

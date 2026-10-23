@@ -1,0 +1,41 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  62,
+  64,
+  70,
+  77,
+  78,
+  80,
+  83,
+  87,
+  97
+ ],
+ "sec": 1.8,
+ "usage": {
+  "queue_time": 0.316222427,
+  "prompt_tokens": 2572,
+  "prompt_time": 0.526911048,
+  "completion_tokens": 595,
+  "completion_time": 0.737559621,
+  "total_tokens": 3167,
+  "total_time": 1.264470669,
+  "prompt_tokens_details": {
+   "cached_tokens": 512
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 9
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "991",
+  "x-ratelimit-remaining-tokens": "4978",
+  "x-ratelimit-reset-requests": "12m57.599s",
+  "x-ratelimit-reset-tokens": "22.665s"
+ },
+ "content": "{\"results\":[{\"n\":62,\"cats\":[\"goods\"],\"evidence\":[\"サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ\",\"オリジナル「スマホ壁紙」をプレゼント\"],\"reason\":\"사전 예약을 통한 디지털 굿즈(스마트폰 배경화면) 제공이므로 goods\"},{\"n\":64,\"cats\":[\"broadcast\",\"live\"],\"evidence\":[\"ゆめみた 全員集合！ バンドリ！アワーノーツ リリース記念生配信\",\"フリーライブ DAY2の振り返りも\"],\"reason\":\"라이브 공연(프리 라이브) 생중계이므로 live와 broadcast 모두\"},{\"n\":70,\"cats\":[\"broadcast\"],\"evidence\":[\"リリース記念ムービー公開決定\",\"本日21:00よりプレミア公開\"],\"reason\":\"뮤비 공개는 방송이므로 broadcast\"},{\"n\":77,\"cats\":[\"broadcast\"],\"evidence\":[\"プレミア公開 動画を投稿します〜ののちゃんクイズ\",\"10/1 18:00〜プレミア公開\"],\"reason\":\"동영상 공개는 방송이므로 broadcast\"},{\"n\":78,\"cats\":[\"broadcast\",\"live\"],\"evidence\":[\"東京公演 FINAL ライブ映像 同時視聴生配信\",\"10/11(日)に東京ガーデンシアターにて開催する 過去最大規模の単独ライブ\"],\"reason\":\"공연 영상 생중계이므로 live와 broadcast\"},{\"n\":80,\"cats\":[],\"evidence\":[\"アニメ『ゆめみた』がTOKYO MXで週2回再放送決定！\"],\"reason\":\"애니메이션 재방송은 멤버가 출연하지 않으므로 분류 없음\"},{\"n\":83,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"当日のグッズ販売情報を公開しました\",\"チケットトレードの受付も決定\"],\"reason\":\"공연 티켓과 굿즈 판매 안내이므로 live와 goods\"},{\"n\":87,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"リリースイベントにつきまして\",\"夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント\"],\"reason\":\"리리리즈 이벤트(행사)와 굿즈(특전) 안내이므로 event와 goods\"},{\"n\":97,\"cats\":[\"goods\"],\"evidence\":[\"チケット特典引き換えのお知らせ\",\"チケットのグッズ引換券にて実施いたします\"],\"reason\":\"티켓 특전 교환 안내이므로 goods\"}]}"
+}

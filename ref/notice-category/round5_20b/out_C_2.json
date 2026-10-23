@@ -1,0 +1,41 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 2,
+ "ns": [
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  30,
+  31
+ ],
+ "sec": 3.1,
+ "usage": {
+  "queue_time": 0.274976961,
+  "prompt_tokens": 2218,
+  "prompt_time": 0.419409473,
+  "completion_tokens": 1465,
+  "completion_time": 2.174168708,
+  "total_tokens": 3683,
+  "total_time": 2.593578181,
+  "prompt_tokens_details": {
+   "cached_tokens": 768
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 27
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "981",
+  "x-ratelimit-remaining-tokens": "5597",
+  "x-ratelimit-reset-requests": "27m21.6s",
+  "x-ratelimit-reset-tokens": "18.022s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 22,\n      \"subject\": \"TV 애니메이션 방영 기념 무료 라이브 공연 일정과 현장 굿즈 판매 시간 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"TVアニメ「バンドリ！ ゆめ∞みた」 放送記念フリーライブ 「新宿着陸計画」\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"会場でのグッズ物販の詳細を公開\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"공연 일정과 현장 굿즈 판매 시간을 안내함\"\n    },\n    {\n      \"n\": 23,\n      \"subject\": \"TV 애니메이션 방영 기념 무료 라이브 공연에서 CD 예약 판매 일정 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"TVアニメ「バンドリ！ ゆめ∞みた」 放送記念フリーライブ 「新宿着陸計画」\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"会場でのCD予約販売の詳細を公開\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"공연 중 CD 예약 판매 일정 안내\"\n    },\n    {\n      \"n\": 24,\n      \"subject\": \"꿈제한대뮤타입이 커버한 곡의 영상과 일러스트 제작 소식\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"RT @norainu03019: 唱【 covered by 夢限大みゅーたいぷ】 https://youtu.be/5kvQmIzJ8ZA\"\n      },\n      \"reason\": \"영상과 일러스트 제작 소식이 방송/영상으로 제공됨\"\n    },\n    {\n      \"n\": 25,\n      \"subject\": \"꿈제한대뮤타입의 커버곡 '唱' 디지털 리리스를 시작했으며 MV 공개 예정\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"デジタルリリース開始\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"디지털 음원과 MV 공개가 상품 안내임\"\n    },\n    {\n      \"n\": 26,\n      \"subject\": \"『バンドリ！TV LIVE 2026』 생방송 일정과 출연자 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"このあと22:03頃〜生配信\"\n      },\n      \"reason\": \"생방송 일정과 출연자 정보 제공\"\n    },\n    {\n      \"n\": 27,\n      \"subject\": \"아니메 여자심 연구소 특집방송 일정과 출연자 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"TOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組\"\n      },\n      \"reason\": \"방송 일정과 출연자 안내\"\n    },\n    {\n      \"n\": 28,\n      \"subject\": \"藤都子 생일 기념 라이브 스트리밍 시작 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"藤都子生誕記念配信がまもなく始まります\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"藤都子生誕記念配信がまもなく始まります\"\n      },\n      \"reason\": \"라이브 스트리밍 일정 안내\"\n    },\n    {\n      \"n\": 30,\n      \"subject\": \"꿈제한대뮤타입 5th 싱글 'これはぼくたちの生存のあらすじ' 발매 이벤트 일정 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"リリースイベント\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"5th Single 「これはぼくたちの生存のあらすじ」\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"발매 이벤트와 싱글 안내\"\n    },\n    {\n      \"n\": 31,\n      \"subject\": \"꿈제한대뮤타입 'DIMENSIONAL OVERLAP' 티켓 일반 판매 시작 안내\",\n      \"live\": {\n        \"yes\": true,\n        \"evidence\": \"チケット一般発売中\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"チケット一般発売中\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"티켓 판매 일정 안내\"\n    }\n  ]\n}"
+}

@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  35,
+  39,
+  40,
+  48,
+  50,
+  51,
+  52,
+  54,
+  57
+ ],
+ "sec": 2.2,
+ "usage": {
+  "queue_time": 0.530875358,
+  "prompt_tokens": 2352,
+  "prompt_time": 0.155692327,
+  "completion_tokens": 966,
+  "completion_time": 1.231376907,
+  "total_tokens": 3318,
+  "total_time": 1.387069234,
+  "completion_tokens_details": {
+   "reasoning_tokens": 274
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "972",
+  "x-ratelimit-remaining-tokens": "4678",
+  "x-ratelimit-reset-requests": "40m19.2s",
+  "x-ratelimit-reset-tokens": "24.915s"
+ },
+ "content": "{\"results\":[{\"n\":35,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"9月21日(月･祝)にanimate hall BLACK（アニメイト池袋本店 北館9F）にて開催予定の【夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント】につきまして、台風25号の接近に伴い、お客様とメンバーの安全を最優先に考慮した結果、誠に残念ながら開催を中止させていただくこととなりました。\"],\"reason\":\"리리리즈 이벤트가 취소되었으므로 이벤트와 해당 음원/굿즈 관련 안내이므로 goods 포함.\"},{\"n\":39,\"cats\":[\"goods\"],\"evidence\":[\"オリオンをなぞる(Cover) デジタルリリース開始\",\"各音楽配信サービスにてデジタルリリース🎉\",\"MVも本日20時に公開予定ですので、\"],\"reason\":\"디지털 리리리즈와 MV 공개는 굿즈에 해당.\"},{\"n\":40,\"cats\":[\"broadcast\"],\"evidence\":[\"鷲崎健のヨルナイト×ヨルナイト ラジオ出演！峰月律と千石ユノが登場\",\"夢限大みゅーたいぷ より、峰月律と千石ユノが出演🎉\"],\"reason\":\"라디오 방송에 멤버가 출연하므로 broadcast.\"},{\"n\":48,\"cats\":[\"live\"],\"evidence\":[\"BanG Dream! 第13回ライブ\",\"夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」\"],\"reason\":\"13th LIVE는 공연이므로 live.\"},{\"n\":50,\"cats\":[\"live\",\"broadcast\"],\"evidence\":[\"このあと生配信開始\",\"YouTube「バンドリちゃんねる☆」にて全編無料配信📹\"],\"reason\":\"YouTube 생중계이므로 live와 broadcast 모두.\"},{\"n\":51,\"cats\":[],\"evidence\":[],\"reason\":\"애니메이션 방영은 멤버 출연이 아니므로 분류 없음.\"},{\"n\":52,\"cats\":[\"goods\"],\"evidence\":[\"コミックス発売決定！\",\"藤都子が描く漫画 #マジるる のコミックスが発売決定\"],\"reason\":\"만화 출시가 굿즈에 해당.\"},{\"n\":54,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\",\"リリースイベントがタワーレコード 錦糸町パルコ店さんにて開催\"],\"reason\":\"리리리즈 이벤트이므로 event, 해당 이벤트에서 굿즈 배포 안내이므로 goods.\"},{\"n\":57,\"cats\":[\"event\"],\"evidence\":[\"🎨「藤都子展〜16歳〜」開催記念お渡し会🎨\",\"ご参加・ご声援いただき、ありがとうございました\"],\"reason\":\"전시와 오프라인 행사이므로 event만.\"}]}"
+}

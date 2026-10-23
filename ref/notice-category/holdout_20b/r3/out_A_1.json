@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 1,
+ "ns": [
+  98,
+  99,
+  100,
+  102,
+  103,
+  104,
+  105,
+  107,
+  108
+ ],
+ "sec": 1.5,
+ "usage": {
+  "queue_time": 0.314688047,
+  "prompt_tokens": 2255,
+  "prompt_time": 0.11496253,
+  "completion_tokens": 731,
+  "completion_time": 0.858851063,
+  "total_tokens": 2986,
+  "total_time": 0.973813593,
+  "completion_tokens_details": {
+   "reasoning_tokens": 286
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "986",
+  "x-ratelimit-remaining-tokens": "5494",
+  "x-ratelimit-reset-requests": "20m9.6s",
+  "x-ratelimit-reset-tokens": "18.795s"
+ },
+ "content": "{\"results\":[{\"n\":98,\"cats\":[\"live\"],\"evidence\":[\"13thライブ DAY DIMENSIONAL OVERLAP\"],\"reason\":\"공연이 진행된 13thライブ DAY에 대한 글이므로 라이브 공연에 해당한다.\"},{\"n\":99,\"cats\":[\"goods\"],\"evidence\":[\"セットリプレイリスト公開中\"],\"reason\":\"세트리스트를 음원 서비스에 공개한 것이 음원·굿즈에 해당한다.\"},{\"n\":100,\"cats\":[\"goods\"],\"evidence\":[\"CD販売情報💿 会場での販売詳細と抽選会のお知らせ\"],\"reason\":\"공연장 내 CD 판매 안내이므로 음원·굿즈에 해당한다.\"},{\"n\":102,\"cats\":[\"event\"],\"evidence\":[\"「夢ノ結唱 MEW アルファー版」体験会を実施\"],\"reason\":\"공연이 아닌 체험회(오프라인 행사)로 분류된다.\"},{\"n\":103,\"cats\":[\"live\"],\"evidence\":[\"まもなく開場\"],\"reason\":\"공연 시작 안내이므로 라이브 공연에 해당한다.\"},{\"n\":104,\"cats\":[\"live\"],\"evidence\":[\"LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定\"],\"reason\":\"투어 공연이 발표된 글이므로 라이브 공연에 해당한다.\"},{\"n\":105,\"cats\":[\"broadcast\"],\"evidence\":[\"「バンドリ！TV LIVE 2026」\"],\"reason\":\"방송 생중계에 관한 글이므로 방송에 해당한다.\"},{\"n\":107,\"cats\":[\"broadcast\"],\"evidence\":[\"アーカイブ配信チケットが 本日21時まで発売中\"],\"reason\":\"방송 아카이브 티켓 판매 안내이므로 방송에 해당한다.\"},{\"n\":108,\"cats\":[\"goods\"],\"evidence\":[\"藤都子バースデーグッズ受付終了のお知らせ\"],\"reason\":\"굿즈 판매 안내이므로 음원·굿즈에 해당한다.\"}]}"
+}

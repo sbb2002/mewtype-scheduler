@@ -1,0 +1,31 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  128,
+  129
+ ],
+ "sec": 1.1,
+ "usage": {
+  "queue_time": 0.386899125,
+  "prompt_tokens": 1013,
+  "prompt_time": 0.067285723,
+  "completion_tokens": 396,
+  "completion_time": 0.467845411,
+  "total_tokens": 1409,
+  "total_time": 0.535131134,
+  "completion_tokens_details": {
+   "reasoning_tokens": 162
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "992",
+  "x-ratelimit-remaining-tokens": "6537",
+  "x-ratelimit-reset-requests": "11m31.2s",
+  "x-ratelimit-reset-tokens": "10.972s"
+ },
+ "content": "{\"results\":[{\"n\":128,\"cats\":[\"goods\"],\"evidence\":[\"「特典CD」1枚(全5種)をプレゼント\",\"2027年1月27日(水)リリース\",\"#ゆめみた 2nd Album「It’s our choice」🛸\",\"9月25日に開催された、\",\"「新宿着陸計画」DAY2のライブ音源1曲を収録した\",\"「特典CD」1枚(全5種)をプレゼント🎁✨\"],\"reason\":\"특별 CD가 출시되는 내용이므로 음원·굿즈에 해당한다.\"},{\"n\":129,\"cats\":[\"event\"],\"evidence\":[\"みやこのアトリエ開催決定！\",\"日程:2027年3月20日(土)\",\"会場:学校法人片柳学園 日本工学院専門学校 片柳記念ホール\"],\"reason\":\"미야코의 아틀리에가 오프라인 행사로 개최되는 내용이므로 이벤트에 해당한다.\"}]}"
+}

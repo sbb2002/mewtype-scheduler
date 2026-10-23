@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 1,
+ "ns": [
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  20,
+  21
+ ],
+ "sec": 2.2,
+ "usage": {
+  "queue_time": 0.27912463,
+  "prompt_tokens": 2072,
+  "prompt_time": 0.146373356,
+  "completion_tokens": 1468,
+  "completion_time": 1.5559428290000001,
+  "total_tokens": 3540,
+  "total_time": 1.702316185,
+  "completion_tokens_details": {
+   "reasoning_tokens": 29
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "982",
+  "x-ratelimit-remaining-tokens": "5787",
+  "x-ratelimit-reset-requests": "25m55.199s",
+  "x-ratelimit-reset-tokens": "16.597s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 12,\n      \"subject\": \"오늘 밤 23시부터 애니 '유메미타' 동시 시청 생방송이 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"本日23時より生配信📢\"\n      },\n      \"reason\": \"이 글은 동시 시청 생방송을 안내하는 내용이므로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 13,\n      \"subject\": \"오늘 밤 23시부터 TV 애니 '밴드리! 유메∞미타' 동시 시청 생방송이 시작됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"配信開始📢\"\n      },\n      \"reason\": \"동시 시청 생방송을 안내하는 내용이므로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 14,\n      \"subject\": \"오늘 23:59까지 5th 싱글 '이것은 우리 생존의 줄거리' 리리리즈 기념 인터넷 사인회가 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"リリース記念 インターネットサイン会\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"사인회는 오프라인(인터넷) 이벤트이므로 event에 해당한다.\"\n    },\n    {\n      \"n\": 15,\n      \"subject\": \"내일 12시부터 5th 싱글 리리리즈 기념 인터넷 사인회가 생방송으로 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"リリース記念 インターネットサイン会\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"サイン会の様子を生配信！\"\n      },\n      \"reason\": \"사인회 자체는 이벤트이며, 생방송 안내가 포함되어 있어 broadcast에도 해당한다.\"\n    },\n    {\n      \"n\": 16,\n      \"subject\": \"내일 12시부터 5th 싱글 리리리즈 기념 인터넷 사인회가 생방송으로 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"リリース記念 インターネットサイン会\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"サイン会の様子を生配信！\"\n      },\n      \"reason\": \"사인회 자체는 이벤트이며, 생방송 안내가 포함되어 있어 broadcast에도 해당한다.\"\n    },\n    {\n      \"n\": 17,\n      \"subject\": \"9월 12일 25시부터 FM802 '802 Palette'에서 유메미타 애니 감상회가 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"アニメ感想会\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"감상회는 오프라인(방송) 이벤트이므로 event에 해당한다.\"\n    },\n    {\n      \"n\": 18,\n      \"subject\": \"FM802 '802 Palette'에 유메미타 전체가 출연했습니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"FM802『802 Palette』に 夢限大みゅーたいぷ全員で 出演させていただきました\"\n      },\n      \"reason\": \"방송에 출연한 내용을 안내하므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 20,\n      \"subject\": \"오늘 23:59까지 仲町あられ의 2026년 생일 굿즈가 온라인 스토어에서 판매됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"バースデーグッズ2026\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"굿즈 판매 안내이므로 goods에 해당한다.\"\n    },\n    {\n      \"n\": 21,\n      \"subject\": \"오늘 18시부터 '유메∞미타 라디오' #12가 생방송으로 진행됩니다.\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"本日18時より配信\"\n      },\n      \"reason\": \"라디오 생방송 안내이므로 broadcast에 해당한다.\"\n    }\n  ]\n}"
+}

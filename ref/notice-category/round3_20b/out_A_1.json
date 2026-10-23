@@ -1,0 +1,41 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 1,
+ "ns": [
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  20,
+  21
+ ],
+ "sec": 2.2,
+ "usage": {
+  "queue_time": 0.211669282,
+  "prompt_tokens": 2203,
+  "prompt_time": 0.818891474,
+  "completion_tokens": 906,
+  "completion_time": 0.981593738,
+  "total_tokens": 3109,
+  "total_time": 1.800485212,
+  "prompt_tokens_details": {
+   "cached_tokens": 512
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 270
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "970",
+  "x-ratelimit-remaining-tokens": "5615",
+  "x-ratelimit-reset-requests": "43m12s",
+  "x-ratelimit-reset-tokens": "17.887s"
+ },
+ "content": "{\"results\":[{\"n\":12,\"cats\":[],\"evidence\":[],\"reason\":\"본 글은 멤버들이 애니메이션을 동시에 시청하는 생방송이지만, 멤버가 직접 출연하거나 방송을 진행하지 않으므로 'broadcast'에 해당하지 않는다.\"},{\"n\":13,\"cats\":[],\"evidence\":[],\"reason\":\"애니메이션 자체의 생방송이며, 멤버가 출연하지 않으므로 분류 대상이 아니다.\"},{\"n\":14,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\",\"リリース記念 インターネットサイン会\"],\"reason\":\"인터넷 사인회는 오프라인 행사의 일종이며, 동시에 5th Single 발매와 연계된 상품(특典) 판매가 포함된다.\"},{\"n\":15,\"cats\":[\"event\",\"goods\",\"broadcast\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\",\"サイン会の様子を生配信\"],\"reason\":\"사인회는 이벤트이며, 사인회와 연계된 상품이 존재하고, 사인회 현장을 생방송으로 중계한다.\"},{\"n\":16,\"cats\":[\"event\",\"goods\",\"broadcast\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\",\"配信URLはこちら\"],\"reason\":\"전문과 동일하게 이벤트·상품·방송이 모두 포함된다.\"},{\"n\":17,\"cats\":[\"broadcast\"],\"evidence\":[\"FM802『802 Palette』で夢限大みゅーたいぷアニメ感想会開催\",\"ゲストは #夢限大みゅーたいぷ\"],\"reason\":\"FM 라디오 프로그램에 멤버가 게스트로 출연한 방송이다.\"},{\"n\":18,\"cats\":[\"broadcast\"],\"evidence\":[\"FM802「802 Palette」に 夢限大みゅーたいぷ全員で 出演させていただきました\"],\"reason\":\"FM 라디오에 전체 멤버가 출연한 방송이므로 'broadcast'에 해당한다.\"},{\"n\":20,\"cats\":[\"goods\"],\"evidence\":[\"仲町あられ バースデーグッズ2026\",\"受注販売\"],\"reason\":\"특정 멤버(仲町あられ)의 생일 기념 상품 판매이므로 'goods'에 해당한다.\"},{\"n\":21,\"cats\":[\"broadcast\"],\"evidence\":[\"夢限大みゅーたいぷの『ゆめ∞みたラジオ』#12\",\"宮永ののか・峰月律・藤都子が出演\"],\"reason\":\"멤버가 출연한 라디오 방송이므로 'broadcast'에 해당한다.\"}]}"
+}

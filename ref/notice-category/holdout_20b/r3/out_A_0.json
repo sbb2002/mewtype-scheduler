@@ -1,0 +1,41 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  62,
+  64,
+  70,
+  77,
+  78,
+  80,
+  83,
+  87,
+  97
+ ],
+ "sec": 1.8,
+ "usage": {
+  "queue_time": 0.116648648,
+  "prompt_tokens": 2466,
+  "prompt_time": 0.171639899,
+  "completion_tokens": 932,
+  "completion_time": 1.209458402,
+  "total_tokens": 3398,
+  "total_time": 1.381098301,
+  "prompt_tokens_details": {
+   "cached_tokens": 512
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 273
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "987",
+  "x-ratelimit-remaining-tokens": "4966",
+  "x-ratelimit-reset-requests": "18m43.2s",
+  "x-ratelimit-reset-tokens": "22.755s"
+ },
+ "content": "{\"results\":[{\"n\":62,\"cats\":[\"goods\"],\"evidence\":[\"サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ\",\"オリジナル「スマホ壁紙」をプレゼント\"],\"reason\":\"전용 디지털 굿즈(스마트폰 배경화면) 제공이므로 goods에 해당\"},{\"n\":64,\"cats\":[\"broadcast\"],\"evidence\":[\"ゆめみた 全員集合！ バンドリ！アワーノーツ リリース記念生配信\",\"生配信まであと1⃣時間\"],\"reason\":\"멤버가 출연하는 생방송이므로 broadcast에 해당\"},{\"n\":70,\"cats\":[\"goods\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念ムービー公開決定\",\"本日21:00よりプレミア公開\"],\"reason\":\"리리리즈 기념 영상 공개이므로 goods에 해당\"},{\"n\":77,\"cats\":[\"goods\"],\"evidence\":[\"プレミア公開 動画を投稿します〜ののちゃんクイズ\",\"10/1 18:00〜プレミア公開\"],\"reason\":\"외부 제작 영상 공개이므로 goods에 해당\"},{\"n\":78,\"cats\":[\"live\",\"broadcast\"],\"evidence\":[\"ゆめみた 東京公演 FINAL ライブ映像 同時視聴生配信\",\"10/11(日)に東京ガーデンシアターにて開催する 過去最大規模の単独ライブ\"],\"reason\":\"공연이 진행되고 동시에 생중계이므로 live와 broadcast 모두에 해당\"},{\"n\":80,\"cats\":[],\"evidence\":[\"アニメ『ゆめみた』がTOKYO MXで週2回再放送決定！\",\"TOKYO MXほかにて週2回の再放送が決定\"],\"reason\":\"멤버가 출연하지 않는 재방송이므로 분류 없음\"},{\"n\":83,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"#バンドリ13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\",\"当日のグッズ販売情報を公開しました\"],\"reason\":\"공연이 진행되고 그날의 굿즈 판매가 안내되므로 live와 goods 모두에 해당\"},{\"n\":87,\"cats\":[\"event\"],\"evidence\":[\"リリースイベントにつきまして\",\"夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」リリースイベント\"],\"reason\":\"리리리즈 이벤트 취소 안내이므로 event에 해당\"},{\"n\":97,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"チケット特典引き換えのお知らせ\",\"チケットのグッズ引換券にて実施いたします\"],\"reason\":\"티켓 특전 교환이 현장 이벤트이며, 교환 대상이 굿즈이므로 event와 goods 모두에 해당\"}] }"
+}

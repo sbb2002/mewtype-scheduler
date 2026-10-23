@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 0,
+ "ns": [
+  62,
+  64,
+  70,
+  77,
+  78,
+  80,
+  83,
+  87,
+  97
+ ],
+ "sec": 2.1,
+ "usage": {
+  "queue_time": 0.118179614,
+  "prompt_tokens": 2335,
+  "prompt_time": 0.117226204,
+  "completion_tokens": 1412,
+  "completion_time": 1.588830018,
+  "total_tokens": 3747,
+  "total_time": 1.706056222,
+  "completion_tokens_details": {
+   "reasoning_tokens": 10
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "999",
+  "x-ratelimit-remaining-tokens": "4882",
+  "x-ratelimit-reset-requests": "1m26.4s",
+  "x-ratelimit-reset-tokens": "23.384s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 62,\n      \"subject\": \"5th Single ‘これはぼくたちの生存のあらすじ’ 사전 예약 캠페인 시작\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"Apple Music [Pre-add] していただいた方に オリジナル「スマホ壁紙」をプレゼント\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"사전 예약을 통해 스티커(굿즈)를 제공하는 내용이므로 굿즈 안내에 해당한다.\"\n    },\n    {\n      \"n\": 64,\n      \"subject\": \"ゆめみた 전원 모임! バンドリ！アワーノーツ 출시 기념 생방송\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"バンドリ！アワーノーツ リリース記念生配信\"\n      },\n      \"reason\": \"생방송(방송·영상) 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 70,\n      \"subject\": \"5th Single ‘これはぼくたちの生存のあらすじ’ 출시 기념 뮤비 공개 결정\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"本日21:00よりプレミア公開\"\n      },\n      \"reason\": \"뮤비 공개(방송·영상) 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 77,\n      \"subject\": \"노노짱 퀴즈 영상 프리미어 공개\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"10/1 18:00〜プレミア公開\"\n      },\n      \"reason\": \"프리미어 공개(방송·영상) 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 78,\n      \"subject\": \"ゆめみた 도쿄 공연 FINAL 라이브 영상 동시 시청 생방송\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"ライブ映像 同時視聴生配信\"\n      },\n      \"reason\": \"라이브 영상 생방송 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 80,\n      \"subject\": \"アニメ『ゆめみた』 재방송이 TOKYO MX에서 주 2회 시작\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": true,\n        \"evidence\": \"TOKYO MXほかにて週2回の再放送が決定\"\n      },\n      \"reason\": \"재방송 안내이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 83,\n      \"subject\": \"13th 라이브 DAY 夢限大みゅーたいぷ ‘DIMENSIONAL OVERLAP’ 티켓 및 굿즈 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"当日のグッズ販売情報を公開しました\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"티켓·굿즈 판매 안내이므로 goods에 해당한다.\"\n    },\n    {\n      \"n\": 87,\n      \"subject\": \"5th Single ‘これはぼくたちの生存のあらすじ’ 리리리즈 이벤트 취소 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"リリースイベントにつきまして\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"리리리즈 이벤트(오프라인 행사) 안내이므로 event에 해당한다.\"\n    },\n    {\n      \"n\": 97,\n      \"subject\": \"13th 라이브 DAY 夢限大みゅーたいぷ ‘DIMENSIONAL OVERLAP’ 티켓 특전 교환 안내\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"チケットのグッズ引換券にて実施いたします\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"티켓 특전 교환(굿즈) 안내이므로 goods에 해당한다.\"\n    }\n  ]\n}"
+}

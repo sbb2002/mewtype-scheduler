@@ -1,0 +1,31 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  128,
+  129
+ ],
+ "sec": 1.2,
+ "usage": {
+  "queue_time": 0.160327011,
+  "prompt_tokens": 1410,
+  "prompt_time": 0.164578618,
+  "completion_tokens": 263,
+  "completion_time": 0.286734016,
+  "total_tokens": 1673,
+  "total_time": 0.451312634,
+  "completion_tokens_details": {
+   "reasoning_tokens": 107
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "988",
+  "x-ratelimit-remaining-tokens": "5937",
+  "x-ratelimit-reset-requests": "17m16.8s",
+  "x-ratelimit-reset-tokens": "15.472s"
+ },
+ "content": "{\"results\":[{\"n\":128,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"「特典CD」1枚(全5種)をプレゼント\",\"9月25日に開催された、\\n「新宿着陸計画」DAY2のライブ音源1曲を収録した\"],\"reason\":\"특별 CD가 라이브 음원 포함되어 있어 공연과 음원·굿즈 두 가지 분류에 해당한다.\"},{\"n\":129,\"cats\":[\"event\"],\"evidence\":[\"みやこのアトリエ開催決定！\"],\"reason\":\"아트리어는 공연이 아닌 오프라인 행사이므로 event에 해당한다.\"}]}"
+}

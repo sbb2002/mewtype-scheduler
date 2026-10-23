@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  30,
+  31
+ ],
+ "sec": 1.4,
+ "usage": {
+  "queue_time": 0.212831532,
+  "prompt_tokens": 2058,
+  "prompt_time": 0.123222619,
+  "completion_tokens": 816,
+  "completion_time": 0.905389419,
+  "total_tokens": 2874,
+  "total_time": 1.028612038,
+  "completion_tokens_details": {
+   "reasoning_tokens": 134
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "977",
+  "x-ratelimit-remaining-tokens": "5760",
+  "x-ratelimit-reset-requests": "33m7.2s",
+  "x-ratelimit-reset-tokens": "16.8s"
+ },
+ "content": "{\"results\":[{\"n\":22,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」 放送記念フリーライブ 「新宿着陸計画」\",\"会場でのグッズ物販の詳細を公開🛍❕\"],\"reason\":\"공연이면서 물품 판매가 동시에 안내되었으므로 live와 goods 모두\"},{\"n\":23,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」放送記念フリーライブ「新宿着陸計画」開催\",\"会場でのCD予約販売の詳細を公開💿❕\"],\"reason\":\"공연이면서 CD 판매가 안내되었으므로 live와 goods 모두\"},{\"n\":24,\"cats\":[\"goods\"],\"evidence\":[\"RT @norainu03019: 唱【 covered by 夢限大みゅーたいぷ】 https://youtu.be/5kvQmIzJ8ZA?si=zZxrudAnFQa9R6Ag\",\"映像制作しました！🐶✨\"],\"reason\":\"MV 영상 제작 및 공개이므로 음원·굿즈에 해당\"},{\"n\":25,\"cats\":[\"goods\"],\"evidence\":[\"楽曲情報：夢限大みゅーたいぷ 「唱(Cover)」 デジタルリリース開始\",\"MVも本日21時に公開予定です\"],\"reason\":\"디지털 음원 및 MV 공개이므로 goods\"},{\"n\":26,\"cats\":[\"broadcast\"],\"evidence\":[\"「バンドリ！TV LIVE 2026」RT @bang_dream_info: このあと22:03頃〜生配信📺✨\",\"YouTube で生配信📺✨\"],\"reason\":\"YouTube 생방송이므로 broadcast\"},{\"n\":27,\"cats\":[\"broadcast\"],\"evidence\":[\"TOKYO MXほか各局にて #アニメゆめみた 放送終了を記念した特別番組\",\"『ぱーてぃーちゃんのアニメ女心 研究所』の放送が決定✨\"],\"reason\":\"방송 프로그램이므로 broadcast\"},{\"n\":28,\"cats\":[\"broadcast\"],\"evidence\":[\"藤都子生誕記念配信がまもなく始まります\",\"藤都子生誕記念配信がまもなく始まります！\"],\"reason\":\"YouTube 생방송이므로 broadcast\"},{\"n\":30,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリースイベント\",\"リリースイベント🛸\"],\"reason\":\"리리리즈 이벤트이므로 event이며 음원·굿즈 판매가 포함되어 goods\"},{\"n\":31,\"cats\":[\"live\"],\"evidence\":[\"チケット一般発売中 📢 #バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\",\"チケット一般発売中📢\"],\"reason\":\"티켓 판매 안내이므로 live\"}]}"
+}

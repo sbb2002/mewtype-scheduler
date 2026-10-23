@@ -1,0 +1,31 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "C",
+ "batch": 3,
+ "ns": [
+  128,
+  129
+ ],
+ "sec": 1.2,
+ "usage": {
+  "queue_time": 0.343310821,
+  "prompt_tokens": 1173,
+  "prompt_time": 0.068002995,
+  "completion_tokens": 574,
+  "completion_time": 0.638787363,
+  "total_tokens": 1747,
+  "total_time": 0.706790358,
+  "completion_tokens_details": {
+   "reasoning_tokens": 250
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "996",
+  "x-ratelimit-remaining-tokens": "5080",
+  "x-ratelimit-reset-requests": "5m45.6s",
+  "x-ratelimit-reset-tokens": "21.9s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 128,\n      \"subject\": \"특전 CD 1장(총 5종) 선물\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"goods\": {\n        \"yes\": true,\n        \"evidence\": \"「特典CD」1枚(全5種)をプレゼント\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"포스트는 5종의 특전 CD를 구매 시 선물로 제공한다는 내용이므로 굿즈 안내에 해당한다.\"\n    },\n    {\n      \"n\": 129,\n      \"subject\": \"미야코의 아틀리에 개최\",\n      \"live\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"event\": {\n        \"yes\": true,\n        \"evidence\": \"みやこのアトリエ開催決定！\"\n      },\n      \"goods\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"broadcast\": {\n        \"yes\": false,\n        \"evidence\": \"\"\n      },\n      \"reason\": \"포스트는 오프라인 행사인 미야코의 아틀리에 개최를 알리고 있으므로 이벤트 안내에 해당한다.\"\n    }\n  ]\n}"
+}

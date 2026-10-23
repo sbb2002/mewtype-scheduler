@@ -1,0 +1,41 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  1,
+  2,
+  3,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "sec": 2.4,
+ "usage": {
+  "queue_time": 0.788037494,
+  "prompt_tokens": 2071,
+  "prompt_time": 0.304169029,
+  "completion_tokens": 696,
+  "completion_time": 1.072266838,
+  "total_tokens": 2767,
+  "total_time": 1.376435867,
+  "prompt_tokens_details": {
+   "cached_tokens": 512
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 12
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "979",
+  "x-ratelimit-remaining-tokens": "5667",
+  "x-ratelimit-reset-requests": "30m14.4s",
+  "x-ratelimit-reset-tokens": "17.497s"
+ },
+ "content": "{\"results\":[{\"n\":1,\"cats\":[],\"evidence\":[],\"reason\":\"글은 애니메이션 방영과 리포스트 캠페인에 관한 내용이므로 방송이 아니며, 공연, 이벤트, 굿즈와 관련이 없으므로 분류 없음.\"},{\"n\":2,\"cats\":[\"broadcast\"],\"evidence\":[\"「バンドリ！TV LIVE 2026」＃331\",\"夢限大みゅーたいぷ 5名が出演\"],\"reason\":\"TV 방송에 출연하는 내용이므로 broadcast.\"},{\"n\":3,\"cats\":[\"broadcast\"],\"evidence\":[\"「バンドリ！TV LIVE 2026」＃331\",\"出演者 仲町あられ 宮永ののか 峰月律 藤都子 千石ユノ\",\"YouTube で生配信\"],\"reason\":\"YouTube 생방송에 출연하는 내용이므로 broadcast.\"},{\"n\":6,\"cats\":[],\"evidence\":[],\"reason\":\"애니메이션 방영 시작 알림이므로 방송이 아니며, 공연·이벤트·굿즈와 관련이 없음.\"},{\"n\":7,\"cats\":[\"goods\"],\"evidence\":[\"『バンドリ！ ゆめ∞みた』が雑誌掲載！対談特集\",\"本日9/10(木)発売 #アニメージュ 様10月号にて\",\"TVアニメ「バンドリ！ ゆめ∞みた」を取り上げていただきました\"],\"reason\":\"잡지에 실린다는 소식이므로 goods.\"},{\"n\":8,\"cats\":[\"goods\"],\"evidence\":[\"TVアニメ『バンドリ！ ゆめ∞みた』が雑誌掲載！インタビューとポスター紹介\",\"本日9/10(木)発売の #アニメディア 10月号にて\",\"千石ユノ描き下ろしポスターも収録\"],\"reason\":\"잡지에 실린다는 소식이므로 goods.\"},{\"n\":9,\"cats\":[\"goods\"],\"evidence\":[\"バンドリ！ ゆめ∞みたがニュータイプ10月号に掲載\",\"本日9/10(木)発売の #ニュータイプ 10月号にて\",\"夢限大みゅーたいぷ キャスト5人×梅津朋美監督の座談会インタビュー\"],\"reason\":\"잡지에 실린다는 소식이므로 goods.\"},{\"n\":10,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"バンドリ13thライブ DAY 夢限大みゅーたいぷ「DIMENSIONAL OVERLAP」チケット販売開始\",\"チケット一般発売中\",\"スペシャルな告知CMも公開中\"],\"reason\":\"티켓 판매와 공연 안내이므로 live, 그리고 티켓 판매는 goods.\"},{\"n\":11,\"cats\":[\"live\",\"goods\"],\"evidence\":[\"BanG Dream! 13th LIVE 先行通販開始\",\"先行通販がこのあと15時00分より開始です\",\"東京ガーデンシアター\"],\"reason\":\"공연 티켓 및 굿즈 판매 안내이므로 live와 goods.\"}]}"
+}

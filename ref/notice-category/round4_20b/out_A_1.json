@@ -1,0 +1,38 @@
+{
+ "model": "openai/gpt-oss-20b",
+ "variant": "A",
+ "batch": 1,
+ "ns": [
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  20,
+  21
+ ],
+ "sec": 1.8,
+ "usage": {
+  "queue_time": 0.4592961,
+  "prompt_tokens": 2309,
+  "prompt_time": 0.157762846,
+  "completion_tokens": 848,
+  "completion_time": 1.006536562,
+  "total_tokens": 3157,
+  "total_time": 1.164299408,
+  "completion_tokens_details": {
+   "reasoning_tokens": 258
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "974",
+  "x-ratelimit-remaining-tokens": "5479",
+  "x-ratelimit-reset-requests": "37m26.4s",
+  "x-ratelimit-reset-tokens": "18.907s"
+ },
+ "content": "{\"results\":[{\"n\":12,\"cats\":[],\"evidence\":[],\"reason\":\"아니오, 멤버가 출연하지 않는 애니메이션 동시 시청 생방송이므로 분류 대상이 아님.\"},{\"n\":13,\"cats\":[\"broadcast\"],\"evidence\":[\"TVアニメ「バンドリ！ ゆめ∞みた」 同時視聴配信 #13 開始\",\"出演:夢限大みゅーたいぷ\"],\"reason\":\"멤버가 출연하는 방송이므로 broadcast.\"},{\"n\":14,\"cats\":[\"event\",\"goods\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念インターネットサイン会\",\"リリース記念 インターネットサイン会\"],\"reason\":\"인터넷 사인회는 event이며, 리리스를 기념해 굿즈를 받을 수 있으므로 goods.\"},{\"n\":15,\"cats\":[\"event\",\"goods\",\"broadcast\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念 インターネットサイン会\",\"サイン会の様子を生配信\"],\"reason\":\"사인회는 event, 굿즈 제공, 생방송이므로 broadcast.\"},{\"n\":16,\"cats\":[\"event\",\"goods\",\"broadcast\"],\"evidence\":[\"夢限大みゅーたいぷ 5th Single リリース記念 インターネットサイン会\",\"サイン会の様子を生配信\",\"配信URLはこちら\"],\"reason\":\"같은 사인회 생방송이므로 동일 분류.\"},{\"n\":17,\"cats\":[\"broadcast\"],\"evidence\":[\"FM802『802 Palette』で夢限大みゅーたいぷアニメ感想会開催\",\"ゲストは #夢限大みゅーたいぷ\"],\"reason\":\"라디오 방송에 멤버가 출연하므로 broadcast.\"},{\"n\":18,\"cats\":[\"broadcast\"],\"evidence\":[\"FM802「802 Palette」に 夢限大みゅーたいぷ全員で 出演\"],\"reason\":\"라디오 프로그램에 멤버가 출연하므로 broadcast.\"},{\"n\":20,\"cats\":[\"goods\"],\"evidence\":[\"仲町あられ バースデーグッズ2026\",\"受注販売\"],\"reason\":\"굿즈 판매이므로 goods.\"},{\"n\":21,\"cats\":[\"broadcast\"],\"evidence\":[\"夢限大みゅーたいぷの『ゆめ∞みたラジオ』#12\",\"宮永ののか・峰月律・藤都子が出演\"],\"reason\":\"라디오 방송에 멤버가 출연하므로 broadcast.\"}]}"
+}
