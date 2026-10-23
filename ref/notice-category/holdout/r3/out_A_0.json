@@ -1,0 +1,40 @@
+{
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  62,
+  64,
+  70,
+  77,
+  78,
+  80,
+  83,
+  87,
+  97
+ ],
+ "sec": 3.7,
+ "usage": {
+  "queue_time": 0.01083629,
+  "prompt_tokens": 2466,
+  "prompt_time": 0.09215404,
+  "completion_tokens": 1449,
+  "completion_time": 3.3226111720000002,
+  "total_tokens": 3915,
+  "total_time": 3.414765212,
+  "prompt_tokens_details": {
+   "cached_tokens": 512
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 564
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "988",
+  "x-ratelimit-remaining-tokens": "4221",
+  "x-ratelimit-reset-requests": "17m16.8s",
+  "x-ratelimit-reset-tokens": "28.342s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 62,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ\",\n        \"🛸#ゆめみた 5th Single 「これはぼくたちの生存のあらすじ」🛸\"\n      ],\n      \"reason\": \"프리오더 캠페인으로 싱글과 원본 벽지 제공을 안내하는 내용이므로 굿즈에 해당한다.\"\n    },\n    {\n      \"n\": 64,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"バンドリ！アワーノーツ リリース記念生配信\",\n        \"🔗https://www.youtube.com/watch?v=dRUOZpog1Dk\"\n      ],\n      \"reason\": \"릴리스 기념 생방송을 안내하는 트윗으로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 70,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"リリース記念ムービー公開決定\",\n        \"🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念ムービー🛸\"\n      ],\n      \"reason\": \"싱글 발매 기념 영상을 공개한다는 내용으로 굿즈(영상) 안내이다.\"\n    },\n    {\n      \"n\": 77,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"動画を投稿します〜ののちゃんクイズ\",\n        \"https://youtu.be/zh6vG0isdAE?si=zLM9iSk-ziTE7xXH\"\n      ],\n      \"reason\": \"멤버가 만든 퀴즈 영상 소개이며 판매 여부와 관계없이 굿즈에 해당한다.\"\n    },\n    {\n      \"n\": 78,\n      \"cats\": [\"live\", \"broadcast\"],\n      \"evidence\": [\n        \"東京公演 FINAL ライブ映像 同時視聴生配信\",\n        \"10/11(日)に東京ガーデンシアターにて開催する 過去最大規模の単独ライブもお見逃しなく\"\n      ],\n      \"reason\": \"단독 라이브 공연을 진행하고 그 영상을 동시 시청 생중계하므로 라이브와 방송 모두에 해당한다.\"\n    },\n    {\n      \"n\": 80,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"애니메이션 재방송 안내이며 멤버가 출연하는 방송이 아니므로 해당 분류가 없다.\"\n    },\n    {\n      \"n\": 83,\n      \"cats\": [\"live\", \"goods\"],\n      \"evidence\": [\n        \"【ライブ情報】#バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\",\n        \"当日のグッズ販売情報を公開しました\"\n      ],\n      \"reason\": \"라이브 공연 일정 안내와 동시에 현장 굿즈 판매 정보를 제공하므로 라이브와 굿즈 모두에 해당한다.\"\n    },\n    {\n      \"n\": 87,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"リリースイベントにつきまして\",\n        \"出演キャンセルのお知らせ\"\n      ],\n      \"reason\": \"싱글 발매 이벤트(리리즈 이벤트) 취소 안내이므로 오프라인 행사에 해당한다.\"\n    },\n    {\n      \"n\": 97,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"チケット特典のお渡しについて\",\n        \"特典の引き換えは、チケットのグッズ引換券にて実施いたします。\"\n      ],\n      \"reason\": \"공연 티켓에 포함된 굿즈 특전 교환 안내이므로 굿즈에 해당한다.\"\n    }\n  ]\n}"
+}

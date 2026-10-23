@@ -1,0 +1,853 @@
+{
+ "variant": "A",
+ "n_items": 29,
+ "exact": 17,
+ "dropped": [],
+ "pass_rule": {
+  "live": 1.0,
+  "event": 0.95,
+  "goods": 0.95,
+  "broadcast": 0.95
+ },
+ "beta": 0.5,
+ "views": {
+  "분류": {
+   "per_label": {
+    "live": {
+     "tp": 5,
+     "fp": 3,
+     "fn": 4,
+     "tn": 17,
+     "support": 9,
+     "precision": 0.625,
+     "recall": 0.5555555555555556,
+     "accuracy": 0.7586206896551724,
+     "f1": 0.5882352941176471,
+     "f0.5": 0.6097560975609756,
+     "fp_n": [
+      78,
+      118,
+      119
+     ],
+     "fn_n": [
+      97,
+      99,
+      102,
+      107
+     ],
+     "pass": false
+    },
+    "event": {
+     "tp": 4,
+     "fp": 2,
+     "fn": 3,
+     "tn": 20,
+     "support": 7,
+     "precision": 0.6666666666666666,
+     "recall": 0.5714285714285714,
+     "accuracy": 0.8275862068965517,
+     "f1": 0.6153846153846153,
+     "f0.5": 0.6451612903225806,
+     "fp_n": [
+      102,
+      120
+     ],
+     "fn_n": [
+      109,
+      118,
+      119
+     ],
+     "pass": false
+    },
+    "goods": {
+     "tp": 6,
+     "fp": 3,
+     "fn": 0,
+     "tn": 20,
+     "support": 6,
+     "precision": 0.6666666666666666,
+     "recall": 1.0,
+     "accuracy": 0.896551724137931,
+     "f1": 0.8,
+     "f0.5": 0.7142857142857142,
+     "fp_n": [
+      70,
+      77,
+      83
+     ],
+     "fn_n": [],
+     "pass": false
+    },
+    "broadcast": {
+     "tp": 4,
+     "fp": 1,
+     "fn": 3,
+     "tn": 21,
+     "support": 7,
+     "precision": 0.8,
+     "recall": 0.5714285714285714,
+     "accuracy": 0.8620689655172413,
+     "f1": 0.6666666666666666,
+     "f0.5": 0.7407407407407408,
+     "fp_n": [
+      107
+     ],
+     "fn_n": [
+      70,
+      77,
+      120
+     ],
+     "pass": false
+    },
+    "etc": {
+     "tp": 1,
+     "fp": 2,
+     "fn": 0,
+     "tn": 26,
+     "support": 1,
+     "precision": 0.3333333333333333,
+     "recall": 1.0,
+     "accuracy": 0.9310344827586207,
+     "f1": 0.5,
+     "f0.5": 0.3846153846153846,
+     "fp_n": [
+      99,
+      109
+     ],
+     "fn_n": []
+    }
+   },
+   "weighted_avg": {
+    "precision": 0.685919540229885,
+    "recall": 0.6551724137931034,
+    "f1": 0.6575336766006137,
+    "f0.5": 0.6715459786622868
+   },
+   "cross": {
+    "live": {
+     "live": 5,
+     "event": 1,
+     "goods": 2,
+     "broadcast": 1,
+     "etc": 1
+    },
+    "event": {
+     "live": 2,
+     "event": 4,
+     "goods": 0,
+     "broadcast": 0,
+     "etc": 1
+    },
+    "goods": {
+     "live": 0,
+     "event": 0,
+     "goods": 6,
+     "broadcast": 0,
+     "etc": 0
+    },
+    "broadcast": {
+     "live": 1,
+     "event": 1,
+     "goods": 2,
+     "broadcast": 4,
+     "etc": 0
+    },
+    "etc": {
+     "live": 0,
+     "event": 0,
+     "goods": 0,
+     "broadcast": 0,
+     "etc": 1
+    }
+   },
+   "passed": false
+  },
+  "실효": {
+   "per_label": {
+    "live": {
+     "tp": 5,
+     "fp": 3,
+     "fn": 4,
+     "tn": 17,
+     "support": 9,
+     "precision": 0.625,
+     "recall": 0.5555555555555556,
+     "accuracy": 0.7586206896551724,
+     "f1": 0.5882352941176471,
+     "f0.5": 0.6097560975609756,
+     "fp_n": [
+      78,
+      118,
+      119
+     ],
+     "fn_n": [
+      97,
+      99,
+      102,
+      107
+     ],
+     "pass": false
+    },
+    "event": {
+     "tp": 4,
+     "fp": 2,
+     "fn": 3,
+     "tn": 20,
+     "support": 7,
+     "precision": 0.6666666666666666,
+     "recall": 0.5714285714285714,
+     "accuracy": 0.8275862068965517,
+     "f1": 0.6153846153846153,
+     "f0.5": 0.6451612903225806,
+     "fp_n": [
+      102,
+      120
+     ],
+     "fn_n": [
+      109,
+      118,
+      119
+     ],
+     "pass": false
+    },
+    "goods": {
+     "tp": 6,
+     "fp": 3,
+     "fn": 0,
+     "tn": 20,
+     "support": 6,
+     "precision": 0.6666666666666666,
+     "recall": 1.0,
+     "accuracy": 0.896551724137931,
+     "f1": 0.8,
+     "f0.5": 0.7142857142857142,
+     "fp_n": [
+      70,
+      77,
+      83
+     ],
+     "fn_n": [],
+     "pass": false
+    },
+    "broadcast": {
+     "tp": 4,
+     "fp": 1,
+     "fn": 3,
+     "tn": 21,
+     "support": 7,
+     "precision": 0.8,
+     "recall": 0.5714285714285714,
+     "accuracy": 0.8620689655172413,
+     "f1": 0.6666666666666666,
+     "f0.5": 0.7407407407407408,
+     "fp_n": [
+      107
+     ],
+     "fn_n": [
+      70,
+      77,
+      120
+     ],
+     "pass": false
+    },
+    "etc": {
+     "tp": 1,
+     "fp": 2,
+     "fn": 0,
+     "tn": 26,
+     "support": 1,
+     "precision": 0.3333333333333333,
+     "recall": 1.0,
+     "accuracy": 0.9310344827586207,
+     "f1": 0.5,
+     "f0.5": 0.3846153846153846,
+     "fp_n": [
+      99,
+      109
+     ],
+     "fn_n": []
+    }
+   },
+   "weighted_avg": {
+    "precision": 0.685919540229885,
+    "recall": 0.6551724137931034,
+    "f1": 0.6575336766006137,
+    "f0.5": 0.6715459786622868
+   },
+   "cross": {
+    "live": {
+     "live": 5,
+     "event": 1,
+     "goods": 2,
+     "broadcast": 1,
+     "etc": 1
+    },
+    "event": {
+     "live": 2,
+     "event": 4,
+     "goods": 0,
+     "broadcast": 0,
+     "etc": 1
+    },
+    "goods": {
+     "live": 0,
+     "event": 0,
+     "goods": 6,
+     "broadcast": 0,
+     "etc": 0
+    },
+    "broadcast": {
+     "live": 1,
+     "event": 1,
+     "goods": 2,
+     "broadcast": 4,
+     "etc": 0
+    },
+    "etc": {
+     "live": 0,
+     "event": 0,
+     "goods": 0,
+     "broadcast": 0,
+     "etc": 1
+    }
+   },
+   "passed": false
+  }
+ },
+ "items": [
+  {
+   "n": 62,
+   "gold": [
+    "goods"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "프리오더 캠페인으로 싱글과 원본 벽지 제공을 안내하는 내용이므로 굿즈에 해당한다.",
+   "evidence": [
+    "サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ",
+    "🛸#ゆめみた 5th Single 「これはぼくたちの生存のあらすじ」🛸"
+   ],
+   "title": "サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ"
+  },
+  {
+   "n": 64,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "broadcast"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "릴리스 기념 생방송을 안내하는 트윗으로 방송에 해당한다.",
+   "evidence": [
+    "バンドリ！アワーノーツ リリース記念生配信",
+    "🔗https://www.youtube.com/watch?v=dRUOZpog1Dk"
+   ],
+   "title": "ゆめみた 全員集合！ バンドリ！アワーノーツ リリース記念生配信"
+  },
+  {
+   "n": 70,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "싱글 발매 기념 영상을 공개한다는 내용으로 굿즈(영상) 안내이다.",
+   "evidence": [
+    "リリース記念ムービー公開決定",
+    "🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念ムービー🛸"
+   ],
+   "title": "🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念ムービー公開決定"
+  },
+  {
+   "n": 77,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "멤버가 만든 퀴즈 영상 소개이며 판매 여부와 관계없이 굿즈에 해당한다.",
+   "evidence": [
+    "動画を投稿します〜ののちゃんクイズ",
+    "https://youtu.be/zh6vG0isdAE?si=zLM9iSk-ziTE7xXH"
+   ],
+   "title": "プレミア公開 動画を投稿します〜ののちゃんクイズ"
+  },
+  {
+   "n": 78,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "broadcast",
+    "live"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "단독 라이브 공연을 진행하고 그 영상을 동시 시청 생중계하므로 라이브와 방송 모두에 해당한다.",
+   "evidence": [
+    "東京公演 FINAL ライブ映像 同時視聴生配信",
+    "10/11(日)に東京ガーデンシアターにて開催する 過去最大規模の単独ライブもお見逃しなく"
+   ],
+   "title": "ゆめみた 東京公演 FINAL ライブ映像 同時視聴生配信"
+  },
+  {
+   "n": 80,
+   "gold": [
+    "etc"
+   ],
+   "pred": [
+    "etc"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "애니메이션 재방송 안내이며 멤버가 출연하는 방송이 아니므로 해당 분류가 없다.",
+   "evidence": [],
+   "title": "アニメ『ゆめみた』がTOKYO MXで週2回再放送決定！"
+  },
+  {
+   "n": 83,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "goods",
+    "live"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "라이브 공연 일정 안내와 동시에 현장 굿즈 판매 정보를 제공하므로 라이브와 굿즈 모두에 해당한다.",
+   "evidence": [
+    "【ライブ情報】#バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」",
+    "当日のグッズ販売情報を公開しました"
+   ],
+   "title": "【ライブ情報】#バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」"
+  },
+  {
+   "n": 87,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "event"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "싱글 발매 이벤트(리리즈 이벤트) 취소 안내이므로 오프라인 행사에 해당한다.",
+   "evidence": [
+    "リリースイベントにつきまして",
+    "出演キャンセルのお知らせ"
+   ],
+   "title": "リリースイベントにつきまして"
+  },
+  {
+   "n": 97,
+   "gold": [
+    "goods",
+    "live"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "공연 티켓에 포함된 굿즈 특전 교환 안내이므로 굿즈에 해당한다.",
+   "evidence": [
+    "チケット特典のお渡しについて",
+    "特典の引き換えは、チケットのグッズ引換券にて実施いたします。"
+   ],
+   "title": "チケット特典引き換えのお知らせ"
+  },
+  {
+   "n": 98,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "live"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "공연에 대한 감사 인사로, 라이브 공연에 해당한다.",
+   "evidence": [
+    "ご来場・ご視聴ありがとうございました❣"
+   ],
+   "title": "13thライブ DAY DIMENSIONAL OVERLAP"
+  },
+  {
+   "n": 99,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "etc"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "플레이리스트 공개는 판매·공연·방송과 직접적인 관련이 없어 분류 없음.",
+   "evidence": [
+    "セットリプレイリスト公開中"
+   ],
+   "title": "【バンドリ 13thライブ DAY 夢限大みゅーたいぷ】「DIMENSIONAL OVERLAP」セットリプレイリスト公開中"
+  },
+  {
+   "n": 100,
+   "gold": [
+    "goods"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "CD 판매 및 추첨회 안내로 굿즈(음반) 판매에 해당한다.",
+   "evidence": [
+    "CD販売情報💿 会場での販売詳細と抽選会のお知らせ",
+    "会場でのCD販売の詳細はこちら💡"
+   ],
+   "title": "CD販売情報💿 会場での販売詳細と抽選会のお知らせ"
+  },
+  {
+   "n": 102,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "event"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "오프라인 체험회 개최 안내로 이벤트에 해당한다.",
+   "evidence": [
+    "「夢ノ結唱 MEW アルファー版」体験会を実施💻",
+    "会場内、夢ノ結唱ブースにて「夢ノ結唱 MEW アルファー版」体験会を実施"
+   ],
+   "title": "「夢ノ結唱 MEW アルファー版」体験会を実施💻"
+  },
+  {
+   "n": 103,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "live"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "공연 개장 및 입장 안내로 라이브 공연에 해당한다.",
+   "evidence": [
+    "お早めのご整列をお願いします",
+    "⏰開場:16:30予定"
+   ],
+   "title": "お早めのご整列をお願いします"
+  },
+  {
+   "n": 104,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "live"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "투어 개최 및 티켓 선예매 안내로 라이브 공연에 해당한다.",
+   "evidence": [
+    "LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定",
+    "チケット最速先行はこのあと21時〜受付開始"
+   ],
+   "title": "LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定"
+  },
+  {
+   "n": 105,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "broadcast"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "TV 생방송 및 유튜브 생중계 안내로 방송에 해당한다.",
+   "evidence": [
+    "このあと22:00〜 生配信📺",
+    "「バンドリ！TV LIVE 2026」＃336"
+   ],
+   "title": "「バンドリ！TV LIVE 2026」"
+  },
+  {
+   "n": 107,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "broadcast"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "아카이브 영상 스트리밍 티켓 판매로 방송(생중계) 서비스에 해당한다.",
+   "evidence": [
+    "アーカイブ配信チケットが 本日21時まで発売中📢",
+    "※ご視聴は23:59まで"
+   ],
+   "title": "本日21時まで発売中"
+  },
+  {
+   "n": 108,
+   "gold": [
+    "goods"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "멤버 생일 굿즈 판매 종료 안내로 굿즈에 해당한다.",
+   "evidence": [
+    "藤都子 バースデーグッズ受付終了のお知らせ",
+    "ブシロード オンラインストアにて受注販売"
+   ],
+   "title": "藤都子バースデーグッズ受付終了のお知らせ"
+  },
+  {
+   "n": 109,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "etc"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "프로필 및 콜라보 소개만으로는 공연, 행사, 굿즈, 방송에 해당되지 않는다.",
+   "evidence": [],
+   "title": "「藤都子」プロフィール"
+  },
+  {
+   "n": 114,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "broadcast"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "유튜브 채널을 통한 생일 기념 실시간 스트리밍이므로 방송에 해당한다.",
+   "evidence": [
+    "千石ユノ生誕記念配信決定！",
+    "📅11月4日(水) 21:00〜",
+    "千石ユノ 生誕記念配信を バースデー当日に実施💖",
+    "📺千石ユノ 個人YouTubeチャンネルにて配信！"
+   ],
+   "title": "千石ユノ生誕記念配信決定！"
+  },
+  {
+   "n": 117,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "event"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "새로운 오프라인 행사인 ‘新潟グランプリ’에 출연하는 것으로 행사에 해당한다.",
+   "evidence": [
+    "千石ユノ、 新潟グランプリに出演決定！",
+    "🗓　11月15日(日)",
+    "📍　CARDBASE JABURO"
+   ],
+   "title": "千石ユノ、 新潟グランプリに出演決定！"
+  },
+  {
+   "n": 118,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "live"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "공연 티켓 일반 판매 안내이며, 현장 공연(라이브)으로 분류한다.",
+   "evidence": [
+    "チケット一般発売 明日開始",
+    "11/21(土)開催",
+    "💪集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜💪",
+    "⏰受付期間 明日10/18(日) 12:00〜"
+   ],
+   "title": "チケット一般発売 明日開始"
+  },
+  {
+   "n": 119,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "live"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "라이브 이벤트 티켓 사전 판매 안내이므로 live에 해당한다.",
+   "evidence": [
+    "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜",
+    "プレイガイド先行 本日受付終了",
+    "🎫お申し込みはこちら"
+   ],
+   "title": "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜"
+  },
+  {
+   "n": 120,
+   "gold": [
+    "broadcast"
+   ],
+   "pred": [
+    "event"
+   ],
+   "exact": false,
+   "dropped": false,
+   "related": null,
+   "reason": "오프라인 토크쇼 행사이므로 event에 해당한다.",
+   "evidence": [
+    "アニメ・スタいしかわ 2026 夢限大みゅーたいぷ出演決定！スペシャルトークショー開催",
+    "11/28(土)・29(日)開催",
+    "スペシャルトークショーを実施✨"
+   ],
+   "title": "アニメ・スタいしかわ 2026 夢限大みゅーたいぷ出演決定！スペシャルトークショー開催"
+  },
+  {
+   "n": 122,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "event"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "유노가 주최하는 DJ 오프라인 행사이므로 event에 해당한다.",
+   "evidence": [
+    "YUNO’s PARTY Lv.3 開催決定！",
+    "千石ユノ主催DJイベント",
+    "日程:2026年12月5日(土)",
+    "会場:duo MUSIC EXCHANGE"
+   ],
+   "title": "YUNO’s PARTY Lv.3 開催決定！"
+  },
+  {
+   "n": 125,
+   "gold": [
+    "goods"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "Blu-ray 발매 및 판매 안내이므로 goods에 해당한다.",
+   "evidence": [
+    "12/16(水)発売",
+    "TVアニメ「バンドリ！ ゆめ∞みた」 Blu-ray 上下巻",
+    "法人別特典画像を公開",
+    "同時購入キャンペーンも開催中"
+   ],
+   "title": "12/16(水)発売"
+  },
+  {
+   "n": 127,
+   "gold": [
+    "live"
+   ],
+   "pred": [
+    "live"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "라이브 공연 티켓 일반 판매 안내이므로 live에 해당한다.",
+   "evidence": [
+    "チケット一般発売 明日開始",
+    "12/24(木)開催",
+    "NAKAMACHI ARALE LIVE 2026 「RESONEXT」",
+    "⏰受付期間 明日10/3(土) 12:00〜"
+   ],
+   "title": "チケット一般発売 明日開始"
+  },
+  {
+   "n": 128,
+   "gold": [
+    "goods"
+   ],
+   "pred": [
+    "goods"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "앨범 발매와 함께 제공되는 특전 CD는 판매·배포되는 물품이므로 goods에 해당한다.",
+   "evidence": [
+    "「特典CD」1枚(全5種)をプレゼント",
+    "2027年1月27日(水)リリース",
+    "#ゆめみた 2nd Album「It’s our choice」🛸",
+    "9月25日に開催された、「新宿着陸計画」DAY2のライブ音源1曲を収録した「特典CD」1枚(全5種)をプレゼント🎁✨"
+   ],
+   "title": "「特典CD」1枚(全5種)をプレゼント"
+  },
+  {
+   "n": 129,
+   "gold": [
+    "event"
+   ],
+   "pred": [
+    "event"
+   ],
+   "exact": true,
+   "dropped": false,
+   "related": null,
+   "reason": "멤버 미야코가 주최하는 오프라인 행사(아트 전시)이며 공연이나 물품 판매와는 관련이 없으므로 event에 해당한다.",
+   "evidence": [
+    "みやこのアトリエ開催決定！",
+    "日程:2027年3月20日(土)",
+    "会場:学校法人片柳学園 日本工学院専門学校 片柳記念ホール",
+    "#バンドリ #ゆめみた"
+   ],
+   "title": "みやこのアトリエ開催決定！"
+  }
+ ]
+}

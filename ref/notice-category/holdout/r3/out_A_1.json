@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 1,
+ "ns": [
+  98,
+  99,
+  100,
+  102,
+  103,
+  104,
+  105,
+  107,
+  108
+ ],
+ "sec": 3.5,
+ "usage": {
+  "queue_time": 0.330874096,
+  "prompt_tokens": 2255,
+  "prompt_time": 0.112431249,
+  "completion_tokens": 1336,
+  "completion_time": 2.790322889,
+  "total_tokens": 3591,
+  "total_time": 2.902754138,
+  "completion_tokens_details": {
+   "reasoning_tokens": 595
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "987",
+  "x-ratelimit-remaining-tokens": "3085",
+  "x-ratelimit-reset-requests": "18m43.2s",
+  "x-ratelimit-reset-tokens": "36.862s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 98,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"ご来場・ご視聴ありがとうございました❣\"\n      ],\n      \"reason\": \"공연에 대한 감사 인사로, 라이브 공연에 해당한다.\"\n    },\n    {\n      \"n\": 99,\n      \"cats\": [],\n      \"evidence\": [\n        \"セットリプレイリスト公開中\"\n      ],\n      \"reason\": \"플레이리스트 공개는 판매·공연·방송과 직접적인 관련이 없어 분류 없음.\"\n    },\n    {\n      \"n\": 100,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"CD販売情報💿 会場での販売詳細と抽選会のお知らせ\",\n        \"会場でのCD販売の詳細はこちら💡\"\n      ],\n      \"reason\": \"CD 판매 및 추첨회 안내로 굿즈(음반) 판매에 해당한다.\"\n    },\n    {\n      \"n\": 102,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"「夢ノ結唱 MEW アルファー版」体験会を実施💻\",\n        \"会場内、夢ノ結唱ブースにて「夢ノ結唱 MEW アルファー版」体験会を実施\"\n      ],\n      \"reason\": \"오프라인 체험회 개최 안내로 이벤트에 해당한다.\"\n    },\n    {\n      \"n\": 103,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"お早めのご整列をお願いします\",\n        \"⏰開場:16:30予定\"\n      ],\n      \"reason\": \"공연 개장 및 입장 안내로 라이브 공연에 해당한다.\"\n    },\n    {\n      \"n\": 104,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定\",\n        \"チケット最速先行はこのあと21時〜受付開始\"\n      ],\n      \"reason\": \"투어 개최 및 티켓 선예매 안내로 라이브 공연에 해당한다.\"\n    },\n    {\n      \"n\": 105,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"このあと22:00〜 生配信📺\",\n        \"「バンドリ！TV LIVE 2026」＃336\"\n      ],\n      \"reason\": \"TV 생방송 및 유튜브 생중계 안내로 방송에 해당한다.\"\n    },\n    {\n      \"n\": 107,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"アーカイブ配信チケットが 本日21時まで発売中📢\",\n        \"※ご視聴は23:59まで\"\n      ],\n      \"reason\": \"아카이브 영상 스트리밍 티켓 판매로 방송(생중계) 서비스에 해당한다.\"\n    },\n    {\n      \"n\": 108,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"藤都子 バースデーグッズ受付終了のお知らせ\",\n        \"ブシロード オンラインストアにて受注販売\"\n      ],\n      \"reason\": \"멤버 생일 굿즈 판매 종료 안내로 굿즈에 해당한다.\"\n    }\n  ]\n}"
+}
