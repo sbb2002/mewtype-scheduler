@@ -555,7 +555,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   판정 = `telegram_app._notice_categories`(`_prepare_notice` 안, 시점 판정 · 비전 OCR 뒤, 이미 본 트윗이면 안 함):
   ① 관리 페이지가 고른 분류가 있으면 그것 ② 게임 계정 글(`_game_account_handle`) → `["game"]` ③ 리포스트(본문이 `RT @…:` / `@…:` 로 시작, `_RT_HEAD_RE`) → `["etc"]`
   ④ `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 구절 필수 · 3회) → 고른 것, 빈 목록이면 `["etc"]`, 실패(None)면 **키를 안 붙인다**.
-  `live` 가 들어 있으면 `llm.live_info` 로 `live_name`(공연 이름, 원문 표기 · 「」 안쪽) · `live_date`(공연 당일 YYYY-MM-DD) — 원문에 없는 이름은 버리고, 공연일의 월 · 일이 근거 줄에 없으면 날짜만 버린다.
+  `live` 가 들어 있으면 `llm.live_info` 로 `live_name`(공연 이름, 원문 표기 · 「」 안쪽) · `live_date`(공연 당일 YYYY-MM-DD) — 원문에 없는 이름은 버리고, 공연일의 월 · 일이 근거 줄에 없으면 날짜만 버린다. 이 판정에는 **원문(`body_raw`)** 을 준다 — 분류에 쓰는 `body_for_llm` 은 날짜 · URL 을 지운 본문이라 공연일을 찾을 수 없다(v4.7.0 배포판은 `body_for_llm` 을 줘 공연일이 늘 비었다, 10-23 소급 판정에서 발견).
   병합(`_merge_fields`)은 새 글의 값이 있으면 덮고, 새 글이 라이브공연이 아니면 공연 이름 · 공연일을 지운다. 수정(`edit_notice`)에서 `live_name` · `live_date` 를 `None` 으로 주면 키를 지운다.
 - **옛 분류 `category`**(정규식 4종 live · release · platform · etc, `xnotice._category`)는 그대로 남긴다(옛 호환). `categories` 가 없는 줄(v4.7.0 이전 · 판정 실패)은
   프론트 · 관리 페이지가 **바꿔 읽는다**: 출처가 게임 계정이면 `game`, 아니면 `live` → 방송(옛 「라이브예고」는 실제로 대부분 방송) · `release` → 음원·굿즈 · `platform` · 모르는 값 → 기타.
