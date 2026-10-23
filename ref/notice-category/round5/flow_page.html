@@ -1,0 +1,327 @@
+<title>소식 인입 흐름 (5차 구현 가정)</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 레이아웃: v4 팸플릿과 같은 어두운 패널 — 위 공통 단계 → 계정별 탭 → 세로 흐름(단계 카드 + 오른쪽 갈림 출구) → 판단 표 */
+:root {
+  color-scheme: dark;
+  --bg: #101114; --panel: #17181c; --panel2: #1e2024; --deep: #0d0e11;
+  --ink: #e9e9ea; --dim: #9a9ca2; --faint: #6b6d73; --line: #2c2e33;
+  --cyan: #cbf7f5; --cyan-soft: rgba(203, 247, 245, .13);
+  --llm: #c9a6ff; --llm-soft: rgba(201, 166, 255, .14);
+  --store: #8fd3a8; --store-soft: rgba(143, 211, 168, .13);
+  --logic: #ffb46b; --logic-soft: rgba(255, 180, 107, .14);
+  --prompt: #9ec5ff; --prompt-soft: rgba(158, 197, 255, .14);
+  --end: #ff8f8f; --end-soft: rgba(255, 143, 143, .10);
+  --f-sans: "IBM Plex Sans KR", "IBM Plex Sans", ui-sans-serif, system-ui, "Malgun Gothic", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-sans); font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; }
+.wrap { max-width: 1000px; margin: 0 auto; display: grid; gap: 22px; }
+code, .mono { font-family: var(--f-mono); font-size: .84em; }
+h2 { margin: 26px 0 0; font-size: .8rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--cyan); }
+.sub { margin: 0; color: var(--dim); font-size: .9rem; }
+
+.hero { border: 1px solid var(--line); border-radius: 16px; padding: 28px 26px;
+  background: radial-gradient(120% 140% at 0% 0%, rgba(203, 247, 245, .07), transparent 55%), var(--panel); display: grid; gap: 12px; }
+.hero .eyebrow { margin: 0; font-family: var(--f-mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--cyan); }
+.hero h1 { margin: 0; font-size: 1.7rem; font-weight: 700; letter-spacing: -.01em; text-wrap: balance; }
+.hero p { margin: 0; max-width: 64ch; color: var(--dim); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-family: var(--f-mono); font-size: .72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+.chip.code { color: var(--cyan); border-color: rgba(203, 247, 245, .35); background: var(--cyan-soft); }
+.chip.llm { color: var(--llm); border-color: rgba(201, 166, 255, .4); background: var(--llm-soft); }
+.chip.store { color: var(--store); border-color: rgba(143, 211, 168, .4); background: var(--store-soft); }
+.chip.logic { color: var(--logic); border-color: rgba(255, 180, 107, .45); background: var(--logic-soft); }
+.chip.prompt { color: var(--prompt); border-color: rgba(158, 197, 255, .45); background: var(--prompt-soft); }
+.chip.ui { color: var(--ink); border-color: var(--faint); }
+.card .hd .chip.prompt, .card .hd .chip.logic, .card .hd .chip.ui { white-space: normal; border-radius: 8px; }
+
+.tabs { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel2); }
+.tab { flex: 1 1 160px; padding: 11px 12px; font: inherit; font-size: .86rem; color: var(--dim); background: none; border: 0; border-right: 1px solid var(--line); cursor: pointer; text-align: center; }
+.tab:last-child { border-right: 0; }
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: #0c1416; background: var(--cyan); font-weight: 600; }
+.tab:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.tab small { display: block; font-size: .72rem; opacity: .8; font-weight: 400; }
+
+.flow { display: grid; gap: 0; }
+.cap { margin: 0 0 14px; color: var(--dim); font-size: .92rem; max-width: 70ch; }
+.cap b { color: var(--ink); }
+.step { display: grid; grid-template-columns: 36px minmax(0, 1fr) minmax(0, 300px); gap: 0 14px; align-items: stretch; }
+.rail { display: flex; flex-direction: column; align-items: center; }
+.num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-family: var(--f-mono); font-size: .76rem;
+  border: 1.5px solid var(--line); color: var(--dim); background: var(--deep); flex: none; }
+.step.k-llm .num { border-color: var(--llm); color: var(--llm); }
+.step.k-code .num { border-color: rgba(203, 247, 245, .5); color: var(--cyan); }
+.step.k-store .num { border-color: var(--store); color: var(--store); }
+.line { flex: 1; width: 2px; background: var(--line); margin: 3px 0; min-height: 14px; }
+.step:last-child .line { display: none; }
+.card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; margin-bottom: 12px; min-width: 0; display: grid; gap: 6px; }
+.step.changed .card { border-color: rgba(255, 180, 107, .55); box-shadow: inset 0 0 0 1px rgba(255, 180, 107, .12); }
+.card .hd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.card .t { font-weight: 600; font-size: .98rem; }
+.card .d { margin: 0; color: var(--dim); font-size: .88rem; }
+.card .d em { font-style: normal; color: var(--logic); }
+.card .fn { font-family: var(--f-mono); font-size: .72rem; color: var(--faint); overflow-wrap: anywhere; }
+.exits { display: grid; gap: 8px; align-content: start; padding-top: 4px; margin-bottom: 12px; }
+.exit { border: 1px dashed rgba(255, 143, 143, .45); background: var(--end-soft); border-radius: 10px; padding: 8px 10px; font-size: .82rem; color: var(--ink); }
+.exit .w { display: block; font-family: var(--f-mono); font-size: .7rem; color: var(--end); margin-bottom: 2px; }
+.exit.alt { border-color: rgba(158, 197, 255, .45); background: var(--prompt-soft); }
+.exit.alt .w { color: var(--prompt); }
+.done { border: 1px solid rgba(143, 211, 168, .45); background: var(--store-soft); border-radius: 12px; padding: 12px 14px; font-size: .9rem; margin-left: 50px; }
+
+.panel { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 18px; display: grid; gap: 12px; }
+.panel h3 { margin: 0; font-size: 1rem; }
+.tbl { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; min-width: 560px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--faint); font-weight: 500; font-size: .76rem; letter-spacing: .04em; }
+td .chip { margin-right: 4px; }
+.verdict { border: 1px solid rgba(255, 180, 107, .5); background: var(--logic-soft); border-radius: 12px; padding: 14px 16px; }
+.verdict b { color: var(--logic); }
+ul.find { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; color: var(--dim); font-size: .9rem; }
+ul.find b { color: var(--ink); font-weight: 600; }
+
+@media (max-width: 760px) {
+  .step { grid-template-columns: 30px minmax(0, 1fr); }
+  .exits { grid-column: 2; padding-top: 0; }
+  .done { margin-left: 44px; }
+  .hero h1 { font-size: 1.4rem; }
+}
+</style>
+
+<div class="wrap">
+  <header class="hero">
+    <p class="eyebrow">ref/notice-category · 5차 구현 가정(A1 ~ A6)</p>
+    <h1>트윗 한 건이 소식이 되기까지</h1>
+    <p>A3 = 라이브공연만 소감도 올림, A4 = 공연 이름이 다르거나 날짜가 다르면 합치지 않음(10-23 운영자 결정)을 구현했다고 가정한 흐름이다.
+      지금 그대로인 단계와 바뀌는 단계를 구분했다. 함수 이름은 main <code>2fdfca6</code>(v4.7.0) 코드에서 확인했다.</p>
+    <div class="legend">
+      <span class="chip code">코드 판정</span><span class="chip llm">Groq LLM</span><span class="chip store">저장 · 화면</span>
+      <span class="chip prompt">바뀜 · 프롬프트</span><span class="chip logic">바뀜 · 로직</span><span class="chip ui">바뀜 · 화면 이름</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>공통 — 모든 X 알림</h2>
+    <div class="flow" id="common"></div>
+  </section>
+
+  <section>
+    <h2>계정별 흐름</h2>
+    <p class="sub">공통 단계의 「계정 갈래」 다음부터. 탭을 고르면 그 계정 글의 흐름이 보인다.</p>
+  </section>
+  <div class="tabs" role="tablist" aria-label="발신 계정">
+    <button class="tab" role="tab" id="t-bdp" data-k="bdp" aria-selected="true">@BDP_yumemita<small>공식 계정</small></button>
+    <button class="tab" role="tab" id="t-game" data-k="game" aria-selected="false">@bang_dream_on<small>게임 계정</small></button>
+    <button class="tab" role="tab" id="t-other" data-k="other" aria-selected="false">대상 외 핸들<small>다른 계정 · 리트윗</small></button>
+    <button class="tab" role="tab" id="t-member" data-k="member" aria-selected="false">멤버 5인 (참고)<small>소식으로 새는 길</small></button>
+  </div>
+  <section class="flow" id="lane" aria-live="polite"></section>
+
+  <section>
+    <h2>판단 — 프롬프트로 끝나는가</h2>
+  </section>
+  <div class="verdict" id="verdict"></div>
+  <div class="panel">
+    <h3>바뀌는 것 하나하나</h3>
+    <div class="tbl"><table id="changes"></table></div>
+  </div>
+  <div class="panel">
+    <h3>흐름을 그리며 점검한 것</h3>
+    <ul class="find" id="findings"></ul>
+  </div>
+  <div class="panel">
+    <h3>소식 한 건의 Groq 호출(구현 가정)</h3>
+    <div class="tbl"><table id="calls"></table></div>
+  </div>
+</div>
+
+<script>
+// 단계 = {t 제목, k 종류(code·llm·store), d 설명, fn 코드 위치, ch 바뀜[[번호, 종류(prompt·logic·ui), 한 줄]], ex 갈림 출구[[조건, 결과, alt?]]}
+const COMMON = [
+  { t: "X 알림 받기", k: "code", d: "폰 Automate 가 X 앱 알림을 POST /ingest 로 보낸다. X-Ingest-Secret 이 맞아야 받는다.", fn: "telegram_app._ingest_impl",
+    ex: [["시크릿 불일치", "거절(403)"]] },
+  { t: "원문 복원", k: "code", d: "tweet id 로 vxtwitter(실패하면 fxtwitter)를 조회해 잘린 폰 원문을 통째로 바꾼다. 작성 계정 · 리트윗 표시도 이때 얻는다. 조회가 안 되면 폰 원문 그대로.", fn: "_recover_raw_via_vxtwitter" },
+  { t: "계정 갈래", k: "code", d: "알림 표시명(android.title)과 작성 계정으로 나눈다 — 멤버 5인 · 게임 계정 · 그 밖. 그 밖은 모두 「공식 후보」 로 같은 길에 들어간다.", fn: "xtweet.route_by_title · _game_account" },
+];
+
+const NOTICE_TAIL = [
+  { t: "시점 판정", k: "llm", d: "앞으로 · 지금의 일을 알리는 글(announce)인가, 이미 있었던 일의 감사 · 소감 · 보고(report)인가, 그 일의 날짜, 덧붙은 다음 일정 줄. 근거 구절 필수. 이미 본 트윗이면 부르지 않는다.", fn: "llm.notice_timing" },
+  { t: "분류 판정", k: "llm", ch: [["A1", "prompt", "5차(또는 2차) 프롬프트 — 주제 한 줄 + 분류마다 예/아니오와 근거"], ["A3", "logic", "시점 결정 앞으로 이동"]],
+    d: "라이브공연 · 오프라인행사 · 음원·굿즈 · 방송·영상을 하나씩 예/아니오로. <em>근거가 원문에 없는 「예」 는 그 분류만 버린다</em>. 고른 것이 없으면 기타. 실패하면 분류 없이 계속(아래 저장 단계에서 다시 판정 표시).",
+    fn: "llm.notice_categories · telegram_app._notice_categories" },
+  { t: "올릴지 결정", k: "code", ch: [["A3", "logic", "라이브공연이면 지난 일의 소감도 올림"]],
+    d: "알림 → 그대로. 오늘 일의 보고 → 오늘 자정까지. 다음 일정 줄이 붙은 보고 → 그 줄만. 지난 일의 소감 · 보고 → 안 올림 — <em>단, 분류에 라이브공연이 있으면 소감 · 세트리스트도 그대로 올린다</em>.",
+    fn: "notices.timing_decision · _apply_notice_timing", ex: [["지난 일 소감 · 라이브공연 아님", "안 올림 (LLM 판단 기록 — 반려하면 되살림)"]] },
+  { t: "공연 이름 · 공연일", k: "llm", ch: [["A2", "prompt", "멤버 솔로 공연도 공연(v4.7.1 후보)"]],
+    d: "분류에 라이브공연이 있을 때만. 「」 안 타이틀(예: RESONEXT · DIMENSIONAL OVERLAP), 없으면 공연 이름 그대로. 이름 · 날짜 모두 원문 근거가 있어야 인정.", fn: "llm.live_info" },
+  { t: "제목 추출 · 번역", k: "llm", d: "목록에 보일 짧은 원문 제목과 한글 제목.", fn: "llm.notice_title" },
+  { t: "같은 소식 찾기", k: "code", ch: [["A4", "logic", "공연 이름이 다르거나, 원문 제목만 같고 날짜가 다르면 합치지 않음"], ["A3", "logic", "지난 날짜의 라이브공연 소감은 버리지 않음"]],
+    d: "지금 규칙은 URL 이 같거나 <b>원문 제목이 같으면</b> 같은 소식으로 합친다. 새 규칙: <em>두 글 모두 공연 이름이 있고 다르면</em> 별개, <em>원문 제목만 같고 날짜가 다르면</em> 별개(URL 이 같으면 지금처럼 합침). " +
+       "또 지금은 <b>소식 날짜가 지난 새 글을 버리고</b>, 보관함에 같은 소식이 있으면 그쪽 seen 에만 더한다 — 공연 뒤 소감은 대개 공연일(지난 날짜)로 잡히므로 <em>라이브공연이면 이 두 갈래를 건너뛰어야</em> 화면에 올라간다.",
+    fn: "notices._same_group · merge_notice", ex: [["지난 날짜의 새 글", "버림(skip) — A3 예외 필요"], ["보관함에 같은 소식", "보관함 seen 에만 더함(recap) — 화면에 안 보임 · A3 예외 필요"]] },
+  { t: "의미상 중복 판정", k: "llm", ch: [["A4", "logic", "LLM 이 고른 기존 소식과 공연 이름이 다르면 합치지 않음"]],
+    d: "새 소식이면 같은 날짜의 기존 소식 중 같은 행사가 있는지 LLM 이 판단해 합친다. 새 규칙은 여기에도 똑같이 건다.", fn: "llm.duplicate_notice · notices.merge_into" },
+  { t: "본문 번역", k: "llm", d: "올라가거나 본문이 바뀌는 줄일 때만.", fn: "llm.translate" },
+  { t: "저장", k: "store",
+    d: "쓰기 서비스(/write)가 notices.json 에 커밋. 합쳐질 때 분류 · 공연 이름은 새 글 판정으로 덮는다(P5 보류 — 지금 그대로). <em>분류가 없는 줄은 다시 판정 표시(needs_cat)</em> → 번역 sweep 처럼 다음 정기 수집 때 한 번 더. " +
+       "만료(expires_at) = 소식 날짜 다음 날 00:00(JST) — 지난 날짜면 저장하자마자 화면에서 숨겨진다. <em>라이브공연 소감은 표시 기간을 따로 정해야 한다(결정 대기)</em>.",
+    fn: "_commit_notice · xnotice._expires_at · enrich", ch: [["A5", "logic", "분류 판정 실패 → 다음 정기 수집에서 1회 다시"], ["A3", "logic", "라이브공연 소감의 표시 기간"]] },
+  { t: "화면", k: "store", ch: [["A6", "ui", "「방송」 → 「방송·영상」"]],
+    d: "소식판 분류 탭(라이브공연 · 오프라인행사 · 음원·굿즈 · 방송·영상 · Our Notes · 기타). 한 소식은 자기 분류 탭 모두에. 라이브공연 탭은 공연 이름별 묶음(공연일 기준 D-day).", fn: "src/frontend/js/notices.js" },
+];
+
+const LANES = {
+  bdp: {
+    cap: "<b>공식 계정이 직접 쓴 글</b>. 소식 · 일일 스케줄 · 출연 정보가 모두 이 길로 들어온다. 이 그림은 소식 쪽만 그렸다.",
+    steps: [
+      { t: "공식 글인가", k: "code", d: "리트윗 표시(폰 원문 「@핸들:」 · vxtwitter 「RT @」 · fxtwitter reposted_by)가 있거나 작성자가 @BDP_yumemita 가 아니면 소식 · 스케줄 어디에도 안 올린다.",
+        fn: "_official_skip_reason", ex: [["리트윗 · 다른 계정", "무시 (모니터 「공식 글 아님」)"]] },
+      { t: "행사 배너가 다루는 글인가", k: "code", d: "이미 있는 행사 배너의 행사 · 가챠 이름이 본문에 있으면 소식으로 또 올리지 않는다.", fn: "_maybe_auto_notice · banners.covers_text",
+        ex: [["배너가 다룸", "소식 안 올림"]] },
+      { t: "소식 형식인가", k: "code", d: "일일 스케줄 · 出演情報는 예고 경로로. 「RT @…:」 · 「@…:」 로 시작하거나 날짜도 시각도 없는 글은 소식 아님.", fn: "xnotice.parse",
+        ex: [["配信スケジュール · 出演情報", "예고 경로 (이 그림 밖)", true], ["날짜 · 시각 없음 · RT 머리", "소식 아님"]] },
+      { t: "출처 표기 · 이미 본 트윗인가", k: "code", d: "출처 = @BDP_yumemita. 이 트윗 id 가 활성 · 보관 소식에 이미 있으면 아래 LLM 단계를 모두 건너뛰고 저장 단계에서 「이미 본 글」 로 끝.",
+        fn: "_notice_already_seen", ex: [["이미 봄", "Groq 안 부름 · 변화 없음"]] },
+      ...NOTICE_TAIL,
+    ],
+    done: "notices.json 에 올라감 → 소식판 · 라이브공연 탭 공연별 묶음",
+  },
+  game: {
+    cap: "<b>게임 계정(バンドリ！アワーノーツ) 글</b>. 소식 · 스케줄 경로 대신 행사 판정으로 먼저 간다. 게임 밖 콜라보 · 행사만 소식이 되고, 분류는 LLM 없이 Our Notes.",
+    steps: [
+      { t: "게임 계정 글", k: "code", d: "작성 계정 또는 알림 표시명이 게임 계정(config/channels.json game_accounts)이면 행사 판정으로.", fn: "_game_account → _handle_banner_ingest" },
+      { t: "게임 안 / 밖", k: "llm", d: "게임 속 이벤트 · 가챠인가, 게임 밖 콜라보 · 행사인가. 근거 구절 필수.", fn: "llm.banner_scope",
+        ex: [["게임 안 이벤트 · 가챠", "행사 배너 판정(banner_extract) → 배너 카드 · 소식 아님", true], ["미션 · 로그인 보너스 등", "버림"]] },
+      { t: "게임 밖 → 소식 경로", k: "code", d: "공식 글과 같은 소식 준비로 들어간다(행사 배너 확인 · 소식 형식 · 이미 본 트윗). 출처 = @bang_dream_on.", fn: "_maybe_auto_notice(title=게임 계정)" },
+      { t: "시점 판정", k: "llm", d: "공식 글과 같다.", fn: "llm.notice_timing" },
+      { t: "분류", k: "code", d: "게임 계정 글은 LLM 분류 없이 Our Notes 하나.", fn: "_notice_categories" },
+      { t: "올릴지 결정", k: "code", ch: [["A3", "logic", "라이브공연만 예외 — Our Notes 는 해당 없음"]], d: "Our Notes 는 라이브공연이 아니므로 지난 일의 소감 · 보고면 지금처럼 안 올린다.", fn: "notices.timing_decision",
+        ex: [["지난 일 소감", "안 올림"]] },
+      { t: "출연진 OCR", k: "llm", d: "게임 계정 글만 — 첨부 이미지 속 출연진 이름(크로스오버 공지)을 읽어 참여 멤버로.", fn: "_maybe_tag_cast_participants · vision" },
+      { t: "제목 · 같은 소식 찾기 · 중복 판정 · 번역 · 저장 · 화면", k: "store", ch: [["A4", "logic", "병합 막기 규칙은 똑같이 적용"]], d: "공식 글의 같은 단계 그대로. 공연 이름이 없으니 A4 는 「원문 제목만 같고 날짜가 다르면 별개」 쪽만 걸린다.", fn: "" },
+    ],
+    done: "Our Notes 탭에 올라감 (게임 안 이벤트 · 가챠는 행사 배너 카드)",
+  },
+  other: {
+    cap: "<b>공식 · 게임 · 멤버가 아닌 계정의 알림</b>(예: @bang_dream_info · @BushiM_info · @BUSHIM_ongaku) 과 <b>공식 계정의 리트윗</b>. 폰이 이런 알림도 보내지만 소식으로는 안 올라간다.",
+    steps: [
+      { t: "「공식 후보」 로 분류", k: "code", d: "표시명이 멤버 5인 · 게임 계정이 아니면 일단 공식 경로로 들어온다.", fn: "xtweet.route_by_title" },
+      { t: "공식 글인가", k: "code", d: "작성자(vxtwitter · fxtwitter)가 @BDP_yumemita 가 아니면 끝. 리트윗 표시가 있으면 끝. 작성자를 모르면 표시명이 「夢限大みゅーたいぷ」 로 시작하는지로 판단.", fn: "_official_skip_reason",
+        ex: [["다른 계정 글 · 리트윗", "무시 — 모니터 「공식 글 아님」 기록만, Groq 안 부름"]] },
+      { t: "(안전망) 소식 형식 검사", k: "code", d: "그래도 들어온 리트윗 본문(「RT @…:」 · 「@…:」)은 소식 파서가 다시 거른다. 분류 단계의 「리포스트 = 기타」 규칙은 세 번째 안전망.", fn: "xnotice.parse · _notice_categories",
+        ex: [["RT 머리", "소식 아님"]] },
+    ],
+    done: "어디에도 안 올라감 (Groq 0회)",
+  },
+  member: {
+    cap: "<b>멤버 5인 계정</b>은 개인 트윗 · 예고 경로가 본업이다. 다만 본문에 유튜브가 아닌 링크가 있으면 소식 경로로 넘어간다 — #77 노노카 · #109 미야코가 이 길로 소식이 됐다.",
+    steps: [
+      { t: "리트윗인가", k: "code", d: "남의 글 리트윗이면 개인 트윗 · 예고 어디에도 안 올린다.", fn: "_personal_retweet_reason", ex: [["리트윗", "건너뜀"]] },
+      { t: "개인 트윗 · 예고 판정", k: "llm", d: "편지 배지(개인 트윗) + 유튜브 URL → 예고 확정 · URL 없는 예고는 LLM 최종 확인 등(이 그림 밖).", fn: "_maybe_personal_tweet · _maybe_personal_schedule" },
+      { t: "유튜브가 아닌 URL", k: "code", d: "예고로 추적할 수 없어 소식 경로로 넘긴다(v3.6). 이후는 공식 글의 「소식 형식」 단계부터 같다.", fn: "_maybe_nonyt_url_notice → _prepare_notice" },
+      { t: "출처 표기", k: "code", d: "알림 표시명을 넘기지 않아 출처가 기본값 @BDP_yumemita 로 적힌다 — 10-23 에 고친 41줄 중 멤버 2줄이 이 때문(기존 버그, A1 ~ A6 범위 밖).", fn: "xnotice._src_handle",
+        ex: [["출처 = @BDP_yumemita", "실제 작성자와 다름", true]] },
+    ],
+    done: "공식 글과 같은 소식 단계로 (분류는 LLM)",
+  },
+};
+
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const KIND = { code: ["code", "코드"], llm: ["llm", "Groq"], store: ["store", "저장 · 화면"] };
+const CHG = { prompt: "prompt", logic: "logic", ui: "ui" };
+
+function stepEl(s, i) {
+  const st = el("div", "step k-" + s.k + (s.ch ? " changed" : ""));
+  const rail = el("div", "rail");
+  rail.append(el("span", "num", String(i + 1)), el("span", "line"));
+  const card = el("div", "card");
+  const hd = el("div", "hd");
+  hd.append(el("span", "t", s.t), el("span", "chip " + KIND[s.k][0], KIND[s.k][1]));
+  (s.ch || []).forEach(([id, kind, txt]) => hd.append(el("span", "chip " + CHG[kind], id + " · " + txt)));
+  card.append(hd, el("p", "d", s.d));
+  if (s.fn) card.append(el("span", "fn", s.fn));
+  const ex = el("div", "exits");
+  (s.ex || []).forEach(([w, to, alt]) => { const x = el("div", "exit" + (alt ? " alt" : "")); x.append(el("span", "w", w), document.createTextNode(to)); ex.append(x); });
+  st.append(rail, card, ex);
+  return st;
+}
+function render(box, steps, done) {
+  box.textContent = "";
+  steps.forEach((s, i) => box.append(stepEl(s, i)));
+  if (done) box.append(el("div", "done", "→ " + done));
+}
+render(document.getElementById("common"), COMMON);
+
+const lane = document.getElementById("lane");
+function show(k) {
+  document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.k === k)));
+  lane.textContent = "";
+  lane.append(el("p", "cap", LANES[k].cap));
+  const box = el("div", "flow");
+  render(box, LANES[k].steps, LANES[k].done);
+  lane.append(box);
+  try { localStorage.setItem("notice-flow-tab", k); } catch (e) { /* 저장 못 해도 화면은 바꾼다 */ }
+}
+document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => show(b.dataset.k)));
+let first = "bdp";
+try { const v = localStorage.getItem("notice-flow-tab"); if (v && LANES[v]) first = v; } catch (e) { /* 기본 탭 */ }
+show(first);
+
+document.getElementById("verdict").innerHTML =
+  "<b>로직 수정이 필요하다.</b> 프롬프트만으로 끝나는 것은 A1(분류) · A2(공연 이름) 둘. " +
+  "A3(라이브 소감 올리기)는 네 곳 — 분류를 시점 결정 앞으로 옮기기 · 결정 규칙 · 병합의 「지난 날짜 새 글 버림 / 보관함 흡수」 예외 · 만료 기간 — 이고, A4(다른 공연 · 다른 날짜 병합 금지)는 병합 규칙 두 곳, " +
+  "A5(판정 실패 재시도)는 정기 수집에 재판정을 더해야 한다. 모두 소식 경로 안이라 예고 · 행사 배너 · 개인 트윗은 건드리지 않는다.";
+
+const CH = [
+  ["A1", "prompt", "분류 프롬프트 5차(또는 2차) · 근거 없는 「예」 는 그 분류만 버림", "프롬프트 + 응답 해석", "llm.notice_categories"],
+  ["A2", "prompt", "공연 이름 — 멤버 솔로 공연도 공연", "프롬프트", "llm.live_info (hotfix/live-name-solo 3e384d8)"],
+  ["A3", "logic", "라이브공연이면 지난 일의 소감 · 세트리스트도 올림", "로직 — 순서 · 결정 규칙 · 병합 예외 · 만료", "_prepare_notice 순서 · notices.timing_decision · merge_notice(지난 날짜 skip · 보관함 recap) · xnotice._expires_at"],
+  ["A4", "logic", "공연 이름이 다르거나, 원문 제목만 같고 날짜가 다르면 합치지 않음", "로직 — 병합 규칙", "notices._same_group · merge_into 호출부(_commit_notice)"],
+  ["A5", "logic", "분류 판정 실패 → 다음 정기 수집에서 1회 다시", "로직 — 재시도", "notices 행 needs_cat · enrich(번역 sweep 옆)"],
+  ["A6", "ui", "「방송」 → 「방송·영상」", "화면 이름", "js/notices.js · admin.html · notices.CAT_KO · 문서"],
+];
+const t = document.getElementById("changes");
+t.innerHTML = "<thead><tr><th>번호</th><th>무엇</th><th>성격</th><th>바뀌는 곳</th></tr></thead>";
+const tb = el("tbody");
+CH.forEach(([id, kind, what, nature, where]) => {
+  const tr = el("tr");
+  const c1 = el("td"); c1.append(el("span", "chip " + kind, id));
+  tr.append(c1, el("td", null, what), el("td", null, nature), el("td", "mono", where));
+  tb.append(tr);
+});
+t.append(tb);
+
+const F = [
+  "<b>병합 사고의 원인 확인</b> — <code>notices._same_group</code> 은 「URL 이 같거나 <b>원문 제목이 같으면</b> 같은 소식」. RESONEXT 와 근트레이닝부 글은 원문 제목이 둘 다 「チケット一般発売開始」 라 한 줄로 합쳐졌다(보관함 <code>nd9f0821858f4ac9</code> — 한글 제목은 RESONEXT, 본문은 근트레이닝부). 분류 프롬프트로는 못 고친다.",
+  "<b>A4 는 두 군데</b> — URL · 제목 일치(<code>_same_group</code>)와, 새 소식일 때 LLM 이 같은 날짜 후보에서 고르는 의미상 중복(<code>merge_into</code>). 한쪽만 막으면 다른 쪽으로 합쳐진다.",
+  "<b>P1(올라가지 않을 글엔 분류 안 부름)은 거의 사라진다</b> — A3 는 시점 결정 전에, A4 는 병합 판단 전에 분류 · 공연 이름이 필요하다. 남는 절약은 「이미 본 트윗이면 안 부름」(지금도 있음)뿐.",
+  "<b>A3 는 「올릴지 결정」 만 바꿔서는 화면에 안 나온다</b> — ① 병합 단계가 소식 날짜가 지난 새 글을 버리고(skip) ② 보관함에 같은 소식이 있으면 그쪽 seen 에만 더하며(recap) ③ 만료가 「소식 날짜 다음 자정」 이라 지난 날짜면 바로 숨겨진다. 공연 뒤 소감은 보통 공연일(지난 날짜)로 잡히므로 셋 다 라이브공연 예외가 필요하다. <b>소감 소식을 며칠 보여 줄지</b>(예: 게시 뒤 N일)는 운영자 결정이 필요하다.",
+  "<b>A3 와 시점 판정의 관계</b> — LLM 시점 판정은 그대로 부르고, 올릴지 정하는 코드만 분류를 본다.",
+  "<b>리포스트 = 기타(v4.7.0)는 거의 닿지 않는 안전망</b> — 리트윗은 공식 글 판정과 소식 파서에서 이미 두 번 걸러진다. 대상 외 핸들은 Groq 를 한 번도 안 부른다.",
+  "<b>멤버 글의 출처 표기 버그</b> — 유튜브가 아닌 링크가 있는 멤버 글은 소식 경로로 넘어가는데 알림 표시명을 넘기지 않아 출처가 @BDP_yumemita 로 적힌다. A1 ~ A6 밖의 별개 수정.",
+  "<b>P5(병합 때 분류 합치기)</b>는 보류 — 지금처럼 새 글 판정으로 덮는다. A4 로 「다른 공연이 합쳐지는」 일이 막히면 덮어써도 피해가 줄어든다.",
+];
+const fl = document.getElementById("findings");
+F.forEach((h) => fl.append(el("li", null, h)));
+
+const C = [
+  ["공식 글(라이브공연 · 새 소식)", "시점 1 · 분류 1 · 공연 이름 1 · 제목 1 · 중복 0 ~ 1 · 본문 번역 1", "5 ~ 6회"],
+  ["공식 글(라이브공연 아님)", "시점 1 · 분류 1 · 제목 1 · 중복 0 ~ 1 · 본문 번역 1", "4 ~ 5회"],
+  ["게임 계정 글(게임 밖 → 소식)", "게임 안/밖 1 · 시점 1 · 출연진 OCR(이미지) · 제목 1 · 중복 0 ~ 1 · 본문 번역 1", "4 ~ 5회 + 비전"],
+  ["이미 본 트윗", "없음", "0회"],
+  ["대상 외 핸들 · 리트윗", "없음", "0회"],
+];
+const ct = document.getElementById("calls");
+ct.innerHTML = "<thead><tr><th>경우</th><th>호출</th><th>합</th></tr></thead>";
+const cb = el("tbody");
+C.forEach((r) => { const tr = el("tr"); r.forEach((v, i) => tr.append(el("td", i === 2 ? "mono" : null, v))); cb.append(tr); });
+ct.append(cb);
+const note = el("p", "sub", "나중 단계 후보: 시점 판정 · 분류 · 공연 이름은 모두 「이 글이 무엇을 알리나」 를 묻는다 — 한 호출로 합치면 공식 라이브공연 글이 6회 → 4회. A1 ~ A6 을 먼저 시험한 뒤로 미룬다.");
+ct.parentElement.append(note);
+</script>
