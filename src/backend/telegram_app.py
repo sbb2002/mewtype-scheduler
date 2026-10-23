@@ -1888,19 +1888,110 @@ def _notice_already_seen(parsed: dict, gh) -> bool:
     return any(tid in (n.get("seen_ids") or []) or n.get("id") == tid for n in rows)
 
 
+def _notice_posted_jst(tag, now_iso: str) -> datetime:
+    """(test/notice-r5) 판정 기준 시각 = 트윗 게시 시각(KST, tweet id 로 계산) — 없으면 처리 시각(10-23 운영자, T6)."""
+    s = ""
+    try:
+        s = _banner_posted_jst(tag, now_iso) if banners is not None else ""
+    except Exception:  # noqa: BLE001
+        s = ""
+    try:
+        if s:
+            return datetime.strptime(s[:16], "%Y-%m-%d %H:%M").replace(tzinfo=xnotice.JST)
+    except ValueError:
+        pass
+    return datetime.fromisoformat(now_iso.replace("Z", "+00:00")).astimezone(xnotice.JST)
+
+
+def _decide_notice(parsed: dict, u: dict | None, *, raw: str, tag, title, gh, now_iso: str, posted: datetime,
+                   timing: str, forced_cats: list | None, game_handle: str | None, seen: bool) -> tuple[dict | None, dict | None]:
+    """(test/notice-r5) 결정 한 번 — 분류 확정 → 라이브공연 유지 기간 / 코드 시점 판정. 반환 (올릴 항목 | None(안 올림), 미리보기용 시점 정보).
+
+    분류 = 운영자 지정 > 게임 계정 = Our Notes > 리포스트 = 기타 > 소식 이해 결과(없으면 기타) > 이해 실패면 붙이지 않고 needs_cat(다음 정기 수집에서 1회 다시).
+    라이브공연 + 공연일을 앎: 게시일 ≤ 공연일 + 7일 → 글 전체를 라이브공연으로(만료 = 공연일 + 7일 24:00), 지난 뒤 → 기타로(게시일 24:00 까지).
+    그 밖: `xnotice.timing_by_code`(게시 시각 기준) — 지난 일 = 안 올림(코드 판정 기록, 반려 → 사용자 판단 「올림」 가능), 게시일만 = 그날 24:00 까지.
+    timing: "gate"(자동) · "show"(미리보기 — 판정만 붙임) · "off"(수동 확정 — 시점으로 거르지 않음).
+    """
+    # ── 분류 ──
+    body = xtweet._clean_text(raw or "") if xtweet is not None else (raw or "")
+    if forced_cats:
+        cats = [c for c in NOTICE_CATS if c in forced_cats] or None
+    elif game_handle:
+        cats = ["game"]
+    elif _RT_HEAD_RE.match(body):
+        cats = ["etc"]
+    elif u is not None:
+        cats = list(u.get("cats") or []) or ["etc"]
+    else:
+        cats = None
+    if cats:
+        parsed["categories"] = cats
+    elif not seen:
+        parsed["needs_cat"] = True
+    if cats and "live" in cats and u:
+        if u.get("live_name"):
+            parsed["live_name"] = u["live_name"]
+        if u.get("live_date"):
+            parsed["live_date"] = u["live_date"]
+
+    # ── 라이브공연(공연일을 앎) — 시점 판정 없이 유지 기간 규칙 ──
+    ld = parsed.get("live_date") if cats and "live" in cats else None
+    if ld:
+        try:
+            within = posted.date() <= (datetime.fromisoformat(ld).date() + timedelta(days=notices.LIVE_KEEP_DAYS))
+        except ValueError:
+            within = True
+        if within:
+            parsed["keep_past"] = True
+            parsed["expires_at"] = notices.live_until(ld) or parsed.get("expires_at")
+            info = {"action": "live", "why": f"라이브공연 — 공연일 {ld} + {notices.LIVE_KEEP_DAYS}일까지", "verdict": None}
+        else:
+            parsed["categories"] = ["etc"]
+            parsed.pop("live_name", None)
+            parsed.pop("live_date", None)
+            parsed["keep_past"] = True
+            parsed["expires_at"] = (datetime.combine(posted.date(), datetime.min.time(), tzinfo=xnotice.JST)
+                                    + timedelta(days=1)).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            info = {"action": "late_live", "why": f"라이브공연 유지 기간(공연일 {ld} + {notices.LIVE_KEEP_DAYS}일) 뒤에 온 글 — 기타로, 게시일 24:00 까지", "verdict": None}
+        flowtrace.mark("소식 시점", "done", info["why"])
+        return parsed, info
+
+    # ── 그 밖 — 코드 시점 판정(게시 시각 기준) ──
+    if timing == "off":
+        return parsed, None
+    tm = xnotice.timing_by_code(raw, posted)
+    fv = _review_forced("notice_timing", _NOFORCE)       # 반려 뒤 사용자 판단 「소식으로 올림」 = kind 가 report 아닌 값
+    if fv is not _NOFORCE and (fv or {}).get("kind") != "report":
+        tm = {"action": "post", "until": None, "why": "사용자 판단 — 소식으로 올림"}
+    info = {"action": tm["action"], "why": tm["why"], "verdict": None}
+    if timing != "gate":
+        return parsed, info
+    head = (parsed.get("title") or "")[:40]
+    if tm["action"] == "drop":
+        if gh is not None:
+            _llm_record(gh, "notice_timing", "notice", f"코드 시점 판정 — 지난 일이라 소식으로 안 올림 · {head}", tm["why"],
+                        undo=None, now_iso=now_iso, input=_inp(raw, tag=tag, title=title))
+            _log_event_safe(gh, now_iso, "notice", RESULT_OK, via="ingest", detail=f"notice skip: {tm['why']}"[:200])
+        flowtrace.mark("소식 시점", "skip", tm["why"])
+        return None, info
+    if tm["action"] == "today" and tm.get("until"):
+        if not parsed.get("expires_at") or parsed["expires_at"] > tm["until"]:
+            parsed["expires_at"] = tm["until"]
+    flowtrace.mark("소식 시점", "done", tm["why"])
+    return parsed, info
+
+
 def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, timing: str = "gate",
                     categories: list | None = None) -> dict | None:
     """(WP-3a) 소식 준비 (제어 채널에서 실행).
 
-    외부 호출(비전 OCR·LLM) + 중복판정까지 한 뒤 결과를 반환.
-    반환: {"parsed": dict, "tl": dict|None, "dup_id": str|None, "body_src": str|None, "body_ko": str|None} | None
-    (v4.0.5) body_ko = 본문(body_raw) 한글 번역 — 실제로 올라가거나 본문이 바뀌는 소식일 때만 번역한다.
-    실패(None)면 저장 뒤 번역 sweep(`enrich.collect`)이 body_ko 가 빈 행을 다시 번역한다.
-    (v4.6.2) timing = "gate"(자동 인입 — 시점 판정으로 지난 일의 소감 · 보고를 거름) | "show"(관리 페이지 수동 투입 미리보기 — 판정만 붙이고 그대로 올림)
-    | "off"(판정 안 함 — 수동 투입 확정 · 텔레그램 수동 투입. 운영자가 정한 글이라 Groq 를 쓰지 않는다).
-    반환 dict 의 "timing" = {"action", "why", "verdict"} | None (관리 페이지 미리보기 표시용).
-    (v4.7.0) 분류(`categories`) · 공연 이름(`live_name` · `live_date`)을 parsed 에 붙인다 — `_notice_categories`.
-    categories 인자 = 관리 페이지에서 운영자가 고른 분류(LLM 을 건너뛴다).
+    (test/notice-r5) 순서 = ① 사전 계산(같은 날짜 기존 소식 = 같은 소식 후보) ② 소식 이해(`llm.notice_understand` — Groq 1회:
+    분류 · 공연 이름 · 공연일 · 제목 · 같은 소식) ③ 결정(`_decide_notice` — 코드: 분류 확정 · 라이브공연 유지 기간 · 코드 시점 판정)
+    ④ 가상 병합(공연 이름 · 날짜 병합 막기) → 같은 소식 확정 ⑤ 본문 번역(올라가거나 본문이 바뀌는 줄만). 이미 본 트윗이면 Groq 를 부르지 않는다.
+    devpapers ref/notice-category/IMPL_PLAN_UNDERSTAND.md.
+    반환: {"parsed": dict, "tl": dict|None, "dup_id": str|None, "body_src": str|None, "body_ko": str|None, "timing": dict|None} | None
+    timing = "gate"(자동 인입) | "show"(관리 페이지 미리보기 — 시점 판정을 붙이기만) | "off"(수동 확정 — 시점으로 거르지 않음).
+    categories 인자 = 관리 페이지에서 운영자가 고른 분류.
     """
     if xnotice is None or notices is None:
         return None
@@ -1911,72 +2002,78 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
     _gh = _game_account_handle(title)
     if _gh:
         parsed["src_handle"] = "@" + _gh
+    posted = _notice_posted_jst(tag, now_iso)
+    seen = _notice_already_seen(parsed, gh)
 
-    # 0. (v4.6.2) 시점 판정 — 지난 일의 소감 · 보고는 소식으로 올리지 않는다(LLM 판정, 올릴지는 코드). 제목 · 번역 LLM 보다 먼저.
-    #    이미 본 트윗(활성 · 보관 소식의 seen_ids)이면 부르지 않는다 — 커밋에서 어차피 「dup」 으로 끝난다(같은 글이 다시 와도 Groq 를 안 쓰게).
-    timing_info = None
-    if timing != "off" and not _notice_already_seen(parsed, gh):
-        tm = _notice_timing(raw, tag, now_iso)
-        if timing == "gate":
-            parsed = _apply_notice_timing(parsed, tm, raw, now_iso, tag=tag, title=title, gh=gh)
-            if parsed is None:
-                return None
-        timing_info = {"action": tm["decision"]["action"], "why": tm["decision"]["why"], "verdict": tm.get("verdict")}
-
-    # 1. 크로스오버 출연진 비전 OCR
-    _maybe_tag_cast_participants(parsed, tag)
-
-    # 1-1. (v4.7.0) 분류 · 공연 이름 — 이미 본 트윗이면 부르지 않는다(커밋에서 「dup」 으로 끝난다)
-    if categories or not _notice_already_seen(parsed, gh):
-        _notice_categories(parsed, raw, tag, now_iso, game_handle=_gh, forced=categories)
-
-    # 2. 제목추출·번역 (재시도와 무관하게 한 번만)
-    tl = None
-    if not parsed.get("title_ko"):
-        tl = _inline_notice_title(
-            parsed.get("body_for_llm") or parsed.get("body_raw") or parsed.get("title"))
-
-    # 3. 중복판정 사전 계산
-    dup_id = None
-    need_body = gh is None                 # (v4.0.5) 미리 못 보면 일단 번역
+    # ① 사전 계산 — 같은 날짜의 기존 소식(같은 소식 후보, 최대 8)
+    prev = arch = None
     if gh is not None:
         try:
             prev, _ = gh.read_json(_NOTICES_PATH)
             arch, _ = gh.read_json(_NOTICE_ARCHIVE_PATH)
             prev = prev or notices.default_notices()
             arch = arch or notices.default_archive()
+        except Exception:
+            log.warning("준비: notices 읽기 실패", exc_info=True)
+            prev = arch = None
+    cands = ([{"id": n.get("id"), "date": n.get("date"), "title": n.get("title"), "title_ko": n.get("title_ko")}
+              for n in (prev or {}).get("notices") or [] if n.get("id") and n.get("date") == parsed.get("date")][:8]
+             if parsed.get("date") else [])
 
-            # 사본으로 merge_notice 호출 (인자 변형 방지)
-            prev_copy = copy.deepcopy(prev)
-            arch_copy = copy.deepcopy(arch)
-            parsed_copy = copy.deepcopy(parsed)
-            new_n, new_a, changed, mode = notices.merge_notice(
-                prev_copy, parsed_copy, now_iso, archive=arch_copy)
-            # (v4.0.5) 본문 번역이 필요한가 — 올라가는(added · updated) 행에 아직 본문 번역이 없을 때만
+    # ② 소식 이해 — Groq 1회(이미 본 트윗이면 안 부름)
+    u = None
+    if not seen:
+        client = _make_llm_client()
+        if client is not None and hasattr(client, "notice_understand"):
+            try:
+                u = client.notice_understand(parsed.get("body_for_llm") or parsed.get("body_raw") or raw,
+                                             posted.strftime("%Y-%m-%d %H:%M"), cands)
+            except Exception:  # noqa: BLE001
+                log.warning("소식 이해 호출 실패", exc_info=True)
+                u = None
+
+    # ③ 결정 — 분류 · 라이브공연 유지 기간 · 코드 시점 판정
+    parsed, timing_info = _decide_notice(parsed, u, raw=raw, tag=tag, title=title, gh=gh, now_iso=now_iso, posted=posted,
+                                         timing=timing, forced_cats=categories, game_handle=_gh, seen=seen)
+    if parsed is None:
+        return None
+
+    # 크로스오버 출연진 비전 OCR(게임 계정 글만)
+    _maybe_tag_cast_participants(parsed, tag)
+
+    tl = None
+    if u and u.get("title_ko") and not parsed.get("title_ko"):
+        tl = {"title_ja": u.get("title_ja") or parsed.get("title"), "title_ko": u["title_ko"]}
+
+    # ④ 가상 병합 → 같은 소식 확정(공연 이름 · 날짜 병합 막기는 notices._same_group) · 본문 번역이 필요한가
+    dup_id = None
+    need_body = prev is None
+    if prev is not None:
+        try:
+            new_n, _na, changed, mode = notices.merge_notice(copy.deepcopy(prev), copy.deepcopy(parsed), now_iso,
+                                                             archive=copy.deepcopy(arch))
             if changed and mode in ("added", "updated"):
                 _row = next((n for n in new_n.get("notices") or []
                              if parsed.get("id") and (n.get("id") == parsed["id"]
                                                       or parsed["id"] in (n.get("seen_ids") or []))), None)
                 need_body = _row is None or not _row.get("body_ko")
-
-            # changed and mode == "added" 일 때만 중복판정 LLM 호출
             if changed and mode == "added":
                 _fd = _review_forced("dup_id", _NOFORCE)      # 사용자 판단 — 같은 소식(id) / 별도 소식("")
-                dup_id = _inline_notice_dup_check(parsed, prev) if _fd is _NOFORCE else (_fd or None)
+                dup_id = ((u or {}).get("dup_id") if _fd is _NOFORCE else (_fd or None))
                 _before = next((copy.deepcopy(n) for n in prev.get("notices") or [] if n.get("id") == dup_id), None) if dup_id else None
-                if dup_id and _before is None:
-                    dup_id = None                              # 병합 대상이 없으면 별도 소식으로
+                if dup_id and (_before is None or notices.merge_blocked(_before, parsed)):
+                    dup_id = None                              # 대상이 없거나 공연 이름이 다르면 별도 소식으로
                 if dup_id:
                     _llm_record(gh, "duplicate_notice", "notice",
                                 f"같은 소식으로 판정 — {(parsed.get('title') or '')[:40]}", f"기존 소식 {dup_id}", now_iso=now_iso,
                                 undo={"type": "restore_notice", "id": dup_id, "before": _before, "parsed_id": parsed.get("id")},
                                 input=_inp(raw, tag=tag, title=title))
         except Exception:
-            log.warning("준비: notices 읽기 실패", exc_info=True)
+            log.warning("준비: 가상 병합 실패", exc_info=True)
             dup_id = None
             need_body = True
 
-    # 4. (v4.0.5) 본문 한글 번역
+    # ⑤ (v4.0.5) 본문 한글 번역
     body_src = parsed.get("body_raw")
     body_ko = _inline_translate(body_src) if (need_body and body_src) else None
 
@@ -2084,7 +2181,8 @@ def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict |
             return mode, parsed
 
         # (v3.7) LLM 판정으로 중복 찾았으면 즉시 병합
-        if mode == "added" and dup_id:
+        _tgt = next((n for n in prev.get("notices") or [] if n.get("id") == dup_id), None) if dup_id else None
+        if mode == "added" and dup_id and not (_tgt is not None and notices.merge_blocked(_tgt, parsed)):   # (test/notice-r5) 다른 공연 · 다른 종류는 합치지 않음
             merged, found = notices.merge_into(prev, dup_id, parsed, now_iso)
             if found:
                 new_n, mode = merged, "updated"
@@ -7761,7 +7859,7 @@ if __name__ == "__main__":
         assert _apply_notice_timing(_pt, _tm, _raw_t, _NOW_T, gh=_tg) is None
         _la = _tg.f[_LLM_ACTIONS_PATH]["items"]
         assert _la[-1]["kind"] == "notice_timing" and _la[-1]["undo"] is None and "안 올림" in _la[-1]["summary"], _la[-1]
-        assert _prepare_notice(_raw_t, _NOW_T, gh=None) is None, "자동 인입은 소감이면 준비 단계에서 끝"
+        # (test/notice-r5) 소식 준비는 더 이상 LLM 시점 판정을 부르지 않는다(코드 판정) — 아래 「test/notice-r5」 시험에서 확인
         # 오늘 일 — 올리되 오늘 자정(KST)에 내린다
         _make_llm_client = lambda: _TLLM({"kind": "report", "subject": "13thライブ DAY2", "subject_date": "2026-10-11",
                                           "evidence": ["ご来場・ご視聴ありがとうございました❣"], "next_lines": [], "reason": "오늘 라이브"})
@@ -7805,12 +7903,74 @@ if __name__ == "__main__":
         assert _notice_already_seen(_ps, _tg) and not _notice_already_seen(dict(_ps, id="999"), _tg)
         _prepare_notice(_raw_t, _NOW_T, tag=_seen_tag, gh=_tg)
         _prepare_notice(_raw_t, _NOW_T, gh=None, timing="off")
-        assert _cnt.n == 0, f"판정 LLM 이 {_cnt.n}번 불림"
         _pv = _prepare_notice(_raw_t, _NOW_T, gh=None, timing="show")
-        assert _cnt.n == 1 and _pv and _pv["timing"]["action"] == "post", _pv
+        assert _cnt.n == 0, f"(test/notice-r5) 소식 준비가 LLM 시점 판정을 {_cnt.n}번 불렀다 — 코드 판정이어야 한다"
+        assert _pv and _pv["timing"]["action"] == "today", _pv          # 10/11 게시 · 10/11 글 = 게시일의 일
     finally:
         _make_llm_client = _saved_nt
-    print("[OK] (v4.6.2) 소식 시점 판정 — 소감 안 올림 · 오늘 일 자정까지 · 다음 일정만 · 실패 올림 + 기록 · 반려(내림) · 이미 본 트윗 · 수동 확정은 LLM 안 부름")
+    print("[OK] (v4.6.2) 소식 시점 판정 함수 — 소감 안 올림 · 오늘 일 자정까지 · 다음 일정만 · 실패 올림 + 기록 · 반려(내림) · (test/notice-r5) 준비는 LLM 시점 판정 안 부름")
+
+    # ── (test/notice-r5) 소식 준비 = 사전 계산 → 소식 이해(1회) → 결정(코드) — 라이브공연 유지 · 코드 시점 · 병합 막기 · needs_cat ──
+    class _ULLM:
+        def __init__(self, u):
+            self.u, self.calls = u, 0
+        def notice_understand(self, text, posted, cands=None):
+            self.calls += 1
+            self.cands = cands
+            return self.u
+        def translate(self, *a, **k):
+            return None
+        def notice_timing(self, *a, **k):
+            raise AssertionError("시점은 코드 — notice_timing 을 부르면 안 된다")
+    _saved_u = _make_llm_client
+    _rl = "🛸 #バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n10/11(日)開催\nご来場・ご視聴ありがとうございました❣"
+    _U_LIVE = {"cats": ["live"], "live_name": "DIMENSIONAL OVERLAP", "live_date": "2026-10-11", "title_ja": "13thライブ DAY2 感謝",
+               "title_ko": "13th 라이브 DAY2 감사", "dup_id": None, "subject": "공연 감사", "reason": "."}
+    try:
+        _g = _MemGH()
+        # 라이브공연 아님 + 적힌 날짜가 모두 지남 → 안 올림(코드 판정 기록)
+        _c = _ULLM(dict(_U_LIVE, cats=["event"], live_name=None, live_date=None))
+        _make_llm_client = lambda: _c
+        assert _prepare_notice(_rl, "2026-10-12T03:00:00Z", gh=_g) is None and _c.calls == 1
+        assert "코드 시점 판정" in _g.f[_LLM_ACTIONS_PATH]["items"][-1]["summary"]
+        # 라이브공연 · 공연일 + 7일 안 → 지난 날짜여도 올림(keep_past · 만료 = 공연일 + 7일 24:00) · 제목은 이해 결과
+        _c = _ULLM(dict(_U_LIVE))
+        _make_llm_client = lambda: _c
+        _pp = _prepare_notice(_rl, "2026-10-13T03:00:00Z", gh=_MemGH())
+        _q = _pp["parsed"]
+        assert _q["categories"] == ["live"] and _q["live_name"] == "DIMENSIONAL OVERLAP" and _q["keep_past"] is True, _q
+        assert _q["expires_at"] == "2026-10-18T15:00:00Z" and _pp["tl"]["title_ko"] == "13th 라이브 DAY2 감사" and _pp["timing"]["action"] == "live", _pp
+        # 라이브공연 · 공연일 + 7일 뒤 → 기타로, 게시일 24:00 까지
+        _pp = _prepare_notice(_rl, "2026-10-20T03:00:00Z", gh=_MemGH())
+        assert _pp["parsed"]["categories"] == ["etc"] and "live_name" not in _pp["parsed"] and _pp["parsed"]["expires_at"] == "2026-10-20T15:00:00Z", _pp["parsed"]
+        # 이해 실패 → 분류 없이 올리되 needs_cat(미래 날짜 글이라 시점은 통과)
+        _c = _ULLM(None)
+        _make_llm_client = lambda: _c
+        _pp = _prepare_notice("12/24(木)開催 RESONEXT チケット一般発売", "2026-10-02T03:00:00Z", gh=_MemGH())
+        assert _pp and _pp["parsed"].get("needs_cat") is True and "categories" not in _pp["parsed"], _pp["parsed"]
+        # 같은 소식 후보 — 이해 결과가 고른 기존 소식과 공연 이름이 다르면 합치지 않음
+        _g2 = _MemGH()
+        _g2.f[_NOTICES_PATH] = {"notices": [{"id": "old1", "date": "2026-12-24", "title": "x", "url": "https://a/1", "live_name": "RESONEXT", "seen_ids": ["old1"]}]}
+        _c = _ULLM(dict(_U_LIVE, live_name="YMMTric COUNTER POINT", live_date="2026-12-24", dup_id="old1"))
+        _make_llm_client = lambda: _c
+        _pp = _prepare_notice("12/24(木)開催 YMMTric COUNTER POINT 追加公演", "2026-10-02T03:00:00Z", gh=_g2)
+        assert _c.cands and _c.cands[0]["id"] == "old1" and _pp["dup_id"] is None, (_c.cands, _pp["dup_id"])
+        _c = _ULLM(dict(_U_LIVE, live_name="RESONEXT", live_date="2026-12-24", dup_id="old1"))
+        _make_llm_client = lambda: _c
+        _pp = _prepare_notice("12/24(木)開催 RESONEXT 追加情報", "2026-10-02T03:00:00Z", gh=_g2)
+        assert _pp["dup_id"] == "old1", _pp["dup_id"]
+        # 반려 뒤 사용자 판단 「소식으로 올림」 → 지난 일이어도 올림 · 수동 확정(off)도 시점으로 거르지 않음
+        _c = _ULLM(dict(_U_LIVE, cats=["event"], live_name=None, live_date=None))
+        _make_llm_client = lambda: _c
+        _rtok = _REVIEW.set({"forced": {"notice_timing": {"kind": "announce"}}})
+        try:
+            assert _prepare_notice(_rl, "2026-10-12T03:00:00Z", gh=_MemGH()) is not None
+        finally:
+            _REVIEW.reset(_rtok)
+        assert _prepare_notice(_rl, "2026-10-12T03:00:00Z", gh=_MemGH(), timing="off") is not None
+    finally:
+        _make_llm_client = _saved_u
+    print("[OK] (test/notice-r5) 소식 준비 — 이해 1회 · 지난 일 코드 판정 · 라이브공연 + 7일 유지 · 기간 뒤 기타 · 실패 needs_cat · 다른 공연 병합 막기 · 사용자 판단 · 수동 확정")
 
     # ── (v4.7.0) 소식 분류 — LLM 4분류 + 코드 규칙(게임 계정 = Our Notes · 리포스트 = 기타 · 고른 것 없음 = 기타 · 실패 = 안 붙임) + 공연 이름 ──
     class _CLLM:
@@ -9137,7 +9297,7 @@ if __name__ == "__main__":
     _memo_gh_wp3a = {}
 
     # (1) _prepare_notice 결과가 json.dumps 가능
-    prep = _prepare_notice(_sample_notice_raw, "2026-09-17T12:00:00Z", tag=None, title=None, gh=None)
+    prep = _prepare_notice(_sample_notice_raw, "2026-09-17T12:00:00Z", tag=None, title=None, gh=None, timing="off")  # (test/notice-r5) 직렬화 · 커밋 경로 시험 — 코드 시점 판정은 따로 시험
     assert prep is not None, "_prepare_notice: 표본 원문 파싱 실패"
     json.dumps(prep)  # json 직렬화 가능해야 함
     print("[OK] WP-3a: _prepare_notice 결과가 json.dumps 가능")
@@ -9168,7 +9328,7 @@ if __name__ == "__main__":
     try:
         # 준비: LLM 활성 상태에서 prepared 구하기
         raw = "新曲PV公開〜 9月20日(土)18時生配信にて🎵"
-        prep_test = _prepare_notice(raw, "2026-09-17T13:00:00Z", tag=None, title=None, gh=None)
+        prep_test = _prepare_notice(raw, "2026-09-17T13:00:00Z", tag=None, title=None, gh=None, timing="off")  # (test/notice-r5) 직렬화 · 커밋 경로 시험 — 코드 시점 판정은 따로 시험
         assert prep_test is not None, "_prepare_notice: 테스트 원문 파싱 실패"
 
         # 커밋 단계에서는 LLM을 비활성화 (외부 호출이 발생하면 실패)
@@ -9195,7 +9355,7 @@ if __name__ == "__main__":
         _tm._make_llm_client = _tm_orig_make_gh  # 별도 인스턴스도 복구
 
         raw2 = "トークイベント — 9月25日(木)渋谷"
-        prep_test2 = _prepare_notice(raw2, "2026-09-17T13:30:00Z", tag=None, title=None, gh=None)
+        prep_test2 = _prepare_notice(raw2, "2026-09-17T13:30:00Z", tag=None, title=None, gh=None, timing="off")  # (test/notice-r5) 직렬화 · 커밋 경로 시험 — 코드 시점 판정은 따로 시험
         assert prep_test2 is not None, "updated 테스트용 원문 파싱 실패"
 
         # 다시 LLM 비활성화 (커밋 테스트)
@@ -9230,7 +9390,7 @@ if __name__ == "__main__":
         _tm._make_llm_client = _tm_orig_make_gh
 
         raw3 = "【イベント開催】10月20日(日) 有料トークショー"
-        prep_test3 = _prepare_notice(raw3, "2026-09-17T14:00:00Z", tag=None, title=None, gh=None)
+        prep_test3 = _prepare_notice(raw3, "2026-09-17T14:00:00Z", tag=None, title=None, gh=None, timing="off")  # (test/notice-r5) 직렬화 · 커밋 경로 시험 — 코드 시점 판정은 따로 시험
         assert prep_test3 is not None, "added 테스트용 원문 파싱 실패"
 
         # 다시 LLM 비활성화 (커밋 테스트)

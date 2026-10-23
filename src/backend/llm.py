@@ -516,6 +516,67 @@ def _md_in_evidence(date: str, evidence: str, posted_date: str = "") -> bool:
     return bool(posted_date) and date == posted_date and bool(re.search(r"本日|今日|今夜", ev))
 
 
+# ───── (test/notice-r5) 소식 이해 — 분류 · 공연 이름 · 제목 · 같은 소식을 한 호출로(시점은 코드 — xnotice.timing_by_code) ─────
+# devpapers ref/notice-category/IMPL_PLAN_UNDERSTAND.md. 분류 문구 = 5차 안(ROUND5_PLAN §1-1, 10-23 운영자 답 반영 — 공연 뒤 소감도 live · 「방송·영상」).
+NOTICE_UNDERSTAND_PROMPT = "r5"
+_YN = {"type": "object", "additionalProperties": False, "required": ["yes", "evidence"],
+       "properties": {"yes": {"type": "boolean"}, "evidence": {"type": "string"}}}
+_NOTICE_UNDERSTAND_SCHEMA = {
+    "name": "notice_understand",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "subject": {"type": "string"},
+            "live": _YN, "event": _YN, "goods": _YN, "broadcast": _YN,
+            "live_name": {"type": "string"}, "live_name_evidence": {"type": "string"},
+            "live_date": {"type": "string"}, "live_date_evidence": {"type": "string"},
+            "title_ja": {"type": "string"}, "title_ko": {"type": "string"},
+            "dup_id": {"type": "string"}, "dup_reason": {"type": "string"},
+            "reason": {"type": "string"},
+        },
+        "required": ["subject", "live", "event", "goods", "broadcast", "live_name", "live_name_evidence", "live_date",
+                     "live_date_evidence", "title_ja", "title_ko", "dup_id", "dup_reason", "reason"],
+        "additionalProperties": False,
+    },
+}
+_UNDERSTAND_HEAD = (
+    "아래는 X(트위터) 글이다. 이 글은 성우 밴드 「夢限大みゅーたいぷ」(유메미타 — 仲町あられ · 宮永ののか · 峰月律 · 藤都子 · 千石ユノ) 관련 글이다.\n"
+    "1단계 — subject: 이 글이 팬에게 알리는 것을 한국어 한 줄로 적어라(무엇을 · 언제). 글에 곁들여 언급된 것은 넣지 않는다.\n"
+    "2단계 — 아래 네 분류마다 「이 글이 그것 자체를 알리는가」를 따로 판단해 yes(true/false)와 근거 한 줄(evidence — 원문 그대로 복사, no 면 \"\")을 적어라.\n"
+    "여러 개가 yes 일 수 있지만, 일부러 더 고르지 말 것. 곁들인 언급(「当日グッズ情報も」 같은 한 줄)만으로는 yes 가 아니다 — 그 내용 자체를 안내하면 yes.\n"
+    "- live (라이브공연): 유메미타 전체 · 일부 · 멤버 솔로가 무대에 서는 공연. 그 공연의 티켓 · 추첨 · 아카이브 시청권 판매 · 개장 · 변경 안내, 공연 회장 안의 부대 안내, "
+    "공연이 끝난 뒤의 감사 · 소감 · 현장 보고 · 세트리스트 포함. 아님: 공연 영상을 다 같이 보는 동시 시청 방송(→ broadcast).\n"
+    "- event (오프라인행사): 공연이 아닌, 멤버가 나오는 오프라인 행사 — 사인회 · お渡し会 · 릴리즈 이벤트 · 토크쇼 · 팬 이벤트 · 전시 · 콜라보 매장. "
+    "아님: 「ライブ」 공연, 온라인 사인회의 생중계 자체(→ broadcast).\n"
+    "- goods (음원·굿즈): 판매 · 발매 · 예약 · 특전이 이 글의 안내 대상인 물건 — CD · 음원 · 커버곡 · 굿즈 · Blu-ray · 잡지 · 코믹스. "
+    "아님: 영상 · MV 공개 자체(판매가 아님), 행사 · 공연 안내 속 한 줄 언급.\n"
+    "- broadcast (방송·영상): 멤버가 출연하거나 직접 하는 방송 · 영상 — 유튜브 생방송 · 프리미어 · 동시 시청, 「バンドリ！TV LIVE」, 라디오 · TV 출연, 행사 · 공연의 생중계. "
+    "아님: 애니메이션 「ゆめ∞みた」 방영 · 재방송 안내(멤버 출연이 아님).\n"
+    "3단계 — live 가 yes 일 때만 공연 이름 · 공연일(live 가 no 면 넷 다 \"\"):\n"
+    "- live_name = 이 글이 다루는 공연의 고유 제목을 글에 적힌 표기 그대로. 유메미타 전체 공연뿐 아니라 멤버 한 명의 솔로 공연 · 투어 · 프리 라이브 · 여러 밴드가 서는 합동 공연도 모두 공연이다. "
+    "「」 · 『』 · “” 안에 든 공연 타이틀이 있으면 괄호를 뺀 안쪽만(예: 「DIMENSIONAL OVERLAP」 → DIMENSIONAL OVERLAP, ○○ LIVE 2026 「タイトル」 → タイトル). "
+    "괄호 타이틀이 없으면 공연 이름 그대로. 해시태그 · 회장 이름 · 굿즈 이름은 공연 이름이 아니다. 없으면 \"\". live_name_evidence = 그 이름이 나온 원문 줄 그대로.\n"
+    "- live_date = 공연이 열리는 날(일본 시간 YYYY-MM-DD). 티켓 판매 · 접수 · 통판 · 발표 날짜가 아니라 공연 당일, 여러 날이면 첫날, 연도가 없으면 게시 시각 기준. 없으면 \"\". "
+    "live_date_evidence = 공연일이 적힌 원문 줄 그대로.\n"
+    "4단계 — 제목: title_ja = 이 글이 알리는 것의 자연스러운 제목 1줄(일본어), title_ko = 그 한국어 번역. 고유명사 보존. @@GLOSSARY0@@ 같은 토큰은 바꾸지 말고 그대로 남겨라.\n"
+)
+
+
+def _understand_prompt(text: str, posted_jst: str, candidates: list | None) -> str:
+    """소식 이해 프롬프트 — 같은 소식 후보(같은 날짜의 기존 소식)가 있을 때만 5단계를 붙인다."""
+    tail = ""
+    if candidates:
+        rows = "\n".join(f"- id: {c.get('id')} | 날짜: {c.get('date') or '?'} | 제목: {(c.get('title_ko') or c.get('title') or '')[:60]}"
+                           for c in candidates)
+        tail = ("5단계 — 같은 소식: 아래 후보(같은 날짜의 기존 소식) 중 이 글과 같은 행사 · 같은 공연을 알리는 것이 있으면 그 id 를 dup_id 에, 이유를 dup_reason 에 적어라. "
+                "공연 이름이 다르면 같은 소식이 아니다. 없으면 둘 다 \"\".\n후보:\n" + rows + "\n")
+    else:
+        tail = "5단계 없음 — dup_id · dup_reason 은 \"\".\n"
+    return (_UNDERSTAND_HEAD + tail + "reason = 판단 이유 한국어 한 문장. JSON 으로만 답하라.\n\n"
+            + "게시 시각: " + (posted_jst or "?") + " (일본 시간)\n\n글:\n" + (text or ""))
+
+
 _BANNER_SCOPE_SCHEMA = {
     "name": "banner_scope",
     "strict": True,
@@ -1179,6 +1240,63 @@ class LLMClient:
         else:
             logger.info("live_info: 호출 실패 또는 3회 모두 실패 — None (공연 이름 없이 올림)")
         return name_only
+
+    def notice_understand(self, text: str, posted_jst: str, candidates: list | None = None) -> dict | None:
+        """
+        (test/notice-r5) 소식 이해 — 분류(4종, 분류마다 예/아니오 + 근거) · 공연 이름 · 공연일 · 제목 · 같은 소식을 한 호출로.
+        시점은 묻지 않는다(코드 — `xnotice.timing_by_code`). candidates = 같은 날짜의 기존 소식 [{id, date, title, title_ko}] (최대 8).
+        **근거 검사는 항목별** — 근거가 원문에 없는 분류 · 공연 이름 · 공연일 · 같은 소식은 그 항목만 버린다(응답 전체를 버리지 않음).
+        다시 묻기는 JSON · 모양이 깨졌을 때만(최대 3회). 호출 실패면 바로 None(v4.6.1).
+        Returns: {"cats": [...], "live_name", "live_date", "title_ja", "title_ko", "dup_id", "subject", "reason"} | None
+        """
+        self.last_reason = ""
+        if self.disabled:
+            return None
+        masked, mapping = _mask_glossary(text or "")
+        cands = list(candidates or [])[:8]
+        ids = {str(c.get("id")) for c in cands if c.get("id")}
+        base = _with_hint(_understand_prompt(masked, posted_jst, cands))
+        posted_date = (posted_jst or "")[:10]
+        for attempt in range(1, 4):
+            response = self._call_groq(self.model, base, json_schema=_NOTICE_UNDERSTAND_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, base, json_schema=_NOTICE_UNDERSTAND_SCHEMA)
+            if not response:
+                break
+            try:
+                r = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.info(f"notice_understand: JSON 파싱 실패 (attempt {attempt}/3) — {response!r}")
+                continue
+            if not isinstance(r, dict) or not all(isinstance(r.get(c), dict) for c in NOTICE_LLM_CATS):
+                logger.info(f"notice_understand: 예상 필드 부재 (attempt {attempt}/3) — {r!r}")
+                continue
+            um = lambda v: _unmask_glossary(str(v or "").strip(), mapping, to="ja")
+            cats = [c for c in NOTICE_LLM_CATS
+                    if r[c].get("yes") is True and evidence_in_text(um(r[c].get("evidence")), text or "")]
+            out = {"cats": cats, "live_name": None, "live_date": None, "title_ja": None, "title_ko": None, "dup_id": None,
+                   "subject": str(r.get("subject") or "").strip()[:120], "reason": str(r.get("reason") or "").strip()[:200]}
+            if "live" in cats:
+                name = um(r.get("live_name")).strip("「」『』“”\"")
+                if name and evidence_in_text(name, text or "") and evidence_in_text(um(r.get("live_name_evidence")), text or ""):
+                    out["live_name"] = name[:80]
+                d, dev = str(r.get("live_date") or "").strip(), um(r.get("live_date_evidence"))
+                if d and evidence_in_text(dev, text or "") and _md_in_evidence(d, dev, posted_date):
+                    out["live_date"] = d
+            tj = _unmask_glossary(str(r.get("title_ja") or "").strip(), mapping, to="ja")
+            tk = _unmask_glossary(str(r.get("title_ko") or "").strip(), mapping, to="ko")
+            if tj and tk:
+                out["title_ja"], out["title_ko"] = tj[:120], tk[:120]
+            did = str(r.get("dup_id") or "").strip()
+            if did and did in ids and len(str(r.get("dup_reason") or "").strip()) >= 5:
+                out["dup_id"] = did
+            dropped = [c for c in NOTICE_LLM_CATS if r[c].get("yes") is True and c not in cats]
+            if dropped:
+                logger.info(f"notice_understand: 근거가 원문에 없는 분류는 버림 — {dropped}")
+            self.last_reason = out["reason"]
+            return out
+        logger.info("notice_understand: 호출 실패 또는 3회 모두 JSON 실패 — None (호출부가 분류 없이 올리고 다시 판정 표시)")
+        return None
 
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
         """
@@ -2436,6 +2554,29 @@ if __name__ == "__main__":
     assert _md_in_evidence("2026-12-24", "12月24日(木)") and _md_in_evidence("2026-10-11", "2026.10.11 東京") and not _md_in_evidence("2026-10-03", "12/24(木)")
     assert _md_in_evidence("2026-10-11", "本日開催", "2026-10-11") and not _md_in_evidence("2026-10-12", "本日開催", "2026-10-11")
     print("✓ notice_categories · live_info: 분류 순서 · 근거 다시 묻기 · 빈 목록 · 실패 None · 공연일 근거 · 이름만")
+
+    # ──── (test/notice-r5) 소식 이해 — 항목별 근거 검사 · 후보 밖 id 버림 · JSON 깨지면만 다시 묻기 ────
+    _ut = "＼チケット一般発売 明日開始📢／\n12/24(木)開催\n🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤\n⏰受付期間 明日10/3(土) 12:00〜"
+    def _u(**kw):
+        base = {"subject": "아라레 솔로 공연 티켓 판매", "live": {"yes": True, "evidence": "12/24(木)開催"},
+                "event": {"yes": False, "evidence": ""}, "goods": {"yes": True, "evidence": "없는 굿즈 줄"},
+                "broadcast": {"yes": False, "evidence": ""}, "live_name": "RESONEXT",
+                "live_name_evidence": "🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤", "live_date": "2026-12-24", "live_date_evidence": "12/24(木)開催",
+                "title_ja": "RESONEXT チケット一般発売", "title_ko": "RESONEXT 티켓 일반 판매", "dup_id": "", "dup_reason": "", "reason": "공연 티켓 안내."}
+        base.update(kw)
+        return json.dumps(base, ensure_ascii=False)
+    _s = _ReadingSession([_u()])
+    _r = LLMClient("k", session=_s).notice_understand(_ut, "2026-10-02 12:00")
+    assert _r["cats"] == ["live"] and _r["live_name"] == "RESONEXT" and _r["live_date"] == "2026-12-24" and _s.calls == 1, _r
+    _s = _ReadingSession(["깨진", _u(live_date="2026-10-03", dup_id="zz", dup_reason="같은 행사다.")])
+    _r = LLMClient("k", session=_s).notice_understand(_ut, "2026-10-02 12:00", [{"id": "n1", "date": "2026-12-24", "title": "x"}])
+    assert _s.calls == 2 and _r["live_date"] is None and _r["dup_id"] is None, (_r, "JSON 깨지면 다시 · 근거 없는 날짜 · 후보 밖 id 는 버림")
+    _r = LLMClient("k", session=_ReadingSession([_u(dup_id="n1", dup_reason="같은 공연 티켓 안내다.")])).notice_understand(
+        _ut, "2026-10-02 12:00", [{"id": "n1", "date": "2026-12-24", "title": "x"}])
+    assert _r["dup_id"] == "n1", _r
+    assert LLMClient("k", session=_ReadingSession([""])).notice_understand(_ut, "2026-10-02 12:00") is None, "호출 실패 → None"
+    assert "5단계 없음" in _understand_prompt("x", "", None) and "후보:" in _understand_prompt("x", "", [{"id": "a"}])
+    print("✓ notice_understand: 항목별 근거 검사 · 후보 밖 id 버림 · JSON 깨지면만 다시 묻기 · 실패 None")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")

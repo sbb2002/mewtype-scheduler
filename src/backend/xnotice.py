@@ -342,6 +342,48 @@ def _expires_at(date_iso: str | None, time_hm: str | None, posted_iso: str, now_
     return end.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# ───── (test/notice-r5) 코드 시점 판정 — 10-23 운영자 결정: Groq 대신 코드로, 기준 시각 = 트윗 게시 시각(KST) ─────
+# 글에 적힌 날짜 · 시각을 모두 뽑아 게시일과 비교한다. devpapers ref/notice-category/IMPL_PLAN_UNDERSTAND.md §6.
+_REL_DAY = (("明後日", 2), ("明日", 1), ("あす", 1), ("本日", 0), ("今日", 0), ("今夜", 0), ("今晩", 0), ("このあと", 0), ("この後", 0),
+            ("まもなく", 0), ("これから", 0), ("ただいま", 0), ("昨日", -1), ("昨夜", -1), ("昨晩", -1), ("先日", -1))
+_ONGOING_RE = re.compile(r"開催中|発売中|販売中|放送中|公開中|配信中|受付中|好評発売|期間中")   # 끝 날짜가 없어도 지금 진행 중(T4)
+_YEARS_AGO_RE = re.compile(r"\d+\s*年前")                                                  # 회고 — 「今日」 은 오늘이 아니다(T3)
+
+
+def timing_by_code(text: str, posted_jst: datetime) -> dict:
+    """글의 날짜 · 시각 ↔ 게시일 → {"action": "post"|"today"|"drop", "until": UTC ISO|None, "why": str}.
+
+    하나라도 게시일 이후(또는 「開催中 · 発売中」 같은 진행 중 표현) → post(글 전체) · 게시일만 → today(게시일 24:00 까지) ·
+    모두 지남 → drop. 날짜 · 시각이 하나도 없으면 post(소식 파서가 이미 날짜나 시각이 있는 글만 넘긴다).
+    「本日 · 今日 · 今夜 · 시각만」 = 게시일, 「明日」 = 다음 날, 「昨日 · 昨夜 · 先日」 = 지난 날, 「N年前」 이 있으면 「今日」 류도 지난 날.
+    """
+    t = normalize(text or "")
+    today = posted_jst.date()
+    days = []
+    for m in _DATE_RE.finditer(t):
+        try:
+            mo, da = int(m.group("m")), int(m.group("d"))
+            y = int(m.group("y")) if m.group("y") else _infer_year(mo, da, posted_jst)
+            days.append(datetime(y, mo, da).date())
+        except (ValueError, TypeError):
+            continue
+    retro = bool(_YEARS_AGO_RE.search(t))
+    for w, k in _REL_DAY:
+        if w in t:
+            days.append(today - timedelta(days=1) if (retro and k == 0) else today + timedelta(days=k))
+    if not days and _first_time(t):
+        days.append(today)
+    nxt = (datetime.combine(today, datetime.min.time(), tzinfo=JST) + timedelta(days=1)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if any(d > today for d in days) or _ONGOING_RE.search(t):
+        return {"action": "post", "until": None, "why": "앞으로 · 진행 중인 일이 적혀 있음"}
+    if any(d == today for d in days):
+        return {"action": "today", "until": nxt, "why": "게시일의 일 — 그날 24:00 까지"}
+    if days:
+        last = max(days).isoformat()
+        return {"action": "drop", "until": None, "why": f"적힌 날짜가 모두 지남(마지막 {last}) — 지난 일"}
+    return {"action": "post", "until": None, "why": "날짜 · 시각 없음"}
+
+
 def parse(text: str, now_iso: str, *, tag: str | None = None, title: str | None = None) -> dict | None:
     """트윗 → 소식 dict. 소식이 아니면 None.
 
@@ -571,4 +613,18 @@ if __name__ == "__main__":
     assert r14["anchor_a"] == "5728", r14["anchor_a"]
     print("[OK] S14  URL 물결표 보존 · 조각 제외 anchor")
 
+    # (test/notice-r5) 코드 시점 판정 — 게시 10-12 01:30(KST) 기준
+    _P = datetime(2026, 10, 12, 1, 30, tzinfo=JST)
+    _tc = {"ご参加ありがとうございました✨\n次回は10/25(日)お渡し会を開催！": "post",      # T1 감사 + 다음 일정 = 전체 올림
+           "昨日のライブありがとうございました": "drop",                                        # T2 昨日
+           "2年前の今日、#ゆめみた 初配信でした": "drop",                                        # T3 회고
+           "10/11から開催中！コラボ風呂": "post",                                               # T4 진행 중
+           "10/11(日)開催 13thライブ ご来場ありがとうございました": "drop",
+           "22:00〜生配信": "today", "本日はご来場ありがとうございました！": "today",           # 날짜 없는 「本日」 = 게시일(한계 — 다음 날 새벽 글도 게시일로)
+           "9月25日に開催された音源を収録 2027年1月27日(水)リリース": "post"}
+    for _t, _want in _tc.items():
+        _got = timing_by_code(_t, _P)["action"]
+        assert _got == _want, (_t, _got, _want)
+    assert timing_by_code("本日22:00〜", _P)["until"] == "2026-10-12T15:00:00Z"
+    print("[OK] (test/notice-r5) 코드 시점 판정 — 감사+다음 일정 · 昨日 · 회고 · 진행 중 · 지난 날짜 · 시각만 · 本日 · 맥락 과거+미래")
     print("\nSUCCESS: xnotice self-test 통과")

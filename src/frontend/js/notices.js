@@ -26,7 +26,7 @@ const CATS = [
   { id: "live", name: "라이브공연" },
   { id: "event", name: "오프라인행사" },
   { id: "goods", name: "음원·굿즈" },
-  { id: "broadcast", name: "방송" },
+  { id: "broadcast", name: "방송·영상" },   // (test/notice-r5) 10-23 운영자 — 프리미어 · 영상 공개도
   { id: "game", name: "Our Notes" },
   { id: "etc", name: "기타" },
 ];

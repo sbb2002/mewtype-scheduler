@@ -557,6 +557,12 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   ④ `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 구절 필수 · 3회) → 고른 것, 빈 목록이면 `["etc"]`, 실패(None)면 **키를 안 붙인다**.
   `live` 가 들어 있으면 `llm.live_info` 로 `live_name`(공연 이름, 원문 표기 · 「」 안쪽) · `live_date`(공연 당일 YYYY-MM-DD) — 원문에 없는 이름은 버리고, 공연일의 월 · 일이 근거 줄에 없으면 날짜만 버린다.
   병합(`_merge_fields`)은 새 글의 값이 있으면 덮고, 새 글이 라이브공연이 아니면 공연 이름 · 공연일을 지운다. 수정(`edit_notice`)에서 `live_name` · `live_date` 를 `None` 으로 주면 키를 지운다.
+- **(test/notice-r5 — 시험 브랜치, 미병합 · 미배포)** 소식 준비 5 ~ 13단계 교체(devpapers `ref/notice-category/IMPL_PLAN_UNDERSTAND.md`):
+  ① 사전 계산(같은 날짜 기존 소식 = 같은 소식 후보) ② `llm.notice_understand` 1회(분류 · 공연 이름 · 공연일 · 제목 · 같은 소식, 근거 항목별 검사)
+  ③ `_decide_notice`(코드): 분류 확정 → **라이브공연 + 공연일 → 게시일 ≤ 공연일 + 7일이면 글 전체를 라이브공연으로(`keep_past`, 만료 = 공연일 + 7일 24:00 KST), 지나면 기타(게시일 24:00 까지)**
+  → 그 밖은 **코드 시점 판정 `xnotice.timing_by_code`(기준 = 트윗 게시 시각, Groq 없음)** ④ 가상 병합 → 같은 소식(`notices.merge_blocked` — 공연 이름이 다르거나 라이브공연 ↔ 라이브공연 아님이면 합치지 않음)
+  ⑤ 본문 번역. 병합 규칙 `_same_group`: 공연 이름이 다르면 별개 · 원문 제목만 같고 날짜가 다르거나 공연 이름이 한쪽에만 있으면 별개.
+  이해 실패 → `needs_cat` → 정기 수집(`enrich`)이 1회 다시. 분류 이름 `broadcast` = 「방송·영상」. 새 소식 1건 Groq = 이해 1 + 본문 번역 1.
 - **옛 분류 `category`**(정규식 4종 live · release · platform · etc, `xnotice._category`)는 그대로 남긴다(옛 호환). `categories` 가 없는 줄(v4.7.0 이전 · 판정 실패)은
   프론트 · 관리 페이지가 **바꿔 읽는다**: 출처가 게임 계정이면 `game`, 아니면 `live` → 방송(옛 「라이브예고」는 실제로 대부분 방송) · `release` → 음원·굿즈 · `platform` · 모르는 값 → 기타.
   옛 `live` 와 새 `live` 의 뜻이 다르다는 점에 주의. 기존 줄은 다시 판정하지 않는다(10-23 운영자 결정).

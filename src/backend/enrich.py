@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import logging
 
-from . import xtweet
+from datetime import datetime, timedelta
+
+from . import notices, xtweet
 from .gh_store import ConflictError
 
 log = logging.getLogger("backend.enrich")
@@ -47,7 +49,11 @@ BODY_TL_PER_SWEEP = 10
 
 
 def empty_updates() -> dict:
-    return {"notices": {}, "tweets": {}, "preview": {}, "notice_body": {}, "archive_body": {}}
+    return {"notices": {}, "tweets": {}, "preview": {}, "notice_body": {}, "archive_body": {}, "notice_cat": {}}
+
+
+# (test/notice-r5) 분류 판정 실패 줄(needs_cat)의 다시 판정 — 정기 수집마다 이만큼만, 줄마다 1회(성공 · 실패 모두 표시를 지운다)
+CAT_RETRY_PER_SWEEP = 3
 
 
 def _needs_body_ko(n: dict) -> bool:
@@ -86,6 +92,21 @@ def collect(store, llm, now_iso: str) -> dict:
                 }
     except Exception as e:  # noqa: BLE001
         log.warning("notice 번역 수집 실패: %s", e)
+
+    # (test/notice-r5) 분류 다시 판정 — 소식 이해 1회로 분류 · 공연 이름 · 공연일만 다시(시점 · 병합은 다시 안 함)
+    try:
+        if hasattr(llm, "notice_understand"):
+            for n in [n for n in (nj or {}).get("notices", []) or [] if n.get("needs_cat") and n.get("id")][:CAT_RETRY_PER_SWEEP]:
+                fs = (n.get("first_seen") or now_iso).replace("Z", "+00:00")
+                try:
+                    posted = (datetime.fromisoformat(fs) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    posted = ""
+                u = llm.notice_understand(n.get("body_for_llm") or n.get("body_raw") or n.get("title") or "", posted)
+                out["notice_cat"][n["id"]] = ({"cats": list(u.get("cats") or []) or ["etc"], "live_name": u.get("live_name"),
+                                               "live_date": u.get("live_date")} if u else {"failed": True})
+    except Exception as e:  # noqa: BLE001
+        log.warning("notice 분류 다시 판정 수집 실패: %s", e)
 
     # (v4.0.5) 소식 본문 번역 — 활성 소식 먼저, 남으면 지난 소식(최근 것부터)
     budget = BODY_TL_PER_SWEEP
@@ -181,6 +202,33 @@ def apply_translations(store, updates: dict, now_iso: str, *, force: bool = Fals
                 nj["generated_at"] = now_iso
             return n_ok
         res["notice_tl"] = _write_retry(store, "notices.json", _m_notices, f"data: notices tl {now_iso}")
+
+    # (test/notice-r5) 분류 다시 판정 반영 — needs_cat 이 남아 있는 줄만, 성공 · 실패 모두 표시를 지운다(1회).
+    #   라이브공연 + 공연일이면 만료를 공연일 + 7일 24:00 으로(더 늦을 때만).
+    cu = updates.get("notice_cat") or {}
+    if cu:
+        def _m_cat(nj):
+            n_ok = 0
+            for n in nj.get("notices", []) or []:
+                u = cu.get(n.get("id"))
+                if not u or not n.get("needs_cat"):
+                    continue
+                n.pop("needs_cat", None)
+                if not u.get("failed"):
+                    n["categories"] = u["cats"]
+                    if "live" in u["cats"]:
+                        for k in ("live_name", "live_date"):
+                            if u.get(k):
+                                n[k] = u[k]
+                        lu = notices.live_until(n["live_date"]) if n.get("live_date") else None
+                        if lu and (n.get("expires_at") or "") < lu:
+                            n["expires_at"] = lu
+                n["last_updated"] = now_iso
+                n_ok += 1
+            if n_ok:
+                nj["generated_at"] = now_iso
+            return n_ok
+        res["notice_cat"] = _write_retry(store, "notices.json", _m_cat, f"data: notices cat retry {now_iso}")
 
     # (v4.0.5) 소식 본문 번역 — 그 사이 본문이 바뀐 행 · 이미 번역이 생긴 행(관리자 수정 등)은 건너뛴다.
     # force 는 본문엔 안 쓴다(관리 페이지는 수정 창에서 body_ko 를 직접 고친다).
@@ -340,3 +388,26 @@ if __name__ == "__main__":
         assert list(up["notice_body"]) == ["b1"] and list(up["archive_body"]) == ["a1"], up
         globals()["BODY_TL_PER_SWEEP"] = old_cap
     print("[PASS] enrich self-test: collect 읽기 전용 · apply 반영 · 제목 바뀐 항목 보류 · 소식 본문 번역(상한 · 백필)")
+
+    # (test/notice-r5) 분류 판정 실패 줄(needs_cat) 다시 판정 — 성공은 분류 · 공연 이름 · 만료 반영, 실패도 표시를 지운다(1회)
+    class _ULLM(_LLM):
+        def __init__(self, ok):
+            self.ok = ok
+        def notice_understand(self, text, posted, cands=None):
+            return {"cats": ["live"], "live_name": "RESONEXT", "live_date": "2026-12-24"} if self.ok else None
+    for ok in (True, False):
+        with tempfile.TemporaryDirectory() as d:
+            s = LocalStore(d, "data")
+            s.write_json("notices.json", {"notices": [{"id": "c1", "needs_cat": True, "title": "t", "title_ko": "제목",
+                                                       "first_seen": "2026-10-02T03:00:00Z", "expires_at": "2026-12-25T15:00:00Z"}]},
+                         prev_sha=None, message="t")
+            up = collect(s, _ULLM(ok), "2026-10-02T04:00:00Z")
+            assert set(up["notice_cat"]) == {"c1"}, up
+            r = apply_translations(s, up, "2026-10-02T04:00:00Z")
+            row = s.read_json("notices.json")[0]["notices"][0]
+            assert r["notice_cat"] == 1 and "needs_cat" not in row, (r, row)
+            if ok:
+                assert row["categories"] == ["live"] and row["live_name"] == "RESONEXT" and row["expires_at"] == "2026-12-31T15:00:00Z", row
+            else:
+                assert "categories" not in row, row
+    print("[PASS] enrich (test/notice-r5) 분류 다시 판정 — 성공 반영 · 실패도 1회로 끝")

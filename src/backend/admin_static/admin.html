@@ -3117,7 +3117,7 @@
             // 멤버 칩 — main: 선택 강조(단일 선택), disabled(k): 선택 불가 표시
             // (v4.7.0) 소식 분류 — 라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿, Our Notes · 기타는 단독.
             // categories 가 없는 옛 줄은 옛 category 를 바꿔 읽는다(프론트 js/notices.js _cats 와 같은 규칙).
-            NTC_CATS: [["live", "라이브공연"], ["event", "오프라인행사"], ["goods", "음원·굿즈"], ["broadcast", "방송"], ["game", "Our Notes"], ["etc", "기타"]],
+            NTC_CATS: [["live", "라이브공연"], ["event", "오프라인행사"], ["goods", "음원·굿즈"], ["broadcast", "방송·영상"], ["game", "Our Notes"], ["etc", "기타"]],
             ntcCats(n) {
                 const ids = this.NTC_CATS.map((c) => c[0]);
                 const c = n && Array.isArray(n.categories) ? ids.filter((k) => n.categories.includes(k)) : [];

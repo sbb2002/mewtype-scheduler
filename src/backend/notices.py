@@ -67,11 +67,51 @@ def _sorted(notices: list[dict]) -> list[dict]:
     return sorted(notices, key=_sort_key)
 
 
+# (test/notice-r5) 라이브공연 소식 유지 = 공연일 + 7일 24:00(KST) — 그 안에 온 소감 · 보고도 라이브공연으로(10-23 운영자, T9)
+LIVE_KEEP_DAYS = 7
+
+
+def _norm_live(name) -> str:
+    """같은 공연 판정 — 전각/반각 · 대소문자 · 공백 · 괄호 · 구두점 무시(프론트 js/notices.js _liveKey 와 같은 규칙)."""
+    import unicodedata
+    return re.sub(r"[\s「」『』“”\"'’・·:：!！?？\-–—_.,、。☆★]", "", unicodedata.normalize("NFKC", str(name or "")).lower())
+
+
+def live_conflict(a: dict, b: dict) -> bool:
+    """(test/notice-r5) 두 소식 모두 공연 이름이 있고 다르면 True — 같은 소식으로 합치지 않는다(10-23 운영자)."""
+    na, nb = _norm_live(a.get("live_name")), _norm_live(b.get("live_name"))
+    return bool(na and nb and na != nb)
+
+
+def merge_blocked(a: dict, b: dict) -> bool:
+    """(test/notice-r5) LLM 이 같은 소식이라 해도 합치지 않을 때 — 공연 이름이 다르거나, 한쪽은 공연 이름이 있는 라이브공연인데
+    다른 쪽은 분류가 있고 라이브공연이 아닐 때(다른 종류의 행사). 다른 쪽이 공연 이름 없는 라이브공연이면 LLM 판단을 따른다."""
+    if live_conflict(a, b):
+        return True
+    for x, y in ((a, b), (b, a)):
+        if x.get("live_name") and y.get("categories") and "live" not in (y.get("categories") or []):
+            return True
+    return False
+
+
+def live_until(live_date: str) -> str | None:
+    """공연일(YYYY-MM-DD) → 라이브공연 소식 만료 = 공연일 + LIVE_KEEP_DAYS 일의 24:00 KST(UTC ISO)."""
+    try:
+        d = datetime.fromisoformat(live_date).replace(tzinfo=_JST) + timedelta(days=LIVE_KEEP_DAYS + 1)
+    except (TypeError, ValueError):
+        return None
+    return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _same_group(a: dict, b: dict) -> bool:
     """같은 이벤트인가 — URL 일치 OR 제목 일치.
 
     v3: anchor_a/b 기반 그룹핑에서 url|title 기반으로 변경.
+    (test/notice-r5, 10-23 운영자) 공연 이름이 둘 다 있고 다르면 별개 · 원문 제목만 같고 날짜가 다르면 별개
+    — RESONEXT 와 근트레이닝부 글이 원문 제목 「チケット一般発売開始」 이 같아 합쳐졌던 일(보관함 nd9f0821858f4ac9).
     """
+    if live_conflict(a, b):
+        return False
     # URL 일치 우선 (가장 확정적)
     url_a, url_b = a.get("url"), b.get("url")
     if url_a and url_b and url_a == url_b:
@@ -81,6 +121,12 @@ def _same_group(a: dict, b: dict) -> bool:
     title_a = re.sub(r"\s+", "", a.get("title") or "").lower()
     title_b = re.sub(r"\s+", "", b.get("title") or "").lower()
     if title_a and title_b and title_a == title_b:
+        if a.get("date") and b.get("date") and a["date"] != b["date"]:
+            return False
+        # (test/notice-r5) 원문 제목만 같을 때(URL 은 다름)는 공연 이름도 양쪽이 같아야 — 한쪽에만 있으면 같은 공연인지 모른다
+        #   (「チケット一般発売開始」 처럼 흔한 제목의 다른 행사 글이 공연 소식에 합쳐져 공연 이름까지 지워지던 것)
+        if (a.get("live_name") or b.get("live_name")) and _norm_live(a.get("live_name")) != _norm_live(b.get("live_name")):
+            return False
         return True
     return False
 
@@ -122,9 +168,9 @@ def _new_row(inc: dict, now_iso: str) -> dict:
         "id", "category", "title", "title_ko", "title_raw", "body_raw", "body_ko", "body_for_llm",
         "date", "time", "deadline", "site", "url",
         "tweet_url", "src_handle", "anchor_a", "anchor_b", "title_slug", "expires_at",
-        "participants", "categories", "live_name", "live_date",
+        "participants", "categories", "live_name", "live_date", "needs_cat",
     )}
-    for k in ("categories", "live_name", "live_date"):      # (v4.7.0) 없으면 키도 안 만든다(옛 줄과 같은 모양)
+    for k in ("categories", "live_name", "live_date", "needs_cat"):     # (test/notice-r5) needs_cat = 분류 판정 실패 → 다음 정기 수집에서 1회 다시      # (v4.7.0) 없으면 키도 안 만든다(옛 줄과 같은 모양)
         if row.get(k) is None:
             row.pop(k)
     row["deadline"] = bool(row.get("deadline"))
@@ -159,7 +205,8 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
             return out, arch, True, mode
 
     # 3) 아카이브에서 같은 그룹 (지난 이벤트의 후속·후기)
-    for i, n in enumerate(arch_list):
+    #    (test/notice-r5) keep_past(라이브공연 · 유지 기간 안) 글은 보관함에 흡수하지 않고 새 소식으로(10-23 운영자)
+    for i, n in enumerate([] if incoming.get("keep_past") else arch_list):
         if _same_group(n, incoming):
             ids = list(n.get("seen_ids") or [])
             if tid and tid not in ids:
@@ -170,8 +217,9 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
             return prev, arch, False, "dup"
 
     # 4) 신규
-    if past:
+    if past and not incoming.get("keep_past"):
         # 이미 지난 날짜의 새 소식(회고글·지각 후기 등)은 예고판에 안 올린다.
+        # (test/notice-r5) 라이브공연 소식은 공연일 + 7일까지 올린다(keep_past — 결정 단계가 붙임).
         # 추적 중이던 이벤트의 후기는 위 2)·3) 에서 seen_ids 로 흡수됨.
         return prev, arch, False, "skip"
     notices.append(_new_row(incoming, now_iso))
@@ -300,7 +348,7 @@ def sweep_expired(prev: dict, archive: dict, now_iso: str) -> tuple[dict, dict, 
 
 _KIND_KO = {"live": "라이브예고", "release": "음반·굿즈", "platform": "타 플랫폼", "etc": "기타"}
 # (v4.7.0) 새 분류 이름 — 프론트 js/notices.js CATS 와 같게
-CAT_KO = {"live": "라이브공연", "event": "오프라인행사", "goods": "음원·굿즈", "broadcast": "방송", "game": "Our Notes", "etc": "기타"}
+CAT_KO = {"live": "라이브공연", "event": "오프라인행사", "goods": "음원·굿즈", "broadcast": "방송·영상", "game": "Our Notes", "etc": "기타"}
 
 
 def summary_line(n: dict) -> str:
@@ -488,5 +536,25 @@ if __name__ == "__main__":
     assert ch and NE["notices"][0]["categories"] == ["live"] and NE["notices"][0]["live_name"] == "X" and "live_date" not in NE["notices"][0]
     assert summary_line(NE["notices"][0]).startswith("[라이브공연]"), summary_line(NE["notices"][0])
     print("[OK] categories · live_name · live_date (v4.7.0)")
+
+    # (test/notice-r5) 병합 막기 · 라이브공연 지난 날짜 예외 · 유지 기간
+    _a = {"url": "https://e/1", "title": "チケット一般発売開始", "date": "2026-09-21", "live_name": "RESONEXT"}
+    assert not _same_group(_a, dict(_a, live_name="DIMENSIONAL OVERLAP")), "공연 이름이 다르면 URL 이 같아도 별개"
+    assert not _same_group({"title": "チケット一般発売開始", "date": "2026-09-21"}, {"title": "チケット一般発売開始", "date": "2026-11-21"}), "원문 제목만 같고 날짜 다르면 별개"
+    assert _same_group({"title": "x", "date": "2026-09-21"}, {"title": "x", "date": "2026-09-21"}) and _same_group({"url": "u", "date": "a"}, {"url": "u", "date": "b"})
+    assert _same_group(_a, dict(_a, live_name="ＲＥＳＯ　ＮＥＸＴ")), "표기만 다른 같은 공연"
+    assert not _same_group({"title": "チケット一般発売開始", "date": "2026-11-21", "live_name": "RESONEXT"},
+                           {"title": "チケット一般発売開始", "date": "2026-11-21"}), "제목만 같고 공연 이름이 한쪽에만 있으면 별개"
+    assert _same_group({"url": "u", "live_name": "RESONEXT"}, {"url": "u"}), "URL 이 같으면 공연 이름이 한쪽에만 있어도 같은 소식"
+    assert merge_blocked({"live_name": "RESONEXT", "categories": ["live"]}, {"categories": ["event"]}), "라이브공연 ↔ 라이브공연 아님 = 합치지 않음"
+    assert not merge_blocked({"live_name": "RESONEXT", "categories": ["live"]}, {"categories": ["live"]}), "이름 없는 라이브공연이면 LLM 판단대로"
+    _NOWP = "2026-10-13T03:00:00Z"
+    _NP, _AP, ch, m = merge_notice(default_notices(), inc(id="90", url="https://p/1", date="2026-10-11"), _NOWP, archive=default_archive())
+    assert m == "skip", "지난 날짜 새 글은 지금처럼 버림"
+    _NP, _AP, ch, m = merge_notice(default_notices(), inc(id="91", url="https://p/1", date="2026-10-11", keep_past=True), _NOWP,
+                                   archive={"notices": [dict(inc(id="80", url="https://p/1", date="2026-10-11"), seen_ids=["80"])]})
+    assert m == "added" and "keep_past" not in _NP["notices"][0], "라이브공연 유지 기간 안이면 보관함에 흡수하지 않고 새 소식"
+    assert live_until("2026-10-11") == "2026-10-18T15:00:00Z", live_until("2026-10-11")      # 10-11 + 7일 = 10-18 24:00 KST
+    print("[OK] (test/notice-r5) 병합 막기(공연 이름 · 날짜) · 라이브공연 지난 날짜 예외 · 유지 기간")
 
     print("\nSUCCESS: notices.py smoke test 통과")
