@@ -68,7 +68,7 @@ const POP_MAX_H = 560;                    // 팝업 최대 높이 — 화면 안
 
 const _st = { built: false, sig: "", idx: 0, open: false, timer: null, paused: false,
               bn: [], bnSig: "", rawBanners: null, lastData: undefined,
-              lang: _loadLang(), tab: "all", mode: "pc", list: [], section: null, listEl: null,
+              lang: _loadLang(), tab: "all", mode: "pc", list: [], held: [], section: null, listEl: null,   // held = (v4.7.1) 기간 지난 묶음 유지 소식
               liveView: _loadLiveView(), liveOpen: {} };   // (v4.7.0) 라이브공연 탭 [공연별 | 날짜순] · 묶음별 펼침(키 → bool)
 // PC 팝업 카드 상태 — mode: null | "peek"(호버) | "pin"(클릭 고정)
 const _pop = { el: null, id: null, mode: null, sig: "", cardTimer: null, closeTimer: null };
@@ -146,26 +146,63 @@ function _ttlSpan(n) {
   return `<span class="ntc__ttl" lang="${tt.lang}">${_esc(tt.t)}</span>`;
 }
 // 소식 줄 · 카드 공통 속성 — 링크가 아니라 팝업(시트)을 여는 버튼
-function _hitAttrs(n) {
-  return `data-nid="${_attr(n.id)}" role="button" tabindex="0" aria-haspopup="dialog" aria-label="${_attr(_titleOf(n).t)}"`;
+function _hitAttrs(n, past) {   // past = (v4.7.1) 기간 지난 묶음 하위 소식 — 읽어 주는 이름에도 「지난 소식」
+  return `data-nid="${_attr(n.id)}" role="button" tabindex="0" aria-haspopup="dialog" aria-label="${_attr(_titleOf(n).t + (past ? " (지난 소식)" : ""))}"` +
+    (past ? ` title="지난 소식"` : "");
 }
 
+// (v4.7.1) 라이브공연 공연별 묶음 유지 — 묶음은 공연일 + 7일 24:00(KST)까지(하위 소식 기간이 더 늦으면 그때까지, 공연일 미정이면
+// 하위 소식 중 가장 늦은 기간까지). 그 안의 하위 소식은 자기 기간(expires_at)이 지나도 묶음과 함께 남아 「지난 소식」(어둡게)으로 보인다.
+// 백엔드 notices.live_holds · sweep_expired 와 같은 규칙.
+const LIVE_KEEP_DAYS = 7;
+function _expired(n, now) {   // 자기 기간(expires_at)이 지났나
+  if (!n.expires_at) return false;
+  const e = Date.parse(n.expires_at);
+  return !isNaN(e) && e <= now;
+}
+function _liveGKey(n) { return _cats(n).includes("live") ? _liveKey(n.live_name) : ""; }   // 공연별 묶음 열쇠(없으면 "" = 묶음 아님)
+function _liveHolds(all) {   // 묶음 열쇠 → 유지 끝(ms)
+  const by = new Map();
+  all.forEach((n) => {
+    const k = _liveGKey(n);
+    if (!k) return;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(n);
+  });
+  const out = new Map();
+  by.forEach((items, k) => {
+    const date = _mostCommon(items.map((n) => (_DATE_RE.test(n.live_date || "") ? n.live_date : null)));
+    const c = items.map((n) => Date.parse(n.expires_at || "")).filter((t) => !isNaN(t));
+    if (date) c.push(new Date(date + "T00:00:00+09:00").getTime() + (LIVE_KEEP_DAYS + 1) * 86400000);
+    if (c.length) out.set(k, Math.max(...c));
+  });
+  return out;
+}
+function _byDate(a, b) {
+  return (_date(a) || "9999-99-99").localeCompare(_date(b) || "9999-99-99") ||
+    (a.time || "99:99").localeCompare(b.time || "99:99") ||
+    String(a.id).localeCompare(String(b.id));
+}
+// 반환 { list = 지금 소식(기간 안), held = 기간은 지났지만 공연별 묶음이 유지 중이라 남는 라이브공연 소식 }.
+// held 는 라이브공연 탭 「공연별」 묶음에서만 어둡게 보인다 — 다른 탭 · 날짜순 · 티커 · 오늘/7일 숫자에는 안 넣는다.
 function _visible(data) {
   const now = Date.now();
-  const list = ((data && data.notices) || []).filter((n) => {
-    if (!n) return false;
-    if (!n.expires_at) return true;
-    const e = Date.parse(n.expires_at);
-    return isNaN(e) || e > now;
+  const all = ((data && data.notices) || []).filter(Boolean);
+  const holds = _liveHolds(all);
+  const list = [], held = [];
+  all.forEach((n) => {
+    if (!_expired(n, now)) { list.push(n); return; }
+    const h = holds.get(_liveGKey(n));
+    if (h != null && h > now) held.push(n);
   });
-  list.sort((a, b) =>
-    (_date(a) || "9999-99-99").localeCompare(_date(b) || "9999-99-99") ||
-    (a.time || "99:99").localeCompare(b.time || "99:99") ||
-    String(a.id).localeCompare(String(b.id))
-  );
-  return list;
+  list.sort(_byDate);
+  held.sort(_byDate);
+  return { list, held };
 }
-function _byId(id) { return id == null ? null : _st.list.find((n) => String(n.id) === String(id)) || null; }
+function _byId(id) {
+  if (id == null) return null;
+  return _st.list.find((n) => String(n.id) === String(id)) || _st.held.find((n) => String(n.id) === String(id)) || null;
+}
 
 function _counts(list) {
   const c = { all: list.length };
@@ -196,7 +233,8 @@ function _segHTML() {
 }
 
 // 탭 목록 = 전체(항상) + 건수가 있는 분류만
-function _tabCats(c) { return [{ id: "all", name: "전체" }].concat(CATS.filter((k) => c[k.id] > 0)); }
+function _hasTab(c, id) { return c[id] > 0 || (id === "live" && c.liveHeld > 0); }   // (v4.7.1)
+function _tabCats(c) { return [{ id: "all", name: "전체" }].concat(CATS.filter((k) => _hasTab(c, k.id))); }
 
 // ── PC 분류 칩: [전체 n] [아이콘 이름 n] … (0건 분류는 숨김) ──
 function _chipsHTML(c) {
@@ -218,7 +256,7 @@ function _utabsHTML(c) {
 
 // ── 모바일 접힌 막대: 분류별 건수 칩(0건 분류는 숨김) ──
 function _cchipsHTML(c) {
-  return CATS.filter((k) => c[k.id] > 0).map((k) =>
+  return CATS.filter((k) => _hasTab(c, k.id)).map((k) =>
     `<button class="ntc__cchip" type="button" data-open-tab="${k.id}" data-cat="${k.id}"` +
       ` aria-label="${_attr(k.name)} ${c[k.id]}건 보기" title="${_attr(k.name)} ${c[k.id]}건 보기">${_ic(k.id)}<span>${c[k.id]}</span></button>`
   ).join("");
@@ -325,14 +363,16 @@ function _liveGroupsHTML(list, mode) {
         : `<span class="ntc__lgtile is-tbd"><span class="m">공연일</span><span class="d">미정</span></span>`;
     const dd = !g.key ? "" : g.d == null ? "공연일 미정" : g.d < 0 ? `종료 · D+${-g.d}` : g.d === 0 ? "TODAY" : `D-${g.d}`;
     const sub = `소식 ${g.items.length}건` + (g.past && g.last ? ` · 마지막 ${_md(g.last)}` : "");
+    const now = Date.now();
     const rows = g.items.map((n) => {
+      const past = _expired(n, now), pc = past ? " is-past" : "";   // (v4.7.1) 자기 기간이 지난 하위 소식 = 어둡게
       const chips = _cats(n).filter((k) => k !== "live")
         .map((k) => `<span class="ntc__lchip" data-cat="${k}">${_esc(CAT_NAME[k])}</span>`).join("");
       return mode === "pc"
-        ? `<div class="ntc__gi ntc__lrow" data-cat="live" ${_hitAttrs(n)}><span class="ntc__ldot" aria-hidden="true"></span>` +
+        ? `<div class="ntc__gi ntc__lrow${pc}" data-cat="live" ${_hitAttrs(n, past)}><span class="ntc__ldot" aria-hidden="true"></span>` +
             `<span class="ntc__ldate">${_esc(_dateTxt(n))}</span><span class="ntc__ltime">${_esc(n.time || "—")}</span>` +
             _ttlSpan(n) + `<span class="ntc__lchips">${chips}</span></div>`
-        : `<div class="ntc__card ntc__lrow" data-cat="live" ${_hitAttrs(n)}><span class="ntc__ldot" aria-hidden="true"></span>` +
+        : `<div class="ntc__card ntc__lrow${pc}" data-cat="live" ${_hitAttrs(n, past)}><span class="ntc__ldot" aria-hidden="true"></span>` +
             `<div class="ntc__cbody">${_ttlSpan(n)}<div class="ntc__meta"><span>${_esc(_dateTxt(n))}</span>` +
             `<span>${_esc(n.time || "—")}</span>${chips}</div></div></div>`;
     }).join("");
@@ -365,7 +405,7 @@ function _cardFill(box, n, device) {
                 (tw ? `<a href="${_attr(tw)}" target="_blank" rel="noopener">원문 트윗 ↗</a>` : "");
   box.innerHTML =
     `<div class="ntc-card__hd" data-cat="${cat}">${_catIc(cat)}<span class="ntc-card__cn">${_esc(_catNames(n))}</span>` +
-      (_date(n) ? _ddHTML(_date(n)) : "") +
+      (_expired(n, Date.now()) ? `<span class="ntc__dd d-past">지난 소식</span>` : _date(n) ? _ddHTML(_date(n)) : "") +   // (v4.7.1)
       `<span class="ntc-card__when">${_esc(when)}</span>` +
       `<span class="ntc-card__h">${_esc(n.src_handle || "@BDP_yumemita")}</span>` +
       `<span class="ntc-card__sp"></span>` +
@@ -526,14 +566,14 @@ export function renderNotices(section, data) {
   if (!section) return;
   _st.section = section;
   _st.lastData = data;
-  const list = _visible(data);
+  const { list, held } = _visible(data);
   _wireGlobal(section);
 
-  if (!list.length) {
+  if (!list.length && !held.length) {
     // 숨기지 않는다 — 빈 막대만 두고 펼치기는 비활성. (요청: 소식 0건이어도 자리 유지)
     if (_st.timer) { clearInterval(_st.timer); _st.timer = null; }
     _popClose(); _sheetClose(false);
-    _st.built = false; _st.sig = ""; _st.open = false; _st.idx = 0; _st.list = []; _st.listEl = null;
+    _st.built = false; _st.sig = ""; _st.open = false; _st.idx = 0; _st.list = []; _st.held = []; _st.listEl = null;
     if (section.dataset.empty !== "1") {
       stopBannerMotion();
       section.hidden = false;
@@ -554,20 +594,23 @@ export function renderNotices(section, data) {
 
   const mode = _isMobile() ? "m" : "pc";
   const today = _todayKST();
-  const sig = list.map((n) => n.id + ":" + (n.last_updated || "") + ":" + _cats(n).join(",") + ":" + (n.live_name || "") + ":" + (n.live_date || "")).join("|") +
+  const nsig = (n) => n.id + ":" + (n.last_updated || "") + ":" + _cats(n).join(",") + ":" + (n.live_name || "") + ":" + (n.live_date || "");
+  const sig = list.map(nsig).join("|") + "#" + held.map(nsig).join("|") +
     "#" + _st.bnSig + "#" + mode + "#" + today;
   if (_st.built && sig === _st.sig) return;   // 변화 없음 → 계속 돌림
   _st.sig = sig;
   _st.mode = mode;
   _st.list = list;
+  _st.held = held;
   _build(section);
 }
 
 // 막대 + 펼친 목록 골격을 새로 만든다(데이터 · 배너 · 화면 모드 · 날짜가 바뀌었을 때)
 function _build(section) {
   const list = _st.list, mode = _st.mode, c = _counts(list);
+  c.liveHeld = _st.held.length;   // (v4.7.1) 숫자는 지금 소식만 세고, 지난 묶음 소식만 남아도 라이브공연 탭은 숨지 않게(_hasTab)
   if (_st.timer) { clearInterval(_st.timer); _st.timer = null; }
-  if (_st.tab !== "all" && !c[_st.tab]) _st.tab = "all";   // 고른 분류가 0건이 되면(탭이 숨으므로) 전체로
+  if (_st.tab !== "all" && !_hasTab(c, _st.tab)) _st.tab = "all";   // 고른 분류가 0건이 되면(탭이 숨으므로) 전체로
 
   const ds = list.map((n) => _dday(_date(n)).n);
   const nToday = ds.filter((n) => n === 0).length;
@@ -606,7 +649,7 @@ function _build(section) {
   const track = section.querySelector(".ntc__track");
   const ticker = section.querySelector(".ntc__ticker");
   const N = list.length;
-  _st.idx = Math.min(_st.idx, N - 1);
+  _st.idx = Math.max(0, Math.min(_st.idx, N - 1));
   let H = 35;
   const show = (i, animate) => {
     if (!track) return;
@@ -615,6 +658,7 @@ function _build(section) {
   };
   const paintTicker = () => {
     if (!track) return;
+    if (!N) { track.innerHTML = `<span class="ntc__empty">새 소식이 없습니다</span>`; return; }   // (v4.7.1) 지난 묶음 소식만 남았을 때
     track.innerHTML = list.map((n) => _tickRow(n, false)).join("") + (N > 1 ? _tickRow(list[0], true) : "");
     H = track.firstElementChild ? track.firstElementChild.getBoundingClientRect().height || 35 : 35;
     show(_st.idx % N, false);
@@ -661,18 +705,21 @@ function _build(section) {
   // ── 분류 줄 + 소식 목록 (탭 · 언어를 바꾸면 이것만 다시 그린다) ──
   const hdEl = listEl.querySelector(".ntc__hd"), bodyEl = listEl.querySelector(".ntc__body");
   const paintList = () => {
-    const shown = _filtered();
     const liveTab = _st.tab === "live", lv = liveTab ? _liveSegHTML() : "";   // (v4.7.0) 라이브공연 탭 = [공연별 | 날짜순]
+    const groupView = liveTab && _st.liveView === "group";
+    const shown = groupView ? _filtered().concat(_st.held).sort(_byDate) : _filtered();   // (v4.7.1) 공연별 묶음에만 지난 소식(held)을 더한다
     if (mode === "pc") {
       hdEl.innerHTML = _chipsHTML(c) + lv + _segHTML();
     } else {
       const label = _st.tab === "all" ? "전체" : CAT_NAME[_st.tab];
-      hdEl.innerHTML = `<div class="ntc__hd2"><span class="ntc__count">${_esc(label)} ${shown.length}건</span>${lv}${_segHTML()}</div>` + _utabsHTML(c);
+      const nNow = groupView ? shown.length - _st.held.length : shown.length;   // (v4.7.1) 지난 묶음 소식은 따로 센다
+      const held = groupView && _st.held.length ? ` · 지난 ${_st.held.length}` : "";
+      hdEl.innerHTML = `<div class="ntc__hd2"><span class="ntc__count">${_esc(label)} ${nNow}건${held}</span>${lv}${_segHTML()}</div>` + _utabsHTML(c);
     }
     hdEl.classList.toggle("has-lv", liveTab);
     bodyEl.innerHTML = !shown.length
       ? `<p class="ntc__none">이 분류의 소식이 없습니다.</p>`
-      : liveTab && _st.liveView === "group" ? _liveGroupsHTML(shown, mode)
+      : groupView ? _liveGroupsHTML(shown, mode)
       : mode === "pc" ? _groupsHTML(shown) : _cardsHTML(shown);
     listEl.style.setProperty("--ntc-hd-h", hdEl.getBoundingClientRect().height + "px");   // PC 날짜 칸이 분류 줄 아래에 붙게
     if (_st.open) applyListHeight();
@@ -691,7 +738,7 @@ function _build(section) {
     if (all) all.hidden = !open;
     applyListHeight();
     if (open) stop();
-    else { _popClose(); show(_st.idx % N, false); play(); }
+    else { _popClose(); if (N) show(_st.idx % N, false); play(); }
   };
   _st.setOpen = setOpen;
 

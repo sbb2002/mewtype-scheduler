@@ -279,13 +279,81 @@ def remove_notice(prev: dict, nid: str) -> tuple[dict, bool]:
     return out, True
 
 
+# (v4.7.1) 라이브공연 공연별 묶음 유지 — 묶음은 공연일 + LIVE_KEEP_DAYS 일의 24:00 KST 까지 남고, 그 안의 하위 소식은
+# 각자 기간(expires_at)이 지나도 묶음과 함께 내려간다(2026-10-23 운영자). 화면(js/notices.js _liveHolds)과 같은 규칙.
+LIVE_KEEP_DAYS = 7
+_LIVE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _norm_live(name) -> str:
+    """같은 공연 판정 — 전각/반각 · 대소문자 · 공백 · 괄호 · 구두점 무시(프론트 js/notices.js _liveKey 와 같은 규칙)."""
+    import unicodedata
+    return re.sub(r"[\s「」『』“”\"'’・·:：!！?？\-–—_.,、。☆★]", "", unicodedata.normalize("NFKC", str(name or "")).lower())
+
+
+def live_until(live_date: str | None) -> str | None:
+    """공연일(YYYY-MM-DD) → 공연별 묶음 유지 끝 = 공연일 + LIVE_KEEP_DAYS 일의 24:00 KST(UTC ISO). 형식이 틀리면 None."""
+    if not _LIVE_DATE_RE.match(str(live_date or "")):
+        return None
+    try:
+        d = datetime.fromisoformat(live_date).replace(tzinfo=_JST) + timedelta(days=LIVE_KEEP_DAYS + 1)
+    except ValueError:
+        return None
+    return d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _most_common(vals: list) -> str | None:
+    """가장 많이 나온 값(같으면 정렬상 앞선 값 — 날짜는 이른 날). 프론트 _mostCommon 과 같게."""
+    best, bn, cnt = None, 0, {}
+    for v in sorted(v for v in vals if v):
+        cnt[v] = cnt.get(v, 0) + 1
+    for v in sorted(cnt):
+        if cnt[v] > bn:
+            best, bn = v, cnt[v]
+    return best
+
+
+def _iso_dt(s: str | None):
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def live_group_key(n: dict) -> str:
+    """공연별 묶음 열쇠 — 라이브공연 분류이고 공연 이름이 있을 때만(없으면 빈 문자열 = 묶음 아님)."""
+    return _norm_live(n.get("live_name")) if "live" in (n.get("categories") or []) else ""
+
+
+def live_holds(notices: list[dict]) -> dict[str, str]:
+    """공연별 묶음마다 유지 끝(UTC ISO) — max(공연일 + 7일 24:00 KST, 하위 소식 expires_at 중 가장 늦은 것).
+    공연일이 없는 묶음은 하위 소식 중 가장 늦은 기간까지(전과 같음). 공연일 = 묶음 안에서 가장 많이 나온 live_date."""
+    groups: dict[str, list[dict]] = {}
+    for n in notices:
+        k = live_group_key(n)
+        if k:
+            groups.setdefault(k, []).append(n)
+    out = {}
+    for k, items in groups.items():
+        cands = [_iso_dt(live_until(_most_common([n.get("live_date") for n in items if _LIVE_DATE_RE.match(str(n.get("live_date") or ""))])))]
+        cands += [_iso_dt(n.get("expires_at")) for n in items]
+        cands = [c for c in cands if c]
+        if cands:
+            out[k] = max(cands).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return out
+
+
 def sweep_expired(prev: dict, archive: dict, now_iso: str) -> tuple[dict, dict, list[dict]]:
-    """expires_at 지난 소식 → notice_archive.json (archived_at 추가, id dedupe)."""
+    """expires_at 지난 소식 → notice_archive.json (archived_at 추가, id dedupe).
+    (v4.7.1) 라이브공연 공연별 묶음의 하위 소식은 묶음 유지 끝(`live_holds`)이 지나야 묶음째 옮긴다 —
+    그 전엔 자기 기간이 지나도 남는다(화면이 어둡게 「지난 소식」으로 보인다). expires_at 은 고치지 않는다."""
     prev = prev or default_notices()
     archive = archive or default_archive()
+    holds = live_holds(prev.get("notices", []))
     live, moved = [], []
     for n in prev.get("notices", []):
-        if _reached(n.get("expires_at"), now_iso):
+        k = live_group_key(n)
+        if _reached(holds[k] if k in holds else n.get("expires_at"), now_iso):
             moved.append(dict(n, archived_at=now_iso))
         else:
             live.append(n)
@@ -488,5 +556,42 @@ if __name__ == "__main__":
     assert ch and NE["notices"][0]["categories"] == ["live"] and NE["notices"][0]["live_name"] == "X" and "live_date" not in NE["notices"][0]
     assert summary_line(NE["notices"][0]).startswith("[라이브공연]"), summary_line(NE["notices"][0])
     print("[OK] categories · live_name · live_date (v4.7.0)")
+
+    # (v4.7.1) 라이브공연 공연별 묶음 유지 — 공연일 + 7일 24:00 KST 까지 하위 소식을 묶음째 남긴다
+    assert live_until("2026-12-24") == "2026-12-31T15:00:00Z", live_until("2026-12-24")   # 12-24 + 7일 = 12-31 24:00 KST
+    assert live_until(None) is None and live_until("12/24") is None
+    assert _norm_live("ＲＥＳＯ　ＮＥＸＴ") == _norm_live("RESONEXT")
+    def _lv(id_, date, exp, name="RESONEXT", ld="2026-12-24", cats=("live",)):
+        r = inc(id=id_, url=f"https://l/{id_}", title=f"t{id_}", date=date, expires_at=exp, categories=list(cats))
+        if name: r["live_name"] = name
+        if ld: r["live_date"] = ld
+        return r
+    LG = {"notices": [
+        _lv("a1", "2026-11-01", "2026-11-01T15:00:00Z"),                       # 티켓 선행(공연 전 기간 끝)
+        _lv("a2", "2026-12-24", "2026-12-24T15:00:00Z", name="ＲＥＳＯ ＮＥＸＴ"),  # 표기만 다른 같은 공연
+        _lv("a3", "2026-12-26", "2026-12-26T15:00:00Z", ld=None),               # 공연일 없는 하위 소식(묶음 공연일을 따름)
+        _lv("b1", "2026-11-05", "2026-11-05T15:00:00Z", name="X LIVE", ld=None),  # 공연일 미정 묶음
+        _lv("b2", "2026-11-09", "2026-11-09T15:00:00Z", name="X LIVE", ld=None),
+        _lv("c1", "2026-11-01", "2026-11-01T15:00:00Z", name=None, ld=None),    # 공연 이름 없음 = 묶음 아님
+        _lv("d1", "2026-11-01", "2026-11-01T15:00:00Z", cats=("goods",)),       # 라이브공연 아님 = 묶음 아님
+    ]}
+    H = live_holds(LG["notices"])
+    assert H == {_norm_live("RESONEXT"): "2026-12-31T15:00:00Z", _norm_live("X LIVE"): "2026-11-09T15:00:00Z"}, H
+    def _ids(d): return sorted(n["id"] for n in d["notices"])
+    s1, a1, mv = sweep_expired(LG, default_archive(), "2026-11-02T00:00:00Z")   # a1 · c1 · d1 기간 지남
+    assert _ids(s1) == ["a1", "a2", "a3", "b1", "b2"] and sorted(m["id"] for m in mv) == ["c1", "d1"], (_ids(s1), mv)
+    s2, a2, mv = sweep_expired(s1, a1, "2026-11-06T00:00:00Z")                  # b1 기간 지남 · 묶음(11-09)은 유지
+    assert _ids(s2) == ["a1", "a2", "a3", "b1", "b2"] and not mv
+    s3, a3, mv = sweep_expired(s2, a2, "2026-11-09T15:00:00Z")                  # 공연일 미정 묶음 = 마지막 하위 소식과 함께
+    assert _ids(s3) == ["a1", "a2", "a3"] and sorted(m["id"] for m in mv) == ["b1", "b2"]
+    s4, a4, mv = sweep_expired(s3, a3, "2026-12-31T14:59:59Z")                  # 공연 + 7일 23:59:59 KST — 아직 남음
+    assert _ids(s4) == ["a1", "a2", "a3"] and not mv
+    assert s4["notices"][0]["expires_at"] == "2026-11-01T15:00:00Z", "자기 기간(expires_at)은 그대로 — 화면이 지난 소식으로 어둡게"
+    s5, a5, mv = sweep_expired(s4, a4, "2026-12-31T15:00:00Z")                  # 공연 + 7일 24:00 — 묶음째
+    assert not s5["notices"] and sorted(m["id"] for m in mv) == ["a1", "a2", "a3"]
+    assert {n["id"] for n in a5["notices"]} == {"a1", "a2", "a3", "b1", "b2", "c1", "d1"}
+    LT = {"notices": [_lv("e1", "2027-03-01", "2027-03-01T15:00:00Z", ld="2026-12-24")]}   # 하위 소식 기간이 공연 + 7일보다 늦으면 그때까지
+    assert live_holds(LT["notices"]) == {_norm_live("RESONEXT"): "2027-03-01T15:00:00Z"}
+    print("[OK] 라이브공연 공연별 묶음 유지 (v4.7.1)")
 
     print("\nSUCCESS: notices.py smoke test 통과")

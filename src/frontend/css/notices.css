@@ -152,6 +152,7 @@
                    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ntc-dsoon) 55%, transparent); }
 .ntc__dd.d-far   { color: var(--color-text-muted); box-shadow: inset 0 0 0 1px var(--color-border); }
 .ntc__dd.d-none  { color: var(--color-text-muted); }
+.ntc__dd.d-past  { color: var(--color-text-faint); box-shadow: inset 0 0 0 1px var(--color-border); }   /* (v4.7.1) 팝업 — 기간 지난 묶음 하위 소식 */
 
 /* ── 제목 · 출처 ── */
 .ntc__ttl {
@@ -324,6 +325,12 @@ a.ntc__src:hover { color: var(--color-text); }
   font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
   color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
 }
+/* (v4.7.1) 기간 지난 하위 소식 — 묶음이 내려갈 때까지 남되 글자를 어둡게(밝게 테마에선 옅게) */
+.ntc__lrow.is-past .ntc__ttl, .ntc__lrow.is-past .ntc__ldate, .ntc__lrow.is-past .ntc__ltime,
+.ntc__lrow.is-past .ntc__meta { color: var(--color-text-faint); }
+.ntc__lrow.is-past .ntc__ttl { font-weight: 400; }
+.ntc__lrow.is-past .ntc__ldot { background: transparent; box-shadow: inset 0 0 0 1px var(--color-text-faint); }
+.ntc__lrow.is-past .ntc__lchip { color: var(--color-text-faint); background: color-mix(in srgb, var(--color-text-faint) 14%, transparent); }
 @media (prefers-reduced-motion: reduce) { .ntc__lgchev { transition: none; } }
 
 @media (max-width: 767px) {
