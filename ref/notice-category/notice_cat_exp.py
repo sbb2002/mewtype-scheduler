@@ -163,8 +163,12 @@ def hbuild():
     items = {i["id"]: i for i in json.load(open(os.path.join(data, "holdout_items.json"), encoding="utf-8"))}
     labels = json.load(open(os.path.join(data, "holdout_labels_2026-10-23.json"), encoding="utf-8"))
     gold = []
+    import re
     for lid, d in labels.items():
         i = items[lid]
+        # (v4.7.0 배포 뒤) 리포스트 표시(본문이 「RT @…:」/「@…:」)가 있는 글은 운영 코드가 LLM 없이 기타로 정한다(10-23 운영자 결정) — LLM 채점에서 뺀다
+        if re.match(r"^\s*(?:RT\s+)?@\w{1,15}\s*[:：]", i.get("body") or ""):
+            continue
         cats = [c for c in d["cats"] if c in CATS]
         gold.append({"n": i["n"], "id": lid, "gold": sorted(cats), "title": i["title"], "body": i["body"], "note": d.get("note") or ""})
     gold.sort(key=lambda g: g["n"])

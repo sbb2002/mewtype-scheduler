@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 2,
+ "ns": [
+  109,
+  114,
+  117,
+  118,
+  119,
+  120,
+  122,
+  125,
+  127
+ ],
+ "sec": 3.2,
+ "usage": {
+  "queue_time": 0.267286769,
+  "prompt_tokens": 1860,
+  "prompt_time": 0.07912057,
+  "completion_tokens": 1279,
+  "completion_time": 2.677504683,
+  "total_tokens": 3139,
+  "total_time": 2.756625253,
+  "completion_tokens_details": {
+   "reasoning_tokens": 440
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "987",
+  "x-ratelimit-remaining-tokens": "4697",
+  "x-ratelimit-reset-requests": "18m43.2s",
+  "x-ratelimit-reset-tokens": "24.772s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 109,\n      \"cats\": [],\n      \"evidence\": [],\n      \"reason\": \"프로필 및 콜라보 안내만 포함되어 있어 라이브·오프라인 행사·굿즈·방송에 해당하지 않는다.\"\n    },\n    {\n      \"n\": 114,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"千石ユノ生誕記念配信決定！\",\n        \"千石ユノ 個人YouTubeチャンネルにて配信！\"\n      ],\n      \"reason\": \"멤버의 생일을 기념한 유튜브 생방송이므로 broadcast에 해당한다.\"\n    },\n    {\n      \"n\": 117,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"千石ユノ、 新潟グランプリに出演決定！\",\n        \"新潟グランプリに千石ユノの出演が決定✨\"\n      ],\n      \"reason\": \"멤버가 오프라인 행사인 ‘新潟グランプリ’에 출연하는 일정이므로 event이다.\"\n    },\n    {\n      \"n\": 118,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"チケット一般発売 明日開始\",\n        \"11/21(土)開催\",\n        \"💪集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜\"\n      ],\n      \"reason\": \"공연 티켓 판매 안내이며, 실제 무대가 열리는 라이브 공연이므로 live에 해당한다.\"\n    },\n    {\n      \"n\": 119,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜\",\n        \"プレイガイド先行 本日受付終了\",\n        \"🎫お申し込みはこちら\"\n      ],\n      \"reason\": \"라이브 공연 티켓 사전 판매 안내이므로 live에 해당한다.\"\n    },\n    {\n      \"n\": 120,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"アニメ・スタいしかわ 2026 夢限大みゅーたいぷ出演決定！スペシャルトークショー開催\",\n        \"11/29(日) 16:30より、スペシャルトークショーを実施✨\"\n      ],\n      \"reason\": \"오프라인 행사인 토크쇼 일정이므로 event에 해당한다.\"\n    },\n    {\n      \"n\": 122,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"YUNO’s PARTY Lv.3 開催決定！\",\n        \"千石ユノ主催DJイベント 「YUNO’s PARTY Lv.3」 開催決定！\"\n      ],\n      \"reason\": \"멤버가 주최하는 DJ 파티는 오프라인 행사이므로 event에 해당한다.\"\n    },\n    {\n      \"n\": 125,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"12/16(水)発売\",\n        \"TVアニメ「バンドリ！ ゆめ∞みた」 Blu-ray 上下巻\",\n        \"同時購入キャンペーンも開催中✨\"\n      ],\n      \"reason\": \"Blu-ray 발매 및 구매 캠페인 안내이므로 goods에 해당한다.\"\n    },\n    {\n      \"n\": 127,\n      \"cats\": [\"live\"],\n      \"evidence\": [\n        \"チケット一般発売 明日開始\",\n        \"12/24(木)開催\",\n        \"NAKAMACHI ARALE LIVE 2026 「RESONEXT」\"\n      ],\n      \"reason\": \"라이브 공연 티켓 판매 안내이므로 live에 해당한다.\"\n    }\n  ]\n}"
+}

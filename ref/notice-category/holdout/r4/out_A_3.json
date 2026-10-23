@@ -1,0 +1,33 @@
+{
+ "variant": "A",
+ "batch": 3,
+ "ns": [
+  128,
+  129
+ ],
+ "sec": 1.1,
+ "usage": {
+  "queue_time": 0.010550197,
+  "prompt_tokens": 1410,
+  "prompt_time": 0.018320388,
+  "completion_tokens": 399,
+  "completion_time": 0.828204262,
+  "total_tokens": 1809,
+  "total_time": 0.84652465,
+  "prompt_tokens_details": {
+   "cached_tokens": 1024
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 163
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "990",
+  "x-ratelimit-remaining-tokens": "5182",
+  "x-ratelimit-reset-requests": "14m24s",
+  "x-ratelimit-reset-tokens": "21.135s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 128,\n      \"cats\": [\n        \"goods\"\n      ],\n      \"evidence\": [\n        \"「特典CD」1枚(全5種)をプレゼント\",\n        \"「新宿着陸計画」DAY2のライブ音源1曲を収録した\"\n      ],\n      \"reason\": \"앨범 발매와 함께 제공되는 특전 CD는 판매·예약·특전 안내에 해당하므로 goods 로 분류한다.\"\n    },\n    {\n      \"n\": 129,\n      \"cats\": [\n        \"event\"\n      ],\n      \"evidence\": [\n        \"みやこのアトリエ開催決定！\",\n        \"日程:2027年3月20日(土) 会場:学校法人片柳学園 日本工学院専門学校 片柳記念ホール\"\n      ],\n      \"reason\": \"멤버 미야코가 진행하는 오프라인 아틀리에 행사이므로 event 로 분류한다.\"\n    }\n  ]\n}"
+}

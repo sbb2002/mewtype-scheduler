@@ -1,0 +1,37 @@
+{
+ "variant": "A",
+ "batch": 0,
+ "ns": [
+  62,
+  64,
+  70,
+  77,
+  78,
+  80,
+  83,
+  87,
+  97
+ ],
+ "sec": 3.4,
+ "usage": {
+  "queue_time": 0.01673434,
+  "prompt_tokens": 2175,
+  "prompt_time": 0.130549762,
+  "completion_tokens": 1443,
+  "completion_time": 3.004256943,
+  "total_tokens": 3618,
+  "total_time": 3.134806705,
+  "completion_tokens_details": {
+   "reasoning_tokens": 268
+  }
+ },
+ "ratelimit": {
+  "x-ratelimit-limit-requests": "1000",
+  "x-ratelimit-limit-tokens": "8000",
+  "x-ratelimit-remaining-requests": "989",
+  "x-ratelimit-remaining-tokens": "4382",
+  "x-ratelimit-reset-requests": "15m50.4s",
+  "x-ratelimit-reset-tokens": "27.134s"
+ },
+ "content": "{\n  \"results\": [\n    {\n      \"n\": 62,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ\",\n        \"🛸#ゆめみた 5th Single 「これはぼくたちの生存のあらすじ」🛸\",\n        \"📌Apple Music [Pre-add]\",\n        \"📌Spotify [Pre-save] していただいた方に オリジナル「スマホ壁紙」をプレゼント🎁✨\"\n      ],\n      \"reason\": \"싱글 사전 예약 및 오리지널 벽지 제공은 음원·굿즈 판매·특전 안내에 해당한다.\"\n    },\n    {\n      \"n\": 64,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"ゆめみた 全員集合！ バンドリ！アワーノーツ リリース記念生配信\",\n        \"＼生配信まであと1⃣時間／\",\n        \"🔗https://www.youtube.com/watch?v=dRUOZpog1Dk\"\n      ],\n      \"reason\": \"리리스를 기념한 생방송 스트리밍은 방송에 해당한다.\"\n    },\n    {\n      \"n\": 70,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念ムービー公開決定\",\n        \"本日21:00よりプレミア公開🎉\",\n        \"📺https://youtu.be/ojgoIwE1fL0\"\n      ],\n      \"reason\": \"리리스를 기념한 영상 프리미어 공개는 방송(온라인 스트리밍)으로 분류한다.\"\n    },\n    {\n      \"n\": 77,\n      \"cats\": [],\n      \"evidence\": [\n        \"プレミア公開 動画を投稿します〜ののちゃんクイズ\",\n        \"10/1 18:00〜プレミア公開\",\n        \"動画を投稿します🎶\"\n      ],\n      \"reason\": \"퀴즈 영상 게시는 라이브·이벤트·굿즈·방송 어느 카테고리에도 해당되지 않는다.\"\n    },\n    {\n      \"n\": 78,\n      \"cats\": [\"broadcast\"],\n      \"evidence\": [\n        \"ゆめみた 東京公演 FINAL ライブ映像 同時視聴生配信\",\n        \"10/11(日)に東京ガーデンシアターにて開催する 過去最大規模の単独ライブもお見逃しなく✨\",\n        \"📺アーカイブはこちら https://youtube.com/live/dTqZ7duxoHY\"\n      ],\n      \"reason\": \"라이브 공연 영상을 동시 시청 생중계 형태로 제공하는 것은 방송에 해당한다.\"\n    },\n    {\n      \"n\": 80,\n      \"cats\": [],\n      \"evidence\": [\n        \"アニメ『ゆめみた』がTOKYO MXで週2回再放送決定！\",\n        \"TOKYO MXほかにて週2回の再放送が決定\",\n        \"10/1(木)23:00より毎週木曜\"\n      ],\n      \"reason\": \"애니메이션 재방송은 멤버가 직접 출연하는 방송이 아니므로 해당되지 않는다.\"\n    },\n    {\n      \"n\": 83,\n      \"cats\": [\"live\", \"goods\"],\n      \"evidence\": [\n        \"【ライブ情報】#バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」\",\n        \"当日のグッズ販売情報を公開しました✨\",\n        \"チケットトレードの受付も決定\"\n      ],\n      \"reason\": \"공연 일정 안내와 당일 굿즈 판매 정보가 모두 포함돼 라이브와 굿즈 두 카테고리에 해당한다.\"\n    },\n    {\n      \"n\": 87,\n      \"cats\": [\"event\"],\n      \"evidence\": [\n        \"リリースイベントにつきまして\",\n        \"明日10/4(日) ヨドバシカメラマルチメディアAkibaにて開催の 夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」 リリースイベント\",\n        \"峰月律が体調不良につき、大事を取って出演をキャンセルさせていただきます。\"\n      ],\n      \"reason\": \"싱글 발매와 연계된 오프라인 리리즈 이벤트 안내이므로 이벤트에 해당한다.\"\n    },\n    {\n      \"n\": 97,\n      \"cats\": [\"goods\"],\n      \"evidence\": [\n        \"チケット特典引き換えのお知らせ\",\n        \"特典の引き換えは、チケットのグッズ引換券にて実施いたします。\",\n        \"引換場所 東京ガーデンシアター 3Fバルコニーゲート付近 特典引換所\"\n      ],\n      \"reason\": \"공연 티켓 특전(굿즈) 교환 안내는 굿즈 카테고리에 해당한다.\"\n    }\n  ]\n}"
+}
