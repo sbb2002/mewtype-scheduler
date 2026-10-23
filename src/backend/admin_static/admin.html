@@ -1323,13 +1323,12 @@
                     </div>
                     <div class="ing-row2">
                         <div><label for="n-date">날짜</label><input type="date" id="n-date"></div>
-                        <div><label for="n-cat">분류</label>
-                            <select id="n-cat">
-                                <option value="live">라이브 예고</option>
-                                <option value="release">음반 · 굿즈</option>
-                                <option value="platform">타 플랫폼</option>
-                                <option value="etc" selected>기타</option>
-                            </select></div>
+                        <div><label>분류 (여럿 고를 수 있음)</label>
+                            <div class="chips" id="n-cats" aria-label="분류"></div></div>
+                    </div>
+                    <div class="ing-row2" id="n-live-row" hidden>
+                        <div><label for="n-live-name">공연 이름</label><input type="text" id="n-live-name" placeholder="예: DIMENSIONAL OVERLAP" autocomplete="off"></div>
+                        <div><label for="n-live-date">공연일</label><input type="date" id="n-live-date"></div>
                     </div>
                     <div><label for="n-url">URL (선택)</label><input type="text" id="n-url" placeholder="https://" autocomplete="off"></div>
                 </div>
@@ -2581,7 +2580,7 @@
                     .map((k) => [k, (this.channels[k] || {}).name_ko || k]));
                 let chips = null;
                 if (u.sub === "notices") {
-                    chips = this.cxChips([["all", "전체"], ["live", "라이브예고"], ["release", "음반·굿즈"], ["platform", "타 플랫폼"], ["etc", "기타"]], u.nCat,
+                    chips = this.cxChips([["all", "전체"], ...this.NTC_CATS], u.nCat,
                         (k) => { u.nCat = k; u.limit.notices = 8; u.open.n = null; u.sel.n = null; this.renderContentAll(); });
                 } else if (u.sub === "tweets") {
                     chips = this.cxChips(unitOpts, u.tUnit,
@@ -3116,6 +3115,41 @@
             },
 
             // 멤버 칩 — main: 선택 강조(단일 선택), disabled(k): 선택 불가 표시
+            // (v4.7.0) 소식 분류 — 라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿, Our Notes · 기타는 단독.
+            // categories 가 없는 옛 줄은 옛 category 를 바꿔 읽는다(프론트 js/notices.js _cats 와 같은 규칙).
+            NTC_CATS: [["live", "라이브공연"], ["event", "오프라인행사"], ["goods", "음원·굿즈"], ["broadcast", "방송"], ["game", "Our Notes"], ["etc", "기타"]],
+            ntcCats(n) {
+                const ids = this.NTC_CATS.map((c) => c[0]);
+                const c = n && Array.isArray(n.categories) ? ids.filter((k) => n.categories.includes(k)) : [];
+                if (c.length) return c;
+                if (n && /^@?bang_dream_on$/i.test(String(n.src_handle || "").trim())) return ["game"];
+                const old = n && n.category;
+                return [({ live: "broadcast", release: "goods", platform: "etc" })[old] || (ids.includes(old) ? old : "etc")];
+            },
+            ntcCatNames(n) {
+                const name = Object.fromEntries(this.NTC_CATS);
+                return this.ntcCats(n).map((k) => name[k]).join(" · ") + (Array.isArray(n && n.categories) && n.categories.length ? "" : " (옛 분류)");
+            },
+            // 분류 칩 — set(선택한 분류)을 고치고 onChange(). Our Notes · 기타를 고르면 나머지를 끄고, 다른 분류를 고르면 둘을 끈다
+            drawCatChips(box, set, onChange) {
+                box.textContent = "";
+                for (const [k, label] of this.NTC_CATS) {
+                    const b = document.createElement("button");
+                    b.type = "button";
+                    b.className = "chip";
+                    b.textContent = label;
+                    b.setAttribute("aria-pressed", String(set.has(k)));
+                    b.addEventListener("click", () => {
+                        if (set.has(k)) set.delete(k);
+                        else if (k === "game" || k === "etc") { set.clear(); set.add(k); }
+                        else { set.delete("game"); set.delete("etc"); set.add(k); }
+                        this.drawCatChips(box, set, onChange);
+                        onChange && onChange();
+                    });
+                    box.appendChild(b);
+                }
+            },
+
             drawChips(box, isOn, onClick, opts = {}) {
                 box.textContent = "";
                 const add = (key, label, extra) => {
@@ -3176,6 +3210,14 @@
                     { disabled: (k) => k === s.host });
                 this.drawChips(document.getElementById("t-host"), (k) => s.thost === k,
                     (k) => { s.thost = k; redraw(); }, { main: true });
+                if (!s.ncats) s.ncats = new Set(["etc"]);     // (v4.7.0) 수동 소식 분류(복수)
+                this.drawCatChips(document.getElementById("n-cats"), s.ncats, () => this.resetIngestPreview());
+                document.getElementById("n-live-row").hidden = !s.ncats.has("live");
+                const nc = document.getElementById("n-cats");
+                if (!nc.dataset.wired) {            // 라이브공연을 고르거나 끄면 공연 이름 · 공연일 칸을 보이거나 숨긴다
+                    nc.dataset.wired = "1";
+                    nc.addEventListener("click", () => { document.getElementById("n-live-row").hidden = !s.ncats.has("live"); });
+                }
             },
 
             updateIngestForm() {
@@ -3385,7 +3427,8 @@
                     return {
                         endpoint: "/ingest_notice_manual",
                         body: { title: v("n-title"), title_ko: v("n-title-ko"), date: v("n-date") || null,
-                                category: v("n-cat"), url: v("n-url"), confirm: false },
+                                categories: [...(this.ing.ncats || ["etc"])], url: v("n-url"), confirm: false,
+                                live_name: v("n-live-name"), live_date: v("n-live-date") || null },
                     };
                 }
                 return {
@@ -3438,7 +3481,6 @@
                 const box = document.getElementById("ingest-preview-content");
                 box.textContent = "";
                 const nameOf = (k) => (this.channels[k] || {}).name_ko || k || "?";
-                const CAT = { live: "라이브 예고", release: "음반 · 굿즈", platform: "타 플랫폼", etc: "기타" };
                 const line = (label, value) => {
                     if (value === undefined || value === null || value === "") return;
                     const d = document.createElement("div");
@@ -3500,7 +3542,8 @@
                     line("제목", tl.title_ko || p.title_ko || p.title);
                     line("원문 제목", tl.title_ja || p.title);
                     line("날짜", p.date);
-                    line("분류", CAT[p.category] || p.category);
+                    line("분류", this.ntcCatNames(p));
+                    line("공연", [p.live_name, p.live_date].filter(Boolean).join(" · "));
                     line("URL", p.url);
                     if (pv && pv.dup_id) {
                         const w = document.createElement("div");
@@ -3646,6 +3689,14 @@
                 try {
                     const { endpoint, body, kind } = this.ingestPreviewData;
                     const send = { ...body, confirm: true };
+                    if (endpoint === "/ingest_notice_raw") {        // (v4.7.0) 미리보기에서 판정한 분류 · 공연 이름을 그대로 올린다
+                        const pp = ((this.ingestPreviewData.result || {}).preview || {}).parsed || {};
+                        if (Array.isArray(pp.categories) && pp.categories.length) {
+                            send.categories = pp.categories;
+                            send.live_name = pp.live_name || null;
+                            send.live_date = pp.live_date || null;
+                        }
+                    }
                     const chg = this.ingestPreviewData.result.change;
                     if (chg && (chg.action === "del" || chg.action === "edit")) {
                         send.change_ids = [...document.querySelectorAll("#ingest-preview-content .chg-cb:checked")]
@@ -3669,7 +3720,7 @@
                         }
                         // 입력 비우기(호스트 · 날짜 · 분류는 다음 입력을 위해 유지)
                         for (const id of ["a-raw", "a-turl", "m-title", "m-title-ko", "m-url", "n-title", "n-title-ko",
-                                          "n-url", "t-url", "t-text", "t-text-ko"]) {
+                                          "n-url", "n-live-name", "n-live-date", "t-url", "t-text", "t-text-ko"]) {
                             document.getElementById(id).value = "";
                         }
                         document.getElementById("a-count").textContent = "0자";
@@ -3998,8 +4049,6 @@
                 container.classList.remove("loading");
                 container.textContent = "";
                 const u = this.ui;
-                const CAT = { live: "라이브예고", release: "음반·굿즈", platform: "타 플랫폼", etc: "기타" };
-
                 const all = (this.data.notices && this.data.notices.notices) || [];
                 if (!all.length) {
                     container.appendChild(this.cxEmpty("소식 없음"));
@@ -4007,7 +4056,7 @@
                     return;
                 }
                 const q = u.qc.trim().toLowerCase();
-                const items = all.filter((n) => (u.nCat === "all" || n.category === u.nCat) &&
+                const items = all.filter((n) => (u.nCat === "all" || this.ntcCats(n).includes(u.nCat)) &&
                     (!q || [n.title_ko, n.title, n.body_ko].join("\n").toLowerCase().includes(q)));
                 if (!items.length) {
                     container.appendChild(this.cxEmpty("조건에 맞는 소식이 없습니다."));
@@ -4032,7 +4081,8 @@
                 const rows = [];
                 const addRow = (n) => {
                     const lead = this.cxEl("span", "badge badge-end", dated(n) ? n.date.slice(5, 10).replace("-", "/") : "—");
-                    const metas = [this.cxEl("span", "badge badge-end", CAT[n.category] || "기타")];
+                    const metas = [this.cxEl("span", "badge badge-end", this.ntcCatNames(n))];
+                    if (n.live_name) metas.push(this.cxEl("span", "badge badge-end", n.live_name));
                     const title = n.title_ko || n.title || "제목 없음";
                     const bodyFn = () => {
                         let full = n.url || "";
@@ -4041,7 +4091,8 @@
                         return this.cxBody({
                             orig: n.title_ko && n.title && n.title_ko !== n.title ? n.title : "",
                             extra,
-                            kv: [["날짜", n.date || "날짜 없음"], ["시각", n.time || ""], ["분류", CAT[n.category] || "기타"],
+                            kv: [["날짜", n.date || "날짜 없음"], ["시각", n.time || ""], ["분류", this.ntcCatNames(n)],
+                                ["공연", [n.live_name, n.live_date].filter(Boolean).join(" · ")],
                                 ["주소", n.url ? this.displayUrl(n.url, 60) : "", full],
                                 ["트윗", n.tweet_url || ""]],
                             onEdit: () => this.editNotice(n),
@@ -4129,7 +4180,11 @@
                         body_ko: notice.body_ko ?? "",
                         date: notice.date,
                         url: notice.url,
+                        categories: this.ntcCats(notice).join(","),
+                        live_name: notice.live_name || "",
+                        live_date: notice.live_date || "",
                     },
+                    cats: new Set(this.ntcCats(notice)),
                 };
 
                 const form = document.getElementById("edit-modal-form");
@@ -4151,6 +4206,38 @@
                 dateGroup.appendChild(dateLabel);
                 dateGroup.appendChild(dateInput);
                 form.appendChild(dateGroup);
+
+                // (v4.7.0) 분류(여럿) + 공연 이름 · 공연일(라이브공연일 때)
+                const catGroup = document.createElement("div");
+                catGroup.className = "form-group";
+                const catLabel = document.createElement("label");
+                catLabel.textContent = Array.isArray(notice.categories) && notice.categories.length
+                    ? "분류 (여럿 고를 수 있음)" : "분류 (여럿 고를 수 있음) — 지금은 옛 분류를 바꿔 읽은 값";
+                const catBox = document.createElement("div");
+                catBox.className = "chips";
+                catGroup.appendChild(catLabel);
+                catGroup.appendChild(catBox);
+                form.appendChild(catGroup);
+                const liveGroup = document.createElement("div");
+                liveGroup.className = "form-group";
+                const liveLabel = document.createElement("label");
+                liveLabel.textContent = "공연 이름 · 공연일 (라이브공연 탭에서 같은 공연끼리 묶음)";
+                const liveName = document.createElement("input");
+                liveName.type = "text";
+                liveName.id = "edit-notice-live-name";
+                liveName.placeholder = "예: DIMENSIONAL OVERLAP";
+                liveName.value = notice.live_name || "";
+                const liveDate = document.createElement("input");
+                liveDate.type = "date";
+                liveDate.id = "edit-notice-live-date";
+                liveDate.value = notice.live_date || "";
+                liveGroup.appendChild(liveLabel);
+                liveGroup.appendChild(liveName);
+                liveGroup.appendChild(liveDate);
+                form.appendChild(liveGroup);
+                const syncLive = () => { liveGroup.hidden = !this.editState.cats.has("live"); };
+                this.drawCatChips(catBox, this.editState.cats, syncLive);
+                syncLive();
 
                 // URL
                 const urlGroup = document.createElement("div");
@@ -4333,6 +4420,17 @@
                     const bodyKo = document.getElementById("edit-notice-body-ko");
                     if (bodyKo && bodyKo.value.trim() !== (seen.body_ko || "")) {
                         patch.body_ko = bodyKo.value.trim();
+                    }
+
+                    // (v4.7.0) 분류 · 공연 이름 · 공연일 — 라이브공연이 아니면 서버가 공연 이름 · 공연일을 지운다
+                    const cats = this.NTC_CATS.map((c) => c[0]).filter((k) => this.editState.cats.has(k));
+                    if (!cats.length) { this.showToast("분류를 하나 이상 고르세요", "error"); return; }
+                    if (cats.join(",") !== seen.categories) patch.categories = cats;
+                    if (cats.includes("live")) {
+                        const ln = document.getElementById("edit-notice-live-name").value.trim();
+                        const ld = document.getElementById("edit-notice-live-date").value;
+                        if (ln !== seen.live_name) patch.live_name = ln;
+                        if (ld !== seen.live_date) patch.live_date = ld;
                     }
 
                     if (Object.keys(patch).length === 0) {

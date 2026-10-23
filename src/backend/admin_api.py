@@ -924,14 +924,24 @@ def _ingest_preview_raw_core(raw: str, *, confirm: bool, channel_key: str | None
     return _record("ingest_preview", channel_key, "개인 예고(URL 없음)", res)
 
 
-def ingest_notice_raw(raw: str, *, confirm: bool) -> dict:
-    """소식 원문 투입. confirm=False → 미리보기 {"ok", "preview": {소식 항목}}."""
+def ingest_notice_raw(raw: str, *, confirm: bool, categories: list | None = None,
+                      live_name: str | None = None, live_date: str | None = None) -> dict:
+    """소식 원문 투입. confirm=False → 미리보기 {"ok", "preview": {소식 항목}}.
+    (v4.7.0) 확정 때 미리보기의 분류 · 공연 이름 · 공연일(categories · live_name · live_date)을 같이 보내면 그대로 쓴다(LLM 다시 안 부름)."""
     t = _t()
     raw = (raw or "").strip()
     now = _now_iso()
     gh = _store()
+    cats, err = _notice_cats_arg(categories)
+    if err:
+        return _err(err)
+    if live_date and not _DATE_RE.match(live_date):
+        return _err("공연일 형식이 올바르지 않습니다")
     # (v4.6.2) 운영자 수동 투입 — 시점 판정(소감 · 보고인가)은 미리보기에서만 보여 주고(Groq 1회), 확정은 판정 없이 그대로 올린다
-    prepared = t._prepare_notice(raw, now, gh=gh, timing="off" if confirm else "show") if raw else None
+    prepared = t._prepare_notice(raw, now, gh=gh, timing="off" if confirm else "show",
+                                 categories=cats if confirm else None) if raw else None
+    if prepared and confirm and cats:
+        _set_live(prepared["parsed"], cats, live_name, live_date)
     if not prepared:
         return _err("소식으로 인식되지 않았습니다 (리트윗 · 스케줄 형식 · 날짜 없음 등)")
     if not confirm:
@@ -1046,7 +1056,31 @@ def ingest_tweet_url(url: str, *, confirm: bool, force_unit: str | None = None, 
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _TIME_RE = re.compile(r"^\d{1,2}:\d{2}$")
-_NOTICE_CATS = ("live", "release", "platform", "etc")
+_NOTICE_CATS = ("live", "release", "platform", "etc")          # 옛 분류(category, 정규식 4종) — 수동 입력의 옛 인자 호환
+_NOTICE_NEW_CATS = ("live", "event", "goods", "broadcast", "game", "etc")   # (v4.7.0) categories — telegram_app.NOTICE_CATS
+
+
+def _notice_cats_arg(categories) -> tuple[list | None, str | None]:
+    """(v4.7.0) 관리 페이지가 보낸 분류 목록 검사 → (정렬된 목록 | None, 오류 문구 | None). game · etc 는 단독만."""
+    if categories in (None, "", []):
+        return None, None
+    if not isinstance(categories, list) or any(c not in _NOTICE_NEW_CATS for c in categories):
+        return None, "분류가 올바르지 않습니다"
+    cats = [c for c in _NOTICE_NEW_CATS if c in categories]
+    if len(cats) > 1 and ({"game", "etc"} & set(cats)):
+        return None, "Our Notes · 기타는 다른 분류와 함께 고를 수 없습니다"
+    return cats, None
+
+
+def _set_live(parsed: dict, cats: list | None, live_name: str | None, live_date: str | None) -> None:
+    """(v4.7.0) 공연 이름 · 공연일 — 라이브공연일 때만 남긴다."""
+    for k in ("live_name", "live_date"):
+        parsed.pop(k, None)
+    if cats and "live" in cats:
+        if (live_name or "").strip():
+            parsed["live_name"] = live_name.strip()[:80]
+        if live_date:
+            parsed["live_date"] = live_date
 
 
 def _host_ok(chs: dict, key: str | None) -> bool:
@@ -1121,7 +1155,8 @@ def ingest_preview_manual(*, host: str, date: str, title: str, confirm: bool, co
 
 
 def ingest_notice_manual(*, title: str, confirm: bool, date: str | None = None, category: str = "etc",
-                         url: str = "", title_ko: str = "") -> dict:
+                         url: str = "", title_ko: str = "", categories: list | None = None,
+                         live_name: str = "", live_date: str | None = None) -> dict:
     """(v4a) 소식 수동 입력 — 제목 · 날짜 · 분류 · URL 을 직접 넣는다. 한글 제목을 비우면 자동 번역(needs_tl).
     미리보기 형태는 원문 투입과 같다({"parsed","tl","dup_id"})."""
     import hashlib
@@ -1133,6 +1168,11 @@ def ingest_notice_manual(*, title: str, confirm: bool, date: str | None = None, 
         return _err("날짜 형식이 올바르지 않습니다")
     if category not in _NOTICE_CATS:
         return _err("분류가 올바르지 않습니다")
+    cats, err = _notice_cats_arg(categories)        # (v4.7.0) 새 분류(복수)
+    if err:
+        return _err(err)
+    if live_date and not _DATE_RE.match(live_date):
+        return _err("공연일 형식이 올바르지 않습니다")
     if url and not re.match(r"^https?://", url):
         return _err("URL 은 http(s):// 로 시작해야 합니다")
     now = _now_iso()
@@ -1147,6 +1187,9 @@ def ingest_notice_manual(*, title: str, confirm: bool, date: str | None = None, 
         "anchor_a": anchor_a, "anchor_b": None, "title_slug": xn._title_slug(title),
         "expires_at": xn._expires_at(date, None, now, now_jst),
     }
+    if cats:
+        parsed["categories"] = cats
+        _set_live(parsed, cats, live_name, live_date)
     gh = _store()
     dup_id = None
     try:
@@ -1215,14 +1258,34 @@ def edit_notice(nid: str, patch: dict) -> dict:
     URL → site · anchor_a, 제목 → title_slug). 전엔 값만 덮어써 날짜를 바꿔도 옛 날짜 기준으로 만료됐다.
     제목(원문·한글)을 고치면 자동 번역을 끈다(needs_tl=False). 한글 빈 문자열 = 번역 없음.
     (v4.0.5) body_ko = 본문(트윗 원문) 한글 번역. 원문은 읽기 전용. 비우면 None 으로 — 다음 정기 수집이 다시 자동 번역한다."""
-    patch = {k: v for k, v in (patch or {}).items() if k in ("title", "title_ko", "body_ko", "date", "url")}
+    patch = {k: v for k, v in (patch or {}).items()
+             if k in ("title", "title_ko", "body_ko", "date", "url", "categories", "live_name", "live_date")}
     if not patch:
         return _err("바꿀 필드가 없습니다")
+    # (v4.7.0) 분류 · 공연 이름 · 공연일 — 운영자가 LLM 판정을 고친다. 공연 이름 · 공연일은 빈 값이면 지움(None)
+    extra = {}
+    if "categories" in patch:
+        cats, err = _notice_cats_arg(patch.pop("categories"))
+        if err or not cats:
+            return _err(err or "분류를 하나 이상 고르세요")
+        extra["categories"] = cats
+    for k in ("live_name", "live_date"):
+        if k in patch:
+            v = (patch.pop(k) or "").strip() or None
+            if k == "live_date" and v and not _DATE_RE.match(v):
+                return _err("공연일 형식이 올바르지 않습니다")
+            extra[k] = v[:80] if v and k == "live_name" else v
     row = next((n for n in list_notices().get("notices", []) if n.get("id") == nid), None)
     if row is None:
         return _err("소식이 없습니다")
     t = _t()
-    full = t._notice_edit_finalize({k: v for k, v in patch.items() if k not in ("title_ko", "body_ko")}, row, _now_iso())
+    full = t._notice_edit_finalize({k: v for k, v in patch.items() if k not in ("title_ko", "body_ko")}, row, _now_iso()) if patch else {}
+    cats_after = extra.get("categories", row.get("categories"))
+    if cats_after and "live" not in cats_after:          # 라이브공연이 아니면 공연 이름 · 공연일을 지운다
+        extra["live_name"] = extra["live_date"] = None
+    for k, v in extra.items():
+        if v != row.get(k):
+            full[k] = v
     if "title_ko" in patch and patch["title_ko"] != row.get("title_ko"):
         full["title_ko"] = patch["title_ko"]
     if "title" in full or "title_ko" in full:
@@ -2090,3 +2153,15 @@ if __name__ == "__main__":
         fl = jobs_overview()["flows"]
         assert any(f.get("llm") and f["llm"][0]["kind"].startswith("song_") for f in fl), "작업 탭 흐름에 신곡 판단이 보임"
     print("[PASS] admin_api self-test: 곡 관리 · 신곡 감지 통합(감지 · 반려 · 재등록 차단 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 재시도/재요청)")
+
+    # (v4.7.0) 소식 분류 인자 검사 · 공연 이름 정리
+    assert _notice_cats_arg(None) == (None, None) and _notice_cats_arg([]) == (None, None)
+    assert _notice_cats_arg(["goods", "live"]) == (["live", "goods"], None), "CATS 순서로 정렬"
+    assert _notice_cats_arg(["live", "etc"])[1] and _notice_cats_arg(["game", "goods"])[1], "Our Notes · 기타는 단독"
+    assert _notice_cats_arg(["release"])[1] and _notice_cats_arg("live")[1], "모르는 값 · 목록 아님 거절"
+    _pp = {"live_name": "옛 이름", "live_date": "2026-01-01"}
+    _set_live(_pp, ["goods"], "X", "2026-12-24")
+    assert _pp == {}, "라이브공연 아니면 공연 이름 · 공연일 없음"
+    _set_live(_pp, ["live"], "  RESONEXT ", "2026-12-24")
+    assert _pp == {"live_name": "RESONEXT", "live_date": "2026-12-24"}, _pp
+    print("[PASS] admin_api (v4.7.0) 소식 분류 인자 · 공연 이름 정리")

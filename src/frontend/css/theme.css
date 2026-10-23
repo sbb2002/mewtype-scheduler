@@ -59,6 +59,10 @@
   --ntc-shadow: rgba(40, 30, 80, 0.16);
   --ntc-accent: #6b5bc4;   /* (v4.6.4) 고정 팝업 테두리 · 팝업 링크 */
   --ntc-scrim: rgba(20, 18, 40, 0.38);   /* (v4.6.4) 모바일 시트 뒤 배경 */
+  --ntc-lg-ink: #ffffff;                 /* (v4.7.0) 라이브공연 탭 공연별 묶음 — 밝게 */
+  --ntc-lg-head: rgba(176, 42, 111, 0.06);
+  --ntc-lg-rows: #faf9fd;
+  --ntc-lg-past: #f3f2f7;
 
   /* banners.css */
   --bnr-surface: #f0eefa;
