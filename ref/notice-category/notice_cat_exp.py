@@ -5,6 +5,11 @@ python -I -X utf8 notice_cat_exp.py dry A|B                # 프롬프트 크기
 python -I -X utf8 notice_cat_exp.py run A|B BATCH_NO X.env # 묶음 하나만 실제 호출(오류 · 429면 STOP 파일 남기고 멈춤)
 python -I -X utf8 notice_cat_exp.py score A|B              # 이 폴더의 out_*.json 채점
 python -I -X utf8 notice_cat_exp.py runall A X.env.local   # (3차) 전 묶음을 차례로 — 한도 헤더 확인 · 75초 이상 간격 · 오류면 STOP
+(검증 세트 — 프롬프트를 고칠 때 보지 않은 글로 과적합 확인)
+python -I -X utf8 notice_cat_exp.py hbuild                 # data/holdout_* → gold_holdout.json
+python -I -X utf8 notice_cat_exp.py hdry 2|3|4             # 그 회차 프롬프트(roundN/prompt_A_batch0.txt 머리)로 예상 토큰
+python -I -X utf8 notice_cat_exp.py hrun 2|3|4 X.env.local # 그 회차 프롬프트로 검증 세트 전 묶음 → holdout/rN/
+python -I -X utf8 notice_cat_exp.py hscore 2|3|4           # holdout/rN/ 채점(gold_holdout.json)
 """
 import glob, json, os, sys, time, urllib.request, urllib.error
 
@@ -15,6 +20,8 @@ BATCH = 9
 BUDGET = 20000          # 회차(OUT 폴더)별 상한 — A안 4묶음 ≈ 14.5k. (10-23: 1차 약 12k + 2차 26,832 + 3차 14,403)
 # 호출은 묶음 하나씩, 사이 75초 이상(분당 한도 TPM 8,000 — 1차에 연달아 보내 429)
 OUT = os.path.join(HERE, "round4")   # 응답 · STOP · 예산 계산을 이 폴더로(1 · 2차는 끝난 뒤 손으로 옮겼다, 3차 = round3)
+GOLD = os.path.join(HERE, "gold.json")   # 정답표 — 검증 세트 명령(h*)은 gold_holdout.json 으로 바꾼다
+HEAD_OVERRIDE = None    # 검증 세트 명령은 그 회차에 실제로 보낸 프롬프트 머리(roundN/prompt_A_batch0.txt)를 그대로 쓴다
 GAP = 75                # 요청 사이 최소 초
 MIN_RPD_LEFT = 100      # 일일 요청 잔량이 한도의 10% 미만이면 멈춤(운영과 같은 키)
 
@@ -99,13 +106,13 @@ def schema(variant):
 
 
 def prompt(variant, batch):
-    head = HEAD + (HEAD_B if variant == "B" else "") + TAIL
+    head = HEAD_OVERRIDE or (HEAD + (HEAD_B if variant == "B" else "") + TAIL)
     body = "".join(f"\n--- 글 n={g['n']} ---\n{g['title']}\n{g['body']}\n" for g in batch)
     return head + body
 
 
 def batches():
-    gold = json.load(open(os.path.join(HERE, "gold.json"), encoding="utf-8"))
+    gold = json.load(open(GOLD, encoding="utf-8"))
     return [gold[k:k + BATCH] for k in range(0, len(gold), BATCH)]
 
 
@@ -148,6 +155,31 @@ def run(variant, no):
     json.dump(out, open(os.path.join(OUT, f"out_{variant}_{no}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps({"usage": out["usage"], "ratelimit": hdr, "sec": out["sec"], "cum": used()}, ensure_ascii=False), flush=True)
     return out
+
+
+def hbuild():
+    """검증 세트 정답 → gold_holdout.json. 「기타」 = 고른 분류 없음([]) — 1 · 2 · 3 · 4차 정답표와 같은 표기."""
+    data = os.path.join(HERE, "data")
+    items = {i["id"]: i for i in json.load(open(os.path.join(data, "holdout_items.json"), encoding="utf-8"))}
+    labels = json.load(open(os.path.join(data, "holdout_labels_2026-10-23.json"), encoding="utf-8"))
+    gold = []
+    for lid, d in labels.items():
+        i = items[lid]
+        cats = [c for c in d["cats"] if c in CATS]
+        gold.append({"n": i["n"], "id": lid, "gold": sorted(cats), "title": i["title"], "body": i["body"], "note": d.get("note") or ""})
+    gold.sort(key=lambda g: g["n"])
+    json.dump(gold, open(os.path.join(HERE, "gold_holdout.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    from collections import Counter
+    print(len(gold), Counter(c for g in gold for c in (g["gold"] or ["etc"])))
+
+
+def _holdout(r):
+    """검증 세트 명령 공통 — 정답표 · 프롬프트 머리 · 출력 폴더를 그 회차 것으로."""
+    global GOLD, HEAD_OVERRIDE, OUT
+    GOLD = os.path.join(HERE, "gold_holdout.json")
+    t = open(os.path.join(HERE, f"round{r}", "prompt_A_batch0.txt"), encoding="utf-8").read()
+    HEAD_OVERRIDE = t[:t.index("\n--- 글 n=")]
+    OUT = os.path.join(HERE, "holdout", f"r{r}")
 
 
 def _secs(v):
@@ -232,7 +264,7 @@ def score(variant, outdir=None):
     「분류」 = 모델이 고른 분류 그대로. 「실효」 = 사용자에게 보이는 결과 — B 안의 related=false 는 소식이 안 올라가므로
     그 글의 분류가 하나도 없는 것(etc 도 아님)으로 친다(A 안은 두 값이 같다)."""
     outdir = outdir or HERE
-    gold = {g["n"]: g for g in json.load(open(os.path.join(HERE, "gold.json"), encoding="utf-8"))}
+    gold = {g["n"]: g for g in json.load(open(GOLD, encoding="utf-8"))}
     pred = {}
     for f in sorted(glob.glob(os.path.join(outdir, f"out_{variant}_*.json"))):
         for r in json.loads(json.load(open(f, encoding="utf-8"))["content"])["results"]:
@@ -299,5 +331,17 @@ if __name__ == "__main__":
         run(sys.argv[2], int(sys.argv[3]))
     elif cmd == "runall":
         runall(sys.argv[2])
+    elif cmd == "hbuild":
+        hbuild()
+    elif cmd in ("hdry", "hrun", "hscore"):
+        _holdout(sys.argv[2])
+        if cmd == "hdry":
+            for k, b in enumerate(batches()):
+                p = prompt("A", b)
+                print(k, len(b), "chars", len(p), "≈tok", int(len(p) / 1.2))
+        elif cmd == "hrun":
+            runall("A")
+        else:
+            score("A", OUT)
     elif cmd == "score":   # score A [결과 폴더 — 기본 이 폴더]
         score(sys.argv[2], os.path.join(HERE, sys.argv[3]) if len(sys.argv) > 3 else None)
