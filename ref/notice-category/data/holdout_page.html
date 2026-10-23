@@ -1,0 +1,230 @@
+<title>소식 분류 검증세트</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&family=Noto+Sans+JP:wght@400;500&display=swap">
+<style>
+/* 레이아웃: 위에 고정 진행 막대, 아래로 글 카드가 한 줄씩 — 카드 안은 원문 | 한국어 두 칸(좁으면 한 칸) + 분류 칩 + 특이사항 */
+:root {
+  --bg: #f3f4f7; --surface: #ffffff; --fg: #1d2230; --muted: #626a7d; --line: #dde0e8;
+  --accent: #3b4fc4; --accent-soft: #e6e9fb; --ok: #1f7a4d; --ok-soft: #e0f2e8; --warn: #9a5b00;
+  --c-live: #c2410c; --c-event: #0f766e; --c-goods: #7c3aed; --c-broadcast: #1d4ed8; --c-etc: #57606f;
+  --sans: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Consolas", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12141b; --surface: #1b1e28; --fg: #e6e8ef; --muted: #9aa1b2; --line: #2d3240;
+  --accent: #8d9cff; --accent-soft: #262c4d; --ok: #5fd69a; --ok-soft: #173326; --warn: #f2b45a;
+  --c-live: #fb8b5a; --c-event: #4fd1c0; --c-goods: #b794ff; --c-broadcast: #7aa5ff; --c-etc: #a3abbb;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12141b; --surface: #1b1e28; --fg: #e6e8ef; --muted: #9aa1b2; --line: #2d3240;
+  --accent: #8d9cff; --accent-soft: #262c4d; --ok: #5fd69a; --ok-soft: #173326; --warn: #f2b45a;
+  --c-live: #fb8b5a; --c-event: #4fd1c0; --c-goods: #b794ff; --c-broadcast: #7aa5ff; --c-etc: #a3abbb;
+  color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 48px }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg) }
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 16px }
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 14px 10px;
+  border-bottom: 1px solid var(--line); display: grid; gap: 8px }
+.top-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; justify-content: space-between }
+h1 { font-size: 20px; margin: 0; text-wrap: balance; letter-spacing: -0.01em }
+.progress { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13px; color: var(--muted) }
+.bar { width: 160px; max-width: 40vw; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden }
+.bar > i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .3s }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden }
+.seg button { font: inherit; font-size: 13px; padding: 5px 12px; border: 0; background: var(--surface); color: var(--muted); cursor: pointer }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600 }
+.status { font-size: 13px; color: var(--muted) }
+.status.err { color: var(--warn) }
+details.rules { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px }
+details.rules summary { cursor: pointer; font-weight: 600; font-size: 14px }
+.rules dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 12px 0 8px; font-size: 14px }
+.rules dt { font-weight: 600 } .rules dd { margin: 0; min-width: 0 }
+.rules ul { margin: 6px 0 0; padding-left: 20px; font-size: 14px; color: var(--muted) }
+.note-top { font-size: 13.5px; color: var(--muted); margin: 0 }
+article.item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px }
+article.item.done { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)) }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; font-size: 13px; color: var(--muted) }
+.meta .n { font-family: var(--mono); font-size: 15px; color: var(--fg); font-weight: 500 }
+.meta a { color: var(--accent) }
+.meta .flag { color: var(--warn) }
+.badge-done { margin-left: auto; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--ok-soft); color: var(--ok); font-weight: 600 }
+.texts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px }
+.texts > div { min-width: 0; display: grid; gap: 4px; align-content: start }
+.lbl { font-size: 11.5px; letter-spacing: .06em; color: var(--muted); font-weight: 600 }
+.ttl { font-weight: 600 }
+.ja { font-family: var(--jp) }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; background: var(--bg); border-radius: 8px; padding: 10px 12px; max-height: 320px; overflow: auto }
+.cats { display: flex; flex-wrap: wrap; gap: 8px }
+.cat { --c: var(--accent); font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 99px; border: 1.5px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; min-height: 36px }
+.cat[data-k="live"] { --c: var(--c-live) } .cat[data-k="event"] { --c: var(--c-event) } .cat[data-k="goods"] { --c: var(--c-goods) }
+.cat[data-k="broadcast"] { --c: var(--c-broadcast) } .cat[data-k="etc"] { --c: var(--c-etc) }
+.cat:hover { border-color: var(--c) }
+.cat[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); font-weight: 600 }
+.cat:focus-visible, .seg button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.cat.sep { margin-left: 8px }
+textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 40px; resize: vertical }
+.empty { text-align: center; color: var(--muted); padding: 32px 0 }
+@media (max-width: 720px) { .texts { grid-template-columns: 1fr } .cat.sep { margin-left: 0 } .rules dl { grid-template-columns: 1fr } }
+@media (prefers-reduced-motion: reduce) { .bar > i { transition: none } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="top-row">
+      <h1>소식 분류 검증세트</h1>
+      <div class="progress"><span id="prog">0 / 0 입력</span><span class="bar"><i id="bar"></i></span></div>
+    </div>
+    <div class="top-row">
+      <div class="seg" role="group" aria-label="보기">
+        <button id="f-all" type="button" aria-pressed="true">전체</button>
+        <button id="f-todo" type="button" aria-pressed="false">미입력만</button>
+      </div>
+      <span id="status" class="status">저장소 연결 중…</span>
+    </div>
+  </header>
+
+  <p class="note-top">프롬프트를 고칠 때 보지 않은 실제 소식 32건입니다(#60 ~ #129 중 게임 계정 글 · 원문이 잘린 리포스트 13건 · 번역이 깨진 #101 제외).
+    해당하는 분류를 <b>모두</b> 누르세요. 아무 분류에도 안 맞으면 「기타」. 고르는 즉시 저장됩니다.</p>
+
+  <details class="rules">
+    <summary>분류 기준 (10-22 ~ 23 확정)</summary>
+    <dl>
+      <dt>라이브공연</dt><dd>유메미타 전체 또는 일부의 공연 관련 소식 일체 (티켓 · 추첨 · 중지 · 변경 포함)</dd>
+      <dt>오프라인행사</dt><dd>공연 외의 유메미타 멤버들의 오프라인 행사 관련 소식 일체</dd>
+      <dt>음원·굿즈</dt><dd>싱글 · 앨범 등 CD 판매 / 커버곡 출시, 유메미타 굿즈 · Blu-ray · 출판물 소식 일체</dd>
+      <dt>방송</dt><dd>유메미타 멤버가 출연하는 방송 일체 (멤버 · 동시 시청 방송, TV LIVE, 라디오, 다른 프로그램 출연)</dd>
+      <dt>기타</dt><dd>위 어느 분류에도 속하지 않는 경우 (유메미타와 무관한 글도 기타 + 특이사항)</dd>
+    </dl>
+    <ul>
+      <li>공연 굿즈 판매 · 통판 → 라이브공연 + 음원·굿즈</li>
+      <li>CD 발매 기념 행사(릴리즈 이벤트 · 사인회 · お渡し会) → 오프라인행사 + 음원·굿즈</li>
+      <li>멤버가 나오는 행사의 생중계 → 그 행사 분류 + 방송 / 공연의 유튜브 생중계 → 라이브공연 + 방송</li>
+      <li>잡지 게재 · 코믹스 · Blu-ray · 커버곡 · MV 공개 → 음원·굿즈</li>
+      <li>애니 「ゆめ∞みた」 방영 · 배신 · 리포스트 캠페인 → 기타 / 라디오 → 방송</li>
+    </ul>
+  </details>
+
+  <div id="list"></div>
+</div>
+
+<script>
+const ITEMS = [{"n": 62, "id": "2103398104217305355", "author": "BDP_yumemita", "date": "2026-09-29", "title": "サブスク事前予約キャンペーン開始！オリジナル壁紙プレゼント @バンドリ", "title_ko": "구독 사전 예약 캠페인 시작! 오리지널 배경화면 증정 @뱅드림", "body": "＼サブスク事前予約キャンペーン開始📢／\n\n🛸#ゆめみた 5th Single\n「これはぼくたちの生存のあらすじ」🛸\n\n📌Apple Music [Pre-add]\n📌Spotify [Pre-save] していただいた方に\nオリジナル「スマホ壁紙」をプレゼント🎁✨\n\n⏰受付期間\n〜9/29(火) 20:00\n\n🔗https://link.fans/yumemita-oursurvival-pre\n\n#バンドリ", "body_ko": "＼구독 사전 예약 캠페인 시작📢／\n\n🛸#ゆめみた 5번째 싱글\n「이것은 우리들의 생존 개요」🛸\n\n📌Apple Music [Pre-add]\n📌Spotify [Pre-save] 해주신 분께\n오리지널 “스마트폰 배경화면”을 선물🎁✨\n\n⏰접수 기간\n〜9/29(화) 20:00\n\n🔗https://link.fans/yumemita-oursurvival-pre\n\n#뱅드림", "url": "https://x.com/i/status/2103398104217305355"}, {"n": 64, "id": "2103816861024690360", "author": "BDP_yumemita", "date": "2026-09-29", "title": "ゆめみた 全員集合！ バンドリ！アワーノーツ リリース記念生配信", "title_ko": "전체 생방송 결정! 뱅드림 아워노트스 출시 기념 라이브", "body": "＼生配信まであと1⃣時間／\n\n⏰このあと22:00〜\n\n🛸#ゆめみた 全員集合！\nバンドリ！アワーノーツ リリース記念生配信🛸\n\n🔗https://www.youtube.com/watch?v=dRUOZpog1Dk\n\nフリーライブ DAY2の振り返りも\nお見逃しなく✨\n\n#バンドリ", "body_ko": "생방송까지 1시간 남았습니다\n\n⏰이후 22:00부터\n\n🛸#ゆめみた 전원 집합!\n뱅드림! 아워노트스 출시 기념 생방송🛸\n\n🔗https://www.youtube.com/watch?v=dRUOZpog1Dk\n\n프리 라이브 DAY2 회고도\n놓치지 마세요✨\n\n#뱅드림", "url": "https://x.com/i/status/2104904038705971256"}, {"n": 70, "id": "2105130520904650989", "author": "BDP_yumemita", "date": "2026-09-30", "title": "🛸夢限大みゅーたいぷ 5th Single 「これはぼくたちの生存のあらすじ」 リリース記念ムービー公開決定", "title_ko": "🛸무겐다이 뮤타입 5th 싱글 「これはぼくたちの生存のあらすじ」 발매 기념 무비 공개 결정", "body": "＼🎊記念ムービー公開決定🎊／\n\n🛸夢限大みゅーたいぷ 5th Single\n「これはぼくたちの生存のあらすじ」\nリリース記念ムービー🛸\n\n本日21:00よりプレミア公開🎉\n\n📺https://youtu.be/ojgoIwE1fL0\n\nお見逃しなく✨\n\n#バンドリ #ゆめみた", "body_ko": "＼🎊기념 무비 공개 결정🎊／\n\n🛸무겐다이 뮤타입 5th Single\n「이것은 우리들의 생존 이야기」\n리리스 기념 무비🛸\n\n오늘 21:00부터 프리미어 공개🎉\n\n📺https://youtu.be/ojgoIwE1fL0\n\n놓치지 마세요✨\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2105130520904650989"}, {"n": 72, "id": "2098351126504718514", "author": "BUSHIM_ongaku", "date": "2026-09-30", "title": "RT @BUSHIM_ongaku: #ゆめみたフリーライブ_DAY2", "title_ko": "5번째 싱글 \"これはぼくたちの生存のあらすじ\" 청취 영상 공개", "body": "RT @BUSHIM_ongaku: #ゆめみたフリーライブ_DAY2\n\n本日はありがとうございました！\n\n▼最新シングル「これはぼくたちの生存のあらすじ」は9月30日発売\nhttps://bushiroad-music.com/musics/brmm-11060", "body_ko": "RT @BUSHIM_ongaku: #ゆめみたフリーライブ_DAY2\n\n오늘도 감사합니다!\n\n▼ 최신 싱글 “これはぼくたちの生存のあらすじ”는 9월 30일 발매\nhttps://bushiroad-music.com/musics/brmm-11060", "url": "https://x.com/i/status/2103463784916627782"}, {"n": 77, "id": "2105260421691437160", "author": "nonoka_yumemita", "date": "2026-10-01", "title": "プレミア公開 動画を投稿します〜ののちゃんクイズ", "title_ko": "프리미어 공개 영상 게시합니다~노노짱 퀴즈", "body": "【告知】\n\n10/1 18:00〜プレミア公開\n\n動画を投稿します🎶\n今回は、ののちゃんクイズ‼\nみなさんは、回答できるかな⁉😍\n\nこのエピソード夢？現実？クイズ【宮永ののか】#ゆめみた https://youtu.be/zh6vG0isdAE?si=zLM9iSk-ziTE7xXH", "body_ko": "【공지】\n\n10/1 18:00~ 프리미어 공개\n\n동영상을 올립니다🎶\n이번에는 노노짱 퀴즈‼\n여러분은 답할 수 있을까요⁉😍\n\n이 에피소드 꿈? 현실? 퀴즈【미야나가 노노카】#유메미타 https://youtu.be/zh6vG0isdAE?si=zLM9iSk-ziTE7xXH", "url": "https://x.com/i/status/2105260421691437160"}, {"n": 78, "id": "2103046802341548366", "author": "BDP_yumemita", "date": "2026-10-01", "title": "ゆめみた 東京公演 FINAL ライブ映像 同時視聴生配信", "title_ko": "전체 생방송 결정! 유메미타 도쿄 공연 FINAL 라이브 영상 동시 시청 #뱅드림", "body": "＼🌟ご視聴ありがとうございました🌟／\n\n🛸#ゆめみた 東京公演 FINAL \nライブ映像 同時視聴生配信！🛸\n\n10/11(日)に東京ガーデンシアターにて開催する\n 過去最大規模の単独ライブもお見逃しなく✨\n\n📺アーカイブはこちら\nhttps://youtube.com/live/dTqZ7duxoHY\n\n#ゆめみた交信中", "body_ko": "＼🌟시청해 주셔서 감사합니다🌟／\n\n🛸#ゆめみた 도쿄 공연 FINAL \n라이브 영상 동시 시청 생중계!🛸\n\n10/11(일) 도쿄 가든 시어터에서 개최되는\n역대 최대 규모 단독 라이브도 놓치지 마세요✨\n\n📺아카이브는 여기\nhttps://youtube.com/live/dTqZ7duxoHY\n\n#ゆめみた교신중", "url": "https://x.com/i/status/2105638957698719884"}, {"n": 80, "id": "2105474490021085201", "author": "bang_dream_info", "date": "2026-10-01", "title": "アニメ『ゆめみた』がTOKYO MXで週2回再放送決定！", "title_ko": "애니메이션 'ゆめみた'가 TOKYO MX에서 주 2회 재방송 결정!", "body": "／\n#アニメゆめみた🛸\nTOKYO MXほかにて週2回の再放送が決定🎉🎉\n＼\n\n📅10/1(木)23:00より毎週木曜\nTOKYO MXほかにて再放送がスタート🛸\n\nさらに\n📅10/5(月)19:00より毎週月曜にも\nTOKYO MXにて再放送がスタート🛸🛸\n\nなんと毎週木曜日＆月曜日、再放送が週2回！\n#ゆめみた の世界にどっぷり浸かろう💫", "body_ko": "/\n#アニメゆめみた🛸\nTOKYO MX 등에서 주 2회 재방송이 결정되었습니다🎉🎉\n\\\n\n📅10/1(목) 23:00부터 매주 목요일\nTOKYO MX 등에서 재방송이 시작됩니다🛸\n\n또한\n📅10/5(월) 19:00부터 매주 월요일에도\nTOKYO MX에서 재방송이 시작됩니다🛸🛸\n\n무려 매주 목요일과 월요일, 재방송이 주 2회!\n#ゆめみた의 세계에 푹 빠져보세요💫", "url": "https://x.com/i/status/2105474490021085201"}, {"n": 83, "id": "2105932689073373638", "author": "BDP_yumemita", "date": "2026-10-02", "title": "【ライブ情報】#バンドリ 13thライブ DAY 夢限大みゅーたいぷ 「DIMENSIONAL OVERLAP」", "title_ko": "【라이브 정보】#뱅드림 13th 라이브 DAY 무겐다이 뮤타입 「DIMENSIONAL OVERLAP」", "body": "＼ライブ情報／\n\n🛸#バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n「DIMENSIONAL OVERLAP」🛸\n\n✨当日のグッズ販売情報を公開しました✨\n\nまた、チケットトレードの受付も決定💡\n\n▼詳細はこちら\nhttps://bang-dream.com/events/13th-live-day2/\n\n#バンドリ", "body_ko": "＼라이브 정보／\n\n🛸#뱅드림 13th 라이브\nDAY2 : 무겐다이 뮤타입\n「DIMENSIONAL OVERLAP」🛸\n\n✨당일 굿즈 판매 정보를 공개했습니다✨\n\n또한, 티켓 트레이드 접수도 결정되었습니다💡\n\n▼자세한 내용은 여기\nhttps://bang-dream.com/events/13th-live-day2/\n\n#뱅드림", "url": "https://x.com/i/status/2105932689073373638"}, {"n": 87, "id": "2103739498677121420", "author": "BDP_yumemita", "date": "2026-10-04", "title": "リリースイベントにつきまして", "title_ko": "토크 & 전달회 당첨 번호 발표", "body": "【出演キャンセルのお知らせ】\n\n明日10/4(日) ヨドバシカメラマルチメディアAkibaにて開催の\n夢限大みゅーたいぷ 5th Single「これはぼくたちの生存のあらすじ」\nリリースイベントにつきまして、\n峰月律が体調不良につき、大事を取って出演をキャンセルさせていただきます。\n\n直前のご報告となりましたこと、心よりお詫び申し上げます。\n\nお楽しみにしていただいていた皆様には大変申し訳ございませんが、何卒ご理解賜りますようお願い申し上げます。\n\n#バンドリ #ゆめみた", "body_ko": "【출연 취소 안내】\n\n내일 10/4(일) 요도바시카메라 멀티미디어 Akiba에서 개최되는\n무겐다이 뮤타입 5th Single “これはぼくたちの生存のあらすじ”\n릴리즈 이벤트와 관련하여,\n미네츠키 리츠가 컨디션 불량으로, 안전을 위해 출연을 취소하게 되었습니다.\n\n갑작스러운 보고가 되어 진심으로 사과드립니다.\n\n즐겁게 기다려 주셨던 여러분께 대단히 죄송하지만, 부디 양해해 주시길 부탁드립니다.\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2106308272835973148"}, {"n": 97, "id": "2109124331309531241", "author": "BDP_yumemita", "date": "2026-10-11", "title": "チケット特典引き換えのお知らせ", "title_ko": "티켓 특전 교환 안내", "body": "【チケット特典のお渡しについて】\n\n🛸 #バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n「DIMENSIONAL OVERLAP」🛸\n\n特典の引き換えは、\nチケットのグッズ引換券にて実施いたします。\n\n📝引換場所\n東京ガーデンシアター\n3Fバルコニーゲート付近 特典引換所\n\n⏰引換時間\n13:00〜終演後 列が途切れ次第終了\n\n※開場時間以降は場内からも引き換えいただけます。\n\n※特典の引き換えは上記引換時間のみ対応させていただきます。後日のご連絡にはお応えいたしかねますので、特典はお忘れなくお受け取りください。\n\n※終演後は大変混雑が予想されます。混雑緩和のためお時間に余裕をもって特典の引換をお願いいたします。\n\n#ゆめみた_DIMENSIONALOVERLAP", "body_ko": "【티켓 특전 전달에 관하여】\n\n🛸 #뱅드림 13th 라이브\nDAY2 : 무겐다이 뮤타입\n「DIMENSIONAL OVERLAP」🛸\n\n특전 교환은,\n티켓의 굿즈 교환권으로 진행합니다.\n\n📝 교환 장소\n도쿄 가든 시어터\n3층 발코니 게이트 근처 특전 교환소\n\n⏰ 교환 시간\n13:00~공연 종료 후 줄이 끊기는 대로 종료\n\n※ 개장 시간 이후에도 현장 내에서 교환이 가능합니다.\n\n※ 특전 교환은 위 교환 시간에만 대응합니다. 추후 연락에는 응답할 수 없으니, 특전은 꼭 받아 주세요.\n\n※ 공연 종료 후는 매우 혼잡할 것으로 예상됩니다. 혼잡 완화를 위해 여유 있게 교환해 주시기 바랍니다.\n\n#ゆめみた_DIMENSIONALOVERLAP", "url": "https://x.com/i/status/2109124331309531241"}, {"n": 98, "id": "2109240261767487860", "author": "BDP_yumemita", "date": "2026-10-11", "title": "13thライブ DAY DIMENSIONAL OVERLAP", "title_ko": "13th 라이브 DAY DIMENSIONAL OVERLAP", "body": "🛸 #バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n「DIMENSIONAL OVERLAP」🛸\n\nご来場・ご視聴ありがとうございました❣\n\n#ゆめみた_DIMENSIONALOVERLAP  をつけて\n感想お待ちしています🌟\n\nこれからも皆さんと共に歩んでいく\n夢限大みゅーたいぷを、どうぞよろしくお願いします💌", "body_ko": "🛸 #뱅드림 13th 라이브\nDAY2 : 무겐다이 뮤타입\n「DIMENSIONAL OVERLAP」🛸\n\n관람·시청해 주셔서 감사합니다❣\n\n#ゆめみた_DIMENSIONALOVERLAP 를 달고\n감상 기다리고 있습니다🌟\n\n앞으로도 여러분과 함께 걸어갈\n무겐다이 뮤타입을, 잘 부탁드립니다💌", "url": "https://x.com/i/status/2109240261767487860"}, {"n": 99, "id": "2109240725049369063", "author": "BDP_yumemita", "date": "2026-10-11", "title": "【バンドリ 13thライブ DAY 夢限大みゅーたいぷ】「DIMENSIONAL OVERLAP」セットリプレイリスト公開中", "title_ko": "【뱅드림 13th 라이브 DAY 무겐다이 뮤타입】「DIMENSIONAL OVERLAP」 세트리플레이리스트 공개", "body": "＼セトリプレイリスト公開中📢／\n\n🛸 #バンドリ13thライブ\nDAY2 : 夢限大みゅーたいぷ\n「DIMENSIONAL OVERLAP」🛸\n\n披露したセットリストのプレイリストを、\n各音楽配信サービスにて公開しました🎧🌟\n\nプレイリストはこちら🗒\nhttps://bmu.lnk.to/bd13th_day2_yumemitatw\n\n#ゆめみた_DIMENSIONALOVERLAP", "body_ko": "＼세트리 플레이리스트 공개 중📢／\n\n🛸 #뱅드림 13th 라이브\nDAY2 : 무겐다이 뮤타입\n「DIMENSIONAL OVERLAP」🛸\n\n공개한 세트리스트 플레이리스트를,\n각 음악 스트리밍 서비스에서 공개했습니다🎧🌟\n\n플레이리스트는 여기🗒\nhttps://bmu.lnk.to/bd13th_day2_yumemitatw\n\n#ゆめみた_DIMENSIONALOVERLAP", "url": "https://x.com/i/status/2109240725049369063"}, {"n": 100, "id": "2109087083209822504", "author": "BDP_yumemita", "date": "2026-10-11", "title": "CD販売情報💿 会場での販売詳細と抽選会のお知らせ", "title_ko": "CD 판매 정보💿 현장 판매 상세 및 추첨 행사 안내", "body": "＼CD販売情報💿／\n\n会場でのCD販売の詳細はこちら💡\n直筆サイン入りポスターが当たる抽選会も✨\n\n⏰販売時間\n・先行販売:12:00〜16:00\n・開場販売:16:30〜18:00\n\n詳細はこちら👇\nhttps://bang-dream.com/events/13th-live-day2/#CD_sales\n\n#ゆめみた_DIMENSIONALOVERLAP\n#バンドリ13thライブ", "body_ko": "＼CD 판매 정보💿／\n\n현장에서의 CD 판매 상세는 여기💡\n직필 사인 포스터가 당첨되는 추첨회도✨\n\n⏰판매 시간\n・선행 판매:12:00〜16:00\n・개장 판매:16:30〜18:00\n\n상세는 여기👇\nhttps://bang-dream.com/events/13th-live-day2/#CD_sales\n\n#ゆめみた_DIMENSIONALOVERLAP\n#뱅드림 13thライブ", "url": "https://x.com/i/status/2109087083209822504"}, {"n": 102, "id": "2098018660086657040", "author": "BDP_yumemita", "date": "2026-10-11", "title": "「夢ノ結唱 MEW アルファー版」体験会を実施💻", "title_ko": "뱅드림 13th 라이브 DAY 무겐다이 뮤타입 “DIMENSIONAL OVERLAP” 티켓 일반 판매 시작", "body": "＼夢ノ結唱 MEW 体験会情報💻／\n\n会場内、夢ノ結唱ブースにて\n「夢ノ結唱 MEW アルファー版」体験会を実施💻✨\n\n⏰開催時間:13:30〜16:30 \n\n詳しくはこちら👀👇 \nhttps://bang-dream.com/events/13th-live-day2\n\nぜひ直接ご体験ください🌟\n\n#ゆめみた_DIMENSIONALOVERLAP\n#バンドリ13thライブ #夢ノ結唱", "body_ko": "＼꿈노결창 MEW 체험회 정보💻／\n\n회장 내, 꿈노결창 부스에서\n「꿈노결창 MEW 알파 버전」 체험회를 진행💻✨\n\n⏰ 개최 시간: 13:30〜16:30\n\n자세히 보기👀👇 \nhttps://bang-dream.com/events/13th-live-day2\n\n꼭 직접 체험해 주세요🌟\n\n#ゆめみた_DIMENSIONALOVERLAP\n#뱅드림 13thライブ #꿈노결창", "url": "https://x.com/i/status/2109088592991514758"}, {"n": 103, "id": "2109094129435283771", "author": "BDP_yumemita", "date": "2026-10-11", "title": "お早めのご整列をお願いします", "title_ko": "【#뱅드림 13th 라이브】 DAY 무겐다이 뮤타입 「DIMENSIONAL OVERLAP」", "body": "＼📢まもなく開場／\n\n#バンドリ13thライブ DAY2🌟\n#ゆめみた_DIMENSIONALOVERLAP\n\n⏰開場:16:30予定\n\nお早めのご整列をお願いします🌟\n\nお荷物は可能な限り、コインロッカー等にお預けください🧳\n\n📝公演に関する注意事項\nhttps://bang-dream.com/events/13th-live-day2/#Notice", "body_ko": "📢 곧 개장\n\n#뱅드림 13th 라이브 DAY2🌟\n#ゆめみた_DIMENSIONALOVERLAP\n\n⏰ 개장: 16:30 예정\n\n가능한 빨리 줄 서 주세요🌟\n\n짐은 가능한 한 코인락커 등에 맡겨 주세요🧳\n\n📝 공연 관련 주의사항\nhttps://bang-dream.com/events/13th-live-day2/#Notice", "url": "https://x.com/i/status/2109177177107464640"}, {"n": 104, "id": "2109241565281739077", "author": "BDP_yumemita", "date": "2026-10-11", "title": "LIVE TOUR 2027 「YMMTric COUNTER POINT」開催決定", "title_ko": "LIVE TOUR 2027 「YMMTric COUNTER POINT」 개최 결정", "body": "＼🎊特報🎊／\n\n夢限大みゅーたいぷ LIVE TOUR 2027\n「YMMTric COUNTER POINT」開催決定🎉\n\nチケット最速先行はこのあと21時〜受付開始📢\n申込券は #ゆめみた 5th Single\n「これはぼくたちの生存のあらすじ」初回生産分に\n封入💡\n\nツアー詳細はこちら🛸\nhttps://bang-dream.com/events/ymmt-tour2027/\n\n#バンドリ #ゆめみた", "body_ko": "＼🎊특보🎊／\n\n무겐다이 뮤타입 LIVE TOUR 2027\n「YMMTric COUNTER POINT」 개최 결정🎉\n\n티켓 최우선 선예매는 이 후 21시부터 접수 시작📢\n신청권은 #ゆめみた 5th Single\n「これはぼくたちの生存のあらすじ」 초판 생산분에\n동봉💡\n\n투어 상세는 여기🛸\nhttps://bang-dream.com/events/ymmt-tour2027/\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2109241565281739077"}, {"n": 105, "id": "2110693398952968218", "author": "BDP_yumemita", "date": "2026-10-15", "title": "「バンドリ！TV LIVE 2026」", "title_ko": "오늘 출연! 뱅드림에서 나카마치 아라레 등장", "body": "【まもなく配信開始📢】\n\nこのあと22:00〜 生配信📺\n「バンドリ！TV LIVE 2026」＃336\n\n#ゆめみた より仲町あられが出演🛸\n\n📺配信URLはこちら\nhttps://www.youtube.com/live/YUB5qGbmzHs\n\nお見逃しなく✨\n\n#バンドリTVLIVE", "body_ko": "곧 방송 시작📢\n\n오늘 22:00부터 생방송📺\n「뱅드림! TV LIVE 2026」#336\n\n#유메미타 에서 나카마치 아라레가 출연🛸\n\n📺 방송 URL은 여기\nhttps://www.youtube.com/live/YUB5qGbmzHs\n\n놓치지 마세요✨\n\n#뱅드림 TVLIVE", "url": "https://x.com/i/status/2110715569620337127"}, {"n": 107, "id": "2110309646002970986", "author": "BDP_yumemita", "date": "2026-10-18", "title": "本日21時まで発売中", "title_ko": "아카이브 스트리밍 티켓 판매 중!", "body": "🛸 #バンドリ13thライブ DAY2\n#ゆめみた_DIMENSIONALOVERLAP 🛸\n\nアーカイブ配信チケットが\n本日21時まで発売中📢\n※ご視聴は23:59まで\n\n🎫https://eplus.jp/13th-live/st/\n\nライブ初披露の「うちゅうのふしぎ」や「愛は衝動」をお見逃しなく👀\n\n#バンドリ #ゆめみた", "body_ko": "🛸 #뱅드림 13th 라이브 DAY2\n#ゆめみた_DIMENSIONALOVERLAP 🛸\n\n아카이브 방송 티켓이 오늘 21시까지 판매 중📢\n※시청은 23:59까지\n\n🎫https://eplus.jp/13th-live/st/\n\n라이브 초공개 곡 ‘우주의 신비’와 ‘사랑은 충동’ 놓치지 마세요👀\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2111661044150198460"}, {"n": 108, "id": "2111668594828619918", "author": "BDP_yumemita", "date": "2026-10-18", "title": "藤都子バースデーグッズ受付終了のお知らせ", "title_ko": "藤都子 생일 굿즈 접수 종료 안내", "body": "＼バースデーグッズ 本日受付終了📢／\n\n💜藤都子 バースデーグッズ2026💜\n\n描き下ろしイラストを使用した特製グッズが\nブシロード オンラインストアにて受注販売❣\n\n⏰受付期間:本日23:59まで\n\n🛒ご購入はこちら\nhttps://bushiroad-store.com/collections/miyako-birthday2026\n\nお見逃しなく✨\n\n#バンドリ #ゆめみた", "body_ko": "＼생일 굿즈 오늘 접수 종료📢／\n\n💜후지 미야코 생일 굿즈2026💜\n\n새로 그린 일러스트를 사용한 특제 굿즈가\n부시로드 온라인 스토어에서 주문 판매❣\n\n⏰접수 기간: 오늘 23:59까지\n\n🛒구매는 여기\nhttps://bushiroad-store.com/collections/miyako-birthday2026\n\n놓치지 마세요✨\n\n#뱅드림 #유메미타", "url": "https://x.com/i/status/2111668594828619918"}, {"n": 109, "id": "2108029621224558725", "author": "miyako_yumemita", "date": "2026-10-20", "title": "「藤都子」プロフィール", "title_ko": "유메미타×극락탕 코라보 개최 중", "body": "本日10/11から10/13まで❣\nコラボ風呂💜みやこの湯ですぞ💜\n▷https://rakuspa.com/yumemita/\n\n「藤都子」プロフィール\n現役女子高生漫画家（16歳）\nストイックで情熱的な女の子。\n可愛いものが大好き。\n\n可愛いものが大好き。\n#ばばんばばんばんばんドリーム", "body_ko": "오늘 10/11부터 10/13까지❣\n콜라보 욕조💜미야코의 물이에요💜\n▷https://rakuspa.com/yumemita/\n\n「藤都子」프로필\n현역 여고생 만화가(16세)\n스토익하고 열정적인 소녀.\n귀여운 것을 아주 좋아함.\n\n귀여운 것을 아주 좋아함.\n#ばばんばばんばんばんドリーム", "url": "https://x.com/i/status/2109116788143525971"}, {"n": 114, "id": "2112175910661378122", "author": "BDP_yumemita", "date": "2026-11-04", "title": "千石ユノ生誕記念配信決定！", "title_ko": "센고쿠 유노 생일 기념 방송 결정!", "body": "＼🎂生誕記念配信決定🎂／\n\n📅11月4日(水) 21:00〜\n\n千石ユノ生誕記念配信を\nバースデー当日に実施💖\n\n📺千石ユノ 個人YouTubeチャンネルにて配信！\nhttps://youtube.com/@yuno_yumemita\n\nぜひお祝いに来てくださいね🥳\n\n#千石ユノ生誕祭2026\n#バンドリ", "body_ko": "＼🎂생일 기념 방송 결정🎂／\n\n📅11월 4일(수) 21:00〜\n\n센고쿠 유노 생일 기념 방송을\n생일 당일에 진행💖\n\n📺센고쿠 유노 개인 YouTube 채널에서 방송!\nhttps://youtube.com/@yuno_yumemita\n\n꼭 축하하러 와 주세요🥳\n\n#千石ユノ生誕祭2026\n#뱅드림", "url": "https://x.com/i/status/2112175910661378122"}, {"n": 117, "id": "2099836384936882682", "author": "BDP_yumemita", "date": "2026-11-15", "title": "千石ユノ、 新潟グランプリに出演決定！", "title_ko": "치세키 유노, 니가타 그랑프리 출연 확정!", "body": "˗ˏˋ 🆕 イベント情報🆕  ˎˊ˗\n\n新潟グランプリに千石ユノの出演が決定✨\n\n🗓　11月15日(日)\n📍　CARDBASE JABURO\n\n詳細は引用ポストをチェック‼👇\n\n#ヴァンガード #ゆめみた", "body_ko": "˗ˏˋ 🆕 이벤트 정보🆕  ˎˊ˗\n\n니가타 그랑프리에서 센고쿠 유노 출연 확정✨\n\n🗓 11월 15일(일)\n📍 CARDBASE JABURO\n\n자세한 내용은 인용 포스트를 확인하세요‼👇\n\n#ヴァンガード #ゆめみた", "url": "https://x.com/i/status/2099836384936882682"}, {"n": 118, "id": "2110656938530717890", "author": "BDP_yumemita", "date": "2026-11-21", "title": "チケット一般発売 明日開始", "title_ko": "티켓 일반 판매 결정! #꿈꾸는근육부 〜빛나라! 상완이두근〜 #뱅드림", "body": "＼チケット一般発売 明日開始📢／\n\n11/21(土)開催\n💪集え！#ゆめみた筋トレ部 \n　〜輝け！上腕二頭筋〜💪\n\n⏰受付期間\n明日10/18(日) 12:00〜\n※先着順・上限数に達し次第終了\n\n🔗詳細はこちら\nhttps://bang-dream.com/events/yumemita_kinntorebu2026/\n\nこの機会をお見逃しなく✨\n\n#バンドリ", "body_ko": "＼티켓 일반 판매 내일 시작📢／  \n11/21(토) 개최  \n💪모여라! #유메미타근트레이닝부  \n　~빛나라! 상완 이두근~💪  \n\n⏰접수 기간  \n내일 10/18(일) 12:00~  \n※선착순·한도에 도달하는 즉시 종료  \n\n🔗상세는 여기  \nhttps://bang-dream.com/events/yumemita_kinntorebu2026/  \n\n이 기회를 놓치지 마세요✨  \n\n#뱅드림", "url": "https://x.com/i/status/2111408207373721752"}, {"n": 119, "id": "n862390d67e958a4", "author": "BDP_yumemita", "date": "2026-11-21", "title": "集え！#ゆめみた筋トレ部 〜輝け！上腕二頭筋〜", "title_ko": "모여라! #꿈꾸는근육부 ~빛나라! 상완이두근~", "body": "＼プレイガイド先行 本日受付終了📢／\n\n💪集え！#ゆめみた筋トレ部 \n　〜輝け！上腕二頭筋〜💪\n\n⏰受付期間:本日23:59まで\n\n🎫お申し込みはこちら\nhttps://eplus.jp/yumemita_kinntorebu2026/\n\n開催までお楽しみに🛸\n\n#バンドリ", "body_ko": "＼플레이 가이드 사전 접수 오늘 종료📢／\n\n💪모여라! #ゆめみた筋トレ部  \n　〜빛나라! 상완 이두근〜💪\n\n⏰접수 기간: 오늘 23:59까지\n\n🎫신청은 여기서\nhttps://eplus.jp/yumemita_kinntorebu2026/\n\n행사까지 기대해 주세요🛸\n\n#뱅드림", "url": "https://x.com/i/status/2107040600046580003"}, {"n": 120, "id": "2105568407240544703", "author": "BDP_yumemita", "date": "2026-11-28", "title": "アニメ・スタいしかわ 2026 夢限大みゅーたいぷ出演決定！スペシャルトークショー開催", "title_ko": "애니메 스타이시카와 2026 무겐다이 뮤타입 출연 확정! 스페셜 토크쇼 개최", "body": "＼🛸お知らせ📢／\n\n11/28(土)・29(日)開催\n「アニメ・スタいしかわ 2026」\n\n夢限大みゅーたいぷの出演が決定🎉\n\n11/29(日) 16:30より、\nスペシャルトークショーを実施✨\n\n🔗お申込みはこちら\nhttps://animest-ishikawa.com/event/\n\n#アニメスタいしかわ #バンドリ", "body_ko": "＼🛸공지📢／\n\n11/28(토)·29(일) 개최\n「애니메·스타 이시카와 2026」\n\n무겐다이 뮤타입의 출연이 확정🎉\n\n11/29(일) 16:30부터,\n스페셜 토크쇼를 진행✨\n\n🔗신청은 여기서\nhttps://animest-ishikawa.com/event/\n\n#アニメスタいしかわ #뱅드림", "url": "https://x.com/i/status/2105568407240544703"}, {"n": 122, "id": "2112177293850550683", "author": "BDP_yumemita", "date": "2026-12-05", "title": "YUNO’s PARTY Lv.3 開催決定！", "title_ko": "YUNO’s PARTY Lv.3 개최 결정！", "body": "／\n千石ユノ主催DJイベント\n「YUNO’s PARTY Lv.3」\n　開催決定！🎧\n＼\n\n日程:2026年12月5日(土)\n会場:duo MUSIC EXCHANGE\n\n🔗詳細はこちら\nhttps://bang-dream.com/events/yumemita_yunos_party_lv3/\n\n出演者やチケットなどの詳細は後日公開いたします💡\nお楽しみに💖\n\n#バンドリ #ゆめみた", "body_ko": "센고쿠 유노 주최 DJ 이벤트\n「YUNO’s PARTY Lv.3」\n　개최 확정!🎧\n\n일시:2026년 12월 5일(토)\n장소:duo MUSIC EXCHANGE\n\n🔗자세한 내용은 여기\nhttps://bang-dream.com/events/yumemita_yunos_party_lv3/\n\n출연자와 티켓 등 자세한 내용은 추후 공개합니다💡\n기대해 주세요💖\n\n#뱅드림 #유메미타", "url": "https://x.com/i/status/2112177293850550683"}, {"n": 123, "id": "2098325225503158601", "author": "BUSHIM_ongaku", "date": "2026-12-09", "title": "BanG Dream! 10周年ライブ Blu-ray 特典デザイン先行公開", "title_ko": "BanG Dream! 10주년 라이브 Blu-ray 특전 디자인 선공개", "body": "@BUSHIM_ongaku: ＼特典デザイン公開②📢／\n\n12/9(水)発売\n⭐BanG Dream! 10th Anniversary LIVE\n　「In the name of BanG Dream!」Blu-ray⭐\n\nブシロード オンラインストアの法人別特典デザインを先行公開🎉\n\nその他の特典デザインは後日の公開をお楽しみに！\n\nご予約はこちら👇\nbushiroad-store.com/products/20003…\n\n#バンドリ pic.x.com/wfdObAzjXW", "body_ko": "@BUSHIM_ongaku: ＼특전 디자인 공개②📢／\n\n12/9(수) 발매\n⭐BanG Dream! 10주년 기념 LIVE\n　「In the name of BanG Dream!」Blu-ray⭐\n\n부시로드 온라인스토어의 법인별 특전 디자인을 선공개🎉\n\n다른 특전 디자인는 추후 공개를 기대해 주세요!\n\n예약은 여기👇\nbushiroad-store.com/products/20003…\n\n#뱅드림 pic.x.com/wfdObAzjXW", "url": "https://x.com/i/status/2098325225503158601"}, {"n": 124, "id": "2098059091252047961", "author": "bang_dream_info", "date": "2026-12-16", "title": "バンドリ！ ゆめ∞みた Blu-ray 下巻 ジャケット公開", "title_ko": "뱅드림! 유메∞미타 Blu-ray 하권 재킷 공개", "body": "@bang_dream_info: ＼🎊ジャケット公開🎊／\n\n12/16(水)発売\nTVアニメ「バンドリ！ ゆめ∞みた」Blu-ray\n\n下巻のジャケットデザインを公開🎉\n\n💿収録内容の詳細はこちら\nbang-dream.com/discographies/…\n\n収録内容も更新しておりますので、\nぜひチェックしてください✨\n\n#アニメゆめみた #バンドリ pic.x.com/oXYNbGt76t", "body_ko": "@bang_dream_info: ＼🎊자켓 공개🎊／\n\n12/16(수) 발매\nTV 애니메이션 「뱅드림! 꿈∞미타」 Blu-ray\n\n하권 자켓 디자인을 공개🎉\n\n💿수록 내용 상세는 여기\nbang-dream.com/discographies/…\n\n수록 내용도 업데이트 되었으니,\n꼭 확인해 주세요✨\n\n#애니꿈미타 #뱅드림 pic.x.com/oXYNbGt76t", "url": "https://x.com/i/status/2098059091252047961"}, {"n": 125, "id": "2098059265680515490", "author": "BDP_yumemita", "date": "2026-12-16", "title": "12/16(水)発売", "title_ko": "뱅드림! 유메∞미타 Blu-ray 발매 및 15초 CM 공개", "body": "＼特典デザイン公開📢／\n\n12/16(水)発売\n🛸TVアニメ「バンドリ！ ゆめ∞みた」\n　Blu-ray 上下巻🛸\n\n法人別特典画像を公開🎉\n\n💿詳細はこちら\nhttps://bang-dream.com/news/2362/\n\n同時購入キャンペーンも開催中✨\n\n#バンドリ #ゆめみた", "body_ko": "＼특전 디자인 공개📢／\n\n12/16(수) 발매\n🛸TV 애니메이션 「뱅드림! ゆめ∞みた」\n　Blu-ray 상·하권🛸\n\n법인별 특전 이미지 공개🎉\n\n💿상세 내용은 여기\nhttps://bang-dream.com/news/2362/\n\n동시 구매 캠페인도 진행 중✨\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2104858735046799538"}, {"n": 127, "id": "2105243763694244096", "author": null, "date": "2026-12-24", "title": "チケット一般発売 明日開始", "title_ko": "티켓 일반 판매 결정! NAKAMACHI ARALE LIVE 2026 「RESONEXT」", "body": "＼チケット一般発売 明日開始📢／\n\n12/24(木)開催\n🎤NAKAMACHI ARALE LIVE 2026\n「RESONEXT」🎤\n\n⏰受付期間\n明日10/3(土) 12:00〜\n※先着順・上限数に達し次第終了\n\n🔗詳細はこちら\nhttps://bang-dream.com/events/nakamachiarale_live2026/\n\nこの機会をお見逃しなく✨\n\n#バンドリ #ゆめみた", "body_ko": "＼티켓 일반 판매 내일 시작📢／\n\n12/24(목) 개최\n🎤NAKAMACHI ARALE LIVE 2026\n「RESONEXT」🎤\n\n⏰접수 기간\n내일 10/3(토) 12:00〜\n※선착순·정원에 도달하는 즉시 종료\n\n🔗자세한 내용은 여기\nhttps://bang-dream.com/events/nakamachiarale_live2026/\n\n이 기회를 놓치지 마세요✨\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2105960991897080077"}, {"n": 128, "id": "2109241849189941510", "author": "BDP_yumemita", "date": "2027-01-27", "title": "「特典CD」1枚(全5種)をプレゼント", "title_ko": "2027년 2nd 앨범 “It’s our choice” 발매 결정", "body": "＼先着購入特典決定🎉／\n\n2027年1月27日(水)リリース\n#ゆめみた 2nd Album「It’s our choice」🛸\n\n9月25日に開催された、\n「新宿着陸計画」DAY2のライブ音源1曲を収録した\n「特典CD」1枚(全5種)をプレゼント🎁✨\n\n特典配布対象店舗の詳細はこちら🛸\nhttps://bushiroad-music.com/topics/23448/\n\n#バンドリ", "body_ko": "선착순 구매 특전 결정🎉\n\n2027년 1월 27일(수) 발매\n#ゆめみた 2nd Album「It’s our choice」🛸\n\n9월 25일에 개최된\n「신주쿠 착륙 계획」DAY2 라이브 음원 1곡을 수록한\n「특전 CD」 1장(전 5종)을 선물🎁✨\n\n특전 배포 대상 매장의 상세 내용은 여기🛸\nhttps://bushiroad-music.com/topics/23448/\n\n#뱅드림", "url": "https://x.com/i/status/2109242232373215313"}, {"n": 129, "id": "2101307201470263636", "author": "BDP_yumemita", "date": "2027-03-20", "title": "みやこのアトリエ開催決定！", "title_ko": "미야코의 아틀리에 개최 결정!", "body": "／\n🎨みやこのアトリエ\n　開催決定！🎨\n＼\n\n日程:2027年3月20日(土)\n会場:学校法人片柳学園 日本工学院専門学校 片柳記念ホール\n\n🔗詳細はこちら\nhttps://bang-dream.com/events/miyako_atelier/\n\nチケットなどの詳細は後日公開いたしますので、\nお楽しみに✨\n\n#バンドリ #ゆめみた", "body_ko": "／\n🎨미야코의 아틀리에\n　개최 확정! 🎨\n＼\n\n일정: 2027년 3월 20일(토)\n장소: 학교법인 카타야나기 학원 일본공학전문학교 카타야나기 기념홀\n\n🔗자세한 내용은 여기\nhttps://bang-dream.com/events/miyako_atelier/\n\n티켓 등 상세 내용은 추후 공개될 예정이니,\n많이 기대해 주세요✨\n\n#뱅드림 #ゆめみた", "url": "https://x.com/i/status/2101307201470263636"}];
+const CATS = [["live", "라이브공연"], ["event", "오프라인행사"], ["goods", "음원·굿즈"], ["broadcast", "방송"]];
+const state = {};          // id → {cats: [], note: ""}
+let db = null, filterTodo = false, canWrite = true;
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+function isDone(id) { const s = state[id]; return !!(s && s.cats && s.cats.length); }
+
+function setStatus(text, err) { const s = $("status"); s.textContent = text; s.classList.toggle("err", !!err); }
+
+function updateProgress() {
+  const done = ITEMS.filter(i => isDone(i.id)).length;
+  $("prog").textContent = `${done} / ${ITEMS.length} 입력`;
+  $("bar").style.width = (done / ITEMS.length * 100) + "%";
+}
+
+async function save(id) {
+  if (!db) { setStatus("저장소에 연결되지 않아 저장할 수 없습니다 — 페이지를 다시 열어 주세요", true); return; }
+  const s = state[id] || { cats: [], note: "" };
+  const it = ITEMS.find(i => i.id === id);
+  try {
+    await db.doc("labels/" + id).set({ n: it.n, cats: s.cats, note: s.note || "", at: new Date().toISOString() });
+    setStatus(`#${it.n} 저장됨`);
+  } catch (e) {
+    if (e && e.code === "invalid_argument") { canWrite = false; render(); setStatus("이 계정은 저장 권한이 없습니다", true); }
+    else setStatus(`#${it.n} 저장 실패 (${e && e.code || "오류"}) — 다시 눌러 주세요`, true);
+  }
+}
+
+function toggle(id, k) {
+  const s = state[id] = state[id] || { cats: [], note: "" };
+  let cats = new Set(s.cats);
+  if (k === "etc") cats = cats.has("etc") ? new Set() : new Set(["etc"]);
+  else { cats.delete("etc"); cats.has(k) ? cats.delete(k) : cats.add(k); }
+  s.cats = CATS.map(c => c[0]).concat("etc").filter(c => cats.has(c));
+  render(); save(id);
+}
+
+const noteTimers = {};
+function onNote(id, v) {
+  const s = state[id] = state[id] || { cats: [], note: "" };
+  s.note = v;
+  clearTimeout(noteTimers[id]);
+  noteTimers[id] = setTimeout(() => save(id), 800);
+}
+
+function card(it) {
+  const s = state[it.id] || { cats: [], note: "" };
+  const a = el("article", "item" + (isDone(it.id) ? " done" : ""));
+  const meta = el("div", "meta");
+  meta.append(el("span", "n", "#" + it.n), el("span", null, it.date || ""));
+  meta.append(el("span", it.author ? null : "flag", it.author ? "@" + it.author : "작성 계정 미확인"));
+  const link = el("a", null, "X 원문 열기"); link.href = it.url; link.target = "_blank"; link.rel = "noopener";
+  meta.append(link);
+  if (isDone(it.id)) meta.append(el("span", "badge-done", "입력됨"));
+  a.append(meta);
+
+  const texts = el("div", "texts");
+  const ja = el("div"); ja.append(el("span", "lbl", "원문"), el("div", "ttl ja", it.title), el("div", "body ja", it.body));
+  const ko = el("div"); ko.append(el("span", "lbl", "한국어 (저장된 번역)"), el("div", "ttl", it.title_ko), el("div", "body", it.body_ko));
+  texts.append(ja, ko); a.append(texts);
+
+  const cats = el("div", "cats"); cats.setAttribute("role", "group"); cats.setAttribute("aria-label", `#${it.n} 분류`);
+  for (const [k, name] of CATS.concat([["etc", "기타"]])) {
+    const b = el("button", "cat" + (k === "etc" ? " sep" : ""), name);
+    b.type = "button"; b.dataset.k = k; b.id = `c-${it.id}-${k}`;
+    b.setAttribute("aria-pressed", s.cats.includes(k) ? "true" : "false");
+    b.disabled = !canWrite;
+    b.addEventListener("click", () => toggle(it.id, k));
+    cats.append(b);
+  }
+  a.append(cats);
+
+  const ta = el("textarea"); ta.id = "note-" + it.id; ta.rows = 1; ta.placeholder = "특이사항 (선택) — 예: 유메미타와 무관, 소식으로 올리면 안 됨, 번역이 이상함";
+  ta.value = s.note || ""; ta.disabled = !canWrite;
+  ta.addEventListener("input", () => onNote(it.id, ta.value));
+  a.append(ta);
+  return a;
+}
+
+function render() {
+  const list = $("list");
+  const active = document.activeElement && document.activeElement.id;
+  const shown = ITEMS.filter(it => !filterTodo || !isDone(it.id));
+  const frag = document.createDocumentFragment();
+  if (!shown.length) frag.append(el("p", "empty", filterTodo ? "남은 글이 없습니다. 32건 모두 입력했습니다." : "글이 없습니다."));
+  for (const it of shown) frag.append(card(it));
+  list.replaceChildren(frag);
+  if (active) { const f = document.getElementById(active); if (f) { f.focus(); if (f.tagName === "TEXTAREA") f.setSelectionRange(f.value.length, f.value.length); } }
+  updateProgress();
+}
+
+$("f-all").addEventListener("click", () => { filterTodo = false; $("f-all").setAttribute("aria-pressed", "true"); $("f-todo").setAttribute("aria-pressed", "false"); render(); });
+$("f-todo").addEventListener("click", () => { filterTodo = true; $("f-all").setAttribute("aria-pressed", "false"); $("f-todo").setAttribute("aria-pressed", "true"); render(); });
+
+render();
+
+(async () => {
+  db = await (window.claude?.use ? window.claude.use("db") : null);
+  if (!db) { setStatus("저장소를 쓸 수 없는 화면입니다 — claude.ai 에 로그인한 상태로 열어 주세요", true); return; }
+  db.collection("labels").onSnapshot((snap) => {
+    let changed = false;
+    for (const d of snap.docs) {
+      const v = d.data(); if (!v) continue;
+      if (document.activeElement && document.activeElement.id === "note-" + d.id) continue;   // 입력 중인 칸은 덮지 않음
+      const cur = state[d.id];
+      if (!cur || JSON.stringify(cur.cats) !== JSON.stringify(v.cats || []) || cur.note !== (v.note || "")) {
+        state[d.id] = { cats: Array.isArray(v.cats) ? v.cats.slice() : [], note: v.note || "" }; changed = true;
+      }
+    }
+    if (changed) render();
+    if (!snap.metadata.fromCache) setStatus("저장소 연결됨 — 고르는 즉시 저장");
+  }, (e) => setStatus(`저장소 연결이 끊겼습니다 (${e.code}) — 페이지를 다시 열어 주세요`, true));
+})();
+</script>
