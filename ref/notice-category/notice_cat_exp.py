@@ -10,8 +10,12 @@ python -I -X utf8 notice_cat_exp.py hbuild                 # data/holdout_* → 
 python -I -X utf8 notice_cat_exp.py hdry 2|3|4             # 그 회차 프롬프트(roundN/prompt_A_batch0.txt 머리)로 예상 토큰
 python -I -X utf8 notice_cat_exp.py hrun 2|3|4 X.env.local # 그 회차 프롬프트로 검증 세트 전 묶음 → holdout/rN/
 python -I -X utf8 notice_cat_exp.py hscore 2|3|4           # holdout/rN/ 채점(gold_holdout.json)
+(5차 — 주제 먼저 · 분류마다 예/아니오 + 근거, ROUND5_PLAN.md)
+python -I -X utf8 notice_cat_exp.py run5 1|2 X.env.local   # 1 = 1차 정답표(36건) → round5/, 2 = 검증 세트(29건) → holdout/r5/
+python -I -X utf8 notice_cat_exp.py score5 1|2             # 같은 폴더 채점 + 2 · 3 · 4차와 비교표
+python -I -X utf8 notice_cat_exp.py dry5 1|2               # 5차 프롬프트 크기만(호출 없음)
 """
-import glob, json, os, sys, time, urllib.request, urllib.error
+import glob, json, os, re, sys, time, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENV = sys.argv[-1] if ".env" in os.path.basename(sys.argv[-1]) else None   # run 은 마지막 인자로 .env · .env.local 경로(GROQ_API_KEY)
@@ -86,12 +90,59 @@ HEAD = (
     "만든 사람이 외부여도, 판매가 아니어도 같다.\n"
     "- 공연(프리 라이브 포함)을 유튜브 등으로 생중계(「フリーライブ … YouTubeにて生配信」 「全編無料配信」) → live, broadcast.\n"
 )
+# ───── (5차, 10-24 예정) 주제 먼저 · 분류마다 따로 예/아니오 + 근거 — ROUND5_PLAN.md ─────
+# 3 · 4차의 「빠뜨리지 말고 더 골라라」 예시가 보지 않은 글에서 잘못 붙임을 늘린 것(§4-4)을 거꾸로 — 곁들인 언급으로는 고르지 않게 한다.
+# 정의 줄의 일부는 운영자 정답(검증 세트, 10-23)에 맞춘 것 — #77 · #107 · #102 · #118 · #119. #100 · #120 은 확인 대기라 넣지 않았다.
+HEAD_C = (
+    "아래는 X(트위터) 글 여러 개다. 각 글은 성우 밴드 「夢限大みゅーたいぷ」(유메미타 — 仲町あられ · 宮永ののか · 峰月律 · 藤都子 · 千石ユノ) 관련 글이다.\n"
+    "글마다 아래 두 단계를 따라라.\n"
+    "1단계 — subject: 이 글이 팬에게 알리는 것을 한국어 한 줄로 적어라(무엇을 · 언제). 글에 곁들여 언급된 것은 넣지 않는다.\n"
+    "2단계 — 아래 네 분류마다 「이 글이 그것 자체를 알리는가」를 따로 판단해 yes(true/false)와 근거 한 줄(evidence — 원문 그대로 복사, no 면 \"\")을 적어라.\n"
+    "여러 개가 yes 일 수 있지만, 일부러 더 고르지 말 것. 곁들인 언급(「当日グッズ情報も」 같은 한 줄)만으로는 yes 가 아니다 — 그 내용 자체를 안내하면 yes.\n"
+    "- live (라이브공연): 유메미타 전체 · 일부 · 멤버 솔로가 무대에 서는 공연. 그 공연의 티켓 · 추첨 · 아카이브 시청권 판매 · 개장 · 변경 안내, 공연 회장 안의 부대 안내 포함. "
+    "아님: 공연이 끝난 뒤 감사 · 소감 · 세트리스트, 공연 영상을 다 같이 보는 동시 시청 방송(→ broadcast).\n"
+    "- event (오프라인행사): 공연이 아닌, 멤버가 나오는 오프라인 행사 — 사인회 · お渡し会 · 릴리즈 이벤트 · 토크쇼 · 팬 이벤트 · 전시 · 콜라보 매장. "
+    "아님: 「ライブ」 공연, 온라인 사인회의 생중계 자체(→ broadcast).\n"
+    "- goods (음원·굿즈): 판매 · 발매 · 예약 · 특전이 이 글의 안내 대상인 물건 — CD · 음원 · 커버곡 · 굿즈 · Blu-ray · 잡지 · 코믹스. "
+    "아님: 영상 · MV 공개 자체(판매가 아님), 행사 · 공연 안내 속 한 줄 언급.\n"
+    "- broadcast (방송): 멤버가 출연하거나 직접 하는 방송 · 영상 — 유튜브 생방송 · 프리미어 · 동시 시청, 「バンドリ！TV LIVE」, 라디오 · TV 출연, 행사 · 공연의 생중계. "
+    "아님: 애니메이션 「ゆめ∞みた」 방영 · 재방송 안내(멤버 출연이 아님).\n"
+    "reason = 판단 이유 한국어 한 문장. 결과는 글 번호(n)마다 하나씩. JSON 으로만 답하라.\n"
+)
+
+
+def _norm_ev(t):
+    """근거 대조용 — 공백 · 줄바꿈 무시, NFKC(운영 llm.evidence_in_text 와 같은 취지)."""
+    import unicodedata
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", t or ""))
+
+
+def _cats_c(r, body):
+    """5차 응답 → 분류 목록. yes 이고 근거가 원문에 있는(2자 이상) 분류만(운영 코드에서도 같은 규칙으로 쓸 예정)."""
+    out = []
+    for c in CATS:
+        v = r.get(c) or {}
+        ev = _norm_ev(v.get("evidence"))
+        if v.get("yes") is True and len(ev) >= 2 and ev in _norm_ev(body):
+            out.append(c)
+    return out
+
+
 HEAD_B = ("- related: 유메미타(멤버 포함)가 전혀 나오지 않고 다른 밴드 · 다른 작품만 다루는 글이면 false, 아니면 true.\n")
 TAIL = ("evidence = 판단 근거가 된 구절들 — 글에서 한 줄씩 그대로 복사(바꾸지 말 것).\n"
         "reason = 판단 이유 한국어 한 문장.\n결과는 글 번호(n)마다 하나씩. JSON 으로만 답하라.\n")
 
 
 def schema(variant):
+    if variant == "C":   # 5차
+        one = {"type": "object", "additionalProperties": False, "required": ["yes", "evidence"],
+               "properties": {"yes": {"type": "boolean"}, "evidence": {"type": "string"}}}
+        item = {"n": {"type": "integer"}, "subject": {"type": "string"},
+                **{c: one for c in CATS}, "reason": {"type": "string"}}
+        return {"name": "notice_categories_r5", "strict": True, "schema": {
+            "type": "object", "additionalProperties": False, "required": ["results"],
+            "properties": {"results": {"type": "array", "items": {
+                "type": "object", "additionalProperties": False, "required": list(item), "properties": item}}}}}
     item = {"n": {"type": "integer"},
             "cats": {"type": "array", "items": {"type": "string", "enum": CATS}},
             # (1차 400 json_validate_failed — 모델이 객체 대신 문자열을 냄) 운영 notice_timing 과 같은 문자열 목록으로
@@ -106,7 +157,7 @@ def schema(variant):
 
 
 def prompt(variant, batch):
-    head = HEAD_OVERRIDE or (HEAD + (HEAD_B if variant == "B" else "") + TAIL)
+    head = HEAD_OVERRIDE or (HEAD_C if variant == "C" else HEAD + (HEAD_B if variant == "B" else "") + TAIL)
     body = "".join(f"\n--- 글 n={g['n']} ---\n{g['title']}\n{g['body']}\n" for g in batch)
     return head + body
 
@@ -155,6 +206,46 @@ def run(variant, no):
     json.dump(out, open(os.path.join(OUT, f"out_{variant}_{no}.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(json.dumps({"usage": out["usage"], "ratelimit": hdr, "sec": out["sec"], "cum": used()}, ensure_ascii=False), flush=True)
     return out
+
+
+def compare5(ds):
+    """5차와 2 · 3 · 4차를 같은 데이터 · 같은 채점으로 비교 — 1 = 1차 정답표(36건 + 리포스트 표시 뺀 21건), 2 = 검증 세트(29건)."""
+    gold = {g["n"]: g for g in json.load(open(GOLD, encoding="utf-8"))}
+    RT = re.compile(r"^\s*(?:RT\s+)?@\w{1,15}\s*[:：]")
+
+    def load(folder, variant):
+        pred = {}
+        for f in sorted(glob.glob(os.path.join(HERE, folder, f"out_{variant}_*.json"))):
+            for r in json.loads(json.load(open(f, encoding="utf-8"))["content"])["results"]:
+                if variant == "C":
+                    g0 = gold.get(r["n"])
+                    r["cats"] = _cats_c(r, (g0["title"] + "\n" + g0["body"]) if g0 else "")
+                pred[r["n"]] = r
+        return pred
+
+    rounds = ([("2차", "round2", "A"), ("3차", "round3", "A"), ("4차", "round4", "A"), ("5차", "round5", "C")] if ds != "2" else
+              [("2차", "holdout/r2", "A"), ("3차", "holdout/r3", "A"), ("4차", "holdout/r4", "A"), ("5차", "holdout/r5", "C")])
+    views = [("전체", list(gold))] + ([("리포스트 표시 뺀 것", [n for n in gold if not RT.match(gold[n]["body"] or "")])] if ds != "2" else [])
+    lines = []
+    for vname, keep in views:
+        lines += [f"### {'1차 정답표' if ds != '2' else '검증 세트'} — {vname} ({len(keep)}건)", "",
+                  "| 회차 | 완전 일치 | 가중 precision | 가중 recall | 가중 F0.5 | 잘못 붙임 | 빠뜨림 | live 잘못 붙임 |", "|---|---|---|---|---|---|---|---|"]
+        for name, folder, variant in rounds:
+            pred = load(folder, variant)
+            ns = [n for n in keep if n in pred]
+            if not ns:
+                lines.append(f"| {name} | (응답 없음) | | | | | | |")
+                continue
+            G = {n: set(gold[n]["gold"]) or {"etc"} for n in ns}
+            P = {n: set(pred[n]["cats"]) or {"etc"} for n in ns}
+            per, avg, _ = _metrics(ns, G, P)
+            pc = lambda v: f"{v * 100:.1f}%"
+            lines.append(f"| {name} | {sum(G[n] == P[n] for n in ns)}/{len(ns)} | {pc(avg['precision'])} | {pc(avg['recall'])} | **{pc(avg['f0.5'])}** | "
+                         f"{sum(per[c]['fp'] for c in PASS)} | {sum(per[c]['fn'] for c in PASS)} | {per['live']['fp']} |")
+        lines.append("")
+    txt = "\n".join(lines)
+    open(os.path.join(OUT, "compare.md"), "w", encoding="utf-8").write(txt + "\n")
+    print(txt)
 
 
 def hbuild():
@@ -272,6 +363,9 @@ def score(variant, outdir=None):
     pred = {}
     for f in sorted(glob.glob(os.path.join(outdir, f"out_{variant}_*.json"))):
         for r in json.loads(json.load(open(f, encoding="utf-8"))["content"])["results"]:
+            if "cats" not in r and variant == "C":      # 5차 — 분류마다 예/아니오 + 근거 → 목록
+                g0 = gold.get(r["n"])
+                r["cats"] = _cats_c(r, (g0["title"] + "\n" + g0["body"]) if g0 else "")
             pred[r["n"]] = r
     ns = [n for n in gold if n in pred]
     G = {n: set(gold[n]["gold"]) or {"etc"} for n in ns}
@@ -335,6 +429,23 @@ if __name__ == "__main__":
         run(sys.argv[2], int(sys.argv[3]))
     elif cmd == "runall":
         runall(sys.argv[2])
+    elif cmd in ("run5", "score5", "dry5"):
+        ds = sys.argv[2]
+        if ds == "2":
+            GOLD = os.path.join(HERE, "gold_holdout.json")
+            OUT = os.path.join(HERE, "holdout", "r5")
+        else:
+            OUT = os.path.join(HERE, "round5")
+        if cmd == "dry5":
+            for k, b in enumerate(batches()):
+                p = prompt("C", b)
+                print(k, len(b), "chars", len(p), "≈tok", int(len(p) / 1.5))
+        elif cmd == "run5":
+            runall("C")
+        else:
+            if glob.glob(os.path.join(OUT, "out_C_*.json")):
+                score("C", OUT)
+            compare5(ds)
     elif cmd == "hbuild":
         hbuild()
     elif cmd in ("hdry", "hrun", "hscore"):
