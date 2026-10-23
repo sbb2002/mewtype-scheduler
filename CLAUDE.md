@@ -57,6 +57,10 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.7.0 (기능, 2026-10-23)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.7.0`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
+> **v4.7.1 (핫픽스, 브랜치 `hotfix/live-group-keep`, 2026-10-23, 백엔드 + 프론트 — 병합 · 배포 전)**: **라이브공연 공연별 묶음 = 공연일 + 7일 24:00(KST)까지 유지 + 지난 하위 소식은 어둡게.**
+> 묶음이 내려가기 전엔 하위 소식을 하나씩 내리지 않는다(`notices.live_holds` · `sweep_expired` — 묶음째 보관함으로, `expires_at` 은 그대로). 자기 기간이 지난 하위 소식 = **지난 소식**,
+> 공연별 묶음 안에서만 어둡게(`notices.js` `_liveHolds` · `_visible` → `{list, held}` · `.ntc__lrow.is-past`), 다른 탭 · 날짜순 · 티커 · 숫자엔 안 넣음. 상세 `docs/SPEC.md` 「공연별 묶음 유지 · 지난 소식」, 요약 `docs/VERSION.md`.
+>
 > **v4.7.0 (기능, 브랜치 `feat/notice-categories`, 2026-10-23, 백엔드 + 프론트 + 관리 페이지 — 배포 완료 `mewtype-backend` 00176 · `mewtype-telegram` 00121, 롤백 = 00174 · 00120 / 병합 `1ed68a8`(PR #82))**: **소식 분류 6종(LLM) + 라이브공연 탭 공연별 묶음.**
 > `categories` 목록(라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿, Our Notes · 기타는 단독) — `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 필수) + 코드 규칙(게임 계정 = Our Notes · 리포스트 = 기타 · 없음 = 기타).
 > 라이브공연이면 `llm.live_info` 로 공연 이름 · 공연일 → 라이브공연 탭 [공연별 | 날짜순], 공연별 = 공연일 타일 · 공연일 기준 D-day. 기존 소식은 다시 판정 안 함(옛 `category` 바꿔 읽기). 프롬프트 개량은 핫픽스로.
