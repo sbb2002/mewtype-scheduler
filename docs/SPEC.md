@@ -38,7 +38,7 @@ src/
       time.js          # UTC→KST 포맷 · 상대시간(D-n·절대표기) · elapsedLabel — 순수
       api.js           # fetchPreview(url): AbortController 타임아웃, {ok,data|error}
       render.js        # renderBoard / renderFooter / updateCountdowns — preview.items(state) 기반
-      notices.js       # 소식판 — (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 한 줄, 소식 팝업 카드/시트
+      notices.js       # 소식판 — (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 한 줄, 소식 팝업 카드/시트 · (v4.7.0) 복수 분류 · 라이브공연 탭 공연별 묶음
       tweets.js        # 유닛 아바타 편지 배지 (+ text_ko 원문↔번역 토글 버튼)
       main.js          # DOMContentLoaded → poll(preview) + pollNotices + pollTweets + 카운트다운 틱
   collector/           # v1 순수 모듈 — config/rss/youtube 는 v3 백엔드가 import 재사용.
@@ -508,7 +508,8 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 
 - `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
   `title`·`title_ko`·`title_raw`·`body_raw`·`body_ko?`·`body_for_llm`·`date`·`time`·`deadline`·`site`·`url`·
-  `tweet_url`·`src_handle`·`needs_tl?`·`participants?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`.
+  `tweet_url`·`src_handle`·`needs_tl?`·`participants?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`
+  · (v4.7.0) `categories?` · `live_name?` · `live_date?`.
   정렬 date→time→id.
   `title_raw`(정규식 제목)·`body_raw`(원문, 600자 컷)는 파싱·번역 품질 개선용 기록 — 프론트 안 읽음, 아카이브까지 이관.
 - **`body_ko`** (v4.0.5) = `body_raw` 의 한글 번역(`title_ko` 는 한글 **제목**이라 별개). 팬 화면은 안 읽고, 리포트 팝업 「한글」 칸 ·
@@ -549,9 +550,16 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   이미 잘못 남아 있는 행은 이 수정으로 바뀌지 않는다(다음 병합 때부터).
 - **출처 표기** (v4.6.4): 게임 계정(`config/channels.json` `game_accounts`) 글이 소식이 되면(v4.5.10 게임 밖 행사) `src_handle` = 그 계정(`@bang_dream_on`).
   `_prepare_notice` 가 알림 표시명으로 판별(`_game_account_handle`). 전엔 `xnotice._src_handle` 기본값 `@BDP_yumemita` 로 적혔다.
-- **분류(`category`)는 아직 옛 정규식 4종**(live · release · platform · etc, `xnotice._category`). 프론트(v4.6.4 소식판)는 6분류 탭으로 **바꿔 읽는다**: `live` → 방송출연(옛 「라이브예고」는 실제로
-  대부분 방송) · `release` → 음원·굿즈·출판 · `platform` · `etc` · 모르는 값 → 기타. 새 6분류 값(`live`=오프라인 라이브 · `event` · `broadcast` · `goods` · `game` · `etc`)을 백엔드가 쓰기 시작하면(소식 판독 핫픽스 —
-  다음 버전) 이 바꿔 읽기 표를 같이 바꿔야 한다(옛 `live` 와 새 `live` 의 뜻이 다르다).
+- **분류 `categories`** (v4.7.0) = 목록. `live`(라이브공연) · `event`(오프라인행사) · `goods`(음원·굿즈) · `broadcast`(방송)은 여럿 함께,
+  `game`(Our Notes) · `etc`(기타)는 단독. 정의 · 경계 규칙 = devpapers `ref/notice-category/README.md` §1(10-22 ~ 23 운영자 확정).
+  판정 = `telegram_app._notice_categories`(`_prepare_notice` 안, 시점 판정 · 비전 OCR 뒤, 이미 본 트윗이면 안 함):
+  ① 관리 페이지가 고른 분류가 있으면 그것 ② 게임 계정 글(`_game_account_handle`) → `["game"]` ③ 리포스트(본문이 `RT @…:` / `@…:` 로 시작, `_RT_HEAD_RE`) → `["etc"]`
+  ④ `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 구절 필수 · 3회) → 고른 것, 빈 목록이면 `["etc"]`, 실패(None)면 **키를 안 붙인다**.
+  `live` 가 들어 있으면 `llm.live_info` 로 `live_name`(공연 이름, 원문 표기 · 「」 안쪽) · `live_date`(공연 당일 YYYY-MM-DD) — 원문에 없는 이름은 버리고, 공연일의 월 · 일이 근거 줄에 없으면 날짜만 버린다.
+  병합(`_merge_fields`)은 새 글의 값이 있으면 덮고, 새 글이 라이브공연이 아니면 공연 이름 · 공연일을 지운다. 수정(`edit_notice`)에서 `live_name` · `live_date` 를 `None` 으로 주면 키를 지운다.
+- **옛 분류 `category`**(정규식 4종 live · release · platform · etc, `xnotice._category`)는 그대로 남긴다(옛 호환). `categories` 가 없는 줄(v4.7.0 이전 · 판정 실패)은
+  프론트 · 관리 페이지가 **바꿔 읽는다**: 출처가 게임 계정이면 `game`, 아니면 `live` → 방송(옛 「라이브예고」는 실제로 대부분 방송) · `release` → 음원·굿즈 · `platform` · 모르는 값 → 기타.
+  옛 `live` 와 새 `live` 의 뜻이 다르다는 점에 주의. 기존 줄은 다시 판정하지 않는다(10-23 운영자 결정).
 - `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed, mode∈added|updated|recap|dup|skip)`.
   지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브. `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko` · v4.0.5 `body_ko`) 만 대입.
 
@@ -1239,8 +1247,13 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   ([분류 아이콘] [제목 / D-day · 분류 · 날짜(요일) · 시각]).
 - **제목**: PC · 모바일 모두 **15.5px 한 줄, 넘치면 말줄임(…)**. marquee · 글꼴 줄이기 없음(10-22 운영자 결정 — 글꼴 크기가 들쭉날쭉하고 marquee 가 많아 읽기 어려웠다).
   잘린 제목 전체는 소식 팝업 카드에서 본다.
-- **분류 탭**(`CATS` · `CAT_READ`): [전체] + 6분류(라이브 · 행사 · 방송출연 · 음원·굿즈·출판 · 게임 · 기타), 0건 분류는 숨김(전체는 항상, 고른 분류가 0건이 되면 전체로).
-  저장 값은 아직 옛 4종이라 바꿔 읽는다 — 계약 H 「분류」.
+- **분류 탭**(`CATS` · `_cats`): [전체] + 6분류(라이브공연 · 오프라인행사 · 음원·굿즈 · 방송 · Our Notes · 기타), 0건 분류는 숨김(전체는 항상, 고른 분류가 0건이 되면 전체로).
+  (v4.7.0) 한 소식은 자기 분류 탭 모두에 나오고 건수도 분류마다 센다. 분류 이름 칸은 「라이브공연 · 음원·굿즈」 처럼 모두, 아이콘은 그 탭의 분류(전체면 첫 분류).
+  `categories` 가 없는 옛 줄은 바꿔 읽는다 — 계약 H 「옛 분류」.
+- **라이브공연 탭 — 공연별 묶음** (v4.7.0): 분류 줄에 [공연별 | 날짜순](`localStorage` `mew.notice.liveview`, 기본 공연별). 공연별 = `live_name` 으로 묶는다(전각/반각 · 대소문자 · 공백 · 괄호 · 구두점 무시, `_liveKey`).
+  묶음 머리 = [공연일 타일(월 · 일 · 요일)] [공연 이름(묶음 안에서 가장 많이 나온 표기) / 소식 n건] [D-day] [›] — 공연일 = 묶음 안 `live_date` 중 가장 많이 나온 값, **D-day 는 공연일 기준**(지난 공연 「종료 · D+n」, 없으면 「공연일 미정」).
+  하위 소식 = 들여 쓴 어두운 칸의 작은 줄(날짜 · 시각 · 제목 · 라이브공연 외 분류 칩) — 머리와 구분되게(10-23 운영자 지적). 순서 = 다가오는 공연(공연일 순) → 공연일 미정 → 지난 공연(최근 순, 처음엔 접힘) → 「그 밖의 공연 소식」(공연 이름 없음).
+  머리를 누르면 접기/펼치기(이번 방문 동안 기억). 하위 소식 줄을 누르면 다른 탭과 같은 소식 팝업 카드(PC) · 시트(모바일). 날짜순 = 다른 탭과 같은 목록 + 줄마다 공연 이름 꼬리표.
 - **언어**: [한글 | 원문] 한 번에 한 언어, 기본 한글, `localStorage` `mew.notice.lang`(트윗 번역 설정과 별개). 한글 제목이 없으면 원문.
 - **소식 팝업 카드** — 트윗 말풍선과 같은 방식:
   - PC: 소식 줄 **호버 = 잠깐 열림**(팝업으로 옮겨도 유지 · 떠나면 닫힘, 닫기는 160ms 미룸), **클릭 = 고정**(한 번에 1개, 같은 줄 다시 클릭 · ✕ · Esc · 바깥 클릭으로 닫힘, 고정 중 호버 무시).

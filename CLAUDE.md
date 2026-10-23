@@ -57,6 +57,11 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.6.4 (핫픽스, 2026-10-22)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.6.4`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
+> **v4.7.0 (기능, 브랜치 `feat/notice-categories`, 2026-10-23, 백엔드 + 프론트 + 관리 페이지 — 병합 · 배포 대기(운영자 결정), 현재 버전은 아직 v4.6.4)**: **소식 분류 6종(LLM) + 라이브공연 탭 공연별 묶음.**
+> `categories` 목록(라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿, Our Notes · 기타는 단독) — `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 필수) + 코드 규칙(게임 계정 = Our Notes · 리포스트 = 기타 · 없음 = 기타).
+> 라이브공연이면 `llm.live_info` 로 공연 이름 · 공연일 → 라이브공연 탭 [공연별 | 날짜순], 공연별 = 공연일 타일 · 공연일 기준 D-day. 기존 소식은 다시 판정 안 함(옛 `category` 바꿔 읽기). 프롬프트 개량은 핫픽스로.
+> 상세 `docs/SPEC.md` 계약 H 「분류 `categories`」 · 「라이브공연 탭 — 공연별 묶음」, 요약 `docs/VERSION.md`, 시험 기록 devpapers `ref/notice-category/`.
+>
 > **v4.6.4 (핫픽스, 브랜치 `hotfix/notice-board`, 2026-10-22, 프론트 + 백엔드 버그 수정 2건 — 배포 완료 `mewtype-backend` 00174 · `mewtype-telegram` 00120, 롤백 = 00172 · 00119 / 병합 `334b239`(PR #81))**: **소식판 개편 + 행사 배너 드래그.** 분류 탭(6분류, 0건 숨김 — 저장 값은 아직 옛 4종이라 화면에서 바꿔 읽음) ·
 > 제목 15.5px 한 줄 + 말줄임(marquee 제거) · 소식을 가리키거나 누르면 **소식 팝업 카드**(PC 호버/클릭 고정 · 모바일 아래 시트 — 트윗 말풍선과 같은 동작, 번역 본문 + X 공식 카드, 원문 본문은 안 그림) ·
 > 행사 배너 카드 좌우 드래그 · PC → 모바일 폭 전환 때 `render.js` 캐러셀 NotFoundError(기존 버그). 백엔드: 소식 병합 때 한글 제목이 옛 글 것으로 남던 버그 · 게임 계정 소식 출처 표기. LLM 짧은 제목 · 6분류는 품질 미달로 다음 핫픽스. 상세 `docs/SPEC.md` 「소식판 (v4.6.4)」 · 계약 H, 요약 `docs/VERSION.md`.
@@ -525,6 +530,7 @@ src/
       render.js        # renderBoard / renderFooter / updateCountdowns
       timetable.js     # (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼 — render.js 가 호출
       notices.js       # (v2.7) renderNotices(#notice, data) — 소식판. (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 15.5px 한 줄, 소식 팝업 카드(PC 호버/클릭) · 시트(모바일). (v4.6.0) 막대 마지막 칸에 전환 버튼을 옮겨 붙임
+                       #   (v4.7.0) 복수 분류(categories, 없으면 옛 category 바꿔 읽기) · 라이브공연 탭 [공연별 | 날짜순] 공연별 묶음
       theme.js         # (v4.6.0) 밝게/어둡게 전환 버튼 · 저장(localStorage "theme") · 기기 설정 따라가기 · mew:theme 이벤트(X 카드 테마)
       king.js          # (v4.3.1) 노노카 지각 이스터에그 — 지각 5단계 · 입장 연출(v4.5.8 — 지각한 방송이 라이브인 동안 페이지마다 한 번, 끝나면 바로 1.2초에 걸쳐 평소 라이브 카드로) · 대신의 말. timetable.js 가 노노카 행의 블록 · 팝업 · 오늘 카드에서 호출 (king.selfcheck.mjs)
       tweets.js        # (v2.8) renderTweets/reapplyTweets — 유닛 아바타 편지 배지 + PC 말풍선 / 모바일 토스트. (v4.6.4) X 카드 export(makeXCard · loadXCards · stopXCards — 소식 팝업 카드가 씀)
@@ -562,6 +568,7 @@ src/
                        #        announces_own_broadcast(텍스트 예고 최종확인) 추가 — 둘 다 최대
                        #        5회 재시도, 5회 모두 실패 시 None(호출부 미등록 처리)
                        #        (v3.7) duplicate_notice(같은 날짜 소식 의미 중복판정)
+                       #        (v4.7.0) notice_categories(소식 분류 4종, 분류 시험 4차 A 안 프롬프트) · live_info(공연 이름 · 공연일) — 둘 다 근거 필수
                        #        폴백 기본값 FALLBACK_MODEL=openai/gpt-oss-20b (llama-3.3 은 이 계정에서 404)
     ytnotif.py         # (v3) YouTube 앱 푸시알림 파서 (`chime.*` 키). INGEST_YT_ENABLED 뒤
                        #   + (v3.7.3) `parse_member_live_relay` — 실제 중계 폼(`source=yt`)의 회원 전용 시작 알림

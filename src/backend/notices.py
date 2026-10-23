@@ -6,11 +6,17 @@ notices.json
   { "generated_at": "...Z",
     "notices": [ { id, category, title, title_ko, title_raw, body_raw, body_ko, body_for_llm,
                    date, time, deadline, site, url, tweet_url, src_handle, anchor_a, anchor_b,
-                   title_slug, is_recap, needs_tl?, seen_ids[], first_seen, last_updated, expires_at } ] }
+                   title_slug, is_recap, needs_tl?, seen_ids[], first_seen, last_updated, expires_at,
+                   categories?, live_name?, live_date? } ] }
 notice_archive.json  { "notices": [ <notice + archived_at> ] }  (append-only, id dedupe)
   title_raw/body_raw 는 파싱·번역 품질 개선용 원문 기록 (프론트 안 읽음).
   body_ko (v4.0.5) = body_raw 의 한글 번역. None(키 없음) = 아직 번역 안 됨 → 번역 sweep 이 채운다.
     body_raw 가 바뀌면(더 최신 트윗으로 갱신) 같이 비운다 — 옛 본문의 번역이 남지 않게.
+  categories (v4.7.0) = 분류 목록 — live(라이브공연) · event(오프라인행사) · goods(음원·굿즈) · broadcast(방송) 중 여럿,
+    또는 game(Our Notes, 게임 계정 글) · etc(기타) 단독. 판정 = telegram_app._notice_categories(LLM 4분류 + 코드 규칙).
+    키가 없으면(v4.7.0 이전 줄 · 판정 실패) 화면은 옛 `category`(정규식 4종)를 바꿔 읽는다. `category` 는 그대로 남긴다(옛 호환).
+  live_name · live_date (v4.7.0) = 라이브공연 소식의 공연 이름(원문 표기) · 공연일(YYYY-MM-DD, 일본 날짜) — 라이브공연 탭 공연별 묶음.
+    둘 다 없을 수 있다(공연 이름 없는 글 · 판정 실패).
 
 중복 판정 (merge_notice) — v3: url ∥ title 기반
   1. incoming.id 가 어느 소식의 id/seen_ids 에 이미 있음        → "dup" (no-op)
@@ -91,10 +97,15 @@ def _merge_fields(cur: dict, inc: dict, now_iso: str) -> dict:
         out["body_ko"] = inc.get("body_ko") or None
     for k in ("title", "title_ko", "title_raw", "body_raw", "body_for_llm", "time", "url",
               "site", "tweet_url", "src_handle", "category",
-              "anchor_a", "anchor_b", "title_slug", "expires_at", "participants"):
+              "anchor_a", "anchor_b", "title_slug", "expires_at", "participants",
+              "categories", "live_name", "live_date"):
         v = inc.get(k)
         if v:
             out[k] = v
+    # (v4.7.0) 새 글의 분류 판정이 라이브공연이 아니면 옛 공연 이름 · 공연일을 지운다(합쳐진 글이 다른 성격이 됨)
+    if inc.get("categories") and "live" not in inc["categories"]:
+        out.pop("live_name", None)
+        out.pop("live_date", None)
     # date 는 유지(같은 이벤트). deadline 은 새 값이 True 면 반영.
     if inc.get("deadline"):
         out["deadline"] = True
@@ -111,8 +122,11 @@ def _new_row(inc: dict, now_iso: str) -> dict:
         "id", "category", "title", "title_ko", "title_raw", "body_raw", "body_ko", "body_for_llm",
         "date", "time", "deadline", "site", "url",
         "tweet_url", "src_handle", "anchor_a", "anchor_b", "title_slug", "expires_at",
-        "participants",
+        "participants", "categories", "live_name", "live_date",
     )}
+    for k in ("categories", "live_name", "live_date"):      # (v4.7.0) 없으면 키도 안 만든다(옛 줄과 같은 모양)
+        if row.get(k) is None:
+            row.pop(k)
     row["deadline"] = bool(row.get("deadline"))
     row["seen_ids"] = [inc["id"]] if inc.get("id") else []
     row["first_seen"] = now_iso
@@ -220,7 +234,8 @@ def merge_into(prev: dict, target_id: str, incoming: dict, now_iso: str) -> tupl
 
 
 _EDITABLE = ("title", "title_ko", "body_ko", "date", "time", "url", "site", "anchor_a", "category",
-             "deadline", "title_slug", "expires_at", "needs_tl")
+             "deadline", "title_slug", "expires_at", "needs_tl",
+             "categories", "live_name", "live_date")            # (v4.7.0) 관리 페이지 소식 수정 — 값 None 이면 키를 지운다
 
 
 def edit_notice(prev: dict, nid: str, patch: dict, now_iso: str) -> tuple[dict, bool]:
@@ -238,7 +253,11 @@ def edit_notice(prev: dict, nid: str, patch: dict, now_iso: str) -> tuple[dict, 
     row = dict(lst[idx])
     touched = False
     for k, v in (patch or {}).items():
-        if k in _EDITABLE and row.get(k) != v:
+        if k in ("categories", "live_name", "live_date") and v is None:   # (v4.7.0) None = 지움
+            if k in row:
+                row.pop(k)
+                touched = True
+        elif k in _EDITABLE and row.get(k) != v:
             row[k] = v
             touched = True
     if not touched:
@@ -280,13 +299,16 @@ def sweep_expired(prev: dict, archive: dict, now_iso: str) -> tuple[dict, dict, 
 
 
 _KIND_KO = {"live": "라이브예고", "release": "음반·굿즈", "platform": "타 플랫폼", "etc": "기타"}
+# (v4.7.0) 새 분류 이름 — 프론트 js/notices.js CATS 와 같게
+CAT_KO = {"live": "라이브공연", "event": "오프라인행사", "goods": "음원·굿즈", "broadcast": "방송", "game": "Our Notes", "etc": "기타"}
 
 
 def summary_line(n: dict) -> str:
     d = n.get("date") or "?"
     tm = (" " + n["time"]) if n.get("time") else ""
     mark = "〜 " if n.get("deadline") else ""
-    return f"[{_KIND_KO.get(n.get('category'), '기타')}] {mark}{d}{tm} · {n.get('title', '')[:60]}"
+    kind = "·".join(CAT_KO.get(c, c) for c in n["categories"]) if n.get("categories") else _KIND_KO.get(n.get("category"), "기타")
+    return f"[{kind}] {mark}{d}{tm} · {n.get('title', '')[:60]}"
 
 
 if __name__ == "__main__":
@@ -449,5 +471,22 @@ if __name__ == "__main__":
     )
     assert ch and m == "updated" and NP["notices"][0]["participants"] == ["nonoka"], NP["notices"][0]
     print("[OK] participants 필드 신규/갱신 보존 (비전 OCR 출연 채널)")
+
+    # (v4.7.0) categories · live_name · live_date — 신규 · 갱신 · 라이브공연이 아니게 되면 공연 이름 지움 · 수정(None = 지움)
+    NC = default_notices()
+    NC, _, ch, m = merge_notice(NC, inc(id="80", url="https://c.jp/1", categories=["live", "goods"],
+                                       live_name="RESONEXT", live_date="2026-12-24"), NOW)
+    r = NC["notices"][0]
+    assert m == "added" and r["categories"] == ["live", "goods"] and r["live_name"] == "RESONEXT" and r["live_date"] == "2026-12-24", r
+    NC, _, ch, m = merge_notice(NC, inc(id="81", url="https://c.jp/1"), NOW)
+    assert m == "updated" and NC["notices"][0]["live_name"] == "RESONEXT", "판정 없는 새 글 → 기존 값 유지"
+    NC, _, ch, m = merge_notice(NC, inc(id="82", url="https://c.jp/1", categories=["goods"]), NOW)
+    assert NC["notices"][0]["categories"] == ["goods"] and "live_name" not in NC["notices"][0] and "live_date" not in NC["notices"][0]
+    NO, _, _, _ = merge_notice(default_notices(), inc(id="83", url="https://c.jp/2"), NOW)
+    assert not {"categories", "live_name", "live_date"} & set(NO["notices"][0]), "판정 없으면 키도 없음(옛 줄과 같은 모양)"
+    NE, ch = edit_notice(NC, NC["notices"][0]["id"], {"categories": ["live"], "live_name": "X", "live_date": None}, NOW)
+    assert ch and NE["notices"][0]["categories"] == ["live"] and NE["notices"][0]["live_name"] == "X" and "live_date" not in NE["notices"][0]
+    assert summary_line(NE["notices"][0]).startswith("[라이브공연]"), summary_line(NE["notices"][0])
+    print("[OK] categories · live_name · live_date (v4.7.0)")
 
     print("\nSUCCESS: notices.py smoke test 통과")

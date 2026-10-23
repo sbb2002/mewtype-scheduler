@@ -438,6 +438,84 @@ _NOTICE_TIMING_SCHEMA = {
         "additionalProperties": False,
     },
 }
+# (v4.7.0) 소식 분류 — LLM 이 고르는 4분류. Our Notes(game) · 기타(etc)는 코드가 정한다(telegram_app._notice_categories).
+NOTICE_LLM_CATS = ("live", "event", "goods", "broadcast")
+_NOTICE_CATS_SCHEMA = {
+    "name": "notice_categories",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "cats": {"type": "array", "items": {"type": "string", "enum": list(NOTICE_LLM_CATS)}},
+            "evidence": {"type": "array", "items": {"type": "string"}},
+            "reason": {"type": "string"},
+        },
+        "required": ["cats", "evidence", "reason"],
+        "additionalProperties": False,
+    },
+}
+# (v4.7.0) 라이브공연 소식의 공연 이름 · 공연일 — 라이브공연 탭의 공연별 묶음 열쇠
+_LIVE_INFO_SCHEMA = {
+    "name": "live_info",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "name_evidence": {"type": "string"},
+            "date": {"type": "string"},
+            "date_evidence": {"type": "string"},
+            "reason": {"type": "string"},
+        },
+        "required": ["name", "name_evidence", "date", "date_evidence", "reason"],
+        "additionalProperties": False,
+    },
+}
+# (v4.7.0) 분류 프롬프트 = 소식 분류 시험 4차 A 안(devpapers ref/notice-category/round4/prompt_A_batch0.txt)을 글 하나용으로 옮긴 것.
+# 시험은 9건씩 묶어 보냈다 — 묶음 표현(「글 여러 개」 · 「글 번호(n)마다」)만 바꾸고 분류 정의 · 경계 예시 문장은 그대로 둔다.
+# 개량은 핫픽스로 이 문자열만 바꾼다(2026-10-23 운영자 결정). 바꾸면 NOTICE_CAT_PROMPT 도 올린다.
+NOTICE_CAT_PROMPT = "r4"
+_NOTICE_CAT_HEAD = (
+    "아래는 X(트위터) 글이다. 이 글은 성우 밴드 「夢限大みゅーたいぷ」(유메미타 — 仲町あられ · 宮永ののか · 峰月律 · 藤都子 · 千石ユノ)의 "
+    "공식 계정이 쓰거나 리포스트한 글이다. 이 글이 알리는 것에 해당하는 분류를 아래에서 **모두** 골라라. 없으면 빈 목록.\n"
+    "- live (라이브공연): 유메미타 전체 또는 일부 멤버가 무대에 서는 공연 — 단독 · 합동 · 프리 라이브, 투어. "
+    "그 공연의 티켓 판매 · 추첨 · 중지 · 변경 안내도 포함. 공연 굿즈 판매 · 통판 안내는 live 와 goods 둘 다.\n"
+    "- event (오프라인행사): 공연이 아닌, 유메미타 멤버가 나오는 행사 — 사인회(인터넷 사인회 포함) · お渡し会 · 릴리즈 이벤트 · "
+    "토크쇼 · 전시 · 팝업 스토어 · 콜라보 행사.\n"
+    "- goods (음원·굿즈): 유메미타의 CD(싱글 · 앨범) · 음원 · 커버곡 출시(커버곡 · MV 영상 공개 포함), 굿즈 · Blu-ray · 코믹스 등 "
+    "판매되는 물건과 그 예약 · 판매 · 특전 안내. 유메미타가 잡지에 실린다는 소식(雑誌掲載 · 인터뷰 · 특집 · 포스터)도 goods. "
+    "공연장 · 행사장 물판, CD 발매 기념 행사(릴리즈 이벤트 · 사인회 · お渡し会)도 포함(그 공연 · 행사 분류와 함께).\n"
+    "- broadcast (방송): 유메미타 멤버가 출연하는 방송 — 유튜브 생방송 · 동시 시청 · 생일 방송, 「バンドリ！TV LIVE」, 라디오, "
+    "TV · 니코니코 프로그램 출연, 멤버가 나오는 행사의 생중계(「様子を生配信」). 공연의 유튜브 생중계는 live 와 broadcast 둘 다. "
+    "애니메이션 「ゆめ∞みた」의 방영 · 방송 시작 · 배신 · 몰아보기 안내는 멤버가 출연하는 방송이 아니므로 broadcast 가 아니다.\n"
+    "경계 예시 — 한 글이 둘 이상에 걸치는 일이 많다. 분류 하나를 고른 뒤에도 나머지 분류를 하나씩 다시 확인해 빠뜨리지 말 것.\n"
+    "- 공연 굿즈의 판매 · 선행 판매 · 통판 · 사후 통판 안내 → live, goods. 굿즈만 다루는 글이라도 어느 공연의 굿즈인지 적혀 있으면 live 도 고른다. "
+    "「BanG Dream! ○th LIVE」처럼 여러 밴드가 함께 서는 공연도, 글에 유메미타(夢限大みゅーたいぷ · #ゆめみた)가 나오면 유메미타 공연이다. "
+    "(공연 티켓 판매는 live 만 — goods 아님. 「バンドリ！TV LIVE」는 방송 프로그램 이름이라 live 가 아니라 broadcast.)\n"
+    "- CD(싱글 · 앨범) 발매를 기념하는 릴리즈 이벤트 · 사인회 · お渡し会의 개최 · 중지 · 참가 감사 · 다음 회차 안내 → event, goods. "
+    "CD 발매와 무관한 행사(전시 · 생일 · 기념일을 기념하는 お渡し会 · 사인회 등)는 event 만 — 행사에서 무언가를 받거나 산다는 것만으로는 goods 가 아니다.\n"
+    "- 팬 · 영상 제작자 등 다른 사람이 만든 유메미타 커버곡 영상 · MV 를 리포스트하거나 소개하는 글(「covered by 夢限大みゅーたいぷ」) → goods. "
+    "만든 사람이 외부여도, 판매가 아니어도 같다.\n"
+    "- 공연(프리 라이브 포함)을 유튜브 등으로 생중계(「フリーライブ … YouTubeにて生配信」 「全編無料配信」) → live, broadcast.\n"
+    "evidence = 판단 근거가 된 구절들 — 글에서 한 줄씩 그대로 복사(바꾸지 말 것).\n"
+    "reason = 판단 이유 한국어 한 문장.\nJSON 으로만 답하라.\n"
+)
+
+
+def _md_in_evidence(date: str, evidence: str, posted_date: str = "") -> bool:
+    """(v4.7.0) 공연일 YYYY-MM-DD 의 월 · 일이 근거 줄에 실제로 적혀 있나 — 「12/24」 「12月24日」 「12.24」 「2026.12.24」.
+    「本日」 「今日」 「今夜」 는 게시일과 같을 때만. 티켓 접수일 같은 다른 날짜를 공연일로 고른 것은 못 거른다(그건 프롬프트 몫)."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date or "")
+    if not m:
+        return False
+    import unicodedata
+    ev = unicodedata.normalize("NFKC", evidence or "")
+    mo, d = int(m.group(2)), int(m.group(3))
+    if re.search(rf"(?<!\d)0?{mo}\s*[/月.\-]\s*0?{d}(?!\d)", ev):
+        return True
+    return bool(posted_date) and date == posted_date and bool(re.search(r"本日|今日|今夜", ev))
+
+
 _BANNER_SCOPE_SCHEMA = {
     "name": "banner_scope",
     "strict": True,
@@ -1004,6 +1082,100 @@ class LLMClient:
                     "evidence": ev, "next_lines": nx, "reason": why[:200]}
         logger.info("notice_timing: 호출 실패 또는 5회 모두 실패(응답 · 근거) — None (호출부가 올리고 실패 기록)")
         return None
+
+    def notice_categories(self, text: str) -> list[str] | None:
+        """
+        (v4.7.0) 소식 분류 — live(라이브공연) · event(오프라인행사) · goods(음원·굿즈) · broadcast(방송) 중 해당하는 것을 모두.
+        프롬프트 = 분류 시험 4차 A 안(`_NOTICE_CAT_HEAD`, `NOTICE_CAT_PROMPT`). 빈 목록 = 해당 없음(호출부가 기타로).
+        **근거 필수** — 분류를 골랐으면 evidence 가 하나 이상, 모두 원문에 있어야 한다. 아니면 다시 묻는다(3회).
+        Returns: 분류 목록(NOTICE_LLM_CATS 순서) | None(호출 실패 · 3회 모두 근거 없음 — 호출부가 옛 분류로 둔다)
+        """
+        self.last_reason = ""
+        if self.disabled:
+            return None
+        base = _with_hint(_NOTICE_CAT_HEAD + "\n글:\n" + (text or ""))
+        prompt = base
+        for attempt in range(1, 4):
+            response = self._call_groq(self.model, prompt, json_schema=_NOTICE_CATS_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=_NOTICE_CATS_SCHEMA)
+            if not response:
+                break   # 호출 실패(429 · 5xx · 네트워크)면 다시 묻지 않는다(v4.6.1)
+            try:
+                r = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.info(f"notice_categories: JSON 파싱 실패 (attempt {attempt}/3) — {response!r}")
+                continue
+            if not isinstance(r, dict) or not isinstance(r.get("cats"), list):
+                logger.info(f"notice_categories: 예상 필드 부재 (attempt {attempt}/3) — {r!r}")
+                continue
+            cats = [c for c in NOTICE_LLM_CATS if c in r["cats"]]
+            ev = [str(e).strip() for e in (r.get("evidence") or []) if str(e).strip()]
+            why = str(r.get("reason") or "").strip()
+            if len(why) < 5 or (cats and not ev) or not all(evidence_in_text(e, text or "") for e in ev):
+                logger.info(f"notice_categories: 근거 없음 · 원문에 없는 구절 — 다시 묻는다 (attempt {attempt}/3) — {r!r}")
+                prompt = (base + "\n\n주의: 바로 전 답은 근거가 없거나 원문에 없는 구절을 들어 받지 않았다. "
+                          "분류를 골랐으면 evidence 에 위 글에 실제로 있는 줄을 그대로 복사하고, reason 에 판단 이유를 한 문장으로 적어라.")
+                continue
+            self.last_reason = why[:200] + (f" (근거: 「{ev[0][:60]}」)" if ev else "")
+            return cats
+        logger.info("notice_categories: 호출 실패 또는 3회 모두 실패(응답 · 근거) — None (호출부가 옛 분류로 둔다)")
+        return None
+
+    def live_info(self, text: str, posted_jst: str) -> dict | None:
+        """
+        (v4.7.0) 라이브공연 소식의 공연 이름 · 공연일 — 라이브공연 탭에서 같은 공연 소식을 한데 모으는 열쇠.
+        name = 공연 타이틀을 원문 표기 그대로(「」 안쪽), date = 공연 당일(티켓 · 통판 날짜 아님).
+        **근거 필수** — name · name_evidence · date_evidence 가 원문에 있어야 하고, date 의 월 · 일이 date_evidence 에 적혀 있어야 한다(3회).
+        3회 모두 날짜 근거가 안 맞으면 날짜만 비우고 이름은 살린다.
+        Returns: {"name": str|None, "date": "YYYY-MM-DD"|None, "reason": str} | None(호출 실패 · 이름 근거도 끝내 없음)
+        """
+        if self.disabled:
+            return None
+        posted_date = (posted_jst or "")[:10]
+        base = _with_hint(
+            "아래는 성우 밴드 「夢限大みゅーたいぷ」(유메미타) 소식 글이다. 게시 시각: " + (posted_jst or "?") + " (일본 시간).\n"
+            "이 글이 다루는 공연(라이브)의 이름과 공연일을 뽑아라.\n"
+            "- name = 공연을 가리키는 고유 제목을 글에 적힌 표기 그대로. 「」 · 『』 · “” 안에 든 공연 타이틀(예: 「DIMENSIONAL OVERLAP」)이 있으면 "
+            "괄호를 뺀 안쪽만. 타이틀이 없으면 공연 이름(예: NAKAMACHI ARALE LIVE 2026). 「BanG Dream! 13th LIVE」처럼 여러 밴드가 서는 공연 안에서 "
+            "유메미타 공연의 타이틀이 따로 있으면 그 타이틀. 해시태그 · 회장 이름 · 굿즈 이름은 공연 이름이 아니다. 공연 이름이 없으면 \"\".\n"
+            "- name_evidence = name 이 나온 원문 줄을 그대로 복사. name 이 \"\"면 \"\".\n"
+            "- date = 공연이 열리는 날(일본 시간 YYYY-MM-DD). 티켓 판매 · 접수 · 통판 · 발표 날짜가 아니라 공연 당일. 여러 날이면 첫날. "
+            "연도가 없으면 게시 시각 기준으로 정한다. 글에 공연일이 없으면 \"\".\n"
+            "- date_evidence = 공연일이 적힌 원문 줄을 그대로 복사. date 가 \"\"면 \"\".\n"
+            "- reason = 판단 이유 한국어 한 문장.\nJSON 으로만 답하라.\n\n글:\n" + (text or ""))
+        prompt = base
+        name_only = None
+        for attempt in range(1, 4):
+            response = self._call_groq(self.model, prompt, json_schema=_LIVE_INFO_SCHEMA)
+            if not response:
+                response = self._call_groq(self.fallback, prompt, json_schema=_LIVE_INFO_SCHEMA)
+            if not response:
+                break
+            try:
+                r = json.loads(_strip_json_fence(response))
+            except json.JSONDecodeError:
+                logger.info(f"live_info: JSON 파싱 실패 (attempt {attempt}/3) — {response!r}")
+                continue
+            if not isinstance(r, dict):
+                continue
+            name = str(r.get("name") or "").strip().strip("「」『』“”\"")
+            nev, date, dev = (str(r.get(k) or "").strip() for k in ("name_evidence", "date", "date_evidence"))
+            why = str(r.get("reason") or "").strip()
+            name_ok = not name or (evidence_in_text(name, text or "") and evidence_in_text(nev, text or ""))
+            date_ok = not date or (evidence_in_text(dev, text or "") and _md_in_evidence(date, dev, posted_date))
+            if name_ok and date_ok and len(why) >= 5:
+                return {"name": name or None, "date": date or None, "reason": why[:200]}
+            if name_ok and name and len(why) >= 5:
+                name_only = {"name": name, "date": None, "reason": why[:200]}
+            logger.info(f"live_info: 근거 없음 · 원문에 없는 구절 · 날짜 근거 불일치 — 다시 묻는다 (attempt {attempt}/3) — {r!r}")
+            prompt = (base + "\n\n주의: 바로 전 답은 이름 · 근거가 원문에 없거나, 공연일의 월 · 일이 date_evidence 에 적혀 있지 않아 받지 않았다. "
+                      "원문에 있는 표기를 그대로 복사하고, 공연일이 적힌 줄이 없으면 date 는 \"\"로 둬라.")
+        if name_only:
+            logger.info("live_info: 날짜 근거가 끝내 안 맞아 이름만 — %s", name_only["name"])
+        else:
+            logger.info("live_info: 호출 실패 또는 3회 모두 실패 — None (공연 이름 없이 올림)")
+        return name_only
 
     def duplicate_notice(self, new_text: str, candidates: list[dict]) -> str | None:
         """
@@ -2233,6 +2405,34 @@ if __name__ == "__main__":
     _r = _live.banner_extract("BanG Dream! 13th☆LIVE\n「DIMENSIONAL OVERLAP」\n開催記念 ミッションパス🛸", "2026-10-11 21:02")
     assert _r["items"] == [] and "이벤트 표지 없음" in _r["reason"], _r
     print("✓ banner_extract: 「」 안쪽 · 본문 표기 · 근거 없는 제목 거절 · 이미지 수 안 맞는 용도 버림 · 남의 기간 빌림 거름 · 공연 이름 거름")
+
+    # ──── (v4.7.0) 소식 분류 · 공연 이름 ────
+    _nt = "＼先行通販開始📢／\nBanG Dream! 13th☆LIVE\n先行通販がこのあと15時00分より開始です！\n#ゆめみた"
+    _s = _ReadingSession(['{"cats": ["goods", "live"], "evidence": ["先行通販がこのあと15時00分より開始です！"], "reason": "공연 굿즈 통판이다."}'])
+    assert LLMClient("k", session=_s).notice_categories(_nt) == ["live", "goods"], "분류 순서 = NOTICE_LLM_CATS"
+    _s = _ReadingSession(['{"cats": ["live"], "evidence": ["없는 구절"], "reason": "공연 소식이다."}',
+                          '{"cats": ["live"], "evidence": [], "reason": "공연 소식이다."}',
+                          '{"cats": ["live"], "evidence": ["BanG Dream! 13th☆LIVE"], "reason": "공연 소식이다."}'])
+    assert LLMClient("k", session=_s).notice_categories(_nt) == ["live"] and _s.calls == 3, "근거 없으면 다시 묻는다"
+    _s = _ReadingSession(['{"cats": [], "evidence": [], "reason": "애니 방영 안내라 해당 없음."}'])
+    assert LLMClient("k", session=_s).notice_categories("アニメ放送開始") == [], "빈 목록 = 해당 없음(근거 없어도 됨)"
+    _s = _ReadingSession(['{"cats": ["live"], "evidence": ["x"], "reason": "."}'] * 3)
+    assert LLMClient("k", session=_s).notice_categories(_nt) is None and _s.calls == 3, "3회 모두 근거 없음 → None"
+    assert LLMClient("k", session=_ReadingSession([""])).notice_categories(_nt) is None, "호출 실패 → None"
+    _lt = "＼チケット一般発売 明日開始📢／\n12/24(木)開催\n🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤\n⏰受付期間 明日10/3(土) 12:00〜"
+    _s = _ReadingSession(['{"name": "RESONEXT", "name_evidence": "🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤", "date": "2026-12-24", '
+                          '"date_evidence": "12/24(木)開催", "reason": "공연 타이틀과 개최일이다."}'])
+    assert LLMClient("k", session=_s).live_info(_lt, "2026-10-02 12:00") == {"name": "RESONEXT", "date": "2026-12-24", "reason": "공연 타이틀과 개최일이다."}
+    _bad_date = ('{"name": "RESONEXT", "name_evidence": "🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤", "date": "2026-10-03", '
+                 '"date_evidence": "12/24(木)開催", "reason": "공연 타이틀과 개최일이다."}')
+    _s = _ReadingSession([_bad_date] * 3)
+    _r = LLMClient("k", session=_s).live_info(_lt, "2026-10-02 12:00")
+    assert _r == {"name": "RESONEXT", "date": None, "reason": "공연 타이틀과 개최일이다."} and _s.calls == 3, "날짜 근거 불일치 → 이름만"
+    _s = _ReadingSession(['{"name": "없는 공연", "name_evidence": "없는 줄", "date": "", "date_evidence": "", "reason": "공연 이름이다."}'] * 3)
+    assert LLMClient("k", session=_s).live_info(_lt, "2026-10-02 12:00") is None, "원문에 없는 이름 → None"
+    assert _md_in_evidence("2026-12-24", "12月24日(木)") and _md_in_evidence("2026-10-11", "2026.10.11 東京") and not _md_in_evidence("2026-10-03", "12/24(木)")
+    assert _md_in_evidence("2026-10-11", "本日開催", "2026-10-11") and not _md_in_evidence("2026-10-12", "本日開催", "2026-10-11")
+    print("✓ notice_categories · live_info: 분류 순서 · 근거 다시 묻기 · 빈 목록 · 실패 None · 공연일 근거 · 이름만")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")

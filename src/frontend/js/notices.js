@@ -4,6 +4,7 @@
 //        펼침: 행사 배너 → [분류 칩 · 한글|원문] → 날짜별 묶음(날짜 칸 「10/24 (토) TODAY」 + 소식 줄)
 //   모바일 접힘: [램프] [분류별 건수 칩 — 움직이지 않음, 누르면 그 분류로 펼침] [▾] [테마]
 //        펼침: 행사 배너 → [「전체 n건」 · 한글|원문 / 밑줄 탭] → 카드 1열
+// (v4.7.0) 분류 = 소식마다 categories(목록) — 한 소식은 자기 분류 탭 모두에. 라이브공연 탭은 [공연별 | 날짜순], 공연별 = 공연 이름으로 묶음(_liveGroupsHTML).
 // 「소식 팝업 카드」 = 소식 하나의 자세한 내용(분류 · D-day · 날짜 · 시각 · 출처 / 전체 제목 / 번역 본문 / X 공식 카드 / 링크).
 //   PC: 소식 줄 호버 = 잠깐 열림(팝업으로 옮겨도 유지), 클릭 = 고정(한 번에 1개), ✕ · Esc · 바깥 클릭으로 닫힘 — 트윗 말풍선과 같은 방식.
 //   모바일: 카드를 누르면 아래 시트(배경 · ✕ · Esc 로 닫힘) — 트윗 시트와 같은 방식.
@@ -17,21 +18,32 @@ import { visibleBanners, bannerHTML, bannerSig, mountBannerMotion, stopBannerMot
 import { themeButton } from "./theme.js";   // (v4.6.0) 막대 마지막 칸 = 밝게/어둡게 전환 버튼 (다시 그려도 같은 버튼을 옮겨 붙인다)
 import { makeXCard, loadXCards, stopXCards } from "./tweets.js";   // (v4.6.4) 팝업 카드의 X 공식 카드 — 트윗 말풍선과 같은 코드
 
-// (v4.6.4) 분류 6개. 지금 데이터의 옛 값은 화면에서 바꿔 읽는다:
-//   live(옛 「라이브예고」 — 실제로는 대부분 방송) → broadcast, release → goods, platform · etc · 모르는 값 → etc.
-//   새 값(event · broadcast · goods · game · etc)은 그대로 쓴다. 백엔드가 새 6분류를 쓰기 시작하면 이 표를 같이 바꾼다(SPEC).
+// (v4.7.0) 분류 6개 — 백엔드가 소식마다 `categories`(목록)를 붙인다: 라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿 함께,
+//   Our Notes(게임 계정 글) · 기타는 단독. 한 소식은 자기 분류 탭 모두에 나온다.
+//   `categories` 가 없는 줄(v4.7.0 이전 · 판정 실패)은 옛 `category`(정규식 4종)를 바꿔 읽는다:
+//   live(옛 「라이브예고」 — 실제로는 대부분 방송) → broadcast, release → goods, platform · 모르는 값 → etc, 출처가 게임 계정이면 game.
 const CATS = [
-  { id: "live", name: "라이브" },
-  { id: "event", name: "행사" },
-  { id: "broadcast", name: "방송출연" },
-  { id: "goods", name: "음원·굿즈·출판" },
-  { id: "game", name: "게임" },
+  { id: "live", name: "라이브공연" },
+  { id: "event", name: "오프라인행사" },
+  { id: "goods", name: "음원·굿즈" },
+  { id: "broadcast", name: "방송" },
+  { id: "game", name: "Our Notes" },
   { id: "etc", name: "기타" },
 ];
+const CAT_IDS = CATS.map((c) => c.id);
 const CAT_NAME = Object.fromEntries(CATS.map((c) => [c.id, c.name]));
-const CAT_READ = { live: "broadcast", release: "goods", platform: "etc",
-                   event: "event", broadcast: "broadcast", goods: "goods", game: "game", etc: "etc" };
-function _cat(n) { return CAT_READ[n && n.category] || "etc"; }
+const LEGACY_READ = { live: "broadcast", release: "goods", platform: "etc" };
+const GAME_SRC_RE = /^@?bang_dream_on$/i;   // config/channels.json game_accounts 의 handle
+function _cats(n) {   // 이 소식의 분류 목록(CATS 순서)
+  const c = n && Array.isArray(n.categories) ? CAT_IDS.filter((id) => n.categories.includes(id)) : [];
+  if (c.length) return c;
+  if (n && GAME_SRC_RE.test(String(n.src_handle || "").trim())) return ["game"];
+  const old = n && n.category;
+  return [LEGACY_READ[old] || (CAT_IDS.includes(old) ? old : "etc")];
+}
+// 아이콘으로 보일 분류 하나 — 분류 탭 안이면 그 탭의 분류, 전체면 첫 분류
+function _cat(n) { const cs = _cats(n); return _st.tab !== "all" && cs.includes(_st.tab) ? _st.tab : cs[0]; }
+function _catNames(n) { return _cats(n).map((k) => CAT_NAME[k]).join(" · "); }
 
 // 아이콘 — 고정 문자열(데이터 아님). 분류 아이콘은 선(stroke), X 로고만 채움(fill)
 const ICON = {
@@ -45,6 +57,7 @@ const ICON = {
 };
 
 const LANG_KEY = "mew.notice.lang";       // 제목 언어(ko = 한글, ja = 원문) — 트윗 번역 설정과 별개
+const LIVE_VIEW_KEY = "mew.notice.liveview";   // (v4.7.0) 라이브공연 탭 보기 방식(group = 공연별, date = 날짜순)
 const LIST_CAP = { pc: 420, m: 460 };     // 펼친 목록에서 분류 줄 아래 소식 영역의 최대 높이(px). 행사 배너 · 분류 줄 높이는 따로 더한다
 const VIEWPORT_CAP = 0.7;                 // 펼친 목록 전체는 화면 높이의 70% 를 넘지 않는다 — 넘으면 목록 안에서 스크롤
 const MOBILE_MQ = "(max-width: 767px)";   // notices.css 의 모바일 기준과 같다
@@ -55,7 +68,8 @@ const POP_MAX_H = 560;                    // 팝업 최대 높이 — 화면 안
 
 const _st = { built: false, sig: "", idx: 0, open: false, timer: null, paused: false,
               bn: [], bnSig: "", rawBanners: null, lastData: undefined,
-              lang: _loadLang(), tab: "all", mode: "pc", list: [], section: null, listEl: null };
+              lang: _loadLang(), tab: "all", mode: "pc", list: [], section: null, listEl: null,
+              liveView: _loadLiveView(), liveOpen: {} };   // (v4.7.0) 라이브공연 탭 [공연별 | 날짜순] · 묶음별 펼침(키 → bool)
 // PC 팝업 카드 상태 — mode: null | "peek"(호버) | "pin"(클릭 고정)
 const _pop = { el: null, id: null, mode: null, sig: "", cardTimer: null, closeTimer: null };
 // 모바일 시트 상태
@@ -156,16 +170,16 @@ function _byId(id) { return id == null ? null : _st.list.find((n) => String(n.id
 function _counts(list) {
   const c = { all: list.length };
   CATS.forEach((k) => { c[k.id] = 0; });
-  list.forEach((n) => { c[_cat(n)]++; });
+  list.forEach((n) => { _cats(n).forEach((k) => { c[k]++; }); });   // 여러 분류인 소식은 각 분류에 하나씩
   return c;
 }
 function _filtered() {
-  return _st.tab === "all" ? _st.list : _st.list.filter((n) => _cat(n) === _st.tab);
+  return _st.tab === "all" ? _st.list : _st.list.filter((n) => _cats(n).includes(_st.tab));
 }
 
 // ── PC 티커 한 줄: [D-day] [분류 아이콘] [제목] [날짜 (요일) 시각]. 제목을 누르면 펼침 + 그 소식 팝업 고정 ──
 function _tickRow(n, clone) {
-  const cat = _cat(n), d = _date(n);
+  const cat = _cats(n)[0], d = _date(n);
   const when = d ? `${_dateTxt(n)}${n.time ? " " + n.time : ""}` : (n.time || "");
   const tt = _titleOf(n);
   const ttl = clone
@@ -229,7 +243,7 @@ function _groupsHTML(list) {
         `<span class="ntc__time${n.time ? "" : " is-none"}">${_esc(n.time || "—")}</span>` +
         _catIc(cat) +
         `<div class="ntc__gbody">${_ttlSpan(n)}` +
-          `<div class="ntc__meta"><span class="ntc__cn">${_esc(CAT_NAME[cat])}</span>` +
+          `<div class="ntc__meta"><span class="ntc__cn">${_esc(_catNames(n))}</span>` + _lnameHTML(n) +
             (n.deadline ? `<span class="ntc__until">이날까지</span>` : "") +
             `<span class="ntc__src">${_ic("x")}<span class="nm">${_esc(n.src_handle || "@BDP_yumemita")}</span></span>` +
           `</div></div></div>`;
@@ -245,9 +259,91 @@ function _cardsHTML(list) {
     const cat = _cat(n);
     return `<div class="ntc__card" data-cat="${cat}" ${_hitAttrs(n)}>${_catIc(cat, true)}` +
       `<div class="ntc__cbody">${_ttlSpan(n)}` +
-        `<div class="ntc__meta">${_ddHTML(_date(n))}<span class="ntc__cn">${_esc(CAT_NAME[cat])}</span>` +
+        `<div class="ntc__meta">${_ddHTML(_date(n))}<span class="ntc__cn">${_esc(_catNames(n))}</span>` +
           `<span>${_esc(_dateTxt(n))}</span><span>${_esc(n.time || "—")}</span></div>` +
       `</div></div>`;
+  }).join("") + `</div>`;
+}
+
+// ───────────── (v4.7.0) 라이브공연 탭 — 공연별 묶음 ─────────────
+// 백엔드가 라이브공연 소식에 붙인 공연 이름(live_name, 원문 표기) · 공연일(live_date)로 같은 공연 소식을 모은다.
+// 묶음 머리 = [공연일 타일] [공연 이름 / 소식 n건] [공연일 기준 D-day] [›] — 하위 소식 줄은 들여 쓴 어두운 칸에 작은 글자로(머리와 구분).
+// 순서 = 다가오는 공연(공연일 순) → 공연일 미정 → 지난 공연(최근 순, 접힘) → 「그 밖의 공연 소식」(공연 이름 없음).
+// [공연별 | 날짜순] 선택은 localStorage 에 남긴다. 날짜순 = 다른 탭과 같은 목록(줄마다 공연 이름 꼬리표).
+function _loadLiveView() {
+  try { return localStorage.getItem(LIVE_VIEW_KEY) === "date" ? "date" : "group"; } catch (e) { return "group"; }
+}
+function _saveLiveView(v) {
+  try { localStorage.setItem(LIVE_VIEW_KEY, v); } catch (e) { /* 저장 못 해도 지금 화면은 바꾼다 */ }
+}
+function _liveKey(name) {   // 같은 공연 판정 — 전각/반각 · 대소문자 · 공백 · 괄호 · 구두점 차이는 무시
+  return String(name || "").normalize("NFKC").toLowerCase().replace(/[\s「」『』“”"'’・·:：!！?？\-–—_.,、。☆★]/g, "");
+}
+function _lnameHTML(n) {   // 소식 줄의 공연 이름 꼬리표(라이브공연이고 이름이 있을 때)
+  return n.live_name && _cats(n).includes("live") ? `<span class="ntc__lname" lang="ja">${_esc(n.live_name)}</span>` : "";
+}
+function _liveSegHTML() {
+  const b = (v, label) => `<button type="button" data-lview="${v}" aria-pressed="${_st.liveView === v}">${label}</button>`;
+  return `<div class="ntc__seg ntc__seg--lv" role="group" aria-label="라이브공연 보기 방식">${b("group", "공연별")}${b("date", "날짜순")}</div>`;
+}
+function _mostCommon(vals) {   // 가장 많이 나온 값(같으면 앞선 값 — 날짜는 이른 날)
+  const cnt = new Map();
+  vals.filter(Boolean).sort().forEach((v) => cnt.set(v, (cnt.get(v) || 0) + 1));
+  let best = null, bn = 0;
+  cnt.forEach((c, v) => { if (c > bn) { best = v; bn = c; } });
+  return best;
+}
+function _liveGroups(list) {
+  const today = _todayKST(), by = new Map();
+  list.forEach((n) => {
+    const k = _liveKey(n.live_name);
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(n);
+  });
+  const t0 = new Date(today + "T00:00:00+09:00").getTime();
+  const groups = [...by.entries()].map(([key, items]) => {
+    const name = key ? _mostCommon(items.map((n) => n.live_name)) : null;
+    const date = key ? _mostCommon(items.map((n) => (_DATE_RE.test(n.live_date || "") ? n.live_date : null))) : null;
+    const d = date ? Math.round((new Date(date + "T00:00:00+09:00").getTime() - t0) / 86400000) : null;
+    const past = d != null && d < 0;
+    const rank = !key ? 3 : past ? 2 : date ? 0 : 1;
+    const last = items.map(_date).filter(Boolean).sort().pop() || null;
+    return { key, name, date, d, past, rank, items, last };
+  });
+  groups.sort((a, b) => a.rank - b.rank ||
+    (a.rank === 0 ? a.date.localeCompare(b.date) : a.rank === 2 ? b.date.localeCompare(a.date) : String(a.name).localeCompare(String(b.name))));
+  return groups;
+}
+function _liveGroupsHTML(list, mode) {
+  return `<div class="ntc__lgs">` + _liveGroups(list).map((g) => {
+    const gid = g.key || "~other";
+    const open = gid in _st.liveOpen ? _st.liveOpen[gid] : !g.past;
+    const tile = !g.key
+      ? `<span class="ntc__lgtile is-icon">${_ic("live")}</span>`
+      : g.date
+        ? `<span class="ntc__lgtile"><span class="m">${Number(g.date.slice(5, 7))}월</span><span class="d">${Number(g.date.slice(8, 10))}</span><span class="w">${_wd(g.date)}</span></span>`
+        : `<span class="ntc__lgtile is-tbd"><span class="m">공연일</span><span class="d">미정</span></span>`;
+    const dd = !g.key ? "" : g.d == null ? "공연일 미정" : g.d < 0 ? `종료 · D+${-g.d}` : g.d === 0 ? "TODAY" : `D-${g.d}`;
+    const sub = `소식 ${g.items.length}건` + (g.past && g.last ? ` · 마지막 ${_md(g.last)}` : "");
+    const rows = g.items.map((n) => {
+      const chips = _cats(n).filter((k) => k !== "live")
+        .map((k) => `<span class="ntc__lchip" data-cat="${k}">${_esc(CAT_NAME[k])}</span>`).join("");
+      return mode === "pc"
+        ? `<div class="ntc__gi ntc__lrow" data-cat="live" ${_hitAttrs(n)}><span class="ntc__ldot" aria-hidden="true"></span>` +
+            `<span class="ntc__ldate">${_esc(_dateTxt(n))}</span><span class="ntc__ltime">${_esc(n.time || "—")}</span>` +
+            _ttlSpan(n) + `<span class="ntc__lchips">${chips}</span></div>`
+        : `<div class="ntc__card ntc__lrow" data-cat="live" ${_hitAttrs(n)}><span class="ntc__ldot" aria-hidden="true"></span>` +
+            `<div class="ntc__cbody">${_ttlSpan(n)}<div class="ntc__meta"><span>${_esc(_dateTxt(n))}</span>` +
+            `<span>${_esc(n.time || "—")}</span>${chips}</div></div></div>`;
+    }).join("");
+    const cls = "ntc__lg" + (g.past ? " is-past" : "") + (!g.key ? " is-other" : "") + (g.key && !g.date ? " is-tbd" : "");
+    return `<section class="${cls}" data-cat="live">` +
+      `<button class="ntc__lghd" type="button" data-lgrp="${_attr(gid)}" aria-expanded="${open}">` + tile +
+        `<span class="ntc__lgtx"><span class="ntc__lgname"${g.key ? ' lang="ja"' : ""}>${_esc(g.name || "그 밖의 공연 소식")}</span>` +
+          `<span class="ntc__lgsub">${_esc(sub)}</span></span>` +
+        (dd ? `<span class="ntc__lgdd">${_esc(dd)}</span>` : "") +
+        `<span class="ntc__lgchev" aria-hidden="true">›</span></button>` +
+      `<div class="ntc__lgrows"${open ? "" : " hidden"}>${rows}</div></section>`;
   }).join("") + `</div>`;
 }
 
@@ -268,7 +364,7 @@ function _cardFill(box, n, device) {
   const links = (more ? `<a href="${_attr(more)}" target="_blank" rel="noopener">자세히 보기 ↗</a>` : "") +
                 (tw ? `<a href="${_attr(tw)}" target="_blank" rel="noopener">원문 트윗 ↗</a>` : "");
   box.innerHTML =
-    `<div class="ntc-card__hd" data-cat="${cat}">${_catIc(cat)}<span class="ntc-card__cn">${_esc(CAT_NAME[cat])}</span>` +
+    `<div class="ntc-card__hd" data-cat="${cat}">${_catIc(cat)}<span class="ntc-card__cn">${_esc(_catNames(n))}</span>` +
       (_date(n) ? _ddHTML(_date(n)) : "") +
       `<span class="ntc-card__when">${_esc(when)}</span>` +
       `<span class="ntc-card__h">${_esc(n.src_handle || "@BDP_yumemita")}</span>` +
@@ -279,7 +375,7 @@ function _cardFill(box, n, device) {
     (links ? `<div class="ntc-card__links">${links}</div>` : "");
   if (tw) box.querySelector(".ntc-card__cols").appendChild(makeXCard(_tweetId(n), tw));
 }
-function _cardSig(n) { return [n.id, n.last_updated, n.title, n.title_ko, n.body_ko, n.category, n.date, n.time, n.tweet_url, n.url, _st.lang].join("\u0001"); }
+function _cardSig(n) { return [n.id, n.last_updated, n.title, n.title_ko, n.body_ko, _cats(n).join(","), n.live_name, n.live_date, n.date, n.time, n.tweet_url, n.url, _st.lang].join("\u0001"); }
 
 // ───────────── PC 팝업 (#notice 안 · 목록 밖, z-index 43) ─────────────
 function _popRow() {
@@ -458,7 +554,7 @@ export function renderNotices(section, data) {
 
   const mode = _isMobile() ? "m" : "pc";
   const today = _todayKST();
-  const sig = list.map((n) => n.id + ":" + (n.last_updated || "") + ":" + _cat(n)).join("|") +
+  const sig = list.map((n) => n.id + ":" + (n.last_updated || "") + ":" + _cats(n).join(",") + ":" + (n.live_name || "") + ":" + (n.live_date || "")).join("|") +
     "#" + _st.bnSig + "#" + mode + "#" + today;
   if (_st.built && sig === _st.sig) return;   // 변화 없음 → 계속 돌림
   _st.sig = sig;
@@ -566,14 +662,17 @@ function _build(section) {
   const hdEl = listEl.querySelector(".ntc__hd"), bodyEl = listEl.querySelector(".ntc__body");
   const paintList = () => {
     const shown = _filtered();
+    const liveTab = _st.tab === "live", lv = liveTab ? _liveSegHTML() : "";   // (v4.7.0) 라이브공연 탭 = [공연별 | 날짜순]
     if (mode === "pc") {
-      hdEl.innerHTML = _chipsHTML(c) + _segHTML();
+      hdEl.innerHTML = _chipsHTML(c) + lv + _segHTML();
     } else {
       const label = _st.tab === "all" ? "전체" : CAT_NAME[_st.tab];
-      hdEl.innerHTML = `<div class="ntc__hd2"><span class="ntc__count">${_esc(label)} ${shown.length}건</span>${_segHTML()}</div>` + _utabsHTML(c);
+      hdEl.innerHTML = `<div class="ntc__hd2"><span class="ntc__count">${_esc(label)} ${shown.length}건</span>${lv}${_segHTML()}</div>` + _utabsHTML(c);
     }
+    hdEl.classList.toggle("has-lv", liveTab);
     bodyEl.innerHTML = !shown.length
       ? `<p class="ntc__none">이 분류의 소식이 없습니다.</p>`
+      : liveTab && _st.liveView === "group" ? _liveGroupsHTML(shown, mode)
       : mode === "pc" ? _groupsHTML(shown) : _cardsHTML(shown);
     listEl.style.setProperty("--ntc-hd-h", hdEl.getBoundingClientRect().height + "px");   // PC 날짜 칸이 분류 줄 아래에 붙게
     if (_st.open) applyListHeight();
@@ -600,7 +699,7 @@ function _build(section) {
   const openAndPin = (id, viaKey) => {
     const n = _byId(id);
     if (!n) return;
-    if (_st.tab !== "all" && _cat(n) !== _st.tab) { _st.tab = "all"; paintList(); }
+    if (_st.tab !== "all" && !_cats(n).includes(_st.tab)) { _st.tab = "all"; paintList(); }
     setOpen(true);
     const go = () => {
       const row = Array.from(listEl.querySelectorAll(".ntc__gi")).find((r) => r.dataset.nid === String(id));
@@ -625,6 +724,30 @@ function _build(section) {
       paintList();
       const t = listEl.querySelector(`[data-tab="${_st.tab}"]`);
       if (t) t.focus({ preventScroll: true });
+      return;
+    }
+    // (v4.7.0) 라이브공연 탭 — 보기 방식 · 공연 묶음 접기/펼치기
+    const lview = e.target.closest("[data-lview]");
+    if (lview) {
+      const v = lview.dataset.lview === "date" ? "date" : "group";
+      if (_st.liveView === v) return;
+      _st.liveView = v;
+      _saveLiveView(v);
+      _popClose();
+      paintList();
+      const b = listEl.querySelector(`[data-lview="${v}"]`);
+      if (b) b.focus({ preventScroll: true });
+      return;
+    }
+    const lg = e.target.closest("[data-lgrp]");
+    if (lg) {
+      const open = lg.getAttribute("aria-expanded") !== "true";
+      _st.liveOpen[lg.dataset.lgrp] = open;
+      lg.setAttribute("aria-expanded", String(open));
+      const rows = lg.parentElement.querySelector(".ntc__lgrows");
+      if (rows) rows.hidden = !open;
+      if (!open && _pop.mode && rows && _pop.id != null && rows.querySelector(`[data-nid="${CSS.escape(String(_pop.id))}"]`)) _popClose();
+      if (_st.open) applyListHeight();
       return;
     }
     const lang = e.target.closest("[data-lang]");

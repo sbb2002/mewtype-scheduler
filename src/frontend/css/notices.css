@@ -22,6 +22,11 @@
   --ntc-cat-goods: #ad97f5;                /* 음원·굿즈·출판 */
   --ntc-cat-game: #8bd06f;                 /* 게임 */
   --ntc-cat-etc: #a3abbd;                  /* 기타 */
+  /* (v4.7.0) 라이브공연 탭 공연별 묶음 */
+  --ntc-lg-ink: #1a0d14;                   /* 공연일 타일 · D-day 배지(라이브공연 색 바탕) 위 글자 */
+  --ntc-lg-head: rgba(242, 123, 181, 0.07);/* 다가오는 공연 머리 바탕(라이브공연 색을 옅게) */
+  --ntc-lg-rows: #141414;                  /* 하위 소식 칸 — 머리보다 어둡게 */
+  --ntc-lg-past: #1d1d1d;                  /* 지난 공연 머리 · 타일 */
   --ntc-item-h: 2.2rem;                    /* 접힌 막대 높이 — 모바일 layout.css --m-notice 가 이 높이를 전제로 한다 */
   --ntc-ja: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP",
             -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -256,6 +261,71 @@ a.ntc__src:hover { color: var(--color-text); }
 }
 
 /* ── 모바일 ≤767px — 시안 ③: 접힌 막대 = 분류별 건수 칩, 펼침 = 밑줄 탭 7칸 + 카드 1열 ── */
+/* ── (v4.7.0) 라이브공연 탭 — 공연별 묶음. 머리 = [공연일 타일] [공연 이름 / 소식 n건] [D-day] [›], 하위 소식 = 들여 쓴 어두운 칸의 작은 줄 ── */
+.ntc__seg--lv + .ntc__seg { margin-left: 0; }
+.ntc__lname {
+  font-size: 12px; font-weight: 700; color: var(--ntc-cat-live); white-space: nowrap;
+  padding: 0 7px; border-radius: 5px; background: color-mix(in srgb, var(--ntc-cat-live) 12%, transparent);
+}
+.ntc__lgs { display: grid; gap: 10px; padding: 12px; }
+.ntc__lg {
+  border: 1px solid color-mix(in srgb, var(--ntc-cat-live) 40%, transparent);
+  border-radius: 12px; overflow: hidden; background: var(--color-bg-secondary);
+}
+.ntc__lg.is-past, .ntc__lg.is-other { border-color: var(--ntc-border-soft); }
+.ntc__lghd {
+  width: 100%; display: flex; align-items: center; gap: 16px; padding: 14px 16px;
+  border: 0; background: var(--ntc-lg-head); color: var(--color-text); font: inherit; text-align: left; cursor: pointer;
+}
+.ntc__lg.is-past .ntc__lghd, .ntc__lg.is-other .ntc__lghd { background: var(--ntc-lg-past); }
+.ntc__lghd:hover { filter: brightness(1.08); }
+.ntc__lghd:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
+.ntc__lgtile {
+  flex: none; width: 58px; height: 62px; border-radius: 10px; box-sizing: border-box;
+  display: grid; place-content: center; justify-items: center; line-height: 1.1;
+  background: var(--ntc-cat-live); color: var(--ntc-lg-ink);
+}
+.ntc__lgtile .m, .ntc__lgtile .w { font-size: 11px; font-weight: 700; opacity: 0.85; }
+.ntc__lgtile .d { font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ntc__lgtile.is-tbd { background: transparent; border: 1.5px dashed var(--ntc-cat-live); color: var(--ntc-cat-live); }
+.ntc__lgtile.is-tbd .d { font-size: 17px; }
+.ntc__lgtile.is-icon { background: transparent; border: 1.5px solid var(--ntc-border-soft); color: var(--color-text-muted); }
+.ntc__lgtile.is-icon .ntc__ic { width: 22px; height: 22px; }
+.ntc__lg.is-past .ntc__lgtile { background: var(--color-raised); color: var(--color-text-muted); }
+.ntc__lgtx { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.ntc__lgname {
+  font-family: var(--ntc-ja); font-size: 20px; font-weight: 800; letter-spacing: 0.01em; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ntc__lg.is-past .ntc__lgname, .ntc__lg.is-other .ntc__lgname { font-size: 17px; color: var(--color-text-muted); }
+.ntc__lg.is-other .ntc__lgname { font-family: inherit; }
+.ntc__lgsub { font-size: 12.5px; color: var(--color-text-muted); }
+.ntc__lgdd {
+  flex: none; font-size: 13px; font-weight: 800; padding: 3px 11px; border-radius: 999px; white-space: nowrap;
+  background: var(--ntc-cat-live); color: var(--ntc-lg-ink); font-variant-numeric: tabular-nums;
+}
+.ntc__lg.is-tbd .ntc__lgdd { background: transparent; color: var(--ntc-cat-live); box-shadow: inset 0 0 0 1px var(--ntc-cat-live); }
+.ntc__lg.is-past .ntc__lgdd { background: var(--color-raised); color: var(--color-text-muted); }
+.ntc__lgchev { flex: none; font-size: 22px; line-height: 1; color: var(--color-text-muted); transition: transform 0.15s; }
+.ntc__lghd[aria-expanded="true"] .ntc__lgchev { transform: rotate(90deg); }
+.ntc__lgrows { display: grid; padding: 4px 0 8px; background: var(--ntc-lg-rows); border-top: 1px solid var(--ntc-border-soft); }
+.ntc__lgrows[hidden] { display: none; }
+.ntc__lrow.ntc__gi {
+  grid-template-columns: 10px 92px 46px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 7px 16px 7px 40px; font-size: 13.5px;
+}
+.ntc__lgrows .ntc__gi + .ntc__gi { border-top: 0; }
+.ntc__lrow .ntc__ttl { font-size: 14px; font-weight: 500; line-height: 20px; }
+.ntc__ldot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-faint); justify-self: center; }
+.ntc__ldate { color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ntc__ltime { color: var(--ntc-faint); font-variant-numeric: tabular-nums; }
+.ntc__lchips { display: inline-flex; gap: 6px; }
+.ntc__lchip {
+  font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+  color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+@media (prefers-reduced-motion: reduce) { .ntc__lgchev { transition: none; } }
+
 @media (max-width: 767px) {
   #notice.ntc { padding: 0 var(--m-pad, 1rem); margin-top: var(--gap); }
   .ntc__list { left: var(--m-pad, 1rem); right: var(--m-pad, 1rem); }
@@ -306,6 +376,24 @@ a.ntc__src:hover { color: var(--color-text); }
   .ntc__card .ntc__ttl { font-size: 15.5px; font-weight: 600; line-height: 22px; }
   .ntc__card .ntc__meta { flex-wrap: nowrap; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .ntc__card .ntc__dd { font-size: 12px; padding: 1px 6px; }
+
+  /* (v4.7.0) 라이브공연 탭 공연별 묶음 — 모바일 */
+  .ntc__hd.has-lv .ntc__hd2 { flex-wrap: wrap; row-gap: 6px; }
+  .ntc__lgs { gap: 8px; padding: 10px; }
+  .ntc__lghd { gap: 10px; padding: 11px 12px; min-height: 44px; }
+  .ntc__lgtile { width: 46px; height: 50px; border-radius: 9px; }
+  .ntc__lgtile .w { display: none; }
+  .ntc__lgtile .d { font-size: 18px; }
+  .ntc__lgtile.is-tbd .d { font-size: 14px; }
+  .ntc__lgname { font-size: 16.5px; }
+  .ntc__lg.is-past .ntc__lgname, .ntc__lg.is-other .ntc__lgname { font-size: 15px; }
+  .ntc__lgdd { font-size: 11.5px; padding: 2px 9px; }
+  .ntc__lrow.ntc__card {
+    grid-template-columns: 8px minmax(0, 1fr); gap: 10px; padding: 8px 12px 8px 20px; border-bottom: 0;
+  }
+  .ntc__lrow.ntc__card .ntc__ldot { margin-top: 7px; align-self: start; }
+  .ntc__lrow.ntc__card .ntc__ttl { font-size: 14px; }
+  .ntc__lrow.ntc__card .ntc__meta { font-size: 12px; }
 }
 
 /* ── 소식 팝업 카드 — PC 팝업(.ntc__pop) · 모바일 시트(.ntc-sheet) 공용 내용 ── */

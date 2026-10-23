@@ -1821,6 +1821,59 @@ def _apply_notice_timing(parsed: dict, tm: dict, raw: str, now_iso: str, *, tag=
     return None
 
 
+# (v4.7.0) 소식 분류 — LLM 4분류(llm.notice_categories, 분류 시험 4차 A 안) + 코드 규칙. 2026-10-23 운영자 결정:
+#   게임 계정 글 = Our Notes(game) · 리포스트(본문이 「RT @…:」/「@…:」 로 시작 — 다른 계정 글) = 기타 · LLM 이 아무것도 안 고름 = 기타.
+#   판정 실패(None)면 categories 를 안 붙인다 — 화면은 옛 category 를 바꿔 읽는다. 라이브공연이면 공연 이름 · 공연일(llm.live_info)도.
+NOTICE_CATS = ("live", "event", "goods", "broadcast", "game", "etc")
+
+
+def _notice_categories(parsed: dict, raw: str, tag, now_iso: str, *, game_handle: str | None = None,
+                       forced: list | None = None) -> None:
+    """parsed 에 categories(· live_name · live_date)를 붙인다(제자리). 외부 호출 실패는 조용히 넘긴다(소식은 그대로 올라감)."""
+    if forced:
+        cats = [c for c in NOTICE_CATS if c in forced]
+        if cats:
+            parsed["categories"] = cats
+        return
+    if game_handle:
+        parsed["categories"] = ["game"]
+        return
+    body = xtweet._clean_text(raw or "") if xtweet is not None else (raw or "")
+    if _RT_HEAD_RE.match(body):
+        parsed["categories"] = ["etc"]
+        return
+    client = _make_llm_client()
+    if client is None or not hasattr(client, "notice_categories"):
+        return
+    text = parsed.get("body_for_llm") or parsed.get("body_raw") or raw or ""
+    try:
+        cats = client.notice_categories(text)
+    except Exception:  # noqa: BLE001
+        log.warning("소식 분류 판정 호출 실패", exc_info=True)
+        cats = None
+    if cats is None:
+        return
+    parsed["categories"] = list(cats) or ["etc"]
+    if "live" not in parsed["categories"]:
+        return
+    posted = ""
+    try:
+        posted = _banner_posted_jst(tag, now_iso) if banners is not None else ""
+    except Exception:  # noqa: BLE001
+        posted = ""
+    if not posted:
+        posted = (datetime.fromisoformat(now_iso.replace("Z", "+00:00")) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")
+    try:
+        info = client.live_info(text, posted)
+    except Exception:  # noqa: BLE001
+        log.warning("공연 이름 판정 호출 실패", exc_info=True)
+        info = None
+    if info and info.get("name"):
+        parsed["live_name"] = info["name"][:80]
+    if info and info.get("date"):
+        parsed["live_date"] = info["date"]
+
+
 def _notice_already_seen(parsed: dict, gh) -> bool:
     """(v4.6.2) 이 소식의 트윗 id 가 이미 활성 · 보관 소식의 seen_ids 에 있나(`notices.merge_notice` 의 「dup」 과 같은 판단). 못 읽으면 False."""
     tid = parsed.get("id") or ""
@@ -1835,7 +1888,8 @@ def _notice_already_seen(parsed: dict, gh) -> bool:
     return any(tid in (n.get("seen_ids") or []) or n.get("id") == tid for n in rows)
 
 
-def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, timing: str = "gate") -> dict | None:
+def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, timing: str = "gate",
+                    categories: list | None = None) -> dict | None:
     """(WP-3a) 소식 준비 (제어 채널에서 실행).
 
     외부 호출(비전 OCR·LLM) + 중복판정까지 한 뒤 결과를 반환.
@@ -1845,6 +1899,8 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
     (v4.6.2) timing = "gate"(자동 인입 — 시점 판정으로 지난 일의 소감 · 보고를 거름) | "show"(관리 페이지 수동 투입 미리보기 — 판정만 붙이고 그대로 올림)
     | "off"(판정 안 함 — 수동 투입 확정 · 텔레그램 수동 투입. 운영자가 정한 글이라 Groq 를 쓰지 않는다).
     반환 dict 의 "timing" = {"action", "why", "verdict"} | None (관리 페이지 미리보기 표시용).
+    (v4.7.0) 분류(`categories`) · 공연 이름(`live_name` · `live_date`)을 parsed 에 붙인다 — `_notice_categories`.
+    categories 인자 = 관리 페이지에서 운영자가 고른 분류(LLM 을 건너뛴다).
     """
     if xnotice is None or notices is None:
         return None
@@ -1869,6 +1925,10 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
 
     # 1. 크로스오버 출연진 비전 OCR
     _maybe_tag_cast_participants(parsed, tag)
+
+    # 1-1. (v4.7.0) 분류 · 공연 이름 — 이미 본 트윗이면 부르지 않는다(커밋에서 「dup」 으로 끝난다)
+    if categories or not _notice_already_seen(parsed, gh):
+        _notice_categories(parsed, raw, tag, now_iso, game_handle=_gh, forced=categories)
 
     # 2. 제목추출·번역 (재시도와 무관하게 한 번만)
     tl = None
@@ -7751,6 +7811,56 @@ if __name__ == "__main__":
     finally:
         _make_llm_client = _saved_nt
     print("[OK] (v4.6.2) 소식 시점 판정 — 소감 안 올림 · 오늘 일 자정까지 · 다음 일정만 · 실패 올림 + 기록 · 반려(내림) · 이미 본 트윗 · 수동 확정은 LLM 안 부름")
+
+    # ── (v4.7.0) 소식 분류 — LLM 4분류 + 코드 규칙(게임 계정 = Our Notes · 리포스트 = 기타 · 고른 것 없음 = 기타 · 실패 = 안 붙임) + 공연 이름 ──
+    class _CLLM:
+        def __init__(self, cats, info=None):
+            self.cats, self.info, self.calls = cats, info, []
+        def notice_categories(self, text):
+            self.calls.append("cat")
+            return self.cats
+        def live_info(self, text, posted):
+            self.calls.append(("live", posted[:10]))
+            return self.info
+    _saved_cl = _make_llm_client
+    try:
+        _c = _CLLM(["live", "goods"], {"name": "RESONEXT", "date": "2026-12-24", "reason": "."})
+        _make_llm_client = lambda: _c
+        _pc = {"body_for_llm": "12/24(木)開催 「RESONEXT」 グッズ"}
+        _notice_categories(_pc, "12/24(木)開催 「RESONEXT」 グッズ", None, "2026-10-02T03:00:00Z")
+        assert _pc["categories"] == ["live", "goods"] and _pc["live_name"] == "RESONEXT" and _pc["live_date"] == "2026-12-24", _pc
+        assert _c.calls == ["cat", ("live", "2026-10-02")], _c.calls
+        _c = _CLLM(["goods"])
+        _make_llm_client = lambda: _c
+        _pc = {}
+        _notice_categories(_pc, "CD発売", None, "2026-10-02T03:00:00Z")
+        assert _pc == {"categories": ["goods"]} and _c.calls == ["cat"], "라이브공연이 아니면 공연 이름을 묻지 않는다"
+        _c = _CLLM([])
+        _make_llm_client = lambda: _c
+        _pc = {}
+        _notice_categories(_pc, "アニメ放送開始", None, "2026-10-02T03:00:00Z")
+        assert _pc == {"categories": ["etc"]}, "고른 분류 없음 = 기타"
+        _c = _CLLM(None)
+        _make_llm_client = lambda: _c
+        _pc = {}
+        _notice_categories(_pc, "x", None, "2026-10-02T03:00:00Z")
+        assert _pc == {}, "판정 실패 = 안 붙임(화면은 옛 분류)"
+        _c = _CLLM(["live"])
+        _make_llm_client = lambda: _c
+        _pc = {}
+        _notice_categories(_pc, "x", None, "2026-10-02T03:00:00Z", game_handle="bang_dream_on")
+        assert _pc == {"categories": ["game"]} and not _c.calls, "게임 계정 = Our Notes(LLM 안 부름)"
+        for _rt in ("RT @BUSHIM_ongaku: #ゆめみた\nBlu-ray", "@bang_dream_info: ＼ジャケット公開／"):
+            _pc = {}
+            _notice_categories(_pc, _rt, None, "2026-10-02T03:00:00Z")
+            assert _pc == {"categories": ["etc"]}, (_rt, _pc)
+        assert not _c.calls, "리포스트 = 기타(LLM 안 부름)"
+        _pc = {}
+        _notice_categories(_pc, "x", None, "2026-10-02T03:00:00Z", forced=["goods", "live", "bogus"])
+        assert _pc == {"categories": ["live", "goods"]} and not _c.calls, "운영자가 고른 분류 = LLM 안 부름"
+    finally:
+        _make_llm_client = _saved_cl
+    print("[OK] (v4.7.0) 소식 분류 — LLM 4분류 · 공연 이름 · 게임 계정 = Our Notes · 리포스트 = 기타 · 없음 = 기타 · 실패 = 안 붙임 · 운영자 지정")
 
     # ── _maybe_tag_cast_participants (v3.2 — 크로스오버 출연진 비전 OCR) ──
     _p1 = {"src_handle": "@BDP_yumemita"}
