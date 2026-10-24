@@ -15,7 +15,7 @@
 
 import { fetchPreview } from "./api.js";
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
-import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange } from "./songs.js";
+import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
 
 const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에서 높이 200 이 되는 값)
@@ -78,6 +78,24 @@ let tickTimer = null;
 let lastFocus = null;
 let loadPromise = null;
 let wantPlay = false;  // 플레이어가 준비되기 전에 요청된 곡의 자동 재생 여부
+let listenedId = null; // (v4.8.1) 이번에 고른 곡의 재생을 이미 기록했는가 — 일시정지 후 다시 재생 · 한 곡 반복은 새로 기록하지 않는다
+
+// (v4.8.1) 들은 곡 기록 — localStorage `ymmt_listened` = {곡 id: 마지막으로 재생한 날(KST "YYYY-MM-DD")}. 랜덤플리 오마카세가 순서를 정할 때 읽는다.
+// 이 브라우저에만 남는다. 저장소를 못 쓰면(차단 · 시크릿 창) 기록 없이 동작 — 오마카세는 전부 안 들은 곡으로 보고 섞는다.
+const LISTENED_KEY = "ymmt_listened";
+function readListened() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LISTENED_KEY) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch (e) { return {}; }
+}
+function markListened(id) {
+  try {
+    const v = readListened();
+    v[id] = kstDate();
+    localStorage.setItem(LISTENED_KEY, JSON.stringify(v));
+  } catch (e) { /* 기록 못 해도 재생은 그대로 */ }
+}
 
 // ── DOM 헬퍼 ─────────────────────────────────────────────────────────
 function h(tag, props = {}, ...kids) {
@@ -252,6 +270,7 @@ async function ensurePlayer(videoId, autoplay) {
 function onYtState(e) {
   const S = window.YT.PlayerState;
   if (e.data === S.PLAYING || e.data === S.BUFFERING) { st.playing = true; st.started = true; st.error = null; }
+  if (e.data === S.PLAYING && st.curId && listenedId !== st.curId) { listenedId = st.curId; markListened(st.curId); }   // (v4.8.1) 곡이 재생되는 시점에 기록
   else if (e.data === S.PAUSED || e.data === S.CUED) st.playing = false;
   else if (e.data === S.ENDED) {
     if (st.repeat === "one") { yt.seekTo(0, true); yt.playVideo(); return; }
@@ -284,6 +303,7 @@ function startTick() {
 function selectSong(id, autoplay, qi = -1) {
   st.curId = id;
   st.qi = qi;
+  listenedId = null;   // 새로 고른 곡은 재생이 시작될 때 다시 기록한다
   st.pos = 0;
   st.dur = 0;
   st.error = null;
@@ -453,18 +473,14 @@ function closeOma() {
 }
 function toggleOma() { st.omaOpen ? closeOma() : openOma(); }
 
-/** 고른 종류의 모든 곡을 무작위 순서로 재생목록에 넣고(기존 재생목록은 덮어씀) 1번부터 재생한다. 재생은 클릭 직후(사용자 조작 안)에 시작해야 자동 재생이 막히지 않는다. */
+/** 고른 종류의 모든 곡을 재생목록에 넣고(기존 재생목록은 덮어씀) 1번부터 재생한다. 재생은 클릭 직후(사용자 조작 안)에 시작해야 자동 재생이 막히지 않는다.
+ *  (v4.8.1) 순서 = songs.js omakaseOrder — 7일 동안 안 들은 곡을 섞어 앞에 두고, 그 사이에 7일 이내에 들었던 곡을 50% 확률로 한 곡씩 끼운다. */
 function omakase(kind) {
   const pool = omaPool(kind);
   closeOma();
   if (st.omaBusy || !pool.length) return;
   st.omaBusy = true;
-  const ids = pool.map((s) => s.id);
-  for (let i = ids.length - 1; i > 0; i--) {   // Fisher–Yates
-    const j = Math.floor(Math.random() * (i + 1));
-    [ids[i], ids[j]] = [ids[j], ids[i]];
-  }
-  st.queue = ids;
+  st.queue = omakaseOrder(pool.map((s) => s.id), readListened(), kstDate());
   st.played = new Set();
   st.qi = -1;
   playQueueAt(0);

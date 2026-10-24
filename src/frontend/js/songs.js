@@ -135,3 +135,50 @@ export function matchRange(text, query) {
   const i = t.indexOf(q);
   return i < 0 ? null : [i, i + q.length];
 }
+
+// ── 랜덤플리 오마카세 순서 (v4.8.1) ─────────────────────────────────
+// 곡마다 마지막으로 재생한 날(KST, "YYYY-MM-DD")을 기록해 두고(player.js — localStorage `ymmt_listened`),
+// A(최근 7일 동안 안 들은 곡) 사이에 B(7일 이내에 들었던 곡)를 50% 확률로 조금씩 끼워 넣는다(운영자 결정 2026-10-25).
+export const OMA_RECENT_DAYS = 7;   // 이 날수 안에 들었던 곡 = B. 오늘 들은 곡은 0일, 6일 전까지 B, 7일 전부터 A
+export const OMA_MIX = 0.5;         // A 곡 사이 틈마다 B 곡이 들어갈 확률 x
+
+/** 그 시각의 KST 날짜 "YYYY-MM-DD". */
+export function kstDate(ms = Date.now()) {
+  return new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+}
+/** 두 KST 날짜("YYYY-MM-DD")의 날수 차(b − a). 날짜가 아니면 NaN. */
+export function daysBetween(a, b) {
+  const re = /^\d{4}-\d{2}-\d{2}$/;
+  if (!re.test(a || "") || !re.test(b || "")) return NaN;
+  return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+}
+/** Fisher–Yates — 배열을 제자리에서 섞어 돌려준다. rand 는 [0,1) 난수(테스트용으로 바꿔 끼울 수 있다). */
+export function shuffle(a, rand = Math.random) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+/** 오마카세 재생목록 순서(곡 id 배열).
+ *  1. ids 를 A(기록이 없거나 마지막 재생이 `days`일 이상 전 · 날짜가 이상한 기록 포함)와 B(`days`일 이내에 들었던 곡)로 나누고 각각 Fisher–Yates 로 섞는다.
+ *  2. A 곡과 곡 사이 틈(n−1칸)을 앞에서부터 본다. 틈마다 B 의 다음 곡이 확률 x 로 그 틈에 들어가고, 떨어지면 그 곡은 건너뛴다(다음 틈엔 B 의 다음 곡).
+ *  3. 틈을 다 봤거나 B 를 다 쓰면 멈추고, 끼워지지 못한 B 곡은 섞인 순서대로 맨 뒤에 붙인다.
+ *  첫 곡은 A 가 있으면 늘 A. A 가 없으면 B 만 섞인 순서(= 예전 오마카세와 같다). */
+export function omakaseOrder(ids, listened, today, { x = OMA_MIX, days = OMA_RECENT_DAYS, rand = Math.random } = {}) {
+  const rec = listened && typeof listened === "object" ? listened : {};
+  const isB = (id) => { const d = daysBetween(rec[id], today); return d >= 0 && d < days; };
+  const A = shuffle(ids.filter((id) => !isB(id)), rand);
+  const B = shuffle(ids.filter(isB), rand);
+  const out = [], rest = [];
+  let bi = 0;
+  for (let g = 0; g < A.length; g++) {
+    out.push(A[g]);
+    if (g < A.length - 1 && bi < B.length) {
+      const cand = B[bi++];
+      if (rand() < x) out.push(cand);
+      else rest.push(cand);
+    }
+  }
+  return out.concat(rest, B.slice(bi));
+}

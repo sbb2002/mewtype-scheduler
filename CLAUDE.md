@@ -54,8 +54,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.8.0 (기능, 2026-10-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> **현재 버전 = v4.8.1 (핫픽스, 2026-10-25)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.7.5`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+>
+> **v4.8.1 (핫픽스, 브랜치 `hotfix/omakase-listened`, 2026-10-25, 프론트만 — 미병합)**: **랜덤플리 오마카세 — 최근에 들은 곡은 조금만 섞기.**
+> 플레이어에서 곡이 재생되는 시점에 localStorage `ymmt_listened` 에 곡별 마지막 재생 날짜(KST)를 적고, 오마카세는 7일 동안 안 들은 곡(A)을 섞어 앞에 두고 A 곡 사이 틈마다
+> 7일 이내에 들었던 곡(B)을 50% 확률로 한 곡씩 끼운다(남은 B 는 맨 뒤 · 섞기는 모두 Fisher–Yates). `songs.js omakaseOrder` · `player.js`. 시안 아티팩트 「골고루 오마카세」.
+> 상세 `docs/SPEC.md` 「랜덤플리 오마카세」, 용어 `docs/TERMINOLOGY.md`, 요약 `docs/VERSION.md`. 모바일 · 실기기 미확인.
 >
 > **v4.8.0 (기능, 브랜치 `feat/micro-interactions`, 2026-10-24, 프론트만 — 병합 `120e6b8`(PR #90), **Vercel 배포 완료**(production `120e6b8` READY))**: **마이크로 인터랙션 — 직관성이 떨어지는 조작 9곳에 붙인 보조 동작.**
 > 시트 · 토스트 끌어 닫기(공용 `js/sheetdrag.js` — 소식 · 플레이어 시트는 아래로, 트윗 토스트는 위로, 닫힘 선 · 진동 · 튕겨 돌아가기, 소식 시트 손잡이 줄 고정) ·
