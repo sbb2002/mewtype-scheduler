@@ -57,7 +57,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.7.5 (핫픽스, 2026-10-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.7.5`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.7.5 (핫픽스, 브랜치 `hotfix/notice-bar-new`, 2026-10-24, 프론트만 — 병합 `MERGE_SHA`(PR #88), Vercel 자동 배포)**: **PC 소식 막대에도 분류 칩 + 새 소식 점.**
+> **v4.7.5 (핫픽스, 브랜치 `hotfix/notice-bar-new`, 2026-10-24, 프론트만 — 병합 `a919347`(PR #88), **Vercel 배포 완료**(production `a919347` READY))**: **PC 소식 막대에도 분류 칩 + 새 소식 점.**
 > 모바일에만 있던 접힌 막대의 분류 칩(아이콘 + 건수)을 PC 에도(「소식」 글자 숨김) · 오늘(KST) 들어온 소식이 있는 분류 칩에 빨간 점(PC · 모바일). 10-24 오전 작업이 커밋되지 않은 채 남아 v4.7.2 ~ v4.7.4 에서 빠졌던 것.
 > `notices.js` · `css/notices.css`, 상세 `docs/SPEC.md` 「소식판 (v4.6.4)」, 용어 `docs/TERMINOLOGY.md`, 요약 `docs/VERSION.md`.
 >
