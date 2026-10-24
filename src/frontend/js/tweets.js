@@ -14,6 +14,7 @@
 
 import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { currentTheme, THEME_EVENT } from "./theme.js";
+import { wireSheetDrag, vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 토스트 밀어 닫기 · 진동
 
 // 원문 링크 아이콘 = X (notice 의 x path 재활용).
 const X_SVG = '<svg class="src__ic" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg>';
@@ -537,8 +538,21 @@ function _ensureToast() {
       '<button class="tw-toast__tl" type="button" hidden></button>' +
       '<button class="tw-toast__x" type="button" aria-label="닫기">✕</button>' +
     '</div>' +
-    '<div class="tw-toast__scroll"></div>';
+    '<div class="tw-toast__scroll"></div>' +
+    '<div class="tw-toast__grab" aria-hidden="true"><i></i></div>';
   _toast.querySelector(".tw-toast__x").addEventListener("click", _closeToast);
+  // (마이크로 인터랙션) 위에서 내려온 토스트 — 머리줄이나 맨 아래 손잡이를 위로 밀면 닫힌다(sheetdrag.js). 머리줄 · 손잡이는 늘 제자리, 트윗 목록만 스크롤
+  wireSheetDrag({
+    sheet: _toast,
+    handles: [_toast.querySelector(".tw-toast__head"), _toast.querySelector(".tw-toast__grab")],
+    dir: "up",
+    isOpen: () => document.body.classList.contains("tw-modal-open"),
+    close: _closeToast,
+    setScrim: (v) => {
+      _backdrop.style.transition = v == null ? "" : "none";
+      _backdrop.style.opacity = v == null ? "" : String(v);
+    },
+  });
   _toast.querySelector(".tw-toast__tl").addEventListener("click", () => { _flipLang(); return false; });
   document.body.append(_backdrop, _toast);
 }
@@ -569,6 +583,37 @@ function _closeToast() {
   document.body.classList.remove("tw-modal-open");
 }
 
+/* ── (마이크로 인터랙션) 트윗 없는 네임플레이트를 눌렀을 때 ──────────
+   네임플레이트가 고개를 젓듯 좌우로 흔들리고(.is-nope), 그 위에 「OO의 새 트윗이 아직 없어요」가 1.7초 떴다 사라진다(.tw-nope).
+   진동 8ms(안드로이드만). 움직임 줄이기 설정이면 흔들기는 빼고 글만 띄운다. */
+let _nopeEl = null, _nopeT = 0;
+function _noTweet(target, ck) {
+  const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!calm) { target.classList.remove("is-nope"); void target.offsetWidth; target.classList.add("is-nope"); }
+  vibrate(8);
+  if (!_nopeEl) {
+    _nopeEl = document.createElement("div");
+    _nopeEl.className = "tw-nope";
+    _nopeEl.setAttribute("role", "status");
+    _nopeEl.addEventListener("animationend", () => _nopeEl.classList.remove("on"));
+    document.body.appendChild(_nopeEl);
+  }
+  const name = String((FALLBACK_CHANNELS[ck] || {}).name_ko || "").split(" ").pop();
+  _nopeEl.textContent = `${name ? name + "의 " : ""}새 트윗이 아직 없어요`;
+  _nopeEl.classList.remove("on", "below");
+  const r = target.getBoundingClientRect(), w = _nopeEl.offsetWidth, h = _nopeEl.offsetHeight;
+  const left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  const below = r.top - h - 10 < 8;
+  _nopeEl.classList.toggle("below", below);
+  _nopeEl.style.left = left + "px";
+  _nopeEl.style.top = (below ? r.bottom + 10 : r.top - h - 10) + "px";
+  _nopeEl.style.setProperty("--tail-x", Math.max(10, Math.min(w - 10, r.left + r.width / 2 - left)) + "px");
+  void _nopeEl.offsetWidth;
+  _nopeEl.classList.add("on");
+  clearTimeout(_nopeT);
+  _nopeT = setTimeout(() => _nopeEl.classList.remove("on"), 1800);
+}
+
 /* ── 이벤트 배선 (한 번만 — #board 는 세션 내내 같은 노드) ───────── */
 function _wire() {
   const board = _st.board;
@@ -579,9 +624,13 @@ function _wire() {
     const lane = e.target.closest(".lane");
     if (!lane || lane.hasAttribute("data-no-badge")) return;
     const ck = lane.dataset.channel;
-    if (!_visible(_st.data)[ck]) return;                 // 트윗 없음 → 유튜브 그대로
     // (v4.3.4) 네임플레이트(아바타·편지 배지·이름)는 말풍선 전용 — YouTube/X 이동은 우측 레일 버튼이 맡는다
-    if (!e.target.closest(".lane__tw, .lane__avatar, .lane__link, .tt__nm")) return;  // 레일 등 → 그대로
+    const plate = e.target.closest(".lane__tw, .lane__avatar, .lane__link, .tt__nm");
+    if (!_visible(_st.data)[ck]) {                       // 트윗 없음 → 말풍선 대신 「새 트윗 없음」 알림(트윗 목록을 받은 뒤에만)
+      if (plate && _st.data !== undefined) _noTweet(plate.closest(".lane__link, .tt__who") || plate, ck);
+      return;
+    }
+    if (!plate) return;                                  // 레일 등 → 그대로
     e.preventDefault();
     e.stopPropagation();
     if (_mobile()) { _openToast(ck); return; }

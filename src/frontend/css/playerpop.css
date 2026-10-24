@@ -114,7 +114,41 @@ html.mp-lock { overflow: hidden; }
 .mp-track::before { content: ""; position: absolute; inset: -10px 0; }   /* 끌기 · 누르기 영역을 위아래로 넓힌다 */
 .mp-track.is-drag { cursor: grabbing; }
 .mp-track i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 4px; background: var(--mp-accent); }
-.mp-ctl { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px 8px; }
+/* (마이크로 인터랙션) 손가락으로 끄는 동안(.is-touch)만 — 손잡이가 커지고, 손가락 위로 시간 말풍선이 따라온다 */
+.mp-track__th {
+  position: absolute; top: 50%; left: 0; width: 0; height: 0; border-radius: 50%; translate: -50% -50%; pointer-events: none;
+  background: var(--color-text); box-shadow: 0 0 0 6px color-mix(in srgb, var(--mp-accent) 30%, transparent); opacity: 0;
+  transition: width 0.18s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s cubic-bezier(0.25, 1.55, 0.45, 1), opacity 0.12s;
+}
+.mp-track.is-touch .mp-track__th { width: 22px; height: 22px; opacity: 1; }
+.mp-track__tip {
+  position: absolute; bottom: calc(100% + 30px); left: 0; z-index: 3; pointer-events: none; white-space: nowrap;
+  padding: 5px 10px; border-radius: 8px; background: var(--color-text); color: var(--color-bg-secondary);
+  font-size: 0.95rem; font-weight: 700; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  opacity: 0; transform: translateY(6px); transition: opacity 0.15s, transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mp-track.is-touch .mp-track__tip { opacity: 1; transform: none; }
+.mp-track__tip.is-tick { animation: mp-tip-tick 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes mp-tip-tick { 40% { scale: 1.12; } }
+.mp-ctl { position: relative; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px 8px; }
+/* (마이크로 인터랙션) 반복 · 셔플을 누르면 그 버튼 위에 바뀐 상태 + 다음 동작이 1.8초 뜬다(js/player.js sayCtl) */
+.mp-ctltip {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 6; pointer-events: none; white-space: nowrap; text-align: center;
+  padding: 5px 10px; border-radius: 8px; background: var(--color-raised); border: 1px solid var(--color-raised-edge);
+  color: var(--color-text); font-size: 0.78rem; font-weight: 700; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  opacity: 0; visibility: hidden;
+}
+.mp-ctltip small { display: block; font-size: 0.68rem; font-weight: 400; color: var(--color-text-muted); }
+.mp-ctltip::after {
+  content: ""; position: absolute; left: calc(var(--tail-x, 50%) - 5px); top: 100%;
+  border: 5px solid transparent; border-top-color: var(--color-raised-edge); border-bottom: 0;
+}
+.mp-ctltip.is-on { visibility: visible; animation: mp-ctltip 1.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+@keyframes mp-ctltip { 0% { opacity: 0; transform: translateY(6px); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.mp-tog.is-bop { animation: mp-bop 0.32s cubic-bezier(0.25, 1.55, 0.45, 1); }
+@keyframes mp-bop { 40% { transform: scale(0.84); } }
+.mp-tog svg.is-spin { animation: mp-spin 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes mp-spin { from { transform: rotate(-200deg); } }
 .mp-grp { display: flex; align-items: center; gap: 6px; }
 .mp-btn, .mp-tog, .mp-main {
   display: grid;
@@ -185,6 +219,7 @@ html.mp-lock { overflow: hidden; }
 .mp-err a { text-decoration: underline; }
 /* 재생목록 — 움푹 패인 우물. 바탕을 패널보다 어둡게 + 안쪽 위 그림자(빛이 위에서 와서 윗벽이 그늘짐) + 아래 테두리 바깥의 얇은 밝은 선(패인 가장자리에 걸린 빛). */
 .mp-q {
+  position: relative;   /* 되돌리기 알림(.mp-undo)의 기준 */
   display: flex; flex-direction: column; min-height: 0; flex: 1;
   padding: 8px 6px 6px 10px;
   border-radius: 10px;
@@ -199,9 +234,24 @@ html.mp-lock { overflow: hidden; }
 .mp-q__head .mp-link { margin-left: auto; font-size: 0.7rem; }
 .mp-q__list { list-style: none; margin: 4px 0 0; padding: 0; overflow-y: auto; min-height: 0; max-height: 220px; display: grid; grid-auto-rows: max-content; }
 .mp-q__empty { padding: 10px 4px; font-size: 0.7rem; line-height: 1.5; color: var(--color-text-muted); }
-.mp-q__item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 6px; }
-.mp-q__item:hover { background: var(--mp-panel-2); }
-.mp-q__item.is-cur { background: color-mix(in srgb, var(--mp-accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--mp-accent); }
+/* 재생목록 줄 = 밑판(.mp-q__under 「빼기」) 위에 윗판(.mp-q__fg). 모바일에서 윗판을 왼쪽으로 밀어 뺀다(js/player.js initQueueSwipe).
+   윗판이 밑판을 가리도록 우물 바탕을 칠하고, 밑판은 미는 동안(.is-swiping)만 보인다. --p = 빼기 선까지 민 비율(0~1) */
+.mp-q__item { position: relative; border-radius: 6px; overflow: hidden; }
+.mp-q__fg {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: 6px;
+  background: var(--mp-well); transition: transform 0.4s cubic-bezier(0.25, 1.55, 0.45, 1);
+}
+.mp-q__item:hover .mp-q__fg { background: var(--mp-panel-2); }
+.mp-q__item.is-cur .mp-q__fg { background: color-mix(in srgb, var(--mp-accent) 14%, var(--mp-well)); box-shadow: inset 2px 0 0 var(--mp-accent); }
+.mp-q__under {
+  position: absolute; inset: 0; border-radius: 6px; display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding-right: 14px;
+  background: #e5384a; color: #fff; font-size: 0.72rem; font-weight: 700; opacity: 0;
+}
+.mp-q__under svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.2s cubic-bezier(0.25, 1.55, 0.45, 1); }
+.mp-q__item.is-swiping .mp-q__under { opacity: calc(0.3 + var(--p, 0) * 0.7); }
+.mp-q__item.is-swiping .mp-q__fg { transition: none; }
+.mp-q__item.is-armed .mp-q__under svg { transform: scale(1.35); }
+@media (max-width: 767px) { .mp-q__fg { touch-action: pan-y; } }
 .mp-q__main { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 8px; text-align: left; color: var(--color-text); font-size: 0.78rem; min-width: 0; }
 .mp-q__n { text-align: right; font-size: 0.7rem; color: var(--color-text-muted); }
 .mp-q__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -444,6 +494,16 @@ html.mp-lock { overflow: hidden; }
   /* 토스트처럼 아래에서 올라온다. 닫을 땐 is-open 이 빠지며 반대로 내려간다 (js/player.js openPlayer · closePlayer) */
   .mp-pop { height: 94%; border-radius: 14px 14px 0 0; transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .mp-scrim.is-open .mp-pop { transform: none; }
+  /* (마이크로 인터랙션) 머리줄을 아래로 끌어 내린다(js/sheetdrag.js). 머리줄 맨 위 가운데에 손잡이 막대 — 닫힘 선을 넘으면 길어지고 강조색 */
+  .mp-pop__head { position: relative; padding-top: 18px; touch-action: none; cursor: grab; }
+  .mp-pop__grab {
+    position: absolute; top: 7px; left: 50%; translate: -50% 0; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border);
+    transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s;
+  }
+  .mp-pop.is-armed .mp-pop__grab { width: 58px; height: 5px; background: var(--mp-accent); }
+  .mp-pop.is-dragging { transition: none; }
+  .mp-pop.is-dragging .mp-pop__head { cursor: grabbing; }
+  .mp-pop.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }
   /* 본문은 스크롤하지 않는다. 재생부는 위에 고정(flex none), 아래 탭 패널 한 칸만 남은 높이를 받아 그 안에서 스크롤 */
   .mp-pop__body { display: flex; flex-direction: column; overflow: hidden; }
   .mp-side { flex: 1; }
@@ -458,7 +518,49 @@ html.mp-lock { overflow: hidden; }
   .mp-frame.is-float { bottom: calc(var(--m-foot, 45px) + var(--m-dots, 44px) + 8px); }
 }
 
+/* 모바일 시트 손잡이는 PC(도크 · 모달)에서는 안 보인다 */
+.mp-pop__grab { display: none; }
+@media (max-width: 767px) { .mp-pop__grab { display: block; } }
+
+/* (마이크로 인터랙션) 「비우기」 뒤 5초 되돌리기 — 재생목록 칸 아래쪽. 밑줄 막대가 5초 동안 줄어든다 */
+.mp-undo {
+  position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 4; display: flex; align-items: center; gap: 10px; overflow: hidden;
+  padding: 8px 12px 10px; border-radius: 10px; background: var(--color-raised); border: 1px solid var(--color-raised-edge);
+  font-size: 0.76rem; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.mp-undo[hidden] { display: none; }
+.mp-undo span { flex: 1; min-width: 0; }
+.mp-undo__b { border: 0; background: none; padding: 0; color: var(--mp-accent); font-weight: 700; cursor: pointer; }
+.mp-undo__bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--mp-accent); transform-origin: left; }
+.mp-undo.is-in { animation: mp-undo-in 0.28s cubic-bezier(0.25, 1.55, 0.45, 1); }
+.mp-undo.is-in .mp-undo__bar { animation: mp-undo-drain 5s linear forwards; }
+@keyframes mp-undo-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes mp-undo-drain { to { transform: scaleX(0); } }
+
+/* (마이크로 인터랙션) PC 플로팅 손잡이 더블클릭 안내 — 처음 한 번만(js/player.js showGripTip). 두 번 톡톡 표시 */
+.mp-coach {
+  position: fixed; z-index: 47; left: 0; top: 0; white-space: nowrap; padding: 9px 14px 9px 42px; border-radius: 10px;
+  background: var(--mp-accent); color: var(--mp-accent-fg); font-size: 0.78rem; font-weight: 700; line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); pointer-events: none; opacity: 0; transform: translateY(4px);
+}
+.mp-coach[hidden] { display: none; }
+.mp-coach::after {   /* 꼬리 — 손잡이 쪽 */
+  content: ""; position: absolute; left: 22px; top: 100%; border: 6px solid transparent; border-top-color: var(--mp-accent); border-bottom: 0;
+}
+.mp-coach.is-below::after { top: auto; bottom: 100%; border-top: 0; border-bottom: 6px solid var(--mp-accent); }
+.mp-coach.is-on { opacity: 1; transform: none; transition: opacity 0.2s, transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.mp-coach__tap { position: absolute; left: 12px; top: 50%; width: 20px; height: 20px; translate: 0 -50%; }
+.mp-coach__tap i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--mp-accent-fg); opacity: 0; }
+.mp-coach.is-on .mp-coach__tap i { animation: mp-tap2 1.3s ease-out infinite; }
+.mp-coach.is-on .mp-coach__tap i:nth-child(2) { animation-delay: 0.22s; }
+@keyframes mp-tap2 { 0% { transform: scale(0.3); opacity: 1; } 45% { opacity: 0; transform: scale(1.1); } 100% { opacity: 0; } }
+
 @media (prefers-reduced-motion: reduce) {
+  .mp-q__fg, .mp-track__th, .mp-track__tip { transition: none; }
+  .mp-ctltip.is-on { animation: none; opacity: 1; }
+  .mp-undo.is-in { animation: none; }
+  .mp-coach.is-on { transition: none; }
+  .mp-coach.is-on .mp-coach__tap i { animation: none; opacity: 1; transform: none; }
   .mp-frame, .mp-scrim, .mp-pop { transition: none !important; }
   .mp-new { animation: none; background: #e5384a; }
   .mp-badge.pulse { animation: none; }
