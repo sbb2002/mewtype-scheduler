@@ -1932,6 +1932,11 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
     # 1-1. (v4.7.0) 분류 · 공연 이름 — 이미 본 트윗이면 부르지 않는다(커밋에서 「dup」 으로 끝난다)
     if categories or not _notice_already_seen(parsed, gh):
         _notice_categories(parsed, raw, tag, now_iso, game_handle=_gh, forced=categories)
+        # (v4.7.3) 라이브공연인데 공연일을 못 정했으면 알린다 — 화면은 「공연일 미정」 묶음이 되고 공연일 + 7일 유지도 안 걸린다.
+        #   10-23 KIMCHIKURA 가 이렇게 조용히 미정으로 남았다(공연 판정에 날짜 지운 본문이 들어가던 버그). 운영자가 정한 분류면 알리지 않는다.
+        if not categories and "live" in (parsed.get("categories") or []) and not parsed.get("live_date"):
+            _log_event_safe(gh, now_iso, "notice", RESULT_WARN, via="ingest",
+                            detail=f"live_info: 공연일 못 정함 — 「공연일 미정」 으로 올라감 · {(parsed.get('live_name') or parsed.get('title') or '')[:40]}")
 
     # 2. 제목추출·번역 (재시도와 무관하게 한 번만)
     tl = None
