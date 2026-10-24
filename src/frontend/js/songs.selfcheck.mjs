@@ -3,7 +3,7 @@
  * node songs.selfcheck.mjs 로 실행. 프레임워크 없음.
  */
 import { readFileSync } from "node:fs";
-import { isNewSong, hasNewSong, displayKo, kanaToHangul, normalize, prepareSong, matches, viewSongs, matchRange } from "./songs.js";
+import { isNewSong, hasNewSong, displayKo, kanaToHangul, normalize, prepareSong, matches, viewSongs, matchRange, kstDate, daysBetween, omakaseOrder } from "./songs.js";
 
 let n = 0;
 function assert(cond, msg) {
@@ -92,5 +92,45 @@ assert(nv.indexOf("ジレンマ") < nv.indexOf("ユキトキ") && nv.includes("�
 // ── 강조 구간 ──
 assert(JSON.stringify(matchRange("ユキトキ", "きと")) === "[1,3]", "강조 구간 (가타카나 ↔ 히라가나)");
 assert(matchRange("abc", "") === null && matchRange("abc", "zz") === null, "일치 없음이면 null");
+
+// ── 랜덤플리 오마카세 순서 (v4.8.1) ──
+assert(kstDate(Date.parse("2026-10-25T14:59:00Z")) === "2026-10-25" && kstDate(Date.parse("2026-10-25T15:00:00Z")) === "2026-10-26", "KST 날짜 — UTC 15:00 에 날이 바뀜");
+assert(daysBetween("2026-10-19", "2026-10-25") === 6 && daysBetween("2026-10-18", "2026-10-25") === 7 && Number.isNaN(daysBetween("x", "2026-10-25")), "날수 차 · 날짜 아님 = NaN");
+let seed = 12345;
+const rnd = () => {   // 테스트용 고정 난수(mulberry32)
+  let z = (seed = (seed + 0x6d2b79f5) | 0);
+  z = Math.imul(z ^ (z >>> 15), z | 1);
+  z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+  return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+};
+const ids = Array.from({ length: 74 }, (_, i) => "s" + i);
+const TODAY = "2026-10-25";
+const heard = {};   // s0~s29 = 6일 전(B) · s30~s34 = 7일 전(A) · s35 = 미래 날짜(A) · s36 = 날짜 아님(A)
+for (let i = 0; i < 30; i++) heard["s" + i] = "2026-10-19";
+for (let i = 30; i < 35; i++) heard["s" + i] = "2026-10-18";
+heard.s35 = "2026-10-30"; heard.s36 = "어제";
+const isBid = (id) => +id.slice(1) < 30;
+let okPerm = true, okFirst = true, okNoBB = true, inserted = 0;
+const R = 4000;
+for (let r = 0; r < R; r++) {
+  const q = omakaseOrder(ids, heard, TODAY, { rand: rnd });
+  okPerm &&= q.length === 74 && new Set(q).size === 74;
+  okFirst &&= !isBid(q[0]);
+  const lastA = q.reduce((v, id, k) => (isBid(id) ? v : k), -1);
+  for (let k = 1; k <= lastA; k++) if (isBid(q[k]) && isBid(q[k - 1])) okNoBB = false;   // 끼워 넣은 구간에선 B 가 연달아 오지 않는다
+  inserted += q.slice(0, lastA + 1).filter(isBid).length;
+}
+assert(okPerm, "오마카세 — 곡이 빠지거나 겹치지 않음");
+assert(okFirst, "오마카세 — 첫 곡은 늘 A(7일 동안 안 들은 곡)");
+assert(okNoBB, "오마카세 — A 사이 틈에는 B 가 한 곡씩만");
+assert(Math.abs(inserted / R - 15) < 0.5, `오마카세 — B 30곡 · x 50% 면 평균 15곡이 끼워짐 (${(inserted / R).toFixed(2)})`);
+assert(new Set(omakaseOrder(ids, {}, TODAY, { rand: rnd })).size === 74, "기록이 없으면 전부 A — 그대로 섞기");
+const allB = {}; ids.forEach((id) => (allB[id] = TODAY));
+const qb = omakaseOrder(ids, allB, TODAY, { rand: rnd });
+assert(qb.length === 74 && new Set(qb).size === 74, "전부 B(A 없음) — B 만 섞인 순서");
+const one = omakaseOrder(["a", "b", "c", "d"], { c: TODAY, d: TODAY }, TODAY, { x: 1, rand: rnd });
+assert(one.length === 4 && ["a", "b"].includes(one[0]) && ["c", "d"].includes(one[1]) && ["a", "b"].includes(one[2]), "x 100% — A 2곡 사이 틈 1칸에 B 1곡, 남은 B 는 뒤");
+const zero = omakaseOrder(["a", "b", "c", "d"], { c: TODAY, d: TODAY }, TODAY, { x: 0, rand: rnd });
+assert(["a", "b"].includes(zero[0]) && ["a", "b"].includes(zero[1]), "x 0% — A 를 다 들은 뒤에 B");
 
 console.log(`\n${n}개 통과`);
