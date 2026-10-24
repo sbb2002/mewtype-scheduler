@@ -100,6 +100,32 @@
 .ntc__all { font-weight: 400; letter-spacing: 0; color: var(--color-text-muted); margin-left: 0.35rem; }
 .ntc__all[hidden] { display: none; }
 
+/* (v4.7.5) 「소식」 글자는 모바일처럼 PC 에서도 숨긴다 — 램프 · 분류 칩이 그 자리를 대신한다 */
+.ntc__label { display: none; }
+
+/* (v4.7.5) 접힌 막대의 분류 칩(PC · 모바일 공통) — 움직이지 않음, 누르면 그 분류로 펼침.
+   PC = [램프] [분류 칩] [요약] [5초 티커] [▾] [테마], 모바일 = [램프] [분류 칩] [▾] [테마] */
+.ntc__chipbar {
+  flex: none; display: flex; align-items: center; gap: 4px; padding: 0 6px;
+  border-right: 1px solid var(--ntc-border-soft);
+}
+.ntc.is-open .ntc__chipbar { visibility: hidden; }
+.ntc__cchip {
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 6px;
+  border: 0; border-radius: 999px; cursor: pointer;
+  color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent);
+  font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.ntc__cchip:hover { background: color-mix(in srgb, var(--c) 26%, transparent); }
+.ntc__cchip .ntc__ic { width: 14px; height: 14px; }
+.ntc__cchip:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
+/* (v4.7.5) 오늘 들어온 소식이 있는 분류 = 칩 오른쪽 위에 겹친 빨간 점(움직이지 않음). 칩 폭을 늘리지 않으려고 겹쳐 둔다 —
+   모바일 390px 에서 칩 6개가 막대에 다 들어간다. 테두리 = 막대 바탕색이라 칩과 떨어져 보인다 */
+.ntc__cdot {
+  position: absolute; top: 1px; right: 0; width: 7px; height: 7px; border-radius: 50%;
+  background: #e5384a; box-shadow: 0 0 0 1.5px var(--color-bg-secondary); pointer-events: none;
+}
+
 /* PC 막대 왼쪽 요약 「오늘 n · 7일 안 n」 */
 .ntc__sum {
   flex: none; display: inline-flex; align-items: center; gap: 6px;
@@ -336,24 +362,10 @@ a.ntc__src:hover { color: var(--color-text); }
 @media (max-width: 767px) {
   #notice.ntc { padding: 0 var(--m-pad, 1rem); margin-top: var(--gap); }
   .ntc__list { left: var(--m-pad, 1rem); right: var(--m-pad, 1rem); }
-  .ntc__label { display: none; }
 
-  /* 접힌 막대의 분류 칩 — 움직이지 않음. 칩이 많아 넘치면 가로로 밀어 본다 */
-  .ntc__chipbar {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; padding: 0 8px;
-    overflow-x: auto; scrollbar-width: none;
-  }
+  /* 모바일 접힌 막대 = 분류 칩만 — 남는 폭을 다 쓰고, 칩이 많아 넘치면 가로로 밀어 본다 */
+  .ntc__chipbar { flex: 1; min-width: 0; border-right: none; overflow-x: auto; scrollbar-width: none; }
   .ntc__chipbar::-webkit-scrollbar { display: none; }
-  .ntc.is-open .ntc__chipbar { visibility: hidden; }
-  .ntc__cchip {
-    flex: none; display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 7px;
-    border: 0; border-radius: 999px; cursor: pointer;
-    color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent);
-    font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
-  }
-  .ntc__cchip:hover { background: color-mix(in srgb, var(--c) 26%, transparent); }
-  .ntc__cchip .ntc__ic { width: 14px; height: 14px; }
-  .ntc__cchip:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
 
   /* 펼친 머리: 「전체 n건」 + 언어 전환 / 밑줄 탭 7칸 */
   .ntc__hd { padding: 8px 12px 0; row-gap: 4px; }
