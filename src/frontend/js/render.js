@@ -1,6 +1,7 @@
 import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
+import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤버를 넘길 때 짧은 진동
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
@@ -672,6 +673,19 @@ function applyMarquees(boardEl) {
    좌우 패딩·옆 유닛 미리보기(peek)·gap 이 있어도 정확히 한 칸씩 스냅. */
 
 let activeIdx = 0;                 // 마지막으로 보던 방송인 (재렌더/회전 넘어가도 유지)
+// (마이크로 인터랙션) 첫 방문 힌트 — 이 브라우저에서 처음 한 번만 레인들이 살짝 밀렸다 돌아오며 다음 멤버가 밝아진다.
+// 직접 넘겨 본 뒤에도 기록한다. 저장소를 못 쓰면 이 페이지를 연 동안 한 번만.
+const LANE_HINT_KEY = "mew.tip.lane-swipe";
+let laneHintDone = false;
+const calmMotion = () => !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+function laneHintSeen() {
+  if (laneHintDone) return true;
+  try { return localStorage.getItem(LANE_HINT_KEY) === "1"; } catch { return false; }
+}
+function markLaneHint() {
+  laneHintDone = true;
+  try { localStorage.setItem(LANE_HINT_KEY, "1"); } catch { /* 이 페이지를 연 동안만 */ }
+}
 let carouselBoard = null;
 const mqlPhone = window.matchMedia("(max-width: 767px)");
 mqlPhone.addEventListener("change", () => {
@@ -799,11 +813,19 @@ function initMobileCarousel(boardEl) {
     let real = di - 1;
     if (real < 0) real = n - 1;
     else if (real > n - 1) real = 0;
-    if (real !== activeIdx) { activeIdx = real; setActiveDot(real); }
+    if (real !== activeIdx) {
+      activeIdx = real;
+      setActiveDot(real);
+      // (마이크로 인터랙션) 다른 멤버로 넘어가면 그 점이 톡 튀어오르고 짧게 진동
+      const dot = dots?.querySelectorAll(".dot")[real];
+      if (dot && !calmMotion()) { dot.classList.remove("dot--pop"); void dot.offsetWidth; dot.classList.add("dot--pop"); }
+      vibrate(6);
+      markLaneHint();
+    }
 
     clearTimeout(settle);
     settle = setTimeout(() => {
-      if (drag) return;                      // 드래그 중에는 클론 → 실제 순간이동을 미룬다 (놓을 때 정리)
+      if (drag || glideRaf) return;          // 드래그 · 놓은 뒤 미끄러지는 중에는 클론 → 실제 순간이동을 미룬다
       const d = currentDom();
       if (d <= 0) jumpReal(n - 1);
       else if (d >= n + 1) jumpReal(0);
@@ -811,30 +833,53 @@ function initMobileCarousel(boardEl) {
   };
   boardEl.addEventListener("scroll", onScroll, { passive: true });
 
-  // (v4.1.0) 마우스 드래그로도 넘긴다 (터치는 기본 스크롤·스냅). 놓으면 가장 가까운 유닛으로 정렬되고,
-  // 5px 이상 끌었으면 그 클릭은 카드·링크 이동으로 치지 않는다.
-  let drag = null, dragMoved = false, suppressClick = false;
+  // (v4.1.0) 마우스 드래그로도 넘긴다 (터치는 기본 스크롤·스냅). 5px 이상 끌었으면 그 클릭은 카드·링크 이동으로 치지 않는다.
+  // (마이크로 인터랙션) 놓으면 놓은 자리에서 감속하며 가장 가까운 유닛으로(빠르게 튕겼으면 다음 유닛으로) 이어서 미끄러진다.
+  // 스냅(board--dragging 이 끄고 있음)은 미끄러짐이 끝난 뒤에 다시 켠다 — 놓자마자 켜면 브라우저 스냅이 툭 끌어당긴다.
+  let drag = null, dragMoved = false, suppressClick = false, glideRaf = 0;
+  const glideTo = (di) => {
+    cancelAnimationFrame(glideRaf);
+    const from = boardEl.scrollLeft, dist = targetFor(di) - from;
+    const done = () => { glideRaf = 0; boardEl.classList.remove("board--dragging"); onScroll(); };
+    if (calmMotion() || Math.abs(dist) < 1) { boardEl.scrollLeft = from + dist; done(); return; }
+    const T = Math.min(420, Math.max(220, Math.abs(dist) * 1.2)), t0 = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / T);
+      boardEl.scrollLeft = from + dist * (1 - Math.pow(1 - p, 3));
+      if (p < 1) glideRaf = requestAnimationFrame(step); else done();
+    };
+    glideRaf = requestAnimationFrame(step);
+  };
   const onDown = (e) => {
     if (e.pointerType !== "mouse" || e.button !== 0) return;
-    drag = { x: e.clientX, s: boardEl.scrollLeft };
+    if (glideRaf) { cancelAnimationFrame(glideRaf); glideRaf = 0; }
+    drag = { x: e.clientX, s: boardEl.scrollLeft, di: currentDom(), pts: [{ x: e.clientX, t: e.timeStamp }] };
     dragMoved = false;
   };
   const onMove = (e) => {
     if (!drag) return;
     const dx = e.clientX - drag.x;
     if (!dragMoved && Math.abs(dx) > 5) { dragMoved = true; boardEl.classList.add("board--dragging"); }
-    if (dragMoved) { e.preventDefault(); boardEl.scrollLeft = drag.s - dx; }
+    if (dragMoved) {
+      e.preventDefault();
+      boardEl.scrollLeft = drag.s - dx;
+      drag.pts.push({ x: e.clientX, t: e.timeStamp });
+      if (drag.pts.length > 5) drag.pts.shift();
+    }
   };
-  const onUp = () => {
+  const onUp = (e) => {
     if (!drag) return;
-    const moved = dragMoved;
+    const moved = dragMoved, g = drag;
     drag = null;
     dragMoved = false;
     if (!moved) return;
-    boardEl.classList.remove("board--dragging");
     suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 0);
-    goDom(currentDom(), true);                // 놓은 자리에서 가장 가까운 유닛으로 (클론이면 settle 이 실제로 옮김)
+    const p0 = g.pts[0], p1 = g.pts[g.pts.length - 1];
+    const v = p1.t > p0.t && e.timeStamp - p1.t < 80 ? (p1.x - p0.x) / (p1.t - p0.t) : 0;   // px/ms. 멈췄다 놓았으면 0
+    let di = currentDom();
+    if (Math.abs(v) > 0.4 && di === g.di) di += v < 0 ? 1 : -1;   // 빠르게 튕겼는데 아직 옆 유닛에 못 미쳤으면 그쪽으로
+    glideTo(Math.max(0, Math.min(n + 1, Math.max(g.di - 1, Math.min(g.di + 1, di)))));   // 클론에 닿으면 settle 이 실제로 옮김
   };
   const onClickCapture = (e) => { if (suppressClick) { e.preventDefault(); e.stopPropagation(); } };
   const onDragStart = (e) => e.preventDefault();   // 링크·이미지 기본 끌기 방지
@@ -848,6 +893,19 @@ function initMobileCarousel(boardEl) {
   const onResize = () => jumpReal(activeIdx);
   window.addEventListener("resize", onResize);
 
+  // (마이크로 인터랙션) 첫 방문 힌트 — 이 브라우저에서 처음 한 번만. 레인 전체가 왼쪽으로 44px 밀렸다 돌아오고 다음 멤버 레인이 잠깐 밝아진다
+  let hintT = 0;
+  if (!laneHintSeen() && !calmMotion()) {
+    hintT = setTimeout(() => {
+      if (laneHintSeen() || document.hidden || drag || !boardEl.classList.contains("board--carousel")) return;
+      markLaneHint();
+      for (const s of slides()) s.animate([{ transform: "translateX(0)" }, { transform: "translateX(-44px)", offset: 0.4 }, { transform: "translateX(0)" }],
+        { duration: 900, easing: "cubic-bezier(.4,0,.2,1)" });
+      const next = slides()[currentDom() + 1];
+      if (next) { next.classList.remove("lane--peek"); void next.offsetWidth; next.classList.add("lane--peek"); }
+    }, 900);
+  }
+
   boardEl._carouselCleanup = () => {
     boardEl.removeEventListener("scroll", onScroll);
     boardEl.removeEventListener("pointerdown", onDown);
@@ -859,6 +917,8 @@ function initMobileCarousel(boardEl) {
     boardEl.classList.remove("board--dragging");
     window.removeEventListener("resize", onResize);
     clearTimeout(settle);
+    cancelAnimationFrame(glideRaf);
+    clearTimeout(hintT);
   };
 }
 

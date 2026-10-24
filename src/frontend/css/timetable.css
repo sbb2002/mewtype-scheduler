@@ -114,6 +114,26 @@
   padding: 14px 14px 16px;
   overflow-x: auto;
 }
+/* (마이크로 인터랙션) 가로로 넘칠 때 — 넘친 쪽 끝 흐림 + 화살표 버튼 (js/timetable.js wireOverflow) */
+.tt__sw { position: relative; }
+.tt__sw.is-over .tt__scroll {
+  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, var(--ml, 1)) 0, #000 72px, #000 calc(100% - 72px), rgba(0, 0, 0, var(--mr, 1)) 100%);
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, var(--ml, 1)) 0, #000 72px, #000 calc(100% - 72px), rgba(0, 0, 0, var(--mr, 1)) 100%);
+}
+.tt__arr {
+  position: absolute; top: 50%; translate: 0 -50%; z-index: 3; width: 32px; height: 32px; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+  background: var(--color-raised); border: 1px solid var(--color-raised-edge); color: var(--color-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); transition: opacity 0.2s;
+}
+.tt__arr:disabled { opacity: 0; pointer-events: none; }
+.tt__arr:hover { border-color: var(--color-text-muted); }
+.tt__arr svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tt__arr--l { left: -6px; }
+.tt__arr--r { right: -6px; }
+.tt__arr.is-nudge { animation: tt-arr-nudge 0.7s ease-in-out 3; }
+@keyframes tt-arr-nudge { 50% { transform: translateX(5px); } }
+@media (prefers-reduced-motion: reduce) { .tt__arr.is-nudge { animation: none; } }
 .tt__grid {
   position: relative;
   min-width: 1000px;
@@ -612,4 +632,11 @@ a.tt-pop__img { cursor: pointer; }
     transform: scale(1.2);
     box-shadow: 0 0 0 2px var(--lane-color, #fff);
   }
+  /* (마이크로 인터랙션) 넘겨서 다른 멤버가 되면 그 점이 톡 튀어오른다 · 첫 방문 힌트 때 다음 멤버 레인이 잠깐 밝아진다 (js/render.js) */
+  #pager-dots .dot.dot--pop { animation: dot-pop 0.38s cubic-bezier(0.25, 1.55, 0.45, 1); }
+  .lane.lane--peek { animation: lane-peek 1.1s ease-out; }
+}
+@keyframes dot-pop { 45% { scale: 1.35; translate: 0 -4px; } }
+@keyframes lane-peek { 30% { filter: brightness(1.3); } }
+@media (max-width: 767px) {
 }

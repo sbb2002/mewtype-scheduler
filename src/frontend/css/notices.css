@@ -471,7 +471,7 @@ a.ntc__src:hover { color: var(--color-text); }
 }
 .ntc-sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 901;
-  max-height: 85vh; max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain;
+  max-height: 85vh; max-height: 85dvh; display: flex; flex-direction: column; overflow: hidden;
   background: var(--color-bg-secondary); color: var(--color-text);
   border-radius: 16px 16px 0 0; box-shadow: 0 -10px 30px var(--ntc-shadow);
   font-size: 14px; line-height: 1.5;
@@ -482,7 +482,19 @@ a.ntc__src:hover { color: var(--color-text); }
 body.ntc-sheet-open { overflow: hidden; }
 body.ntc-sheet-open .ntc-scrim { opacity: 1; pointer-events: auto; }
 body.ntc-sheet-open .ntc-sheet { transform: none; visibility: visible; transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1); }
-.ntc-sheet__grab { width: 40px; height: 4px; border-radius: 2px; background: var(--color-border); margin: 8px auto 0; }
+/* 손잡이 줄 — 시트 맨 위에 고정(내용만 .ntc-sheet__in 에서 스크롤). 아래로 끌면 닫힌다(js/sheetdrag.js):
+   닫힘 선을 넘으면 .is-armed(막대가 길어지고 강조색), 놓으면 닫힘 · 덜 끌었으면 .is-spring 으로 튕겨 돌아감 */
+.ntc-sheet__grabz {
+  flex: none; height: 22px; display: grid; place-items: center; cursor: grab; touch-action: none;
+  border-radius: 16px 16px 0 0; transition: box-shadow 0.2s;
+}
+.ntc-sheet.is-dragging .ntc-sheet__grabz { cursor: grabbing; }
+.ntc-sheet.is-scrolled .ntc-sheet__grabz { box-shadow: 0 1px 0 var(--color-border); }
+.ntc-sheet__grab { width: 40px; height: 4px; border-radius: 2px; background: var(--color-border); transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s; }
+.ntc-sheet.is-armed .ntc-sheet__grab { width: 58px; height: 5px; background: var(--ntc-accent); }
+.ntc-sheet__in { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+body.ntc-sheet-open .ntc-sheet.is-dragging { transition: none; }
+body.ntc-sheet-open .ntc-sheet.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }
 .ntc-sheet .ntc-card__cols { grid-template-columns: minmax(0, 1fr); }
 
 @media (prefers-reduced-motion: reduce) {

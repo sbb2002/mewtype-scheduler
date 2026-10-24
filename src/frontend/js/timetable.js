@@ -380,6 +380,49 @@ export function buildBoardHead(ctx) {
   return head;
 }
 
+/* (마이크로 인터랙션) 편성 레일이 가로로 넘칠 때 — 넘친 쪽 끝을 흐리게 지우고(mask, --ml · --mr) 그쪽 가장자리에 화살표 버튼
+   (누르면 그쪽으로 320px). 처음 한 번은 오른쪽 화살표가 세 번 까딱인다(페이지를 연 동안 1회 — 75초마다 다시 그려도 반복하지 않게).
+   끝까지 밀면 그쪽 흐림 · 화살표가 없어진다. 넘치지 않으면 아무것도 안 보인다. */
+let ttRO = null, ttNudged = false;
+function overflowArrow(side) {
+  const b = el("button", `tt__arr tt__arr--${side}`);
+  b.type = "button";
+  b.disabled = true;
+  b.setAttribute("aria-label", side === "l" ? "앞 시간 보기" : "뒤 시간 보기");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  p.setAttribute("d", side === "l" ? "M8 2 4 6l4 4" : "M4 2l4 4-4 4");
+  svg.appendChild(p);
+  b.appendChild(svg);
+  return b;
+}
+function wireOverflow(scroll) {
+  const box = el("div", "tt__sw");
+  const aL = overflowArrow("l"), aR = overflowArrow("r");
+  box.append(scroll, aL, aR);
+  const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const upd = () => {
+    const max = scroll.scrollWidth - scroll.clientWidth, over = max > 2;
+    const l = over ? Math.min(1, scroll.scrollLeft / 60) : 0, r = over ? Math.min(1, (max - scroll.scrollLeft) / 60) : 0;
+    box.classList.toggle("is-over", over);
+    box.style.setProperty("--ml", String(1 - 0.92 * l));
+    box.style.setProperty("--mr", String(1 - 0.92 * r));
+    aL.disabled = l <= 0.5;
+    aR.disabled = r <= 0.5;
+    if (!aR.disabled && !ttNudged && !calm) { ttNudged = true; aR.classList.add("is-nudge"); }
+  };
+  const go = (dx) => scroll.scrollBy({ left: dx, behavior: calm ? "auto" : "smooth" });
+  aL.addEventListener("click", () => go(-320));
+  aR.addEventListener("click", () => go(320));
+  scroll.addEventListener("scroll", upd, { passive: true });
+  if (ttRO) ttRO.disconnect();   // 다시 그릴 때마다 새 레일만 지켜본다
+  if (window.ResizeObserver) { ttRO = new ResizeObserver(upd); ttRO.observe(scroll); }
+  requestAnimationFrame(upd);
+  return box;
+}
+
 export function buildTimetable(ctx) {
   wirePopOnce();
   const sec = el("section", "tt");
@@ -439,7 +482,7 @@ export function buildTimetable(ctx) {
   ov.append(past, now, nowTag, el("div", "tt__mid"));
   grid.appendChild(ov);
   scroll.appendChild(grid);
-  sec.appendChild(scroll);
+  sec.appendChild(wireOverflow(scroll));
   positionNow(grid, ctx.nowMs);
 
   const legend = el("div", "tt__legend");

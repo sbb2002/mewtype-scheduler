@@ -395,6 +395,16 @@ body.tw-modal-open .tw-backdrop {
 body.tw-modal-open .tw-toast {
   transform: translateY(0);
 }
+/* (마이크로 인터랙션) 위로 밀어 닫기 — 머리줄 · 맨 아래 손잡이를 위로 끈다(js/sheetdrag.js). 닫힘 선을 넘으면 .is-armed */
+.tw-toast__head { touch-action: none; cursor: grab; }
+.tw-toast__grab { height: 16px; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.tw-toast__grab i {
+  width: 36px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--tw-ink, #fff) 35%, transparent);
+  transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s;
+}
+.tw-toast.is-armed .tw-toast__grab i { width: 54px; height: 5px; background: var(--tw-ink, #fff); }
+.tw-toast.is-dragging, .tw-toast.is-dragging .tw-toast__head { transition: none; cursor: grabbing; }
+.tw-toast.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }
 .tw-toast__avatar {
   width: 26px;
   height: 26px;
@@ -499,4 +509,32 @@ body.tw-modal-open .tw-toast {
 /* 트윗이 있는 멤버의 아바타 = 얇은 링(색 = 안 읽음 숫자 배지 .lane__tw 와 같은 --tw-badge-bg) (읽음 여부와 무관, PC 타임테이블 왼쪽 칸 · 모바일 레인 헤더 공통). tweets.js _apply 가 .has-tweet 을 켠다 */
 .lane__avatar.has-tweet {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 2.5px var(--tw-badge-bg);
+}
+
+/* ── (마이크로 인터랙션) 트윗 없는 네임플레이트를 눌렀을 때 — js/tweets.js _noTweet ── */
+.is-nope { animation: tw-nope-shake 0.42s; }
+@keyframes tw-nope-shake {
+  0%, 100% { translate: 0; rotate: 0deg; }
+  20% { translate: -5px 0; rotate: -3deg; }
+  40% { translate: 5px 0; rotate: 3deg; }
+  60% { translate: -3px 0; rotate: -1.5deg; }
+  80% { translate: 2px 0; rotate: 0deg; }
+}
+.tw-nope {
+  position: fixed; z-index: 950; left: 0; top: 0; pointer-events: none; opacity: 0; visibility: hidden;
+  background: var(--color-raised); color: var(--color-text); border: 1px solid var(--color-raised-edge);
+  border-radius: 8px; padding: 6px 10px; font-size: 0.78rem; white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.tw-nope::after {   /* 꼬리 — 네임플레이트 가운데를 가리킨다 */
+  content: ""; position: absolute; left: calc(var(--tail-x, 50%) - 5px); bottom: -6px;
+  border: 5px solid transparent; border-top-color: var(--color-raised-edge); border-bottom: 0;
+}
+.tw-nope.below::after { bottom: auto; top: -6px; border-top: 0; border-bottom: 5px solid var(--color-raised-edge); }
+.tw-nope.on { visibility: visible; animation: tw-nope-tip 1.7s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+@keyframes tw-nope-tip { 0% { opacity: 0; transform: translateY(6px); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.tw-nope.below.on { animation-name: tw-nope-tip-b; }
+@keyframes tw-nope-tip-b { 0% { opacity: 0; transform: translateY(-6px); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .is-nope { animation: none; }
+  .tw-nope.on, .tw-nope.below.on { animation: none; opacity: 1; }
 }

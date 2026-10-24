@@ -17,6 +17,7 @@
 import { visibleBanners, bannerHTML, bannerSig, mountBannerMotion, stopBannerMotion } from "./banners.js";   // (v4a) 펼친 목록 맨 위 행사 배너
 import { themeButton } from "./theme.js";   // (v4.6.0) 막대 마지막 칸 = 밝게/어둡게 전환 버튼 (다시 그려도 같은 버튼을 옮겨 붙인다)
 import { makeXCard, loadXCards, stopXCards } from "./tweets.js";   // (v4.6.4) 팝업 카드의 X 공식 카드 — 트윗 말풍선과 같은 코드
+import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 시트 끌어 닫기
 
 // (v4.7.0) 분류 6개 — 백엔드가 소식마다 `categories`(목록)를 붙인다: 라이브공연 · 오프라인행사 · 음원·굿즈 · 방송은 여럿 함께,
 //   Our Notes(게임 계정 글) · 기타는 단독. 한 소식은 자기 분류 탭 모두에 나온다.
@@ -522,9 +523,23 @@ function _sheetEnsure() {
   _sheet.el.setAttribute("role", "dialog");
   _sheet.el.setAttribute("aria-modal", "true");
   _sheet.el.setAttribute("aria-label", "소식 자세히");
-  _sheet.el.innerHTML = `<div class="ntc-sheet__grab" aria-hidden="true"></div><div class="ntc-sheet__in"></div>`;
+  // 손잡이 줄(.ntc-sheet__grabz)은 시트 맨 위에 고정하고 그 아래 내용(.ntc-sheet__in)만 스크롤한다 — 내용을 내려도 손잡이는 제자리.
+  // 손잡이 줄을 아래로 끌면 닫힌다(sheetdrag.js). 내용이 손잡이 밑으로 지나가면 .is-scrolled 로 경계선을 긋는다.
+  _sheet.el.innerHTML = `<div class="ntc-sheet__grabz"><div class="ntc-sheet__grab" aria-hidden="true"></div></div><div class="ntc-sheet__in"></div>`;
   _sheet.el.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) _sheetClose(true); });
+  const inner = _sheet.el.querySelector(".ntc-sheet__in");
+  inner.addEventListener("scroll", () => _sheet.el.classList.toggle("is-scrolled", inner.scrollTop > 2), { passive: true });
   document.body.append(_sheet.scrim, _sheet.el);
+  wireSheetDrag({
+    sheet: _sheet.el,
+    handles: [_sheet.el.querySelector(".ntc-sheet__grabz")],
+    isOpen: () => _sheet.id != null,
+    close: () => _sheetClose(true),
+    setScrim: (v) => {
+      _sheet.scrim.style.transition = v == null ? "" : "none";
+      _sheet.scrim.style.opacity = v == null ? "" : String(v);
+    },
+  });
 }
 function _sheetOpen(id) {
   const n = _byId(id);
@@ -536,7 +551,8 @@ function _sheetOpen(id) {
     stopXCards(_sheet.el);
     _cardFill(inner, n, "m");
     _sheet.sig = _cardSig(n);
-    _sheet.el.scrollTop = 0;
+    inner.scrollTop = 0;
+    _sheet.el.classList.remove("is-scrolled");
   }
   _sheet.id = String(id);
   document.body.classList.add("ntc-sheet-open");

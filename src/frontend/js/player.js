@@ -16,6 +16,7 @@
 import { fetchPreview } from "./api.js";
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
 import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange } from "./songs.js";
+import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
 
 const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에서 높이 200 이 되는 값)
 const FLOAT_H = 200;                      // 플로팅 프레임 높이 — YouTube 임베드 최소 200×200 을 채운다
@@ -33,6 +34,10 @@ const floatW = () => el.fmain.offsetWidth;          // 탭을 뺀 본체 폭 (�
 const tuckedLeft = (side) => side === "l" ? -(floatW() - TUCK_VIS) : innerWidth - TUCK_TAB - TUCK_VIS;   // 넣었을 때 프레임 left
 const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
 const vibrate = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* 무시 */ } };
+const calm = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);   // 움직임 줄이기
+const isPhone = () => !!(window.matchMedia && matchMedia("(max-width: 767px)").matches);
+const restartCls = (e, cls) => { e.classList.remove(cls); void e.offsetWidth; e.classList.add(cls); };   // 같은 애니메이션을 처음부터 다시
+const GRIP_TIP_KEY = "mew.tip.grip-dblclick";   // (마이크로 인터랙션) 손잡이 더블클릭 안내를 본 적 있음 — 이 브라우저에 기록이 남아 있는 동안 다시 안 띄운다
 
 const st = {
   raw: [],
@@ -360,11 +365,69 @@ function removeFromQueue(i) {
   else if (i === st.qi) st.qi = -1;
   paint();
 }
+/** (마이크로 인터랙션) 재생목록 줄을 접으며 뺀다 — ✕ · 밀어서 빼기 공용. 접히는 동안 목록이 다시 그려져도 같은 곡 위치를 다시 찾는다. */
+function removeAnimated(i, li) {
+  const id = st.queue[i];
+  const done = () => {
+    const k = st.queue[i] === id ? i : st.queue.indexOf(id);
+    if (k >= 0) removeFromQueue(k);
+  };
+  if (!li || calm()) { done(); return; }
+  li.inert = true;
+  li.style.overflow = "hidden";
+  li.animate([{ height: li.offsetHeight + "px", opacity: 1 }, { height: "0px", opacity: 0 }],
+    { duration: 240, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" }).onfinish = done;
+}
+/** 「비우기」 — 줄들이 차례로 떨어진 뒤 비우고, 5초 동안 「되돌리기」를 띄운다.
+ *  되돌리면 비운 곡들을 원래 순서대로 앞에 다시 넣는다(비운 뒤 새로 담은 곡은 그 뒤에 남는다). */
+let undoSaved = null, undoTimer = 0;
 function clearQueue() {
-  st.queue = [];
-  st.played = new Set();
-  st.qi = -1;
+  if (!st.queue.length) return;
+  const saved = { queue: [...st.queue], played: new Set(st.played), qi: st.qi, curId: st.curId };
+  const go = () => {
+    el.qClear.disabled = false;
+    st.queue = [];
+    st.played = new Set();
+    st.qi = -1;
+    paint();
+    showUndo(saved);
+  };
+  const rows = calm() ? [] : [...el.qList.querySelectorAll(".mp-q__item")].slice(0, 14);
+  if (!rows.length) { go(); return; }
+  el.qClear.disabled = true;
+  let last = null;
+  rows.forEach((li, k) => {
+    last = li.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(10px)" }],
+      { duration: 180, delay: k * 35, easing: "ease-in", fill: "forwards" });
+  });
+  last.onfinish = go;
+}
+function showUndo(saved) {
+  undoSaved = saved;
+  el.undoT.textContent = `재생목록 ${saved.queue.length}곡을 비웠습니다`;
+  el.undo.hidden = false;
+  restartCls(el.undo, "is-in");
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, 5000);
+}
+function hideUndo() {
+  clearTimeout(undoTimer);
+  undoSaved = null;
+  if (el.undo) el.undo.hidden = true;
+}
+function undoClear() {
+  const s = undoSaved;
+  if (!s) return;
+  hideUndo();
+  st.queue = s.queue.concat(st.queue);
+  st.played = new Set(s.played);
+  if (st.qi >= 0) st.qi += s.queue.length;
+  else if (st.curId === s.curId && s.qi >= 0) st.qi = s.qi;
   paint();
+  pulseBadge();
+  if (!calm()) [...el.qList.querySelectorAll(".mp-q__item")].slice(0, 14).forEach((li, k) =>
+    li.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }],
+      { duration: 220, delay: k * 35, easing: "ease-out", fill: "backwards" }));
 }
 
 // ── 랜덤플리 오마카세 ────────────────────────────────────────────────
@@ -435,10 +498,22 @@ function build() {
   el.cur = h("span", { class: "mp-mono", text: "0:00" });
   el.dur = h("span", { class: "mp-mono", text: "0:00" });
   el.fill = h("i");
-  el.track = h("div", { class: "mp-track", role: "slider", "aria-label": "재생 위치", tabindex: "0", on: { keydown: onTrackKey } }, el.fill);
+  el.thumb = h("b", { class: "mp-track__th", "aria-hidden": "true" });                   // (마이크로 인터랙션) 손가락으로 끄는 동안만 보이는 손잡이
+  el.trackTip = h("span", { class: "mp-track__tip mp-mono", "aria-hidden": "true" });     // 손가락 위로 따라오는 시간 말풍선
+  el.track = h("div", { class: "mp-track", role: "slider", "aria-label": "재생 위치", tabindex: "0", on: { keydown: onTrackKey } }, el.fill, el.thumb, el.trackTip);
   el.bPlay = h("button", { type: "button", class: "mp-main", on: { click: togglePlay } });
-  el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => { st.shuffle = !st.shuffle; st.played = new Set(st.qi >= 0 ? [st.qi] : []); paintControls(); } } }, icon("shuffle"));
-  el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => { st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls(); } } }, icon("repeat", "mp-ico mp-ico--rpt"));
+  el.bShuffle = h("button", { type: "button", class: "mp-tog", "aria-label": "셔플 (이전·다음 버튼이 무작위 곡으로)", title: "셔플", on: { click: () => {
+    st.shuffle = !st.shuffle; st.played = new Set(st.qi >= 0 ? [st.qi] : []); paintControls();
+    sayCtl(el.bShuffle, st.shuffle ? "셔플 켜짐" : "셔플 꺼짐", st.shuffle ? "이전 · 다음이 무작위 곡으로" : "재생목록 순서대로");
+    if (!calm()) restartCls(el.bShuffle, "is-bop");
+  } } }, icon("shuffle"));
+  el.bRepeat = h("button", { type: "button", class: "mp-tog", on: { click: () => {
+    st.repeat = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off"; paintControls();
+    const next = st.repeat === "off" ? "one" : st.repeat === "one" ? "all" : "off";
+    sayCtl(el.bRepeat, RPT_LABEL[st.repeat], `다시 누르면 ${RPT_LABEL[next]}`);
+    if (!calm()) restartCls(el.bRepeat.querySelector("svg"), "is-spin");
+  } } }, icon("repeat", "mp-ico mp-ico--rpt"));
+  el.ctlTip = h("div", { class: "mp-ctltip", role: "status" });   // (마이크로 인터랙션) 반복 · 셔플 상태 말풍선
   // 랜덤플리 오마카세 — 버튼 + 말풍선(전체/오리지널/커버)
   el.omaT = h("span", { class: "mp-oma__t" });
   el.oma = h("button", { type: "button", class: "mp-oma", "aria-haspopup": "dialog", "aria-expanded": "false", on: { click: toggleOma } }, h("span", { class: "mp-oma__e", "aria-hidden": "true", text: "🎁" }), el.omaT);
@@ -456,15 +531,19 @@ function build() {
   el.qCount = h("span", { class: "mp-q__count" });
   el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
   el.qList = h("ol", { class: "mp-q__list" });
+  el.undoT = h("span");
+  el.undo = h("div", { class: "mp-undo", role: "status", hidden: true },   // (마이크로 인터랙션) 「비우기」 뒤 5초 되돌리기
+    el.undoT, h("button", { type: "button", class: "mp-undo__b", text: "되돌리기", on: { click: undoClear } }), h("i", { class: "mp-undo__bar" }));
   el.qBox = h("section", { class: "mp-q", "aria-label": "재생목록" },
     h("div", { class: "mp-q__head" }, h("strong", { text: "재생목록" }), el.qCount, el.qClear),
     el.qList,
+    el.undo,
   );
   el.stage = h("section", { class: "mp-stage" },
     el.slot,
     h("div", { class: "mp-song" }, el.sTitle, el.sMeta, el.sKo),
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
-    h("div", { class: "mp-ctl" }, h("div", { class: "mp-grp" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat), el.omaWrap),
+    h("div", { class: "mp-ctl" }, el.ctlTip, h("div", { class: "mp-grp" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat), el.omaWrap),
     el.err,
   );
 
@@ -492,8 +571,9 @@ function build() {
   el.panels = h("div", { class: "mp-panels" }, el.lib, el.qPanel);
   el.side = h("div", { class: "mp-side" }, el.tabBar, el.panels);
 
+  el.head = h("div", { class: "mp-pop__head" }, h("i", { class: "mp-pop__grab", "aria-hidden": "true" }), el.titleEl, el.closeBtn);   // 모바일: 머리줄을 끌어 내린다
   el.pop = h("div", { class: "mp-pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "mp-title" },
-    h("div", { class: "mp-pop__head" }, el.titleEl, el.closeBtn),
+    el.head,
     el.body = h("div", { class: "mp-pop__body" }, el.stage, el.side),
   );
   el.scrim = h("div", { class: "mp-scrim", id: "player-pop", hidden: true, on: { mousedown: (e) => { if (e.target === el.scrim) closePlayer(); } } }, el.pop);
@@ -509,7 +589,7 @@ function build() {
     el.gBtns = h("span", { class: "mp-grip__btns" },
       iconBtn("prev", "이전 곡", "mp-gbtn", () => go(-1)),
       iconBtn("next", "다음 곡", "mp-gbtn", () => go(1)),
-      h("button", { type: "button", class: "mp-gbtn", "aria-label": "팝업 열기", title: "팝업 열기", text: "▴", on: { click: openPlayer } }),
+      h("button", { type: "button", class: "mp-gbtn", "aria-label": "팝업 열기", title: "팝업 열기", text: "▴", on: { click: () => { markGripTipSeen(); hideGripTip(); openPlayer(); } } }),
       h("button", { type: "button", class: "mp-gbtn", "aria-label": "플레이어 닫기 (정지)", title: "닫기 (정지)", text: "✕", on: { click: dismissFrame } }),
     ),
   );
@@ -523,10 +603,26 @@ function build() {
     h("div", { class: "mp-edge__glow" }), h("div", { class: "mp-edge__lip" }),
     h("div", { class: "mp-edge__chev" }, ...[0, 1, 2].map(() => chevSvg("", "0 0 12 14", "M8 2 3 7l5 5", "2.2"))));
 
-  document.body.append(el.scrim, el.frame, el.edge);
+  // (마이크로 인터랙션) PC 플로팅 손잡이 더블클릭 안내 — 처음 한 번만(GRIP_TIP_KEY)
+  el.coach = h("div", { class: "mp-coach", role: "status", hidden: true },
+    h("span", { class: "mp-coach__tap", "aria-hidden": "true" }, h("i"), h("i")), "더블클릭하면 아래 플레이어로 이동합니다");
+
+  document.body.append(el.scrim, el.frame, el.edge, el.coach);
 
   initGripDrag();
   initTrackDrag();
+  initQueueSwipe();
+  wireSheetDrag({   // (마이크로 인터랙션) 모바일 시트 — 머리줄을 아래로 끌어 내린다(재생은 계속). PC 도크는 해당 없음
+    sheet: el.pop,
+    handles: [el.head],
+    isOpen: () => st.popOpen && !st.dock && isPhone(),
+    close: closePlayer,
+    setScrim: (v) => {
+      el.scrim.style.transition = v == null ? "" : "none";
+      el.scrim.style.background = v == null ? "" : `rgba(0, 0, 0, ${(0.6 * v).toFixed(3)})`;
+    },
+    onMove: () => followFrame(SHEET_MS + 200),   // 프레임이 재생부 자리를 따라온다(튕겨 돌아가는 동안 포함)
+  });
   el.scrim.addEventListener("keydown", trapFocus);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && st.omaOpen) { closeOma(); return; } if (e.key === "Escape" && st.popOpen) closePlayer(); });
   document.addEventListener("click", (e) => { if (st.omaOpen && !el.omaWrap.contains(e.target)) closeOma(); });
@@ -643,11 +739,14 @@ function paintQueue() {
     const s = st.songs.find((x) => x.id === id);
     if (!s) return null;
     const cur = i === st.qi;   // 같은 곡이 여러 번 있어도 위치로 구분
-    return h("li", { class: "mp-q__item" + (cur ? " is-cur" : "") },
-      h("button", { type: "button", class: "mp-q__main", "aria-current": cur ? "true" : null, on: { click: () => playQueueAt(i) } },
-        h("span", { class: "mp-mono mp-q__n", text: cur && st.playing ? "▶" : String(i + 1) }),
-        h("span", { class: "mp-q__title", text: s.title })),
-      h("button", { type: "button", class: "mp-q__x", "aria-label": `${s.title} 재생목록에서 빼기`, title: "빼기", text: "✕", on: { click: () => removeFromQueue(i) } }));
+    // (마이크로 인터랙션) 밑판(.mp-q__under 「빼기」) 위에 윗판(.mp-q__fg) — 모바일에서 윗판을 왼쪽으로 밀면 밑판이 드러나며 빠진다(initQueueSwipe)
+    return h("li", { class: "mp-q__item" + (cur ? " is-cur" : ""), "data-i": String(i) },
+      h("span", { class: "mp-q__under", "aria-hidden": "true" }, trashIcon(), "빼기"),
+      h("div", { class: "mp-q__fg" },
+        h("button", { type: "button", class: "mp-q__main", "aria-current": cur ? "true" : null, on: { click: () => playQueueAt(i) } },
+          h("span", { class: "mp-mono mp-q__n", text: cur && st.playing ? "▶" : String(i + 1) }),
+          h("span", { class: "mp-q__title", text: s.title })),
+        h("button", { type: "button", class: "mp-q__x", "aria-label": `${s.title} 재생목록에서 빼기`, title: "빼기", text: "✕", on: { click: (e) => removeAnimated(i, e.currentTarget.closest("li")) } })));
   }));
 }
 
@@ -742,6 +841,7 @@ function layoutFrame() {
   f.hidden = !show;
   if (!show) return;
   if (inSlot) {
+    hideGripTip();   // (마이크로 인터랙션) 프레임이 재생부로 들어가면 손잡이 안내는 닫는다
     // 재생부 자리(slot) 위에 겹친다. 손잡이 줄은 숨김. 도크는 페이지와 같이 스크롤되도록 문서 좌표(absolute)로 둔다.
     const r = el.slot.getBoundingClientRect();
     f.classList.remove("is-float");
@@ -943,6 +1043,7 @@ function pullEnd(commit) {
 function initGripDrag() {
   let drag = null;   // 떠 있는 프레임을 끄는 중 — {id, dx, dy, over, side, armed, touched}
   el.grip.addEventListener("pointerdown", (e) => {
+    hideGripTip();
     if (e.target.closest("button") || e.button > 0) return;
     if (st.tuck) { pullStart(e); return; }   // 넣은 상태의 보이는 손잡이 조각 — 탭과 같이 끈다
     const r = el.frame.getBoundingClientRect();
@@ -993,7 +1094,8 @@ function initGripDrag() {
   };
   el.grip.addEventListener("pointerup", end(true));
   el.grip.addEventListener("pointercancel", end(false));
-  el.grip.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) openPlayer(); });
+  el.grip.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) { markGripTipSeen(); hideGripTip(); openPlayer(); } });
+  el.grip.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") showGripTip(); });   // (마이크로 인터랙션) 처음 한 번만 안내
   // 넣은 상태의 남은 탭 — 누르기 · 바깥으로 끌기 = 꺼냄, 위아래 끌기 = 높이만
   for (const t of [el.tabL, el.tabR]) {
     t.addEventListener("pointerdown", pullStart);
@@ -1002,6 +1104,109 @@ function initGripDrag() {
     t.addEventListener("pointercancel", (e) => { if (pull && e.pointerId === pull.id) pullEnd(false); });
     t.addEventListener("click", (e) => { if (e.detail === 0 && st.tuck) untuckFrame(); });   // 키보드(Enter · Space)
   }
+}
+
+// ── (마이크로 인터랙션) 반복 · 셔플 상태 말풍선 ─────────────────────────
+const RPT_LABEL = { off: "반복 꺼짐", one: "한 곡 반복", all: "전체 반복" };
+let ctlTipTimer = 0;
+/** 누른 버튼 위에 바뀐 상태(main)와 다음 동작(sub)을 1.8초 띄운다. */
+function sayCtl(btn, main, sub) {
+  const box = el.ctlTip.parentElement;
+  el.ctlTip.replaceChildren(main, h("small", { text: sub }));
+  const br = box.getBoundingClientRect(), r = btn.getBoundingClientRect(), w = el.ctlTip.offsetWidth;
+  const cx = r.left + r.width / 2 - br.left;
+  const left = clamp(cx - w / 2, 0, Math.max(0, br.width - w));
+  el.ctlTip.style.left = `${left}px`;
+  el.ctlTip.style.setProperty("--tail-x", `${clamp(cx - left, 10, w - 10)}px`);
+  restartCls(el.ctlTip, "is-on");
+  clearTimeout(ctlTipTimer);
+  ctlTipTimer = setTimeout(() => el.ctlTip.classList.remove("is-on"), 1800);
+}
+
+// ── (마이크로 인터랙션) PC 플로팅 손잡이 더블클릭 안내 — 이 브라우저에서 처음 한 번만 ──────
+// 손잡이에 처음 마우스를 올릴 때 띄우고, 띄운 순간 본 것으로 기록한다(localStorage). 안내를 보기 전에 더블클릭 · ▴ 로 이미 옮겨 봤어도 기록한다.
+// 저장소를 못 쓰면(시크릿 창 · 차단) 이 페이지를 연 동안 한 번만. 4초 뒤 · 손잡이를 누르면 닫힌다.
+let gripTipTimer = 0, gripTipShown = false;
+function gripTipSeen() { try { return localStorage.getItem(GRIP_TIP_KEY) === "1"; } catch (e) { return false; } }
+function markGripTipSeen() { gripTipShown = true; try { localStorage.setItem(GRIP_TIP_KEY, "1"); } catch (e) { /* 이 페이지를 연 동안만 */ } }
+function showGripTip() {
+  if (!st.dock || st.tuck || !el.frame.classList.contains("is-float") || gripTipShown || gripTipSeen()) return;
+  markGripTipSeen();
+  const r = el.grip.getBoundingClientRect();
+  el.coach.hidden = false;
+  const w = el.coach.offsetWidth, hh = el.coach.offsetHeight;
+  const above = r.top - hh - 10 >= 8;
+  el.coach.classList.toggle("is-below", !above);
+  el.coach.style.left = `${clamp(r.left, 8, innerWidth - w - 8)}px`;
+  el.coach.style.top = `${above ? r.top - hh - 10 : r.bottom + 10}px`;
+  restartCls(el.coach, "is-on");
+  clearTimeout(gripTipTimer);
+  gripTipTimer = setTimeout(hideGripTip, 4000);
+}
+function hideGripTip() {
+  clearTimeout(gripTipTimer);
+  if (el.coach) { el.coach.classList.remove("is-on"); el.coach.hidden = true; }
+}
+
+// ── (마이크로 인터랙션) 모바일 재생목록 줄 밀어서 빼기 ──────────────────
+// 줄을 왼쪽으로 밀면 밑판 「빼기」가 드러나고, 줄 폭의 35%를 넘으면 휴지통이 커지며 진동(10ms). 놓으면 빠지고, 덜 밀었으면 튕겨 돌아온다.
+// 세로로 더 움직이면 목록 스크롤에 맡긴다(CSS touch-action: pan-y). 민 뒤의 click 은 곡 재생으로 치지 않는다. ✕ 버튼도 그대로 쓴다.
+function trashIcon() {
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5");
+  svg.appendChild(p);
+  return svg;
+}
+function initQueueSwipe() {
+  let d = null, suppress = false;
+  el.qList.addEventListener("pointerdown", (e) => {
+    const fg = e.target.closest(".mp-q__fg");
+    if (!fg || !isPhone() || e.target.closest(".mp-q__x") || (e.pointerType === "mouse" && e.button !== 0)) return;
+    d = { id: e.pointerId, x0: e.clientX, y0: e.clientY, fg, li: fg.parentElement, w: fg.offsetWidth || 1, drag: false, armed: false, dx: 0 };
+  });
+  el.qList.addEventListener("pointermove", (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+    if (!d.drag) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (Math.abs(dy) >= Math.abs(dx)) { d = null; return; }
+      d.drag = true;
+      d.li.classList.add("is-swiping");
+      try { d.fg.setPointerCapture(e.pointerId); } catch (_) { /* 무시 */ }
+    }
+    d.dx = dx;
+    const lim = d.w * 0.6;
+    const shown = dx >= 0 ? Math.min(14, dx * 0.2) : (-dx < lim ? dx : -(lim + (-dx - lim) * 0.3));
+    d.fg.style.transform = `translateX(${shown.toFixed(1)}px)`;
+    d.li.style.setProperty("--p", String(clamp(-dx / (d.w * 0.35), 0, 1)));
+    const armed = -dx > d.w * 0.35;
+    if (armed !== d.armed) { d.armed = armed; d.li.classList.toggle("is-armed", armed); vibrate(armed ? 10 : 5); }
+  });
+  const end = (commit) => (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const g = d;
+    d = null;
+    if (!g.drag) return;
+    suppress = true;
+    setTimeout(() => { suppress = false; }, 0);
+    g.li.classList.remove("is-swiping");
+    const i = Number(g.li.dataset.i);
+    if (commit && g.armed) {
+      if (calm()) { removeAnimated(i, null); return; }
+      g.fg.animate([{ transform: g.fg.style.transform }, { transform: `translateX(${-g.w - 20}px)` }], { duration: 170, easing: "ease-in", fill: "forwards" })
+        .onfinish = () => removeAnimated(i, g.li);
+      return;
+    }
+    g.li.classList.remove("is-armed");
+    g.li.style.setProperty("--p", "0");
+    g.fg.style.transform = "";
+  };
+  el.qList.addEventListener("pointerup", end(true));
+  el.qList.addEventListener("pointercancel", end(false));
+  el.qList.addEventListener("click", (e) => { if (suppress) { e.preventDefault(); e.stopPropagation(); } }, true);
 }
 
 // ── 진행 바 ──────────────────────────────────────────────────────────
@@ -1021,13 +1226,24 @@ function previewDrag(ratio) {
   trackDrag.ratio = ratio;
   st.pos = ratio * st.dur;
   paintProgress();
+  if (!trackDrag.touch) return;
+  // (마이크로 인터랙션) 손가락으로 끄는 동안 — 손잡이를 키우고 손가락 위에 시간 말풍선. 1분 단위를 지날 때마다 짧은 진동
+  const w = el.track.clientWidth;
+  el.thumb.style.left = `${ratio * 100}%`;
+  el.trackTip.textContent = fmt(st.pos);
+  const tw = el.trackTip.offsetWidth;
+  el.trackTip.style.left = `${clamp(ratio * w - tw / 2, -24, w - tw + 24)}px`;
+  const m = Math.floor(st.pos / 60);
+  if (trackDrag.min != null && m !== trackDrag.min) { vibrate(4); if (!calm()) restartCls(el.trackTip, "is-tick"); }
+  trackDrag.min = m;
 }
 function initTrackDrag() {
   el.track.addEventListener("pointerdown", (e) => {
     if (e.button > 0 || !(st.dur > 0)) return;
-    trackDrag = { id: e.pointerId, ratio: 0 };
+    trackDrag = { id: e.pointerId, ratio: 0, touch: e.pointerType !== "mouse", min: null };
     el.track.setPointerCapture(e.pointerId);
     el.track.classList.add("is-drag");
+    el.track.classList.toggle("is-touch", trackDrag.touch);
     previewDrag(trackRatio(e));
     e.preventDefault();
   });
@@ -1038,7 +1254,7 @@ function initTrackDrag() {
     if (!trackDrag || e.pointerId !== trackDrag.id) return;
     const ratio = trackDrag.ratio;
     trackDrag = null;
-    el.track.classList.remove("is-drag");
+    el.track.classList.remove("is-drag", "is-touch");
     if (commit) seekTo(ratio);
     else paintProgress();   // 취소 — 다음 tick 이 실제 위치로 되돌린다
   };
