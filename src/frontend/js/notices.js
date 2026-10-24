@@ -1,6 +1,6 @@
 // notices.js — 예고판 상단 「소식」 막대 (v2.7 → v4.6.4 개편). notices.json 을 읽어 표시한다.
 // (v4.6.4) 디자인 = 운영자 승인 시안 — PC 는 날짜별 묶음, 모바일(≤767px)은 분류 칩 막대 + 카드. 제목은 둘 다 15.5px 한 줄(넘치면 …).
-//   PC   접힘: [소식] [오늘 n · 7일 안 n] [5초마다 한 줄씩 넘어가는 티커] [▾] [테마] — 티커 제목을 누르면 목록을 펼치고 그 소식 팝업을 고정
+//   PC   접힘: [램프] [분류별 건수 칩] [오늘 n · 7일 안 n] [5초마다 한 줄씩 넘어가는 티커] [▾] [테마]  ((v4.7.5) 분류 칩 추가 · 「소식」 글자 숨김) — 티커 제목을 누르면 목록을 펼치고 그 소식 팝업을 고정
 //        펼침: 행사 배너 → [분류 칩 · 한글|원문] → 날짜별 묶음(날짜 칸 「10/24 (토) TODAY」 + 소식 줄)
 //   모바일 접힘: [램프] [분류별 건수 칩 — 움직이지 않음, 누르면 그 분류로 펼침] [▾] [테마]
 //        펼침: 행사 배너 → [「전체 n건」 · 한글|원문 / 밑줄 탭] → 카드 1열
@@ -204,10 +204,19 @@ function _byId(id) {
   return _st.list.find((n) => String(n.id) === String(id)) || _st.held.find((n) => String(n.id) === String(id)) || null;
 }
 
+// (v4.7.5) 오늘(KST) 들어온 소식인가 — first_seen(이 소식이 처음 저장된 시각)의 KST 날짜가 오늘. 그날 자정이 지나면 꺼진다
+function _isNew(n, today) {
+  const t = Date.parse((n && n.first_seen) || "");
+  return !Number.isNaN(t) && new Date(t).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }) === today;
+}
 function _counts(list) {
-  const c = { all: list.length };
-  CATS.forEach((k) => { c[k.id] = 0; });
-  list.forEach((n) => { _cats(n).forEach((k) => { c[k]++; }); });   // 여러 분류인 소식은 각 분류에 하나씩
+  const c = { all: list.length, fresh: {} };   // fresh = 분류별 오늘 들어온 소식 수(칩 모서리 점)
+  const today = _todayKST();
+  CATS.forEach((k) => { c[k.id] = 0; c.fresh[k.id] = 0; });
+  list.forEach((n) => {
+    const nw = _isNew(n, today);
+    _cats(n).forEach((k) => { c[k]++; if (nw) c.fresh[k]++; });   // 여러 분류인 소식은 각 분류에 하나씩
+  });
   return c;
 }
 function _filtered() {
@@ -254,12 +263,15 @@ function _utabsHTML(c) {
   ).join("") + `</div>`;
 }
 
-// ── 모바일 접힌 막대: 분류별 건수 칩(0건 분류는 숨김) ──
+// ── 접힌 막대(PC · 모바일): 분류별 건수 칩(0건 분류는 숨김). (v4.7.5) 오늘 들어온 소식이 있으면 칩 모서리에 빨간 점(.ntc__cdot) ──
 function _cchipsHTML(c) {
-  return CATS.filter((k) => _hasTab(c, k.id)).map((k) =>
-    `<button class="ntc__cchip" type="button" data-open-tab="${k.id}" data-cat="${k.id}"` +
-      ` aria-label="${_attr(k.name)} ${c[k.id]}건 보기" title="${_attr(k.name)} ${c[k.id]}건 보기">${_ic(k.id)}<span>${c[k.id]}</span></button>`
-  ).join("");
+  return CATS.filter((k) => _hasTab(c, k.id)).map((k) => {
+    const nw = c.fresh[k.id] > 0;
+    const lb = `${k.name} ${c[k.id]}건${nw ? ` (오늘 새 소식 ${c.fresh[k.id]}건)` : ""} 보기`;
+    return `<button class="ntc__cchip" type="button" data-open-tab="${k.id}" data-cat="${k.id}"` +
+      ` aria-label="${_attr(lb)}" title="${_attr(lb)}">${_ic(k.id)}<span>${c[k.id]}</span>` +
+      (nw ? `<span class="ntc__cdot" aria-hidden="true"></span>` : "") + `</button>`;
+  }).join("");
 }
 
 // ── PC 날짜별 묶음: 소식 줄 = 시각 · 분류 아이콘 · 제목(한 줄) / 분류 이름 · 이날까지 · 출처 ──
@@ -616,10 +628,11 @@ function _build(section) {
   const nToday = ds.filter((n) => n === 0).length;
   const nWeek = ds.filter((n) => n != null && n <= 7).length;
 
-  const mid = mode === "pc"
+  // (v4.7.5) 분류 칩은 PC · 모바일 공통. PC 는 그 뒤에 요약 · 5초 티커를 더 둔다
+  const mid = `<div class="ntc__chipbar">${_cchipsHTML(c)}</div>` + (mode === "pc"
     ? `<span class="ntc__sum">오늘 <b>${nToday}</b> · 7일 안 <b>${nWeek}</b></span>` +
       `<div class="ntc__ticker"><div class="ntc__track"></div></div>`
-    : `<div class="ntc__chipbar">${_cchipsHTML(c)}</div>`;
+    : "");
 
   section.hidden = false;
   section.className = `ntc ntc--${mode}` + (nToday ? " has-today" : "") + (_st.open ? " is-open" : " is-collapsed");
@@ -809,7 +822,7 @@ function _build(section) {
       if (b) b.focus({ preventScroll: true });
     }
   });
-  // (모바일) 접힌 막대의 분류 칩 → 그 분류 탭으로 펼침 / (PC) 티커 제목 → 펼침 + 팝업 고정
+  // 접힌 막대의 분류 칩 → 그 분류 탭으로 펼침 / (PC) 티커 제목 → 펼침 + 팝업 고정
   barEl.addEventListener("click", (e) => {
     const pin = e.target.closest("[data-pin]");
     if (pin) { openAndPin(pin.dataset.pin, false); return; }

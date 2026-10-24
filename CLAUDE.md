@@ -54,8 +54,12 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.7.4 (핫픽스, 2026-10-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.7.4`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.7.5 (핫픽스, 2026-10-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.7.5`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+>
+> **v4.7.5 (핫픽스, 브랜치 `hotfix/notice-bar-new`, 2026-10-24, 프론트만 — 병합 `MERGE_SHA`(PR #PR_NO), Vercel 자동 배포)**: **PC 소식 막대에도 분류 칩 + 새 소식 점.**
+> 모바일에만 있던 접힌 막대의 분류 칩(아이콘 + 건수)을 PC 에도(「소식」 글자 숨김) · 오늘(KST) 들어온 소식이 있는 분류 칩에 빨간 점(PC · 모바일). 10-24 오전 작업이 커밋되지 않은 채 남아 v4.7.2 ~ v4.7.4 에서 빠졌던 것.
+> `notices.js` · `css/notices.css`, 상세 `docs/SPEC.md` 「소식판 (v4.6.4)」, 용어 `docs/TERMINOLOGY.md`, 요약 `docs/VERSION.md`.
 >
 > **v4.7.4 (핫픽스, 브랜치 `hotfix/tweet-gap-fill`, 2026-10-24, 백엔드만 — 배포 완료 `mewtype-backend` 00182 · `mewtype-telegram` 00124, 롤백 = 00180 · 00123 / 병합 `324ba4e`(PR #87))**: **빠진 트윗 보충 — 폰 알림이 빠진 멤버 트윗을 서버가 최근 글 목록에서 찾아 넣는다.**
 > 멤버 트윗 알림이 들어올 때마다 그 멤버의 최근 글 목록(fxtwitter API v2 `/2/profile/<핸들>/statuses`, IP 당 분당 1,000회)을 1회 조회해(`telegram_app._fill_member_gaps`)
