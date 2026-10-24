@@ -5,6 +5,7 @@
 // 설계 원칙 (YouTube API 정책 — 개발자 정책 III.I.5 · III.I.7 · III.I.9, 필수 최소 기능):
 //  - 재생은 YouTube IFrame Player API 의 임베드 프레임만 쓴다. 광고는 프레임 안에서 YouTube 가 처리 — 건너뛰기를 대신하지 않는다.
 //  - 프레임은 숨기지 않는다(백그라운드 재생 금지). 팝업을 내리면 같은 프레임이 플로팅으로 남는다. 크기는 항상 200×200 이상.
+//  - (v4.7.6) 모바일 플로팅 창은 화면 좌우 끝으로 밀어 넣을 수 있다 — 넣어도 영상 끝 14px 와 손잡이 탭이 화면에 남고 재생은 계속된다(운영자 결정 2026-10-24).
 //  - 프레임 위에는 아무것도 덮지 않는다. 끌기 · 더블클릭용 손잡이 줄은 프레임 바깥(위)에 따로 붙는다.
 //  - 프레임 요소는 한 번 만들면 옮기지 않는다(옮기면 iframe 이 다시 로드돼 재생이 끊긴다). 팝업 ↔ 플로팅은 CSS 위치만 바꾼다.
 // 재생목록: 목록의 곡을 누르면 재생목록에 순서대로 쌓이고(같은 곡도 여러 번 쌓인다), 재생은 1번부터 순서대로 이어진다.
@@ -20,6 +21,18 @@ const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에
 const FLOAT_H = 200;                      // 플로팅 프레임 높이 — YouTube 임베드 최소 200×200 을 채운다
 const MIN_SLOT_H = 200;                   // 팝업 안 프레임 최소 높이 (좁은 화면에서도 200 이상)
 const NS = "http://www.w3.org/2000/svg";
+// (v4.7.6) 모바일 가장자리 넣기 — 수치는 ref 데모(player-edge-tuck.html)와 같다
+const TUCK_TAB = 24;     // 넣었을 때 남는 손잡이 탭 폭
+const TUCK_VIS = 14;     // 넣었을 때 화면 안에 남는 영상 폭 (영상 일부가 보이게 — 운영자 결정 2026-10-24)
+const TUCK_ARM = 56;     // 화면 끝에 닿은 뒤 이만큼 더 밀면 「다 참」 — 놓으면 들어간다
+const TUCK_PUSH = 44;    // 미는 동안 창이 화면 밖으로 밀려 들어가는 최대 거리(저항)
+const TUCK_PULL = 44;    // 넣은 탭을 바깥으로 이만큼 끌면 꺼낸다
+const TUCK_INSET = 16;   // 꺼냈을 때 화면 끝과의 간격
+const tuckable = () => !st.dock && window.matchMedia && matchMedia("(max-width: 767px)").matches;   // 모바일 플로팅에서만
+const floatW = () => el.fmain.offsetWidth;          // 탭을 뺀 본체 폭 (프레임 폭은 넣으면 탭만큼 넓어진다)
+const tuckedLeft = (side) => side === "l" ? -(floatW() - TUCK_VIS) : innerWidth - TUCK_TAB - TUCK_VIS;   // 넣었을 때 프레임 left
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+const vibrate = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* 무시 */ } };
 
 const st = {
   raw: [],
@@ -45,6 +58,7 @@ const st = {
   omaOpen: false,     // 랜덤플리 오마카세 말풍선이 열려 있는가
   omaBusy: false,     // 뒤섞임 연출 + 5초 쿨타임 중 — 버튼 잠금
   fpos: null,         // 플로팅 프레임을 끌어 옮긴 위치 {x,y}. null 이면 CSS 기본(오른쪽 아래)
+  tuck: null,         // (v4.7.6) 모바일 가장자리 넣기 — "l" | "r" | null. 넣은 상태에서도 st.fpos.y 를 높이로 쓴다
   pos: 0,
   dur: 0,
   error: null,        // {id, code} — 임베드 불가 등 재생 오류
@@ -117,6 +131,34 @@ function icon(name, cls = "mp-ico") {
 
 function iconBtn(name, label, cls, onClick) {
   return h("button", { type: "button", class: cls, "aria-label": label, title: label, on: { click: onClick } }, icon(name));
+}
+
+/** 꺾쇠 svg — 가장자리 빛 띠(mp-edge__chev)와 넣은 탭(mp-ftab__chev) 공용. cls 가 빈 문자열이면 class 를 달지 않는다. */
+function chevSvg(cls, vb, d, sw) {
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", vb);
+  if (cls) svg.setAttribute("class", cls);
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", d);
+  p.setAttribute("fill", "none");
+  p.setAttribute("stroke", "currentColor");
+  p.setAttribute("stroke-width", sw);
+  p.setAttribute("stroke-linecap", "round");
+  p.setAttribute("stroke-linejoin", "round");
+  svg.append(p);
+  return svg;
+}
+
+/** 넣었을 때 화면 끝에 남는 손잡이 탭 — 누르기 · 바깥으로 끌기 = 꺼냄. 평소엔 폭 0(CSS). */
+function tuckTab(side) {
+  return h("button", { type: "button", class: `mp-ftab mp-ftab--${side}`, "aria-label": "플레이어 꺼내기", title: "눌러서 꺼내기", tabindex: "-1" },
+    h("span", { class: "mp-ftab__in" },
+      chevSvg("mp-ftab__chev", "0 0 14 14", "M5 2l5 5-5 5", "2"),
+      h("span", { class: "mp-ftab__eq" }, h("i"), h("i"), h("i")),
+      h("span", { "aria-hidden": "true", text: "⠿" }),
+    ));
 }
 
 const fmt = (t) => {
@@ -464,7 +506,7 @@ function build() {
   el.grip = h("div", { class: "mp-grip", title: "끌어서 이동 · 더블클릭하면 팝업으로" },
     h("span", { class: "mp-grip__dots", "aria-hidden": "true", text: "⠿" }),
     el.gTitle,
-    h("span", { class: "mp-grip__btns" },
+    el.gBtns = h("span", { class: "mp-grip__btns" },
       iconBtn("prev", "이전 곡", "mp-gbtn", () => go(-1)),
       iconBtn("next", "다음 곡", "mp-gbtn", () => go(1)),
       h("button", { type: "button", class: "mp-gbtn", "aria-label": "팝업 열기", title: "팝업 열기", text: "▴", on: { click: openPlayer } }),
@@ -472,9 +514,16 @@ function build() {
     ),
   );
   el.ytBox = h("div", { class: "mp-yt" }, el.ytTarget);
-  el.frame = h("div", { class: "mp-frame", id: "player-frame", hidden: true }, el.grip, el.ytBox);
+  el.fmain = h("div", { class: "mp-frame__main" }, el.grip, el.ytBox);   // 본체 — 폭은 CSS(플로팅일 때만 고정)
+  el.tabL = tuckTab("l");   // 오른쪽에 넣었을 때 남는 탭 (프레임 왼쪽 끝)
+  el.tabR = tuckTab("r");   // 왼쪽에 넣었을 때 남는 탭 (프레임 오른쪽 끝)
+  el.frame = h("div", { class: "mp-frame", id: "player-frame", hidden: true }, el.tabL, el.fmain, el.tabR);
+  // 가장자리 빛 띠 — 넣는 동안 화면 끝에 뜬다 (프레임 밖, body 에 붙는다)
+  el.edge = h("div", { class: "mp-edge", "aria-hidden": "true" },
+    h("div", { class: "mp-edge__glow" }), h("div", { class: "mp-edge__lip" }),
+    h("div", { class: "mp-edge__chev" }, ...[0, 1, 2].map(() => chevSvg("", "0 0 12 14", "M8 2 3 7l5 5", "2.2"))));
 
-  document.body.append(el.scrim, el.frame);
+  document.body.append(el.scrim, el.frame, el.edge);
 
   initGripDrag();
   initTrackDrag();
@@ -567,6 +616,7 @@ function paintProgress() {
 }
 
 function paintControls() {
+  el.frame.classList.toggle("is-playing", st.playing);   // 손잡이 탭의 재생 막대 애니메이션 (playerpop.css)
   el.bPlay.replaceChildren(icon(st.playing ? "pause" : "play"));
   el.bPlay.setAttribute("aria-label", st.playing ? "일시정지" : "재생");
   el.oma.disabled = st.omaBusy || !st.songs.length;
@@ -704,7 +754,8 @@ function layoutFrame() {
     slotCss = "";
     f.classList.remove("is-dock");
     f.classList.add("is-float");
-    f.style.cssText = st.fpos ? `left:${st.fpos.x}px;top:${st.fpos.y}px;right:auto;bottom:auto` : "";
+    // 넣은 상태면 가장자리 밖 자리(tuckedLeft). cssText 는 transform 도 지운다 — 미는 중 transform 은 호출한 쪽이 다시 준다
+    f.style.cssText = st.fpos ? `left:${st.tuck ? tuckedLeft(st.tuck) : st.fpos.x}px;top:${st.fpos.y}px;right:auto;bottom:auto` : "";
   }
 }
 
@@ -736,6 +787,7 @@ export async function mountDock(container) {
   if (st.dock === container) return;
   if (st.popOpen) closePlayer();
   finishClose();
+  clearTuck();   // PC 도크: 넣은 상태는 풀린다
   st.dock = container;
   container.append(el.pop);
   el.pop.classList.add("mp-pop--dock");
@@ -771,30 +823,185 @@ export function unmountDock() {
 
 function clampFloat() {
   if (!st.fpos || !built || st.popOpen) return;
-  const w = el.frame.offsetWidth, hh = el.frame.offsetHeight;
-  st.fpos = { x: Math.min(Math.max(0, st.fpos.x), Math.max(0, innerWidth - w)), y: Math.min(Math.max(0, st.fpos.y), Math.max(0, innerHeight - hh)) };
+  const w = floatW(), hh = el.frame.offsetHeight;
+  if (st.tuck && !tuckable()) clearTuck();   // 넓어져서 가장자리 넣기가 없어졌다 — 넣은 상태만 풀고(애니메이션 없이)
+  st.fpos = {
+    x: st.tuck ? st.fpos.x : clamp(st.fpos.x, 0, Math.max(0, innerWidth - w)),   // 넣은 상태의 x 는 layoutFrame 이 innerWidth 로 다시 계산
+    y: clamp(st.fpos.y, 0, Math.max(0, innerHeight - hh)),
+  };
 }
 
-// ── 손잡이: 끌기 · 더블클릭 ──────────────────────────────────────────
+// ── 손잡이: 끌기 · 더블클릭 · (v4.7.6) 모바일 가장자리 넣기 ──────────
+let animTimer = 0;   // 전환 클래스(is-tuck-anim · is-spring)를 떼는 타이머
+let gulpTimer = 0;   // 빛 띠 gulp 클래스를 떼는 타이머
+let pull = null;     // 넣은 상태에서 손잡이 탭 · 조각을 끄는 중 — {id, sx, sy, y0, kind, d}
+const visibleTab = () => (st.tuck === "l" ? el.tabR : el.tabL);   // 넣었을 때 화면에 남는 탭
+
+/** 전환 클래스를 붙이고 600ms 뒤 뗀다. null 이면 떼기만 — 다음 끌기 · 팝업 따라가기 때 지연이 생기지 않게. */
+function animFrame(cls) {
+  clearTimeout(animTimer);
+  el.frame.classList.remove("is-tuck-anim", "is-spring");
+  if (!cls) return;
+  el.frame.classList.add(cls);
+  void el.frame.offsetWidth;   // 클래스를 붙인 뒤 한 번 굽어야 이어지는 위치 변화가 전환된다
+  animTimer = setTimeout(() => el.frame.classList.remove(cls), 600);
+}
+
+/** 넣은 상태 표시를 모두 지운다(✕ · 팝업 · PC 도크 · 폭 변경). 위치는 호출한 쪽이 정한다. */
+function clearTuck() {
+  st.tuck = null;
+  el.frame.classList.remove("is-tucked-l", "is-tucked-r");
+  for (const t of [el.tabL, el.tabR]) { t.tabIndex = -1; t.classList.remove("is-ready"); }
+  el.gBtns.inert = false;
+}
+
+// 가장자리 빛 띠 — 위치 · 높이는 JS 가 (손잡이 줄 위 26px · 프레임 높이 + 52px), 색 · 모양은 CSS
+function bumpEdge() {
+  el.edge.classList.remove("is-bump"); void el.edge.offsetWidth; el.edge.classList.add("is-bump");
+}
+function showEdge(side, p, armed) {
+  const e = el.edge;
+  e.classList.toggle("is-l", side === "l");
+  e.classList.toggle("is-r", side === "r");
+  e.style.top = (st.fpos.y - 26) + "px";
+  e.style.height = (el.frame.offsetHeight + 52) + "px";
+  e.style.setProperty("--p", p.toFixed(3));
+  e.classList.add("is-on");
+  e.classList.toggle("is-armed", armed);
+}
+function hideEdge() { el.edge.classList.remove("is-on", "is-armed"); }
+/** 넣는 순간 빛 띠가 한 번 쑥 들어간다(560ms). */
+function gulpEdge(side) {
+  const e = el.edge;
+  e.classList.remove("is-on", "is-armed", "is-gulp");
+  e.classList.toggle("is-l", side === "l");
+  e.classList.toggle("is-r", side === "r");
+  void e.offsetWidth;
+  e.classList.add("is-gulp");
+  clearTimeout(gulpTimer);
+  gulpTimer = setTimeout(() => e.classList.remove("is-gulp"), 560);
+}
+
+/** 가장자리로 넣는다 — side 쪽 끝에 영상 TUCK_VIS 만큼 + 손잡이 탭이 화면에 남는다. */
+function tuckFrame(side) {
+  st.tuck = side;
+  el.frame.classList.remove("is-tucked-l", "is-tucked-r");
+  el.frame.classList.add("is-tucked-" + side);
+  el.gBtns.inert = true;   // 넣은 동안 손잡이 줄 버튼(이전 · 다음 · 팝업 · 닫기)은 안 눌린다 — 그 자리를 누르면 꺼내기(CSS pointer-events 와 같이)
+  animFrame("is-tuck-anim");
+  layoutFrame();   // cssText 가 transform 도 지운다 — 넣는 자리로 전환
+  gulpEdge(side);
+  vibrate(10);
+  (side === "l" ? el.tabR : el.tabL).tabIndex = 0;   // 남는 탭만 키보드 포커스 대상
+}
+/** 꺼낸다. x = 꺼낸 뒤 프레임 left(없으면 가장자리 안쪽 INSET). 높이(st.fpos.y)는 그대로. */
+function untuckFrame(x) {
+  const side = st.tuck;
+  if (!side) return;
+  clearTuck();
+  const w = floatW();
+  const lo = TUCK_INSET, hi = innerWidth - w - TUCK_INSET;
+  st.fpos = { x: x == null ? (side === "l" ? lo : hi) : clamp(x, lo, hi), y: st.fpos.y };
+  animFrame("is-spring");
+  layoutFrame();
+}
+
+/** 넣은 상태의 손잡이(탭 또는 보이는 손잡이 조각)를 누름. */
+function pullStart(e) {
+  if (e.button > 0 || !st.tuck) return;
+  pull = { id: e.pointerId, sx: e.clientX, sy: e.clientY, y0: st.fpos.y, kind: null, d: 0 };
+  animFrame(null);
+  e.currentTarget.setPointerCapture(e.pointerId);
+  e.preventDefault();
+}
+function pullMove(e) {
+  if (!pull || e.pointerId !== pull.id || !st.tuck) return;
+  const side = st.tuck;
+  const dx = e.clientX - pull.sx, dy = e.clientY - pull.sy;
+  const out = side === "l" ? dx : -dx;   // 화면 바깥(넣은 쪽 반대)으로 끈 거리 — 양수
+  if (!pull.kind && Math.hypot(dx, dy) > 6) pull.kind = Math.abs(dy) > Math.abs(out) * 1.2 ? "v" : "pull";
+  if (!pull.kind) return;
+  st.fpos.y = clamp(pull.y0 + dy, 0, Math.max(0, innerHeight - el.frame.offsetHeight));
+  layoutFrame();   // 높이만 옮기는 중 · 꺼내는 중 모두 여기서 자리를 잡는다
+  if (pull.kind === "v") return;
+  pull.d = out > 0 ? out : Math.max(out * 0.25, -8);   // 안쪽으로 끌면 살짝만 따라온다
+  el.frame.style.transform = `translateX(${side === "l" ? pull.d : -pull.d}px)`;
+  visibleTab().classList.toggle("is-ready", pull.d > TUCK_PULL);
+}
+function pullEnd(commit) {
+  const p = pull, side = st.tuck;
+  pull = null;
+  if (!p || !side) return;
+  el.tabL.classList.remove("is-ready");
+  el.tabR.classList.remove("is-ready");
+  if (!p.kind) { if (commit) untuckFrame(); else layoutFrame(); return; }   // 그냥 누름 = 꺼냄, 취소 = 그대로
+  if (p.kind === "pull" && commit && p.d > TUCK_PULL) { untuckFrame(tuckedLeft(side) + (side === "l" ? p.d : -p.d)); return; }
+  animFrame("is-spring");   // 덜 끌었거나 세로로 끌었으면 제자리로 튕겨 돌아간다
+  layoutFrame();
+}
+
 function initGripDrag() {
-  let drag = null;
+  let drag = null;   // 떠 있는 프레임을 끄는 중 — {id, dx, dy, over, side, armed, touched}
   el.grip.addEventListener("pointerdown", (e) => {
     if (e.target.closest("button") || e.button > 0) return;
+    if (st.tuck) { pullStart(e); return; }   // 넣은 상태의 보이는 손잡이 조각 — 탭과 같이 끈다
     const r = el.frame.getBoundingClientRect();
-    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, over: 0, side: null, armed: false, touched: false };
+    animFrame(null);
     el.grip.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
   el.grip.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    const w = el.frame.offsetWidth, hh = el.frame.offsetHeight;
-    st.fpos = { x: Math.min(Math.max(0, e.clientX - drag.dx), Math.max(0, innerWidth - w)), y: Math.min(Math.max(0, e.clientY - drag.dy), Math.max(0, innerHeight - hh)) };
-    layoutFrame();
+    if (pull) { pullMove(e); return; }
+    if (!drag || e.pointerId !== drag.id) return;
+    const w = floatW(), hh = el.frame.offsetHeight;
+    const rawX = e.clientX - drag.dx;
+    st.fpos = { x: clamp(rawX, 0, Math.max(0, innerWidth - w)), y: clamp(e.clientY - drag.dy, 0, Math.max(0, innerHeight - hh)) };
+    layoutFrame();   // 먼저 — 아래에서 밀린 자리가 있으면 덮어쓴다
+    if (!tuckable()) return;
+    const maxX = innerWidth - w;
+    let side = null, over = 0;   // over = 화면 끝을 넘어 더 민 거리
+    if (rawX < 0) { side = "l"; over = -rawX; } else if (rawX > maxX) { side = "r"; over = rawX - maxX; }
+    if (over > 0) {
+      if (!drag.touched || drag.side !== side) { drag.touched = true; bumpEdge(); vibrate(6); }
+      drag.side = side;
+      drag.over = over;
+      const p = Math.min(over / TUCK_ARM, 1);
+      if (!drag.armed && over >= TUCK_ARM) { drag.armed = true; vibrate(14); }
+      else if (drag.armed && over < TUCK_ARM * 0.8) drag.armed = false;   // 조금 물러나도 바로 풀리지 않게
+      const push = TUCK_PUSH * (1 - Math.exp(-over / 70));   // 밀수록 덜 따라오는 저항
+      el.frame.style.transformOrigin = side === "l" ? "left center" : "right center";
+      el.frame.style.transform = `translateX(${side === "l" ? -push : push}px) scale(${1 - 0.035 * p})`;
+      el.frame.classList.toggle("is-armed", drag.armed);
+      showEdge(side, p, drag.armed);
+    } else if (drag.touched) {
+      drag.touched = false; drag.armed = false; drag.side = null; drag.over = 0;
+      el.frame.classList.remove("is-armed");
+      hideEdge();
+    }
   });
-  const end = () => { drag = null; };
-  el.grip.addEventListener("pointerup", end);
-  el.grip.addEventListener("pointercancel", end);
+  const end = (commit) => (e) => {
+    if (pull) { if (e.pointerId === pull.id) pullEnd(commit); return; }
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    el.frame.classList.remove("is-armed");
+    if (commit && d.armed) { tuckFrame(d.side); return; }   // 다 찼을 때 놓으면 들어간다
+    hideEdge();
+    if (d.over > 0) animFrame("is-spring");   // 다 차기 전에 놓으면 끝자리로 튕겨 나온다
+    layoutFrame();
+  };
+  el.grip.addEventListener("pointerup", end(true));
+  el.grip.addEventListener("pointercancel", end(false));
   el.grip.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) openPlayer(); });
+  // 넣은 상태의 남은 탭 — 누르기 · 바깥으로 끌기 = 꺼냄, 위아래 끌기 = 높이만
+  for (const t of [el.tabL, el.tabR]) {
+    t.addEventListener("pointerdown", pullStart);
+    t.addEventListener("pointermove", pullMove);
+    t.addEventListener("pointerup", (e) => { if (pull && e.pointerId === pull.id) pullEnd(true); });
+    t.addEventListener("pointercancel", (e) => { if (pull && e.pointerId === pull.id) pullEnd(false); });
+    t.addEventListener("click", (e) => { if (e.detail === 0 && st.tuck) untuckFrame(); });   // 키보드(Enter · Space)
+  }
 }
 
 // ── 진행 바 ──────────────────────────────────────────────────────────
@@ -918,6 +1125,7 @@ export function closePlayer() {
 
 /** 플로팅 프레임의 ✕ — 재생을 멈추고 프레임을 치운다. */
 function dismissFrame() {
+  clearTuck();   // 넣은 상태였으면 풀고 — 프레임은 곧 숨는다
   if (yt && ytReady) { try { yt.stopVideo(); } catch (e) { /* 무시 */ } if (st.curId) { try { yt.cueVideoById(st.curId); } catch (e) { /* 무시 */ } } }
   st.started = false;
   st.playing = false;

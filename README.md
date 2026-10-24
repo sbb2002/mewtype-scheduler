@@ -4,7 +4,7 @@
 > 팬이 들어오면 누가 언제 방송하는지, 지금 라이브 중인지, 어느 주소로 가면 되는지 한눈에 확인한다.
 > 비공식 팬 메이드 · 비영리 프로젝트이며 관련 권리는 각 권리사에 있다.
 
-**현재 버전: v4.7.5 (핫픽스 · 2026-10-24)** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md), 버전마다 git 태그 `vX.Y.Z`([Tags](https://github.com/sbb2002/mewtype-scheduler/tags))
+**현재 버전: v4.7.6 (핫픽스 · 2026-10-24)** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md), 버전마다 git 태그 `vX.Y.Z`([Tags](https://github.com/sbb2002/mewtype-scheduler/tags))
 🌐 운영 사이트: <https://mewtype-schduler.vercel.app/> (주소의 `schduler` 오타는 옛 이름이 그대로 남은 것 — 프로젝트 · 저장소 이름은 `mewtype-scheduler`)
 
 📦 [구현 명세 (docs/SPEC.md)](./docs/SPEC.md) | 🗣 [용어 기준 (docs/TERMINOLOGY.md)](./docs/TERMINOLOGY.md) | 🔀 [ingest 흐름 (docs/INGEST_FLOW.md)](./docs/INGEST_FLOW.md) | 🧭 작업 지침 [CLAUDE.md](./CLAUDE.md)
