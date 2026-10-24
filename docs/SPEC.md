@@ -586,8 +586,15 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   tweet_archive/notices 어디서든 이미 번역된 적 있으면 그 번역을 재사용**하고, 없을 때만
   LLM 을 새로 호출한다(인라인 실패 시 `quote.needs_tl=True` → `handlers._translate_sweep` 가
   같은 순서로 재시도) — 같은 인용 원본이 여러 멤버·트윗에 반복 등장할 때 중복 번역 호출을 줄인다.
-- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled`).
-  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것.
+- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled|deleted`).
+  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 아래 빠진 트윗 보충이 되살리지 않게.
+- **빠진 트윗 보충** (v4.7.4, `telegram_app._fill_member_gaps`): `/ingest` 에 멤버 트윗 알림이 하나 들어와 개인 트윗 경로를 마치면, 그 멤버의 최근 글 목록
+  (`vxtwitter.fetch_profile_statuses` = fxtwitter API v2 `/2/profile/<핸들>/statuses`, 약 20건 · 리트윗 섞임, 한도 IP 당 분당 1,000회)을 1회 조회해
+  폰 알림이 빠진 본인 트윗을 같은 경로(`_maybe_personal_tweet` — 번역 · 예고 판정 · 취소 · 변경 판정 포함)로 넣는다. 고르는 규칙(`xtweet.gap_candidates`):
+  본인 작성 · 리트윗 아님 · 남에게 단 답글 아님(**자기 글에 단 답글은 포함** — 폰은 자기 답글 알림을 거의 안 보낸다, 10-24 실측 6건 중 0건) · 게시 48시간 안 ·
+  그 멤버 스레드와 보관함(만료 · 밀려남 · 지움)에 없음 · 방금 받은 글 아님, 오래된 것부터 최대 3건(나머지는 다음 알림 때). 보충한 건마다 모니터 WARN
+  `gap-fill: 폰 알림이 빠진 트윗 보충 · <id> · mode`. 조회 · 읽기 실패는 아무것도 안 한다. 그 멤버가 다시 트윗해야 돈다(정기 수집에서는 안 함 — 운영자 결정 A안).
+  목록 API 의 `replying_to` 는 객체(`{screen_name, status, …}`)라 핸들만 꺼낸다(단건 조회는 문자열). 계기: 10-24 13:34 노노카 한글 트윗 · 자기 답글 2건이 폰에서 서버로 안 넘어옴.
 - `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
   (`config/channels.json` 의 `x_names[]` 매칭).
 - `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.

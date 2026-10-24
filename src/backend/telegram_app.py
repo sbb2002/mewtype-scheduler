@@ -2915,6 +2915,48 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
     return media, quote
 
 
+def _fill_member_gaps(gh, channel_key: str, now_iso: str, *, exclude_tag: str | None = None) -> int:
+    """(누락 보충, 2026-10-24) 멤버 트윗 알림이 하나 들어올 때마다, 그 멤버의 최근 글 목록(fxtwitter `/2/profile/<핸들>/statuses`)에서
+    폰 알림이 빠진 본인 트윗을 찾아 폰 알림과 같은 개인 트윗 경로(`_maybe_personal_tweet`)로 넣는다. 반환 = 새로 올린 건수.
+    고르는 규칙 = `xtweet.gap_candidates`(본인 · 리트윗 아님 · 남에게 단 답글 아님 · 48h · 스레드 · 보관함에 없음, 오래된 것부터 3건).
+    보충한 건은 모니터에 WARN 「gap-fill」 — 폰이 얼마나 빠뜨리는지 보는 자료. 조회 · 읽기 실패는 아무것도 안 하고 0.
+    계기: 10-24 13:34 노노카 한글 트윗 · 답글 2건이 폰(Automate)에서 서버로 안 넘어왔다(2분 뒤 13:36 글은 옴 — 서버엔 받은 흔적 없음)."""
+    if gh is None or vxtwitter is None or xtweet is None:
+        return 0
+    try:
+        ch = (_load_channels_config().get("channels") or {}).get(channel_key) or {}
+        handle = (ch.get("handle") or "").lstrip("@")
+        if not handle:
+            return 0
+        statuses = vxtwitter.fetch_profile_statuses(handle)
+        if not statuses:
+            log.info("빠진 트윗 보충: %s 최근 글 목록 조회 실패 — 건너뜀", channel_key)
+            return 0
+        cur, _ = gh.read_json(_TWEETS_PATH)
+        arc, _ = gh.read_json(_TWEET_ARCHIVE_PATH)
+        bucket = ((cur or {}).get("tweets") or {}).get(channel_key) or []
+        bucket = bucket if isinstance(bucket, list) else [bucket]
+        known = {str(m.get("id")) for m in bucket if m} | {str(a.get("id")) for a in ((arc or {}).get("tweets") or []) if a}
+        cands = xtweet.gap_candidates(statuses, handle, known, now_iso, exclude=xtweet._tweet_id(exclude_tag))
+    except Exception:  # noqa: BLE001
+        log.warning("빠진 트윗 보충: 준비 실패 — 건너뜀", exc_info=True)
+        return 0
+    title = ((ch.get("x_names") or []) + [ch.get("name") or channel_key])[0]
+    n = 0
+    for s in cands:
+        try:
+            mode = _maybe_personal_tweet(s["text"], title=title, tag=f"p#https://x.com/#1tweet-{s['id']}",
+                                         channel_key=channel_key, now_iso=now_iso)
+        except Exception:  # noqa: BLE001
+            log.warning("빠진 트윗 보충: 처리 실패 %s", s["id"], exc_info=True)
+            mode = "error"
+        if mode in ("added", "rolled"):
+            n += 1
+        _log_event_safe(gh, now_iso, "tweet", RESULT_WARN, who=channel_key, via="ingest",
+                        detail=f"gap-fill: 폰 알림이 빠진 트윗 보충 · {s['id']} · mode: {mode}")
+    return n
+
+
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                           channel_key: str, now_iso: str,
                           vx_extract: dict | None = None, via: str = "ingest") -> str:
@@ -6239,17 +6281,19 @@ def _tweet_del_commit(gh, unit: str, now_iso: str, tweet_id: str | None = None) 
     tw = dict(prev.get("tweets", {}) or {})
     if unit not in tw:
         return {"found": False}
+    cur = tw[unit]
+    lst = [m for m in (cur if isinstance(cur, list) else [cur]) if m]
     if tweet_id:
-        cur = tw[unit]
-        lst = cur if isinstance(cur, list) else [cur]
-        keep = [m for m in lst if str((m or {}).get("id")) != str(tweet_id)]
+        keep = [m for m in lst if str(m.get("id")) != str(tweet_id)]
         if len(keep) == len(lst):
             return {"found": False}
+        removed = [m for m in lst if str(m.get("id")) == str(tweet_id)]
         if keep:
             tw[unit] = keep
         else:
             tw.pop(unit)
     else:
+        removed = lst
         tw.pop(unit)
     new = dict(prev)
     new["tweets"] = tw
@@ -6258,6 +6302,19 @@ def _tweet_del_commit(gh, unit: str, now_iso: str, tweet_id: str | None = None) 
                             message=f"data: /del tweet {unit} {now_iso}")
     _save_undo(gh, action=f"/del tweet {unit}", prev_content=prev, new_sha=nsha,
                now_iso=now_iso, path=_TWEETS_PATH)
+    # (누락 보충, 2026-10-24) 지운 트윗을 보관함에 「deleted」 로 남긴다 — 빠진 트윗 보충(_fill_member_gaps)이 보관함에 있는 id 는 건너뛰므로
+    #   지운 트윗이 48시간 안에 되살아나지 않는다. 스레드 병합(merge_thread)은 보관함을 안 보니 다른 동작은 그대로. 실패해도 삭제는 끝난 것.
+    if xtweet is not None and removed:
+        try:
+            arc, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
+            arc = arc or xtweet.default_archive()
+            new_a = arc
+            for m in removed:
+                new_a = xtweet._archive_push(new_a, m, now_iso, "deleted")
+            if new_a is not arc:
+                gh.write_json(_TWEET_ARCHIVE_PATH, new_a, prev_sha=asha, message=f"data: tweet archive deleted {unit} {now_iso}")
+        except Exception:  # noqa: BLE001
+            log.warning("트윗 삭제: 보관함 기록 실패 — 빠진 트윗 보충이 이 트윗을 다시 올릴 수 있음", exc_info=True)
     return {"found": True}
 
 
@@ -7268,7 +7325,9 @@ if _FLASK_AVAILABLE:
                     return jsonify({"ok": True, "personal": _route, "mode": "retweet"}), 200
                 mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
                                             now_iso=now_iso, vx_extract=_vx_ex)
-                return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
+                # (누락 보충, 2026-10-24) 이 멤버의 최근 글 목록에서 폰 알림이 빠진 트윗을 찾아 같은 경로로 넣는다
+                gap = _fill_member_gaps(gh, _route, now_iso, exclude_tag=x_tag)
+                return jsonify({"ok": True, "personal": _route, "mode": mode, "gap_filled": gap}), 200
             elif raw and (_gacct := _game_account(_vx_ex, title, _load_channels_config())):
                 # (v4a, 2026-10-02) 게임 계정(bang_dream_on) 글 — 소식 · 스케줄로 가지 않고 행사 배너 판정으로만
                 flowtrace.mark("분류", "done", f"게임 계정 @{_gacct} → 행사 판정")
@@ -9884,6 +9943,49 @@ if __name__ == "__main__":
     except Exception as e:
         # xtweet 모듈 부재 또는 다른 예외
         print(f"[OK] _commit_personal_tweet: 재시도 로직 검증 (예상 ConflictError 또는 모듈 오류: {type(e).__name__})")
+
+    # (누락 보충, 2026-10-24) 빠진 트윗 보충 · 지운 트윗은 보관함 「deleted」 로 남아 보충이 되살리지 않음
+    if xtweet is not None and vxtwitter is not None:
+        class _GapGH:
+            def __init__(self, store):
+                self.store = store
+            def read_json(self, path):
+                return self.store.get(path), "sha"
+            def write_json(self, path, data, *, prev_sha=None, message=""):
+                self.store[path] = data
+                return True, "sha2"
+        _G_NOW = "2026-10-24T04:40:00Z"
+        _row = lambda tid: {"channel_key": "nonoka", "id": tid, "text": "t", "posted_at": "2026-10-24T04:00:00Z",
+                            "expires_at": "2026-10-26T04:00:00Z"}
+        _gg = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": [_row("2113847683337347370"), _row("2113852162069635159")]}},
+                      _TWEET_ARCHIVE_PATH: {"tweets": []}})
+        _prof = [{"id": i, "text": "본문 " + i, "author": "nonoka_yumemita", "repost": False, "reply_to": r}
+                 for i, r in (("2113852162069635159", None), ("2113851579740963041", None),
+                              ("2113851584719561114", "nonoka_yumemita"), ("2113847683337347370", None))]
+        _saved = (vxtwitter.fetch_profile_statuses, globals()["_maybe_personal_tweet"], globals()["_log_event_safe"])
+        _calls, _evs = [], []
+        try:
+            vxtwitter.fetch_profile_statuses = lambda h, **kw: _prof if h == "nonoka_yumemita" else None
+            globals()["_maybe_personal_tweet"] = lambda raw, **kw: (_calls.append((kw["tag"], kw["title"], raw)) or "added")
+            globals()["_log_event_safe"] = lambda *a, **kw: _evs.append(kw.get("detail"))
+            _n = _fill_member_gaps(_gg, "nonoka", _G_NOW, exclude_tag="p#https://x.com/#1tweet-2113852162069635159")
+            assert _n == 2 and [c[0][-19:] for c in _calls] == ["2113851579740963041", "2113851584719561114"], _calls
+            assert _calls[0][2] == "본문 2113851579740963041" and all("gap-fill" in (e or "") for e in _evs) and len(_evs) == 2, (_calls, _evs)
+            # 지운 트윗(보관함 deleted)은 다시 안 올린다
+            _gd = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": [_row("2113847683337347370"), _row("2113851579740963041")]}},
+                          _TWEET_ARCHIVE_PATH: {"tweets": []}})
+            assert _tweet_del_commit(_gd, "nonoka", _G_NOW, "2113851579740963041") == {"found": True}
+            _arc = _gd.store[_TWEET_ARCHIVE_PATH]["tweets"]
+            assert [(a["id"], a["archived_reason"]) for a in _arc] == [("2113851579740963041", "deleted")], _arc
+            _calls.clear()
+            _fill_member_gaps(_gd, "nonoka", _G_NOW, exclude_tag=None)
+            assert "2113851579740963041" not in [c[0][-19:] for c in _calls], _calls
+            # 조회 실패 · 다른 멤버는 아무것도 안 함
+            _calls.clear()
+            assert _fill_member_gaps(_gg, "ritsu", _G_NOW) == 0 and not _calls
+        finally:
+            vxtwitter.fetch_profile_statuses, globals()["_maybe_personal_tweet"], globals()["_log_event_safe"] = _saved
+        print("[OK] (누락 보충) 빠진 본인 트윗만 오래된 순으로 개인 트윗 경로 · 모니터 gap-fill · 지운 트윗은 보관함 deleted 로 남아 안 되살림 · 조회 실패 0")
 
     print(chr(10) + "=" * 60)
     print("SUCCESS: telegram_app v3 smoke test 통과")

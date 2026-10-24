@@ -155,6 +155,32 @@ def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = VX_TIMEO
     return j
 
 
+def fetch_profile_statuses(handle: str, *, session: Any = None, timeout: float = FX_TIMEOUT_SEC,
+                           base: str = FX_BASE) -> list[dict] | None:
+    """(누락 보충, 2026-10-24) 한 계정의 최근 글 목록 — fxtwitter API v2 `/2/profile/<핸들>/statuses`(약 20건, 리트윗 섞임).
+    폰 알림이 빠진 멤버 트윗을 찾는 데 쓴다. 한도 = IP 당 분당 1,000회(docs.fxembed.com). 실패하면 None.
+    반환 [{"id", "text", "author"(소문자 핸들), "repost"(남의 글 리트윗인가), "reply_to"(답글 대상 소문자 핸들 | None)}]."""
+    h = (handle or "").lstrip("@").strip()
+    if not re.fullmatch(r"\w{1,15}", h):
+        return None
+    j = _get_json(f"{base}/2/profile/{h}/statuses", session, timeout, "fxtwitter profile")
+    if not j or not isinstance(j.get("results"), list):
+        return None
+    out = []
+    for r in j["results"]:
+        sid = str((r or {}).get("id") or "")
+        if not sid.isdigit():
+            continue
+        rt = r.get("replying_to")
+        if isinstance(rt, dict):        # 목록 API 는 {screen_name, status, url, …} 객체(단건 조회는 핸들 문자열) — 10-24 실데이터 시험에서 확인
+            rt = rt.get("screen_name")
+        out.append({"id": sid, "text": r.get("text") or "",
+                    "author": str((r.get("author") or {}).get("screen_name") or "").lower(),
+                    "repost": bool(r.get("reposted_by")),
+                    "reply_to": str(rt).lower() if rt else None})
+    return out
+
+
 _VIDEO_TYPES = ("video", "gif", "animated_gif")
 
 
@@ -423,4 +449,20 @@ if __name__ == "__main__":
     assert extract(_fx_to_vx(fx_vid))["media"] == extract(vx_video)["media"] == [THUMB]
     print("  vx·fx 경로가 같은 썸네일을 낸다")
 
-    print("✓ vxtwitter.extract self-test 통과 (15/15)")
+    # (누락 보충) 최근 글 목록 — 리트윗 · 답글 표시를 함께 돌려준다, 실패 · 잘못된 핸들은 None
+    prof = {"code": 200, "results": [
+        {"id": "2113852162069635159", "text": "今日のイベント", "author": {"screen_name": "nonoka_yumemita"}},
+        {"id": "2113851584719561114", "text": "韓国語にしてみた", "author": {"screen_name": "nonoka_yumemita"},
+         "replying_to": {"screen_name": "nonoka_yumemita", "status": "2113851579740963041"}},   # 목록 API 실제 모양
+        {"id": "2113589627122761929", "text": "出演決定", "author": {"screen_name": "BDP_yumemita"}, "reposted_by": {"screen_name": "nonoka_yumemita"}},
+        {"id": "x", "text": "?"}]}
+    s = _Sess(_Resp(200, {}), _Resp(200, prof))
+    st = fetch_profile_statuses("@nonoka_yumemita", session=s)
+    assert [x["id"] for x in st] == ["2113852162069635159", "2113851584719561114", "2113589627122761929"], st
+    assert st[1]["reply_to"] == "nonoka_yumemita" and st[2]["repost"] and st[2]["author"] == "bdp_yumemita" and not st[0]["repost"], st
+    assert s.calls == ["https://api.fxtwitter.com/2/profile/nonoka_yumemita/statuses"], s.calls
+    assert fetch_profile_statuses("nonoka_yumemita", session=_Sess(_Resp(200, {}), _Resp(500))) is None
+    assert fetch_profile_statuses("bad/handle", session=_Sess(_Resp(200, {}), _Resp(200, prof))) is None
+    print("  최근 글 목록: 리트윗 · 답글 표시 · 실패 None")
+
+    print("✓ vxtwitter.extract self-test 통과 (16/16)")
