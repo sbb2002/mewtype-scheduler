@@ -283,6 +283,32 @@ def merge_thread(prev: dict, incoming: dict, now_iso: str, *,
 merge_tweet = merge_thread
 
 
+def gap_candidates(statuses: list[dict] | None, handle: str, known_ids: set, now_iso: str, *,
+                   exclude: str | None = None, max_age_h: int = 48, cap: int = 3) -> list[dict]:
+    """(누락 보충, 2026-10-24) 멤버의 최근 글 목록(`vxtwitter.fetch_profile_statuses`)에서 폰 알림이 빠진 본인 트윗을 고른다.
+    본인 작성 · 리트윗 아님 · 남에게 단 답글 아님(자기 글에 단 답글은 포함 — 스레드) · 게시 max_age_h 시간 안(트윗 수명 48h 와 같음) ·
+    known_ids(그 멤버 스레드 + 트윗 보관함 — 만료 · 밀려남 · 관리 페이지 삭제 포함)에 없음 · exclude(방금 받은 글) 아님.
+    오래된 것부터 최대 cap 건(나머지는 다음 알림 때). 계기: 10-24 13:34 노노카 한글 트윗 · 답글 2건이 폰에서 안 넘어옴."""
+    h = (handle or "").lstrip("@").lower()
+    try:
+        now_ms = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).timestamp() * 1000
+    except (AttributeError, ValueError):
+        return []
+    out = []
+    for s in statuses or []:
+        sid = str(s.get("id") or "")
+        if not sid.isdigit() or sid in known_ids or sid == str(exclude or ""):
+            continue
+        if s.get("author") != h or s.get("repost") or s.get("reply_to") not in (None, h):
+            continue
+        posted_ms = (int(sid) >> 22) + _TW_EPOCH_MS
+        if now_ms - posted_ms > max_age_h * 3600 * 1000 or posted_ms > now_ms + 60_000:
+            continue
+        out.append(s)
+    out.sort(key=lambda s: int(s["id"]))
+    return out[:cap]
+
+
 def sweep_expired(prev: dict, archive: dict, now_iso: str
                   ) -> tuple[dict, dict, list[str]]:
     """스레드 안 expires_at 지난 메시지 → tweet_archive.json.
@@ -1453,5 +1479,22 @@ if __name__ == "__main__":
     _od = apply_overrides([_np], [_pp], _AE_NOW)[0]
     assert _od["scheduled_start"] == "2026-10-24T13:00:00Z" and _od["info_source"] == "api", _od
     print("[OK] apply_overrides  (manual 출처 · manual 권한은 API 불변 시 유지 · 변화 시 API 승 / 권한 manual 은 변화해도 유지 / personal 회귀 없음)")
+
+    # (누락 보충) 빠진 트윗 고르기 — 본인 · 리트윗 아님 · 자기 답글은 포함 · 48h · 아는 id · 방금 받은 글 제외 · 오래된 순 · 상한
+    _G_NOW = "2026-10-24T04:40:00Z"
+    _st = [
+        {"id": "2113852162069635159", "author": "nonoka_yumemita", "repost": False, "reply_to": None},              # 13:36 방금 받은 글
+        {"id": "2113851579740963041", "author": "nonoka_yumemita", "repost": False, "reply_to": None},              # 13:34:24 한글 글
+        {"id": "2113851584719561114", "author": "nonoka_yumemita", "repost": False, "reply_to": "nonoka_yumemita"}, # 13:34:25 자기 답글
+        {"id": "2113847683337347370", "author": "nonoka_yumemita", "repost": False, "reply_to": None},              # 13:18 이미 받음
+        {"id": "2113589627122761929", "author": "bdp_yumemita", "repost": True, "reply_to": None},                 # 공식 글 리트윗
+        {"id": "2113600000000000000", "author": "nonoka_yumemita", "repost": False, "reply_to": "some_fan"},       # 팬에게 단 답글
+        {"id": "2112000000000000000", "author": "nonoka_yumemita", "repost": False, "reply_to": None},              # 48h 넘음
+    ]
+    _g = gap_candidates(_st, "@nonoka_yumemita", {"2113847683337347370"}, _G_NOW, exclude="2113852162069635159")
+    assert [x["id"] for x in _g] == ["2113851579740963041", "2113851584719561114"], _g
+    assert gap_candidates(_st, "nonoka_yumemita", {"2113847683337347370"}, _G_NOW, exclude="2113852162069635159", cap=1)[0]["id"] == "2113851579740963041"
+    assert gap_candidates(None, "nonoka_yumemita", set(), _G_NOW) == [] and gap_candidates(_st, "nonoka_yumemita", set(), "bad") == []
+    print("[OK] gap_candidates  (본인 · 리트윗 제외 · 자기 답글 포함 · 남에게 단 답글 제외 · 48h · 아는 id · 방금 받은 글 제외 · 오래된 순 · 상한)")
 
     print("\nSUCCESS: xtweet self-test 통과")
