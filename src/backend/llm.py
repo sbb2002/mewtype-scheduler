@@ -948,7 +948,8 @@ class LLMClient:
         logger.info("collab_partners: 호출 실패 또는 5회 모두 실패 — None (호출부 미추가 처리) — 호출부가 기록")
         return None
 
-    def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str) -> dict | None:
+    def broadcast_change_targets(self, text_ja: str, candidates: list[dict], now_kst: str,
+                                 quote_ja: str | None = None) -> dict | None:
         """
         (v4a) 취소·변경 글 판정 + **어느 방송인지 선택**. 옛 `broadcast_change`(2026-10-01 삭제)는 종류만 판정해 호출부가
         "가장 이른 1개"를 고르는 규칙이라, "오늘 휴방"인데 오늘 방송이 2개인 경우 1개만 내려갔다
@@ -958,6 +959,8 @@ class LLMClient:
             text_ja: 트윗 원문
             candidates: [{"id", "when": "MM/DD HH:MM"(KST), "title"}] — 그 멤버가 호스트인 활성 예고
             now_kst: 지금 KST "MM/DD(요일) HH:MM" — 오늘/내일 · 아침/밤 같은 상대 표현의 기준
+            quote_ja: (v4.7.2) 이 게시물이 인용한 글 — 어느 방송 이야기인지 알아보는 참고용(판정 대상은 text_ja).
+                      리츠 「予定変更💥」처럼 본문이 짧고 방송을 인용문에서 가리키는 경우를 위해 넘긴다. 없으면 기존 프롬프트 그대로.
 
         Returns:
             {"action": "del"|"edit"|"none", "target_ids": [...], "when": "MM/DD HH:MM"|None, "reason": str}
@@ -968,6 +971,10 @@ class LLMClient:
             logger.warning("LLMClient disabled (api_key missing)")
             return None
         masked_text, _mapping = _mask_glossary(text_ja or "")
+        if quote_ja:   # (v4.7.2) 인용문은 본문 바로 뒤에 참고용으로 붙인다 — 같은 마스킹 · 600자 상한
+            masked_quote, _ = _mask_glossary(quote_ja)
+            masked_text += ("\n\n(이 게시물이 인용한 글 — 어느 방송 이야기인지 알아보는 참고용. 판정 대상은 위 게시물이다)\n"
+                            f"{masked_quote[:600]}")
         lines = "\n".join(f"- id={c['id']} | {c['when']} | {c['title']}" for c in candidates)
         prompt = (
             f"다음은 유메미타 멤버가 올린 X(트위터) 게시물 원문이다.\n\n{masked_text}\n\n"
@@ -2084,6 +2091,22 @@ if __name__ == "__main__":
     result = llm_bc_fail.broadcast_change_targets("계속 깨진 응답", bc_cands, "09/30(화) 18:00")
     assert result is None, result
     print("✓ broadcast_change_targets: 5회 모두 실패 → None (호출부 미반영 처리)")
+
+    # (v4.7.2) quote_ja — 인용문이 프롬프트 본문 뒤에 붙고, 없으면 붙지 않는다(가짜 세션으로 요청 본문만 확인)
+    class _RecSession(ParticipationSession):
+        def post(self, url, **kwargs):
+            self.last_body = json.dumps(kwargs.get("json") or {}, ensure_ascii=False)
+            return super().post(url, **kwargs)
+    _rec_ok = '{"action": "edit", "target_ids": ["pv_a"], "when": "09/30 23:30", "reason": "인용문의 예고를 변경"}'
+    _rs = _RecSession(0, _rec_ok)
+    _r_q = LLMClient("test-key", session=_rs).broadcast_change_targets(
+        "予定変更💥 明日の夜23:30に変更", bc_cands, "09/30(화) 18:00", quote_ja="ゲーム配信は今日21時！")
+    assert _r_q and _r_q["action"] == "edit", _r_q
+    assert "이 게시물이 인용한 글" in _rs.last_body and "ゲーム配信は今日21時" in _rs.last_body, "인용문이 프롬프트에 안 들어감"
+    _rs2 = _RecSession(0, _rec_ok)
+    LLMClient("test-key", session=_rs2).broadcast_change_targets("予定変更💥", bc_cands, "09/30(화) 18:00")
+    assert "이 게시물이 인용한 글" not in _rs2.last_body, "인용문 없는데 프롬프트에 인용 문구가 들어감"
+    print("✓ broadcast_change_targets(quote_ja): 인용문은 본문 뒤 참고용으로 붙고, 없으면 프롬프트 불변")
 
     # ──── 시나리오 8f: ！ 연속 접기/되펼치기 (2026-10-07 리츠 트윗) ────
     print("\n[시나리오 8f] 느낌표 4회+ 연속 접기 → 번역 → 개수 복원")

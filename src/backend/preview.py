@@ -350,6 +350,33 @@ def set_state(item: dict, new_state: str, now_iso: str) -> dict:
     return result
 
 
+# (v4.7.2) 자동 수정 권한 `auto_edit` — 예정 시각 · 취소(삭제)에만 적용. 상태 전이 · 제목 · 썸네일은 그대로.
+#   x_yt = X&YT (트윗 + YouTube 예약 시각 변화로 자동 수정, 기본)
+#   yt   = YT 만 (트윗으로는 시각을 안 고침 · 이 예고에 Groq 판정 안 함)
+#   manual = 수동 (시각 자동 수정 전부 끔 · Groq 판정 안 함)
+AUTO_EDIT_LEVELS = ("manual", "yt", "x_yt")
+AUTO_EDIT_DEFAULT = "x_yt"
+# 수집(API 재구성)이 scheduled_start 를 바로 덮지 않는 출처 — 사람/트윗이 정한 시각.
+# API 쪽 실제 변화는 xtweet.apply_overrides 가 반영한다.
+PROTECTED_TIME_SOURCES = ("personal", "x-relay", "manual")
+
+
+def auto_edit_level(item: dict) -> str:
+    """항목의 자동 수정 권한. 필드가 없거나 모르는 값이면 기본값 x_yt."""
+    v = (item or {}).get("auto_edit")
+    return v if v in AUTO_EDIT_LEVELS else AUTO_EDIT_DEFAULT
+
+
+def allows_tweet_edit(item: dict) -> bool:
+    """트윗(변경 · 취소 글, 예고 글)으로 시각 · 취소를 고칠 수 있는가 — X&YT 만."""
+    return auto_edit_level(item) == "x_yt"
+
+
+def allows_api_time(item: dict) -> bool:
+    """YouTube 예약 시각 변화를 따라갈 수 있는가 — YT · X&YT."""
+    return auto_edit_level(item) in ("yt", "x_yt")
+
+
 def to_archive_record(item: dict, now_iso: str) -> dict:
     """
     Convert an item to an archive record.
@@ -617,5 +644,13 @@ if __name__ == "__main__":
     )
     assert item_pre_tl["needs_tl"] is False, item_pre_tl
     print("✓ title_ko/needs_tl 기본값 (제목 있음+미번역 → True, 제목 없음/이미 번역 → False)")
+
+    # Test 15: (v4.7.2) auto_edit 권한 헬퍼 — 없음/모르는 값 = x_yt
+    assert auto_edit_level({}) == "x_yt" and auto_edit_level({"auto_edit": "bogus"}) == "x_yt", "기본값 실패"
+    assert auto_edit_level({"auto_edit": "yt"}) == "yt" and auto_edit_level({"auto_edit": "manual"}) == "manual"
+    assert allows_tweet_edit({}) and not allows_tweet_edit({"auto_edit": "yt"}) and not allows_tweet_edit({"auto_edit": "manual"})
+    assert allows_api_time({}) and allows_api_time({"auto_edit": "yt"}) and not allows_api_time({"auto_edit": "manual"})
+    assert set(PROTECTED_TIME_SOURCES) == {"personal", "x-relay", "manual"}, "보호 출처 목록 실패"
+    print("✓ (v4.7.2) auto_edit_level · allows_tweet_edit · allows_api_time")
 
     print("\n✓ All 14 self-test assertions passed")

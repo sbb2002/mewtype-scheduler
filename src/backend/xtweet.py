@@ -508,7 +508,8 @@ def merge_personal_schedule(prev_items: list[dict], inc: dict, now_iso: str) -> 
         cur["video_id"] = inc["video_id"]
 
     # info_at 최신이면 시각 정보 업데이트
-    if (inc.get("info_at") or "") > (cur.get("info_at") or ""):
+    # (v4.7.2) 자동 수정 권한이 X&YT 일 때만 — YT · 수동 권한의 예고는 트윗으로 시각을 바꾸지 않는다
+    if preview.allows_tweet_edit(cur) and (inc.get("info_at") or "") > (cur.get("info_at") or ""):
         cur["scheduled_start"] = inc["scheduled_start"]
         cur["time_tbd"] = inc.get("time_tbd", False)
         cur["info_at"] = inc["info_at"]
@@ -656,9 +657,26 @@ def merge_video_confirmed(prev_items: list[dict], video_id: str, new_item: dict,
         cur["needs_tl"] = bool(new_item.get("title"))
     cur["thumbnail"] = new_item.get("thumbnail") or cur.get("thumbnail")
     cur["url"] = new_item.get("url") or cur.get("url")
-    cur["api_start_seen"] = new_item.get("api_start_seen")
-    if cur.get("info_source") not in ("x-relay",):
+    api_old, api_new = cur.get("api_start_seen"), new_item.get("api_start_seen")
+    cur["api_start_seen"] = api_new
+    # (v4.7.2) 자동 수정 권한이 YT · X&YT 일 때만 API 확정 시각으로 덮는다. 출처별:
+    #   x-relay = 덮지 않음(기존) · manual(운영자) = YouTube 예약 시각이 실제로 바뀌었을 때만 ·
+    #   personal(트윗) = 처음 API 를 보는 때(api_start_seen 없음) 또는 실제로 바뀌었을 때만 —
+    #   리츠 10-23 처럼 트윗이 옮긴 시각을, 같은 영상 URL 을 담은 다음 트윗이 YouTube 의 옛 예약 시각으로 되돌리지 않게.
+    api_moved = bool(api_old and api_new and abs(_epoch(api_new) - _epoch(api_old)) > 60)
+    src = cur.get("info_source")
+    if src == "x-relay":
+        take_api = False
+    elif src == "manual":
+        take_api = api_moved
+    elif src == "personal":
+        take_api = api_old is None or api_moved
+    else:
+        take_api = True
+    if preview.allows_api_time(cur) and take_api:
         cur["scheduled_start"] = new_item.get("scheduled_start") or cur.get("scheduled_start")
+        if api_moved and src in ("manual", "personal"):
+            cur["info_source"] = "api"   # apply_overrides 규칙 6 과 같게 — 이후로는 API 를 따른다
     if new_item.get("actual_start"):
         cur["actual_start"] = new_item["actual_start"]
     if new_item.get("concurrent_viewers") is not None:
@@ -819,7 +837,8 @@ def apply_overrides(new_items: list[dict], prev_items: list[dict], now_iso: str)
 
     규칙 각 b 에 대해 pb = match_item(prev_items, b):
     1. pb 없음 → 그대로.
-    2. b.info_source ∉ ("personal", "x-relay") → 그대로.
+    2. b.info_source ∉ preview.PROTECTED_TIME_SOURCES (personal · x-relay · manual) → 그대로.
+    2-b. (v4.7.2) auto_edit_level(b) == "manual" → 그대로(API 가 바뀌어도 시각 유지).
     3. b.time_tbd 또는 b.scheduled_start 없음 → 그대로.
     4. api_now = b.api_start_seen, api_prev = pb.api_start_seen.
        둘 중 하나라도 없음 → 그대로(처음 API 관측).
@@ -844,8 +863,12 @@ def apply_overrides(new_items: list[dict], prev_items: list[dict], now_iso: str)
         if pb is None:
             continue
 
-        # 규칙 2: 원래 info_source가 personal 또는 x-relay만
-        if b.get("info_source") not in ("personal", "x-relay"):
+        # 규칙 2: 원래 info_source가 사람·트윗이 정한 출처만 (personal · x-relay · manual — v4.7.2)
+        if b.get("info_source") not in preview.PROTECTED_TIME_SOURCES:
+            continue
+
+        # (v4.7.2) 규칙 2-b: 자동 수정 권한이 수동이면 API 가 바뀌어도 시각을 건드리지 않는다
+        if preview.auto_edit_level(b) == "manual":
             continue
 
         # 규칙 3: time_tbd 또는 scheduled_start 없으면 패스
@@ -1362,5 +1385,73 @@ if __name__ == "__main__":
     assert find_active_item(_items_fa, "ritsu") is None, "channel_key 일치 없으면 None"
     assert find_active_item([], "nonoka") is None
     print("[OK] find_active_item  (호스트 소유 미종료 항목 중 가장 이른 것, 게스트/end 제외)")
+
+    # (v4.7.2) 자동 수정 권한 auto_edit — 시각을 고치는 세 경로(트윗 upsert · 트윗 속 YouTube 확정 · API 실제 변화)가 권한대로 갈린다
+    _AE_NOW = "2026-10-23T19:00:00Z"
+    def _ae(**kw):
+        d = {"id": "pvAE", "channel_key": "ritsu", "state": "upcoming", "source": "personal", "video_id": "VAE",
+             "url": "https://www.youtube.com/watch?v=VAE", "scheduled_start": "2026-10-24T12:00:00Z",
+             "info_source": "personal", "info_at": "2026-10-23T09:00:00Z", "title": "t", "thumbnail": "th",
+             "time_tbd": False, "collab_with": None, "kind": None, "api_start_seen": "2026-10-24T12:00:00Z"}
+        d.update(kw)
+        return d
+    _inc_tw = {"channel_key": "ritsu", "video_id": "VAE", "url": None, "scheduled_start": "2026-10-24T14:30:00Z",
+               "time_tbd": False, "info_at": "2026-10-23T18:30:00Z", "info_source": "personal", "state": "announced",
+               "source": "personal"}
+    # merge_personal_schedule — 트윗 시각 upsert 는 X&YT 만
+    _o, _ = merge_personal_schedule([_ae()], _inc_tw, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T14:30:00Z", "기본(X&YT) 트윗 upsert 가 시각을 안 고침"
+    _o, _ = merge_personal_schedule([_ae(auto_edit="yt")], _inc_tw, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T12:00:00Z", "YT 권한인데 트윗이 시각을 고침"
+    _o, _ = merge_personal_schedule([_ae(auto_edit="manual")], _inc_tw, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T12:00:00Z", "수동 권한인데 트윗이 시각을 고침"
+    print("[OK] merge_personal_schedule  (auto_edit: X&YT 만 트윗 시각 갱신, YT · 수동은 유지)")
+
+    # merge_video_confirmed — 트윗 속 YouTube URL 확정 시각 덮기: 기본·YT 는 API 로, 수동·manual 출처는 유지
+    _vnew = {"title": "t", "thumbnail": "th", "url": "u", "api_start_seen": "2026-10-24T14:30:00Z",
+             "scheduled_start": "2026-10-24T14:30:00Z", "state": "upcoming", "collab_with": None}
+    _o, _ = merge_video_confirmed([_ae()], "VAE", _vnew, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T14:30:00Z", "기본 personal 은 API 확정 시각으로 덮어야 함"
+    _o, _ = merge_video_confirmed([_ae(auto_edit="yt")], "VAE", _vnew, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T14:30:00Z", "YT 권한은 API 확정 시각을 따라야 함"
+    _o, _ = merge_video_confirmed([_ae(auto_edit="manual")], "VAE", _vnew, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T12:00:00Z", "수동 권한인데 API 가 덮음"
+    # manual 출처 — YouTube 예약 시각이 실제로 바뀌었으면(12:00→14:30) API 승, 그대로면 운영자 시각 유지
+    _o, _ = merge_video_confirmed([_ae(info_source="manual")], "VAE", _vnew, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T14:30:00Z" and _o[0]["info_source"] == "api", _o[0]
+    _vsame = dict(_vnew, api_start_seen="2026-10-24T12:00:00Z", scheduled_start="2026-10-24T12:00:00Z")
+    _o, _ = merge_video_confirmed([_ae(info_source="manual", scheduled_start="2026-10-24T14:30:00Z")], "VAE", _vsame, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T14:30:00Z", "manual 출처 · API 불변인데 옛 시각으로 덮음"
+    # 리츠 10-23 모양 — 트윗(LLM)이 23:30 으로 옮긴 personal 항목에, 같은 영상 URL 을 담은 다음 트윗이 옛 예약(21:00) 그대로 옴 → 유지
+    _o, _ = merge_video_confirmed([_ae(scheduled_start="2026-10-24T14:30:00Z")], "VAE", _vsame, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T14:30:00Z" and _o[0]["info_source"] == "personal", _o[0]
+    # personal 인데 API 를 처음 보는 경우(api_start_seen 없음) — 지금처럼 API 확정 시각
+    _o, _ = merge_video_confirmed([_ae(api_start_seen=None, scheduled_start="2026-10-24T13:00:00Z")], "VAE", _vsame, _AE_NOW)
+    assert _o[0]["scheduled_start"] == "2026-10-24T12:00:00Z", "personal 첫 API 관측인데 API 시각을 안 씀"
+    print("[OK] merge_video_confirmed  (수동 권한 유지 · manual/personal 출처는 YouTube 예약 시각이 실제로 바뀔 때만 API)")
+
+    # apply_overrides — manual 출처 · manual 권한 (API 실제 변화 반영 여부)
+    _prev_m = preview.make_item(channel_key="ritsu", state="upcoming", source="manual", now_iso=_AE_NOW,
+                                video_id="VM", scheduled_start="2026-10-24T14:30:00Z",
+                                info_source="manual", info_at="2026-10-23T18:00:00Z",
+                                api_start_seen="2026-10-24T12:00:00Z")
+    # (a) manual 출처, API 값 그대로 → 운영자 시각 유지
+    _nm = dict(_prev_m, api_start_seen="2026-10-24T12:00:00Z")
+    assert apply_overrides([_nm], [_prev_m], _AE_NOW)[0]["scheduled_start"] == "2026-10-24T14:30:00Z", "manual 출처 · API 불변인데 시각 바뀜"
+    # (b) manual 출처, API 가 60초 넘게 바뀜 → API 승 (info_source=api)
+    _nm2 = dict(_prev_m, api_start_seen="2026-10-24T13:00:00Z")
+    _ob = apply_overrides([_nm2], [_prev_m], _AE_NOW)[0]
+    assert _ob["scheduled_start"] == "2026-10-24T13:00:00Z" and _ob["info_source"] == "api", _ob
+    # (c) 출처는 보호 대상(manual)인데 권한이 manual 이면 API 가 바뀌어도 유지 (규칙 2-b)
+    _pm = dict(_prev_m, auto_edit="manual")
+    _nm3 = dict(_pm, scheduled_start="2026-10-24T14:30:00Z", api_start_seen="2026-10-24T13:00:00Z")
+    _oc = apply_overrides([_nm3], [_pm], _AE_NOW)[0]
+    assert _oc["scheduled_start"] == "2026-10-24T14:30:00Z" and _oc["info_source"] == "manual", _oc
+    # (d) personal 출처 · 기본 권한이면 기존 H 와 같이 API 승 (규칙 2 집합 변경의 회귀 확인)
+    _pp = _ae(api_start_seen="2026-10-24T12:00:00Z")
+    _np = dict(_pp, scheduled_start="2026-10-24T14:30:00Z", api_start_seen="2026-10-24T13:00:00Z")
+    _od = apply_overrides([_np], [_pp], _AE_NOW)[0]
+    assert _od["scheduled_start"] == "2026-10-24T13:00:00Z" and _od["info_source"] == "api", _od
+    print("[OK] apply_overrides  (manual 출처 · manual 권한은 API 불변 시 유지 · 변화 시 API 승 / 권한 manual 은 변화해도 유지 / personal 회귀 없음)")
 
     print("\nSUCCESS: xtweet self-test 통과")

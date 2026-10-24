@@ -20,6 +20,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from . import apply, enrich, storage
+from . import preview as preview_mod      # (v4.7.2) 자동 수정 권한 헬퍼
 from . import songs as songs_mod
 
 log = logging.getLogger("backend.admin_api")
@@ -140,8 +141,14 @@ def channels() -> dict:
 _PREVIEW_FIELD = {"title": "title", "state": "state", "scheduled_start": "date", "url": "url",
                   # (v4a) 합동 참여 멤버(주 레인 제외) · 회원 전용
                   "collab_with": "collab_with", "membership": "membership",
-                  "title_ko": "title_ko"}  # (v4a) 한글 제목(빈 문자열 = 번역 없음)
+                  "title_ko": "title_ko",  # (v4a) 한글 제목(빈 문자열 = 번역 없음)
+                  "auto_edit": "auto_edit"}  # (v4.7.2) 자동 수정 권한 manual · yt · x_yt
 _EDITABLE_STATES = ("announced", "upcoming", "watching", "live", "end")
+
+
+def _cur_value(cur: dict, key: str):
+    """수정 폼이 본 값과 비교할 현재 값. 권한은 필드가 없으면 기본값(x_yt)으로 본다."""
+    return preview_mod.auto_edit_level(cur) if key == "auto_edit" else cur.get(key)
 
 
 def edit_preview(item_id: str, patch: dict, seen: dict) -> dict:
@@ -155,6 +162,8 @@ def edit_preview(item_id: str, patch: dict, seen: dict) -> dict:
         return _err(f"state 는 {', '.join(_EDITABLE_STATES)} 중 하나 (삭제는 삭제 버튼)")
     if "membership" in patch and not isinstance(patch["membership"], bool):
         return _err("membership 은 true/false")
+    if "auto_edit" in patch and patch["auto_edit"] not in preview_mod.AUTO_EDIT_LEVELS:
+        return _err("auto_edit 는 manual · yt · x_yt 중 하나")
     if "url" in patch:
         # (v4a) 팬 화면(render.js)이 이 값을 그대로 링크로 쓴다 — http(s) 주소만 받는다(javascript: 등 차단). 비우기는 허용
         u = (patch["url"] or "").strip() if isinstance(patch["url"], (str, type(None))) else None
@@ -173,13 +182,20 @@ def edit_preview(item_id: str, patch: dict, seen: dict) -> dict:
         # 채널 순서대로 · 중복 제거. 빈 목록은 None(합동 아님)으로 저장 — make_item 기본값과 같게
         patch["collab_with"] = [k for k in order if k in cw] or None
     seen = seen or {}
-    changed = [k for k in patch if k in seen and cur.get(k) != seen.get(k)]
+    changed = [k for k in patch if k in seen and _cur_value(cur, k) != seen.get(k)]
     if changed:
         return _err("conflict:" + ",".join(changed))
     ctx = {"id": item_id,
            "patch": {_PREVIEW_FIELD[k]: v for k, v in patch.items()},
-           "pre": {_PREVIEW_FIELD[k]: cur.get(k) for k in patch}}
+           "pre": {_PREVIEW_FIELD[k]: _cur_value(cur, k) for k in patch}}
     res = _submit("apply_preview_edit", {"now_iso": _now_iso(), "ctx": ctx})
+    # (v4.7.2) 자동 수정 권한을 바꿔 저장했으면 그 권한으로 한 번 맞춰 보고 결과 한 줄을 토스트에 돌려준다
+    if res["ok"] and "auto_edit" in patch and patch["auto_edit"] != preview_mod.auto_edit_level(cur):
+        try:
+            once = _t()._auto_edit_once(_store(), item_id, patch["auto_edit"], _now_iso())
+        except Exception as e:  # noqa: BLE001
+            once = f"1회 동작 실패: {type(e).__name__}"
+        res["result"] = dict(res.get("result") or {}, once=once)
     return _record("edit_preview", item_id, f"{cur.get('channel_key')} {cur.get('title') or ''} ← {patch}", res)
 
 
@@ -1982,6 +1998,19 @@ if __name__ == "__main__":
         r = edit_preview("pv_a", {"title": ""}, {"title": "新タイトル"})
         it = list_preview()["items"][0]
         assert r["ok"] and "title_manual" not in it and it["title"] is None, it
+        # (v4.7.2) 자동 수정 권한 — 값 검증 · 충돌 비교(필드 없음 = x_yt) · 바꾸면 1회 동작 결과가 result.once 로 돌아온다
+        assert edit_preview("pv_a", {"auto_edit": "bogus"}, {})["ok"] is False, "모르는 권한 값 통과"
+        r = edit_preview("pv_a", {"auto_edit": "yt"}, {"auto_edit": "manual"})
+        assert r["ok"] is False and r["error"] == "conflict:auto_edit", r   # 폼은 manual 로 봤는데 지금은 기본(x_yt)
+        r = edit_preview("pv_a", {"auto_edit": "manual"}, {"auto_edit": "x_yt"})
+        assert r["ok"] and "꺼짐" in (r["result"] or {}).get("once", ""), r
+        assert list_preview()["items"][0]["auto_edit"] == "manual"
+        r = edit_preview("pv_a", {"auto_edit": "x_yt"}, {"auto_edit": "manual"})   # 기본값으로 되돌리면 필드 삭제
+        assert r["ok"] and "once" in (r["result"] or {}), r
+        assert "auto_edit" not in list_preview()["items"][0], list_preview()["items"][0]
+        r = edit_preview("pv_a", {"auto_edit": "yt", "title": "新タイトル2"}, {"auto_edit": "x_yt"})
+        assert r["ok"] and list_preview()["items"][0]["auto_edit"] == "yt", r
+        assert "once" in (r["result"] or {}), "YT 로 바꿨는데 1회 동작 결과가 없음"
         assert translate_text("")["ok"] is False
         # 운영 설정 → ops
         assert set_log_level("detail")["ok"] and get_control()["log_level"] == "detail"

@@ -195,6 +195,16 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
+- **v4.7.2** (핫픽스, 2026-10-24 — 브랜치 `hotfix/preview-auto-edit`, 백엔드 + 관리 페이지): **예고 자동 수정 권한 [수동 · YT · X&YT] + 운영자 지정 시각 보호 + 변경 트윗 감지 게이트 확장.**
+  계기(10-23 리츠): 「予定変更💥 …明日の夜23:30からに変更」(자기 21:00 예고 인용)가 본문에 `配信` 이 없어 변경 판정이 불리지 않았고, 운영자가 관리 페이지에서 23:30 으로 고친 시각을
+  3분 뒤 수집이 YouTube 예약 시각(옛 21:00 그대로)으로 덮었다(`preview_build` 이 `info_source` personal · x-relay 만 보호). D27(「YouTube API 가 진실」)을 바꾼다.
+  ① 운영자 · LLM 이 고친 시각에 출처(`manual` · `personal`)를 남기고, 수집 · 트윗 URL 확정은 YouTube 예약 시각이 실제로 바뀔 때만 따른다(`preview.PROTECTED_TIME_SOURCES`, `xtweet.merge_video_confirmed` 출처별 규칙).
+  영상 없는 예고는 수정 때 `expires_at` 재계산. ② 예고마다 자동 수정 권한 `auto_edit`(기본 X&YT) — 관리 페이지 예고 편집 팝업 맨 아래 구역(캔버스 D안), 바꿔 저장하면 1회 동작(X&YT = 연결된 트윗 Groq 1회 판정).
+  YT · 수동 예고는 트윗 변경 판정 후보에서 빠진다. ③ 변경 판정 게이트 = `配信` · 변경어(`_CHANGE_WORD_RE`) · 인용문의 후보 영상 URL, 인용문을 LLM 에 참고로 넘김.
+  상세 `docs/SPEC.md` 「예고 자동 수정 권한 · 운영자 지정 시각」, 용어 `docs/TERMINOLOGY.md`. 구현 = 명세를 써서 Haiku 5.5 가 코딩 → 검증 중 `merge_video_confirmed` 의 personal 덮어쓰기 구멍을 고침.
+  검증: self-test 10개 모듈(preview · preview_build · xtweet · xrelay · llm · telegram_app · admin_api · admin_web · handlers · writers) · 10-23 운영 스냅샷 재현(main = 23:30 → 21:00 되돌아감, 새 코드 = 유지) ·
+  실제 Groq 1회(리츠 원문 + 인용 → `edit 10/24 23:30`, 출처 personal) · 관리 페이지 팝업 브라우저 렌더링(PC · 390px).
+  미확인: 저장 시 1회 동작의 실제 Groq · YouTube 호출(mock 만) · 변경어로 늘어나는 Groq 호출량(X&YT 예고가 있는 멤버의 트윗만).
 - **v4.7.1** (핫픽스, 2026-10-23 — 브랜치 `hotfix/live-group-keep`, 백엔드 + 프론트, 병합 `2b70451`(PR #84), **배포 완료** `mewtype-backend` 00178 · `mewtype-telegram` 00122, 롤백 = 00176 · 00121, 프론트 Vercel main): **라이브공연 공연별 묶음 = 공연일 + 7일 24:00(KST)까지 유지 + 지난 하위 소식은 어둡게.**
   배포판엔 「공연일 + 7일」이 없었다(그 규칙은 보류된 `test/notice-r5` 에만 있었다) — 하위 소식이 각자 기간에 내려가 묶음이 마지막 소식과 함께 사라졌다(실측: RESONEXT 12-24 공연 → 12-24 24:00 에 사라질 예정).
   백엔드 `notices.live_holds` + `sweep_expired`: 묶음(라이브공연 + 공연 이름)마다 유지 끝 = max(공연일 + 7일 24:00, 하위 소식 기간 중 가장 늦은 것), 그 전엔 하위 소식을 옮기지 않고 끝나면 묶음째 보관함으로(`expires_at` 은 그대로).
