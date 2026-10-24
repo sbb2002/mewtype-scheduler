@@ -1158,7 +1158,54 @@
         @keyframes sg-sp { to { transform: rotate(360deg); } }
         .sg-blocked-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem; align-items: center; }
         @media (max-width: 640px) { .sg-frow { grid-template-columns: 1fr; } .sg-blocked-row { grid-template-columns: 1fr; } .sg-blocked-row button { width: 100%; } }
+        /* (v4.7.2) 예고 편집 팝업 — 자동 수정 권한 구역 (캔버스 D안) */
+        .ae-box { border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; background: #141414; display: flex; flex-direction: column; gap: 12px; }
+        .ae-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .ae-head b { font-size: 0.95rem; }
+        .ae-badge { font-size: 0.78rem; color: #999; }
+        .ae-badge.is-changed { color: #fcd34d; font-weight: 600; }
+        .ae-track { position: relative; height: 44px; overflow: hidden; }
+        .ae-bar, .ae-fill { position: absolute; top: 20px; height: 4px; border-radius: 2px; }
+        .ae-bar { left: calc(100% / 6); right: calc(100% / 6); background: var(--color-border); }
+        .ae-fill { left: calc(100% / 6); width: 0; background: var(--color-accent); transition: width .2s; }
+        .ae-fill[data-lv="yt"] { width: calc(100% / 3); }
+        .ae-fill[data-lv="x_yt"] { width: calc(100% * 2 / 3); }
+        .ae-dots, .ae-names { display: grid; grid-template-columns: repeat(3, 1fr); }
+        .ae-dots { position: absolute; inset: 0; align-items: center; }
+        .ae-box .ae-dots button, .ae-box .ae-names button {
+            min-height: 44px; background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; color: inherit; font: inherit;
+        }
+        .ae-dot { display: block; box-sizing: border-box; border-radius: 50%; width: 12px; height: 12px; }
+        .ae-dot.is-before { background: var(--color-accent); }
+        .ae-dot.is-after { border: 2px solid #555; background: transparent; }
+        .ae-dot.is-on { width: 22px; height: 22px; background: var(--color-accent); box-shadow: 0 0 0 5px rgba(6, 182, 212, .22); }
+        .ae-names button { font-size: 0.85rem; color: #999; font-weight: 400; }
+        .ae-names button.is-on { color: var(--color-accent); font-weight: 700; }
+        .ae-det-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .ae-det { display: flex; gap: 8px; align-items: center; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 8px 10px; font-size: 0.8rem; }
+        .ae-det.is-on { border-color: var(--color-accent); }
+        .ae-det.is-off { opacity: .7; }
+        .ae-det i { display: block; flex: 0 0 10px; width: 10px; height: 10px; border-radius: 50%; box-sizing: border-box; }
+        .ae-det.is-on i { background: var(--color-accent); }
+        .ae-det.is-off i { border: 2px solid var(--color-border); }
+        .ae-det b { display: block; font-size: 0.8rem; }
+        .ae-det small { display: block; color: #999; font-size: 0.74rem; }
+        .ae-expl { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 12px; font-size: 0.84rem; }
+        .ae-expl-head { color: #999; margin-bottom: 8px; }
+        .ae-expl-head.is-changed { color: #fcd34d; }
+        .ae-step { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; }
+        .ae-step .ae-cost { color: #999; white-space: nowrap; font-size: 0.78rem; }
+        .ae-strike { color: #777; text-decoration: line-through; }
+        .ae-tw { border-top: 1px dashed var(--color-border); margin-top: 10px; padding-top: 10px; }
+        .ae-tw-head { color: #999; font-size: 0.78rem; margin-bottom: 4px; }
+        .ae-tw-row { font-size: 0.8rem; line-height: 1.5; word-break: break-all; }
+        @media (max-width: 640px) {
+            .ae-det-row { grid-template-columns: 1fr; }
+            .ae-step { flex-direction: column; gap: 2px; }
+        }
 </style>
+
 </head>
 <body>
     <h1>뮤타입 방송 스케줄 — 관리 페이지</h1>
@@ -1531,7 +1578,7 @@
             <div id="edit-modal-form"></div>
             <div class="modal-actions">
                 <button onclick="app.closeModal()">취소</button>
-                <button onclick="app.submitEdit()" style="background-color: #51cf66;">저장</button>
+                <button id="edit-save-btn" onclick="app.submitEdit()" style="background-color: #51cf66;">저장</button>
             </div>
         </div>
     </div>
@@ -2677,6 +2724,10 @@
                         const collab = item.collab_with || [];
                         if (collab.length || item.kind === "collab") metas.push(this.cxEl("span", "badge badge-collab", item.host === "group" ? "그룹 합동" : "합동"));
                         if (item.membership) metas.push(this.cxEl("span", "badge badge-collab", "회원 전용"));
+                        // (v4.7.2) 자동 수정 권한이 기본(X&YT)이 아니면 표시 — 수동 · YT
+                        if (item.auto_edit === "manual" || item.auto_edit === "yt") {
+                            metas.push(this.cxEl("span", "badge badge-collab", `권한: ${item.auto_edit === "manual" ? "수동" : "YT"}`));
+                        }
                         const title = item.title_ko || item.title || "제목 없음";
                         const bodyFn = () => {
                             const names = [key, ...collab].map((k) => (this.channels[k] || {}).name_ko || k);
@@ -2834,9 +2885,13 @@
                         url: item.url,
                         collab_with: item.collab_with ?? null,
                         membership: item.membership ?? false,
+                        // (v4.7.2) 자동 수정 권한 — 필드가 없으면 기본값 x_yt
+                        auto_edit: ["manual", "yt", "x_yt"].includes(item.auto_edit) ? item.auto_edit : "x_yt",
                     },
                     channelKey: item.channel_key,
                 };
+                const saveBtn = document.getElementById("edit-save-btn");
+                if (saveBtn) saveBtn.textContent = "저장";
 
                 const form = document.getElementById("edit-modal-form");
                 form.textContent = "";
@@ -2956,8 +3011,184 @@
                 memberGroup.appendChild(memberLabel);
                 form.appendChild(memberGroup);
 
+                // (v4.7.2) 자동 수정 권한 — 회원 전용 다음, 팝업 맨 아래
+                this.buildAutoEditBox(form, item);
+
                 document.getElementById("edit-modal-title").textContent = "예고 편집";
                 document.getElementById("edit-modal").classList.add("active");
+            },
+
+            // (v4.7.2) 예고 편집 팝업 — 자동 수정 권한 구역(캔버스 D안). DOM 은 createElement · textContent 만 쓴다(innerHTML 금지).
+            // 선택값은 this.editState.aeChoice() 로 submitPreviewEdit 가 읽는다. 저장 버튼 글자는 바꿨을 때만 「저장 · 1회 동작」.
+            buildAutoEditBox(form, item) {
+                const LV = ["manual", "yt", "x_yt"];
+                const LABEL = { manual: "수동", yt: "YT", x_yt: "X&YT" };
+                const STEPS = {
+                    manual: [
+                        { text: "트윗 판정 안 함 — 변경 · 취소 글이 와도 그대로", cost: "Groq 0회" },
+                        { text: "YouTube 예약 시각이 바뀌어도 그대로", cost: "Groq 0회" },
+                    ],
+                    yt: [
+                        { text: "연결된 트윗 다시 판정", strike: true, extra: " 안 함", cost: "Groq 0회" },
+                        { text: "YouTube 예약 시각으로 바로 맞춤 · 이후 바뀌면 따라감", cost: "Groq 0회" },
+                    ],
+                    x_yt: [
+                        { text: "연결된 트윗 다시 판정 → 변경 · 취소면 먼저 반영", cost: "Groq 1회" },
+                        { text: "YouTube 예약 시각은 실제로 바뀌었을 때만 따라감", cost: "Groq 0회" },
+                    ],
+                };
+                const saved = LV.includes(item.auto_edit) ? item.auto_edit : "x_yt";
+                let cur = saved;
+                const el = (tag, cls, text) => {
+                    const e = document.createElement(tag);
+                    if (cls) e.className = cls;
+                    if (text != null) e.textContent = text;
+                    return e;
+                };
+
+                const box = el("div", "ae-box");
+                // 머리줄
+                const head = el("div", "ae-head");
+                head.appendChild(el("b", "", "자동 수정 권한"));
+                const headBadge = el("span", "ae-badge");
+                head.appendChild(headBadge);
+                box.appendChild(head);
+
+                // 슬라이더: 막대 (첫 점 ~ 끝 점 사이만) + 채움 + 점 3개
+                const track = el("div", "ae-track");
+                const fill = el("div", "ae-fill");
+                track.appendChild(el("div", "ae-bar"));
+                track.appendChild(fill);
+                const dots = el("div", "ae-dots");
+                const dotBtns = {};
+                const dotEls = {};
+                for (const lv of LV) {
+                    const b = el("button", "");
+                    b.type = "button";
+                    b.setAttribute("aria-label", LABEL[lv]);
+                    const d = el("span", "ae-dot");
+                    b.appendChild(d);
+                    b.onclick = () => { cur = lv; paint(); };
+                    dotBtns[lv] = b;
+                    dotEls[lv] = d;
+                    dots.appendChild(b);
+                }
+                track.appendChild(dots);
+                box.appendChild(track);
+
+                // 이름 버튼 (수동 · YT · X&YT)
+                const names = el("div", "ae-names");
+                const nameBtns = {};
+                for (const lv of LV) {
+                    const b = el("button", "", LABEL[lv]);
+                    b.type = "button";
+                    b.onclick = () => { cur = lv; paint(); };
+                    nameBtns[lv] = b;
+                    names.appendChild(b);
+                }
+                box.appendChild(names);
+
+                // 감지 표시 2칸
+                const detRow = el("div", "ae-det-row");
+                const mkDet = (title) => {
+                    const cell = el("div", "ae-det");
+                    cell.appendChild(el("i"));
+                    const wrap = el("div");
+                    wrap.appendChild(el("b", "", title));
+                    wrap.appendChild(el("small", "", ""));
+                    cell.appendChild(wrap);
+                    detRow.appendChild(cell);
+                    return cell;
+                };
+                const detX = mkDet("X 트윗 판정");
+                const detYt = mkDet("YouTube 예약 시각");
+                box.appendChild(detRow);
+
+                // 설명 상자
+                const expl = el("div", "ae-expl");
+                const explHead = el("div", "ae-expl-head");
+                const explSteps = el("div");
+                expl.appendChild(explHead);
+                expl.appendChild(explSteps);
+                box.appendChild(expl);
+
+                // 이 예고에 연결된 트윗 (데이터가 아직 없으면 생략)
+                const tweetsAll = this.data.tweets && this.data.tweets.tweets;
+                if (tweetsAll) {
+                    const tw = el("div", "ae-tw");
+                    tw.appendChild(el("div", "ae-tw-head", "이 예고에 연결된 트윗 (게시 후 48시간 안)"));
+                    for (const row of this.linkedTweetRows(item, tweetsAll)) {
+                        tw.appendChild(el("div", "ae-tw-row", row));
+                    }
+                    box.appendChild(tw);
+                }
+
+                const paint = () => {
+                    const si = LV.indexOf(cur);
+                    fill.setAttribute("data-lv", cur);
+                    for (let i = 0; i < LV.length; i++) {
+                        const lv = LV[i];
+                        dotEls[lv].className = "ae-dot " + (i < si ? "is-before" : i === si ? "is-on" : "is-after");
+                        dotBtns[lv].setAttribute("aria-pressed", String(i === si));
+                        nameBtns[lv].className = i === si ? "is-on" : "";
+                    }
+                    const changed = cur !== saved;
+                    headBadge.className = "ae-badge" + (changed ? " is-changed" : "");
+                    headBadge.textContent = changed
+                        ? `저장된 값 ${LABEL[saved]} → ${LABEL[cur]}`
+                        : (saved === "x_yt" ? "저장된 값 X&YT (기본값)" : `저장된 값 ${LABEL[saved]}`);
+                    const xOn = cur === "x_yt";
+                    const ytOn = cur !== "manual";
+                    detX.className = "ae-det " + (xOn ? "is-on" : "is-off");
+                    detX.querySelector("small").textContent = xOn ? "켜짐 · Groq 사용" : "꺼짐 · Groq 안 씀";
+                    detYt.className = "ae-det " + (ytOn ? "is-on" : "is-off");
+                    detYt.querySelector("small").textContent = ytOn ? "켜짐 · 바뀌면 따라감" : "꺼짐";
+                    explHead.className = "ae-expl-head" + (changed ? " is-changed" : "");
+                    explHead.textContent = changed ? "저장하면 바로 1회, 그 뒤로도 이 설정대로:" : "현재 동작:";
+                    explSteps.textContent = "";
+                    for (const s of STEPS[cur]) {
+                        const row = el("div", "ae-step");
+                        const txt = el("span");
+                        if (s.strike) {
+                            txt.appendChild(el("span", "ae-strike", s.text));
+                            if (s.extra) txt.appendChild(document.createTextNode(s.extra));
+                        } else {
+                            txt.textContent = s.text;
+                        }
+                        row.appendChild(txt);
+                        row.appendChild(el("span", "ae-cost", s.cost));
+                        explSteps.appendChild(row);
+                    }
+                    const saveBtn = document.getElementById("edit-save-btn");
+                    if (saveBtn) saveBtn.textContent = changed ? "저장 · 1회 동작" : "저장";
+                };
+
+                this.editState.aeChoice = () => cur;
+                form.appendChild(box);
+                paint();
+            },
+
+            // (v4.7.2) 이 예고에 연결된 트윗 줄 — 관리 API 의 tweets.json 기준(src_url 같은 status · 본문/인용의 영상 id), 최근 4건
+            linkedTweetRows(item, tweetsAll) {
+                const statusId = (u) => ((u || "").match(/\/status\/(\d+)/) || [])[1] || null;
+                const srcId = statusId(item.src_url);
+                const vid = item.video_id;
+                const short = (iso) => {
+                    if (!iso || isNaN(Date.parse(iso))) return "시각 미정";
+                    const s = this.utcIsoToKstInput(iso);   // "YYYY-MM-DDTHH:MM" (KST)
+                    return `${s.slice(5, 7)}/${s.slice(8, 10)} ${s.slice(11, 16)}`;
+                };
+                const hits = (tweetsAll[item.channel_key] || []).filter((t) => {
+                    if (srcId && statusId(t.url) === srcId) return true;
+                    if (!vid) return false;
+                    return (t.text || "").includes(vid) || ((t.quote && t.quote.text) || "").includes(vid);
+                });
+                hits.sort((a, b) => ((a.posted_at || a.received_at || "") < (b.posted_at || b.received_at || "") ? -1 : 1));
+                const rows = hits.slice(-4).map((t) => {
+                    const body = Array.from((t.text || "").replace(/\s+/g, " ")).slice(0, 40).join("");
+                    return `${short(t.posted_at || t.received_at)} · ${body}`;
+                });
+                return rows.length ? rows : ["없음"];
             },
 
             // (Claude 검증 수정) 같은 이름의 submitEdit 가 두 번 정의돼 뒤의 것(소식)이 앞의 것(예고)을 덮어써
@@ -3035,6 +3266,12 @@
                         patch.membership = memberOn;
                     }
 
+                    // (v4.7.2) 자동 수정 권한 — 고른 값이 저장된 값과 다를 때만 보낸다
+                    const aeNow = this.editState.aeChoice ? this.editState.aeChoice() : (seen.auto_edit || "x_yt");
+                    if (aeNow !== (seen.auto_edit || "x_yt")) {
+                        patch.auto_edit = aeNow;
+                    }
+
                     if (Object.keys(patch).length === 0) {
                         this.showToast("바뀐 것이 없습니다");
                         this.closeModal();
@@ -3049,7 +3286,9 @@
                         });
 
                         if (result.ok) {
-                            this.showToast("예고가 수정되었습니다");
+                            // (v4.7.2) 권한을 바꿨으면 서버가 돌려준 「1회 동작」 결과 한 줄을 붙인다
+                            const once = result.result && result.result.once;
+                            this.showToast(once ? `예고가 수정되었습니다 — ${once}` : "예고가 수정되었습니다");
                             this.closeModal();
                             this.loadPreview();
                         } else if (result.error && result.error.startsWith("conflict:")) {
@@ -6414,6 +6653,9 @@
             closeModal() {
                 document.getElementById("edit-modal").classList.remove("active");
                 this.editState = null;
+                // (v4.7.2) 저장 버튼 글자는 「저장」으로 돌아온다 — 「저장 · 1회 동작」이 다른 팝업에 남지 않게
+                const saveBtn = document.getElementById("edit-save-btn");
+                if (saveBtn) saveBtn.textContent = "저장";
             },
         };
 

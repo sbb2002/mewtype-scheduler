@@ -609,6 +609,39 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   60초 초과(스트림 예약 실제 수정) → `scheduled_start = api_start_seen`, `info_source="api"`, `info_at=now`
   (이후 tick 은 API 값으로 계속 갱신). 이 tick 의 wake 예약은 override 전 시각 기준 — 다음 light tick(≤10분)에 재계산.
   (v3.7.1 이전에는 정의만 있고 어디서도 호출되지 않았다.)
+  (v4.7.2) 보호 출처가 `preview.PROTECTED_TIME_SOURCES` = personal · x-relay · **manual** 로 늘고, 자동 수정 권한이 수동이면 API 가 바뀌어도 그대로(아래).
+
+### 예고 자동 수정 권한 · 운영자 지정 시각 (v4.7.2)
+
+계기(2026-10-23 리츠): ① 「予定変更💥 …明日の夜23:30からに変更」(자기 21:00 예고 트윗을 인용)가 본문에 `配信` 이 없어 변경 판정 게이트에서 끝났다(LLM 미호출).
+② 운영자가 관리 페이지에서 그 예고(영상 有, `info_source="api"`)를 23:30 으로 고쳤는데 3분 뒤 수집(`preview_build`)이 YouTube 예약 시각(옛 21:00)으로 덮었다.
+이 절은 D27(2026-10-01 「YouTube API 가 진실」)을 바꾼다 — 운영자 · 트윗이 정한 시각은 **YouTube 예약 시각이 실제로 바뀔 때(60초 넘게)만** API 를 따른다.
+
+- **자동 수정 권한** `auto_edit`(preview 아이템 필드): `x_yt`(X&YT, 기본 — 필드 없음 · 모르는 값도 이것, 저장 안 함) · `yt`(YT) · `manual`(수동). 헬퍼 `preview.auto_edit_level` · `allows_tweet_edit`(x_yt) · `allows_api_time`(yt · x_yt).
+  권한은 **예정 시각 · 취소(삭제)** 에만 적용 — 상태 전이(live 감지 · 종료) · 제목 · 썸네일은 권한과 무관하게 지금처럼.
+
+  | 경로 | x_yt | yt | manual |
+  |---|---|---|---|
+  | 수집 `preview_build`(영상 有 항목) | 출처가 보호 출처가 아니면 API 로 덮음 | 같음 | 덮지 않음 |
+  | `xtweet.apply_overrides`(보호 출처의 API 실제 변화) | API 승 | API 승 | 그대로 |
+  | 트윗 예고 upsert `merge_personal_schedule` | 갱신 | 안 함 | 안 함 |
+  | 트윗 속 영상 URL 확정 `merge_video_confirmed` | 출처별(아래) | 출처별 | 안 함 |
+  | 공식 스케줄 재공지 `xrelay.merge_announced` | 영상 없는 항목은 통째로 교체(기존) | 보조 필드만 | 보조 필드만 |
+  | 변경 · 취소 판정 후보 `_change_candidates` | 후보 | 빠짐(Groq 안 씀) | 빠짐 |
+
+- **운영자 지정 시각**: `_apply_preview_edit` 가 `date` 를 고치면 `info_source` = ctx 의 값 또는 `"manual"`(관리 페이지 · 텔레그램 수정), `info_at = now`.
+  LLM 변경 판정이 옮긴 시각은 `"personal"`, 1회 동작의 YouTube 반영은 `"api"`. 영상 없는 예고는 `expires_at` 도 새 시각으로 다시 계산(안 하면 옛 시각 + 3h 에 지워진다).
+- `merge_video_confirmed` 의 시각: x-relay = 덮지 않음 · manual = YouTube 예약 시각이 실제로 바뀌었을 때만 · personal = API 를 처음 볼 때(`api_start_seen` 없음) 또는 실제로 바뀌었을 때만 ·
+  그 밖 = API. 실제로 바뀌어 덮은 manual · personal 은 `info_source="api"` 로.
+- **변경 판정 게이트**(`telegram_app._maybe_broadcast_change`, 개인 트윗마다): 본문에 `配信` · 또는 변경어(`_CHANGE_WORD_RE` = 変更 · 延期 · 中止 · 休み · おやすみ · お休み · 見送 · ずら · 遅ら · 遅れ ·
+  リスケ · 取りやめ · キャンセル · 休配 등) · 또는 인용문 속 영상 id 가 이 멤버 판정 후보의 `video_id`. 후보(권한 x_yt 인 활성 예고)가 없으면 LLM 을 부르지 않는다.
+  인용문은 `llm.broadcast_change_targets(quote_ja=…)` 로 본문 뒤에 참고용(600자)으로 붙고, 판단 기록 `input` 에도 남아 재판단 때 쓰인다.
+- **관리 페이지 「자동 수정 권한」**(예고 편집 팝업 맨 아래 구역): 점 3개 슬라이더 [수동 · YT · X&YT] + 켜짐 표시 2칸(X 트윗 판정 · YouTube 예약 시각) + 단계별 동작 설명(Groq 횟수) + 이 예고에 연결된 트윗.
+  목록 카드엔 기본이 아닐 때 「권한: 수동 / YT」 배지. API `edit_preview` 의 patch 키 `auto_edit`.
+- **1회 동작**(권한을 바꿔 저장했을 때만, `telegram_app._auto_edit_once` — 결과 한 줄이 저장 토스트에):
+  manual = 아무것도 안 함 · yt = YouTube 예약 시각으로 바로 맞춤 ·
+  x_yt = **연결된 트윗**(`_linked_tweets`: 그 멤버의 tweets.json 중 예고 출처 트윗 `src_url` 이거나 본문 · 인용문에 영상 id 가 든 것, 최근 4건)을 묶어 LLM 1회로 판정해 취소 · 변경을 먼저 반영,
+  반영이 없으면 YouTube 예약 시각이 실제로 바뀐 경우(직전 관측 `api_start_seen` 대비 60초 넘게)에만 따른다 — 트윗이 옮긴 시각을 YouTube 의 옛 예약 시각으로 되돌리지 않기 위함.
 
 ---
 

@@ -647,7 +647,9 @@ def merge_announced(prev_items: list[dict], inc_list: list[dict], now_iso: str) 
         idx = items.index(matched)
         cur = items[idx]
         original = dict(cur)
-        is_higher_tier = bool(cur.get("video_id")) or cur.get("state") != "announced"
+        # (v4.7.2) 자동 수정 권한이 수동 · YT 인 항목은 공식 스케줄 재공지가 통째로 덮지 않는다 — 보조 필드만 채운다
+        is_higher_tier = (bool(cur.get("video_id")) or cur.get("state") != "announced"
+                          or preview.auto_edit_level(cur) != "x_yt")
 
         if is_higher_tier:
             # 보조 필드만 보강 — 핵심 필드(state/video_id/url/title/thumbnail/
@@ -1120,6 +1122,20 @@ if __name__ == "__main__":
     assert kept["title"] == "최종회 스페셜", "title 유지 실패"
     assert kept["kind"] == "talk", "빈 보조 필드(kind)는 보강되어야 함"
     print("[OK] merge_announced  (상위 티어 항목 보존 — 보조 필드만 보강)")
+
+    # (v4.7.2) 자동 수정 권한이 수동·YT 인 announced 항목은 재공지가 통째로 덮지 않는다(보조 필드만 채움)
+    _ae_prev = [preview.make_item(channel_key="miyako", state="announced", source="manual", now_iso=NOW,
+                                  scheduled_start="2026-09-13T11:00:00Z", title="수동 제목")]
+    _ae_prev[0]["auto_edit"] = "manual"
+    _ae_inc = [preview.make_item(channel_key="miyako", state="announced", source="x-relay", now_iso=NOW,
+                                 scheduled_start="2026-09-13T11:20:00Z", kind="talk")]
+    _ae_m, _ = merge_announced(_ae_prev, _ae_inc, NOW)
+    assert len(_ae_m) == 1 and _ae_m[0]["scheduled_start"] == "2026-09-13T11:00:00Z", f"수동 권한 항목이 재공지로 덮임: {_ae_m}"
+    assert _ae_m[0]["kind"] == "talk" and _ae_m[0]["title"] == "수동 제목", "보조 필드 보강 · 제목 유지 실패"
+    _ae_prev[0].pop("auto_edit")  # 기본(X&YT) 권한이면 지금처럼 통째로 교체
+    _ae_m2, _ = merge_announced(_ae_prev, _ae_inc, NOW)
+    assert _ae_m2[0]["scheduled_start"] == "2026-09-13T11:20:00Z", "기본 권한인데 재공지가 교체 안 함"
+    print("[OK] merge_announced  (v4.7.2 auto_edit 수동 항목은 재공지에 덮이지 않음 · 기본 권한은 교체)")
 
     # merge_announced: empty
     merged3, changed3 = merge_announced(prev, [], NOW)

@@ -230,10 +230,12 @@ def build_preview(
             item["url"] = url
             item["video_id"] = video_id
             item["last_updated"] = now_iso
-            # API scheduled_start 기록 (apply_overrides 용)
+            # API scheduled_start 기록 (apply_overrides 용) — 항상 갱신
             item["api_start_seen"] = video.scheduled_start
-            # info_source 가 personal/x-relay 면 scheduled_start 덮지 말 것
-            if item.get("info_source") not in ("personal", "x-relay"):
+            # (v4.7.2) 예정 시각은 자동 수정 권한(auto_edit)이 YT · X&YT 이고, 출처가 사람·트윗이 정한 값
+            # (PROTECTED_TIME_SOURCES: personal · x-relay · manual)이 아닐 때만 API 값으로 덮는다.
+            # 수동(manual) 권한이면 API 가 바뀌어도 유지 — 실제 변화는 xtweet.apply_overrides 가 맡는다.
+            if preview.allows_api_time(item) and item.get("info_source") not in preview.PROTECTED_TIME_SOURCES:
                 item["scheduled_start"] = video.scheduled_start
         else:
             # 신규 아이템
@@ -1147,6 +1149,41 @@ if __name__ == "__main__":
                 assert _got == {"EX": _ex_mem, "NEW": _new_mem}, (_line, _flow, _got)
                 _n += 1
     print(f"  (v4.0.8) 기존 × 신규 회원/일반 4조합 · 신규 앞/뒤 · 유입 순서 2가지 — {_n}건 membership 기대대로")
+
+    # (v4.7.2) 자동 수정 권한(auto_edit) — API 예약 시각이 저장된 예고 시각을 덮는지
+    # 시나리오: 저장값 = 23:30 KST(14:30Z, 사람/트윗이 정함), API 예약 = 21:00 KST(12:00Z, 옛 시각)
+    _api_12 = types.SimpleNamespace(
+        video_id="V1", channel_id="UCWfF0DB6m_t2CE3KcOOOX7g", title="T", thumbnail="th",
+        live_state="upcoming", scheduled_start="2026-10-24T12:00:00Z",
+        actual_start=None, actual_end=None, concurrent_viewers=None,
+    )
+    def _prev_v1(**over):
+        it = preview.make_item(channel_key="arale", state="upcoming", source="api", now_iso=now_iso,
+                               video_id="V1", url="https://www.youtube.com/watch?v=V1", title="T",
+                               scheduled_start="2026-10-24T14:30:00Z", info_source=over.pop("info_source", "api"))
+        it.update(over)
+        return {"generated_at": None, "channel_order": ["arale"], "channels": {}, "items": [it]}
+    def _run_v1(prev):
+        out = build_preview(channels_cfg, {"V1": _api_12}, prev, now_iso)[0]["items"]
+        return next(i for i in out if i.get("video_id") == "V1")
+
+    # ① info_source="manual"(운영자가 시각을 고친 항목) → API 시각이 달라도 scheduled_start 유지, api_start_seen 은 갱신
+    _m = _run_v1(_prev_v1(info_source="manual"))
+    assert _m["scheduled_start"] == "2026-10-24T14:30:00Z", f"manual 출처 시각이 API 로 덮임: {_m['scheduled_start']}"
+    assert _m["api_start_seen"] == "2026-10-24T12:00:00Z", "api_start_seen 갱신 실패"
+    # ② auto_edit="manual" + info_source="api" → 유지
+    _m2 = _run_v1(_prev_v1(auto_edit="manual"))
+    assert _m2["scheduled_start"] == "2026-10-24T14:30:00Z", f"수동 권한인데 API 로 덮임: {_m2['scheduled_start']}"
+    # ③ 기본(필드 없음) + info_source="api" → 지금처럼 API 로 덮음
+    _d = _run_v1(_prev_v1())
+    assert _d["scheduled_start"] == "2026-10-24T12:00:00Z", f"기본 권한인데 API 로 안 덮음: {_d['scheduled_start']}"
+    # ③' auto_edit="yt" + info_source="api" → YT 권한이라 API 로 덮음
+    _y = _run_v1(_prev_v1(auto_edit="yt"))
+    assert _y["scheduled_start"] == "2026-10-24T12:00:00Z", "YT 권한인데 API 로 안 덮음"
+    # ④ 기본 권한이어도 personal 출처면 API 로 안 덮음(기존 동작 유지)
+    _p = _run_v1(_prev_v1(info_source="personal"))
+    assert _p["scheduled_start"] == "2026-10-24T14:30:00Z", "personal 출처가 API 로 덮임"
+    print("✓ (v4.7.2) preview_build 자동 수정 권한 — manual 출처 · manual 권한 유지 / 기본·YT 는 API 로 덮음 / personal 유지")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 17개 self-test scenarios passed ✓ (v4a)")
