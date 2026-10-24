@@ -464,7 +464,7 @@ _LIVE_INFO_SCHEMA = {
             "name": {"type": "string"},
             "name_evidence": {"type": "string"},
             "date": {"type": "string"},
-            "date_evidence": {"type": "string"},
+            "date_evidence": {"type": "array", "items": {"type": "string"}},   # (v4.7.3) 여러 줄 — 날짜 줄 + 출연일 줄(「DAY1に出演」)
             "reason": {"type": "string"},
         },
         "required": ["name", "name_evidence", "date", "date_evidence", "reason"],
@@ -502,16 +502,17 @@ _NOTICE_CAT_HEAD = (
 )
 
 
-def _md_in_evidence(date: str, evidence: str, posted_date: str = "") -> bool:
-    """(v4.7.0) 공연일 YYYY-MM-DD 의 월 · 일이 근거 줄에 실제로 적혀 있나 — 「12/24」 「12月24日」 「12.24」 「2026.12.24」.
-    「本日」 「今日」 「今夜」 는 게시일과 같을 때만. 티켓 접수일 같은 다른 날짜를 공연일로 고른 것은 못 거른다(그건 프롬프트 몫)."""
+def _day_in_evidence(date: str, evidence: str, posted_date: str = "") -> bool:
+    """(v4.7.3) 공연일 YYYY-MM-DD 의 「일」 숫자가 근거 줄에 적혀 있나 — 원문에 없는 날을 지어낸 답만 거른다.
+    전엔(v4.7.0 `_md_in_evidence`) 월 · 일이 붙어 적혀 있어야 해서, 「1月23日(土)・24日(日)開催」 의 24일처럼 월이 빠진 둘째 날을
+    LLM 이 맞게 골라도 버렸다(10-24 KIMCHIKURA 조사). 어느 날을 고를지(출연일 · DAY 번호)는 프롬프트 몫이라 여기서는 보지 않는다.
+    「本日」 「今日」 「今夜」 는 게시일과 같을 때만."""
     m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", date or "")
     if not m:
         return False
     import unicodedata
     ev = unicodedata.normalize("NFKC", evidence or "")
-    mo, d = int(m.group(2)), int(m.group(3))
-    if re.search(rf"(?<!\d)0?{mo}\s*[/月.\-]\s*0?{d}(?!\d)", ev):
+    if re.search(rf"(?<!\d)0?{int(m.group(3))}(?!\d)", ev):
         return True
     return bool(posted_date) and date == posted_date and bool(re.search(r"本日|今日|今夜", ev))
 
@@ -1133,7 +1134,8 @@ class LLMClient:
         """
         (v4.7.0) 라이브공연 소식의 공연 이름 · 공연일 — 라이브공연 탭에서 같은 공연 소식을 한데 모으는 열쇠.
         name = 공연 타이틀을 원문 표기 그대로(「」 안쪽), date = 공연 당일(티켓 · 통판 날짜 아님).
-        **근거 필수** — name · name_evidence · date_evidence 가 원문에 있어야 하고, date 의 월 · 일이 date_evidence 에 적혀 있어야 한다(3회).
+        **근거 필수** — name · name_evidence · date_evidence(줄 목록, v4.7.3) 가 원문에 있어야 하고, date 의 「일」 숫자가 그 줄들에 적혀 있어야 한다(3회).
+        (v4.7.3) date = 유메미타 출연일(DAY1 / DAY2 · 「○日に出演」, 없을 때만 첫날). text 는 원문(body_raw) — 날짜를 지운 body_for_llm 을 주면 공연일을 못 찾는다.
         3회 모두 날짜 근거가 안 맞으면 날짜만 비우고 이름은 살린다.
         Returns: {"name": str|None, "date": "YYYY-MM-DD"|None, "reason": str} | None(호출 실패 · 이름 근거도 끝내 없음)
         """
@@ -1142,15 +1144,24 @@ class LLMClient:
         posted_date = (posted_jst or "")[:10]
         base = _with_hint(
             "아래는 성우 밴드 「夢限大みゅーたいぷ」(유메미타) 소식 글이다. 게시 시각: " + (posted_jst or "?") + " (일본 시간).\n"
-            "이 글이 다루는 공연(라이브)의 이름과 공연일을 뽑아라.\n"
-            "- name = 공연을 가리키는 고유 제목을 글에 적힌 표기 그대로. 「」 · 『』 · “” 안에 든 공연 타이틀(예: 「DIMENSIONAL OVERLAP」)이 있으면 "
-            "괄호를 뺀 안쪽만. 타이틀이 없으면 공연 이름(예: NAKAMACHI ARALE LIVE 2026). 「BanG Dream! 13th LIVE」처럼 여러 밴드가 서는 공연 안에서 "
-            "유메미타 공연의 타이틀이 따로 있으면 그 타이틀. 해시태그 · 회장 이름 · 굿즈 이름은 공연 이름이 아니다. 공연 이름이 없으면 \"\".\n"
+            "이 글이 다루는 공연(라이브)의 이름과, 그 공연에서 유메미타가 무대에 서는 날을 뽑아라.\n"
+            # (v4.7.1) 멤버 솔로 공연도 공연 — 120b 가 「○○ LIVE 2026 「タイトル」」 을 「유메미타 공연 타이틀이 아님」 으로 보고 이름을 비웠다(10-23 실측)
+            "- name = 이 글이 다루는 공연의 고유 제목을 글에 적힌 표기 그대로. 유메미타 전체 공연뿐 아니라 **멤버 한 명의 솔로 공연** · 투어 · 프리 라이브 · "
+            "여러 밴드가 서는 합동 공연도 모두 공연이다. 「」 · 『』 · “” 안에 든 공연 타이틀이 있으면 괄호를 뺀 안쪽만"
+            "(예: 「DIMENSIONAL OVERLAP」 → DIMENSIONAL OVERLAP, ○○ LIVE 2026 「タイトル」 → タイトル). 괄호 타이틀이 없으면 공연 이름 그대로"
+            "(예: NAKAMACHI ARALE LIVE 2026). 「BanG Dream! 13th LIVE」처럼 여러 밴드가 서는 공연 안에서 유메미타 공연의 타이틀이 따로 있으면 그 타이틀. "
+            "해시태그 · 회장 이름 · 굿즈 이름은 공연 이름이 아니다. 공연을 가리키는 이름이 글에 전혀 없을 때만 \"\".\n"
             "- name_evidence = name 이 나온 원문 줄을 그대로 복사. name 이 \"\"면 \"\".\n"
-            "- date = 공연이 열리는 날(일본 시간 YYYY-MM-DD). 티켓 판매 · 접수 · 통판 · 발표 날짜가 아니라 공연 당일. 여러 날이면 첫날. "
-            "연도가 없으면 게시 시각 기준으로 정한다. 글에 공연일이 없으면 \"\".\n"
-            "- date_evidence = 공연일이 적힌 원문 줄을 그대로 복사. date 가 \"\"면 \"\".\n"
-            "- reason = 판단 이유 한국어 한 문장.\nJSON 으로만 답하라.\n\n글:\n" + (text or ""))
+            # (v4.7.3) 공연일 = 유메미타 출연일 — 전엔 「여러 날이면 첫날」 이라 DAY2 출연 글이면 틀렸다(10-24 KIMCHIKURA 조사)
+            "- date = 유메미타가 그 공연에 출연하는 날(일본 시간 YYYY-MM-DD). 티켓 판매 · 접수 · 통판 · 발표 날짜가 아니라 공연 당일.\n"
+            "  · 공연이 여러 날이면 먼저 글에 유메미타의 출연일이 적혀 있는지 본다 — 「DAY1」 · 「DAY2」 · 「○日に出演」 · 「○日公演に出演」 같은 줄이 있으면 그 날. "
+            "DAY 번호는 글에 적힌 개최일을 앞에서부터 센 것이다(DAY1 = 첫째 날).\n"
+            "  · 출연일이 글에 없을 때만 첫날.\n"
+            "  · 「1月23日(土)・24日(日)」 처럼 뒤 날짜에 월이 빠져 있으면 앞 날짜의 월을 이어 쓴다.\n"
+            "  · 연도가 없으면 게시 시각 기준으로 정한다. 글에 공연일이 없으면 \"\".\n"
+            "- date_evidence = date 를 정한 근거 줄들을 원문 그대로 복사한 목록. 날짜가 적힌 줄과, 출연일을 알려 주는 줄(예: 「DAY1に出演」)이 "
+            "따로 있으면 그 줄도 넣는다. date 가 \"\"면 빈 목록.\n"
+            "- reason = 판단 이유 한국어 한 문장. 여러 날 공연이면 어느 날을 왜 골랐는지 적는다.\nJSON 으로만 답하라.\n\n글:\n" + (text or ""))
         prompt = base
         name_only = None
         for attempt in range(1, 4):
@@ -1167,17 +1178,21 @@ class LLMClient:
             if not isinstance(r, dict):
                 continue
             name = str(r.get("name") or "").strip().strip("「」『』“”\"")
-            nev, date, dev = (str(r.get(k) or "").strip() for k in ("name_evidence", "date", "date_evidence"))
+            nev, date = (str(r.get(k) or "").strip() for k in ("name_evidence", "date"))
+            devs = r.get("date_evidence")
+            devs = [str(x).strip() for x in (devs if isinstance(devs, list) else [devs]) if str(x or "").strip()]
             why = str(r.get("reason") or "").strip()
             name_ok = not name or (evidence_in_text(name, text or "") and evidence_in_text(nev, text or ""))
-            date_ok = not date or (evidence_in_text(dev, text or "") and _md_in_evidence(date, dev, posted_date))
+            # (v4.7.3) 근거 줄마다 원문에 그대로 있어야 하고, 고른 날의 「일」 숫자가 근거 줄 어딘가에 있어야 한다
+            date_ok = not date or (bool(devs) and all(evidence_in_text(d, text or "") for d in devs)
+                                   and _day_in_evidence(date, "\n".join(devs), posted_date))
             if name_ok and date_ok and len(why) >= 5:
                 return {"name": name or None, "date": date or None, "reason": why[:200]}
             if name_ok and name and len(why) >= 5:
                 name_only = {"name": name, "date": None, "reason": why[:200]}
             logger.info(f"live_info: 근거 없음 · 원문에 없는 구절 · 날짜 근거 불일치 — 다시 묻는다 (attempt {attempt}/3) — {r!r}")
-            prompt = (base + "\n\n주의: 바로 전 답은 이름 · 근거가 원문에 없거나, 공연일의 월 · 일이 date_evidence 에 적혀 있지 않아 받지 않았다. "
-                      "원문에 있는 표기를 그대로 복사하고, 공연일이 적힌 줄이 없으면 date 는 \"\"로 둬라.")
+            prompt = (base + "\n\n주의: 바로 전 답은 이름 · 근거 줄이 원문에 그대로 있지 않거나, 고른 공연일의 날짜가 date_evidence 줄들에 적혀 있지 않아 받지 않았다. "
+                      "원문에 있는 줄을 그대로 복사하고, 공연일이 적힌 줄이 없으면 date 는 \"\"로 둬라.")
         if name_only:
             logger.info("live_info: 날짜 근거가 끝내 안 맞아 이름만 — %s", name_only["name"])
         else:
@@ -2444,18 +2459,32 @@ if __name__ == "__main__":
     assert LLMClient("k", session=_ReadingSession([""])).notice_categories(_nt) is None, "호출 실패 → None"
     _lt = "＼チケット一般発売 明日開始📢／\n12/24(木)開催\n🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤\n⏰受付期間 明日10/3(土) 12:00〜"
     _s = _ReadingSession(['{"name": "RESONEXT", "name_evidence": "🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤", "date": "2026-12-24", '
-                          '"date_evidence": "12/24(木)開催", "reason": "공연 타이틀과 개최일이다."}'])
+                          '"date_evidence": ["12/24(木)開催"], "reason": "공연 타이틀과 개최일이다."}'])
     assert LLMClient("k", session=_s).live_info(_lt, "2026-10-02 12:00") == {"name": "RESONEXT", "date": "2026-12-24", "reason": "공연 타이틀과 개최일이다."}
     _bad_date = ('{"name": "RESONEXT", "name_evidence": "🎤NAKAMACHI ARALE LIVE 2026 「RESONEXT」🎤", "date": "2026-10-03", '
-                 '"date_evidence": "12/24(木)開催", "reason": "공연 타이틀과 개최일이다."}')
+                 '"date_evidence": ["12/24(木)開催"], "reason": "공연 타이틀과 개최일이다."}')
     _s = _ReadingSession([_bad_date] * 3)
     _r = LLMClient("k", session=_s).live_info(_lt, "2026-10-02 12:00")
     assert _r == {"name": "RESONEXT", "date": None, "reason": "공연 타이틀과 개최일이다."} and _s.calls == 3, "날짜 근거 불일치 → 이름만"
-    _s = _ReadingSession(['{"name": "없는 공연", "name_evidence": "없는 줄", "date": "", "date_evidence": "", "reason": "공연 이름이다."}'] * 3)
+    _s = _ReadingSession(['{"name": "없는 공연", "name_evidence": "없는 줄", "date": "", "date_evidence": [], "reason": "공연 이름이다."}'] * 3)
     assert LLMClient("k", session=_s).live_info(_lt, "2026-10-02 12:00") is None, "원문에 없는 이름 → None"
-    assert _md_in_evidence("2026-12-24", "12月24日(木)") and _md_in_evidence("2026-10-11", "2026.10.11 東京") and not _md_in_evidence("2026-10-03", "12/24(木)")
-    assert _md_in_evidence("2026-10-11", "本日開催", "2026-10-11") and not _md_in_evidence("2026-10-12", "本日開催", "2026-10-11")
-    print("✓ notice_categories · live_info: 분류 순서 · 근거 다시 묻기 · 빈 목록 · 실패 None · 공연일 근거 · 이름만")
+    # (v4.7.3) 여러 날 공연 — 출연일 줄까지 근거로, 월이 빠진 둘째 날(24日)도 받는다(10-24 KIMCHIKURA)
+    _kt = ("＼📣出演決定❗／\n\n2027年1月23日(土)・24日(日)開催\nKIMCHIKURA×ANISAMA SEOUL 2027 に\n夢限大みゅーたいぷの出演が決定🛸✨\n\n"
+           "#ゆめみた はDAY2に出演いたします🌟")
+    _s = _ReadingSession(['{"name": "KIMCHIKURA×ANISAMA SEOUL 2027", "name_evidence": "KIMCHIKURA×ANISAMA SEOUL 2027 に", "date": "2027-01-24", '
+                          '"date_evidence": ["2027年1月23日(土)・24日(日)開催", "#ゆめみた はDAY2に出演いたします🌟"], "reason": "유메미타는 DAY2(24일) 출연이다."}'])
+    assert LLMClient("k", session=_s).live_info(_kt, "2026-10-23 20:18")["date"] == "2027-01-24", "월 없는 둘째 날도 받는다"
+    _s = _ReadingSession(['{"name": "KIMCHIKURA×ANISAMA SEOUL 2027", "name_evidence": "KIMCHIKURA×ANISAMA SEOUL 2027 に", "date": "2027-01-25", '
+                          '"date_evidence": ["2027年1月23日(土)・24日(日)開催"], "reason": "유메미타는 DAY2 출연이다."}'] * 3)
+    _r = LLMClient("k", session=_s).live_info(_kt, "2026-10-23 20:18")
+    assert _r["date"] is None and _s.calls == 3, "근거 줄에 없는 날(25일) → 날짜 버림"
+    _s = _ReadingSession(['{"name": "KIMCHIKURA×ANISAMA SEOUL 2027", "name_evidence": "KIMCHIKURA×ANISAMA SEOUL 2027 に", "date": "2027-01-24", '
+                          '"date_evidence": ["2027年1月24日(日)開催"], "reason": "유메미타는 DAY2 출연이다."}'] * 3)
+    assert LLMClient("k", session=_s).live_info(_kt, "2026-10-23 20:18")["date"] is None, "원문에 없는 근거 줄 → 날짜 버림"
+    assert _day_in_evidence("2026-12-24", "12月24日(木)") and _day_in_evidence("2026-10-11", "2026.10.11 東京") and not _day_in_evidence("2026-10-03", "12/24(木)")
+    assert _day_in_evidence("2027-01-24", "2027年1月23日(土)・24日(日)開催") and not _day_in_evidence("2027-01-25", "2027年1月23日(土)・24日(日)開催")
+    assert _day_in_evidence("2026-10-11", "本日開催", "2026-10-11") and not _day_in_evidence("2026-10-12", "本日開催", "2026-10-11")
+    print("✓ notice_categories · live_info: 분류 순서 · 근거 다시 묻기 · 빈 목록 · 실패 None · 공연일 근거(여러 줄 · 월 없는 둘째 날) · 이름만")
 
     print("\n" + "=" * 70)
     print("SUCCESS: 모든 스모크 테스트 통과 (WP-2 포함)")

@@ -54,8 +54,14 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.7.2 (핫픽스, 2026-10-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
-> (`git tag -n3 v4.7.2`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+> **현재 버전 = v4.7.3 (핫픽스, 2026-10-24)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> (`git tag -n3 v4.7.3`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
+>
+> **v4.7.3 (핫픽스, 브랜치 `hotfix/live-info-date`, 2026-10-24, 백엔드만)**: **라이브공연 공연일 판정 — 원문 입력 + 공연일 = 유메미타 출연일 + 근거 검사 완화 + 공연 이름에 멤버 솔로 공연.**
+> `llm.live_info` 에 날짜를 지운 `body_for_llm` 대신 원문(`body_raw`)을 준다(PR #83 · `hotfix/live-name-solo` 를 옮겨 와 함께 — 둘 다 10-23 에 만들고 병합 안 됐던 것).
+> 공연일 = 유메미타 출연일(DAY1 / DAY2 · 「○日に出演」, 없을 때만 첫날) · 근거 `date_evidence` 를 줄 목록으로 · 월 · 일 정규식 검사 → 「일」 숫자 검사(`_day_in_evidence`) · 공연일을 못 정하면 모니터 WARN.
+> 계기: 10-23 KIMCHIKURA×ANISAMA SEOUL 2027(「2027年1月23日(土)・24日(日)開催」 · 「#ゆめみた はDAY1に出演」) 이 「공연일 미정」. 운영 소식은 2027-01-23 으로 소급(data `93a7eb9`).
+> 상세 `docs/SPEC.md` 계약 H 「분류 `categories`」, 요약 `docs/VERSION.md`.
 >
 > **v4.7.2 (핫픽스, 브랜치 `hotfix/preview-auto-edit`, 2026-10-24, 백엔드 + 관리 페이지 — 배포 완료 `mewtype-backend` 00180 · `mewtype-telegram` 00123, 롤백 = 00178 · 00122 / 병합 `975b6a2`(PR #85))**: **예고 자동 수정 권한 [수동 · YT · X&YT] + 운영자 지정 시각 보호 + 변경 트윗 감지 게이트 확장.**
 > 운영자 · LLM 이 고친 예정 시각은 출처(`info_source` manual · personal)를 남기고, 수집 · 트윗 URL 확정은 YouTube 예약 시각이 **실제로 바뀔 때만** 따른다(D27 「YouTube API 가 진실」 변경).
@@ -910,6 +916,9 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
     단순히 "다음 핫픽스"에 알파벳을 붙이지 말 것(잘못된 예: v3.9 다음 핫픽스를 v3.9a 로 표기 — 당시 규칙으로 v3.8.10 으로 정정됨).
 - **버전 올릴 때 할 일** (2026-10-20 사용자 확정) — 새 번호가 `main` 에 들어가면 **빠짐없이** 아래를 같이 한다.
   병합 · 배포는 운영자 결정이므로, 병합을 맡은 쪽(운영자 또는 운영자가 병합을 지시한 세션)이 같은 자리에서 끝낸다.
+  0. **병합 전 — 묻힌 수정 확인** (2026-10-24 추가): `gh pr list --state open` · `git branch -r --no-merged origin/main | grep -E 'hotfix/|feat/'` 로
+     열린 PR · 병합 안 된 브랜치를 보고 운영자에게 알린다(병합할지 · 버릴지는 운영자 결정). 계기: 공연일 버그를 고친 PR #83 과 `hotfix/live-name-solo` 가
+     10-23 에 만들어진 채 묻혀, 그 사이 v4.7.1 · v4.7.2 가 그 수정 없이 배포됐다(v4.7.3 에서 함께 반영).
   1. **git 태그** — 그 버전이 `main` 에 들어온 **병합 커밋**에 주석 태그(annotated) `vX.Y.Z`(세 자리, 후속 패치는 `vX.Y.Z[a-z]`)를 붙여
      **태그 이름을 지정해** 푸시한다: `git tag -a v4.6.1 <병합 커밋> -m "v4.6.1" -m "<VERSION.md 그 버전 첫 줄>"` → `git push origin refs/tags/v4.6.1`.
      `git push --tags` 는 쓰지 말 것(로컬 실험 태그 `fault-test-base` 같은 것까지 올라간다). 한 버전이 여러 번에 나뉘어 들어왔으면 마지막 코드 병합,
