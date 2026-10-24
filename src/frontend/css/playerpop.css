@@ -1,5 +1,5 @@
 /* playerpop.css — (v4.2.0) 플레이어 팝업 · 플로팅 프레임. 마크업 · 동작은 js/player.js. 색은 layout.css 토큰 + 아래 --mp-* (어둡게 값, 밝게 = theme.css).
-   z-index: 도트 띠 25 < 플로팅 프레임 45 < 디스클레이머 팝업(#foot) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
+   z-index: 도트 띠 25 < 플로팅 프레임 45 < 가장자리 빛 띠 46 < 디스클레이머 팝업(#foot) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
    프레임(.mp-frame)은 한 번 만들고 옮기지 않는다 — 팝업일 땐 JS 가 .mp-slot 자리에 맞춰 위치를 주고, 내리면 .is-float 로 CSS 위치(오른쪽 아래)를 쓴다. */
 
 :root {
@@ -306,11 +306,12 @@ html.mp-lock { overflow: hidden; }
   position: fixed;
   z-index: 810;                  /* 팝업 안: 배경(800) 위 */
   display: flex;
-  flex-direction: column;
+  flex-direction: row;           /* 왼쪽 탭 · 본체 · 오른쪽 탭 (탭은 넣었을 때만 폭이 생긴다) */
   overflow: hidden;
   border-radius: 8px;
   background: #000;
 }
+.mp-frame__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .mp-frame[hidden] { display: none; }
 .mp-yt { position: relative; flex: 1; min-height: 0; }
 .mp-yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
@@ -334,13 +335,13 @@ html.mp-lock { overflow: hidden; }
   z-index: 45;
   right: 16px;
   bottom: calc(var(--mp-foot) + 16px);
-  width: min(var(--mp-float-w), calc(100vw - 32px));
-  min-width: 200px;
+  width: auto;                   /* 폭은 본체(.mp-frame__main)가 정한다 — 넣으면 탭이 옆에 붙는다 */
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-bg-secondary);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
+.mp-frame.is-float .mp-frame__main { flex: none; width: min(var(--mp-float-w), calc(100vw - 32px)); min-width: 200px; }
 .mp-frame.is-float .mp-yt { flex: none; height: var(--mp-float-h); background: #000; }
 
 /* 손잡이 줄 — 프레임 "위"에 따로 붙는다(프레임을 덮지 않음). 끌기 · 더블클릭 = 팝업 열기 */
@@ -377,6 +378,65 @@ html.mp-lock { overflow: hidden; }
 }
 .mp-gbtn .mp-ico { width: 11px; height: 11px; }
 
+/* ── 모바일 가장자리 넣기 (v4.7.6) — 넣으면 영상 한쪽 끝(14px)과 손잡이 탭(24px)만 화면에 남는다. 넣은 동안 재생은 계속.
+   수치 · 동작은 ref 데모(player-edge-tuck.html)와 같다. 넣기 · 꺼내기 JS 는 player.js (tuckFrame · untuckFrame · pullMove). ── */
+.mp-frame.is-tuck-anim { transition: left 480ms cubic-bezier(0.3, 1.3, 0.4, 1), top 480ms cubic-bezier(0.3, 1.3, 0.4, 1), transform 480ms cubic-bezier(0.3, 1.3, 0.4, 1), box-shadow 140ms ease; }
+.mp-frame.is-spring { transition: left 420ms cubic-bezier(0.25, 1.7, 0.45, 1), top 420ms cubic-bezier(0.25, 1.7, 0.45, 1), transform 420ms cubic-bezier(0.25, 1.7, 0.45, 1), box-shadow 140ms ease; }
+.mp-frame.is-armed { box-shadow: 0 0 0 2px var(--mp-accent), 0 8px 30px rgba(0, 0, 0, 0.5); }
+
+/* 넣은 탭 — 평소엔 폭 0. 넣었을 때 화면에 남는 쪽만 24px 로 펼치고, 영상과 맞닿는 쪽에 경계선을 긋는다. */
+.mp-ftab {
+  flex: none; width: 0; overflow: hidden; padding: 0; border: 0; border-radius: 0;
+  background: var(--mp-panel-2); color: var(--color-text-muted);
+  display: flex; justify-content: center; cursor: grab; touch-action: none;
+  transition: width 260ms ease;
+}
+.mp-ftab__in { flex: none; width: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+.mp-frame.is-float.is-tucked-l .mp-ftab--r { width: 24px; border-left: 1px solid var(--color-border); }
+.mp-frame.is-float.is-tucked-r .mp-ftab--l { width: 24px; border-right: 1px solid var(--color-border); }
+/* 넣은 동안 손잡이 줄 버튼은 안 눌린다 — 누른 자리는 손잡이 줄로 가서 꺼내기가 된다(JS 는 inert 로 키보드도 막는다) */
+.mp-frame.is-float.is-tucked-l .mp-grip__btns, .mp-frame.is-float.is-tucked-r .mp-grip__btns { pointer-events: none; }
+.mp-ftab__chev { width: 14px; height: 14px; color: var(--mp-accent); transition: transform 160ms ease; }
+.mp-ftab--l .mp-ftab__chev { transform: scaleX(-1); }
+.mp-ftab.is-ready .mp-ftab__chev { transform: translateX(3px); }
+.mp-ftab--l.is-ready .mp-ftab__chev { transform: scaleX(-1) translateX(3px); }
+.mp-ftab__eq { display: flex; gap: 2px; align-items: flex-end; height: 14px; }
+.mp-ftab__eq i { width: 3px; height: 4px; border-radius: 1px; background: var(--mp-accent); }
+.mp-frame.is-playing .mp-ftab__eq i { animation: mp-eq 900ms ease-in-out infinite; }
+.mp-frame.is-playing .mp-ftab__eq i:nth-child(2) { animation-delay: -300ms; }
+.mp-frame.is-playing .mp-ftab__eq i:nth-child(3) { animation-delay: -600ms; }
+@keyframes mp-eq { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+
+/* 가장자리 빛 띠 — 넣기 중 화면 끝에 생긴다(위치 · 높이는 JS). 넣은 뒤에는 gulp 로 쑥 들어간다. */
+.mp-edge { position: fixed; z-index: 46; left: 0; width: 22px; --p: 0; pointer-events: none; opacity: 0; }
+.mp-edge.is-r { left: auto; right: 0; }
+.mp-edge.is-on, .mp-edge.is-gulp { opacity: 1; }
+.mp-edge__glow { position: absolute; top: 0; bottom: 0; width: calc(4px + 18px * var(--p)); transition: width 70ms linear; }
+.mp-edge.is-l .mp-edge__glow { left: 0; border-radius: 0 14px 14px 0; background: linear-gradient(90deg, color-mix(in srgb, var(--mp-accent) calc(30% + 50% * var(--p)), transparent), transparent); }
+.mp-edge.is-r .mp-edge__glow { right: 0; border-radius: 14px 0 0 14px; background: linear-gradient(270deg, color-mix(in srgb, var(--mp-accent) calc(30% + 50% * var(--p)), transparent), transparent); }
+.mp-edge__lip { position: absolute; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--mp-accent); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3); opacity: calc(0.45 + 0.55 * var(--p)); }
+.mp-edge.is-l .mp-edge__lip { left: 0; }
+.mp-edge.is-r .mp-edge__lip { right: 0; }
+.mp-edge.is-armed .mp-edge__lip { width: 4px; box-shadow: 0 0 12px 2px var(--mp-accent); }
+.mp-edge.is-bump .mp-edge__lip { animation: mp-edge-bump 260ms ease-out; }
+.mp-edge.is-gulp .mp-edge__lip { animation: mp-edge-gulp 520ms ease-out forwards; }
+.mp-edge.is-gulp .mp-edge__glow { animation: mp-edge-gulp-glow 520ms ease-out forwards; }
+.mp-edge__chev { position: absolute; top: 50%; margin-top: -21px; display: grid; color: var(--mp-accent-fg); opacity: 0; transition: opacity 120ms; }
+.mp-edge.is-l .mp-edge__chev { left: 5px; }
+.mp-edge.is-r .mp-edge__chev { right: 5px; }
+.mp-edge__chev svg { width: 12px; height: 14px; display: block; }
+.mp-edge.is-r .mp-edge__chev svg { transform: scaleX(-1); }
+.mp-edge.is-armed .mp-edge__chev { opacity: 1; }
+.mp-edge.is-armed .mp-edge__chev svg { animation: mp-edge-chev-l 700ms ease-in-out infinite; }
+.mp-edge.is-r.is-armed .mp-edge__chev svg { animation-name: mp-edge-chev-r; }
+.mp-edge.is-armed .mp-edge__chev svg:nth-child(2) { animation-delay: -230ms; }
+.mp-edge.is-armed .mp-edge__chev svg:nth-child(3) { animation-delay: -460ms; }
+@keyframes mp-edge-chev-l { 0%, 100% { transform: translateX(2px); opacity: 0.5; } 50% { transform: translateX(-2px); opacity: 1; } }
+@keyframes mp-edge-chev-r { 0%, 100% { transform: scaleX(-1) translateX(2px); opacity: 0.5; } 50% { transform: scaleX(-1) translateX(-2px); opacity: 1; } }
+@keyframes mp-edge-bump { 0% { transform: scaleY(0.5); } 60% { transform: scaleY(1.06); } 100% { transform: scaleY(1); } }
+@keyframes mp-edge-gulp { 0% { opacity: 1; box-shadow: 0 0 16px 4px var(--mp-accent); } 100% { opacity: 0; box-shadow: 0 0 0 0 var(--mp-accent); } }
+@keyframes mp-edge-gulp-glow { 0% { opacity: 1; } 100% { opacity: 0; } }
+
 /* ── 모바일: 바텀 시트 · 하단 도트 띠(푸터 45 + 도트 44) 위로 플로팅 프레임 ── */
 @media (max-width: 767px) {
   .mp-scrim { align-items: flex-end; padding: 0; background: rgba(0, 0, 0, 0); transition: background 0.32s ease; }
@@ -402,4 +462,6 @@ html.mp-lock { overflow: hidden; }
   .mp-frame, .mp-scrim, .mp-pop { transition: none !important; }
   .mp-new { animation: none; background: #e5384a; }
   .mp-badge.pulse { animation: none; }
+  .mp-ftab { transition-duration: 80ms; }
+  .mp-frame.is-playing .mp-ftab__eq i, .mp-edge.is-armed .mp-edge__chev svg, .mp-edge.is-bump .mp-edge__lip { animation: none; }
 }
