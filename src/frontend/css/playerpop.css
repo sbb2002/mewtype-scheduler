@@ -102,13 +102,15 @@ html.mp-lock { overflow: hidden; }
 .mp-media__b:hover { color: var(--color-text); }
 .mp-media__b[aria-pressed="true"] { background: var(--mp-accent); color: var(--mp-accent-fg); }
 .mp-media__b .mp-ico { width: 15px; height: 15px; }
-/* MV 로 처음 바꿀 때 한 번 — 전환 버튼 바로 아래 오른쪽 정렬, 위로 꼬리. 4.5초 뒤 사라진다(js/player.js setMedia) */
+/* 전환 버튼 아래 말풍선 — 재생 중 전환(「다음 영상부터 …」) · MV 첫 안내. 오른쪽 정렬, 위로 꼬리. 시간은 js/player.js showMediaTip 이 animation-duration 으로 준다 */
 .mp-mvtip {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 6; pointer-events: none; white-space: nowrap;
   padding: 6px 10px; border-radius: 8px; background: var(--mp-accent); color: var(--mp-accent-fg);
   font-size: 0.78rem; font-weight: 700; line-height: 1.35; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 .mp-mvtip[hidden] { display: none; }
+.mp-mvtip small { display: block; margin-top: 2px; font-size: 0.68rem; font-weight: 500; opacity: 0.85; }   /* 재생 중 전환 + MV 첫 안내가 겹칠 때 둘째 줄 */
+.mp-mvtip small[hidden] { display: none; }
 .mp-mvtip::after {
   content: ""; position: absolute; right: 22px; bottom: 100%; border: 6px solid transparent; border-top: 0; border-bottom-color: var(--mp-accent);
 }

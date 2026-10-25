@@ -344,7 +344,8 @@ function selectSong(id, autoplay, qi = -1) {
 }
 
 // ── (v4.8.3) 영상 올리기 · 재생 불가 처리 ─────────────────────────────
-const WATCH_MS = 8000;   // 자동 재생을 요청한 뒤 이 안에 재생 · 버퍼링이 없으면 재생 불가로 본다 (프리미어 대기 화면 등)
+const WATCH_MS = 8000;   // 자동 재생을 요청한 뒤 이 안에 재생이 없고 길이도 0 이면 재생 불가로 본다 (그 밖의 멈춤)
+const WATCH_FAST_MS = 2000;   // 프리미어 대기 영상(getVideoData().isPremiere · 길이 0)은 2초에 판정 — 운영자 결정 2026-10-25(8초는 너무 길다)
 const SKIP_MS = 3000;    // 재생 불가 안내를 보여 주는 시간 — 지나면 다음 곡
 let watch = null;        // {vid, timer} — 재생 불가 감시 중인 영상
 let skipRun = 0;         // 재생 불가로 연속 넘긴 횟수 — 곡 수를 넘으면 멈춘다(반복 목록이 전부 재생 불가일 때 무한 순환 방지)
@@ -352,23 +353,25 @@ let skipping = false;    // 재생 불가 뒤 넘기는 중 — 이때의 select
 let skipTimer = 0;
 let deadId = null;       // 불러 두기만 했는데 후보가 모두 재생 불가였던 곡 id — ▶ 를 누르면 다시 골라(자동 재생) 안내 · 넘김을 탄다
 
-function watchStop() { if (watch) { clearTimeout(watch.timer); watch = null; } }
-/** 자동 재생을 요청해 올린 영상을 WATCH_MS 동안 지켜본다. cue 만 하는 경우(autoplay=false)는 지키지 않는다. */
+function watchStop() { if (watch) { clearTimeout(watch.fast); clearTimeout(watch.timer); watch = null; } }
+/** 자동 재생을 요청해 올린 영상을 지켜본다 — 2초에 프리미어 대기 판정, WATCH_MS 에 일반 판정. cue 만 하는 경우(autoplay=false)는 지키지 않는다. */
 function watchStart(vid, autoplay) {
   watchStop();
   if (!autoplay) return;
-  const w = { vid, timer: 0 };
-  w.timer = setTimeout(() => watchCheck(w), WATCH_MS);
+  const w = { vid, fast: 0, timer: 0 };
+  w.fast = setTimeout(() => watchCheck(w, true), WATCH_FAST_MS);
+  w.timer = setTimeout(() => watchCheck(w, false), WATCH_MS);
   watch = w;
 }
-function watchCheck(w) {
+function watchCheck(w, fast) {
   if (watch !== w) return;
-  watch = null;
+  if (!fast) watch = null;
   if (st.vid !== w.vid || !yt || !ytReady) return;
-  let state, dur;
-  try { state = yt.getPlayerState(); dur = yt.getDuration() || 0; } catch (e) { return; }
+  let state, dur, premiere;
+  try { state = yt.getPlayerState(); dur = yt.getDuration() || 0; premiere = !!(yt.getVideoData() || {}).isPremiere; } catch (e) { return; }
   const S = window.YT.PlayerState;
-  if (state !== S.PLAYING && !(dur > 0)) onUnplayable();   // 8초 동안 재생을 시작 못 했고 길이도 없음 = 프리미어 대기 등(실측: 상태 -1 · 길이 0)
+  if (state === S.PLAYING || dur > 0) return;
+  if (!fast || premiere) onUnplayable();   // 재생을 시작 못 했고 길이도 없음 — 프리미어 대기면 2초, 그 밖은 8초(실측: 상태 -1 · 길이 0 · isPremiere)
 }
 
 /** 영상 하나를 프레임에 올린다. autoplay 면 재생을 요청하고 재생 불가 감시를 건다. */
@@ -460,23 +463,39 @@ function placeSkip() {
   }
 }
 
-/** [음원 | MV] 전환 — 저장하고, 지금 곡에 MV 가 있으면 그 모드로 처음부터 다시 고른다(재생 중이면 계속 재생). MV 가 없는 곡이면 프레임은 그대로. */
+/** [음원 | MV] 전환 — 저장한다. 영상이 재생 중이거나 중간까지 들었으면 **그 영상은 그대로** 두고 「다음 영상부터 …로 재생됩니다.」를 띄운다(운영자 결정 2026-10-25).
+ *  아직 틀지 않은 곡(처음 화면)이면 지금 곡을 그 모드로 바로 다시 불러 둔다(MV 가 없는 곡이면 그대로). MV 로 처음 바꿀 때는 MV 안내를 한 번 함께 보인다. */
 let mvTipShown = false, mvTipTimer = 0;
 function setMedia(mode) {
   if (mode === st.media) return;
   st.media = mode;
   writeMediaPref(mode);
-  if (mode === "mv" && !mvTipShown && !mvTipSeen()) {   // 처음 MV 로 바꿀 때 한 번만 안내
+  const first = mode === "mv" && !mvTipShown && !mvTipSeen();   // 처음 MV 로 바꿀 때 한 번만 안내
+  if (first) {
     mvTipShown = true;
     try { localStorage.setItem(MV_TIP_KEY, "1"); } catch (e) { /* 이 페이지를 연 동안만 */ }
-    el.mvTip.hidden = false;
-    restartCls(el.mvTip, "is-on");
-    clearTimeout(mvTipTimer);
-    mvTipTimer = setTimeout(() => { el.mvTip.classList.remove("is-on"); el.mvTip.hidden = true; }, 4500);
   }
+  const HINT = "MV가 있는 곡은 MV로, 없는 곡은 음원으로 보여줘요";
   const s = curSong();
-  if (s && hasMv(s)) selectSong(st.curId, st.playing, st.qi);
+  if (s && (st.playing || st.pos > 0)) {
+    showMediaTip(`다음 영상부터 ${mode === "mv" ? "MV로" : "음원으로"} 재생됩니다.`, first ? HINT : "", first ? 4500 : 2600);
+    paint();
+    return;
+  }
+  if (first) showMediaTip(HINT, "", 4500);
+  if (s && hasMv(s)) selectSong(st.curId, false, st.qi);
   else paint();
+}
+/** 전환 버튼 아래 말풍선 — main(굵게) + sub(작게, 없으면 숨김)를 ms 동안. */
+function showMediaTip(main, sub, ms) {
+  el.mvTipMain.textContent = main;
+  el.mvTipSub.textContent = sub;
+  el.mvTipSub.hidden = !sub;
+  el.mvTip.style.animationDuration = `${ms}ms`;
+  el.mvTip.hidden = false;
+  restartCls(el.mvTip, "is-on");
+  clearTimeout(mvTipTimer);
+  mvTipTimer = setTimeout(() => { el.mvTip.classList.remove("is-on"); el.mvTip.hidden = true; }, ms);
 }
 
 function togglePlay() {
@@ -717,7 +736,9 @@ function build() {
   el.mAudio = h("button", { type: "button", class: "mp-media__b", on: { click: () => setMedia("audio") } }, icon("note"), h("span", { text: "음원" }));
   el.mMv = h("button", { type: "button", class: "mp-media__b", on: { click: () => setMedia("mv") } }, icon("film"), h("span", { text: "MV" }));
   el.media = h("div", { class: "mp-media", role: "group", "aria-label": "재생할 영상 종류" }, el.mAudio, el.mMv);
-  el.mvTip = h("div", { class: "mp-mvtip", role: "status", hidden: true }, "MV가 있는 곡은 MV로, 없는 곡은 음원으로 보여줘요");
+  el.mvTipMain = h("span");
+  el.mvTipSub = h("small", { hidden: true });
+  el.mvTip = h("div", { class: "mp-mvtip", role: "status", hidden: true }, el.mvTipMain, el.mvTipSub);   // 전환 안내 · MV 첫 안내 (showMediaTip)
   el.qCount = h("span", { class: "mp-q__count" });
   el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
   el.qList = h("ol", { class: "mp-q__list" });
