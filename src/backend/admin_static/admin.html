@@ -6463,6 +6463,19 @@
                 const dateIn = this.sgInput("date", s.date);
                 root.appendChild(this.sgField("날짜", dateIn, "YouTube 업로드 시각의 KST 날짜 — 공식 발매일이 아닙니다."));
 
+                // 음원 · MV 영상 (v4.8.3) — 한 줄에 하나, 주소 또는 영상 ID. 저장 때 줄로 나눠 바뀐 것만 patch 에 넣는다(빈 목록 = 키 삭제)
+                const mediaLines = (t) => t.split("\n").map((x) => x.trim()).filter(Boolean);
+                const altIn = document.createElement("textarea");
+                altIn.rows = 3;
+                altIn.placeholder = "비워 두면 대표 음원 하나";
+                altIn.value = (s.alt || []).join("\n");
+                root.appendChild(this.sgField("다른 음원 영상", altIn, "같은 소리의 앨범 · c/w 수록본. 재생할 때 대표 음원과 함께 무작위로 고릅니다. 한 줄에 하나 · 주소 또는 영상 ID."));
+                const mvIn = document.createElement("textarea");
+                mvIn.rows = 3;
+                mvIn.placeholder = "비워 두면 MV 없음";
+                mvIn.value = (s.mv || []).join("\n");
+                root.appendChild(this.sgField("MV 영상", mvIn, "한 줄에 하나 · 주소 또는 영상 ID · 여럿이면 무작위로 고릅니다."));
+
                 const link = this.cxEl("a", "sg-link", `youtu.be/${s.id} ↗`);
                 link.href = `https://youtu.be/${encodeURIComponent(s.id)}`;
                 link.target = "_blank";
@@ -6502,6 +6515,9 @@
                     if (kindSel.value !== s.kind) patch.kind = kindSel.value;
                     if (whoSel.value !== (s.who || "group")) patch.who = whoSel.value;
                     if (dateIn.value && dateIn.value !== s.date) patch.date = dateIn.value;
+                    const altNow = mediaLines(altIn.value), mvNow = mediaLines(mvIn.value);
+                    if (altNow.join("\n") !== (s.alt || []).join("\n")) patch.alt = altNow;
+                    if (mvNow.join("\n") !== (s.mv || []).join("\n")) patch.mv = mvNow;
                     if (!Object.keys(patch).length) return fail("바꾼 항목이 없습니다.");
                     const done = this.sgBusy(save, "저장 중…");
                     const r = await this.sgPost("/edit_song", { song_id: s.id, patch });

@@ -54,9 +54,13 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 - **현행 전체 흐름 (박스별 설명 + 그림): `docs/ARCHITECTURE.md`** + `docs/v2_4_flow.png` (devpapers)
 - 백엔드 스케줄(운영자 시점 요약): `docs/SCHEDULE.md`. 아키텍처 구상도: `docs/old/v2/v1_impro_final.md` (devpapers)
 
-> **현재 버전 = v4.8.2 (핫픽스, 2026-10-25)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+> **현재 버전 = v4.8.3 (핫픽스, 2026-10-25, 병합 · 배포 전)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.7.5`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
+> **v4.8.3 (핫픽스, 브랜치 `hotfix/player-mv`, 2026-10-25, 프론트 + 백엔드 · 관리 페이지 — 병합 · 배포 전, 실기기 미확인)**: **플레이어 음원 · MV 전환.** 곡마다 「음원 영상」(`id` · `alt`)과 「MV」(`mv`), 부른 사람이 여럿이면 `singers`. 재생부 [음원 | MV] 전환(localStorage `mew.player.media`), 여럿이면 무작위, MV 모드는 없거나 재생 불가면 음원으로 조용히 폴백. 재생 불가(오류 · 감시 — 프리미어 대기 2초, 그 밖 8초)는 남은 후보 → 3초 안내 뒤 다음 곡. 재생 중에 전환하면 지금 영상은 그대로, 「다음 영상부터 …로 재생됩니다.」 안내. 歌ってみた 는 별개 곡(唱, 「아라레, 리츠」).
+> **부른 사람 표시는 쉼표로**(「아라레, 리츠」). **그룹 명의 표시 이름 「그룹」 → 「夢限大みゅーたいぷ」**(관리 페이지 멤버 선택 칸은 그대로).
+> 백엔드 · 관리 페이지: `songs.py normalize_media` · 곡 수정 창 두 textarea. 데이터 `scripts/apply_song_media.py`(시드만 갱신 — 운영 data 브랜치는 운영자 승인 뒤 데이터 저장소에서). 상세 `docs/SPEC.md` 「플레이어」 음원 · MV 전환 소절, 용어 `docs/TERMINOLOGY.md` 「음원 · MV 용어」, 요약 `docs/VERSION.md`.
+
 > **v4.8.2 (핫픽스, 브랜치 `hotfix/queue-focus`, 2026-10-25, 프론트만 — 병합 `e1c3dc7`(PR #92), **Vercel 배포 완료**(production `e1c3dc7` READY))**: **플레이어 재생목록 — 곡이 바뀌면 지금 곡 줄로 스크롤.** 현재 곡 줄이 목록 위 12% ~ 아래 88% 밖이면 위 1/3 지점으로 부드럽게 스크롤(사용자가 직접 스크롤한 뒤 4초는 건너뜀, 줄을 눌러 바꾸면 즉시). `player.js focusQueueCur`, 상세 `docs/SPEC.md` 「랜덤플리 오마카세」 아래 · 요약 `docs/VERSION.md`. 실기기 미확인.
 >
 > **v4.8.1 (핫픽스, 브랜치 `hotfix/omakase-listened`, 2026-10-25, 프론트만 — 병합 `b7795fd`(PR #91), **Vercel 배포 완료**(production `b7795fd` READY))**: **랜덤플리 오마카세 — 최근에 들은 곡은 조금만 섞기.**

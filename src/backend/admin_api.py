@@ -783,8 +783,8 @@ def _song_res(res: dict) -> dict:
 
 
 def edit_song(song_id: str, patch: dict | None = None, **fields) -> dict:
-    """곡 수정 — patch(또는 키워드) = title · reading · kind · who · date 중 바꿀 것. 독음을 직접 고치면 LLM 이 덮지 않는다(reading_manual),
-    독음을 비우면 LLM 이 다음 정기 수집에서 다시 쓴다."""
+    """곡 수정 — patch(또는 키워드) = title · reading · kind · who · date · alt · mv 중 바꿀 것. 독음을 직접 고치면 LLM 이 덮지 않는다(reading_manual),
+    독음을 비우면 LLM 이 다음 정기 수집에서 다시 쓴다. alt · mv(v4.8.3) = 영상 ID 목록(URL 도 됨, 빈 목록이면 키 삭제) — 정리 · 검증은 songs.normalize_media."""
     p = dict(patch or {}, **fields)
     res = _song_res(_submit("song_edit", {"op": "edit", "now_iso": _now_iso(), "id": song_id, "patch": p}))
     return _record("edit_song", song_id, ", ".join(sorted(p)), res)

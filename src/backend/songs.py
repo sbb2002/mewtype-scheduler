@@ -16,7 +16,7 @@ RSS 는 쿼터 0 이고, 새 곡이 있을 때만 쓰기가 일어난다.
   - `seen`: 이미 판단 기록을 남긴 「곡명 중복 건너뜀」(같은 건너뜀을 tick 마다 다시 기록하지 않게, 최근 200건).
   - 곡의 `needs_reading`: 독음(LLM)을 아직 못 채운 곡 → 다음 tick 이 재시도(tick 당 3건). `reading_manual`: 운영자가 직접 정한 독음(LLM 이 덮지 않음).
 
-순수 함수: parse_feed_entries / classify / name_key / is_feat / kst_date / find_new_songs / merge_songs / delete_song / unblock / edit_song / add_song / fill_readings / mark_seen. 네트워크는 fetch_feed_entries 뿐.
+순수 함수: parse_feed_entries / classify / name_key / is_feat / kst_date / find_new_songs / merge_songs / delete_song / unblock / edit_song / normalize_media / add_song / fill_readings / mark_seen. 네트워크는 fetch_feed_entries 뿐.
 self-test: python -m src.backend.songs
 """
 from __future__ import annotations
@@ -116,7 +116,8 @@ REJECTED_MAX = 500
 SEEN_MAX = 200
 READING_BATCH = 3                    # tick 당 LLM 독음 호출 상한(신곡 + 재시도 합산)
 REASON_NAME_DUP, REASON_FEAT, REASON_ID_DUP, REASON_REJECTED = "name_dup", "feat", "id_dup", "rejected"
-EDITABLE = ("title", "reading", "kind", "who", "date")
+EDITABLE = ("title", "reading", "kind", "who", "date", "alt", "mv")
+MEDIA_KEYS = ("alt", "mv")   # v4.8.3 — alt: 같은 소리의 다른 음원 영상, mv: MV 영상(영상 ID 목록). singers 는 수정 대상이 아니다(시드 · 데이터 파일에서만)
 
 
 def norm_doc(doc: Optional[dict]) -> dict:
@@ -252,6 +253,49 @@ def validate_fields(patch: dict, *, whos: Optional[list[str]] = None) -> Optiona
     return None
 
 
+def _media_items(v) -> Optional[list[str]]:
+    """alt · mv 입력 → 항목 문자열 목록. 목록 또는 줄바꿈 · 쉼표 · 공백으로 나뉜 문자열만 받는다(그 밖은 None)."""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        parts = re.split(r"[\s,]+", v)
+    elif isinstance(v, (list, tuple)):
+        parts = [str(x) for x in v]
+    else:
+        return None
+    return [p.strip() for p in parts if p and p.strip()]
+
+
+def normalize_media(patch: dict, song: dict) -> tuple[dict, Optional[str]]:
+    """patch 의 alt · mv 를 영상 ID 목록으로 정리한다(v4.8.3). 반환 (정리된 값, 오류 사유). 빈 목록은 [] 로 돌려주고 키 삭제는 호출부가 한다.
+    - URL 도 받는다(parse_video_id). 잘못된 항목 → 오류. 중복은 입력 순서대로 하나만 남긴다.
+    - alt 에서 대표 영상(곡의 id)은 뺀다.
+    - alt 와 mv 에 같은 영상이 있으면 오류. 바뀌지 않는 쪽은 곡에 이미 있는 값과 비교한다."""
+    out: dict = {}
+    for k in MEDIA_KEYS:
+        if k not in patch:
+            continue
+        raw = _media_items(patch[k])
+        if raw is None:
+            return {}, f"{k} 는 영상 ID 목록이어야 합니다"
+        ids: list[str] = []
+        for item in raw:
+            vid = parse_video_id(item)
+            if not vid:
+                return {}, f"영상 ID 가 올바르지 않습니다 ({item})"
+            if vid not in ids:
+                ids.append(vid)
+        if k == "alt":
+            ids = [i for i in ids if i != song.get("id")]
+        out[k] = ids
+    alt = out.get("alt", song.get("alt") or [])
+    mv = out.get("mv", song.get("mv") or [])
+    both = next((i for i in alt if i in mv), None)
+    if both:
+        return {}, f"같은 영상이 음원과 MV 에 둘 다 있습니다 ({both})"
+    return out, None
+
+
 def edit_song(doc: dict, song_id: str, patch: dict, now_iso: str) -> tuple[dict, Optional[dict], Optional[str]]:
     """곡 수정. 독음을 직접 고치면 `reading_manual=True` · `needs_reading` 해제(LLM 이 덮지 않게). 반환 (새 문서, 고친 곡, 오류)."""
     d = norm_doc(doc)
@@ -264,12 +308,20 @@ def edit_song(doc: dict, song_id: str, patch: dict, now_iso: str) -> tuple[dict,
     err = validate_fields(p)
     if err:
         return d, None, err
+    if any(k in p for k in MEDIA_KEYS):
+        media, err = normalize_media(p, s)
+        if err:
+            return d, None, err
+        p.update(media)
     if "title" in p and name_key(p["title"]) != name_key(s.get("title", "")):
         other = next((x for x in d["songs"] if x.get("id") != song_id and name_key(x.get("title", "")) == name_key(p["title"])), None)
         if other:
             return d, None, f"같은 곡명이 이미 있습니다 ({other.get('title')})"
     for k, v in p.items():
-        s[k] = v
+        if k in MEDIA_KEYS and not v:
+            s.pop(k, None)   # 빈 목록 = 그 키를 지운다
+        else:
+            s[k] = v
     if "reading" in p:
         if p["reading"]:
             s["reading_manual"] = True
@@ -460,6 +512,7 @@ if __name__ == "__main__":
     ok(len(entries) == 9 and entries[0]["video_id"] == "jlnbYlVunfg", "RSS 파싱 9건 · 순서 유지")
     ok("Released on: 2026-09-28" in next(e for e in entries if e["video_id"] == "Fp2a-MhCFVw")["description"], "설명(발매일) 파싱")
     existing = json.loads((root / "src" / "frontend" / "assets" / "songs.json").read_text(encoding="utf-8"))["songs"]
+    existing = [x for x in existing if x.get("id") != "zVdR0urFjnc"]   # 唱(v4.8.3 수동 추가)은 시드 64곡 기준 RSS 시험에서 뺀다
     new, skipped = find_new_songs(entries, existing, now_iso="2026-10-06T00:00:00Z")
     names = {s["title"]: s for s in new}
     ok("夢我夢中" in names and names["夢我夢中"]["id"] == "Fp2a-MhCFVw", "새 곡 夢我夢中 감지")
@@ -511,6 +564,20 @@ if __name__ == "__main__":
     ok(edit_song(doc, "없는id", {"title": "x"}, "t")[2] == "목록에 없는 곡입니다", "수정: 없는 곡")
     ok("같은 곡명" in (edit_song(doc, "Fp2a-MhCFVw", {"title": "コハク"}, "t")[2] or ""), "수정: 다른 곡과 곡명이 같아지는 것 거절")
     ok(edit_song(doc, "Fp2a-MhCFVw", {"date": "2026/10/06"}, "t")[2] is not None, "수정: 날짜 형식 검증")
+
+    # 음원 · MV 영상 (v4.8.3) — URL · 잘못된 ID · 중복 · 대표 영상 제거 · 음원/MV 겹침 · 빈 목록 삭제
+    dm, sm, err = edit_song(doc, "Fp2a-MhCFVw", {"mv": "https://youtu.be/_awcveMOhc0\nhttps://www.youtube.com/watch?v=rfA_P10FGQQ, _awcveMOhc0"}, "t")
+    ok(err is None and sm["mv"] == ["_awcveMOhc0", "rfA_P10FGQQ"], "음원 · MV: URL · 줄바꿈/쉼표 입력 → 영상 ID 목록(중복 제거, 입력 순서)")
+    ok(edit_song(doc, "Fp2a-MhCFVw", {"alt": "short"}, "t")[2] == "영상 ID 가 올바르지 않습니다 (short)", "음원 · MV: 잘못된 영상 ID 는 오류")
+    ok(edit_song(doc, "Fp2a-MhCFVw", {"mv": 3}, "t")[2] == "mv 는 영상 ID 목록이어야 합니다", "음원 · MV: 목록도 문자열도 아니면 오류")
+    da, sa, err = edit_song(doc, "Fp2a-MhCFVw", {"alt": ["Fp2a-MhCFVw", "dQw4w9WgXcQ"]}, "t")
+    ok(err is None and sa["alt"] == ["dQw4w9WgXcQ"], "음원 · MV: alt 에서 대표 영상(곡 id)은 뺀다")
+    ok(edit_song(doc, "Fp2a-MhCFVw", {"alt": "dQw4w9WgXcQ", "mv": "dQw4w9WgXcQ"}, "t")[2] == "같은 영상이 음원과 MV 에 둘 다 있습니다 (dQw4w9WgXcQ)", "음원 · MV: 같은 영상이 음원과 MV 에 둘 다면 오류")
+    dk, _, _ = edit_song(doc, "Fp2a-MhCFVw", {"alt": "dQw4w9WgXcQ"}, "t")
+    ok("같은 영상이 음원과 MV 에 둘 다" in (edit_song(dk, "Fp2a-MhCFVw", {"mv": "dQw4w9WgXcQ"}, "t")[2] or ""), "음원 · MV: 바뀌지 않는 쪽(alt)의 기존 값과도 비교")
+    de, se, err = edit_song(dm, "Fp2a-MhCFVw", {"mv": []}, "t")
+    ok(err is None and "mv" not in se, "음원 · MV: 빈 목록이면 그 키를 지운다")
+    ok(dm["songs"] is not doc["songs"] and "mv" not in next(x for x in doc["songs"] if x["id"] == "Fp2a-MhCFVw"), "음원 · MV: 원본 문서는 건드리지 않는다")
 
     d4b, s4b, _ = edit_song(d4, "Fp2a-MhCFVw", {"reading": ""}, "t")
     ok(s4b["reading"] == "" and s4b["needs_reading"] is True and s4b["reading_manual"] is False, "수정: 독음을 비우면 LLM 이 다시 쓰도록 needs_reading")

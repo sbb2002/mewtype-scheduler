@@ -70,17 +70,44 @@ export function normalize(x) {
   return foldHangul(t);
 }
 
-/** 곡 하나에 검색용 필드(독음 한글 · 정규화 문자열)를 붙인다. aliases = 사용자 별칭 배열. */
+// ── 음원 · MV 영상 (v4.8.3) ──────────────────────────────────────────
+// 곡 하나에 영상이 여럿일 수 있다: 대표 음원 `id` · 같은 소리의 다른 음원 `alt` · MV `mv`(영상 ID 목록). 재생 때 그중 하나를 무작위로 고른다.
+const VID_RE = /^[\w-]{11}$/;
+/** 영상 ID 목록 정리 — 배열이 아니면 [], 형식이 아닌 것 · 중복 · skip(대표 id) 은 뺀다. */
+function cleanIds(v, skip) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const x of v) if (typeof x === "string" && VID_RE.test(x) && x !== skip && !out.includes(x)) out.push(x);
+  return out;
+}
+
+/** 곡 하나에 검색용 필드(독음 한글 · 정규화 문자열)를 붙인다. aliases = 사용자 별칭 배열. alt · mv · singers 는 정리해서 붙인다(v4.8.3). */
 export function prepareSong(raw, aliases = []) {
   const reading = raw.reading || "";
   const readingKo = reading ? kanaToHangul(reading) : "";
+  const singers = Array.isArray(raw.singers) ? [...new Set(raw.singers.filter((x) => typeof x === "string" && x))] : [];
   return {
     ...raw,
     reading,
     readingKo,
     aliases: aliases.slice(),
+    alt: cleanIds(raw.alt, raw.id),
+    mv: cleanIds(raw.mv, undefined),
+    singers,
     _n: { title: normalize(raw.title), reading: normalize(reading), readingKo: normalize(readingKo), aliases: aliases.map(normalize) },
   };
+}
+
+/** 재생 후보 영상 ID 를 시도 순서대로(v4.8.3). 음원 = 대표 id + alt 를 무작위로 섞은 순서. MV 모드 = MV 를 섞은 뒤 음원(폴백).
+ *  중복은 한 번만. 곡 객체의 배열은 건드리지 않는다. rand 는 [0,1) 난수(테스트용으로 바꿔 끼운다). */
+export function mediaCandidates(song, mode, rand = Math.random) {
+  const audio = shuffle([song.id, ...(song.alt || [])], rand);
+  const list = mode === "mv" ? [...shuffle([...(song.mv || [])], rand), ...audio] : audio;
+  return [...new Set(list)];
+}
+/** MV 가 하나라도 있는 곡인가 (v4.8.3). */
+export function hasMv(song) {
+  return Array.isArray(song && song.mv) && song.mv.length > 0;
 }
 
 /** 화면에 보여 줄 한글 음차 — 곡명에 일본어(가나·한자)가 있고 독음이 있는 곡만. 영문 곡명 · 독음 없는 곡은 빈 문자열. */

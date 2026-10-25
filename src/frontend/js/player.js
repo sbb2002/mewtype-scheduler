@@ -15,7 +15,7 @@
 
 import { fetchPreview } from "./api.js";
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
-import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder } from "./songs.js";
+import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
 
 const FLOAT_W = 356;                      // 플로팅 프레임 너비(16:9 에서 높이 200 이 되는 값)
@@ -38,6 +38,8 @@ const calm = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: 
 const isPhone = () => !!(window.matchMedia && matchMedia("(max-width: 767px)").matches);
 const restartCls = (e, cls) => { e.classList.remove(cls); void e.offsetWidth; e.classList.add(cls); };   // 같은 애니메이션을 처음부터 다시
 const GRIP_TIP_KEY = "mew.tip.grip-dblclick";   // (마이크로 인터랙션) 손잡이 더블클릭 안내를 본 적 있음 — 이 브라우저에 기록이 남아 있는 동안 다시 안 띄운다
+const MEDIA_KEY = "mew.player.media";           // (v4.8.3) 고른 영상 종류 "audio" | "mv" — 이 브라우저에 남는다
+const MV_TIP_KEY = "mew.tip.mv-mode";           // (v4.8.3) MV 로 처음 바꿀 때 안내를 본 적 있음 — GRIP_TIP_KEY 와 같은 방식
 
 const st = {
   raw: [],
@@ -47,7 +49,10 @@ const st = {
   kind: "all",
   sortBy: "date",
   dir: "desc",
-  curId: null,
+  curId: null,        // 곡 id — 곡을 구별하는 값(재생목록 · 들은 곡 · 선택 상태)
+  vid: null,          // (v4.8.3) 지금 프레임에 올린 영상 ID — YouTube 호출은 전부 이 값으로
+  cands: [],          // (v4.8.3) 이 곡의 남은 재생 후보 영상 ID (vid 제외) — 재생 불가면 여기서 다음 것을 올린다
+  media: readMediaPref(),   // (v4.8.3) "audio" | "mv" — [음원 | MV] 전환 (localStorage mew.player.media)
   playing: false,
   started: false,     // 한 번이라도 재생을 시작했는가 — 팝업을 내린 뒤 플로팅 프레임을 남길지 결정
   popOpen: false,
@@ -97,6 +102,11 @@ function markListened(id) {
   } catch (e) { /* 기록 못 해도 재생은 그대로 */ }
 }
 
+// (v4.8.3) 영상 종류 기억 — 저장소를 못 쓰면 음원으로 시작하고, 고른 값은 이 페이지를 연 동안만 유지된다.
+function readMediaPref() { try { return localStorage.getItem(MEDIA_KEY) === "mv" ? "mv" : "audio"; } catch (e) { return "audio"; } }
+function writeMediaPref(v) { try { localStorage.setItem(MEDIA_KEY, v); } catch (e) { /* 이 페이지를 연 동안만 */ } }
+function mvTipSeen() { try { return localStorage.getItem(MV_TIP_KEY) === "1"; } catch (e) { return false; } }
+
 // ── DOM 헬퍼 ─────────────────────────────────────────────────────────
 function h(tag, props = {}, ...kids) {
   const e = document.createElement(tag);
@@ -118,8 +128,11 @@ const ICONS = {
   next: ["M16 4h2v16h-2zM4 4v16l11-8z"],
   shuffle: ["M3 7h4l10 10h4v2h-5L6 9H3zM3 15h3l2-2 1.4 1.4L7 17H3zM17 7h4v2h-4L14 12l-1.4-1.4z"],
   repeat: ["M7 7h10v3l4-4-4-4v3H5v6h2zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2z"],
+  note: ["M9 18V4.6L20 2.6V16H18V5.9L11 7.2V18Z", "M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z", "M20 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"],   // (v4.8.3) 음표 — 채운 모양 세 조각
+  film: ["M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9.5 9v6l5-3z"],   // (v4.8.3) 화면 + 재생 삼각형(evenodd 로 뚫는다)
   search: null,
 };
+const EVENODD = new Set(["film"]);
 
 function icon(name, cls = "mp-ico") {
   const svg = document.createElementNS(NS, "svg");
@@ -140,6 +153,7 @@ function icon(name, cls = "mp-ico") {
     const p = document.createElementNS(NS, "path");
     p.setAttribute("d", d);
     p.setAttribute("fill", "currentColor");
+    if (EVENODD.has(name)) p.setAttribute("fill-rule", "evenodd");
     svg.append(p);
   }
   if (name === "repeat") {   // 반복 화살표 안의 글자 — 한 곡 "1" · 전체 "A" (paintControls 가 채운다)
@@ -209,12 +223,24 @@ const curSong = () => st.songs.find((s) => s.id === st.curId) || null;
 /** 멤버 표시 — 이름(성 제외)과 색. 색은 타임테이블 레인 색(아바타 평균색)을 그대로 쓴다. 그룹은 소식·합동과 같은 바이올렛. */
 function memberOf(key) {
   if (!key) return null;
-  if (key === "group") return { name: "그룹", color: "var(--color-collab)" };
+  if (key === "group") return { name: "夢限大みゅーたいぷ", color: "var(--color-collab)" };
   const ch = FALLBACK_CHANNELS[key];
   if (!ch) return null;
   const lane = document.querySelector(`.lane[data-channel="${CSS.escape(key)}"]`);
   const c = lane ? getComputedStyle(lane).getPropertyValue("--lane-color").trim() : "";
   return { name: ch.name_ko.split(" ").pop(), color: c || "var(--color-text-muted)" };
+}
+
+/** 부른 사람들(멤버 표시 목록) — singers 가 있으면 그 멤버들, 없으면 who 하나. 멤버가 아니면 빈 배열 (v4.8.3). */
+function memberList(s) {
+  const keys = Array.isArray(s.singers) && s.singers.length ? s.singers : [s.who];
+  return keys.map((k) => memberOf(k)).filter(Boolean);
+}
+/** 재생부 메타용 노드 — 점(멤버마다 하나) + 이름「아라레, 리츠」 + 「 · 」(종류 · 날짜와 잇기). 멤버가 없으면 빈 배열. */
+function memberNodes(s) {
+  const ms = memberList(s);
+  if (!ms.length) return [];
+  return [...ms.map((m) => h("span", { class: "mp-dot", style: `--mc:${m.color}` })), ms.map((m) => m.name).join(", "), " · "];
 }
 
 // ── YouTube IFrame API ───────────────────────────────────────────────
@@ -250,19 +276,19 @@ async function ensurePlayer(videoId, autoplay) {
           ytReady = true;
           const f = yt.getIframe();
           if (f) f.setAttribute("title", "YouTube 플레이어");
-          // 로딩 중에 다른 곡이 골라졌으면 그 곡으로 바꾼다
+          // 로딩 중에 다른 영상이 골라졌으면 그 영상으로 바꾼다
           try {
-            if (st.curId && st.curId !== videoId) wantPlay ? yt.loadVideoById(st.curId) : yt.cueVideoById(st.curId);
-            else if (wantPlay) yt.playVideo();
+            if (st.vid && st.vid !== videoId) loadVid(st.vid, wantPlay);
+            else { watchStart(videoId, wantPlay); if (wantPlay) yt.playVideo(); }
           } catch (e) { /* 자동 재생 거부는 YouTube 쪽 컨트롤로 */ }
           startTick();
         },
         onStateChange: onYtState,
-        onError: (e) => { st.error = { id: st.curId, code: e.data }; st.playing = false; paint(); },
+        onError: () => onUnplayable(),   // (v4.8.3) 오류 코드가 무엇이든 재생 불가 — 후보 · 안내 · 다음 곡으로 처리
       },
     });
   } catch (e) {
-    st.error = { id: st.curId, code: "api" };
+    st.error = { id: st.vid, code: "api" };   // 플레이어 API 로드 실패만 「YouTube 에서 보기」 오류로 남긴다
     paint();
   }
 }
@@ -270,19 +296,15 @@ async function ensurePlayer(videoId, autoplay) {
 function onYtState(e) {
   const S = window.YT.PlayerState;
   if (e.data === S.PLAYING || e.data === S.BUFFERING) { st.playing = true; st.started = true; st.error = null; }
+  if (e.data === S.PLAYING) { skipRun = 0; watchStop(); }   // 실제로 재생이 시작됐을 때만 감시 해제 — 프리미어 대기 영상도 잠깐 BUFFERING 을 거친다(2026-10-25 실측)
   if (e.data === S.PLAYING && st.curId && listenedId !== st.curId) { listenedId = st.curId; markListened(st.curId); }   // (v4.8.1) 곡이 재생되는 시점에 기록
   else if (e.data === S.PAUSED || e.data === S.CUED) st.playing = false;
   else if (e.data === S.ENDED) {
     if (st.repeat === "one") { yt.seekTo(0, true); yt.playVideo(); return; }
-    if (st.shuffle && st.qi >= 0) {   // 셔플 — 아직 안 들은 곡 중 무작위, 다 들었으면 전체 반복일 때만 새 바퀴
-      const n = pickShuffle();
-      if (n >= 0) { playQueueAt(n); return; }
-      if (st.repeat === "all") { playQueueAt(pickShuffle(true)); return; }
-    } else if (st.qi >= 0 && st.qi + 1 < st.queue.length) { playQueueAt(st.qi + 1); return; }   // 재생목록의 다음 곡
-    if (st.qi >= 0 && st.repeat === "all") { playQueueAt(0); return; }                    // 마지막 뒤에 1번으로
+    if (nextInQueue()) return;   // 재생목록의 다음 곡(셔플 · 전체 반복 포함). 재생목록 밖이면 멈춘다
     st.playing = false;
     st.pos = 0;
-    yt.cueVideoById(st.curId);   // 처음 화면으로 되돌려 멈춘다 — 끝 화면의 추천 영상으로 넘어가지 않게
+    yt.cueVideoById(st.vid);   // 처음 화면으로 되돌려 멈춘다 — 끝 화면의 추천 영상으로 넘어가지 않게
   }
   paint();
 }
@@ -301,6 +323,9 @@ function startTick() {
 /** 곡 선택. autoplay=true 면 바로 재생(사용자 조작 직후에만), false 면 첫 화면만 불러 둔다. */
 /** qi = 이 곡의 재생목록 위치(재생목록에서 고른 경우). 아니면 -1. */
 function selectSong(id, autoplay, qi = -1) {
+  if (!skipping) skipRun = 0;   // 사용자가 고른 곡이면 재생 불가 연속 넘김을 처음부터 다시 센다
+  hideSkip();
+  deadId = null;
   st.curId = id;
   st.qi = qi;
   listenedId = null;   // 새로 고른 곡은 재생이 시작될 때 다시 기록한다
@@ -309,9 +334,168 @@ function selectSong(id, autoplay, qi = -1) {
   st.error = null;
   if (autoplay) st.started = true;
   wantPlay = autoplay;
-  if (!yt) ensurePlayer(id, autoplay);
-  else if (ytReady) { try { autoplay ? yt.loadVideoById(id) : yt.cueVideoById(id); } catch (e) { /* 오류는 onError 로 */ } }
+  const song = st.songs.find((x) => x.id === id);
+  const cands = song ? mediaCandidates(song, st.media) : [id];   // (v4.8.3) 음원 · MV 후보를 시도 순서대로 — 고를 때마다 무작위
+  st.cands = cands.slice(1);
+  st.vid = cands[0];   // 플레이어가 준비되기 전에 골라도 onReady 가 이 영상으로 맞춘다
+  if (!yt) ensurePlayer(cands[0], autoplay);
+  else if (ytReady) loadVid(cands[0], autoplay);
   paint();
+}
+
+// ── (v4.8.3) 영상 올리기 · 재생 불가 처리 ─────────────────────────────
+const WATCH_MS = 8000;   // 자동 재생을 요청한 뒤 이 안에 재생이 없고 길이도 0 이면 재생 불가로 본다 (그 밖의 멈춤)
+const WATCH_FAST_MS = 2000;   // 프리미어 대기 영상(getVideoData().isPremiere · 길이 0)은 2초에 판정 — 운영자 결정 2026-10-25(8초는 너무 길다)
+const SKIP_MS = 3000;    // 재생 불가 안내를 보여 주는 시간 — 지나면 다음 곡
+let watch = null;        // {vid, timer} — 재생 불가 감시 중인 영상
+let skipRun = 0;         // 재생 불가로 연속 넘긴 횟수 — 곡 수를 넘으면 멈춘다(반복 목록이 전부 재생 불가일 때 무한 순환 방지)
+let skipping = false;    // 재생 불가 뒤 넘기는 중 — 이때의 selectSong 은 skipRun 을 지우지 않는다
+let skipTimer = 0;
+let deadId = null;       // 불러 두기만 했는데 후보가 모두 재생 불가였던 곡 id — ▶ 를 누르면 다시 골라(자동 재생) 안내 · 넘김을 탄다
+
+function watchStop() { if (watch) { clearTimeout(watch.fast); clearTimeout(watch.timer); watch = null; } }
+/** 자동 재생을 요청해 올린 영상을 지켜본다 — 2초에 프리미어 대기 판정, WATCH_MS 에 일반 판정. cue 만 하는 경우(autoplay=false)는 지키지 않는다. */
+function watchStart(vid, autoplay) {
+  watchStop();
+  if (!autoplay) return;
+  const w = { vid, fast: 0, timer: 0 };
+  w.fast = setTimeout(() => watchCheck(w, true), WATCH_FAST_MS);
+  w.timer = setTimeout(() => watchCheck(w, false), WATCH_MS);
+  watch = w;
+}
+function watchCheck(w, fast) {
+  if (watch !== w) return;
+  if (!fast) watch = null;
+  if (st.vid !== w.vid || !yt || !ytReady) return;
+  let state, dur, premiere;
+  try { state = yt.getPlayerState(); dur = yt.getDuration() || 0; premiere = !!(yt.getVideoData() || {}).isPremiere; } catch (e) { return; }
+  const S = window.YT.PlayerState;
+  if (state === S.PLAYING || dur > 0) return;
+  if (!fast || premiere) onUnplayable();   // 재생을 시작 못 했고 길이도 없음 — 프리미어 대기면 2초, 그 밖은 8초(실측: 상태 -1 · 길이 0 · isPremiere)
+}
+
+/** 영상 하나를 프레임에 올린다. autoplay 면 재생을 요청하고 재생 불가 감시를 건다. */
+function loadVid(vid, autoplay) {
+  st.vid = vid;
+  watchStart(vid, autoplay);
+  try { autoplay ? yt.loadVideoById(vid) : yt.cueVideoById(vid); } catch (e) { /* 오류는 onError 로 */ }
+}
+
+/** 재생 불가 — 오류(onError) 또는 감시 실패. 남은 후보가 있으면 문구 없이 다음 후보를 올리고, 다 떨어지면 안내 뒤 다음 곡(넘어갈 곡이 없으면 멈춘다). */
+function onUnplayable() {
+  watchStop();
+  if (st.cands.length) { loadVid(st.cands.shift(), wantPlay); paint(); return; }
+  st.playing = false;
+  st.pos = 0;
+  st.dur = 0;
+  if (!wantPlay) { deadId = st.curId; paint(); return; }   // 불러 두기만 한 곡(첫 화면 등) — 사용자가 틀기 전엔 안내 · 넘김 없이 둔다(▶ 를 누르면 togglePlay 가 다시 고른다)
+  const more = st.qi >= 0 ? queueHasNext() : listHasNext();
+  showSkip(more ? "이 곡은 지금 재생이 불가능해요… 다음 곡으로 넘어갈게요!" : "이 곡은 지금 재생이 불가능해요.");
+  skipTimer = setTimeout(() => { skipTimer = 0; hideSkip(); if (more) skipAway(); }, SKIP_MS);
+  paint();
+}
+/** 재생 불가 안내 뒤 다음 곡으로 — 재생목록 안이면 재생목록 규칙, 밖이면 목록 다음 곡. 연속으로 곡 수만큼 넘겼으면 멈춘다. */
+function skipAway() {
+  skipRun += 1;
+  if (skipRun > (st.qi >= 0 ? st.queue.length : view().length)) return;   // 재생목록 안이면 재생목록 곡 수, 밖이면 목록 곡 수만큼 넘겼으면 멈춘다
+  skipping = true;
+  try {
+    if (st.qi >= 0) nextInQueue();
+    else { const id = listNext(); if (id) selectSong(id, true); }
+  } finally { skipping = false; }
+}
+/** 재생목록 안에서 다음 곡으로 넘어간다(셔플 · 다음 · 전체 반복). 넘어갔으면 true. 재생목록 밖(qi < 0)이면 false. */
+function nextInQueue() {
+  if (st.qi < 0) return false;
+  if (st.shuffle) {   // 아직 안 들은 곡 중 무작위, 다 들었으면 전체 반복일 때만 새 바퀴
+    const n = pickShuffle();
+    if (n >= 0) { playQueueAt(n); return true; }
+    if (st.repeat === "all") { playQueueAt(pickShuffle(true)); return true; }
+    return false;
+  }
+  if (st.qi + 1 < st.queue.length) { playQueueAt(st.qi + 1); return true; }   // 재생목록의 다음 곡
+  if (st.repeat === "all") { playQueueAt(0); return true; }                    // 마지막 뒤에 1번으로
+  return false;
+}
+/** nextInQueue 가 넘어갈 곡이 있는가 (고르지 않고 확인만). */
+function queueHasNext() {
+  if (st.qi < 0) return false;
+  if (st.shuffle) return st.repeat === "all" || st.queue.some((_, k) => k !== st.qi && !st.played.has(k));
+  return st.qi + 1 < st.queue.length || st.repeat === "all";
+}
+/** 재생목록 밖 — 목록에서 지금 곡 다음 곡(셔플이면 지금 곡 말고 무작위). 없으면 null. */
+function listNext() {
+  const list = view();
+  if (!listHasNext()) return null;
+  if (st.shuffle) { const others = list.filter((s) => s.id !== st.curId); return others[Math.floor(Math.random() * others.length)].id; }
+  const i = list.findIndex((s) => s.id === st.curId);
+  return list[(i + 1) % list.length].id;
+}
+function listHasNext() { return view().some((s) => s.id !== st.curId); }
+
+/** 재생 불가 안내 — 플로팅 창이면 창 바로 위에, 그 밖이면 재생부 컨트롤 아래에 띄운다. */
+function showSkip(text) {
+  if (!el.skip) return;
+  el.skipT.textContent = text;
+  el.skip.hidden = false;
+  placeSkip();
+  restartCls(el.skip, "is-on");
+}
+function hideSkip() {
+  clearTimeout(skipTimer);
+  skipTimer = 0;
+  if (el.skip) { el.skip.hidden = true; el.skip.classList.remove("is-on"); }
+}
+/** 안내 자리 — 플로팅 창이면 body 에 고정 위치로(손잡이 위 8px, 영상 위는 덮지 않는다), 그 밖에서는 재생부 안 흐름(.mp-err 위쪽). */
+function placeSkip() {
+  if (!el.skip) return;
+  if (el.frame.classList.contains("is-float") && !el.frame.hidden) {
+    if (el.skip.parentElement !== document.body) document.body.append(el.skip);
+    const g = el.grip.getBoundingClientRect(), w = el.skip.offsetWidth;
+    el.skip.classList.add("is-fixed");
+    el.skip.style.left = `${clamp(g.left, 8, Math.max(8, innerWidth - w - 8))}px`;
+    el.skip.style.bottom = `${innerHeight - g.top + 8}px`;
+  } else if (el.skip.parentElement !== el.stage) {
+    el.stage.insertBefore(el.skip, el.err);
+    el.skip.classList.remove("is-fixed");
+    el.skip.style.left = "";
+    el.skip.style.bottom = "";
+  }
+}
+
+/** [음원 | MV] 전환 — 저장한다. 영상이 재생 중이거나 중간까지 들었으면 **그 영상은 그대로** 두고 「다음 영상부터 …로 재생됩니다.」를 띄운다(운영자 결정 2026-10-25).
+ *  아직 틀지 않은 곡(처음 화면)이면 지금 곡을 그 모드로 바로 다시 불러 둔다(MV 가 없는 곡이면 그대로). MV 로 처음 바꿀 때는 MV 안내를 한 번 함께 보인다. */
+let mvTipShown = false, mvTipTimer = 0;
+function setMedia(mode) {
+  if (mode === st.media) return;
+  st.media = mode;
+  writeMediaPref(mode);
+  const first = mode === "mv" && !mvTipShown && !mvTipSeen();   // 처음 MV 로 바꿀 때 한 번만 안내
+  if (first) {
+    mvTipShown = true;
+    try { localStorage.setItem(MV_TIP_KEY, "1"); } catch (e) { /* 이 페이지를 연 동안만 */ }
+  }
+  const HINT = "MV가 있는 곡은 MV로, 없는 곡은 음원으로 보여줘요";
+  const s = curSong();
+  if (s && (st.playing || st.pos > 0)) {
+    showMediaTip(`다음 영상부터 ${mode === "mv" ? "MV로" : "음원으로"} 재생됩니다.`, first ? HINT : "", first ? 4500 : 2600);
+    paint();
+    return;
+  }
+  if (first) showMediaTip(HINT, "", 4500);
+  if (s && hasMv(s)) selectSong(st.curId, false, st.qi);
+  else paint();
+}
+/** 전환 버튼 아래 말풍선 — main(굵게) + sub(작게, 없으면 숨김)를 ms 동안. */
+function showMediaTip(main, sub, ms) {
+  el.mvTipMain.textContent = main;
+  el.mvTipSub.textContent = sub;
+  el.mvTipSub.hidden = !sub;
+  el.mvTip.style.animationDuration = `${ms}ms`;
+  el.mvTip.hidden = false;
+  restartCls(el.mvTip, "is-on");
+  clearTimeout(mvTipTimer);
+  mvTipTimer = setTimeout(() => { el.mvTip.classList.remove("is-on"); el.mvTip.hidden = true; }, ms);
 }
 
 function togglePlay() {
@@ -319,9 +503,10 @@ function togglePlay() {
   // 재생목록이 있는데 지금 곡이 그 안에 없으면 1번부터 시작한다(멈춰 있을 때만 — 재생 중 일시정지는 그대로)
   if (st.queue.length && !st.playing && st.qi < 0) { playQueueAt(0); return; }
   st.started = true;
+  if (deadId && deadId === st.curId) { selectSong(st.curId, true, st.qi); return; }   // (v4.8.3) 불러 둘 때 재생 불가였던 곡 — 다시 골라 후보 · 안내 · 넘김을 탄다
   if (yt && ytReady) {
     if (st.playing) yt.pauseVideo();
-    else yt.playVideo();
+    else { wantPlay = true; watchStart(st.vid, true); yt.playVideo(); }   // (v4.8.3) 처음 화면만 불러 둔 영상을 ▶ 로 틀 때도 재생 불가 감시 · 폴백 후보도 자동 재생
   } else {
     selectSong(st.curId, true);
   }
@@ -544,6 +729,16 @@ function build() {
   );
   el.omaWrap = h("div", { class: "mp-oma-wrap" }, el.omaBub, el.oma);
   el.err = h("div", { class: "mp-err", role: "status", hidden: true });
+  el.skipIco = h("span", { class: "mp-skip__ico", "aria-hidden": "true", text: "!" });   // (v4.8.3) 재생 불가 안내 — 자리는 placeSkip 이 정한다
+  el.skipT = h("span", { class: "mp-skip__t" });
+  el.skip = h("div", { class: "mp-skip", role: "status", hidden: true }, el.skipIco, el.skipT, h("i", { class: "mp-skip__bar", "aria-hidden": "true" }));
+  // (v4.8.3) [음원 | MV] 전환 — 재생부 곡 정보 줄 오른쪽
+  el.mAudio = h("button", { type: "button", class: "mp-media__b", on: { click: () => setMedia("audio") } }, icon("note"), h("span", { text: "음원" }));
+  el.mMv = h("button", { type: "button", class: "mp-media__b", on: { click: () => setMedia("mv") } }, icon("film"), h("span", { text: "MV" }));
+  el.media = h("div", { class: "mp-media", role: "group", "aria-label": "재생할 영상 종류" }, el.mAudio, el.mMv);
+  el.mvTipMain = h("span");
+  el.mvTipSub = h("small", { hidden: true });
+  el.mvTip = h("div", { class: "mp-mvtip", role: "status", hidden: true }, el.mvTipMain, el.mvTipSub);   // 전환 안내 · MV 첫 안내 (showMediaTip)
   el.qCount = h("span", { class: "mp-q__count" });
   el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
   el.qList = h("ol", { class: "mp-q__list" });
@@ -558,7 +753,7 @@ function build() {
   );
   el.stage = h("section", { class: "mp-stage" },
     el.slot,
-    h("div", { class: "mp-song" }, el.sTitle, el.sMeta, el.sKo),
+    h("div", { class: "mp-song" }, h("div", { class: "mp-song__txt" }, el.sTitle, el.sMeta, el.sKo), el.media, el.mvTip),
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
     h("div", { class: "mp-ctl" }, el.ctlTip, h("div", { class: "mp-grp" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat), el.omaWrap),
     el.err,
@@ -704,14 +899,12 @@ function paintStage() {
   el.sMeta.replaceChildren();
   el.sKo.textContent = s ? displayKo(s) : "";
   if (s) {
-    const m = memberOf(s.who);
-    if (m) el.sMeta.append(h("span", { class: "mp-dot", style: `--mc:${m.color}` }), `${m.name} · `);
-    el.sMeta.append(`${KIND_LABEL[s.kind] || s.kind} · ${s.date}`);
+    el.sMeta.append(...memberNodes(s), `${KIND_LABEL[s.kind] || s.kind} · ${s.date}`);
   }
   el.err.hidden = !st.error;
   el.err.replaceChildren();
   if (st.error) {
-    const url = `https://youtu.be/${st.error.id || st.curId}`;
+    const url = `https://youtu.be/${st.error.id || st.vid}`;
     el.err.append(
       st.error.code === "api" ? "YouTube 플레이어를 불러오지 못했습니다. " : "이 영상은 임베드 재생이 제한되어 있을 수 있습니다. ",
       h("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: "YouTube 에서 보기" }),
@@ -735,6 +928,8 @@ function paintControls() {
   el.bPlay.setAttribute("aria-label", st.playing ? "일시정지" : "재생");
   el.oma.disabled = st.omaBusy || !st.songs.length;
   el.bShuffle.setAttribute("aria-pressed", String(st.shuffle));
+  el.mAudio.setAttribute("aria-pressed", String(st.media !== "mv"));   // (v4.8.3) [음원 | MV]
+  el.mMv.setAttribute("aria-pressed", String(st.media === "mv"));
   const rp = st.repeat;
   el.bRepeat.setAttribute("aria-pressed", String(rp !== "off"));
   const lab = rp === "off" ? "반복 (꺼짐) — 누르면 한 곡 반복" : rp === "one" ? "한 곡 반복 (켜짐) — 누르면 전체 반복" : "전체 반복 (켜짐) — 누르면 끄기";
@@ -842,12 +1037,13 @@ function newPill() {
 
 function songRow(s, i, q) {
   const cur = s.id === st.curId;
-  const m = memberOf(s.who);
+  const ms = memberList(s);
   const sub = h("span", { class: "mp-item__sub" },
-    m ? h("span", { class: "mp-dot", style: `--mc:${m.color}` }) : null,
-    m ? h("span", { text: m.name }) : null,
+    ...ms.map((m) => h("span", { class: "mp-dot", style: `--mc:${m.color}` })),
+    ms.length ? h("span", { text: ms.map((m) => m.name).join(", ") }) : null,
     h("span", { text: KIND_LABEL[s.kind] || s.kind }),
     h("span", { class: "mp-mono", text: s.date }),
+    hasMv(s) ? h("span", { class: "mp-mvtag", text: "MV" }) : null,   // (v4.8.3) MV 가 있는 곡 표시 — 재생목록 줄에는 안 붙인다
   );
   const qns = st.queue.flatMap((x, k) => (x === s.id ? [k + 1] : []));   // 재생목록에서의 번호들(같은 곡이 여러 번일 수 있다)
   if (qns.length) {   // 글자 수 상한: 1번이면 「N번」, 여럿이면 「N번 외 K」(N = 가장 앞 번호). 전체 번호는 툴팁 · 접근성 이름으로만
@@ -897,6 +1093,7 @@ function layoutFrame() {
     // 넣은 상태면 가장자리 밖 자리(tuckedLeft). cssText 는 transform 도 지운다 — 미는 중 transform 은 호출한 쪽이 다시 준다
     f.style.cssText = st.fpos ? `left:${st.tuck ? tuckedLeft(st.tuck) : st.fpos.x}px;top:${st.fpos.y}px;right:auto;bottom:auto` : "";
   }
+  placeSkip();   // (v4.8.3) 재생 불가 안내도 프레임을 따라간다
 }
 
 // ── PC 하단 도크 ─────────────────────────────────────────────────────
@@ -1382,7 +1579,9 @@ export function closePlayer() {
 /** 플로팅 프레임의 ✕ — 재생을 멈추고 프레임을 치운다. */
 function dismissFrame() {
   clearTuck();   // 넣은 상태였으면 풀고 — 프레임은 곧 숨는다
-  if (yt && ytReady) { try { yt.stopVideo(); } catch (e) { /* 무시 */ } if (st.curId) { try { yt.cueVideoById(st.curId); } catch (e) { /* 무시 */ } } }
+  watchStop();
+  hideSkip();
+  if (yt && ytReady) { try { yt.stopVideo(); } catch (e) { /* 무시 */ } if (st.vid) { try { yt.cueVideoById(st.vid); } catch (e) { /* 무시 */ } } }
   st.started = false;
   st.playing = false;
   paint();
