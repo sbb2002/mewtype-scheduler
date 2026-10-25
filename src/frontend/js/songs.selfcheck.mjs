@@ -3,7 +3,7 @@
  * node songs.selfcheck.mjs 로 실행. 프레임워크 없음.
  */
 import { readFileSync } from "node:fs";
-import { isNewSong, hasNewSong, displayKo, kanaToHangul, normalize, prepareSong, matches, viewSongs, matchRange, kstDate, daysBetween, omakaseOrder } from "./songs.js";
+import { isNewSong, hasNewSong, displayKo, kanaToHangul, normalize, prepareSong, matches, viewSongs, matchRange, kstDate, daysBetween, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 
 let n = 0;
 function assert(cond, msg) {
@@ -30,8 +30,8 @@ assert(normalize("유키") === normalize("유기"), "한글 초성 평음화 (�
 
 // ── 검색 ──
 const songs = JSON.parse(readFileSync(new URL("../assets/songs.json", import.meta.url), "utf8")).songs;
-assert(songs.length === 64, "곡 64개");
-assert(new Set(songs.map((s) => s.id)).size === 64, "video_id 중복 없음");
+assert(songs.length === 65, "곡 65개 (v4.8.3 唱 추가)");
+assert(new Set(songs.map((s) => s.id)).size === 65, "video_id 중복 없음");
 const prep = songs.map((s) => prepareSong(s, s.title === "ZEAL of proud" ? ["질오브"] : []));
 const find = (q) => prep.filter((s) => matches(s, q)).map((s) => s.title);
 assert(find("ゆきとき").includes("ユキトキ"), "가나 독음으로 검색");
@@ -41,7 +41,7 @@ assert(find("유기도기").includes("ユキトキ"), "한글 독음 표기 차�
 assert(find("마요나카").includes("真夜中遊園地"), "한글 독음 부분 일치");
 assert(find("질오브").includes("ZEAL of proud"), "사용자 별칭으로 검색");
 assert(find("zeal").includes("ZEAL of proud"), "영문 대소문자 무시");
-assert(find("").length === 64, "빈 검색어 = 전부");
+assert(find("").length === 65, "빈 검색어 = 전부");
 assert(find("zzzzqq").length === 0, "일치 없음");
 assert(find("solo").length === 0 || !find("solo").some((t) => !t.toLowerCase().includes("solo")), "종류 텍스트는 검색 대상 아님");
 
@@ -68,8 +68,8 @@ assert(viewSongs(prep, { ...opts, dir: "asc" })[0].date === "2023-11-28", "날�
 assert(viewSongs(prep, { ...opts, kind: "cover" }).every((s) => s.kind === "cover"), "종류 필터");
 assert(prep.every((s) => s.kind === "cover" || s.kind === "original"), "종류는 original / cover 둘뿐(solo 없음)");
 const byName = viewSongs(prep, { ...opts, sortBy: "name", dir: "asc" });
-assert(byName.length === 64, "이름순 정렬은 곡을 잃지 않음");
-assert(prep.length === 64 && prep[0].date === "2023-11-28", "원본 배열은 건드리지 않음");
+assert(byName.length === 65, "이름순 정렬은 곡을 잃지 않음");
+assert(prep.length === 65 && prep[0].date === "2023-11-28", "원본 배열은 건드리지 않음");
 
 // ── 신곡 필터 ──
 const ymd = (daysAgo) => new Date(Date.now() + 9 * 3600e3 - daysAgo * 86400e3).toISOString().slice(0, 10);   // KST 날짜
@@ -132,5 +132,31 @@ const one = omakaseOrder(["a", "b", "c", "d"], { c: TODAY, d: TODAY }, TODAY, { 
 assert(one.length === 4 && ["a", "b"].includes(one[0]) && ["c", "d"].includes(one[1]) && ["a", "b"].includes(one[2]), "x 100% — A 2곡 사이 틈 1칸에 B 1곡, 남은 B 는 뒤");
 const zero = omakaseOrder(["a", "b", "c", "d"], { c: TODAY, d: TODAY }, TODAY, { x: 0, rand: rnd });
 assert(["a", "b"].includes(zero[0]) && ["a", "b"].includes(zero[1]), "x 0% — A 를 다 들은 뒤에 B");
+
+// ── 음원 · MV 영상 (v4.8.3) ──
+const seq = (...v) => { let i = 0; return () => v[i++ % v.length]; };   // 결정적 난수
+const sFull = prepareSong({ id: "AAAAAAAAAAA", title: "t", alt: ["BBBBBBBBBBB", "AAAAAAAAAAA", "bad", "BBBBBBBBBBB", 3], mv: ["CCCCCCCCCCC", "not-an-id", "CCCCCCCCCCC"], singers: ["arale", "arale", 5, ""] });
+assert(JSON.stringify(sFull.alt) === '["BBBBBBBBBBB"]', "alt: 대표 id · 형식 아닌 것 · 중복 제거");
+assert(JSON.stringify(sFull.mv) === '["CCCCCCCCCCC"]', "mv: 형식 아닌 것 · 중복 제거");
+assert(JSON.stringify(sFull.singers) === '["arale"]', "singers: 문자열만 · 중복 제거");
+const sNone = prepareSong({ id: "AAAAAAAAAAA", title: "t", alt: "x", mv: 5, singers: "arale" });
+assert(sNone.alt.length === 0 && sNone.mv.length === 0 && sNone.singers.length === 0, "배열이 아니면 []");
+assert(mediaCandidates(sFull, "audio", () => 0).length === 2 && mediaCandidates(sFull, "audio", () => 0).includes("BBBBBBBBBBB"), "음원 모드 = 대표 + alt 섞기");
+const audioOnly = mediaCandidates(sFull, "audio", () => 0.99);
+assert(audioOnly.length === 2 && !audioOnly.includes("CCCCCCCCCCC"), "음원 모드에 MV 는 없다");
+const mvFirst = mediaCandidates(sFull, "mv", () => 0.99);
+assert(mvFirst[0] === "CCCCCCCCCCC" && mvFirst.slice(1).sort().join() === ["AAAAAAAAAAA", "BBBBBBBBBBB"].sort().join(), "MV 모드 = MV 먼저, 음원이 폴백으로 뒤에");
+const noMv = prepareSong({ id: "DDDDDDDDDDD", title: "t" });
+assert(JSON.stringify(mediaCandidates(noMv, "mv", () => 0)) === '["DDDDDDDDDDD"]', "MV 없는 곡 MV 모드 = 음원만");
+assert(hasMv(sFull) && !hasMv(noMv), "hasMv: MV 가 하나라도 있으면 true");
+const dup = prepareSong({ id: "EEEEEEEEEEE", title: "t", mv: ["EEEEEEEEEEE"] });
+assert(mediaCandidates(dup, "mv", () => 0).length === 1, "MV 가 대표 id 와 같으면 후보는 한 번만");
+const before = JSON.stringify(sFull.mv);
+mediaCandidates(sFull, "mv", seq(0, 0.5));
+assert(JSON.stringify(sFull.mv) === before, "후보 계산은 곡 배열을 건드리지 않는다");
+const multi = prepareSong({ id: "FFFFFFFFFFF", title: "t", alt: ["GGGGGGGGGGG"], mv: ["HHHHHHHHHHH", "IIIIIIIIIII"] });
+const firsts = new Set();
+for (let k = 0; k < 200; k++) firsts.add(mediaCandidates(multi, "mv", Math.random)[0]);
+assert(firsts.size === 2 && !firsts.has("GGGGGGGGGGG"), "MV 가 여럿이면 매번 무작위로 첫 후보를 고른다 (음원은 MV 뒤)");
 
 console.log(`\n${n}개 통과`);

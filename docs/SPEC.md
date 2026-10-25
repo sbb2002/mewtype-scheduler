@@ -1428,6 +1428,30 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 9. **멤버 표시 분류 규칙**: 곡의 `who` 는 업로드 채널명으로 정한다(멤버 이름 일·영문 모두 인식, 「`Yuno Sengoku - Topic`」 같은 자동 생성 아티스트 채널 포함, 그 밖은 `group`). 멤버별 곡 수는 그룹 28 · 아라레 11 · 유노 8 · 미야코 7 · 리츠 6 · 노노카 5.
    한 곡이 여러 멤버의 곡인지(참여 멤버)는 데이터에 없다.
 
+#### 음원 · MV 전환 (v4.8.3, 2026-10-25 — 브랜치 `hotfix/player-mv`, 병합 · 배포 전, 실기기 미확인)
+
+- **데이터 필드**(`songs.json` 곡 항목, 모두 선택): `alt`(같은 소리의 다른 음원 영상 ID 목록 — 앨범 · c/w 수록본) · `mv`(MV 영상 ID 목록) · `singers`(부른 멤버 키 목록 — 여럿이 부른 곡만). `id` 는 여전히 **곡을 구별하는 값**(재생목록 · 들은 곡 기록 · 선택 상태). 영상 ID = `^[\\w-]{11}$`.
+  `songs.js prepareSong` 이 배열이 아니면 `[]`, 형식이 아닌 ID · 중복을 빼고, `alt` 에서는 대표 `id` 도 뺀다. `singers` 는 문자열만.
+- **후보 순서**(`songs.js mediaCandidates(song, mode, rand)`): 음원 모드 = [대표 `id`, `alt…`] 을 섞은 순서. MV 모드 = `mv` 를 섞은 뒤 음원 순서(폴백). 두 경우 모두 중복은 한 번만. 고를 때마다(곡을 누를 때 · 다시 고를 때) 무작위.
+  첫 후보 = `st.vid`(지금 프레임의 영상), 나머지 = `st.cands`. `st.curId`(곡 id)는 곡 식별용으로 그대로 — YouTube 호출(`loadVideoById` · `cueVideoById` · `seekTo` · 오류 링크 · 프레임 ✕)은 전부 `st.vid`.
+- **[음원 | MV] 전환**: 재생부 곡 정보 줄(`.mp-song`) 오른쪽 `div.mp-media[role=group]` 안 `button.mp-media__b[aria-pressed]` 2개(음표 · 화면+재생 아이콘). 누르면 `st.media` 저장(localStorage `mew.player.media` = `audio` | `mv`, 기본 `audio`).
+  지금 곡에 MV 가 있고(`hasMv`) 모드가 실제로 바뀌면 `selectSong(st.curId, st.playing, st.qi)` — 처음부터 다시 고르고, 재생 중이었으면 계속 재생. MV 없는 곡이면 프레임은 그대로.
+- **MV 로 처음 바꿀 때 안내**: localStorage `mew.tip.mv-mode`(「1」)를 한 번만 본다(`GRIP_TIP_KEY` 와 같은 방식 — 저장소를 못 쓰면 이 페이지를 연 동안 한 번). `div.mp-mvtip[role=status]` 「MV가 있는 곡은 MV로, 없는 곡은 음원으로 보여줘요」 — 전환 버튼 아래 오른쪽 정렬, 위로 꼬리, 4.5초 뒤 사라짐, `pointer-events: none`.
+- **재생 불가 판정**(`player.js onUnplayable`): ① 원인 = (a) `onError` 전부(코드 2 · 5 · 100 · 101 · 150 등) (b) 감시 타이머 — 자동 재생을 요청해 올린 뒤(곡 선택 · ▶ 버튼) **8초**(`WATCH_MS`) 안에 PLAYING 이 한 번도 없고, 8초 시점에 PLAYING 이 아니며 `getDuration()` 이 0 이면(프리미어 대기 화면). **BUFFERING 으로는 감시를 풀지 않는다** — 프리미어 대기 영상도 잠깐 BUFFERING 을 거친다(2026-10-25 실측: 夢我夢中 MV `c_T1QlWWsOE` = 상태 -1 · 길이 0 · `getVideoData().isPremiere` true). cue 만 하는 경우는 감시 안 함. 영상이 바뀌면 타이머는 취소(`watch` 토큰 비교).
+  **불러 두기만 한 곡**(페이지를 열 때 첫 곡 등, autoplay=false)은 후보가 모두 재생 불가여도 안내 · 넘김 없이 둔다(`deadId`) — 사용자가 ▶ 를 누르면 그 곡을 자동 재생으로 다시 골라 아래 ② · ③ 을 탄다. (전엔 첫 화면에서 재생 불가가 나면 누르지도 않은 다음 곡이 자동 재생됐다 — 검증 중 발견해 수정.)
+  ② `st.cands` 가 남았으면 다음 후보를 `st.vid` 로 **문구 없이** 다시 올린다(같은 autoplay). ③ 다 떨어지면 안내 → **3초**(`SKIP_MS`) 뒤 다음 곡. 다음 곡은 ENDED 와 같은 `nextInQueue()`(재생목록 안: 셔플 · 다음 · 전체 반복) — **한 곡 반복은 무시**. 재생목록 밖(`qi < 0`)이면 목록의 다음 곡(셔플이면 지금 곡 말고 무작위 — 이전 · 다음 버튼의 목록 규칙과 같다). 넘어갈 곡이 없으면 「이 곡은 지금 재생이 불가능해요.」만 3초 보이고 멈춘다.
+  ④ `st.error` · `.mp-err`(「YouTube 에서 보기」)는 `code === "api"`(플레이어 API 로드 실패)일 때만.
+  연속으로 넘긴 횟수 `skipRun` 이 곡 수(재생목록 안이면 재생목록 곡 수, 밖이면 목록 곡 수)를 넘으면 멈춘다 — 전체 반복 재생목록이 전부 재생 불가일 때 무한 순환 방지. 재생이 시작되면 0 으로 돌아가고, 사용자가 곡을 직접 고르면 다시 센다.
+- **검증(2026-10-25, 로컬 서버 + Chrome, 운영 곡 목록에 스크립트를 적용한 임시 데이터)**: PC 도크 · 모바일 시트 · 플로팅 창 · 밝게 테마. MV 모드 夢我夢中 → 프리미어 화면 8초 → 음원 `Fp2a-MhCFVw` 재생 · MV 재생(오리온 `ekZUC5KaJFw`) 중 음원 전환 → `1_WyE1U0f4E` 이어서 재생 · 존재하지 않는 ID 의 가짜 곡 → 안내 → 다음 곡(플로팅이면 창 위) · MV 모드 + 랜덤플리 오마카세 13곡(다음 버튼 9 · 곡 끝 4) — MV 있는 곡은 MV, 없는 곡은 음원, 전환 버튼 · 저장값은 MV 유지 · 唱 2곡 표시 「夢限大みゅーたいぷ」 / 「아라레, 리츠」. 미확인: 실기기(모바일 자동 재생 차단 상태의 감시 판정), 관리 페이지 저장 end-to-end.
+- **안내 UI**(`div.mp-skip[role=status]`): 「!」 원 아이콘 + 문구 + 아래 3초 동안 줄어드는 막대(`mp-undo-drain`). 자리(`placeSkip`): 팝업 · PC 도크 — 재생부 안 `.mp-err` 바로 위 흐름. **플로팅 창** — `body` 로 옮겨 `position: fixed`, 창의 손잡이 줄 바로 위 8px(영상 위는 덮지 않는다). `layoutFrame` 끝에서 매번 자리를 맞춘다. 움직임 줄이기면 애니메이션 없음. 색은 `--color-late`.
+- **곡 목록 「MV」 표시**: `songRow` 의 `.mp-item__sub` 날짜 뒤 `span.mp-mvtag`(테두리 accent 55%, 0.6rem 굵게). 재생목록 줄에는 안 붙인다.
+- **부른 사람 표시**(v4.8.3 — `player.js memberList` · `memberNodes`): `singers` 가 있으면 `who` 대신 그 멤버들. 점은 멤버마다 하나, 이름은 **쉼표로 잇는다**(「아라레, 리츠」). 없으면 `who` 하나. 재생부 메타와 곡 목록 줄 둘 다.
+- **그룹 명의 표시 이름**(v4.8.3): `memberOf("group")` 의 이름이 「그룹」 → 「夢限大みゅーたいぷ」. 점 색(`--color-collab`)은 그대로. 팬 화면의 `memberOf` 를 쓰는 곳 전부에 적용된다. 관리 페이지(admin.html)의 멤버 선택 칸 글자는 그대로.
+- **관리 페이지**(`admin.html` 곡 수정 창, `sgEditor`): 날짜 아래 「다른 음원 영상」 · 「MV 영상」 textarea(줄마다 하나 · 주소 또는 영상 ID). 저장 때 줄로 나눠 바뀐 것만 `patch.alt` / `patch.mv` 로 보낸다(빈 목록 = 키 삭제). 백엔드: `songs.py EDITABLE` 에 두 키, `normalize_media(patch, song)` 가 URL 도 받아 ID 로 바꾸고 잘못된 ID · 중복 제거 · `alt` 에서 대표 id 제거 · `alt`/`mv` 겹침 오류(바뀌지 않는 쪽은 곡의 기존 값과 비교). `telegram_app._song_edit_commit` 은 patch 를 그대로 `songs.edit_song` 에 넘긴다(수정 없음).
+- **데이터 반영**: `python scripts/apply_song_media.py <입력 songs.json> [<출력>]` — 표(`MEDIA`)의 `id` 와 같은 곡에 `alt` · `mv` 를 넣고(이미 있으면 덮어씀, 빈 목록은 키를 넣지 않음), NEW 곡(唱, `zVdR0urFjnc`, 歌ってみた 별개 곡 · `singers`: arale·ritsu)을 같은 id 가 없을 때만 맨 뒤에 추가. 표에 있는데 문서에 없는 id 는 건너뛰고 수를 출력. 두 번 돌려도 같은 결과(멱등). 이 저장소에서는 `src/frontend/assets/songs.json` · `config/songs_seed.json` 을 갱신(시드 · 폴백 — 같은 내용). **운영 data 브랜치(`songs.json`)는 이 커밋으로 바뀌지 않는다** — 운영자 승인 뒤 데이터 저장소에서 같은 스크립트로 갱신해 data 브랜치에 커밋한다. 표의 4곡(TedsUWY90Vs · eZG4sXy0zPM · tRS9u2YlqdM · Fp2a-MhCFVw)은 현재 시드에 없어 건너뛴다(정상).
+- **歌ってみた 기준**: 「歌ってみた」 표시가 붙은 영상은 그 자체로 한 곡이다 — MV 로 묶지 않고 별개 곡으로 둔다(唱 2024, 표시는 「아라레, 리츠」).
+- **localStorage 키 2개**: `mew.player.media`(영상 종류) · `mew.tip.mv-mode`(MV 안내를 봤는지). 둘 다 이 브라우저에만 남는다.
+
 ---
 
 ## 10. Telegram 모니터링·제어 — 결정 사항
