@@ -547,6 +547,7 @@ function build() {
   el.qCount = h("span", { class: "mp-q__count" });
   el.qClear = h("button", { type: "button", class: "mp-link", text: "비우기", on: { click: clearQueue } });
   el.qList = h("ol", { class: "mp-q__list" });
+  for (const ev of ["wheel", "touchmove"]) el.qList.addEventListener(ev, () => { qUserAt = Date.now(); }, { passive: true });   // 사용자가 목록을 직접 훑는 중
   el.undoT = h("span");
   el.undo = h("div", { class: "mp-undo", role: "status", hidden: true },   // (마이크로 인터랙션) 「비우기」 뒤 5초 되돌리기
     el.undoT, h("button", { type: "button", class: "mp-undo__b", text: "되돌리기", on: { click: undoClear } }), h("i", { class: "mp-undo__bar" }));
@@ -667,6 +668,7 @@ function paintTabs() {
 function setTab(t) {
   st.tab = t;
   paintTabs();
+  if (t === "queue") { qFocusKey = null; focusQueueCur(); }   // 모바일: 재생목록 탭을 열면 지금 곡 위치로
 }
 
 /** 탭 바 키보드 — 좌우 화살표로 옮기며 포커스도 따라간다(WAI-ARIA 탭 패턴). */
@@ -742,6 +744,26 @@ function paintControls() {
   if (t) t.textContent = rp === "one" ? "1" : rp === "all" ? "A" : "";
 }
 
+let qUserAt = 0;       // 사용자가 재생목록을 직접 스크롤한 마지막 시각 — 이후 4초는 자동 포커스를 건너뛴다
+let qFocusKey = null;  // 마지막으로 포커스한 「곡 + 위치」 — 곡이 바뀔 때만 움직이게 한다
+
+/** 재생 중인 곡 줄이 목록 보이는 영역의 위 12%~아래 88% 밖이면 위 1/3 지점으로 부드럽게 스크롤한다(목록 안에서만). */
+function focusQueueCur() {
+  if (!built || st.qi < 0 || el.qPanel.hidden) return;
+  const key = st.curId + ":" + st.qi;
+  if (key === qFocusKey) return;
+  if (Date.now() - qUserAt < 4000) return;
+  const cur = el.qList.children[st.qi];
+  const vh = el.qList.clientHeight;
+  if (!cur || !vh) return;
+  qFocusKey = key;
+  const lr = el.qList.getBoundingClientRect(), cr = cur.getBoundingClientRect();   // 화면에 보이는 위치 기준
+  const rel = cr.top - lr.top - el.qList.clientTop;
+  if (rel >= vh * 0.12 && rel + cr.height <= vh * 0.88) return;
+  const to = Math.max(0, Math.min(el.qList.scrollHeight - vh, rel + el.qList.scrollTop - vh / 3 + cr.height / 2));
+  el.qList.scrollTo({ top: to, behavior: calm() ? "auto" : "smooth" });
+}
+
 function paintQueue() {
   if (!built) return;
   el.badge.textContent = String(st.queue.length);
@@ -749,6 +771,7 @@ function paintQueue() {
   el.qClear.hidden = !st.queue.length;
   if (!st.queue.length) {
     el.qList.replaceChildren(h("li", { class: "mp-q__empty", text: "오른쪽 목록에서 곡을 누르면 여기에 쌓입니다. 재생은 1번부터 순서대로 이어집니다." }));
+    qFocusKey = null;
     return;
   }
   el.qList.replaceChildren(...st.queue.map((id, i) => {
@@ -759,11 +782,12 @@ function paintQueue() {
     return h("li", { class: "mp-q__item" + (cur ? " is-cur" : ""), "data-i": String(i) },
       h("span", { class: "mp-q__under", "aria-hidden": "true" }, trashIcon(), "빼기"),
       h("div", { class: "mp-q__fg" },
-        h("button", { type: "button", class: "mp-q__main", "aria-current": cur ? "true" : null, on: { click: () => playQueueAt(i) } },
+        h("button", { type: "button", class: "mp-q__main", "aria-current": cur ? "true" : null, on: { click: () => { qUserAt = 0; playQueueAt(i); } } },
           h("span", { class: "mp-mono mp-q__n", text: cur && st.playing ? "▶" : String(i + 1) }),
           h("span", { class: "mp-q__title", text: s.title })),
         h("button", { type: "button", class: "mp-q__x", "aria-label": `${s.title} 재생목록에서 빼기`, title: "빼기", text: "✕", on: { click: (e) => removeAnimated(i, e.currentTarget.closest("li")) } })));
   }));
+  focusQueueCur();
 }
 
 function paintGrip() {
