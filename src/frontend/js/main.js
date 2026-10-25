@@ -4,7 +4,7 @@ import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
 import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
 import { initTheme } from "./theme.js";
-import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS } from "./config.js";
+import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS, APP_VERSION, APP_DATE } from "./config.js";
 
 const board = document.getElementById("board");
 const foot = document.getElementById("foot");
@@ -182,6 +182,77 @@ function initMonitorEasterEgg() {
   });
 }
 
+/** (v4.8.4) 하단 버전 버튼 — 현재 버전 · 날짜 말풍선.
+ * PC(마우스): 올려 두고 2초 있으면 아래 막대가 차오르고 말풍선이 뜬다. 나가면 숨김.
+ * 터치 · 펜: 0.6초 길게 누르면 같은 말풍선. 손을 떼면 3초 뒤 숨김(또는 다른 곳 탭). 누르는 중 10px 넘게 움직이면 취소.
+ * 키보드: 포커스되면 2초 뒤 표시, 포커스가 빠지거나 Esc 면 숨김. 길게 누른 뒤 손을 떼면 click 이 한 번 더 나므로 그 1회는 이스터에그 카운트에서 뺀다. */
+let versionIgnoreClick = false;   // 말풍선이 터치 길게 누르기로 뜬 직후의 click 1회 — initMonitorTapEasterEgg 가 읽고 지운다
+function initVersionButton() {
+  const btn = document.getElementById("foot-version");
+  const pop = document.getElementById("foot-ver-pop");
+  const wrap = btn && btn.closest(".foot-ver-wrap");
+  if (!btn || !pop || !wrap) return;
+  const HOLD_MOUSE_MS = 2000, HOLD_TOUCH_MS = 600, TOUCH_HIDE_MS = 3000, MOVE_CANCEL_PX = 10;
+  let holdT = 0, hideT = 0, down = null;
+
+  pop.querySelector(".foot-ver__v").textContent = APP_VERSION;
+  pop.querySelector(".foot-ver__date").textContent = APP_DATE;
+
+  const cancelHold = () => { clearTimeout(holdT); holdT = 0; btn.classList.remove("is-hold"); };
+  const show = () => {
+    clearTimeout(holdT); holdT = 0;
+    btn.classList.remove("is-hold");
+    btn.classList.add("is-done");   // 다 찬 막대는 옅게 사라진다 (CSS)
+    pop.hidden = false;
+  };
+  const hide = () => {
+    clearTimeout(hideT); hideT = 0;
+    cancelHold();
+    pop.hidden = true;
+    btn.classList.remove("is-done");
+  };
+  // touch = 터치 · 펜 길게 누르기 — 끝나면 그 뒤 click 1회를 이스터에그에서 뺀다
+  const startHold = (ms, touch) => {
+    if (!pop.hidden) return;   // 이미 떠 있으면 다시 재지 않는다
+    clearTimeout(holdT);
+    btn.style.setProperty("--hold", ms + "ms");
+    btn.classList.add("is-hold");
+    holdT = setTimeout(() => {
+      holdT = 0;
+      if (touch) versionIgnoreClick = true;
+      show();
+    }, ms);
+  };
+
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());   // 길게 누를 때 복사 · 메뉴 막기
+  btn.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") startHold(HOLD_MOUSE_MS, false); });
+  btn.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
+  btn.addEventListener("pointerdown", (e) => {
+    versionIgnoreClick = false;
+    clearTimeout(hideT); hideT = 0;
+    if (e.pointerType === "mouse") return;
+    down = { x: e.clientX, y: e.clientY };
+    startHold(HOLD_TOUCH_MS, true);
+  });
+  btn.addEventListener("pointermove", (e) => {
+    if (!down || e.pointerType === "mouse") return;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > MOVE_CANCEL_PX) { down = null; cancelHold(); }
+  });
+  const release = (e) => {
+    if (e.pointerType === "mouse") return;
+    down = null;
+    cancelHold();   // 아직 못 채웠으면 취소 — 이미 떴으면 막대는 끝나 있다
+    if (!pop.hidden) hideT = setTimeout(hide, TOUCH_HIDE_MS);
+  };
+  btn.addEventListener("pointerup", release);
+  btn.addEventListener("pointercancel", release);
+  // 키보드 포커스만 — 마우스 · 터치 탭으로 생기는 포커스는 말풍선을 띄우지 않는다
+  btn.addEventListener("focus", () => { if (btn.matches(":focus-visible")) startHold(HOLD_MOUSE_MS, false); });
+  btn.addEventListener("blur", hide);
+  document.addEventListener("pointerdown", (e) => { if (!pop.hidden && !wrap.contains(e.target)) hide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+}
+
 // 이스터에그(모바일용): 풋터 버전 표시(ver. ♾️)를 5초 안에 15번 탭 — 탭마다 랜덤 멤버
 // 아이콘이 풍선처럼 떠오르며 사라진다(순수 시각 피드백, 카운트 자체는 안 보여줌).
 function initMonitorTapEasterEgg() {
@@ -206,6 +277,7 @@ function initMonitorTapEasterEgg() {
   }
 
   versionEl.addEventListener("click", (e) => {
+    if (versionIgnoreClick) { versionIgnoreClick = false; return; }   // (v4.8.4) 길게 눌러 말풍선이 뜬 뒤의 click 1회는 세지 않는다
     const rect = versionEl.getBoundingClientRect();
     spawnBalloon(rect.left + rect.width / 2, rect.top);
 
@@ -253,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTheme();   // (v4.6.0) 밝게/어둡게 — 직접 고른 적 없으면 기기 설정 변경을 따라간다. 버튼은 소식 막대 마지막 칸(notices.js)
   initMonitorEasterEgg();
   initMonitorTapEasterEgg();
+  initVersionButton();
   poll();
   pollArchive();
   pollNotices();

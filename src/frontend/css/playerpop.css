@@ -93,15 +93,32 @@ html.mp-lock { overflow: hidden; }
 /* (v4.8.3) 곡 정보 줄 — 왼쪽 제목 · 메타 · 한글, 오른쪽 [음원 | MV] 전환. 모바일에서도 같은 줄, 제목은 줄바꿈 */
 .mp-song { position: relative; display: flex; align-items: flex-start; gap: 10px; }
 .mp-song__txt { flex: 1; min-width: 0; }
-/* [음원 | MV] 전환 — 바깥 테두리 포함 약 42px (버튼 36px) */
-.mp-media { flex: none; display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--mp-panel-2); }
-.mp-media__b {
-  display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 11px; border: 0; border-radius: 999px;
-  background: none; color: var(--color-text-muted); font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+/* (v4.8.4) [음원 | MV] 스위치 — 버튼 하나(role=switch). 두 칸 각 72px · 높이 42px(테두리 포함) · 패딩 3px.
+   손잡이(.mp-media__thumb) = 칸 하나 크기 accent 배경, .is-mv 면 옆 칸으로 밀린다. 시안 v484canvas/project/Main.dc.html 과 같은 모양 · 움직임 */
+.mp-media {
+  position: relative; flex: none; display: inline-grid; grid-template-columns: 72px 72px; box-sizing: border-box;
+  height: 42px; padding: 3px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--mp-panel-2);
+  color: var(--color-text-muted); cursor: pointer; transition: transform 0.12s ease;
 }
-.mp-media__b:hover { color: var(--color-text); }
-.mp-media__b[aria-pressed="true"] { background: var(--mp-accent); color: var(--mp-accent-fg); }
-.mp-media__b .mp-ico { width: 15px; height: 15px; }
+.mp-media:active { transform: scale(0.96); }
+.mp-media:focus-visible { outline: 2px solid var(--mp-accent); outline-offset: 3px; }
+.mp-media__thumb {
+  position: absolute; top: 3px; bottom: 3px; left: 3px; width: 72px; border-radius: 999px;
+  background: var(--mp-accent); box-shadow: 0 2px 8px color-mix(in srgb, var(--mp-accent) 35%, transparent);
+  transition: transform 0.34s cubic-bezier(0.3, 1.35, 0.5, 1);
+}
+.mp-media.is-mv .mp-media__thumb { transform: translateX(72px); }
+.mp-media__lab {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 0.8rem; font-weight: 700; white-space: nowrap; transition: color 0.22s ease;
+}
+.mp-media:not(.is-mv) .mp-media__lab--a, .mp-media.is-mv .mp-media__lab--m { color: var(--mp-accent-fg); }
+.mp-media__lab .mp-ico { width: 14px; height: 14px; transition: transform 0.34s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.mp-media:not(.is-mv) .mp-media__lab--a .mp-ico, .mp-media.is-mv .mp-media__lab--m .mp-ico { transform: scale(1.18); }
+@media (prefers-reduced-motion: reduce) {
+  .mp-media, .mp-media__thumb, .mp-media__lab, .mp-media__lab .mp-ico { transition: none; }
+  .mp-media:active { transform: none; }
+}
 /* 전환 버튼 아래 말풍선 — 재생 중 전환(「다음 영상부터 …」) · MV 첫 안내. 오른쪽 정렬, 위로 꼬리. 시간은 js/player.js showMediaTip 이 animation-duration 으로 준다 */
 .mp-mvtip {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 6; pointer-events: none; white-space: nowrap;

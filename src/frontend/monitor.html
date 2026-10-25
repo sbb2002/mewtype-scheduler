@@ -8,14 +8,73 @@
   <title>운영 모니터</title>
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0d0e12; }
-    #f { width: 100%; height: 100%; border: 0; display: block; }
+    #f { width: 100%; height: calc(100% - 44px); border: 0; display: block; }   /* (v4.8.4) 맨 위 막대 44px 를 뺀 나머지 */
     #msg { color: #8a8f98; font-family: -apple-system, "Segoe UI", sans-serif;
            padding: 2rem; text-align: center; }
+    /* (v4.8.4) 맨 위 막대 — 「운영 모니터」 · 「사이트 기록 초기화」. 색은 이 페이지 안에 직접 적는다(토큰 없음) */
+    .mon-bar { display: flex; align-items: center; gap: 12px; height: 44px; box-sizing: border-box; padding: 0 16px;
+               border-bottom: 1px solid #23262e; background: #12141a; font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; }
+    .mon-bar__t { flex: 1; font-size: 13px; font-weight: 700; color: #c5c9d2; }
+    .rb { height: 30px; padding: 0 12px; border: 1px solid #3a3f48; border-radius: 8px; background: transparent; color: #c5c9d2;
+          font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: border-color .15s, color .15s; }
+    .rb:hover { border-color: #e0a030; color: #e0a030; }
+    .rb:focus-visible, .db:focus-visible { outline: 2px solid #a99be6; outline-offset: 2px; }
+    /* 초기화 확인 창 — 네이티브 dialog(Esc · 바깥 클릭으로 닫힘). 바깥 어둠 = ::backdrop */
+    #reset-dlg { width: 440px; max-width: calc(100vw - 32px); padding: 0; border: 1px solid #333333; border-radius: 14px;
+                 background: #1a1a1a; color: #e8e8e8; font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
+                 box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+    #reset-dlg::backdrop { background: rgba(0, 0, 0, 0.6); }
+    #reset-dlg[open] { animation: dlg-in .24s cubic-bezier(.2, .8, .2, 1); }
+    .dlg-in { padding: 20px 22px; }
+    #reset-dlg h2 { margin: 0; font-size: 16px; }
+    #reset-dlg .dlg-txt { margin: 10px 0; font-size: 13px; color: #c5c9d2; line-height: 1.7; }
+    #reset-dlg dl { margin: 0 0 18px; display: grid; grid-template-columns: max-content minmax(0, 1fr); border: 1px solid #2a2a2a;
+                    border-radius: 10px; overflow: hidden; font-size: 13px; line-height: 1.5; }
+    #reset-dlg dt, #reset-dlg dd { margin: 0; padding: 10px 14px 10px 0; }
+    #reset-dlg dt { padding-left: 14px; padding-right: 18px; font-weight: 700; color: #e8e8e8; white-space: nowrap; }   /* 왼쪽 칸 = 가장 긴 이름 폭(줄바꿈 없이) */
+    #reset-dlg dd { color: #b8bcc6; }
+    #reset-dlg dl > :nth-child(n + 3) { border-top: 1px solid #2a2a2a; }
+    .dlg-btns { display: flex; justify-content: flex-end; gap: 8px; }
+    .db { height: 40px; padding: 0 16px; border: 1px solid #333333; border-radius: 8px; background: transparent; color: #e8e8e8;
+          font-family: inherit; font-size: 13px; cursor: pointer; }
+    .db--go { border-color: #e0a030; background: #e0a030; color: #17130a; font-weight: 700; }
+    /* 아래 가운데 알림 — 5초 뒤 숨김 */
+    .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 11; white-space: nowrap; max-width: calc(100vw - 32px);
+             overflow: hidden; text-overflow: ellipsis; padding: 11px 16px; border-radius: 10px; background: #2b2f38; border: 1px solid #46505f;
+             color: #e8e8e8; font-family: -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; font-size: 13px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+             animation: dlg-in .28s cubic-bezier(.25, 1.5, .45, 1); }
+    .toast[hidden] { display: none; }
+    @keyframes dlg-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+    @media (prefers-reduced-motion: reduce) {
+      #reset-dlg[open], .toast { animation: none; }
+      .rb { transition: none; }
+    }
   </style>
 </head>
 <body>
+  <header class="mon-bar">
+    <span class="mon-bar__t">운영 모니터</span>
+    <button type="button" class="rb" id="reset-open">사이트 기록 초기화</button>
+  </header>
   <iframe id="f" title="운영 모니터 리포트" hidden></iframe>
   <p id="msg">불러오는 중…</p>
+  <dialog id="reset-dlg" aria-labelledby="reset-title">
+    <div class="dlg-in">
+      <h2 id="reset-title">처음 방문했을 때처럼 되돌릴까요?</h2>
+      <p class="dlg-txt">이 브라우저에 남은 기록이 지워져요.</p>
+      <dl>
+        <dt>들은 곡</dt><dd>랜덤플리가 처음처럼 골고루 섞어요</dd>
+        <dt>읽은 트윗</dt><dd>다시 새 글로 보여요</dd>
+        <dt>화면 설정</dt><dd>밝기 · 보기 방식 · 음원/MV · 번역이 처음대로예요</dd>
+        <dt>처음 안내</dt><dd>한 번씩 다시 보여요</dd>
+      </dl>
+      <div class="dlg-btns">
+        <button type="button" class="db" id="reset-cancel">취소</button>
+        <button type="button" class="db db--go" id="reset-ok">되돌리기</button>
+      </div>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
   <script>
     // (v4a) hostname 이 *.vercel.app 이면 Cloud Run URL, 아니면 /monitor-live 로컬 경로 사용.
     var LIVE_URL = location.hostname && location.hostname.endsWith('.vercel.app')
@@ -57,6 +116,32 @@
     setInterval(function () {
       if (document.visibilityState === "visible") refresh().catch(function () {});
     }, 30 * 60000);
+
+    // (v4.8.4) 사이트 기록 초기화 — 이 주소(= 사이트)의 localStorage 전부를 지운다. 같은 주소라 메인 사이트의 저장값도 함께 지워진다.
+    // 지우는 키: ymmt_listened(들은 곡) · mew:twread(읽은 트윗) · mew:tllang(번역 언어) · theme(밝기) · mew.board.view(보기 방식)
+    //   · mew.player.media(음원/MV) · mew.notice.lang · mew.notice.liveview · mew.tip.*(처음 안내). sessionStorage 는 건드리지 않는다.
+    var resetDlg = document.getElementById("reset-dlg");
+    var toastEl = document.getElementById("toast");
+    var toastT = 0;
+    function toast(text) {
+      toastEl.textContent = text;
+      toastEl.hidden = false;
+      clearTimeout(toastT);
+      toastT = setTimeout(function () { toastEl.hidden = true; }, 5000);
+    }
+    document.getElementById("reset-open").addEventListener("click", function () { resetDlg.showModal(); });
+    document.getElementById("reset-cancel").addEventListener("click", function () { resetDlg.close(); });
+    resetDlg.addEventListener("click", function (e) { if (e.target === resetDlg) resetDlg.close(); });   // 안쪽 .dlg-in 이 아니라 dialog 자체를 누르면(바깥 어둠) 닫는다
+    document.getElementById("reset-ok").addEventListener("click", function () {
+      resetDlg.close();
+      try {
+        localStorage.clear();
+      } catch (e) {
+        toast("이 브라우저에서는 기록을 지울 수 없어요.");
+        return;
+      }
+      toast("처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.");
+    });
   </script>
 </body>
 </html>
