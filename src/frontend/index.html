@@ -73,7 +73,14 @@
         </ul>
       </div>
       <span id="foot-status" hidden>업데이트 지연</span>
-      <span id="foot-version" aria-hidden="true">ver. ♾️</span>
+      <span class="foot-ver-wrap">
+        <!-- (v4.8.4) 버전 버튼 — 말풍선 동작은 js/main.js initVersionButton. id 는 디스클레이머 위치 계산 · 빠른 탭 이스터에그가 쓴다 -->
+        <button type="button" id="foot-version" class="foot-ver" aria-label="현재 버전 보기" aria-describedby="foot-ver-pop">ver. <span class="foot-ver__inf" aria-hidden="true">♾️</span><i class="foot-ver__bar" aria-hidden="true"></i></button>
+        <span id="foot-ver-pop" class="foot-ver__pop" role="tooltip" hidden>
+          <span class="foot-ver__lab">현재 버전</span>
+          <span class="foot-ver__row"><strong class="foot-ver__v"></strong><span class="foot-ver__date"></span></span>
+        </span>
+      </span>
     </div>
   </footer>
   <script type="module" src="js/main.js"></script>

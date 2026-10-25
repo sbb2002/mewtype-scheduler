@@ -1356,6 +1356,24 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **확인한 것**(2026-10-24, 로컬 서버 + 운영 데이터 사본, 데스크톱 Chrome · 폭 980px / 500px): 위 항목 전부 동작 — 모바일 쪽은 가짜 터치 이벤트로 확인했다.
   **미확인**: 실기기 터치 · 진동 · iOS · 밝게 테마 · 움직임 줄이기. 테스트 중 플레이어 시트가 한 번 저절로 열려 있었는데 같은 순서로 두 번 해도 재현되지 않았다(원인 확인 필요).
 
+### 프론트 풋터 — 버전 버튼 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `index.html` · `main.js initVersionButton` · `css/layout.css`
+
+- **마크업**: 오른쪽 끝 「ver. ♾️」 = `span.foot-ver-wrap` > `button#foot-version.foot-ver`(알약형 28px — 푸터 높이 45px 유지, 글자 0.75rem 600, 테두리 `--color-border`, 바탕 `--color-hover`, hover 시 테두리 `--mp-accent` · 바탕 `--color-raised`) + 말풍선 `#foot-ver-pop.foot-ver__pop[role=tooltip][hidden]`(「현재 버전」 · 버전 · 날짜). `aria-describedby="foot-ver-pop"`. id `foot-version` 은 디스클레이머 위치 계산(`positionDisclaimerPopup`, 버튼 rect 로 재므로 그대로 동작)과 빠른 탭 이스터에그가 쓴다.
+- **값**: `config.js` `APP_VERSION` · `APP_DATE` 를 `initVersionButton` 이 `textContent` 로 채운다. 버전 올릴 때 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 6).
+- **동작**: 마우스(`pointerType=mouse`) — 올리면(`pointerenter`) 2초 동안 아래 막대(`.foot-ver__bar`, 높이 2px, `--hold` 시간만큼 `scaleX 0→1`) 차오르고 말풍선 표시, 나가면 숨김. 터치 · 펜 — `pointerdown` 0.6초 길게 누르면 같은 말풍선, 그 전에 `pointerup`/`pointercancel` 또는 10px 넘게 움직이면 취소. 말풍선은 손을 뗀 뒤 3초 뒤 숨김, 다른 곳을 누르면 바로 숨김. 키보드 — `:focus-visible` 일 때만 포커스 2초 뒤 표시(마우스 · 탭으로 생긴 포커스는 안 띄운다), 포커스 이탈 · Esc 숨김.
+- **이스터에그 연결**: 빠른 탭 15번(`initMonitorTapEasterEgg`, 5초 창)은 그대로. 길게 눌러 말풍선이 뜬 **직후의 click 1회**는 세지 않는다(`versionIgnoreClick` — 터치 길게 누르기로 뜬 경우만, 마우스 호버로 뜬 뒤의 click 은 센다).
+- **글자 · 메뉴**: `user-select:none` · `-webkit-touch-callout:none` · `touch-action:manipulation`, `contextmenu` 취소.
+- **움직임**: 말풍선 등장 0.26s(`foot-ver-in`), 막대 채움 = `--hold`. `prefers-reduced-motion` 이면 전환 · 등장 애니메이션 없음.
+- 하단 디스클레이머(`initDisclaimerHover`, 위 「하단 디스클레이머 팝업」)와는 별개 요소다.
+
+### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` 만
+
+- **구성**: 맨 위 막대 44px(「운영 모니터」 · 「사이트 기록 초기화」 버튼, 색은 이 페이지 안에 직접 적음 — 토큰 없음). 그 아래 iframe 높이 `calc(100% − 44px)`. iframe 로딩 · `latest.html` 폴백 · 30분 안전망 코드는 바꾸지 않았다.
+- **확인 창**: 네이티브 `<dialog>`(`showModal`) — Esc 로 닫힘, 바깥(어둠) 클릭으로도 닫힘(`e.target === dialog`). 취소 · 되돌리기 두 버튼. 본문 문구는 시안 그대로(「처음 방문했을 때처럼 되돌릴까요?」 · 들은 곡 · 읽은 트윗 · 화면 설정 · 처음 안내 4줄).
+- **동작**: 「되돌리기」 → `localStorage.clear()`. **같은 주소(= 사이트)** 라 메인 사이트의 저장값도 전부 지워진다. `sessionStorage` 는 건드리지 않는다(`va-skip` 등 이 탭 안에서만 쓰는 값은 남는다). 성공하면 아래 가운데 알림 「처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.」 5초, 저장소를 못 쓰면(예외) 「이 브라우저에서는 기록을 지울 수 없어요.」. 이미 열린 사이트 탭은 새로고침 전까지 옛 값을 쓸 수 있다.
+- **지워지는 localStorage 키**(코드 `localStorage` 전수 확인, 2026-10-25): `ymmt_listened`(들은 곡 — 랜덤플리 오마카세의 A · B 묶음) · `mew:twread`(읽은 트윗) · `mew:tllang`(트윗 번역 언어 — 기본 한글) · `theme`(밝게 · 어둡게 — 없으면 기기 설정) · `mew.board.view`(PC 보기 방식 테이블 · 카드) · `mew.player.media`(음원 · MV) · `mew.notice.lang`(소식 제목 언어) · `mew.notice.liveview`(라이브공연 보기 방식) · `mew.tip.grip-dblclick` · `mew.tip.mv-mode` · `mew.tip.lane-swipe`(처음 안내 — 한 번씩 다시 보인다).
+- 백엔드 · 관리 페이지 · 텔레그램은 바뀌지 않는다(`monitor_report.py` 무수정).
+
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
 
 「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 **data 브랜치 `songs.json`**(`SONGS_URL` — 신곡 자동 감지가 등록, 어드민 음반 탭에서 수정 · 삭제 · 직접 추가, 아래 §8.15)을 먼저 읽고,
@@ -1434,7 +1452,7 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
   `songs.js prepareSong` 이 배열이 아니면 `[]`, 형식이 아닌 ID · 중복을 빼고, `alt` 에서는 대표 `id` 도 뺀다. `singers` 는 문자열만.
 - **후보 순서**(`songs.js mediaCandidates(song, mode, rand)`): 음원 모드 = [대표 `id`, `alt…`] 을 섞은 순서. MV 모드 = `mv` 를 섞은 뒤 음원 순서(폴백). 두 경우 모두 중복은 한 번만. 고를 때마다(곡을 누를 때 · 다시 고를 때) 무작위.
   첫 후보 = `st.vid`(지금 프레임의 영상), 나머지 = `st.cands`. `st.curId`(곡 id)는 곡 식별용으로 그대로 — YouTube 호출(`loadVideoById` · `cueVideoById` · `seekTo` · 오류 링크 · 프레임 ✕)은 전부 `st.vid`.
-- **[음원 | MV] 전환**: 재생부 곡 정보 줄(`.mp-song`) 오른쪽 `div.mp-media[role=group]` 안 `button.mp-media__b[aria-pressed]` 2개(음표 · 화면+재생 아이콘). 누르면 `st.media` 저장(localStorage `mew.player.media` = `audio` | `mv`, 기본 `audio`).
+- **[음원 | MV] 전환 (v4.8.4 — 스위치)**: 재생부 곡 정보 줄(`.mp-song`) 오른쪽 **버튼 하나** `button.mp-media[role=switch][aria-checked]`(MV 모드면 `aria-checked="true"` · 클래스 `.is-mv`, 「MV 로 보기」). 안에 손잡이 `i.mp-media__thumb`(칸 하나 크기 accent 배경, `.is-mv` 면 `translateX(72px)`, 0.34s) + 라벨 `span.mp-media__lab--a`(음표 아이콘 · 「음원」) · `--m`(화면 아이콘 · 「MV」). 두 칸 각 72px · 높이 42px(테두리 포함) · 패딩 3px. **어디를 눌러도 반대 모드**(`setMedia(st.media === "mv" ? "audio" : "mv")`). 누르는 동안 `scale(.96)`, 선택된 쪽 아이콘 `scale(1.18)`. 움직임 줄이기면 전환 없음. 저장 = localStorage `mew.player.media` = `audio` | `mv`, 기본 `audio`. (v4.8.3 까지는 `div.mp-media[role=group]` 안 `button.mp-media__b[aria-pressed]` 2개였다.)
   **영상이 재생 중이거나 중간까지 들었으면(`st.playing` 또는 `st.pos > 0`) 그 영상은 바꾸지 않고** 「다음 영상부터 MV로 재생됩니다.」 / 「다음 영상부터 음원으로 재생됩니다.」를 2.6초 띄운다(운영자 결정 2026-10-25) — 다음에 고르는 곡부터 새 모드. 아직 틀지 않은 곡(처음 화면)이면 지금 곡에 MV 가 있을 때만 그 모드로 바로 다시 불러 둔다(`selectSong(st.curId, false, st.qi)`).
 - **전환 버튼 아래 말풍선**(`div.mp-mvtip[role=status]`, `showMediaTip(main, sub, ms)`): 전환 버튼 아래 오른쪽 정렬, 위로 꼬리, `pointer-events: none`(영상 위는 덮지 않는다). **MV 로 처음 바꿀 때** 안내 「MV가 있는 곡은 MV로, 없는 곡은 음원으로 보여줘요」를 한 번(localStorage `mew.tip.mv-mode` = 「1」, `GRIP_TIP_KEY` 와 같은 방식 — 저장소를 못 쓰면 이 페이지를 연 동안 한 번) 4.5초. 재생 중 전환과 겹치면 「다음 영상부터 …」 아래 둘째 줄(작게)로 함께 4.5초.
 - **재생 불가 판정**(`player.js onUnplayable`): ① 원인 = (a) `onError` 전부(코드 2 · 5 · 100 · 101 · 150 등) (b) 감시 타이머 — 자동 재생을 요청해 올린 뒤(곡 선택 · ▶ 버튼) PLAYING 이 한 번도 없고 `getDuration()` 이 0 이면: **프리미어 대기**(`getVideoData().isPremiere`)는 **2초**(`WATCH_FAST_MS`, 운영자 결정 2026-10-25 — 8초는 너무 길다), 그 밖은 **8초**(`WATCH_MS`). **BUFFERING 으로는 감시를 풀지 않는다** — 프리미어 대기 영상도 잠깐 BUFFERING 을 거친다(2026-10-25 실측: 夢我夢中 MV `c_T1QlWWsOE` = 상태 -1 · 길이 0 · `getVideoData().isPremiere` true). cue 만 하는 경우는 감시 안 함. 영상이 바뀌면 타이머는 취소(`watch` 토큰 비교).

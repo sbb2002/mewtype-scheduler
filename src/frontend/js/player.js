@@ -732,10 +732,11 @@ function build() {
   el.skipIco = h("span", { class: "mp-skip__ico", "aria-hidden": "true", text: "!" });   // (v4.8.3) 재생 불가 안내 — 자리는 placeSkip 이 정한다
   el.skipT = h("span", { class: "mp-skip__t" });
   el.skip = h("div", { class: "mp-skip", role: "status", hidden: true }, el.skipIco, el.skipT, h("i", { class: "mp-skip__bar", "aria-hidden": "true" }));
-  // (v4.8.3) [음원 | MV] 전환 — 재생부 곡 정보 줄 오른쪽
-  el.mAudio = h("button", { type: "button", class: "mp-media__b", on: { click: () => setMedia("audio") } }, icon("note"), h("span", { text: "음원" }));
-  el.mMv = h("button", { type: "button", class: "mp-media__b", on: { click: () => setMedia("mv") } }, icon("film"), h("span", { text: "MV" }));
-  el.media = h("div", { class: "mp-media", role: "group", "aria-label": "재생할 영상 종류" }, el.mAudio, el.mMv);
+  // (v4.8.4) [음원 | MV] 스위치 — 버튼 하나. 어디를 눌러도 반대 모드로 간다(setMedia). 손잡이(i.mp-media__thumb)가 옮겨 가며 두 라벨을 가린다
+  el.mThumb = h("i", { class: "mp-media__thumb", "aria-hidden": "true" });
+  el.mLabA = h("span", { class: "mp-media__lab mp-media__lab--a" }, icon("note"), h("span", { text: "음원" }));
+  el.mLabM = h("span", { class: "mp-media__lab mp-media__lab--m" }, icon("film"), h("span", { text: "MV" }));
+  el.media = h("button", { type: "button", role: "switch", class: "mp-media", "aria-label": "MV 로 보기", on: { click: () => setMedia(st.media === "mv" ? "audio" : "mv") } }, el.mThumb, el.mLabA, el.mLabM);
   el.mvTipMain = h("span");
   el.mvTipSub = h("small", { hidden: true });
   el.mvTip = h("div", { class: "mp-mvtip", role: "status", hidden: true }, el.mvTipMain, el.mvTipSub);   // 전환 안내 · MV 첫 안내 (showMediaTip)
@@ -928,8 +929,8 @@ function paintControls() {
   el.bPlay.setAttribute("aria-label", st.playing ? "일시정지" : "재생");
   el.oma.disabled = st.omaBusy || !st.songs.length;
   el.bShuffle.setAttribute("aria-pressed", String(st.shuffle));
-  el.mAudio.setAttribute("aria-pressed", String(st.media !== "mv"));   // (v4.8.3) [음원 | MV]
-  el.mMv.setAttribute("aria-pressed", String(st.media === "mv"));
+  el.media.setAttribute("aria-checked", String(st.media === "mv"));   // (v4.8.4) [음원 | MV] 스위치 — MV 면 손잡이가 오른쪽 칸으로
+  el.media.classList.toggle("is-mv", st.media === "mv");
   const rp = st.repeat;
   el.bRepeat.setAttribute("aria-pressed", String(rp !== "off"));
   const lab = rp === "off" ? "반복 (꺼짐) — 누르면 한 곡 반복" : rp === "one" ? "한 곡 반복 (켜짐) — 누르면 전체 반복" : "전체 반복 (켜짐) — 누르면 끄기";
