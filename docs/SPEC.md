@@ -67,6 +67,7 @@ src/
     writers.py         # /write 잡 kind → 커밋 함수 매핑 (§8.14)
     writeclient.py     # 접수 서비스 → 쓰기 서비스 /write 호출(OIDC, 429/503 만 백오프 재시도). 로컬이면 적용 큐
     apply.py           # 적용 — data 를 쓰는 유일한 경로(로컬은 쓰기 스레드 q-apply, 배포는 /write 안)
+    archive_rotate.py  # 보관함 정리 — 캐시 보관함의 오래된 항목을 일자 보관함으로(매일 /monitor, §8.18)
     storage.py         # store 팩토리 — 역할별 브랜치(data · ops · monitoring · raw), OPS_PATHS 는 ops 로
     gh_store.py        # GitHub Contents API read/write (낙관적 동시성, ConflictError, _serialize)
     local_store.py     # 로컬 파일 store(GitHubStore 와 같은 인터페이스)
@@ -100,15 +101,17 @@ src/
     push_monitor.py    # 미사용 — 삭제 후보
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
 deploy/                # gcloud 배포 스크립트(README.md). env.sh 는 루트 .env 매핑(gitignore). env.stage.sh = 스테이징
-scripts/               # 일회성 데이터 스크립트 — build_songs_json · apply_song_media · 모니터 백필
+scripts/               # 일회성 데이터 스크립트 — build_songs_json · apply_song_media · 모니터 백필 · split_archives(보관함 첫 이전, §8.18)
 config/channels.json   # 채널 단일 소스 — channel_order(5인) · channels(5인 + group[is_group]) · song_feeds · game_accounts
 
 데이터 저장소 sbb2002/mewtype-scheduler-data (코드 저장소에는 data 브랜치가 없다 — 2026-10-20 삭제)
   data 브랜치          # 팬 화면이 읽는 것 — preview.json / preview_archive.json · notices.json / notice_archive.json ·
                        #   tweets.json / tweet_archive.json · banners.json / banners_archive.json · songs.json
+                       #   + 일자 보관함 tweet_archive/YYYY-MM-DD.json · notice_archive/YYYY-MM-DD.json · notice_archive/index.json (§8.18)
                        #   (control.json · admin_state.json · monitoring/ · .old/ 는 브랜치 분리 전 남은 옛 사본 — 코드는 안 씀)
   ops 브랜치           # 운영 상태(storage.OPS_PATHS) — control.json · admin_state.json · group_pending.json · video_releases.json ·
                        #   llm_actions.json · ocr_pending.json (+ admin_nonces.json · history.json). 처음 쓸 때 생긴다
+                       #   + 일자 보관함 llm_actions/YYYY-MM-DD.json (storage.OPS_PREFIXES, §8.18)
   monitoring 브랜치    # monitoring/events-YYYY-MM-DD.jsonl(06:00 KST 경계) · latest.html · days/ · summary.json · lost_queue.json
                        #   + raw/YYYY-MM-DD.jsonl(원문 보존, RAW_BRANCH=monitoring). data 에서 분기해 옛 파일 사본이 남아 있다
 ```
@@ -566,7 +569,13 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   옛 정규식 후기 판정(`xnotice._RE_RECAP` · `_RE_RETRO` → `is_recap`, `merge_notice` 의 「후기 + 지난 날짜 → seen_ids 만」)은 없앴다 — `is_recap` 은 호환용 `False`. 「지난 날짜의 새 소식 = skip」은 날짜 안전장치로 남김.
   소급(이미 올라간 소감 글 정리)은 코드에 넣지 않았다 — 10-22 해당 1건(FM802 출연 감사)을 data 브랜치에서 직접 보관함으로 옮김(`archived_reason: recap`).
 - **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
-- `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, append-only, `id` dedupe).
+- `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, `id` dedupe) — **캐시 보관함**(핫픽스 archive-split): 보관 시각과 행사 날짜(`date`) 중 늦은 것이
+  30일 이내인 것만 남고, 그보다 오래된 것은 매일 보관함 정리(§8.18)가 `notice_archive/YYYY-MM-DD.json`(처음 받은 날 `first_seen` 기준, KST)으로 옮긴다.
+  옮긴 소식의 트윗 · 소식 id 와 시각은 색인 `notice_archive/index.json` = `{ids: {id: 날짜}, ts: {시각: 날짜}}` 에 남는다.
+  - 「이미 본 트윗」(`merge_notice` 1단계 · `_notice_already_seen`)은 캐시 + **색인 id** 를 본다(`seen_ids` 인자) — 오래된 트윗을 다시 넣어도 영구히 `dup`.
+  - 「보관 소식과 같은 묶음 → 후속 글로 흡수(`recap`)」는 **캐시 안에서만** — 보관된 지 30일이 지난 행사와 URL · 제목이 같은 새 트윗(공식 계정이 새로 올린 글)이
+    앞날짜면 새 소식으로 올라간다(지난 날짜면 지금처럼 `skip`). 날짜가 아직 안 지났는데 일찍 내려간 소식(판단 반려 등)은 행사 날짜 + 30일까지 캐시에 남는다.
+  - 지난 소식 본문 번역 백필(`enrich`)은 캐시만 채운다.
 - `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
   분류·날짜·URL 은 정규식 전담. `title`/`title_raw` 는 정규식 헤드라인, `title_ko`=None.
 - **자동 인입 시 LLM 제목추출·번역** (v3.1.2): `_apply_notice` 가 병합 직후 `llm.notice_title(body_for_llm)` 을
@@ -614,7 +623,9 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   tweet_archive/notices 어디서든 이미 번역된 적 있으면 그 번역을 재사용**하고, 없을 때만
   LLM 을 새로 호출한다(인라인 실패 시 `quote.needs_tl=True` → `handlers._translate_sweep` 가
   같은 순서로 재시도) — 같은 인용 원본이 여러 멤버·트윗에 반복 등장할 때 중복 번역 호출을 줄인다.
-- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled|deleted`).
+- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled|deleted`) — **캐시 보관함**(핫픽스 archive-split): 게시 7일 이내만 남고
+  그보다 오래된 것은 매일 보관함 정리(§8.18)가 `tweet_archive/YYYY-MM-DD.json`(게시일 KST — tweet id 로 계산, 숫자 id 가 아닌 옛 항목은 받은 날)으로 옮긴다.
+  운영 경로(빠진 트윗 보충의 「이미 아는 id」 · 번역 재사용 · 밀려남 · 만료 · 삭제)는 캐시만 읽고 쓴다 — 보충은 게시 48h 안의 글만 보므로 7일이면 넉넉하다.
   `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 아래 빠진 트윗 보충이 되살리지 않게.
 - **빠진 트윗 보충** (v4.7.4, `telegram_app._fill_member_gaps`): `/ingest` 에 멤버 트윗 알림이 하나 들어와 개인 트윗 경로를 마치면, 그 멤버의 최근 글 목록
   (`vxtwitter.fetch_profile_statuses` = fxtwitter API v2 `/2/profile/<핸들>/statuses`, 약 20건 · 리트윗 섞임, 한도 IP 당 분당 1,000회)을 1회 조회해
@@ -1076,7 +1087,7 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 `@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
 `@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
 `@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
-`@app.post("/monitor")` (v3.5, v3.8.9 개편) → **매일**(monitor_auto 와 무관) `monitor_snapshot.run_daily`:
+`@app.post("/monitor")` (v3.5, v3.8.9 개편) → (핫픽스 archive-split) 먼저 **보관함 정리**(§8.18, 실패해도 다음 단계 계속) → **매일**(monitor_auto 와 무관) `monitor_snapshot.run_daily`:
 전일(06:00 KST 경계) 하루치를 `monitoring/days/{날짜}.json` 에 굳히고 `monitoring/summary.json` 에 요약 한 줄을
 추가(요약 = `{"triggers","events"}`, 그날 이벤트 로그 파일이 없으면 숫자 대신 `{"no_log": true}`). 백필:
 `backfill_complete` 가 false 면 `monitoring/` 의 `events-*.jsonl` 목록으로 로그 파일이 있는 과거 날짜만 채우고,
@@ -1250,6 +1261,33 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 
 **작업 탭 구성 (v4.5.9, 운영자가 고른 시안 D — 아티팩트 「작업 탭 재구성 시안」)**: ① 요약 카드 3장(확인 필요 · 시스템 = 지금 상태 타일 중 가장 나쁜 것 · 다음 예정 = 첫 예약 + 예약 · 번역 대기 · 오늘 실패, 누르면 그 하위 탭) ② 하위 탭 [타임라인 · 확인 필요 · 예약·대기 · 시스템 상태](`#jobs-tab[data-sub]`) ③ 타임라인 = 흐름(경로 재생) · 자동 처리(배포판 = 이벤트 로그) · 내 조작(`list_history`)을 시간순 한 줄로, 시간대 머리줄(「오늘 16시」)로 묶고 칩 [전체 · 알림 · 방송 확인 · 자동 처리 · 내 조작 · LLM 판단 · 멈춤·진행 중 · 실패만]. 로컬은 관리 조작도 흐름이 되므로 흐름에 관리 조작이 있으면 내 조작은 빼 겹치지 않게 한다. 흐름을 누르면 PC 넓은 화면(≥1100px)은 오른쪽 상세, 좁으면 그 줄 아래로 펼침. 옛 「최근 자동 처리」 · 「내가 한 조작」 칸은 타임라인으로 합쳤다.
 - **배포**: `vision.googleapis.com` 활성화 · 접수 서비스 실행 계정(INVOKER_SA)에 `roles/serviceusage.serviceUsageConsumer`(`deploy/setup.sh`). 키 없음(서비스 계정 인증).
+
+### 8.18 보관함 정리 — 캐시 보관함 · 일자 보관함 (`archive_rotate.py`, 핫픽스 archive-split)
+
+- **왜**: GitHub Contents API 는 1MB 넘는 파일을 기본 형식으로 읽으면 내용을 비워 준다 → `gh_store.read_json` 예외 → 그 파일을 읽는 저장이 전부 실패.
+  `tweet_archive.json` 이 888,969B(2026-10-26)로 11-03 전후 넘을 참이었다(개인 트윗 저장 중단).
+- **캐시 보관함**(운영 경로가 읽는 최근분 — 파일 이름 그대로)과 **일자 보관함**(보존용 — 웹 모니터 지난 날짜 조회 · 분석만 읽음):
+
+| 캐시 | 남기는 기준 | 일자 보관함(날짜 = KST) | 비고 |
+|---|---|---|---|
+| `tweet_archive.json`(data) | 게시 7일 | `tweet_archive/YYYY-MM-DD.json`(게시일) | 계약 I |
+| `notice_archive.json`(data) | 보관 시각 · 행사 날짜 중 늦은 것 30일 | `notice_archive/YYYY-MM-DD.json`(처음 받은 날) + `notice_archive/index.json` | 계약 H |
+| `llm_actions.json`(ops) | 판단 시각 21일 | `llm_actions/YYYY-MM-DD.json`(판단 날) | 관리 페이지 반려 · 재판단 유효기간 |
+
+- **보관함 정리**: `apply.run_snapshot`(백엔드 `/monitor`, 매일 KST 06:10 · 일시정지와 무관) → `archive_rotate.run_all`. 대상마다 ① 기준보다 오래된 항목을 날짜별로 묶어
+  ② 일자 파일에 id 로 합쳐 쓰고(이미 있는 id 는 그대로 — 두 번 돌려도 같음) ③ (소식) 색인 ④ 캐시에서 뺀다. 중간에 실패해도 양쪽에 남을 뿐 잃지 않는다. 캐시 쓰기 충돌 → 다시 읽어 재계산.
+  - 한 번에 쓰는 일자 파일 = 대상마다 3개(`MAX_FILES_PER_RUN`) — 백엔드는 한 번에 한 요청이라 이 작업 동안 `/write` 가 기다린다. 넘는 날짜는 다음 날.
+  - 크기 안전장치: 캐시가 800KB(`CACHE_LIMIT_BYTES`)를 넘으면 기간 안이라도 오래된 날짜부터 더 옮긴다. 그래도 넘거나 실패하면 운영자 DM.
+  - 모니터 `flow="archive"`(옮긴 게 있을 때만 1건/대상: ok · 크기 초과 남음 warn · 실패 err). 웹 모니터 타임라인에는 아직 레인이 없다(이벤트 로그에만).
+- **LLM 판단 기록**: 덧붙일 때 300건으로 자르던 것을 없앴다(전엔 넘는 판단이 사라졌다 — 이제 정리가 일자 파일로 옮긴다). 관리 페이지 「LLM 판단」은 캐시 전부를 보이고,
+  판단 후 21일(`archive_rotate.LLM_KEEP_DAYS`)이 지난 판단은 반려 · 재판단 · 사용자 판단을 서버가 거절한다(화면에도 판단마다 가능 기한 · 안내 문구).
+- **웹 모니터 지난 날짜**(`telegram_app._monitor_past_day` → `monitor_report.extend_lookup_for_day`): 캐시에서 못 찾은 트윗은 그날 · 다음 날 · 트윗 id 의 게시일 일자 파일에서,
+  소식은 색인으로 날짜를 찾아 그 일자 파일에서 찾는다(최대 6개씩, 실패하면 팝업만 덜 자세해짐).
+- **저장 라우팅**: `storage.OPS_PREFIXES = ("llm_actions/",)` — LLM 일자 파일도 ops 브랜치로.
+- **첫 이전**: `scripts/split_archives.py --data <data 체크아웃> --ops <ops 체크아웃> [--dry-run]` — 밀린 분량을 같은 기준으로 한 번에 나누고 전후 id 집합을 비교(잃음 · 중복 0 이 아니면 안 씀),
+  결과는 git 으로 브랜치마다 커밋 1개. Contents API 로 하나씩 쓰면 GitHub 콘텐츠 생성 속도 제한에 걸리고 운영 쓰기와 다툰다.
+- 범위 밖: `preview_archive.json`(151KB) · `banners_archive.json` 도 상한이 없다 — 커지면 같은 방식으로. `notice_archive/index.json` 은 1년 약 180KB 로 자란다(몇 년 뒤 연도별로 나눌 것).
+- self-test: `python -m src.backend.archive_rotate`.
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
 

@@ -310,6 +310,9 @@
         .fllm-row .s { font-weight: 600; overflow-wrap: anywhere; }
         .fllm-row .r { font-size: 0.8rem; color: var(--color-text-muted); overflow-wrap: anywhere; }
         .fllm-row .st { font-size: 0.78rem; color: var(--color-text-muted); }
+        .fllm-row .fllm-valid { font-size: 0.74rem; color: var(--color-text-muted); }
+        .fllm-row .fllm-valid.past { opacity: .75; }
+        .tl-note { margin: 8px 0 0; font-size: 0.76rem; color: var(--color-text-muted); line-height: 1.5; }
         .fllm-row .st.done { color: var(--ok); }
         .fllm-row button { justify-self: start; background: rgba(167, 139, 250, .2); color: #ddd6fe; border: 1px solid rgba(167, 139, 250, .6);
             display: inline-flex; align-items: center; gap: 0.4rem; }
@@ -1473,7 +1476,7 @@
                 </div>
                 <div class="gp-list" id="ocr-list"></div>
                 <p class="ocr-foot">48시간이 지나면 대기에서 빠집니다. 읽지 않아도 본문만으로 처리한 결과는 그대로 남습니다.
-                    다시 판정한 행사 배너는 「타임라인 → LLM 판단」에서 반려할 수 있습니다.</p>
+                    다시 판정한 행사 배너는 「타임라인 → LLM 판단」에서 반려할 수 있습니다(판단 후 21일까지).</p>
             </section>
         </div>
 
@@ -1491,6 +1494,7 @@
                     <button class="chip" data-f="attn" aria-pressed="false">멈춤 · 진행 중</button>
                     <button class="chip chip-fail" data-f="fail" aria-pressed="false">실패만</button>
                 </div>
+                <p class="tl-note" id="llm-valid-note"></p>
                 <div class="flows" id="flows"><div class="jempty">로드 중...</div></div>
                 <div id="fd-holder" hidden><div class="fwrap" id="fwrap"><div class="fwrap-in">
                 <div class="fdetail" id="fdetail" aria-live="polite">
@@ -4761,6 +4765,9 @@
                     try {
                         const la = await this.apiCall("GET", "/list_llm_actions");
                         this.llmActions = Object.fromEntries((la.items || []).map((e) => [e.id, e]));
+                        this.llmReviewDays = la.review_days || 21;      // 판단 후 반려 · 재판단 · 사용자 판단을 할 수 있는 날수(서버 LLM_KEEP_DAYS)
+                        const note = document.getElementById("llm-valid-note");
+                        if (note) note.textContent = `LLM 판단은 판단 후 ${this.llmReviewDays}일까지 반려 · 재판단 · 사용자 판단을 할 수 있습니다. 그 뒤에는 기록으로만 남습니다.`;
                     } catch (e) {
                         this.llmActions = this.llmActions || {};
                     }
@@ -5360,6 +5367,18 @@
                 s.className = "s";
                 s.textContent = e.summary || "";
                 row.append(h, s);
+                // 판단 후 반려 · 재판단 · 사용자 판단 기간(서버 LLM_KEEP_DAYS) — 지나면 버튼을 숨기고 그 사실을 적는다
+                const days = this.llmReviewDays || 21;
+                const deadline = Date.parse(e.ts) + days * 86400000;
+                const open = !(Date.now() > deadline);           // 시각을 모르면(NaN) 열어 둔다 — 서버도 시각 없는 판단은 막지 않는다
+                if (e.kind !== "user_review" && Number.isFinite(deadline)) {
+                    const valid = document.createElement("div");
+                    valid.className = "fllm-valid" + (open ? "" : " past");
+                    valid.textContent = open
+                        ? `반려 · 재판단 가능: ${this.formatTime(new Date(deadline).toISOString())}까지 (판단 후 ${days}일)`
+                        : `반려 · 재판단 기간 지남 (판단 후 ${days}일)`;
+                    row.appendChild(valid);
+                }
                 if (e.reason) {
                     const r = document.createElement("div");
                     r.className = "r";
@@ -5379,7 +5398,7 @@
                     st.textContent = "사용자 판단 기록 — 데이터를 바꾸지 않은 결정입니다.";
                     row.appendChild(st);
                 } else if (!e.undone) {
-                    acts.appendChild(this.llmAct("반려", `누르면: ${this.undoDescribe(e)}`, (b, label) => this.rejectLlm(e, f, b, label), {}));
+                    if (open) acts.appendChild(this.llmAct("반려", `누르면: ${this.undoDescribe(e)}`, (b, label) => this.rejectLlm(e, f, b, label), {}));
                     row.appendChild(acts);
                 } else {
                     if (justId === e.id) this.flashOnce(row, "just-undone", 2200);
@@ -5389,7 +5408,9 @@
                             ? ` (건너뜀: ${e.undone.skipped.filter((x) => !String(x).startsWith("롤백할 변경 없음")).join(" · ")})` : "");
                     row.appendChild(st);
                     const fu = e.followup;
-                    if (!fu) {
+                    if (!fu && !open) {
+                        row.appendChild(acts);
+                    } else if (!fu) {
                         const ok = SUPPORTED.includes(e.kind);
                         const noInput = !e.input;
                         if (!NO_REJUDGE.includes(e.kind)) acts.appendChild(this.llmAct("LLM 재판단",
@@ -5433,7 +5454,8 @@
 
             // 반려 — 그 판단이 한 변경만 원래대로(롤백). 같은 글을 다시 판정하지는 않는다. 흐름도가 마지막 단계부터 판단한 단계까지 거꾸로 감긴다
             async rejectLlm(e, f, btn, label) {
-                if (!(await this.confirmModal({ title: "LLM 판단 반려", message: `${e.summary || e.id}\n\n▶ ${this.undoDescribe(e)}\n\n· 이 판단이 한 변경만 원래대로 돌립니다(롤백).\n· 같은 글을 자동으로 다시 판정하지는 않습니다. 반려 뒤 「LLM 재판단」 또는 「사용자 판단」을 고를 수 있습니다.\n· 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.\n· 한 번 반려한 판단은 다시 반려할 수 없습니다.`, okText: "반려" }))) return;
+                if (!(await this.confirmModal({ title: "LLM 판단 반려", message: `${e.summary || e.id}\n\n▶ ${this.undoDescribe(e)}\n\n· 이 판단이 한 변경만 원래대로 돌립니다(롤백).\n· 같은 글을 자동으로 다시 판정하지는 않습니다. 반려 뒤 「LLM 재판단」 또는 「사용자 판단」을 고를 수 있습니다.\n· 그 뒤 다른 이유로 바뀐 항목은 건너뜁니다.\n· 한 번 반려한 판단은 다시 반려할 수 없습니다.
+· 판단 후 ${this.llmReviewDays || 21}일이 지나면 반려 · 재판단할 수 없습니다.`, okText: "반려" }))) return;
                 btn.disabled = true;
                 btn.classList.add("loading");
                 label.textContent = "반려하는 중…";

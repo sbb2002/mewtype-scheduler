@@ -134,9 +134,10 @@ def _new_row(inc: dict, now_iso: str) -> dict:
     return row
 
 
-def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | None = None
-                 ) -> tuple[dict, dict, bool, str]:
-    """(new_notices, new_archive, changed, mode). mode ∈ added|updated|recap|dup|skip."""
+def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | None = None,
+                 seen_ids: set | frozenset | None = None) -> tuple[dict, dict, bool, str]:
+    """(new_notices, new_archive, changed, mode). mode ∈ added|updated|recap|dup|skip.
+    seen_ids = 보관함 정리로 일자 파일에 옮겨진 옛 소식 · 트윗 id 색인(`archive_rotate.notice_index`) — 캐시 밖이어도 이미 본 트윗은 dup."""
     prev = prev or default_notices()
     arch = archive if archive is not None else default_archive()
     notices = [dict(n) for n in prev.get("notices", [])]
@@ -145,7 +146,8 @@ def merge_notice(prev: dict, incoming: dict, now_iso: str, *, archive: dict | No
     past = bool(incoming.get("date")) and incoming["date"] < _today_jst(now_iso)
 
     # 1) 이미 본 트윗
-    if tid and (any(_seen(n, tid) for n in notices) or any(_seen(n, tid) for n in arch_list)):
+    if tid and (any(_seen(n, tid) for n in notices) or any(_seen(n, tid) for n in arch_list)
+                or (seen_ids and tid in seen_ids)):
         return prev, arch, False, "dup"
 
     # 2) 활성 소식에서 같은 그룹
@@ -413,6 +415,13 @@ if __name__ == "__main__":
     assert N["notices"][0]["time"] == "21:30" and N["notices"][0]["seen_ids"] == ["1", "2"]
     assert len(N["notices"]) == 1
     print("[OK] added / dup / updated (같은 URL 기반 중복)")
+
+    # seen_ids — 캐시에서 빠진 옛 트윗 id 도 같은 트윗이면 dup (보관함 정리 뒤에도 다시 올리지 않게)
+    _, _, ch, m = merge_notice(default_notices(), inc(id="900", url="https://old.jp/z"), NOW, seen_ids={"900"})
+    assert not ch and m == "dup", m
+    _, _, ch, m = merge_notice(default_notices(), inc(id="901", url="https://old.jp/z"), NOW, seen_ids=frozenset({"900"}))
+    assert ch and m == "added", m
+    print("[OK] seen_ids — 캐시 밖 옛 트윗 id 는 dup")
 
     # merge_into (v3.7 LLM 의미 중복 게이트가 호출하는 병합 — url/title 안 다르게 만든 케이스)
     N3, A3, ch, m = merge_notice(default_notices(), inc(id="20", title="다른표현A", url=None), NOW, archive=default_archive())

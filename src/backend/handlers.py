@@ -316,7 +316,8 @@ def _record_song_actions(gh, entries: list[dict], now_iso: str) -> list[str]:
             cur, sha = gh.read_json(_t._LLM_ACTIONS_PATH)
             items = list((cur or {}).get("items") or []) + entries
             try:
-                gh.write_json(_t._LLM_ACTIONS_PATH, {"items": items[-_t._LLM_ACTIONS_MAX:]}, prev_sha=sha,
+                # (핫픽스 archive-split) 300건 자르기 없음 — 오래된 판단은 보관함 정리가 일자 파일로 옮긴다(버리지 않음)
+                gh.write_json(_t._LLM_ACTIONS_PATH, {"items": items}, prev_sha=sha,
                               message=f"ops: 신곡 판단 기록 +{len(entries)} {now_iso}")
                 return [e["id"] for e in entries]
             except ConflictError:

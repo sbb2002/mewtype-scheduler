@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from . import archive_rotate
 from .monitor_log import DAY_START_HOUR, _monitor_gh, bucket_date_kst, normalize_event
 
 logger = logging.getLogger(__name__)
@@ -360,6 +361,54 @@ def load_detail_lookup(gh) -> dict:
         if t.get("received_at"):
             tw_key[(t.get("channel_key"), t["received_at"])] = t
     return {"pv": pv, "nt_id": nt_id, "nt_ts": nt_ts, "tw_id": tw_id, "tw_key": tw_key}
+
+
+def _next_day(date_kst: str) -> str:
+    return (datetime.strptime(date_kst, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def extend_lookup_for_day(gh, lk: dict, date_kst: str, day: dict) -> dict:
+    """(archive-split) 지난 날짜 팝업용 찾기 표 — 캐시에서 빠져 일자 보관함으로 옮겨진 트윗 · 소식을 더한 **새** 표를 돌려준다(lk 는 그대로).
+    트윗 = 모니터 하루(날짜 · 다음 날)의 일자 파일 + 이벤트 트윗 id 가 가리키는 날짜. 소식 = 보관 색인(`notice_archive/index.json`)으로 찾은 날짜.
+    각각 최대 6번 읽는다. 읽기 실패는 그 부분만 빼고 그대로 둔다(팝업은 보조 정보)."""
+    out = {k: dict(v) for k, v in lk.items()}
+    try:
+        tw_dates = [date_kst, _next_day(date_kst)]
+        for e in day.get("tweet") or []:
+            tid = str(e.get("tid") or "")
+            if tid and tid not in out["tw_id"]:
+                d = archive_rotate.tweet_day(tid)
+                if d and d not in tw_dates:
+                    tw_dates.append(d)
+        for d in tw_dates[:6]:
+            for t in archive_rotate.read_day(gh, archive_rotate.TWEETS, d):
+                if t.get("id"):
+                    out["tw_id"].setdefault(str(t["id"]), t)
+                if t.get("received_at"):
+                    out["tw_key"].setdefault((t.get("channel_key"), t["received_at"]), t)
+    except Exception:  # noqa: BLE001
+        logger.warning("지난 날짜 트윗 보관함 읽기 실패 — 팝업 정보 없이 표시", exc_info=True)
+    try:
+        missing = [e for e in day.get("notice") or []
+                   if str(e.get("nid") or "") not in out["nt_id"] and (e.get("ts") or "") not in out["nt_ts"]]
+        if missing:
+            index = archive_rotate.notice_index(gh)
+            nt_dates = []
+            for e in missing:
+                d = index["ids"].get(str(e.get("nid") or "")) or index["ts"].get(e.get("ts") or "")
+                if d and d not in nt_dates:
+                    nt_dates.append(d)
+            for d in nt_dates[:6]:
+                for n in archive_rotate.read_day(gh, archive_rotate.NOTICES, d):
+                    for k in [n.get("id"), *(n.get("seen_ids") or [])]:
+                        if k:
+                            out["nt_id"].setdefault(str(k), n)
+                    for k in (n.get("first_seen"), n.get("last_updated")):
+                        if k:
+                            out["nt_ts"].setdefault(k, n)
+    except Exception:  # noqa: BLE001
+        logger.warning("지난 날짜 소식 보관함 읽기 실패 — 팝업 정보 없이 표시", exc_info=True)
+    return out
 
 
 def _yt_url(it: dict | None, vid: str | None) -> str | None:
@@ -3058,5 +3107,54 @@ if __name__ == "__main__":
     assert report_filename({"date": "2026-09-30", "monthly": True, "yearly": False}) == "monitor_202609.html"
     assert report_filename({"date": "2026-12-31", "monthly": False, "yearly": True}) == "monitor_2026.html"
     print("[OK] report_filename: daily/monthly/yearly 파일명 자릿수")
+
+    # ── extend_lookup_for_day (archive-split): 캐시 밖 일자 보관함에서 팝업 정보를 찾는다 ──
+    class _FileGh:
+        def __init__(self, files):
+            self.f = files
+        def read_json(self, path):
+            return (json.loads(json.dumps(self.f[path])) if path in self.f else None), ("s" if path in self.f else None)
+
+    def _empty_lk():
+        return {"pv": {}, "nt_id": {}, "nt_ts": {}, "tw_id": {}, "tw_key": {}}
+
+    # 트윗 · 소식 · 색인 · 날짜별 일자 파일
+    _tid_0910 = str((int(datetime(2026, 9, 10, 12, 0, tzinfo=KST).timestamp() * 1000) - _TWEET_EPOCH_MS) << 22)
+    gh_arch = _FileGh({
+        "tweet_archive/2026-09-20.json": {"tweets": [{"id": "T-20", "channel_key": "arale", "received_at": "2026-09-20T03:00:00Z",
+                                                      "text": "원문A", "text_ko": "번역A"}]},
+        "tweet_archive/2026-09-10.json": {"tweets": [{"id": _tid_0910, "channel_key": "yuno", "received_at": "2026-09-10T03:00:00Z",
+                                                       "text": "원문B", "text_ko": "번역B"}]},
+        "notice_archive/2026-09-18.json": {"notices": [{"id": "N-1", "seen_ids": ["N-1", "N-1b"], "first_seen": "2026-09-18T01:00:00Z",
+                                                        "last_updated": "2026-09-18T01:00:00Z", "body_raw": "소식원문", "body_ko": "소식번역"}]},
+        "notice_archive/index.json": {"ids": {"N-1": "2026-09-18"}, "ts": {"2026-09-18T01:00:00Z": "2026-09-18"}},
+    })
+    day_a = {"preview": [], "notice": [{"nid": "N-1", "ts": "2026-09-18T01:00:00Z"}],
+             "tweet": [{"tid": "T-20", "member": "arale", "ts": "2026-09-20T03:00:00Z"},
+                       {"tid": _tid_0910, "member": "yuno", "ts": "2026-09-20T05:00:00Z"}]}
+    lk_a = _empty_lk()
+    ext_a = extend_lookup_for_day(gh_arch, lk_a, "2026-09-20", day_a)
+    assert lk_a["tw_id"] == {} and lk_a["nt_id"] == {}, "원래 표는 건드리지 않음 (새 표를 돌려줌)"
+    attach_details(day_a, ext_a)
+    assert day_a["tweet"][0]["info"]["ko"] == "번역A", day_a["tweet"][0]
+    assert day_a["tweet"][1]["info"]["ko"] == "번역B", "트윗 id 가 가리키는 날짜의 일자 파일도 읽음"
+    assert day_a["notice"][0]["info"]["ko"] == "소식번역" and day_a["notice"][0]["info"]["orig"] == "소식원문"
+    print("[OK] extend_lookup_for_day: 날짜 파일 · 트윗 id 날짜 · 소식 색인으로 찾음")
+
+    # 이미 표에 있는 항목은 덮어쓰지 않음
+    lk_b = _empty_lk()
+    lk_b["tw_id"]["T-20"] = {"id": "T-20", "text": "원래", "text_ko": "원래번역"}
+    ext_b = extend_lookup_for_day(gh_arch, lk_b, "2026-09-20", day_a)
+    assert ext_b["tw_id"]["T-20"]["text_ko"] == "원래번역", "기존 항목은 덮지 않음"
+    print("[OK] extend_lookup_for_day: 기존 항목 유지")
+
+    # 파일이 아무것도 없어도 죽지 않고 빈 표 — 팝업 정보만 없다
+    gh_none = _FileGh({})
+    day_c = {"preview": [], "notice": [{"nid": "X", "ts": "2026-09-01T00:00:00Z"}],
+             "tweet": [{"tid": _tid_0910, "member": "yuno", "ts": "2026-09-01T00:00:00Z"}]}
+    ext_c = extend_lookup_for_day(gh_none, _empty_lk(), "2026-09-01", day_c)
+    attach_details(day_c, ext_c)
+    assert "info" not in day_c["notice"][0] and "info" not in day_c["tweet"][0]
+    print("[OK] extend_lookup_for_day: 보관함 파일 없음 → 예외 없이 팝업 정보 없음")
 
     print("\nSUCCESS: monitor_report.py self-test 통과 (mock)")
