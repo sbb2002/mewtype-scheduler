@@ -57,7 +57,7 @@ Claude가 만드는 이해용 산출물(팜플렛 HTML·다이어그램·아키�
 > **현재 버전 = v4.8.5 (핫픽스, 2026-10-26)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 > (`git tag -n3 v4.7.5`, `git describe --tags`). 버전을 올리면 이 줄 · README · `docs/VERSION.md`(맨 위 태그 대조표 + 상세) · 태그를 같이 갱신한다 — 아래 「주의점」 **버전 올릴 때 할 일**.
 >
-> **v4.8.5 (핫픽스, 브랜치 `hotfix/text-cursor`, 2026-10-26, 프론트만 — 병합 전)**: **화면 크롬 글자 위 텍스트 커서(I-빔) 제거.** `css/reset.css` `body { cursor: default }` + 상세 내용(소식 팝업 카드 · 트윗 번역 말풍선 · 타임테이블 팝업 · 하단 디스클레이머)만 `cursor: auto` 복원. 요약 `docs/VERSION.md`.
+> **v4.8.5 (핫픽스, 브랜치 `hotfix/text-cursor`, 2026-10-26, 프론트만 — 병합 `8d96f1d`(PR #95), **Vercel 배포 완료**)**: **화면 크롬 글자 위 텍스트 커서(I-빔) 제거.** `css/reset.css` `body { cursor: default }` + 상세 내용(소식 팝업 카드 · 트윗 번역 말풍선 · 타임테이블 팝업 · 하단 디스클레이머)만 `cursor: auto` 복원. 요약 `docs/VERSION.md`.
 >
 > **v4.8.4 (핫픽스, 브랜치 `hotfix/footer-version-reset`, 2026-10-25, 프론트만 — 병합 `8e0bb69`(PR #94), **Vercel 배포 완료**(production `8e0bb69` READY), 실기기 미확인)**: **음원 · MV 스위치 · 하단 버전 버튼 · 모니터 사이트 기록 초기화.** 플레이어 [음원 | MV] 를 버튼 하나의 스위치로(어디를 눌러도 반대 모드). 하단 「ver.」 버튼에 마우스 2초 · 터치 0.6초 길게 누르면 현재 버전 · 날짜 말풍선(`src/frontend/js/config.js` `APP_VERSION` · `APP_DATE` — 버전 올릴 때 같이 고친다). `monitor.html` 맨 위 「사이트 기록 초기화」 → 확인 → 이 사이트 localStorage 전부 삭제(sessionStorage 유지). 상세 `docs/SPEC.md` 「음원 · MV 전환」 · 「프론트 풋터 — 버전 버튼」 · 「운영 모니터 `monitor.html`」, 요약 `docs/VERSION.md`. 실기기 미확인(밝게 테마는 Chrome 확인). 모바일 하단 멤버 점 튀어오름은 점 띠(44px) 안에서만(1.1배 + 링 한 번 굵게 — 전엔 보드를 덮었다).
 >

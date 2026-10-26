@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.8.5 | `8d96f1d` | 2026-10-26 16:29 | `hotfix/text-cursor` | 병합 커밋 | Vercel 배포 success 확인(프론트만) |
 | v4.8.4 | `8e0bb69` | 2026-10-25 17:11 | `hotfix/footer-version-reset` | 병합 커밋 | Vercel 배포 READY 확인(프론트만) |
 | v4.8.3 | `f5ac029` | 2026-10-25 16:38 | `hotfix/player-mv` | 병합 커밋 | Vercel 배포 READY · Cloud Run backend 00184 · telegram 00125 · data `37f5153` |
 | v4.8.2 | `e1c3dc7` | 2026-10-25 15:08 | `hotfix/queue-focus` | 병합 커밋 | Vercel 배포 READY 확인 |
@@ -205,7 +206,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
-- **v4.8.5** (핫픽스, 2026-10-26 — 브랜치 `hotfix/text-cursor`, 프론트만): **화면 크롬 글자 위에서 텍스트 커서(I-빔) 제거.** `css/reset.css` 에 `body { cursor: default }`(cursor 는 상속) — 직접 cursor 를 지정한 버튼 · 링크 · 손잡이와 input/textarea 는 그대로, 글자 선택(user-select)은 안 건드림. 상세 내용(소식 팝업 카드 제목 · 본문 `.ntc-card__tt/__body`, 트윗 번역 말풍선 `.lane__thread__msg/__quote`, 타임테이블 팝업 `.tt-pop__body`, 하단 디스클레이머 `.fdisc__list`)은 `cursor: auto` 로 복원. `monitor.html` 제외. 브라우저 실확인 전 · 병합 전.
+- **v4.8.5** (핫픽스, 2026-10-26 — 브랜치 `hotfix/text-cursor`, 프론트만): **화면 크롬 글자 위에서 텍스트 커서(I-빔) 제거.** `css/reset.css` 에 `body { cursor: default }`(cursor 는 상속) — 직접 cursor 를 지정한 버튼 · 링크 · 손잡이와 input/textarea 는 그대로, 글자 선택(user-select)은 안 건드림. 상세 내용(소식 팝업 카드 제목 · 본문 `.ntc-card__tt/__body`, 트윗 번역 말풍선 `.lane__thread__msg/__quote`, 타임테이블 팝업 `.tt-pop__body`, 하단 디스클레이머 `.fdisc__list`)은 `cursor: auto` 로 복원. `monitor.html` 제외. PC Chrome 에서 계산된 cursor 값 실측 확인(모바일 · 밝게 테마 · 운영 데이터 미확인). 병합 `8d96f1d`(PR #95), Vercel 배포 완료.
 - **v4.8.4** (핫픽스, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 프론트만(+ 문서), 병합 `8e0bb69`(PR #94), **Vercel 배포 완료**(production `8e0bb69` READY), 실기기 미확인): **음원 · MV 스위치 + 하단 버전 버튼 + 모니터 사이트 기록 초기화 + 모바일 멤버 점 튀어오름이 보드를 덮지 않게.** 운영자가 확정한 시안 3건(`Main` · `Footer` · `Monitor`)대로 구현.
   ① 플레이어 [음원 | MV] 전환을 두 칸 버튼에서 **버튼 하나의 스위치**로(`button.mp-media[role=switch]`, 어디를 눌러도 반대 모드, 손잡이가 옮겨 가며 라벨을 가린다). 동작(재생 중 전환 = 지금 영상 유지 + 「다음 영상부터 …」 · 아니면 바로 다시 불러 둠 · MV 첫 안내)은 그대로. 움직임 줄이기면 없음.
   ② 하단 「ver. ♾️」가 **버튼**이 됐다: 마우스 2초 · 터치 0.6초 길게 누르기 · 키보드 포커스 2초 → 현재 버전 · 날짜 말풍선(`js/config.js APP_VERSION · APP_DATE`, `main.js initVersionButton`). 빠른 탭 15번 모니터 이스터에그는 그대로이고, 길게 눌러 말풍선이 뜬 뒤의 click 1회만 카운트에서 뺀다. 글자 선택 · 길게 누르기 메뉴는 막음.
