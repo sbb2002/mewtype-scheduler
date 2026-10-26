@@ -65,3 +65,8 @@ print('$d','tweet',len(tw),'info',sum(1 for e in tw if e.get('info')),'| notice'
 - `preview_archive.json`(151KB) · `banners_archive.json` 도 상한이 없다 — 커지면 같은 방식(`archive_rotate.Target` 추가).
 - `notice_archive/index.json` 은 1년 약 180KB 로 자란다 — 몇 년 뒤 연도별로.
 - 보류 중인 자기 답글 패치(`ref/self-reply/patch_spec.md`)를 다시 열 차례 — 그 명세의 「48h 지난 원글 되살리기」는 이제 트윗 일자 파일(게시일 = tweet id 로 계산)에서 찾는다.
+
+## 5. 오토핫픽스 시험 S-O — 이 장애를 오토핫픽스가 혼자 고칠 수 있었나 (운영자 요청 2026-10-26)
+
+준비 완료 · 미실행. 절차 · 대조표 = **`ref/autofix-test/README.md`**. 시험 브랜치 `test/autofix-archive1mb`(= v4.8.6 직전 main `ddc2040` + 오토핫픽스 수신기),
+트리거 `ref/autofix-test/archive1mb_trigger.py`(브랜치에 넣지 않음 — 분석 모델이 답을 미리 보지 않게). 결과는 같은 폴더에 `result_<날짜>_<회차>.md`.
