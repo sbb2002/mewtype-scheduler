@@ -1,12 +1,12 @@
-# 구현 명세 (SPEC) — v3.0 (현행 v3.7.1 반영)
+# 구현 명세 (SPEC) — v3.0 계약 기반, 현행 v4 계보
 
 현행 구현 계약. v2 원문은 `docs/old/v2/`, v1 은 `docs/old/v1/`.
 설계 배경: `docs/plan/v3_backend_surgery.md`(기능 상세) · `docs/plan/v3_draft.md`(결정 로그) ·
 `docs/plan/v3_telegram_controller.md`(제어 채널) · `docs/plan/v3_impl_spec.md`(구현 명세·진행) ·
 `docs/plan/v3_golive.md`(전환·롤백 런북).
 
-> **배포 상태**: **v3.0 배포됨 (2026-09-09)** — `main` 이 현행. `data` 브랜치는 콜드 스타트
-> (v2 파일은 `data:.old/`, 마이그레이션 스크립트 없음).
+> **배포 상태**: `main` 이 현행(현재 버전은 `README.md` · `docs/VERSION.md`). v3.0(2026-09-09) 전환 때 `data` 브랜치는 콜드 스타트
+> (v2 파일은 `data:.old/`, 마이그레이션 스크립트 없음). v4.0(2026-10-04)부터 운영 상태 · 로그는 `ops` · `monitoring` 브랜치로 분리.
 
 **인터페이스 계약(§1~§7)을 벗어나는 변경은 이 문서를 먼저 고친다.**
 
@@ -21,68 +21,96 @@
 | 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
 | 정기 트리거 | **Cloud Scheduler** 4잡 — baseline JST 06:00 / light 10분(v3.6, 구 3h) → `POST /tick`, monitor KST 06:10 → `POST /monitor`, (v4.5.0) websub-renew KST 06:20 → `POST /websub-renew` (OIDC) |
 | 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
-| 저장 | **GitHub `data` 브랜치** — 2026-09-14 부터 별도 저장소 `sbb2002/mewtype-scheduler-data`(Vercel 비연결). Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋 |
+| 저장 | **GitHub 데이터 저장소 `sbb2002/mewtype-scheduler-data`**(2026-09-14 부터, Vercel 비연결)의 `data` · `ops` · `monitoring` 브랜치 — Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋. 브랜치를 나눈 이유 = 충돌 단위가 브랜치 HEAD |
 | 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
-| 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` + (v4.5.0) PubSub 콜백 `/websub/<이름>` |
+| 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` + (v4.5.0) PubSub 콜백 `/websub/<이름>` + 관리 페이지 `/admin` + 웹 모니터 `/monitor-live` |
 | PubSub(WebSub) | (v4.5.0) 허브가 멤버 5채널 · 뮤타입 음원 채널의 변경을 `mewtype-telegram` 으로 POST → 즉시 wake / 신곡 등록(v4.5.2 — PubSub 전용 큐 `mewtype-websub` 로 예약, 수신 기록은 쓰기 서비스). 구독 일일 갱신은 `mewtype-backend` `/websub-renew`. §8.16 |
 | 외부 LLM | **Groq**(선택) — notice 제목 추출·의미 중복판정 + notice/개인트윗/방송 제목 번역 + 개인 예고 판정(참여·예고확인). 키 없으면 원문 노출 폴백 |
 | 업스트림 시스템 | 운영자 폰 Automate — X·YouTube 푸시알림을 `POST /ingest` 로 중계(코드베이스 밖) |
 
 ```
 src/
-  frontend/            # Vercel Root Directory = src/frontend, 빌드 없음
-    index.html         # #notice + #board + #foot 스켈레톤, <script type="module">
-    css/{reset,layout,card,notices,tweets}.css
+  frontend/            # Vercel Root Directory = src/frontend, 빌드 없음, ES 모듈(상대 import). 상세 §9
+    index.html         # #notice + #board + #foot 스켈레톤. head 인라인 스크립트가 CSS 전에 data-theme 결정 · ?va=claude 탭은 통계 제외
+    monitor.html       # 운영 모니터(이스터에그 진입) — 웹 모니터 iframe + 사이트 기록 초기화
+    vercel.json        # main 만 배포 (반드시 이 위치 — 루트에 두면 Vercel 이 못 읽는다)
+    assets/songs.json  # 플레이어 곡 목록 시드 · 폴백 (운영 정본 = data 브랜치 songs.json)
+    css/               # reset · layout · card · timetable · king · notices · banners · tweets · player · playerpop · theme
+                       #   각 :root 토큰 = 어둡게, theme.css(맨 끝) = 밝게 값
     js/
-      config.js        # 상수 (PREVIEW_URL, NOTICES_URL, TWEETS_URL, 폴링 주기, 폴백 채널)
-      time.js          # UTC→KST 포맷 · 상대시간(D-n·절대표기) · elapsedLabel — 순수
+      main.js          # DOMContentLoaded → 폴링(preview · archive · notices · tweets · banners) + 카운트다운 틱 + 플레이어 동적 import
+      config.js        # 상수 — 데이터 URL · 폴링 주기(75초) · APP_VERSION/APP_DATE
+      time.js          # UTC→KST 포맷 · 상대시간 — 순수
       api.js           # fetchPreview(url): AbortController 타임아웃, {ok,data|error}
-      render.js        # renderBoard / renderFooter / updateCountdowns — preview.items(state) 기반
-      notices.js       # 소식판 — (v4.6.4) PC 날짜별 묶음 · 모바일 칩+카드, 분류 탭, 제목 한 줄, 소식 팝업 카드/시트 · (v4.7.0) 복수 분류 · 라이브공연 탭 공연별 묶음
-      tweets.js        # 유닛 아바타 편지 배지 (+ text_ko 원문↔번역 토글 버튼)
-      main.js          # DOMContentLoaded → poll(preview) + pollNotices + pollTweets + 카운트다운 틱
-  collector/           # v1 순수 모듈 — config/rss/youtube 는 v3 백엔드가 import 재사용.
+      render.js        # renderBoard / renderFooter / updateCountdowns — 레인 헤더 · PC 보기 방식 · 모바일 슬라이드
+      timetable.js     # PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고 펼치기
+      notices.js       # 소식판 — 분류 탭 · 날짜별 묶음 · 라이브공연 공연별 묶음 · 소식 팝업 카드/시트
+      banners.js       # 행사 배너(계약 J) — 탭 + 카드 1장
+      tweets.js        # 멤버 트윗 — 아바타 편지 배지 · PC 말풍선 / 모바일 토스트 · X 공식 카드
+      player.js playerbtn.js songs.js   # YouTube 곡 플레이어 · 여는 버튼 · 곡 검색/정렬/오마카세(순수)
+      king.js          # 노노카 지각 이스터에그
+      theme.js         # 밝게/어둡게 전환
+      sheetdrag.js     # 시트 · 토스트 끌어 닫기 공용
+      *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
+  collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
     rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
     config.py
-  backend/             # v3 Cloud Run 서비스
-    app.py             # /tick(Scheduler) /wake(Cloud Tasks) /write(제어 채널) /monitor(Scheduler) · `/` 헬스체크
-    handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 + LLM 번역 sweep + 모니터 로그(실행당 최대 1커밋)
-    writers.py         # (v3.7) write-queue — /write 잡 kind → telegram_app 커밋 함수 매핑 (§8.14)
-    writeclient.py     # (v3.7) 제어 채널 → 백엔드 /write 동기 호출 (OIDC). MAIN_SERVICE_URL 없으면 로컬 디스패치
-    monitor_log.py     # (v3.5) monitoring/events-YYYY-MM-DD.jsonl append (log_event / log_events 배치)
-    monitor_report.py  # (v3.5) /monitor Ops Timeline HTML 생성. (v3.8.9) 웹 monitor 는 전 기간(all) 리포트
-    monitor_snapshot.py # (v3.8.9) 모니터링 스냅샷 — 일별(monitoring/days/)·전 기간 요약(summary.json)·멤버 현황 DM 텍스트
-    preview.py         # (신규) preview.json 스키마 헬퍼 (id·매칭·정렬·승격·아카이브) — 순수
-    preview_build.py   # (신규) reconcile 포크 → build_preview(6상태 + FSM 파생 + ytnotif 머지) — 순수
-    statemachine.py    # (v3 재작성) derive(item, now) → 상태 전이·다음 wake 시각. 저장 타이머 없음 — 순수
-    llm.py             # (신규) Groq 클라이언트 — notice_title / translate / participation / announces_own_broadcast
-                       #   / duplicate_notice, 백오프·환각가드 — 순수 로직
-    ytnotif.py         # (신규) YouTube 앱 푸시알림 payload 파서 (TUNEIN/REMINDER/SUB_START) — 순수
-    vxtwitter.py       # (신규) api.vxtwitter.com unfurl — 본문·미디어·YT video_id 추출
-    gh_store.py        # GitHub Contents API read/write (낙관적 동시성, ConflictError)
-    tasks.py           # Cloud Tasks enqueue (OIDC 타깃, 720h 클램프)
-    oidc.py            # Scheduler/Tasks OIDC bearer 검증
-    config.py          # 환경변수 → Config
-    notify.py          # Telegram sendMessage + diff_events(6상태 전이) + allows(레벨 게이팅)
-    control.py         # control.json 스키마 (paused / log_level)
-    admin.py           # admin_state.json 스키마 — v3 pending_op / edit_lock / suppress + v2 호환 슬롯
-    telegram_app.py    # 공개 webhook — {cmd}×{contents} 격자 + POST /ingest (X 릴레이)
-    xrelay.py          # @BDP 일일 스케줄 트윗 파서 → announced 아이템 (merge_announced) — 순수
-    xnotice.py         # 방송 외 이벤트 트윗 → notices 항목 파서 (+ body_for_llm) — 순수
-    notices.py         # notices.json 계약 + 중복판정(url∥title)·머지·sweep·edit — 순수
-    xtweet.py          # 개인 5인 트윗 — route_by_title / parse / merge_tweet / parse_schedule
-                       #   / merge_personal_schedule / apply_overrides(v3.7.1 handlers 연결). 리트윗(^@handle:) 필터 — 순수
+  bus/                 # 에러 버스 발신기(v4.3.0) — MEW_BUS_DIR 없으면 no-op(배포판 미설정). 봉투 스키마 docs/bus/
+  backend/             # Cloud Run 2서비스 공용 코드. 상세 §8
+    # ── 라우트
+    app.py             # 쓰기 서비스(mewtype-backend) — /tick /wake /write /monitor /websub-renew · `/` 헬스체크
+    telegram_app.py    # 접수 서비스(mewtype-telegram) — /telegram webhook · POST /ingest 분기 · 커밋 함수(_commit_*) · /monitor-live
+    admin_web.py       # 관리 페이지 블루프린트(/admin) — 일회용 링크 로그인 · 세션 · CSRF. 정적 파일 admin_static/
+    admin_api.py       # 관리 페이지가 부르는 함수 — 읽기 + 쓰기 큐 적재(data 를 직접 쓰지 않음)
+    websub.py          # PubSub(WebSub) 수신 — 알림 파싱 · 서명 검증 · 구독/갱신 · 콜백 /websub/<이름>(§8.16)
+    # ── 쓰기 경로 · 저장
+    writers.py         # /write 잡 kind → 커밋 함수 매핑 (§8.14)
+    writeclient.py     # 접수 서비스 → 쓰기 서비스 /write 호출(OIDC, 429/503 만 백오프 재시도). 로컬이면 적용 큐
+    apply.py           # 적용 — data 를 쓰는 유일한 경로(로컬은 쓰기 스레드 q-apply, 배포는 /write 안)
+    storage.py         # store 팩토리 — 역할별 브랜치(data · ops · monitoring · raw), OPS_PATHS 는 ops 로
+    gh_store.py        # GitHub Contents API read/write (낙관적 동시성, ConflictError, _serialize)
+    local_store.py     # 로컬 파일 store(GitHubStore 와 같은 인터페이스)
+    tasks.py oidc.py   # Cloud Tasks enqueue(720h 클램프) · Scheduler/Tasks OIDC 검증
+    # ── 수집 · 상태
+    handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 · 번역 sweep · 신곡 감지 · 모니터 로그(실행당 최대 1커밋)
+    preview.py         # preview.json 계약 — id · match_item(±45분) · 정렬 · 승격 · 아카이브 — 순수
+    preview_build.py   # reconcile 포크 → build_preview(6상태 + 그룹 채널 · 그룹 프리미어 제외) — 순수
+    statemachine.py    # derive(item, now) → 다음 상태 · 다음 wake 시각. 저장 타이머 없음 — 순수
+    ytnotif.py         # YouTube 앱 푸시 알림 파서 — 순수
+    ytdlp_probe.py     # 회원 전용 라이브 video_id/URL 조회(yt-dlp, 쿠키 선택)
+    # ── 인입 파서 · 계약 (순수 위주)
+    xrelay.py          # @BDP 일일 스케줄 · 出演情報 · 즉시개시 트윗 → announced 아이템 · 그룹 영상 근거 판정
+    xnotice.py notices.py   # 소식 파서 / notices.json 계약(중복판정 · 머지 · 시점 판정 · sweep · 분류)
+    xtweet.py          # 개인 5인 트윗 — route_by_title · tweets.json 계약(게시 + 48h) · 개인 예고 파싱 · apply_overrides
+    banners.py         # 행사 배너 banners.json 계약(J) — 판정 반영 · 상태 파생 · 정리
+    songs.py           # 신곡 감지 · songs.json 계약 · 곡 관리 (§8.15)
+    vxtwitter.py       # 트윗 unfurl — vxtwitter, 실패 시 fxtwitter
+    # ── 외부 판단
+    llm.py             # Groq — 번역 · 소식 제목/분류/시점 · 예고/참여/변경 판정 · 행사 판정 · 라이브 정보 (429 = 모델 막기)
+    vision.py          # Groq 비전 OCR — 출연진 이름 · 행사 카드 글자
+    cloudvision.py     # Google Cloud Vision 예비 판독 — 운영자 허가 시에만(§8.17)
+    # ── 운영 · 모니터링
+    notify.py          # Telegram 알림 + diff_events + allows(알림 레벨)
+    control.py admin.py config.py   # control.json · admin_state.json 스키마 / env → Config
+    monitor_log.py     # 이벤트 로그(monitoring 브랜치) · 유실 원문 큐
+    monitor_snapshot.py monitor_report.py   # 일일 스냅샷 · 요약 / 리포트 HTML(웹 모니터)
+    rawlog.py          # 방송 일정 관련 트윗 원문 보존 raw/YYYY-MM-DD.jsonl
+    # ── 로컬 시험판 전용
+    local_runner.py jobqueue.py enrich.py tg_poll.py flowtrace.py   # 러너 · 작업 큐 · 가공 큐 · 텔레그램 폴링 · 흐름 기록
+    push_monitor.py    # 미사용 — 삭제 후보
 Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
-deploy/                # gcloud 배포 스크립트. env.sh 는 루트 .env 매핑(gitignore)
-config/channels.json   # 5채널 단일 소스 (channel_order, channel_id, handle, name, name_ko, x_names)
-data 브랜치             # preview.json + preview_archive.json + control.json + admin_state.json
-                       #   + notices.json / notice_archive.json + tweets.json / tweet_archive.json
-                       #   + ingest_queue.json (ECHO/DRY-RUN 버퍼)
-                       #   + monitoring/events-YYYY-MM-DD.jsonl (이벤트 로그) + monitoring/latest.html
-                       #     (/monitor 리포트 — 공개 저장소라 raw URL 로 누구나 열람 가능). 코드 없음.
-                       #   + (v3.8.9) monitoring/days/YYYY-MM-DD.json (하루치 스냅샷) +
-                       #     monitoring/summary.json ({"days": {날짜: 요약}, "backfill_complete"})
-                       #   ※ v2 의 schedule.json / archive.json / pending.json 은 폐지.
+deploy/                # gcloud 배포 스크립트(README.md). env.sh 는 루트 .env 매핑(gitignore). env.stage.sh = 스테이징
+scripts/               # 일회성 데이터 스크립트 — build_songs_json · apply_song_media · 모니터 백필
+config/channels.json   # 채널 단일 소스 — channel_order(5인) · channels(5인 + group[is_group]) · song_feeds · game_accounts
+
+데이터 저장소 sbb2002/mewtype-scheduler-data (코드 저장소에는 data 브랜치가 없다 — 2026-10-20 삭제)
+  data 브랜치          # 팬 화면이 읽는 것 — preview.json / preview_archive.json · notices.json / notice_archive.json ·
+                       #   tweets.json / tweet_archive.json · banners.json / banners_archive.json · songs.json
+                       #   (control.json · admin_state.json · monitoring/ · .old/ 는 브랜치 분리 전 남은 옛 사본 — 코드는 안 씀)
+  ops 브랜치           # 운영 상태(storage.OPS_PATHS) — control.json · admin_state.json · group_pending.json · video_releases.json ·
+                       #   llm_actions.json · ocr_pending.json (+ admin_nonces.json · history.json). 처음 쓸 때 생긴다
+  monitoring 브랜치    # monitoring/events-YYYY-MM-DD.jsonl(06:00 KST 경계) · latest.html · days/ · summary.json · lost_queue.json
+                       #   + raw/YYYY-MM-DD.jsonl(원문 보존, RAW_BRANCH=monitoring). data 에서 분기해 옛 파일 사본이 남아 있다
 ```
 
 - 파이썬 3.12. 시각은 전부 UTC ISO(`Z`) 저장, KST 변환은 프론트 `time.js` 전담.
