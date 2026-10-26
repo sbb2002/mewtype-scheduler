@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>자동 대응 관리</title>
+<style>
+  :root { --bg:#0f0f0f; --bg2:#1a1a1a; --bg3:#232323; --text:#e8e8e8; --muted:#999; --border:#333; --accent:#06b6d4;
+          --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --pad:clamp(.75rem,3vw,2rem); }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; margin:0;
+         padding:var(--pad); padding-bottom:5.5rem; }
+  h1 { font-size:1.15rem; margin:0; }
+  h2 { font-size:1rem; margin:1.2rem 0 .5rem; }
+  h3 { font-size:.95rem; margin:0 0 .35rem; }
+  .top { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.8rem; }
+  .grow { flex:1; }
+  .card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:.9rem 1rem; margin-bottom:.7rem; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:.7rem; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:.7rem; }
+  .muted { color:var(--muted); } .small { font-size:12px; }
+  button, select { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.5rem .8rem;
+                   font-size:14px; min-height:40px; cursor:pointer; }
+  button.pri { background:var(--accent); color:#001318; border-color:var(--accent); font-weight:600; }
+  button.bad { background:#3a1414; border-color:#6b2020; }
+  button.go { background:#0f3a28; border-color:#1d5b34; }
+  button:disabled, select:disabled, input:disabled { opacity:.5; cursor:default; }
+  .pill { display:inline-block; padding:.05rem .55rem; border-radius:999px; font-size:12px; border:1px solid var(--border); background:var(--bg3); white-space:nowrap; }
+  .ok { color:var(--ok); border-color:#1d5b34; } .warn { color:var(--warn); border-color:#6b4a0a; } .bad { color:var(--bad); border-color:#6b2020; }
+  .sev-CRITICAL { color:#fff; background:#b91c1c; border-color:#b91c1c; } .sev-ERROR { color:var(--bad); }
+  .sev-WARN { color:var(--warn); } .sev-INFO, .sev-DEBUG { color:var(--muted); }
+  .bar { height:10px; background:var(--bg3); border-radius:6px; overflow:hidden; margin:.3rem 0 .15rem; }
+  .bar > i { display:block; height:100%; background:var(--ok); transition:width .4s; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:.15rem .8rem; }
+  .kv b { color:var(--muted); font-weight:400; } .kv span { text-align:right; word-break:break-all; }
+  table { width:100%; border-collapse:collapse; margin:.4rem 0; }
+  th, td { border-bottom:1px solid var(--border); padding:.3rem .5rem; text-align:left; vertical-align:middle; word-break:break-word; }
+  th { color:var(--muted); font-weight:500; } th.n { text-align:right; }
+  td.n { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  nav { position:fixed; left:0; right:0; bottom:0; display:flex; background:var(--bg2); border-top:1px solid var(--border); z-index:5; }
+  nav button { flex:1; border:0; border-radius:0; background:none; min-height:52px; color:var(--muted); font-size:13px; }
+  nav button.on { color:var(--accent); font-weight:600; }
+  section { display:none; } section.on { display:block; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:10; display:none; padding:1rem; overflow:auto; }
+  .modal.on { display:block; }
+  .modal .box { background:var(--bg2); border:1px solid var(--border); border-radius:12px; max-width:900px; margin:0 auto; padding:1rem 1.2rem; }
+  .md h1 { font-size:1.15rem; } .md h2 { font-size:1.02rem; border-bottom:1px solid var(--border); padding-bottom:.2rem; }
+  .md h3 { font-size:.95rem; color:var(--muted); } .md pre { background:#111; border:1px solid var(--border); border-radius:8px; padding:.6rem;
+    overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; } .md code { background:#111; padding:0 .25rem; border-radius:4px; }
+  .md table { font-size:13px; } .md ul { padding-left:1.2rem; }
+  .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:4.5rem; background:#111; border:1px solid var(--border);
+           padding:.5rem 1rem; border-radius:8px; z-index:20; display:none; max-width:90vw; }
+  .chain { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem; margin:.5rem 0; }
+  .arrow { color:var(--muted); }
+  .blk { min-height:auto; padding:.4rem .6rem; text-align:left; display:flex; flex-direction:column; gap:.1rem; border-width:2px; }
+  .blk b { font-size:13px; } .blk span { font-size:11px; color:var(--muted); }
+  .blk.st-ok { border-color:var(--ok); } .blk.st-fail { border-color:var(--bad); background:#2a1414; }
+  .blk.st-skipped { border-style:dashed; opacity:.6; } .blk.st-stop, .blk.st-held { border-color:var(--warn); }
+  input[type=text] { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.4rem .6rem; min-height:40px; font-size:14px; flex:1; min-width:8rem; }
+  .blk.sel { box-shadow:0 0 0 2px var(--accent); } .blk.off { opacity:.45; border-style:dashed; } .blk.lock { border-color:#5b5b5b; }
+  .chip-add { border-style:dashed; color:var(--muted); min-height:34px; padding:.2rem .6rem; }
+  .err { color:var(--bad); } .good { color:var(--ok); } .wr { color:var(--warn); }
+  .opt { display:flex; gap:.7rem; align-items:flex-start; text-align:left; width:100%; margin-bottom:.45rem; border-width:2px; padding:.55rem .8rem; }
+  .opt.on { border-color:var(--accent); background:#0a2a30; } .opt small { display:block; color:var(--muted); font-size:12px; }
+  .opt .rd { flex:none; width:16px; height:16px; margin-top:3px; border-radius:50%; border:2px solid #666; display:inline-block; }
+  .opt.on .rd { border-color:var(--accent); background:radial-gradient(circle, var(--accent) 0 4px, transparent 5px); }
+  .dim { opacity:.45; }
+  textarea { width:100%; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.5rem; min-height:4rem; font:inherit; }
+  .apr-sec { border-top:1px solid var(--border); margin-top:.6rem; padding-top:.5rem; } .apr-sec h4 { margin:.1rem 0 .3rem; font-size:13px; color:var(--muted); font-weight:500; }
+  #nav-ctl .bd { background:var(--warn); color:#1b1405; border-radius:999px; font-size:11px; padding:0 .4rem; margin-left:.3rem; font-weight:700; }
+  .run-note { font-size:12px; color:var(--muted); min-height:1.2em; }
+  input[type=number] { background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.4rem; width:5rem; min-height:40px; }
+  input[type=checkbox] { width:20px; height:20px; accent-color:var(--accent); }
+  .chips { display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:.7rem; }
+  .chips button { border-radius:999px; min-height:34px; padding:.2rem .85rem; background:var(--bg2); color:var(--muted); font-size:13px; }
+  .chips button.on { background:var(--bg3); color:var(--text); border-color:#555; }
+  .lrow { background:var(--bg2); border:1px solid var(--border); border-radius:12px; margin-bottom:.55rem; overflow:hidden; }
+  .lrow.open { border-color:#555; }
+  .lh { width:100%; display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; text-align:left; background:none; border:0; border-radius:0; min-height:52px; padding:.5rem .8rem; }
+  .lh .w { font-weight:600; min-width:9rem; } .lh .m { flex:1 1 220px; min-width:0; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb { border-top:1px solid var(--border); padding:.7rem; display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:.6rem; background:#121212; }
+  .pn { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:.7rem .8rem; min-width:0; }
+  .pn h3 { color:var(--muted); font-weight:500; font-size:13px; }
+  .logl { font-size:12px; color:var(--muted); font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-word; margin:.1rem 0; }
+  .repbox { max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:.1rem .7rem; margin:.4rem 0; background:#141414; }
+  .dlgov { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:30; display:none; align-items:center; justify-content:center; padding:1rem; }
+  .dlgov.on { display:flex; } .dlg { background:var(--bg2); border:1px solid #555; border-radius:14px; padding:1.2rem 1.3rem; max-width:480px; width:100%; }
+  @media (min-width: 720px) { nav { position:static; border:1px solid var(--border); border-radius:10px; margin-bottom:.8rem; } body { padding-bottom:var(--pad); } }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>🤖 자동 대응 관리</h1><span id="stage" class="pill"></span><span class="grow"></span>
+  <span class="muted small" id="clock"></span>
+</div>
+
+<div class="card" id="usage">
+  <div class="row"><b>구독 사용량</b><span class="grow"></span><span class="muted small" id="u-age"></span>
+    <button id="u-refresh" class="pri" title="가장 작은 호출 1회로 지금 값을 읽습니다(사용량을 아주 조금 소모)">지금 조회</button></div>
+  <div id="u-body"><span class="muted">아직 측정값 없음 — “지금 조회”를 누르거나 첫 분석 뒤에 표시됩니다.</span></div>
+</div>
+
+<nav id="tabs">
+  <button data-t="overview" class="on">Overview</button><button data-t="control" id="nav-ctl">Control</button><button data-t="settings">Settings</button>
+</nav>
+
+<section id="overview" class="on">
+  <h2>헬스체크</h2>
+  <div class="grid" id="hc-grid"></div>
+  <h2>버스 큐 <span class="muted small">발신기 → 수신기 사이 폴더 대기열</span></h2>
+  <div class="card"><div class="grid" id="q-grid"></div><div class="muted small" id="q-note"></div></div>
+  <div class="grid2">
+    <div class="card"><h3>패치 정책 <span class="pill">읽기 전용</span></h3><div class="kv" id="pp-kv"></div>
+      <p class="muted small">수정은 로컬 브랜치에만 커밋되고 main · data 브랜치와 배포 주소에는 닿지 않습니다. 변경은 설정 파일(.env.local)에서만 합니다.</p></div>
+    <div class="card"><h3>모델 역할 할당</h3><div class="kv" id="md-kv"></div></div>
+  </div>
+</section>
+
+<section id="control">
+  <div class="chips" id="ctl-filter"></div>
+  <div id="ctl-list"></div>
+  <div class="row"><button id="log-toggle">WARN 이하 기록 보기</button></div>
+  <div id="log-list"></div>
+</section>
+
+<section id="settings">
+  <div class="card"><h3>파이프라인 조립</h3>
+    <p class="muted small">수정 파이프라인을 블록으로 조립합니다. 🔒 잠금 블록(가드 · 보호 확인 등)은 빼거나 끄거나 순서를 바꿀 수 없습니다. 저장한 파이프라인은 아래 “로그 레벨별 대응 정책”에서 고를 수 있습니다.</p>
+    <div class="row"><select id="pl-select"></select><button id="pl-new">표준에서 새로 만들기</button><button id="pl-clone">복제</button><button id="pl-del" class="bad">삭제</button></div>
+    <div class="row" style="margin-top:.6rem"><input type="text" id="pl-name" placeholder="이름 (예: 신중 — 검토 먼저)" maxlength="40"><input type="text" id="pl-id" placeholder="id (소문자·숫자·-_)" maxlength="32"><span id="pl-badge"></span></div>
+    <div class="muted small" id="pl-ro" style="margin:.4rem 0"></div>
+    <div class="chain" id="pl-chain"></div>
+    <div class="row small" id="pl-palette"></div>
+    <div class="card" id="pl-detail" style="background:var(--bg3);margin-top:.5rem"></div>
+    <div id="pl-msg" class="small"></div>
+    <div class="row"><button id="pl-save" class="pri">저장</button><button id="pl-revert">편집 취소(원래대로)</button><span class="grow"></span><button id="pl-reset-all" class="bad">사용자 정의 전부 삭제(내장만 남김)</button><span class="muted small" id="pl-note"></span></div></div>
+
+  <div class="grid2">
+    <div class="card"><h3>동작 모드</h3>
+      <p class="muted small">자동 대응이 에러에 어떻게 반응할지 정하는 전체 스위치입니다.</p>
+      <div id="mode-btns"></div><div id="mode-desc" style="margin-top:.4rem"></div><div class="muted small" id="mode-note"></div><div class="good small" id="mode-toast"></div></div>
+    <div class="card" id="cyc-card"><h3>동작 주기</h3>
+      <p class="muted small">수신기가 쌓인 에러를 언제 처리할지 정합니다. 동작 모드가 자동 또는 반자동일 때만 적용되며, CRITICAL 은 주기와 관계없이 즉시 처리합니다.</p>
+      <div id="cyc-btns"></div><div class="muted small" id="cyc-note" style="margin-top:.4rem"></div><div class="wr small" id="cyc-off"></div></div>
+  </div>
+
+  <div class="card"><h3>로그 레벨별 대응 정책</h3>
+    <p class="muted small">심각도마다 러너가 발신할지, 수신기가 기록 · 분석 · 수정을 어디까지 할지, 파이프라인과 쿨다운을 정합니다. 저장하면 다음 에러부터 바로 적용됩니다(재시작 불필요).</p>
+    <div style="overflow-x:auto"><table><thead><tr><th>레벨</th><th>발신(러너)</th><th>기록</th><th>동작</th><th>파이프라인</th><th>쿨다운(분)</th></tr></thead><tbody id="pol-body"></tbody></table></div>
+    <div class="muted small" id="pol-send"></div>
+    <div id="pol-warn" class="small" style="color:var(--warn)"></div>
+    <div class="row" style="margin-top:.6rem"><button id="pol-save" class="pri">정책 저장</button><button id="pol-reset">기본값으로</button><span class="grow"></span><span class="muted small" id="pol-note"></span></div></div>
+
+  <div class="card" style="border-color:#6b2020"><h3>설정 및 정책 초기화</h3>
+    <p class="muted small">에러 레벨별 정책과 동작 주기를 기본값(CRITICAL 긴급 수정 · ERROR 표준 수정 · WARN 이하 끔 · 이벤트마다)으로 되돌리고, 사용자 정의 파이프라인을 모두 지워 내장 프리셋(표준 · 긴급)만 남깁니다. 수신기 정지(PAUSE) · 임시 발신 레벨 같은 일시 설정은 건드리지 않습니다.</p>
+    <div class="row"><button id="reset-all" class="bad">정책 + 파이프라인 전체 초기화</button><span class="muted small" id="reset-note"></span></div></div>
+</section>
+
+<div class="modal" id="modal"><div class="box"><div class="row"><b id="m-title"></b><span class="grow"></span>
+  <button id="m-close">닫기</button></div><div class="md" id="m-body"></div></div></div>
+<div class="dlgov" id="dlgov"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+  <h3 id="dlg-t" style="font-size:1.05rem">대기 중인 에러가 있습니다</h3><p id="dlg-text"></p>
+  <p class="muted small">“예”는 쌓인 에러를 지금 처리한 뒤 모드를 바꾸고, “아니오”는 쌓인 에러를 버리고 모드를 바꿉니다. “취소”는 아무것도 바꾸지 않고 창만 닫습니다.</p>
+  <div class="row" style="justify-content:flex-end"><button id="dlg-cancel">취소</button><button id="dlg-no" class="bad">아니오 · 버리고 변경</button><button id="dlg-yes" class="pri">예 · 먼저 처리</button></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const kst = (iso, d = true) => { if (!iso) return '-'; const t = new Date(iso.length < 20 ? iso : iso); if (isNaN(t)) return iso;
+  const k = new Date(t.getTime() + 9 * 3600e3); const p = n => String(n).padStart(2, '0');
+  return (d ? `${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())} ` : '') + `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}:${p(k.getUTCSeconds())}`; };
+const kstEpoch = (e, d) => e ? kst(new Date(e * 1000).toISOString(), d) + ' KST' : '-';
+const pct = v => { const x = v * 100; return Math.abs(x - Math.round(x)) < 1e-6 ? Math.round(x) + '%' : x.toFixed(2) + '%'; };
+const rel = s => s == null ? '-' : s < 60 ? `${Math.round(s)}초 전` : s < 3600 ? `${Math.round(s / 60)}분 전` : `${(s / 3600).toFixed(1)}시간 전`;
+const until = e => { const s = e - Date.now() / 1000; return s <= 0 ? '곧' : s < 3600 ? `${Math.round(s / 60)}분 후` : `${(s / 3600).toFixed(1)}시간 후`; };
+function toast(m) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
+async function api(path, body) {
+  const o = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': CSRF }, body: JSON.stringify(body) };
+  const r = await fetch(path, o);
+  if (r.status === 401) { location.href = '/login'; throw new Error('401'); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || j.msg || r.status);
+  return j;
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function pill(text, cls) { return el('span', 'pill ' + (cls || ''), text); }
+
+/* 마크다운(안전: 먼저 escape 후 제한된 태그만 생성) */
+function md(src) {
+  const lines = esc(src).split('\n'); let out = '', i = 0;
+  const inl = s => s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) { let b = []; i++; while (i < lines.length && !lines[i].startsWith('```')) b.push(lines[i++]); i++; out += '<pre>' + b.join('\n') + '</pre>'; continue; }
+    let m;
+    if ((m = l.match(/^(#{1,3}) (.*)/))) { out += `<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`; i++; continue; }
+    if (l.startsWith('|')) { let rows = []; while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++]);
+      const cell = r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const body = rows.filter(r => !/^\|[\s:|-]+\|$/.test(r)); out += '<table>' + body.map((r, k) => '<tr>' + cell(r).map(c => k === 0 ? `<th>${inl(c)}</th>` : `<td>${inl(c)}</td>`).join('') + '</tr>').join('') + '</table>'; continue; }
+    if (/^\s*- /.test(l)) { let li = []; while (i < lines.length && /^\s*- /.test(lines[i])) li.push(lines[i++].replace(/^\s*- /, '')); out += '<ul>' + li.map(x => `<li>${inl(x)}</li>`).join('') + '</ul>'; continue; }
+    out += l.trim() ? `<p>${inl(l)}</p>` : ''; i++;
+  }
+  return out;
+}
+async function openReport(name) {
+  try { const j = await api('/api/report/' + encodeURIComponent(name)); $('#m-title').textContent = name; $('#m-body').innerHTML = md(j.text); $('#modal').classList.add('on'); }
+  catch (e) { toast('보고서를 열 수 없음: ' + e.message); }
+}
+
+/* 사용량 */
+function renderUsage(u) {
+  const b = $('#u-body'); b.textContent = '';
+  if (!u) { b.append(el('span', 'muted', '아직 측정값 없음 — “지금 조회”를 누르거나 첫 분석 뒤에 표시됩니다.')); $('#u-age').textContent = ''; return; }
+  const row = (label, v, reset) => { const d = el('div'); const t = el('div', 'row'); t.append(el('b', '', label), el('span', '', `${pct(v)} 사용 · 남음 ${pct(1 - v)}`), el('span', 'grow'),
+      el('span', 'muted small', `초기화 ${kstEpoch(reset, label.includes('주간'))} (${until(reset)})`));
+    const bar = el('div', 'bar'); const f = el('i'); f.style.width = Math.min(100, v * 100) + '%'; f.style.background = v >= .85 ? 'var(--bad)' : v >= .6 ? 'var(--warn)' : 'var(--ok)'; bar.append(f); d.append(t, bar); return d; };
+  if (u.five != null) b.append(row('세션(5시간)', u.five, u.reset5));
+  if (u.seven != null) b.append(row('주간(7일)', u.seven, u.reset7));
+  b.append(el('div', 'muted small', '같은 계정의 다른 세션 사용분 포함 · 서버가 1%p 단위로 알려 줍니다'));
+  $('#u-age').textContent = `측정 ${rel(u.age)}`;
+}
+$('#u-refresh').onclick = async () => { const b = $('#u-refresh'); b.disabled = true; b.textContent = '조회 중…';
+  try { const j = await api('/api/usage/refresh', {}); renderUsage(j.usage); toast(j.msg); } catch (e) { toast('실패: ' + e.message); }
+  b.disabled = false; b.textContent = '지금 조회'; };
+
+/* 파이프라인 조립 (레고식) */
+const CANON = ['spec', 'worktree', 'implement', 'guard', 'tests', 'verify', 'review', 'commit', 'protected', 'apply', 'restart'];
+let PLS = {}, CAT = {}, RULES = {}, MODELS = [], USED = {}, ED = null, SELIDX = -1, PLSEL = 'standard', PL_ERRS = [], VTIMER = null;
+const clone = o => JSON.parse(JSON.stringify(o));
+async function loadPipelines() { const j = await api('/api/pipelines'); PLS = j.pipelines; CAT = j.catalog; RULES = j.param_rules; MODELS = j.models; USED = j.used_by;
+  const s = $('#pl-select'); s.textContent = ''; Object.values(PLS).forEach(p => { const o = el('option', '', p.name + (p.builtin ? ' [내장]' : '') + (USED[p.id] ? ` · 정책 ${USED[p.id].join('/')}` : '')); o.value = p.id; s.append(o); });
+  selectPl(PLSEL in PLS ? PLSEL : 'standard'); }
+function selectPl(id) { PLSEL = id; $('#pl-select').value = id; const p = PLS[id]; ED = { id: p.id, name: p.name, builtin: !!p.builtin, isNew: false, blocks: clone(p.blocks) }; SELIDX = -1; renderEditor(); }
+$('#pl-select').onchange = e => selectPl(e.target.value);
+$('#pl-new').onclick = () => { ED = { id: '', name: '', builtin: false, isNew: true, blocks: clone(PLS.standard.blocks) }; SELIDX = -1; renderEditor(); };
+$('#pl-clone').onclick = () => { ED = { id: '', name: (ED.name || '') + ' 복사', builtin: false, isNew: true, blocks: clone(ED.blocks) }; SELIDX = -1; renderEditor(); };
+$('#pl-del').onclick = async () => { if (ED.builtin || ED.isNew) return; if (!confirm(`'${ED.name}' 파이프라인을 삭제할까요?`)) return;
+  try { await api('/api/pipelines/delete', { id: ED.id }); toast('삭제됨'); PLSEL = 'standard'; loadPipelines(); } catch (e) { toast('삭제 실패: ' + e.message); } };
+$('#pl-name').oninput = e => { ED.name = e.target.value; scheduleValidate(); };
+$('#pl-id').oninput = e => { ED.id = e.target.value.trim(); scheduleValidate(); };
+const ro = () => ED.builtin;
+function paramSummary(b) { const p = b.params || {}, out = []; if (p.max_revisions != null) out.push(`라운드 ${p.max_revisions}`); if (p.core === false) out.push('변경 모듈만'); if (p.core === true) out.push('핵심 포함');
+  if (p.model) out.push(p.model.includes('haiku') ? 'Haiku' : 'Sonnet'); return out.join(' · '); }
+function renderEditor() {
+  $('#pl-name').value = ED.name; $('#pl-id').value = ED.id; $('#pl-name').disabled = ro(); $('#pl-id').disabled = !ED.isNew;
+  $('#pl-badge').textContent = ''; $('#pl-badge').append(pill(ED.builtin ? '내장(읽기 전용)' : (ED.isNew ? '새 파이프라인' : '사용자 정의'), ED.builtin ? 'warn' : 'ok'));
+  $('#pl-ro').textContent = ED.builtin ? '내장 프리셋은 수정할 수 없습니다. 위의 “복제”로 복사본을 만들어 편집하세요.' : '';
+  $('#pl-del').disabled = ED.builtin || ED.isNew;
+  const chain = $('#pl-chain'); chain.textContent = '';
+  ED.blocks.forEach((b, i) => { if (i) chain.append(el('span', 'arrow', '→')); const locked = CAT[b.id].locked, btn = el('button', 'blk' + (i === SELIDX ? ' sel' : '') + (!b.enabled ? ' off' : '') + (locked ? ' lock' : ''));
+    btn.append(el('b', '', (locked ? '🔒 ' : '') + CAT[b.id].name), el('span', '', (b.enabled ? '' : '꺼짐 · ') + paramSummary(b))); btn.onclick = () => { SELIDX = i; renderEditor(); }; chain.append(btn); });
+  const pal = $('#pl-palette'); pal.textContent = ''; const have = new Set(ED.blocks.map(b => b.id)); const missing = CANON.filter(id => !have.has(id) && !CAT[id].locked);
+  if (missing.length && !ro()) { pal.append(el('span', 'muted', '추가할 수 있는 블록:')); missing.forEach(id => { const b = el('button', 'chip-add', '+ ' + CAT[id].name); b.onclick = () => addBlock(id); pal.append(b); }); }
+  renderDetail(); $('#pl-save').disabled = ro() || PL_ERRS.length > 0 || !ED.id || !ED.name; scheduleValidate();
+}
+function addBlock(id) { const idx = CANON.indexOf(id); let at = ED.blocks.findIndex(b => CANON.indexOf(b.id) > idx); if (at < 0) at = ED.blocks.length; ED.blocks.splice(at, 0, { id, enabled: true, params: {} }); SELIDX = at; renderEditor(); }
+function move(i, d) { const j = i + d; if (j < 0 || j >= ED.blocks.length) return; [ED.blocks[i], ED.blocks[j]] = [ED.blocks[j], ED.blocks[i]]; SELIDX = j; renderEditor(); }
+function renderDetail() {
+  const d = $('#pl-detail'); d.textContent = ''; if (SELIDX < 0 || !ED.blocks[SELIDX]) { d.append(el('span', 'muted small', '블록을 누르면 설정이 나옵니다.')); return; }
+  const b = ED.blocks[SELIDX], c = CAT[b.id], r = RULES[b.id] || {}; const h = el('div', 'row'); h.append(el('b', '', c.name), el('span', 'grow'));
+  h.append(pill({ pre: '사전', cycle: '반복(구현→검사)', post: '사후' }[c.phase], ''));
+  if (c.locked) h.append(pill('🔒 잠금 — 빼거나 끄거나 순서를 바꿀 수 없음', 'warn'));
+  d.append(h);
+  if (!c.locked && !ro()) { const row = el('div', 'row'); const t = el('button', '', b.enabled ? '끄기' : '켜기'); t.onclick = () => { b.enabled = !b.enabled; renderEditor(); };
+    const up = el('button', '', '▲'), dn = el('button', '', '▼'), rm = el('button', 'bad', '빼기'); up.onclick = () => move(SELIDX, -1); dn.onclick = () => move(SELIDX, 1);
+    rm.onclick = () => { ED.blocks.splice(SELIDX, 1); SELIDX = -1; renderEditor(); }; row.append(t, up, dn, rm); d.append(row); }
+  const pr = el('div', 'row small'); const set = (k, v) => { b.params = b.params || {}; b.params[k] = v; renderEditor(); };
+  if (r.max_revisions) { pr.append(el('span', '', '수정 라운드'), sel([0, 1, 2, 3].map(String), String((b.params || {}).max_revisions ?? 1), v => set('max_revisions', +v))); }
+  if (r.model) { pr.append(el('span', '', '모델'), sel(MODELS, (b.params || {}).model || '', v => { if (v) set('model', v); else { delete b.params.model; renderEditor(); } }, true)); }
+  if (r.budget) { const n = el('input'); n.type = 'number'; n.step = '0.1'; n.min = r.budget[0]; n.max = r.budget[1]; n.placeholder = '기본'; n.value = (b.params || {}).budget ?? '';
+    n.onchange = () => { if (n.value === '') { delete b.params.budget; } else { b.params = b.params || {}; b.params.budget = +n.value; } renderEditor(); }; pr.append(el('span', '', '비용 상한($)'), n); }
+  if (b.id === 'tests') { const cb = el('input'); cb.type = 'checkbox'; cb.checked = (b.params || {}).core !== false; cb.onchange = () => set('core', cb.checked); pr.append(cb, el('span', '', '핵심 모듈 테스트도 실행(끄면 변경 모듈만)')); }
+  Array.from(pr.querySelectorAll('select,input')).forEach(x => x.disabled = ro()); if (pr.children.length) d.append(pr);
+  d.append(el('div', 'muted small', ({ spec: '원인 분석으로 수정 명세서를 작성합니다. 수정 대상이 아니면 여기서 멈춥니다.', worktree: '깨끗한 git 워크트리와 수정 브랜치를 만듭니다.',
+    implement: '명세서대로 코드를 고칩니다(셸 없음). 문제가 있으면 정해진 라운드 수만큼 되돌아와 고칩니다.', guard: '운영 자원(원격 main/data · Vercel · GCP · 텔레그램 번호) 접촉과 금지 경로 수정을 기계적으로 검사합니다.',
+    tests: '문법 검사와 self-test 를 변경 전·후로 비교합니다.', verify: '수정이 명세서와 원인 분석에 맞는지 읽기 전용으로 검증합니다.', review: '새 맥락의 독립 검토자가 diff 만 보고 부작용 · 운영 자원 접촉을 적대적으로 봅니다.',
+    commit: '수신기가 로컬 브랜치에 커밋합니다(원격 푸시 없음).', protected: 'main · data · 원격 ref · 원격 설정 · 환경 파일이 그대로인지 확인합니다.',
+    apply: '러너 작업 브랜치에 ff-only 로 적용합니다.', restart: '러너를 재시작하고 건강 확인에 실패하면 자동으로 되돌립니다.' })[b.id] || ''));
+}
+function sel(opts, cur, on, withDefault) { const s = el('select'); if (withDefault) { const o = el('option', '', '기본'); o.value = ''; s.append(o); } opts.forEach(v => { const o = el('option', '', v); o.value = v; s.append(o); }); s.value = cur; s.onchange = () => on(s.value); return s; }
+function scheduleValidate() { clearTimeout(VTIMER); VTIMER = setTimeout(runValidate, 250); }
+async function runValidate() { try { const j = await api('/api/pipelines/validate', { blocks: ED.blocks }); PL_ERRS = j.errors; } catch (e) { PL_ERRS = ['검증 요청 실패: ' + e.message]; }
+  const m = $('#pl-msg'); m.textContent = ''; const warn = [];
+  const en = id => ED.blocks.some(b => b.id === id && b.enabled);
+  if (!en('verify') && !en('review')) warn.push('⚠️ 검증 · 독립 검토가 모두 없습니다 — 코드 검토 없이 커밋·적용됩니다(가드와 보호 확인은 유지).');
+  if (en('apply') && !en('restart')) warn.push('ℹ️ 재시작이 없어 적용된 코드는 다음 러너 재시작 때 반영됩니다.');
+  if (PL_ERRS.length) PL_ERRS.forEach(e => m.append(el('div', 'err', '✗ ' + e))); else m.append(el('div', 'good', '✓ 조립 규칙을 모두 통과했습니다'));
+  warn.forEach(w => m.append(el('div', 'wr', w)));
+  $('#pl-save').disabled = ro() || PL_ERRS.length > 0 || !ED.id || !ED.name; }
+$('#pl-save').onclick = async () => { if (!confirm(`'${ED.name}' (${ED.id}) 파이프라인을 저장할까요?`)) return;
+  try { await api('/api/pipelines', { id: ED.id, name: ED.name, blocks: ED.blocks }); toast('저장됨 — 제어 탭의 정책에서 고를 수 있습니다'); PLSEL = ED.id; await loadPipelines(); $('#pl-note').textContent = '저장됨 ' + new Date().toLocaleTimeString(); }
+  catch (e) { toast('저장 실패: ' + e.message); } };
+
+/* ── 공통 상태 · 도우미 ── */
+let CSRF = '', TAB = 'overview', STATUS = null;
+const MODEKO = { auto: '자동', semi: '반자동', off: '끔' };
+const CYCLEKO = { event: '이벤트 발생 시마다', h1: '1시간마다', h3: '3시간마다' };
+async function postJson(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': CSRF }, body: JSON.stringify(body || {}) });
+  if (r.status === 401) { location.href = '/login'; throw new Error('401'); }
+  return { status: r.status, j: await r.json().catch(() => ({})) };
+}
+function kv(pairs) { const g = el('div', 'kv'); pairs.forEach(([k, v]) => { g.append(el('b', '', k)); const s = el('span'); if (v instanceof Node) s.append(v); else s.textContent = v; g.append(s); }); return g; }
+function setBadge(n) { const b = $('#nav-ctl'); b.textContent = 'Control'; if (n) b.append(el('span', 'bd', String(n))); }
+
+/* ── Overview ── */
+async function loadStatus() {
+  const s = STATUS = await api('/api/status');
+  const st = $('#stage'); st.textContent = `${s.stage}단계 · ${MODEKO[s.mode] || '?'}${s.mode !== 'off' ? ' · ' + (CYCLEKO[s.cycle] || '') : ''}`; st.className = 'pill' + (s.mode === 'off' ? ' warn' : '');
+  $('#clock').textContent = kst(s.now) + ' KST';
+  renderUsage(s.usage); setBadge(s.proposals_pending); renderOverview(s);
+  renderMode(s.mode); renderCycle(s);
+  if (POL) syncPolicyRows();
+}
+function hcCard(title, ok, okText, badText, pairs) {
+  const c = el('div', 'card'); const h = el('div', 'row'); h.append(el('h3', '', title), el('span', 'grow'), ok === null ? pill('확인 불가', '') : pill(ok ? okText : badText, ok ? 'ok' : 'bad')); c.append(h, kv(pairs)); return c;
+}
+function renderOverview(s) {
+  const g = $('#hc-grid'); g.textContent = '';
+  const ctr = s.publisher.counters ? Object.entries(s.publisher.counters).map(([k, v]) => `${k} ${v}`).join(' · ') : '-';
+  g.append(hcCard('발신기', s.publisher.alive, '정상', '신호 없음', [['마지막 신호', rel(s.publisher.age)], ['발신 레벨', s.publisher.level || '-'], ['발신 정지', s.publisher.paused ? '예' : '아니오'], ['누적', ctr], ['pid', s.publisher.pid ?? '-']]));
+  const rxc = el('div', 'card'); const rxh = el('div', 'row'); rxh.append(el('h3', '', '수신기'), el('span', 'grow'),
+    s.mode === 'off' ? pill('끔', 'warn') : s.rx_paused ? pill('정지됨', 'warn') : pill('동작 중', 'ok'));
+  rxc.append(rxh, kv([['오늘 분석', `${s.receiver.calls_today} / ${s.receiver.daily_cap}`], ['오늘 수정 시도', `${s.receiver.fixes_today}회 (상한 없음)`], ['분석 정지(PAUSE)', s.rx_paused ? '예' : '아니오'],
+    ['발신기 소실 알림', s.lost_alerted ? '발송됨' : '없음'], ['pid', s.receiver.pid]])); g.append(rxc);
+  g.append(hcCard('러너', s.runner.healthy === undefined ? null : s.runner.healthy, '정상', s.runner.healthy === false ? '응답 없음' : '확인 불가', [['포트', s.runner.port ?? '-'], ['작업 브랜치 HEAD', s.head], ['pid', s.runner.pid ?? '-']]));
+  const q = $('#q-grid'); q.textContent = '';
+  const tile = (label, n, bad) => { const t = el('div', 'card'); t.style.marginBottom = '0'; t.append(el('div', 'muted small', label)); const b = el('b', '', String(n)); b.style.fontSize = '1.6rem'; if (bad) b.className = 'err'; t.append(b); return t; };
+  q.append(tile('inbox · 대기', s.queue.inbox), tile('묶음 대기(주기)', s.hold.count), tile('처리 중', s.queue.processing), tile('완료', s.queue.done), tile('dead · 처리 실패', s.queue.dead, s.queue.dead > 0));
+  $('#q-note').textContent = s.cycle === 'event' || s.mode === 'off' ? '' : `다음 실행 ${kst(s.hold.next_run, true)} KST · 지금 대기 중 ${s.hold.count}건 / ${s.hold.types}종류`;
+  const pp = $('#pp-kv'); pp.textContent = ''; pp.append(...kv([['로컬 배포 · 재시작', s.apply_local ? pill('켜짐', 'ok') : pill('꺼짐(커밋까지만)', 'warn')], ['적용 브랜치', s.apply_branch], ['원격 푸시', '안 함 · 고정'], ['금지 자원 검사', '항상 실행 · 고정']]).childNodes);
+  const md2 = $('#md-kv'); md2.textContent = ''; md2.append(...kv([['분석 · 명세 · 검증 · 독립 검토', s.models.analysis], ['코드 수정(구현)', s.models.code]]).childNodes);
+}
+
+/* ── Control: 로그 한 건 = 한 칸. 누르면 로그 · 분석 보고서 · 파이프라인 · 승인이 펼쳐진다 ── */
+let CD = null, OPEN = null, CF = '', CSIG = '', REP = {}, SHOWLOG = false;
+const APR_ST = { pending: ['승인 대기', 'warn'], running: ['실행 중', ''], done: ['완료', 'ok'], failed: ['실패', 'bad'], declined: ['거절됨', ''], replanning: ['재계획 중', ''], interrupted: ['중단됨', 'bad'], held: ['적용 보류', 'warn'] };
+const FIX_ST = { applied: ['적용 · 재시작 완료', 'ok'], applied_no_restart: ['적용(재시작 안 함)', 'ok'], committed: ['커밋됨(적용 전)', 'warn'], held: ['적용 보류', 'warn'], reverted: ['되돌림', 'bad'], guard_fail: ['가드 중단', 'bad'], error: ['수정 실패', 'bad'], failed: ['수정 실패', 'bad'] };
+const VERDICT = { confirmed: ['원인 확정', 'ok'], unknown: ['원인 불명', ''], ignored: ['무시 가능', ''] };
+async function loadControl() {
+  const [e, r, p] = await Promise.all([api('/api/errors?log=1'), api('/api/runs'), api('/api/proposals')]);
+  const runs = {}; (r.runs || []).forEach(x => { if (!runs[x.sig]) runs[x.sig] = x; });              // 최신순
+  const props = {}; (p.proposals || []).forEach(x => { const c = props[x.sig]; if (!c || (x.status === 'pending' && c.status !== 'pending')) props[x.sig] = x; });
+  CD = { errors: e.errors || [], tail: e.log || [], runs, props, head: p.head_now, pending: p.pending, busy: e.manual_busy || [], fixable: e.fixable || [] };
+  setBadge(p.pending); renderControl(false);
+}
+function rowState(e, run, prop) {
+  if (e.human) return ['사람 조치 필요', 'warn'];
+  if (prop && prop.status === 'pending') return ['승인 대기', 'warn'];
+  if (prop && ['running', 'replanning'].includes(prop.status)) return APR_ST[prop.status];
+  if (prop && prop.status === 'declined') return ['거절됨', ''];
+  const fs = (prop && prop.result && prop.result.fix_status) || (run && run.fix_status) || e.fix_status;
+  if (fs && FIX_ST[fs]) return FIX_ST[fs];
+  const v = e.verdict || (run && run.verdict);
+  if (v === 'ignored') return ['수정 대상 아님', ''];
+  if (v === 'unknown') return ['원인 불명', ''];
+  if (run) return ['분석 완료', ''];
+  return ['기록만', ''];
+}
+function renderControl(force) {
+  if (!CD) return;
+  const typing = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
+  const sig = JSON.stringify([CD.errors.map(x => [x.sig, x.count, x.last, x.verdict, x.fix_status, x.human && x.human.since]), Object.values(CD.runs).map(x => [x.ts, x.fix_status]), Object.values(CD.props).map(x => [x.id, x.status, x.plans.length]), CD.busy, CD.fixable, OPEN, CF, SHOWLOG]);
+  if (!force && (sig === CSIG || typing)) return; CSIG = sig;
+  const f = $('#ctl-filter'); f.textContent = '';
+  const nPend = CD.errors.filter(x => CD.props[x.sig] && CD.props[x.sig].status === 'pending').length;
+  [['', '전체', CD.errors.length], ['CRITICAL', 'CRITICAL', 0], ['ERROR', 'ERROR', 0], ['WARN', 'WARN', 0], ['__pending', '승인 대기', nPend], ['__human', '사람 조치 필요', 0]].forEach(([k, label, n]) => {
+    const cnt = k === '' || k === '__pending' ? n : k === '__human' ? CD.errors.filter(x => x.human).length : CD.errors.filter(x => x.sev === k).length;
+    const b = el('button', CF === k ? 'on' : '', `${label} ${cnt}`); if ((k === '__pending' || k === '__human') && cnt) b.style.color = 'var(--warn)'; b.onclick = () => { CF = k; renderControl(true); }; f.append(b); });
+  const l = $('#ctl-list'); l.textContent = '';
+  const rows = CD.errors.filter(x => !CF ? true : CF === '__pending' ? (CD.props[x.sig] && CD.props[x.sig].status === 'pending') : CF === '__human' ? !!x.human : x.sev === CF);
+  if (!rows.length) l.append(el('div', 'muted', '기록된 에러가 없습니다.'));
+  rows.slice(0, 100).forEach(e => l.append(logRow(e)));
+  const ll = $('#log-list'); ll.textContent = '';
+  if (SHOWLOG) { const t = el('table'); t.append(Object.assign(el('tr'), { innerHTML: '<th>시각(KST)</th><th>심각도</th><th>메시지</th><th>비고</th>' }));
+    CD.tail.forEach(x => { const tr = el('tr'); [kst(x.ts), x.severity, x.msg + (x.occ > 1 ? ` (×${x.occ})` : ''), x.note || ''].forEach(v => tr.append(el('td', '', v))); t.append(tr); }); ll.append(t); }
+}
+function logRow(e) {
+  const run = CD.runs[e.sig], prop = CD.props[e.sig], st = rowState(e, run, prop), open = OPEN === e.sig;
+  const w = el('div', 'lrow' + (open ? ' open' : '')); const h = el('button', 'lh'); h.setAttribute('aria-expanded', open ? 'true' : 'false');
+  h.append(pill(e.sev, 'sev-' + e.sev), el('span', 'w', e.where), el('span', 'm', e.msg), el('span', 'muted small', `×${e.count} · ${kst(e.last, false)}`), pill(st[0], st[1]), el('span', 'muted', open ? '▲' : '▼'));
+  h.onclick = () => { OPEN = open ? null : e.sig; renderControl(true); }; w.append(h);
+  if (open) w.append(logBody(e, run, prop));
+  return w;
+}
+function loadReport(name, box) {
+  if (REP[name] !== undefined) { box.innerHTML = md(REP[name]); return; }
+  api('/api/report/' + encodeURIComponent(name)).then(j => { REP[name] = j.text; if (box.isConnected) box.innerHTML = md(j.text); }).catch(() => { box.textContent = '보고서를 불러올 수 없습니다.'; });
+}
+function logBody(e, run, prop) {
+  const b = el('div', 'lb');
+  // 1) 발신기 에러 로그
+  const p1 = el('div', 'pn'); p1.append(el('h3', '', '발신기 에러 로그'));
+  p1.append(kv([['시그니처', e.sig], ['첫 발생 · 마지막', `${kst(e.first)} · ${kst(e.last)} KST`], ['누적', `${e.count}건`], ['쿨다운으로 생략', `${e.suppressed || 0}건`]]));
+  const lines = CD.tail.filter(x => x.sig === e.sig).slice(0, 6);
+  lines.forEach(x => p1.append(el('div', 'logl', `${kst(x.ts)} ${x.severity} ${x.msg}${x.occ > 1 ? ` (×${x.occ})` : ''}${x.note ? ' — ' + x.note : ''}`)));
+  if (!lines.length) p1.append(el('div', 'muted small', '최근 기록 줄이 없습니다.'));
+  // 2) 에러 분석 보고서
+  const p2 = el('div', 'pn'); p2.append(el('h3', '', '에러 분석 보고서'));
+  const rname = (run && run.report) || e.report, v = e.verdict || (run && run.verdict);
+  if (rname) {
+    const hh = el('div', 'row'); if (v && VERDICT[v]) hh.append(pill(VERDICT[v][0], VERDICT[v][1])); hh.append(el('span', 'muted small', rname)); p2.append(hh);
+    const box = el('div', 'repbox md', '불러오는 중…'); p2.append(box); loadReport(rname, box);
+    const ob = el('button', '', '보고서 전체 열기'); ob.onclick = () => openReport(rname); p2.append(ob);
+  } else {
+    const pol = STATUS && STATUS.policy && STATUS.policy[e.sev];
+    p2.append(el('div', 'muted small', pol && pol.action === 'off' ? `${e.sev} 정책이 “끔(기록만)”이라 분석하지 않았습니다. Settings 탭의 로그 레벨별 대응 정책에서 “분석만” 이상으로 바꾸면 보고서가 생깁니다.` : '아직 분석하지 않았습니다(쿨다운 중이거나 묶음 주기 대기 중일 수 있습니다).'));
+  }
+  // 3) 파이프라인 실행 기록
+  const p3 = el('div', 'pn'); p3.append(el('h3', '', '파이프라인 실행 기록'));
+  if (run && run.steps && run.steps.length > 1) {
+    const hh = el('div', 'row'); hh.append(pill(run.preset === 'urgent' ? '긴급' : run.preset === 'standard' ? '표준' : (run.preset || '-'), ''), el('span', 'muted small', `${kst(run.ts)} KST`)); p3.append(hh);
+    const note = el('div', 'run-note', '블록을 누르면 단계 결과가 표시됩니다.'); p3.append(chain(run.steps, note), note);
+    const halt = run.steps.find(x => ['fail', 'stop', 'held'].includes(x.status));
+    const pairs = []; const fl = run.files || [];
+    if (fl.length) pairs.push(['변경 파일', fl.map(x => `${x.path} (+${x.added} −${x.deleted})`).join(', ')]);
+    if (run.commit_before) pairs.push(['커밋', `${run.commit_before} → ${run.commit_after || run.commit_before}${run.branch ? ' · ' + run.branch : ''}`]);
+    if (halt) pairs.push(['중단 사유', `${halt.name}: ${halt.note || ST[halt.status]}`]);
+    if (pairs.length) { const k = kv(pairs); k.style.marginTop = '.5rem'; p3.append(k); }
+  } else if (run) {
+    p3.append(el('div', 'muted small', run.action === 'fix' ? '분석만 했습니다(수정 대상이 아니거나 원인이 확정되지 않았습니다).' : '정책이 “분석만”이라 수정 파이프라인을 시작하지 않았습니다.'));
+  } else p3.append(el('div', 'muted small', '수정 파이프라인을 시작하지 않았습니다.'));
+  b.append(p1, p2, p3, e.human ? humanPanel(e) : approvalPanel(e, prop));
+  if (['WARN', 'INFO', 'DEBUG'].includes(e.sev)) b.append(manualPanel(e));
+  return b;
+}
+
+/* 수동 분석 · 수정: 정책이 WARN 이하를 자동 처리하지 않을 때 사람이 직접 누른다 */
+async function manualRun(sig, fix, saved, note) {
+  try { const j = await api(saved ? '/api/manual_fix' : '/api/manual', saved ? { sig, note: note || '' } : { sig, fix }); toast(j.msg || '시작했습니다'); await loadControl(); }
+  catch (er) { toast('실패: ' + er.message); }
+}
+function manualPanel(e) {
+  const c = el('div', 'pn'); c.append(el('h3', '', '수동 분석 · 수정'));
+  const busy = (CD.busy || []).includes(e.sig), off = STATUS && STATUS.mode === 'off';
+  c.append(el('div', 'muted small', `${e.sev} 는 정책에 따라 자동으로 처리되지 않을 수 있습니다. 버튼을 누르면 쿨다운 · 동작 주기와 관계없이 이 에러의 최근 기록으로 지금 처리합니다.` + (STATUS && STATUS.mode === 'semi' ? ' 반자동이라 수정은 계획안을 만든 뒤 승인 대기로 넘어갑니다.' : '')));
+  const r = el('div', 'row apr-sec'); const an = el('button', 'pri', busy ? '처리 중…' : '분석'); const fx = el('button', 'go', busy ? '처리 중…' : '분석 + 수정');
+  an.disabled = fx.disabled = busy || off;
+  an.onclick = () => { if (confirm('이 에러를 지금 분석할까요? (Sonnet 호출 1회 — 구독 사용량이 소모됩니다)')) manualRun(e.sig, false); };
+  fx.onclick = () => { if (confirm('이 에러를 분석하고, 원인이 확정되면 수정까지 진행할까요? ' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true); };
+  const sv = (CD.fixable || []).includes(e.sig);
+  r.append(an, fx);
+  if (sv) {
+    const box = el('div', 'apr-sec'); const ta = el('textarea'); ta.placeholder = '수정 지시(선택) — 예: 연속 실패할 때만 경고하고 재시도 간격을 늘리세요'; ta.rows = 2;
+    const sf = el('button', 'go', busy ? '처리 중…' : '이 분석으로 수정'); sf.disabled = busy || off;
+    sf.title = '분석 보고서를 읽은 뒤 판정과 관계없이 수정을 진행합니다(재분석 없음)';
+    sf.onclick = () => { if (confirm('보고서를 확인했고 수정을 진행할까요? (재분석 없음, 판정이 무시 가능 · 원인 불명이어도 진행) ' + (STATUS && STATUS.mode === 'semi' ? '반자동: 계획안을 만들고 승인 대기로 둡니다.' : '자동: 가드 · 검증을 통과하면 로컬 브랜치에 커밋하고 적용 · 재시작합니다.'))) manualRun(e.sig, true, true, ta.value); };
+    box.append(el('div', 'muted small', '보고서를 읽고 수정하기로 했다면 아래에서 진행합니다. 지시문은 구현 단계에 그대로 전달됩니다.'), ta, sf); c.append(r, box);
+  } else c.append(r);
+  if (off) r.append(el('span', 'muted small', "동작 모드가 '끔'이라 실행할 수 없습니다."));
+  return c;
+}
+
+/* 사람 조치 필요: 외부 서비스의 인증 · 결제 · 쿼터 · 계정 문제 — 자동 수정 대상이 아니다 */
+async function humanClear(sig) { try { const j = await api('/api/human_clear', { sig }); toast(j.msg || '해제했습니다'); await loadControl(); } catch (er) { toast('실패: ' + er.message); } }
+function humanPanel(e) {
+  const h = e.human, c = el('div', 'pn'); c.append(el('h3', '', '사람 조치 필요'));
+  c.append(el('div', 'wr small', '이 에러는 코드가 아니라 사람이 결정해야 하는 문제(키 · 요금제 · 쿼터 · 계정 · 공급자 선택 등)로 판정돼 자동 수정 · 계획안을 만들지 않습니다.'));
+  c.append(kv([['판정 시각', kst(h.since) + ' KST'], ['원인', h.reason || '-'], ['사람이 할 일', h.action || '보고서 참고']]));
+  c.append(el('div', 'muted small', '같은 에러는 표시가 풀리거나 만료되기 전까지 다시 분석하지 않습니다(구독 사용량 보호).'));
+  const r = el('div', 'row apr-sec'); const b = el('button', 'go', '조치 완료 — 다시 감시');
+  b.onclick = () => { if (confirm('키 교체 · 요금제 · 공급자 선택 등 조치를 마쳤습니까? 표시를 풀고 같은 에러가 다시 나면 새로 분석합니다.')) humanClear(e.sig); };
+  r.append(b); c.append(r); return c;
+}
+
+/* 승인 결재: 반자동 모드의 패치 계획안 — 승인 · 재분석(반려 사유) · 거절 */
+async function openPlan(id, rev) { try { const j = await api('/api/proposals/' + id); $('#m-title').textContent = `패치 계획 파일 — rev ${rev}`; $('#m-body').innerHTML = md(j.plan_texts[String(rev)] || '(없음)'); $('#modal').classList.add('on'); } catch (e) { toast('열 수 없음: ' + e.message); } }
+async function decide(id, action, body, okmsg) { try { const j = await api(`/api/proposals/${id}/${action}`, body || {}); toast(j.msg || okmsg); await loadControl(); loadStatus(); } catch (e) { toast('실패: ' + e.message); } }
+function approvalPanel(e, p) {
+  const c = el('div', 'pn'); c.append(el('h3', '', '승인 결재'));
+  if (!p) { c.append(el('div', 'muted small', STATUS && STATUS.mode === 'semi' ? '이 에러에 대한 패치 계획안이 없습니다(수정 대상이 아니거나 아직 분석 전).' : '자동 모드에서는 승인 없이 실행됩니다. 사람이 결재하려면 Settings 에서 반자동으로 바꾸세요.')); return c; }
+  const plan = p.plans[p.plans.length - 1], st = APR_ST[p.status] || [p.status, ''];
+  const h = el('div', 'row'); h.append(pill(st[0], st[1]), pill('계획 rev ' + plan.rev, ''), el('span', 'grow'), el('span', 'muted small', kst(p.created) + ' KST')); c.append(h);
+  const tt = el('div', '', plan.title); tt.style.fontWeight = '600'; c.append(tt);
+  const ul = el('ul', 'small'); plan.change_plan.forEach(x => ul.append(el('li', '', `${x.file}: ${x.change}`))); c.append(ul, el('div', 'muted small', '테스트 계획: ' + plan.test_plan), el('div', 'muted small', '위험: ' + plan.risk));
+  if (plan.feedback) c.append(el('div', 'small', '↩ 반영한 재분석 사유: ' + plan.feedback));
+  if (CD.head && p.base !== CD.head && p.status === 'pending') c.append(el('div', 'wr small', `⚠️ 계획을 만든 뒤 코드가 바뀌었습니다(${p.base} → ${CD.head}). 승인하면 현재 코드 기준으로 실행됩니다.`));
+  const fb = el('button', '', '계획 파일 보기'); fb.onclick = () => openPlan(p.id, plan.rev);
+  if (p.status === 'pending') {
+    const r = el('div', 'row apr-sec'); const ok = el('button', 'go', '승인 · 실행'); const rp = el('button', '', '재분석'); const dc = el('button', 'bad', '거절');
+    const box = el('div', 'apr-sec'); box.style.display = 'none'; const ta = el('textarea'); ta.placeholder = '재분석 사유 (3자 이상 — 예: tests 도 같이 고쳐 주세요 / 이 파일은 건드리지 마세요)'; const go = el('button', 'pri', '재분석 요청'); box.append(ta, go);
+    ok.onclick = () => { if (confirm(`이 계획을 승인할까요?\n'${plan.title}'\n파이프라인(구현 → 가드 → 검증 …)을 실행하고 통과하면 로컬 브랜치에 커밋/적용합니다.`)) decide(p.id, 'approve', {}, '승인됨'); };
+    rp.onclick = () => { box.style.display = box.style.display === 'none' ? 'block' : 'none'; if (box.style.display === 'block') ta.focus(); };
+    go.onclick = () => { if (ta.value.trim().length < 3) { toast('재분석 사유를 3자 이상 입력하세요'); return; } decide(p.id, 'replan', { reason: ta.value.trim() }, '재분석 요청됨'); };
+    dc.onclick = () => { if (confirm('이 계획을 거절할까요? 아무 변경도 하지 않으며, 같은 에러는 쿨다운 동안 다시 제안하지 않습니다.')) decide(p.id, 'decline', {}, '거절됨'); };
+    r.append(ok, rp, dc, el('span', 'grow'), fb); c.append(r, box);
+  } else { const r = el('div', 'row apr-sec'); r.append(fb); c.append(r); }
+  if (p.result) { const rs = el('div', 'apr-sec small'); const fl = p.result.files || []; rs.textContent = `결과: ${p.result.fix_status}${p.result.branch ? ' · ' + p.result.branch : ''}${fl.length ? ` · 파일 ${fl.length}개 +${fl.reduce((a, x) => a + x.added, 0)} −${fl.reduce((a, x) => a + x.deleted, 0)}` : ''}${p.result.note ? ' · ' + p.result.note : ''}`; c.append(rs); }
+  if (p.decisions.length) { const d = el('div', 'muted small'); d.textContent = '이력: ' + p.decisions.map(x => `${kst(x.ts, false)} ${x.action}${x.note ? '(' + x.note.slice(0, 40) + ')' : ''}`).join(' → '); c.append(d); }
+  return c;
+}
+const ST = { ok: '통과', fail: '실패', skipped: '건너뜀', stop: '중단', held: '보류' };
+function chain(steps, noteEl) {
+  const w = el('div', 'chain');
+  steps.forEach((s, i) => { if (i) w.append(el('span', 'arrow', '→'));
+    const b = el('button', 'blk st-' + s.status); b.append(el('b', '', s.name), el('span', '', (ST[s.status] || s.status) + (s.sec != null ? ` · ${s.sec}초` : '') + (s.cost ? ` · $${s.cost}` : '')));
+    b.onclick = () => { noteEl.textContent = `${s.name} — ${ST[s.status] || s.status}${s.model ? ' · ' + s.model : ''}${s.note ? ' · ' + s.note : ''}`; }; w.append(b); });
+  return w;
+}
+$('#log-toggle').onclick = () => { SHOWLOG = !SHOWLOG; $('#log-toggle').textContent = SHOWLOG ? '기록 숨기기' : 'WARN 이하 기록 보기'; renderControl(true); };
+
+/* ── Settings: 동작 모드 · 동작 주기 ── */
+const MODEINFO = { auto: ['자동', '기본 — 에러를 분석하고 정책에 따라 전부 자동으로 패치합니다.', '승인 단계 없이 실행됩니다.'],
+  semi: ['반자동', '분석 후 패치 계획안만 만들고, Control 탭에서 사람이 승인 · 재분석 · 거절합니다.', '승인 전에는 코드 · 브랜치를 건드리지 않습니다.'],
+  off: ['끔', '자동 대응이 동작하지 않습니다 — 에러는 기록만 합니다.', '알림(발신기 소실 포함)도 보내지 않습니다. 장애 대응 중 잠깐 멈출 때 쓰는 모드이며, 이 페이지와 텔레그램 명령은 계속 동작합니다.'] };
+let CURMODE = null, MODETOAST = '';
+function renderMode(m) {
+  CURMODE = m; const b = $('#mode-btns'); b.textContent = '';
+  ['auto', 'semi', 'off'].forEach(k => { const btn = el('button', 'opt' + (k === m ? ' on' : '')); btn.setAttribute('aria-pressed', k === m ? 'true' : 'false');
+    btn.append(el('i', 'rd'), (() => { const s = el('span'); s.append(el('b', '', MODEINFO[k][0]), el('small', '', MODEINFO[k][1])); return s; })()); btn.onclick = () => setMode(k); b.append(btn); });
+  $('#mode-desc').textContent = ''; $('#mode-note').textContent = m ? MODEINFO[m][2] : ''; $('#mode-toast').textContent = MODETOAST;
+}
+async function setMode(m, queue) {
+  if (m === CURMODE) return;
+  try {
+    const { status, j } = await postJson('/api/mode', queue ? { mode: m, queue } : { mode: m });
+    if (status === 409 && j.needs_queue) { openQueueDialog(m, j); return; }
+    if (status !== 200) { toast('모드 변경 실패: ' + ((j.errors || [])[0] || j.error || status)); return; }
+    MODETOAST = j.queue === 'process' ? `대기 중이던 ${j.count}건을 처리한 뒤 모드를 바꿨습니다.` : j.queue === 'discard' ? `대기 중이던 ${j.count}건을 버리고 모드를 바꿨습니다.` : '';
+    toast(`동작 모드: ${j.label}`); await loadStatus();
+  } catch (e) { toast('모드 변경 실패: ' + e.message); }
+}
+function openQueueDialog(m, q) {
+  $('#dlg-text').textContent = `대기 중인 에러 ${q.count}건(${q.types}종류)이 있습니다. 먼저 처리하고 “${MODEINFO[m][0]}” 모드로 바꿀까요?`;
+  const close = () => $('#dlgov').classList.remove('on');
+  $('#dlg-cancel').onclick = close;
+  $('#dlg-yes').onclick = () => { close(); toast('대기 중인 에러를 처리하는 중입니다… (몇 분 걸릴 수 있습니다)'); setMode(m, 'process'); };
+  $('#dlg-no').onclick = () => { close(); setMode(m, 'discard'); };
+  $('#dlgov').classList.add('on');
+}
+const CYCINFO = { event: ['이벤트 발생 시마다', '에러가 도착하는 대로 바로 처리합니다(같은 종류는 쿨다운 안에서 1회). 반응이 가장 빠릅니다.'],
+  h1: ['1시간마다', '한 시간 동안 쌓인 에러에서 같은 종류(시그니처)를 추려내 정시에 한 번씩 처리합니다.'], h3: ['3시간마다', '세 시간 동안 쌓인 에러에서 같은 종류(시그니처)를 추려내 0 · 3 · 6 … 시 정각에 한 번씩 처리합니다.'] };
+function renderCycle(s) {
+  const b = $('#cyc-btns'); b.textContent = '';
+  ['event', 'h1', 'h3'].forEach(k => { const btn = el('button', 'opt' + (k === s.cycle ? ' on' : '')); btn.setAttribute('aria-pressed', k === s.cycle ? 'true' : 'false');
+    btn.append(el('i', 'rd'), (() => { const x = el('span'); x.append(el('b', '', CYCINFO[k][0]), el('small', '', CYCINFO[k][1])); return x; })());
+    btn.onclick = async () => { if (k === s.cycle) return; try { const { status, j } = await postJson('/api/cycle', { cycle: k }); if (status !== 200) throw new Error((j.errors || [])[0] || status); toast(`동작 주기: ${j.label}`); await loadStatus(); } catch (e) { toast('주기 변경 실패: ' + e.message); } };
+    b.append(btn); });
+  b.style.opacity = s.mode === 'off' ? '.45' : '1';
+  $('#cyc-note').textContent = s.cycle === 'event' ? (s.hold.count ? `보류 중인 에러 ${s.hold.count}건` : '대기 중인 에러 없음 — 도착하는 대로 처리합니다.')
+    : `다음 실행 ${kst(s.hold.next_run, true)} KST · 지금 대기 중 ${s.hold.count ? s.hold.count + '건 / ' + s.hold.types + '종류' : '인 에러 없음'}`;
+  $('#cyc-off').textContent = s.mode === 'off' ? '동작 모드가 “끔”이라 지금은 적용되지 않습니다.' : '';
+}
+
+/* ── Settings: 로그 레벨별 대응 정책 (+ 발신 레벨) ── */
+let POL = null, PMETA = null, SENDLV = 'WARN', SENDTTL = '3600', SEND_DIRTY = false, PREFS = null;
+const SENDRANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
+async function loadPolicy() {
+  const j = await api('/api/policy'); POL = j.policy; PMETA = j;
+  const lv = STATUS && STATUS.publisher && STATUS.publisher.level; SENDLV = lv in SENDRANK ? lv : 'WARN'; SEND_DIRTY = false; SENDTTL = '3600';
+  renderPolicy();
+}
+function renderPolicy() {
+  const body = $('#pol-body'); body.textContent = ''; PREFS = {};
+  PMETA.severities.forEach(sev => { const p = POL[sev]; const tr = el('tr'); const r = PREFS[sev] = { tr };
+    const c0 = el('td'); c0.append(pill(sev, 'sev-' + sev)); tr.append(c0);
+    const c1 = el('td'); r.snd = el('input'); r.snd.type = 'checkbox'; r.snd.setAttribute('aria-label', sev + ' 발신'); const fixed = sev === 'CRITICAL' || sev === 'ERROR';
+    r.snd.checked = fixed || SENDRANK[sev] <= SENDRANK[SENDLV]; r.snd.disabled = fixed;
+    const lab = el('label', 'row'); lab.style.gap = '.4rem'; lab.append(r.snd); r.sndNote = el('span', 'muted small', fixed ? (sev === 'CRITICAL' ? '항상 · 고정' : '최소 · 고정') : ''); lab.append(r.sndNote);
+    if (sev === 'INFO' || sev === 'DEBUG') { r.ttl = el('select'); [['900', '임시 발신 · 15분 뒤 자동 해제'], ['3600', '임시 발신 · 1시간 뒤 자동 해제'], ['14400', '임시 발신 · 4시간 뒤 자동 해제'], ['0', '항상 유지']].forEach(([v, t]) => { const o = el('option', '', t); o.value = v; r.ttl.append(o); }); r.ttl.value = SENDTTL; r.ttl.setAttribute('aria-label', sev + ' 임시 발신 해제 시점'); r.ttl.onchange = () => { SENDTTL = r.ttl.value; SEND_DIRTY = true; syncPolicyRows(); }; lab.append(r.ttl); }
+    r.snd.onchange = () => { SENDLV = r.snd.checked ? sev : ['ERROR', 'WARN', 'INFO', 'DEBUG'][SENDRANK[sev] - 1]; SEND_DIRTY = true; syncPolicyRows(); };
+    c1.append(lab); tr.append(c1);
+    const c2 = el('td'); r.rec = el('input'); r.rec.type = 'checkbox'; r.rec.checked = p.record; r.rec.setAttribute('aria-label', sev + ' 기록'); c2.append(r.rec); tr.append(c2);
+    const c3 = el('td'); r.act = el('select'); r.act.setAttribute('aria-label', sev + ' 동작'); Object.entries(PMETA.actions).forEach(([k, v]) => { const o = el('option', '', v); o.value = k; r.act.append(o); }); r.act.value = p.action; c3.append(r.act); tr.append(c3);
+    const c4 = el('td'); r.pre = el('select'); r.pre.setAttribute('aria-label', sev + ' 파이프라인'); Object.entries(PMETA.presets).forEach(([k, v]) => { const o = el('option', '', v); o.value = k; r.pre.append(o); }); r.pre.value = p.preset; c4.append(r.pre); tr.append(c4);
+    const c5 = el('td'); r.cd = el('input'); r.cd.type = 'number'; r.cd.min = 0; r.cd.value = Math.round(p.cooldown_sec / 60); r.cd.setAttribute('aria-label', sev + ' 쿨다운'); c5.append(r.cd); tr.append(c5);
+    r.act.onchange = syncPolicyRows; body.append(tr); });
+  syncPolicyRows();
+}
+function syncPolicyRows() {
+  if (!PREFS || !PMETA) return;
+  const batch = STATUS && STATUS.cycle && STATUS.cycle !== 'event';
+  PMETA.severities.forEach(sev => { const r = PREFS[sev]; if (!r) return;
+    const fixed = sev === 'CRITICAL' || sev === 'ERROR', sent = fixed || SENDRANK[sev] <= SENDRANK[SENDLV];
+    r.snd.checked = sent; if (r.ttl) { r.ttl.style.display = sent ? '' : 'none'; r.ttl.value = SENDTTL; }
+    if (!fixed) r.sndNote.textContent = sent ? (r.ttl ? '' : (sev === 'WARN' ? '기본' : '')) : '끔';
+    Array.from(r.tr.children).forEach((td, i) => td.classList.toggle('dim', i >= 2 && !sent));
+    r.pre.disabled = r.act.value !== 'fix';
+    r.cd.disabled = r.act.value === 'off' || (batch && sev !== 'CRITICAL');   // 묶음 주기에서는 쿨다운 대신 주기가 간격을 정한다(CRITICAL 은 즉시 처리라 쿨다운 유지)
+    r.cd.title = batch && sev !== 'CRITICAL' ? '동작 주기가 “이벤트 발생 시마다”일 때만 쓰입니다' : '';
+  });
+  const w = [];
+  PMETA.severities.forEach(sev => { const a = PREFS[sev].act.value;
+    if (sev === 'CRITICAL' && a === 'off') w.push('CRITICAL 을 끄면 서버 정지급 에러도 자동 대응하지 않습니다.');
+    if (['WARN', 'INFO', 'DEBUG'].includes(sev) && a === 'analyze') w.push(`${sev} 를 분석하면 구독 사용량이 늘어납니다(반복 에러는 쿨다운 또는 주기 안에서 1회).`);
+    if (['WARN', 'INFO', 'DEBUG'].includes(sev) && a === 'fix') w.push(`${sev} 를 “수정까지”로 두면 외부 요인(API 오류 · 404 등)에도 수정을 시도하고 분석 · 수정 호출을 많이 쓰게 됩니다.`); });
+  if (PMETA.stage < 2) w.push('수신기가 1단계(RX_STAGE=1)라서 “수정까지”를 골라도 분석만 합니다.');
+  $('#pol-warn').textContent = w.join(' ');
+  const cur = STATUS && STATUS.publisher && STATUS.publisher.level;
+  $('#pol-send').textContent = `현재 발신 임계값: ${cur || '-'}${SEND_DIRTY ? ` → 저장하면 ${SENDLV}${(SENDLV === 'INFO' || SENDLV === 'DEBUG') ? (SENDTTL === '0' ? ' (항상 유지)' : ' (임시 발신)') : ''}` : ''} — 발신하지 않는 레벨은 수신기에 도착하지 않아 그 줄의 나머지 설정이 흐리게 표시됩니다. ` +
+    `INFO · DEBUG 는 양이 많아 기본이 임시 발신이고 “항상 유지”는 러너를 재시작하면 기본값(WARN)으로 돌아갑니다. 묶음 주기에서는 쿨다운이 쓰이지 않습니다(CRITICAL 제외).`;
+}
+$('#pol-save').onclick = async () => {
+  const out = {}; PMETA.severities.forEach(sev => { const r = PREFS[sev]; out[sev] = { record: r.rec.checked, action: r.act.value, preset: r.pre.value, cooldown_sec: Math.max(0, Math.round(+r.cd.value * 60)) }; });
+  if (!confirm('로그 레벨별 대응 정책을 저장할까요? 다음 에러부터 적용됩니다.')) return;
+  try {
+    const j = await api('/api/policy', { policy: out }); POL = j.policy;
+    if (SEND_DIRTY) { const verbose = SENDLV === 'INFO' || SENDLV === 'DEBUG'; const body = { level: SENDLV }; if (verbose) body.ttl_sec = +SENDTTL; await api('/api/pub/level', body); }
+    toast('정책 저장됨' + (SEND_DIRTY ? ' · 발신 레벨 변경 요청을 보냈습니다(5초 안에 반영)' : '')); SEND_DIRTY = false; $('#pol-note').textContent = '저장됨 ' + new Date().toLocaleTimeString(); renderPolicy();
+  } catch (e) { toast('저장 실패: ' + e.message); } };
+$('#pol-reset').onclick = async () => { if (!confirm('기본 정책(CRITICAL 긴급 수정 · ERROR 표준 수정 · WARN 이하 끔)과 동작 주기(이벤트마다)로 되돌릴까요?')) return;
+  try { const j = await api('/api/policy', { reset: true }); POL = j.policy; toast('기본값으로 되돌림'); await loadStatus(); renderPolicy(); } catch (e) { toast('실패: ' + e.message); } };
+
+/* ── Settings: 초기화 ── */
+$('#pl-revert').onclick = () => { if (ED.isNew) { ED = { id: '', name: '', builtin: false, isNew: true, blocks: clone(PLS.standard.blocks) }; SELIDX = -1; renderEditor(); toast('새 파이프라인을 표준 상태로 되돌렸습니다'); } else { selectPl(ED.id); toast('저장된 상태로 되돌렸습니다'); } };
+async function doReset(what, msg) { try { const j = await api('/api/reset', { what }); toast(msg); POL = j.policy; await loadStatus(); if (TAB === 'settings') { await loadPolicy(); PLSEL = 'standard'; loadPipelines(); } return j; } catch (e) { toast('초기화 실패: ' + e.message); } }
+$('#pl-reset-all').onclick = async () => { if (!confirm('사용자 정의 파이프라인을 모두 삭제하고 내장 프리셋(표준 · 긴급)만 남길까요?\n정책이 삭제된 파이프라인을 가리키고 있으면 그 레벨은 기본 프리셋으로 돌아갑니다.')) return;
+  const j = await doReset('pipelines', '사용자 정의 파이프라인을 모두 삭제했습니다'); if (j) $('#pl-note').textContent = `삭제 ${j.pipelines_removed}개`; };
+$('#reset-all').onclick = async () => { if (!confirm('정책 · 동작 주기와 사용자 정의 파이프라인을 모두 원래대로 되돌릴까요?')) return; if (!confirm('정말 초기화할까요? 되돌릴 수 없습니다(변경 이력 파일에는 남습니다).')) return;
+  const j = await doReset('all', '정책과 파이프라인을 초기화했습니다'); if (j) $('#reset-note').textContent = `정책 · 주기 기본값 · 사용자 정의 ${j.pipelines_removed}개 삭제 · ${new Date().toLocaleTimeString()}`; };
+
+/* ── 탭 · 갱신 ── */
+function show(t) { TAB = t; $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $$('section').forEach(s => s.classList.toggle('on', s.id === t));
+  if (t === 'settings') { loadPolicy(); loadPipelines(); } refresh(); }
+$$('#tabs button').forEach(b => b.onclick = () => show(b.dataset.t));
+$('#m-close').onclick = () => $('#modal').classList.remove('on');
+$('#modal').onclick = e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); };
+async function refresh() { try { await loadStatus(); if (TAB === 'control') await loadControl(); } catch (e) { if (e.message !== '401') toast('불러오기 실패: ' + e.message); } }
+(async () => { try { CSRF = (await api('/api/me')).csrf; } catch (e) { return; } show('overview'); setInterval(refresh, 10000); })();
+</script>
+</body>
+</html>
