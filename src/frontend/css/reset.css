@@ -42,6 +42,20 @@ body {
   cursor: auto;
 }
 
+/* 터치 기기: 화면 크롬 글자를 길게 눌러도 선택되지 않게(폭이 아니라 입력 방식 기준 — PC 마우스는 그대로 드래그 선택).
+   위 cursor 와 같은 상세 내용 목록 + 입력창만 선택을 남긴다(iOS 는 상속된 none 이면 입력창 타이핑이 막힌다). */
+@media (pointer: coarse) {
+  body {
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .ntc-card__tt, .ntc-card__body, .tt-pop__body, .fdisc__list,
+  .lane__thread__msg, .lane__thread__quote, input, textarea {
+    -webkit-user-select: text; user-select: text;
+    -webkit-touch-callout: default;
+  }
+}
+
 button {
   font-family: inherit;
   font-size: inherit;
