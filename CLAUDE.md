@@ -86,7 +86,8 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
 ## 데이터 흐름 (현행)
 
 1. **발견** — light 틱(10분)이 멤버 개인 채널 RSS + `videos.list` 로 `preview.json` 을 다시 만든다(`handlers` → `preview_build`, FSM 은 저장 없이 `statemachine.derive` 로 파생).
-   PubSub 알림이 오면 즉시 wake. env `WEBSUB_REPLACE_RSS=1` 이면 light 틱은 RSS · 신곡 감지를 생략(일일 baseline 이 안전망) — 기본 0(알림 + 폴링 이중 운영), 1 로 바꿀지는 운영자 결정 대기.
+   PubSub 수신은 운영 중이다(멤버 알림 → 즉시 wake, 구독은 매일 갱신). env `WEBSUB_REPLACE_RSS` 가 1 이면 light 틱이 RSS · 신곡 감지를 생략하고 일일 baseline 만 안전망으로 남는데,
+   **운영값은 0 — 알림과 10분 RSS 폴링이 같이 돈다**(2026-10-26 Cloud Run `mewtype-backend-00184` env 로 확인). 1 로 바꾸려면 `deploy/env.sh` 에 넣고 재배포.
 2. **상태** `none|announced|upcoming|watching|live|end`(+ 아카이브 신호 `out`). wake 간격(`statemachine.py` 상수):
    watching = 예정 20분 전부터 3분 간격 · live = 시작 후 60분까지 10분, 그 뒤 5분 · end 창 30분 동안 5분. URL 없는 예고 = 시작 +2분 `search.list` 1회, +1h 까지 못 오르면 `out`.
 3. **트윗 · 알림 인입** — 폰이 `/ingest` 로 보낸 알림을 표시명으로 가른다: 공식 계정 → 일일 스케줄(예고) 또는 소식 · 개인 5인 → 개인 트윗(+ 예고 판정) ·
