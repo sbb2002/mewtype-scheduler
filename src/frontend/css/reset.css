@@ -30,6 +30,18 @@ ul {
   list-style: none;
 }
 
+/* (v4.8.5) 화면 크롬의 글자 위에서 I-빔(텍스트 커서)이 뜨지 않게 — cursor 는 상속이라 body 한 곳이면 된다.
+   버튼 · 링크 · 손잡이처럼 직접 cursor 를 지정한 요소와 input/textarea(브라우저 기본 text)는 그대로. 글자 선택(user-select)은 건드리지 않는다. */
+body {
+  cursor: default;
+}
+
+/* 상세 내용 = 읽고 드래그해 복사하는 글: 소식 팝업 카드 · 트윗 번역 말풍선 · 타임테이블 팝업 · 하단 디스클레이머 */
+.ntc-card__tt, .ntc-card__body, .tt-pop__body, .fdisc__list,
+.lane__thread__msg, .lane__thread__quote {
+  cursor: auto;
+}
+
 button {
   font-family: inherit;
   font-size: inherit;
