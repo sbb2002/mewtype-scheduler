@@ -28,6 +28,14 @@ OPS_PATHS = frozenset({"control.json", "admin_state.json",
                        "llm_actions.json",
                        "ocr_pending.json"})     # (v4.5.9) 이미지 판독 대기 · Cloud Vision 월 사용량     # (v4a) LLM 판단 기록 · 되돌리기  # (v4a) 방송 카드로 올리지 않은 프리미어(녹화 영상) 기록   # (v4a) 그룹 영상 참여 멤버 확인 대기 — 운영 상태
 
+# (핫픽스 archive-split) 이 접두사로 시작하는 경로도 ops — LLM 판단 기록 일자 파일(llm_actions/YYYY-MM-DD.json)
+OPS_PREFIXES = ("llm_actions/",)
+
+
+def is_ops_path(path: str) -> bool:
+    return path in OPS_PATHS or path.startswith(OPS_PREFIXES)
+
+
 _ROLE_ENV = {
     "data": ("DATA_BRANCH", "data"),
     "ops": ("OPS_BRANCH", "ops"),
@@ -62,7 +70,7 @@ class RoutedStore:
         return getattr(self._data, name)
 
     def _pick(self, path: str):
-        return self._ops if path in OPS_PATHS else self._data
+        return self._ops if is_ops_path(path) else self._data
 
     def read_json(self, path: str):
         return self._pick(path).read_json(path)
@@ -138,6 +146,10 @@ if __name__ == "__main__":
         assert os.path.exists(os.path.join(d, "ops", "control.json")), "control.json 은 ops 로"
         assert not os.path.exists(os.path.join(d, "data", "control.json"))
         assert s.read_json("control.json")[0] == {"paused": False}
+        s.write_json("llm_actions/2026-10-01.json", {"items": []}, prev_sha=None, message="t")
+        assert os.path.exists(os.path.join(d, "ops", "llm_actions", "2026-10-01.json")), "LLM 판단 일자 파일은 ops 로"
+        s.write_json("tweet_archive/2026-10-01.json", {"tweets": []}, prev_sha=None, message="t")
+        assert os.path.exists(os.path.join(d, "data", "tweet_archive", "2026-10-01.json")), "트윗 일자 파일은 data, 하위 폴더 생성"
         m = with_branch(s, "monitoring")
         assert m.branch == "monitoring" and s.branch == "data"
         m.write_text("monitoring/x.jsonl", "a\n", message="t")
@@ -148,4 +160,4 @@ if __name__ == "__main__":
         os.environ["GITHUB_TOKEN"], os.environ["GITHUB_REPO"] = "tok", "o/r"
         os.environ.pop("OPS_BRANCH", None)
         assert isinstance(make_store("data"), GitHubStore)
-    print("[PASS] storage self-test: 로컬 라우팅(control → ops) · 브랜치 복제 · 비로컬 현행 유지")
+    print("[PASS] storage self-test: 로컬 라우팅(control · llm_actions/ → ops, 하위 폴더) · 브랜치 복제 · 비로컬 현행 유지")

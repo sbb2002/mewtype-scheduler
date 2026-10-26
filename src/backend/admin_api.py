@@ -19,7 +19,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from . import apply, enrich, storage
+from . import apply, archive_rotate, enrich, storage
 from . import preview as preview_mod      # (v4.7.2) 자동 수정 권한 헬퍼
 from . import songs as songs_mod
 
@@ -543,14 +543,37 @@ def _official_group_video(t, text: str, *, confirm: bool, members: list | None, 
     return _commit_group_rows(t, [row], now, f"{vid} · 선택 멤버")
 
 
-def list_llm_actions(limit: int = 300) -> dict:
-    """(v4a) LLM 판단 기록(최신 먼저) — 작업 탭 「LLM 판단」 필터 · 되돌리기."""
-    items = _t()._llm_actions_read(_store())
-    return {"items": list(reversed(items))[: max(1, int(limit or 300))]}
+def list_llm_actions(limit: int | None = None) -> dict:
+    """(v4a) LLM 판단 기록(최신 먼저) — 작업 탭 「LLM 판단」 필터 · 되돌리기. limit 이 없으면 캐시 전부(21일 안)."""
+    items = list(reversed(_t()._llm_actions_read(_store())))
+    if limit is not None:
+        items = items[: max(1, int(limit or 300))]
+    return {"items": items, "review_days": archive_rotate.LLM_KEEP_DAYS}
+
+
+_LLM_REVIEW_NOW: datetime | None = None   # 자체 시험 전용 — 판단 기간 검사의 현재 시각을 고정한다(None 이면 실제 시각)
+
+
+def _llm_review_expired(action_id: str) -> str | None:
+    """(archive-split) 판단 후 LLM_KEEP_DAYS 일이 지났으면 반려 · 재판단 · 사용자 판단을 막는 안내 문구, 아니면 None."""
+    e = next((x for x in _t()._llm_actions_read(_store()) if x.get("id") == action_id), None)
+    if e is None:
+        return None
+    ts = archive_rotate._parse_iso(e.get("ts"))
+    if ts is None:
+        return None
+    now = _LLM_REVIEW_NOW or datetime.now(timezone.utc)
+    if ts < now - timedelta(days=archive_rotate.LLM_KEEP_DAYS):
+        return (f"판단 후 {archive_rotate.LLM_KEEP_DAYS}일이 지나 반려 · 재판단 · 사용자 판단을 할 수 없습니다"
+                "(기록으로만 남습니다).")
+    return None
 
 
 def undo_llm_action(action_id: str) -> dict:
     """(v4a) LLM 판단 반려(구 되돌리기) — 그때 바뀐 항목만 되돌린다(그 뒤 다른 이유로 바뀐 항목은 건너뜀). 되살린 영상은 곧바로 확인 적재."""
+    expired = _llm_review_expired(action_id)
+    if expired:
+        return _record("undo_llm_action", action_id, expired, _err(expired))
     res = _submit("llm_action", {"op": "undo", "now_iso": _now_iso(), "action_id": action_id})
     if res.get("ok") and (res.get("result") or {}).get("error"):
         res = _err(res["result"]["error"])
@@ -569,6 +592,9 @@ def llm_review_options(action_id: str) -> dict:
 
 
 def _review_api(action_id: str, mode: str, decision: dict | None) -> dict:
+    expired = _llm_review_expired(action_id)
+    if expired:
+        return _err(expired)
     try:
         r = _t()._llm_review(_store(), action_id, mode, decision, _now_iso())
     except Exception as e:  # noqa: BLE001
@@ -1215,7 +1241,7 @@ def ingest_notice_manual(*, title: str, confirm: bool, date: str | None = None, 
         prev = prev or t.notices.default_notices()
         arch = arch or t.notices.default_archive()
         _, _, changed, mode = t.notices.merge_notice(copy.deepcopy(prev), copy.deepcopy(parsed), now,
-                                                     archive=copy.deepcopy(arch))
+                                                     archive=copy.deepcopy(arch), seen_ids=t._notice_old_ids(gh))
         if changed and mode == "added":
             dup_id = t._inline_notice_dup_check(parsed, prev)
     except Exception:  # noqa: BLE001
@@ -2081,7 +2107,8 @@ if __name__ == "__main__":
         assert {s["reason"] for s in st["preview"]["skipped"]} == {"name_dup", "feat"}, st["preview"]["skipped"]
         assert list_songs()["counts"]["total"] == 2, "dry-run 은 쓰지 않는다"
 
-        # 감지 → 즉시 등록 · 판단 기록
+        # 감지 → 즉시 등록 · 판단 기록 (판단 시각 2026-01-01 — 검사 시계를 그 무렵으로 고정)
+        _LLM_REVIEW_NOW = datetime(2026, 1, 2, tzinfo=timezone.utc)
         llm0 = _LLM()
         r = tick("2026-01-01T00:00:00Z", llm0)
         assert r["added"] == ["新しい曲", "誰かの曲"] and r["dups"] == ["既にある曲"] and r["readings"] == 2, r
@@ -2181,6 +2208,15 @@ if __name__ == "__main__":
         assert _FLOW_KO["song"] == "신곡" and all(k in API_FUNCTIONS for k in ("list_songs", "songs_status", "edit_song", "delete_song", "add_song", "regenerate_song_reading", "unblock_song"))
         fl = jobs_overview()["flows"]
         assert any(f.get("llm") and f["llm"][0]["kind"].startswith("song_") for f in fl), "작업 탭 흐름에 신곡 판단이 보임"
+        # (archive-split) 판단 후 21일 안에서만 반려 · 재판단 · 사용자 판단 — 지나면 안내 문구로 막는다
+        _LLM_REVIEW_NOW = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        assert _llm_review_expired(new_act["id"]) is None, "21일 안"
+        _LLM_REVIEW_NOW = datetime(2026, 2, 15, tzinfo=timezone.utc)
+        assert "21일이 지나" in (_llm_review_expired(new_act["id"]) or ""), "21일 지남"
+        assert decide_llm_action(new_act["id"], {"choice": "register"})["ok"] is False, "기간 지나면 사용자 판단 거절"
+        _LLM_REVIEW_NOW = None
+        assert list_llm_actions(2)["review_days"] == archive_rotate.LLM_KEEP_DAYS and len(list_llm_actions(2)["items"]) == 2
+        assert len(list_llm_actions()["items"]) >= len(list_llm_actions(2)["items"]), "limit 없으면 캐시 전부"
     print("[PASS] admin_api self-test: 곡 관리 · 신곡 감지 통합(감지 · 반려 · 재등록 차단 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 재시도/재요청)")
 
     # (v4.7.0) 소식 분류 인자 검사 · 공연 이름 정리

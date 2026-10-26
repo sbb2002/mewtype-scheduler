@@ -419,6 +419,41 @@ def _summary(result) -> str:
 
 # ── 일일 스냅샷 (v3 app.py /monitor 본문) ──────────────────────────────────────
 
+def _rotate_archives(gh, cfg, now_iso: str) -> list[dict]:
+    """(핫픽스 archive-split) 보관함 정리 — 트윗 · 소식 · LLM 판단 기록 캐시의 오래된 항목을 일자 보관함으로(`archive_rotate`).
+    옮긴 게 있으면 모니터 `flow="archive"` 1건/대상, 실패 · 크기 초과가 남으면 운영자 DM. 예외는 삼킨다(스냅샷 · DM 을 막지 않게)."""
+    from . import archive_rotate, notify
+    from .monitor_log import RESULT_ERR, RESULT_OK, RESULT_WARN, log_event
+
+    def _log(r: dict) -> None:
+        if r.get("error"):
+            res, det = RESULT_ERR, f"보관함 정리 실패 {r['name']} · {r['error']}"
+        elif r.get("moved") or r.get("over_limit"):
+            res = RESULT_WARN if r.get("over_limit") else RESULT_OK
+            det = (f"보관함 정리 {r['name']} · {r['moved']}건 → {', '.join(r.get('files') or []) or '-'} · "
+                   f"캐시 {round((r.get('cache_bytes') or 0) / 1024)}KB" + (" · 크기 상한 초과 남음" if r.get("over_limit") else ""))
+        else:
+            return
+        log_event(gh, now_iso, "archive", res, detail=det)
+
+    try:
+        results = archive_rotate.run_all(gh, now_iso, log_fn=_log)
+    except Exception:  # noqa: BLE001
+        log.warning("보관함 정리 실패", exc_info=True)
+        return []
+    bad = [r for r in results if r.get("error") or r.get("over_limit")]
+    if bad:
+        try:
+            notify.Telegram(cfg.telegram_bot_token, cfg.telegram_chat_id).send(
+                "⚠️ 보관함 정리 확인 필요\n" + "\n".join(
+                    f"· {r['name']}: " + (f"실패 — {r['error']}" if r.get("error")
+                                          else f"캐시 {round((r.get('cache_bytes') or 0) / 1024)}KB — 크기 상한을 넘은 채 남음")
+                    for r in bad))
+        except Exception:  # noqa: BLE001
+            log.warning("보관함 정리 DM 실패", exc_info=True)
+    return results
+
+
 def run_snapshot() -> dict:
     """모니터링 스냅샷 + (monitor_auto 면) 멤버 현황 DM. v3 `app.py /monitor` 와 같은 동작."""
     from . import monitor_report, monitor_snapshot, notify, storage
@@ -432,6 +467,8 @@ def run_snapshot() -> dict:
     now = datetime.now(KST)
     today_bucket = bucket_date_kst(now)
     now_iso = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # (핫픽스 archive-split) 보관함 정리 — 실패해도 스냅샷 · DM 은 계속
+    archive = _rotate_archives(gh, cfg, now_iso)
     snap = monitor_snapshot.run_daily(
         gh_monitor, today_bucket=today_bucket, now_iso=now_iso,
         healthchecks_api_key=cfg.healthchecks_api_key,
@@ -439,7 +476,7 @@ def run_snapshot() -> dict:
         vercel_token=cfg.vercel_token,
     )
     yday = snap["yesterdayDate"]
-    result = {"date": yday, "snapshotted": snap["snapshotted"], "dm": False}
+    result = {"date": yday, "snapshotted": snap["snapshotted"], "dm": False, "archive": archive}
     if snap["yesterday"] is not None:
         try:
             report = monitor_report.snapshot_report(snap["yesterday"], yday, snap["summary"])

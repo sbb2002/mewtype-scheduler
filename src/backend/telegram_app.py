@@ -106,6 +106,7 @@ from . import writeclient
 from . import llm
 from . import songs                        # (v4.2.0) 곡 목록 관리 · 신곡 반려
 from . import storage                      # (v4a) store 팩토리 — 로컬/깃허브 + ops 라우팅
+from . import archive_rotate                # (archive-split) 보관함 정리 — 소식 보관 색인 · LLM 판단 보존 기간
 from . import flowtrace                    # (v4a) 흐름 기록(관리 페이지 작업 탭) — 로컬 전용
 from .control import (
     LOG_LEVELS,
@@ -1877,8 +1878,18 @@ def _notice_categories(parsed: dict, raw: str, tag, now_iso: str, *, game_handle
         parsed["live_date"] = info["date"]
 
 
+def _notice_old_ids(gh) -> set:
+    """(archive-split) 보관함 정리로 일자 파일에 옮겨진 옛 소식 · 트윗 id 색인(`notice_archive/index.json`). 못 읽으면 빈 집합(로그만)."""
+    try:
+        return set(archive_rotate.notice_index(gh)["ids"])
+    except Exception:  # noqa: BLE001
+        log.warning("소식 보관 색인 읽기 실패 — 옛 트윗 id 중복 확인을 건너뜀", exc_info=True)
+        return set()
+
+
 def _notice_already_seen(parsed: dict, gh) -> bool:
-    """(v4.6.2) 이 소식의 트윗 id 가 이미 활성 · 보관 소식의 seen_ids 에 있나(`notices.merge_notice` 의 「dup」 과 같은 판단). 못 읽으면 False."""
+    """(v4.6.2) 이 소식의 트윗 id 가 이미 활성 · 보관 소식의 seen_ids 에 있나(`notices.merge_notice` 의 「dup」 과 같은 판단). 못 읽으면 False.
+    (archive-split) 캐시에서 빠진 옛 트윗 id 도 보관 색인으로 본다."""
     tid = parsed.get("id") or ""
     if not tid or gh is None:
         return False
@@ -1888,6 +1899,8 @@ def _notice_already_seen(parsed: dict, gh) -> bool:
     except Exception:  # noqa: BLE001
         return False
     rows = list((cur or {}).get("notices") or []) + list((arc or {}).get("notices") or [])
+    if tid in _notice_old_ids(gh):
+        return True
     return any(tid in (n.get("seen_ids") or []) or n.get("id") == tid for n in rows)
 
 
@@ -1959,7 +1972,7 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
             arch_copy = copy.deepcopy(arch)
             parsed_copy = copy.deepcopy(parsed)
             new_n, new_a, changed, mode = notices.merge_notice(
-                prev_copy, parsed_copy, now_iso, archive=arch_copy)
+                prev_copy, parsed_copy, now_iso, archive=arch_copy, seen_ids=_notice_old_ids(gh))
             # (v4.0.5) 본문 번역이 필요한가 — 올라가는(added · updated) 행에 아직 본문 번역이 없을 때만
             if changed and mode in ("added", "updated"):
                 _row = next((n for n in new_n.get("notices") or []
@@ -2082,12 +2095,13 @@ def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict |
     tl = prepared.get("tl")
     dup_id = prepared.get("dup_id")
 
+    old_ids = _notice_old_ids(gh)            # (archive-split) 보관 색인은 한 번만 읽는다
     for _try in (1, 2):
         prev, psha = gh.read_json(_NOTICES_PATH)
         arch, asha = gh.read_json(_NOTICE_ARCHIVE_PATH)
         prev = prev or notices.default_notices()
         arch = arch or notices.default_archive()
-        new_n, new_a, changed, mode = notices.merge_notice(prev, parsed, now_iso, archive=arch)
+        new_n, new_a, changed, mode = notices.merge_notice(prev, parsed, now_iso, archive=arch, seen_ids=old_ids)
         if not changed:
             return mode, parsed
 
@@ -4973,7 +4987,6 @@ def _ocr_cast_keys(media: list[str] | None, limit: int = 4) -> tuple[list[str], 
 # 이미 바뀐 항목은 건드리지 않는다(건너뜀으로 보고). "아님" 판단(예고 아님 · 참여 아님 · 취소 아님 · 중복 소식)은 검토용 — 되돌릴 데이터가
 # 없으니 원문 투입으로 직접 넣는다. 번역 · 소식 제목 추출은 판단이 아니라 제외.
 _LLM_ACTIONS_PATH = "llm_actions.json"
-_LLM_ACTIONS_MAX = 300
 
 
 # ── (2026-10-02) 반려 · 재판단 · 사용자 판단 ──────────────────────────────────────────────────
@@ -5034,7 +5047,7 @@ def _llm_actions_read(gh) -> list[dict]:
 
 def _llm_action_commit(gh, op: str, now_iso: str, entry: dict | None = None, action_id: str | None = None,
                        patch: dict | None = None, guard: bool = False) -> dict:
-    """(적용 큐) op="add" — 기록 추가(최근 300건). op="undo" — 반려(되돌리기) 실행 후 기록에 표시.
+    """(적용 큐) op="add" — 기록 추가(자르기 없음 · 21일 지난 것은 보관함 정리가 일자 파일로 옮긴다). op="undo" — 반려(되돌리기) 실행 후 기록에 표시.
     op="mark" — 기록 필드 갱신(재판단 · 사용자 판단의 followup). guard=True 면 이미 followup 이 있을 때 거절(중복 클릭 방지)."""
     if op == "undo":
         return _llm_undo(gh, action_id or "", now_iso)
@@ -5059,7 +5072,8 @@ def _llm_action_commit(gh, op: str, now_iso: str, entry: dict | None = None, act
         items = list((cur or {}).get("items") or [])
         items.append(entry)
         try:
-            gh.write_json(_LLM_ACTIONS_PATH, {"items": items[-_LLM_ACTIONS_MAX:]}, prev_sha=sha,
+            # (핫픽스 archive-split) 300건 자르기 없음 — 오래된 판단은 보관함 정리가 일자 파일로 옮긴다(버리지 않음)
+            gh.write_json(_LLM_ACTIONS_PATH, {"items": items}, prev_sha=sha,
                           message=f"ops: LLM 판단 기록 {entry.get('kind')} {now_iso}")
             return {"id": entry.get("id")}
         except ConflictError:
@@ -6900,7 +6914,8 @@ def _monitor_past_day(date_kst: str) -> dict:
         try:
             _txt, _ = _monitor_gh(gh).read_text(f"monitoring/events-{date_kst}.jsonl")
             monitor_report.refresh_detail_parts(day, _txt)
-            monitor_report.attach_details(day, _detail_lookup(gh))
+            # (archive-split) 캐시에서 빠져 일자 보관함으로 옮겨진 트윗 · 소식도 찾는다
+            monitor_report.attach_details(day, monitor_report.extend_lookup_for_day(gh, _detail_lookup(gh), date_kst, day))
         except Exception:  # noqa: BLE001
             log.warning("지난 날짜 팝업 상세 실패 date=%s", date_kst, exc_info=True)
         if len(_monitor_day_cache) >= _MONITOR_DAY_CACHE_MAX:
