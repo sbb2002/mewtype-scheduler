@@ -51,7 +51,7 @@ export const SONGS_URL = getDataUrl(
 export const SONGS_FALLBACK_URL = "assets/songs.json";
 
 // (v4.8.4) 현재 버전 · 날짜 — 하단 「ver.」 버튼 말풍선에 보인다(js/main.js initVersionButton).
-// 버전을 올릴 때 이 두 값도 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 4번 · README · VERSION.md 와 맞춘다).
+// 버전을 올릴 때 이 두 값도 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 6번 · README · VERSION.md 와 맞춘다).
 export const APP_VERSION = "v4.8.5";
 export const APP_DATE = "2026-10-26";
 
