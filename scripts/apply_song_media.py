@@ -1,6 +1,9 @@
-"""곡 목록에 「음원 영상 · MV」 정보를 반영한다 (v4.8.3). 입력 songs.json 의 곡에 `alt`(다른 음원 영상) · `mv`(MV 영상)를 넣고, 표에 없는 새 곡 1건을 추가한다.
+"""곡 목록에 「음원 영상 · MV」 정보를 반영한다 (v4.8.3, AMV 추가 v4.9.2). 입력 songs.json 의 곡에 `alt`(다른 음원 영상) · `mv`(MV 영상)를 넣고, 표에 없는 새 곡 1건을 추가한다.
 
 출처: 2026-10-25 yt-dlp 조사 결과(곡별 같은 소리의 다른 음원 영상 · MV 영상 id 표, 운영자 확정). 표의 id 는 songs.json 의 대표 id 다.
+      v4.9.2(2026-10-27 yt-dlp 재조사, 운영자 확정): AMV(애니메이션 MV) 를 MV 로 넣는다 — BanG Dream Channel☆ 의 TV 애니 「バンドリ！ ゆめ∞みた」
+      삽입곡 영상 5곡(TearJerker 는 잘린 버전 143초 / 음원 178초지만 넣는다) · 그룹 채널 미니 애니 5곡(드라마 부분 포함, 기존 MV 와 함께 무작위).
+      TV 사이즈(90초) 크레딧 없는 OP · ED 영상과 にこいちミライ 미니 애니 주제가(30초)는 넣지 않는다.
 기준: 「歌ってみた」 표시가 붙은 영상은 그 자체로 한 곡이다 — MV 로 묶지 않고 별도 곡으로 둔다(唱 2024 처럼 따로 추가). 표시는 「아라레, 리츠」.
 
 사용: python scripts/apply_song_media.py <입력 songs.json> [<출력 경로>]   (출력 생략 = 입력에 덮어쓴다)
@@ -19,12 +22,12 @@ MEDIA = """
 zFsTGz60TLY  alt fdXuZ47vNec KXbC2U_jBwU   mv _awcveMOhc0
 SI8q0trRdOE  alt GZO1yxWxNyM               mv rfA_P10FGQQ
 oD74b35UNVc  alt ZHdR3lIu_Zo HEoKwUmjNgs   mv 49huUnynCPQ
-_iX9WOOierg  alt UrHGouRCkQ8               mv W4ib6g0KeZI
-xosxYF29mvk  alt 4_dKW9eN7zM               mv A3lRSM6v44c
-3WpaXoun2Tc  alt 3irTSJwcoxU               mv z1ga6_4K2io
+_iX9WOOierg  alt UrHGouRCkQ8               mv W4ib6g0KeZI v9yaFY20KgM
+xosxYF29mvk  alt 4_dKW9eN7zM               mv A3lRSM6v44c c5h6SU7A5v8
+3WpaXoun2Tc  alt 3irTSJwcoxU               mv z1ga6_4K2io DZpTjwXFt7U
 XYCI2LzEnZA  alt JCb1ks0bPvE o6Unc8Kpr1A   mv dkeX5Qy_ths
-J_zCYMoy1Cw                                mv EvbVMKvTY4U
-vS2MCoSUEVs  alt Q_KhNpXkWuQ               mv GB2MEvY2sQk
+J_zCYMoy1Cw                                mv EvbVMKvTY4U tYrOQycCOBY
+vS2MCoSUEVs  alt Q_KhNpXkWuQ               mv GB2MEvY2sQk GGxlbJQ23h0
 mKiBvYqfBfk  alt dihT5By_Jqs QJsZ5EKMbCs   mv GN_0T7cClGM
 a1-SB-tFYmI  alt pUNK6ANdaxw               mv 2ecjo9jpoPM
 fDnYCRzvCco  alt gcP4wgxPi-E
@@ -39,10 +42,14 @@ jr_xt37IcRc                                mv WFOobNlAr3I
 4XbNBhZuBoA  alt jlnbYlVunfg               mv ojgoIwE1fL0
 TedsUWY90Vs  alt zPieTviOC54               mv Ps8vxSKsbOc
 eZG4sXy0zPM                                mv 3m6JMKsF2x8
-tRS9u2YlqdM  alt W3_XJnrC9Jw
+tRS9u2YlqdM  alt W3_XJnrC9Jw               mv 5NZp6NKhhlQ
 Fp2a-MhCFVw                                mv c_T1QlWWsOE
 1_WyE1U0f4E                                mv ekZUC5KaJFw
 XbqG3T4MGJE                                mv beTgKM4yo2o
+YzKXbj8mCY8                                mv keIRgf-YfSI
+6PpzqcesklA                                mv vuMUMWARZ4g
+9YjehFo3hAw                                mv JfeX3ABTBUs
+T8ynAJWmPtM                                mv s3egp9Y1DTU
 """
 
 # 표에 없는 새 곡 — 歌ってみた 표시(「唱」)가 붙은 별개 곡. 같은 id 가 이미 있으면 추가하지 않는다.
