@@ -39,6 +39,19 @@
   → `/ingest` 가 저장 없이 받은 원문·파싱결과만 DM 회신. 푸시 알림이 잘리지 않고
   엔트리 전부 오는지 확인되면 `INGEST_DRY_RUN=0` 으로 되돌리고 재배포.
 
+### self-reply 핫픽스 — 상시 조사 · 일일 묶음 잡 (2026-10-27, 미배포 — 병합 · 배포는 운영자 결정)
+
+배포 순서(명세 `ref/self-reply/patch_spec.md` §8):
+1. `bash deploy/setup.sh` — 큐 2개 추가: `mewtype-gapfill`(동시 1 · 3회), `mewtype-daily`(동시 1 · 4회 · 30~300초). 기존 큐 옵션은 그대로.
+2. `bash deploy/deploy.sh` — 쓰기 서비스 `/daily` · 새 데이터 모양(`reply_to_id`) · 글타래 수명. env `DAILY_QUEUE`(기본 `mewtype-daily`).
+3. `bash deploy/deploy_telegram.sh` && `bash deploy/telegram_webhook.sh` — 접수 서비스 `/gap-check` · `/gap-fill`. env `GAPFILL_QUEUE`(기본 `mewtype-gapfill`) · `ADMIN_BASE_URL`(자기 주소 — 보충 작업 대상 · OIDC audience).
+   `mewtype-telegram` 이 `INVOKER_SA` 로 떠 있어야 Scheduler · Cloud Tasks 의 OIDC 토큰이 맞는다(기존과 같음).
+4. 스테이징 수동 시험(`STAGE=1 bash deploy/deploy.sh` 등 — 스테이징은 Scheduler 를 만들지 않는다, `STAGE=1 bash deploy/scheduler.sh` 는 아무것도 안 하고 끝남).
+5. `bash deploy/scheduler.sh` — **KST 05:50~06:30 을 피해서** 실행(스크립트가 그 창에선 거부). 새 잡 `mewtype-daily`(매일 06:00 KST) · `mewtype-gapcheck`(매분)을 만든 **뒤** 옛 잡 `mewtype-baseline` · `mewtype-monitor` · `mewtype-websub-renew` 을 지운다. 결과: 잡 3개(`mewtype-light` · `mewtype-daily` · `mewtype-gapcheck`).
+   접수 서비스 주소는 `TELEGRAM_SERVICE`(기본 `mewtype-telegram`)로 조회한다.
+
+되돌리기: 옛 `scheduler.sh`(main 판)로 옛 잡 3개를 다시 만든 뒤 `mewtype-daily` · `mewtype-gapcheck` 를 지운다(이 순서 — monitor 가 하루 빠지지 않게). Cloud Run 은 직전 리비전으로 트래픽을 되돌린다(VERSION.md 에 적힌 리비전). 옛 코드는 `reply_to_id` 를 모르는 키로 무시하고, 늘어난 `expires_at` 은 그대로 읽는다.
+
 ### v4.5.2 — PubSub 버스트 대비 (PubSub 전용 큐 `mewtype-websub`)
 
 순서: ① 큐 생성(`setup.sh` 의 해당 부분과 같은 명령 — `setup.sh` 전체는 기존 큐 설정까지 다시 쓰므로 필요한 것만):
@@ -173,5 +186,5 @@ gcloud run services logs read "$SERVICE_NAME" \
 ## 문제 해결
 
 - 배포 실패: `gcloud run deploy` 출력 확인, Secret Manager 값 검증
-- 스케줄러 미동작: `gcloud scheduler jobs describe mewtype-baseline --location="$GCP_LOCATION" --format=json` 로 상태 확인
+- 스케줄러 미동작: `gcloud scheduler jobs describe mewtype-daily --location="$GCP_LOCATION" --format=json` 로 상태 확인
 - 권한 오류: `deploy/setup.sh` 의 IAM 섹션 다시 실행
