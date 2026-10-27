@@ -31,21 +31,18 @@ mode = os.environ.get("STUB_MODE", "")
 def out(d):
     print(json.dumps({"structured_output": d, "total_cost_usd": 0.01, "is_error": False, "result": ""}))
 STORE = os.path.join("src", "backend", "gh_store.py")
-STORE_GOOD = "def read():\n    return 'raw'\n\nif __name__ == \"__main__\":\n    assert read() == 'raw'\n    print('ok')\n"
+STORE_GOOD = "def read():\n    return 'fixed'\n\nif __name__ == \"__main__\":\n    assert read() == 'fixed'\n    print('ok')\n"
 MIG = ("import argparse, json, pathlib, sys\n"
        "ap = argparse.ArgumentParser(); ap.add_argument('--data'); ap.add_argument('--ops'); a = ap.parse_args()\n"
        "d = pathlib.Path(a.data)\n"
        "FAIL\n"
-       "big = json.loads((d / 'big.json').read_text(encoding='utf-8'))\n"
-       "items = big['items']\n"
-       "(d / 'big').mkdir(exist_ok=True)\n"
-       "for i in range(0, len(items), 4):\n"
-       "    (d / 'big' / f'{i // 4}.json').write_text(json.dumps({'items': items[i:i + 4]}), encoding='utf-8')\n"
-       "(d / 'big.json').write_text(json.dumps({'items': []}), encoding='utf-8')\n"
-       "got = sum(len(json.loads(p.read_text(encoding='utf-8'))['items']) for p in (d / 'big').glob('*.json'))\n"
-       "print('moved', got); sys.exit(0 if got == len(items) else 1)\n")
+       "doc = json.loads((d / 'list.json').read_text(encoding='utf-8'))\n"
+       "items = doc.get('items', doc.get('rows', []))\n"
+       "(d / 'list.json').write_text(json.dumps({'rows': items}), encoding='utf-8')\n"
+       "got = len(json.loads((d / 'list.json').read_text(encoding='utf-8'))['rows'])\n"
+       "print('converted', got); sys.exit(0 if got == len(items) else 1)\n")
 if purpose == "analysis":
-    out({"verdict": "confirmed", "summary": "저장소 읽기 실패", "cause": "큰 파일", "evidence": [], "proposed_action": "나눈다", "needs_human": False})
+    out({"verdict": "confirmed", "summary": "저장소 읽기 실패", "cause": "형식 불일치", "evidence": [], "proposed_action": "형식 변환", "needs_human": False})
 elif purpose in ("spec", "replan"):
     if mode == "spec_human":
         out({"fixable": False, "needs_human": True, "why_not": "새 키 필요",
@@ -54,17 +51,17 @@ elif purpose in ("spec", "replan"):
     else:
         mig = mode.startswith("mig")
         out({"fixable": True, "needs_human": False, "human_need": "", "why_not": "",
-             "title": "저장소 큰 파일 나누기" if mig else "저장소 읽기 수정",
-             "change_plan": [{"file": "src/backend/gh_store.py", "change": "raw 읽기"}] + ([{"file": "scripts/mig.py", "change": "이전"}] if mig else []),
-             "test_plan": "self-test", "risk": "낮음", "auto_decisions": ["보존 7일 — 기존 캐시 관례"] if mig else [],
-             **({"migration": {"script": "scripts/mig.py", "purpose": "big.json 을 4건씩 나눔"}} if mig else {})})
+             "title": "목록 형식 변환" if mig else "저장소 읽기 수정",
+             "change_plan": [{"file": "src/backend/gh_store.py", "change": "읽기 수정"}] + ([{"file": "scripts/mig.py", "change": "이전"}] if mig else []),
+             "test_plan": "self-test", "risk": "낮음", "auto_decisions": ["재시도 3회 — 기존 관례"] if mig else [],
+             **({"migration": {"script": "scripts/mig.py", "purpose": "list.json 의 items 를 rows 로"}} if mig else {})})
 elif purpose in ("implement", "revise"):
     if mode == "newkey":
         open(STORE, "w", encoding="utf-8").write("import os\nKEY = os.environ.get('NEW_PROVIDER_KEY')\n" + STORE_GOOD)
     else:
         open(STORE, "w", encoding="utf-8").write(STORE_GOOD)
         os.makedirs("docs", exist_ok=True)
-        open(os.path.join("docs", "SPEC.md"), "a", encoding="utf-8").write("\n- 큰 파일 계약\n")
+        open(os.path.join("docs", "SPEC.md"), "a", encoding="utf-8").write("\n- 목록 계약\n")
         if mode.startswith("mig"):
             os.makedirs("scripts", exist_ok=True)
             fail = {"mig_ok": "pass", "mig_fail_real": "sys.exit(7) if 'data_try' not in a.data else None"}[mode]
@@ -165,7 +162,7 @@ def main() -> int:
         shutil.rmtree(dd, ignore_errors=True)
         (dd / "data").mkdir(parents=True)
         (dd / "ops").mkdir()
-        (dd / "data" / "big.json").write_text(json.dumps({"items": list(range(10))}), encoding="utf-8")
+        (dd / "data" / "list.json").write_text(json.dumps({"items": list(range(10))}), encoding="utf-8")
 
     def run_fix(mode, sensitive=True, data=True, preset="standard"):
         sh(repo, "checkout", "-q", "-f", "test-s")
@@ -181,7 +178,7 @@ def main() -> int:
         cfg.extra_env["STUB_MODE"] = mode
         head = git_head(repo)
         af = AutoFix(cfg, restarter=lambda c: (True, "러너 재시작(1초)"))
-        res = af.run("sig-s", {"verdict": "confirmed", "summary": "저장소 읽기 실패", "cause": "큰 파일"}, rx._snapshot(head), head, 1, preset)
+        res = af.run("sig-s", {"verdict": "confirmed", "summary": "저장소 읽기 실패", "cause": "형식 불일치"}, rx._snapshot(head), head, 1, preset)
         if res.status == "committed":
             res = af.apply_and_restart(res)
         return res, head
@@ -198,7 +195,7 @@ def main() -> int:
     md = "\n".join(res.md_lines())
     check(res.status == "applied" and res.sensitive == ["docs/SPEC.md", "src/backend/gh_store.py"], "S2 민감 경로 허용: 저장 계층 · docs 수정이 적용됨")
     check("민감 경로 수정" in md and "`src/backend/gh_store.py`" in md, "S2 보고서에 「민감 경로 수정」 표시")
-    check("raw" in (repo / "src" / "backend" / "gh_store.py").read_text(encoding="utf-8"), "S2 러너 작업 폴더에 반영")
+    check("fixed" in (repo / "src" / "backend" / "gh_store.py").read_text(encoding="utf-8"), "S2 러너 작업 폴더에 반영")
     check(all(json.loads(x)["sensitive_rules"] for x in slog.read_text(encoding="utf-8").splitlines() if json.loads(x)["purpose"] in ("spec", "implement")),
           "S2 명세 · 구현 프롬프트에 민감 규칙(땜질 금지 등)")
 
@@ -221,16 +218,15 @@ def main() -> int:
     # S6) 데이터 이전: 복사본에서 시험 → 적용 후 실제 데이터에 실행
     res, head = run_fix("mig_ok")
     md = "\n".join(res.md_lines())
-    split = sorted((dd / "data" / "big").glob("*.json"))
-    check(res.status == "applied" and res.migration == "scripts/mig.py" and "복사본) 통과" in res.tests and len(split) == 3
-          and json.loads((dd / "data" / "big.json").read_text(encoding="utf-8"))["items"] == [], "S6 데이터 이전: 복사본 시험 통과 → 실제 데이터 이전")
-    check(any(s["id"] == "migrate" and s["status"] == "ok" for s in res.steps) and "자동 결정한 값" in md and "보존 7일" in md and "데이터 이전" in md,
+    check(res.status == "applied" and res.migration == "scripts/mig.py" and "복사본) 통과" in res.tests
+          and json.loads((dd / "data" / "list.json").read_text(encoding="utf-8")) == {"rows": list(range(10))}, "S6 데이터 이전: 복사본 시험 통과 → 실제 데이터 이전")
+    check(any(s["id"] == "migrate" and s["status"] == "ok" for s in res.steps) and "자동 결정한 값" in md and "재시도 3회" in md and "데이터 이전" in md,
           "S6 보고서에 데이터 이전 · 자동 결정한 값")
 
     # S7) 실제 데이터에서 이전 실패 → 데이터 복원 + 패치 revert
     res, head = run_fix("mig_fail_real")
-    check(res.status == "reverted" and json.loads((dd / "data" / "big.json").read_text(encoding="utf-8"))["items"] == list(range(10))
-          and not (dd / "data" / "big").exists() and "None" in (repo / "src" / "backend" / "gh_store.py").read_text(encoding="utf-8"),
+    check(res.status == "reverted" and json.loads((dd / "data" / "list.json").read_text(encoding="utf-8")) == {"items": list(range(10))}
+          and "None" in (repo / "src" / "backend" / "gh_store.py").read_text(encoding="utf-8"),
           "S7 실제 이전 실패 → 데이터 백업 복원 + 패치 revert")
 
     # S8) 데이터 폴더가 없는데 이전이 필요 → 코드는 브랜치에 두고 이전 실행을 사람에게 요청
