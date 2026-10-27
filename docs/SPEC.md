@@ -19,7 +19,7 @@
 | 역할 | 수단 |
 |---|---|
 | 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
-| 정기 트리거 | **Cloud Scheduler** 4잡 — baseline JST 06:00 / light 10분(v3.6, 구 3h) → `POST /tick`, monitor KST 06:10 → `POST /monitor`, (v4.5.0) websub-renew KST 06:20 → `POST /websub-renew` (OIDC) |
+| 정기 트리거 | **Cloud Scheduler** 3잡(self-reply D6) — light 10분 → `POST /tick` (쓰기 서비스) · **daily** KST 06:00 → `POST /daily` (쓰기 서비스 — baseline tick + 그날 06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks `mewtype-daily` 로 먼저 예약, §8.13) · **gapcheck** 매분 → `POST /gap-check` (접수 서비스 — 상시 조사, §8.11) · 전부 OIDC |
 | 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
 | 저장 | **GitHub 데이터 저장소 `sbb2002/mewtype-scheduler-data`**(2026-09-14 부터, Vercel 비연결)의 `data` · `ops` · `monitoring` 브랜치 — Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋. 브랜치를 나눈 이유 = 충돌 단위가 브랜치 HEAD |
 | 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
@@ -626,14 +626,18 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled|deleted`) — **캐시 보관함**(핫픽스 archive-split): 게시 7일 이내만 남고
   그보다 오래된 것은 매일 보관함 정리(§8.18)가 `tweet_archive/YYYY-MM-DD.json`(게시일 KST — tweet id 로 계산, 숫자 id 가 아닌 옛 항목은 받은 날)으로 옮긴다.
   운영 경로(빠진 트윗 보충의 「이미 아는 id」 · 번역 재사용 · 밀려남 · 만료 · 삭제)는 캐시만 읽고 쓴다 — 보충은 게시 48h 안의 글만 보므로 7일이면 넉넉하다.
-  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 아래 빠진 트윗 보충이 되살리지 않게.
-- **빠진 트윗 보충** (v4.7.4, `telegram_app._fill_member_gaps`): `/ingest` 에 멤버 트윗 알림이 하나 들어와 개인 트윗 경로를 마치면, 그 멤버의 최근 글 목록
-  (`vxtwitter.fetch_profile_statuses` = fxtwitter API v2 `/2/profile/<핸들>/statuses`, 약 20건 · 리트윗 섞임, 한도 IP 당 분당 1,000회)을 1회 조회해
-  폰 알림이 빠진 본인 트윗을 같은 경로(`_maybe_personal_tweet` — 번역 · 예고 판정 · 취소 · 변경 판정 포함)로 넣는다. 고르는 규칙(`xtweet.gap_candidates`):
-  본인 작성 · 리트윗 아님 · 남에게 단 답글 아님(**자기 글에 단 답글은 포함** — 폰은 자기 답글 알림을 거의 안 보낸다, 10-24 실측 6건 중 0건) · 게시 48시간 안 ·
-  그 멤버 스레드와 보관함(만료 · 밀려남 · 지움)에 없음 · 방금 받은 글 아님, 오래된 것부터 최대 3건(나머지는 다음 알림 때). 보충한 건마다 모니터 WARN
-  `gap-fill: 폰 알림이 빠진 트윗 보충 · <id> · mode`. 조회 · 읽기 실패는 아무것도 안 한다. 그 멤버가 다시 트윗해야 돈다(정기 수집에서는 안 함 — 운영자 결정 A안).
-  목록 API 의 `replying_to` 는 객체(`{screen_name, status, …}`)라 핸들만 꺼낸다(단건 조회는 문자열). 계기: 10-24 13:34 노노카 한글 트윗 · 자기 답글 2건이 폰에서 서버로 안 넘어옴.
+  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 상시 조사는 「아는 id」로 다시 올리지 않는다(자기 답글이 달린 경우엔 글타래째 되살린다 — 위 「원글 되살리기」, D13).
+- **빠진 트윗 보충 · 자기 답글 (self-reply 핫픽스, 2026-10-27 — 명세 `ref/self-reply/patch_spec.md`)** — 옛 방식(`/ingest` 가 멤버 알림 뒤에 최근 글을 훑던 `_fill_member_gaps`)은 **없앴다**. 대신 접수 서비스가 1분마다 훑는다:
+  - **상시 조사** `POST /gap-check`(접수 서비스, OIDC 강제 검증, Scheduler `mewtype-gapcheck` 매분): 멤버 5명 `fxtwitter /2/profile/<핸들>/statuses?since=<지금−600초>`(매시 정각 KST 만 since 없이 20건) 를 동시에 받는다. 5명 모두 204(`since` 뒤 글 없음)면 GitHub 를 읽지 않고 끝. 글이 있으면 `tweets.json` · `tweet_archive.json` 캐시를 한 번 읽어 「이미 아는 id」를 빼고 후보를 고른다(`xtweet.gap_candidates`): 본인 작성 · 리트윗 아님 · 남에게 단 답글 아님 · 게시 48h 안 · **일반 글은 게시 7분 뒤부터**(폰 알림을 기다린다) · **자기 답글은 바로**. 상한 없음, 오래된 순. 후보마다 보충 작업을 Cloud Tasks `mewtype-gapfill` 큐에 `gapfill-<트윗 id>`(분 버킷 없음)로 적재.
+  - **시간 · 쉬기**(명세 D9): 조사 1회 상한 20초(넘으면 거기서 끝). 5명 모두 실패한 실행이 3번 연속이거나 한 번이라도 429 면 10분 쉰다(인스턴스 메모리). 쉬기 시작 · 끝만 모니터 `warn`.
+  - **보충 작업** `POST /gap-fill`(접수 서비스, 큐 `mewtype-gapfill` 동시 1 · 3회 시도): 이미 등록이면 끝. 자기 답글이면 **원글 사슬**을 먼저(스레드에 있으면 그대로 · 보관함(캐시 → 일자 파일)에 있으면 백엔드 커밋이 되살린다 · 없으면 fxtwitter 단건으로 받아 뿌리부터 최대 5단, 판정은 아래 「원글 판정」). 그다음 글 자신을 `_maybe_personal_tweet(origin="gapfill", reply_to_id=…)` 로 — 번역 · 예고 판정 · 변경 판정 · 새 트윗 DM 은 폰 경로와 같다. 실패해도 200(다음 조사가 다시 찾는다).
+  - **원글 판정**(명세 §7-6, Claude 제안 — **운영자 미확인 결정**): 되살린 원글 = 판정 없음(처음 들어왔을 때 이미 판정했다) · 처음 들어오는 48h 안 원글 = 판정 · 48h 넘은 원글 = 번역만(DM · 판정 없음).
+  - **폰과 겹칠 때**(명세 §4-3): 커밋 결과가 `dup`·`stale` 이고 `via != "ops"` 면 예고 · 변경 판정 · 새 트윗 DM 을 하지 않는다. 보충이 먼저 넣은 글에 폰 알림이 늦게 오면 모니터 `ok` 「폰 늦게 도착 · 보충 뒤 +N분」. 관리 페이지 수동 경로(`via="ops"`)는 지금처럼 돈다.
+  - **모니터**: 보충 1건마다 자기 답글 = `ok` · 일반 글 = `warn` 「gap-fill · <id> · +N분 · mode: …」(+「원글 함께」「원글 되살림」). 구현은 `via="ingest"` + `origin="gapfill"`(명세 §4-3 의 `via="gapfill"` 대안 — `monitor_report` 의 자동 인입 집계가 `ingest` 만 세기 때문).
+- **자기 답글 필드 `reply_to_id`** (계약 I 항목, 옛 항목엔 없음 = `null`): 같은 멤버 자기 글에 단 답글이면 바로 위 글의 tweet id. 폰 경로는 vxtwitter 단건 `replyingTo`(핸들) · `replyingToID`, fxtwitter 폴백 `replying_to` · `replying_to_status` 에서 얻고 **핸들이 그 멤버일 때만**(`vxtwitter.extract` → `reply_to`·`reply_to_id`, `telegram_app._self_reply_id`). 목록 경로는 `replying_to.status`(`vxtwitter.fetch_profile_statuses` 반환의 `reply_to_id`). **확인 필요**: vxtwitter 단건 실응답의 키 이름(`replyingTo`·`replyingToID`)은 아직 실응답으로 확인하지 않았다 — fixture 미확인.
+- **글타래 수명**(D12, `xtweet.extend_threads`): 자기 답글이 커밋되면 **글타래(뿌리 · 중간 답글 · 새 답글)의 모든 글** `expires_at = max(지금 값, 글타래에서 가장 늦은 글 게시 + 48h)`. 예: 원글 10-01 10:00 · 답글 10:05 → 둘 다 10-03 10:05. 답글 없는 글은 지금처럼 게시 + 48h.
+- **원글 되살리기**(D13, `telegram_app._revive_plan` · `_commit_personal_tweet`): 자기 답글의 원글이 스레드에 없으면 **사유가 무엇이든**(`expired`·`rolled`·`replaced`·`deleted`) 보관함에서 찾아 스레드로 되돌린다 — 캐시에서 찾으면 캐시에서, 아니면 일자 파일(`tweet_archive/<원글 게시 KST 날짜>.json`)에서. 되살린 뒤 그 자리에서 지운다(캐시 · 일자 파일 양쪽에 남지 않게). `deleted` 를 되살리면 모니터 `warn` 「원글 되살림(관리 페이지에서 지웠던 글)」. **답글 없는 지운 글은 되살리지 않는다**(지금과 같음 — 상시 조사가 「아는 id」로 거른다).
+- `xtweet.gap_candidates` 의 옛 규칙(cap 3 · 2분 이내 제외 등)은 이 핫픽스로 바뀌었다 — 위 규칙이 정본.
 - `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
   (`config/channels.json` 의 `x_names[]` 매칭).
 - `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.
@@ -1029,7 +1033,11 @@ lateness=actual_start−scheduled_start) / `live_end`(live→end) / `demote`(`tr
 
 ### 8.11 `telegram_app.py` — 공개 webhook 서비스
 
-Flask. 엔트리포인트 `src.backend.telegram_app:app`. `ALLOW_UNAUTH=1`. 라우트 `POST /telegram` · `POST /ingest` · `GET /`.
+Flask. 엔트리포인트 `src.backend.telegram_app:app`. `ALLOW_UNAUTH=1`. 라우트 `POST /telegram` · `POST /ingest` · `GET /` · (self-reply) `POST /gap-check` · `POST /gap-fill` — 뒤의 두 개만 `oidc.verify_request(force=True)` 로 **강제 검증**(audience = `ADMIN_BASE_URL`, 발급자 = `INVOKER_SA`, 설정 없으면 거절).
+
+**`/gap-check`** (상시 조사, 매분): 5명 목록 조회 → 후보 → 보충 작업 적재. 본체 `_gap_check_run` · `_gap_check_core`(주입식, self-test 용). 상세 = 계약 I「빠진 트윗 보충 · 자기 답글」.
+**`/gap-fill`** (보충 작업 1건): 본체 `_gap_fill_one`. 원글 사슬 → 글 자신을 `_maybe_personal_tweet(origin="gapfill")`. 실패해도 200.
+`/ingest` 의 개인 트윗 분기는 더 이상 빠진 트윗 보충을 부르지 않는다(명세 §4-3).
 
 **`/telegram`**: `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 검증. 항상 **200**, 응답은 `sendMessage` 별도.
 followup 소진 순서: del/undo (y/N/terminate) → `_handle_ingest_followup` → `_handle_member_followup` →
@@ -1087,6 +1095,7 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 `@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
 `@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
 `@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
+`@app.post("/daily")` (self-reply D6 · 명세 §4-6, Scheduler `mewtype-daily` KST 06:00) → ① `DAILY_QUEUE` 에 그날 **06:10 `/monitor`** · **06:20 `/websub-renew`** 태스크를 먼저 예약(이름 `daily-monitor-<분>` · `daily-websub-renew-<분>` — 날짜로 고정이라 재시도해도 두 번 안 만든다) → ② `handlers.tick("baseline")` 그대로(일시정지 가드 포함). 예약 실패는 tick 을 막지 않고 응답 500 + 운영자 알림 1회(Scheduler 재시도). `/monitor`·`/websub-renew` 본문은 그대로.
 `@app.post("/monitor")` (v3.5, v3.8.9 개편) → (핫픽스 archive-split) 먼저 **보관함 정리**(§8.18, 실패해도 다음 단계 계속) → **매일**(monitor_auto 와 무관) `monitor_snapshot.run_daily`:
 전일(06:00 KST 경계) 하루치를 `monitoring/days/{날짜}.json` 에 굳히고 `monitoring/summary.json` 에 요약 한 줄을
 추가(요약 = `{"triggers","events"}`, 그날 이벤트 로그 파일이 없으면 숫자 대신 `{"no_log": true}`). 백필:
@@ -1578,13 +1587,12 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 `deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
 - `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**,
-  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)) + (v4.5.2) PubSub 전용 큐 `WEBSUB_QUEUE`(기본 `mewtype-websub`, 동시 1 · 초당 0.2). 멱등.
+  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)) + (v4.5.2) PubSub 전용 큐 `WEBSUB_QUEUE`(기본 `mewtype-websub`, 동시 1 · 초당 0.2). (self-reply) 보충 작업 큐 `GAPFILL_QUEUE`(기본 `mewtype-gapfill`, 동시 1 · 3회) · 일일 묶음 예약 큐 `DAILY_QUEUE`(기본 `mewtype-daily`, 동시 1 · 4회 · 30~300초). 멱등.
 - `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
   + secrets/env. `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN` 은 Secret 이 있을 때만 마운트(v3.7.1 — 전엔
   healthchecks Secret 을 무조건 마운트해 새 프로젝트에서 첫 배포가 실패). 배포 후 `SERVICE_URL` env 재설정.
   (v4.5.0) `WEBSUB_SECRET`(Secret, 있을 때만) · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL — 배포 때 조회, 접수 서비스를 **먼저** 배포) · `WEBSUB_REPLACE_RSS`(기본 0) · (v4.5.2) `WEBSUB_QUEUE`(PubSub 확인 재예약용) env.
-- `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`*/10 * * * *` Etc/UTC, v3.6) /
-  `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`) / (v4.5.0) `mewtype-websub-renew`(`20 6 * * *` Asia/Seoul → `/websub-renew`). OIDC.
+- `scheduler.sh` — (self-reply D6, 2026-10-27 이후) 3잡: `mewtype-light`(`*/10 * * * *` Etc/UTC → 쓰기 `/tick`) · `mewtype-daily`(`0 6 * * *` Asia/Seoul → 쓰기 `/daily`) · `mewtype-gapcheck`(`* * * * *` Etc/UTC → 접수 `/gap-check`, audience = 접수 서비스 주소). 옛 `mewtype-baseline` · `mewtype-monitor` · `mewtype-websub-renew` 은 새 잡을 만든 뒤 지운다. **STAGE=1 이면 아무것도 안 하고 끝남**(D10). **KST 05:50~06:30 에는 거부**(일일 묶음 잡 · 예약과 겹침). OIDC.
 - `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
   `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
   (조건부) + `INGEST_YT_ENABLED` env. (v4.5.0) `WEBSUB_SECRET`(조건부 — 없으면 `/websub/*` 는 503) · (v4.5.2) `WEBSUB_QUEUE`(알림 확인 · 신곡 등록 예약 큐 — 큐가 없으면 예약 실패 → 503 이라 `setup.sh` 로 **먼저** 만든다). (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
