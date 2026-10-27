@@ -1,0 +1,8 @@
+fix(vT1.0.1): 1MB 초과 파일을 읽지 못하는 gh_store 읽기 폴백 추가
+
+원인: gh_store.read_json 은 GitHub Contents API JSON 응답의 base64 `content` 만 읽는다. Contents API는 1MB를 넘는 파일에 대해 content를 비우고 encoding='none' 으로 응답한다. tweet_archive.json 은 size=1138183(약 1.1MB)으로 한도를 넘었다. 그래서 read_json 이 "No content in response" RuntimeError를 던졌다. _commit_personal_tweet 은 이 예외를 잡아 log.excepti
+분석: telegram_app-1330ba5e
+작성: claude-haiku-5-5 · 명세/검증/검토: claude-sonnet-5-5
+파이프라인: 표준(충분한 검증)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>

@@ -1,0 +1,155 @@
+{
+ "ts": "2026-10-27T02:47:52Z",
+ "sig": "telegram_app-1330ba5e",
+ "severity": "ERROR",
+ "verdict": "confirmed",
+ "report": "20261027T024752Z_telegram_app-1330ba5e.md",
+ "action": "fix",
+ "preset": "standard",
+ "steps": [
+  {
+   "id": "analysis",
+   "name": "분석(Sonnet)",
+   "status": "ok",
+   "sec": 27.5,
+   "note": "confirmed",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1364
+  },
+  {
+   "id": "spec",
+   "name": "명세서(Sonnet)",
+   "status": "ok",
+   "sec": 22.2,
+   "note": "",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1552
+  },
+  {
+   "id": "worktree",
+   "name": "수정 브랜치 · 워크트리",
+   "status": "ok",
+   "sec": 0.5,
+   "note": "auto/telegram_app-1330ba5e-1",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "implement",
+   "name": "구현(Haiku)",
+   "status": "ok",
+   "sec": 27.4,
+   "note": "",
+   "model": "claude-haiku-5-5",
+   "cost": 0.0121
+  },
+  {
+   "id": "guard",
+   "name": "가드: 금지 자원 확인",
+   "status": "ok",
+   "sec": 0.6,
+   "note": "민감 경로: src/backend/gh_store.py",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "tests",
+   "name": "문법 · self-test",
+   "status": "ok",
+   "sec": null,
+   "note": "self-test 7/7 통과 (변경 전 7/7)",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "verify",
+   "name": "검증(Sonnet)",
+   "status": "ok",
+   "sec": 15.5,
+   "note": "명세서와 diff가 일치한다. read_json 과 read_text 는 `encoding == 'none'` 일 때만 `_get_raw` 로 재요청하고, 그 외 빈 content 는 기존처럼 RuntimeError 를 낸다. sha 는 1차 응답 값을 쓴다. `_get_raw` 는 바이트를 직접 UTF-8 로 디코딩해 한글이 깨지지 않는다. 비정상 상태코드와 네트워크 오류는 RuntimeError 로 올라가서 에러를 삼키는 곳이 없다. 데이터를 버리거나 자르는 땜질도 없다. 새 호스트와 새 환경변수도 없다. 저장 형식은 그대로라서",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1537
+  },
+  {
+   "id": "review",
+   "name": "독립 검토(Sonnet)",
+   "status": "ok",
+   "sec": 18.8,
+   "note": "변경은 src/backend/gh_store.py 한 파일이다. content 가 비고 encoding 이 'none' 일 때만 같은 URL 을 Accept: application/vnd.github.raw+json 으로 다시 GET 한다. 이 폴백이 read_json 과 read_text 양쪽에 들어갔고, sha 는 1차 응답 값을 쓴다. 그 외의 빈 content 는 기존처럼 RuntimeError 를 낸다. 에러를 삼키거나 데이터를 버리는 땜질이 아니라 원인(1MB 초과 시 content 가 빈다)을 직접 고친 것이다. 본문은",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1524
+  },
+  {
+   "id": "commit",
+   "name": "로컬 브랜치 커밋",
+   "status": "ok",
+   "sec": 0.2,
+   "note": "095c735 → 6825a77 (vT1.0.1) · 버전 기록 실패: FileNotFoundError",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "protected",
+   "name": "보호 대상 불변 확인",
+   "status": "ok",
+   "sec": 0.1,
+   "note": "",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "apply",
+   "name": "러너 브랜치에 적용",
+   "status": "ok",
+   "sec": null,
+   "note": "test/autofix-s ff-only",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "restart",
+   "name": "러너 재시작 + 건강 확인",
+   "status": "ok",
+   "sec": 8.5,
+   "note": "러너 재시작(4초 · 옵션 --env .env.local --no-scheduler --no-telegram)",
+   "model": "",
+   "cost": null
+  }
+ ],
+ "title": "1MB 초과 파일을 읽지 못하는 gh_store 읽기 폴백 추가",
+ "fix_status": "applied",
+ "proposal_id": null,
+ "branch": "auto/telegram_app-1330ba5e-1",
+ "files": [
+  {
+   "path": "src/backend/gh_store.py",
+   "added": 108,
+   "deleted": 8
+  }
+ ],
+ "usage": {
+  "five": 0.42,
+  "reset5": 1793080800,
+  "seven": 0.11,
+  "reset7": 1793613600,
+  "delta_five": 0.04999999999999999,
+  "calls_seen": 8
+ },
+ "commit_before": "095c735",
+ "commit_after": "6825a77",
+ "analysis": {
+  "verdict": "confirmed",
+  "summary": "tweet_archive.json 이 1MB 초과해 Contents API가 content를 비워 개인 트윗 반영 실패",
+  "cause": "gh_store.read_json 은 GitHub Contents API JSON 응답의 base64 `content` 만 읽는다. Contents API는 1MB를 넘는 파일에 대해 content를 비우고 encoding='none' 으로 응답한다. tweet_archive.json 은 size=1138183(약 1.1MB)으로 한도를 넘었다. 그래서 read_json 이 \"No content in response\" RuntimeError를 던졌다. _commit_personal_tweet 은 이 예외를 잡아 log.exception(ERROR)을 남기고 mode=\"error\" 를 반환한다. 아카이브가 계속 1MB를 넘는 한 같은 조건에서 반복해 실패하는 구조적 문제다. 일시적 장애가 아니다.",
+  "evidence": [
+   "src/backend/gh_store.py:122-128 — content 가 비면 encoding/size 를 담아 RuntimeError 를 던지고, raw 미디어 타입이나 blob API 폴백은 없음",
+   "src/backend/telegram_app.py:2160 — _commit_personal_tweet 이 tweets.json 읽기 직후 gh.read_json(_TWEET_ARCHIVE_PATH) 호출",
+   "src/backend/telegram_app.py:2207-2213 — 예외를 잡아 log.exception(\"personal tweet 반영 실패\") 후 mode=error 반환, tweets.json 쓰기(2188행)에 도달하지 못함",
+   "src/backend/telegram_app.py:2025,2936,4614,6185,6309 — 같은 아카이브를 읽는 다른 호출부도 같은 read_json 을 쓰므로 같은 영향을 받음",
+   "logs.json — RuntimeError: No content in response for tweet_archive.json (encoding='none', size=1138183)"
+  ],
+  "proposed_action": "1) gh_store.read_json 에서 content 가 비고 encoding=='none' 이면 `Accept: application/vnd.github.raw+json` 으로 같은 URL을 다시 GET해 본문을 받고(sha는 1차 응답 값 사용), 또는 git blob API(`/git/blobs/{sha}`)로 읽는 폴백을 추가한다. 이 방식은 100MB까지 가능하다. write_json 의 PUT 은 1MB 초과여도 가능한지 함께 확인한다. 2) 근본적으로 xtweet 아카이브에 보존 기간이나 건수 상한을 두어 1MB 아래로 유지한다(보수적인 값으로 정한다). 3) 아카이브가 이미 비대하므로, 폴백을 넣은 뒤 트윗 수명 정책에 맞춰 정리하는 데이터 작업을 한다.",
+  "impact": "아카이브가 1MB를 넘은 뒤로 개인 트윗(+예고 판정) 인입이 tweets.json 에 반영되지 못해, 해당 트윗이 팬 화면에서 누락될 수 있다. 같은 아카이브를 읽는 다른 경로도 영향을 받을 수 있다. 수신기에는 1건만 잡혔고 24시간 시간대별 집계는 비어 있다. 다만 원인이 파일 크기라서 개인 트윗이 들어올 때마다 재현될 가능성이 높다. 이 호출의 폴백은 mode=error 반환뿐이라 사용자에게 서비스가 제공되지 않는다.",
+  "needs_human": false
+ }
+}

@@ -1,0 +1,148 @@
+diff --git a/src/backend/gh_store.py b/src/backend/gh_store.py
+index 9b9d19a..cf05695 100644
+--- a/src/backend/gh_store.py
++++ b/src/backend/gh_store.py
+@@ -124,12 +124,15 @@ class GitHubStore:
+             sha = resp_json.get("sha")
+ 
+             if not content_b64:
+-                raise RuntimeError(f"No content in response for {path} "
+-                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
+-
+-            # 베이스64 디코딩
+-            content_bytes = base64.b64decode(content_b64)
+-            content_str = content_bytes.decode("utf-8")
++                if resp_json.get("encoding") != "none":
++                    raise RuntimeError(f"No content in response for {path} "
++                                       f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
++                # 1MB 초과 파일: Contents API 가 content 를 비우고 encoding='none' 을 준다 → raw 로 재요청
++                content_str = self._get_raw(path)
++            else:
++                # 베이스64 디코딩
++                content_bytes = base64.b64decode(content_b64)
++                content_str = content_bytes.decode("utf-8")
+ 
+             # JSON 파싱
+             data = json.loads(content_str)
+@@ -141,6 +144,35 @@ class GitHubStore:
+         except (ValueError, KeyError) as e:
+             raise RuntimeError(f"GitHub API response parsing error: {e}")
+ 
++    def _get_raw(self, path: str) -> str:
++        """(1MB 초과 파일 폴백) 같은 URL 을 raw 미디어 타입으로 GET 해 본문 텍스트를 받는다.
++
++        Contents API 는 1MB 를 넘는 파일의 content 를 비워 돌려주므로(encoding='none'),
++        본문은 Accept: application/vnd.github.raw+json 으로 따로 받아야 한다.
++
++        Returns:
++            UTF-8 로 디코딩한 파일 본문.
++
++        Raises:
++            RuntimeError: 네트워크 오류 또는 200 이 아닌 상태코드.
++        """
++        url = f"{self.API}/repos/{self.repo}/contents/{path}"
++        params = {"ref": self.branch}
++        headers = dict(self._headers(), Accept="application/vnd.github.raw+json")
++        try:
++            sess = self.session or requests.Session()
++            resp = sess.get(url, params=params, headers=headers, timeout=self.timeout)
++        except requests.RequestException as e:
++            raise RuntimeError(f"GitHub API network error: {e}")
++
++        if resp.status_code != 200:
++            raise RuntimeError(
++                f"GitHub API read failed: {resp.status_code} {resp.reason}. "
++                f"Response: {resp.text[:200]}"
++            )
++        # resp.text 는 charset 미지정 시 requests 가 ISO-8859-1 로 추측해 한글이 깨지므로 바이트를 직접 UTF-8 디코딩
++        return resp.content.decode("utf-8")
++
+     def write_json(
+         self,
+         path: str,
+@@ -218,8 +250,11 @@ class GitHubStore:
+             content_b64 = resp_json.get("content", "")
+             sha = resp_json.get("sha")
+             if not content_b64:
+-                raise RuntimeError(f"No content in response for {path} "
+-                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
++                if resp_json.get("encoding") != "none":
++                    raise RuntimeError(f"No content in response for {path} "
++                                       f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
++                # 1MB 초과 파일 폴백 (read_json 과 동일)
++                return self._get_raw(path), sha
+             return base64.b64decode(content_b64).decode("utf-8"), sha
+         except requests.RequestException as e:
+             raise RuntimeError(f"GitHub API network error: {e}")
+@@ -420,6 +455,71 @@ if __name__ == "__main__":
+     assert changed_e is False and sha_e == "shaE" and sess_e.put_calls == 0
+     print("✓ write_text: 내용 동일하면 PUT 생략")
+ 
++    # 검증 7~10: 1MB 초과 파일 폴백 (content 비고 encoding='none' → raw 재요청)
++    class _BigSess:
++        """GET 은 Accept 가 raw 면 본문(바이트)을, 아니면 1MB 초과 응답(content 빈 값)을 돌려준다.
++        PUT 은 마지막 요청 body 를 기록한다."""
++        def __init__(self, body: str, sha: str = "shaBig"):
++            self.body, self.sha = body, sha
++            self.raw_calls, self.put_calls, self.last_put = 0, 0, None
++        def get(self, url, **kw):
++            if kw["headers"].get("Accept") == "application/vnd.github.raw+json":
++                self.raw_calls += 1
++                r = _Resp(200)
++                r.content = self.body.encode("utf-8")
++                r.text = self.body
++                return r
++            return _Resp(200, {"content": "", "encoding": "none", "size": 1138183, "sha": self.sha})
++        def put(self, url, **kw):
++            self.put_calls += 1
++            self.last_put = kw["json"]
++            return _Resp(200, {"content": {"sha": "newBig"}})
++
++    big = {"items": [{"name": "한글", "n": i} for i in range(3)]}
++    big_text = _serialize(big)
++
++    # (a) read_json: raw 폴백으로 본문을 받아 파싱, sha 는 1차 응답 것, raw 요청 1회
++    sess_big = _BigSess(big_text)
++    gh_big = GitHubStore("tok", "o/r", "data", session=sess_big)
++    data_big, sha_big = gh_big.read_json("tweet_archive.json")
++    assert data_big == big and sha_big == "shaBig" and sess_big.raw_calls == 1
++    print("✓ read_json: encoding='none' 이면 raw 로 재요청해 파싱")
++
++    # (b) read_text: 같은 폴백
++    sess_bt = _BigSess(big_text)
++    gh_bt = GitHubStore("tok", "o/r", "data", session=sess_bt)
++    text_bt, sha_bt = gh_bt.read_text("docs/big.txt")
++    assert text_bt == big_text and sha_bt == "shaBig" and sess_bt.raw_calls == 1
++    print("✓ read_text: 같은 폴백 적용")
++
++    # (c) write_json: 내용 동일 → PUT 없음 / 다르면 sha='shaBig' 로 PUT
++    sess_same = _BigSess(big_text)
++    gh_same = GitHubStore("tok", "o/r", "data", session=sess_same)
++    changed_s, sha_s = gh_same.write_json("tweet_archive.json", big, prev_sha="shaBig", message="m")
++    assert changed_s is False and sha_s == "shaBig" and sess_same.put_calls == 0
++    sess_diff = _BigSess(big_text)
++    gh_diff = GitHubStore("tok", "o/r", "data", session=sess_diff)
++    changed_d2, sha_d2 = gh_diff.write_json("tweet_archive.json", {"items": []}, prev_sha="shaBig", message="m")
++    assert changed_d2 is True and sha_d2 == "newBig" and sess_diff.put_calls == 1
++    assert sess_diff.last_put["sha"] == "shaBig"
++    print("✓ write_json: 큰 파일 — 동일하면 PUT 생략, 다르면 shaBig 기준 PUT")
++
++    # (d) encoding 이 'none' 이 아닌 빈 content 는 여전히 RuntimeError (원인을 가리지 않음)
++    class _EmptySess:
++        def get(self, url, **kw):
++            return _Resp(200, {"content": "", "encoding": "base64", "size": 0, "sha": "shaE0"})
++    try:
++        GitHubStore("tok", "o/r", "data", session=_EmptySess()).read_json("x.json")
++        assert False, "RuntimeError 가 발생해야 함"
++    except RuntimeError:
++        pass
++    try:
++        GitHubStore("tok", "o/r", "data", session=_EmptySess()).read_text("x.txt")
++        assert False, "RuntimeError 가 발생해야 함"
++    except RuntimeError:
++        pass
++    print("✓ 빈 content (encoding != 'none') 는 RuntimeError 유지")
++
+     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
+     import os
+     gh_token_test = os.environ.get("GH_TOKEN_TEST")
