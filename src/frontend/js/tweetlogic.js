@@ -2,7 +2,8 @@
 // tweets.js 가 가져다 쓰고, tweetlogic.selfcheck.mjs 가 node 에서 직접 검사한다(V1-C).
 //
 // 여기 있는 것: 글타래 묶기 · 끌어올리기(chains) · 첨부 개수 문구(attachments) · 글자색 · 번역 칸 바탕(paletteFor) ·
-//   시각 표기(KST) · 카드 자리 높이 어림(estimateCardH) · 새 글 자리(firstUnread) · 면 저장값(mew:tllang ↔ 면 번호) · 표시 서명(sigOf).
+//   시각 표기(KST) · 카드 자리 높이 어림(estimateCardH) · 새 글 자리(firstUnread) · 면 저장값(mew:tllang ↔ 면 번호) · 표시 서명(sigOf) ·
+//   열린 시트 갱신 계획(reconcileUnits — 새 글만 끼우기).
 
 export const KST_MS = 9 * 3600e3;
 export const CARD_EST_H = 230;          // X 카드가 높이를 알려주기 전 자리 높이(짧은 텍스트 트윗 실측)
@@ -182,6 +183,44 @@ export function langOf(face) { return face === 1 ? "orig" : "ko"; }
 /* ── 표시 서명 — 75초 폴링마다 같으면 다시 그리지 않는다 ─────────────── */
 export function sigOf(list) {
   return (list || []).map((m) => [m.id, m.text_ko || "", (m.quote && m.quote.text_ko) || "", m.reply_to_id || ""].join("|")).join("~");
+}
+
+/* ── 열린 시트 갱신 계획 (v4.9.1) ─────────────────────────────────────
+   폴링으로 글이 늘었을 때 이미 그린 글(X 카드 iframe 포함)을 그대로 두고 새 글만 끼울 수 있는지 본다.
+   old · next = 글타래 단위의 id 배열들(chains 결과를 id 로). 옛 글타래는 하나도 빠짐없이 새 글타래 하나의 앞부분이어야 한다
+   (같은 뿌리 · 같은 순서 · 뒤에만 덧붙음). 아니면 null — 글이 빠졌거나 글타래 안에 끼어들었거나 뿌리가 바뀐 것이니 다시 그린다.
+   반환: 새 글타래마다 { from: 옛 글타래 번호(-1 = 새 글타래), add: 뒤에 붙는 새 id 들, keep: 제자리에 둬도 되는가 }.
+   keep = 옛 글타래 중 순서를 지키는 가장 긴 줄(LIS)에 든 것 — 나머지만 옮긴다(옮기면 그 X 카드는 다시 불러와진다). */
+export function reconcileUnits(old, next) {
+  const oldUnits = (old || []).map((u) => u.map(String));
+  const byRoot = new Map();
+  oldUnits.forEach((u, i) => byRoot.set(u[0], i));
+  const oldIds = new Set(oldUnits.flat());
+  const used = new Set();
+  const plan = [];
+  for (const raw of next || []) {
+    const u = raw.map(String);
+    const k = byRoot.has(u[0]) ? byRoot.get(u[0]) : -1;
+    const o = k >= 0 ? oldUnits[k] : [];
+    if (k >= 0 && (used.has(k) || o.length > u.length || o.some((id, i) => u[i] !== id))) return null;
+    const add = u.slice(o.length);
+    if (add.some((id) => oldIds.has(id))) return null;
+    if (k >= 0) used.add(k);
+    plan.push({ from: k, add, keep: false });
+  }
+  if (used.size !== oldUnits.length) return null;
+  // 옛 순서를 지키는 가장 긴 줄(O(n²) — 글타래는 많아야 50개)
+  const idx = plan.map((p, i) => (p.from >= 0 ? i : -1)).filter((i) => i >= 0);
+  const len = idx.map(() => 1), prev = idx.map(() => -1);
+  let best = -1;
+  for (let a = 0; a < idx.length; a++) {
+    for (let b = 0; b < a; b++) {
+      if (plan[idx[b]].from < plan[idx[a]].from && len[b] + 1 > len[a]) { len[a] = len[b] + 1; prev[a] = b; }
+    }
+    if (best < 0 || len[a] > len[best]) best = a;
+  }
+  for (let a = best; a >= 0; a = prev[a]) plan[idx[a]].keep = true;
+  return plan;
 }
 
 /* ── 이름 · 칩 ─────────────────────────────────────────────────────── */

@@ -1,10 +1,10 @@
 /**
- * tweetlogic.js 순수 로직 자동 테스트 (트윗 시트, V1-C 의 C1~C8). node tweetlogic.selfcheck.mjs 로 실행. 프레임워크 없음. DOM 을 쓰지 않는다.
+ * tweetlogic.js 순수 로직 자동 테스트 (트윗 시트, V1-C 의 C1~C8 + v4.9.1 C9 새 글만 끼우기 계획). node tweetlogic.selfcheck.mjs 로 실행. 프레임워크 없음. DOM 을 쓰지 않는다.
  */
 import {
   chains, attachments, inkFor, paperFor, paletteFor, contrast, parseRgb, kstParts,
   postedLabel, replyLabel, unpostedLabel, gapLabel, clockLabel, estimateCardH, firstUnread,
-  faceOf, langOf, sigOf, shortName,
+  faceOf, langOf, sigOf, shortName, reconcileUnits,
 } from "./tweetlogic.js";
 
 let n = 0;
@@ -143,6 +143,28 @@ const NOW = Date.parse("2026-10-26T22:05:00Z");   // 10/27 07:05 KST
   assert(sigOf(l1) !== sigOf(l2), "서명: 답글 연결이 바뀌면 다름");
   assert(sigOf(l1) === sigOf([{ id: "1", text_ko: "가" }]), "서명: 같은 내용이면 같음");
   assert(shortName("나카마치 아라레") === "아라레" && shortName("") === "", "이름: 마지막 낱말");
+}
+
+// ── C9 · 열린 시트 갱신 계획 (v4.9.1, reconcileUnits)
+{
+  const js = (v) => JSON.stringify(v);
+  const same = reconcileUnits([["a"], ["b", "c"]], [["a"], ["b", "c"]]);
+  assert(js(same) === js([{ from: 0, add: [], keep: true }, { from: 1, add: [], keep: true }]), "C9 그대로 → 붙일 것 없음 · 모두 제자리");
+  const tail = reconcileUnits([["a"], ["b"]], [["a"], ["b"], ["d"]]);
+  assert(tail && tail[2].from === -1 && js(tail[2].add) === js(["d"]) && tail[0].keep && tail[1].keep, "C9 맨 뒤 새 글 → 새 글타래만 덧붙임");
+  const grow = reconcileUnits([["a"], ["b"]], [["a"], ["b", "e"]]);
+  assert(grow && grow[1].from === 1 && js(grow[1].add) === js(["e"]) && grow[1].keep, "C9 마지막 글에 자기 답글 → 그 글타래 뒤에 붙임");
+  const lift = reconcileUnits([["a"], ["b"], ["c"]], [["b"], ["c"], ["a", "f"]]);
+  assert(lift && lift[2].from === 0 && js(lift[2].add) === js(["f"]) && !lift[2].keep && lift[0].keep && lift[1].keep,
+    "C9 옛 글에 답글 → 그 글타래가 끝으로(끌어올리기) — 그 하나만 옮김");
+  assert(reconcileUnits([["a"], ["b"]], [["b"]]) === null, "C9 글이 빠짐(만료) → 다시 그림");
+  assert(reconcileUnits([["a", "c"]], [["a", "b", "c"]]) === null, "C9 글타래 중간에 끼어듦 → 다시 그림");
+  assert(reconcileUnits([["b"]], [["a", "b"]]) === null, "C9 원글이 뒤늦게 와서 뿌리가 바뀜 → 다시 그림");
+  const older = reconcileUnits([["b"]], [["a"], ["b"]]);
+  assert(older && older[0].from === -1 && older[1].keep, "C9 더 이른 시각의 새 글 → 앞에 끼움(옛 글은 제자리)");
+  const real = reconcileUnits(chains([msg("a", t0), msg("b", t0 + MIN)]).map((u) => u.map((m) => m.id)),
+    chains([msg("a", t0), msg("b", t0 + MIN), msg("c", t0 + 2 * MIN, { reply_to_id: "b" })]).map((u) => u.map((m) => m.id)));
+  assert(real && real.length === 2 && js(real[1].add) === js(["c"]), "C9 chains 결과와 맞물림");
 }
 
 console.log(`\n✅ tweetlogic selfcheck 통과 (${n}건)`);
