@@ -40,8 +40,9 @@
 ## 3. 가드 (프롬프트 규약이 아니라 사후 기계 검사 — `src/busrx/guard.py`)
 
 1. **수정 허용 경로**: `src/backend/` · `src/collector/` 만. 그 밖(프론트엔드 · `config/` · `deploy/` · `docs/` · `.github/` …)은 위반.
-2. **허용 경로 안의 금지 파일**: `src/bus/` · `src/busrx/`(자기 자신), 운영 자원 접근을 정하는
+2. **허용 경로 안의 금지 파일**: `src/bus/` · `src/busrx/`(자기 자신 — 어떤 설정에서도 금지), 운영 자원 접근을 정하는
    `storage.py` · `gh_store.py` · `tasks.py` · `oidc.py` · `config.py` · `writeclient.py` · `local_runner.py` · `tg_poll.py` · `notify.py`.
+   **2026-10-27: 자기 자신 밖은 「민감 경로」로 바뀌었다** — `RX_SENSITIVE=1`(실행 기본) 이면 자동 허용(+ `local_store.py` · `docs/` · `scripts/`). §12.
 3. **금지 자원이 추가되는 줄**(추가된 줄만 검사) — 위반이면 즉시 폐기:
    Vercel 주소(`vercel.app` · `mewtype-schduler`) · GCP(`*.run.app` · `asia-northeast1` · `mewtype-backend/telegram` · Cloud Tasks · Secret Manager) ·
    운영 데이터 저장소(`mewtype-scheduler-data` · GitHub API · raw.githubusercontent) · 원격 git/CLI 조작(`git push|remote|fetch|pull`, `gh`, `gcloud`, `vercel deploy` —
@@ -54,6 +55,7 @@
    self-test 를 **변경 전 스냅샷과 변경 후 워크트리에서 각각** 돌려 비교. 변경 전엔 통과했는데 후에 실패하면 회귀(수정 라운드 대상). 변경 무관 기존 실패는 건수로만 표시.
    테스트 실행 환경에는 비밀 환경 변수를 넘기지 않는다.
 7. **새 외부 의존성 금지(2026-10-13)**: 수정이 기준 코드(`src/` · `config/` · `deploy/` 스냅샷)에 **없던 외부 호스트**(다른 API 공급자 주소)나 **없던 환경변수 이름**(새 API 키)을 추가하면 위반으로 즉시 폐기한다(`guard.external_additions`). 주석만 있는 줄과 `example.com` 류는 제외. 공급자 교체 · 새 키 도입은 코드 수정이 아니라 사람의 결정이기 때문이다.
+   `RX_SENSITIVE=1` 이면 폐기하고 결과를 **「사람 요청」**(`needs_human` — 그 호스트 · 키가 필요하다는 것을 텔레그램으로 요청)으로 끝낸다(§12).
 8. 텔레그램 보고에 **"금지 자원 확인: 통과/실패 (확인 항목 목록)"** 이 항상 들어간다.
 
 > 한계: 가드는 *추가되는 줄* 의 패턴을 검사하므로, 패턴에 없는 방식으로 운영 자원에 접근하는 코드는 막지 못할 수 있다. 그래서 이중 검토(독립 검토자의
@@ -82,6 +84,7 @@
 
 `RX_STAGE`(기본 2, 1 이면 분석 · 보고만) · `RX_MODEL_ANALYSIS`(기본 `claude-sonnet-5-5`) · `RX_MODEL_CODE`(기본 `claude-haiku-5-5`) ·
 `RX_APPLY_LOCAL`(1) · `RX_APPLY_BRANCH`(`test-fullauto-hotfix`) · `RX_RUNNER_DIR`(이 저장소) · `RX_BUDGET_USD` 등 호출별 비용 상한. 정지: `mewtype-bus/rx/PAUSE` 파일.
+`RX_SENSITIVE`(기본 1 — 민감 경로 자동 허용, 0 이면 예전 금지 목록) · `RX_DATA_DIR`(데이터 이전을 돌릴 시험 데이터 폴더 `<dir>/data` · `<dir>/ops`, 없으면 이전은 사람 요청). §12.
 
 ## 7. 점검
 
@@ -154,3 +157,30 @@
 
 시험: `python -m src.busrx.selftest_human`(가짜 claude, 가드 · 상태 · API · 화면) · `python -m src.busrx.live_human_check`(진짜 claude 로 외부 API 장애별 반응 —
 결과는 `docs/AUTOFIX_HUMAN_ACTION_TEST_2026-10-13.md`).
+
+## 12. 사람 개입 최소화 — 민감 경로 · 사람 요청 · 데이터 이전 (2026-10-27 운영자 지시, 시험 S-O 후속)
+
+동작 모드의 뜻(운영자): **자동** = 정말 필요한 경우(혼자 진행할 수 없는 것)를 빼면 사람이 손대지 않는다 · **반자동** = 분석 후 패치가 필요하면 그때마다 허가 ·
+**끔(수동)** = 에러 알림만(경우에 따라 분석 보고서까지). 시험 S-O(devpapers `ref/autofix-test/result_2026-10-27.md`)에서 원인을 확정하고도
+근본 수정 위치가 금지 경로라 `not_fixable` 로 멈춘 것을 계기로, 자동 · 반자동에서 할 수 있는 범위를 넓혔다.
+
+1. **가드 3단계**(`guard.py`): 절대 금지 = `src/bus/` · `src/busrx/`(자기 자신) · 운영 자원 문자열 · 비밀값 · 원격 git · 디스클레이머 · 보호 ref(그대로 폐기) /
+   **사람 요청** = 새 외부 호스트 · 새 환경변수(폐기 + 요청) / **민감 경로** = `SENSITIVE_PATHS`(저장 계층 `storage` · `gh_store` · `local_store`,
+   `tasks` · `oidc` · `config` · `writeclient` · `local_runner` · `tg_poll` · `notify`, `docs/`, `scripts/`) — `RX_SENSITIVE=1` 이면 자동 허용.
+   `src/frontend/` · `config/` · `deploy/` 는 여전히 범위 밖.
+2. **민감 경로를 고친 수정의 조건**: 바꾼 모듈 self-test(전후 비교) + **검증 · 검토를 끌 수 없다**(긴급 프리셋에서도 실행, 검토자에게 호출부 · 데이터 형식 호환 확인 지시) +
+   보고서 · 계획안에 「⚠️ 민감 경로 수정」 표시(반자동은 이 표시를 보고 허가).
+3. **명세서 세 갈래**(`SPEC_SCHEMA`): `fixable=true` 진행 / `fixable=false · needs_human=true` **사람 요청**(`human_need` — 자격 증명 · 결제 · 계정 · 공급자 선택 ·
+   외부 서비스 설정처럼 혼자 할 수 없는 것만) / 그 밖 `not_fixable`. 사유 원문은 자르지 않고 보고서 · `rx/fix/<sig>/SPEC.md` 에 남긴다(단계 기록만 300자).
+   사람 요청이면 「사람 조치 필요」 표시 · 텔레그램 알림(§11 과 같은 경로, 반자동 계획 단계 포함).
+4. **운영 값은 스스로 정한다**: 보존 기간 · 임계값 등은 묻지 않고 기존 관례에서 보수적인 값을 정해 `auto_decisions` 에 「값 — 근거」로 — 보고서 「자동 결정한 값」(사후 보고).
+5. **땜질 금지**(민감 규칙 `RULES_SENSITIVE`): 에러 삼키기 · 데이터 버리기 · 증상만 가리기로 끝내지 않는다. 검증 · 검토도 땜질이면 반려.
+6. **데이터 이전**: 저장된 데이터를 옮겨야 하면 명세서 `migration.script`(`scripts/…`) — 계약 `python <스크립트> --data <data 폴더> --ops <ops 폴더>`,
+   파일 직접 읽기 · 쓰기(네트워크 금지), 멱등, 잃은 항목 · 중복이면 0 이 아닌 종료 코드. 수신기가
+   ① 테스트 단계에서 `RX_DATA_DIR` **복사본**(`rx/fix/<sig>/data_try`)에 돌려 보고(실패 = 수정 라운드) ② 적용(ff) 직후 **백업**(`rx/fix/data_backup_<버전>`)을 뜨고 실제 데이터에 실행,
+   실패하면 데이터 복원 + 패치 revert(`reverted`). `RX_DATA_DIR` 이 없으면(운영처럼) 코드는 브랜치에 두고 적용을 보류, 이전 실행을 사람에게 요청한다.
+7. **분석 규칙**: `unknown` 이면 cause 와 따로 `hypothesis`(유력 가설) · `how_to_confirm`(확인 방법)을 받아 보고서에 싣는다. 지침 10번의 사람 조치는
+   혼자 못 하는 것만 — 운영 값 · 저장 계층 · 계약 문서 · 데이터 이전은 사람 조치가 아니다.
+8. **기타**: 단계 이름에 실제 모델(`명세서(Opus)` 등, `claude.model_label`) · claude 서브프로세스에 `CLAUDE_*` 세션 변수를 넘기지 않음(`CLAUDE_CONFIG_DIR` · `ANTHROPIC_*` 만 —
+   수신기를 Claude 세션 셸에서 띄우면 `CLAUDE_EFFORT` 등이 새어 effort 가 바뀔 수 있었다).
+9. self-test: `python -m src.busrx.selftest_sensitive`.

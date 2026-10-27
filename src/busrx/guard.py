@@ -13,13 +13,17 @@ from pathlib import Path
 
 # 수정을 허용하는 경로(접두사) — 그 밖은 전부 위반
 ALLOWED_PREFIXES = ("src/backend/", "src/collector/")
-# 허용 경로 안에서도 건드리지 않는 파일: 운영 자원 접근 · 저장소 선택 · 텔레그램 송수신 · 자기 자신
-DENIED_PATHS = (
-    "src/bus/", "src/busrx/",
-    "src/backend/storage.py", "src/backend/gh_store.py", "src/backend/tasks.py", "src/backend/oidc.py",
-    "src/backend/config.py", "src/backend/writeclient.py", "src/backend/local_runner.py",
-    "src/backend/tg_poll.py", "src/backend/notify.py",
+# 어떤 설정에서도 건드리지 않는 경로: 자동 대응 자신(발신기 · 수신기)
+HARD_DENIED = ("src/bus/", "src/busrx/")
+# 민감 경로: 운영 자원 접근 · 저장소 선택 · 텔레그램 송수신 · 러너 · 계약 문서 · 데이터 스크립트.
+# 기본은 금지. RX_SENSITIVE=1(2026-10-27 운영자 — 사람 개입 최소화 시험)이면 자동 허용하되,
+# 바꾼 모듈 self-test 와 검증 · 검토를 끌 수 없고 보고서에 「민감 경로 수정」으로 표시한다.
+SENSITIVE_PATHS = (
+    "src/backend/storage.py", "src/backend/gh_store.py", "src/backend/local_store.py", "src/backend/tasks.py",
+    "src/backend/oidc.py", "src/backend/config.py", "src/backend/writeclient.py", "src/backend/local_runner.py",
+    "src/backend/tg_poll.py", "src/backend/notify.py", "docs/", "scripts/",
 )
+DENIED_PATHS = HARD_DENIED + tuple(p for p in SENSITIVE_PATHS if p.startswith("src/"))  # 민감 경로를 끈 기본 판정(예전 목록)
 # 디스클레이머 · 법적 문구를 지우는 변경 금지
 DISCLAIMER_RE = re.compile(r"(?i)disclaimer|디스클레이머|면책|법률")
 
@@ -64,15 +68,23 @@ def totals(rows) -> tuple[int, int, int]:
 
 
 # ── 경로 · 내용 검사 ──────────────────────────────────
-def path_violations(paths: list[str]) -> list[str]:
+def path_violations(paths: list[str], sensitive_ok: bool = False) -> list[str]:
+    """sensitive_ok=True 면 민감 경로(SENSITIVE_PATHS — docs/ · scripts/ 포함)는 위반이 아니다(sensitive_paths 로 따로 표시)."""
     bad = []
     for p in paths:
         q = p.replace("\\", "/")
-        if any(q.startswith(d) for d in DENIED_PATHS):
+        if any(q.startswith(d) for d in HARD_DENIED):
             bad.append(f"금지 경로 수정: {q}")
+        elif any(q.startswith(d) for d in SENSITIVE_PATHS):
+            if not sensitive_ok:
+                bad.append(f"금지 경로 수정: {q}")
         elif not any(q.startswith(a) for a in ALLOWED_PREFIXES):
             bad.append(f"허용 범위 밖 경로 수정: {q}")
     return bad
+
+
+def sensitive_paths(paths: list[str]) -> list[str]:
+    return [q for q in (p.replace("\\", "/") for p in paths) if any(q.startswith(d) for d in SENSITIVE_PATHS)]
 
 
 def added_removed_lines(diff_text: str) -> tuple[list[str], list[str]]:
@@ -118,7 +130,8 @@ def content_violations(diff_text: str, secrets: list[str]) -> list[str]:
 
 
 # ── 새 외부 의존성 금지 — 공급자 교체 · 새 키 요구는 사람이 정할 일 (운영자 지시 2026-10-13) ──
-# 수정이 코드에 **없던 외부 호스트**(다른 API 공급자 주소)나 **없던 환경변수 이름**(새 API 키)을 끌어들이면 hard 위반.
+# 수정이 코드에 **없던 외부 호스트**(다른 API 공급자 주소)나 **없던 환경변수 이름**(새 API 키)을 끌어들이면 그 수정은 폐기하고,
+# 파이프라인은 「사람 요청」(그 호스트 · 키가 필요하다는 것)으로 끝낸다(2026-10-27 — 전엔 가드 실패로만 끝났다).
 # 요금제 · 인증 · 쿼터 문제를 코드로 풀겠다며 공급자를 바꾸는 패치가 키도 없이 적용돼 서비스가 조용히 죽는 것을 막는다.
 URL_HOST_RE = re.compile(r"https?://([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,})(?=[/:?#\s\"'`)>\]}]|$)")
 ENV_NAME_RE = re.compile(r"""(?:os\.environ(?:\.get)?\s*[\[(]\s*|os\.getenv\s*\(\s*|getenv\s*\(\s*)["']([A-Za-z][A-Za-z0-9_]{2,})["']""")

@@ -19,6 +19,14 @@ from pathlib import Path
 
 MODEL_ANALYSIS = "claude-sonnet-5-5"
 MODEL_CODE = "claude-haiku-5-5"
+
+
+def model_label(model: str) -> str:
+    """단계 이름에 붙일 모델 표기 — claude-opus-5-5 → Opus. 모르는 이름은 그대로."""
+    for k in ("opus", "sonnet", "haiku", "fable"):
+        if k in (model or "").lower():
+            return k.capitalize()
+    return model or "?"
 KST = dt.timezone(dt.timedelta(hours=9))
 
 # claude 서브프로세스에 넘기는 환경 변수 — 필요한 것만(GROQ · YOUTUBE · 텔레그램 · GitHub 키 등은 비전달)
@@ -26,9 +34,13 @@ _KEEP = ("PATH", "SYSTEMROOT", "SystemRoot", "USERPROFILE", "APPDATA", "LOCALAPP
          "USERNAME", "COMSPEC", "PATHEXT", "WINDIR", "PROGRAMFILES", "PROGRAMDATA", "HOMEDRIVE", "HOMEPATH")
 
 
+# CLAUDE_* 중 넘기는 것 — 나머지(CLAUDECODE · CLAUDE_EFFORT · CLAUDE_CODE_SESSION_ID 등)는 수신기를 띄운 Claude 세션의 변수라
+# claude 서브프로세스의 effort · 세션 동작을 바꿀 수 있다(2026-10-27 시험 S-O). effort 는 ~/.claude/settings.json 의 모델별 값을 따른다.
+_KEEP_CLAUDE = ("CLAUDE_CONFIG_DIR",)
+
+
 def clean_env(extra: dict | None = None) -> dict:
-    env = {k: v for k, v in os.environ.items() if k in _KEEP or k.startswith(("ANTHROPIC_", "CLAUDE_"))}
-    env.pop("CLAUDECODE", None)  # 중첩 세션 표시는 넘기지 않는다
+    env = {k: v for k, v in os.environ.items() if k in _KEEP or k in _KEEP_CLAUDE or k.startswith("ANTHROPIC_")}
     if extra:
         env.update(extra)
     return env
