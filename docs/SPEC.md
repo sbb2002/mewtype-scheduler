@@ -1566,6 +1566,11 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 - **관리 페이지**(`admin.html` 곡 수정 창, `sgEditor`): 날짜 아래 「다른 음원 영상」 · 「MV 영상」 textarea(줄마다 하나 · 주소 또는 영상 ID). 저장 때 줄로 나눠 바뀐 것만 `patch.alt` / `patch.mv` 로 보낸다(빈 목록 = 키 삭제). 백엔드: `songs.py EDITABLE` 에 두 키, `normalize_media(patch, song)` 가 URL 도 받아 ID 로 바꾸고 잘못된 ID · 중복 제거 · `alt` 에서 대표 id 제거 · `alt`/`mv` 겹침 오류(바뀌지 않는 쪽은 곡의 기존 값과 비교). `telegram_app._song_edit_commit` 은 patch 를 그대로 `songs.edit_song` 에 넘긴다(수정 없음).
 - **데이터 반영**: `python scripts/apply_song_media.py <입력 songs.json> [<출력>]` — 표(`MEDIA`)의 `id` 와 같은 곡에 `alt` · `mv` 를 넣고(이미 있으면 덮어씀, 빈 목록은 키를 넣지 않음), NEW 곡(唱, `zVdR0urFjnc`, 歌ってみた 별개 곡 · `singers`: arale·ritsu)을 같은 id 가 없을 때만 맨 뒤에 추가. 표에 있는데 문서에 없는 id 는 건너뛰고 수를 출력. 두 번 돌려도 같은 결과(멱등). 이 저장소에서는 `src/frontend/assets/songs.json` · `config/songs_seed.json` 을 갱신(시드 · 폴백 — 같은 내용). **운영 data 브랜치(`songs.json`)는 이 커밋으로 바뀌지 않는다** — 운영자 승인 뒤 데이터 저장소에서 같은 스크립트로 갱신해 data 브랜치에 커밋한다. 표의 4곡(TedsUWY90Vs · eZG4sXy0zPM · tRS9u2YlqdM · Fp2a-MhCFVw)은 현재 시드에 없어 건너뛴다(정상).
 - **歌ってみた 기준**: 「歌ってみた」 표시가 붙은 영상은 그 자체로 한 곡이다 — MV 로 묶지 않고 별개 곡으로 둔다(唱 2024, 표시는 「아라레, 리츠」).
+- **AMV 기준 (v4.9.2, 2026-10-27 운영자 확정)**: AMV(애니메이션 MV — 곡에 애니 그림을 붙인 영상)도 `mv` 에 넣는다. v4.8.3 조사는 그룹 공식 채널의 「Official Music Video」 만 봐서 BanG Dream Channel☆ 에 올라온 애니 영상이 빠졌다(愛は衝動 이 MV 모드에서 음원으로 나오던 원인).
+  넣는 것: TV 애니 「バンドリ！ ゆめ∞みた」 삽입곡 영상(BanG Dream Channel☆ — 愛は衝動 `5NZp6NKhhlQ` · in my words `keIRgf-YfSI` · Face The Next `vuMUMWARZ4g` · 一番のひかり `JfeX3ABTBUs` · TearJerker `s3egp9Y1DTU`(잘린 버전 143초 / 음원 178초지만 넣음)) ·
+  그룹 채널 미니 애니(✞animaるパーティ✞ `tYrOQycCOBY` · エンプティパペット `c5h6SU7A5v8` · 限界現実サバイブ天使 `v9yaFY20KgM` · ビッグマウス `DZpTjwXFt7U` · 夢現妄想世界 `GGxlbJQ23h0` — 드라마 부분이 있어 음원의 1.5~2배 길이, 기존 Official MV 와 함께 무작위).
+  넣지 않는 것: TV 사이즈(90초) 크레딧 없는 OP · ED 영상(ゆめ∞みた OP · ED, ヴァンガード ED 真夜中遊園地) · にこいちミライ 미니 애니 주제가(30초) · 라이브 영상. 이미 있던 AMV: チューニング(`rkpYy32ik7E` · `QARyadS-0zY`).
+  표 = `scripts/apply_song_media.py` `MEDIA`. MV 가 여럿이면 `mediaCandidates` 가 고를 때마다 섞는다(코드 변경 없음).
 - **localStorage 키 2개**: `mew.player.media`(영상 종류) · `mew.tip.mv-mode`(MV 안내를 봤는지). 둘 다 이 브라우저에만 남는다.
 
 ---
