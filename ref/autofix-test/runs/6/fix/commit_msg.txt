@@ -1,0 +1,8 @@
+fix(vT1.0.1): fix: gh_store 1MB 넘는 파일을 Git Blob API 로 읽어 개인 트윗 반영 실패 해결
+
+원인: gh_store.read_json은 Contents API 응답의 `content`만 base64 디코딩한다. 로그의 응답은 encoding='none', size=1138183(약 1.1MB)이라 content가 비어 있고, read_json이 "No content in response"로 RuntimeError를 낸다. 이 응답 형태는 GitHub Contents API가 큰 파일에 주는 것으로 알려진 동작이다(이 부분은 로그 값과 외부 지식에 근거하며, 소스로 직접 증명한 것은 아니다). tweet_archive.json이 커
+분석: telegram_app-1330ba5e
+작성: claude-haiku-5-5 · 명세: claude-opus-5-5 · 검증/검토: claude-sonnet-5-5
+파이프라인: 표준(충분한 검증)
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
