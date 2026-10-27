@@ -9,6 +9,8 @@
 //
 // 계약: tweets[ck] = [ <메시지>, … ] 최신이 뒤(계약 I). 메시지별 expires_at 이 지난 것은 뺀다. reply_to_id 는 자기 답글의 원글 id.
 // 읽음 = 시트를 닫을 때 · 멤버를 바꿀 때(mew:twread, 4일 보존). 면 저장값 = mew:tllang(ko · orig). 엿보기 횟수 = mew:twpeek.
+// (v4.9.1) PC 팝업 = 머리 줄로 옮기기 · 위아래 가장자리로 대칭 높이 조절(mew:twh) · X 카드 덮개(카드 위에서 밀기).
+//   열린 시트에 새 글이 오면 새 글만 끼운다(_patchFeed) — 맨 아래였으면 아래에서 올라오고, 아니면 ↓ 동그라미(.tws__fab).
 
 import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { THEME_EVENT, currentTheme } from "./theme.js";
@@ -21,6 +23,8 @@ const PEEK_KEY = "mew:twpeek";
 const READ_TTL_MS = 4 * 24 * 3600 * 1000;   // 읽음 기록 보존 4일(트윗 수명 48h 보다 넉넉히)
 const MAX_THREAD = 50;                       // 노출 상한(백엔드 xtweet.MAX_THREAD 와 같게)
 const PEEK_MAX = 2;                          // 엿보기는 처음 두 번만
+const HKEY = "mew:twh";                      // (v4.9.1) PC 팝업 높이(px) — 사용자가 가장자리를 끌어 정한 값
+const MIN_H = 360;                           // PC 팝업 최소 높이(창이 더 작으면 창 - 16px)
 const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 const SPRING = "cubic-bezier(0.25, 1.4, 0.45, 1)";   // 놓을 때만 쓰는 튕김
 const NS = "http://www.w3.org/2000/svg";
@@ -74,9 +78,16 @@ const IC = {
   video: () => _icon("0 0 14 14", ["M2 4a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 10 4v6a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10z", "M10 6l2.5-1.5v5L10 8"]),
   x: () => _icon("0 0 24 24", ["M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"], true),
   close: () => _icon("0 0 20 20", ["M5 5l10 10M15 5L5 15"]),
+  down: () => _icon("0 0 20 20", ["M10 4v11", "M5 10.5l5 5 5-5"]),
 };
 const _reduce = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
 const _mobile = () => !!(window.matchMedia && window.matchMedia("(max-width: 767px)").matches);
+// X 카드 덮개가 켜지는 조건 — css/tweets.css 의 같은 미디어 쿼리와 맞춘다(PC 폭 + 마우스)
+const _coverOn = () => !!(window.matchMedia && matchMedia("(min-width: 768px) and (hover: hover) and (pointer: fine)").matches);
+/** 숫자 배지가 늘 때 한 번 톡 커졌다 돌아온다 */
+const _pop = (el) => {
+  if (el && el.animate && !_reduce()) el.animate([{ transform: "scale(1)" }, { transform: "scale(1.4)", offset: 0.35 }, { transform: "scale(1)" }], { duration: 380, easing: "cubic-bezier(0.3, 1.5, 0.5, 1)" });
+};
 
 /* ── 계약 I 하위호환: tweets[ck] → 메시지 배열 ───────────────────── */
 function _list(v) {
@@ -144,14 +155,23 @@ function _unreadCount(list, rd) {
 }
 /** 멤버 색: 예고판이 아바타에서 뽑아 .lane 에 넣는 --lane-color. 없으면 폴백 바탕 · 글자색은 대비로 */
 function _palette(ck) {
-  let raw = "";
+  return L.paletteFor(_laneColor(ck));
+}
+function _laneColor(ck) {
   if (_st.board) {
     for (const lane of _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]`)) {
-      raw = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
-      if (raw) break;
+      const raw = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
+      if (raw) return raw;
     }
   }
-  return L.paletteFor(raw);
+  return "";
+}
+/** (v4.9.1) 멤버 칩의 왼쪽 원 = 예고판 네임플레이트 아바타(.lane__avatar)와 같은 이미지. 보드에 없으면 config 의 avatar */
+function _avatarImg(ck) {
+  const av = _st.board && _st.board.querySelector(`.lane[data-channel="${CSS.escape(ck)}"] .lane__avatar`);
+  if (av && av.style.backgroundImage) return av.style.backgroundImage;
+  const u = (FALLBACK_CHANNELS[ck] || {}).avatar;
+  return u ? `url("${u}")` : "none";
 }
 function _lanes(ck) {
   // data-no-badge = 이후 예고 열(PC) — 배지는 타임테이블 왼쪽 칸 / 모바일 레인에만 붙는다
@@ -360,6 +380,7 @@ function _ensureSheet() {
   const s = {
     open: false, ck: null, from: null, sig: "", face: 0, anchor: null, watch: null, cardIO: null,
     peekT: 0, peekEl: null, peekMem: 0, pendT: [], hintT: 0, hintShown: false, chips: {}, memOn: false,
+    units: [], unitEls: [], pending: [], cnt: {}, tx: 0, ty: 0, geo: null,   // (v4.9.1) 그린 글타래 · ↓ 동그라미 대기 글 · 칩 수 · PC 위치
   };
   S = s;
   s.scrim = _el("div", { cls: "tws-scrim", on: { click: () => _close() } });
@@ -381,7 +402,7 @@ function _ensureSheet() {
   for (const ck of FALLBACK_CHANNEL_ORDER) {
     const meta = FALLBACK_CHANNELS[ck] || {};
     const chip = _el("button", { cls: "tws__chip", attrs: { type: "button", "data-ck": ck }, on: { click: () => _switchTo(ck) } }, [
-      _el("i", { attrs: { "aria-hidden": "true" } }),
+      _el("span", { cls: "tws__chip-av", attrs: { "aria-hidden": "true" } }),
       _el("span", { text: L.shortName(meta.name_ko) || ck }),
     ]);
     s.chips[ck] = chip;
@@ -390,8 +411,16 @@ function _ensureSheet() {
   s.feed = _el("div", { cls: "tws__feed" });
   s.newChip = _el("button", { cls: "tws__newchip", attrs: { type: "button" }, on: { click: () => _jumpNew() } });
   s.hint = _el("div", { cls: "tws__hint", attrs: { role: "status" } });
+  // (v4.9.1) ↓ 동그라미 · 새 글 알림(화면 낭독기 — 숫자만이 아니라 「누구 새 글 N개」 한 문장) · PC 위아래 가장자리 손잡이
+  s.fabN = _el("b", { cls: "tws__fab-n" });
+  s.fab = _el("button", { cls: "tws__fab", attrs: { type: "button", tabindex: "-1", "aria-label": "새 글, 맨 아래로" }, on: { click: () => _toBottom() } },
+    [_el("span", { cls: "tws__fab-in" }, [IC.down(), s.fabN])]);
+  s.live = _el("div", { cls: "tws__live", attrs: { role: "status", "aria-atomic": "true" } });
+  s.hread = _el("span", { cls: "tws__hread" });
+  s.rzT = _el("div", { cls: "tws__rz tws__rz--t", attrs: { "aria-hidden": "true" } });
+  s.rzB = _el("div", { cls: "tws__rz tws__rz--b", attrs: { "aria-hidden": "true" } }, [s.hread]);
   s.sheet = _el("section", { cls: "tws", attrs: { role: "dialog", "aria-modal": "true", "aria-labelledby": "tws-nm", tabindex: "-1" } },
-    [s.grab, s.head, s.members, s.feed, s.newChip, s.hint]);
+    [s.rzT, s.grab, s.head, s.members, s.feed, s.newChip, s.fab, s.hint, s.live, s.rzB]);
   document.body.append(s.scrim, s.sheet);
 
   // 폰: 손잡이 · 머리 줄을 아래로 끌어 닫기(sheetdrag.js). PC 는 끌어 닫기 없음
@@ -413,7 +442,29 @@ function _ensureSheet() {
   });
   s.members.addEventListener("click", (e) => { if (s.memOn) { s.memOn = false; e.preventDefault(); e.stopPropagation(); } }, true);
   s.members.addEventListener("scroll", () => _fadeMembers(), { passive: true });
-  s.feed.addEventListener("scroll", () => _fadeEdges(), { passive: true });
+  s.feed.addEventListener("scroll", () => { _fadeEdges(); _seenPending(); }, { passive: true });
+  // (v4.9.1) PC: 머리 줄을 잡아 옮기기 · 위아래 가장자리를 끌어 높이 바꾸기(더블클릭 = 창의 90%로)
+  s.head.addEventListener("pointerdown", (e) => {
+    if (!s.open || _mobile() || e.button > 0) return;
+    if (e.target instanceof Element && e.target.closest("button, a")) return;
+    s.geo = { kind: "move", id: e.pointerId, x: e.clientX, y: e.clientY, tx: s.tx, ty: s.ty };
+    _geoStart(s.head, e.pointerId, "is-moving");
+  });
+  for (const rz of [s.rzT, s.rzB]) {
+    rz.addEventListener("pointerdown", (e) => {
+      if (!s.open || _mobile() || e.button > 0) return;
+      s.geo = { kind: "size", id: e.pointerId, y: e.clientY, h: s.sheet.offsetHeight, dir: rz === s.rzB ? 1 : -1, el: rz };
+      rz.classList.add("is-on");
+      _geoStart(rz, e.pointerId, "is-sizing");
+      _readout(s.geo.h);
+    });
+    rz.addEventListener("dblclick", () => {
+      if (!s.open || _mobile()) return;
+      try { localStorage.removeItem(HKEY); } catch { /* 지우지 못해도 이번 화면은 90% */ }
+      s.sheet.style.height = "";
+      _geom();
+    });
+  }
   // 엿보기는 어떤 조작이든 즉시 취소
   s.sheet.addEventListener("pointerdown", () => _cancelPeek(), true);
   s.sheet.addEventListener("keydown", () => _cancelPeek(), true);
@@ -428,18 +479,22 @@ function _wireGlobal() {
   window.addEventListener("pointermove", (e) => {
     if (_drag) _drag.move(e);
     if (_mdrag) _memMove(e);
+    if (S && S.geo) _geoMove(e);
   });
-  window.addEventListener("pointerup", () => {
+  window.addEventListener("pointerup", (e) => {
     if (_drag) _drag.up();
     _memEnd();
+    if (S && S.geo) _geoEnd(e);
   });
-  window.addEventListener("pointercancel", () => {
+  window.addEventListener("pointercancel", (e) => {
     if (_drag) _drag.cancel();
     _memEnd();
+    if (S && S.geo) _geoEnd(e);
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S && S.open) _close(); });
   window.addEventListener("resize", () => {
     if (!S) return;
+    if (S.open) _geom();   // 창이 줄면 팝업 높이 · 위치를 창 안으로(폰 폭으로 넘어가면 PC 값을 지운다)
     _syncPills(true);
     _fadeEdges();
     _fadeMembers();
@@ -466,26 +521,33 @@ function _syncSeg(instant) {
   _placePill(s.pill, s.face === 0 ? s.koBtn : s.xBtn, instant);
 }
 
-/** 멤버 칩 상태 · 알약(A5) · 칩 줄을 현재 칩이 보이게 */
-function _members(instant) {
-  const s = S, vis = _visible(_st.data), rd = _readMap();
+/** 멤버 칩 상태 · 알약(A5) · 칩 줄을 현재 칩이 보이게. pop = 새 글 수가 늘어난 칩의 숫자를 톡 키운다(폴링 갱신).
+ *  반환: 새 글 수가 늘어난 멤버 [{ ck, n }] (pop 일 때만) */
+function _members(instant, pop) {
+  const s = S, vis = _visible(_st.data), rd = _readMap(), grew = [];
   for (const ck of FALLBACK_CHANNEL_ORDER) {
     const chip = s.chips[ck], list = vis[ck] || [];
     chip.setAttribute("aria-current", String(ck === s.ck));
     chip.setAttribute("aria-disabled", String(!list.length));   // 트윗 없는 멤버는 흐리게 · 누를 수 없게
     chip.classList.toggle("is-empty", !list.length);
-    chip.querySelector("i").style.setProperty("--c", _palette(ck).bg);
+    const av = chip.querySelector(".tws__chip-av");                // 네임플레이트 아바타 + 레인 색 테두리
+    av.style.backgroundImage = _avatarImg(ck);
+    av.style.setProperty("--lc", _laneColor(ck) || L.FALLBACK_BG);
     const n = ck === s.ck ? 0 : _unreadCount(list, rd);
+    const was = s.cnt[ck] || 0;
+    s.cnt[ck] = n;
     let b = chip.querySelector("b");
     if (n) {
       if (!b) { b = _el("b"); chip.append(b); }
       b.textContent = String(n);
       b.setAttribute("aria-label", `새 글 ${n}개`);
+      if (pop && n > was) { _pop(b); grew.push({ ck, n }); }
     } else if (b) b.remove();
   }
   _placePill(s.mpill, s.chips[s.ck], instant);
   _keepChip(instant);
   _fadeMembers();
+  return grew;
 }
 /** 칩 줄이 현재 칩을 보이게 — 페이지 전체는 스크롤하지 않도록 줄의 scrollLeft 만 맞춘다 */
 function _keepChip(instant) {
@@ -581,15 +643,21 @@ function _article(m, prev, isRoot, unread, now) {
   const att = L.attachments(m);
   const ms = L.tOf(m);
   const hasPosted = !!L.postedIso(m);
-  const timeText = prev && hasPosted ? L.replyLabel(ms, L.tOf(prev), now)
-    : hasPosted ? L.postedLabel(ms, now)
+  const label = (t) => prev && hasPosted ? L.replyLabel(ms, L.tOf(prev), t)
+    : hasPosted ? L.postedLabel(ms, t)
     : L.unpostedLabel(ms);
-  const timeKids = [prev && hasPosted ? IC.reply() : null, document.createTextNode(timeText), unread ? _el("span", { cls: "tws-tag", text: "새 글" }) : null];
+  const timeText = label(now);
+  const timeNode = document.createTextNode(timeText);
+  const timeKids = [prev && hasPosted ? IC.reply() : null, timeNode, unread ? _el("span", { cls: "tws-tag", text: "새 글" }) : null];
 
   // 번역 면: 번역 텍스트 · 인용 번역 · 첨부 줄(사진 · 영상은 우리가 그리지 않는다 — 개수 글자만)
-  const koKids = [_el("p", { cls: "tws-ko__txt", text: m.text_ko || "번역 준비 중…" })];
-  if (m.quote && (m.quote.text || m.quote.text_ko)) {
-    koKids.push(_el("div", { cls: "tws-ko__q" }, [_el("span", { text: "인용한 글 번역" }), document.createTextNode(m.quote.text_ko || "번역 준비 중…")]));
+  const koTxt = _el("p", { cls: "tws-ko__txt", text: m.text_ko || "번역 준비 중…" });
+  const koKids = [koTxt];
+  const hasQuote = (q) => !!(q && (q.text || q.text_ko));
+  let quoteNode = null;
+  if (hasQuote(m.quote)) {
+    quoteNode = document.createTextNode(m.quote.text_ko || "번역 준비 중…");
+    koKids.push(_el("div", { cls: "tws-ko__q" }, [_el("span", { text: "인용한 글 번역" }), quoteNode]));
   }
   const media = att.text ? _el("button", {
     cls: "tws-tw__media", attrs: { type: "button", title: att.text, "aria-label": att.text + ", 원문에서 보기" },
@@ -606,7 +674,18 @@ function _article(m, prev, isRoot, unread, now) {
     ]));
   }
   const ko = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "번역" } }, [_el("div", { cls: "tws-ko" }, koKids)]);
-  const xface = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "X 원문 카드" } }, [_xCard(m)]);
+  const xcard = _xCard(m);
+  const xface = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "X 원문 카드" } }, [xcard]);
+  // (v4.9.1) X 카드 덮개(PC · 마우스만, CSS 가 켠다): 카드 머리(작성자 줄)를 뺀 나머지를 투명하게 덮어 밀기 손잡이로 쓴다 —
+  // X 카드는 iframe 이라 그 위에서 누른 마우스를 바깥이 받지 못한다. 끌지 않고 한 번 누르면 덮개가 비켜 카드 조작으로(.is-live),
+  // 마우스가 카드를 벗어나면 다시 덮인다.
+  let dragged = false;
+  if (xcard.dataset.id) {
+    const cover = _el("div", { cls: "tws-xcover", attrs: { "aria-hidden": "true" } });
+    cover.addEventListener("click", () => { if (!dragged) xcard.classList.add("is-live"); });
+    xcard.addEventListener("mouseleave", () => xcard.classList.remove("is-live"));
+    xcard.append(cover);
+  }
   const track = _el("div", { cls: "tws-tw__track" }, [ko, xface]);
   const dots = _el("div", { cls: "tws-tw__dots", attrs: { "aria-hidden": "true" } }, [_el("i"), _el("i")]);
   const openA = _el("a", { cls: "tws-tw__open", attrs: { target: "_blank", rel: "noopener", "aria-label": "X 에서 열기" } }, [IC.x()]);
@@ -623,6 +702,16 @@ function _article(m, prev, isRoot, unread, now) {
       "aria-label": (prev ? "이어진 글, " : "") + timeText + (att.text ? ", " + att.text : ""),
     },
   }, [meta, track, dots]);
+  // (v4.9.1) 폴링 갱신 때 다시 그리지 않고 고친다: 시각 줄 · 번역 · 인용 번역 · 원문 링크.
+  // 첨부 개수나 인용 유무가 바뀌었으면 false — 호출한 쪽이 시트를 다시 그린다.
+  art._retime = (t) => { timeNode.nodeValue = label(t); };
+  art._update = (m2) => {
+    if (L.attachments(m2).text !== att.text || hasQuote(m2.quote) !== !!quoteNode) return false;
+    koTxt.textContent = m2.text_ko || "번역 준비 중…";
+    if (quoteNode) quoteNode.nodeValue = m2.quote.text_ko || "번역 준비 중…";
+    _setSrc(openA, m2);
+    return true;
+  };
 
   let face = 0, prog = 0, st = 0, live = false, rub = 0, pastMid = false, dragOn = false;
   const setDots = (t) => {
@@ -686,7 +775,7 @@ function _article(m, prev, isRoot, unread, now) {
   track.addEventListener("scroll", () => { onTrackScroll(); clearTimeout(st); st = setTimeout(settle, 140); }, { passive: true });
   track.addEventListener("scrollend", () => { clearTimeout(st); settle(); });
 
-  // 끌기: 마우스는 글 어디서나, 손가락은 시각 줄 · 점 줄에서(번역 면은 브라우저 가로 스냅이 처리, X 카드 위는 iframe 이 가져간다)
+  // 끌기: 마우스는 글 어디서나(PC 는 X 카드 덮개 위 포함), 손가락은 시각 줄 · 점 줄에서(번역 면은 브라우저 가로 스냅이 처리, X 카드 위는 iframe 이 가져간다)
   let g = null;   // { x, y, s, on }
   const ctl = {
     move(e) {
@@ -694,7 +783,7 @@ function _article(m, prev, isRoot, unread, now) {
       const dx = e.clientX - g.x, dy = e.clientY - g.y;
       if (!g.on) {
         if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
-        g.on = true; dragOn = true;
+        g.on = true; dragOn = true; dragged = true;
         track.classList.add("is-grabbing");
         document.body.classList.add("no-select");
       }
@@ -710,6 +799,7 @@ function _article(m, prev, isRoot, unread, now) {
       if (_drag === ctl) _drag = null;
       if (!was) return;
       dragOn = false;
+      setTimeout(() => { dragged = false; }, 0);   // 끈 직후 덮개에 떨어지는 click 한 번은 「카드 조작」으로 치지 않는다
       const r = track.scrollLeft / Math.max(1, track.clientWidth);   // 스냅을 되돌리기 전에 뗀 위치를 읽는다
       const to = r > (face ? 0.75 : 0.25) ? 1 : 0;
       track.classList.remove("is-grabbing");
@@ -717,7 +807,11 @@ function _article(m, prev, isRoot, unread, now) {
       window.getSelection && window.getSelection().removeAllRanges();
       springBack();
       setFace(to, true);
-      if (to === 1 && !S.hintShown) { S.hintShown = true; _hint("X 카드 위에서는 밀기가 X 화면으로 가요. 글 위 시각 줄이나 아래 점 줄을 밀면 번역으로 돌아와요."); }
+      if (to === 1 && !S.hintShown) {
+        S.hintShown = true;
+        _hint(_coverOn() ? "카드를 옆으로 끌면 번역으로 돌아와요. 카드 속 영상 · 링크는 한 번 누른 뒤 다시 누르세요."
+          : "X 카드 위에서는 밀기가 X 화면으로 가요. 글 위 시각 줄이나 아래 점 줄을 밀면 번역으로 돌아와요.");
+      }
     },
     cancel() { g = null; live = false; dragOn = false; if (_drag === ctl) _drag = null; },
   };
@@ -754,10 +848,11 @@ function _renderFeed(fresh) {
   const units = L.chains(list);
   const anchor = L.firstUnread(units, isRead);
   const now = Date.now();
-  const arts = [];
+  const arts = [], unitEls = [];
   let anchorEl = null;
   for (const u of units) {
-    const wrap = u.length > 1 ? _el("div", { cls: "tws-chain" + (_reduce() ? "" : " wait"), attrs: { role: "group", "aria-label": `글타래: 원글과 이어진 글 ${u.length - 1}개` } }) : null;
+    const wrap = u.length > 1 ? _chainWrap(u.length) : null;
+    let one = null;
     u.forEach((m, i) => {
       if (anchor && !anchorEl && String(m.id) === anchor.id) {
         anchorEl = _el("div", { cls: "tws__new", text: "여기부터 새 글" });
@@ -768,10 +863,16 @@ function _renderFeed(fresh) {
       const art = _article(m, i > 0 ? u[i - 1] : null, !!wrap && i === 0, !isRead(m), now);
       arts.push(art);
       (wrap || feed).append(art);
+      one = art;
     });
     if (wrap) feed.append(wrap);
+    unitEls.push(wrap || one);
   }
   s.anchor = anchorEl;
+  s.units = units.map((u) => u.map((m) => String(m.id)));   // (v4.9.1) 다음 폴링 때 새 글만 끼우려고 그린 모양을 기억
+  s.unitEls = unitEls;
+  s.pending = [];
+  _fab(0);
   s.newChip.textContent = "새 글 " + _unreadCount(list, rd) + "개 ↓";
   s.newChip.classList.remove("is-on");
   requestAnimationFrame(() => {
@@ -786,6 +887,150 @@ function _renderFeed(fresh) {
     _watch();
   });
 }
+function _chainWrap(n) {
+  return _el("div", { cls: "tws-chain" + (_reduce() ? "" : " wait"), attrs: { role: "group", "aria-label": `글타래: 원글과 이어진 글 ${n - 1}개` } });
+}
+
+/* ── 새 글 도착 (v4.9.1) ──────────────────────────────────────────────
+   폴링으로 글이 늘면 이미 그린 글(X 카드 iframe 포함)은 그대로 두고 새 글만 끼운다(L.reconcileUnits 가 계획).
+   끼울 수 없으면(글이 빠짐 · 글타래 안에 끼어듦 · 뿌리가 바뀜 · 첨부나 인용 유무가 바뀜) false → 다시 그린다(_renderFeed).
+   맨 아래에 있었으면 새 글이 아래에서 올라오고 피드가 따라 내려간다. 아니면 화면 아래쪽 새 글 수를 ↓ 동그라미에 띄운다. */
+function _patchFeed(list) {
+  const s = S, feed = s.feed;
+  const units = L.chains(list);
+  const plan = L.reconcileUnits(s.units, units.map((u) => u.map((m) => String(m.id))));
+  if (!plan) return false;
+  const byId = new Map();
+  for (const a of feed.querySelectorAll(".tws-tw")) byId.set(a.dataset.id, a);
+  const now = Date.now();
+  for (const m of list) {
+    const a = byId.get(String(m.id));
+    if (!a) continue;
+    if (!a._update(m)) return false;
+    a._retime(now);
+  }
+  const wasBottom = _atBottom();
+  const rd = _readMap();
+  const added = [], newWraps = [], els = [];
+  plan.forEach((p, i) => {
+    const u = units[i];
+    let el = p.from >= 0 ? s.unitEls[p.from] : null;
+    if (p.add.length) {
+      const isChain = (x) => !!x && x.classList.contains("tws-chain");
+      if (u.length > 1 && !isChain(el)) {          // 글 하나였던 자리에 답글이 붙음 · 새 글타래 → 묶음을 만든다
+        const wrap = _chainWrap(u.length);
+        if (el) { el.replaceWith(wrap); wrap.append(el); el.classList.add("is-root"); }
+        el = wrap;
+        newWraps.push(wrap);
+      } else if (isChain(el)) el.setAttribute("aria-label", `글타래: 원글과 이어진 글 ${u.length - 1}개`);
+      for (let j = u.length - p.add.length; j < u.length; j++) {
+        const m = u[j];
+        const art = _article(m, j > 0 ? u[j - 1] : null, u.length > 1 && j === 0, !rd[m.id], now);
+        added.push(art);
+        if (isChain(el)) el.append(art); else el = art;
+      }
+    }
+    els.push({ el, keep: p.keep });
+  });
+  // 순서 맞추기: 제자리(keep)가 아닌 옛 글타래만 떼었다 다시 끼운다. 「여기부터 새 글」 선은 바로 뒤 글타래를 따라간다
+  const anchorFor = s.anchor && s.anchor.parentNode === feed ? s.anchor.nextElementSibling : null;
+  for (const { el, keep } of els) if (!keep && el.parentNode === feed) el.remove();
+  let cur = null;
+  const put = (node) => {
+    const want = cur ? cur.nextElementSibling : feed.firstElementChild;
+    if (want !== node) { if (cur) cur.after(node); else feed.prepend(node); }
+    cur = node;
+  };
+  for (const { el } of els) { if (el === anchorFor) put(s.anchor); put(el); }
+  s.units = units.map((u) => u.map((m) => String(m.id)));
+  s.unitEls = els.map((x) => x.el);
+  _observe(added, newWraps);
+  requestAnimationFrame(() => {
+    if (!S || !S.open) return;
+    for (const a of added) a._setFace(s.face, false);
+    _arrive(added, wasBottom);
+    _fadeEdges();
+  });
+  return true;
+}
+function _atBottom() {
+  const f = S.feed;
+  return f.scrollHeight - f.clientHeight - f.scrollTop < 24;
+}
+/** 새로 끼운 글 · 글타래를 관찰에 넣는다(글타래 세로줄 · X 카드 불러오기) */
+function _observe(arts, wraps) {
+  const s = S;
+  if (!s.watch || !s.cardIO) {
+    for (const w of wraps) w.classList.remove("wait");
+    for (const a of arts) a.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard);
+    return;
+  }
+  for (const w of wraps) if (w.classList.contains("wait")) s.watch.observe(w);
+  for (const a of arts) s.cardIO.observe(a);
+}
+function _arrive(arts, wasBottom) {
+  const s = S, feed = s.feed;
+  if (!arts.length) return;
+  const name = L.shortName((FALLBACK_CHANNELS[s.ck] || {}).name_ko);
+  if (wasBottom && !s.pending.length) {
+    for (const a of arts) _anim(a, "is-arriving");
+    feed.scrollTo({ top: feed.scrollHeight, behavior: _reduce() ? "auto" : "smooth" });
+    _say(`${name} 새 글 ${arts.length}개가 도착했어요`);
+    return;
+  }
+  const fr = feed.getBoundingClientRect();
+  for (const a of arts) {
+    const r = a.getBoundingClientRect();
+    if (r.top >= fr.bottom - 8) s.pending.push(a);      // 화면 아래 → ↓ 동그라미가 데려간다
+    else if (r.bottom > fr.top) _anim(a, "is-arriving"); // 화면 안에 끼어든 글은 그 자리에서 올라온다
+  }
+  if (s.pending.length) {
+    _fab(s.pending.length, true);
+    _say(`${name} 새 글 ${s.pending.length}개 — 맨 아래로 버튼으로 이동`);
+  }
+}
+/** 한 번만 도는 CSS 애니메이션 클래스(끝나면 뗀다). 움직임 줄이기는 CSS 쪽에서 투명도만 */
+function _anim(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  const done = (e) => { if (e.target !== el) return; el.classList.remove(cls); el.removeEventListener("animationend", done); };
+  el.addEventListener("animationend", done);
+}
+/** ↓ 동그라미: n = 기다리는 새 글 수(0 = 거둔다). bump = 수가 늘 때 숫자를 톡 키운다 */
+function _fab(n, bump) {
+  const s = S, f = s.fab;
+  if (!n) {
+    if (document.activeElement === f) s.sheet.focus({ preventScroll: true });
+    f.classList.remove("is-on");
+    f.tabIndex = -1;
+    return;
+  }
+  s.fabN.textContent = String(n);
+  f.setAttribute("aria-label", `새 글 ${n}개, 맨 아래로`);
+  f.tabIndex = 0;
+  s.newChip.classList.remove("is-on");   // 「새 글 N개 ↓」 칩과 겹치지 않게 — 동그라미가 우선
+  if (!f.classList.contains("is-on")) f.classList.add("is-on");
+  else if (bump) _pop(s.fabN);
+}
+function _toBottom() {
+  const f = S.feed;
+  f.scrollTo({ top: f.scrollHeight, behavior: _reduce() ? "auto" : "smooth" });
+}
+/** 맨 아래까지 내려와 기다리던 새 글을 만났다 — 어느 글이 새로 왔는지 테두리를 한 번 빛내고 동그라미를 거둔다 */
+function _seenPending() {
+  const s = S;
+  if (!s.pending.length || !_atBottom()) return;
+  for (const a of s.pending) if (a.isConnected) _anim(a, "is-fresh");
+  s.pending = [];
+  _fab(0);
+}
+function _say(text) {
+  const el = S.live;
+  el.textContent = "";
+  setTimeout(() => { el.textContent = text; }, 30);   // 같은 문장이어도 다시 읽히게
+}
+
 /** 관찰 세 가지: 글타래 세로줄 한 번 그리기(C1) · 「새 글」 자리가 아래에 있을 때 칩(C2) · 화면 근처 글의 X 카드 불러오기(§5-5) */
 function _watch() {
   const s = S;
@@ -798,7 +1043,7 @@ function _watch() {
     for (const en of entries) {
       const el = en.target;
       if (el === s.anchor) {
-        s.newChip.classList.toggle("is-on", !en.isIntersecting && !!en.rootBounds && en.boundingClientRect.top >= en.rootBounds.bottom);
+        s.newChip.classList.toggle("is-on", !s.fab.classList.contains("is-on") && !en.isIntersecting && !!en.rootBounds && en.boundingClientRect.top >= en.rootBounds.bottom);
         continue;
       }
       if (!en.isIntersecting) continue;
@@ -882,8 +1127,11 @@ function _open(ck, from) {
   s.from = from || null;
   s.face = _getFace();
   s.sig = L.sigOf(list);
+  s.cnt = {};
+  s.tx = 0; s.ty = 0;          // 위치는 열 때마다 가운데, 높이만 기억(mew:twh)
   _head();
   _members(true);
+  _geom();
   // PC: 누른 아바타 쪽에서 커지며 나온다(B2)
   if (!_mobile() && from) {
     const r = s.sheet.getBoundingClientRect(), a = from.getBoundingClientRect();
@@ -894,7 +1142,7 @@ function _open(ck, from) {
   s.sheet.classList.add("is-open");
   s.scrim.classList.add("is-on");
   s.scrim.style.opacity = "";
-  document.body.classList.add("tw-modal-open");
+  _lock(true);
   setTimeout(() => { if (S && S.open) s.sheet.focus({ preventScroll: true }); }, 30);
   _peek();
 }
@@ -907,9 +1155,11 @@ function _close() {
   s.sheet.classList.remove("is-open");
   s.scrim.classList.remove("is-on");
   s.scrim.style.opacity = "";
-  document.body.classList.remove("tw-modal-open");
+  _lock(false);
   _cancelPeek();
   s.newChip.classList.remove("is-on");
+  s.pending = [];
+  _fab(0);
   if (s.watch) { s.watch.disconnect(); s.watch = null; }
   if (s.cardIO) { s.cardIO.disconnect(); s.cardIO = null; }
   _stopCards(s.feed);                                  // 닫으면 X 카드(재생 중인 영상 포함) 를 지운다
@@ -955,18 +1205,103 @@ function _switchTo(ck) {
   void feed.offsetWidth;
   feed.classList.add("is-swapping");
 }
-/** 폴링 뒤: 시트가 열려 있으면 표시 서명이 바뀐 때만 다시 그린다. 트윗이 모두 사라졌으면 닫는다. */
+/** 폴링 뒤: 시트가 열려 있으면 멤버 칩의 새 글 수는 늘 맞추고(v4.9.1 — 전엔 보고 있는 멤버 글이 그대로면 칩도 안 바뀌었다),
+ *  글 목록은 표시 서명이 바뀐 때만 — 새 글만 끼우고(_patchFeed), 안 되면 다시 그린다. 트윗이 모두 사라졌으면 닫는다. */
 function _refreshOpen() {
   const s = S;
   if (!s || !s.open) return;
   const list = _visible(_st.data)[s.ck];
   if (!list || !list.length) { _close(); return; }
+  const grew = _members(true, true);
+  if (grew.length) {
+    _say(grew.map(({ ck, n }) => `${L.shortName((FALLBACK_CHANNELS[ck] || {}).name_ko) || ck} 새 글 ${n}개`).join(", "));
+  }
   const sig = L.sigOf(list);
   if (sig === s.sig) return;
   s.sig = sig;
   _head();
-  _members(true);
-  _renderFeed(false);
+  if (!_patchFeed(list)) _renderFeed(false);
+}
+
+/* ── 스크롤 잠금 · PC 팝업 위치 · 높이 (v4.9.1) ────────────────────────
+   잠금: 스크롤바가 보이면 잠그는 동안 그 자리를 비워 둔다(html.tw-gutter = scrollbar-gutter: stable) —
+   스크롤바가 사라지며 배경이 오른쪽으로 밀렸다 돌아오던 것(PC). 스크롤바가 화면 위에 겹치는 환경(폰 · macOS)은 폭이 0 이라 할 일 없음.
+   위치 · 높이: 머리 줄을 잡아 옮기고(--tx · --ty, 열 때마다 가운데로), 위 · 아래 가장자리를 끌어 높이를 바꾼다.
+   팝업은 가운데 기준(translate -50%)이라 높이만 바꾸면 위아래가 같이 늘어난다 — 한쪽을 d 끌면 높이는 2d.
+   높이 = mew:twh(사용자가 정한 값, px) → 없으면 창의 90%. 창보다 크면 줄여 쓴다(저장값은 그대로). 폰 폭이면 쓰지 않는다. */
+function _lock(on) {
+  const root = document.documentElement;
+  if (on) {
+    if (innerWidth - root.clientWidth > 0) root.classList.add("tw-gutter");
+    document.body.classList.add("tw-modal-open");
+  } else {
+    document.body.classList.remove("tw-modal-open");
+    root.classList.remove("tw-gutter");
+  }
+}
+function _savedH() {
+  try { const v = Number(localStorage.getItem(HKEY)); return v > 0 ? v : 0; } catch { return 0; }
+}
+function _clampH(h) {
+  const hi = innerHeight - 16, lo = Math.min(MIN_H, hi);
+  return Math.round(Math.max(lo, Math.min(hi, h)));
+}
+/** 머리 줄은 늘 창 안에, 가로로는 80px 이상 창 안에 */
+function _clampPos(tx, ty) {
+  const s = S, vw = document.documentElement.clientWidth, vh = innerHeight;
+  const w = s.sheet.offsetWidth, h = s.sheet.offsetHeight, hh = s.head.offsetHeight;
+  const cx = vw / 2, cy = vh / 2;
+  tx = Math.max(80 - (cx + w / 2), Math.min(vw - 80 - (cx - w / 2), tx));
+  ty = Math.max(8 - (cy - h / 2), Math.min(vh - 8 - hh - (cy - h / 2), ty));
+  return [Math.round(tx), Math.round(ty)];
+}
+function _geom() {
+  const s = S, st = s.sheet.style;
+  if (_mobile()) { st.height = ""; st.removeProperty("--tx"); st.removeProperty("--ty"); return; }
+  st.height = _clampH(_savedH() || innerHeight * 0.9) + "px";
+  [s.tx, s.ty] = _clampPos(s.tx, s.ty);
+  st.setProperty("--tx", s.tx + "px");
+  st.setProperty("--ty", s.ty + "px");
+}
+function _geoStart(el, id, cls) {
+  try { el.setPointerCapture(id); } catch { /* 이미 놓았으면 무시 */ }
+  S.sheet.classList.add("is-geo", cls);
+  document.body.classList.add("no-select");
+  if (cls === "is-sizing") document.body.classList.add("tw-ns");
+}
+function _geoMove(e) {
+  const s = S, g = s.geo;
+  if (e.pointerId !== g.id) return;
+  if (g.kind === "move") {
+    [s.tx, s.ty] = _clampPos(g.tx + e.clientX - g.x, g.ty + e.clientY - g.y);
+    s.sheet.style.setProperty("--tx", s.tx + "px");
+    s.sheet.style.setProperty("--ty", s.ty + "px");
+  } else {
+    const h = _clampH(g.h + 2 * (e.clientY - g.y) * g.dir);
+    s.sheet.style.height = h + "px";
+    const [tx, ty] = _clampPos(s.tx, s.ty);   // 옮겨 둔 팝업이 커져 머리 줄이 창 밖으로 나가면 그만큼만 밀어 넣는다
+    if (tx !== s.tx || ty !== s.ty) {
+      s.tx = tx; s.ty = ty;
+      s.sheet.style.setProperty("--tx", tx + "px");
+      s.sheet.style.setProperty("--ty", ty + "px");
+    }
+    _readout(h);
+  }
+}
+function _geoEnd(e) {
+  const s = S, g = s.geo;
+  if (e.pointerId !== g.id) return;
+  s.geo = null;
+  if (g.kind === "size") {
+    g.el.classList.remove("is-on");
+    try { localStorage.setItem(HKEY, String(s.sheet.offsetHeight)); } catch { /* 저장 못 해도 이번 화면은 그대로 */ }
+    _fadeEdges();
+  }
+  s.sheet.classList.remove("is-geo", "is-moving", "is-sizing");
+  document.body.classList.remove("no-select", "tw-ns");
+}
+function _readout(h) {
+  S.hread.textContent = `높이 ${Math.round(h)}px · 창의 ${Math.round((h / innerHeight) * 100)}%`;
 }
 
 /* ── 트윗 없는 네임플레이트를 눌렀을 때 ──────────────────────────────
