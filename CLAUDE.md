@@ -131,7 +131,8 @@ src/
       config.js        # 상수 · 데이터 URL · APP_VERSION/APP_DATE(하단 ver. 말풍선)
       time.js api.js   # KST 포맷 · 상대시간 / fetch(타임아웃)
       render.js timetable.js   # 보드 — PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고
-      notices.js banners.js tweets.js   # 소식판 · 행사 배너 · 멤버 트윗 말풍선
+      notices.js banners.js tweets.js   # 소식판 · 행사 배너 · 멤버 트윗 시트
+      tweetlogic.js    # 트윗 시트 순수 로직(글타래 · 첨부 문구 · 글자색 · 시각 표기) — DOM 없음
       player.js playerbtn.js songs.js   # YouTube 곡 플레이어(첫 클릭 때 동적 import)
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
@@ -167,7 +168,7 @@ Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 # Windows 콘솔은 PYTHONIOENCODING=utf-8 권장
 python -m src.backend.<모듈>         # self-test 있는 모듈: src/backend 전부(app · local_runner 제외 — 서버 · 러너를 띄운다) + src.collector.rss · src.collector.youtube · src.bus.conform · src.bus.publisher
 python -m src.backend.vision --live  # 실제 Groq 비전 호출(GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때만)
-node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · render · songs · time · timetable)
+node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · render · songs · time · timetable · tweetlogic)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md) — 배포는 운영자 결정
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등)
