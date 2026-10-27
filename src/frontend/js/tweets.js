@@ -285,22 +285,49 @@ function _applyBadges() {
       avatar.classList.toggle("has-tweet", !!(list && list.length));   // 트윗이 있으면(읽음 여부 무관) 아바타에 얇은 링
       let badge = lane.querySelector(".lane__tw");
       if (!list || !list.length) {
-        if (badge) badge.remove();
+        if (badge) { if (badge.__cancelOut) badge.__cancelOut(); badge.remove(); }
         continue;
       }
       const unreadN = _unreadCount(list, rd);
       const unread = unreadN > 0;
       const sig = list.map((m) => m.id).join(",") + "|" + unreadN;
+      const nm = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
       if (badge && !unread && badge.classList.contains("is-unread") && !badge.__out) {
-        // B4: 읽음 처리 → 배지가 작아지며 사라진다(끝나면 읽은 상태)
-        badge.__out = true;
+        // B4: 읽음 처리 → 배지가 작아지며 사라진다. 최종 상태(읽은 상태)는 애니메이션과 상관없이 맞춘다:
+        // 애니메이션 끝 · 260ms 시간 제한 중 먼저 오는 쪽에서 한 번만 실행(탭이 가려져 onfinish 가 안 와도 남지 않게).
+        const setRead = () => {
+          badge.classList.remove("is-unread");
+          badge.classList.add("is-read");
+          badge.textContent = "";
+          badge.setAttribute("aria-label", nm + ` 읽은 트윗 (스레드 ${list.length}건)`);
+          badge.dataset.sig = list.map((m) => m.id).join(",") + "|0";
+        };
         badge.classList.remove("is-unread");
-        const a = badge.animate(_reduce() ? [{ opacity: 1 }, { opacity: 0 }] : [{ transform: "scale(1)" }, { transform: "scale(0)" }],
+        if (_reduce()) { setRead(); continue; }   // 움직임 줄이기: 애니메이션 없이 바로 최종 상태
+        badge.__out = true;
+        let a = null, t = 0;
+        const cancel = () => {   // 취소 = 애니메이션 · 타이머 정리(최종 상태는 맞추지 않는다)
+          clearTimeout(t);
+          if (a) { a.onfinish = null; a.cancel(); a = null; }
+          badge.__out = false;
+          badge.__cancelOut = null;
+        };
+        const finish = () => {   // 최종 상태 — __out 이 살아 있을 때만 한 번 실행
+          if (!badge.__out) return;
+          cancel();
+          setRead();
+        };
+        badge.__cancelOut = cancel;
+        a = badge.animate([{ transform: "scale(1)" }, { transform: "scale(0)" }],
           { duration: 200, easing: "ease-in", fill: "forwards" });
-        a.onfinish = () => { badge.classList.add("is-read"); badge.__out = false; badge.dataset.sig = ""; a.cancel(); };
+        a.onfinish = finish;
+        t = setTimeout(finish, 260);
         continue;
       }
-      if (badge && badge.__out) continue;
+      if (badge && badge.__out) {
+        if (!unread) continue;                 // 사라지는 중 — 끝나면 최종 상태가 맞춰진다
+        badge.__cancelOut();                   // 사라지는 중 다시 안 읽은 글이 생김 → 취소하고 아래서 정상 갱신
+      }
       const wantCls = unread ? "is-unread" : "is-read";
       if (badge && badge.dataset.sig === sig && badge.classList.contains(wantCls)) continue;   // 같은 상태면 그대로(콩콩 애니메이션 유지)
       if (!badge) {
@@ -312,7 +339,6 @@ function _applyBadges() {
       badge.dataset.sig = sig;
       badge.classList.toggle("is-unread", unread);
       badge.classList.toggle("is-read", !unread);
-      const nm = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
       badge.setAttribute("aria-label", nm + (unread ? ` 읽지 않은 트윗 ${unreadN}건` : " 읽은 트윗") + ` (스레드 ${list.length}건)`);
       // 같은 크기의 원: 안 읽음 1건 = 빈 원, 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음
       badge.textContent = unreadN >= 2 ? String(unreadN) : "";
@@ -889,7 +915,27 @@ function _close() {
   _stopCards(s.feed);                                  // 닫으면 X 카드(재생 중인 영상 포함) 를 지운다
   const back = s.from;
   s.from = null;
-  if (back && back.isConnected) back.focus({ preventScroll: true });
+  const target = _focusTarget(back, ck);
+  if (target) target.focus({ preventScroll: true });
+}
+/** 닫을 때 포커스 복귀: 연 요소 → 같은 레인의 배지(.lane__tw) → 레인 링크(.lane__link) → 레인 안 첫 포커스 가능 요소. 없으면 null. */
+const _FOCUSABLE_SEL = "a[href], button, input, select, textarea, [tabindex]";
+function _canFocus(el) {
+  return !!el && el.isConnected && el.matches(_FOCUSABLE_SEL) && !el.disabled && el.tabIndex >= 0 && el.getClientRects().length > 0;
+}
+function _focusTarget(back, ck) {
+  if (_canFocus(back)) return back;
+  const own = back && back.closest ? back.closest(".lane") : null;
+  const lanes = own ? [own] : [..._lanes(ck)];
+  for (const lane of lanes) {
+    for (const el of [lane.querySelector(".lane__tw"), lane.querySelector(".lane__link")]) {
+      if (_canFocus(el)) return el;
+    }
+    for (const el of lane.querySelectorAll(_FOCUSABLE_SEL)) {
+      if (_canFocus(el)) return el;
+    }
+  }
+  return null;
 }
 function _switchTo(ck) {
   const s = S;

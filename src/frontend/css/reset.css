@@ -36,9 +36,9 @@ body {
   cursor: default;
 }
 
-/* 상세 내용 = 읽고 드래그해 복사하는 글: 소식 팝업 카드 · 트윗 번역 말풍선 · 타임테이블 팝업 · 하단 디스클레이머 */
+/* 상세 내용 = 읽고 드래그해 복사하는 글: 소식 팝업 카드 · 트윗 시트 번역 · 타임테이블 팝업 · 하단 디스클레이머 */
 .ntc-card__tt, .ntc-card__body, .tt-pop__body, .fdisc__list,
-.lane__thread__msg, .lane__thread__quote {
+.tws-ko__txt, .tws-ko__q {
   cursor: auto;
 }
 
@@ -50,7 +50,7 @@ body {
     -webkit-touch-callout: none;
   }
   .ntc-card__tt, .ntc-card__body, .tt-pop__body, .fdisc__list,
-  .lane__thread__msg, .lane__thread__quote, input, textarea {
+  .tws-ko__txt, .tws-ko__q, input, textarea {
     -webkit-user-select: text; user-select: text;
     -webkit-touch-callout: default;
   }
