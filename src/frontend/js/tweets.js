@@ -918,21 +918,21 @@ function _close() {
   const target = _focusTarget(back, ck);
   if (target) target.focus({ preventScroll: true });
 }
-/** 닫을 때 포커스 복귀: 연 요소 → 같은 레인의 배지(.lane__tw) → 레인 링크(.lane__link) → 레인 안 첫 포커스 가능 요소. 없으면 null. */
+/** 닫을 때 포커스 복귀: 연 요소 → 같은 레인의 레인 링크(.lane__link) → 레인 안 첫 포커스 가능 요소. 없으면 null.
+ *  배지(.lane__tw)는 닫으면서 읽음 처리되어 숨겨질 수 있으므로 후보에서 뺀다. */
 const _FOCUSABLE_SEL = "a[href], button, input, select, textarea, [tabindex]";
 function _canFocus(el) {
   return !!el && el.isConnected && el.matches(_FOCUSABLE_SEL) && !el.disabled && el.tabIndex >= 0 && el.getClientRects().length > 0;
 }
 function _focusTarget(back, ck) {
-  if (_canFocus(back)) return back;
+  if (_canFocus(back) && !back.classList.contains("lane__tw")) return back;
   const own = back && back.closest ? back.closest(".lane") : null;
   const lanes = own ? [own] : [..._lanes(ck)];
   for (const lane of lanes) {
-    for (const el of [lane.querySelector(".lane__tw"), lane.querySelector(".lane__link")]) {
-      if (_canFocus(el)) return el;
-    }
+    const link = lane.querySelector(".lane__link");
+    if (_canFocus(link)) return link;
     for (const el of lane.querySelectorAll(_FOCUSABLE_SEL)) {
-      if (_canFocus(el)) return el;
+      if (!el.classList.contains("lane__tw") && _canFocus(el)) return el;
     }
   }
   return null;
