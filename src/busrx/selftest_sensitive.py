@@ -113,8 +113,8 @@ def main() -> int:
     check(guard.path_violations(["src/busrx/a.py", "src/bus/b.py", "src/frontend/i.html", "config/c.json", "deploy/d.sh"], sensitive_ok=True) ==
           ["금지 경로 수정: src/busrx/a.py", "금지 경로 수정: src/bus/b.py", "허용 범위 밖 경로 수정: src/frontend/i.html",
            "허용 범위 밖 경로 수정: config/c.json", "허용 범위 밖 경로 수정: deploy/d.sh"], "가드: 자기 자신 · 프론트 · 설정 · 배포는 민감 허용이어도 위반")
-    check(guard.sensitive_paths(["src/backend/gh_store.py", "src/backend/x.py", "docs/SPEC.md"]) == ["src/backend/gh_store.py", "docs/SPEC.md"],
-          "가드: 민감 경로 목록 추출")
+    check(guard.sensitive_paths(["src/backend/gh_store.py", "src/backend/x.py", "docs/SPEC.md", "src/backend/gh_store.py"]) ==
+          ["src/backend/gh_store.py", "docs/SPEC.md"], "가드: 민감 경로 목록 추출(중복 없이)")
 
     # ── claude 서브프로세스 환경 · 모델 표기 · 분석 규칙 ──
     saved = dict(os.environ)
@@ -253,6 +253,16 @@ def main() -> int:
     names = {s["id"]: s["name"] for s in res.steps}
     check(names["spec"] == "명세서(Opus)" and names["verify"] == "검증(Opus)" and names["review"] == "독립 검토(Opus)" and names["implement"] == "구현(Haiku)",
           "S10 단계 이름에 실제 모델(Opus · Haiku)")
+    # S11) 명세서만 다른 모델(RX_MODEL_SPEC)
+    cfg.model_analysis, cfg.model_spec = "claude-sonnet-5-5", "claude-opus-5-5"
+    res, head = run_fix("")
+    names = {s["id"]: s["name"] for s in res.steps}
+    models = {json.loads(x)["purpose"]: json.loads(x)["model"] for x in slog.read_text(encoding="utf-8").splitlines()}
+    check(names["spec"] == "명세서(Opus)" and names["verify"] == "검증(Sonnet)" and models["spec"] == "claude-opus-5-5"
+          and models["verify"] == models["review"] == "claude-sonnet-5-5" and "claude-opus-5-5(명세)" in res.models,
+          "S11 명세서만 Opus, 검증 · 검토는 Sonnet")
+    check("vT1.0.1" in res.version and any(s["id"] == "commit" and "버전 기록 실패" not in s["note"] for s in res.steps),
+          "S11 버전 기록 성공(파일이 없던 브랜치의 기준선 생성은 testver self-test)")
     check(sh(repo, "rev-parse", "main") == full0, "main 브랜치 불변")
     print("모두 통과")
     return 0

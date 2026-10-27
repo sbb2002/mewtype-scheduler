@@ -84,7 +84,12 @@ def path_violations(paths: list[str], sensitive_ok: bool = False) -> list[str]:
 
 
 def sensitive_paths(paths: list[str]) -> list[str]:
-    return [q for q in (p.replace("\\", "/") for p in paths) if any(q.startswith(d) for d in SENSITIVE_PATHS)]
+    """민감 경로만 — 처음 나온 순서대로, 중복 없이(명세서 변경 계획은 같은 파일을 여러 항목에 적는다)."""
+    out: list[str] = []
+    for q in (p.replace("\\", "/") for p in paths):
+        if any(q.startswith(d) for d in SENSITIVE_PATHS) and q not in out:
+            out.append(q)
+    return out
 
 
 def added_removed_lines(diff_text: str) -> tuple[list[str], list[str]]:

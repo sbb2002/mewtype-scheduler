@@ -102,6 +102,7 @@ class Config:
     stage: int = 2                        # 1 = 분석 · 보고만, 2 = + 자동 수정(로컬 브랜치 커밋)
     model_analysis: str = MODEL_ANALYSIS  # 분석 · 명세서 · 검증 · 이중 검토 (Sonnet 5.5)
     model_code: str = MODEL_CODE          # 코드 수정 · 구현 (Haiku 5.5)
+    model_spec: str = ""                  # 명세서(계획)만 다른 모델로 — 비면 model_analysis (RX_MODEL_SPEC, 2026-10-27 시험 S-O 6회차)
     budget_usd: float = 1.0
     budget_spec: float = 0.8
     budget_code: float = 1.5
@@ -157,6 +158,7 @@ def config_from_env() -> Config:
         bus_dir=Path(g("MEW_BUS_DIR", "")), token=g("TELEGRAM_BOT_TOKEN", ""), chat_id=g("TELEGRAM_CHAT_ID", ""),
         stage=int(g("RX_STAGE", "2")), model_analysis=g("RX_MODEL_ANALYSIS", MODEL_ANALYSIS),
         model_code=g("RX_MODEL_CODE", MODEL_CODE), apply_local=g("RX_APPLY_LOCAL", "1") != "0",
+        model_spec=g("RX_MODEL_SPEC", ""), budget_spec=float(g("RX_BUDGET_SPEC", "0.8")),
         apply_branch=g("RX_APPLY_BRANCH", "test-fullauto-hotfix"), runner_dir=Path(g("RX_RUNNER_DIR", str(ROOT))),
         report_format=g("RX_REPORT_FORMAT", "md"), web_port=int(g("RX_WEB_PORT", "8789")),
         web_enabled=g("RX_WEB", "1") != "0",

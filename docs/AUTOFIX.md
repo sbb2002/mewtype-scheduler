@@ -84,7 +84,7 @@
 
 `RX_STAGE`(기본 2, 1 이면 분석 · 보고만) · `RX_MODEL_ANALYSIS`(기본 `claude-sonnet-5-5`) · `RX_MODEL_CODE`(기본 `claude-haiku-5-5`) ·
 `RX_APPLY_LOCAL`(1) · `RX_APPLY_BRANCH`(`test-fullauto-hotfix`) · `RX_RUNNER_DIR`(이 저장소) · `RX_BUDGET_USD` 등 호출별 비용 상한. 정지: `mewtype-bus/rx/PAUSE` 파일.
-`RX_SENSITIVE`(기본 1 — 민감 경로 자동 허용, 0 이면 예전 금지 목록) · `RX_DATA_DIR`(데이터 이전을 돌릴 시험 데이터 폴더 `<dir>/data` · `<dir>/ops`, 없으면 이전은 사람 요청). §12.
+`RX_MODEL_SPEC`(명세서만 다른 모델 — 비면 `RX_MODEL_ANALYSIS`) · `RX_BUDGET_SPEC`(명세서 비용 상한, 기본 0.8) · `RX_SENSITIVE`(기본 1 — 민감 경로 자동 허용, 0 이면 예전 금지 목록) · `RX_DATA_DIR`(데이터 이전을 돌릴 시험 데이터 폴더 `<dir>/data` · `<dir>/ops`, 없으면 이전은 사람 요청). §12.
 
 ## 7. 점검
 

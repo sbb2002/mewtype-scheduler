@@ -282,7 +282,7 @@ class AutoFix:
     def _b_spec(self, cx, feedback: str = "", prev_md: str = "") -> bool:
         """명세서 — 수정 대상이 아니면 False(파이프라인 중단)."""
         cfg, res, pl = self.cfg, cx.res, cx.pl
-        model = pl.param("spec", "model", cfg.model_analysis)
+        model = pl.param("spec", "model", getattr(cfg, "model_spec", "") or cfg.model_analysis)
         extra = (f"\n\n## 이전에 제안한 계획\n{prev_md}\n\n## 사용자의 반려 사유(반드시 반영해 계획을 다시 세워라)\n{feedback}") if feedback else ""
         t0 = time.time()
         spec, c, _ = run_claude(
@@ -474,7 +474,7 @@ class AutoFix:
         cfg, res = self.cfg, cx.res
         res.version = testver.next_patch(cx.wt)  # 테스트판 버전(vT) — 커밋까지 간 수정만 번호를 쓴다(docs/VERSION_vT.md)
         msg = (f"fix({res.version}): {res.title or '자동 수정'}\n\n원인: {cx.analysis.get('cause', '')[:300]}\n"
-               f"분석: {cx.sig}\n작성: {cfg.model_code} · 명세/검증/검토: {cfg.model_analysis}\n파이프라인: {cx.pl.name}\n\n"
+               f"분석: {cx.sig}\n작성: {cfg.model_code} · 명세: {getattr(cfg, 'model_spec', '') or cfg.model_analysis} · 검증/검토: {cfg.model_analysis}\n파이프라인: {cx.pl.name}\n\n"
                f"Co-Authored-By: Claude {model_label(cfg.model_analysis)} 5.5 <noreply@anthropic.com>")
         (cx.fixdir / "commit_msg.txt").write_text(msg, encoding="utf-8")
         t0 = time.time()
@@ -514,7 +514,9 @@ class AutoFix:
         cfg = self.cfg
         pl = pipelines.resolve(cfg, preset)
         res = FixResult(base=base, seq=seq, version="", preset=pl.id,
-                        models=f"{pl.param('implement', 'model', cfg.model_code)}(구현) · {pl.param('verify', 'model', cfg.model_analysis)}(명세·검증·검토)",
+                        models=(f"{pl.param('implement', 'model', cfg.model_code)}(구현) · "
+                                + (f"{pl.param('spec', 'model', cfg.model_spec)}(명세) · {pl.param('verify', 'model', cfg.model_analysis)}(검증·검토)"
+                                   if getattr(cfg, "model_spec", "") else f"{pl.param('verify', 'model', cfg.model_analysis)}(명세·검증·검토)")),
                         apply_on=pl.enabled("apply"), restart_on=pl.enabled("restart"))
         fixdir = cfg.rx / "fix" / sig
         fixdir.mkdir(parents=True, exist_ok=True)

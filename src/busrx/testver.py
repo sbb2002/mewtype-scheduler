@@ -40,6 +40,9 @@ def record(root: Path, version: str, *, title: str, sig: str, cause: str, files:
            preset: str, origin: str, now: dt.datetime | None = None) -> Path:
     """기록 파일 맨 위(표지 아래)에 항목 추가. files = [(+, −, path)]."""
     p = Path(root) / FILE
+    if not p.exists():  # 처음 쓰는 브랜치(옛 test-fullauto-hotfix 밖) — 기준선으로 만든다(2026-10-27, 전엔 FileNotFoundError 로 기록이 빠졌다)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(f"# 테스트판 버전 기록\n\n{MARK}\n\n## vT1.0.0 — 기준선\n", encoding="utf-8", newline="\n")
     text = p.read_text(encoding="utf-8")
     assert MARK in text, f"{FILE} 에 항목 표지가 없음"
     when = (now or dt.datetime.now(KST)).astimezone(KST).strftime("%Y-%m-%d %H:%M")
@@ -79,6 +82,9 @@ if __name__ == "__main__":
     t = (d / FILE).read_text(encoding="utf-8")
     assert t.index("vT1.0.2") < t.index("vT1.0.1") < t.index("vT1.0.0") and "+3 −1" in t
     assert latest(Path(tempfile.mkdtemp())) == (1, 0, 0)
+    e = Path(tempfile.mkdtemp())  # 기록 파일이 없는 저장소 — 기준선을 만들고 이어 쓴다
+    record(e, next_patch(e), title="z", sig="s3", cause="c", files=[], base="a", head="b", branch="auto/s3-1", preset="표준", origin="자동")
+    assert latest(e) == (1, 0, 1) and "## vT1.0.0 — 기준선" in (e / FILE).read_text(encoding="utf-8")
     mark_reverted(d, "vT1.0.2", "되돌림")
     t2 = (d / FILE).read_text(encoding="utf-8")
     assert "⚠️ 되돌림" in t2 and t2.index("⚠️") < t2.index("## vT1.0.1") and latest(d) == (1, 0, 2)
