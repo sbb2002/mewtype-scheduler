@@ -87,3 +87,8 @@
 - 운영자 판단: fxtwitter 404 가 나도 다음 회차가 다시 찾고, 그 간격에 글이 만료 · 밀릴 일은 없으므로 적용. Claude 도 동의(실패 = 지연일 뿐 손실 없음, 지금 운영의 즉시 보충도 같은 호출을 써 나빠지지 않음).
 - 운영 큐 2개 → `deploy.sh`(backend 00188) → `deploy_telegram.sh`(telegram 00127) → `telegram_webhook.sh`(텔레그램 API 404 — 이 PC env.sh 토큰 문제, 주소 불변이라 기존 등록 유지로 판단) → `scheduler.sh`(3잡, 옛 3잡 삭제) → PR #101 병합 `2cad9f5` · 태그 `v4.9.0` · 문서 커밋 `67993b0` · `bdb3f11` → Vercel 반영 확인.
 - V5 결과 · 지켜볼 것 · 되돌리기 = 같은 폴더 **`watch_after_deploy.md`**.
+
+## 18:00 KST 정각 전체 조회 결과 (2026-10-27)
+- **스테이징**(`mewtype-telegram-stage`, Cloud Tasks 로 09:00:05Z 호출): 200, 새 인스턴스로 떴는데 fxtwitter 404 경고 0 → 5명 전체 목록을 Cloud Run 에서 정상으로 받음. 보충 후보 없음(스테이징 데이터에 운영 트윗을 채워 둔 상태라 맞음).
+- **운영**(`mewtype-telegram`, Scheduler `mewtype-gapcheck`): 17:44 배포 뒤 매분 200, 18:00:02 정각 전체 조회 포함 **fxtwitter 404 경고 0건**, 보충 작업 0건(빠진 글 없음 — 맞음).
+- 결론: 17:00 의 전원 404 는 지속 차단이 아니라 **일시 실패**로 보인다(17:02 일부 → 17:26 · 18:00 정상). 시간대별 실패율은 W2 대로 계속 관찰.
