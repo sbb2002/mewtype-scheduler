@@ -124,7 +124,8 @@ class GitHubStore:
             sha = resp_json.get("sha")
 
             if not content_b64:
-                raise RuntimeError(f"No content in response for {path}")
+                raise RuntimeError(f"No content in response for {path} "
+                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
 
             # 베이스64 디코딩
             content_bytes = base64.b64decode(content_b64)
@@ -217,7 +218,8 @@ class GitHubStore:
             content_b64 = resp_json.get("content", "")
             sha = resp_json.get("sha")
             if not content_b64:
-                raise RuntimeError(f"No content in response for {path}")
+                raise RuntimeError(f"No content in response for {path} "
+                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
             return base64.b64decode(content_b64).decode("utf-8"), sha
         except requests.RequestException as e:
             raise RuntimeError(f"GitHub API network error: {e}")
@@ -417,6 +419,19 @@ if __name__ == "__main__":
     changed_e, sha_e = gh_e.write_text("docs/x.html", "<html>same</html>", message="m")
     assert changed_e is False and sha_e == "shaE" and sess_e.put_calls == 0
     print("✓ write_text: 내용 동일하면 PUT 생략")
+
+    # 200 인데 content 가 빈 응답(1MB 초과 파일 등) → 오류 메시지에 encoding · size
+    class _EmptySess:
+        def get(self, url, **kw):
+            return _Resp(200, {"content": "", "encoding": "none", "size": 1052918, "sha": "shaF"})
+    for _read in (GitHubStore("tok", "o/r", "data", session=_EmptySess()).read_json,
+                  GitHubStore("tok", "o/r", "devpapers", session=_EmptySess()).read_text):
+        try:
+            _read("big.json")
+            assert False, "RuntimeError 가 나야 함"
+        except RuntimeError as e:
+            assert "encoding='none', size=1052918" in str(e), e
+    print("✓ read_json · read_text: 빈 content 오류에 encoding · size")
 
     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
     import os
