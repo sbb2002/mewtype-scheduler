@@ -11,7 +11,7 @@
 
 | # | 항목 | 방법 | 기록할 것 |
 |---|---|---|---|
-| V0-1 [필수] | 기존 self-test 전부 | main `f69a7bc` 에서 `python -m src.backend.<모듈>`(src/backend 전부 + `collector.rss` · `collector.youtube` · `bus.conform` · `bus.publisher`), `node src/frontend/js/<이름>.selfcheck.mjs`(king · render · songs · time · timetable) | 통과 · 실패 목록. **이미 실패하던 것은 따로 표시**(이번 변경 탓이 아님을 구분) |
+| V0-1 [필수] | 기존 self-test 전부 | main `f69a7bc` 에서 `python -m src.backend.<모듈>`(src/backend 중 `app` · `local_runner` 를 뺀 전부 — 이 둘은 self-test 가 아니라 개발 서버 · 러너를 띄운다 + `collector.rss` · `collector.youtube` · `bus.conform` · `bus.publisher`), `node src/frontend/js/<이름>.selfcheck.mjs`(king · render · songs · time · timetable) | 통과 · 실패 목록. **이미 실패하던 것은 따로 표시**(이번 변경 탓이 아님을 구분) |
 | V0-2 | Scheduler 잡 | `gcloud scheduler jobs list --location=asia-northeast1` | 4개(light · baseline · monitor · websub-renew) · 일정 · 대상 |
 | V0-3 | Cloud Run 사용량 | Monitoring `run.googleapis.com/container/billable_instance_time` · `request_count` 최근 30일 · 최근 7일(서비스별) | 10-27 값: 30일 합계 약 54,900초 · backend 요청 7,941 · telegram 2,405 |
 | V0-4 | 하루 일과 기준 | 최근 3일 monitoring 이벤트에서 06:00 baseline tick · 06:10 스냅샷 · 06:20 websub-renew 의 시각 · 결과, 운영자 DM(monitor) 횟수 | 하루 1번씩인지 |
