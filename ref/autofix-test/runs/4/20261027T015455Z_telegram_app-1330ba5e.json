@@ -1,0 +1,61 @@
+{
+ "ts": "2026-10-27T01:54:55Z",
+ "sig": "telegram_app-1330ba5e",
+ "severity": "ERROR",
+ "verdict": "confirmed",
+ "report": "20261027T015455Z_telegram_app-1330ba5e.md",
+ "action": "fix",
+ "preset": "standard",
+ "steps": [
+  {
+   "id": "analysis",
+   "name": "분석(Sonnet)",
+   "status": "ok",
+   "sec": 22.1,
+   "note": "confirmed",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1248
+  },
+  {
+   "id": "spec",
+   "name": "명세서(Sonnet)",
+   "status": "stop",
+   "sec": 14.1,
+   "note": "원인은 확인했다. src/backend/gh_store.py:122-128 의 read_json 이 Contents API 의 content 필드만 읽고, 1MB 초과 파일(encoding='none')에는 대체 경로가 없다. 그러나 근본 수정 위치인 gh_store.py 는 수정 금지 목록(storage, gh_store, tasks, oidc, config, writeclient, local_runner, tg_poll, notify)에 있어서 허용 경로 안에서는 고칠 수 없다. telegram_app.py 에서 예외를 삼키는 ",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.094
+  }
+ ],
+ "title": "gh_store.read_json 대용량(1MB 초과) 파일 읽기 폴백 추가",
+ "fix_status": "not_fixable",
+ "proposal_id": null,
+ "branch": "",
+ "files": [],
+ "usage": {
+  "five": 0.18,
+  "reset5": 1793080800,
+  "seven": 0.08,
+  "reset7": 1793613600,
+  "delta_five": 0.01999999999999999,
+  "calls_seen": 4
+ },
+ "commit_before": "94fe706",
+ "commit_after": "94fe706",
+ "analysis": {
+  "verdict": "confirmed",
+  "summary": "tweet_archive.json 1MB 초과로 Contents API content 비어 개인 트윗 반영 실패",
+  "cause": "gh_store.read_json 은 GitHub Contents API 의 content(base64) 필드만 읽는다. 이 API 는 1MB 를 넘는 파일에는 content 를 비우고 encoding='none' 으로 응답한다. 로그의 tweet_archive.json 은 size=1052918(약 1.05MB)로 한도를 넘었고, read_json 이 'No content in response' RuntimeError 를 던졌다. _commit_personal_tweet 의 광범위 except 가 이를 잡아 ERROR 로 기록하고 mode='error' 를 반환했다. 대용량 파일용 폴백(raw media type · blob API · download_url)은 코드에 없다(grep 으로 확인). 아카이브는 계속 커지기만 하므로 일시 오류가 아닌 구조적 결함이다.",
+  "evidence": [
+   "src/backend/gh_store.py:122 — resp.json() 에서 content 만 읽고 대용량 대체 경로가 없다",
+   "src/backend/gh_store.py:126 — content 가 비면 RuntimeError('No content in response ... encoding=none, size=...') 를 던진다",
+   "src/backend/telegram_app.py:2160 — tweets.json 읽은 직후 gh.read_json(_TWEET_ARCHIVE_PATH) 호출, 여기서 예외가 난다",
+   "src/backend/telegram_app.py:129 — _TWEET_ARCHIVE_PATH = \"tweet_archive.json\"",
+   "src/backend/telegram_app.py:2207 — 광범위 except 가 log.exception('personal tweet 반영 실패') 후 mode='error' 를 반환한다(2213줄)",
+   "src/backend/telegram_app.py:2158 — 재시도 루프 안에서 읽으므로 재시도해도 같은 이유로 실패한다",
+   "logs.json — frequency: total_seen=1, 2026-10-27T01:54:08Z 한 건. last_24h 시간대별 집계는 비어 있다. env=local, 로컬 워크트리 test-autofix-s 에서 발생"
+  ],
+  "proposed_action": "gh_store.read_json 에서 content 가 비고 encoding=='none' 이면 같은 URL 을 Accept: application/vnd.github.raw+json 으로 다시 요청해 본문을 직접 받거나, git blob API(sha 사용)로 읽는다. sha 는 기존 응답 값을 그대로 쓴다. write_json 도 내부에서 read_json 을 쓰므로 같은 수정으로 해결된다. 근본적으로는 tweet_archive.json 이 1MB 를 넘지 않도록 보관 기간 제한이나 월별 분할을 검토한다. 같은 이유로 notice_archive 등 다른 아카이브 파일도 1MB 에 가까워지면 실패하므로 함께 점검한다. 이 단계에서는 변경하지 않는다.",
+  "impact": "tweet_archive.json 이 1MB 를 넘은 상태라면, 개인 트윗 인입마다 tweets.json 에도 쓰지 못해 팬 화면에 새 트윗 말풍선이 누락된다. 지금까지 1건만 확인됐고 env=local 이라 운영 영향은 확인하지 못했다. 다만 파일이 줄어들지 않으므로 같은 조건의 운영 환경에서는 매 트윗 지속적으로 재발할 것이다. 폴백 없이 기능 출력이 끝까지 나오지 못하므로 ERROR 등급이 맞다.",
+  "needs_human": false
+ }
+}

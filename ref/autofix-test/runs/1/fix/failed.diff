@@ -1,0 +1,134 @@
+diff --git a/src/backend/gh_store.py b/src/backend/gh_store.py
+index a0b3ebd..47206c4 100644
+--- a/src/backend/gh_store.py
++++ b/src/backend/gh_store.py
+@@ -124,7 +124,14 @@ class GitHubStore:
+             sha = resp_json.get("sha")
+ 
+             if not content_b64:
+-                raise RuntimeError(f"No content in response for {path}")
++                # 1MB 초과 파일은 content 가 비어 올 수 있음(추정, 코드로 증명되지 않음).
++                # 같은 contents URL 을 raw media type 으로 한 번 더 받아 본문을 그대로 쓴다.
++                # 그래도 비면 기존 메시지로 실패.
++                raw_headers = {**self._headers(), "Accept": "application/vnd.github.raw"}
++                raw_resp = sess.get(url, params=params, headers=raw_headers, timeout=self.timeout)
++                if raw_resp.status_code != 200 or not raw_resp.text:
++                    raise RuntimeError(f"No content in response for {path}")
++                return json.loads(raw_resp.text), sha
+ 
+             # 베이스64 디코딩
+             content_bytes = base64.b64decode(content_b64)
+@@ -418,6 +425,42 @@ if __name__ == "__main__":
+     assert changed_e is False and sha_e == "shaE" and sess_e.put_calls == 0
+     print("✓ write_text: 내용 동일하면 PUT 생략")
+ 
++    # read_json 폴백: 200 인데 content 가 비면 raw media type 으로 한 번 더 GET
++    class _SeqSess:
++        """GET 응답을 호출 순서대로 돌려주고, 각 호출의 Accept 헤더를 기록한다."""
++        def __init__(self, *resps):
++            self.resps, self.accepts = list(resps), []
++        def get(self, url, **kw):
++            self.accepts.append(kw.get("headers", {}).get("Accept"))
++            return self.resps.pop(0)
++
++    def _raw(code, text=""):
++        r = _Resp(code)
++        r.text = text
++        return r
++
++    body_g = _serialize({"big": 1})
++    # (a) 첫 응답 content 빈 값 → raw 재조회 본문으로 (data, sha)
++    sess_f = _SeqSess(_Resp(200, {"content": "", "sha": "shaF"}), _raw(200, body_g))
++    data_f, sha_f = GitHubStore("tok", "o/r", "data", session=sess_f).read_json("tweet_archive.json")
++    assert data_f == {"big": 1} and sha_f == "shaF"
++    assert sess_f.accepts[1] == "application/vnd.github.raw"
++    print("✓ read_json: content 빈 200 → raw 재조회로 본문 복구")
++
++    # (b) 두 번 다 빈 본문 → 기존 메시지의 RuntimeError
++    sess_g = _SeqSess(_Resp(200, {"content": "", "sha": "shaG"}), _raw(200, ""))
++    try:
++        GitHubStore("tok", "o/r", "data", session=sess_g).read_json("tweet_archive.json")
++        assert False, "RuntimeError 가 발생해야 함"
++    except RuntimeError as e:
++        assert "No content in response" in str(e)
++    print("✓ read_json: raw 재조회도 빈 본문이면 RuntimeError")
++
++    # (c) 404 → (None, None) 그대로
++    sess_h = _SeqSess(_raw(404))
++    assert GitHubStore("tok", "o/r", "data", session=sess_h).read_json("none.json") == (None, None)
++    print("✓ read_json: 404 → (None, None)")
++
+     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
+     import os
+     gh_token_test = os.environ.get("GH_TOKEN_TEST")
+diff --git a/src/backend/telegram_app.py b/src/backend/telegram_app.py
+index 1a35ab3..6474fdd 100644
+--- a/src/backend/telegram_app.py
++++ b/src/backend/telegram_app.py
+@@ -2157,7 +2157,14 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
+     try:
+         for _try in range(_CONFLICT_RETRY_COUNT):
+             prev, psha = gh.read_json(_TWEETS_PATH)
+-            arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
++            # 아카이브 읽기 실패는 tweets.json 반영을 막지 않는다. 읽지 못한 기존 아카이브를
++            # 기본값으로 덮어쓰지 않도록 arch_ok=False 로 두고 아카이브 쓰기를 건너뛴다.
++            try:
++                arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
++                arch_ok = True
++            except Exception as e:
++                log.warning("tweet: 아카이브 읽기 실패 — tweets.json 만 반영: %s", e)
++                arch, asha, arch_ok = None, None, False
+             prev = prev or xtweet.default_tweets()
+             arch = arch or xtweet.default_archive()
+             new_t, new_a, changed, mode = xtweet.merge_thread(prev, parsed, now_iso, archive=arch)
+@@ -2187,7 +2194,7 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
+             try:
+                 gh.write_json(_TWEETS_PATH, new_t, prev_sha=psha,
+                               message=f"data: tweet {mode} {channel_key} {now_iso}")
+-                if new_a is not arch:
++                if arch_ok and new_a is not arch:
+                     gh.write_json(_TWEET_ARCHIVE_PATH, new_a, prev_sha=asha,
+                                   message=f"data: tweet archive {now_iso}")
+             except ConflictError as e:
+@@ -9987,6 +9994,40 @@ if __name__ == "__main__":
+             vxtwitter.fetch_profile_statuses, globals()["_maybe_personal_tweet"], globals()["_log_event_safe"] = _saved
+         print("[OK] (누락 보충) 빠진 본인 트윗만 오래된 순으로 개인 트윗 경로 · 모니터 gap-fill · 지운 트윗은 보관함 deleted 로 남아 안 되살림 · 조회 실패 0")
+ 
++    # (아카이브 읽기 폴백, 2026-10-27) 아카이브 읽기 실패 → tweets.json 만 반영하고 읽지 못한 아카이브는 덮어쓰지 않는다.
++    # 정상 읽기 → 기존처럼 롤오버된 트윗을 아카이브에도 쓴다.
++    if xtweet is not None:
++        class _ArchGH:
++            def __init__(self, archive_ok):
++                self.archive_ok, self.writes = archive_ok, []
++                # MAX_THREAD 를 꽉 채워 새 트윗이 들어오면 가장 오래된 한 건이 아카이브로 밀려나게 한다
++                self.tweets = {"generated_at": None, "tweets": {"nonoka": [
++                    {"channel_key": "nonoka", "id": f"old{i}", "text": "t",
++                     "posted_at": f"2026-10-26T{i // 60:02d}:{i % 60:02d}:00Z",
++                     "expires_at": "2026-10-29T00:00:00Z"} for i in range(xtweet.MAX_THREAD)]}}
++            def read_json(self, path):
++                if path == _TWEET_ARCHIVE_PATH:
++                    if not self.archive_ok:
++                        raise RuntimeError("No content in response for tweet_archive.json")
++                    return {"tweets": []}, "sha-a"
++                return self.tweets, "sha-t"
++            def write_json(self, path, data, *, prev_sha=None, message=""):
++                self.writes.append(path)
++                return True, "sha-new"
++        _ap = {"parsed": {"channel_key": "nonoka", "id": "new1", "text": "새 트윗",
++                          "posted_at": "2026-10-27T01:00:00Z", "expires_at": "2026-10-29T01:00:00Z"},
++               "text_src": "", "text_ko": None, "quote_src": None, "quote_ko": None}
++        _ap_now = "2026-10-27T02:00:00Z"
++        _g_ok = _ArchGH(True)
++        _r_ok = _commit_personal_tweet(_g_ok, _ap, channel_key="nonoka", now_iso=_ap_now)
++        _w_ok = [p for p in _g_ok.writes if p in (_TWEETS_PATH, _TWEET_ARCHIVE_PATH)]
++        assert _r_ok["mode"] == "rolled" and _w_ok == [_TWEETS_PATH, _TWEET_ARCHIVE_PATH], (_r_ok, _w_ok)
++        _g_bad = _ArchGH(False)
++        _r_bad = _commit_personal_tweet(_g_bad, _ap, channel_key="nonoka", now_iso=_ap_now)
++        _w_bad = [p for p in _g_bad.writes if p in (_TWEETS_PATH, _TWEET_ARCHIVE_PATH)]
++        assert _r_bad["mode"] != "error" and _w_bad == [_TWEETS_PATH], (_r_bad, _w_bad)
++        print("[OK] (아카이브 읽기 폴백) 정상 읽기 → tweets.json + 아카이브 쓰기 · 아카이브 읽기 실패 → tweets.json 만 쓰고 mode 는 error 아님")
++
+     print(chr(10) + "=" * 60)
+     print("SUCCESS: telegram_app v3 smoke test 통과")
+     print("=" * 60)
+\ No newline at end of file

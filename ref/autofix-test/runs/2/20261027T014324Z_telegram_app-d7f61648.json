@@ -1,0 +1,49 @@
+{
+ "ts": "2026-10-27T01:43:24Z",
+ "sig": "telegram_app-d7f61648",
+ "severity": "ERROR",
+ "verdict": "unknown",
+ "report": "20261027T014324Z_telegram_app-d7f61648.md",
+ "action": "fix",
+ "preset": "standard",
+ "steps": [
+  {
+   "id": "analysis",
+   "name": "분석(Sonnet)",
+   "status": "ok",
+   "sec": 19.7,
+   "note": "unknown",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1133
+  }
+ ],
+ "title": "패치 없음 — 수정 대상 아님(원인 미확정/무시 가능)",
+ "fix_status": "",
+ "proposal_id": null,
+ "branch": "",
+ "files": [],
+ "usage": {
+  "five": 0.1,
+  "reset5": 1793080800,
+  "seven": 0.08,
+  "reset7": 1793613600,
+  "delta_five": 0.010000000000000009,
+  "calls_seen": 2
+ },
+ "commit_before": "4a33021",
+ "commit_after": "4a33021",
+ "analysis": {
+  "verdict": "unknown",
+  "summary": "개인 트윗 반영 중 tweet_archive.json 읽기가 빈 content 로 실패(1회)",
+  "cause": "_commit_personal_tweet 이 tweet_archive.json 을 gh.read_json 으로 읽는데, GitHub 응답이 HTTP 200 이지만 content 가 비어 있어 gh_store 가 RuntimeError 를 던졌다. 이 예외는 광범위 except 에 잡혀 mode=error 로 끝난다. 응답이 빈 이유는 코드와 로그만으로 증명할 수 없다. 파일이 커서 Contents API 가 content 를 생략했을 수도 있고, 일시적 응답 이상일 수도 있다. 이 경우 verdict 는 unknown 이다. 이 에러는 env=local, 테스트 워크트리(test-autofix-s)에서 1회만 나왔다.",
+  "evidence": [
+   "src/backend/gh_store.py:122-127 — HTTP 200 인데 resp_json 의 content 가 비어 있으면 'No content in response for {path}' RuntimeError 를 던진다. 200 이 아닌 상태나 404 와는 다른 분기다.",
+   "src/backend/telegram_app.py:2159-2160 — 재시도 루프 안에서 tweets.json 과 tweet_archive.json 을 연달아 읽는다. 이 읽기 예외는 ConflictError 처리 대상이 아니라서 재시도 없이 바깥 except 로 간다.",
+   "src/backend/telegram_app.py:2207-2213 — 광범위 except 가 log.exception 으로 ERROR 를 남기고, monitor_log 에 RESULT_ERR 를 기록한 뒤 {'mode':'error'} 를 반환한다. 이 경우 tweets.json 에는 아무것도 쓰지 않는다.",
+   "logs.json — total_seen=1, first_seen 과 last_seen 이 모두 2026-10-27T01:42:55Z 이고 last_24h_total=0 이다. source.env=local 이고 경로는 test-autofix-s 워크트리다."
+  ],
+  "proposed_action": "1) 재현할 때 해당 시점의 tweet_archive.json 크기와 GitHub 응답(encoding, size 필드)을 확인한다. 2) 확인 후 대응을 정한다. 응답이 일시적 이상이면 gh_store.read_json 이 빈 content 를 재시도 가능한 오류로 보고 짧게 1~2회 재시도하게 한다. 파일이 1MB 를 넘어 content 가 생략된 것이면 Contents API 대신 Git Blobs API 나 download_url 로 읽게 한다. 3) 아카이브 읽기 실패가 트윗 반영 전체를 막지 않도록, 아카이브만 default_archive 로 대체하는 폴백을 둘지는 데이터 유실 위험(아카이브를 덮어쓸 수 있음)을 먼저 검토한다.",
+  "impact": "이번 한 번의 개인 트윗은 tweets.json 에 반영되지 않아, 재전송이나 후속 인입이 없으면 팬 화면에 그 트윗이 나오지 않는다. 다만 발생은 로컬 환경에서 1건뿐이고 운영 반복 증거는 없다. 운영에서 같은 조건(아카이브가 커서 content 가 비는 경우)이 되면 매번 실패할 수 있으나, 이는 증명되지 않았다.",
+  "needs_human": false
+ }
+}

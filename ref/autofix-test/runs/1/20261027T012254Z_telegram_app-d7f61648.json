@@ -1,0 +1,124 @@
+{
+ "ts": "2026-10-27T01:22:54Z",
+ "sig": "telegram_app-d7f61648",
+ "severity": "ERROR",
+ "verdict": "confirmed",
+ "report": "20261027T012254Z_telegram_app-d7f61648.md",
+ "action": "fix",
+ "preset": "standard",
+ "steps": [
+  {
+   "id": "analysis",
+   "name": "분석(Sonnet)",
+   "status": "ok",
+   "sec": 22.7,
+   "note": "confirmed",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1258
+  },
+  {
+   "id": "spec",
+   "name": "명세서(Sonnet)",
+   "status": "ok",
+   "sec": 17.1,
+   "note": "",
+   "model": "claude-sonnet-5-5",
+   "cost": 0.1231
+  },
+  {
+   "id": "worktree",
+   "name": "수정 브랜치 · 워크트리",
+   "status": "ok",
+   "sec": 0.5,
+   "note": "auto/telegram_app-d7f61648-1",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "implement",
+   "name": "구현(Haiku)",
+   "status": "ok",
+   "sec": 73.6,
+   "note": "",
+   "model": "claude-haiku-5-5",
+   "cost": 0.0237
+  },
+  {
+   "id": "guard",
+   "name": "가드: 금지 자원 확인",
+   "status": "fail",
+   "sec": 1.4,
+   "note": "금지 경로 수정: src/backend/gh_store.py",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "tests",
+   "name": "문법 · self-test",
+   "status": "skipped",
+   "sec": null,
+   "note": "앞 단계 실패",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "verify",
+   "name": "검증(Sonnet)",
+   "status": "skipped",
+   "sec": null,
+   "note": "앞 단계 실패",
+   "model": "",
+   "cost": null
+  },
+  {
+   "id": "review",
+   "name": "독립 검토(Sonnet)",
+   "status": "skipped",
+   "sec": null,
+   "note": "앞 단계 실패",
+   "model": "",
+   "cost": null
+  }
+ ],
+ "title": "개인 트윗 아카이브 읽기 실패 시 폴백·대용량 raw 읽기 추가",
+ "fix_status": "guard_fail",
+ "proposal_id": null,
+ "branch": "auto/telegram_app-d7f61648-1",
+ "files": [
+  {
+   "path": "src/backend/gh_store.py",
+   "added": 44,
+   "deleted": 1
+  },
+  {
+   "path": "src/backend/telegram_app.py",
+   "added": 43,
+   "deleted": 2
+  }
+ ],
+ "usage": {
+  "five": 0.07,
+  "reset5": 1793080800,
+  "seven": 0.07,
+  "reset7": 1793613600,
+  "delta_five": 0.020000000000000004,
+  "calls_seen": 3
+ },
+ "commit_before": "4a33021",
+ "commit_after": "4a33021",
+ "analysis": {
+  "verdict": "confirmed",
+  "summary": "tweet_archive.json 읽기 시 content가 비어 RuntimeError, 개인 트윗 반영 실패",
+  "cause": "`gh_store.read_json`은 GitHub Contents API가 200으로 응답해도 `content`가 빈 문자열이면 `RuntimeError(\"No content in response ...\")`를 던진다. `_commit_personal_tweet`은 tweets.json을 읽은 뒤 tweet_archive.json도 읽는데(2160행), 아카이브는 읽기 실패에 대한 폴백이 없다. 그래서 예외가 바깥 `except Exception`으로 올라가 `log.exception`(ERROR)이 찍히고 `mode: error`로 끝난다. content가 비는 이유는 코드만으로는 증명되지 않는다. 다만 GitHub Contents API는 1MB 초과 파일에서 content를 비워 보내는 것으로 알려져 있고, 트레이스백의 워크트리 이름이 `test-autofix-archive1mb`라서 아카이브가 1MB를 넘긴 상황을 재현하는 시험으로 보인다. 로그의 env는 local이고 현재 코드에는 대용량 대응(raw/blob 읽기)이 없다.",
+  "evidence": [
+   "src/backend/gh_store.py:126 — content_b64가 비어 있으면 `No content in response for {path}` RuntimeError를 던진다.",
+   "src/backend/gh_store.py:113 — 404일 때만 (None, None)을 반환하고, 200인데 content가 빈 경우의 폴백은 없다.",
+   "src/backend/telegram_app.py:2160 — 재시도 루프 안에서 `gh.read_json(_TWEET_ARCHIVE_PATH)`를 예외 처리 없이 호출한다.",
+   "src/backend/telegram_app.py:2207 — 바깥 `except Exception`이 `log.exception(\"personal tweet 반영 실패\")`를 남기고 `mode: error`를 반환한다.",
+   "logs.json — 총 1건, 2026-10-27T01:20:45Z, source.env=local, last_24h_by_hour_kst 비어 있음."
+  ],
+  "proposed_action": "아카이브 읽기를 방어적으로 고친다. (1) `read_json`에서 content가 비고 encoding이 none이거나 size가 1MB를 넘으면 `Accept: application/vnd.github.raw` 헤더나 git blob API로 다시 읽는다. (2) `_commit_personal_tweet`에서 아카이브 읽기 실패 시 `default_archive()`로 대체하되, 기존 아카이브를 덮어쓰지 않도록 아카이브 쓰기는 건너뛴다. (3) 아카이브 크기가 커지지 않게 회전하거나 분할한다. 이 단계에서는 변경하지 않는다.",
+  "impact": "tweets.json이 갱신되지 않아 해당 개인 트윗이 팬 화면에 누락되고, 그 트윗을 근거로 하는 예고 판정도 이어지지 않는다. 이번에는 local 환경에서 1건만 발생해 운영 영향은 확인되지 않았다. 하지만 운영 아카이브가 1MB를 넘으면 모든 개인 트윗 반영이 계속 실패할 수 있다.",
+  "needs_human": false
+ }
+}
