@@ -1,0 +1,742 @@
+<meta charset="utf-8">
+<title>멤버 트윗 시트</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 레이아웃: 위 = 눌러 보는 무대(보드 + 트윗 보드), 아래 = 설계 설명. 폰 = 아래에서 올라오는 시트, PC = 가운데 뜨는 팝업 보드. 속은 같은 부품. */
+@property --m { syntax: '<color>'; inherits: true; initial-value: #888888; }
+@property --mi { syntax: '<color>'; inherits: true; initial-value: #ffffff; }
+:root {
+  --bg: #eef0f3;
+  --stage: #e2e5ea;
+  --surface: #ffffff;
+  --surface-2: #f3f5f7;
+  --fg: #16191f;
+  --fg-2: #4d5562;
+  --line: #d6dbe2;
+  --focus: #0b7c84;
+  --scrim: rgba(12, 14, 18, 0.42);
+  --xbg: #ffffff; --xink: #0f1419; --xsub: #536471; --xline: #cfd9de; --xph: #e7ecf0;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Roboto, sans-serif;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* 움직임 속도 토큰 — JS 쪽 애니메이션도 같은 값(EASE · SPRING 상수) */
+  --t-fast: 120ms; --t-face: 260ms; --t-open: 320ms; --t-close: 210ms; --t-color: 500ms;
+  --spring: cubic-bezier(0.25, 1.4, 0.45, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --stage: #181b20; --surface: #1f2329; --surface-2: #272c33; --fg: #eceef1; --fg-2: #a6aeb9; --line: #353b44;
+    --focus: #4cc9cf; --scrim: rgba(0, 0, 0, 0.6); --xbg: #000000; --xink: #e7e9ea; --xsub: #71767b; --xline: #2f3336; --xph: #16181c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --stage: #181b20; --surface: #1f2329; --surface-2: #272c33; --fg: #eceef1; --fg-2: #a6aeb9; --line: #353b44;
+  --focus: #4cc9cf; --scrim: rgba(0, 0, 0, 0.6); --xbg: #000000; --xink: #e7e9ea; --xsub: #71767b; --xline: #2f3336; --xph: #16181c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 64px;
+}
+body.no-select { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+.page { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
+.intro h1 { margin: 0 0 6px; font-size: 25px; line-height: 1.25; text-wrap: balance; }
+.intro p { margin: 0; color: var(--fg-2); max-width: 72ch; }
+.small { font-size: 13px; color: var(--fg-2); max-width: 80ch; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ── 무대 ── */
+.stagebar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.seg { position: relative; display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); flex: none; }
+.seg button { position: relative; z-index: 1; border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; cursor: pointer; font-size: 13px; color: var(--fg-2); min-height: 30px; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: transparent; color: var(--fg); font-weight: 700; }
+/* A4: 미끄러지는 알약 — 위치 · 크기는 JS(placePill) 가 넣는다 */
+.seg .pill { position: absolute; left: 0; z-index: 0; border-radius: 7px; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,0.12); pointer-events: none; transition: all var(--t-face) var(--ease); }
+.stagewrap { display: flex; justify-content: center; overflow-x: auto; }
+.stage { container-type: inline-size; container-name: stage; position: relative; width: 100%; height: 660px; border-radius: 16px; overflow: hidden; background: var(--stage); border: 1px solid var(--line); }
+.stage.is-phone { width: 390px; height: 780px; border-radius: 28px; border-width: 8px; flex: none; }
+.board { position: absolute; inset: 0; padding: 18px; display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.board__title { font-size: 13px; color: var(--fg-2); }
+.lane { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.lane__av { position: relative; width: 44px; height: 44px; border-radius: 50%; background: var(--m); border: 0; cursor: pointer; flex: none; display: grid; place-items: center; font-weight: 800; color: var(--mi); font-size: 15px; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--m); }
+.lane__badge { position: absolute; right: -5px; top: -5px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #e5484d; color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--surface); }
+.lane__body { min-width: 0; display: flex; flex-direction: column; }
+.lane__nm { font-weight: 700; }
+.lane__sub { font-size: 12.5px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 트윗 시트: 바탕 = 멤버 색(아바타 평균색), 글자색 = 밝기로 자동(지금 말풍선 규칙). 안쪽 면은 글자색을 섞어 만든다 ── */
+.scrim { position: absolute; inset: 0; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity var(--t-face); z-index: 5; }
+.scrim.is-on { opacity: 1; pointer-events: auto; }
+.scrim.is-drag { transition: none; }   /* B3: 끄는 동안은 손가락을 그대로 따른다 */
+.sheet {
+  --m: #888; --mi: #fff;
+  --s1: color-mix(in srgb, var(--mi) 14%, transparent);
+  --s2: color-mix(in srgb, var(--mi) 22%, transparent);
+  --ln: color-mix(in srgb, var(--mi) 26%, transparent);
+  --sub: color-mix(in srgb, var(--mi) 84%, var(--m));
+  --paper: rgba(255, 255, 255, 0.38);   /* 번역 칸 바탕 — 글자와 반대쪽으로 섞는다(JS 가 글자색 따라 정함) */
+  position: absolute; z-index: 6; display: flex; flex-direction: column;
+  left: 0; right: 0; bottom: 0; margin: 0 auto; width: 100%; max-width: 460px; height: 86%;
+  background: linear-gradient(172deg, color-mix(in srgb, var(--m) 88%, #fff) 0%, var(--m) 48%, color-mix(in srgb, var(--m) 90%, #000) 100%);
+  color: var(--mi); border-radius: 22px 22px 0 0;
+  box-shadow: 0 -18px 50px -20px rgba(0,0,0,0.5);
+  transform: translateY(103%); transition: transform var(--t-close) var(--ease), opacity var(--t-close), --m var(--t-color) ease, --mi var(--t-color) ease; visibility: hidden;
+}
+/* B2: 열기(320ms) · 닫기(210ms) — 닫기 전환은 기본 규칙, 여는 전환은 is-open 에서 */
+.sheet.is-open { transform: translateY(var(--drag, 0px)); visibility: visible; transition: transform var(--t-open) var(--ease), opacity var(--t-open), --m var(--t-color) ease, --mi var(--t-color) ease; }
+.sheet.is-dragging { transition: none; }
+.sheet:focus { outline: none; }
+/* PC: 가운데 뜨는 팝업 보드 — 아래 시트 대신. 끌어 닫기 없음(✕ · 바깥 클릭 · Esc) */
+@container stage (min-width: 641px) {
+  .sheet { left: 50%; right: auto; top: 50%; bottom: auto; margin: 0; width: 540px; max-width: calc(100% - 48px); height: min(86%, 660px);
+    border-radius: 20px; box-shadow: 0 30px 80px -24px rgba(0,0,0,0.6), 0 0 0 1px color-mix(in srgb, var(--mi) 12%, transparent);
+    opacity: 0; transform: translate(-50%, -47%) scale(0.8); }
+  .sheet.is-open { opacity: 1; transform: translate(-50%, -50%); }
+  .sheet .sheet__grab { display: none; }
+  .sheet .sheet__head { padding-top: 14px; cursor: default; }
+}
+.sheet__grab { height: 22px; display: grid; place-items: center; cursor: grab; touch-action: none; flex: none; }
+.sheet__grab i { width: 40px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--mi) 45%, transparent); transition: width var(--t-fast); }
+.sheet.is-armed .sheet__grab i { width: 56px; }   /* B3: 닫힘 선(110px)을 넘은 표시 */
+.sheet__head { display: flex; align-items: center; gap: 10px; padding: 0 12px 8px 16px; flex: none; touch-action: none; cursor: grab; }
+.sheet__who { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.sheet__av { width: 34px; height: 34px; border-radius: 50%; background: var(--m); border: 2px solid color-mix(in srgb, var(--mi) 55%, transparent); flex: none; }
+.sheet__nm { font-weight: 800; font-size: 15px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet__hd { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iconbtn { width: 36px; height: 36px; border-radius: 10px; border: 0; background: var(--s1); display: grid; place-items: center; cursor: pointer; color: inherit; flex: none; }
+.iconbtn:hover { background: var(--s2); }
+.iconbtn svg { width: 16px; height: 16px; }
+/* 칩 줄: 마우스 · 펜은 JS 끌기(mem), 터치는 브라우저 가로 스크롤(pan-x). 넘칠 때만 양 끝 16px 흐림 — 끝에 닿은 쪽은 at-l / at-r 로 끈다 */
+.sheet__members { --ml: 16px; --mr: 16px; position: relative; display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto; scrollbar-width: none; flex: none; cursor: grab; touch-action: pan-x;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--ml), #000 calc(100% - var(--mr)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--ml), #000 calc(100% - var(--mr)), transparent 100%); }
+.sheet__members.at-l { --ml: 0px; }
+.sheet__members.at-r { --mr: 0px; }
+.sheet__members.is-grabbing { cursor: grabbing; }
+.chip { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ln); background: var(--s1); color: inherit; border-radius: 999px; padding: 3px 10px 3px 3px; cursor: pointer; font-size: 13px; white-space: nowrap; min-height: 32px; }
+.chip i { width: 24px; height: 24px; border-radius: 50%; background: var(--c); border: 1.5px solid color-mix(in srgb, var(--mi) 50%, transparent); }
+.chip[aria-current="true"] { background: transparent; color: var(--m); font-weight: 800; border-color: var(--mi); }
+/* A5: 선택 알약 — 칩 줄 안의 절대 위치 요소 하나가 칩 사이를 미끄러진다 */
+.mpill { position: absolute; left: 0; top: 0; height: 32px; border-radius: 999px; background: var(--mi); pointer-events: none; transition: all var(--t-face) var(--ease); }
+.chip b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e5484d; color: #fff; font-size: 10.5px; display: grid; place-items: center; }
+/* 전체 탭은 머리 줄(.sheet__head) 안, 닫기 버튼 왼쪽 — 작게 */
+.sheet__head .seg { flex: none; }
+.sheet__head .seg button { min-height: 28px; padding: 4px 9px; font-size: 12px; }
+.sheet .seg { background: var(--s1); border-color: var(--ln); }
+.sheet .seg button { color: var(--sub); }
+.sheet .seg button[aria-pressed="true"] { background: transparent; color: var(--m); box-shadow: none; }
+.sheet .seg .pill { background: var(--mi); box-shadow: none; }
+.feed.is-swapping { animation: swapin 0.32s var(--ease); }
+@keyframes swapin { from { opacity: 0; transform: translateX(var(--from, 0px)); } to { opacity: 1; transform: none; } }
+.feed { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px 22px; display: flex; flex-direction: column; gap: 16px; scrollbar-width: thin; scrollbar-color: var(--ln) transparent; }
+
+/* C3: 피드 위 · 아래 끝 옅게 흐림 — 끝에 닿은 쪽은 fadeEdges() 가 at-top / at-bottom 으로 끈다 */
+.feed { --ft: 12px; --fb: 16px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%); }
+.feed.at-top { --ft: 0px; }
+.feed.at-bottom { --fb: 0px; }
+.newline { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; }
+.newline::before, .newline::after { content: ""; flex: 1; height: 1.5px; background: var(--mi); opacity: 0.55; }
+/* B4: 시트를 열 때 양쪽 선이 왼쪽에서 오른쪽으로 그어짐 (openSheet 이 .draw 를 한 번 붙인다) */
+.newline.draw::before, .newline.draw::after { transform-origin: left center; animation: nlDraw 420ms var(--ease) both; }
+@keyframes nlDraw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.chain { position: relative; display: flex; flex-direction: column; gap: 12px; padding-left: 18px; }
+.chain::before { content: ""; position: absolute; left: 6px; top: 16px; bottom: 30px; width: 2px; border-radius: 1px; background: var(--mi); opacity: 0.5; }
+/* C1: 글타래 세로줄 — 처음 화면에 들어올 때 위에서 아래로 한 번 (watchFeed) */
+.chain::before { transform-origin: top center; }
+.chain.wait::before { transform: scaleY(0); }
+.chain.draw::before { animation: chainDraw 480ms var(--ease) both; }
+@keyframes chainDraw { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+.tw { position: relative; display: flex; flex-direction: column; gap: 6px; }
+/* C4: 키보드로 글에 들어오면 글자색 2px 테두리 */
+.tw:focus-visible { outline: 2px solid var(--mi); outline-offset: 3px; border-radius: 12px; }
+.chain .tw::before { content: ""; position: absolute; left: -15px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--mi); box-shadow: 0 0 0 3px var(--m); }
+.chain .tw.is-root::before { background: var(--m); border: 2px solid var(--mi); }
+.tw__meta { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+.tw__time { font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px; }
+.tw__time strong { color: var(--mi); font-weight: 800; }
+.tw__time svg { width: 13px; height: 13px; flex: none; }
+.newtag { font-size: 10.5px; font-weight: 800; color: #fff; background: #e5484d; border-radius: 6px; padding: 0 5px; margin-left: 2px; }
+/* 시각 줄의 사진 · 영상 버튼 — 아이콘 + 수(tabular-nums). 누르면 그 글만 원문 면 */
+.tw__media { display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-width: 28px; min-height: 28px; padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--mi); cursor: pointer; flex: none; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; transition: transform var(--t-fast) var(--ease), background var(--t-fast); }
+.tw__media:hover { background: var(--s1); }
+.tw__media:active { transform: scale(0.96); }
+.tw__media:focus-visible { outline: 2px solid var(--mi); outline-offset: 2px; }
+.tw__mi { display: inline-flex; align-items: center; gap: 3px; }
+.tw__mn { font-variant-numeric: tabular-nums; }
+.tw__media svg { width: 14px; height: 14px; }
+.tw__meta { touch-action: pan-y; cursor: grab; }
+.tw__x { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--sub); flex: none; }
+.tw__x:hover { background: var(--s1); color: var(--mi); }
+.tw__x svg { width: 14px; height: 14px; }
+
+/* 앞(번역) · 뒤(X 카드): 가로 스냅 스크롤. 두 면은 늘 같은 높이(더 큰 쪽) — 전환해도 목록이 들썩이지 않는다 */
+.track { display: flex; align-items: stretch; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; border-radius: 14px; cursor: grab; }
+.track::-webkit-scrollbar { display: none; }
+.track.is-grabbing { cursor: grabbing; scroll-snap-type: none; }
+.face { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; }
+.ko { flex: 1; display: flex; flex-direction: column; gap: 10px; background: var(--paper); border: 1px solid var(--ln); border-radius: 14px; padding: 12px 14px; }
+.ko__txt { margin: 0; font-size: 15.5px; line-height: 1.68; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-break: strict; }
+.ko__q { padding: 9px 11px; border-radius: 10px; border: 1px solid var(--ln); background: transparent; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-break: strict; }
+.ko__q span { display: block; font-size: 11px; font-weight: 800; margin-bottom: 2px; white-space: normal; }
+/* 첨부 줄 — 번역엔 사진 · 영상을 안 그리므로(원문 미디어는 X 카드로만) 있다는 것을 알리고 바로 원문 면으로 */
+.att { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--mi) 45%, transparent); background: color-mix(in srgb, var(--mi) 8%, transparent); color: inherit; cursor: pointer; text-align: left; width: 100%; font-size: 13px; }
+.att:hover { background: var(--s2); }
+.att { transition: transform var(--t-fast) var(--ease); }
+.att:active { transform: scale(0.98); }   /* B1: 누르는 느낌 */
+.att__ic { display: inline-flex; gap: 3px; flex: none; }
+.att__ic svg { width: 16px; height: 16px; }
+.att__txt { flex: 1; min-width: 0; font-weight: 700; }
+.att__go { flex: none; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.xc { border-radius: 14px; background: var(--xbg); color: var(--xink); border: 1px solid var(--xline); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.xc__top { display: flex; gap: 10px; align-items: center; }
+.xc__av { width: 36px; height: 36px; border-radius: 50%; background: var(--m); flex: none; }
+.xc__nm { font-weight: 700; font-size: 14px; line-height: 1.2; }
+.xc__hd { font-size: 12.5px; color: var(--xsub); }
+.xc__ln { height: 9px; border-radius: 5px; background: var(--xph); }
+.xc__img { border-radius: 12px; background: var(--xph); display: grid; place-items: center; color: var(--xsub); font-size: 12px; aspect-ratio: 16 / 10; }
+.xc__imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; border-radius: 12px; overflow: hidden; }
+.xc__imgs .xc__img { border-radius: 0; aspect-ratio: 4 / 5; }
+.xc__qt { border: 1px solid var(--xline); border-radius: 12px; padding: 9px 10px; display: flex; flex-direction: column; gap: 6px; }
+.xc__note { font-size: 11px; color: var(--xsub); text-align: center; }
+/* B5: X 카드 자리 표시 — is-skel(색만 옅게, 글자 숨김) → 처음 보일 때 is-shim(쉬머 한 번, 280ms) → 내용. 칸 구성은 그대로라 높이 불변 */
+.xc.is-skel .xc__av, .xc.is-skel .xc__ln, .xc.is-skel .xc__img { background-color: var(--xph); }
+.xc.is-skel .xc__nm, .xc.is-skel .xc__hd, .xc.is-skel .xc__img, .xc.is-skel .xc__note { color: transparent; }
+.xc.is-shim .xc__av, .xc.is-shim .xc__ln, .xc.is-shim .xc__img { background-image: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--xink) 9%, transparent) 50%, transparent 70%); background-size: 250% 100%; background-repeat: no-repeat; animation: xcShim 280ms linear 1 both; }
+@keyframes xcShim { from { background-position: 125% 0; } to { background-position: -125% 0; } }
+.facegap { flex: 1; }
+.dots { display: flex; justify-content: center; align-items: center; gap: 5px; height: 18px; margin-top: -2px; touch-action: pan-y; cursor: grab; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--mi); opacity: 0.35; transition: width var(--t-fast), opacity var(--t-fast); }
+.dots i.on { width: 14px; border-radius: 3px; opacity: 0.9; }
+.dots.is-drag i { transition: none; }   /* A2: 끄는 동안 폭은 손가락을 따른다 */
+
+.hint { position: absolute; z-index: 7; left: 16px; right: 16px; bottom: 18px; margin: 0 auto; max-width: 420px; width: fit-content; text-align: center; background: var(--fg); color: var(--surface); font-size: 12.5px; line-height: 1.45; padding: 8px 12px; border-radius: 10px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.hint.is-on { opacity: 0.94; }
+
+/* C2: 「새 글 N개 ↓」 칩 — 새 글 자리가 화면 아래에 있을 때만 */
+.newchip { position: absolute; z-index: 3; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: fit-content; border: 0; border-radius: 999px; padding: 6px 14px; background: var(--mi); color: var(--m); font-size: 12.5px; font-weight: 800; box-shadow: 0 4px 14px -6px rgba(0,0,0,0.5); cursor: pointer; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity var(--t-fast), transform var(--t-fast) var(--ease); }
+.newchip.is-on { opacity: 1; pointer-events: auto; transform: none; }
+.doc { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.doc section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.doc h2 { margin: 0 0 8px; font-size: 16px; }
+.doc ul, .doc ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; }
+.doc table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.doc th, .doc td { text-align: left; vertical-align: top; padding: 6px 6px; border-bottom: 1px solid var(--line); }
+.doc th { font-size: 12px; color: var(--fg-2); font-weight: 600; }
+/* 움직임 줄이기: 이동 · 크기는 끄고 색 · 투명도만. A1 · A3 은 JS 에서 아예 안 함 */
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .sheet.is-open { transition: opacity var(--t-fast), --m var(--t-color) ease, --mi var(--t-color) ease !important; }
+  .scrim, .hint { transition: opacity var(--t-fast) !important; }
+  .dots i, .sheet__grab i, .seg .pill, .mpill { transition: none !important; }
+  .newchip { transition: opacity var(--t-fast) !important; transform: none !important; }
+  .att:active, .tw__media:active { transform: none; }
+  .feed.is-swapping { animation: none; }
+  .newline.draw::before, .newline.draw::after, .chain.draw::before { animation: none; }
+  .xc.is-shim .xc__av, .xc.is-shim .xc__ln, .xc.is-shim .xc__img { animation: none; }
+}
+</style>
+
+<div class="page">
+  <div class="intro">
+    <h1>멤버 트윗 시트</h1>
+    <p>글 하나에 한 면씩 칸 전체 폭으로 보여 줍니다. 머리 줄의 「번역 · 원문」 탭은 모든 글을 한꺼번에 바꾸고, 글 하나만 바꿀 때는 그 글을 옆으로 밉니다. 두 면은 같은 높이라 바꿔도 목록이 움직이지 않습니다. 바탕은 멤버 색이고 멤버를 바꾸면 색이 부드럽게 넘어갑니다. 폰은 아래에서 올라오는 시트, PC는 가운데 뜨는 팝업 보드입니다.</p>
+  </div>
+
+  <div class="stagebar">
+    <div class="small">글 · 사진 수 · 인용은 10-25~27 실제 데이터, 지금 시각은 10/27 07:05 로 고정. 리츠의 23:30 → 07:01 글타래와 00:15 글은 배치 예시(07:01 글은 실제로는 인용 글). 멤버 색은 운영 사이트가 아바타에서 뽑은 실제 색(10-27)이고, X 카드는 회색 자리 표시입니다.</div>
+    <div class="seg" role="group" aria-label="미리보기 크기">
+      <button type="button" id="szWide" aria-pressed="true">PC</button>
+      <button type="button" id="szPhone" aria-pressed="false">폰 390px</button>
+    </div>
+  </div>
+
+  <div class="stagewrap">
+    <div class="stage" id="stage">
+      <div class="board" id="board">
+        <div class="board__title">오늘의 방송 보드(예시) — 아바타를 눌러 트윗 보기</div>
+      </div>
+      <div class="scrim" id="scrim"></div>
+      <aside class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shNm" tabindex="-1">
+        <div class="sheet__grab" id="grab" aria-hidden="true"><i></i></div>
+        <div class="sheet__head" id="shHead">
+          <div class="sheet__who"><span class="sheet__av" id="shAv"></span><div style="min-width:0"><div class="sheet__nm" id="shNm"></div><div class="sheet__hd" id="shHd"></div></div></div>
+          <div class="seg" role="group" aria-label="모든 글 보기 전환(글 하나만 바꾸려면 그 글을 옆으로 밀기)">
+            <button type="button" id="defKo" aria-pressed="true">번역</button>
+            <button type="button" id="defX" aria-pressed="false">원문</button>
+          </div>
+          <button type="button" class="iconbtn" id="shClose" aria-label="닫기"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>
+        </div>
+        <nav class="sheet__members" id="members" aria-label="멤버"></nav>
+        <div class="feed" id="feed"></div>
+        <button type="button" class="newchip" id="newChip"></button>
+      </aside>
+      <div class="hint" id="hint" role="status"></div>
+    </div>
+  </div>
+
+  <div class="doc">
+    <section>
+      <h2>이번에 고친 것</h2>
+      <ul>
+        <li><b>첨부 표시.</b> 번역 면 아래에 「사진 2장 · 인용 글 사진 1장 — 원문에서 보기」 줄이 붙고, 누르면 원문 면으로 넘어갑니다. 글의 시각 줄에는 사진 · 영상 버튼(수 표시)이 붙어, 누르면 그 글만 원문 면으로 넘어갑니다. 실제 데이터에서 개인 트윗의 약 30%에 사진 · 영상이, 약 40%가 인용 글(그중 90%에 사진)입니다.</li>
+        <li><b>두 면 같은 높이.</b> 번역과 X 카드 중 큰 쪽 높이로 맞춰 바꿔도 목록이 들썩이지 않습니다. 짧은 쪽 면은 남는 자리를 바탕으로 채우고, 첨부 줄은 번역 면 맨 아래에 붙습니다.</li>
+        <li><b>멤버 색 바탕.</b> 시트 전체가 멤버 아바타 평균색입니다. 글자색은 검정 · 흰색 중 대비가 더 큰 쪽을 고릅니다 — 지금 말풍선의 「밝기 0.42 기준」은 분홍 · 보라 같은 중간 밝기 색에서 흰 글자를 골라 번역 글자 대비가 3.4:1 까지 떨어졌습니다(기준 4.5:1). 번역 칸 · 칩 · 버튼은 글자색을 옅게 섞어 만듭니다. X 카드는 X 자체 색(사이트 테마)을 유지합니다.</li>
+        <li><b>전환 두 가지.</b> 머리 줄의 「번역 · 원문」 탭 = 모든 글 한꺼번에(기억됨). 글 하나만 = 그 글을 옆으로 밀기. 글마다 붙어 있던 탭은 없앴습니다. 원문 면의 X 카드 위는 밀기가 X 쪽으로 가므로, 글 위 시각 줄과 아래 점 줄을 밀어도 바뀝니다. 번역 면의 첨부 줄을 누르면 그 글만 원문으로 넘어갑니다.</li>
+        <li><b>멤버 순서</b> = 예고 보드와 같은 아라레 · 유노 · 노노카 · 리츠 · 미야코(<code>config/channels.json</code> 의 <code>channel_order</code>).</li>
+        <li><b>멤버 바꿀 때</b> 바탕색이 0.5초 동안 다음 멤버 색으로 부드럽게 넘어가고(위아래 옅은 그라데이션), 글 목록은 멤버 칩 방향에서 미끄러져 들어옵니다.</li>
+        <li><b>PC = 팝업 보드.</b> 가운데에 뜨는 보드(폭 540px). 끌어 닫기 없이 ✕ · 바깥 클릭 · Esc. 폰은 아래 시트 그대로(끌어 닫기). 속 구성 · 조작은 같습니다. 지금 PC 의 「마우스 올리면 미리보기 · 여러 개 고정」은 없앱니다.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>기기별로 다른 점(허용 범위)</h2>
+      <table>
+        <thead><tr><th>동작</th><th>폰</th><th>PC</th></tr></thead>
+        <tbody>
+          <tr><td>글 하나 전환</td><td>손가락 플릭</td><td>마우스 끌기 · 트랙패드 가로 밀기 · ←/→ 키</td></tr>
+          <tr><td>모양</td><td>아래에서 올라오는 시트(폭 전체 · 높이 86%)</td><td>가운데 팝업 보드(폭 540px · 높이 최대 660px)</td></tr>
+          <tr><td>닫기</td><td>아래로 끌기 · 바깥 탭 · ✕</td><td>바깥 클릭 · ✕ · Esc</td></tr>
+          <tr><td>공통</td><td colspan="2">머리 줄의 「번역 · 원문」 탭(모든 글), 밀어서 글 하나 전환, 첨부 줄, 멤버 칩 · 색 전환, 새 글 구분선, 글타래 표시</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section>
+      <h2>구현 메모</h2>
+      <ul>
+        <li>X 카드는 글이 화면 근처(한 화면 앞)에 오면 미리 불러와 높이를 압니다(지금처럼). 다 불러오기 전엔 사진 수 · 인용 여부로 높이를 어림해 자리를 잡아 둬서, 불러온 뒤 크기가 바뀌어도 대개 화면 밖에서 바뀝니다.</li>
+        <li>사진 · 영상 구분은 지금 데이터로 됩니다 — 영상은 썸네일 주소(<code>video_thumb</code> · <code>amplify</code>)로 압니다. 데이터 계약은 바꾸지 않습니다.</li>
+        <li>멤버 색 대비: 글자색은 검정/흰색 중 대비가 큰 쪽, 번역 칸 바탕은 글자와 반대쪽으로 섞습니다(검은 글자면 밝게, 흰 글자면 어둡게 — 지금 말풍선은 늘 흰색을 섞어 흰 글자일 때 대비가 깎임). 시안 5색 모두 번역 · 작은 글자 대비 4.5:1 이상을 측정으로 확인했습니다. 실제 아바타 색으로도 구현 때 다시 잽니다.</li>
+        <li>번역 줄바꿈 규칙(어절 단위 · 긴 URL 만 아무 데서나 · 문장부호 줄머리 금지)은 그대로.</li>
+      </ul>
+    </section>
+    <section>
+      <h2>마이크로인터랙션</h2>
+      <ul>
+        <li><b>엿보기(A1)</b>: 시트를 처음 두 번 열 때 화면의 첫 글이 왼쪽으로 살짝 밀렸다 돌아옵니다. 움직임 줄이기에서는 생략하고, 조작하면 바로 멈춥니다.</li>
+        <li><b>끄는 중 점(A2)</b>: 글을 끄는 만큼 현재 점은 줄고 다음 점은 커집니다. 넘어가는 선(25%)을 넘으면 다음 점이 한 번 커졌다 돌아오고 진동이 한 번 울립니다.</li>
+        <li><b>끝 고무줄(A3)</b>: 더 갈 면이 없는 쪽으로 끌면 끈 거리의 1/3(최대 24px)만큼만 따라오고, 놓으면 튕기며 제자리로 돌아옵니다.</li>
+        <li><b>전체 탭(A4)</b>: 머리 줄의 「번역 · 원문」 알약이 누른 쪽으로 미끄러집니다. 화면에 보이는 글만 위에서부터 40ms 간격으로 바뀌고, 화면 밖 글은 바로 바뀝니다.</li>
+        <li><b>멤버 칩(A5)</b>: 선택 알약이 칩 사이를 미끄러져 옮겨 갑니다. 칩 줄이 가로로 밀려 있어도 맞습니다.</li>
+        <li><b>첨부 줄(B1)</b>: 누르면 살짝 눌렸다가(98%), 원문 면으로 넘어간 뒤 사진 자리 테두리가 한 번 은은하게 빛납니다.</li>
+        <li><b>시트 열기 · 닫기(B2)</b>: PC 팝업은 누른 아바타 쪽에서 커지며 나오고, 닫을 때도 그쪽으로 줄어듭니다(열기 320ms · 닫기 210ms). 폰은 아래에서 올라오고 내려갑니다.</li>
+        <li><b>끌어 닫기(B3)</b>: 아래로 끄는 만큼 뒤 배경이 옅어집니다. 110px을 넘으면 손잡이 막대가 넓어지고 진동이 한 번 울리며, 놓으면 닫힙니다.</li>
+        <li><b>새 글(B4)</b>: 시트를 열면 「여기부터 새 글」 양쪽 선이 왼쪽에서 오른쪽으로 그어집니다. 닫아서 읽음 처리되면 보드의 안 읽은 배지가 작아지며 사라집니다.</li>
+        <li><b>X 카드 자리(B5)</b>: X 카드가 처음 화면에 들어오면 280ms 동안 쉬머가 한 번 지나가고, 같은 높이의 지금 내용으로 바뀝니다.</li>
+        <li><b>글타래 줄(C1)</b>: 글타래가 처음 화면에 들어올 때 세로줄이 위에서 아래로 한 번 그어집니다.</li>
+        <li><b>「새 글 N개 ↓」 칩(C2)</b>: 새 글 자리가 화면 아래에 있으면 칩이 뜨고, 누르면 그 자리로 부드럽게 갑니다. 그 자리가 보이면 사라집니다.</li>
+        <li><b>피드 끝 흐림(C3)</b>: 목록의 위 · 아래 끝을 옅게 흐려 더 있음을 알립니다. 이미 끝에 닿은 쪽은 흐리지 않습니다.</li>
+        <li><b>키보드 포커스(C4)</b>: Tab 으로 글에 가면 글 테두리에 글자색 2px 선이 생깁니다. ←/→ 로 그 글만 바꿉니다.</li>
+        <li><b>시각 줄 사진 · 영상 버튼</b>: 누르면 그 글만 원문 면으로 넘어가고, 원문 면에서 누르면 사진 자리 테두리가 한 번 빛납니다. 누르는 동안 시트 끌기는 시작되지 않습니다.</li>
+        <li><b>멤버 칩 줄 끌기</b>: 마우스 · 펜은 칩 줄을 끌어 옆으로 넘기고(8px 넘으면 끌기, 끈 뒤의 클릭은 무시), 터치는 손가락으로 밉니다. 넘치는 쪽 끝은 옅게 흐려집니다.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const NOW = Date.parse("2026-10-26T22:05:00Z");   // 10/27 07:05 KST
+  const KST = 9 * 3600e3;
+  // 순서 = 예고 보드(config/channels.json channel_order). 색 = 운영 사이트가 아바타에서 뽑은 실제 레인 색(render.js sampleLaneColor, 10-27 읽음)
+  const M = {
+    arale:  { name: "아라레", handle: "arale_yumemita", color: "rgb(225 187 139)" },
+    yuno:   { name: "유노", handle: "yuno_yumemita", color: "rgb(151 84 103)" },
+    nonoka: { name: "노노카", handle: "nonoka_yumemita", color: "rgb(197 179 197)" },
+    ritsu:  { name: "리츠", handle: "ritsu_yumemita", color: "rgb(193 201 214)" },
+    miyako: { name: "미야코", handle: "miyako_yumemita", color: "rgb(169 151 190)" },
+  };
+  // 글자색 = 검정(#17171b) · 흰색 중 바탕과 대비가 더 큰 쪽(지금 말풍선은 「밝기 0.42 기준」 — 중간 밝기 색에서 흰 글자를 골라 대비가 4.5:1 아래로 떨어졌다)
+  function ink(rgb) { const m = rgb.match(/(\d+)\D+(\d+)\D+(\d+)/); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; const L = 0.2126 * f(+m[1]) + 0.7152 * f(+m[2]) + 0.0722 * f(+m[3]); const Ld = 0.0089; return (L + 0.05) / (Ld + 0.05) >= 1.05 / (L + 0.05) ? "#17171b" : "#ffffff"; }
+  for (const k in M) M[k].ink = ink(M[k].color);
+  const P = ["photo"];
+  const T = {
+    ritsu: [
+      { id: "r1", at: "2026-10-26T10:49:21Z", ko: "10/30의 파르월드 카드게임 부스터 팩 제2탄 “깨어난 전설” 출시 기념 방송에 출연합니다!! 와! 너무 기대됩니다!!!!! 잘 부탁드립니다🌸", quote: { ko: "📢 #파르월드카드게임【공지】\n\n🎉🎊부스터팩 2탄 “잠든 전설”\n출시 기념 방송 결정🎊🎉\n\n공식 인플루언서인 미네츠키 리츠 씨, 센고쿠 유노 씨, 키타니 프로듀서가 출연✨\n\n📅10월 30일(금) 19:00～\n\n📺YouTube 공식 채널에서 생방송!", media: P } },
+      { id: "r2", at: "2026-10-26T10:50:39Z", ko: "리츠짱 퀴즈★ 유메미타들은 각각 어떤 도시락을 먹었을까~?", media: P },
+      { id: "r3", at: "2026-10-26T14:30:58Z", ko: "【방송 예정】\n🩵 ･･････････････････････ 🩵\n\n10월 27일\n　START 아침 7:00〜\n\n좋은 아침 리츠짱☀제8회!\n\n↻ URL\nhttps://www.youtube.com/live/CujtCeV3xp0\n\n🩵 ･･････････････････････ 🩵", media: P },
+      { id: "r4", at: "2026-10-26T15:15:00Z", ko: "오늘도 고마웠어요! 잘 자요🌙" },
+      { id: "r5", at: "2026-10-26T22:01:06Z", ko: "시작합니다!", reply_to: "r3", unread: true },
+    ],
+    arale: [
+      { id: "a1", at: "2026-10-25T13:38:01Z", ko: "감사했습니다…!✨️\n사실 꽤 긴장했어요……!\n게키크로 씨 콜라보 온라인 판매는\n11/23(월) 17:59까지야~!👕\n같이 맞춰 입을 수 있겠네👍\n(재킷 뒷면 멋있어✨️⋆͛📢)\n#bfj2026", media: P, quote: { ko: "⋱ 𝐁𝐮𝐬𝐡𝐢𝐫𝐨𝐚𝐝 𝐅𝐚𝐬𝐡𝐢𝐨𝐧 𝐉𝐨𝐮𝐫𝐧𝐞𝐲 ⋰\n\n무겐다이 뮤타입×게키크로\n현장에서 봐주신 여러분, 감사합니다🛸\n\n선보인 룩을 공개합니다\n\n#bfj2026", media: P } },
+      { id: "a2", at: "2026-10-26T13:32:57Z", ko: "🔴 ━━━ 방송 시작 ━━━ 🔴\n\n┊ 10/26(月) 22:30〜┊#イ中田丁なう\n\n┊ 노래 방송 ┊전체로 정돈된 사람!!의 오늘\n\n🔗 https://youtube.com/live/tHO5UZRO514", media: P, unread: true },
+      { id: "a3", at: "2026-10-26T15:40:14Z", ko: "잘 자요🌃\n좋은 꿈 꿀 수 있길 바래요🌙\n귀여워!", unread: true },
+    ],
+    nonoka: [
+      { id: "n1", at: "2026-10-25T15:21:56Z", ko: "♡🐰 Bushiroad Fashion Journe 🩹♡\n\n무겐다이 뮤타입×게키크로✨\n\n감사합니다🎶\n긴장해서 걸음걸이를 잊어버렸어요🤣\n콜라보 아이템, 꼭 받아 주세요!🥹\n\n#bfj2026", media: P, quote: { ko: "⋱ 𝐁𝐮𝐬𝐡𝐢𝐫𝐨𝐚𝐝 𝐅𝐚𝐬𝐡𝐢𝐨𝐧 𝐉𝐨𝐮𝐫𝐧𝐞𝐲 ⋰\n\n무겐다이 뮤타입×게키크로\n현장에서 봐주신 여러분, 감사합니다🛸\n\n선보인 룩을 공개합니다\n\n#bfj2026", media: P } },
+      { id: "n2", at: "2026-10-25T15:36:40Z", ko: "모두가 올려준 노노카의 런웨이 wwww\n꽤 열심히 했는데!!!! 대단해, 자꾸 움직이고 있어 🤣🤣🤣🤣🤣🤣" },
+    ],
+    miyako: [
+      { id: "m1", at: "2026-10-26T10:29:01Z", ko: "𝕝𝕠𝕧𝕖𝕝𝕪 🎀⚡️𝒸ℴℴ𝓁\n#bfj2026", media: ["photo", "photo"], unread: true },
+    ],
+    yuno: [
+      { id: "y1", at: "2026-10-26T02:27:07Z", ko: "Bushiroad Fashion Journey, 감사합니다!\n\n옷의 귀여움과 멋짐을 모두에게 전할 수 있도록 열심히 걸었어요!\n\n게키쿠로 씨의 아이템, 꼭 같이 맞추자!", quote: { ko: "💫Bushiroad Fashion Journey💫\n\n뱅드림!에서、\n무겐다이 뮤타입가 출연했습니다🛸\n\n방문과 응원에 감사드립니다✨\n\n오늘 멤버가 착용한 게키크로 콜라보 아이템도 놓치지 마세요👀\n\n#bfj2026 #ゆめみた", media: P } },
+    ],
+  };
+  const read = new Set();
+  let cur = null, defFace = 0, lastFocus = null;
+  const $ = (id) => document.getElementById(id);
+  function h(tag, attrs, kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") el.className = v; else if (k === "text") el.textContent = v;
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v); else if (v !== null && v !== undefined) el.setAttribute(k, v);
+    }
+    for (const c of [].concat(kids || [])) if (c) el.append(c);
+    return el;
+  }
+  const NS = "http://www.w3.org/2000/svg";
+  function icon(d, vb, sw) { const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", vb || "0 0 12 12"); s.setAttribute("aria-hidden", "true"); for (const part of [].concat(d)) { const p = document.createElementNS(NS, "path"); p.setAttribute("d", part); p.setAttribute("fill", "none"); p.setAttribute("stroke", "currentColor"); p.setAttribute("stroke-width", sw || "1.4"); p.setAttribute("stroke-linecap", "round"); p.setAttribute("stroke-linejoin", "round"); s.append(p); } return s; }
+  const IC = {
+    reply: ["M3 1.5v4.2a2 2 0 0 0 2 2h4.2", "M7.2 5.5l2 2.2-2 2.2"],
+    photo: ["M2 4.5A1.5 1.5 0 0 1 3.5 3h1l.8-1h3.4l.8 1h1A1.5 1.5 0 0 1 12 4.5v5A1.5 1.5 0 0 1 10.5 11h-7A1.5 1.5 0 0 1 2 9.5z", "M9 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"],
+    video: ["M2 4a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 10 4v6a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10z", "M10 6l2.5-1.5v5L10 8"],
+    out: ["M5 2H2.5v7.5H10V7", "M7 2h3v3", "M10 2L5.5 6.5"],
+  };
+  const kst = (ms) => new Date(ms + KST);
+  const pad = (n) => String(n).padStart(2, "0");
+  function hm(ms) { const d = kst(ms); return pad(d.getUTCHours()) + ":" + pad(d.getUTCMinutes()); }
+  function when(ms) { const d = kst(ms), n = kst(NOW); const same = d.getUTCMonth() === n.getUTCMonth() && d.getUTCDate() === n.getUTCDate(); return (same ? "" : (d.getUTCMonth() + 1) + "/" + d.getUTCDate() + " ") + hm(ms); }
+  function ago(ms) { const m = Math.max(0, Math.round((NOW - ms) / 60000)); if (m < 1) return "방금"; if (m < 60) return m + "분 전"; const hh = Math.floor(m / 60); if (hh < 24) return hh + "시간 전"; return Math.floor(hh / 24) + "일 전"; }
+  function gap(ms) { const m = Math.round(ms / 60000); if (m < 60) return m + "분 뒤"; const hh = Math.floor(m / 60), mm = m % 60; if (hh < 24) return hh + "시간" + (mm ? " " + mm + "분" : "") + " 뒤"; return Math.floor(hh / 24) + "일 뒤"; }
+  const unreadOf = (ck) => T[ck].filter((t) => t.unread && !read.has(t.id)).length;
+  function count(list) { const p = (list || []).filter((k) => k === "photo").length, v = (list || []).filter((k) => k === "video").length; return { p, v }; }
+  function attLabel(t) {
+    const own = count(t.media), q = count(t.quote && t.quote.media), parts = [];
+    if (own.p) parts.push("사진 " + own.p + "장"); if (own.v) parts.push("영상 " + own.v + "개");
+    if (q.p || q.v) parts.push("인용 글 " + [q.p ? "사진 " + q.p + "장" : "", q.v ? "영상 " + q.v + "개" : ""].filter(Boolean).join(" · "));
+    return { text: parts.join(" · "), photo: own.p + q.p, video: own.v + q.v };
+  }
+
+  const board = $("board");
+  for (const [ck, m] of Object.entries(M)) {
+    const n = unreadOf(ck), last = T[ck][T[ck].length - 1];
+    const av = h("button", { class: "lane__av", type: "button", style: "--m:" + m.color + ";--mi:" + m.ink, "data-ck": ck, onclick: (e) => open(ck, e.currentTarget) }, [m.name.slice(0, 1), n ? h("span", { class: "lane__badge", text: String(n), "aria-hidden": "true" }) : null]);
+    av.setAttribute("aria-label", m.name + " 트윗 보기" + (n ? ", 새 글 " + n + "개" : ""));
+    board.append(h("div", { class: "lane" }, [av, h("div", { class: "lane__body" }, [h("span", { class: "lane__nm", text: m.name }), h("span", { class: "lane__sub", text: "최근 트윗 " + ago(Date.parse(last.at)) + " · " + last.ko.split("\n")[0] })])]));
+  }
+  function refreshBadges() {
+    for (const av of board.querySelectorAll(".lane__av")) {
+      const ck = av.dataset.ck, n = unreadOf(ck), b = av.querySelector(".lane__badge");
+      if (n && b) b.textContent = String(n);
+      else if (!n && b && !b.dataset.out) {   // B4: 읽음 처리 → 배지가 작아지며 사라짐(200ms 뒤 제거)
+        b.dataset.out = "1";
+        b.animate(reduce() ? [{ opacity: 1 }, { opacity: 0 }] : [{ transform: "scale(1)" }, { transform: "scale(0)" }], { duration: 200, easing: "ease-in", fill: "forwards" });
+        setTimeout(() => b.remove(), 200);
+      }
+      av.setAttribute("aria-label", M[ck].name + " 트윗 보기" + (n ? ", 새 글 " + n + "개" : ""));
+    }
+  }
+
+  function units(list) {
+    const byId = Object.fromEntries(list.map((t) => [t.id, t]));
+    const root = (t) => { let r = t, k = 0; while (r.reply_to && byId[r.reply_to] && k++ < 10) r = byId[r.reply_to]; return r; };
+    const g = new Map();
+    for (const t of list) { const r = root(t).id; if (!g.has(r)) g.set(r, []); g.get(r).push(t); }
+    const out = [...g.values()].map((x) => x.sort((a, b) => Date.parse(a.at) - Date.parse(b.at)));
+    out.sort((a, b) => Date.parse(a[a.length - 1].at) - Date.parse(b[b.length - 1].at));
+    return out;
+  }
+
+  // X 카드 자리 표시 — 실제로는 X 공식 임베드(iframe). 사진 수 · 인용 여부만큼 크기를 흉내 낸다
+  function xcard(t) {
+    const m = M[cur], own = count(t.media), lines = Math.min(6, t.ko.split("\n").length);
+    const kids = [h("div", { class: "xc__top" }, [h("span", { class: "xc__av" }), h("div", {}, [h("div", { class: "xc__nm", text: m.name }), h("div", { class: "xc__hd", text: "@" + m.handle })])])];
+    for (let i = 0; i < lines; i++) kids.push(h("div", { class: "xc__ln", style: "width:" + (92 - (i * 13) % 50) + "%" }));
+    if (own.p === 1 || own.v === 1) kids.push(h("div", { class: "xc__img", text: own.v ? "영상" : "사진" }));
+    if (own.p >= 2) kids.push(h("div", { class: "xc__imgs" }, Array.from({ length: Math.min(4, own.p) }, () => h("div", { class: "xc__img", text: "사진" }))));
+    if (t.quote) kids.push(h("div", { class: "xc__qt" }, [h("div", { class: "xc__hd", text: "인용한 글" }), h("div", { class: "xc__ln" }), h("div", { class: "xc__ln", style: "width:70%" }), (t.quote.media || []).length ? h("div", { class: "xc__img", text: "사진" }) : null]));
+    kids.push(h("div", { class: "xc__note", text: "X 공식 카드 자리" }));
+    return h("div", { class: "xc is-skel" }, kids);
+  }
+
+  function card(t, prev, isRoot) {
+    const at = Date.parse(t.at), isUnread = t.unread && !read.has(t.id), att = attLabel(t);
+    const timeKids = prev ? [icon(IC.reply), h("strong", { text: "이어서" }), document.createTextNode(" · " + when(at) + " · " + gap(at - Date.parse(prev.at)))] : [document.createTextNode(when(at) + " · " + ago(at))];
+    if (isUnread) timeKids.push(h("span", { class: "newtag", text: "새 글" }));
+    const koKids = [h("p", { class: "ko__txt", text: t.ko })];
+    if (t.quote) koKids.push(h("div", { class: "ko__q" }, [h("span", { text: "인용한 글 번역" }), document.createTextNode(t.quote.ko)]));
+    let setFace;
+    if (att.text) koKids.push(h("button", { class: "att", type: "button", onclick: () => { setFace(1, true); setTimeout(pulseX, 280); } }, [h("span", { class: "att__ic" }, [att.photo ? icon(IC.photo, "0 0 14 14") : null, att.video ? icon(IC.video, "0 0 14 14") : null]), h("span", { class: "att__txt", text: att.text }), h("span", { class: "att__go", text: "원문에서 보기 ›" })]));
+    const ko = h("section", { class: "face", "aria-label": "번역" }, [h("div", { class: "ko" }, koKids)]);
+    const xface = h("section", { class: "face", "aria-label": "X 원문 카드" }, [xcard(t), h("div", { class: "facegap" })]);
+    const track = h("div", { class: "track" }, [ko, xface]);
+    const dots = h("div", { class: "dots", "aria-hidden": "true" }, [h("i", { class: "on" }), h("i")]);
+    const meta = h("div", { class: "tw__meta" }, [h("span", { class: "tw__time" }, timeKids),
+        att.text ? h("button", { class: "tw__media", type: "button", title: att.text, "aria-label": att.text + ", 원문에서 보기", onclick: () => { if (face === 1) { pulseX(); return; } setFace(1, true); setTimeout(pulseX, 280); } }, [
+          att.photo ? h("span", { class: "tw__mi" }, [icon(IC.photo, "0 0 14 14"), h("span", { class: "tw__mn", text: String(att.photo) })]) : null,
+          att.video ? h("span", { class: "tw__mi" }, [icon(IC.video, "0 0 14 14"), h("span", { class: "tw__mn", text: String(att.video) })]) : null]) : null,
+        h("a", { class: "tw__x", href: "https://x.com/" + M[cur].handle, target: "_blank", rel: "noopener", "aria-label": "X 에서 열기" }, [icon(IC.out)])]);
+    const art = h("article", { class: "tw" + (isRoot ? " is-root" : ""), tabindex: "0", "aria-roledescription": "트윗, 좌우로 밀어 번역 · 원문 전환", "aria-label": (prev ? "이어진 글, " : "") + when(at) + (att.text ? ", " + att.text : "") }, [meta, track, dots]);
+    let face = 0, prog = 0, st, drag = null, live = false, rub = 0, pastMid = false;
+    // A2: 끄는 중 점 — 0 = 첫 면, 1 = 둘째 면. 활성 점 14→6px · 다음 점 6→14px 연속 보간(끄는 동안만 inline 폭)
+    function clearDots() { for (const d of dots.children) d.style.width = ""; dots.classList.remove("is-drag"); }
+    function setDots(t) {
+      if (reduce() || t <= 0.001 || t >= 0.999) { clearDots(); return; }
+      dots.classList.add("is-drag");
+      dots.children[0].style.width = (14 - 8 * t).toFixed(2) + "px";
+      dots.children[1].style.width = (6 + 8 * t).toFixed(2) + "px";
+    }
+    function pulseDot(k) { if (!reduce()) dots.children[k].animate([{ transform: "scale(1.25)" }, { transform: "scale(1)" }], { duration: 120, easing: "ease-out" }); }
+    // 끄는 중(live)에만 점 진행 · 25% 선 넘음 판정. 넘는 순간 한 번 점 펄스 + 진동
+    function onTrackScroll() {
+      if (!live) return;
+      const t = Math.min(1, Math.max(0, track.scrollLeft / Math.max(1, track.clientWidth)));
+      setDots(t);
+      const past = face === 0 ? t > 0.25 : t < 0.75;
+      if (past !== pastMid) { pastMid = past; if (past) { pulseDot(face === 0 ? 1 : 0); buzz(); } }
+    }
+    // A3: 고무줄 — transform 만 쓴다(scrollLeft 는 그대로). 놓으면 스프링으로 복귀
+    function setRub(v) { rub = v; track.style.transform = v ? "translateX(" + v.toFixed(2) + "px)" : ""; }
+    function springBack() { const from = rub; setRub(0); if (from) runT(track, [{ transform: "translateX(" + from.toFixed(2) + "px)" }, { transform: "translateX(0px)" }], { duration: 420, easing: SPRING }); }
+    // B1: 첨부 줄 → 원문 면에서 사진 자리(없으면 카드) 테두리 한 번 빛냄
+    function pulseX() { const f = art.querySelector(".xc__img") || art.querySelector(".xc"); if (face === 1 && f && f.animate) f.animate([{ boxShadow: "0 0 0 0 transparent" }, { boxShadow: "0 0 0 4px var(--focus)", offset: 0.4 }, { boxShadow: "0 0 0 0 transparent" }], { duration: 700, easing: "ease-out" }); }
+    setFace = function (i, smooth, quiet) {
+      face = i;
+      dots.children[0].classList.toggle("on", i === 0); dots.children[1].classList.toggle("on", i === 1);
+      clearDots(); pastMid = false;
+      const x = i * track.clientWidth;
+      if (Math.abs(track.scrollLeft - x) > 1) { prog = Date.now(); track.scrollTo({ left: x, behavior: smooth && !reduce() ? "smooth" : "auto" }); }
+      if (i === 1 && smooth && !quiet) hint("X 카드 위에서는 밀기가 X 화면으로 가요. 글 위 시각 줄이나 아래 점 줄을 밀면 번역으로 돌아와요.");
+    };
+    art._setFace = setFace;
+    art.addEventListener("keydown", (e) => { if (e.target !== art) return; if (e.key === "ArrowRight") { setFace(1, true); e.preventDefault(); } if (e.key === "ArrowLeft") { setFace(0, true); e.preventDefault(); } });
+    function settle() { if (drag && drag.on) return; if (Date.now() - prog < 600 && Math.abs(track.scrollLeft - face * track.clientWidth) > 2) return; prog = 0; const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth)); if (i !== face) setFace(i, false); }
+    track.addEventListener("scroll", () => { onTrackScroll(); clearTimeout(st); st = setTimeout(settle, 140); }, { passive: true });
+    track.addEventListener("scrollend", () => { clearTimeout(st); settle(); });
+    // 끌기: 마우스는 글 어디서나, 손가락은 시각 줄 · 점 줄에서(번역 면은 브라우저 가로 스냅 스크롤이 처리, X 카드 위는 iframe 이 가져간다)
+    const startDrag = (e) => { live = true; stopTrack(track); if (e.button > 0 || e.target.closest("button, a")) return; drag = { x: e.clientX, y: e.clientY, s: track.scrollLeft, on: false }; };
+    // 손가락(터치)은 track 을 브라우저가 직접 밀므로 live 만 켠다(진행 중 전환 취소 포함)
+    track.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") startDrag(e); else { live = true; stopTrack(track); } });
+    meta.addEventListener("pointerdown", startDrag);
+    dots.addEventListener("pointerdown", startDrag);
+    window.addEventListener("pointermove", (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.on) { if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return; drag.on = true; track.classList.add("is-grabbing"); document.body.classList.add("no-select"); }
+      window.getSelection()?.removeAllRanges();
+      // A3: 더 갈 면이 없는 쪽(번역 면에서 오른쪽 · 원문 면에서 왼쪽)은 1/3 만 따라오고 최대 24px
+      const edge = (face === 0 && dx > 0) || (face === 1 && dx < 0);
+      if (edge && !reduce()) setRub(Math.sign(dx) * Math.min(24, Math.abs(dx) / 3));
+      else { if (rub) setRub(0); track.scrollLeft = drag.s - dx; } });
+    window.addEventListener("pointerup", () => { live = false; if (!drag) return; const was = drag.on; drag = null; if (!was) return;
+      const r = track.scrollLeft / Math.max(1, track.clientWidth);   // 스냅을 되돌리기 전에 뗀 위치를 읽는다(먼저 되돌리면 브라우저가 가까운 면으로 붙여 버림)
+      const to = r > (face ? 0.75 : 0.25) ? 1 : 0;
+      track.classList.remove("is-grabbing"); document.body.classList.remove("no-select"); window.getSelection()?.removeAllRanges();
+      springBack();
+      setFace(to, true); });
+    window.addEventListener("pointercancel", () => { live = false; });
+    requestAnimationFrame(() => setFace(defFace, false));
+    return art;
+  }
+
+  let watchIO = null, anchorEl = null;   // watchIO: 피드 안 관찰(글타래 · X 카드 · 새 글 칩), anchorEl: 「여기부터 새 글」 자리
+  function render() {
+    const feed = $("feed"); feed.replaceChildren();
+    if (watchIO) { watchIO.disconnect(); watchIO = null; }
+    let placed = false, anchor = null;
+    for (const u of units(T[cur])) {
+      const wrap = u.length > 1 ? h("div", { class: "chain" + (reduce() ? "" : " wait"), role: "group", "aria-label": "글타래: 원글과 이어진 글 " + (u.length - 1) + "개" }) : null;
+      u.forEach((t, i) => {
+        if (!placed && t.unread && !read.has(t.id)) { placed = true; anchor = h("div", { class: "newline", text: "여기부터 새 글" }); (wrap && i > 0 ? wrap : feed).append(anchor); }
+        (wrap || feed).append(card(t, wrap && i > 0 ? u[i - 1] : null, wrap && i === 0));
+      });
+      if (wrap) feed.append(wrap);
+    }
+    anchorEl = anchor;
+    const chip = $("newChip");
+    chip.textContent = "새 글 " + unreadOf(cur) + "개 ↓"; chip.classList.remove("is-on");
+    requestAnimationFrame(() => {
+      if (anchor) feed.scrollTop = anchor.offsetTop - 10; else feed.scrollTop = feed.scrollHeight;
+      fadeEdges(); watchFeed(feed);
+    });
+  }
+  // 칩은 한 번만 만들고 상태만 고친다 — 알약(A5)이 칩 사이를 미끄러지려면 칩 노드가 유지돼야 한다
+  const chipEl = {};
+  let mPill = null;
+  function members(instant) {
+    const nav = $("members");
+    if (!mPill) {
+      mPill = h("span", { class: "mpill", "aria-hidden": "true" }); nav.append(mPill);
+      for (const [ck, m] of Object.entries(M)) {
+        chipEl[ck] = h("button", { class: "chip", type: "button", style: "--c:" + m.color, onclick: () => switchTo(ck) }, [h("i"), document.createTextNode(m.name)]);
+        nav.append(chipEl[ck]);
+      }
+    }
+    for (const ck of Object.keys(M)) {
+      const chip = chipEl[ck], n = unreadOf(ck);
+      chip.setAttribute("aria-current", String(ck === cur));
+      let b = chip.querySelector("b");
+      if (n && ck !== cur) { if (!b) { b = h("b"); chip.append(b); } b.textContent = String(n); b.setAttribute("aria-label", "새 글 " + n + "개"); }
+      else if (b) b.remove();
+    }
+    placePill(mPill, chipEl[cur], instant);
+    keepChip(instant); fadeMembers();
+  }
+  // 멤버 칩 줄: 현재 칩이 보이도록 줄의 scrollLeft 를 직접 맞춘다(페이지 스크롤은 건드리지 않음)
+  const mem = $("members");
+  let mdrag = null, mMoved = false;
+  function keepChip(instant) {
+    const chip = chipEl[cur]; if (!chip) return;
+    const pad = 12, vl = mem.scrollLeft, vr = vl + mem.clientWidth, l = chip.offsetLeft, r = l + chip.offsetWidth;
+    let to = vl; if (l - pad < vl) to = l - pad; else if (r + pad > vr) to = r + pad - mem.clientWidth;
+    if (Math.abs(to - vl) > 0.5) mem.scrollTo({ left: to, behavior: instant || reduce() ? "auto" : "smooth" });
+  }
+  // 넘칠 때만 양 끝 흐림 — 끝에 닿은 쪽은 at-l / at-r 로 끈다
+  function fadeMembers() { const over = mem.scrollWidth > mem.clientWidth + 1; mem.classList.toggle("at-l", !over || mem.scrollLeft <= 1); mem.classList.toggle("at-r", !over || mem.scrollLeft + mem.clientWidth >= mem.scrollWidth - 1); }
+  // 마우스 · 펜 끌기(터치는 CSS touch-action: pan-x 로 브라우저가 민다). 8px 넘으면 끌기, 그 뒤 오는 click 은 칩 전환 안 함
+  mem.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch" || e.button > 0) return; mdrag = { x: e.clientX, s: mem.scrollLeft, on: false }; mMoved = false; });
+  window.addEventListener("pointermove", (e) => {
+    if (!mdrag) return; const dx = e.clientX - mdrag.x;
+    if (!mdrag.on) { if (Math.abs(dx) < 8) return; mdrag.on = true; mMoved = true; mem.classList.add("is-grabbing"); document.body.classList.add("no-select"); }
+    window.getSelection()?.removeAllRanges(); mem.scrollLeft = mdrag.s - dx;
+  });
+  const memEnd = () => { if (!mdrag) return; const was = mdrag.on; mdrag = null; if (was) { mem.classList.remove("is-grabbing"); document.body.classList.remove("no-select"); window.getSelection()?.removeAllRanges(); } };
+  window.addEventListener("pointerup", memEnd); window.addEventListener("pointercancel", memEnd);
+  mem.addEventListener("click", (e) => { if (mMoved) { mMoved = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  mem.addEventListener("scroll", fadeMembers, { passive: true });
+  function markRead(ck) { for (const t of T[ck]) if (t.unread) read.add(t.id); refreshBadges(); }
+  function head() { const m = M[cur], s = $("sheet"); s.style.setProperty("--m", m.color); s.style.setProperty("--mi", m.ink); s.style.setProperty("--paper", m.ink === "#ffffff" ? "rgba(0, 0, 0, 0.2)" : "rgba(255, 255, 255, 0.38)"); $("shNm").textContent = m.name; $("shHd").textContent = "@" + m.handle + " · 최근 48시간"; }
+  function switchTo(ck) {
+    if (ck === cur) return;
+    const keys = Object.keys(M), dir = keys.indexOf(ck) > keys.indexOf(cur) ? 1 : -1;
+    if (cur) markRead(cur); cur = ck; head(); render(); members();
+    const feed = $("feed"); feed.classList.remove("is-swapping"); feed.style.setProperty("--from", (dir * 24) + "px"); void feed.offsetWidth; feed.classList.add("is-swapping");
+  }
+
+  const sheet = $("sheet"), scrim = $("scrim");
+  function open(ck, from) {
+    lastFocus = from || null; cur = ck; head(); render(); members(true);
+    // B2: PC 팝업은 누른 아바타 쪽에서 커진다 — transform-origin 을 아바타 중심(시트 박스 안 %)으로
+    if ($("stage").clientWidth > 640 && from) {
+      const r = sheet.getBoundingClientRect(), a = from.getBoundingClientRect();
+      sheet.style.transformOrigin = ((a.left + a.width / 2 - r.left) / Math.max(1, r.width) * 100).toFixed(1) + "% " + ((a.top + a.height / 2 - r.top) / Math.max(1, r.height) * 100).toFixed(1) + "%";
+    } else sheet.style.transformOrigin = "";
+    sheet.classList.add("is-open"); scrim.classList.add("is-on"); sheet.style.removeProperty("--drag"); scrim.style.opacity = "";
+    syncPills(true);
+    const nl = $("feed").querySelector(".newline"); if (nl && !reduce()) nl.classList.add("draw");   // B4: 여는 때 한 번
+    setTimeout(() => sheet.focus(), 30);
+    peek();
+  }
+  function close() {
+    if (!sheet.classList.contains("is-open")) return;
+    markRead(cur); sheet.classList.remove("is-open"); scrim.classList.remove("is-on"); sheet.style.removeProperty("--drag"); scrim.style.opacity = "";
+    cancelPeek(); $("newChip").classList.remove("is-on");
+    if (lastFocus) lastFocus.focus();
+  }
+  $("shClose").addEventListener("click", close);
+  scrim.addEventListener("click", close);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+  // 손잡이 · 머리를 아래로 끌어 닫기 — PC(마우스) · 폰(터치) 같은 동작
+  let sd = null, armed = false;
+  for (const el of [$("grab"), $("shHead")]) {
+    el.addEventListener("pointerdown", (e) => { if (e.target.closest("button, .seg") || $("stage").clientWidth > 640) return; sd = { y: e.clientY }; armed = false; el.setPointerCapture(e.pointerId); sheet.classList.add("is-dragging"); scrim.classList.add("is-drag"); cancelPeek(); });
+    el.addEventListener("pointermove", (e) => { if (!sd) return; const dy = Math.max(0, e.clientY - sd.y);
+      sheet.style.setProperty("--drag", dy + "px");
+      scrim.style.opacity = String(Math.max(0, 1 - dy / 300));   // B3: 끄는 만큼 뒤 배경이 옅어짐
+      const over = dy > 110;                                       // 닫힘 선을 넘는 순간 막대 넓힘 + 진동 한 번
+      if (over !== armed) { armed = over; sheet.classList.toggle("is-armed", over); if (over) buzz(); } });
+    const end = (e) => { if (!sd) return; const dy = Math.max(0, e.clientY - sd.y); sd = null; armed = false; sheet.classList.remove("is-dragging", "is-armed"); scrim.classList.remove("is-drag"); scrim.style.opacity = ""; if (dy > 110) close(); else sheet.style.removeProperty("--drag"); };
+    el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
+  }
+
+  function setDef(i) { defFace = i; $("defKo").setAttribute("aria-pressed", String(i === 0)); $("defX").setAttribute("aria-pressed", String(i === 1)); syncPills(false); applyAll(i); try { localStorage.setItem("mew:face", String(i)); } catch (e) { /* 저장 못 해도 동작 */ } }
+  $("defKo").addEventListener("click", () => setDef(0));
+  $("defX").addEventListener("click", () => setDef(1));
+  try { if (localStorage.getItem("mew:face") === "1") { defFace = 1; $("defKo").setAttribute("aria-pressed", "false"); $("defX").setAttribute("aria-pressed", "true"); } } catch (e) { /* 무시 */ }
+
+  function setSize(phone) { $("stage").classList.toggle("is-phone", phone); $("szWide").setAttribute("aria-pressed", String(!phone)); $("szPhone").setAttribute("aria-pressed", String(phone)); requestAnimationFrame(() => { for (const a of document.querySelectorAll(".tw")) a._setFace && a._setFace(defFace, false); syncPills(true); }); }
+  $("szWide").addEventListener("click", () => setSize(false));
+  $("szPhone").addEventListener("click", () => setSize(true));
+
+  let ht;
+  function hint(msg) { const el = $("hint"); el.textContent = msg; el.classList.add("is-on"); clearTimeout(ht); ht = setTimeout(() => el.classList.remove("is-on"), 2600); }
+  function reduce() { return window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches; }
+
+  // ── 마이크로인터랙션 공통 ──
+  const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)", SPRING = "cubic-bezier(0.25, 1.4, 0.45, 1)";   // CSS 토큰 --ease · --spring 과 같은 값
+  function buzz() { try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) { /* 진동 없는 기기 */ } }
+  // 진행 중 WAAPI 취소(새 조작이 즉시 끊는다). 필수 상태는 여기 의존하지 않는다
+  function stopTrack(el) { if (el._anim) { try { el._anim.cancel(); } catch (e) { /* 이미 끝남 */ } el._anim = null; } el.style.transform = ""; }
+  function runT(el, frames, opts) { stopTrack(el); const a = el.animate(frames, opts); el._anim = a; a.onfinish = () => { if (el._anim === a) el._anim = null; }; return a; }
+  // 알약 위치 · 크기 — 선택 요소의 offset 으로 맞춘다(instant 면 미끄러짐 없이)
+  function placePill(pill, el, instant) {
+    if (!pill || !el) return;
+    if (instant) pill.style.transition = "none";
+    pill.style.top = el.offsetTop + "px"; pill.style.height = el.offsetHeight + "px";
+    pill.style.width = el.offsetWidth + "px"; pill.style.transform = "translateX(" + el.offsetLeft + "px)";
+    if (instant) { void pill.offsetWidth; pill.style.transition = ""; }
+  }
+  function syncPills(instant) { for (const seg of document.querySelectorAll(".seg")) placePill(seg.querySelector(".pill"), seg.querySelector('[aria-pressed="true"]'), instant); }
+  // A4: 전체 전환 — 화면에 보이는 글만 위에서 아래로 40ms 간격, 나머지는 즉시. 다시 누르면 남은 예약 취소
+  let pendT = [];
+  function applyAll(i) {
+    for (const t of pendT) clearTimeout(t); pendT = [];
+    const f = $("feed"), fr = f.getBoundingClientRect(), shown = sheet.classList.contains("is-open");
+    let k = 0;
+    for (const a of f.querySelectorAll(".tw")) {
+      const r = a.getBoundingClientRect();
+      if (shown && r.bottom > fr.top && r.top < fr.bottom) { const d = 40 * k++; if (d) pendT.push(setTimeout(() => a._setFace(i, true, true), d)); else a._setFace(i, true, true); }
+      else a._setFace(i, false, true);
+    }
+  }
+  // C3: 끝에 닿은 쪽은 흐림을 끈다
+  function fadeEdges() { const f = $("feed"); f.classList.toggle("at-top", f.scrollTop <= 1); f.classList.toggle("at-bottom", f.scrollTop + f.clientHeight >= f.scrollHeight - 1); }
+  // A1: 엿보기 — 시트를 연 처음 두 번(localStorage mew:peek, 실패하면 이 화면에서 센 값), 보이는 첫 글을 24px 밀었다 돌아온다
+  let peekT = 0, peekEl = null, memPeek = 0;
+  function cancelPeek() { clearTimeout(peekT); peekT = 0; if (peekEl) stopTrack(peekEl); peekEl = null; }
+  function peek() {
+    if (reduce()) return;
+    let n = memPeek;
+    try { n = Math.max(n, Number(localStorage.getItem("mew:peek")) || 0); } catch (e) { /* 읽기 실패: 이 화면에서 센 값만 */ }
+    if (n >= 2) return;
+    memPeek = n + 1;
+    try { localStorage.setItem("mew:peek", String(n + 1)); } catch (e) { /* 저장 실패해도 보여 준다 */ }
+    peekT = setTimeout(() => {
+      peekT = 0;
+      const f = $("feed"), fr = f.getBoundingClientRect();
+      const art = [...f.querySelectorAll(".tw")].find((a) => { const r = a.getBoundingClientRect(); return r.bottom > fr.top + 8 && r.top < fr.bottom - 8; });
+      const tr = art && art.querySelector(".track");
+      if (!tr || !sheet.classList.contains("is-open")) return;
+      peekEl = tr;
+      runT(tr, [{ transform: "translateX(0px)" }, { transform: "translateX(-24px)", offset: 0.5 }, { transform: "translateX(0px)" }], { duration: 260, easing: EASE });
+    }, 360);
+  }
+  // C1 · B5 · C2: 피드 안에서 보이는지 관찰 — 글타래 세로줄(한 번), X 카드 쉬머(처음 보일 때 280ms), 「새 글 ↓」 칩(새 글 자리가 아래에 있을 때)
+  function watchFeed(feed) {
+    const chip = $("newChip");
+    watchIO = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        const el = en.target;
+        if (el === anchorEl) { chip.classList.toggle("is-on", !en.isIntersecting && !!en.rootBounds && en.boundingClientRect.top >= en.rootBounds.bottom); continue; }
+        if (!en.isIntersecting) continue;
+        watchIO.unobserve(el);
+        if (el.classList.contains("chain")) { el.classList.remove("wait"); el.classList.add("draw"); }
+        else if (el.classList.contains("is-skel")) { el.classList.add("is-shim"); setTimeout(() => el.classList.remove("is-skel", "is-shim"), 280); }
+      }
+    }, { root: feed, threshold: 0 });
+    if (anchorEl) watchIO.observe(anchorEl);
+    for (const c of feed.querySelectorAll(".chain.wait")) watchIO.observe(c);
+    for (const x of feed.querySelectorAll(".xc.is-skel")) watchIO.observe(x);
+  }
+
+  // ── 마이크로인터랙션 초기화 ──
+  for (const seg of document.querySelectorAll(".seg")) seg.prepend(h("i", { class: "pill", "aria-hidden": "true" }));
+  syncPills(true);
+  requestAnimationFrame(() => syncPills(true));
+  $("feed").addEventListener("scroll", fadeEdges, { passive: true });
+  $("newChip").addEventListener("click", () => {
+    if (!anchorEl) return;
+    const f = $("feed");
+    f.scrollTo({ top: f.scrollTop + anchorEl.getBoundingClientRect().top - f.getBoundingClientRect().top - 10, behavior: reduce() ? "auto" : "smooth" });
+  });
+  // 엿보기는 어떤 조작이든 즉시 취소
+  sheet.addEventListener("pointerdown", cancelPeek, true);
+  sheet.addEventListener("keydown", cancelPeek, true);
+  sheet.addEventListener("wheel", cancelPeek, { capture: true, passive: true });
+  window.addEventListener("resize", () => { syncPills(true); fadeEdges(); fadeMembers(); });
+  open("ritsu", board.querySelector('[data-ck="ritsu"]'));
+})();
+</script>
