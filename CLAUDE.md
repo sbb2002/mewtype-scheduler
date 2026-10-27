@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-**현재 버전 = v4.8.6 (핫픽스, 2026-10-26)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+**현재 버전 = v4.9.0 (마이너, 2026-10-27)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 (`git describe --tags`). 버전별로 무엇이 바뀌었는지 · 배포 리비전 · 롤백 대상은 **`docs/VERSION.md`**(맨 위 태그 대조표 + 버전별 상세)가 정본이다 —
 이 파일에는 버전 이력을 쌓지 않는다(아래 「버전 올릴 때 할 일」).
 
