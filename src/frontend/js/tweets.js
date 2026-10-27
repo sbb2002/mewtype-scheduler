@@ -1,31 +1,82 @@
-// tweets.js — 예고판 상단 멤버 개인 트윗 "편지 배지" + 메신저형 스레드 (v3.1).
-// tweets.json (계약 I): tweets[ck] = [ <메시지>, … ] 최신이 뒤, 유닛당 저장 상한 xtweet.MAX_THREAD.
-//   화면에는 메시지별 expires_at(X 게시 시각 + 48h, v4a — 게시 시각을 모르면 받은 시각 + 48h)이 안 지난 것을 최대 MAX_THREAD 건까지 노출 —
-//   안 읽은 메시지 폭주 방지는 말풍선 스크롤(css: 2/3 뷰포트 높이 초과 시 스크롤)이 맡는다.
-//   v2.8 단건(dict)도 _list() 가 [dict] 로 감싸 하위호환.
-// 계약·목업: docs/plan/v2_8_personal_tweets.md · docs/SPEC.md §계약 I
+// tweets.js — 멤버 트윗 시트 (self-reply 핫픽스, ui_spec.md).
+// 보드에서 멤버 아바타 · 이름 · 트윗 배지를 누르면 「트윗 시트」가 열린다. 폰 = 아래에서 올라오는 시트(끌어 닫기), PC = 가운데 뜨는 팝업 보드.
+// 시트는 하나만 만들어 두고 JS 가 채운다(createElement · textContent 만 — innerHTML 로 데이터를 넣지 않는다).
+// 순수 로직(글타래 묶기 · 첨부 문구 · 색 · 시각 표기 · 새 글 자리)은 tweetlogic.js.
 //
-//  renderTweets(boardEl, data)  — 폴링마다. data 를 캐시하고 배지를 재적용.
-//  reapplyTweets(boardEl)       — renderBoard 직후. 캐시된 data 로 배지만 다시 붙임.
+//  renderTweets(boardEl, data)  — 폴링마다. data 를 캐시하고 배지 · 열린 시트를 갱신(표시 서명이 같으면 시트를 다시 그리지 않는다).
+//  reapplyTweets(boardEl)       — renderBoard 직후. 캐시된 data 로 배지만 다시 붙인다.
+//  makeXCard · loadXCards · stopXCards — 소식 팝업(notices.js)이 쓰는 X 공식 카드. 트윗 시트의 원문 면도 같은 카드를 쓴다.
 //
-// PC: 아바타/배지 호버 = 스레드 패널 펼침, 클릭 = 고정(X/Esc/바깥클릭으로 닫힘), 여러 개 동시.
-// 모바일: 배지 탭 = 상단 시트 + 백드롭. 배경 = 유닛 --lane-color, 글자색은 대비로 자동.
-// 안 읽은 메시지 2건+ 이면 배지에 카운트. 만료·404·빈 파일이면 배지 안 뜬다.
+// 계약: tweets[ck] = [ <메시지>, … ] 최신이 뒤(계약 I). 메시지별 expires_at 이 지난 것은 뺀다. reply_to_id 는 자기 답글의 원글 id.
+// 읽음 = 시트를 닫을 때 · 멤버를 바꿀 때(mew:twread, 4일 보존). 면 저장값 = mew:tllang(ko · orig). 엿보기 횟수 = mew:twpeek.
 
 import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
-import { currentTheme, THEME_EVENT } from "./theme.js";
-import { wireSheetDrag, vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 토스트 밀어 닫기 · 진동
-
-// 원문 링크 아이콘 = X (notice 의 x path 재활용).
-const X_SVG = '<svg class="src__ic" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"/></svg>';
+import { THEME_EVENT, currentTheme } from "./theme.js";
+import { wireSheetDrag, vibrate } from "./sheetdrag.js";
+import * as L from "./tweetlogic.js";
 
 const RKEY = "mew:twread";
-const TLANG_KEY = "mew:tllang";  // ponytail: 번역 토글 기억
-const READ_TTL_MS = 4 * 24 * 3600 * 1000;   // 읽음 기록 보존 4일(트윗 TTL 24h 훨씬 넘김)
-const MAX_THREAD = 50;                       // 노출 상한(백엔드 xtweet.MAX_THREAD 와 동일)
-const GROUP_GAP_MS = 2 * 60 * 1000;         // 연속 메시지 묶음 간격
-const _st = { data: null, board: null, wired: false, pinned: new Set(), peek: null, bubbles: new Map(), tlang: "ko" };
-let _toast = null, _backdrop = null;
+const TLANG_KEY = "mew:tllang";
+const PEEK_KEY = "mew:twpeek";
+const READ_TTL_MS = 4 * 24 * 3600 * 1000;   // 읽음 기록 보존 4일(트윗 수명 48h 보다 넉넉히)
+const MAX_THREAD = 50;                       // 노출 상한(백엔드 xtweet.MAX_THREAD 와 같게)
+const PEEK_MAX = 2;                          // 엿보기는 처음 두 번만
+const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const SPRING = "cubic-bezier(0.25, 1.4, 0.45, 1)";   // 놓을 때만 쓰는 튕김
+const NS = "http://www.w3.org/2000/svg";
+
+const EMBED_ORIGINS = ["https://platform.twitter.com", "https://platform.x.com"];
+const CARD_TIMEOUT_MS = 15000;   // 이 안에 렌더링 신호가 없으면 「X에서 보기」 링크를 띄운다
+
+const _st = { data: null, board: null, wired: false };
+let S = null;                    // 트윗 시트 상태(처음 열 때 한 번 만든다)
+let _drag = null;                // 면 끌기 중인 컨트롤러(한 번에 하나) — window 리스너는 한 번만 단다
+let _mdrag = null;               // 멤버 칩 줄 끌기
+let _globalWired = false;
+
+/* ── DOM 헬퍼 (innerHTML 없음) ─────────────────────────────────────── */
+function _el(tag, o, kids) {
+  const e = document.createElement(tag);
+  if (o) {
+    if (o.cls) e.className = o.cls;
+    if (o.text != null) e.textContent = o.text;
+    if (o.id) e.id = o.id;
+    if (o.attrs) for (const k of Object.keys(o.attrs)) e.setAttribute(k, o.attrs[k]);
+    if (o.on) for (const k of Object.keys(o.on)) e.addEventListener(k, o.on[k]);
+  }
+  for (const c of [].concat(kids || [])) if (c) e.append(c);
+  return e;
+}
+/** 아이콘: paths = 선 그리기(stroke) 또는 채우기(fill: true). viewBox 는 호출하는 쪽이 정한다 */
+function _icon(vb, paths, fill) {
+  const s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", vb);
+  s.setAttribute("aria-hidden", "true");
+  s.setAttribute("focusable", "false");
+  for (const d of paths) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d);
+    if (fill) p.setAttribute("fill", "currentColor");
+    else {
+      p.setAttribute("fill", "none");
+      p.setAttribute("stroke", "currentColor");
+      p.setAttribute("stroke-width", "1.4");
+      p.setAttribute("stroke-linecap", "round");
+      p.setAttribute("stroke-linejoin", "round");
+    }
+    s.append(p);
+  }
+  return s;
+}
+const IC = {
+  reply: () => _icon("0 0 12 12", ["M3 1.5v4.2a2 2 0 0 0 2 2h4.2", "M7.2 5.5l2 2.2-2 2.2"]),
+  photo: () => _icon("0 0 14 14", ["M2 4.5A1.5 1.5 0 0 1 3.5 3h1l.8-1h3.4l.8 1h1A1.5 1.5 0 0 1 12 4.5v5A1.5 1.5 0 0 1 10.5 11h-7A1.5 1.5 0 0 1 2 9.5z", "M9 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"]),
+  video: () => _icon("0 0 14 14", ["M2 4a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 10 4v6a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10z", "M10 6l2.5-1.5v5L10 8"]),
+  x: () => _icon("0 0 24 24", ["M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"], true),
+  close: () => _icon("0 0 20 20", ["M5 5l10 10M15 5L5 15"]),
+};
+const _reduce = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+const _mobile = () => !!(window.matchMedia && window.matchMedia("(max-width: 767px)").matches);
 
 /* ── 계약 I 하위호환: tweets[ck] → 메시지 배열 ───────────────────── */
 function _list(v) {
@@ -35,9 +86,8 @@ function _list(v) {
 }
 
 /* ── 읽음 상태 (뷰어별 localStorage) ─────────────────────────────────
-   { id: readAtEpochMs }. 시간 기반으로만 정리한다 — "지금 안 보이는 id" 를
-   즉시 지우면(v2 방식) 폴링이 잠깐 빈/오래된 tweets.json 을 물었을 때 읽음
-   기록이 통째로 날아간다. 오래된 항목만 자연 소멸시킨다. */
+   { id: readAtEpochMs }. 시간 기반으로만 정리한다 — "지금 안 보이는 id" 를 즉시 지우면
+   폴링이 잠깐 빈 tweets.json 을 받았을 때 읽음 기록이 통째로 날아간다. */
 function _readMap() {
   let o;
   try { o = JSON.parse(localStorage.getItem(RKEY) || "{}") || {}; } catch { return {}; }
@@ -55,59 +105,25 @@ function _readMap() {
 function _writeMap(o) {
   try { localStorage.setItem(RKEY, JSON.stringify(o)); } catch { /* private mode 등 */ }
 }
-function _isRead(id) { return !!_readMap()[id]; }
+/** 목록을 읽음으로 기록하고 배지를 다시 붙인다(시트를 닫을 때 · 멤버를 바꿀 때) */
 function _markReadAll(list) {
   const o = _readMap();
   let changed = false;
   for (const m of list || []) if (!o[m.id]) { o[m.id] = Date.now(); changed = true; }
   if (!changed) return;
   _writeMap(o);
-  if (_st.board) _apply();          // 배지를 '열린 편지'로
+  if (_st.board) _applyBadges();
 }
-
-/* ── 번역 언어 토글 (뷰어별 localStorage) — 디폴트 한글, 전역 ─────── */
-function _getTlang() {
-  try { return localStorage.getItem(TLANG_KEY) === "orig" ? "orig" : "ko"; } catch { return "ko"; }
+/** 면 저장값 — 머리 줄의 「번역 · 원문」 탭이 쓰고 이어받는다("ko" · "orig"). 못 읽으면 번역 */
+function _getFace() {
+  try { return L.faceOf(localStorage.getItem(TLANG_KEY)); } catch { return 0; }
 }
-function _setTlang(lang) {
-  try { localStorage.setItem(TLANG_KEY, lang); } catch { /* private mode 등 */ }
-  _st.tlang = lang;
-}
-function _tlOn() { return _st.tlang === "ko"; }
-function _tlGlyph() { return _tlOn() ? "번역 ON" : "번역 OFF"; }
-function _tlAria() { return _tlOn() ? "번역 끄기" : "번역 켜기"; }
-
-/** 번역 ON/OFF 전환 - 열려 있는 모든 패널·시트에 반영. 재렌더하지 않는다(X 카드가 다시 로드되지 않게). */
-function _flipLang() {
-  _setTlang(_tlOn() ? "orig" : "ko");
-  const vis = _visible(_st.data);
-  for (const [ck, b] of _st.bubbles) _syncTl(b, vis[ck]);
-  if (_toast) { const ck = _toast.dataset.ck; if (ck) _syncTl(_toast, vis[ck]); }
-  _repositionAll();                       // 번역 ON/OFF 로 패널 폭이 바뀐다
-  setTimeout(_repositionAll, 520);          // 폭 애니메이션이 끝난 뒤 화면 가장자리 보정을 다시
+function _setFace(face) {
+  try { localStorage.setItem(TLANG_KEY, L.langOf(face)); } catch { /* 저장 못 해도 동작 */ }
 }
 
 /* ── 유틸 ────────────────────────────────────────────────────────── */
-function _mobile() {
-  return window.matchMedia && window.matchMedia("(max-width: 767px)").matches;
-}
-/* (v4a) 메시지 시각 = X 게시 시각. 백엔드 posted_at, 없으면(그 전에 저장된 메시지) Snowflake id 에서 계산.
-   둘 다 못 얻으면 받은 시각(received_at)을 쓰고 화면에는 「HH:MM 등록」으로 구분한다.
-   BigInt 리터럴(22n)은 쓰지 않는다 — 지원 안 하는 브라우저에서 모듈 전체가 파싱 오류로 죽지 않게. */
-const _TW_EPOCH_MS = 1288834974657;
-function _postedIso(m) {
-  if (m.posted_at) return m.posted_at;
-  const id = String(m.id || "");
-  if (/^\d{15,}$/.test(id) && typeof BigInt === "function") {
-    try {
-      const ms = Number(BigInt(id) >> BigInt(22)) + _TW_EPOCH_MS;
-      return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");   // 백엔드 posted_at 형식(초 단위)과 같게 — 정렬 비교용
-    } catch { /* 아래 폴백 */ }
-  }
-  return "";
-}
-function _whenIso(m) { return _postedIso(m) || m.received_at || ""; }
-/** data → { ck: [메시지…] }. 메시지별 expires_at(게시 시각 + 48h) 필터 + 게시 시각 오름차순 + 상한(MAX_THREAD). */
+/** data → { ck: [메시지…] }. 만료 지난 것 빼기 · 게시 시각순 · 상한(MAX_THREAD, 최신 쪽) */
 function _visible(data) {
   const now = Date.now();
   const out = {};
@@ -115,48 +131,38 @@ function _visible(data) {
   for (const ck of Object.keys(t)) {
     const msgs = _list(t[ck])
       .filter((m) => { const e = Date.parse(m.expires_at); return isNaN(e) || e > now; })
-      .sort((a, b) => _whenIso(a).localeCompare(_whenIso(b)))
+      .sort((a, b) => L.tOf(a) - L.tOf(b))
       .slice(-MAX_THREAD);
     if (msgs.length) out[ck] = msgs;
   }
   return out;
 }
-function _ago(iso) {
-  const t = Date.parse(iso);
-  if (isNaN(t)) return "";
-  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
-  if (m < 1) return "방금";
-  if (m < 60) return m + "분 전";
-  const h = Math.round(m / 60);
-  if (h < 24) return h + "시간 전";
-  return Math.round(h / 24) + "일 전";
+function _unreadCount(list, rd) {
+  let n = 0;
+  for (const m of list || []) if (!rd[m.id]) n++;
+  return n;
 }
-function _hm(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  try {
-    return new Intl.DateTimeFormat("ko-KR", {
-      timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false,
-    }).format(d);
-  } catch { return ""; }
-}
-/** 유닛 색: 예고판 헤더가 아바타에서 추출해 넣는 --lane-color 재사용 + 대비로 글자색 결정. */
-function _palette(laneEl) {
-  const raw = laneEl ? getComputedStyle(laneEl).getPropertyValue("--lane-color").trim() : "";
-  const m = raw.match(/(\d+)[ ,]+(\d+)[ ,]+(\d+)/);
-  if (!m) return { bg: "#3a3a3e", ink: "#ffffff" };
-  const [r, g, b] = [m[1], m[2], m[3]].map(Number);
-  const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-  const L = 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
-  return { bg: `rgb(${r} ${g} ${b})`, ink: L > 0.42 ? "#17171b" : "#ffffff" };
+/** 멤버 색: 예고판이 아바타에서 뽑아 .lane 에 넣는 --lane-color. 없으면 폴백 바탕 · 글자색은 대비로 */
+function _palette(ck) {
+  let raw = "";
+  if (_st.board) {
+    for (const lane of _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]`)) {
+      raw = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
+      if (raw) break;
+    }
+  }
+  return L.paletteFor(raw);
 }
 function _lanes(ck) {
-  // (v4.1.0) data-no-badge = 이후 예고 열(PC) — 편지 배지는 타임테이블 왼쪽 칸 / 모바일 레인에만 붙는다
+  // data-no-badge = 이후 예고 열(PC) — 배지는 타임테이블 왼쪽 칸 / 모바일 레인에만 붙는다
   return _st.board ? _st.board.querySelectorAll(`.lane[data-channel="${CSS.escape(ck)}"]:not([data-no-badge])`) : [];
 }
 // 원문 앵커: 메시지 URL → 없으면 X 프로필(x.com/<handle>) → 둘 다 없으면 비활성. 유튜브로는 안 감.
+function _srcUrl(m) {
+  return m.url || (m.handle ? "https://x.com/" + m.handle : "");
+}
 function _setSrc(el, m) {
-  const u = m.url || (m.handle ? "https://x.com/" + m.handle : "");
+  const u = _srcUrl(m);
   if (u) {
     el.href = u;
     el.classList.remove("is-disabled");
@@ -170,20 +176,14 @@ function _setSrc(el, m) {
   }
 }
 
-/* ── 트윗 = 번역 말풍선 + X 공식 카드 (v3.8.0b) ─────────────────────────────
-   법률 자문에 따라 트윗의 요소(원문 텍스트·이미지·영상·참조 트윗의 미디어)를 우리가 다시 조립해 그리지 않는다.
-   화면에는 ① 원문 트윗에 대한 번역(참조 트윗은 번역만, 안쪽 말풍선) ② X 공식 임베드 카드 ③ 디스클레이머(사이트 하단)만 나온다.
-   원문·미디어는 X 카드가 보여 준다. 저장 데이터(tweets.json 의 text/media/quote/video)는 유지보수용으로 그대로 두되 화면에는 쓰지 않는다.
-   X 카드는 iframe 이 필요한 높이를 twttr.private.resize 메시지로 알려주므로 그 값을 그대로 쓰고(상한 없음 - 패널 스크롤에 맡김),
-   폭 250px 미만이면 렌더링 자체를 못 하므로(실측) PC 패널 폭을 320px 로 한다. 영상이 든 카드 여러 개를 한꺼번에 띄우면
-   브라우저가 멈춰(실측) 화면에 들어올 때만(IntersectionObserver) 불러온다. */
-const EMBED_ORIGINS = ["https://platform.twitter.com", "https://platform.x.com"];
-const CARD_EST_H = 230;          // 카드가 실제 높이를 알려주기 전 자리표시 높이(짧은 텍스트 트윗 실측)
-const CARD_TIMEOUT_MS = 15000;   // 이 안에 렌더링 신호가 없으면 "X에서 보기" 링크를 띄운다
+/* ── X 공식 카드 (소식 팝업과 공용) ─────────────────────────────────────
+   카드 = iframe(X 임베드). 높이는 임베드가 twttr.private.resize 로 알려 주는 값을 그대로 쓴다.
+   영상이 든 카드를 한꺼번에 띄우면 브라우저가 멈추므로 화면 근처에 올 때만 불러온다(IntersectionObserver).
+   테마를 바꾸면 이미 열린 카드도 같은 테마로 다시 부른다. 15초 안에 신호가 없으면 「X에서 보기」 링크. */
 let _embedWired = false;
-
-function _srcUrl(m) {
-  return m.url || (m.handle ? "https://x.com/" + m.handle : "");
+function _isNumId(id) { return /^[0-9]{5,25}$/.test(String(id || "")); }
+function _embedSrc(id) {   // X 카드도 사이트 테마(밝게/어둡게)로 불러온다
+  return "https://platform.twitter.com/embed/Tweet.html?id=" + id + "&theme=" + currentTheme() + "&dnt=true&lang=ko&hideThread=true&frame=false";
 }
 function _wireEmbedResize() {
   if (_embedWired) return;
@@ -199,7 +199,7 @@ function _wireEmbedResize() {
     for (const f of document.querySelectorAll("iframe.lane__thread__embed")) {
       if (f.contentWindow !== e.source) continue;
       const wrap = f.parentElement;
-      const sc = wrap.closest(".lane__bubble__scroll, .tw-toast__scroll");
+      const sc = wrap.closest(".tws__feed");
       const atBottom = sc && (sc.scrollHeight - sc.clientHeight - sc.scrollTop) < 8;
       wrap.style.minHeight = h + "px";
       wrap.dataset.ready = "1";
@@ -208,10 +208,6 @@ function _wireEmbedResize() {
       if (atBottom) sc.scrollTop = sc.scrollHeight;    // 늦게 로드된 카드 때문에 맨 아래 고정이 풀리지 않게
     }
   });
-}
-function _isNumId(id) { return /^[0-9]{5,25}$/.test(String(id || "")); }
-function _embedSrc(id) {   // (v4.6.0) X 카드도 사이트 테마(밝게/어둡게)로 불러온다
-  return "https://platform.twitter.com/embed/Tweet.html?id=" + id + "&theme=" + currentTheme() + "&dnt=true&lang=ko&hideThread=true&frame=false";
 }
 // 테마를 바꾸면 이미 열린 X 카드도 같은 테마로 다시 불러온다(카드 높이는 다시 받은 resize 신호로 맞춰진다)
 document.addEventListener(THEME_EVENT, () => {
@@ -243,66 +239,20 @@ function _loadCard(wrap) {
     wrap.appendChild(a);
   }, CARD_TIMEOUT_MS);
 }
-function _watchCards(scrollEl) {
-  const cards = scrollEl.querySelectorAll(".lane__thread__xcard[data-id]");
-  if (!cards.length) return;
-  if (typeof IntersectionObserver === "undefined") { cards.forEach(_loadCard); return; }
-  const io = new IntersectionObserver((entries) => {
-    for (const en of entries) {
-      if (!en.isIntersecting) continue;
-      io.unobserve(en.target);
-      _loadCard(en.target);
-    }
-  }, { root: getComputedStyle(scrollEl).overflowY === "visible" ? null : scrollEl, rootMargin: "300px 0px" });
-  scrollEl.__io = io;
-  cards.forEach((c) => io.observe(c));
-}
-function _stopCards(root) {
-  if (!root) return;
-  const scrolls = root.querySelectorAll(".lane__bubble__scroll, .tw-toast__scroll");
-  for (const sc of scrolls) { if (sc.__io) { sc.__io.disconnect(); sc.__io = null; } }
-  for (const f of root.querySelectorAll("iframe.lane__thread__embed")) f.remove();
-}
-function _tlBubble(m) {
-  const row = document.createElement("div");
-  row.className = "lane__thread__msg";
-  const lab = document.createElement("span");
-  lab.className = "lab";
-  lab.textContent = "번역";
-  row.appendChild(lab);
-  const tx = document.createElement("span");
-  tx.className = "txt";
-  tx.textContent = m.text_ko || "번역 준비 중…";      // 번역이 없으면 원문을 대신 보여 주지 않는다(재조립 금지)
-  row.appendChild(tx);
-  if (m.quote && m.quote.text) {                      // 참조 트윗은 번역 텍스트만 안쪽 말풍선으로 - 이미지 등 미디어는 X 카드에서
-    const q = document.createElement("div");
-    q.className = "lane__thread__quote";
-    q.textContent = m.quote.text_ko || "번역 준비 중…";
-    row.appendChild(q);
-  }
-  const a = document.createElement("a");
-  a.className = "ori";
-  a.target = "_blank";
-  a.rel = "noopener";
-  a.setAttribute("aria-label", "원문");
-  a.innerHTML = X_SVG;
-  _setSrc(a, m);
-  row.appendChild(a);
-  return row;
-}
+/** 카드 자리 하나. 숫자 id 면 임베드 자리(높이는 글 내용으로 어림), 아니면 「X에서 원문 보기」 링크 */
 function _xCard(m) {
   const wrap = document.createElement("div");
   wrap.className = "lane__thread__xcard";
   const href = _srcUrl(m);
   if (_isNumId(m.id)) {
-    wrap.dataset.id = m.id;
+    wrap.dataset.id = String(m.id);
     if (href) wrap.dataset.href = href;
-    wrap.style.minHeight = CARD_EST_H + "px";
+    wrap.style.minHeight = L.estimateCardH(m) + "px";
     const sk = document.createElement("div");
     sk.className = "lane__thread__xskel";
     sk.textContent = "X 카드 불러오는 중…";
     wrap.appendChild(sk);
-  } else {                                            // 합성 id(숫자 아님)는 임베드할 수 없다 -> 링크만
+  } else {                                            // 합성 id(숫자 아님)는 임베드할 수 없다 → 링크만
     wrap.classList.add("is-plain");
     const a = document.createElement("a");
     a.className = "lane__thread__xlink";
@@ -314,78 +264,45 @@ function _xCard(m) {
   }
   return wrap;
 }
-
-/* ── 스레드 렌더 (말풍선·시트 공용) ──────────────────────────────── */
-function _groupMsgs(list) {
-  const out = [];
-  for (const m of list) {
-    const g = out[out.length - 1];
-    const prev = g && g[g.length - 1];
-    if (prev && Math.abs(Date.parse(_whenIso(m)) - Date.parse(_whenIso(prev))) <= GROUP_GAP_MS) g.push(m);
-    else out.push([m]);
-  }
-  return out;
-}
-function _renderThread(scrollEl, list) {
-  if (!scrollEl) return;
-  if (scrollEl.__io) { scrollEl.__io.disconnect(); scrollEl.__io = null; }
-  scrollEl.textContent = "";
-  const groups = _groupMsgs(list);
-  groups.forEach((g, gi) => {
-    const gw = document.createElement("div");
-    gw.className = "lane__thread__grp";
-    for (const m of g) {
-      const unit = document.createElement("div");
-      unit.className = "lane__thread__unit";
-      unit.appendChild(_tlBubble(m));                 // 번역이 먼저(즉시 보임)
-      unit.appendChild(_xCard(m));                    // X 공식 카드는 그 아래에서 뒤늦게 붙는다
-      gw.appendChild(unit);
-    }
-    const last = g[g.length - 1];
-    const tm = document.createElement("time");
-    tm.className = "lane__thread__t";
-    // (v4a) 게시 시각 — 못 얻은 메시지만 받은 시각에 「등록」을 붙여 구분
-    const posted = _postedIso(last), when = posted || last.received_at || "";
-    tm.dateTime = when;
-    tm.textContent = _hm(when) + (posted ? "" : " 등록") + (gi === groups.length - 1 ? " · " + _ago(when) : "");
-    gw.appendChild(tm);
-    scrollEl.appendChild(gw);
-  });
-  scrollEl.scrollTop = scrollEl.scrollHeight;   // 최신이 아래 -> 열면 맨 아래
-  _watchCards(scrollEl);
-}
-function _syncTl(container, list) {
-  const btn = container.querySelector(".lane__bubble__tl, .tw-toast__tl");
-  if (!btn) return;
-  btn.hidden = !(list && list.some((m) => m.text_ko));
-  btn.textContent = _tlGlyph();
-  btn.setAttribute("aria-label", _tlAria());
-  container.classList.toggle("tl-off", !_tlOn());     // CSS 가 번역 말풍선을 숨긴다
+/** 시트 · 팝업에서 닫을 때 X 카드 iframe 을 지운다(재생 중인 영상도 멈춘다) */
+function _stopCards(root) {
+  if (!root) return;
+  for (const f of root.querySelectorAll("iframe.lane__thread__embed")) f.remove();
 }
 
-/* ── 배지 적용 ───────────────────────────────────────────────────── */
-function _apply() {
+/* ── 배지 · 보드 ───────────────────────────────────────────────────── */
+/** 배지(.lane__tw) · 아바타 링(.has-tweet) 을 메시지 상태에 맞춘다. 읽음 처리되면 배지가 작아지며 사라진다(B4). */
+function _applyBadges() {
   const board = _st.board;
   if (!board) return;
   const vis = _visible(_st.data);
-
+  const rd = _readMap();
   for (const ck of FALLBACK_CHANNEL_ORDER) {
     const list = vis[ck];
     for (const lane of _lanes(ck)) {
       const avatar = lane.querySelector(".lane__avatar");
       if (!avatar) continue;
-      avatar.classList.toggle("has-tweet", !!(list && list.length));   // 트윗이 있으면(읽음 여부 무관) 아바타에 푸른 링
+      avatar.classList.toggle("has-tweet", !!(list && list.length));   // 트윗이 있으면(읽음 여부 무관) 아바타에 얇은 링
       let badge = lane.querySelector(".lane__tw");
       if (!list || !list.length) {
         if (badge) badge.remove();
         continue;
       }
-      const unreadN = list.reduce((n, m) => n + (_isRead(m.id) ? 0 : 1), 0);
+      const unreadN = _unreadCount(list, rd);
       const unread = unreadN > 0;
       const sig = list.map((m) => m.id).join(",") + "|" + unreadN;
+      if (badge && !unread && badge.classList.contains("is-unread") && !badge.__out) {
+        // B4: 읽음 처리 → 배지가 작아지며 사라진다(끝나면 읽은 상태)
+        badge.__out = true;
+        badge.classList.remove("is-unread");
+        const a = badge.animate(_reduce() ? [{ opacity: 1 }, { opacity: 0 }] : [{ transform: "scale(1)" }, { transform: "scale(0)" }],
+          { duration: 200, easing: "ease-in", fill: "forwards" });
+        a.onfinish = () => { badge.classList.add("is-read"); badge.__out = false; badge.dataset.sig = ""; a.cancel(); };
+        continue;
+      }
+      if (badge && badge.__out) continue;
       const wantCls = unread ? "is-unread" : "is-read";
-      // 같은 스레드 + 같은 읽음상태면 그대로 둔다(콩콩 애니메이션 유지).
-      if (badge && badge.dataset.sig === sig && badge.classList.contains(wantCls)) continue;
+      if (badge && badge.dataset.sig === sig && badge.classList.contains(wantCls)) continue;   // 같은 상태면 그대로(콩콩 애니메이션 유지)
       if (!badge) {
         badge = document.createElement("button");
         badge.type = "button";
@@ -396,200 +313,621 @@ function _apply() {
       badge.classList.toggle("is-unread", unread);
       badge.classList.toggle("is-read", !unread);
       const nm = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
-      badge.setAttribute("aria-label",
-        nm + (unread ? ` 읽지 않은 트윗 ${unreadN}건` : " 읽은 트윗") + ` (스레드 ${list.length}건)`);
-      // (v4.1.0) 봉투 아이콘 없이 동그라미만: 같은 크기의 원 — 안 읽음 1건 = 빈 원, 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음
+      badge.setAttribute("aria-label", nm + (unread ? ` 읽지 않은 트윗 ${unreadN}건` : " 읽은 트윗") + ` (스레드 ${list.length}건)`);
+      // 같은 크기의 원: 안 읽음 1건 = 빈 원, 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음
       badge.textContent = unreadN >= 2 ? String(unreadN) : "";
     }
   }
-
-  // 열려 있던 패널 중 트윗이 사라졌으면 정리
-  for (const ck of [..._st.pinned]) if (!vis[ck]) { _st.pinned.delete(ck); _closeBubble(ck); }
-  if (_st.peek && !vis[_st.peek]) { _closeBubble(_st.peek); _st.peek = null; }
-  for (const ck of _st.bubbles.keys()) _fillBubble(ck, vis[ck]);
-  _repositionAll();
-
+}
+/** 배지 + 열린 시트 갱신. 열린 시트는 표시 서명이 바뀐 때만 다시 그린다(X 카드 재로드 방지). */
+function _apply() {
+  if (!_st.board) return;
+  _applyBadges();
+  _refreshOpen();
   if (!_st.wired) _wire();
 }
 
-/* ── PC 스레드 패널 (#board 에 absolute 로 얹음 — 헤더 overflow 클리핑 회피) ── */
-function _bubble(ck) {
-  let b = _st.bubbles.get(ck);
-  if (b) return b;
-  b = document.createElement("div");
-  b.className = "lane__bubble";
-  b.dataset.ck = ck;
-  b.innerHTML =
-    '<div class="lane__bubble__head">' +
-      '<span class="lane__bubble__who"></span>' +
-      '<span class="lane__bubble__ctrl">' +
-        '<button class="lane__bubble__tl" type="button" hidden></button>' +
-        '<button class="lane__bubble__x" type="button" aria-label="닫기">✕</button>' +
-      '</span>' +
-    '</div>' +
-    '<div class="lane__bubble__scroll"></div>';
-  b.querySelector(".lane__bubble__x").addEventListener("click", () => {
-    _st.pinned.delete(ck);
-    _closeBubble(ck);
-  });
-  b.querySelector(".lane__bubble__tl").addEventListener("click", () => { _flipLang(); return false; });
-  _st.board.appendChild(b);
-  _st.bubbles.set(ck, b);
-  return b;
-}
-function _fillBubble(ck, list) {
-  const b = _st.bubbles.get(ck);
-  if (!b || !list || !list.length) return;
-  const lane = _lanes(ck)[0];
-  const pal = _palette(lane);
-  b.style.setProperty("--tw-bg", pal.bg);
-  b.style.setProperty("--tw-ink", pal.ink);
-  b.querySelector(".lane__bubble__who").textContent = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
-  // 75초 폴링마다 열린 패널이 다시 채워진다 — 그때마다 다시 그리면 X 카드가 계속 재로드되므로(무겁고 깜빡임)
-  // 표시 내용(id·번역)이 바뀐 경우에만 스레드를 다시 그린다.
-  const sc = b.querySelector(".lane__bubble__scroll");
-  const sig = list.map((m) => [m.id, m.text_ko || "", (m.quote && m.quote.text_ko) || ""].join("|")).join("~");
-  if (b.__sig !== sig || !sc.firstChild) {
-    _renderThread(sc, list);
-    b.__sig = sig;
-  }
-  _syncTl(b, list);
-}
-function _positionBubble(ck) {
-  const b = _st.bubbles.get(ck);
-  const lane = _lanes(ck)[0];
-  if (!b || !lane) return;
-  const badge = lane.querySelector(".lane__tw") || lane.querySelector(".lane__avatar");
-  const header = lane.querySelector(".lane__header");
-  const rr = _st.board.getBoundingClientRect();
-  const br = (lane.querySelector(".lane__avatar") || badge).getBoundingClientRect();
-  const cx = br.left + br.width / 2 - rr.left + _st.board.scrollLeft;   // 캐릭터 아바타(동그라미) 중심 - 꼬리가 바로 아래로 오게
-  let left = cx - 24;
-  const top = header.getBoundingClientRect().bottom - rr.top + _st.board.scrollTop + 6;
-  const maxLeft = _st.board.clientWidth - b.offsetWidth - 8;
-  if (left > maxLeft) left = Math.max(4, maxLeft);
-  b.style.left = left + "px";
-  b.style.top = top + "px";
-  b.style.setProperty("--tail-x", Math.max(10, cx - left - 6.5) + "px");
-}
-function _repositionAll() {
-  for (const ck of _st.bubbles.keys()) _positionBubble(ck);
-}
-function _showBubble(ck) {
-  const vis = _visible(_st.data);
-  if (!vis[ck]) return;
-  const b = _bubble(ck);
-  _fillBubble(ck, vis[ck]);
-  b.classList.toggle("is-pinned", _st.pinned.has(ck));
-  requestAnimationFrame(() => {
-    // 이 프레임이 오기 전에 닫힘 요청(빠른 호버-이탈 등)이 있었으면 다시 열지 않는다.
-    if (!_st.pinned.has(ck) && _st.peek !== ck) return;
-    _positionBubble(ck);
-    b.classList.add("is-open");
-    const s = b.querySelector(".lane__bubble__scroll");
-    if (s) s.scrollTop = s.scrollHeight;          // 레이아웃 후 맨 아래 보정
-    setTimeout(() => { if (b.classList.contains("is-open")) _positionBubble(ck); }, 300);   // 아바타 이미지 등 늦은 레이아웃 뒤 꼬리를 다시 뱃지 중심에
-  });
-}
-function _closeBubble(ck) {
-  if (_st.pinned.has(ck) || _st.peek === ck) return;   // 아직 열려 있어야 함
-  const b = _st.bubbles.get(ck);
-  if (!b) return;
-  _stopCards(b);                         // 패널을 닫으면 X 카드(재생 중인 영상 포함)도 지운다
-  b.classList.remove("is-open");
-  const done = () => {
-    b.removeEventListener("transitionend", done);
-    // 예약 후 다시 열렸으면(재호버/재클릭) 취소 — 지금 보이는 말풍선을 잘못 지우지 않게.
-    if (_st.pinned.has(ck) || _st.peek === ck) return;
-    b.remove();
-    _st.bubbles.delete(ck);
+/* ── 트윗 시트 ───────────────────────────────────────────────────────
+   구조(ui_spec.md §4): .tws-scrim · section.tws > .tws__grab · .tws__head · nav.tws__members · .tws__feed · .tws__newchip · .tws__hint */
+function _ensureSheet() {
+  if (S) return S;
+  const s = {
+    open: false, ck: null, from: null, sig: "", face: 0, anchor: null, watch: null, cardIO: null,
+    peekT: 0, peekEl: null, peekMem: 0, pendT: [], hintT: 0, hintShown: false, chips: {}, memOn: false,
   };
-  b.addEventListener("transitionend", done);
-  setTimeout(done, 260);
-}
-function _togglePin(ck) {
-  if (_st.pinned.has(ck)) {
-    _st.pinned.delete(ck);
-    _closeBubble(ck);
-  } else {
-    _st.pinned.add(ck);
-    _markReadAll(_visible(_st.data)[ck] || []);
-    _showBubble(ck);
+  S = s;
+  s.scrim = _el("div", { cls: "tws-scrim", on: { click: () => _close() } });
+  s.grab = _el("div", { cls: "tws__grab", attrs: { "aria-hidden": "true" } }, [_el("i")]);
+  s.av = _el("span", { cls: "tws__av", attrs: { "aria-hidden": "true" } });
+  s.nm = _el("div", { cls: "tws__nm", id: "tws-nm" });
+  s.hd = _el("div", { cls: "tws__hd" });
+  s.pill = _el("i", { cls: "tws__seg-pill", attrs: { "aria-hidden": "true" } });
+  s.koBtn = _el("button", { cls: "tws__seg-b", text: "번역", attrs: { type: "button", "aria-pressed": "true" }, on: { click: () => _setAll(0) } });
+  s.xBtn = _el("button", { cls: "tws__seg-b", text: "원문", attrs: { type: "button", "aria-pressed": "false" }, on: { click: () => _setAll(1) } });
+  s.seg = _el("div", { cls: "tws__seg", attrs: { role: "group", "aria-label": "모든 글 보기 전환(글 하나만 바꾸려면 그 글을 옆으로 밀기)" } }, [s.pill, s.koBtn, s.xBtn]);
+  s.closeBtn = _el("button", { cls: "tws__close", attrs: { type: "button", "aria-label": "닫기" }, on: { click: () => _close() } }, [IC.close()]);
+  s.head = _el("div", { cls: "tws__head" }, [
+    _el("div", { cls: "tws__who" }, [s.av, _el("div", { cls: "tws__id" }, [s.nm, s.hd])]),
+    s.seg, s.closeBtn,
+  ]);
+  s.mpill = _el("span", { cls: "tws__mpill", attrs: { "aria-hidden": "true" } });
+  s.members = _el("nav", { cls: "tws__members", attrs: { "aria-label": "멤버" } }, [s.mpill]);
+  for (const ck of FALLBACK_CHANNEL_ORDER) {
+    const meta = FALLBACK_CHANNELS[ck] || {};
+    const chip = _el("button", { cls: "tws__chip", attrs: { type: "button", "data-ck": ck }, on: { click: () => _switchTo(ck) } }, [
+      _el("i", { attrs: { "aria-hidden": "true" } }),
+      _el("span", { text: L.shortName(meta.name_ko) || ck }),
+    ]);
+    s.chips[ck] = chip;
+    s.members.append(chip);
   }
-}
-function _closeAllPins() {
-  for (const ck of [..._st.pinned]) { _st.pinned.delete(ck); _closeBubble(ck); }
-}
+  s.feed = _el("div", { cls: "tws__feed" });
+  s.newChip = _el("button", { cls: "tws__newchip", attrs: { type: "button" }, on: { click: () => _jumpNew() } });
+  s.hint = _el("div", { cls: "tws__hint", attrs: { role: "status" } });
+  s.sheet = _el("section", { cls: "tws", attrs: { role: "dialog", "aria-modal": "true", "aria-labelledby": "tws-nm", tabindex: "-1" } },
+    [s.grab, s.head, s.members, s.feed, s.newChip, s.hint]);
+  document.body.append(s.scrim, s.sheet);
 
-/* ── 모바일 시트 ─────────────────────────────────────────────────── */
-function _ensureToast() {
-  if (_toast) return;
-  _backdrop = document.createElement("div");
-  _backdrop.className = "tw-backdrop";
-  _backdrop.addEventListener("click", _closeToast);
-  _toast = document.createElement("article");
-  _toast.className = "tw-toast";
-  _toast.setAttribute("role", "dialog");
-  _toast.setAttribute("aria-modal", "true");
-  _toast.innerHTML =
-    '<div class="tw-toast__head">' +
-      '<span class="tw-toast__avatar"></span>' +
-      '<span class="tw-toast__id"><b class="nm"></b><span class="hd"></span></span>' +
-      '<button class="tw-toast__tl" type="button" hidden></button>' +
-      '<button class="tw-toast__x" type="button" aria-label="닫기">✕</button>' +
-    '</div>' +
-    '<div class="tw-toast__scroll"></div>' +
-    '<div class="tw-toast__grab" aria-hidden="true"><i></i></div>';
-  _toast.querySelector(".tw-toast__x").addEventListener("click", _closeToast);
-  // (마이크로 인터랙션) 위에서 내려온 토스트 — 머리줄이나 맨 아래 손잡이를 위로 밀면 닫힌다(sheetdrag.js). 머리줄 · 손잡이는 늘 제자리, 트윗 목록만 스크롤
+  // 폰: 손잡이 · 머리 줄을 아래로 끌어 닫기(sheetdrag.js). PC 는 끌어 닫기 없음
   wireSheetDrag({
-    sheet: _toast,
-    handles: [_toast.querySelector(".tw-toast__head"), _toast.querySelector(".tw-toast__grab")],
-    dir: "up",
-    isOpen: () => document.body.classList.contains("tw-modal-open"),
-    close: _closeToast,
+    sheet: s.sheet,
+    handles: [s.grab, s.head],
+    dir: "down",
+    isOpen: () => s.open && _mobile(),
+    close: () => _close(),
     setScrim: (v) => {
-      _backdrop.style.transition = v == null ? "" : "none";
-      _backdrop.style.opacity = v == null ? "" : String(v);
+      s.scrim.classList.toggle("is-drag", v != null);
+      s.scrim.style.opacity = v == null ? "" : String(v);
     },
   });
-  _toast.querySelector(".tw-toast__tl").addEventListener("click", () => { _flipLang(); return false; });
-  document.body.append(_backdrop, _toast);
+  // 멤버 칩 줄: 마우스 · 펜은 끌기(터치는 CSS pan-x), 끈 뒤의 클릭은 무시
+  s.members.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch" || e.button > 0) return;
+    _mdrag = { x: e.clientX, s: s.members.scrollLeft, on: false };
+  });
+  s.members.addEventListener("click", (e) => { if (s.memOn) { s.memOn = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  s.members.addEventListener("scroll", () => _fadeMembers(), { passive: true });
+  s.feed.addEventListener("scroll", () => _fadeEdges(), { passive: true });
+  // 엿보기는 어떤 조작이든 즉시 취소
+  s.sheet.addEventListener("pointerdown", () => _cancelPeek(), true);
+  s.sheet.addEventListener("keydown", () => _cancelPeek(), true);
+  s.sheet.addEventListener("wheel", () => _cancelPeek(), { capture: true, passive: true });
+  s.newChip.setAttribute("aria-live", "polite");
+  _wireGlobal();
+  return s;
 }
-function _openToast(ck) {
-  const list = _visible(_st.data)[ck];
-  if (!list || !list.length) return;
-  _ensureToast();
-  _toast.dataset.ck = ck;
-  const lane = _lanes(ck)[0];
-  const pal = _palette(lane);
-  const meta = FALLBACK_CHANNELS[ck] || {};
-  _toast.style.setProperty("--tw-bg", pal.bg);
-  _toast.style.setProperty("--tw-ink", pal.ink);
-  const av = _toast.querySelector(".tw-toast__avatar");
-  av.style.backgroundImage = meta.avatar ? `url("${meta.avatar}")` : "none";
-  _toast.querySelector(".nm").textContent = meta.name_ko || ck;
-  const lastHandle = list[list.length - 1].handle;
-  _toast.querySelector(".hd").textContent = lastHandle ? "@" + lastHandle : "";
-  const sc = _toast.querySelector(".tw-toast__scroll");
-  _renderThread(sc, list);
-  _syncTl(_toast, list);
-  document.body.classList.add("tw-modal-open");
-  requestAnimationFrame(() => { sc.scrollTop = sc.scrollHeight; });
-  _markReadAll(list);
-}
-function _closeToast() {
-  _stopCards(_toast);
-  document.body.classList.remove("tw-modal-open");
+function _wireGlobal() {
+  if (_globalWired) return;
+  _globalWired = true;
+  window.addEventListener("pointermove", (e) => {
+    if (_drag) _drag.move(e);
+    if (_mdrag) _memMove(e);
+  });
+  window.addEventListener("pointerup", () => {
+    if (_drag) _drag.up();
+    _memEnd();
+  });
+  window.addEventListener("pointercancel", () => {
+    if (_drag) _drag.cancel();
+    _memEnd();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S && S.open) _close(); });
+  window.addEventListener("resize", () => {
+    if (!S) return;
+    _syncPills(true);
+    _fadeEdges();
+    _fadeMembers();
+  });
 }
 
-/* ── (마이크로 인터랙션) 트윗 없는 네임플레이트를 눌렀을 때 ──────────
-   네임플레이트가 고개를 젓듯 좌우로 흔들리고(.is-nope), 그 위에 「OO의 새 트윗이 아직 없어요」가 1.7초 떴다 사라진다(.tw-nope).
-   진동 8ms(안드로이드만). 움직임 줄이기 설정이면 흔들기는 빼고 글만 띄운다. */
+function _head() {
+  const s = S, ck = s.ck, meta = FALLBACK_CHANNELS[ck] || {};
+  const pal = _palette(ck);
+  s.sheet.style.setProperty("--m", pal.bg);
+  s.sheet.style.setProperty("--mi", pal.ink);
+  s.sheet.style.setProperty("--paper", pal.paper);
+  s.nm.textContent = meta.name_ko || ck;
+  const list = _visible(_st.data)[ck] || [];
+  const handle = list.length ? list[list.length - 1].handle : "";
+  s.hd.textContent = (handle ? "@" + handle + " · " : "") + "최근 48시간";
+  s.av.style.backgroundImage = meta.avatar ? `url("${meta.avatar}")` : "none";
+  _syncSeg(true);
+}
+function _syncSeg(instant) {
+  const s = S;
+  s.koBtn.setAttribute("aria-pressed", String(s.face === 0));
+  s.xBtn.setAttribute("aria-pressed", String(s.face === 1));
+  _placePill(s.pill, s.face === 0 ? s.koBtn : s.xBtn, instant);
+}
+
+/** 멤버 칩 상태 · 알약(A5) · 칩 줄을 현재 칩이 보이게 */
+function _members(instant) {
+  const s = S, vis = _visible(_st.data), rd = _readMap();
+  for (const ck of FALLBACK_CHANNEL_ORDER) {
+    const chip = s.chips[ck], list = vis[ck] || [];
+    chip.setAttribute("aria-current", String(ck === s.ck));
+    chip.setAttribute("aria-disabled", String(!list.length));   // 트윗 없는 멤버는 흐리게 · 누를 수 없게
+    chip.classList.toggle("is-empty", !list.length);
+    chip.querySelector("i").style.setProperty("--c", _palette(ck).bg);
+    const n = ck === s.ck ? 0 : _unreadCount(list, rd);
+    let b = chip.querySelector("b");
+    if (n) {
+      if (!b) { b = _el("b"); chip.append(b); }
+      b.textContent = String(n);
+      b.setAttribute("aria-label", `새 글 ${n}개`);
+    } else if (b) b.remove();
+  }
+  _placePill(s.mpill, s.chips[s.ck], instant);
+  _keepChip(instant);
+  _fadeMembers();
+}
+/** 칩 줄이 현재 칩을 보이게 — 페이지 전체는 스크롤하지 않도록 줄의 scrollLeft 만 맞춘다 */
+function _keepChip(instant) {
+  const s = S, chip = s.chips[s.ck];
+  if (!chip) return;
+  const mem = s.members, pad = 12;
+  const vl = mem.scrollLeft, vr = vl + mem.clientWidth, l = chip.offsetLeft, r = l + chip.offsetWidth;
+  let to = vl;
+  if (l - pad < vl) to = l - pad;
+  else if (r + pad > vr) to = r + pad - mem.clientWidth;
+  if (Math.abs(to - vl) > 0.5) mem.scrollTo({ left: to, behavior: instant || _reduce() ? "auto" : "smooth" });
+}
+/** 넘칠 때만 양 끝 흐림 — 끝에 닿은 쪽은 at-l / at-r 로 끈다 */
+function _fadeMembers() {
+  const s = S; if (!s) return;
+  const mem = s.members, over = mem.scrollWidth > mem.clientWidth + 1;
+  mem.classList.toggle("at-l", !over || mem.scrollLeft <= 1);
+  mem.classList.toggle("at-r", !over || mem.scrollLeft + mem.clientWidth >= mem.scrollWidth - 1);
+}
+function _memMove(e) {
+  const s = S, dx = e.clientX - _mdrag.x;
+  if (!_mdrag.on) {
+    if (Math.abs(dx) < 8) return;
+    _mdrag.on = true;
+    s.memOn = true;
+    s.members.classList.add("is-grabbing");
+    document.body.classList.add("no-select");
+  }
+  window.getSelection && window.getSelection().removeAllRanges();
+  s.members.scrollLeft = _mdrag.s - dx;
+}
+function _memEnd() {
+  if (!_mdrag) return;
+  const was = _mdrag.on;
+  _mdrag = null;
+  if (was && S) {
+    setTimeout(() => { if (S) S.memOn = false; }, 0);   // 끈 뒤의 click 한 번만 막는다 — 칩 밖에서 놓아도 다음 클릭이 막히지 않게
+    S.members.classList.remove("is-grabbing");
+    document.body.classList.remove("no-select");
+    window.getSelection && window.getSelection().removeAllRanges();
+  }
+}
+/** 알약 위치 · 크기 — 선택 요소의 offset 으로 맞춘다(instant 면 미끄러짐 없이) */
+function _placePill(pill, el, instant) {
+  if (!pill || !el) return;
+  if (instant) pill.style.transition = "none";
+  pill.style.top = el.offsetTop + "px";
+  pill.style.height = el.offsetHeight + "px";
+  pill.style.width = el.offsetWidth + "px";
+  pill.style.transform = "translateX(" + el.offsetLeft + "px)";
+  if (instant) { void pill.offsetWidth; pill.style.transition = ""; }
+}
+function _syncPills(instant) {
+  if (!S) return;
+  _placePill(S.mpill, S.chips[S.ck], instant);
+  _syncSeg(instant);
+}
+
+/** 피드 위 · 아래 끝 흐림(C3) — 끝에 닿은 쪽은 흐림을 끈다 */
+function _fadeEdges() {
+  const f = S && S.feed; if (!f) return;
+  f.classList.toggle("at-top", f.scrollTop <= 1);
+  f.classList.toggle("at-bottom", f.scrollTop + f.clientHeight >= f.scrollHeight - 1);
+}
+
+/** 안내 한 줄(세션당 한 번 — 원문 면으로 처음 밀었을 때) */
+function _hint(msg) {
+  const s = S;
+  s.hint.textContent = msg;
+  s.hint.classList.add("is-on");
+  clearTimeout(s.hintT);
+  s.hintT = setTimeout(() => s.hint.classList.remove("is-on"), 2600);
+}
+
+/** 알약 · 칩 · 면 같은 짧은 움직임용 애니메이션 — 진행 중이면 먼저 끊는다 */
+function _stopT(el) {
+  if (el._anim) { try { el._anim.cancel(); } catch { /* 이미 끝남 */ } el._anim = null; }
+  el.style.transform = "";
+}
+function _runT(el, frames, opts) {
+  _stopT(el);
+  const a = el.animate(frames, opts);
+  el._anim = a;
+  a.onfinish = () => { if (el._anim === a) el._anim = null; };
+  return a;
+}
+const _buzz = () => vibrate(10);
+
+/* ── 글(article) 하나 ─────────────────────────────────────────────────
+   두 면(번역 · X 원문)을 가로 스냅 스크롤로 잇는다. 같은 높이는 CSS(align-items: stretch). */
+function _article(m, prev, isRoot, unread, now) {
+  const s = S;
+  const att = L.attachments(m);
+  const ms = L.tOf(m);
+  const hasPosted = !!L.postedIso(m);
+  const timeText = prev && hasPosted ? L.replyLabel(ms, L.tOf(prev), now)
+    : hasPosted ? L.postedLabel(ms, now)
+    : L.unpostedLabel(ms);
+  const timeKids = [prev && hasPosted ? IC.reply() : null, document.createTextNode(timeText), unread ? _el("span", { cls: "tws-tag", text: "새 글" }) : null];
+
+  // 번역 면: 번역 텍스트 · 인용 번역 · 첨부 줄(사진 · 영상은 우리가 그리지 않는다 — 개수 글자만)
+  const koKids = [_el("p", { cls: "tws-ko__txt", text: m.text_ko || "번역 준비 중…" })];
+  if (m.quote && (m.quote.text || m.quote.text_ko)) {
+    koKids.push(_el("div", { cls: "tws-ko__q" }, [_el("span", { text: "인용한 글 번역" }), document.createTextNode(m.quote.text_ko || "번역 준비 중…")]));
+  }
+  const media = att.text ? _el("button", {
+    cls: "tws-tw__media", attrs: { type: "button", title: att.text, "aria-label": att.text + ", 원문에서 보기" },
+    on: { click: () => goX(true) },
+  }, [
+    att.photo ? _el("span", { cls: "tws-tw__mi" }, [IC.photo(), _el("span", { cls: "tws-tw__mn", text: String(att.photo) })]) : null,
+    att.video ? _el("span", { cls: "tws-tw__mi" }, [IC.video(), _el("span", { cls: "tws-tw__mn", text: String(att.video) })]) : null,
+  ]) : null;
+  if (att.text) {
+    koKids.push(_el("button", { cls: "tws-att", attrs: { type: "button" }, on: { click: () => goX(true) } }, [
+      _el("span", { cls: "tws-att__ic" }, [att.photo ? IC.photo() : null, att.video ? IC.video() : null]),
+      _el("span", { cls: "tws-att__txt", text: att.text }),
+      _el("span", { cls: "tws-att__go", text: "원문에서 보기 ›" }),
+    ]));
+  }
+  const ko = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "번역" } }, [_el("div", { cls: "tws-ko" }, koKids)]);
+  const xface = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "X 원문 카드" } }, [_xCard(m)]);
+  const track = _el("div", { cls: "tws-tw__track" }, [ko, xface]);
+  const dots = _el("div", { cls: "tws-tw__dots", attrs: { "aria-hidden": "true" } }, [_el("i"), _el("i")]);
+  const openA = _el("a", { cls: "tws-tw__open", attrs: { target: "_blank", rel: "noopener", "aria-label": "X 에서 열기" } }, [IC.x()]);
+  _setSrc(openA, m);
+  const meta = _el("div", { cls: "tws-tw__meta" }, [
+    _el("span", { cls: "tws-tw__time" }, timeKids),
+    media,
+    openA,
+  ]);
+  const art = _el("article", {
+    cls: "tws-tw" + (isRoot ? " is-root" : ""),
+    attrs: {
+      tabindex: "0", "data-id": String(m.id), "aria-roledescription": "트윗, 좌우로 밀어 번역 · 원문 전환",
+      "aria-label": (prev ? "이어진 글, " : "") + timeText + (att.text ? ", " + att.text : ""),
+    },
+  }, [meta, track, dots]);
+
+  let face = 0, prog = 0, st = 0, live = false, rub = 0, pastMid = false, dragOn = false;
+  const setDots = (t) => {
+    if (_reduce() || t <= 0.001 || t >= 0.999) { clearDots(); return; }
+    dots.classList.add("is-drag");
+    dots.children[0].style.width = (14 - 8 * t).toFixed(2) + "px";   // A2: 끄는 동안 점 폭 연속 변화
+    dots.children[1].style.width = (6 + 8 * t).toFixed(2) + "px";
+  };
+  const clearDots = () => { for (const d of dots.children) d.style.width = ""; dots.classList.remove("is-drag"); };
+  const pulseDot = (k) => { if (!_reduce()) dots.children[k].animate([{ transform: "scale(1.25)" }, { transform: "scale(1)" }], { duration: 120, easing: "ease-out" }); };
+  const onTrackScroll = () => {
+    if (!live) return;
+    const t = Math.min(1, Math.max(0, track.scrollLeft / Math.max(1, track.clientWidth)));
+    setDots(t);
+    const past = face === 0 ? t > 0.25 : t < 0.75;
+    if (past !== pastMid) { pastMid = past; if (past) { pulseDot(face === 0 ? 1 : 0); _buzz(); } }
+  };
+  const setRub = (v) => { rub = v; track.style.transform = v ? "translateX(" + v.toFixed(2) + "px)" : ""; };
+  const springBack = () => {
+    const from = rub;
+    setRub(0);
+    if (from && !_reduce()) _runT(track, [{ transform: "translateX(" + from.toFixed(2) + "px)" }, { transform: "translateX(0px)" }], { duration: 420, easing: SPRING });
+  };
+  const pulseX = () => {
+    const f = art.querySelector(".lane__thread__xcard");
+    if (face === 1 && f && f.animate && !_reduce()) f.animate([{ boxShadow: "0 0 0 0 transparent" }, { boxShadow: "0 0 0 4px currentColor", offset: 0.4 }, { boxShadow: "0 0 0 0 transparent" }], { duration: 700, easing: "ease-out" });
+  };
+  function setFace(i, smooth) {
+    face = i;
+    art._face = i;
+    dots.children[0].classList.toggle("on", i === 0);
+    dots.children[1].classList.toggle("on", i === 1);
+    clearDots();
+    pastMid = false;
+    const x = i * track.clientWidth;
+    if (Math.abs(track.scrollLeft - x) > 1) {
+      prog = Date.now();
+      track.scrollTo({ left: x, behavior: smooth && !_reduce() ? "smooth" : "auto" });
+    }
+  }
+  /** 원문 면으로 보내고(att · 사진 버튼 · → 키), 사진 자리를 한 번 빛낸다(B1). 이미 원문이면 빛남만 */
+  function goX(smooth) {
+    if (face === 1) { pulseX(); return; }
+    setFace(1, smooth);
+    setTimeout(pulseX, 280);
+  }
+  art._setFace = setFace;
+  art._face = 0;
+  art.addEventListener("keydown", (e) => {
+    if (e.target !== art) return;
+    if (e.key === "ArrowRight") { setFace(1, true); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { setFace(0, true); e.preventDefault(); }
+  });
+  const settle = () => {
+    if (dragOn) return;
+    if (Date.now() - prog < 600 && Math.abs(track.scrollLeft - face * track.clientWidth) > 2) return;   // 프로그램 스크롤 중 보호
+    prog = 0;
+    const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+    if (i !== face) setFace(i, false);
+  };
+  track.addEventListener("scroll", () => { onTrackScroll(); clearTimeout(st); st = setTimeout(settle, 140); }, { passive: true });
+  track.addEventListener("scrollend", () => { clearTimeout(st); settle(); });
+
+  // 끌기: 마우스는 글 어디서나, 손가락은 시각 줄 · 점 줄에서(번역 면은 브라우저 가로 스냅이 처리, X 카드 위는 iframe 이 가져간다)
+  let g = null;   // { x, y, s, on }
+  const ctl = {
+    move(e) {
+      if (!g) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (!g.on) {
+        if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+        g.on = true; dragOn = true;
+        track.classList.add("is-grabbing");
+        document.body.classList.add("no-select");
+      }
+      window.getSelection && window.getSelection().removeAllRanges();
+      const edge = (face === 0 && dx > 0) || (face === 1 && dx < 0);   // A3: 더 갈 면이 없는 쪽
+      if (edge && !_reduce()) setRub(Math.sign(dx) * Math.min(24, Math.abs(dx) / 3));
+      else { if (rub) setRub(0); track.scrollLeft = g.s - dx; }
+    },
+    up() {
+      const was = g && g.on;
+      g = null;
+      live = false;
+      if (_drag === ctl) _drag = null;
+      if (!was) return;
+      dragOn = false;
+      const r = track.scrollLeft / Math.max(1, track.clientWidth);   // 스냅을 되돌리기 전에 뗀 위치를 읽는다
+      const to = r > (face ? 0.75 : 0.25) ? 1 : 0;
+      track.classList.remove("is-grabbing");
+      document.body.classList.remove("no-select");
+      window.getSelection && window.getSelection().removeAllRanges();
+      springBack();
+      setFace(to, true);
+      if (to === 1 && !S.hintShown) { S.hintShown = true; _hint("X 카드 위에서는 밀기가 X 화면으로 가요. 글 위 시각 줄이나 아래 점 줄을 밀면 번역으로 돌아와요."); }
+    },
+    cancel() { g = null; live = false; dragOn = false; if (_drag === ctl) _drag = null; },
+  };
+  const startDrag = (e) => {
+    live = true;
+    _stopT(track);
+    if (e.button > 0 || e.target.closest("button, a")) return;
+    g = { x: e.clientX, y: e.clientY, s: track.scrollLeft, on: false };
+    _drag = ctl;
+  };
+  track.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") startDrag(e); else { live = true; _stopT(track); } });
+  track.addEventListener("pointerup", () => { live = false; });
+  track.addEventListener("pointercancel", () => { live = false; });
+  meta.addEventListener("pointerdown", startDrag);
+  dots.addEventListener("pointerdown", startDrag);
+  return art;
+}
+
+/* ── 피드 그리기 ───────────────────────────────────────────────────── */
+/** 시트 목록을 다시 그린다. keep = 폴링으로 갱신 — 각 글의 면 · 피드 스크롤 위치를 유지한다. */
+function _renderFeed(fresh) {
+  const s = S;
+  const feed = s.feed;
+  const faces = new Map();
+  const prevTop = feed.scrollTop;
+  if (!fresh) for (const a of feed.querySelectorAll(".tws-tw")) faces.set(a.dataset.id, a._face || 0);
+  if (s.watch) { s.watch.disconnect(); s.watch = null; }
+  if (s.cardIO) { s.cardIO.disconnect(); s.cardIO = null; }
+  _stopCards(feed);
+  feed.replaceChildren();
+  const list = _visible(_st.data)[s.ck] || [];
+  const rd = _readMap();
+  const isRead = (m) => !!rd[m.id];
+  const units = L.chains(list);
+  const anchor = L.firstUnread(units, isRead);
+  const now = Date.now();
+  const arts = [];
+  let anchorEl = null;
+  for (const u of units) {
+    const wrap = u.length > 1 ? _el("div", { cls: "tws-chain" + (_reduce() ? "" : " wait"), attrs: { role: "group", "aria-label": `글타래: 원글과 이어진 글 ${u.length - 1}개` } }) : null;
+    u.forEach((m, i) => {
+      if (anchor && !anchorEl && String(m.id) === anchor.id) {
+        anchorEl = _el("div", { cls: "tws__new", text: "여기부터 새 글" });
+        if (fresh && !_reduce()) anchorEl.classList.add("draw");   // B4: 여는 때 한 번 양쪽 선이 그어진다
+        if (anchor.inChain && wrap) wrap.append(anchorEl);
+        else feed.append(anchorEl);
+      }
+      const art = _article(m, i > 0 ? u[i - 1] : null, !!wrap && i === 0, !isRead(m), now);
+      arts.push(art);
+      (wrap || feed).append(art);
+    });
+    if (wrap) feed.append(wrap);
+  }
+  s.anchor = anchorEl;
+  s.newChip.textContent = "새 글 " + _unreadCount(list, rd) + "개 ↓";
+  s.newChip.classList.remove("is-on");
+  requestAnimationFrame(() => {
+    if (!S || S !== s) return;
+    for (const a of arts) {
+      const want = faces.has(a.dataset.id) ? faces.get(a.dataset.id) : s.face;
+      a._setFace(want, false);
+    }
+    if (fresh) feed.scrollTop = anchorEl ? anchorEl.getBoundingClientRect().top - feed.getBoundingClientRect().top + feed.scrollTop - 10 : feed.scrollHeight;
+    else feed.scrollTop = prevTop;
+    _fadeEdges();
+    _watch();
+  });
+}
+/** 관찰 세 가지: 글타래 세로줄 한 번 그리기(C1) · 「새 글」 자리가 아래에 있을 때 칩(C2) · 화면 근처 글의 X 카드 불러오기(§5-5) */
+function _watch() {
+  const s = S;
+  if (typeof IntersectionObserver === "undefined") {
+    s.feed.querySelectorAll(".tws-chain").forEach((c) => c.classList.remove("wait"));
+    s.feed.querySelectorAll(".tws-tw").forEach((a) => a.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard));
+    return;
+  }
+  s.watch = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      const el = en.target;
+      if (el === s.anchor) {
+        s.newChip.classList.toggle("is-on", !en.isIntersecting && !!en.rootBounds && en.boundingClientRect.top >= en.rootBounds.bottom);
+        continue;
+      }
+      if (!en.isIntersecting) continue;
+      s.watch.unobserve(el);
+      el.classList.remove("wait");
+      el.classList.add("draw");
+    }
+  }, { root: s.feed, threshold: 0 });
+  if (s.anchor) s.watch.observe(s.anchor);
+  else s.newChip.classList.remove("is-on");
+  for (const c of s.feed.querySelectorAll(".tws-chain.wait")) s.watch.observe(c);
+
+  s.cardIO = new IntersectionObserver((entries) => {
+    for (const en of entries) {
+      if (!en.isIntersecting) continue;
+      s.cardIO.unobserve(en.target);
+      en.target.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard);
+    }
+  }, { root: s.feed, rootMargin: "100% 0px" });   // 화면 위아래 한 화면 안쪽의 글만 — 원문 면이 가로로 밀려 있어도 글 자체를 본다
+  for (const a of s.feed.querySelectorAll(".tws-tw")) s.cardIO.observe(a);
+}
+function _jumpNew() {
+  const s = S;
+  if (!s.anchor) return;
+  const f = s.feed;
+  f.scrollTo({ top: f.scrollTop + s.anchor.getBoundingClientRect().top - f.getBoundingClientRect().top - 10, behavior: _reduce() ? "auto" : "smooth" });
+}
+/** 모든 글 면 전환(머리 줄 탭): 화면에 보이는 글만 위에서 40ms 간격, 나머지는 즉시. 선택은 mew:tllang 에 남는다 */
+function _setAll(face) {
+  const s = S;
+  s.face = face;
+  _setFace(face);
+  _syncSeg(false);
+  for (const t of s.pendT) clearTimeout(t);
+  s.pendT = [];
+  const f = s.feed, fr = f.getBoundingClientRect();
+  let k = 0;
+  for (const a of f.querySelectorAll(".tws-tw")) {
+    const r = a.getBoundingClientRect();
+    if (s.open && r.bottom > fr.top && r.top < fr.bottom) {
+      const d = 40 * k++;
+      if (d) s.pendT.push(setTimeout(() => a._setFace(face, true), d));
+      else a._setFace(face, true);
+    } else a._setFace(face, false);
+  }
+}
+/** A1: 처음 두 번 열 때 보이는 첫 글을 24px 밀었다 돌아온다. 조작하면 취소 */
+function _peek() {
+  const s = S;
+  if (_reduce()) return;
+  let n = s.peekMem;
+  try { n = Math.max(n, Number(localStorage.getItem(PEEK_KEY)) || 0); } catch { /* 읽기 실패: 이 화면에서 센 값만 */ }
+  if (n >= PEEK_MAX) return;
+  s.peekMem = n + 1;
+  try { localStorage.setItem(PEEK_KEY, String(n + 1)); } catch { /* 저장 실패해도 보여 준다 */ }
+  s.peekT = setTimeout(() => {
+    s.peekT = 0;
+    const fr = s.feed.getBoundingClientRect();
+    const art = [...s.feed.querySelectorAll(".tws-tw")].find((a) => { const r = a.getBoundingClientRect(); return r.bottom > fr.top + 8 && r.top < fr.bottom - 8; });
+    const tr = art && art.querySelector(".tws-tw__track");
+    if (!tr || !s.open) return;
+    s.peekEl = tr;
+    _runT(tr, [{ transform: "translateX(0px)" }, { transform: "translateX(-24px)", offset: 0.5 }, { transform: "translateX(0px)" }], { duration: 260, easing: EASE });
+  }, 360);
+}
+function _cancelPeek() {
+  const s = S; if (!s) return;
+  clearTimeout(s.peekT);
+  s.peekT = 0;
+  if (s.peekEl) _stopT(s.peekEl);
+  s.peekEl = null;
+}
+
+/* ── 열기 · 닫기 · 멤버 바꾸기 ──────────────────────────────────────── */
+function _open(ck, from) {
+  const list = _visible(_st.data)[ck];
+  if (!list || !list.length) return;
+  const s = _ensureSheet();
+  if (s.open) return;
+  s.ck = ck;
+  s.from = from || null;
+  s.face = _getFace();
+  s.sig = L.sigOf(list);
+  _head();
+  _members(true);
+  // PC: 누른 아바타 쪽에서 커지며 나온다(B2)
+  if (!_mobile() && from) {
+    const r = s.sheet.getBoundingClientRect(), a = from.getBoundingClientRect();
+    s.sheet.style.transformOrigin = ((a.left + a.width / 2 - r.left) / Math.max(1, r.width) * 100).toFixed(1) + "% " + ((a.top + a.height / 2 - r.top) / Math.max(1, r.height) * 100).toFixed(1) + "%";
+  } else s.sheet.style.transformOrigin = "";
+  s.open = true;
+  _renderFeed(true);
+  s.sheet.classList.add("is-open");
+  s.scrim.classList.add("is-on");
+  s.scrim.style.opacity = "";
+  document.body.classList.add("tw-modal-open");
+  setTimeout(() => { if (S && S.open) s.sheet.focus({ preventScroll: true }); }, 30);
+  _peek();
+}
+function _close() {
+  const s = S;
+  if (!s || !s.open) return;
+  s.open = false;
+  const ck = s.ck;
+  _markReadAll(_visible(_st.data)[ck] || []);   // 닫으면 읽음 처리 → 배지가 줄어든다(B4)
+  s.sheet.classList.remove("is-open");
+  s.scrim.classList.remove("is-on");
+  s.scrim.style.opacity = "";
+  document.body.classList.remove("tw-modal-open");
+  _cancelPeek();
+  s.newChip.classList.remove("is-on");
+  if (s.watch) { s.watch.disconnect(); s.watch = null; }
+  if (s.cardIO) { s.cardIO.disconnect(); s.cardIO = null; }
+  _stopCards(s.feed);                                  // 닫으면 X 카드(재생 중인 영상 포함) 를 지운다
+  const back = s.from;
+  s.from = null;
+  if (back && back.isConnected) back.focus({ preventScroll: true });
+}
+function _switchTo(ck) {
+  const s = S;
+  if (!s || !s.open || ck === s.ck) return;
+  if (!(_visible(_st.data)[ck] || []).length) return;
+  const keys = FALLBACK_CHANNEL_ORDER;
+  const dir = keys.indexOf(ck) > keys.indexOf(s.ck) ? 1 : -1;
+  _markReadAll(_visible(_st.data)[s.ck] || []);        // 멤버를 바꾸면 그 전 멤버는 읽음
+  s.ck = ck;
+  s.sig = L.sigOf(_visible(_st.data)[ck] || []);
+  _head();
+  _members(false);
+  _renderFeed(true);
+  const feed = s.feed;
+  feed.classList.remove("is-swapping");
+  feed.style.setProperty("--from", (dir * 24) + "px");   // 칩 방향에서 24px 미끄러져 들어온다
+  void feed.offsetWidth;
+  feed.classList.add("is-swapping");
+}
+/** 폴링 뒤: 시트가 열려 있으면 표시 서명이 바뀐 때만 다시 그린다. 트윗이 모두 사라졌으면 닫는다. */
+function _refreshOpen() {
+  const s = S;
+  if (!s || !s.open) return;
+  const list = _visible(_st.data)[s.ck];
+  if (!list || !list.length) { _close(); return; }
+  const sig = L.sigOf(list);
+  if (sig === s.sig) return;
+  s.sig = sig;
+  _head();
+  _members(true);
+  _renderFeed(false);
+}
+
+/* ── 트윗 없는 네임플레이트를 눌렀을 때 ──────────────────────────────
+   네임플레이트가 고개를 젓듯 흔들리고(.is-nope), 「OO의 새 트윗이 아직 없어요」가 1.7초 떴다 사라진다(.tw-nope). 진동 8ms. */
 let _nopeEl = null, _nopeT = 0;
 function _noTweet(target, ck) {
-  const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!calm) { target.classList.remove("is-nope"); void target.offsetWidth; target.classList.add("is-nope"); }
+  if (!_reduce()) { target.classList.remove("is-nope"); void target.offsetWidth; target.classList.add("is-nope"); }
   vibrate(8);
   if (!_nopeEl) {
     _nopeEl = document.createElement("div");
@@ -598,7 +936,7 @@ function _noTweet(target, ck) {
     _nopeEl.addEventListener("animationend", () => _nopeEl.classList.remove("on"));
     document.body.appendChild(_nopeEl);
   }
-  const name = String((FALLBACK_CHANNELS[ck] || {}).name_ko || "").split(" ").pop();
+  const name = L.shortName((FALLBACK_CHANNELS[ck] || {}).name_ko);
   _nopeEl.textContent = `${name ? name + "의 " : ""}새 트윗이 아직 없어요`;
   _nopeEl.classList.remove("on", "below");
   const r = target.getBoundingClientRect(), w = _nopeEl.offsetWidth, h = _nopeEl.offsetHeight;
@@ -618,74 +956,36 @@ function _noTweet(target, ck) {
 function _wire() {
   const board = _st.board;
   _st.wired = true;
-
-  // 클릭 — 캐러셀 클론 포함 위임. 캡처 단계에서 앵커(.lane__link) 기본 내비를 가로챈다.
+  // 클릭 — 캡처 단계에서 아바타 · 배지 · 이름을 잡아 앵커 기본 이동을 막고 시트를 연다. 레일 버튼(YouTube · X)은 그대로 통과.
   board.addEventListener("click", (e) => {
     const lane = e.target.closest(".lane");
     if (!lane || lane.hasAttribute("data-no-badge")) return;
     const ck = lane.dataset.channel;
-    // (v4.3.4) 네임플레이트(아바타·편지 배지·이름)는 말풍선 전용 — YouTube/X 이동은 우측 레일 버튼이 맡는다
     const plate = e.target.closest(".lane__tw, .lane__avatar, .lane__link, .tt__nm");
-    if (!_visible(_st.data)[ck]) {                       // 트윗 없음 → 말풍선 대신 「새 트윗 없음」 알림(트윗 목록을 받은 뒤에만)
+    if (!_visible(_st.data)[ck]) {                       // 트윗 없음 → 「새 트윗 없음」 알림(트윗 목록을 받은 뒤에만)
       if (plate && _st.data !== undefined) _noTweet(plate.closest(".lane__link, .tt__who") || plate, ck);
       return;
     }
-    if (!plate) return;                                  // 레일 등 → 그대로
+    if (!plate) return;
     e.preventDefault();
     e.stopPropagation();
-    if (_mobile()) { _openToast(ck); return; }
-    // 호버로 열려 있던/열리던 중이었어도 클릭은 항상 고정(pinned) 패널로 넘긴다 —
-    // 같은 노드를 그대로 재사용(_bubble)하므로 끊김 없이 이어짐.
-    if (_st.peek === ck) _st.peek = null;
-    _togglePin(ck);
+    _open(ck, plate);
   }, true);
-
-  // PC 호버 — 있는 동안 펼침. 이미 열려있거나(peek) 고정돼(pinned) 있으면 재진입 무시
-  // (열리는 애니메이션 도중 재호버/재클릭으로 상태가 꼬이는 걸 막음 — 애초에 트리거를 잠근다).
-  board.addEventListener("pointerover", (e) => {
-    if (_mobile()) return;
-    const lane = e.target.closest(".lane");
-    if (!lane || lane.hasAttribute("data-no-badge") || !e.target.closest(".lane__tw, .lane__avatar")) return;
-    const ck = lane.dataset.channel;
-    if (!_visible(_st.data)[ck]) return;
-    if (_st.pinned.has(ck) || _st.peek === ck) return;
-    _st.peek = ck;
-    _showBubble(ck);
-  });
-  // 레인 밖으로 나가도 그 채널의 말풍선 패널(.lane__bubble, #board 의 형제 노드라
-  // lane.contains() 로는 못 잡음)로 이동한 거면 유지 — 패널 위에서 스크롤·번역 버튼
-  // 클릭이 가능해야 하므로. 패널에서 레인으로 되돌아가는 경우도 동일하게 유지.
-  board.addEventListener("pointerout", (e) => {
-    const lane = e.target.closest(".lane");
-    const bubbleEl = e.target.closest(".lane__bubble");
-    if (!lane && !bubbleEl) return;
-    const ck = lane ? lane.dataset.channel : bubbleEl.dataset.ck;
-    if (_st.peek !== ck) return;   // 이 채널이 호버로 열린 상태가 아니면(핀 등) 상관 안 함
-    const rt = e.relatedTarget;
-    const laneEl = lane || _lanes(ck)[0];
-    const b = _st.bubbles.get(ck);
-    if (rt && ((laneEl && laneEl.contains(rt)) || (b && b.contains(rt)))) return;
-    _st.peek = null;
-    _closeBubble(ck);
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
-    _closeAllPins();
-    _closeToast();
-  });
-  document.addEventListener("click", (e) => {
-    if (e.target.closest(".lane__tw, .lane__avatar, .lane__bubble")) return;
-    _closeAllPins();
-  });
-  window.addEventListener("resize", () => {
-    if (_mobile()) _closeAllPins();
-    else _repositionAll();
-  });
 }
 
-/* ── (v4.6.4) 소식 팝업 카드(notices.js)도 같은 X 공식 카드를 쓴다 ─────────
-   카드 만들기 · 불러오기 · 정리만 내보낸다 — 테마 전환 · 높이 신호(iframe.lane__thread__embed) · 15초 실패 링크는 트윗과 같은 코드가 처리한다. */
+/* ── public ─────────────────────────────────────────────────────── */
+export function renderTweets(boardEl, data) {
+  _st.board = boardEl;
+  if (data !== undefined) _st.data = data;
+  _apply();
+}
+export function reapplyTweets(boardEl) {
+  _st.board = boardEl;
+  _apply();
+}
+
+/* ── (소식 팝업 · 트윗 시트 공용) X 공식 카드 ─────────────────────────
+   카드 만들기 · 불러오기 · 정리만 내보낸다. 테마 전환 · 높이 신호 · 15초 실패 링크는 같은 코드가 처리한다. */
 /** X 카드 자리(숫자 id 면 임베드 자리, 아니면 「X에서 원문 보기」 링크). href = 원문 트윗 주소 */
 export function makeXCard(id, href) { return _xCard({ id, url: href || "" }); }
 /** root 안의 X 카드 자리를 지금 불러온다(iframe 생성) */
@@ -695,16 +995,3 @@ export function loadXCards(root) {
 }
 /** root 안의 X 카드 iframe 을 지운다(닫을 때) */
 export function stopXCards(root) { _stopCards(root); }
-
-/* ── public ─────────────────────────────────────────────────────── */
-export function renderTweets(boardEl, data) {
-  _st.board = boardEl;
-  _st.tlang = _getTlang();
-  if (data !== undefined) _st.data = data;
-  _apply();
-}
-export function reapplyTweets(boardEl) {
-  _st.board = boardEl;
-  _st.tlang = _getTlang();
-  _apply();
-}

@@ -1,21 +1,21 @@
-/* tweets.css — 멤버 개인 트윗 편지 배지 + PC 말풍선 + 모바일 토스트 (v2.8).
-   계약·목업: docs/plan/v2_8_personal_tweets.md
-   말풍선 색은 멤버 아바타 색(tweets.js). 그 밖의 색은 layout.css 토큰 + 아래 --tw-* (어둡게 값, 밝게 = theme.css). */
+/* tweets.css — 멤버 트윗 시트(ui_spec.md) · 보드 트윗 배지 · X 공식 카드(소식 팝업과 공용).
+   시트 색: 바탕 = 멤버 색(--m · 레인 색을 tweets.js 가 넣는다), 글자 = --mi(검정 · 흰색 중 대비 큰 쪽, tweetlogic.js).
+   그 밖의 색은 아래 --tw-* 토큰(어둡게 값, 밝게 = theme.css). 새 토큰(--t-*)은 :root 에 둔다. */
+
+/* 색 전환이 부드럽도록 멤버 색 두 개를 등록한다(시트 바탕 · 글자색 500ms) */
+@property --m { syntax: "<color>"; inherits: true; initial-value: #3a3a3e; }
+@property --mi { syntax: "<color>"; inherits: true; initial-value: #ffffff; }
 
 :root {
   --tw-badge-bg: #ccfbfa;   /* 안 읽은 트윗 배지 · 트윗 있는 아바타 링 */
   --tw-badge-fg: #0c1a1a;
   --tw-xcard-bg: #000000;   /* X 카드 자리 바탕 */
+  /* 움직임 속도 — tweets.js 의 EASE 와 같은 곡선 */
+  --t-fast: 120ms; --t-face: 260ms; --t-open: 320ms; --t-close: 210ms; --t-color: 500ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* PC 말풍선을 #board 좌표계에 absolute 로 얹는다 (헤더 overflow:hidden 클리핑 회피). */
-#board {
-  position: relative;
-}
-
-/* ── (v3.0.2) 헤더 우측 이동 레일 — YouTube · X ───────────────────────
-   layout.css 뒤에 로드되므로 여기서 .lane__header 를 3열(아바타+이름 / 레일)로 만든다.
-   render.js buildHeader 가 <a.lane__link> 다음에 <nav.lane__nav> 를 넣는다. */
+/* ── 헤더 우측 이동 레일 — YouTube · X (render.js buildHeader 가 .lane__link 다음에 .lane__nav 를 넣는다) ── */
 .lane__header {
   display: flex;
   align-items: center;
@@ -66,17 +66,16 @@
   .lane__nav-btn { width: 26px; height: 26px; }   /* 터치 타깃 */
 }
 
-/* ── 트윗 알림 배지 (아바타 우상단, 살짝 겹침) ───────────────────────
-   (v4.1.0) 봉투 아이콘을 없애고 동그라미만: 크기는 모두 같은 원: 안 읽음 1건 = 빈 원(숫자 없음), 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음 */
+/* ── 트윗 배지 (아바타 우상단, 살짝 겹침) ───────────────────────────────
+   같은 크기의 원: 안 읽음 1건 = 빈 원, 2건 이상 = 숫자 원, 모두 읽음 = 표시 없음(.is-read) */
 .lane__tw {
   position: absolute;
-  /* 위치 = 아바타(44px) 오른쪽 위 모서리 바깥: 중심이 아바타 가로 87.5% · 세로 6% 지점. 헤더 높이(이동 레일 때문에 달라짐)와 상관없이
-     아바타가 세로 중앙이므로 top 을 50% 기준으로 잡는다. 타임테이블 칸(40px 아바타)은 timetable.css 에서 같은 비율로 */
+  /* 위치 = 아바타(44px) 오른쪽 위 모서리 바깥: 중심이 아바타 가로 87.5% · 세로 6% 지점 */
   left: 44.5px;
   top: calc(50% - 29px);
   z-index: 12;
   box-sizing: border-box;
-  width: 20px;                    /* 숫자 · 상태와 관계없이 항상 같은 크기 */
+  width: 20px;
   height: 20px;
   padding: 0;
   display: grid;
@@ -93,7 +92,7 @@
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5));
 }
 .lane__tw.is-read {
-  display: none;                  /* 모두 읽으면 테두리도 남기지 않는다 (아바타를 누르면 스레드는 계속 열린다) */
+  display: none;                  /* 모두 읽으면 표시를 남기지 않는다 */
 }
 .lane__tw:focus-visible {
   outline: 2px solid var(--tw-badge-bg);
@@ -121,190 +120,293 @@
   18% { transform: translateY(0); }
 }
 
-/* ── PC 스레드 패널 (= 확장된 말풍선, v3.1) ──────────────────────── */
-.lane__bubble {
-  position: absolute;
-  z-index: 60;
-  width: 540px;                     /* v3.8.1: 좌 카드(300px) + 우 번역(≈200px). X 카드는 폭 250px 이상 필요 */
-  max-width: calc(100% - 16px);
-  background: var(--tw-bg, #3a3a3e);
-  color: var(--tw-ink, #fff);
-  border-radius: 13px;
-  padding: 4px 5px 6px;
-  box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.7);
-  font-size: 13px;
-  line-height: 1.55;
-  transform-origin: top left;
-  transform: translateY(-4px) scale(0.94);
+/* 트윗이 있는 멤버의 아바타 = 얇은 링(읽음 여부와 무관). tweets.js _applyBadges 가 .has-tweet 을 켠다 */
+.lane__avatar.has-tweet {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 2.5px var(--tw-badge-bg);
+}
+
+/* ── 트윗 시트 (ui_spec.md §4) ─────────────────────────────────────────
+   폰(767px 이하) = 아래에서 올라오는 시트(폭 전체 · 높이 86% · 위 모서리 22px · 끌어 닫기),
+   PC(768px 이상) = 가운데 뜨는 팝업 보드(폭 540px · 최대 높이 660px). 속 구성 · 조작은 같다. */
+body.tw-modal-open {
+  overflow: hidden;
+}
+body.no-select { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+
+.tws-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.55);
   opacity: 0;
   pointer-events: none;
-  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.15s ease;
+  transition: opacity var(--t-face) var(--ease);
 }
-.lane__bubble.tl-off { width: 330px; }                      /* 번역 OFF — 우측 열을 접어 카드만 */
-.lane__bubble.is-open {
-  transform: translateY(0) scale(1);
-  opacity: 1;
-  pointer-events: auto;
-}
-.lane__bubble::before {
-  content: "";
-  position: absolute;
-  top: -6px;
-  left: var(--tail-x, 18px);        /* JS 가 뱃지 중심 바로 아래로 맞춘다 */
-  width: 13px;
-  height: 13px;
-  background: var(--tw-bg, #3a3a3e);
-  transform: rotate(45deg);
-  border-radius: 3px;
-}
+.tws-scrim.is-on { opacity: 1; pointer-events: auto; }
+.tws-scrim.is-drag { transition: none; }   /* 끄는 동안은 손가락을 그대로 따른다(sheetdrag.js) */
 
-/* 패널·시트 공용 헤더 (유닛명 + 번역토글 + 닫기) */
-.lane__bubble__head,
-.tw-toast__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 8px 6px;
-}
-.lane__bubble__who {
-  font-size: 12px;
-  font-weight: 700;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lane__bubble__ctrl {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-}
-.lane__bubble__tl,
-.tw-toast__tl {
-  background: rgba(255, 255, 255, 0.16);
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-  line-height: 1;
-  padding: 3px 6px;
-  border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
-  border-radius: 6px;
-}
-.lane__bubble__x,
-.tw-toast__x {
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--tw-ink, #fff) 20%, transparent);
-  color: inherit;
-  cursor: pointer;
-  font-size: 10px;
-  display: none;
-  place-items: center;
-  flex: none;
-}
-.lane__bubble.is-pinned .lane__bubble__x,
-.tw-toast__x { display: grid; }
-
-/* 메시지 스택 (최신이 아래, 넘치면 스크롤) */
-.lane__bubble__scroll,
-.tw-toast__scroll {
+.tws, .tws * { box-sizing: border-box; }
+.tws {
+  --m: #3a3a3e;
+  --mi: #ffffff;
+  --paper: rgba(0, 0, 0, 0.2);   /* 번역 칸 바탕 — 글자와 반대쪽으로 섞는다(JS 가 글자색 따라 넣는다) */
+  --s1: color-mix(in srgb, var(--mi) 14%, transparent);
+  --s2: color-mix(in srgb, var(--mi) 22%, transparent);
+  --ln: color-mix(in srgb, var(--mi) 26%, transparent);
+  --sub: color-mix(in srgb, var(--mi) 84%, var(--m));
+  position: fixed;
+  z-index: 901;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 460px;
+  height: 86%;
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding: 3px 8px 5px;
-  /* 트윗 노출 범위가 24시간·최대 50건이라 메시지 수가 늘 수 있음 — 말풍선 전체(헤더 포함)가
-     화면 세로 2/3(66.6vh)을 넘지 않도록, 헤더 높이(~44px)를 뺀 만큼만 스크롤 영역에 배정. */
-  max-height: calc(66.6vh - 44px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
+  background: linear-gradient(172deg, color-mix(in srgb, var(--m) 88%, #fff) 0%, var(--m) 48%, color-mix(in srgb, var(--m) 90%, #000) 100%);
+  color: var(--mi);
+  font-size: 14px;
+  line-height: 1.55;
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -18px 50px -20px rgba(0, 0, 0, 0.5);
+  transform: translateY(103%);
+  visibility: hidden;
+  transition: transform var(--t-close) var(--ease), --m var(--t-color) ease, --mi var(--t-color) ease;
 }
-.lane__bubble__scroll::-webkit-scrollbar,
-.tw-toast__scroll::-webkit-scrollbar { width: 5px; }
-.lane__bubble__scroll::-webkit-scrollbar-thumb,
-.tw-toast__scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 3px;
+/* B2: 열기 320ms · 닫기 210ms */
+.tws.is-open {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--t-open) var(--ease), --m var(--t-color) ease, --mi var(--t-color) ease;
 }
-.lane__thread__grp {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.lane__thread__msg {
-  position: relative;
-  align-self: flex-start;
-  max-width: 94%;
-  background: rgba(255, 255, 255, 0.17);
-  border-radius: 11px;
-  border-top-left-radius: 4px;
-  padding: 7px 24px 7px 10px;
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-.lane__thread__grp .lane__thread__msg + .lane__thread__msg { border-top-left-radius: 11px; }
-.lane__thread__msg .ori {
-  position: absolute;
-  right: 5px;
-  bottom: 4px;
-  width: 12px;
-  height: 12px;
-  color: inherit;
-  opacity: 0;                       /* 평소엔 숨김 — 스택이 지저분해지지 않게 */
-  transition: opacity 0.12s ease;
-}
-.lane__thread__msg:hover .ori,
-.lane__thread__msg .ori:focus-visible { opacity: 0.7; }
-@media (hover: none) {
-  .lane__thread__msg .ori { opacity: 0.38; }   /* 터치기기는 은은하게 상시 노출 */
-}
-.lane__thread__msg .ori.is-disabled { opacity: 0 !important; pointer-events: none; }
-.lane__thread__msg .ori .src__ic { width: 13px; height: 13px; display: block; }
-.lane__thread__t {
-  align-self: flex-end;
-  font-size: 10px;
-  opacity: 0.72;
-  margin-top: 2px;
-  font-variant-numeric: tabular-nums;
+.tws.is-dragging { transition: none; }                                /* B3: 끄는 동안 */
+.tws.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }   /* 놓고 제자리로 튕김 */
+.tws:focus { outline: none; }
+
+@media (min-width: 768px) {
+  .tws {
+    left: 50%;
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    margin: 0;
+    width: 540px;
+    max-width: calc(100% - 48px);
+    height: min(86%, 660px);
+    border-radius: 20px;
+    box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.6), 0 0 0 1px color-mix(in srgb, var(--mi) 12%, transparent);
+    opacity: 0;
+    transform: translate(-50%, -47%) scale(0.8);
+    transition: transform var(--t-close) var(--ease), opacity var(--t-close) ease, --m var(--t-color) ease, --mi var(--t-color) ease;
+  }
+  .tws.is-open {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    transition: transform var(--t-open) var(--ease), opacity var(--t-open) ease, --m var(--t-color) ease, --mi var(--t-color) ease;
+  }
+  .tws .tws__grab { display: none; }
+  .tws .tws__head { padding-top: 14px; cursor: default; }
 }
 
-/* ── 트윗 = 번역 말풍선 + X 공식 카드 (v3.8.0b) ─────────────────────────────────────────
-   원문 텍스트·이미지·영상 등은 우리가 그리지 않는다(법률 자문). 번역 말풍선이 먼저 보이고, 그 아래에 X 공식 카드가
-   화면에 들어올 때 로드된다. 카드 높이는 X 임베드가 알려주는 값을 JS 가 wrap 에 적용한다(iframe 은 wrap 을 꽉 채움). */
-.lane__thread__unit {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.tws__grab { height: 22px; display: grid; place-items: center; cursor: grab; touch-action: none; flex: none; }
+.tws__grab i { width: 40px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--mi) 45%, transparent); transition: width var(--t-fast); }
+.tws.is-armed .tws__grab i { width: 56px; }   /* B3: 닫힘 선을 넘은 표시 */
+
+.tws__head { display: flex; align-items: center; gap: 10px; padding: 0 12px 8px 16px; flex: none; touch-action: none; cursor: grab; }
+.tws__who { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.tws__av {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  background-color: color-mix(in srgb, var(--mi) 20%, transparent);
+  background-size: cover; background-position: center;
+  border: 2px solid color-mix(in srgb, var(--mi) 55%, transparent);
 }
-.lane__thread__msg .lab {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  opacity: 0.7;
-  margin-bottom: 1px;
+.tws__id { min-width: 0; flex: 1; }
+.tws__nm { font-weight: 800; font-size: 15px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tws__hd { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tws__close {
+  width: 36px; height: 36px; border-radius: 10px; border: 0; background: var(--s1);
+  display: grid; place-items: center; cursor: pointer; color: inherit; flex: none;
 }
-/* 참조 트윗은 번역 텍스트만 안쪽 말풍선으로 — 이미지 등 미디어는 X 카드에서 확인 */
-.lane__thread__quote {
-  margin-top: 6px;
-  padding: 7px 8px;
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.12);
-  font-size: 12px;
-  line-height: 1.4;
-  opacity: 0.9;
-  white-space: pre-wrap;
-  word-break: break-word;
+.tws__close:hover { background: var(--s2); }
+.tws__close svg { width: 16px; height: 16px; }
+
+/* 머리 줄 「번역 · 원문」 탭 = 모든 글 한꺼번에(A4 알약이 미끄러진다) */
+.tws__seg {
+  position: relative; display: inline-flex; padding: 2px; border-radius: 9px;
+  background: var(--s1); border: 1px solid var(--ln); flex: none;
 }
+.tws__seg-b {
+  position: relative; z-index: 1; border: 0; background: transparent; color: var(--sub);
+  font: inherit; font-size: 12px; white-space: nowrap; padding: 4px 9px; min-height: 28px;
+  border-radius: 7px; cursor: pointer;
+}
+.tws__seg-b[aria-pressed="true"] { color: var(--m); font-weight: 800; }
+.tws__seg-pill {
+  position: absolute; left: 0; top: 0; z-index: 0; border-radius: 7px; background: var(--mi);
+  pointer-events: none; transition: all var(--t-face) var(--ease);
+}
+
+/* 멤버 칩 줄: 마우스 · 펜은 JS 끌기, 터치는 브라우저 가로 스크롤(pan-x). 넘칠 때만 양 끝 16px 흐림 */
+.tws__members {
+  --ml: 16px; --mr: 16px;
+  position: relative; display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto;
+  scrollbar-width: none; flex: none; cursor: grab; touch-action: pan-x;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--ml), #000 calc(100% - var(--mr)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--ml), #000 calc(100% - var(--mr)), transparent 100%);
+}
+.tws__members::-webkit-scrollbar { display: none; }
+.tws__members.at-l { --ml: 0px; }
+.tws__members.at-r { --mr: 0px; }
+.tws__members.is-grabbing { cursor: grabbing; }
+.tws__chip {
+  position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--ln); background: var(--s1); color: inherit; border-radius: 999px;
+  padding: 3px 10px 3px 3px; cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; min-height: 32px;
+  transition: opacity var(--t-fast);
+}
+.tws__chip i {
+  width: 24px; height: 24px; border-radius: 50%; flex: none;
+  background: var(--c, #888); border: 1.5px solid color-mix(in srgb, var(--mi) 50%, transparent);
+}
+.tws__chip[aria-current="true"] { background: transparent; color: var(--m); font-weight: 800; border-color: var(--mi); }
+.tws__chip[aria-disabled="true"] { opacity: 0.4; cursor: default; }   /* 트윗 없는 멤버: 흐리게 · 누를 수 없게 */
+.tws__chip b {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e5484d; color: #fff;
+  font-size: 10.5px; display: grid; place-items: center; font-variant-numeric: tabular-nums;
+}
+/* A5: 선택 알약 — 칩 사이를 미끄러진다(위치 · 크기는 JS) */
+.tws__mpill {
+  position: absolute; left: 0; top: 0; height: 32px; border-radius: 999px; background: var(--mi);
+  pointer-events: none; transition: all var(--t-face) var(--ease);
+}
+
+/* 피드 — 위 · 아래 끝 흐림(C3). 끝에 닿은 쪽은 at-top / at-bottom 으로 끈다 */
+.tws__feed {
+  --ft: 12px; --fb: 16px;
+  position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px 14px 22px; display: flex; flex-direction: column; gap: 16px;
+  scrollbar-width: thin; scrollbar-color: var(--ln) transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%);
+}
+.tws__feed.at-top { --ft: 0px; }
+.tws__feed.at-bottom { --fb: 0px; }
+.tws__feed.is-swapping { animation: tws-swap 0.32s var(--ease); }   /* 멤버를 바꾸면 칩 방향에서 */
+@keyframes tws-swap { from { opacity: 0; transform: translateX(var(--from, 0px)); } to { opacity: 1; transform: none; } }
+
+/* 「여기부터 새 글」 구분선(B4: 열면 양쪽 선이 왼쪽에서 그어진다) */
+.tws__new { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; }
+.tws__new::before, .tws__new::after { content: ""; flex: 1; height: 1.5px; background: var(--mi); opacity: 0.55; }
+.tws__new.draw::before, .tws__new.draw::after { transform-origin: left center; animation: tws-nl 420ms var(--ease) both; }
+@keyframes tws-nl { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* 글타래(C1: 세로줄이 처음 보일 때 위에서 아래로 한 번) */
+.tws-chain { position: relative; display: flex; flex-direction: column; gap: 12px; padding-left: 18px; }
+.tws-chain::before {
+  content: ""; position: absolute; left: 6px; top: 16px; bottom: 30px; width: 2px; border-radius: 1px;
+  background: var(--mi); opacity: 0.5; transform-origin: top center;
+}
+.tws-chain.wait::before { transform: scaleY(0); }
+.tws-chain.draw::before { animation: tws-chain 480ms var(--ease) both; }
+@keyframes tws-chain { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+/* 글 하나 */
+.tws-tw { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.tws-tw:focus-visible { outline: 2px solid var(--mi); outline-offset: 3px; border-radius: 12px; }   /* C4 */
+.tws-chain .tws-tw::before {
+  content: ""; position: absolute; left: -15px; top: 9px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--mi); box-shadow: 0 0 0 3px var(--m);
+}
+.tws-chain .tws-tw.is-root::before { background: var(--m); border: 2px solid var(--mi); }
+.tws-tw__meta { display: flex; align-items: center; gap: 6px; min-height: 28px; touch-action: pan-y; cursor: grab; }
+.tws-tw__time {
+  font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px;
+}
+.tws-tw__time svg { width: 13px; height: 13px; flex: none; }
+.tws-tag { font-size: 10.5px; font-weight: 800; color: #fff; background: #e5484d; border-radius: 6px; padding: 0 5px; margin-left: 2px; }
+/* 시각 줄의 사진 · 영상 버튼(아이콘 + 수). 누르면 그 글만 원문 면 */
+.tws-tw__media {
+  display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-width: 28px; min-height: 28px;
+  padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--mi); cursor: pointer; flex: none;
+  font: inherit; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: transform var(--t-fast) var(--ease), background var(--t-fast);
+}
+.tws-tw__media:hover { background: var(--s1); }
+.tws-tw__media:active { transform: scale(0.96); }
+.tws-tw__media:focus-visible { outline: 2px solid var(--mi); outline-offset: 2px; }
+.tws-tw__mi { display: inline-flex; align-items: center; gap: 3px; }
+.tws-tw__media svg { width: 14px; height: 14px; }
+.tws-tw__open {
+  width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--sub); flex: none;
+}
+.tws-tw__open:hover { background: var(--s1); color: var(--mi); }
+.tws-tw__open svg { width: 14px; height: 14px; }
+.tws-tw__open.is-disabled { pointer-events: none; opacity: 0.4; }
+
+/* 두 면: 가로 스냅 스크롤. 늘 같은 높이(align-items: stretch — 큰 쪽에 맞춘다, U3) */
+.tws-tw__track {
+  display: flex; align-items: stretch; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain; scrollbar-width: none; border-radius: 14px; cursor: grab;
+}
+.tws-tw__track::-webkit-scrollbar { display: none; }
+.tws-tw__track.is-grabbing { cursor: grabbing; scroll-snap-type: none; }
+.tws-tw__face { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; }
+.tws-ko {
+  flex: 1; display: flex; flex-direction: column; gap: 10px; background: var(--paper);
+  border: 1px solid var(--ln); border-radius: 14px; padding: 12px 14px;
+}
+.tws-ko__txt {
+  margin: 0; font-size: 15.5px; line-height: 1.68; white-space: pre-wrap; word-break: keep-all;
+  overflow-wrap: anywhere; line-break: strict;
+}
+.tws-ko__q {
+  padding: 9px 11px; border-radius: 10px; border: 1px solid var(--ln); background: transparent;
+  font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-break: strict;
+}
+.tws-ko__q span { display: block; font-size: 11px; font-weight: 800; margin-bottom: 2px; }
+/* 첨부 줄 — 번역 면엔 사진 · 영상을 안 그리므로(원문 미디어는 X 카드로만) 있다는 것만 알리고 원문 면으로 */
+.tws-att {
+  margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--mi) 45%, transparent); background: color-mix(in srgb, var(--mi) 8%, transparent);
+  color: inherit; cursor: pointer; text-align: left; width: 100%; font: inherit; font-size: 13px;
+  transition: transform var(--t-fast) var(--ease);
+}
+.tws-att:hover { background: var(--s2); }
+.tws-att:active { transform: scale(0.98); }   /* B1: 누르는 느낌 */
+.tws-att__ic { display: inline-flex; gap: 3px; flex: none; }
+.tws-att__ic svg { width: 16px; height: 16px; }
+.tws-att__txt { flex: 1; min-width: 0; font-weight: 700; }
+.tws-att__go { flex: none; font-size: 12px; font-weight: 700; white-space: nowrap; }
+/* 면 점 2개(끌기 손잡이 겸 — A2: 끄는 동안 폭이 따라간다) */
+.tws-tw__dots { display: flex; justify-content: center; align-items: center; gap: 5px; height: 18px; margin-top: -2px; touch-action: pan-y; cursor: grab; }
+.tws-tw__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--mi); opacity: 0.35; transition: width var(--t-fast), opacity var(--t-fast); }
+.tws-tw__dots i.on { width: 14px; border-radius: 3px; opacity: 0.9; }
+.tws-tw__dots.is-drag i { transition: none; }
+
+/* 안내 한 줄(원문 면으로 처음 밀었을 때, 세션당 한 번) */
+.tws__hint {
+  position: absolute; z-index: 3; left: 16px; right: 16px; bottom: 14px; margin: 0 auto; max-width: 420px; width: fit-content;
+  text-align: center; background: var(--color-raised); color: var(--color-text); border: 1px solid var(--color-raised-edge);
+  font-size: 12.5px; line-height: 1.45; padding: 8px 12px; border-radius: 10px;
+  opacity: 0; transition: opacity 0.2s; pointer-events: none;
+}
+.tws__hint.is-on { opacity: 0.96; }
+
+/* C2: 「새 글 N개 ↓」 칩 — 새 글 자리가 화면 아래에 있을 때만 */
+.tws__newchip {
+  position: absolute; z-index: 2; left: 0; right: 0; bottom: 12px; margin: 0 auto; width: fit-content;
+  border: 0; border-radius: 999px; padding: 6px 14px; background: var(--mi); color: var(--m); font: inherit;
+  font-size: 12.5px; font-weight: 800; box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.5); cursor: pointer;
+  opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity var(--t-fast), transform var(--t-fast) var(--ease);
+}
+.tws__newchip.is-on { opacity: 1; pointer-events: auto; transform: none; }
+.tws :focus-visible { outline: 2px solid var(--mi); outline-offset: 2px; }
+
+/* ── X 공식 카드 (소식 팝업 notices.js 와 공용 · 트윗 시트의 원문 면) ──────────────────────
+   카드 높이는 X 임베드가 알려주는 값을 JS 가 wrap 에 적용한다(iframe 은 wrap 을 꽉 채움). */
 .lane__thread__xcard {
   position: relative;
   align-self: stretch;
@@ -326,14 +428,13 @@
   animation: tw-shim 1.6s linear infinite;
 }
 @keyframes tw-shim { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .lane__thread__xskel { animation: none; } }
 .lane__thread__embed {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   border: 0;
-  color-scheme: inherit;   /* (v4.6.0) 사이트 테마를 따른다 — X 카드도 같은 테마로 불러온다(tweets.js embedUrl) */
+  color-scheme: inherit;   /* 사이트 테마를 따른다 — X 카드도 같은 테마로 불러온다(tweets.js _embedSrc) */
   background: transparent;
 }
 .lane__thread__xlink {
@@ -358,159 +459,6 @@
 }
 .lane__thread__xlink.is-disabled { pointer-events: none; opacity: 0.6; }
 
-
-/* ── 모바일 토스트 (메신저 알림풍) ──────────────────────────────── */
-.tw-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 900;
-  background: rgba(0, 0, 0, 0.55);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.28s;
-}
-.tw-toast {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  top: 12px;
-  z-index: 901;
-  background: var(--tw-bg, #3a3a3e);
-  color: var(--tw-ink, #fff);
-  border-radius: 14px;
-  padding: 4px 5px 7px;
-  box-shadow: 0 20px 44px -12px rgba(0, 0, 0, 0.72);
-  transform: translateY(-140%);
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
-  font-size: 13px;
-  line-height: 1.55;
-}
-body.tw-modal-open {
-  overflow: hidden;
-}
-body.tw-modal-open .tw-backdrop {
-  opacity: 1;
-  pointer-events: auto;
-}
-body.tw-modal-open .tw-toast {
-  transform: translateY(0);
-}
-/* (마이크로 인터랙션) 위로 밀어 닫기 — 머리줄 · 맨 아래 손잡이를 위로 끈다(js/sheetdrag.js). 닫힘 선을 넘으면 .is-armed */
-.tw-toast__head { touch-action: none; cursor: grab; }
-.tw-toast__grab { height: 16px; display: grid; place-items: center; touch-action: none; cursor: grab; }
-.tw-toast__grab i {
-  width: 36px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--tw-ink, #fff) 35%, transparent);
-  transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s;
-}
-.tw-toast.is-armed .tw-toast__grab i { width: 54px; height: 5px; background: var(--tw-ink, #fff); }
-.tw-toast.is-dragging, .tw-toast.is-dragging .tw-toast__head { transition: none; cursor: grabbing; }
-.tw-toast.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }
-.tw-toast__avatar {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: 50%;
-  background: center / cover no-repeat rgba(0, 0, 0, 0.2);
-  border: 1.5px solid color-mix(in srgb, var(--tw-ink, #fff) 35%, transparent);
-}
-.tw-toast__id {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.2;
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
-.tw-toast__id .nm {
-  font-size: 12.5px;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tw-toast__id .hd {
-  font-size: 10px;
-  opacity: 0.8;
-  white-space: nowrap;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lane__tw.is-unread {
-    animation: none;
-  }
-  .lane__bubble,
-  .tw-toast,
-  .tw-backdrop {
-    transition: none;
-  }
-}
-
-/* ── v3.8.1 트윗 = 좌 X 카드 / 우 번역 말풍선 (PC 패널·모바일 토스트 공통). 한 트윗의 두 열은 더 긴 쪽 높이로 같다.
-   카드 자체엔 스크롤이 없고(전체 높이로 펼침), PC 말풍선은 화면 높이 1/2 를 넘으면 말풍선이 스크롤된다.
-   번역 ON/OFF 는 애니메이션: OFF = 번역이 먼저 페이드아웃(.18s) -> 열이 접히고 카드가 채워진다(.25s),
-   ON = 열이 먼저 펼쳐지고(.25s) -> 번역이 페이드인. 번역이 보이지 않는 동안엔 높이 0 으로 접어 줄바꿈 깜빡임이 행 높이에 안 새게 한다. ── */
-.lane__bubble .lane__bubble__scroll {
-  max-height: calc(50vh - 60px);
-  min-height: 120px;
-  overflow-y: auto;
-}
-.lane__bubble,
-.lane__bubble.tl-off {
-  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.15s ease, width 0.25s ease;
-}
-.lane__bubble.tl-off { transition-delay: 0s, 0s, 0.18s; }
-
-.lane__thread__grp { gap: 8px; }
-.lane__thread__unit {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 0;
-}
-.lane__thread__xcard {
-  order: 1;                          /* DOM 은 번역이 먼저 - 화면은 좌 카드 / 우 번역 */
-  flex: 0 0 300px;
-  min-width: 0;
-  transition: flex-grow 0.01s linear;   /* 크기 변화는 번역 열 애니메이션이 끝난 시점에 한 번에(카드 iframe 이 매 프레임 다시 그려지지 않게) */
-}
-.lane__thread__msg {
-  order: 2;
-  flex: 1 1 0;
-  min-width: 0;
-  align-self: stretch;
-  max-width: none;
-  margin-left: 8px;
-  overflow: hidden;
-  max-height: 4000px;
-  border-top-left-radius: 11px;
-  opacity: 1;
-  transition: opacity 0.18s ease 0.25s, max-height 0s 0.25s, flex-grow 0.25s ease, margin-left 0.25s ease, padding 0.25s ease, min-width 0.25s ease;
-}
-.tl-off .lane__thread__msg {
-  flex-grow: 0;
-  margin-left: 0;
-  padding: 0;
-  max-height: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s ease, max-height 0s 0.18s, flex-grow 0.25s ease 0.18s, margin-left 0.25s ease 0.18s, padding 0.25s ease 0.18s, min-width 0.25s ease 0.18s;
-}
-
-/* 모바일 토스트: 카드 250px(= X 카드 최소 폭) + 번역(최소 110px, 모자라면 목록이 가로로 밀린다). OFF 면 카드가 가득 채운다. */
-.tw-toast { left: 6px; right: 6px; padding: 3px 3px 7px; }
-.tw-toast .tw-toast__scroll { padding: 3px 4px 5px; overflow-x: auto; }
-.tw-toast .lane__thread__xcard { flex: 0 0 250px; }
-.tw-toast.tl-off .lane__thread__xcard { flex: 1 0 250px; transition-delay: 0.43s; }   /* OFF: 번역이 접힌 뒤(0.18+0.25s) 카드가 한 번에 넓어진다. ON 은 즉시 250px 로 돌아가 번역 열이 펼쳐질 자리를 준다 */
-.tw-toast .lane__thread__msg { min-width: 110px; margin-left: 6px; font-size: 12px; }
-.tw-toast.tl-off .lane__thread__msg { min-width: 0; margin-left: 0; }
-@media (prefers-reduced-motion: reduce) {
-  .lane__thread__xcard, .lane__thread__msg, .lane__bubble, .lane__bubble.tl-off { transition: none !important; }
-}
-
-/* 트윗이 있는 멤버의 아바타 = 얇은 링(색 = 안 읽음 숫자 배지 .lane__tw 와 같은 --tw-badge-bg) (읽음 여부와 무관, PC 타임테이블 왼쪽 칸 · 모바일 레인 헤더 공통). tweets.js _apply 가 .has-tweet 을 켠다 */
-.lane__avatar.has-tweet {
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 2.5px var(--tw-badge-bg);
-}
-
 /* ── (마이크로 인터랙션) 트윗 없는 네임플레이트를 눌렀을 때 — js/tweets.js _noTweet ── */
 .is-nope { animation: tw-nope-shake 0.42s; }
 @keyframes tw-nope-shake {
@@ -534,7 +482,19 @@ body.tw-modal-open .tw-toast {
 @keyframes tw-nope-tip { 0% { opacity: 0; transform: translateY(6px); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
 .tw-nope.below.on { animation-name: tw-nope-tip-b; }
 @keyframes tw-nope-tip-b { 0% { opacity: 0; transform: translateY(-6px); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ── 움직임 줄이기: 이동 · 크기는 끄고 색 · 투명도만(A1 · A3 은 JS 에서 안 함) ── */
 @media (prefers-reduced-motion: reduce) {
-  .is-nope { animation: none; }
-  .tw-nope.on, .tw-nope.below.on { animation: none; opacity: 1; }
+  .lane__tw.is-unread { animation: none; }
+  .lane__thread__xskel { animation: none; }
+  .tws, .tws.is-open, .tws.is-dragging, .tws.is-spring {
+    transition: opacity var(--t-fast), --m var(--t-color) ease, --mi var(--t-color) ease !important;
+  }
+  .tws-scrim, .tws__hint { transition: opacity var(--t-fast) !important; }
+  .tws-tw__dots i, .tws__grab i, .tws__seg-pill, .tws__mpill { transition: none !important; }
+  .tws__newchip { transition: opacity var(--t-fast) !important; transform: none !important; }
+  .tws-att:active, .tws-tw__media:active { transform: none; }
+  .tws__feed.is-swapping { animation: none; }
+  .tws__new.draw::before, .tws__new.draw::after, .tws-chain.draw::before { animation: none; }
+  .lane__thread__xcard, .tw-nope { transition: none; }
 }
