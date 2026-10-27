@@ -963,6 +963,7 @@ tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `
 `GitHubStore(token, repo, branch="data", *, session=None, timeout=15.0)`. `read_json(path) -> (data|None, sha|None)`.
 `write_json(path, data, *, prev_sha, message) -> (bool, sha|None)` — 현재 원격 재조회해 내용 동일이면 PUT 안 함;
 `prev_sha` 와 현재 sha 다르면 `ConflictError`(다른 내용 커밋됨). 409/422 → `ConflictError`. 네트워크만 재시도.
+read_json · read_text — Contents API 가 1MB 초과 파일에 content 를 비워 주면(encoding=none) 응답 sha 로 `GET /repos/{repo}/git/blobs/{sha}` 를 다시 읽는다(최대 100MB). sha 는 Contents 응답 값을 그대로 써 낙관적 동시성이 유지된다. 실패는 RuntimeError.
 
 ### 8.8 `tasks.py` + `oidc.py`
 

@@ -1,5 +1,6 @@
 """
 GitHub Contents API 저장소 클라이언트. schedule.json/archive.json/pending.json 읽고 쓰기.
+1MB 초과(encoding=none) → Git Blob API(sha 지정, 최대 100MB)로 다시 읽음.
 """
 
 import base64
@@ -80,23 +81,48 @@ class GitHubStore:
             "User-Agent": "mewtype-scheduler-backend",
         }
 
-    def read_json(self, path: str) -> tuple[Optional[dict], Optional[str]]:
+    def _get_blob(self, sha: str) -> str:
         """
-        GitHub 저장소에서 JSON 파일을 읽음.
+        1MB 초과 파일 본문을 Git Blob API 로 읽음 (최대 100MB).
 
-        GET /repos/{repo}/contents/{path}?ref={branch}
-
-        Args:
-            path: 저장소 내 파일 경로 (예: "schedule.json").
+        GET /repos/{repo}/git/blobs/{sha}
+        sha 는 Contents 응답의 sha 를 그대로 쓴다 — 본문과 sha 가 같은 스냅샷이라 낙관적 동시성이 유지된다.
 
         Returns:
-            (data, sha) 튜플:
-            - 200: (파싱된 dict, sha 문자열)
-            - 404: (None, None)
-            - 그 외 오류: RuntimeError 발생
+            utf-8 본문 문자열.
 
         Raises:
-            RuntimeError: 네트워크 오류, 예상 외 HTTP 상태코드, 베이스64 디코딩 오류, JSON 파싱 오류.
+            RuntimeError: 200 이 아님, encoding 이 base64 가 아님, content 없음 (조용히 None 을 돌려주지 않는다).
+        """
+        url = f"{self.API}/repos/{self.repo}/git/blobs/{sha}"
+        sess = self.session or requests.Session()
+        resp = sess.get(url, headers=self._headers(), timeout=self.timeout)
+
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"GitHub Blob read failed: {resp.status_code} {resp.reason}. "
+                f"Response: {resp.text[:200]}"
+            )
+
+        resp_json = resp.json()
+        encoding = resp_json.get("encoding")
+        content_b64 = resp_json.get("content", "")
+        if encoding != "base64" or not content_b64:
+            raise RuntimeError(
+                f"GitHub Blob response unusable: status={resp.status_code}, "
+                f"encoding={encoding!r}, size={resp_json.get('size')}, sha={sha[:8]}"
+            )
+
+        return base64.b64decode(content_b64).decode("utf-8")
+
+    def _get_contents(self, path: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Contents API GET 1회 → (본문 문자열, sha). read_json · read_text 공용.
+
+        - 404: (None, None)
+        - 200 이 아니면 RuntimeError
+        - content 가 비었을 때: encoding == 'none' 이고 sha 가 있으면 1MB 초과 파일 → _get_blob 으로 다시 읽음.
+          그 밖의 빈 content 는 RuntimeError.
         """
         url = f"{self.API}/repos/{self.repo}/contents/{path}"
         params = {"ref": self.branch}
@@ -123,21 +149,47 @@ class GitHubStore:
             content_b64 = resp_json.get("content", "")
             sha = resp_json.get("sha")
 
-            if not content_b64:
-                raise RuntimeError(f"No content in response for {path} "
-                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
+            if content_b64:
+                # 베이스64 디코딩
+                return base64.b64decode(content_b64).decode("utf-8"), sha
 
-            # 베이스64 디코딩
-            content_bytes = base64.b64decode(content_b64)
-            content_str = content_bytes.decode("utf-8")
+            # 1MB 초과 파일: Contents 는 content 를 비우고 encoding=none 을 돌려준다
+            if resp_json.get("encoding") == "none" and sha:
+                return self._get_blob(sha), sha
 
-            # JSON 파싱
-            data = json.loads(content_str)
-
-            return data, sha
+            raise RuntimeError(f"No content in response for {path} "
+                               f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
 
         except requests.RequestException as e:
             raise RuntimeError(f"GitHub API network error: {e}")
+
+    def read_json(self, path: str) -> tuple[Optional[dict], Optional[str]]:
+        """
+        GitHub 저장소에서 JSON 파일을 읽음.
+
+        GET /repos/{repo}/contents/{path}?ref={branch}
+        1MB 초과(encoding=none) → Git Blob API(sha 지정, 최대 100MB)로 다시 읽음.
+
+        Args:
+            path: 저장소 내 파일 경로 (예: "schedule.json").
+
+        Returns:
+            (data, sha) 튜플:
+            - 200: (파싱된 dict, sha 문자열)
+            - 404: (None, None)
+            - 그 외 오류: RuntimeError 발생
+
+        Raises:
+            RuntimeError: 네트워크 오류, 예상 외 HTTP 상태코드, 베이스64 디코딩 오류, JSON 파싱 오류.
+        """
+        try:
+            body, sha = self._get_contents(path)
+            if body is None:
+                return None, None
+
+            # JSON 파싱
+            return json.loads(body), sha
+
         except (ValueError, KeyError) as e:
             raise RuntimeError(f"GitHub API response parsing error: {e}")
 
@@ -198,31 +250,12 @@ class GitHubStore:
 
     def read_text(self, path: str) -> tuple[Optional[str], Optional[str]]:
         """GitHub 저장소에서 일반 텍스트 파일(HTML 등)을 읽음. read_json 과 동일하되 JSON 파싱 안 함.
+        1MB 초과 파일도 _get_contents 의 Blob 경로로 같이 읽는다.
 
         Returns:
             (content_str, sha) 또는 404 면 (None, None).
         """
-        url = f"{self.API}/repos/{self.repo}/contents/{path}"
-        params = {"ref": self.branch}
-        try:
-            sess = self.session or requests.Session()
-            resp = sess.get(url, params=params, headers=self._headers(), timeout=self.timeout)
-            if resp.status_code == 404:
-                return None, None
-            if resp.status_code != 200:
-                raise RuntimeError(
-                    f"GitHub API read failed: {resp.status_code} {resp.reason}. "
-                    f"Response: {resp.text[:200]}"
-                )
-            resp_json = resp.json()
-            content_b64 = resp_json.get("content", "")
-            sha = resp_json.get("sha")
-            if not content_b64:
-                raise RuntimeError(f"No content in response for {path} "
-                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
-            return base64.b64decode(content_b64).decode("utf-8"), sha
-        except requests.RequestException as e:
-            raise RuntimeError(f"GitHub API network error: {e}")
+        return self._get_contents(path)
 
     def list_dir(self, path: str) -> list[str]:
         """(v3.8.9) 디렉터리의 파일 이름 목록(파일만, 하위 디렉터리 제외). 404 면 [].
@@ -419,6 +452,86 @@ if __name__ == "__main__":
     changed_e, sha_e = gh_e.write_text("docs/x.html", "<html>same</html>", message="m")
     assert changed_e is False and sha_e == "shaE" and sess_e.put_calls == 0
     print("✓ write_text: 내용 동일하면 PUT 생략")
+
+    # 큰 파일(1MB 초과): Contents 는 content 를 비우고 encoding=none 만 준다 → Git Blob API 로 본문을 다시 읽는다
+    class _BigFakeSess:
+        """Contents GET 은 빈 content(encoding=meta_enc)를, blobs GET 은 base64 본문을 돌려준다."""
+        def __init__(self, big_text: str, sha: str, meta_enc: str = "none", blob_status: int = 200):
+            self.big_b64 = base64.b64encode(big_text.encode()).decode()
+            # Blob API 는 base64 를 76자마다 개행해 준다 — 디코더가 개행을 견디는지 같이 본다
+            self.big_b64_wrapped = "\n".join(
+                self.big_b64[i:i + 76] for i in range(0, len(self.big_b64), 76)
+            )
+            self.sha, self.meta_enc, self.blob_status = sha, meta_enc, blob_status
+            self.blob_calls: list[str] = []
+            self.put_calls = 0
+        def get(self, url, **kw):
+            if "/git/blobs/" in url:
+                self.blob_calls.append(url)
+                if self.blob_status != 200:
+                    return _Resp(self.blob_status, {})
+                return _Resp(200, {"content": self.big_b64_wrapped, "encoding": "base64", "sha": self.sha})
+            return _Resp(200, {"content": "", "encoding": self.meta_enc, "size": 1138183, "sha": self.sha})
+        def put(self, url, **kw):
+            self.put_calls += 1
+            return _Resp(201, {"content": {"sha": "newsha"}})
+
+    big = {"tweets": [{"id": i, "text": "트윗 본문 " * 5} for i in range(1500)]}
+    big_text = _serialize(big)
+
+    # (1) read_json: 원본 dict 와 sha 'shaBig' 를 돌려준다
+    sess_big = _BigFakeSess(big_text, "shaBig")
+    gh_big = GitHubStore("tok", "o/r", "data", session=sess_big)
+    data_big, sha_big = gh_big.read_json("tweet_archive.json")
+    assert data_big == big and sha_big == "shaBig", "큰 파일 read_json 이 원본과 sha 를 돌려줘야 함"
+
+    # (2) blob GET 은 정확히 1번, sha 'shaBig' 로 호출된다
+    assert len(sess_big.blob_calls) == 1, f"blob GET 1회여야 함: {sess_big.blob_calls}"
+    assert sess_big.blob_calls[0].endswith("/git/blobs/shaBig"), sess_big.blob_calls[0]
+
+    # (3) write_json: prev_sha 일치 → PUT, 불일치 → ConflictError 이고 PUT 안 함
+    sess_w = _BigFakeSess(big_text, "shaBig")
+    gh_w = GitHubStore("tok", "o/r", "data", session=sess_w)
+    changed_w, new_w = gh_w.write_json(
+        "tweet_archive.json", {"tweets": []}, prev_sha="shaBig", message="m",
+    )
+    assert changed_w and new_w == "newsha" and sess_w.put_calls == 1, "prev_sha 일치 시 PUT 해야 함"
+
+    sess_c2 = _BigFakeSess(big_text, "shaBig")
+    gh_c2 = GitHubStore("tok", "o/r", "data", session=sess_c2)
+    try:
+        gh_c2.write_json("tweet_archive.json", {"tweets": []}, prev_sha="shaOld", message="m")
+        assert False, "큰 파일도 ConflictError 가 발생해야 함"
+    except ConflictError:
+        pass
+    assert sess_c2.put_calls == 0, "ConflictError 시 PUT 하지 않아야 함"
+
+    # (4) read_text: 같은 blob 경로로 본문을 돌려준다
+    sess_t = _BigFakeSess(big_text, "shaBig")
+    gh_t = GitHubStore("tok", "o/r", "data", session=sess_t)
+    text_big, sha_t = gh_t.read_text("tweet_archive.json")
+    assert text_big == big_text and sha_t == "shaBig", "큰 파일 read_text 가 본문을 돌려줘야 함"
+
+    # (5) blob 응답이 403 → RuntimeError (조용히 None 을 돌려주지 않는다)
+    sess_403 = _BigFakeSess(big_text, "shaBig", blob_status=403)
+    gh_403 = GitHubStore("tok", "o/r", "data", session=sess_403)
+    try:
+        gh_403.read_json("tweet_archive.json")
+        assert False, "blob 403 이면 RuntimeError 가 나야 함"
+    except RuntimeError as e:
+        assert "403" in str(e), e
+
+    # (6) encoding 이 none 이 아니고 content 가 빈 응답 → 지금처럼 RuntimeError
+    sess_empty = _BigFakeSess(big_text, "shaE", meta_enc="base64")
+    gh_empty = GitHubStore("tok", "o/r", "data", session=sess_empty)
+    try:
+        gh_empty.read_json("tweet_archive.json")
+        assert False, "빈 content(encoding!=none) 는 RuntimeError 여야 함"
+    except RuntimeError as e:
+        assert "No content" in str(e), e
+    assert sess_empty.blob_calls == [], "encoding=none 이 아니면 blob 을 부르지 않아야 함"
+
+    print("✓ Large file (encoding=none): read_json/read_text via Blob API, sha 유지, 실패는 RuntimeError")
 
     # 선택 스모크테스트: GH_TOKEN_TEST 환경변수 있으면 실제 read 시도
     import os
