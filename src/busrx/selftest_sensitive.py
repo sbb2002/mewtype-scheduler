@@ -17,6 +17,7 @@ from . import guard, testver
 from .autofix import AutoFix
 from .claude import clean_env, model_label
 from .receiver import RESULT_SCHEMA, SYSTEM_RULES, Config, Receiver, git_head
+from .restart import runner_args
 
 STUB = r'''
 import json, os, re, sys
@@ -125,6 +126,8 @@ def main() -> int:
         os.environ.update(saved)
     check(not any(k in ce for k in ("CLAUDE_EFFORT", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE")) and ce.get("CLAUDE_CONFIG_DIR") == "/c"
           and ce.get("ANTHROPIC_BASE_URL") == "u", "claude 환경: 세션 변수(CLAUDE_EFFORT 등)는 빼고 CLAUDE_CONFIG_DIR · ANTHROPIC_* 만")
+    check(runner_args(r"C:\py\python.exe -m src.backend.local_runner --env .env.local --no-scheduler --no-telegram")
+          == ["--env", ".env.local", "--no-scheduler", "--no-telegram"] and runner_args("") == [], "러너 재시작: 원래 실행 인자 유지")
     check(model_label("claude-opus-5-5") == "Opus" and model_label("claude-haiku-5-5") == "Haiku" and model_label("x") == "x", "모델 표기")
     check({"hypothesis", "how_to_confirm"} <= set(RESULT_SCHEMA["properties"]) and "how_to_confirm" in SYSTEM_RULES
           and "혼자 진행할 수 없는 것" in SYSTEM_RULES, "분석 규칙: 유력 가설 · 확인 방법 칸, 사람 조치는 혼자 못 하는 것만")

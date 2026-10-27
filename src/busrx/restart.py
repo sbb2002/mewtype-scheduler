@@ -1,6 +1,6 @@
 """로컬 러너 재시작 — 패치 적용 후 새 코드로 다시 띄우고 건강한지 확인한다 (Windows 기준).
 
-러너는 운영자가 다른 터미널에서 켜 둔 프로세스다. 수신기가 그 프로세스를 종료하고 같은 명령을 분리된 프로세스로 다시 띄운다.
+러너는 운영자가 다른 터미널에서 켜 둔 프로세스다. 수신기가 그 프로세스를 종료하고 같은 명령(같은 인자)을 분리된 프로세스로 다시 띄운다.
 안전 확인: runner.json 의 pid 가 실제로 `local_runner` 를 실행 중일 때만 종료한다(엉뚱한 프로세스를 죽이지 않는다).
 재시작 뒤 출력은 `<러너 폴더>/_runner.log` 에 남는다(원래 터미널 화면에는 더 이상 안 보임).
 """
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -30,6 +31,16 @@ def _cmdline(pid: int) -> str:
         return r.stdout.strip()
     except Exception:
         return ""
+
+
+def runner_args(cmdline: str) -> list[str]:
+    """실행 중인 러너 명령줄에서 `-m src.backend.local_runner` 뒤의 인자(--env · --no-scheduler · --no-telegram 등)를 꺼낸다 —
+    재시작 때 같은 옵션으로 다시 띄우려고(2026-10-27: 전엔 인자를 버려 정기 잡 · 텔레그램이 켜진 채 올라왔다)."""
+    toks = [t.strip('"') for t in shlex.split(cmdline, posix=False)] if cmdline else []
+    for i, t in enumerate(toks):
+        if t == "src.backend.local_runner" and i > 0 and toks[i - 1] == "-m":
+            return toks[i + 1:]
+    return []
 
 
 def find_runner(runner_dir: Path) -> int | None:
@@ -69,6 +80,7 @@ def restart_runner(runner_dir: Path, python: str = "", bus_dir: Path | None = No
     pid = find_runner(runner_dir)
     if pid is None:
         return False, "러너가 실행 중이 아님(runner.json pid 없음/불일치) — 재시작 생략"
+    args = runner_args(_cmdline(pid))
     py = python or str(runner_dir / ".venv" / "Scripts" / "python.exe")
     if not Path(py).exists():
         py = sys.executable
@@ -79,7 +91,7 @@ def restart_runner(runner_dir: Path, python: str = "", bus_dir: Path | None = No
     flags = 0x00000008 | 0x00000200 | 0x08000000  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
-    subprocess.Popen([py, "-m", "src.backend.local_runner"], cwd=runner_dir, stdout=log, stderr=subprocess.STDOUT,
+    subprocess.Popen([py, "-m", "src.backend.local_runner", *args], cwd=runner_dir, stdout=log, stderr=subprocess.STDOUT,
                      stdin=subprocess.DEVNULL, creationflags=flags, env=env, close_fds=True)
     ok = healthy(runner_dir, since=t0, bus_dir=bus_dir)
-    return ok, f"러너 재시작({int(time.time() - t0)}초)" + ("" if ok else " — 건강 확인 실패")
+    return ok, f"러너 재시작({int(time.time() - t0)}초" + (f" · 옵션 {' '.join(args)}" if args else "") + ")" + ("" if ok else " — 건강 확인 실패")
