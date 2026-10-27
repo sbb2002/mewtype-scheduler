@@ -38,6 +38,7 @@ def _build_task(
     body: dict,
     name_key: str,
     schedule_time_iso: str,
+    minute_bucket: bool = True,
 ) -> dict:
     """순수 함수. Cloud Tasks task dict 생성.
 
@@ -48,6 +49,8 @@ def _build_task(
         body: JSON 직렬화할 요청 바디 (예: {"video_id": "..."} 또는 {"mode": "light"}).
         name_key: 태스크 이름 접두 (예: "wake-<video_id>", "tick-light"). 뒤에 "-{분버킷}" 이 붙는다.
         schedule_time_iso: 태스크 실행 시각 (ISO 'Z' 형식).
+        minute_bucket: False 면 분 버킷을 붙이지 않는다 — 상시 조사의 보충 작업 `gapfill-<트윗 id>`
+            (같은 글은 몇 분이 지나도 한 번만 적재되게). 기존 wake · tick · write 는 True(이름 불변).
 
     Returns:
         tasks_v2.Task 로 변환 가능한 dict.
@@ -76,7 +79,8 @@ def _build_task(
     epoch_seconds = int(dt.timestamp())
     bucket = epoch_seconds // 60
 
-    task_name = f"{queue_path}/tasks/{name_key}-{bucket}"
+    task_name = (f"{queue_path}/tasks/{name_key}-{bucket}" if minute_bucket
+                 else f"{queue_path}/tasks/{name_key}")
 
     task_dict = {
         "name": task_name,
@@ -96,13 +100,24 @@ def _build_task(
     return task_dict
 
 
-def from_env(queue: str | None = None) -> "TaskQueue | None":
-    """(v4) 환경변수로 TaskQueue 구성 — 접수 서비스 · 쓰기 서비스 공용. 대상은 쓰기 서비스
-    (접수: `MAIN_SERVICE_URL`, 쓰기 서비스 자신: `SERVICE_URL`). 값이 모자라면 None.
-    (v4.5.2) `queue` 를 주면 `TASKS_QUEUE` 대신 그 큐(예: PubSub 전용 속도 제한 큐 `WEBSUB_QUEUE`)."""
+def resolve_target(target_url: str | None = None) -> str:
+    """태스크가 가리킬 서비스 URL. 인자를 주면 그것(예: 접수 서비스 자신 = `ADMIN_BASE_URL`),
+    없으면 쓰기 서비스(접수: `MAIN_SERVICE_URL`, 쓰기 서비스 자신: `SERVICE_URL`)."""
     import os
 
-    target = (os.environ.get("MAIN_SERVICE_URL", "").strip() or os.environ.get("SERVICE_URL", "").strip()).rstrip("/")
+    if target_url:
+        return target_url.strip().rstrip("/")
+    return (os.environ.get("MAIN_SERVICE_URL", "").strip() or os.environ.get("SERVICE_URL", "").strip()).rstrip("/")
+
+
+def from_env(queue: str | None = None, *, target_url: str | None = None) -> "TaskQueue | None":
+    """(v4) 환경변수로 TaskQueue 구성 — 접수 서비스 · 쓰기 서비스 공용. 대상 기본값은 쓰기 서비스
+    (접수: `MAIN_SERVICE_URL`, 쓰기 서비스 자신: `SERVICE_URL`). 값이 모자라면 None.
+    (v4.5.2) `queue` 를 주면 `TASKS_QUEUE` 대신 그 큐(예: PubSub 전용 속도 제한 큐 `WEBSUB_QUEUE`).
+    (self-reply) `target_url` 을 주면 그 서비스로 보낸다(보충 작업 = 접수 서비스 자신, 일일 작업 = 쓰기 서비스)."""
+    import os
+
+    target = resolve_target(target_url)
     vals = {
         "project": os.environ.get("GCP_PROJECT", "").strip(),
         "location": os.environ.get("GCP_LOCATION", "").strip(),
@@ -185,6 +200,14 @@ class TaskQueue:
             schedule_time_iso=schedule_time_iso,
         )
 
+    def enqueue_path(self, path: str, body: dict, name_key: str, schedule_time_iso: str, *,
+                     minute_bucket: bool = True) -> str:
+        """(self-reply) 범용 적재 — `path` 라우트에 `body` 를 POST 하는 태스크. 이름 = `name_key`(+ 분 버킷 옵션).
+        `minute_bucket=False` 는 같은 이름이면 시각과 관계없이 한 번만 만들어진다(보충 작업 `gapfill-<id>`).
+        이미 같은 이름이 있으면 AlreadyExists 를 삼키고 추정 이름을 돌려준다(호출부는 「이미 적재」로 본다)."""
+        return self._enqueue(path=path, body=body, name_key=name_key,
+                             schedule_time_iso=schedule_time_iso, minute_bucket=minute_bucket)
+
     def enqueue_write(self, kind: str, args: dict, *, schedule_time_iso: str | None = None) -> str:
         """(v4) 적용 작업 하나를 쓰기 서비스 `/write` 로 비동기 전달 — `apply.submit(wait=False)` 의 클라우드 대응.
 
@@ -233,10 +256,12 @@ class TaskQueue:
                 logger.info(f"delete_task 건너뜀 {t.name}: {e}")
         return gone
 
-    def _enqueue(self, *, path: str, body: dict, name_key: str, schedule_time_iso: str) -> str:
+    def _enqueue(self, *, path: str, body: dict, name_key: str, schedule_time_iso: str,
+                 minute_bucket: bool = True) -> str:
         queue_path = self.client.queue_path(self.project, self.location, self.queue)
         task_dict = _build_task(
-            self, path=path, body=body, name_key=name_key, schedule_time_iso=schedule_time_iso
+            self, path=path, body=body, name_key=name_key, schedule_time_iso=schedule_time_iso,
+            minute_bucket=minute_bucket,
         )
 
         if tasks_v2 is None:
@@ -342,5 +367,38 @@ if __name__ == "__main__":
     task4 = wake_task(tq, "video789", "2026-09-01T12:00:00Z")
     assert "wake-video789" in task4["name"]
     print("[OK] TaskQueue instance as cfg works")
+
+    # Test 7 (self-reply V1-B 26): 분 버킷 없는 보충 작업 이름 · 일일 작업 버킷 · 대상 URL 인자
+    gap = _build_task(mock_cfg, path="/gap-fill", body={"id": "2113851579740963041"},
+                      name_key="gapfill-2113851579740963041", schedule_time_iso=_WHEN, minute_bucket=False)
+    assert gap["name"].endswith("/tasks/gapfill-2113851579740963041"), gap["name"]
+    gap_later = _build_task(mock_cfg, path="/gap-fill", body={}, name_key="gapfill-2113851579740963041",
+                            schedule_time_iso="2026-09-01T12:09:00Z", minute_bucket=False)
+    assert gap_later["name"] == gap["name"], "같은 글은 시각이 달라도 같은 이름(한 번만 적재)"
+    assert tick["name"].endswith(f"/tasks/tick-light-{_BUCKET}"), "기존 버킷 이름 불변"
+    daily = _build_task(mock_cfg, path="/monitor", body={}, name_key="daily-monitor",
+                        schedule_time_iso="2026-09-01T21:10:00Z")
+    assert daily["name"].endswith(f"/tasks/daily-monitor-{int(_parse_iso('2026-09-01T21:10:00Z').timestamp()) // 60}")
+    assert daily["http_request"]["url"] == "https://example.com/monitor"
+    # 대상 URL 인자 — 보충 작업은 접수 서비스 자신, 기본 대상은 쓰기 서비스(인자 없음 = 기존 동작)
+    import os
+    _saved_env = {k: os.environ.get(k) for k in ("MAIN_SERVICE_URL", "SERVICE_URL")}
+    try:
+        os.environ["MAIN_SERVICE_URL"] = "https://writer.example/"
+        os.environ["SERVICE_URL"] = "https://self.example"
+        assert resolve_target() == "https://writer.example", resolve_target()
+        assert resolve_target("https://accept.example/") == "https://accept.example"
+        assert resolve_target(None) == "https://writer.example"
+    finally:
+        for k, v in _saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    acc = dict(mock_cfg, target_url="https://accept.example")
+    gt = _build_task(acc, path="/gap-fill", body={}, name_key="gapfill-1", schedule_time_iso=_WHEN, minute_bucket=False)
+    assert gt["http_request"]["url"] == "https://accept.example/gap-fill"
+    assert gt["http_request"]["oidc_token"]["audience"] == "https://accept.example", gt["http_request"]
+    print("[OK] self-reply: 보충 작업 이름(버킷 없음) · 일일 작업 버킷 · 대상 URL 인자 · 기존 이름 불변")
 
     print("\n[PASS] All smoke tests passed!")

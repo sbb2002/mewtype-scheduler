@@ -84,6 +84,11 @@ def _fx_to_vx(fx: dict) -> dict | None:
                  # (2026-10-01 실측: 미야코가 @bang_dream_info 글을 리트윗 → author=bang_dream_info,
                  #  reposted_by.screen_name=miyako_yumemita). vxtwitter 는 리트윗 자체(`RT @…:` 본문)를 준다.
                  "reposted_by": ((t.get("reposted_by") or {}).get("screen_name") or "")}
+    # (자기 답글) 답글이면 답글 대상 핸들 · 글 id — 핸들 비교는 extract 호출부(개인 트윗 경로)가 한다.
+    rt = t.get("replying_to")
+    if rt or t.get("replying_to_status"):
+        out["replyingTo"] = ((rt.get("screen_name") if isinstance(rt, dict) else rt) or "")
+        out["replyingToID"] = str(t.get("replying_to_status") or "") or None
     q = t.get("quote")
     if isinstance(q, dict):
         qurls, qext = _fx_media(q.get("media"))
@@ -155,16 +160,52 @@ def fetch_tweet(tweet_id: str, *, session: Any = None, timeout: float = VX_TIMEO
     return j
 
 
+class FxRateLimited(Exception):
+    """fxtwitter 가 429 를 줬다 — 상시 조사가 바로 쉬도록 호출부가 구분해 잡는다(명세 §4-1 ⑥)."""
+
+
+def _get_status(url: str, session: Any, timeout: float, tag: str) -> tuple[int | None, Any]:
+    """GET → (HTTP 상태, JSON 또는 None). 연결 · 타임아웃 · 예외면 (None, None). 204 는 본문 없이 (204, None)."""
+    try:
+        if session:
+            resp = session.get(url, timeout=timeout)
+        else:
+            if not requests:
+                warnings.warn(f"{tag}: requests 미설치", stacklevel=3)
+                return None, None
+            resp = requests.get(url, timeout=timeout)
+    except Exception as e:  # noqa: BLE001 — 네트워크·타임아웃 전부
+        warnings.warn(f"{tag}: {type(e).__name__} {url}", stacklevel=3)
+        return None, None
+    if resp.status_code == 204:
+        return 204, None
+    if resp.status_code != 200:
+        warnings.warn(f"{tag}: {resp.status_code} {url}", stacklevel=3)
+        return resp.status_code, None
+    try:
+        return 200, resp.json()
+    except Exception:  # noqa: BLE001 — JSON 오류
+        warnings.warn(f"{tag}: JSON 오류 {url}", stacklevel=3)
+        return 200, None
+
+
 def fetch_profile_statuses(handle: str, *, session: Any = None, timeout: float = FX_TIMEOUT_SEC,
-                           base: str = FX_BASE) -> list[dict] | None:
-    """(누락 보충, 2026-10-24) 한 계정의 최근 글 목록 — fxtwitter API v2 `/2/profile/<핸들>/statuses`(약 20건, 리트윗 섞임).
-    폰 알림이 빠진 멤버 트윗을 찾는 데 쓴다. 한도 = IP 당 분당 1,000회(docs.fxembed.com). 실패하면 None.
-    반환 [{"id", "text", "author"(소문자 핸들), "repost"(남의 글 리트윗인가), "reply_to"(답글 대상 소문자 핸들 | None)}]."""
+                           base: str = FX_BASE, since: int | None = None) -> list[dict] | None:
+    """(상시 조사, 명세 §4-1) 한 계정의 최근 글 목록 — fxtwitter API v2 `/2/profile/<핸들>/statuses`(약 20건, 리트윗 섞임).
+    since(Unix 초) 를 주면 그 뒤에 글이 **없을 때 204** 를 준다 → 빈 목록 `[]`(실패 `None` 과 구분). 글이 하나라도 있으면 20건 전체.
+    한도 = IP 당 분당 1,000회(docs.fxembed.com). 실패(타임아웃 · 5xx · JSON 오류 · 잘못된 핸들) 는 None, 429 는 FxRateLimited.
+    반환 [{"id", "text", "author"(소문자 핸들), "repost"(남의 글 리트윗인가), "reply_to"(답글 대상 소문자 핸들 | None),
+           "reply_to_id"(답글 대상 글 id | None)}]."""
     h = (handle or "").lstrip("@").strip()
     if not re.fullmatch(r"\w{1,15}", h):
         return None
-    j = _get_json(f"{base}/2/profile/{h}/statuses", session, timeout, "fxtwitter profile")
-    if not j or not isinstance(j.get("results"), list):
+    url = f"{base}/2/profile/{h}/statuses" + (f"?since={int(since)}" if since else "")
+    code, j = _get_status(url, session, timeout, "fxtwitter profile")
+    if code == 429:
+        raise FxRateLimited(url)
+    if code == 204:
+        return []
+    if code != 200 or not j or not isinstance(j.get("results"), list):
         return None
     out = []
     for r in j["results"]:
@@ -172,12 +213,15 @@ def fetch_profile_statuses(handle: str, *, session: Any = None, timeout: float =
         if not sid.isdigit():
             continue
         rt = r.get("replying_to")
+        rt_id = None
         if isinstance(rt, dict):        # 목록 API 는 {screen_name, status, url, …} 객체(단건 조회는 핸들 문자열) — 10-24 실데이터 시험에서 확인
+            rt_id = str(rt.get("status")) if rt.get("status") else None
             rt = rt.get("screen_name")
         out.append({"id": sid, "text": r.get("text") or "",
                     "author": str((r.get("author") or {}).get("screen_name") or "").lower(),
                     "repost": bool(r.get("reposted_by")),
-                    "reply_to": str(rt).lower() if rt else None})
+                    "reply_to": str(rt).lower() if rt else None,
+                    "reply_to_id": rt_id})
     return out
 
 
@@ -249,6 +293,8 @@ def extract(j: dict) -> dict:
         "text": text,
         "author": str(j.get("user_screen_name") or ""),     # (v4a) 작성자 X 핸들 — URL 투입에서 멤버 판별용
         "reposted_by": str(j.get("reposted_by") or ""),     # (v4a) 리트윗한 계정(fxtwitter 폴백일 때만) — 리트윗 판정용
+        "reply_to": str(j.get("replyingTo") or "").lstrip("@").lower(),          # (자기 답글) 답글 대상 핸들(소문자) — 없으면 ""
+        "reply_to_id": str(j.get("replyingToID") or "") or None,                 # (자기 답글) 답글 대상 글 id — 없으면 None
         "media": media_urls,
         "urls": urls,
         "yt_video_id": yt_video_id,
@@ -464,5 +510,29 @@ if __name__ == "__main__":
     assert fetch_profile_statuses("nonoka_yumemita", session=_Sess(_Resp(200, {}), _Resp(500))) is None
     assert fetch_profile_statuses("bad/handle", session=_Sess(_Resp(200, {}), _Resp(200, prof))) is None
     print("  최근 글 목록: 리트윗 · 답글 표시 · 실패 None")
+
+    # (상시 조사 V1-B 1·2) 자기 답글의 reply_to_id · since 로 204 → 빈 목록(실패 None 과 구분) · 429 → FxRateLimited
+    assert [x["reply_to_id"] for x in st] == [None, "2113851579740963041", None], st
+    s2 = _Sess(_Resp(200, {}), _Resp(204))
+    assert fetch_profile_statuses("nonoka_yumemita", session=s2, since=1800000000) == [], "204 = 빈 목록"
+    assert s2.calls == ["https://api.fxtwitter.com/2/profile/nonoka_yumemita/statuses?since=1800000000"], s2.calls
+    assert fetch_profile_statuses("nonoka_yumemita", session=_Sess(_Resp(200, {}), _Resp(500))) is None
+    try:
+        fetch_profile_statuses("nonoka_yumemita", session=_Sess(_Resp(200, {}), _Resp(429)))
+        raise AssertionError("429 은 FxRateLimited 여야")
+    except FxRateLimited:
+        pass
+    assert fetch_profile_statuses("nonoka_yumemita", session=_Sess(_Resp(200, {}), TimeoutError("t"))) is None
+    print("  since 204 → []  ·  429 → FxRateLimited  ·  타임아웃 · 5xx → None  ·  reply_to_id 추출")
+
+    # (V1-B 1) 단건 응답의 자기 답글 — replyingTo(핸들) · replyingToID → extract 가 reply_to · reply_to_id
+    _rx = extract({"text": "返信", "replyingTo": "@Nonoka_Yumemita", "replyingToID": "2113851579740963041"})
+    assert (_rx["reply_to"], _rx["reply_to_id"]) == ("nonoka_yumemita", "2113851579740963041"), _rx
+    _ry = extract({"text": "남에게 답글", "replyingTo": "some_fan", "replyingToID": "1"})
+    assert _ry["reply_to"] == "some_fan" and extract({"text": "일반"})["reply_to_id"] is None
+    _rf = extract(_fx_to_vx({"tweet": {"id": "3", "text": "返信", "replying_to": {"screen_name": "nonoka_yumemita"},
+                                       "replying_to_status": "2113851579740963041"}}))
+    assert (_rf["reply_to"], _rf["reply_to_id"]) == ("nonoka_yumemita", "2113851579740963041"), _rf
+    print("[OK] 자기 답글 reply_to · reply_to_id (vx 단건 · fx 폴백 · 목록)")
 
     print("✓ vxtwitter.extract self-test 통과 (16/16)")
