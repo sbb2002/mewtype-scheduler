@@ -31,6 +31,8 @@ cd ../mewtype-scheduler-worktrees/v4/test-autofix-archive1mb
 # 2) .env.local — 옛 test-fullauto-hotfix 시험 때 쓰던 것을 복사(MEW_BUS_DIR · RX_* · ADMIN_SECRET · 러너 설정 · claude 로그인 상태)
 #    + 반드시 추가:  RX_APPLY_BRANCH=test/autofix-archive1mb
 #    (수신기 기본값은 옛 이름 test-fullauto-hotfix — 자체 시험이 그 기본값을 전제로 해서 코드는 안 바꿨다. 이 값이 없으면 「적용 보류」로 끝난다)
+#    + MEW_BUS_DIR 은 이 시험 전용 새 폴더로 바꾼다(예: ../mewtype-bus-so). 옛 버스(mewtype-bus)의 state.json · 일일 호출 수 · rx/fix · 보고서가
+#      섞이지 않게. 정책은 옛 버스의 rx/policy.json(ERROR = 수정까지 · 표준, 모드 auto, 주기 event)을 새 폴더 rx/ 에 복사해 같은 조건으로.
 
 # 3) 러너 · 수신기 기동(각각 다른 터미널)
 python -m src.backend.local_runner --env .env.local
@@ -45,9 +47,13 @@ python ../../devpapers/ref/autofix-test/archive1mb_trigger.py --env .env.local
 #    → "_commit_personal_tweet → {'mode': 'error', ...} · 발신 1건"
 
 # 6) 결과 모으기: 텔레그램 보고 · 관리 화면 Control 칸 · <MEW_BUS_DIR>/rx/runs/*.json · rx/reports/*.md · 수정 브랜치(auto/…) diff
+#    + rx/fix/<sig>/ — SPEC.md(Sonnet 수정 명세 — 대조표 E · F · G 판정의 1차 자료) · attempt*.diff · change.diff 또는 failed.diff · commit_msg.txt
+#    + 반자동이면 rx/proposals/<id>/plan_rev*.md
+#    rx/fix/<sig>/ 는 시그니처마다 폴더 하나라 같은 트리거를 다시 돌리면 덮어쓴다(autofix.py fixdir = rx/fix/<sig>) — 회차가 끝날 때마다
+#    이 폴더 runs/<회차>/ 로 복사: rx/fix/<sig>/ 전부 + 그 회차 rx/reports/*.md · rx/runs/*.json + 수정 브랜치 diff(git diff 4a33021..<브랜치>)
 ```
 
-- 같은 시험을 반복하려면(모델 출력은 매번 다를 수 있음 — 가능하면 2~3회): 적용된 자동 커밋을 되돌리고(`git reset --hard 4a33021`, 로컬만) 수신기 쿨다운(ERROR 60분)이 지나거나 정책에서 쿨다운을 줄인 뒤 다시.
+- 같은 시험을 반복하려면(모델 출력은 매번 다를 수 있음 — 가능하면 2~3회): **먼저 위 6) 의 회차 복사**, 그다음 적용된 자동 커밋을 되돌리고(`git reset --hard 4a33021`, 로컬만) 수신기 쿨다운(ERROR 60분)이 지나거나 정책에서 쿨다운을 줄인 뒤 다시.
 - 자동 수정 커밋은 **원격에 푸시하지 않는다**(오토핫픽스 규칙도 로컬 전용). 결과물 diff 는 이 폴더에 `result_<날짜>_<회차>.md` 로 남긴다.
 - 구독 사용량을 쓴다(분석 · 명세 · 검증 · 검토 = Sonnet, 구현 = Haiku). 보고서의 사용량 구간을 기록.
 
