@@ -68,5 +68,6 @@ print('$d','tweet',len(tw),'info',sum(1 for e in tw if e.get('info')),'| notice'
 
 ## 5. 오토핫픽스 시험 S-O — 이 장애를 오토핫픽스가 혼자 고칠 수 있었나 (운영자 요청 2026-10-26)
 
-준비 완료 · 미실행. 절차 · 대조표 = **`ref/autofix-test/README.md`**. 시험 브랜치 `test/autofix-archive1mb`(= v4.8.6 직전 main `ddc2040` + 오토핫픽스 수신기),
-트리거 `ref/autofix-test/archive1mb_trigger.py`(브랜치에 넣지 않음 — 분석 모델이 답을 미리 보지 않게). 결과는 같은 폴더에 `result_<날짜>_<회차>.md`.
+**종료(2026-10-27, 1~6회차)** — 결론 = `ref/autofix-test/result_2026-10-27.md` 맨 위. 6회차(명세 Opus · high)가 사람 개입 없이 1MB 장애를 멈추는 수정
+(Git Blob API 읽기)을 적용했고 운영자 기대 수준으로 평가 · 도입은 아직 이름. 근본 해결(캐시 + 일자 보관함)은 사람 아이디어 몫으로 남음.
+부산물: main 핫픽스 v4.8.7 PR #99(빈 content 오류에 encoding · size) — 병합 · 배포 대기.
