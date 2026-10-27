@@ -1,4 +1,4 @@
-# 구현 명세 — 트윗 시트(멤버 트윗 보기 새 화면) (2026-10-27 · 미구현)
+# 구현 명세 — 트윗 시트(멤버 트윗 보기 새 화면) (2026-10-27 · **v4.9.0 으로 배포** — 지켜볼 것 = `watch_after_deploy.md`)
 
 같은 핫픽스(`hotfix/self-reply-fill`)에 들어간다. 백엔드 · 데이터 = `patch_spec.md`, 검증 = `verify_spec.md`(V1-C · V2-5 · V5-5 · V6-9). 이 문서는 프론트만.
 **운영자가 확정한 시안 = 같은 폴더 `ui_prototype.html`**(아티팩트 https://claude.ai/artifact/56DyWE8n6fh49zZ9Zg6zCA 버전 6). 동작 · 모양 · 수치가 이 문서와 시안이 다르면 **시안을 따르고** 다른 점을 보고한다.
