@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.9.0 | `2cad9f5` | 2026-10-27 17:52 | `hotfix/self-reply-fill` | 병합 커밋 | 마이너(새 등급 첫 적용) · 배포 backend 00188 · telegram 00127 · Scheduler 3잡 · 큐 mewtype-gapfill · mewtype-daily · Vercel(main 푸시) |
 | v4.8.6 | `576ae34` | 2026-10-26 23:54 | `hotfix/archive-split` | 병합 커밋 | Cloud Run backend 00186 · telegram 00126 · 데이터 첫 이전 data `f33db54`+`fd46576` · ops `9260c86`+`5a83fed` |
 | v4.8.5 | `8d96f1d` | 2026-10-26 16:29 | `hotfix/text-cursor` | 병합 커밋 | Vercel 배포 success 확인(프론트만) |
 | v4.8.4 | `8e0bb69` | 2026-10-25 17:11 | `hotfix/footer-version-reset` | 병합 커밋 | Vercel 배포 READY 확인(프론트만) |

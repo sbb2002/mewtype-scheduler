@@ -69,7 +69,7 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
   - `mewtype-backend`(쓰기 서비스, `concurrency=1 · max-instances=1` — data 쓰기 직렬화) — `/tick` `/wake` `/write` `/monitor` `/websub-renew` `/daily`.
   - `mewtype-telegram`(접수 서비스, 공개) — 텔레그램 webhook · `POST /ingest`(폰 알림) · PubSub 콜백 `/websub/<이름>` · 관리 페이지 `/admin` · 웹 모니터 `/monitor-live` · 상시 조사 `/gap-check` · 보충 작업 `/gap-fill`(둘은 OIDC 강제 검증).
     콘텐츠 쓰기는 직접 하지 않고 백엔드 `/write` 로 보낸다(`writeclient` → `writers` → `apply`).
-- **Cloud Scheduler 3잡**(self-reply 핫픽스 — 옛 4잡을 줄였다): light 10분 → 쓰기 `/tick` · **daily** KST 06:00 → 쓰기 `/daily`(baseline tick + 그날 06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks 로 먼저 예약) · **gapcheck** 매분 → 접수 `/gap-check`(상시 조사). 운영 잡 이름 `mewtype-light` · `mewtype-daily` · `mewtype-gapcheck`.
+- **Cloud Scheduler 3잡**(v4.9.0 — 옛 4잡을 줄였다): light 10분 → 쓰기 `/tick` · **daily** KST 06:00 → 쓰기 `/daily`(baseline tick + 그날 06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks 로 먼저 예약) · **gapcheck** 매분 → 접수 `/gap-check`(상시 조사). 운영 잡 이름 `mewtype-light` · `mewtype-daily` · `mewtype-gapcheck`.
 - **Cloud Tasks**: 방송별 정밀 `/wake {video_id}`(큐 `mewtype-wake`) · PubSub 알림 전용 큐 `mewtype-websub` · 보충 작업 `/gap-fill`(큐 `mewtype-gapfill`, 동시 1 · 3회, 이름 `gapfill-<트윗 id>`) · 일일 묶음 예약 `/monitor` `/websub-renew`(큐 `mewtype-daily`, 동시 1 · 4회). 상한 720h → `now+696h` 클램프.
 - **저장 = GitHub 데이터 저장소 `sbb2002/mewtype-scheduler-data`** 의 브랜치들(Contents API, fine-grained PAT):
   `data`(팬 화면이 읽는 preview · notices · tweets · banners · songs 등) · `ops`(control · admin_state · LLM 판단 기록 등 운영 상태, `storage.OPS_PATHS`) ·
@@ -94,7 +94,7 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
    watching = 예정 20분 전부터 3분 간격 · live = 시작 후 60분까지 10분, 그 뒤 5분 · end 창 30분 동안 5분. URL 없는 예고 = 시작 +2분 `search.list` 1회, +1h 까지 못 오르면 `out`.
 3. **트윗 · 알림 인입** — 폰이 `/ingest` 로 보낸 알림을 표시명으로 가른다: 공식 계정 → 일일 스케줄(예고) 또는 소식 · 개인 5인 → 개인 트윗(+ 예고 판정) ·
    게임 계정 → 행사 배너 판정. 원문은 tweet id 가 있으면 vxtwitter/fxtwitter 결과를 정본으로 쓴다. 상세 `docs/INGEST_FLOW.md` · `docs/SPEC.md` §8.11.
-   **빠진 트윗 · 자기 답글**(self-reply 핫픽스): 폰이 빠뜨리거나 자기 답글은 알림이 안 오므로, 접수 서비스 `/gap-check` 가 1분마다 멤버 5명의 최근 글을 훑어 보충 작업(`/gap-fill`)으로 넣는다(일반 글은 게시 7분 뒤, 자기 답글은 바로). 자기 답글은 `reply_to_id` 로 원글에 이어 붙이고, 글타래 수명은 가장 늦은 글 + 48h. 명세 `docs/SPEC.md` 계약 I.
+   **빠진 트윗 · 자기 답글**(v4.9.0): 폰이 빠뜨리거나 자기 답글은 알림이 안 오므로, 접수 서비스 `/gap-check` 가 1분마다 멤버 5명의 최근 글을 훑어 보충 작업(`/gap-fill`)으로 넣는다(일반 글은 게시 7분 뒤, 자기 답글은 바로). 자기 답글은 `reply_to_id` 로 원글에 이어 붙이고, 글타래 수명은 가장 늦은 글 + 48h. 명세 `docs/SPEC.md` 계약 I.
 4. **쓰기** — 모든 콘텐츠 쓰기는 백엔드 `/write` 한 곳에서 직렬화. 외부 호출(LLM · API · OCR)은 접수 서비스에서 준비하고 `/write` 잡은 커밋만 한다.
 5. **표시** — 프론트가 data 브랜치 JSON 을 폴링해 그린다. 시각은 전부 UTC ISO(`Z`) 저장, KST 변환은 프론트 `time.js` 담당.
 
@@ -140,7 +140,7 @@ src/
   collector/           # v1 순수 모듈 — config · rss · youtube 를 백엔드가 import 재사용
   bus/                 # 에러 버스 발신기 — MEW_BUS_DIR 없으면 no-op(배포판은 미설정)
   backend/             # Cloud Run (Flask + gunicorn)
-    app.py             # 쓰기 서비스 라우트 /tick /wake /write /monitor /websub-renew
+    app.py             # 쓰기 서비스 라우트 /tick /wake /write /monitor /websub-renew /daily
     telegram_app.py    # 접수 서비스 — webhook · /ingest 분기 · 커밋 함수들(_commit_*) · 웹 모니터
     admin_web.py admin_api.py admin_static/   # 관리 페이지(블루프린트 · API · 정적 파일)
     handlers.py        # tick/wake 오케스트레이션 → preview.json 커밋 · 번역 sweep · 신곡 감지 · 모니터 로그
@@ -174,7 +174,7 @@ node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · 
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등)
 bash deploy/deploy.sh         # mewtype-backend
 bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # mewtype-telegram
-bash deploy/scheduler.sh      # 스케줄러 4잡 (URL 불변이면 생략 가능)
+bash deploy/scheduler.sh      # 스케줄러 3잡(light · daily · gapcheck) — KST 05:50~06:30 에는 거부, STAGE=1 이면 아무것도 안 함 (URL 불변이면 생략 가능)
 # writers.py · telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 
 # 프론트 로컬 (저장소 루트에서 — fixture 상대경로 유지 위해)
