@@ -19,7 +19,7 @@
 | 역할 | 수단 |
 |---|---|
 | 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
-| 정기 트리거 | **Cloud Scheduler** 4잡 — baseline JST 06:00 / light 10분(v3.6, 구 3h) → `POST /tick`, monitor KST 06:10 → `POST /monitor`, (v4.5.0) websub-renew KST 06:20 → `POST /websub-renew` (OIDC) |
+| 정기 트리거 | **Cloud Scheduler** 3잡(self-reply D6) — light 10분 → `POST /tick` (쓰기 서비스) · **daily** KST 06:00 → `POST /daily` (쓰기 서비스 — baseline tick + 그날 06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks `mewtype-daily` 로 먼저 예약, §8.13) · **gapcheck** 매분 → `POST /gap-check` (접수 서비스 — 상시 조사, §8.11) · 전부 OIDC |
 | 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
 | 저장 | **GitHub 데이터 저장소 `sbb2002/mewtype-scheduler-data`**(2026-09-14 부터, Vercel 비연결)의 `data` · `ops` · `monitoring` 브랜치 — Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋. 브랜치를 나눈 이유 = 충돌 단위가 브랜치 HEAD |
 | 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
@@ -46,11 +46,12 @@ src/
       timetable.js     # PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고 펼치기
       notices.js       # 소식판 — 분류 탭 · 날짜별 묶음 · 라이브공연 공연별 묶음 · 소식 팝업 카드/시트
       banners.js       # 행사 배너(계약 J) — 탭 + 카드 1장
-      tweets.js        # 멤버 트윗 — 아바타 편지 배지 · PC 말풍선 / 모바일 토스트 · X 공식 카드
+      tweets.js        # 멤버 트윗 — 아바타 트윗 배지 · 트윗 시트(폰 아래 시트 · PC 팝업 보드) · X 공식 카드
+      tweetlogic.js    # 트윗 시트 순수 로직(글타래 묶기 · 첨부 문구 · 글자색 · 시각 표기 · 새 글 자리) — DOM 없음
       player.js playerbtn.js songs.js   # YouTube 곡 플레이어 · 여는 버튼 · 곡 검색/정렬/오마카세(순수)
       king.js          # 노노카 지각 이스터에그
       theme.js         # 밝게/어둡게 전환
-      sheetdrag.js     # 시트 · 토스트 끌어 닫기 공용
+      sheetdrag.js     # 시트 끌어 닫기 공용(트윗 시트 · 소식 시트 · 플레이어 시트)
       *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
   collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
     rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
@@ -268,10 +269,10 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 `<div class="lane__link" role="button" tabindex="0">`(아바타 `lane__avatar` + `lane__meta`) **+** `<nav class="lane__nav">`
 (우측 세로 레일: `lane__nav-btn lane__nav-yt` = `channel_url`, `lane__nav-btn lane__nav-x` =
 `https://x.com/<handle>`). 헤더는 `display:flex` (tweets.css 가 layout.css override).
-**(v4.3.4)** 네임플레이트(아바타 · 편지 배지 · 이름 = PC 타임테이블 `tt__nm` 포함)는 이동 링크가 아니라
-`tweets.js` 가 클릭을 위임 처리하는 **말풍선 토글**(PC 고정 패널 / 모바일 토스트)이다 — 트윗이 없으면 말풍선 대신 「새 트윗이 아직 없어요」 알림(아래 「마이크로 인터랙션」)
+**(v4.3.4)** 네임플레이트(아바타 · 트윗 배지 · 이름 = PC 타임테이블 `tt__nm` 포함)는 이동 링크가 아니라
+`tweets.js` 가 클릭을 위임 처리하는 **트윗 시트 열기**(폰 아래 시트 / PC 팝업 보드)이다 — 트윗이 없으면 시트 대신 「새 트윗이 아직 없어요」 알림(아래 「마이크로 인터랙션」)
 (v4.3.3 까지는 `<a>` 라 이름 · 트윗 없는 아바타가 YouTube 로 이동). 채널 이동은 우측 레일 버튼만.
-이후 예고 열(`data-no-badge`)의 헤더는 말풍선 대상이 아니다. SVG 아이콘은 `render.js svgIcon()`(`createElementNS`).
+이후 예고 열(`data-no-badge`)의 헤더는 트윗 시트 대상이 아니다. SVG 아이콘은 `render.js svgIcon()`(`createElementNS`).
 
 ### 카드 클래스 매핑 (state → class)
 
@@ -312,7 +313,7 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 
 **PC (≥768px)** — `#board.board--tt`(5열 그리드 해제) 안에 위에서 아래로:
 1. `section.tt` 타임테이블: `.tt__axis`(06:00 부터 3시간 눈금, 자정은 `.is-midnight` 강조 + 익일 날짜) · 멤버 5행
-   (왼쪽 `section.lane.tt__lane[data-channel]` > `header.lane__header.tt__who` > `.lane__avatar` — **편지 배지(`.lane__tw`)와 말풍선의 기준 요소**.
+   (왼쪽 `section.lane.tt__lane[data-channel]` > `header.lane__header.tt__who` > `.lane__avatar` — **트윗 배지(`.lane__tw`)와 트윗 시트의 기준 요소**.
    오른쪽 `.tt__track[data-channel]` 에 블록 `.tt-blk.tt-blk--{upcoming|live|ended}`) · `.tt__ov`(지금 선 `.tt__now` · 지난 구간 음영 `.tt__past` · 자정 점선).
    블록 폭 = 종료 시각을 알면(ended) 실제 길이, 모르면 고정 폭(live 는 시작~지금, 최소 폭 있음). 한 행에 한 줄만 쓰고 겹치면 앞 블록을 다음 블록 시작에서 자른다.
    좁아도 블록 모양은 같고 넘치는 부분만 잘린다. 제목은 한 줄 + 넘치면 무한 marquee(`applyTimetableMarquees`).
@@ -320,9 +321,9 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
    블록은 **클릭해도 이동하지 않고** 호버 = 카드 팝업(`.tt-pop`) · 클릭 = 고정(바깥 클릭 / Esc / 재클릭으로 닫힘). 영상 이동은 팝업의 이미지 · 「▶ YouTube에서 보기」로만.
 2. `.tt-fold` 「오늘 이후 예고 N건 펼치기」(펼치면 「오늘 이후 예고 접기」)(방송인별 건수 아바타 포함).
 3. `.tt-later` 5열: 펼침(`#board.board--later-open`)일 때만 보임. 열 = `.lane.lane--later[data-channel][data-no-badge]` — **기존 네임플레이트**(`buildHeader`, 우측 세로 YT·X)
-   + `.lane__later` 안에 기존 카드(`createCard`). `data-no-badge` 인 레인에는 편지 배지가 안 붙는다(`tweets.js` 가 건너뜀) — 배지는 타임테이블 왼쪽 칸에만.
+   + `.lane__later` 안에 기존 카드(`createCard`). `data-no-badge` 인 레인에는 트윗 배지가 안 붙는다(`tweets.js` 가 건너뜀) — 배지는 타임테이블 왼쪽 칸에만.
 
-**모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(편지 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
+**모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(트윗 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
 `.tt-fold` + `.lane__later`. 오늘 카드: 예정 = 카운트다운 링(1시간 넘게 남으면 24시간 기준으로 차오름 · (v4.5.8) 1시간 이내는 노랑 분 단위 링이 0분까지 닳음 — 아래 「타이머 링」, **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
 **지금 보는 레인만 동작**: `render.js initMobileCarousel` 가 현재 슬라이드에만 `.lane--active` 를 주고 나머지(클론 포함)는 `inert` 로 **동작만** 막는다(겉모양 · 스크롤바는 그대로 — `overflow:hidden` 으로 숨기면 스크롤바 폭만큼 카드가 움찔거려 쓰지 않음) — 옆에 비쳐 보이는 레인의 스크롤 · 클릭이 반응하지 않는다(드래그/스와이프 시작점으로는 보드가 받음).
 하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
@@ -351,7 +352,7 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 - **저장**: `localStorage["mew.board.view"]` = `"table"`(기본) | `"cards"`. 읽기 · 쓰기 모두 `try/catch` — 못 쓰면 모듈 변수(`viewOverride`)로 이번 세션만 유지. 탭 클릭 → `setViewMode` → `document` 에 `mew:view-change`(`VIEW_CHANGE_EVENT`) → `main.js` 가 `paintBoard()`(보드 재렌더 + 편지 배지 재적용). 재렌더 뒤 키보드 포커스는 새 선택 탭으로 되돌린다(`boardEl.__focusTab`). 탭은 ←/→ 키로도 바꾼다(`role=tablist` · `aria-selected`).
 - **테이블 보기** = 위 「타임테이블 · 이후 예고」 그대로(`#board.board--tt`).
 - **카드 보기** = `#board.board--tt.board--cards` > `section.tt.tt--cards` > 머리줄 + `.cards-board`(5열 그리드, `align-items:start`) + `.tt-fold`.
-  레인 = `section.lane[data-channel]` > `buildHeader`(기존 네임플레이트) + `buildTodayCards(ctx, key, {compact:true})`(모바일과 같은 오늘 카드) + `buildLaterList`(`.lane__later`, 접힘). `data-no-badge` 없음 → 편지 배지 · 말풍선 · 노노카 이스터에그가 모바일 레인과 같은 경로로 동작.
+  레인 = `section.lane[data-channel]` > `buildHeader`(기존 네임플레이트) + `buildTodayCards(ctx, key, {compact:true})`(모바일과 같은 오늘 카드) + `buildLaterList`(`.lane__later`, 접힘). `data-no-badge` 없음 → 트윗 배지 · 트윗 시트 · 노노카 이스터에그가 모바일 레인과 같은 경로로 동작.
 - **펼치기 전 세로 고정**: `.board--cards .lane` 은 `container-type:inline-size`; `.cards-board .tt-today` 높이 = `34px + 2·pad + 2·카드높이 + 12px + 30px`(카드 2장 + 다음 카드가 살짝 보임), 넘치면 `overflow-y:auto`. 카드높이 = `(100cqw − 2·pad − 2px)·9/16 + --bh + 2px`, `.tcard__body{height:--bh}`(78px, ≤1100px 에서 pad 11.2px · bh 72px). 날짜줄은 줄바꿈 없이 한 줄. (v4.5.8) 노노카 지각 이스터에그가 붙은 카드(`.k-card`)만 본문이 `height:auto; min-height:--bh` 로 늘어나고 대신의 말 글자를 줄인다(`king.css`) — 고정 높이에 잘려 안 보였다.
 - **이후 예고 펼치기**: 단일 `.tt-fold`(`buildFoldButton(counts, ctx, {perMember:true})`)가 `#board.board--later-open` 을 토글 → 5개 `.lane__later` 가 동시에 열리고 닫힌다. `toggleLater` 의 애니메이션 대상 선택자는 `board--cards` 이면 `.lane__later`(테이블 보기는 `.tt-later`). 이후 예고가 전체 0건이면 버튼 없음(레인별 「이후 예고 없음」 문구는 `buildLaterList` 기본).
 - 펼침 상태(`board--later-open`)는 보기 방식을 바꿔도 `#board` 에 남는다.
@@ -606,7 +607,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 
 ## 6-3. 계약 I — `tweets.json` / `tweet_archive.json` (data 브랜치)
 
-멤버 5인의 **개인 트윗** — 예고판 상단 편지 배지. `xtweet.py`.
+멤버 5인의 **개인 트윗** — 예고판 상단 트윗 배지(트윗 시트로 열린다). `xtweet.py`.
 
 - `tweets.json` = `{ generated_at, tweets: { "<channel_key>": [ { channel_key, id, text, text_ko,
   url, handle, received_at, expires_at, needs_tl?, media, quote }, … ] } }`. **채널당 스레드 = 메시지
@@ -617,8 +618,7 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
   `media`(=`[url,...]`, 본인 트윗 첨부 이미지 — 영상·GIF 는 썸네일 이미지 URL, v3.7.4. v3.8.0 부터 화면은 media·quote 의 원문/미디어를 쓰지 않고 `id`·`text_ko`·`quote.text_ko` 와 X 카드로 대체 - 데이터는 유지보수용으로 보존) / `quote`(=`{text,media,text_ko,needs_tl?}` | `null`,
   인용(QRT)한 남의 트윗 — **표시만**, 예고 파싱 등 ingest 대상 아님)는 (v3.4.5) `telegram_app.
   _enrich_personal_media` 가 tweet id 로 vxtwitter 를 재조회해 채운다(실패·미첨부·id 없음 →
-  `[]`/`null`, 무회귀). 프론트 `tweets.js`(`_mediaGrid`/`_quoteCard`) 가 말풍선 안에 썸네일/인용카드로
-  렌더 — 번역 토글이 한국어면 `quote.text_ko` 를 쓴다. (v3.4.6) `quote.text_ko` 는 `xtweet.
+  `[]`/`null`, 무회귀). 프론트 `tweets.js` 는 미디어를 그리지 않는다(번역 텍스트 · 첨부 개수 문구만 — 트윗 시트 「첨부 세기」). 번역 면은 `quote.text_ko` 를 쓴다. (v3.4.6) `quote.text_ko` 는 `xtweet.
   find_reused_ko(text, tweets_data, archive_data, notices_data)` 로 **같은 원문이 tweets/
   tweet_archive/notices 어디서든 이미 번역된 적 있으면 그 번역을 재사용**하고, 없을 때만
   LLM 을 새로 호출한다(인라인 실패 시 `quote.needs_tl=True` → `handlers._translate_sweep` 가
@@ -626,14 +626,18 @@ FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이
 - `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled|deleted`) — **캐시 보관함**(핫픽스 archive-split): 게시 7일 이내만 남고
   그보다 오래된 것은 매일 보관함 정리(§8.18)가 `tweet_archive/YYYY-MM-DD.json`(게시일 KST — tweet id 로 계산, 숫자 id 가 아닌 옛 항목은 받은 날)으로 옮긴다.
   운영 경로(빠진 트윗 보충의 「이미 아는 id」 · 번역 재사용 · 밀려남 · 만료 · 삭제)는 캐시만 읽고 쓴다 — 보충은 게시 48h 안의 글만 보므로 7일이면 넉넉하다.
-  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 아래 빠진 트윗 보충이 되살리지 않게.
-- **빠진 트윗 보충** (v4.7.4, `telegram_app._fill_member_gaps`): `/ingest` 에 멤버 트윗 알림이 하나 들어와 개인 트윗 경로를 마치면, 그 멤버의 최근 글 목록
-  (`vxtwitter.fetch_profile_statuses` = fxtwitter API v2 `/2/profile/<핸들>/statuses`, 약 20건 · 리트윗 섞임, 한도 IP 당 분당 1,000회)을 1회 조회해
-  폰 알림이 빠진 본인 트윗을 같은 경로(`_maybe_personal_tweet` — 번역 · 예고 판정 · 취소 · 변경 판정 포함)로 넣는다. 고르는 규칙(`xtweet.gap_candidates`):
-  본인 작성 · 리트윗 아님 · 남에게 단 답글 아님(**자기 글에 단 답글은 포함** — 폰은 자기 답글 알림을 거의 안 보낸다, 10-24 실측 6건 중 0건) · 게시 48시간 안 ·
-  그 멤버 스레드와 보관함(만료 · 밀려남 · 지움)에 없음 · 방금 받은 글 아님, 오래된 것부터 최대 3건(나머지는 다음 알림 때). 보충한 건마다 모니터 WARN
-  `gap-fill: 폰 알림이 빠진 트윗 보충 · <id> · mode`. 조회 · 읽기 실패는 아무것도 안 한다. 그 멤버가 다시 트윗해야 돈다(정기 수집에서는 안 함 — 운영자 결정 A안).
-  목록 API 의 `replying_to` 는 객체(`{screen_name, status, …}`)라 핸들만 꺼낸다(단건 조회는 문자열). 계기: 10-24 13:34 노노카 한글 트윗 · 자기 답글 2건이 폰에서 서버로 안 넘어옴.
+  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 상시 조사는 「아는 id」로 다시 올리지 않는다(자기 답글이 달린 경우엔 글타래째 되살린다 — 위 「원글 되살리기」, D13).
+- **빠진 트윗 보충 · 자기 답글 (self-reply 핫픽스, 2026-10-27 — 명세 `ref/self-reply/patch_spec.md`)** — 옛 방식(`/ingest` 가 멤버 알림 뒤에 최근 글을 훑던 `_fill_member_gaps`)은 **없앴다**. 대신 접수 서비스가 1분마다 훑는다:
+  - **상시 조사** `POST /gap-check`(접수 서비스, OIDC 강제 검증, Scheduler `mewtype-gapcheck` 매분): 멤버 5명 `fxtwitter /2/profile/<핸들>/statuses?since=<지금−600초>`(매시 정각 KST 만 since 없이 20건) 를 동시에 받는다. 5명 모두 204(`since` 뒤 글 없음)면 GitHub 를 읽지 않고 끝. 글이 있으면 `tweets.json` · `tweet_archive.json` 캐시를 한 번 읽어 「이미 아는 id」를 빼고 후보를 고른다(`xtweet.gap_candidates`): 본인 작성 · 리트윗 아님 · 남에게 단 답글 아님 · 게시 48h 안 · **일반 글은 게시 7분 뒤부터**(폰 알림을 기다린다) · **자기 답글은 바로**. 상한 없음, 오래된 순. 후보마다 보충 작업을 Cloud Tasks `mewtype-gapfill` 큐에 `gapfill-<트윗 id>`(분 버킷 없음)로 적재.
+  - **시간 · 쉬기**(명세 D9): 조사 1회 상한 20초(넘으면 거기서 끝). 5명 모두 실패한 실행이 3번 연속이거나 한 번이라도 429 면 10분 쉰다(인스턴스 메모리). 쉬기 시작 · 끝만 모니터 `warn`.
+  - **보충 작업** `POST /gap-fill`(접수 서비스, 큐 `mewtype-gapfill` 동시 1 · 3회 시도): 이미 등록이면 끝. 자기 답글이면 **원글 사슬**을 먼저(스레드에 있으면 그대로 · 보관함(캐시 → 일자 파일)에 있으면 백엔드 커밋이 되살린다 · 없으면 fxtwitter 단건으로 받아 뿌리부터 최대 5단, 판정은 아래 「원글 판정」). 그다음 글 자신을 `_maybe_personal_tweet(origin="gapfill", reply_to_id=…)` 로 — 번역 · 예고 판정 · 변경 판정 · 새 트윗 DM 은 폰 경로와 같다. 실패해도 200(다음 조사가 다시 찾는다).
+  - **원글 판정**(명세 §7-6, Claude 제안 — **운영자 미확인 결정**): 되살린 원글 = 판정 없음(처음 들어왔을 때 이미 판정했다) · 처음 들어오는 48h 안 원글 = 판정 · 48h 넘은 원글 = 번역만(DM · 판정 없음).
+  - **폰과 겹칠 때**(명세 §4-3): 커밋 결과가 `dup`·`stale` 이고 `via != "ops"` 면 예고 · 변경 판정 · 새 트윗 DM 을 하지 않는다. 보충이 먼저 넣은 글에 폰 알림이 늦게 오면 모니터 `ok` 「폰 늦게 도착 · 보충 뒤 +N분」. 관리 페이지 수동 경로(`via="ops"`)는 지금처럼 돈다.
+  - **모니터**: 보충 1건마다 자기 답글 = `ok` · 일반 글 = `warn` 「gap-fill · <id> · +N분 · mode: …」(+「원글 함께」「원글 되살림」). 구현은 `via="ingest"` + `origin="gapfill"`(명세 §4-3 의 `via="gapfill"` 대안 — `monitor_report` 의 자동 인입 집계가 `ingest` 만 세기 때문).
+- **자기 답글 필드 `reply_to_id`** (계약 I 항목, 옛 항목엔 없음 = `null`): 같은 멤버 자기 글에 단 답글이면 바로 위 글의 tweet id. 폰 경로는 vxtwitter 단건 `replyingTo`(핸들) · `replyingToID`, fxtwitter 폴백 `replying_to` · `replying_to_status` 에서 얻고 **핸들이 그 멤버일 때만**(`vxtwitter.extract` → `reply_to`·`reply_to_id`, `telegram_app._self_reply_id`). 목록 경로는 `replying_to.status`(`vxtwitter.fetch_profile_statuses` 반환의 `reply_to_id`). **확인 필요**: vxtwitter 단건 실응답의 키 이름(`replyingTo`·`replyingToID`)은 아직 실응답으로 확인하지 않았다 — fixture 미확인.
+- **글타래 수명**(D12, `xtweet.extend_threads`): 자기 답글이 커밋되면 **글타래(뿌리 · 중간 답글 · 새 답글)의 모든 글** `expires_at = max(지금 값, 글타래에서 가장 늦은 글 게시 + 48h)`. 예: 원글 10-01 10:00 · 답글 10:05 → 둘 다 10-03 10:05. 답글 없는 글은 지금처럼 게시 + 48h.
+- **원글 되살리기**(D13, `telegram_app._revive_plan` · `_commit_personal_tweet`): 자기 답글의 원글이 스레드에 없으면 **사유가 무엇이든**(`expired`·`rolled`·`replaced`·`deleted`) 보관함에서 찾아 스레드로 되돌린다 — 캐시에서 찾으면 캐시에서, 아니면 일자 파일(`tweet_archive/<원글 게시 KST 날짜>.json`)에서. 되살린 뒤 그 자리에서 지운다(캐시 · 일자 파일 양쪽에 남지 않게). `deleted` 를 되살리면 모니터 `warn` 「원글 되살림(관리 페이지에서 지웠던 글)」. **답글 없는 지운 글은 되살리지 않는다**(지금과 같음 — 상시 조사가 「아는 id」로 거른다).
+- `xtweet.gap_candidates` 의 옛 규칙(cap 3 · 2분 이내 제외 등)은 이 핫픽스로 바뀌었다 — 위 규칙이 정본.
 - `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
   (`config/channels.json` 의 `x_names[]` 매칭).
 - `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.
@@ -1029,7 +1033,11 @@ lateness=actual_start−scheduled_start) / `live_end`(live→end) / `demote`(`tr
 
 ### 8.11 `telegram_app.py` — 공개 webhook 서비스
 
-Flask. 엔트리포인트 `src.backend.telegram_app:app`. `ALLOW_UNAUTH=1`. 라우트 `POST /telegram` · `POST /ingest` · `GET /`.
+Flask. 엔트리포인트 `src.backend.telegram_app:app`. `ALLOW_UNAUTH=1`. 라우트 `POST /telegram` · `POST /ingest` · `GET /` · (self-reply) `POST /gap-check` · `POST /gap-fill` — 뒤의 두 개만 `oidc.verify_request(force=True)` 로 **강제 검증**(audience = `ADMIN_BASE_URL`, 발급자 = `INVOKER_SA`, 설정 없으면 거절).
+
+**`/gap-check`** (상시 조사, 매분): 5명 목록 조회 → 후보 → 보충 작업 적재. 본체 `_gap_check_run` · `_gap_check_core`(주입식, self-test 용). 상세 = 계약 I「빠진 트윗 보충 · 자기 답글」.
+**`/gap-fill`** (보충 작업 1건): 본체 `_gap_fill_one`. 원글 사슬 → 글 자신을 `_maybe_personal_tweet(origin="gapfill")`. 실패해도 200.
+`/ingest` 의 개인 트윗 분기는 더 이상 빠진 트윗 보충을 부르지 않는다(명세 §4-3).
 
 **`/telegram`**: `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 검증. 항상 **200**, 응답은 `sendMessage` 별도.
 followup 소진 순서: del/undo (y/N/terminate) → `_handle_ingest_followup` → `_handle_member_followup` →
@@ -1087,6 +1095,7 @@ GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
 `@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
 `@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
 `@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
+`@app.post("/daily")` (self-reply D6 · 명세 §4-6, Scheduler `mewtype-daily` KST 06:00) → ① `DAILY_QUEUE` 에 그날 **06:10 `/monitor`** · **06:20 `/websub-renew`** 태스크를 먼저 예약(이름 `daily-monitor-<분>` · `daily-websub-renew-<분>` — 날짜로 고정이라 재시도해도 두 번 안 만든다) → ② `handlers.tick("baseline")` 그대로(일시정지 가드 포함). 예약 실패는 tick 을 막지 않고 응답 500 + 운영자 알림 1회(Scheduler 재시도). `/monitor`·`/websub-renew` 본문은 그대로.
 `@app.post("/monitor")` (v3.5, v3.8.9 개편) → (핫픽스 archive-split) 먼저 **보관함 정리**(§8.18, 실패해도 다음 단계 계속) → **매일**(monitor_auto 와 무관) `monitor_snapshot.run_daily`:
 전일(06:00 KST 경계) 하루치를 `monitoring/days/{날짜}.json` 에 굳히고 `monitoring/summary.json` 에 요약 한 줄을
 추가(요약 = `{"triggers","events"}`, 그날 이벤트 로그 파일이 없으면 숫자 대신 `{"no_log": true}`). 백필:
@@ -1301,13 +1310,13 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
     소식 막대 · 펼친 목록 폭은 v4.5.x 와 같다(버튼이 막대 안 한 칸을 쓰고 티커 글자 자리만 그만큼 줄어든다, 모바일은 ▾ · 전환 두 칸을 2.25rem 으로 좁힘).
   - **기기 설정 따라가기**: 한 번도 직접 고르지 않았으면 기기 설정이 바뀔 때 화면도 따라 바뀐다(`initTheme`). 직접 고른 뒤에는 그 선택이 우선.
   - **색**: 각 css 의 `:root` 토큰이 어둡게 값(기본), `css/theme.css` 의 `:root[data-theme="light"]` 가 밝게 값으로 덮는다(디자인 = 목업 아티팩트 「v4.6.0 테마 목업」 밝게 A — BPM 톤:
-    배경 #f5f4fb · 카드 #fff · 글자 #232436). 멤버 레인 색(아바타 평균색) · 트윗 말풍선(멤버 색) · 썸네일 위 덮개는 두 테마 공통.
+    배경 #f5f4fb · 카드 #fff · 글자 #232436). 멤버 레인 색(아바타 평균색) · 트윗 시트(멤버 색) · 썸네일 위 덮개는 두 테마 공통.
     X 공식 카드도 같은 테마로 불러오고(`tweets.js` `_embedSrc` 의 `theme=`), 테마를 바꾸면 열린 카드를 다시 불러온다(`mew:theme` 이벤트).
     노노카 지각 이스터에그(`king.css`)의 무대 그림은 자체 어두운 배경이라 두 테마 공통. (v4.5.8) 카드 · 팝업 본문 위 대신의 말 글자 · 단계 테두리는 테마를 따른다 —
     `king.css` 토큰 `--k-ink-kick` · `--k-ink` · `--k-ink-gold-kick` · `--k-ink-gold` · `--k-edge-lo` · `--k-edge`(어둡게 = 은빛 · 연금색), 밝게 값은 `theme.css`(진한 쇠색 · 진한 금색). 밝은 바탕에서 은빛 글자가 안 보였다.
   - 바꾸는 순간에만 배경 · 글자 · 테두리 색이 0.3초에 걸쳐 바뀐다(`html.theme-anim`, 움직임 줄이기 설정이면 즉시).
   - **브라우저 자동 어둡게(삼성 인터넷 · Chrome Android force-dark)는 계속 끈다** — `color-scheme` 메타가 dark 를 포함하고 `:root` 의 `color-scheme` 이 테마를 따른다.
-    선언이 없으면 기기 다크 모드에서 투명 섞기 색(헤더 그라데이션 · 트윗 말풍선)이 이중 처리돼 뭉개진다.
+    선언이 없으면 기기 다크 모드에서 투명 섞기 색(헤더 그라데이션 · 트윗 시트)이 이중 처리돼 뭉개진다.
 - **방문 통계 (v4.5.4, v4.6.0 Claude 접속 제외)**: Vercel Web Analytics 스크립트. **주소에 `?va=claude` 가 붙은 탭은 통계를 보내지 않는다** — 공식 `beforeSend`(null 반환)로 막고,
   표시는 그 탭의 `sessionStorage`(`va-skip`)에 남아 같은 탭에서 새로고침 · 이동해도 계속 빠진다. 같은 브라우저의 다른 탭(운영자 접속)은 그대로 집계된다.
   Claude 가 운영 사이트를 브라우저로 열 때 이 표시를 붙인다(CLAUDE.md). 그 전(10-16 · 10-19, Chrome 접속 4회)은 집계에 들어가 있다.
@@ -1336,14 +1345,32 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   "OOO시간 지각"처럼 잘못 보이다가 다음 정기 poll(최대 `POLL_MS`) 이 돼야 정정됐음.
 - **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 소식판. 아래 「소식판 (v4.6.4)」.
   (v4.6.3 까지: 한 줄 티커 + 펼친 목록, 제목을 `[번역]　—　[원문]` 으로 이어 marquee — v4.6.4 에서 없앰.)
-- **js/tweets.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 유닛 아바타 트윗 알림 배지 — **동그라미만**(v4.1.0: 같은 크기의 원 — 안 읽음 1건 = 빈 원, 2건+ = 숫자 원, 모두 읽음 = 표시 없음(테두리도 안 남김). 봉투 아이콘 제거). 배지 클릭/호버 → **메신저형 스레드**: PC `.lane__bubble` 패널 / 모바일
-  `.tw-toast` 시트에 **`expires_at`(24h)이 안 지난 메시지 최대 50건**을 최신이 아래로 스택
-  (v3.5.3 — 이전엔 유닛당 최근 5개 고정. v3.5.3~v3.7.1 은 12시간 창을 따로 걸어 밤에 온 트윗이 다음날 낮에 전부 사라졌음 → v3.7.2 에서 제거),
-  ~2분 내 연속은 시각 1개로 묶음(`.lane__thread__grp`/`__msg`/`__t`), 열면 맨 아래로 스크롤 + 표시분
-  전부 읽음. 메시지가 많아도 말풍선(헤더 포함)이 화면 세로 2/3을 넘지 않도록 내부 스크롤 영역
-  높이를 `calc(66.6vh - 44px)` 로 고정(css). `한/日` 토글은 헤더에 1개(전역 `mew:tllang`), 원문(X)
-  링크는 메시지별(`.ori`). 만료·404 면 안 뜸.
+- **js/tweets.js** + **js/tweetlogic.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 보드의 아바타 · 이름 · 트윗 배지(`.lane__tw`)를 누르면 **트윗 시트**가 열린다(아래 「트윗 시트 (self-reply 핫픽스)」).
+  트윗 배지: 안 읽음 1건 = 빈 원, 2건+ = 숫자 원, 모두 읽음 = 표시 없음. 아바타 링 `.has-tweet` = 트윗이 있는 멤버(읽음 여부와 무관).
+  `expires_at` 이 지난 메시지는 빼고, 게시 시각순으로 최대 `MAX_THREAD`(=50)건을 보여 준다. 트윗 없는 네임플레이트는 흔들기 + 「OO의 새 트윗이 아직 없어요」(`_noTweet`).
 - **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
+
+### 트윗 시트 (self-reply 핫픽스) — `tweets.js` · `tweetlogic.js` · `css/tweets.css`
+
+설계 정본 = devpapers `ref/self-reply/ui_spec.md`(결정 U1~U9, §3 지킬 것) · 확정 시안 `ui_prototype.html`. 시트 하나를 `document.body` 에 두고 JS 가 만든다(`createElement` · `textContent` 만, innerHTML 금지).
+
+- **DOM(클래스 계약 — 이름을 바꾸면 여기 먼저)**: `.tws-scrim`(바깥 어둠, 클릭 = 닫기) · `section.tws[role=dialog][aria-modal=true][aria-labelledby=tws-nm]` > `.tws__grab`(폰 손잡이) · `.tws__head`(아바타 · `#tws-nm` · `.tws__hd`「@핸들 · 최근 48시간」 · `.tws__seg`(번역 | 원문, 알약 `.tws__seg-pill`) · `.tws__close`) · `nav.tws__members`(칩 `.tws__chip` ×5 + 알약 `.tws__mpill`, 순서 = `channel_order`) · `.tws__feed`(`.tws__new` 「여기부터 새 글」 · `.tws-chain[role=group]` 글타래 · `article.tws-tw`) · `.tws__newchip`(「새 글 N개 ↓」) · `.tws__hint`(원문 면 첫 안내 한 줄).
+- **글 한 개**: `.tws-tw__meta`(`.tws-tw__time` 시각 줄 · `button.tws-tw__media` 사진 · 영상 수 · `a.tws-tw__open` X 원문 링크) · `.tws-tw__track`(가로 스냅, 두 면이 같은 높이) > `.tws-tw__face`(번역 면 = `.tws-ko` · `.tws-ko__txt` · `.tws-ko__q` · `button.tws-att` 첨부 줄 / 원문 면 = X 카드 `.lane__thread__xcard` 공용) · `.tws-tw__dots`.
+- **면**: 글 하나에 번역 면 · 원문 면 중 한 번에 한 면만 칸 전체 폭. 머리 줄 「번역 · 원문」 탭 = 모든 글 한꺼번에(저장값 `mew:tllang` 을 그대로 이어받음). 글 하나만 = 옆으로 밀기(마우스 끌기 · 트랙패드 · 터치 · ←/→). 첨부 줄 · 사진 버튼 = 그 글만 원문 면.
+- **열기 · 닫기**: 보드 클릭 위임(트윗이 있는 멤버만). 폰(`max-width: 767px`) = 아래 시트(높이 86%), 손잡이 · 머리 줄을 아래로 끌어 닫기(`sheetdrag.js` `wireSheetDrag`). PC(768px 이상) = 가운데 팝업 540px(최대 높이 660px), ✕ · 바깥 클릭 · Esc 로 닫기, 끌어 닫기 없음. PC 호버 미리보기 · 여러 개 고정은 없다. 폭 경계를 넘나들어도 닫지 않고 모양만 바뀐다(CSS 미디어 쿼리).
+  닫을 때 · 멤버를 바꿀 때 그 멤버 글을 읽음 처리(`mew:twread`, 4일 보존) — 보드 배지가 줄어들며 사라진다. 닫으면 X 카드 iframe 을 지운다(`_stopCards`).
+- **목록 규칙**(`tweetlogic.js`, DOM 없음 · selfcheck C1~C8): `chains()` = `reply_to_id` 가 목록 안 글이면 같은 글타래(뿌리까지), 글타래 안은 게시 시각순, 글타래 자리 = 가장 늦은 글 시각(끌어올리기). 원글이 목록에 없으면 답글은 혼자. 순환은 혼자 처리(무한 반복 없음). `reply_to_id` 없는 옛 데이터는 게시 시각순 그대로. 2분 묶음은 없다 — 글마다 시각 줄.
+  시각 줄: 오늘(KST) = `HH:MM · N분 전`, 그 밖 = `M/D HH:MM · N시간 전`, 답글 = `이어서 · 시각 · 「N분 / N시간 M분 / N일 뒤」`, 게시 시각을 모르면 `HH:MM 등록`.
+  「여기부터 새 글」 = 첫 안 읽은 글 앞(답글이면 글타래 안). 열면 그 자리로, 없으면 맨 아래로.
+- **첨부 세기**: 사진 = `media` · `quote.media` 중 영상 썸네일이 아닌 URL, 영상 = URL 에 `video_thumb` 또는 `amplify` 포함. 번역 면에는 개수 글자만(「사진 2장 · 인용 글 사진 1장」). 원문 · 사진 · 영상은 우리가 그리지 않는다(법률 자문 — 원문 미디어는 X 카드가 보여 준다).
+- **X 카드 불러오기**: 글(`article.tws-tw`)이 피드 화면 근처(위아래 한 화면)에 들어올 때 `_loadCard`. 자리 높이는 `estimateCardH`(글 내용으로 어림, 기본 230) → 높이 신호가 오면 그 값.
+- **폴링**: 75초마다 `renderTweets`. 열린 시트는 표시 서명(`sigOf`: id · 번역 · 인용 번역 · reply_to_id)이 바뀐 때만 다시 그린다(X 카드 재로드 방지). 다시 그릴 때 각 글의 면 · 피드 스크롤 위치를 유지. 모든 메시지가 사라지면 닫는다.
+- **색**: 바탕 = 멤버 레인 색(`--lane-color`, 없으면 `#3a3a3e`), 글자 = 검정(`#17171b`) · 흰색 중 대비가 큰 쪽(`inkFor`), 번역 칸 = 글자 반대쪽으로 섞은 `--paper`(`paperFor`). 멤버를 바꾸면 `@property --m · --mi` 로 500ms 동안 넘어간다.
+- **움직임**: A1 엿보기(처음 두 번, `mew:twpeek`) · A2 끄는 중 점 · 25% 넘으면 진동 · A3 끝 고무줄 · A4 머리 줄 알약 · A5 칩 알약 · 칩 줄 끌기 · B1 첨부 줄 → 원문 + 사진 자리 빛남 · B2 PC 열기 320ms · 닫기 210ms · B3 폰 끌기 · 배경 옅어짐 · B4 「여기부터 새 글」 선 · 배지 사라짐 · B5 X 카드 자리 쉬머(`.lane__thread__xskel`) · C1 글타래 세로줄 · C2 「새 글 ↓」 칩 · C3 피드 끝 흐림 · C4 키보드 포커스. 움직임 줄이기면 이동 · 크기는 끄고 색 · 투명도만.
+- **저장 키**: `mew:twread`(읽음, 4일) · `mew:tllang`(면, 기존 키 그대로) · `mew:twpeek`(엿보기 횟수, 새 키). 모두 try/catch.
+- **지운 것**(v4.8.6 까지의 말풍선 · 토스트): `.lane__bubble*` · `.tw-toast*` · `.tw-backdrop` · `.lane__thread__grp/__unit/__msg/__t/__quote`, PC 호버 미리보기 · 여러 개 고정, 2분 묶음.
+- **남긴 것**: `.lane__thread__xcard`(· `__embed` · `__xskel` · `__xlink`) · `.lane__tw` · `.has-tweet` · `.is-nope` · `.tw-nope` 와 그 코드. 소식 팝업(`notices.js`)도 같은 X 카드를 쓴다(`makeXCard` · `loadXCards` · `stopXCards`).
+- **미확인(10-27 기준)**: 실기기 터치 · 진동 · 밝게 테마 · 움직임 줄이기 · 시트 끌기 — 운영자 브라우저 확인 전. `css/reset.css` 의 선택 허용 목록에 옛 클래스 `.lane__thread__msg`(번역 글 선택)가 남아 있다 — 새 번역 글(`.tws-ko__txt` · `.tws-ko__q`)로 바꿔야 터치 기기에서 복사가 된다(범위 밖이라 이번 핫픽스에서는 안 건드림).
 
 ### 소식판 (v4.6.4) — `notices.js` · `css/notices.css`
 
@@ -1372,13 +1399,13 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   백엔드 `notices.live_holds` · `sweep_expired` 와 프론트 `_liveHolds` · `_visible` 이 같은 규칙(묶음 열쇠 = 라이브공연 분류 + 공연 이름 정규화, 공연일 = 묶음 안 최빈값). 저장된 `expires_at` 은 고치지 않는다.
   공연 이름이 없는 라이브공연 소식(「그 밖의 공연 소식」)과 다른 분류는 전처럼 자기 기간에 내려간다. 이미 지난 날짜로 **새로 들어오는** 글은 전처럼 안 올린다.
 - **언어**: [한글 | 원문] 한 번에 한 언어, 기본 한글, `localStorage` `mew.notice.lang`(트윗 번역 설정과 별개). 한글 제목이 없으면 원문.
-- **소식 팝업 카드** — 트윗 말풍선과 같은 방식:
+- **소식 팝업 카드** — 트윗 시트와 같은 방식:
   - PC: 소식 줄 **호버 = 잠깐 열림**(팝업으로 옮겨도 유지 · 떠나면 닫힘, 닫기는 160ms 미룸), **클릭 = 고정**(한 번에 1개, 같은 줄 다시 클릭 · ✕ · Esc · 바깥 클릭으로 닫힘, 고정 중 호버 무시).
     `.ntc__pop`(#notice 안 · 목록 밖, z-index 43 — 펼친 목록 42 · 플레이어 도크 40 위). 아래 공간이 모자라면 위로, 화면 안으로 맞춤, 꼬리, 목록 스크롤 · 창 크기 변화에 따라감.
   - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). ✕ · 배경 · Esc · 손잡이 줄 아래로 끌기(아래 「마이크로 인터랙션」)로 닫힘, 열린 동안 body 스크롤 잠금. 손잡이 줄은 맨 위 고정 · 내용만 스크롤. 시트 안을 눌러도 소식 목록은 안 닫힌다.
   - 내용: 분류 · D-day · 날짜(요일, 마감이면 〜) · 시각 · 출처 / 전체 제목(언어 전환 따름) / **번역 본문(`body_ko`, 없으면 「번역 준비 중…」)** / **X 공식 트윗 카드** / 「자세히 보기 ↗」(`url`) · 「원문 트윗 ↗」(`tweet_url`, http(s)만).
-    **원문 모드에서도 본문 원문(`body_raw`)은 우리가 그리지 않는다**(v3.8.0 법률 자문 — 원문 · 이미지는 X 카드가 보여 준다, 트윗 말풍선과 같은 원칙). PC = 본문 | X 카드(280px) 2열, 모바일 = 1열.
-  - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 말풍선 코드 재사용 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.
+    **원문 모드에서도 본문 원문(`body_raw`)은 우리가 그리지 않는다**(v3.8.0 법률 자문 — 원문 · 이미지는 X 카드가 보여 준다, 트윗 시트와 같은 원칙). PC = 본문 | X 카드(280px) 2열, 모바일 = 1열.
+  - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 시트와 같은 코드 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.
   - 소식 줄 · 카드는 링크가 아니라 버튼(`role=button` · `tabindex=0` · `aria-haspopup=dialog`, Enter/Space 로 열기, 키보드로 닫으면 포커스가 그 줄로).
   - 75초 폴링으로 다시 그릴 때: 고정 팝업 · 시트는 같은 소식이 남아 있으면 유지(내용이 바뀌면 다시 채움), 없으면 닫음. 호버 팝업은 닫음.
 - **펼친 목록 높이**: 행사 배너 + 분류 줄 + 소식 영역(`LIST_CAP` PC 420 · 모바일 460px 상한), 전체는 화면 높이 70% 상한. 펼친 목록 z-index 42(v4.6.3 까지 30 — PC 플레이어 도크(40)의 YouTube 화면 밑으로 들어가던 것을 고침).
@@ -1395,8 +1422,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   `.is-spring` 으로 튕겨 돌아간다. 반대 방향은 22px 까지만 버틴다. 닫을 땐 인라인 transform 을 지운 뒤 시트의 원래 닫기를 불러 원래 닫힘 전환이 끌던 자리에서 이어진다.
   - **소식 시트**(`notices.js _sheetEnsure`): 손잡이 줄 `.ntc-sheet__grabz`(22px)를 아래로. **손잡이 줄은 시트 맨 위에 고정**되고 내용 `.ntc-sheet__in` 만 스크롤한다
     (전엔 `.ntc-sheet` 전체가 스크롤 상자라 내용을 내리면 손잡이도 같이 올라갔다 — 10-24 운영자 지적). 내용이 손잡이 밑으로 지나가면 `.is-scrolled` 경계선.
-  - **트윗 토스트**(`tweets.js _ensureToast`): 위에서 내려오는 토스트라 **위로 밀어 닫는다**(`dir: "up"`). 손잡이 = 머리줄 `.tw-toast__head` + 맨 아래 새 손잡이 `.tw-toast__grab`.
-    머리줄 · 손잡이는 늘 제자리, 트윗 목록 `.tw-toast__scroll` 만 스크롤. (시안은 아래 시트로 그렸지만 실제는 위 토스트 — 구현 때 확인)
+  - **트윗 시트**(폰, `tweets.js _ensureSheet`): 아래에서 올라오므로 **아래로 끌어 닫는다**(`dir: "down"`). 손잡이 = `.tws__grab` + 머리 줄 `.tws__head`(버튼 · 탭 위에서는 끌기 안 함). PC 는 끌어 닫기 없음.
   - **플레이어 시트**(모바일, `player.js`): 머리줄 `.mp-pop__head`(모바일에만 손잡이 막대 `.mp-pop__grab`)를 아래로. 내리면 `closePlayer` 와 같다(재생 계속 · 플로팅으로).
     끄는 동안 · 튕겨 돌아가는 동안 `followFrame` 으로 YouTube 프레임이 재생부 자리를 따라온다. PC 도크에는 해당 없음.
 - **트윗 없는 네임플레이트**(`tweets.js _noTweet`): 트윗이 없는 멤버의 아바타 · 이름(`lane__link` · PC `tt__who`)을 누르면 고개를 젓듯 흔들리고(`.is-nope`) 그 위에
@@ -1578,13 +1604,12 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 `deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
 - `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**,
-  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)) + (v4.5.2) PubSub 전용 큐 `WEBSUB_QUEUE`(기본 `mewtype-websub`, 동시 1 · 초당 0.2). 멱등.
+  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)) + (v4.5.2) PubSub 전용 큐 `WEBSUB_QUEUE`(기본 `mewtype-websub`, 동시 1 · 초당 0.2). (self-reply) 보충 작업 큐 `GAPFILL_QUEUE`(기본 `mewtype-gapfill`, 동시 1 · 3회) · 일일 묶음 예약 큐 `DAILY_QUEUE`(기본 `mewtype-daily`, 동시 1 · 4회 · 30~300초). 멱등.
 - `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
   + secrets/env. `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN` 은 Secret 이 있을 때만 마운트(v3.7.1 — 전엔
   healthchecks Secret 을 무조건 마운트해 새 프로젝트에서 첫 배포가 실패). 배포 후 `SERVICE_URL` env 재설정.
   (v4.5.0) `WEBSUB_SECRET`(Secret, 있을 때만) · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL — 배포 때 조회, 접수 서비스를 **먼저** 배포) · `WEBSUB_REPLACE_RSS`(기본 0) · (v4.5.2) `WEBSUB_QUEUE`(PubSub 확인 재예약용) env.
-- `scheduler.sh` — `mewtype-baseline`(`0 6 * * *` Asia/Tokyo) / `mewtype-light`(`*/10 * * * *` Etc/UTC, v3.6) /
-  `mewtype-monitor`(`10 6 * * *` Asia/Seoul → `/monitor`) / (v4.5.0) `mewtype-websub-renew`(`20 6 * * *` Asia/Seoul → `/websub-renew`). OIDC.
+- `scheduler.sh` — (self-reply D6, 2026-10-27 이후) 3잡: `mewtype-light`(`*/10 * * * *` Etc/UTC → 쓰기 `/tick`) · `mewtype-daily`(`0 6 * * *` Asia/Seoul → 쓰기 `/daily`) · `mewtype-gapcheck`(`* * * * *` Etc/UTC → 접수 `/gap-check`, audience = 접수 서비스 주소). 옛 `mewtype-baseline` · `mewtype-monitor` · `mewtype-websub-renew` 은 새 잡을 만든 뒤 지운다. **STAGE=1 이면 아무것도 안 하고 끝남**(D10). **KST 05:50~06:30 에는 거부**(일일 묶음 잡 · 예약과 겹침). OIDC.
 - `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
   `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
   (조건부) + `INGEST_YT_ENABLED` env. (v4.5.0) `WEBSUB_SECRET`(조건부 — 없으면 `/websub/*` 는 503) · (v4.5.2) `WEBSUB_QUEUE`(알림 확인 · 신곡 등록 예약 큐 — 큐가 없으면 예약 실패 → 503 이라 `setup.sh` 로 **먼저** 만든다). (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +

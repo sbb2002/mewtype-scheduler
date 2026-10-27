@@ -114,11 +114,13 @@ def _reached(iso_when: str | None, now_iso: str) -> bool:
 
 def parse(text: str, *, title: str, tag: str | None, channel_key: str,
           now_iso: str, handle: str = "",
-          media: list[str] | None = None, quote: dict | None = None) -> dict | None:
+          media: list[str] | None = None, quote: dict | None = None,
+          reply_to_id: str | None = None) -> dict | None:
     """개인 트윗 1건 dict. text 가 (장식 제거 후) 비면 None. 리트윗/타인글은 필터.
 
     media: 본인 트윗에 첨부된 이미지 URL 목록(표시용, 파싱엔 안 씀).
     quote: 인용(QRT)한 남의 트윗 {"text","media"} — 표시만 하고 ingest(파싱)는 안 함.
+    reply_to_id: 같은 멤버 자기 글에 단 답글이면 원글 id(없으면 None — 옛 항목과 같은 뜻).
     """
     body = _clean_text(text)
     if not body:
@@ -150,6 +152,7 @@ def parse(text: str, *, title: str, tag: str | None, channel_key: str,
         "media": list(media) if media else [],
         "quote": ({"text": quote.get("text") or "", "media": list(quote.get("media") or []),
                     "text_ko": None} if quote else None),
+        "reply_to_id": str(reply_to_id) if reply_to_id else None,   # (자기 답글) 원글 id — 글타래 묶음 · 수명 규칙
     }
 
 
@@ -208,7 +211,7 @@ def default_archive() -> dict:
 
 
 _ROW_KEYS = ("channel_key", "id", "text", "text_ko", "url", "handle", "received_at", "posted_at", "expires_at",
-             "media", "quote")
+             "media", "quote", "reply_to_id")
 
 
 def _as_list(v) -> list:
@@ -265,7 +268,7 @@ def merge_thread(prev: dict, incoming: dict, now_iso: str, *,
         return prev, arch, False, "dup"
 
     row = {k: incoming.get(k) for k in _ROW_KEYS}
-    lst = sorted(lst + [row], key=_sort_key)          # 최신이 뒤
+    lst = extend_threads(sorted(lst + [row], key=_sort_key))   # 최신이 뒤 · 글타래 수명(D12)
 
     mode = "added"
     while len(lst) > MAX_THREAD:
@@ -283,12 +286,66 @@ def merge_thread(prev: dict, incoming: dict, now_iso: str, *,
 merge_tweet = merge_thread
 
 
+def _post_iso(m: dict) -> str:
+    """글의 게시 시각(ISO) — posted_at → Snowflake → received_at 순. 없으면 ""."""
+    return m.get("posted_at") or snowflake_iso(str(m.get("id") or "")) or m.get("received_at") or ""
+
+
+def extend_threads(lst: list[dict]) -> list[dict]:
+    """(자기 답글 D12) reply_to_id 로 이어진 글타래(뿌리 · 중간 답글 · 답글의 답글)마다 **모든 글**의
+    expires_at = max(지금 값, 글타래에서 가장 늦은 글의 게시 + TTL_HOURS) 로 늘린다. 답글이 없는 글은 그대로.
+    입력 dict 는 고치지 않고 바뀐 글만 복사해 새 리스트를 돌려준다(입력 순서 유지)."""
+    ids = {str(m.get("id")): m for m in lst if m.get("id") is not None}
+    adj: dict[str, set[str]] = {k: set() for k in ids}
+    for m in lst:
+        p, me = m.get("reply_to_id"), str(m.get("id"))
+        if p and str(p) in ids and str(p) != me:
+            adj[me].add(str(p))
+            adj[str(p)].add(me)
+    floors: dict[str, str] = {}
+    seen: set[str] = set()
+    for start in ids:
+        if start in seen or not adj[start]:
+            continue
+        comp, stack = [], [start]
+        seen.add(start)
+        while stack:
+            x = stack.pop()
+            comp.append(x)
+            for y in adj[x]:
+                if y not in seen:
+                    seen.add(y)
+                    stack.append(y)
+        latest = _parse_iso(max(_post_iso(ids[x]) for x in comp))
+        if latest is None:
+            continue
+        floor = (latest + timedelta(hours=TTL_HOURS)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for x in comp:
+            floors[x] = floor
+    out = []
+    for m in lst:
+        f = floors.get(str(m.get("id")))
+        cur = m.get("expires_at") or ""
+        if f and (not cur or f > cur):          # 둘 다 같은 ISO-Z 모양이라 문자열 비교 = 시각 비교
+            out.append(dict(m, expires_at=f))
+        else:
+            out.append(m)
+    return out
+
+
+# (자기 답글) 일반 글은 게시 후 이 시간이 지나야 보충 후보 — 폰 알림이 보통 2분 안에 와서 그 뒤에 본다(D14).
+GAP_GENERAL_MIN_SEC = 7 * 60
+
+
 def gap_candidates(statuses: list[dict] | None, handle: str, known_ids: set, now_iso: str, *,
-                   exclude: str | None = None, max_age_h: int = 48, cap: int = 3) -> list[dict]:
-    """(누락 보충, 2026-10-24) 멤버의 최근 글 목록(`vxtwitter.fetch_profile_statuses`)에서 폰 알림이 빠진 본인 트윗을 고른다.
-    본인 작성 · 리트윗 아님 · 남에게 단 답글 아님(자기 글에 단 답글은 포함 — 스레드) · 게시 max_age_h 시간 안(트윗 수명 48h 와 같음) ·
-    known_ids(그 멤버 스레드 + 트윗 보관함 — 만료 · 밀려남 · 관리 페이지 삭제 포함)에 없음 · exclude(방금 받은 글) 아님.
-    오래된 것부터 최대 cap 건(나머지는 다음 알림 때). 계기: 10-24 13:34 노노카 한글 트윗 · 답글 2건이 폰에서 안 넘어옴."""
+                   exclude: str | None = None, max_age_h: int = 48,
+                   general_min_sec: int = GAP_GENERAL_MIN_SEC) -> list[dict]:
+    """(상시 조사, 명세 §4-1 ④) 멤버의 최근 글 목록(`vxtwitter.fetch_profile_statuses`)에서 아직 안 들어온 본인 글을 고른다.
+    - 본인 작성 · 리트윗 아님 · 남에게 단 답글 아님(자기 글에 단 답글 = 자기 답글은 포함).
+    - 게시 max_age_h 시간 안(트윗 수명 48h 와 같음). 원글이 48h 를 넘어도 자기 답글은 후보(원글은 보충 작업이 찾는다).
+    - 일반 글은 게시 general_min_sec 뒤부터(폰이 제때 주면 그 전에 들어와 있다), 자기 답글은 바로.
+    - known_ids(스레드 + 보관함 캐시 — 만료 · 밀려남 · 관리 페이지 삭제 포함)에 없음. exclude 는 호환용(지정 id 제외).
+    - 상한 없음. 오래된 것부터 돌려준다. 계기: 10-24 노노카 한글 트윗 · 답글 2건이 폰에서 안 넘어옴(명세 §1)."""
     h = (handle or "").lstrip("@").lower()
     try:
         now_ms = datetime.fromisoformat(now_iso.replace("Z", "+00:00")).timestamp() * 1000
@@ -302,11 +359,14 @@ def gap_candidates(statuses: list[dict] | None, handle: str, known_ids: set, now
         if s.get("author") != h or s.get("repost") or s.get("reply_to") not in (None, h):
             continue
         posted_ms = (int(sid) >> 22) + _TW_EPOCH_MS
-        if now_ms - posted_ms > max_age_h * 3600 * 1000 or posted_ms > now_ms + 60_000:
+        age_ms = now_ms - posted_ms
+        if age_ms > max_age_h * 3600 * 1000 or posted_ms > now_ms + 60_000:
             continue
+        if s.get("reply_to") is None and age_ms < general_min_sec * 1000:
+            continue                          # 일반 글: 7분 전엔 아직 — 폰 알림을 기다린다
         out.append(s)
     out.sort(key=lambda s: int(s["id"]))
-    return out[:cap]
+    return out
 
 
 def sweep_expired(prev: dict, archive: dict, now_iso: str
@@ -1481,7 +1541,7 @@ if __name__ == "__main__":
     print("[OK] apply_overrides  (manual 출처 · manual 권한은 API 불변 시 유지 · 변화 시 API 승 / 권한 manual 은 변화해도 유지 / personal 회귀 없음)")
 
     # (누락 보충) 빠진 트윗 고르기 — 본인 · 리트윗 아님 · 자기 답글은 포함 · 48h · 아는 id · 방금 받은 글 제외 · 오래된 순 · 상한
-    _G_NOW = "2026-10-24T04:40:00Z"
+    _G_NOW = "2026-10-24T04:45:00Z"       # (새 규칙: 일반 글 7분 뒤부터 — 13:34 글이 후보가 되려면 13:41 KST 이후)
     _st = [
         {"id": "2113852162069635159", "author": "nonoka_yumemita", "repost": False, "reply_to": None},              # 13:36 방금 받은 글
         {"id": "2113851579740963041", "author": "nonoka_yumemita", "repost": False, "reply_to": None},              # 13:34:24 한글 글
@@ -1493,8 +1553,63 @@ if __name__ == "__main__":
     ]
     _g = gap_candidates(_st, "@nonoka_yumemita", {"2113847683337347370"}, _G_NOW, exclude="2113852162069635159")
     assert [x["id"] for x in _g] == ["2113851579740963041", "2113851584719561114"], _g
-    assert gap_candidates(_st, "nonoka_yumemita", {"2113847683337347370"}, _G_NOW, exclude="2113852162069635159", cap=1)[0]["id"] == "2113851579740963041"
     assert gap_candidates(None, "nonoka_yumemita", set(), _G_NOW) == [] and gap_candidates(_st, "nonoka_yumemita", set(), "bad") == []
-    print("[OK] gap_candidates  (본인 · 리트윗 제외 · 자기 답글 포함 · 남에게 단 답글 제외 · 48h · 아는 id · 방금 받은 글 제외 · 오래된 순 · 상한)")
+    print("[OK] gap_candidates  (본인 · 리트윗 제외 · 자기 답글 포함 · 남에게 단 답글 제외 · 48h · 아는 id · 오래된 순)")
+
+    # ── (상시 조사 · 자기 답글, 명세 §4-1 ④ · §3 · V1-B 3~6) ──────────────────
+    def _sid_at(iso):                       # 게시 시각 → Snowflake id (시각 → (ms - epoch) << 22)
+        ms = int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp() * 1000)
+        return str((ms - _TW_EPOCH_MS) << 22)
+    import copy
+    _NOW = "2026-10-27T03:00:00Z"
+    # _at(m) = 지금부터 m분 전에 게시된 글의 id
+    _at = lambda m: _sid_at((datetime.fromisoformat(_NOW.replace("Z", "+00:00")) - timedelta(minutes=m))
+                            .strftime("%Y-%m-%dT%H:%M:%SZ"))
+    _row3 = lambda sid, rt=None: {"id": sid, "text": "t", "author": "ritsu_yumemita", "repost": False, "reply_to": rt}
+    # (3) 일반 글 6분 = 제외 · 7분 · 9분 = 후보 · 자기 답글 0분 = 후보 (오래된 순 = id 오름차순)
+    _c3 = gap_candidates([_row3(_at(6)), _row3(_at(7)), _row3(_at(9)), _row3(_at(0), "ritsu_yumemita")],
+                         "ritsu_yumemita", set(), _NOW)
+    assert [x["id"] for x in _c3] == [_at(9), _at(7), _at(0)], [x["id"] for x in _c3]
+    print("  V1-B 3: 일반 글 6분 제외 · 7분 · 9분 후보 · 자기 답글 0분 후보")
+    # (4) 후보 5건 → 상한 없이 5건, 오래된 것부터
+    _five = [_row3(_at(m)) for m in (30, 25, 20, 15, 10)]
+    _c4 = gap_candidates(_five, "ritsu_yumemita", set(), _NOW)
+    assert [x["id"] for x in _c4] == [_at(m) for m in (30, 25, 20, 15, 10)], "상한 없이 오래된 순"
+    print("  V1-B 4: 후보 5건 전부 · 오래된 순")
+    # (5) 원글 48h 넘은 자기 답글 = 후보 · 48h 넘은 일반 글 · 리트윗 · 남에게 단 답글 · 아는 id 제외
+    # 자기 답글은 답글 자체의 게시 시각으로 48h 를 본다 — 원글이 48h 넘었어도(목록엔 원글 시각이 없다) 답글이 최근이면 후보
+    _c5 = gap_candidates([_row3(_at(60 * 20), "ritsu_yumemita"), _row3(_at(60 * 50)),
+                          dict(_row3(_at(20)), repost=True), _row3(_at(20), "some_fan"),
+                          _row3(_at(20))], "ritsu_yumemita", {_at(20)}, _NOW)
+    assert [x["id"] for x in _c5] == [_at(60 * 20)] and _c5[0].get("reply_to") == "ritsu_yumemita", _c5
+    print("  V1-B 5: 자기 답글(원글 48h 넘어도 답글이 48h 안이면) 후보 · 48h 넘은 일반 글 · 리트윗 · 남에게 단 답글 · 아는 id 제외")
+
+    # (V1-B 6 · D12) 글타래 수명 — 글타래 모든 글 = max(지금 값, 가장 늦은 글 게시 + 48h)
+    _TN = "2026-10-01T02:00:00Z"
+    _r = lambda i, p, posted, exp, rt=None: {"channel_key": "ritsu", "id": i, "text": "t", "posted_at": posted,
+                                             "expires_at": exp, "reply_to_id": rt}
+    _pt = {"tweets": {"ritsu": [_r("1", None, "2026-10-01T01:00:00Z", "2026-10-03T01:00:00Z")]}}
+    _ans, _, _ch, _md = merge_thread(_pt, _r("2", None, "2026-10-01T01:05:00Z", "2026-10-03T01:05:00Z", "1"), _TN)
+    _exp = {m["id"]: m["expires_at"] for m in _ans["tweets"]["ritsu"]}
+    assert _exp == {"1": "2026-10-03T01:05:00Z", "2": "2026-10-03T01:05:00Z"}, _exp
+    _ans2, _, _, _ = merge_thread(_pt, _r("2", None, "2026-10-04T03:00:00Z", "2026-10-06T03:00:00Z", "1"), _TN)
+    assert {m["id"]: m["expires_at"] for m in _ans2["tweets"]["ritsu"]} == {"1": "2026-10-06T03:00:00Z", "2": "2026-10-06T03:00:00Z"}
+    _chain = {"tweets": {"ritsu": [_r("1", None, "2026-10-01T01:00:00Z", "2026-10-03T01:00:00Z"),
+                                   _r("2", None, "2026-10-01T01:05:00Z", "2026-10-03T01:05:00Z", "1")]}}
+    _ans3, _, _, _ = merge_thread(_chain, _r("3", None, "2026-10-05T00:00:00Z", "2026-10-07T00:00:00Z", "2"), _TN)
+    assert {m["id"]: m["expires_at"] for m in _ans3["tweets"]["ritsu"]} == {m: "2026-10-07T00:00:00Z" for m in ("1", "2", "3")}
+    _solo = merge_thread(_pt, _r("9", None, "2026-10-01T05:00:00Z", "2026-10-03T05:00:00Z"), _TN)[0]
+    assert {m["id"]: m["expires_at"] for m in _solo["tweets"]["ritsu"]}["9"] == "2026-10-03T05:00:00Z"   # 답글 없음 = 게시 + 48h
+    assert {m["id"]: m["expires_at"] for m in _solo["tweets"]["ritsu"]}["1"] == "2026-10-03T01:00:00Z"
+    _pt_before = copy.deepcopy(_pt)
+    merge_thread(_pt, _r("2", None, "2026-10-04T03:00:00Z", "2026-10-06T03:00:00Z", "1"), _TN)
+    assert _pt == _pt_before, "입력 prev 는 고치지 않는다"
+    print("  V1-B 6: 답글 10-01 10:05 → 둘 다 10-03 10:05 · 답글 10-04 12:00(KST) → 둘 다 10-06 · 사슬 3단 셋 다 · 답글 없음 = 게시 + 48h · 입력 불변")
+    # 같은 입력을 두 번 넣어도 같은 결과(결정적) · parse 가 reply_to_id 를 싣는다
+    _pa = parse("返信です", title="x", tag="tweet-2113851584719561114", channel_key="ritsu",
+                now_iso=_NOW, handle="ritsu_yumemita", reply_to_id="2113851579740963041")
+    assert _pa["reply_to_id"] == "2113851579740963041"
+    assert parse("일반", title="x", tag="tweet-2113851584719561114", channel_key="ritsu", now_iso=_NOW)["reply_to_id"] is None
+    print("[OK] 자기 답글 · 글타래 수명(D12) · 상시 조사 후보 규칙(7분 · 자기 답글 즉시 · 상한 없음 · 48h)")
 
     print("\nSUCCESS: xtweet self-test 통과")

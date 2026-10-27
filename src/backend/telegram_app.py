@@ -2011,21 +2011,35 @@ def _prepare_notice(raw: str, now_iso: str, *, tag=None, title=None, gh=None, ti
     }
 
 
+def _self_reply_id(vx: dict | None, handle: str) -> str | None:
+    """(자기 답글) vxtwitter 결과(`vxtwitter.extract`)가 **같은 멤버 글에 단 답글**이면 원글 id, 아니면 None.
+    남에게 단 답글 · 답글 정보 없음 · 핸들 불일치는 None — 핸들이 그 멤버일 때만(명세 §3)."""
+    if not vx or not handle:
+        return None
+    rid = vx.get("reply_to_id")
+    if rid and str(vx.get("reply_to") or "").lower() == handle.lstrip("@").lower():
+        return str(rid)
+    return None
+
+
 def _prepare_personal_tweet(raw: str, *, title: str, tag: str | None, channel_key: str, now_iso: str,
                             vx_extract: dict | None = None, gh: GitHubStore | None = None,
-                            text_ko_override: str | None = None) -> dict | None:
+                            text_ko_override: str | None = None,
+                            reply_to_id: str | None = None) -> dict | None:
     """(WP-3b) 개인 트윗 준비 (제어 채널에서 실행).
 
     외부 호출(vxtwitter·LLM) + 머지 변화 판정까지 한 뒤 결과를 반환.
     반환: {"parsed": dict, "text_src": str, "text_ko": str|None, "quote_src": str|None, "quote_ko": str|None} | None
+    reply_to_id: 자기 답글의 원글 id. 없으면 vx_extract 의 답글 정보로 정한다(`_self_reply_id`).
     """
     if xtweet is None:
         return None
     channels_cfg = _load_channels_config()
     handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
     media, quote = _enrich_personal_media(tag, prefetched=vx_extract)
+    rid = reply_to_id or _self_reply_id(vx_extract, handle)
     parsed = xtweet.parse(raw, title=title, tag=tag, channel_key=channel_key,
-                          now_iso=now_iso, handle=handle, media=media, quote=quote)
+                          now_iso=now_iso, handle=handle, media=media, quote=quote, reply_to_id=rid)
     if not parsed:
         return None
 
@@ -2149,7 +2163,7 @@ def _commit_notice(gh, prepared: dict | None, now_iso: str) -> tuple[str, dict |
 
 
 def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_iso: str,
-                           via: str = "ingest") -> dict:
+                           via: str = "ingest", origin: str = "phone") -> dict:
     """(WP-3b) 개인 트윗 커밋 (백엔드 잡에서 실행).
 
     준비된 개인 트윗을 tweets.json에 반영.
@@ -2168,16 +2182,22 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
         return {"mode": "none", "n_thread": 0, "needs_tl": False}
 
     row = None
+    revived = None                       # (자기 답글 D13) 되살린 원글의 사유 — "deleted" | "archive" | None
+    revive_day = None                    # 일자 파일에서 되살렸으면 그 날짜(쓰기 성공 뒤 거기서도 지운다)
     try:
         for _try in range(_CONFLICT_RETRY_COUNT):
             prev, psha = gh.read_json(_TWEETS_PATH)
             arch, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
             prev = prev or xtweet.default_tweets()
             arch = arch or xtweet.default_archive()
-            new_t, new_a, changed, mode = xtweet.merge_thread(prev, parsed, now_iso, archive=arch)
+            rv = _revive_plan(gh, prev, arch, parsed, channel_key)      # 원글이 스레드에 없으면 보관함에서 되살린 복사본
+            prev_r, arch_r = (rv["prev"], rv["arch"]) if rv else (prev, arch)
+            new_t, new_a, changed, mode = xtweet.merge_thread(prev_r, parsed, now_iso, archive=arch_r)
             if not changed:
                 n_thread = len(_tw_list(new_t.get("tweets", {}).get(channel_key)))
-                return {"mode": mode, "n_thread": n_thread, "needs_tl": False}
+                return {"mode": mode, "n_thread": n_thread, "needs_tl": False, "revived": None}
+            revived = (rv["reason"] == "deleted" and "deleted" or "archive") if rv else None
+            revive_day = rv["day"] if rv and rv["src"] == "day" else None
 
             # 방금 들어온 메시지에 번역 반영
             row = next((m for m in _tw_list(new_t["tweets"].get(channel_key))
@@ -2217,6 +2237,11 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
                 continue
             break
 
+        if revive_day:                       # 되살린 원글은 일자 파일에서도 지운다 — 캐시 · 일자 파일 양쪽에 남지 않게
+            try:
+                _archive_day_remove(gh, revive_day, str(parsed.get("reply_to_id")), now_iso)
+            except Exception:  # noqa: BLE001
+                log.warning("원글 되살림: 일자 보관함에서 지우기 실패 — 두 곳에 남을 수 있음 (%s)", revive_day, exc_info=True)
         _tweet_sweep(gh, now_iso)  # 만료 슬롯 정리 (best-effort)
     except Exception:
         log.exception("personal tweet 반영 실패")
@@ -2224,20 +2249,81 @@ def _commit_personal_tweet(gh, prepared: dict | None, *, channel_key: str, now_i
             log_event(gh, now_iso, "tweet", RESULT_ERR, no_bus=True, who=channel_key, detail="mode: error (exception)", via=via)
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
-        return {"mode": "error", "n_thread": 0, "needs_tl": False}
+        return {"mode": "error", "n_thread": 0, "needs_tl": False, "revived": None}
 
     needs_tl = bool(row and (row.get("needs_tl") or (row.get("quote") or {}).get("needs_tl")))
-    try:
-        log_event(
-            gh, now_iso, "tweet", RESULT_WARN if needs_tl else RESULT_OK,
-            who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
-            tweet_id=(row or {}).get("id"),   # (v4.0.4) 리포트 팝업이 원문 · 번역 · X url 을 찾는 열쇠
-        )
-    except Exception:  # noqa: BLE001
-        log.warning("monitor_log 기록 실패(tweet)")
+    if revived == "deleted":             # (D13 · 명세 §3) 관리 페이지에서 지웠던 원글을 되살렸다 — 다시 지울지 운영자가 판단
+        try:
+            log_event(gh, now_iso, "tweet", RESULT_WARN, who=channel_key, via=via, tweet_id=parsed.get("reply_to_id"),
+                      detail=f"원글 되살림(관리 페이지에서 지웠던 글) · {parsed.get('reply_to_id')} · 답글 {parsed.get('id')}")
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(원글 되살림)")
+    if origin != "gapfill":              # 보충 작업은 호출부(_gap_fill_one)가 한 줄로 남긴다(+N분 · 원글 함께 등)
+        try:
+            log_event(
+                gh, now_iso, "tweet", RESULT_WARN if needs_tl else RESULT_OK,
+                who=channel_key, detail=f"mode: {mode}" + (", needs_tl=true" if needs_tl else ""), via=via,
+                tweet_id=(row or {}).get("id"),   # (v4.0.4) 리포트 팝업이 원문 · 번역 · X url 을 찾는 열쇠
+            )
+        except Exception:  # noqa: BLE001
+            log.warning("monitor_log 기록 실패(tweet)")
 
     n_thread = len(_tw_list((new_t or {}).get("tweets", {}).get(channel_key)))
-    return {"mode": mode, "n_thread": n_thread, "needs_tl": needs_tl}
+    return {"mode": mode, "n_thread": n_thread, "needs_tl": needs_tl, "revived": revived}
+
+
+def _revive_plan(gh, prev: dict, arch: dict, parsed: dict, channel_key: str) -> dict | None:
+    """(자기 답글 D13) 답글(`parsed.reply_to_id`)의 원글이 스레드에 없으면 보관함에서 찾아 **스레드에 되돌린 복사본**을 만든다.
+    찾는 순서 = 보관함 캐시(`tweet_archive.json`) → 일자 파일(`tweet_archive/<원글 게시 KST 날짜>.json`). 사유가 무엇이든
+    (expired · rolled · replaced · deleted) 되살린다. 못 찾으면 None(답글은 단독으로 올라간다). 쓰기는 하지 않는다 —
+    캐시에서 뺀 복사본(`arch`)과 일자 파일 날짜(`day`)를 돌려주고, 호출부가 스레드 쓰기가 성공한 뒤 지운다."""
+    rid = parsed.get("reply_to_id")
+    if not rid:
+        return None
+    rid = str(rid)
+    lst = _tw_list((prev.get("tweets") or {}).get(channel_key))
+    if any(str(m.get("id")) == rid for m in lst):
+        return None
+    found, src, day = None, None, None
+    for a in arch.get("tweets") or []:
+        if isinstance(a, dict) and str(a.get("id")) == rid:
+            found, src = a, "cache"
+            break
+    if found is None:
+        day = archive_rotate.tweet_day(rid)
+        for a in (archive_rotate.read_day(gh, archive_rotate.TWEETS, day) if day else []):
+            if isinstance(a, dict) and str(a.get("id")) == rid:
+                found, src = a, "day"
+                break
+    if found is None:
+        return None
+    root = {k: found.get(k) for k in xtweet._ROW_KEYS}
+    new_prev = dict(prev)
+    new_prev["tweets"] = dict(prev.get("tweets") or {}, **{channel_key: sorted(lst + [root], key=xtweet._sort_key)})
+    new_arch = arch
+    if src == "cache":
+        new_arch = dict(arch, tweets=[a for a in arch.get("tweets") or [] if str(a.get("id")) != rid])
+    return {"prev": new_prev, "arch": new_arch, "src": src, "day": day if src == "day" else None,
+            "rid": rid, "reason": found.get("archived_reason")}
+
+
+def _archive_day_remove(gh, day: str, tweet_id: str, now_iso: str) -> bool:
+    """일자 보관함 파일(`tweet_archive/<day>.json`)에서 트윗 한 건을 뺀다(되살린 뒤 정리). 있었으면 True."""
+    path = archive_rotate.day_path(archive_rotate.TWEET_DIR, day)
+    for t in range(3):
+        d, sha = gh.read_json(path)
+        items = list((d or {}).get("tweets") or [])
+        keep = [a for a in items if not (isinstance(a, dict) and str(a.get("id")) == str(tweet_id))]
+        if len(keep) == len(items):
+            return False
+        try:
+            gh.write_json(path, {"tweets": keep}, prev_sha=sha,
+                          message=f"data: tweet archive revive {tweet_id} {now_iso}")
+            return True
+        except ConflictError:
+            if t == 2:
+                raise
+    return False
 
 
 def _notice_sweep(gh, now_iso: str) -> int:
@@ -2929,63 +3015,290 @@ def _enrich_personal_media(tag: str | None, *, prefetched: dict | None = None
     return media, quote
 
 
-def _fill_member_gaps(gh, channel_key: str, now_iso: str, *, exclude_tag: str | None = None) -> int:
-    """(누락 보충, 2026-10-24) 멤버 트윗 알림이 하나 들어올 때마다, 그 멤버의 최근 글 목록(fxtwitter `/2/profile/<핸들>/statuses`)에서
-    폰 알림이 빠진 본인 트윗을 찾아 폰 알림과 같은 개인 트윗 경로(`_maybe_personal_tweet`)로 넣는다. 반환 = 새로 올린 건수.
-    고르는 규칙 = `xtweet.gap_candidates`(본인 · 리트윗 아님 · 남에게 단 답글 아님 · 48h · 스레드 · 보관함에 없음, 오래된 것부터 3건).
-    보충한 건은 모니터에 WARN 「gap-fill」 — 폰이 얼마나 빠뜨리는지 보는 자료. 조회 · 읽기 실패는 아무것도 안 하고 0.
-    계기: 10-24 13:34 노노카 한글 트윗 · 답글 2건이 폰(Automate)에서 서버로 안 넘어왔다(2분 뒤 13:36 글은 옴 — 서버엔 받은 흔적 없음)."""
-    if gh is None or vxtwitter is None or xtweet is None:
-        return 0
+# ── 상시 조사 · 보충 작업 (자기 답글 · 빠진 트윗, 명세 §4-1 · §4-2 · §4-3) ─────────────────────
+#   접수 서비스: POST /gap-check (1분, Scheduler) → 멤버 5명 최근 글 목록 → 후보 → 보충 작업 적재(Cloud Tasks gapfill-<id>)
+#   접수 서비스: POST /gap-fill (보충 작업 1건) → 원글 사슬(있으면) → 같은 개인 트윗 경로(`_maybe_personal_tweet`, origin=gapfill)
+GAP_CHECK_BUDGET_SEC = 20.0          # 조사 1회 전체 상한(GitHub 읽기 포함) — 넘으면 그 자리에서 끝낸다(§4-1 ⑥)
+GAP_REST_SEC = 600                   # 연속 실패 · 429 뒤 쉬는 시간(§4-1 ⑥)
+GAP_MAX_FAIL_STREAK = 3              # 5명 모두 실패한 실행이 이만큼 연속이면 쉰다
+GAP_CHAIN_MAX = 5                    # 원글 사슬을 위로 거슬러 올라가는 최대 단계(§4-2 ③)
+_gap_lock = threading.Lock()
+_gap_state: dict = {"fail_streak": 0, "resting": False, "rest_until": 0.0}   # 인스턴스 메모리 — 새 인스턴스는 0부터(명세 허용)
+
+
+def _gap_authorize() -> None:
+    """(§5-3) 공개 경로 `/gap-check` · `/gap-fill` 강제 검증 — audience = 접수 서비스 자신(ADMIN_BASE_URL), 발급자 = INVOKER_SA.
+    설정이 없으면 거절(fail closed). 검증 실패는 PermissionError → 호출부가 403."""
+    from . import oidc
+    aud = os.environ.get("ADMIN_BASE_URL", "").strip().rstrip("/")
+    sa = os.environ.get("INVOKER_SA", "").strip()
+    if not aud or not sa:
+        raise PermissionError("ADMIN_BASE_URL · INVOKER_SA 미설정 — 검증 불가(거절)")
+    oidc.verify_request(request.headers, expected_audience=aud, expected_sa=sa, force=True)
+
+
+def _gap_members() -> list[tuple[str, str, str]]:
+    """(ck, 핸들, 표시 이름) — 5인(channel_order). 핸들 없는 채널과 그룹 채널은 뺀다."""
+    cfg = _load_channels_config()
+    chs = cfg.get("channels") or {}
+    out = []
+    for ck in cfg.get("channel_order") or []:
+        ch = chs.get(ck) or {}
+        h = (ch.get("handle") or "").lstrip("@")
+        if h and not ch.get("is_group"):
+            out.append((ck, h, ((ch.get("x_names") or []) + [ch.get("name") or ck])[0]))
+    return out
+
+
+def _gap_fetch(handle: str, since: int | None) -> tuple[str, list | None]:
+    """(상시 조사) 한 멤버의 최근 글 목록 → ("ok", [글…]) · ("fail", None) · ("429", None). 예외는 모두 fail."""
+    if vxtwitter is None:
+        return "fail", None
     try:
-        ch = (_load_channels_config().get("channels") or {}).get(channel_key) or {}
-        handle = (ch.get("handle") or "").lstrip("@")
-        if not handle:
-            return 0
-        statuses = vxtwitter.fetch_profile_statuses(handle)
-        if not statuses:
-            log.info("빠진 트윗 보충: %s 최근 글 목록 조회 실패 — 건너뜀", channel_key)
-            return 0
-        cur, _ = gh.read_json(_TWEETS_PATH)
-        arc, _ = gh.read_json(_TWEET_ARCHIVE_PATH)
-        bucket = ((cur or {}).get("tweets") or {}).get(channel_key) or []
-        bucket = bucket if isinstance(bucket, list) else [bucket]
-        known = {str(m.get("id")) for m in bucket if m} | {str(a.get("id")) for a in ((arc or {}).get("tweets") or []) if a}
-        cands = xtweet.gap_candidates(statuses, handle, known, now_iso, exclude=xtweet._tweet_id(exclude_tag))
+        st = vxtwitter.fetch_profile_statuses(handle, since=since)
+    except vxtwitter.FxRateLimited:
+        return "429", None
     except Exception:  # noqa: BLE001
-        log.warning("빠진 트윗 보충: 준비 실패 — 건너뜀", exc_info=True)
-        return 0
-    title = ((ch.get("x_names") or []) + [ch.get("name") or channel_key])[0]
-    n = 0
-    for s in cands:
+        return "fail", None
+    return ("fail", None) if st is None else ("ok", st)
+
+
+def _gap_check_core(now: datetime, *, members: list, fetch, read_known, enqueue,
+                    clock=time.monotonic) -> dict:
+    """(상시 조사 핵심, 주입식 — self-test 용) 멤버 목록을 동시에 받고 → 후보를 고르고 → 보충 작업을 적재한다.
+    since = 지금 − 600초(D14). 매시 정각(KST 분 0)만 since 없이 20건(회복 실행).
+    5명 모두 204(글 없음)면 GitHub 를 읽지 않고 끝낸다. 시간 상한 20초를 넘으면 거기서 끝낸다.
+    반환 {"checked","ok","fail","rate_limited","found","enqueued","read_gh","cut"}."""
+    from concurrent.futures import ThreadPoolExecutor
+    t0 = clock()
+    now_iso = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    since = None if now.astimezone(KST).minute == 0 else int(now.timestamp()) - 600
+    summary = {"checked": len(members), "ok": 0, "fail": 0, "rate_limited": False,
+               "found": 0, "enqueued": 0, "read_gh": False, "cut": None}
+    ex = ThreadPoolExecutor(max_workers=max(1, len(members)))
+    futs = {ck: ex.submit(fetch, h, since) for ck, h, _ in members}
+    results: dict[str, tuple[str, list | None]] = {}
+    for ck, f in futs.items():
+        left = max(0.1, GAP_CHECK_BUDGET_SEC - (clock() - t0))
         try:
-            mode = _maybe_personal_tweet(s["text"], title=title, tag=f"p#https://x.com/#1tweet-{s['id']}",
-                                         channel_key=channel_key, now_iso=now_iso)
-        except Exception:  # noqa: BLE001
-            log.warning("빠진 트윗 보충: 처리 실패 %s", s["id"], exc_info=True)
-            mode = "error"
-        if mode in ("added", "rolled"):
-            n += 1
-        _log_event_safe(gh, now_iso, "tweet", RESULT_WARN, who=channel_key, via="ingest",
-                        detail=f"gap-fill: 폰 알림이 빠진 트윗 보충 · {s['id']} · mode: {mode}")
-    return n
+            results[ck] = f.result(timeout=left)
+        except Exception:  # noqa: BLE001 — 시간 상한 · 예외는 실패로
+            results[ck] = ("fail", None)
+    ex.shutdown(wait=False)
+    summary["ok"] = sum(1 for k, _ in results.values() if k == "ok")
+    summary["fail"] = len(members) - summary["ok"]
+    summary["rate_limited"] = any(k == "429" for k, _ in results.values())
+    nonempty = {ck: st for ck, (k, st) in results.items() if k == "ok" and st}
+    if not nonempty:                       # 전부 204(또는 실패) — GitHub 안 읽는다
+        return summary
+    if clock() - t0 > GAP_CHECK_BUDGET_SEC:
+        summary["cut"] = "budget"
+        return summary
+    known = read_known()                   # {ck: {이미 아는 id}} — 스레드 + 보관함 캐시
+    summary["read_gh"] = True
+    handles = {ck: h for ck, h, _ in members}
+    cands = []
+    for ck, st in nonempty.items():
+        for c in xtweet.gap_candidates(st, handles[ck], known.get(ck, set()), now_iso):
+            cands.append((ck, c))
+    cands.sort(key=lambda x: int(x[1]["id"]))              # 오래된 것부터
+    summary["found"] = len(cands)
+    for ck, c in cands:
+        if clock() - t0 > GAP_CHECK_BUDGET_SEC:
+            summary["cut"] = "budget"
+            break
+        try:
+            enqueue(ck, c, now_iso)
+            summary["enqueued"] += 1
+        except Exception:  # noqa: BLE001 — 한 건 실패가 나머지를 막지 않는다
+            log.warning("상시 조사: 보충 작업 적재 실패 %s", c.get("id"), exc_info=True)
+    return summary
+
+
+def _gap_read_known(gh) -> dict:
+    """(상시 조사) 「이미 아는 id」 — 멤버별 스레드 + 보관함 캐시(만료 · 밀려남 · 삭제 포함). 일자 파일은 보지 않는다(48h 안 글만 본다)."""
+    if gh is None:
+        raise RuntimeError("GitHub 설정 없음")
+    cur, _ = gh.read_json(_TWEETS_PATH)
+    arc, _ = gh.read_json(_TWEET_ARCHIVE_PATH)
+    known: dict[str, set] = {}
+    for ck, v in ((cur or {}).get("tweets") or {}).items():
+        known.setdefault(ck, set()).update(str(m.get("id")) for m in _tw_list(v) if m)
+    for a in (arc or {}).get("tweets") or []:
+        if isinstance(a, dict) and a.get("channel_key"):
+            known.setdefault(a["channel_key"], set()).add(str(a.get("id")))
+    return known
+
+
+def _gap_enqueue(ck: str, cand: dict, now_iso: str) -> None:
+    """(상시 조사) 보충 작업 1건 적재 — 로컬 시험판은 가공 큐(q-enrich), 클라우드는 Cloud Tasks 큐 `GAPFILL_QUEUE`
+    (대상 = 접수 서비스 자신 `ADMIN_BASE_URL`, 이름 `gapfill-<id>` · 분 버킷 없음)."""
+    body = {"channel_key": ck, "id": cand["id"], "text": cand.get("text") or "",
+            "reply_to_id": cand.get("reply_to_id"), "reply_to": cand.get("reply_to")}
+    if storage.is_local():
+        from . import enrich
+        if enrich.enqueue_gap_fill(body) is None:
+            raise RuntimeError("가공 큐 없음 — 보충 작업 적재 실패")
+        return
+    from . import tasks
+    queue = os.environ.get("GAPFILL_QUEUE", "").strip()
+    tq = tasks.from_env(queue, target_url=os.environ.get("ADMIN_BASE_URL", "").strip()) if queue else None
+    if tq is None:
+        raise RuntimeError("보충 작업 큐 설정 없음(GAPFILL_QUEUE · ADMIN_BASE_URL)")
+    tq.enqueue_path("/gap-fill", body, f"gapfill-{cand['id']}", now_iso, minute_bucket=False)
+
+
+def _gap_mon(now_iso: str, result: str, detail: str) -> None:
+    gh = _make_gh()
+    if gh is not None:
+        _log_event_safe(gh, now_iso, "tweet", result, who="gap-check", via="ingest", detail=detail[:200])
+
+
+def _gap_check_run(now: datetime, *, clock=time.monotonic, members: list | None = None, fetch=None,
+                   read_known=None, enqueue=None, gh_factory=None) -> dict:
+    """POST /gap-check 의 본체 — 쉬기 상태 확인 → 핵심 실행 → 쉬기 상태 갱신. 쉬기 시작 · 끝만 모니터에 남긴다(§4-1 ⑥)."""
+    now_iso = now.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    mono = clock()
+    resumed = False
+    with _gap_lock:
+        if _gap_state["resting"] and mono >= _gap_state["rest_until"]:
+            _gap_state["resting"] = False
+            resumed = True
+        if _gap_state["resting"]:
+            return {"rest": True}                    # 쉬는 동안 실행은 아무것도 안 하고 기록도 안 한다
+    if resumed:
+        _gap_mon(now_iso, RESULT_WARN, "gap-check: fxtwitter 쉬기 끝 — 재개")
+    gh_factory = gh_factory or _make_gh
+    if read_known is None:
+        read_known = lambda: _gap_read_known(gh_factory())
+    summary = _gap_check_core(now, members=members if members is not None else _gap_members(),
+                              fetch=fetch or _gap_fetch, read_known=read_known,
+                              enqueue=enqueue or _gap_enqueue, clock=clock)
+    rest_reason = None
+    with _gap_lock:
+        if summary["rate_limited"]:
+            rest_reason = "fxtwitter 429"
+        elif summary["ok"] == 0:
+            _gap_state["fail_streak"] += 1
+            if _gap_state["fail_streak"] >= GAP_MAX_FAIL_STREAK:
+                rest_reason = f"fxtwitter 연속 실패 {GAP_MAX_FAIL_STREAK}회"
+        else:
+            _gap_state["fail_streak"] = 0
+        if rest_reason:
+            _gap_state.update(resting=True, rest_until=mono + GAP_REST_SEC, fail_streak=0)
+    if rest_reason:
+        _gap_mon(now_iso, RESULT_WARN, f"gap-check: {rest_reason} — 10분 쉼")
+        summary["rest_started"] = rest_reason
+    return summary
+
+
+def _gap_minutes(tid: str, now_iso: str) -> int:
+    """게시 → 지금 까지 분(Snowflake 기준). 모르면 0."""
+    p = xtweet.snowflake_iso(tid)
+    d_now, d_p = _parse_iso_safe(now_iso), _parse_iso_safe(p)
+    return max(0, int((d_now - d_p).total_seconds() // 60)) if d_now and d_p else 0
+
+
+def _parse_iso_safe(s: str | None):
+    try:
+        return datetime.fromisoformat((s or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _gap_fill_one(body: dict, now_iso: str, *, gh=None, fetch_root=None, maybe=None) -> dict:
+    """(보충 작업 1건, 명세 §4-2) 이미 등록이면 끝 · 자기 답글이면 원글 사슬부터(스레드·보관함에 없는 것만 받아 위에서부터 넣는다)
+    · 그다음 글 자신을 `_maybe_personal_tweet(origin="gapfill")` 로 — 번역 · 판정 · DM 은 폰 경로와 같다(판정 생략 조건은 아래).
+    원글 판정(§7-6 Claude 제안, 운영자 확인 필요): 되살린 원글 = 판정 없음(백엔드 커밋이 되살린다) · 처음 들어오는 48h 안 원글 = 판정 ·
+    48h 넘은 원글 = 번역만. 모니터 한 줄: 자기 답글 ok · 일반 글 warn(「+N분」 · 「원글 함께」 · 「원글 되살림」)."""
+    ck = str(body.get("channel_key") or "")
+    tid = str(body.get("id") or "")
+    text = str(body.get("text") or "")
+    if not ck or not tid.isdigit() or not text:
+        return {"ok": False, "skip": "bad-body"}
+    gh = gh or _make_gh()
+    if gh is None:
+        return {"ok": False, "skip": "no-gh"}
+    ch = (_load_channels_config().get("channels") or {}).get(ck) or {}
+    handle = (ch.get("handle") or "").lstrip("@")
+    if not handle:
+        return {"ok": False, "skip": "no-handle"}
+    title = ((ch.get("x_names") or []) + [ch.get("name") or ck])[0]
+    cur, _ = gh.read_json(_TWEETS_PATH)
+    thread_ids = {str(m.get("id")) for m in _tw_list(((cur or {}).get("tweets") or {}).get(ck))}
+    if tid in thread_ids:
+        return {"ok": True, "skip": "exists"}                    # 폰이 먼저 넣었다
+    rid = str(body.get("reply_to_id") or "") or None
+    if rid and str(body.get("reply_to") or "").lstrip("@").lower() not in ("", handle.lower()):
+        rid = None                                              # 남에게 단 답글 방어(후보 규칙과 같은 판정)
+    maybe = maybe or _maybe_personal_tweet
+    fetch_root = fetch_root or (lambda i: vxtwitter.fetch_tweet_fx(i) if vxtwitter is not None else None)
+    fetched: list[str] = []
+    if rid:
+        arc, _ = gh.read_json(_TWEET_ARCHIVE_PATH)
+        arc = arc or xtweet.default_archive()
+        chain, cur_id = [], rid
+        while cur_id and len(chain) < GAP_CHAIN_MAX:
+            if cur_id in thread_ids:
+                break                                           # 원글이 스레드에 있다
+            if _archive_find(gh, arc, cur_id)[0] is not None:
+                break                                           # 보관함에 있다 → 백엔드 커밋이 되살린다
+            vx = fetch_root(cur_id)
+            ex = vxtwitter.extract(vx) if (vx and vxtwitter is not None) else None
+            if not ex or str(ex.get("author") or "").lstrip("@").lower() != handle.lower():
+                break                                           # 못 받았거나 남의 글
+            parent = _self_reply_id(ex, handle)
+            chain.append((cur_id, ex, parent))
+            cur_id = parent
+        for aid, ex, parent in reversed(chain):                 # 뿌리부터 넣는다
+            judge = _gap_minutes(aid, now_iso) <= xtweet.TTL_HOURS * 60
+            maybe(str(ex.get("text") or ""), title=title, tag=f"p#https://x.com/#1tweet-{aid}", channel_key=ck,
+                  now_iso=now_iso, via="ingest", origin="gapfill", reply_to_id=parent, judge=judge,
+                  vx_extract=ex)
+            fetched.append(aid)
+    info: dict = {}
+    mode = maybe(text, title=title, tag=f"p#https://x.com/#1tweet-{tid}", channel_key=ck, now_iso=now_iso,
+                 via="ingest", origin="gapfill", reply_to_id=rid, judge=True, res_out=info)
+    mins = _gap_minutes(tid, now_iso)
+    result = RESULT_ERR if mode == "error" else (RESULT_OK if rid else RESULT_WARN)
+    detail = f"{'gap-fill(자기 답글)' if rid else 'gap-fill'} · {tid} · +{mins}분 · mode: {mode}"
+    if fetched:
+        detail += " · 원글 함께"
+    if info.get("revived"):
+        detail += " · 원글 되살림"
+    _log_event_safe(gh, now_iso, "tweet", result, who=ck, via="ingest", detail=detail[:200], tweet_id=tid)
+    return {"ok": True, "mode": mode, "fetched": fetched, "revived": info.get("revived"), "minutes": mins}
+
+
+def _archive_find(gh, arch: dict, tid: str) -> tuple[dict | None, str | None]:
+    """보관함에서 트윗 한 건 찾기 — 캐시(`tweet_archive.json`) → 일자 파일(`tweet_archive/<게시 KST 날짜>.json`). (항목, 출처) 또는 (None, None)."""
+    for a in (arch or {}).get("tweets") or []:
+        if isinstance(a, dict) and str(a.get("id")) == str(tid):
+            return a, "cache"
+    day = archive_rotate.tweet_day(tid)
+    for a in (archive_rotate.read_day(gh, archive_rotate.TWEETS, day) if day else []):
+        if isinstance(a, dict) and str(a.get("id")) == str(tid):
+            return a, "day"
+    return None, None
 
 
 def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
                           channel_key: str, now_iso: str,
-                          vx_extract: dict | None = None, via: str = "ingest") -> str:
+                          vx_extract: dict | None = None, via: str = "ingest",
+                          origin: str = "phone", reply_to_id: str | None = None,
+                          judge: bool = True, res_out: dict | None = None) -> str:
     """(WP-3b) 개인 트윗 인입 — 제어 채널 오케스트레이터.
 
-    `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로.
-    `/edit → tweet` 마법사(운영자가 원문을 직접 붙여넣는 수동 교체)도 같은 함수를 탄다.
+    `_ingest` 3.5 라우팅이 개인 5인으로 판정하면 여기로. 상시 조사의 보충 작업(`/gap-fill`)도 같은 함수를 탄다.
+    `/edit → tweet` 마법사(운영자 수동 교체)도 같은 함수(via="ops").
 
-    ECHO/DRY-RUN/paused 와 무관하게 실행(이 갈래에 온 시점에서 이미 개인 트윗). 반환: mode(로그용).
-    파싱이 트윗이 아니면(본문 없음) GitHub 은 안 건드린다.
-
-    `vx_extract`: `_ingest` 가 `_recover_raw_via_vxtwitter` 로 이미 조회해 둔 같은 tweet 의
-    vxtwitter 결과 — 있으면 `_enrich_personal_media` 가 재조회 없이 재사용.
-    `via`: 모니터링 로그용 트리거 구분 — "ingest"(X 웹훅 자동 인입, 기본값) | "ops"(운영자
-    수동 편집). 자동/수동을 구분해서 보고 싶다는 요청(2026-09-16)으로 추가.
+    `via`: 모니터링 트리거 구분 — "ingest"(자동) | "ops"(운영자 수동 편집).
+    `origin`: 누가 넣었나 — "phone"(폰 알림, 기본) | "gapfill"(상시 조사의 보충 작업). 보충은 한 줄 기록을 호출부가 쓴다.
+    `reply_to_id`: 자기 답글의 원글 id(없으면 vx_extract 의 답글 정보로 정한다).
+    `judge`: False 면 예고 · 변경 판정과 새 트윗 DM 을 하지 않는다(48h 넘은 원글 — 번역만).
+    `res_out`: 주면 `revived`(되살린 원글의 사유 | None)를 채워 돌려준다.
+    커밋 결과가 dup · stale 이고 via != ops 면 판정 · DM 을 하지 않는다(명세 §4-3 — 먼저 들어온 쪽이 이미 했다).
+    반환: mode(로그용).
     """
     if xtweet is None:
         return "no-xtweet"
@@ -2996,14 +3309,15 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
 
     # 준비 단계 (제어 채널)
     prepared = _prepare_personal_tweet(raw, title=title, tag=tag, channel_key=channel_key,
-                                       now_iso=now_iso, vx_extract=vx_extract, gh=gh)
+                                       now_iso=now_iso, vx_extract=vx_extract, gh=gh,
+                                       reply_to_id=reply_to_id)
     if prepared is None:
         return "none"
 
     # 커밋 단계 (write-queue)
     try:
         res = writeclient.call_write("personal_tweet", gh=gh, prepared=prepared,
-                                     channel_key=channel_key, now_iso=now_iso, via=via,
+                                     channel_key=channel_key, now_iso=now_iso, via=via, origin=origin,
                                      label=f"{channel_key} 트윗")
         mode = res.get("mode", "error")
         n_thread = res.get("n_thread", 0)
@@ -3017,17 +3331,29 @@ def _maybe_personal_tweet(raw: str, *, title: str, tag: str | None,
         except Exception:  # noqa: BLE001
             log.warning("monitor_log 기록 실패(tweet)")
         return "error"
+    if res_out is not None:
+        res_out["revived"] = res.get("revived")
 
     # 백엔드 잡이 오류를 반환한 경우
     if mode == "error":
         _dm_lost_raw("백엔드 personal_tweet 처리 오류", raw, title=title or "",
                     kind="personal_tweet", channel_key=channel_key, tag=tag, gh=gh)
 
+    parsed = prepared.get("parsed", {})
+    if mode in ("dup", "stale") and via != "ops":
+        # (명세 §4-3) 이미 있는 글 — 판정 · DM 을 다시 하지 않는다. 보충이 먼저 넣은 글에 폰 알림이 늦게 오면 그 사실만 남긴다.
+        if mode == "dup" and via == "ingest" and origin == "phone":
+            pid = str(parsed.get("id") or "")
+            _log_event_safe(gh, now_iso, "tweet", RESULT_OK, who=channel_key, via=via, tweet_id=pid,
+                            detail=f"폰 늦게 도착 · 보충 뒤 +{_gap_minutes(pid, now_iso)}분 · {pid}")
+        return mode
+    if not judge and via != "ops":
+        return mode                       # 48h 넘은 원글 — 번역만(판정 · DM 없음)
+
     # DM 발송
     channels_cfg = _load_channels_config()
     name = channels_cfg.get("channels", {}).get(channel_key, {}).get("name_ko", channel_key)
     handle = channels_cfg.get("channels", {}).get(channel_key, {}).get("handle", "")
-    parsed = prepared.get("parsed", {})
     if mode in ("added", "rolled"):
         _auto_dm(gh, "tweet",
                  f"🐦 <b>{html.escape(name)}</b> 새 트윗 (스레드 {n_thread}/{xtweet.MAX_THREAD})\n"
@@ -6316,8 +6642,9 @@ def _tweet_del_commit(gh, unit: str, now_iso: str, tweet_id: str | None = None) 
                             message=f"data: /del tweet {unit} {now_iso}")
     _save_undo(gh, action=f"/del tweet {unit}", prev_content=prev, new_sha=nsha,
                now_iso=now_iso, path=_TWEETS_PATH)
-    # (누락 보충, 2026-10-24) 지운 트윗을 보관함에 「deleted」 로 남긴다 — 빠진 트윗 보충(_fill_member_gaps)이 보관함에 있는 id 는 건너뛰므로
-    #   지운 트윗이 48시간 안에 되살아나지 않는다. 스레드 병합(merge_thread)은 보관함을 안 보니 다른 동작은 그대로. 실패해도 삭제는 끝난 것.
+    # (누락 보충, 2026-10-24) 지운 트윗을 보관함에 「deleted」 로 남긴다 — 상시 조사(_gap_read_known)가 보관함에 있는 id 는 건너뛰므로
+    #   지운 트윗이 48시간 안에 되살아나지 않는다. 예외(self-reply D13): 그 글에 자기 답글이 달리면 글타래째 되살린다(_revive_plan).
+    #   스레드 병합(merge_thread)은 보관함을 안 보니 다른 동작은 그대로. 실패해도 삭제는 끝난 것.
     if xtweet is not None and removed:
         try:
             arc, asha = gh.read_json(_TWEET_ARCHIVE_PATH)
@@ -7340,9 +7667,8 @@ if _FLASK_AVAILABLE:
                     return jsonify({"ok": True, "personal": _route, "mode": "retweet"}), 200
                 mode = _maybe_personal_tweet(raw, title=title, tag=x_tag, channel_key=_route,
                                             now_iso=now_iso, vx_extract=_vx_ex)
-                # (누락 보충, 2026-10-24) 이 멤버의 최근 글 목록에서 폰 알림이 빠진 트윗을 찾아 같은 경로로 넣는다
-                gap = _fill_member_gaps(gh, _route, now_iso, exclude_tag=x_tag)
-                return jsonify({"ok": True, "personal": _route, "mode": mode, "gap_filled": gap}), 200
+                # (self-reply) 빠진 트윗 보충은 여기서 하지 않는다 — 상시 조사(/gap-check, 1분)가 맡는다(명세 §4-3)
+                return jsonify({"ok": True, "personal": _route, "mode": mode}), 200
             elif raw and (_gacct := _game_account(_vx_ex, title, _load_channels_config())):
                 # (v4a, 2026-10-02) 게임 계정(bang_dream_on) 글 — 소식 · 스케줄로 가지 않고 행사 배너 판정으로만
                 flowtrace.mark("분류", "done", f"게임 계정 @{_gacct} → 행사 판정")
@@ -7646,6 +7972,36 @@ if _FLASK_AVAILABLE:
     def _health():
         """헬스체크."""
         return "ok", 200
+
+    @app.post("/gap-check")
+    def _gap_check_route():
+        """(상시 조사, 명세 §4-1) Cloud Scheduler 1분 — OIDC 강제 검증 뒤 멤버 5명 최근 글 목록을 본다.
+        검증 실패는 외부 호출 전에 403. 실패해도 200(조사 한 번을 건너뛴 것일 뿐 — 다음 분이 다시 본다)."""
+        try:
+            _gap_authorize()
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        try:
+            res = _gap_check_run(datetime.now(timezone.utc))
+        except Exception as e:  # noqa: BLE001
+            log.exception("gap-check 실패")
+            res = {"error": str(e)[:200]}
+        return jsonify(res), 200
+
+    @app.post("/gap-fill")
+    def _gap_fill_route():
+        """(보충 작업, 명세 §4-2) Cloud Tasks gapfill-<id> 1건 — OIDC 강제 검증. 실패해도 200(재시도 폭주 방지 — 다음 조사가 다시 찾는다)."""
+        try:
+            _gap_authorize()
+        except PermissionError as e:
+            return jsonify({"error": str(e)}), 403
+        body = request.get_json(silent=True) or {}
+        try:
+            res = _gap_fill_one(body, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        except Exception as e:  # noqa: BLE001
+            log.exception("gap-fill 실패 id=%s", body.get("id"))
+            res = {"ok": False, "error": str(e)[:200]}
+        return jsonify(res), 200
 
     def _register_admin_cloud() -> None:
         """(v4) 클라우드 접수 서비스에 관리 페이지(/admin) 등록. 로컬은 local_runner.build_app 이 등록한다.
@@ -9959,48 +10315,387 @@ if __name__ == "__main__":
         # xtweet 모듈 부재 또는 다른 예외
         print(f"[OK] _commit_personal_tweet: 재시도 로직 검증 (예상 ConflictError 또는 모듈 오류: {type(e).__name__})")
 
-    # (누락 보충, 2026-10-24) 빠진 트윗 보충 · 지운 트윗은 보관함 「deleted」 로 남아 보충이 되살리지 않음
+    # ── (상시 조사 · 자기 답글 · 보충 작업 · 되살리기 — 명세 §4 · §3 · V1-B 7~22) ──────────────────
     if xtweet is not None and vxtwitter is not None:
+        import copy as _cp
+        from datetime import datetime as _dt
+        import os as _os
+
         class _GapGH:
+            """가짜 저장소(읽기 · 쓰기) — 네트워크 없음."""
             def __init__(self, store):
                 self.store = store
             def read_json(self, path):
-                return self.store.get(path), "sha"
+                v = self.store.get(path)
+                return (_cp.deepcopy(v) if v is not None else None), "sha"
             def write_json(self, path, data, *, prev_sha=None, message=""):
-                self.store[path] = data
+                self.store[path] = _cp.deepcopy(data)
                 return True, "sha2"
-        _G_NOW = "2026-10-24T04:40:00Z"
-        _row = lambda tid: {"channel_key": "nonoka", "id": tid, "text": "t", "posted_at": "2026-10-24T04:00:00Z",
-                            "expires_at": "2026-10-26T04:00:00Z"}
-        _gg = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": [_row("2113847683337347370"), _row("2113852162069635159")]}},
-                      _TWEET_ARCHIVE_PATH: {"tweets": []}})
-        _prof = [{"id": i, "text": "본문 " + i, "author": "nonoka_yumemita", "repost": False, "reply_to": r}
-                 for i, r in (("2113852162069635159", None), ("2113851579740963041", None),
-                              ("2113851584719561114", "nonoka_yumemita"), ("2113847683337347370", None))]
-        _saved = (vxtwitter.fetch_profile_statuses, globals()["_maybe_personal_tweet"], globals()["_log_event_safe"])
-        _calls, _evs = [], []
+
+        def _sid_at_iso(iso):                    # 게시 시각 → Snowflake id
+            ms = int(_dt.fromisoformat(iso.replace("Z", "+00:00")).timestamp() * 1000)
+            return str((ms - _TW_EPOCH_MS_TG) << 22)
+
+        _TW_EPOCH_MS_TG = 1288834974657
+        _NOW_T = "2026-10-27T03:20:00Z"
+        _ago = lambda m: _sid_at_iso(
+            (_dt.fromisoformat(_NOW_T.replace("Z", "+00:00")) - timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        _NOW_DT = _dt.fromisoformat(_NOW_T.replace("Z", "+00:00"))
+        _members = [("nonoka", "nonoka_yumemita", "宮永ののか"), ("ritsu", "ritsu_yumemita", "峰月律")]
+        _saved_mon = globals()["_gap_mon"]
+        _saved_ev = globals()["_log_event_safe"]
+        _mon_log, _ev_log = [], []
+        globals()["_gap_mon"] = lambda now_iso, result, detail: _mon_log.append((result, detail))
+        globals()["_log_event_safe"] = lambda gh, now_iso, flow, result, **kw: _ev_log.append((result, kw.get("detail"), kw.get("tweet_id")))
         try:
-            vxtwitter.fetch_profile_statuses = lambda h, **kw: _prof if h == "nonoka_yumemita" else None
-            globals()["_maybe_personal_tweet"] = lambda raw, **kw: (_calls.append((kw["tag"], kw["title"], raw)) or "added")
-            globals()["_log_event_safe"] = lambda *a, **kw: _evs.append(kw.get("detail"))
-            _n = _fill_member_gaps(_gg, "nonoka", _G_NOW, exclude_tag="p#https://x.com/#1tweet-2113852162069635159")
-            assert _n == 2 and [c[0][-19:] for c in _calls] == ["2113851579740963041", "2113851584719561114"], _calls
-            assert _calls[0][2] == "본문 2113851579740963041" and all("gap-fill" in (e or "") for e in _evs) and len(_evs) == 2, (_calls, _evs)
-            # 지운 트윗(보관함 deleted)은 다시 안 올린다
-            _gd = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": [_row("2113847683337347370"), _row("2113851579740963041")]}},
-                          _TWEET_ARCHIVE_PATH: {"tweets": []}})
-            assert _tweet_del_commit(_gd, "nonoka", _G_NOW, "2113851579740963041") == {"found": True}
-            _arc = _gd.store[_TWEET_ARCHIVE_PATH]["tweets"]
-            assert [(a["id"], a["archived_reason"]) for a in _arc] == [("2113851579740963041", "deleted")], _arc
-            _calls.clear()
-            _fill_member_gaps(_gd, "nonoka", _G_NOW, exclude_tag=None)
-            assert "2113851579740963041" not in [c[0][-19:] for c in _calls], _calls
-            # 조회 실패 · 다른 멤버는 아무것도 안 함
-            _calls.clear()
-            assert _fill_member_gaps(_gg, "ritsu", _G_NOW) == 0 and not _calls
+            # (9) 5명 모두 204 → GitHub 읽기 0회 · 적재 0
+            _rk_calls = []
+            _s9 = _gap_check_core(_NOW_DT, members=_members, fetch=lambda h, since: ("ok", []),
+                                  read_known=lambda: _rk_calls.append(1) or {}, enqueue=lambda *a: _rk_calls.append(2),
+                                  clock=lambda: 0.0)
+            assert _s9["ok"] == 2 and _s9["found"] == 0 and not _s9["read_gh"] and _rk_calls == [], _s9
+            print("  V1-B 9: 전부 204 → GitHub 읽기 0 · 적재 0")
+
+            # (10) KST 분 = 0 → since 없음 / 그 밖 → since = 지금 − 600초
+            _sinces = []
+            _gap_check_core(_dt.fromisoformat("2026-10-27T03:00:00+00:00"), members=_members,
+                            fetch=lambda h, since: (_sinces.append(since), ("ok", []))[1], read_known=lambda: {},
+                            enqueue=lambda *a: None, clock=lambda: 0.0)
+            _now_ts = int(_dt.fromisoformat("2026-10-27T03:20:00+00:00").timestamp())
+            _gap_check_core(_dt.fromisoformat("2026-10-27T03:20:00+00:00"), members=_members,
+                            fetch=lambda h, since: (_sinces.append(since), ("ok", []))[1], read_known=lambda: {},
+                            enqueue=lambda *a: None, clock=lambda: 0.0)
+            assert _sinces == [None, None, _now_ts - 600, _now_ts - 600], _sinces   # 03:00Z = KST 12:00(정각) · 03:20Z = KST 12:20
+            print("  V1-B 10: 매시 정각(KST 분 0) 은 since 없음 · 그 밖은 지금 − 600초")
+
+            # (3·4·5 의 적재 면) 후보 — 일반 글 20분 · 자기 답글 · 5명 · 오래된 순 · 적재 실패 한 건이 나머지를 막지 않음
+            _st_n = [{"id": _ago(20), "text": "일반", "author": "nonoka_yumemita", "repost": False, "reply_to": None},
+                     {"id": _ago(2), "text": "2분 전 일반 — 제외", "author": "nonoka_yumemita", "repost": False, "reply_to": None},
+                     {"id": _ago(1), "text": "자기 답글", "author": "nonoka_yumemita", "repost": False,
+                      "reply_to": "nonoka_yumemita", "reply_to_id": _ago(20)}]
+            _st_r = [{"id": _ago(9), "text": "리츠 일반", "author": "ritsu_yumemita", "repost": False, "reply_to": None}]
+            _enq = []
+            def _enq_fn(ck, c, now_iso):
+                if c["id"] == _ago(9):
+                    raise RuntimeError("적재 실패(가짜)")
+                _enq.append((ck, c["id"]))
+            _s34 = _gap_check_core(_NOW_DT, members=_members,
+                                   fetch=lambda h, since: ("ok", _st_n if h == "nonoka_yumemita" else _st_r),
+                                   read_known=lambda: {}, enqueue=_enq_fn, clock=lambda: 0.0)
+            assert _enq == [("nonoka", _ago(20)), ("nonoka", _ago(1))], _enq
+            assert _s34["found"] == 3 and _s34["enqueued"] == 2 and _s34["read_gh"], _s34
+            print("  V1-B 3·4 면: 2분 전 일반 글 제외 · 20분 전 일반 · 자기 답글 적재 · 리츠 적재 실패는 로그만(오류 아님)")
+
+            # (13) 3회 연속 전부 실패 → 4번째 실행 외부 호출 0 · 429 다음 실행 0 · 10분 뒤 재개 · 모니터 쉼 1 · 재개 1
+            _gap_state.update(fail_streak=0, resting=False, rest_until=0.0)
+            _mon_log.clear()
+            _fails = []
+            _clk = [0.0]
+            _fail_fetch = lambda h, since: (_fails.append(h), ("fail", None))[1]
+            for i in range(3):
+                _clk[0] = float(i)
+                _gap_check_run(_NOW_DT, clock=lambda: _clk[0], members=_members, fetch=_fail_fetch,
+                               read_known=lambda: {}, enqueue=lambda *a: None, gh_factory=lambda: None)
+            assert len(_fails) == 6, _fails                    # 3회 × 2명
+            _clk[0] = 3.0
+            _r4 = _gap_check_run(_NOW_DT, clock=lambda: _clk[0], members=_members, fetch=_fail_fetch,
+                                 read_known=lambda: {}, enqueue=lambda *a: None, gh_factory=lambda: None)
+            assert _r4 == {"rest": True} and len(_fails) == 6, (_r4, _fails)    # 4번째 = 외부 호출 0
+            _gap_state.update(fail_streak=0, resting=False, rest_until=0.0)
+            _rl = []
+            _gap_check_run(_NOW_DT, clock=lambda: 0.0, members=_members,
+                           fetch=lambda h, since: (_rl.append(h), ("429", None))[1],
+                           read_known=lambda: {}, enqueue=lambda *a: None, gh_factory=lambda: None)
+            _clk[0] = 5.0
+            _r429 = _gap_check_run(_NOW_DT, clock=lambda: _clk[0], members=_members, fetch=_fail_fetch,
+                                   read_known=lambda: {}, enqueue=lambda *a: None, gh_factory=lambda: None)
+            assert _r429 == {"rest": True} and len(_rl) == 2 and len(_fails) == 6, (_r429, _rl)   # 429 다음 실행 외부 호출 0
+            _clk[0] = 601.0
+            _gap_check_run(_NOW_DT, clock=lambda: _clk[0], members=_members, fetch=lambda h, since: ("ok", []),
+                           read_known=lambda: {}, enqueue=lambda *a: None, gh_factory=lambda: None)
+            _res = [r for r, _ in _mon_log]
+            assert _res.count(RESULT_WARN) == len(_res) and sum("쉼" in d for _, d in _mon_log) == 2 and sum("재개" in d for _, d in _mon_log) == 1, _mon_log
+            print("  V1-B 13: 3회 연속 실패 → 4번째 외부 호출 0 · 429 → 다음 실행 0 · 10분 뒤 재개 · 쉼 · 재개 warn 각 1")
         finally:
-            vxtwitter.fetch_profile_statuses, globals()["_maybe_personal_tweet"], globals()["_log_event_safe"] = _saved
-        print("[OK] (누락 보충) 빠진 본인 트윗만 오래된 순으로 개인 트윗 경로 · 모니터 gap-fill · 지운 트윗은 보관함 deleted 로 남아 안 되살림 · 조회 실패 0")
+            globals()["_gap_mon"] = _saved_mon
+            globals()["_log_event_safe"] = _saved_ev
+            _gap_state.update(fail_streak=0, resting=False, rest_until=0.0)
+
+        # (10a · D14) 일반 글(게시 시각 T0) — 1분마다 조사: 정상 → 7분에 적재 · 7분 실패 → 8분 · 7·8분 실패 → 9분
+        _T0 = _dt.fromisoformat("2026-10-27T03:00:00+00:00")
+        _pid10 = _sid_at_iso("2026-10-27T03:00:00Z")
+        def _minute_run(m, failing):
+            nowm = _T0 + timedelta(minutes=m)
+            got = []
+            def _f(h, since, _n=nowm):
+                if failing:
+                    return ("fail", None)
+                return ("ok", [{"id": _pid10, "text": "일반", "author": "nonoka_yumemita", "repost": False, "reply_to": None}])
+            _gap_check_core(nowm, members=[("nonoka", "nonoka_yumemita", "x")], fetch=_f, read_known=lambda: {},
+                            enqueue=lambda ck, c, n: got.append(m), clock=lambda: 0.0)
+            return got
+        _first = {}
+        for _case, _fails in (("ok", set()), ("7fail", {7}), ("7-8fail", {7, 8})):
+            _landed = None
+            for m in range(7, 11):
+                if _minute_run(m, m in _fails):
+                    _landed = m
+                    break
+            _first[_case] = _landed
+        assert _first == {"ok": 7, "7fail": 8, "7-8fail": 9}, _first
+        print("  V1-B 10a: 게시 → 7분에 적재 · 7분 실패면 8분 · 7·8분 실패면 9분(세 번 기회)")
+
+        # (14) 시간 상한 — 시계가 빨리 가면 조회 뒤 GitHub 읽기 · 적재 없이 끝낸다
+        _clk14 = [0.0]
+        def _tick14():
+            _clk14[0] += 9.0
+            return _clk14[0]
+        _rk14 = []
+        _s14 = _gap_check_core(_NOW_DT, members=_members, fetch=lambda h, since: ("ok", _st_n),
+                               read_known=lambda: _rk14.append(1) or {}, enqueue=lambda *a: _rk14.append(2),
+                               clock=_tick14)
+        assert _s14["cut"] == "budget" and _rk14 == [], (_s14, _rk14)
+        print("  V1-B 14: 시간 상한 20초 — 넘으면 GitHub 읽기 · 적재 없이 끝냄")
+
+        # (7a·16·17 · 15 · 18) 보충 작업 — 원글 사슬 · 이미 등록 · 쓰기 실패 200
+        _ROOT_ID = _ago(60)                       # 1시간 전 원글(48h 안)
+        _MID_ID = _ago(40)
+        _REPLY_ID = _ago(5)
+        _gap_store = {_TWEETS_PATH: {"tweets": {"nonoka": [
+            {"channel_key": "nonoka", "id": _ago(90), "text": "기존", "posted_at": "2026-10-27T01:50:00Z",
+             "expires_at": "2026-10-29T01:50:00Z"}]}},
+            _TWEET_ARCHIVE_PATH: {"tweets": []}}
+        _gg2 = _GapGH(_gap_store)
+        _maybe_calls = []
+        def _fake_maybe(raw, **kw):
+            _maybe_calls.append((kw.get("tag"), raw, kw.get("reply_to_id"), kw.get("judge"), kw.get("origin")))
+            if kw.get("res_out") is not None:
+                kw["res_out"]["revived"] = None
+            return "added"
+        _saved_ev_b = globals()["_log_event_safe"]
+        globals()["_log_event_safe"] = lambda gh, now_iso, flow, result, **kw: _ev_log.append((result, kw.get("detail"), kw.get("tweet_id")))
+        # 15 · 이미 등록 → 쓰기 0 · 판정 0
+        _r15 = _gap_fill_one({"channel_key": "nonoka", "id": _ago(90), "text": "기존"}, _NOW_T, gh=_gg2, maybe=_fake_maybe)
+        assert _r15 == {"ok": True, "skip": "exists"} and not _maybe_calls, _r15
+        print("  V1-B 15: 이미 등록된 id → 200 · 판정 · 쓰기 0")
+
+        # 16 · 자기 답글, 원글 미등록 · 보관함에도 없음 → 원글 먼저(판정 있음, 48h 안) → 답글
+        _fx = {}
+        def _vx(i, text, reply_id=None):
+            d = {"text": text, "user_screen_name": "nonoka_yumemita", "tweetID": i}
+            if reply_id:
+                d["replyingTo"] = "nonoka_yumemita"
+                d["replyingToID"] = reply_id
+            return d
+        _fx.update({_ROOT_ID: _vx(_ROOT_ID, "원글"), _MID_ID: _vx(_MID_ID, "중간", _ROOT_ID)})
+        _maybe_calls.clear()
+        _r16 = _gap_fill_one({"channel_key": "nonoka", "id": _REPLY_ID, "text": "답글", "reply_to_id": _MID_ID,
+                              "reply_to": "nonoka_yumemita"}, _NOW_T, gh=_gg2, maybe=_fake_maybe,
+                             fetch_root=lambda i: _fx.get(i))
+        assert [c[1] for c in _maybe_calls] == ["원글", "중간", "답글"], _maybe_calls      # 뿌리부터 · 답글 마지막
+        assert _maybe_calls[0][2] is None and _maybe_calls[1][2] == _ROOT_ID and _maybe_calls[2][2] == _MID_ID, _maybe_calls
+        assert all(c[3] for c in _maybe_calls) and _maybe_calls[2][4] == "gapfill", _maybe_calls
+        assert _r16["fetched"] == [_ROOT_ID, _MID_ID], _r16
+        print("  V1-B 16: 자기 답글 · 원글 미등록 → 원글 사슬을 뿌리부터 같은 경로로 넣고 답글 (판정 · origin=gapfill)")
+
+        # 16b · 원글이 보관함(캐시)에 있으면 받아서 넣지 않는다(백엔드 커밋이 되살린다)
+        _gg3 = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": []}},
+                       _TWEET_ARCHIVE_PATH: {"tweets": [{"channel_key": "nonoka", "id": _ROOT_ID, "text": "원글",
+                                                          "archived_reason": "expired", "expires_at": "2026-10-25T00:00:00Z"}]}})
+        _maybe_calls.clear()
+        _fetch_calls = []
+        _r16b = _gap_fill_one({"channel_key": "nonoka", "id": _REPLY_ID, "text": "답글", "reply_to_id": _ROOT_ID,
+                               "reply_to": "nonoka_yumemita"}, _NOW_T, gh=_gg3, maybe=_fake_maybe,
+                              fetch_root=lambda i: _fetch_calls.append(i) or None)
+        assert _fetch_calls == [] and [c[1] for c in _maybe_calls] == ["답글"] and _maybe_calls[0][2] == _ROOT_ID, (_fetch_calls, _maybe_calls)
+        print("  V1-B 7(보관함 원글): 캐시에 있으면 받지 않고 답글만 — 되살림은 백엔드 커밋이 한다")
+
+        # 17 · 사슬 6단(상한 5) → 5단까지 받고 멈춤, 답글은 들어감
+        _chain_ids = [_ago(10 + k) for k in range(8)]          # 답글 → 1단 → … → 7단(6단 이상은 상한 밖)
+        _fx17 = {}
+        for k in range(6):
+            _fx17[_chain_ids[k + 1]] = _vx(_chain_ids[k + 1], f"단{k + 1}", _chain_ids[k + 2])
+        _maybe_calls.clear()
+        _r17 = _gap_fill_one({"channel_key": "nonoka", "id": _chain_ids[0], "text": "맨위 답글", "reply_to_id": _chain_ids[1],
+                              "reply_to": "nonoka_yumemita"}, _NOW_T, gh=_gg2, maybe=_fake_maybe,
+                             fetch_root=lambda i: _fx17.get(i))
+        assert len(_r17["fetched"]) == GAP_CHAIN_MAX and _r17["mode"] == "added", _r17
+        assert _maybe_calls[-1][1] == "맨위 답글" and len(_maybe_calls) == GAP_CHAIN_MAX + 1, _maybe_calls
+        print("  V1-B 17: 사슬 6단 → 5단까지 올라가고 멈춤, 답글은 들어감")
+
+        # 18 · 쓰기 실패(mode error) → 200(ok) 반환, 모니터 err 1줄
+        _ev_log.clear()
+        _r18 = _gap_fill_one({"channel_key": "nonoka", "id": _ago(7), "text": "일반 7분"}, _NOW_T, gh=_gg2,
+                             maybe=lambda raw, **kw: "error")
+        assert _r18["ok"] and _r18["mode"] == "error" and _ev_log[-1][0] == RESULT_ERR, (_r18, _ev_log)
+        print("  V1-B 18: 쓰기 실패 → 200 · 모니터 err 1줄")
+
+        # 21 · 모니터 등급 — 자기 답글 ok · 일반 글 warn · 원글 함께 · 원글 되살림
+        _ev_log.clear()
+        _gap_fill_one({"channel_key": "nonoka", "id": _REPLY_ID, "text": "답글", "reply_to_id": _MID_ID,
+                       "reply_to": "nonoka_yumemita"}, _NOW_T, gh=_GapGH(_cp.deepcopy(_gap_store)), maybe=_fake_maybe,
+                      fetch_root=lambda i: _fx.get(i))
+        _ev_log.clear()
+        _gap_fill_one({"channel_key": "nonoka", "id": _ago(7), "text": "일반 7분"}, _NOW_T, gh=_GapGH(_cp.deepcopy(_gap_store)),
+                      maybe=lambda raw, **kw: (kw["res_out"].update(revived="deleted") or "added"))
+        assert _ev_log[-1][0] == RESULT_WARN and "gap-fill · " in _ev_log[-1][1] and "원글 되살림" in _ev_log[-1][1], _ev_log
+        _ev_log.clear()
+        _gap_fill_one({"channel_key": "nonoka", "id": _REPLY_ID, "text": "답글", "reply_to_id": _MID_ID,
+                       "reply_to": "nonoka_yumemita"}, _NOW_T, gh=_GapGH(_cp.deepcopy(_gap_store)), maybe=_fake_maybe,
+                      fetch_root=lambda i: _fx.get(i))
+        assert _ev_log[-1][0] == RESULT_OK and "gap-fill(자기 답글)" in _ev_log[-1][1] and "원글 함께" in _ev_log[-1][1], _ev_log
+        print("  V1-B 21: 모니터 — 자기 답글 ok · 일반 글 warn · 「원글 함께」 · 「원글 되살림」 detail")
+
+        # 7 · 되살리기(D13) — 커밋: 캐시 · 일자 파일 · deleted(warn) · 답글 없는 지운 글은 되살리지 않음
+        _ev_warn = []
+        _saved_le = globals()["log_event"]
+        globals()["log_event"] = lambda gh, now, flow, result, **kw: _ev_warn.append((result, kw.get("detail")))
+        try:
+            _root_row = {"channel_key": "nonoka", "id": _ROOT_ID, "text": "원글", "text_ko": "원글번역",
+                         "posted_at": xtweet.snowflake_iso(_ROOT_ID), "expires_at": "2026-10-27T00:00:00Z",
+                         "archived_reason": "expired", "archived_at": "2026-10-27T01:00:00Z"}
+            _reply_prep = {"parsed": xtweet.parse("답글", title="x", tag=f"p#https://x.com/#1tweet-{_REPLY_ID}",
+                                                 channel_key="nonoka", now_iso=_NOW_T, handle="nonoka_yumemita",
+                                                 reply_to_id=_ROOT_ID),
+                           "text_src": "답글", "text_ko": "답글번역", "quote_src": None, "quote_ko": None}
+            # (a) 캐시에서 되살림
+            _ga = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": []}},
+                          _TWEET_ARCHIVE_PATH: {"tweets": [_cp.deepcopy(_root_row)]}})
+            _ra = _commit_personal_tweet(_ga, _reply_prep, channel_key="nonoka", now_iso=_NOW_T, via="ingest", origin="gapfill")
+            assert _ra["mode"] == "added" and _ra["revived"] == "archive", _ra
+            _thr = {m["id"]: m for m in _ga.store[_TWEETS_PATH]["tweets"]["nonoka"]}
+            assert set(_thr) == {_ROOT_ID, _REPLY_ID}, _thr
+            assert _thr[_ROOT_ID]["expires_at"] == _thr[_REPLY_ID]["expires_at"], _thr
+            assert _ga.store[_TWEET_ARCHIVE_PATH]["tweets"] == [], "캐시에서 빠짐(양쪽에 없음)"
+            assert not _ev_warn or all(r != RESULT_WARN for r, _ in _ev_warn), _ev_warn   # 캐시 되살림 = warn 없음
+            print("  V1-B 7(캐시): 원글 되살림 → 스레드에 들어가고 캐시에서 빠짐 · 같은 글타래 수명")
+
+            # (b) 일자 파일에서 되살림 — 캐시에는 없고 일자 파일에만
+            _day = archive_rotate.tweet_day(_ROOT_ID)
+            _gb = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": []}},
+                          _TWEET_ARCHIVE_PATH: {"tweets": []},
+                          f"{archive_rotate.TWEET_DIR}/{_day}.json": {"tweets": [_cp.deepcopy(_root_row)]}})
+            _rb = _commit_personal_tweet(_gb, _reply_prep, channel_key="nonoka", now_iso=_NOW_T, via="ingest", origin="gapfill")
+            assert _rb["revived"] == "archive" and {m["id"] for m in _gb.store[_TWEETS_PATH]["tweets"]["nonoka"]} == {_ROOT_ID, _REPLY_ID}
+            assert _gb.store[f"{archive_rotate.TWEET_DIR}/{_day}.json"]["tweets"] == [], "일자 파일에서도 빠짐"
+            print("  V1-B 7(일자 파일): 일자 파일에서 되살리면 그 파일에서도 지움")
+
+            # (c) deleted 되살림 → 모니터 warn 「관리 페이지에서 지웠던 글」
+            _gc = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": []}},
+                          _TWEET_ARCHIVE_PATH: {"tweets": [dict(_cp.deepcopy(_root_row), archived_reason="deleted")]}})
+            _ev_warn.clear()
+            _rc = _commit_personal_tweet(_gc, _reply_prep, channel_key="nonoka", now_iso=_NOW_T, via="ingest", origin="gapfill")
+            assert _rc["revived"] == "deleted" and any(r == RESULT_WARN and "관리 페이지에서 지웠던" in (d or "") for r, d in _ev_warn), _ev_warn
+            print("  V1-B 7(deleted): 되살림 + 모니터 warn 「관리 페이지에서 지웠던 글」")
+
+            # (d) 답글 없는 지운 글은 보충이 되살리지 않는다(지금과 같음)
+            _kn = _gap_read_known(_GapGH({_TWEETS_PATH: {"tweets": {"nonoka": []}},
+                                          _TWEET_ARCHIVE_PATH: {"tweets": [dict(_cp.deepcopy(_root_row), archived_reason="deleted")]}}))
+            assert _ROOT_ID in _kn.get("nonoka", set()), "답글 없는 지운 글 = 아는 id → 상시 조사가 후보로 안 고른다"
+            _plain = {"parsed": xtweet.parse("일반", title="x", tag=f"p#https://x.com/#1tweet-{_ROOT_ID}", channel_key="nonoka",
+                                             now_iso=_NOW_T, handle="nonoka_yumemita"), "text_src": "일반", "text_ko": None,
+                      "quote_src": None, "quote_ko": None}
+            _gd = _GapGH({_TWEETS_PATH: {"tweets": {"nonoka": []}},
+                          _TWEET_ARCHIVE_PATH: {"tweets": [dict(_cp.deepcopy(_root_row), archived_reason="deleted")]}})
+            _rd = _commit_personal_tweet(_gd, _plain, channel_key="nonoka", now_iso=_NOW_T, via="ingest", origin="gapfill")
+            assert _rd["revived"] is None and [m["id"] for m in _gd.store[_TWEETS_PATH]["tweets"]["nonoka"]] == [_ROOT_ID], _rd
+            print("  V1-B 7(답글 없음): 지운 글 = 아는 id → 상시 조사가 다시 고르지 않음 · 되살림 없음(지금과 같음)")
+        finally:
+            globals()["log_event"] = _saved_le
+
+        # 8 · 되살린 뒤 MAX_THREAD 초과 → 가장 오래된 것이 rolled, 결정적
+        _big = {"tweets": {"nonoka": [{"channel_key": "nonoka", "id": _sid_at_iso("2026-10-27T01:00:00Z"), "text": "x",
+                                        "posted_at": "2026-10-27T01:00:00Z", "expires_at": "2026-10-29T03:00:00Z"}]}}
+        _big["tweets"]["nonoka"] = [dict(_big["tweets"]["nonoka"][0], id=str(int(_big["tweets"]["nonoka"][0]["id"]) + k),
+                                         posted_at=None) for k in range(xtweet.MAX_THREAD)]
+        _ptwo = xtweet.merge_thread(_big, xtweet.parse("답글", title="x", tag="p#https://x.com/#1tweet-1",
+                                                       channel_key="nonoka", now_iso=_NOW_T, handle="nonoka_yumemita",
+                                                       reply_to_id=_big["tweets"]["nonoka"][0]["id"]),
+                                    _NOW_T, archive={"tweets": []})
+        assert _ptwo[3] == "rolled" and len(_ptwo[0]["tweets"]["nonoka"]) == xtweet.MAX_THREAD, _ptwo[3]
+        print("  V1-B 8: 되살린 뒤 MAX_THREAD 초과 → rolled (결정적)")
+
+        # 19 · 같은 글 보충 ↔ 폰 순서 — 판정 1회 · dup 때 판정 0 · 폰 늦게 도착 기록
+        _judge_calls, _dm_calls = [], []
+        _saved_sched = globals()["_maybe_personal_schedule"]
+        _saved_bc = globals()["_maybe_broadcast_change"]
+        _saved_dm = globals()["_auto_dm"]
+        _saved_prep = globals()["_prepare_personal_tweet"]
+        _saved_mg = globals()["_make_gh"]
+        _saved_cw = writeclient.call_write
+        _saved_ev2 = globals()["_log_event_safe"]
+        _cw_mode = ["added"]
+        _cw_kw = {}
+        try:
+            globals()["_maybe_personal_schedule"] = lambda *a, **kw: _judge_calls.append("sched")
+            globals()["_maybe_broadcast_change"] = lambda *a, **kw: _judge_calls.append("bc")
+            globals()["_auto_dm"] = lambda *a, **kw: _dm_calls.append(1)
+            globals()["_prepare_personal_tweet"] = lambda *a, **kw: {"parsed": {"id": "2113851579740963041", "posted_at": "2026-10-27T03:00:00Z",
+                                                                                 "text": "t"}, "text_src": "t"}
+            globals()["_make_gh"] = lambda: _GapGH({})
+            globals()["_log_event_safe"] = lambda gh, now_iso, flow, result, **kw: _ev_log.append((result, kw.get("detail"), kw.get("tweet_id")))
+            writeclient.call_write = lambda kind, **kw: (_cw_kw.update(kw) or {"mode": _cw_mode[0], "n_thread": 1, "revived": None})
+
+            def _run(mode, via="ingest", origin="phone", judge=True):
+                _judge_calls.clear(); _dm_calls.clear(); _cw_mode[0] = mode; _ev_log.clear()
+                return _maybe_personal_tweet("t", title="x", tag="p#https://x.com/#1tweet-2113851579740963041",
+                                             channel_key="nonoka", now_iso=_NOW_T, via=via, origin=origin, judge=judge)
+            # V1-A 3: 새 글 → 판정 · DM 각 1회
+            assert _run("added") == "added" and _judge_calls == ["sched", "bc"] and len(_dm_calls) == 1
+            # V1-A 4: 관리 페이지(ops) dup → 판정 지금처럼 돈다
+            assert _run("dup", via="ops") == "dup" and _judge_calls == ["sched", "bc"], _judge_calls
+            # 19: 폰 먼저 → 보충(dup) 는 판정 0 · 두 번째 순서(보충 먼저 → 폰 dup) 도 판정은 한 번씩만(폰이 dup 이면 0)
+            assert _run("dup", via="ingest", origin="gapfill") == "dup" and _judge_calls == [] and _dm_calls == []
+            assert _run("dup", via="ingest", origin="phone") == "dup" and _judge_calls == [] and _dm_calls == []
+            assert any("폰 늦게 도착" in (d or "") and r == RESULT_OK for r, d, _ in _ev_log), _ev_log
+            # judge=False(48h 넘은 원글) → 판정 · DM 없음
+            assert _run("added", origin="gapfill", judge=False) == "added" and _judge_calls == [] and _dm_calls == []
+            # 보충 added → 판정 1회 (폰 경로와 같음)
+            assert _run("added", origin="gapfill") == "added" and _judge_calls == ["sched", "bc"] and len(_dm_calls) == 1
+            assert writeclient is not None and _cw_kw.get("origin") == "gapfill", _cw_kw
+            print("  V1-A 3·4 · V1-B 19: 새 글 판정 1회 · 관리 dup 판정 지금처럼 · 폰/보충 dup 판정 0 · 폰 늦게 도착 기록 · judge=False 번역만")
+            print("  V1-B 10b: 폰 늦게 도착 → 판정 · DM 없음 · ok 기록(detail 「폰 늦게 도착」)")
+        finally:
+            globals()["_maybe_personal_schedule"] = _saved_sched
+            globals()["_maybe_broadcast_change"] = _saved_bc
+            globals()["_auto_dm"] = _saved_dm
+            globals()["_prepare_personal_tweet"] = _saved_prep
+            globals()["_make_gh"] = _saved_mg
+            writeclient.call_write = _saved_cw
+            globals()["_log_event_safe"] = _saved_ev2
+
+        # 20 · /ingest 는 보충을 부르지 않는다
+        assert "_fill_member_gaps" not in globals()
+        import inspect as _insp
+        assert "_fill_member_gaps" not in _insp.getsource(globals()["_ingest_impl"]), "즉시 보충 호출 제거"
+        print("  V1-B 20: /ingest 는 빠진 트윗 보충을 부르지 않는다")
+
+        # 12 · 라우트 — OIDC 없음 · 설정 없음 → 403, 외부 호출 0
+        if app is not None:
+            _env_bak = {k: _os.environ.get(k) for k in ("ADMIN_BASE_URL", "INVOKER_SA", "ALLOW_UNAUTH")}
+            _touched = []
+            _saved_fetch = globals()["_gap_fetch"]
+            try:
+                _os.environ["ADMIN_BASE_URL"] = "https://accept.example"
+                _os.environ["INVOKER_SA"] = "invoker@x.iam.gserviceaccount.com"
+                _os.environ["ALLOW_UNAUTH"] = "1"           # 접수 서비스 실제 설정 — force 가 있어야 검증된다
+                globals()["_gap_fetch"] = lambda h, since: (_touched.append(h), ("fail", None))[1]
+                _cl = app.test_client()
+                assert _cl.post("/gap-check").status_code == 403 and not _touched, "토큰 없음 → 403, 조회 0"
+                assert _cl.post("/gap-fill", json={"channel_key": "nonoka", "id": "1", "text": "x"}).status_code == 403
+                _os.environ.pop("INVOKER_SA")
+                assert _cl.post("/gap-check").status_code == 403, "설정 없음 → 거절(fail closed)"
+                assert not _touched
+            finally:
+                globals()["_gap_fetch"] = _saved_fetch
+                for k, v in _env_bak.items():
+                    if v is None:
+                        _os.environ.pop(k, None)
+                    else:
+                        _os.environ[k] = v
+            print("  V1-B 12: /gap-check · /gap-fill 토큰 없음 · 설정 없음 → 403, 조회 · 쓰기 0")
+        globals()["_log_event_safe"] = _saved_ev_b
+        print("[OK] (상시 조사 · 보충 작업 · 되살리기) V1-B 3~21 중 프론트 제외 항목 self-test 통과")
 
     print(chr(10) + "=" * 60)
     print("SUCCESS: telegram_app v3 smoke test 통과")

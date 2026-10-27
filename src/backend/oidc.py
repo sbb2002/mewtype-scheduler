@@ -18,23 +18,25 @@ logger = logging.getLogger(__name__)
 
 
 def verify_request(
-    headers, *, expected_audience: str, expected_sa: str | None = None
+    headers, *, expected_audience: str, expected_sa: str | None = None, force: bool = False
 ) -> None:
     """Flask request.headers 에서 Bearer 토큰 추출·검증.
 
-    환경변수 ALLOW_UNAUTH == '1' 이면 검증 스킵 (로컬 개발용).
+    환경변수 ALLOW_UNAUTH == '1' 이면 검증 스킵 (로컬 개발용) — 단 `force=True` 면 스킵하지 않는다.
     그 외에는 필수 Authorization 헤더 + Google OAuth2 토큰 검증.
 
     Args:
         headers: dict-like (Flask request.headers).
         expected_audience: OIDC 토큰의 audience 클레임 (Cloud Run 서비스 URL).
         expected_sa: 토큰 발급자 (서비스계정 email). 미지정 시 검증 스킵.
+        force: (self-reply) 접수 서비스의 공개 경로 `/gap-check` · `/gap-fill` 용 — 접수 서비스는 ALLOW_UNAUTH=1 이라
+            기본 검증이 꺼져 있으므로, 이 두 경로만 강제로 검증한다(남이 불러 외부 호출 사용량을 늘리는 것 방지).
 
     Raises:
         PermissionError: 검증 실패 시. 이유는 메시지에 포함.
     """
-    # ALLOW_UNAUTH 환경변수 확인 (로컬 개발)
-    if os.getenv("ALLOW_UNAUTH") == "1":
+    # ALLOW_UNAUTH 환경변수 확인 (로컬 개발) — force 면 건너뛰지 않는다
+    if os.getenv("ALLOW_UNAUTH") == "1" and not force:
         logger.debug("ALLOW_UNAUTH=1: Authorization skipped")
         return
 
@@ -123,6 +125,24 @@ if __name__ == "__main__":
         else:
             print(f"[FAIL] Unexpected error message: {e}")
             sys.exit(1)
+
+    # Test 3b (self-reply): force=True 면 ALLOW_UNAUTH=1 이어도 검증 — 토큰 없으면 거절, force 없으면 그대로 스킵
+    os.environ["ALLOW_UNAUTH"] = "1"
+    try:
+        verify_request({}, expected_audience="https://example.com")
+        print("[OK] force 없으면 ALLOW_UNAUTH=1 에서 스킵(기존 동작)")
+        try:
+            verify_request({}, expected_audience="https://example.com", force=True)
+            print("[FAIL] force=True 는 토큰 없으면 거절해야 함")
+            sys.exit(1)
+        except PermissionError as e:
+            if "missing bearer token" in str(e):
+                print("[OK] force=True: ALLOW_UNAUTH=1 이어도 토큰 없으면 PermissionError")
+            else:
+                print(f"[FAIL] force 거절 메시지 이상: {e}")
+                sys.exit(1)
+    finally:
+        del os.environ["ALLOW_UNAUTH"]
 
     # Test 4: google-auth 라이브러리 미설치 시 테스트
     if id_token is None or ga_requests is None:

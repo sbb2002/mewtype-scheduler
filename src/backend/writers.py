@@ -58,7 +58,7 @@ def _registry() -> dict[str, Callable[[GitHubStore, dict], Any]]:
         "notice_edit_commit": lambda gh, a: t._notice_edit_commit(gh, a["nid"], a["patch"], a["now_iso"]),
         "personal_tweet": lambda gh, a: t._commit_personal_tweet(
             gh, a["prepared"], channel_key=a["channel_key"], now_iso=a["now_iso"],
-            via=a.get("via", "ingest"),
+            via=a.get("via", "ingest"), origin=a.get("origin", "phone"),   # (self-reply) origin=gapfill 이면 상시 조사의 보충
         ),
         "tweet_sweep": lambda gh, a: {"moved": t._tweet_sweep(gh, a["now_iso"])},
         "tweet_del_commit": lambda gh, a: t._tweet_del_commit(gh, a["unit"], a["now_iso"], a.get("tweet_id")),

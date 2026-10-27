@@ -142,6 +142,21 @@ def scheduler_loop(stop: threading.Event) -> None:
         log.info("scheduler: %s 적재 @ %s", kind, iso)
 
 
+def gap_loop(stop: threading.Event) -> None:
+    """(self-reply, 명세 §5-5) 상시 조사 — 로컬 시험판은 Scheduler 대신 1분 타이머. 클라우드 `/gap-check` 와 같은 본체(`_gap_check_run`)를 부른다.
+    보충 작업은 가공 큐(q-enrich)로 간다(`telegram_app._gap_enqueue`). 매분 경계에서 깨어난다."""
+    from . import telegram_app
+    while not stop.is_set():
+        now = datetime.now(timezone.utc)
+        nxt = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if stop.wait(max(1.0, (nxt - now).total_seconds())):
+            break
+        try:
+            telegram_app._gap_check_run(datetime.now(timezone.utc))
+        except Exception:  # noqa: BLE001 — 한 번 실패해도 다음 분에 다시 본다
+            log.exception("상시 조사 실패")
+
+
 # ── Flask 앱 ─────────────────────────────────────────────────────────────────
 
 def build_app():
@@ -303,6 +318,7 @@ def main(argv=None) -> int:
         return 3
     if not args.no_scheduler:
         threading.Thread(target=scheduler_loop, args=(stop,), name="scheduler", daemon=True).start()
+        threading.Thread(target=gap_loop, args=(stop,), name="gap-check", daemon=True).start()
     if not args.no_telegram:
         start_tg_poll(app, stop)
     _write_runner_info(scheduler=not args.no_scheduler, telegram=not args.no_telegram)

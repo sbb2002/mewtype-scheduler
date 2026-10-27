@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-**현재 버전 = v4.8.6 (핫픽스, 2026-10-26)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+**현재 버전 = v4.9.0 (마이너, 2026-10-27)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 (`git describe --tags`). 버전별로 무엇이 바뀌었는지 · 배포 리비전 · 롤백 대상은 **`docs/VERSION.md`**(맨 위 태그 대조표 + 버전별 상세)가 정본이다 —
 이 파일에는 버전 이력을 쌓지 않는다(아래 「버전 올릴 때 할 일」).
 
@@ -66,11 +66,11 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
 서버 상시 가동 없음. 무료 인프라만 사용. 리전 `asia-northeast1`(Cloud Run · Scheduler · Tasks 는 같은 리전이어야 함).
 
 - **Cloud Run 2서비스**(같은 이미지, 엔트리포인트만 다름):
-  - `mewtype-backend`(쓰기 서비스, `concurrency=1 · max-instances=1` — data 쓰기 직렬화) — `/tick` `/wake` `/write` `/monitor` `/websub-renew`.
-  - `mewtype-telegram`(접수 서비스, 공개) — 텔레그램 webhook · `POST /ingest`(폰 알림) · PubSub 콜백 `/websub/<이름>` · 관리 페이지 `/admin` · 웹 모니터 `/monitor-live`.
+  - `mewtype-backend`(쓰기 서비스, `concurrency=1 · max-instances=1` — data 쓰기 직렬화) — `/tick` `/wake` `/write` `/monitor` `/websub-renew` `/daily`.
+  - `mewtype-telegram`(접수 서비스, 공개) — 텔레그램 webhook · `POST /ingest`(폰 알림) · PubSub 콜백 `/websub/<이름>` · 관리 페이지 `/admin` · 웹 모니터 `/monitor-live` · 상시 조사 `/gap-check` · 보충 작업 `/gap-fill`(둘은 OIDC 강제 검증).
     콘텐츠 쓰기는 직접 하지 않고 백엔드 `/write` 로 보낸다(`writeclient` → `writers` → `apply`).
-- **Cloud Scheduler 4잡**: baseline JST 06:00 · light 10분 → `/tick`, monitor KST 06:10 → `/monitor`, websub-renew KST 06:20.
-- **Cloud Tasks**: 방송별 정밀 `/wake {video_id}`(큐 `mewtype-wake`) · PubSub 알림 전용 큐 `mewtype-websub`. 상한 720h → `now+696h` 클램프.
+- **Cloud Scheduler 3잡**(self-reply 핫픽스 — 옛 4잡을 줄였다): light 10분 → 쓰기 `/tick` · **daily** KST 06:00 → 쓰기 `/daily`(baseline tick + 그날 06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks 로 먼저 예약) · **gapcheck** 매분 → 접수 `/gap-check`(상시 조사). 운영 잡 이름 `mewtype-light` · `mewtype-daily` · `mewtype-gapcheck`.
+- **Cloud Tasks**: 방송별 정밀 `/wake {video_id}`(큐 `mewtype-wake`) · PubSub 알림 전용 큐 `mewtype-websub` · 보충 작업 `/gap-fill`(큐 `mewtype-gapfill`, 동시 1 · 3회, 이름 `gapfill-<트윗 id>`) · 일일 묶음 예약 `/monitor` `/websub-renew`(큐 `mewtype-daily`, 동시 1 · 4회). 상한 720h → `now+696h` 클램프.
 - **저장 = GitHub 데이터 저장소 `sbb2002/mewtype-scheduler-data`** 의 브랜치들(Contents API, fine-grained PAT):
   `data`(팬 화면이 읽는 preview · notices · tweets · banners · songs 등) · `ops`(control · admin_state · LLM 판단 기록 등 운영 상태, `storage.OPS_PATHS`) ·
   `monitoring`(이벤트 로그 · 스냅샷 · 유실 원문 큐 · 원문 보존 `raw/`). 브랜치를 나눈 이유 = Contents API 충돌 단위가 브랜치 HEAD 라서(v3.9 유실 사고).
@@ -94,6 +94,7 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
    watching = 예정 20분 전부터 3분 간격 · live = 시작 후 60분까지 10분, 그 뒤 5분 · end 창 30분 동안 5분. URL 없는 예고 = 시작 +2분 `search.list` 1회, +1h 까지 못 오르면 `out`.
 3. **트윗 · 알림 인입** — 폰이 `/ingest` 로 보낸 알림을 표시명으로 가른다: 공식 계정 → 일일 스케줄(예고) 또는 소식 · 개인 5인 → 개인 트윗(+ 예고 판정) ·
    게임 계정 → 행사 배너 판정. 원문은 tweet id 가 있으면 vxtwitter/fxtwitter 결과를 정본으로 쓴다. 상세 `docs/INGEST_FLOW.md` · `docs/SPEC.md` §8.11.
+   **빠진 트윗 · 자기 답글**(self-reply 핫픽스): 폰이 빠뜨리거나 자기 답글은 알림이 안 오므로, 접수 서비스 `/gap-check` 가 1분마다 멤버 5명의 최근 글을 훑어 보충 작업(`/gap-fill`)으로 넣는다(일반 글은 게시 7분 뒤, 자기 답글은 바로). 자기 답글은 `reply_to_id` 로 원글에 이어 붙이고, 글타래 수명은 가장 늦은 글 + 48h. 명세 `docs/SPEC.md` 계약 I.
 4. **쓰기** — 모든 콘텐츠 쓰기는 백엔드 `/write` 한 곳에서 직렬화. 외부 호출(LLM · API · OCR)은 접수 서비스에서 준비하고 `/write` 잡은 커밋만 한다.
 5. **표시** — 프론트가 data 브랜치 JSON 을 폴링해 그린다. 시각은 전부 UTC ISO(`Z`) 저장, KST 변환은 프론트 `time.js` 담당.
 
@@ -130,7 +131,8 @@ src/
       config.js        # 상수 · 데이터 URL · APP_VERSION/APP_DATE(하단 ver. 말풍선)
       time.js api.js   # KST 포맷 · 상대시간 / fetch(타임아웃)
       render.js timetable.js   # 보드 — PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고
-      notices.js banners.js tweets.js   # 소식판 · 행사 배너 · 멤버 트윗 말풍선
+      notices.js banners.js tweets.js   # 소식판 · 행사 배너 · 멤버 트윗 시트
+      tweetlogic.js    # 트윗 시트 순수 로직(글타래 · 첨부 문구 · 글자색 · 시각 표기) — DOM 없음
       player.js playerbtn.js songs.js   # YouTube 곡 플레이어(첫 클릭 때 동적 import)
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
@@ -164,9 +166,9 @@ Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 ```bash
 # 모듈 self-test (네트워크 불필요, 테스트 프레임워크 없음 — 각 모듈의 if __name__ == "__main__" 블록)
 # Windows 콘솔은 PYTHONIOENCODING=utf-8 권장
-python -m src.backend.<모듈>         # self-test 있는 모듈: src/backend 전부 + collector.rss · collector.youtube · bus.conform · bus.publisher
+python -m src.backend.<모듈>         # self-test 있는 모듈: src/backend 전부(app · local_runner 제외 — 서버 · 러너를 띄운다) + src.collector.rss · src.collector.youtube · src.bus.conform · src.bus.publisher
 python -m src.backend.vision --live  # 실제 Groq 비전 호출(GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때만)
-node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · render · songs · time · timetable)
+node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · render · songs · time · timetable · tweetlogic)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md) — 배포는 운영자 결정
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등)

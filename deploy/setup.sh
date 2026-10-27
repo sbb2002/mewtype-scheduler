@@ -128,6 +128,30 @@ else
   gcloud tasks queues create "$WEBSUB_QUEUE" --location="$GCP_LOCATION" "${_WSQ_OPTS[@]}"
 fi
 
+# (self-reply D6 · 명세 §5-2) 상시 조사의 보충 작업 — 접수 서비스가 `gapfill-<트윗 id>` 로 적재, 접수 서비스 자신이 받는다.
+#          동시 1건(같은 글 두 번 처리 · 쓰기 몰림 방지), 3회까지 시도. 실패는 다음 상시 조사가 다시 찾는다.
+GAPFILL_QUEUE="${GAPFILL_QUEUE:-mewtype-gapfill}"
+_GFQ_OPTS=(--max-concurrent-dispatches=1 --max-attempts=3)
+if gcloud tasks queues describe "$GAPFILL_QUEUE" --location="$GCP_LOCATION" &>/dev/null; then
+  echo "✓ $GAPFILL_QUEUE 큐 이미 존재 — 설정 갱신"
+  gcloud tasks queues update "$GAPFILL_QUEUE" --location="$GCP_LOCATION" "${_GFQ_OPTS[@]}"
+else
+  echo "생성 중: $GAPFILL_QUEUE"
+  gcloud tasks queues create "$GAPFILL_QUEUE" --location="$GCP_LOCATION" "${_GFQ_OPTS[@]}"
+fi
+
+# (self-reply D6 · 명세 §4-6) 일일 묶음 잡의 06:10 · 06:20 예약 — 쓰기 서비스가 받는다. 재시도 4회(30~300초, 지금 Scheduler 재시도와 같게).
+#          wake 큐를 안 쓰는 이유: 그 큐는 최대 시도 횟수가 없어 /monitor 가 계속 실패하면 오류 DM 이 여러 번 간다.
+DAILY_QUEUE="${DAILY_QUEUE:-mewtype-daily}"
+_DQ_OPTS=(--max-concurrent-dispatches=1 --max-attempts=4 --min-backoff=30s --max-backoff=300s)
+if gcloud tasks queues describe "$DAILY_QUEUE" --location="$GCP_LOCATION" &>/dev/null; then
+  echo "✓ $DAILY_QUEUE 큐 이미 존재 — 설정 갱신"
+  gcloud tasks queues update "$DAILY_QUEUE" --location="$GCP_LOCATION" "${_DQ_OPTS[@]}"
+else
+  echo "생성 중: $DAILY_QUEUE"
+  gcloud tasks queues create "$DAILY_QUEUE" --location="$GCP_LOCATION" "${_DQ_OPTS[@]}"
+fi
+
 echo "=== Secret Manager 시크릿 생성 ==="
 
 # 시크릿 생성 헬퍼: env 에 값이 있으면 그대로 쓰고, 없으면 프롬프트.
