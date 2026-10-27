@@ -41,6 +41,14 @@ def enqueue_sweep() -> str | None:
     return _q.enqueue("translate_sweep", {}, name="translate-sweep")
 
 
+def enqueue_gap_fill(args: dict) -> str | None:
+    """(self-reply, 명세 §5-5) 상시 조사의 보충 작업 1건을 가공 큐에 적재 — 이름 `gapfill-<id>`(같은 글은 한 번만).
+    보충 작업은 적용 큐(q-apply)가 아니라 가공 큐에 둔다: 적용 큐에 넣으면 `call_write` 가 같은 큐를 기다려 교착한다."""
+    if _q is None:
+        return None
+    return _q.enqueue("gap_fill", dict(args or {}), name=f"gapfill-{(args or {}).get('id')}")
+
+
 # (v4.0.5) 소식 본문 번역(body_ko)은 한 번에 이만큼만 — 지난 소식 백필(활성 32 · 아카이브 78건, 10-04)이
 # 첫 수집 한 번에 몰리지 않게. 정기 수집 10분마다 나눠서 채운다.
 BODY_TL_PER_SWEEP = 10
@@ -251,6 +259,12 @@ def apply_translations(store, updates: dict, now_iso: str, *, force: bool = Fals
 
 def handle(kind: str, args: dict, meta: dict) -> dict:
     """가공 큐 작업 처리 (스레드 q-enrich). data 는 읽기만 하고, 반영은 적용 큐로 넘긴다."""
+    if kind == "gap_fill":                   # (self-reply) 상시 조사의 보충 작업 — 같은 개인 트윗 경로(_gap_fill_one)
+        from datetime import datetime, timezone
+
+        from . import telegram_app
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return telegram_app._gap_fill_one(args, now_iso)
     if kind != "translate_sweep":
         raise ValueError(f"unknown enrich job kind: {kind!r}")
     from datetime import datetime, timezone
