@@ -18,11 +18,16 @@
                     일간/월간/연간 HTML 리포트 자동 DM 은 폐지 — 전 기간은 웹 monitor 에서,
                     필요하면 /monitor 명령으로 수동 생성.
   POST /websub-renew — Cloud Scheduler (매일, body 없음). (v4.5.0) PubSub(WebSub) 구독 일일 갱신 + 끊긴 구독 점검(`websub.renew`).
+  POST /daily     — Cloud Scheduler (매일 KST 06:00, 일일 묶음 잡 `mewtype-daily`, self-reply D6 · 명세 §4-6). 먼저 그날
+                    06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks(`DAILY_QUEUE`)에 예약하고, 그다음 baseline tick 을 그대로 돈다.
+                    예약 이름이 날짜로 고정이라 Scheduler 재시도가 와도 두 번 만들어지지 않는다(`AlreadyExists`).
   GET  /          — 무인증 헬스체크 ("/healthz" 는 GFE 가 가로채므로 루트를 씀)
 """
 from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
 from flask import Flask, jsonify, request
@@ -179,6 +184,55 @@ def _websub_renew():
         log.exception("websub-renew 실패")
         _alert("/websub-renew", e)
         return jsonify({"error": str(e)}), 500
+
+
+_DAILY_KST = timezone(timedelta(hours=9))
+
+
+def _daily_plan(now_utc: datetime) -> list[tuple[str, str, str]]:
+    """(순수, self-test 용) 그날 KST 06:10 · 06:20 의 예약 목록 [(태스크 이름 키, 라우트, 실행 시각 UTC ISO)].
+    이름은 날짜 · 시각으로 고정 — 같은 날 재시도하면 같은 이름이 된다(분 버킷도 06:10 · 06:20 이라 고정)."""
+    day = now_utc.astimezone(_DAILY_KST).date()
+    def at(h: int, m: int) -> str:
+        return datetime(day.year, day.month, day.day, h, m, tzinfo=_DAILY_KST).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return [("daily-monitor", "/monitor", at(6, 10)), ("daily-websub-renew", "/websub-renew", at(6, 20))]
+
+
+@app.post("/daily")
+def _daily():
+    """(self-reply D6 · 명세 §4-6) 일일 묶음 잡 — Scheduler 1개(KST 06:00)가 옛 잡 3개(baseline · monitor · websub-renew)를 대신한다.
+    순서: ① 그날 06:10 `/monitor` · 06:20 `/websub-renew` 태스크를 **먼저** 예약(큐 `DAILY_QUEUE`, 재시도 4회) ② baseline tick 을 그대로 실행
+    (`/tick {"mode":"baseline"}` 과 같은 코드 · 일시정지 가드 포함). 예약이 실패해도 tick 은 돈다. 실패는 응답 500 과 운영자 알림 1회."""
+    try:
+        _authorize()
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    from . import tasks
+    cfg = _cfg()
+    errors: list[str] = []
+    queued: list[str] = []
+    queue = os.environ.get("DAILY_QUEUE", "").strip()
+    tq = tasks.from_env(queue, target_url=cfg.service_url) if queue else None
+    if tq is None:
+        errors.append("DAILY_QUEUE · SERVICE_URL 미설정 — 06:10 · 06:20 예약 안 됨")
+    else:
+        for name, path, when in _daily_plan(datetime.now(timezone.utc)):
+            try:
+                tq.enqueue_path(path, {}, name, when)
+                queued.append(name)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{name}: {str(e)[:150]}")
+    if errors:
+        _alert("/daily 예약 실패", RuntimeError("; ".join(errors)))
+    try:
+        body = handlers.tick("baseline")
+    except Exception as e:  # noqa: BLE001
+        log.exception("daily baseline tick 실패")
+        _alert("/daily baseline", e)
+        return jsonify({"error": str(e), "queued": queued}), 500
+    if errors:
+        return jsonify({**body, "queued": queued, "error": "; ".join(errors)}), 500
+    return jsonify({**body, "queued": queued}), 200
 
 
 @app.get("/")
