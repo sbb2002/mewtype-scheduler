@@ -124,7 +124,8 @@ class GitHubStore:
             sha = resp_json.get("sha")
 
             if not content_b64:
-                raise RuntimeError(f"No content in response for {path}")
+                raise RuntimeError(f"No content in response for {path} "
+                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
 
             # 베이스64 디코딩
             content_bytes = base64.b64decode(content_b64)
@@ -217,7 +218,8 @@ class GitHubStore:
             content_b64 = resp_json.get("content", "")
             sha = resp_json.get("sha")
             if not content_b64:
-                raise RuntimeError(f"No content in response for {path}")
+                raise RuntimeError(f"No content in response for {path} "
+                                   f"(encoding={resp_json.get('encoding')!r}, size={resp_json.get('size')})")
             return base64.b64decode(content_b64).decode("utf-8"), sha
         except requests.RequestException as e:
             raise RuntimeError(f"GitHub API network error: {e}")
