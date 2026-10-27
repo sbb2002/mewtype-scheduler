@@ -70,4 +70,4 @@ print('$d','tweet',len(tw),'info',sum(1 for e in tw if e.get('info')),'| notice'
 
 **종료(2026-10-27, 1~6회차)** — 결론 = `ref/autofix-test/result_2026-10-27.md` 맨 위. 6회차(명세 Opus · high)가 사람 개입 없이 1MB 장애를 멈추는 수정
 (Git Blob API 읽기)을 적용했고 운영자 기대 수준으로 평가 · 도입은 아직 이름. 근본 해결(캐시 + 일자 보관함)은 사람 아이디어 몫으로 남음.
-부산물: main 핫픽스 v4.8.7 PR #99(빈 content 오류에 encoding · size) — 병합 · 배포 대기.
+시험 중 main 핫픽스(v4.8.7, PR #99 — 빈 content 오류에 encoding · size)를 올렸다가 운영자 불허로 닫음(정답을 안 뒤 넣은 이 문제 전용 힌트 — 결과 문서 「케이스 리포트」).
