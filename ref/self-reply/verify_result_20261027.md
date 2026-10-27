@@ -49,3 +49,34 @@
 ## 안 함
 - V2-5b(실제 색 대비 화면 측정 — selfcheck 계산으로만) · V2-5c(움직임 줄이기) · 밝게 테마 · 원문 면 안내 문구 표시 · 실제 손가락 터치.
 - V2-1~V2-4(로컬 시험판 + 실제 fxtwitter 로 자기 답글 보충), V3(스테이징), V4(장애 주입 — V1 가짜 객체분은 Haiku self-test 에 포함), V5 · V6.
+
+---
+
+# 실제 API · V3 스테이징 — 2026-10-27 저녁 (다른 세션 인계용)
+
+브랜치 `hotfix/self-reply-fill` 은 **푸시됨**(`33cad24`, 커밋 10개). **PR · 병합 · 운영 배포는 안 함** — 아래 막힘 때문. 버전 = 마이너(v4.9.0 예정, 운영자 결정).
+
+## 실제 API(이 PC, 시크릿 불필요) — 합격
+- `vxtwitter.fetch_profile_statuses` 5명 1.3~1.9초, 유노 · 노노카 · 리츠 자기 답글의 `reply_to_id` 정확. `since=지금` → `[]`(204).
+- 단건 조회 답글 필드: vxtwitter `replyingTo` · `replyingToID` 실재(Haiku 「추정」 해소), fxtwitter 폴백도 같은 값. `extract()` → `reply_to` · `reply_to_id` 맞음.
+- 로컬 시험판(V2-1~4)은 이 PC 에 `.env.local` 이 없어 못 돌림(시험판 PC 는 따로) — 스테이징으로 대체.
+
+## V3 스테이징 — 결과
+- 배포: `mewtype-backend-stage` · `mewtype-telegram-stage` (`STAGE=1 bash deploy/deploy.sh` · `deploy_telegram.sh`, 웹훅 스크립트는 안 돌림 — 운영 봇 연결 보호). 큐 `mewtype-gapfill-stage`(동시 1 · 3회) · `mewtype-daily-stage`(동시 1 · 4회 · 30~300초)는 `setup.sh` 대신 gcloud 로 직접 생성(`setup.sh` 는 시크릿 프롬프트까지 돎). 운영 큐 옵션 불변.
+- V3-1: `STAGE=1 scheduler.sh` 는 시험 안 함(코드상 즉시 종료) · 운영 Scheduler 잡 4개 그대로.
+- V3-3 인증: 토큰 없음 · 잘못된 형식 · 내 계정 토큰(audience 다름) → 403. Cloud Tasks 가 `INVOKER_SA` OIDC 로 부르면 200. (내 계정은 `INVOKER_SA` 토큰 직접 발급 권한 없음 — IAM 은 안 바꿈. 시험 호출은 `gcloud tasks create-http-task --oidc-service-account-email` 로.)
+- V3-5 `/daily`: 큐를 멈춘 채 두 번 호출 → 예약 2개뿐(`daily-monitor-29884150` = 06:10 KST · `daily-websub-renew-29884160` = 06:20 KST, 두 번째는 「Task already exists」), baseline tick 두 번 정상(200, 16~24초). 스테이징에서 monitor · websub 구독이 실제로 돌지 않게 두 작업을 지우고 큐 재개.
+- V3-4 보충 작업: 스테이징 data-stage 에 운영 `tweets.json` · `tweet_archive.json` 을 복사하고 유노 글 `2114544324147089633` 만 뺀 뒤 `/gap-fill` 직접 적재 → 단건 조회 + Groq 120b 번역(0.8초) + data-stage 반영(번역 있음) — **합격**. (같은 커밋에서 만료된 유노 글 2건은 정상 sweep.)
+- **V3-4 상시 조사 — 막힘**: Cloud Run(스테이징 접수 서비스)에서 `GET https://api.fxtwitter.com/2/profile/<핸들>/statuses` 가 **404**(17:00 정각 전체 조회 = 5명 전부, 17:02 `since` 조회 = 미야코 404 확인). 같은 시각 이 PC(가정 회선)에서는 같은 코드 · 같은 주소가 200. 404 = fxtwitter 명세상 「사용자 없음 또는 빈 목록」(한도 초과면 429) — 우리 사용량(분당 수 회)은 한도 1,000/분에 한참 못 미침. 추정: 구글 데이터센터(공유) IP 대역에서만 막힘 · 또는 X 가 데이터센터 요청에 빈 목록을 줌 · 또는 일시 장애. **확인 안 됨.**
+  - 운영 `mewtype-telegram` 은 10-25 같은 호출로 보충 성공 기록(모니터 gap-fill 1건), 그 뒤 404 경고 로그 없음(UserWarning 은 메시지가 같으면 인스턴스당 한 번만 찍히므로 「없음」이 성공을 뜻하진 않음).
+  - 17:26 재시도(`since` 조회): 200 · 404 경고 없음 → 아마 5명 모두 204(새 글 없음) — 목록 접근이 됐다는 뜻일 수 있으나 전체 조회가 아니라 결론 못 냄. **18:00 KST 정각 전체 조회 예약(`gapcheck-hour18-…`)** — 결과는 아래 추가.
+  - 구글 쪽 다른 경로(Cloud Tasks 로 fxtwitter 직접 GET) 시도 — 큐 기록(log-sampling)을 켰지만 기록이 안 남아 결론 못 냄(기록은 다시 끔).
+
+## 스테이징 상태(남겨 둠 — 운영과 분리)
+- 서비스 2개 새 코드로 배포된 상태, 큐 2개 생성됨(`mewtype-gapfill-stage` · `mewtype-daily-stage`), data-stage `tweets.json` · `tweet_archive.json` = 10-27 운영 복사본 + 시험 보충 1건. Scheduler 잡은 만들지 않음.
+
+## 다음 세션이 할 일
+1. fxtwitter 404 원인: 스테이징에서 정각 전체 조회 반복 · 큰 다른 계정 목록도 404 인지(시험 경로 필요) · 운영 서버의 지금 즉시 보충(멤버 트윗 때 `_fill_member_gaps`)이 성공하는지 로그 · 계속 막히면 대안(fxtwitter 자체 호스팅 등 — 무료 조건 · X 인증 조건 조사, 유료 경로 제외 — 메모리 「유료 서비스 반려」).
+2. 막힘이 풀리면: 남은 V3-4(정각 상시 조사 → 후보 적재 → 보충) · V4 장애 주입 일부 · 그 뒤 PR → 병합(마이너 v4.9.0, 「버전 올릴 때 할 일」 0~6) → 배포 순서(`deploy/README.md` self-reply 절 — `scheduler.sh` 는 KST 05:50~06:30 피해서).
+3. 대안으로 갈 경우: 이번 변경이 `/ingest` 의 즉시 보충을 없앴으므로 상시 조사 없이 내보내려면 즉시 보충을 되살리는 수정이 필요.
+4. 보류: 트윗 시트 키보드 접근성(메모리 「키보드 접근성 보류」).
