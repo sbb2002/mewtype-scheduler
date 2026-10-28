@@ -11,6 +11,8 @@
 // 읽음 = 시트를 닫을 때 · 멤버를 바꿀 때(mew:twread, 4일 보존). 면 저장값 = mew:tllang(ko · orig). 엿보기 횟수 = mew:twpeek.
 // (v4.9.1) PC 팝업 = 머리 줄로 옮기기 · 위아래 가장자리로 대칭 높이 조절(mew:twh) · X 카드 덮개(카드 위에서 밀기).
 //   열린 시트에 새 글이 오면 새 글만 끼운다(_patchFeed) — 맨 아래였으면 아래에서 올라오고, 아니면 ↓ 동그라미(.tws__fab).
+// (v4.9.3) 두 면 겹쳐 밀기 · 번역 면에 사진 · 영상 · 인용(X 카드와 같은 뼈대 · 치수로 위치 맞춤) · 시각은 말풍선 바닥 줄 한 번 ·
+//   날짜 구분선 · 열면 맨 아래(멤버별 자리 기억) · 올리면 ↓ 동그라미. 영상 칸만 누른다(원문 카드로 + 같은 칸 글로우).
 
 import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { THEME_EVENT, currentTheme } from "./theme.js";
@@ -79,6 +81,7 @@ const IC = {
   x: () => _icon("0 0 24 24", ["M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"], true),
   close: () => _icon("0 0 20 20", ["M5 5l10 10M15 5L5 15"]),
   down: () => _icon("0 0 20 20", ["M10 4v11", "M5 10.5l5 5 5-5"]),
+  play: () => _icon("0 0 14 14", ["M4 2.2v9.6L11.8 7z"], true),
 };
 const _reduce = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
 const _mobile = () => !!(window.matchMedia && window.matchMedia("(max-width: 767px)").matches);
@@ -223,6 +226,9 @@ function _wireEmbedResize() {
       const atBottom = sc && (sc.scrollHeight - sc.clientHeight - sc.scrollTop) < 8;
       wrap.style.minHeight = h + "px";
       wrap.dataset.ready = "1";
+      wrap.dataset.h = String(h);
+      const art = wrap.closest(".tws-tw");
+      if (art && art._align) art._align();         // (v4.9.3) 실제 카드 높이로 번역 면 본문 자리를 다시 맞춘다
       const fb = wrap.querySelector(".lane__thread__xlink");
       if (fb) fb.remove();
       if (atBottom) sc.scrollTop = sc.scrollHeight;    // 늦게 로드된 카드 때문에 맨 아래 고정이 풀리지 않게
@@ -381,6 +387,7 @@ function _ensureSheet() {
     open: false, ck: null, from: null, sig: "", face: 0, anchor: null, watch: null, cardIO: null,
     peekT: 0, peekEl: null, peekMem: 0, pendT: [], hintT: 0, hintShown: false, chips: {}, memOn: false,
     units: [], unitEls: [], pending: [], cnt: {}, tx: 0, ty: 0, geo: null,   // (v4.9.1) 그린 글타래 · ↓ 동그라미 대기 글 · 칩 수 · PC 위치
+    unitDays: [], pos: {}, fabRaf: 0,                                        // (v4.9.3) 글타래별 날짜 · 멤버별 스크롤 자리 · 동그라미 맞추기
   };
   S = s;
   s.scrim = _el("div", { cls: "tws-scrim", on: { click: () => _close() } });
@@ -419,8 +426,9 @@ function _ensureSheet() {
   s.hread = _el("span", { cls: "tws__hread" });
   s.rzT = _el("div", { cls: "tws__rz tws__rz--t", attrs: { "aria-hidden": "true" } });
   s.rzB = _el("div", { cls: "tws__rz tws__rz--b", attrs: { "aria-hidden": "true" } }, [s.hread]);
+  s.measure = _el("div", { cls: "tws__measure", attrs: { "aria-hidden": "true" } });   // (v4.9.3) 원문 높이를 재는 숨은 칸
   s.sheet = _el("section", { cls: "tws", attrs: { role: "dialog", "aria-modal": "true", "aria-labelledby": "tws-nm", tabindex: "-1" } },
-    [s.rzT, s.grab, s.head, s.members, s.feed, s.newChip, s.fab, s.hint, s.live, s.rzB]);
+    [s.rzT, s.grab, s.head, s.members, s.feed, s.newChip, s.fab, s.hint, s.live, s.rzB, s.measure]);
   document.body.append(s.scrim, s.sheet);
 
   // 폰: 손잡이 · 머리 줄을 아래로 끌어 닫기(sheetdrag.js). PC 는 끌어 닫기 없음
@@ -442,7 +450,11 @@ function _ensureSheet() {
   });
   s.members.addEventListener("click", (e) => { if (s.memOn) { s.memOn = false; e.preventDefault(); e.stopPropagation(); } }, true);
   s.members.addEventListener("scroll", () => _fadeMembers(), { passive: true });
-  s.feed.addEventListener("scroll", () => { _fadeEdges(); _seenPending(); }, { passive: true });
+  s.feed.addEventListener("scroll", () => {
+    _fadeEdges();
+    _seenPending();
+    if (!s.fabRaf) s.fabRaf = requestAnimationFrame(() => { s.fabRaf = 0; _fabSync(); });   // (v4.9.3) 올리면 ↓ 동그라미
+  }, { passive: true });
   // (v4.9.1) PC: 머리 줄을 잡아 옮기기 · 위아래 가장자리를 끌어 높이 바꾸기(더블클릭 = 창의 90%로)
   s.head.addEventListener("pointerdown", (e) => {
     if (!s.open || _mobile() || e.button > 0) return;
@@ -495,6 +507,7 @@ function _wireGlobal() {
   window.addEventListener("resize", () => {
     if (!S) return;
     if (S.open) _geom();   // 창이 줄면 팝업 높이 · 위치를 창 안으로(폰 폭으로 넘어가면 PC 값을 지운다)
+    if (S.open) { clearTimeout(S.alignT); S.alignT = setTimeout(_alignAll, 150); }   // (v4.9.3) 폭이 바뀌면 두 면 위치를 다시
     _syncPills(true);
     _fadeEdges();
     _fadeMembers();
@@ -637,45 +650,59 @@ function _runT(el, frames, opts) {
 const _buzz = () => vibrate(10);
 
 /* ── 글(article) 하나 ─────────────────────────────────────────────────
-   두 면(번역 · X 원문)을 가로 스냅 스크롤로 잇는다. 같은 높이는 CSS(align-items: stretch). */
+   (v4.9.3) 두 면(번역 · X 원문)을 같은 칸에 겹친다. 뒤 면은 투명하게 제자리에 둔다 — 옆으로 밀어 두면 브라우저가 X 카드를
+   그리지 않아 높이 신호가 오지 않는다(10-28 실측). 바꿀 때 앞 면만 옆으로 밀려 나가며 흐려진다(겹쳐 밀기).
+   번역 면은 X 카드와 같은 뼈대 · 치수(tweetlogic XM)로 그리고, 본문 · 인용 본문 칸은 원문 높이만큼 자리를 잡아(_align)
+   넘겨도 사진 · 인용 · 시각이 같은 자리에 온다. 높이 = 두 면 중 큰 쪽(grid). */
 function _article(m, prev, isRoot, unread, now) {
   const s = S;
-  const att = L.attachments(m);
   const ms = L.tOf(m);
   const hasPosted = !!L.postedIso(m);
-  const label = (t) => prev && hasPosted ? L.replyLabel(ms, L.tOf(prev), t)
-    : hasPosted ? L.postedLabel(ms, t)
-    : L.unpostedLabel(ms);
-  const timeText = label(now);
-  const timeNode = document.createTextNode(timeText);
-  const timeKids = [prev && hasPosted ? IC.reply() : null, timeNode, unread ? _el("span", { cls: "tws-tag", text: "새 글" }) : null];
-
-  // 번역 면: 번역 텍스트 · 인용 번역 · 첨부 줄(사진 · 영상은 우리가 그리지 않는다 — 개수 글자만)
-  const koTxt = _el("p", { cls: "tws-ko__txt", text: m.text_ko || "번역 준비 중…" });
-  const koKids = [koTxt];
+  const ck = m.channel_key || s.ck;
+  const meta0 = FALLBACK_CHANNELS[ck] || {};
+  const att = L.attachments(m);
+  const own = L.mediaItems(m.media);
+  const qItems = L.mediaItems(m.quote && m.quote.media);
   const hasQuote = (q) => !!(q && (q.text || q.text_ko));
-  let quoteNode = null;
+  const timeShort = hasPosted ? L.hmLabel(ms) : L.unpostedLabel(ms);
+  const timeFull = (t) => (hasPosted ? L.fullLabel(ms, t) : L.unpostedLabel(ms));
+
+  // 번역 면: 머리 줄 → (자기 답글 줄) → 번역 본문 → 미디어 격자 → 인용 상자 → 바닥 줄(시각 · 원문 링크) — X 카드와 같은 순서
+  const av = _el("span", { cls: "tws-ko__av", attrs: { "aria-hidden": "true" } });
+  av.style.backgroundImage = _avatarImg(ck);
+  const head = _el("div", { cls: "tws-ko__head" }, [
+    av,
+    _el("div", { cls: "tws-ko__id" }, [
+      _el("div", { cls: "tws-ko__nm", text: meta0.name_ko || ck }),
+      _el("div", { cls: "tws-ko__hd", text: m.handle ? "@" + m.handle : "" }),
+    ]),
+    _el("span", { cls: "tws-ko__tag", text: "번역" }),
+  ]);
+  const koKids = [head];
+  if (m.reply_to_id) {   // X 카드의 「@핸들 님에게 보내는 답글」 줄 자리 — 바로 위 글과의 간격을 쓴다
+    koKids.push(_el("div", { cls: "tws-ko__re" }, [IC.reply(), document.createTextNode(prev && hasPosted ? "이어서 · " + L.gapLabel(ms - L.tOf(prev)) : "이어서 쓴 글")]));
+  }
+  const koTxt = _el("p", { cls: "tws-ko__txt", text: m.text_ko || "번역 준비 중…" });
+  koKids.push(koTxt);
+  const onVideo = (cell, inQuote) => goVideo(cell, inQuote);
+  const ownBox = own.length ? _grid(own, false, onVideo) : null;
+  if (ownBox) koKids.push(ownBox);
+  let quoteNode = null, koQt = null, qBox = null;
   if (hasQuote(m.quote)) {
     quoteNode = document.createTextNode(m.quote.text_ko || "번역 준비 중…");
-    koKids.push(_el("div", { cls: "tws-ko__q" }, [_el("span", { text: "인용한 글 번역" }), quoteNode]));
+    koQt = _el("div", { cls: "tws-ko__qt" }, [quoteNode]);
+    qBox = qItems.length ? _grid(qItems, true, onVideo) : null;
+    koKids.push(_el("div", { cls: "tws-ko__q" }, [_el("div", { cls: "tws-ko__qi" }, [_el("b", { cls: "tws-ko__qh", text: "인용한 글" }), koQt]), qBox]));
   }
-  const media = att.text ? _el("button", {
-    cls: "tws-tw__media", attrs: { type: "button", title: att.text, "aria-label": att.text + ", 원문에서 보기" },
-    on: { click: () => goX(true) },
-  }, [
-    att.photo ? _el("span", { cls: "tws-tw__mi" }, [IC.photo(), _el("span", { cls: "tws-tw__mn", text: String(att.photo) })]) : null,
-    att.video ? _el("span", { cls: "tws-tw__mi" }, [IC.video(), _el("span", { cls: "tws-tw__mn", text: String(att.video) })]) : null,
-  ]) : null;
-  if (att.text) {
-    koKids.push(_el("button", { cls: "tws-att", attrs: { type: "button" }, on: { click: () => goX(true) } }, [
-      _el("span", { cls: "tws-att__ic" }, [att.photo ? IC.photo() : null, att.video ? IC.video() : null]),
-      _el("span", { cls: "tws-att__txt", text: att.text }),
-      _el("span", { cls: "tws-att__go", text: "원문에서 보기 ›" }),
-    ]));
-  }
-  const ko = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "번역" } }, [_el("div", { cls: "tws-ko" }, koKids)]);
+  const timeEl = _el("span", { cls: "tws-ko__time", text: timeShort, attrs: { title: timeFull(now) } });
+  const openA = _el("a", { cls: "tws-tw__open", attrs: { target: "_blank", rel: "noopener", "aria-label": "X 에서 원문 열기" } }, [IC.x(), _el("span", { text: "원문" })]);
+  _setSrc(openA, m);
+  koKids.push(_el("div", { cls: "tws-ko__foot" }, [timeEl, openA]));
+  const ko = _el("section", { cls: "tws-tw__face is-front", attrs: { "aria-label": "번역" } }, [_el("div", { cls: "tws-ko" }, koKids)]);
+
   const xcard = _xCard(m);
-  const xface = _el("section", { cls: "tws-tw__face", attrs: { "aria-label": "X 원문 카드" } }, [xcard]);
+  const xface = _el("section", { cls: "tws-tw__face is-back", attrs: { "aria-label": "X 원문 카드", "aria-hidden": "true" } }, [xcard]);
+  xface.inert = true;
   // (v4.9.1) X 카드 덮개(PC · 마우스만, CSS 가 켠다): 카드 머리(작성자 줄)를 뺀 나머지를 투명하게 덮어 밀기 손잡이로 쓴다 —
   // X 카드는 iframe 이라 그 위에서 누른 마우스를 바깥이 받지 못한다. 끌지 않고 한 번 누르면 덮개가 비켜 카드 조작으로(.is-live),
   // 마우스가 카드를 벗어나면 다시 덮인다.
@@ -687,151 +714,270 @@ function _article(m, prev, isRoot, unread, now) {
     xcard.append(cover);
   }
   const track = _el("div", { cls: "tws-tw__track" }, [ko, xface]);
-  const dots = _el("div", { cls: "tws-tw__dots", attrs: { "aria-hidden": "true" } }, [_el("i"), _el("i")]);
-  const openA = _el("a", { cls: "tws-tw__open", attrs: { target: "_blank", rel: "noopener", "aria-label": "X 에서 열기" } }, [IC.x()]);
-  _setSrc(openA, m);
-  const meta = _el("div", { cls: "tws-tw__meta" }, [
-    _el("span", { cls: "tws-tw__time" }, timeKids),
-    media,
-    openA,
-  ]);
+  const dots = _el("div", { cls: "tws-tw__dots", attrs: { "aria-hidden": "true" } }, [_el("i", { cls: "on" }), _el("i")]);
   const art = _el("article", {
     cls: "tws-tw" + (isRoot ? " is-root" : ""),
     attrs: {
       tabindex: "0", "data-id": String(m.id), "aria-roledescription": "트윗, 좌우로 밀어 번역 · 원문 전환",
-      "aria-label": (prev ? "이어진 글, " : "") + timeText + (att.text ? ", " + att.text : ""),
+      "aria-label": (m.reply_to_id ? "이어진 글, " : "") + timeFull(now) + (unread ? ", 새 글" : "") + (att.text ? ", " + att.text : ""),
     },
-  }, [meta, track, dots]);
-  // (v4.9.1) 폴링 갱신 때 다시 그리지 않고 고친다: 시각 줄 · 번역 · 인용 번역 · 원문 링크.
-  // 첨부 개수나 인용 유무가 바뀌었으면 false — 호출한 쪽이 시트를 다시 그린다.
-  art._retime = (t) => { timeNode.nodeValue = label(t); };
+  }, [track, dots]);
+
+  /* 두 면 위치 맞추기: 본문 · 인용 본문 칸 = 원문 높이(숨은 칸으로 잼 → X 카드 높이 신호가 오면 거꾸로 계산한 값).
+     카드 자리 높이도 같은 계산으로 잡는다. 번역이 더 길어 밀린 양은 영상 글로우 자리 보정에 쓴다. */
+  const ratioOf = (box) => Number(box && box.dataset.ratio) || 0;
+  art._align = () => {
+    const w = track.clientWidth;
+    if (!w) return;
+    const cw = w - 2 * L.XM.border - 2 * L.XM.side;
+    const qT = koQt ? _measureH((m.quote && m.quote.text) || "", cw - 2 * L.XM.border - 2 * L.XM.qPad, true) : 0;
+    const p = {
+      w, reply: !!m.reply_to_id, n: own.length, ratio: ratioOf(ownBox),
+      quote: koQt ? { textH: qT, n: qItems.length, ratio: ratioOf(qBox) } : null,
+    };
+    const xh = Number(xcard.dataset.h) || 0;
+    const tH = xh ? L.xTextH(xh, p) : _measureH(m.text || "", cw, false);
+    koTxt.style.minHeight = tH + "px";
+    if (koQt) koQt.style.minHeight = qT + "px";
+    if (!xh && xcard.dataset.id) xcard.style.minHeight = L.predictCardH({ ...p, textH: tH }) + "px";
+    art._shift = Math.max(0, koTxt.offsetHeight - tH);
+    art._qshift = koQt ? Math.max(0, koQt.offsetHeight - qT) : 0;
+  };
+  // 화면 근처에 오면 번역 면 그림을 넣는다(X 카드 불러오기와 같은 때). 1칸이면 그림 크기를 읽어 비율을 정한다.
+  art._paint = () => {
+    for (const box of [ownBox, qBox]) if (box) _paintGrid(box, art);
+  };
+  // (v4.9.1) 폴링 갱신 때 다시 그리지 않고 고친다: 시각 · 번역 · 인용 번역 · 원문 링크.
+  // 미디어 · 인용 유무 · 답글 여부가 바뀌었으면 false — 호출한 쪽이 시트를 다시 그린다.
+  const mediaSig = (x) => [L.mediaItems(x.media).map((i) => i.url).join(","), L.mediaItems(x.quote && x.quote.media).map((i) => i.url).join(","), !!x.reply_to_id].join("|");
+  const sig0 = mediaSig(m);
+  art._retime = (t) => { timeEl.title = timeFull(t); };
   art._update = (m2) => {
-    if (L.attachments(m2).text !== att.text || hasQuote(m2.quote) !== !!quoteNode) return false;
+    if (mediaSig(m2) !== sig0 || hasQuote(m2.quote) !== !!quoteNode) return false;
     koTxt.textContent = m2.text_ko || "번역 준비 중…";
     if (quoteNode) quoteNode.nodeValue = m2.quote.text_ko || "번역 준비 중…";
     _setSrc(openA, m2);
     return true;
   };
 
-  let face = 0, prog = 0, st = 0, live = false, rub = 0, pastMid = false, dragOn = false;
-  const setDots = (t) => {
+  /* ── 겹쳐 밀기 ── */
+  const faces = [ko, xface];
+  let face = 0, busy = 0, pastMid = false, g = null;
+  const clearDots = () => { for (const d of dots.children) d.style.width = ""; dots.classList.remove("is-drag"); };
+  const setDots = (t) => {   // t = 원문 면 쪽으로 간 정도(0~1)
     if (_reduce() || t <= 0.001 || t >= 0.999) { clearDots(); return; }
     dots.classList.add("is-drag");
     dots.children[0].style.width = (14 - 8 * t).toFixed(2) + "px";   // A2: 끄는 동안 점 폭 연속 변화
     dots.children[1].style.width = (6 + 8 * t).toFixed(2) + "px";
   };
-  const clearDots = () => { for (const d of dots.children) d.style.width = ""; dots.classList.remove("is-drag"); };
   const pulseDot = (k) => { if (!_reduce()) dots.children[k].animate([{ transform: "scale(1.25)" }, { transform: "scale(1)" }], { duration: 120, easing: "ease-out" }); };
-  const onTrackScroll = () => {
-    if (!live) return;
-    const t = Math.min(1, Math.max(0, track.scrollLeft / Math.max(1, track.clientWidth)));
-    setDots(t);
-    const past = face === 0 ? t > 0.25 : t < 0.75;
-    if (past !== pastMid) { pastMid = past; if (past) { pulseDot(face === 0 ? 1 : 0); _buzz(); } }
-  };
-  const setRub = (v) => { rub = v; track.style.transform = v ? "translateX(" + v.toFixed(2) + "px)" : ""; };
-  const springBack = () => {
-    const from = rub;
-    setRub(0);
-    if (from && !_reduce()) _runT(track, [{ transform: "translateX(" + from.toFixed(2) + "px)" }, { transform: "translateX(0px)" }], { duration: 420, easing: SPRING });
-  };
-  const pulseX = () => {
-    const f = art.querySelector(".lane__thread__xcard");
-    if (face === 1 && f && f.animate && !_reduce()) f.animate([{ boxShadow: "0 0 0 0 transparent" }, { boxShadow: "0 0 0 4px currentColor", offset: 0.4 }, { boxShadow: "0 0 0 0 transparent" }], { duration: 700, easing: "ease-out" });
-  };
-  function setFace(i, smooth) {
-    face = i;
-    art._face = i;
-    dots.children[0].classList.toggle("on", i === 0);
-    dots.children[1].classList.toggle("on", i === 1);
+  /** 앞 · 뒤 면을 확정한다(끼어 있던 움직임 · 끄는 중 모양은 지운다) */
+  const mark = (f) => {
+    faces.forEach((x, i) => {
+      const on = i === f;
+      x.classList.toggle("is-front", on);
+      x.classList.toggle("is-back", !on);
+      x.classList.remove("is-going");
+      x.inert = !on;
+      if (on) x.removeAttribute("aria-hidden"); else x.setAttribute("aria-hidden", "true");
+      x.style.transform = "";
+      x.style.opacity = "";
+    });
+    dots.children[0].classList.toggle("on", f === 0);
+    dots.children[1].classList.toggle("on", f === 1);
     clearDots();
     pastMid = false;
-    const x = i * track.clientWidth;
-    if (Math.abs(track.scrollLeft - x) > 1) {
-      prog = Date.now();
-      track.scrollTo({ left: x, behavior: smooth && !_reduce() ? "smooth" : "auto" });
-    }
+  };
+  function setFace(i, smooth) {
+    if (busy) { clearTimeout(busy); busy = 0; mark(face); }
+    const from = face;
+    face = i;
+    art._face = i;
+    if (from === i || !smooth || _reduce()) { mark(i); return; }
+    const front = faces[from], back = faces[i];
+    front.classList.add("is-going");
+    front.style.transform = "translateX(" + (i === 1 ? -40 : 40) + "%)";
+    front.style.opacity = "0";
+    back.classList.add("is-going");
+    back.style.transform = "none";
+    back.style.opacity = "1";
+    dots.children[0].classList.toggle("on", i === 0);
+    dots.children[1].classList.toggle("on", i === 1);
+    busy = setTimeout(() => { busy = 0; mark(i); }, 300);
   }
-  /** 원문 면으로 보내고(att · 사진 버튼 · → 키), 사진 자리를 한 번 빛낸다(B1). 이미 원문이면 빛남만 */
-  function goX(smooth) {
-    if (face === 1) { pulseX(); return; }
-    setFace(1, smooth);
-    setTimeout(pulseX, 280);
+  /** 손을 놓았는데 문턱을 못 넘음 → 앞 면이 제자리로 튕겨 돌아온다 */
+  const springBack = () => {
+    const front = faces[face];
+    if (!_reduce()) { front.classList.add("is-spring"); setTimeout(() => front.classList.remove("is-spring"), 440); }
+    mark(face);
+  };
+  /** (v4.9.3) 영상 칸 → 그 글만 원문 면 + 카드의 같은 영상 칸 자리에 글로우 한 번. 사진 칸은 누르지 않는다 */
+  function goVideo(cell, inQuote) {
+    if (dragged) return;
+    let x = 0, y = 0;
+    for (let e = cell; e && e !== ko; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; }
+    y -= art._shift || 0;                       // 번역이 원문보다 길어 밀린 만큼 카드 쪽 자리로
+    if (inQuote) y -= art._qshift || 0;
+    const box = { x, y, w: cell.offsetWidth, h: cell.offsetHeight };
+    if (_coverOn()) xcard.classList.add("is-live");   // PC: 다음 한 번 누름이 바로 카드(영상 재생)에 닿게
+    setFace(1, true);
+    setTimeout(() => {
+      if (!xface.isConnected) return;
+      const gl = _el("div", { cls: "tws-glow", attrs: { "aria-hidden": "true" } });
+      Object.assign(gl.style, { left: box.x + "px", top: box.y + "px", width: box.w + "px", height: box.h + "px" });
+      xface.append(gl);
+      const done = () => gl.remove();
+      gl.addEventListener("animationend", done);
+      setTimeout(done, 1500);                  // 탭이 가려져 animationend 가 안 와도 남지 않게
+    }, _reduce() ? 0 : 300);
   }
   art._setFace = setFace;
   art._face = 0;
+  art._front = () => faces[face];
   art.addEventListener("keydown", (e) => {
     if (e.target !== art) return;
     if (e.key === "ArrowRight") { setFace(1, true); e.preventDefault(); }
     if (e.key === "ArrowLeft") { setFace(0, true); e.preventDefault(); }
   });
-  const settle = () => {
-    if (dragOn) return;
-    if (Date.now() - prog < 600 && Math.abs(track.scrollLeft - face * track.clientWidth) > 2) return;   // 프로그램 스크롤 중 보호
-    prog = 0;
-    const i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
-    if (i !== face) setFace(i, false);
-  };
-  track.addEventListener("scroll", () => { onTrackScroll(); clearTimeout(st); st = setTimeout(settle, 140); }, { passive: true });
-  track.addEventListener("scrollend", () => { clearTimeout(st); settle(); });
-
-  // 끌기: 마우스는 글 어디서나(PC 는 X 카드 덮개 위 포함), 손가락은 시각 줄 · 점 줄에서(번역 면은 브라우저 가로 스냅이 처리, X 카드 위는 iframe 이 가져간다)
-  let g = null;   // { x, y, s, on }
+  // 끌기: 마우스 · 손가락 · 펜 모두(번역 면 · 점 줄 · PC 덮개 위). 손가락이 X 카드 위면 iframe 이 가져간다.
   const ctl = {
     move(e) {
       if (!g) return;
       const dx = e.clientX - g.x, dy = e.clientY - g.y;
       if (!g.on) {
         if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
-        g.on = true; dragOn = true; dragged = true;
+        g.on = true; dragged = true;
+        if (busy) { clearTimeout(busy); busy = 0; mark(face); }
         track.classList.add("is-grabbing");
         document.body.classList.add("no-select");
       }
       window.getSelection && window.getSelection().removeAllRanges();
-      const edge = (face === 0 && dx > 0) || (face === 1 && dx < 0);   // A3: 더 갈 면이 없는 쪽
-      if (edge && !_reduce()) setRub(Math.sign(dx) * Math.min(24, Math.abs(dx) / 3));
-      else { if (rub) setRub(0); track.scrollLeft = g.s - dx; }
+      const t = dx / Math.max(1, track.clientWidth);
+      const want = face === 0 ? t < 0 : t > 0;
+      const k = Math.min(1, Math.abs(t));
+      const front = faces[face], back = faces[1 - face];
+      if (want) {
+        front.style.transform = "translateX(" + (t * 100).toFixed(2) + "%)";
+        front.style.opacity = String(Math.max(0, 1 - k * 1.2));
+        back.style.opacity = String(Math.min(1, k * 1.6));
+        back.style.transform = "scale(" + (0.985 + 0.015 * k).toFixed(4) + ")";
+      } else if (!_reduce()) {                  // A3: 더 갈 면이 없는 쪽 = 고무줄
+        front.style.transform = "translateX(" + (Math.sign(dx) * Math.min(24, Math.abs(dx) / 3)).toFixed(2) + "px)";
+      }
+      setDots(want ? (face === 0 ? k : 1 - k) : face);
+      const past = want && k > 0.25;
+      if (past !== pastMid) { pastMid = past; if (past) { pulseDot(1 - face); _buzz(); } }
+      g.t = t;
     },
     up() {
-      const was = g && g.on;
+      const was = g && g.on, t = g ? g.t || 0 : 0;
       g = null;
-      live = false;
       if (_drag === ctl) _drag = null;
       if (!was) return;
-      dragOn = false;
-      setTimeout(() => { dragged = false; }, 0);   // 끈 직후 덮개에 떨어지는 click 한 번은 「카드 조작」으로 치지 않는다
-      const r = track.scrollLeft / Math.max(1, track.clientWidth);   // 스냅을 되돌리기 전에 뗀 위치를 읽는다
-      const to = r > (face ? 0.75 : 0.25) ? 1 : 0;
+      setTimeout(() => { dragged = false; }, 0);   // 끈 직후 덮개 · 영상 칸에 떨어지는 click 한 번은 무시
       track.classList.remove("is-grabbing");
       document.body.classList.remove("no-select");
       window.getSelection && window.getSelection().removeAllRanges();
-      springBack();
+      const to = L.swipeTo(face, t);
+      if (to === face) { springBack(); return; }
       setFace(to, true);
       if (to === 1 && !S.hintShown) {
         S.hintShown = true;
         _hint(_coverOn() ? "카드를 옆으로 끌면 번역으로 돌아와요. 카드 속 영상 · 링크는 한 번 누른 뒤 다시 누르세요."
-          : "X 카드 위에서는 밀기가 X 화면으로 가요. 글 위 시각 줄이나 아래 점 줄을 밀면 번역으로 돌아와요.");
+          : "X 카드 위에서는 밀기가 X 화면으로 가요. 아래 점 줄을 밀면 번역으로 돌아와요.");
       }
     },
-    cancel() { g = null; live = false; dragOn = false; if (_drag === ctl) _drag = null; },
+    cancel() {
+      const was = g && g.on;
+      g = null;
+      if (_drag === ctl) _drag = null;
+      if (!was) return;
+      dragged = false;
+      track.classList.remove("is-grabbing");
+      document.body.classList.remove("no-select");
+      mark(face);
+    },
   };
   const startDrag = (e) => {
-    live = true;
-    _stopT(track);
-    if (e.button > 0 || e.target.closest("button, a")) return;
-    g = { x: e.clientX, y: e.clientY, s: track.scrollLeft, on: false };
+    _stopT(faces[face]);
+    if (e.button > 0 || (e.target instanceof Element && e.target.closest("a"))) return;
+    g = { x: e.clientX, y: e.clientY, on: false };
     _drag = ctl;
   };
-  track.addEventListener("pointerdown", (e) => { if (e.pointerType === "mouse") startDrag(e); else { live = true; _stopT(track); } });
-  track.addEventListener("pointerup", () => { live = false; });
-  track.addEventListener("pointercancel", () => { live = false; });
-  meta.addEventListener("pointerdown", startDrag);
+  track.addEventListener("pointerdown", startDrag);
   dots.addEventListener("pointerdown", startDrag);
+  track.addEventListener("click", (e) => { if (dragged) { e.preventDefault(); e.stopPropagation(); } }, true);
+  // 트랙패드 가로: 가로로 60px 넘게 모이면 한 번 넘기고 400ms 쉰다(세로 휠은 피드 스크롤로)
+  let acc = 0, rest = 0, accT = 0;
+  track.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    const t0 = Date.now();
+    if (t0 < rest) return;
+    if (t0 - accT > 250) acc = 0;
+    accT = t0;
+    acc += e.deltaX;
+    if (Math.abs(acc) > 60) { setFace(acc > 0 ? 1 : 0, true); acc = 0; rest = t0 + 400; }
+  }, { passive: false });
   return art;
+}
+/** 미디어 격자. 사진 = div[role=img](누르지 않음), 영상 = button(▶ — 누르면 원문 카드의 같은 칸으로).
+ *  그림은 화면 근처에 올 때 넣는다(_paintGrid). 내려받기 막기: <img> 를 쓰지 않고 배경 그림 + 우클릭 · 끌기 막기 */
+function _grid(items, inQuote, onVideo) {
+  const g = L.gridOf(items.length);
+  const box = _el("div", { cls: "tws-md " + g.cls });
+  box.addEventListener("contextmenu", (e) => e.preventDefault());
+  box.addEventListener("dragstart", (e) => e.preventDefault());
+  items.slice(0, g.shown).forEach((it, i) => {
+    const cell = it.video
+      ? _el("button", { cls: "tws-md__cell is-video", attrs: { type: "button", "aria-label": "영상, 원문 카드에서 재생" } }, [_el("span", { cls: "tws-md__play", attrs: { "aria-hidden": "true" } }, [IC.play()])])
+      : _el("div", { cls: "tws-md__cell", attrs: { role: "img", "aria-label": "사진" } });
+    cell.dataset.src = L.smallUrl(it.url);
+    if (i === 3 && g.more) cell.append(_el("span", { cls: "tws-md__more", text: "+" + g.more, attrs: { "aria-hidden": "true" } }));
+    if (it.video) cell.addEventListener("click", () => onVideo(cell, inQuote));
+    box.append(cell);
+  });
+  return box;
+}
+function _paintGrid(box, art) {
+  for (const cell of box.querySelectorAll(".tws-md__cell[data-src]")) {
+    cell.style.backgroundImage = `url("${cell.dataset.src.replace(/["\\]/g, "")}")`;
+    cell.dataset.painted = cell.dataset.src;
+    cell.removeAttribute("data-src");
+  }
+  if (!box.classList.contains("g1") || box.dataset.ratio) return;
+  const src = box.firstElementChild && box.firstElementChild.dataset.painted;
+  if (!src) return;
+  const im = new Image();                     // 크기만 읽는다(화면에는 두지 않는다)
+  im.onload = () => {
+    const r = L.singleRatio(im.naturalWidth, im.naturalHeight);
+    box.dataset.ratio = String(r);
+    _keepBottom(() => { box.style.aspectRatio = String(r); if (art._align) art._align(); });
+  };
+  im.src = src;
+}
+/** 원문 높이를 X 카드와 같은 글꼴 · 크기 · 폭으로 잰다(숨은 칸 — 화면에 그리지 않는다). quote = 인용 본문(15px/20px) */
+function _measureH(text, width, quote) {
+  const el = S && S.measure;
+  if (!el || !text || !(width > 0)) return 0;
+  el.className = "tws__measure" + (quote ? " is-quote" : "");
+  el.style.width = width + "px";
+  el.textContent = text;
+  const h = Math.ceil(el.getBoundingClientRect().height);
+  el.textContent = "";
+  return h;
+}
+/** 피드가 맨 아래였으면 fn(높이를 바꾸는 일) 뒤에도 맨 아래를 지킨다 */
+function _keepBottom(fn) {
+  const f = S && S.feed;
+  const was = !!f && f.scrollHeight - f.clientHeight - f.scrollTop < 8;
+  fn();
+  if (was && S.open) f.scrollTop = f.scrollHeight;
 }
 
 /* ── 피드 그리기 ───────────────────────────────────────────────────── */
-/** 시트 목록을 다시 그린다. keep = 폴링으로 갱신 — 각 글의 면 · 피드 스크롤 위치를 유지한다. */
+/** 시트 목록을 다시 그린다. fresh = 열 때 · 멤버를 바꿀 때(v4.9.3: 처음이면 맨 아래, 다시 온 멤버면 기억한 자리),
+ *  아니면 폴링으로 갱신 — 각 글의 면 · 피드 스크롤 위치를 유지한다. */
 function _renderFeed(fresh) {
   const s = S;
   const feed = s.feed;
@@ -871,8 +1017,9 @@ function _renderFeed(fresh) {
   s.anchor = anchorEl;
   s.units = units.map((u) => u.map((m) => String(m.id)));   // (v4.9.1) 다음 폴링 때 새 글만 끼우려고 그린 모양을 기억
   s.unitEls = unitEls;
+  s.unitDays = units.map((u) => L.dayLabel(L.tOf(u[u.length - 1])));
+  _days();
   s.pending = [];
-  _fab(0);
   s.newChip.textContent = "새 글 " + _unreadCount(list, rd) + "개 ↓";
   s.newChip.classList.remove("is-on");
   requestAnimationFrame(() => {
@@ -880,12 +1027,47 @@ function _renderFeed(fresh) {
     for (const a of arts) {
       const want = faces.has(a.dataset.id) ? faces.get(a.dataset.id) : s.face;
       a._setFace(want, false);
+      a._align();
     }
-    if (fresh) feed.scrollTop = anchorEl ? anchorEl.getBoundingClientRect().top - feed.getBoundingClientRect().top + feed.scrollTop - 10 : feed.scrollHeight;
-    else feed.scrollTop = prevTop;
+    if (fresh) {
+      // (v4.9.3) 처음이면 맨 아래 — 「여기부터 새 글」 선은 표시만. 이 멤버를 연 동안 다시 왔으면 기억한 자리
+      const tgt = L.restoreTarget(s.pos[s.ck], arts.map((a) => a.dataset.id));
+      const el = tgt && feed.querySelector(`.tws-tw[data-id="${CSS.escape(tgt.id)}"]`);
+      feed.scrollTop = el ? el.getBoundingClientRect().top - feed.getBoundingClientRect().top + feed.scrollTop + tgt.off : feed.scrollHeight;
+    } else feed.scrollTop = prevTop;
     _fadeEdges();
     _watch();
+    _fabSync();
   });
+}
+/** (v4.9.3) 날짜 구분선 — 날짜가 바뀌는 글타래 앞에(「여기부터 새 글」 선이 바로 앞이면 그 선 앞에) */
+function _days() {
+  const s = S;
+  for (const d of s.feed.querySelectorAll(".tws__day")) d.remove();
+  let prev = "";
+  s.unitEls.forEach((el, i) => {
+    const d = s.unitDays[i];
+    if (!el || d === prev) return;
+    prev = d;
+    const at = s.anchor && el.previousElementSibling === s.anchor ? s.anchor : el;
+    at.before(_el("div", { cls: "tws__day", text: d, attrs: { role: "separator" } }));
+  });
+}
+/** (v4.9.3) 멤버를 떠날 때 지금 자리를 기억한다 — 맨 아래면 맨 아래, 아니면 위 가장자리에 걸친 글 + 어긋남 */
+function _savePos() {
+  const s = S, f = s.feed;
+  if (!s.ck) return;
+  if (_atBottom()) { s.pos[s.ck] = { bottom: true }; return; }
+  const top = f.getBoundingClientRect().top;
+  for (const a of f.querySelectorAll(".tws-tw")) {
+    const r = a.getBoundingClientRect();
+    if (r.bottom > top + 1) { s.pos[s.ck] = { id: a.dataset.id, off: top - r.top }; return; }
+  }
+}
+/** (v4.9.3) 그린 글 전부 두 면 위치를 다시 맞춘다(창 폭이 바뀌었을 때) */
+function _alignAll() {
+  if (!S || !S.open) return;
+  _keepBottom(() => { for (const a of S.feed.querySelectorAll(".tws-tw")) if (a._align) a._align(); });
 }
 function _chainWrap(n) {
   return _el("div", { cls: "tws-chain" + (_reduce() ? "" : " wait"), attrs: { role: "group", "aria-label": `글타래: 원글과 이어진 글 ${n - 1}개` } });
@@ -934,6 +1116,7 @@ function _patchFeed(list) {
   });
   // 순서 맞추기: 제자리(keep)가 아닌 옛 글타래만 떼었다 다시 끼운다. 「여기부터 새 글」 선은 바로 뒤 글타래를 따라간다
   const anchorFor = s.anchor && s.anchor.parentNode === feed ? s.anchor.nextElementSibling : null;
+  for (const d of feed.querySelectorAll(".tws__day")) d.remove();   // (v4.9.3) 순서를 맞춘 뒤 다시 넣는다
   for (const { el, keep } of els) if (!keep && el.parentNode === feed) el.remove();
   let cur = null;
   const put = (node) => {
@@ -944,10 +1127,12 @@ function _patchFeed(list) {
   for (const { el } of els) { if (el === anchorFor) put(s.anchor); put(el); }
   s.units = units.map((u) => u.map((m) => String(m.id)));
   s.unitEls = els.map((x) => x.el);
+  s.unitDays = units.map((u) => L.dayLabel(L.tOf(u[u.length - 1])));
+  _days();
   _observe(added, newWraps);
   requestAnimationFrame(() => {
     if (!S || !S.open) return;
-    for (const a of added) a._setFace(s.face, false);
+    for (const a of added) { a._setFace(s.face, false); a._align(); }
     _arrive(added, wasBottom);
     _fadeEdges();
   });
@@ -962,7 +1147,7 @@ function _observe(arts, wraps) {
   const s = S;
   if (!s.watch || !s.cardIO) {
     for (const w of wraps) w.classList.remove("wait");
-    for (const a of arts) a.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard);
+    for (const a of arts) { a.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard); if (a._paint) a._paint(); }
     return;
   }
   for (const w of wraps) if (w.classList.contains("wait")) s.watch.observe(w);
@@ -985,7 +1170,7 @@ function _arrive(arts, wasBottom) {
     else if (r.bottom > fr.top) _anim(a, "is-arriving"); // 화면 안에 끼어든 글은 그 자리에서 올라온다
   }
   if (s.pending.length) {
-    _fab(s.pending.length, true);
+    _fabSync(true);
     _say(`${name} 새 글 ${s.pending.length}개 — 맨 아래로 버튼으로 이동`);
   }
 }
@@ -997,25 +1182,39 @@ function _anim(el, cls) {
   const done = (e) => { if (e.target !== el) return; el.classList.remove(cls); el.removeEventListener("animationend", done); };
   el.addEventListener("animationend", done);
 }
-/** ↓ 동그라미: n = 기다리는 새 글 수(0 = 거둔다). bump = 수가 늘 때 숫자를 톡 키운다 */
-function _fab(n, bump) {
-  const s = S, f = s.fab;
-  if (!n) {
+/** ↓ 동그라미 맞추기(v4.9.3): 기다리는 새 글이 있으면 숫자 · 흔들기(.is-count), 없어도 맨 아래에서 160px 넘게 올라가 있으면
+ *  「맨 아래로」만, 아니면 거둔다(L.fabMode). bump = 수가 늘 때 숫자를 톡 키운다 */
+function _fabSync(bump) {
+  const s = S, f = s.fab, n = s.pending.length;
+  const mode = L.fabMode(s.feed.scrollHeight - s.feed.clientHeight - s.feed.scrollTop, n);
+  if (mode === "off") {
     if (document.activeElement === f) s.sheet.focus({ preventScroll: true });
-    f.classList.remove("is-on");
+    f.classList.remove("is-on", "is-count");
     f.tabIndex = -1;
     return;
   }
-  s.fabN.textContent = String(n);
-  f.setAttribute("aria-label", `새 글 ${n}개, 맨 아래로`);
+  const was = Number(s.fabN.textContent) || 0;
+  f.classList.toggle("is-count", mode === "count");
+  s.fabN.textContent = mode === "count" ? String(n) : "";
+  f.setAttribute("aria-label", mode === "count" ? `새 글 ${n}개, 맨 아래로` : "맨 아래로");
   f.tabIndex = 0;
-  s.newChip.classList.remove("is-on");   // 「새 글 N개 ↓」 칩과 겹치지 않게 — 동그라미가 우선
+  if (mode === "count") s.newChip.classList.remove("is-on");   // 「새 글 N개 ↓」 칩과 겹치지 않게 — 숫자 동그라미가 우선
   if (!f.classList.contains("is-on")) f.classList.add("is-on");
-  else if (bump) _pop(s.fabN);
+  else if (bump && mode === "count" && n > was) _pop(s.fabN);
 }
 function _toBottom() {
   const f = S.feed;
   f.scrollTo({ top: f.scrollHeight, behavior: _reduce() ? "auto" : "smooth" });
+  // (v4.9.3) 내려가는 동안 지나친 X 카드가 실제 높이로 커지면 바닥이 밀린다 — 다 내려간 뒤 한 번 더 맨 아래로
+  let done = false;
+  const fin = () => {
+    if (done) return;
+    done = true;
+    f.removeEventListener("scrollend", fin);
+    if (S.open && f.scrollHeight - f.clientHeight - f.scrollTop > 8) f.scrollTop = f.scrollHeight;
+  };
+  f.addEventListener("scrollend", fin);
+  setTimeout(fin, 1200);   // scrollend 를 모르는 브라우저
 }
 /** 맨 아래까지 내려와 기다리던 새 글을 만났다 — 어느 글이 새로 왔는지 테두리를 한 번 빛내고 동그라미를 거둔다 */
 function _seenPending() {
@@ -1023,7 +1222,7 @@ function _seenPending() {
   if (!s.pending.length || !_atBottom()) return;
   for (const a of s.pending) if (a.isConnected) _anim(a, "is-fresh");
   s.pending = [];
-  _fab(0);
+  _fabSync();
 }
 function _say(text) {
   const el = S.live;
@@ -1036,14 +1235,14 @@ function _watch() {
   const s = S;
   if (typeof IntersectionObserver === "undefined") {
     s.feed.querySelectorAll(".tws-chain").forEach((c) => c.classList.remove("wait"));
-    s.feed.querySelectorAll(".tws-tw").forEach((a) => a.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard));
+    s.feed.querySelectorAll(".tws-tw").forEach((a) => { a.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard); if (a._paint) a._paint(); });
     return;
   }
   s.watch = new IntersectionObserver((entries) => {
     for (const en of entries) {
       const el = en.target;
       if (el === s.anchor) {
-        s.newChip.classList.toggle("is-on", !s.fab.classList.contains("is-on") && !en.isIntersecting && !!en.rootBounds && en.boundingClientRect.top >= en.rootBounds.bottom);
+        s.newChip.classList.toggle("is-on", !s.fab.classList.contains("is-count") && !en.isIntersecting && !!en.rootBounds && en.boundingClientRect.top >= en.rootBounds.bottom);
         continue;
       }
       if (!en.isIntersecting) continue;
@@ -1061,6 +1260,7 @@ function _watch() {
       if (!en.isIntersecting) continue;
       s.cardIO.unobserve(en.target);
       en.target.querySelectorAll(".lane__thread__xcard[data-id]").forEach(_loadCard);
+      if (en.target._paint) en.target._paint();   // (v4.9.3) 번역 면 사진 · 영상 썸네일도 이때
     }
   }, { root: s.feed, rootMargin: "100% 0px" });   // 화면 위아래 한 화면 안쪽의 글만 — 원문 면이 가로로 밀려 있어도 글 자체를 본다
   for (const a of s.feed.querySelectorAll(".tws-tw")) s.cardIO.observe(a);
@@ -1103,7 +1303,7 @@ function _peek() {
     s.peekT = 0;
     const fr = s.feed.getBoundingClientRect();
     const art = [...s.feed.querySelectorAll(".tws-tw")].find((a) => { const r = a.getBoundingClientRect(); return r.bottom > fr.top + 8 && r.top < fr.bottom - 8; });
-    const tr = art && art.querySelector(".tws-tw__track");
+    const tr = art && art._front && art._front();   // (v4.9.3) 겹쳐 밀기 — 앞 면만 엿본다
     if (!tr || !s.open) return;
     s.peekEl = tr;
     _runT(tr, [{ transform: "translateX(0px)" }, { transform: "translateX(-24px)", offset: 0.5 }, { transform: "translateX(0px)" }], { duration: 260, easing: EASE });
@@ -1128,6 +1328,7 @@ function _open(ck, from) {
   s.face = _getFace();
   s.sig = L.sigOf(list);
   s.cnt = {};
+  s.pos = {};                  // (v4.9.3) 멤버별 스크롤 자리는 연 동안만 기억
   s.tx = 0; s.ty = 0;          // 위치는 열 때마다 가운데, 높이만 기억(mew:twh)
   _head();
   _members(true);
@@ -1159,7 +1360,8 @@ function _close() {
   _cancelPeek();
   s.newChip.classList.remove("is-on");
   s.pending = [];
-  _fab(0);
+  s.fab.classList.remove("is-on", "is-count");
+  s.fab.tabIndex = -1;
   if (s.watch) { s.watch.disconnect(); s.watch = null; }
   if (s.cardIO) { s.cardIO.disconnect(); s.cardIO = null; }
   _stopCards(s.feed);                                  // 닫으면 X 카드(재생 중인 영상 포함) 를 지운다
@@ -1193,6 +1395,7 @@ function _switchTo(ck) {
   if (!(_visible(_st.data)[ck] || []).length) return;
   const keys = FALLBACK_CHANNEL_ORDER;
   const dir = keys.indexOf(ck) > keys.indexOf(s.ck) ? 1 : -1;
+  _savePos();                                          // (v4.9.3) 돌아오면 이 자리로
   _markReadAll(_visible(_st.data)[s.ck] || []);        // 멤버를 바꾸면 그 전 멤버는 읽음
   s.ck = ck;
   s.sig = L.sigOf(_visible(_st.data)[ck] || []);

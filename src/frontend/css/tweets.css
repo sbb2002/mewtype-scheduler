@@ -317,7 +317,7 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 .tws__feed {
   --ft: 12px; --fb: 16px;
   position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  padding: 12px 14px 22px; display: flex; flex-direction: column; gap: 16px;
+  padding: 12px 14px 22px; display: flex; flex-direction: column; gap: 12px;
   scrollbar-width: thin; scrollbar-color: var(--ln) transparent;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ft), #000 calc(100% - var(--fb)), transparent 100%);
@@ -343,76 +343,123 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 .tws-chain.draw::before { animation: tws-chain 480ms var(--ease) both; }
 @keyframes tws-chain { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 
+/* (v4.9.3) 날짜 구분선 — 메신저처럼 가운데 작은 알약 */
+.tws__day {
+  align-self: center; font-size: 11.5px; font-weight: 700; color: var(--sub); background: var(--s1);
+  border-radius: 999px; padding: 2px 10px; font-variant-numeric: tabular-nums;
+}
+
 /* 글 하나 */
-.tws-tw { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.tws-tw { position: relative; display: flex; flex-direction: column; gap: 4px; }
 .tws-tw:focus-visible { outline: 2px solid var(--mi); outline-offset: 3px; border-radius: 12px; }   /* C4 */
 .tws-chain .tws-tw::before {
-  content: ""; position: absolute; left: -15px; top: 9px; width: 8px; height: 8px; border-radius: 50%;
+  content: ""; position: absolute; left: -15px; top: 18px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--mi); box-shadow: 0 0 0 3px var(--m);
 }
 .tws-chain .tws-tw.is-root::before { background: var(--m); border: 2px solid var(--mi); }
-.tws-tw__meta { display: flex; align-items: center; gap: 6px; min-height: 28px; touch-action: pan-y; cursor: grab; }
-.tws-tw__time {
-  font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; display: flex; align-items: center; gap: 4px;
-}
-.tws-tw__time svg { width: 13px; height: 13px; flex: none; }
-.tws-tag { font-size: 10.5px; font-weight: 800; color: #fff; background: #e5484d; border-radius: 6px; padding: 0 5px; margin-left: 2px; }
-/* 시각 줄의 사진 · 영상 버튼(아이콘 + 수). 누르면 그 글만 원문 면 */
-.tws-tw__media {
-  display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-width: 28px; min-height: 28px;
-  padding: 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--mi); cursor: pointer; flex: none;
-  font: inherit; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
-  transition: transform var(--t-fast) var(--ease), background var(--t-fast);
-}
-.tws-tw__media:hover { background: var(--s1); }
-.tws-tw__media:active { transform: scale(0.96); }
-.tws-tw__media:focus-visible { outline: 2px solid var(--mi); outline-offset: 2px; }
-.tws-tw__mi { display: inline-flex; align-items: center; gap: 3px; }
-.tws-tw__media svg { width: 14px; height: 14px; }
 .tws-tw__open {
-  width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--sub); flex: none;
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border-radius: 6px;
+  color: var(--sub); text-decoration: none; font-size: 12px; font-weight: 700; flex: none;
 }
 .tws-tw__open:hover { background: var(--s1); color: var(--mi); }
-.tws-tw__open svg { width: 14px; height: 14px; }
+.tws-tw__open svg { width: 12px; height: 12px; }
 .tws-tw__open.is-disabled { pointer-events: none; opacity: 0.4; }
 
-/* 두 면: 가로 스냅 스크롤. 늘 같은 높이(align-items: stretch — 큰 쪽에 맞춘다, U3) */
-.tws-tw__track {
-  display: flex; align-items: stretch; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain; scrollbar-width: none; border-radius: 14px; cursor: grab;
+/* (v4.9.3) 두 면 겹쳐 밀기: 같은 칸(grid)에 겹친다. 높이 = 큰 쪽(U3). 뒤 면은 투명하게 제자리 — 옆으로 밀어 두면 X 카드가 그려지지 않는다.
+   바꿀 때 앞 면만 옆으로 밀려 나가며 흐려진다(tweets.js 가 transform · opacity 를 넣고 300ms 뒤 앞 · 뒤를 바꾼다) */
+.tws-tw__track { display: grid; border-radius: 14px; overflow: hidden; cursor: grab; touch-action: pan-y; }
+.tws-tw__track.is-grabbing { cursor: grabbing; }
+.tws-tw__face {
+  grid-area: 1 / 1; min-width: 0; position: relative; display: flex; flex-direction: column;
+  transition: transform var(--t-face) var(--ease), opacity var(--t-face) ease;
 }
-.tws-tw__track::-webkit-scrollbar { display: none; }
-.tws-tw__track.is-grabbing { cursor: grabbing; scroll-snap-type: none; }
-.tws-tw__face { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; display: flex; flex-direction: column; }
+.tws-tw__face.is-front { z-index: 1; }
+.tws-tw__face.is-back { opacity: 0; pointer-events: none; transform: scale(0.985); }
+.tws-tw__face.is-spring { transition: transform 0.42s cubic-bezier(0.25, 1.4, 0.45, 1), opacity var(--t-face) ease; }
+.tws-tw__track.is-grabbing .tws-tw__face { transition: none; }
+
+/* (v4.9.3) 번역 면 = X 카드와 같은 뼈대 · 치수(tweetlogic XM — 테두리 1 · 위 12 · 옆 16 · 머리 줄 48 · 사이 12 · 시각 줄 앞 8).
+   본문 · 인용 본문 칸의 높이(min-height)는 tweets.js 가 원문 높이에 맞춘다 — 넘겨도 사진 · 인용 · 시각이 같은 자리 */
 .tws-ko {
-  flex: 1; display: flex; flex-direction: column; gap: 10px; background: var(--paper);
-  border: 1px solid var(--ln); border-radius: 14px; padding: 12px 14px;
+  flex: 1; display: flex; flex-direction: column; background: var(--paper);
+  border: 1px solid var(--ln); border-radius: 12px; padding: 12px 16px 12px;
 }
+.tws-ko__head { height: 48px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tws-ko__av {
+  width: 40px; height: 40px; border-radius: 50%; flex: none; margin: 0 4px;
+  background: var(--color-img, #111) center / cover no-repeat; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--mi) 40%, transparent);
+}
+.tws-ko__id { flex: 1; min-width: 0; line-height: 20px; }
+.tws-ko__nm { font-size: 14.5px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tws-ko__hd { font-size: 12.5px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tws-ko__tag { flex: none; font-size: 11px; font-weight: 800; border: 1px solid var(--ln); border-radius: 6px; padding: 0 6px; line-height: 18px; }
+.tws-ko__re {   /* X 카드의 「@핸들 님에게 보내는 답글」 줄 자리(24px) */
+  margin-top: 12px; height: 24px; display: flex; align-items: center; gap: 4px;
+  font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden;
+}
+.tws-ko__re svg { width: 13px; height: 13px; flex: none; }
 .tws-ko__txt {
-  margin: 0; font-size: 15.5px; line-height: 1.68; white-space: pre-wrap; word-break: keep-all;
+  margin: 12px 0 0; font-size: 15.5px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all;
   overflow-wrap: anywhere; line-break: strict;
 }
-.tws-ko__q {
-  padding: 9px 11px; border-radius: 10px; border: 1px solid var(--ln); background: transparent;
-  font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; line-break: strict;
+.tws-ko__re + .tws-ko__txt { margin-top: 0; }
+.tws-ko > .tws-md { margin-top: 12px; }
+.tws-ko__q { margin-top: 12px; border: 1px solid var(--ln); border-radius: 12px; overflow: hidden; }
+.tws-ko__qi { padding: 12px; }
+.tws-ko__qh { display: block; height: 20px; line-height: 20px; font-size: 12px; font-weight: 800; }
+.tws-ko__qt {
+  margin-top: 6px; font-size: 14px; line-height: 20px; white-space: pre-wrap; word-break: keep-all;
+  overflow-wrap: anywhere; line-break: strict;
 }
-.tws-ko__q span { display: block; font-size: 11px; font-weight: 800; margin-bottom: 2px; }
-/* 첨부 줄 — 번역 면엔 사진 · 영상을 안 그리므로(원문 미디어는 X 카드로만) 있다는 것만 알리고 원문 면으로 */
-.tws-att {
-  margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
-  border: 1px dashed color-mix(in srgb, var(--mi) 45%, transparent); background: color-mix(in srgb, var(--mi) 8%, transparent);
-  color: inherit; cursor: pointer; text-align: left; width: 100%; font: inherit; font-size: 13px;
-  transition: transform var(--t-fast) var(--ease);
+.tws-ko__foot { margin-top: 8px; height: 20px; display: flex; align-items: center; gap: 8px; }
+.tws-ko__time { font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; }
+
+/* (v4.9.3) 미디어 격자 — X 카드 실측: 2~4칸 = 16:9 묶음 · 1칸 = 원래 비율(세로는 정사각형, tweets.js 가 aspect-ratio) ·
+   칸 사이 2px · 테두리 1px · 모서리 12px. 인용 상자 안은 아래에 가장자리까지 붙인다.
+   내려받기 막기: <img> 대신 배경 그림, 선택 · iOS 길게 누르기 메뉴 끔(우클릭 · 끌기는 tweets.js) */
+.tws-md {
+  display: grid; gap: 2px; aspect-ratio: 16 / 9; border: 1px solid var(--ln); border-radius: 12px; overflow: hidden;
+  background: color-mix(in srgb, var(--mi) 10%, transparent);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
-.tws-att:hover { background: var(--s2); }
-.tws-att:active { transform: scale(0.98); }   /* B1: 누르는 느낌 */
-.tws-att__ic { display: inline-flex; gap: 3px; flex: none; }
-.tws-att__ic svg { width: 16px; height: 16px; }
-.tws-att__txt { flex: 1; min-width: 0; font-weight: 700; }
-.tws-att__go { flex: none; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.tws-ko__q .tws-md { border: 0; border-radius: 0; }
+.tws-md.g2 { grid-template-columns: 1fr 1fr; }
+.tws-md.g3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tws-md.g3 > :first-child { grid-row: 1 / 3; }
+.tws-md.g4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.tws-md__cell {
+  position: relative; min-width: 0; min-height: 0; border: 0; padding: 0; margin: 0; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--mi) 12%, transparent) center / cover no-repeat; color: #fff; font: inherit;
+}
+button.tws-md__cell { cursor: pointer; }
+button.tws-md__cell:focus-visible { outline: 2px solid var(--mi); outline-offset: -3px; }
+.tws-md__play {   /* 영상 ▶ — 시트 톤(멤버 색을 어둡게 + 흰 테) */
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--m) 70%, #000); box-shadow: 0 0 0 2px #fff; transition: transform var(--t-fast) var(--ease);
+}
+.tws-md__play svg { width: 18px; height: 18px; margin-left: 3px; }
+button.tws-md__cell:hover .tws-md__play { transform: scale(1.06); }
+button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
+.tws-md__more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); font-size: 20px; font-weight: 800; }
+
+/* (v4.9.3) 영상 칸을 누르면 원문 카드의 같은 영상 칸 자리에 글로우 한 번(멤버 색 · 약하게). 카드 위에 겹치고 누름은 통과 */
+.tws-glow {
+  position: absolute; z-index: 4; pointer-events: none; border-radius: 4px; opacity: 0;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--m) 80%, #fff), 0 0 8px 1px color-mix(in srgb, var(--m) 60%, transparent);
+  animation: tws-glow 650ms ease-out forwards;
+}
+@keyframes tws-glow { 0% { opacity: 0; } 35% { opacity: 0.8; } 100% { opacity: 0; } }
+
+/* (v4.9.3) 원문 높이를 재는 숨은 칸 — X 카드 본문과 같은 시스템 글꼴 · 크기(본문 20/24 · 인용 15/20). 화면에 그리지 않는다 */
+.tws__measure {
+  position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none; contain: layout style;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 20px; line-height: 24px; white-space: pre-wrap; overflow-wrap: break-word;
+}
+.tws__measure.is-quote { font-size: 15px; line-height: 20px; }
+
 /* 면 점 2개(끌기 손잡이 겸 — A2: 끄는 동안 폭이 따라간다) */
-.tws-tw__dots { display: flex; justify-content: center; align-items: center; gap: 5px; height: 18px; margin-top: -2px; touch-action: pan-y; cursor: grab; }
+.tws-tw__dots { display: flex; justify-content: center; align-items: center; gap: 5px; height: 20px; touch-action: pan-y; cursor: grab; }
 .tws-tw__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--mi); opacity: 0.35; transition: width var(--t-fast), opacity var(--t-fast); }
 .tws-tw__dots i.on { width: 14px; border-radius: 3px; opacity: 0.9; }
 .tws-tw__dots.is-drag i { transition: none; }
@@ -466,9 +513,10 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 }
 .tws__fab-in svg { width: 20px; height: 20px; }
 .tws__fab-in svg path { stroke-width: 2.2; }
-.tws__fab.is-on .tws__fab-in { animation: tws-wobble 2.8s ease-in-out 0.7s infinite; }
-.tws__fab.is-on .tws__fab-in::before { animation: tws-halo 2.8s ease-out 0.7s infinite; }
-.tws__fab.is-on .tws__fab-in svg { animation: tws-nudge 2.8s ease-in-out 0.7s infinite; }
+/* (v4.9.3) 흔들기 · 숫자는 기다리는 새 글이 있을 때만(.is-count). 그냥 올렸을 때는 조용한 「맨 아래로」 */
+.tws__fab.is-on.is-count .tws__fab-in { animation: tws-wobble 2.8s ease-in-out 0.7s infinite; }
+.tws__fab.is-on.is-count .tws__fab-in::before { animation: tws-halo 2.8s ease-out 0.7s infinite; }
+.tws__fab.is-on.is-count .tws__fab-in svg { animation: tws-nudge 2.8s ease-in-out 0.7s infinite; }
 .tws__fab:hover .tws__fab-in, .tws__fab:focus-visible .tws__fab-in,
 .tws__fab:hover .tws__fab-in::before, .tws__fab:hover .tws__fab-in svg { animation-play-state: paused; }
 .tws__fab:hover .tws__fab-in { transform: scale(1.07); }
@@ -477,9 +525,10 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 .tws__fab:focus-visible .tws__fab-in { outline: 2px solid var(--mi); outline-offset: 3px; }
 .tws__fab-n {
   position: absolute; right: -4px; top: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
-  background: #e5484d; color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center;
+  background: #e5484d; color: #fff; font-size: 11px; font-weight: 800; display: none; place-items: center;
   font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--m);
 }
+.tws__fab.is-count .tws__fab-n { display: grid; }
 @keyframes tws-wobble {
   0%, 44%, 100% { transform: none; }
   6% { transform: translateY(2px) rotate(-8deg); }
@@ -497,7 +546,7 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
    마우스가 카드를 벗어나면 다시 덮인다. 「X에서 보기」 대체 링크가 떠 있으면 덮지 않는다. */
 .tws-xcover { display: none; }
 @media (min-width: 768px) and (hover: hover) and (pointer: fine) {
-  .tws .lane__thread__xcard { --xhead: 64px; }
+  .tws .lane__thread__xcard { --xhead: 64px; }   /* X 카드 머리 줄 = 위 13 + 48 (10-28 실측) */
   .tws-xcover { display: block; position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; top: var(--xhead); cursor: grab; }
   .tws-tw__track.is-grabbing .tws-xcover { cursor: grabbing; }
   .lane__thread__xcard.is-live .tws-xcover { pointer-events: none; }
@@ -606,7 +655,9 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
   .tws__fab, .tws__fab.is-on { transform: none; transition: opacity var(--t-fast); }
   .tws__fab.is-on .tws__fab-in, .tws__fab.is-on .tws__fab-in::before, .tws__fab.is-on .tws__fab-in svg { animation: none; }
   .tws__rz::after, .tws-xcover::after { transition: opacity var(--t-fast); }
-  .tws-att:active, .tws-tw__media:active { transform: none; }
+  .tws-tw__face, .tws-tw__face.is-spring { transition: opacity var(--t-fast) !important; transform: none !important; }   /* (v4.9.3) 겹쳐 밀기 = 투명도만 */
+  .tws-glow { animation-duration: 900ms; }
+  button.tws-md__cell:hover .tws-md__play, button.tws-md__cell:active .tws-md__play { transform: none; }
   .tws__feed.is-swapping { animation: none; }
   .tws__new.draw::before, .tws__new.draw::after, .tws-chain.draw::before { animation: none; }
   .lane__thread__xcard, .tw-nope { transition: none; }

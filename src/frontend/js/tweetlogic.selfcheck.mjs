@@ -1,10 +1,11 @@
 /**
- * tweetlogic.js 순수 로직 자동 테스트 (트윗 시트, V1-C 의 C1~C8 + v4.9.1 C9 새 글만 끼우기 계획). node tweetlogic.selfcheck.mjs 로 실행. 프레임워크 없음. DOM 을 쓰지 않는다.
+ * tweetlogic.js 순수 로직 자동 테스트 (트윗 시트, V1-C 의 C1~C8 + v4.9.1 C9 새 글만 끼우기 계획 + v4.9.3 C10~C15 미디어 · X 카드 치수 · 스크롤 · 밀기). node tweetlogic.selfcheck.mjs 로 실행. 프레임워크 없음. DOM 을 쓰지 않는다.
  */
 import {
   chains, attachments, inkFor, paperFor, paletteFor, contrast, parseRgb, kstParts,
   postedLabel, replyLabel, unpostedLabel, gapLabel, clockLabel, estimateCardH, firstUnread,
   faceOf, langOf, sigOf, shortName, reconcileUnits,
+  mediaItems, smallUrl, gridOf, singleRatio, mediaBoxH, predictCardH, xTextH, restoreTarget, fabMode, swipeTo, dayLabel, fullLabel,
 } from "./tweetlogic.js";
 
 let n = 0;
@@ -165,6 +166,70 @@ const NOW = Date.parse("2026-10-26T22:05:00Z");   // 10/27 07:05 KST
   const real = reconcileUnits(chains([msg("a", t0), msg("b", t0 + MIN)]).map((u) => u.map((m) => m.id)),
     chains([msg("a", t0), msg("b", t0 + MIN), msg("c", t0 + 2 * MIN, { reply_to_id: "b" })]).map((u) => u.map((m) => m.id)));
   assert(real && real.length === 2 && js(real[1].add) === js(["c"]), "C9 chains 결과와 맞물림");
+}
+
+// ── C10 · 미디어 목록 · 작은 그림 주소 · 격자 (v4.9.3)
+{
+  const P = "https://pbs.twimg.com/media/aaa.jpg", V = "https://pbs.twimg.com/amplify_video_thumb/1/img/x.jpg";
+  const items = mediaItems([P, V, "", null]);
+  assert(items.length === 2 && !items[0].video && items[1].video, "C10 mediaItems: 빈 값 빼고 영상 썸네일 구분");
+  assert(smallUrl(P) === P + "?name=small", "C10 smallUrl: name=small 붙임");
+  assert(smallUrl("https://pbs.twimg.com/media/x.png?name=orig") === "https://pbs.twimg.com/media/x.png?name=small", "C10 smallUrl: name=orig → small");
+  assert(smallUrl("https://pbs.twimg.com/media/x?format=jpg&name=large") === "https://pbs.twimg.com/media/x?format=jpg&name=small", "C10 smallUrl: 다른 인자는 그대로");
+  assert(smallUrl("https://example.com/a.jpg") === "https://example.com/a.jpg", "C10 smallUrl: pbs 가 아니면 그대로");
+  const g = [0, 1, 2, 3, 4, 6].map(gridOf);
+  assert(g[0].cls === "" && g[1].cls === "g1" && g[3].cls === "g3" && g[4].shown === 4 && g[4].more === 0, "C10 gridOf: 0~4칸");
+  assert(g[5].cls === "g4" && g[5].shown === 4 && g[5].more === 2, "C10 gridOf: 6개 → 4칸 + 「+2」");
+}
+
+// ── C11 · X 카드 치수 (2026-10-28 운영 X 카드 실측값 그대로)
+{
+  assert(singleRatio(526, 900) === 1 && singleRatio(1200, 675) === 1200 / 675 && singleRatio(0, 0) === 16 / 9, "C11 singleRatio: 세로 → 1:1 · 가로 → 원래 비율 · 모름 → 16:9");
+  // 카드 폭 505 → 묶음 폭 471: 2~4칸 266(16:9) · 세로 사진 1칸 471 · 인용 안(폭 469, 테두리 없음) 264
+  assert(mediaBoxH(4, 471, 0, 1) === 266 && mediaBoxH(2, 371, 0, 1) === 210 && mediaBoxH(3, 311, 0, 1) === 176, "C11 2~4칸 = 16:9 (471→266 · 371→210 · 311→176)");
+  assert(mediaBoxH(1, 471, singleRatio(526, 900), 1) === 471, "C11 세로 사진 1칸 = 정사각형 471");
+  assert(mediaBoxH(2, 469, 0, 0) === 264, "C11 인용 안 2칸(테두리 없음) 469→264");
+  assert(mediaBoxH(0, 471, 0, 1) === 0, "C11 미디어 없음 → 0");
+  // 실측 카드 높이: 영상3+사진1(본문 192) 671 · 세로 사진 1장(본문 266) 950 · 사진 2 + 인용(본문 120 · 사진 2)(본문 73) 1000 · 자기 답글(본문 50) 275
+  const mix = { w: 505, reply: false, n: 4, ratio: 0, quote: null };
+  assert(predictCardH({ ...mix, textH: 192 }) === 671 && xTextH(671, mix) === 192, "C11 영상3+사진1: 671 ↔ 본문 192");
+  const one = { w: 505, reply: false, n: 1, ratio: singleRatio(526, 900), quote: null };
+  assert(predictCardH({ ...one, textH: 266 }) === 950, "C11 세로 사진 1장: 950");
+  const q = { w: 505, reply: false, n: 2, ratio: 0, quote: { textH: 120, n: 2, ratio: 0 } };
+  assert(predictCardH({ ...q, textH: 73 }) === 1000 && xTextH(1000, q) === 73, "C11 사진 2 + 인용 사진 2: 1000 ↔ 본문 73");
+  const re = { w: 505, reply: true, n: 0, ratio: 0, quote: null };
+  assert(predictCardH({ ...re, textH: 50 }) === 275 && xTextH(275, re) === 50, "C11 자기 답글(「님에게 보내는 답글」 줄): 275 ↔ 본문 50");
+  assert(xTextH(100, re) === 0, "C11 카드가 고정 치수보다 작으면 본문 0");
+}
+
+// ── C12 · 스크롤 자리 되돌리기
+{
+  assert(restoreTarget(undefined, ["a"]) === null && restoreTarget({ bottom: true }, ["a"]) === null, "C12 기록 없음 · 맨 아래였음 → 맨 아래");
+  const t = restoreTarget({ id: "b", off: 37 }, ["a", "b"]);
+  assert(t && t.id === "b" && t.off === 37, "C12 보던 글이 있으면 그 글 + 어긋남");
+  assert(restoreTarget({ id: "z", off: 5 }, ["a", "b"]) === null, "C12 보던 글이 사라졌으면 맨 아래");
+}
+
+// ── C13 · ↓ 동그라미
+{
+  assert(fabMode(0, 0) === "off" && fabMode(160, 0) === "off", "C13 맨 아래 160px 안 · 새 글 없음 → 안 뜸");
+  assert(fabMode(161, 0) === "plain", "C13 160px 넘게 올림 → 「맨 아래로」(숫자 없음)");
+  assert(fabMode(0, 2) === "count" && fabMode(500, 1) === "count", "C13 기다리는 새 글 → 숫자 · 흔들기");
+}
+
+// ── C14 · 밀기 판정
+{
+  assert(swipeTo(0, -0.26) === 1 && swipeTo(0, -0.25) === 0, "C14 번역 → 원문: 왼쪽으로 25% 를 넘겨야");
+  assert(swipeTo(0, 0.9) === 0, "C14 번역에서 오른쪽(갈 면 없음) → 그대로");
+  assert(swipeTo(1, 0.3) === 0 && swipeTo(1, -0.9) === 1, "C14 원문 → 번역은 오른쪽, 반대쪽은 그대로");
+}
+
+// ── C15 · 날짜 구분선 · 시각 title
+{
+  assert(dayLabel(Date.parse("2026-10-28T12:00:00+09:00")) === "10월 28일 (수)", "C15 10/28 → 「10월 28일 (수)」");
+  assert(dayLabel(Date.parse("2026-10-27T15:30:00Z")) === "10월 28일 (수)", "C15 UTC 15:30 = KST 다음날 00:30");
+  const now = Date.parse("2026-10-28T21:05:00+09:00");
+  assert(fullLabel(Date.parse("2026-10-28T21:02:00+09:00"), now) === "10/28 21:02 · 3분 전", "C15 fullLabel");
 }
 
 console.log(`\n✅ tweetlogic selfcheck 통과 (${n}건)`);

@@ -132,7 +132,7 @@ src/
       time.js api.js   # KST 포맷 · 상대시간 / fetch(타임아웃)
       render.js timetable.js   # 보드 — PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고
       notices.js banners.js tweets.js   # 소식판 · 행사 배너 · 멤버 트윗 시트
-      tweetlogic.js    # 트윗 시트 순수 로직(글타래 · 첨부 문구 · 글자색 · 시각 표기) — DOM 없음
+      tweetlogic.js    # 트윗 시트 순수 로직(글타래 · 글자색 · 시각 표기 · 미디어 격자 · X 카드 치수로 두 면 위치 맞추기) — DOM 없음
       player.js playerbtn.js songs.js   # YouTube 곡 플레이어(첫 클릭 때 동적 import)
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
