@@ -35,6 +35,7 @@
 2. **보드 쪽 그대로**: 트윗 배지 `.lane__tw`(빈 원 · 숫자 원 · 읽음이면 없음, `aria-label`, `data-sig` 로 다시 안 그림) · 아바타 링 `.lane__avatar.has-tweet` · 트윗 없는 네임플레이트를 누르면 흔들기 + 「OO의 새 트윗이 아직 없어요」(`_noTweet`) · 클릭 대상(`.lane__tw, .lane__avatar, .lane__link, .tt__nm`, `data-no-badge` 레인 제외, 캡처 단계에서 앵커 기본 이동 막기).
 3. **데이터 규칙 그대로**: `_visible`(만료 `expires_at` 지난 것 빼기 · 게시 시각순 · `MAX_THREAD` 50) · `_postedIso`(posted_at → Snowflake → 받은 시각 「HH:MM 등록」) · 원문 앵커 `_setSrc`(url → x.com/handle → 비활성) · v2.8 단건 하위호환 `_list`.
 4. **법률 자문 원칙**: 원문 텍스트 · 사진 · 영상 · 인용 글 미디어는 **우리가 그리지 않는다** — 번역 면엔 번역 텍스트만, 첨부는 「사진 N장」 같은 **개수 글자**만. 데이터의 `media` · `quote.media` 는 개수 · 종류를 세는 데만 쓴다.
+   - **(2026-10-28 바뀜, v4.9.3)** 운영자 법률 재검토로 번역 면에 사진 · 영상(썸네일) · 인용 글 미디어를 그린다 — 조건: X 원문 카드 함께 · 이름 · 핸들 · 작성 시각 · 원본 링크가 보일 것 · 내려받기 막기. 원문 텍스트는 여전히 그리지 않는다. 정본 = `main` `docs/SPEC.md` 「트윗 시트」 미디어 · `ref/tweet-sheet-v493/`.
 5. 데이터는 **`textContent` · `createElement` 로만**(innerHTML 금지 — 지금 `_bubble` · `_ensureToast` 의 고정 마크업 innerHTML 도 새 코드에선 쓰지 않는다).
 6. **75초 폴링마다 다시 그려도 X 카드가 다시 불러와지지 않게** — 열린 시트의 목록은 표시 내용 서명(id · 번역 · 인용 번역 · reply_to_id)이 바뀐 때만 다시 그린다(지금 `_fillBubble` 의 `__sig` 방식). 다시 그릴 때 각 글의 지금 면 · 피드 스크롤 위치를 유지.
 7. **저장값 이어받기**: 읽음 = `mew:twread`(형식 · 4일 보존 그대로). 전체 면 = 기존 `mew:tllang`("ko" = 번역, "orig" = 원문) 을 그대로 읽고 쓴다(사용자의 지금 설정이 이어지게). 엿보기 횟수 = 새 키 `mew:twpeek`. 모든 읽기 · 쓰기 try/catch.

@@ -1,0 +1,672 @@
+<title>트윗 시트 v4.9.3 시제품</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 레이아웃: 왼쪽 = 트윗 시트 시제품 무대(폰 시트 폭 460px), 오른쪽 = 해 볼 것 목록 · 조작 버튼. 좁으면 위아래.
+   시트 안 색은 멤버 색(--m · --mi · --paper)을 따르고, 페이지 바탕은 테마 토큰을 따른다 */
+:root {
+  --bg: #efede9; --fg: #1d1c1a; --muted: #67635c; --line: #d8d3ca; --panel: #ffffff; --accent: #a34f2a;
+  --stage: #2a2a30;
+  --f-ui: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+  --f-num: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --slow: 1;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141318; --fg: #ebeaef; --muted: #a29eaa; --line: #34323b; --panel: #1f1e25; --accent: #e3926a; --stage: #0c0c0f; color-scheme: dark;
+} }
+:root[data-theme="dark"] { --bg: #141318; --fg: #ebeaef; --muted: #a29eaa; --line: #34323b; --panel: #1f1e25; --accent: #e3926a; --stage: #0c0c0f; color-scheme: dark; }
+@property --m { syntax: "<color>"; inherits: true; initial-value: #e6bf8f; }
+@property --mi { syntax: "<color>"; inherits: true; initial-value: #17171b; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-ui); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 24px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 18px; }
+h1 { margin: 0; font-size: 21px; text-wrap: balance; }
+.lead { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.6; max-width: 72ch; }
+.cols { display: grid; grid-template-columns: minmax(0, 460px) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 860px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* 무대 */
+.stage { position: relative; height: 700px; max-height: 86vh; min-height: 520px; border-radius: 18px; background: var(--stage); overflow: hidden; }
+.board { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; gap: 14px; padding: 20px; color: #dcdbe2; }
+.board p { margin: 0; font-size: 13px; opacity: 0.8; text-align: center; }
+.board .row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.board button { position: relative; border: 0; background: transparent; color: inherit; font: inherit; display: grid; justify-items: center; gap: 6px; cursor: pointer; font-size: 12px; }
+.board .av { width: 52px; height: 52px; }
+.board b { position: absolute; left: 38px; top: -4px; min-width: 20px; height: 20px; border-radius: 10px; background: #ccfbfa; color: #0c1a1a; font-size: 11px; display: grid; place-items: center; padding: 0 5px; border: 2px solid var(--stage); }
+.av { border-radius: 50%; display: grid; place-items: center; font-weight: 900; color: #17171b; font-size: 13px; flex: none; }
+
+/* 시트 */
+.scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); opacity: 0; pointer-events: none; transition: opacity 260ms; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.tws {
+  --s1: color-mix(in srgb, var(--mi) 14%, transparent); --s2: color-mix(in srgb, var(--mi) 22%, transparent);
+  --ln: color-mix(in srgb, var(--mi) 26%, transparent); --sub: color-mix(in srgb, var(--mi) 80%, var(--m));
+  position: absolute; left: 0; right: 0; bottom: 0; height: 94%; display: flex; flex-direction: column;
+  background: linear-gradient(172deg, color-mix(in srgb, var(--m) 88%, #fff) 0%, var(--m) 48%, color-mix(in srgb, var(--m) 90%, #000) 100%);
+  color: var(--mi); font-size: 14px; line-height: 1.55; border-radius: 22px 22px 0 0;
+  transform: translateY(103%); transition: transform 210ms var(--ease), --m 500ms ease, --mi 500ms ease;
+}
+.tws.open { transform: none; transition: transform 320ms var(--ease), --m 500ms ease, --mi 500ms ease; }
+.tws *, .tws { box-sizing: border-box; }
+.grab { height: 18px; display: grid; place-items: center; flex: none; }
+.grab i { width: 40px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--mi) 45%, transparent); }
+.head { display: flex; align-items: center; gap: 10px; padding: 0 12px 8px 16px; flex: none; }
+.who0 { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.who0 .av { width: 34px; height: 34px; border: 2px solid color-mix(in srgb, var(--mi) 55%, transparent); }
+.nm { font-weight: 800; font-size: 15px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hd { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--s1); border: 1px solid var(--ln); flex: none; }
+.seg button { border: 0; background: transparent; color: var(--sub); font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 7px; cursor: pointer; transition: background 200ms, color 200ms; }
+.seg button[aria-pressed="true"] { background: var(--mi); color: var(--m); font-weight: 800; }
+.x-close { width: 36px; height: 36px; border-radius: 10px; border: 0; background: var(--s1); color: inherit; cursor: pointer; font-size: 16px; flex: none; }
+.members { display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ln); background: var(--s1); color: inherit; border-radius: 999px; padding: 3px 10px 3px 3px; cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; min-height: 32px; }
+.chip .av { width: 24px; height: 24px; font-size: 10px; border: 1.5px solid rgba(0, 0, 0, 0.3); }
+.chip[aria-current="true"] { background: var(--mi); color: var(--m); font-weight: 800; border-color: var(--mi); }
+.chip b { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e5484d; color: #fff; font-size: 10.5px; display: grid; place-items: center; }
+
+.feed { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 14px 70px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; scrollbar-color: var(--ln) transparent; }
+.feed.swap { animation: swap 320ms var(--ease); }
+@keyframes swap { from { opacity: 0; transform: translateX(var(--from, 0px)); } to { opacity: 1; transform: none; } }
+.newline { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; }
+.newline::before, .newline::after { content: ""; flex: 1; height: 1.5px; background: var(--mi); opacity: 0.55; }
+
+.tw { position: relative; display: flex; flex-direction: column; gap: 4px; }
+/* 날짜 구분선 — 메신저처럼 가운데 작은 알약 */
+.day { align-self: center; font-size: 11.5px; font-weight: 700; color: var(--sub); background: var(--s1); border-radius: 999px; padding: 2px 10px; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+.tw:focus-visible { outline: 2px solid var(--mi); outline-offset: 3px; border-radius: 12px; }
+.tw.rise { animation: rise calc(560ms * var(--slow)) cubic-bezier(0.2, 1.15, 0.3, 1) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(36px) scale(0.98); } 55% { opacity: 1; } to { opacity: 1; transform: none; } }
+.meta { display: flex; align-items: center; gap: 6px; min-height: 26px; cursor: grab; touch-action: pan-y; }
+.meta .t { flex: 1; font-size: 12.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { font-size: 10.5px; font-weight: 800; color: #fff; background: #e5484d; border-radius: 6px; padding: 0 5px; margin-left: 4px; }
+.mbtn { border: 0; background: transparent; color: var(--mi); font: inherit; font-size: 12px; font-weight: 700; border-radius: 8px; padding: 2px 6px; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+.mbtn:hover { background: var(--s1); }
+.xl { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--sub); text-decoration: none; font-weight: 900; font-size: 13px; }
+.xl:hover { background: var(--s1); color: var(--mi); }
+svg.ic { width: 14px; height: 14px; }
+
+/* 겹쳐 밀기: 두 면이 같은 칸. 뒤 면은 투명하게 제자리(실제로는 그래서 X 카드가 그려지고 높이를 알려 준다) */
+.track { display: grid; border-radius: 14px; overflow: hidden; touch-action: pan-y; cursor: grab; }
+.track.drag { cursor: grabbing; }
+.face { grid-area: 1 / 1; min-width: 0; display: flex; flex-direction: column; transition: transform calc(300ms * var(--slow)) var(--ease), opacity calc(300ms * var(--slow)) ease; }
+.face.back { opacity: 0; pointer-events: none; transform: scale(0.985); }
+.track.drag .face { transition: none; }
+.dots { display: flex; justify-content: center; align-items: center; gap: 5px; height: 20px; cursor: grab; touch-action: pan-y; }
+.dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--mi); opacity: 0.35; transition: width 120ms, opacity 120ms; }
+.dots i.on { width: 14px; opacity: 0.9; }
+
+/* 번역 면 */
+.ko, .xcard { position: relative; flex: 1; display: flex; flex-direction: column; gap: 10px; border-radius: 16px 16px 16px 4px; padding: 12px 14px 10px; font-size: 14px; line-height: 1.5; }
+.ko { background: var(--paper); border: 1px solid var(--ln); }
+/* 머리 줄 · 인용 상자 · 바닥 줄 — X 카드와 같은 치수(.xh · .xq · .xf) */
+.kh, .xh { display: flex; align-items: center; gap: 8px; font-size: 13px; height: 38px; }
+.kh .av, .xh .av { width: 36px; height: 36px; font-size: 11px; }
+.kh span, .xh span { display: block; font-size: 12.5px; }
+.kh span { color: var(--sub); }
+.kh .lg { margin-left: auto; font-size: 11px; font-weight: 800; border: 1px solid var(--ln); border-radius: 6px; padding: 1px 6px; }
+.q, .xq { border-radius: 12px; overflow: hidden; display: grid; font-size: 13px; line-height: 20px; }
+.qi { padding: 9px 11px; display: grid; gap: 6px; }  /* 소수 줄 높이는 반올림으로 0.5px 어긋나서 정수로 */
+.q { border: 1px solid var(--ln); }
+.qi > b { font-size: 13px; height: 20px; overflow: hidden; }
+.kf, .xf { font-size: 12px; padding-top: 8px; display: flex; gap: 14px; }
+.kf .kt { font-variant-numeric: tabular-nums; }
+.kf { color: var(--sub); border-top: 1px solid var(--ln); }
+.kf a { color: inherit; }
+.who { display: flex; align-items: center; gap: 7px; font-size: 12px; min-width: 0; }
+.who .av { width: 22px; height: 22px; font-size: 9px; border: 1.5px solid rgba(0, 0, 0, 0.3); }
+.who b { font-size: 12.5px; white-space: nowrap; }
+.who span { color: var(--sub); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.ko p, .ko .qt { margin: 0; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+.att { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--mi) 45%, transparent); background: color-mix(in srgb, var(--mi) 8%, transparent); color: inherit; cursor: pointer; text-align: left; font: inherit; font-size: 12.5px; font-weight: 700; width: 100%; }
+.att span:last-child { margin-left: auto; white-space: nowrap; }
+
+/* 미디어 격자 — <img> 대신 배경 그림(우클릭 「이미지 저장」 메뉴가 안 생긴다) */
+.md { display: grid; gap: 2px; border-radius: 12px; overflow: hidden; aspect-ratio: 16 / 9; border: 1px solid var(--ln); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.xcard .md { border-color: #38444d; }
+/* 인용 상자 — X 처럼 이름 줄 · 본문은 안쪽 여백, 사진은 상자 아래에 가장자리까지 붙인다 */
+.q .md, .xq .md { border: 0; border-radius: 0; }
+.md.g2 { grid-template-columns: 1fr 1fr; }
+.md.g3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.md.g3 > :first-child { grid-row: 1 / 3; }
+.md.g4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.cell { position: relative; border: 0; padding: 0; cursor: default; background-size: cover; background-position: center; display: grid; place-items: center; color: rgba(255, 255, 255, 0.92); font: inherit; font-size: 11px; font-weight: 800; }
+.cell .lbl { position: absolute; left: 6px; bottom: 5px; font-size: 10px; background: rgba(0, 0, 0, 0.35); padding: 0 5px; border-radius: 4px; }
+.cell .play { width: 44px; height: 44px; border-radius: 50%; background: color-mix(in srgb, var(--m) 70%, #000); color: #fff; display: grid; place-items: center; box-shadow: 0 0 0 2px #fff; }
+.xcard .cell .play { background: #1d9bf0; box-shadow: 0 0 0 3px #fff; }   /* X 카드 흉내 = X 의 파란 ▶ */
+.cell .play svg { width: 18px; height: 18px; margin-left: 3px; }
+.cell .more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.45); font-size: 20px; }
+.cell:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+
+/* 원문 면 — X 카드 흉내(실제로는 X 의 iframe) */
+.xcard { background: #000; color: #e7e9ea; border: 1px solid #000; }
+.xh span { color: #71767b; }
+.xh .lg { margin-left: auto; font-weight: 900; font-size: 18px; }
+.xq { border: 1px solid #2f3336; }
+.xf { color: #71767b; border-top: 1px solid #2f3336; }
+.xcard .playing { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, 0.7); color: #fff; font-weight: 800; font-size: 13px; border-radius: 12px; }
+/* 미디어를 눌러 넘어왔을 때 카드가 한 번 반짝 + 말풍선 */
+.xcard.flash { animation: flash calc(900ms * var(--slow)) ease-out; }
+@keyframes flash { 0% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 5px var(--mi), 0 0 24px 6px color-mix(in srgb, var(--mi) 60%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.bub { position: absolute; left: 50%; top: 52px; transform: translate(-50%, -6px); background: var(--mi); color: var(--m); font-size: 12px; font-weight: 800; border-radius: 999px; padding: 4px 12px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 160ms, transform 240ms var(--ease); z-index: 3; }
+.bub.on { opacity: 1; transform: translate(-50%, 0); }
+/* 누른 칸과 같은 자리(카드 위)에 한 번 퍼지는 고리 — 실제로는 X 카드 iframe 위에 겹쳐 그린다(누름은 통과) */
+.face { position: relative; }
+.ring, .glow { position: absolute; z-index: 4; pointer-events: none; border-radius: 4px; }
+.ring { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--mi); animation: ring calc(1100ms * var(--slow)) ease-out forwards; }
+/* 영상: 가장자리 글로우 한 번 깜박 — 멤버 색(--m)을 조금 밝힌 얇은 테 + 옅은 번짐 */
+.glow {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--m) 80%, #fff), 0 0 8px 1px color-mix(in srgb, var(--m) 60%, transparent);
+  opacity: 0; animation: glow calc(650ms * var(--slow)) ease-out forwards;
+}
+@keyframes glow { 0% { opacity: 0; } 35% { opacity: 0.8; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .glow { animation-duration: 900ms; } }
+@keyframes ring { 0% { opacity: 0; transform: scale(1.08); } 20% { opacity: 1; transform: scale(1); } 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ↓ 동그라미 — 맨 아래로 버튼 */
+.fab { position: absolute; right: 16px; bottom: 16px; width: 44px; height: 44px; border: 0; padding: 0; border-radius: 50%; background: var(--mi); color: var(--m); cursor: pointer; display: grid; place-items: center; box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.6); opacity: 0; pointer-events: none; transform: scale(0.4) translateY(12px); transition: opacity 180ms, transform 220ms var(--ease); z-index: 4; }
+.fab.on { opacity: 1; pointer-events: auto; transform: none; transition: opacity 220ms, transform 460ms cubic-bezier(0.25, 1.4, 0.45, 1); }
+.fab svg { width: 20px; height: 20px; }
+.fab b { position: absolute; right: -4px; top: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #e5484d; color: #fff; font-size: 11px; display: none; place-items: center; box-shadow: 0 0 0 2px var(--m); }
+.fab.count b { display: grid; }
+.fab.count { animation: wob 2.8s ease-in-out 0.7s infinite; }
+@keyframes wob { 0%, 44%, 100% { transform: none; } 6% { transform: translateY(2px) rotate(-8deg); } 14% { transform: translateY(-1px) rotate(7deg); } 22% { transform: translateY(1px) rotate(-4deg); } 38% { transform: none; } }
+.fab:focus-visible { outline: 2px solid var(--mi); outline-offset: 3px; }
+.hint { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); background: rgba(20, 20, 24, 0.92); color: #fff; font-size: 12px; padding: 6px 12px; border-radius: 9px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 180ms; z-index: 5; }
+.hint.on { opacity: 1; }
+
+/* 오른쪽 안내 */
+.side { display: grid; gap: 14px; min-width: 0; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; }
+.ctl button, .ctl label { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 6px 11px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.ctl button:focus-visible, .ctl input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; }
+.card h2 { margin: 0; font-size: 14px; }
+.card ol, .card ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; font-size: 13px; line-height: 1.6; }
+.card p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.k { font-weight: 800; color: var(--accent); }
+.ab { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.ab button { border: 0; border-radius: 0; background: var(--panel); color: var(--fg); padding: 6px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.ab button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 800; }
+.gallery-wrap { display: grid; gap: 10px; }
+.gallery-wrap h2 { margin: 0; font-size: 17px; }
+.gallery-wrap > p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; max-width: 76ch; }
+.gallery {
+  --m: #e6bf8f; --mi: #17171b; --paper: color-mix(in srgb, #e6bf8f 52%, #fff);
+  --s1: color-mix(in srgb, var(--mi) 14%, transparent); --ln: color-mix(in srgb, var(--mi) 26%, transparent); --sub: color-mix(in srgb, var(--mi) 80%, var(--m));
+  background: var(--m); color: var(--mi); border-radius: 18px; padding: 16px; display: grid; gap: 22px; font-size: 14px; line-height: 1.55;
+}
+.ghead { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; font-size: 12px; font-weight: 800; }
+.gallery .tw .track { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; overflow: visible; cursor: default; }
+.gallery .face { grid-area: auto; opacity: 1 !important; transform: none !important; pointer-events: auto !important; }
+.gallery .dots { display: none; }
+@media (max-width: 700px) { .ghead { display: none; } .gallery .tw .track { grid-template-columns: minmax(0, 1fr); } }
+button.cell { cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .face, .tws, .fab { transition-duration: 1ms !important; } .fab.count, .tw.rise, .xcard.flash, .feed.swap { animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <h1>트윗 시트 v4.9.3 시제품</h1>
+  <p class="lead">구현을 마쳤을 때 예상되는 화면입니다. 미디어 격자는 실제 X 카드 규칙으로 고쳤고, 시트는 「예시 모음」으로 열리며 아래에 두 면을 나란히 놓은 비교가 있습니다. 왼쪽 시트를 그대로 만져 보세요. 멤버 · 글 · 사진은 예시이고, 사진은 그림 대신 색 상자이며, 원문 면의 검은 카드는 진짜 X 카드를 흉내 낸 것입니다. 실제로는 카드 안의 사진을 누르면 X 가 새 창으로 열립니다.</p>
+  <div class="cols">
+    <div class="stage" id="stage">
+      <div class="board" id="board">
+        <p>예고판의 멤버 아바타 자리입니다. 누르면 트윗 시트가 열립니다.</p>
+        <div class="row" id="boardRow"></div>
+      </div>
+      <div class="scrim" id="scrim"></div>
+      <section class="tws" id="sheet" role="dialog" aria-modal="true" aria-labelledby="nm" tabindex="-1">
+        <div class="grab" aria-hidden="true"><i></i></div>
+        <div class="head">
+          <div class="who0"><span class="av" id="hav"></span><div style="min-width:0"><div class="nm" id="nm"></div><div class="hd" id="hd"></div></div></div>
+          <div class="seg" role="group" aria-label="모든 글 보기 전환"><button type="button" id="segKo" aria-pressed="true">번역</button><button type="button" id="segX" aria-pressed="false">원문</button></div>
+          <button type="button" class="x-close" id="close" aria-label="닫기">✕</button>
+        </div>
+        <nav class="members" id="members" aria-label="멤버"></nav>
+        <div class="feed" id="feed"></div>
+        <button type="button" class="fab" id="fab" aria-label="맨 아래로" tabindex="-1"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v11M5 10.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><b id="fabN"></b></button>
+        <div class="hint" id="hint" role="status"></div>
+      </section>
+    </div>
+
+    <div class="side">
+      <div class="ctl">
+        <button type="button" id="cases">미디어 여러 개 예시 보기</button>
+        <button type="button" id="arrive">지금 멤버에게 새 글 도착</button>
+        <label for="slow"><input type="checkbox" id="slow"> 움직임 3배 느리게</label>
+      </div>
+      <div class="card">
+        <h2>해 볼 것</h2>
+        <ol>
+          <li><span class="k">맨 아래로 열기</span> — 처음 열면 맨 아래 최신 글입니다. 칩으로 다른 멤버에게 처음 가도 맨 아래입니다. 위로 올려 둔 멤버로 돌아오면 보던 자리입니다. ✕로 닫고 다시 열면 또 맨 아래입니다.</li>
+          <li><span class="k">메신저처럼</span> — 글 위에 따로 있던 시각 줄을 없앴습니다. 시각은 말풍선 바닥 줄에 한 번만(「21:02」, 올리면 날짜 · 「N분 전」), 날짜가 바뀌는 곳엔 「10월 28일 (화)」 구분선이 들어갑니다. 말풍선 왼쪽 아래 모서리를 좁혀 꼬리처럼 보이게 했습니다.</li>
+          <li><span class="k">겹쳐 밀기</span> — 글을 옆으로 끌거나(마우스 · 손가락 · 트랙패드 가로), 글을 고르고 ← →, 위 「번역 · 원문」. 두 면 높이가 같아 바꿔도 목록이 움직이지 않습니다.</li>
+          <li><span class="k">번역 면 미디어</span> — 번역 면이 카드와 같은 뼈대입니다(머리 줄 → 본문 → 사진 · 영상 → 인용 글 → 바닥 줄의 작성 시각). 번역이 원문보다 짧으면 원문 높이만큼 자리를 잡아, 넘겨도 사진 · 인용 · 시각이 같은 자리에 있습니다. 사진은 번역 면에서 그대로 보고, 누를 수 있는 건 영상(▶) 칸뿐입니다. 영상 칸을 누르면 그 글만 원문 카드로 넘어갑니다. 사진을 우클릭해도 저장 메뉴가 나오지 않습니다.</li>
+          <li><span class="k">미디어 여러 개</span> — 「미디어 여러 개 예시 보기」(또는 칩 「예시 모음」)에 사진만 1~4장 · 사진과 영상 섞음 · 영상만 1~3개 · 인용 글 안 여러 개를 모아 두었습니다. 2칸 = 좌우, 3칸 = 왼쪽 큰 칸 + 오른쪽 위아래, 4칸 = 2×2. 영상 칸에만 ▶가 붙습니다. 사진 칸은 누를 수 없습니다(번역 면에서 보는 것으로 충분). 영상 칸을 누르면 원문 카드로 넘어가고, 카드의 같은 영상 칸 가장자리에 글로우가 한 번 깜박입니다. X 는 글 하나에 최대 4개라 5개 이상은 없습니다.</li>
+          <li><span class="k">맨 아래로 버튼</span> — 위로 조금 올리면 오른쪽 아래에 ↓ 동그라미가 뜹니다. 그 상태에서 「새 글 도착」을 누르면 숫자가 붙고 흔들립니다. 맨 아래에서 누르면 새 글이 아래에서 떠오릅니다.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>시제품과 실제가 다른 곳</h2>
+        <ul>
+          <li>영상: 시제품의 카드 ▶는 누르면 「재생 중」을 보여 줍니다. 실제 X 카드는 우리가 재생을 시킬 수 없어 카드 안 ▶를 한 번 더 눌러야 합니다. PC 에서는 그 한 번이 바로 카드에 닿게 덮개를 미리 비켜 둡니다.</li>
+          <li>위치 맞추기: 번역이 원문보다 길면 그만큼 아래 칸이 내려갑니다(원문 카드는 우리가 줄일 수 없음). 실제 구현에서는 원문 높이를 X 카드 글꼴 치수로 미리 재서 맞추므로 몇 px 차이가 날 수 있습니다.</li>
+          <li>터치: 실제로는 X 카드 위에서 손가락으로 밀면 카드(iframe)가 가져갑니다. 원문 면에서 번역으로 돌아올 때는 시각 줄이나 점 줄을 밉니다. 시제품은 카드 위에서도 밀립니다.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section class="gallery-wrap" aria-labelledby="gh">
+    <h2 id="gh">고친 미디어 격자 — 번역 면과 원문 카드를 나란히</h2>
+    <p>실제 X 카드를 재서 얻은 규칙으로 고친 모습입니다(10-28). 2~4칸은 묶음 전체가 16:9 상자이고, 1칸은 원래 비율이되 세로로 긴 사진은 정사각형으로 잘립니다. 칸 사이 2px, 테두리 1px, 모서리 12px입니다. 인용 글 사진은 인용 상자 아래에 가장자리까지 붙습니다. 왼쪽은 우리가 그리는 번역 면, 오른쪽은 X 카드를 흉내 낸 원문 면입니다. 실제 시트에서는 두 면이 같은 자리에 겹쳐 있습니다. 여기서도 영상 칸을 누르면 오른쪽 카드의 같은 영상 칸에 글로우가 한 번 깜박입니다.</p>
+    <div class="gallery" id="gallery"><div class="ghead"><span>번역 면 (우리가 그림)</span><span>원문 카드 (X 카드 흉내)</span></div></div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const slow = () => ($("slow").checked ? 3 : 1);
+  $("slow").addEventListener("change", () => document.documentElement.style.setProperty("--slow", String(slow())));
+  const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NS = "http://www.w3.org/2000/svg";
+  const icon = (d, fill) => { const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 14 14"); s.setAttribute("class", "ic"); s.setAttribute("aria-hidden", "true");
+    for (const p of [].concat(d)) { const e = document.createElementNS(NS, "path"); e.setAttribute("d", p); e.setAttribute("fill", fill ? "currentColor" : "none"); if (!fill) { e.setAttribute("stroke", "currentColor"); e.setAttribute("stroke-width", "1.4"); e.setAttribute("stroke-linejoin", "round"); } s.append(e); } return s; };
+  const IC = {
+    photo: () => icon(["M2 4.5A1.5 1.5 0 0 1 3.5 3h1l.8-1h3.4l.8 1h1A1.5 1.5 0 0 1 12 4.5v5A1.5 1.5 0 0 1 10.5 11h-7A1.5 1.5 0 0 1 2 9.5z", "M9 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"]),
+    video: () => icon(["M2 4a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 10 4v6a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10z", "M10 6l2.5-1.5v5L10 8"]),
+    play: () => { const s = icon(["M3 1.5v11l9.5-5.5z"], true); return s; },
+  };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+  /* ── 예시 데이터 ── */
+  const M = [
+    { ck: "a", short: "A", name: "멤버 A", handle: "member_a", bg: "#e6bf8f", ink: "#17171b", av: "linear-gradient(135deg,#fbe1bd,#d39a63)" },
+    { ck: "b", short: "B", name: "멤버 B", handle: "member_b", bg: "#7cc3d6", ink: "#17171b", av: "linear-gradient(135deg,#c9f0f8,#4f9fb6)" },
+    { ck: "c", short: "C", name: "멤버 C", handle: "member_c", bg: "#7b5cc4", ink: "#ffffff", av: "linear-gradient(135deg,#cdb9f7,#6c4bb5)" },
+    { ck: "d", short: "D", name: "멤버 D", handle: "member_d", bg: "#86c08f", ink: "#17171b", av: "linear-gradient(135deg,#d6f2d9,#5ea56a)" },
+    { ck: "e", short: "E", name: "멤버 E", handle: "member_e", bg: "#d9799d", ink: "#17171b", av: "linear-gradient(135deg,#ffd3e3,#c45a82)" },
+  ];
+  const POOL = [
+    { ko: "좋은 아침이에요 ☀️ 오늘은 날씨가 좋아서 산책하고 왔어요!", ja: "おはようございます☀️今日は天気がいいのでお散歩してきました！", media: [] },
+    { ko: "오늘 밤 22:30부터 노래 방송해요! 요즘 연습한 곡 잔뜩 부를 테니 와 주세요 🎤", ja: "今夜22:30から歌枠やります！最近練習してた曲いっぱい歌うので来てね🎤", media: ["p"] },
+    { ko: "새 의상 공개 방송 와 줘서 고마워요!! 사진 몇 장 올려 둘게요 💕", ja: "新衣装お披露目配信来てくれてありがとう！！写真いくつか載せとくね💕", media: ["p", "p"] },
+    { ko: "연습 영상 조금만 공개! 끝까지 봐 주세요 🎶", ja: "練習動画ちょっとだけ公開！最後まで見てね🎶", media: ["v"] },
+    { ko: "오늘의 공식 공지예요. 다들 꼭 확인해 주세요!", ja: "今日の公式のお知らせです。みんなチェックしてね！", media: [], quote: { ko: "【안내】 이번 주 방송 스케줄입니다", ja: "【お知らせ】今週の配信スケジュールです", media: ["p"] } },
+    { ko: "굿즈 샘플이 도착했어요… 너무 귀여워서 다 보여 드리고 싶어 📦", ja: "グッズのサンプル届きました…可愛すぎて全部見せたい📦", media: ["p", "p", "p"] },
+    { ko: "오늘 방송 하이라이트 모음! 놓친 분들은 여기서 💫", ja: "今日の配信ハイライトまとめ！見逃した人はここで💫", media: ["p", "v", "p", "p", "p"] },
+    { ko: "이 영상 꼭 봐 주세요!! 모두 같이 만든 거예요", ja: "この動画ぜひ見てね！！みんなで作ったんだ", media: [], quote: { ko: "새 MV 공개! 다 함께 들어 주세요", ja: "新MV公開！みんなで聴いてね", media: ["v"] } },
+    { ko: "잘 자요 🌙 내일 방송에서 만나요", ja: "おやすみなさい🌙明日の配信で会おうね", media: [] },
+  ];
+  let seq = 1;
+  const now = Date.now();
+  for (const [mi, m] of M.entries()) {
+    const n = 7;
+    m.tweets = [];
+    for (let i = 0; i < n; i++) {
+      const p = POOL[(i * 2 + mi * 3) % POOL.length];
+      m.tweets.push({ id: seq++, ...p, at: now - (n - i) * (95 + mi * 17) * 60000, hue: (mi * 70 + i * 37) % 360 });
+    }
+    m.unread = new Set(m.tweets.slice(-(2 + (mi % 3))).map((t) => t.id));   // 끝쪽 2~4개가 안 읽음
+  }
+  // 미디어 여러 개 경우 모음 — X 는 글 하나에 사진 · 영상을 합쳐 최대 4개까지 붙일 수 있다
+  const CASES = [
+    ["사진만 · 1장", ["p"]], ["사진만 · 2장", ["p", "p"]], ["사진만 · 3장", ["p", "p", "p"]], ["사진만 · 4장", ["p", "p", "p", "p"]],
+    ["사진 + 영상 · 사진 1 · 영상 1", ["p", "v"]], ["사진 + 영상 · 영상 1 · 사진 2", ["v", "p", "p"]], ["사진 + 영상 · 사진 2 · 영상 2", ["p", "v", "p", "v"]],
+    ["영상만 · 1개", ["v"]], ["영상만 · 2개", ["v", "v"]], ["영상만 · 3개", ["v", "v", "v"]],
+  ];
+  const Z = { ck: "z", short: "예", name: "멤버 예시 모음", handle: "media_cases", bg: "#c9c3b6", ink: "#17171b", av: "linear-gradient(135deg,#efe9dc,#9d9584)", tweets: [], unread: new Set() };
+  CASES.forEach(([label, media], i) => Z.tweets.push({ id: seq++, ko: `[예시] ${label}\n영상 칸을 누르면 그 글만 원문 카드로 넘어가고, 카드의 같은 영상 칸이 한 번 빛납니다.`, ja: `（例）${label}\nマスを押すと、その投稿だけ原文カードに切り替わり、カードの同じ位置が一度光ります。`, media, at: now - (CASES.length + 1 - i) * 7 * 60000, hue: (i * 41) % 360 }));
+  Z.tweets.push({ id: seq++, ko: "[예시] 본문 사진 2장 + 인용 글 사진 · 영상 3개\n인용 칸을 눌러도 카드의 인용 자리에서 같은 칸이 빛납니다.", ja: "（例）本文の写真2枚＋引用ツイートの写真・動画3つ\n引用のマスを押しても、カードの引用部分の同じマスが光ります。", media: ["p", "p"], quote: { ko: "인용한 글 — 사진 2장과 영상 1개", ja: "引用ツイート", media: ["p", "v", "p"] }, at: now - 5 * 60000, hue: 200 });
+  M.push(Z);
+
+  /* ── 시각 표기 (KST) ── */
+  const fmt = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  const parts = (ms) => Object.fromEntries(fmt.formatToParts(ms).map((x) => [x.type, x.value]));
+  const hm = (ms) => { const p = parts(ms); return `${p.hour}:${p.minute}`; };
+  const md = (ms) => { const p = parts(ms); return `${p.month}/${p.day} ${p.hour}:${p.minute}`; };
+  const ago = (ms) => { const m = Math.max(0, Math.round((Date.now() - ms) / 60000)); if (m < 1) return "방금"; if (m < 60) return `${m}분 전`; const h = Math.floor(m / 60); return h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`; };
+  const sameDay = (a) => parts(a).day === parts(Date.now()).day;
+  const dfmt = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", weekday: "short" });
+  const dayLabel = (ms) => { const x = Object.fromEntries(dfmt.formatToParts(ms).map((y) => [y.type, y.value])); return `${x.month} ${x.day}일 (${x.weekday})`; };
+
+  /* ── 상태 ── */
+  const S = { open: false, ck: "a", face: 0, pos: {}, seen: new Set(), pending: [], qMode: "a3" };
+  const cur = () => M.find((m) => m.ck === S.ck);
+
+  /* ── 보드 ── */
+  function drawBoard() {
+    const row = $("boardRow");
+    row.replaceChildren();
+    for (const m of M) {
+      const b = el("button");
+      b.type = "button";
+      const av = el("span", "av", m.short); av.style.background = m.av;
+      b.append(av, el("span", null, m.name));
+      if (m.unread.size) b.append(el("b", null, m.unread.size > 1 ? String(m.unread.size) : ""));
+      b.addEventListener("click", () => openSheet(m.ck));
+      row.append(b);
+    }
+  }
+
+  /* ── 미디어 격자 ── */
+  // allPress = 사진도 누를 수 있게(X 카드 흉내). 번역 면은 영상 칸만 누른다 — 사진은 보기만
+  function grid(list, hue, onPress, allPress) {
+    const n = list.length, shown = Math.min(4, n);
+    const g = el("div", "md g" + shown);
+    if (shown === 1) {   // X: 한 장이면 원래 비율, 세로로 길면 정사각형으로 자른다(예시 그림이라 비율을 흉내만 낸다)
+      const kind = list[0] === "v" ? 1 : hue % 3;
+      g.style.aspectRatio = kind === 0 ? "1 / 1" : kind === 1 ? "16 / 9" : "4 / 3";
+      g.dataset.kind = kind === 0 ? "세로 사진 → 정사각형으로 자름" : kind === 1 ? "16:9" : "4:3";
+    }
+    g.addEventListener("contextmenu", (e) => { e.preventDefault(); toast("이미지 저장 메뉴를 막았어요 (이 안내는 시제품에만)"); });
+    g.addEventListener("dragstart", (e) => e.preventDefault());
+    for (let i = 0; i < shown; i++) {
+      const v = list[i] === "v", h = (hue + i * 48) % 360;
+      const press = !!onPress && (v || !!allPress);
+      const c = el(press ? "button" : "div", "cell");
+      if (press) c.type = "button"; else { c.setAttribute("role", "img"); }
+      c.style.backgroundImage = v ? `linear-gradient(140deg, hsl(${h} 35% 42%), hsl(${(h + 50) % 360} 45% 22%))`
+        : `linear-gradient(140deg, hsl(${h} 75% 80%), hsl(${(h + 45) % 360} 60% 62%))`;
+      c.setAttribute("aria-label", v ? "영상, 원문 카드에서 재생" : "사진");
+      if (v) { const pl = el("span", "play"); pl.append(IC.play()); c.append(pl); }
+      c.append(el("span", "lbl", (v ? "영상 예시" : "사진 예시") + (shown === 1 ? " · " + g.dataset.kind : "")));
+      if (i === 3 && n > 4) c.append(el("span", "more", "+" + (n - 4)));
+      if (press) c.addEventListener("click", () => onPress(v, i, shown, c));
+      g.append(c);
+    }
+    return g;
+  }
+  const count = (list) => { const p = list.filter((x) => x === "p").length, v = list.length - p; return [p ? `사진 ${p}장` : "", v ? `영상 ${v}개` : ""].filter(Boolean).join(" · "); };
+
+  /* ── 글 하나 ── */
+  function article(m, t, unread) {
+    const art = el("article", "tw");
+    art.tabIndex = 0;
+    art.dataset.id = t.id;
+
+    // 번역 면: 카드와 같은 뼈대 — 머리 줄 → 본문 → 미디어 격자 → 인용 상자 → 바닥 줄(작성 시각 · 원문 링크)
+    const ko = el("div", "ko");
+    const kh = el("div", "kh");
+    const kav = el("span", "av", m.short); kav.style.background = m.av;
+    const kn = el("div"); kn.append(el("b", null, m.name), el("span", null, "@" + m.handle));
+    kh.append(kav, kn, el("span", "lg", "번역"));
+    const koTxt = el("p", null, t.ko);
+    ko.append(kh, koTxt);
+    if (t.media.length) ko.append(grid(t.media, t.hue, (v, i, n, c) => goX(true, v, i, n, c, false)));
+    let koQ = null;
+    if (t.quote) {
+      const q = el("div", "q");
+      koQ = el("div", "qt", t.quote.ko);
+      const qi = el("div", "qi"); qi.append(el("b", null, "인용한 글"), koQ); q.append(qi);
+      if (t.quote.media.length) q.append(grid(t.quote.media, t.hue + 120, (v, i, n, c) => goX(true, v, i, n, c, true)));
+      ko.append(q);
+    }
+    const kf = el("div", "kf");
+    const kl = el("a", null, "𝕏에서 원문"); kl.href = "#"; kl.addEventListener("click", (e) => { e.preventDefault(); toast("X 원문이 새 창으로 열려요 (시제품)"); });
+    const kt = el("span", "kt", hm(t.at)); kt.title = md(t.at) + " · " + ago(t.at);   // 메신저처럼 시각만, 날짜는 구분선
+    kf.append(kt, kl);
+    ko.append(kf);
+    const fKo = el("section", "face front"); fKo.setAttribute("aria-label", "번역"); fKo.append(ko);
+
+    // 원문 면: X 카드 흉내
+    const xc = el("div", "xcard");
+    const xh = el("div", "xh");
+    const xav = el("span", "av", m.short); xav.style.background = m.av;
+    const xn = el("div"); xn.append(el("b", null, m.name.replace("멤버", "Member")), el("span", null, "@" + m.handle));
+    xh.append(xav, xn, el("span", "lg", "𝕏"));
+    const xTxt = el("div", null, t.ja);
+    xc.append(xh, xTxt);
+    const cardPress = (v) => { if (v) { if (!xc.querySelector(".playing")) { const pl = el("div", "playing", "▶ 재생 중 (시제품 — 실제는 X 카드가 재생)"); pl.addEventListener("click", () => pl.remove()); xc.append(pl); } } else toast("카드 안 사진 → X 가 새 창으로 열려요 (시제품)"); };
+    if (t.media.length) xc.append(grid(t.media, t.hue, cardPress, true));
+    let xQ = null;
+    if (t.quote) { const xq = el("div", "xq"); xQ = el("div", null, t.quote.ja); const xqi = el("div", "qi"); xqi.append(el("b", null, "Official @official"), xQ); xq.append(xqi); if (t.quote.media.length) xq.append(grid(t.quote.media, t.hue + 120, cardPress, true)); xc.append(xq); }
+    const xf = el("div", "xf"); xf.append(el("span", null, md(t.at)), el("span", null, "♥ " + (80 + (t.id * 37) % 400)), el("span", null, "답글"));
+    xc.append(xf);
+    const bub = el("div", "bub"); xc.append(bub);
+    const fX = el("section", "face back"); fX.setAttribute("aria-label", "X 원문 카드"); fX.setAttribute("aria-hidden", "true"); fX.inert = true; fX.append(xc);
+
+    const track = el("div", "track"); track.append(fKo, fX);
+    art._align = () => {
+      koTxt.style.minHeight = xTxt.offsetHeight + "px";
+      if (koQ && xQ) koQ.style.minHeight = xQ.offsetHeight + "px";
+      const off = koTxt.offsetHeight - xTxt.offsetHeight + (koQ && xQ ? koQ.offsetHeight - xQ.offsetHeight : 0);
+      art.classList.toggle("longer", off > 0);
+    };
+    const dots = el("div", "dots"); dots.setAttribute("aria-hidden", "true"); dots.append(el("i", "on"), el("i"));
+    art.append(track, dots);
+
+    /* 겹쳐 밀기 */
+    const faces = [fKo, fX];
+    let face = 0, busy = 0;
+    const mark = (f) => { dots.children[0].classList.toggle("on", f === 0); dots.children[1].classList.toggle("on", f === 1);
+      faces.forEach((x, i) => { x.classList.toggle("front", i === f); x.classList.toggle("back", i !== f); x.inert = i !== f; x.toggleAttribute("aria-hidden", i !== f); x.style.transform = ""; x.style.opacity = ""; }); };
+    function setFace(f, smooth) {
+      if (f === face) return;
+      clearTimeout(busy);
+      if (!smooth || reduce()) { face = f; mark(f); return; }
+      const front = faces[face], back = faces[f], dir = f === 1 ? -1 : 1;
+      front.style.transform = `translateX(${dir * 40}%)`; front.style.opacity = "0";
+      back.style.opacity = "1"; back.style.transform = "none";
+      face = f;
+      dots.children[0].classList.toggle("on", f === 0); dots.children[1].classList.toggle("on", f === 1);
+      busy = setTimeout(() => mark(f), 300 * slow());
+    }
+    // 칸 자리 이름(격자 모양별) — 카드에서 어디를 누르면 되는지 말풍선으로 알린다
+    const SPOT = { 1: [""], 2: ["왼쪽", "오른쪽"], 3: ["왼쪽 큰 칸", "오른쪽 위", "오른쪽 아래"], 4: ["왼쪽 위", "오른쪽 위", "왼쪽 아래", "오른쪽 아래"] };
+    function goX(flash, video, i, n, cell, inQuote) {
+      // 두 면의 칸 위치가 같으므로, 넘기기 전에 번역 면에서 누른 칸 자리(변형 영향 없는 offset 기준)를 재 두었다가 카드 위 같은 자리에 표시한다
+      let box = null;
+      if (cell) {
+        let x = 0, y = 0; for (let e = cell; e && e !== fKo; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; }
+        // 번역이 원문보다 길어 아래로 밀린 만큼 빼서 카드 쪽 자리로(본문 차이 + 인용 칸이면 인용 본문 차이까지)
+        y -= Math.max(0, koTxt.offsetHeight - xTxt.offsetHeight);
+        if (inQuote && koQ && xQ) y -= Math.max(0, koQ.offsetHeight - xQ.offsetHeight);
+        box = { x, y, w: cell.offsetWidth, h: cell.offsetHeight };
+      }
+      setFace(1, true);
+      if (!flash) return;
+      setTimeout(() => {
+        // 영상: 말풍선 · 카드 전체 반짝임 없이, 카드의 같은 영상 칸 가장자리에 글로우가 한 번 깜박
+        if (box) mark2(box, "glow");
+      }, 300 * slow());
+    }
+    function mark2(box, cls) {
+      const r = el("div", cls);
+      Object.assign(r.style, { left: box.x + "px", top: box.y + "px", width: box.w + "px", height: box.h + "px" });
+      fX.append(r);
+      r.addEventListener("animationend", () => r.remove());
+      setTimeout(() => r.remove(), 2000 * slow());   // 탭이 가려져 animationend 가 안 와도 남지 않게
+    }
+    art._setFace = setFace;
+    art.addEventListener("keydown", (e) => { if (e.target !== art) return; if (e.key === "ArrowRight") { setFace(1, true); e.preventDefault(); } if (e.key === "ArrowLeft") { setFace(0, true); e.preventDefault(); } });
+    // 끌기 — 마우스 · 손가락 · 펜 모두(트랙 · 시각 줄 · 점 줄)
+    let g = null, dragged = false;
+    const start = (e) => { if (e.button > 0 || e.target.closest("a, .x-close")) return; g = { x: e.clientX, y: e.clientY, on: false, id: e.pointerId, w: track.clientWidth }; DRAG = { move, up }; };
+    for (const h of [track, dots]) h.addEventListener("pointerdown", start);
+    const move = (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (!g.on) { if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return; g.on = true; dragged = true; track.classList.add("drag"); clearTimeout(busy); mark(face); }
+      const t = dx / g.w, want = face === 0 ? t < 0 : t > 0, k = Math.min(1, Math.abs(t));
+      const front = faces[face], back = faces[1 - face];
+      if (want) { front.style.transform = `translateX(${t * 100}%)`; front.style.opacity = String(Math.max(0, 1 - k * 1.2)); back.style.opacity = String(Math.min(1, k * 1.6)); back.style.transform = `scale(${0.985 + 0.015 * k})`; }
+      else front.style.transform = `translateX(${Math.sign(dx) * Math.min(24, Math.abs(dx) / 3)}px)`;   // 더 갈 면이 없는 쪽 = 고무줄
+      dots.children[0].style.width = (face === 0 ? 14 - 8 * (want ? k : 0) : 6 + 8 * (want ? k : 0)) + "px";
+      dots.children[1].style.width = (face === 0 ? 6 + 8 * (want ? k : 0) : 14 - 8 * (want ? k : 0)) + "px";
+      g.t = t; g.want = want;
+    };
+    const up = (e) => {
+      if (!g || e.pointerId !== g.id) return;
+      const was = g.on, t = g.t || 0, want = g.want;
+      g = null; DRAG = null;
+      for (const d of dots.children) d.style.width = "";
+      if (!was) return;
+      track.classList.remove("drag");
+      setTimeout(() => { dragged = false; }, 0);
+      if (want && Math.abs(t) > 0.25) setFace(1 - face, true);
+      else { faces.forEach((x) => { x.style.transform = ""; x.style.opacity = ""; }); }
+    };
+    track.addEventListener("click", (e) => { if (dragged) { e.stopPropagation(); e.preventDefault(); } }, true);
+    // 트랙패드 가로: 60px 넘게 모이면 한 번 넘기고 400ms 쉰다
+    let acc = 0, rest = 0;
+    track.addEventListener("wheel", (e) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      if (Date.now() < rest) return;
+      acc += e.deltaX;
+      if (Math.abs(acc) > 60) { setFace(acc > 0 ? 1 : 0, true); acc = 0; rest = Date.now() + 400; }
+    }, { passive: false });
+    if (S.face === 1) { face = 1; mark(1); }
+    return art;
+  }
+
+  /* 끌기 중인 글 하나 — 창 리스너는 한 번만 단다 */
+  let DRAG = null;
+  window.addEventListener("pointermove", (e) => { if (DRAG) DRAG.move(e); });
+  window.addEventListener("pointerup", (e) => { if (DRAG) DRAG.up(e); });
+  window.addEventListener("pointercancel", (e) => { if (DRAG) DRAG.up(e); });
+
+  /* ── 피드 ── */
+  const feed = $("feed");
+  function render(mode) {
+    const m = cur();
+    feed.replaceChildren();
+    let lined = false, day = "";
+    for (const t of m.tweets) {
+      const un = m.unread.has(t.id);
+      const d = dayLabel(t.at);
+      if (d !== day) { feed.append(el("div", "day", d)); day = d; }
+      if (un && !lined) { feed.append(el("div", "newline", "여기부터 새 글")); lined = true; }
+      feed.append(article(m, t, un));
+    }
+    S.pending = [];
+    requestAnimationFrame(() => {
+      for (const a of feed.querySelectorAll(".tw")) a._align();
+      const p = S.pos[S.ck];
+      const target = mode === "restore" && p && !p.bottom ? feed.querySelector(`.tw[data-id="${p.id}"]`) : null;
+      if (target) feed.scrollTop = target.offsetTop + p.off;
+      else feed.scrollTop = feed.scrollHeight;     // 처음 열 때 · 멤버에 처음 갈 때 = 맨 아래
+      fab();
+    });
+  }
+  function savePos() {
+    const dist = feed.scrollHeight - feed.clientHeight - feed.scrollTop;
+    if (dist < 24) { S.pos[S.ck] = { bottom: true }; return; }
+    const fr = feed.getBoundingClientRect();
+    for (const a of feed.querySelectorAll(".tw")) {
+      const r = a.getBoundingClientRect();
+      if (r.bottom > fr.top + 1) { S.pos[S.ck] = { id: a.dataset.id, off: fr.top - r.top }; return; }
+    }
+  }
+
+  /* ── 머리 · 칩 ── */
+  function head() {
+    const m = cur(), s = $("sheet");
+    s.style.setProperty("--m", m.bg); s.style.setProperty("--mi", m.ink);
+    s.style.setProperty("--paper", m.ink === "#ffffff" ? `color-mix(in srgb, ${m.bg} 72%, #000)` : `color-mix(in srgb, ${m.bg} 52%, #fff)`);
+    $("nm").textContent = m.name; $("hd").textContent = "@" + m.handle + " · 최근 48시간";
+    const hav = $("hav"); hav.textContent = m.short; hav.style.background = m.av;
+    const mem = $("members");
+    mem.replaceChildren();
+    for (const x of M) {
+      const c = el("button", "chip"); c.type = "button";
+      c.setAttribute("aria-current", String(x.ck === S.ck));
+      const a = el("span", "av", x.short); a.style.background = x.av;
+      c.append(a, el("span", null, x.name.replace("멤버 ", "")));
+      if (x.ck !== S.ck && x.unread.size) c.append(el("b", null, String(x.unread.size)));
+      c.addEventListener("click", () => switchTo(x.ck));
+      mem.append(c);
+    }
+  }
+  function openSheet(ck) {
+    S.ck = ck; S.pos = {}; S.seen = new Set([ck]); S.open = true;
+    head(); render("bottom");
+    $("sheet").classList.add("open"); $("scrim").classList.add("on");
+    setTimeout(() => $("sheet").focus({ preventScroll: true }), 30);
+  }
+  function closeSheet() {
+    if (!S.open) return;
+    S.open = false;
+    cur().unread.clear();
+    $("sheet").classList.remove("open"); $("scrim").classList.remove("on");
+    drawBoard();
+  }
+  function switchTo(ck) {
+    if (ck === S.ck) return;
+    const dir = M.findIndex((m) => m.ck === ck) > M.findIndex((m) => m.ck === S.ck) ? 1 : -1;
+    savePos();
+    cur().unread.clear();                       // 떠나는 멤버는 읽음
+    S.ck = ck;
+    const first = !S.seen.has(ck);
+    S.seen.add(ck);
+    head();
+    render(first ? "bottom" : "restore");
+    feed.classList.remove("swap"); feed.style.setProperty("--from", dir * 24 + "px"); void feed.offsetWidth; feed.classList.add("swap");
+  }
+  $("close").addEventListener("click", closeSheet);
+  $("scrim").addEventListener("click", closeSheet);
+  $("sheet").addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+
+  /* ── 모든 글 면 전환 ── */
+  function setAll(f) {
+    S.face = f;
+    $("segKo").setAttribute("aria-pressed", String(f === 0)); $("segX").setAttribute("aria-pressed", String(f === 1));
+    const fr = feed.getBoundingClientRect();
+    let k = 0;
+    for (const a of feed.querySelectorAll(".tw")) {
+      const r = a.getBoundingClientRect();
+      if (r.bottom > fr.top && r.top < fr.bottom) { const d = 40 * k++; setTimeout(() => a._setFace(f, true), d * slow()); }
+      else a._setFace(f, false);
+    }
+  }
+  $("segKo").addEventListener("click", () => setAll(0));
+  $("segX").addEventListener("click", () => setAll(1));
+
+  /* ── ↓ 동그라미 ── */
+  const atBottom = (px) => feed.scrollHeight - feed.clientHeight - feed.scrollTop < px;
+  function fab() {
+    const f = $("fab");
+    if (S.pending.length && atBottom(24)) S.pending = [];
+    const n = S.pending.length, far = !atBottom(160);
+    f.classList.toggle("on", !!n || far);
+    f.classList.toggle("count", !!n);
+    $("fabN").textContent = n ? String(n) : "";
+    f.setAttribute("aria-label", n ? `새 글 ${n}개, 맨 아래로` : "맨 아래로");
+    f.tabIndex = n || far ? 0 : -1;
+  }
+  window.addEventListener("resize", () => { for (const a of feed.querySelectorAll(".tw")) a._align(); });
+  let raf = 0;
+  feed.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; fab(); }); }, { passive: true });
+  $("fab").addEventListener("click", () => feed.scrollTo({ top: feed.scrollHeight, behavior: reduce() ? "auto" : "smooth" }));
+
+  /* ── 새 글 도착 흉내 ── */
+  $("arrive").addEventListener("click", () => {
+    if (!S.open) openSheet(S.ck);
+    const m = cur(), p = POOL[(seq * 5) % POOL.length];
+    const t = { id: seq++, ...p, at: Date.now(), hue: (seq * 53) % 360 };
+    m.tweets.push(t);
+    const wasBottom = atBottom(24);
+    const a = article(m, t, true);
+    feed.append(a);
+    a._align();
+    if (wasBottom) {
+      a.classList.add("rise");
+      feed.scrollTo({ top: feed.scrollHeight, behavior: reduce() ? "auto" : "smooth" });
+    } else S.pending.push(a);
+    fab();
+  });
+
+  $("cases").addEventListener("click", () => { if (S.open) switchTo("z"); else openSheet("z"); });
+
+  /* ── 짧은 안내 ── */
+  let ht = 0;
+  function toast(msg) { const h = $("hint"); h.textContent = msg; h.classList.add("on"); clearTimeout(ht); ht = setTimeout(() => h.classList.remove("on"), 1800); }
+
+  drawBoard();
+  const gal = $("gallery");
+  for (const t of Z.tweets) gal.append(article(Z, t, false));
+  requestAnimationFrame(() => { for (const a of gal.querySelectorAll(".tw")) a._align(); });
+  openSheet("z");
+})();
+</script>
