@@ -85,8 +85,6 @@ const IC = {
 };
 const _reduce = () => !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
 const _mobile = () => !!(window.matchMedia && window.matchMedia("(max-width: 767px)").matches);
-// X 카드 덮개가 켜지는 조건 — css/tweets.css 의 같은 미디어 쿼리와 맞춘다(PC 폭 + 마우스)
-const _coverOn = () => !!(window.matchMedia && matchMedia("(min-width: 768px) and (hover: hover) and (pointer: fine)").matches);
 /** 숫자 배지가 늘 때 한 번 톡 커졌다 돌아온다 */
 const _pop = (el) => {
   if (el && el.animate && !_reduce()) el.animate([{ transform: "scale(1)" }, { transform: "scale(1.4)", offset: 0.35 }, { transform: "scale(1)" }], { duration: 380, easing: "cubic-bezier(0.3, 1.5, 0.5, 1)" });
@@ -504,6 +502,11 @@ function _wireGlobal() {
     if (S && S.geo) _geoEnd(e);
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S && S.open) _close(); });
+  // (v4.9.4) 카드 조작 중(.is-live)인 X 카드 밖을 누르면 덮개를 다시 덮는다 — 폰은 mouseleave 가 없어서
+  document.addEventListener("pointerdown", (e) => {
+    if (!S || !S.open) return;
+    for (const c of S.feed.querySelectorAll(".lane__thread__xcard.is-live")) if (!c.contains(e.target)) c.classList.remove("is-live");
+  }, true);
   window.addEventListener("resize", () => {
     if (!S) return;
     if (S.open) _geom();   // 창이 줄면 팝업 높이 · 위치를 창 안으로(폰 폭으로 넘어가면 PC 값을 지운다)
@@ -703,9 +706,10 @@ function _article(m, prev, isRoot, unread, now) {
   const xcard = _xCard(m);
   const xface = _el("section", { cls: "tws-tw__face is-back", attrs: { "aria-label": "X 원문 카드", "aria-hidden": "true" } }, [xcard]);
   xface.inert = true;
-  // (v4.9.1) X 카드 덮개(PC · 마우스만, CSS 가 켠다): 카드 머리(작성자 줄)를 뺀 나머지를 투명하게 덮어 밀기 손잡이로 쓴다 —
-  // X 카드는 iframe 이라 그 위에서 누른 마우스를 바깥이 받지 못한다. 끌지 않고 한 번 누르면 덮개가 비켜 카드 조작으로(.is-live),
-  // 마우스가 카드를 벗어나면 다시 덮인다.
+  // (v4.9.1) X 카드 덮개: 카드 머리(작성자 줄)를 뺀 나머지를 투명하게 덮어 밀기 손잡이로 쓴다 —
+  // X 카드는 iframe 이라 그 위에서 누른 마우스 · 손가락을 바깥이 받지 못한다. 끌지 않고 한 번 누르면 덮개가 비켜 카드 조작으로(.is-live),
+  // 마우스가 카드를 벗어나거나 카드 밖을 누르면 다시 덮인다. (v4.9.4) 폰 · 터치에도 씌운다 — v4.9.3 에서 글 위 시각 줄(손가락 손잡이)을
+  // 없앤 뒤로 폰 원문 면에서는 아래 점 줄만 밀 수 있어 「원문 카드에서 좌우로 밀리지 않는다」가 됐다.
   let dragged = false;
   if (xcard.dataset.id) {
     const cover = _el("div", { cls: "tws-xcover", attrs: { "aria-hidden": "true" } });
@@ -773,6 +777,7 @@ function _article(m, prev, isRoot, unread, now) {
   const pulseDot = (k) => { if (!_reduce()) dots.children[k].animate([{ transform: "scale(1.25)" }, { transform: "scale(1)" }], { duration: 120, easing: "ease-out" }); };
   /** 앞 · 뒤 면을 확정한다(끼어 있던 움직임 · 끄는 중 모양은 지운다) */
   const mark = (f) => {
+    if (f === 0) xcard.classList.remove("is-live");   // 번역으로 돌아오면 덮개를 다시 덮는다
     faces.forEach((x, i) => {
       const on = i === f;
       x.classList.toggle("is-front", on);
@@ -819,7 +824,7 @@ function _article(m, prev, isRoot, unread, now) {
     y -= art._shift || 0;                       // 번역이 원문보다 길어 밀린 만큼 카드 쪽 자리로
     if (inQuote) y -= art._qshift || 0;
     const box = { x, y, w: cell.offsetWidth, h: cell.offsetHeight };
-    if (_coverOn()) xcard.classList.add("is-live");   // PC: 다음 한 번 누름이 바로 카드(영상 재생)에 닿게
+    xcard.classList.add("is-live");               // 다음 한 번 누름이 바로 카드(영상 재생)에 닿게(덮개를 미리 비킴)
     setFace(1, true);
     setTimeout(() => {
       if (!xface.isConnected) return;
@@ -883,8 +888,7 @@ function _article(m, prev, isRoot, unread, now) {
       setFace(to, true);
       if (to === 1 && !S.hintShown) {
         S.hintShown = true;
-        _hint(_coverOn() ? "카드를 옆으로 끌면 번역으로 돌아와요. 카드 속 영상 · 링크는 한 번 누른 뒤 다시 누르세요."
-          : "X 카드 위에서는 밀기가 X 화면으로 가요. 아래 점 줄을 밀면 번역으로 돌아와요.");
+        _hint("카드를 옆으로 밀면 번역으로 돌아와요. 카드 속 영상 · 링크는 한 번 누른 뒤 다시 누르세요.");
       }
     },
     cancel() {
