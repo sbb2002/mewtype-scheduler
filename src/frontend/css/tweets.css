@@ -242,23 +242,9 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 .tws__grab i { width: 40px; height: 5px; border-radius: 3px; background: color-mix(in srgb, var(--mi) 45%, transparent); transition: width var(--t-fast); }
 .tws.is-armed .tws__grab i { width: 56px; }   /* B3: 닫힘 선을 넘은 표시 */
 
-.tws__head { display: flex; align-items: center; gap: 10px; padding: 0 12px 8px 16px; flex: none; touch-action: none; cursor: grab; }
-.tws__who { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.tws__av {
-  width: 34px; height: 34px; border-radius: 50%; flex: none;
-  background-color: color-mix(in srgb, var(--mi) 20%, transparent);
-  background-size: cover; background-position: center;
-  border: 2px solid color-mix(in srgb, var(--mi) 55%, transparent);
-}
-.tws__id { min-width: 0; flex: 1; }
-.tws__nm { font-weight: 800; font-size: 15px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tws__hd { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tws__close {
-  width: 36px; height: 36px; border-radius: 10px; border: 0; background: var(--s1);
-  display: grid; place-items: center; cursor: pointer; color: inherit; flex: none;
-}
-.tws__close:hover { background: var(--s2); }
-.tws__close svg { width: 16px; height: 16px; }
+/* (v4.9.5) 머리 줄 한 줄 = 멤버 칩 줄(지금 멤버만 얼굴 + 이름) + 번역 · 원문 (운영자 D안, 닫기 단추 없음) */
+.tws__head { display: flex; align-items: center; gap: 8px; padding: 0 12px 6px 8px; flex: none; touch-action: none; cursor: grab; }
+.tws__nm { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }   /* 화면 낭독용 시트 이름 */
 
 /* 머리 줄 「번역 · 원문」 탭 = 모든 글 한꺼번에(A4 알약이 미끄러진다) */
 .tws__seg {
@@ -279,8 +265,8 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 /* 멤버 칩 줄: 마우스 · 펜은 JS 끌기, 터치는 브라우저 가로 스크롤(pan-x). 넘칠 때만 양 끝 16px 흐림 */
 .tws__members {
   --ml: 16px; --mr: 16px;
-  position: relative; display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto;
-  scrollbar-width: none; flex: none; cursor: grab; touch-action: pan-x;
+  position: relative; display: flex; align-items: center; gap: 8px; padding: 4px; overflow-x: auto; flex: 1; min-width: 0;
+  scrollbar-width: none; cursor: grab; touch-action: pan-x;
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--ml), #000 calc(100% - var(--mr)), transparent 100%);
   mask-image: linear-gradient(to right, transparent 0, #000 var(--ml), #000 calc(100% - var(--mr)), transparent 100%);
 }
@@ -288,28 +274,32 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 .tws__members.at-l { --ml: 0px; }
 .tws__members.at-r { --mr: 0px; }
 .tws__members.is-grabbing { cursor: grabbing; }
-.tws__chip {
-  position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--ln); background: var(--s1); color: inherit; border-radius: 999px;
-  padding: 3px 10px 3px 3px; cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; min-height: 32px;
+.tws__chip {   /* 다른 멤버 = 얼굴만(이름은 aria-label · title), 지금 멤버 = 얼굴 + 이름 알약 */
+  position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; flex: none;
+  border: 0; background: transparent; color: inherit; border-radius: 999px;
+  padding: 2px; cursor: pointer; font: inherit; font-size: 14px; white-space: nowrap; min-height: 36px;
   transition: opacity var(--t-fast);
 }
+.tws__chip-nm { display: none; }
+.tws__chip[aria-current="true"] { padding-right: 14px; }
+.tws__chip[aria-current="true"] .tws__chip-nm { display: inline; }
+.tws__chip:not([aria-current="true"]):hover .tws__chip-av { box-shadow: 0 0 0 2px var(--mi); }
 /* (v4.9.1) 왼쪽 원 = 예고판 네임플레이트 아바타(.lane__avatar)와 같은 이미지 + 레인 색(--lc) 테두리 */
 .tws__chip-av {
-  width: 24px; height: 24px; border-radius: 50%; flex: none;
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
   background: var(--color-img, #111) center / cover no-repeat;
   border: 1.5px solid var(--lc, #888); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
 }
 .tws__chip[aria-current="true"] { background: transparent; color: var(--m); font-weight: 800; border-color: var(--mi); }
 .tws__chip[aria-disabled="true"] { opacity: 0.4; cursor: default; }   /* 트윗 없는 멤버: 흐리게 · 누를 수 없게 */
 .tws__chip[aria-disabled="true"] .tws__chip-av { filter: grayscale(0.6); }
-.tws__chip b {
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e5484d; color: #fff;
-  font-size: 10.5px; display: grid; place-items: center; font-variant-numeric: tabular-nums;
+.tws__chip b {   /* 새 글 수 — 얼굴 오른쪽 위에 */
+  position: absolute; right: -4px; top: -3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: #e5484d; color: #fff;
+  font-size: 10px; display: grid; place-items: center; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--m);
 }
 /* A5: 선택 알약 — 칩 사이를 미끄러진다(위치 · 크기는 JS) */
 .tws__mpill {
-  position: absolute; left: 0; top: 0; height: 32px; border-radius: 999px; background: var(--mi);
+  position: absolute; left: 0; top: 0; height: 36px; border-radius: 999px; background: var(--mi);
   pointer-events: none; transition: all var(--t-face) var(--ease);
 }
 

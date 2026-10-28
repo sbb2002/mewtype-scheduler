@@ -79,7 +79,6 @@ const IC = {
   photo: () => _icon("0 0 14 14", ["M2 4.5A1.5 1.5 0 0 1 3.5 3h1l.8-1h3.4l.8 1h1A1.5 1.5 0 0 1 12 4.5v5A1.5 1.5 0 0 1 10.5 11h-7A1.5 1.5 0 0 1 2 9.5z", "M9 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"]),
   video: () => _icon("0 0 14 14", ["M2 4a1.5 1.5 0 0 1 1.5-1.5h5A1.5 1.5 0 0 1 10 4v6a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 2 10z", "M10 6l2.5-1.5v5L10 8"]),
   x: () => _icon("0 0 24 24", ["M18.9 2.6h3.3l-7.2 8.2 8.5 11.3h-6.7l-5.2-6.8-6 6.8H1.3l7.7-8.8L.7 2.6h6.9l4.7 6.2 5.6-6.2Zm-1.2 17.7h1.9L7.2 4.4H5.2l12.5 15.9Z"], true),
-  close: () => _icon("0 0 20 20", ["M5 5l10 10M15 5L5 15"]),
   down: () => _icon("0 0 20 20", ["M10 4v11", "M5 10.5l5 5 5-5"]),
   play: () => _icon("0 0 14 14", ["M4 2.2v9.6L11.8 7z"], true),
 };
@@ -378,7 +377,7 @@ function _apply() {
 }
 
 /* ── 트윗 시트 ───────────────────────────────────────────────────────
-   구조(ui_spec.md §4): .tws-scrim · section.tws > .tws__grab · .tws__head · nav.tws__members · .tws__feed · .tws__newchip · .tws__hint */
+   구조(ui_spec.md §4): .tws-scrim · section.tws > .tws__grab · .tws__head(nav.tws__members · 번역 | 원문 — 한 줄, 닫기 단추 없음) · .tws__feed · .tws__newchip · .tws__hint */
 function _ensureSheet() {
   if (S) return S;
   const s = {
@@ -390,29 +389,26 @@ function _ensureSheet() {
   S = s;
   s.scrim = _el("div", { cls: "tws-scrim", on: { click: () => _close() } });
   s.grab = _el("div", { cls: "tws__grab", attrs: { "aria-hidden": "true" } }, [_el("i")]);
-  s.av = _el("span", { cls: "tws__av", attrs: { "aria-hidden": "true" } });
-  s.nm = _el("div", { cls: "tws__nm", id: "tws-nm" });
-  s.hd = _el("div", { cls: "tws__hd" });
+  // (v4.9.5) 머리 줄 한 줄 = 멤버 칩 줄(지금 멤버만 얼굴 + 이름, 다른 멤버는 얼굴만) + 번역 · 원문 — 트윗 칸을 세로로 넓힌다.
+  // 같은 얼굴이 머리 줄 · 칩 · 글마다 겹쳐 보이던 것(운영자 D안). 닫기 단추는 없앴다(바깥 누르기 · Esc · 폰 끌어 내리기).
+  // 시트 이름(#tws-nm)은 화면 낭독용으로만, 「@핸들 · 최근 48시간」은 지금 멤버 칩의 title 로(핸들은 글마다 번역 카드에도 있다).
+  s.nm = _el("span", { cls: "tws__nm", id: "tws-nm" });
   s.pill = _el("i", { cls: "tws__seg-pill", attrs: { "aria-hidden": "true" } });
   s.koBtn = _el("button", { cls: "tws__seg-b", text: "번역", attrs: { type: "button", "aria-pressed": "true" }, on: { click: () => _setAll(0) } });
   s.xBtn = _el("button", { cls: "tws__seg-b", text: "원문", attrs: { type: "button", "aria-pressed": "false" }, on: { click: () => _setAll(1) } });
   s.seg = _el("div", { cls: "tws__seg", attrs: { role: "group", "aria-label": "모든 글 보기 전환(글 하나만 바꾸려면 그 글을 옆으로 밀기)" } }, [s.pill, s.koBtn, s.xBtn]);
-  s.closeBtn = _el("button", { cls: "tws__close", attrs: { type: "button", "aria-label": "닫기" }, on: { click: () => _close() } }, [IC.close()]);
-  s.head = _el("div", { cls: "tws__head" }, [
-    _el("div", { cls: "tws__who" }, [s.av, _el("div", { cls: "tws__id" }, [s.nm, s.hd])]),
-    s.seg, s.closeBtn,
-  ]);
   s.mpill = _el("span", { cls: "tws__mpill", attrs: { "aria-hidden": "true" } });
   s.members = _el("nav", { cls: "tws__members", attrs: { "aria-label": "멤버" } }, [s.mpill]);
   for (const ck of FALLBACK_CHANNEL_ORDER) {
     const meta = FALLBACK_CHANNELS[ck] || {};
-    const chip = _el("button", { cls: "tws__chip", attrs: { type: "button", "data-ck": ck }, on: { click: () => _switchTo(ck) } }, [
+    const chip = _el("button", { cls: "tws__chip", attrs: { type: "button", "data-ck": ck, title: meta.name_ko || ck }, on: { click: () => _switchTo(ck) } }, [
       _el("span", { cls: "tws__chip-av", attrs: { "aria-hidden": "true" } }),
-      _el("span", { text: L.shortName(meta.name_ko) || ck }),
+      _el("span", { cls: "tws__chip-nm", text: L.shortName(meta.name_ko) || ck }),   // 지금 멤버 칩에만 보인다(CSS) — 한 줄에 들도록 짧은 이름
     ]);
     s.chips[ck] = chip;
     s.members.append(chip);
   }
+  s.head = _el("div", { cls: "tws__head" }, [s.members, s.seg, s.nm]);
   s.feed = _el("div", { cls: "tws__feed" });
   s.newChip = _el("button", { cls: "tws__newchip", attrs: { type: "button" }, on: { click: () => _jumpNew() } });
   s.hint = _el("div", { cls: "tws__hint", attrs: { role: "status" } });
@@ -426,7 +422,7 @@ function _ensureSheet() {
   s.rzB = _el("div", { cls: "tws__rz tws__rz--b", attrs: { "aria-hidden": "true" } }, [s.hread]);
   s.measure = _el("div", { cls: "tws__measure", attrs: { "aria-hidden": "true" } });   // (v4.9.3) 원문 높이를 재는 숨은 칸
   s.sheet = _el("section", { cls: "tws", attrs: { role: "dialog", "aria-modal": "true", "aria-labelledby": "tws-nm", tabindex: "-1" } },
-    [s.rzT, s.grab, s.head, s.members, s.feed, s.newChip, s.fab, s.hint, s.live, s.rzB, s.measure]);
+    [s.rzT, s.grab, s.head, s.feed, s.newChip, s.fab, s.hint, s.live, s.rzB, s.measure]);
   document.body.append(s.scrim, s.sheet);
 
   // 폰: 손잡이 · 머리 줄을 아래로 끌어 닫기(sheetdrag.js). PC 는 끌어 닫기 없음
@@ -454,12 +450,14 @@ function _ensureSheet() {
     if (!s.fabRaf) s.fabRaf = requestAnimationFrame(() => { s.fabRaf = 0; _fabSync(); });   // (v4.9.3) 올리면 ↓ 동그라미
   }, { passive: true });
   // (v4.9.1) PC: 머리 줄을 잡아 옮기기 · 위아래 가장자리를 끌어 높이 바꾸기(더블클릭 = 창의 90%로)
-  s.head.addEventListener("pointerdown", (e) => {
-    if (!s.open || _mobile() || e.button > 0) return;
-    if (e.target instanceof Element && e.target.closest("button, a")) return;
-    s.geo = { kind: "move", id: e.pointerId, x: e.clientX, y: e.clientY, tx: s.tx, ty: s.ty };
-    _geoStart(s.head, e.pointerId, "is-moving");
-  });
+  for (const h of [s.head]) {
+    h.addEventListener("pointerdown", (e) => {
+      if (!s.open || _mobile() || e.button > 0) return;
+      if (e.target instanceof Element && e.target.closest("button, a, .tws__members")) return;   // 칩 줄은 칩 끌기
+      s.geo = { kind: "move", id: e.pointerId, x: e.clientX, y: e.clientY, tx: s.tx, ty: s.ty };
+      _geoStart(h, e.pointerId, "is-moving");
+    });
+  }
   for (const rz of [s.rzT, s.rzB]) {
     rz.addEventListener("pointerdown", (e) => {
       if (!s.open || _mobile() || e.button > 0) return;
@@ -526,8 +524,8 @@ function _head() {
   s.nm.textContent = meta.name_ko || ck;
   const list = _visible(_st.data)[ck] || [];
   const handle = list.length ? list[list.length - 1].handle : "";
-  s.hd.textContent = (handle ? "@" + handle + " · " : "") + "최근 48시간";
-  s.av.style.backgroundImage = meta.avatar ? `url("${meta.avatar}")` : "none";
+  for (const c of Object.values(s.chips)) c.title = (FALLBACK_CHANNELS[c.dataset.ck] || {}).name_ko || c.dataset.ck;
+  if (s.chips[ck]) s.chips[ck].title = (meta.name_ko || ck) + (handle ? " · @" + handle : "") + " · 최근 48시간";
   _syncSeg(true);
 }
 function _syncSeg(instant) {
@@ -544,12 +542,14 @@ function _members(instant, pop) {
   for (const ck of FALLBACK_CHANNEL_ORDER) {
     const chip = s.chips[ck], list = vis[ck] || [];
     chip.setAttribute("aria-current", String(ck === s.ck));
+    const nmK = (FALLBACK_CHANNELS[ck] || {}).name_ko || ck;
     chip.setAttribute("aria-disabled", String(!list.length));   // 트윗 없는 멤버는 흐리게 · 누를 수 없게
     chip.classList.toggle("is-empty", !list.length);
     const av = chip.querySelector(".tws__chip-av");                // 네임플레이트 아바타 + 레인 색 테두리
     av.style.backgroundImage = _avatarImg(ck);
     av.style.setProperty("--lc", _laneColor(ck) || L.FALLBACK_BG);
     const n = ck === s.ck ? 0 : _unreadCount(list, rd);
+    chip.setAttribute("aria-label", n ? `${nmK}, 새 글 ${n}개` : nmK);   // (v4.9.5) 다른 멤버 칩은 얼굴만 보이므로 이름은 여기로
     const was = s.cnt[ck] || 0;
     s.cnt[ck] = n;
     let b = chip.querySelector("b");
