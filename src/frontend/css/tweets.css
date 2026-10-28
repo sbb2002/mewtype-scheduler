@@ -541,25 +541,23 @@ button.tws-md__cell:active .tws-md__play { transform: scale(0.94); }
 @keyframes tws-nudge { 0%, 44%, 100% { transform: none; } 10% { transform: translateY(3px); } 22% { transform: translateY(0); } 30% { transform: translateY(1.5px); } }
 .tws__live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-/* ── (v4.9.1) X 카드 덮개 — PC · 마우스만(tweets.js _coverOn 과 같은 조건) ──────────────
-   카드 머리(작성자 줄, --xhead)를 뺀 나머지를 투명하게 덮어 밀기 손잡이로 쓴다. 한 번 누르면 비켜 카드 조작(.is-live),
-   마우스가 카드를 벗어나면 다시 덮인다. 「X에서 보기」 대체 링크가 떠 있으면 덮지 않는다. */
-.tws-xcover { display: none; }
-@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
-  .tws .lane__thread__xcard { --xhead: 64px; }   /* X 카드 머리 줄 = 위 13 + 48 (10-28 실측) */
-  .tws-xcover { display: block; position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; top: var(--xhead); cursor: grab; }
-  .tws-tw__track.is-grabbing .tws-xcover { cursor: grabbing; }
-  .lane__thread__xcard.is-live .tws-xcover { pointer-events: none; }
-  .lane__thread__xcard:has(.lane__thread__xlink) .tws-xcover { display: none; }
-  .tws-xcover::after {
-    content: "카드 조작 중 · 카드 밖으로 나가면 다시 밀 수 있어요"; position: absolute; left: 50%; top: -12px;
-    transform: translate(-50%, -4px); white-space: nowrap; pointer-events: none; font-size: 11.5px; font-weight: 700;
-    background: var(--mi); color: var(--m); border-radius: 999px; padding: 2px 10px;
-    opacity: 0; transition: opacity var(--t-fast), transform var(--t-face) var(--ease);
-  }
-  .lane__thread__xcard.is-live .tws-xcover::after { opacity: 1; transform: translate(-50%, 0); }
-  .tws .lane__thread__xcard.is-live { box-shadow: inset 0 0 0 2px var(--mi); }
+/* ── (v4.9.1) X 카드 덮개 — (v4.9.4) PC · 폰 모두 ──────────────
+   카드 머리(작성자 줄, --xhead)를 뺀 나머지를 투명하게 덮어 밀기 손잡이로 쓴다(손가락은 세로로 밀면 피드 스크롤 — pan-y).
+   한 번 누르면 비켜 카드 조작(.is-live), 마우스가 카드를 벗어나거나 카드 밖을 누르면 다시 덮인다. 「X에서 보기」 대체 링크가 떠 있으면 덮지 않는다. */
+.tws .lane__thread__xcard { --xhead: 64px; }   /* X 카드 머리 줄 = 위 13 + 48 (10-28 실측) */
+.tws-xcover { display: block; position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; top: var(--xhead); cursor: grab; touch-action: pan-y; }
+.tws-tw__track.is-grabbing .tws-xcover { cursor: grabbing; }
+.lane__thread__xcard.is-live .tws-xcover { pointer-events: none; }
+.lane__thread__xcard:has(.lane__thread__xlink) .tws-xcover { display: none; }
+.tws-xcover::after {
+  content: "카드 조작 중 · 카드 밖으로 나가면 다시 밀 수 있어요"; position: absolute; left: 50%; top: -12px;
+  transform: translate(-50%, -4px); white-space: nowrap; pointer-events: none; font-size: 11.5px; font-weight: 700;
+  background: var(--mi); color: var(--m); border-radius: 999px; padding: 2px 10px;
+  opacity: 0; transition: opacity var(--t-fast), transform var(--t-face) var(--ease);
 }
+@media (hover: none) { .tws-xcover::after { content: "카드 조작 중 · 카드 밖을 누르면 다시 밀 수 있어요"; } }
+.lane__thread__xcard.is-live .tws-xcover::after { opacity: 1; transform: translate(-50%, 0); }
+.tws .lane__thread__xcard.is-live { box-shadow: inset 0 0 0 2px var(--mi); }
 
 /* ── X 공식 카드 (소식 팝업 notices.js 와 공용 · 트윗 시트의 원문 면) ──────────────────────
    카드 높이는 X 임베드가 알려주는 값을 JS 가 wrap 에 적용한다(iframe 은 wrap 을 꽉 채움). */
