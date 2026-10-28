@@ -3,7 +3,8 @@
 //
 // 여기 있는 것: 글타래 묶기 · 끌어올리기(chains) · 첨부 개수 문구(attachments) · 글자색 · 번역 칸 바탕(paletteFor) ·
 //   시각 표기(KST) · 카드 자리 높이 어림(estimateCardH) · 새 글 자리(firstUnread) · 면 저장값(mew:tllang ↔ 면 번호) · 표시 서명(sigOf) ·
-//   열린 시트 갱신 계획(reconcileUnits — 새 글만 끼우기).
+//   열린 시트 갱신 계획(reconcileUnits — 새 글만 끼우기) ·
+//   (v4.9.3) 번역 면 미디어 격자 · X 카드 치수로 두 면 위치 맞추기(predictCardH · xTextH) · 스크롤 자리 · ↓ 동그라미 · 밀기 판정 · 날짜 구분선.
 
 export const KST_MS = 9 * 3600e3;
 export const CARD_EST_H = 230;          // X 카드가 높이를 알려주기 전 자리 높이(짧은 텍스트 트윗 실측)
@@ -65,7 +66,7 @@ export function chains(list) {
 
 /* ── 첨부 세기 ────────────────────────────────────────────────────────
    media · quote.media 는 URL 목록. 영상은 썸네일 URL 로만 저장된다(video_thumb · amplify 가 들어간 주소). 나머지 = 사진.
-   원문 미디어는 우리가 그리지 않는다 — 여기서는 개수 문구만 만든다. */
+   (v4.9.3) 번역 면에 미디어를 그리게 되어 개수 문구는 글의 화면 낭독용 이름에만 쓴다. */
 export function isVideoUrl(u) { return /video_thumb|amplify/.test(String(u || "")); }
 function _kinds(urls) {
   let p = 0, v = 0;
@@ -162,6 +163,87 @@ export function estimateCardH(m) {
   else if (n >= 2) h += 200;
   if (m && m.quote) { h += 90; if (q.p + q.v > 0) h += 150; }
   return h;
+}
+
+/* ── 번역 면 미디어 · 두 면 위치 맞추기 (v4.9.3) ─────────────────────────
+   번역 면에 사진 · 영상(썸네일)을 X 카드와 같은 격자로 그리고, 번역 면 칸들이 X 카드의 같은 칸과 같은 높이에 오게 한다.
+   X 카드 실측(2026-10-28, 카드 폭 362 · 512 · 548px 에서 같음 — 폭과 무관):
+     테두리 1 · 안쪽 위 12 / 옆 16 · 머리 줄 48 · 12 뒤 (답글이면 「님에게 보내는 답글」 24 뒤) 본문 20px/24px ·
+     12 뒤 미디어(2~4칸 = 16:9 묶음, 1칸 = 원래 비율 · 세로는 정사각형, 칸 사이 2 · 테두리 1) ·
+     12 뒤 인용 상자(테두리 1 · 여백 12 · 이름 줄 26 · 본문 15px/20px · 12 뒤 미디어를 아래에 붙임(테두리 없음), 미디어 없으면 여백 12) ·
+     8 뒤 시각 줄 20 · 그 아래 100(반응 · 답글 버튼 · 아래 테두리 — 7개 글에서 모두 같음). */
+export const XM = { border: 1, pad: 12, side: 16, head: 48, gap: 12, reply: 24, qPad: 12, qHead: 26, timeGap: 8, time: 20, below: 100 };
+
+/** URL 목록 → [{ url, video }] (영상 = 썸네일 주소) */
+export function mediaItems(urls) {
+  return (Array.isArray(urls) ? urls : []).filter((u) => typeof u === "string" && u).map((u) => ({ url: u, video: isVideoUrl(u) }));
+}
+/** pbs.twimg.com 그림은 작은 크기(name=small)로 요청한다. 다른 주소는 그대로 */
+export function smallUrl(u) {
+  const s = String(u || "");
+  if (!/^https:\/\/pbs\.twimg\.com\//.test(s)) return s;
+  if (/[?&]name=/.test(s)) return s.replace(/([?&]name=)[^&]*/, "$1small");
+  return s + (s.includes("?") ? "&" : "?") + "name=small";
+}
+/** 칸 수 → { cls: "g1"~"g4" (없으면 ""), shown: 그릴 칸 수(최대 4), more: 넷째 칸에 붙일 「+N」 } — X 는 글 하나에 최대 4개 */
+export function gridOf(n) {
+  const k = Math.max(0, Math.floor(Number(n) || 0)), shown = Math.min(4, k);
+  return { cls: shown ? "g" + shown : "", shown, more: Math.max(0, k - 4) };
+}
+/** 1칸 비율(가로 ÷ 세로). 세로로 길면 정사각형(1)으로 자른다. 크기를 모르면 16:9 */
+export function singleRatio(w, h) {
+  return w > 0 && h > 0 ? Math.max(1, w / h) : 16 / 9;
+}
+/** 미디어 묶음 높이(테두리 포함). w = 묶음 바깥 폭, border = 테두리(본문 1 · 인용 안 0) */
+export function mediaBoxH(n, w, ratio, border = 1) {
+  if (!(n > 0) || !(w > 0)) return 0;
+  const inner = w - 2 * border;
+  return Math.round(n >= 2 ? (inner * 9) / 16 : inner / (ratio || 16 / 9)) + 2 * border;
+}
+/** 인용 상자 높이. qw = 상자 바깥 폭 */
+export function quoteBoxH(q, qw) {
+  const b = XM.border;
+  return b + XM.qPad + XM.qHead + (q.textH || 0) + XM.qPad + (q.n ? mediaBoxH(q.n, qw - 2 * b, q.ratio, 0) : 0) + b;
+}
+/** 본문 밖 고정 치수의 합(본문 높이만 빼고 카드 전체). p = { w: 카드 폭, reply, n, ratio, quote: { textH, n, ratio } | null } */
+function _fixedH(p) {
+  const cw = p.w - 2 * XM.border - 2 * XM.side;
+  let h = XM.border + XM.pad + XM.head + XM.gap + (p.reply ? XM.reply : 0);
+  if (p.n) h += XM.gap + mediaBoxH(p.n, cw, p.ratio, 1);
+  if (p.quote) h += XM.gap + quoteBoxH(p.quote, cw);
+  return h + XM.timeGap + XM.time + XM.below;
+}
+/** X 카드 높이 어림 = 고정 치수 + 본문 높이(p.textH) */
+export function predictCardH(p) { return _fixedH(p) + (p.textH || 0); }
+/** X 카드가 알려 준 실제 높이에서 본문 높이를 거꾸로 계산한다(음수면 0) */
+export function xTextH(cardH, p) { return Math.max(0, Math.round(cardH - _fixedH(p))); }
+
+/** 열린 시트가 기억한 멤버별 자리 → 되돌릴 글 { id, off } 또는 null(= 맨 아래). ids = 지금 그린 글 id 들 */
+export function restoreTarget(pos, ids) {
+  if (!pos || pos.bottom || pos.id == null) return null;
+  return (ids || []).map(String).includes(String(pos.id)) ? { id: String(pos.id), off: Number(pos.off) || 0 } : null;
+}
+/** ↓ 동그라미: dist = 맨 아래까지 남은 px, pending = 기다리는 새 글 수 → "count"(숫자 · 흔들기) · "plain"(맨 아래로) · "off" */
+export const FAB_DIST = 160;
+export function fabMode(dist, pending) {
+  if (pending > 0) return "count";
+  return dist > FAB_DIST ? "plain" : "off";
+}
+/** 밀기를 놓았을 때 갈 면. t = 끈 거리 ÷ 폭(왼쪽 −). 갈 수 있는 쪽으로 25% 를 넘겨야 넘어간다 */
+export function swipeTo(face, t) {
+  const want = face === 0 ? t < 0 : t > 0;
+  return want && Math.abs(t) > 0.25 ? 1 - face : face;
+}
+const _WD = ["일", "월", "화", "수", "목", "금", "토"];
+/** 날짜 구분선: 「10월 28일 (화)」 (KST) */
+export function dayLabel(ms) {
+  const p = kstParts(ms), wd = new Date(ms + KST_MS).getUTCDay();
+  return `${p.mo}월 ${p.d}일 (${_WD[wd]})`;
+}
+/** 시각을 올렸을 때(title): 「10/28 21:02 · 3분 전」 */
+export function fullLabel(ms, now) {
+  const p = kstParts(ms);
+  return `${p.mo}/${p.d} ${hmLabel(ms)} · ${agoLabel(ms, now)}`;
 }
 
 /* ── 새 글 자리 ──────────────────────────────────────────────────────
