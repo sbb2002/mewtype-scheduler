@@ -4,6 +4,7 @@ import { renderNotices, setBanners, refreshBanners } from "./notices.js";
 import { renderTweets, reapplyTweets } from "./tweets.js";
 import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
 import { initTheme } from "./theme.js";
+import { pruneVideos } from "./push.js";  // (test/live-notify)
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS, APP_VERSION, APP_DATE } from "./config.js";
 
 const board = document.getElementById("board");
@@ -18,6 +19,7 @@ let lastJSON = null;   // 내용이 안 바뀌면 renderBoard 생략 (모바일 
 function paintBoard() {
   renderBoard(board, lastSchedule, Date.now(), lastArchive);
   reapplyTweets(board);
+  pruneVideos(lastSchedule);  // (test/live-notify)
 }
 
 /** (v2.8) 개인 트윗 폴링 — 스케줄과 독립. 404/오류면 배지 안 뜬다. */

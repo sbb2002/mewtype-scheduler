@@ -1,4 +1,5 @@
 import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
+import { memberBell, videoBell } from "./push.js";  // (test/live-notify) 라이브 알림 시험판
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
 import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤버를 넘길 때 짧은 진동
@@ -280,6 +281,12 @@ function createCard(item, nowMs, channelData, laneKey) {
     thumbWrap.appendChild(collabBadge);
   }
 
+  // (test/live-notify) upcoming · watching 카드 썸네일 오른쪽 아래 방송 종
+  if ((item.state === "upcoming" || isWatching) && item.video_id) {
+    const vBell = videoBell(item.video_id);
+    if (vBell) thumbWrap.appendChild(vBell);
+  }
+
   a.appendChild(thumbWrap);
 
   const body = document.createElement("div");
@@ -333,7 +340,7 @@ function createCard(item, nowMs, channelData, laneKey) {
 }
 
 /* ── 레인 헤더 (아바타 + 이름 + 핸들 + 우측 이동 레일) ────────────── */
-function buildHeader(channelData) {
+function buildHeader(channelData, key) {
   const header = document.createElement("header");
   header.className = "lane__header";
 
@@ -371,7 +378,13 @@ function buildHeader(channelData) {
   handle.className = "lane__handle";
   handle.textContent = channelData.handle ? `@${channelData.handle}` : "";
 
-  metaWrap.append(nameLine, handle);
+  // (test/live-notify) 핸들 옆 멤버 종 — 누르면 그 멤버 라이브 알림 켬/끔(트윗 시트는 안 열림)
+  const handleLine = document.createElement("span");
+  handleLine.className = "lane__handle-line";
+  handleLine.appendChild(handle);
+  const mBell = key ? memberBell(key, channelData.name_ko) : null;
+  if (mBell) handleLine.appendChild(mBell);
+  metaWrap.append(nameLine, handleLine);
   link.appendChild(metaWrap);
   header.appendChild(link);
 
@@ -589,7 +602,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
       const lane = document.createElement("section");
       lane.className = "lane";
       lane.dataset.channel = key;
-      lane.appendChild(buildHeader(channels[key]));
+      lane.appendChild(buildHeader(channels[key], key));
       lane.appendChild(buildTodayCards(ctx, key, { compact: true }));
       lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
       grid.appendChild(lane);
@@ -607,7 +620,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
       lane.className = "lane lane--later";
       lane.dataset.channel = key;
       lane.dataset.noBadge = "";           // 편지 배지는 타임테이블 왼쪽 칸에만 (tweets.js 가 건너뜀)
-      lane.appendChild(buildHeader(channels[key]));
+      lane.appendChild(buildHeader(channels[key], key));
       lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
       later.appendChild(lane);
     }
@@ -617,7 +630,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
       const lane = document.createElement("section");
       lane.className = "lane";
       lane.dataset.channel = key;
-      lane.appendChild(buildHeader(channels[key]));
+      lane.appendChild(buildHeader(channels[key], key));
       lane.appendChild(buildTodayCards(ctx, key));
       if ((laterBy[key] || []).length) {       // 이 멤버의 이후 예고가 0건이면 펼치기 버튼도 목록도 숨김
         lane.appendChild(buildFoldButton({ total: laterBy[key].length }, ctx));

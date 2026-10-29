@@ -1,0 +1,50 @@
+/* (test/live-notify) 라이브 알림 종 — 시험판. 켜진 종은 모두 같은 색(아라레 레인 색 = 아바타 평균색 rgb(225 187 139)) */
+:root { --push-bell-on: rgb(225 187 139); }
+.lane__handle-line {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+.lane__handle-line .lane__handle { min-width: 0; }
+
+.push-bell {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.push-bell svg { width: 0.95rem; height: 0.95rem; }
+.push-bell path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.push-bell.is-on { color: var(--push-bell-on); }
+.push-bell.is-on path { fill: currentColor; }
+.push-bell.is-blocked { opacity: 0.4; }
+.push-bell:hover { background: rgba(127, 127, 127, 0.18); }
+.push-bell:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+
+/* 카드 썸네일 오른쪽 아래 */
+.push-bell--video {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.4rem;
+  z-index: 2;
+  width: 1.8rem;
+  height: 1.8rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+}
+.push-bell--video svg { width: 1.05rem; height: 1.05rem; }
+.push-bell--video.is-on { color: var(--push-bell-on); }
+.push-bell--video:hover { background: rgba(0, 0, 0, 0.75); }
+
+/* 오늘 카드: 오른쪽 아래는 회원 전용 · LIVE 알약 자리라 왼쪽 아래 */
+.tcard__th .push-bell--video { right: auto; left: 0.4rem; }
+/* PC 타임테이블 팝업: YouTube 단추 아래 */
+.push-bell--pop { position: static; align-self: flex-start; }

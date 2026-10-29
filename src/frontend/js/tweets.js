@@ -1546,6 +1546,7 @@ function _wire() {
   _st.wired = true;
   // 클릭 — 캡처 단계에서 아바타 · 배지 · 이름을 잡아 앵커 기본 이동을 막고 시트를 연다. 레일 버튼(YouTube · X)은 그대로 통과.
   board.addEventListener("click", (e) => {
+    if (e.target.closest(".push-bell")) return;          // (test/live-notify) 알림 종은 push.js 가 처리
     const lane = e.target.closest(".lane");
     if (!lane || lane.hasAttribute("data-no-badge")) return;
     const ck = lane.dataset.channel;

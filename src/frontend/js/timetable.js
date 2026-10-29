@@ -13,6 +13,9 @@
 //  closeCardPop()                      → 블록 카드 팝업 닫기
 
 import { formatKST } from "./time.js";
+import { videoBell } from "./push.js";  // (test/live-notify) 라이브 알림 시험판
+// (test/live-notify) 영상이 확정된 예정 방송(upcoming · watching)만 방송 종을 단다
+const bellable = (it) => !!it.video_id && (it.state === "upcoming" || it.state === "watching");
 import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
 
 const HOUR_MS = 3600000;
@@ -226,6 +229,7 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey) {
     const btn = el("a", "tt-pop__btn", "▶ YouTube에서 보기");
     btn.href = url; btn.target = "_blank"; btn.rel = "noopener";
     body.appendChild(btn);
+    if (bellable(it)) { const vb = videoBell(it.video_id); if (vb) { vb.classList.add("push-bell--pop"); body.appendChild(vb); } }   // (test/live-notify)
   } else {
     body.appendChild(el("span", "tt-pop__none", "아직 영상 링크가 없습니다"));
   }
@@ -597,6 +601,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
   if (state === "ended") pills.appendChild(el("div", "tcard__pill tcard__pill--end", "종료"));
   else if (state === "live") pills.appendChild(el("div", "tcard__pill tcard__pill--live", "LIVE"));
   if (pills.children.length) th.appendChild(pills);
+  if (bellable(it)) { const vb = videoBell(it.video_id); if (vb) th.appendChild(vb); }   // (test/live-notify)
   a.appendChild(th);
 
   const body = el("div", "tcard__body");
