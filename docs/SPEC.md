@@ -354,7 +354,9 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
    - 계획 = `timetable.planLater(items, archiveItems, nowMs, order)` → `{ws, we, today, days[7], far[], undated[]}`(순수 함수, selfcheck). 날짜 경계 = **KST 달력 00:00**(예고보드의 04:00 하루와 다름).
    - 이번주 = 지금이 든 주의 일 ~ 토 7줄(`div.wk2__row` > 왼쪽 `.wk2__date` 날짜 · 요일(오늘 줄은 「오늘」 알약, 지난 줄은 흐림) + 오른쪽 `.wk2__dots`). 그 주에 시작한 방송 전부 — 종료(preview `end` + 보관함, `classify` 와 같은 10분 ~ 12시간 규칙) · 방송 중 · 예정(오늘 · 내일 예고와 겹쳐도 넣음 · 시각 미정은 그날 줄).
    - 먼 미래 = 주 밖이고 오늘 · 내일 예고 구간(`dayWindow(now).ds` ~ `de + 24h`) 밖인 예정 — 날짜별 줄(올해가 아니면 연도 · `D-n`), 예정 시각이 없으면 맨 아래 「날짜 미정」 줄. 0건이면 「먼 미래 예고 없음」.
-   - **점** `button.wk2__dot` = 방송 하나(14px 원, 누르는 자리 24px). 안 `span.wk2__seg[data-channel]` 가 참여 멤버 수만큼 — 합동은 멤버 색으로 나뉜 한 점(색 = `sampleLaneColor` 가 넣는 `--lane-color`). 상태 `is-ended`(흐림) · `is-live`(빨간 링) · `is-tbd`(점선 링).
+   - **점** `button.wk2__dot` = 방송 하나(14px 원, 누르는 자리 24px). 색 = **네임플레이트와 같은 멤버 색** `--lane-color`(`sampleLaneColor` 가 아바타 평균색으로 넣음 — 아바타를 못 불러오면 네임플레이트와 함께 회색 기본값).
+     합동은 참여 멤버 수만큼 14px 조각(`span.wk2__seg[data-channel]`)을 이어 붙인 **알약**. 상태 `is-ended`(투명도 0.5) · `is-live`(빨간 링) · `is-tbd`(점선 링).
+   - 날짜 칸은 날짜 · 요일 · 꼬리(「오늘」 / `D-n`) 세 칸 고정 폭 격자라 줄마다 같은 자리에 놓인다(먼 미래는 연도가 붙을 수 있어 날짜 칸이 넓음).
      마우스 올림 = 블록과 같은 카드 팝업(공용 `wirePop`), 클릭 · Enter · Space = 고정. 점에서 연 팝업만 시각에 날짜를 붙인다(`10/31(토) 21:30` · `시각 미정` · 종료는 시작 ~ 끝 · 길이).
    카드 보기 · 모바일의 이후 예고는 그대로(멤버별 `.lane__later` 목록 + 멤버별 건수 버튼).
 

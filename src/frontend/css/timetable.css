@@ -486,18 +486,21 @@ a.tt-pop__img { cursor: pointer; }
 }
 .wk2__row:last-child { border-bottom: 0; }
 .wk2__date {
-  flex: 0 0 96px;
-  display: flex;
+  flex: none;
+  display: grid;
+  grid-template-columns: 3.4em 1.3em 3.4em;   /* (v4.9.6) 날짜 · 요일 · 꼬리(「오늘」 / D-n) — 줄마다 같은 자리 */
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0 6px;
+  column-gap: 4px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+.wk2__panel--far .wk2__date { grid-template-columns: 5.8em 1.3em 3.6em; }   /* 먼 미래 = 연도가 붙을 수 있어 날짜 칸이 넓다 */
+.wk2__dn { justify-self: end; }
 .wk2__date > b { font-size: 0.86rem; font-weight: 600; }
-.wk2__panel--far .wk2__date { flex-basis: 148px; flex-wrap: nowrap; }   /* 먼 미래 = 연도 · D-n 까지 한 줄 (예: 2027/01/01 금 D-63) */
 .wk2__date > span:not(.wk2__now):not(.wk2__dn) { font-size: 0.74rem; color: var(--color-text-muted); }
 .wk2__dn { font-size: 0.7rem; color: var(--color-text-muted); }
 .wk2__now {
+  justify-self: start;
   padding: 0 6px;
   border-radius: 999px;
   background: var(--color-raised);
@@ -515,7 +518,7 @@ a.tt-pop__img { cursor: pointer; }
 .wk2__dot {
   display: flex;
   flex: none;
-  width: 24px;
+  min-width: 24px;
   height: 24px;
   margin: 0 -2px;
   padding: 5px;
@@ -527,14 +530,15 @@ a.tt-pop__img { cursor: pointer; }
 }
 .wk2__dot:hover .wk2__seg { filter: brightness(1.15); }
 .wk2__dot:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
-.wk2__seg { flex: 1 1 0; min-width: 0; height: 100%; background: var(--lane-color, var(--color-text-muted)); }
+.wk2__seg { flex: none; width: 14px; height: 14px; background: var(--lane-color, var(--color-text-muted)); }   /* 색 = 네임플레이트와 같은 멤버 색(--lane-color, render.js sampleLaneColor) */
 .wk2__seg:only-child { border-radius: 50%; }
-.wk2__seg:first-child:not(:last-child) { border-radius: 50% 0 0 50%; }
-.wk2__seg:last-child:not(:first-child) { border-radius: 0 50% 50% 0; }
-.wk2__dot.is-ended { opacity: 0.45; }
-.wk2__dot.is-ended .wk2__seg { filter: saturate(0.4); }
-.wk2__dot.is-live { box-shadow: 0 0 0 2px var(--color-live); }
-.wk2__dot.is-tbd { outline: 1.5px dashed var(--color-text-muted); outline-offset: 0; }
+/* 합동 = 참여 멤버 수만큼 이어 붙인 알약 (14px × n, 양 끝만 둥글게) */
+.wk2__seg:first-child:not(:last-child) { border-radius: 7px 0 0 7px; }
+.wk2__seg:last-child:not(:first-child) { border-radius: 0 7px 7px 0; }
+.wk2__dot.is-ended { opacity: 0.5; }   /* 지난 방송 = 멤버 색 그대로 흐리게(채도는 낮추지 않음 — 누구 방송인지 알아보게) */
+.wk2__dot { border-radius: 12px; }
+.wk2__dot.is-live { box-shadow: inset 0 0 0 2px var(--color-live); }
+.wk2__dot.is-tbd { outline: 1.5px dashed var(--color-text-muted); outline-offset: -3px; }
 .lane__later {
   display: none;
   flex-direction: column;
