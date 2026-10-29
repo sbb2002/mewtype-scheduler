@@ -305,7 +305,7 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey, dated = false) {
   for (const t of (state === "live" ? [el("span", "tt-tag tt-tag--live", "LIVE")] : []).concat(tagsFor(entry, state))) nm.appendChild(t);
   body.appendChild(nm);
   body.appendChild(el("div", "tt-pop__rg", rangeLabel(entry, state, dated)));
-  body.appendChild(el("div", "tt-pop__ti", titleText(it, ctx)));
+  body.appendChild(dated ? popTitle(it, ctx) : el("div", "tt-pop__ti", titleText(it, ctx)));
   if (url) {
     const btn = el("a", "tt-pop__btn", "▶ YouTube에서 보기");
     btn.href = url; btn.target = "_blank"; btn.rel = "noopener";
@@ -319,21 +319,55 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey, dated = false) {
   cpop.addEventListener("mouseleave", () => {
     if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
   });
+  const w = Math.min(290, innerWidth - 24);
+  cpop.style.width = `${w}px`;                    // (v4.9.7) 폭을 먼저 정해야 한 줄 제목이 팝업을 넓히지 않고, 높이도 최종 폭에서 잰다
   document.body.appendChild(cpop);
+  if (dated) applyPopMarquees(cpop);
 
   const r = owner.getBoundingClientRect();
-  const w = Math.min(290, innerWidth - 24);
   const h = cpop.offsetHeight;
   const left = Math.min(Math.max(r.left + scrollX, 12 + scrollX), scrollX + innerWidth - w - 12);
   const below = r.bottom + h + 14 < innerHeight || r.top < h + 14;
-  cpop.style.width = `${w}px`;
   cpop.style.left = `${left}px`;
   cpop.style.top = `${below ? r.bottom + scrollY + 8 : r.top + scrollY - h - 8}px`;
   if (!below) cpop.dataset.anchorBottom = String(r.top + scrollY - 8);   // (king.js) 위쪽에 놓인 팝업이 줄어들어도 블록에 붙어 있게 아래 가장자리를 기록
 }
 
+/* (v4.9.7) 점 팝업 제목 — 한글 · 원문을 한 줄씩. 넘치는 줄만 applyPopMarquees 가 흐르게 해 팝업이 세로로 길어지지 않는다 */
+function popTitle(item, ctx) {
+  const box = el("div", "tt-pop__ti");
+  const line = (text, cls) => {
+    const ln = el("div", "tt-pop__ln" + (cls ? ` ${cls}` : ""));
+    const trk = el("span", "tt-pop__trk");
+    trk.appendChild(el("span", "", text));
+    ln.appendChild(trk);
+    box.appendChild(ln);
+  };
+  if (item.title && item.title_ko && item.title_ko !== item.title) {
+    line(item.title_ko);
+    line(item.title, "tt-pop__ln--orig");
+  } else line(titleText(item, ctx));
+  return box;
+}
+
+/* 줄이 팝업 폭을 넘치면 복제본을 붙여 무한히 흐른다(블록 제목 applyTimetableMarquees 와 같은 방식). 움직임 줄이기 설정이면 줄바꿈으로 둔다(CSS) */
+function applyPopMarquees(pop) {
+  if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  for (const ln of pop.querySelectorAll(".tt-pop__ln")) {
+    const trk = ln.firstElementChild;
+    const sp = trk.firstElementChild;
+    if (sp.offsetWidth - 2 <= ln.clientWidth) continue;
+    const dup = sp.cloneNode(true);
+    dup.setAttribute("aria-hidden", "true");
+    trk.appendChild(dup);
+    ln.classList.add("is-marquee");
+    trk.style.setProperty("--dur", `${Math.max(6, sp.offsetWidth / 45)}s`);
+  }
+}
+
 /* (v4.9.6) 블록 · 이후 예고 점 공용 팝업 연결 — 호버 = 미리보기, 클릭 · Enter · Space = 고정. dated = 날짜 붙인 시각(점에서만) */
 function wirePop(node, entry, state, ctx, rowKey, dated = false) {
+  wirePopOnce();   // (v4.9.7) 모바일은 buildTimetable 을 안 거쳐 바깥 클릭 닫기가 안 붙었다 — 팝업을 쓰는 쪽에서 붙인다
   node.addEventListener("click", (e) => { e.stopPropagation(); showCardPop(entry, state, node, true, ctx, rowKey, dated); });
   node.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showCardPop(entry, state, node, true, ctx, rowKey, dated); }
@@ -347,7 +381,8 @@ function wirePop(node, entry, state, ctx, rowKey, dated = false) {
 function wirePopOnce() {
   if (popWired) return;
   popWired = true;
-  document.addEventListener("click", (e) => {
+  // (v4.9.7) click 대신 pointerdown — iOS 는 빈 영역 탭에 click 을 안 보내고, 고정된 팝업이 있으면 다른 블록 · 점 클릭이 무시됐다
+  document.addEventListener("pointerdown", (e) => {
     if (!cpop) return;
     if (cpop.contains(e.target) || (cpopOwner && cpopOwner.contains(e.target))) return;
     closeCardPop();

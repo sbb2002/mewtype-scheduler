@@ -402,6 +402,21 @@ a.tt-pop__img { cursor: pointer; }
 .tt-pop__nm { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; font-size: 0.76rem; }
 .tt-pop__rg { font-size: 0.78rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .tt-pop__ti { font-size: 0.84rem; font-weight: 700; line-height: 1.4; }
+/* (v4.9.7) 점 팝업 제목 — 한글 · 원문 한 줄씩, 넘치면 무한 marquee (timetable.js applyPopMarquees 가 is-marquee 를 켠다) */
+.tt-pop__ln { overflow: hidden; white-space: nowrap; }
+.tt-pop__ln--orig { font-size: 0.74rem; font-weight: 400; color: var(--color-text-muted); }
+.tt-pop__trk { display: inline-flex; }
+.tt-pop__trk > span { flex: none; }
+.tt-pop__ln.is-marquee {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 6px, #000 calc(100% - 14px), transparent 100%);
+}
+.tt-pop__ln.is-marquee .tt-pop__trk > span { padding-right: 2.5rem; }
+.tt-pop__ln.is-marquee .tt-pop__trk { animation: tt-mq var(--dur, 12s) linear infinite; }
+@media (prefers-reduced-motion: reduce) {   /* 흐르지 않으면 잘려 못 읽으니 줄바꿈 */
+  .tt-pop__ln { white-space: normal; }
+  .tt-pop__trk { display: inline; }
+}
 .tt-pop__btn {
   align-self: flex-start;
   margin-top: 6px;

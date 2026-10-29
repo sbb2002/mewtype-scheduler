@@ -81,8 +81,11 @@ function build() {
   body.addEventListener("scroll", () => closeCardPop(), { passive: true });   // 카드 팝업은 문서 좌표에 고정이라 시트를 스크롤하면 닫는다
   sheet.append(head, body);
   scrim.appendChild(sheet);
-  scrim.addEventListener("mousedown", (e) => { if (e.target === scrim) closeWeek(); });
-  scrim.addEventListener("touchend", (e) => { if (e.target === scrim) { e.preventDefault(); closeWeek(); } });
+  // (v4.9.7) 카드 팝업이 떠 있을 때 시트 바깥을 누르면 팝업만 닫는다(Esc 와 같다) — 팝업은 document 의 pointerdown 이 닫으므로, 그보다 먼저 도는 여기서 떠 있었는지 기록
+  let popAtDown = false;
+  scrim.addEventListener("pointerdown", () => { popAtDown = !!document.querySelector(".tt-pop"); });
+  scrim.addEventListener("mousedown", (e) => { if (e.target === scrim && !popAtDown) closeWeek(); });
+  scrim.addEventListener("touchend", (e) => { if (e.target === scrim && !popAtDown) { e.preventDefault(); closeWeek(); } });
   document.body.appendChild(scrim);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && isOpen && !document.querySelector(".tt-pop")) closeWeek(); }, true);   // 캡처 — 카드 팝업이 떠 있으면 Esc 는 팝업만 닫는다(timetable.js 가 닫음)
   wireSheetDrag({   // (마이크로 인터랙션) 머리줄을 아래로 끌어 내린다 — 플레이어 시트와 같다
