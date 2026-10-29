@@ -40,7 +40,7 @@ function applyNew() {
   if (hasNew) document.documentElement.setAttribute("data-new-song", "");
   else document.documentElement.removeAttribute("data-new-song");
   const label = hasNew ? `${PLAYER_BUTTON_LABEL} (신곡 NEW)` : PLAYER_BUTTON_LABEL;
-  for (const b of document.querySelectorAll(".player-btn")) { b.setAttribute("aria-label", label); b.title = label; }
+  for (const b of document.querySelectorAll(".player-btn:not(.week-btn)")) { b.setAttribute("aria-label", label); b.title = label; }   // (v4.9.6) 같은 모양의 표 버튼(.week-btn)은 제외
 }
 
 /** 곡 목록(data 브랜치 songs.json, 없으면 정적 파일)을 한 번 읽어 NEW 배지를 켠다. 실패하면 조용히 배지 없음. 버튼이 다시 그려져도 CSS 가 속성을 보고 배지를 그린다. */

@@ -2,6 +2,7 @@ import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
 import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤버를 넘길 때 짧은 진동
+import { createWeekButton, setWeekData } from "./weekpop.js";   // (v4.9.6) 모바일 「표」 버튼 · 이번주 · 먼 미래 시트
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
@@ -574,6 +575,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
   const cls = classify(preview.items, archive && archive.items, nowMs, order);
   const ctx = { ...cls, nowMs, order, channels };
   boardEl.__ttDe = cls.de;
+  setWeekData({ ...cls, nowMs, order, channels }, preview.items, archive && archive.items);   // (v4.9.6) 모바일 표 시트가 쓸 마지막 데이터
 
   // 이후 예고 — 합동은 참여 멤버 전원 레인에 팬아웃 (v3 와 같은 규칙)
   const laterBy = {};
@@ -791,6 +793,7 @@ function initMobileCarousel(boardEl) {
     dots.hidden = false;
     dots.innerHTML = "";
     dots.appendChild(createPlayerButton("player-btn--dock"));   // (v4.2.0) 멤버 아이콘 줄 맨 왼쪽
+    dots.appendChild(createWeekButton());                       // (v4.9.6) 맨 오른쪽 = 이번주 · 먼 미래 표 시트
     reals.forEach((lane, i) => {
       const btn = document.createElement("button");
       btn.type = "button";

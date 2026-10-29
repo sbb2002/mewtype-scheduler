@@ -16,7 +16,7 @@
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 /* 신곡 NEW 배지 — 발매일 +14일 안의 곡이 있으면 <html data-new-song>(playerbtn.js)이 켠다. 버튼이 다시 그려져도 속성만 보고 그려진다 */
-html[data-new-song] .player-btn::after {
+html[data-new-song] .player-btn:not(.week-btn)::after {
   content: "NEW";
   position: absolute;
   top: -7px;
@@ -35,7 +35,7 @@ html[data-new-song] .player-btn::after {
 @keyframes player-new-shine { from { background-position: 130% 0; } to { background-position: -130% 0; } }
 @keyframes player-new-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(229, 56, 74, 0.55); } 50% { box-shadow: 0 0 0 4px rgba(229, 56, 74, 0); } }
 @media (prefers-reduced-motion: reduce) {
-  html[data-new-song] .player-btn::after { animation: none; background: #e5384a; }
+  html[data-new-song] .player-btn:not(.week-btn)::after { animation: none; background: #e5384a; }
 }
 .player-btn svg {
   display: block;
