@@ -368,10 +368,26 @@ def _next_day(date_kst: str) -> str:
 
 
 def extend_lookup_for_day(gh, lk: dict, date_kst: str, day: dict) -> dict:
-    """(archive-split) 지난 날짜 팝업용 찾기 표 — 캐시에서 빠져 일자 보관함으로 옮겨진 트윗 · 소식을 더한 **새** 표를 돌려준다(lk 는 그대로).
+    """(archive-split) 지난 날짜 팝업용 찾기 표 — 캐시에서 빠져 일자 보관함으로 옮겨진 트윗 · 소식 · 예고를 더한 **새** 표를 돌려준다(lk 는 그대로).
     트윗 = 모니터 하루(날짜 · 다음 날)의 일자 파일 + 이벤트 트윗 id 가 가리키는 날짜. 소식 = 보관 색인(`notice_archive/index.json`)으로 찾은 날짜.
-    각각 최대 6번 읽는다. 읽기 실패는 그 부분만 빼고 그대로 둔다(팝업은 보조 정보)."""
+    예고(v4.9.6) = 표에 없는 구간 id 가 있을 때만, 그날부터 사흘 뒤까지의 일자 파일(보관 시각 날짜 — 방송이 끝나거나 빠진 뒤에 보관되므로 그날 이후).
+    각각 최대 6번 읽는다. 읽기 실패는 그 부분만 빼고 그대로 둔다(팝업은 보조 정보). 보관이 한참 뒤인 예고(준영구 대기소 프레임 등)는 못 찾을 수 있다."""
     out = {k: dict(v) for k, v in lk.items()}
+    try:
+        missing_pv = {sg.get("id") for row in day.get("preview") or [] for sg in row.get("segs") or []
+                      if sg.get("id") and sg.get("id") not in out["pv"]}
+        if missing_pv:
+            found: dict = {}
+            d = date_kst
+            for _ in range(4):
+                for it in archive_rotate.read_day(gh, archive_rotate.PREVIEWS, d):
+                    if it.get("id") in missing_pv:
+                        found[it["id"]] = it                        # 같은 예고가 다시 보관됐으면 뒤 기록(캐시와 같은 규칙)
+                d = _next_day(d)
+            for k, it in found.items():
+                out["pv"].setdefault(k, it)
+    except Exception:  # noqa: BLE001
+        logger.warning("지난 날짜 예고 보관함 읽기 실패 — 팝업 정보 없이 표시", exc_info=True)
     try:
         tw_dates = [date_kst, _next_day(date_kst)]
         for e in day.get("tweet") or []:
@@ -3156,5 +3172,25 @@ if __name__ == "__main__":
     attach_details(day_c, ext_c)
     assert "info" not in day_c["notice"][0] and "info" not in day_c["tweet"][0]
     print("[OK] extend_lookup_for_day: 보관함 파일 없음 → 예외 없이 팝업 정보 없음")
+
+    # (v4.9.6) 예고 — 표에 없는 구간 id 만, 그날~사흘 뒤 일자 파일에서. 다시 보관된 같은 id 는 뒤 기록
+    gh_pv = _FileGh({
+        "preview_archive/2026-09-20.json": {"items": [{"id": "pv_1", "title": "앞 기록", "scheduled_start": "2026-09-20T10:00:00Z"}]},
+        "preview_archive/2026-09-22.json": {"items": [{"id": "pv_1", "title": "보관 제목", "scheduled_start": "2026-09-20T10:00:00Z",
+                                                        "video_id": "V1"},
+                                                       {"id": "pv_2", "title": "다른 날 예고"}]},
+        "preview_archive/2026-09-24.json": {"items": [{"id": "pv_3", "title": "너무 늦게 보관"}]},
+    })
+    day_d = {"preview": [{"title": "행", "segs": [{"id": "pv_1", "s": "a"}, {"id": "pv_3", "s": "b"}, {"id": "pv_9", "s": "c"}]}],
+             "notice": [], "tweet": []}
+    ext_d = extend_lookup_for_day(gh_pv, _empty_lk(), "2026-09-20", day_d)
+    assert set(ext_d["pv"]) == {"pv_1"}, ext_d["pv"].keys()           # pv_2 는 이날 구간에 없음 · pv_3 은 나흘 뒤라 안 읽음
+    attach_details(day_d, ext_d)
+    sg0 = day_d["preview"][0]["segs"][0]["info"]
+    assert sg0["title"] == "보관 제목" and sg0["yt"] == "https://www.youtube.com/watch?v=V1", sg0
+    lk_e = _empty_lk()
+    lk_e["pv"]["pv_1"] = {"id": "pv_1", "title": "캐시"}
+    assert extend_lookup_for_day(gh_pv, lk_e, "2026-09-20", day_d)["pv"]["pv_1"]["title"] == "캐시", "표에 있으면 일자 파일 안 봄"
+    print("[OK] extend_lookup_for_day: 예고 — 빠진 구간 id 만 그날~사흘 뒤 일자 파일에서, 다시 보관분은 뒤 기록")
 
     print("\nSUCCESS: monitor_report.py self-test 통과 (mock)")

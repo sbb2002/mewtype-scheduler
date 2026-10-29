@@ -4,8 +4,10 @@
   tweet_archive.json (data)  — 게시 7일 이내
   notice_archive.json (data) — 보관 시각 · 행사 날짜 중 늦은 것이 30일 이내
   llm_actions.json (ops)     — 판단 21일 이내 (관리 페이지에서 반려 · 재판단할 수 있는 기간)
+  preview_archive.json (data) — 보관 7일 이내 (v4.9.6 — 프론트는 오늘 예고의 끝난 방송만 찾는다)
 일자 보관함(보존용 — 운영 경로는 안 읽음, 웹 모니터 지난 날짜 조회 · 분석만):
   tweet_archive/YYYY-MM-DD.json · notice_archive/YYYY-MM-DD.json(+ notice_archive/index.json) · llm_actions/YYYY-MM-DD.json(ops)
+  · preview_archive/YYYY-MM-DD.json
 
 계기: GitHub Contents API 는 1MB 넘는 파일을 기본 형식으로 읽으면 내용을 비워 준다(`gh_store.read_json` 예외) —
 트윗 보관함이 888,969B(10-26)로 11-03 전후 1MB 를 넘어 개인 트윗 저장이 전부 막힐 참이었다.
@@ -31,6 +33,7 @@ _TW_EPOCH_MS = 1288834974657            # X Snowflake 기준 시각 (xtweet._TW_
 TWEET_KEEP_DAYS = 7
 NOTICE_KEEP_DAYS = 30
 LLM_KEEP_DAYS = 21                      # 관리 페이지 「LLM 판단」 반려 · 재판단 유효기간 — admin_api · admin.html 이 이 값을 쓴다
+PREVIEW_KEEP_DAYS = 7                   # (v4.9.6) 프론트(오늘 예고의 끝난 방송)는 하루 남짓만 쓰고, 웹 모니터 최근 일주일은 캐시로 바로 찾는다
 MAX_FILES_PER_RUN = 3                   # 대상마다 한 번에 쓰는 일자 파일 수
 CACHE_LIMIT_BYTES = 800_000             # 캐시가 이보다 크면 기간 안이라도 오래된 날짜부터 더 옮긴다(1MB 까지 여유 약 250KB)
 
@@ -38,6 +41,7 @@ TWEET_CACHE, TWEET_DIR = "tweet_archive.json", "tweet_archive"
 NOTICE_CACHE, NOTICE_DIR = "notice_archive.json", "notice_archive"
 NOTICE_INDEX = "notice_archive/index.json"
 LLM_CACHE, LLM_DIR = "llm_actions.json", "llm_actions"
+PREVIEW_CACHE, PREVIEW_DIR = "preview_archive.json", "preview_archive"
 
 
 # ── 시각 · 날짜 ───────────────────────────────────────────────────────────────
@@ -124,19 +128,35 @@ class Target:
     day_of: Callable[[dict], Optional[str]]
     index: Optional[str] = None
     extra: dict = field(default_factory=dict)
+    key: Optional[Callable[[dict], str]] = None     # 일자 파일 안 같은 항목 열쇠 — 없으면 _key(id)
 
 
 TWEETS = Target("tweet", TWEET_CACHE, TWEET_DIR, "tweets", TWEET_KEEP_DAYS, tweet_dt, lambda t: kst_date(tweet_dt(t)))
 NOTICES = Target("notice", NOTICE_CACHE, NOTICE_DIR, "notices", NOTICE_KEEP_DAYS, notice_keep_ref, notice_day, index=NOTICE_INDEX)
 LLM = Target("llm", LLM_CACHE, LLM_DIR, "items", LLM_KEEP_DAYS, lambda e: _parse_iso(e.get("ts")),
              lambda e: kst_date(_parse_iso(e.get("ts"))))
-TARGETS = (TWEETS, NOTICES, LLM)
 
 
 def _key(item: dict) -> str:
     """일자 파일 안에서 같은 항목을 가르는 열쇠 — id, 없으면 내용 전체."""
     i = item.get("id")
     return str(i) if i not in (None, "") else json.dumps(item, sort_keys=True, ensure_ascii=False)
+
+
+def preview_key(item: dict) -> str:
+    """(v4.9.6) 예고 보관 기록의 열쇠 = id + 보관 시각. 같은 예고가 preview 로 돌아왔다 다시 보관되면(관리 명령 경로는 캐시 안 중복을
+    따지지 않는다) 두 기록이 모두 남게 — id 만으로 합치면 뒤 기록이 버려진다."""
+    return f"{_key(item)}|{item.get('archived_at') or ''}"
+
+
+def key_of(target: Target) -> Callable[[dict], str]:
+    return target.key or _key
+
+
+# (v4.9.6) 예고 보관함 — 기준 시각 · 날짜 = 보관 시각(archived_at, KST 달력 날짜. 예고보드의 04:00 하루와 무관)
+PREVIEWS = Target("preview", PREVIEW_CACHE, PREVIEW_DIR, "items", PREVIEW_KEEP_DAYS, lambda p: _parse_iso(p.get("archived_at")),
+                  lambda p: kst_date(_parse_iso(p.get("archived_at"))), key=preview_key)
+TARGETS = (TWEETS, NOTICES, LLM, PREVIEWS)
 
 
 def _size(data: dict) -> int:
@@ -185,12 +205,12 @@ def plan(items: list[dict], target: Target, now: datetime, *, max_files: int = M
     return _keep(), moves, over
 
 
-def merge_day(existing: list[dict], incoming: list[dict]) -> list[dict]:
+def merge_day(existing: list[dict], incoming: list[dict], key: Callable[[dict], str] = _key) -> list[dict]:
     """일자 파일에 합치기 — 이미 있는 열쇠는 그대로 두고 새 것만 뒤에. 두 번 합쳐도 같다."""
-    have = {_key(x) for x in existing}
+    have = {key(x) for x in existing}
     out = list(existing)
     for x in incoming:
-        k = _key(x)
+        k = key(x)
         if k not in have:
             have.add(k)
             out.append(x)
@@ -210,11 +230,12 @@ def merge_index(index: Optional[dict], moved: list[dict], day: str) -> dict:
 
 # ── 실행 (저장 호출) ──────────────────────────────────────────────────────────
 
-def _write_merged(gh, path: str, list_key: str, incoming: list[dict], message: str, tries: int = 3) -> None:
+def _write_merged(gh, path: str, list_key: str, incoming: list[dict], message: str, tries: int = 3,
+                  key: Callable[[dict], str] = _key) -> None:
     from .gh_store import ConflictError
     for t in range(tries):
         cur, sha = gh.read_json(path)
-        merged = merge_day(list((cur or {}).get(list_key) or []), incoming)
+        merged = merge_day(list((cur or {}).get(list_key) or []), incoming, key)
         try:
             gh.write_json(path, {list_key: merged}, prev_sha=sha, message=message)
             return
@@ -238,7 +259,8 @@ def rotate(gh, target: Target, now_iso: str, **kw) -> dict:
         files = []
         for day in sorted(moves):
             path = day_path(target.directory, day)
-            _write_merged(gh, path, target.list_key, moves[day], f"data: archive {target.name} → {path} ({len(moves[day])}) {now_iso}")
+            _write_merged(gh, path, target.list_key, moves[day], f"data: archive {target.name} → {path} ({len(moves[day])}) {now_iso}",
+                          key=key_of(target))
             files.append(path)
         if target.index:
             for t in range(3):
@@ -266,7 +288,7 @@ def rotate(gh, target: Target, now_iso: str, **kw) -> dict:
 
 
 def run_all(gh, now_iso: str, *, log_fn: Callable | None = None) -> list[dict]:
-    """세 대상을 차례로 정리. 한 대상이 실패해도 나머지는 계속. log_fn(result) 로 모니터 기록(호출부가 넘김)."""
+    """대상(트윗 · 소식 · LLM 판단 · 예고)을 차례로 정리. 한 대상이 실패해도 나머지는 계속. log_fn(result) 로 모니터 기록(호출부가 넘김)."""
     out = []
     for t in TARGETS:
         try:
@@ -405,8 +427,28 @@ if __name__ == "__main__":
     logged = []
     res = run_all(g3, now_iso, log_fn=logged.append)
     assert len(g3.f[TWEET_CACHE]["tweets"]) == len(old) and res[0].get("error")
-    assert res[1]["skipped"] == "no-cache" and res[2]["moved"] == 1 and len(logged) == 3
+    assert res[1]["skipped"] == "no-cache" and res[2]["moved"] == 1 and len(logged) == 4 and res[3]["skipped"] == "no-cache"
     print("[OK] 일자 파일 쓰기 실패 → 캐시 안 줄임 · 다른 대상은 계속")
+
+    # (v4.9.6) 예고: 보관 시각 7일 · 날짜 = 보관 시각의 KST 날짜 · 같은 id 다른 보관 시각은 둘 다 남김 · 다시 돌려도 같음
+    pv = [{"id": "pv_a", "archived_at": "2026-10-10T16:00:00Z", "actual_start": "2026-10-10T12:00:00Z"},   # KST 10-11 01:00 → 10-11 파일
+          {"id": "pv_b", "archived_at": "2026-10-12T03:00:00Z"},
+          {"id": "pv_a", "archived_at": "2026-10-12T05:00:00Z", "state": "out"},                          # 다시 보관된 같은 예고
+          {"id": "pv_c", "archived_at": "2026-10-25T03:00:00Z"},                                         # 7일 안 → 캐시에 남음
+          {"id": "pv_d"}]                                                                                 # 보관 시각 없음 → 남음
+    keep, moves, _ = plan(pv, PREVIEWS, NOW)
+    assert [p.get("id") for p in keep] == ["pv_c", "pv_d"] and sorted(moves) == ["2026-10-11", "2026-10-12"], (keep, moves)
+    g4 = _G({PREVIEW_CACHE: {"generated_at": "x", "items": pv},
+             "preview_archive/2026-10-12.json": {"items": [{"id": "pv_b", "archived_at": "2026-10-12T03:00:00Z", "title": "이미 옮겨진 것"}]}})
+    r4 = rotate(g4, PREVIEWS, now_iso)
+    assert r4["moved"] == 3 and g4.f[PREVIEW_CACHE] == {"generated_at": "x", "items": pv[3:]}
+    d12 = g4.f["preview_archive/2026-10-12.json"]["items"]
+    assert [(p["id"], p.get("title")) for p in d12] == [("pv_b", "이미 옮겨진 것"), ("pv_a", None)], d12
+    assert [p["id"] for p in g4.f["preview_archive/2026-10-11.json"]["items"]] == ["pv_a"]
+    n_w = len(g4.writes)
+    assert rotate(g4, PREVIEWS, now_iso)["moved"] == 0 and len(g4.writes) == n_w
+    assert PREVIEWS in TARGETS
+    print("[OK] 예고 7일 — 보관 시각 KST 날짜 · 같은 id 다시 보관분도 남김 · 캐시의 다른 키(generated_at) 유지 · 다시 돌리면 할 일 없음")
 
     # 캐시 없음
     assert rotate(_G(), TWEETS, now_iso)["skipped"] == "no-cache"

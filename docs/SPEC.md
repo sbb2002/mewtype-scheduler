@@ -252,8 +252,10 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 }
 ```
 
-- `end→none` 또는 removed/expired 시 `build_archive_appends` 가 append. `(video_id, id)` 로 dedupe.
-- 프론트는 안 읽음 — 디버그 + 회원전용 사후확정(RSS 로 뒤늦게 뜨는 아카이브)용.
+- `end→none` 또는 removed/expired 시 `build_archive_appends` 가 append. `(video_id, id)` 로 dedupe(캐시 안에서만). 관리 명령의 즉시 제거(`telegram_app`)는 dedupe 없이 덧붙인다.
+- 프론트(v4.1.0~)가 읽는다 — 타임테이블 · 오늘 카드의 「오늘 예고 안에 이미 끝난 방송」(`timetable.classify` 의 `ended`). 웹 모니터 팝업도 읽는다.
+- (v4.9.6) **캐시 보관함**이다 — 보관 시각(`archived_at`) 7일 이내만 남고, 그 전 기록은 매일 KST 06:10 보관함 정리가
+  `preview_archive/YYYY-MM-DD.json`(보관 시각의 KST 날짜, 같은 `{"items": [...]}` 모양)으로 옮긴다(§8.18). 프론트가 읽는 파일 이름 · 모양은 그대로다.
 
 ---
 
@@ -299,34 +301,82 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
 예고판의 **ON-AIR 존(`lane__live`) + 오늘 / 7일 이내 / 7일 이후 버킷(`lane__buckets`)을 대체**한다.
 `render.js renderBoard(boardEl, preview, nowMs, archive)` 가 화면 폭(`mqlPhone`, <768px)으로 두 구성 중 하나를 만든다.
 
-**오늘 구간** = KST 06:00 ~ 익일 06:00(`timetable.dayWindow`, 모니터링 하루 경계 `monitor_log.DAY_START_HOUR` 와 같음).
+**예고보드의 하루**(v4.9.6) = KST **04:00 ~ 익일 04:00**(`timetable.DAY_START_HOUR = 4`, 프론트 전용 — 모니터링 하루 경계 `monitor_log.DAY_START_HOUR = 6` 과 별개. 전엔 06:00).
+**오늘 예고** = 지금 시각이 들어 있는 하루(`dayWindow(now)` → `{ds, de}`), **내일 예고** = 그다음 하루(`dayWindow(now, 1)`). 지난 하루는 보여 주지 않는다.
+예: 10/30(금) 01:00 → 실제 날짜는 10/30 이지만 04:00 전이라 오늘 예고 = 10/29(목) 04:00 ~ 10/30 04:00, 내일 예고 = 10/30 04:00 ~ 10/31 04:00. 04:00 에 두 화면이 함께 하루씩 넘어간다.
 `timetable.classify(items, archiveItems, nowMs, order)` 가 아이템을 나눈다:
 
 | 구분 | 기준 |
 |---|---|
 | `live` | `state=="live"` — 시작 = `actual_start`(없으면 `scheduled_start`) |
-| `ended` | `state=="end"`(끝 = `state_since`) + `preview_archive.json` 에서 **오늘 06:00 이후 시작해 이미 끝난** 항목(끝 = `archived_at`, 길이 10분~12시간만. 같은 `video_id` 는 한 번만) |
-| `upcoming` | announced/upcoming/watching 이고 `scheduled_start` 가 오늘 구간 안 (시각 미정 제외) |
-| `later` (이후 예고) | announced/upcoming/watching 이고 구간 뒤(`>= de`)이거나 `time_tbd` · 시각 없음. 기간 구분 없이 시작시각순 |
+| `ended` | `state=="end"` 이고 끝(`state_since`)이 오늘 예고 시작(`ds`) 뒤 + `preview_archive.json` 에서 **오늘 04:00 이후 시작해 이미 끝난** 항목(끝 = `archived_at`, 길이 10분~12시간만. 같은 `video_id` 는 한 번만) |
+| `upcoming` | announced/upcoming/watching 이고 `scheduled_start < de`(오늘 예고 끝 전 — 이미 지난 「지각」 포함, 시각 미정 제외) |
+| `tomorrow` (내일 예고, v4.9.6) | announced/upcoming/watching 이고 `de <= scheduled_start < de + 24h`. `{item, start, end:null}`, 시작순 |
+| `later` (이후 예고) | announced/upcoming/watching 이고 내일 예고 뒤(`>= de + 24h`)이거나 `time_tbd` · 시각 없음. 기간 구분 없이 시작시각순 |
+
+종료 카드 · 블록은 **04:00 에 없어진다** — `tickTimetable` 이 `nowMs >= boardEl.__ttDe`(오늘 예고의 `de`)이면 true → `main.js` 가 다시 그리고, 새 `ds` 보다 먼저 끝난 방송은 `ended` 에서 빠진다(23시에 시작해 01시에 끝난 방송은 04:00 까지 남음).
 
 합동(`collab_with`)은 참여 멤버(알려진 채널) **전원 행/레인에 팬아웃**(`timetable.itemKeys`, v3 와 같은 규칙).
 
 **PC (≥768px)** — `#board.board--tt`(5열 그리드 해제) 안에 위에서 아래로:
-1. `section.tt` 타임테이블: `.tt__axis`(06:00 부터 3시간 눈금, 자정은 `.is-midnight` 강조 + 익일 날짜) · 멤버 5행
-   (왼쪽 `section.lane.tt__lane[data-channel]` > `header.lane__header.tt__who` > `.lane__avatar` — **트윗 배지(`.lane__tw`)와 트윗 시트의 기준 요소**.
-   오른쪽 `.tt__track[data-channel]` 에 블록 `.tt-blk.tt-blk--{upcoming|live|ended}`) · `.tt__ov`(지금 선 `.tt__now` · 지난 구간 음영 `.tt__past` · 자정 점선).
+1. `section.tt` 타임테이블 — (v4.9.6) **오늘 예고 · 내일 예고 두 화면**을 옆으로 넘긴다. DOM:
+   ```
+   section.tt
+     div.tt__head > h2.tt__title(「오늘 예고」|「내일 예고」) + span.tt__pg(두 점, aria-hidden) + span.tt__meta + .vt
+     div.tt__body                                   ← 가로 flex: 표 + 일 이동 버튼
+       div.tt__sw > div.tt__scroll > div.tt__grid   ← (기존) 넘침 흐림 · 화살표. grid = 124px | 1fr, --dawn-l = 익일 새벽 칸 시작(%)
+           div.tt__side > div.tt__corner + section.lane.tt__lane[data-channel] × 5   ← 1열, 넘기는 동안 움직이지 않음
+           div.tt__rail > div.tt__strip               ← 2열(overflow hidden) · 띠 폭 200%, transform translateX(0 | -50%)
+               div.tt__pane[data-day="0"] > .tt__axis + .tt__track[data-channel] × 5 + .tt__ov
+               div.tt__pane[data-day="1"] > .tt__axis + .tt__track[data-channel] × 5
+       button.tt__day > span.tt__day-ic(svg) + span.tt__day-n(내일 건수 알약)
+     div.tt__legend
+   ```
+   멤버 칸 `section.lane.tt__lane[data-channel]` > `header.lane__header.tt__who` > `.lane__avatar` + `.tt__nm`(이름 · 보고 있는 화면의 건수) — **트윗 배지(`.lane__tw`)와 트윗 시트의 기준 요소**.
+   `.tt__axis` = 04:00 부터 **4시간 눈금**(04 · 08 · 12 · 16 · 20 · 00 · 04), 자정 눈금(`h === 24 − DAY_START_HOUR`)은 `.is-midnight` 강조 + 익일 날짜. 칸 세로 눈금선도 4시간(`calc(100% / 6)`).
+   **익일 새벽 칸** = 각 `.tt__track` 배경(블록 아래 층)에 자정 ~ 끝(실제 다음 날 00:00 ~ 04:00)을 `--color-dawn`(어둡게 흰색 8.5% · 밝게 보라 11%) 으로 밝게 + 경계 1px `--color-dawn-edge`. 옛 자정 점선 `.tt__mid` 는 없앴다.
+   `.tt__ov`(지금 선 `.tt__now` · 지난 구간 음영 `.tt__past` · 「지금 HH:MM」)는 오늘 화면에만. 내일 화면은 모든 블록이 예정, 빈 칸 문구 「내일 예정 없음」.
+   **보고 있는 화면**(`timetable.js` 모듈 변수 `ttDay`, 0|1)은 저장하지 않는다 — 첫 입장 · 새로고침은 언제나 오늘 예고. 75초 재렌더 · 보기 방식 전환에는 유지,
+   내일 예정이 0건이 되면 0, 04:00(`tickTimetable` 이 true)에 0. 두 화면을 미리 다 그려 두고 넘길 때는 띠의 transform 만 바꾼다.
+   **일 이동 버튼** `.tt__day`: 오늘 화면 `>`(내일 예정 0건이면 `disabled` · 흐림 · 알약 없음 · `aria-label` 「내일 예정 없음」, 1건 이상이면 건수 알약), 내일 화면 `<`(화살표 180° 회전, 늘 활성).
+   건수가 바뀌면 알약이 한 번 튐(`is-pop`). 오늘 남은 예정이 0건이고 내일이 있으면 페이지를 연 동안 한 번 세 번 까딱임(`is-nudge`) — 그 렌더의 넘침 화살표 까딱임은 다음 렌더로 미룬다.
+   **넘기는 움직임**: 띠 280ms `cubic-bezier(0.2, 0.8, 0.2, 1)`, 제목 · 메타는 넘기는 방향으로 6px 밀려 흐려졌다 반대쪽에서 들어옴(80 + 80ms), 멤버 칸 건수는 흐렸다 바뀜, 두 점 강조가 옮겨 감.
+   넘기기 시작 때 블록 카드 팝업을 닫고, 넘기는 동안(`ttSliding`)은 블록 마우스 올림 팝업을 띄우지 않는다.
+   **마우스 끌기**(마우스만, 표가 넘치지 않을 때 · 블록 · 버튼 위가 아닌 곳): 띠가 1:1 로 따라오고, 더 갈 화면이 없는 쪽(오늘에서 오른쪽 · 내일에서 왼쪽 · 내일 0건일 때 왼쪽)은 고무줄(30%, 최대 48px).
+   놓을 때 레일 폭의 25% 이상 또는 0.5px/ms 이상 튕기면 넘김, 아니면 200ms 로 제자리(`timetable.swipeDecision` · `dragFollow`, selfcheck 대상). 5px 넘게 끌었으면 이어지는 click 한 번을 막는다. 터치 · 넘치는 폭은 버튼만.
+   움직임 줄이기(`prefers-reduced-motion`) = 미끄러짐 · 글자 밀림 · 회전 · 까딱임 · 고무줄 · 알약 튐 없이 즉시. 키보드는 일 이동 버튼만(표 안 방향키 없음).
    블록 폭 = 종료 시각을 알면(ended) 실제 길이, 모르면 고정 폭(live 는 시작~지금, 최소 폭 있음). 한 행에 한 줄만 쓰고 겹치면 앞 블록을 다음 블록 시작에서 자른다.
    좁아도 블록 모양은 같고 넘치는 부분만 잘린다. 제목은 한 줄 + 넘치면 무한 marquee(`applyTimetableMarquees`).
    블록 안은 항상 **3줄 고정 높이**(v4.5.6): ① 시각 + 태그(`.tt-blk__t`) ② 카운트다운(`.tt-blk__rel` — 예고만. 「방송시작까지 1.5시간」 · 60분 미만 「n분」 정수 · 정각 「2시간」 · 시각이 지나면 「지각」, 모바일 카드 링과 같은 규칙) ③ 제목(`.tt-blk__n`). 라이브 · 종료 블록의 ② 는 빈 줄(`.tt-blk__sp`, king.js 가 `.tt-blk__rel` 을 「지각」 자리로 쓰므로 클래스를 나눔). 예정 블록 고정 폭 `W_FIXED` = 250px.
    블록은 **클릭해도 이동하지 않고** 호버 = 카드 팝업(`.tt-pop`) · 클릭 = 고정(바깥 클릭 / Esc / 재클릭으로 닫힘). 영상 이동은 팝업의 이미지 · 「▶ YouTube에서 보기」로만.
-2. `.tt-fold` 「오늘 이후 예고 N건 펼치기」(펼치면 「오늘 이후 예고 접기」)(방송인별 건수 아바타 포함).
-3. `.tt-later` 5열: 펼침(`#board.board--later-open`)일 때만 보임. 열 = `.lane.lane--later[data-channel][data-no-badge]` — **기존 네임플레이트**(`buildHeader`, 우측 세로 YT·X)
-   + `.lane__later` 안에 기존 카드(`createCard`). `data-no-badge` 인 레인에는 트윗 배지가 안 붙는다(`tweets.js` 가 건너뜀) — 배지는 타임테이블 왼쪽 칸에만.
+2. `.tt-fold` 「이후 예고 펼치기」(펼치면 「이후 예고 접기」) + 오른쪽 요약 `이번주 N · 먼 미래 M`(`buildFoldButton(…, {summary})`). 셋 다 0건이면 버튼 · 표 없음. (v4.9.6 — 전엔 「오늘 이후 예고 N건」 + 멤버별 건수)
+3. (v4.9.6, 운영자 안 3) `.tt-later`: 펼침(`#board.board--later-open`)일 때만 보임. 안 = `div.wk2`(2칸, 1000px 이하 1칸) > **이번주 테이블** `section.wk2__panel--week` + **먼 미래 테이블** `section.wk2__panel--far`.
+   - 계획 = `timetable.planLater(items, archiveItems, nowMs, order)` → `{ws, we, today, days[7], far[], undated[]}`(순수 함수, selfcheck). 날짜 경계 = **KST 달력 00:00**(예고보드의 04:00 하루와 다름).
+   - 이번주 = 지금이 든 주의 일 ~ 토 7줄(`div.wk2__row` > 왼쪽 `.wk2__date` 날짜 · 요일(오늘 줄은 「오늘」 알약, 지난 줄은 흐림) + 오른쪽 `.wk2__dots`). 그 주에 시작한 방송 전부 — 종료(preview `end` + 보관함, `classify` 와 같은 10분 ~ 12시간 규칙) · 방송 중 · 예정(오늘 · 내일 예고와 겹쳐도 넣음 · 시각 미정은 그날 줄).
+   - 먼 미래 = 주 밖이고 오늘 · 내일 예고 구간(`dayWindow(now).ds` ~ `de + 24h`) 밖인 예정 — 날짜별 줄(올해가 아니면 연도 · `D-n`), 예정 시각이 없으면 맨 아래 「날짜 미정」 줄. 0건이면 「먼 미래 예고 없음」.
+   - **점** `button.wk2__dot` = 방송 하나(14px 원, 누르는 자리 24px). 색 = **네임플레이트와 같은 멤버 색** `--lane-color`(`sampleLaneColor` 가 아바타 평균색으로 넣음 — 아바타를 못 불러오면 네임플레이트와 함께 회색 기본값).
+     합동은 참여 멤버 수만큼 14px 조각(`span.wk2__seg[data-channel]`)을 이어 붙인 **알약**(`span.wk2__shape`) + 예고 카드 · 합동 태그와 같은 **보라 테두리**(`is-collab`, `--color-collab`).
+     회원 전용(`membership`)은 점 오른쪽 아래 작은 **자물쇠**(`svg.wk2__lock`, 바탕색 원 위). 상태 `is-ended`(투명도 0.5) · `is-live`(빨간 링) · `is-tbd`(점선 링).
+   - 날짜 칸은 날짜 · 요일 · 꼬리(「오늘」 / `D-n`) 세 칸 고정 폭 격자라 줄마다 같은 자리에 놓인다(먼 미래는 연도가 붙을 수 있어 날짜 칸이 넓음).
+     마우스 올림 = 블록과 같은 카드 팝업(공용 `wirePop`), 클릭 · Enter · Space = 고정. 점에서 연 팝업만 시각에 날짜를 붙인다(`10/31(토) 21:30` · `시각 미정` · 종료는 시작 ~ 끝 · 길이).
+   - **한 상자**: 펼치면 접기 버튼(위만 둥글게) + `.tt-later`(아래만 둥글게, 같은 바탕 · 테두리)가 한 영역으로 보인다. 두 표(`.wk2__panel`)는 그 안에서 한 단계 깊은 바탕(`--color-bg`).
+   - **점 범례** `ul.wk2__legend`(먼 미래 표 아래, `.wk2__col`): 견본 점(`span.wk2__dot`, 누를 수 없음 — 표의 점과 같은 `fillDot`)을 글머리표로 한 작은 글자 3열 —
+     방송 1건 · 멤버 색 / 합동 / 방송 중 / 지난 방송 / 시각 미정 / 회원 전용. 견본 색 = 멤버 순서상 첫 · 둘째 멤버.
+   카드 보기 · 모바일의 이후 예고는 그대로(멤버별 `.lane__later` 목록 + 멤버별 건수 버튼).
+   - **모바일 「표」 버튼 · 시트**(v4.9.6, `js/weekpop.js`): 모바일은 카드 구성이라 위 두 표가 없으므로, 하단 멤버 아이콘 줄(`#pager-dots`) **오른쪽 끝**(플레이어 버튼 반대편)에
+     같은 모양의 버튼 `button.player-btn.week-btn`(표 + 점 + `>` 아이콘, 신곡 NEW 배지 · 플레이어 이름은 안 붙음)을 둔다. 누르면 바텀 시트(`.wk-scrim > .wk-sheet`, 높이 최대 88%)에
+     같은 `buildLaterTables` 를 **세로로**(이번주 → 먼 미래 → 범례 2열) 그린다. 열 때마다 마지막 보드 데이터(`renderBoard` → `setWeekData`)로 새로 그리고, 점 색은 `#board` 멤버 레인의 `--lane-color` 를 옮겨 온다.
+     닫기 = 「닫기」 · 바깥 누르기 · Esc(카드 팝업이 떠 있으면 팝업만) · 머리줄 끌어 내리기(`sheetdrag`). 카드 팝업은 시트 위(`html.wk-lock .tt-pop` z-index 900), 시트를 스크롤하면 닫힌다.
 
 **모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(트윗 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
-`.tt-fold` + `.lane__later`. 오늘 카드: 예정 = 카운트다운 링(1시간 넘게 남으면 24시간 기준으로 차오름 · (v4.5.8) 1시간 이내는 노랑 분 단위 링이 0분까지 닳음 — 아래 「타이머 링」, **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
+`.tt-fold` + `.lane__later`. (v4.9.6) 카드 묶음 순서 = **종료 → 방송 중 → 오늘 예정 → 내일 구분선 `.tt-today__div`(「내일 예고 · 10/31(토) 04:00 ~」, 내일 예정이 있을 때만) → 내일 예정** —
+화면 넘기기 없이 한 줄로 다 보여 준다(PC 카드 보기도 같음). 오늘 것이 0건이고 내일이 있으면 「오늘 남은 예고가 없습니다.」 + 구분선 + 내일 카드. 크게 보이는 첫 카드 = 종료가 아닌 첫 카드(없으면 내일 첫 카드).
+머리 메타 = `10/29(목) 04:00 ~ 익일 04:00 · 예정 n · 방송 중 n · 종료 n · 내일 n`(0건 항목은 생략). 오늘 카드: 예정 = 카운트다운 링(1시간 넘게 남으면 24시간 기준으로 차오름 · (v4.5.8) 1시간 이내는 노랑 분 단위 링이 0분까지 닳음 — 아래 「타이머 링」, **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
 **지금 보는 레인만 동작**: `render.js initMobileCarousel` 가 현재 슬라이드에만 `.lane--active` 를 주고 나머지(클론 포함)는 `inert` 로 **동작만** 막는다(겉모양 · 스크롤바는 그대로 — `overflow:hidden` 으로 숨기면 스크롤바 폭만큼 카드가 움찔거려 쓰지 않음) — 옆에 비쳐 보이는 레인의 스크롤 · 클릭이 반응하지 않는다(드래그/스와이프 시작점으로는 보드가 받음).
-하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
+하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. (v4.9.6) 방송 중인 멤버의 점은 `.dot--live`(흐리지 않고 빨간 링).
+**라이브 레인 효과**(v4.9.6): `renderBoard` 가 레인을 다 만든 뒤(캐러셀 클론 복제 전) `classify().live` 의 참여 멤버(합동 포함, `itemKeys`) 레인 `.lane[data-channel]` 에
+`.lane--live` → **그 멤버 예고판(레인) 테두리**가 빨갛게 + 느린 호흡 글로우(움직임 줄이기면 정적). **카드 보기(PC 5열) · 모바일 레인에만** 보인다 — 테이블 보기(멤버 칸 `.tt__lane` · 이후 예고 `.lane--later`)는 라이브 블록이 이미 보여 주므로 CSS 가 뺀다(`:not(.tt__lane):not(.lane--later)`). 아바타 자체에는 효과를 두지 않는다(운영자 10-29).
+**탭 제목 라이브 표시**(v4.9.6): 라이브가 1건 이상이면 `document.title` = `🔴 LIVE n · <원래 제목>`(n = `classify().live.length`, 합동 1건 = 1), 0건이면 원래 제목(`render.applyLiveTitle`, 처음 제목을 한 번 읽어 둠). 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
 **PC → 모바일 폭 전환 (v4.6.4)**: 767px 경계 리스너가 두 곳(`render.js` `mqlPhone` → `initMobileCarousel`, `main.js` → `paintBoard`)이고 `render.js` 쪽이 먼저 돈다. 이때 보드는 아직 PC 구성(레인이 안쪽 상자 안)이라 `initMobileCarousel` 은 **레인이 모두 보드 직속일 때만** 캐러셀을 만들고 아니면 돌아간다 — 바로 뒤 `paintBoard` 가 모바일 구성으로 다시 그리며 다시 부른다. 전엔 여기서 `insertBefore` NotFoundError(콘솔 1건, 화면은 정상)가 났다.
 이후 예고가 0건이면 `.tt-fold` 와 목록을 만들지 않는다(PC = 전체 0건, 모바일 = 그 멤버 0건).
 합동 카드는 이미지 **왼쪽 위에 참여 멤버 아바타만**(하단 선택 아이콘과 같은 고정 순서 아라레-유노-노노카-리츠-미야코로 겹쳐서, 이름 글자 없음, **그 레인의 본인은 뺀다**. 본인 외 참여자를 모르면 빈 알약을 만들지 않는다) 놓고, "합동" 글자는 날짜 옆 태그로만 쓴다.
@@ -339,11 +389,12 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
   (v4.5.8) `timetable.updateRing`: 1시간 넘게 남음 = `--p` = 24시간 중 지난 비율(차오름, 레인 색) · **1시간 이내**(`.is-min`) = `--p` = 남은 분 / 60 — 가득 찬 노랑 링이
   12시부터 시계방향으로 비워져 0분에 빈 링(방송 중 링의 「비우기」와 같은 방향), 글자 「n분 / 시작까지」 · **시작 시각 지남**(`.is-late`) = 빈 링 + 노랑 「지각」
   (전엔 꽉 찬 레인 색 링 + 「지각」). 노노카 지각 이스터에그가 붙은 카드(`data-king`)는 「지각」 대신 「행차 / 준비 중」(`king.KING_RING_LATE`). 방송 중 링(「N분 / 방송중」)과 같은 2단 구조 · 글꼴(`.tcard__ring--up` = `.tcard__ring--live` 와 스타일 공유). PC 블록의 `relShort` 표기는 별개.
-- 갱신: `updateCountdowns` → `timetable.tickTimetable` 이 지금 선 · 링을 1분마다 옮기고, **오늘 구간이 끝나면(`nowMs >= boardEl.__ttDe`) `true`** 를 돌려 `main.js` 가 재렌더. 데이터는 75초 폴링(`poll`)이 바꿈.
+- 갱신: `updateCountdowns` → `timetable.tickTimetable` 이 지금 선 · 링을 1분마다 옮기고, **오늘 구간이 끝나면(`nowMs >= boardEl.__ttDe`, 04:00) `true`** 를 돌려 `main.js` 가 재렌더(이때 표는 오늘 예고로 — `ttDay = 0`). 데이터는 75초 폴링(`poll`)이 바꿈.
 - 종료 블록용 `preview_archive.json`(`config.ARCHIVE_URL`)은 `main.js pollArchive` 가 따로 폴링 — 404 여도 보드는 그려지고 종료는 preview 의 `end` 상태만 나온다.
 - 한계(의도): 예고 항목에는 **종료 시각 필드가 없어** 예정 블록은 고정 폭이다. 종료 길이는 끝난 방송(`end` · 아카이브)에서만 알 수 있다.
   시각 미정(`time_tbd`)은 타임테이블에 놓을 수 없어 이후 예고로 간다.
-- 자체 점검: `node src/frontend/js/timetable.selfcheck.mjs`(순수 함수 `dayWindow` · `classify` · `itemKeys`).
+- 자체 점검: `node src/frontend/js/timetable.selfcheck.mjs`(순수 함수 `dayWindow` · `classify` · `itemKeys` · (v4.9.6) `swipeDecision` · `dragFollow`).
+- 알아 둘 것: 예정 블록은 고정 폭이라 오른쪽 끝(04:00)에 닿으면 끝에 맞춰 왼쪽으로 당겨 그린다(기존 규칙) — 심야(02:00 등) 예고 블록은 시작 위치보다 왼쪽에서 시작해 보인다.
 
 ### PC 보기 방식 · 카드 보기 (v4.4.0) — `render.js` · `timetable.js` · `css/timetable.css`
 
@@ -1282,6 +1333,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 | `tweet_archive.json`(data) | 게시 7일 | `tweet_archive/YYYY-MM-DD.json`(게시일) | 계약 I |
 | `notice_archive.json`(data) | 보관 시각 · 행사 날짜 중 늦은 것 30일 | `notice_archive/YYYY-MM-DD.json`(처음 받은 날) + `notice_archive/index.json` | 계약 H |
 | `llm_actions.json`(ops) | 판단 시각 21일 | `llm_actions/YYYY-MM-DD.json`(판단 날) | 관리 페이지 반려 · 재판단 유효기간 |
+| `preview_archive.json`(data) | 보관 시각 7일 (v4.9.6) | `preview_archive/YYYY-MM-DD.json`(보관한 날) | 계약 B. 일자 파일 안 같은 기록 = id + 보관 시각(다시 보관된 같은 예고도 둘 다 남김) |
 
 - **보관함 정리**: `apply.run_snapshot`(백엔드 `/monitor`, 매일 KST 06:10 · 일시정지와 무관) → `archive_rotate.run_all`. 대상마다 ① 기준보다 오래된 항목을 날짜별로 묶어
   ② 일자 파일에 id 로 합쳐 쓰고(이미 있는 id 는 그대로 — 두 번 돌려도 같음) ③ (소식) 색인 ④ 캐시에서 뺀다. 중간에 실패해도 양쪽에 남을 뿐 잃지 않는다. 캐시 쓰기 충돌 → 다시 읽어 재계산.
@@ -1292,10 +1344,12 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   판단 후 21일(`archive_rotate.LLM_KEEP_DAYS`)이 지난 판단은 반려 · 재판단 · 사용자 판단을 서버가 거절한다(화면에도 판단마다 가능 기한 · 안내 문구).
 - **웹 모니터 지난 날짜**(`telegram_app._monitor_past_day` → `monitor_report.extend_lookup_for_day`): 캐시에서 못 찾은 트윗은 그날 · 다음 날 · 트윗 id 의 게시일 일자 파일에서,
   소식은 색인으로 날짜를 찾아 그 일자 파일에서 찾는다(최대 6개씩, 실패하면 팝업만 덜 자세해짐).
+  (v4.9.6) 예고는 표에 없는 구간 id 가 있을 때만 그날부터 사흘 뒤까지 4개 일자 파일에서 찾는다(보관은 방송이 끝나거나 빠진 뒤라 그날 이후) — 보관이 한참 뒤인 예고(준영구 대기소 프레임 등)는 못 찾을 수 있다.
 - **저장 라우팅**: `storage.OPS_PREFIXES = ("llm_actions/",)` — LLM 일자 파일도 ops 브랜치로.
 - **첫 이전**: `scripts/split_archives.py --data <data 체크아웃> --ops <ops 체크아웃> [--dry-run]` — 밀린 분량을 같은 기준으로 한 번에 나누고 전후 id 집합을 비교(잃음 · 중복 0 이 아니면 안 씀),
   결과는 git 으로 브랜치마다 커밋 1개. Contents API 로 하나씩 쓰면 GitHub 콘텐츠 생성 속도 제한에 걸리고 운영 쓰기와 다툰다.
-- 범위 밖: `preview_archive.json`(151KB) · `banners_archive.json` 도 상한이 없다 — 커지면 같은 방식으로. `notice_archive/index.json` 은 1년 약 180KB 로 자란다(몇 년 뒤 연도별로 나눌 것).
+- (v4.9.6) 예고 보관함도 대상이 됐다(10-29 기준 136건 · 약 160KB, 2027년 중반 1MB 예상). 첫 이전도 같은 스크립트(예고 136건 → 캐시 18건 + 일자 파일 41개, dry-run 잃음 · 중복 0).
+- 범위 밖: `banners_archive.json` 도 상한이 없다 — 커지면 같은 방식으로. `notice_archive/index.json` 은 1년 약 180KB 로 자란다(몇 년 뒤 연도별로 나눌 것).
 - self-test: `python -m src.backend.archive_rotate`.
 
 ## 9. 프론트엔드 모듈 (`src/frontend/`)
@@ -1346,7 +1400,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 소식판. 아래 「소식판 (v4.6.4)」.
   (v4.6.3 까지: 한 줄 티커 + 펼친 목록, 제목을 `[번역]　—　[원문]` 으로 이어 marquee — v4.6.4 에서 없앰.)
 - **js/tweets.js** + **js/tweetlogic.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 보드의 아바타 · 이름 · 트윗 배지(`.lane__tw`)를 누르면 **트윗 시트**가 열린다(아래 「트윗 시트 (self-reply 핫픽스)」).
-  트윗 배지: 안 읽음 1건 = 빈 원, 2건+ = 숫자 원, 모두 읽음 = 표시 없음. 아바타 링 `.has-tweet` = 트윗이 있는 멤버(읽음 여부와 무관).
+  트윗 배지: 안 읽음 1건 = 빈 원, 2건+ = 숫자 원, 모두 읽음 = 표시 없음. 색 = `--tw-badge-bg`(v4.9.6 청록 → 빨강 `var(--color-live)`, 글자 흰색 · 펄스 글로우도 같은 색). (v4.9.6) 트윗이 있는 멤버의 아바타 링 `.has-tweet` 은 없앴다.
   `expires_at` 이 지난 메시지는 빼고, 게시 시각순으로 최대 `MAX_THREAD`(=50)건을 보여 준다. 트윗 없는 네임플레이트는 흔들기 + 「OO의 새 트윗이 아직 없어요」(`_noTweet`).
 - **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
 
@@ -1387,7 +1441,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **움직임**: A1 엿보기(처음 두 번, `mew:twpeek`) · A2 끄는 중 점 · 25% 넘으면 진동 · A3 끝 고무줄 · A4 머리 줄 알약 · A5 칩 알약 · 칩 줄 끌기 · B1 영상 칸 → 원문 + 같은 칸 글로우(v4.9.3) · B2 PC 열기 320ms · 닫기 210ms · B3 폰 끌기 · 배경 옅어짐 · B4 「여기부터 새 글」 선 · 배지 사라짐 · B5 X 카드 자리 쉬머(`.lane__thread__xskel`) · C1 글타래 세로줄 · C2 「새 글 ↓」 칩 · C3 피드 끝 흐림 · C4 키보드 포커스. 움직임 줄이기면 이동 · 크기는 끄고 색 · 투명도만.
 - **저장 키**: `mew:twread`(읽음, 4일) · `mew:tllang`(면, 기존 키 그대로) · `mew:twpeek`(엿보기 횟수, 새 키) · `mew:twh`(v4.9.1 PC 팝업 높이 px). 모두 try/catch.
 - **지운 것**(v4.8.6 까지의 말풍선 · 토스트): `.lane__bubble*` · `.tw-toast*` · `.tw-backdrop` · `.lane__thread__grp/__unit/__msg/__t/__quote`, PC 호버 미리보기 · 여러 개 고정, 2분 묶음.
-- **남긴 것**: `.lane__thread__xcard`(· `__embed` · `__xskel` · `__xlink`) · `.lane__tw` · `.has-tweet` · `.is-nope` · `.tw-nope` 와 그 코드. 소식 팝업(`notices.js`)도 같은 X 카드를 쓴다(`makeXCard` · `loadXCards` · `stopXCards`).
+- **남긴 것**: `.lane__thread__xcard`(· `__embed` · `__xskel` · `__xlink`) · `.lane__tw` · `.is-nope` · `.tw-nope` 와 그 코드. 소식 팝업(`notices.js`)도 같은 X 카드를 쓴다(`makeXCard` · `loadXCards` · `stopXCards`).
 - **v4.9.1 확인 · 미확인**: 로컬(실제 data 의 tweets.json + 시험 글을 덧붙여 다시 읽기, PC Chrome 1718×1304 · 390px 틀)에서 확인 — 열고 닫을 때 보드 위치 그대로(스크롤바 10px) · 높이 = 창의 90% · 머리 줄 옮기기 · 위 가장자리 끌기로 높이 1174 → 918px(가운데 그대로) · 저장 후 다시 열면 918px · 카드 덮개 위 끌기로 번역 면 · 한 번 누르면 「카드 조작 중」 → 카드 밖으로 나가면 풀림 · 맨 아래에서 새 글 → 맨 아래 유지 · 위로 올려 둔 채 새 글 2개 → ↓ 동그라미 「2」 → 누르면 맨 아래 · 동그라미 사라짐 · 다른 멤버 칩 3 → 4 · 새 글을 끼워도 기존 X 카드 iframe 유지 · 폰 폭에선 손잡이 · 덮개 없음 · 시트 86%. **미확인**: 실제 X 카드 안 영상 재생(덮개를 비킨 뒤) · 밝게 테마의 비운 스크롤바 자리 색 · 움직임 줄이기 · 실기기 터치 · 운영 폴링 중 실제 새 글(글타래 끌어올리기 포함). 떠오르는 움직임 자체는 자동 확인이 어려워 눈으로 확인 필요.
 - **v4.9.3 확인 · 미확인**: 로컬(운영 data 사본 + 실제 X 글 7개를 시험 글로 덧붙임 — 영상 1 · 영상 3+사진 1 · 사진 4 · 인용 사진 3 · 사진 1+인용 사진 2 · 세로 사진 1 · 자기 답글, PC Chrome 팝업 폭 502px · 390px 틀)에서 확인 — 열면 맨 아래(scrollTop = 최대) · 다른 멤버 처음 = 맨 아래 · 올려 둔 멤버로 돌아오면 같은 글이 위 가장자리 · 번역 면을 보는 동안에도 화면 안 X 카드 높이 신호가 옴(뒤 면 `inert` 상태에서도) · 카드 높이 어림(숨은 칸) vs 실제: 8개 중 7개 0~3px, 1개 23px(본문 원문 한 줄 더 셈 — 신호가 오면 거꾸로 계산으로 정확) · 두 면을 반투명으로 겹쳐 눈으로 비교: 머리 줄 · 본문 시작 · 4칸 격자 · 인용 상자 · 인용 사진 · 시각 줄이 같은 자리(PC 502px · 폰 348px) · 영상 칸 누름 → 원문 면 + 글로우 자리 = 누른 칸 자리(0px) · PC 덮개 비킴 · 사진 칸 우클릭 막힘(`defaultPrevented`) · 사진은 `div[role=img]` 배경 그림(`name=small`) · 날짜 구분선 2개(10월 27일 (화) · 10월 28일 (수)) · ↓ 동그라미: 맨 아래 = 없음, 100px 위 = 없음, 400px 위 = 「맨 아래로」(숫자 없음), 누르면 맨 아래(6315px 위에서 눌러도 바닥까지 — 내려가며 카드가 커져도 끝에서 한 번 더 맞춤). selfcheck tweetlogic 85건(C10~C15 새로) · 다른 프론트 selfcheck 5개 통과. **미확인**: 실기기 터치 밀기 · 진동 · iOS 길게 누르기 메뉴 · 트랙패드 가로 넘기기 · 밝게 테마 · 움직임 줄이기 · 운영 폴링 중 실제 새 글 · 아주 가로로 긴 사진(파노라마)의 X 카드 높이 한계 · 영상이 섞인 묶음 모서리 16px 조건 · 인용 글에 미디어가 없을 때 아래 여백(12px 로 가정) · 인용 본문은 숨은 칸으로만 재므로(거꾸로 계산 없음) 줄바꿈이 다르면 인용 사진이 어긋날 수 있음 · X 가 긴 URL 을 「…」로 줄이는 규칙(숨은 칸은 원문 그대로 잰다).
 - **미확인(10-27 기준)**: 실기기 터치 · 진동 · 밝게 테마 · 움직임 줄이기 · 시트 끌기 — 운영자 브라우저 확인 전. `css/reset.css` 의 선택 허용 목록에 옛 클래스 `.lane__thread__msg`(번역 글 선택)가 남아 있다 — 새 번역 글(`.tws-ko__txt` · `.tws-ko__q`)로 바꿔야 터치 기기에서 복사가 된다(범위 밖이라 이번 핫픽스에서는 안 건드림).

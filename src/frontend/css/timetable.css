@@ -19,6 +19,15 @@
   margin: 0 0 0.5rem;
 }
 .tt__head > :last-child { margin-left: auto; }   /* 제목 · 메타만 있으면 메타가, 보기 방식 탭이 있으면 탭이 오른쪽 끝 */
+.tt__title, .tt__meta { display: inline-block; }   /* (v4.9.6) 머리줄 글자 바꾸기 때 transform 이 먹도록 */
+
+/* (v4.9.6) 두 점 표시 — 오늘 · 내일 중 어디인지. --pg = 0(오늘) ~ 1(내일), 끄는 동안 끈 거리만큼 옮겨 간다 */
+.tt__pg { align-self: center; display: inline-flex; gap: 4px; --pg: 0; }
+.tt__pg i { height: 6px; border-radius: 3px; background: var(--color-text-muted); transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s; }
+.tt__pg i:first-child { width: calc(6px + 10px * (1 - var(--pg))); opacity: calc(0.35 + 0.65 * (1 - var(--pg))); }
+.tt__pg i:last-child { width: calc(6px + 10px * var(--pg)); opacity: calc(0.35 + 0.65 * var(--pg)); }
+.tt__pg.is-live i { transition: none; }   /* 끄는 동안(JS 가 --pg 를 매 프레임 넣음)은 바로 따라오게 */
+
 
 /* ── 보기 방식 탭 [테이블 | 카드] (v4.4.0, PC 전용 — 모바일은 탭 없음) ── */
 .vt {
@@ -140,8 +149,13 @@
   display: grid;
   grid-template-columns: 124px 1fr;
 }
+/* (v4.9.6) 1열 = 머리 칸 + 멤버 칸(넘기는 동안 움직이지 않음), 2열 = 두 화면을 잇는 띠 */
+.tt__side { grid-column: 1; }
+.tt__corner { height: 36px; border-bottom: 1px solid transparent; }
+.tt__rail { grid-column: 2; position: relative; overflow: hidden; }
+.tt__strip { display: flex; width: 200%; will-change: transform; }
+.tt__pane { position: relative; width: 50%; flex: none; }
 .tt__axis {
-  grid-column: 2;
   position: relative;
   height: 36px;
   border-bottom: 1px solid var(--color-border);
@@ -195,7 +209,10 @@
   position: relative;
   height: 78px;
   border-bottom: 1px dashed var(--color-line-soft);
-  background-image: repeating-linear-gradient(to right, var(--color-grid) 0 1px, transparent 1px calc(100% / 8));
+  /* (v4.9.6) 4시간 눈금 + 익일 새벽 칸(실제 다음 날 00:00~04:00 — 블록 아래 층이라 블록 색이 바래지 않는다) */
+  background-image:
+    repeating-linear-gradient(to right, var(--color-grid) 0 1px, transparent 1px calc(100% / 6)),
+    linear-gradient(to right, transparent var(--dawn-l, 83.333%), var(--color-dawn-edge) var(--dawn-l, 83.333%) calc(var(--dawn-l, 83.333%) + 1px), var(--color-dawn) calc(var(--dawn-l, 83.333%) + 1px));
 }
 .tt__empty {
   position: absolute;
@@ -206,10 +223,10 @@
   color: var(--color-text-faint);
 }
 
-/* 지금 선 · 지난 구간 음영 · 자정 점선 (위치는 render/timetable.js 가 % 로 채움) */
+/* 지금 선 · 지난 구간 음영 (위치는 timetable.js 가 % 로 채움 · 오늘 화면(pane 0)에만) */
 .tt__ov {
   position: absolute;
-  inset: 0 0 0 124px;
+  inset: 0;
   pointer-events: none;
 }
 .tt__past { position: absolute; top: 36px; bottom: 0; left: 0; background: var(--color-past); }
@@ -234,13 +251,40 @@
   font-weight: 700;
   white-space: nowrap;
 }
-.tt__mid {
-  position: absolute;
-  top: 36px;
-  bottom: 0;
-  left: 75%;                      /* 06:00 + 18h = 자정 */
-  border-left: 1px dashed var(--color-late);
-  opacity: 0.8;
+
+/* (v4.9.6) 끌기 커서 — 넘칠 때(is-over)는 가로 스크롤 · 화살표가 맡는다 */
+.tt__sw:not(.is-over) .tt__rail { cursor: grab; }
+.tt__rail.is-dragging { cursor: grabbing; user-select: none; }
+.tt__rail.is-dragging .tt-blk { pointer-events: none; }
+
+/* (v4.9.6) 표 + 일 이동 버튼(오른쪽 세로 띠) */
+.tt__body { display: flex; gap: 10px; align-items: stretch; }
+.tt__body > .tt__sw { flex: 1; min-width: 0; }
+.tt__day {
+  flex: none; width: 36px; padding: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg-secondary); color: var(--color-text);
+  cursor: pointer; transition: background 0.15s, opacity 0.2s, transform 80ms;
+}
+.tt__day:hover:not(:disabled) { background: var(--color-hover); }
+.tt__day:active:not(:disabled) { transform: scale(0.94); }
+.tt__day:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
+.tt__day:disabled { opacity: 0.35; cursor: default; }
+.tt__day-ic { display: grid; place-items: center; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.15s; }
+.tt__day-ic svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tt__day.is-back .tt__day-ic { transform: rotate(180deg); }
+.tt__day:hover:not(:disabled) .tt__day-ic { translate: 2px 0; }
+.tt__day.is-back:hover .tt__day-ic { translate: -2px 0; }
+.tt__day-n {
+  min-width: 18px; padding: 1px 5px; border-radius: 9px; box-sizing: border-box; text-align: center;
+  font-size: 0.66rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--color-raised); box-shadow: inset 0 0 0 1px var(--color-raised-edge);
+}
+.tt__day-n.is-pop { animation: dot-pop 0.38s cubic-bezier(0.25, 1.55, 0.45, 1); }
+.tt__day.is-nudge { animation: tt-arr-nudge 0.7s ease-in-out 3; }
+@media (prefers-reduced-motion: reduce) {
+  .tt__day, .tt__day-ic, .tt__pg i { transition: none; }
+  .tt__day.is-nudge, .tt__day-n.is-pop { animation: none; }
 }
 
 /* 예고 바(블록). 길이를 알면 실제 길이, 모르면 고정 폭. 좁아도 같은 모양 — 넘치는 부분은 잘리기만 한다 */
@@ -417,12 +461,119 @@ a.tt-pop__img { cursor: pointer; }
 .tt-later { display: none; }
 .board--later-open .tt-later,
 .tt-later.is-closing {   /* is-closing: 접는 애니메이션이 끝날 때까지 display 유지 (js/render.js toggleLater) */
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--gap);
-  align-items: start;
+  display: block;
   margin-top: 12px;
 }
+/* (v4.9.6) PC 표 보기 — 펼치면 접기 버튼과 두 표가 한 상자: 버튼 = 상자 머리(위만 둥글게), .tt-later = 몸통(아래만 둥글게, 같은 바탕 · 테두리) */
+#board.board--tt:not(.board--cards) > .tt-fold { transition: border-radius 0.2s; }
+#board.board--tt:not(.board--cards).board--later-open > .tt-fold {
+  border-radius: 10px 10px 0 0;
+  border-bottom-color: var(--color-line-soft);
+}
+#board.board--tt:not(.board--cards) > .tt-later {
+  margin-top: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--color-bg-secondary);
+}
+
+/* (v4.9.6) PC 표 보기의 이후 예고 — 이번주 표(왼쪽) + 먼 미래 표(오른쪽). 1000px 이하는 한 칸으로 쌓는다 */
+.wk2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+@media (max-width: 1000px) { .wk2 { grid-template-columns: minmax(0, 1fr); } }
+.wk2__panel {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--color-bg);              /* (v4.9.6) 바깥 상자(--color-bg-secondary) 안의 두 칸 — 한 단계 깊게 */
+  border: 1px solid var(--color-line-soft);
+  border-radius: 8px;
+}
+.wk2__col { min-width: 0; display: grid; gap: 10px; }
+/* (v4.9.6) 점 범례 — 실제 점 모양을 글머리표로, 작은 글자 3열 */
+.wk2__legend {
+  list-style: none; margin: 0; padding: 0 4px;
+  display: grid; grid-template-columns: repeat(3, max-content); gap: 2px 18px;
+  font-size: 0.72rem; color: var(--color-text-muted);
+}
+.wk2__legend li { display: flex; align-items: center; gap: 4px; }
+.wk2__legend .wk2__dot { cursor: default; }
+.wk2__legend .wk2__dot:hover .wk2__seg { filter: none; }
+.wk2__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.8rem; margin: 0 0 0.5rem; }
+.wk2__hd b { font-size: 0.9rem; font-weight: 700; }
+.wk2__hd > span { font-size: 0.76rem; color: var(--color-text-muted); }
+.wk2__row {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  border-bottom: 1px dashed var(--color-line-soft);
+}
+.wk2__row:last-child { border-bottom: 0; }
+.wk2__date {
+  flex: none;
+  display: grid;
+  grid-template-columns: 3.4em 1.3em 3.4em;   /* (v4.9.6) 날짜 · 요일 · 꼬리(「오늘」 / D-n) — 줄마다 같은 자리 */
+  align-items: baseline;
+  column-gap: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.wk2__panel--far .wk2__date { grid-template-columns: 5.8em 1.3em 3.6em; }   /* 먼 미래 = 연도가 붙을 수 있어 날짜 칸이 넓다 */
+.wk2__dn { justify-self: end; }
+.wk2__date > b { font-size: 0.86rem; font-weight: 600; }
+.wk2__date > span:not(.wk2__now):not(.wk2__dn) { font-size: 0.74rem; color: var(--color-text-muted); }
+.wk2__dn { font-size: 0.7rem; color: var(--color-text-muted); }
+.wk2__now {
+  justify-self: start;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-raised);
+  box-shadow: inset 0 0 0 1px var(--color-raised-edge);
+  color: var(--color-text);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+.wk2__row.is-today .wk2__date > b { font-weight: 800; }
+.wk2__row.is-past .wk2__date { opacity: 0.5; }
+.wk2__dots { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; padding: 4px 0 4px 2px; }
+.wk2__none { padding: 8px 0; font-size: 0.78rem; color: var(--color-text-muted); }
+
+/* 점 = 버튼 24px(누르는 자리, 투명 padding 5px) 안에 14px 원. 점 사이 보이는 간격 6px (margin -2px) */
+.wk2__dot {
+  display: flex;
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  margin: 0 -2px;
+  padding: 5px;
+  box-sizing: border-box;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+}
+.wk2__shape { display: flex; border-radius: 7px; }
+/* (v4.9.6) 합동 = 예고 카드 · 합동 태그와 같은 보라 테두리 */
+.wk2__dot.is-collab .wk2__shape { box-shadow: 0 0 0 1.5px var(--color-bg-secondary), 0 0 0 3px var(--color-collab); }
+/* (v4.9.6) 회원 전용 = 점 오른쪽 아래 작은 자물쇠 (바탕색 원 위에 그려 점 색과 섞이지 않게) */
+.wk2__lock {
+  position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; padding: 1px; box-sizing: border-box;
+  border-radius: 50%; background: var(--color-bg-secondary);
+  fill: var(--color-text); stroke: var(--color-text); stroke-width: 1.2;
+}
+.wk2__lock path { fill: none; }
+.wk2__dot:hover .wk2__seg { filter: brightness(1.15); }
+.wk2__dot:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
+.wk2__seg { flex: none; width: 14px; height: 14px; background: var(--lane-color, var(--color-text-muted)); }   /* 색 = 네임플레이트와 같은 멤버 색(--lane-color, render.js sampleLaneColor) */
+.wk2__seg:only-child { border-radius: 50%; }
+/* 합동 = 참여 멤버 수만큼 이어 붙인 알약 (14px × n, 양 끝만 둥글게) */
+.wk2__seg:first-child:not(:last-child) { border-radius: 7px 0 0 7px; }
+.wk2__seg:last-child:not(:first-child) { border-radius: 0 7px 7px 0; }
+.wk2__dot.is-ended { opacity: 0.5; }   /* 지난 방송 = 멤버 색 그대로 흐리게(채도는 낮추지 않음 — 누구 방송인지 알아보게) */
+.wk2__dot { border-radius: 12px; }
+.wk2__dot.is-live { box-shadow: inset 0 0 0 2px var(--color-live); }
+.wk2__dot.is-tbd { outline: 1.5px dashed var(--color-text-muted); outline-offset: -3px; }
 .lane__later {
   display: none;
   flex-direction: column;
@@ -485,6 +636,14 @@ a.tt-pop__img { cursor: pointer; }
   font-size: 0.84rem;
 }
 .tt-today__stack { display: flex; flex-direction: column; gap: 12px; }
+/* (v4.9.6) 카드 보기의 내일 구분선 — 오늘 예정 다음, 내일 예고(다음 04:00 하루)의 예정 앞 */
+.tt-today__div {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.72rem; font-weight: 600; color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.tt-today__div::after { content: ""; flex: 1; border-top: 1px dashed var(--color-border); }
+.tt-today__none + .tt-today__stack { margin-top: 12px; }
 
 .tcard {
   position: relative;
@@ -640,4 +799,83 @@ a.tt-pop__img { cursor: pointer; }
 @keyframes dot-pop { 45% { scale: 1.1; box-shadow: 0 0 0 3px var(--lane-color, #fff); } }
 @keyframes lane-peek { 30% { filter: brightness(1.3); } }
 @media (max-width: 767px) {
+}
+
+/* (v4.9.6) 라이브 레인 효과 — 방송 중인 멤버의 예고판(카드 보기 · 모바일 레인)에 그라데이션 글로우(느린 호흡).
+   테두리 선은 위쪽만 빨갛고 아래로 갈수록 사라지며(border-box 그라데이션), 빛은 판 바깥 위쪽으로 번진다 — 안쪽 LIVE 카드의 빨간 테두리와 선이 겹쳐 보이지 않게.
+   render.js renderBoard 가 .lane--live 를 켠다. 테이블 보기(멤버 칸 .tt__lane · 이후 예고 .lane--later)는 블록이 이미 라이브를 보여 줘서 안 쓴다 */
+.lane.lane--live:not(.tt__lane):not(.lane--later) {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--color-bg-secondary), var(--color-bg-secondary)) padding-box,
+    linear-gradient(180deg, var(--color-live), color-mix(in srgb, var(--color-live) 35%, var(--color-border)) 14%, var(--color-border) 32%) border-box;
+  box-shadow: 0 -4px 22px -2px color-mix(in srgb, var(--color-live) 50%, transparent), 0 0 30px -6px color-mix(in srgb, var(--color-live) 30%, transparent);
+  animation: live-breathe 2.4s ease-in-out infinite;
+}
+@keyframes live-breathe {
+  50% { box-shadow: 0 -6px 30px 0 color-mix(in srgb, var(--color-live) 32%, transparent), 0 0 36px -4px color-mix(in srgb, var(--color-live) 18%, transparent); }
+}
+/* 모바일 하단 멤버 전환 점 — 방송 중인 멤버는 흐리지 않고 빨간 링 */
+#pager-dots .dot.dot--live {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--color-live), 0 0 8px 1px color-mix(in srgb, var(--color-live) 55%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lane.lane--live { animation: none; }
+}
+
+/* ── (v4.9.6) 모바일 「표」 버튼 · 이후 예고 시트 (js/weekpop.js) ───────────────────────────
+   버튼 = 플레이어 버튼(.player-btn, player.css)과 같은 모양, 하단 멤버 아이콘 줄의 오른쪽 끝(플레이어 버튼 반대편).
+   시트 = 플레이어 시트처럼 아래에서 올라오는 바텀 시트, 안에 이번주 테이블 → 먼 미래 테이블 → 점 범례를 세로로 */
+@media (max-width: 767px) {
+  #pager-dots .player-btn.week-btn {   /* player.css 가 이 파일보다 뒤에 읽혀 선택자를 하나 더 붙인다 */
+    position: absolute;
+    left: auto;                    /* player.css 의 #pager-dots .player-btn { left } 를 풀고 오른쪽에 */
+    right: var(--m-pad, 1rem);
+    top: 50%;
+    transform: translateY(-50%);
+    height: 26px;
+    padding: 0 7px;
+  }
+  #pager-dots .player-btn.week-btn svg { width: 31px; height: 18px; }
+}
+html.wk-lock { overflow: hidden; }
+html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 */
+.wk-scrim {
+  position: fixed; inset: 0; z-index: 800;
+  display: flex; align-items: flex-end; justify-content: center;
+  background: rgba(0, 0, 0, 0); transition: background 0.32s ease;
+}
+.wk-scrim[hidden] { display: none; }
+.wk-scrim.is-open { background: rgba(0, 0, 0, 0.6); }
+.wk-sheet {
+  width: min(560px, 100%); max-height: 88%;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--color-bg-secondary); color: var(--color-text);
+  border: 1px solid var(--color-border); border-bottom: 0; border-radius: 14px 14px 0 0;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45);
+  transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wk-scrim.is-open .wk-sheet { transform: none; }
+.wk-sheet.is-dragging { transition: none; }
+.wk-sheet.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }
+.wk-sheet__head {
+  position: relative; flex: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 14px 10px; border-bottom: 1px solid var(--color-border);
+  touch-action: none; cursor: grab;
+}
+.wk-sheet__grab {
+  position: absolute; top: 7px; left: 50%; translate: -50% 0; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border);
+  transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s;
+}
+.wk-sheet.is-armed .wk-sheet__grab { width: 58px; height: 5px; background: var(--color-text-muted); }
+.wk-sheet__title { flex: 1; margin: 0; font-size: 0.9rem; font-weight: 700; }
+.wk-sheet__x { padding: 5px 11px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.78rem; color: inherit; }
+.wk-sheet__body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.wk-sheet .tt-later { display: block; margin: 0; }
+.wk-sheet .wk2 { grid-template-columns: minmax(0, 1fr); }   /* 세로로: 이번주 → 먼 미래(+ 범례) */
+.wk-sheet .wk2__legend { grid-template-columns: repeat(2, max-content); }
+@media (prefers-reduced-motion: reduce) {
+  .wk-scrim, .wk-sheet { transition: none !important; }
 }

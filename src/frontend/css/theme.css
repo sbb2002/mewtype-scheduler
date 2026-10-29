@@ -22,6 +22,8 @@
   --color-text-faint: #8a8ea3;
   --color-line-soft: #e7e4f0;
   --color-grid: #eceaf3;
+  --color-dawn: rgba(107, 91, 196, 0.11);
+  --color-dawn-edge: rgba(107, 91, 196, 0.35);
   --color-hover: #f0eefa;
   --color-hover-veil: rgba(35, 36, 54, 0.06);
   --color-raised: #ece9f7;
@@ -102,7 +104,7 @@
   --bnr-dot-on: #232436;
 
   /* tweets.css */
-  --tw-badge-bg: #12a4a9;
+  --tw-badge-bg: var(--color-live);   /* (v4.9.6) 청록 → 빨강 */
   --tw-badge-fg: #ffffff;
   --tw-xcard-bg: #ffffff;
 

@@ -294,7 +294,7 @@ function _stopCards(root) {
 }
 
 /* ── 배지 · 보드 ───────────────────────────────────────────────────── */
-/** 배지(.lane__tw) · 아바타 링(.has-tweet) 을 메시지 상태에 맞춘다. 읽음 처리되면 배지가 작아지며 사라진다(B4). */
+/** 배지(.lane__tw) 를 메시지 상태에 맞춘다. 읽음 처리되면 배지가 작아지며 사라진다(B4). (v4.9.6) 아바타 링 표시는 없앴다. */
 function _applyBadges() {
   const board = _st.board;
   if (!board) return;
@@ -305,7 +305,6 @@ function _applyBadges() {
     for (const lane of _lanes(ck)) {
       const avatar = lane.querySelector(".lane__avatar");
       if (!avatar) continue;
-      avatar.classList.toggle("has-tweet", !!(list && list.length));   // 트윗이 있으면(읽음 여부 무관) 아바타에 얇은 링
       let badge = lane.querySelector(".lane__tw");
       if (!list || !list.length) {
         if (badge) { if (badge.__cancelOut) badge.__cancelOut(); badge.remove(); }

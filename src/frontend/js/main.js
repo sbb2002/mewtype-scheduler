@@ -355,7 +355,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(pollTweets, POLL_MS);
   setInterval(pollBanners, POLL_MS);
 
-  // 1분마다 남은시간 텍스트 · 타임테이블 지금 선 갱신. 오늘 구간(KST 06:00)이 바뀌었으면 보드 재렌더.
+  // 1분마다 남은시간 텍스트 · 타임테이블 지금 선 갱신. 오늘 구간(KST 04:00)이 바뀌었으면 보드 재렌더.
   setInterval(() => {
     if (updateCountdowns(board) && lastSchedule) paintBoard();
     try { refreshBanners(notice); } catch (e) { /* D-day · 상태 갱신 실패는 무시 */ }

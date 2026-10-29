@@ -2,9 +2,11 @@ import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
 import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤버를 넘길 때 짧은 진동
+import { createWeekButton, setWeekData } from "./weekpop.js";   // (v4.9.6) 모바일 「표」 버튼 · 이번주 · 먼 미래 시트
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
+  planLater, laterCounts, buildLaterTables,   // (v4.9.6) PC 표 보기의 이후 예고 = 이번주 표 + 먼 미래 표
 } from "./timetable.js";
 
 /* ── 보기 방식 (v4.4.0, PC 전용) — "table"(오늘 타임테이블) | "cards"(5인 카드 열) ──────────────
@@ -541,6 +543,14 @@ function wireFold(boardEl) {
   });
 }
 
+/* (v4.9.6) 탭 제목 라이브 표시 — 라이브가 1건 이상이면 「🔴 LIVE n · 원래 제목」. n = 방송 수(합동 1건 = 1). 같은 값이면 쓰지 않는다 */
+let baseTitle = null;
+function applyLiveTitle(n) {
+  if (baseTitle === null) baseTitle = document.title;
+  const t = n > 0 ? `🔴 LIVE ${n} · ${baseTitle}` : baseTitle;
+  if (document.title !== t) document.title = t;
+}
+
 /**
  * 보드 전체 재구성 (v4.1.0).
  *  PC(≥768px)   : 오늘 타임테이블 + "이후 예고" 펼치기(방송인별 네임플레이트 · 카드 5열)
@@ -565,6 +575,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
   const cls = classify(preview.items, archive && archive.items, nowMs, order);
   const ctx = { ...cls, nowMs, order, channels };
   boardEl.__ttDe = cls.de;
+  setWeekData({ ...cls, nowMs, order, channels }, preview.items, archive && archive.items);   // (v4.9.6) 모바일 표 시트가 쓸 마지막 데이터
 
   // 이후 예고 — 합동은 참여 멤버 전원 레인에 팬아웃 (v3 와 같은 규칙)
   const laterBy = {};
@@ -599,19 +610,13 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     boardEl.appendChild(sec);
   } else if (!phone) {
     boardEl.appendChild(buildTimetable(ctx));
-    if (counts.total) boardEl.appendChild(buildFoldButton(counts, ctx, { perMember: true }));   // 이후 예고가 0건이면 버튼도 목록도 없다
-    const later = document.createElement("div");
-    later.className = "tt-later";
-    for (const key of order) {
-      const lane = document.createElement("section");
-      lane.className = "lane lane--later";
-      lane.dataset.channel = key;
-      lane.dataset.noBadge = "";           // 편지 배지는 타임테이블 왼쪽 칸에만 (tweets.js 가 건너뜀)
-      lane.appendChild(buildHeader(channels[key]));
-      lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
-      later.appendChild(lane);
+    // (v4.9.6) 이후 예고 = 이번주 표 + 먼 미래 표 (표 보기만). 0건이면 버튼도 표도 없다. 카드 보기 · 모바일은 위의 목록 그대로
+    const plan = planLater(preview.items, archive && archive.items, nowMs, order);
+    const pc = laterCounts(plan);
+    if (pc.total) {
+      boardEl.appendChild(buildFoldButton({ total: pc.total }, ctx, { summary: `이번주 ${pc.week} · 먼 미래 ${pc.rest}` }));
+      boardEl.appendChild(buildLaterTables(ctx, plan));
     }
-    if (counts.total) boardEl.appendChild(later);
   } else {
     for (const key of order) {
       const lane = document.createElement("section");
@@ -627,6 +632,10 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     }
   }
   for (const key of order) sampleLaneColor(avatarSized(channels[key].avatar, 176), boardEl.querySelector(`.lane[data-channel="${key}"]`));
+  // (v4.9.6) 라이브 레인 효과 — 지금 방송 중인 멤버(합동 참여자 포함)의 레인에 lane--live(테두리 글로우는 카드 보기 · 모바일만, timetable.css). 모바일 캐러셀 클론이 같이 복제하도록 initMobileCarousel 전에
+  for (const e of cls.live) for (const k of itemKeys(e.item, order)) {
+    boardEl.querySelectorAll(`.lane[data-channel="${CSS.escape(k)}"]`).forEach((l) => l.classList.add("lane--live"));
+  }
 
   wireFold(boardEl);
   syncFold(boardEl);
@@ -639,6 +648,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     const t = boardEl.querySelector('.vt__btn[aria-selected="true"]');
     if (t) t.focus();
   }
+  applyLiveTitle(cls.live.length);   // (v4.9.6) 탭 제목에 라이브 수 표시
 }
 
 /* 제목이 카드 폭을 넘치면 흐르는 marquee 로 전환 (PC). 줄바꿈되는 모바일은
@@ -783,12 +793,14 @@ function initMobileCarousel(boardEl) {
     dots.hidden = false;
     dots.innerHTML = "";
     dots.appendChild(createPlayerButton("player-btn--dock"));   // (v4.2.0) 멤버 아이콘 줄 맨 왼쪽
+    dots.appendChild(createWeekButton());                       // (v4.9.6) 맨 오른쪽 = 이번주 · 먼 미래 표 시트
     reals.forEach((lane, i) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "dot";
       const key = lane.dataset.channel;
       if (key) btn.dataset.channel = key;
+      if (lane.classList.contains("lane--live")) btn.classList.add("dot--live");   // (v4.9.6) 방송 중인 멤버 점 = 빨간 링
       // 아바타 색이 이미 샘플링됐으면 그 값, 아니면 나중에 sampleLaneColor 가 채움
       const c = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
       if (c) btn.style.setProperty("--lane-color", c);
@@ -969,6 +981,6 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
       }
     }
   }
-  // 타임테이블: 지금 선 · 카운트다운 링 갱신. 오늘 구간(06:00)이 바뀌었으면 true → 호출부가 재렌더
+  // 타임테이블: 지금 선 · 카운트다운 링 갱신. 오늘 구간(04:00)이 바뀌었으면 true → 호출부가 재렌더
   return tickTimetable(boardEl, nowMs);
 }

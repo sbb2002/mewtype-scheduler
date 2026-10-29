@@ -7,8 +7,8 @@
 @property --mi { syntax: "<color>"; inherits: true; initial-value: #ffffff; }
 
 :root {
-  --tw-badge-bg: #ccfbfa;   /* 안 읽은 트윗 배지 · 트윗 있는 아바타 링 */
-  --tw-badge-fg: #0c1a1a;
+  --tw-badge-bg: var(--color-live);   /* 안 읽은 트윗 배지 (v4.9.6 청록 → 빨강, 최종 색은 화면 보고 정함) */
+  --tw-badge-fg: #ffffff;
   --tw-xcard-bg: #000000;   /* X 카드 자리 바탕 */
   /* 움직임 속도 — tweets.js 의 EASE 와 같은 곡선 */
   --t-fast: 120ms; --t-face: 260ms; --t-open: 320ms; --t-close: 210ms; --t-color: 500ms;
@@ -109,7 +109,7 @@
   }
   50% {
     filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.6)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5))
-      drop-shadow(0 0 5px rgba(204, 251, 250, 0.8));
+      drop-shadow(0 0 5px color-mix(in srgb, var(--tw-badge-bg) 80%, transparent));
   }
 }
 @keyframes tw-hop {
@@ -118,11 +118,6 @@
   10% { transform: translateY(0); }
   14% { transform: translateY(-1.5px); }
   18% { transform: translateY(0); }
-}
-
-/* 트윗이 있는 멤버의 아바타 = 얇은 링(읽음 여부와 무관). tweets.js _applyBadges 가 .has-tweet 을 켠다 */
-.lane__avatar.has-tweet {
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 2.5px var(--tw-badge-bg);
 }
 
 /* ── 트윗 시트 (ui_spec.md §4) ─────────────────────────────────────────
