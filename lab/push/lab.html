@@ -146,7 +146,7 @@ async function refresh() {
   try {
     const snap = await (await fetch("/lab/api")).json();
     const c = snap.conf;
-    $("conf").textContent = `응답은 늘 202 · 구독 1개 = 문서 1개(Firestore 흉내) · 하루 쓰기 상한 ${c.cap} · 요청 ${c.max_body}B 이하 · 연타는 프론트가 2초 묶음`;
+    $("conf").textContent = `저장소 ${snap.store} · 응답은 늘 202 · 구독 1개 = 문서 1개 · 하루 쓰기 상한 ${c.cap} · 요청 ${c.max_body}B 이하 · 연타는 프론트가 2초 묶음`;
     renderItems(snap.items, snap.notified); renderSubs(snap); renderLog(snap.log);
   } catch { /* 서버 재시작 중 */ }
 }

@@ -94,17 +94,12 @@ def log(kind: str, msg: str) -> None:
     print(f"[{hhmmss()}] {kind:6} {msg}", flush=True)
 
 
-# ── 문서 저장소(Firestore 흉내) ──────────────────────────────────────
-class DocStore:
-    """컬렉션 하나. Firestore 에서 쓸 연산만: get · set · delete · array_contains 조회. 연산 수를 센다."""
-
-    def __init__(self, path: str):
-        self.path = path
+# ── 문서 저장소 ──────────────────────────────────────────────────────
+# 구독 1개 = 문서 1개. 쓰는 연산은 get · set · delete · array-contains-any 조회뿐이고, 연산 수를 센다(Firestore 무료 한도 대조용).
+# FIRESTORE_EMULATOR_HOST 가 있으면 실제 Firestore 클라이언트(에뮬레이터), 없으면 같은 동작의 로컬 파일 저장소.
+class _OpCounter:
+    def __init__(self):
         self.lock = threading.Lock()
-        self.docs: dict = {}
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                self.docs = json.load(f)
         self.ops = collections.Counter()   # 오늘(태평양 시간) 연산 수 — read · write · delete
         self.day = self._today()
 
@@ -116,52 +111,121 @@ class DocStore:
         if self._today() != self.day:
             self.day, self.ops = self._today(), collections.Counter()
 
-    def _persist(self) -> None:
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.docs, f, ensure_ascii=False, indent=2, sort_keys=True)
-            f.write("\n")
+    def _count(self, kind: str, n: int = 1) -> None:
+        with self.lock:
+            self._roll()
+            self.ops[kind] += n
 
     def writes_today(self) -> int:
         with self.lock:
             self._roll()
             return self.ops["write"] + self.ops["delete"]
 
-    def get(self, doc_id: str):
+    def ops_today(self) -> tuple:
         with self.lock:
             self._roll()
-            self.ops["read"] += 1
+            return dict(self.ops), self.day
+
+
+class DocStore(_OpCounter):
+    """로컬 파일 저장소(Firestore 흉내)."""
+    kind = "로컬 파일(Firestore 흉내)"
+
+    def __init__(self, path: str):
+        super().__init__()
+        self.path = path
+        self.docs: dict = {}
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self.docs = json.load(f)
+
+    def _persist(self) -> None:
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self.docs, f, ensure_ascii=False, indent=2, sort_keys=True)
+            f.write("\n")
+
+    def get(self, doc_id: str):
+        self._count("read")
+        with self.lock:
             d = self.docs.get(doc_id)
             return dict(d) if d else None
 
     def set(self, doc_id: str, doc: dict) -> None:
+        self._count("write")
         with self.lock:
-            self._roll()
-            self.ops["write"] += 1
             self.docs[doc_id] = doc
             self._persist()
 
-    def delete(self, doc_id: str) -> bool:
+    def delete(self, doc_id: str) -> None:
+        self._count("delete")
         with self.lock:
-            self._roll()
-            self.ops["delete"] += 1
-            existed = self.docs.pop(doc_id, None) is not None
+            self.docs.pop(doc_id, None)
             self._persist()
-            return existed
 
     def where_array_contains_any(self, field: str, values: list) -> dict:
-        """Firestore `array-contains-any` 흉내 — 돌려준 문서 수만큼 읽기로 센다."""
         with self.lock:
-            self._roll()
             hit = {k: dict(v) for k, v in self.docs.items() if set(v.get(field) or []) & set(values)}
-            self.ops["read"] += max(1, len(hit))
-            return hit
+        self._count("read", max(1, len(hit)))   # Firestore 는 결과 0건이어도 읽기 1건
+        return hit
 
     def all(self) -> dict:          # 실험실 보기용(연산 수에 안 넣음)
         with self.lock:
             return {k: dict(v) for k, v in self.docs.items()}
 
+    def purge(self, ids: list) -> None:   # 실험실 청소용(연산 수에 안 넣음)
+        with self.lock:
+            for k in ids:
+                self.docs.pop(k, None)
+            self._persist()
 
-STORE = DocStore(os.path.join(DATA_DIR, "subs.json"))
+
+class FirestoreStore(_OpCounter):
+    """실제 Firestore 클라이언트 — 컬렉션 하나. 운영에서도 이 연산만 쓴다."""
+    kind = "Firestore"
+
+    def __init__(self, collection: str = "push_subs"):
+        super().__init__()
+        from google.cloud import firestore
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        self._ff = FieldFilter
+        self.client = firestore.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT", "mewtype-lab"))
+        self.col = self.client.collection(collection)
+        self.kind = f"Firestore 에뮬레이터 {os.environ['FIRESTORE_EMULATOR_HOST']}" \
+            if os.environ.get("FIRESTORE_EMULATOR_HOST") else "Firestore"
+
+    def get(self, doc_id: str):
+        self._count("read")
+        snap = self.col.document(doc_id).get()
+        return snap.to_dict() if snap.exists else None
+
+    def set(self, doc_id: str, doc: dict) -> None:
+        self._count("write")
+        self.col.document(doc_id).set(doc)
+
+    def delete(self, doc_id: str) -> None:
+        self._count("delete")
+        self.col.document(doc_id).delete()
+
+    def where_array_contains_any(self, field: str, values: list) -> dict:
+        hit = {d.id: d.to_dict() for d in self.col.where(filter=self._ff(field, "array_contains_any", values)).stream()}
+        self._count("read", max(1, len(hit)))
+        return hit
+
+    def all(self) -> dict:
+        return {d.id: d.to_dict() for d in self.col.stream()}
+
+    def purge(self, ids: list) -> None:
+        batch = self.client.batch()
+        for i, k in enumerate(ids, 1):
+            batch.delete(self.col.document(k))
+            if i % 400 == 0:
+                batch.commit()
+                batch = self.client.batch()
+        batch.commit()
+
+
+LOCAL_PATH = os.path.join(DATA_DIR, "subs.json")
+STORE = FirestoreStore() if os.environ.get("FIRESTORE_EMULATOR_HOST") else DocStore(LOCAL_PATH)
 
 
 def sid_of(endpoint: str) -> str:
@@ -352,10 +416,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True})
         if path == "/lab/clearfake":
             fakes = [k for k, v in STORE.all().items() if v.get("fake")]
-            with STORE.lock:
-                for k in fakes:
-                    STORE.docs.pop(k, None)
-                STORE._persist()
+            STORE.purge(fakes)
             log("시험", f"가짜 구독 {len(fakes)}개 지움(연산 수에 안 넣음)")
             return self._json({"ok": True})
         self._send(404, b"not found")
@@ -393,11 +454,8 @@ def lab_snapshot() -> dict:
     docs = STORE.all()
     subs = [{"sid": sid[:10], "members": d["members"], "videos": d["videos"], "updated": d.get("updated", "")[11:19],
              "fake": bool(d.get("fake"))} for sid, d in docs.items()]
-    with STORE.lock:
-        STORE._roll()
-        ops = dict(STORE.ops)
-        day = STORE.day
-    return {"items": items, "subs": subs, "stats": dict(STATS), "ops": ops, "day": day,
+    ops, day = STORE.ops_today()
+    return {"items": items, "subs": subs, "stats": dict(STATS), "ops": ops, "day": day, "store": STORE.kind,
             "notified": sorted(NOTIFIED), "log": list(LOG),
             "conf": {"cap": DAILY_WRITE_CAP, "max_body": MAX_BODY}}
 
@@ -440,24 +498,29 @@ def lab_new(channel_key: str, state: str = "upcoming") -> dict:
     return {"ok": True, "video_id": vid}
 
 
-def _migrate_old_store() -> None:
-    """앞 시험판(10자리 문서 id)의 구독을 이 저장소 형식(16자리)으로 옮긴다 — 운영자가 이미 켜 둔 등록 유지."""
-    moved = 0
-    with STORE.lock:
-        for k in [k for k in STORE.docs if len(k) != 16]:
-            d = STORE.docs.pop(k)
-            STORE.docs[sid_of(d["endpoint"])] = d
-            moved += 1
-        if moved:
-            STORE._persist()
-    if moved:
-        log("시작", f"앞 시험판 구독 {moved}개를 새 문서 id 로 옮김")
+def _carry_over() -> None:
+    """운영자가 이미 켜 둔 등록을 잇는다(연산 수에 안 넣음).
+    로컬 파일: 앞 시험판(10자리 문서 id)을 16자리로. Firestore(에뮬레이터는 끄면 비워짐): 비어 있으면 로컬 파일 내용을 옮겨 심는다."""
+    local = {}
+    if os.path.exists(LOCAL_PATH):
+        with open(LOCAL_PATH, encoding="utf-8") as f:
+            local = {sid_of(d["endpoint"]): d for d in json.load(f).values() if not d.get("fake")}
+    if isinstance(STORE, DocStore):
+        if set(local) != set(STORE.docs):
+            with STORE.lock:
+                STORE.docs = local
+                STORE._persist()
+            log("시작", f"앞 시험판 구독 {len(local)}개를 새 문서 id 로 옮김")
+    elif local and not STORE.all():
+        for k, d in local.items():
+            STORE.col.document(k).set(d)
+        log("시작", f"로컬 파일 구독 {len(local)}개를 Firestore 에 옮겨 심음")
 
 
 if __name__ == "__main__":
-    _migrate_old_store()
+    _carry_over()
     load_preview()
     threading.Thread(target=send_loop, daemon=True).start()
-    log("시작", f"팬 화면 http://localhost:{PORT}/ · 서버 보기 http://localhost:{PORT}/lab · 저장된 구독 {len(STORE.all())}개")
+    log("시작", f"팬 화면 http://localhost:{PORT}/ · 서버 보기 http://localhost:{PORT}/lab · 저장소 {STORE.kind} · 구독 {len(STORE.all())}개")
     ThreadingHTTPServer.request_queue_size = 512   # 기본 5 — 동시 수천 건 시험에서 실험실 서버가 먼저 연결을 거절하지 않게
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
