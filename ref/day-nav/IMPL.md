@@ -327,3 +327,75 @@ section.tt
 
 ### B-4. 확인
 - `node src/frontend/js/render.selfcheck.mjs` 통과(이 파일이 `document` 없이 render.js 를 import 하면 `document.title` 이 모듈 로드 때 불리지 않는지 확인 — 함수 안에서만 읽으므로 괜찮아야 한다).
+
+---
+
+## 작업 묶음 D — 테이블 보기 「이후 예고」 = 이번주 테이블 + 먼 미래 테이블 (운영자 안 3, 10-29) (worktree `../mewtype-scheduler-worktrees/v4/hotfix-day-nav-live`)
+
+운영자 결정(10-29): 표 = **2열 × 행**(왼쪽 날짜 · 요일, 오른쪽 그날 방송을 멤버 색 점으로) · 이번주 하루 경계 = **00:00 달력 날짜**(예고보드의 04:00 하루와 다름) ·
+**오늘 · 내일 예고도 이번주 테이블에 넣음**(위 표와 겹쳐 나와도 됨) · **합동 = 점 하나를 참여 멤버 색으로 나눠 칠함**. 범위 = **PC 테이블 보기만**(카드 보기 · 모바일의 이후 예고 목록은 그대로).
+
+파일: `src/frontend/js/timetable.js` · `src/frontend/js/timetable.selfcheck.mjs` · `src/frontend/js/render.js`(테이블 보기 분기만) · `src/frontend/css/timetable.css`.
+
+### D-1. 순수 함수 `planLater(items, archiveItems, nowMs, order)` (`timetable.js`, export — DOM 없음, selfcheck 대상)
+반환 `{ ws, we, today, days, far, undated }`
+- `ws` = 지금이 들어 있는 **KST 달력 주의 일요일 00:00**(ms), `we = ws + 7일`. `today` = 0~6(오늘이 몇 번째 줄인지).
+- `days` = 길이 7 배열, 각 `{ ds: 그날 00:00(ms), entries: [...] }`. `far` = `[{ ds: 그날 KST 00:00, entries }]` 날짜순. `undated` = 날짜를 모르는 예고 entries.
+- entry = `{ item, start, end, state, keys }` — `state` 는 `"ended" | "live" | "upcoming"`, `keys = itemKeys(item, order)`, `start` 순 정렬.
+- 넣는 규칙(멤버 5인만 — `order` 에 있는 `channel_key`):
+  - preview `live`: 시작 = `actual_start || scheduled_start`. 시작이 `[ws, we)` 면 그날 줄, state `live`, end null.
+  - preview `end`: 시작 = `actual_start || scheduled_start`, end = `state_since`(없으면 null). 시작이 `[ws, we)` 면 `ended`.
+  - preview `announced | upcoming | watching`: s = `scheduled_start`.
+    - s 가 없거나 숫자가 아님 → `undated`.
+    - s 가 `[ws, we)` → 그날 줄, `upcoming`(시각 미정 `time_tbd` 도 그날 줄 — 점 모양으로 구분, D-3).
+    - 아니고 s ≥ `we` 이고 **오늘 · 내일 예고 구간 `[dayWindow(now).ds, dayWindow(now).de + 1일)` 밖** → `far`(KST 날짜별로 묶음).
+    - s < `ws`(지난주 예정이 아직 남은 것) → 넣지 않음.
+  - 보관함(`archiveItems`): preview 에 같은 `video_id` 가 있으면 건너뜀. `actual_start` 와 `archived_at` 이 둘 다 있고, 길이(`archived_at − actual_start`)가 10분 ~ 12시간이고, `archived_at ≤ now`, 시작이 `[ws, we)` 이면 `ended`(end = `archived_at`). (= `classify` 의 보관함 규칙과 같고 범위만 이번주)
+- 날짜(줄) = **시작 시각의 KST 달력 날짜**(00:00 경계). 예: 목 01:00 시작 → 목요일 줄.
+
+### D-2. 화면 구조 (테이블 보기에서 `.tt-later` 안쪽을 바꾼다)
+`render.js` 테이블 보기 분기(지금 `const later = document.createElement("div"); later.className = "tt-later"; … 5개 lane--later …`)를 아래로 바꾼다. **`.tt-later` 클래스 이름은 그대로**(펼치기 · 접기 CSS · `toggleLater` 애니메이션이 이 이름을 쓴다).
+```
+div.tt-later
+  div.wk2                                  ← 2칸 그리드(좁으면 1칸)
+    section.wk2__panel.wk2__panel--week
+      div.wk2__hd > b「이번주」 + span(`10/25(일) ~ 10/31(토)`)
+      div.wk2__tbl
+        div.wk2__row[.is-past|.is-today] × 7
+          div.wk2__date > b(`10/29`) + span(`목`) [+ span.wk2__now「오늘」 — 오늘 줄만]
+          div.wk2__dots > button.wk2__dot × n  (없으면 빈 칸)
+    section.wk2__panel.wk2__panel--far
+      div.wk2__hd > b「먼 미래」 + span(`N건`)
+      div.wk2__tbl
+        div.wk2__row × (far 날짜 수)          ← 왼쪽 = 그 예고의 날짜(`12/24` + 요일, 올해가 아니면 `2027/12/24`) + span.wk2__dn(`D-55`)
+        div.wk2__row (undated 가 있을 때만)    ← 왼쪽 = 「날짜 미정」
+      (far · undated 가 0건이면 div.wk2__none「먼 미래 예고 없음」)
+```
+- `buildLaterTables(ctx, plan)` 를 `timetable.js` 에 만들어 export, `render.js` 는 `boardEl.appendChild(buildLaterTables(ctx, planLater(preview.items, archive && archive.items, nowMs, order)))` 형태로 부른다(`.tt-later` 는 함수가 만든다).
+- **점** `button.wk2__dot`(type=button): 크기 14px 원(누르는 자리 24px — 투명 padding), 안에 `span.wk2__seg[data-channel=멤버]` 를 참여 멤버 수만큼(가로로 나란히 `flex: 1`, 원 밖은 잘림) — `render.js sampleLaneColor` 가 `#board [data-channel]` 에 `--lane-color` 를 넣으므로 각 조각 배경 = `var(--lane-color, var(--color-text-muted))`. 합동이면 색이 세로 줄무늬로 나뉜다.
+  - `aria-label` = `HH:MM 멤버이름(들) · 제목`(시각 미정이면 「시각 미정」, 제목은 `titleText`).
+  - 상태 클래스: `is-ended`(opacity 0.4 + 채도 낮춤 — 「지나간 것은 약간 어두운 톤」), `is-live`(바깥 2px `--color-live` 링), `is-tbd`(바깥 1.5px 점선 링 `--color-text-muted`). 이번주 지난 날 줄(`is-past`)의 날짜 글자도 흐리게.
+  - 점 사이 간격 6px, 줄 높이 최소 34px, 줄 사이는 표와 같은 점선(`--color-line-soft`).
+- **팝업**: 점에 마우스 올림 = 미리보기, 클릭(또는 Enter · Space) = 고정 — 지금 블록(`blockEl`)의 `mouseenter` · `mouseleave` · `click` · `keydown` 처리와 **같은 코드**를 쓴다. 공용 함수 `wirePop(el, entry, state, ctx, rowKey)` 로 빼서 `blockEl` 과 점이 함께 쓴다(`ttSliding` 검사 포함). `rowKey` = `item.channel_key`.
+  - 이 표의 팝업은 날짜가 필요하다: `showCardPop` 의 범위 글자(`rangeLabel`)에 날짜를 붙이는 선택을 둔다 — 점에서 연 팝업만 `10/31(토) 21:30`(시각 미정이면 `10/31(토) 시각 미정`, 종료면 `10/29(목) 23:02 ~ 00:45 (익일) · 1시간 43분`). 블록 팝업은 지금 그대로.
+- **패널 모양** = 표(`.tt__scroll`)와 같은 상자: 배경 `--color-bg-secondary`, 테두리 `--color-border`, 둥글기 10px, 안쪽 여백 12px 14px. 날짜 열 폭 96px, 날짜 숫자 `tabular-nums`. 오늘 줄은 날짜를 굵게 + 「오늘」 작은 알약(`--color-raised` 바탕). 머리줄(`.wk2__hd`) = 표 머리줄(`.tt__head`)과 같은 글자 크기(제목 0.9rem 굵게 · 보조 0.76rem muted).
+- 2칸 그리드: `grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap)`, `@media (max-width: 1000px)` 에서 1칸. 위 여백은 지금 `.tt-later` 와 같게.
+- 움직임 줄이기와 상관없는 정적 화면(애니메이션 없음). 펼치기 · 접기 애니메이션은 기존 `toggleLater` 그대로.
+
+### D-3. 펼치기 버튼(테이블 보기만)
+- 보이는 조건: 이번주 점 + 먼 미래 + 날짜 미정이 **1건 이상**(지금의 `counts.total` 조건 대신). 0건이면 버튼 · `.tt-later` 둘 다 없음.
+- 글자: 펼치기 「이후 예고 펼치기」, 접기 「이후 예고 접기」, 오른쪽에 멤버별 아바타 건수 대신 작은 글자 `이번주 N · 먼 미래 M`(`span.tt-fold__cn` 자리, N = 이번주 점 수, M = far + undated 건수). `buildFoldButton(counts, ctx, opts)` 에 `opts.summary`(문자열)가 있으면 그것을 쓰고 perMember 는 무시.
+- 카드 보기 · 모바일의 버튼 · 목록은 **그대로**(「이후 예고 N건 펼치기」 + 멤버별 건수, 5열/레인 목록).
+
+### D-4. selfcheck (`timetable.selfcheck.mjs`)
+now = `2026-10-30T01:00` KST(금):
+- `ws` = 10/25(일) 00:00, `we` = 11/1(일) 00:00, `today` = 5.
+- 목 10/29 23:00 시작 · 10/30 00:45 끝난 `end` 항목 → 목요일 줄(days[4]) `ended`. 금 00:30 `live` → days[5] `live`.
+- 보관함 10/26 19:00~21:10 → days[1] `ended`. 10/24(토, 지난주) 보관 → 없음. 5분짜리 → 없음.
+- 예정 10/31 21:30 → days[6] `upcoming`. 시각 미정 10/31 → days[6] `upcoming`(item.time_tbd).
+- 예정 11/1 10:00(일) → 내일 예고 구간(10/30 04:00 ~ 10/31 04:00) 밖이고 주 밖 → `far`. 예정 10/30 07:00 → days[5](이번주). 예정 12/24 → `far`, 날짜순. `scheduled_start` 없음 → `undated`.
+- 합동(`collab_with`) → entry.keys 에 참여 멤버, 줄에는 한 번만.
+- 토요일(10/31) 10:00 기준: 내일 예고 = 10/31 04:00 ~ 11/1 04:00 → 11/1 02:00 예정은 **far 에 넣지 않음**(내일 예고에 있음), 11/1 05:00 예정은 far.
+
+### D-5. 확인 (작업자)
+`node --check` · `timetable` · `render` · `king` selfcheck 통과. 커밋하지 않는다.
