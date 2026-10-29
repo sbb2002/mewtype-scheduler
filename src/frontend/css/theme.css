@@ -174,6 +174,8 @@
 
 /* (v4.9.10) 전환 방식 1 — View Transitions: 옛 화면은 그대로 두고 새 화면을 위에 서서히 드러낸다(기본 교차 페이드의 밝아졌다 어두워지는 겹침 없이). theme.js 가 html.theme-vt 를 켠다 */
 @keyframes theme-vt-in { from { opacity: 0; } to { opacity: 1; } }
+/* 새 화면은 찍힌 사진이 아니라 살아 있는 화면이라, 각 요소가 자기 transition(0.15~0.3s 색 · 투명도)을 따로 돌리면 서서히 드러나는 동안 두 번 바뀌는 것처럼 끊겨 보인다 → 전환 중엔 요소별 transition 을 끈다(페이드 한 가지만 남김) */
+html.theme-vt *, html.theme-vt *::before, html.theme-vt *::after { transition: none !important; }
 html.theme-vt::view-transition-old(root) { animation: none; mix-blend-mode: normal; }
 html.theme-vt::view-transition-new(root) { animation: theme-vt-in 0.9s cubic-bezier(0.45, 0, 0.25, 1); mix-blend-mode: normal; }
 
