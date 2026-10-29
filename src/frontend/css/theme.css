@@ -102,7 +102,7 @@
   --bnr-dot-on: #232436;
 
   /* tweets.css */
-  --tw-badge-bg: #12a4a9;
+  --tw-badge-bg: var(--color-live);   /* (v4.9.6) 청록 → 빨강 */
   --tw-badge-fg: #ffffff;
   --tw-xcard-bg: #ffffff;
 
