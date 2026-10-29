@@ -1,0 +1,283 @@
+<title>뮤타입 배경 시안</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 레이아웃: 시안 5개를 세로로 나열, 각 시안에 모바일 다크·라이트 / PC 다크·라이트 4컷 */
+:root {
+  --bg: #f5f4fb; --fg: #232436; --muted: #6b6c85; --line: #dcd8ea; --card: #ffffff;
+  --pink: #ff7788; --blue: #2288dd;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0f0f0f; --fg: #e8e8e8; --muted: #9a9aa8; --line: #333; --card: #1a1a1a; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #0f0f0f; --fg: #e8e8e8; --muted: #9a9aa8; --line: #333; --card: #1a1a1a; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: "Noto Sans KR", -apple-system, "Segoe UI", sans-serif; line-height: 1.55; padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; }
+main { max-width: 1120px; margin-inline: auto; display: grid; gap: 44px; }
+h1 { font-size: 1.5rem; margin: 0 0 6px; text-wrap: balance; }
+.lead { color: var(--muted); margin: 0; max-width: 64ch; }
+.sw { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; font-size: 0.8rem; }
+.sw span { display: inline-flex; align-items: center; gap: 6px; }
+.sw i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+section.v { display: grid; gap: 12px; }
+.v h2 { font-size: 1.1rem; margin: 0; }
+.v p { margin: 0; color: var(--muted); font-size: 0.88rem; max-width: 70ch; }
+.row { display: grid; grid-template-columns: repeat(2, minmax(0, 150px)) repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.cell { display: grid; gap: 6px; min-width: 0; }
+.cell small { color: var(--muted); font-size: 0.72rem; }
+@keyframes fl { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(var(--dx), var(--dy)); } }
+.fl { animation: fl var(--dur) ease-in-out var(--delay) infinite; }
+@media (prefers-reduced-motion: reduce) { .fl { animation: none; } }
+.shake { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.shake button { font: inherit; font-size: 0.85rem; padding: 8px 16px; min-height: 44px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+.shake button.pri { background: var(--pink); border-color: var(--pink); color: #fff; font-weight: 700; }
+.shake button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.shake small { color: var(--muted); font-size: 0.78rem; }
+.cell svg { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 8px; }
+@media (max-width: 720px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+
+<main>
+  <header>
+    <h1>뮤타입 배경 시안 5종</h1>
+    <p class="lead">A는 스케치의 띠, B~D는 새로 만든 패턴이고 E는 로고 장식을 회전·굵게 바꾼 것입니다. 색은 로고의 세로 비율(위 약 60%는 분홍, 아래로 갈수록 파랑)을 따릅니다. 각 시안 위에 카드 모양을 얹어 글자 가독성도 함께 볼 수 있게 했습니다.</p>
+    <div class="sw"><span><i style="background:#ff7788"></i>#ff7788</span><span><i style="background:#2288dd"></i>#2288dd</span><span>다크 #0f0f0f · 라이트 #f5f4fb</span></div>
+  </header>
+  <div id="out"></div>
+</main>
+
+<script>
+let UID = 0;
+const PINK = "#ff7788", BLUE = "#2288dd";
+const THEME = {
+  dark:  { bg: "#0f0f0f", card: "#1a1a1a", edge: "#333333", a: 0.5 },
+  light: { bg: "#f5f4fb", card: "#ffffff", edge: "#dcd8ea", a: 0.55 },
+};
+function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+
+/* 매끈한 직선 띠 (기울기 k = tan, 가운데 x=W/2 에서 중심 y=cy, 세로 두께 thick) */
+function flat(W, k, cy, thick, fill, op) {
+  const x0 = -W * 0.05, x1 = W * 1.05, yy = (x) => cy - k * (x - W / 2);
+  return `<polygon points="${x0},${yy(x0) - thick / 2} ${x1},${yy(x1) - thick / 2} ${x1},${yy(x1) + thick / 2} ${x0},${yy(x0) + thick / 2}" fill="${fill}" opacity="${op}"/>`;
+}
+function mix(c1, c2, t) {
+  const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const a = p(c1), b = p(c2);
+  return "#" + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+/* 손으로 칠한 듯한 띠: 기준선 둘레 thick 폭의 다각형, 가장자리를 살짝 흔든다 */
+function band(x0, y0, x1, y1, thick, fill, op, r) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len, n = 36, top = [], bot = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, bx = x0 + dx * t, by = y0 + dy * t, w = thick / 2, j = () => (r() - 0.5) * thick * 0.07;
+    top.push([bx + nx * (w + j()), by + ny * (w + j())]);
+    bot.push([bx - nx * (w + j()), by - ny * (w + j())]);
+  }
+  const pts = top.concat(bot.reverse()).map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  return `<polygon points="${pts}" fill="${fill}" opacity="${op}"/>`;
+}
+/* 기준선 (x0,y0)→(x1,y1) 둘레를 오가는 낙서 지그재그 점열 */
+function scribble(x0, y0, x1, y1, n, amp, r) {
+  const pts = [];
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, side = i % 2 ? 1 : -1;
+    const o = side * amp * (0.35 + r() * 0.65);
+    const j = (r() - 0.5) * (len / n) * 0.9;
+    pts.push([x0 + dx * t + nx * o + (dx / len) * j, y0 + dy * t + ny * o + (dy / len) * j]);
+  }
+  return pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+}
+function wavy(x0, y0, x1, y1, n, amp, r) {
+  const pts = [];
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), nx = -dy / len, ny = dx / len;
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, o = (r() - 0.5) * 2 * amp;
+    pts.push([x0 + dx * t + nx * o, y0 + dy * t + ny * o]);
+  }
+  return pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+}
+/* 로고 그라데이션: 세로 길이 기준, 0~58% 분홍 → 100% 파랑 */
+function grad(id, W, H, from = 0.58) {
+  return `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${H}">
+    <stop offset="0" stop-color="${PINK}"/><stop offset="${from}" stop-color="${PINK}"/><stop offset="1" stop-color="${BLUE}"/></linearGradient>`;
+}
+function stroke(d, paint, w, op) {
+  return `<path d="${d}" fill="none" stroke="${paint}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`;
+}
+/* 배경 위에 얹는 카드 모양 (가독성 확인용) */
+function cards(W, H, th, mobile) {
+  const t = THEME[th], out = [];
+  const box = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${W * 0.014 + 4}" fill="${t.card}" stroke="${t.edge}"/>`;
+  if (mobile) {
+    out.push(box(W * 0.06, H * 0.12, W * 0.88, H * 0.34));
+    out.push(box(W * 0.06, H * 0.5, W * 0.88, H * 0.1));
+  } else {
+    const gap = W * 0.015, w = (W * 0.94 - gap * 4) / 5;
+    for (let i = 0; i < 5; i++) out.push(box(W * 0.03 + i * (w + gap), H * 0.14, w, H * 0.34));
+    out.push(box(W * 0.03, H * 0.54, W * 0.94, H * 0.1));
+  }
+  return out.join("");
+}
+
+/* ── 시안 정의: (W,H,theme) → <defs>+<g> ── */
+const VARIANTS = [
+  { name: "A. 띠 두 줄 (완만하게)",
+    note: "분홍 띠와 파랑 띠의 기울기를 같게 맞추고, PC는 가로 끝에서 끝까지 올라가는 높이를 세로의 1.5%로 줄여 거의 수평(약 0.8도)이고, 모바일은 약 10도입니다. 가장자리는 매끈한 직선이라 계단이 생기지 않습니다. 분홍은 굵게, 파랑은 얇게, 둘 사이에 일정한 틈을 둡니다.",
+    draw(W, H, th) {
+      const a = th === "dark" ? 0.42 : 0.5, k = (W > H ? 0.015 : 0.08) * H / W;   // 가로 전체에서 올라가는 높이 = 세로의 8%(모바일) · 1.5%(PC)
+      return flat(W, k, H * 0.84, H * 0.09, PINK, a) + flat(W, k, H * 0.84 + H * 0.09, H * 0.03, BLUE, a);
+    } },
+  { name: "B. 도트 그라데이션",
+    note: "촘촘한 동그라미 격자입니다. 점 크기와 색이 로고 비율을 따라 바뀝니다. 위쪽은 작은 분홍 점이 드문드문하고, 아래로 갈수록 점이 커지면서 파랑으로 넘어갑니다. 선이 아니라 둥근 점이라 계단이 없습니다.",
+    draw(W, H, th) {
+      const a = th === "dark" ? 0.5 : 0.55, step = Math.max(26, Math.min(W, H) * 0.058); let s = "";
+      for (let y = step / 2; y < H; y += step) {
+        const t = y / H, row = Math.round(y / step), off = row % 2 ? step / 2 : 0;
+        const k = Math.max(0, (t - 0.35) / 0.65), rad = step * (0.04 + 0.2 * k * k);
+        if (rad < 0.8) continue;
+        const m = Math.min(1, Math.max(0, (t - 0.55) / 0.45)), c = mix(PINK, BLUE, m);
+        for (let x = off; x < W + step; x += step) s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(2)}" fill="${c}" opacity="${a}"/>`;
+      }
+      return s;
+    } },
+  { name: "C. 물결 줄 패턴",
+    note: "로고의 물결 선을 가로로 촘촘히 반복합니다. 줄마다 색이 한 칸씩 변해 위는 분홍, 아래는 파랑입니다. 위쪽 줄은 가늘고 옅게, 아래쪽 줄은 굵고 진하게 해서 아래에서 올라오는 느낌을 줍니다.",
+    draw(W, H, th) {
+      const a = th === "dark" ? 0.5 : 0.55, gap = Math.max(22, H * 0.042), amp = gap * 0.28, wl = Math.max(46, W * 0.07); let s = "";
+      for (let y = gap; y < H; y += gap) {
+        const t = y / H, m = Math.min(1, Math.max(0, (t - 0.5) / 0.5)), c = mix(PINK, BLUE, m), op = a * (0.25 + 0.75 * t);
+        let d = `M${-wl} ${y}`;
+        for (let x = -wl; x < W + wl; x += wl) d += ` q${wl / 4} ${-amp} ${wl / 2} 0 t${wl / 2} 0`;
+        s += `<path d="${d}" fill="none" stroke="${c}" stroke-width="${(1 + 1.6 * t).toFixed(2)}" stroke-linecap="round" opacity="${op.toFixed(2)}"/>`;
+      }
+      return s;
+    } },
+  { name: "D. 마름모 격자",
+    note: "가는 선으로 짠 마름모 격자입니다. 교차점에는 작은 점이 찍히고, 선 색은 위 분홍에서 아래 파랑으로 줄마다 바뀝니다. 위쪽은 거의 보이지 않을 만큼 옅고 아래쪽에서 또렷해집니다.",
+    draw(W, H, th) {
+      const a = th === "dark" ? 0.5 : 0.55, step = Math.max(40, Math.min(W, H) * 0.09), rows = Math.ceil(H / (step / 2)) + 2; let s = "";
+      for (let j = -1; j < rows; j++) {
+        const y = j * step / 2, t = Math.min(1, Math.max(0, y / H)), m = Math.min(1, Math.max(0, (t - 0.5) / 0.5)), c = mix(PINK, BLUE, m), op = a * (0.12 + 0.88 * t * t);
+        let d = `M${-step} ${y}`, dots = "";
+        for (let x = -step, i = 0; x < W + step; x += step / 2, i++) { d += ` L${x + step / 2} ${y + (i % 2 ? -step / 2 : step / 2)}`; }
+        s += `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.2" opacity="${op.toFixed(2)}"/>`;
+        for (let x = -step; x < W + step; x += step) s += `<circle cx="${x + step / 2}" cy="${y}" r="${(1.2 + 1.8 * t).toFixed(2)}" fill="${c}" opacity="${Math.min(1, op * 1.6).toFixed(2)}"/>`;
+      }
+      return s;
+    } },
+  { name: "E. 로고 장식 흩뿌리기",
+    note: "장식을 회전시켜 흩뿌리고 선을 두껍게 했습니다. 장식마다 위쪽은 분홍, 약 60%를 지나면서 아래쪽은 파랑으로 바뀌는 로고 비율을 적용했습니다. 장식은 느리게 떠다닙니다(9~16초 주기, 움직임 줄이기 설정이면 멈춤). 바탕에는 같은 비율의 옅은 그라데이션 톤을 깔아 다크·라이트 바탕색이 유지되도록 투명도를 낮췄고, 아래 긴 지그재그 선은 두껍게 했습니다. 가운데는 비워 카드가 편합니다.",
+    draw(W, H, th) {
+      const uid = ++UID, r = rng(21), a = th === "dark" ? 0.7 : 0.75, u = Math.min(W, H) * 0.04, sw = Math.max(3.5, u * 0.2); let s = "", defs = "";
+      const spots = [[0.08, 0.07], [0.92, 0.1], [0.05, 0.33], [0.95, 0.4], [0.09, 0.6], [0.91, 0.66], [0.5, 0.95], [0.2, 0.9], [0.8, 0.92], [0.05, 0.82], [0.96, 0.83]];
+      spots.forEach(([fx, fy], i) => {
+        const before = s.length, x = W * fx, y = H * fy, k = i % 5, ang = Math.round(r() * 360), id = `gE${uid}_${i}`, ext = u * 1.9;
+        defs += `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x}" y1="${y - ext}" x2="${x}" y2="${y + ext}" gradientTransform="rotate(${-ang} ${x} ${y})"><stop offset="0" stop-color="${PINK}"/><stop offset="0.6" stop-color="${PINK}"/><stop offset="1" stop-color="${BLUE}"/></linearGradient>`;
+        const P = `stroke="url(#${id})" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" fill="none"`, T = `transform="rotate(${ang} ${x} ${y})" opacity="${a}"`;
+        if (k === 0) s += `<circle cx="${x}" cy="${y}" r="${u}" ${P} ${T}/>`;
+        else if (k === 1) s += `<polygon points="${x},${y - u} ${x + u},${y + u * 0.8} ${x - u},${y + u * 0.8}" ${P} ${T}/>`;
+        else if (k === 2) s += `<path d="M${x - u * 1.8} ${y} q${u * 0.9} ${-u * 1.1} ${u * 1.8} 0 t${u * 1.8} 0" ${P} ${T}/>`;
+        else if (k === 3) s += `<circle cx="${x}" cy="${y}" r="${u * 0.45}" fill="url(#${id})" ${T}/>`;
+        else s += `<rect x="${x - u * 0.75}" y="${y - u * 0.75}" width="${u * 1.5}" height="${u * 1.5}" rx="3" fill="url(#${id})" ${T}/>`;
+        const dx = ((r() - 0.5) * u * 1.6).toFixed(1), dy = ((r() - 0.5) * u * 1.6).toFixed(1), dur = (9 + r() * 7).toFixed(1), del = (-r() * 12).toFixed(1);
+        s = s.slice(0, before) + `<g class="sh" data-cx="${x.toFixed(1)}" data-cy="${y.toFixed(1)}" data-r="${(u * 1.25).toFixed(1)}" data-ang="${ang}" data-gid="${id}"><g class="fl" style="--dx:${dx}px;--dy:${dy}px;--dur:${dur}s;--delay:${del}s">` + s.slice(before) + "</g></g>";
+      });
+      const tone = th === "dark" ? 0.16 : 0.13;   // 배경 톤: 투명도를 낮춰 다크 · 라이트 바탕색이 그대로 읽히게
+      const bg = `<linearGradient id="gBg${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${PINK}" stop-opacity="${tone}"/><stop offset="0.58" stop-color="${PINK}" stop-opacity="${tone}"/><stop offset="1" stop-color="${BLUE}" stop-opacity="${tone * 1.25}"/></linearGradient>`;
+      return `<defs>${bg}${defs}${grad("gE" + uid, W, H, 0.6)}</defs><rect width="${W}" height="${H}" fill="url(#gBg${uid})"/>` + s + stroke(scribble(W * 0.06, H * 0.97, W * 0.94, H * 0.92, 24, H * 0.012, r), `url(#gE${uid})`, 5, a);
+    } },
+];
+
+function svg(v, W, H, th, mobile) {
+  const t = THEME[th];
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${v.name} ${mobile ? "모바일" : "PC"} ${th === "dark" ? "다크" : "라이트"}"><rect width="${W}" height="${H}" fill="${t.bg}"/>${v.draw(W, H, th)}${cards(W, H, th, mobile)}</svg>`;
+}
+const out = document.getElementById("out");
+out.innerHTML = VARIANTS.map((v) => {
+  const cell = (label, W, H, th, m) => `<div class="cell">${svg(v, W, H, th, m)}<small>${label}</small></div>`;
+  return `<section class="v"><h2>${v.name}</h2><p>${v.note}</p><div class="row">
+    ${cell("모바일 · 다크", 390, 844, "dark", true)}${cell("모바일 · 라이트", 390, 844, "light", true)}
+    ${cell("PC · 다크", 1440, 900, "dark", false)}${cell("PC · 라이트", 1440, 900, "light", false)}</div></section>`;
+}).join("");
+
+/* ── E안 흔들기: 장식들이 서로 자리를 바꾼다 (센서 없이도 버튼으로 시뮬레이션) ── */
+(function () {
+  const sec = [...document.querySelectorAll("section.v")].find((x) => x.querySelector("h2").textContent.startsWith("E."));
+  const bar = document.createElement("div");
+  bar.className = "shake";
+  bar.innerHTML = '<button type="button" id="shake-btn" class="pri">흔들기</button><button type="button" id="shake-reset">제자리로</button><small id="shake-msg">누를 때마다 장식이 제각각 다른 방향·속도로 튀어 나가 벽에 튕기며 멈춥니다. 연속으로 누르면 속도가 쌓이고, 벽이나 다른 장식에 부딪히면 회전합니다.</small>';
+  sec.querySelector("p").after(bar);
+  const msg = bar.querySelector("#shake-msg");
+  /* 물리 방식: 흔들 때마다 장식마다 무작위 방향·속도의 충격을 주고, 매 프레임 마찰로 감속시키며 벽에서 튕긴다.
+     (웹의 흔들기 효과 표준 구현: devicemotion 가속도 임계값 감지 + requestAnimationFrame 속도·마찰 적분) */
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const items = [];
+  document.querySelectorAll("section.v:last-of-type svg").forEach((svg, gi) => {
+    const vb = svg.viewBox.baseVal, m = Math.min(vb.width, vb.height) * 0.04;
+    svg.querySelectorAll(".sh").forEach((g) => items.push({ g, cx: +g.dataset.cx, cy: +g.dataset.cy, W: vb.width, H: vb.height, m, sc: Math.min(vb.width, vb.height), ox: 0, oy: 0, vx: 0, vy: 0, drag: 1, home: false, gi, r: +g.dataset.r, th: 0, w: 0, ang: +g.dataset.ang, grad: svg.querySelector("#" + g.dataset.gid) }));
+  });
+  let raf = 0, tPrev = 0;
+  const TAU = Math.PI * 2;
+  function frame(t) {
+    const dt = Math.min(0.05, (t - tPrev) / 1000 || 0.016); tPrev = t; let moving = false;
+    for (const it of items) {
+      if (it.home) { it.vx += -it.ox * 6 * dt; it.vy += -it.oy * 6 * dt; it.w += -it.th * 8 * dt; }
+      const f = Math.exp(-it.drag * dt); it.vx *= f; it.vy *= f;
+      it.w *= Math.exp((it.home ? -4 : -0.7) * dt);   // 회전은 이동보다 오래 남는다
+      it.ox += it.vx * dt; it.oy += it.vy * dt; it.th += it.w * dt;
+      const x = it.cx + it.ox, y = it.cy + it.oy, spin = (v) => { it.w += (Math.random() < 0.5 ? -1 : 1) * Math.min(10, v / it.sc * 4); };
+      if (x < it.m) { it.ox = it.m - it.cx; spin(Math.abs(it.vx)); it.vx = Math.abs(it.vx) * 0.8; } else if (x > it.W - it.m) { it.ox = it.W - it.m - it.cx; spin(Math.abs(it.vx)); it.vx = -Math.abs(it.vx) * 0.8; }   // 벽에 튕기며 회전
+      if (y < it.m) { it.oy = it.m - it.cy; spin(Math.abs(it.vy)); it.vy = Math.abs(it.vy) * 0.8; } else if (y > it.H - it.m) { it.oy = it.H - it.m - it.cy; spin(Math.abs(it.vy)); it.vy = -Math.abs(it.vy) * 0.8; }
+    }
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {   // 장식끼리 충돌 (같은 그림 안에서만, 원으로 근사)
+      const p = items[i], q = items[j]; if (p.gi !== q.gi || p.home || q.home) continue;
+      const dx = q.cx + q.ox - p.cx - p.ox, dy = q.cy + q.oy - p.cy - p.oy, d = Math.hypot(dx, dy), min = p.r + q.r;
+      if (d >= min || d < 0.01) continue;
+      const nx = dx / d, ny = dy / d, push = (min - d) / 2;
+      p.ox -= nx * push; p.oy -= ny * push; q.ox += nx * push; q.oy += ny * push;
+      const rvx = q.vx - p.vx, rvy = q.vy - p.vy, vn = rvx * nx + rvy * ny;
+      if (vn < 0) {   // 서로 다가오는 중일 때만: 같은 질량의 탄성 충돌
+        const jn = -(1 + 0.85) * vn / 2;
+        p.vx -= jn * nx; p.vy -= jn * ny; q.vx += jn * nx; q.vy += jn * ny;
+        const vt = rvx * -ny + rvy * nx;   // 접선 속도 → 스치듯 부딪히면 회전이 생긴다
+        p.w += Math.max(-10, Math.min(10, vt / p.r * 0.5)); q.w += Math.max(-10, Math.min(10, vt / q.r * 0.5));
+      }
+    }
+    for (const it of items) {
+      if (Math.hypot(it.vx, it.vy) > 4 || Math.abs(it.w) > 0.05 || (it.home && (Math.hypot(it.ox, it.oy) > 0.5 || Math.abs(it.th) > 0.01))) moving = true;
+      else if (it.home) { it.ox = it.oy = it.th = it.w = 0; }
+      it.g.style.transform = `translate(${it.ox.toFixed(1)}px, ${it.oy.toFixed(1)}px) rotate(${(it.th * 57.2958).toFixed(1)}deg)`;
+      it.g.style.transformOrigin = `${it.cx}px ${it.cy}px`;
+      if (it.grad) it.grad.setAttribute("gradientTransform", `rotate(${(-it.ang - it.th * 57.2958).toFixed(1)} ${it.cx} ${it.cy})`);   // 돌아도 그라데이션은 위 분홍 · 아래 파랑 유지
+    }
+    raf = moving ? requestAnimationFrame(frame) : 0;
+  }
+  function kick() { if (!raf) { tPrev = performance.now(); raf = requestAnimationFrame(frame); } }
+  function shuffle(power = 1) {
+    for (const it of items) {
+      const ang = Math.random() * Math.PI * 2, sp = it.sc * (1 + Math.random() * 3.2) * power;   // 장식마다 방향·속도 제각각
+      it.home = false; it.drag = 0.9 + Math.random() * 1.4;                                 // 마찰도 제각각 → 멈추는 시점이 다르다
+      it.vx += Math.cos(ang) * sp; it.vy += Math.sin(ang) * sp; it.w += (Math.random() - 0.5) * 8;   // 연속으로 흔들면 속도가 쌓인다
+      const cap = it.sc * 6, v = Math.hypot(it.vx, it.vy); if (v > cap) { it.vx *= cap / v; it.vy *= cap / v; }   // 너무 빨라지지 않게 상한
+    }
+    if (reduce) { for (const it of items) { it.ox = (Math.random() - 0.5) * it.W * 0.6; it.oy = (Math.random() - 0.5) * it.H * 0.6; it.vx = it.vy = 0; it.g.style.transform = `translate(${it.ox}px, ${it.oy}px)`; } return; }
+    kick();
+  }
+  function reset() { for (const it of items) { it.home = true; it.drag = 3.2; it.th = ((it.th % TAU) + TAU + Math.PI) % TAU - Math.PI; } if (reduce) { for (const it of items) { it.ox = it.oy = it.vx = it.vy = it.th = it.w = 0; it.g.style.transform = ""; } return; } kick(); }
+  let last = 0;
+  /* 연속 흔들기: 0.12초 간격까지 받아들이고, 센서 세기에 비례해 충격을 키운다(세게 흔들수록 멀리 튄다) */
+  function shake(power = 1) { const now = performance.now(); if (now - last < 120) return; last = now; shuffle(power); }
+  bar.querySelector("#shake-btn").addEventListener("click", async () => {
+    shake();
+    // 실제 기기에서는 센서도 켠다 (iOS 는 버튼 탭 안에서 권한 요청). 이 화면처럼 막힌 곳에서는 조용히 건너뛴다
+    try {
+      if (!window._sensorOn && typeof DeviceMotionEvent !== "undefined") {
+        if (typeof DeviceMotionEvent.requestPermission === "function" && (await DeviceMotionEvent.requestPermission()) !== "granted") return;
+        window.addEventListener("devicemotion", (e) => {
+          const a = e.accelerationIncludingGravity; if (!a) return;
+          const mag = Math.hypot(a.x || 0, a.y || 0, a.z || 0); if (mag > 25) shake(Math.min(1.6, mag / 25));
+        });
+        window._sensorOn = true; msg.textContent = "센서 연결됨: 폰을 흔들어도 섞입니다.";
+      }
+    } catch (e) { /* 센서 사용 불가 */ }
+  });
+  bar.querySelector("#shake-reset").addEventListener("click", reset);
+})();
+</script>
