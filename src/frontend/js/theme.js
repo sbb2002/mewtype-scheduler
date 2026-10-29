@@ -7,7 +7,7 @@
 
 export const THEME_EVENT = "mew:theme";   // detail = "light" | "dark" — X 카드처럼 테마를 따로 불러오는 곳이 듣는다
 const KEY = "theme";
-const ANIM_MS = 350;
+const ANIM_MS = 800;   // theme.css 의 전환 0.7s 가 끝난 뒤 한 박자 더 켜 둔다
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 let _btn = null;

@@ -3,7 +3,7 @@
    저장된 선택(localStorage "theme") → 없으면 기기 설정(prefers-color-scheme). 전환 버튼 · 저장은 js/theme.js.
    어둡게 = 각 파일의 :root 기본값 그대로. 밝게 = 아래 값(디자인: 목업 아티팩트 「v4.6.0 테마 목업」 밝게 A — BPM 톤). */
 
-:root { color-scheme: dark; }
+:root { color-scheme: dark; --theme-ease: cubic-bezier(0.4, 0, 0.2, 1); }   /* 테마 전환 곡선(부드럽게 출발 · 감속) */
 
 :root[data-theme="light"] {
   color-scheme: light;
@@ -177,8 +177,12 @@
   html.theme-anim *,
   html.theme-anim *::before,
   html.theme-anim *::after {
-    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
+    /* (v4.9.10) 0.3s ease → 0.7s 감속 곡선, 그림자 · 외곽선 색도 같이 — 일부만 먼저 바뀌어 번쩍이던 것을 줄인다 */
+    transition: background-color 0.7s var(--theme-ease), color 0.7s var(--theme-ease), border-color 0.7s var(--theme-ease), fill 0.7s var(--theme-ease), stroke 0.7s var(--theme-ease), box-shadow 0.7s var(--theme-ease), outline-color 0.7s var(--theme-ease), text-decoration-color 0.7s var(--theme-ease) !important;
   }
+  /* 배경 장식(bgdeco.css)의 투명도 · 그라데이션 톤도 함께 */
+  html.theme-anim #bgdeco .bgd-shape { transition: opacity 0.7s var(--theme-ease) !important; }
+  html.theme-anim #bgdeco stop { transition: stop-opacity 0.7s var(--theme-ease), stop-color 0.7s var(--theme-ease) !important; }
   html.theme-anim .ntc__theme svg { transition: opacity 0.3s ease, transform 0.3s ease !important; }   /* 해 · 달 바꿔 보이기는 그대로 */
 }
 @media (prefers-reduced-motion: reduce) {
