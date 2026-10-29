@@ -1,7 +1,12 @@
 # 라이브 시작 알림 — 경과 · 인계 (2026-10-29)
 
 다른 세션이 이어받기 위한 문서. 결정 · 조사 · 시험판 상태 · 남은 일을 한곳에 모았다.
-**아직 기획 · 시험 단계** — 운영 반영(구현 착수 · 병합 · 배포) 지시는 없다.
+
+> **상태: 보류 (2026-10-29 운영자 결정).** PC Chrome 에서 가능성은 확인했지만, 외부 API(Firestore) · 서비스 · 비밀 키가 늘고
+> 팬 사이트에 처음으로 공개 쓰기 경로(등록 API)가 생겨 공격 대비가 필수가 되며, 디스클레이머 수정도 걸린다 — 일 방문 15~16명 규모에선
+> 구현 · 유지보수 부담이 이득보다 크다는 판단. 유튜브 알림 단추 유도(2클릭)도 함께 고민했으나 채택하지 않음.
+> 시험판(`test/live-notify` 최신 `d6c2e95`)과 이 문서는 보존. **재개 기준(운영자 판단, 예시)**: 일 방문이 몇 배로 늘거나, 팬들이 알림을 원하는 반응이 보일 때.
+> 재개하면 5절(결정 대기)과 6절(운영 이행 할 일)부터.
 
 용어(이 문서에서 처음 쓰는 것 — 본 구현 때 `docs/TERMINOLOGY.md` 에 올릴 것)
 - **멤버 종*** — 네임플레이트 핸들 옆 종 아이콘. 누르면 그 멤버의 모든 라이브(upcoming 이상으로 등록되는 영상)가 live 로 들어갈 때 알림.
@@ -65,7 +70,7 @@ Samsung Browser 48% · Chrome(PC) 24% · Chrome Mobile 17% · Mobile Safari 6% �
 ### 데모 (scratchpad, 저장소 밖)
 1분 뒤 알림 A(페이지 타이머) · B(Web Push) — PC Chrome 에서 운영자가 둘 다 동작, A 는 탭 닫으면 안 옴 확인. 폐기해도 됨.
 
-### `test/live-notify` 브랜치 (최신 커밋 `43d3f4b`, origin 푸시됨 · 워크트리 `mewtype-scheduler-worktrees/v4/test-live-notify`)
+### `test/live-notify` 브랜치 (최신 커밋 `d6c2e95`, origin 푸시됨 · 워크트리 `mewtype-scheduler-worktrees/v4/test-live-notify`)
 - 실행: `lab/push/README.md` — Firestore 에뮬레이터(`gcloud emulators firestore start --host-port=127.0.0.1:8085`) + `FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 python lab/push/server.py`, 또는 에뮬레이터 없이 `python lab/push/server.py` → 팬 화면 `http://localhost:8770/` · 서버 보기 `/lab`.
   이 PC 엔 2026-10-29 Java(Temurin 21) · `cloud-firestore-emulator` 설치함. 에뮬레이터가 Java 21 지원 종료 예고 경고를 냄(지금은 동작) — 막히면 Java 25 이상.
 - 프론트
@@ -87,7 +92,9 @@ Samsung Browser 48% · Chrome(PC) 24% · Chrome Mobile 17% · Mobile Safari 6% �
   - 멤버 종 끔 → 바로 문서 반영 / live 가 된 방송의 등록 → 프론트가 자동 정리 · 문서 반영
   - 발송 0.44~0.65초, 이때까지 저장소 연산 쓰기 8 · 읽기 19
 - **확인 안 한 것**: 모바일 실기기, 브라우저(탭 · 프로세스)를 끈 상태의 수신(Web Push 데모에선 탭 닫은 상태 수신 확인 — 이 시험판으로는 아직), 실제 GCP Firestore(에뮬레이터만).
-- 결정 대기 후보(시험 중 나온 것): 멤버 종이 켜진 멤버의 방송 종은 눌러도 결과가 같다 — 「이미 켜짐」으로 보여 줄지 그대로 둘지.
+- **멤버 종이 켜진 멤버의 방송 종 = 「켜짐」 고정**(운영자 결정, `d6c2e95`): 서버는 멤버 알림이면 그 멤버(채널 + 합동)의 live 에 무조건 보내므로
+  방송 종도 켜짐으로 보이고 누를 수 없다(툴팁 「멤버 알림이 켜져 있어 이 방송도 알림이 가요」). 개별 해제가 더 직관적이지만 단순 구현상 미지원.
+  브라우저에서 확인: 아라레 · 유노 멤버 종 켬 → 두 멤버 방송 종 `is-on is-covered`, 리츠 · 미야코 방송 종은 꺼짐.
 
 ## 5. 운영자 결정 대기
 
