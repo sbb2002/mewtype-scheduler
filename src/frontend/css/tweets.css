@@ -80,7 +80,7 @@
   padding: 0;
   display: grid;
   place-items: center;
-  border: 2px solid var(--color-bg-secondary, #1a1a1a);
+  border: 2px solid #ffffff;      /* (v4.9.9) 테두리는 어둡게 · 밝게 모두 흰색 — 전엔 카드 바탕색이라 어둡게에서 까맣게 보였다 */
   border-radius: 999px;
   background: var(--tw-badge-bg);
   color: var(--tw-badge-fg);
