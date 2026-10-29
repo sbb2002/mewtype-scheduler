@@ -1030,13 +1030,29 @@ function wkDot(entry, ctx) {
   else if (entry.state === "live") b.classList.add("is-live");
   if (tbd) b.classList.add("is-tbd");
   const keys = entry.keys.length ? entry.keys : [it.channel_key];
+  const shape = el("span", "wk2__shape");   // (v4.9.6) 보이는 점(합동 = 알약). 합동 테두리는 이 모양에 두른다
   for (const k of keys) {
     const seg = el("span", "wk2__seg");
     seg.dataset.channel = k;
-    b.appendChild(seg);
+    shape.appendChild(seg);
+  }
+  b.appendChild(shape);
+  if (isCollab(it)) b.classList.add("is-collab");   // (v4.9.6) 예고 카드 · 태그와 같은 보라(--color-collab) 테두리
+  if (it.membership) {                               // (v4.9.6) 회원 전용 = 점 오른쪽 아래 작은 자물쇠
+    const NS = "http://www.w3.org/2000/svg";
+    const lock = document.createElementNS(NS, "svg");
+    lock.setAttribute("class", "wk2__lock");
+    lock.setAttribute("viewBox", "0 0 10 10");
+    lock.setAttribute("aria-hidden", "true");
+    const body = document.createElementNS(NS, "rect");
+    body.setAttribute("x", "2"); body.setAttribute("y", "4.5"); body.setAttribute("width", "6"); body.setAttribute("height", "4.5"); body.setAttribute("rx", "1");
+    const arc = document.createElementNS(NS, "path");
+    arc.setAttribute("d", "M3.3 4.6V3.4a1.7 1.7 0 0 1 3.4 0v1.2");
+    lock.append(body, arc);
+    b.appendChild(lock);
   }
   const names = keys.map((k) => shortName(ctx.channels[k])).join(", ");
-  b.setAttribute("aria-label", `${tbd ? "시각 미정" : hm(entry.start)} ${names} · ${titleText(it, ctx)}`);
+  b.setAttribute("aria-label", `${tbd ? "시각 미정" : hm(entry.start)} ${names}${it.membership ? " · 회원 전용" : ""} · ${titleText(it, ctx)}`);
   wirePop(b, entry, entry.state, ctx, it.channel_key, true);
   return b;
 }

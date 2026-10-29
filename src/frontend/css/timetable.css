@@ -527,7 +527,18 @@ a.tt-pop__img { cursor: pointer; }
   border: 0;
   border-radius: 50%;
   cursor: pointer;
+  position: relative;
 }
+.wk2__shape { display: flex; border-radius: 7px; }
+/* (v4.9.6) 합동 = 예고 카드 · 합동 태그와 같은 보라 테두리 */
+.wk2__dot.is-collab .wk2__shape { box-shadow: 0 0 0 1.5px var(--color-bg-secondary), 0 0 0 3px var(--color-collab); }
+/* (v4.9.6) 회원 전용 = 점 오른쪽 아래 작은 자물쇠 (바탕색 원 위에 그려 점 색과 섞이지 않게) */
+.wk2__lock {
+  position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; padding: 1px; box-sizing: border-box;
+  border-radius: 50%; background: var(--color-bg-secondary);
+  fill: var(--color-text); stroke: var(--color-text); stroke-width: 1.2;
+}
+.wk2__lock path { fill: none; }
 .wk2__dot:hover .wk2__seg { filter: brightness(1.15); }
 .wk2__dot:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
 .wk2__seg { flex: none; width: 14px; height: 14px; background: var(--lane-color, var(--color-text-muted)); }   /* 색 = 네임플레이트와 같은 멤버 색(--lane-color, render.js sampleLaneColor) */
