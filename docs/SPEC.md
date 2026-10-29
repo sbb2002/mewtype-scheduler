@@ -51,6 +51,7 @@ src/
       player.js playerbtn.js songs.js   # YouTube 곡 플레이어 · 여는 버튼 · 곡 검색/정렬/오마카세(순수)
       king.js          # 노노카 지각 이스터에그
       theme.js         # 밝게/어둡게 전환
+      bgdeco.js bglogic.js   # (v4.9.8) 배경 장식 — 아래 「배경 장식」
       sheetdrag.js     # 시트 끌어 닫기 공용(트윗 시트 · 소식 시트 · 플레이어 시트)
       *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
   collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
@@ -409,6 +410,20 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 - **펼치기 전 세로 고정**: `.board--cards .lane` 은 `container-type:inline-size`; `.cards-board .tt-today` 높이 = `34px + 2·pad + 2·카드높이 + 12px + 30px`(카드 2장 + 다음 카드가 살짝 보임), 넘치면 `overflow-y:auto`. 카드높이 = `(100cqw − 2·pad − 2px)·9/16 + --bh + 2px`, `.tcard__body{height:--bh}`(78px, ≤1100px 에서 pad 11.2px · bh 72px). 날짜줄은 줄바꿈 없이 한 줄. (v4.5.8) 노노카 지각 이스터에그가 붙은 카드(`.k-card`)만 본문이 `height:auto; min-height:--bh` 로 늘어나고 대신의 말 글자를 줄인다(`king.css`) — 고정 높이에 잘려 안 보였다.
 - **이후 예고 펼치기**: 단일 `.tt-fold`(`buildFoldButton(counts, ctx, {perMember:true})`)가 `#board.board--later-open` 을 토글 → 5개 `.lane__later` 가 동시에 열리고 닫힌다. `toggleLater` 의 애니메이션 대상 선택자는 `board--cards` 이면 `.lane__later`(테이블 보기는 `.tt-later`). 이후 예고가 전체 0건이면 버튼 없음(레인별 「이후 예고 없음」 문구는 `buildLaterList` 기본).
 - 펼침 상태(`board--later-open`)는 보기 방식을 바꿔도 `#board` 에 남는다.
+
+### 배경 장식 (v4.9.8) — `bgdeco.js` · `bglogic.js` · `css/bgdeco.css`
+
+화면 뒤에 고정된 그림 한 장 — `<div id="bgdeco" aria-hidden="true">` 안의 `<svg>`(`position: fixed; inset: 0; z-index: -1; pointer-events: none`). 데이터를 받지 않는 순수 장식이다.
+`html` 에 배경이 없어 `body` 색이 캔버스로 올라가므로 그 위 · 카드 · 시트 아래에 그려진다. `main.js` 의 `DOMContentLoaded` 에서 `initBgDeco()` 가 만든다.
+
+- **그림**: viewBox = 창 크기(`preserveAspectRatio="xMidYMid slice"`). ① 바탕 톤 사각형(세로 그라데이션 — 위 60% 분홍 `#ff7788` → 아래 파랑 `#2288dd`, 맨 아래 파랑은 1.25배 진하게) ② 장식 11개(`bglogic.SPOTS` — 가장자리 비율 좌표, 가운데는 비움 · 종류 순환 `ring · tri · wave · dot · gem`) ③ 아래 긴 지그재그 낙서 선(굵기 5, 화면 높이 기준 같은 비율의 그라데이션).
+  장식 크기 기준 = 화면 짧은 변 × 0.04. 장식마다 도형 자체에도 같은 그라데이션(위 60% 분홍 → 파랑)이 걸리고, 돌면 `gradientTransform` 을 반대로 돌려 화면 기준 위 분홍 · 아래 파랑을 유지한다.
+- **색 · 투명도 토큰**: `--bgd-pink` · `--bgd-blue` · `--bgd-tone`(다크 0.16 · 라이트 0.13) · `--bgd-shape`(다크 0.7 · 라이트 0.75). 어둡게 = `:root`, 밝게 = `:root[data-theme="light"]`.
+- **평소 모션**: `.bgd-fl` 의 CSS 애니메이션 `bgd-float` — 장식마다 방향 · 거리(크기의 ±0.8배) · 주기(9~16초) · 시작 시점이 다르다. `prefers-reduced-motion: reduce` 면 멈춘다.
+- **흔들기**: `devicemotion` 의 `acceleration`(없으면 중력 포함값에서 9.8 을 뺀 값)이 **14m/s²** 를 넘으면 흔든 것 — 세기 = `min(1.6, max(0.6, 가속도/15))`. `shake(power)` 가 장식마다 무작위 방향(0~360도) · 속도(짧은 변 × 1~4.2 × 세기) · 마찰(0.9~2.3/초) 충격을 주고,
+  `requestAnimationFrame` 이 매 프레임 마찰로 감속 · 벽 반사(속도 80%) · 장식끼리 탄성 충돌(원 근사, 반발 0.85)을 계산하며 벽 · 충돌 때 회전이 붙는다. 120ms 간격까지 연속 입력을 받고 속도는 쌓이되 상한 = 짧은 변 × 6/초. 모두 멈추면 프레임 반복도 멈춘다.
+  흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
+- **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
 
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
 
