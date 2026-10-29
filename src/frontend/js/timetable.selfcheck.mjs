@@ -2,7 +2,7 @@
  * timetable.js 순수 헬퍼 자동 테스트 (v4.1.0).
  * node timetable.selfcheck.mjs 로 실행. 프레임워크 없음. (DOM 접근 함수는 호출하지 않는다)
  */
-import { dayWindow, classify, itemKeys, swipeDecision, dragFollow } from "./timetable.js";
+import { dayWindow, classify, itemKeys, swipeDecision, dragFollow, planLater, laterCounts } from "./timetable.js";   // (v4.9.6) planLater · laterCounts 추가
 
 let n = 0;
 function assert(cond, msg) {
@@ -97,5 +97,55 @@ assert(dragFollow(-100, 800, 0, false) === -30, "끌기: 내일 0건이면 고�
 assert(dragFollow(500, 800, 0, true) === 48, "끌기: 갈 곳 없는 쪽은 최대 48px");
 assert(dragFollow(100, 800, 1, true) === 100, "끌기: 내일 화면에서 오른쪽은 1:1");
 assert(dragFollow(-1000, 800, 0, true) === -800, "끌기: 1:1 도 레일 폭에서 멈춤");
+
+// ── (v4.9.6) 이후 예고 · PC 표 보기 — 이번주(일 ~ 토, KST 달력 00:00) · 먼 미래 · 날짜 미정. now = 10/30(금) 01:00
+const LN = kst("2026-10-30T01:00:00");
+const up = (vid, ch, s, extra = {}) => ({ video_id: vid, channel_key: ch, state: "upcoming", scheduled_start: s, ...extra });
+const PITEMS = [
+  { video_id: "e1", channel_key: "arale", state: "end", actual_start: "2026-10-29T23:00:00+09:00", state_since: "2026-10-30T00:45:00+09:00" },
+  { video_id: "l1", channel_key: "yuno", state: "live", actual_start: "2026-10-30T00:30:00+09:00" },
+  up("u1", "ritsu", "2026-10-31T21:30:00+09:00"),
+  up("u2", "miyako", "2026-10-31T00:00:00+09:00", { time_tbd: true }),
+  up("u3", "arale", "2026-11-01T10:00:00+09:00"),
+  up("u4", "nonoka", "2026-10-30T07:00:00+09:00"),
+  up("u5", "yuno", "2026-12-24T19:00:00+09:00"),
+  { video_id: "u6", channel_key: "ritsu", state: "upcoming" },   // 예정 시각 없음 → 날짜 미정
+  { video_id: "c1", channel_key: "arale", state: "upcoming", scheduled_start: "2026-10-31T18:00:00+09:00", collab_with: ["yuno"] },
+  { video_id: "x1", channel_key: "gamer", state: "upcoming", scheduled_start: "2026-10-31T18:00:00+09:00" },   // 멤버 아님 → 제외
+];
+const ARC = [
+  { video_id: "a1", channel_key: "ritsu", actual_start: "2026-10-26T19:00:00+09:00", archived_at: "2026-10-26T21:10:00+09:00" },
+  { video_id: "a2", channel_key: "ritsu", actual_start: "2026-10-24T19:00:00+09:00", archived_at: "2026-10-24T21:10:00+09:00" },   // 지난주 → 제외
+  { video_id: "a3", channel_key: "ritsu", actual_start: "2026-10-27T19:00:00+09:00", archived_at: "2026-10-27T19:05:00+09:00" },   // 5분 → 제외
+  { video_id: "e1", channel_key: "arale", actual_start: "2026-10-29T23:00:00+09:00", archived_at: "2026-10-30T00:45:00+09:00" },   // preview 와 같은 영상 → 한 번만
+];
+const P = planLater(PITEMS, ARC, LN, ORDER);
+const ids = (i) => P.days[i].entries.map((e) => e.item.video_id);
+const all = [...P.days.flatMap((d) => d.entries), ...P.far.flatMap((f) => f.entries), ...P.undated].map((e) => e.item.video_id);
+assert(P.ws === kst("2026-10-25T00:00:00") && P.we === kst("2026-11-01T00:00:00") && P.today === 5, "금 01:00 → 이번주 10/25(일) ~ 11/1 00:00, 금요일 줄 = 5");
+const e1 = P.days[4].entries.find((e) => e.item.video_id === "e1");
+assert(ids(4).join() === "e1" && e1.state === "ended" && e1.end === kst("2026-10-30T00:45:00"), "목 23:00 시작 · 금 00:45 종료 → 목요일 줄 ended (end = state_since)");
+assert(P.days[5].entries.some((e) => e.item.video_id === "l1" && e.state === "live"), "금 00:30 시작 방송 중 → 금요일 줄 live");
+assert(ids(5).includes("u4"), "10/30 07:00 예정 → 금요일 줄(이번주 안)");
+assert(ids(1).join() === "a1" && P.days[1].entries[0].end === kst("2026-10-26T21:10:00"), "보관함 10/26 19:00~21:10 → 월요일 줄 ended");
+assert(!all.includes("a2") && !all.includes("a3"), "지난주 보관 · 5분짜리 보관은 넣지 않음");
+assert(all.filter((v) => v === "e1").length === 1, "preview 와 같은 video_id 의 보관함은 건너뜀");
+assert(ids(6).includes("u1") && ids(6).includes("u2"), "10/31 21:30 · 시각 미정(10/31) → 토요일 줄");
+assert(P.days[6].entries.find((e) => e.item.video_id === "u2").item.time_tbd === true, "시각 미정 항목도 그날 줄(time_tbd 유지)");
+const c1 = P.days[6].entries.find((e) => e.item.video_id === "c1");
+assert(c1 && c1.keys.join() === "arale,yuno" && ids(6).filter((v) => v === "c1").length === 1, "합동 = 키 2개, 줄에는 한 번만");
+assert(!all.includes("x1"), "멤버 5인이 아닌 채널은 제외");
+assert(P.far.length === 2 && P.far[0].ds === kst("2026-11-01T00:00:00") && P.far[1].ds === kst("2026-12-24T00:00:00"), "먼 미래 = 날짜순 2줄 (11/1 · 12/24)");
+assert(P.far[0].entries[0].item.video_id === "u3" && P.far[1].entries[0].item.video_id === "u5", "먼 미래 줄마다 그날 예고");
+assert(P.undated.length === 1 && P.undated[0].item.video_id === "u6", "예정 시각이 없으면 날짜 미정");
+assert(JSON.stringify(laterCounts(P)) === JSON.stringify({ week: 7, rest: 3, total: 10 }), "개수 — 이번주 7 · 먼 미래+날짜 미정 3 · 합 10");
+// 토요일 10:00 — 오늘 · 내일 예고 구간(내일 = 11/1 04:00 ~ 11/2 04:00) 안은 먼 미래가 아니다
+const P2 = planLater([
+  up("s1", "arale", "2026-11-01T02:00:00+09:00"),
+  up("s2", "arale", "2026-11-01T05:00:00+09:00"),
+  up("s3", "arale", "2026-11-02T05:00:00+09:00"),
+], [], kst("2026-10-31T10:00:00"), ORDER);
+assert(P2.today === 6, "토요일 줄 = 6");
+assert(P2.far.length === 1 && P2.far[0].entries[0].item.video_id === "s3", "토 10:00 기준 — 11/2 05:00 만 먼 미래 (11/1 새벽 · 아침은 내일 예고 구간)");
 
 console.log(`\n✅ 모두 통과: ${n}/${n}`);

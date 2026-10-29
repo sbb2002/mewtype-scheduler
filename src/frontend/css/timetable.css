@@ -461,12 +461,80 @@ a.tt-pop__img { cursor: pointer; }
 .tt-later { display: none; }
 .board--later-open .tt-later,
 .tt-later.is-closing {   /* is-closing: 접는 애니메이션이 끝날 때까지 display 유지 (js/render.js toggleLater) */
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--gap);
-  align-items: start;
+  display: block;
   margin-top: 12px;
 }
+
+/* (v4.9.6) PC 표 보기의 이후 예고 — 이번주 표(왼쪽) + 먼 미래 표(오른쪽). 1000px 이하는 한 칸으로 쌓는다 */
+.wk2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); align-items: start; }
+@media (max-width: 1000px) { .wk2 { grid-template-columns: minmax(0, 1fr); } }
+.wk2__panel {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+.wk2__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.8rem; margin: 0 0 0.5rem; }
+.wk2__hd b { font-size: 0.9rem; font-weight: 700; }
+.wk2__hd > span { font-size: 0.76rem; color: var(--color-text-muted); }
+.wk2__row {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  border-bottom: 1px dashed var(--color-line-soft);
+}
+.wk2__row:last-child { border-bottom: 0; }
+.wk2__date {
+  flex: 0 0 96px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.wk2__date > b { font-size: 0.86rem; font-weight: 600; }
+.wk2__panel--far .wk2__date { flex-basis: 148px; flex-wrap: nowrap; }   /* 먼 미래 = 연도 · D-n 까지 한 줄 (예: 2027/01/01 금 D-63) */
+.wk2__date > span:not(.wk2__now):not(.wk2__dn) { font-size: 0.74rem; color: var(--color-text-muted); }
+.wk2__dn { font-size: 0.7rem; color: var(--color-text-muted); }
+.wk2__now {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-raised);
+  box-shadow: inset 0 0 0 1px var(--color-raised-edge);
+  color: var(--color-text);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+.wk2__row.is-today .wk2__date > b { font-weight: 800; }
+.wk2__row.is-past .wk2__date { opacity: 0.5; }
+.wk2__dots { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; padding: 4px 0 4px 2px; }
+.wk2__none { padding: 8px 0; font-size: 0.78rem; color: var(--color-text-muted); }
+
+/* 점 = 버튼 24px(누르는 자리, 투명 padding 5px) 안에 14px 원. 점 사이 보이는 간격 6px (margin -2px) */
+.wk2__dot {
+  display: flex;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin: 0 -2px;
+  padding: 5px;
+  box-sizing: border-box;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.wk2__dot:hover .wk2__seg { filter: brightness(1.15); }
+.wk2__dot:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
+.wk2__seg { flex: 1 1 0; min-width: 0; height: 100%; background: var(--lane-color, var(--color-text-muted)); }
+.wk2__seg:only-child { border-radius: 50%; }
+.wk2__seg:first-child:not(:last-child) { border-radius: 50% 0 0 50%; }
+.wk2__seg:last-child:not(:first-child) { border-radius: 0 50% 50% 0; }
+.wk2__dot.is-ended { opacity: 0.45; }
+.wk2__dot.is-ended .wk2__seg { filter: saturate(0.4); }
+.wk2__dot.is-live { box-shadow: 0 0 0 2px var(--color-live); }
+.wk2__dot.is-tbd { outline: 1.5px dashed var(--color-text-muted); outline-offset: 0; }
 .lane__later {
   display: none;
   flex-direction: column;

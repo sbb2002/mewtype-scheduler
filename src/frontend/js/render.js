@@ -5,6 +5,7 @@ import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤�
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
   tickTimetable, applyTimetableMarquees, closeCardPop,
+  planLater, laterCounts, buildLaterTables,   // (v4.9.6) PC 표 보기의 이후 예고 = 이번주 표 + 먼 미래 표
 } from "./timetable.js";
 
 /* ── 보기 방식 (v4.4.0, PC 전용) — "table"(오늘 타임테이블) | "cards"(5인 카드 열) ──────────────
@@ -607,19 +608,13 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     boardEl.appendChild(sec);
   } else if (!phone) {
     boardEl.appendChild(buildTimetable(ctx));
-    if (counts.total) boardEl.appendChild(buildFoldButton(counts, ctx, { perMember: true }));   // 이후 예고가 0건이면 버튼도 목록도 없다
-    const later = document.createElement("div");
-    later.className = "tt-later";
-    for (const key of order) {
-      const lane = document.createElement("section");
-      lane.className = "lane lane--later";
-      lane.dataset.channel = key;
-      lane.dataset.noBadge = "";           // 편지 배지는 타임테이블 왼쪽 칸에만 (tweets.js 가 건너뜀)
-      lane.appendChild(buildHeader(channels[key]));
-      lane.appendChild(buildLaterList(laterBy[key] || [], nowMs, channels[key], key));
-      later.appendChild(lane);
+    // (v4.9.6) 이후 예고 = 이번주 표 + 먼 미래 표 (표 보기만). 0건이면 버튼도 표도 없다. 카드 보기 · 모바일은 위의 목록 그대로
+    const plan = planLater(preview.items, archive && archive.items, nowMs, order);
+    const pc = laterCounts(plan);
+    if (pc.total) {
+      boardEl.appendChild(buildFoldButton({ total: pc.total }, ctx, { summary: `이번주 ${pc.week} · 먼 미래 ${pc.rest}` }));
+      boardEl.appendChild(buildLaterTables(ctx, plan));
     }
-    if (counts.total) boardEl.appendChild(later);
   } else {
     for (const key of order) {
       const lane = document.createElement("section");

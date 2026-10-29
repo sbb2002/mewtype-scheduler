@@ -8,6 +8,8 @@
 //  buildTimetable(ctx)                 → PC 편성 레일 (편지 배지 자리 = 왼쪽 칸의 .lane__avatar)
 //  buildTodayCards(ctx, key)           → 모바일 오늘 카드(카운트다운 링)
 //  buildFoldButton(counts, ctx)        → "이후 예고 N건 펼치기" 버튼 (상태는 #board 클래스로 — 캐러셀 클론에도 적용)
+//  planLater(items, archive, now, order) → (v4.9.6) PC 표 보기 이후 예고 = 이번주 7일 + 먼 미래 + 날짜 미정
+//  buildLaterTables(ctx, plan)         → (v4.9.6) 위 계획을 2열 표(이번주 · 먼 미래)로 — 점 하나 = 방송 하나
 //  tickTimetable(boardEl, nowMs)       → 1분 틱: 지금 선 · 링 갱신. 오늘 구간이 끝났으면 true(재렌더 필요)
 //  applyTimetableMarquees(boardEl)     → 블록 제목이 넘치면 한 줄 무한 흐름
 //  closeCardPop()                      → 블록 카드 팝업 닫기
@@ -118,6 +120,74 @@ export function classify(items, archiveItems, nowMs, order) {
   return { ds, de, live, ended, upcoming, tomorrow, later };
 }
 
+/* ── 이후 예고 · PC 표 보기 (v4.9.6) ─────────────────────────────────────
+   날짜 경계 = KST 달력 00:00 (예고보드의 04:00 하루와 다르다). 이번주 = 일요일 ~ 토요일 7칸.
+   오늘 · 내일 예고 구간에 든 예고는 먼 미래에 넣지 않는다(타임테이블 레일이 이미 보여 준다). */
+const kstMidnight = (ms) => {
+  const d = new Date(ms + KST_OFFSET_MS);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - KST_OFFSET_MS;
+};
+/* (v4.9.6) 계획 = { ws 이번주 일요일 00:00, we 다음 일요일 00:00, today 0~6(오늘 줄), days[7] = { ds, entries }, far = [{ ds, entries }], undated = [entry] }
+   entry = { item, start, end, state("ended" | "live" | "upcoming"), keys }. 멤버 5인 채널 예고만 넣는다(order). */
+export function planLater(items, archiveItems, nowMs, order) {
+  const today0 = kstMidnight(nowMs);
+  const dow = new Date(today0 + KST_OFFSET_MS).getUTCDay();   // 0 = 일
+  const ws = today0 - dow * DAY_MS, we = ws + 7 * DAY_MS;
+  const tomEnd = dayWindow(nowMs).de + DAY_MS;               // 내일 예고 구간 끝 — 이 전까지는 먼 미래가 아니다
+  const days = Array.from({ length: 7 }, (_, i) => ({ ds: ws + i * DAY_MS, entries: [] }));
+  const farBy = new Map();
+  const undated = [];
+  const seen = new Set();
+  const ok = (it) => it && it.channel_key && order.includes(it.channel_key);
+  const mk = (item, start, end, state) => ({ item, start, end, state, keys: itemKeys(item, order) });
+  const place = (entry, canFar) => {
+    const s = entry.start;
+    if (s >= ws && s < we) days[Math.floor((s - ws) / DAY_MS)].entries.push(entry);
+    else if (canFar && s >= we && s >= tomEnd) {
+      const d = kstMidnight(s);
+      if (!farBy.has(d)) farBy.set(d, []);
+      farBy.get(d).push(entry);
+    }
+  };
+
+  for (const item of items || []) {
+    if (!ok(item)) continue;
+    if (item.video_id) seen.add(item.video_id);
+    if (item.state === "live") {
+      const s = itemMs(item.actual_start || item.scheduled_start);
+      if (isFinite(s)) place(mk(item, s, null, "live"), false);
+    } else if (item.state === "end") {
+      const s = itemMs(item.actual_start || item.scheduled_start);
+      const e = itemMs(item.state_since);
+      if (isFinite(s)) place(mk(item, s, isFinite(e) ? e : null, "ended"), false);
+    } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
+      const s = itemMs(item.scheduled_start);
+      if (isFinite(s)) place(mk(item, s, null, "upcoming"), true);
+      else undated.push(mk(item, NaN, null, "upcoming"));
+    }
+  }
+  // 보관함 — 같은 video_id 가 preview 에 있으면 건너뛴다 (classify 와 같은 규칙, 범위만 이번주)
+  for (const item of archiveItems || []) {
+    if (!ok(item) || (item.video_id && seen.has(item.video_id))) continue;
+    const a = itemMs(item.actual_start), e = itemMs(item.archived_at);
+    if (!isFinite(a) || !isFinite(e) || e > nowMs) continue;
+    if (e - a < LATE_ENDED_MIN || e - a > LATE_ENDED_MAX) continue;
+    place(mk(item, a, e, "ended"), false);
+  }
+
+  const byStart = (x, y) => x.start - y.start;
+  days.forEach((d) => d.entries.sort(byStart));
+  const far = [...farBy.entries()].sort((x, y) => x[0] - y[0]).map(([ds, entries]) => ({ ds, entries: entries.sort(byStart) }));
+  return { ws, we, today: dow, days, far, undated };
+}
+
+/* (v4.9.6) 개수 — 머리 버튼 문구(「이번주 N · 먼 미래 M」)와 버튼 표시 조건(total 1건 이상)에 쓴다 */
+export function laterCounts(plan) {
+  const week = plan.days.reduce((n, d) => n + d.entries.length, 0);
+  const rest = plan.far.reduce((n, f) => n + f.entries.length, 0) + plan.undated.length;
+  return { week, rest, total: week + rest };
+}
+
 /* ── 항목 공통 헬퍼 ────────────────────────────────────────────────── */
 export function itemKeys(item, order) {
   const keys = new Set([item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])]);
@@ -176,13 +246,25 @@ export function closeCardPop() {
   cpopPinned = false;
 }
 
-function rangeLabel(entry, state) {
+/* (v4.9.6) 날짜를 붙인 시각 — 이후 예고 표의 점에서 연 팝업만 쓴다 (블록 팝업은 그대로) */
+function datedLabel(entry, state) {
+  if (!isFinite(entry.start)) return "날짜 미정";
+  const it = entry.item;
+  const d = mdw(entry.start);
+  if (state === "live") return `LIVE · ${d} ${hm(entry.start)} 시작`;
+  if (it.time_tbd) return `${d} 시각 미정`;
+  if (entry.end) return `${d} ${hm(entry.start)} ~ ${hm(entry.end)}${ymd(entry.end) !== ymd(entry.start) ? " (익일)" : ""} · ${durLabel(entry.end - entry.start)}`;
+  return `${d} ${hm(entry.start)}`;
+}
+
+function rangeLabel(entry, state, dated = false) {
+  if (dated) return datedLabel(entry, state);   // (v4.9.6)
   if (state === "live") return `LIVE · ${hm(entry.start)} 시작`;
   if (entry.end) return `${hm(entry.start)} ~ ${hm(entry.end)}${ymd(entry.end) !== ymd(entry.start) ? " (익일)" : ""} · ${durLabel(entry.end - entry.start)}`;
   return hm(entry.start);
 }
 
-function showCardPop(entry, state, owner, pin, ctx, rowKey) {
+function showCardPop(entry, state, owner, pin, ctx, rowKey, dated = false) {
   if (cpop && cpopOwner === owner) {
     if (pin) { if (cpopPinned) closeCardPop(); else cpopPinned = true; }
     return;
@@ -222,7 +304,7 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey) {
   nm.append(faces, el("b", "", keys.map((k) => shortName(ctx.channels[k])).join(" · ") || shortName(ch)));
   for (const t of (state === "live" ? [el("span", "tt-tag tt-tag--live", "LIVE")] : []).concat(tagsFor(entry, state))) nm.appendChild(t);
   body.appendChild(nm);
-  body.appendChild(el("div", "tt-pop__rg", rangeLabel(entry, state)));
+  body.appendChild(el("div", "tt-pop__rg", rangeLabel(entry, state, dated)));
   body.appendChild(el("div", "tt-pop__ti", titleText(it, ctx)));
   if (url) {
     const btn = el("a", "tt-pop__btn", "▶ YouTube에서 보기");
@@ -248,6 +330,18 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey) {
   cpop.style.left = `${left}px`;
   cpop.style.top = `${below ? r.bottom + scrollY + 8 : r.top + scrollY - h - 8}px`;
   if (!below) cpop.dataset.anchorBottom = String(r.top + scrollY - 8);   // (king.js) 위쪽에 놓인 팝업이 줄어들어도 블록에 붙어 있게 아래 가장자리를 기록
+}
+
+/* (v4.9.6) 블록 · 이후 예고 점 공용 팝업 연결 — 호버 = 미리보기, 클릭 · Enter · Space = 고정. dated = 날짜 붙인 시각(점에서만) */
+function wirePop(node, entry, state, ctx, rowKey, dated = false) {
+  node.addEventListener("click", (e) => { e.stopPropagation(); showCardPop(entry, state, node, true, ctx, rowKey, dated); });
+  node.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showCardPop(entry, state, node, true, ctx, rowKey, dated); }
+  });
+  node.addEventListener("mouseenter", () => { if (ttSliding) return; clearTimeout(cpopTimer); showCardPop(entry, state, node, false, ctx, rowKey, dated); });   // (v4.9.6) 넘기는 동안은 팝업 안 띄움
+  node.addEventListener("mouseleave", () => {
+    if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
+  });
 }
 
 function wirePopOnce() {
@@ -293,14 +387,7 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   tx.appendChild(n);
   b.appendChild(tx);
 
-  b.addEventListener("click", (e) => { e.stopPropagation(); showCardPop(entry, state, b, true, ctx, rowKey); });
-  b.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showCardPop(entry, state, b, true, ctx, rowKey); }
-  });
-  b.addEventListener("mouseenter", () => { if (ttSliding) return; clearTimeout(cpopTimer); showCardPop(entry, state, b, false, ctx, rowKey); });   // (v4.9.6) 넘기는 동안은 팝업 안 띄움
-  b.addEventListener("mouseleave", () => {
-    if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
-  });
+  wirePop(b, entry, state, ctx, rowKey);   // (v4.9.6) 팝업 연결은 이 블록 · 이후 예고 점이 함께 쓴다
   if (rowKey === KING_KEY) decorateBlock(b, entry, state);   // (v4.3.1) 노노카 본인 행의 블록에만
   return b;
 }
@@ -904,9 +991,11 @@ export function buildFoldButton(counts, ctx, opts = {}) {
   btn.type = "button";
   btn.appendChild(el("i", "tt-fold__tri"));
   const total = counts.total;
-  btn.appendChild(el("span", "tt-fold__open", `이후 예고 ${total}건 펼치기`));
+  btn.appendChild(el("span", "tt-fold__open", opts.summary ? "이후 예고 펼치기" : `이후 예고 ${total}건 펼치기`));   // (v4.9.6) 표 보기는 건수를 오른쪽 요약에
   btn.appendChild(el("span", "tt-fold__close", "이후 예고 접기"));
-  if (opts.perMember) {
+  if (opts.summary) {   // (v4.9.6) 표 보기 — 「이번주 N · 먼 미래 M」 (멤버별 건수 대신)
+    btn.appendChild(el("span", "tt-fold__cn", opts.summary));
+  } else if (opts.perMember) {
     const cn = el("span", "tt-fold__cn");
     for (const key of ctx.order) {
       const ch = ctx.channels[key];
@@ -920,6 +1009,96 @@ export function buildFoldButton(counts, ctx, opts = {}) {
     btn.appendChild(cn);
   }
   return btn;
+}
+
+/* ── 이후 예고 표 (PC 표 보기 · v4.9.6) ─────────────────────────────────
+   2열: 왼쪽 「이번주」(일 ~ 토 7줄 · 줄마다 점), 오른쪽 「먼 미래」(날짜 줄 · 날짜 미정 줄). 점 = 방송 하나, 합동은 참여 멤버 색으로 나뉜다. */
+const WK_DOW = ["일", "월", "화", "수", "목", "금", "토"];
+const pad2 = (n) => String(n).padStart(2, "0");
+const kParts = (ms) => new Date(ms + KST_OFFSET_MS);   // UTC 필드 = KST 달력 값
+const kMD = (ms) => { const d = kParts(ms); return `${pad2(d.getUTCMonth() + 1)}/${pad2(d.getUTCDate())}`; };
+const kDow = (ms) => WK_DOW[kParts(ms).getUTCDay()];
+
+/* 점 하나 — 상태 클래스(is-ended · is-live · is-tbd), 조각 = 참여 멤버(data-channel → render.js 가 --lane-color 를 채운다) */
+function wkDot(entry, ctx) {
+  const it = entry.item;
+  const b = el("button", "wk2__dot");
+  b.type = "button";
+  b.setAttribute("aria-haspopup", "dialog");
+  const tbd = !!it.time_tbd || !isFinite(entry.start);
+  if (entry.state === "ended") b.classList.add("is-ended");
+  else if (entry.state === "live") b.classList.add("is-live");
+  if (tbd) b.classList.add("is-tbd");
+  const keys = entry.keys.length ? entry.keys : [it.channel_key];
+  for (const k of keys) {
+    const seg = el("span", "wk2__seg");
+    seg.dataset.channel = k;
+    b.appendChild(seg);
+  }
+  const names = keys.map((k) => shortName(ctx.channels[k])).join(", ");
+  b.setAttribute("aria-label", `${tbd ? "시각 미정" : hm(entry.start)} ${names} · ${titleText(it, ctx)}`);
+  wirePop(b, entry, entry.state, ctx, it.channel_key, true);
+  return b;
+}
+
+/* 줄 하나 = 왼쪽 날짜 칸 + 오른쪽 점 칸. 점이 없으면 빈 칸 */
+function wkRow(dateNode, entries, cls, ctx) {
+  const row = el("div", "wk2__row" + (cls ? ` ${cls}` : ""));
+  row.appendChild(dateNode);
+  const dots = el("div", "wk2__dots");
+  for (const e of entries) dots.appendChild(wkDot(e, ctx));
+  row.appendChild(dots);
+  return row;
+}
+
+export function buildLaterTables(ctx, plan) {
+  const wrap = el("div", "tt-later");   // 펼치기 · 접기 애니메이션이 이 이름을 쓴다 (render.js toggleLater)
+  const grid = el("div", "wk2");
+
+  // 이번주 — 일요일 ~ 토요일 7줄. 지난 줄은 흐리게, 오늘 줄은 「오늘」 알약
+  const wk = el("section", "wk2__panel wk2__panel--week");
+  const hd = el("div", "wk2__hd");
+  const last = plan.we - DAY_MS;
+  hd.append(el("b", "", "이번주"), el("span", "", `${kMD(plan.ws)}(${kDow(plan.ws)}) ~ ${kMD(last)}(${kDow(last)})`));
+  wk.appendChild(hd);
+  const tbl = el("div", "wk2__tbl");
+  plan.days.forEach((d, i) => {
+    const date = el("div", "wk2__date");
+    date.append(el("b", "", kMD(d.ds)), el("span", "", kDow(d.ds)));
+    if (i === plan.today) date.appendChild(el("span", "wk2__now", "오늘"));
+    tbl.appendChild(wkRow(date, d.entries, i < plan.today ? "is-past" : i === plan.today ? "is-today" : "", ctx));
+  });
+  wk.appendChild(tbl);
+
+  // 먼 미래 — 날짜별 줄(D-n 표시), 마지막에 날짜 미정 줄. 0건이면 안내 한 줄
+  const far = el("section", "wk2__panel wk2__panel--far");
+  const counts = laterCounts(plan);
+  const fhd = el("div", "wk2__hd");
+  fhd.append(el("b", "", "먼 미래"), el("span", "", `${counts.rest}건`));
+  far.appendChild(fhd);
+  if (!counts.rest) {
+    far.appendChild(el("div", "wk2__none", "먼 미래 예고 없음"));
+  } else {
+    const ftbl = el("div", "wk2__tbl");
+    const todayStart = plan.ws + plan.today * DAY_MS;
+    const nowY = kParts(todayStart).getUTCFullYear();
+    for (const f of plan.far) {
+      const date = el("div", "wk2__date");
+      const y = kParts(f.ds).getUTCFullYear();
+      date.append(
+        el("b", "", `${y === nowY ? "" : `${y}/`}${kMD(f.ds)}`),
+        el("span", "", kDow(f.ds)),
+        el("span", "wk2__dn", `D-${Math.round((f.ds - todayStart) / DAY_MS)}`),
+      );
+      ftbl.appendChild(wkRow(date, f.entries, "", ctx));
+    }
+    if (plan.undated.length) ftbl.appendChild(wkRow(el("div", "wk2__date", "날짜 미정"), plan.undated, "", ctx));
+    far.appendChild(ftbl);
+  }
+
+  grid.append(wk, far);
+  wrap.appendChild(grid);
+  return wrap;
 }
 
 /* ── 틱 · 마키 ─────────────────────────────────────────────────────── */

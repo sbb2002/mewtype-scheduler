@@ -349,9 +349,14 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
    좁아도 블록 모양은 같고 넘치는 부분만 잘린다. 제목은 한 줄 + 넘치면 무한 marquee(`applyTimetableMarquees`).
    블록 안은 항상 **3줄 고정 높이**(v4.5.6): ① 시각 + 태그(`.tt-blk__t`) ② 카운트다운(`.tt-blk__rel` — 예고만. 「방송시작까지 1.5시간」 · 60분 미만 「n분」 정수 · 정각 「2시간」 · 시각이 지나면 「지각」, 모바일 카드 링과 같은 규칙) ③ 제목(`.tt-blk__n`). 라이브 · 종료 블록의 ② 는 빈 줄(`.tt-blk__sp`, king.js 가 `.tt-blk__rel` 을 「지각」 자리로 쓰므로 클래스를 나눔). 예정 블록 고정 폭 `W_FIXED` = 250px.
    블록은 **클릭해도 이동하지 않고** 호버 = 카드 팝업(`.tt-pop`) · 클릭 = 고정(바깥 클릭 / Esc / 재클릭으로 닫힘). 영상 이동은 팝업의 이미지 · 「▶ YouTube에서 보기」로만.
-2. `.tt-fold` 「이후 예고 N건 펼치기」(펼치면 「이후 예고 접기」)(방송인별 건수 아바타 포함). (v4.9.6 — 전엔 「오늘 이후 예고」. 화면 넘기기와 무관하게 같은 목록)
-3. `.tt-later` 5열: 펼침(`#board.board--later-open`)일 때만 보임. 열 = `.lane.lane--later[data-channel][data-no-badge]` — **기존 네임플레이트**(`buildHeader`, 우측 세로 YT·X)
-   + `.lane__later` 안에 기존 카드(`createCard`). `data-no-badge` 인 레인에는 트윗 배지가 안 붙는다(`tweets.js` 가 건너뜀) — 배지는 타임테이블 왼쪽 칸에만.
+2. `.tt-fold` 「이후 예고 펼치기」(펼치면 「이후 예고 접기」) + 오른쪽 요약 `이번주 N · 먼 미래 M`(`buildFoldButton(…, {summary})`). 셋 다 0건이면 버튼 · 표 없음. (v4.9.6 — 전엔 「오늘 이후 예고 N건」 + 멤버별 건수)
+3. (v4.9.6, 운영자 안 3) `.tt-later`: 펼침(`#board.board--later-open`)일 때만 보임. 안 = `div.wk2`(2칸, 1000px 이하 1칸) > **이번주 테이블** `section.wk2__panel--week` + **먼 미래 테이블** `section.wk2__panel--far`.
+   - 계획 = `timetable.planLater(items, archiveItems, nowMs, order)` → `{ws, we, today, days[7], far[], undated[]}`(순수 함수, selfcheck). 날짜 경계 = **KST 달력 00:00**(예고보드의 04:00 하루와 다름).
+   - 이번주 = 지금이 든 주의 일 ~ 토 7줄(`div.wk2__row` > 왼쪽 `.wk2__date` 날짜 · 요일(오늘 줄은 「오늘」 알약, 지난 줄은 흐림) + 오른쪽 `.wk2__dots`). 그 주에 시작한 방송 전부 — 종료(preview `end` + 보관함, `classify` 와 같은 10분 ~ 12시간 규칙) · 방송 중 · 예정(오늘 · 내일 예고와 겹쳐도 넣음 · 시각 미정은 그날 줄).
+   - 먼 미래 = 주 밖이고 오늘 · 내일 예고 구간(`dayWindow(now).ds` ~ `de + 24h`) 밖인 예정 — 날짜별 줄(올해가 아니면 연도 · `D-n`), 예정 시각이 없으면 맨 아래 「날짜 미정」 줄. 0건이면 「먼 미래 예고 없음」.
+   - **점** `button.wk2__dot` = 방송 하나(14px 원, 누르는 자리 24px). 안 `span.wk2__seg[data-channel]` 가 참여 멤버 수만큼 — 합동은 멤버 색으로 나뉜 한 점(색 = `sampleLaneColor` 가 넣는 `--lane-color`). 상태 `is-ended`(흐림) · `is-live`(빨간 링) · `is-tbd`(점선 링).
+     마우스 올림 = 블록과 같은 카드 팝업(공용 `wirePop`), 클릭 · Enter · Space = 고정. 점에서 연 팝업만 시각에 날짜를 붙인다(`10/31(토) 21:30` · `시각 미정` · 종료는 시작 ~ 끝 · 길이).
+   카드 보기 · 모바일의 이후 예고는 그대로(멤버별 `.lane__later` 목록 + 멤버별 건수 버튼).
 
 **모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(트윗 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
 `.tt-fold` + `.lane__later`. (v4.9.6) 카드 묶음 순서 = **종료 → 방송 중 → 오늘 예정 → 내일 구분선 `.tt-today__div`(「내일 예고 · 10/31(토) 04:00 ~」, 내일 예정이 있을 때만) → 내일 예정** —
