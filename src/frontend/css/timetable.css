@@ -19,6 +19,15 @@
   margin: 0 0 0.5rem;
 }
 .tt__head > :last-child { margin-left: auto; }   /* 제목 · 메타만 있으면 메타가, 보기 방식 탭이 있으면 탭이 오른쪽 끝 */
+.tt__title, .tt__meta { display: inline-block; }   /* (v4.9.6) 머리줄 글자 바꾸기 때 transform 이 먹도록 */
+
+/* (v4.9.6) 두 점 표시 — 오늘 · 내일 중 어디인지. --pg = 0(오늘) ~ 1(내일), 끄는 동안 끈 거리만큼 옮겨 간다 */
+.tt__pg { align-self: center; display: inline-flex; gap: 4px; --pg: 0; }
+.tt__pg i { height: 6px; border-radius: 3px; background: var(--color-text-muted); transition: width 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s; }
+.tt__pg i:first-child { width: calc(6px + 10px * (1 - var(--pg))); opacity: calc(0.35 + 0.65 * (1 - var(--pg))); }
+.tt__pg i:last-child { width: calc(6px + 10px * var(--pg)); opacity: calc(0.35 + 0.65 * var(--pg)); }
+.tt__pg.is-live i { transition: none; }   /* 끄는 동안(JS 가 --pg 를 매 프레임 넣음)은 바로 따라오게 */
+
 
 /* ── 보기 방식 탭 [테이블 | 카드] (v4.4.0, PC 전용 — 모바일은 탭 없음) ── */
 .vt {
@@ -140,8 +149,13 @@
   display: grid;
   grid-template-columns: 124px 1fr;
 }
+/* (v4.9.6) 1열 = 머리 칸 + 멤버 칸(넘기는 동안 움직이지 않음), 2열 = 두 화면을 잇는 띠 */
+.tt__side { grid-column: 1; }
+.tt__corner { height: 36px; border-bottom: 1px solid transparent; }
+.tt__rail { grid-column: 2; position: relative; overflow: hidden; }
+.tt__strip { display: flex; width: 200%; will-change: transform; }
+.tt__pane { position: relative; width: 50%; flex: none; }
 .tt__axis {
-  grid-column: 2;
   position: relative;
   height: 36px;
   border-bottom: 1px solid var(--color-border);
@@ -195,7 +209,10 @@
   position: relative;
   height: 78px;
   border-bottom: 1px dashed var(--color-line-soft);
-  background-image: repeating-linear-gradient(to right, var(--color-grid) 0 1px, transparent 1px calc(100% / 8));
+  /* (v4.9.6) 4시간 눈금 + 익일 새벽 칸(실제 다음 날 00:00~04:00 — 블록 아래 층이라 블록 색이 바래지 않는다) */
+  background-image:
+    repeating-linear-gradient(to right, var(--color-grid) 0 1px, transparent 1px calc(100% / 6)),
+    linear-gradient(to right, transparent var(--dawn-l, 83.333%), var(--color-dawn-edge) var(--dawn-l, 83.333%) calc(var(--dawn-l, 83.333%) + 1px), var(--color-dawn) calc(var(--dawn-l, 83.333%) + 1px));
 }
 .tt__empty {
   position: absolute;
@@ -206,10 +223,10 @@
   color: var(--color-text-faint);
 }
 
-/* 지금 선 · 지난 구간 음영 · 자정 점선 (위치는 render/timetable.js 가 % 로 채움) */
+/* 지금 선 · 지난 구간 음영 (위치는 timetable.js 가 % 로 채움 · 오늘 화면(pane 0)에만) */
 .tt__ov {
   position: absolute;
-  inset: 0 0 0 124px;
+  inset: 0;
   pointer-events: none;
 }
 .tt__past { position: absolute; top: 36px; bottom: 0; left: 0; background: var(--color-past); }
@@ -234,13 +251,40 @@
   font-weight: 700;
   white-space: nowrap;
 }
-.tt__mid {
-  position: absolute;
-  top: 36px;
-  bottom: 0;
-  left: 75%;                      /* 06:00 + 18h = 자정 */
-  border-left: 1px dashed var(--color-late);
-  opacity: 0.8;
+
+/* (v4.9.6) 끌기 커서 — 넘칠 때(is-over)는 가로 스크롤 · 화살표가 맡는다 */
+.tt__sw:not(.is-over) .tt__rail { cursor: grab; }
+.tt__rail.is-dragging { cursor: grabbing; user-select: none; }
+.tt__rail.is-dragging .tt-blk { pointer-events: none; }
+
+/* (v4.9.6) 표 + 일 이동 버튼(오른쪽 세로 띠) */
+.tt__body { display: flex; gap: 10px; align-items: stretch; }
+.tt__body > .tt__sw { flex: 1; min-width: 0; }
+.tt__day {
+  flex: none; width: 36px; padding: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-bg-secondary); color: var(--color-text);
+  cursor: pointer; transition: background 0.15s, opacity 0.2s, transform 80ms;
+}
+.tt__day:hover:not(:disabled) { background: var(--color-hover); }
+.tt__day:active:not(:disabled) { transform: scale(0.94); }
+.tt__day:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
+.tt__day:disabled { opacity: 0.35; cursor: default; }
+.tt__day-ic { display: grid; place-items: center; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), translate 0.15s; }
+.tt__day-ic svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tt__day.is-back .tt__day-ic { transform: rotate(180deg); }
+.tt__day:hover:not(:disabled) .tt__day-ic { translate: 2px 0; }
+.tt__day.is-back:hover .tt__day-ic { translate: -2px 0; }
+.tt__day-n {
+  min-width: 18px; padding: 1px 5px; border-radius: 9px; box-sizing: border-box; text-align: center;
+  font-size: 0.66rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--color-raised); box-shadow: inset 0 0 0 1px var(--color-raised-edge);
+}
+.tt__day-n.is-pop { animation: dot-pop 0.38s cubic-bezier(0.25, 1.55, 0.45, 1); }
+.tt__day.is-nudge { animation: tt-arr-nudge 0.7s ease-in-out 3; }
+@media (prefers-reduced-motion: reduce) {
+  .tt__day, .tt__day-ic, .tt__pg i { transition: none; }
+  .tt__day.is-nudge, .tt__day-n.is-pop { animation: none; }
 }
 
 /* 예고 바(블록). 길이를 알면 실제 길이, 모르면 고정 폭. 좁아도 같은 모양 — 넘치는 부분은 잘리기만 한다 */

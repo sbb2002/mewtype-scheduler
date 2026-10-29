@@ -2,7 +2,7 @@
  * timetable.js 순수 헬퍼 자동 테스트 (v4.1.0).
  * node timetable.selfcheck.mjs 로 실행. 프레임워크 없음. (DOM 접근 함수는 호출하지 않는다)
  */
-import { dayWindow, classify, itemKeys } from "./timetable.js";
+import { dayWindow, classify, itemKeys, swipeDecision, dragFollow } from "./timetable.js";
 
 let n = 0;
 function assert(cond, msg) {
@@ -82,5 +82,20 @@ assert(!r2.tomorrow.some((e) => e.item.channel_key === "nonoka") && !r2.upcoming
 const endItem = { channel_key: "arale", state: "end", actual_start: new Date(kst("2026-10-29T23:00:00")).toISOString(), state_since: new Date(kst("2026-10-30T01:00:00")).toISOString(), video_id: "E2" };
 assert(classify([endItem], [], kst("2026-10-30T03:59:00"), ORDER).ended.length === 1, "종료 방송은 04:00 전까지 종료 칸에 남는다");
 assert(classify([endItem], [], kst("2026-10-30T04:00:00"), ORDER).ended.length === 0, "04:00 이 되면 종료 칸에서 빠진다");
+
+// ── (v4.9.6) 일 넘기기 판정 · 끌기 거리 (w = 800)
+assert(swipeDecision(-200, 0, 800, 0, true) === "next", "넘기기: 레일 25% 끌면 다음(내일) 화면 (경계 포함)");
+assert(swipeDecision(-199, 0, 800, 0, true) === "stay", "넘기기: 25% 미만 · 느리면 제자리");
+assert(swipeDecision(-50, -0.6, 800, 0, true) === "next", "넘기기: 짧아도 빠르게 튕기면 다음");
+assert(swipeDecision(-400, 0, 800, 0, false) === "stay", "넘기기: 내일 예정 0건이면 다음 화면으로 안 간다");
+assert(swipeDecision(300, 0, 800, 0, true) === "stay", "넘기기: 오늘 화면에서 오른쪽은 갈 곳 없음");
+assert(swipeDecision(200, 0, 800, 1, true) === "prev", "넘기기: 내일 화면에서 오른쪽 25% 끌면 오늘");
+assert(swipeDecision(-300, 0, 800, 1, true) === "stay", "넘기기: 내일 화면에서 왼쪽은 갈 곳 없음");
+assert(swipeDecision(50, 0.6, 800, 1, true) === "prev", "넘기기: 내일 화면에서 빠르게 튕기면 오늘");
+assert(dragFollow(-100, 800, 0, true) === -100, "끌기: 갈 수 있는 쪽은 1:1");
+assert(dragFollow(-100, 800, 0, false) === -30, "끌기: 내일 0건이면 고무줄 30%");
+assert(dragFollow(500, 800, 0, true) === 48, "끌기: 갈 곳 없는 쪽은 최대 48px");
+assert(dragFollow(100, 800, 1, true) === 100, "끌기: 내일 화면에서 오른쪽은 1:1");
+assert(dragFollow(-1000, 800, 0, true) === -800, "끌기: 1:1 도 레일 폭에서 멈춤");
 
 console.log(`\n✅ 모두 통과: ${n}/${n}`);
