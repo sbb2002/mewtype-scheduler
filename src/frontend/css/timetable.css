@@ -485,6 +485,14 @@ a.tt-pop__img { cursor: pointer; }
   font-size: 0.84rem;
 }
 .tt-today__stack { display: flex; flex-direction: column; gap: 12px; }
+/* (v4.9.6) 카드 보기의 내일 구분선 — 오늘 예정 다음, 내일 예고(다음 04:00 하루)의 예정 앞 */
+.tt-today__div {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.72rem; font-weight: 600; color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.tt-today__div::after { content: ""; flex: 1; border-top: 1px dashed var(--color-border); }
+.tt-today__none + .tt-today__stack { margin-top: 12px; }
 
 .tcard {
   position: relative;

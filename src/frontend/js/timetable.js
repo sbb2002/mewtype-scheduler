@@ -1,10 +1,10 @@
 // timetable.js — (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼.
 // 예고판(5열 레인 보드)의 "오늘/7일 이내/7일 이후 버킷 + ON-AIR 영역"을 대체한다.
-// 오늘 = KST 06:00 ~ 익일 06:00 (모니터링 하루 경계와 같음). 그 밖의 예고는 "이후 예고"로 펼친다.
+// 오늘 = KST 04:00 ~ 익일 04:00(오늘 예고), 그다음 하루 = 내일 예고. 그 밖의 예고는 "이후 예고"로 펼친다.
 // 데이터는 textContent/createElement 로만 주입(XSS 방어, innerHTML 금지) — render.js 와 같은 규칙.
 //
-//  dayWindow(nowMs)                    → { ds, de }  오늘 구간(ms)
-//  classify(items, archive, nowMs, order) → { ds, de, live, ended, upcoming, later }
+//  dayWindow(nowMs, offset)            → { ds, de }  오늘 구간(ms) · offset 1 = 내일 구간
+//  classify(items, archive, nowMs, order) → { ds, de, live, ended, upcoming, tomorrow, later }
 //  buildTimetable(ctx)                 → PC 편성 레일 (편지 배지 자리 = 왼쪽 칸의 .lane__avatar)
 //  buildTodayCards(ctx, key)           → 모바일 오늘 카드(카운트다운 링)
 //  buildFoldButton(counts, ctx)        → "이후 예고 N건 펼치기" 버튼 (상태는 #board 클래스로 — 캐러셀 클론에도 적용)
@@ -18,7 +18,7 @@ import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
 const KST_OFFSET_MS = 9 * HOUR_MS;
-const DAY_START_HOUR = 6;                  // monitor_log.DAY_START_HOUR 와 같은 하루 경계
+export const DAY_START_HOUR = 4;           // (v4.9.6) 예고보드의 하루 = 04:00 ~ 익일 04:00 (프론트 전용 — 모니터링 하루 경계 06:00 과 별개)
 const LATE_ENDED_MIN = 10 * 60000;         // 종료 기록으로 인정하는 최소/최대 방송 길이
 const LATE_ENDED_MAX = 12 * HOUR_MS;
 const TRACK_PX = 888;                      // 블록 위치·폭을 환산하는 기준 트랙 폭 (실제 폭에 비례)
@@ -58,12 +58,13 @@ function durLabel(ms) {
 }
 
 /* ── 오늘 구간 ────────────────────────────────────────────────────── */
-export function dayWindow(nowMs) {
+/* 오늘 구간(offset 0 = 오늘 예고, 1 = 내일 예고) */
+export function dayWindow(nowMs, offset = 0) {
   const k = nowMs + KST_OFFSET_MS;
   const d = new Date(k);
   let base = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), DAY_START_HOUR);
   if (k < base) base -= DAY_MS;
-  const ds = base - KST_OFFSET_MS;
+  const ds = base - KST_OFFSET_MS + offset * DAY_MS;
   return { ds, de: ds + DAY_MS };
 }
 
@@ -72,12 +73,12 @@ const itemMs = (iso) => (iso ? Date.parse(iso) : NaN);
 /**
  * 아이템을 오늘 구간 기준으로 나눈다.
  *  live / ended / upcoming = 타임테이블에 놓이는 항목 { item, start, end }
- *  later = 이후 예고(구간 밖·시각 미정) 원본 아이템 목록 (시작 시각순)
- * ended = preview.json 의 end 상태 + preview_archive.json 에서 오늘 06:00 이후 시작해 이미 끝난 방송.
+ *  tomorrow = 내일 예고(다음 04:00 하루)의 예정 { item, start }, later = 이후 예고(그다음 04:00 이후 · 시각 미정) 원본 아이템 목록 (시작 시각순)
+ * ended = preview.json 의 end 상태 + preview_archive.json 에서 오늘 04:00 이후 시작해 이미 끝난 방송.
  */
 export function classify(items, archiveItems, nowMs, order) {
   const { ds, de } = dayWindow(nowMs);
-  const live = [], ended = [], upcoming = [], later = [];
+  const live = [], ended = [], upcoming = [], tomorrow = [], later = [];
   const seen = new Set();
   const ok = (it) => it && it.channel_key && order.includes(it.channel_key);
 
@@ -93,7 +94,8 @@ export function classify(items, archiveItems, nowMs, order) {
       if (isFinite(s) && (!isFinite(e) || e > ds)) ended.push({ item, start: s, end: isFinite(e) ? e : null });
     } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
       const s = itemMs(item.scheduled_start);
-      if (item.time_tbd || !isFinite(s) || s >= de) later.push(item);
+      if (item.time_tbd || !isFinite(s) || s >= de + DAY_MS) later.push(item);
+      else if (s >= de) tomorrow.push({ item, start: s, end: null });
       else upcoming.push({ item, start: s, end: null });
     }
   }
@@ -106,14 +108,14 @@ export function classify(items, archiveItems, nowMs, order) {
     ended.push({ item, start: a, end: e });
   }
   const byStart = (x, y) => x.start - y.start;
-  live.sort(byStart); ended.sort(byStart); upcoming.sort(byStart);
+  live.sort(byStart); ended.sort(byStart); upcoming.sort(byStart); tomorrow.sort(byStart);
   later.sort((a, b) => {
     const x = itemMs(a.scheduled_start), y = itemMs(b.scheduled_start);
     if (!isFinite(x)) return isFinite(y) ? 1 : 0;
     if (!isFinite(y)) return -1;
     return x - y;
   });
-  return { ds, de, live, ended, upcoming, later };
+  return { ds, de, live, ended, upcoming, tomorrow, later };
 }
 
 /* ── 항목 공통 헬퍼 ────────────────────────────────────────────────── */
@@ -374,7 +376,7 @@ export function buildBoardHead(ctx) {
   const head = el("div", "tt__head");
   head.appendChild(el("h2", "tt__title", "오늘 예고"));
   head.appendChild(el("span", "tt__meta",
-    `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · 예정 ${ctx.upcoming.length}건` +
+    `${mdw(ctx.ds)} 04:00 ~ 익일 04:00 · 예정 ${ctx.upcoming.length}건` +
     (nLive ? ` · 방송 중 ${nLive}건` : "") + (nEnded ? ` · 종료 ${nEnded}건` : "")));
   if (ctx.onViewChange) head.appendChild(buildViewTabs(ctx.view, ctx.onViewChange));
   return head;
@@ -643,22 +645,29 @@ function todayCard(entry, state, ctx, big, laneKey) {
 export function buildTodayCards(ctx, key, opts = {}) {
   const has = (e) => itemKeys(e.item, ctx.order).includes(key);
   const mE = ctx.ended.filter(has), mL = ctx.live.filter(has), mU = ctx.upcoming.filter(has);
+  const mT = (ctx.tomorrow || []).filter(has);   // (v4.9.6) 내일 예고 — 오늘 예정 뒤에 구분선을 두고 잇는다
   const sec = el("section", "tt-today");
   const head = el("div", "tt__head");
   head.appendChild(el("h2", "tt__title", "오늘 예고"));
   head.appendChild(el("span", "tt__meta",
     // 카드 보기(opts.compact)는 날짜 · 구간이 보드 머리줄에 이미 있어 건수만 — 5열이라 좁다
-    (opts.compact ? "" : `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · `) + `예정 ${mU.length}` + (mL.length ? ` · 방송 중 ${mL.length}` : "") + (mE.length ? ` · 종료 ${mE.length}` : "")));
+    (opts.compact ? "" : `${mdw(ctx.ds)} 04:00 ~ 익일 04:00 · `) + `예정 ${mU.length}` + (mL.length ? ` · 방송 중 ${mL.length}` : "") + (mE.length ? ` · 종료 ${mE.length}` : "") + (mT.length ? ` · 내일 ${mT.length}` : "")));
   sec.appendChild(head);
   const all = [
     ...mE.map((entry) => ({ entry, state: "ended" })),
     ...mL.map((entry) => ({ entry, state: "live" })),
     ...mU.map((entry) => ({ entry, state: "upcoming" })),
   ];
-  if (!all.length) { sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다.")); return sec; }
+  if (!all.length && !mT.length) { sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다.")); return sec; }
+  if (!all.length) sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다."));   // (v4.9.6) 오늘은 비고 내일만 있는 경우
   const stack = el("div", "tt-today__stack");
   const bigIdx = all.findIndex((g) => g.state !== "ended");
   all.forEach((g, i) => stack.appendChild(todayCard(g.entry, g.state, ctx, i === bigIdx, key)));
+  if (mT.length) {
+    stack.appendChild(el("div", "tt-today__div", `내일 예고 · ${mdw(ctx.de)} 04:00 ~`));   // (v4.9.6) 내일 구분선
+    // 오늘 종료 외 카드가 없으면 내일 첫 카드가 big (bigIdx < 0)
+    mT.forEach((entry, i) => stack.appendChild(todayCard(entry, "upcoming", ctx, bigIdx < 0 && i === 0, key)));
+  }
   sec.appendChild(stack);
   return sec;
 }
@@ -669,8 +678,8 @@ export function buildFoldButton(counts, ctx, opts = {}) {
   btn.type = "button";
   btn.appendChild(el("i", "tt-fold__tri"));
   const total = counts.total;
-  btn.appendChild(el("span", "tt-fold__open", `오늘 이후 예고 ${total}건 펼치기`));
-  btn.appendChild(el("span", "tt-fold__close", "오늘 이후 예고 접기"));
+  btn.appendChild(el("span", "tt-fold__open", `이후 예고 ${total}건 펼치기`));
+  btn.appendChild(el("span", "tt-fold__close", "이후 예고 접기"));
   if (opts.perMember) {
     const cn = el("span", "tt-fold__cn");
     for (const key of ctx.order) {
