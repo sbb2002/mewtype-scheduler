@@ -541,6 +541,14 @@ function wireFold(boardEl) {
   });
 }
 
+/* (v4.9.6) 탭 제목 라이브 표시 — 라이브가 1건 이상이면 「🔴 LIVE n · 원래 제목」. n = 방송 수(합동 1건 = 1). 같은 값이면 쓰지 않는다 */
+let baseTitle = null;
+function applyLiveTitle(n) {
+  if (baseTitle === null) baseTitle = document.title;
+  const t = n > 0 ? `🔴 LIVE ${n} · ${baseTitle}` : baseTitle;
+  if (document.title !== t) document.title = t;
+}
+
 /**
  * 보드 전체 재구성 (v4.1.0).
  *  PC(≥768px)   : 오늘 타임테이블 + "이후 예고" 펼치기(방송인별 네임플레이트 · 카드 5열)
@@ -627,6 +635,10 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     }
   }
   for (const key of order) sampleLaneColor(avatarSized(channels[key].avatar, 176), boardEl.querySelector(`.lane[data-channel="${key}"]`));
+  // (v4.9.6) 라이브 아바타 효과 — 지금 방송 중인 멤버(합동 참여자 포함)의 레인에 lane--live. 모바일 캐러셀 클론이 같이 복제하도록 initMobileCarousel 전에
+  for (const e of cls.live) for (const k of itemKeys(e.item, order)) {
+    boardEl.querySelectorAll(`.lane[data-channel="${CSS.escape(k)}"]`).forEach((l) => l.classList.add("lane--live"));
+  }
 
   wireFold(boardEl);
   syncFold(boardEl);
@@ -639,6 +651,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     const t = boardEl.querySelector('.vt__btn[aria-selected="true"]');
     if (t) t.focus();
   }
+  applyLiveTitle(cls.live.length);   // (v4.9.6) 탭 제목에 라이브 수 표시
 }
 
 /* 제목이 카드 폭을 넘치면 흐르는 marquee 로 전환 (PC). 줄바꿈되는 모바일은
@@ -789,6 +802,7 @@ function initMobileCarousel(boardEl) {
       btn.className = "dot";
       const key = lane.dataset.channel;
       if (key) btn.dataset.channel = key;
+      if (lane.classList.contains("lane--live")) btn.classList.add("dot--live");   // (v4.9.6) 방송 중인 멤버 점 = 빨간 링
       // 아바타 색이 이미 샘플링됐으면 그 값, 아니면 나중에 sampleLaneColor 가 채움
       const c = getComputedStyle(lane).getPropertyValue("--lane-color").trim();
       if (c) btn.style.setProperty("--lane-color", c);
