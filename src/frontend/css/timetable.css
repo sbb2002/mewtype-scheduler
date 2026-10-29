@@ -694,15 +694,19 @@ a.tt-pop__img { cursor: pointer; }
 @media (max-width: 767px) {
 }
 
-/* (v4.9.6) 라이브 레인 효과 — 방송 중인 멤버의 예고판(카드 보기 · 모바일 레인) 테두리를 빨갛게 + 은은한 글로우(느린 호흡).
+/* (v4.9.6) 라이브 레인 효과 — 방송 중인 멤버의 예고판(카드 보기 · 모바일 레인)에 그라데이션 글로우(느린 호흡).
+   테두리 선은 위쪽만 빨갛고 아래로 갈수록 사라지며(border-box 그라데이션), 빛은 판 바깥 위쪽으로 번진다 — 안쪽 LIVE 카드의 빨간 테두리와 선이 겹쳐 보이지 않게.
    render.js renderBoard 가 .lane--live 를 켠다. 테이블 보기(멤버 칸 .tt__lane · 이후 예고 .lane--later)는 블록이 이미 라이브를 보여 줘서 안 쓴다 */
 .lane.lane--live:not(.tt__lane):not(.lane--later) {
-  border-color: var(--color-live);
-  box-shadow: 0 0 0 1px var(--color-live), 0 0 14px 2px color-mix(in srgb, var(--color-live) 45%, transparent);
+  border-color: transparent;
+  background:
+    linear-gradient(var(--color-bg-secondary), var(--color-bg-secondary)) padding-box,
+    linear-gradient(180deg, var(--color-live), color-mix(in srgb, var(--color-live) 35%, var(--color-border)) 14%, var(--color-border) 32%) border-box;
+  box-shadow: 0 -4px 22px -2px color-mix(in srgb, var(--color-live) 50%, transparent), 0 0 30px -6px color-mix(in srgb, var(--color-live) 30%, transparent);
   animation: live-breathe 2.4s ease-in-out infinite;
 }
 @keyframes live-breathe {
-  50% { box-shadow: 0 0 0 1px var(--color-live), 0 0 22px 5px color-mix(in srgb, var(--color-live) 28%, transparent); }
+  50% { box-shadow: 0 -6px 30px 0 color-mix(in srgb, var(--color-live) 32%, transparent), 0 0 36px -4px color-mix(in srgb, var(--color-live) 18%, transparent); }
 }
 /* 모바일 하단 멤버 전환 점 — 방송 중인 멤버는 흐리지 않고 빨간 링 */
 #pager-dots .dot.dot--live {
