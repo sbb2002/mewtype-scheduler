@@ -635,7 +635,7 @@ export function renderBoard(boardEl, preview, nowMs = Date.now(), archive = null
     }
   }
   for (const key of order) sampleLaneColor(avatarSized(channels[key].avatar, 176), boardEl.querySelector(`.lane[data-channel="${key}"]`));
-  // (v4.9.6) 라이브 아바타 효과 — 지금 방송 중인 멤버(합동 참여자 포함)의 레인에 lane--live. 모바일 캐러셀 클론이 같이 복제하도록 initMobileCarousel 전에
+  // (v4.9.6) 라이브 레인 효과 — 지금 방송 중인 멤버(합동 참여자 포함)의 레인에 lane--live(테두리 글로우는 카드 보기 · 모바일만, timetable.css). 모바일 캐러셀 클론이 같이 복제하도록 initMobileCarousel 전에
   for (const e of cls.live) for (const k of itemKeys(e.item, order)) {
     boardEl.querySelectorAll(`.lane[data-channel="${CSS.escape(k)}"]`).forEach((l) => l.classList.add("lane--live"));
   }
