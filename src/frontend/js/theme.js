@@ -37,14 +37,26 @@ function _syncButton() {
 function _apply(theme, animate) {
   if (theme === currentTheme()) return;
   const root = document.documentElement;
+  const commit = () => {
+    root.dataset.theme = theme;
+    _syncButton();
+    document.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: theme }));
+  };
+  // (v4.9.10) 화면 전체를 한 장으로 찍어 두었다가 새 테마 화면을 위에 서서히 드러낸다(View Transitions) — 요소마다 색을 따로 바꾸면 요소별로 끊겨 보였다.
+  // 지원하지 않는 브라우저 · 움직임 줄이기 설정이면 예전 방식(요소별 색 전환 — theme.css 의 html.theme-anim)으로 돌아간다.
+  if (animate && document.startViewTransition && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+    root.classList.add("theme-vt");
+    const vt = document.startViewTransition(commit);
+    const done = () => root.classList.remove("theme-vt");
+    vt.finished.then(done, done);
+    return;
+  }
   if (animate) {
     root.classList.add("theme-anim");
     clearTimeout(_animTimer);
     _animTimer = setTimeout(() => root.classList.remove("theme-anim"), ANIM_MS);
   }
-  root.dataset.theme = theme;
-  _syncButton();
-  document.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: theme }));
+  commit();
 }
 
 function _icon(kind) {
