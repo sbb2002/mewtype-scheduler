@@ -464,6 +464,20 @@ a.tt-pop__img { cursor: pointer; }
   display: block;
   margin-top: 12px;
 }
+/* (v4.9.6) PC 표 보기 — 펼치면 접기 버튼과 두 표가 한 상자: 버튼 = 상자 머리(위만 둥글게), .tt-later = 몸통(아래만 둥글게, 같은 바탕 · 테두리) */
+#board.board--tt:not(.board--cards) > .tt-fold { transition: border-radius 0.2s; }
+#board.board--tt:not(.board--cards).board--later-open > .tt-fold {
+  border-radius: 10px 10px 0 0;
+  border-bottom-color: var(--color-line-soft);
+}
+#board.board--tt:not(.board--cards) > .tt-later {
+  margin-top: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--color-bg-secondary);
+}
 
 /* (v4.9.6) PC 표 보기의 이후 예고 — 이번주 표(왼쪽) + 먼 미래 표(오른쪽). 1000px 이하는 한 칸으로 쌓는다 */
 .wk2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap); align-items: start; }
@@ -471,10 +485,20 @@ a.tt-pop__img { cursor: pointer; }
 .wk2__panel {
   min-width: 0;
   padding: 12px 14px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
+  background: var(--color-bg);              /* (v4.9.6) 바깥 상자(--color-bg-secondary) 안의 두 칸 — 한 단계 깊게 */
+  border: 1px solid var(--color-line-soft);
+  border-radius: 8px;
 }
+.wk2__col { min-width: 0; display: grid; gap: 10px; }
+/* (v4.9.6) 점 범례 — 실제 점 모양을 글머리표로, 작은 글자 3열 */
+.wk2__legend {
+  list-style: none; margin: 0; padding: 0 4px;
+  display: grid; grid-template-columns: repeat(3, max-content); gap: 2px 18px;
+  font-size: 0.72rem; color: var(--color-text-muted);
+}
+.wk2__legend li { display: flex; align-items: center; gap: 4px; }
+.wk2__legend .wk2__dot { cursor: default; }
+.wk2__legend .wk2__dot:hover .wk2__seg { filter: none; }
 .wk2__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.8rem; margin: 0 0 0.5rem; }
 .wk2__hd b { font-size: 0.9rem; font-weight: 700; }
 .wk2__hd > span { font-size: 0.76rem; color: var(--color-text-muted); }

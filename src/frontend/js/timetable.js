@@ -1019,26 +1019,21 @@ const kParts = (ms) => new Date(ms + KST_OFFSET_MS);   // UTC 필드 = KST 달�
 const kMD = (ms) => { const d = kParts(ms); return `${pad2(d.getUTCMonth() + 1)}/${pad2(d.getUTCDate())}`; };
 const kDow = (ms) => WK_DOW[kParts(ms).getUTCDay()];
 
-/* 점 하나 — 상태 클래스(is-ended · is-live · is-tbd), 조각 = 참여 멤버(data-channel → render.js 가 --lane-color 를 채운다) */
-function wkDot(entry, ctx) {
-  const it = entry.item;
-  const b = el("button", "wk2__dot");
-  b.type = "button";
-  b.setAttribute("aria-haspopup", "dialog");
-  const tbd = !!it.time_tbd || !isFinite(entry.start);
-  if (entry.state === "ended") b.classList.add("is-ended");
-  else if (entry.state === "live") b.classList.add("is-live");
-  if (tbd) b.classList.add("is-tbd");
-  const keys = entry.keys.length ? entry.keys : [it.channel_key];
+/* 점 모양 채우기 — 조각 = 참여 멤버(data-channel → render.js 가 --lane-color 를 채운다), 상태 = is-ended · is-live · is-tbd · is-collab, 회원 전용 = 자물쇠.
+   이후 예고 표의 점과 범례 견본이 같이 쓴다 */
+function fillDot(node, keys, f) {
+  if (f.ended) node.classList.add("is-ended");
+  else if (f.live) node.classList.add("is-live");
+  if (f.tbd) node.classList.add("is-tbd");
   const shape = el("span", "wk2__shape");   // (v4.9.6) 보이는 점(합동 = 알약). 합동 테두리는 이 모양에 두른다
   for (const k of keys) {
     const seg = el("span", "wk2__seg");
     seg.dataset.channel = k;
     shape.appendChild(seg);
   }
-  b.appendChild(shape);
-  if (isCollab(it)) b.classList.add("is-collab");   // (v4.9.6) 예고 카드 · 태그와 같은 보라(--color-collab) 테두리
-  if (it.membership) {                               // (v4.9.6) 회원 전용 = 점 오른쪽 아래 작은 자물쇠
+  node.appendChild(shape);
+  if (f.collab) node.classList.add("is-collab");     // (v4.9.6) 예고 카드 · 태그와 같은 보라(--color-collab) 테두리
+  if (f.lock) {                                      // (v4.9.6) 회원 전용 = 점 오른쪽 아래 작은 자물쇠
     const NS = "http://www.w3.org/2000/svg";
     const lock = document.createElementNS(NS, "svg");
     lock.setAttribute("class", "wk2__lock");
@@ -1049,8 +1044,20 @@ function wkDot(entry, ctx) {
     const arc = document.createElementNS(NS, "path");
     arc.setAttribute("d", "M3.3 4.6V3.4a1.7 1.7 0 0 1 3.4 0v1.2");
     lock.append(body, arc);
-    b.appendChild(lock);
+    node.appendChild(lock);
   }
+  return node;
+}
+
+/* 점 하나 = 방송 하나 (누르면 · 올리면 카드 팝업) */
+function wkDot(entry, ctx) {
+  const it = entry.item;
+  const b = el("button", "wk2__dot");
+  b.type = "button";
+  b.setAttribute("aria-haspopup", "dialog");
+  const tbd = !!it.time_tbd || !isFinite(entry.start);
+  const keys = entry.keys.length ? entry.keys : [it.channel_key];
+  fillDot(b, keys, { ended: entry.state === "ended", live: entry.state === "live", tbd, collab: isCollab(it), lock: !!it.membership });
   const names = keys.map((k) => shortName(ctx.channels[k])).join(", ");
   b.setAttribute("aria-label", `${tbd ? "시각 미정" : hm(entry.start)} ${names}${it.membership ? " · 회원 전용" : ""} · ${titleText(it, ctx)}`);
   wirePop(b, entry, entry.state, ctx, it.channel_key, true);
@@ -1065,6 +1072,26 @@ function wkRow(dateNode, entries, cls, ctx) {
   for (const e of entries) dots.appendChild(wkDot(e, ctx));
   row.appendChild(dots);
   return row;
+}
+
+/* (v4.9.6) 점 범례 — 견본 점(span, 누를 수 없음)을 글머리표로. 멤버 색은 순서상 첫 · 둘째 멤버 */
+function buildDotLegend(ctx) {
+  const [a, b] = ctx.order;
+  const ul = el("ul", "wk2__legend");
+  for (const [keys, f, text] of [
+    [[a], {}, "방송 1건 · 멤버 색"],
+    [[a, b], { collab: true }, "합동"],
+    [[a], { live: true }, "방송 중"],
+    [[a], { ended: true }, "지난 방송"],
+    [[a], { tbd: true }, "시각 미정"],
+    [[a], { lock: true }, "회원 전용"],
+  ]) {
+    const li = el("li");
+    li.append(fillDot(el("span", "wk2__dot"), keys.filter(Boolean), f), document.createTextNode(text));
+    ul.appendChild(li);
+  }
+  ul.setAttribute("aria-label", "점 설명");
+  return ul;
 }
 
 export function buildLaterTables(ctx, plan) {
@@ -1112,7 +1139,10 @@ export function buildLaterTables(ctx, plan) {
     far.appendChild(ftbl);
   }
 
-  grid.append(wk, far);
+  // (v4.9.6) 범례 — 먼 미래 표 아래, 실제 점 모양을 글머리표로 쓴 작은 목록
+  const col = el("div", "wk2__col");
+  col.append(far, buildDotLegend(ctx));
+  grid.append(wk, col);
   wrap.appendChild(grid);
   return wrap;
 }
