@@ -65,8 +65,9 @@ Samsung Browser 48% · Chrome(PC) 24% · Chrome Mobile 17% · Mobile Safari 6% �
 ### 데모 (scratchpad, 저장소 밖)
 1분 뒤 알림 A(페이지 타이머) · B(Web Push) — PC Chrome 에서 운영자가 둘 다 동작, A 는 탭 닫으면 안 옴 확인. 폐기해도 됨.
 
-### `test/live-notify` 브랜치 (커밋 `570fcb7`, origin 푸시됨 · 워크트리 `mewtype-scheduler-worktrees/v4/test-live-notify`)
-- 실행: `pip install pywebpush` → 저장소 루트에서 `python lab/push/server.py` → 팬 화면 `http://localhost:8770/` · 서버 보기 `/lab`. 사용법 `lab/push/README.md`.
+### `test/live-notify` 브랜치 (최신 커밋 `43d3f4b`, origin 푸시됨 · 워크트리 `mewtype-scheduler-worktrees/v4/test-live-notify`)
+- 실행: `lab/push/README.md` — Firestore 에뮬레이터(`gcloud emulators firestore start --host-port=127.0.0.1:8085`) + `FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 python lab/push/server.py`, 또는 에뮬레이터 없이 `python lab/push/server.py` → 팬 화면 `http://localhost:8770/` · 서버 보기 `/lab`.
+  이 PC 엔 2026-10-29 Java(Temurin 21) · `cloud-firestore-emulator` 설치함. 에뮬레이터가 Java 21 지원 종료 예고 경고를 냄(지금은 동작) — 막히면 Java 25 이상.
 - 프론트
   - `src/frontend/js/push.js` — 종 생성 · 켬/끔(localStorage `mew.push.v1`) · 2초 묶음 전송 · 오류 시 2→60초 재전송 · 페이지 열 때 1회 재전송 · upcoming/watching 아닌 영상 등록 정리.
   - `src/frontend/sw.js` — push 받으면 알림, 누르면 방송 주소 열기.
@@ -74,12 +75,13 @@ Samsung Browser 48% · Chrome(PC) 24% · Chrome Mobile 17% · Mobile Safari 6% �
   - 종 위치: 멤버 종 = 네임플레이트 핸들 옆(`render.js buildHeader`). 방송 종 = 오늘 카드 썸네일 왼쪽 아래(`timetable.js todayCard`) · 이후 예고 카드 썸네일 오른쪽 아래(`render.js createCard`) · PC 타임테이블 팝업 「YouTube에서 보기」 아래(`timetable.js showCardPop`).
   - 네임플레이트를 누르면 열리던 트윗 시트는 그대로, 종만 건너뛰게 `tweets.js` 캡처 핸들러에 한 줄.
 - 실험실 서버 `lab/push/server.py`
-  - 저장소 = Firestore 를 흉내 낸 로컬 문서 저장소 `DocStore`(`.data/subs.json`, 문서 id = 푸시 주소 SHA-256 앞 16자). get · set · delete · `array-contains-any` 만 사용하고 연산 수(읽기 · 쓰기 · 삭제)를 센다.
+  - 저장소 두 구현이 같은 연산(get · set · delete · `array-contains-any`)만 쓰고 연산 수(읽기 · 쓰기 · 삭제)를 센다: `FirestoreStore`(실제 클라이언트, `FIRESTORE_EMULATOR_HOST` 있을 때, 컬렉션 `push_subs`) · `DocStore`(로컬 파일 `.data/subs.json`). 문서 id = 푸시 주소 SHA-256 앞 16자. 에뮬레이터가 비어 있으면 로컬 파일 구독을 옮겨 심음.
   - `POST /push/state`: 늘 202. 크기(4KB) · 형식(푸시 주소 도메인 · 멤버 5명 · 영상 30개 · video_id 11자) 오류 버림 → 읽기 1 → 같으면 안 씀 → 하루 쓰기 상한(`LAB_WRITE_CAP`, 기본 1만) → 쓰기 또는 해지(삭제).
   - `/lab`: 방송 상태 바꾸기(→ live 면 감지 · 발송), 시험 방송 만들기, 등록 현황 · 연산 수, 서버 기록, 버스트 시험(curl 흉내 연타 · 가짜 1500개 · 10KB).
   - 발송: live 전이 순간 조회 2번(멤버 · 영상) → `pywebpush`(TTL 30분), 영상당 1번, 404/410 이면 문서 삭제.
 - 확인한 것: 종 렌더(카드 보기 · 오늘 카드) 스크린샷, 프론트 self-check(render · time · timetable · tweetlogic) 통과, curl 로 늘 202 · 같은 내용 안 씀 · 형식 오류 · 4KB 초과 · 해지 삭제 동작. 운영자 브라우저 구독 1개(아라레 · 미야코 · 유노)가 저장소에 들어와 있음 = 종 → 등록 경로는 실제로 동작.
-- **확인 안 한 것**: 종으로 등록한 뒤 `/lab` 에서 live 로 바꿨을 때 실제 알림 수신(운영자 보고 없음), 모바일 실기기, 실제 Firestore(에뮬레이터는 Java 필요 — 이 PC엔 없음, 어댑터 미작성).
+- Firestore 에뮬레이터로 확인: 쓰기 · 같은 내용 안 씀 · live 전이 때 `array-contains-any` 조회(가짜 구독은 조회되지만 발송 제외) · 운영자 구독 옮겨 심기.
+- **확인 안 한 것**: 종으로 등록한 뒤 `/lab` 에서 live 로 바꿨을 때 실제 알림 수신(운영자 보고 없음), 모바일 실기기, 실제 GCP Firestore(에뮬레이터만).
 
 ## 5. 운영자 결정 대기
 
