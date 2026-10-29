@@ -1,10 +1,10 @@
 // timetable.js — (v4.1.0) 오늘 타임테이블(PC) · 오늘 카드(모바일) · 이후 예고 펼치기 버튼.
 // 예고판(5열 레인 보드)의 "오늘/7일 이내/7일 이후 버킷 + ON-AIR 영역"을 대체한다.
-// 오늘 = KST 06:00 ~ 익일 06:00 (모니터링 하루 경계와 같음). 그 밖의 예고는 "이후 예고"로 펼친다.
+// 오늘 = KST 04:00 ~ 익일 04:00(오늘 예고), 그다음 하루 = 내일 예고. 그 밖의 예고는 "이후 예고"로 펼친다.
 // 데이터는 textContent/createElement 로만 주입(XSS 방어, innerHTML 금지) — render.js 와 같은 규칙.
 //
-//  dayWindow(nowMs)                    → { ds, de }  오늘 구간(ms)
-//  classify(items, archive, nowMs, order) → { ds, de, live, ended, upcoming, later }
+//  dayWindow(nowMs, offset)            → { ds, de }  오늘 구간(ms) · offset 1 = 내일 구간
+//  classify(items, archive, nowMs, order) → { ds, de, live, ended, upcoming, tomorrow, later }
 //  buildTimetable(ctx)                 → PC 편성 레일 (편지 배지 자리 = 왼쪽 칸의 .lane__avatar)
 //  buildTodayCards(ctx, key)           → 모바일 오늘 카드(카운트다운 링)
 //  buildFoldButton(counts, ctx)        → "이후 예고 N건 펼치기" 버튼 (상태는 #board 클래스로 — 캐러셀 클론에도 적용)
@@ -18,7 +18,7 @@ import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
 const KST_OFFSET_MS = 9 * HOUR_MS;
-const DAY_START_HOUR = 6;                  // monitor_log.DAY_START_HOUR 와 같은 하루 경계
+export const DAY_START_HOUR = 4;           // (v4.9.6) 예고보드의 하루 = 04:00 ~ 익일 04:00 (프론트 전용 — 모니터링 하루 경계 06:00 과 별개)
 const LATE_ENDED_MIN = 10 * 60000;         // 종료 기록으로 인정하는 최소/최대 방송 길이
 const LATE_ENDED_MAX = 12 * HOUR_MS;
 const TRACK_PX = 888;                      // 블록 위치·폭을 환산하는 기준 트랙 폭 (실제 폭에 비례)
@@ -58,12 +58,13 @@ function durLabel(ms) {
 }
 
 /* ── 오늘 구간 ────────────────────────────────────────────────────── */
-export function dayWindow(nowMs) {
+/* 오늘 구간(offset 0 = 오늘 예고, 1 = 내일 예고) */
+export function dayWindow(nowMs, offset = 0) {
   const k = nowMs + KST_OFFSET_MS;
   const d = new Date(k);
   let base = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), DAY_START_HOUR);
   if (k < base) base -= DAY_MS;
-  const ds = base - KST_OFFSET_MS;
+  const ds = base - KST_OFFSET_MS + offset * DAY_MS;
   return { ds, de: ds + DAY_MS };
 }
 
@@ -72,12 +73,12 @@ const itemMs = (iso) => (iso ? Date.parse(iso) : NaN);
 /**
  * 아이템을 오늘 구간 기준으로 나눈다.
  *  live / ended / upcoming = 타임테이블에 놓이는 항목 { item, start, end }
- *  later = 이후 예고(구간 밖·시각 미정) 원본 아이템 목록 (시작 시각순)
- * ended = preview.json 의 end 상태 + preview_archive.json 에서 오늘 06:00 이후 시작해 이미 끝난 방송.
+ *  tomorrow = 내일 예고(다음 04:00 하루)의 예정 { item, start }, later = 이후 예고(그다음 04:00 이후 · 시각 미정) 원본 아이템 목록 (시작 시각순)
+ * ended = preview.json 의 end 상태 + preview_archive.json 에서 오늘 04:00 이후 시작해 이미 끝난 방송.
  */
 export function classify(items, archiveItems, nowMs, order) {
   const { ds, de } = dayWindow(nowMs);
-  const live = [], ended = [], upcoming = [], later = [];
+  const live = [], ended = [], upcoming = [], tomorrow = [], later = [];
   const seen = new Set();
   const ok = (it) => it && it.channel_key && order.includes(it.channel_key);
 
@@ -93,7 +94,8 @@ export function classify(items, archiveItems, nowMs, order) {
       if (isFinite(s) && (!isFinite(e) || e > ds)) ended.push({ item, start: s, end: isFinite(e) ? e : null });
     } else if (item.state === "announced" || item.state === "upcoming" || item.state === "watching") {
       const s = itemMs(item.scheduled_start);
-      if (item.time_tbd || !isFinite(s) || s >= de) later.push(item);
+      if (item.time_tbd || !isFinite(s) || s >= de + DAY_MS) later.push(item);
+      else if (s >= de) tomorrow.push({ item, start: s, end: null });
       else upcoming.push({ item, start: s, end: null });
     }
   }
@@ -106,14 +108,14 @@ export function classify(items, archiveItems, nowMs, order) {
     ended.push({ item, start: a, end: e });
   }
   const byStart = (x, y) => x.start - y.start;
-  live.sort(byStart); ended.sort(byStart); upcoming.sort(byStart);
+  live.sort(byStart); ended.sort(byStart); upcoming.sort(byStart); tomorrow.sort(byStart);
   later.sort((a, b) => {
     const x = itemMs(a.scheduled_start), y = itemMs(b.scheduled_start);
     if (!isFinite(x)) return isFinite(y) ? 1 : 0;
     if (!isFinite(y)) return -1;
     return x - y;
   });
-  return { ds, de, live, ended, upcoming, later };
+  return { ds, de, live, ended, upcoming, tomorrow, later };
 }
 
 /* ── 항목 공통 헬퍼 ────────────────────────────────────────────────── */
@@ -295,7 +297,7 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   b.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showCardPop(entry, state, b, true, ctx, rowKey); }
   });
-  b.addEventListener("mouseenter", () => { clearTimeout(cpopTimer); showCardPop(entry, state, b, false, ctx, rowKey); });
+  b.addEventListener("mouseenter", () => { if (ttSliding) return; clearTimeout(cpopTimer); showCardPop(entry, state, b, false, ctx, rowKey); });   // (v4.9.6) 넘기는 동안은 팝업 안 띄움
   b.addEventListener("mouseleave", () => {
     if (!cpopPinned) { clearTimeout(cpopTimer); cpopTimer = setTimeout(closeCardPop, 150); }
   });
@@ -368,14 +370,20 @@ export function buildViewTabs(current, onSelect) {
   return box;
 }
 
-/* 「오늘 예고」 머리줄 — 테이블 · 카드 보기 공용. 오른쪽 끝에 보기 방식 탭 (ctx.view · ctx.onViewChange) */
-export function buildBoardHead(ctx) {
-  const nLive = ctx.live.length, nEnded = ctx.ended.length;
+/* 「오늘 예고」 머리줄 — 테이블 · 카드 보기 공용. 오른쪽 끝에 보기 방식 탭 (ctx.view · ctx.onViewChange).
+   (v4.9.6) opts.day(0|1) = 오늘 · 내일 예고 제목 · 메타, opts.pager = 두 점 표시(표 보기 전용). 인자가 없으면 지금처럼 오늘 예고 */
+export function buildBoardHead(ctx, opts = {}) {
+  const day = opts.day ? 1 : 0;
   const head = el("div", "tt__head");
-  head.appendChild(el("h2", "tt__title", "오늘 예고"));
-  head.appendChild(el("span", "tt__meta",
-    `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · 예정 ${ctx.upcoming.length}건` +
-    (nLive ? ` · 방송 중 ${nLive}건` : "") + (nEnded ? ` · 종료 ${nEnded}건` : "")));
+  head.appendChild(el("h2", "tt__title", day ? "내일 예고" : "오늘 예고"));
+  if (opts.pager) {   // (v4.9.6) 두 점 — 오늘 · 내일 중 어디인지. --pg 는 끄는 동안 JS 가 옮긴다
+    const pg = el("span", "tt__pg");
+    pg.setAttribute("aria-hidden", "true");
+    pg.style.setProperty("--pg", String(day));
+    pg.append(el("i"), el("i"));
+    head.appendChild(pg);
+  }
+  head.appendChild(el("span", "tt__meta", headMeta(ctx, day)));
   if (ctx.onViewChange) head.appendChild(buildViewTabs(ctx.view, ctx.onViewChange));
   return head;
 }
@@ -411,7 +419,7 @@ function wireOverflow(scroll) {
     box.style.setProperty("--mr", String(1 - 0.92 * r));
     aL.disabled = l <= 0.5;
     aR.disabled = r <= 0.5;
-    if (!aR.disabled && !ttNudged && !calm) { ttNudged = true; aR.classList.add("is-nudge"); }
+    if (!aR.disabled && !ttNudged && !calm && !nudgeBusy) { ttNudged = true; aR.classList.add("is-nudge"); }   // (v4.9.6) 일 이동 버튼이 이 렌더에서 까딱였으면 넘침 화살표는 다음 렌더로
   };
   const go = (dx) => scroll.scrollBy({ left: dx, behavior: calm ? "auto" : "smooth" });
   aL.addEventListener("click", () => go(-320));
@@ -423,69 +431,290 @@ function wireOverflow(scroll) {
   return box;
 }
 
-export function buildTimetable(ctx) {
-  wirePopOnce();
-  const sec = el("section", "tt");
-  sec.appendChild(buildBoardHead(ctx));
+/* (v4.9.6) 머리줄 메타 — 0 = 오늘 예고(방송 중 · 종료 건수 포함), 1 = 내일 예고(다음 04:00 하루) */
+function headMeta(ctx, day) {
+  if (day) return `${mdw(ctx.de)} 04:00 ~ 익일 04:00 · 예정 ${ctx.tomorrow.length}건`;
+  const nLive = ctx.live.length, nEnded = ctx.ended.length;
+  return `${mdw(ctx.ds)} 04:00 ~ 익일 04:00 · 예정 ${ctx.upcoming.length}건` +
+    (nLive ? ` · 방송 중 ${nLive}건` : "") + (nEnded ? ` · 종료 ${nEnded}건` : "");
+}
 
-  const scroll = el("div", "tt__scroll");
-  const grid = el("div", "tt__grid");
-  grid.__tt = { ds: ctx.ds, de: ctx.de };
+/* (v4.9.6) 일 이동 버튼 상태 — 화살표 방향 · 비활성(내일 예정 0건) · 건수 알약 · 글자 */
+let ttDay = 0, ttSliding = false, dayNudged = false, lastTomN = null, nudgeBusy = false, ttDragOff = null;
+function syncDayBtn(btn, nTom) {
+  btn.classList.toggle("is-back", ttDay === 1);
+  btn.disabled = ttDay === 0 && nTom === 0;
+  btn.setAttribute("aria-label", btn.disabled ? "내일 예정 없음" : ttDay ? "오늘 예고 보기" : `내일 예고 보기 (예정 ${nTom}건)`);
+  const n = btn.querySelector(".tt__day-n");
+  n.textContent = String(nTom);
+  n.hidden = nTom === 0 || ttDay === 1;
+}
 
-  // 시간축: 06:00 부터 3시간마다. 자정은 강조 + 익일 날짜
-  grid.appendChild(el("div"));
+/* (v4.9.6) 넘기기 판정 — dx = 끈 거리(px, 왼쪽 = 음수 = 내일 쪽), vx = 놓기 직전 속도(px/ms), w = 레일 폭, day = 지금 화면, canNext = 내일 예정이 1건 이상 */
+export function swipeDecision(dx, vx, w, day, canNext) {
+  if (day === 0 && canNext && dx < 0 && (-dx >= w * 0.25 || vx <= -0.5)) return "next";
+  if (day === 1 && dx > 0 && (dx >= w * 0.25 || vx >= 0.5)) return "prev";
+  return "stay";
+}
+/* (v4.9.6) 끄는 동안 띠가 따라오는 거리 — 더 갈 화면이 없는 쪽은 고무줄(30%, 최대 48px), 갈 수 있는 쪽은 1:1(레일 폭까지) */
+export function dragFollow(dx, w, day, canNext) {
+  const open = (day === 0 && dx < 0 && canNext) || (day === 1 && dx > 0);
+  if (open) return Math.max(-w, Math.min(w, dx));
+  return Math.sign(dx) * Math.min(48, Math.abs(dx) * 0.3);
+}
+
+/* (v4.9.6) 한 멤버의 항목 (화면별 목록에서) */
+const mineOf = (items, key, order) => items.filter(({ entry }) => itemKeys(entry.item, order).includes(key));
+
+/* (v4.9.6) 머리줄 글자 바꾸기 — 나가는 쪽으로 흐려지고 들어오는 쪽에서 다시 밝아진다. 움직임 줄이기면 바로 바꾼다 */
+function swapText(node, text, dir, calm) {
+  if (calm || !node.animate) { node.textContent = text; return; }
+  node.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-6 * dir}px)` }], { duration: 80, easing: "ease-in" }).onfinish = () => {
+    node.textContent = text;
+    node.animate([{ opacity: 0, transform: `translateX(${6 * dir}px)` }, { opacity: 1, transform: "none" }], { duration: 80, easing: "ease-out" });
+  };
+}
+
+/* (v4.9.6) 한 화면(pane) = 시간축 + 멤버별 트랙. day 0 = 오늘 예고(지금 선 · 지난 구간 음영 포함), day 1 = 내일 예고 */
+function buildPane(pctx, items, day) {
+  const pane = el("div", "tt__pane");
+  pane.dataset.day = String(day);
+  // 시간축: 04:00 부터 4시간마다. 자정은 강조 + 익일 날짜 (MID = 04:00 에서 자정까지 20시간)
+  const MID = 24 - DAY_START_HOUR;
   const axis = el("div", "tt__axis");
-  for (let h = 0; h <= 24; h += 3) {
-    const t = ctx.ds + h * HOUR_MS;
-    const tick = el("div", "tt__tick" + (h === 0 ? " is-first" : h === 24 ? " is-last" : "") + (h === 18 ? " is-midnight" : ""));
+  for (let h = 0; h <= 24; h += 4) {
+    const t = pctx.ds + h * HOUR_MS;
+    const tick = el("div", "tt__tick" + (h === 0 ? " is-first" : h === 24 ? " is-last" : "") + (h === MID ? " is-midnight" : ""));
     tick.style.left = `${(h / 24) * 100}%`;
     tick.appendChild(el("b", "", hm(t)));
-    const sub = h === 0 ? mdw(t) : h === 18 ? `자정 · 익일 ${mdw(t)}` : h === 24 ? `익일 ${mdw(t)}` : "";
+    const sub = h === 0 ? mdw(t) : h === MID ? `자정 · 익일 ${mdw(t)}` : h === 24 ? `익일 ${mdw(t)}` : "";
     if (sub) tick.appendChild(document.createTextNode(sub));
     axis.appendChild(tick);
   }
-  grid.appendChild(axis);
+  pane.appendChild(axis);
 
-  const all = [
+  for (const key of pctx.order) {
+    if (!pctx.channels[key]) continue;
+    const mine = mineOf(items, key, pctx.order);
+    const track = el("div", "tt__track");
+    track.dataset.channel = key;               // sampleLaneColor 가 --lane-color 를 채운다
+    if (!mine.length) track.appendChild(el("div", "tt__empty", day ? "내일 예정 없음" : "오늘 예정 없음"));
+    for (const g of layoutRow(mine, pctx)) track.appendChild(blockEl(g.entry, g.state, pctx, g, key));
+    pane.appendChild(track);
+  }
+
+  // 지금 선 · 지난 구간 음영 — 오늘 화면에만 (positionNow 가 위치를 채운다)
+  if (!day) {
+    const ov = el("div", "tt__ov");
+    ov.append(el("div", "tt__past"), el("div", "tt__now"), el("div", "tt__nowtag", `지금 ${hm(pctx.nowMs)}`));
+    pane.appendChild(ov);
+  }
+  return pane;
+}
+
+export function buildTimetable(ctx) {
+  wirePopOnce();
+  if (ttDragOff) ttDragOff();                  // (v4.9.6) 이전 렌더의 끌기 상태 · 창 리스너 정리
+  const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const nTom = ctx.tomorrow.length;
+  if (!nTom) ttDay = 0;                        // (v4.9.6) 내일 예정이 0건이 되면 오늘로
+  nudgeBusy = false;
+
+  const sec = el("section", "tt");
+  sec.appendChild(buildBoardHead(ctx, { day: ttDay, pager: true }));
+
+  // (v4.9.6) 두 화면의 항목 — 0 = 오늘 예고(종료 · 방송 중 · 예정), 1 = 내일 예고(예정)
+  const ctx1 = { ...ctx, ds: ctx.de, de: ctx.de + DAY_MS };
+  const items0 = [
     ...ctx.ended.map((entry) => ({ entry, state: "ended" })),
     ...ctx.live.map((entry) => ({ entry, state: "live" })),
     ...ctx.upcoming.map((entry) => ({ entry, state: "upcoming" })),
   ];
+  const items1 = ctx.tomorrow.map((entry) => ({ entry, state: "upcoming" }));
+
+  const scroll = el("div", "tt__scroll");
+  const grid = el("div", "tt__grid");
+  grid.__tt = { ds: ctx.ds, de: ctx.de };
+  grid.style.setProperty("--dawn-l", `${((24 - DAY_START_HOUR) / 24) * 100}%`);   // 익일 새벽 칸 시작 = 자정
+
+  // 1열: 머리 칸 + 멤버 칸 5줄 — 넘기는 동안 움직이지 않는다
+  const side = el("div", "tt__side");
+  side.appendChild(el("div", "tt__corner"));
   for (const key of ctx.order) {
     const ch = ctx.channels[key];
     if (!ch) continue;
-    const mine = all.filter(({ entry }) => itemKeys(entry.item, ctx.order).includes(key));
-
     const lane = el("section", "lane tt__lane");
     lane.dataset.channel = key;
     const header = el("header", "lane__header tt__who");
     const avatar = el("span", "lane__avatar");
     if (ch.avatar) avatar.style.backgroundImage = `url("${avatarSized(ch.avatar, 176)}")`;
     const nm = el("span", "tt__nm");
-    nm.append(el("b", "", shortName(ch)), el("small", "", `${mine.length}건`));
+    const cnt = el("small");
+    cnt.dataset.n0 = String(mineOf(items0, key, ctx.order).length);
+    cnt.dataset.n1 = String(mineOf(items1, key, ctx.order).length);
+    cnt.textContent = `${ttDay ? cnt.dataset.n1 : cnt.dataset.n0}건`;
+    nm.append(el("b", "", shortName(ch)), cnt);
     header.append(avatar, nm);
     lane.appendChild(header);
-    grid.appendChild(lane);
-
-    const track = el("div", "tt__track");
-    track.dataset.channel = key;               // sampleLaneColor 가 --lane-color 를 채운다
-    if (!mine.length) track.appendChild(el("div", "tt__empty", "오늘 예정 없음"));
-    for (const g of layoutRow(mine, ctx)) track.appendChild(blockEl(g.entry, g.state, ctx, g, key));
-    grid.appendChild(track);
+    side.appendChild(lane);
   }
 
-  // 지금 선 · 지난 구간 음영 · 자정 점선
-  const ov = el("div", "tt__ov");
-  const past = el("div", "tt__past");
-  const now = el("div", "tt__now");
-  const nowTag = el("div", "tt__nowtag", `지금 ${hm(ctx.nowMs)}`);
-  ov.append(past, now, nowTag, el("div", "tt__mid"));
-  grid.appendChild(ov);
+  // 2열: 두 화면을 가로로 잇는 띠 — 화면 한 장 = 레일 폭. 일 이동 = 띠를 옮긴다
+  const rail = el("div", "tt__rail");
+  const strip = el("div", "tt__strip");
+  strip.style.transform = `translateX(${-50 * ttDay}%)`;
+  strip.append(buildPane(ctx, items0, 0), buildPane(ctx1, items1, 1));
+  rail.appendChild(strip);
+  grid.append(side, rail);
   scroll.appendChild(grid);
-  sec.appendChild(wireOverflow(scroll));
+
+  // (v4.9.6) 일 이동 버튼 — 내일 예고가 있는데 오늘 예고가 비었으면 처음 한 번 까딱인다
+  const btn = el("button", "tt__day");
+  btn.type = "button";
+  const ic = el("span", "tt__day-ic");
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("aria-hidden", "true");
+  const chev = document.createElementNS(NS, "path");
+  chev.setAttribute("d", "M4 2l4 4-4 4");
+  svg.appendChild(chev);
+  ic.appendChild(svg);
+  const dayN = el("span", "tt__day-n");
+  btn.append(ic, dayN);
+  if (!dayNudged && !calm && ttDay === 0 && ctx.upcoming.length === 0 && nTom > 0) {
+    dayNudged = true;
+    btn.classList.add("is-nudge");
+    nudgeBusy = true;                          // 이 렌더의 넘침 화살표 까딱임은 건너뛴다 (ttNudged 는 그대로 — 다음 렌더에 한다)
+  }
+  const sw = wireOverflow(scroll);
+  const body = el("div", "tt__body");
+  body.append(sw, btn);
+  sec.appendChild(body);
+  syncDayBtn(btn, nTom);
+  // 건수가 바뀌었으면 알약을 한 번 튀긴다
+  const pop = lastTomN !== null && nTom !== lastTomN && nTom > 0 && !calm;
+  lastTomN = nTom;
+  if (pop) {
+    dayN.classList.add("is-pop");
+    dayN.addEventListener("animationend", () => dayN.classList.remove("is-pop"), { once: true });
+  }
+
+  const title = sec.querySelector(".tt__title");
+  const meta = sec.querySelector(".tt__meta");
+  const pg = sec.querySelector(".tt__pg");
+  const smalls = sec.querySelectorAll(".tt__nm small");
+
+  // 띠 이동 — 끝나면 ttSliding 을 내린다 (transitionend 또는 시간 제한 중 먼저). 이전 이동의 끝 처리는 먼저 치운다
+  let slideEnd = null;
+  const moveStrip = (to, ms) => {
+    if (slideEnd) slideEnd();
+    strip.style.transition = calm ? "none" : `transform ${ms}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+    strip.style.transform = `translateX(${-50 * to}%)`;
+    if (calm) { ttSliding = false; return; }   // 움직임 줄이기: 바로 옮겼으니 끌기 중 올린 표시도 내린다
+    ttSliding = true;
+    let t = 0;
+    const end = (e) => {
+      if (e && e.target !== strip) return;
+      clearTimeout(t);
+      strip.removeEventListener("transitionend", end);
+      ttSliding = false;
+      slideEnd = null;
+    };
+    t = setTimeout(end, ms + 20);
+    strip.addEventListener("transitionend", end);
+    slideEnd = () => {
+      clearTimeout(t);
+      strip.removeEventListener("transitionend", end);
+      ttSliding = false;
+      slideEnd = null;
+    };
+  };
+
+  // 화면 넘기기 (버튼 · 끌기 공용)
+  const switchDay = (to) => {
+    closeCardPop();
+    if (to === ttDay) {                        // 끌기에서 온 경우 제자리로
+      moveStrip(ttDay, 200);
+      pg.style.setProperty("--pg", String(ttDay));
+      return;
+    }
+    const dir = to > ttDay ? 1 : -1;
+    ttDay = to;
+    moveStrip(to, 280);
+    swapText(title, to ? "내일 예고" : "오늘 예고", dir, calm);
+    swapText(meta, headMeta(ctx, to), dir, calm);
+    pg.style.setProperty("--pg", String(to));
+    for (const s of smalls) {
+      s.textContent = `${to ? s.dataset.n1 : s.dataset.n0}건`;
+      if (!calm && s.animate) s.animate([{ opacity: 0.2 }, { opacity: 1 }], { duration: 160 });
+    }
+    syncDayBtn(btn, nTom);
+  };
+  btn.addEventListener("click", () => switchDay(ttDay ? 0 : 1));
+
+  // 마우스 끌기 (레일) — 누른 뒤 창 리스너를 걸고, 놓으면 푼다. 다시 그릴 때도 ttDragOff 로 푼다
+  let drag = null;
+  let suppress = false;                        // 끌고 놓은 뒤 이어지는 click 한 번을 막는다
+  const onMove = (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (!drag.moved) {
+      if (Math.abs(dx) <= 5) return;
+      drag.moved = true;
+      if (slideEnd) slideEnd();
+      rail.classList.add("is-dragging");
+      pg.classList.add("is-live");
+      closeCardPop();
+      ttSliding = true;
+      strip.style.transition = "none";
+    }
+    e.preventDefault();
+    drag.pts.push({ x: e.clientX, t: e.timeStamp });
+    if (drag.pts.length > 5) drag.pts.shift();
+    if (calm) return;                          // 움직임 줄이기: 띠는 놓을 때만 옮긴다
+    const f = dragFollow(dx, drag.w, ttDay, nTom > 0);
+    strip.style.transform = `translateX(calc(${-50 * ttDay}% + ${f}px))`;
+    pg.style.setProperty("--pg", String(Math.min(1, Math.max(0, ttDay - f / drag.w))));
+  };
+  const endDrag = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+  };
+  const onUp = (e) => {
+    endDrag();
+    const d = drag;
+    drag = null;
+    if (!d || !d.moved) return;
+    rail.classList.remove("is-dragging");
+    pg.classList.remove("is-live");
+    const p0 = d.pts[0], p1 = d.pts[d.pts.length - 1];
+    const vx = p1.t > p0.t && e.timeStamp - p1.t < 80 ? (p1.x - p0.x) / (p1.t - p0.t) : 0;   // 멈췄다 놓았으면 0 (render.js 캐러셀과 같은 방식)
+    const dec = swipeDecision(p1.x - d.x, vx, d.w, ttDay, nTom > 0);
+    suppress = true;
+    setTimeout(() => { suppress = false; }, 0);
+    if (dec === "next") switchDay(1);
+    else if (dec === "prev") switchDay(0);
+    else { moveStrip(ttDay, 200); pg.style.setProperty("--pg", String(ttDay)); }
+  };
+  rail.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    if (sw.classList.contains("is-over")) return;          // 넘치는 표는 가로 스크롤 · 화살표가 맡는다
+    if (e.target.closest(".tt-blk, button")) return;
+    drag = { x: e.clientX, w: rail.clientWidth || 1, pts: [{ x: e.clientX, t: e.timeStamp }], moved: false };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  });
+  rail.addEventListener("click", (e) => { if (suppress) { e.preventDefault(); e.stopPropagation(); } }, true);
+  ttDragOff = () => { endDrag(); drag = null; ttSliding = false; };
+
   positionNow(grid, ctx.nowMs);
 
   const legend = el("div", "tt__legend");
+  sec.appendChild(legend);
+
   for (const [cls, text] of [
     ["tt-lg--end", "종료된 방송 (실제 시작~종료)"],
     ["tt-lg--live", "방송 중"],
@@ -497,7 +726,6 @@ export function buildTimetable(ctx) {
     legend.appendChild(s);
   }
   legend.appendChild(el("span", "", "블록을 누르면 카드 팝업 (영상 이동은 팝업에서)"));
-  sec.appendChild(legend);
   return sec;
 }
 
@@ -643,22 +871,29 @@ function todayCard(entry, state, ctx, big, laneKey) {
 export function buildTodayCards(ctx, key, opts = {}) {
   const has = (e) => itemKeys(e.item, ctx.order).includes(key);
   const mE = ctx.ended.filter(has), mL = ctx.live.filter(has), mU = ctx.upcoming.filter(has);
+  const mT = (ctx.tomorrow || []).filter(has);   // (v4.9.6) 내일 예고 — 오늘 예정 뒤에 구분선을 두고 잇는다
   const sec = el("section", "tt-today");
   const head = el("div", "tt__head");
   head.appendChild(el("h2", "tt__title", "오늘 예고"));
   head.appendChild(el("span", "tt__meta",
     // 카드 보기(opts.compact)는 날짜 · 구간이 보드 머리줄에 이미 있어 건수만 — 5열이라 좁다
-    (opts.compact ? "" : `${mdw(ctx.ds)} 06:00 ~ 익일 06:00 · `) + `예정 ${mU.length}` + (mL.length ? ` · 방송 중 ${mL.length}` : "") + (mE.length ? ` · 종료 ${mE.length}` : "")));
+    (opts.compact ? "" : `${mdw(ctx.ds)} 04:00 ~ 익일 04:00 · `) + `예정 ${mU.length}` + (mL.length ? ` · 방송 중 ${mL.length}` : "") + (mE.length ? ` · 종료 ${mE.length}` : "") + (mT.length ? ` · 내일 ${mT.length}` : "")));
   sec.appendChild(head);
   const all = [
     ...mE.map((entry) => ({ entry, state: "ended" })),
     ...mL.map((entry) => ({ entry, state: "live" })),
     ...mU.map((entry) => ({ entry, state: "upcoming" })),
   ];
-  if (!all.length) { sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다.")); return sec; }
+  if (!all.length && !mT.length) { sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다.")); return sec; }
+  if (!all.length) sec.appendChild(el("div", "tt-today__none", "오늘 남은 예고가 없습니다."));   // (v4.9.6) 오늘은 비고 내일만 있는 경우
   const stack = el("div", "tt-today__stack");
   const bigIdx = all.findIndex((g) => g.state !== "ended");
   all.forEach((g, i) => stack.appendChild(todayCard(g.entry, g.state, ctx, i === bigIdx, key)));
+  if (mT.length) {
+    stack.appendChild(el("div", "tt-today__div", `내일 예고 · ${mdw(ctx.de)} 04:00 ~`));   // (v4.9.6) 내일 구분선
+    // 오늘 종료 외 카드가 없으면 내일 첫 카드가 big (bigIdx < 0)
+    mT.forEach((entry, i) => stack.appendChild(todayCard(entry, "upcoming", ctx, bigIdx < 0 && i === 0, key)));
+  }
   sec.appendChild(stack);
   return sec;
 }
@@ -669,8 +904,8 @@ export function buildFoldButton(counts, ctx, opts = {}) {
   btn.type = "button";
   btn.appendChild(el("i", "tt-fold__tri"));
   const total = counts.total;
-  btn.appendChild(el("span", "tt-fold__open", `오늘 이후 예고 ${total}건 펼치기`));
-  btn.appendChild(el("span", "tt-fold__close", "오늘 이후 예고 접기"));
+  btn.appendChild(el("span", "tt-fold__open", `이후 예고 ${total}건 펼치기`));
+  btn.appendChild(el("span", "tt-fold__close", "이후 예고 접기"));
   if (opts.perMember) {
     const cn = el("span", "tt-fold__cn");
     for (const key of ctx.order) {
@@ -694,7 +929,9 @@ export function tickTimetable(boardEl, nowMs) {
   for (const card of boardEl.querySelectorAll(".tcard--upcoming")) updateRing(card, nowMs);
   for (const card of boardEl.querySelectorAll(".tcard--live")) updateLiveRing(card, nowMs);
   const de = boardEl.__ttDe;
-  return typeof de === "number" && nowMs >= de;
+  const roll = typeof de === "number" && nowMs >= de;
+  if (roll) ttDay = 0;   // (v4.9.6) 오늘 구간이 끝났으면 표는 다시 오늘 예고로
+  return roll;
 }
 
 /* 제목이 블록 폭을 넘치면 한 줄로 무한히 흐른다 (복제본을 붙이고 -50% 이동). 속도는 글자 길이에 비례. */

@@ -983,6 +983,6 @@ export function updateCountdowns(boardEl, nowMs = Date.now()) {
       }
     }
   }
-  // 타임테이블: 지금 선 · 카운트다운 링 갱신. 오늘 구간(06:00)이 바뀌었으면 true → 호출부가 재렌더
+  // 타임테이블: 지금 선 · 카운트다운 링 갱신. 오늘 구간(04:00)이 바뀌었으면 true → 호출부가 재렌더
   return tickTimetable(boardEl, nowMs);
 }
