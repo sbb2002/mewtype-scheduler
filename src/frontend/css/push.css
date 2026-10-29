@@ -26,6 +26,9 @@
 .push-bell.is-on { color: var(--push-bell-on); }
 .push-bell.is-on path { fill: currentColor; }
 .push-bell.is-blocked { opacity: 0.4; }
+.push-bell.is-covered { cursor: default; }   /* 멤버 알림이 덮는 방송 종 — 켜짐 고정 */
+.push-bell.is-covered:hover { background: transparent; }
+.push-bell--video.is-covered:hover { background: rgba(0, 0, 0, 0.55); }
 .push-bell:hover { background: rgba(127, 127, 127, 0.18); }
 .push-bell:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 

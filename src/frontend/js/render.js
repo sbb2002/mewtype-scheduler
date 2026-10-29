@@ -283,7 +283,7 @@ function createCard(item, nowMs, channelData, laneKey) {
 
   // (test/live-notify) upcoming · watching 카드 썸네일 오른쪽 아래 방송 종
   if ((item.state === "upcoming" || isWatching) && item.video_id) {
-    const vBell = videoBell(item.video_id);
+    const vBell = videoBell(item);
     if (vBell) thumbWrap.appendChild(vBell);
   }
 

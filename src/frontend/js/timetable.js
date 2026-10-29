@@ -229,7 +229,7 @@ function showCardPop(entry, state, owner, pin, ctx, rowKey) {
     const btn = el("a", "tt-pop__btn", "▶ YouTube에서 보기");
     btn.href = url; btn.target = "_blank"; btn.rel = "noopener";
     body.appendChild(btn);
-    if (bellable(it)) { const vb = videoBell(it.video_id); if (vb) { vb.classList.add("push-bell--pop"); body.appendChild(vb); } }   // (test/live-notify)
+    if (bellable(it)) { const vb = videoBell(it); if (vb) { vb.classList.add("push-bell--pop"); body.appendChild(vb); } }   // (test/live-notify)
   } else {
     body.appendChild(el("span", "tt-pop__none", "아직 영상 링크가 없습니다"));
   }
@@ -601,7 +601,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
   if (state === "ended") pills.appendChild(el("div", "tcard__pill tcard__pill--end", "종료"));
   else if (state === "live") pills.appendChild(el("div", "tcard__pill tcard__pill--live", "LIVE"));
   if (pills.children.length) th.appendChild(pills);
-  if (bellable(it)) { const vb = videoBell(it.video_id); if (vb) th.appendChild(vb); }   // (test/live-notify)
+  if (bellable(it)) { const vb = videoBell(it); if (vb) th.appendChild(vb); }   // (test/live-notify)
   a.appendChild(th);
 
   const body = el("div", "tcard__body");

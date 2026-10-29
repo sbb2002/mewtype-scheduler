@@ -36,14 +36,25 @@ function listOf(kind) {
   return kind === "member" ? st.members : st.videos;
 }
 
-function paint(b) {
-  const on = listOf(b.dataset.pushKind).includes(b.dataset.pushId);
-  b.classList.toggle("is-on", on);
-  b.setAttribute("aria-pressed", on ? "true" : "false");
-  b.title = on ? `${b.dataset.pushLabel} 켜짐` : `${b.dataset.pushLabel} 꺼짐`;
+/** 방송 종인데 참여 멤버(채널 + 합동) 중 누군가의 멤버 종이 켜져 있으면 — 서버는 멤버 알림으로 그 방송에 어차피 보내므로
+ *  방송 종은 「켜짐」으로 고정하고 끌 수 없다(개별 해제는 단순 구현상 지원 안 함). */
+function covered(b) {
+  return b.dataset.pushKind === "video"
+    && (b.dataset.pushMembers || "").split(",").some((k) => k && st.members.includes(k));
 }
 
-function bell(kind, id, label) {
+function paint(b) {
+  const cov = covered(b);
+  const on = cov || listOf(b.dataset.pushKind).includes(b.dataset.pushId);
+  b.classList.toggle("is-on", on);
+  b.classList.toggle("is-covered", cov);
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  b.setAttribute("aria-disabled", cov ? "true" : "false");
+  b.title = cov ? "멤버 알림이 켜져 있어 이 방송도 알림이 가요"
+    : on ? `${b.dataset.pushLabel} 켜짐` : `${b.dataset.pushLabel} 꺼짐`;
+}
+
+function bell(kind, id, label, members) {
   if (!supported()) return null;
   const b = document.createElement("button");
   b.type = "button";
@@ -51,6 +62,7 @@ function bell(kind, id, label) {
   b.dataset.pushKind = kind;
   b.dataset.pushId = id;
   b.dataset.pushLabel = label;
+  if (members) b.dataset.pushMembers = members.filter(Boolean).join(",");
   b.setAttribute("aria-label", label);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -68,9 +80,10 @@ function bell(kind, id, label) {
 export function memberBell(key, nameKo) {
   return bell("member", key, `${nameKo || key} 라이브 알림`);
 }
-/** upcoming · watching 카드의 방송 종 */
-export function videoBell(videoId) {
-  return bell("video", videoId, "이 방송 라이브 알림");
+/** upcoming · watching 카드의 방송 종 — item 의 채널 + 합동 멤버(서버 발송 대상 판정과 같은 범위) */
+export function videoBell(item) {
+  return bell("video", item.video_id, "이 방송 라이브 알림",
+    [item.channel_key, ...(Array.isArray(item.collab_with) ? item.collab_with : [])]);
 }
 
 async function onClick(e) {
@@ -78,6 +91,7 @@ async function onClick(e) {
   e.preventDefault();
   e.stopPropagation();
   const b = e.currentTarget;
+  if (covered(b)) return;                                  // 멤버 알림이 덮는 방송 종은 끌 수 없음
   if (Notification.permission !== "granted") {
     const p = await Notification.requestPermission();
     if (p !== "granted") {
