@@ -1,5 +1,6 @@
 """보관함 첫 이전(1회) — 데이터 저장소 체크아웃 폴더에서 캐시 보관함을 캐시 + 일자 보관함으로 나눈다 (핫픽스 archive-split, 2026-10-26).
 
+(v4.9.6) 예고 보관함(`preview_archive.json`, 약 50일치)도 같은 방식으로 나눈다 — 이미 나눈 대상은 다시 돌려도 바뀌지 않는다.
 보관함 정리(`archive_rotate`)는 한 번에 일자 파일 3개까지만 쓰므로, 이미 쌓인 분량(트윗 약 47일 · 소식 약 45일 · LLM 판단 약 22일)은
 이 스크립트로 한 번에 나눈다 — Contents API 로 파일 120여 개를 하나씩 쓰면 GitHub 콘텐츠 생성 속도 제한에 걸리고 운영 쓰기와 다툰다.
 나눈 결과를 git 으로 브랜치마다 커밋 1개로 민다(커밋 · push 는 이 스크립트가 하지 않는다).
@@ -37,7 +38,7 @@ def split(root: Path, target: ar.Target, now: datetime) -> dict:
     for day, its in sorted(moves.items()):
         path = ar.day_path(target.directory, day)
         cur = _load(root / path) or {}
-        writes[path] = {target.list_key: ar.merge_day(list(cur.get(target.list_key) or []), its)}
+        writes[path] = {target.list_key: ar.merge_day(list(cur.get(target.list_key) or []), its, ar.key_of(target))}
     if target.index and moves:
         idx = _load(root / target.index)
         for day, its in sorted(moves.items()):
@@ -49,7 +50,7 @@ def split(root: Path, target: ar.Target, now: datetime) -> dict:
 
     # 점검 — 전: 캐시 + 기존 일자 파일 / 후: 새 캐시 + 새 일자 파일(+ 손대지 않은 기존 일자 파일)
     def ids_in(lst):
-        return [ar._key(x) for x in lst]
+        return [ar.key_of(target)(x) for x in lst]
     before = ids_in(items)
     after_cache = ids_in(keep)
     after_days = [k for p, d in writes.items() if p.startswith(target.directory + "/") and p != target.index
@@ -73,7 +74,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     now = ar._parse_iso(a.now) if a.now else datetime.now(timezone.utc)
-    plans = [(a.data, split(a.data, ar.TWEETS, now)), (a.data, split(a.data, ar.NOTICES, now)), (a.ops, split(a.ops, ar.LLM, now))]
+    plans = [(a.data, split(a.data, ar.TWEETS, now)), (a.data, split(a.data, ar.NOTICES, now)), (a.ops, split(a.ops, ar.LLM, now)),
+             (a.data, split(a.data, ar.PREVIEWS, now))]
     ok = True
     for root, r in plans:
         if r.get("skipped"):
