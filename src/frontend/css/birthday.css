@@ -21,23 +21,50 @@
 /* 플레이어 도크 · 소식 막대의 바깥 상자 */
 :root[data-bday] #player-dock { -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15); }
 
-/* ③ 컨트롤 — 우하단 고정, 푸터(50) · 시트(900) 사이. 모바일은 푸터 위로 */
+/* ③ 컨트롤 — 🎂 버튼 하나(#bday-ui). 위치는 js 가 transform 으로 정한다(기본 = 오른쪽 아래, 모바일은 멤버 줄 · 풋터 위). z-index = 푸터(50) 위 · 시트(900) 아래.
+   1초 꾹 누르면: 고리가 차오름 → 버튼이 커지며 살짝 흔들림(끌기 모드) → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 가장자리에 스프링으로 붙음 */
 #bday-ui {
-  position: fixed; right: 0.75rem; bottom: calc(env(safe-area-inset-bottom, 0px) + 3.4rem); z-index: 60;
-  display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  position: fixed; left: 0; top: 0; z-index: 60; width: 2.9rem; height: 2.9rem;
+  --tilt: 0deg;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);   /* 놓았을 때 · 크기 바뀔 때 스프링 */
+  will-change: transform;
 }
+#bday-ui.is-drag { transition: none; }     /* 끄는 동안은 손가락을 그대로 따라간다 */
 .bday-btn {
-  width: 2.4rem; height: 2.4rem; border-radius: 50%; padding: 0; line-height: 1; font-size: 1.05rem;
-  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  position: relative; width: 100%; height: 100%; border-radius: 50%; padding: 0; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; touch-action: none;
   color: var(--color-text); background: var(--bday-glass); border: 1px solid var(--bday-glass-edge);
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  transition: transform 0.15s var(--theme-ease, ease), background-color 0.2s;
+  transform: rotate(var(--tilt)) scale(1);
+  transition: transform 0.18s var(--theme-ease, ease), box-shadow 0.2s;
 }
-.bday-btn:hover { transform: scale(1.08); }
-.bday-btn:focus-visible { outline: 2px solid var(--color-text); outline-offset: 2px; }
-.bday-btn--main { width: 2.8rem; height: 2.8rem; font-size: 1.3rem; }
-.bday-btn[aria-pressed="true"]:not(.bday-btn--main) { background: var(--color-raised, var(--bday-glass)); }
+.bday-btn__ico { font-size: 1.35rem; pointer-events: none; }
+.bday-btn:hover { transform: rotate(var(--tilt)) scale(1.07); }
+.bday-btn:active { transform: rotate(var(--tilt)) scale(0.94); }
+.bday-btn:focus-visible { outline: 2px solid var(--color-text); outline-offset: 3px; }
+.bday-btn.is-holding { transform: rotate(var(--tilt)) scale(0.92); }
+/* 꾹 누르는 고리 */
+.bday-ring { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); transform: rotate(-90deg); pointer-events: none; overflow: visible; }
+.bday-ring circle { fill: none; stroke: #ffd36b; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 126; stroke-dashoffset: 126; opacity: 0; }
+.bday-btn.is-holding .bday-ring circle { opacity: 1; stroke-dashoffset: 0; transition: stroke-dashoffset 1s linear, opacity 0.15s; }
+/* 끌기 모드 — 커지고 빛나며 살짝 흔들린다 */
+#bday-ui.is-drag .bday-btn { transform: rotate(var(--tilt)) scale(1.22); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 211, 107, 0.55); animation: bday-wiggle 0.5s ease-in-out infinite; }
+@keyframes bday-wiggle { 0%, 100% { margin-top: 0; } 50% { margin-top: -2px; } }
+/* 놓았을 때 — 짓눌렸다 튀어 오르며 안착 */
+#bday-ui.is-settle .bday-btn { animation: bday-settle 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes bday-settle { 0% { transform: scale(1.22); } 40% { transform: scale(0.86, 1.1); } 70% { transform: scale(1.08, 0.94); } 100% { transform: scale(1); } }
+/* 끌기 안내 말풍선 — 버튼 위에 뜬다 */
+.bday-hint {
+  position: absolute; bottom: calc(100% + 0.6rem); white-space: nowrap; pointer-events: none;
+  padding: 0.3rem 0.65rem; border-radius: 999px; font-size: 0.78rem; color: var(--color-text);
+  background: var(--bday-glass); border: 1px solid var(--bday-glass-edge);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+#bday-ui[data-side="right"] .bday-hint { right: 0; }
+#bday-ui[data-side="left"] .bday-hint { left: 0; }
+.bday-hint[hidden] { display: none; }
 
 /* ④ 온전히 보기 — 화면 UI 를 부드럽게 숨기고(js 가 inert 도 건다) 장면 · 컨트롤 · 인사만 남긴다 */
 #notice, #board, #player-dock, #player-frame, #foot, #pager-dots { transition: opacity 0.5s var(--theme-ease, ease); }
@@ -55,5 +82,7 @@
 .bday-greet__who { font-size: clamp(0.95rem, 2.6vw, 1.3rem); letter-spacing: 0.08em; opacity: 0.92; }
 
 @media (prefers-reduced-motion: reduce) {
-  #notice, #board, #player-dock, #player-frame, #foot, #pager-dots, #bday-greet, .bday-btn { transition: none; }
+  #notice, #board, #player-dock, #player-frame, #foot, #pager-dots, #bday-greet, .bday-btn, #bday-ui { transition: none; }
+  #bday-ui.is-drag .bday-btn, #bday-ui.is-settle .bday-btn { animation: none; }
+  .bday-btn.is-holding .bday-ring circle { transition: none; stroke-dashoffset: 0; }
 }

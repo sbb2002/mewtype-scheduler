@@ -68,10 +68,10 @@ export function mountYunoScene(host, opts = {}) {
       for (const p of parts) {
         p.age += dt; if (p.age < p.delay) continue;
         const age = p.age-p.delay; p.x += p.vx*dt; p.y += p.vy*dt; p.vy += 20*dt; p.vx *= Math.exp(-dt*.35);
-        ctx.globalAlpha = Math.max(0, 1-age/2.1)*.85; ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, 1-age/(p.life||2.1))*.85; ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
       }
-      parts = parts.filter(p => p.age-p.delay < 2.1);
+      parts = parts.filter(p => p.age-p.delay < (p.life||2.1));
       if (!parts.length) ctx.clearRect(0, 0, width, height);
     }
     raf = win.requestAnimationFrame(frame);
@@ -99,6 +99,15 @@ export function mountYunoScene(host, opts = {}) {
     for (let i = 0; i < 40; i++) { const a = i*Math.PI*2/40, v = 28+Math.random()*50; parts.push({ x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v, age: 0, color: colors[i%3], r: 1+Math.random()*1.6, delay }); }
     if (parts.length > 120) parts.splice(0, parts.length-120);
   }
+  // (v4.10.0) 「온전히 보기」 전환용 화려한 폭죽 — 하늘 곳곳에서 색을 달리해 차례로 터진다. 번쩍임(밝기 점멸)은 없이 작은 점만 흩어진다.
+  function grandBurst(x, y, delay, color) {
+    const colors = [color, '#fff9ec'];
+    for (let i = 0; i < 64; i++) {
+      const outer = i % 4 !== 0, a = i*Math.PI*2/64 + Math.random()*.06, v = outer ? 46+Math.random()*30 : 14+Math.random()*18;
+      parts.push({ x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v, age: 0, color: colors[i%7 === 0 ? 1 : 0], r: 1.1+Math.random()*1.7, delay, life: 2.5 });
+    }
+    if (parts.length > 720) parts.splice(0, parts.length-720);
+  }
   const ro = new win.ResizeObserver(resize); ro.observe(host);
   const io = win.IntersectionObserver ? new win.IntersectionObserver(entries => { intersecting = entries[0].isIntersecting; sync(); }) : null; io?.observe(host);
   doc.addEventListener('visibilitychange', sync); mq.addEventListener('change', sync); win.addEventListener('resize', resize);
@@ -119,6 +128,11 @@ export function mountYunoScene(host, opts = {}) {
       if (stopped() || !ctx) return; clear();
       if (Number.isFinite(xRatio) && Number.isFinite(yRatio)) burst(width*Math.max(0, Math.min(1, xRatio)), height*Math.max(0, Math.min(1, yRatio)));
       else [[.24,.38],[.76,.27],[.54,.17]].forEach(([x,y],i) => burst(width*x, height*y, i*.26));
+    },
+    finale() {
+      if (stopped() || !ctx) return; clear();
+      const colors = ['#ff477d', '#efb62f', '#6ee7f9', '#c4a1ff', '#ff9f6b', '#fff9ec'];
+      [[.5,.2],[.22,.34],[.78,.3],[.36,.12],[.64,.15],[.1,.2],[.9,.18],[.5,.38],[.3,.26],[.7,.24]].forEach(([x,y],i) => grandBurst(width*x, height*y, i*.17, colors[i%colors.length]));
     },
     destroy() {
       if (destroyed) return; destroyed = true; sync(); ro.disconnect(); io?.disconnect();
