@@ -425,6 +425,22 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
   흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
 - **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
 
+### 생일 스킨 (v4.10.0) — `birthday.js` · `birthdayui.js` · `bdayscene-<멤버>.js` · `bdaybeat.js` · `css/birthday.css` · `css/bdayscene-<멤버>.css`
+
+멤버 생일 **당일(KST 00:00 ~ 익일 00:00)** 에 화면 뒤 배경을 그 멤버의 생일 장면(AI 생성 일러스트 + 모션)으로 바꾼다. 평소(해당 없는 날)에는 아무 코드도 장면을 불러오지 않는다. 데이터를 받지 않는 순수 클라이언트 기능.
+
+- **생일 데이터**: `config.js` 의 `BIRTHDAYS`(`{키: "MM-DD"}`, KST 달력 날짜) — 아라레 08-16 · 노노카 04-17 · 리츠 02-07 · 미야코 09-19 · 유노 11-04(운영자 교차 확인 2026-10-30). 백엔드는 생일을 쓰지 않아 `config/channels.json` 이 아니라 프론트 상수에 둔다. `BIRTHDAY_SCENES_ENABLED`(`{키: bool}`)는 **장면이 완성돼 켜진 멤버** — 지금 `yuno` 만 true, 나머지 4명은 날짜만 등록(꺼 둠). 켜려면 이 값과 `birthdayui.js` 의 `SCENE_LOADERS` 에 장면 모듈을 같이 등록.
+- **판정(`birthday.js`, 순수 · DOM 없음)**: `kstMonthDay(nowMs)`(UTC+9 로 달력 날짜 읽기) · `birthdayMemberAt` · `overrideMember`(시험용 `?bday=<멤버키>`, 장면이 켜진 멤버만) · `pickBirthdayScene`(강제 표시 → 오늘 생일 → 없으면 null) · `msToNextKstMidnight`. self-check `node src/frontend/js/birthday.selfcheck.mjs`(경계 KST 23:59:59 / 00:00:00 · 윤년 · 연말 포함). 운영 사이트에서 시험할 때는 `?bday=yuno&va=claude`.
+- **화면(`birthdayui.js`)**: `main.js` `DOMContentLoaded` 의 `initBirthday()`. 판정이 멤버를 정하면 `<html data-bday="<멤버>">` · `<div id="bday-bg">`(장면 호스트, `position: fixed; inset: 0; z-index: -1`) · 컨트롤 `#bday-ui` · 인사 `#bday-greet` 를 붙이고 장면 모듈을 **그때 처음** `import()` 한다. 자정(KST) 직후 · 탭이 다시 보일 때 재판정(`msToNextKstMidnight` 타이머 + `visibilitychange`)해 날이 바뀌면 정리한다. 장면 로드 실패 시 평소 화면 그대로(콘솔 오류만). `data-bday` 가 있으면 평소 배경 장식(`#bgdeco`)은 숨긴다.
+- **장면 모듈 계약**: `mountYunoScene(host, opts) → { setStill(bool), celebrate(x?, y?), destroy(), whenReady }`. host 를 100%×100% 로 채우고(slice), 화면 비율에 따라 PC(가로) · 모바일(세로) 구도를 바꾼다. 모션 줄이기 · 「움직임 멈춤」 · 탭 숨김이면 정지(박 위상 시계 하나로 재개 시 어긋나지 않음). 이미지는 `assets/birthday/<멤버>/*.webp` 실제 파일(data URI 아님, 유노 9개 약 154KB). 데이터를 `innerHTML` 로 넣지 않는다.
+- **유리 패널**(`css/birthday.css`): `html[data-bday]` 일 때 `.lane` · `.lane__header` · `.card` · `.vt` · `.tt__scroll` · `.tt-fold` · `.ntc__bar` · `#foot` · `#board > .tt-later` 의 바탕을 반투명(`--bday-glass`: 어둡게 `rgba(18,18,24,.58)` · 밝게 `rgba(255,255,255,.7)`) + `backdrop-filter: blur(10px)` 로 바꾼다. 팝업 · 시트는 불투명 그대로. 이 규칙은 `theme.css` 뒤에 불러온다.
+- **컨트롤(`#bday-ui`) — 🎂 버튼 하나**: 누르면 「온전히 보기」 전환(켤 때 화려한 폭죽 `finale()` — 하늘 10곳에서 차례로, 돌아올 때는 작은 폭죽 `celebrate()`). 폭죽 · 움직임 멈춤 · 배경 끄기 버튼은 두지 않는다(운영자 결정 2026-10-31 — 이스터에그라 하루 동안 유지). 모션 줄이기 설정이면 폭죽 · 모션 없이 정지한 장면만.
+  - **기본 위치**: 오른쪽 가장자리, 세로 화면 높이의 73%(`DEFAULT_POS` — 운영자가 직접 정한 자리, 2026-10-31). 모바일 멤버 줄(`#pager-dots` — CD · 타임테이블 버튼이 있는 줄)과 풋터 위로는 내려가지 못한다(`limits()` 가 두 요소의 `getBoundingClientRect().top` 으로 계산, 크기 변화는 `ResizeObserver(body)` · `resize` 로 따라간다)라 겹치지 않는다.
+  - **끌어서 옮기기**: 0.5초(`HOLD_MS`) 꾹 누르면 끌기 모드 — 고리가 0.5초 동안 차오르고(손가락이 10px 넘게 움직이면 취소) → 진동(지원 기기) + 버튼이 커지며 빛나고 살짝 흔들림 + 「옮길 곳에 놓으세요」 말풍선 → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 왼쪽/오른쪽 가장자리에 스프링으로 붙고(짓눌렸다 튀어 오르는 안착 모션) 짧은 진동. 끌기를 마친 손가락 뗌은 클릭으로 세지 않는다. 위치(`{side, ratio}`)만 `localStorage "bday-btn"` 에 저장(생일 스킨이 뜬 날에만 쓰임). 멤버 줄 · 풋터 아래로는 놓을 수 없게 제한. 키보드는 Enter/Space 로 전환만(끌기는 포인터 전용).
+- **온전히 보기**: `html[data-bday-full]` — `#notice · #board · #player-dock · #player-frame · #foot · #pager-dots` 를 0.5초에 걸쳐 투명하게 하고 `inert` 를 걸어(포커스 · 클릭 차단) 장면 · 버튼 · 인사(「Happy Birthday.」 + 이름 · 날짜)만 남긴다. 🎂(켜면 ✕) 버튼 · Esc · 빈 곳 클릭으로 복귀. **방문할 때마다** 첫 장면 준비가 끝나면 화려한 폭죽과 함께 4.5초 동안 자동으로 온전히 보여 준다(저장 안 함 · 모션 줄이기 설정이면 생략).
+- **모션 안전**: 번쩍임 금지(밝기 점멸 없음), `prefers-reduced-motion` 이면 정지한 장면만.
+- **디스클레이머**: 장면 이미지는 AI 생성 팬 제작물이다 — 기존 풋터 디스클레이머(「비공식 팬 메이드 프로젝트」)가 그대로 적용된다. 제작 원본 · 경위는 브랜치 `easteregg/birthday-skin` 의 `easteregg/birthday/`(HANDOFF.md).
+
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
 
 > (v4.5.1) 입장 후 유지 3분 → **1분**, 그 뒤 즉시 제거 → **1.2초에 걸쳐 서서히 복귀**(`.k-leave`).
