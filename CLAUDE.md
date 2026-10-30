@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-**현재 버전 = v4.9.12 (일반 패치, 2026-10-30)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+**현재 버전 = v4.10.0 (마이너, 2026-10-31)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 (`git describe --tags`). 버전별로 무엇이 바뀌었는지 · 배포 리비전 · 롤백 대상은 **`docs/VERSION.md`**(맨 위 태그 대조표 + 버전별 상세)가 정본이다 —
 이 파일에는 버전 이력을 쌓지 않는다(아래 「버전 올릴 때 할 일」).
 
@@ -45,6 +45,7 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
 | 현행 구현 명세 — 계약 A~J(데이터 스키마) · 백엔드 모듈(§8) · 프론트 모듈(§9) · 인프라(§12) | `docs/SPEC.md` (main) |
 | 용어 기준 | `docs/TERMINOLOGY.md` (main) |
 | 버전별 변경 · 태그 대조표 · 배포 리비전 · 롤백 | `docs/VERSION.md` (main) |
+| **생일 스킨 — 나머지 멤버를 이어서 만드는 법 · Codex 와 협업하는 법 · 운영자 디자인 결정** | `docs/BIRTHDAY_SKIN.md` (main) · 제작 원본 · 시제품 = 브랜치 `easteregg/birthday-skin` |
 | `/ingest` 분기 흐름(소식 · 스케줄 · 개인 트윗) | `docs/INGEST_FLOW.md` (main) |
 | 폰 Automate 배선 · v4 한눈에 보기 | `docs/v4_AUTOMATE_WIRE.md` · `docs/v4_PAMPHLET.html` (main) |
 | 에러 버스 봉투 스키마 · 예시(발신기 self-test 가 읽음) | `docs/bus/` (main) |

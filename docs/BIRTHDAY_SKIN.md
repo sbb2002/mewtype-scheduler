@@ -1,0 +1,100 @@
+# 생일 스킨 — 인수 문서 (나머지 멤버를 이어서 만들 세션용)
+
+작성 2026-10-31 (v4.10.0). **이 문서만 읽으면 다음 세션이 아라레 · 노노카 · 리츠 · 미야코 장면을 이어서 만들 수 있게** 쓴다.
+기능 계약(데이터 · 함수 · DOM)은 `docs/SPEC.md` 「생일 스킨 (v4.10.0)」, 용어는 `docs/TERMINOLOGY.md` 「생일 스킨 용어」. 이 문서는 **작업 방법 · 현황 · 운영자 결정 · Codex 협업**을 다룬다.
+
+## 1. 현황 (2026-10-31)
+
+| 멤버 | 생일(KST) | 장면 | 사이트 상태 | 시제품(브랜치 `easteregg/birthday-skin`, `birthday_bg_v16.html`) |
+|---|---|---|---|---|
+| 유노 | 11-04 | 심야 synthwave DJ | **켜짐** — `bdayscene-yuno.js` | 완료(운영자 승인) |
+| 리츠 | 02-07 | 파란 곰 + 기타, 하늘 호수 · 라멘 · 햄버거 | 꺼짐(날짜만 등록) | 있음 — 이식 · 보강 필요 |
+| 노노카 | 04-17 | 분홍 토끼 + 기타(신나게), 포근한 방 | 꺼짐 | 있음 — 이식 · 보강 필요 |
+| 아라레 | 08-16 | 노란 페넥 여우 + 마이크, 초원 · 신라면 | 꺼짐 | 있음 — **클릭 점프 + 폭죽** 이식 필요 |
+| 미야코 | 09-19 | 연보라 강아지 + 건반 + 청둥오리 + 마루군, 달빛 정원 | 꺼짐 | 있음 — 이식 필요(마루군 · 청둥오리 포함) |
+
+생일이 가까운 순서 = 리츠(02-07) → 노노카(04-17) → 아라레(08-16) → 미야코(09-19). **작업 시작 전에 운영자에게 어느 멤버를 먼저 할지 확인**한다(운영자가 「다른 멤버는 추후 보강」이라 했다).
+
+## 2. 어디에 무엇이 있나
+
+- **사이트 코드(main)**: `src/frontend/js/birthday.js`(판정, 순수) · `birthdayui.js`(화면 · 🎂 버튼 · 온전히 보기) · `bdayscene-yuno.js`(유노 장면) · `bdaybeat.js`(유노 박 시계 · 스펙트럼 — 유노 전용 이름) · `css/birthday.css`(유리 패널 · 버튼) · `css/bdayscene-yuno.css` · `assets/birthday/yuno/*.webp` · `config.js`(`BIRTHDAYS` · `BIRTHDAY_SCENES_ENABLED`) · `fixtures/bdayscene-yuno.html`(장면만 풀스크린으로 띄우는 시험 페이지) · `fixtures/validate-bdayscene-yuno.cjs`.
+- **시제품 · 제작 원본(브랜치 `easteregg/birthday-skin`, `easteregg/birthday/`)**: `birthday_bg_v2~v16.html`(단일 HTML 시제품, **v16 = 5명 최신본**), `assets5/`(부위 PNG · WebP · `rigs*.json` · 빌드 `build_v*.py` · 프롬프트 `*_prompt.txt` · 검증 `validate_v*.cjs`), `briefs/`(**Codex 에게 보낸 지시서 = 운영자 요구의 원문 기록**, `feedback7~20.md`), `design_notes.md`(Codex 의 설계 · 검증 기록), `HANDOFF.md`(제작 경위 · 디자인 결정). 로컬 위치(운영자 PC): `…/mewtype-scheduler-worktrees/v4/easteregg-birthday-skin/easteregg/birthday/`.
+- **제3자 참고 이미지**(나무위키 · 클라우드프론트 · 디시콘 도트)는 저작권상 저장소에 없다. 운영자 PC 의 `…/mewtype-scheduler-worktrees/devpapers/ref/birthday-easteregg-handoff/` · 그 워크트리의 `refs7/`(미커밋)에만 있다. 필요하면 운영자에게 파일을 요청한다.
+
+## 3. 멤버 한 명을 사이트에 올리는 절차
+
+유노를 올린 방식 그대로 한다(유노 코드가 견본).
+
+1. 브랜치: `main` 최신에서 `feat/birthday-<멤버>`(워크트리 `../mewtype-scheduler-worktrees/v4/feat-birthday-<멤버>`).
+2. **장면 모듈 만들기**(Codex 에게 맡긴다 — §4). 계약: `mountXxxScene(host, opts) → { setStill(bool), celebrate(x?, y?), finale(), destroy(), whenReady }`
+   (유노 모듈이 정본 · 시제품 `birthday_bg_v16.html` 의 해당 멤버 `*Scene()` 과 `rasterPuppet()` 이 원본). 필요한 것: `js/bdayscene-<멤버>.js` · `css/bdayscene-<멤버>.css`(`.bdayscene` 아래로 스코프) · `assets/birthday/<멤버>/*.webp` · 순수 로직 self-check `*.selfcheck.mjs` · `fixtures/bdayscene-<멤버>.html`.
+   - 규칙: 외부 요청 0 · 데이터 `innerHTML` 금지(정적 템플릿은 `DOMParser`/`createElementNS`) · 모션 줄이기 · 탭 숨김 정지 · `destroy()` 후 리스너 · RAF 0 · 폭죽 `finale()`(유노 `grandBurst` 참고 — resize 가 파티클을 지우지 않게) · 이미지 data URI 금지(WebP 파일, 멤버당 약 150KB 목표).
+   - 구도: PC(가로) · 모바일(세로) 모두. 장면은 **화면 전체 배경**이고 위에 유리 패널이 얹히므로 캐릭터 얼굴 · 손은 **하단 1/3~1/2** 에 둔다(유노 구도 참고).
+3. **통합**: `birthdayui.js` 의 `SCENE_LOADERS` 에 `<멤버>: () => import("./bdayscene-<멤버>.js").then((m) => m.mountXxxScene)` 추가, `index.html` 에 `<link rel="stylesheet" href="css/bdayscene-<멤버>.css">` 추가, `config.js` `BIRTHDAY_SCENES_ENABLED.<멤버> = true`. 장면 이름 · 날짜 인사는 `FALLBACK_CHANNELS[key].name_ko` · `BIRTHDAYS` 에서 자동. 유리 패널 · 🎂 버튼 · 온전히 보기는 멤버 공통이라 손댈 것 없음.
+4. **self-check**: `node src/frontend/js/birthday.selfcheck.mjs`(켜진 멤버 목록을 단언하는 줄 — `BIRTHDAY_SCENES_ENABLED` 에서 true 인 키가 `['yuno']` 라고 박혀 있으니 멤버를 켜면 **이 단언을 같이 고친다**) · 장면 self-check · 기존 프론트 self-check 전부.
+5. **Chrome 으로 직접 눈으로 확인**(§5): `?bday=<멤버>` 로 PC · 모바일 폭, 어둡게 · 밝게, 🎂 온전히 보기 · 폭죽 · 끌어 옮기기. (`BIRTHDAY_SCENES_ENABLED` 가 true 인 멤버만 `?bday=` 로 열린다.)
+6. 문서: `docs/SPEC.md` 「생일 스킨」 표의 멤버 · 이 문서 §1 표 갱신. 버전 = 새 요소 추가가 아니면 일반 패치, 장면 추가는 보통 **일반 패치**(같은 요소의 멤버 추가) — 애매하면 운영자에게 제안 후 결정(CLAUDE.md 「버전 번호」).
+7. PR 까지만 — 병합 · 배포는 운영자 지시가 있을 때(CLAUDE.md). 배포 = 프론트만(Vercel 자동), 백엔드 배포 불필요.
+
+## 4. Codex 와 같이 일하기 (운영자 지시: **디자인 · 모션은 반드시 Codex 와 같이**)
+
+운영자는 「Codex 가 디자인 방면에서는 너보다 더 잘한다」고 했다. 이미지 생성 · 부위 리그 · 모션 설계 · 장면 이식은 **Codex 에게 시키고**, Claude 는 요구를 지시서로 옮기고 결과를 직접 검증한다. 운영자가 「Codex 한테도 반드시 물어봐」 라고 한 항목(예: 미야코 디자인)은 지시서에 「네 판단과 이유를 `design_notes.md` 에 먼저 적고 작업해라」를 넣는다.
+
+### 호출 방법 (Windows, 운영자 PC 기준 — 검증된 방식)
+- 설치: `C:\Users\User\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe`(CLI). 이미 열려 있던 터미널은 PATH 가 옛것이라 `codex` 를 못 찾는다 → 전체 경로 사용.
+- **Bash 의 한 줄 `cmd //c "…"` 따옴표가 꼬여 실패한 적이 있다.** `.cmd` 파일을 만들어 실행한다:
+  ```
+  @echo off
+  cd /d <작업 폴더>
+  "C:\Users\User\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe" exec resume <세션id> - --skip-git-repo-check -c sandbox_mode="workspace-write" -i <참고이미지> < briefs\feedbackNN.md >> history\codex_rNN.log 2>&1
+  ```
+  새 작업이면 `exec resume <세션id>` 대신 `exec - -s workspace-write --skip-git-repo-check -C <폴더>`. 한글이 깨지므로 PowerShell 의 `>` / `*>` 로 받지 말고 `cmd` 의 리다이렉션을 쓴다. 오래 걸리니 백그라운드로 돌리고 끝 알림을 기다린다.
+- **세션 id** `01a18c73-1f13-72b2-b192-8bfb2f2b5c49`(7~20라운드, 운영자 PC `~/.codex/sessions/` 에만 있음). 다른 PC · 새 세션이면 `briefs/` 의 지시서가 곧 맥락이다(처음부터 읽혀라).
+- 작업 폴더(`-C` / `cd`)를 **Codex 가 쓸 워크트리**로 맞춘다. 읽기는 다른 경로(시제품 브랜치 폴더)도 된다. 지시서에 절대 경로로 시제품 · 참고 파일 위치를 적는다.
+- 참고 이미지는 `-i` 로 첨부(resume 에서도 된다).
+
+### 지시서 쓰는 법 (`briefs/feedbackNN.md` 형식을 따른다)
+1. 첫 줄에 **운영자 원문**을 인용한다(해석하지 말고).
+2. **내가 직접 본 문제**를 구체적으로(Chrome 확대 캡처 기준) — 「어디가 어떻게 어색한가」.
+3. 요구 · 유지할 것(다른 캐릭터 · 승인된 부분은 건드리지 말 것) · 결과 파일 이름(`birthday_bg_vNN.html` · `build_vNN.py`, **이전 버전은 보존**).
+4. **검증 규칙**: 구문 · 크기 점검만으로 「통과」라 하지 말고 Chrome 에서 확대 캡처 · 애니메이션 시점별 캡처 · 숫자(박 위상 등)로 스스로 평가하고 아쉬운 점을 솔직히 보고하게 한다.
+
+### Claude 가 지켜야 할 것 (이번 작업에서 겪은 것)
+- **Codex 의 「검증 통과」 보고를 믿지 말고 직접 Chrome 으로 확대해서 본다.** 7라운드에서 Codex 는 구문 · 크기 검증만 하고 통과라 보고했지만 실제로는 손(팔)이 어깨에서 분리돼 어색했다(운영자 「하나도 안 고쳐졌어」). 8라운드부터 「눈으로 보고 평가」를 지시서에 넣어 해결.
+- 운영자 코멘트는 **하나씩 정확히 반영**한다. 예: 「아까랑 같은 타입」(유노의 둥근 앞발) · 「처음과 같이 돌려놓고 위치만 조정」(원래 손 이미지 복원) — 말뜻이 갈리면 어느 쪽인지 되묻기보다 근거(이전 버전)를 보고 판단하고 보고한다.
+- **개선본은 새 아티팩트로 보여준다**(기존 것은 보존) — `mcp__claude-artifacts__publish_files`. 파일을 읽을 권한이 없으면 운영자가 `/add-dir <워크트리 경로>`(입력창 `!` 없이)를 해야 한다. 로컬 서버로 직접 열어 보여 줄 수도 있다.
+- 로컬 서버(`python -m http.server`)는 크롬이 JS 모듈을 캐시해 옛 코드가 돌 수 있다 — 안 바뀐 것처럼 보이면 `fetch(경로, {cache:'reload'})` 로 비우거나 `Ctrl+Shift+R`. (운영 Vercel 에는 해당 없음.)
+- 이미지 생성 결과는 매번 달라진다. **확정된 `assets5/*.png` 를 원본으로 취급**하고 승인된 부위는 재생성하지 않는다.
+- 제3자 사이트(디시콘 등)의 핫링크 방지(403)를 리퍼러 위조로 우회하지 않는다 — 운영자가 파일로 직접 주게 한다(청둥오리 도트는 운영자가 `icon_69.png` 로 줬다).
+
+## 5. 확인 방법 (운영 데이터로 사이트 전체를 로컬에서 보기)
+
+```bash
+cd src/frontend && mkdir -p data && for f in preview notices tweets banners preview_archive songs; do \
+  curl -s -o data/$f.json https://raw.githubusercontent.com/sbb2002/mewtype-scheduler-data/data/$f.json; done
+python -m http.server 8124        # → http://127.0.0.1:8124/index.html?bday=yuno
+```
+(`src/frontend/data/` 는 커밋하지 않는다 — `git rev-parse --git-common-dir` 아래 `info/exclude` 에 넣어 둔다.) 로컬 호스트는 `/data/*.json` 을 읽으므로 위처럼 복사해야 보드가 채워진다. 운영 사이트 확인은 주소에 `?va=claude`(통계 제외) 를 붙이고 `&bday=yuno` 로 강제 표시.
+Chrome 확대 확인: `mcp__claude-in-chrome__computer` 의 `zoom` · `javascript_tool`(합성 `PointerEvent` 로 꾹 누르기 · 끌기, 캔버스 픽셀 샘플로 폭죽 확인). 이 PC 의 창은 최소 폭 때문에 약 500px 밑으로 안 줄고 최대 폭도 제한적이다 — 모바일은 그 폭으로 본다. **실제 폰 터치 · 진동 · KST 자정 전환은 아직 실기기로 확인하지 못했다**(미확인으로 남아 있다).
+
+## 6. 멤버별 디자인 결정 (운영자 원문 기준 — 시제품 `HANDOFF.md` §3 의 요약 + 이후 코멘트)
+
+공통: **캐릭터 = 공식 「ゆめみた animals」 일러스트를 참고해 AI 로 새로 그린 것**(얇은 선 · 파스텔 셀 · 둥근 비례 · 큰 눈 + 하이라이트 · 분홍 볼). 도형(SVG)으로 새로 그린 방식은 반려됐다. 각 멤버의 환경은 서로 다르다(격자 바닥 재사용 금지). 움직임은 느리고 숨 쉬듯, **번쩍임 초당 3회 이하**.
+**손(팔)**: 팔은 어깨에서 이어진 하나의 부위(어깨 피벗 고정 회전). 소매 토막처럼 몸에서 떠 있으면 안 된다. 앞발은 둥글고 통통하게(유노의 손이 기준) — 단 **리츠 · 노노카는 운영자가 「처음과 같이(원래 손 이미지)」로 되돌리게 했으니** 그 손 이미지를 쓰고 위치만 맞춘다.
+
+- **유노**(완료): 분홍 족제비 계열, 붉은/분홍 반반 머리, 헤드셋. **synthwave 는 유노에게만**. 100 BPM DJ — 왼손 스크래치 · 오른손 믹서/페이더 · 스윙 + 2·4박 액센트 · 이퀄라이저(스펙트럼 애널라이저, 박과 같은 시점에 피크). 운영자 코멘트 이력: 흐느적거림 금지 → 박에 딱 맞게 · 살짝 천천히(120→100 BPM) · 그루비(스윙) · 이퀄라이저와 박 일치 · 좌우 교대 금지(실제 스펙트럼 패턴).
+- **리츠**: **파란 곰**. 기타(왼손 = 넥 중간 프렛 구간을 쥠, 오른손 = 사운드홀 위에서 **천천히** 스트로크). 라멘 · 햄버거가 둥실, 5.2초 주기로 궤적을 남기며 날아가는 별. 배경 하늘 호수 · 구름.
+- **노노카**: **분홍 토끼** + 기타, **신나게**(스트로크 0.5~0.7초 주기, 몸 · 귀 · 머리 리듬 흔들림). 포근한 방.
+- **아라레**: 노란 페넥 여우(청록 지그재그 핀 · 검은 재킷 · 마이크). 계란후라이 위. **클릭하면 폭죽 + 작게 통통 점프**(시제품 `arale-jump` · `.arale-trigger` 참고). 신라면 봉지는 실제 봉지처럼 보이되 약한 블러(`stdDeviation .75`) — 회사 로고 · 작은 글씨는 블러에 묻힘. 초원 배경.
+- **미야코**: **참고 이미지 그대로**(연한 라벤더 몸, 처진 긴 귀 · 안쪽 진한 보라, 노란 별 머리핀 = **보는 사람 기준 왼쪽**, 작은 흰 천사 날개, **입을 닫은 얌전한 표정**, 보라 계열 외곽선). 건반 연주(독립 타건은 생략). **왼쪽 = 청둥오리**(운영자가 준 도트 아이콘을 그대로 사용, 미야코 쪽을 보게 좌우 반전 · `image-rendering: pixelated`), **오른쪽 = 마루군**(분홍 솜뭉치 · 발 없는 만두 실루엣 · 갈래 털 귀 · 오른쪽 머리 별 1개 + 가슴 별 · 만세 팔 — 운영자가 준 도트를 보고 새로 그림). 달빛 정원.
+
+## 7. 라이선스 · 디스클레이머
+
+장면 이미지는 **AI 가 공식 캐릭터를 참고해 그린 팬 제작물**이다. 운영자 결정(2026-10-30): 「이전에도 AI 생성물을 도트 에셋으로 올렸다 — 올리되 잘 보관하고 디스클레이머를 의식하라」. 사이트에는 기존 풋터 디스클레이머(「비공식 팬 메이드 프로젝트」 …)가 그대로 적용된다. 시제품 HTML 푸터에는 「비공식 팬 제작 · AI 생성 일러스트 · 공식과 무관」이 들어 있다. 새 멤버 장면을 올릴 때도 이 취지를 유지한다.
+
+## 8. 아직 열려 있는 것
+
+- 유노 이외 4명 장면 이식(§1) — 운영자가 순서 · 시기를 정한다. 각 멤버는 시제품 보강 요청이 더 나올 수 있다(시제품 단계에서 먼저 보강하고 이식해도 된다).
+- 위치 저장(`localStorage "bday-btn"`)은 **생일 스킨이 뜬 날에만** 쓰이고 모든 멤버가 같은 키를 쓴다. 장면별 구도에 따라 기본 위치(`DEFAULT_POS` = 오른쪽 73%)를 바꿀지는 운영자 결정.
+- 실기기(폰 터치 · 진동 · 모바일 브라우저 주소창 변화) · KST 자정 전환 실측 · 장면 로드 실패 폴백 실기 확인.
+- 유노 이퀄라이저 · 박 모듈 이름이 유노 전용(`yunoPose`)이다. 다른 멤버의 박 연동이 생기면 공통 부분을 `bdaybeat.js` 에서 뽑을지 결정.

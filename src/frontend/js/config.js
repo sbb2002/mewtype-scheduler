@@ -52,8 +52,8 @@ export const SONGS_FALLBACK_URL = "assets/songs.json";
 
 // (v4.8.4) 현재 버전 · 날짜 — 하단 「ver.」 버튼 말풍선에 보인다(js/main.js initVersionButton).
 // 버전을 올릴 때 이 두 값도 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 6번 · README · VERSION.md 와 맞춘다).
-export const APP_VERSION = "v4.9.12";
-export const APP_DATE = "2026-10-30";
+export const APP_VERSION = "v4.10.0";
+export const APP_DATE = "2026-10-31";
 
 // (v4.10.0) 멤버 생일 — KST 달력 날짜(MM-DD). 생일 당일 00:00~24:00(KST)에 배경이 그 멤버의 생일 스킨으로 바뀐다(js/birthday.js · birthdayui.js).
 // 일본 표준시와 한국 표준시는 UTC+9 로 같아 날짜가 어긋나지 않는다. 운영자 교차 확인 완료(2026-10-30).
