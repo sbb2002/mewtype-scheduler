@@ -23,7 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
-| v4.10.0 | `(병합 뒤 기입)` | 2026-10-31 | `feat/birthday-easteregg` | 병합 커밋 | 프론트만 · **마이너**(새 요소 — 생일 스킨) · 유노 장면만 켬 · 생일 5명 등록 |
+| v4.10.0 | `e8c80a7` | 2026-10-31 01:59 | `feat/birthday-easteregg` | 병합 커밋 | 프론트만 · **마이너**(새 요소 — 생일 스킨) · 유노 장면만 켬 · 생일 5명 등록 · Vercel 프로덕션 success |
 | v4.9.12 | `(병합 뒤 기입)` | 2026-10-30 | `hotfix/miyako-name-translation` | 병합 커밋 | 백엔드만 · 일반 패치 · 번역 프롬프트 후지 미야코 |
 | v4.9.11 | `812f45c` | 2026-10-30 20:19 | `hotfix/tweet-media-referrer` | 병합 커밋 | 프론트만 · 일반 패치 · 사진 `no-referrer` · 운영 config.js v4.9.11 · 번역 카드 9칸 로드 확인 |
 | v4.9.10 | `df28599` | 2026-10-29 22:28 | `hotfix/theme-fade` | 병합 커밋 | 프론트만 · 일반 패치(운영자 판정) · Vercel 프로덕션 success(`3p8igQyY9KgdzVPfRPaWn62BD5js`) |
@@ -232,6 +232,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
   - 판정 `birthday.js`(순수, KST 경계 self-check) · 화면 `birthdayui.js`(생일 당일에만 장면 모듈 `import()`, 자정 · 탭 복귀 때 재판정) · 장면 `bdayscene-yuno.js` + `bdaybeat.js`(100 BPM 박 시계 · 스윙/2·4박 액센트 · 스펙트럼 이퀄라이저 · 폭죽, WebP 9개 약 154KB).
   - 기존 화면은 반투명 **유리 패널**(`css/birthday.css`)로 장면 위에 얹는다. **🎂 버튼 하나**: 누르면 「온전히 보기」(화려한 폭죽과 함께 UI 숨김, Esc · 빈 곳 · 버튼으로 복귀), 방문마다 첫 4.5초 자동 전체 노출(폭죽 포함, 저장 안 함), 0.5초 꾹 누르면 끌어서 옮기기(가장자리 스프링 안착, 위치만 localStorage `bday-btn`, 기본 = 오른쪽 세로 73%).
   - 문서: `docs/SPEC.md` 「생일 스킨」 · `docs/TERMINOLOGY.md` 「생일 스킨 용어」 · **`docs/BIRTHDAY_SKIN.md`**(나머지 멤버 이식 절차 · Codex 협업 · 운영자 결정). 제작 원본 · 시제품 v2~v16 = 브랜치 `easteregg/birthday-skin`.
+  - **배포 완료(2026-10-31)**: 병합 `e8c80a7`(PR #125, 01:59 KST) → Vercel 프로덕션 success · 운영 config.js v4.10.0 · 운영 Chrome 확인(`?bday=yuno` — 장면 · 🎂 온전히 보기 · 유리 패널 · 폭죽, 생일이 아닌 평소 화면은 장면 이미지를 불러오지 않고 배경 장식 그대로).
   - **미확인**: 실기기(폰 터치 · 진동) · KST 자정 실제 전환(판정만 self-check) · PC 큰 화면(이 PC 창 폭 제한으로 약 500px 폭까지만 확인) · 장면 로드 실패 폴백 실기. 롤백 = 프론트 직전 `87f9b8b`(v4.9.12).
 - **v4.9.12** (일반 패치, 2026-10-30 — 브랜치 `hotfix/miyako-name-translation`, 백엔드만): **한자 이름 「藤都子」 오역 수정.** 번역 프롬프트(`llm._translate_prompt`)가 「藤都子」를 후지토코 · 토코 · 후지츠 등으로 읽는 일이 있었다(소식 `2104794883966005392` 「넨드로이드 후지토코」 · 제목 「토우코」). 공용 규칙 `llm._MIYAKO_RULE` 를 번역 프롬프트와 소식 제목 프롬프트(`notice_title`)에 넣었다 — 「藤都子」=후지 미야코, 「都子」=미야코, 「みゃちゃん」「みゃーちゃん」=먀쨩. 번역 호출은 전부 `translate()` 를 지나므로 트윗 · 소식 · 영상 제목 · 관리 페이지 재번역에 모두 적용된다. 소급 처리 없음(이미 저장된 번역은 그대로). **확인**: 실 Groq 로 예시 6문장 + 실제 오역 소식 본문 재번역 → 모두 의도대로.
 - **v4.9.11** (일반 패치, 2026-10-30 — 브랜치 `hotfix/tweet-media-referrer`, 프론트만): **트윗 번역 면 사진이 안 나오던 것 수정.** 원인 = `pbs.twimg.com` 이 `Referer` 가 X 계열이 아닌 요청을 `351 Forbidden` 으로 거부(curl 실측: Referer 없음 · `x.com` · `twitter.com` = 200, 우리 도메인 · `example.com` · `google.com` = 351 — `tweets.json` 사진 12장 전부, 10-28 게시분 포함). 번역 면 사진이 CSS 배경 그림이라 Referer 정책을 줄 수 없었다 → `_paintGrid` 가 칸마다 `<img referrerpolicy="no-referrer" draggable="false">`(`.tws-md__cell > img`, `object-fit: cover`)를 넣고, 1칸 비율을 읽는 `new Image()` 에도 `referrerPolicy = "no-referrer"`. 영상 ▶ 는 `position: relative` 로 그림 위. **확인**: 운영 사이트에서 `no-referrer` 로 사진 27장 중 확인된 전부 로드(마지막 1장은 출력 잘림) · 임시 주입 9칸 모두 로드 · 수정본을 로컬(운영 data 사본)에서 열어 9칸 모두 로드 · 비율 7건 계산 · selfcheck tweetlogic 85 · render 16 · timetable 54 통과. **미확인**: 폰 실기기 · X 가 앞으로 `no-referrer` 까지 막을 가능성 · 규칙이 시작된 시각(운영자 관찰: 17시 전엔 보였음 — 폰 캐시 때문으로 추정, 미검증) · 영상 칸(데이터에 영상 없어 렌더 미확인).
