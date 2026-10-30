@@ -1,0 +1,820 @@
+{
+  "bytes": 2227106,
+  "within12MB": true,
+  "allRasterRigsUnchanged": true,
+  "otherScenesUnchanged": true,
+  "floorDriftCodeUnchanged": true,
+  "preserved": true,
+  "disclaimer": true,
+  "scenes": [
+    {
+      "name": "아라레",
+      "loaded": true
+    },
+    {
+      "name": "유노",
+      "loaded": true
+    },
+    {
+      "name": "리츠",
+      "loaded": true
+    },
+    {
+      "name": "미야코",
+      "loaded": true
+    },
+    {
+      "name": "노노카",
+      "loaded": true
+    }
+  ],
+  "tempoComparison": {
+    "oldBpm": 120,
+    "newBpm": 100,
+    "scale": 1.2,
+    "oldBeatSeconds": 0.5,
+    "newBeatSeconds": 0.6,
+    "oldBarSeconds": 2,
+    "newBarSeconds": 2.4,
+    "oldScratchRoundTrip": 0.25,
+    "newScratchRoundTrip": 0.3,
+    "oldDirectionInterval": 0.125,
+    "newDirectionInterval": 0.15,
+    "oldBurstRest": 0.5,
+    "newBurstRest": 0.6,
+    "oldEightBars": 16,
+    "newEightBars": 19.2,
+    "oldSixteenBars": 32,
+    "newSixteenBars": 38.4,
+    "oldRightRecordDegreesPerSecond": 45,
+    "newRightRecordDegreesPerSecond": 37.5,
+    "maxPhaseMatchedError": 1.6697754290362354e-12
+  },
+  "bpm": 100,
+  "frames": [
+    {
+      "seconds": 0,
+      "bar": 0,
+      "beat": 1,
+      "phase": 0,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": 0,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0,
+      "nod": 0,
+      "tail": 0,
+      "leftCoast": 0,
+      "leftRecord": 0,
+      "rightRecord": 0,
+      "headY": 0,
+      "headAngle": 0,
+      "ear": 0,
+      "mic": 0,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          543.5375
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          121.875,
+          199.625
+        ],
+        "scene": [
+          677.90625,
+          539.46875
+        ]
+      },
+      "fader": 2.90625,
+      "energy": 1,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 0.075,
+      "bar": 0,
+      "beat": 1,
+      "phase": 0.125,
+      "pattern": "paired-1-and-3",
+      "scratch": 1,
+      "left": 5.5,
+      "right": 0,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.6991390306122449,
+      "nod": 0.9987700437317785,
+      "tail": 2.7534765745159184,
+      "leftCoast": 0,
+      "leftRecord": 26,
+      "rightRecord": 2.8125,
+      "headY": 1.7977860787172013,
+      "headAngle": -0.49938502186588923,
+      "ear": 0.8988930393586007,
+      "mic": 0.5831842916038896,
+      "leftContact": {
+        "rig": [
+          57.69784405651376,
+          199.70172221266904
+        ],
+        "scene": [
+          578.4316582875963,
+          540.671334927086
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          121.875,
+          199.625
+        ],
+        "scene": [
+          677.90625,
+          540.5524154974489
+        ]
+      },
+      "fader": 2.90625,
+      "energy": 0.5028315779709409,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(0.995396, 0.0958458, -0.0958458, 0.995396, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 0.22499999999999998,
+      "bar": 0,
+      "beat": 1,
+      "phase": 0.37499999999999994,
+      "pattern": "paired-1-and-3",
+      "scratch": -0.9999999999999996,
+      "left": -5.499999999999997,
+      "right": 0,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.36970997836668473,
+      "nod": 0.5281571119524068,
+      "tail": 1.6700679632444233,
+      "leftCoast": 0,
+      "leftRecord": -25.99999999999999,
+      "rightRecord": 8.437499999999998,
+      "headY": 0.9506828015143323,
+      "headAngle": -0.2640785559762034,
+      "ear": 0.47534140075716613,
+      "mic": 0.2754767534376402,
+      "leftContact": {
+        "rig": [
+          65.03004412431089,
+          204.4460869624201
+        ],
+        "scene": [
+          589.7965683926818,
+          547.5144852582196
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          121.875,
+          199.625
+        ],
+        "scene": [
+          677.90625,
+          540.0418004664683
+        ]
+      },
+      "fader": 2.90625,
+      "energy": 0.12713573293203564,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(0.995396, -0.0958458, 0.0958458, 0.995396, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 0.6749999999999999,
+      "bar": 0,
+      "beat": 2,
+      "phase": 0.125,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": 5,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.6991390306122449,
+      "nod": 0.9987700437317785,
+      "tail": 2.7534765745159184,
+      "leftCoast": 2,
+      "leftRecord": 2,
+      "rightRecord": 25.312499999999996,
+      "headY": 1.7977860787172013,
+      "headAngle": 0.49938502186588923,
+      "ear": 0.8988930393586007,
+      "mic": 0.5831842916038896,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          544.6211654974489
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          118.88851668650909,
+          196.77671362649758
+        ],
+        "scene": [
+          673.2772008640891,
+          536.1375716185203
+        ]
+      },
+      "fader": -1.7227991359109183,
+      "energy": 0.5028315779709409,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.996195, 0.0871557, -0.0871557, 0.996195, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 0.825,
+      "bar": 0,
+      "beat": 2,
+      "phase": 0.375,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": -5,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.3697099783666846,
+      "nod": 0.5281571119524067,
+      "tail": 1.6700679632444222,
+      "leftCoast": 6,
+      "leftRecord": 6,
+      "rightRecord": 30.9375,
+      "headY": 0.950682801514332,
+      "headAngle": 0.26407855597620333,
+      "ear": 0.475341400757166,
+      "mic": 0.27547675343764005,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          544.1105504664683
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          125.09836335727974,
+          202.2021586125393
+        ],
+        "scene": [
+          682.9024632037836,
+          544.0363963159043
+        ]
+      },
+      "fader": 7.9024632037835545,
+      "energy": 0.1271357329320356,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.996195, -0.0871557, 0.0871557, 0.996195, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 1.275,
+      "bar": 0,
+      "beat": 3,
+      "phase": 0.12499999999999956,
+      "pattern": "paired-1-and-3",
+      "scratch": 0.9999999999999964,
+      "left": 5.4999999999999805,
+      "right": 6.992669753086392,
+      "mode": "knob",
+      "knob": 0,
+      "bounce": 0.6991390306122448,
+      "nod": 0.9987700437317784,
+      "tail": 2.7534765745159135,
+      "leftCoast": 16,
+      "leftRecord": 41.99999999999991,
+      "rightRecord": 47.81249999999999,
+      "headY": 1.797786078717201,
+      "headAngle": -0.4993850218658892,
+      "ear": 0.8988930393586005,
+      "mic": 0.5831842916038888,
+      "leftContact": {
+        "rig": [
+          57.69784405651377,
+          199.70172221266904
+        ],
+        "scene": [
+          578.4316582875963,
+          540.671334927086
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          117.76944445223458,
+          195.57078088669672
+        ],
+        "scene": [
+          671.5426389009637,
+          534.2683758718289
+        ]
+      },
+      "fader": 2.9,
+      "energy": 0.5028315779709421,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(0.995396, 0.0958458, -0.0958458, 0.995396, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.992562, 0.121743, -0.121743, 0.992562, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 1.425,
+      "bar": 0,
+      "beat": 3,
+      "phase": 0.375,
+      "pattern": "paired-1-and-3",
+      "scratch": -1,
+      "left": -5.5,
+      "right": 9.777777777777779,
+      "mode": "knob",
+      "knob": 14.444444444444445,
+      "bounce": 0.3697099783666846,
+      "nod": 0.5281571119524067,
+      "tail": 1.6700679632444222,
+      "leftCoast": 16,
+      "leftRecord": -10,
+      "rightRecord": 53.4375,
+      "headY": 0.950682801514332,
+      "headAngle": -0.26407855597620333,
+      "ear": 0.475341400757166,
+      "mic": 0.27547675343764005,
+      "leftContact": {
+        "rig": [
+          65.03004412431089,
+          204.4460869624201
+        ],
+        "scene": [
+          589.7965683926818,
+          547.5144852582196
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          116.27702933729626,
+          193.8216310034545
+        ],
+        "scene": [
+          669.2293954728092,
+          531.0465785218229
+        ]
+      },
+      "fader": 2.9,
+      "energy": 0.1271357329320356,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(0.995396, -0.0958458, 0.0958458, 0.995396, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.985474, 0.169828, -0.169828, 0.985474, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 1.875,
+      "bar": 0,
+      "beat": 4,
+      "phase": 0.125,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": 6,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.6991390306122449,
+      "nod": 0.9987700437317785,
+      "tail": 2.7534765745159184,
+      "leftCoast": 18,
+      "leftRecord": 18,
+      "rightRecord": 70.3125,
+      "headY": 1.7977860787172013,
+      "headAngle": 0.49938502186588923,
+      "ear": 0.8988930393586007,
+      "mic": 0.5831842916038896,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          544.6211654974489
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          118.32167950275233,
+          196.17639410328903
+        ],
+        "scene": [
+          672.3986032292661,
+          535.207076357547
+        ]
+      },
+      "fader": -2.6013967707339134,
+      "energy": 0.5028315779709409,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.994522, 0.104528, -0.104528, 0.994522, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 2.025,
+      "bar": 0,
+      "beat": 4,
+      "phase": 0.375,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": -6,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.3697099783666846,
+      "nod": 0.5281571119524067,
+      "tail": 1.6700679632444222,
+      "leftCoast": 22,
+      "leftRecord": 22,
+      "rightRecord": 75.9375,
+      "headY": 0.950682801514332,
+      "headAngle": 0.26407855597620333,
+      "ear": 0.475341400757166,
+      "mic": 0.27547675343764005,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          544.1105504664683
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          125.76933251057265,
+          202.68329094170045
+        ],
+        "scene": [
+          683.9424653913876,
+          544.7821514261041
+        ]
+      },
+      "fader": 8.9424653913876,
+      "energy": 0.1271357329320356,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.994522, -0.104528, 0.104528, 0.994522, 0, 0)"
+        }
+      ]
+    },
+    {
+      "seconds": 2.3249999999999997,
+      "bar": 0,
+      "beat": 4,
+      "phase": 0.8749999999999996,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": 0,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.014788399134667484,
+      "nod": 0.02112628447809641,
+      "tail": 0,
+      "leftCoast": 29.999999999999993,
+      "leftRecord": 29.999999999999993,
+      "rightRecord": 87.18749999999999,
+      "headY": 0.03802731206057353,
+      "headAngle": 0.010563142239048204,
+      "ear": 0.019013656030286766,
+      "mic": -0.06146717211171039,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          543.5604220186588
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          121.875,
+          199.625
+        ],
+        "scene": [
+          677.90625,
+          539.4916720186587
+        ]
+      },
+      "fader": 2.90625,
+      "energy": 0.008127515489292234,
+      "joints": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    }
+  ],
+  "variations": [
+    {
+      "name": "cue_depart",
+      "seconds": 18.119999999999997,
+      "bar": 7,
+      "beat": 3,
+      "phase": 0.19999999999999574,
+      "pattern": "paired-1-and-3",
+      "scratch": 0.4000000000000341,
+      "left": 2.2000000000001876,
+      "right": -27.80799999999903,
+      "mode": "travel",
+      "knob": 0,
+      "bounce": 0.6057328285559826,
+      "nod": 0.8653326122228324,
+      "tail": 3.187561238927309,
+      "leftCoast": 240,
+      "leftRecord": 250.4000000000009,
+      "rightRecord": 679.4999999999999,
+      "headY": 1.5575987020010984,
+      "headAngle": -0.4326663061114162,
+      "ear": 0.7787993510005492,
+      "mic": 0.6263410592709965,
+      "leftContact": {
+        "rig": [
+          59.79990912123937,
+          201.27170827779005
+        ],
+        "scene": [
+          581.6898591379211,
+          542.9600337148363
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          142.08886824296965,
+          210.03100535270465
+        ],
+        "scene": [
+          709.237745776603,
+          556.536944180954
+        ]
+      },
+      "fader": 2.9,
+      "energy": 0.3328710836980874
+    },
+    {
+      "name": "cue_contact",
+      "seconds": 18.48,
+      "bar": 7,
+      "beat": 3,
+      "phase": 0.8000000000000007,
+      "pattern": "paired-1-and-3",
+      "scratch": -0.4000000000000057,
+      "left": -2.2000000000000313,
+      "right": -79.48,
+      "mode": "right-record",
+      "knob": 0,
+      "bounce": 0.03785830178474824,
+      "nod": 0.05408328826392607,
+      "tail": 0,
+      "leftCoast": 240,
+      "leftRecord": 229.59999999999985,
+      "rightRecord": 693,
+      "headY": 0.09734991887506693,
+      "headAngle": -0.027041644131963034,
+      "ear": 0.048674959437533465,
+      "mic": -0.10353348074502579,
+      "leftContact": {
+        "rig": [
+          62.73657651643478,
+          203.1719048276224
+        ],
+        "scene": [
+          586.2416936004739,
+          545.025132850581
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          182.34342463360187,
+          201.1061946414898
+        ],
+        "scene": [
+          771.6323081820829,
+          541.8232820620756
+        ]
+      },
+      "fader": 2.9,
+      "energy": 0.012277339903068393
+    },
+    {
+      "name": "cue_return",
+      "seconds": 18.84,
+      "bar": 7,
+      "beat": 4,
+      "phase": 0.3999999999999986,
+      "pattern": "paired-1-and-3",
+      "scratch": 0,
+      "left": 0,
+      "right": -61.936000000000284,
+      "mode": "travel",
+      "knob": 0,
+      "bounce": 0.34072471606273824,
+      "nod": 0.4867495943753404,
+      "tail": 1.3205446926798037,
+      "leftCoast": 246.39999999999998,
+      "leftRecord": 246.39999999999998,
+      "rightRecord": 706.5,
+      "headY": 0.8761492698756127,
+      "headAngle": 0.2433747971876702,
+      "ear": 0.43807463493780635,
+      "mic": 0.2124450190054191,
+      "leftContact": {
+        "rig": [
+          61.25,
+          202.25
+        ],
+        "scene": [
+          583.9375,
+          544.0656233098972
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          169.79331578433792,
+          208.22545415219054
+        ],
+        "scene": [
+          752.1796394657238,
+          553.3275772457926
+        ]
+      },
+      "fader": 2.9,
+      "energy": 0.11080315836233474
+    },
+    {
+      "name": "bar16_pattern",
+      "seconds": 36.675,
+      "bar": 15,
+      "beat": 2,
+      "phase": 0.1249999999999929,
+      "pattern": "single-per-beat",
+      "scratch": 0.9999999999999432,
+      "left": 5.499999999999687,
+      "right": 4.999999999999716,
+      "mode": "fader",
+      "knob": 0,
+      "bounce": 0.6991390306122437,
+      "nod": 0.9987700437317767,
+      "tail": 2.753476574515835,
+      "leftCoast": 488,
+      "leftRecord": 513.9999999999985,
+      "rightRecord": 1375.3124999999998,
+      "headY": 1.797786078717198,
+      "headAngle": 0.49938502186588835,
+      "ear": 0.898893039358599,
+      "mic": 0.583184291603876,
+      "leftContact": {
+        "rig": [
+          57.69784405651396,
+          199.70172221266918
+        ],
+        "scene": [
+          578.4316582875966,
+          540.6713349270863
+        ]
+      },
+      "rightContact": {
+        "rig": [
+          118.88851668650925,
+          196.77671362649772
+        ],
+        "scene": [
+          673.2772008640893,
+          536.1375716185205
+        ]
+      },
+      "fader": -1.722799135910691,
+      "energy": 0.5028315779709606
+    }
+  ],
+  "contactSweep": {
+    "samples": 1203,
+    "leftOnRecord": true,
+    "rightOnMixer": true,
+    "cueOnRightRecord": true,
+    "travelOnDeck": true,
+    "maxScratchAngle": 5.2800000000002,
+    "maxLeftRecordOffset": 24.960000000000946,
+    "recordHandError": 7.105427357601002e-15,
+    "patterns": [
+      "paired-1-and-3",
+      "single-per-beat"
+    ]
+  },
+  "gifFrames": 50,
+  "pauseClockStopped": true,
+  "resumeAdvance": 0.16670000000000074,
+  "hiddenClockStopped": true,
+  "reducedClockStopped": true,
+  "reducedAnimatedCount": 0,
+  "runtimeErrors": [],
+  "externalNetworkRequests": []
+}

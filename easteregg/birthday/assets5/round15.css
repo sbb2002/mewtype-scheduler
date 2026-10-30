@@ -1,0 +1,4 @@
+/* DJ joints share the existing stopped RAF clock; only the occasional blink keeps CSS timing. */
+.rig-yuno,.rig-yuno .rig-head,.rig-yuno .rig-arm8_l,.rig-yuno .rig-arm8_r,.rig-yuno .rig-ear-l,.rig-yuno .rig-ear-r,.rig-yuno .rig-tail,.rig-yuno .rig-headset{animation:none!important}
+.dj-record15{animation:none!important}
+.rig-yuno .rig-arm8_l,.rig-yuno .rig-arm8_r{transform-origin:var(--shoulder)}
