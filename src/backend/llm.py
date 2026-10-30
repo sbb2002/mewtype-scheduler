@@ -236,11 +236,19 @@ def _member_info() -> "tuple[str, list[str]]":
     return _member_cache
 
 
+# (v4.9.12) 한자 이름 「藤都子」를 후지토코 · 토코 등으로 읽는 오역 방지 — 번역 프롬프트 · 소식 제목 프롬프트 공용.
+_MIYAKO_RULE = (
+    "특히 한자 이름 「藤都子」는 반드시 '후지 미야코'(후지토코·후지츠·토코 등으로 읽지 말 것), 「都子」는 '미야코', "
+    "애칭 「みゃちゃん」「みゃーちゃん」은 '먀쨩'으로 옮긴다."
+)
+
+
 def _translate_prompt(masked_text: str) -> str:
     names_line, _ = _member_info()
     names_rule = (
         f"5. 멤버 이름(괄호는 짧은 호칭): {names_line}. 호칭만 나오면 해당 멤버의 이름으로 옮긴다"
         f"(みやこ=미야코, ののか=노노카 …). 서로 바꾸지 말 것. "
+        f"{_MIYAKO_RULE} "
         if names_line else "5. "
     )
     return (
@@ -661,7 +669,7 @@ class LLMClient:
         masked_body, mapping = _mask_glossary(body_no_date_url)
         prompt = (
             f"다음 이벤트 공지 본문에서 자연스러운 제목 1줄을 뽑아내고 일본어와 한국어로 제시하라. "
-            f"JSON 포맷만 출력 (다른 텍스트 제외). 고유명사 보존. "
+            f"JSON 포맷만 출력 (다른 텍스트 제외). 고유명사 보존. {_MIYAKO_RULE} "
             f"@@GLOSSARY0@@ 같은 토큰은 절대 번역·수정하지 말고 그대로 출력에 남겨라.\n\n"
             f"본문:\n{masked_body}\n\n"
             f"출력:\n"

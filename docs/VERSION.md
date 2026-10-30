@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.9.12 | `(병합 뒤 기입)` | 2026-10-30 | `hotfix/miyako-name-translation` | 병합 커밋 | 백엔드만 · 일반 패치 · 번역 프롬프트 후지 미야코 |
 | v4.9.11 | `812f45c` | 2026-10-30 20:19 | `hotfix/tweet-media-referrer` | 병합 커밋 | 프론트만 · 일반 패치 · 사진 `no-referrer` · 운영 config.js v4.9.11 · 번역 카드 9칸 로드 확인 |
 | v4.9.10 | `df28599` | 2026-10-29 22:28 | `hotfix/theme-fade` | 병합 커밋 | 프론트만 · 일반 패치(운영자 판정) · Vercel 프로덕션 success(`3p8igQyY9KgdzVPfRPaWn62BD5js`) |
 | v4.9.9 | `f772abb` | 2026-10-29 22:10 | `hotfix/tw-badge-border` | 병합 커밋 | 프론트만 · 버그 수정이라 일반 패치 · Vercel 프로덕션 success(`AA3s4FTnWHQrbAkdh3yvpoEan42g`) |
@@ -225,6 +226,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.7a | `a557918` | 09-22 23:36 | v3.8.7 후속 |
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
+- **v4.9.12** (일반 패치, 2026-10-30 — 브랜치 `hotfix/miyako-name-translation`, 백엔드만): **한자 이름 「藤都子」 오역 수정.** 번역 프롬프트(`llm._translate_prompt`)가 「藤都子」를 후지토코 · 토코 · 후지츠 등으로 읽는 일이 있었다(소식 `2104794883966005392` 「넨드로이드 후지토코」 · 제목 「토우코」). 공용 규칙 `llm._MIYAKO_RULE` 를 번역 프롬프트와 소식 제목 프롬프트(`notice_title`)에 넣었다 — 「藤都子」=후지 미야코, 「都子」=미야코, 「みゃちゃん」「みゃーちゃん」=먀쨩. 번역 호출은 전부 `translate()` 를 지나므로 트윗 · 소식 · 영상 제목 · 관리 페이지 재번역에 모두 적용된다. 소급 처리 없음(이미 저장된 번역은 그대로). **확인**: 실 Groq 로 예시 6문장 + 실제 오역 소식 본문 재번역 → 모두 의도대로.
 - **v4.9.11** (일반 패치, 2026-10-30 — 브랜치 `hotfix/tweet-media-referrer`, 프론트만): **트윗 번역 면 사진이 안 나오던 것 수정.** 원인 = `pbs.twimg.com` 이 `Referer` 가 X 계열이 아닌 요청을 `351 Forbidden` 으로 거부(curl 실측: Referer 없음 · `x.com` · `twitter.com` = 200, 우리 도메인 · `example.com` · `google.com` = 351 — `tweets.json` 사진 12장 전부, 10-28 게시분 포함). 번역 면 사진이 CSS 배경 그림이라 Referer 정책을 줄 수 없었다 → `_paintGrid` 가 칸마다 `<img referrerpolicy="no-referrer" draggable="false">`(`.tws-md__cell > img`, `object-fit: cover`)를 넣고, 1칸 비율을 읽는 `new Image()` 에도 `referrerPolicy = "no-referrer"`. 영상 ▶ 는 `position: relative` 로 그림 위. **확인**: 운영 사이트에서 `no-referrer` 로 사진 27장 중 확인된 전부 로드(마지막 1장은 출력 잘림) · 임시 주입 9칸 모두 로드 · 수정본을 로컬(운영 data 사본)에서 열어 9칸 모두 로드 · 비율 7건 계산 · selfcheck tweetlogic 85 · render 16 · timetable 54 통과. **미확인**: 폰 실기기 · X 가 앞으로 `no-referrer` 까지 막을 가능성 · 규칙이 시작된 시각(운영자 관찰: 17시 전엔 보였음 — 폰 캐시 때문으로 추정, 미검증) · 영상 칸(데이터에 영상 없어 렌더 미확인).
   - **배포 완료(2026-10-30)**: 병합 `812f45c`(PR #120, 20:19 KST) → 운영 config.js v4.9.11 · tweets.js 반영 · 운영 번역 카드 사진 9/9 로드 확인(Chrome PC). 롤백 = 프론트 `904793e`(v4.9.10). **남은 확인**: 폰 실기기.
 - **v4.9.10** (일반 패치, 2026-10-29 — 브랜치 `hotfix/theme-fade`, 프론트만): **밝게 · 어둡게 전환을 더 부드럽게.** 운영자 요청. 요소마다 색을 따로 바꾸는 방식이 요소별로 끊겨 보여서, **View Transitions** 로 화면 전체를 한 장으로 찍어 두고 새 테마 화면을 위에 0.9초 동안 서서히 드러내게 했다(`document.startViewTransition` — `theme.js` `_apply` · `html.theme-vt` · `theme.css` `::view-transition-*`). 전환 중엔 요소별 `transition`(0.15~0.3s)을 꺼서 페이드 한 가지만 남긴다(새 화면은 살아 있는 화면이라 요소별 전환이 겹치면 두 번 바뀌는 것처럼 끊겨 보였다 — 실제 Chrome 에서 전환 중 15개가 도는 것을 확인). 못 쓰는 브라우저는 예전 방식(요소별 색 전환)으로 돌아가되 0.3s → 0.7s 감속 곡선(`--theme-ease`) · 그림자 · 외곽선 · 밑줄 색 · 배경 장식(`#bgdeco`) 투명도 · 톤도 포함, 유지 시간 350 → 800ms. 움직임 줄이기 설정이면 전환 없음(그대로).
