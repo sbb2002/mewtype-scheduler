@@ -1,0 +1,10 @@
+.rig-maru{animation-duration:8s}
+.rig-maru .rig-head{animation:maru-nod14 12s ease-in-out infinite;animation-delay:var(--phase);transform-origin:50% 90%}
+.rig-maru .rig-ear-l,.rig-maru .rig-ear-r{animation:maru-puff14 8s ease-in-out infinite;animation-delay:var(--phase)}
+.rig-maru .rig-ear-r{animation-direction:reverse}
+.rig-maru .rig-arm_l,.rig-maru .rig-arm_r{transform-origin:var(--shoulder);animation:maru-wave14 7s ease-in-out infinite;animation-delay:0s}
+.rig-maru .rig-arm_r{animation-direction:reverse}
+@keyframes maru-nod14{50%{transform:rotate(.35deg)}}
+@keyframes maru-puff14{0%,100%{transform:rotate(-.6deg)}50%{transform:rotate(.6deg)}}
+@keyframes maru-wave14{0%,100%{transform:rotate(-1.8deg)}50%{transform:rotate(1.8deg)}}
+@media(prefers-reduced-motion:reduce){.rig-maru,.rig-maru *{animation:none!important}}
