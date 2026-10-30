@@ -925,7 +925,7 @@ function _article(m, prev, isRoot, unread, now) {
   return art;
 }
 /** 미디어 격자. 사진 = div[role=img](누르지 않음), 영상 = button(▶ — 누르면 원문 카드의 같은 칸으로).
- *  그림은 화면 근처에 올 때 넣는다(_paintGrid). 내려받기 막기: <img> 를 쓰지 않고 배경 그림 + 우클릭 · 끌기 막기 */
+ *  그림은 화면 근처에 올 때 넣는다(_paintGrid). 내려받기 막기: 우클릭 · 끌기 막기(v4.9.11 부터 그림은 Referer 를 안 보내는 <img>) */
 function _grid(items, inQuote, onVideo) {
   const g = L.gridOf(items.length);
   const box = _el("div", { cls: "tws-md " + g.cls });
@@ -944,7 +944,10 @@ function _grid(items, inQuote, onVideo) {
 }
 function _paintGrid(box, art) {
   for (const cell of box.querySelectorAll(".tws-md__cell[data-src]")) {
-    cell.style.backgroundImage = `url("${cell.dataset.src.replace(/["\\]/g, "")}")`;
+    // pbs.twimg.com 은 외부 Referer 요청을 거부한다(351) — CSS 배경 그림은 Referer 정책을 못 줘서 <img> 로 넣는다
+    const img = _el("img", { attrs: { alt: "", draggable: "false", decoding: "async", referrerpolicy: "no-referrer" } });
+    img.src = cell.dataset.src;
+    cell.prepend(img);
     cell.dataset.painted = cell.dataset.src;
     cell.removeAttribute("data-src");
   }
@@ -952,6 +955,7 @@ function _paintGrid(box, art) {
   const src = box.firstElementChild && box.firstElementChild.dataset.painted;
   if (!src) return;
   const im = new Image();                     // 크기만 읽는다(화면에는 두지 않는다)
+  im.referrerPolicy = "no-referrer";
   im.onload = () => {
     const r = L.singleRatio(im.naturalWidth, im.naturalHeight);
     box.dataset.ratio = String(r);
