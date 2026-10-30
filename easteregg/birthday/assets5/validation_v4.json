@@ -1,0 +1,103 @@
+{
+  "bytes": 1417731,
+  "within12MB": true,
+  "externalSourceAttributes": false,
+  "oldVectorCharacterRenderer": false,
+  "v2Unchanged": true,
+  "scenes": [
+    {
+      "name": "아라레",
+      "characters": [
+        "arale"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "유노",
+      "characters": [
+        "yuno",
+        "yuno-hands"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "리츠",
+      "characters": [
+        "ritsu"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "미야코",
+      "characters": [
+        "duck",
+        "maru",
+        "miyako"
+      ],
+      "loaded": true,
+      "imageCount": 18,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "노노카",
+      "characters": [
+        "nonoka"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    }
+  ],
+  "araleKeyboardJump": true,
+  "headReallyMoves": true,
+  "generatedBlinkFrame": {
+    "open": "0",
+    "closed": "1",
+    "earTransform": "matrix(0.99863, -0.052336, 0.052336, 0.99863, 0, 0)"
+  },
+  "maruPresent": true,
+  "keyboardSelected": "유노",
+  "cometDuration": "5.2s",
+  "fireworksVisible": true,
+  "fireworksCleared": true,
+  "pause": {
+    "rafStopped": true,
+    "cssPaused": "paused",
+    "burstDisabled": true
+  },
+  "backgroundOff": "hidden",
+  "syntheticHiddenStopsRAF": true,
+  "reducedMotion": {
+    "disabled": true,
+    "animatedCount": 0,
+    "open": "1",
+    "closed": "0"
+  },
+  "responsive": [
+    {
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "width": 414,
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "overflow": false
+    }
+  ],
+  "preserved": true,
+  "runtimeErrors": 0,
+  "externalNetworkRequests": []
+}

@@ -1,0 +1,416 @@
+{
+  "bytes": 1385051,
+  "within12MB": true,
+  "externalSourceAttributes": false,
+  "oldVectorCharacterRenderer": false,
+  "v2Unchanged": true,
+  "scenes": [
+    {
+      "name": "아라레",
+      "characters": [
+        "arale"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "유노",
+      "characters": [
+        "yuno",
+        "yuno-hands"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "리츠",
+      "characters": [
+        "ritsu"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "미야코",
+      "characters": [
+        "duck",
+        "maru",
+        "miyako"
+      ],
+      "loaded": true,
+      "imageCount": 16,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "노노카",
+      "characters": [
+        "nonoka"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    }
+  ],
+  "motionFrames": [
+    {
+      "name": "ritsu",
+      "t": 0,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(0.996195, -0.0871557, 0.0871557, 0.996195, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "25px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 650,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "25px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 1300,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(0.996195, 0.0871557, -0.0871557, 0.996195, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "25px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 1950,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "25px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 0,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(0.984808, -0.173648, 0.173648, 0.984808, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "23px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 150,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "23px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 300,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(0.984808, 0.173648, -0.173648, 0.984808, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "23px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 450,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "23px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    }
+  ],
+  "pawTrajectories": [
+    {
+      "name": "ritsu",
+      "t": 0,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            108.00041680000001,
+            193.8169432
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            139,
+            186
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 650,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            106,
+            196
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            139,
+            186
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 1300,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            103.8169432,
+            198.0004168
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            139,
+            186
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 1950,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            106,
+            196
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            139,
+            186
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 0,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            107.976592,
+            207.452648
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            141,
+            202
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 150,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            104,
+            212
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            141,
+            202
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 300,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            99.294192,
+            215.787752
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            141,
+            202
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 450,
+      "paws": [
+        {
+          "part": "arm8_l",
+          "center": [
+            104,
+            212
+          ],
+          "insidePlayingZone": true
+        },
+        {
+          "part": "arm8_r",
+          "center": [
+            141,
+            202
+          ],
+          "insidePlayingZone": true
+        }
+      ]
+    }
+  ],
+  "araleKeyboardJump": true,
+  "headReallyMoves": true,
+  "generatedBlinkFrame": {
+    "open": "0",
+    "closed": "1",
+    "earTransform": "matrix(0.99863, -0.052336, 0.052336, 0.99863, 0, 0)"
+  },
+  "maruPresent": true,
+  "keyboardSelected": "유노",
+  "cometDuration": "5.2s",
+  "fireworksVisible": true,
+  "fireworksCleared": true,
+  "pause": {
+    "rafStopped": true,
+    "cssPaused": "paused",
+    "burstDisabled": true
+  },
+  "backgroundOff": "hidden",
+  "syntheticHiddenStopsRAF": true,
+  "reducedMotion": {
+    "disabled": true,
+    "animatedCount": 0,
+    "open": "1",
+    "closed": "0"
+  },
+  "responsive": [
+    {
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "width": 414,
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "overflow": false
+    }
+  ],
+  "preserved": true,
+  "runtimeErrors": 0,
+  "externalNetworkRequests": [],
+  "disclaimer": true,
+  "anchoredArms": true,
+  "otherCharactersUnchanged": true,
+  "sceneAndMotionCodeUnchanged": true,
+  "shouldersUnchanged": true
+}

@@ -1,0 +1,3 @@
+/* Reference-first low resting silhouette: no whole-sprite head tilt or independent paw motion. */
+.rig-miyako{animation-duration:8s}
+.rig-miyako .rig-head{animation:none}

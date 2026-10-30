@@ -1,0 +1,18 @@
+/* All arm transforms rotate around an anchored shoulder, never translate. */
+.rig-ritsu .rig-arm8_l{animation:stroke8 2.6s ease-in-out infinite;transform-origin:var(--shoulder)}
+.rig-ritsu .rig-arm8_r{animation:chord8 10.4s ease-in-out infinite;transform-origin:var(--shoulder)}
+.rig-nonoka .rig-arm8_l{animation:stroke8-fast .6s ease-in-out infinite;transform-origin:var(--shoulder)}
+.rig-nonoka .rig-arm8_r{animation:chord8 4.8s ease-in-out infinite;transform-origin:var(--shoulder)}
+.rig-yuno .rig-arm8_l{animation:scratch8 3.8s ease-in-out infinite;transform-origin:var(--shoulder)}
+.rig-yuno .rig-arm8_r{animation:mixer8 11.4s ease-in-out infinite;transform-origin:var(--shoulder)}
+.rig-yuno .rig-body{clip-path:polygon(25% 0,75% 0,75% 28%,78% 66%,100% 85%,100% 100%,0 100%,0 85%,22% 66%,25% 28%)}
+.rig-arale .rig-arm_l,.rig-arale .rig-arm_r,.rig-duck .rig-arm_l,.rig-duck .rig-arm_r{animation:none}
+.rig-miyako .rig-paw7_l,.rig-miyako .rig-paw7_r{animation:none}
+@keyframes stroke8{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+@keyframes stroke8-fast{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(10deg)}}
+@keyframes chord8{0%,30%,100%{transform:rotate(0)}45%,65%{transform:rotate(1.5deg)}}
+@keyframes scratch8{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}
+@keyframes mixer8{0%,30%,100%{transform:rotate(0)}12%,22%{transform:rotate(4deg)}48%,66%{transform:rotate(-72deg)}54%,60%{transform:rotate(-68deg)}}
+.rig-ritsu .rig-prop{transform:rotate(22deg);transform-origin:53px 44px}
+.rig-nonoka .rig-prop{transform:rotate(22deg);transform-origin:54px 44px}
+@media(prefers-reduced-motion:reduce){.raster-rig,.raster-rig *{animation:none!important}}

@@ -1,0 +1,159 @@
+{
+  "bytes": 1212244,
+  "within12MB": true,
+  "externalSourceAttributes": false,
+  "oldVectorCharacterRenderer": false,
+  "v2Unchanged": true,
+  "scenes": [
+    {
+      "name": "아라레",
+      "characters": [
+        "arale"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "유노",
+      "characters": [
+        "yuno",
+        "yuno-hands"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "리츠",
+      "characters": [
+        "ritsu"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "미야코",
+      "characters": [
+        "duck",
+        "maru",
+        "miyako"
+      ],
+      "loaded": true,
+      "imageCount": 6,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "노노카",
+      "characters": [
+        "nonoka"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    }
+  ],
+  "mallardFrames": [
+    {
+      "t": 0,
+      "transform": "matrix(1, 0, 0, 1, 0, 0)"
+    },
+    {
+      "t": 2250,
+      "transform": "matrix(0.999998, 0.00174533, -0.00174533, 0.999998, 0, -0.5)"
+    },
+    {
+      "t": 4500,
+      "transform": "matrix(0.999994, 0.00349065, -0.00349065, 0.999994, 0, -1)"
+    },
+    {
+      "t": 6750,
+      "transform": "matrix(0.999998, 0.00174533, -0.00174533, 0.999998, 0, -0.5)"
+    }
+  ],
+  "mallardStyle": {
+    "naturalWidth": 200,
+    "naturalHeight": 200,
+    "width": "200px",
+    "height": "200px",
+    "rendering": "pixelated",
+    "flip": "matrix(-1, 0, 0, 1, 0, 0)",
+    "animation": "mallard-bob13",
+    "duration": "9s"
+  },
+  "mallardPause": "paused",
+  "mallardHidden": "paused",
+  "mallardReducedMotion": "none",
+  "miyakoFrames": [
+    {
+      "state": "open",
+      "t": 0,
+      "opacities": {
+        "open": "1",
+        "closed": "0"
+      }
+    },
+    {
+      "state": "closed",
+      "t": 3058,
+      "opacities": {
+        "open": "0",
+        "closed": "1"
+      }
+    }
+  ],
+  "araleKeyboardJump": true,
+  "headReallyMoves": true,
+  "generatedBlinkFrame": {
+    "open": "0",
+    "closed": "1",
+    "earTransform": "matrix(0.99863, -0.052336, 0.052336, 0.99863, 0, 0)"
+  },
+  "maruPresent": true,
+  "keyboardSelected": "유노",
+  "cometDuration": "5.2s",
+  "fireworksVisible": true,
+  "fireworksCleared": true,
+  "pause": {
+    "rafStopped": true,
+    "cssPaused": "paused",
+    "burstDisabled": true
+  },
+  "backgroundOff": "hidden",
+  "syntheticHiddenStopsRAF": true,
+  "reducedMotion": {
+    "disabled": true,
+    "animatedCount": 0,
+    "open": "1",
+    "closed": "0"
+  },
+  "responsive": [
+    {
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "width": 414,
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "overflow": false
+    }
+  ],
+  "preserved": true,
+  "runtimeErrors": 0,
+  "externalNetworkRequests": [],
+  "disclaimer": true,
+  "otherCharactersUnchanged": true,
+  "otherSceneCodeUnchanged": true,
+  "mallardOriginalEmbedded": true,
+  "mallardCopyUnchanged": true,
+  "restoredOriginalFiles": true,
+  "originalWebPEmbedded": true
+}

@@ -1,0 +1,94 @@
+{
+  "ritsu/arm8_l": {
+    "proximalArmPixelsUnchanged": true,
+    "distalShift": [
+      6.0,
+      5.0
+    ],
+    "shoulder": [
+      82,
+      172
+    ],
+    "oldBox": [
+      73,
+      167,
+      36,
+      32
+    ],
+    "newBox": [
+      73,
+      167,
+      41,
+      35
+    ]
+  },
+  "ritsu/arm8_r": {
+    "proximalArmPixelsUnchanged": true,
+    "distalShift": [
+      0.0,
+      0.0
+    ],
+    "shoulder": [
+      157,
+      174
+    ],
+    "oldBox": [
+      125,
+      169,
+      41,
+      34
+    ],
+    "newBox": [
+      132,
+      169,
+      34,
+      34
+    ]
+  },
+  "nonoka/arm8_l": {
+    "proximalArmPixelsUnchanged": true,
+    "distalShift": [
+      5.0,
+      1.0
+    ],
+    "shoulder": [
+      80,
+      187
+    ],
+    "oldBox": [
+      70,
+      181,
+      37,
+      35
+    ],
+    "newBox": [
+      70,
+      181,
+      42,
+      37
+    ]
+  },
+  "nonoka/arm8_r": {
+    "proximalArmPixelsUnchanged": true,
+    "distalShift": [
+      0.0,
+      0.0
+    ],
+    "shoulder": [
+      158,
+      189
+    ],
+    "oldBox": [
+      129,
+      184,
+      37,
+      28
+    ],
+    "newBox": [
+      135,
+      184,
+      31,
+      28
+    ]
+  }
+}

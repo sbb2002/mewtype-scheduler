@@ -1,0 +1,6 @@
+/* Original v3/v4 images, transformed only; all selectors are limited to the two guitarists. */
+.rig-ritsu .rig-arm_l{rotate:-90deg;transform-origin:var(--shoulder);animation:stroke8 2.6s ease-in-out 0s infinite}
+.rig-ritsu .rig-arm_r{rotate:110deg;transform-origin:var(--shoulder);animation:chord8 10.4s ease-in-out 0s infinite}
+.rig-nonoka .rig-arm_l{rotate:-75deg;transform-origin:var(--shoulder);animation:stroke8-fast .6s ease-in-out 0s infinite}
+.rig-nonoka .rig-arm_r{rotate:110deg;transform-origin:var(--shoulder);animation:chord8 4.8s ease-in-out 0s infinite}
+@media(prefers-reduced-motion:reduce){.rig-ritsu .rig-arm_l,.rig-ritsu .rig-arm_r,.rig-nonoka .rig-arm_l,.rig-nonoka .rig-arm_r{animation:none!important}}

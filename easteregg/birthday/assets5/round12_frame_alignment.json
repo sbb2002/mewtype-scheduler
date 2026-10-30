@@ -1,0 +1,32 @@
+{
+  "sharedCrop": [
+    106,
+    135,
+    1497,
+    914
+  ],
+  "rigHead": [
+    5.0,
+    114,
+    230,
+    129
+  ],
+  "eyePatchBoxes": [
+    [
+      365,
+      520,
+      565,
+      645
+    ],
+    [
+      715,
+      540,
+      930,
+      675
+    ]
+  ],
+  "sameAlpha": true,
+  "mouthUnchanged": true,
+  "outsideEyePatchesUnchanged": true,
+  "changedPixels": 39608
+}

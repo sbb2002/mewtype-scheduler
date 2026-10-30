@@ -1,0 +1,20 @@
+{
+  "characters": {
+    "ritsu": {
+      "faceBodyInstrumentAndOtherPartsUnchanged": true,
+      "armPawConnectedComponents": {
+        "arm8_l": 1,
+        "arm8_r": 1
+      }
+    },
+    "nonoka": {
+      "faceBodyInstrumentAndOtherPartsUnchanged": true,
+      "armPawConnectedComponents": {
+        "arm8_l": 1,
+        "arm8_r": 1
+      }
+    }
+  },
+  "oldFilesPreserved": true,
+  "sceneMotionCodeUnchanged": true
+}

@@ -1,0 +1,143 @@
+{
+  "source": "C:\\Users\\User\\Documents\\pyworks\\mewtype-scheduler-worktrees\\devpapers\\ref\\birthday-easteregg-handoff\\birthday\\assets5",
+  "files": {
+    "ritsu_arm_l.png": "d9333b7484f333f04738090e27e19aadfa26322fe0103cfa09a90eed2e09e737",
+    "ritsu_arm_l.webp": "422af5e001d3ecdebd5e277065a62cd9ecad01c8312fd4513f5ea86ec60d9bf6",
+    "ritsu_arm_r.png": "c306c4426a7e4027a837fc85d3e21dd1c67bc52e162f900b9329b5f733f3318c",
+    "ritsu_arm_r.webp": "ba67d44dae6ee369048e96ba8926d21b7a16553ee6f0d299982210d8261c5eba",
+    "nonoka_arm_l.png": "5ccec0c8bfe2cfcee981ad7ef1d015b7408200daa93623c5dc650ecad941d6a9",
+    "nonoka_arm_l.webp": "8c2be5ae3ce2e328d3a159ddb6d3bc16cea7a16cf8873fff9816aa9ad7032aa7",
+    "nonoka_arm_r.png": "a1216411d77ac044d670b95e97ed078a49958204e22ed106011f5a94671ceb9c",
+    "nonoka_arm_r.webp": "c46218af1bad4dab20c4131714a921e028d87270c0f3a6fd3f9de0e1bf132a2e"
+  },
+  "originalRigs": {
+    "ritsu": {
+      "head": [
+        32,
+        35,
+        175,
+        140
+      ],
+      "ears": [
+        [
+          8,
+          -8,
+          45,
+          42
+        ],
+        [
+          121,
+          -8,
+          45,
+          42
+        ]
+      ],
+      "earOrigins": [
+        "50% 95%",
+        "50% 95%"
+      ],
+      "layers": [
+        [
+          "tail",
+          161,
+          191,
+          36,
+          35
+        ],
+        [
+          "body",
+          64,
+          165,
+          112,
+          78
+        ],
+        [
+          "prop",
+          67,
+          156,
+          91,
+          84
+        ],
+        [
+          "arm_l",
+          81,
+          186,
+          37,
+          32
+        ],
+        [
+          "arm_r",
+          125,
+          151,
+          40,
+          35
+        ]
+      ],
+      "baseline": 238
+    },
+    "nonoka": {
+      "head": [
+        33,
+        62,
+        176,
+        130
+      ],
+      "ears": [
+        [
+          9,
+          -63,
+          55,
+          88
+        ],
+        [
+          113,
+          -63,
+          55,
+          88
+        ]
+      ],
+      "earOrigins": [
+        "50% 95%",
+        "50% 95%"
+      ],
+      "layers": [
+        [
+          "tail",
+          165,
+          211,
+          34,
+          33
+        ],
+        [
+          "body",
+          64,
+          181,
+          112,
+          74
+        ],
+        [
+          "prop",
+          66,
+          170,
+          98,
+          83
+        ],
+        [
+          "arm_l",
+          80,
+          200,
+          36,
+          38
+        ],
+        [
+          "arm_r",
+          132,
+          167,
+          39,
+          41
+        ]
+      ],
+      "baseline": 250
+    }
+  }
+}

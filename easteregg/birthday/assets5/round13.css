@@ -1,0 +1,4 @@
+.rig-duck.mallard-motion{width:200px;height:200px;transform-origin:100px 181px;animation:mallard-bob13 9s ease-in-out infinite}
+.rig-duck .mallard-icon{image-rendering:pixelated;transform:scaleX(-1)}
+@keyframes mallard-bob13{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-1px) rotate(.2deg)}}
+@media(prefers-reduced-motion:reduce){.rig-duck.mallard-motion{animation:none!important}}

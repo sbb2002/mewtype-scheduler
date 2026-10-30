@@ -1,9 +1,6 @@
-# 이 폴더는 공개 저장소다. 아래는 저작권 · 상표 문제로 커밋하지 않는다.
-# (전체 자료는 운영자가 보관 중인 birthday-easteregg-handoff.zip 에 있다 — HANDOFF.md 참고)
-*.png
-*.webp
-*.jpg
-*.jpeg
-birthday_bg_v*.html
+# AI 생성 일러스트 · 부위 이미지 · 시제품 HTML 은 운영자 결정(2026-10-30)으로 이 저장소에 보관한다 (비공식 팬 제작 · AI 생성 — HANDOFF.md 디스클레이머 참고).
+# 아래는 제3자 저작물이거나 용량만 큰 작업 부산물이라 커밋하지 않는다.
 refs/*/
+refs7/
 history/
+qa/shots*/

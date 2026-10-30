@@ -1,0 +1,32 @@
+﻿.rig-yuno .rig-head{animation:dj-nod 3.6s ease-in-out infinite}
+.rig-yuno .rig-arm_l{animation:scratch7 3.8s ease-in-out infinite;transform-origin:50% 70%}
+.rig-yuno .rig-arm_r{animation:mixer7 5.4s ease-in-out infinite}
+.rig-ritsu .rig-arm_l{animation:strum7 3.4s ease-in-out infinite;transform-origin:20% 10%}
+.rig-ritsu .rig-arm_r{animation:chord7 9s ease-in-out infinite;transform-origin:80% 70%}
+.rig-nonoka{animation:hop7 1.2s ease-in-out infinite}
+.rig-nonoka .rig-arm_l{animation:strum7 .6s ease-in-out infinite;transform-origin:15% 15%}
+.rig-nonoka .rig-arm_r{animation:chord7 4.8s ease-in-out infinite}
+.rig-nonoka .rig-head{animation:dj-nod 1.2s ease-in-out infinite}
+.rig-nonoka .rig-ear-l,.rig-nonoka .rig-ear-r{animation:ear7 1.2s ease-in-out infinite alternate}
+.rig-miyako .rig-sprite7{animation:keys7 7s ease-in-out infinite}
+.arale-jump .raster-rig{animation:jump7 1.8s ease-out 1}
+.arale-trigger{pointer-events:all;cursor:pointer;fill:transparent;stroke:transparent;stroke-width:2}
+.arale-trigger:focus-visible{outline:none;stroke:#9e7446;stroke-dasharray:4 5}
+@keyframes dj-nod{50%{transform:translateY(1.6px) rotate(1deg)}}
+@keyframes scratch7{25%{transform:translate(3px,-1px) rotate(5deg)}75%{transform:translate(-3px,1px) rotate(-5deg)}}
+@keyframes mixer7{35%,65%{transform:translateY(-3px) rotate(2deg)}}
+@keyframes strum7{0%,100%{transform:translateY(-2px) rotate(-5deg)}50%{transform:translateY(3px) rotate(7deg)}}
+@keyframes chord7{0%,35%,100%{transform:none}45%,65%{transform:translate(2px,-2px) rotate(-2deg)}}
+@keyframes hop7{50%{transform:translateY(-3px) rotate(.6deg)}}
+@keyframes ear7{to{transform:rotate(2deg)}}
+@keyframes keys7{50%{transform:translateY(.8px)}}
+@keyframes jump7{0%,28%,56%,84%,100%{transform:translateY(0)}14%{transform:translateY(-10px)}42%{transform:translateY(-7px)}70%{transform:translateY(-4px)}}
+@media(prefers-reduced-motion:reduce){.raster-rig,.raster-rig *{animation:none!important}}
+.rig-miyako .rig-sprite7{animation:none}
+.rig-miyako .rig-wing7_l{transform-origin:36% 64%;animation:wing7 8s ease-in-out infinite}
+.rig-miyako .rig-wing7_r{transform-origin:67% 64%;animation:wing7 8s ease-in-out infinite reverse}
+.rig-miyako .rig-paw7_l{animation:tap7 4.8s ease-in-out infinite}
+.rig-miyako .rig-paw7_r{animation:tap7 5.4s ease-in-out -2s infinite}
+@keyframes wing7{50%{transform:rotate(1.5deg)}}
+@keyframes tap7{40%,60%{transform:translateY(.7px)}}
+@media(prefers-reduced-motion:reduce){.raster-rig,.raster-rig *{animation:none!important}}

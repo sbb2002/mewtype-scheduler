@@ -1,0 +1,24 @@
+{
+  "l": {
+    "sameSize": true,
+    "changedBounds": [
+      1,
+      150,
+      98,
+      209
+    ],
+    "outsidePawMaskUnchanged": true,
+    "redCuffUnchanged": true
+  },
+  "r": {
+    "sameSize": true,
+    "changedBounds": [
+      1,
+      131,
+      63,
+      206
+    ],
+    "outsidePawMaskUnchanged": true,
+    "redCuffUnchanged": true
+  }
+}

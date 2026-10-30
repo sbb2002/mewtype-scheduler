@@ -1,0 +1,379 @@
+{
+  "bytes": 1382091,
+  "within12MB": true,
+  "externalSourceAttributes": false,
+  "oldVectorCharacterRenderer": false,
+  "v2Unchanged": true,
+  "scenes": [
+    {
+      "name": "아라레",
+      "characters": [
+        "arale"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "유노",
+      "characters": [
+        "yuno",
+        "yuno-hands"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "리츠",
+      "characters": [
+        "ritsu"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "미야코",
+      "characters": [
+        "duck",
+        "maru",
+        "miyako"
+      ],
+      "loaded": true,
+      "imageCount": 16,
+      "allImagesDataURI": true
+    },
+    {
+      "name": "노노카",
+      "characters": [
+        "nonoka"
+      ],
+      "loaded": true,
+      "imageCount": 9,
+      "allImagesDataURI": true
+    }
+  ],
+  "motionFrames": [
+    {
+      "name": "arale",
+      "t": 0,
+      "arms": []
+    },
+    {
+      "name": "arale",
+      "t": 1500,
+      "arms": []
+    },
+    {
+      "name": "arale",
+      "t": 3000,
+      "arms": []
+    },
+    {
+      "name": "arale",
+      "t": 4500,
+      "arms": []
+    },
+    {
+      "name": "yuno",
+      "t": 0,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(0.992546, -0.121869, 0.121869, 0.992546, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "yuno",
+      "t": 2850,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, -1.24013e-16, 1.24013e-16, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.998781, 0.0493539, -0.0493539, 0.998781, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "yuno",
+      "t": 5700,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(0.992546, 0.121869, -0.121869, 0.992546, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.324365, -0.945932, 0.945932, 0.324365, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "yuno",
+      "t": 8550,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "36px 7px",
+          "matrix": "matrix(1, 4.03043e-16, -4.03043e-16, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "39px 7px",
+          "matrix": "matrix(0.476462, -0.879195, 0.879195, 0.476462, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 0,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(0.996195, -0.0871557, 0.0871557, 0.996195, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "32px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 650,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "32px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 1300,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(0.996195, 0.0871557, -0.0871557, 0.996195, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "32px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "ritsu",
+      "t": 1950,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "9px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "32px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "miyako",
+      "t": 0,
+      "arms": []
+    },
+    {
+      "name": "miyako",
+      "t": 2000,
+      "arms": []
+    },
+    {
+      "name": "miyako",
+      "t": 4000,
+      "arms": []
+    },
+    {
+      "name": "miyako",
+      "t": 6000,
+      "arms": []
+    },
+    {
+      "name": "maru",
+      "t": 0,
+      "arms": []
+    },
+    {
+      "name": "maru",
+      "t": 1500,
+      "arms": []
+    },
+    {
+      "name": "maru",
+      "t": 3000,
+      "arms": []
+    },
+    {
+      "name": "maru",
+      "t": 4500,
+      "arms": []
+    },
+    {
+      "name": "duck",
+      "t": 0,
+      "arms": []
+    },
+    {
+      "name": "duck",
+      "t": 1500,
+      "arms": []
+    },
+    {
+      "name": "duck",
+      "t": 3000,
+      "arms": []
+    },
+    {
+      "name": "duck",
+      "t": 4500,
+      "arms": []
+    },
+    {
+      "name": "nonoka",
+      "t": 0,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(0.984808, -0.173648, 0.173648, 0.984808, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "29px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 150,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "29px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 300,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(0.984808, 0.173648, -0.173648, 0.984808, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "29px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    },
+    {
+      "name": "nonoka",
+      "t": 450,
+      "arms": [
+        {
+          "part": "rig-arm8_l ",
+          "origin": "10px 6px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        },
+        {
+          "part": "rig-arm8_r ",
+          "origin": "29px 5px",
+          "matrix": "matrix(1, 0, 0, 1, 0, 0)"
+        }
+      ]
+    }
+  ],
+  "araleKeyboardJump": true,
+  "headReallyMoves": true,
+  "generatedBlinkFrame": {
+    "open": "0",
+    "closed": "1",
+    "earTransform": "matrix(0.99863, -0.052336, 0.052336, 0.99863, 0, 0)"
+  },
+  "maruPresent": true,
+  "keyboardSelected": "유노",
+  "cometDuration": "5.2s",
+  "fireworksVisible": true,
+  "fireworksCleared": true,
+  "pause": {
+    "rafStopped": true,
+    "cssPaused": "paused",
+    "burstDisabled": true
+  },
+  "backgroundOff": "hidden",
+  "syntheticHiddenStopsRAF": true,
+  "reducedMotion": {
+    "disabled": true,
+    "animatedCount": 0,
+    "open": "1",
+    "closed": "0"
+  },
+  "responsive": [
+    {
+      "width": 320,
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "overflow": false
+    },
+    {
+      "width": 414,
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "overflow": false
+    }
+  ],
+  "preserved": true,
+  "runtimeErrors": 0,
+  "externalNetworkRequests": [],
+  "disclaimer": true,
+  "anchoredArms": true
+}
