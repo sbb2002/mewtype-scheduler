@@ -92,7 +92,7 @@ export function mountYunoScene(host, opts = {}) {
       const dpr = Math.min(win.devicePixelRatio || 1, width < 600 ? 1.5 : 2);
       canvas.width = Math.round(width*dpr); canvas.height = Math.round(height*dpr); ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    clear(); sync();
+    sync();   // 크기가 바뀌어도 날아가는 폭죽은 지우지 않는다(「온전히 보기」 전환의 스크롤바 변화로 처음 폭죽이 지워지던 문제) — 캔버스는 크기 설정 때 이미 비워진다
   }
   function burst(x, y, delay = 0) {
     const colors = ['#ff477d', '#fff9ec', '#efb62f'];

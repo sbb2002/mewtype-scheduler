@@ -4,7 +4,7 @@
 //
 // 「온전히 보기」: 🎂 버튼 하나 → 화려한 폭죽과 함께 화면 UI 를 부드럽게 숨기고 장면만 보여 준다(다시 누르기 · Esc · 빈 곳 누르기로 복귀).
 // 방문할 때마다 첫 장면 준비가 끝나면 AUTO_FULL_MS 동안 먼저 온전히 보여 준다(저장하지 않음 — 새로 열 때마다 다시).
-// 버튼 위치: 기본 = 오른쪽 아래(모바일은 멤버 줄 · 풋터 바로 위). 1초 꾹 누르면 끌어서 옮길 수 있고, 놓으면 가까운 왼쪽/오른쪽 가장자리에 붙는다.
+// 버튼 위치: 기본 = 오른쪽, 세로 73% 쯤(운영자가 정한 자리 — DEFAULT_POS. 멤버 줄 · 풋터 아래로는 못 내려간다). 0.5초 꾹 누르면 끌어서 옮길 수 있고, 놓으면 가까운 왼쪽/오른쪽 가장자리에 붙는다.
 // 위치만 localStorage "bday-btn" 에 저장한다(생일 스킨이 뜬 날에만 쓰인다).
 
 import { BIRTHDAYS, BIRTHDAY_SCENES_ENABLED, FALLBACK_CHANNELS } from "./config.js";
@@ -16,7 +16,7 @@ const SCENE_LOADERS = {
 };
 
 const AUTO_FULL_MS = 4500;
-const HOLD_MS = 1000;          // 이만큼 꾹 누르면 끌기 모드
+const HOLD_MS = 500;           // 이만큼(0.5초) 꾹 누르면 끌기 모드
 const HOLD_CANCEL_PX = 10;     // 꾹 누르는 동안 이만큼 움직이면 취소(스크롤 · 우연한 끌림)
 const EDGE = 12;               // 화면 가장자리 여백(px)
 const POS_KEY = "bday-btn";
@@ -27,7 +27,8 @@ let key = null;        // 지금 표시 중인 멤버 키
 let host = null, ui = null, greet = null, ctrl = null, btnFull = null, hintEl = null, bodyRO = null;
 let fullView = false, autoDone = false, suppressClick = false;
 let autoTimer = 0, midnightTimer = 0, seq = 0;
-let pos = { side: "right", ratio: null };   // 버튼 위치 — side: 붙은 가장자리, ratio: 세로 위치(화면 높이 대비, null = 기본(아래쪽))
+const DEFAULT_POS = { side: "right", ratio: 0.73 };   // 기본 위치 — 운영자가 정한 자리(2026-10-31)
+let pos = { ...DEFAULT_POS };   // 버튼 위치 — side: 붙은 가장자리, ratio: 세로 위치(화면 높이 대비. null 이면 맨 아래 허용 높이)
 const reduceMq = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 const reduced = () => !!(reduceMq && reduceMq.matches);
 
@@ -60,7 +61,7 @@ function setFull(on, fireworks) {
   setPageInert(on);
   btnFull.setAttribute("aria-pressed", String(on));
   btnFull.setAttribute("aria-label", on ? "화면으로 돌아가기" : "배경 전체 보기");
-  btnFull.title = (on ? "화면으로 돌아가기" : "배경 전체 보기") + " (1초 꾹 누르면 위치 이동)";
+  btnFull.title = (on ? "화면으로 돌아가기" : "배경 전체 보기") + " (0.5초 꾹 누르면 위치 이동)";
   btnFull.firstChild.textContent = on ? "✕" : "🎂";
   greet.setAttribute("aria-hidden", String(!on));
   if (fireworks && ctrl && !reduced()) { if (on) ctrl.finale(); else ctrl.celebrate(); }
@@ -170,7 +171,7 @@ function attachDrag(btn) {
 
 function buildUi(k) {
   ui = el("div", { id: "bday-ui" });
-  btnFull = el("button", { type: "button", class: "bday-btn", "aria-pressed": "false", "aria-label": "배경 전체 보기", title: "배경 전체 보기 (1초 꾹 누르면 위치 이동)" });
+  btnFull = el("button", { type: "button", class: "bday-btn", "aria-pressed": "false", "aria-label": "배경 전체 보기", title: "배경 전체 보기 (0.5초 꾹 누르면 위치 이동)" });
   btnFull.append(el("span", { class: "bday-btn__ico", "aria-hidden": "true" }, "🎂"));
   const ring = document.createElementNS(NS, "svg");           // 꾹 누를 때 차오르는 고리
   ring.setAttribute("class", "bday-ring");
@@ -212,8 +213,8 @@ function setup(k) {
   }).then(() => {
     if (mySeq !== seq || !ctrl || autoDone) return;
     autoDone = true;
-    if (!reduced()) {                         // 첫 장면 준비가 끝나면 잠깐 온전히 보여 준다(폭죽 없이 — 폭죽은 버튼을 눌렀을 때만)
-      setFull(true);
+    if (!reduced()) {                         // 첫 장면 준비가 끝나면 화려한 폭죽과 함께 잠깐 온전히 보여 준다
+      setFull(true, true);
       autoTimer = setTimeout(() => setFull(false), AUTO_FULL_MS);
     }
   }).catch((e) => {

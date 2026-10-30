@@ -22,7 +22,7 @@
 :root[data-bday] #player-dock { -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15); }
 
 /* ③ 컨트롤 — 🎂 버튼 하나(#bday-ui). 위치는 js 가 transform 으로 정한다(기본 = 오른쪽 아래, 모바일은 멤버 줄 · 풋터 위). z-index = 푸터(50) 위 · 시트(900) 아래.
-   1초 꾹 누르면: 고리가 차오름 → 버튼이 커지며 살짝 흔들림(끌기 모드) → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 가장자리에 스프링으로 붙음 */
+   0.5초 꾹 누르면: 고리가 차오름 → 버튼이 커지며 살짝 흔들림(끌기 모드) → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 가장자리에 스프링으로 붙음 */
 #bday-ui {
   position: fixed; left: 0; top: 0; z-index: 60; width: 2.9rem; height: 2.9rem;
   --tilt: 0deg;
@@ -45,10 +45,10 @@
 .bday-btn:active { transform: rotate(var(--tilt)) scale(0.94); }
 .bday-btn:focus-visible { outline: 2px solid var(--color-text); outline-offset: 3px; }
 .bday-btn.is-holding { transform: rotate(var(--tilt)) scale(0.92); }
-/* 꾹 누르는 고리 */
+/* 꾹 누르는 고리(0.5초) */
 .bday-ring { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); transform: rotate(-90deg); pointer-events: none; overflow: visible; }
 .bday-ring circle { fill: none; stroke: #ffd36b; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 126; stroke-dashoffset: 126; opacity: 0; }
-.bday-btn.is-holding .bday-ring circle { opacity: 1; stroke-dashoffset: 0; transition: stroke-dashoffset 1s linear, opacity 0.15s; }
+.bday-btn.is-holding .bday-ring circle { opacity: 1; stroke-dashoffset: 0; transition: stroke-dashoffset 0.5s linear, opacity 0.12s; }
 /* 끌기 모드 — 커지고 빛나며 살짝 흔들린다 */
 #bday-ui.is-drag .bday-btn { transform: rotate(var(--tilt)) scale(1.22); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 211, 107, 0.55); animation: bday-wiggle 0.5s ease-in-out infinite; }
 @keyframes bday-wiggle { 0%, 100% { margin-top: 0; } 50% { margin-top: -2px; } }
