@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.9.11 | `812f45c` | 2026-10-30 20:19 | `hotfix/tweet-media-referrer` | 병합 커밋 | 프론트만 · 일반 패치 · 사진 `no-referrer` · 운영 config.js v4.9.11 · 번역 카드 9칸 로드 확인 |
 | v4.9.10 | `df28599` | 2026-10-29 22:28 | `hotfix/theme-fade` | 병합 커밋 | 프론트만 · 일반 패치(운영자 판정) · Vercel 프로덕션 success(`3p8igQyY9KgdzVPfRPaWn62BD5js`) |
 | v4.9.9 | `f772abb` | 2026-10-29 22:10 | `hotfix/tw-badge-border` | 병합 커밋 | 프론트만 · 버그 수정이라 일반 패치 · Vercel 프로덕션 success(`AA3s4FTnWHQrbAkdh3yvpoEan42g`) |
 | v4.9.8 | `0ae3315` | 2026-10-29 21:34 | `hotfix/bg-deco` | 병합 커밋 | 프론트만 · 새 화면 요소지만 운영자가 일반 패치로 정함 · Vercel 프로덕션 success(`FF9p6RLaX8TDXd5T8U5SQCRC377m`) |
@@ -225,6 +226,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
 - **v4.9.11** (일반 패치, 2026-10-30 — 브랜치 `hotfix/tweet-media-referrer`, 프론트만): **트윗 번역 면 사진이 안 나오던 것 수정.** 원인 = `pbs.twimg.com` 이 `Referer` 가 X 계열이 아닌 요청을 `351 Forbidden` 으로 거부(curl 실측: Referer 없음 · `x.com` · `twitter.com` = 200, 우리 도메인 · `example.com` · `google.com` = 351 — `tweets.json` 사진 12장 전부, 10-28 게시분 포함). 번역 면 사진이 CSS 배경 그림이라 Referer 정책을 줄 수 없었다 → `_paintGrid` 가 칸마다 `<img referrerpolicy="no-referrer" draggable="false">`(`.tws-md__cell > img`, `object-fit: cover`)를 넣고, 1칸 비율을 읽는 `new Image()` 에도 `referrerPolicy = "no-referrer"`. 영상 ▶ 는 `position: relative` 로 그림 위. **확인**: 운영 사이트에서 `no-referrer` 로 사진 27장 중 확인된 전부 로드(마지막 1장은 출력 잘림) · 임시 주입 9칸 모두 로드 · 수정본을 로컬(운영 data 사본)에서 열어 9칸 모두 로드 · 비율 7건 계산 · selfcheck tweetlogic 85 · render 16 · timetable 54 통과. **미확인**: 폰 실기기 · X 가 앞으로 `no-referrer` 까지 막을 가능성 · 규칙이 시작된 시각(운영자 관찰: 17시 전엔 보였음 — 폰 캐시 때문으로 추정, 미검증) · 영상 칸(데이터에 영상 없어 렌더 미확인).
+  - **배포 완료(2026-10-30)**: 병합 `812f45c`(PR #120, 20:19 KST) → 운영 config.js v4.9.11 · tweets.js 반영 · 운영 번역 카드 사진 9/9 로드 확인(Chrome PC). 롤백 = 프론트 `904793e`(v4.9.10). **남은 확인**: 폰 실기기.
 - **v4.9.10** (일반 패치, 2026-10-29 — 브랜치 `hotfix/theme-fade`, 프론트만): **밝게 · 어둡게 전환을 더 부드럽게.** 운영자 요청. 요소마다 색을 따로 바꾸는 방식이 요소별로 끊겨 보여서, **View Transitions** 로 화면 전체를 한 장으로 찍어 두고 새 테마 화면을 위에 0.9초 동안 서서히 드러내게 했다(`document.startViewTransition` — `theme.js` `_apply` · `html.theme-vt` · `theme.css` `::view-transition-*`). 전환 중엔 요소별 `transition`(0.15~0.3s)을 꺼서 페이드 한 가지만 남긴다(새 화면은 살아 있는 화면이라 요소별 전환이 겹치면 두 번 바뀌는 것처럼 끊겨 보였다 — 실제 Chrome 에서 전환 중 15개가 도는 것을 확인). 못 쓰는 브라우저는 예전 방식(요소별 색 전환)으로 돌아가되 0.3s → 0.7s 감속 곡선(`--theme-ease`) · 그림자 · 외곽선 · 밑줄 색 · 배경 장식(`#bgdeco`) 투명도 · 톤도 포함, 유지 시간 350 → 800ms. 움직임 줄이기 설정이면 전환 없음(그대로).
   - **배포 완료(2026-10-29)**: 병합 `df28599`(PR #118, 22:28 KST) → Vercel 프로덕션 success(`3p8igQyY9KgdzVPfRPaWn62BD5js`) · 운영 config.js v4.9.10 · theme.css 반영 확인. 롤백 = 프론트 `f772abb`(v4.9.9). **남은 확인**: 운영자 눈으로 본 전환 체감(로컬에서는 승인).
 - **v4.9.9** (일반 패치, 2026-10-29 — 브랜치 `hotfix/tw-badge-border`, 프론트만): **안 읽은 트윗 배지 테두리를 어둡게 · 밝게 모두 흰색으로.** 운영자 요청 — 어둡게에서 테두리가 카드 바탕색(`--color-bg-secondary` #1a1a1a)이라 까맣게 보였다. `.lane__tw` 의 `border` 색을 `#ffffff` 로 고정(밝게 값과 같음).
