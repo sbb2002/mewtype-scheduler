@@ -1421,6 +1421,24 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   `expires_at` 이 지난 메시지는 빼고, 게시 시각순으로 최대 `MAX_THREAD`(=50)건을 보여 준다. 트윗 없는 네임플레이트는 흔들기 + 「OO의 새 트윗이 아직 없어요」(`_noTweet`).
 - **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
 
+### X 이미지 Referer 거부 — 장애 기록 · 진단 순서 (v4.9.11, 2026-10-30)
+
+- **증상**: 트윗 시트 번역 면(`.tws-ko`) 사진 칸이 비어 보인다(칸 틀 · 비율은 그대로, 그림만 없음). 그 전까지는 잘 나왔다 — 운영자 관찰로는 이날 17시(KST) 전엔 보였고 그 뒤 새로 받는 그림부터 안 나왔다(이미 받아 둔 그림은 폰 캐시 때문에 계속 보였던 것으로 **추정** — 미검증).
+- **원인(실측)**: `pbs.twimg.com` 이 `Referer` 가 X 계열이 아닌 이미지 요청에 `351 Forbidden`(`text/html`)을 준다.
+  curl 실측 — Referer 없음 · `https://x.com/` · `https://twitter.com/` = 200, 우리 도메인 · `example.com` · `google.com` · `foo.vercel.app` = 351(`tweets.json` 사진 12장 전부, 10-28 게시분 포함). 이미지 URL · 데이터는 정상이었다.
+  X 개발자 포럼에 같은 증상(351, 해결 = `referrerpolicy="no-referrer"`)의 글이 있다(devcommunity.x.com「Avatars and header images obtained via OAuth cannot be loaded」). X 공식 문서에서 이 규칙을 설명한 곳은 찾지 못했다 — **언제 생겼는지 · 고정 규칙인지 모른다.**
+- **수정**: `tweets.js` `_paintGrid` 가 칸마다 `<img referrerpolicy="no-referrer" draggable="false" alt="" decoding="async">` 를 넣는다(`.tws-md__cell > img`, `object-fit: cover`). 1칸 비율을 읽는 `new Image()` 도 `referrerPolicy = "no-referrer"`.
+  이전(v4.9.3~v4.9.10)에는 CSS 배경 그림이었다 — **배경 그림은 Referer 정책을 줄 수 없어** 되돌리면 같은 문제가 난다. `banners.js` 의 행사 배너 그림은 처음부터 같은 속성을 쓴다.
+- **하지 말 것**: 전역 `<meta name="referrer" content="no-referrer">` — YouTube 임베드 플레이어가 Referer 를 필요로 한다.
+- **다시 안 나올 때 진단 순서**:
+  1. `tweets.json` 의 사진 주소 하나를 골라 `curl -s -o /dev/null -w "%{http_code}
+" "<주소>?name=small"` (Referer 없음) 과 `curl -e https://mewtype-schduler.vercel.app/ ...` 를 비교한다.
+     둘 다 200 이면 이미지 서버 문제가 아니다(브라우저 확장 · Firefox 추적 방지 · 이미지 삭제 등). **Referer 없음도 막히면 `no-referrer` 우회가 더는 안 통하는 것** — 아래 대안으로.
+  2. 브라우저 개발자 도구 Network 에서 사진 요청의 상태 · Content-Type 을 본다(351 · `text/html` 이면 이 건과 같다).
+  3. 폰만 안 나오면 사이트 데이터(캐시)를 지우고 다시 열어 본다 — 옛 그림은 캐시로 보이고 새 그림만 안 나오는 식으로 가려질 수 있다.
+- **막힌 뒤 대안(결정 미정 — 운영자 판단)**: ① 실패 칸에 「사진을 불러오지 못했어요 · 원문에서 보기」 표시(프론트만) ② 서버가 최근 사진을 주기적으로 Referer 없이 요청해 실패하면 텔레그램 알림 ③ 그림을 우리 쪽에 보관 · 중계(저장 · 저작권 부담 — 「X 카드 + 번역만, 재조립 금지」 방향과 충돌 가능).
+  지금은 ① ② 도 **구현하지 않았다**(실패해도 조용히 빈 칸 — 운영자가 눈으로 봐야 안다).
+
 ### 트윗 시트 (self-reply 핫픽스) — `tweets.js` · `tweetlogic.js` · `css/tweets.css`
 
 설계 정본 = devpapers `ref/self-reply/ui_spec.md`(결정 U1~U9, §3 지킬 것) · 확정 시안 `ui_prototype.html`. 시트 하나를 `document.body` 에 두고 JS 가 만든다(`createElement` · `textContent` 만, innerHTML 금지).
