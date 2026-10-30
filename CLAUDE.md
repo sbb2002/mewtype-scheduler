@@ -194,6 +194,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 - **준영구 「대기소 · 프리챗 · 굿즈안내」 프레임**(`upcoming` 인데 예정 시각이 1~2년 뒤)이 섞여 들어온다 — 필터 없이 노출(보류 결정). 그래서 날짜 표기에 연도를 생략하지 않는다.
 - **폰 알림 원문은 조용히 잘릴 수 있다** — Automate 리스너가 축약본(`contentText`)만 넘기면 말줄임표 없이 완결된 문장처럼 잘려 온다(버그리포트 20260913 #2).
   그래서 tweet id 가 있으면 vxtwitter 결과를 정본으로 쓴다(`telegram_app._recover_raw_via_vxtwitter`, SPEC §8.6). vxtwitter 가 죽으면 잘림이 재발할 수 있다.
+- **X 이미지(`pbs.twimg.com`)는 외부 Referer 를 거부한다**(2026-10-30, v4.9.11) — 트윗 번역 면 사진을 `<img referrerpolicy="no-referrer">` 로 그려 우회 중이다.
+  CSS 배경 그림 · 전역 `<meta name="referrer">` 로 바꾸면 다시 깨진다(전역은 YouTube 임베드도 건드린다). 사진이 안 나오면 `docs/SPEC.md` 「X 이미지 Referer 거부」 의 진단 순서를 따를 것.
 - **OIDC**: audience = 서비스 `status.url`. `mewtype-telegram` 은 INVOKER_SA 로 실행해야 메인 `/tick` 호출이 통과한다.
   gcloud `--args` 는 값이 `-` 로 시작하면 `--args=...` 형태로 붙인다.
 - **Claude 가 운영 사이트를 브라우저로 열 때는 주소에 `?va=claude` 를 붙인다** (2026-10-19 사용자 요청) — 그 탭은 방문 통계에서 빠진다(탭 단위, 새 탭마다 다시).
