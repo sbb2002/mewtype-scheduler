@@ -3,6 +3,10 @@
 작성 2026-10-30 · 브랜치 `easteregg/birthday-skin` · 다른 세션이 이 폴더만 보고 이어 작업할 수 있게 쓴 문서다.
 **이 브랜치는 main 병합 · 배포 대상이 아니다**(운영자 결정 전). 사이트 코드(`src/`)는 건드리지 않았다.
 
+> **[중요] 이 저장소는 공개(PUBLIC)라서, 저작권 · 상표가 걸린 파일은 브랜치에서 뺐다**(2026-10-30 운영자 지시). 브랜치에는 **문서 · 명세 · 지시서 · 스크립트 · 리그 메타**만 있다.
+> 뺀 것: `birthday_bg_v3.html` · `birthday_bg_v2.html`(신라면 봉지 재현 포함), `assets5/*.png` · `*.webp`(공식 캐릭터를 AI 가 재현한 일러스트와 부위 파일), 참고 이미지, Codex 대화 로그.
+> 전체는 운영자가 보관 중인 **`birthday-easteregg-handoff.zip`** 에 있다. 이 폴더(`easteregg/birthday/`)에 덮어 풀어서 쓰되, **다시 커밋하지 말 것**(`easteregg/birthday/.gitignore` 가 막는다. 그래도 `git status` 로 확인). 아래 §4~§6 의 파일 설명은 zip 을 푼 상태 기준이다.
+
 ## 1. 한 줄 요약
 멤버 생일 당일(KST 00:00~24:00)에 사이트를 그 멤버의 전용 장면으로 바꾸는 이스터에그.
 **지금까지 만든 것 = 「배경 장면 시제품」 1개(단일 HTML)뿐이다.** 사이트에는 아직 이식하지 않았다.
@@ -38,11 +42,12 @@
 ```
 easteregg/birthday/
   HANDOFF.md               이 문서
-  birthday_bg_v3.html      ★ 최신 시제품(단일 HTML, ~1.4MB, 외부 요청 0). 6라운드 반영본
-  birthday_bg_v2.html      v3 빌드의 베이스(SVG 장면 · 배경 · UI). 직접 열면 SVG 캐릭터 구버전
+  birthday_bg_v3.html      [zip 에만 있음] ★ 최신 시제품(단일 HTML, ~1.4MB, 외부 요청 0). 6라운드 반영본
+  birthday_bg_v2.html      [zip 에만 있음] v3 빌드의 베이스(SVG 장면 · 배경 · UI). 직접 열면 SVG 캐릭터 구버전
+  history/codex_dialog.log [zip 에만 있음] Codex 와의 전체 대화 로그(UTF-8, ~1MB). 라운드별 지시 · 응답 · 검증 출력
   design_notes.md          Codex 의 설계 · 검증 기록(라운드별 추가됨)
   spec.md                  초기 명세 v0.2(원근 · 성능 · 접근성 규칙). 이후 결정은 이 문서가 우선
-  assets5/                 생성 일러스트와 부위 PNG · WebP · 리그 메타 · 빌드 스크립트
+  assets5/                 리그 메타 · 빌드 스크립트 · 프롬프트(저장소에 있음). 생성 일러스트와 부위 PNG · WebP 는 [zip 에만 있음]
   briefs/                  Codex 에게 보낸 지시서(brief · feedback2~6) = 운영자 요구의 원문 기록
   qa/qa-birthday-v5.cjs    Codex 가 쓴 브라우저 점검 스크립트(의존성은 §6 참고)
   refs/README.md           참고 이미지를 다시 모으는 법(이미지 자체는 저작권상 올리지 않음)
@@ -60,7 +65,7 @@ easteregg/birthday/
 - 이미지는 WebP data URI 로 파일에 박혀 있다(61장).
 
 ## 6. 에셋 재생성 · 빌드
-- **빌드(검증됨)**: `easteregg/birthday/` 에서 `python assets5/build_v3.py` (Pillow 필요). `birthday_bg_v2.html` + `assets5/rigs.json` + 부위 PNG → `birthday_bg_v3.html`. 이 파일들을 올리기 전 작업 폴더에서 돌렸을 때 `birthday_bg_v3.html` 과 **바이트 단위로 동일**한 결과가 나왔다(2026-10-30 확인). 단 git 의 줄 끝(CRLF → LF) 변환 때문에 다른 환경에서 다시 빌드하면 바이트는 다를 수 있다(내용은 같다).
+- **빌드(검증됨, zip 을 푼 뒤에만 가능 — 브랜치에는 PNG 와 v2 HTML 이 없다)**: `easteregg/birthday/` 에서 `python assets5/build_v3.py` (Pillow 필요). `birthday_bg_v2.html` + `assets5/rigs.json` + 부위 PNG → `birthday_bg_v3.html`. 이 파일들을 올리기 전 작업 폴더에서 돌렸을 때 `birthday_bg_v3.html` 과 **바이트 단위로 동일**한 결과가 나왔다(2026-10-30 확인). 단 git 의 줄 끝(CRLF → LF) 변환 때문에 다른 환경에서 다시 빌드하면 바이트는 다를 수 있다(내용은 같다).
 - 부위 PNG 의 출처 = 캐릭터마다 Codex 이미지 생성으로 만든 **3×3 투명 퍼핏 아틀라스**(`*_atlas.png`) → `extract_atlases.py` 로 부위 추출 → `prepare_parts.py` 로 정리. 미야코 6라운드 갱신은 `update_miyako_round6.py`. 프롬프트는 `assets5/*_prompt.txt`.
 - 다른 환경에서 이미지를 새로 생성하려면 Codex 의 `image_generation` 기능(안정판)과 **참고 이미지**가 필요하다. 참고 이미지는 `refs/README.md` 에 적힌 검색어로 다시 모은다.
 - 검증: `assets5/validate_v3.cjs`(스크립트 구문, 파일 크기 12MB 이하, 외부 src/href 없음, v2 불변 해시 등 점검 — 이 폴더에서 `node assets5/validate_v3.cjs`; v2 해시 비교는 `assets5/v2_preserved.sha256` 기준). `qa/qa-birthday-v5.cjs` 는 Codex 가 쓴 **임시 점검용**으로, `C:/Program Files/Google/Chrome/Application/chrome.exe` 와 `%TEMP%` 경로를 하드코딩하고 Node 의 `WebSocket`/`fetch` 로 Chrome 원격 디버깅(포트 9230)에 붙는다. Windows + Chrome 설치 + 최신 Node 에서만 그대로 돌고, 작업 폴더에 `birthday_bg_v3.html` 이 있어야 한다. 다른 환경에서는 참고용으로만 보고 새로 쓸 것. (두 스크립트 모두 이 브랜치로 옮긴 뒤 내가 다시 실행해 보지는 않았다. 작업 중 Codex 가 원래 위치에서 통과시킨 것만 확인했다.)
@@ -92,7 +97,8 @@ easteregg/birthday/
 - 폐기된 1차 시안의 아이디어(레인 빛줄기 + 반짝이, 아바타 왼쪽 위 꼬깔 SVG, 카드 포일 광택 + HAPPY BIRTHDAY 리본)는 **운영자가 「지나치게 단조롭다」고 반려**했다. 방향만 참고하고 §3 화풍으로 새로 설계할 것.
 
 ## 10. 알려진 위험 · 판단이 필요한 것
-- **이 저장소는 공개(PUBLIC)다.** 이 브랜치의 이미지는 공식 캐릭터를 참고 입력으로 **AI 가 재현한 파생물**이다. 공개 저장소 · 공개 사이트에 올려도 되는지는 **운영자가 판단**한다(공식 도안 사용 · 신라면 봉지 재현 = 상표 · 저작권 문제). 참고 이미지로 쓴 제3자 스크린샷은 일부러 올리지 않았다.
+- **이 저장소는 공개(PUBLIC)다.** 생성 이미지는 공식 캐릭터를 참고 입력으로 **AI 가 재현한 파생물**이고, 아라레 장면에는 신라면 봉지 재현이 있다. 공개 저장소 · 공개 사이트에 올려도 되는지는 **운영자가 판단**한다(상표 · 저작권 문제). 그래서 이미지와 HTML 은 브랜치에서 뺐고 제3자 스크린샷 · 대화 로그도 올리지 않았다(위 중요 안내 참고).
+- **이력에는 이미지가 아직 남아 있다.** 이 브랜치의 첫 커밋(`1c8fd3b`)은 이미지 · HTML 을 포함한 채 이미 푸시됐고, 이후 커밋은 그 파일들을 **삭제만** 했다. 그래서 브랜치 끝(tip)에는 없지만 `1c8fd3b` 나 브랜치 이력에서는 내려받을 수 있다. 이력까지 지우려면 브랜치를 `origin/main` 기준 한 커밋으로 다시 만들어 **force push**(또는 브랜치 삭제 후 재생성)해야 하는데, 이 작업은 파괴적이라 자동 권한이 거부돼 **아직 하지 않았다** — 운영자가 직접 하거나 허락해야 한다. 그래도 GitHub 은 SHA 를 아는 사람에게 연결 끊긴 커밋을 한동안 보여 줄 수 있어, 완전 삭제는 GitHub Support 에 캐시 제거를 요청해야 한다.
 - `foreignObject` 안의 `<img>` 방식은 Safari 에서 확대 · 변환 위치가 어긋날 수 있다. 데스크톱 Chrome 에서만 직접 확인했다. 모바일은 Codex 보고(4개 폭 가로 넘침 없음)만 있다.
 - 마루군 · 오리의 정확한 공식 도안은 확인하지 못했다(마루군은 공식 인형 · 일러스트 2장 기준).
 - 이미지 생성 결과는 매번 달라진다. 같은 캐릭터를 다시 만들면 다른 그림이 나오므로 확정된 `assets5/*.png` 를 원본으로 취급할 것.

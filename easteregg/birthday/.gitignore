@@ -1,0 +1,9 @@
+# 이 폴더는 공개 저장소다. 아래는 저작권 · 상표 문제로 커밋하지 않는다.
+# (전체 자료는 운영자가 보관 중인 birthday-easteregg-handoff.zip 에 있다 — HANDOFF.md 참고)
+*.png
+*.webp
+*.jpg
+*.jpeg
+birthday_bg_v*.html
+refs/*/
+history/
