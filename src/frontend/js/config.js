@@ -55,6 +55,24 @@ export const SONGS_FALLBACK_URL = "assets/songs.json";
 export const APP_VERSION = "v4.9.12";
 export const APP_DATE = "2026-10-30";
 
+// (v4.10.0) 멤버 생일 — KST 달력 날짜(MM-DD). 생일 당일 00:00~24:00(KST)에 배경이 그 멤버의 생일 스킨으로 바뀐다(js/birthday.js · birthdayui.js).
+// 일본 표준시와 한국 표준시는 UTC+9 로 같아 날짜가 어긋나지 않는다. 운영자 교차 확인 완료(2026-10-30).
+export const BIRTHDAYS = {
+  arale: "08-16",
+  yuno: "11-04",
+  nonoka: "04-17",
+  ritsu: "02-07",
+  miyako: "09-19"
+};
+// 장면(생일 스킨)이 완성돼 켜진 멤버. 나머지는 날짜만 등록해 두고 보강이 끝나면 true 로 켠다 — js/birthdayui.js SCENE_LOADERS 에 장면 모듈도 같이 등록.
+export const BIRTHDAY_SCENES_ENABLED = {
+  arale: false,
+  yuno: true,
+  nonoka: false,
+  ritsu: false,
+  miyako: false
+};
+
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;

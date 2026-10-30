@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Yuno scene module fixture</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/src/frontend/css/bdayscene-yuno.css">
+<style>html,body{margin:0;background:#170725}#scene-host{position:fixed;inset:0}</style>
+<div id="scene-host"></div>
+<script type="module">
+import { mountYunoScene } from '/src/frontend/js/bdayscene-yuno.js';
+window.mountYunoScene = mountYunoScene;
+window.scene = mountYunoScene(document.querySelector('#scene-host'));
+window.ready = scene.whenReady;
+</script></html>
