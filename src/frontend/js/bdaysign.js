@@ -21,7 +21,7 @@ const skySign=(()=>{
  let tt=0;for(const s of segs){const d=s.pen?(s.end-s.start)/penW*PENT:JUMP;s.start=tt;s.end=tt+=d}
  const T=tt,INTRO=.45;
  const path=new Path2D();for(const st of strokes){path.moveTo(...st[0]);for(const p of st.slice(1))path.lineTo(...p)}
- function layer(glow){const cv=document.createElement('canvas');cv.width=550;cv.height=390;const c=cv.getContext('2d');c.translate(-30,-5);c.lineCap='round';c.lineJoin='round';
+ function layer(glow){const cv=document.createElement('canvas');cv.width=614;cv.height=454;const c=cv.getContext('2d');c.translate(2,27);c.lineCap='round';c.lineJoin='round';
   if(glow){c.strokeStyle='#7844ba';c.lineWidth=9;c.shadowColor='#8ae3e2';c.shadowBlur=26;c.stroke(path);c.strokeStyle='#ff488d';c.lineWidth=6;c.shadowColor='#ff488d';c.shadowBlur=16;c.stroke(path);c.strokeStyle='#ff488d';c.lineWidth=4;c.shadowBlur=8;c.stroke(path)}
   else{strokes.forEach((st,i)=>{const p=new Path2D();p.moveTo(...st[0]);for(const pt of st.slice(1))p.lineTo(...pt);c.globalAlpha=1;c.strokeStyle='#ff488d';c.lineWidth=SKY_SIGN_WIDTHS[i]*1.9+1.2;c.stroke(p);c.globalAlpha=.55;c.strokeStyle='#ffc2dc';c.lineWidth=Math.max(1.4,SKY_SIGN_WIDTHS[i]*.6);c.stroke(p)})}return cv}
  return {strokes,segs,T,INTRO,core:layer(false),glow:layer(true)};
@@ -46,7 +46,7 @@ function skySignDrawOriginal(c,f,age){
    if(any){const k=(bin+.5)/8;c.globalAlpha=.8*k**1.1*visibility;c.strokeStyle=k>.55?'#ff488d':k>.25?'#d63a78':'#8f2a5c';c.shadowBlur=k>.55?6:0;c.stroke()}
   }c.restore();
  }
- if(rs>=0&&rs<f.fade){const rise=djEase15(rs/.18),decay=djEase15(djClamp15((f.fade-rs)/1.1)),pop=1+.9*Math.exp(-Math.max(0,rs-.18)/.35);c.save();c.globalAlpha=Math.min(1,.95*rise*decay);c.drawImage(skySign.glow,30,5);c.globalAlpha=Math.min(1,.5*pop*rise*decay);c.drawImage(skySign.glow,30,5);c.globalAlpha=Math.min(1,rise*decay);c.drawImage(skySign.core,30,5);c.restore()}
+ if(rs>=0&&rs<f.fade){const rise=djEase15(rs/.18),decay=djEase15(djClamp15((f.fade-rs)/1.1)),pop=1+.9*Math.exp(-Math.max(0,rs-.18)/.35);c.save();c.globalAlpha=Math.min(1,.95*rise*decay);c.drawImage(skySign.glow,-2,-27);c.globalAlpha=Math.min(1,.5*pop*rise*decay);c.drawImage(skySign.glow,-2,-27);c.globalAlpha=Math.min(1,rise*decay);c.drawImage(skySign.core,-2,-27);c.restore()}
  // 끊긴 지점마다 작은 별: UFO 가 다음 획으로 이동하는 것과 상관없이 제자리에서 독립적으로 회전하며 사라진다.
  skySign.segs.forEach((sg,i)=>{if(sg.pen)return;const st=age-sg.start;if(st>=0&&st<=1.0)skyStar(c,sg.a[0],sg.a[1],st/1.0,i+1,.42)});
  // 첫 시작을 제외한 모든 새 획의 시작점: UFO 가 나타나기 직전에 작은 별이 먼저 떠서 '여기서 다시 등장한다'는 느낌을 준다.

@@ -1,6 +1,6 @@
 // 정본 prototype_v12.html에서 수식·상수를 이식. 카메라/드롭/사인 폭만 정본 명세대로 변경.
 import { createSkySign } from './bdaysign.js';
-import { sceneLayout, introScene, introBrightness } from './bdaylogic.js';
+import { sceneLayout, introScene, introBrightness, fitSkySign } from './bdaylogic.js';
 import { backgroundStars, backgroundFireworks, backgroundMeteors, createAmbientTimeline, ambientVisibility } from './bdaystars.js';
 export function mountYunoScene(host,opts={}) {
 let snapshot=null,activeLayout=null,introActive=()=>false,groundBottom=760;
@@ -332,11 +332,11 @@ function skyUfos(c,t){
  const plan=skyPlan(TRK),env=(age,life,fade)=>djEase15(age/fade)*djEase15((life-age)/fade);
  const portrait=activeLayout?.portrait;
  const point=p=>portrait?[skyViewport.left+skyViewport.width*(.08+.84*p[0]/1200),skyViewport.top+skyViewport.height*(.12+.68*p[1]/395),p[2]]:p;
- c.save();c.beginPath();if(portrait)c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);else c.rect(0,0,1200,395);c.clip();c.lineCap='round';
+ c.save();c.beginPath();c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);c.clip();c.lineCap='round';
  if(skyUFO.complete&&skyUFO.naturalWidth)for(const f of plan.ufos){
   const age=t-f.birth,life=f.end-f.birth;if(age<0||age>life+SKY_TRAIL_DECAY)continue;
   if(f.type===1){
-   if(f.mode==='sign'){c.save();if(portrait){const k=activeLayout.signWidth/440;c.translate(600-k*275,activeLayout.signY);c.scale(k,k)}skySignDraw(c,f,age);c.restore();continue}
+   if(f.mode==='sign'){const fit=fitSkySign(skyViewport,portrait);c.save();c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);skySignDraw(c,f,age);c.restore();continue}
    skyTrail(c,ta=>point(skyZig(f,ta/f.flight)),age,f.flight);
    if(age>f.flight){if(age<=f.flight+1.3){const p=point(f.zig.pts.at(-1));skyStar(c,p[0],p[1],(age-f.flight)/1.3,998)}continue}
    for(let j=0;j<0;j++){const ta=age-.22*(1-j/26),tb=age-.22*(1-(j+1)/26);if(ta<0)continue;const a=skyZig(f,ta/f.flight),b=skyZig(f,tb/f.flight);c.globalAlpha=.55*(j/26)**1.4*env(age,f.flight,.09);c.strokeStyle=j<13?V:C;c.lineWidth=2.8;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke()}
@@ -345,8 +345,16 @@ function skyUfos(c,t){
    skyTrail(c,ta=>{const q=skyUfo2(f,ta);return point([q.x,q.y])},age,life);
    if(age>life)continue;
    const pos={...skyUfo2(f,age)},alpha=env(age,life,.65),mapped=point([pos.x,pos.y]);pos.x=mapped[0];pos.y=mapped[1];
-   if(pos.scanning){const e=djEase15(pos.u/.12)*djEase15((1-pos.u)/.12),sweep=Math.sin(pos.u*5*Math.PI),base=pos.x+sweep*95;
-    c.save();c.globalAlpha=alpha*e*.42;const g=c.createLinearGradient(pos.x,pos.y+15,base,395);g.addColorStop(0,P);g.addColorStop(.4,'#ff488db0');g.addColorStop(1,'#7844ba28');c.fillStyle=g;c.beginPath();c.moveTo(pos.x-18,pos.y+17);c.lineTo(base-100,395);c.quadraticCurveTo(base,408,base+100,395);c.lineTo(pos.x+18,pos.y+17);c.closePath();c.fill();c.restore();
+   if(pos.scanning){
+    const e=djEase15(pos.u/.18)*djEase15((1-pos.u)/.18),sx=pos.x-Math.sin(pos.tilt)*20,sy=pos.y+Math.cos(pos.tilt)*20;
+    const bottom=386,depth=Math.max(0,bottom-sy),width=Math.min(95,skyViewport.width*.19,depth*.30);
+    const base=Math.max(skyViewport.left+width,Math.min(skyViewport.left+skyViewport.width-width,sx+Math.sin(pos.u*Math.PI*2)*Math.min(45,depth*.12)));
+    if(depth>12){
+     c.save();c.globalAlpha=alpha*e*.24;const g=c.createLinearGradient(0,sy,0,bottom);g.addColorStop(0,'#8ae3e2a0');g.addColorStop(.55,'#8ae3e254');g.addColorStop(1,'#8ae3e200');
+     c.fillStyle=g;c.beginPath();c.moveTo(sx-7,sy);c.lineTo(base-width,bottom);c.quadraticCurveTo(base,bottom+7,base+width,bottom);c.lineTo(sx+7,sy);c.closePath();c.fill();
+     const glow=c.createRadialGradient(base,0,0,base,0,Math.max(1,width));glow.addColorStop(0,'#8ae3e278');glow.addColorStop(1,'#8ae3e200');
+     c.translate(0,bottom);c.scale(1,.07);c.fillStyle=glow;c.fillRect(base-width,-width,width*2,width*2);c.restore();
+    }
    }
    c.save();c.globalAlpha=alpha;c.translate(pos.x,pos.y);c.rotate(pos.tilt);c.shadowColor=P;c.shadowBlur=7;c.drawImage(skyUFO,-31,-31,62,62);c.restore();
   }

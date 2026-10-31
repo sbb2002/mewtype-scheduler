@@ -1,6 +1,7 @@
 // 생일 음악 컨트롤과 곡 시계 기준 인트로.
 import { introBrightness } from './bdaylogic.js';
 import { mountBirthdayPlayerDrag } from './bdayplayerdrag.js';
+import { mountBirthdayStory } from './bdaystory.js';
 export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
   let dead=false,raf=0,idle=0,intro=true,lastIndex=-1,ready=false,starting=false,unsub;
@@ -26,9 +27,10 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
     pp.textContent=audio.paused?'▶':'Ⅱ';pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
     mute.textContent=audio.muted||!audio.volume?'🔇':'♫';mute.setAttribute('aria-pressed',String(audio.muted));
     range.value=audio.volume;range.style.setProperty('--v',audio.volume*100+'%');tip.textContent=Math.round(audio.volume*100)+'%';shell.classList.toggle('playing',!audio.paused);
-    if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪BGM '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}
+    if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪ '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}
   }
   unsub=audio.subscribe(update);update();scene.setClock(()=>audio.clock());scene.setIntro(()=>intro&&!reduced());
+  const story=mountBirthdayStory({audio,scene,shell,reduced});
   function wake(){shell.classList.remove('idle');clearTimeout(idle);idle=setTimeout(()=>shell.classList.add('idle'),5000)}
   for(const type of ['pointermove','pointerdown','keydown'])document.addEventListener(type,wake,{signal});wake();
   document.addEventListener('keydown',e=>{
@@ -49,5 +51,5 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   }
   document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else if(intro&&!raf&&!dead)raf=requestAnimationFrame(tick)},{signal});
   root.setAttribute('data-bday-intro','');setFull(true);raf=requestAnimationFrame(tick);start();
-  return {shell,get intro(){return intro},destroy(){dead=true;cancelAnimationFrame(raf);clearTimeout(idle);drag.destroy();events.abort();unsub();shell.remove();host.style.filter='';for(const k of ['data-bday-intro','data-bday-started','data-bday-revealed'])root.removeAttribute(k)}};
+  return {shell,get intro(){return intro},destroy(){dead=true;cancelAnimationFrame(raf);clearTimeout(idle);story.destroy();drag.destroy();events.abort();unsub();shell.remove();host.style.filter='';for(const k of ['data-bday-intro','data-bday-started','data-bday-revealed'])root.removeAttribute(k)}};
 }

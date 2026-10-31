@@ -12,6 +12,12 @@ export function sceneLayout(w,h) {
   const offsetY=portrait?h*.68-395*scale:(h-760*scale)/2;
   return {portrait,scale,offsetY,sunScale:portrait?(r>=1.9?1.6:1.45):1,signWidth:portrait?697:440,signY:portrait?(h*.25-offsetY)/scale-180*(697/440):0};
 }
+
+// 사인·UFO·별과 글로우를 감싼 원본 영역까지 화면의 하늘 안에 맞춘다.
+export function fitSkySign(view,portrait=false){
+ const k=Math.max(.01,Math.min((view.width*.9)/580,(view.height*.68)/430,(portrait?720:640)/580));
+ return {scale:k,x:view.left+view.width/2-290*k,y:view.top+view.height*.39-200*k};
+}
 export function decodeTrack(t,bands=null) {
   const q=bands?new Uint8Array(bands):Uint8Array.from(atob(t.bands),v=>v.charCodeAt(0));
   if(q.length!==t.frames*t.nb)throw new Error('박 지도 크기 불일치');

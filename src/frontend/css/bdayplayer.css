@@ -26,3 +26,21 @@
 @media(max-width:700px),(pointer:coarse){.bday-volume{display:none}.bday-music__bar{bottom:calc(110px + env(safe-area-inset-bottom));padding:5px 8px;gap:2px}.bday-music__title{right:calc(14px + env(safe-area-inset-right));bottom:calc(64px + env(safe-area-inset-bottom));max-width:calc(100% - 28px - env(safe-area-inset-left) - env(safe-area-inset-right));font-size:12px;text-align:right}.bday-music__disc{bottom:calc(38px + env(safe-area-inset-bottom));font-size:9.5px}.bday-music .bday-ib{min-width:34px}}
 @media(max-width:700px),(pointer:coarse){.bday-eq{flex-shrink:0}.bday-track{overflow-wrap:anywhere}}
 @media(prefers-reduced-motion:reduce){.bday-music *{animation:none!important;transition:none!important}}
+
+/* 짧은 이야기와 감상 기념 카드: 화면 안에서 줄바꿈하고 하단 음악 UI는 비워 둔다. */
+.bday-story{position:absolute;left:max(20px,env(safe-area-inset-left));right:max(20px,env(safe-area-inset-right));top:clamp(24px,18vh,150px);text-align:center;opacity:0;transform:translateY(6px);transition:opacity 1.2s ease,transform 1.2s ease;text-shadow:0 2px 5px #000,0 0 20px #000;visibility:hidden}
+[data-bday-full][data-bday-revealed] .bday-story{visibility:visible}
+.bday-story.is-visible{opacity:1;transform:none}
+.bday-story__text{max-width:34rem;margin:auto;font-size:clamp(17px,4.6vw,28px);font-weight:650;line-height:1.65;white-space:pre-line;overflow-wrap:anywhere;text-wrap:balance;color:#fff2e6}
+.bday-story__stars{min-height:1.6em;font-size:clamp(17px,4vw,25px);letter-spacing:.35em;color:#ffdc9b;text-shadow:0 0 14px #ffc88b80}
+.bday-memory{position:absolute;box-sizing:border-box;left:50%;top:max(14px,8vh);transform:translateX(-50%);width:min(440px,calc(100% - 40px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-height:calc(100% - 160px - 8vh - env(safe-area-inset-bottom));overflow:auto;padding:clamp(18px,4vw,32px);border:1px solid #ffe0b657;border-radius:22px;text-align:center;color:#fff3e3;background:linear-gradient(145deg,#29142ef5,#140d24f5);box-shadow:0 0 38px #ff9aca24,0 16px 48px #0008;pointer-events:auto;animation:bday-memory-in 1.8s ease both;overflow-wrap:anywhere}
+.bday-memory[hidden],:root:not([data-bday-full]) .bday-memory{display:none}
+.bday-memory h2{font-size:clamp(21px,5.5vw,32px);line-height:1.4;margin:10px 0 16px;text-wrap:balance}
+.bday-memory p{font-size:clamp(14px,3.7vw,17px);line-height:1.8;white-space:pre-line;margin:12px 0}
+.bday-memory__stars{font-size:26px;color:#ffdc9b;letter-spacing:.3em}
+.bday-memory p.bday-memory__signature{font-size:13px;color:#ffc2dc}
+.bday-memory button{max-width:100%;padding:10px 18px;margin-top:10px;border:1px solid #ffe0b657;border-radius:999px;background:#ffe3b915;color:#fff3e3;font:inherit;cursor:pointer;white-space:normal}
+.bday-memory button:focus-visible{outline:2px solid #8ae3e2;outline-offset:3px}
+@keyframes bday-memory-in{from{opacity:0}to{opacity:1}}
+@media(max-height:500px){.bday-story{top:18px}.bday-story__text{font-size:17px;line-height:1.4}.bday-memory{top:12px;max-height:calc(100% - 132px);padding:10px 16px;border-radius:15px}.bday-memory__stars{font-size:15px}.bday-memory h2{font-size:20px;margin:4px 0}.bday-memory p{font-size:12px;line-height:1.4;margin:5px 0}.bday-memory button{padding:6px 14px;margin-top:4px;font-size:12px}}
+@media(prefers-reduced-motion:reduce){.bday-story{transform:none;transition:opacity .5s ease}.bday-memory{animation:none}}
