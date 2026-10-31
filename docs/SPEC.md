@@ -425,20 +425,23 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
   흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
 - **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
 
-### 생일 스킨 (v4.10.0) — `birthday.js` · `birthdayui.js` · `bdayscene-<멤버>.js` · `bdaybeat.js` · `css/birthday.css` · `css/bdayscene-<멤버>.css`
+### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js`
 
 멤버 생일 **당일(KST 00:00 ~ 익일 00:00)** 에 화면 뒤 배경을 그 멤버의 생일 장면(AI 생성 일러스트 + 모션)으로 바꾼다. 평소(해당 없는 날)에는 아무 코드도 장면을 불러오지 않는다. 데이터를 받지 않는 순수 클라이언트 기능.
 
 - **생일 데이터**: `config.js` 의 `BIRTHDAYS`(`{키: "MM-DD"}`, KST 달력 날짜) — 아라레 08-16 · 노노카 04-17 · 리츠 02-07 · 미야코 09-19 · 유노 11-04(운영자 교차 확인 2026-10-30). 백엔드는 생일을 쓰지 않아 `config/channels.json` 이 아니라 프론트 상수에 둔다. `BIRTHDAY_SCENES_ENABLED`(`{키: bool}`)는 **장면이 완성돼 켜진 멤버** — 지금 `yuno` 만 true, 나머지 4명은 날짜만 등록(꺼 둠). 켜려면 이 값과 `birthdayui.js` 의 `SCENE_LOADERS` 에 장면 모듈을 같이 등록.
 - **판정(`birthday.js`, 순수 · DOM 없음)**: `kstMonthDay(nowMs)`(UTC+9 로 달력 날짜 읽기) · `birthdayMemberAt` · `overrideMember`(시험용 `?bday=<멤버키>`, 장면이 켜진 멤버만) · `pickBirthdayScene`(강제 표시 → 오늘 생일 → 없으면 null) · `msToNextKstMidnight`. self-check `node src/frontend/js/birthday.selfcheck.mjs`(경계 KST 23:59:59 / 00:00:00 · 윤년 · 연말 포함). 운영 사이트에서 시험할 때는 `?bday=yuno&va=claude`.
 - **화면(`birthdayui.js`)**: `main.js` `DOMContentLoaded` 의 `initBirthday()`. 판정이 멤버를 정하면 `<html data-bday="<멤버>">` · `<div id="bday-bg">`(장면 호스트, `position: fixed; inset: 0; z-index: -1`) · 컨트롤 `#bday-ui` · 인사 `#bday-greet` 를 붙이고 장면 모듈을 **그때 처음** `import()` 한다. 자정(KST) 직후 · 탭이 다시 보일 때 재판정(`msToNextKstMidnight` 타이머 + `visibilitychange`)해 날이 바뀌면 정리한다. 장면 로드 실패 시 평소 화면 그대로(콘솔 오류만). `data-bday` 가 있으면 평소 배경 장식(`#bgdeco`)은 숨긴다.
-- **장면 모듈 계약**: `mountYunoScene(host, opts) → { setStill(bool), celebrate(x?, y?), destroy(), whenReady }`. host 를 100%×100% 로 채우고(slice), 화면 비율에 따라 PC(가로) · 모바일(세로) 구도를 바꾼다. 모션 줄이기 · 「움직임 멈춤」 · 탭 숨김이면 정지(박 위상 시계 하나로 재개 시 어긋나지 않음). 이미지는 `assets/birthday/<멤버>/*.webp` 실제 파일(data URI 아님, 유노 9개 약 154KB). 데이터를 `innerHTML` 로 넣지 않는다.
+- **장면 모듈 계약**: `mountYunoScene(host, opts) → { setStill, celebrate, finale, destroy, whenReady, setClock, setTrack, setLayout, setIntro, setBrightness }`. 유노는 정본 `prototype_v12.html`의 Canvas 수식을 사용한다. `setClock(fn)`은 평활한 곡 시각, `setTrack(track)`은 디코딩된 박 지도를 받는다. 유노·데크는 x=600 중심. 가로는 1200×760 cover, 세로는 가로 820단위·지평선 68%, 태양 1.45/1.6배, 사인은 늘린 하늘 중앙에 화면 폭 85%로 배치한다. `visualViewport` 크기 변화·탭 숨김·화면 밖 정지를 처리한다. 모션 줄이기에서는 0초 정지 프레임. 기존 `celebrate/finale` 계약은 유지하되 기존 전환 폭죽의 색·수식·지연을 유지한다. 부위 webp 9개와 UFO만 실제 이미지로 요청하고, 사인은 벡터를 합성한다. `innerHTML`을 사용하지 않는다.
 - **유리 패널**(`css/birthday.css`): `html[data-bday]` 일 때 `.lane` · `.lane__header` · `.card` · `.vt` · `.tt__scroll` · `.tt-fold` · `.ntc__bar` · `#foot` · `#board > .tt-later` 의 바탕을 반투명(`--bday-glass`: 어둡게 `rgba(18,18,24,.58)` · 밝게 `rgba(255,255,255,.7)`) + `backdrop-filter: blur(10px)` 로 바꾼다. 팝업 · 시트는 불투명 그대로. 이 규칙은 `theme.css` 뒤에 불러온다.
-- **컨트롤(`#bday-ui`) — 🎂 버튼 하나**: 누르면 「온전히 보기」 전환(켤 때 화려한 폭죽 `finale()` — 하늘 10곳에서 차례로, 돌아올 때는 작은 폭죽 `celebrate()`). 폭죽 · 움직임 멈춤 · 배경 끄기 버튼은 두지 않는다(운영자 결정 2026-10-31 — 이스터에그라 하루 동안 유지). 모션 줄이기 설정이면 폭죽 · 모션 없이 정지한 장면만.
+- **컨트롤(`#bday-ui`)**: 🎂로 「온전히 보기」를 전환한다. 일반 화면에서는 옆 작은 재생/정지 버튼으로 음악을 제어하고, 전체 장면에서는 하단 음악 컨트롤을 사용한다. 기존 꾹 누르기·위치 저장은 유지하며 하단 플레이어 영역을 피한다.
   - **기본 위치**: 오른쪽 가장자리, 세로 화면 높이의 73%(`DEFAULT_POS` — 운영자가 직접 정한 자리, 2026-10-31). 모바일 멤버 줄(`#pager-dots` — CD · 타임테이블 버튼이 있는 줄)과 풋터 위로는 내려가지 못한다(`limits()` 가 두 요소의 `getBoundingClientRect().top` 으로 계산, 크기 변화는 `ResizeObserver(body)` · `resize` 로 따라간다)라 겹치지 않는다.
   - **끌어서 옮기기**: 0.5초(`HOLD_MS`) 꾹 누르면 끌기 모드 — 고리가 0.5초 동안 차오르고(손가락이 10px 넘게 움직이면 취소) → 진동(지원 기기) + 버튼이 커지며 빛나고 살짝 흔들림 + 「옮길 곳에 놓으세요」 말풍선 → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 왼쪽/오른쪽 가장자리에 스프링으로 붙고(짓눌렸다 튀어 오르는 안착 모션) 짧은 진동. 끌기를 마친 손가락 뗌은 클릭으로 세지 않는다. 위치(`{side, ratio}`)만 `localStorage "bday-btn"` 에 저장(생일 스킨이 뜬 날에만 쓰임). 멤버 줄 · 풋터 아래로는 놓을 수 없게 제한. 키보드는 Enter/Space 로 전환만(끌기는 포인터 전용).
-- **온전히 보기**: `html[data-bday-full]` — `#notice · #board · #player-dock · #player-frame · #foot · #pager-dots` 를 0.5초에 걸쳐 투명하게 하고 `inert` 를 걸어(포커스 · 클릭 차단) 장면 · 버튼 · 인사(「Happy Birthday.」 + 이름 · 날짜)만 남긴다. 🎂(켜면 ✕) 버튼 · Esc · 빈 곳 클릭으로 복귀. **방문할 때마다** 첫 장면 준비가 끝나면 화려한 폭죽과 함께 4.5초 동안 자동으로 온전히 보여 준다(저장 안 함 · 모션 줄이기 설정이면 생략).
-- **모션 안전**: 번쩍임 금지(밝기 점멸 없음), `prefers-reduced-motion` 이면 정지한 장면만.
+- **온전히 보기·인트로**: `html[data-bday-full]`은 기존 화면을 투명하게 하고 `inert`를 건다. 방문마다 Noctural Run 0초에서 시작한다(저장하지 않음). 자동재생이 거부되면 암전 가운데 「탭하여 시작 ♪」만 표시하고 첫 조작에서 재생한다. 인계의 곡선 충돌 해결 지시에 따라 밝기는 0→3초에 .03→.30, 17.14→18.64초에 2.4→1.0으로 quadratic ease-out한다. 3~17.14초는 .30이다. 따라서 1.5초 .2325, 17.2초 2.29024이며 기존 선형 표본은 현재 곡선의 검증 기준으로 쓰지 않는다. 기본 장면·유노 조명·점등 전파는 별도 Canvas의 최종 CSS 밝기로 합성한다. 부모에서 다시 감쇠해 색이 회색으로 클리핑되는 중간 합성을 피한다. 첫 드럼 17.14초에 태양에서 0.55초 링 3개, 19초 이후 컨트롤·제목·SUNO 안내를 순서대로 공개한다. 인트로 중 복귀는 막고 이후 🎂·Esc·빈 곳 클릭으로 복귀한다. 일반 화면으로 돌아와도 음악은 계속된다.
+- **음악**: `bdayaudio.js`는 Noctural Run ↔ Midnight Groove를 교대로 재생하고 최초에는 `audio.currentTime`, 버퍼 전환 뒤에는 `AudioContext.currentTime`에 LAT=.02 평활화를 적용한다. 첫 곡을 스트리밍하면서 두 곡의 blob·박 지도를 선로딩·디코드하고 같은 컨텍스트 시각에 스트림 Gain과 버퍼 출력을 교체한다. 이후 현재 곡과 다음 두 곡의 AudioBufferSource를 종료 시각에 이어 예약하므로 메인 스레드의 ended 처리 지연이 곡 경계에 공백을 만들지 않는다. 제목·박 지도·장면 시계도 같은 예약 시각에서 바뀐다. 일시정지·탐색·곡 선택은 예약을 취소하고 다시 잡는다. Web Audio/디코드 불가 시 스트리밍으로 대체하며 이 경로는 무공백을 보장하지 않는다. Web Audio GainNode 기본 .3, 저장 키 `bday-vol`. 미디어 요소 volume은 1로 두어 이중 감쇠를 방지한다. Space/좌우/상하/M 단축키, 모바일 슬라이더 숨김·음소거를 지원한다. 음원은 원본 약 10MB, 박 지도는 JSON 메타데이터와 uint8 `.bin`으로 저장한다.
+- **모션 안전**: `prefers-reduced-motion`이면 장면은 정지하고 인트로는 .03→1 단순 페이드이며 번쩍임·링·UI 애니메이션을 생략한다. 일반 모드에서는 첫 드럼에서만 밝기 상승이 있다.
+- **복사 억제**: `bdaysign.js`의 인코딩된 좌표를 디코딩해 Canvas에 그린다. 완성 사인은 5.5초 표시한다. 전체 보기에서 contextmenu·dragstart·일부 개발 도구 단축키를 억제하고 해당 캔버스 인스턴스의 `toDataURL/toBlob/getImageData`를 빈 결과로 대체했다가 복구한다. 이는 **우연한 가져가기를 어렵게 하는 장벽**이며 암호화·접근 통제가 아니다. 개발자 도구·스크린샷·음원 다운로드는 막을 수 없다.
+- **정리·검증**: 자정 재판정 시 장면·음악·플레이어·가드를 정리하고 fetch 중단·AudioContext 종료·blob 해제를 수행한다. `destroyBirthday()`는 공통 재판정 리스너와 자정 타이머까지 제거한다. self-check와 `scripts/verify_birthday_*.py`, `scripts/compare_birthday_pixels.py`로 실제 Chromium을 검증한다. 그라데이션 재사용·조명 캐시·캐릭터/파면의 CSS 합성 레이어 분리로 프레임 비용을 줄였다. GPU 가속과 SwiftShader를 구분한 측정은 `scripts/verify_birthday_performance.py`, 실제 출력 샘플의 곡 경계 검증은 `scripts/verify_birthday_gapless.py`로 실행한다. 성능 수치는 CPU에서 Canvas 명령을 제출한 비용이며 GPU 완료 시각을 뜻하지 않는다. 실제 iPhone Safari 음향·자동재생·안전영역·주소창 검증은 남아 있다.
 - **디스클레이머**: 장면 이미지는 AI 생성 팬 제작물이다 — 기존 풋터 디스클레이머(「비공식 팬 메이드 프로젝트」)가 그대로 적용된다. 제작 원본 · 경위는 브랜치 `easteregg/birthday-skin` 의 `easteregg/birthday/`(HANDOFF.md).
 
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
@@ -1565,12 +1568,15 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **움직임**: 말풍선 등장 0.26s(`foot-ver-in`), 막대 채움 = `--hold`. `prefers-reduced-motion` 이면 전환 · 등장 애니메이션 없음.
 - 하단 디스클레이머(`initDisclaimerHover`, 위 「하단 디스클레이머 팝업」)와는 별개 요소다.
 
-### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` 만
+### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` · `js/monitorbirthday*.js`
 
 - **구성**: 맨 위 막대 44px(「운영 모니터」 · 「사이트 기록 초기화」 버튼, 색은 이 페이지 안에 직접 적음 — 토큰 없음). 그 아래 iframe 높이 `calc(100% − 44px)`. iframe 로딩 · `latest.html` 폴백 · 30분 안전망 코드는 바꾸지 않았다.
 - **확인 창**: 네이티브 `<dialog>`(`showModal`) — Esc 로 닫힘, 바깥(어둠) 클릭으로도 닫힘(`e.target === dialog`). 취소 · 되돌리기 두 버튼. 본문 문구는 시안 그대로(「처음 방문했을 때처럼 되돌릴까요?」 · 들은 곡 · 읽은 트윗 · 화면 설정 · 처음 안내 4줄).
 - **동작**: 「되돌리기」 → `localStorage.clear()`. **같은 주소(= 사이트)** 라 메인 사이트의 저장값도 전부 지워진다. `sessionStorage` 는 건드리지 않는다(`va-skip` 등 이 탭 안에서만 쓰는 값은 남는다). 성공하면 아래 가운데 알림 「처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.」 5초, 저장소를 못 쓰면(예외) 「이 브라우저에서는 기록을 지울 수 없어요.」. 이미 열린 사이트 탭은 새로고침 전까지 옛 값을 쓸 수 있다.
 - **지워지는 localStorage 키**(코드 `localStorage` 전수 확인, 2026-10-25): `ymmt_listened`(들은 곡 — 랜덤플리 오마카세의 A · B 묶음) · `mew:twread`(읽은 트윗) · `mew:tllang`(트윗 번역 언어 — 기본 한글) · `theme`(밝게 · 어둡게 — 없으면 기기 설정) · `mew.board.view`(PC 보기 방식 테이블 · 카드) · `mew.player.media`(음원 · MV) · `mew.notice.lang`(소식 제목 언어) · `mew.notice.liveview`(라이브공연 보기 방식) · `mew.tip.grip-dblclick` · `mew.tip.mv-mode` · `mew.tip.lane-swipe`(처음 안내 — 한 번씩 다시 보인다).
+- **모니터 생일 진입 명령**(후속 추가 2026-11-01): 초기화 확인창의 버튼을 제외한 안쪽에서 마우스 왼쪽 드래그 또는 한 손가락 터치를 시작해 창 밖으로 `↑↑↓↓←→←→` 순서로 밀어낸다. 한 번 누르고 뗄 때 한 방향만 입력한다. 실제 이동 24px 이상이며 창 경계에서 12px 이상 벗어났을 때 인식하고 해당 변이 즉시 시안/분홍빛으로 빛난다(손을 뗀 뒤 450ms 유지). 모서리는 먼저 통과한 변으로 계산한다. 8방향을 마치면 상단 초기화 버튼이 빛나며 확인창이 닫힌다. 이어 리포트 iframe의 EXT → APP 탭을 차례로 누르면 같은 창의 `./?bday=yuno`로 이동한다(`va` 쿼리는 있으면 유지). 생일이 아닌 날에도 유노 인트로를 시험할 수 있다.
+- **진입 명령 수명·안전**: 상태는 메모리에만 둔다. 잘못된 방향은 다음 ↑↑ 접두사부터 다시 인식하고, 준비 뒤 잘못 누른 탭·30초 무입력·확인창 다시 열기·취소/Esc·탭 숨김·페이지 이탈에서는 초기화한다. 진입 입력은 저장값을 지우지 않으며 드래그 뒤의 호환 click도 소비한다. 기존 되돌리기는 명시적으로 버튼을 클릭했을 때만 실행된다. Pointer Events/캡처와 `touch-action:none`으로 마우스·모바일 터치를 처리하고 다중 터치·pointercancel은 현재 동작을 버린다. 동작 줄이기에서는 가장자리 표시를 유지하되 버튼 점멸은 생략한다.
+- **iframe 탭 연결**: 같은 출처를 상속하는 srcdoc 문서에 클릭을 위임한다. 라이브/스냅샷·30분 안전망 교체 시 새 문서에 다시 연결하고 이전 문서 리스너는 중단한다. 리포트·서버에 postMessage 코드나 새 API를 추가하지 않는다. `monitorbirthday.selfcheck.mjs`와 `scripts/verify_monitor_birthday.py`로 순서·드래그/터치·초기화 버튼·폴백/재로딩을 검사한다.
 - 백엔드 · 관리 페이지 · 텔레그램은 바뀌지 않는다(`monitor_report.py` 무수정).
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
@@ -1753,3 +1759,8 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 + 각 채널 `x_names[]` (트윗 표시명 매칭용, `xtweet.route_by_title`). `channel_url` 은
 `https://www.youtube.com/@{handle}` 로 코드 파생. **채널 추가/변경은 이 파일 한 곳만.**
 `group` 은 `channel_order` 밖 — RSS/`videos.list` 폴링 대상이지만 전용 레인은 없다(§1-3-1).
+
+
+### 생일 음악 인트로 추가 연출 (추가 지시 1)
+
+첫 곡 최초 재생에만 6.3~7.2초 유노·데크 스포트라이트를 켜고 17.14~18.14초에 제거한다. 태양은 지평선 아래에서 10초부터 smoothstep으로 상승해 16.9초에 목표 위치에 도달한다. 일출 중 halo 박 버스트는 숨기고 17.14초에 태양 중심에서 0.5초 동안 화면 끝까지 밝기 파면이 전파된다. 기존 감쇠·3겹 링을 유지한다. 모션 줄이기는 최종 태양 위치에 정지하고 조명·파면 없이 단순 페이드한다. 실제 Chromium 검증은 `scripts/verify_birthday_addendum.py`, 후속 최적화·검증 결과는 handoff REPORT.md의 「3차 결과」를 따른다.
