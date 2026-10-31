@@ -14,6 +14,7 @@
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
 
 import { fetchPreview } from "./api.js";
+import { setMainMusicActive } from './musicpriority.js';
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
 import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
@@ -295,6 +296,7 @@ async function ensurePlayer(videoId, autoplay) {
 
 function onYtState(e) {
   const S = window.YT.PlayerState;
+  setMainMusicActive(e.data === S.PLAYING || e.data === S.BUFFERING);
   if (e.data === S.PLAYING || e.data === S.BUFFERING) { st.playing = true; st.started = true; st.error = null; }
   if (e.data === S.PLAYING) { skipRun = 0; watchStop(); }   // 실제로 재생이 시작됐을 때만 감시 해제 — 프리미어 대기 영상도 잠깐 BUFFERING 을 거친다(2026-10-25 실측)
   if (e.data === S.PLAYING && st.curId && listenedId !== st.curId) { listenedId = st.curId; markListened(st.curId); }   // (v4.8.1) 곡이 재생되는 시점에 기록
@@ -383,6 +385,7 @@ function loadVid(vid, autoplay) {
 
 /** 재생 불가 — 오류(onError) 또는 감시 실패. 남은 후보가 있으면 문구 없이 다음 후보를 올리고, 다 떨어지면 안내 뒤 다음 곡(넘어갈 곡이 없으면 멈춘다). */
 function onUnplayable() {
+  setMainMusicActive(false);
   watchStop();
   if (st.cands.length) { loadVid(st.cands.shift(), wantPlay); paint(); return; }
   st.playing = false;

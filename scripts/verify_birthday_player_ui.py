@@ -68,7 +68,7 @@ try:
    drag_to(end=(width-1,height-1));r=box();disc=page.locator('.bday-music__disc').bounding_box()
    assert r['x']+r['width']<=width-11.9 and r['y']+r['height']<=disc['y']-11.9,(r,disc)
    if mobile:
-    t=page.locator('.bday-music__title').bounding_box();assert abs(t['x']+t['width']/2-r['x']-r['width']/2)<2 and t['y']+t['height']<=r['y']-7.9,(t,r)
+    t=page.locator('.bday-music__title').bounding_box();assert abs(t['x']+t['width']-(width-14))<2 and r['y']+r['height']<=t['y']-11.9 and t['y']+t['height']<=disc['y']-10,(t,r,disc)
     assert background()['color']=='rgba(18, 12, 28, 0.55)',background()
    page.screenshot(path=str(OUT/f'{key}-moved.png'))
    # 재생·볼륨 조작은 위치를 바꾸지 않는다.

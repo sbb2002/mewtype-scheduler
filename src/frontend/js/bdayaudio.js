@@ -1,5 +1,6 @@
 // 첫 곡은 즉시 스트리밍하고 디코드 뒤에는 AudioContext 시계로 세 곡을 미리 예약한다.
 import { decodeTrack, smoothClock } from './bdaylogic.js';
+import { mainMusicActive, subscribeMainMusic } from './musicpriority.js';
 export const TRACKS=[{key:'noctural',title:'Noctural Run'},{key:'midnight',title:'Midnight Groove'}];
 export async function mountBirthdayAudio(onChange=()=>{}) {
   const abort=new AbortController(),events=new AbortController(),urls=new Map(),preloads=new Map(),maps=new Map(),listeners=new Set();
@@ -60,7 +61,7 @@ export async function mountBirthdayAudio(onChange=()=>{}) {
     return warming;
   }
   async function play(){
-    if(dead)return;const rev=++playRevision;ensureContext();const resume=context?.resume();
+    if(dead||mainMusicActive())return;const rev=++playRevision;ensureContext();const resume=context?.resume();
     if(buffers){
       await resume;if(dead||rev!==playRevision)return;if(context.state!=='running')throw new DOMException('사용자 조작이 필요합니다','NotAllowedError');
       if(bufferMode&&playing)return;
@@ -102,9 +103,10 @@ export async function mountBirthdayAudio(onChange=()=>{}) {
     play,pause,toggle(){return api.paused?play():Promise.resolve(pause())},next(){return select(api.index+1)},previous(){return select(api.index-1)},seek,
     setVolume(v){volume=Math.min(1,Math.max(0,v));muted=false;applyVolume();try{localStorage.setItem('bday-vol',String(volume))}catch{}emit()},mute(){muted=!muted;applyVolume();emit()},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},
     diagnostics(){return {dead,context:context?.state,blobURLs:urls.size,listeners:listeners.size,volume:gain?.gain.value,engine:bufferMode?'buffer':'stream',decoded:!!buffers,scheduled:queue.map(({i,start,end,offset})=>({i,start,end,offset})),transitions:[...transitions],timer:!!poll,handover:!!handover,autoplayTimer:!!autoplayTimer}},
-    destroy(){if(dead)return;dead=true;revision++;playRevision++;playing=false;clearTimeout(autoplayTimer);autoplayTimer=0;stopNodes();abort.abort();events.abort();listeners.clear();for(const a of audios){a.pause();a.removeAttribute('src');a.load()}streamGain?.disconnect();gain?.disconnect();if(context){context.close();context=null}gain=streamGain=null;buffers=null;for(const u of urls.values())URL.revokeObjectURL(u);urls.clear();maps.clear();preloads.clear()}
+    destroy(){if(dead)return;releasePriority();dead=true;revision++;playRevision++;playing=false;clearTimeout(autoplayTimer);autoplayTimer=0;stopNodes();abort.abort();events.abort();listeners.clear();for(const a of audios){a.pause();a.removeAttribute('src');a.load()}streamGain?.disconnect();gain?.disconnect();if(context){context.close();context=null}gain=streamGain=null;buffers=null;for(const u of urls.values())URL.revokeObjectURL(u);urls.clear();maps.clear();preloads.clear()}
   };
   audios[0].src=asset('bgm','noctural','mp3');applyVolume();
+  const releasePriority=subscribeMainMusic(active=>{if(active)pause()});
   try{await map(0)}catch(e){api.destroy();throw e}
   return api;
 }
