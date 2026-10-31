@@ -4,7 +4,7 @@
 > 팬이 들어오면 누가 언제 방송하는지, 지금 라이브 중인지, 어느 주소로 가면 되는지 한눈에 확인한다.
 > 비공식 팬 메이드 · 비영리 프로젝트이며 관련 권리는 각 권리사에 있다.
 
-**현재 버전: v4.10.0 (마이너 · 2026-10-31)** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md), 버전마다 git 태그 `vX.Y.Z`([Tags](https://github.com/sbb2002/mewtype-scheduler/tags))
+**현재 버전: v4.11.0 (마이너 · 2026-11-01)** — 버전별 내역은 [docs/VERSION.md](./docs/VERSION.md), 버전마다 git 태그 `vX.Y.Z`([Tags](https://github.com/sbb2002/mewtype-scheduler/tags))
 🌐 운영 사이트: <https://mewtype-schduler.vercel.app/> (주소의 `schduler` 오타는 옛 이름이 그대로 남은 것 — 프로젝트 · 저장소 이름은 `mewtype-scheduler`)
 
 📦 [구현 명세 (docs/SPEC.md)](./docs/SPEC.md) | 🗣 [용어 기준 (docs/TERMINOLOGY.md)](./docs/TERMINOLOGY.md) | 🔀 [ingest 흐름 (docs/INGEST_FLOW.md)](./docs/INGEST_FLOW.md) | 🧭 작업 지침 [CLAUDE.md](./CLAUDE.md)
@@ -23,7 +23,7 @@
 | **유메미타 플레이어** | 곡 목록(검색 · 독음 · 신곡)과 YouTube 임베드 재생, 재생목록 · 셔플 · 반복, **랜덤플리 오마카세**(전체/오리지널/커버를 무작위로 재생목록에 넣어 재생) |
 | **밝게 / 어둡게** | 소식 막대 마지막 칸의 해/달 버튼, 기기 설정을 따라감 |
 | **하단 디스클레이머** | 비공식 · 번역 안내 · 방문 통계 고지. 마우스를 2초 올리면 전체 팝업(포커스는 바로) |
-| 이스터에그 | 노노카 지각 연출(`king.js`), 운영 모니터 페이지 진입(`monitor.html`) |
+| 이스터에그 | 노노카 지각 연출(`king.js`), 운영 모니터 페이지 진입(`monitor.html`), 유노 생일 음악 장면·인트로와 모니터 방향 입력(↑↑↓↓←→←→ → EXT → APP) |
 
 데이터는 모두 `data` 저장소의 JSON(`preview.json` · `notices.json` · `tweets.json` · `banners.json` · `songs.json` 등)을 75초마다 fetch한다.
 `raw.githubusercontent.com` 캐시 때문에 최대 약 5분 지연되는 것은 의도된 트레이드오프다.
