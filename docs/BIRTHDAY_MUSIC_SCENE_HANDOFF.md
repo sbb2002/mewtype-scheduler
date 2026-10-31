@@ -62,3 +62,9 @@
 ## 6. 이어받기 지시문 (Codex 에 그대로 붙여 넣을 것)
 
 > 워크트리 `C:\Users\User\Documents\pyworks\mewtype-scheduler-worktrees\v4\feat-birthday-music-scene` (브랜치 `feat/birthday-music-scene`)에서 이어서 작업하라. 먼저 `CLAUDE.md`, `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md`, `docs/BIRTHDAY_MUSIC_SCENE_HANDOFF.md`, 그리고 `…\scratchpad\handoff\REPORT.md` 를 읽어라. 구현은 이미 들어가 있고 **커밋되지 않았다**. 해야 할 일은 인수 문서 §2 의 순서대로: (1) 장면 프레임 비용을 8ms 이하로(정적 레이어 오프스크린 캐시 · 바닥/조명/점등 합성 최적화 · 시안과 구간별 시간 비교, 측정 환경 명시) (2) 곡 전환 무공백 (3) 가능한 범위의 모바일 재검증, 실기기 필요 항목은 미확인으로 기록 (4) 의미 단위 한국어 커밋(트레일러 `Co-Authored-By: Codex <noreply@openai.com>`) (5) 문서 갱신(버전 상수는 건드리지 말고 제안만). 푸시 · 병합 · 배포 금지. 검증은 직접 실행하고 통과/미통과/미확인을 근거와 함께 `…\scratchpad\handoff\REPORT.md` 끝에 「3차 결과」 절로 덧붙여라. 통과하지 못한 것은 못 했다고 써라. 끝나면 같은 폴더에 `DONE3.flag` 를 만들어라.
+
+## 7. 후속 완료 (2026-11-01)
+
+위 미커밋·배포 금지 상태는 인계 당시 기록이다. 후속 구현·검증과 모니터 방향 입력/가장자리 표시를 완료했고, 2026-11-01 운영자 지시로 PR #127(`6969df5`)을 병합하고 v4.11.0을 프로덕션에 배포했다. 태그는 같은 코드 병합 커밋을 가리킨다. Vercel `dpl_HPj2rF2fAeJ8XMN5L8ootsZUKqLm` READY와 운영 파일 일치·음원 Range를 확인했다.
+
+최신 근거는 `docs/BIRTHDAY_MUSIC_SCENE_VERIFICATION.md`와 `docs/VERSION.md`다. GPU 가속 CPU 8ms와 스테레오 무공백 검사는 통과했고 소프트웨어 렌더링은 8ms를 넘는다. 실제 삼성 브라우저·iPhone 확인은 운영자가 진행한다. 소스 버전 표기는 v4.11.0/2026-11-01로 갱신했다.
