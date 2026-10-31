@@ -1,13 +1,19 @@
 <!doctype html>
 <html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Yuno scene module fixture</title>
+<title>유노 음악 장면 검증용 화면</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/src/frontend/css/bdayscene-yuno.css">
 <style>html,body{margin:0;background:#170725}#scene-host{position:fixed;inset:0}</style>
 <div id="scene-host"></div>
 <script type="module">
 import { mountYunoScene } from '/src/frontend/js/bdayscene-yuno.js';
+import { decodeTrack } from '/src/frontend/js/bdaylogic.js';
 window.mountYunoScene = mountYunoScene;
 window.scene = mountYunoScene(document.querySelector('#scene-host'));
-window.ready = scene.whenReady;
+window.ready = (async()=>{
+  const base='/src/frontend/assets/birthday/beat/noctural';
+  const [track,bands]=await Promise.all([fetch(base+'.json').then(r=>r.json()),fetch(base+'.bin').then(r=>r.arrayBuffer())]);
+  scene.setTrack(decodeTrack(track,bands));
+  const start=performance.now();scene.setClock(()=>(performance.now()-start)/1000);
+  await scene.whenReady;
+})();
 </script></html>
