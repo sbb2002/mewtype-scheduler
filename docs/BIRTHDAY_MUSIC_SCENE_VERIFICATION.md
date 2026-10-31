@@ -1,6 +1,6 @@
 # 생일 음악 장면 3차 검증 (2026-10-31)
 
-브랜치 `feat/birthday-music-scene`의 구현과 로컬 검증 기록이다. 2026-11-01 운영자가 병합·배포를 승인해 v4.11.0으로 진행한다. 아래 미확인 실기기 검증은 운영자가 후속 확인하며, 병합·배포 식별자는 `docs/VERSION.md`에 기록한다.
+브랜치 `feat/birthday-music-scene`의 구현과 로컬 검증 기록이다. 2026-11-01 운영자 승인으로 v4.11.0을 병합·프로덕션 배포했다(PR #127, `6969df5`). 아래 미확인 실기기 검증은 운영자가 후속 확인하며, 병합·배포 식별자는 `docs/VERSION.md`에 기록한다.
 
 ## 프레임 비용
 
@@ -63,3 +63,10 @@ python scripts/verify_birthday_performance.py
 - 실제 삼성 브라우저는 미확인이다. SamsungBrowser UA·Android 터치 에뮬레이션을 실기기 검증으로 간주하지 않는다. 실제 iPhone Safari 미확인도 유지한다.
 
 산출물은 새 검사 출력 폴더의 `monitor/results.json`, `pc-mouse-edge-*.png`, `android-touch-edge-*.png`, `*-armed.png`에 있다. 가장자리 표시는 드래그 중 즉시 켜지고 손을 뗀 뒤 450ms 유지된다. 방향 입력은 확인창 안에서 시작해야 하며 버튼에서는 시작하지 않는다.
+
+## 운영 반영 확인 (2026-11-01)
+
+- 코드 병합: PR #127, `6969df5871398a2daf12c02e82ee4fb453199db1`. 주석 태그 `v4.11.0`도 같은 병합 커밋에 지정해 푸시했다.
+- Vercel 프로덕션: `dpl_HPj2rF2fAeJ8XMN5L8ootsZUKqLm`, READY. 운영 주소 `https://mewtype-schduler.vercel.app/`에서 확인했다.
+- `config.js` v4.11.0/2026-11-01, `monitor.html`, 방향 입력 두 모듈, 생일 장면·음악·플레이어·CSS를 포함한 8개 운영 파일이 배포 소스와 일치했다. 두 mp3 모두 첫 1024바이트가 원본과 일치하고 Range 206/전체 크기도 맞았다.
+- 배포 후 상세 조작·실제 삼성 브라우저/iPhone 확인은 운영자가 모니터 페이지로 수행한다. 기존 실기기 미확인 표시는 유지한다. 롤백 기준은 `fc6f8ca`다.
