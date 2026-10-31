@@ -3,7 +3,7 @@
 // 판정은 순수 로직 js/birthday.js, 장면은 멤버별 모듈(js/bdayscene-<키>.js — 생일 당일에만 불러온다).
 //
 // 「온전히 보기」: 🎂 버튼 하나 → 화려한 폭죽과 함께 화면 UI 를 부드럽게 숨기고 장면만 보여 준다(다시 누르기 · Esc · 빈 곳 누르기로 복귀).
-// 방문할 때마다 첫 장면 준비가 끝나면 AUTO_FULL_MS 동안 먼저 온전히 보여 준다(저장하지 않음 — 새로 열 때마다 다시).
+// 방문마다 곡 0초에서 인트로를 시작하고 첫 드럼 뒤 음악 컨트롤을 공개한다.
 // 버튼 위치: 기본 = 오른쪽, 세로 73% 쯤(운영자가 정한 자리 — DEFAULT_POS. 멤버 줄 · 풋터 아래로는 못 내려간다). 0.5초 꾹 누르면 끌어서 옮길 수 있고, 놓으면 가까운 왼쪽/오른쪽 가장자리에 붙는다.
 // 위치만 localStorage "bday-btn" 에 저장한다(생일 스킨이 뜬 날에만 쓰인다).
 
@@ -15,7 +15,6 @@ const SCENE_LOADERS = {
   yuno: () => import("./bdayscene-yuno.js").then((m) => m.mountYunoScene)   // 반환 = 장면 마운트 함수(host, opts) → { setStill, celebrate, finale, destroy, whenReady }
 };
 
-const AUTO_FULL_MS = 4500;
 const HOLD_MS = 500;           // 이만큼(0.5초) 꾹 누르면 끌기 모드
 const HOLD_CANCEL_PX = 10;     // 꾹 누르는 동안 이만큼 움직이면 취소(스크롤 · 우연한 끌림)
 const EDGE = 12;               // 화면 가장자리 여백(px)
@@ -25,8 +24,10 @@ const PAGE_UI = ["notice", "board", "player-dock", "player-frame", "foot", "page
 
 let key = null;        // 지금 표시 중인 멤버 키
 let host = null, ui = null, greet = null, ctrl = null, btnFull = null, hintEl = null, bodyRO = null;
-let fullView = false, autoDone = false, suppressClick = false;
+let fullView = false, suppressClick = false;
 let autoTimer = 0, midnightTimer = 0, seq = 0;
+let music=null, player=null, guard=null, musicCss=null;
+let dragCleanup=null, initialized=false;
 const DEFAULT_POS = { side: "right", ratio: 0.73 };   // 기본 위치 — 운영자가 정한 자리(2026-10-31)
 let pos = { ...DEFAULT_POS };   // 버튼 위치 — side: 붙은 가장자리, ratio: 세로 위치(화면 높이 대비. null 이면 맨 아래 허용 높이)
 const reduceMq = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
@@ -59,6 +60,7 @@ function setFull(on, fireworks) {
   const root = document.documentElement;
   if (on) root.setAttribute("data-bday-full", ""); else root.removeAttribute("data-bday-full");
   setPageInert(on);
+  if(guard)guard.setActive(on);
   btnFull.setAttribute("aria-pressed", String(on));
   btnFull.setAttribute("aria-label", on ? "화면으로 돌아가기" : "배경 전체 보기");
   btnFull.title = (on ? "화면으로 돌아가기" : "배경 전체 보기") + " (0.5초 꾹 누르면 위치 이동)";
@@ -68,10 +70,10 @@ function setFull(on, fireworks) {
 }
 
 function onDocClick(e) {
-  if (fullView && ui && !ui.contains(e.target)) setFull(false);   // 온전히 보기 중 빈 곳을 누르면 복귀
+  if (fullView && !player?.intro && ui && !ui.contains(e.target) && !player?.shell.contains(e.target)) setFull(false);
 }
 function onKey(e) {
-  if (e.key === "Escape" && fullView) setFull(false);
+  if (e.key === "Escape" && fullView && !player?.intro) setFull(false);
 }
 
 // ── 버튼 위치 · 끌기 ─────────────────────────────────────────────────────────────────────────
@@ -89,6 +91,7 @@ function savePos() {
 function limits() {
   const size = ui.offsetWidth || 44;
   let bottom = window.innerHeight;
+  if(fullView)bottom=Math.min(bottom,window.innerHeight-180);
   for (const id of ["pager-dots", "foot"]) {
     const e = document.getElementById(id);
     if (e && !e.hidden && e.getClientRects().length > 0) {   // position:fixed 요소는 offsetParent 가 null 이라 getClientRects 로 보이는지 본다
@@ -167,6 +170,7 @@ function attachDrag(btn) {
   btn.addEventListener("pointerup", end);
   btn.addEventListener("pointercancel", end);
   btn.addEventListener("contextmenu", (e) => e.preventDefault());   // 모바일 길게 누름 메뉴 방지
+  return cancelHold;
 }
 
 function buildUi(k) {
@@ -189,7 +193,7 @@ function buildUi(k) {
   document.body.append(greet, ui);
   loadPos();
   restPosition();
-  attachDrag(btnFull);
+  dragCleanup=attachDrag(btnFull);
   window.addEventListener("resize", restPosition);
   if (window.ResizeObserver) { bodyRO = new ResizeObserver(restPosition); bodyRO.observe(document.body); }   // 풋터 · 멤버 줄이 나중에 그려져도 위치를 맞춘다
   document.addEventListener("click", onDocClick);
@@ -205,18 +209,21 @@ function setup(k) {
   document.body.prepend(host);
   document.documentElement.setAttribute("data-bday", k);
   buildUi(k);
-  load().then((mount) => {
+  document.documentElement.setAttribute('data-bday-intro','');
+  setFull(true);
+  musicCss=el('link',{rel:'stylesheet',href:new URL('../css/bdayplayer.css',import.meta.url).href});document.head.append(musicCss);
+  Promise.all([load(),import('./bdayaudio.js'),import('./bdayplayer.js'),import('./bdayguard.js')]).then(async ([mount,a,p,g]) => {
     if (mySeq !== seq || !host) return;       // 그새 정리됐으면(자정 · 끄기) 무시
     ctrl = mount(host, {});
     applyStill();
-    return ctrl && ctrl.whenReady;
-  }).then(() => {
-    if (mySeq !== seq || !ctrl || autoDone) return;
-    autoDone = true;
-    if (!reduced()) {                         // 첫 장면 준비가 끝나면 화려한 폭죽과 함께 잠깐 온전히 보여 준다
-      setFull(true, true);
-      autoTimer = setTimeout(() => setFull(false), AUTO_FULL_MS);
-    }
+    const scene=ctrl;
+    const audio=await a.mountBirthdayAudio();
+    if(mySeq!==seq){audio.destroy();return}
+    music=audio;scene.setTrack(await audio.beat);
+    await scene.whenReady;
+    if(mySeq!==seq)return;
+    player=p.mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced});
+    guard=g.mountBirthdayGuard([host,ui,player.shell]);guard.setActive(fullView);
   }).catch((e) => {
     console.error("[birthday]", e);
     if (mySeq === seq) teardown();              // 장면이 못 뜨면 평소 화면 그대로 둔다
@@ -225,8 +232,10 @@ function setup(k) {
 
 function teardown() {
   seq++;
+  dragCleanup?.();dragCleanup=null;
   clearTimeout(autoTimer);
   setFull(false);
+  guard?.destroy();guard=null;player?.destroy();player=null;music?.destroy();music=null;musicCss?.remove();musicCss=null;
   document.removeEventListener("click", onDocClick);
   document.removeEventListener("keydown", onKey);
   window.removeEventListener("resize", restPosition);
@@ -238,6 +247,7 @@ function teardown() {
   key = null;
   document.documentElement.removeAttribute("data-bday");
   document.documentElement.removeAttribute("data-bday-full");
+  document.documentElement.removeAttribute('data-bday-intro');
   setPageInert(false);
 }
 
@@ -253,7 +263,14 @@ function evaluate() {
 }
 
 export function initBirthday() {
+  if(initialized)return;initialized=true;
   evaluate();
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") evaluate(); });
+  document.addEventListener("visibilitychange", onVisibility);
   if (reduceMq && reduceMq.addEventListener) reduceMq.addEventListener("change", applyStill);
+}
+function onVisibility(){if(document.visibilityState==='visible')evaluate()}
+export function destroyBirthday(){
+  initialized=false;clearTimeout(midnightTimer);teardown();
+  document.removeEventListener('visibilitychange',onVisibility);
+  reduceMq?.removeEventListener?.('change',applyStill);
 }
