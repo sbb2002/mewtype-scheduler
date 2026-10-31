@@ -56,6 +56,10 @@ try:
     start,end={'U':((cx,top+32),(cx,top-14)), 'D':((left+25,bottom-32),(left+25,bottom+14)),
                'L':((left+32,cy),(left-14,cy)), 'R':((right-32,cy),(right+14,cy))}[direction]
     if mobile:
+     # 좁은 휴대폰에서도 팝업 안쪽의 짧은 스와이프만으로 네 방향을 입력한다.
+     dx,dy={'U':(0,-44),'D':(0,44),'L':(-44,0),'R':(44,0)}[direction]
+     start=(cx,cy);end=(cx+dx,cy+dy)
+     assert left<end[0]<right and top<end[1]<bottom
      cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':start[0],'y':start[1],'id':1}]})
      for n in range(1,7):cdp.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':start[0]+(end[0]-start[0])*n/6,'y':start[1]+(end[1]-start[1])*n/6,'id':1}]})
     else:
@@ -72,6 +76,10 @@ try:
     for i,d in enumerate(code):swipe(d,'edge-'+d if i in [0,2,4,7] else None)
     page.wait_for_function('!document.getElementById("reset-dlg").open')
     assert page.locator('#reset-open').evaluate('(e)=>e.classList.contains("bday-armed")')
+    assert frame.locator('#tabBtnApp').text_content()=='A' and frame.locator('#tabBtnExt').text_content()=='B'
+    assert frame.locator('.mon-bday-key').count()==2 and frame.locator('#tabBtnExt.mon-bday-next').count()==1
+    assert frame.locator('#mon-bday-key-style').count()==1
+    for id in ['tabBtnApp','tabBtnExt']:assert frame.locator('#'+id).evaluate('(e)=>getComputedStyle(e).boxShadow')!='none'
     assert page.evaluate('()=>localStorage.getItem("monitor-test")')=='keep'
     assert not [u for u in requests if '/assets/birthday/' in u or '/bdayaudio.js' in u]
    # 틀린 방향과 취소는 창/기록을 그대로 유지한다.
@@ -84,17 +92,22 @@ try:
    # 준비 뒤 틀린 탭은 해제하며 평소 탭 전환은 동작한다.
    arm();frame.locator('#tabBtnApp').click();assert page.url==url
    assert not page.locator('#reset-open').evaluate('(e)=>e.classList.contains("bday-armed")')
+   assert frame.locator('#tabBtnApp').text_content()=='APP' and frame.locator('#tabBtnExt').text_content()=='EXT'
+   assert frame.locator('.mon-bday-key').count()==0 and frame.locator('#mon-bday-key-style').count()==0
    # 30초 무입력 해제: 실제 타이머를 브라우저 가상 시계로 전진한다.
    page.clock.install();arm();page.clock.fast_forward(31000)
    assert not page.locator('#reset-open').evaluate('(e)=>e.classList.contains("bday-armed")')
+   assert frame.locator('#tabBtnApp').text_content()=='APP' and frame.locator('#tabBtnExt').text_content()=='EXT'
    frame.locator('#tabBtnExt').click();frame.locator('#tabBtnApp').click();assert page.url==url
    # 준비 뒤 라이브 실패→스냅샷으로 교체돼도 새 iframe의 탭을 인식한다.
    arm();mode['fallback']=True
    page.evaluate('()=>refresh()');frame.locator('#tabBtnApp').wait_for(state='visible');page.wait_for_timeout(200)
    assert mode['snapshots']>0
    assert page.locator('#reset-open').evaluate('(e)=>e.classList.contains("bday-armed")')
+   assert frame.locator('#tabBtnApp').text_content()=='A' and frame.locator('#tabBtnExt').text_content()=='B'
    page.screenshot(path=str(OUT/f'{name}-armed.png'))
    frame.locator('#tabBtnExt').click();assert page.url==url
+   assert frame.locator('#tabBtnApp.mon-bday-next').count()==1 and frame.locator('#tabBtnExt.mon-bday-next').count()==0
    frame.locator('#tabBtnApp').click();page.wait_for_url('**/?bday=yuno&va=claude')
    query=parse_qs(urlparse(page.url).query);assert query=={'bday':['yuno'],'va':['claude']}
    page.wait_for_selector('html[data-bday="yuno"]');page.wait_for_selector('#bday-bg canvas')
@@ -106,9 +119,9 @@ try:
    assert '처음 상태로' in page.locator('#toast').text_content()
    assert not errors,errors
    results[name]={'directions':'UUDDLRLR','edge_glow':['U','D','L','R'],'armed_glow':True,'wrong_direction':True,'wrong_tab':True,
-                  'timeout':True,'snapshot_reload':mode['snapshots'],'url_query':query,'storage_preserved_on_entry':True,'normal_reset':True,'errors':errors}
+                  'timeout':True,'temporary_AB_labels':True,'next_key_glow':True,'inside_touch_swipe':mobile,'labels_restored':True,'snapshot_reload':mode['snapshots'],'url_query':query,'storage_preserved_on_entry':True,'normal_reset':True,'errors':errors}
    ctx.close()
   browser.close()
 finally:server.shutdown()
-(OUT/'results.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf8')
+(OUT/'results.json').write_text(json.dumps(results,sort_keys=True,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
 print(json.dumps(results,ensure_ascii=False,indent=2))

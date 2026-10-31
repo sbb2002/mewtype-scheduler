@@ -73,13 +73,13 @@
 
 #bday-greet {
   position: fixed; left: 0; right: 0; top: 14vh; z-index: 55; text-align: center; pointer-events: none;
-  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
-  color: #fff; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55), 0 0 2px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem; padding: 0 16px; box-sizing: border-box;
+  color: #fff; text-shadow: 0 2px 4px #000, 0 0 16px #000, 0 4px 28px #000b;
   opacity: 0; transform: translateY(6px); transition: opacity 0.6s ease 0.15s, transform 0.6s ease 0.15s;
 }
 :root[data-bday-full] #bday-greet { opacity: 1; transform: none; }
-.bday-greet__en { font: 600 clamp(2rem, 7vw, 4.2rem)/1.05 Georgia, "Times New Roman", serif; letter-spacing: 0.01em; }
-.bday-greet__who { font-size: clamp(0.95rem, 2.6vw, 1.3rem); letter-spacing: 0.08em; opacity: 0.92; }
+.bday-greet__en { max-width: 100%; font: 800 clamp(1.95rem, 9.5vw, 5.25rem)/1.1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.01em; }
+.bday-greet__who { max-width: 100%; font-size: clamp(1.2rem, 4.4vw, 1.75rem); font-weight: 700; line-height: 1.4; letter-spacing: 0.06em; opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
   #notice, #board, #player-dock, #player-frame, #foot, #pager-dots, #bday-greet, .bday-btn, #bday-ui { transition: none; }

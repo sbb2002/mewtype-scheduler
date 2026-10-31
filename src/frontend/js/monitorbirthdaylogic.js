@@ -27,3 +27,14 @@ export function dialogExitDirection(start, point, rect) {
   exits.sort((a,b)=>a[1]-b[1]);
   return exits[0]?.[0]||null;
 }
+
+// 모바일은 화면 끝까지 밀지 않아도 창 안에서 짧게 한 방향으로 밀면 인식한다.
+export function dialogDirection(start, point, rect, pointerType='mouse') {
+  if(pointerType==='mouse')return dialogExitDirection(start,point,rect);
+  if(start.x<rect.left||start.x>rect.right||start.y<rect.top||start.y>rect.bottom)return null;
+  const dx=point.x-start.x,dy=point.y-start.y,x=Math.abs(dx),y=Math.abs(dy);
+  if(Math.max(x,y)<36)return null;
+  if(x>=y*1.25)return dx<0?'L':'R';
+  if(y>=x*1.25)return dy<0?'U':'D';
+  return null;
+}
