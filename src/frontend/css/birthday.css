@@ -81,8 +81,32 @@
 .bday-greet__en { max-width: 100%; font: 800 clamp(1.95rem, 9.5vw, 5.25rem)/1.1 system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: 0.01em; }
 .bday-greet__who { max-width: 100%; font-size: clamp(1.2rem, 4.4vw, 1.75rem); font-weight: 700; line-height: 1.4; letter-spacing: 0.06em; opacity: 1; }
 
+/* 첫 드럼 공개: 두 줄이 차례로 떠오르고 빛난 뒤, 읽을 시간을 두고 함께 소멸한다. */
+:root[data-bday-revealed] #bday-greet { animation: bday-greet-out 2.8s ease-in-out 4.8s forwards; }
+:root[data-bday-revealed] .bday-greet__en {
+  color: #fff5da;
+  animation: bday-greet-rise 1.4s cubic-bezier(.16, 1, .3, 1) both, bday-greet-glow 3s ease-in-out 1.4s both;
+}
+:root[data-bday-revealed] .bday-greet__who {
+  color: #ffeaf5;
+  animation: bday-greet-rise 1.4s cubic-bezier(.16, 1, .3, 1) .3s both, bday-greet-glow 3s ease-in-out 1.7s both;
+}
+@keyframes bday-greet-rise {
+  from { opacity: 0; transform: translateY(22px) scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bday-greet-glow {
+  0%, 100% { text-shadow: 0 2px 4px #000, 0 0 16px #000, 0 0 14px #ffd88b66, 0 4px 28px #000b; }
+  45% { text-shadow: 0 2px 4px #000, 0 0 16px #000, 0 0 20px #ffd88bcc, 0 0 36px #ff91c480; }
+}
+@keyframes bday-greet-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #notice, #board, #player-dock, #player-frame, #foot, #pager-dots, #bday-greet, .bday-btn, #bday-ui { transition: none; }
   #bday-ui.is-drag .bday-btn, #bday-ui.is-settle .bday-btn { animation: none; }
   .bday-btn.is-holding .bday-ring circle { transition: none; stroke-dashoffset: 0; }
+  :root[data-bday-revealed] :is(.bday-greet__en, .bday-greet__who) { animation: none; }
 }

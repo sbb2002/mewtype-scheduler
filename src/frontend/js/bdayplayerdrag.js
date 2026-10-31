@@ -7,8 +7,8 @@ export function mountBirthdayPlayerDrag({bar,grip,shell,title,disc}) {
     const view=window.visualViewport,x=view?.offsetLeft||0,y=view?.offsetTop||0;
     const width=view?.width||innerWidth,height=view?.height||innerHeight,r=bar.getBoundingClientRect();
     const style=getComputedStyle(shell),safe=side=>parseFloat(style.getPropertyValue('--bday-safe-'+side))||0;
-    const top=y+safe('top')+12+(mobile.matches?title.offsetHeight+8:0);
-    const floor=Math.min(y+height-safe('bottom')-12,disc.getBoundingClientRect().top-12);
+    const top=y+safe('top')+12;
+    const floor=Math.min(y+height-safe('bottom')-12,disc.getBoundingClientRect().top-12,mobile.matches?title.getBoundingClientRect().top-12:Infinity);
     const left=x+safe('left')+12;
     return {left,right:Math.max(left,x+width-safe('right')-r.width-12),top,bottom:Math.max(top,floor-r.height),width:r.width};
   }

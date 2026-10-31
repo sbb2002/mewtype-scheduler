@@ -1,8 +1,10 @@
 // 정본 prototype_v12.html에서 수식·상수를 이식. 카메라/드롭/사인 폭만 정본 명세대로 변경.
 import { createSkySign } from './bdaysign.js';
 import { sceneLayout, introScene, introBrightness } from './bdaylogic.js';
+import { backgroundStars, backgroundFireworks, backgroundMeteors, createAmbientTimeline, ambientVisibility } from './bdaystars.js';
 export function mountYunoScene(host,opts={}) {
 let snapshot=null,activeLayout=null,introActive=()=>false,groundBottom=760;
+let skyViewport={left:0,top:0,width:1200,height:395};
 let effect={x:850,y:267,scale:1,spot:0,wave:0};
 function sunTransform(c){c.translate(effect.x,effect.y);c.scale(effect.scale,effect.scale);c.translate(-850,-267)}
 const spectrumHash19=(a,b)=>{const x=Math.sin((a%64+64)%64*127.1+b*311.7+19.73)*43758.5453;return x-Math.floor(x)};
@@ -222,6 +224,9 @@ function skyPlan(T){
  f.arrive=f.zig.stopU*(f.end-f.birth-f.scan);f.leave=f.arrive+f.scan;
  const mode=skyMode(T),sign=mode==='sign',flight=sign?skySign.T+skySign.INTRO:4.25,reveal=flight+.92,fade=sign?5.5:0;
  const plan={meteors,drop:mid?B[drop]:17.14,quiet:[[B[br],B[en]],[B[320],T.duration]],ufos:[{type:1,mode,birth:B[br],end:sign?B[br]+reveal+fade:B[br]+4.75,flight,reveal,fade,zig:skyMakePath(seed+404)},f]};
+ plan.blocked=[[0,19],[plan.drop,plan.drop+1.6],...plan.quiet,...meteors.map(m=>[m.birth,m.birth+m.life]),...plan.ufos.map(u=>[u.birth,u.end+SKY_TRAIL_DECAY])].sort((a,b)=>a[0]-b[0]);
+ plan.ambientSeed=seed+SKY_SALT*997;
+ plan.ambient=createAmbientTimeline(T.duration,plan.blocked,plan.ambientSeed);
  skyPlans.set(T,plan);return plan;
 }
 // UFO1 지그재그 경로: 페이지를 열 때마다(SKY_SALT)·곡마다 무작위로 생성. 같은 세션 안에서는 어느 시점이든 동일(결정적).
@@ -306,6 +311,10 @@ function skyProps(c,t){
   const g=c.createLinearGradient(x+p.len,y-dy,x,y);g.addColorStop(0,'#7844ba00');g.addColorStop(.45,V);g.addColorStop(.84,P);g.addColorStop(1,C);
   c.globalAlpha=p.alpha*env(age,p.duration,.35);c.strokeStyle=g;c.lineWidth=m.large?10:p.size;c.shadowColor=C;c.shadowBlur=m.large?22:5;c.beginPath();c.moveTo(x+p.len,y-dy);c.lineTo(x,y);c.stroke();c.fillStyle=C;c.beginPath();c.arc(x,y,p.size,0,Math.PI*2);c.fill();c.shadowBlur=0;
  }
+ c.restore();
+ // 유성의 원래 영역과 분리한다. 태양 펄스는 세로 화면의 확장 하늘 전체로 퍼진다.
+ c.save();c.beginPath();c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);c.clip();c.lineCap='round';
+ sunTransform(c);
  const age=t-plan.drop;
  if(!introActive()&&age>=0&&age<1.6){
   const u=age/1.6,e=env(age,1.6,.09),g=c.createLinearGradient(550,40,1100,395);g.addColorStop(0,P);g.addColorStop(.5,V);g.addColorStop(1,C);
@@ -321,19 +330,21 @@ function skyProps(c,t){
 // UFO·궤적·사인: 유노 바로 뒤 · 그 밖의 모든 요소(halo·LED·유성·오로라 등) 앞에 그린다.
 function skyUfos(c,t){
  const plan=skyPlan(TRK),env=(age,life,fade)=>djEase15(age/fade)*djEase15((life-age)/fade);
- c.save();c.beginPath();c.rect(0,0,1200,395);c.clip();c.lineCap='round';
+ const portrait=activeLayout?.portrait;
+ const point=p=>portrait?[skyViewport.left+skyViewport.width*(.08+.84*p[0]/1200),skyViewport.top+skyViewport.height*(.12+.68*p[1]/395),p[2]]:p;
+ c.save();c.beginPath();if(portrait)c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);else c.rect(0,0,1200,395);c.clip();c.lineCap='round';
  if(skyUFO.complete&&skyUFO.naturalWidth)for(const f of plan.ufos){
   const age=t-f.birth,life=f.end-f.birth;if(age<0||age>life+SKY_TRAIL_DECAY)continue;
   if(f.type===1){
-   if(f.mode==='sign'){skySignDraw(c,f,age);continue}
-   skyTrail(c,ta=>skyZig(f,ta/f.flight),age,f.flight);
-   if(age>f.flight){if(age<=f.flight+1.3)skyStar(c,f.zig.pts.at(-1)[0],f.zig.pts.at(-1)[1],(age-f.flight)/1.3,998);continue}
+   if(f.mode==='sign'){c.save();if(portrait){const k=activeLayout.signWidth/440;c.translate(600-k*275,activeLayout.signY);c.scale(k,k)}skySignDraw(c,f,age);c.restore();continue}
+   skyTrail(c,ta=>point(skyZig(f,ta/f.flight)),age,f.flight);
+   if(age>f.flight){if(age<=f.flight+1.3){const p=point(f.zig.pts.at(-1));skyStar(c,p[0],p[1],(age-f.flight)/1.3,998)}continue}
    for(let j=0;j<0;j++){const ta=age-.22*(1-j/26),tb=age-.22*(1-(j+1)/26);if(ta<0)continue;const a=skyZig(f,ta/f.flight),b=skyZig(f,tb/f.flight);c.globalAlpha=.55*(j/26)**1.4*env(age,f.flight,.09);c.strokeStyle=j<13?V:C;c.lineWidth=2.8;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke()}
-   const [x,y,angle]=skyZig(f,age/f.flight);c.save();c.translate(x,y);c.rotate(Math.sin(angle)*.16);c.globalAlpha=env(age,f.flight,.09);c.shadowColor=P;c.shadowBlur=7;c.drawImage(skyUFO,-27,-27,54,54);c.restore();
+   const [x,y,angle]=point(skyZig(f,age/f.flight));c.save();c.translate(x,y);c.rotate(Math.sin(angle)*.16);c.globalAlpha=env(age,f.flight,.09);c.shadowColor=P;c.shadowBlur=7;c.drawImage(skyUFO,-27,-27,54,54);c.restore();
   }else{
-   skyTrail(c,ta=>{const q=skyUfo2(f,ta);return [q.x,q.y]},age,life);
+   skyTrail(c,ta=>{const q=skyUfo2(f,ta);return point([q.x,q.y])},age,life);
    if(age>life)continue;
-   const pos=skyUfo2(f,age),alpha=env(age,life,.65);
+   const pos={...skyUfo2(f,age)},alpha=env(age,life,.65),mapped=point([pos.x,pos.y]);pos.x=mapped[0];pos.y=mapped[1];
    if(pos.scanning){const e=djEase15(pos.u/.12)*djEase15((1-pos.u)/.12),sweep=Math.sin(pos.u*5*Math.PI),base=pos.x+sweep*95;
     c.save();c.globalAlpha=alpha*e*.42;const g=c.createLinearGradient(pos.x,pos.y+15,base,395);g.addColorStop(0,P);g.addColorStop(.4,'#ff488db0');g.addColorStop(1,'#7844ba28');c.fillStyle=g;c.beginPath();c.moveTo(pos.x-18,pos.y+17);c.lineTo(base-100,395);c.quadraticCurveTo(base,408,base+100,395);c.lineTo(pos.x+18,pos.y+17);c.closePath();c.fill();c.restore();
    }
@@ -488,6 +499,7 @@ function floorWave(c,type,t){
   const start=performance.now(),r=host.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,1.5),w=Math.round(r.width*d),h=Math.round(r.height*d);
   if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
   const L=layout||sceneLayout(r.width,r.height),s=L.scale*d,ox=w/2-600*s,oy=L.offsetY*d;activeLayout=L;groundBottom=L.portrait?Math.max(760,(h-oy)/s):760;
+  skyViewport={left:-ox/s,top:-oy/s,width:w/s,height:395+oy/s};
   c.setTransform(1,0,0,1,0,0);c.fillStyle='#170725';c.fillRect(0,0,w,h);
   c.setTransform(s,0,0,s,ox,oy);
   // 세로 하늘은 원래 그라데이션의 시작색으로 이어지고 바닥은 아래까지 연장된다.
@@ -498,13 +510,39 @@ function floorWave(c,type,t){
   const waveActive=introActive()&&!still&&t>=17.14&&t<17.64;
   lightLayer.style.display=waveActive?'block':'none';frontLayer.style.display=effect.spot?'block':'none';
   bg(c);
+  // 하늘의 작은 별은 CSS 픽셀 크기로 그려 모바일에서도 UFO 퇴장 별보다 작고 또렷하다.
+  const skyPlanNow=skyPlan(TRK),ambientAlpha=ambientVisibility(t,skyPlanNow.blocked);
+  if(!still&&ambientAlpha>0){
+   c.save();c.setTransform(d,0,0,d,0,0);c.fillStyle='#fff1d5';
+   const skyHeight=Math.max(0,Math.min(r.height,(oy+395*s)/d));
+   for(const star of backgroundStars(t,skyPlanNow.ambientSeed)){
+    const x=star.x*r.width,y=star.y*skyHeight,k=star.radius;
+    c.globalAlpha=star.alpha*ambientAlpha;c.beginPath();c.moveTo(x,y-k);c.lineTo(x+k*.25,y-k*.25);c.lineTo(x+k,y);c.lineTo(x+k*.25,y+k*.25);c.lineTo(x,y+k);c.lineTo(x-k*.25,y+k*.25);c.lineTo(x-k,y);c.lineTo(x-k*.25,y-k*.25);c.closePath();c.fill();
+   }
+   c.lineWidth=1;c.lineCap='round';
+   for(const meteor of backgroundMeteors(t,skyPlanNow.ambient)){
+    const x=meteor.x*r.width,y=meteor.y*skyHeight,dx=r.width*.16,dy=skyHeight*.0413;
+    const glow=c.createLinearGradient(x+dx,y-dy,x,y);glow.addColorStop(0,'#8ae3e200');glow.addColorStop(1,'#fff1d5');
+    c.globalAlpha=meteor.alpha*.75;c.strokeStyle=glow;c.lineWidth=1.4;c.beginPath();c.moveTo(x+dx,y-dy);c.lineTo(x,y);c.stroke();
+    c.fillStyle='#fff1d5';c.beginPath();c.arc(x,y,1.3,0,Math.PI*2);c.fill();
+   }
+   for(const burst of backgroundFireworks(t,skyPlanNow.ambient)){
+    const radius=Math.min(76,r.width*.15)*(1-Math.exp(-burst.age*1.8)),x=burst.x*r.width,y=burst.y*skyHeight+5*burst.age**2;
+    c.globalAlpha=burst.alpha*.7;c.strokeStyle=burst.color;
+    for(let i=0;i<24;i++){
+     const angle=i*Math.PI/12,reach=radius*(i%2?.76:1),tail=3+3*(1-burst.age/2.3);
+     c.beginPath();c.moveTo(x+Math.cos(angle)*Math.max(0,reach-tail),y+Math.sin(angle)*Math.max(0,reach-tail));c.lineTo(x+Math.cos(angle)*reach,y+Math.sin(angle)*reach);c.stroke();
+    }
+   }
+   c.restore();
+  }
   if(introActive()&&t<17.14){
    c.save();c.beginPath();c.rect(-2000,-2000,5200,2395);c.clip();
    const glow=c.createRadialGradient(effect.x,395,0,effect.x,395,260);glow.addColorStop(0,`rgba(255,72,141,${effect.rise*.28})`);glow.addColorStop(1,'#7844ba00');c.fillStyle=glow;c.fillRect(effect.x-260,135,520,260);c.restore();
   }
   skyProps(c,t);floorWave(c,0,t);if(!introActive()||t>=17.14)visual(c,5,t);
   if(introActive()&&!still&&t>=17.14&&t<17.69){const u=(t-17.14)/.55;c.save();sunTransform(c);for(let j=0;j<3;j++){c.strokeStyle=[P,V,C][j];c.globalAlpha=(1-u)*.9;c.lineWidth=7-j;c.beginPath();c.arc(850,267,100+500*u-j*18,0,Math.PI*2);c.stroke()}c.restore()}
-  c.save();if(L.portrait){const k=L.signWidth/440;c.translate(600-k*275,L.signY);c.scale(k,k)}skyUfos(c,t);c.restore();
+  skyUfos(c,t);
   // 조명 원뿔은 유노 중심이며 세로 화면의 확장 하늘에서 내려온다.
   if(effect.spot){
    // 원뿔과 바닥 조명의 모양은 크기가 바뀔 때만 계산하고 알파로 점등한다.
@@ -548,7 +586,7 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
   setStill(value){still=value;if(still)parts=[];cancelAnimationFrame(raf);raf=0;lastT=null;draw(0);resume()},
   celebrate(xRatio,yRatio){if(dead||still||document.hidden||!visible)return;parts=[];const r=host.getBoundingClientRect();const burst=(x,y,delay=0)=>{const colors=['#ff477d','#fff9ec','#efb62f'];for(let i=0;i<40;i++){const a=i*Math.PI*2/40,v=28+Math.random()*50;parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:colors[i%3],r:1+Math.random()*1.6,delay})}};if(Number.isFinite(xRatio)&&Number.isFinite(yRatio))burst(r.width*djClamp15(xRatio),r.height*djClamp15(yRatio));else [[.24,.38],[.76,.27],[.54,.17]].forEach(([x,y],i)=>burst(r.width*x,r.height*y,i*.26));lastFrame=performance.now();resume()},
   finale(){if(dead||still||document.hidden||!visible)return;parts=[];const r=host.getBoundingClientRect(),colors=['#ff477d','#efb62f','#6ee7f9','#c4a1ff','#ff9f6b','#fff9ec'];[[.5,.2],[.22,.34],[.78,.3],[.36,.12],[.64,.15],[.1,.2],[.9,.18],[.5,.38],[.3,.26],[.7,.24]].forEach(([x,y],j)=>{for(let i=0;i<64;i++){const outer=i%4!==0,a=i*Math.PI*2/64+Math.random()*.06,v=outer?46+Math.random()*30:14+Math.random()*18;parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%7===0?'#fff9ec':colors[j%colors.length],r:1.1+Math.random()*1.7,delay:j*.17,life:2.5})}});lastFrame=performance.now();resume()},
-  renderAt(t){draw(t)},diagnostics(){return {effect:{...effect},snapshot,costs:[...costs],layout:sceneLayout(host.clientWidth,host.clientHeight),raf,dead,particles:parts.length}},
+  renderAt(t){draw(t)},diagnostics(){return {effect:{...effect},snapshot,ambient:TRK?{blocked:skyPlan(TRK).blocked.map(r=>[...r]),events:skyPlan(TRK).ambient.map(e=>({...e}))}:null,costs:[...costs],layout:sceneLayout(host.clientWidth,host.clientHeight),raf,dead,particles:parts.length}},
   destroy(){dead=true;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
  };
 }
