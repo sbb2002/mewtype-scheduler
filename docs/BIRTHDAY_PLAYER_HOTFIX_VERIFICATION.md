@@ -29,3 +29,7 @@
 `python scripts/verify_birthday_lifecycle.py`: 실제 자동재생 차단→터치 시작, 음소거·저장 볼륨, 자연 곡 경계(gap 0), 정지 탐색 오차 0, 자정/정리 후 Audio·AudioContext·blob·RAF 0, destroyBirthday 후 생일 소유 리스너 0. 새 손잡이 리스너와 관찰자도 정리한다.
 
 산출물은 운영자 PC 임시 폴더 `C:\Users\User\AppData\Local\Temp\birthday-player-ui`의 results/monitor/lifecycle JSON, selfchecks 로그와 화면 PNG다. 실제 삼성 브라우저·iPhone의 하드웨어/브라우저 음향·터치 체감은 운영자 후속 확인 대상이며 에뮬레이션을 실기기 검증으로 간주하지 않는다. 배포 식별자와 롤백은 `docs/VERSION.md`에 완료 뒤 기록한다.
+
+## 배포 확인
+
+PR #129 병합 `779842c`에 태그 `v4.11.1`을 게시했다. Vercel 프로덕션 `dpl_9cVxEymqjH2jGCfFtm8T2HMPbrKv` READY 및 운영 도메인 변경 파일 8개 일치·버전 v4.11.1을 확인했다. 롤백 대상은 `2ee9cc7`이다. 배포 증거는 같은 임시 폴더의 release.json에 저장했다.
