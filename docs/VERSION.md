@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.11.2 | `ba2b65b` | 2026-11-01 01:30 | `hotfix/birthday-greeting-motion` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 · PR #131 · Vercel READY(`dpl_4JTKp22MjRpckyTmzU1S7pxysFqz`) |
 | v4.11.1 | `779842c` | 2026-11-01 01:09 | `hotfix/birthday-player-controls` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 · PR #129 · Vercel READY(`dpl_9cVxEymqjH2jGCfFtm8T2HMPbrKv`) |
 | v4.11.0 | `6969df5` | 2026-11-01 00:30 | `feat/birthday-music-scene` | 병합 커밋 | 프론트만 · 마이너 · PR #127 · Vercel 프로덕션 READY(`dpl_HPj2rF2fAeJ8XMN5L8ootsZUKqLm`) · 실기기 후속 확인 |
 | v4.10.0 | `e8c80a7` | 2026-10-31 01:59 | `feat/birthday-easteregg` | 병합 커밋 | 프론트만 · **마이너**(새 요소 — 생일 스킨) · 유노 장면만 켬 · 생일 5명 등록 · Vercel 프로덕션 success |
@@ -233,7 +234,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
   - 영문/이름·날짜의 시차 등장과 금빛·분홍빛 글로우, 2.8초 페이드아웃. 모바일 BGM 제목 우하단 고정·안내/이동 플레이바와 겹침 방지.
   - 곡 시각에 따라 작은 별 여러 개와 간헐적 폭죽. 모션 줄이기에서 생략. 모바일 태양 펄스 상단 잘림과 UFO 경로 개선.
   - 유메미타 플레이어 재생/버퍼링 우선, 생일 BGM 일시정지·재시작 차단, 자동 재개 없음. 생일 제어 버튼으로 수동 재개.
-  - 검증 결과는 `docs/BIRTHDAY_GREETING_HOTFIX_VERIFICATION.md`. 배포 진행: 검증 후 병합·배포. 롤백 = `d77667b`(v4.11.1 완료 main). 백엔드·음원 자산 변경 없음.
+  - 검증 결과는 `docs/BIRTHDAY_GREETING_HOTFIX_VERIFICATION.md`. 배포 완료: PR #131 병합 `ba2b65b`, 태그 `v4.11.2` 원격 게시. Vercel `dpl_4JTKp22MjRpckyTmzU1S7pxysFqz` READY. 운영 도메인의 변경 파일 9개가 병합 코드와 일치하고 버전 v4.11.2를 확인했다. 롤백 = `d77667b`(v4.11.1 완료 main). 백엔드·음원 자산 변경 없음.
 
 - **v4.11.1** (일반 패치·핫픽스, 2026-11-01 — 브랜치 `hotfix/birthday-player-controls`, 프론트만): **생일 인사말·플레이바와 모바일 모니터 입력 보완.** 운영자가 이번 수정을 핫픽스 등급으로 지정했다.
   - 인사말 영문/이름·날짜를 확대·굵게 하고 대비를 높였다. 플레이바 마우스 호버 중 불투명, 그 외에는 기존 반투명이다.
