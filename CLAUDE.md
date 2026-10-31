@@ -138,6 +138,9 @@ src/
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
       bgdeco.js bglogic.js   # 배경 장식 — 분홍 → 파랑 톤 + 떠다니는 로고 도형 · 폰 흔들면 흩어짐(bglogic = 순수 로직 · 물리, css/bgdeco.css)
+      birthdayui.js birthday.js   # KST 생일 판정 · 유리 패널 · 🎂 끌기 · 음악 인트로 수명 관리
+      bdayscene-yuno.js bdaysign.js bdaylogic.js   # 정본 v12 Canvas 장면과 일출·조명 인트로 · 인코딩 사인 · 순수 계산
+      bdayaudio.js bdayplayer.js bdayguard.js   # 생일에만 로드하는 음원 · 컨트롤 · 복사 억제
       *.selfcheck.mjs  # 순수 로직 self-check
   collector/           # v1 순수 모듈 — config · rss · youtube 를 백엔드가 import 재사용
   bus/                 # 에러 버스 발신기 — MEW_BUS_DIR 없으면 no-op(배포판은 미설정)
@@ -238,3 +241,5 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
   큰 버전 = 들어갈 줄기(지금 `main` = v4). `devpapers` 는 `mewtype-scheduler-worktrees/devpapers`.
 - `.agents/` · `.claude/` · `skills-lock.json`(운영자 PC 의 Claude 스킬 설치분)은 `.gitignore` 로 뺀다.
 - 병합이 끝난 워크트리는 지운다(`git worktree remove`).
+
+생일 음악 후속 구현은 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md`와 `docs/BIRTHDAY_SKIN.md`를 따른다. 첫 스트리밍 뒤 Web Audio 예약 재생으로 전환한다. 성능은 GPU/소프트웨어를 구분하고 실제 iPhone Safari는 별도 확인한다. 현재 버전 상수는 운영자 확정 전 바꾸지 않는다.

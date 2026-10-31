@@ -1,6 +1,14 @@
 # 생일 스킨 — 인수 문서 (나머지 멤버를 이어서 만들 세션용)
 
 작성 2026-10-31 (v4.10.0). **이 문서만 읽으면 다음 세션이 아라레 · 노노카 · 리츠 · 미야코 장면을 이어서 만들 수 있게** 쓴다.
+
+음악 장면 후속 구현(배포 전): 유노는 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md` 정본 v12의 Canvas 렌더러로 교체했다. 기존 v16/SVG 제작법은 아래의 **다른 멤버 원본을 찾는 참고**이며 현재 유노 실행 방식이 아니다. `bdaybeat.js`와 v16 fixture/self-check는 예전 박 계산의 회귀 검증용으로 보존하고 실행 장면에서는 import하지 않는다. 정적 HTML의 예전 장면 CSS 연결도 제거했다.
+
+유노의 현재 흐름은 매 방문 Noctural Run 0초 → 밝기 .03~.30 → 17.14초 첫 드럼에서 2.4 → 18.64초 정상 밝기 → 19초부터 컨트롤 공개다. 자동재생 거부 시 첫 탭으로 시작한다. 기존 4.5초 자동 보기는 없어졌고, 일반 화면에서도 음악은 이어진다. 음악·박 지도·사인·부위 이미지는 생일 판정 뒤 동적 로드한다. 음원 원본 2개는 `assets/birthday/bgm/`, 박 지도 JSON/uint8는 `beat/`, UFO는 `ufo.png`에 있다. 사인은 별도 이미지 파일이 없다.
+
+검증 스크립트는 `scripts/verify_birthday_music.py`(앱·배치·밝기), `scripts/verify_birthday_lifecycle.py`(실제 자동재생 거부·터치·종료·자정·정리), `scripts/compare_birthday_pixels.py`(정본 함수와 7개 시각 비교), 순수 검증은 `bdaymusic.selfcheck.mjs`다. 캡처·수치는 작업 지시의 저장소 밖 `handoff/verify/`에만 쓴다. 생성 스크립트 `scripts/port_birthday_scene.py`는 정본 자료가 있는 운영자 PC에서만 재실행 가능하다.
+
+**출시 전 확인**: 곡 전환은 Web Audio 예약 재생으로 개선했고 실제 경계 출력 샘플을 검사했다. GPU/소프트웨어 성능과 정본 픽셀 차이는 REPORT.md 「3차 결과」를 따른다. 실제 iPhone Safari 음향·주소창·안전영역·길게 누르기는 미확인이다. 복사 억제는 우연한 가져가기를 어렵게 하는 장벽이며 완전한 차단이 아니다. v4.11.0은 제안이며 번호 확정·병합·배포는 운영자 결정이다.
 기능 계약(데이터 · 함수 · DOM)은 `docs/SPEC.md` 「생일 스킨 (v4.10.0)」, 용어는 `docs/TERMINOLOGY.md` 「생일 스킨 용어」. 이 문서는 **작업 방법 · 현황 · 운영자 결정 · Codex 협업**을 다룬다.
 
 ## 1. 현황 (2026-10-31)
@@ -17,7 +25,7 @@
 
 ## 2. 어디에 무엇이 있나
 
-- **사이트 코드(main)**: `src/frontend/js/birthday.js`(판정, 순수) · `birthdayui.js`(화면 · 🎂 버튼 · 온전히 보기) · `bdayscene-yuno.js`(유노 장면) · `bdaybeat.js`(유노 박 시계 · 스펙트럼 — 유노 전용 이름) · `css/birthday.css`(유리 패널 · 버튼) · `css/bdayscene-yuno.css` · `assets/birthday/yuno/*.webp` · `config.js`(`BIRTHDAYS` · `BIRTHDAY_SCENES_ENABLED`) · `fixtures/bdayscene-yuno.html`(장면만 풀스크린으로 띄우는 시험 페이지) · `fixtures/validate-bdayscene-yuno.cjs`.
+- **사이트 코드(이 브랜치)**: `src/frontend/js/birthday.js`(판정, 순수) · `birthdayui.js`(화면·수명) · `bdayscene-yuno.js`(Canvas) · `bdaysign.js`(사인) · `bdaylogic.js`(순수 계산) · `bdayaudio.js`(음원) · `bdayplayer.js`(인트로·컨트롤) · `bdayguard.js`(억제) · `css/birthday.css`/`bdayplayer.css` · `assets/birthday/` · `config.js`(날짜·켜짐 여부). `fixtures/bdayscene-yuno.html`은 무음의 곡 시계 장면 시험 화면이며, `fixtures/validate-bdayscene-yuno.cjs`는 새 Python 검증 3개를 호출한다. 과거 `bdaybeat.js`·`bdayscene-yuno.css`는 회귀 자료로 보존되며 실행 앱에서는 로드하지 않는다.
 - **시제품 · 제작 원본(브랜치 `easteregg/birthday-skin`, `easteregg/birthday/`)**: `birthday_bg_v2~v16.html`(단일 HTML 시제품, **v16 = 5명 최신본**), `assets5/`(부위 PNG · WebP · `rigs*.json` · 빌드 `build_v*.py` · 프롬프트 `*_prompt.txt` · 검증 `validate_v*.cjs`), `briefs/`(**Codex 에게 보낸 지시서 = 운영자 요구의 원문 기록**, `feedback7~20.md`), `design_notes.md`(Codex 의 설계 · 검증 기록), `HANDOFF.md`(제작 경위 · 디자인 결정). 로컬 위치(운영자 PC): `…/mewtype-scheduler-worktrees/v4/easteregg-birthday-skin/easteregg/birthday/`.
 - **제3자 참고 이미지**(나무위키 · 클라우드프론트 · 디시콘 도트)는 저작권상 저장소에 없다. 운영자 PC 의 `…/mewtype-scheduler-worktrees/devpapers/ref/birthday-easteregg-handoff/` · 그 워크트리의 `refs7/`(미커밋)에만 있다. 필요하면 운영자에게 파일을 요청한다.
 
@@ -98,3 +106,14 @@ Chrome 확대 확인: `mcp__claude-in-chrome__computer` 의 `zoom` · `javascrip
 - 위치 저장(`localStorage "bday-btn"`)은 **생일 스킨이 뜬 날에만** 쓰이고 모든 멤버가 같은 키를 쓴다. 장면별 구도에 따라 기본 위치(`DEFAULT_POS` = 오른쪽 73%)를 바꿀지는 운영자 결정.
 - 실기기(폰 터치 · 진동 · 모바일 브라우저 주소창 변화) · KST 자정 전환 실측 · 장면 로드 실패 폴백 실기 확인.
 - 유노 이퀄라이저 · 박 모듈 이름이 유노 전용(`yunoPose`)이다. 다른 멤버의 박 연동이 생기면 공통 부분을 `bdaybeat.js` 에서 뽑을지 결정.
+
+
+### 생일 음악 인트로 추가 연출 (추가 지시 1)
+
+첫 곡 최초 재생에만 6.3~7.2초 유노·데크 스포트라이트를 켜고 17.14~18.14초에 제거한다. 태양은 지평선 아래에서 10초부터 smoothstep으로 상승해 16.9초에 목표 위치에 도달한다. 일출 중 halo 박 버스트는 숨기고 17.14초에 태양 중심에서 0.5초 동안 화면 끝까지 밝기 파면이 전파된다. 기존 감쇠·3겹 링을 유지한다. 모션 줄이기는 최종 태양 위치에 정지하고 조명·파면 없이 단순 페이드한다. 실제 Chromium 검증은 `scripts/verify_birthday_addendum.py`, 후속 최적화·검증 결과는 handoff REPORT.md의 「3차 결과」를 따른다.
+
+### 음악 장면 3차 인계
+
+바닥 띠는 열마다 그라데이션을 만들지 않고 파면별 그라데이션을 공유한다. 오로라는 두 색 그라데이션을 좌표 변환으로 재사용한다. 조명은 화면 크기가 바뀔 때만 캐시하고 캐릭터 조명과 점등 파면은 별도 Canvas의 최종 CSS 밝기로 합성해 색의 중간 클리핑을 피한다. 밝기 곡선은 인계 지시에 따라 양 끝 값과 quadratic ease-out으로 통일했다. 성능 검사는 `verify_birthday_performance.py --headed`, 출력 샘플 검사는 `verify_birthday_gapless.py`. 두 곡 디코드는 48kHz·스테레오에서 약 157MiB의 PCM 메모리를 사용하며 destroy 시 예약 소스·타이머·버퍼·blob을 해제한다. 메모리 부족/디코드 실패 시 스트리밍을 유지한다.
+
+최종 성능 표·통과 범위·실기기 미확인 목록은 [3차 검증](BIRTHDAY_MUSIC_SCENE_VERIFICATION.md)을 따른다. GPU 환경의 600프레임 평균·p95·최대는 모두 8ms 이내(최대 4.8ms)였다. 소프트웨어는 평균 17.38~32.81ms이고 실제 iPhone은 미확인이므로 전체 출시 기준 통과로 처리하지 않는다.
