@@ -1568,12 +1568,15 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **움직임**: 말풍선 등장 0.26s(`foot-ver-in`), 막대 채움 = `--hold`. `prefers-reduced-motion` 이면 전환 · 등장 애니메이션 없음.
 - 하단 디스클레이머(`initDisclaimerHover`, 위 「하단 디스클레이머 팝업」)와는 별개 요소다.
 
-### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` 만
+### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` · `js/monitorbirthday*.js`
 
 - **구성**: 맨 위 막대 44px(「운영 모니터」 · 「사이트 기록 초기화」 버튼, 색은 이 페이지 안에 직접 적음 — 토큰 없음). 그 아래 iframe 높이 `calc(100% − 44px)`. iframe 로딩 · `latest.html` 폴백 · 30분 안전망 코드는 바꾸지 않았다.
 - **확인 창**: 네이티브 `<dialog>`(`showModal`) — Esc 로 닫힘, 바깥(어둠) 클릭으로도 닫힘(`e.target === dialog`). 취소 · 되돌리기 두 버튼. 본문 문구는 시안 그대로(「처음 방문했을 때처럼 되돌릴까요?」 · 들은 곡 · 읽은 트윗 · 화면 설정 · 처음 안내 4줄).
 - **동작**: 「되돌리기」 → `localStorage.clear()`. **같은 주소(= 사이트)** 라 메인 사이트의 저장값도 전부 지워진다. `sessionStorage` 는 건드리지 않는다(`va-skip` 등 이 탭 안에서만 쓰는 값은 남는다). 성공하면 아래 가운데 알림 「처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.」 5초, 저장소를 못 쓰면(예외) 「이 브라우저에서는 기록을 지울 수 없어요.」. 이미 열린 사이트 탭은 새로고침 전까지 옛 값을 쓸 수 있다.
 - **지워지는 localStorage 키**(코드 `localStorage` 전수 확인, 2026-10-25): `ymmt_listened`(들은 곡 — 랜덤플리 오마카세의 A · B 묶음) · `mew:twread`(읽은 트윗) · `mew:tllang`(트윗 번역 언어 — 기본 한글) · `theme`(밝게 · 어둡게 — 없으면 기기 설정) · `mew.board.view`(PC 보기 방식 테이블 · 카드) · `mew.player.media`(음원 · MV) · `mew.notice.lang`(소식 제목 언어) · `mew.notice.liveview`(라이브공연 보기 방식) · `mew.tip.grip-dblclick` · `mew.tip.mv-mode` · `mew.tip.lane-swipe`(처음 안내 — 한 번씩 다시 보인다).
+- **모니터 생일 진입 명령**(후속 추가 2026-11-01): 초기화 확인창의 버튼을 제외한 안쪽에서 마우스 왼쪽 드래그 또는 한 손가락 터치를 시작해 창 밖으로 `↑↑↓↓←→←→` 순서로 밀어낸다. 한 번 누르고 뗄 때 한 방향만 입력한다. 실제 이동 24px 이상이며 창 경계에서 12px 이상 벗어났을 때 인식하고 해당 변이 즉시 시안/분홍빛으로 빛난다(손을 뗀 뒤 450ms 유지). 모서리는 먼저 통과한 변으로 계산한다. 8방향을 마치면 상단 초기화 버튼이 빛나며 확인창이 닫힌다. 이어 리포트 iframe의 EXT → APP 탭을 차례로 누르면 같은 창의 `./?bday=yuno`로 이동한다(`va` 쿼리는 있으면 유지). 생일이 아닌 날에도 유노 인트로를 시험할 수 있다.
+- **진입 명령 수명·안전**: 상태는 메모리에만 둔다. 잘못된 방향은 다음 ↑↑ 접두사부터 다시 인식하고, 준비 뒤 잘못 누른 탭·30초 무입력·확인창 다시 열기·취소/Esc·탭 숨김·페이지 이탈에서는 초기화한다. 진입 입력은 저장값을 지우지 않으며 드래그 뒤의 호환 click도 소비한다. 기존 되돌리기는 명시적으로 버튼을 클릭했을 때만 실행된다. Pointer Events/캡처와 `touch-action:none`으로 마우스·모바일 터치를 처리하고 다중 터치·pointercancel은 현재 동작을 버린다. 동작 줄이기에서는 가장자리 표시를 유지하되 버튼 점멸은 생략한다.
+- **iframe 탭 연결**: 같은 출처를 상속하는 srcdoc 문서에 클릭을 위임한다. 라이브/스냅샷·30분 안전망 교체 시 새 문서에 다시 연결하고 이전 문서 리스너는 중단한다. 리포트·서버에 postMessage 코드나 새 API를 추가하지 않는다. `monitorbirthday.selfcheck.mjs`와 `scripts/verify_monitor_birthday.py`로 순서·드래그/터치·초기화 버튼·폴백/재로딩을 검사한다.
 - 백엔드 · 관리 페이지 · 텔레그램은 바뀌지 않는다(`monitor_report.py` 무수정).
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
