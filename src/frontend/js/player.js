@@ -14,7 +14,7 @@
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
 
 import { fetchPreview } from "./api.js";
-import { setMainMusicActive } from './musicpriority.js';
+import { setMainMusicActive, setMainMusicHandOff } from './musicpriority.js';
 import { SONGS_URL, SONGS_FALLBACK_URL, FALLBACK_CHANNELS } from "./config.js";
 import { KIND_LABEL, displayKo, isNewSong, prepareSong, viewSongs, matchRange, kstDate, omakaseOrder, mediaCandidates, hasMv } from "./songs.js";
 import { wireSheetDrag } from "./sheetdrag.js";   // (마이크로 인터랙션) 모바일 시트 끌어 내리기
@@ -296,7 +296,7 @@ async function ensurePlayer(videoId, autoplay) {
 
 function onYtState(e) {
   const S = window.YT.PlayerState;
-  setMainMusicActive(e.data === S.PLAYING || e.data === S.BUFFERING);
+  if (!fadingOut) setMainMusicActive(e.data === S.PLAYING || e.data === S.BUFFERING);
   if (e.data === S.PLAYING || e.data === S.BUFFERING) { st.playing = true; st.started = true; st.error = null; }
   if (e.data === S.PLAYING) { skipRun = 0; watchStop(); }   // 실제로 재생이 시작됐을 때만 감시 해제 — 프리미어 대기 영상도 잠깐 BUFFERING 을 거친다(2026-10-25 실측)
   if (e.data === S.PLAYING && st.curId && listenedId !== st.curId) { listenedId = st.curId; markListened(st.curId); }   // (v4.8.1) 곡이 재생되는 시점에 기록
@@ -500,6 +500,28 @@ function showMediaTip(main, sub, ms) {
   clearTimeout(mvTipTimer);
   mvTipTimer = setTimeout(() => { el.mvTip.classList.remove("is-on"); el.mvTip.hidden = true; }, ms);
 }
+
+/** 생일 장면이 자정에 켜질 때 — 팝업을 내리고, 재생 중이면 소리를 줄여 일시정지한 뒤 볼륨을 되돌린다.
+ * 곡 · 재생목록 · 재생 위치는 그대로라 장면을 닫고 ▶ 를 누르면 이어서 듣는다. iOS 는 볼륨 조절을 무시해 시간이 되면 멈추기만 한다. */
+let fadingOut = false;
+function handOffToBirthday(ms) {
+  closePlayer();
+  if (fadingOut || !st.playing || !yt || !ytReady) return;
+  let from = 100;
+  try { from = yt.getVolume(); } catch (e) { /* 무시 */ }
+  fadingOut = true;
+  setMainMusicActive(false);   // 생일 음악이 페이드 동안 겹쳐 시작할 수 있게 우선권을 먼저 내준다
+  const start = performance.now();
+  const timer = setInterval(() => {
+    const u = Math.min(1, (performance.now() - start) / ms);
+    try { yt.setVolume(Math.round(from * (1 - u))); } catch (e) { /* 무시 */ }
+    if (u < 1) return;
+    clearInterval(timer);
+    try { yt.pauseVideo(); yt.setVolume(from); } catch (e) { /* 무시 */ }
+    fadingOut = false;
+  }, 50);
+}
+setMainMusicHandOff(handOffToBirthday);
 
 function togglePlay() {
   if (!st.curId && !st.queue.length) return;

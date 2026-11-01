@@ -9,6 +9,7 @@
 
 import { BIRTHDAYS, BIRTHDAY_SCENES_ENABLED, FALLBACK_CHANNELS } from "./config.js";
 import { pickBirthdayScene, msToNextKstMidnight } from "./birthday.js";
+import { handOffMainMusic, mainMusicActive } from "./musicpriority.js";
 
 // 장면이 완성된 멤버만 등록한다(config.js BIRTHDAY_SCENES_ENABLED 와 같이 켠다)
 const SCENE_LOADERS = {
@@ -251,15 +252,20 @@ function teardown() {
   setPageInert(false);
 }
 
-/** 지금 생일 장면을 보여 줄지 다시 판정한다 — 자정을 넘기거나 잠들었다 깬 뒤에도 맞게 */
+const MUSIC_FADE_MS = 2500;   // 생일이 시작될 때 유메미타 플레이어 소리를 줄이는 시간
+
+/** 지금 생일 장면을 보여 줄지 다시 판정한다 — 자정을 넘기거나 잠들었다 깬 뒤에도 맞게.
+ * 켜는 쪽: 생일 00:00 에 화면을 보고 있으면 그 자리에서 장면을 띄운다. 숨은 탭은 음악을 듣는 중일 때만 바로 띄우고, 아니면 돌아왔을 때 띄운다.
+ * 끄는 쪽: 생일이 끝나도 이미 켜진 장면은 내리지 않는다. 새로고침하면 판정에 걸려 사라지고, 다음 날 들어온 사람에게는 뜨지 않는다. */
 function evaluate() {
   const want = pickBirthdayScene(Date.now(), location.search, BIRTHDAYS, BIRTHDAY_SCENES_ENABLED);
-  if (want !== key) {
+  if (want && want !== key && (!document.hidden || mainMusicActive())) {
     if (key) teardown();
-    if (want) setup(want);
+    handOffMainMusic(MUSIC_FADE_MS);
+    setup(want);
   }
   clearTimeout(midnightTimer);
-  midnightTimer = setTimeout(evaluate, msToNextKstMidnight(Date.now()) + 1000);   // 다음 KST 자정 직후 재판정
+  midnightTimer = setTimeout(evaluate, msToNextKstMidnight(Date.now()) + 50);   // 다음 KST 자정 직후 재판정
 }
 
 export function initBirthday() {
