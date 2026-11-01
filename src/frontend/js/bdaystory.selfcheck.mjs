@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { STORY_CUES, STORY_MAX_GAP, birthdayStoryCue } from './bdaystorylogic.js';
 import { fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation, YMMT_INK_W, YMMT_INK_H } from './bdaylogic.js';
 import { fireworkFrame, fireworkShot, fireworkSalvo } from './bdayfireworks.js';
+import { decodeSign, signDrawOrder } from './bdaysign.js';
 
 // 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음
 for(const track of [0,1]){
@@ -43,6 +44,10 @@ for(const [view,portrait] of views){
  assert.deepEqual(fireworkShot(1,7,v),fireworkShot(1,7,v));assert.equal(fireworkShot(.3,7,v).rockets.length,1);assert.equal(fireworkShot(4,7,v).particles.length,0);
  const salvo=fireworkSalvo(.8,9,v);assert.ok(salvo.particles.length>500&&salvo.particles.length<=1400&&!salvo.rockets.length);
  assert.equal(fireworkSalvo(4.3,9,v).particles.length,0)}
+// 사인 — 가운데 y 는 한 붓(점 사이 끊김 없음), 순서는 y → m → o, 원본 획의 점은 하나도 빠지지 않는다.
+{const [raw]=decodeSign(),drawn=signDrawOrder(raw),y=drawn[2],gap=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+ assert.ok(y.every((p,i)=>!i||gap(p,y[i-1])<.1));assert.deepEqual(drawn[3],raw[3]);assert.deepEqual(drawn[4],raw[4]);assert.deepEqual(y.at(-1),raw[8].at(-1));assert.deepEqual(y[0],raw[2].at(-1));
+ assert.equal(drawn.length,raw.length-1);const seen=new Set(drawn.flat().map(String));assert.ok(raw.flat().every(p=>seen.has(String(p))))}
 console.log('bdaystory selfcheck ok');
 
 // 전체 회전 후 글로우 여백을 포함한 외곽이 원래 칸 안에 남고 큰 장면의 사인을 침범하지 않는다.
