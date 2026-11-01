@@ -44,6 +44,8 @@ try:
       }SKY_SALT=saved;return rows},
       skyBusy(t)''')
      r.fulfill(content_type='text/javascript',body=s)
+    elif '/bdaystory.js' in r.request.url:
+     r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/bdaystory.js').read_text(encoding='utf8').replace('const talk=!reward.unlocked','const talk=true'))
     else:r.continue_()
    page.route('**/*',route)
    page.goto(f'http://127.0.0.1:{server.server_port}/src/frontend/?bday=yuno&ufo=sign')
@@ -94,8 +96,11 @@ try:
      page.evaluate('async t=>{await __birthday.audio.seek(t);__birthday.scene.renderAt(t)}',plan['showers'][0]+1.05);shot('shower')
    # 토글은 정지 중에도 그리고, 숨김 복귀 시 주기를 새로 시작한다.
    for label in ['폭죽','유성우']:
-    page.get_by_role('button',name=label,exact=True).click()
-    assert page.get_by_role('button',name=label,exact=True).get_attribute('aria-pressed')=='true'
+    effect=page.get_by_role('button',name=label,exact=True)
+    if label=='폭죽': # 폭죽은 클릭 = 단발, 길게 = 토글
+     box=effect.bounding_box();page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down();page.wait_for_function('e=>e.hasAttribute("data-charged")',arg=effect.element_handle(),timeout=5000);page.mouse.up()
+    else:effect.click()
+    assert effect.get_attribute('aria-pressed')=='true'
    before=page.evaluate('window.__draws');page.wait_for_timeout(200)
    assert page.evaluate('window.__draws')>before and page.evaluate('__birthday.audio.paused')
    page.evaluate('()=>{window.__routineCalls=0;__birthday.scene.ageToggles(17.3)}');shot('toggle-salvo')
@@ -110,9 +115,12 @@ try:
    ages=page.evaluate('Object.values(__birthday.scene.testState().toggles).map(e=>performance.now()/1000-e.start)')
    assert all(a<.5 for a in ages),ages
    for label in ['폭죽','유성우']:
-    page.get_by_role('button',name=label,exact=True).click()
+    effect=page.get_by_role('button',name=label,exact=True)
+    if label=='폭죽':
+     box=effect.bounding_box();page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down();page.wait_for_function('e=>e.hasAttribute("data-charged")',arg=effect.element_handle(),timeout=5000);page.mouse.up()
+    else:effect.click()
     assert page.get_by_role('button',name=label,exact=True).get_attribute('aria-pressed')=='false'
-   assert page.evaluate('__birthday.scene.testState().toggles')=={'fireworks':None,'shower':None}
+   page.wait_for_function('!__birthday.scene.testState().toggles.fireworks&&!__birthday.scene.testState().toggles.shower',timeout=8000) # 끈 뒤에는 이미 나온 효과가 끝나야 비워진다
    # 원래 UFO·사인 렌더러, 동시 재생, 같은 종류 재시작, 마지막 수명 종료의 피날레를 검사한다.
    assert page.evaluate('__birthday.audio.paused')
    page.get_by_role('button',name='UFO',exact=True).click()

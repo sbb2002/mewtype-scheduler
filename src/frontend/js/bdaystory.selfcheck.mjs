@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { STORY_CUES, STORY_MAX_GAP, birthdayStoryCue } from './bdaystorylogic.js';
 import { fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation, YMMT_INK_W, YMMT_INK_H } from './bdaylogic.js';
-import { fireworkFrame } from './bdayfireworks.js';
+import { fireworkFrame, fireworkShot, fireworkSalvo } from './bdayfireworks.js';
 
 // 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음
 for(const track of [0,1]){
@@ -36,6 +36,13 @@ for(const [view,portrait] of views){
  assert.ok(Math.max(...x)<=yl||Math.max(...y)<=yt,JSON.stringify(view));
  assert.ok(yl>=view.left-.01&&yr<=view.left+view.width+.01&&yt>=view.top-.01&&yb<=view.top+view.height+.01,JSON.stringify(view));
 }
+// 폭죽 — 끈 뒤에는 새로 쏘지 않되 이미 쏜 것은 끝까지 그린다. 단발 · 사인 폭죽은 결정적이고 상한을 지킨다.
+{const v={left:0,top:0,width:1200,height:395};
+ assert.ok(fireworkFrame(8.5,3,v,{until:8.1}).particles.length+fireworkFrame(8.5,3,v,{until:8.1}).rockets.length>0);
+ const none=fireworkFrame(16.3,3,v,{until:15.9});assert.equal(none.particles.length+none.rockets.length,0);
+ assert.deepEqual(fireworkShot(1,7,v),fireworkShot(1,7,v));assert.equal(fireworkShot(.3,7,v).rockets.length,1);assert.equal(fireworkShot(4,7,v).particles.length,0);
+ const salvo=fireworkSalvo(.8,9,v);assert.ok(salvo.particles.length>500&&salvo.particles.length<=1400&&!salvo.rockets.length);
+ assert.equal(fireworkSalvo(4.3,9,v).particles.length,0)}
 console.log('bdaystory selfcheck ok');
 
 // 전체 회전 후 글로우 여백을 포함한 외곽이 원래 칸 안에 남고 큰 장면의 사인을 침범하지 않는다.

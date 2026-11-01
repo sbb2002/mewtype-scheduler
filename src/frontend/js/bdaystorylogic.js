@@ -28,4 +28,6 @@ export const STORY_CUES=[
  {id:'three',track:1,start:175,end:184,text:'별빛 셋.\n......다음 말, 두 번은 안 해.',stars:3},
  {id:'stay',track:1,start:198,end:205,text:'곧 끝나.\n......끝까지 있어.'}
 ];
+// 곡 시각과 상관없이 한 번씩 나오는 대사. 해금 뒤 마지막 말 · 무음이 1분 이어질 때.
+export const STORY_TURN='자, 이제 너의 음악을 들려줘.\n너의 턴이야.',STORY_NUDGE='... 안듣고 있는거.\n알고 있거든?',SILENT_NUDGE_MS=60000;
 export function birthdayStoryCue(track,time,intro=false){return STORY_CUES.find(c=>c.track===track&&time>=c.start&&time<c.end&&(!c.intro||intro))||null}

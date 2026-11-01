@@ -50,6 +50,8 @@ try:
      s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace('return {skyBusy(t)', 'return {stopForTest(){cancelAnimationFrame(raf);raf=0},testPlan(){return skyPlan(TRK)},manualState(){return {manual:[...manualEffects.values()][0]||manual,returnAt}},expireManual(){for(const e of manualEffects.values())e.start-=e.dur+1;draw(clock())},skyBusy(t)').replace('skySignDraw(c,f,age);c.restore();continue','window.__signMatrix=c.getTransform();skySignDraw(c,f,age);c.restore();continue').replace('if(depth>12){','window.__beam={sx,sy,bottom,depth,width,base};if(depth>12){')
      s=s.replace('function skyProps(c,t){','function skyProps(c,t){window.__routineCalls=(window.__routineCalls||0)+1;').replace('function skyUfos(c,t,events=skyPlan(TRK).ufos){','function skyUfos(c,t,events=skyPlan(TRK).ufos){if(events===skyPlan(TRK).ufos)window.__routineCalls=(window.__routineCalls||0)+1;')
      r.fulfill(content_type='text/javascript',body=s)
+    elif '/bdaystory.js' in r.request.url:
+     r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/bdaystory.js').read_text(encoding='utf8').replace('const talk=!reward.unlocked','const talk=true'))
     else:r.continue_()
    page.route('**/*',route);page.goto(BASE+'/src/frontend/?bday=yuno&ufo=sign');page.wait_for_function('window.__birthday?.player')
    page.evaluate('()=>{__birthday.audio.pause();__birthday.scene.stopForTest();__birthday.scene.setIntro(()=>false)}');page.add_style_tag(content='#bday-bg,#bday-bg canvas{filter:brightness(1)!important}')

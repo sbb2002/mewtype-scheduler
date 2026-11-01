@@ -1,4 +1,4 @@
-import { birthdayStoryCue } from './bdaystorylogic.js';
+import { birthdayStoryCue, STORY_TURN, STORY_NUDGE, SILENT_NUDGE_MS } from './bdaystorylogic.js';
 
 export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const root=document.documentElement,abort=new AbortController(),signal=abort.signal;
@@ -12,12 +12,22 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const signature=document.createElement('p');signature.className='bday-memory__signature';signature.textContent='— yuno';
  const close=document.createElement('button');close.type='button';close.textContent='밤 풍경 더 보기';
  card.append(ornament,title,note,signature,close);shell.append(message,card);
- let raf=0,leaving=0,dead=false,key='',finale=false,finished=false,cardPending=false;
+ let raf=0,leaving=0,dead=false,key='',finale=false,finished=false,cardPending=false,special=null,specialTimer=0,turnPending=false,nudged=false,silentMs=0,lastPaint=0;
  function visible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-revealed')}
  function introVisible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-intro')}
  function paint(){
   if(dead)return;
-  const index=audio.index,time=audio.audio.currentTime,cue=(visible()||introVisible())&&!audio.silent&&!scene.skyBusy?.(time)?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null,next=cue?.id||'';
+  const index=audio.index,time=audio.audio.currentTime,now=performance.now(),silent=audio.silent,shown=visible()||introVisible(),busy=scene.skyBusy?.(time);
+  // 무음 시간은 재생 중에만 잰다. 탭이 숨겨진 동안은 프레임이 없어 세지 않는다.
+  if(!silent)silentMs=0;else if(!audio.paused&&lastPaint)silentMs+=Math.min(now-lastPaint,500);lastPaint=now;
+  if(special&&now>=special.until)special=null;
+  if(!special&&shown&&!busy&&card.hidden){
+   if(turnPending&&reward.unlocked&&!silent){turnPending=false;special={id:'turn',text:STORY_TURN,until:now+6500}}
+   else if(!nudged&&silentMs>=SILENT_NUDGE_MS){nudged=true;special={id:'nudge',text:STORY_NUDGE,until:now+5500}}
+   if(special){clearTimeout(specialTimer);specialTimer=setTimeout(wake,special.until-now+20)}
+  }
+  // 해금 뒤에는 곡 대사가 없다. 무음이면 말하지 않는다.
+  const talk=!reward.unlocked,cue=!shown?null:special||(talk&&!silent&&!busy?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null),next=cue?.id||'';
   if(next!==key){
    key=next;message.classList.remove('is-visible');
    if(cue){
@@ -28,7 +38,7 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
    }
   }
   // 퇴장도 곡 시각으로 계산해 탐색 후 같은 상태를 재현한다.
-  if(cue)message.style.setProperty('--story-fade',String(Math.min(1,(cue.end-time)/.8)));
+  if(cue)message.style.setProperty('--story-fade',String(Math.min(1,((cue.until?(cue.until-now)/1000:cue.end-time))/.8)));
   if(index===1&&time>=209&&!finale&&!audio.paused&&visible()){
    finale=true;if(!reduced())scene.finale();
   }
@@ -39,11 +49,11 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  function frame(){raf=0;paint();if(!dead&&!audio.paused&&!document.hidden)raf=requestAnimationFrame(frame)}
  function wake(){if(dead)return;paint();if(!raf&&!audio.paused&&!document.hidden)raf=requestAnimationFrame(frame)}
  // 닫기 = 카드가 빛으로 터져 사라지고 큰 장면이 시작된다. 모션 줄이기는 바로 닫는다.
- close.addEventListener('click',e=>{e.stopPropagation();if(leaving)return;scene.grandShow?.();if(reduced()){card.hidden=true;return}leaving=setTimeout(()=>{leaving=0;card.hidden=true;card.classList.remove('is-leaving')},760);card.classList.add('is-leaving')},{signal});
+ close.addEventListener('click',e=>{e.stopPropagation();if(leaving)return;turnPending=true;scene.grandShow?.();if(reduced()){card.hidden=true;return}leaving=setTimeout(()=>{leaving=0;card.hidden=true;card.classList.remove('is-leaving')},760);card.classList.add('is-leaving')},{signal});
  card.addEventListener('click',e=>e.stopPropagation(),{signal});
  const unsubscribe=audio.subscribe(wake);
  document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else wake()},{signal});
  const observer=new MutationObserver(wake);observer.observe(root,{attributes:true,attributeFilter:['data-bday-full','data-bday-revealed','data-bday-intro']});
  wake();
- return {destroy(){dead=true;clearTimeout(leaving);cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
+ return {destroy(){dead=true;clearTimeout(leaving);clearTimeout(specialTimer);cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
 }

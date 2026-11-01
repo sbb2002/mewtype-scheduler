@@ -27,6 +27,8 @@ const skySign=(()=>{
  return {strokes,segs,T,INTRO,core:layer(false),glow:layer(true)};
 })();
 function skySignPos(age){const ss=skySign.segs,t=Math.max(0,Math.min(skySign.T,age));let lo=0,hi=ss.length-1;while(lo<hi){const m=(lo+hi)>>1;if(ss[m].end<t)lo=m+1;else hi=m}const s=ss[lo],q=djClamp15((t-s.start)/(s.end-s.start));return [s.a[0]+(s.b[0]-s.a[0])*q,s.a[1]+(s.b[1]-s.a[1])*q,Math.atan2(s.b[1]-s.a[1],s.b[0]-s.a[0])]}
+// 궤적 세기: 밝은 획은 0.5초 만에 옅은 궤적으로 넘어가고, 가장 옅은 색 구간(세기 25% 아래)은 2.63초 남는다(8.1초 기준 30% 연장).
+const trailStrength=dt=>dt<=.5?djClamp15(1-.45*dt/.5):dt<=6.075?.55-.3*(dt-.5)/5.575:djClamp15(.25*(1-(dt-6.075)/2.63));
 function skySignDraw(c,f,age){
  c.save();c.translate(55,30);c.scale(.88,.88);c.translate(-55,-30);skySignDrawOriginal(c,f,age);c.restore();
 }
@@ -38,12 +40,19 @@ function skySignDrawOriginal(c,f,age){
  if(age<0)return;
  // Eight age bins: a few strokes, no per-segment shadowBlur, no pen-lift connectors.
  const trailEnd=f.end-f.birth,visibility=djClamp15((trailEnd-age)/.4)*(rs>0?Math.exp(-rs*5):1);
- if(visibility>.001){ // 기존 UFO 궤적 효과(원래 9초의 90%인 8.1초에 걸쳐 옅어지는 긴 잔상) — 색만 사인과 같은 붉은 분홍 계열
+ if(visibility>.001){ // 기존 UFO 궤적 효과(옅어지는 긴 잔상, trailStrength) — 색만 사인과 같은 붉은 분홍 계열
  c.save();c.lineCap='round';c.lineJoin='round';c.lineWidth=2.6;c.shadowColor='#ff488d';
   for(let bin=0;bin<8;bin++){c.beginPath();let any=false;
-   for(const s of skySign.segs){if(!s.pen||s.start>age)continue;const k=djClamp15(1-(age-s.end)/8.1);if(Math.min(7,Math.floor(k*8))!==bin||!k)continue;
+   for(const s of skySign.segs){if(!s.pen||s.start>age)continue;const k=trailStrength(age-s.end);if(Math.min(7,Math.floor(k*8))!==bin||!k)continue;
     const q=djClamp15((age-s.start)/(s.end-s.start));c.moveTo(...s.a);c.lineTo(s.a[0]+(s.b[0]-s.a[0])*q,s.a[1]+(s.b[1]-s.a[1])*q);any=true}
    if(any){const k=(bin+.5)/8;c.globalAlpha=.8*k**1.1*visibility;c.strokeStyle=k>.55?'#ff488d':k>.25?'#d63a78':'#8f2a5c';c.shadowBlur=k>.55?6:0;c.stroke()}
+  }
+  // 막 그어진 획에는 완성 때의 네온 빛을 살짝 넣고 0.5초 안에 걷어 낸다.
+  c.shadowBlur=0;
+  for(const [from,to,k] of [[0,.2,1],[.2,.5,.45]]){c.beginPath();let any=false;
+   for(const s of skySign.segs){if(!s.pen||s.start>age)continue;const dt=Math.max(0,age-s.end);if(dt<from||dt>=to)continue;
+    const q=djClamp15((age-s.start)/(s.end-s.start));c.moveTo(...s.a);c.lineTo(s.a[0]+(s.b[0]-s.a[0])*q,s.a[1]+(s.b[1]-s.a[1])*q);any=true}
+   if(any)for(const [color,width,alpha] of [['#7844ba',10,.16],['#ff488d',6.5,.32],['#ffc2dc',2.4,.85]]){c.strokeStyle=color;c.lineWidth=width;c.globalAlpha=alpha*k*visibility;c.stroke()}
   }c.restore();
  }
  if(rs>=0&&rs<f.fade){const rise=djEase15(rs/.18),decay=djEase15(djClamp15((f.fade-rs)/1.1)),pop=1+.9*Math.exp(-Math.max(0,rs-.18)/.35);c.save();c.globalAlpha=Math.min(1,.95*rise*decay);c.drawImage(skySign.glow,-2,-27);c.globalAlpha=Math.min(1,.5*pop*rise*decay);c.drawImage(skySign.glow,-2,-27);c.globalAlpha=Math.min(1,rise*decay);c.drawImage(skySign.core,-2,-27);c.restore()}

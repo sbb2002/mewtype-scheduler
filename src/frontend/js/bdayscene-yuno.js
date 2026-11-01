@@ -1,4 +1,4 @@
-import { fireworkFrame, drawFireworkFrame } from './bdayfireworks.js';
+import { fireworkFrame, fireworkShot, fireworkSalvo, drawFireworkFrame, drawSpark, SHELL_LIFE, SALVO_LIFE } from './bdayfireworks.js';
 import { createBirthdayBackdrop } from './bdaybackdrop.js';
 // 정본 prototype_v12.html에서 수식·상수를 이식. 카메라/드롭/사인 폭만 정본 명세대로 변경.
 import { createSkySign } from './bdaysign.js';
@@ -307,12 +307,12 @@ const SKY_STAR_Y='#ffd23f',SKY_STAR_EDGE='#ff9f1c';
 function skyStar(c,x,y,u,seed=0,scale=1,color=SKY_STAR_Y,edge=SKY_STAR_EDGE){
  u=djClamp15(u);const h=k=>skyHash(seed*131+k*17+SKY_SALT*3),rot=h(1)*Math.PI*2+(h(2)<.5?-1:1)*u*1.1; // 사라지는 동안 약 63° 회전
  const a=Math.sin(Math.PI*u)**.6*(1-.35*u),r=(12+38*djEase15(Math.min(1,u*1.4)))*scale;
- c.save();c.translate(x,y);c.rotate(rot);c.globalAlpha=a;c.shadowColor=color;c.shadowBlur=26*scale+4;c.fillStyle=color;c.beginPath();
+ c.save();c.translate(x,y);c.rotate(rot);c.fillStyle=c.strokeStyle=color;c.lineJoin='round';c.beginPath();
  for(let i=0;i<8;i++){const ang=i*Math.PI/4-Math.PI/2,rr=i%2?r*.24:r;i?c.lineTo(Math.cos(ang)*rr,Math.sin(ang)*rr):c.moveTo(Math.cos(ang)*rr,Math.sin(ang)*rr)}
- c.closePath();c.fill();c.shadowBlur=0;c.strokeStyle=edge;c.lineWidth=1.6*Math.max(.6,scale);c.stroke();c.restore();
+ c.closePath();c.globalAlpha=a*.14;c.lineWidth=20*scale+4;c.stroke();c.globalAlpha=a*.28;c.lineWidth=9*scale+2;c.stroke();c.globalAlpha=a;c.fill();c.strokeStyle=edge;c.lineWidth=1.6*Math.max(.6,scale);c.stroke();c.restore();
 }
 // UFO 궤적 잔상: 지나온 경로 전체를 DECAY 초에 걸쳐 천천히 옅어지게 남긴다(UFO 가 사라진 뒤에도 남음).
-const SKY_TRAIL_DECAY=9;
+const SKY_TRAIL_DECAY=9,TOGGLE_TAIL=3.4; // TOGGLE_TAIL = 토글을 끈 뒤 이미 나온 효과가 끝나는 데 걸리는 시간.
 function skyTrail(c,fn,age,tmax){
  const t1=Math.min(age,tmax),t0=Math.max(0,age-SKY_TRAIL_DECAY);if(t1<=t0)return;
  const N=170;let prev=fn(t0);c.save();c.lineCap='round';c.lineJoin='round';c.shadowColor=C;
@@ -339,16 +339,45 @@ function skyProps(c,t){
  c.save();c.beginPath();c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);c.clip();c.lineCap='round';
  sunTransform(c);
  const age=t-plan.drop;
- if(!introActive()&&age>=0&&age<1.6){
-  const u=age/1.6,e=env(age,1.6,.09),g=c.createLinearGradient(550,40,1100,395);g.addColorStop(0,P);g.addColorStop(.5,V);g.addColorStop(1,C);
-  for(let j=2;j>=0;j--){const r=104+430*u-24*j;if(r<75)continue;
-   c.globalAlpha=skyRoutineAlpha*e*(1-.65*u)*(.8-j*.15);c.strokeStyle=g;c.shadowColor=j===0?P:C;c.shadowBlur=18;c.lineWidth=(12-9*u)*(1-j*.17);c.beginPath();c.arc(850,267,r,0,Math.PI*2);c.stroke();
-   if(j===0){c.globalAlpha=skyRoutineAlpha*e*.065*(1-u);c.lineWidth=46;c.stroke()}
-  }
-  c.shadowBlur=9;c.strokeStyle=P;c.lineWidth=3;c.globalAlpha=skyRoutineAlpha*e*.7*(1-u);
-  for(let j=0;j<20;j++){const ang=j*Math.PI/10,len=45*(1-u);c.beginPath();c.moveTo(850+Math.cos(ang)*111,267+Math.sin(ang)*111);c.lineTo(850+Math.cos(ang)*(111+len),267+Math.sin(ang)*(111+len));c.stroke()}c.shadowBlur=0;
- }
+ if(!introActive()&&age>=0&&age<PULSE_LIFE.small)sunPulse(c,age,skyRoutineAlpha);
  c.restore();
+}
+// 효과가 겹칠 때 렉의 주범은 큰 도형의 shadowBlur 다(GPU). 움직이는 효과는 현재 경로를 넓고 옅게 겹쳐 그어 빛을 낸다.
+const glowStroke=(c,alpha,width,blur)=>{c.globalAlpha=alpha*.14;c.lineWidth=width+blur*1.5;c.stroke();c.globalAlpha=alpha*.28;c.lineWidth=width+blur*.7;c.stroke();c.globalAlpha=alpha;c.lineWidth=width;c.stroke()};
+// 태양 펄스 = 드롭 때 나오는 고리. 버튼 단발도 같은 그림이다. 호출 전에 sunTransform 을 적용해 둔다.
+const PULSE_LIFE={small:1.6,big:2.6};
+function sunPulse(c,age,k=1,lite=false){
+ const u=age/PULSE_LIFE.small,e=djEase15(age/.09)*djEase15((PULSE_LIFE.small-age)/.09),g=c.createLinearGradient(550,40,1100,395);g.addColorStop(0,P);g.addColorStop(.5,V);g.addColorStop(1,C);
+ for(let j=lite?0:2;j>=0;j--){const r=104+430*u-24*j;if(r<75)continue;
+  c.strokeStyle=g;c.beginPath();c.arc(850,267,r,0,Math.PI*2);const width=(12-9*u)*(1-j*.17),a=k*e*(1-.65*u)*(.8-j*.15);
+  if(lite){c.globalAlpha=a*.2;c.lineWidth=width+16;c.stroke();c.globalAlpha=a;c.lineWidth=width;c.stroke();return}
+  glowStroke(c,a,width,18);
+  if(j===0){c.globalAlpha=k*e*.065*(1-u);c.lineWidth=46;c.stroke()}
+ }
+ c.strokeStyle=P;c.beginPath();
+ for(let j=0;j<20;j++){const ang=j*Math.PI/10,len=45*(1-u);c.moveTo(850+Math.cos(ang)*111,267+Math.sin(ang)*111);c.lineTo(850+Math.cos(ang)*(111+len),267+Math.sin(ang)*(111+len))}
+ glowStroke(c,k*e*.7*(1-u),3,9);
+}
+// 버튼을 누르고 있는 동안의 반 박 펄스: 얇은 고리 하나가 클릭 펄스의 절반 거리만 간다.
+function sunThinPulse(c,age){
+ const u=age/PULSE_LIFE.small,e=djEase15(age/.09)*djEase15((PULSE_LIFE.small-age)/.09),width=3-2*u,a=e*(1-.75*u)*.8;
+ c.strokeStyle=P;c.beginPath();c.arc(850,267,104+215*u,0,Math.PI*2);c.globalAlpha=a*.2;c.lineWidth=width+7;c.stroke();c.globalAlpha=a;c.lineWidth=width;c.stroke();
+}
+// 길게 눌렀다 뗀 큰 펄스: 고리 3겹이 시차를 두고 멀리 퍼지고, 빛살이 더 많고 길다.
+function sunBigPulse(c,age){
+ const life=PULSE_LIFE.big,u=age/life,e=djEase15(age/.09)*djEase15((life-age)/.3),g=c.createLinearGradient(400,-100,1300,500);g.addColorStop(0,P);g.addColorStop(.33,'#ffd36b');g.addColorStop(.66,V);g.addColorStop(1,C);
+ const bloom=c.createRadialGradient(850,267,100,850,267,240+150*u);bloom.addColorStop(0,'#fff2c900');bloom.addColorStop(.28,'#ffdca0');bloom.addColorStop(.6,C);bloom.addColorStop(1,'#8ae3e200');
+ c.globalAlpha=e*.09*(1-u)**2;c.fillStyle=bloom;c.fillRect(460,-123,780,780);
+ for(let wave=0;wave<3;wave++){const a=age-wave*.22;if(a<0)continue;const q=a/(life-.44);if(q>=1)continue;
+  for(let j=2;j>=0;j--){const r=104+1150*q-30*j;if(r<75)continue;
+   c.strokeStyle=g;c.beginPath();c.arc(850,267,r,0,Math.PI*2);glowStroke(c,e*(1-.8*q)*(.95-j*.2),(20-15*q)*(1-j*.18),22);
+   if(j===0){c.globalAlpha=e*.09*(1-q);c.lineWidth=80;c.stroke();c.strokeStyle='#e5ffff';c.beginPath();c.arc(850,267,r,.3+wave*2.1,1.4+wave*2.1);glowStroke(c,e*.75*(1-q),2.5,8)}
+  }
+ }
+ for(const [color,hit] of [['#ffe9b0',j=>j%3],[C,j=>!(j%3)]]){c.strokeStyle=color;c.beginPath();
+  for(let j=0;j<40;j++){if(!hit(j))continue;const ang=j*Math.PI/20+.08*u,inner=118+240*u,len=(j%2?75:170)*(1-u);c.moveTo(850+Math.cos(ang)*inner,267+Math.sin(ang)*inner);c.lineTo(850+Math.cos(ang)*(inner+len),267+Math.sin(ang)*(inner+len))}
+  glowStroke(c,e*.85*(1-u),4,12);
+ }
 }
 // UFO·궤적·사인: 유노 바로 뒤 · 그 밖의 모든 요소(halo·LED·유성·오로라 등) 앞에 그린다.
 function skyUfos(c,t,events=skyPlan(TRK).ufos){
@@ -408,24 +437,23 @@ if(type===5){
   lobes.push({a,w:width,e:power*amp,m:sharp},{a:a+Math.PI,w:width*.9,e:power*amp*.8,m:sharp},{a:a+1.5,w:width*.7,e:power*.35,m:1-sharp});
   punch+=p*str;
  }
+ const peak=yunoEyesClosed?.01:1; // 볼륨 0 · 음소거면 후광 · LED 의 비트 피크를 1/100 로 줄여 안 듣고 있는 게 보인다.
  const field=a=>{
-  let e=0;for(const h of lobes){const d=Math.abs(Math.atan2(Math.sin(a-h.a),Math.cos(a-h.a)))/h.w;if(d<1)e+=h.e*((1-h.m)*Math.cos(d*Math.PI/2)**2+h.m*(1-d)**4)}return Math.min(1.2,e);
+  let e=0;for(const h of lobes){const d=Math.abs(Math.atan2(Math.sin(a-h.a),Math.cos(a-h.a)))/h.w;if(d<1)e+=h.e*((1-h.m)*Math.cos(d*Math.PI/2)**2+h.m*(1-d)**4)}return Math.min(1.2,e)*peak;
  };
- const lengths=Array.from({length:88},(_,i)=>{const a=i/88*TAU-Math.PI/2;return 3+4*presence+4*E.high*(.5+.5*Math.sin(5*a+bp*.12))+138*field(a)});
+ const lengths=Array.from({length:88},(_,i)=>{const a=i/88*TAU-Math.PI/2;return 3+peak*(4*presence+4*E.high*(.5+.5*Math.sin(5*a+bp*.12)))+138*field(a)});
  c.save();c.beginPath();c.rect(-2000,-2000,5200,2395);c.clip();
  sunTransform(c);const cx=850,cy=267,segment=(a,r,len)=>{c.beginPath();c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len));c.stroke()};
  c.lineCap='round';
- for(let i=0;i<180;i++){
-  const a=i/180*TAU,len=8+130*field(a)+12*E.high,r=baseR+5;
-  const g=c.createLinearGradient(cx+Math.cos(a)*r,cy+Math.sin(a)*r,cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len));g.addColorStop(0,'#7844ba88');g.addColorStop(1,'#7844ba00');
-  c.strokeStyle=g;c.lineWidth=.9;c.globalAlpha=.5+.4*presence;segment(a,r,len);
- }
+ // 후광 선은 많아서 선마다 그라데이션 · 그림자를 두지 않고 한 경로로 묶는다.
+ {const r=baseR+5,fade=c.createRadialGradient(cx,cy,r,cx,cy,r+150);fade.addColorStop(0,'#7844ba88');fade.addColorStop(1,'#7844ba00');c.strokeStyle=fade;c.lineWidth=.9;c.globalAlpha=.5+.4*presence;c.beginPath();
+  for(let i=0;i<180;i++){const a=i/180*TAU,len=8+130*field(a)+peak*12*E.high;c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len))}c.stroke()}
  c.beginPath();for(let i=0;i<=256;i++){const a=i/256*TAU,r=baseR-3+2*breath+30*field(a),xx=cx+Math.cos(a)*r,yy=cy+Math.sin(a)*r;i?c.lineTo(xx,yy):c.moveTo(xx,yy)}
- c.closePath();c.strokeStyle=P;c.lineWidth=1.9;c.globalAlpha=.6+.4*presence;c.shadowColor=P;c.shadowBlur=7;c.stroke();
- for(let i=0;i<88;i++){
-  const a=i/88*TAU-Math.PI/2,e=field(a);c.strokeStyle=i%3===0?P:V;c.globalAlpha=.7+.3*presence;c.lineWidth=4;c.shadowColor=V;c.shadowBlur=4;segment(a,baseR+5,lengths[i]);
-  c.strokeStyle=C;c.globalAlpha=.9*clamp(e*1.5);c.shadowColor=C;c.shadowBlur=8;segment(a,baseR+5,lengths[i]);
- }
+ c.closePath();c.strokeStyle=P;c.lineWidth=1.9;c.globalAlpha=.6+.4*presence;c.stroke();
+ const spokes=(color,alpha,width,pick)=>{c.strokeStyle=color;c.globalAlpha=alpha;c.lineWidth=width;c.beginPath();for(let i=0;i<88;i++){if(!pick(i))continue;const a=i/88*TAU-Math.PI/2,r=baseR+5,len=lengths[i];c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len))}c.stroke()};
+ const body=.7+.3*presence,lit=lengths.map((_,i)=>Math.min(4,Math.ceil(clamp(field(i/88*TAU-Math.PI/2)*1.5)*4)));
+ spokes(P,body*.3,7,i=>i%3===0);spokes(V,body*.3,7,i=>i%3!==0);spokes(P,body,4,i=>i%3===0);spokes(V,body,4,i=>i%3!==0);
+ for(let n=1;n<=4;n++)spokes(C,.9*n/4,4,i=>lit[i]===n);
  c.restore();
  // Smooth finite-window band samples and finite-history peak: independent of playback history.
  const band=(now,i)=>bandLvl(Math.max(0,now),Math.min(i,39-i)*2,40); // 평활 없음: 원 신호 그대로(피크가 살아 있게)
@@ -433,7 +461,7 @@ if(type===5){
  for(let i=0;i<40;i++){
   const distance=Math.abs((i-19.5)/19.5),mask=smooth((density-distance)/.18),b=band(t,i);
   let kickwave=0;for(let j=Math.max(0,kb-3);j<=kb;j++){const age=t-TRK.beats[j]-distance*.22,w=midnight?(j%2===0?1:.5):1;kickwave+=pulse(age)*TRK.kick[j]*w}
-  const heightAt=now=>mask*(.3+(2+6*opened+3*drive)*band(now,i)+1.5*build*E.high+1.7*drive*kickwave);
+  const heightAt=now=>mask*(.3+peak*((2+6*opened+3*drive)*band(now,i)+1.5*build*E.high+1.7*drive*kickwave));
   let level=heightAt(t);for(let k=1;k<=10;k++)level=Math.max(level,heightAt(t-k*.03)-k*1.35); // 상승 즉시 · 하강은 초당 ~45칸(약 0.33s)
   level=Math.min(14.8,level);let cap=level;
   for(let k=1;k<=6;k++)cap=Math.max(cap,heightAt(t-k*.06)-k*.16);
@@ -441,7 +469,7 @@ if(type===5){
   const xx=63+i*27.3;
   for(let j=0;j<15;j++){
    const on=clamp(level-j),col=j>10?P:j>6?V:C;if(on<=.005)continue;
-   c.fillStyle=col;c.globalAlpha=alphas[i]*on;c.shadowColor=col;c.shadowBlur=3*on;c.fillRect(xx,398-(j+1)*9.5,15,7);c.shadowBlur=0;
+   c.fillStyle=col;c.globalAlpha=alphas[i]*on*.16;c.fillRect(xx-2,398-(j+1)*9.5-2,19,11);c.globalAlpha=alphas[i]*on;c.fillRect(xx,398-(j+1)*9.5,15,7);
    if(j<7){c.globalAlpha=alphas[i]*on*.30*(1-j/7);c.fillRect(xx,402+j*9.5,15,7)}
   }
   if(level>.05){c.fillStyle=cap>10?P:C;c.globalAlpha=alphas[i]*smooth(level/.5);c.fillRect(xx,398-(cap+1)*9.5-1,15,2)}
@@ -533,23 +561,47 @@ function floorWave(c,type,t){
  const backdrop=createBirthdayBackdrop();
  const c=canvas.getContext('2d');let clock=()=>0,still=false,dead=false,raf=0,visible=true,layout=null,lastT=null,parts=[],lastFrame=0;
  let manual=null,returnAt=-Infinity,pendingFinale=false,grandListener=null;
- const manualEffects=new Map(),toggles={fireworks:null,shower:null};let toggleParticles=0;
- const hasManual=()=>!!manual||manualEffects.size>0,hasToggles=()=>!!toggles.fireworks||!!toggles.shower;
+ const manualEffects=new Map(),toggles={fireworks:null,shower:null},shots=[],pulses=[];let toggleParticles=0,lastShot=-Infinity,pulseHolding=false,holdIndex=-1,pendingBig=null;
+ const hasManual=()=>!!manual||manualEffects.size>0,hasToggles=()=>!!toggles.fireworks||!!toggles.shower||shots.length>0||pulses.length>0||pulseHolding||!!pendingBig;
+ // 클릭 파는 나올 때 정한 모양으로 끝까지 간다. 많이 겹치면 고리 하나로 시작한다.
+ function addPulse(big,thin){const now=performance.now()/1000,lite=!big&&!thin&&pulses.filter(p=>!p.big&&!p.thin&&now-p.start<PULSE_LIFE.small).length>=2;pulses.push({start:now,big,thin,lite});if(pulses.length>16)pulses.shift();lastT=null;resume()}
+ // 펄스 버튼을 누르고 있는 동안 곡의 반 박마다 한 파씩, 떼면 바로 다음 박에 큰 펄스. 일시정지라 박이 오지 않으면 시간으로 대신한다.
+ function stepPulseHold(t,wall){
+  if(pulseHolding&&TRK){const B=TRK.beats,j=beatIdx(t),half=j+1<B.length&&t>=(B[j]+B[j+1])/2?j*2+1:j*2;if(holdIndex>=0&&half!==holdIndex)addPulse(false,true);holdIndex=half}
+  if(pendingBig&&(t>=pendingBig.at||wall>=pendingBig.deadline)){pendingBig=null;addPulse(true)}
+ }
  function drawToggles(wall){
   toggleParticles=0;
-  if(toggles.fireworks){const small=host.clientWidth<700,frame=fireworkFrame(wall-toggles.fireworks.start,toggles.fireworks.seed,skyViewport,{small,reduced:still,budget:Math.max(0,(small?1900:3200)-parts.length)});
+  // 끈 토글은 새로 쏘지 않고 이미 나온 폭죽 · 유성이 끝날 때까지만 남는다.
+  for(const kind of ['fireworks','shower'])if(toggles[kind]?.stopAt&&(still||wall-toggles[kind].stopAt>TOGGLE_TAIL))toggles[kind]=null;
+  while(shots.length&&wall-shots[0].start>SHELL_LIFE)shots.shift();
+  const small=host.clientWidth<700,room=Math.max(0,(small?1900:3200)*quality-parts.length),fire=toggles.fireworks;
+  if(fire||shots.length){const frame=fire?fireworkFrame(wall-fire.start,fire.seed,skyViewport,{small,reduced:still,budget:room,until:fire.stopAt?fire.stopAt-fire.start:Infinity}):{particles:[],rockets:[]};
+   // 단발은 몇 번을 눌러도 한 발씩 다 보이도록 많을수록 입자만 줄인다.
+   const left=room-frame.particles.length-frame.rockets.length,count=Math.max(24,Math.min(small?56:96,Math.floor(left/Math.max(1,shots.length))));
+   for(const shot of shots){const one=fireworkShot(wall-shot.start,shot.seed,skyViewport,{small,reduced:still,budget:Math.max(0,room-frame.particles.length-frame.rockets.length),count});frame.particles.push(...one.particles);frame.rockets.push(...one.rockets)}
    toggleParticles=frame.particles.length+frame.rockets.length;c.save();c.beginPath();c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);c.clip();drawFireworkFrame(c,frame);c.restore()}
-  if(toggles.shower){const t=wall-toggles.shower.start;skyExtra('shower',still?1:t%1.6);if(!still&&t>=1.6)skyExtra('shower',t%1.6+1.6);if(!still&&t%18<8)skyExtra('comet',t%18)}
+  if(toggles.shower){const {start,stopAt}=toggles.shower,t=wall-start,cut=age=>stopAt?age-(wall-stopAt):Infinity,shower=age=>skyExtra('shower',age,{cut:cut(age)});
+   shower(still?1:t%1.6);if(!still&&t>=1.6)shower(t%1.6+1.6);if(!still&&t%18<8)skyExtra('comet',t%18,{cut:cut(t%18)})}
  }
  function manualFlight(kind){
   const seed=Math.floor(Math.random()*1000000),sign=kind==='sign',flight=sign?skySign.T+skySign.INTRO:4.25,reveal=flight+.92,fade=sign?5.5:0;
   return {type:1,mode:sign?'sign':'zig',birth:0,end:sign?reveal+fade:4.75,flight,reveal,fade,place:Math.random()<.5?'left':'center',tilt:sign?(Math.random()*2-1)*SIGN_TILT:0,zig:skyMakePath(seed)};
  }
  function startManual(kind){
-  const f=manualFlight(kind);
-  manualEffects.set(kind,{kind,start:performance.now()/1000,dur:Math.max(3,kind==='sign'?f.reveal+SIGN_BURST:f.end+SKY_TRAIL_DECAY),f});lastT=null;resume();
+  // 사인과 YMMT 는 자리가 겹치므로 나중에 누른 쪽으로 바뀐다.
+  if(kind==='sign')manualEffects.delete('ymmt');if(kind==='ymmt')manualEffects.delete('sign');
+  const f=kind==='ymmt'?null:manualFlight(kind),dur=kind==='ymmt'?9:Math.max(3,kind==='sign'?f.reveal+SIGN_BURST:f.end+SKY_TRAIL_DECAY);
+  manualEffects.set(kind,{kind,start:performance.now()/1000,dur,f});lastT=null;resume();
  }
  const costs=[];
+ // 프레임이 41fps 아래로 0.6초쯤 이어지면 입자 · 유성 수를 줄이고, 여유가 돌아오면 되돌린다.
+ let quality=1,slow=0,lastDraw=0;
+ function pace(now){
+  const gap=now-lastDraw;lastDraw=now;if(gap>=250)return;
+  slow=Math.max(-40,Math.min(24,slow+(gap>24?1:-.5)));
+  if(slow>=24&&quality>.4){quality=Math.max(.4,quality-.3);slow=0}else if(slow<=-40&&quality<1){quality=Math.min(1,quality+.3);slow=0}
+ }
  // 완주 피날레: 부채꼴로 번지는 1막 → 하늘 전체 2막 → 금빛 대폭발 3막, 약 4.5초.
  function playFinale(){if(dead||still||document.hidden||!visible)return;parts=[];
   const r=host.getBoundingClientRect(),small=r.width<700,density=small?.6:1,reach=Math.max(.85,Math.min(1.6,r.width/900)),colors=['#ff477d','#efb62f','#6ee7f9','#c4a1ff','#ff9f6b','#fff9ec'];
@@ -564,11 +616,34 @@ function floorWave(c,type,t){
  function skyGrand(age){
   const layout=grandLayout(skyViewport,activeLayout?.portrait);
   skyExtra('comet',age);if(age<12)skyExtra('shower',age%4);skyExtra('rainbow',Math.max(0,age-.3));
-  if(still||age<9)skyExtra('constellation',still?4:age,{box:layout.ymmt});
+  if(still)skyExtra('constellation',4,{box:layout.ymmt});else if(age<manual.f.end)skyExtra('ymmt-sync',age,{box:layout.ymmt,f:manual.f,signScale:layout.sign.scale});
   skyUfos(c,still?manual.f.reveal+.5:age,[{...manual.f,fit:layout.sign}]);signBurst(age-manual.f.reveal);
  }
  // 사인이 완성되는 순간(age=0)부터 YMMT 완성처럼 무지개 유성 · 혜성을 쏟는다. 모션 줄이기에서는 그리지 않는다.
- function signBurst(age){if(still||age<0||age>=SIGN_BURST)return;skyExtra('rainbow',age);skyExtra('comet',age)}
+ function signBurst(age){
+  if(still||age<0||age>=SIGN_BURST)return;
+  skyExtra('rainbow',age);skyExtra('comet',age);
+  if(age<SALVO_LIFE){const frame=fireworkSalvo(age,TRK.bpm+SKY_SALT,skyViewport,{small:host.clientWidth<700,budget:(host.clientWidth<700?700:1400)*quality}),v=skyViewport;c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();drawFireworkFrame(c,frame);c.restore()}
+ }
+ // 버튼 태양 펄스. 고정 이벤트를 막지 않고 유노 뒤 하늘에 겹쳐 그린다.
+ function drawPulses(wall){
+  while(pulses.length&&wall-pulses[0].start>=PULSE_LIFE.big)pulses.shift();
+  if(!pulses.length)return;
+  const v=skyViewport;c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();c.lineCap='round';sunTransform(c);
+  for(const p of pulses){const age=wall-p.start;if(p.big)sunBigPulse(c,age);else if(age>=PULSE_LIFE.small)continue;else if(p.thin)sunThinPulse(c,age);else sunPulse(c,age,1,p.lite)}
+  c.restore();
+ }
+ // 완성된 YMMT 네온을 한 번만 구워 둔다. 층 구성은 사인(skySign.glow · core)과 같고 색만 파랗다. k = 사인 두께 대비 배율.
+ const ymmtLayers={key:0,glow:null,core:null};
+ function ymmtNeon(k){
+  if(ymmtLayers.key===k)return ymmtLayers;
+  const S=2,bake=(paint)=>{const cv=document.createElement('canvas');cv.width=720;cv.height=240;const x=cv.getContext('2d');x.scale(S,S);x.translate(20,20);x.lineCap=x.lineJoin='round';
+   const line=(color,width,shadow,blur)=>{x.strokeStyle=color;x.lineWidth=width*k;x.shadowColor=shadow;x.shadowBlur=blur*k*S;for(const {points,path} of ymmtShape){x.beginPath();path.forEach((p,i)=>i?x.lineTo(...points[p]):x.moveTo(...points[p]));x.stroke()}};paint(line,x);return cv};
+  ymmtLayers.key=k;
+  ymmtLayers.glow=bake(line=>{line('#2b4fc4',9,'#8ae3e2',26);line('#329dff',6,'#329dff',16);line('#329dff',4,'#329dff',8)});
+  ymmtLayers.core=bake((line,x)=>{line('#329dff',4.4,'#00000000',0);x.globalAlpha=.55;line('#c3edff',1.6,'#00000000',0)});
+  return ymmtLayers;
+ }
  function skyExtra(kind,age,opt={}){
   const v=skyViewport,small=host.clientWidth<700;
   c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();
@@ -578,24 +653,36 @@ function floorWave(c,type,t){
    const rainbow=kind==='rainbow',count=rainbow?(small?44:52):(small?5:9),gap=rainbow?(small?.12:.1):(small?.23:.19);
    for(let i=0;i<count;i++){
     const h=k=>skyHash(i*71+k*149+TRK.bpm),delay=i*gap+h(1)*.14,duration=.85+h(2)*.55;
-    const a=age-delay;if(a<0||a>duration)continue;const u=still?.5:a/duration;
+    const a=age-delay;if(a<0||a>duration||delay>(opt.cut??Infinity)||skyHash(i*13+5)>quality)continue;const u=still?.5:a/duration;
     const dx=v.width*(.4+.28*h(3)),dy=v.height*(.22+.19*h(4))*(tall?.6:1),sx=v.left+v.width*(.32+.73*h(5)),sy=v.top+v.height*(.02+.25*h(6));
     const px=sx-dx*u,py=sy+dy*u,tail=(rainbow?.26:.12+.12*h(7))*(small?.75:1),tx=px+dx*tail,ty=py-dy*tail;
     const opacity=Math.sin(u*Math.PI)*(rainbow?.95:.4+.55*h(8)),g=c.createLinearGradient(tx,ty,px,py),hue=Math.round(i*137.5)%360;
     if(rainbow){g.addColorStop(0,`hsla(${hue},100%,62%,0)`);g.addColorStop(.6,`hsla(${hue},100%,68%,.8)`);g.addColorStop(1,`hsl(${hue},100%,88%)`)}else{g.addColorStop(0,'#72aaff00');g.addColorStop(.65,'#7fcfff70');g.addColorStop(1,'#e6fcff')}
-    c.globalAlpha=opacity;c.strokeStyle=g;c.lineWidth=(small?1.1:1.5)+(rainbow?.5:0)+h(9)*(rainbow?1.6:1.1);c.lineCap='round';c.shadowColor=rainbow?`hsl(${hue},100%,62%)`:'#71c9ff';c.shadowBlur=5+h(10)*7;
-    c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);c.stroke();
+    const width=(small?1.1:1.5)+(rainbow?.5:0)+h(9)*(rainbow?1.6:1.1);c.strokeStyle=g;c.lineCap='round';c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);
+    c.globalAlpha=opacity*.22;c.lineWidth=width*3.2;c.stroke();c.globalAlpha=opacity;c.lineWidth=width;c.stroke();
     c.fillStyle=rainbow?`hsl(${hue},100%,92%)`:'#e9fcff';c.beginPath();c.arc(px,py,1+h(11)*.9,0,Math.PI*2);c.fill();
    }
   }else if(kind==='comet'){
    // 혜성 = 긴 꼬리를 끌며 하늘을 가로지르는 큰 빛. 유성보다 크고 느리다.
    for(const [delay,start,dir] of [[.4,.08,1],[3.1,.3,-1],[5.4,.05,1]]){
-    const a=age-delay,duration=2.6;if(!still&&(a<0||a>duration))continue;const u=still?.5:a/duration,w=v.width,h=v.height;
+    const a=age-delay,duration=2.6;if(!still&&(a<0||a>duration||delay>(opt.cut??Infinity)))continue;const u=still?.5:a/duration,w=v.width,h=v.height;
     const px=v.left+w*(dir>0?1.1-1.2*u:-.1+1.2*u),py=v.top+h*(start+(tall?.3:.5)*u),tx=px+dir*w*.36,ty=py-h*(tall?.09:.15);
     const g=c.createLinearGradient(tx,ty,px,py);g.addColorStop(0,'#8ae3e200');g.addColorStop(.6,'#8ae3e288');g.addColorStop(1,'#ffffff');
-    c.globalAlpha=Math.sin(u*Math.PI);c.lineCap='round';c.strokeStyle=g;c.lineWidth=small?3.5:5;c.shadowColor=C;c.shadowBlur=20;c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);c.stroke();
+    c.lineCap='round';c.strokeStyle=g;c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);glowStroke(c,Math.sin(u*Math.PI),small?3.5:5,14);
     c.fillStyle='#fff';c.beginPath();c.arc(px,py,small?4:6,0,Math.PI*2);c.fill();
    }
+  }else if(kind==='ymmt-sync'){
+   // 밤 풍경의 YMMT: 별은 먼저 뜨고, 선은 사인 완성 0.9초 전부터 그어져 완성 순간 사인과 같은 곡선으로 번쩍이고 같이 사라진다.
+   const box=fitYmmtRotation(opt.box,ymmtAngle),{reveal,fade}=opt.f,rs=age-reveal,pen=djClamp15((rs+.9)/.9);
+   const rise=rs<0?0:djEase15(rs/.18),decay=djEase15(djClamp15((fade-rs)/1.1)),pop=1+.9*Math.exp(-Math.max(0,rs-.18)/.35);
+   c.translate(box.cx,box.cy);c.rotate(box.angle);c.scale(box.scale,box.scale);c.translate(-157.5,-40);
+   if(pen>0&&rise<1){c.strokeStyle='#65baff';c.lineWidth=2;c.lineCap=c.lineJoin='round';c.globalAlpha=1-rise;
+    ymmtShape.forEach(({points,path},i)=>{const q=djClamp15(pen*4-i)*(path.length-1);if(q<=0)return;const whole=Math.floor(q),part=q-whole;c.beginPath();c.moveTo(...points[path[0]]);for(let s=1;s<=whole;s++)c.lineTo(...points[path[s]]);
+     if(part>0){const a=points[path[whole]],b=points[path[whole+1]];c.lineTo(a[0]+(b[0]-a[0])*part,a[1]+(b[1]-a[1])*part)}c.stroke()})}
+   if(rise>0&&rs<fade){const {glow,core}=ymmtNeon(opt.signScale*.88/box.scale);c.globalAlpha=Math.min(1,.95*rise*decay);c.drawImage(glow,-20,-20,360,120);c.globalAlpha=Math.min(1,.5*pop*rise*decay);c.drawImage(glow,-20,-20,360,120);c.globalAlpha=Math.min(1,rise*decay);c.drawImage(core,-20,-20,360,120)}
+   // 별은 선과 네온보다 앞에 둔다.
+   let n=0;c.fillStyle='#c3edff';
+   for(const {points} of ymmtShape)for(const [a,b] of points){const born=n++*.065;if(age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff');c.globalAlpha=decay*Math.max(0,Math.min(1,(age-born-.2)*8));c.beginPath();c.arc(a,b,3.5,0,Math.PI*2);c.fill()}
   }else if(kind==='constellation'){
    const box=fitYmmtRotation(opt.box||{cx:x,cy:y,scale:Math.min(v.width*.8/355,v.height*.48/120)},ymmtAngle),scale=box.scale,alpha=Math.min(1,(9-age)/1.6),flash=still?0:Math.sin(Math.PI*djClamp15((age-7)/.4));
    c.translate(box.cx,box.cy);c.rotate(box.angle);c.scale(scale,scale);c.translate(-157.5,-40);c.strokeStyle='#65baff';c.fillStyle='#c3edff';c.shadowColor='#329dff';c.shadowBlur=12;c.lineWidth=2;
@@ -611,7 +698,7 @@ function floorWave(c,type,t){
  const whenReady=Promise.all(images.map(i=>i.decode()));
  function draw(t=clock()) {
   if(dead||!TRK)return;
-  const start=performance.now(),r=host.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,1.5),w=Math.round(r.width*d),h=Math.round(r.height*d);
+  const start=performance.now();pace(start);const r=host.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,1.5),w=Math.round(r.width*d),h=Math.round(r.height*d);
   if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
   const L=layout||sceneLayout(r.width,r.height),s=L.scale*d,ox=w/2-600*s,oy=L.offsetY*d;activeLayout=L;groundBottom=L.portrait?Math.max(760,(h-oy)/s):760;
   skyViewport={left:-ox/s,top:-oy/s,width:w/s,height:395+oy/s};
@@ -663,7 +750,7 @@ function floorWave(c,type,t){
    c.save();c.beginPath();c.rect(-2000,-2000,5200,2395);c.clip();
    const glow=c.createRadialGradient(effect.x,395,0,effect.x,395,260);glow.addColorStop(0,`rgba(255,72,141,${effect.rise*.28})`);glow.addColorStop(1,'#7844ba00');c.fillStyle=glow;c.fillRect(effect.x-260,135,520,260);c.restore();
   }
-  c.save();if(routineAlpha<1)c.filter=`opacity(${routineAlpha})`;if(!hasManual())skyProps(c,t);c.restore();floorWave(c,0,t);if(!introActive()||t>=17.14)visual(c,5,t);
+  c.save();if(routineAlpha<1)c.filter=`opacity(${routineAlpha})`;if(!hasManual())skyProps(c,t);c.restore();stepPulseHold(t,wall);drawPulses(wall);floorWave(c,0,t);if(!introActive()||t>=17.14)visual(c,5,t);
   if(introActive()&&!still&&t>=17.14&&t<17.69){const u=(t-17.14)/.55;c.save();sunTransform(c);for(let j=0;j<3;j++){c.strokeStyle=[P,V,C][j];c.globalAlpha=(1-u)*.9;c.lineWidth=7-j;c.beginPath();c.arc(850,267,100+500*u-j*18,0,Math.PI*2);c.stroke()}c.restore()}
   if(!hasManual()){c.save();if(routineAlpha<1)c.filter=`opacity(${routineAlpha})`;skyUfos(c,t);
    const age=t-skyPlanNow.constellation;if(skyPlanNow.constellation!==null&&age>=0&&age<9){if(age>=1.85&&age<8.3)skyExtra('rainbow',age-1.85);skyExtra('constellation',age)}
@@ -672,7 +759,10 @@ function floorWave(c,type,t){
   }
   if(manual?.kind==='grand')skyGrand(wall-manual.start);
   skyRoutineAlpha=1;
-  for(const event of manualEffects.values()){skyUfos(c,still?(event.kind==='sign'?event.f.reveal+.5:event.f.flight*.5):wall-event.start,[event.f]);if(event.kind==='sign')signBurst(wall-event.start-event.f.reveal)}
+  for(const event of manualEffects.values()){
+   if(event.kind==='ymmt'){const a=still?4:wall-event.start;if(!still&&a>=1.85&&a<8.3)skyExtra('rainbow',a-1.85);skyExtra('constellation',a);continue}
+   skyUfos(c,still?(event.kind==='sign'?event.f.reveal+.5:event.f.flight*.5):wall-event.start,[event.f]);if(event.kind==='sign')signBurst(wall-event.start-event.f.reveal)
+  }
   drawToggles(wall);
   // 조명 원뿔은 유노 중심이며 세로 화면의 확장 하늘에서 내려온다.
   if(effect.spot){
@@ -703,27 +793,39 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
   }
   // 기존 🎂 전환 폭죽의 수식·색·지연을 유지한다. 음악 장면 자체와는 별도이며 인트로에는 호출하지 않는다.
   const now=performance.now(),dt=lastFrame?Math.min(.05,(now-lastFrame)/1000):0;lastFrame=now;
-  if(parts.length){c.save();c.setTransform(d,0,0,d,0,0);for(const p of parts){p.age+=dt;if(p.age<p.delay)continue;const age=p.age-p.delay;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.vx*=Math.exp(-dt*.35);c.globalAlpha=Math.max(0,1-age/(p.life||2.1))*.85;c.fillStyle=p.color;c.beginPath();c.arc(p.x,p.y,p.r,0,Math.PI*2);c.fill()}parts=parts.filter(p=>p.age-p.delay<(p.life||2.1));c.restore()}
+  if(parts.length){c.save();c.setTransform(d,0,0,d,0,0);for(const p of parts){p.age+=dt;if(p.age<p.delay)continue;const age=p.age-p.delay;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.vx*=Math.exp(-dt*.35);c.globalAlpha=Math.max(0,1-age/(p.life||2.1))*.85;drawSpark(c,p.color,p.x,p.y,p.r*3.3)}parts=parts.filter(p=>p.age-p.delay<(p.life||2.1));c.restore()}
   costs.push(performance.now()-start);if(costs.length>300)costs.shift();lastT=t;
  }
  function frame(){raf=0;if(dead)return;if(!document.hidden&&visible&&(!still||lastT===null||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)){const t=still?0:clock();if(t!==lastT||parts.length||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)draw(t)}if((!still||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)&&!document.hidden&&visible)raf=requestAnimationFrame(frame)}
  function resume(){if(!dead&&!raf&&!document.hidden&&visible)raf=requestAnimationFrame(frame)}
- function visibility(){if(document.hidden){cancelAnimationFrame(raf);raf=0}else{for(const kind of Object.keys(toggles))if(toggles[kind])toggles[kind].start=performance.now()/1000;lastT=null;resume()}}
+ function visibility(){if(document.hidden){cancelAnimationFrame(raf);raf=0}else{for(const kind of Object.keys(toggles))if(toggles[kind]?.stopAt)toggles[kind]=null;else if(toggles[kind])toggles[kind].start=performance.now()/1000;lastT=null;resume()}}
  function resize(){layout=null;lastT=null;draw(still?0:clock());resume()}
  const observer=new IntersectionObserver(es=>{visible=es[0].isIntersecting;if(!visible){cancelAnimationFrame(raf);raf=0}else resume()});observer.observe(canvas);
  document.addEventListener('visibilitychange',visibility);window.addEventListener('resize',resize);window.visualViewport?.addEventListener('resize',resize);
  whenReady.then(()=>{if(!dead){draw(0);resume()}}).catch(()=>{});
  return {skyBusy(t){if(!TRK)return false;const plan=skyPlan(TRK),f=plan.ufos[0],a=plan.constellation;return hasManual()||(f.mode==='sign'&&t>=f.birth&&t<f.birth+f.reveal+SIGN_BURST)||(a!==null&&t>=a&&t<a+9)},
   setEyesClosed(value){yunoEyesClosed=!!value;lastT=null;resume()},onGrand(fn){grandListener=fn},
-  grandShow(){if(dead||document.hidden)return;grandListener?.(true);const f=manualFlight('sign');manualEffects.delete('sign');manual={kind:'grand',start:performance.now()/1000,dur:f.reveal+SIGN_BURST,f};parts=[];lastT=null;if(!still){const r=host.getBoundingClientRect();[[.5,.28,'#ff477d'],[.42,.2,'#6ee7f9'],[.58,.2,'#ffd36b'],[.5,.14,'#c4a1ff']].forEach(([x,y,color],j)=>{for(let i=0;i<70;i++){const a=i*Math.PI/35,v=(50+Math.random()*90)*Math.max(.8,Math.min(1.4,r.width/900));parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%3?color:'#fff9ec',r:1.1+Math.random()*1.8,delay:j*.08,life:2.2})}});lastFrame=performance.now()}resume()},triggerManual(kind){
-   if(dead||document.hidden||!['fireworks','ufo','sign','shower'].includes(kind))return;
-   if(kind==='fireworks'||kind==='shower'){toggles[kind]=toggles[kind]?null:{start:performance.now()/1000,seed:Math.random()*100000};lastT=null;resume();return !!toggles[kind]}
+  grandShow(){if(dead||document.hidden)return;grandListener?.(true);pulseHolding=false;pendingBig=null;const f=manualFlight('sign');manualEffects.delete('sign');manual={kind:'grand',start:performance.now()/1000,dur:f.reveal+SIGN_BURST,f};parts=[];lastT=null;if(!still){const r=host.getBoundingClientRect();[[.5,.28,'#ff477d'],[.42,.2,'#6ee7f9'],[.58,.2,'#ffd36b'],[.5,.14,'#c4a1ff']].forEach(([x,y,color],j)=>{for(let i=0;i<70;i++){const a=i*Math.PI/35,v=(50+Math.random()*90)*Math.max(.8,Math.min(1.4,r.width/900));parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%3?color:'#fff9ec',r:1.1+Math.random()*1.8,delay:j*.08,life:2.2})}});lastFrame=performance.now()}resume()},triggerManual(kind){
+   if(dead||document.hidden||!['fireworks','ufo','sign','ymmt','shower','shot','pulse','pulse-big'].includes(kind))return;
+   const now=performance.now()/1000;
+   // 폭죽 단발 = 쿨타임 0.1초. 고정 이벤트를 막지 않는다.
+   if(kind==='shot'){if(now-lastShot<.1)return false;lastShot=now;shots.push({start:now,seed:Math.random()*100000});lastT=null;resume();return true}
+   if(kind==='pulse'||kind==='pulse-big'){addPulse(kind==='pulse-big');return true}
+   // 끄면 이미 나온 폭죽 · 유성은 끝까지 재생한다. 끝나기 전에 다시 켜면 그대로 이어진다.
+   if(kind==='fireworks'||kind==='shower'){const on=toggles[kind];if(on&&!on.stopAt)on.stopAt=now;else if(on)on.stopAt=0;else toggles[kind]={start:now,seed:Math.random()*100000,stopAt:0};lastT=null;resume();return !toggles[kind].stopAt}
    startManual(kind);
+  },pulseHold(on,big=true){
+   if(dead)return;
+   if(on){pulseHolding=true;holdIndex=-1;lastT=null;resume();return}
+   pulseHolding=false;if(!big)return;
+   if(still||!TRK){addPulse(true);return}
+   const t=clock(),B=TRK.beats,at=t<B[0]?B[0]:B[beatIdx(t)+1]??t;
+   pendingBig={at,deadline:performance.now()/1000+(at-t)+.3};lastT=null;resume();
   },whenReady,setBrightness,setIntro(fn){introActive=fn},setClock(fn){clock=fn;lastT=null;resume()},setTrack(track){TRK=track;lastT=null;resume()},setLayout(value){layout=value;lastT=null;draw()},
   setStill(value){still=value;if(still)parts=[];cancelAnimationFrame(raf);raf=0;lastT=null;draw(0);resume()},
   celebrate(xRatio,yRatio){if(dead||still||hasManual()||document.hidden||!visible)return;parts=[];const r=host.getBoundingClientRect();const burst=(x,y,delay=0)=>{const colors=['#ff477d','#fff9ec','#efb62f'];for(let i=0;i<40;i++){const a=i*Math.PI*2/40,v=28+Math.random()*50;parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:colors[i%3],r:1+Math.random()*1.6,delay})}};if(Number.isFinite(xRatio)&&Number.isFinite(yRatio))burst(r.width*djClamp15(xRatio),r.height*djClamp15(yRatio));else [[.24,.38],[.76,.27],[.54,.17]].forEach(([x,y],i)=>burst(r.width*x,r.height*y,i*.26));lastFrame=performance.now();resume()},
   finale(){if(hasManual()){pendingFinale=true;return}playFinale()},
   renderAt(t){draw(t)},diagnostics(){return {effect:{...effect},snapshot,ambient:TRK?{blocked:skyPlan(TRK).blocked.map(r=>[...r]),events:skyPlan(TRK).ambient.map(e=>({...e}))}:null,costs:[...costs],layout:sceneLayout(host.clientWidth,host.clientHeight),raf,dead,particles:parts.length}},
-  destroy(){backdrop.destroy();dead=true;yunoEyesClosed=false;grandListener=null;manual=null;manualEffects.clear();toggles.fireworks=toggles.shower=null;pendingFinale=false;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
+  destroy(){backdrop.destroy();ymmtLayers.key=0;if(ymmtLayers.glow)ymmtLayers.glow.width=ymmtLayers.core.width=0;dead=true;yunoEyesClosed=false;grandListener=null;manual=null;manualEffects.clear();toggles.fireworks=toggles.shower=null;shots.length=pulses.length=0;pulseHolding=false;pendingBig=null;pendingFinale=false;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
  };
 }
