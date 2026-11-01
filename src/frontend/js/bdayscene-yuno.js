@@ -478,12 +478,19 @@ function floorWave(c,type,t){
   mc.strokeStyle=`rgba(255,72,141,${smooth(0,.2,z)})`;mc.beginPath();mc.moveTo(0,y);mc.lineTo(1200,y);mc.stroke();
  }
  // 세로 방사선: 위치 고정, 소실점 근처는 투명 → 앞쪽으로 갈수록 진해짐.
- for(const x of GRID_X){
-  for(const [ctx,m] of [[gc,1],[mc,3.2]]){
-   const ex=600+(x-600)*(groundBottom-389)/371;const gr=ctx.createLinearGradient(600,389,ex,groundBottom);
-   gr.addColorStop(0,'rgba(255,72,141,0)');gr.addColorStop(.18,m>1?'rgba(255,72,141,1)':'rgba(255,72,141,.04)');gr.addColorStop(1,m>1?'rgba(255,72,141,1)':'rgba(255,72,141,.26)');
-   ctx.strokeStyle=gr;ctx.beginPath();ctx.moveTo(600,389);ctx.lineTo(ex,groundBottom);ctx.stroke();
+ // 선이 많아 프레임마다 그리지 않는다. 모양은 크기에만 달렸으니 한 번 그려 두고 복사한다.
+ for(const [ctx,m,name] of [[gc,1,'radialG'],[mc,3.2,'radialM']]){
+  const layer=FL[name]??=document.createElement('canvas'),key=[ctx.canvas.width,ctx.canvas.height,groundBottom,ctx.lineWidth].join(':');
+  if(layer.dataset.key!==key||!layer.width){
+   layer.width=ctx.canvas.width;layer.height=ctx.canvas.height;layer.dataset.key=key;
+   const lc=layer.getContext('2d');lc.setTransform(ctx.getTransform());lc.lineWidth=ctx.lineWidth;lc.lineCap=ctx.lineCap;
+   for(const x of GRID_X){
+    const ex=600+(x-600)*(groundBottom-389)/371,gr=lc.createLinearGradient(600,389,ex,groundBottom);
+    gr.addColorStop(0,'rgba(255,72,141,0)');gr.addColorStop(.18,m>1?'rgba(255,72,141,1)':'rgba(255,72,141,.04)');gr.addColorStop(1,m>1?'rgba(255,72,141,1)':'rgba(255,72,141,.26)');
+    lc.strokeStyle=gr;lc.beginPath();lc.moveTo(600,389);lc.lineTo(ex,groundBottom);lc.stroke();
+   }
   }
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(layer,0,0);ctx.restore();
  }
  // 열마다 같은 색 정지점을 다시 만들지 않고 한 프레임의 띠 그라데이션을 공유한다.
  const bandStops=[];
