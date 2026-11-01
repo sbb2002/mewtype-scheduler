@@ -53,6 +53,7 @@ src/
       theme.js         # 밝게/어둡게 전환
       bgdeco.js bglogic.js   # (v4.9.8) 배경 장식 — 아래 「배경 장식」
       sheetdrag.js     # 시트 끌어 닫기 공용(트윗 시트 · 소식 시트 · 플레이어 시트)
+      longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 + 첫 안내 말풍선(css/longcopy.css)
       *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
   collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
     rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
@@ -1430,6 +1431,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
     프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
+- **js/longcopy.js** + **css/longcopy.css** — (v4.11.5) 아래 「길게 눌러 주소 복사」. `markCopy` · `copyTarget` · `pickTipTarget` · `tipPosition` · `initLongCopy` · `maybeShowCopyTip`. selfcheck: `longcopy.selfcheck.mjs`.
 - **js/king.js** + **css/king.css** — (v4.3.1) 노노카 지각 이스터에그. 위 「노노카 지각 이스터에그 (v4.3.1)」. `timetable.js` 가 `decorateBlock` · `decoratePopup` · `decorateCard` 를 호출. selfcheck: `king.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
   마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
@@ -1525,6 +1527,20 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   - 75초 폴링으로 다시 그릴 때: 고정 팝업 · 시트는 같은 소식이 남아 있으면 유지(내용이 바뀌면 다시 채움), 없으면 닫음. 호버 팝업은 닫음.
 - **펼친 목록 높이**: 행사 배너 + 분류 줄 + 소식 영역(`LIST_CAP` PC 420 · 모바일 460px 상한), 전체는 화면 높이 70% 상한. 펼친 목록 z-index 42(v4.6.3 까지 30 — PC 플레이어 도크(40)의 YouTube 화면 밑으로 들어가던 것을 고침).
 - 데이터 주입: 템플릿 + `_esc` · `_attr` 이스케이프(v2 부터의 방식 그대로), 링크는 http(s)만.
+
+### 길게 눌러 주소 복사 (v4.11.5, 2026-11-02) — `longcopy.js` · `css/longcopy.css`
+
+오늘 카드(`.tcard`) · 이후 예고 카드(`.card`) · 타임테이블 블록(`.tt-blk`) · 표의 점(`button.wk2__dot`, 범례 견본 제외)을 PC · 모바일에서 길게 누르면 주소를 복사한다. 시안 = 아티팩트 1안(누름 애니메이션) · 2안(알림) — 운영자가 둘을 합치라고 정함.
+
+- **표시**: 부품을 만들 때 `markCopy` 가 `data-copy-url` · `data-copy-kind`(`video` | `channel`) · `data-copy-state` · `data-copy-start` 와 `.lc` 를 붙인다. 누름 처리는 document 위임이라 75초 재렌더 · 캐러셀 복제본에도 그대로 동작한다.
+- **복사할 주소** `copyTarget`: `video_id` 와 http(s) `url` 이 다 있으면 영상 주소, 아니면 채널 주소(알림 둘째 줄 「아직 영상 주소가 없어요」). 쓸 주소가 없으면 대상에서 뺀다.
+- **시간**: 500ms 누르면 복사. 0.15초 전에는 살짝 눌림만, 0.15초부터 **채움***이 번진다. 8px 넘게 움직이면 취소(스크롤 · 끌기). 짧게 누르면 원래 동작(링크 · 카드 팝업) 그대로. 복사 뒤 따라오는 click 1회는 막는다. 터치 중 시스템 메뉴는 막고, PC 우클릭은 그대로 둔다. `.lc` 위에서는 글자 드래그 선택이 안 된다.
+- **애니메이션**: 눌림 `scale` .985 → .965, 놓일 때 튐(`lc-pop`), 채움 = 누른 자리에서 부품 전체로 번지는 멤버 색(`--lane-color` 46%, 없으면 `--color-collab`). 점은 작아서 줄이지 않고 바깥 링(`.lc-ring`)을 그린다. 진동 14ms(안드로이드만). 움직임 줄이기 설정이면 크기 변화 · 튐을 빼고 채움은 반투명 면으로 바로 보인다.
+- **알림** `.lc-toast`: 패널형(1.6초). 누른 부품 위 · 아래에 두되 제목 · 시각 · 링 · 배지 · 자물쇠 · 호버 팝업과 겹치면 가까운 빈자리로 옮긴다. z-index 960(시트 800 · 카드 팝업 900 위). 스크린리더용 `.lc-live` 에 같은 문구를 넣는다.
+- **복사 경로**: `navigator.clipboard.writeText` → 실패하면 숨은 입력칸 + `execCommand("copy")` → 그래도 실패하고 아직 누르는 중이면 「손을 떼면 복사돼요」 후 손을 뗄 때(터치는 `touchend`) 다시 시도 → 마지막 실패는 「주소를 복사하지 못했어요」.
+- **첫 안내 말풍선** `.lc-tip`(「길게 누르면 주소가 복사돼요」): 처음 온 사람에게 보드를 그린 0.9초 뒤 카드 하나에 띄운다. 고르는 순서 `pickTipTarget` = 지금 화면에 실제로 보이는 카드 · 블록 중 **멤버 순서(아라레 먼저) → 방송 중 → 가장 가까운 예정 → 가장 최근 종료**. 카드가 없으면 뜨지 않고, 다음 그리기 · 스크롤 때 다시 찾는다. 6초 · 아무 곳이나 누르기 · 카드가 화면 밖으로 나가면 닫힌다. 떠 있는 동안 카드를 따라가고, 보드가 다시 그려지면 같은 규칙으로 다시 고른다. 한 번 뜨거나 직접 길게 눌러 복사하면 `localStorage` `mew.tip.long-copy` 에 기록해 사이트 기록 초기화 전까지 다시 안 띄운다.
+
+* 채움 = 길게 누르는 동안 누른 자리에서 부품 전체로 번지는 멤버 색.
 
 ### 마이크로 인터랙션 (v4.8.0, 2026-10-24) — `sheetdrag.js` 외
 

@@ -6,6 +6,7 @@ import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
 import { initTheme } from "./theme.js";
 import { initBgDeco } from "./bgdeco.js";
 import { initBirthday } from "./birthdayui.js";
+import { initLongCopy, maybeShowCopyTip } from "./longcopy.js";
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS, APP_VERSION, APP_DATE } from "./config.js";
 
 const board = document.getElementById("board");
@@ -19,6 +20,7 @@ let lastJSON = null;   // 내용이 안 바뀌면 renderBoard 생략 (모바일 
 /** 보드 재구성 + 그 위에 개인 트윗 편지 배지 재적용 (renderBoard 가 배지를 지우므로). */
 function paintBoard() {
   renderBoard(board, lastSchedule, Date.now(), lastArchive);
+  maybeShowCopyTip();   // (v4.11.5) 처음 온 사람에게 길게 누르기 말풍선 한 번
   reapplyTweets(board);
 }
 
@@ -325,6 +327,7 @@ function syncPlayerDock() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initBirthday();   // (v4.10.0) 멤버 생일 당일(KST)이면 배경을 그 멤버의 생일 장면으로 — 판정 js/birthday.js · 화면 js/birthdayui.js
+  initLongCopy();   // (v4.11.5) 카드 · 블록 · 점을 길게 눌러 주소 복사
   initBgDeco();   // (v4.9.8) 배경 장식 — 분홍 → 파랑 톤 · 떠다니는 로고 도형 · 폰을 흔들면 흩어짐
   initTheme();   // (v4.6.0) 밝게/어둡게 — 직접 고른 적 없으면 기기 설정 변경을 따라간다. 버튼은 소식 막대 마지막 칸(notices.js)
   initMonitorEasterEgg();

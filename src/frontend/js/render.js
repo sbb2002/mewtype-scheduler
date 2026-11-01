@@ -2,6 +2,7 @@ import { formatKST, relativeLabel, elapsedLabel, isLate } from "./time.js";
 import { FALLBACK_CHANNEL_ORDER, FALLBACK_CHANNELS } from "./config.js";
 import { createPlayerButton } from "./playerbtn.js";
 import { vibrate } from "./sheetdrag.js";   // (마이크로 인터랙션) 멤버를 넘길 때 짧은 진동
+import { markCopy } from "./longcopy.js";   // (v4.11.5) 길게 눌러 주소 복사
 import { createWeekButton, setWeekData } from "./weekpop.js";   // (v4.9.6) 모바일 「표」 버튼 · 이번주 · 먼 미래 시트
 import {
   avatarSized, classify, itemKeys, buildTimetable, buildBoardHead, buildTodayCards, buildFoldButton,
@@ -114,6 +115,7 @@ function createCard(item, nowMs, channelData, laneKey) {
       : "card card--announced";
     if (isCollab) a.classList.add("card--collab");
     a.href = item.url || (channelData && channelData.channel_url) || "#";
+    markCopy(a, item, channelData && channelData.channel_url, "upcoming", Date.parse(item.scheduled_start));
 
     // 썸네일 자리 — membership 이면 자물쇠, 아니면 아이콘
     const thumbWrap = document.createElement("div");
@@ -227,6 +229,7 @@ function createCard(item, nowMs, channelData, laneKey) {
 
   // 회원 전용 live 는 영상 URL 조회에 실패하면 url 이 채널 링크이거나 비어 있을 수 있다.
   a.href = item.url || (channelData && channelData.channel_url) || "#";
+  markCopy(a, item, channelData && channelData.channel_url, isLive ? "live" : isEnd ? "ended" : "upcoming", Date.parse(item.scheduled_start));
 
   // 썸네일 영역
   const thumbWrap = document.createElement("div");
