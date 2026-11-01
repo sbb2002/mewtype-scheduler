@@ -209,7 +209,7 @@ const skyHash=n=>{n=Math.imul(n^0x9e3779b9,0x85ebca6b);n=Math.imul(n^(n>>>16),0x
 
 const skyModes=new WeakMap();
 const skyForcedMode=new URLSearchParams(location.search).get('ufo');
-function skyMode(T){return skyModes.get(T)||(['sign','zig'].includes(skyForcedMode)?skyForcedMode:skyHash((T.bpm===100?73:25)+404+SKY_SALT*7)<.5?'sign':'zig')}
+function skyMode(T){return skyModes.get(T)||(['sign','zig'].includes(skyForcedMode)?skyForcedMode:(skyHash(429+SKY_SALT*7)<.5)===(T.bpm===100)?'sign':'zig')} // 두 곡이 서로 반대라 한 바퀴에 사인이 꼭 한 번 나온다.
 const {skySign,skySignPos,skySignDraw}=createSkySign({djClamp15,djEase15,skyStar,skyUFO});
 let skyRoutineAlpha=1;
 const SIGN_TILT=4*Math.PI/180,GRAND_SHOW=9.4;
@@ -323,7 +323,10 @@ function skyTrail(c,fn,age,tmax){
 }
 function skyProps(c,t){
  const plan=skyPlan(TRK),env=(age,life,fade)=>djEase15(age/fade)*djEase15((life-age)/fade);
- c.save();c.beginPath();c.rect(0,0,1200,395);c.clip();c.lineCap='round';
+ // 세로 화면은 하늘이 위로 길다. 오로라와 고정 유성을 멘트 높이(하늘의 26%)로 올리고 폭에 맞춘다.
+ const v=skyViewport,tall=activeLayout?.portrait,k=v.width/1200;
+ const below=tall&&plan.ufos[0].mode==='sign'; // 사인이 나오는 곡의 오로라는 사인 아래로 내린다.
+ c.save();if(tall){c.translate(v.left,v.top+v.height*(below?.56:.26)-197.5*k);c.scale(k,k)}c.beginPath();if(tall)c.rect(0,-300,1200,900);else c.rect(0,0,1200,395);c.clip();c.lineCap='round';
  for(const [a,b] of plan.quiet)if(t>=a&&t<=b)skyAurora(c,t,a,b);
  for(const m of plan.meteors)for(const p of m.parts){
   const age=t-m.birth-p.delay;if(age<0||age>p.duration)continue;
@@ -351,7 +354,7 @@ function skyProps(c,t){
 function skyUfos(c,t,events=skyPlan(TRK).ufos){
  const plan=skyPlan(TRK),env=(age,life,fade)=>djEase15(age/fade)*djEase15((life-age)/fade);
  const portrait=activeLayout?.portrait;
- const point=p=>portrait?[skyViewport.left+skyViewport.width*(.08+.84*p[0]/1200),skyViewport.top+skyViewport.height*(.12+.68*p[1]/395),p[2]]:p;
+ const point=p=>portrait?[skyViewport.left+skyViewport.width*(.08+.84*p[0]/1200),skyViewport.top+skyViewport.height*(.06+.52*p[1]/395),p[2]]:p;
  c.save();c.beginPath();c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);c.clip();c.lineCap='round';
  if(skyUFO.complete&&skyUFO.naturalWidth)for(const f of events){
   const age=t-f.birth,life=f.end-f.birth;if(age<0||age>life+SKY_TRAIL_DECAY)continue;
@@ -562,7 +565,7 @@ function floorWave(c,type,t){
  function skyExtra(kind,age,opt={}){
   const v=skyViewport,small=host.clientWidth<700;
   c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();
-  const x=v.left+v.width*.5,y=v.top+v.height*.35;
+  const tall=activeLayout?.portrait,x=v.left+v.width*.5,y=v.top+v.height*(tall?.27:.35);
   if(kind==='sign'){
    const fit=opt.fit||fitSkySign(v,activeLayout?.portrait,opt.place);
    c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);tiltSign(c,opt.tilt||0);
@@ -575,7 +578,7 @@ function floorWave(c,type,t){
    for(let i=0;i<count;i++){
     const h=k=>skyHash(i*71+k*149+TRK.bpm),delay=i*gap+h(1)*.14,duration=.85+h(2)*.55;
     const a=age-delay;if(a<0||a>duration)continue;const u=still?.5:a/duration;
-    const dx=v.width*(.4+.28*h(3)),dy=v.height*(.22+.19*h(4)),sx=v.left+v.width*(.32+.73*h(5)),sy=v.top+v.height*(.02+.25*h(6));
+    const dx=v.width*(.4+.28*h(3)),dy=v.height*(.22+.19*h(4))*(tall?.6:1),sx=v.left+v.width*(.32+.73*h(5)),sy=v.top+v.height*(.02+.25*h(6));
     const px=sx-dx*u,py=sy+dy*u,tail=(rainbow?.26:.12+.12*h(7))*(small?.75:1),tx=px+dx*tail,ty=py-dy*tail;
     const opacity=Math.sin(u*Math.PI)*(rainbow?.95:.4+.55*h(8)),g=c.createLinearGradient(tx,ty,px,py),hue=Math.round(i*137.5)%360;
     if(rainbow){g.addColorStop(0,`hsla(${hue},100%,62%,0)`);g.addColorStop(.6,`hsla(${hue},100%,68%,.8)`);g.addColorStop(1,`hsl(${hue},100%,88%)`)}else{g.addColorStop(0,'#72aaff00');g.addColorStop(.65,'#7fcfff70');g.addColorStop(1,'#e6fcff')}
@@ -587,7 +590,7 @@ function floorWave(c,type,t){
    // 혜성 = 긴 꼬리를 끌며 하늘을 가로지르는 큰 빛. 유성보다 크고 느리다.
    for(const [delay,start,dir] of [[.4,.08,1],[3.1,.3,-1],[5.4,.05,1]]){
     const a=age-delay,duration=2.6;if(!still&&(a<0||a>duration))continue;const u=still?.5:a/duration,w=v.width,h=v.height;
-    const px=v.left+w*(dir>0?1.1-1.2*u:-.1+1.2*u),py=v.top+h*(start+.5*u),tx=px+dir*w*.36,ty=py-h*.15;
+    const px=v.left+w*(dir>0?1.1-1.2*u:-.1+1.2*u),py=v.top+h*(start+(tall?.3:.5)*u),tx=px+dir*w*.36,ty=py-h*(tall?.09:.15);
     const g=c.createLinearGradient(tx,ty,px,py);g.addColorStop(0,'#8ae3e200');g.addColorStop(.6,'#8ae3e288');g.addColorStop(1,'#ffffff');
     c.globalAlpha=Math.sin(u*Math.PI);c.lineCap='round';c.strokeStyle=g;c.lineWidth=small?3.5:5;c.shadowColor=C;c.shadowBlur=20;c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);c.stroke();
     c.fillStyle='#fff';c.beginPath();c.arc(px,py,small?4:6,0,Math.PI*2);c.fill();

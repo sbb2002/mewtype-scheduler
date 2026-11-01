@@ -10,6 +10,7 @@ const EFFECTS=[
  ['sign','사인','M3 14c2-6 4-10 5.5-9.5S7 13 9 12s2-4 3.5-3.5-.5 3.5 1 3.5 2-1 3.5-1M3 17.5h14'],
  ['shower','유성우','M17 2l-7 7M11 3L6 8M17 8l-6 6M9 10.5h.01M5 9.5h.01M10 15.5h.01'],
 ];
+const SPEAKER_BODY='M3 7.5v5h3l4.5 3.5V4L6 7.5z',SPEAKER_ON=SPEAKER_BODY+'M13 7.5a3.5 3.5 0 0 1 0 5M15.2 5a7 7 0 0 1 0 10',SPEAKER_OFF=SPEAKER_BODY+'M3 3l14 14';
 function icon(path){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),p=document.createElementNS(ns,'path');svg.setAttribute('viewBox','0 0 20 20');svg.setAttribute('aria-hidden','true');p.setAttribute('d',path);svg.append(p);return svg}
 export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
@@ -27,7 +28,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const prev=button('prev','이전 곡','◀│',()=>audio.previous());
   const pp=button('pp','재생','▶',()=>audio.toggle());
   const next=button('next','다음 곡','│▶',()=>audio.next());
-  const mute=button('mute','음소거','♫',()=>audio.mute());
+  const mute=button('mute','음소거','',()=>audio.mute()),speaker=icon(SPEAKER_ON);mute.append(speaker);
   const vol=el('label','bday-volume'),range=el('input',''),tip=el('output','bday-vtip');range.type='range';range.min=0;range.max=1;range.step=.01;range.setAttribute('aria-label','음악 볼륨');vol.append(range,tip);bar.append(vol);
   range.addEventListener('input',()=>audio.setVolume(+range.value),{signal});
   const effects=el('div','bday-effects');effects.setAttribute('role','group');effects.setAttribute('aria-label','하늘 효과');
@@ -49,7 +50,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const drag=mountBirthdayPlayerDrag({bar,grip,shell,title,disc});
   function update(){
     pp.textContent=audio.paused?'▶':'';pp.classList.toggle('is-paused-icon',!audio.paused);pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
-    scene.setEyesClosed(audio.muted||!audio.volume);mute.textContent=audio.muted||!audio.volume?'🔇':'♫';mute.setAttribute('aria-pressed',String(audio.muted));
+    scene.setEyesClosed(audio.muted||!audio.volume);speaker.firstChild.setAttribute('d',audio.muted||!audio.volume?SPEAKER_OFF:SPEAKER_ON);mute.setAttribute('aria-pressed',String(audio.muted));
     range.value=audio.volume;range.style.setProperty('--v',audio.volume*100+'%');tip.textContent=Math.round(audio.volume*100)+'%';shell.classList.toggle('playing',!audio.paused);
     if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪ '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}
   }

@@ -120,3 +120,19 @@
 .bday-effects .effect:disabled{opacity:.32;cursor:default;transform:none}
 [data-grand] .bday-effects .grand:disabled{opacity:1;box-shadow:0 0 12px var(--yuno-glow)}
 @media(max-width:380px){[data-unlocked] .bday-effects .effect{min-width:40px;width:40px;padding:0}}
+
+/* 모바일 제어 바는 안내 문구 바로 위까지 내려 유노 얼굴을 가리지 않는다. */
+@media(max-width:700px),(pointer:coarse){
+.bday-music__bar{bottom:calc(60px + env(safe-area-inset-bottom));row-gap:0}
+.bday-music__title{bottom:calc(32px + env(safe-area-inset-bottom))}
+.bday-music__disc{bottom:calc(10px + env(safe-area-inset-bottom))}
+.bday-effects{padding-top:3px;margin-top:1px}
+.bday-effects .effect{height:32px}
+}
+
+/* 볼륨 슬라이더는 기기와 상관없이 기본 제공한다. 음소거 버튼은 슬라이더 바로 왼쪽의 스피커 도형이다. */
+.bday-ib.mute svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+@media(max-width:700px),(pointer:coarse){.bday-volume{display:block;flex:0 1 72px;min-width:48px;width:72px}.bday-volume input{width:100%}[data-unlocked] .bday-volume{flex:1 1 40px;width:auto}}
+
+/* 좁은 화면도 재생 줄 한 줄에 슬라이더까지 담는다. */
+@media(max-width:380px){.bday-grip{width:22px}.bday-ib.prev,.bday-ib.next{width:28px}.bday-music .bday-ib.prev,.bday-music .bday-ib.next{min-width:28px}[data-unlocked] .bday-volume{min-width:36px}}
