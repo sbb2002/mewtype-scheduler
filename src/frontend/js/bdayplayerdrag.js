@@ -1,14 +1,13 @@
 // 플레이바의 왼쪽 손잡이만 이동을 시작한다. 위치는 이번 방문 동안만 유지한다.
 export function mountBirthdayPlayerDrag({bar,grip,shell,title,disc}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
-  const mobile=matchMedia('(max-width:700px), (pointer:coarse)');
   let position=null,drag=null,dead=false;
   function limits(){
     const view=window.visualViewport,x=view?.offsetLeft||0,y=view?.offsetTop||0;
     const width=view?.width||innerWidth,height=view?.height||innerHeight,r=bar.getBoundingClientRect();
     const style=getComputedStyle(shell),safe=side=>parseFloat(style.getPropertyValue('--bday-safe-'+side))||0;
     const top=y+safe('top')+12;
-    const floor=Math.min(y+height-safe('bottom')-12,disc.getBoundingClientRect().top-12,mobile.matches?title.getBoundingClientRect().top-12:Infinity);
+    const floor=Math.min(y+height-safe('bottom')-12,disc.getBoundingClientRect().top-12,title.getBoundingClientRect().top-12);
     const left=x+safe('left')+12;
     return {left,right:Math.max(left,x+width-safe('right')-r.width-12),top,bottom:Math.max(top,floor-r.height),width:r.width};
   }
@@ -54,5 +53,6 @@ export function mountBirthdayPlayerDrag({bar,grip,shell,title,disc}) {
   window.visualViewport?.addEventListener('scroll',layout,{signal});
   const observer=new MutationObserver(()=>{if(root.hasAttribute('data-bday-full'))layout();else finish()});
   observer.observe(root,{attributes:true,attributeFilter:['data-bday-full']});
-  return {destroy(){dead=true;finish();observer.disconnect();events.abort()}};
+  const sizeObserver=new ResizeObserver(layout);sizeObserver.observe(bar);
+  return {destroy(){dead=true;finish();sizeObserver.disconnect();observer.disconnect();events.abort()}};
 }

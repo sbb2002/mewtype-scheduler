@@ -425,7 +425,9 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
   흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
 - **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
 
-### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js`
+### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js` · `bdaystory.js` · `bdayreward.js`
+
+감상 이야기 · 완곡 보상 · 수동 효과(v4.11.3) 계약은 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md` 맨 끝 절을 따른다.
 
 멤버 생일 **당일(KST 00:00 ~ 익일 00:00)** 에 화면 뒤 배경을 그 멤버의 생일 장면(AI 생성 일러스트 + 모션)으로 바꾼다. 평소(해당 없는 날)에는 아무 코드도 장면을 불러오지 않는다. 데이터를 받지 않는 순수 클라이언트 기능.
 

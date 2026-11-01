@@ -15,25 +15,31 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const prompt=el('button','bday-start','탭하여 시작 ♪');prompt.type='button';prompt.setAttribute('aria-label','탭하여 생일 음악 시작');prompt.hidden=true;
   const grip=el('button','bday-grip');grip.type='button';grip.setAttribute('aria-label','음악 플레이바 이동');grip.title='잡고 이동 · 방향키로 이동 · Home으로 원래 위치';
   const dots=el('span','bday-grip__dots');dots.setAttribute('aria-hidden','true');for(let i=0;i<6;i++)dots.append(el('i',''));grip.append(dots);bar.append(grip);
-  function button(cls,label,text,fn){const b=el('button','bday-ib '+cls,text);b.type='button';b.setAttribute('aria-label',label);b.addEventListener('click',e=>{e.stopPropagation();const r=el('span','bday-ripple');b.append(r);r.addEventListener('animationend',()=>r.remove(),{once:true});if(navigator.vibrate)navigator.vibrate(10);Promise.resolve(fn()).catch(()=>{prompt.hidden=false})},{signal});bar.append(b);return b}
+  function button(cls,label,text,fn){const b=el('button','bday-ib '+cls,text);b.type='button';b.setAttribute('aria-label',label);b.addEventListener('click',e=>{e.stopPropagation();if(!reduced()){const r=el('span','bday-ripple');b.append(r);r.addEventListener('animationend',()=>r.remove(),{once:true})}if(navigator.vibrate)navigator.vibrate(10);Promise.resolve(fn()).catch(()=>{prompt.hidden=false})},{signal});bar.append(b);return b}
   const prev=button('prev','이전 곡','◀│',()=>audio.previous());
   const pp=button('pp','재생','▶',()=>audio.toggle());
   const next=button('next','다음 곡','│▶',()=>audio.next());
   const mute=button('mute','음소거','♫',()=>audio.mute());
   const vol=el('label','bday-volume'),range=el('input',''),tip=el('output','bday-vtip');range.type='range';range.min=0;range.max=1;range.step=.01;range.setAttribute('aria-label','음악 볼륨');vol.append(range,tip);bar.append(vol);
   range.addEventListener('input',()=>audio.setVolume(+range.value),{signal});
+  const effects=el('div','bday-effects');effects.setAttribute('role','group');effects.setAttribute('aria-label','하늘 효과');
+  for(const [kind,label] of [['fireworks','폭죽'],['ufo','UFO'],['sign','사인'],['shower','유성우']]){const b=button('effect',label,label,()=>scene.triggerManual(kind));effects.append(b)}bar.append(effects);
+  const scan=el('span','bday-panel-scan');scan.setAttribute('aria-hidden','true');bar.append(scan);
+  bar.addEventListener('animationend',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
+  bar.addEventListener('animationcancel',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
+  bar.addEventListener('click',e=>e.stopPropagation(),{signal});
   shell.append(bar,title,disc,prompt);document.body.append(shell);
   const drag=mountBirthdayPlayerDrag({bar,grip,shell,title,disc});
   function update(){
-    pp.textContent=audio.paused?'▶':'Ⅱ';pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
+    pp.textContent=audio.paused?'▶':'';pp.classList.toggle('is-paused-icon',!audio.paused);pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
     mute.textContent=audio.muted||!audio.volume?'🔇':'♫';mute.setAttribute('aria-pressed',String(audio.muted));
     range.value=audio.volume;range.style.setProperty('--v',audio.volume*100+'%');tip.textContent=Math.round(audio.volume*100)+'%';shell.classList.toggle('playing',!audio.paused);
     if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪ '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}
   }
   unsub=audio.subscribe(update);update();scene.setClock(()=>audio.clock());scene.setIntro(()=>intro&&!reduced());
   // 보상 전 · 인트로 중에는 이전/다음 곡이 화면 · 포커스 · 키보드 어디에도 없다.
-  function syncReward(){const on=reward.unlocked&&!intro;prev.hidden=next.hidden=!on;shell.toggleAttribute('data-unlocked',on)}
-  const reward=mountBirthdayReward({audio,onUnlock:syncReward});syncReward();
+  function syncReward(){const on=reward.unlocked&&!intro;prev.hidden=next.hidden=effects.hidden=!on;shell.toggleAttribute('data-unlocked',on)}
+  const reward=mountBirthdayReward({audio,onUnlock:()=>{if(!reduced())shell.setAttribute('data-fresh-unlock','');syncReward()}});syncReward();
   const story=mountBirthdayStory({audio,scene,shell,reduced,reward});
   function wake(){shell.classList.remove('idle');clearTimeout(idle);idle=setTimeout(()=>shell.classList.add('idle'),5000)}
   for(const type of ['pointermove','pointerdown','keydown'])document.addEventListener(type,wake,{signal});wake();

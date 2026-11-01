@@ -7,9 +7,9 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const text=document.createElement('div');text.className='bday-story__text';message.append(stars,text);
  const card=document.createElement('section');card.className='bday-memory';card.hidden=true;card.setAttribute('aria-label','생일 밤의 감사 카드');
  const ornament=document.createElement('div');ornament.className='bday-memory__stars';ornament.textContent='✦  ✧  ✦';ornament.setAttribute('aria-hidden','true');
- const title=document.createElement('h2');title.textContent='함께해 줘서 고마워';
- const note=document.createElement('p');note.textContent='유노의 생일 밤을\n끝까지 빛내 준 당신에게.';
- const signature=document.createElement('p');signature.className='bday-memory__signature';signature.textContent='Happy Birthday, Yuno.';
+ const title=document.createElement('h2');title.textContent='......고마워';
+ const note=document.createElement('p');note.textContent='생일 같은 거 별거 아니라고 생각했는데,\n오늘은 의외로 나쁘지 않았어.';
+ const signature=document.createElement('p');signature.className='bday-memory__signature';signature.textContent='— yuno';
  const close=document.createElement('button');close.type='button';close.textContent='밤 풍경 더 보기';
  card.append(ornament,title,note,signature,close);shell.append(message,card);
  let raf=0,dead=false,key='',finale=false,finished=false,cardPending=false;
@@ -19,8 +19,15 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
   const index=audio.index,time=audio.audio.currentTime,cue=visible()?birthdayStoryCue(index,time):null,next=cue?.id||'';
   if(next!==key){
    key=next;message.classList.remove('is-visible');
-   if(cue){text.textContent=cue.text;stars.textContent=cue.stars?'✦ '.repeat(cue.stars).trim():'';message.classList.add('is-visible')}
+   if(cue){
+    text.replaceChildren();text.setAttribute('aria-label',cue.text);message.classList.toggle('is-reduced',reduced());
+    cue.text.split('\n').forEach((line,row)=>{const span=document.createElement('span');span.className='bday-story__line';span.setAttribute('aria-hidden','true');
+     Array.from(line).forEach((char,i)=>{const glyph=document.createElement('span');glyph.textContent=char;glyph.className='bday-story__glyph';glyph.style.setProperty('--arrival',(row*.22+Math.min(.32,i*.018))+'s');span.append(glyph)});text.append(span)});
+    stars.textContent=cue.stars?'✦ '.repeat(cue.stars).trim():'';message.classList.add('is-visible');
+   }
   }
+  // 퇴장도 곡 시각으로 계산해 탐색 후 같은 상태를 재현한다.
+  if(cue)message.style.setProperty('--story-fade',String(Math.min(1,(cue.end-time)/.8)));
   if(index===1&&time>=209&&!finale&&!audio.paused&&visible()){
    finale=true;if(!reduced())scene.finale();
   }

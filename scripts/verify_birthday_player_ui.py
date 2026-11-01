@@ -3,20 +3,20 @@ from pathlib import Path
 import functools,http.server,threading,json,os,tempfile
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-player-ui')))
+OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'round2'/'ui')))
 OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass
  def copyfile(self,source,outputfile):
   try:super().copyfile(source,outputfile)
   except (ConnectionResetError,BrokenPipeError):pass
-server=http.server.ThreadingHTTPServer(('127.0.0.1',8131),functools.partial(Handler,directory=str(ROOT)))
+server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT)))
 threading.Thread(target=server.serve_forever,daemon=True).start()
 results={}
 try:
  with sync_playwright() as p:
   browser=p.chromium.launch(headless=True,args=['--autoplay-policy=no-user-gesture-required'])
-  for width,height,mobile in [(1440,900,False),(390,844,True),(360,800,True),(320,740,True)]:
+  for width,height,mobile in [(1440,900,False),(1920,600,False),(900,800,False),(390,844,True),(360,800,True),(320,568,True),(740,360,False)]:
    key=f'{width}x{height}';context=browser.new_context(viewport={'width':width,'height':height},is_mobile=mobile,has_touch=mobile,device_scale_factor=1)
    page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
    def route(r):
@@ -24,7 +24,7 @@ try:
     elif '/birthdayui.js' in r.request.url:
      r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/birthdayui.js').read_text(encoding='utf8')+';window.__birthday={get scene(){return ctrl},get audio(){return music},get player(){return player},teardown};')
     else:r.continue_()
-   page.route('**/*',route);page.goto('http://127.0.0.1:8131/src/frontend/?bday=yuno')
+   page.route('**/*',route);page.goto(f'http://127.0.0.1:{server.server_port}/src/frontend/?bday=yuno')
    page.wait_for_function('window.__birthday?.player && __birthday.audio');page.wait_for_timeout(350)
    page.evaluate('async()=>{__birthday.audio.pause();await __birthday.audio.seek(19.05)}')
    page.wait_for_function('document.documentElement.hasAttribute("data-bday-revealed")');page.wait_for_timeout(1450)
@@ -94,9 +94,31 @@ try:
    r=box();vw=page.viewport_size['width'];vh=page.viewport_size['height'];assert r['x']>=11.9 and r['x']+r['width']<=vw-11.9 and r['y']+r['height']<=vh-11.9,r
    if mobile:
     drag_to(20,-40,release=False);cdp.send('Input.dispatchTouchEvent',{'type':'touchCancel','touchPoints':[]});page.wait_for_function('!document.querySelector(".bday-music__bar").classList.contains("is-dragging")')
+   # 저장 해제 재방문과 정지 중 수동 실행을 실제 Canvas로 검사한다.
+   page.set_viewport_size({'width':width,'height':height})
+   page.evaluate("localStorage.setItem('bday-yuno-controls-unlocked-v1','1')")
+   page.reload();page.wait_for_function('window.__birthday?.player && __birthday.audio');page.wait_for_timeout(500)
+   page.evaluate('async()=>{__birthday.audio.pause();await __birthday.audio.seek(19.05)}')
+   page.wait_for_selector('[data-unlocked]',state='attached');page.wait_for_timeout(1500)
+   assert page.locator('.bday-ib.prev').is_visible()
+   assert page.locator('.bday-effects button').count()==4
+   for effect in page.locator('.bday-effects button').all():
+    e=effect.bounding_box();assert e['x']>=12 and e['x']+e['width']<=width-12,e
+   page.locator('.bday-ib.pp').click();page.wait_for_function('!__birthday.audio.paused')
+   assert page.locator('.bday-ib.pp').evaluate('e=>getComputedStyle(e,"::before").width===getComputedStyle(e,"::after").width&&getComputedStyle(e,"::before").height==="16px"')
+   page.locator('.bday-ib.pp').click();page.wait_for_function('__birthday.audio.paused')
+   r=box();assert r['x']>=12 and r['x']+r['width']<=width-12,r
+   t=page.locator('.bday-music__title').bounding_box();assert r['y']+r['height']<=t['y']-12,(r,t)
+   state=page.evaluate('()=>({index:__birthday.audio.index,time:__birthday.audio.clock()})')
+   for label in ['폭죽','UFO','사인','유성우']:
+    page.get_by_role('button',name=label,exact=True).click();page.wait_for_timeout(180)
+   assert page.evaluate('()=>__birthday.audio.paused')
+   assert page.evaluate('()=>({index:__birthday.audio.index,time:__birthday.audio.clock()})')==state
+   page.screenshot(path=str(OUT/f'{key}-unlocked.png'))
+   page.wait_for_timeout(3100)
    page.evaluate('()=>__birthday.teardown()');page.set_viewport_size({'width':width,'height':height});assert page.locator('#bday-music').count()==0
    assert not errors,errors
-   results[key]={'greeting':greeting,'left_grip':True,'drag':True,'clamped':True,'controls_preserved':True,'keyboard':True,'no_mini':True,'normal_shortcuts_disabled':True,'resize':True,'cleanup':True,'errors':errors}
+   results[key]={'greeting':greeting,'left_grip':True,'drag':True,'clamped':True,'controls_preserved':True,'keyboard':True,'no_mini':True,'normal_shortcuts_disabled':True,'resize':True,'cleanup':True,'saved_unlock':True,'manual_while_paused':True,'pause_bars':True,'errors':errors}
    context.close()
   browser.close()
 finally:server.shutdown()

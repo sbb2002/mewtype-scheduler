@@ -23,6 +23,8 @@
 
 생일이 가까운 순서 = 리츠(02-07) → 노노카(04-17) → 아라레(08-16) → 미야코(09-19). **작업 시작 전에 운영자에게 어느 멤버를 먼저 할지 확인**한다(운영자가 「다른 멤버는 추후 보강」이라 했다).
 
+**유노 말투 근거**(2026-11-01, 운영자 지정 자료): bdon.moe 한국어 번역 — 이벤트 「사랑의 격류 AtoZ」(10946~10954) · 메인스토리 일부. 반말 · 단문 · 말줄임표 · 멤버는 성+씨 호칭 · 칭찬은 받아넘기고 고마움은 짧게 흐린다. 팬에게 직접 말하는 장면과 생일 대사는 찾지 못했으므로 v4.11.3 멘트는 창작이다. 다른 멤버 멘트도 같은 방식으로 근거를 먼저 찾는다.
+
 ## 2. 어디에 무엇이 있나
 
 - **사이트 코드(이 브랜치)**: `src/frontend/js/birthday.js`(판정, 순수) · `birthdayui.js`(화면·수명) · `bdayscene-yuno.js`(Canvas) · `bdaysign.js`(사인) · `bdaylogic.js`(순수 계산) · `bdayaudio.js`(음원) · `bdayplayer.js`(인트로·컨트롤) · `bdayguard.js`(억제) · `css/birthday.css`/`bdayplayer.css` · `assets/birthday/` · `config.js`(날짜·켜짐 여부). `fixtures/bdayscene-yuno.html`은 무음의 곡 시계 장면 시험 화면이며, `fixtures/validate-bdayscene-yuno.cjs`는 새 Python 검증 3개를 호출한다. 과거 `bdaybeat.js`·`bdayscene-yuno.css`는 회귀 자료로 보존되며 실행 앱에서는 로드하지 않는다.
