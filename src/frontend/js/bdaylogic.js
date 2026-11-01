@@ -76,3 +76,10 @@ export function ymmtLetters(seed=0){
   return {points:moved,path};
  });
 }
+
+// 방문별 전체 회전. 회전 외곽을 원래 칸에 맞추므로 grandLayout의 분리는 유지된다.
+export function ymmtTilt(seed=0){return Math.sin(seed*127.1+19.73)*8*Math.PI/180}
+export function fitYmmtRotation(box,angle){
+ const c=Math.abs(Math.cos(angle)),s=Math.abs(Math.sin(angle));
+ return {...box,scale:box.scale*Math.min(355/(355*c+120*s),120/(355*s+120*c)),angle};
+}

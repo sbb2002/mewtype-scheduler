@@ -3,7 +3,7 @@ from pathlib import Path
 import functools,http.server,threading,json,os,tempfile
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'round2'/'ui')))
+OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'round5'/'ui')))
 OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass
@@ -97,7 +97,7 @@ try:
    # 저장 해제 재방문과 정지 중 수동 실행을 실제 Canvas로 검사한다.
    page.set_viewport_size({'width':width,'height':height})
    page.evaluate("localStorage.setItem('bday-yuno-controls-unlocked-v1','1')")
-   page.reload();page.wait_for_function('window.__birthday?.player && __birthday.audio');page.wait_for_timeout(500)
+   page.reload();page.wait_for_function('window.__birthday?.player && __birthday.audio');page.wait_for_function('document.documentElement.hasAttribute("data-bday-started")')
    page.evaluate('async()=>{__birthday.audio.pause();await __birthday.audio.seek(19.05)}')
    page.wait_for_selector('[data-unlocked]',state='attached');page.wait_for_timeout(1500)
    assert page.locator('.bday-ib.prev').is_visible()
@@ -112,6 +112,8 @@ try:
    state=page.evaluate('()=>({index:__birthday.audio.index,time:__birthday.audio.clock()})')
    for label in ['폭죽','UFO','사인','유성우']:
     page.get_by_role('button',name=label,exact=True).click();page.wait_for_timeout(180)
+   for label in ['폭죽','유성우']:
+    b=page.get_by_role('button',name=label,exact=True);assert b.get_attribute('aria-pressed')=='true';b.click();assert b.get_attribute('aria-pressed')=='false'
    assert page.evaluate('()=>__birthday.audio.paused')
    assert page.evaluate('()=>({index:__birthday.audio.index,time:__birthday.audio.clock()})')==state
    page.screenshot(path=str(OUT/f'{key}-unlocked.png'))

@@ -3,7 +3,7 @@ from pathlib import Path
 import json, threading, functools, http.server
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(__import__('tempfile').gettempdir())/'birthday-story'/'round2'/'lifecycle';OUT.mkdir(parents=True,exist_ok=True)
+OUT=Path(__import__('tempfile').gettempdir())/'birthday-story'/'round5'/'lifecycle';OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*a):pass
 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT)))
@@ -59,7 +59,7 @@ with sync_playwright() as p:
     result['previous']=page.evaluate('()=>__birthday.audio.index')
     page.evaluate('async()=>{__birthday.audio.pause();await __birthday.audio.seek(110.125)}');page.wait_for_timeout(150)
     result['paused_seek_error_seconds']=page.evaluate('()=>Math.abs(__birthday.audio.audio.currentTime-110.125)')
-    page.evaluate('()=>{__birthday.scene.triggerManual("sign");Object.defineProperty(document,"hidden",{configurable:true,value:true});document.dispatchEvent(new Event("visibilitychange"))}')
+    page.evaluate('()=>{__birthday.scene.triggerManual("sign");__birthday.scene.triggerManual("ufo");__birthday.scene.triggerManual("fireworks");__birthday.scene.triggerManual("shower");Object.defineProperty(document,"hidden",{configurable:true,value:true});document.dispatchEvent(new Event("visibilitychange"))}')
     page.wait_for_timeout(100);result['hidden_manual']=page.evaluate('()=>audit()');assert result['hidden_manual']['raf']==0
     page.evaluate('()=>{delete document.hidden;document.dispatchEvent(new Event("visibilitychange"));__birthday.scene.triggerManual("shower")}')
     page.evaluate('()=>__birthday.teardown()');page.wait_for_timeout(200)
@@ -67,6 +67,7 @@ with sync_playwright() as p:
     # 동일 문서에서 다시 마운트: 저장값 복원 및 자정 evaluate 정리.
     page.evaluate('()=>__birthday.evaluate()');page.wait_for_function('__birthday.player');page.wait_for_timeout(200)
     result['restore_volume']=page.evaluate('()=>__birthday.audio.volume')
+    page.evaluate('()=>{__birthday.scene.triggerManual("fireworks");__birthday.scene.triggerManual("shower");__birthday.scene.triggerManual("sign")}')
     result['before_midnight']=page.evaluate('()=>audit()')
     page.evaluate('()=>{history.replaceState(null,"",location.pathname);window.testNow=Date.parse("2026-11-04T15:00:01Z");__birthday.evaluate()}');page.wait_for_timeout(300)
     result['after_midnight']=page.evaluate('()=>({audit:audit(),birthday:document.documentElement.hasAttribute("data-bday"),scene:__birthday.scene,audio:__birthday.audio})')

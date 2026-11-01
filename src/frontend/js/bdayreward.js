@@ -42,5 +42,5 @@ export function mountBirthdayReward({audio,onUnlock=()=>{}}){
   }
   // 탭을 숨겨도 음악은 계속되므로 RAF 가 아니라 타이머로 잰다.
   timer=setInterval(tick,250);
-  return {get unlocked(){return unlocked},cardReady:()=>tracker.cardReady(),destroy(){clearInterval(timer);timer=0}};
+  return {get unlocked(){return unlocked},cardReady:()=>!unlocked&&tracker.cardReady(),destroy(){clearInterval(timer);timer=0}};
 }

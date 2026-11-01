@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { STORY_CUES, STORY_MAX_GAP, birthdayStoryCue } from './bdaystorylogic.js';
-import { fitSkySign, grandLayout, ymmtLetters } from './bdaylogic.js';
+import { fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation } from './bdaylogic.js';
+import { fireworkFrame } from './bdayfireworks.js';
 
 // 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음
 for(const track of [0,1]){
@@ -34,3 +35,27 @@ for(const [view,portrait] of views){
  assert.ok(yl>=view.left-.01&&yr<=view.left+view.width+.01&&yt>=view.top-.01&&yb<=view.top+view.height+.01,JSON.stringify(view));
 }
 console.log('bdaystory selfcheck ok');
+
+// 전체 회전 후 글로우 여백을 포함한 외곽이 원래 칸 안에 남고 큰 장면의 사인을 침범하지 않는다.
+for(const [view,portrait] of views)for(let seed=0;seed<2000;seed++){
+ const angle=ymmtTilt(seed);assert.ok(Math.abs(angle)<=8*Math.PI/180);
+ const layout=grandLayout(view,portrait);
+ const normal={cx:view.left+view.width*.5,cy:view.top+view.height*.35,scale:Math.min(view.width*.8/355,view.height*.48/120)};
+ for(const original of [normal,layout.ymmt]){
+  const fit=fitYmmtRotation(original,angle),c=Math.cos(angle),s=Math.sin(angle);
+  for(const [x,y] of [[-177.5,-60],[177.5,-60],[-177.5,60],[177.5,60]]){
+   const p=[fit.cx+fit.scale*(x*c-y*s),fit.cy+fit.scale*(x*s+y*c)];
+   assert.ok(inside(view,p),JSON.stringify({view,seed,p}));
+   assert.ok(Math.abs(p[0]-original.cx)<=177.5*original.scale+.01&&Math.abs(p[1]-original.cy)<=60*original.scale+.01);
+   if(original===layout.ymmt){const sc=corners(layout.sign,.07).concat(corners(layout.sign,-.07));assert.ok(p[0]>=Math.max(...sc.map(v=>v[0]))||p[1]>=Math.max(...sc.map(v=>v[1])))}
+  }
+ }
+}
+for(const small of [false,true])for(let seed=0;seed<40;seed++)for(let t=0;t<42;t+=.13){
+ const v={left:0,top:0,width:small?820:1200,height:600},frame=fireworkFrame(t,seed,v,{small});
+ assert.ok(frame.particles.length+frame.rockets.length<=(small?420:720));
+ const limited=fireworkFrame(t,seed,v,{small,budget:17});assert.ok(limited.particles.length+limited.rockets.length<=17);
+ assert.deepEqual(frame,fireworkFrame(t,seed,v,{small}));
+ const calm=fireworkFrame(t,seed,v,{small,reduced:true});assert.equal(calm.rockets.length,0);
+}
+console.log('YMMT 회전 외곽 2000시드·폭죽 입자 상한·축소 모션 selfcheck 통과');

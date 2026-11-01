@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(tempfile.gettempdir())/'birthday-story'/'round2'
+OUT=Path(tempfile.gettempdir())/'birthday-story'/'round5'
 OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass
@@ -28,10 +28,16 @@ try:
      r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/birthdayui.js').read_text(encoding='utf8')+';window.__birthday={get scene(){return ctrl},get audio(){return music},teardown};')
     elif '/bdayscene-yuno.js' in r.request.url:
      s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8')
+     s=s.replace('function draw(t=clock()) {','function draw(t=clock()) {window.__draws=(window.__draws||0)+1;').replace('function skyProps(c,t){','function skyProps(c,t){window.__routineCalls=(window.__routineCalls||0)+1;')
+     s=s.replace('if(t1<=t0)return;','if(t1<=t0)return;window.__trailSegments=(window.__trailSegments||0)+170;').replace('skySignDraw(c,f,age);','window.__signCalls=(window.__signCalls||0)+1;skySignDraw(c,f,age);')
      s=s.replace('const SKY_SALT=','let SKY_SALT=').replace('function playFinale(){','function playFinale(){window.__finaleRuns=(window.__finaleRuns||0)+1;')
      s=s.replace('return {skyBusy(t)', '''return {
       testPlan(){return skyPlan(TRK)},stopForTest(){cancelAnimationFrame(raf);raf=0},
-      testState(){return {pendingFinale,manual,particles:parts.length}},
+      testState(){return {pendingFinale,manual,effects:[...manualEffects.values()],toggles,toggleParticles,particles:parts.length}},
+      ageEffects(seconds){for(const e of manualEffects.values())e.start-=seconds;draw(clock())},
+      ageToggles(seconds){for(const e of Object.values(toggles))if(e)e.start-=seconds;draw(clock())},
+      expireEffects(){for(const e of manualEffects.values())e.start-=e.dur+1;if(manual)manual.start-=manual.dur+1;draw(clock())},
+      pathMetrics(){const e=manualEffects.get('ufo'),pts=Array.from({length:101},(_,i)=>skyZig(e.f,i/100));return {style:e.f.zig.style,yRange:Math.max(...pts.map(p=>p[1]))-Math.min(...pts.map(p=>p[1])),points:e.f.zig.pts}},
       samplePlans(){const saved=SKY_SALT,rows=[];for(let salt=0;salt<100;salt++){
        SKY_SALT=salt;const plan=skyPlan({...TRK}),base=plan.blocked.filter(([a,b])=>!plan.showers.some(t=>a===t&&b===t+5));
        rows.push({styles:plan.ufos.map(u=>u.zig.style),showers:plan.showers.length,ambient:plan.ambient.length,before:createAmbientTimeline(TRK.duration,base,plan.ambientSeed).length});
@@ -73,7 +79,7 @@ try:
    tracks=[]
    for index in range(2):
     if index:
-     page.evaluate('async()=>{await __birthday.audio.next();__birthday.scene.setTrack(await __birthday.audio.beat);__birthday.scene.stopForTest()}')
+     page.evaluate('async()=>{await __birthday.audio.next();__birthday.audio.pause();__birthday.scene.setTrack(await __birthday.audio.beat);__birthday.scene.stopForTest()}')
     plan=page.evaluate('__birthday.scene.testPlan()');samples=page.evaluate('__birthday.scene.samplePlans()')
     assert {s for r in samples for s in r['styles']}=={'curve','angle','mixed'},'UFO 궤적 세 종류'
     assert all(2<=r['showers']<=3 and r['ambient']>=3 for r in samples),samples
@@ -85,21 +91,63 @@ try:
      page.evaluate('async t=>{await __birthday.audio.seek(t);for(const a of document.querySelector(".bday-story").getAnimations({subtree:true}))if(Number.isFinite(a.effect.getComputedTiming().endTime))a.finish();__birthday.scene.renderAt(t)}',plan['constellation']+1.8);shot('constellation-pop')
      page.evaluate('t=>__birthday.scene.renderAt(t)',plan['constellation']+4.5);shot('constellation-rainbow')
      page.evaluate('async t=>{await __birthday.audio.seek(t);__birthday.scene.renderAt(t)}',plan['showers'][0]+1.05);shot('shower')
-   # 피날레 한 건만 보류하고 반복 입력 후 마지막 조작 3초에 한 번 재생한다.
-   page.evaluate('()=>{window.__finaleRuns=0;__birthday.scene.triggerManual("sign");__birthday.scene.finale();__birthday.scene.finale()}')
-   assert page.evaluate('__birthday.scene.testState().pendingFinale')
-   page.wait_for_timeout(300);page.evaluate('__birthday.scene.triggerManual("shower")')
-   page.wait_for_timeout(2400);assert page.evaluate('__birthday.scene.testState().pendingFinale')
-   page.wait_for_timeout(750)
+   # 토글은 정지 중에도 그리고, 숨김 복귀 시 주기를 새로 시작한다.
+   for label in ['폭죽','유성우']:
+    page.get_by_role('button',name=label,exact=True).click()
+    assert page.get_by_role('button',name=label,exact=True).get_attribute('aria-pressed')=='true'
+   before=page.evaluate('window.__draws');page.wait_for_timeout(200)
+   assert page.evaluate('window.__draws')>before and page.evaluate('__birthday.audio.paused')
+   page.evaluate('()=>{window.__routineCalls=0;__birthday.scene.ageToggles(17.3)}');shot('toggle-salvo')
+   assert page.evaluate('window.__routineCalls')>0
+   cap=420 if width<700 else 720
+   assert 0<page.evaluate('__birthday.scene.testState().toggleParticles')<=cap
+   page.evaluate('__birthday.scene.ageToggles(3.1)');shot('toggle-comet')
+   page.evaluate('()=>{Object.defineProperty(document,"hidden",{configurable:true,value:true});document.dispatchEvent(new Event("visibilitychange"))}')
+   page.wait_for_timeout(100)
+   page.evaluate('__birthday.scene.ageToggles(120)')
+   page.evaluate('()=>{delete document.hidden;document.dispatchEvent(new Event("visibilitychange"))}')
+   ages=page.evaluate('Object.values(__birthday.scene.testState().toggles).map(e=>performance.now()/1000-e.start)')
+   assert all(a<.5 for a in ages),ages
+   for label in ['폭죽','유성우']:
+    page.get_by_role('button',name=label,exact=True).click()
+    assert page.get_by_role('button',name=label,exact=True).get_attribute('aria-pressed')=='false'
+   assert page.evaluate('__birthday.scene.testState().toggles')=={'fireworks':None,'shower':None}
+   # 원래 UFO·사인 렌더러, 동시 재생, 같은 종류 재시작, 마지막 수명 종료의 피날레를 검사한다.
+   assert page.evaluate('__birthday.audio.paused')
+   page.get_by_role('button',name='UFO',exact=True).click()
+   page.evaluate('()=>{window.__trailSegments=0;window.__signCalls=0;__birthday.scene.ageEffects(1.4)}')
+   metrics=page.evaluate('__birthday.scene.pathMetrics()');assert metrics['yRange']>60,metrics
+   assert page.evaluate('window.__trailSegments')>0
+   shot('manual-ufo')
+   page.evaluate('__birthday.scene.triggerManual("sign")');page.wait_for_timeout(120)
+   page.evaluate('__birthday.scene.ageEffects(1.2)');shot('manual-both')
    state=page.evaluate('__birthday.scene.testState()')
-   assert not state['pendingFinale'] and state['manual'] is None and state['particles']>0,state
-   page.wait_for_timeout(500);assert page.evaluate('window.__finaleRuns')==1
+   assert {e['kind'] for e in state['effects']}=={'sign','ufo'}
+   assert page.evaluate('window.__signCalls')>0
+   old=metrics['points'];page.evaluate('__birthday.scene.triggerManual("ufo")')
+   assert page.evaluate('__birthday.scene.pathMetrics().points')!=old
+   assert len(page.evaluate('__birthday.scene.testState().effects'))==2
+   page.evaluate('()=>{window.__finaleRuns=0;__birthday.scene.finale();__birthday.scene.finale()}')
+   assert page.evaluate('__birthday.scene.testState().pendingFinale')
+   page.evaluate('__birthday.scene.ageEffects(3.1)')
+   assert page.evaluate('__birthday.scene.testState().pendingFinale')
+   page.evaluate('__birthday.scene.expireEffects()');page.wait_for_timeout(150)
+   state=page.evaluate('__birthday.scene.testState()')
+   assert not state['pendingFinale'] and not state['effects'] and state['particles']>0,state
+   assert page.evaluate('window.__finaleRuns')==1
+   page.evaluate('()=>{__birthday.scene.triggerManual("fireworks");__birthday.scene.ageToggles(17.3)}')
+   shared=page.evaluate('__birthday.scene.testState()')
+   assert shared['particles']+shared['toggleParticles']<=(1900 if width<700 else 3200)
+   page.evaluate('__birthday.scene.triggerManual("fireworks")')
+   page.evaluate('()=>{__birthday.scene.triggerManual("fireworks");__birthday.scene.triggerManual("shower");__birthday.scene.setStill(true);__birthday.scene.ageToggles(1.3)}');shot('toggles-reduced')
+   assert page.evaluate('__birthday.scene.testState().toggleParticles')<=108
+   page.evaluate('()=>{__birthday.scene.triggerManual("fireworks");__birthday.scene.triggerManual("shower")}')
    page.emulate_media(reduced_motion='reduce')
    page.evaluate('document.querySelector(".bday-music").setAttribute("data-fresh-unlock","")')
    assert page.locator('.bday-panel-scan').evaluate('e=>getComputedStyle(e).display')=='none'
    assert page.locator('.bday-effects button').first.evaluate('e=>getComputedStyle(e).animationName')=='none'
    page.evaluate('__birthday.teardown()');assert not errors,errors
-   results[f'{width}x{height}']={'tracks':tracks,'text_stagger':True,'fresh_cleanup_idle':True,'finale_deferred_once':True,'reduced_expansion':True,'errors':errors}
+   results[f'{width}x{height}']={'tracks':tracks,'text_stagger':True,'fresh_cleanup_idle':True,'finale_deferred_once':True,'ufo_path':metrics,'manual_sign_renderer':True,'independent_manual_effects':True,'toggle_on_off_paused':True,'hidden_no_backlog':True,'particle_cap':cap,'trail_segments':page.evaluate('window.__trailSegments'),'sign_renderer_calls':page.evaluate('window.__signCalls'),'reduced_expansion':True,'errors':errors}
    context.close()
   browser.close()
 finally:server.shutdown()

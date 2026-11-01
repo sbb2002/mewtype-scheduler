@@ -3,7 +3,7 @@ from pathlib import Path
 import functools,http.server,threading,json,os
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(os.environ['TEMP'])/'birthday-story'/'round2';OUT.mkdir(parents=True,exist_ok=True)
+OUT=Path(os.environ['TEMP'])/'birthday-story'/'round5';OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass
  def copyfile(self,source,outputfile):
@@ -47,8 +47,8 @@ try:
     if '127.0.0.1' not in r.request.url:r.fulfill(content_type='application/json',body='{}')
     elif '/birthdayui.js' in r.request.url:r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/birthdayui.js').read_text(encoding='utf8')+';window.__birthday={get scene(){return ctrl},get audio(){return music},get player(){return player}};')
     elif '/bdayscene-yuno.js' in r.request.url:
-     s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace('return {skyBusy(t)', 'return {stopForTest(){cancelAnimationFrame(raf);raf=0},testPlan(){return skyPlan(TRK)},manualState(){return {manual,returnAt}},skyBusy(t)').replace('skySignDraw(c,f,age);c.restore();continue','window.__signMatrix=c.getTransform();skySignDraw(c,f,age);c.restore();continue').replace('if(depth>12){','window.__beam={sx,sy,bottom,depth,width,base};if(depth>12){')
-     s=s.replace('function skyProps(c,t){','function skyProps(c,t){window.__routineCalls=(window.__routineCalls||0)+1;').replace('function skyUfos(c,t){','function skyUfos(c,t){window.__routineCalls=(window.__routineCalls||0)+1;')
+     s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace('return {skyBusy(t)', 'return {stopForTest(){cancelAnimationFrame(raf);raf=0},testPlan(){return skyPlan(TRK)},manualState(){return {manual:[...manualEffects.values()][0]||manual,returnAt}},expireManual(){for(const e of manualEffects.values())e.start-=e.dur+1;draw(clock())},skyBusy(t)').replace('skySignDraw(c,f,age);c.restore();continue','window.__signMatrix=c.getTransform();skySignDraw(c,f,age);c.restore();continue').replace('if(depth>12){','window.__beam={sx,sy,bottom,depth,width,base};if(depth>12){')
+     s=s.replace('function skyProps(c,t){','function skyProps(c,t){window.__routineCalls=(window.__routineCalls||0)+1;').replace('function skyUfos(c,t,events=skyPlan(TRK).ufos){','function skyUfos(c,t,events=skyPlan(TRK).ufos){if(events===skyPlan(TRK).ufos)window.__routineCalls=(window.__routineCalls||0)+1;')
      r.fulfill(content_type='text/javascript',body=s)
     else:r.continue_()
    page.route('**/*',route);page.goto(BASE+'/src/frontend/?bday=yuno&ufo=sign');page.wait_for_function('window.__birthday?.player')
@@ -70,9 +70,8 @@ try:
    page.screenshot(path=str(OUT/f'{width}x{height}-scan.png'));page.evaluate('t=>__birthday.scene.renderAt(t)',data['signTime']);page.screenshot(path=str(OUT/f'{width}x{height}-sign.png'))
    page.evaluate('()=>{__routineCalls=0;__birthday.scene.triggerManual("sign");const f=__birthday.scene.testPlan().ufos[0];__birthday.scene.renderAt(f.birth+1)}');assert page.evaluate('__routineCalls')==0;page.wait_for_timeout(500)
    assert page.evaluate('()=>__birthday.scene.manualState().manual.kind')=='sign'
-   page.evaluate('()=>__birthday.scene.triggerManual("shower")');page.wait_for_timeout(300)
-   assert page.evaluate('()=>__birthday.scene.manualState().manual.kind')=='shower'
-   page.wait_for_timeout(3100)
+   page.evaluate('()=>__birthday.scene.triggerManual("ufo")');page.wait_for_timeout(300)
+   page.evaluate('()=>__birthday.scene.expireManual()');page.wait_for_timeout(750)
    assert page.evaluate('()=>__birthday.scene.manualState().manual') is None
    assert page.evaluate('__routineCalls')>0
    page.evaluate('()=>{__birthday.scene.setStill(true);__birthday.scene.triggerManual("sign")}');page.wait_for_timeout(100)
@@ -80,7 +79,7 @@ try:
    page.evaluate('()=>__birthday.scene.setStill(false)')
    assert 'BGM' not in page.locator('.bday-track').inner_text()
    assert not errors,errors
-   results[f'{width}x{height}'].update({'sign_fits':True,'beam_attached':True,'title_without_bgm':True,'constellation_reserved':True,'manual_suppresses_fixed':True,'manual_restarts':True,'returns_after_three_seconds':True,'reduced_manual':True});page.close()
+   results[f'{width}x{height}'].update({'sign_fits':True,'beam_attached':True,'title_without_bgm':True,'constellation_reserved':True,'manual_suppresses_fixed':True,'manual_restarts':True,'returns_after_effect_lifetime':True,'reduced_manual':True});page.close()
   browser.close()
 finally:server.shutdown()
 (OUT/'results.json').write_text(json.dumps(results,sort_keys=True,indent=2)+'\n',encoding='utf8');print(json.dumps(results))

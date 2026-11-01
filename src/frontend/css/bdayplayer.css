@@ -49,6 +49,8 @@
 /* 보상 패널: 좁은 화면에서는 효과 행을 분리한다. */
 .bday-effects{display:flex;gap:4px;border-left:1px solid #8ae3e266;padding-left:10px;margin-left:4px}
 .bday-effects[hidden]{display:none}
+.bday-effects .effect[aria-pressed="true"]{background:#3de9ed30;border-color:#8afaff;color:#e5ffff;box-shadow:inset 0 0 0 1px #85faff99,0 0 13px #60eaff55}
+.bday-effects .effect[aria-pressed="true"]::after{content:"";position:absolute;bottom:3px;width:12px;height:2px;background:#b7ffff;border-radius:2px;box-shadow:0 0 6px #7cffff}
 .bday-effects .effect{width:auto;min-width:44px;padding:0 8px;border-radius:8px;font:600 12px system-ui;color:#bafaff;background:#8ae3e20d;white-space:nowrap;flex-shrink:0}
 [data-unlocked] .bday-music__bar{border-color:#8ae3e288;border-radius:18px;box-shadow:0 0 22px #43cbd32b,0 8px 28px #0008}
 @media(min-width:701px) and (pointer:fine){.bday-music__bar{bottom:calc(max(70px,9.5%) + env(safe-area-inset-bottom))}}

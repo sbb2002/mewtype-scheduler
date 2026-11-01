@@ -31,7 +31,11 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const vol=el('label','bday-volume'),range=el('input',''),tip=el('output','bday-vtip');range.type='range';range.min=0;range.max=1;range.step=.01;range.setAttribute('aria-label','음악 볼륨');vol.append(range,tip);bar.append(vol);
   range.addEventListener('input',()=>audio.setVolume(+range.value),{signal});
   const effects=el('div','bday-effects');effects.setAttribute('role','group');effects.setAttribute('aria-label','하늘 효과');
-  for(const [kind,label,path] of EFFECTS){const b=button('effect',label,'',()=>scene.triggerManual(kind));b.title=label;b.append(icon(path));effects.append(b)}bar.append(effects);
+  for(const [kind,label,path] of EFFECTS){
+   const toggle=kind==='fireworks'||kind==='shower';
+   const b=button('effect',label,'',()=>{const on=scene.triggerManual(kind);if(toggle)b.setAttribute('aria-pressed',String(on))});
+   if(toggle)b.setAttribute('aria-pressed','false');b.title=label;b.append(icon(path));effects.append(b)
+  }bar.append(effects);
   const scan=el('span','bday-panel-scan');scan.setAttribute('aria-hidden','true');bar.append(scan);
   bar.addEventListener('animationend',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
   bar.addEventListener('animationcancel',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
