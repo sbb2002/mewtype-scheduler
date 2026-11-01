@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.11.4 | `11c09c4` | 2026-11-01 21:34 | `hotfix/birthday-bottom-labels` | 병합 커밋 | 프론트만 · 운영자 지시 · PR #135 · Vercel 프로덕션 success(`mewtype-scheduler-o0fe3kq9f-sbb2002`) · 운영 파일 2개 일치 |
 | v4.11.3 | `fa8acda` | 2026-11-01 21:15 | `feat/birthday-story` | 병합 커밋 | 프론트만 · 운영자 지정 일반 패치 · PR #133 · Vercel 프로덕션 success(`mewtype-scheduler-ch2dv56mp`) · 운영 파일 21개 일치 |
 | v4.11.2 | `ba2b65b` | 2026-11-01 01:30 | `hotfix/birthday-greeting-motion` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 · PR #131 · Vercel READY(`dpl_4JTKp22MjRpckyTmzU1S7pxysFqz`) |
 | v4.11.1 | `779842c` | 2026-11-01 01:09 | `hotfix/birthday-player-controls` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 · PR #129 · Vercel READY(`dpl_9cVxEymqjH2jGCfFtm8T2HMPbrKv`) |
@@ -232,6 +233,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
 - **v4.11.4** (일반 패치, 2026-11-01 — 브랜치 `hotfix/birthday-bottom-labels`, 프론트만, 운영자 지시): **생일 화면 하단 문구 위치.** SUNO 안내를 가운데에서 좌하단으로, 곡 제목을 우하단 모서리로 옮겼다. 좁은 화면은 한 줄에 안 들어가 곡 제목을 안내 한 칸 위에 둔다.
+  - **배포 완료**: 병합 `11c09c4`(PR #135, 21:34 KST), 태그 `v4.11.4` 원격 게시. Vercel 프로덕션 배포 success(`mewtype-scheduler-o0fe3kq9f-sbb2002`, GitHub deployment 7473074122). 운영 도메인의 변경 파일 2개가 병합 코드와 일치하고 config.js v4.11.4 를 확인했다. 운영 주소 평소 화면과 `?bday=yuno` 화면 모두 페이지 오류 · 4xx 없음. 롤백 = `2f6212f`(v4.11.3 완료 표기 커밋).
 - **v4.11.3** (일반 패치, 2026-11-01 — 브랜치 `feat/birthday-story`, 프론트만, 운영자 지정 등급): **생일 감상 이야기·두 곡 완곡 보상·수동 하늘 효과.** 효과가 겹칠 때의 렉은 GPU 그림자 · 입자별 그리기가 원인이라 겹쳐 긋기 · 구운 빛점 · 품질 자동 조절로 줄였다(이 PC 측정 1440×900 27→66fps, 390×844 43→110fps, 실기기 미측정). 렉 주범이던 오로라는 절반 해상도 층에 초당 20번만 그리고, 장면은 60fps 로 제한한다. 운영 데이터 · 75초 폴링 · 버스트 · 장애 응답 시험은 `scripts/verify_birthday_service.py`.
   - **배포 완료**: 병합 `fa8acda`(PR #133, 21:15 KST), 태그 `v4.11.3` 원격 게시. Vercel 프로덕션 배포 success(`mewtype-scheduler-ch2dv56mp`, GitHub deployment 7472852091). 운영 도메인의 변경 파일 21개가 병합 코드와 일치하고 config.js v4.11.3 을 확인했다. 운영 주소 평소 화면(생일 파일 요청 0)과 `?bday=yuno` 화면 모두 페이지 오류 · 4xx 없음. 롤백 = `11ef3b5`(v4.11.2 완료 표기 커밋).
   - **미확인**: 실기기 iPhone Safari · 삼성 브라우저, 실제 YouTube 재생에서의 자정 페이드(대역으로 검증), 운영자 화면의 렉 · 우측 쏠림(이 PC 측정에서 재현 안 됨, `&perf` 로 확인 예정). 유노 글자색 `#ffb4d2` 는 임시값 그대로 배포했다.
