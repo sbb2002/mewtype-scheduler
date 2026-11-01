@@ -15,8 +15,10 @@ export function sceneLayout(w,h) {
 
 // 사인·UFO·별과 글로우를 감싼 원본 영역까지 화면의 하늘 안에 맞춘다.
 export function fitSkySign(view,portrait=false){
- const k=Math.max(.01,Math.min((view.width*.9)/580,(view.height*.68)/430,(portrait?720:640)/580));
- return {scale:k,x:view.left+view.width/2-290*k,y:view.top+view.height*.39-200*k};
+ // 획이 차지하는 칸(가로 45~565, 세로 30~375)을 유노 머리 위(장면 y 262) 하늘에 최대한 채운다. 태양과는 겹쳐도 된다.
+ const floor=Math.min(view.top+view.height,262),room=Math.max(1,floor-view.top);
+ const k=Math.max(.01,Math.min((view.width*.97)/520,(room*.97)/345));
+ return {scale:k,x:view.left+view.width/2-305*k,y:view.top+room/2-202.5*k};
 }
 export function decodeTrack(t,bands=null) {
   const q=bands?new Uint8Array(bands):Uint8Array.from(atob(t.bands),v=>v.charCodeAt(0));
@@ -38,4 +40,21 @@ export function introScene(t,L,enabled=true,reduced=false) {
  const y=enabled&&!reduced&&t<16.9?395+103*scale+(target-395-103*scale)*rise:target;
  const spot=enabled?(reduced?0:clamp((t-6.3)/.9)*(1-clamp((t-DROP)/1))):0;
  return {x,y,scale,rise:enabled?rise:1,spot,wave:enabled&&!reduced&&t>=DROP?clamp((t-DROP)/.5):0};
+}
+
+// YMMT 별자리 — 글자마다 꼭짓점을 ±4, 회전을 ±6도 흔든다. 글자 칸 사이 25 에서 양쪽 최대 8.2 라 옆 글자를 넘지 않는다.
+const YMMT_LETTERS=[
+ {points:[[0,0],[30,40],[60,0],[30,80]],path:[0,1,2,1,3]},
+ {points:[[85,80],[85,0],[115,45],[145,0],[145,80]],path:[0,1,2,3,4]},
+ {points:[[170,80],[170,0],[200,45],[230,0],[230,80]],path:[0,1,2,3,4]},
+ {points:[[255,0],[285,0],[315,0],[285,80]],path:[0,1,2,1,3]},
+];
+export function ymmtLetters(seed=0){
+ let n=(seed*2654435761+1)>>>0;
+ const rand=()=>{n=(n+0x6D2B79F5)>>>0;let t=Math.imul(n^n>>>15,1|n);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+ return YMMT_LETTERS.map(({points,path})=>{
+  const xs=points.map(p=>p[0]),cx=(Math.min(...xs)+Math.max(...xs))/2,cy=40,angle=(rand()*2-1)*6*Math.PI/180,cos=Math.cos(angle),sin=Math.sin(angle);
+  const moved=points.map(([x,y])=>{const dx=x+(rand()*2-1)*4-cx,dy=y+(rand()*2-1)*4-cy;return [cx+dx*cos-dy*sin,cy+dx*sin+dy*cos]});
+  return {points:moved,path};
+ });
 }

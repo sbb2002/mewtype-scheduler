@@ -3,6 +3,14 @@ import { introBrightness } from './bdaylogic.js';
 import { mountBirthdayPlayerDrag } from './bdayplayerdrag.js';
 import { mountBirthdayStory } from './bdaystory.js';
 import { mountBirthdayReward } from './bdayreward.js';
+// 효과 버튼 아이콘(20×20, 선 도형). 이름은 aria-label · title 로 남긴다.
+const EFFECTS=[
+ ['fireworks','폭죽','M10 2v4M10 14v4M2 10h4M14 10h4M4.3 4.3l2.8 2.8M12.9 12.9l2.8 2.8M15.7 4.3l-2.8 2.8M7.1 12.9l-2.8 2.8'],
+ ['ufo','UFO','M6 9a4 4 0 0 1 8 0M2 11.5c0-1.4 3.6-2.5 8-2.5s8 1.1 8 2.5-3.6 2.5-8 2.5-8-1.1-8-2.5zM7 16l-1 2M13 16l1 2'],
+ ['sign','사인','M3 14c2-6 4-10 5.5-9.5S7 13 9 12s2-4 3.5-3.5-.5 3.5 1 3.5 2-1 3.5-1M3 17.5h14'],
+ ['shower','유성우','M17 2l-7 7M11 3L6 8M17 8l-6 6M9 10.5h.01M5 9.5h.01M10 15.5h.01'],
+];
+function icon(path){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),p=document.createElementNS(ns,'path');svg.setAttribute('viewBox','0 0 20 20');svg.setAttribute('aria-hidden','true');p.setAttribute('d',path);svg.append(p);return svg}
 export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
   let dead=false,raf=0,idle=0,intro=true,lastIndex=-1,ready=false,starting=false,unsub;
@@ -23,7 +31,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const vol=el('label','bday-volume'),range=el('input',''),tip=el('output','bday-vtip');range.type='range';range.min=0;range.max=1;range.step=.01;range.setAttribute('aria-label','음악 볼륨');vol.append(range,tip);bar.append(vol);
   range.addEventListener('input',()=>audio.setVolume(+range.value),{signal});
   const effects=el('div','bday-effects');effects.setAttribute('role','group');effects.setAttribute('aria-label','하늘 효과');
-  for(const [kind,label] of [['fireworks','폭죽'],['ufo','UFO'],['sign','사인'],['shower','유성우']]){const b=button('effect',label,label,()=>scene.triggerManual(kind));effects.append(b)}bar.append(effects);
+  for(const [kind,label,path] of EFFECTS){const b=button('effect',label,'',()=>scene.triggerManual(kind));b.title=label;b.append(icon(path));effects.append(b)}bar.append(effects);
   const scan=el('span','bday-panel-scan');scan.setAttribute('aria-hidden','true');bar.append(scan);
   bar.addEventListener('animationend',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
   bar.addEventListener('animationcancel',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
