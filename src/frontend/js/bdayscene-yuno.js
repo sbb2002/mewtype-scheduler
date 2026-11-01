@@ -366,13 +366,13 @@ function skyUfos(c,t,events=skyPlan(TRK).ufos){
    if(age>life)continue;
    const pos={...skyUfo2(f,age)},alpha=env(age,life,.65),mapped=point([pos.x,pos.y]);pos.x=mapped[0];pos.y=mapped[1];
    if(pos.scanning){
-    const e=djEase15(pos.u/.18)*djEase15((1-pos.u)/.18),sx=pos.x-Math.sin(pos.tilt)*20,sy=pos.y+Math.cos(pos.tilt)*20;
+    const e=djEase15(pos.u/.18)*djEase15((1-pos.u)/.18),sx=pos.x+2*Math.cos(pos.tilt)-11*Math.sin(pos.tilt),sy=pos.y+2*Math.sin(pos.tilt)+11*Math.cos(pos.tilt);
     const bottom=386,depth=Math.max(0,bottom-sy),width=Math.min(95,skyViewport.width*.19,depth*.30);
     const base=Math.max(skyViewport.left+width,Math.min(skyViewport.left+skyViewport.width-width,sx+Math.sin(pos.u*Math.PI*2)*Math.min(45,depth*.12)));
     if(depth>12){
-     c.save();c.globalAlpha=skyRoutineAlpha*alpha*e*.24;const g=c.createLinearGradient(0,sy,0,bottom);g.addColorStop(0,'#8ae3e2a0');g.addColorStop(.55,'#8ae3e254');g.addColorStop(1,'#8ae3e200');
-     c.fillStyle=g;c.beginPath();c.moveTo(sx-7,sy);c.lineTo(base-width,bottom);c.quadraticCurveTo(base,bottom+7,base+width,bottom);c.lineTo(sx+7,sy);c.closePath();c.fill();
-     const glow=c.createRadialGradient(base,0,0,base,0,Math.max(1,width));glow.addColorStop(0,'#8ae3e278');glow.addColorStop(1,'#8ae3e200');
+     c.save();c.globalAlpha=skyRoutineAlpha*alpha*e*.82;const g=c.createLinearGradient(0,sy,0,bottom);g.addColorStop(0,'#d8fffee6');g.addColorStop(.3,'#8ae3e2b0');g.addColorStop(.75,'#8ae3e24d');g.addColorStop(1,'#8ae3e200');
+     c.fillStyle=g;c.beginPath();c.moveTo(sx-12,sy);c.lineTo(base-width,bottom);c.quadraticCurveTo(base,bottom+7,base+width,bottom);c.lineTo(sx+12,sy);c.closePath();c.fill();
+     const glow=c.createRadialGradient(base,0,0,base,0,Math.max(1,width));glow.addColorStop(0,'#c6fffdcc');glow.addColorStop(1,'#8ae3e200');
      c.translate(0,bottom);c.scale(1,.07);c.fillStyle=glow;c.fillRect(base-width,-width,width*2,width*2);c.restore();
     }
    }
@@ -453,8 +453,8 @@ if(type===3){for(let row=0;row<16;row++){const z=row/15,scale=.22+.78*z,y=411+z*
 if(type===4){for(let i=0;i<40;i++){let h=spectrum19(t,Math.min(i,39-i)*2,40),x=63+i*27.3,level=h.height/8,cap=Math.min(14,(h.cap-4)/8);for(let j=0;j<15;j++){c.fillStyle=j>10?P:j>6?V:C;c.globalAlpha=.065+.88*Math.max(0,Math.min(1,level-j));c.fillRect(x,393-j*11,15,6)}c.globalAlpha=.85;c.fillStyle=P;c.fillRect(x,393-cap*11,15,2)}c.globalAlpha=1}
 }
 
-// 바닥 세로선 — 지평선 근처에서 화면 좌우 끝까지 닿도록 멀리까지 잡고, 바깥쪽은 듬성하게 둬서 그리는 양을 줄인다.
-const GRID_X=[];for(let x=-7800;x<=9000;x+=x<-1200||x>=2400?450:150)GRID_X.push(x);
+// 바닥 세로선 — 지평선 근처에서 화면 좌우 끝까지 닿도록 멀리까지 같은 간격으로 잡는다.
+const GRID_X=[];for(let x=-7800;x<=9000;x+=150)GRID_X.push(x);
 function groundGrid(c){line(c,[[0,395],[1200,395]],P,1.5,.5);for(const x of GRID_X)line(c,[[600,389],[x,760]],P,1,.22);for(let j=1;j<=12;j++){let y=395+365*(j/12)**2.5;line(c,[[0,y],[1200,y]],P,1,.12+j*.015)}}
 const FL={};
 function floorWave(c,type,t){
@@ -586,12 +586,13 @@ function floorWave(c,type,t){
     c.fillStyle='#fff';c.beginPath();c.arc(px,py,small?4:6,0,Math.PI*2);c.fill();
    }
   }else if(kind==='constellation'){
-   const box=fitYmmtRotation(opt.box||{cx:x,cy:y,scale:Math.min(v.width*.8/355,v.height*.48/120)},ymmtAngle),scale=box.scale,alpha=Math.min(1,(9-age)/2);
+   const box=fitYmmtRotation(opt.box||{cx:x,cy:y,scale:Math.min(v.width*.8/355,v.height*.48/120)},ymmtAngle),scale=box.scale,alpha=Math.min(1,(9-age)/1.6),flash=still?0:Math.sin(Math.PI*djClamp15((age-7)/.4));
    c.translate(box.cx,box.cy);c.rotate(box.angle);c.scale(scale,scale);c.translate(-157.5,-40);c.strokeStyle='#65baff';c.fillStyle='#c3edff';c.shadowColor='#329dff';c.shadowBlur=12;c.lineWidth=2;
    let n=0;for(const {points,path} of ymmtShape){if(age>=1.6||still){const pop=still?0:Math.sin(Math.PI*djClamp15((age-1.6)/.4));
      c.globalAlpha=alpha*(still?1:Math.min(1,(age-1.6)/.4));c.beginPath();path.forEach((p,i)=>i?c.lineTo(...points[p]):c.moveTo(...points[p]));c.stroke();
-     if(pop>0){c.save();c.globalAlpha=pop*.75;c.strokeStyle='#e6faff';c.shadowColor='#7fcaff';c.shadowBlur=25;c.lineWidth=2+pop*4;c.stroke();c.restore()}}
-    for(const [a,b] of points){const born=n++*.065;if(!still&&age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff');c.globalAlpha=alpha*(still?1:Math.max(0,Math.min(1,(age-born-.2)*8)));c.beginPath();c.arc(a,b,3.5,0,Math.PI*2);c.fill()}}
+     if(pop>0){c.save();c.globalAlpha=pop*.75;c.strokeStyle='#e6faff';c.shadowColor='#7fcaff';c.shadowBlur=25;c.lineWidth=2+pop*4;c.stroke();c.restore()}
+     if(flash>0){c.save();c.lineJoin='round';c.lineCap='round';c.globalAlpha=flash;c.strokeStyle='#1e86ff';c.shadowColor='#1e86ff';c.shadowBlur=40;c.lineWidth=2+flash*9;c.stroke();c.strokeStyle='#62b8ff';c.shadowBlur=14;c.lineWidth=2+flash*3;c.stroke();c.restore()}}
+    for(const [a,b] of points){const born=n++*.065;if(!still&&age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff');c.globalAlpha=alpha*(still?1:Math.max(0,Math.min(1,(age-born-.2)*8)));c.beginPath();c.arc(a,b,3.5+flash*3,0,Math.PI*2);c.fill()}}
   }
   c.restore();
  }

@@ -90,6 +90,7 @@ try:
     if not index:
      page.evaluate('async t=>{await __birthday.audio.seek(t);for(const a of document.querySelector(".bday-story").getAnimations({subtree:true}))if(Number.isFinite(a.effect.getComputedTiming().endTime))a.finish();__birthday.scene.renderAt(t)}',plan['constellation']+1.8);shot('constellation-pop')
      page.evaluate('t=>__birthday.scene.renderAt(t)',plan['constellation']+4.5);shot('constellation-rainbow')
+     page.evaluate('t=>__birthday.scene.renderAt(t)',plan['constellation']+7.2);shot('constellation-flash')
      page.evaluate('async t=>{await __birthday.audio.seek(t);__birthday.scene.renderAt(t)}',plan['showers'][0]+1.05);shot('shower')
    # 토글은 정지 중에도 그리고, 숨김 복귀 시 주기를 새로 시작한다.
    for label in ['폭죽','유성우']:
