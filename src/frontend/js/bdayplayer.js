@@ -35,7 +35,12 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
    const toggle=kind==='fireworks'||kind==='shower';
    const b=button('effect',label,'',()=>{const on=scene.triggerManual(kind);if(toggle)b.setAttribute('aria-pressed',String(on))});
    if(toggle)b.setAttribute('aria-pressed','false');b.title=label;b.append(icon(path));effects.append(b)
-  }bar.append(effects);
+  }
+  // 유노 얼굴 = 「밤 풍경 더 보기」 다시 보기. 재생 중에는 효과 버튼을 잠시 잠근다(켜 둔 토글은 그대로).
+  const grand=button('effect grand','밤 풍경 더 보기','',()=>scene.grandShow()),face=new Image();
+  face.src=new URL('../assets/birthday/yuno/head_open.webp',import.meta.url).href;face.alt='';face.draggable=false;grand.title='밤 풍경 더 보기';grand.append(face);effects.append(grand);
+  scene.onGrand(on=>{for(const b of effects.querySelectorAll('button'))b.disabled=on;shell.toggleAttribute('data-grand',on)});
+  bar.append(effects);
   const scan=el('span','bday-panel-scan');scan.setAttribute('aria-hidden','true');bar.append(scan);
   bar.addEventListener('animationend',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
   bar.addEventListener('animationcancel',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
@@ -44,7 +49,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const drag=mountBirthdayPlayerDrag({bar,grip,shell,title,disc});
   function update(){
     pp.textContent=audio.paused?'▶':'';pp.classList.toggle('is-paused-icon',!audio.paused);pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
-    mute.textContent=audio.muted||!audio.volume?'🔇':'♫';mute.setAttribute('aria-pressed',String(audio.muted));
+    scene.setEyesClosed(audio.muted||!audio.volume);mute.textContent=audio.muted||!audio.volume?'🔇':'♫';mute.setAttribute('aria-pressed',String(audio.muted));
     range.value=audio.volume;range.style.setProperty('--v',audio.volume*100+'%');tip.textContent=Math.round(audio.volume*100)+'%';shell.classList.toggle('playing',!audio.paused);
     if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪ '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}
   }

@@ -114,3 +114,9 @@
 /* 감사 카드 퇴장: 빛이 차오른 뒤 부풀며 흩어진다. .bday-memory 의 transform 은 가운데 정렬이라 scale 속성을 따로 쓴다. */
 .bday-memory.is-leaving{pointer-events:none;animation:bday-memory-out .76s cubic-bezier(.3,0,.2,1) forwards}
 @keyframes bday-memory-out{0%{opacity:1;scale:1;filter:brightness(1)}35%{opacity:1;scale:.97;filter:brightness(2.4);box-shadow:0 0 60px 18px color-mix(in srgb,var(--yuno-glow) 70%,transparent),0 0 120px 40px #8ae3e255}100%{opacity:0;scale:1.5;filter:brightness(4) blur(14px)}}
+
+/* 유노 얼굴 버튼 · 큰 장면 재생 중 잠금 */
+.bday-effects .effect img{width:27px;height:auto;display:block;pointer-events:none;-webkit-user-drag:none}
+.bday-effects .effect:disabled{opacity:.32;cursor:default;transform:none}
+[data-grand] .bday-effects .grand:disabled{opacity:1;box-shadow:0 0 12px var(--yuno-glow)}
+@media(max-width:380px){[data-unlocked] .bday-effects .effect{min-width:40px;width:40px;padding:0}}
