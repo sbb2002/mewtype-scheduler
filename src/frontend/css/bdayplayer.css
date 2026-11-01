@@ -9,6 +9,7 @@
 .bday-grip:hover{background:#ffffff24}.bday-grip:active,.is-dragging .bday-grip{cursor:grabbing}.bday-grip:focus-visible{outline:2px solid #8ae3e2;outline-offset:3px}
 .bday-grip__dots{display:grid;grid-template-columns:repeat(2,3px);gap:3px;pointer-events:none}.bday-grip__dots i{width:3px;height:3px;border-radius:50%;background:currentColor}
 .bday-ib{width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:#fff;display:grid;place-items:center;cursor:pointer;position:relative;overflow:hidden;transition:transform .16s,background .18s;font-size:16px}
+.bday-ib[hidden]{display:none}
 .bday-ib:hover{background:#ffffff24;transform:scale(1.1)}.bday-ib:active{transform:scale(.88)}.bday-ib:focus-visible,.bday-volume input:focus-visible{outline:2px solid #8ae3e2;outline-offset:3px}
 .bday-ib.pp{width:40px;height:40px;background:#ff488d;color:#2a0a1c}.bday-ib.prev:active{translate:-3px}.bday-ib.next:active{translate:3px}
 .bday-ripple{position:absolute;inset:4px;border-radius:50%;background:white;opacity:.5;animation:bday-ripple .5s ease-out forwards;pointer-events:none}@keyframes bday-ripple{from{transform:scale(0)}to{transform:scale(3.2);opacity:0}}

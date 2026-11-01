@@ -1,6 +1,6 @@
 import { birthdayStoryCue } from './bdaystorylogic.js';
 
-export function mountBirthdayStory({audio,scene,shell,reduced}){
+export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const root=document.documentElement,abort=new AbortController(),signal=abort.signal;
  const message=document.createElement('div');message.className='bday-story';message.setAttribute('aria-hidden','true');
  const stars=document.createElement('div');stars.className='bday-story__stars';
@@ -24,7 +24,7 @@ export function mountBirthdayStory({audio,scene,shell,reduced}){
   if(index===1&&time>=209&&!finale&&!audio.paused&&visible()){
    finale=true;if(!reduced())scene.finale();
   }
-  if(index===1&&time>=211&&!finished&&!audio.paused){finished=true;cardPending=true}
+  if(index===1&&time>=211&&!finished&&!audio.paused&&reward.cardReady()){finished=true;cardPending=true}
   if(cardPending&&visible()){card.hidden=false;cardPending=false;message.classList.remove('is-visible')}
   card.inert=!visible();card.setAttribute('aria-hidden',String(!visible()||card.hidden));
  }

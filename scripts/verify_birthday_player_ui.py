@@ -36,7 +36,8 @@ try:
    assert greeting['en']['size']>=30 and greeting['who']['size']>=19,greeting
    assert all(v['left']>=10 and v['right']<=width-10 for v in greeting.values()),greeting
    assert greeting['who']['top']>=greeting['en']['bottom'],greeting
-   assert grip.bounding_box()['x']<page.locator('.bday-ib.prev').bounding_box()['x']
+   assert grip.bounding_box()['x']<page.locator('.bday-ib.pp').bounding_box()['x']
+   assert page.locator('.bday-ib.prev').is_hidden() and page.locator('.bday-ib.next').is_hidden()
    assert page.locator('.bday-mini').count()==0
    page.screenshot(path=str(OUT/f'{key}-greeting.png'))
    # 배치 검사는 곡을 멈추고 장면 RAF를 쉬게 해 UI 동작을 분리해서 관찰한다.
