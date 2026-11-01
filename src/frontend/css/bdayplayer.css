@@ -194,3 +194,8 @@
  [data-unlocked] .bday-effects .grand{order:10}
  [data-unlocked] .bday-effects .pulse{order:11}
 }
+
+/* SUNO 안내는 좌하단, 곡 제목은 우하단 모서리. 좁은 화면은 한 줄에 안 들어가 곡 제목을 한 칸 위에 둔다. */
+.bday-music__disc{left:calc(14px + env(safe-area-inset-left));right:auto;bottom:calc(14px + env(safe-area-inset-bottom));text-align:left}
+.bday-music__title{right:calc(14px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom))}
+@media(max-width:700px),(pointer:coarse){.bday-music__disc{bottom:calc(10px + env(safe-area-inset-bottom))}.bday-music__title{bottom:calc(32px + env(safe-area-inset-bottom))}}
