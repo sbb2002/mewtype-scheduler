@@ -2,8 +2,9 @@
 from pathlib import Path
 import functools,http.server,threading,json,os,tempfile
 from playwright.sync_api import sync_playwright
+from PIL import Image
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'beat-controls')))
+OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'transport-icons')))
 OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass
@@ -108,9 +109,28 @@ try:
    assert page.get_by_role('button',name='밤 풍경 더 보기',exact=True).is_visible()
    for effect in page.locator('.bday-effects button').all():
     e=effect.bounding_box();assert e['x']>=12 and e['x']+e['width']<=width-12,e
-   page.locator('.bday-ib.pp').click();page.wait_for_function('!__birthday.audio.paused')
-   assert page.locator('.bday-ib.pp').evaluate('e=>getComputedStyle(e,"::before").width===getComputedStyle(e,"::after").width&&getComputedStyle(e,"::before").height==="16px"')
-   page.locator('.bday-ib.pp').click();page.wait_for_function('__birthday.audio.paused')
+   # 유메미타의 원본 SVG 도형과 두 상태의 중심·바 크기·접근성 이름을 확인한다.
+   pp=page.locator('.bday-ib.pp');before_transport=box()
+   def transport_state(playing):
+    page.mouse.move(2,2);page.wait_for_timeout(550)
+    expected='pause' if playing else 'play'
+    assert pp.get_attribute('aria-label')==('일시정지' if playing else '재생')
+    assert pp.locator('svg').get_attribute('viewBox')=='0 0 24 24'
+    assert pp.locator('svg').get_attribute('data-icon')==expected
+    assert pp.locator('path').get_attribute('d')==('M6 4h4v16H6zM14 4h4v16h-4z' if playing else 'M7 4v16l13-8z')
+    metrics=pp.evaluate('''e=>{const r=e.getBoundingClientRect(),v=e.querySelector('svg').getBoundingClientRect();return {w:r.width,h:r.height,iw:v.width,ih:v.height,dx:v.x+v.width/2-r.x-r.width/2,dy:v.y+v.height/2-r.y-r.height/2,before:getComputedStyle(e,'::before').content,after:getComputedStyle(e,'::after').content}}''')
+    assert metrics['w']==44 and metrics['h']==(32 if mobile else 40),metrics
+    assert metrics['iw']==metrics['ih']==18 and abs(metrics['dx'])<.01 and abs(metrics['dy'])<.01,metrics
+    assert metrics['before']==metrics['after']=='none',metrics
+    assert box()==before_transport,(box(),before_transport)
+    phase='playing-pause' if playing else 'paused-play';path=OUT/f'{key}-{phase}.png';page.screenshot(path=str(path))
+    with Image.open(path) as im:
+     im.resize((width*2,height*2),Image.Resampling.LANCZOS).save(path.with_stem(path.stem+'-2x'))
+     b=box();im.crop((int(b['x'])-2,int(b['y'])-2,int(b['x']+b['width'])+2,int(b['y']+b['height'])+2)).resize((int(b['width']+4)*2,int(b['height']+4)*2),Image.Resampling.LANCZOS).save(OUT/f'{key}-{phase}-panel-2x.png')
+   pp.click();page.wait_for_function('!__birthday.audio.paused');transport_state(True)
+   pp.click();page.wait_for_function('__birthday.audio.paused');transport_state(False)
+   for selector,path in [('.prev','M6 4h2v16H6zM20 4v16L9 12z'),('.next','M16 4h2v16h-2zM4 4v16l11-8z')]:
+    assert page.locator('.bday-ib'+selector+' path').get_attribute('d')==path
    r=box();assert r['x']>=12 and r['x']+r['width']<=width-12,r
    t=page.locator('.bday-music__title').bounding_box();assert r['y']+r['height']<=t['y']-12,(r,t)
    state=page.evaluate('()=>({index:__birthday.audio.index,time:__birthday.audio.clock()})')
@@ -149,7 +169,7 @@ try:
    page.wait_for_timeout(3100)
    page.evaluate('()=>__birthday.teardown()');page.set_viewport_size({'width':width,'height':height});assert page.locator('#bday-music').count()==0
    assert not errors,errors
-   results[key]={'layout':layout,'greeting':greeting,'left_grip':True,'drag':True,'clamped':True,'controls_preserved':True,'keyboard':True,'no_mini':True,'normal_shortcuts_disabled':True,'resize':True,'cleanup':True,'saved_unlock':True,'manual_while_paused':True,'pause_bars':True,'charging':True,'reduced_charge':True,'errors':errors}
+   results[key]={'layout':layout,'greeting':greeting,'left_grip':True,'drag':True,'clamped':True,'controls_preserved':True,'keyboard':True,'no_mini':True,'normal_shortcuts_disabled':True,'resize':True,'cleanup':True,'saved_unlock':True,'manual_while_paused':True,'transport_svg':True,'transport_centered':True,'transport_geometry_unchanged':True,'charging':True,'reduced_charge':True,'errors':errors}
    context.close()
   browser.close()
 finally:server.shutdown()

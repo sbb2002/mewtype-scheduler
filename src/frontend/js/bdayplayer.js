@@ -14,9 +14,10 @@ const EFFECTS=[
 const SPEAKER_BODY='M3 7.5v5h3l4.5 3.5V4L6 7.5z',SPEAKER_ON=SPEAKER_BODY+'M13 7.5a3.5 3.5 0 0 1 0 5M15.2 5a7 7 0 0 1 0 10',SPEAKER_OFF=SPEAKER_BODY+'M3 3l14 14';
 // 짧게 누름 = tap, 0.5초 이상 눌렀다 뗌 = hold. down 은 누르는 순간(박자에 맞춰야 하는 효과용).
 const HOLD_MS=500,HOLD_HELP={fireworks:'폭죽 — 클릭 1발 · 길게 누르면 연속 켜기/끄기',pulse:'태양 펄스 — 클릭 1파 · 누르고 있으면 박마다 파동 · 떼면 다음 박에 큰 펄스',sign:'YMMT 별자리 — 길게 누르면 유노 사인'};
-function holdable(b,{down,tap,hold,charge,cancel},signal){
+function holdable(b,{down,tap,hold,charge,cancel,ms=HOLD_MS},signal){
+ b.style.setProperty('--hold-ms',ms+'ms');
  let timer=0,charged=false,active=false;
- const begin=()=>{if(active||b.disabled)return;active=true;charged=false;b.setAttribute('data-charging','');down?.();timer=setTimeout(()=>{charged=true;b.setAttribute('data-charged','');charge?.()},HOLD_MS)};
+ const begin=()=>{if(active||b.disabled)return;active=true;charged=false;b.setAttribute('data-charging','');down?.();timer=setTimeout(()=>{charged=true;b.setAttribute('data-charged','');charge?.()},ms)};
  const finish=run=>{if(!active)return;active=false;clearTimeout(timer);b.removeAttribute('data-charging');b.removeAttribute('data-charged');if(run&&!b.disabled)(charged?hold:tap)?.();else if(charged)cancel?.()};
  const on=(type,fn)=>b.addEventListener(type,fn,{signal});
  on('pointerdown',e=>{if(e.button)return;b.setPointerCapture?.(e.pointerId);begin()});on('pointerup',()=>finish(true));on('pointercancel',()=>finish(false));on('lostpointercapture',()=>finish(false));on('blur',()=>finish(false));
@@ -24,6 +25,14 @@ function holdable(b,{down,tap,hold,charge,cancel},signal){
  on('contextmenu',e=>e.preventDefault());
 }
 function icon(path){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),p=document.createElementNS(ns,'path');svg.setAttribute('viewBox','0 0 20 20');svg.setAttribute('aria-hidden','true');p.setAttribute('d',path);svg.append(p);return svg}
+// 유메미타 플레이어와 같은 24px 도형·채움 비율을 사용한다.
+const TRANSPORT_ICONS={play:'M7 4v16l13-8z',pause:'M6 4h4v16H6zM14 4h4v16h-4z',prev:'M6 4h2v16H6zM20 4v16L9 12z',next:'M16 4h2v16h-2zM4 4v16l11-8z'};
+function setTransportIcon(svg,name){
+ svg.setAttribute('data-icon',name);svg.firstChild.setAttribute('d',TRANSPORT_ICONS[name]);
+ // 삼각형의 면적 중심을 막대 두 개의 중심과 맞춘다(18px 표시에서 0.5px 보정).
+ svg.firstChild.setAttribute('transform',name==='play'?'translate(0.6666667 0)':'translate(0 0)');
+}
+function transportIcon(name){const svg=icon(TRANSPORT_ICONS[name]);svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('class','bday-transport-icon');svg.setAttribute('focusable','false');setTransportIcon(svg,name);return svg}
 export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
   let dead=false,raf=0,idle=0,intro=true,lastIndex=-1,ready=false,starting=false,unsub;
@@ -37,9 +46,9 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const grip=el('button','bday-grip');grip.type='button';grip.setAttribute('aria-label','음악 플레이바 이동');grip.title='잡고 이동 · 방향키로 이동 · Home으로 원래 위치';
   const dots=el('span','bday-grip__dots');dots.setAttribute('aria-hidden','true');for(let i=0;i<6;i++)dots.append(el('i',''));grip.append(dots);bar.append(grip);
   function button(cls,label,text,fn){const b=el('button','bday-ib '+cls,text);b.type='button';b.setAttribute('aria-label',label);b.addEventListener('click',e=>{e.stopPropagation();if(!reduced()){const r=el('span','bday-ripple');b.append(r);r.addEventListener('animationend',()=>r.remove(),{once:true})}if(navigator.vibrate)navigator.vibrate(10);Promise.resolve(fn()).catch(()=>{prompt.hidden=false})},{signal});bar.append(b);return b}
-  const prev=button('prev','이전 곡','◀│',()=>audio.previous());
-  const pp=button('pp','재생','▶',()=>audio.toggle());
-  const next=button('next','다음 곡','│▶',()=>audio.next());
+  const prev=button('prev','이전 곡','',()=>audio.previous());prev.append(transportIcon('prev'));
+  const pp=button('pp','재생','',()=>audio.toggle()),ppIcon=transportIcon('play');pp.append(ppIcon);
+  const next=button('next','다음 곡','',()=>audio.next());next.append(transportIcon('next'));
   const mute=button('mute','음소거','',()=>audio.mute()),speaker=icon(SPEAKER_ON);mute.append(speaker);
   const vol=el('label','bday-volume'),range=el('input',''),tip=el('output','bday-vtip');range.type='range';range.min=0;range.max=1;range.step=.01;range.setAttribute('aria-label','음악 볼륨');vol.append(range,tip);bar.append(vol);
   range.addEventListener('input',()=>audio.setVolume(+range.value),{signal});
@@ -49,8 +58,8 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
    const b=button('effect '+kind,label,'',()=>{if(held)return;const on=scene.triggerManual(kind);if(toggle)b.setAttribute('aria-pressed',String(on))});
    if(toggle)b.setAttribute('aria-pressed','false');b.title=HOLD_HELP[kind]||label;b.append(icon(path));effects.append(b);
    if(kind==='fireworks')holdable(b,{tap:()=>scene.triggerManual('shot'),hold:()=>b.setAttribute('aria-pressed',String(scene.triggerManual('fireworks')))},signal);
-   // 펄스는 박자에 맞출 수 있게 누르는 순간 한 파가 나간다. 0.5초 넘게 누르면 곡의 박마다 파동이 나가고, 떼면 다음 박에 큰 펄스.
-   if(kind==='pulse')holdable(b,{down:()=>scene.triggerManual('pulse'),charge:()=>scene.pulseHold(true),hold:()=>scene.pulseHold(false),cancel:()=>scene.pulseHold(false,false)},signal);
+   // 펄스는 박자에 맞출 수 있게 누르는 순간 한 파가 나간다. 0.3초 넘게 누르면 곡의 박마다 파동이 나가고, 떼면 다음 박에 큰 펄스.
+   if(kind==='pulse')holdable(b,{down:()=>scene.triggerManual('pulse'),charge:()=>scene.pulseHold(true),hold:()=>scene.pulseHold(false),cancel:()=>scene.pulseHold(false,false),ms:300},signal);
    if(kind==='sign')holdable(b,{tap:()=>scene.triggerManual('ymmt'),hold:()=>scene.triggerManual('sign')},signal);
   }
   // 유노 얼굴 = 「밤 풍경 더 보기」 다시 보기. 재생 중에는 효과 버튼을 잠시 잠근다(켜 둔 토글은 그대로).
@@ -65,7 +74,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   shell.append(bar,title,disc,prompt);document.body.append(shell);
   const drag=mountBirthdayPlayerDrag({bar,grip,shell,title,disc});
   function update(){
-    pp.textContent=audio.paused?'▶':'';pp.classList.toggle('is-paused-icon',!audio.paused);pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
+    const ppName=audio.paused?'play':'pause';if(ppIcon.getAttribute('data-icon')!==ppName)setTransportIcon(ppIcon,ppName);pp.replaceChildren(ppIcon);pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
     scene.setEyesClosed(audio.silent);speaker.firstChild.setAttribute('d',audio.silent?SPEAKER_OFF:SPEAKER_ON);mute.setAttribute('aria-pressed',String(audio.muted));
     range.value=audio.volume;range.style.setProperty('--v',audio.volume*100+'%');tip.textContent=Math.round(audio.volume*100)+'%';shell.classList.toggle('playing',!audio.paused);
     if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪ '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}

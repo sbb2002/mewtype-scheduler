@@ -27,8 +27,8 @@ const skySign=(()=>{
  return {strokes,segs,T,INTRO,core:layer(false),glow:layer(true)};
 })();
 function skySignPos(age){const ss=skySign.segs,t=Math.max(0,Math.min(skySign.T,age));let lo=0,hi=ss.length-1;while(lo<hi){const m=(lo+hi)>>1;if(ss[m].end<t)lo=m+1;else hi=m}const s=ss[lo],q=djClamp15((t-s.start)/(s.end-s.start));return [s.a[0]+(s.b[0]-s.a[0])*q,s.a[1]+(s.b[1]-s.a[1])*q,Math.atan2(s.b[1]-s.a[1],s.b[0]-s.a[0])]}
-// 궤적 세기: 밝은 획은 0.5초 만에 옅은 궤적으로 넘어가고, 가장 옅은 색 구간(세기 25% 아래)은 2.63초 남는다(8.1초 기준 30% 연장).
-const trailStrength=dt=>dt<=.5?djClamp15(1-.45*dt/.5):dt<=6.075?.55-.3*(dt-.5)/5.575:djClamp15(.25*(1-(dt-6.075)/2.63));
+// 궤적 세기: 8.1초에 걸쳐 옅어지고, 가장 옅은 색 구간(세기 25% 아래)만 30% 오래(2.03 → 2.63초) 남는다.
+const trailStrength=dt=>dt<=6.075?djClamp15(1-dt/8.1):djClamp15(.25*(1-(dt-6.075)/2.63));
 function skySignDraw(c,f,age){
  c.save();c.translate(55,30);c.scale(.88,.88);c.translate(-55,-30);skySignDrawOriginal(c,f,age);c.restore();
 }
