@@ -369,7 +369,7 @@ function sunPulse(c,age,k=1,lite=false){
 }
 // 버튼을 누르고 있는 동안의 파동. 얇은 고리 하나이며 마디의 박마다 모양이 다르다. reach = 퍼지는 거리(클릭 펄스 430).
 const SMALL_WAVE={name:'small',life:1.6,reach:215,width:3};
-const HOLD_WAVES=[SMALL_WAVE,SMALL_WAVE,{name:'back',life:.38,reach:60,width:2,back:true,color:'#ffd36b'},{name:'medium',life:1.6,reach:320,width:4.5}];
+const HOLD_WAVES=[SMALL_WAVE,SMALL_WAVE,{name:'back',life:.38,reach:60,width:2,back:true,color:'#ffd36b'},{name:'medium',life:1.6/.95,reach:320,width:8,color:'#ff78ab'}];
 function sunWave(c,age,{life,reach,width,back,color=P}){
  const u=age/life,e=djEase15(age/.09)*djEase15((life-age)/.09),a=e*(back?.9:(1-.75*u)*.8),w=back?width*(.5+.5*u):width*(1-.66*u),r=104+reach*(back?1-u*u:u);
  c.strokeStyle=color;c.beginPath();c.arc(850,267,r,0,Math.PI*2);c.globalAlpha=a*.2;c.lineWidth=w+7;c.stroke();c.globalAlpha=a;c.lineWidth=w;c.stroke();
@@ -452,14 +452,20 @@ if(type===5){
  const field=a=>{
   let e=0;for(const h of lobes){const d=Math.abs(Math.atan2(Math.sin(a-h.a),Math.cos(a-h.a)))/h.w;if(d<1)e+=h.e*((1-h.m)*Math.cos(d*Math.PI/2)**2+h.m*(1-d)**4)}return Math.min(1.2,e)*peak;
  };
- const lengths=Array.from({length:88},(_,i)=>{const a=i/88*TAU-Math.PI/2;return 3+peak*(4*presence+4*E.high*(.5+.5*Math.sin(5*a+bp*.12)))+138*field(a)});
+ // 전기 노이즈: LED 처럼 들썩이도록 소리 세기를 따라 살 묶음이 초당 14번 튀어 올랐다가 가라앉는다. 박 사이에도 움직이고, 곡 시각으로 정해져 탐색해도 같다.
+ const hop=t*14,step=Math.floor(hop),rest=hop-step,lift=(i,k)=>{const h=j=>spectrumHash19(((j%88)+88)%64,k%4096+((j%88)+88>>6)*997);return (h(i)**2+.6*h(i-1)**2+.6*h(i+1)**2)/2.2};
+ const buzz=Array.from({length:88},(_,i)=>Math.max(lift(i,step),lift(i,step-1)*(1-rest)**2));
+ const buzzSize=peak*(10+34*clamp(.55*presence+.6*E.high));
+ const lengths=Array.from({length:88},(_,i)=>{const a=i/88*TAU-Math.PI/2;return 3+peak*(4*presence+4*E.high*(.5+.5*Math.sin(5*a+bp*.12)))+138*field(a)+buzzSize*buzz[i]});
  c.save();c.beginPath();c.rect(-2000,-2000,5200,2395);c.clip();
  sunTransform(c);const cx=850,cy=267,segment=(a,r,len)=>{c.beginPath();c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len));c.stroke()};
  c.lineCap='round';
  // 후광 선은 많아서 선마다 그라데이션 · 그림자를 두지 않고 한 경로로 묶는다.
  {const r=baseR+5,fade=c.createRadialGradient(cx,cy,r,cx,cy,r+150);fade.addColorStop(0,'#7844ba88');fade.addColorStop(1,'#7844ba00');c.strokeStyle=fade;c.lineWidth=.9;c.globalAlpha=.5+.4*presence;c.beginPath();
-  for(let i=0;i<180;i++){const a=i/180*TAU,len=8+130*field(a)+peak*12*E.high;c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len))}c.stroke()}
- c.beginPath();for(let i=0;i<=256;i++){const a=i/256*TAU,r=baseR-3+2*breath+30*field(a),xx=cx+Math.cos(a)*r,yy=cy+Math.sin(a)*r;i?c.lineTo(xx,yy):c.moveTo(xx,yy)}
+  for(let i=0;i<180;i++){const a=i/180*TAU,len=8+130*field(a)+peak*12*E.high+.7*buzzSize*buzz[(Math.round(i*88/180)+66)%88];c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len))}c.stroke()}
+ // 원형 띠도 같은 노이즈로 들썩인다. 바깥쪽으로만 밀어 태양에는 닿지 않는다(살 사이는 이어 그려 부드럽게).
+ const ringBuzz=a=>{const p=((a+Math.PI/2)/TAU*88%88+88)%88,i=Math.floor(p),f=p-i;return Math.min(12,.4*buzzSize*(buzz[i]*(1-f)+buzz[(i+1)%88]*f))};
+ c.beginPath();for(let i=0;i<=256;i++){const a=i/256*TAU,r=baseR-3+2*breath+30*field(a)+ringBuzz(a),xx=cx+Math.cos(a)*r,yy=cy+Math.sin(a)*r;i?c.lineTo(xx,yy):c.moveTo(xx,yy)}
  c.closePath();c.strokeStyle=P;c.lineWidth=1.9;c.globalAlpha=.6+.4*presence;c.stroke();
  const spokes=(color,alpha,width,pick)=>{c.strokeStyle=color;c.globalAlpha=alpha;c.lineWidth=width;c.beginPath();for(let i=0;i<88;i++){if(!pick(i))continue;const a=i/88*TAU-Math.PI/2,r=baseR+5,len=lengths[i];c.moveTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);c.lineTo(cx+Math.cos(a)*(r+len),cy+Math.sin(a)*(r+len))}c.stroke()};
  const body=.7+.3*presence,lit=lengths.map((_,i)=>Math.min(4,Math.ceil(clamp(field(i/88*TAU-Math.PI/2)*1.5)*4)));

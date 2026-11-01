@@ -150,7 +150,7 @@
 .bday-effects .fireworks svg,.bday-effects .pulse svg{width:23px;height:23px}
 .bday-effects .effect:hover{transform:none;filter:brightness(1.18)}
 .bday-effects .effect:active{transform:none;box-shadow:inset 0 0 14px #8ae3e244;filter:brightness(1.4)}
-.bday-effects .effect[data-charging]::before{content:"";position:absolute;bottom:0;left:2px;right:2px;height:3px;border-radius:2px;background:#9cffff;box-shadow:0 0 7px #8affff;transform-origin:left;animation:bday-hold-fill .1s linear forwards;pointer-events:none}
+.bday-effects .effect[data-charging]::before{content:"";position:absolute;bottom:0;left:2px;right:2px;height:3px;border-radius:2px;background:#9cffff;box-shadow:0 0 7px #8affff;transform-origin:left;animation:bday-hold-fill .2s linear forwards;pointer-events:none}
 .bday-effects .effect[data-charged]{box-shadow:inset 0 0 0 1px #ffe7a8,0 0 10px #ffdc8a66;background:#ffd48b2b;color:#fff2cb}
 .bday-effects .effect[data-charged]::before{animation:none;transform:scaleX(1);background:#fff0c7;box-shadow:0 0 9px #ffda7a}
 @keyframes bday-hold-fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}

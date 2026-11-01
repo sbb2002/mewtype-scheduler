@@ -12,8 +12,8 @@ const EFFECTS=[
  ['shower','유성우','M17 2l-7 7M11 3L6 8M17 8l-6 6M9 10.5h.01M5 9.5h.01M10 15.5h.01'],
 ];
 const SPEAKER_BODY='M3 7.5v5h3l4.5 3.5V4L6 7.5z',SPEAKER_ON=SPEAKER_BODY+'M13 7.5a3.5 3.5 0 0 1 0 5M15.2 5a7 7 0 0 1 0 10',SPEAKER_OFF=SPEAKER_BODY+'M3 3l14 14';
-// 짧게 누름 = tap, 0.1초 이상 눌렀다 뗌 = hold. down 은 누르는 순간(박자에 맞춰야 하는 효과용).
-const HOLD_MS=100,HOLD_HELP={fireworks:'폭죽 — 클릭 1발 · 길게 누르면 연속 켜기/끄기',pulse:'태양 펄스 — 클릭 1파 · 누르고 있으면 박마다 파동 · 떼면 다음 박에 큰 펄스',sign:'YMMT 별자리 — 길게 누르면 유노 사인'};
+// 짧게 누름 = tap, 0.2초 이상 눌렀다 뗌 = hold. down 은 누르는 순간(박자에 맞춰야 하는 효과용).
+const HOLD_MS=200,HOLD_HELP={fireworks:'폭죽 — 클릭 1발 · 길게 누르면 연속 켜기/끄기',pulse:'태양 펄스 — 클릭 1파 · 누르고 있으면 박마다 파동 · 떼면 다음 박에 큰 펄스',sign:'YMMT 별자리 — 길게 누르면 유노 사인'};
 function holdable(b,{down,tap,hold,charge,cancel},signal){
  let timer=0,charged=false,active=false;
  const begin=()=>{if(active||b.disabled)return;active=true;charged=false;b.setAttribute('data-charging','');down?.();timer=setTimeout(()=>{charged=true;b.setAttribute('data-charged','');charge?.()},HOLD_MS)};
@@ -57,7 +57,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
    const b=button('effect '+kind,label,'',()=>{if(held)return;const on=scene.triggerManual(kind);if(toggle)b.setAttribute('aria-pressed',String(on))});
    if(toggle)b.setAttribute('aria-pressed','false');b.title=HOLD_HELP[kind]||label;b.append(icon(path));effects.append(b);
    if(kind==='fireworks')holdable(b,{tap:()=>scene.triggerManual('shot'),hold:()=>b.setAttribute('aria-pressed',String(scene.triggerManual('fireworks')))},signal);
-   // 펄스는 박자에 맞출 수 있게 누르는 순간 한 파가 나간다. 0.1초 넘게 누르면 곡의 박마다 파동이 나가고, 떼면 다음 박에 큰 펄스.
+   // 펄스는 박자에 맞출 수 있게 누르는 순간 한 파가 나간다. 0.2초 넘게 누르면 곡의 박마다 파동이 나가고, 떼면 다음 박에 큰 펄스.
    if(kind==='pulse')holdable(b,{down:()=>scene.triggerManual('pulse'),charge:()=>scene.pulseHold(true),hold:()=>scene.pulseHold(false),cancel:()=>scene.pulseHold(false,false)},signal);
    if(kind==='sign')holdable(b,{tap:()=>scene.triggerManual('ymmt'),hold:()=>scene.triggerManual('sign')},signal);
   }
