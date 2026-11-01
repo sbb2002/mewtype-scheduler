@@ -23,6 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
+| v4.11.5 | `5aa3cca` | 2026-11-02 01:50 | `feat/long-press-copy` | 병합 커밋 | 프론트만 · 새 기능이지만 운영자가 일반 패치로 지정 · PR #137 · Vercel 프로덕션 success(`mewtype-scheduler-k52kidvwa-sbb2002`) · 운영 파일 7개 일치 |
 | v4.11.4 | `11c09c4` | 2026-11-01 21:34 | `hotfix/birthday-bottom-labels` | 병합 커밋 | 프론트만 · 운영자 지시 · PR #135 · Vercel 프로덕션 success(`mewtype-scheduler-o0fe3kq9f-sbb2002`) · 운영 파일 2개 일치 |
 | v4.11.3 | `fa8acda` | 2026-11-01 21:15 | `feat/birthday-story` | 병합 커밋 | 프론트만 · 운영자 지정 일반 패치 · PR #133 · Vercel 프로덕션 success(`mewtype-scheduler-ch2dv56mp`) · 운영 파일 21개 일치 |
 | v4.11.2 | `ba2b65b` | 2026-11-01 01:30 | `hotfix/birthday-greeting-motion` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 · PR #131 · Vercel READY(`dpl_4JTKp22MjRpckyTmzU1S7pxysFqz`) |
@@ -233,6 +234,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
 | v3.8.9a | `4b176e4` | 09-23 13:41 | v3.8.9 후속 |
 
 - **v4.11.5** (일반 패치, 2026-11-02 — 브랜치 `feat/long-press-copy`, 프론트만, 운영자 지정 등급): **예고를 길게 눌러 주소 복사 + 첫 안내 말풍선.** 오늘 카드 · 이후 예고 카드 · 타임테이블 블록 · 표의 점을 PC · 모바일에서 500ms 누르면 영상 주소(없으면 채널 주소)를 복사한다. 누름 애니메이션은 시안 1안, 알림은 Codex 가 디자인한 2안을 운영자가 합치라고 정했다. 처음 온 사람에게는 화면에 보이는 카드 중 아라레 쪽 · 지금에 가까운 카드 하나에 말풍선을 한 번 띄운다(`mew.tip.long-copy`, 사이트 기록 초기화 전까지). 세부 = `docs/SPEC.md` 「길게 눌러 주소 복사」.
+  - **배포 완료**: 병합 `5aa3cca`(PR #137, 01:50 KST), 태그 `v4.11.5` 원격 게시. Vercel 프로덕션 배포 success(`mewtype-scheduler-k52kidvwa-sbb2002`, GitHub deployment 7476023793). 운영 도메인의 변경 파일 7개가 병합 코드와 일치하고, 운영 페이지(`?va=claude`, 헤드리스)에서 v4.11.5 · 대상 부품 14개 · 말풍선 · 페이지 오류 0건을 확인했다(4xx 는 기존 favicon 404 뿐). 롤백 = `2250b4c`(v4.11.4 완료 표기 병합 커밋).
   - 변경 파일: 새 `js/longcopy.js` · `css/longcopy.css` · `longcopy.selfcheck.mjs`, `timetable.js` · `render.js` · `main.js` · `index.html` · 범례 문구.
   - 검증: selfcheck 3종 통과. 헤드리스 Chrome 에 가짜 preview 를 넣은 실제 화면 시험 — 마우스 · 터치 입력으로 복사 · 클립보드 내용 · click 차단 · 이동 취소 · 채널 문구 · 점 링 · 말풍선(첫 방문 · 재방문 · 기록 삭제 · 6초 닫힘 · 모바일 슬라이드 힌트 중 유지) · 390px 가로 넘침 없음 · 페이지 오류 없음. 시험 중 모바일 슬라이드 힌트의 스크롤에 말풍선이 바로 닫히는 문제를 찾아, 카드를 따라가게 고쳤다.
   - 미확인: 실제 iPhone Safari 의 손 뗄 때 복사 경로 · 실제 휴대폰 터치와 진동 · 저사양 기기 · 생일 유리 스킨 위 채움 · 실제 아바타 색이 점 링에 들어가는 것(시험에서는 값이 비어 보라색 기본값).
