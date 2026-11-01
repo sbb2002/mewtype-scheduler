@@ -34,7 +34,7 @@ try:
     elif '/birthdayui.js' in r.request.url:
      r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/birthdayui.js').read_text(encoding='utf8')+';window.__birthday={get scene(){return ctrl},get audio(){return music},teardown};')
     elif '/bdayscene-yuno.js' in r.request.url:
-     r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace("function addPulse(big,thin){","function addPulse(big,thin){(window.__pulseLog??=[]).push(big?'pulse-big':thin?'pulse-thin':'pulse');").replace('return {skyBusy(t)','return {testPlan(){return skyPlan(TRK)},stopForTest(){cancelAnimationFrame(raf);raf=0},testGrand(a){manual.start=performance.now()/1000-a;cancelAnimationFrame(raf);raf=0;draw(clock());return {reveal:manual.f.reveal,end:manual.f.end}},testSign(a){const e=manualEffects.get("sign");e.start=performance.now()/1000-a;cancelAnimationFrame(raf);raf=0;draw(clock())},resumeForTest(){resume()},testFrame(){return window.__toDataURL.call(canvas,"image/png")},testState(){return {shots:shots.length,pulses:pulses.length,fireworks:!!toggles.fireworks,stopping:!!toggles.fireworks?.stopAt,shower:!!toggles.shower,effects:[...manualEffects.keys()]}},skyBusy(t)'))
+     r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace("function addPulse(big,wave){","function addPulse(big,wave){(window.__pulseLog??=[]).push(big?'pulse-big':wave?wave.name:'pulse');").replace('return {skyBusy(t)','return {testPlan(){return skyPlan(TRK)},stopForTest(){cancelAnimationFrame(raf);raf=0},testGrand(a){manual.start=performance.now()/1000-a;cancelAnimationFrame(raf);raf=0;draw(clock());return {reveal:manual.f.reveal,end:manual.f.end}},testSign(a){const e=manualEffects.get("sign");e.start=performance.now()/1000-a;cancelAnimationFrame(raf);raf=0;draw(clock())},resumeForTest(){resume()},testFrame(){return window.__toDataURL.call(canvas,"image/png")},testState(){return {shots:shots.length,pulses:pulses.length,fireworks:!!toggles.fireworks,stopping:!!toggles.fireworks?.stopAt,shower:!!toggles.shower,effects:[...manualEffects.keys()]}},skyBusy(t)'))
     elif '/bdaystory.js' in r.request.url:
      r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/bdaystory.js').read_text(encoding='utf8').replace('const talk=!reward.unlocked','const talk=!reward.unlocked||window.__forceTalk'))
     elif '/bdaystorylogic.js' in r.request.url:
@@ -71,7 +71,7 @@ try:
    page.evaluate('async()=>{await __birthday.audio.play();window.__pulseLog=[]}')
    box=pulse.bounding_box();page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down();page.wait_for_timeout(2500);page.mouse.up()
    page.wait_for_function("__pulseLog.includes('pulse-big')",timeout=3000);log=page.evaluate('__pulseLog');page.evaluate('__birthday.audio.pause()')
-   assert log[-1]=='pulse-big' and 4<=log.count('pulse-thin')<=8,log
+   waves=[x for x in log if x in ('small','back','medium')];assert log[-1]=='pulse-big' and 2<=len(waves)<=6 and ','.join(waves) in ','.join(['small','small','back','medium']*4),log
    page.screenshot(path=str(OUT/f'{width}x{height}-pulse-big.png'))
    # 별자리 · 사인: 클릭 = YMMT, 길게 = 사인, 나중에 누른 쪽으로 바뀐다.
    sign.click();assert state()['effects']==['ymmt'],state();page.wait_for_timeout(3000);page.screenshot(path=str(OUT/f'{width}x{height}-ymmt-button.png'))

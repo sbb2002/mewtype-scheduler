@@ -358,10 +358,12 @@ function sunPulse(c,age,k=1,lite=false){
  for(let j=0;j<20;j++){const ang=j*Math.PI/10,len=45*(1-u);c.moveTo(850+Math.cos(ang)*111,267+Math.sin(ang)*111);c.lineTo(850+Math.cos(ang)*(111+len),267+Math.sin(ang)*(111+len))}
  glowStroke(c,k*e*.7*(1-u),3,9);
 }
-// 버튼을 누르고 있는 동안의 반 박 펄스: 얇은 고리 하나가 클릭 펄스의 절반 거리만 간다.
-function sunThinPulse(c,age){
- const u=age/PULSE_LIFE.small,e=djEase15(age/.09)*djEase15((PULSE_LIFE.small-age)/.09),width=3-2*u,a=e*(1-.75*u)*.8;
- c.strokeStyle=P;c.beginPath();c.arc(850,267,104+215*u,0,Math.PI*2);c.globalAlpha=a*.2;c.lineWidth=width+7;c.stroke();c.globalAlpha=a;c.lineWidth=width;c.stroke();
+// 버튼을 누르고 있는 동안의 파동. 얇은 고리 하나이며 마디의 박마다 모양이 다르다. reach = 퍼지는 거리(클릭 펄스 430).
+const SMALL_WAVE={name:'small',life:1.6,reach:215,width:3};
+const HOLD_WAVES=[SMALL_WAVE,SMALL_WAVE,{name:'back',life:.38,reach:120,width:2,back:true},{name:'medium',life:1.6,reach:320,width:4.5}];
+function sunWave(c,age,{life,reach,width,back}){
+ const u=age/life,e=djEase15(age/.09)*djEase15((life-age)/.09),a=e*(back?.9:(1-.75*u)*.8),w=back?width*(.5+.5*u):width*(1-.66*u),r=104+reach*(back?1-u*u:u);
+ c.strokeStyle=P;c.beginPath();c.arc(850,267,r,0,Math.PI*2);c.globalAlpha=a*.2;c.lineWidth=w+7;c.stroke();c.globalAlpha=a;c.lineWidth=w;c.stroke();
 }
 // 길게 눌렀다 뗀 큰 펄스: 고리 3겹이 시차를 두고 멀리 퍼지고, 빛살이 더 많고 길다.
 function sunBigPulse(c,age){
@@ -564,10 +566,10 @@ function floorWave(c,type,t){
  const manualEffects=new Map(),toggles={fireworks:null,shower:null},shots=[],pulses=[];let toggleParticles=0,lastShot=-Infinity,pulseHolding=false,holdIndex=-1,pendingBig=null;
  const hasManual=()=>!!manual||manualEffects.size>0,hasToggles=()=>!!toggles.fireworks||!!toggles.shower||shots.length>0||pulses.length>0||pulseHolding||!!pendingBig;
  // 클릭 파는 나올 때 정한 모양으로 끝까지 간다. 많이 겹치면 고리 하나로 시작한다.
- function addPulse(big,thin){const now=performance.now()/1000,lite=!big&&!thin&&pulses.filter(p=>!p.big&&!p.thin&&now-p.start<PULSE_LIFE.small).length>=2;pulses.push({start:now,big,thin,lite});if(pulses.length>16)pulses.shift();lastT=null;resume()}
- // 펄스 버튼을 누르고 있는 동안 곡의 반 박마다 한 파씩, 떼면 바로 다음 박에 큰 펄스. 일시정지라 박이 오지 않으면 시간으로 대신한다.
+ function addPulse(big,wave){const now=performance.now()/1000,lite=!big&&!wave&&pulses.filter(p=>!p.big&&!p.wave&&now-p.start<PULSE_LIFE.small).length>=2;pulses.push({start:now,big,wave,lite});if(pulses.length>16)pulses.shift();lastT=null;resume()}
+ // 펄스 버튼을 누르고 있는 동안 곡의 박마다 마디 안 순서대로 한 파씩(1·2박 작게, 3박 안으로 되돌아오게, 4박 중간), 떼면 바로 다음 박에 큰 펄스. 일시정지라 박이 오지 않으면 시간으로 대신한다.
  function stepPulseHold(t,wall){
-  if(pulseHolding&&TRK){const B=TRK.beats,j=beatIdx(t),half=j+1<B.length&&t>=(B[j]+B[j+1])/2?j*2+1:j*2;if(holdIndex>=0&&half!==holdIndex)addPulse(false,true);holdIndex=half}
+  if(pulseHolding&&TRK){const j=beatIdx(t);if(holdIndex>=0&&j!==holdIndex)addPulse(false,HOLD_WAVES[j%4]);holdIndex=j}
   if(pendingBig&&(t>=pendingBig.at||wall>=pendingBig.deadline)){pendingBig=null;addPulse(true)}
  }
  function drawToggles(wall){
@@ -630,7 +632,7 @@ function floorWave(c,type,t){
   while(pulses.length&&wall-pulses[0].start>=PULSE_LIFE.big)pulses.shift();
   if(!pulses.length)return;
   const v=skyViewport;c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();c.lineCap='round';sunTransform(c);
-  for(const p of pulses){const age=wall-p.start;if(p.big)sunBigPulse(c,age);else if(age>=PULSE_LIFE.small)continue;else if(p.thin)sunThinPulse(c,age);else sunPulse(c,age,1,p.lite)}
+  for(const p of pulses){const age=wall-p.start;if(p.big)sunBigPulse(c,age);else if(p.wave){if(age<p.wave.life)sunWave(c,age,p.wave)}else if(age<PULSE_LIFE.small)sunPulse(c,age,1,p.lite)}
   c.restore();
  }
  // 완성된 YMMT 네온을 한 번만 구워 둔다. 층 구성은 사인(skySign.glow · core)과 같고 색만 파랗다. k = 사인 두께 대비 배율.
