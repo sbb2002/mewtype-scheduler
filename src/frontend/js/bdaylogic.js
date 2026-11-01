@@ -30,13 +30,15 @@ export function fitSkySign(view,portrait=false,place='center'){
  const left=signLeft(view);return left.scale>=center.scale*.9?left:center;
 }
 // 「밤 풍경 더 보기」 — 사인과 YMMT 를 겹치지 않게 나눈다(가로 = 좌우, 세로 = 위아래).
+// UFO 사인은 칸보다 작게 그려지므로(0.88배, 왼쪽 위 기준) 실제 획 + ±4도 + UFO · 글로우 여백까지만 비워 두고 남는 하늘을 YMMT 에 준다.
+const GRAND_SIGN_RIGHT=224,GRAND_SIGN_BOTTOM=150;
 export function grandLayout(view,portrait=false){
  if(portrait){
-  const sign=fitSkySign(view,true),top=sign.cy+SIGN_H*sign.scale/2+10,bottom=Math.max(top+60,150);
-  return {sign,ymmt:{cx:view.left+view.width/2,cy:(top+bottom)/2,scale:Math.min(view.width*.8/355,(bottom-top)*.8/120)}};
+  const sign=fitSkySign(view,true),top=sign.cy+GRAND_SIGN_BOTTOM*sign.scale,bottom=Math.max(top+60,150);
+  return {sign,ymmt:{cx:view.left+view.width/2,cy:(top+bottom)/2,w:view.width*.96,h:bottom-top}};
  }
- const sign=signLeft(view),left=sign.cx+SIGN_W*sign.scale/2+8,right=view.left+view.width,bottom=Math.min(view.top+view.height,HEAD_FLOOR);
- return {sign,ymmt:{cx:(left+right)/2,cy:(view.top+bottom)/2,scale:Math.min((right-left)*.92/355,(bottom-view.top)*.85/120)}};
+ const sign=signLeft(view),left=sign.cx+GRAND_SIGN_RIGHT*sign.scale,right=view.left+view.width,bottom=Math.min(view.top+view.height,HEAD_FLOOR);
+ return {sign,ymmt:{cx:(left+right)/2,cy:(view.top+bottom)/2,w:right-left,h:bottom-view.top}};
 }
 export function decodeTrack(t,bands=null) {
   const q=bands?new Uint8Array(bands):Uint8Array.from(atob(t.bands),v=>v.charCodeAt(0));
@@ -79,7 +81,10 @@ export function ymmtLetters(seed=0){
 
 // 방문별 전체 회전. 회전 외곽을 원래 칸에 맞추므로 grandLayout의 분리는 유지된다.
 export function ymmtTilt(seed=0){return Math.sin(seed*127.1+19.73)*8*Math.PI/180}
+// 큰 장면은 w · h 칸을 받아 실제 별자리 외곽(YMMT_INK_W×H)을 회전한 채로 칸에 꽉 채운다.
+export const YMMT_INK_W=345,YMMT_INK_H=110;
 export function fitYmmtRotation(box,angle){
  const c=Math.abs(Math.cos(angle)),s=Math.abs(Math.sin(angle));
+ if(box.w)return {...box,scale:Math.min(box.w/(YMMT_INK_W*c+YMMT_INK_H*s),box.h/(YMMT_INK_W*s+YMMT_INK_H*c)),angle};
  return {...box,scale:box.scale*Math.min(355/(355*c+120*s),120/(355*s+120*c)),angle};
 }

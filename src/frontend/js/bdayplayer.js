@@ -50,7 +50,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const drag=mountBirthdayPlayerDrag({bar,grip,shell,title,disc});
   function update(){
     pp.textContent=audio.paused?'▶':'';pp.classList.toggle('is-paused-icon',!audio.paused);pp.setAttribute('aria-label',audio.paused?'재생':'일시정지');
-    scene.setEyesClosed(audio.muted||!audio.volume);speaker.firstChild.setAttribute('d',audio.muted||!audio.volume?SPEAKER_OFF:SPEAKER_ON);mute.setAttribute('aria-pressed',String(audio.muted));
+    scene.setEyesClosed(audio.silent);speaker.firstChild.setAttribute('d',audio.silent?SPEAKER_OFF:SPEAKER_ON);mute.setAttribute('aria-pressed',String(audio.muted));
     range.value=audio.volume;range.style.setProperty('--v',audio.volume*100+'%');tip.textContent=Math.round(audio.volume*100)+'%';shell.classList.toggle('playing',!audio.paused);
     if(lastIndex!==audio.index){lastIndex=audio.index;const expectedIndex=lastIndex;name.textContent='♪ '+audio.track.title;name.getAnimations().forEach(a=>a.cancel());if(!reduced())name.animate([{opacity:0,transform:'translateY(8px)'},{opacity:1,transform:'none'}],{duration:450});audio.beat.then(t=>{if(!dead&&expectedIndex===audio.index)scene.setTrack(t)});}
   }

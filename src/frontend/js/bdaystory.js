@@ -17,7 +17,7 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  function introVisible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-intro')}
  function paint(){
   if(dead)return;
-  const index=audio.index,time=audio.audio.currentTime,cue=(visible()||introVisible())&&!scene.skyBusy?.(time)?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null,next=cue?.id||'';
+  const index=audio.index,time=audio.audio.currentTime,cue=(visible()||introVisible())&&!audio.silent&&!scene.skyBusy?.(time)?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null,next=cue?.id||'';
   if(next!==key){
    key=next;message.classList.remove('is-visible');
    if(cue){

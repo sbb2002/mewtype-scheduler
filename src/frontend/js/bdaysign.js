@@ -38,10 +38,10 @@ function skySignDrawOriginal(c,f,age){
  if(age<0)return;
  // Eight age bins: a few strokes, no per-segment shadowBlur, no pen-lift connectors.
  const trailEnd=f.end-f.birth,visibility=djClamp15((trailEnd-age)/.4)*(rs>0?Math.exp(-rs*5):1);
- if(visibility>.001){ // 기존 UFO 궤적 효과(9초에 걸쳐 옅어지는 긴 잔상) — 색만 사인과 같은 붉은 분홍 계열
+ if(visibility>.001){ // 기존 UFO 궤적 효과(원래 9초의 90%인 8.1초에 걸쳐 옅어지는 긴 잔상) — 색만 사인과 같은 붉은 분홍 계열
  c.save();c.lineCap='round';c.lineJoin='round';c.lineWidth=2.6;c.shadowColor='#ff488d';
   for(let bin=0;bin<8;bin++){c.beginPath();let any=false;
-   for(const s of skySign.segs){if(!s.pen||s.start>age)continue;const k=djClamp15(1-(age-s.end)/4.5);if(Math.min(7,Math.floor(k*8))!==bin||!k)continue;
+   for(const s of skySign.segs){if(!s.pen||s.start>age)continue;const k=djClamp15(1-(age-s.end)/8.1);if(Math.min(7,Math.floor(k*8))!==bin||!k)continue;
     const q=djClamp15((age-s.start)/(s.end-s.start));c.moveTo(...s.a);c.lineTo(s.a[0]+(s.b[0]-s.a[0])*q,s.a[1]+(s.b[1]-s.a[1])*q);any=true}
    if(any){const k=(bin+.5)/8;c.globalAlpha=.8*k**1.1*visibility;c.strokeStyle=k>.55?'#ff488d':k>.25?'#d63a78':'#8f2a5c';c.shadowBlur=k>.55?6:0;c.stroke()}
   }c.restore();

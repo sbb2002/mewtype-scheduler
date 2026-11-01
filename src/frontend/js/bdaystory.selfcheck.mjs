@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { STORY_CUES, STORY_MAX_GAP, birthdayStoryCue } from './bdaystorylogic.js';
-import { fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation } from './bdaylogic.js';
+import { fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation, YMMT_INK_W, YMMT_INK_H } from './bdaylogic.js';
 import { fireworkFrame } from './bdayfireworks.js';
 
 // 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음
@@ -26,11 +26,13 @@ assert.notDeepEqual(ymmtLetters(7),ymmtLetters(8));
 // 사인 — 어떤 화면에서도 ±4도 기울여 하늘을 벗어나지 않고, 큰 장면에서 YMMT 와 겹치지 않는다
 const corners=(fit,tilt)=>[[45,30],[565,30],[45,375],[565,375]].map(([x,y])=>{const dx=x-305,dy=y-202.5,c=Math.cos(tilt),s=Math.sin(tilt);return [fit.cx+fit.scale*(dx*c-dy*s),fit.cy+fit.scale*(dx*s+dy*c)]});
 const views=[[{left:0,top:0,width:1200,height:395},false],[{left:-200,top:0,width:1600,height:395},false],[{left:0,top:0,width:900,height:395},false],[{left:190,top:-830,width:830,height:1225},true],[{left:230,top:-600,width:740,height:995},true]];
+// UFO 사인의 실제 획 칸(0.88배) + 양쪽 기울임 + UFO 반폭 · 글로우 24.
+const grandSign=fit=>[.07,-.07].flatMap(tilt=>[[32,9],[514,9],[32,333],[514,333]].map(([x,y])=>{const dx=x-305,dy=y-202.5,c=Math.cos(tilt),s=Math.sin(tilt);return [fit.cx+fit.scale*(dx*c-dy*s),fit.cy+fit.scale*(dx*s+dy*c)]}));
 const inside=(v,p)=>p[0]>=v.left-.01&&p[0]<=v.left+v.width+.01&&p[1]>=v.top-.01&&p[1]<=v.top+v.height+.01;
 for(const [view,portrait] of views){
  for(const place of ['center','left'])for(const tilt of [-.07,0,.07])for(const p of corners(fitSkySign(view,portrait,place),tilt))assert.ok(inside(view,p),JSON.stringify([view,place,p]));
- const {sign,ymmt}=grandLayout(view,portrait),rect=corners(sign,.07).concat(corners(sign,-.07)),x=rect.map(p=>p[0]),y=rect.map(p=>p[1]);
- const yl=ymmt.cx-177.5*ymmt.scale,yr=ymmt.cx+177.5*ymmt.scale,yt=ymmt.cy-60*ymmt.scale,yb=ymmt.cy+60*ymmt.scale;
+ const {sign,ymmt}=grandLayout(view,portrait),rect=grandSign(sign),x=rect.map(p=>p[0]),y=rect.map(p=>p[1]);
+ const yl=ymmt.cx-ymmt.w/2,yr=ymmt.cx+ymmt.w/2,yt=ymmt.cy-ymmt.h/2,yb=ymmt.cy+ymmt.h/2;
  assert.ok(Math.max(...x)<=yl||Math.max(...y)<=yt,JSON.stringify(view));
  assert.ok(yl>=view.left-.01&&yr<=view.left+view.width+.01&&yt>=view.top-.01&&yb<=view.top+view.height+.01,JSON.stringify(view));
 }
@@ -42,12 +44,12 @@ for(const [view,portrait] of views)for(let seed=0;seed<2000;seed++){
  const layout=grandLayout(view,portrait);
  const normal={cx:view.left+view.width*.5,cy:view.top+view.height*.35,scale:Math.min(view.width*.8/355,view.height*.48/120)};
  for(const original of [normal,layout.ymmt]){
-  const fit=fitYmmtRotation(original,angle),c=Math.cos(angle),s=Math.sin(angle);
-  for(const [x,y] of [[-177.5,-60],[177.5,-60],[-177.5,60],[177.5,60]]){
+  const fit=fitYmmtRotation(original,angle),c=Math.cos(angle),s=Math.sin(angle),grand=original===layout.ymmt,hw=grand?YMMT_INK_W/2:177.5,hh=grand?YMMT_INK_H/2:60,halfW=grand?original.w/2:177.5*original.scale,halfH=grand?original.h/2:60*original.scale;
+  for(const [x,y] of [[-hw,-hh],[hw,-hh],[-hw,hh],[hw,hh]]){
    const p=[fit.cx+fit.scale*(x*c-y*s),fit.cy+fit.scale*(x*s+y*c)];
    assert.ok(inside(view,p),JSON.stringify({view,seed,p}));
-   assert.ok(Math.abs(p[0]-original.cx)<=177.5*original.scale+.01&&Math.abs(p[1]-original.cy)<=60*original.scale+.01);
-   if(original===layout.ymmt){const sc=corners(layout.sign,.07).concat(corners(layout.sign,-.07));assert.ok(p[0]>=Math.max(...sc.map(v=>v[0]))||p[1]>=Math.max(...sc.map(v=>v[1])))}
+   assert.ok(Math.abs(p[0]-original.cx)<=halfW+.01&&Math.abs(p[1]-original.cy)<=halfH+.01);
+   if(grand){const sc=grandSign(layout.sign);assert.ok(p[0]>=Math.max(...sc.map(v=>v[0]))||p[1]>=Math.max(...sc.map(v=>v[1])))}
   }
  }
 }

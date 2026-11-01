@@ -98,7 +98,7 @@ export async function mountBirthdayAudio(onChange=()=>{}) {
     for(const type of ['play','pause','volumechange'])a.addEventListener(type,()=>{if(!bufferMode)emit()},{signal:events.signal});
   }
   const bufferView={get currentTime(){return currentTime()},set currentTime(t){void seek(t)},get duration(){sync();return buffers[index].duration},get volume(){return 1},get paused(){return !playing},get src(){sync();return urls.get(index)||audios[index].src}};
-  const api={get index(){sync();return index},get track(){sync();return TRACKS[index]},get beat(){sync();return maps.get(index)},get audio(){sync();return bufferMode?bufferView:audios[index]},get volume(){return volume},get muted(){return muted},get paused(){return bufferMode?!playing:audios[index].paused},
+  const api={get index(){sync();return index},get track(){sync();return TRACKS[index]},get beat(){sync();return maps.get(index)},get audio(){sync();return bufferMode?bufferView:audios[index]},get volume(){return volume},get muted(){return muted},get silent(){return muted||!volume},get paused(){return bufferMode?!playing:audios[index].paused},
     clock(){return smoothClock(state,currentTime(),performance.now()/1000,api.paused)},
     play,pause,toggle(){return api.paused?play():Promise.resolve(pause())},next(){return select(api.index+1)},previous(){return select(api.index-1)},seek,
     setVolume(v){volume=Math.min(1,Math.max(0,v));muted=false;applyVolume();try{localStorage.setItem('bday-vol',String(volume))}catch{}emit()},mute(){muted=!muted;applyVolume();emit()},subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn)},
