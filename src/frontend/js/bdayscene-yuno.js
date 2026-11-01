@@ -607,6 +607,10 @@ function floorWave(c,type,t){
   manualEffects.set(kind,{kind,start:performance.now()/1000,dur,f});lastT=null;resume();
  }
  const costs=[];
+ // ?perf 진단: 렉이 걸릴 때 화면 숫자로 원인을 가른다. draw 가 1ms 대면 GPU 그리기, 10ms 이상이면 캔버스가 소프트웨어로 내려간 상태다.
+ const perfBox=new URLSearchParams(location.search).has('perf')?document.createElement('output'):null;let perfN=0,perfMs=0,perfAt=0,perfGpu='';
+ if(perfBox){perfBox.style.cssText='position:fixed;left:8px;top:8px;z-index:99999;padding:6px 8px;background:#000c;color:#8afaff;font:12px/1.5 monospace;white-space:pre;pointer-events:none';document.body.append(perfBox);try{const g=document.createElement('canvas').getContext('webgl'),e=g?.getExtension('WEBGL_debug_renderer_info');perfGpu=e?g.getParameter(e.UNMASKED_RENDERER_WEBGL):'webgl 없음'}catch{perfGpu='확인 불가'}}
+ function perfTick(now,cost){perfN++;perfMs+=cost;if(now-perfAt<1000)return;perfBox.textContent=`${Math.round(perfN*1000/(now-perfAt))}fps · draw ${(perfMs/perfN).toFixed(1)}ms · 품질 ${quality.toFixed(1)}\n${innerWidth}×${innerHeight} · 배율 ${devicePixelRatio}\n${perfGpu}`;perfN=perfMs=0;perfAt=now}
  // 프레임이 41fps 아래로 0.6초쯤 이어지면 입자 · 유성 수를 줄인다. 되돌리는 건 6초 동안 느린 프레임이 없을 때만 — 자주 오르내리면 효과가 깜빡여 오히려 끊겨 보인다.
  let quality=1,slow=0,lastDraw=0,lastSlow=0;
  function pace(now){
@@ -806,9 +810,14 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
   // 기존 🎂 전환 폭죽의 수식·색·지연을 유지한다. 음악 장면 자체와는 별도이며 인트로에는 호출하지 않는다.
   const now=performance.now(),dt=lastFrame?Math.min(.05,(now-lastFrame)/1000):0;lastFrame=now;
   if(parts.length){c.save();c.setTransform(d,0,0,d,0,0);for(const p of parts){p.age+=dt;if(p.age<p.delay)continue;const age=p.age-p.delay;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=20*dt;p.vx*=Math.exp(-dt*.35);c.globalAlpha=Math.max(0,1-age/(p.life||2.1))*.85;drawSpark(c,p.color,p.x,p.y,p.r*3.3)}parts=parts.filter(p=>p.age-p.delay<(p.life||2.1));c.restore()}
+  if(perfBox)perfTick(performance.now(),performance.now()-start);
   costs.push(performance.now()-start);if(costs.length>300)costs.shift();lastT=t;
  }
- function frame(){raf=0;if(dead)return;if(!document.hidden&&visible&&(!still||lastT===null||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)){const t=still?0:clock();if(t!==lastT||parts.length||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)draw(t)}if((!still||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)&&!document.hidden&&visible)raf=requestAnimationFrame(frame)}
+ // 고주사율 모니터에서도 60fps 로 그린다. 주사율만큼 그리면 GPU 를 쉬지 않고 쓰게 된다.
+ let nextPaint=0;
+ function frame(){raf=0;if(dead)return;
+  const paintNow=performance.now();if(paintNow<nextPaint-2){raf=requestAnimationFrame(frame);return}nextPaint=Math.max(nextPaint+1000/60,paintNow);
+  if(!document.hidden&&visible&&(!still||lastT===null||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)){const t=still?0:clock();if(t!==lastT||parts.length||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)draw(t)}if((!still||hasManual()||hasToggles()||performance.now()/1000-returnAt<.6)&&!document.hidden&&visible)raf=requestAnimationFrame(frame)}
  function resume(){if(!dead&&!raf&&!document.hidden&&visible)raf=requestAnimationFrame(frame)}
  function visibility(){if(document.hidden){cancelAnimationFrame(raf);raf=0}else{for(const kind of Object.keys(toggles))if(toggles[kind]?.stopAt)toggles[kind]=null;else if(toggles[kind])toggles[kind].start=performance.now()/1000;lastT=null;resume()}}
  function resize(){layout=null;lastT=null;draw(still?0:clock());resume()}
@@ -839,6 +848,6 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
   celebrate(xRatio,yRatio){if(dead||still||hasManual()||document.hidden||!visible)return;parts=[];const r=host.getBoundingClientRect();const burst=(x,y,delay=0)=>{const colors=['#ff477d','#fff9ec','#efb62f'];for(let i=0;i<40;i++){const a=i*Math.PI*2/40,v=28+Math.random()*50;parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:colors[i%3],r:1+Math.random()*1.6,delay})}};if(Number.isFinite(xRatio)&&Number.isFinite(yRatio))burst(r.width*djClamp15(xRatio),r.height*djClamp15(yRatio));else [[.24,.38],[.76,.27],[.54,.17]].forEach(([x,y],i)=>burst(r.width*x,r.height*y,i*.26));lastFrame=performance.now();resume()},
   finale(){if(hasManual()){pendingFinale=true;return}playFinale()},
   renderAt(t){draw(t)},diagnostics(){return {effect:{...effect},snapshot,ambient:TRK?{blocked:skyPlan(TRK).blocked.map(r=>[...r]),events:skyPlan(TRK).ambient.map(e=>({...e}))}:null,costs:[...costs],layout:sceneLayout(host.clientWidth,host.clientHeight),raf,dead,particles:parts.length}},
-  destroy(){backdrop.destroy();auroraLayer.key=null;if(auroraLayer.cv){auroraLayer.cv.width=0;auroraLayer.cv=null}ymmtLayers.key=0;if(ymmtLayers.glow)ymmtLayers.glow.width=ymmtLayers.core.width=0;dead=true;yunoEyesClosed=false;grandListener=null;manual=null;manualEffects.clear();toggles.fireworks=toggles.shower=null;shots.length=pulses.length=0;pulseHolding=false;pendingBig=null;pendingFinale=false;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
+  destroy(){perfBox?.remove();backdrop.destroy();auroraLayer.key=null;if(auroraLayer.cv){auroraLayer.cv.width=0;auroraLayer.cv=null}ymmtLayers.key=0;if(ymmtLayers.glow)ymmtLayers.glow.width=ymmtLayers.core.width=0;dead=true;yunoEyesClosed=false;grandListener=null;manual=null;manualEffects.clear();toggles.fireworks=toggles.shower=null;shots.length=pulses.length=0;pulseHolding=false;pendingBig=null;pendingFinale=false;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
  };
 }
