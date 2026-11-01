@@ -1,4 +1,5 @@
 import { fireworkFrame, drawFireworkFrame } from './bdayfireworks.js';
+import { createBirthdayBackdrop } from './bdaybackdrop.js';
 // 정본 prototype_v12.html에서 수식·상수를 이식. 카메라/드롭/사인 폭만 정본 명세대로 변경.
 import { createSkySign } from './bdaysign.js';
 import { sceneLayout, introScene, introBrightness, fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation } from './bdaylogic.js';
@@ -519,6 +520,7 @@ function floorWave(c,type,t){
  lightLayer.style.width=lightLayer.style.height='100%';
  function setBrightness(value){canvas.style.filter=`brightness(${value})`;frontLayer.style.filter=`brightness(${value*(1+effect.spot*1.85)})`}
 
+ const backdrop=createBirthdayBackdrop();
  const c=canvas.getContext('2d');let clock=()=>0,still=false,dead=false,raf=0,visible=true,layout=null,lastT=null,parts=[],lastFrame=0;
  let manual=null,returnAt=-Infinity,pendingFinale=false,grandListener=null;
  const manualEffects=new Map(),toggles={fireworks:null,shower:null};let toggleParticles=0;
@@ -611,6 +613,7 @@ function floorWave(c,type,t){
   const waveActive=introActive()&&!still&&t>=17.14&&t<17.64;
   lightLayer.style.display=waveActive?'block':'none';frontLayer.style.display=effect.spot?'block':'none';
   bg(c);
+  backdrop.draw(c,skyViewport,{width:w,height:h},introActive()?.35+.65*effect.rise:1);
   // 하늘의 작은 별은 CSS 픽셀 크기로 그려 모바일에서도 UFO 퇴장 별보다 작고 또렷하다.
   const wall=performance.now()/1000;
   const wasBusy=hasManual();
@@ -708,6 +711,6 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
   celebrate(xRatio,yRatio){if(dead||still||hasManual()||document.hidden||!visible)return;parts=[];const r=host.getBoundingClientRect();const burst=(x,y,delay=0)=>{const colors=['#ff477d','#fff9ec','#efb62f'];for(let i=0;i<40;i++){const a=i*Math.PI*2/40,v=28+Math.random()*50;parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:colors[i%3],r:1+Math.random()*1.6,delay})}};if(Number.isFinite(xRatio)&&Number.isFinite(yRatio))burst(r.width*djClamp15(xRatio),r.height*djClamp15(yRatio));else [[.24,.38],[.76,.27],[.54,.17]].forEach(([x,y],i)=>burst(r.width*x,r.height*y,i*.26));lastFrame=performance.now();resume()},
   finale(){if(hasManual()){pendingFinale=true;return}playFinale()},
   renderAt(t){draw(t)},diagnostics(){return {effect:{...effect},snapshot,ambient:TRK?{blocked:skyPlan(TRK).blocked.map(r=>[...r]),events:skyPlan(TRK).ambient.map(e=>({...e}))}:null,costs:[...costs],layout:sceneLayout(host.clientWidth,host.clientHeight),raf,dead,particles:parts.length}},
-  destroy(){dead=true;yunoEyesClosed=false;grandListener=null;manual=null;manualEffects.clear();toggles.fireworks=toggles.shower=null;pendingFinale=false;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
+  destroy(){backdrop.destroy();dead=true;yunoEyesClosed=false;grandListener=null;manual=null;manualEffects.clear();toggles.fireworks=toggles.shower=null;pendingFinale=false;parts=[];cancelAnimationFrame(raf);raf=0;observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);canvas.remove();frontLayer.remove();lightLayer.remove();spotLayer.width=spotLayer.height=0;lightLayer.width=lightLayer.height=frontLayer.width=frontLayer.height=0;for(const i of images)i.src='';for(const k in FL){FL[k].width=FL[k].height=0}skySign.core.width=skySign.glow.width=0;historyCache.clear();}
  };
 }
