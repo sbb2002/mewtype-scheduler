@@ -1,6 +1,6 @@
 // 정본 prototype_v12.html에서 수식·상수를 이식. 카메라/드롭/사인 폭만 정본 명세대로 변경.
 import { createSkySign } from './bdaysign.js';
-import { sceneLayout, introScene, introBrightness, fitSkySign, ymmtLetters } from './bdaylogic.js';
+import { sceneLayout, introScene, introBrightness, fitSkySign, grandLayout, ymmtLetters } from './bdaylogic.js';
 import { backgroundStars, backgroundFireworks, backgroundMeteors, createAmbientTimeline, ambientVisibility } from './bdaystars.js';
 export function mountYunoScene(host,opts={}) {
 let snapshot=null,activeLayout=null,introActive=()=>false,groundBottom=760;
@@ -208,6 +208,8 @@ const skyForcedMode=new URLSearchParams(location.search).get('ufo');
 function skyMode(T){return skyModes.get(T)||(['sign','zig'].includes(skyForcedMode)?skyForcedMode:skyHash((T.bpm===100?73:25)+404+SKY_SALT*7)<.5?'sign':'zig')}
 const {skySign,skySignPos,skySignDraw}=createSkySign({djClamp15,djEase15,skyStar,skyUFO});
 let skyRoutineAlpha=1;
+const SIGN_TILT=4*Math.PI/180,GRAND_SHOW=9.4;
+const tiltSign=(c,angle)=>{c.translate(305,202.5);c.rotate(angle);c.translate(-305,-202.5)};
 const skyPlans=new WeakMap();
 function skyPlan(T){
  if(skyPlans.has(T)&&skyPlans.get(T).ufos[0].mode===skyMode(T))return skyPlans.get(T);
@@ -224,7 +226,7 @@ function skyPlan(T){
  f.zig=skyMakePath(seed+505,{n:n2,pinIdx:pin,pinX:f.stopX,exitX:-80});
  f.arrive=f.zig.stopU*(f.end-f.birth-f.scan);f.leave=f.arrive+f.scan;
  const mode=skyMode(T),sign=mode==='sign',flight=sign?skySign.T+skySign.INTRO:4.25,reveal=flight+.92,fade=sign?5.5:0;
- const plan={meteors,drop:mid?B[drop]:17.14,quiet:[[B[br],B[en]],[B[320],T.duration]],ufos:[{type:1,mode,birth:B[br],end:sign?B[br]+reveal+fade:B[br]+4.75,flight,reveal,fade,zig:skyMakePath(seed+404)},f]};
+ const plan={meteors,drop:mid?B[drop]:17.14,quiet:[[B[br],B[en]],[B[320],T.duration]],ufos:[{type:1,mode,place:skyHash(seed+606+SKY_SALT)<.5?'left':'center',tilt:(skyHash(seed+707+SKY_SALT)*2-1)*SIGN_TILT,birth:B[br],end:sign?B[br]+reveal+fade:B[br]+4.75,flight,reveal,fade,zig:skyMakePath(seed+404)},f]};
  plan.blocked=[[0,19],[plan.drop,plan.drop+1.6],...plan.quiet,...meteors.map(m=>[m.birth,m.birth+m.life]),...plan.ufos.map(u=>[u.birth,Math.max(u.end,u.type===1?u.birth+skySign.T+skySign.INTRO+.92+5.5:0)+SKY_TRAIL_DECAY])].sort((a,b)=>a[0]-b[0]);
  // 전체 길이가 들어가는 빈 구간만 예약한다. 곡별 고정 해시로 반복·탐색에도 동일하다.
  const free=(a,len)=>!plan.blocked.some(([x,y])=>a<y+1&&a+len>x-1);
@@ -256,10 +258,12 @@ function skyMakePath(seed,opt={}){
  if(opt.pinIdx!==undefined){pts[opt.pinIdx][0]=opt.pinX;if(Math.abs(pts[opt.pinIdx][1]-pts[opt.pinIdx-1][1])<50)pts[opt.pinIdx][1]=pts[opt.pinIdx-1][1]>130?pts[opt.pinIdx-1][1]-70:pts[opt.pinIdx-1][1]+70}
  // 꼭짓점(구간)마다 속도 배율이 달라진다: 이웃 구간과 최소 0.55 이상 차이가 나도록 교대
  const sp=[];for(let i=0;i<pts.length-1;i++){let v=.4+1.9*h(120+i);if(i&&Math.abs(v-sp[i-1])<.55)v=sp[i-1]>1.1?.4+.35*h(150+i):1.7+.6*h(150+i);sp.push(v)}
- const cv=sp.map((_,i)=>h(210+i)<.4?(h(240+i)<.5?-1:1)*(.22+.3*h(270+i)):0); // 약 40% 구간은 부드러운 호(곡선)
+ // 궤적 종류는 UFO 마다 곡선 · 각진 직선 · 둘을 섞은 것 중 하나다.
+ const style=['curve','angle','mixed'][Math.floor(h(300)*3)];
+ const cv=sp.map((_,i)=>{const arc=(h(240+i)<.5?-1:1)*(.22+.3*h(270+i));return style==='angle'?0:style==='curve'?arc:h(210+i)<.5?arc:0});
  const segs=sp.map((v,i)=>Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1])*(1+2.7*cv[i]*cv[i])/v);
  const ex=sp.map((_,i)=>.75+.6*h(180+i));
- const total=segs.reduce((a,b)=>a+b,0);return {pts,segs,ex,cv,total,stopU:opt.pinIdx!==undefined?segs.slice(0,opt.pinIdx).reduce((a,b)=>a+b,0)/total:0};
+ const total=segs.reduce((a,b)=>a+b,0);return {style,pts,segs,ex,cv,total,stopU:opt.pinIdx!==undefined?segs.slice(0,opt.pinIdx).reduce((a,b)=>a+b,0)/total:0};
 }
 function skyZig(f,u){
  const Z=f.zig;let d=djClamp15(u)*Z.total;
@@ -348,7 +352,7 @@ function skyUfos(c,t){
  if(skyUFO.complete&&skyUFO.naturalWidth)for(const f of plan.ufos){
   const age=t-f.birth,life=f.end-f.birth;if(age<0||age>life+SKY_TRAIL_DECAY)continue;
   if(f.type===1){
-   if(f.mode==='sign'){const fit=fitSkySign(skyViewport,portrait);c.save();c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);skySignDraw(c,f,age);c.restore();continue}
+   if(f.mode==='sign'){const fit=fitSkySign(skyViewport,portrait,f.place);c.save();c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);tiltSign(c,f.tilt);skySignDraw(c,f,age);c.restore();continue}
    skyTrail(c,ta=>point(skyZig(f,ta/f.flight)),age,f.flight);
    if(age>f.flight){if(age<=f.flight+1.3){const p=point(f.zig.pts.at(-1));skyStar(c,p[0],p[1],(age-f.flight)/1.3,998)}continue}
    for(let j=0;j<0;j++){const ta=age-.22*(1-j/26),tb=age-.22*(1-(j+1)/26);if(ta<0)continue;const a=skyZig(f,ta/f.flight),b=skyZig(f,tb/f.flight);c.globalAlpha=skyRoutineAlpha*.55*(j/26)**1.4*env(age,f.flight,.09);c.strokeStyle=j<13?V:C;c.lineWidth=2.8;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke()}
@@ -522,39 +526,56 @@ function floorWave(c,type,t){
   [[.5,.2],[.25,.2],[.75,.2],[.38,.1],[.62,.1],[.12,.28],[.88,.28],[.5,.36],[.32,.34],[.68,.34]].forEach(([x,y],j)=>burst(x,y,2.5+j*.05,140,132,3.1,j%2?'#ffd36b':'#fff1c4',colors[j%6]));
   lastFrame=performance.now();resume()}
  const ymmtShape=ymmtLetters(SKY_SALT);
- function skyExtra(kind,age){
+ // 감사 카드를 닫은 뒤의 큰 장면: 사인 · 별자리 · 유성우 · 혜성을 함께 그린다.
+ function skyGrand(age){
+  const layout=grandLayout(skyViewport,activeLayout?.portrait),alpha=Math.max(0,Math.min(1,(GRAND_SHOW-age)/1.2));
+  skyExtra('comet',age);skyExtra('shower',age%4);skyExtra('rainbow',Math.max(0,age-.3));
+  skyExtra('sign',age,{fit:layout.sign,alpha,tilt:manual.tilt});skyExtra('constellation',age,{box:layout.ymmt});
+ }
+ function skyExtra(kind,age,opt={}){
   const v=skyViewport,small=host.clientWidth<700;
   c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();
   const x=v.left+v.width*.5,y=v.top+v.height*.35;
   if(kind==='sign'){
-   const fit=fitSkySign(v,activeLayout?.portrait);
-   c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);
+   const fit=opt.fit||fitSkySign(v,activeLayout?.portrait,opt.place);
+   c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);tiltSign(c,opt.tilt||0);
    const progress=still?1:Math.min(1,age/2.2),end=progress*skySign.T;
-   c.lineCap='round';c.lineJoin='round';c.lineWidth=3;c.strokeStyle=P;c.shadowColor=P;c.shadowBlur=9;c.beginPath();
+   c.globalAlpha=opt.alpha??1;c.lineCap='round';c.lineJoin='round';c.lineWidth=3;c.strokeStyle=P;c.shadowColor=P;c.shadowBlur=9;c.beginPath();
    for(const seg of skySign.segs){if(!seg.pen||seg.start>end)continue;const q=djClamp15((end-seg.start)/(seg.end-seg.start));c.moveTo(...seg.a);c.lineTo(seg.a[0]+(seg.b[0]-seg.a[0])*q,seg.a[1]+(seg.b[1]-seg.a[1])*q)}c.stroke();
   }else if(kind==='ufo'){
    const u=still?.5:age/3,px=v.left+v.width*(.12+.76*u);
    c.globalAlpha=Math.min(1,age*8,(3-age)*5);c.shadowColor=C;c.shadowBlur=12;
    if(skyUFO.naturalWidth)c.drawImage(skyUFO,px-30,y-30,60,60);
-  }else if(kind==='shower'){
-   for(let i=0;i<(small?5:9);i++){
-    const h=k=>skyHash(i*71+k*149+TRK.bpm),delay=i*(small?.23:.19)+h(1)*.14,duration=.85+h(2)*.55;
+  }else if(kind==='shower'||kind==='rainbow'){
+   // 무지개 유성우 = 별자리가 완성되는 순간부터 쏟아지는 빛깔별 유성. 일반 유성우와 그리기를 공유한다.
+   const rainbow=kind==='rainbow',count=rainbow?(small?44:52):(small?5:9),gap=rainbow?(small?.12:.1):(small?.23:.19);
+   for(let i=0;i<count;i++){
+    const h=k=>skyHash(i*71+k*149+TRK.bpm),delay=i*gap+h(1)*.14,duration=.85+h(2)*.55;
     const a=age-delay;if(a<0||a>duration)continue;const u=still?.5:a/duration;
     const dx=v.width*(.4+.28*h(3)),dy=v.height*(.22+.19*h(4)),sx=v.left+v.width*(.32+.73*h(5)),sy=v.top+v.height*(.02+.25*h(6));
-    const px=sx-dx*u,py=sy+dy*u,tail=(.12+.12*h(7))*(small?.75:1),tx=px+dx*tail,ty=py-dy*tail;
-    const opacity=Math.sin(u*Math.PI)*(.4+.55*h(8)),g=c.createLinearGradient(tx,ty,px,py);
-    g.addColorStop(0,'#72aaff00');g.addColorStop(.65,'#7fcfff70');g.addColorStop(1,'#e6fcff');
-    c.globalAlpha=opacity;c.strokeStyle=g;c.lineWidth=(small?1.1:1.5)+h(9)*1.1;c.lineCap='round';c.shadowColor='#71c9ff';c.shadowBlur=5+h(10)*7;
+    const px=sx-dx*u,py=sy+dy*u,tail=(rainbow?.26:.12+.12*h(7))*(small?.75:1),tx=px+dx*tail,ty=py-dy*tail;
+    const opacity=Math.sin(u*Math.PI)*(rainbow?.95:.4+.55*h(8)),g=c.createLinearGradient(tx,ty,px,py),hue=Math.round(i*137.5)%360;
+    if(rainbow){g.addColorStop(0,`hsla(${hue},100%,62%,0)`);g.addColorStop(.6,`hsla(${hue},100%,68%,.8)`);g.addColorStop(1,`hsl(${hue},100%,88%)`)}else{g.addColorStop(0,'#72aaff00');g.addColorStop(.65,'#7fcfff70');g.addColorStop(1,'#e6fcff')}
+    c.globalAlpha=opacity;c.strokeStyle=g;c.lineWidth=(small?1.1:1.5)+(rainbow?.5:0)+h(9)*(rainbow?1.6:1.1);c.lineCap='round';c.shadowColor=rainbow?`hsl(${hue},100%,62%)`:'#71c9ff';c.shadowBlur=5+h(10)*7;
     c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);c.stroke();
-    c.fillStyle='#e9fcff';c.beginPath();c.arc(px,py,1+h(11)*.9,0,Math.PI*2);c.fill();
+    c.fillStyle=rainbow?`hsl(${hue},100%,92%)`:'#e9fcff';c.beginPath();c.arc(px,py,1+h(11)*.9,0,Math.PI*2);c.fill();
+   }
+  }else if(kind==='comet'){
+   // 혜성 = 긴 꼬리를 끌며 하늘을 가로지르는 큰 빛. 유성보다 크고 느리다.
+   for(const [delay,start,dir] of [[.4,.08,1],[3.1,.3,-1],[5.4,.05,1]]){
+    const a=age-delay,duration=2.6;if(!still&&(a<0||a>duration))continue;const u=still?.5:a/duration,w=v.width,h=v.height;
+    const px=v.left+w*(dir>0?1.1-1.2*u:-.1+1.2*u),py=v.top+h*(start+.5*u),tx=px+dir*w*.36,ty=py-h*.15;
+    const g=c.createLinearGradient(tx,ty,px,py);g.addColorStop(0,'#8ae3e200');g.addColorStop(.6,'#8ae3e288');g.addColorStop(1,'#ffffff');
+    c.globalAlpha=Math.sin(u*Math.PI);c.lineCap='round';c.strokeStyle=g;c.lineWidth=small?3.5:5;c.shadowColor=C;c.shadowBlur=20;c.beginPath();c.moveTo(tx,ty);c.lineTo(px,py);c.stroke();
+    c.fillStyle='#fff';c.beginPath();c.arc(px,py,small?4:6,0,Math.PI*2);c.fill();
    }
   }else if(kind==='fireworks'){
    for(let j=0;j<3;j++){const a=age-j*.35;if(a<0||a>2)continue;const rad=Math.min(v.width*.16,90)*(still?.7:1-Math.exp(-a*3));c.globalAlpha=Math.min(1,a*6)*(1-a/2);c.strokeStyle=[P,C,'#ffdca0'][j];c.lineWidth=2;
     for(let i=0;i<24;i++){const an=i*Math.PI*2/24,px=x+(j-1)*v.width*.22,py=y+(j%2)*v.height*.18;c.beginPath();c.moveTo(px+Math.cos(an)*rad*.75,py+Math.sin(an)*rad*.75);c.lineTo(px+Math.cos(an)*rad,py+Math.sin(an)*rad);c.stroke()}
    }
   }else if(kind==='constellation'){
-   const scale=Math.min(v.width*.8/355,v.height*.48/120),alpha=Math.min(1,(9-age)/2);
-   c.translate(x-157.5*scale,y-40*scale);c.scale(scale,scale);c.strokeStyle='#65baff';c.fillStyle='#c3edff';c.shadowColor='#329dff';c.shadowBlur=12;c.lineWidth=2;
+   const box=opt.box||{cx:x,cy:y,scale:Math.min(v.width*.8/355,v.height*.48/120)},scale=box.scale,alpha=Math.min(1,(9-age)/2);
+   c.translate(box.cx-157.5*scale,box.cy-40*scale);c.scale(scale,scale);c.strokeStyle='#65baff';c.fillStyle='#c3edff';c.shadowColor='#329dff';c.shadowBlur=12;c.lineWidth=2;
    let n=0;for(const {points,path} of ymmtShape){if(age>=1.6||still){const pop=still?0:Math.sin(Math.PI*djClamp15((age-1.6)/.4));
      c.globalAlpha=alpha*(still?1:Math.min(1,(age-1.6)/.4));c.beginPath();path.forEach((p,i)=>i?c.lineTo(...points[p]):c.moveTo(...points[p]));c.stroke();
      if(pop>0){c.save();c.globalAlpha=pop*.75;c.strokeStyle='#e6faff';c.shadowColor='#7fcaff';c.shadowBlur=25;c.lineWidth=2+pop*4;c.stroke();c.restore()}}
@@ -582,7 +603,7 @@ function floorWave(c,type,t){
   bg(c);
   // 하늘의 작은 별은 CSS 픽셀 크기로 그려 모바일에서도 UFO 퇴장 별보다 작고 또렷하다.
   const wall=performance.now()/1000;
-  if(manual&&wall-manual.start>=3){returnAt=manual.start+3;manual=null;if(pendingFinale){pendingFinale=false;playFinale()}}
+  if(manual&&wall-manual.start>=manual.dur){returnAt=manual.start+manual.dur;manual=null;if(pendingFinale){pendingFinale=false;playFinale()}}
   const routineAlpha=manual?0:Math.min(1,(wall-returnAt)/.6);
   skyRoutineAlpha=routineAlpha;
   const skyPlanNow=skyPlan(TRK),ambientAlpha=ambientVisibility(t,skyPlanNow.blocked)*routineAlpha;
@@ -617,9 +638,9 @@ function floorWave(c,type,t){
   c.save();if(routineAlpha<1)c.filter=`opacity(${routineAlpha})`;if(!manual)skyProps(c,t);c.restore();floorWave(c,0,t);if(!introActive()||t>=17.14)visual(c,5,t);
   if(introActive()&&!still&&t>=17.14&&t<17.69){const u=(t-17.14)/.55;c.save();sunTransform(c);for(let j=0;j<3;j++){c.strokeStyle=[P,V,C][j];c.globalAlpha=(1-u)*.9;c.lineWidth=7-j;c.beginPath();c.arc(850,267,100+500*u-j*18,0,Math.PI*2);c.stroke()}c.restore()}
   if(!manual){c.save();if(routineAlpha<1)c.filter=`opacity(${routineAlpha})`;skyUfos(c,t);
-   const age=t-skyPlanNow.constellation;if(skyPlanNow.constellation!==null&&age>=0&&age<9)skyExtra('constellation',age);
+   const age=t-skyPlanNow.constellation;if(skyPlanNow.constellation!==null&&age>=0&&age<9){if(age>=1.85&&age<8.3)skyExtra('rainbow',age-1.85);skyExtra('constellation',age)}
    for(const birth of skyPlanNow.showers)if(t>=birth&&t<birth+5)skyExtra('shower',t-birth);c.restore();
-  }else skyExtra(manual.kind,wall-manual.start);
+  }else if(manual.kind==='grand')skyGrand(wall-manual.start);else skyExtra(manual.kind,wall-manual.start,manual);
   // 조명 원뿔은 유노 중심이며 세로 화면의 확장 하늘에서 내려온다.
   if(effect.spot){
    // 원뿔과 바닥 조명의 모양은 크기가 바뀔 때만 계산하고 알파로 점등한다.
@@ -659,7 +680,8 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
  const observer=new IntersectionObserver(es=>{visible=es[0].isIntersecting;if(!visible){cancelAnimationFrame(raf);raf=0}else resume()});observer.observe(canvas);
  document.addEventListener('visibilitychange',visibility);window.addEventListener('resize',resize);window.visualViewport?.addEventListener('resize',resize);
  whenReady.then(()=>{if(!dead){draw(0);resume()}}).catch(()=>{});
- return {signActive(t){const f=TRK&&skyPlan(TRK).ufos[0];return !!f&&f.mode==='sign'&&t>=f.birth&&t<f.end},triggerManual(kind){if(dead||document.hidden||!['fireworks','ufo','sign','shower'].includes(kind))return;manual={kind,start:performance.now()/1000};parts=[];lastT=null;resume()},whenReady,setBrightness,setIntro(fn){introActive=fn},setClock(fn){clock=fn;lastT=null;resume()},setTrack(track){TRK=track;lastT=null;resume()},setLayout(value){layout=value;lastT=null;draw()},
+ return {skyBusy(t){if(!TRK)return false;const plan=skyPlan(TRK),f=plan.ufos[0],a=plan.constellation;return manual?.kind==='grand'||(f.mode==='sign'&&t>=f.birth&&t<f.end)||(a!==null&&t>=a&&t<a+9)},
+  grandShow(){if(dead||document.hidden)return;manual={kind:'grand',start:performance.now()/1000,dur:GRAND_SHOW,tilt:(Math.random()*2-1)*SIGN_TILT};parts=[];lastT=null;if(!still){const r=host.getBoundingClientRect();[[.5,.28,'#ff477d'],[.42,.2,'#6ee7f9'],[.58,.2,'#ffd36b'],[.5,.14,'#c4a1ff']].forEach(([x,y,color],j)=>{for(let i=0;i<70;i++){const a=i*Math.PI/35,v=(50+Math.random()*90)*Math.max(.8,Math.min(1.4,r.width/900));parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%3?color:'#fff9ec',r:1.1+Math.random()*1.8,delay:j*.08,life:2.2})}});lastFrame=performance.now()}resume()},triggerManual(kind){if(dead||document.hidden||!['fireworks','ufo','sign','shower'].includes(kind))return;manual={kind,start:performance.now()/1000,dur:3,place:Math.random()<.5?'left':'center',tilt:kind==='sign'?(Math.random()*2-1)*SIGN_TILT:0};parts=[];lastT=null;resume()},whenReady,setBrightness,setIntro(fn){introActive=fn},setClock(fn){clock=fn;lastT=null;resume()},setTrack(track){TRK=track;lastT=null;resume()},setLayout(value){layout=value;lastT=null;draw()},
   setStill(value){still=value;if(still)parts=[];cancelAnimationFrame(raf);raf=0;lastT=null;draw(0);resume()},
   celebrate(xRatio,yRatio){if(dead||still||manual||document.hidden||!visible)return;parts=[];const r=host.getBoundingClientRect();const burst=(x,y,delay=0)=>{const colors=['#ff477d','#fff9ec','#efb62f'];for(let i=0;i<40;i++){const a=i*Math.PI*2/40,v=28+Math.random()*50;parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:colors[i%3],r:1+Math.random()*1.6,delay})}};if(Number.isFinite(xRatio)&&Number.isFinite(yRatio))burst(r.width*djClamp15(xRatio),r.height*djClamp15(yRatio));else [[.24,.38],[.76,.27],[.54,.17]].forEach(([x,y],i)=>burst(r.width*x,r.height*y,i*.26));lastFrame=performance.now();resume()},
   finale(){if(manual){pendingFinale=true;return}playFinale()},

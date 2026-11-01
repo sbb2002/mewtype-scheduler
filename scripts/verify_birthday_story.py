@@ -37,7 +37,7 @@ try:
    assert card['x']>=12 and card['x']+card['width']<=width-12 and card['y']>=0 and card['y']+card['height']<height-120,(width,height,card)
    assert page.locator('.bday-memory').evaluate('e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth'),(width,height,'card overflow')
    page.evaluate('()=>{for(const a of document.getAnimations())a.finish()}');page.screenshot(path=str(OUT/f'{width}x{height}-card.png'))
-   page.locator('.bday-memory button').click();page.evaluate('()=>{jump(0,0);jump(1,213,false)}');assert page.locator('.bday-memory').is_hidden() and page.evaluate('finaleCount')==1
+   page.locator('.bday-memory button').click();page.wait_for_timeout(850);page.evaluate('()=>{jump(0,0);jump(1,213,false)}');assert page.locator('.bday-memory').is_hidden() and page.evaluate('finaleCount')==1
    page.evaluate('()=>{story.destroy();window.reduced=true;story=null}');assert page.locator('.bday-memory').count()==0
    assert not errors,errors
    results[f'{width}x{height}']={'all_cues_fit':True,'card_fits_without_scroll':True,'ending_once':True,'cleanup':True};page.close()
@@ -47,7 +47,7 @@ try:
     if '127.0.0.1' not in r.request.url:r.fulfill(content_type='application/json',body='{}')
     elif '/birthdayui.js' in r.request.url:r.fulfill(content_type='text/javascript',body=(ROOT/'src/frontend/js/birthdayui.js').read_text(encoding='utf8')+';window.__birthday={get scene(){return ctrl},get audio(){return music},get player(){return player}};')
     elif '/bdayscene-yuno.js' in r.request.url:
-     s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace('return {signActive(t)', 'return {stopForTest(){cancelAnimationFrame(raf);raf=0},testPlan(){return skyPlan(TRK)},manualState(){return {manual,returnAt}},signActive(t)').replace('skySignDraw(c,f,age);c.restore();continue','window.__signMatrix=c.getTransform();skySignDraw(c,f,age);c.restore();continue').replace('if(depth>12){','window.__beam={sx,sy,bottom,depth,width,base};if(depth>12){')
+     s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8').replace('return {skyBusy(t)', 'return {stopForTest(){cancelAnimationFrame(raf);raf=0},testPlan(){return skyPlan(TRK)},manualState(){return {manual,returnAt}},skyBusy(t)').replace('skySignDraw(c,f,age);c.restore();continue','window.__signMatrix=c.getTransform();skySignDraw(c,f,age);c.restore();continue').replace('if(depth>12){','window.__beam={sx,sy,bottom,depth,width,base};if(depth>12){')
      s=s.replace('function skyProps(c,t){','function skyProps(c,t){window.__routineCalls=(window.__routineCalls||0)+1;').replace('function skyUfos(c,t){','function skyUfos(c,t){window.__routineCalls=(window.__routineCalls||0)+1;')
      r.fulfill(content_type='text/javascript',body=s)
     else:r.continue_()
@@ -56,7 +56,7 @@ try:
    data=page.evaluate('''()=>{
     const plan=__birthday.scene.testPlan(),f=plan.ufos[0];__birthday.scene.renderAt(f.birth+f.reveal+1);
     const m=window.__signMatrix,cv=document.querySelector('#bday-bg canvas'),rx=innerWidth/cv.width,ry=innerHeight/cv.height;
-    const bounds={left:(m.e+m.a*45)*rx,right:(m.e+m.a*565)*rx,top:(m.f+m.d*30)*ry,bottom:(m.f+m.d*375)*ry};
+    const pts=[[45,30],[565,30],[45,375],[565,375]].map(([x,y])=>[(m.a*x+m.c*y+m.e)*rx,(m.b*x+m.d*y+m.f)*ry]),bounds={left:Math.min(...pts.map(p=>p[0])),right:Math.max(...pts.map(p=>p[0])),top:Math.min(...pts.map(p=>p[1])),bottom:Math.max(...pts.map(p=>p[1]))};
     const scan=plan.ufos[1];__birthday.scene.renderAt(scan.birth+scan.arrive+scan.scan/2);
     return {bounds,beam:window.__beam,signTime:f.birth+f.reveal+1};
    }''')

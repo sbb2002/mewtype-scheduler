@@ -29,14 +29,14 @@ try:
     elif '/bdayscene-yuno.js' in r.request.url:
      s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8')
      s=s.replace('const SKY_SALT=','let SKY_SALT=').replace('function playFinale(){','function playFinale(){window.__finaleRuns=(window.__finaleRuns||0)+1;')
-     s=s.replace('return {signActive(t)', '''return {
+     s=s.replace('return {skyBusy(t)', '''return {
       testPlan(){return skyPlan(TRK)},stopForTest(){cancelAnimationFrame(raf);raf=0},
       testState(){return {pendingFinale,manual,particles:parts.length}},
       samplePlans(){const saved=SKY_SALT,rows=[];for(let salt=0;salt<100;salt++){
        SKY_SALT=salt;const plan=skyPlan({...TRK}),base=plan.blocked.filter(([a,b])=>!plan.showers.some(t=>a===t&&b===t+5));
-       rows.push({showers:plan.showers.length,ambient:plan.ambient.length,before:createAmbientTimeline(TRK.duration,base,plan.ambientSeed).length});
+       rows.push({styles:plan.ufos.map(u=>u.zig.style),showers:plan.showers.length,ambient:plan.ambient.length,before:createAmbientTimeline(TRK.duration,base,plan.ambientSeed).length});
       }SKY_SALT=saved;return rows},
-      signActive(t)''')
+      skyBusy(t)''')
      r.fulfill(content_type='text/javascript',body=s)
     else:r.continue_()
    page.route('**/*',route)
@@ -75,6 +75,7 @@ try:
     if index:
      page.evaluate('async()=>{await __birthday.audio.next();__birthday.scene.setTrack(await __birthday.audio.beat);__birthday.scene.stopForTest()}')
     plan=page.evaluate('__birthday.scene.testPlan()');samples=page.evaluate('__birthday.scene.samplePlans()')
+    assert {s for r in samples for s in r['styles']}=={'curve','angle','mixed'},'UFO 궤적 세 종류'
     assert all(2<=r['showers']<=3 and r['ambient']>=3 for r in samples),samples
     assert all(abs(a-b)>=24 for i,a in enumerate(plan['showers']) for b in plan['showers'][i+1:])
     tracks.append({'count':len(plan['showers']),'times':plan['showers'],'ambient':len(plan['ambient']),
@@ -82,6 +83,7 @@ try:
                    'ambient_before_mean':sum(r['before'] for r in samples)/100,'ambient_after_mean':sum(r['ambient'] for r in samples)/100})
     if not index:
      page.evaluate('async t=>{await __birthday.audio.seek(t);for(const a of document.querySelector(".bday-story").getAnimations({subtree:true}))if(Number.isFinite(a.effect.getComputedTiming().endTime))a.finish();__birthday.scene.renderAt(t)}',plan['constellation']+1.8);shot('constellation-pop')
+     page.evaluate('t=>__birthday.scene.renderAt(t)',plan['constellation']+4.5);shot('constellation-rainbow')
      page.evaluate('async t=>{await __birthday.audio.seek(t);__birthday.scene.renderAt(t)}',plan['showers'][0]+1.05);shot('shower')
    # 피날레 한 건만 보류하고 반복 입력 후 마지막 조작 3초에 한 번 재생한다.
    page.evaluate('()=>{window.__finaleRuns=0;__birthday.scene.triggerManual("sign");__birthday.scene.finale();__birthday.scene.finale()}')

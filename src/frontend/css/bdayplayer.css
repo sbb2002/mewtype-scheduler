@@ -108,3 +108,7 @@
 .bday-effects .effect{min-width:40px;width:40px;padding:0}
 .bday-effects .effect svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 @media(max-width:700px),(pointer:coarse){.bday-effects .effect{min-width:44px;width:44px;height:36px}}
+
+/* 감사 카드 퇴장: 빛이 차오른 뒤 부풀며 흩어진다. .bday-memory 의 transform 은 가운데 정렬이라 scale 속성을 따로 쓴다. */
+.bday-memory.is-leaving{pointer-events:none;animation:bday-memory-out .76s cubic-bezier(.3,0,.2,1) forwards}
+@keyframes bday-memory-out{0%{opacity:1;scale:1;filter:brightness(1)}35%{opacity:1;scale:.97;filter:brightness(2.4);box-shadow:0 0 60px 18px color-mix(in srgb,var(--yuno-glow) 70%,transparent),0 0 120px 40px #8ae3e255}100%{opacity:0;scale:1.5;filter:brightness(4) blur(14px)}}

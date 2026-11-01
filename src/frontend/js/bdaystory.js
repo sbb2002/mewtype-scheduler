@@ -12,12 +12,12 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const signature=document.createElement('p');signature.className='bday-memory__signature';signature.textContent='— yuno';
  const close=document.createElement('button');close.type='button';close.textContent='밤 풍경 더 보기';
  card.append(ornament,title,note,signature,close);shell.append(message,card);
- let raf=0,dead=false,key='',finale=false,finished=false,cardPending=false;
+ let raf=0,leaving=0,dead=false,key='',finale=false,finished=false,cardPending=false;
  function visible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-revealed')}
  function introVisible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-intro')}
  function paint(){
   if(dead)return;
-  const index=audio.index,time=audio.audio.currentTime,cue=(visible()||introVisible())&&!scene.signActive?.(time)?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null,next=cue?.id||'';
+  const index=audio.index,time=audio.audio.currentTime,cue=(visible()||introVisible())&&!scene.skyBusy?.(time)?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null,next=cue?.id||'';
   if(next!==key){
    key=next;message.classList.remove('is-visible');
    if(cue){
@@ -38,11 +38,12 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  }
  function frame(){raf=0;paint();if(!dead&&!audio.paused&&!document.hidden)raf=requestAnimationFrame(frame)}
  function wake(){if(dead)return;paint();if(!raf&&!audio.paused&&!document.hidden)raf=requestAnimationFrame(frame)}
- close.addEventListener('click',e=>{e.stopPropagation();card.hidden=true},{signal});
+ // 닫기 = 카드가 빛으로 터져 사라지고 큰 장면이 시작된다. 모션 줄이기는 바로 닫는다.
+ close.addEventListener('click',e=>{e.stopPropagation();if(leaving)return;scene.grandShow?.();if(reduced()){card.hidden=true;return}leaving=setTimeout(()=>{leaving=0;card.hidden=true;card.classList.remove('is-leaving')},760);card.classList.add('is-leaving')},{signal});
  card.addEventListener('click',e=>e.stopPropagation(),{signal});
  const unsubscribe=audio.subscribe(wake);
  document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else wake()},{signal});
  const observer=new MutationObserver(wake);observer.observe(root,{attributes:true,attributeFilter:['data-bday-full','data-bday-revealed','data-bday-intro']});
  wake();
- return {destroy(){dead=true;cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
+ return {destroy(){dead=true;clearTimeout(leaving);cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
 }

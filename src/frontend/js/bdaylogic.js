@@ -14,11 +14,29 @@ export function sceneLayout(w,h) {
 }
 
 // 사인·UFO·별과 글로우를 감싼 원본 영역까지 화면의 하늘 안에 맞춘다.
-export function fitSkySign(view,portrait=false){
- // 획이 차지하는 칸(가로 45~565, 세로 30~375)을 유노 머리 위(장면 y 262) 하늘에 최대한 채운다. 태양과는 겹쳐도 된다.
- const floor=Math.min(view.top+view.height,262),room=Math.max(1,floor-view.top);
- const k=Math.max(.01,Math.min((view.width*.97)/520,(room*.97)/345));
- return {scale:k,x:view.left+view.width/2-305*k,y:view.top+room/2-202.5*k};
+// 사인 획의 중심(305,202.5). 칸 543×380 = 획(520×345)을 ±4도 기울인 외곽이라 기울여도 빠져나가지 않는다.
+const SIGN_W=543,SIGN_H=380,SIGN_CX=305,SIGN_CY=202.5,HEAD_FLOOR=262,LEFT_FLOOR=285,LEFT_RIGHT=465;
+const signAt=(k,cx,cy)=>({scale:k,x:cx-SIGN_CX*k,y:cy-SIGN_CY*k,cx,cy});
+function signLeft(view){
+ const right=Math.min(view.left+view.width,LEFT_RIGHT),room=Math.min(view.top+view.height,LEFT_FLOOR)-view.top,width=right-view.left;
+ return signAt(Math.max(.01,Math.min(width*.97/SIGN_W,room*.97/SIGN_H)),view.left+width/2,view.top+room/2);
+}
+// 세로 화면 = 하늘 맨 위. 가로 화면 = 머리 위 가운데, place 'left' 면 유노 왼쪽 위 하늘. 태양과는 겹쳐도 된다.
+export function fitSkySign(view,portrait=false,place='center'){
+ const room=Math.max(1,Math.min(view.top+view.height,HEAD_FLOOR)-view.top),k=Math.max(.01,Math.min(view.width*.97/SIGN_W,room*.97/SIGN_H)),cx=view.left+view.width/2;
+ if(portrait)return signAt(k,cx,view.top+room*.03+SIGN_H*k/2);
+ const center=signAt(k,cx,view.top+room/2);
+ if(place!=='left')return center;
+ const left=signLeft(view);return left.scale>=center.scale*.9?left:center;
+}
+// 「밤 풍경 더 보기」 — 사인과 YMMT 를 겹치지 않게 나눈다(가로 = 좌우, 세로 = 위아래).
+export function grandLayout(view,portrait=false){
+ if(portrait){
+  const sign=fitSkySign(view,true),top=sign.cy+SIGN_H*sign.scale/2+10,bottom=Math.max(top+60,150);
+  return {sign,ymmt:{cx:view.left+view.width/2,cy:(top+bottom)/2,scale:Math.min(view.width*.8/355,(bottom-top)*.8/120)}};
+ }
+ const sign=signLeft(view),left=sign.cx+SIGN_W*sign.scale/2+8,right=view.left+view.width,bottom=Math.min(view.top+view.height,HEAD_FLOOR);
+ return {sign,ymmt:{cx:(left+right)/2,cy:(view.top+bottom)/2,scale:Math.min((right-left)*.92/355,(bottom-view.top)*.85/120)}};
 }
 export function decodeTrack(t,bands=null) {
   const q=bands?new Uint8Array(bands):Uint8Array.from(atob(t.bands),v=>v.charCodeAt(0));
