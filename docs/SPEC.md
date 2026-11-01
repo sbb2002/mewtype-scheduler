@@ -425,7 +425,9 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
   흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
 - **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
 
-### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js`
+### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js` · `bdaystory.js` · `bdayreward.js`
+
+감상 이야기 · 완곡 보상 · 수동 효과(v4.11.3) 계약은 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md` 맨 끝 절을 따른다.
 
 멤버 생일 **당일(KST 00:00 ~ 익일 00:00)** 에 화면 뒤 배경을 그 멤버의 생일 장면(AI 생성 일러스트 + 모션)으로 바꾼다. 평소(해당 없는 날)에는 아무 코드도 장면을 불러오지 않는다. 데이터를 받지 않는 순수 클라이언트 기능.
 
@@ -443,7 +445,8 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 - **음악**: `bdayaudio.js`는 Noctural Run ↔ Midnight Groove를 교대로 재생하고 최초에는 `audio.currentTime`, 버퍼 전환 뒤에는 `AudioContext.currentTime`에 LAT=.02 평활화를 적용한다. 첫 곡을 스트리밍하면서 두 곡의 blob·박 지도를 선로딩·디코드하고 같은 컨텍스트 시각에 스트림 Gain과 버퍼 출력을 교체한다. 이후 현재 곡과 다음 두 곡의 AudioBufferSource를 종료 시각에 이어 예약하므로 메인 스레드의 ended 처리 지연이 곡 경계에 공백을 만들지 않는다. 제목·박 지도·장면 시계도 같은 예약 시각에서 바뀐다. 일시정지·탐색·곡 선택은 예약을 취소하고 다시 잡는다. Web Audio/디코드 불가 시 스트리밍으로 대체하며 이 경로는 무공백을 보장하지 않는다. Web Audio GainNode 기본 .3, 저장 키 `bday-vol`. 미디어 요소 volume은 1로 두어 이중 감쇠를 방지한다. 생일 전체 화면에서만 Space/좌우/상하/M 단축키, 모바일 슬라이더 숨김·음소거를 지원한다. 음원은 원본 약 10MB, 박 지도는 JSON 메타데이터와 uint8 `.bin`으로 저장한다.
 - **모션 안전**: `prefers-reduced-motion`이면 장면은 정지하고 인트로는 .03→1 단순 페이드이며 번쩍임·링·UI 애니메이션을 생략한다. 일반 모드에서는 첫 드럼에서만 밝기 상승이 있다.
 - **복사 억제**: `bdaysign.js`의 인코딩된 좌표를 디코딩해 Canvas에 그린다. 완성 사인은 5.5초 표시한다. 전체 보기에서 contextmenu·dragstart·일부 개발 도구 단축키를 억제하고 해당 캔버스 인스턴스의 `toDataURL/toBlob/getImageData`를 빈 결과로 대체했다가 복구한다. 이는 **우연한 가져가기를 어렵게 하는 장벽**이며 암호화·접근 통제가 아니다. 개발자 도구·스크린샷·음원 다운로드는 막을 수 없다.
-- **정리·검증**: 자정 재판정 시 장면·음악·플레이어·가드를 정리하고 fetch 중단·AudioContext 종료·blob 해제를 수행한다. `destroyBirthday()`는 공통 재판정 리스너와 자정 타이머까지 제거한다. self-check와 `scripts/verify_birthday_*.py`, `scripts/compare_birthday_pixels.py`로 실제 Chromium을 검증한다. 그라데이션 재사용·조명 캐시·캐릭터/파면의 CSS 합성 레이어 분리로 프레임 비용을 줄였다. GPU 가속과 SwiftShader를 구분한 측정은 `scripts/verify_birthday_performance.py`, 실제 출력 샘플의 곡 경계 검증은 `scripts/verify_birthday_gapless.py`로 실행한다. 성능 수치는 CPU에서 Canvas 명령을 제출한 비용이며 GPU 완료 시각을 뜻하지 않는다. 실제 iPhone Safari 음향·자동재생·안전영역·주소창 검증은 남아 있다.
+- **자정 전환**: 생일 00:00 에 사이트를 보고 있으면 그 자리에서 장면이 켜진다. 유메미타 플레이어가 재생 중이면 2.5초에 걸쳐 소리를 줄이며 생일 음악과 겹친 뒤 일시정지하고 볼륨을 되돌린다(`handOffMainMusic`). 곡 · 재생목록 · 재생 위치는 유지한다. 모바일 팝업은 내린다. 숨은 탭은 음악을 듣는 중일 때만 바로 켜고, 아니면 돌아왔을 때 켠다. 생일이 끝나는 00:00 에는 켜져 있는 장면을 내리지 않는다 — 새로고침하면 사라지고, 다음 날 들어온 사람에게는 뜨지 않는다.
+- **정리·검증**: 장면을 정리할 때 장면·음악·플레이어·가드를 정리하고 fetch 중단·AudioContext 종료·blob 해제를 수행한다. `destroyBirthday()`는 공통 재판정 리스너와 자정 타이머까지 제거한다. self-check와 `scripts/verify_birthday_*.py`, `scripts/compare_birthday_pixels.py`로 실제 Chromium을 검증한다. 그라데이션 재사용·조명 캐시·캐릭터/파면의 CSS 합성 레이어 분리로 프레임 비용을 줄였다. GPU 가속과 SwiftShader를 구분한 측정은 `scripts/verify_birthday_performance.py`, 실제 출력 샘플의 곡 경계 검증은 `scripts/verify_birthday_gapless.py`로 실행한다. 성능 수치는 CPU에서 Canvas 명령을 제출한 비용이며 GPU 완료 시각을 뜻하지 않는다. 실제 iPhone Safari 음향·자동재생·안전영역·주소창 검증은 남아 있다.
 - **디스클레이머**: 장면 이미지는 AI 생성 팬 제작물이다 — 기존 풋터 디스클레이머(「비공식 팬 메이드 프로젝트」)가 그대로 적용된다. 제작 원본 · 경위는 브랜치 `easteregg/birthday-skin` 의 `easteregg/birthday/`(HANDOFF.md).
 
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`

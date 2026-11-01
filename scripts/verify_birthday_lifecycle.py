@@ -3,10 +3,10 @@ from pathlib import Path
 import json, threading, functools, http.server
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(r'C:\Users\User\AppData\Local\Temp\claude\C--Users-User-Documents-pyworks-mewtype-scheduler\cd557148-9ec6-47cb-b90f-a459b94aa233\scratchpad\handoff\verify')
+OUT=Path(__import__('tempfile').gettempdir())/'birthday-story'/'round7'/'lifecycle';OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*a):pass
-server=http.server.ThreadingHTTPServer(('127.0.0.1',8102),functools.partial(Handler,directory=str(ROOT)))
+server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT)))
 threading.Thread(target=server.serve_forever,daemon=True).start()
 audit='''(()=>{
  const add=EventTarget.prototype.addEventListener,remove=EventTarget.prototype.removeEventListener,records=[];
@@ -36,7 +36,7 @@ with sync_playwright() as p:
     ctx.add_init_script(audit);ctx.route('**/*',routes)
     page=ctx.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
     # wait_for_function/evaluate는 CDP userGesture를 부여하므로 최초 차단 판정 이전에는 사용하지 않는다.
-    page.goto('http://127.0.0.1:8102/src/frontend/?bday=yuno&ufo=sign');page.wait_for_timeout(2000)
+    page.goto(f'http://127.0.0.1:{server.server_port}/src/frontend/?bday=yuno&ufo=sign');page.wait_for_timeout(2000)
     result['blocked']=page.evaluate('()=>({paused:__birthday.audio.paused,time:__birthday.audio.audio.currentTime,prompt:!document.querySelector(".bday-start").hidden,filter:getComputedStyle(document.querySelector("#bday-bg canvas")).filter,volume:__birthday.audio.diagnostics().volume})')
     print('BLOCKED',json.dumps(result['blocked']),flush=True)
     page.screenshot(path=str(OUT/'autoplay-blocked.png'))
@@ -59,17 +59,21 @@ with sync_playwright() as p:
     result['previous']=page.evaluate('()=>__birthday.audio.index')
     page.evaluate('async()=>{__birthday.audio.pause();await __birthday.audio.seek(110.125)}');page.wait_for_timeout(150)
     result['paused_seek_error_seconds']=page.evaluate('()=>Math.abs(__birthday.audio.audio.currentTime-110.125)')
+    page.evaluate('()=>{__birthday.scene.triggerManual("sign");__birthday.scene.triggerManual("ufo");__birthday.scene.triggerManual("fireworks");__birthday.scene.triggerManual("shower");Object.defineProperty(document,"hidden",{configurable:true,value:true});document.dispatchEvent(new Event("visibilitychange"))}')
+    page.wait_for_timeout(100);result['hidden_manual']=page.evaluate('()=>audit()');assert result['hidden_manual']['raf']==0
+    page.evaluate('()=>{delete document.hidden;document.dispatchEvent(new Event("visibilitychange"));__birthday.scene.triggerManual("shower")}')
     page.evaluate('()=>__birthday.teardown()');page.wait_for_timeout(200)
     result['after_teardown']=page.evaluate('()=>audit()')
     # 동일 문서에서 다시 마운트: 저장값 복원 및 자정 evaluate 정리.
     page.evaluate('()=>__birthday.evaluate()');page.wait_for_function('__birthday.player');page.wait_for_timeout(200)
     result['restore_volume']=page.evaluate('()=>__birthday.audio.volume')
+    page.evaluate('()=>{__birthday.scene.triggerManual("fireworks");__birthday.scene.triggerManual("shower");__birthday.scene.triggerManual("sign")}')
     result['before_midnight']=page.evaluate('()=>audit()')
     page.evaluate('()=>{history.replaceState(null,"",location.pathname);window.testNow=Date.parse("2026-11-04T15:00:01Z");__birthday.evaluate()}');page.wait_for_timeout(300)
     result['after_midnight']=page.evaluate('()=>({audit:audit(),birthday:document.documentElement.hasAttribute("data-bday"),scene:__birthday.scene,audio:__birthday.audio})')
     page.evaluate('()=>__birthday.destroyBirthday()');page.wait_for_timeout(200)
     result['after_destroyBirthday']=page.evaluate('()=>audit()')
-    page.goto('http://127.0.0.1:8102/src/frontend/');page.wait_for_timeout(1000)
+    page.goto(f'http://127.0.0.1:{server.server_port}/src/frontend/');page.wait_for_timeout(1000)
     result['ordinary_baseline']=page.evaluate('()=>audit()')
     result['errors']=errors
     browser.close()

@@ -25,10 +25,11 @@ for (let n = 0; n < 3840; n++) {
 }
 assert.ok(maxError < 1e-9);
 const files = await readdir(new URL('../assets/birthday/yuno/', import.meta.url));
-assert.equal(files.length, 9);
+assert.equal(files.length, 10);
+assert.ok(files.includes('head_flat.webp'));
 assert.ok(files.every(f => /^[a-z_]+\.webp$/.test(f)));
 const css = await readFile(new URL('../css/bdayscene-yuno.css', import.meta.url), 'utf8');
 assert.ok(!css.includes('.stage') && !css.includes('.rig-ritsu') && css.includes('prefers-reduced-motion'));
 const module = await readFile(new URL('./bdayscene-yuno.js', import.meta.url), 'utf8');
 assert.ok(!module.includes('innerHTML') && !module.includes('data:image') && module.includes('mountYunoScene'));
-console.log(`Yuno legacy beat self-check passed: ${reference.length} exact v16 pose/spectrum comparisons, 3,840 safety samples, 9 assets. Canvas 검증은 bdaymusic.selfcheck.mjs 및 브라우저에서 별도 수행.`);
+console.log(`Yuno legacy beat self-check passed: ${reference.length} exact v16 pose/spectrum comparisons, 3,840 safety samples, 10 assets. Canvas 검증은 bdaymusic.selfcheck.mjs 및 브라우저에서 별도 수행.`);
