@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(tempfile.gettempdir())/'birthday-story'/'round5'
+OUT=Path(tempfile.gettempdir())/'birthday-story'/'round7'
 OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass

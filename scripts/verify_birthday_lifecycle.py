@@ -3,7 +3,7 @@ from pathlib import Path
 import json, threading, functools, http.server
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(__import__('tempfile').gettempdir())/'birthday-story'/'round5'/'lifecycle';OUT.mkdir(parents=True,exist_ok=True)
+OUT=Path(__import__('tempfile').gettempdir())/'birthday-story'/'round7'/'lifecycle';OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*a):pass
 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT)))

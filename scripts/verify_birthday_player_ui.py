@@ -3,7 +3,7 @@ from pathlib import Path
 import functools,http.server,threading,json,os,tempfile
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
-OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'round5'/'ui')))
+OUT=Path(os.environ.get('BIRTHDAY_VERIFY_OUT',str(Path(tempfile.gettempdir())/'birthday-story'/'round7'/'ui')))
 OUT.mkdir(parents=True,exist_ok=True)
 class Handler(http.server.SimpleHTTPRequestHandler):
  def log_message(self,*a):pass
@@ -101,7 +101,8 @@ try:
    page.evaluate('async()=>{__birthday.audio.pause();await __birthday.audio.seek(19.05)}')
    page.wait_for_selector('[data-unlocked]',state='attached');page.wait_for_timeout(1500)
    assert page.locator('.bday-ib.prev').is_visible()
-   assert page.locator('.bday-effects button').count()==4
+   assert page.locator('.bday-effects button').count()==5
+   assert page.get_by_role('button',name='밤 풍경 더 보기',exact=True).is_visible()
    for effect in page.locator('.bday-effects button').all():
     e=effect.bounding_box();assert e['x']>=12 and e['x']+e['width']<=width-12,e
    page.locator('.bday-ib.pp').click();page.wait_for_function('!__birthday.audio.paused')

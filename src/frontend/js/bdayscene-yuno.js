@@ -24,7 +24,7 @@ function spectrum19(seconds,i,count){
 const P='#ff488d',C='#8ae3e2',V='#7844ba';
 
 function line(c,pts,color,width=2,alpha=1){c.globalAlpha=alpha;c.strokeStyle=color;c.lineWidth=width;c.beginPath();pts.forEach((p,i)=>i?c.lineTo(...p):c.moveTo(...p));c.stroke();c.globalAlpha=1}
-function bg(c){let g=c.createLinearGradient(0,0,0,580);g.addColorStop(0,'#170725');g.addColorStop(1,'#c62060');c.fillStyle=g;c.fillRect(0,0,1200,760);c.fillStyle='#8ae3e2';for(let i=0;i<34;i++){c.globalAlpha=.15+(i%4)*.06;c.fillRect((i*173+43)%1200,(i*71+41)%300,1.7,1.7)}c.globalAlpha=1;c.save();c.beginPath();c.rect(-2000,-2000,5200,2395);c.clip();sunTransform(c);c.beginPath();c.arc(850,267,102,0,Math.PI*2);c.clip();g=c.createLinearGradient(0,165,0,370);g.addColorStop(0,P);g.addColorStop(1,V);c.fillStyle=g;for(let y=165;y<370;y++)if(y<240||(y-240)%17>3+Math.floor((y-240)/17))c.fillRect(748,y,204,1);c.restore();g=c.createLinearGradient(0,395,0,760);g.addColorStop(0,'#250e30');g.addColorStop(1,'#110e20');c.fillStyle=g;c.fillRect(0,395,1200,365);line(c,[[0,395],[1200,395]],P,1.5,.5);for(let x=-1200;x<=2400;x+=150)line(c,[[600,389],[x,760]],P,1,.22);for(let j=1;j<=12;j++){let y=395+365*(j/12)**2.5;line(c,[[0,y],[1200,y]],P,1,.12+j*.015)}}
+function bg(c){let g=c.createLinearGradient(0,0,0,580);g.addColorStop(0,'#170725');g.addColorStop(1,'#c62060');c.fillStyle=g;c.fillRect(0,0,1200,760);c.fillStyle='#8ae3e2';for(let i=0;i<34;i++){c.globalAlpha=.15+(i%4)*.06;c.fillRect((i*173+43)%1200,(i*71+41)%300,1.7,1.7)}c.globalAlpha=1;c.save();c.beginPath();c.rect(-2000,-2000,5200,2395);c.clip();sunTransform(c);c.beginPath();c.arc(850,267,102,0,Math.PI*2);c.clip();g=c.createLinearGradient(0,165,0,370);g.addColorStop(0,P);g.addColorStop(1,V);c.fillStyle=g;for(let y=165;y<370;y++)if(y<240||(y-240)%17>3+Math.floor((y-240)/17))c.fillRect(748,y,204,1);c.restore();g=c.createLinearGradient(0,395,0,760);g.addColorStop(0,'#250e30');g.addColorStop(1,'#110e20');c.fillStyle=g;c.fillRect(0,395,1200,365);line(c,[[0,395],[1200,395]],P,1.5,.5);for(const x of GRID_X)line(c,[[600,389],[x,760]],P,1,.22);for(let j=1;j<=12;j++){let y=395+365*(j/12)**2.5;line(c,[[0,y],[1200,y]],P,1,.12+j*.015)}}
 const djClamp15=x=>Math.max(0,Math.min(1,x));
 const djFrac15=x=>x-Math.floor(x);
 const djTri15=u=>u<.25?4*u:u<.75?2-4*u:4*u-4;
@@ -133,7 +133,7 @@ function yunoPoseB(bp){
  return q;
 }
 
-const YN={};['arm_l','arm_r','body','ear_l','ear_r','head_closed','head_open','headset','tail'].forEach(n=>{const i=new Image();i.src=new URL('../assets/birthday/yuno/'+n+'.webp',import.meta.url).href;YN[n]=i});
+const YN={};['arm_l','arm_r','body','ear_l','ear_r','head_closed','head_flat','head_open','headset','tail'].forEach(n=>{const i=new Image();i.src=new URL('../assets/birthday/yuno/'+n+'.webp',import.meta.url).href;YN[n]=i});
 const yok=()=>Object.values(YN).every(i=>i.complete&&i.naturalWidth>0);
 function drawRot(c,img,x,y,w,h,deg,ox,oy){c.save();c.translate(ox,oy);c.rotate(deg*Math.PI/180);c.drawImage(img,x-ox,y-oy,w,h);c.restore()}
 // 유노 + DJ 데크: 확정된 부위 이미지(webp)를 박 지도 기반 포즈로 구동한다. 좌표계는 bdayscene-yuno(RIG)와 동일.
@@ -174,7 +174,7 @@ function front(c,t){
   drawRot(c,YN.arm_r,114,157,45,52,q.right,153,164);
   c.save();c.translate(32+87.5,10+.88*156);c.translate(0,headY);c.rotate(q.headAngle*Math.PI/180);c.translate(-(32+87.5),-(10+.88*156));c.translate(32,10);
   const pct=((((t+.7)%7.6)+7.6)%7.6)/7.6*100,closed=yunoEyesClosed||pct>=44.5&&pct<46.3;
-  c.drawImage(closed?YN.head_closed:YN.head_open,0,0,175,156);
+  c.drawImage(yunoEyesClosed?YN.head_flat:closed?YN.head_closed:YN.head_open,0,0,175,156);
   drawRot(c,YN.ear_l,0,0,175,156,-q.ear,.28*175,.45*156);
   drawRot(c,YN.ear_r,0,0,175,156,q.ear,.72*175,.45*156);
   drawRot(c,YN.headset,142,97,42,40,q.mic,142+21,97+20);
@@ -442,7 +442,7 @@ if(type===5){
   }
   if(level>.05){c.fillStyle=cap>10?P:C;c.globalAlpha=alphas[i]*smooth(level/.5);c.fillRect(xx,398-(cap+1)*9.5-1,15,2)}
  }
- c.globalAlpha=1;line(c,[[50,400],[1150,400]],C,1,.45);
+ c.globalAlpha=1;
  // Read-only diagnostics of the exact geometry used by this render (no influence on output).
  snapshot={t,bp,E,density,drive,build,riser,heights,caps,alphas,lengths,baseR,punch};
 }
@@ -452,7 +452,9 @@ if(type===3){for(let row=0;row<16;row++){const z=row/15,scale=.22+.78*z,y=411+z*
 if(type===4){for(let i=0;i<40;i++){let h=spectrum19(t,Math.min(i,39-i)*2,40),x=63+i*27.3,level=h.height/8,cap=Math.min(14,(h.cap-4)/8);for(let j=0;j<15;j++){c.fillStyle=j>10?P:j>6?V:C;c.globalAlpha=.065+.88*Math.max(0,Math.min(1,level-j));c.fillRect(x,393-j*11,15,6)}c.globalAlpha=.85;c.fillStyle=P;c.fillRect(x,393-cap*11,15,2)}c.globalAlpha=1}
 }
 
-function groundGrid(c){line(c,[[0,395],[1200,395]],P,1.5,.5);for(let x=-1200;x<=2400;x+=150)line(c,[[600,389],[x,760]],P,1,.22);for(let j=1;j<=12;j++){let y=395+365*(j/12)**2.5;line(c,[[0,y],[1200,y]],P,1,.12+j*.015)}}
+// 바닥 세로선 — 지평선 근처에서 화면 좌우 끝까지 닿도록 멀리까지 잡고, 바깥쪽은 듬성하게 둬서 그리는 양을 줄인다.
+const GRID_X=[];for(let x=-7800;x<=9000;x+=x<-1200||x>=2400?450:150)GRID_X.push(x);
+function groundGrid(c){line(c,[[0,395],[1200,395]],P,1.5,.5);for(const x of GRID_X)line(c,[[600,389],[x,760]],P,1,.22);for(let j=1;j<=12;j++){let y=395+365*(j/12)**2.5;line(c,[[0,y],[1200,y]],P,1,.12+j*.015)}}
 const FL={};
 function floorWave(c,type,t){
  // Grid Current(D안, 기존 효과 그대로): 지나가는 보라→분홍→시안 띠가 '격자선 위에만' 발광한다.
@@ -475,7 +477,7 @@ function floorWave(c,type,t){
   mc.strokeStyle=`rgba(255,72,141,${smooth(0,.2,z)})`;mc.beginPath();mc.moveTo(0,y);mc.lineTo(1200,y);mc.stroke();
  }
  // 세로 방사선: 위치 고정, 소실점 근처는 투명 → 앞쪽으로 갈수록 진해짐.
- for(let x=-1200;x<=2400;x+=150){
+ for(const x of GRID_X){
   for(const [ctx,m] of [[gc,1],[mc,3.2]]){
    const ex=600+(x-600)*(groundBottom-389)/371;const gr=ctx.createLinearGradient(600,389,ex,groundBottom);
    gr.addColorStop(0,'rgba(255,72,141,0)');gr.addColorStop(.18,m>1?'rgba(255,72,141,1)':'rgba(255,72,141,.04)');gr.addColorStop(1,m>1?'rgba(255,72,141,1)':'rgba(255,72,141,.26)');
