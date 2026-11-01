@@ -29,14 +29,14 @@ try:
     elif '/bdayscene-yuno.js' in r.request.url:
      s=(ROOT/'src/frontend/js/bdayscene-yuno.js').read_text(encoding='utf8')
      s=s.replace('const SKY_SALT=','let SKY_SALT=').replace('function playFinale(){','function playFinale(){window.__finaleRuns=(window.__finaleRuns||0)+1;')
-     s=s.replace('return {triggerManual(kind)', '''return {
+     s=s.replace('return {signActive(t)', '''return {
       testPlan(){return skyPlan(TRK)},stopForTest(){cancelAnimationFrame(raf);raf=0},
       testState(){return {pendingFinale,manual,particles:parts.length}},
       samplePlans(){const saved=SKY_SALT,rows=[];for(let salt=0;salt<100;salt++){
        SKY_SALT=salt;const plan=skyPlan({...TRK}),base=plan.blocked.filter(([a,b])=>!plan.showers.some(t=>a===t&&b===t+5));
        rows.push({showers:plan.showers.length,ambient:plan.ambient.length,before:createAmbientTimeline(TRK.duration,base,plan.ambientSeed).length});
       }SKY_SALT=saved;return rows},
-      triggerManual(kind)''')
+      signActive(t)''')
      r.fulfill(content_type='text/javascript',body=s)
     else:r.continue_()
    page.route('**/*',route)
