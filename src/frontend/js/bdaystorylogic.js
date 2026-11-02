@@ -13,7 +13,7 @@ export const STORY_CUES=[
  {id:'volume',track:0,start:96,end:103,text:'아, 볼륨은 네 마음대로 해.\n......너무 줄이지만 마.'},
  {id:'early',track:0,start:114,end:121,text:'벌써 가려는 건 아니지?\n아직 초반이거든.'},
  {id:'one',track:0,start:134,end:142,text:'별빛 하나.\n아직 듣고 있었어? ......그래그래.',stars:1},
- {id:'count',track:0,start:156,end:163,text:'왜 별을 세냐고?\n......끝까지 들으면 알아.'},
+ {id:'count',track:0,start:144,end:151,text:'왜 별을 세냐고?\n......끝까지 들으면 알아.'},
  {id:'talk',track:0,start:174,end:181,text:'파티라더니 말이 많아졌네.\n......신경 쓰지 마.'},
  {id:'ending',track:0,start:192,end:199,text:'이제 곧 이 곡 끝나.\n그렇다고 나가면 안 돼.'},
  {id:'next',track:0,start:203.8,end:212.8,text:'아직 끝 아니야.\n한 곡 더 남았잖아.'},
@@ -28,6 +28,10 @@ export const STORY_CUES=[
  {id:'three',track:1,start:175,end:184,text:'별빛 셋.\n......다음 말, 두 번은 안 해.',stars:3},
  {id:'stay',track:1,start:198,end:205,text:'곧 끝나.\n......끝까지 있어.'}
 ];
+// 문구가 쉬는 하늘 장면 중 곡마다 시각이 고정된 것 — YMMT 별자리 9초(bdayscene-yuno.js skyPlan 의 plan.constellation).
+// 이 구간에는 문구를 두지 않고(두면 skyBusy 에 가려 나오지 않는다), 공백 계산에서는 화면이 비지 않은 시간으로 친다.
+// 별자리 시각은 박 지도와 고정 해시로 정해진다 — 박 지도 · 장면 예약 규칙을 바꾸면 다시 재서 이 값을 고칠 것.
+export const STORY_SKY_SHOWS=[{id:'constellation',track:0,start:156,end:165},{id:'constellation',track:1,start:37,end:46}];
 // 곡 시각과 상관없이 한 번씩 나오는 대사. 해금 뒤 마지막 말 · 무음이 1분 이어질 때.
 export const STORY_TURN='자, 이제 너의 음악을 들려줘.\n너의 턴이야.',STORY_NUDGE='... 안듣고 있는거.\n알고 있거든?',SILENT_NUDGE_MS=60000;
 export function birthdayStoryCue(track,time,intro=false){return STORY_CUES.find(c=>c.track===track&&time>=c.start&&time<c.end&&(!c.intro||intro))||null}

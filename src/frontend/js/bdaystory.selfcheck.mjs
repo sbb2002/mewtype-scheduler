@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
-import { STORY_CUES, STORY_MAX_GAP, birthdayStoryCue } from './bdaystorylogic.js';
+import { STORY_CUES, STORY_MAX_GAP, STORY_SKY_SHOWS, birthdayStoryCue } from './bdaystorylogic.js';
 import { fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation, YMMT_INK_W, YMMT_INK_H } from './bdaylogic.js';
 import { fireworkFrame, fireworkShot, fireworkSalvo } from './bdayfireworks.js';
 import { decodeSign, signDrawOrder } from './bdaysign.js';
 
-// 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음
+// 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음.
+// 고정 하늘 장면(별자리)은 화면을 채우는 구간으로 치되, 문구와 겹치면 안 된다(겹치면 그 문구가 가려져 안 나온다 — v4.11.8 count).
 for(const track of [0,1]){
- const cues=STORY_CUES.filter(c=>c.track===track);
- for(let i=1;i<cues.length;i++){const gap=cues[i].start-cues[i-1].end;assert.ok(gap>=0,cues[i].id);assert.ok(gap<=STORY_MAX_GAP,`${cues[i].id} ${gap}`)}
+ const cues=STORY_CUES.filter(c=>c.track===track),shows=STORY_SKY_SHOWS.filter(s=>s.track===track);
+ for(const c of cues)for(const s of shows)assert.ok(c.end<=s.start||c.start>=s.end,`${c.id} 가 ${s.id} 와 겹침`);
+ const filled=[...cues,...shows].sort((a,b)=>a.start-b.start);
+ for(let i=1;i<filled.length;i++){const gap=filled[i].start-filled[i-1].end;assert.ok(gap>=0,filled[i].id);assert.ok(gap<=STORY_MAX_GAP,`${filled[i].id} ${gap}`)}
 }
 // 인트로 문구는 드럼(17.14초) 전에 끝나고, 인트로가 아니면 나오지 않는다
 assert.ok(STORY_CUES.filter(c=>c.intro).every(c=>c.end<17.14));
