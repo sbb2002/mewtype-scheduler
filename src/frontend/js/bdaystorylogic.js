@@ -4,7 +4,7 @@
 export const STORY_MAX_GAP=15;
 export const STORY_CUES=[
  // intro = 첫 인트로에서만. 곡이 돌아와도 다시 나오지 않는다. 17.14초 드럼 직전에 끝난다.
- {id:'welcome',track:0,start:.8,end:7.2,intro:true,text:'......왔네.\nYUNO\'s party Lv. 3, 와 줘서 고마워.'},
+ {id:'welcome',track:0,start:.8,end:7.2,intro:true,text:'......왔네.\n내 생일 파티, 와 줘서 고마워.'},
  {id:'listen',track:0,start:7.4,end:12,intro:true,text:'그럼 내 노래도 들어줘.'},
  {id:'prepared',track:0,start:12.2,end:16.9,intro:true,text:'2곡을 준비했어.'},
  {id:'invitation',track:0,start:30,end:38,text:'가지 말라는 건 아니고......\n끝까지 들어 보라는 거야.',stars:0},
@@ -22,7 +22,7 @@ export const STORY_CUES=[
  {id:'birthday',track:1,start:48,end:55,text:'생일이라고 특별한 건 없어.\n......그런 줄 알았는데.'},
  {id:'late',track:1,start:70,end:77,text:'이 시간까지 있는 사람이\n있을 줄은 몰랐어.'},
  {id:'mood',track:1,start:92,end:99,text:'그래그래, 알았어.\n기분 좋은 건 티 안 낼게.'},
- {id:'level',track:1,start:114,end:121,text:'Lv. 3까지 왔네.\n의외로 오래 가잖아, 이 파티.'},
+ {id:'level',track:1,start:114,end:121,text:'생각보다 잘 따라오는걸.\n그루브가 살아있잖아.'},
  {id:'focus',track:1,start:136,end:143,text:'딴짓 안 하고 듣고 있는 거지?\n......보이는 건 아니지만.'},
  {id:'last',track:1,start:156,end:163,text:'슬슬 마지막이 보이네.\n아쉬운 건...... 너만은 아니야.'},
  {id:'three',track:1,start:175,end:184,text:'별빛 셋.\n......다음 말, 두 번은 안 해.',stars:3},
