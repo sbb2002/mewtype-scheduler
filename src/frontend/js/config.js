@@ -77,11 +77,11 @@ export const BIRTHDAY_SCENES_ENABLED = {
 // 리츠 · 미야코는 색약에서 겹치지 않게 명도를 조정했고, 밝게 · 지난 방송(…Ended) 색은 같은 색조에서 계산했다.
 // js/timetable.js fillDot 이 조각마다 --dot-d · --dot-de · --dot-l · --dot-le 로 넣고, css/timetable.css 가 골라 쓴다. 키가 없으면 --lane-color 로 대체.
 export const MEMBER_DOT_COLORS = {
-  arale:  { dark: "#FFDD33", darkEnded: "#967D00", light: "#A68300", lightEnded: "#C2AA3B" },
-  yuno:   { dark: "#FF6688", darkEnded: "#9C2A48", light: "#D02F5D", lightEnded: "#E07085" },
-  nonoka: { dark: "#FFAACC", darkEnded: "#985B74", light: "#CB779A", lightEnded: "#E5A5BE" },
-  ritsu:  { dark: "#6296EC", darkEnded: "#355B9B", light: "#588EE8", lightEnded: "#7EA5E6" },
-  miyako: { dark: "#8C69CE", darkEnded: "#4F347E", light: "#805BC4", lightEnded: "#9D86D2" }
+  arale:  { dark: "#FFDD33", darkEnded: "#C1A300", light: "#A68300", lightEnded: "#BB9A3C" },
+  yuno:   { dark: "#FF6688", darkEnded: "#C63E60", light: "#D02F5D", lightEnded: "#EC5A7B" },
+  nonoka: { dark: "#FFAACC", darkEnded: "#C37997", light: "#CB779A", lightEnded: "#D98AAA" },
+  ritsu:  { dark: "#6296EC", darkEnded: "#4573BF", light: "#588EE8", lightEnded: "#70A2F6" },
+  miyako: { dark: "#8C69CE", darkEnded: "#65459E", light: "#805BC4", lightEnded: "#9D7DE0" }
 };
 
 export const POLL_MS = 75000;
