@@ -5,6 +5,8 @@
 // gradientTransform 을 매 프레임 반대로 돌린다. 데이터는 전혀 받지 않는 장식이라 접근성 트리에서 숨긴다(aria-hidden).
 
 import { layout, scribblePath, makeBody, impulse, step, shakePower, SHAKE_GAP_MS } from "./bglogic.js";
+import { buildVirtualScene, observeMemberAccent } from "./bgvirtual.js";
+import { buildDomeScene } from "./bgdome.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const RAD2DEG = 180 / Math.PI;
@@ -14,6 +16,12 @@ const REBUILD_DH = 150;       // 높이만 이만큼 이상 바뀌면 다시 그
 
 let host = null, svg = null, items = [], bodies = [], els = [];
 let W = 0, H = 0, raf = 0, tPrev = 0, lastShake = 0, rebuildT = 0, sensorOn = false;
+const requested = new URLSearchParams(window.location.search).get("bg");
+const variant = ["a", "b", "c", "d"].includes(requested) ? requested : null;
+const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+let scene = null, momentT = 0, momentEndT = 0;
+let sensorArmed = false, sensorAsked = false;
+const paused = () => document.hidden || reduce() || document.documentElement.hasAttribute("data-bday");
 const reduce = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function sv(tag, attrs, parent) {
@@ -43,7 +51,23 @@ function shape(it, grad, parent) {
 
 function build() {
   W = window.innerWidth; H = window.innerHeight;
+  cancelAnimationFrame(raf); raf = 0;
   if (svg) svg.remove();
+  if (variant === "d") {
+    // 구름은 재생 위치를 유지하고, 정지된 유리만 현재 화면 크기로 다시 투영한다.
+    scene = buildDomeScene(host, W, H);
+    ({ svg, items, els } = scene);
+    bodies = items.map((it) => ({ ...makeBody(it, W, H), home: true, m: it.u * 1.5 }));
+    host.appendChild(svg);
+    return;
+  }
+  if (variant) {
+    scene = buildVirtualScene(variant, W, H);
+    ({ svg, items, els } = scene);
+    bodies = items.map((it) => makeBody(it, W, H));
+    host.appendChild(svg);
+    return;
+  }
   svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "xMidYMid slice", focusable: "false" });
   const defs = sv("defs", {}, svg);
   const tone = sv("linearGradient", { id: "bgd-tone", x1: "0", y1: "0", x2: "0", y2: "1" }, defs);
@@ -77,11 +101,12 @@ function paint() {
   bodies.forEach((b, i) => {
     const e = els[i];
     e.phys.style.transform = `translate(${b.ox.toFixed(1)}px, ${b.oy.toFixed(1)}px) rotate(${(b.th * RAD2DEG).toFixed(1)}deg)`;
-    e.g.setAttribute("gradientTransform", `rotate(${(-items[i].ang - b.th * RAD2DEG).toFixed(1)} ${items[i].x} ${items[i].y})`);   // 돌아도 그라데이션은 위 분홍 · 아래 파랑
+    if (e.g) e.g.setAttribute("gradientTransform", `rotate(${(-items[i].ang - b.th * RAD2DEG).toFixed(1)} ${items[i].x} ${items[i].y})`);   // 돌아도 그라데이션은 위 분홍 · 아래 파랑
   });
 }
 
 function frame(t) {
+  if (paused()) { raf = 0; return; }
   const dt = Math.min(0.05, (t - tPrev) / 1000 || 0.016);
   tPrev = t;
   const moving = step(bodies, dt);
@@ -91,12 +116,47 @@ function frame(t) {
 
 /** 흔들기 — power 는 shakePower() 값(기본 1). 연속으로 불러도 속도가 쌓인다. */
 export function shake(power = 1) {
-  if (!svg || reduce()) return;
+  if (!svg || paused()) return;
   const now = performance.now();
   if (now - lastShake < SHAKE_GAP_MS) return;
   lastShake = now;
   bodies.forEach((b) => impulse(b, power));
+  if (scene && variant !== "d") playMoment(true);
   if (!raf) { tPrev = now; raf = requestAnimationFrame(frame); }
+}
+
+/** 드문 연출만 타이머로 깨운다. 평소에는 물리 프레임을 돌리지 않는다. */
+function playMoment(fromShake = false) {
+  // 연속 센서 입력이 연출 종료를 무한히 미루지 않게 현재 장면은 끝까지 재생한다.
+  if (!scene || paused() || host.dataset.event) return;
+  clearTimeout(momentEndT);
+  host.dataset.event = fromShake ? "shake" : "moment";
+  momentEndT = setTimeout(() => { delete host.dataset.event; }, 6200);
+}
+
+function scheduleMoment() {
+  clearTimeout(momentT);
+  if (!variant || variant === "d" || paused()) return;
+  momentT = setTimeout(() => {
+    playMoment();
+    scheduleMoment();
+  }, 28000 + Math.random() * 18000);
+}
+
+function syncMotion() {
+  const stop = paused();
+  host.classList.toggle("bgd-paused", stop);
+  if (stop) {
+    cancelAnimationFrame(raf); raf = 0;
+    clearTimeout(momentT); clearTimeout(momentEndT);
+    delete host.dataset.event;
+  } else {
+    if (bodies.some((b) => Math.hypot(b.vx, b.vy) > (b.home ? 0.25 : 4) || Math.abs(b.w) > 0.05 || (b.home && Math.hypot(b.ox, b.oy) > 0.4)) && !raf) {
+      tPrev = performance.now(); raf = requestAnimationFrame(frame);
+    }
+    enableSensor();
+    scheduleMoment();
+  }
 }
 
 function onMotion(ev) {
@@ -106,11 +166,14 @@ function onMotion(ev) {
 
 /** 센서 켜기. iOS 는 사용자 동작 안에서 권한을 물어야 해서 첫 터치 때 한 번 요청한다. 안드로이드 · 데스크톱은 바로 듣는다(데스크톱은 이벤트가 안 온다). */
 function enableSensor() {
-  if (sensorOn || typeof DeviceMotionEvent === "undefined") return;
+  if (sensorOn || sensorArmed || sensorAsked || typeof DeviceMotionEvent === "undefined") return;
   const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); };
   if (typeof DeviceMotionEvent.requestPermission !== "function") { attach(); return; }
+  sensorArmed = true;
   const ask = () => {
+    if (paused()) return;
     document.removeEventListener("pointerup", ask, true);
+    sensorArmed = false; sensorAsked = true;
     DeviceMotionEvent.requestPermission().then((r) => { if (r === "granted") attach(); }).catch(() => {});   // 거절 · 실패하면 흔들기만 없다
   };
   document.addEventListener("pointerup", ask, true);
@@ -120,15 +183,21 @@ export function initBgDeco() {
   if (host) return;
   host = document.createElement("div");
   host.id = "bgdeco";
+  if (variant) host.dataset.variant = variant;
   host.setAttribute("aria-hidden", "true");
   document.body.prepend(host);
   build();
+  if (variant && variant !== "d") observeMemberAccent(host);
   window.addEventListener("resize", () => {
     clearTimeout(rebuildT);
     rebuildT = setTimeout(() => {
-      if (window.innerWidth === W && Math.abs(window.innerHeight - H) < REBUILD_DH) return;
+      if (window.innerWidth === W && (variant === "d" ? window.innerHeight === H : Math.abs(window.innerHeight - H) < REBUILD_DH)) return;
       build();   // 크기가 크게 바뀌면(회전 · 창 크기 조절) 장식 자리를 새로 잡는다
+      delete host.dataset.event;
     }, REBUILD_MS);
   });
-  if (!reduce()) enableSensor();
+  document.addEventListener("visibilitychange", syncMotion);
+  motionQuery.addEventListener("change", syncMotion);
+  new MutationObserver(syncMotion).observe(document.documentElement, { attributes: true, attributeFilter: ["data-bday"] });
+  syncMotion();
 }

@@ -38,3 +38,184 @@
 @media (prefers-reduced-motion: reduce) {
   #bgdeco .bgd-fl { animation: none; }
 }
+
+/* 시험안 전용. 쿼리가 없으면 기존 규칙만 적용된다. */
+#bgdeco[data-variant] {
+  --bgv-accent: #ff7788;
+  --bgv-ink: #ccd6ef;
+  --bgv-blue: #73c8f2;
+  --bgv-lilac: #b2a0e9;
+  --bgv-ground: #1b1a2b;
+  --bgv-line: .38;
+  --bgv-fill: .38;
+  --bgv-plane: .2;
+}
+:root[data-theme="light"] #bgdeco[data-variant] {
+  --bgv-ink: #5d5684;
+  --bgv-blue: #2288dd;
+  --bgv-lilac: #9977cb;
+  --bgv-ground: #f3eff8;
+  --bgv-line: .5;
+  --bgv-fill: .49;
+  --bgv-plane: .27;
+}
+#bgdeco .bgv-ground { fill: var(--bgv-ground); }
+#bgdeco .bgv-pink { stop-color: #ff7788; }
+#bgdeco .bgv-ice { stop-color: #b7e8f3; }
+#bgdeco .bgv-lilac { stop-color: #b7a5e9; }
+#bgdeco .bgv-piece, #bgdeco .bgv-fixed { stroke-linejoin: bevel; }
+#bgdeco .bgv-piece > *, #bgdeco .bgv-fixed > *, #bgdeco .bgv-glass, #bgdeco .bgv-solid {
+  transition: fill 2.4s ease, stroke 2.4s ease;
+}
+
+/* A: 면이 넓게 엇갈리고, 조각 안쪽의 얇은 접힘선이 남는다. */
+#bgdeco .bgv-plane { fill: url(#bgv-spectrum); opacity: var(--bgv-plane); }
+#bgdeco .bgv-plane--1 { fill: var(--bgv-accent); opacity: .11; }
+#bgdeco .bgv-plane--2 { fill: var(--bgv-blue); opacity: .12; }
+#bgdeco .bgv-seam { fill: none; stroke: var(--bgv-ink); stroke-width: 1; opacity: .22; }
+#bgdeco .bgv-crown { fill: url(#bgv-spectrum); opacity: .5; }
+#bgdeco .bgv-shard { fill: url(#bgv-spectrum); opacity: var(--bgv-fill); stroke: var(--bgv-ink); stroke-width: .7; }
+#bgdeco .bgv-piece--1 .bgv-shard { fill: var(--bgv-accent); }
+#bgdeco .bgv-shard-edge { fill: none; stroke: var(--bgv-ink); opacity: .5; stroke-width: .8; }
+#bgdeco[data-variant="a"] .bgv-piece--0 { animation: bgv-drift 24s ease-in-out -7s infinite; }
+#bgdeco[data-variant="a"] .bgv-piece--2 { animation: bgv-drift 31s ease-in-out -18s infinite reverse; }
+#bgdeco .bgv-flare { fill: #e5ebff; opacity: .65; }
+#bgdeco .bgv-rare { opacity: 0; }
+#bgdeco[data-event] .bgv-refraction { animation: bgv-refraction 6s ease-in-out both; }
+@keyframes bgv-drift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(7px); } }
+@keyframes bgv-refraction {
+  0% { transform: translateY(0); opacity: 0; }
+  18%, 65% { opacity: .55; }
+  100% { transform: translateY(110vh); opacity: 0; }
+}
+
+/* B: 화면 가장자리의 작은 데이터 흔적. 상시 스캔이나 점멸은 없다. */
+#bgdeco[data-variant="b"] { --bgv-ground: #171b2a; }
+:root[data-theme="light"] #bgdeco[data-variant="b"] { --bgv-ground: #edf1f7; }
+#bgdeco .bgv-circuit { fill: none; stroke: var(--bgv-blue); stroke-width: 1; opacity: .28; }
+#bgdeco .bgv-tick { fill: none; stroke: var(--bgv-ink); stroke-width: 1; opacity: .35; }
+#bgdeco .bgv-frame { fill: none; stroke: var(--bgv-accent); stroke-width: 1.5; opacity: var(--bgv-line); }
+#bgdeco .bgv-check { fill: var(--bgv-accent); opacity: .48; }
+#bgdeco .bgv-chip { fill: var(--bgv-accent); fill-opacity: .15; stroke: var(--bgv-accent); stroke-width: 1.3; opacity: .8; }
+#bgdeco .bgv-pixel { fill: var(--bgv-blue); opacity: .62; }
+#bgdeco .bgv-piece--2 .bgv-pixel { fill: var(--bgv-accent); }
+#bgdeco .bgv-scan-tail { fill: var(--bgv-blue); opacity: .14; }
+#bgdeco .bgv-scan-head { fill: none; stroke: var(--bgv-blue); stroke-width: 2; }
+#bgdeco[data-event] .bgv-scan { animation: bgv-scan 5s cubic-bezier(.2,.6,.4,1) both; }
+#bgdeco[data-variant="b"][data-event] .bgv-piece--1 { animation: bgv-glitch 1.1s steps(1,end) 1; }
+@keyframes bgv-scan {
+  0% { transform: translateY(0); opacity: 0; }
+  12%, 80% { opacity: .7; }
+  100% { transform: translateY(110vh); opacity: 0; }
+}
+@keyframes bgv-glitch {
+  0%, 28%, 60%, 100% { transform: translateX(0); }
+  20%, 54% { transform: translateX(5px); }
+  23%, 57% { transform: translateX(-3px); }
+}
+
+/* C: 희박한 별, 긴 궤도, 자체 제작한 작은 비행체. 번짐 필터는 쓰지 않는다. */
+#bgdeco[data-variant="c"] { --bgv-ground: #141c2c; }
+:root[data-theme="light"] #bgdeco[data-variant="c"] { --bgv-ground: #edf2fa; }
+#bgdeco .bgv-star { fill: var(--bgv-ink); opacity: .43; }
+#bgdeco .bgv-star--accent { fill: var(--bgv-accent); opacity: .65; }
+#bgdeco .bgv-orbit { fill: none; stroke: var(--bgv-lilac); stroke-width: 1; opacity: .42; }
+#bgdeco .bgv-orbit--far { stroke: var(--bgv-blue); opacity: .24; stroke-dasharray: 3 8; }
+#bgdeco .bgv-glass { fill: var(--bgv-blue); fill-opacity: .3; stroke: var(--bgv-blue); stroke-width: 1; }
+#bgdeco .bgv-solid { fill: var(--bgv-accent); fill-opacity: .75; }
+#bgdeco .bgv-port { fill: var(--bgv-ground); }
+#bgdeco .bgv-planet { fill: var(--bgv-lilac); fill-opacity: .25; stroke: var(--bgv-lilac); stroke-opacity: .65; stroke-width: 1; }
+#bgdeco .bgv-planet-ring { fill: none; stroke: var(--bgv-accent); opacity: .6; stroke-width: 1.2; }
+#bgdeco .bgv-spark { fill: var(--bgv-blue); opacity: .65; }
+#bgdeco .bgv-trail { fill: none; stroke: var(--bgv-blue); stroke-width: 1; opacity: .4; }
+#bgdeco[data-variant="c"] .bgv-piece--0 { animation: bgv-drift 28s ease-in-out -13s infinite; }
+#bgdeco[data-event] .bgv-flyby { animation: bgv-flyby 6s cubic-bezier(.25,.4,.65,1) both; }
+@keyframes bgv-flyby {
+  0% { transform: translateX(0); opacity: 0; }
+  10%, 88% { opacity: .85; }
+  100% { transform: translateX(calc(100vw + 90px)); opacity: 0; }
+}
+
+/* 숨은 탭·생일 장면에서는 CSS도 멈춘다. 움직임 설정 변경은 JS도 즉시 따른다. */
+#bgdeco.bgd-paused *, :root[data-bday] #bgdeco * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  #bgdeco[data-variant] * { animation: none !important; transition: none !important; }
+  #bgdeco .bgv-rare { display: none; }
+}
+
+/* D: 실내에서 보는 반구 돔. 다른 시안과 기본 배경에는 적용하지 않는다. */
+#bgdeco[data-variant="d"] {
+  --bgdm-sky: #702747;
+  --bgdm-cloud-filter: url("#bgdm-rose-sky");
+  --bgdm-near-filter: url("#bgdm-rose-cloud");
+  --bgdm-grid-alpha: .23;
+  --bgdm-reflection: .045;
+  --bgdm-floor-back: #9c526c;
+  --bgdm-floor-front: #362c4a;
+  --bgdm-rim: #c882a2;
+  --bgdm-piece: #f49ab9;
+  background: var(--bgdm-sky);
+}
+:root[data-theme="light"] #bgdeco[data-variant="d"] {
+  --bgdm-sky: #f6a8c4;
+  --bgdm-cloud-filter: saturate(.9) hue-rotate(344deg) brightness(1.12);
+  --bgdm-near-filter: saturate(.85) brightness(1.1);
+  --bgdm-grid-alpha: .54;
+  --bgdm-reflection: .09;
+  --bgdm-floor-back: #f8cfdf;
+  --bgdm-floor-front: #c4caed;
+  --bgdm-rim: #dfa4c3;
+  --bgdm-piece: #d8538f;
+}
+#bgdeco .bgdm-sky { position: absolute; inset: 0; overflow: hidden; }
+/* 한 판은 항상 1280 CSS px. 배경 반복과 이동 거리를 일치시켜 복귀 순간도 동일하다.
+   먼 층 0.45px/s, 가까운 층 1px/s. 화면 크기·테마가 바뀌어도 속도는 같다. */
+#bgdeco .bgdm-cloud {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(100% + 1280px);
+  background-repeat: repeat-x;
+  background-size: 1280px 100%;
+  animation: bgdm-cloud-flow 2844.444444s linear infinite;
+}
+#bgdeco .bgdm-cloud--far {
+  background-image: url("../assets/bg/dome-sky.webp");
+  filter: var(--bgdm-cloud-filter);
+}
+#bgdeco .bgdm-cloud--near {
+  background-image: url("../assets/bg/dome-clouds.webp");
+  animation-duration: 1280s;
+  filter: var(--bgdm-near-filter);
+  opacity: .5;
+}
+@keyframes bgdm-cloud-flow { to { transform: translateX(-1280px); } }
+#bgdeco .bgdm-dome { position: absolute; inset: 0; }
+#bgdeco .bgdm-grid {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.05;
+  stroke-opacity: var(--bgdm-grid-alpha);
+  stroke-linejoin: round;
+}
+#bgdeco .bgdm-reflection {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-opacity: var(--bgdm-reflection);
+}
+#bgdeco .bgdm-floor-back { stop-color: var(--bgdm-floor-back); }
+#bgdeco .bgdm-floor-front { stop-color: var(--bgdm-floor-front); }
+#bgdeco .bgdm-floor { fill: url(#bgdm-floor-tone); }
+#bgdeco .bgdm-rim-base { fill: none; stroke: var(--bgdm-rim); stroke-width: 8; }
+#bgdeco .bgdm-rim-light { fill: none; stroke: #fff; stroke-opacity: var(--bgdm-grid-alpha); stroke-width: 1.1; }
+#bgdeco .bgdm-outline { fill: none; stroke: var(--bgdm-piece); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#bgdeco .bgdm-piece--1 { --bgdm-piece: #81cddd; }
+#bgdeco .bgdm-piece--2 { --bgdm-piece: #ac94e0; }
+#bgdeco .bgdm-gem { fill: var(--bgdm-piece); fill-opacity: .65; }
+
+/* D 시험안: 구름 위에 바로 놓이는 작은 글자는 흐린 글자색으로 읽히지 않아 본문색을 쓴다 */
+html:has(#bgdeco[data-variant="d"]) .tt__meta,
+html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }

@@ -70,6 +70,8 @@ const clampW = (w) => Math.max(-10, Math.min(10, w));
 /** dt 초만큼 진행. 하나라도 아직 움직이면 true */
 export function step(bodies, dt, rand = Math.random) {
   for (const b of bodies) {
+    // 돔 안 장식만 약한 복원력을 받는다. 기존 배경의 물리 값은 바꾸지 않는다.
+    if (b.home) { b.vx -= b.ox * 0.72 * dt; b.vy -= b.oy * 0.72 * dt; }
     const f = Math.exp(-b.drag * dt);
     b.vx *= f; b.vy *= f;
     b.w *= Math.exp(-0.7 * dt);   // 회전은 이동보다 오래 남는다
@@ -95,7 +97,9 @@ export function step(bodies, dt, rand = Math.random) {
       p.w = clampW(p.w + vt / p.r * 0.5); q.w = clampW(q.w + vt / q.r * 0.5);
     }
   }
-  return bodies.some((b) => Math.hypot(b.vx, b.vy) > 4 || Math.abs(b.w) > 0.05);
+  const moving = bodies.some((b) => Math.hypot(b.vx, b.vy) > (b.home ? 0.25 : 4) || Math.abs(b.w) > 0.05 || (b.home && Math.hypot(b.ox, b.oy) > 0.4));
+  if (!moving) for (const b of bodies) if (b.home) { b.ox = 0; b.oy = 0; b.vx = 0; b.vy = 0; b.w = 0; }
+  return moving;
 }
 
 // ── 센서 ────────────────────────────────────────────────────
