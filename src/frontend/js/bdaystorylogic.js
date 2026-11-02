@@ -21,13 +21,13 @@ export const STORY_CUES=[
  {id:'second',track:1,start:8,end:15,text:'두 번째 곡.\n......이건 아껴 둔 거야.'},
  {id:'two',track:1,start:26,end:34,text:'별빛 둘.\n하나 남았어. ......나도 좀 기대할게.',stars:2},
  {id:'birthday',track:1,start:48,end:55,text:'이 곡, 네가 좋아할까 꽤 고민했어.\n......못 들은 걸로 해.'},
- {id:'late',track:1,start:70,end:77,text:'아직 안 갔구나.\n이 시간까지 내 노래를\n들어 줄 줄 몰랐어......'},
+ {id:'late',track:1,start:70,end:77,text:'아직 안 갔구나.\n이 시간까지 내 노래를 들어 줄 줄 몰랐어......'},
  {id:'mood',track:1,start:92,end:99,text:'기분이 좋아 보인다고......?\n......뭐, 나도 싫진 않아.'},
  {id:'level',track:1,start:114,end:121,text:'생각보다 잘 따라오는걸.\n그루브가 살아있잖아.'},
  {id:'focus',track:1,start:136,end:143,text:'딴짓 안 하고 듣고 있는 거지?\n......보이는 건 아니지만.'},
  {id:'last',track:1,start:156,end:163,text:'슬슬 마지막이 보이네.\n아쉬운 건...... 너만은 아니야.'},
  {id:'three',track:1,start:175,end:184,text:'별빛 셋.\n네가 있어 준 덕분에 다 모을 수 있었어.',stars:3},
- {id:'stay',track:1,start:198,end:205,text:'지금 이 순간은\n두 번 다시 안 오지만......\n부디 간직해 줘.'}
+ {id:'stay',track:1,start:198,end:205,text:'지금 이 순간은 두 번 다시 안 오지만......\n부디 간직해 줘.'}
 ];
 // 문구가 쉬는 하늘 장면 중 곡마다 시각이 고정된 것 — YMMT 별자리 9초(bdayscene-yuno.js skyPlan 의 plan.constellation).
 // 이 구간에는 문구를 두지 않고(두면 skyBusy 에 가려 나오지 않는다), 공백 계산에서는 화면이 비지 않은 시간으로 친다.
