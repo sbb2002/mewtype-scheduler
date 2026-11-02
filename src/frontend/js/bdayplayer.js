@@ -3,7 +3,8 @@ import { introBrightness } from './bdaylogic.js';
 import { mountBirthdayPlayerDrag } from './bdayplayerdrag.js';
 import { mountBirthdayStory } from './bdaystory.js';
 import { mountBirthdayReward } from './bdayreward.js';
-// 효과 버튼 아이콘(20×20, 선 도형). 이름은 aria-label · title 로 남긴다.
+// 효과 버튼 아이콘(20×20, 선 도형). 이름은 aria-label, 길게 누르기 안내는 aria-description 으로 남긴다.
+// 제어 패널에는 title 을 달지 않는다 — 마우스를 올리면 뜨는 브라우저 기본 도움말을 띄우지 않기로 했다(v4.11.8 운영자 지시).
 const EFFECTS=[
  ['fireworks','폭죽','M10 2v4M10 14v4M2 10h4M14 10h4M4.3 4.3l2.8 2.8M12.9 12.9l2.8 2.8M15.7 4.3l-2.8 2.8M7.1 12.9l-2.8 2.8'],
  ['pulse','태양 펄스','M10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM5.5 5.5a6.4 6.4 0 0 0 0 9M14.5 5.5a6.4 6.4 0 0 1 0 9M3 3a10 10 0 0 0 0 14M17 3a10 10 0 0 1 0 14'],
@@ -42,7 +43,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   for(let i=0;i<4;i++)eq.append(el('i',''));title.append(eq,name);
   const disc=el('div','bday-music__disc','듣고 계시는 이 음악은 SUNO로 제작되었습니다.');
   const prompt=el('button','bday-start','탭하여 시작 ♪');prompt.type='button';prompt.setAttribute('aria-label','탭하여 생일 음악 시작');prompt.hidden=true;
-  const grip=el('button','bday-grip');grip.type='button';grip.setAttribute('aria-label','음악 플레이바 이동');grip.title='잡고 이동 · 방향키로 이동 · Home으로 원래 위치';
+  const grip=el('button','bday-grip');grip.type='button';grip.setAttribute('aria-label','음악 플레이바 이동');grip.setAttribute('aria-description','잡고 이동 · 방향키로 이동 · Home으로 원래 위치');
   const dots=el('span','bday-grip__dots');dots.setAttribute('aria-hidden','true');for(let i=0;i<6;i++)dots.append(el('i',''));grip.append(dots);bar.append(grip);
   function button(cls,label,text,fn){const b=el('button','bday-ib '+cls,text);b.type='button';b.setAttribute('aria-label',label);b.addEventListener('click',e=>{e.stopPropagation();if(!reduced()){const r=el('span','bday-ripple');b.append(r);r.addEventListener('animationend',()=>r.remove(),{once:true})}if(navigator.vibrate)navigator.vibrate(10);Promise.resolve(fn()).catch(()=>{prompt.hidden=false})},{signal});bar.append(b);return b}
   const prev=button('prev','이전 곡','',()=>audio.previous());prev.append(transportIcon('prev'));
@@ -55,7 +56,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   for(const [kind,label,path] of EFFECTS){
    const toggle=kind==='fireworks'||kind==='shower',held=kind in HOLD_HELP;
    const b=button('effect '+kind,label,'',()=>{if(held)return;const on=scene.triggerManual(kind);if(toggle)b.setAttribute('aria-pressed',String(on))});
-   if(toggle)b.setAttribute('aria-pressed','false');b.title=HOLD_HELP[kind]||label;b.append(icon(path));effects.append(b);
+   if(toggle)b.setAttribute('aria-pressed','false');if(HOLD_HELP[kind])b.setAttribute('aria-description',HOLD_HELP[kind]);b.append(icon(path));effects.append(b);
    if(kind==='fireworks')holdable(b,{tap:()=>scene.triggerManual('shot'),hold:()=>b.setAttribute('aria-pressed',String(scene.triggerManual('fireworks')))},signal);
    // 펄스는 박자에 맞출 수 있게 누르는 순간 한 파가 나간다. 0.2초 넘게 누르면 곡의 박마다 파동이 나가고, 떼면 다음 박에 큰 펄스.
    if(kind==='pulse')holdable(b,{down:()=>scene.triggerManual('pulse'),charge:()=>scene.pulseHold(true),hold:()=>scene.pulseHold(false),cancel:()=>scene.pulseHold(false,false)},signal);
@@ -63,7 +64,7 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   }
   // 유노 얼굴 = 「밤 풍경 더 보기」 다시 보기. 재생 중에는 효과 버튼을 잠시 잠근다(켜 둔 토글은 그대로).
   const grand=button('effect grand','밤 풍경 더 보기','',()=>scene.grandShow()),face=new Image();
-  face.src=new URL('../assets/birthday/yuno/head_open.webp',import.meta.url).href;face.alt='';face.draggable=false;grand.title='밤 풍경 더 보기';grand.append(face);effects.append(grand);
+  face.src=new URL('../assets/birthday/yuno/head_open.webp',import.meta.url).href;face.alt='';face.draggable=false;grand.append(face);effects.append(grand);
   scene.onGrand(on=>{for(const b of effects.querySelectorAll('button'))b.disabled=on;shell.toggleAttribute('data-grand',on)});
   bar.append(effects);
   const scan=el('span','bday-panel-scan');scan.setAttribute('aria-hidden','true');bar.append(scan);
