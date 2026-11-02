@@ -686,6 +686,9 @@ function applyMarquees(boardEl) {
    좌우 패딩·옆 유닛 미리보기(peek)·gap 이 있어도 정확히 한 칸씩 스냅. */
 
 let activeIdx = 0;                 // 마지막으로 보던 방송인 (재렌더/회전 넘어가도 유지)
+// (v4.11.7) 보던 멤버 기억 — 키 mew.lane.last, 값 = 채널 키. 페이지를 새로 열면 그 멤버부터 연다(저장소를 못 쓰면 처음부터).
+const LANE_LAST_KEY = "mew.lane.last";
+let laneRestored = false;   // 페이지당 첫 initMobileCarousel 에서만 저장값을 읽는다
 // (마이크로 인터랙션) 첫 방문 힌트 — 이 브라우저에서 처음 한 번만 레인들이 살짝 밀렸다 돌아오며 다음 멤버가 밝아진다.
 // 직접 넘겨 본 뒤에도 기록한다. 저장소를 못 쓰면 이 페이지를 연 동안 한 번만.
 const LANE_HINT_KEY = "mew.tip.lane-swipe";
@@ -781,6 +784,15 @@ function initMobileCarousel(boardEl) {
     slides().forEach((s, i) => { const on = i === di; s.classList.toggle("lane--active", on); s.inert = !on; });
   };
 
+  // (v4.11.7) 저장된 멤버가 있으면 그 자리로 — 같은 채널 키를 못 찾으면 그대로 둔다
+  if (!laneRestored) {
+    laneRestored = true;
+    try {
+      const saved = localStorage.getItem(LANE_LAST_KEY);
+      const idx = saved ? reals.findIndex((l) => l.dataset.channel === saved) : -1;
+      if (idx >= 0) activeIdx = idx;
+    } catch { /* 저장소를 못 쓰면 처음부터 */ }
+  }
   activeIdx = ((activeIdx % n) + n) % n;
   jumpReal(activeIdx);                                  // 즉시
   markActive();
@@ -830,6 +842,11 @@ function initMobileCarousel(boardEl) {
     else if (real > n - 1) real = 0;
     if (real !== activeIdx) {
       activeIdx = real;
+      // (v4.11.7) 보던 멤버를 기억한다 — 저장소를 못 쓰면 무시
+      try {
+        const ch = reals[real] && reals[real].dataset.channel;
+        if (ch) localStorage.setItem(LANE_LAST_KEY, ch);
+      } catch { /* 이 페이지 동안만 */ }
       setActiveDot(real);
       // (마이크로 인터랙션) 다른 멤버로 넘어가면 그 점이 톡 튀어오르고 짧게 진동
       const dot = dots?.querySelectorAll(".dot")[real];
@@ -938,21 +955,16 @@ function initMobileCarousel(boardEl) {
 }
 
 /**
+ * (v4.11.7) 「업데이트 지연」 표기 삭제 — 실패 안내는 js/netrecover.js · main.js 의 #net-alert 가 맡는다.
  * @param {HTMLElement} footEl
  * @param {Object} schedule
- * @param {{stale?: boolean}} opts
  */
-export function renderFooter(footEl, schedule, { stale = false } = {}) {
+export function renderFooter(footEl, schedule) {
   const updatedSpan = footEl.querySelector("#foot-updated");
-  const statusSpan = footEl.querySelector("#foot-status");
 
   if (updatedSpan) {
     const gen = schedule && schedule.generated_at;
     updatedSpan.textContent = gen ? `업데이트: ${formatKST(gen)}` : "업데이트: --/-- --:--";
-  }
-  if (statusSpan) {
-    statusSpan.hidden = !stale;
-    if (stale) statusSpan.textContent = "업데이트 지연";
   }
 }
 

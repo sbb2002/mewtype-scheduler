@@ -827,7 +827,7 @@ function build() {
   el.side = h("div", { class: "mp-side" }, el.tabBar, el.panels);
 
   el.head = h("div", { class: "mp-pop__head" }, h("i", { class: "mp-pop__grab", "aria-hidden": "true" }), el.titleEl, el.closeBtn);   // 모바일: 머리줄을 끌어 내린다
-  el.pop = h("div", { class: "mp-pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "mp-title" },
+  el.pop = h("div", { class: "mp-pop", role: "dialog", "aria-modal": "true", "aria-labelledby": "mp-title", tabindex: "-1" },   // (v4.11.7) 폰은 닫기 버튼이 없어 시트 자체에 포커스할 수 있게
     el.head,
     el.body = h("div", { class: "mp-pop__body" }, el.stage, el.side),
   );
@@ -1648,7 +1648,8 @@ export async function openPlayer() {
   layoutFrame();
   followFrame(SHEET_MS + 80);
   await prepareContent();
-  requestAnimationFrame(() => { layoutFrame(); el.closeBtn.focus({ preventScroll: true }); });
+  // (v4.11.7) 닫기 버튼이 숨겨진 폰이면 시트 자체에 포커스
+  requestAnimationFrame(() => { layoutFrame(); (el.closeBtn.offsetParent ? el.closeBtn : el.pop).focus({ preventScroll: true }); });
 }
 
 export function closePlayer() {

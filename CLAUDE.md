@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-**현재 버전 = v4.11.6 (일반 패치, 2026-11-02)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+**현재 버전 = v4.11.7 (일반 패치, 2026-11-02)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 (`git describe --tags`). 버전별로 무엇이 바뀌었는지 · 배포 리비전 · 롤백 대상은 **`docs/VERSION.md`**(맨 위 태그 대조표 + 버전별 상세)가 정본이다 —
 이 파일에는 버전 이력을 쌓지 않는다(아래 「버전 올릴 때 할 일」).
 
@@ -139,6 +139,7 @@ src/
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
       longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 · 첫 안내 말풍선
+      netrecover.js    # 조회 실패 복구 상태 기계 — 재시도 뒤에도 실패하면 화면 중앙 안내
       bgdeco.js bglogic.js   # 배경 장식 — 분홍 → 파랑 톤 + 떠다니는 로고 도형 · 폰 흔들면 흩어짐(bglogic = 순수 로직 · 물리, css/bgdeco.css)
       birthdayui.js birthday.js   # KST 생일 판정 · 유리 패널 · 🎂 끌기 · 음악 인트로 수명 관리
       bdayscene-yuno.js bdaysign.js bdaylogic.js   # 정본 v12 Canvas 장면과 일출·조명 인트로 · 인코딩 사인 · 순수 계산
@@ -164,7 +165,7 @@ src/
     push_monitor.py    # 미사용 — 삭제 후보
 config/channels.json   # 채널 단일 소스 — channel_order(5인) · channels(5인 + group) · song_feeds · game_accounts
 deploy/                # gcloud 배포 스크립트(README.md). env.sh 는 루트 .env 매핑(gitignore)
-scripts/               # 일회성 데이터 스크립트(곡 목록 생성 · 곡 미디어 적용 · 모니터 백필)
+scripts/               # 일회성 데이터 스크립트(곡 목록 생성 · 곡 미디어 적용 · 모니터 백필) · 로컬 서버 serve_local.py · 브라우저 검증
 fixtures/              # self-test · 프론트 개발용 샘플
 Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 ```
@@ -176,7 +177,7 @@ Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 # Windows 콘솔은 PYTHONIOENCODING=utf-8 권장
 python -m src.backend.<모듈>         # self-test 있는 모듈: src/backend 전부(app · local_runner 제외 — 서버 · 러너를 띄운다) + src.collector.rss · src.collector.youtube · src.bus.conform · src.bus.publisher
 python -m src.backend.vision --live  # 실제 Groq 비전 호출(GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때만)
-node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · longcopy · render · songs · time · timetable · tweetlogic)
+node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · longcopy · netrecover · render · songs · time · timetable · tweetlogic)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md) — 배포는 운영자 결정
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등)
@@ -185,8 +186,8 @@ bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # mewtype-te
 bash deploy/scheduler.sh      # 스케줄러 3잡(light · daily · gapcheck) — KST 05:50~06:30 에는 거부, STAGE=1 이면 아무것도 안 함 (URL 불변이면 생략 가능)
 # writers.py · telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 
-# 프론트 로컬 (저장소 루트에서 — fixture 상대경로 유지 위해)
-python -m http.server 8099           # http://localhost:8099/src/frontend/
+# 프론트 로컬 — /data/*.json 만 운영 데이터 저장소에서 받아 넘긴다(그냥 http.server 는 데이터 404)
+python scripts/serve_local.py 8099   # http://localhost:8099/src/frontend/
 # fixture 로 보려면 src/frontend/js/config.js 의 PREVIEW_URL 을 주석 처리된 fixture 줄로 교체
 ```
 

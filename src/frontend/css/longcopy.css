@@ -20,8 +20,8 @@
 .lc-ring.is-out { opacity: 0; transition: opacity .14s; }
 
 /* 알림 */
-.lc-toast { position: fixed; z-index: 960; left: 0; top: 0; max-width: min(320px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 11px 14px 11px 10px; border: 1px solid var(--color-collab); border-radius: 10px; background: var(--color-bg-secondary); color: var(--color-text); box-shadow: 0 4px 14px var(--shadow-pop); font-family: inherit; font-size: .84rem; font-weight: 600; line-height: 1.5; pointer-events: none; animation: lc-in .18s ease-out both; }
-.lc-toast small { display: block; font-size: .72rem; font-weight: 400; color: var(--color-text-muted); }
+.lc-toast { position: fixed; z-index: 960; left: 0; top: 0; max-width: min(320px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 11px 14px 11px 10px; border: 1px solid var(--color-collab); border-radius: 10px; background: var(--color-bg-secondary); color: var(--color-text); box-shadow: 0 4px 14px var(--shadow-pop); font-family: inherit; font-size: 0.85rem; font-weight: 600; line-height: 1.5; pointer-events: none; animation: lc-in .18s ease-out both; }
+.lc-toast small { display: block; font-size: 0.72rem; font-weight: 400; color: var(--color-text-muted); }
 .lc-toast svg { flex: none; width: 28px; height: 28px; padding: 4px; border-radius: 8px; background: color-mix(in srgb, var(--color-collab) 13%, var(--color-bg-secondary)); color: var(--color-collab); }
 .lc-toast path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .lc-toast.is-wait { border-style: dashed; border-color: var(--color-late); }
@@ -31,7 +31,7 @@
 .lc-toast.is-out { animation: lc-off .18s ease-in both; }
 
 /* 첫 안내 말풍선 — 알림과 같은 패널, 꼬리는 카드 가운데(--tail) */
-.lc-tip { position: fixed; z-index: 955; left: 0; top: 0; max-width: calc(100vw - 24px); padding: 8px 12px; border: 1px solid var(--color-collab); border-radius: 10px; background: var(--color-bg-secondary); color: var(--color-text); box-shadow: 0 4px 14px var(--shadow-pop); font-size: .8rem; font-weight: 600; line-height: 1.4; white-space: nowrap; pointer-events: none; animation: lc-in .18s ease-out both; }
+.lc-tip { position: fixed; z-index: 955; left: 0; top: 0; max-width: calc(100vw - 24px); padding: 8px 12px; border: 1px solid var(--color-collab); border-radius: 10px; background: var(--color-bg-secondary); color: var(--color-text); box-shadow: 0 4px 14px var(--shadow-pop); font-size: 0.8rem; font-weight: 600; line-height: 1.4; white-space: nowrap; pointer-events: none; animation: lc-in .18s ease-out both; }
 .lc-tip::after { content: ""; position: absolute; left: var(--tail, 50%); bottom: -6px; width: 10px; height: 10px; margin-left: -5px; border: solid var(--color-collab); border-width: 0 1px 1px 0; background: var(--color-bg-secondary); transform: rotate(45deg); }
 .lc-tip.is-below::after { bottom: auto; top: -6px; border-width: 1px 0 0 1px; }
 .lc-tip.is-out { animation: lc-off .18s ease-in both; }

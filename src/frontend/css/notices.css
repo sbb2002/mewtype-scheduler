@@ -427,6 +427,9 @@ a.ntc__src:hover { color: var(--color-text); }
 }
 .ntc-card__x:hover { background: var(--ntc-hover); color: var(--color-text); }
 .ntc-card__x:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
+/* (v4.11.7) 폰 시트는 ✕ 를 숨긴다 — 닫기는 손잡이 끌기 · 바깥 탭. PC 팝업의 ✕ 는 그대로 */
+.ntc-sheet .ntc-card__x { display: none; }
+.ntc-sheet:focus, .ntc-sheet:focus-visible { outline: none; }
 .ntc-card__tt { margin: 6px 14px 0; font-size: 17px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; word-break: keep-all; color: var(--color-text); }
 .ntc-card__tt:lang(ja) { font-family: var(--ntc-ja); }
 .ntc-card__cols { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; align-items: start; padding: 10px 14px 12px; }

@@ -520,6 +520,7 @@ function _sheetEnsure() {
   _sheet.scrim.addEventListener("click", () => _sheetClose(true));
   _sheet.el = document.createElement("div");
   _sheet.el.className = "ntc-sheet";
+  _sheet.el.tabIndex = -1;   // (v4.11.7) 닫기(✕)를 숨겼으므로 열릴 때 시트 자체에 포커스
   _sheet.el.setAttribute("role", "dialog");
   _sheet.el.setAttribute("aria-modal", "true");
   _sheet.el.setAttribute("aria-label", "소식 자세히");
@@ -557,7 +558,7 @@ function _sheetOpen(id) {
   _sheet.id = String(id);
   document.body.classList.add("ntc-sheet-open");
   loadXCards(_sheet.el);
-  if (!open) { const x = _sheet.el.querySelector(".ntc-card__x"); if (x) x.focus({ preventScroll: true }); }
+  if (!open) _sheet.el.focus({ preventScroll: true });   // (v4.11.7) 시트에 포커스 — ✕ 는 폰에서 숨긴다
 }
 function _sheetClose(restoreFocus) {
   if (!_sheet.el || _sheet.id == null) return;
@@ -602,6 +603,8 @@ export function renderNotices(section, data) {
     if (_st.timer) { clearInterval(_st.timer); _st.timer = null; }
     _popClose(); _sheetClose(false);
     _st.built = false; _st.sig = ""; _st.open = false; _st.idx = 0; _st.list = []; _st.held = []; _st.listEl = null;
+    // (v4.11.7) 한 번도 못 불러왔으면 「불러오지 못했어요」, 데이터가 있고 0건이면 「없습니다」
+    const emptyMsg = data == null ? "소식을 불러오지 못했어요" : "새 소식이 없습니다";
     if (section.dataset.empty !== "1") {
       stopBannerMotion();
       section.hidden = false;
@@ -610,11 +613,15 @@ export function renderNotices(section, data) {
         `<div class="ntc__bar">` +
           `<span class="ntc__tag"><span class="ntc__lamp" aria-hidden="true"></span>` +
             `<span class="ntc__label">소식</span></span>` +
-          `<div class="ntc__ticker"><span class="ntc__empty">새 소식이 없습니다</span></div>` +
+          `<div class="ntc__ticker"><span class="ntc__empty">${emptyMsg}</span></div>` +
           `<button class="ntc__tgl" type="button" disabled aria-disabled="true" aria-label="소식 없음">▾</button>` +
         `</div>`;
       section.querySelector(".ntc__bar").appendChild(themeButton());
       section.dataset.empty = "1";
+    } else {
+      // (v4.11.7) 빈 막대는 한 번만 그리므로, 문구가 바뀌었으면 글자만 갱신한다
+      const t = section.querySelector(".ntc__empty");
+      if (t && t.textContent !== emptyMsg) t.textContent = emptyMsg;
     }
     return;
   }
@@ -734,6 +741,9 @@ function _build(section) {
   // ── 분류 줄 + 소식 목록 (탭 · 언어를 바꾸면 이것만 다시 그린다) ──
   const hdEl = listEl.querySelector(".ntc__hd"), bodyEl = listEl.querySelector(".ntc__body");
   const paintList = () => {
+    // (v4.11.7) 행사 · 가챠 배너는 전체 · Our Notes(game) 탭에서만 보인다
+    const bnrEl = listEl.querySelector(".ntc__banners");
+    if (bnrEl) bnrEl.hidden = _st.tab !== "all" && _st.tab !== "game";
     const liveTab = _st.tab === "live", lv = liveTab ? _liveSegHTML() : "";   // (v4.7.0) 라이브공연 탭 = [공연별 | 날짜순]
     const groupView = liveTab && _st.liveView === "group";
     const shown = groupView ? _filtered().concat(_st.held).sort(_byDate) : _filtered();   // (v4.7.1) 공연별 묶음에만 지난 소식(held)을 더한다
