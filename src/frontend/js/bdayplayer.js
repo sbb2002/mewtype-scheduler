@@ -62,8 +62,8 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
    if(kind==='pulse')holdable(b,{down:()=>scene.triggerManual('pulse'),charge:()=>scene.pulseHold(true),hold:()=>scene.pulseHold(false),cancel:()=>scene.pulseHold(false,false)},signal);
    if(kind==='sign')holdable(b,{tap:()=>scene.triggerManual('ymmt'),hold:()=>scene.triggerManual('sign')},signal);
   }
-  // 유노 얼굴 = 「밤 풍경 더 보기」 다시 보기. 재생 중에는 효과 버튼을 잠시 잠근다(켜 둔 토글은 그대로).
-  const grand=button('effect grand','밤 풍경 더 보기','',()=>scene.grandShow()),face=new Image();
+  // 유노 얼굴 = 큰 밤 풍경 다시 보기(이름은 감사 카드 버튼과 같은 「이 순간 간직하기」, v4.11.8). 재생 중에는 효과 버튼을 잠시 잠근다(켜 둔 토글은 그대로).
+  const grand=button('effect grand','이 순간 간직하기','',()=>scene.grandShow()),face=new Image();
   face.src=new URL('../assets/birthday/yuno/head_open.webp',import.meta.url).href;face.alt='';face.draggable=false;grand.append(face);effects.append(grand);
   scene.onGrand(on=>{for(const b of effects.querySelectorAll('button'))b.disabled=on;shell.toggleAttribute('data-grand',on)});
   bar.append(effects);

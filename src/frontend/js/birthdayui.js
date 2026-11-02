@@ -64,7 +64,6 @@ function setFull(on, fireworks) {
   if(guard)guard.setActive(on);
   btnFull.setAttribute("aria-pressed", String(on));
   btnFull.setAttribute("aria-label", on ? "화면으로 돌아가기" : "배경 전체 보기");
-  btnFull.title = (on ? "화면으로 돌아가기" : "배경 전체 보기") + " (0.5초 꾹 누르면 위치 이동)";
   btnFull.firstChild.textContent = on ? "✕" : "🎂";
   greet.setAttribute("aria-hidden", String(!on));
   if (fireworks && ctrl && !reduced()) { if (on) ctrl.finale(); else ctrl.celebrate(); }
@@ -176,7 +175,7 @@ function attachDrag(btn) {
 
 function buildUi(k) {
   ui = el("div", { id: "bday-ui" });
-  btnFull = el("button", { type: "button", class: "bday-btn", "aria-pressed": "false", "aria-label": "배경 전체 보기", title: "배경 전체 보기 (0.5초 꾹 누르면 위치 이동)" });
+  btnFull = el("button", { type: "button", class: "bday-btn", "aria-pressed": "false", "aria-label": "배경 전체 보기", "aria-description": "0.5초 꾹 누르면 위치 이동" }); // title 은 달지 않는다(v4.11.8 운영자 지시 — 마우스 도움말 없음)
   btnFull.append(el("span", { class: "bday-btn__ico", "aria-hidden": "true" }, "🎂"));
   const ring = document.createElementNS(NS, "svg");           // 꾹 누를 때 차오르는 고리
   ring.setAttribute("class", "bday-ring");
