@@ -99,14 +99,14 @@ mewtype-scheduler/
 
 ### 프론트엔드
 
-정적 서버는 **저장소 루트**에서 실행한다(fixture 상대경로 `../../fixtures/...` 가 서버 루트 밖으로 나가지 않도록).
+프론트는 `*.vercel.app` 이 아니면 `/data/*.json` 을 읽으므로, 저장소의 `scripts/serve_local.py` 로 띄운다 — `/data/` 요청만 운영 `data` 저장소에서 받아 넘긴다.
 
 ```bash
-python -m http.server 8099
+python scripts/serve_local.py 8099
 # http://localhost:8099/src/frontend/
 ```
 
-로컬 호스트에서는 운영 `data` 저장소의 실데이터를 그대로 읽는다. 샘플 데이터로 보려면 `src/frontend/js/config.js` 의 `PREVIEW_URL` 을
+샘플 데이터로 보려면 `src/frontend/js/config.js` 의 `PREVIEW_URL` 을
 `../../fixtures/preview.sample.json` 으로 임시 교체한다(주석 처리된 줄 있음). 브라우저가 이전 스크립트를 캐시할 수 있으니 확인 땐 강력 새로고침(Ctrl+Shift+R).
 
 ### 점검 (테스트 프레임워크 없음 — 모듈마다 self-test)

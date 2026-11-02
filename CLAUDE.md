@@ -165,7 +165,7 @@ src/
     push_monitor.py    # 미사용 — 삭제 후보
 config/channels.json   # 채널 단일 소스 — channel_order(5인) · channels(5인 + group) · song_feeds · game_accounts
 deploy/                # gcloud 배포 스크립트(README.md). env.sh 는 루트 .env 매핑(gitignore)
-scripts/               # 일회성 데이터 스크립트(곡 목록 생성 · 곡 미디어 적용 · 모니터 백필)
+scripts/               # 일회성 데이터 스크립트(곡 목록 생성 · 곡 미디어 적용 · 모니터 백필) · 로컬 서버 serve_local.py · 브라우저 검증
 fixtures/              # self-test · 프론트 개발용 샘플
 Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 ```
@@ -186,8 +186,8 @@ bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # mewtype-te
 bash deploy/scheduler.sh      # 스케줄러 3잡(light · daily · gapcheck) — KST 05:50~06:30 에는 거부, STAGE=1 이면 아무것도 안 함 (URL 불변이면 생략 가능)
 # writers.py · telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 
-# 프론트 로컬 (저장소 루트에서 — fixture 상대경로 유지 위해)
-python -m http.server 8099           # http://localhost:8099/src/frontend/
+# 프론트 로컬 — /data/*.json 만 운영 데이터 저장소에서 받아 넘긴다(그냥 http.server 는 데이터 404)
+python scripts/serve_local.py 8099   # http://localhost:8099/src/frontend/
 # fixture 로 보려면 src/frontend/js/config.js 의 PREVIEW_URL 을 주석 처리된 fixture 줄로 교체
 ```
 
