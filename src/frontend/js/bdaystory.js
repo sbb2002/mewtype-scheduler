@@ -10,7 +10,7 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const title=document.createElement('h2');title.textContent='“......고마워”';
  const note=document.createElement('p');note.textContent='“생일 같은 거 별거 아니라고 생각했는데,\n오늘은 의외로 나쁘지 않았어.\n나중에 YUNO\'s PARTY Lv.3도 와줘. 기다릴게.”';
  const signature=document.createElement('p');signature.className='bday-memory__signature';signature.textContent='— yuno';
- const close=document.createElement('button');close.type='button';close.textContent='밤 풍경 더 보기';
+ const close=document.createElement('button');close.type='button';close.textContent='이 순간 간직하기';
  card.append(ornament,title,note,signature,close);shell.append(message,card);
  let raf=0,leaving=0,dead=false,key='',finale=false,finished=false,cardPending=false,special=null,specialTimer=0,turnPending=false,nudged=false,silentMs=0,lastPaint=0;
  function visible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-revealed')}
