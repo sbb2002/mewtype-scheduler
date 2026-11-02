@@ -219,8 +219,9 @@ async function touch() {
     check(`${w}: 가로 넘침 없음`, r.scroll[0] <= r.scroll[1], r.scroll.join('/'));
     check(`${w}: 멤버 점 세로 44 · 가로 40`, r.dot && r.dot.h >= 43 && r.dot.w >= 39, JSON.stringify(r.dot));
     check(`${w}: 플레이어 · 표 버튼 세로 44`, r.player.h >= 43 && r.week.h >= 43, JSON.stringify([r.player, r.week]));
-    check(`${w}: YT · X 가로 44`, r.yt.w >= 43 && r.x.w >= 43, JSON.stringify([r.yt, r.x]));
-    check(`${w}: 소식 칩 세로 34`, r.chip.h >= 33, JSON.stringify(r.chip));
+    check(`${w}: YT · X 44×36`, r.yt.w >= 43 && r.x.w >= 43 && r.yt.h >= 35 && r.x.h >= 35, JSON.stringify([r.yt, r.x]));
+    check(`${w}: 소식 칩 세로 막대 안쪽 전체(42)`, r.chip.h >= 41, JSON.stringify(r.chip));
+    check(`${w}: 펼침 · 테마 세로 42`, r.tgl.h >= 41 && r.theme.h >= 41, JSON.stringify([r.tgl, r.theme]));
     if (r.tw) check(`${w}: 트윗 배지 32 이상`, r.tw.w >= 31 && r.tw.h >= 31, JSON.stringify(r.tw));
     if (w === 390) { await o.shot('v-phone-board'); }
     check(`${w}: 페이지 예외 없음`, !o.errs.some(e => e.startsWith('pageerror')), o.errs.filter(e => e.startsWith('pageerror')).join(' | '));console.log('  실패 응답', JSON.stringify(bad));
@@ -228,9 +229,59 @@ async function touch() {
   }
 }
 
+
+async function sizing() {
+  const box = (p, s) => p.evaluate(s => { const e = [...document.querySelectorAll(s)].find(x => x.getBoundingClientRect().width > 0); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10]; }, s);
+  const st = { mode: 'ok' };
+  for (const [w, h] of [[390, 844], [360, 640], [320, 640]]) {
+    const o = await open({ phone: true, w, h }); const p = o.page; await route(p, st); await p.goto(URL); await p.waitForTimeout(2600);
+    const g = await p.evaluate(() => { const l = document.querySelector('.lane--active').getBoundingClientRect(), d = document.querySelector('#pager-dots').getBoundingClientRect(), f = document.getElementById('foot').getBoundingClientRect(), b = document.querySelector('.ntc__bar').getBoundingClientRect(), dot = document.querySelector('#pager-dots .dot').getBoundingClientRect(); return { laneB: l.bottom, dotsT: d.top, dotsB: d.bottom, footT: f.top, bar: b.height, midGapTop: dot.top - l.bottom, midGapBot: f.top - dot.bottom, scroll: [document.documentElement.scrollWidth, innerWidth, document.documentElement.scrollHeight, innerHeight] }; });
+    check(`${w}×${h}: 막대 44 · 멤버 점이 레인과 푸터 사이 가운데`, Math.abs(g.bar - 44) < 1.5 && Math.abs(g.midGapTop - g.midGapBot) <= 2.5 && g.scroll[0] <= g.scroll[1], JSON.stringify(g));
+    if (w === 390) {
+      check('폰 칩 28', (await box(p, '.ntc__cchip'))[1] === 28, JSON.stringify(await box(p, '.ntc__cchip')));
+      check('폰 YT 32', (await box(p, '.lane--active .lane__nav-yt'))[1] === 32);
+      check('폰 펼치기 44', (await box(p, '.lane--active .tt-fold'))?.[1] >= 44);
+      await o.shot('s-phone-board');
+    }
+    await (await p.$('.player-btn--dock')).tap(); await p.waitForTimeout(1800);
+    await (await p.$$('.mp-tab'))[1].tap(); await p.waitForTimeout(500);
+    const songs = await p.evaluate(() => { const v = document.querySelector('.mp-lib').getBoundingClientRect(), t = document.querySelector('.mp-lib .mp-tools').getBoundingClientRect(); const top = Math.max(v.top, t.bottom); return [...document.querySelectorAll('.mp-item__main')].filter(e => { const r = e.getBoundingClientRect(); return r.top >= top - 1 && r.bottom <= v.bottom + 1 && r.height > 0; }).length; });
+    console.log(`  ${w}×${h} 온전히 보이는 곡 ${songs}`);
+    if (w === 390) { check('폰 390: 곡 8곡 이상', songs >= 8, `${songs}`); check('폰 검색 44 · 필터 36 · 탭 44', (await box(p, '.mp-search'))[1] >= 44 && (await box(p, '.mp-chips button'))[1] >= 36 && (await box(p, '.mp-tab'))[1] >= 44, JSON.stringify([await box(p, '.mp-search'), await box(p, '.mp-chips button'), await box(p, '.mp-tab')])); await o.shot('s-phone-player'); }
+    if (w === 360) check('폰 360: 곡 4곡 이상', songs >= 4, `${songs}`);
+    await o.browser.close();
+  }
+  const o = await open({ phone: false }); const p = o.page; await route(p, st); await p.goto(URL); await p.waitForTimeout(2600);
+  check('PC 막대 36 · 칩 28 · 보기 32 · 펼치기 40', Math.abs((await box(p, '.ntc__bar'))[1] - 36) < 1.5 && (await box(p, '.ntc__cchip'))[1] === 28 && (await box(p, '.vt__btn'))[1] === 32 && (await box(p, '.tt-fold'))[1] >= 40, JSON.stringify([await box(p, '.ntc__bar'), await box(p, '.vt__btn'), await box(p, '.tt-fold')]));
+  await o.shot('s-pc-board');
+  await o.browser.close();
+}
+async function banners() {
+  const st = { mode: 'ok' };
+  for (const phone of [true, false]) {
+    const o = await open({ phone }); const p = o.page; await route(p, st); await p.goto(URL); await p.waitForTimeout(2600);
+    await (await p.$('.ntc__tgl'))[phone ? 'tap' : 'click'](); await p.waitForTimeout(800);
+    const vis = () => p.evaluate(() => { const b = document.querySelector('.ntc__banners'); return !!b && b.getBoundingClientRect().height > 0; });
+    const tabs = await p.$$eval('#notice [role=tab][data-tab]', a => [...new Set(a.filter(e => e.getBoundingClientRect().width > 0).map(e => e.dataset.tab))]);
+    const tag = phone ? '폰' : 'PC';
+    check(`${tag}: 전체 탭 배너 보임`, await vis(), tabs.join(','));
+    for (const t of tabs.filter(x => x !== 'all')) {
+      const el = (await p.$$(`#notice [role=tab][data-tab="${t}"]`)); for (const e of el) if (await e.isVisible()) { await e[phone ? 'tap' : 'click'](); break; }
+      await p.waitForTimeout(400);
+      const v = await vis(); check(`${tag}: ${t} 탭 배너 ${t === 'game' ? '보임' : '숨김'}`, v === (t === 'game'));
+      if (t === 'broadcast') await o.shot(`s-${tag}-broadcast`);
+      if (t === 'game') await o.shot(`s-${tag}-game`);
+    }
+    for (const e of await p.$$('#notice [role=tab][data-tab="all"]')) if (await e.isVisible()) { await e[phone ? 'tap' : 'click'](); break; }
+    await p.waitForTimeout(400); check(`${tag}: 전체로 돌아오면 배너 보임`, await vis());
+    check(`${tag}: 페이지 예외 없음`, !o.errs.some(e => e.startsWith('pageerror')));
+    await o.browser.close();
+  }
+}
+
 (async () => {
   const which = process.argv[2];
-  for (const [n, f] of Object.entries({ network, dots, sheets, memory, touch })) if (!which || which === n) { console.log('=== ' + n); try { await f(); } catch (e) { check(n + ' 실행', false, String(e).slice(0, 300)); } }
+  for (const [n, f] of Object.entries({ network, dots, sheets, memory, touch, sizing, banners })) if (!which || which === n) { console.log('=== ' + n); try { await f(); } catch (e) { check(n + ' 실행', false, String(e).slice(0, 300)); } }
   const fail = results.filter(r => !r[0]);
   console.log(`\n합계 ${results.length - fail.length}/${results.length} 통과`);
   fail.forEach(f => console.log('FAIL', f[1], f[2]));

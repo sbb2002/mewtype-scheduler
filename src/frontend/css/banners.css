@@ -152,7 +152,7 @@
 .bnr__tabbar { display: flex; align-items: stretch; gap: 8px; }
 .bnr__tabvp { flex: 1; min-width: 0; overflow: hidden; }
 .bnr__tabtrack { --off: 0; display: flex; gap: 8px; transform: translateX(calc(var(--off) * -1 * ((100% - 16px) / 3 + 8px))); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-.bnr__tab { all: unset; box-sizing: border-box; cursor: pointer; flex: 0 0 calc((100% - 16px) / 3); min-width: 0; display: grid; gap: 1px; padding: 7px 12px; border-radius: 10px;
+.bnr__tab { all: unset; box-sizing: border-box; cursor: pointer; flex: 0 0 calc((100% - 16px) / 3); min-width: 0; min-height: 56px; align-content: center; display: grid; gap: 1px; padding: 8px 12px; border-radius: 12px;   /* (v4.11.7) 최소 높이 56 · 세로 8 · 반경 12 */
   background: var(--color-bg-secondary); border: 1px solid var(--bnr-line); --acc: var(--bnr-live); }
 .bnr__tab[data-st="sched"]  { --acc: var(--bnr-sched); }
 .bnr__tab[data-st="warn"]   { --acc: var(--bnr-warn); }
@@ -163,11 +163,11 @@
 .bnr__tab[aria-selected="true"] { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, var(--color-bg-secondary)); }
 .bnr__tab[data-kind="event"][aria-selected="true"] { border-color: var(--bnr-kind-event); background: color-mix(in srgb, var(--bnr-kind-event) 12%, var(--color-bg-secondary)); }   /* (v4.5.11 A안) */
 .bnr__tab[data-kind="gacha"][aria-selected="true"] { border-color: var(--bnr-kind-gacha); background: color-mix(in srgb, var(--bnr-kind-gacha) 12%, var(--color-bg-secondary)); }
-.bnr__tabtop { display: flex; align-items: center; gap: 7px; font-size: 0.7rem; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden; }
+.bnr__tabtop { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 16px; font-weight: 700;   /* (v4.11.7) */ color: var(--acc); white-space: nowrap; overflow: hidden; }
 .bnr__tabtop i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
-.bnr__tabname { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bnr__tabname { font-size: 14px; line-height: 20px; font-weight: 600;   /* (v4.11.7) */ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bnr__tabname .bnr__kind { font-size: 0.68rem; padding: 0 6px; margin-right: 6px; vertical-align: 1px; }
-.bnr__arrow { all: unset; box-sizing: border-box; cursor: pointer; flex: none; width: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 1.3rem; line-height: 1;
+.bnr__arrow { all: unset; box-sizing: border-box; cursor: pointer; flex: none; width: 34px; border-radius: 12px; display: grid;   /* (v4.11.7) 반경 10 → 12 */ place-items: center; font-size: 1.3rem; line-height: 1;
   color: var(--bnr-arrow); background: var(--color-bg-secondary); border: 1px solid var(--bnr-line); }
 .bnr__arrow:hover:not(:disabled) { border-color: var(--bnr-arrow-hover); color: var(--color-text); }
 .bnr__arrow:disabled { opacity: 0.3; cursor: default; }
@@ -192,7 +192,7 @@
   .bnr__tabvp::-webkit-scrollbar { display: none; }
   .bnr__tabvp.is-drag { scroll-snap-type: none; cursor: grabbing; user-select: none; }
   .bnr__tabtrack { position: relative; transform: none; transition: none; }
-  .bnr__tab { flex: 0 0 min(58%, 220px); scroll-snap-align: start; min-height: 44px; align-content: center; }
+  .bnr__tab { flex: 0 0 min(58%, 220px); scroll-snap-align: start; align-content: center; }   /* (v4.11.7) 폰 min-height 44 삭제 — PC 와 같은 56 */
   .bnr__dots { display: flex; justify-content: center; gap: 6px; }
   .bnr__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--bnr-dot); }
   .bnr__dots i.on { background: var(--bnr-dot-on); }

@@ -741,6 +741,9 @@ function _build(section) {
   // ── 분류 줄 + 소식 목록 (탭 · 언어를 바꾸면 이것만 다시 그린다) ──
   const hdEl = listEl.querySelector(".ntc__hd"), bodyEl = listEl.querySelector(".ntc__body");
   const paintList = () => {
+    // (v4.11.7) 행사 · 가챠 배너는 전체 · Our Notes(game) 탭에서만 보인다
+    const bnrEl = listEl.querySelector(".ntc__banners");
+    if (bnrEl) bnrEl.hidden = _st.tab !== "all" && _st.tab !== "game";
     const liveTab = _st.tab === "live", lv = liveTab ? _liveSegHTML() : "";   // (v4.7.0) 라이브공연 탭 = [공연별 | 날짜순]
     const groupView = liveTab && _st.liveView === "group";
     const shown = groupView ? _filtered().concat(_st.held).sort(_byDate) : _filtered();   // (v4.7.1) 공연별 묶음에만 지난 소식(held)을 더한다

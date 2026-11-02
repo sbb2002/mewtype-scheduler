@@ -1434,7 +1434,8 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
 - **js/netrecover.js** — (v4.11.7) 아래 js/main.js 「조회 실패 복구」의 순수 상태 기계. `createNetRecovery` · `RETRY_DELAYS_MS` · `ONLINE_DELAY_MS`. selfcheck: `netrecover.selfcheck.mjs`.
-- **폰 터치 영역**(v4.11.7, `css/layout.css` 767px 이하): 보이는 크기는 그대로 두고 투명 가상 요소로 누르는 범위만 넓힌다 — 멤버 점 40×44 · 플레이어 · 표 버튼 세로 44 · YouTube · X 44×32 · 트윗 배지 사방 8px · 소식 칩 세로 34(막대 `overflow: hidden` 까지).
+- **폰 터치 영역**(v4.11.7, `css/layout.css` 767px 이하): 보이는 크기는 그대로 두고 투명 가상 요소로 누르는 범위만 넓힌다 — 멤버 점 40×44 · 플레이어 · 표 버튼 세로 44 · YouTube · X 44×36 · 트윗 배지 사방 8px · 소식 칩 세로 42(막대 안쪽 전체).
+- **기능 요소 크기 기준**(v4.11.7): 작은 칩 28px · 보조 선택 폰 36 / PC 32 · 일반 조작 폰 44 / PC 40. 모서리 반경 = 일반 조작 8 · 카드 12 · 칩 999. 소식 막대 폰 44 / PC 36(`--ntc-item-h`, 폰 레인 높이 `--m-notice` 가 이 값을 전제로 한다). 플레이어 곡 줄 · 하단 플레이어 · 표 버튼(멤버 아이콘 26px 에 맞춤)은 이 기준 밖이다. 폰 플레이어 도구 줄을 키운 대신 머리줄 · 재생부 · 탭 사이 여백을 줄여 390×844 에서 곡 8곡을 지킨다.
 - **js/longcopy.js** + **css/longcopy.css** — (v4.11.5) 아래 「길게 눌러 주소 복사」. `markCopy` · `copyTarget` · `pickTipTarget` · `tipPosition` · `initLongCopy` · `maybeShowCopyTip`. selfcheck: `longcopy.selfcheck.mjs`.
 - **js/king.js** + **css/king.css** — (v4.3.1) 노노카 지각 이스터에그. 위 「노노카 지각 이스터에그 (v4.3.1)」. `timetable.js` 가 `decorateBlock` · `decoratePopup` · `decorateCard` 를 호출. selfcheck: `king.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
@@ -1530,6 +1531,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 시트와 같은 코드 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.
   - 소식 줄 · 카드는 링크가 아니라 버튼(`role=button` · `tabindex=0` · `aria-haspopup=dialog`, Enter/Space 로 열기, 키보드로 닫으면 포커스가 그 줄로).
   - 75초 폴링으로 다시 그릴 때: 고정 팝업 · 시트는 같은 소식이 남아 있으면 유지(내용이 바뀌면 다시 채움), 없으면 닫음. 호버 팝업은 닫음.
+- **행사 배너 표시 탭**(v4.11.7): 펼친 목록의 행사 · 가챠 배너(`.ntc__banners`)는 [전체] · Our Notes(`game`) 탭에서만 보이고, 다른 분류 탭에서는 숨긴다.
 - **펼친 목록 높이**: 행사 배너 + 분류 줄 + 소식 영역(`LIST_CAP` PC 420 · 모바일 460px 상한), 전체는 화면 높이 70% 상한. 펼친 목록 z-index 42(v4.6.3 까지 30 — PC 플레이어 도크(40)의 YouTube 화면 밑으로 들어가던 것을 고침).
 - 데이터 주입: 템플릿 + `_esc` · `_attr` 이스케이프(v2 부터의 방식 그대로), 링크는 http(s)만.
 

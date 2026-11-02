@@ -63,7 +63,10 @@
   outline-offset: 1px;
 }
 @media (max-width: 767px) {
-  .lane__nav-btn { width: 26px; height: 26px; }   /* 터치 타깃 */
+  .lane__nav-btn { width: 32px; height: 32px; border-radius: 8px; }   /* 터치 타깃 (v4.11.7: 26 → 32) */
+  .lane__nav-btn svg { width: 18px; height: 18px; }   /* (v4.11.7) */
+  .lane__nav { gap: 4px; }                 /* (v4.11.7) */
+  .tws__seg-b { min-height: 36px; }        /* (v4.11.7) 폰 36px — 칩 위치 · 크기는 tweets.js _placePill 이 offsetHeight 로 잰다 */
 }
 
 /* ── 트윗 배지 (아바타 우상단, 살짝 겹침) ───────────────────────────────
@@ -248,7 +251,7 @@ body.no-select.tw-ns { cursor: ns-resize; }   /* 팝업 높이를 바꾸는 동�
 }
 .tws__seg-b {
   position: relative; z-index: 1; border: 0; background: transparent; color: var(--sub);
-  font: inherit; font-size: 12px; white-space: nowrap; padding: 4px 9px; min-height: 28px;
+  font: inherit; font-size: 12px; white-space: nowrap; padding: 0 9px; min-height: 32px;   /* (v4.11.7) 세로 패딩 0 · 높이 28 → 32(폰 36) */
   border-radius: 7px; cursor: pointer;
 }
 .tws__seg-b[aria-pressed="true"] { color: var(--m); font-weight: 800; }

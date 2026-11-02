@@ -36,15 +36,16 @@
   padding: 3px;
   gap: 2px;
   border: 1px solid var(--color-border);
-  border-radius: 9px;
+  border-radius: 11px;                     /* (v4.11.7) 9px → 11px */
   background: var(--color-bg-secondary);
 }
 .vt__btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 13px;
-  border-radius: 6px;
+  padding: 0 13px;                         /* (v4.11.7) 세로 패딩 0 · 최소 높이 32 */
+  min-height: 32px;
+  border-radius: 8px;
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--color-text-muted);
@@ -440,15 +441,16 @@ a.tt-pop__img { cursor: pointer; }
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;                                /* (v4.11.7) 12 → 8 */
   width: 100%;
   margin-top: 12px;
-  padding: 11px 14px;
+  padding: 0 14px;                         /* (v4.11.7) 세로 패딩 0 · 최소 높이 40(폰 44) */
+  min-height: 40px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 8px;                      /* (v4.11.7) 10px → 8px */
   background: var(--color-bg-secondary);
   color: var(--color-text);
-  font-size: 0.85rem;
+  font-size: 14px;                         /* (v4.11.7) 0.85rem → 14px */
   font-weight: 500;
 }
 .tt-fold:hover { background: var(--color-hover); }
@@ -486,7 +488,7 @@ a.tt-pop__img { cursor: pointer; }
 /* (v4.9.6) PC 표 보기 — 펼치면 접기 버튼과 두 표가 한 상자: 버튼 = 상자 머리(위만 둥글게), .tt-later = 몸통(아래만 둥글게, 같은 바탕 · 테두리) */
 #board.board--tt:not(.board--cards) > .tt-fold { transition: border-radius 0.2s; }
 #board.board--tt:not(.board--cards).board--later-open > .tt-fold {
-  border-radius: 10px 10px 0 0;
+  border-radius: 8px 8px 0 0;              /* (v4.11.7) 10px → 8px — 아래 .tt-later 와 같은 반경 */
   border-bottom-color: var(--color-line-soft);
 }
 #board.board--tt:not(.board--cards) > .tt-later {
@@ -494,7 +496,7 @@ a.tt-pop__img { cursor: pointer; }
   padding: 14px;
   border: 1px solid var(--color-border);
   border-top: 0;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 8px 8px;              /* (v4.11.7) 10px → 8px — 위 접기 버튼과 같은 반경 */
   background: var(--color-bg-secondary);
 }
 
@@ -798,7 +800,7 @@ html[data-theme="light"] .wk2__dot.is-ended .wk2__seg { background: var(--dot-le
   /* 마우스 드래그로 넘기는 동안은 스냅을 풀어 손에 붙어 따라오게 한다 (render.js initMobileCarousel) */
   #board.board--carousel { cursor: grab; }
   #board.board--dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
-  .tt-fold { width: auto; margin: var(--gap) var(--gap) 0; }   /* 위 카드와 한 칸 떨어뜨림 */
+  .tt-fold { width: auto; min-height: 44px; margin: var(--gap) var(--gap) 0; }   /* 위 카드와 한 칸 떨어뜨림 · (v4.11.7) 폰 높이 44 */
   .lane__later { padding-top: var(--gap); }
   /* 하단 페이지 도트 = 멤버 프로필 이미지 (v4.1.0). 레인 아바타와 같은 이미지가 render.js 에서 들어온다 */
   #pager-dots { gap: 14px; }
