@@ -76,7 +76,7 @@ function legacyCopy(text) {
   if (prev && prev.focus) prev.focus({ preventScroll: true });
   return ok;
 }
-async function copyNow(text) {
+export async function copyNow(text) {   // (v4.11.7) 트윗 시트 「URL 복사」도 쓴다
   if (navigator.clipboard && navigator.clipboard.writeText) {
     try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
   }

@@ -17,7 +17,7 @@
 import { formatKST } from "./time.js";
 import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
 import { markCopy } from "./longcopy.js";   // (v4.11.5) 길게 눌러 주소 복사
-import { MEMBER_DOT_COLORS } from "./config.js";   // (v4.11.7) 이후 예고 점의 멤버 색(어둡게 · 밝게 · 지난 방송)
+import { MEMBER_DOT_COLORS } from "./config.js";   // (v4.11.7) 이후 예고 점의 멤버 색(어둡게 · 밝게)
 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
@@ -1072,9 +1072,7 @@ function fillDot(node, keys, f) {
     const dc = MEMBER_DOT_COLORS[k];
     if (dc) {
       seg.style.setProperty("--dot-d", dc.dark);
-      seg.style.setProperty("--dot-de", dc.darkEnded);
       seg.style.setProperty("--dot-l", dc.light);
-      seg.style.setProperty("--dot-le", dc.lightEnded);
     }
     shape.appendChild(seg);
   }

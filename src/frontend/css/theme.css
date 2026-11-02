@@ -136,7 +136,7 @@
 /* ── 전환 버튼 — 소식 막대의 마지막 칸(▾ 오른쪽). notices.js 가 막대를 다시 그릴 때마다 같은 버튼을 옮겨 붙인다 ── */
 .ntc__theme {
   flex: none;
-  width: 2.5rem;                           /* (v4.11.7) PC 2.9rem → 2.5rem(40px) */
+  width: 2.9rem;
   display: grid;
   place-items: center;
   padding: 0;
@@ -150,7 +150,6 @@
 /* 모바일: 버튼이 한 칸 늘어난 만큼 ▾ · 전환 두 칸을 좁혀 소식 제목 자리를 지킨다 */
 @media (max-width: 767px) {
   .ntc__tgl, .ntc__theme { width: 2.25rem; }
-  .ntc__theme svg { width: 18px; height: 18px; }   /* (v4.11.7) 폰 전환 아이콘 18px */
 }
 .ntc__theme:focus-visible { outline: 2px solid var(--ntc-focus); outline-offset: -2px; }
 /* 해 · 달을 같은 자리에 겹쳐 두고 바꿔 보인다(BPM 테마 토글과 같은 방식). 아이콘 = 지금 테마 */

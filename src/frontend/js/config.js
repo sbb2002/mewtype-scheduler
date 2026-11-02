@@ -73,17 +73,15 @@ export const BIRTHDAY_SCENES_ENABLED = {
   miyako: false
 };
 
-// (v4.11.7) 이후 예고 점의 멤버 색 — 기준 = 나무위키 멤버 문서의 이미지 컬러(아라레 #ffdd33 · 유노 #ff6688 · 노노카 #ffaacc · 리츠 #5588dd · 미야코 #9977dd).
-// 리츠 · 미야코는 색약에서 겹치지 않게 명도를 조정했고, 밝게 · 지난 방송(…Ended) 색은 같은 색조에서 계산했다.
-// js/timetable.js fillDot 이 조각마다 --dot-d · --dot-de · --dot-l · --dot-le 로 넣고, css/timetable.css 가 골라 쓴다. 키가 없으면 --lane-color 로 대체.
+// (v4.11.7) 이후 예고 점의 멤버 색 — 기준 = 나무위키 멤버 문서의 이미지 컬러(유노 #ff6688 · 노노카 #ffaacc · 리츠 #5588dd · 미야코 #9977dd).
+// 리츠 · 미야코는 색약에서 겹치지 않게 명도를 조정했고, 밝게 색은 같은 색조에서 계산했다. 아라레는 표에 넣지 않아 --lane-color(아바타 평균색)를 쓴다(운영자 결정).
+// js/timetable.js fillDot 이 조각마다 --dot-d · --dot-l 로 넣고, css/timetable.css 가 골라 쓴다. 지난 방송은 점 전체 불투명도 0.5.
 export const MEMBER_DOT_COLORS = {
-  arale:  { dark: "#FFDD33", darkEnded: "#C1A300", light: "#A68300", lightEnded: "#BB9A3C" },
-  yuno:   { dark: "#FF6688", darkEnded: "#C63E60", light: "#D02F5D", lightEnded: "#EC5A7B" },
-  nonoka: { dark: "#FFAACC", darkEnded: "#C37997", light: "#CB779A", lightEnded: "#D98AAA" },
-  ritsu:  { dark: "#6296EC", darkEnded: "#4573BF", light: "#588EE8", lightEnded: "#70A2F6" },
-  miyako: { dark: "#8C69CE", darkEnded: "#65459E", light: "#805BC4", lightEnded: "#9D7DE0" }
+  yuno:   { dark: "#FF6688", light: "#D02F5D" },
+  nonoka: { dark: "#FFAACC", light: "#CB779A" },
+  ritsu:  { dark: "#6296EC", light: "#588EE8" },
+  miyako: { dark: "#8C69CE", light: "#805BC4" }
 };
-
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;

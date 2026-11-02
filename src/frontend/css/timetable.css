@@ -36,16 +36,15 @@
   padding: 3px;
   gap: 2px;
   border: 1px solid var(--color-border);
-  border-radius: 11px;                     /* (v4.11.7) 9px → 11px */
+  border-radius: 9px;
   background: var(--color-bg-secondary);
 }
 .vt__btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 13px;                         /* (v4.11.7) 세로 패딩 0 · 최소 높이 32 */
-  min-height: 32px;
-  border-radius: 8px;
+  padding: 5px 13px;
+  border-radius: 6px;
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--color-text-muted);
@@ -441,16 +440,15 @@ a.tt-pop__img { cursor: pointer; }
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 8px;                                /* (v4.11.7) 12 → 8 */
+  gap: 12px;
   width: 100%;
   margin-top: 12px;
-  padding: 0 14px;                         /* (v4.11.7) 세로 패딩 0 · 최소 높이 40(폰 44) */
-  min-height: 40px;
+  padding: 11px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;                      /* (v4.11.7) 10px → 8px */
+  border-radius: 10px;
   background: var(--color-bg-secondary);
   color: var(--color-text);
-  font-size: 14px;                         /* (v4.11.7) 0.85rem → 14px */
+  font-size: 0.85rem;
   font-weight: 500;
 }
 .tt-fold:hover { background: var(--color-hover); }
@@ -488,7 +486,7 @@ a.tt-pop__img { cursor: pointer; }
 /* (v4.9.6) PC 표 보기 — 펼치면 접기 버튼과 두 표가 한 상자: 버튼 = 상자 머리(위만 둥글게), .tt-later = 몸통(아래만 둥글게, 같은 바탕 · 테두리) */
 #board.board--tt:not(.board--cards) > .tt-fold { transition: border-radius 0.2s; }
 #board.board--tt:not(.board--cards).board--later-open > .tt-fold {
-  border-radius: 8px 8px 0 0;              /* (v4.11.7) 10px → 8px — 아래 .tt-later 와 같은 반경 */
+  border-radius: 10px 10px 0 0;
   border-bottom-color: var(--color-line-soft);
 }
 #board.board--tt:not(.board--cards) > .tt-later {
@@ -496,7 +494,7 @@ a.tt-pop__img { cursor: pointer; }
   padding: 14px;
   border: 1px solid var(--color-border);
   border-top: 0;
-  border-radius: 0 0 8px 8px;              /* (v4.11.7) 10px → 8px — 위 접기 버튼과 같은 반경 */
+  border-radius: 0 0 10px 10px;
   background: var(--color-bg-secondary);
 }
 
@@ -590,14 +588,11 @@ a.tt-pop__img { cursor: pointer; }
 /* (v4.11.7) 점 색 = 멤버 고정 색(js/config.js MEMBER_DOT_COLORS → fillDot 이 --dot-*). 키가 없으면 --lane-color 로 대체 */
 .wk2__seg { background: var(--dot-d, var(--lane-color, var(--color-text-muted))); }
 html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, var(--color-text-muted))); }
-.wk2__dot.is-ended .wk2__seg { background: var(--dot-de, var(--lane-color, var(--color-text-muted))); }
-html[data-theme="light"] .wk2__dot.is-ended .wk2__seg { background: var(--dot-le, var(--lane-color, var(--color-text-muted))); }
 .wk2__seg:only-child { border-radius: 50%; }
 /* 합동 = 참여 멤버 수만큼 이어 붙인 알약 (14px × n, 양 끝만 둥글게) */
 .wk2__seg:first-child:not(:last-child) { border-radius: 7px 0 0 7px; }
 .wk2__seg:last-child:not(:first-child) { border-radius: 0 7px 7px 0; }
-/* (v4.11.7) 지난 방송은 점 전체 opacity 를 쓰지 않는다 — 대신 위 .is-ended .wk2__seg 가 옅은 멤버 색(…Ended)으로 바꾼다.
-   합동 알약 · 라이브 링 · 자물쇠 · 시각 미정 표시는 흐려지지 않게 그대로 둔다. */
+.wk2__dot.is-ended { opacity: 0.5; }   /* 지난 방송 = 멤버 색 그대로 흐리게(채도는 낮추지 않음 — 누구 방송인지 알아보게) */
 .wk2__dot { border-radius: 12px; }
 .wk2__dot.is-live { box-shadow: inset 0 0 0 2px var(--color-live); }
 .wk2__dot.is-tbd { outline: 1.5px dashed var(--color-text-muted); outline-offset: -3px; }
@@ -800,7 +795,7 @@ html[data-theme="light"] .wk2__dot.is-ended .wk2__seg { background: var(--dot-le
   /* 마우스 드래그로 넘기는 동안은 스냅을 풀어 손에 붙어 따라오게 한다 (render.js initMobileCarousel) */
   #board.board--carousel { cursor: grab; }
   #board.board--dragging { scroll-snap-type: none; cursor: grabbing; user-select: none; }
-  .tt-fold { width: auto; min-height: 44px; margin: var(--gap) var(--gap) 0; }   /* 위 카드와 한 칸 떨어뜨림 · (v4.11.7) 폰 높이 44 */
+  .tt-fold { width: auto; margin: var(--gap) var(--gap) 0; }   /* 위 카드와 한 칸 떨어뜨림 */
   .lane__later { padding-top: var(--gap); }
   /* 하단 페이지 도트 = 멤버 프로필 이미지 (v4.1.0). 레인 아바타와 같은 이미지가 render.js 에서 들어온다 */
   #pager-dots { gap: 14px; }

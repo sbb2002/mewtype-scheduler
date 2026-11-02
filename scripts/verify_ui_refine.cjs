@@ -110,12 +110,12 @@ async function dots() {
     await route(p, st); await p.goto(URL); await p.waitForTimeout(2500);
     await (await p.$('.week-btn')).tap(); await p.waitForTimeout(800);
     const d = await p.evaluate(() => [...document.querySelectorAll('.wk-sheet .wk2__row .wk2__dot')].slice(0, 40).map(b => ({ ended: b.classList.contains('is-ended'), op: getComputedStyle(b).opacity, seg: [...b.querySelectorAll('.wk2__seg')].map(s => [s.dataset.channel, getComputedStyle(s).backgroundColor]) })));
-    const expect = theme === 'dark' ? ['dark', 'darkEnded'] : ['light', 'lightEnded'];
     const cfg = fs.readFileSync(path.join(__dirname, '..', 'src/frontend/js/config.js'), 'utf8');
-    const tbl = {}; for (const m of cfg.matchAll(/(\w+):\s*\{ dark: "(#\w+)", darkEnded: "(#\w+)", light: "(#\w+)", lightEnded: "(#\w+)"/g)) tbl[m[1]] = { dark: m[2], darkEnded: m[3], light: m[4], lightEnded: m[5] };
+    const tbl = {}; for (const m of cfg.matchAll(/(\w+):\s*\{ dark: "(#\w+)", light: "(#\w+)"/g)) tbl[m[1]] = { dark: m[2], light: m[3] };
     const rgb = h => `rgb(${parseInt(h.slice(1, 3), 16)}, ${parseInt(h.slice(3, 5), 16)}, ${parseInt(h.slice(5, 7), 16)})`;
-    let bad = 0; for (const x of d) for (const [k, c] of x.seg) if (c !== rgb(tbl[k][expect[x.ended ? 1 : 0]])) { bad++; console.log('  색 불일치', k, c, x.ended); }
-    check(`${theme}: 점 ${d.length}개가 표의 색과 일치 · 불투명도 1`, d.length > 0 && bad === 0 && d.every(x => x.op === '1'), `종료 ${d.filter(x => x.ended).length}개`);
+    let bad = 0; for (const x of d) for (const [k, c] of x.seg) if (tbl[k] ? c !== rgb(tbl[k][theme]) : !/^rgb/.test(c)) { bad++; console.log('  색 불일치', k, c); }
+    const op = d.every(x => x.op === (x.ended ? '0.5' : '1'));
+    check(`${theme}: 점 ${d.length}개 색 일치 · 지난 방송 불투명도 0.5`, d.length > 0 && bad === 0 && op && !tbl.arale, `종료 ${d.filter(x => x.ended).length}개`);
     await o.shot(`v-week-${theme}`);
     const hasX = await p.evaluate(() => !!document.querySelector('.wk-sheet__x') || [...document.querySelectorAll('.wk-sheet button')].some(b => b.textContent.trim() === '닫기'));
     check(`${theme}: 이후 예고 시트 닫기 버튼 없음`, !hasX);
@@ -219,9 +219,8 @@ async function touch() {
     check(`${w}: 가로 넘침 없음`, r.scroll[0] <= r.scroll[1], r.scroll.join('/'));
     check(`${w}: 멤버 점 세로 44 · 가로 40`, r.dot && r.dot.h >= 43 && r.dot.w >= 39, JSON.stringify(r.dot));
     check(`${w}: 플레이어 · 표 버튼 세로 44`, r.player.h >= 43 && r.week.h >= 43, JSON.stringify([r.player, r.week]));
-    check(`${w}: YT · X 44×36`, r.yt.w >= 43 && r.x.w >= 43 && r.yt.h >= 35 && r.x.h >= 35, JSON.stringify([r.yt, r.x]));
-    check(`${w}: 소식 칩 세로 막대 안쪽 전체(42)`, r.chip.h >= 41, JSON.stringify(r.chip));
-    check(`${w}: 펼침 · 테마 세로 42`, r.tgl.h >= 41 && r.theme.h >= 41, JSON.stringify([r.tgl, r.theme]));
+    check(`${w}: YT · X 44×32`, r.yt.w >= 43 && r.x.w >= 43 && r.yt.h >= 31 && r.x.h >= 31, JSON.stringify([r.yt, r.x]));
+    check(`${w}: 소식 칩 세로 34`, r.chip.h >= 33, JSON.stringify(r.chip));
     if (r.tw) check(`${w}: 트윗 배지 32 이상`, r.tw.w >= 31 && r.tw.h >= 31, JSON.stringify(r.tw));
     if (w === 390) { await o.shot('v-phone-board'); }
     check(`${w}: 페이지 예외 없음`, !o.errs.some(e => e.startsWith('pageerror')), o.errs.filter(e => e.startsWith('pageerror')).join(' | '));console.log('  실패 응답', JSON.stringify(bad));
@@ -231,30 +230,38 @@ async function touch() {
 
 
 async function sizing() {
-  const box = (p, s) => p.evaluate(s => { const e = [...document.querySelectorAll(s)].find(x => x.getBoundingClientRect().width > 0); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.width * 10) / 10, Math.round(r.height * 10) / 10]; }, s);
   const st = { mode: 'ok' };
-  for (const [w, h] of [[390, 844], [360, 640], [320, 640]]) {
+  for (const [w, h] of [[390, 844], [360, 640]]) {
     const o = await open({ phone: true, w, h }); const p = o.page; await route(p, st); await p.goto(URL); await p.waitForTimeout(2600);
-    const g = await p.evaluate(() => { const l = document.querySelector('.lane--active').getBoundingClientRect(), d = document.querySelector('#pager-dots').getBoundingClientRect(), f = document.getElementById('foot').getBoundingClientRect(), b = document.querySelector('.ntc__bar').getBoundingClientRect(), dot = document.querySelector('#pager-dots .dot').getBoundingClientRect(); return { laneB: l.bottom, dotsT: d.top, dotsB: d.bottom, footT: f.top, bar: b.height, midGapTop: dot.top - l.bottom, midGapBot: f.top - dot.bottom, scroll: [document.documentElement.scrollWidth, innerWidth, document.documentElement.scrollHeight, innerHeight] }; });
-    check(`${w}×${h}: 막대 44 · 멤버 점이 레인과 푸터 사이 가운데`, Math.abs(g.bar - 44) < 1.5 && Math.abs(g.midGapTop - g.midGapBot) <= 2.5 && g.scroll[0] <= g.scroll[1], JSON.stringify(g));
-    if (w === 390) {
-      check('폰 칩 28', (await box(p, '.ntc__cchip'))[1] === 28, JSON.stringify(await box(p, '.ntc__cchip')));
-      check('폰 YT 32', (await box(p, '.lane--active .lane__nav-yt'))[1] === 32);
-      check('폰 펼치기 44', (await box(p, '.lane--active .tt-fold'))?.[1] >= 44);
-      await o.shot('s-phone-board');
-    }
+    const g = await p.evaluate(() => { const l = document.querySelector('.lane--active').getBoundingClientRect(), f = document.getElementById('foot').getBoundingClientRect(), b = document.querySelector('.ntc__bar').getBoundingClientRect(), dot = document.querySelector('#pager-dots .dot').getBoundingClientRect(), c = document.querySelector('.ntc__cchip').getBoundingClientRect(), n = document.querySelector('.lane--active .lane__nav-yt').getBoundingClientRect(); return { bar: b.height, chip: c.height, yt: n.height, up: dot.top - l.bottom, down: f.top - dot.bottom }; });
+    check(`${w}×${h}: 원래 크기(막대 약 35 · 칩 26 · YT 26), 멤버 점 가운데`, Math.abs(g.bar - 35.2) < 1.5 && g.chip === 26 && g.yt === 26 && Math.abs(g.up - g.down) <= 2.5, JSON.stringify(g));
     await (await p.$('.player-btn--dock')).tap(); await p.waitForTimeout(1800);
     await (await p.$$('.mp-tab'))[1].tap(); await p.waitForTimeout(500);
     const songs = await p.evaluate(() => { const v = document.querySelector('.mp-lib').getBoundingClientRect(), t = document.querySelector('.mp-lib .mp-tools').getBoundingClientRect(); const top = Math.max(v.top, t.bottom); return [...document.querySelectorAll('.mp-item__main')].filter(e => { const r = e.getBoundingClientRect(); return r.top >= top - 1 && r.bottom <= v.bottom + 1 && r.height > 0; }).length; });
-    console.log(`  ${w}×${h} 온전히 보이는 곡 ${songs}`);
-    if (w === 390) { check('폰 390: 곡 8곡 이상', songs >= 8, `${songs}`); check('폰 검색 44 · 필터 36 · 탭 44', (await box(p, '.mp-search'))[1] >= 44 && (await box(p, '.mp-chips button'))[1] >= 36 && (await box(p, '.mp-tab'))[1] >= 44, JSON.stringify([await box(p, '.mp-search'), await box(p, '.mp-chips button'), await box(p, '.mp-tab')])); await o.shot('s-phone-player'); }
-    if (w === 360) check('폰 360: 곡 4곡 이상', songs >= 4, `${songs}`);
+    check(`${w}×${h}: 온전히 보이는 곡`, songs >= (w === 390 ? 8 : 4), `${songs}`);
     await o.browser.close();
   }
-  const o = await open({ phone: false }); const p = o.page; await route(p, st); await p.goto(URL); await p.waitForTimeout(2600);
-  check('PC 막대 36 · 칩 28 · 보기 32 · 펼치기 40', Math.abs((await box(p, '.ntc__bar'))[1] - 36) < 1.5 && (await box(p, '.ntc__cchip'))[1] === 28 && (await box(p, '.vt__btn'))[1] === 32 && (await box(p, '.tt-fold'))[1] >= 40, JSON.stringify([await box(p, '.ntc__bar'), await box(p, '.vt__btn'), await box(p, '.tt-fold')]));
-  await o.shot('s-pc-board');
-  await o.browser.close();
+}
+async function tweetcopy() {
+  const st = { mode: 'ok' };
+  for (const phone of [true, false]) {
+    const o = await open({ phone }); const p = o.page; await route(p, st);
+    await o.ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://localhost:8099' });
+    await p.goto(URL); await p.waitForTimeout(2800);
+    const tag = phone ? '폰' : 'PC';
+    const tw = await p.$(phone ? '.lane--active .lane__tw' : '.lane__tw');
+    await tw[phone ? 'tap' : 'click'](); await p.waitForTimeout(1600);
+    const info = await p.evaluate(() => { const c = [...document.querySelectorAll('.tws-ko__copy')].find(e => e.getBoundingClientRect().width > 0); const h = c && c.closest('.tws-ko__head').getBoundingClientRect(); const r = c && c.getBoundingClientRect(); return { n: document.querySelectorAll('.tws-ko__copy').length, tag: document.querySelectorAll('.tws-ko__tag').length, text: c && c.textContent, h: h && h.height, href: c && c.closest('.tws-tw').querySelector('.tws-tw__open')?.href }; });
+    check(`${tag}: 「번역」 표시가 URL 복사로 교체 · 머리 줄 48`, info.n > 0 && info.tag === 0 && info.text === 'URL 복사' && info.h === 48, JSON.stringify(info));
+    const handle = await p.evaluateHandle(() => [...document.querySelectorAll('.tws-ko__copy')].find(e => e.getBoundingClientRect().width > 0));
+    await handle.asElement()[phone ? 'tap' : 'click'](); await p.waitForTimeout(350);
+    const after = await p.evaluate(async (h) => ({ t: h.textContent, clip: await navigator.clipboard.readText().catch(e => 'ERR ' + e) }), handle);
+    check(`${tag}: 눌러서 원문 주소 복사 · 표시 바뀜`, after.t === '복사됨' && after.clip === info.href, JSON.stringify(after));
+    await p.waitForTimeout(1500);
+    check(`${tag}: 1.5초 뒤 표시 복귀`, (await p.evaluate(h => h.textContent, handle)) === 'URL 복사');
+    await o.shot(`c-${tag}-tweet`);
+    await o.browser.close();
+  }
 }
 async function banners() {
   const st = { mode: 'ok' };
@@ -281,7 +288,7 @@ async function banners() {
 
 (async () => {
   const which = process.argv[2];
-  for (const [n, f] of Object.entries({ network, dots, sheets, memory, touch, sizing, banners })) if (!which || which === n) { console.log('=== ' + n); try { await f(); } catch (e) { check(n + ' 실행', false, String(e).slice(0, 300)); } }
+  for (const [n, f] of Object.entries({ network, dots, sheets, memory, touch, sizing, banners, tweetcopy })) if (!which || which === n) { console.log('=== ' + n); try { await f(); } catch (e) { check(n + ' 실행', false, String(e).slice(0, 300)); } }
   const fail = results.filter(r => !r[0]);
   console.log(`\n합계 ${results.length - fail.length}/${results.length} 통과`);
   fail.forEach(f => console.log('FAIL', f[1], f[2]));

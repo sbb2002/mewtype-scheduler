@@ -27,7 +27,7 @@
   --ntc-lg-head: rgba(242, 123, 181, 0.07);/* 다가오는 공연 머리 바탕(라이브공연 색을 옅게) */
   --ntc-lg-rows: #141414;                  /* 하위 소식 칸 — 머리보다 어둡게 */
   --ntc-lg-past: #1d1d1d;                  /* 지난 공연 머리 · 타일 */
-  --ntc-item-h: 36px;                      /* 접힌 막대 높이 (v4.11.7: 2.2rem → 36px) — 폰은 44px 로 덮는다(아래 폰 미디어쿼리). 모바일 layout.css --m-notice 가 이 높이를 전제로 한다 */
+  --ntc-item-h: 2.2rem;                    /* 접힌 막대 높이 — 모바일 layout.css --m-notice 가 이 높이를 전제로 한다 */
   --ntc-ja: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP",
             -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
@@ -71,10 +71,10 @@
   overflow: hidden;
   background: var(--color-bg-secondary);
   border: 1px solid var(--ntc-border-soft);
-  border-radius: 8px;                      /* (v4.11.7) 6px → 8px */
+  border-radius: 6px;
 }
 /* 펼쳐도 막대 자체는 한 줄 그대로 — 아래 예고 영역을 밀지 않는다. 전체 목록은 .ntc__list 가 오버레이로 뜬다. */
-.ntc.is-open .ntc__bar { border-bottom: 1px solid var(--ntc-border-soft); border-radius: 8px 8px 0 0; }
+.ntc.is-open .ntc__bar { border-bottom: 1px solid var(--ntc-border-soft); border-radius: 6px 6px 0 0; }
 
 .ntc__tag {
   flex: none;
@@ -111,7 +111,7 @@
 }
 .ntc.is-open .ntc__chipbar { visibility: hidden; }
 .ntc__cchip {
-  position: relative; flex: none; display: inline-flex; align-items: center; gap: 3px; height: 28px; padding: 0 6px;   /* (v4.11.7) 높이 26 → 28 */
+  position: relative; flex: none; display: inline-flex; align-items: center; gap: 3px; height: 26px; padding: 0 6px;
   border: 0; border-radius: 999px; cursor: pointer;
   color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent);
   font: inherit; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -156,7 +156,7 @@
 .ntc__when { font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .ntc__tgl {
-  flex: none; width: 2.5rem;               /* (v4.11.7) PC 2.9rem → 2.5rem(40px) */
+  flex: none; width: 2.9rem;
   display: grid; place-items: center;
   font: inherit; font-size: 1.35rem; line-height: 1;
   color: var(--color-text-muted);
@@ -210,7 +210,7 @@ a.ntc__src:hover { color: var(--color-text); }
   max-height: 0; overflow: hidden;
   opacity: 0; visibility: hidden;
   border: 1px solid var(--ntc-border-soft); border-top: none;
-  border-radius: 0 0 8px 8px; background: var(--color-bg-secondary);
+  border-radius: 0 0 6px 6px; background: var(--color-bg-secondary);
   box-shadow: 0 14px 32px var(--ntc-shadow);
   font-size: 14px; line-height: 1.45;
   transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
@@ -240,8 +240,7 @@ a.ntc__src:hover { color: var(--color-text); }
 }
 .ntc__seg button {
   border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer;
-  font: inherit; font-size: 13px; font-weight: 600; padding: 0 12px; border-radius: 999px;
-  min-height: 32px;                        /* (v4.11.7) 세로 패딩 0 · 최소 높이 32(폰 36, 아래 폰 미디어쿼리) */
+  font: inherit; font-size: 13px; font-weight: 600; padding: 4px 13px; border-radius: 999px;
 }
 .ntc__seg button:hover { color: var(--color-text); }
 .ntc__seg button[aria-pressed="true"] { background: var(--color-raised); color: var(--color-text); box-shadow: inset 0 0 0 1px var(--color-raised-edge); }
@@ -361,10 +360,8 @@ a.ntc__src:hover { color: var(--color-text); }
 @media (prefers-reduced-motion: reduce) { .ntc__lgchev { transition: none; } }
 
 @media (max-width: 767px) {
-  :root { --ntc-item-h: 44px; }            /* (v4.11.7) 폰 막대 44px — 토큰이 정의된 :root 에서 덮는다 */
   #notice.ntc { padding: 0 var(--m-pad, 1rem); margin-top: var(--gap); }
   .ntc__list { left: var(--m-pad, 1rem); right: var(--m-pad, 1rem); }
-  .ntc__seg button { min-height: 36px; }  /* (v4.11.7) 폰 전환 버튼 36px */
 
   /* 모바일 접힌 막대 = 분류 칩만 — 남는 폭을 다 쓰고, 칩이 많아 넘치면 가로로 밀어 본다 */
   .ntc__chipbar { flex: 1; min-width: 0; border-right: none; overflow-x: auto; scrollbar-width: none; }
