@@ -136,8 +136,8 @@ html.mp-lock { overflow: hidden; }
 }
 .mp-mvtip.is-on { animation: mp-mvtip 4.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
 @keyframes mp-mvtip { 0% { opacity: 0; transform: translateY(-6px); } 8% { opacity: 1; transform: none; } 85% { opacity: 1; } 100% { opacity: 0; } }
-.mp-song__ko { margin-top: 2px; font-size: 0.74rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
-.mp-song__meta { margin-top: 4px; font-size: 0.74rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mp-song__ko { margin-top: 2px; font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mp-song__meta { margin-top: 4px; font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
 .mp-dot {
   display: inline-block;
   width: 9px;
@@ -215,7 +215,7 @@ html.mp-lock { overflow: hidden; }
 .mp-oma {
   position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px;
   height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 20px;
-  background: var(--mp-panel-2); font-size: 0.74rem; font-weight: 700; white-space: nowrap; cursor: pointer;
+  background: var(--mp-panel-2); font-size: 0.75rem; font-weight: 700; white-space: nowrap; cursor: pointer;
 }
 .mp-oma:hover:not(:disabled) { border-color: var(--mp-accent); color: var(--mp-accent); }
 .mp-oma:disabled { cursor: default; }
@@ -260,14 +260,14 @@ html.mp-lock { overflow: hidden; }
   .mp-oma-wrap { flex: 1 0 100%; }
   .mp-oma { width: 100%; justify-content: center; }
 }
-.mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.76rem; color: var(--color-late); }
+.mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.75rem; color: var(--color-late); }
 .mp-err[hidden] { display: none; }
 .mp-err a { text-decoration: underline; }
 /* (v4.8.3) 재생 불가 안내 — 아이콘 · 문구 · 아래 3초 동안 줄어드는 막대. 플로팅 창이면 .is-fixed 로 창 바로 위에 뜬다(js/player.js placeSkip) */
 .mp-skip {
   position: relative; display: flex; align-items: center; gap: 9px; padding: 8px 12px 10px; overflow: hidden;
   border-radius: 10px; background: var(--color-raised); border: 1px solid var(--color-late); color: var(--color-text);
-  font-size: 0.76rem; line-height: 1.4; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  font-size: 0.75rem; line-height: 1.4; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 .mp-skip[hidden] { display: none; }
 .mp-skip.is-fixed { position: fixed; z-index: 47; margin: 0; max-width: calc(100vw - 16px); }
@@ -342,7 +342,7 @@ html.mp-lock { overflow: hidden; }
   flex: 1; min-width: 0; padding: 11px 8px;
   border: 0; border-bottom: 2px solid transparent; border-radius: 0;
   background: transparent;
-  font-size: 0.84rem; font-weight: 600; color: var(--color-text-muted);
+  font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted);
 }
 .mp-pop .mp-tab--play { display: none; }   /* 「재생」 탭은 모바일에서만 */
 .mp-pop .mp-tab[aria-selected="true"] { color: var(--color-text); border-bottom-color: var(--mp-accent); }
@@ -569,7 +569,8 @@ html.mp-lock { overflow: hidden; }
   .mp-scrim.is-open .mp-pop { transform: none; }
   /* (마이크로 인터랙션) 머리줄을 아래로 끌어 내린다(js/sheetdrag.js). 머리줄 맨 위 가운데에 손잡이 막대 — 닫힘 선을 넘으면 길어지고 강조색 */
   .mp-pop__head { position: relative; padding: 13px 14px 4px; touch-action: none; cursor: grab; }
-  .mp-x { padding: 1px 9px; }
+  .mp-x { display: none; }   /* (v4.11.7) 폰: 「내리기」 버튼 대신 머리줄을 끌어 내린다 — PC 는 그대로 */
+  .mp-pop:focus, .mp-pop:focus-visible { outline: none; }   /* 시트 자체에 포커스해도 윤곽선이 시트 전체에 안 보이게 */
   .mp-pop__grab {
     position: absolute; top: 5px; left: 50%; translate: -50% 0; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border);
     transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s;
@@ -632,7 +633,7 @@ html.mp-lock { overflow: hidden; }
 .mp-undo {
   position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 4; display: flex; align-items: center; gap: 10px; overflow: hidden;
   padding: 8px 12px 10px; border-radius: 10px; background: var(--color-raised); border: 1px solid var(--color-raised-edge);
-  font-size: 0.76rem; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  font-size: 0.75rem; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 .mp-undo[hidden] { display: none; }
 .mp-undo span { flex: 1; min-width: 0; }

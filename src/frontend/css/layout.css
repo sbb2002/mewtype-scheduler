@@ -224,13 +224,64 @@ body {
   white-space: nowrap;
 }
 
-#foot-status {
-  color: var(--color-live);
-  font-weight: 600;
+/* (v4.11.7) 네트워크 실패 안내 — 화면 가운데 떠 있다가 눌러도 막히지 않는다(pointer-events:none).
+   빨강은 쓰지 않는다(LIVE 전용). 움직임은 넣지 않는다. 밝게 · 어둡게는 --color-* 토큰이 바꾼다. */
+#net-alert {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 960;
+  pointer-events: none;
+  max-width: min(320px, calc(100vw - 32px));
+  width: max-content;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  word-break: keep-all;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 }
 
-#foot-status[hidden] {
+#net-alert[hidden] {
   display: none;
+}
+
+#net-alert .net-alert__ic {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-late);
+  color: #1a1a1a;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* (v4.11.7) 터치 영역 — 폰(767px 이하)만. 보이는 크기 · 배치는 그대로 두고, 투명 ::before / ::after 로 누르는 범위만 넓힌다.
+   ::after 를 이미 쓰는 .player-btn 만 ::before 를 쓴다(새 곡 표식 = ::after). */
+@media (max-width: 767px) {
+  /* 페이지 점: 가로 40 = 점 26 + 간격 14 의 절반씩(이웃과 겹치지 않음), 세로 44 */
+  #pager-dots .dot { position: relative; }
+  #pager-dots .dot::after { content: ""; position: absolute; top: 50%; left: -7px; right: -7px; height: 44px; transform: translateY(-50%); }
+  /* 플레이어 · 표 버튼: 세로 44 */
+  #pager-dots .player-btn::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 44px; transform: translateY(-50%); }
+  /* 헤더 이동 버튼(YouTube · X): 가로 44, 세로는 두 버튼이 겹치지 않는 최대(26 + 간격 6 → 위아래 3px 씩 = 32) */
+  .lane__nav-yt, .lane__nav-x { position: relative; }
+  .lane__nav-yt::after, .lane__nav-x::after { content: ""; position: absolute; top: -3px; bottom: -3px; left: -9px; right: -9px; }
+  /* 트윗 배지: 사방 8px (아바타와 겹쳐도 됨 — 둘 다 트윗 시트를 연다) */
+  .lane__tw::after { content: ""; position: absolute; inset: -8px; }
+  /* 소식 칩: 막대 높이까지(세로 34). .ntc__bar 의 overflow:hidden 에 잘려 44 는 안 되고, 펼침 · 밝게 버튼은 이미 막대 높이다 */
+  .ntc__cchip { position: relative; }
+  .ntc__cchip::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 44px; transform: translateY(-50%); }
 }
 
 /* (v4.8.4) 하단 버전 버튼 — 오른쪽 끝 고정, 알약형 28px. 누르면 · 올리면 현재 버전 말풍선.

@@ -61,6 +61,7 @@ function build() {
   sheet.setAttribute("role", "dialog");
   sheet.setAttribute("aria-modal", "true");
   sheet.setAttribute("aria-labelledby", "wk-title");
+  sheet.tabIndex = -1;   // (v4.11.7) 열리면 시트 자체에 포커스 — 닫기 버튼은 두지 않는다(손잡이로 내린다)
   const head = document.createElement("div");
   head.className = "wk-sheet__head";
   const grab = document.createElement("i");
@@ -70,12 +71,7 @@ function build() {
   title.className = "wk-sheet__title";
   title.id = "wk-title";
   title.textContent = "이후 예고";
-  const x = document.createElement("button");
-  x.type = "button";
-  x.className = "wk-sheet__x";
-  x.textContent = "닫기";
-  x.addEventListener("click", closeWeek);
-  head.append(grab, title, x);
+  head.append(grab, title);   // (v4.11.7) 「닫기」 버튼 삭제 — 머리줄을 끌어 내리거나 바깥을 누르면 닫힌다
   const body = document.createElement("div");
   body.className = "wk-sheet__body";
   body.addEventListener("scroll", () => closeCardPop(), { passive: true });   // 카드 팝업은 문서 좌표에 고정이라 시트를 스크롤하면 닫는다
@@ -98,7 +94,7 @@ function build() {
       scrim.style.background = v == null ? "" : `rgba(0, 0, 0, ${(0.6 * v).toFixed(3)})`;
     },
   });
-  ui = { scrim, sheet, body, x };
+  ui = { scrim, sheet, body };
 }
 
 /** 표를 새로 그린다. 점 색(--lane-color)은 render.js sampleLaneColor 가 #board 안에만 넣으므로 보드의 멤버 레인에서 옮겨 온다 */
@@ -129,7 +125,7 @@ export function openWeek() {
   ui.scrim.classList.add("is-open");
   document.documentElement.classList.add("wk-lock");
   ui.body.scrollTop = 0;
-  requestAnimationFrame(() => ui.x.focus({ preventScroll: true }));
+  requestAnimationFrame(() => ui.sheet.focus({ preventScroll: true }));   // (v4.11.7) 닫기 버튼 대신 시트에 포커스
 }
 
 export function closeWeek() {

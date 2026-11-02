@@ -52,7 +52,7 @@ export const SONGS_FALLBACK_URL = "assets/songs.json";
 
 // (v4.8.4) 현재 버전 · 날짜 — 하단 「ver.」 버튼 말풍선에 보인다(js/main.js initVersionButton).
 // 버전을 올릴 때 이 두 값도 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 6번 · README · VERSION.md 와 맞춘다).
-export const APP_VERSION = "v4.11.6";
+export const APP_VERSION = "v4.11.7";
 export const APP_DATE = "2026-11-02";
 
 // (v4.10.0) 멤버 생일 — KST 달력 날짜(MM-DD). 생일 당일 00:00~24:00(KST)에 배경이 그 멤버의 생일 스킨으로 바뀐다(js/birthday.js · birthdayui.js).
@@ -71,6 +71,17 @@ export const BIRTHDAY_SCENES_ENABLED = {
   nonoka: false,
   ritsu: false,
   miyako: false
+};
+
+// (v4.11.7) 이후 예고 점의 멤버 색 — 기준 = 나무위키 멤버 문서의 이미지 컬러(아라레 #ffdd33 · 유노 #ff6688 · 노노카 #ffaacc · 리츠 #5588dd · 미야코 #9977dd).
+// 리츠 · 미야코는 색약에서 겹치지 않게 명도를 조정했고, 밝게 · 지난 방송(…Ended) 색은 같은 색조에서 계산했다.
+// js/timetable.js fillDot 이 조각마다 --dot-d · --dot-de · --dot-l · --dot-le 로 넣고, css/timetable.css 가 골라 쓴다. 키가 없으면 --lane-color 로 대체.
+export const MEMBER_DOT_COLORS = {
+  arale:  { dark: "#FFDD33", darkEnded: "#967D00", light: "#A68300", lightEnded: "#C2AA3B" },
+  yuno:   { dark: "#FF6688", darkEnded: "#9C2A48", light: "#D02F5D", lightEnded: "#E07085" },
+  nonoka: { dark: "#FFAACC", darkEnded: "#985B74", light: "#CB779A", lightEnded: "#E5A5BE" },
+  ritsu:  { dark: "#6296EC", darkEnded: "#355B9B", light: "#588EE8", lightEnded: "#7EA5E6" },
+  miyako: { dark: "#8C69CE", darkEnded: "#4F347E", light: "#805BC4", lightEnded: "#9D86D2" }
 };
 
 export const POLL_MS = 75000;

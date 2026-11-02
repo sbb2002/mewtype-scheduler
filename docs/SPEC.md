@@ -54,6 +54,7 @@ src/
       bgdeco.js bglogic.js   # (v4.9.8) 배경 장식 — 아래 「배경 장식」
       sheetdrag.js     # 시트 끌어 닫기 공용(트윗 시트 · 소식 시트 · 플레이어 시트)
       longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 + 첫 안내 말풍선(css/longcopy.css)
+      netrecover.js    # 조회 실패 복구 상태 기계(재시도 · 안내 판단, DOM 없음) — main.js 가 연결
       *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
   collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
     rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
@@ -366,18 +367,19 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
    - **한 상자**: 펼치면 접기 버튼(위만 둥글게) + `.tt-later`(아래만 둥글게, 같은 바탕 · 테두리)가 한 영역으로 보인다. 두 표(`.wk2__panel`)는 그 안에서 한 단계 깊은 바탕(`--color-bg`).
    - **점 범례** `ul.wk2__legend`(먼 미래 표 아래, `.wk2__col`): 견본 점(`span.wk2__dot`, 누를 수 없음 — 표의 점과 같은 `fillDot`)을 글머리표로 한 작은 글자 3열 —
      방송 1건 · 멤버 색 / 합동 / 방송 중 / 지난 방송 / 시각 미정 / 회원 전용. 견본 색 = 멤버 순서상 첫 · 둘째 멤버.
+   - **점 색**(v4.11.7): 멤버별 고정색 `config.js MEMBER_DOT_COLORS`(어둡게 · 밝게 × 예고 · 종료 4색, 기준 = 나무위키 멤버 문서의 이미지 컬러(아라레 #ffdd33 · 유노 #ff6688 · 노노카 #ffaacc · 리츠 #5588dd · 미야코 #9977dd). 어둡게 예고는 이 값을 쓰되 파랑 · 보라가 색약에서 겹치지 않게 리츠 · 미야코 명도만 조정, 밝게 · 종료 색은 같은 색조에서 조정). `fillDot` 이 `.wk2__seg` 에 넣는다. 레인 헤더 · 하단 멤버 점의 `--lane-color`(아바타 평균색)와 별개이며 표에 없는 멤버는 `--lane-color` 로 대체한다. 지난 방송 = 불투명도가 아니라 같은 색조에서 채도 · 명도를 낮춘 색(전엔 불투명도 0.5). 색약을 포함해 색맹이 아닌 사용자가 멤버와 종료 여부를 구분할 수 있어야 한다.
    카드 보기 · 모바일의 이후 예고는 그대로(멤버별 `.lane__later` 목록 + 멤버별 건수 버튼).
    - **모바일 「표」 버튼 · 시트**(v4.9.6, `js/weekpop.js`): 모바일은 카드 구성이라 위 두 표가 없으므로, 하단 멤버 아이콘 줄(`#pager-dots`) **오른쪽 끝**(플레이어 버튼 반대편)에
      같은 모양의 버튼 `button.player-btn.week-btn`(표 + 점 + `>` 아이콘, 신곡 NEW 배지 · 플레이어 이름은 안 붙음)을 둔다. 누르면 바텀 시트(`.wk-scrim > .wk-sheet`, 높이 최대 88%)에
-     같은 `buildLaterTables` 를 **세로로**(이번주 → 먼 미래 → 범례 2열) 그린다. 열 때마다 마지막 보드 데이터(`renderBoard` → `setWeekData`)로 새로 그리고, 점 색은 `#board` 멤버 레인의 `--lane-color` 를 옮겨 온다.
-     닫기 = 「닫기」 · 바깥 누르기 · Esc(둘 다 카드 팝업이 떠 있으면 팝업만 — v4.9.7 바깥 누르기도) · 머리줄 끌어 내리기(`sheetdrag`). 카드 팝업은 시트 위(`html.wk-lock .tt-pop` z-index 900), 시트를 스크롤하면 닫힌다.
+     같은 `buildLaterTables` 를 **세로로**(이번주 → 먼 미래 → 범례 2열) 그린다. 열 때마다 마지막 보드 데이터(`renderBoard` → `setWeekData`)로 새로 그린다.
+     닫기 = 바깥 누르기 · Esc(둘 다 카드 팝업이 떠 있으면 팝업만 — v4.9.7 바깥 누르기도) · 머리줄 끌어 내리기(`sheetdrag`). (v4.11.7) 「닫기」 버튼은 없앴다 — 손잡이와 기능이 겹친다. 카드 팝업은 시트 위(`html.wk-lock .tt-pop` z-index 900), 시트를 스크롤하면 닫힌다.
 
 **모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(트윗 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
 `.tt-fold` + `.lane__later`. (v4.9.6) 카드 묶음 순서 = **종료 → 방송 중 → 오늘 예정 → 내일 구분선 `.tt-today__div`(「내일 예고 · 10/31(토) 04:00 ~」, 내일 예정이 있을 때만) → 내일 예정** —
 화면 넘기기 없이 한 줄로 다 보여 준다(PC 카드 보기도 같음). 오늘 것이 0건이고 내일이 있으면 「오늘 남은 예고가 없습니다.」 + 구분선 + 내일 카드. 크게 보이는 첫 카드 = 종료가 아닌 첫 카드(없으면 내일 첫 카드).
 머리 메타 = `10/29(목) 04:00 ~ 익일 04:00 · 예정 n · 방송 중 n · 종료 n · 내일 n`(0건 항목은 생략). 오늘 카드: 예정 = 카운트다운 링(1시간 넘게 남으면 24시간 기준으로 차오름 · (v4.5.8) 1시간 이내는 노랑 분 단위 링이 0분까지 닳음 — 아래 「타이머 링」, **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
 **지금 보는 레인만 동작**: `render.js initMobileCarousel` 가 현재 슬라이드에만 `.lane--active` 를 주고 나머지(클론 포함)는 `inert` 로 **동작만** 막는다(겉모양 · 스크롤바는 그대로 — `overflow:hidden` 으로 숨기면 스크롤바 폭만큼 카드가 움찔거려 쓰지 않음) — 옆에 비쳐 보이는 레인의 스크롤 · 클릭이 반응하지 않는다(드래그/스와이프 시작점으로는 보드가 받음).
-하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. (v4.9.6) 방송 중인 멤버의 점은 `.dot--live`(흐리지 않고 빨간 링).
+(v4.11.7) 사용자가 넘긴 멤버를 `localStorage` `mew.lane.last`(채널 키)에 기억해 다음 방문에 그 멤버부터 보여 준다. 기록이 없으면 첫 멤버. 하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. (v4.9.6) 방송 중인 멤버의 점은 `.dot--live`(흐리지 않고 빨간 링).
 **라이브 레인 효과**(v4.9.6): `renderBoard` 가 레인을 다 만든 뒤(캐러셀 클론 복제 전) `classify().live` 의 참여 멤버(합동 포함, `itemKeys`) 레인 `.lane[data-channel]` 에
 `.lane--live` → **그 멤버 예고판(레인) 테두리**가 빨갛게 + 느린 호흡 글로우(움직임 줄이기면 정적). **카드 보기(PC 5열) · 모바일 레인에만** 보인다 — 테이블 보기(멤버 칸 `.tt__lane` · 이후 예고 `.lane--later`)는 라이브 블록이 이미 보여 주므로 CSS 가 뺀다(`:not(.tt__lane):not(.lane--later)`). 아바타 자체에는 효과를 두지 않는다(운영자 10-29).
 **탭 제목 라이브 표시**(v4.9.6): 라이브가 1건 이상이면 `document.title` = `🔴 LIVE n · <원래 제목>`(n = `classify().live.length`, 합동 1건 = 1), 0건이면 원래 제목(`render.applyLiveTitle`, 처음 제목을 한 번 읽어 둠). 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
@@ -1427,14 +1429,17 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
 - **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
   `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로 붙인다. **PC(≥768px)는 버튼이 없다** — 플레이어가 `#player-dock`(보드 아래)에 상시 표시된다(아래). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다(모바일 모달).
-  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
+  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김 — (v4.11.7) 폰 시트에서도 숨김, 끌어 내리기 · 바깥 누르기로 닫는다). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
     프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
+- **js/netrecover.js** — (v4.11.7) 아래 js/main.js 「조회 실패 복구」의 순수 상태 기계. `createNetRecovery` · `RETRY_DELAYS_MS` · `ONLINE_DELAY_MS`. selfcheck: `netrecover.selfcheck.mjs`.
+- **폰 터치 영역**(v4.11.7, `css/layout.css` 767px 이하): 보이는 크기는 그대로 두고 투명 가상 요소로 누르는 범위만 넓힌다 — 멤버 점 40×44 · 플레이어 · 표 버튼 세로 44 · YouTube · X 44×32 · 트윗 배지 사방 8px · 소식 칩 세로 34(막대 `overflow: hidden` 까지).
 - **js/longcopy.js** + **css/longcopy.css** — (v4.11.5) 아래 「길게 눌러 주소 복사」. `markCopy` · `copyTarget` · `pickTipTarget` · `tipPosition` · `initLongCopy` · `maybeShowCopyTip`. selfcheck: `longcopy.selfcheck.mjs`.
 - **js/king.js** + **css/king.css** — (v4.3.1) 노노카 지각 이스터에그. 위 「노노카 지각 이스터에그 (v4.3.1)」. `timetable.js` 가 `decorateBlock` · `decoratePopup` · `decorateCard` 를 호출. selfcheck: `king.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
-  마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+  마지막 데이터 유지 + 아래 「조회 실패 복구」. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+  **조회 실패 복구**(v4.11.7, `js/netrecover.js` 순수 상태 기계 + `netrecover.selfcheck.mjs`): 앱 복귀 직후처럼 인터넷이 살아 있어도 조회가 잠깐 실패할 수 있어 바로 알리지 않는다. `preview` 조회 실패 → 3초 · 8초 뒤 전체 재조회 → 그래도 실패하면 **화면 중앙 안내** `#net-alert`(화면을 막지 않음, `pointer-events: none`, z-index 960). 문구 = 연결 실패 · 시간 초과 「네트워크가 불안정하여 최신정보를 업데이트하지 못했어요.」, 서버 오류 응답 「최신정보를 업데이트하지 못했어요.」. 탭이 숨겨진 동안은 안내 · 재시도를 하지 않는다(복귀 때 재조회). `online` 이벤트 5초 뒤 재조회하며 페이지 전체를 새로 고치지는 않는다(플레이어 재생 유지). 조회가 성공하면 안내가 사라진다. 소식 · 트윗 · 배너는 실패해도 지난 데이터를 유지한다(읽던 시트가 닫히지 않음). 소식을 한 번도 못 불러왔으면 막대에 「소식을 불러오지 못했어요」. 옛 푸터 「업데이트 지연」(`#foot-status`)은 없앴다.
   **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어
   (브라우저 스펙상 보장 안 됨) — `visibilitychange`(visible 전이) + `pageshow`(`persisted`,
   bfcache 복원) 리스너로 포그라운드 복귀 시 `poll`+`pollNotices`+`pollTweets` 즉시 재실행.
@@ -1519,7 +1524,7 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **소식 팝업 카드** — 트윗 시트와 같은 방식:
   - PC: 소식 줄 **호버 = 잠깐 열림**(팝업으로 옮겨도 유지 · 떠나면 닫힘, 닫기는 160ms 미룸), **클릭 = 고정**(한 번에 1개, 같은 줄 다시 클릭 · ✕ · Esc · 바깥 클릭으로 닫힘, 고정 중 호버 무시).
     `.ntc__pop`(#notice 안 · 목록 밖, z-index 43 — 펼친 목록 42 · 플레이어 도크 40 위). 아래 공간이 모자라면 위로, 화면 안으로 맞춤, 꼬리, 목록 스크롤 · 창 크기 변화에 따라감.
-  - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). ✕ · 배경 · Esc · 손잡이 줄 아래로 끌기(아래 「마이크로 인터랙션」)로 닫힘, 열린 동안 body 스크롤 잠금. 손잡이 줄은 맨 위 고정 · 내용만 스크롤. 시트 안을 눌러도 소식 목록은 안 닫힌다.
+  - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). 배경 · Esc · 손잡이 줄 아래로 끌기(아래 「마이크로 인터랙션」)로 닫힘(v4.11.7 ✕ 없앰 — 손잡이와 기능이 겹친다, PC 팝업 ✕ 는 유지), 열린 동안 body 스크롤 잠금. 손잡이 줄은 맨 위 고정 · 내용만 스크롤. 시트 안을 눌러도 소식 목록은 안 닫힌다.
   - 내용: 분류 · D-day · 날짜(요일, 마감이면 〜) · 시각 · 출처 / 전체 제목(언어 전환 따름) / **번역 본문(`body_ko`, 없으면 「번역 준비 중…」)** / **X 공식 트윗 카드** / 「자세히 보기 ↗」(`url`) · 「원문 트윗 ↗」(`tweet_url`, http(s)만).
     **원문 모드에서도 본문 원문(`body_raw`)은 우리가 그리지 않는다**(v3.8.0 법률 자문 — 원문 · 이미지는 X 카드가 보여 준다, 트윗 시트와 같은 원칙). PC = 본문 | X 카드(280px) 2열, 모바일 = 1열.
   - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 시트와 같은 코드 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.

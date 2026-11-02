@@ -59,8 +59,12 @@
   font-size: 0.95rem;
   font-weight: 700;
 }
+/* (v4.11.7) PC 제목 위계 — 폰 값(0.95rem)은 그대로 두고 PC 만 1rem 으로 키운다 */
+@media (min-width: 768px) {
+  .tt__title { font-size: 1rem; }
+}
 .tt__meta {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
 }
 
@@ -171,7 +175,7 @@
 }
 .tt__tick b {
   display: block;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
@@ -202,7 +206,7 @@
 .tt__who .lane__avatar { width: 40px; height: 40px; }
 .tt__who .lane__tw { left: 35px; top: calc(50% - 27.5px); }   /* 40px 아바타 기준 같은 비율(가로 87.5% · 세로 6%) */
 .tt__nm { position: relative; display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.tt__nm b { font-size: 0.84rem; white-space: nowrap; }
+.tt__nm b { font-size: 0.85rem; white-space: nowrap; }
 .tt__nm small { font-size: 0.68rem; color: var(--color-text-muted); }
 
 .tt__track {
@@ -277,7 +281,7 @@
 .tt__day.is-back:hover .tt__day-ic { translate: -2px 0; }
 .tt__day-n {
   min-width: 18px; padding: 1px 5px; border-radius: 9px; box-sizing: border-box; text-align: center;
-  font-size: 0.66rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  font-size: 0.68rem; font-weight: 700; font-variant-numeric: tabular-nums;
   background: var(--color-raised); box-shadow: inset 0 0 0 1px var(--color-raised-edge);
 }
 .tt__day-n.is-pop { animation: dot-pop 0.38s cubic-bezier(0.25, 1.55, 0.45, 1); }
@@ -324,10 +328,10 @@
   align-items: center;
   height: 18px;
   white-space: nowrap;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
-.tt-blk__rel, .tt-blk__sp { height: 15px; line-height: 15px; font-size: 0.66rem; white-space: nowrap; }
+.tt-blk__rel, .tt-blk__sp { height: 15px; line-height: 15px; font-size: 0.68rem; white-space: nowrap; }
 .tt-blk__rel { color: var(--color-text-muted); }
 .tt-blk--soon .tt-blk__rel, .tt-blk__rel.is-late { color: var(--color-late); }
 /* 제목: 한 줄. 넘치면 무한 marquee (timetable.js applyTimetableMarquees 가 is-marquee 를 켠다) */
@@ -399,12 +403,12 @@
 a.tt-pop__img { cursor: pointer; }
 .tt-pop--ended .tt-pop__img { filter: grayscale(0.65) brightness(0.8); }
 .tt-pop__body { padding: 9px 11px 11px; display: flex; flex-direction: column; gap: 4px; }
-.tt-pop__nm { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; font-size: 0.76rem; }
+.tt-pop__nm { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; font-size: 0.75rem; }
 .tt-pop__rg { font-size: 0.78rem; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-.tt-pop__ti { font-size: 0.84rem; font-weight: 700; line-height: 1.4; }
+.tt-pop__ti { font-size: 0.85rem; font-weight: 700; line-height: 1.4; }
 /* (v4.9.7) 점 팝업 제목 — 한글 · 원문 한 줄씩, 넘치면 무한 marquee (timetable.js applyPopMarquees 가 is-marquee 를 켠다) */
 .tt-pop__ln { overflow: hidden; white-space: nowrap; }
-.tt-pop__ln--orig { font-size: 0.74rem; font-weight: 400; color: var(--color-text-muted); }
+.tt-pop__ln--orig { font-size: 0.75rem; font-weight: 400; color: var(--color-text-muted); }
 .tt-pop__trk { display: inline-flex; }
 .tt-pop__trk > span { flex: none; }
 .tt-pop__ln.is-marquee {
@@ -424,7 +428,7 @@ a.tt-pop__img { cursor: pointer; }
   border-radius: 6px;
   background: #cc1f1f;
   color: #fff;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 .tt-pop__btn:hover { background: #e02a2a; }
@@ -444,7 +448,7 @@ a.tt-pop__img { cursor: pointer; }
   border-radius: 10px;
   background: var(--color-bg-secondary);
   color: var(--color-text);
-  font-size: 0.86rem;
+  font-size: 0.85rem;
   font-weight: 500;
 }
 .tt-fold:hover { background: var(--color-hover); }
@@ -516,7 +520,7 @@ a.tt-pop__img { cursor: pointer; }
 .wk2__legend .wk2__dot:hover .wk2__seg { filter: none; }
 .wk2__hd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.8rem; margin: 0 0 0.5rem; }
 .wk2__hd b { font-size: 0.9rem; font-weight: 700; }
-.wk2__hd > span { font-size: 0.76rem; color: var(--color-text-muted); }
+.wk2__hd > span { font-size: 0.75rem; color: var(--color-text-muted); }
 .wk2__row {
   display: flex;
   align-items: center;
@@ -535,8 +539,8 @@ a.tt-pop__img { cursor: pointer; }
 }
 .wk2__panel--far .wk2__date { grid-template-columns: 5.8em 1.3em 3.6em; }   /* 먼 미래 = 연도가 붙을 수 있어 날짜 칸이 넓다 */
 .wk2__dn { justify-self: end; }
-.wk2__date > b { font-size: 0.86rem; font-weight: 600; }
-.wk2__date > span:not(.wk2__now):not(.wk2__dn) { font-size: 0.74rem; color: var(--color-text-muted); }
+.wk2__date > b { font-size: 0.85rem; font-weight: 600; }
+.wk2__date > span:not(.wk2__now):not(.wk2__dn) { font-size: 0.75rem; color: var(--color-text-muted); }
 .wk2__dn { font-size: 0.7rem; color: var(--color-text-muted); }
 .wk2__now {
   justify-self: start;
@@ -545,7 +549,7 @@ a.tt-pop__img { cursor: pointer; }
   background: var(--color-raised);
   box-shadow: inset 0 0 0 1px var(--color-raised-edge);
   color: var(--color-text);
-  font-size: 0.66rem;
+  font-size: 0.68rem;
   font-weight: 700;
 }
 .wk2__row.is-today .wk2__date > b { font-weight: 800; }
@@ -580,12 +584,18 @@ a.tt-pop__img { cursor: pointer; }
 .wk2__lock path { fill: none; }
 .wk2__dot:hover .wk2__seg { filter: brightness(1.15); }
 .wk2__dot:focus-visible { outline: 2px solid var(--color-text-muted); outline-offset: 1px; }
-.wk2__seg { flex: none; width: 14px; height: 14px; background: var(--lane-color, var(--color-text-muted)); }   /* 색 = 네임플레이트와 같은 멤버 색(--lane-color, render.js sampleLaneColor) */
+.wk2__seg { flex: none; width: 14px; height: 14px; }
+/* (v4.11.7) 점 색 = 멤버 고정 색(js/config.js MEMBER_DOT_COLORS → fillDot 이 --dot-*). 키가 없으면 --lane-color 로 대체 */
+.wk2__seg { background: var(--dot-d, var(--lane-color, var(--color-text-muted))); }
+html[data-theme="light"] .wk2__seg { background: var(--dot-l, var(--lane-color, var(--color-text-muted))); }
+.wk2__dot.is-ended .wk2__seg { background: var(--dot-de, var(--lane-color, var(--color-text-muted))); }
+html[data-theme="light"] .wk2__dot.is-ended .wk2__seg { background: var(--dot-le, var(--lane-color, var(--color-text-muted))); }
 .wk2__seg:only-child { border-radius: 50%; }
 /* 합동 = 참여 멤버 수만큼 이어 붙인 알약 (14px × n, 양 끝만 둥글게) */
 .wk2__seg:first-child:not(:last-child) { border-radius: 7px 0 0 7px; }
 .wk2__seg:last-child:not(:first-child) { border-radius: 0 7px 7px 0; }
-.wk2__dot.is-ended { opacity: 0.5; }   /* 지난 방송 = 멤버 색 그대로 흐리게(채도는 낮추지 않음 — 누구 방송인지 알아보게) */
+/* (v4.11.7) 지난 방송은 점 전체 opacity 를 쓰지 않는다 — 대신 위 .is-ended .wk2__seg 가 옅은 멤버 색(…Ended)으로 바꾼다.
+   합동 알약 · 라이브 링 · 자물쇠 · 시각 미정 표시는 흐려지지 않게 그대로 둔다. */
 .wk2__dot { border-radius: 12px; }
 .wk2__dot.is-live { box-shadow: inset 0 0 0 2px var(--color-live); }
 .wk2__dot.is-tbd { outline: 1.5px dashed var(--color-text-muted); outline-offset: -3px; }
@@ -635,7 +645,7 @@ a.tt-pop__img { cursor: pointer; }
   .cards-board .tcard__body { padding: 8px 9px; gap: 6px; }
   .cards-board .tcard__ring { width: 40px; height: 40px; }
   .cards-board .tcard--big .tcard__ring { width: 44px; height: 44px; }
-  .cards-board .tcard__ti { font-size: 0.82rem; }
+  .cards-board .tcard__ti { font-size: 0.85rem; }
   .cards-board .tcard--big .tcard__ti { font-size: 0.9rem; }
   .cards-board .tcard__when { font-size: 0.72rem; }
 }
@@ -648,7 +658,7 @@ a.tt-pop__img { cursor: pointer; }
   border-radius: 10px;
   color: var(--color-text-muted);
   text-align: center;
-  font-size: 0.84rem;
+  font-size: 0.85rem;
 }
 .tt-today__stack { display: flex; flex-direction: column; gap: 12px; }
 /* (v4.9.6) 카드 보기의 내일 구분선 — 오늘 예정 다음, 내일 예고(다음 04:00 하루)의 예정 앞 */
@@ -744,9 +754,9 @@ a.tt-pop__img { cursor: pointer; }
   background: conic-gradient(from 0deg, var(--color-ring-track) calc(var(--p, 0) * 1%), var(--rcol) 0);
 }
 .tcard__ring--live span, .tcard__ring--up span { display: flex; flex-direction: column; align-items: center; line-height: 1.05; }
-.tcard__ring--live b, .tcard__ring--up b { font-size: 0.74rem; font-weight: 600; }
+.tcard__ring--live b, .tcard__ring--up b { font-size: 0.75rem; font-weight: 600; }
 .tcard__ring--live small, .tcard__ring--up small { font-size: 0.5rem; color: var(--color-text-muted); white-space: nowrap; }
-.tcard--big .tcard__ring--live b, .tcard--big .tcard__ring--up b { font-size: 0.82rem; }
+.tcard--big .tcard__ring--live b, .tcard--big .tcard__ring--up b { font-size: 0.85rem; }
 .tcard--big .tcard__ring--live small, .tcard--big .tcard__ring--up small { font-size: 0.56rem; }
 @media (prefers-reduced-motion: reduce) {
   .tcard__ring { transition: none; }
@@ -760,12 +770,12 @@ a.tt-pop__img { cursor: pointer; }
 }
 .tcard__ring span {
   position: relative;
-  font-size: 0.66rem;
+  font-size: 0.68rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .tcard--big .tcard__ring { width: 54px; height: 54px; }
-.tcard--big .tcard__ring span { font-size: 0.74rem; }
+.tcard--big .tcard__ring span { font-size: 0.75rem; }
 .tcard__body { padding: 10px 12px 12px; display: flex; align-items: center; gap: 10px; min-width: 0; }
 .tcard__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .tcard__when {
@@ -886,7 +896,7 @@ html.wk-lock .tt-pop { z-index: 900; }          /* 시트 위에 카드 팝업 *
 }
 .wk-sheet.is-armed .wk-sheet__grab { width: 58px; height: 5px; background: var(--color-text-muted); }
 .wk-sheet__title { flex: 1; margin: 0; font-size: 0.9rem; font-weight: 700; }
-.wk-sheet__x { padding: 5px 11px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.78rem; color: inherit; }
+.wk-sheet:focus, .wk-sheet:focus-visible { outline: none; }   /* (v4.11.7) 열리면 시트 자체에 포커스 — 윤곽선 없이 */
 .wk-sheet__body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 12px calc(16px + env(safe-area-inset-bottom, 0px)); }
 .wk-sheet .tt-later { display: block; margin: 0; }
 .wk-sheet .wk2 { grid-template-columns: minmax(0, 1fr); }   /* 세로로: 이번주 → 먼 미래(+ 범례) */

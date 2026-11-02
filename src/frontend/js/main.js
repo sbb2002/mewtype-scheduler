@@ -7,6 +7,7 @@ import { initTheme } from "./theme.js";
 import { initBgDeco } from "./bgdeco.js";
 import { initBirthday } from "./birthdayui.js";
 import { initLongCopy, maybeShowCopyTip } from "./longcopy.js";
+import { createNetRecovery } from "./netrecover.js";   // (v4.11.7) 네트워크 실패 재시도 · 안내
 import { PREVIEW_URL, ARCHIVE_URL, NOTICES_URL, TWEETS_URL, BANNERS_URL, POLL_MS, COUNTDOWN_TICK_MS, APP_VERSION, APP_DATE } from "./config.js";
 
 const board = document.getElementById("board");
@@ -16,6 +17,65 @@ const notice = document.getElementById("notice");
 let lastSchedule = null;
 let lastArchive = null;   // (v4.1.0) 오늘 이미 끝난 방송 표시용 — 없어도 보드는 그려진다
 let lastJSON = null;   // 내용이 안 바뀌면 renderBoard 생략 (모바일 캐러셀 위치 보존)
+let noticesLoaded = false;   // (v4.11.7) 소식을 한 번이라도 불러왔는지 — 그 뒤의 실패는 지난 소식을 그대로 둔다
+
+// (v4.11.7) 네트워크 실패 안내 — 문구 2종. 빨강은 쓰지 않는다(LIVE 전용).
+const NET_ALERT_TEXT = {
+  network: "네트워크가 불안정하여 최신정보를 업데이트하지 못했어요.",
+  server: "최신정보를 업데이트하지 못했어요."
+};
+let netAlertEl = null;
+
+/** (v4.11.7) 안내 DOM 을 한 번만 만든다(body 끝). 처음엔 숨김. */
+function netAlertNodes() {
+  if (!netAlertEl) {
+    const wrap = document.createElement("div");
+    wrap.id = "net-alert";
+    wrap.setAttribute("role", "status");
+    wrap.setAttribute("aria-live", "polite");
+    wrap.hidden = true;
+    const ic = document.createElement("span");
+    ic.className = "net-alert__ic";
+    ic.setAttribute("aria-hidden", "true");
+    ic.textContent = "!";
+    const tx = document.createElement("span");
+    tx.className = "net-alert__tx";
+    wrap.append(ic, tx);
+    document.body.appendChild(wrap);
+    netAlertEl = wrap;
+  }
+  return netAlertEl;
+}
+
+/** (v4.11.7) 안내 표시 · 문구 갱신 — kind 는 "network" | "server". */
+function showNetAlert(kind) {
+  const el = netAlertNodes();
+  el.querySelector(".net-alert__tx").textContent = NET_ALERT_TEXT[kind] || NET_ALERT_TEXT.server;
+  el.hidden = false;
+}
+
+function hideNetAlert() {
+  if (netAlertEl) netAlertEl.hidden = true;
+}
+
+/** (v4.11.7) 복구 상태 기계 연결 — 재조회는 refetchAll, 숨김 판정은 화면 가시성. */
+const recovery = createNetRecovery({
+  retry: () => refetchAll(),
+  show: showNetAlert,
+  hide: hideNetAlert,
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (id) => clearTimeout(id),
+  isVisible: () => document.visibilityState === "visible"
+});
+
+/** 전체 재조회 — 포그라운드 복귀 · 네트워크 복구 재시도에서 함께 쓴다. (v4.11.7) 모듈 위로 올림 */
+function refetchAll() {
+  poll();
+  pollArchive();
+  pollNotices();
+  pollTweets();
+  pollBanners();
+}
 
 /** 보드 재구성 + 그 위에 개인 트윗 편지 배지 재적용 (renderBoard 가 배지를 지우므로). */
 function paintBoard() {
@@ -27,8 +87,9 @@ function paintBoard() {
 /** (v2.8) 개인 트윗 폴링 — 스케줄과 독립. 404/오류면 배지 안 뜬다. */
 async function pollTweets() {
   const r = await fetchPreview(TWEETS_URL);
+  if (!r.ok) return;   // (v4.11.7) 실패하면 지난 데이터를 그대로 둔다
   try {
-    renderTweets(board, r.ok ? r.data : null);
+    renderTweets(board, r.data);
   } catch (e) {
     /* 배지 오류가 메인 보드를 막지 않게 */
   }
@@ -37,6 +98,8 @@ async function pollTweets() {
 /** 소식 티커 폴링 — 스케줄과 독립. 404/오류면 티커를 그냥 숨긴 채 둔다. */
 async function pollNotices() {
   const r = await fetchPreview(NOTICES_URL);
+  if (!r.ok && noticesLoaded) return;   // (v4.11.7) 한 번이라도 불러왔으면 실패는 무시 — 지난 소식 유지
+  if (r.ok) noticesLoaded = true;
   try {
     renderNotices(notice, r.ok ? r.data : null);
   } catch (e) {
@@ -47,8 +110,9 @@ async function pollNotices() {
 /** (v4a) 행사 배너 폴링 — 소식 란 펼침 맨 위. 404/오류면 배너 없이 둔다. */
 async function pollBanners() {
   const r = await fetchPreview(BANNERS_URL);
+  if (!r.ok) return;   // (v4.11.7) 실패하면 지난 배너를 그대로 둔다
   try {
-    setBanners(notice, r.ok ? r.data : null);
+    setBanners(notice, r.data);
   } catch (e) {
     /* 배너 오류가 소식 · 보드를 막지 않게 */
   }
@@ -74,13 +138,11 @@ async function poll() {
       lastJSON = j;
       paintBoard();
     }
-    renderFooter(foot, lastSchedule, { stale: false });
+    renderFooter(foot, lastSchedule);   // (v4.11.7) 「업데이트 지연」 표기 삭제 — 실패 안내는 recovery 가 맡는다
     positionDisclaimerPopup();
+    recovery.onSuccess();
   } else {
-    if (lastSchedule) {
-      renderFooter(foot, lastSchedule, { stale: true });
-      positionDisclaimerPopup();
-    } else {
+    if (!lastSchedule) {
       board.innerHTML = "";
       const msg = document.createElement("p");
       msg.textContent = "불러오는 중 문제가 발생했어요";
@@ -89,6 +151,8 @@ async function poll() {
       msg.style.color = "var(--color-text-muted, #999)";
       board.appendChild(msg);
     }
+    // (v4.11.7) 서버가 응답한 실패(HTTP 오류 · 파싱 실패)는 status 가 있다, 연결 실패 · 시간 초과는 없다
+    recovery.onFailure(result.status ? "server" : "network");
   }
 }
 
@@ -326,6 +390,8 @@ function syncPlayerDock() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  netAlertNodes();   // (v4.11.7) 안내 DOM 을 미리 만들어 둔다(숨김)
+  window.addEventListener("online", recovery.onOnline);   // (v4.11.7) 네트워크가 돌아오면 안내 중일 때 5초 뒤 재조회
   initBirthday();   // (v4.10.0) 멤버 생일 당일(KST)이면 배경을 그 멤버의 생일 장면으로 — 판정 js/birthday.js · 화면 js/birthdayui.js
   initLongCopy();   // (v4.11.5) 카드 · 블록 · 점을 길게 눌러 주소 복사
   initBgDeco();   // (v4.9.8) 배경 장식 — 분홍 → 파랑 톤 · 떠다니는 로고 도형 · 폰을 흔들면 흩어짐
@@ -384,13 +450,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // POLL_MS 후 자연 복구 — 그 전엔 화면에 그대로 노출됨). 포그라운드 복귀를 감지해
   // 즉시 재조회해서 그 창을 없앤다. bfcache 복원(iOS 뒤로가기 등)은 visibilitychange
   // 가 안 뜰 수 있어 pageshow(persisted) 도 같이 건다.
-  const refetchAll = () => {
-    poll();
-    pollArchive();
-    pollNotices();
-    pollTweets();
-    pollBanners();
-  };
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refetchAll();
   });
