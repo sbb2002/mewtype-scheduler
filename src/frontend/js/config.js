@@ -78,7 +78,7 @@ export const BIRTHDAY_SCENES_ENABLED = {
 // js/timetable.js fillDot 이 조각마다 --dot-d · --dot-l 로 넣고, css/timetable.css 가 골라 쓴다. 지난 방송은 점 전체 불투명도 0.5.
 export const MEMBER_DOT_COLORS = {
   yuno:   { dark: "#FF6688", light: "#D02F5D" },
-  nonoka: { dark: "#FFAACC", light: "#CB779A" },
+  nonoka: { dark: "#FFC4DC", light: "#E293B6" },
   ritsu:  { dark: "#6296EC", light: "#588EE8" },
   miyako: { dark: "#8C69CE", light: "#805BC4" }
 };
