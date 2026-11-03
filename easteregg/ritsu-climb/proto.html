@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>오르기 시험판</title>
+<style>
+  :root {
+    --sky-top: #2a3f73;
+    --sky-bottom: #8fb3e8;
+    --rock: #5b6475;
+    --rock-edge: #2d3340;
+    --slick: #9fd8ff;
+    --slick-edge: #3d8fc4;
+    --body: #6296ec;
+    --body-edge: #1f3f7a;
+    --tool: #f2e6c9;
+    --tool-edge: #5a4a2c;
+    --hud: #ffffff;
+    --hud-bg: rgba(10, 16, 32, .55);
+    --accent: #ffd166;
+  }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #1b2440; color: var(--hud);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; cursor: crosshair; }
+  .hud { position: fixed; left: 12px; top: 12px; padding: 8px 10px; border-radius: 10px; background: var(--hud-bg); font-size: 13px; line-height: 1.5; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .btns { position: fixed; right: 12px; top: 12px; display: flex; gap: 6px; }
+  .btns button, .panel button, .goal button {
+    font: inherit; font-size: 13px; color: var(--hud); background: var(--hud-bg);
+    border: 1px solid rgba(255,255,255,.35); border-radius: 8px; padding: 6px 10px; cursor: pointer;
+  }
+  .help { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); max-width: calc(100vw - 32px); box-sizing: border-box;
+    padding: 10px 14px; border-radius: 10px; background: var(--hud-bg); font-size: 14px; text-align: center; pointer-events: none; transition: opacity .6s; }
+  .help.off { opacity: 0; }
+  .foot { position: fixed; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 11px; opacity: .6; pointer-events: none; }
+  .goal { position: fixed; inset: 0; display: none; place-items: center; background: rgba(10,16,32,.55); }
+  .goal.on { display: grid; }
+  .goal div { padding: 20px 26px; border-radius: 14px; background: #1b2440; border: 2px solid var(--accent); text-align: center; }
+  .goal h2 { margin: 0 0 8px; color: var(--accent); font-size: 26px; }
+  .goal p { margin: 0 0 14px; font-variant-numeric: tabular-nums; }
+  .panel { position: fixed; right: 12px; top: 52px; width: 250px; max-height: calc(100vh - 70px); overflow: auto; padding: 10px; border-radius: 10px;
+    background: rgba(10,16,32,.8); font-size: 12px; display: none; }
+  .panel.on { display: block; }
+  .panel label { display: grid; grid-template-columns: 1fr 52px; gap: 2px 6px; margin-bottom: 6px; }
+  .panel input { grid-column: 1 / 3; width: 100%; }
+  .panel output { text-align: right; font-variant-numeric: tabular-nums; }
+  .panel .ms { margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 520px) { .panel { width: calc(100vw - 24px); max-height: 45vh; } }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div class="hud" id="hud"></div>
+<div class="btns">
+  <button id="reset" type="button">처음부터</button>
+  <button id="dbg" type="button" hidden>조정</button>
+</div>
+<div class="panel" id="panel"><div class="ms" id="ms"></div><div id="sliders"></div><button id="copy" type="button">값 복사</button></div>
+<div class="help" id="help"></div>
+<div class="goal" id="goal"><div><h2>골인!</h2><p id="goaltext"></p><button id="again" type="button">처음부터</button></div></div>
+<div class="foot">비공식 팬 제작 · 움직임 시험판 · 공식과 무관</div>
+
+<!-- 물리 계산 — DOM 을 쓰지 않는 순수 함수 묶음. 사이트 이식 때 모듈로 옮기고, 시험 스크립트가 이 블록만 떼어 Node 에서 돌린다 -->
+<script id="climb-logic">
+const ClimbLogic = (() => {
+  // 조정값 시작값 — 명세 §7
+  const DEFAULTS = {
+    R: 28, TIP_R: 6, L_MIN: 40, L_MAX: 150,
+    GRAVITY: 1800, AIR_DRAG: 0.15,
+    TOOL_SPEED: 1600, BODY_SHARE: 1.0, MAX_BODY_SPEED: 1400,
+    TIP_FRICTION_ROCK: 4.0, TIP_FRICTION_SLICK: 0.3,
+    BODY_FRICTION_ROCK: 0.8, BODY_FRICTION_SLICK: 0.05,
+    ITER: 4,
+  };
+  const DT = 1 / 120;
+
+  // 시험 코스 — 좌표 단위 u, y 는 아래가 +. 출발 바닥 윗면 = y 0. 벽은 전부 두께 60u 이상의 닫힌 다각형
+  const rect = (x0, y0, x1, y1, mat = "rock") => ({ mat, pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
+  const COURSE = {
+    start: [-450, -28],
+    polys: [
+      rect(-1000, -2200, -700, 400),            // 왼쪽 경계 벽
+      rect(700, -2200, 1000, 400),              // 오른쪽 경계 벽
+      rect(-700, 0, 700, 400),                  // ① 출발 바닥
+      rect(-150, -70, 700, 0),                  // ① 계단 1
+      rect(150, -150, 700, -70),                // ① 계단 2
+      rect(400, -290, 700, -230),               // ② 걸기용 턱(오른쪽 벽에서 튀어나옴, 아래가 비어 있음)
+      // ③ 굴뚝 기둥 — 오른쪽 벽과의 틈 90u = 몸통 지름 × 1.6
+      // ④ 되돌림 길 1: 기둥 윗면 = 미끄러운 비탈(왼쪽으로 오르막, 변 2 만 slick). 미끄러지면 굴뚝으로 빠져 ②의 턱까지 떨어진다
+      { mat: "rock", edgeMat: { 2: "slick" }, pts: [[380, -400], [610, -400], [610, -1000], [380, -1100]] },
+      rect(500, -1095, 560, -1015),             // ④ 비탈 중간의 바위 손잡이(도구를 걸 곳)
+      // ⑤ 꼭대기 바닥 — 가운데 구멍(80u, 몸통보다 넓다) = 되돌림 길 2: 빠지면 출발 바닥까지 떨어진다
+      rect(-20, -1100, 380, -1040),
+      rect(-700, -1100, -100, -1040),
+      rect(-360, -1340, -260, -1100),           // ⑤ 몸통보다 높은 벽(240u) — 튕기기로 넘는다
+    ],
+    goal: { x0: -700, y0: -1230, x1: -380, y1: -1100 },   // ⑥ 골인 영역
+  };
+
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+  const mul = (a, s) => [a[0] * s, a[1] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+  const len = (a) => Math.hypot(a[0], a[1]);
+  function clampLen(v, max) { const l = len(v); return l > max ? mul(v, max / l) : v; }
+  function clampRange(v, lo, hi, fallback) {
+    const l = len(v);
+    if (l < 1e-6) return mul(fallback, lo / (len(fallback) || 1));
+    if (l < lo) return mul(v, lo / l);
+    if (l > hi) return mul(v, hi / l);
+    return v;
+  }
+
+  function inside(pt, pts) {
+    let c = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  }
+  function closestOnSeg(p, a, b) {
+    const ab = sub(b, a), t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / dot(ab, ab)));
+    return add(a, mul(ab, t));
+  }
+
+  /** 원(중심 c, 반지름 r)이 파고든 다각형마다 접촉 하나 — n = 밀어낼 방향(바깥), depth = 파고든 깊이 */
+  function contacts(c, r, polys) {
+    const out = [];
+    for (const poly of polys) {
+      const pts = poly.pts;
+      let best = Infinity, cp = null, edge = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const q = closestOnSeg(c, pts[i], pts[(i + 1) % pts.length]);
+        const d = len(sub(c, q));
+        if (d < best) { best = d; cp = q; edge = i; }
+      }
+      const isIn = inside(c, pts);
+      if (!isIn && best >= r) continue;
+      let n;
+      if (best < 1e-9) n = [0, -1];
+      else n = isIn ? mul(sub(cp, c), 1 / best) : mul(sub(c, cp), 1 / best);
+      // 재질은 다각형 단위(mat), 특정 변만 다르면 edgeMat[변 번호] — 얇은 쐐기 다각형을 따로 두지 않으려고
+      out.push({ n, depth: isIn ? r + best : r - best, mat: poly.edgeMat?.[edge] ?? poly.mat });
+    }
+    return out;
+  }
+
+  /** 면 마찰 — 이번 단계에 면을 따라 미끄러진 거리(from → to)를 mu × 깊이 만큼 되돌린다. 되돌린 벡터를 돌려준다 */
+  function friction(from, to, n, depth, mu) {
+    const delta = sub(to, from);
+    const t = sub(delta, mul(n, dot(delta, n)));
+    const tl = len(t), lim = mu * depth;
+    if (tl < 1e-9) return [0, 0];
+    return tl <= lim ? mul(t, -1) : mul(t, -lim / tl);
+  }
+
+  function makeState(course = COURSE, P = DEFAULTS) {
+    const p = [...course.start];
+    const d = [90, 22];
+    return { p, v: [0, 0], d, want: [...d], qPrev: add(p, d), tipHit: null, bodyHit: null, t: 0 };
+  }
+
+  const muTip = (P, mat) => mat === "slick" ? P.TIP_FRICTION_SLICK : P.TIP_FRICTION_ROCK;
+  const muBody = (P, mat) => mat === "slick" ? P.BODY_FRICTION_SLICK : P.BODY_FRICTION_ROCK;
+
+  /** 물리 한 단계(dt) — 명세 §5.3 순서 그대로 */
+  function step(S, P, polys, dt = DT) {
+    const p0 = S.p;
+    // 1. 중력 · 공기 저항 → 몸통 예측 위치
+    let v = [S.v[0], S.v[1] + P.GRAVITY * dt];
+    v = mul(v, Math.exp(-P.AIR_DRAG * dt));
+    let ph = add(p0, mul(v, dt));
+    // 2. 도구 상대 위치를 목표 쪽으로, 한 단계 최대 TOOL_SPEED × dt 만큼만
+    const want = clampRange(S.want, P.L_MIN, P.L_MAX, S.d);
+    //    각도 · 길이로 나눠 옮긴다 — 직선으로 옮기면 목표가 몸통 반대편일 때 도구가 몸통을 못 넘어간다
+    const l0 = len(S.d), a0 = Math.atan2(S.d[1], S.d[0]);
+    const lw = len(want), aw = Math.atan2(want[1], want[0]);
+    let da = aw - a0;
+    da -= Math.PI * 2 * Math.round(da / (Math.PI * 2));
+    let dl = lw - l0;
+    const move = Math.hypot(l0 * da, dl), maxMove = P.TOOL_SPEED * dt;
+    if (move > maxMove) { da *= maxMove / move; dl *= maxMove / move; }
+    let d = [Math.cos(a0 + da) * (l0 + dl), Math.sin(a0 + da) * (l0 + dl)];
+    d = clampRange(d, P.L_MIN, P.L_MAX, S.d);
+    // 2-1. 몸통 자체의 움직임(중력 · 관성)만 면 마찰을 받는다.
+    //      도구가 끌어 옮기는 몸통은 마찰로 막지 않는다 — 막으면 벽에 낀 몸통이 도구보다 세져 굴뚝을 못 오른다
+    let tipHit = null, bodyHit = null;
+    for (const c of contacts(ph, P.R, polys)) {
+      ph = add(ph, mul(c.n, c.depth));
+      ph = add(ph, friction(p0, ph, c.n, c.depth, muBody(P, c.mat)));
+      bodyHit = c;
+    }
+    // 3. 도구 끝 충돌 → 반동을 몸통에 → 몸통 충돌(밀어내기만), ITER 회 반복
+    for (let k = 0; k < P.ITER; k++) {
+      let q = add(ph, d);
+      let e = [0, 0];
+      for (const c of contacts(q, P.TIP_R, polys)) {
+        const push = mul(c.n, c.depth);
+        q = add(q, push); e = add(e, push);
+        const f = friction(S.qPrev, q, c.n, c.depth, muTip(P, c.mat));
+        q = add(q, f); e = add(e, f);
+        tipHit = c;
+      }
+      ph = add(ph, mul(e, P.BODY_SHARE));
+      for (const c of contacts(ph, P.R, polys)) { ph = add(ph, mul(c.n, c.depth)); bodyHit = c; }
+    }
+    // 4. 몸통 이동 상한(튕기기 상한) → 한 번 더 몸통 충돌 → 고친 위치에서 속도
+    ph = add(p0, clampLen(sub(ph, p0), P.MAX_BODY_SPEED * dt));
+    for (const c of contacts(ph, P.R, polys)) { ph = add(ph, mul(c.n, c.depth)); bodyHit = c; }
+    // 5. 도구 끝이 끝내 못 간 자리는 실제 위치로 맞춘다(몸통도 도구도 막혔을 때 떨림 방지).
+    //    밀려난 끝이 팔 길이 한계를 넘으면 끝을 되돌리지 않고 몸통을 끌어온다 — 끝을 되돌리면 지형 안으로 다시 들어간다
+    let q = add(ph, d);
+    for (const c of contacts(q, P.TIP_R, polys)) q = add(q, mul(c.n, c.depth));
+    const r = sub(q, ph), rl = len(r);
+    if (rl > P.L_MAX || rl < P.L_MIN) {
+      ph = sub(q, mul(r, (rl > P.L_MAX ? P.L_MAX : P.L_MIN) / (rl || 1)));
+      for (const c of contacts(ph, P.R, polys)) { ph = add(ph, mul(c.n, c.depth)); bodyHit = c; }
+    }
+    S.v = mul(sub(ph, p0), 1 / dt);
+    S.p = ph;
+    S.d = sub(q, S.p);
+    S.qPrev = q;
+    S.tipHit = tipHit; S.bodyHit = bodyHit;
+    S.t += dt;
+    return S;
+  }
+
+  const inGoal = (S, g = COURSE.goal) => S.p[0] > g.x0 && S.p[0] < g.x1 && S.p[1] > g.y0 && S.p[1] < g.y1;
+
+  return { DEFAULTS, DT, COURSE, makeState, step, contacts, inGoal, clampRange, add, sub, mul, len };
+})();
+if (typeof module !== "undefined") module.exports = ClimbLogic;
+</script>
+
+<script>
+(() => {
+  const L = ClimbLogic;
+  const qs = new URLSearchParams(location.search);
+  const DEBUG = qs.get("debug") === "1";
+  const REL = qs.get("input") === "rel";
+  const P = { ...L.DEFAULTS };
+  const polys = L.COURSE.polys;
+  const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+  const hud = document.getElementById("hud"), help = document.getElementById("help");
+  const goalEl = document.getElementById("goal"), goalText = document.getElementById("goaltext");
+
+  let W = 0, H = 0, dpr = 1, scale = 1;
+  let S, started = 0, falls = 0, highSince = 0, best = 0, goalT = 0, done = false;
+  let pointer = null, relLast = null, activeId = null, feedQ = [];
+  const anchor = () => [W / 2, H * 0.55];   // 몸통이 늘 놓이는 화면 자리(카메라를 몸통에 붙인다 — 명세 §3)
+
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    scale = Math.min(W, H) * 0.22 / P.L_MAX;
+  }
+
+  function reset() {
+    S = L.makeState(L.COURSE, P);
+    started = 0; falls = 0; highSince = S.p[1]; best = 0; goalT = 0; done = false; feedQ = [];
+    goalEl.classList.remove("on");
+    if (!REL) pointer = null;
+  }
+
+  // ── 입력 ────────────────────────────────────────────
+  // 절대(기본): 목표 = (포인터 − 몸통 화면 자리) ÷ 배율. 손을 떼면 마지막 목표 유지
+  // 이동량(?input=rel): 포인터 움직인 양만큼 목표를 옮긴다. PC 는 포인터 잠금
+  function setWantFromScreen(x, y) {
+    const [ax, ay] = anchor();
+    S.want = [(x - ax) / scale, (y - ay) / scale];
+  }
+  function moveWant(dx, dy) {
+    S.want = L.clampRange([S.want[0] + dx / scale, S.want[1] + dy / scale], P.L_MIN, P.L_MAX, S.d);
+  }
+  function firstInput() { if (!started) started = performance.now(); help.classList.add("off"); }
+
+  cv.addEventListener("pointerdown", (ev) => {
+    if (activeId !== null && ev.pointerType !== "mouse") return;   // 처음 누른 손가락만
+    activeId = ev.pointerId;
+    try { cv.setPointerCapture(ev.pointerId); } catch {}
+    firstInput();
+    if (REL) {
+      if (ev.pointerType === "mouse") { if (document.pointerLockElement !== cv) cv.requestPointerLock?.(); }
+      relLast = [ev.clientX, ev.clientY];
+    } else { pointer = [ev.clientX, ev.clientY]; setWantFromScreen(...pointer); }
+    ev.preventDefault();
+  });
+  cv.addEventListener("pointermove", (ev) => {
+    if (REL) {
+      if (document.pointerLockElement === cv) { moveWant(ev.movementX, ev.movementY); return; }
+      if (ev.pointerId === activeId && relLast) {
+        moveWant(ev.clientX - relLast[0], ev.clientY - relLast[1]);
+        relLast = [ev.clientX, ev.clientY];
+      }
+      return;
+    }
+    // PC 마우스는 누르지 않아도 커서 위치를 쓴다. 터치는 누르고 있을 때만
+    if (ev.pointerType === "mouse" || ev.pointerId === activeId) {
+      if (ev.pointerType === "mouse") firstInput();
+      pointer = [ev.clientX, ev.clientY]; setWantFromScreen(...pointer);   // pointer 는 단계마다 다시 쓴다(화면 크기가 바뀌어도 맞게)
+    }
+  });
+  const release = (ev) => { if (ev.pointerId === activeId) { activeId = null; relLast = null; } };
+  cv.addEventListener("pointerup", release);
+  cv.addEventListener("pointercancel", release);
+  window.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  document.addEventListener("touchmove", (ev) => ev.preventDefault(), { passive: false });
+
+  // ── 그리기 ──────────────────────────────────────────
+  function toScreen(x, y) {
+    const [ax, ay] = anchor();
+    return [ax + (x - S.p[0]) * scale, ay + (y - S.p[1]) * scale];
+  }
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#2a3f73"); g.addColorStop(1, "#8fb3e8");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // 움직임이 보이도록 흐린 격자(100u 간격)
+    ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1;
+    const step = 100 * scale, [ox, oy] = toScreen(0, 0);
+    ctx.beginPath();
+    for (let x = ((ox % step) + step) % step; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = ((oy % step) + step) % step; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    // 골인 깃발
+    const gl = L.COURSE.goal, [fx, fy] = toScreen(gl.x0 + 60, gl.y1);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 90 * scale); ctx.stroke();
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
+    ctx.beginPath(); ctx.moveTo(fx, fy - 90 * scale); ctx.lineTo(fx + 50 * scale, fy - 75 * scale); ctx.lineTo(fx, fy - 60 * scale); ctx.fill();
+    // 지형
+    for (const poly of polys) {
+      ctx.beginPath();
+      poly.pts.forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+      ctx.closePath();
+      ctx.fillStyle = poly.mat === "slick" ? "#9fd8ff" : "#5b6475"; ctx.fill();
+      ctx.strokeStyle = poly.mat === "slick" ? "#3d8fc4" : "#2d3340"; ctx.lineWidth = 2; ctx.stroke();
+      // 미끄러운 변은 하늘색 띠로
+      for (const [i, mat] of Object.entries(poly.edgeMat || {})) {
+        if (mat !== "slick") continue;
+        const a = toScreen(...poly.pts[+i]), b = toScreen(...poly.pts[(+i + 1) % poly.pts.length]);
+        ctx.strokeStyle = "#9fd8ff"; ctx.lineWidth = Math.max(4, 8 * scale); ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+    }
+    // 목표점 · 도구 · 몸통
+    const [bx, by] = toScreen(S.p[0], S.p[1]);
+    const tip = L.add(S.p, S.d), [tx, ty] = toScreen(tip[0], tip[1]);
+    if (DEBUG) {
+      const w = L.clampRange(S.want, P.L_MIN, P.L_MAX, S.d), [wx, wy] = toScreen(S.p[0] + w[0], S.p[1] + w[1]);
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(bx, by, P.L_MAX * scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx, by, P.L_MIN * scale, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = "#ffd166"; ctx.beginPath(); ctx.arc(wx, wy, 7, 0, Math.PI * 2); ctx.stroke();
+      if (S.tipHit) { ctx.strokeStyle = "#ff6b6b"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + S.tipHit.n[0] * 24, ty + S.tipHit.n[1] * 24); ctx.stroke(); }
+    }
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#5a4a2c"; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.strokeStyle = "#f2e6c9"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = S.tipHit ? "#ffd166" : "#f2e6c9"; ctx.strokeStyle = "#5a4a2c"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(tx, ty, P.TIP_R * scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#6296ec"; ctx.strokeStyle = "#1f3f7a"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bx, by, P.R * scale, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // 도구 쪽을 보는 눈 하나(방향 표시)
+    const dl = L.len(S.d) || 1;
+    ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(bx + S.d[0] / dl * P.R * .45 * scale, by + S.d[1] / dl * P.R * .45 * scale, 5 * scale, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // ── 진행 ────────────────────────────────────────────
+  const heightM = (y) => -(y + P.R) / 100;
+  function bookkeeping(dt) {
+    best = Math.max(best, heightM(S.p[1]));
+    // 떨어진 횟수: 어딘가에 닿아 멈춘 높이만 센다(튕겨 오른 꼭대기는 기준이 아니다).
+    // 멈춘 높이가 지금까지 멈춰 본 가장 높은 곳보다 500u(5m) 넘게 낮으면 1회
+    const resting = (S.bodyHit || S.tipHit) && Math.hypot(S.v[0], S.v[1]) < 200;
+    if (resting) {
+      if (S.p[1] - highSince > 500) falls++;
+      highSince = S.p[1] - highSince > 500 ? S.p[1] : Math.min(highSince, S.p[1]);
+    }
+    if (!done && L.inGoal(S)) {
+      goalT += dt;
+      if (goalT >= 1) {
+        done = true;
+        const sec = started ? (performance.now() - started) / 1000 : 0;
+        goalText.textContent = `걸린 시간 ${Math.floor(sec / 60)}분 ${(sec % 60).toFixed(1)}초 · 떨어진 횟수 ${falls}회`;
+        goalEl.classList.add("on");
+      }
+    } else if (!L.inGoal(S)) goalT = 0;
+  }
+  function updateHud() {
+    const sec = started && !done ? (performance.now() - started) / 1000 : 0;
+    hud.textContent = `높이 ${heightM(S.p[1]).toFixed(1)}m · 최고 ${best.toFixed(1)}m\n떨어짐 ${falls}회${started && !done ? ` · ${sec.toFixed(0)}초` : ""}`;
+    hud.style.whiteSpace = "pre";
+  }
+
+  let last = 0, acc = 0, msAvg = 0, msN = 0;
+  const msEl = document.getElementById("ms");
+  function frame(t) {
+    if (!last) last = t;
+    acc += Math.min(0.25, (t - last) / 1000);
+    last = t;
+    const t0 = performance.now();
+    let n = 0;
+    while (acc >= L.DT && n < 8) {
+      if (feedQ.length) { S.want = feedQ.shift(); if (!started) started = performance.now(); }   // 검증용 재생(봇 조작)
+      else if (!REL && pointer) setWantFromScreen(pointer[0], pointer[1]);
+      L.step(S, P, polys, L.DT);
+      bookkeeping(L.DT);
+      acc -= L.DT; n++;
+    }
+    if (n === 8) acc = 0;   // 느린 기기에서 계산이 계속 밀리지 않게
+    const ms = performance.now() - t0;
+    msAvg += ms; msN++;
+    if (msN >= 60) { if (DEBUG) msEl.textContent = `물리 계산 평균 ${(msAvg / msN).toFixed(3)} ms/프레임`; window.__climbMs = msAvg / msN; msAvg = 0; msN = 0; }
+    draw(); updateHud();
+    requestAnimationFrame(frame);
+  }
+  document.addEventListener("visibilitychange", () => { last = 0; acc = 0; });   // 숨겼다 돌아오면 밀린 시간을 버린다
+
+  // ── 조정 패널(?debug=1) ──────────────────────────────
+  const RANGES = {
+    L_MIN: [10, 100, 1], L_MAX: [80, 260, 1], GRAVITY: [400, 4000, 10], AIR_DRAG: [0, 2, .01],
+    TOOL_SPEED: [200, 4000, 10], BODY_SHARE: [0, 1, .05], MAX_BODY_SPEED: [200, 3000, 10],
+    TIP_FRICTION_ROCK: [0, 10, .1], TIP_FRICTION_SLICK: [0, 4, .05],
+    BODY_FRICTION_ROCK: [0, 3, .05], BODY_FRICTION_SLICK: [0, 1, .01], ITER: [1, 10, 1],
+  };
+  if (DEBUG) {
+    document.getElementById("dbg").hidden = false;
+    const panel = document.getElementById("panel"), box = document.getElementById("sliders");
+    if (innerWidth > 700) panel.classList.add("on");   // 폰에서는 접힌 채 시작(「조정」으로 연다)
+    document.getElementById("dbg").addEventListener("click", () => panel.classList.toggle("on"));
+    for (const [k, [lo, hi, st]] of Object.entries(RANGES)) {
+      const lab = document.createElement("label");
+      const name = document.createElement("span"); name.textContent = k;
+      const out = document.createElement("output"); out.textContent = P[k];
+      const inp = document.createElement("input");
+      Object.assign(inp, { type: "range", min: lo, max: hi, step: st, value: P[k] });
+      inp.addEventListener("input", () => { P[k] = Number(inp.value); out.textContent = inp.value; if (k === "L_MAX") resize(); });
+      lab.append(name, out, inp); box.appendChild(lab);
+    }
+    document.getElementById("copy").addEventListener("click", () => {
+      const json = JSON.stringify(Object.fromEntries(Object.keys(RANGES).map((k) => [k, P[k]])), null, 2);
+      navigator.clipboard?.writeText(json).catch(() => {});
+    });
+  }
+
+
+  document.getElementById("reset").addEventListener("click", reset);
+  document.getElementById("again").addEventListener("click", reset);
+  const touch = matchMedia("(pointer: coarse)").matches;
+  help.textContent = REL
+    ? (touch ? "화면 아무 곳이나 누른 채 끌면 도구가 그만큼 움직입니다" : "화면을 한 번 누르면 커서가 잠깁니다 · 마우스를 움직여 도구를 조종 · Esc 로 풀기")
+    : (touch ? "화면을 누른 채 움직이면 도구 끝이 손가락 쪽으로 갑니다 · 손을 떼도 그대로 유지" : "마우스를 움직이면 도구 끝이 커서 쪽으로 갑니다");
+  window.addEventListener("resize", resize);
+  resize(); reset();
+  // ?replay=1 — 검증 봇의 완주 조작(route.json, sim.cjs 로 생성)을 그대로 재생해 보여 준다
+  if (qs.get("replay") === "1") fetch("route.json").then((r) => r.json()).then((a) => { feedQ = a; help.textContent = "검증 봇의 완주 조작을 재생하는 중"; }).catch(() => {});
+  window.__climb = { get S() { return S; }, P, L, reset, get falls() { return falls; }, get done() { return done; }, feed: (arr) => { feedQ = arr.slice(); }, get left() { return feedQ.length; } };   // 검증용 — sim.cjs route 로 만든 조작을 단계마다 하나씩 넣는다
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
