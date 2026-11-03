@@ -41,6 +41,15 @@
   #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); max-width: 70vw; padding: 8px 14px; border-radius: 8px;
     background: #0d1426; border: 1px solid var(--accent); opacity: 0; transition: opacity .3s; pointer-events: none; white-space: pre-line; }
   #toast.on { opacity: 1; }
+  details.adv { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
+  details.adv summary { cursor: pointer; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .sl { margin: 8px 0 10px; }
+  .sl .top { display: flex; justify-content: space-between; gap: 6px; }
+  .sl .top output { font-variant-numeric: tabular-nums; color: var(--accent); }
+  .sl .top output.def { color: var(--text); }
+  .sl input[type=range] { width: 100%; margin: 3px 0 1px; }
+  .sl .desc { color: var(--muted); font-size: 11px; line-height: 1.45; }
+  .advh { font-size: 12px; color: var(--muted); margin: 10px 0 2px; }
   #narrow { display: none; position: fixed; inset: 0; background: var(--bg); place-items: center; text-align: center; padding: 24px; }
   @media (max-width: 899px) { #narrow { display: grid; } }
 </style>
@@ -78,6 +87,16 @@
     <input type="file" id="file" accept=".json,application/json" hidden>
     <div id="stats" style="color:var(--muted);margin-top:4px"></div>
 
+    <details class="adv" id="adv">
+      <summary>고급 설정 — 조작감 · 화면 확대(레벨 파일에 저장)</summary>
+      <div class="advh">조작감</div>
+      <div id="physSliders"></div>
+      <div class="advh">화면 확대 — PC · 폰 따로</div>
+      <div id="viewSliders"></div>
+      <label class="chk"><input type="checkbox" id="viewPreview"> 출발점에서 보이는 화면 크기 미리보기</label>
+      <button class="wide" id="advReset" style="margin-top:6px">고급 설정 전부 처음 값으로</button>
+    </details>
+
     <h2>검사</h2>
     <ul id="warns"></ul>
 
@@ -109,7 +128,7 @@
 
   // ── 레벨 · 저장 · 되돌리기 ───────────────────────────
   const defaultLevel = () => L.normalizeLevel({ ...clone(L.COURSE), name: "기본 코스" }).level;
-  const emptyLevel = () => ({ version: 1, name: "", start: [0, -28], goal: null, polys: [rectPoly(-600, 0, 600, 200)] });
+  const emptyLevel = () => ({ version: 1, name: "", start: [0, -28], goal: null, view: { ...L.VIEW_DEFAULT }, polys: [rectPoly(-600, 0, 600, 200)] });
   function loadSaved() { try { const raw = JSON.parse(localStorage.getItem(KEY_SAVE)); return raw ? L.normalizeLevel(raw).level : null; } catch { return null; } }
   function persist() { try { localStorage.setItem(KEY_SAVE, JSON.stringify(level)); } catch {} }
   let level = loadSaved() || defaultLevel();
@@ -421,6 +440,15 @@
       ctx.strokeRect(a, b, ms[0] - a, ms[1] - b); ctx.setLineDash([]);
       ctx.fillStyle = "#fff"; ctx.fillText(`${Math.abs(mw[0] - drag.w0[0])} × ${Math.abs(mw[1] - drag.w0[1])}u`, ms[0] + 8, ms[1] - 8);
     }
+    // 화면 크기 미리보기 — 게임은 몸통을 화면 가로 가운데 · 세로 55% 에 둔다. 기준 화면 PC 1280×800 · 폰 390×844
+    if ($("viewPreview").checked) {
+      for (const [k, w, h, color] of [["pc", 1280, 800, "#8fe3a8"], ["mobile", 390, 844, "#ff9f43"]]) {
+        const span = level.view?.[k] ?? L.VIEW_DEFAULT[k], sc = Math.min(w, h) / span, ww = w / sc, wh = h / sc;
+        const [a, b] = toS(level.start[0] - ww / 2, level.start[1] - wh * 0.55), [c, d] = toS(level.start[0] + ww / 2, level.start[1] + wh * 0.45);
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash([8, 5]); ctx.strokeRect(a, b, c - a, d - b); ctx.setLineDash([]);
+        ctx.fillStyle = color; ctx.fillText(`${k === "pc" ? "PC 1280×800" : "폰 390×844"} · 짧은 변 ${span}u`, a + 4, b + 14);
+      }
+    }
     // 커서 도우미: 몸통 · 팔 길이 원
     if ($("reach").checked && !drag) {
       ctx.strokeStyle = "rgba(98,150,236,.9)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(...ms, P.R * view.z, 0, Math.PI * 2); ctx.stroke();
@@ -451,8 +479,51 @@
     if (document.activeElement !== $("name")) $("name").value = level.name;
     const goalH = level.goal ? ` · 골인 높이 ${(-level.goal.y1 / 100).toFixed(1)}m` : "";
     $("stats").textContent = `지형 ${level.polys.length}개 · 출발 높이 ${(-(level.start[1] + P.R) / 100).toFixed(1)}m${goalH}`;
+    showAdv();
     draw();
   }
+
+  // ── 고급 설정(레벨 physics · view) ─────────────────────
+  // 범위는 climb-logic.js LEVEL_PHYSICS · VIEW_RANGE. 처음 값과 같으면 레벨 파일에 적지 않는다
+  const PHYS_INFO = {
+    TOOL_ACCEL: ["도구 가속도", "u/s²", "멈춘 도구가 최고 속도까지 오르는 빠르기. 낮을수록 묵직하고 늦게 따라온다. 처음 값이면 0.1초에 최고 속도"],
+    TOOL_SPEED: ["도구 최고 속도", "u/s", "도구 끝이 목표로 가는 최대 속도. 높을수록 튕기기가 세다"],
+    MAX_BODY_SPEED: ["몸통 최고 속도", "u/s", "튕겨 날아가는 속도의 상한"],
+    JUMP_DIST: ["순간이동으로 볼 거리", "u", "목표점이 한 번에 이만큼 넘게 바뀌면(화면을 새로 누름 · 커서가 튐) 그 자리로 바로 가지 않고 아래 속도로 따라간다. 600 이면 사실상 끔"],
+    REPOSITION_SPEED: ["순간이동 때 따라가는 속도", "u/s", "낮을수록 새로 누른 자리로 천천히 옮겨 가 몸통이 덜 튄다. 이어서 휘두르는 동작에는 걸리지 않는다"],
+  };
+  const VIEW_INFO = {
+    pc: ["PC — 화면 짧은 변에 보이는 길이", "커서 · 마우스 기기. 클수록 넓게(작게) 보인다"],
+    mobile: ["폰 — 화면 짧은 변에 보이는 길이", "터치 기기. 클수록 넓게 보이지만, 손가락 위치로 조작하므로 같은 손 움직임에 도구가 더 크게 움직인다(더 민감)"],
+  };
+  const advInputs = {};   // 키 → { inp, out, get, def }
+  let advBefore = null;
+  function slider(box, key, [lo, hi, st], label, unit, desc, get, set, def) {
+    const wrap = document.createElement("div"); wrap.className = "sl";
+    const top = document.createElement("div"); top.className = "top";
+    const name = document.createElement("span"); name.textContent = label;
+    const out = document.createElement("output");
+    const inp = document.createElement("input"); Object.assign(inp, { type: "range", min: lo, max: hi, step: st });
+    const d = document.createElement("div"); d.className = "desc"; d.textContent = `${desc} (처음 값 ${def}${unit})`;
+    top.append(name, out); wrap.append(top, inp, d); box.appendChild(wrap);
+    inp.addEventListener("input", () => { if (advBefore === null) advBefore = snap(); set(Number(inp.value)); persist(); showAdv(); draw(); });
+    inp.addEventListener("change", () => { if (advBefore !== null) pushUndo(advBefore); advBefore = null; });
+    advInputs[key] = { inp, out, get, def, unit };
+  }
+  function setPhys(k, v) { const def = L.DEFAULTS[k]; if (v === def) { if (level.physics) { delete level.physics[k]; if (!Object.keys(level.physics).length) delete level.physics; } } else (level.physics ||= {})[k] = v; }
+  for (const [k, r] of Object.entries(L.LEVEL_PHYSICS)) {
+    const [label, unit, desc] = PHYS_INFO[k];
+    slider($("physSliders"), k, r, label, unit, desc, () => level.physics?.[k] ?? L.DEFAULTS[k], (v) => setPhys(k, v), L.DEFAULTS[k]);
+  }
+  for (const k of ["pc", "mobile"]) {
+    const [label, desc] = VIEW_INFO[k];
+    slider($("viewSliders"), "view_" + k, L.VIEW_RANGE, label, "u", desc, () => level.view?.[k] ?? L.VIEW_DEFAULT[k], (v) => { level.view = { ...L.VIEW_DEFAULT, ...level.view, [k]: v }; }, L.VIEW_DEFAULT[k]);
+  }
+  function showAdv() {
+    for (const a of Object.values(advInputs)) { const v = a.get(); if (Number(a.inp.value) !== v) a.inp.value = v; a.out.textContent = `${v}${a.unit}`; a.out.classList.toggle("def", v === a.def); }
+  }
+  $("viewPreview").addEventListener("change", draw);
+  $("advReset").addEventListener("click", () => change(() => { delete level.physics; level.view = { ...L.VIEW_DEFAULT }; }));
 
   let toastT = 0;
   function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 3200); }

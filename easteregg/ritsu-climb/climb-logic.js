@@ -9,8 +9,26 @@ const ClimbLogic = (() => {
     TIP_FRICTION_ROCK: 4.0, TIP_FRICTION_SLICK: 0.3,
     BODY_FRICTION_ROCK: 0.8, BODY_FRICTION_SLICK: 0.05,
     ITER: 4,
+    // (v2) 도구 가속도 — 도구 끝이 멈춰 있다가 TOOL_SPEED 까지 오르는 데 TOOL_SPEED / TOOL_ACCEL 초. 목표 가까이선 같은 가속도로 줄여 멈춘다
+    TOOL_ACCEL: 16000,
+    // (v2) 목표점 순간이동 제한 — 목표가 한 번에 JUMP_DIST 넘게 바뀌면(화면을 새로 누름 · 커서 튐) 그 자리로 바로 가지 않고 REPOSITION_SPEED 로 따라간다
+    JUMP_DIST: 120, REPOSITION_SPEED: 500,
   };
   const DT = 1 / 120;
+  // 뚫림 방지 — 한 계산 단계에 도구 끝이 움직일 수 있는 거리(도구 + 몸통)의 상한. 가장 얇은 지형(MIN_THICKNESS 60u)의 절반보다 작게.
+  // 속도 조정값을 올려 이 값을 넘으면 한 단계를 이 값 이하가 되도록 잘게 나눠 계산한다(기본값에서는 나누지 않는다)
+  const SAFE_MOVE = 25;
+  // 레벨 파일 · 편집기 「고급 설정」으로 바꿀 수 있는 조정값과 범위 — [최소, 최대, 눈금]
+  const LEVEL_PHYSICS = {
+    TOOL_ACCEL: [2000, 60000, 500],
+    TOOL_SPEED: [400, 4000, 50],
+    MAX_BODY_SPEED: [400, 3000, 50],
+    JUMP_DIST: [40, 600, 10],
+    REPOSITION_SPEED: [200, 4000, 50],
+  };
+  // 화면 확대 — 「화면 짧은 변에 보이는 세계 길이(u)」. PC · 폰 따로. 기본 680u = 예전 배율(팔 최대 길이가 짧은 변의 22%)
+  const VIEW_DEFAULT = { pc: 680, mobile: 680 };
+  const VIEW_RANGE = [300, 2000, 10];
 
   // 시험 코스 — 좌표 단위 u, y 는 아래가 +. 출발 바닥 윗면 = y 0. 벽은 전부 두께 60u 이상의 닫힌 다각형
   const rect = (x0, y0, x1, y1, mat = "rock") => ({ mat, pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
@@ -109,29 +127,68 @@ const ClimbLogic = (() => {
   function makeState(course = COURSE, P = DEFAULTS) {
     const p = [...course.start];
     const d = [90, 22];
-    return { p, v: [0, 0], d, want: [...d], qPrev: add(p, d), tipHit: null, bodyHit: null, t: 0 };
+    // want = 입력이 가리키는 목표(몸통 기준) · aim = 순간이동 제한을 거친 실제 목표 · tv = 도구 끝 속도 [돌아가는 방향, 늘고 주는 방향] u/s
+    return { p, v: [0, 0], d, want: [...d], aim: [...d], catching: false, tv: [0, 0], qPrev: add(p, d), tipHit: null, bodyHit: null, t: 0, substeps: 1 };
   }
+
+  const wrapAngle = (a) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
+  /** 몸통 기준 상대 위치 from 을 to 쪽으로 각도 · 길이로 나눠 최대 maxMove 만큼 옮긴다(직선으로 옮기면 몸통을 가로지른다 — 명세 §4.2) */
+  function polarToward(from, to, maxMove) {
+    const l0 = len(from), a0 = Math.atan2(from[1], from[0]);
+    let da = wrapAngle(Math.atan2(to[1], to[0]) - a0), dl = len(to) - l0;
+    const move = Math.hypot(l0 * da, dl);
+    if (move <= maxMove) return [to[0], to[1]];
+    da *= maxMove / move; dl *= maxMove / move;
+    return [Math.cos(a0 + da) * (l0 + dl), Math.sin(a0 + da) * (l0 + dl)];
+  }
+
+  /** 목표점 순간이동 제한 — want 가 aim 에서 JUMP_DIST 넘게 떨어지면(새로 누름 · 커서 튐) 다 따라잡을 때까지 REPOSITION_SPEED 로만 움직인다 */
+  function updateAim(S, P, dt) {
+    const want = clampRange(S.want, P.L_MIN, P.L_MAX, S.d);
+    if (!S.aim) S.aim = [...want];
+    const gap = len(sub(want, S.aim));
+    if (!S.catching && gap > P.JUMP_DIST) S.catching = true;
+    if (!S.catching) { S.aim = want; return; }
+    S.aim = polarToward(S.aim, want, P.REPOSITION_SPEED * dt);
+    if (len(sub(want, S.aim)) < 0.5) S.catching = false;
+  }
+
+  /** 한 단계를 몇 조각으로 나눌지 — 한 조각에 도구 끝이 SAFE_MOVE 넘게 못 움직이게(뚫림 방지) */
+  const substepsFor = (P, dt) => Math.max(1, Math.ceil((P.TOOL_SPEED + P.MAX_BODY_SPEED) * dt / SAFE_MOVE - 1e-9));
 
   const muTip = (P, mat) => mat === "slick" ? P.TIP_FRICTION_SLICK : P.TIP_FRICTION_ROCK;
   const muBody = (P, mat) => mat === "slick" ? P.BODY_FRICTION_SLICK : P.BODY_FRICTION_ROCK;
 
-  /** 물리 한 단계(dt) — 명세 §5.3 순서 그대로 */
+  /** 물리 한 단계(dt) — 목표점 순간이동 제한 → (필요하면 잘게 나눠) 명세 §5.3 계산 */
   function step(S, P, polys, dt = DT) {
+    updateAim(S, P, dt);
+    const n = substepsFor(P, dt);
+    let tipHit = null, bodyHit = null;
+    for (let k = 0; k < n; k++) {
+      stepOnce(S, P, polys, dt / n);
+      tipHit = S.tipHit || tipHit; bodyHit = S.bodyHit || bodyHit;   // 조각 중 한 번이라도 닿았으면 닿은 것
+    }
+    S.tipHit = tipHit; S.bodyHit = bodyHit; S.substeps = n;
+    S.t += dt;
+    return S;
+  }
+
+  function stepOnce(S, P, polys, dt) {
     const p0 = S.p;
     // 1. 중력 · 공기 저항 → 몸통 예측 위치
     let v = [S.v[0], S.v[1] + P.GRAVITY * dt];
     v = mul(v, Math.exp(-P.AIR_DRAG * dt));
     let ph = add(p0, mul(v, dt));
-    // 2. 도구 상대 위치를 목표 쪽으로, 한 단계 최대 TOOL_SPEED × dt 만큼만
-    const want = clampRange(S.want, P.L_MIN, P.L_MAX, S.d);
+    // 2. 도구 상대 위치를 목표(aim) 쪽으로 — (v2) 가속도 TOOL_ACCEL · 최대 속도 TOOL_SPEED
     //    각도 · 길이로 나눠 옮긴다 — 직선으로 옮기면 목표가 몸통 반대편일 때 도구가 몸통을 못 넘어간다
+    //    속도 tv 는 [돌아가는 방향, 늘고 주는 방향] 성분. 남은 거리에서 TOOL_ACCEL 로 멈출 수 있는 속도까지만 낸다(지나쳐 흔들리지 않게)
+    const aim = clampRange(S.aim || S.want, P.L_MIN, P.L_MAX, S.d);
     const l0 = len(S.d), a0 = Math.atan2(S.d[1], S.d[0]);
-    const lw = len(want), aw = Math.atan2(want[1], want[0]);
-    let da = aw - a0;
-    da -= Math.PI * 2 * Math.round(da / (Math.PI * 2));
-    let dl = lw - l0;
-    const move = Math.hypot(l0 * da, dl), maxMove = P.TOOL_SPEED * dt;
-    if (move > maxMove) { da *= maxMove / move; dl *= maxMove / move; }
+    const m = [l0 * wrapAngle(Math.atan2(aim[1], aim[0]) - a0), len(aim) - l0], dist = len(m);
+    let vd = [0, 0];
+    if (dist > 1e-9) { const vmax = Math.min(P.TOOL_SPEED, Math.sqrt(2 * P.TOOL_ACCEL * dist), dist / dt); vd = mul(m, vmax / dist); }
+    const tv = add(S.tv || [0, 0], clampLen(sub(vd, S.tv || [0, 0]), P.TOOL_ACCEL * dt));
+    const da = tv[0] * dt / (l0 || 1), dl = tv[1] * dt;
     let d = [Math.cos(a0 + da) * (l0 + dl), Math.sin(a0 + da) * (l0 + dl)];
     d = clampRange(d, P.L_MIN, P.L_MAX, S.d);
     // 2-1. 몸통 자체의 움직임(중력 · 관성)만 면 마찰을 받는다.
@@ -173,8 +230,9 @@ const ClimbLogic = (() => {
     S.d = sub(q, S.p);
     S.qPrev = q;
     S.tipHit = tipHit; S.bodyHit = bodyHit;
-    S.t += dt;
-    return S;
+    // (v2) 도구 속도는 실제로 움직인 만큼으로 줄인다 — 끝이 막혀 못 움직였으면 그만큼 기세를 잃는다(늘리지는 않는다)
+    const tvAct = [l0 * wrapAngle(Math.atan2(S.d[1], S.d[0]) - a0) / dt, (len(S.d) - l0) / dt];
+    S.tv = len(tvAct) < len(tv) ? tvAct : tv;
   }
 
   const inGoal = (S, g = COURSE.goal) => !!g && S.p[0] > g.x0 && S.p[0] < g.x1 && S.p[1] > g.y0 && S.p[1] < g.y1;
@@ -211,8 +269,21 @@ const ClimbLogic = (() => {
       }
       level.polys.push(poly);
     });
+    // (v2) 화면 확대 · 조정값 — 없으면 기본값. 범위 밖이면 범위 안으로 자른다
+    const clampTo = ([lo, hi], v) => Math.min(hi, Math.max(lo, v));
+    level.view = { ...VIEW_DEFAULT };
+    if (raw.view && typeof raw.view === "object") for (const k of ["pc", "mobile"]) if (num(raw.view[k])) level.view[k] = clampTo(VIEW_RANGE, raw.view[k]);
+    if (raw.physics && typeof raw.physics === "object") {
+      const ph = {};
+      for (const [k, r] of Object.entries(LEVEL_PHYSICS)) if (num(raw.physics[k])) ph[k] = clampTo(r, raw.physics[k]);
+      if (Object.keys(ph).length) level.physics = ph;
+    }
     return { level, errors };
   }
+  /** 레벨에 적힌 조정값을 기본값 위에 얹는다 */
+  const levelParams = (level) => ({ ...DEFAULTS, ...(level?.physics || {}) });
+  /** 화면 짧은 변에 보이는 세계 길이(u) — device = "pc" | "mobile" */
+  const viewSpan = (level, device) => level?.view?.[device] ?? VIEW_DEFAULT[device];
 
   const signedArea = (pts) => pts.reduce((s, a, i) => { const b = pts[(i + 1) % pts.length]; return s + a[0] * b[1] - b[0] * a[1]; }, 0) / 2;
   function segHit(p, dir, a, b) {   // 반직선 p + t·dir 과 선분 ab 의 교점까지 t (없으면 Infinity)
@@ -293,6 +364,7 @@ const ClimbLogic = (() => {
   const lowestY = (level) => Math.max(level.start[1], ...level.polys.flatMap((p) => p.pts.map((q) => q[1])));
 
   return { DEFAULTS, DT, COURSE, MIN_THICKNESS, makeState, step, contacts, inGoal, inside, clampRange, add, sub, mul, len,
-    normalizeLevel, checkLevel, thinSpots, signedArea, lowestY, bez, flattenPoly, flattenLevel, CURVE_STEP };
+    normalizeLevel, checkLevel, thinSpots, signedArea, lowestY, bez, flattenPoly, flattenLevel, CURVE_STEP,
+    SAFE_MOVE, LEVEL_PHYSICS, VIEW_DEFAULT, VIEW_RANGE, levelParams, viewSpan, substepsFor, polarToward };
 })();
 if (typeof module !== "undefined") module.exports = ClimbLogic;

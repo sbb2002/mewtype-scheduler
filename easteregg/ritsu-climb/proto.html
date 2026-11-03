@@ -72,8 +72,11 @@
   const qs = new URLSearchParams(location.search);
   const DEBUG = qs.get("debug") === "1";
   const REL = qs.get("input") === "rel";
-  const P = { ...L.DEFAULTS };
+  const P = { ...L.DEFAULTS };   // 레벨을 열면 레벨 파일의 조정값(physics)을 얹는다(useLevel)
+  // 화면 확대는 PC · 폰 따로 — 터치가 주 입력이면 폰. ?view=pc|mobile 로 바꿔 볼 수 있다
+  const DEVICE = qs.get("view") === "pc" || qs.get("view") === "mobile" ? qs.get("view") : (matchMedia("(pointer: coarse)").matches ? "mobile" : "pc");
   let LEVEL = L.COURSE, polys = LEVEL.polys, lowest = L.lowestY(LEVEL), levelName = "";
+  let span = L.VIEW_DEFAULT[DEVICE];   // 화면 짧은 변에 보이는 세계 길이(u)
   const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
   const hud = document.getElementById("hud"), help = document.getElementById("help");
   const goalEl = document.getElementById("goal"), goalText = document.getElementById("goaltext");
@@ -87,7 +90,7 @@
     dpr = Math.min(2, window.devicePixelRatio || 1);
     W = window.innerWidth; H = window.innerHeight;
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    scale = Math.min(W, H) * 0.22 / P.L_MAX;
+    scale = Math.min(W, H) / span;
   }
 
   function reset() {
@@ -255,7 +258,7 @@
     if (n === 8) acc = 0;   // 느린 기기에서 계산이 계속 밀리지 않게
     const ms = performance.now() - t0;
     msAvg += ms; msN++;
-    if (msN >= 60) { if (DEBUG) msEl.textContent = `물리 계산 평균 ${(msAvg / msN).toFixed(3)} ms/프레임`; window.__climbMs = msAvg / msN; msAvg = 0; msN = 0; }
+    if (msN >= 60) { if (DEBUG) msEl.textContent = `물리 계산 평균 ${(msAvg / msN).toFixed(3)} ms/프레임 · 한 단계 ${S.substeps}조각 · 화면 ${DEVICE}`; window.__climbMs = msAvg / msN; msAvg = 0; msN = 0; }
     draw(); updateHud();
     requestAnimationFrame(frame);
   }
@@ -264,10 +267,13 @@
   // ── 조정 패널(?debug=1) ──────────────────────────────
   const RANGES = {
     L_MIN: [10, 100, 1], L_MAX: [80, 260, 1], GRAVITY: [400, 4000, 10], AIR_DRAG: [0, 2, .01],
-    TOOL_SPEED: [200, 4000, 10], BODY_SHARE: [0, 1, .05], MAX_BODY_SPEED: [200, 3000, 10],
+    TOOL_SPEED: [200, 4000, 10], TOOL_ACCEL: [2000, 60000, 500], BODY_SHARE: [0, 1, .05], MAX_BODY_SPEED: [200, 3000, 10],
+    JUMP_DIST: [40, 600, 10], REPOSITION_SPEED: [200, 4000, 50],
     TIP_FRICTION_ROCK: [0, 10, .1], TIP_FRICTION_SLICK: [0, 4, .05],
     BODY_FRICTION_ROCK: [0, 3, .05], BODY_FRICTION_SLICK: [0, 1, .01], ITER: [1, 10, 1],
   };
+  const sliders = {};   // 이름 → [input, output] — 레벨을 열면 그 값으로 맞춘다
+  function syncSliders() { for (const [k, [inp, out]] of Object.entries(sliders)) { const v = k === "VIEW" ? span : P[k]; inp.value = v; out.textContent = v; } }
   if (DEBUG) {
     document.getElementById("dbg").hidden = false;
     const panel = document.getElementById("panel"), box = document.getElementById("sliders");
@@ -279,11 +285,18 @@
       const out = document.createElement("output"); out.textContent = P[k];
       const inp = document.createElement("input");
       Object.assign(inp, { type: "range", min: lo, max: hi, step: st, value: P[k] });
-      inp.addEventListener("input", () => { P[k] = Number(inp.value); out.textContent = inp.value; if (k === "L_MAX") resize(); });
-      lab.append(name, out, inp); box.appendChild(lab);
+      inp.addEventListener("input", () => { P[k] = Number(inp.value); out.textContent = inp.value; });
+      lab.append(name, out, inp); box.appendChild(lab); sliders[k] = [inp, out];
+    }
+    {   // 화면 확대 — 이 기기(PC/폰) 값만 바꾼다. 레벨에 남기려면 편집기 「고급 설정」
+      const lab = document.createElement("label"), name = document.createElement("span"), out = document.createElement("output"), inp = document.createElement("input");
+      name.textContent = `VIEW(${DEVICE}) 짧은 변 u`; out.textContent = span;
+      Object.assign(inp, { type: "range", min: L.VIEW_RANGE[0], max: L.VIEW_RANGE[1], step: L.VIEW_RANGE[2], value: span });
+      inp.addEventListener("input", () => { span = Number(inp.value); out.textContent = inp.value; resize(); });
+      lab.append(name, out, inp); box.prepend(lab); sliders.VIEW = [inp, out];
     }
     document.getElementById("copy").addEventListener("click", () => {
-      const json = JSON.stringify(Object.fromEntries(Object.keys(RANGES).map((k) => [k, P[k]])), null, 2);
+      const json = JSON.stringify({ ...Object.fromEntries(Object.keys(RANGES).map((k) => [k, P[k]])), VIEW: { [DEVICE]: span } }, null, 2);
       navigator.clipboard?.writeText(json).catch(() => {});
     });
   }
@@ -303,6 +316,7 @@
     if (!level) { help.textContent = `레벨을 못 읽었습니다: ${errors.join(" · ")}`; return; }
     const flat = L.flattenLevel(level);   // 곡선 변은 짧은 변들로 쪼개 물리에 넘긴다
     LEVEL = flat; polys = flat.polys; lowest = L.lowestY(flat); levelName = label + (level.name ? ` · ${level.name}` : "");
+    Object.assign(P, L.levelParams(level)); span = L.viewSpan(level, DEVICE); resize(); syncSliders();
     reset();
     if (errors.length) help.textContent = `레벨 주의: ${errors.join(" · ")}`;
   }
@@ -315,7 +329,8 @@
       .then((raw) => useLevel(raw, levelFile)).catch((e) => { help.textContent = `levels/${levelFile} 를 못 읽었습니다(${e.message})`; });
   }
   // ?replay=1 — 검증 봇의 완주 조작(route.json, sim.cjs 로 생성)을 그대로 재생해 보여 준다(기본 코스 전용)
-  if (qs.get("replay") === "1" && !levelFile && qs.get("test") !== "1") fetch("route.json").then((r) => r.json()).then((a) => { feedQ = a; help.textContent = "검증 봇의 완주 조작을 재생하는 중"; }).catch(() => {});
+  // 봇 조작은 도구가 즉시 따라오던 물리에 맞춰 짠 것이라 sim.cjs 와 같은 가속도(BOT_TOOL_ACCEL 60000)로 재생한다
+  if (qs.get("replay") === "1" && !levelFile && qs.get("test") !== "1") fetch("route.json").then((r) => r.json()).then((a) => { P.TOOL_ACCEL = 60000; syncSliders(); reset(); feedQ = a; help.textContent = "검증 봇의 완주 조작을 재생하는 중(봇 전용 도구 가속도 60000)"; }).catch(() => {});
   window.__climb = { get S() { return S; }, P, L, reset, get falls() { return falls; }, get done() { return done; }, feed: (arr) => { feedQ = arr.slice(); }, get left() { return feedQ.length; } };   // 검증용 — sim.cjs route 로 만든 조작을 단계마다 하나씩 넣는다
   requestAnimationFrame(frame);
 })();
