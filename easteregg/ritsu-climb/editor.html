@@ -77,6 +77,9 @@
     <div class="row"><button id="matRock">전체 바위</button><button id="matSlick">전체 미끄러움</button></div>
     <div class="row"><button id="dup">복제<kbd>Ctrl+D</kbd></button><button id="del">삭제<kbd>Del</kbd></button></div>
     <div class="row"><button id="rotL">↺ 15° 회전<kbd>Q</kbd></button><button id="rotR">↻ 15° 회전<kbd>E</kbd></button></div>
+    <div class="row"><button id="flipH">좌우 반전<kbd>H</kbd></button></div>
+    <div class="row"><button id="copy">복사<kbd>Ctrl+C</kbd></button><button id="cut">잘라내기<kbd>Ctrl+X</kbd></button></div>
+    <div class="row"><button id="paste">붙이기<kbd>Ctrl+V</kbd></button></div>
 
     <h2>레벨</h2>
     <input type="text" id="name" placeholder="레벨 이름" maxlength="80">
@@ -106,6 +109,8 @@
       <li>휠 = 확대 · 축소, 가운데/오른쪽 버튼 끌기 또는 Space + 끌기 = 화면 이동</li>
       <li>다각형: 클릭으로 꼭짓점, 첫 점 클릭 또는 Enter 로 닫기, Backspace = 마지막 점 취소, Esc = 그리기 취소</li>
       <li>선택: 지형을 끌어 옮기기, 꼭짓점 끌기, 변 더블클릭 = 꼭짓점 추가, 꼭짓점 고르고 Del = 꼭짓점 삭제</li>
+      <li>좌우 반전: H — 지형을 감싸는 사각형 가운데 세로선을 기준으로 뒤집는다(변 재질 · 곡선도 같이)</li>
+      <li>복사 · 잘라내기 · 붙이기: Ctrl+C · X · V. 붙이면 마우스 자리에(격자 간격을 지켜) 놓인다. 다른 탭 · 다른 레벨의 편집기에도 붙일 수 있다. 되돌리기 Ctrl+Z · 다시 Ctrl+Y</li>
       <li>회전: 지형을 고르면 위쪽에 둥근 손잡이가 생긴다. 끌어 돌린다(격자 맞춤이 켜져 있으면 15° 씩, Alt = 자유롭게). Q · E = 15° 씩, Shift+Q · E = 1° 씩. 지형을 감싸는 사각형 가운데를 축으로 돈다</li>
       <li>곡선: 지형을 고르면 변마다 가운데에 작은 주황 원이 생긴다. 끌면 그 변이 휘고(곡선이 그 점을 지난다), 더블클릭하면 다시 곧게</li>
       <li>원 그리기: 가운데에서 끌어 반지름을 정한다(꼭짓점 8개 + 곡선 변)</li>
@@ -223,6 +228,38 @@
   function rotateSel(deg) {
     if (sel.poly === null) return;
     change(() => { const poly = level.polys[sel.poly]; applyRotation(poly, clone(poly.pts), clone(poly.curve || null), polyCenter(poly).c, deg); });
+  }
+  // 좌우 반전 — 감싸는 사각형 가운데 세로선 기준. 꼭짓점 순서 · 변 번호는 그대로라 변 재질(edgeMat) · 곡선(curve)도 같은 변에 남는다
+  function flipSel() {
+    if (sel.poly === null) return;
+    change(() => {
+      const poly = level.polys[sel.poly], cx = polyCenter(poly).c[0], fx = (x) => Math.round((2 * cx - x) * 10) / 10;
+      poly.pts = poly.pts.map(([x, y]) => [fx(x), y]);
+      if (poly.curve) for (const k in poly.curve) poly.curve[k] = [fx(poly.curve[k][0]), poly.curve[k][1]];
+    });
+  }
+  // 복사 · 잘라내기 · 붙이기 — 붙여 넣을 지형은 브라우저 저장소(KEY_CLIP)에도 둬서 같은 주소의 다른 탭 · 다른 레벨에서도 붙일 수 있다
+  const KEY_CLIP = "climb-editor-clip";
+  let clip = null;
+  function copySel(cut) {
+    if (sel.poly === null) { toast("복사할 지형을 먼저 고르세요"); return; }
+    clip = clone(level.polys[sel.poly]);
+    try { localStorage.setItem(KEY_CLIP, JSON.stringify(clip)); } catch {}
+    if (cut) change(() => { level.polys.splice(sel.poly, 1); sel = { poly: null, vertex: null }; });
+    toast(cut ? "잘라냈습니다 — Ctrl+V 로 붙이기" : "복사했습니다 — Ctrl+V 로 붙이기");
+  }
+  function pasteClip() {
+    let c = null;
+    try { const raw = JSON.parse(localStorage.getItem(KEY_CLIP)); if (raw) c = L.normalizeLevel({ start: [0, 0], polys: [raw] }).level.polys[0] || null; } catch {}
+    c = c || (clip && clone(clip));
+    if (!c) { toast("붙일 지형이 없습니다 — 먼저 Ctrl+C"); return; }
+    // 마우스 자리(화면 안이면)로 옮긴다. 옮기는 양을 격자 간격으로 맞춰, 격자에 맞춰 그린 지형은 붙인 뒤에도 격자에 맞는다
+    const center = polyCenter(c).c, inView = mouse[0] > 0 && mouse[1] > 0 && mouse[0] < W && mouse[1] < H;
+    const target = inView ? toW(...mouse) : [center[0] + 40, center[1] - 40];
+    const d = [sn(target[0] - center[0]), sn(target[1] - center[1])];
+    c.pts = c.pts.map(([x, y]) => [x + d[0], y + d[1]]);
+    if (c.curve) for (const k in c.curve) c.curve[k] = [c.curve[k][0] + d[0], c.curve[k][1] + d[1]];
+    change(() => { level.polys.push(c); sel = { poly: level.polys.length - 1, vertex: null }; });
   }
   const goalCorner = (s) => { const g = level.goal; if (!g) return null; const cs = [[g.x0, g.y0, "x0", "y0"], [g.x1, g.y0, "x1", "y0"], [g.x1, g.y1, "x1", "y1"], [g.x0, g.y1, "x0", "y1"]]; return cs.find((c) => dist(toS(c[0], c[1]), s) <= 9) || null; };
   const inGoalRect = (w) => level.goal && w[0] > level.goal.x0 && w[0] < level.goal.x1 && w[1] > level.goal.y0 && w[1] < level.goal.y1;
@@ -373,14 +410,20 @@
   function duplicate() { if (sel.poly === null) return; change(() => { const c = clone(level.polys[sel.poly]); c.pts = c.pts.map((q) => [q[0] + 40, q[1] - 40]); if (c.curve) for (const k in c.curve) c.curve[k] = [c.curve[k][0] + 40, c.curve[k][1] - 40]; level.polys.push(c); sel = { poly: level.polys.length - 1, vertex: null }; }); }
 
   window.addEventListener("keydown", (e) => {
-    if (e.target instanceof HTMLInputElement) return;
+    // 글자를 치는 칸(레벨 이름)에서만 단축키를 끈다 — 체크박스 · 슬라이더를 누른 뒤에도 단축키가 먹게
+    if (e.target instanceof HTMLInputElement && e.target.type === "text") return;
     altKey = e.altKey;
-    const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+    // 한글 입력 상태에서도 단축키가 먹게 글쇠 자리(e.code)로 읽는다(한글 상태면 e.key 가 「ㅊ」 같은 글자가 된다)
+    const k = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
     if (e.key === " ") { spaceKey = true; cv.style.cursor = "grab"; e.preventDefault(); return; }
     if (ctrl && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (ctrl && k === "y") { e.preventDefault(); redo(); return; }
     if (ctrl && k === "d") { e.preventDefault(); duplicate(); return; }
+    if (ctrl && k === "c") { e.preventDefault(); copySel(false); return; }
+    if (ctrl && k === "x") { e.preventDefault(); copySel(true); return; }
+    if (ctrl && k === "v") { e.preventDefault(); pasteClip(); return; }
     if (ctrl) return;
+    if (k === "h" && sel.poly !== null) { flipSel(); return; }
     if (tool === "poly" && draft.length) {
       if (e.key === "Enter") { closeDraft(); return; }
       if (e.key === "Backspace") { draft.pop(); draw(); e.preventDefault(); return; }
@@ -521,7 +564,7 @@
     $("selinfo").textContent = p
       ? `지형 ${sel.poly + 1} · 꼭짓점 ${p.pts.length}개 · ${p.mat === "slick" ? "미끄러움" : "바위"}${p.edgeMat ? ` (다른 재질 변 ${Object.keys(p.edgeMat).length}개)` : ""}${p.curve ? ` · 곡선 변 ${Object.keys(p.curve).length}개` : ""}${sel.vertex !== null ? ` · 꼭짓점 ${sel.vertex + 1} 선택` : ""}`
       : "없음 — 선택 도구로 지형을 누르세요";
-    for (const id of ["matRock", "matSlick", "dup", "del", "rotL", "rotR"]) $(id).disabled = !p;
+    for (const id of ["matRock", "matSlick", "dup", "del", "rotL", "rotR", "flipH", "copy", "cut"]) $(id).disabled = !p;
     $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length;
     if (document.activeElement !== $("name")) $("name").value = level.name;
     const goalH = level.goal ? ` · 골인 높이 ${(-level.goal.y1 / 100).toFixed(1)}m` : "";
@@ -635,6 +678,8 @@
   $("matSlick").addEventListener("click", () => change(() => { const p = level.polys[sel.poly]; p.mat = "slick"; delete p.edgeMat; }));
   $("dup").addEventListener("click", duplicate);
   $("rotL").addEventListener("click", () => rotateSel(-ROT_STEP)); $("rotR").addEventListener("click", () => rotateSel(ROT_STEP));
+  $("flipH").addEventListener("click", flipSel);
+  $("copy").addEventListener("click", () => copySel(false)); $("cut").addEventListener("click", () => copySel(true)); $("paste").addEventListener("click", pasteClip);
   $("del").addEventListener("click", () => { sel.vertex = null; deleteSelection(); });
   $("undo").addEventListener("click", undo); $("redo").addEventListener("click", redo);
   $("play").addEventListener("click", play);
