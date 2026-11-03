@@ -23,7 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
-| v4.11.8 | `2ab5f3a` | 2026-11-03 01:13 | `hotfix/yuno-birthday-script` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 등급(일반 패치) · PR #143 · PR 미리보기 Vercel success · 운영 배포는 이 세션에서 확인 못 함(vercel.app 접속 차단) · 태그 원격 푸시 실패 — 운영자 PC 에서 푸시 필요 |
+| v4.11.8 | `2ab5f3a` | 2026-11-03 01:13 | `hotfix/yuno-birthday-script` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 등급(일반 패치) · PR #143 · PR 미리보기 Vercel success · 운영 배포는 이 세션에서 확인 못 함(vercel.app 접속 차단) |
 | v4.11.7 | `5574cc3` | 2026-11-02 17:19 | `patch/ui-ux-improvision` | 병합 커밋 | 프론트만 · 운영자 지정 일반 패치 · PR #141 · Vercel 프로덕션 success(`mewtype-scheduler-nvv1xwe4o-sbb2002`) · 운영 화면 확인 |
 | v4.11.6 | `278cbc0` | 2026-11-02 10:46 | `hotfix/mobile-player-tabs` | 병합 커밋 | 프론트만 · 운영자 지정 일반 패치 · PR #139 · Vercel 프로덕션 success(`mewtype-scheduler-7l0wjsmqj-sbb2002`) · 운영 파일 3개 일치 |
 | v4.11.5 | `5aa3cca` | 2026-11-02 01:50 | `feat/long-press-copy` | 병합 커밋 | 프론트만 · 새 기능이지만 운영자가 일반 패치로 지정 · PR #137 · Vercel 프로덕션 success(`mewtype-scheduler-k52kidvwa-sbb2002`) · 운영 파일 7개 일치 |
@@ -250,7 +250,7 @@ v3.9a 로 잘못 매겨 머지됐다가(`73d61dc`, 커밋 메시지는 그대로
   - 곡마다 시각이 고정된 별자리 구간을 `STORY_SKY_SHOWS` 로 적고, `bdaystory.selfcheck.mjs` 가 문구와 겹치면 실패하게 했다(공백 15초 계산에서는 별자리를 화면이 찬 시간으로 친다). 별자리 시각은 박 지도 · 장면 예약 규칙에서 나오므로 그쪽을 바꾸면 다시 재야 한다.
   - 남은 것(의도대로 둠): UFO 사인은 방문마다 두 곡 중 한 곡에 무작위로 나와 `early`(1곡 1:54) 또는 `focus`(2곡 2:16) 중 하나가 가려진다.
   - 병합: PR #143 병합 커밋 `2ab5f3a`(2026-11-03 01:13 KST, 운영자 지시로 Claude 가 병합). 프론트만이라 백엔드 배포 없음 — `main` 푸시로 Vercel 이 자동 배포한다. PR 머리 커밋 `7c280be` 의 Vercel 미리보기는 success. 운영 배포 · 운영 화면은 이 세션의 네트워크 정책이 vercel.app 접속을 막아 **확인 못 함**.
-  - 태그: `v4.11.8` 주석 태그를 `2ab5f3a` 에 만들었으나 이 세션에서 원격 푸시가 막혔다(remote hung up). 운영자 PC 에서 `git fetch origin && git tag -a v4.11.8 2ab5f3a -m "v4.11.8" -m "<이 항목 첫 줄>" && git push origin refs/tags/v4.11.8` 필요.
+  - 태그: `v4.11.8` 주석 태그는 클라우드 세션에서 원격 푸시가 막혀(remote hung up), 2026-11-03 운영자 PC 에서 `2ab5f3a` 에 다시 만들어 올렸다.
   - 롤백 대상: v4.11.7(`5574cc3`). 되돌리려면 `git revert -m 1 2ab5f3a` 를 `main` 에 넣는다.
   - 미확인: 실제 폰 · iPhone Safari 에서의 대사 표시와 줄넘김 · 운영 사이트 반영.
 - **v4.11.7** (일반 패치, 2026-11-02 — 브랜치 `patch/ui-ux-improvision`, 프론트만, 운영자 지정 등급): **조회 실패 복구 · 이후 예고 점 멤버 색 · 보던 멤버 기억 · 폰 시트 닫기 정리.** 디자인 점검 뒤 운영자 코멘트를 반영한 묶음. 명세 = Claude, 구현 = Haiku 5.5, 검증 = Claude. 세부 = `docs/SPEC.md` js/main.js 「조회 실패 복구」 · 「점 색」.
