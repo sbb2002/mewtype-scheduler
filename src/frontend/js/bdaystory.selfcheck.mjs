@@ -6,11 +6,13 @@ import { decodeSign, signDrawOrder } from './bdaysign.js';
 
 // 문구 간격 — 인사말(19~26초 부근)이 채우는 인트로 뒤 구간까지 포함해 곡마다 상한 이하, 겹침 없음.
 // 고정 하늘 장면(별자리)은 화면을 채우는 구간으로 치되, 문구와 겹치면 안 된다(겹치면 그 문구가 가려져 안 나온다 — v4.11.8 count).
+// 예외: 1곡 talk(3:01 끝) → next(3:23) 22.8초 — 마무리 구간은 음악만 두기로 운영자가 정했다(v4.11.9).
+const GAP_EXEMPT=new Set(['next']);
 for(const track of [0,1]){
  const cues=STORY_CUES.filter(c=>c.track===track),shows=STORY_SKY_SHOWS.filter(s=>s.track===track);
  for(const c of cues)for(const s of shows)assert.ok(c.end<=s.start||c.start>=s.end,`${c.id} 가 ${s.id} 와 겹침`);
  const filled=[...cues,...shows].sort((a,b)=>a.start-b.start);
- for(let i=1;i<filled.length;i++){const gap=filled[i].start-filled[i-1].end;assert.ok(gap>=0,filled[i].id);assert.ok(gap<=STORY_MAX_GAP,`${filled[i].id} ${gap}`)}
+ for(let i=1;i<filled.length;i++){const gap=filled[i].start-filled[i-1].end;assert.ok(gap>=0,filled[i].id);if(!GAP_EXEMPT.has(filled[i].id))assert.ok(gap<=STORY_MAX_GAP,`${filled[i].id} ${gap}`)}
 }
 // 인트로 문구는 드럼(17.14초) 전에 끝나고, 인트로가 아니면 나오지 않는다
 assert.ok(STORY_CUES.filter(c=>c.intro).every(c=>c.end<17.14));
