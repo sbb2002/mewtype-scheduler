@@ -142,6 +142,32 @@ const inside = (pt) => polys.some((poly) => { let c = false; const pts = poly.pt
   const S = fullRoute(true);
   check(7, "골인", S.goalT >= 1, `골인 영역 체류 ${S.goalT.toFixed(2)}초 (기준 1초) · 봇 조작 시간 ${S.t.toFixed(0)}초`);
 }
+{ // 8. 곡선 지형 — 아치 언덕 + 원 바위에서 버티기 · 뚫림 없음
+  const k8 = 80 / Math.cos(Math.PI / 8);
+  const { level } = L.normalizeLevel({ start: [0, -228], goal: null, polys: [
+    { mat: "rock", pts: [[-700, 0], [700, 0], [700, 200], [-700, 200]] },
+    { mat: "rock", curve: { 0: [0, -400] }, pts: [[-450, 0], [450, 0], [450, 60], [-450, 60]] },   // 윗변이 위로 휜 아치(꼭대기 y -200)
+    { mat: "rock", edgeMat: { 2: "slick" },   // 원 바위(반지름 80, 꼭짓점 8 + 곡선 변 8)
+      curve: Object.fromEntries([...Array(8)].map((_, i) => { const m = i * Math.PI / 4 + Math.PI / 8; return [i, [300 + k8 * Math.cos(m), -420 + k8 * Math.sin(m)]]; })),
+      pts: [...Array(8)].map((_, i) => [300 + 80 * Math.cos(i * Math.PI / 4), -420 + 80 * Math.sin(i * Math.PI / 4)]) },
+  ] });
+  const fp = L.flattenLevel(level).polys;
+  const inF = (pt) => fp.some((poly) => L.inside(pt, poly.pts));
+  const S = L.makeState(level, P); S.d = [0, -80]; S.want = [0, -80]; S.qPrev = L.add(S.p, S.d);
+  for (let i = 0; i < 120; i++) L.step(S, P, fp);
+  const a = [...S.p]; let dev = 0; for (let i = 0; i < 360; i++) { L.step(S, P, fp); dev = Math.max(dev, L.len(L.sub(S.p, a))); }
+  let bad = 0, seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let trial = 0; trial < 12; trial++) {
+    const T = L.makeState(level, P); T.p = [[-300, -120], [0, -228], [250, -100], [300, -528], [180, -420], [420, -420]][trial % 6].slice(); T.qPrev = L.add(T.p, T.d);
+    for (let k = 0; k < 60; k++) {
+      const ang = rnd() * Math.PI * 2, n = 3 + Math.floor(rnd() * 10); T.want = [Math.cos(ang) * 225, Math.sin(ang) * 225];
+      for (let i = 0; i < n; i++) { L.step(T, P, fp); if (inF(T.p) || inF(L.add(T.p, T.d))) bad++; }
+    }
+  }
+  const errs = L.checkLevel(level, P).filter((w) => w.level === "오류");
+  check(8, "곡선 지형", dev < 1 && bad === 0 && !errs.length,
+    `아치 꼭대기에서 3초 움직임 ${dev.toFixed(3)}u (몸통 y ${a[1].toFixed(0)}, 꼭대기 -200) · 마구 휘두르기 12회 뚫림 ${bad}회 · 쪼갠 변 ${fp.reduce((s, p) => s + p.pts.length, 0)}개 · 검사 오류 ${errs.length}건`);
+}
 { // 물리 계산 비용(참고)
   const S = L.makeState(L.COURSE, P); const t0 = process.hrtime.bigint(); for (let i = 0; i < 12000; i++) { S.want = [Math.cos(i / 30) * 120, Math.sin(i / 30) * 120]; L.step(S, P, polys); }
   console.log(`참고  물리 한 단계 평균 ${(Number(process.hrtime.bigint() - t0) / 1e6 / 12000 * 1000).toFixed(1)}µs (Node) — 60fps 한 프레임 = 2단계`);

@@ -301,7 +301,8 @@
   function useLevel(raw, label) {
     const { level, errors } = L.normalizeLevel(raw);
     if (!level) { help.textContent = `레벨을 못 읽었습니다: ${errors.join(" · ")}`; return; }
-    LEVEL = level; polys = level.polys; lowest = L.lowestY(level); levelName = label + (level.name ? ` · ${level.name}` : "");
+    const flat = L.flattenLevel(level);   // 곡선 변은 짧은 변들로 쪼개 물리에 넘긴다
+    LEVEL = flat; polys = flat.polys; lowest = L.lowestY(flat); levelName = label + (level.name ? ` · ${level.name}` : "");
     reset();
     if (errors.length) help.textContent = `레벨 주의: ${errors.join(" · ")}`;
   }

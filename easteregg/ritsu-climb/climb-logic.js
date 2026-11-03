@@ -63,9 +63,22 @@ const ClimbLogic = (() => {
   }
 
   /** 원(중심 c, 반지름 r)이 파고든 다각형마다 접촉 하나 — n = 밀어낼 방향(바깥), depth = 파고든 깊이 */
+  // 다각형마다 감싸는 사각형을 한 번만 계산해 두고, 원이 그 밖이면 변 검사를 건너뛴다(곡선을 잘게 쪼개 변이 많아져서)
+  const boxes = new WeakMap();
+  function boxOf(poly) {
+    let b = boxes.get(poly);
+    if (!b || b.n !== poly.pts.length) {
+      b = { n: poly.pts.length, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      for (const [x, y] of poly.pts) { b.x0 = Math.min(b.x0, x); b.y0 = Math.min(b.y0, y); b.x1 = Math.max(b.x1, x); b.y1 = Math.max(b.y1, y); }
+      boxes.set(poly, b);
+    }
+    return b;
+  }
   function contacts(c, r, polys) {
     const out = [];
     for (const poly of polys) {
+      const bb = boxOf(poly);
+      if (c[0] < bb.x0 - r || c[0] > bb.x1 + r || c[1] < bb.y0 - r || c[1] > bb.y1 + r) continue;
       const pts = poly.pts;
       let best = Infinity, cp = null, edge = 0;
       for (let i = 0; i < pts.length; i++) {
@@ -191,6 +204,11 @@ const ClimbLogic = (() => {
         for (const [k, v] of Object.entries(p.edgeMat)) if (/^\d+$/.test(k) && +k < pts.length && MATS.includes(v) && v !== poly.mat) em[k] = v;
         if (Object.keys(em).length) poly.edgeMat = em;
       }
+      if (p.curve && typeof p.curve === "object") {
+        const cv = {};
+        for (const [k, v] of Object.entries(p.curve)) if (/^\d+$/.test(k) && +k < pts.length && Array.isArray(v) && num(v[0]) && num(v[1])) cv[k] = [v[0], v[1]];
+        if (Object.keys(cv).length) poly.curve = cv;
+      }
       level.polys.push(poly);
     });
     return { level, errors };
@@ -227,10 +245,35 @@ const ClimbLogic = (() => {
     return out;
   }
 
-  /** 편집기 경고 목록 — { level: "오류"|"주의", text, at: [x, y] } */
+  // ── 곡선 변 ─────────────────────────────────────────
+  // 레벨의 변 i 에 curve[i] = [cx, cy] 가 있으면 꼭짓점 i → i+1 을 2차 베지어 곡선(조절점 c)으로 잇는다.
+  // 물리는 다각형만 다루므로, 게임을 시작할 때 곡선을 CURVE_STEP 정도 길이의 짧은 변들로 쪼갠다(flattenPoly)
+  const CURVE_STEP = 12;
+  const bez = (a, c, b, t) => { const u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]; };
+  const curveSteps = (a, c, b) => Math.max(2, Math.min(48, Math.ceil((len(sub(c, a)) + len(sub(b, c))) / CURVE_STEP)));
+  /** 곡선 변을 쪼갠 다각형 — 변 재질도 쪼갠 변마다 이어 받는다. 곡선이 없으면 그대로 돌려준다 */
+  function flattenPoly(poly) {
+    if (!poly.curve) return poly;
+    const n = poly.pts.length, pts = [], em = {};
+    for (let i = 0; i < n; i++) {
+      const a = poly.pts[i], b = poly.pts[(i + 1) % n], c = poly.curve[i], mat = poly.edgeMat?.[i] ?? poly.mat;
+      const steps = c ? curveSteps(a, c, b) : 1;
+      for (let k = 0; k < steps; k++) {
+        if (mat !== poly.mat) em[pts.length] = mat;
+        pts.push(k === 0 ? [a[0], a[1]] : bez(a, c, b, k / steps));
+      }
+    }
+    const out = { mat: poly.mat, pts };
+    if (Object.keys(em).length) out.edgeMat = em;
+    return out;
+  }
+  const flattenLevel = (level) => ({ ...level, polys: level.polys.map(flattenPoly) });
+
+  /** 편집기 경고 목록 — { level: "오류"|"주의", text, at: [x, y] }. 곡선은 쪼갠 모양으로 검사한다 */
   function checkLevel(level, P = DEFAULTS) {
     const out = [];
-    level.polys.forEach((poly, k) => {
+    const flat = level.polys.map(flattenPoly);
+    flat.forEach((poly, k) => {
       const name = `지형 ${k + 1}`, pts = poly.pts, n = pts.length;
       if (Math.abs(signedArea(pts)) < 100) out.push({ level: "오류", text: `${name}: 넓이가 거의 0(선처럼 납작하다)`, at: pts[0] });
       for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
@@ -240,7 +283,7 @@ const ClimbLogic = (() => {
       const thin = thinSpots(poly);
       if (thin.length) { const w = thin.reduce((a, b) => (a.thickness < b.thickness ? a : b)); out.push({ level: "주의", text: `${name}: 두께 ${w.thickness.toFixed(0)}u — ${MIN_THICKNESS}u 보다 얇으면 도구 끝이 뚫을 수 있다`, at: w.at, thin }); }
     });
-    if (contacts(level.start, P.R, level.polys).length) out.push({ level: "주의", text: "출발점의 몸통이 지형과 겹친다", at: level.start });
+    if (contacts(level.start, P.R, flat).length) out.push({ level: "주의", text: "출발점의 몸통이 지형과 겹친다", at: level.start });
     if (!level.goal) out.push({ level: "주의", text: "골인 영역이 없다 — 깰 수 없는 레벨", at: level.start });
     else if (level.goal.x1 - level.goal.x0 < 2 * P.R || level.goal.y1 - level.goal.y0 < 2 * P.R) out.push({ level: "주의", text: `골인 영역이 몸통(지름 ${2 * P.R}u)보다 좁다`, at: [level.goal.x0, level.goal.y0] });
     return out;
@@ -250,6 +293,6 @@ const ClimbLogic = (() => {
   const lowestY = (level) => Math.max(level.start[1], ...level.polys.flatMap((p) => p.pts.map((q) => q[1])));
 
   return { DEFAULTS, DT, COURSE, MIN_THICKNESS, makeState, step, contacts, inGoal, inside, clampRange, add, sub, mul, len,
-    normalizeLevel, checkLevel, thinSpots, signedArea, lowestY };
+    normalizeLevel, checkLevel, thinSpots, signedArea, lowestY, bez, flattenPoly, flattenLevel, CURVE_STEP };
 })();
 if (typeof module !== "undefined") module.exports = ClimbLogic;

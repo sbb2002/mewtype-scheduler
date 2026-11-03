@@ -58,6 +58,7 @@
       <button data-tool="paint">재질 칠하기<kbd>M</kbd></button>
       <button data-tool="start">출발점<kbd>S</kbd></button>
       <button data-tool="goal">골인 영역<kbd>G</kbd></button>
+      <button data-tool="circle">원 그리기<kbd>C</kbd></button>
     </div>
     <label class="chk"><input type="checkbox" id="snap" checked> 격자 맞춤 10u (Alt = 잠시 끔)</label>
     <label class="chk"><input type="checkbox" id="reach"> 커서에 몸통 · 팔 길이 원</label>
@@ -85,6 +86,8 @@
       <li>휠 = 확대 · 축소, 가운데/오른쪽 버튼 끌기 또는 Space + 끌기 = 화면 이동</li>
       <li>다각형: 클릭으로 꼭짓점, 첫 점 클릭 또는 Enter 로 닫기, Backspace = 마지막 점 취소, Esc = 그리기 취소</li>
       <li>선택: 지형을 끌어 옮기기, 꼭짓점 끌기, 변 더블클릭 = 꼭짓점 추가, 꼭짓점 고르고 Del = 꼭짓점 삭제</li>
+      <li>곡선: 지형을 고르면 변마다 가운데에 작은 주황 원이 생긴다. 끌면 그 변이 휘고(곡선이 그 점을 지난다), 더블클릭하면 다시 곧게</li>
+      <li>원 그리기: 가운데에서 끌어 반지름을 정한다(꼭짓점 8개 + 곡선 변)</li>
       <li>재질 칠하기: 변 클릭 = 그 변만 바위 ↔ 미끄러움, 지형 안쪽 클릭 = 지형 전체</li>
       <li>출발점 = 몸통이 놓이는 중심, 골인 영역 = 몸통 중심이 1초 머물면 골인</li>
       <li>작업은 이 브라우저에 자동 저장된다. 다른 PC · 파일로 남기려면 「파일로 저장」</li>
@@ -136,7 +139,7 @@
   }
 
   // ── 도구 · 선택 · 입력 상태 ──────────────────────────
-  const TOOL_NAMES = { select: "선택 · 이동", poly: "다각형 그리기", rect: "사각형 그리기", paint: "재질 칠하기", start: "출발점", goal: "골인 영역" };
+  const TOOL_NAMES = { select: "선택 · 이동", poly: "다각형 그리기", rect: "사각형 그리기", paint: "재질 칠하기", start: "출발점", goal: "골인 영역", circle: "원 그리기" };
   let tool = "select", sel = { poly: null, vertex: null }, draft = [], drag = null, mouse = [0, 0], altKey = false, spaceKey = false, warnings = [];
   const snapOn = () => $("snap").checked && !altKey;
   const sn = (v) => (snapOn() ? Math.round(v / 10) * 10 : Math.round(v));
@@ -150,23 +153,49 @@
   function edgeAt(s, maxPx = 7) {
     let best = null;
     level.polys.forEach((poly, pi) => poly.pts.forEach((a, i) => {
-      const b = poly.pts[(i + 1) % poly.pts.length], [d] = segDistS(s, toS(...a), toS(...b));
-      if (d <= maxPx && (!best || d < best.d - (pi === sel.poly ? 2 : 0))) best = { poly: pi, edge: i, d };
+      const { d, t } = edgeDistS(s, poly, i);
+      if (d <= maxPx && (!best || d < best.d - (pi === sel.poly ? 2 : 0))) best = { poly: pi, edge: i, d, t };
     }));
     return best;
   }
-  function polyAt(w) { for (let i = level.polys.length - 1; i >= 0; i--) if (L.inside(w, level.polys[i].pts)) return i; return -1; }
+  function polyAt(w) { for (let i = level.polys.length - 1; i >= 0; i--) if (L.inside(w, L.flattenPoly(level.polys[i]).pts)) return i; return -1; }
+  // 곡선 변: curve[i] = 2차 베지어 조절점. 화면에서는 그 변의 가운데(t=0.5) 점을 손잡이로 쓴다
+  const edgeEnds = (poly, i) => [poly.pts[i], poly.pts[(i + 1) % poly.pts.length]];
+  function edgeSamples(poly, i) { const [a, b] = edgeEnds(poly, i), c = poly.curve?.[i]; if (!c) return [a, b]; return Array.from({ length: 25 }, (_, k) => L.bez(a, c, b, k / 24)); }
+  function edgeMid(poly, i) { const [a, b] = edgeEnds(poly, i), c = poly.curve?.[i]; return c ? L.bez(a, c, b, 0.5) : [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; }
+  function edgeDistS(s, poly, i) {   // 화면 거리와 변 위 위치 t(0~1)
+    const q = edgeSamples(poly, i).map((w) => toS(...w)), n = q.length - 1; let best = { d: Infinity, t: 0 };
+    for (let k = 0; k < n; k++) { const [d, t] = segDistS(s, q[k], q[k + 1]); if (d < best.d) best = { d, t: (k + t) / n }; }
+    return best;
+  }
+  function midHandleAt(s) { if (sel.poly === null) return -1; const poly = level.polys[sel.poly]; return poly.pts.findIndex((_, i) => dist(toS(...edgeMid(poly, i)), s) <= 7); }
+  function tracePoly(poly) {
+    ctx.beginPath(); ctx.moveTo(...toS(...poly.pts[0]));
+    poly.pts.forEach((_, i) => { const [, b] = edgeEnds(poly, i), c = poly.curve?.[i]; c ? ctx.quadraticCurveTo(...toS(...c), ...toS(...b)) : ctx.lineTo(...toS(...b)); });
+    ctx.closePath();
+  }
+  function traceEdge(poly, i) { const [a, b] = edgeEnds(poly, i), c = poly.curve?.[i]; ctx.beginPath(); ctx.moveTo(...toS(...a)); c ? ctx.quadraticCurveTo(...toS(...c), ...toS(...b)) : ctx.lineTo(...toS(...b)); }
+  function circlePoly(c, r) {   // 꼭짓점 8개 + 45° 마다 곡선 변(조절점 = r / cos 22.5°) — 반지름 오차 0.5% 미만
+    const pts = [], curve = {}, k = 1 / Math.cos(Math.PI / 8);
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, m = a + Math.PI / 8; pts.push([Math.round(c[0] + r * Math.cos(a)), Math.round(c[1] + r * Math.sin(a))]); curve[i] = [Math.round(c[0] + r * k * Math.cos(m)), Math.round(c[1] + r * k * Math.sin(m))]; }
+    return { mat: "rock", pts, curve };
+  }
   const goalCorner = (s) => { const g = level.goal; if (!g) return null; const cs = [[g.x0, g.y0, "x0", "y0"], [g.x1, g.y0, "x1", "y0"], [g.x1, g.y1, "x1", "y1"], [g.x0, g.y1, "x0", "y1"]]; return cs.find((c) => dist(toS(c[0], c[1]), s) <= 9) || null; };
   const inGoalRect = (w) => level.goal && w[0] > level.goal.x0 && w[0] < level.goal.x1 && w[1] > level.goal.y0 && w[1] < level.goal.y1;
 
   // 꼭짓점을 넣고 빼면 변 번호가 밀리므로 변 재질(edgeMat)을 같이 고친다
-  function insertVertex(pi, edge, w) {
+  function insertVertex(pi, edge, w, split) {   // split = 곡선 변을 나눌 때 두 조각의 조절점 [앞, 뒤]
     const poly = level.polys[pi]; poly.pts.splice(edge + 1, 0, w);
+    if (poly.curve || split) { const cv = {}; for (const [k, v] of Object.entries(poly.curve || {})) { const i = +k; if (i < edge) cv[i] = v; else if (i > edge) cv[i + 1] = v; } if (split) { cv[edge] = split[0]; cv[edge + 1] = split[1]; } poly.curve = cv; if (!Object.keys(cv).length) delete poly.curve; }
     if (poly.edgeMat) { const em = {}; for (const [k, v] of Object.entries(poly.edgeMat)) { const i = +k; if (i < edge) em[i] = v; else if (i === edge) { em[i] = v; em[i + 1] = v; } else em[i + 1] = v; } poly.edgeMat = em; }
   }
   function removeVertex(pi, vi) {
-    const poly = level.polys[pi]; if (poly.pts.length <= 3) return false;
+    const poly = level.polys[pi], n0 = poly.pts.length; if (n0 <= 3) return false;
     poly.pts.splice(vi, 1);
+    if (poly.curve) {   // 앞 · 뒤 변이 하나로 합쳐지면 그 변은 곧게
+      const cv = {}; for (const [k, v] of Object.entries(poly.curve)) { const i = +k; if (i < vi) cv[i] = v; else if (i > vi) cv[i - 1] = v; }
+      delete cv[vi === 0 ? n0 - 2 : vi - 1]; poly.curve = cv; if (!Object.keys(cv).length) delete poly.curve;
+    }
     if (poly.edgeMat) { const em = {}; for (const [k, v] of Object.entries(poly.edgeMat)) { const i = +k; if (i < vi) em[i] = v; else if (i > vi) em[i - 1] = v; } poly.edgeMat = em; if (!Object.keys(em).length) delete poly.edgeMat; }
     return true;
   }
@@ -188,10 +217,12 @@
     if (tool === "select") {
       const vi = sel.poly !== null ? vertexAt(s, sel.poly) : -1;
       if (vi >= 0) { sel.vertex = vi; drag = { kind: "vertex", before }; draw(); return; }
+      const hi = midHandleAt(s);
+      if (hi >= 0) { drag = { kind: "curve", edge: hi, before }; return; }
       if (dist(toS(...level.start), s) <= P.R * view.z + 4) { drag = { kind: "start", before }; return; }
       const gc = goalCorner(s); if (gc) { drag = { kind: "goalCorner", c: gc, before }; return; }
       const ed = edgeAt(s), pi = ed ? ed.poly : polyAt(w);
-      if (pi >= 0) { sel = { poly: pi, vertex: null }; drag = { kind: "poly", w0: snW(w), orig: clone(level.polys[pi].pts), before }; refresh(); return; }
+      if (pi >= 0) { sel = { poly: pi, vertex: null }; drag = { kind: "poly", w0: snW(w), orig: clone(level.polys[pi].pts), origCurve: clone(level.polys[pi].curve || null), before }; refresh(); return; }
       if (inGoalRect(w)) { drag = { kind: "goal", w0: snW(w), orig: { ...level.goal }, before }; return; }
       sel = { poly: null, vertex: null }; refresh();
     } else if (tool === "poly") {
@@ -201,6 +232,7 @@
       draw();
     } else if (tool === "rect") drag = { kind: "rect", w0: snW(w) };
     else if (tool === "goal") drag = { kind: "goalNew", w0: snW(w) };
+    else if (tool === "circle") drag = { kind: "circleNew", w0: snW(w) };
     else if (tool === "start") change(() => { level.start = snW(w); });
     else if (tool === "paint") {
       const ed = edgeAt(s, 9);
@@ -214,7 +246,16 @@
     if (drag) {
       if (drag.kind === "pan") { view.cx = drag.c0[0] - (mouse[0] - drag.s0[0]) / view.z; view.cy = drag.c0[1] - (mouse[1] - drag.s0[1]) / view.z; }
       else if (drag.kind === "vertex") level.polys[sel.poly].pts[sel.vertex] = snW(w);
-      else if (drag.kind === "poly") { const d = L.sub(snW(w), drag.w0); level.polys[sel.poly].pts = drag.orig.map((q) => [q[0] + d[0], q[1] + d[1]]); }
+      else if (drag.kind === "poly") {
+        const d = L.sub(snW(w), drag.w0), poly = level.polys[sel.poly];
+        poly.pts = drag.orig.map((q) => [q[0] + d[0], q[1] + d[1]]);
+        if (drag.origCurve) poly.curve = Object.fromEntries(Object.entries(drag.origCurve).map(([k, q]) => [k, [q[0] + d[0], q[1] + d[1]]]));
+      }
+      else if (drag.kind === "curve") {   // 곡선이 손잡이 점을 지나도록 조절점 = 2·손잡이 − (양 끝 가운데)
+        const poly = level.polys[sel.poly], [a, b] = edgeEnds(poly, drag.edge), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], h = snW(w);
+        if (dist(h, m) < 3) { if (poly.curve) { delete poly.curve[drag.edge]; if (!Object.keys(poly.curve).length) delete poly.curve; } }
+        else (poly.curve ||= {})[drag.edge] = [Math.round(2 * h[0] - m[0]), Math.round(2 * h[1] - m[1])];
+      }
       else if (drag.kind === "start") level.start = snW(w);
       else if (drag.kind === "goal") { const d = L.sub(snW(w), drag.w0), o = drag.orig; level.goal = { x0: o.x0 + d[0], y0: o.y0 + d[1], x1: o.x1 + d[0], y1: o.y1 + d[1] }; }
       else if (drag.kind === "goalCorner") { const p = snW(w); level.goal[drag.c[2]] = p[0]; level.goal[drag.c[3]] = p[1]; }
@@ -225,6 +266,12 @@
   function endDrag(sx, sy) {
     if (!drag) return;
     const w = snW(toW(sx, sy)), d = drag; drag = null;
+    if (d.kind === "circleNew") {
+      const r = Math.round(dist(w, d.w0));
+      if (r < 30) { toast("반지름이 너무 작습니다(30u 이상) — 끌어서 그리세요"); draw(); return; }
+      change(() => { level.polys.push(circlePoly(d.w0, r)); sel = { poly: level.polys.length - 1, vertex: null }; });
+      return;
+    }
     if (d.kind === "rect" || d.kind === "goalNew") {
       const x0 = Math.min(d.w0[0], w[0]), x1 = Math.max(d.w0[0], w[0]), y0 = Math.min(d.w0[1], w[1]), y1 = Math.max(d.w0[1], w[1]);
       if (x1 - x0 < 10 || y1 - y0 < 10) { toast("너무 작습니다 — 끌어서 그리세요"); draw(); return; }
@@ -241,9 +288,17 @@
   cv.addEventListener("dblclick", (e) => {
     if (tool !== "select" || sel.poly === null) return;
     const s = [e.offsetX, e.offsetY], poly = level.polys[sel.poly];
+    const hi = midHandleAt(s);
+    if (hi >= 0) { if (poly.curve?.[hi]) change(() => { delete poly.curve[hi]; if (!Object.keys(poly.curve).length) delete poly.curve; }); return; }
     let hit = null;
-    poly.pts.forEach((a, i) => { const [d, t] = segDistS(s, toS(...a), toS(...poly.pts[(i + 1) % poly.pts.length])); if (d <= 7 && t > 0.02 && t < 0.98 && (!hit || d < hit.d)) hit = { i, d }; });
-    if (hit) change(() => { insertVertex(sel.poly, hit.i, snW(toW(...s))); sel.vertex = hit.i + 1; });
+    poly.pts.forEach((_, i) => { const { d, t } = edgeDistS(s, poly, i); if (d <= 7 && t > 0.02 && t < 0.98 && (!hit || d < hit.d)) hit = { i, d, t }; });
+    if (!hit) return;
+    const c = poly.curve?.[hit.i];
+    if (c) {   // 2차 베지어를 t 에서 둘로 나눈다(de Casteljau) — 모양은 그대로, 꼭짓점만 생긴다
+      const [a, b] = edgeEnds(poly, hit.i), t = hit.t, lerp = (p, q) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+      const q0 = lerp(a, c), q1 = lerp(c, b), m = lerp(q0, q1), r = (p) => [Math.round(p[0]), Math.round(p[1])];
+      change(() => { insertVertex(sel.poly, hit.i, r(m), [r(q0), r(q1)]); sel.vertex = hit.i + 1; });
+    } else change(() => { insertVertex(sel.poly, hit.i, snW(toW(...s))); sel.vertex = hit.i + 1; });
   });
   cv.addEventListener("wheel", (e) => {
     e.preventDefault();
@@ -260,7 +315,7 @@
       change(() => { if (!removeVertex(sel.poly, sel.vertex)) toast("꼭짓점이 3개뿐이라 지울 수 없습니다 — 지형을 지우려면 꼭짓점 선택을 풀고 Del"); sel.vertex = null; });
     } else change(() => { level.polys.splice(sel.poly, 1); sel = { poly: null, vertex: null }; });
   }
-  function duplicate() { if (sel.poly === null) return; change(() => { const c = clone(level.polys[sel.poly]); c.pts = c.pts.map((q) => [q[0] + 40, q[1] - 40]); level.polys.push(c); sel = { poly: level.polys.length - 1, vertex: null }; }); }
+  function duplicate() { if (sel.poly === null) return; change(() => { const c = clone(level.polys[sel.poly]); c.pts = c.pts.map((q) => [q[0] + 40, q[1] - 40]); if (c.curve) for (const k in c.curve) c.curve[k] = [c.curve[k][0] + 40, c.curve[k][1] - 40]; level.polys.push(c); sel = { poly: level.polys.length - 1, vertex: null }; }); }
 
   window.addEventListener("keydown", (e) => {
     if (e.target instanceof HTMLInputElement) return;
@@ -278,7 +333,7 @@
     }
     if (e.key === "Escape") { sel = { poly: null, vertex: null }; refresh(); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
-    const map = { v: "select", p: "poly", r: "rect", m: "paint", s: "start", g: "goal" };
+    const map = { v: "select", p: "poly", r: "rect", m: "paint", s: "start", g: "goal", c: "circle" };
     if (map[k]) setTool(map[k]);
     else if (k === "f") { fit(); draw(); }
     else if (k === "t") play();
@@ -315,18 +370,24 @@
     // 지형
     const hoverEdge = tool === "paint" && !drag ? edgeAt(mouse, 9) : null;
     level.polys.forEach((poly, pi) => {
-      ctx.beginPath(); poly.pts.forEach((q, i) => { const s = toS(...q); i ? ctx.lineTo(...s) : ctx.moveTo(...s); }); ctx.closePath();
+      tracePoly(poly);
       ctx.fillStyle = poly.mat === "slick" ? "#9fd8ff" : "#5b6475"; ctx.fill();
       ctx.strokeStyle = poly.mat === "slick" ? "#3d8fc4" : "#2d3340"; ctx.lineWidth = 2; ctx.stroke();
       poly.pts.forEach((a, i) => {
-        const m = edgeMatOf(poly, i), b = poly.pts[(i + 1) % poly.pts.length];
-        if (m === "slick" && poly.mat !== "slick") { ctx.strokeStyle = "#9fd8ff"; ctx.lineWidth = Math.max(4, 8 * view.z); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...toS(...b)); ctx.stroke(); }
-        if (m === "rock" && poly.mat === "slick") { ctx.strokeStyle = "#5b6475"; ctx.lineWidth = Math.max(4, 8 * view.z); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...toS(...b)); ctx.stroke(); }
-        if (hoverEdge && hoverEdge.poly === pi && hoverEdge.edge === i) { ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...toS(...b)); ctx.stroke(); }
+        const m = edgeMatOf(poly, i);
+        if (m === "slick" && poly.mat !== "slick") { ctx.strokeStyle = "#9fd8ff"; ctx.lineWidth = Math.max(4, 8 * view.z); ctx.lineCap = "round"; traceEdge(poly, i); ctx.stroke(); }
+        if (m === "rock" && poly.mat === "slick") { ctx.strokeStyle = "#5b6475"; ctx.lineWidth = Math.max(4, 8 * view.z); ctx.lineCap = "round"; traceEdge(poly, i); ctx.stroke(); }
+        if (hoverEdge && hoverEdge.poly === pi && hoverEdge.edge === i) { ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 3; traceEdge(poly, i); ctx.stroke(); }
       });
       if (pi === sel.poly) {
         ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; ctx.setLineDash([5, 3]);
-        ctx.beginPath(); poly.pts.forEach((q, i) => { const s = toS(...q); i ? ctx.lineTo(...s) : ctx.moveTo(...s); }); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+        tracePoly(poly); ctx.stroke(); ctx.setLineDash([]);
+        poly.pts.forEach((_, i) => {   // 곡선 손잡이(변 가운데): 빈 원 = 곧은 변, 채운 원 = 곡선 변
+          const [x, y] = toS(...edgeMid(poly, i)), curved = !!poly.curve?.[i];
+          ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fillStyle = curved ? "#ff9f43" : "rgba(27,36,64,.85)"; ctx.fill();
+          ctx.strokeStyle = "#ff9f43"; ctx.lineWidth = 1.5; ctx.stroke();
+          if (curved) { const [a, b] = edgeEnds(poly, i), c = toS(...poly.curve[i]); ctx.strokeStyle = "rgba(255,159,67,.35)"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...c); ctx.lineTo(...toS(...b)); ctx.stroke(); ctx.setLineDash([]); }
+        });
         poly.pts.forEach((q, i) => { const [x, y] = toS(...q); ctx.fillStyle = i === sel.vertex ? "#ffd166" : "#fff"; ctx.strokeStyle = "#1b2440"; ctx.lineWidth = 1.5; ctx.fillRect(x - 4, y - 4, 8, 8); ctx.strokeRect(x - 4, y - 4, 8, 8); });
       }
       ctx.lineCap = "butt";
@@ -349,6 +410,11 @@
       ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; ctx.beginPath();
       draft.forEach((q, i) => { const s = toS(...q); i ? ctx.lineTo(...s) : ctx.moveTo(...s); }); ctx.lineTo(...ms); ctx.stroke();
       draft.forEach((q, i) => { const [x, y] = toS(...q); ctx.fillStyle = i === 0 ? "#ffd166" : "#fff"; ctx.beginPath(); ctx.arc(x, y, i === 0 ? 6 : 3.5, 0, Math.PI * 2); ctx.fill(); });
+    }
+    if (drag && drag.kind === "circleNew") {
+      const [a, b] = toS(...drag.w0), r = dist(mw, drag.w0);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]); ctx.beginPath(); ctx.arc(a, b, r * view.z, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#fff"; ctx.fillText(`반지름 ${Math.round(r)}u`, ms[0] + 8, ms[1] - 8);
     }
     if (drag && (drag.kind === "rect" || drag.kind === "goalNew")) {
       const [a, b] = toS(...drag.w0); ctx.strokeStyle = drag.kind === "rect" ? "#fff" : "#ffd166"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
@@ -378,7 +444,7 @@
     }
     const p = sel.poly !== null ? level.polys[sel.poly] : null;
     $("selinfo").textContent = p
-      ? `지형 ${sel.poly + 1} · 꼭짓점 ${p.pts.length}개 · ${p.mat === "slick" ? "미끄러움" : "바위"}${p.edgeMat ? ` (다른 재질 변 ${Object.keys(p.edgeMat).length}개)` : ""}${sel.vertex !== null ? ` · 꼭짓점 ${sel.vertex + 1} 선택` : ""}`
+      ? `지형 ${sel.poly + 1} · 꼭짓점 ${p.pts.length}개 · ${p.mat === "slick" ? "미끄러움" : "바위"}${p.edgeMat ? ` (다른 재질 변 ${Object.keys(p.edgeMat).length}개)` : ""}${p.curve ? ` · 곡선 변 ${Object.keys(p.curve).length}개` : ""}${sel.vertex !== null ? ` · 꼭짓점 ${sel.vertex + 1} 선택` : ""}`
       : "없음 — 선택 도구로 지형을 누르세요";
     for (const id of ["matRock", "matSlick", "dup", "del"]) $(id).disabled = !p;
     $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length;
