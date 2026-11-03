@@ -1,0 +1,91 @@
+{
+  "deployments": [
+    {
+      "created": 1793464307073,
+      "id": "dpl_7QqLVtfJiKC2u6UYRDpLT55QirG5",
+      "sha": "11ef3b57c8deb56cea42c054f616608f0852a19d",
+      "state": "READY",
+      "url": "mewtype-scheduler-k6n04p2oj-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793464248948,
+      "id": "dpl_4JTKp22MjRpckyTmzU1S7pxysFqz",
+      "sha": "ba2b65b10d83c0db319f288b64c1bdd5540b3496",
+      "state": "READY",
+      "url": "mewtype-scheduler-pmsjpbs4n-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793463017445,
+      "id": "dpl_Dtk7vveowetyUpyUzBpu62s2nZNE",
+      "sha": "d77667b83a3c5aac855a192e14a9a627b0886eb4",
+      "state": "READY",
+      "url": "mewtype-scheduler-h2mele9ba-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793462959711,
+      "id": "dpl_9cVxEymqjH2jGCfFtm8T2HMPbrKv",
+      "sha": "779842c65ee326fa00e7f411f3f8c3acee50d16b",
+      "state": "READY",
+      "url": "mewtype-scheduler-gyhv19xmv-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793460854441,
+      "id": "dpl_57qunkcGh9y63Bb6cDW9VVpWgGFw",
+      "sha": "2ee9cc70e86034cef8f041fa20d18f45889ecaa5",
+      "state": "READY",
+      "url": "mewtype-scheduler-fnm52urpv-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793460651792,
+      "id": "dpl_HPj2rF2fAeJ8XMN5L8ootsZUKqLm",
+      "sha": "6969df5871398a2daf12c02e82ee4fb453199db1",
+      "state": "READY",
+      "url": "mewtype-scheduler-4ie5p7qwu-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793379621006,
+      "id": "dpl_5X2my2yx4z7t6ythXDqfihBa3Vnk",
+      "sha": "fc6f8caa127e01ca95772861c5537194d2332204",
+      "state": "READY",
+      "url": "mewtype-scheduler-quveh4hnp-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793379547902,
+      "id": "dpl_C6gVcJ9JFTSwbnbyiRRfA8PhvtBp",
+      "sha": "e8c80a70bf7aaf500b0e780333febbd7a8069379",
+      "state": "READY",
+      "url": "mewtype-scheduler-ducl377do-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793368709405,
+      "id": "dpl_6QfFVs9f7i7WM3EdbDnXHnZhfwhd",
+      "sha": "87f9b8ba4ff413c2aafdefaa6f40a51a66e05f04",
+      "state": "READY",
+      "url": "mewtype-scheduler-ju001xuso-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793359218105,
+      "id": "dpl_42YemRXybJsuZi5Nyp9z13pzxRzD",
+      "sha": "68edd4e6a31701d14da5538e6cddfd8ce35d9c2e",
+      "state": "READY",
+      "url": "mewtype-scheduler-ccdetmj4u-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793359151130,
+      "id": "dpl_B1hJkMNmfU1Tif4vx1nmmNSVa7FW",
+      "sha": "812f45c6adeb226947a1d4b142b5613e33619dbd",
+      "state": "READY",
+      "url": "mewtype-scheduler-uv5hy6bjz-sbb2002.vercel.app"
+    },
+    {
+      "created": 1793280606352,
+      "id": "dpl_vMqVoBLnDhBfaq8T5ru5WJaWaaAH",
+      "sha": "904793e072b4fc30acad84d8a6c1c61baa1d23c9",
+      "state": "READY",
+      "url": "mewtype-scheduler-ezpa3cxin-sbb2002.vercel.app"
+    }
+  ],
+  "framework": null,
+  "project": "mewtype-scheduler",
+  "rootDirectory": "src/frontend"
+}

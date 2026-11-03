@@ -1,0 +1,12 @@
+{
+  "docs/BIRTHDAY_MUSIC_SCENE_VERIFICATION.md": "21532f3de0088a692fcea476ab7542fc159a83bdf2df7ca555ecef47837e503c",
+  "docs/BIRTHDAY_SKIN.md": "13d94fefaf53830e6d57163bfe41065cef4f0d2da2446d57eadcd924940933cc",
+  "docs/SPEC.md": "f4726227ecaa6d5f3769fbd1ea72385f6a0ed0f16aa556c21e84bda3d86a9f30",
+  "docs/TERMINOLOGY.md": "228534eda2ddb9e8d39cea31a06408440a66c8162669bbfefc9513276d2cf17b",
+  "docs/VERSION.md": "1bdfb98c846caf7781e71168ec52baa9aee02e0098315ffb9297d49a34251f19",
+  "scripts/verify_monitor_birthday.py": "183aeec74974d11a0d36588088c656fc745c7626b3b8123194372bd266be28c1",
+  "src/frontend/monitor.html": "8bcf6586f69620f5adf6acd0cc57302e30c6c56fdadcc6d694e2dbcaaef46a22",
+  "src/frontend/js/monitorbirthday.js": "8b964adf49b7b9ccd9d194ca1fc2a200c9e1cdf6af04b974a4aee46eb3137b9b",
+  "src/frontend/js/monitorbirthday.selfcheck.mjs": "a93184a6dce1b0d9192347a9746ee8fb08b0b1e0928b800c00d7688211aaa1f1",
+  "src/frontend/js/monitorbirthdaylogic.js": "dd776427c269ae92b0bdfc50b4239e41ee7ec2cd450feb0746a0e31d1eeb5288"
+}

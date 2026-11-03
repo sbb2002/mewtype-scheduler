@@ -1,0 +1,1763 @@
+# 구현 명세 (SPEC) — v3.0 계약 기반, 현행 v4 계보
+
+현행 구현 계약. v2 원문은 `docs/old/v2/`, v1 은 `docs/old/v1/`.
+설계 배경: `docs/plan/v3_backend_surgery.md`(기능 상세) · `docs/plan/v3_draft.md`(결정 로그) ·
+`docs/plan/v3_telegram_controller.md`(제어 채널) · `docs/plan/v3_impl_spec.md`(구현 명세·진행) ·
+`docs/plan/v3_golive.md`(전환·롤백 런북).
+
+> **배포 상태**: `main` 이 현행(현재 버전은 `README.md` · `docs/VERSION.md`). v3.0(2026-09-09) 전환 때 `data` 브랜치는 콜드 스타트
+> (v2 파일은 `data:.old/`, 마이그레이션 스크립트 없음). v4.0(2026-10-04)부터 운영 상태 · 로그는 `ops` · `monitoring` 브랜치로 분리.
+
+**인터페이스 계약(§1~§7)을 벗어나는 변경은 이 문서를 먼저 고친다.**
+
+---
+
+## 0. 아키텍처 / 저장소 구조
+
+서버 상시 가동 없음. 무료 인프라만 사용.
+
+| 역할 | 수단 |
+|---|---|
+| 수집·판정 | **Cloud Run**(scale-to-zero, `src/backend/`, Flask+gunicorn). 리전 `asia-northeast1` |
+| 정기 트리거 | **Cloud Scheduler** 3잡(self-reply D6) — light 10분 → `POST /tick` (쓰기 서비스) · **daily** KST 06:00 → `POST /daily` (쓰기 서비스 — baseline tick + 그날 06:10 `/monitor` · 06:20 `/websub-renew` 을 Cloud Tasks `mewtype-daily` 로 먼저 예약, §8.13) · **gapcheck** 매분 → `POST /gap-check` (접수 서비스 — 상시 조사, §8.11) · 전부 OIDC |
+| 방송별 정밀 wake | **Cloud Tasks** — `POST /wake {video_id}` (OIDC). 720h 상한 → `now+696h` 클램프 롱폴링 |
+| 저장 | **GitHub 데이터 저장소 `sbb2002/mewtype-scheduler-data`**(2026-09-14 부터, Vercel 비연결)의 `data` · `ops` · `monitoring` 브랜치 — Cloud Run 이 GitHub Contents API(fine-grained PAT, Secret Manager)로 커밋. 브랜치를 나눈 이유 = 충돌 단위가 브랜치 HEAD |
+| 프론트 | **Vercel** 정적 호스팅 (빌드 없음). `raw.githubusercontent.com/.../data/preview.json` 75초 폴링 |
+| 모니터링·제어 | 공개 서비스 **`mewtype-telegram`**(같은 이미지, 다른 엔트리포인트) — Telegram webhook + `/ingest` + (v4.5.0) PubSub 콜백 `/websub/<이름>` + 관리 페이지 `/admin` + 웹 모니터 `/monitor-live` |
+| PubSub(WebSub) | (v4.5.0) 허브가 멤버 5채널 · 뮤타입 음원 채널의 변경을 `mewtype-telegram` 으로 POST → 즉시 wake / 신곡 등록(v4.5.2 — PubSub 전용 큐 `mewtype-websub` 로 예약, 수신 기록은 쓰기 서비스). 구독 일일 갱신은 `mewtype-backend` `/websub-renew`. §8.16 |
+| 외부 LLM | **Groq**(선택) — notice 제목 추출·의미 중복판정 + notice/개인트윗/방송 제목 번역 + 개인 예고 판정(참여·예고확인). 키 없으면 원문 노출 폴백 |
+| 업스트림 시스템 | 운영자 폰 Automate — X·YouTube 푸시알림을 `POST /ingest` 로 중계(코드베이스 밖) |
+
+```
+src/
+  frontend/            # Vercel Root Directory = src/frontend, 빌드 없음, ES 모듈(상대 import). 상세 §9
+    index.html         # #notice + #board + #foot 스켈레톤. head 인라인 스크립트가 CSS 전에 data-theme 결정 · ?va=claude 탭은 통계 제외
+    monitor.html       # 운영 모니터(이스터에그 진입) — 웹 모니터 iframe + 사이트 기록 초기화
+    vercel.json        # main 만 배포 (반드시 이 위치 — 루트에 두면 Vercel 이 못 읽는다)
+    assets/songs.json  # 플레이어 곡 목록 시드 · 폴백 (운영 정본 = data 브랜치 songs.json)
+    css/               # reset · layout · card · timetable · king · notices · banners · tweets · player · playerpop · theme
+                       #   각 :root 토큰 = 어둡게, theme.css(맨 끝) = 밝게 값
+    js/
+      main.js          # DOMContentLoaded → 폴링(preview · archive · notices · tweets · banners) + 카운트다운 틱 + 플레이어 동적 import
+      config.js        # 상수 — 데이터 URL · 폴링 주기(75초) · APP_VERSION/APP_DATE
+      time.js          # UTC→KST 포맷 · 상대시간 — 순수
+      api.js           # fetchPreview(url): AbortController 타임아웃, {ok,data|error}
+      render.js        # renderBoard / renderFooter / updateCountdowns — 레인 헤더 · PC 보기 방식 · 모바일 슬라이드
+      timetable.js     # PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고 펼치기
+      notices.js       # 소식판 — 분류 탭 · 날짜별 묶음 · 라이브공연 공연별 묶음 · 소식 팝업 카드/시트
+      banners.js       # 행사 배너(계약 J) — 탭 + 카드 1장
+      tweets.js        # 멤버 트윗 — 아바타 트윗 배지 · 트윗 시트(폰 아래 시트 · PC 팝업 보드) · X 공식 카드
+      tweetlogic.js    # 트윗 시트 순수 로직(글타래 묶기 · 첨부 문구 · 글자색 · 시각 표기 · 새 글 자리 · (v4.9.3) 미디어 격자 · X 카드 치수 · 스크롤 자리) — DOM 없음
+      player.js playerbtn.js songs.js   # YouTube 곡 플레이어 · 여는 버튼 · 곡 검색/정렬/오마카세(순수)
+      king.js          # 노노카 지각 이스터에그
+      theme.js         # 밝게/어둡게 전환
+      bgdeco.js bglogic.js   # (v4.9.8) 배경 장식 — 아래 「배경 장식」
+      sheetdrag.js     # 시트 끌어 닫기 공용(트윗 시트 · 소식 시트 · 플레이어 시트)
+      *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
+  collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
+    rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
+    config.py
+  bus/                 # 에러 버스 발신기(v4.3.0) — MEW_BUS_DIR 없으면 no-op(배포판 미설정). 봉투 스키마 docs/bus/
+  backend/             # Cloud Run 2서비스 공용 코드. 상세 §8
+    # ── 라우트
+    app.py             # 쓰기 서비스(mewtype-backend) — /tick /wake /write /monitor /websub-renew · `/` 헬스체크
+    telegram_app.py    # 접수 서비스(mewtype-telegram) — /telegram webhook · POST /ingest 분기 · 커밋 함수(_commit_*) · /monitor-live
+    admin_web.py       # 관리 페이지 블루프린트(/admin) — 일회용 링크 로그인 · 세션 · CSRF. 정적 파일 admin_static/
+    admin_api.py       # 관리 페이지가 부르는 함수 — 읽기 + 쓰기 큐 적재(data 를 직접 쓰지 않음)
+    websub.py          # PubSub(WebSub) 수신 — 알림 파싱 · 서명 검증 · 구독/갱신 · 콜백 /websub/<이름>(§8.16)
+    # ── 쓰기 경로 · 저장
+    writers.py         # /write 잡 kind → 커밋 함수 매핑 (§8.14)
+    writeclient.py     # 접수 서비스 → 쓰기 서비스 /write 호출(OIDC, 429/503 만 백오프 재시도). 로컬이면 적용 큐
+    apply.py           # 적용 — data 를 쓰는 유일한 경로(로컬은 쓰기 스레드 q-apply, 배포는 /write 안)
+    archive_rotate.py  # 보관함 정리 — 캐시 보관함의 오래된 항목을 일자 보관함으로(매일 /monitor, §8.18)
+    storage.py         # store 팩토리 — 역할별 브랜치(data · ops · monitoring · raw), OPS_PATHS 는 ops 로
+    gh_store.py        # GitHub Contents API read/write (낙관적 동시성, ConflictError, _serialize)
+    local_store.py     # 로컬 파일 store(GitHubStore 와 같은 인터페이스)
+    tasks.py oidc.py   # Cloud Tasks enqueue(720h 클램프) · Scheduler/Tasks OIDC 검증
+    # ── 수집 · 상태
+    handlers.py        # tick/wake 오케스트레이션 — preview.json 커밋 · 번역 sweep · 신곡 감지 · 모니터 로그(실행당 최대 1커밋)
+    preview.py         # preview.json 계약 — id · match_item(±45분) · 정렬 · 승격 · 아카이브 — 순수
+    preview_build.py   # reconcile 포크 → build_preview(6상태 + 그룹 채널 · 그룹 프리미어 제외) — 순수
+    statemachine.py    # derive(item, now) → 다음 상태 · 다음 wake 시각. 저장 타이머 없음 — 순수
+    ytnotif.py         # YouTube 앱 푸시 알림 파서 — 순수
+    ytdlp_probe.py     # 회원 전용 라이브 video_id/URL 조회(yt-dlp, 쿠키 선택)
+    # ── 인입 파서 · 계약 (순수 위주)
+    xrelay.py          # @BDP 일일 스케줄 · 出演情報 · 즉시개시 트윗 → announced 아이템 · 그룹 영상 근거 판정
+    xnotice.py notices.py   # 소식 파서 / notices.json 계약(중복판정 · 머지 · 시점 판정 · sweep · 분류)
+    xtweet.py          # 개인 5인 트윗 — route_by_title · tweets.json 계약(게시 + 48h) · 개인 예고 파싱 · apply_overrides
+    banners.py         # 행사 배너 banners.json 계약(J) — 판정 반영 · 상태 파생 · 정리
+    songs.py           # 신곡 감지 · songs.json 계약 · 곡 관리 (§8.15)
+    vxtwitter.py       # 트윗 unfurl — vxtwitter, 실패 시 fxtwitter
+    # ── 외부 판단
+    llm.py             # Groq — 번역 · 소식 제목/분류/시점 · 예고/참여/변경 판정 · 행사 판정 · 라이브 정보 (429 = 모델 막기)
+    vision.py          # Groq 비전 OCR — 출연진 이름 · 행사 카드 글자
+    cloudvision.py     # Google Cloud Vision 예비 판독 — 운영자 허가 시에만(§8.17)
+    # ── 운영 · 모니터링
+    notify.py          # Telegram 알림 + diff_events + allows(알림 레벨)
+    control.py admin.py config.py   # control.json · admin_state.json 스키마 / env → Config
+    monitor_log.py     # 이벤트 로그(monitoring 브랜치) · 유실 원문 큐
+    monitor_snapshot.py monitor_report.py   # 일일 스냅샷 · 요약 / 리포트 HTML(웹 모니터)
+    rawlog.py          # 방송 일정 관련 트윗 원문 보존 raw/YYYY-MM-DD.jsonl
+    # ── 로컬 시험판 전용
+    local_runner.py jobqueue.py enrich.py tg_poll.py flowtrace.py   # 러너 · 작업 큐 · 가공 큐 · 텔레그램 폴링 · 흐름 기록
+    push_monitor.py    # 미사용 — 삭제 후보
+Dockerfile             # python:3.12-slim + gunicorn. 두 서비스가 이 이미지 공유(엔트리포인트만 다름)
+deploy/                # gcloud 배포 스크립트(README.md). env.sh 는 루트 .env 매핑(gitignore). env.stage.sh = 스테이징
+scripts/               # 일회성 데이터 스크립트 — build_songs_json · apply_song_media · 모니터 백필 · split_archives(보관함 첫 이전, §8.18)
+config/channels.json   # 채널 단일 소스 — channel_order(5인) · channels(5인 + group[is_group]) · song_feeds · game_accounts
+
+데이터 저장소 sbb2002/mewtype-scheduler-data (코드 저장소에는 data 브랜치가 없다 — 2026-10-20 삭제)
+  data 브랜치          # 팬 화면이 읽는 것 — preview.json / preview_archive.json · notices.json / notice_archive.json ·
+                       #   tweets.json / tweet_archive.json · banners.json / banners_archive.json · songs.json
+                       #   + 일자 보관함 tweet_archive/YYYY-MM-DD.json · notice_archive/YYYY-MM-DD.json · notice_archive/index.json (§8.18)
+                       #   (control.json · admin_state.json · monitoring/ · .old/ 는 브랜치 분리 전 남은 옛 사본 — 코드는 안 씀)
+  ops 브랜치           # 운영 상태(storage.OPS_PATHS) — control.json · admin_state.json · group_pending.json · video_releases.json ·
+                       #   llm_actions.json · ocr_pending.json (+ admin_nonces.json · history.json). 처음 쓸 때 생긴다
+                       #   + 일자 보관함 llm_actions/YYYY-MM-DD.json (storage.OPS_PREFIXES, §8.18)
+  monitoring 브랜치    # monitoring/events-YYYY-MM-DD.jsonl(06:00 KST 경계) · latest.html · days/ · summary.json · lost_queue.json
+                       #   + raw/YYYY-MM-DD.jsonl(원문 보존, RAW_BRANCH=monitoring). data 에서 분기해 옛 파일 사본이 남아 있다
+```
+
+- 파이썬 3.12. 시각은 전부 UTC ISO(`Z`) 저장, KST 변환은 프론트 `time.js` 전담.
+- v2→v3 핵심 변화: `schedule.json`→`preview.json`(6상태), `pending.json` 폐지(FSM 파생),
+  `reconcile.build_schedule`→`preview_build.build_preview`, 외부 LLM(번역) 도입.
+
+---
+
+## 1. 계약 A — `preview.json` 스키마 (data 브랜치 루트)
+
+`schedule.json` 대체. 프론트가 `raw.githubusercontent.com` 에서 직접 fetch.
+`none` 상태 = 파일에 없음(삭제). 상세 배경: `docs/plan/v3_backend_surgery.md` "v3 데이터 스키마".
+
+```jsonc
+{
+  "generated_at": "2026-09-09T12:00:00Z",       // ISO UTC 'Z'. 매 tick/wake 실행시각
+  "channel_order": ["arale","yuno","nonoka","ritsu","miyako"],
+  "channels": {
+    "arale": { "name","name_ko","channel_id","handle","channel_url","avatar" }
+    // channel_url = https://www.youtube.com/@{handle} (코드 파생). avatar 는 baseline 스캔이 취득
+  },
+  "items": [
+    {
+      "id": "pv_a1b2c3d4",                  // "pv_" + sha1(f"{channel_key}|{first_seen}")[:8]. 생애주기 내내 고정
+      "state": "watching",                  // announced | upcoming | watching | live | end
+      "state_since": "2026-09-09T11:57:00Z",// 현재 state 진입 시각 (end 30분창·강등 판정 앵커)
+
+      "channel_key": "ritsu",               // 주 레인
+      "collab_with": null,                  // 합동이면 참여 channel_key 배열(주 레인 제외). 렌더가 union 레인 팬아웃
+      "host": null,                         // "group" = 5인 전원 합동(出演情報 텍스트 또는 그룹 채널 API 감지) → supersede 면제
+      "kind": null,                         // "collab" | 카테고리(game/song/talk/…) | null
+      "membership": false,                  // true = 회원전용. watching 스킵, 시작 신호→live 직행, API 확인 안 함
+
+      "title": "【チラズアート】…",           // JP 원문. announced 단계엔 null 가능
+      "title_ko": null,                     // (v3.1.13) LLM 번역. 없으면 프론트가 원문만 표시
+      "needs_tl": false,                    // (v3.1.13) true → 다음 tick 의 _translate_sweep 재시도 대상.
+                                             //   title 이 새로 생기거나 바뀌면(API 재구성 등) title_ko 를 비우고 다시 true 로
+      "url": "https://www.youtube.com/watch?v=bgzve7Y7S50",   // 없으면 채널 URL
+      "video_id": "bgzve7Y7S50",            // null 가능 (announced / 회원전용)
+      "thumbnail": "https://i.ytimg.com/vi/bgzve7Y7S50/mqdefault.jpg",  // video_id 유래 or vxtwitter 미디어. null 가능
+
+      "scheduled_start": "2026-09-09T12:00:00Z",  // JST→UTC. 파싱 실패 null. time_tbd 면 "<date>T00:00:00Z"
+      "time_tbd": false,                    // true = 날짜만, 시각 미정
+      "actual_start": null,                 // live 확정 시각. live-cadence(60분 분기) 앵커
+      "concurrent_viewers": null,           // live 한정. 변동 필드 → 커밋 diff 트리거에서 제외
+
+      "source": "personal",                // x-relay | personal | yt-notif | api | manual
+      "info_source": "personal",           // 마지막으로 타이밍/정보를 갱신한 신호 종류
+      "info_at": "2026-09-08T09:00:00Z",   // 그 신호 시각(트윗 snowflake 유래 등)
+      "src_url": "https://x.com/i/status/…", // (v4.0.4, 선택) 이 예고를 처음 알린 트윗(공식 스케줄 · 본인 예고 · URL 확정).
+                                           //   비어 있을 때만 채운다. 리포트 팝업 X url · announced at(트윗 ID 게시 시각). 프론트 미사용
+      "api_start_seen": null,              // 마지막 API scheduled_start. 이 값이 바뀌면(스트림 실수정) 트윗값 대신 API 승
+      "announced_start": null,             // (v4.5.8, 선택) 이 실물에 흡수된 영상 없는 예고(자리표시)의 scheduled_start — 여럿이면 가장 이른 것,
+                                           //   시각 미정 예고는 안 넘김. preview_build._carry_collab 이 채운다. 프론트 king.js 의 지각 기준(약속 시각)
+
+      "assumed_live": false,               // video_id 없이 scheduled_start 지남 → 프론트 "방송 중(추정)"
+      "first_seen": "2026-09-08T09:00:00Z",
+      "last_updated": "2026-09-09T11:57:00Z",
+      "expires_at": "2026-09-09T15:00:00Z" // 하드 TTL 안전망. 공개 start+3h / membership +5h / time_tbd 예정일의 다음 JST 자정
+    }
+  ]
+}
+```
+
+규칙:
+- **정렬** (`preview.sort_items`): state 우선순위(`live` > `watching` > `upcoming` > `announced`) →
+  `scheduled_start` asc(null 뒤) → `id`. `end` 는 우선순위 밖(뒤).
+- 파일 없을 때 기본형(`preview.default_preview`): `{"generated_at": null, "channel_order": [], "channels": {}, "items": []}`.
+  프론트는 `channel_order`/`channels` 가 비면 `config.js` 폴백을 쓴다.
+- `generated_at` heartbeat: 실질 변화가 없어도 전진 커밋. `/tick`(정기)은 `_HEARTBEAT_MIN_SEC`
+  (20분) 스로틀, **`/wake`(방송별 정밀 체크)는 스로틀 없이 매번 즉시 now 로 갱신**(v3.1.17 —
+  전엔 tick/wake 구분 없이 20분 스로틀이라, live/end 를 몇 분 간격으로 계속 확인 중이어도
+  프론트 하단 업데이트 시각이 tick 주기로만 움직이는 것처럼 보였다)
+  (`handlers._heartbeat_generated_at` + `_stable_view` 로 volatile 필드 `last_updated`/`concurrent_viewers` 동결).
+
+### 1-1. 아이템 매칭 (`preview.match_item`)
+
+같은 `channel_key` + (`video_id` 일치 ∥ `url` 일치 ∥ `scheduled_start` ±45분(`superscede_sec`, v3.8.10 — 구 ±4h)).
+매칭되면 같은 `id` 유지·필드 갱신. 안 되면 새 `id`. `none` 으로 사라진 뒤 오는 예고는 무조건 새 아이템.
+
+### 1-2. 상태 승격 (`preview.promote_state`)
+
+`upcoming` = `scheduled_start` && !`time_tbd` && `title` && `thumbnail` && `url` && `video_id` 전부.
+아니면 `announced`. 승격 판정은 `preview_build` 가 매 tick 수행 (FSM 은 승격을 되돌리지 않음 — 지각 강등만).
+
+### 1-3. 합동방송 (collab)
+
+`xrelay`/`xtweet` 가 `collab_with` 채운 `announced` 아이템을 참여 유닛 전부에 fan-out.
+url(video_id) 확정 시 일반 방송 추적과 동일 — 상태머신은 레인이 아니라 url 추적. `preview_build` 가
+참여자(`channel_key` ∪ `collab_with`) 중 아무 채널에나 실물 ±45분(`SCHEDULED_SUPERSEDE_SEC`, v3.8.10 — 구 ±4h) 안에 뜨면 supersede 하고
+`_carry_collab` 로 실물 행에 `collab_with` + `kind="collab"` 이관(+ (v4.0.8) 회원 전용 · (v4.5.8) 예고 시각 `announced_start` — 합동이 아니어도). `host=="group"` 은 supersede 면제.
+프론트 `render.js` 가 union 레인에 `.card--collab` 팬아웃. 상세: `docs/old/v2/v2_4_collab.md` §8.
+
+### 1-3-1. 그룹 공식 채널(`@BDP_yumemita`) 폴링 — v3.1.4
+
+`config/channels.json` `channels.group`(channel_order 밖, 전용 레인 없음)은 5인 합동 전용
+공식 채널. RSS/`videos.list` 로 이 채널에 영상이 뜨면 `preview_build.build_preview` 가
+`channel_key=channel_order[0]` + `collab_with=channel_order[1:]` + `host="group"` +
+`kind="collab"` 로 즉시 5인 레인에 팬아웃한다(`GROUP_CHANNEL_KEY`). `出演情報` 텍스트 유래
+`host="group"` 과 동일하게 취급되어 supersede 면제. 이 채널은 RSS 폴링 대상일 뿐 —
+5개 개인 레인과 달리 자체 카드/레인을 갖지 않는다.
+
+### 1-3-2. 즉시개시 트윗 릴레이 (`xrelay.parse_live_now`) — v3.1.4
+
+일일 스케줄(`配信スケジュール`)도 出演情報도 아닌, "지금 막 시작(한다)" 계열 공지
+(`配信開始`/`同時視聴配信`/`生配信`(단독으로도 매치 — "생중계"라는 말 자체가 즉시성을
+내포한다고 보고 v3.1.10 부터 `中`/`開始` 같은 접미사 없이도 반응)/`ただいま配信`/
+`配信中です` 등 + **온전한** YouTube 영상 URL)를 감지해 `video_id` 를 이미 채운 `announced`
+아이템으로 즉시 반영한다. `video_id` 만 있으면 되므로 그 영상이 `config/channels.json`
+미등록 채널(예: 외부 굿즈 판매사 채널) 소유여도 무방 — `videos.list(id=...)` 는 채널 제한이
+없는 조회라 다음 tick 에서 그대로 enrich 된다(v3.1.10, 실측: 5th Single 리리스 기념
+인터넷사인회 생중계가 「리미스타」명의 채널에서 열린 사례). RSS/API 폴링(최대 light tick
+3h 간격)을 기다리지 않고 `/ingest` 시점에 바로 preview 에 올라가는 것이 목적 — 그룹 채널
+폴링(1-3-1)과 상호보완적 이중 경로(둘 중 먼저 도착하는 쪽이 반영, 이후 `video_id` 매칭으로
+합류). 텍스트에 개인 이름이 있으면 그 멤버(+동석자), 없고 그룹 명의(`夢限大みゅーたいぷ`/
+`ゆめみた`)만 있으면 5인 전원(`host="group"`). 둘 다 없으면 채널 특정 불가로 무시. 잘린 URL
+(`…`)은 `video_id` 를 못 얻으므로 노이즈 방지 차 무시.
+
+`scheduled_start` 는 기본은 ingest 시각(`now_iso`)이지만, 텍스트에 `本日12時〜`/`明日20時〜`
+류 상대날짜+시각 표기(`_DAY_TIME_RE` — 당일 `本日`/`今夜`/`まもなく` 등, 익일 `明日`/`明日朝`/
+`明晩`/`明朝`/`あす` — `parse_bdp_schedule` 의 `明日` +1일 관례와 동일 어휘 + 시각 +
+`〜`/`~`/`～`)가 있으면 그 시각을 우선 사용한다(v3.1.10). 릴레이가 실제 방송 시작 전에(예: 당일 아침) 도착해도
+정확한 시각이 찍히게 하기 위함 — `info_source="x-relay"` 아이템은 이후 `videos.list` 의
+API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 override 규칙), 최초에 잘못
+찍히면 자체 교정될 기회가 없다.
+
+---
+
+## 2. 계약 B — `preview_archive.json` 스키마
+
+```jsonc
+{
+  "generated_at": "2026-09-09T12:00:00Z",
+  "items": [ { /* preview 아이템 원본 + "archived_at" */ } ]
+}
+```
+
+- `end→none` 또는 removed/expired 시 `build_archive_appends` 가 append. `(video_id, id)` 로 dedupe(캐시 안에서만). 관리 명령의 즉시 제거(`telegram_app`)는 dedupe 없이 덧붙인다.
+- 프론트(v4.1.0~)가 읽는다 — 타임테이블 · 오늘 카드의 「오늘 예고 안에 이미 끝난 방송」(`timetable.classify` 의 `ended`). 웹 모니터 팝업도 읽는다.
+- (v4.9.6) **캐시 보관함**이다 — 보관 시각(`archived_at`) 7일 이내만 남고, 그 전 기록은 매일 KST 06:10 보관함 정리가
+  `preview_archive/YYYY-MM-DD.json`(보관 시각의 KST 날짜, 같은 `{"items": [...]}` 모양)으로 옮긴다(§8.18). 프론트가 읽는 파일 이름 · 모양은 그대로다.
+
+---
+
+## 3. 계약 C — 프론트 DOM 구조
+
+`render.js` 가 생성하고 `css/` 가 스타일링. class 이름 변경은 이 문서 수정 후에만.
+`#board` 골격(`<section class="lane">` × `channel_order`, `lane__header`)은 v2 와 동일 —
+`docs/old/v2/IMPLEMENTATION_v2.md` §3 참조. v3 변경분 아래. **v4.1.0 에서 `lane__live`(ON-AIR 존) ·
+`lane__buckets`(오늘 / 7일 이내 / 7일 이후)를 없애고 타임테이블로 대체했다 — 아래 「타임테이블 · 이후 예고」 참조.**
+
+### 레인 헤더 (`lane__header`) — v3.0.2
+
+`<div class="lane__link" role="button" tabindex="0">`(아바타 `lane__avatar` + `lane__meta`) **+** `<nav class="lane__nav">`
+(우측 세로 레일: `lane__nav-btn lane__nav-yt` = `channel_url`, `lane__nav-btn lane__nav-x` =
+`https://x.com/<handle>`). 헤더는 `display:flex` (tweets.css 가 layout.css override).
+**(v4.3.4)** 네임플레이트(아바타 · 트윗 배지 · 이름 = PC 타임테이블 `tt__nm` 포함)는 이동 링크가 아니라
+`tweets.js` 가 클릭을 위임 처리하는 **트윗 시트 열기**(폰 아래 시트 / PC 팝업 보드)이다 — 트윗이 없으면 시트 대신 「새 트윗이 아직 없어요」 알림(아래 「마이크로 인터랙션」)
+(v4.3.3 까지는 `<a>` 라 이름 · 트윗 없는 아바타가 YouTube 로 이동). 채널 이동은 우측 레일 버튼만.
+이후 예고 열(`data-no-badge`)의 헤더는 트윗 시트 대상이 아니다. SVG 아이콘은 `render.js svgIcon()`(`createElementNS`).
+
+### 카드 클래스 매핑 (state → class)
+
+| state | 최상위 class | 썸네일 자리 | `.card__rel` |
+|---|---|---|---|
+| `announced` | `card card--announced` | 아이콘 `📺` (`card__icon`) | `relativeLabel`, 배지 "예고"(`card__badge--announced`), href = 채널 URL |
+| `upcoming` | `card card--upcoming` | 썸네일 `<img>` | `relativeLabel` (+ `card__rel--late` 토글) |
+| `watching` | `card card--watching` | 썸네일 `<img>` | `relativeLabel` (+late), 배지 "대기 중"(`card__badge--watching`) |
+| `live` | `card card--live` | 썸네일 + `LIVE` 배지 | `elapsedLabel(actual_start)` = `"방송 중 (n분)"` |
+| `end` | `card card--end` | 썸네일 유지, 배지 "종료"(`card__badge--end`) | `"방송 종료"`. 빨강 테두리 없음(OFF-AIR 소등) |
+
+- `membership` true → `card--membership` 추가. 썸네일 자리 자물쇠 `🔒`(`card__icon`), body 에 `card__chip` "🔒 회원 전용 방송".
+- `assumed_live` && state ∈ (announced, upcoming) → `card--sched-live` 추가, `.card__rel` = `"방송 중 (추정)"`(빨강), 테두리 실선.
+- `kind=="collab"` (또는 `collab_with` 존재) → `card--collab` 추가, 배지 "합동"(`card__badge--collab`), href = `url`.
+  `announced` 는 우측 상단 배지 자리를 "합동"이 대신 차지(예고/합동 상호 배타). `upcoming`/
+  `watching`/`live`/`end` 는 그 자리를 상태 배지(LIVE/대기 중)가 이미 쓰므로 좌측 상단에
+  별도로 띄운다(`card__badge--corner-left`, v3.1.11) — `card__body`는 title+meta 2줄
+  높이로 고정돼 있어, 참여자 라벨을 거기 3번째 줄로 보태면 flexbox 가 전부 짓눌러 글자가
+  점처럼 뭉개지는 회귀가 났었다(v3.1.10 배포 직후 발견, body 밖 배지로 수정).
+- `time_tbd` → `<time>` 자리에 `M/D` 만 + `.card__rel` = "시간 미정", 카운트다운 스킵.
+
+### 타임테이블 · 이후 예고 (v4.1.0) — `timetable.js` · `css/timetable.css`
+
+예고판의 **ON-AIR 존(`lane__live`) + 오늘 / 7일 이내 / 7일 이후 버킷(`lane__buckets`)을 대체**한다.
+`render.js renderBoard(boardEl, preview, nowMs, archive)` 가 화면 폭(`mqlPhone`, <768px)으로 두 구성 중 하나를 만든다.
+
+**예고보드의 하루**(v4.9.6) = KST **04:00 ~ 익일 04:00**(`timetable.DAY_START_HOUR = 4`, 프론트 전용 — 모니터링 하루 경계 `monitor_log.DAY_START_HOUR = 6` 과 별개. 전엔 06:00).
+**오늘 예고** = 지금 시각이 들어 있는 하루(`dayWindow(now)` → `{ds, de}`), **내일 예고** = 그다음 하루(`dayWindow(now, 1)`). 지난 하루는 보여 주지 않는다.
+예: 10/30(금) 01:00 → 실제 날짜는 10/30 이지만 04:00 전이라 오늘 예고 = 10/29(목) 04:00 ~ 10/30 04:00, 내일 예고 = 10/30 04:00 ~ 10/31 04:00. 04:00 에 두 화면이 함께 하루씩 넘어간다.
+`timetable.classify(items, archiveItems, nowMs, order)` 가 아이템을 나눈다:
+
+| 구분 | 기준 |
+|---|---|
+| `live` | `state=="live"` — 시작 = `actual_start`(없으면 `scheduled_start`) |
+| `ended` | `state=="end"` 이고 끝(`state_since`)이 오늘 예고 시작(`ds`) 뒤 + `preview_archive.json` 에서 **오늘 04:00 이후 시작해 이미 끝난** 항목(끝 = `archived_at`, 길이 10분~12시간만. 같은 `video_id` 는 한 번만) |
+| `upcoming` | announced/upcoming/watching 이고 `scheduled_start < de`(오늘 예고 끝 전 — 이미 지난 「지각」 포함, 시각 미정 제외) |
+| `tomorrow` (내일 예고, v4.9.6) | announced/upcoming/watching 이고 `de <= scheduled_start < de + 24h`. `{item, start, end:null}`, 시작순 |
+| `later` (이후 예고) | announced/upcoming/watching 이고 내일 예고 뒤(`>= de + 24h`)이거나 `time_tbd` · 시각 없음. 기간 구분 없이 시작시각순 |
+
+종료 카드 · 블록은 **04:00 에 없어진다** — `tickTimetable` 이 `nowMs >= boardEl.__ttDe`(오늘 예고의 `de`)이면 true → `main.js` 가 다시 그리고, 새 `ds` 보다 먼저 끝난 방송은 `ended` 에서 빠진다(23시에 시작해 01시에 끝난 방송은 04:00 까지 남음).
+
+합동(`collab_with`)은 참여 멤버(알려진 채널) **전원 행/레인에 팬아웃**(`timetable.itemKeys`, v3 와 같은 규칙).
+
+**PC (≥768px)** — `#board.board--tt`(5열 그리드 해제) 안에 위에서 아래로:
+1. `section.tt` 타임테이블 — (v4.9.6) **오늘 예고 · 내일 예고 두 화면**을 옆으로 넘긴다. DOM:
+   ```
+   section.tt
+     div.tt__head > h2.tt__title(「오늘 예고」|「내일 예고」) + span.tt__pg(두 점, aria-hidden) + span.tt__meta + .vt
+     div.tt__body                                   ← 가로 flex: 표 + 일 이동 버튼
+       div.tt__sw > div.tt__scroll > div.tt__grid   ← (기존) 넘침 흐림 · 화살표. grid = 124px | 1fr, --dawn-l = 익일 새벽 칸 시작(%)
+           div.tt__side > div.tt__corner + section.lane.tt__lane[data-channel] × 5   ← 1열, 넘기는 동안 움직이지 않음
+           div.tt__rail > div.tt__strip               ← 2열(overflow hidden) · 띠 폭 200%, transform translateX(0 | -50%)
+               div.tt__pane[data-day="0"] > .tt__axis + .tt__track[data-channel] × 5 + .tt__ov
+               div.tt__pane[data-day="1"] > .tt__axis + .tt__track[data-channel] × 5
+       button.tt__day > span.tt__day-ic(svg) + span.tt__day-n(내일 건수 알약)
+     div.tt__legend
+   ```
+   멤버 칸 `section.lane.tt__lane[data-channel]` > `header.lane__header.tt__who` > `.lane__avatar` + `.tt__nm`(이름 · 보고 있는 화면의 건수) — **트윗 배지(`.lane__tw`)와 트윗 시트의 기준 요소**.
+   `.tt__axis` = 04:00 부터 **4시간 눈금**(04 · 08 · 12 · 16 · 20 · 00 · 04), 자정 눈금(`h === 24 − DAY_START_HOUR`)은 `.is-midnight` 강조 + 익일 날짜. 칸 세로 눈금선도 4시간(`calc(100% / 6)`).
+   **익일 새벽 칸** = 각 `.tt__track` 배경(블록 아래 층)에 자정 ~ 끝(실제 다음 날 00:00 ~ 04:00)을 `--color-dawn`(어둡게 흰색 8.5% · 밝게 보라 11%) 으로 밝게 + 경계 1px `--color-dawn-edge`. 옛 자정 점선 `.tt__mid` 는 없앴다.
+   `.tt__ov`(지금 선 `.tt__now` · 지난 구간 음영 `.tt__past` · 「지금 HH:MM」)는 오늘 화면에만. 내일 화면은 모든 블록이 예정, 빈 칸 문구 「내일 예정 없음」.
+   **보고 있는 화면**(`timetable.js` 모듈 변수 `ttDay`, 0|1)은 저장하지 않는다 — 첫 입장 · 새로고침은 언제나 오늘 예고. 75초 재렌더 · 보기 방식 전환에는 유지,
+   내일 예정이 0건이 되면 0, 04:00(`tickTimetable` 이 true)에 0. 두 화면을 미리 다 그려 두고 넘길 때는 띠의 transform 만 바꾼다.
+   **일 이동 버튼** `.tt__day`: 오늘 화면 `>`(내일 예정 0건이면 `disabled` · 흐림 · 알약 없음 · `aria-label` 「내일 예정 없음」, 1건 이상이면 건수 알약), 내일 화면 `<`(화살표 180° 회전, 늘 활성).
+   건수가 바뀌면 알약이 한 번 튐(`is-pop`). 오늘 남은 예정이 0건이고 내일이 있으면 페이지를 연 동안 한 번 세 번 까딱임(`is-nudge`) — 그 렌더의 넘침 화살표 까딱임은 다음 렌더로 미룬다.
+   **넘기는 움직임**: 띠 280ms `cubic-bezier(0.2, 0.8, 0.2, 1)`, 제목 · 메타는 넘기는 방향으로 6px 밀려 흐려졌다 반대쪽에서 들어옴(80 + 80ms), 멤버 칸 건수는 흐렸다 바뀜, 두 점 강조가 옮겨 감.
+   넘기기 시작 때 블록 카드 팝업을 닫고, 넘기는 동안(`ttSliding`)은 블록 마우스 올림 팝업을 띄우지 않는다.
+   **마우스 끌기**(마우스만, 표가 넘치지 않을 때 · 블록 · 버튼 위가 아닌 곳): 띠가 1:1 로 따라오고, 더 갈 화면이 없는 쪽(오늘에서 오른쪽 · 내일에서 왼쪽 · 내일 0건일 때 왼쪽)은 고무줄(30%, 최대 48px).
+   놓을 때 레일 폭의 25% 이상 또는 0.5px/ms 이상 튕기면 넘김, 아니면 200ms 로 제자리(`timetable.swipeDecision` · `dragFollow`, selfcheck 대상). 5px 넘게 끌었으면 이어지는 click 한 번을 막는다. 터치 · 넘치는 폭은 버튼만.
+   움직임 줄이기(`prefers-reduced-motion`) = 미끄러짐 · 글자 밀림 · 회전 · 까딱임 · 고무줄 · 알약 튐 없이 즉시. 키보드는 일 이동 버튼만(표 안 방향키 없음).
+   블록 폭 = 종료 시각을 알면(ended) 실제 길이, 모르면 고정 폭(live 는 시작~지금, 최소 폭 있음). 한 행에 한 줄만 쓰고 겹치면 앞 블록을 다음 블록 시작에서 자른다.
+   좁아도 블록 모양은 같고 넘치는 부분만 잘린다. 제목은 한 줄 + 넘치면 무한 marquee(`applyTimetableMarquees`).
+   블록 안은 항상 **3줄 고정 높이**(v4.5.6): ① 시각 + 태그(`.tt-blk__t`) ② 카운트다운(`.tt-blk__rel` — 예고만. 「방송시작까지 1.5시간」 · 60분 미만 「n분」 정수 · 정각 「2시간」 · 시각이 지나면 「지각」, 모바일 카드 링과 같은 규칙) ③ 제목(`.tt-blk__n`). 라이브 · 종료 블록의 ② 는 빈 줄(`.tt-blk__sp`, king.js 가 `.tt-blk__rel` 을 「지각」 자리로 쓰므로 클래스를 나눔). 예정 블록 고정 폭 `W_FIXED` = 250px.
+   블록은 **클릭해도 이동하지 않고** 호버 = 카드 팝업(`.tt-pop`) · 클릭 = 고정(바깥 클릭 / Esc / 재클릭으로 닫힘). 영상 이동은 팝업의 이미지 · 「▶ YouTube에서 보기」로만.
+2. `.tt-fold` 「이후 예고 펼치기」(펼치면 「이후 예고 접기」) + 오른쪽 요약 `이번주 N · 먼 미래 M`(`buildFoldButton(…, {summary})`). 셋 다 0건이면 버튼 · 표 없음. (v4.9.6 — 전엔 「오늘 이후 예고 N건」 + 멤버별 건수)
+3. (v4.9.6, 운영자 안 3) `.tt-later`: 펼침(`#board.board--later-open`)일 때만 보임. 안 = `div.wk2`(2칸, 1000px 이하 1칸) > **이번주 테이블** `section.wk2__panel--week` + **먼 미래 테이블** `section.wk2__panel--far`.
+   - 계획 = `timetable.planLater(items, archiveItems, nowMs, order)` → `{ws, we, today, days[7], far[], undated[]}`(순수 함수, selfcheck). 날짜 경계 = **KST 달력 00:00**(예고보드의 04:00 하루와 다름).
+   - 이번주 = 지금이 든 주의 일 ~ 토 7줄(`div.wk2__row` > 왼쪽 `.wk2__date` 날짜 · 요일(오늘 줄은 「오늘」 알약, 지난 줄은 흐림) + 오른쪽 `.wk2__dots`). 그 주에 시작한 방송 전부 — 종료(preview `end` + 보관함, `classify` 와 같은 10분 ~ 12시간 규칙) · 방송 중 · 예정(오늘 · 내일 예고와 겹쳐도 넣음 · 시각 미정은 그날 줄).
+   - 먼 미래 = 주 밖이고 오늘 · 내일 예고 구간(`dayWindow(now).ds` ~ `de + 24h`) 밖인 예정 — 날짜별 줄(올해가 아니면 연도 · `D-n`), 예정 시각이 없으면 맨 아래 「날짜 미정」 줄. 0건이면 「먼 미래 예고 없음」.
+   - **점** `button.wk2__dot` = 방송 하나(14px 원, 누르는 자리 24px). 색 = **네임플레이트와 같은 멤버 색** `--lane-color`(`sampleLaneColor` 가 아바타 평균색으로 넣음 — 아바타를 못 불러오면 네임플레이트와 함께 회색 기본값).
+     합동은 참여 멤버 수만큼 14px 조각(`span.wk2__seg[data-channel]`)을 이어 붙인 **알약**(`span.wk2__shape`) + 예고 카드 · 합동 태그와 같은 **보라 테두리**(`is-collab`, `--color-collab`).
+     회원 전용(`membership`)은 점 오른쪽 아래 작은 **자물쇠**(`svg.wk2__lock`, 바탕색 원 위). 상태 `is-ended`(투명도 0.5) · `is-live`(빨간 링) · `is-tbd`(점선 링).
+   - 날짜 칸은 날짜 · 요일 · 꼬리(「오늘」 / `D-n`) 세 칸 고정 폭 격자라 줄마다 같은 자리에 놓인다(먼 미래는 연도가 붙을 수 있어 날짜 칸이 넓음).
+     마우스 올림 = 블록과 같은 카드 팝업(공용 `wirePop`), 클릭 · Enter · Space = 고정. 점에서 연 팝업만 시각에 날짜를 붙인다(`10/31(토) 21:30` · `시각 미정` · 종료는 시작 ~ 끝 · 길이).
+     (v4.9.7) 점에서 연 팝업의 제목은 한글(`title_ko`) · 원문(`title`, 흐린 작은 글자)을 **한 줄씩**(`.tt-pop__ti > .tt-pop__ln > .tt-pop__trk`) — 넘치는 줄만 무한히 흐른다(`is-marquee`, `applyPopMarquees`, 블록 제목과 같은 방식). 번역이 없거나 같으면 한 줄. 움직임 줄이기 설정이면 흐르지 않고 줄바꿈. 블록 팝업 제목은 그대로(줄바꿈 한 덩어리).
+     고정된 팝업은 바깥을 **누르는 순간**(`pointerdown`) 닫힌다 — 다른 블록 · 점을 누르면 바로 그쪽 팝업으로 바뀐다. 바깥 닫기 리스너는 `wirePop` 이 처음 쓰일 때 붙는다(v4.9.6 은 `buildTimetable` 에서만 붙여 모바일 표 시트에선 바깥을 눌러도 안 닫혔다).
+   - **한 상자**: 펼치면 접기 버튼(위만 둥글게) + `.tt-later`(아래만 둥글게, 같은 바탕 · 테두리)가 한 영역으로 보인다. 두 표(`.wk2__panel`)는 그 안에서 한 단계 깊은 바탕(`--color-bg`).
+   - **점 범례** `ul.wk2__legend`(먼 미래 표 아래, `.wk2__col`): 견본 점(`span.wk2__dot`, 누를 수 없음 — 표의 점과 같은 `fillDot`)을 글머리표로 한 작은 글자 3열 —
+     방송 1건 · 멤버 색 / 합동 / 방송 중 / 지난 방송 / 시각 미정 / 회원 전용. 견본 색 = 멤버 순서상 첫 · 둘째 멤버.
+   카드 보기 · 모바일의 이후 예고는 그대로(멤버별 `.lane__later` 목록 + 멤버별 건수 버튼).
+   - **모바일 「표」 버튼 · 시트**(v4.9.6, `js/weekpop.js`): 모바일은 카드 구성이라 위 두 표가 없으므로, 하단 멤버 아이콘 줄(`#pager-dots`) **오른쪽 끝**(플레이어 버튼 반대편)에
+     같은 모양의 버튼 `button.player-btn.week-btn`(표 + 점 + `>` 아이콘, 신곡 NEW 배지 · 플레이어 이름은 안 붙음)을 둔다. 누르면 바텀 시트(`.wk-scrim > .wk-sheet`, 높이 최대 88%)에
+     같은 `buildLaterTables` 를 **세로로**(이번주 → 먼 미래 → 범례 2열) 그린다. 열 때마다 마지막 보드 데이터(`renderBoard` → `setWeekData`)로 새로 그리고, 점 색은 `#board` 멤버 레인의 `--lane-color` 를 옮겨 온다.
+     닫기 = 「닫기」 · 바깥 누르기 · Esc(둘 다 카드 팝업이 떠 있으면 팝업만 — v4.9.7 바깥 누르기도) · 머리줄 끌어 내리기(`sheetdrag`). 카드 팝업은 시트 위(`html.wk-lock .tt-pop` z-index 900), 시트를 스크롤하면 닫힌다.
+
+**모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(트윗 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
+`.tt-fold` + `.lane__later`. (v4.9.6) 카드 묶음 순서 = **종료 → 방송 중 → 오늘 예정 → 내일 구분선 `.tt-today__div`(「내일 예고 · 10/31(토) 04:00 ~」, 내일 예정이 있을 때만) → 내일 예정** —
+화면 넘기기 없이 한 줄로 다 보여 준다(PC 카드 보기도 같음). 오늘 것이 0건이고 내일이 있으면 「오늘 남은 예고가 없습니다.」 + 구분선 + 내일 카드. 크게 보이는 첫 카드 = 종료가 아닌 첫 카드(없으면 내일 첫 카드).
+머리 메타 = `10/29(목) 04:00 ~ 익일 04:00 · 예정 n · 방송 중 n · 종료 n · 내일 n`(0건 항목은 생략). 오늘 카드: 예정 = 카운트다운 링(1시간 넘게 남으면 24시간 기준으로 차오름 · (v4.5.8) 1시간 이내는 노랑 분 단위 링이 0분까지 닳음 — 아래 「타이머 링」, **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
+**지금 보는 레인만 동작**: `render.js initMobileCarousel` 가 현재 슬라이드에만 `.lane--active` 를 주고 나머지(클론 포함)는 `inert` 로 **동작만** 막는다(겉모양 · 스크롤바는 그대로 — `overflow:hidden` 으로 숨기면 스크롤바 폭만큼 카드가 움찔거려 쓰지 않음) — 옆에 비쳐 보이는 레인의 스크롤 · 클릭이 반응하지 않는다(드래그/스와이프 시작점으로는 보드가 받음).
+하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. (v4.9.6) 방송 중인 멤버의 점은 `.dot--live`(흐리지 않고 빨간 링).
+**라이브 레인 효과**(v4.9.6): `renderBoard` 가 레인을 다 만든 뒤(캐러셀 클론 복제 전) `classify().live` 의 참여 멤버(합동 포함, `itemKeys`) 레인 `.lane[data-channel]` 에
+`.lane--live` → **그 멤버 예고판(레인) 테두리**가 빨갛게 + 느린 호흡 글로우(움직임 줄이기면 정적). **카드 보기(PC 5열) · 모바일 레인에만** 보인다 — 테이블 보기(멤버 칸 `.tt__lane` · 이후 예고 `.lane--later`)는 라이브 블록이 이미 보여 주므로 CSS 가 뺀다(`:not(.tt__lane):not(.lane--later)`). 아바타 자체에는 효과를 두지 않는다(운영자 10-29).
+**탭 제목 라이브 표시**(v4.9.6): 라이브가 1건 이상이면 `document.title` = `🔴 LIVE n · <원래 제목>`(n = `classify().live.length`, 합동 1건 = 1), 0건이면 원래 제목(`render.applyLiveTitle`, 처음 제목을 한 번 읽어 둠). 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
+**PC → 모바일 폭 전환 (v4.6.4)**: 767px 경계 리스너가 두 곳(`render.js` `mqlPhone` → `initMobileCarousel`, `main.js` → `paintBoard`)이고 `render.js` 쪽이 먼저 돈다. 이때 보드는 아직 PC 구성(레인이 안쪽 상자 안)이라 `initMobileCarousel` 은 **레인이 모두 보드 직속일 때만** 캐러셀을 만들고 아니면 돌아간다 — 바로 뒤 `paintBoard` 가 모바일 구성으로 다시 그리며 다시 부른다. 전엔 여기서 `insertBefore` NotFoundError(콘솔 1건, 화면은 정상)가 났다.
+이후 예고가 0건이면 `.tt-fold` 와 목록을 만들지 않는다(PC = 전체 0건, 모바일 = 그 멤버 0건).
+합동 카드는 이미지 **왼쪽 위에 참여 멤버 아바타만**(하단 선택 아이콘과 같은 고정 순서 아라레-유노-노노카-리츠-미야코로 겹쳐서, 이름 글자 없음, **그 레인의 본인은 뺀다**. 본인 외 참여자를 모르면 빈 알약을 만들지 않는다) 놓고, "합동" 글자는 날짜 옆 태그로만 쓴다.
+회원 전용(`membership`) 카드는 이미지 오른쪽 아래 알약 줄(`.tcard__pills`)의 **LIVE · 종료 알약 왼쪽에 🔒 알약**이 붙는다(예정 카드는 🔒 만).
+오늘 카드의 날짜·시각 줄(`.tcard__when`)은 상태와 관계없이 같은 굵은 글씨(종료는 `[날짜] [시작~종료]` — 글꼴은 같고 색만 종료 카드의 흐린 색. 방송 시간은 글자 대신 오른쪽 **회색 링**: 방송 중 경과 링이 끝난 순간에 멈춘 모양, "N분" + "방송") — "LIVE · 방송 중" · "N분 후" · 종료/예고 태그는 쓰지 않고(이미지 알약 · 링이 보여 줌) 태그는 **합동 · 회원 전용**만, 모자라면 다음 줄로 내려간다.
+오늘 카드 제목(`.tcard__ti`)은 한 줄 + 넘치면 기존 카드와 같은 marquee(`render.js applyMarquees`).
+마우스 드래그(`pointerType=="mouse"`)로도 넘길 수 있다 — 드래그 중 `#board.board--dragging`(스냅 해제), 놓으면 가장 가까운 유닛으로 `goDom`; 5px 넘게 끌었으면 그 클릭은 무시.
+
+- 모바일 오늘 카드 타이머 링(v4.3.6): 예고(upcoming) = 큰 글자 「n시간」(1시간 이상, 내림) · 「n분」(1시간 미만) + 작은 글자 「시작까지」, 시작 시각이 지나면 「지각」.
+  (v4.5.8) `timetable.updateRing`: 1시간 넘게 남음 = `--p` = 24시간 중 지난 비율(차오름, 레인 색) · **1시간 이내**(`.is-min`) = `--p` = 남은 분 / 60 — 가득 찬 노랑 링이
+  12시부터 시계방향으로 비워져 0분에 빈 링(방송 중 링의 「비우기」와 같은 방향), 글자 「n분 / 시작까지」 · **시작 시각 지남**(`.is-late`) = 빈 링 + 노랑 「지각」
+  (전엔 꽉 찬 레인 색 링 + 「지각」). 노노카 지각 이스터에그가 붙은 카드(`data-king`)는 「지각」 대신 「행차 / 준비 중」(`king.KING_RING_LATE`). 방송 중 링(「N분 / 방송중」)과 같은 2단 구조 · 글꼴(`.tcard__ring--up` = `.tcard__ring--live` 와 스타일 공유). PC 블록의 `relShort` 표기는 별개.
+- 갱신: `updateCountdowns` → `timetable.tickTimetable` 이 지금 선 · 링을 1분마다 옮기고, **오늘 구간이 끝나면(`nowMs >= boardEl.__ttDe`, 04:00) `true`** 를 돌려 `main.js` 가 재렌더(이때 표는 오늘 예고로 — `ttDay = 0`). 데이터는 75초 폴링(`poll`)이 바꿈.
+- 종료 블록용 `preview_archive.json`(`config.ARCHIVE_URL`)은 `main.js pollArchive` 가 따로 폴링 — 404 여도 보드는 그려지고 종료는 preview 의 `end` 상태만 나온다.
+- 한계(의도): 예고 항목에는 **종료 시각 필드가 없어** 예정 블록은 고정 폭이다. 종료 길이는 끝난 방송(`end` · 아카이브)에서만 알 수 있다.
+  시각 미정(`time_tbd`)은 타임테이블에 놓을 수 없어 이후 예고로 간다.
+- 자체 점검: `node src/frontend/js/timetable.selfcheck.mjs`(순수 함수 `dayWindow` · `classify` · `itemKeys` · (v4.9.6) `swipeDecision` · `dragFollow`).
+- 알아 둘 것: 예정 블록은 고정 폭이라 오른쪽 끝(04:00)에 닿으면 끝에 맞춰 왼쪽으로 당겨 그린다(기존 규칙) — 심야(02:00 등) 예고 블록은 시작 위치보다 왼쪽에서 시작해 보인다.
+
+### PC 보기 방식 · 카드 보기 (v4.4.0) — `render.js` · `timetable.js` · `css/timetable.css`
+
+PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「오늘 예고」 머리줄(`.tt__head`, `timetable.buildBoardHead`) 오른쪽 끝에 붙는다. 모바일은 탭 없음.
+
+- **저장**: `localStorage["mew.board.view"]` = `"table"`(기본) | `"cards"`. 읽기 · 쓰기 모두 `try/catch` — 못 쓰면 모듈 변수(`viewOverride`)로 이번 세션만 유지. 탭 클릭 → `setViewMode` → `document` 에 `mew:view-change`(`VIEW_CHANGE_EVENT`) → `main.js` 가 `paintBoard()`(보드 재렌더 + 편지 배지 재적용). 재렌더 뒤 키보드 포커스는 새 선택 탭으로 되돌린다(`boardEl.__focusTab`). 탭은 ←/→ 키로도 바꾼다(`role=tablist` · `aria-selected`).
+- **테이블 보기** = 위 「타임테이블 · 이후 예고」 그대로(`#board.board--tt`).
+- **카드 보기** = `#board.board--tt.board--cards` > `section.tt.tt--cards` > 머리줄 + `.cards-board`(5열 그리드, `align-items:start`) + `.tt-fold`.
+  레인 = `section.lane[data-channel]` > `buildHeader`(기존 네임플레이트) + `buildTodayCards(ctx, key, {compact:true})`(모바일과 같은 오늘 카드) + `buildLaterList`(`.lane__later`, 접힘). `data-no-badge` 없음 → 트윗 배지 · 트윗 시트 · 노노카 이스터에그가 모바일 레인과 같은 경로로 동작.
+- **펼치기 전 세로 고정**: `.board--cards .lane` 은 `container-type:inline-size`; `.cards-board .tt-today` 높이 = `34px + 2·pad + 2·카드높이 + 12px + 30px`(카드 2장 + 다음 카드가 살짝 보임), 넘치면 `overflow-y:auto`. 카드높이 = `(100cqw − 2·pad − 2px)·9/16 + --bh + 2px`, `.tcard__body{height:--bh}`(78px, ≤1100px 에서 pad 11.2px · bh 72px). 날짜줄은 줄바꿈 없이 한 줄. (v4.5.8) 노노카 지각 이스터에그가 붙은 카드(`.k-card`)만 본문이 `height:auto; min-height:--bh` 로 늘어나고 대신의 말 글자를 줄인다(`king.css`) — 고정 높이에 잘려 안 보였다.
+- **이후 예고 펼치기**: 단일 `.tt-fold`(`buildFoldButton(counts, ctx, {perMember:true})`)가 `#board.board--later-open` 을 토글 → 5개 `.lane__later` 가 동시에 열리고 닫힌다. `toggleLater` 의 애니메이션 대상 선택자는 `board--cards` 이면 `.lane__later`(테이블 보기는 `.tt-later`). 이후 예고가 전체 0건이면 버튼 없음(레인별 「이후 예고 없음」 문구는 `buildLaterList` 기본).
+- 펼침 상태(`board--later-open`)는 보기 방식을 바꿔도 `#board` 에 남는다.
+
+### 배경 장식 (v4.9.8) — `bgdeco.js` · `bglogic.js` · `css/bgdeco.css`
+
+화면 뒤에 고정된 그림 한 장 — `<div id="bgdeco" aria-hidden="true">` 안의 `<svg>`(`position: fixed; inset: 0; z-index: -1; pointer-events: none`). 데이터를 받지 않는 순수 장식이다.
+`html` 에 배경이 없어 `body` 색이 캔버스로 올라가므로 그 위 · 카드 · 시트 아래에 그려진다. `main.js` 의 `DOMContentLoaded` 에서 `initBgDeco()` 가 만든다.
+
+- **그림**: viewBox = 창 크기(`preserveAspectRatio="xMidYMid slice"`). ① 바탕 톤 사각형(세로 그라데이션 — 위 60% 분홍 `#ff7788` → 아래 파랑 `#2288dd`, 맨 아래 파랑은 1.25배 진하게) ② 장식 11개(`bglogic.SPOTS` — 가장자리 비율 좌표, 가운데는 비움 · 종류 순환 `ring · tri · wave · dot · gem`) ③ 아래 긴 지그재그 낙서 선(굵기 5, 화면 높이 기준 같은 비율의 그라데이션).
+  장식 크기 기준 = 화면 짧은 변 × 0.04. 장식마다 도형 자체에도 같은 그라데이션(위 60% 분홍 → 파랑)이 걸리고, 돌면 `gradientTransform` 을 반대로 돌려 화면 기준 위 분홍 · 아래 파랑을 유지한다.
+- **색 · 투명도 토큰**: `--bgd-pink` · `--bgd-blue` · `--bgd-tone`(다크 0.16 · 라이트 0.13) · `--bgd-shape`(다크 0.7 · 라이트 0.75). 어둡게 = `:root`, 밝게 = `:root[data-theme="light"]`.
+- **평소 모션**: `.bgd-fl` 의 CSS 애니메이션 `bgd-float` — 장식마다 방향 · 거리(크기의 ±0.8배) · 주기(9~16초) · 시작 시점이 다르다. `prefers-reduced-motion: reduce` 면 멈춘다.
+- **흔들기**: `devicemotion` 의 `acceleration`(없으면 중력 포함값에서 9.8 을 뺀 값)이 **14m/s²** 를 넘으면 흔든 것 — 세기 = `min(1.6, max(0.6, 가속도/15))`. `shake(power)` 가 장식마다 무작위 방향(0~360도) · 속도(짧은 변 × 1~4.2 × 세기) · 마찰(0.9~2.3/초) 충격을 주고,
+  `requestAnimationFrame` 이 매 프레임 마찰로 감속 · 벽 반사(속도 80%) · 장식끼리 탄성 충돌(원 근사, 반발 0.85)을 계산하며 벽 · 충돌 때 회전이 붙는다. 120ms 간격까지 연속 입력을 받고 속도는 쌓이되 상한 = 짧은 변 × 6/초. 모두 멈추면 프레임 반복도 멈춘다.
+  흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
+- **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
+
+### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js`
+
+멤버 생일 **당일(KST 00:00 ~ 익일 00:00)** 에 화면 뒤 배경을 그 멤버의 생일 장면(AI 생성 일러스트 + 모션)으로 바꾼다. 평소(해당 없는 날)에는 아무 코드도 장면을 불러오지 않는다. 데이터를 받지 않는 순수 클라이언트 기능.
+
+- **생일 데이터**: `config.js` 의 `BIRTHDAYS`(`{키: "MM-DD"}`, KST 달력 날짜) — 아라레 08-16 · 노노카 04-17 · 리츠 02-07 · 미야코 09-19 · 유노 11-04(운영자 교차 확인 2026-10-30). 백엔드는 생일을 쓰지 않아 `config/channels.json` 이 아니라 프론트 상수에 둔다. `BIRTHDAY_SCENES_ENABLED`(`{키: bool}`)는 **장면이 완성돼 켜진 멤버** — 지금 `yuno` 만 true, 나머지 4명은 날짜만 등록(꺼 둠). 켜려면 이 값과 `birthdayui.js` 의 `SCENE_LOADERS` 에 장면 모듈을 같이 등록.
+- **판정(`birthday.js`, 순수 · DOM 없음)**: `kstMonthDay(nowMs)`(UTC+9 로 달력 날짜 읽기) · `birthdayMemberAt` · `overrideMember`(시험용 `?bday=<멤버키>`, 장면이 켜진 멤버만) · `pickBirthdayScene`(강제 표시 → 오늘 생일 → 없으면 null) · `msToNextKstMidnight`. self-check `node src/frontend/js/birthday.selfcheck.mjs`(경계 KST 23:59:59 / 00:00:00 · 윤년 · 연말 포함). 운영 사이트에서 시험할 때는 `?bday=yuno&va=claude`.
+- **화면(`birthdayui.js`)**: `main.js` `DOMContentLoaded` 의 `initBirthday()`. 판정이 멤버를 정하면 `<html data-bday="<멤버>">` · `<div id="bday-bg">`(장면 호스트, `position: fixed; inset: 0; z-index: -1`) · 컨트롤 `#bday-ui` · 인사 `#bday-greet` 를 붙이고 장면 모듈을 **그때 처음** `import()` 한다. 자정(KST) 직후 · 탭이 다시 보일 때 재판정(`msToNextKstMidnight` 타이머 + `visibilitychange`)해 날이 바뀌면 정리한다. 장면 로드 실패 시 평소 화면 그대로(콘솔 오류만). `data-bday` 가 있으면 평소 배경 장식(`#bgdeco`)은 숨긴다.
+- **장면 모듈 계약**: `mountYunoScene(host, opts) → { setStill, celebrate, finale, destroy, whenReady, setClock, setTrack, setLayout, setIntro, setBrightness }`. 유노는 정본 `prototype_v12.html`의 Canvas 수식을 사용한다. `setClock(fn)`은 평활한 곡 시각, `setTrack(track)`은 디코딩된 박 지도를 받는다. 유노·데크는 x=600 중심. 가로는 1200×760 cover, 세로는 가로 820단위·지평선 68%, 태양 1.45/1.6배, 사인은 늘린 하늘 중앙에 화면 폭 85%로 배치한다. `visualViewport` 크기 변화·탭 숨김·화면 밖 정지를 처리한다. 모션 줄이기에서는 0초 정지 프레임. 기존 `celebrate/finale` 계약은 유지하되 기존 전환 폭죽의 색·수식·지연을 유지한다. 부위 webp 9개와 UFO만 실제 이미지로 요청하고, 사인은 벡터를 합성한다. `innerHTML`을 사용하지 않는다.
+- **유리 패널**(`css/birthday.css`): `html[data-bday]` 일 때 `.lane` · `.lane__header` · `.card` · `.vt` · `.tt__scroll` · `.tt-fold` · `.ntc__bar` · `#foot` · `#board > .tt-later` 의 바탕을 반투명(`--bday-glass`: 어둡게 `rgba(18,18,24,.58)` · 밝게 `rgba(255,255,255,.7)`) + `backdrop-filter: blur(10px)` 로 바꾼다. 팝업 · 시트는 불투명 그대로. 이 규칙은 `theme.css` 뒤에 불러온다.
+- **컨트롤(`#bday-ui`)**: 🎂로 「온전히 보기」를 전환한다. 일반 화면에서는 옆 작은 재생/정지 버튼으로 음악을 제어하고, 전체 장면에서는 하단 음악 컨트롤을 사용한다. 기존 꾹 누르기·위치 저장은 유지하며 하단 플레이어 영역을 피한다.
+  - **기본 위치**: 오른쪽 가장자리, 세로 화면 높이의 73%(`DEFAULT_POS` — 운영자가 직접 정한 자리, 2026-10-31). 모바일 멤버 줄(`#pager-dots` — CD · 타임테이블 버튼이 있는 줄)과 풋터 위로는 내려가지 못한다(`limits()` 가 두 요소의 `getBoundingClientRect().top` 으로 계산, 크기 변화는 `ResizeObserver(body)` · `resize` 로 따라간다)라 겹치지 않는다.
+  - **끌어서 옮기기**: 0.5초(`HOLD_MS`) 꾹 누르면 끌기 모드 — 고리가 0.5초 동안 차오르고(손가락이 10px 넘게 움직이면 취소) → 진동(지원 기기) + 버튼이 커지며 빛나고 살짝 흔들림 + 「옮길 곳에 놓으세요」 말풍선 → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 왼쪽/오른쪽 가장자리에 스프링으로 붙고(짓눌렸다 튀어 오르는 안착 모션) 짧은 진동. 끌기를 마친 손가락 뗌은 클릭으로 세지 않는다. 위치(`{side, ratio}`)만 `localStorage "bday-btn"` 에 저장(생일 스킨이 뜬 날에만 쓰임). 멤버 줄 · 풋터 아래로는 놓을 수 없게 제한. 키보드는 Enter/Space 로 전환만(끌기는 포인터 전용).
+- **온전히 보기·인트로**: `html[data-bday-full]`은 기존 화면을 투명하게 하고 `inert`를 건다. 방문마다 Noctural Run 0초에서 시작한다(저장하지 않음). 자동재생이 거부되면 암전 가운데 「탭하여 시작 ♪」만 표시하고 첫 조작에서 재생한다. 인계의 곡선 충돌 해결 지시에 따라 밝기는 0→3초에 .03→.30, 17.14→18.64초에 2.4→1.0으로 quadratic ease-out한다. 3~17.14초는 .30이다. 따라서 1.5초 .2325, 17.2초 2.29024이며 기존 선형 표본은 현재 곡선의 검증 기준으로 쓰지 않는다. 기본 장면·유노 조명·점등 전파는 별도 Canvas의 최종 CSS 밝기로 합성한다. 부모에서 다시 감쇠해 색이 회색으로 클리핑되는 중간 합성을 피한다. 첫 드럼 17.14초에 태양에서 0.55초 링 3개, 19초 이후 컨트롤·제목·SUNO 안내를 순서대로 공개한다. 인트로 중 복귀는 막고 이후 🎂·Esc·빈 곳 클릭으로 복귀한다. 일반 화면으로 돌아와도 음악은 계속된다.
+- **음악**: `bdayaudio.js`는 Noctural Run ↔ Midnight Groove를 교대로 재생하고 최초에는 `audio.currentTime`, 버퍼 전환 뒤에는 `AudioContext.currentTime`에 LAT=.02 평활화를 적용한다. 첫 곡을 스트리밍하면서 두 곡의 blob·박 지도를 선로딩·디코드하고 같은 컨텍스트 시각에 스트림 Gain과 버퍼 출력을 교체한다. 이후 현재 곡과 다음 두 곡의 AudioBufferSource를 종료 시각에 이어 예약하므로 메인 스레드의 ended 처리 지연이 곡 경계에 공백을 만들지 않는다. 제목·박 지도·장면 시계도 같은 예약 시각에서 바뀐다. 일시정지·탐색·곡 선택은 예약을 취소하고 다시 잡는다. Web Audio/디코드 불가 시 스트리밍으로 대체하며 이 경로는 무공백을 보장하지 않는다. Web Audio GainNode 기본 .3, 저장 키 `bday-vol`. 미디어 요소 volume은 1로 두어 이중 감쇠를 방지한다. Space/좌우/상하/M 단축키, 모바일 슬라이더 숨김·음소거를 지원한다. 음원은 원본 약 10MB, 박 지도는 JSON 메타데이터와 uint8 `.bin`으로 저장한다.
+- **모션 안전**: `prefers-reduced-motion`이면 장면은 정지하고 인트로는 .03→1 단순 페이드이며 번쩍임·링·UI 애니메이션을 생략한다. 일반 모드에서는 첫 드럼에서만 밝기 상승이 있다.
+- **복사 억제**: `bdaysign.js`의 인코딩된 좌표를 디코딩해 Canvas에 그린다. 완성 사인은 5.5초 표시한다. 전체 보기에서 contextmenu·dragstart·일부 개발 도구 단축키를 억제하고 해당 캔버스 인스턴스의 `toDataURL/toBlob/getImageData`를 빈 결과로 대체했다가 복구한다. 이는 **우연한 가져가기를 어렵게 하는 장벽**이며 암호화·접근 통제가 아니다. 개발자 도구·스크린샷·음원 다운로드는 막을 수 없다.
+- **정리·검증**: 자정 재판정 시 장면·음악·플레이어·가드를 정리하고 fetch 중단·AudioContext 종료·blob 해제를 수행한다. `destroyBirthday()`는 공통 재판정 리스너와 자정 타이머까지 제거한다. self-check와 `scripts/verify_birthday_*.py`, `scripts/compare_birthday_pixels.py`로 실제 Chromium을 검증한다. 그라데이션 재사용·조명 캐시·캐릭터/파면의 CSS 합성 레이어 분리로 프레임 비용을 줄였다. GPU 가속과 SwiftShader를 구분한 측정은 `scripts/verify_birthday_performance.py`, 실제 출력 샘플의 곡 경계 검증은 `scripts/verify_birthday_gapless.py`로 실행한다. 성능 수치는 CPU에서 Canvas 명령을 제출한 비용이며 GPU 완료 시각을 뜻하지 않는다. 실제 iPhone Safari 음향·자동재생·안전영역·주소창 검증은 남아 있다.
+- **디스클레이머**: 장면 이미지는 AI 생성 팬 제작물이다 — 기존 풋터 디스클레이머(「비공식 팬 메이드 프로젝트」)가 그대로 적용된다. 제작 원본 · 경위는 브랜치 `easteregg/birthday-skin` 의 `easteregg/birthday/`(HANDOFF.md).
+
+### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
+
+> (v4.5.1) 입장 후 유지 3분 → **1분**, 그 뒤 즉시 제거 → **1.2초에 걸쳐 서서히 복귀**(`.k-leave`).
+> **(v4.5.8) 라이브 입장 연출 기준 변경(운영자 결정)** — 「`actual_start` + 1분 안」 대신 **지각한 방송이 라이브인 동안은 무조건**: 페이지가 그 방송을 라이브로
+> 처음 그릴 때 입장 연출을 한 번 재생하고, 끝나면 바로 서서히 평소 라이브 카드로. 「입장 후 1분 유지」 구간과 그 말은 없앴다. 지각은 **약속 시각**\* 기준.
+> 계기(2026-10-20): ① 화면이 라이브를 알게 되는 건 백엔드 감지(0.3~6분, 10-14~10-20 16건 실측) + raw CDN 캐시(최대 5분) + 폴링(75초) 뒤라 1분 창이 거의 늘 지나 있었다.
+> ② 20:00 영상 없는 예고가 20:26 에 바로 시작한 영상(별개 항목)에 흡수되며 실물 `scheduled_start` 가 20:26:26 이라 지각이 17초로 계산됐다.
+> \* 약속 시각 = `scheduled_start` 와 `announced_start`(흡수된 예고 시각, 백엔드가 넘김 — §1-3) 중 이른 것.
+> 같은 버전: PC 카드 보기(v4.4.0)에서 대신의 말이 고정 높이 본문에 잘려 안 보이던 것 — 노노카 카드만 본문이 늘어나고 글자를 줄인다(`king.css` 「PC 카드 보기」). 아래 표 · 클래스 설명은 v4.5.8 기준.
+
+노노카 본인 방송(`item.channel_key == "nonoka"`, `time_tbd` 아님)이 예정 시각을 넘기면 타임테이블 · 오늘 카드에 장식이 붙는다. `preview.json` 필드 `channel_key` · `scheduled_start` · `actual_start` · `time_tbd` · `video_id` 와 (v4.5.8) `announced_start` 를 읽는다.
+
+**판정** `king.phaseOf(item, state, nowMs, playedAt)` (순수 — DOM 없음). `state` 는 `timetable.classify` 의 분류(`upcoming` | `live` | `ended`), `playedAt` = 이 페이지가 그 항목의 입장 연출을 시작한 시각(아직이면 없음).
+
+| 입력 | 결과 |
+|---|---|
+| `upcoming` 이고 `late = now − scheduled_start` 가 0 초과 ~ 3시간(`MAX_LATE_MS`) | `{phase:"wait", stage, late}` — `lateStage(late)`: ~3분 1 · 3~5분 2 · 5~10분 3 · 10~20분 4 · 20분~ 5 (경계는 이상/미만) |
+| `live` 이고 `actual_start − 약속 시각(promisedStart) ≥ 1분`(`ARRIVE_MIN_LATE_MS`) 이고, 아직 재생 안 했거나(`playedAt` 없음) 재생한 지 `ARRIVE_MS`(3.8초) 안 | `{phase:"live", waited, since}` — `actual_start` 뒤 시간 제한 없음 |
+| 그 밖(대상 아님 · 종료 · `actual_start` 없음 · 1분 미만 지각 · 이 페이지에서 이미 재생함) | `null` → 장식 없음 / 복귀 연출 후 걷어냄 |
+
+예고(`upcoming`)의 지각은 화면에 보이는 `scheduled_start` 기준이다(`announced_start` 는 안 씀 — 카드 링 「시작까지」와 어긋나지 않게).
+
+**장식 root 와 클래스** — `king.js` 가 root 요소에 붙이고 `root.dataset.king`(`"card"`·`"popup"`·`"block"`) · `root.__king`(상태 객체)을 둔다.
+`.k-on` 장식 중 · `.k-s1`~`.k-s5` 지각 단계(누적) · `.k-arrive` 입장 연출 중(`ARRIVE_MS` 3.8초) · `.k-live` 금빛 「입장 후」 모습(v4.5.8 부터 모션 줄이기 · 재생 도중 다시 그려진 경우만) · `.k-leave` 복귀 연출 중(`.k-arrive` 또는 `.k-live` 와 함께 붙음, `LEAVE_MS` 1.2초). 입장 연출이 끝나면(`.k-arrive` 를 붙이고 `ARRIVE_MS` 뒤 — 1초 틱도 `phaseOf` 가 `null` 이면 같은 일을 한다) `leave()` 가 `.k-leave` 를 붙이고(모션 줄이기면 바로 `finish()`), 1.2초 뒤 `finish()` 가 클래스 · 추가한 노드 · 바꾼 글자를 모두 원복한다(보드를 다시 그리지 않고 제자리에서).
+
+**복귀 연출(`.k-leave`)** — 무대(`.kg-scene`)는 썸네일 위에 겹쳐 있어 투명해지면(1.2초) 아래의 평소 썸네일이 드러난다. 대신의 말 칸(`.king-msg`)은 0.5초에 옅어지고 1초에 걸쳐 접힌다(`leave()` 가 현재 높이를 `max-height` 인라인 px 로 고정한 뒤 `.k-leave` 가 0 으로 — 접힘 끝의 `margin-top −4px` 는 카드 `.tcard__main` · 팝업 `.tt-pop__body` 의 `gap 4px` 보정). 블록의 왕관 · 카펫 띠도 옅어진다. 카드 오른쪽 도넛(`.tcard__ring`)은 장식이 아니라 건드리지 않으며, 말 칸이 접히는 동안 세로 중앙 정렬에 따라 제자리로 올라온다. 장식은 링크 요소의 자손이고 `pointer-events:none` 이라 연출 중에도 클릭은 영상 링크로 이어진다. 블록 위쪽에 놓인 팝업은 `timetable.js` 가 `data-anchor-bottom` 에 아래 가장자리를 적어 두고 `king.js repin()` 이 줄어드는 동안 블록에 붙여 둔다.
+
+| 위치 | 함수 · root | 삽입 | 호출 지점 |
+|---|---|---|---|
+| 모바일 오늘 카드 | `decorateCard(a, th, main, entry, state)` · `a.tcard`(`.k-card`) | `th`(`.tcard__th`) **첫 자식**으로 무대 `.kg-scene`(LIVE · 합동 알약보다 아래), `main`(`.tcard__main`) 끝에 `.king-msg` | `timetable.todayCard` — `laneKey === "nonoka"` |
+| PC 블록 팝업 | `decoratePopup(pop, img, body, entry, state)` · `.tt-pop`(`.k-pop`) | `img`(`.tt-pop__img`) 첫 자식 `.kg-scene`, `body` 끝 `.king-msg` | `showCardPop(..., rowKey)` — 노노카 행의 블록에서 연 팝업만. 높이를 재기 **전에** 장식(위치 계산이 높이에 의존) |
+| PC 타임테이블 블록 | `decorateBlock(blk, entry, state)` · `.tt-blk`(`.k-blk`) | `.tt-blk__th` 안에 `.kb-crown`(왕관 + 후광 + 궤도 별) · `.kb-zz` · `.kb-flare` · `.kb-sparks`, 블록 끝에 `.kb-carpet` 띠. `.tt-blk__rel`(「지각」 자리) 글자 교체 | `blockEl(..., rowKey)` — `buildTimetable` 이 행 키(`key`)를 넘김 |
+
+`rowKey`/`laneKey` 가 `"nonoka"`(`king.KING_KEY`)가 아니면 아무것도 붙지 않는다 — 노노카가 게스트인 다른 멤버의 합동 방송 · 노노카 방송이 다른 행에 팬아웃된 블록은 대상 아님. 영상 없는 예고 블록은 레인 색 자리표시 위 아바타 동그라미 **윗부분**에 왕관이 얹히도록 `.k-blk .tt-blk__th.tt-ph` 를 아래쪽 정렬(`padding-bottom: 2px`)한다.
+
+**PC 블록 글자**(`blockLabel`): 1~2단계 「행차 준비」 · 3~5단계 「대기 +MM:SS」(1초마다 갱신), 걷어내면 원래 글자.
+
+**색 약속**: 입장 전 = 은빛(`--k-silver*`), 왕관은 움직이지 않음. 입장 순간부터 = 금빛 — 왕관 은빛 층(`.kg-cs`)이 금빛 층(`.kg-cg`)으로 크로스페이드 + 후광(`.kg-halo`) · 궤도 별(`.kg-orbit`) · 금빛 광선(`.kg-rays.kg-gold`) · 광택(`.kg-sweep`). `.k-on.k-arrive/.k-live` 가 `--k-trim`·`--k-glow` 를 금색으로 바꾼다. PC 블록은 아바타가 주인공이라 후광(최대 불투명도 .22~.3) · 발광 · 별(.45)을 약하게 한다.
+
+**입장 연출은 페이지당 항목마다 한 번**: `played` Map(키 = `video_id`‖`id`‖`scheduled_start`)이 연출을 시작한 시각을 기억한다. 보드를 다시 그려 새 root 가 만들어져도 이미 재생이 끝났으면 장식 없음(평소 라이브 카드), 3.8초 안이면 입장 연출을 다시 보여준다. 새로 접속(새로고침)하면 `played` 가 비어 다시 재생한다 — 라이브인 동안 언제 들어와도 입장 연출을 먼저 본다. `.k-arrive` 는 장막이 닫힌 상태에서 열리는 전환이 보이도록 **두 프레임 뒤**에 붙이고, 걷어내기 타이머(`ARRIVE_MS`)는 클래스가 실제로 붙은 순간부터 잰다.
+(v4.5.8) **탭이 숨겨져 있으면(`document.hidden`) 재생하지 않고 기다린다**(`k.mode = "await"`, `played` 기록 안 함) — 백그라운드 탭이 폴링으로 라이브를 받았을 때 아무도 안 보는 사이 끝나지 않게. 1초 틱이 탭이 보이는 순간 재생을 시작한다.
+
+**1초 틱**(`ensureTicker`, 장식 root 가 있을 때만 돌고 없으면 멈춤): `[data-king]` 전부에 대해 `phaseOf` 를 다시 계산 — `wait` 이면 단계 변경 · 카운터(`.king-count`) · 블록 글자 갱신, `null` 이면 `leave`(복귀 연출), `live` 이고 `await` 이면 재생 시작. 시계는 클라이언트 시각이다.
+
+**말** `king.speech(kind, stage, waitedMs)`: 머리말 「대신이 고하오」 + 본문. 대신은 왕보다 낮고 신하(시청자)보다 높은 신분이라 왕은 「전하」, 시청자는 「그대들」, 하오체. 3단계부터 「그대들이 기다린 시간」 + 카운터(`+MM:SS`). 입장 = 「전하 납시오!」 + 「그대들이 +MM:SS 기다린 끝에 납시었소!」(기다린 시간 = `actual_start − 약속 시각`). (v4.5.8 전의 입장 후 말 「…그 충심을 기억하겠소.」는 유지 구간과 함께 없앴다.) 문구 전체는 `king.js speech` 가 기준.
+
+**모션 줄이기**(`prefers-reduced-motion`): CSS 가 `.k-on` 안의 애니메이션 · 전환을 끄고, `king.js` 는 입장 연출을 건너뛰고 「입장 후」 모습(`.k-live`)을 `ARRIVE_MS` 동안 보인 뒤 바로 걷어낸다(코드 작성 · 단위 검증만, 실제 화면 확인은 안 함).
+
+**XSS**: 무대 · 왕관 · 말 모두 `createElement`/`createElementNS` + `textContent`(`innerHTML` 금지).
+
+자체 점검: `node src/frontend/js/king.selfcheck.mjs`(48개 — 대상 · 단계 경계 · `phaseOf`(지각 1분 · 라이브인 동안 시간 제한 없음 · 재생 후 `ARRIVE_MS` 경계 · `announced_start` 약속 시각 · 시계 오차) · 복귀 시간 상수 · 말 · 블록 글자). DOM 함수는 호출하지 않는다.
+
+### 렌더 규칙
+
+- 전체 재렌더(폴링마다 `#board` 재구성). `updateCountdowns()` 는 DOM 재구성 없이 `.card__rel` 텍스트만
+  (`live`→`elapsedLabel`, `end`→고정, 나머지→`relativeLabel`). 구간 넘으면 `true` 반환 → `main.js` 재렌더.
+- **XSS**: 데이터는 `textContent`/`createElement` 로만 주입. `render.js` 는 `innerHTML` 금지(`img.onerror` 속성만 예외).
+  (`notices.js` 는 v2 부터 티커 marquee 구조상 템플릿+`_attr`/`_esc` 이스케이프 사용 — 새 필드도 이스케이프됨.)
+
+---
+
+## 4. 계약 D — 시간 표기 규칙 (`time.js`)
+
+- 저장 UTC, 표시 **KST(UTC+9)**. `Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul'})`.
+- `formatKST(iso, opts={})` → `"MM/DD HH:mm"`. `opts.full===true` → `"YYYY-MM-DD HH:mm"`.
+- `relativeLabel(iso, nowMs)`:
+  | 조건 (start − now) | 출력 |
+  |---|---|
+  | < −5분 (지각) | `"{n}분 지각"` / `"{h}시간 {m}분 지각"` (최소 1분) |
+  | < 60초 | `"곧 시작"` |
+  | 오늘 (같은 KST 날짜) | `"{h}시간 {m}분 후"` (h·m 0 처리) |
+  | 7일 이내 (오늘 아님) | `"D-{n} {HH}:{mm}"` — `n` = KST 캘린더 자정 기준 일수차(올림, 최소 1) |
+  | 그 외 | `"{YYYY}-{MM}-{DD} {HH}:{mm}"` (KST) |
+- `elapsedLabel(actualStartIso, nowMs)` → `"방송 중 ({m}분)"`.
+- `isLate(iso, nowMs)`: `scheduled_start` 를 5분(`LATE_GRACE_MS`) 넘게 지났는지 boolean. `render.js` 가 `.card__rel--late` 토글에 사용.
+- `.card__rel` 은 `updateCountdowns()` 가 **1분마다 사용자 장치 시계 기준**으로 갱신 (`main.js` `COUNTDOWN_TICK_MS`).
+
+---
+
+## 5. 계약 E — (폐지) `pending.json`
+
+v2 의 `pending.json`(폴링 FSM 상태 저장)은 **삭제**. `src/backend/pending.py` 없음.
+FSM 은 `statemachine.derive` 가 `preview.json` 아이템에서 **저장 타이머 없이 파생**:
+
+`derive(item, now_iso, *, live_seen=None, preview_stream_seen=False) -> Tick(next_state, next_check_at, log)`
+
+| 규칙 | 조건 | 결과 |
+|---|---|---|
+| pre-live 진입 | state ∈ (announced, upcoming) && `now ≥ ss − 3분` | `watching`, check `now+3분` |
+| pre-live 예약 | 위인데 아직 3분 전 아님 | state 유지, check `ss − 3분` |
+| watching 체크 | state==watching && `now − ss < 120분` && !live_seen | check `now+3분` |
+| watching → live | state==watching && `live_seen is True` | `live`, check `now+10분` |
+| watching 지각 강등 | state==watching && `now − ss ≥ 120분` | `announced` (url·video_id 살림), check 없음 |
+| assumed-live 폴백 | state ∈ (announced,upcoming) && `assumed_live` && no video_id && `now − ss ≥ 90분` | `none` |
+| membership 직행 | `membership` && `live_seen is True` | `live` (watching 스킵) |
+| live cadence | state==live && `live_seen != False` — `now − actual_start < 60분` → 10분 / 이상 → 5분(v3.7.1, 구 3분) | 유지 |
+| live → end | state==live && `live_seen is False` (명시적 확인. None=미확인은 유지) | `end`, check `now+5분` |
+| end 창 | state==end && `now − state_since < 30분` | check `now+5분` |
+| end → none | state==end && `now − state_since ≥ 30분` && 계속 live 아님 | `none` |
+| end → upcoming | state==end && `preview_stream_seen` (예고 스트림 재등장) | `upcoming` |
+
+- 상수: `PRELIVE_LEAD_SEC=180`, `PRELIVE_TIGHT_SEC=180`, `WATCH_LATE_DEMOTE_SEC=7200`,
+  `ASSUMED_LIVE_MAX_SEC=5400`, `LIVE_EARLY_SEC=600`, `LIVE_EARLY_WINDOW_SEC=3600`, `LIVE_TIGHT_SEC=300`(v3.7.1 — 프론트가 읽는 raw CDN 캐시가 `max-age=300` 이라 3분은 화면에 반영 안 됨),
+  `END_WINDOW_SEC=1800`, `END_TICK_SEC=300`, `MAX_TASK_HORIZON_SEC=696*3600`.
+- `next_check_at` 은 반환 직전 `[now+60s, now+MAX_TASK_HORIZON_SEC]` 클램프. **저장 안 함** — `handlers` 가
+  video_id 있는 watching/live/end 아이템의 `next_check_at` 만 `wakes` 로 받아 Cloud Tasks `/wake` enqueue.
+
+### 방송 중 회원 전용 전환 감지 (v4.3.2) — `handlers._probe_live_membership`
+
+- 배경: `videos.list` 응답에는 회원 전용 여부가 없다. 회원 전용 표시(`membership`)는 트윗 문구 · 회원 전용 시작 YouTube 알림 · 예고 자리표시 흡수로만 켜졌으므로,
+  일반 공개로 시작했다가 방송 중 회원 전용으로 바뀐 영상은 `False` 로 남았다(2026-10-16 아라레 `NETX7vJNdW8` — 시작 알림이 일반 `sub_start`).
+- 동작: **`/wake`** 가 깨운 `video_id` 의 아이템이 `state=="live"` 이고 `membership` 이 거짓일 때만, 그 채널 streams 탭을 `ytdlp_probe.list_streams`(yt-dlp flat, 쿠키 불필요)로 읽는다.
+  같은 `video_id` 항목의 `availability == "subscriber_only"` 면 `membership=True` 로 올린다. `/tick` 에서는 호출하지 않는다.
+- 규칙: 올리기만 하고 내리지 않는다(풀림 미반영 — 표본 부족). 조회 실패 · 목록에 영상 없음은 빈 결과 → 아무것도 바꾸지 않는다(`try/except` 격리, 로그 경고). 외부 호출은 커밋 재시도 루프 밖에서 1회.
+  올렸으면 monitor 이벤트 1건(`flow="preview"`, 「방송 중 회원 전용 전환 감지」). 라이브 종료 판정은 변경 없음(API `videos.list`).
+- 실측(2026-10-16): 같은 영상이 flat 목록에서 `live_status=is_live` · `availability=subscriber_only`. 단일 영상 조회(`watch?v=`)는 회원 전용이라 쿠키 없이 실패하므로 목록 방식만 쓴다.
+
+---
+
+## 6. 계약 F — `control.json` (data 브랜치 루트)
+
+```jsonc
+{ "paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": "..." }
+```
+
+- 기본형: `{"paused": false, "since": null, "by": null, "log_level": "normal", "updated_at": null}`.
+- `control.py` 순수 헬퍼: `default_control()`, `is_paused(c)`, `get_log_level(c)`(이상값→"normal"),
+  `set_paused(c, paused, *, by, now_iso)`, `set_log_level(c, level, *, by, now_iso)`. `set_*` 는 다른 필드 보존.
+- **log_level 별 전송 이벤트** (`notify.allows(level, kind)`):
+  | kind | detail | normal | simple |
+  |---|:-:|:-:|:-:|
+  | `announced` | ✓ | ✓ | ✗ |
+  | `upcoming` / `live_start` / `live_end` | ✓ | ✓ | ✓ |
+  | `demote` (watching→announced 지각 강등) | ✓ | ✗ | ✗ |
+  | `notice` / `tweet` | ✓ | ✓ | ✗ |
+  | `ingest` / `fallback` / `error` / `summary` | ✓ | ✗ | ✗ |
+  - 다운 감지(healthchecks.io grace 초과)는 log_level 무관 항상 알림.
+  - 운영자가 직접 친 명령의 응답은 게이팅 안 함.
+
+---
+
+## 6-1. 계약 G — `admin_state.json` (data 브랜치 루트)
+
+텔레그램 제어 명령의 상태. `admin.py` 순수 헬퍼.
+
+```jsonc
+{
+  "pending_op": null | {           // (v3) /edit·/ingest tweet 마법사 — cmd×contents×step
+    "cmd": "edit", "contents": "preview", "step": "await_field",
+    "ctx": { "unit","id","idx","patch","pre",... }, "at": "..."   // TTL 60s
+  },
+  "edit_lock": null | { "id": "pv_ab12cd34", "until": "..." },     // 아이템 단위 편집 락 (TTL 60s)
+  "suppress": [ { "url": "...", "until": "..." } ],                // /del terminate — url 12h 재진입 차단
+  "undo": null | {
+    "cmd": "...", "contents": "...", "action": "/del arale#2",
+    "path": "preview.json",         // preview.json | notices.json | tweets.json
+    "prev_content": { /* 그 파일 전체(변경 직전) */ }, "new_sha": "...", "at": "..."
+  },
+  "pending_undo": null | { "at": "...", "target_sha": "...", "action": "..." },  // /undo (y/N) TTL 60s
+  // v2 호환 슬롯 (텔레그램 되묻기 플로우 — /notice-edit, /ingest·/notice·/del 무인자, 유닛 되묻기)
+  "pending_del": null | { "unit","idx","snapshot","warn_text","at" },     // TTL 300s
+  "pending_ingest": null | { "at" },                                      // TTL 180s
+  "pending_notice": null | { "at" },                                      // TTL 180s
+  "pending_notice_edit": null | { "nid","step","new","at" },              // TTL 300s
+  "pending_member": null | { "raw","at" }                                 // TTL 300s
+}
+```
+
+- `set_*`/`clear_*` 는 원본 복사 후 해당 슬롯만 갱신(타 슬롯 보존).
+- **취소 토큰** `aNoneTokyo` — 전 되묻기 단계 공통.
+- **edit_lock 반영**: `handlers._run` 이 커밋 직전 `admin.suppressed(url)`(차단 url 아이템 제외) +
+  `admin.edit_lock_active(id)`(락 걸린 id 는 prev 값 유지 — 이번 사이클 갱신 스킵)를 적용.
+- **쓰기 경합**: preview/notices/tweets 를 쓰는 모든 경로(봇 명령, 메인 `/tick`·`/wake`)는
+  CAS(`prev_sha`) + 1회 재계산 재시도로 직렬화. 크로스 서비스 분산 락 없음.
+
+---
+
+## 6-2. 계약 H — `notices.json` / `notice_archive.json` (data 브랜치)
+
+방송 외 이벤트(라이브 예고·음반/굿즈·타 플랫폼·기타) 티커. `notices.py`.
+
+- `notices.json` = `{ generated_at, notices[] }`. 항목: `id`·`category(live|release|platform|etc)`·
+  `title`·`title_ko`·`title_raw`·`body_raw`·`body_ko?`·`body_for_llm`·`date`·`time`·`deadline`·`site`·`url`·
+  `tweet_url`·`src_handle`·`needs_tl?`·`participants?`·`seen_ids[]`·`first_seen`·`last_updated`·`expires_at`
+  · (v4.7.0) `categories?` · `live_name?` · `live_date?`.
+  정렬 date→time→id.
+  `title_raw`(정규식 제목)·`body_raw`(원문, 600자 컷)는 파싱·번역 품질 개선용 기록 — 프론트 안 읽음, 아카이브까지 이관.
+- **`body_ko`** (v4.0.5) = `body_raw` 의 한글 번역(`title_ko` 는 한글 **제목**이라 별개). 팬 화면은 안 읽고, 리포트 팝업 「한글」 칸 ·
+  관리 페이지 소식 수정 창이 쓴다. 키가 없거나 `None` = 아직 번역 안 됨.
+  - 번역 시점: 접수 단계 `telegram_app._prepare_notice` 가 실제로 올라가거나(added) 본문이 바뀌는(updated) 소식일 때만
+    `llm.translate(body_raw)` → 커밋(`_commit_notice`)이 **번역한 본문이 지금 행의 본문과 같을 때만** 저장. dup · recap · skip 은 번역 안 함.
+  - 갱신(`_merge_fields`)으로 `body_raw` 가 바뀌면 `body_ko` 를 새 번역(없으면 `None`)으로 — 옛 본문의 번역이 남지 않게.
+  - 재시도 · 백필: 번역 sweep(`enrich.collect` — 배포판은 정기 수집 안 `_translate_sweep`, 로컬은 가공 큐)이 `body_ko` 가 없는
+    소식을 번역한다. `needs_tl` 플래그는 안 쓴다(제목 번역 전용 그대로). 한 번에 `enrich.BODY_TL_PER_SWEEP`(10)건까지,
+    `notices.json` 먼저 그다음 `notice_archive.json`(보관 시각 최근 것부터) — 지난 소식 백필도 이 경로로 나눠 채운다.
+  - 관리 페이지 수정(`admin_api.edit_notice` `body_ko`): 원문은 읽기 전용, 한글만 고친다. 비우고 저장하면 `None` → 다음 수집이 다시 자동 번역.
+  - 수동 소식 입력(`ingest_notice_manual`)은 본문 = 제목이라 한글 제목을 넣으면 그대로 `body_ko`.
+- **`participants`** (v3.2, 선택 필드): 크로스오버 공식 계정(`_CAST_LOOKUP_HANDLES`, 현재
+  `bang_dream_on`) 소식만 대상 — 첨부 이미지를 `vision.py`(Groq 비전 OCR, `qwen/qwen3.8-27b`
+  — v4.5.9 부터 폴백 없음)로 읽어 5인 중 출연이 확인된 `channel_key` 배열. `telegram_app
+  ._maybe_tag_cast_participants`가 `_apply_notice` 파싱 직후 채운다(tweet id 없음·이미지
+  없음·OCR 실패·매칭 없음이면 그냥 비워둠 — 일반 소식으로 정상 표시, 무회귀). 프론트는 아직
+  이 필드를 읽지 않음(추후 UI 확장 여지).
+- **소식 시점 판정** (v4.6.2, 2026-10-21 · 10-22 운영자 결정): 지난 일의 소감 · 감사 · 현장 보고는 소식으로 올리지 않는다(규칙이 아니라 LLM). `telegram_app._prepare_notice` 가 `xnotice.parse` 직후
+  `_notice_timing` → `llm.notice_timing(text, posted_jst)` = `{kind: announce|report, subject, subject_date(YYYY-MM-DD|null), evidence[], next_lines[], reason}`(근거 · 다음 일정 줄은 원문 그대로 — 아니면 다시 묻기 5회,
+  24시 이상 표기는 다음 날로) → `notices.timing_decision(verdict, 게시일)`: announce = 올림 · report 이고 그 일의 날짜가 게시일과 같거나 뒤, 또는 날짜 미상 = 올리되 `expires_at` 을 게시일 다음 00:00 KST 로 ·
+  report 이고 게시일보다 앞 = 안 올림 · (v4.6.3) report 이고 `next_lines` 가 있으면 **그 일의 날짜와 상관없이** 그 줄만 다시 `xnotice.parse` 해서 올림(그 줄이 소식 형식이 아니면 오늘 일은 오늘 자정까지, 지난 일은 안 올림) · 판정 실패 = 올림. 게시일 = 트윗 id(Snowflake), 없으면 지금.
+  **판정을 부르지 않는 경우**(Groq 를 아끼려고): 이미 본 트윗(활성 · 보관 소식의 `seen_ids` — `_notice_already_seen`, 커밋에서 어차피 「dup」) · `timing="off"`(관리 페이지 원문 투입 확정 · 텔레그램 수동 소식 — 운영자가 정한 글).
+  `timing="show"`(관리 페이지 원문 투입 미리보기)는 판정만 결과에 붙이고(`prepared["timing"]`, 미리보기 경고) 확정하면 그대로 올린다.
+  판단 기록 kind `notice_timing`: 안 올림 · 다음 일정만 = 검토용(undo 없음 → 반려 뒤 재판단 · 사용자 판단 「소식으로 올림」(강제 announce) / 「올리지 않음」), 실패 = `undo {type: remove_notice, id}`(반려하면 그 소식을 보관함으로, 다른 소식에 합쳐졌으면 건너뜀).
+  옛 정규식 후기 판정(`xnotice._RE_RECAP` · `_RE_RETRO` → `is_recap`, `merge_notice` 의 「후기 + 지난 날짜 → seen_ids 만」)은 없앴다 — `is_recap` 은 호환용 `False`. 「지난 날짜의 새 소식 = skip」은 날짜 안전장치로 남김.
+  소급(이미 올라간 소감 글 정리)은 코드에 넣지 않았다 — 10-22 해당 1건(FM802 출연 감사)을 data 브랜치에서 직접 보관함으로 옮김(`archived_reason: recap`).
+- **중복 판정** (`_same_group`): `url` 일치 OR `title` 일치(공백 정규화). v2 의 `date + anchor_a/b` 대체.
+- `notice_archive.json` = `{ notices[] }` (항목 + `archived_at`, `id` dedupe) — **캐시 보관함**(핫픽스 archive-split): 보관 시각과 행사 날짜(`date`) 중 늦은 것이
+  30일 이내인 것만 남고, 그보다 오래된 것은 매일 보관함 정리(§8.18)가 `notice_archive/YYYY-MM-DD.json`(처음 받은 날 `first_seen` 기준, KST)으로 옮긴다.
+  옮긴 소식의 트윗 · 소식 id 와 시각은 색인 `notice_archive/index.json` = `{ids: {id: 날짜}, ts: {시각: 날짜}}` 에 남는다.
+  - 「이미 본 트윗」(`merge_notice` 1단계 · `_notice_already_seen`)은 캐시 + **색인 id** 를 본다(`seen_ids` 인자) — 오래된 트윗을 다시 넣어도 영구히 `dup`.
+  - 「보관 소식과 같은 묶음 → 후속 글로 흡수(`recap`)」는 **캐시 안에서만** — 보관된 지 30일이 지난 행사와 URL · 제목이 같은 새 트윗(공식 계정이 새로 올린 글)이
+    앞날짜면 새 소식으로 올라간다(지난 날짜면 지금처럼 `skip`). 날짜가 아직 안 지났는데 일찍 내려간 소식(판단 반려 등)은 행사 날짜 + 30일까지 캐시에 남는다.
+  - 지난 소식 본문 번역 백필(`enrich`)은 캐시만 채운다.
+- `xnotice.parse(text, now_iso, *, tag, title)` — 날짜·시각 둘 다 없으면 / `配信スケジュール`·`出演情報` 면 `None`.
+  분류·날짜·URL 은 정규식 전담. `title`/`title_raw` 는 정규식 헤드라인, `title_ko`=None.
+- **자동 인입 시 LLM 제목추출·번역** (v3.1.2): `_apply_notice` 가 병합 직후 `llm.notice_title(body_for_llm)` 을
+  1회 호출해 `title`(정제된 일본어)·`title_ko` 채움. 실패하면 `needs_tl=true` → 다음 `/tick` 의
+  `_translate_sweep` 가 재시도. 운영자 `/translate notice` 는 즉시. (트윗 v3.0.1 인라인 번역과 동일 구조)
+  **(v4.6.4) 기존 소식에 합쳐질 때(updated)도 제목을 새 글 기준으로**: `_merge_fields` 가 원문 제목 · 본문을 새 글 것으로 덮는데, 전엔 한글 제목이 이미 있으면
+  새 추출 결과를 버려 **원문과 뜻이 다른 한글 제목**이 남았다(10-22 실측 약 15건 — 예: 본문은 筋トレ部, 한글 제목은 RESONEXT). 이제 `_commit_notice` 가
+  추출 결과(`tl`)가 있으면 합쳐진 행에도 `title` · `title_ko` 를 덮고, 추출이 실패했으면 옛 한글 제목을 비우고(`None`) `needs_tl` — 다음 번역 sweep 이 다시 채우고 그동안 프론트는 원문 제목.
+  이미 잘못 남아 있는 행은 이 수정으로 바뀌지 않는다(다음 병합 때부터).
+- **출처 표기** (v4.6.4): 게임 계정(`config/channels.json` `game_accounts`) 글이 소식이 되면(v4.5.10 게임 밖 행사) `src_handle` = 그 계정(`@bang_dream_on`).
+  `_prepare_notice` 가 알림 표시명으로 판별(`_game_account_handle`). 전엔 `xnotice._src_handle` 기본값 `@BDP_yumemita` 로 적혔다.
+- **분류 `categories`** (v4.7.0) = 목록. `live`(라이브공연) · `event`(오프라인행사) · `goods`(음원·굿즈) · `broadcast`(방송)은 여럿 함께,
+  `game`(Our Notes) · `etc`(기타)는 단독. 정의 · 경계 규칙 = devpapers `ref/notice-category/README.md` §1(10-22 ~ 23 운영자 확정).
+  판정 = `telegram_app._notice_categories`(`_prepare_notice` 안, 시점 판정 · 비전 OCR 뒤, 이미 본 트윗이면 안 함):
+  ① 관리 페이지가 고른 분류가 있으면 그것 ② 게임 계정 글(`_game_account_handle`) → `["game"]` ③ 리포스트(본문이 `RT @…:` / `@…:` 로 시작, `_RT_HEAD_RE`) → `["etc"]`
+  ④ `llm.notice_categories`(분류 시험 4차 A 안 프롬프트, 근거 구절 필수 · 3회) → 고른 것, 빈 목록이면 `["etc"]`, 실패(None)면 **키를 안 붙인다**.
+  `live` 가 들어 있으면 `llm.live_info` 로 `live_name`(공연 이름, 원문 표기 · 「」 안쪽) · `live_date`(**유메미타가 출연하는 날** YYYY-MM-DD) — 원문에 없는 이름은 버리고, 공연일 근거가 안 맞으면 날짜만 버린다. 이 판정에는 **원문(`body_raw`)** 을 준다 — 분류에 쓰는 `body_for_llm` 은 날짜 · URL 을 지운 본문이라 공연일을 찾을 수 없다(v4.7.0 ~ v4.7.2 배포판은 `body_for_llm` 을 줘 「M月D日」 · 「M/D」 꼴 공연일이 늘 비었다 — 10-23 KIMCHIKURA 「2027年1月23日(土)・24日(日)開催」 가 「공연일 미정」).
+  (v4.7.3) 공연 이름: 유메미타 전체 공연뿐 아니라 멤버 솔로 공연 · 투어 · 프리 라이브 · 합동 공연도 공연(`○○ LIVE 2026 「タイトル」` → タイトル, 120b 가 「RESONEXT」 를 비운 10-23 실측). 공연일: 여러 날 공연이면 글에 적힌 유메미타 출연일(「DAY1」 · 「DAY2」 · 「○日に出演」 — DAY 번호 = 적힌 개최일을 앞에서부터 센 것), 없을 때만 첫날 · 월이 빠진 뒤 날짜(「23日(土)・24日(日)」)는 앞 날짜의 월.
+  근거 = `date_evidence` **줄 목록**(날짜 줄 + 출연일 줄) — 줄마다 원문에 그대로 있어야 하고, 고른 날의 「일」 숫자가 그 줄들에 적혀 있어야 한다(`llm._day_in_evidence`, 전의 월 · 일 붙여 쓰기 검사 `_md_in_evidence` 는 월 없는 둘째 날을 버려 뺐다). 라이브공연인데 공연일을 못 정하면(운영자 지정 분류 제외) 모니터 WARN 「live_info: 공연일 못 정함」.
+  병합(`_merge_fields`)은 새 글의 값이 있으면 덮고, 새 글이 라이브공연이 아니면 공연 이름 · 공연일을 지운다. 수정(`edit_notice`)에서 `live_name` · `live_date` 를 `None` 으로 주면 키를 지운다.
+- **옛 분류 `category`**(정규식 4종 live · release · platform · etc, `xnotice._category`)는 그대로 남긴다(옛 호환). `categories` 가 없는 줄(v4.7.0 이전 · 판정 실패)은
+  프론트 · 관리 페이지가 **바꿔 읽는다**: 출처가 게임 계정이면 `game`, 아니면 `live` → 방송(옛 「라이브예고」는 실제로 대부분 방송) · `release` → 음원·굿즈 · `platform` · 모르는 값 → 기타.
+  옛 `live` 와 새 `live` 의 뜻이 다르다는 점에 주의. 기존 줄은 다시 판정하지 않는다(10-23 운영자 결정).
+- `notices.merge_notice(prev, inc, now_iso, *, archive)` → `(new_notices, new_archive, changed, mode∈added|updated|recap|dup|skip)`.
+  지난 날짜의 신규 소식은 `skip`. `sweep_expired` → 만료분 아카이브((v4.7.1) 공연별 묶음 하위 소식은 묶음 유지 끝 `live_holds` 에 묶음째). `edit_notice(prev, nid, patch, now_iso)` — `_EDITABLE`(+`title_ko` · v4.0.5 `body_ko`) 만 대입.
+
+---
+
+## 6-3. 계약 I — `tweets.json` / `tweet_archive.json` (data 브랜치)
+
+멤버 5인의 **개인 트윗** — 예고판 상단 트윗 배지(트윗 시트로 열린다). `xtweet.py`.
+
+- `tweets.json` = `{ generated_at, tweets: { "<channel_key>": [ { channel_key, id, text, text_ko,
+  url, handle, received_at, expires_at, needs_tl?, media, quote }, … ] } }`. **채널당 스레드 = 메시지
+  배열, 최신이 뒤, 저장 안전 상한 `xtweet.MAX_THREAD`(=50, v3.5.3)** — 실제 화면 노출은 프론트
+  `tweets.js` 가 메시지별 `expires_at`(24h)이 안 지난 것만 최대 `MAX_THREAD`(=50)건까지 보여줌(v3.7.2 — 그 전엔 12시간 창이 따로 있었음, 아래 참고).
+  v2.8 단건 dict 는 `_as_list` 가 `[dict]` 로
+  감싸 하위호환. `id` = 트윗 Snowflake 또는 합성 `"p"+sha1[:15]`. `expires_at` = `received_at` + 24h (메시지별).
+  `media`(=`[url,...]`, 본인 트윗 첨부 이미지 — 영상·GIF 는 썸네일 이미지 URL, v3.7.4. v3.8.0 부터 화면은 media·quote 의 원문/미디어를 쓰지 않고 `id`·`text_ko`·`quote.text_ko` 와 X 카드로 대체 - 데이터는 유지보수용으로 보존) / `quote`(=`{text,media,text_ko,needs_tl?}` | `null`,
+  인용(QRT)한 남의 트윗 — **표시만**, 예고 파싱 등 ingest 대상 아님)는 (v3.4.5) `telegram_app.
+  _enrich_personal_media` 가 tweet id 로 vxtwitter 를 재조회해 채운다(실패·미첨부·id 없음 →
+  `[]`/`null`, 무회귀). 프론트 `tweets.js` 는 미디어를 그리지 않는다(번역 텍스트 · 첨부 개수 문구만 — 트윗 시트 「첨부 세기」). 번역 면은 `quote.text_ko` 를 쓴다. (v3.4.6) `quote.text_ko` 는 `xtweet.
+  find_reused_ko(text, tweets_data, archive_data, notices_data)` 로 **같은 원문이 tweets/
+  tweet_archive/notices 어디서든 이미 번역된 적 있으면 그 번역을 재사용**하고, 없을 때만
+  LLM 을 새로 호출한다(인라인 실패 시 `quote.needs_tl=True` → `handlers._translate_sweep` 가
+  같은 순서로 재시도) — 같은 인용 원본이 여러 멤버·트윗에 반복 등장할 때 중복 번역 호출을 줄인다.
+- `tweet_archive.json` = `{ tweets[] }` (항목 + `archived_at` + `archived_reason∈expired|rolled|deleted`) — **캐시 보관함**(핫픽스 archive-split): 게시 7일 이내만 남고
+  그보다 오래된 것은 매일 보관함 정리(§8.18)가 `tweet_archive/YYYY-MM-DD.json`(게시일 KST — tweet id 로 계산, 숫자 id 가 아닌 옛 항목은 받은 날)으로 옮긴다.
+  운영 경로(빠진 트윗 보충의 「이미 아는 id」 · 번역 재사용 · 밀려남 · 만료 · 삭제)는 캐시만 읽고 쓴다 — 보충은 게시 48h 안의 글만 보므로 7일이면 넉넉하다.
+  `rolled` = 스레드 `MAX_THREAD`건 초과로 밀려난 것. (v4.7.4) `deleted` = 관리 페이지 · `/del tweet` 으로 지운 것(`_tweet_del_commit`) — 상시 조사는 「아는 id」로 다시 올리지 않는다(자기 답글이 달린 경우엔 글타래째 되살린다 — 위 「원글 되살리기」, D13).
+- **빠진 트윗 보충 · 자기 답글 (self-reply 핫픽스, 2026-10-27 — 명세 `ref/self-reply/patch_spec.md`)** — 옛 방식(`/ingest` 가 멤버 알림 뒤에 최근 글을 훑던 `_fill_member_gaps`)은 **없앴다**. 대신 접수 서비스가 1분마다 훑는다:
+  - **상시 조사** `POST /gap-check`(접수 서비스, OIDC 강제 검증, Scheduler `mewtype-gapcheck` 매분): 멤버 5명 `fxtwitter /2/profile/<핸들>/statuses?since=<지금−600초>`(매시 정각 KST 만 since 없이 20건) 를 동시에 받는다. 5명 모두 204(`since` 뒤 글 없음)면 GitHub 를 읽지 않고 끝. 글이 있으면 `tweets.json` · `tweet_archive.json` 캐시를 한 번 읽어 「이미 아는 id」를 빼고 후보를 고른다(`xtweet.gap_candidates`): 본인 작성 · 리트윗 아님 · 남에게 단 답글 아님 · 게시 48h 안 · **일반 글은 게시 7분 뒤부터**(폰 알림을 기다린다) · **자기 답글은 바로**. 상한 없음, 오래된 순. 후보마다 보충 작업을 Cloud Tasks `mewtype-gapfill` 큐에 `gapfill-<트윗 id>`(분 버킷 없음)로 적재.
+  - **시간 · 쉬기**(명세 D9): 조사 1회 상한 20초(넘으면 거기서 끝). 5명 모두 실패한 실행이 3번 연속이거나 한 번이라도 429 면 10분 쉰다(인스턴스 메모리). 쉬기 시작 · 끝만 모니터 `warn`.
+  - **보충 작업** `POST /gap-fill`(접수 서비스, 큐 `mewtype-gapfill` 동시 1 · 3회 시도): 이미 등록이면 끝. 자기 답글이면 **원글 사슬**을 먼저(스레드에 있으면 그대로 · 보관함(캐시 → 일자 파일)에 있으면 백엔드 커밋이 되살린다 · 없으면 fxtwitter 단건으로 받아 뿌리부터 최대 5단, 판정은 아래 「원글 판정」). 그다음 글 자신을 `_maybe_personal_tweet(origin="gapfill", reply_to_id=…)` 로 — 번역 · 예고 판정 · 변경 판정 · 새 트윗 DM 은 폰 경로와 같다. 실패해도 200(다음 조사가 다시 찾는다).
+  - **원글 판정**(명세 §7-6, Claude 제안 — **운영자 미확인 결정**): 되살린 원글 = 판정 없음(처음 들어왔을 때 이미 판정했다) · 처음 들어오는 48h 안 원글 = 판정 · 48h 넘은 원글 = 번역만(DM · 판정 없음).
+  - **폰과 겹칠 때**(명세 §4-3): 커밋 결과가 `dup`·`stale` 이고 `via != "ops"` 면 예고 · 변경 판정 · 새 트윗 DM 을 하지 않는다. 보충이 먼저 넣은 글에 폰 알림이 늦게 오면 모니터 `ok` 「폰 늦게 도착 · 보충 뒤 +N분」. 관리 페이지 수동 경로(`via="ops"`)는 지금처럼 돈다.
+  - **모니터**: 보충 1건마다 자기 답글 = `ok` · 일반 글 = `warn` 「gap-fill · <id> · +N분 · mode: …」(+「원글 함께」「원글 되살림」). 구현은 `via="ingest"` + `origin="gapfill"`(명세 §4-3 의 `via="gapfill"` 대안 — `monitor_report` 의 자동 인입 집계가 `ingest` 만 세기 때문).
+- **자기 답글 필드 `reply_to_id`** (계약 I 항목, 옛 항목엔 없음 = `null`): 같은 멤버 자기 글에 단 답글이면 바로 위 글의 tweet id. 폰 경로는 vxtwitter 단건 `replyingTo`(핸들) · `replyingToID`, fxtwitter 폴백 `replying_to` · `replying_to_status` 에서 얻고 **핸들이 그 멤버일 때만**(`vxtwitter.extract` → `reply_to`·`reply_to_id`, `telegram_app._self_reply_id`). 목록 경로는 `replying_to.status`(`vxtwitter.fetch_profile_statuses` 반환의 `reply_to_id`). **확인 필요**: vxtwitter 단건 실응답의 키 이름(`replyingTo`·`replyingToID`)은 아직 실응답으로 확인하지 않았다 — fixture 미확인.
+- **글타래 수명**(D12, `xtweet.extend_threads`): 자기 답글이 커밋되면 **글타래(뿌리 · 중간 답글 · 새 답글)의 모든 글** `expires_at = max(지금 값, 글타래에서 가장 늦은 글 게시 + 48h)`. 예: 원글 10-01 10:00 · 답글 10:05 → 둘 다 10-03 10:05. 답글 없는 글은 지금처럼 게시 + 48h.
+- **원글 되살리기**(D13, `telegram_app._revive_plan` · `_commit_personal_tweet`): 자기 답글의 원글이 스레드에 없으면 **사유가 무엇이든**(`expired`·`rolled`·`replaced`·`deleted`) 보관함에서 찾아 스레드로 되돌린다 — 캐시에서 찾으면 캐시에서, 아니면 일자 파일(`tweet_archive/<원글 게시 KST 날짜>.json`)에서. 되살린 뒤 그 자리에서 지운다(캐시 · 일자 파일 양쪽에 남지 않게). `deleted` 를 되살리면 모니터 `warn` 「원글 되살림(관리 페이지에서 지웠던 글)」. **답글 없는 지운 글은 되살리지 않는다**(지금과 같음 — 상시 조사가 「아는 id」로 거른다).
+- `xtweet.gap_candidates` 의 옛 규칙(cap 3 · 2분 이내 제외 등)은 이 핫픽스로 바뀌었다 — 위 규칙이 정본.
+- `xtweet.route_by_title(title, channels_cfg, *, test_titles)` → `"official"` | `"<channel_key>"` | `"test"`
+  (`config/channels.json` 의 `x_names[]` 매칭).
+- `xtweet.parse(text, *, title, tag, channel_key, now_iso, handle)` → 트윗 dict / `None`.
+  **리트윗/타인글 필터**: 본문이 `^\s*(?:RT\s+)?@[\w]+\s*[:：]` 로 시작하면 `None`.
+  본인 글은 예고 여부와 무관하게 스레드에 실린다(예고는 preview 로도 승격 — 이중 노출 유지).
+- `xtweet.merge_thread(prev, inc, now_iso, *, archive)` → `(new_tweets, new_archive, changed, mode∈added|rolled|dup|stale)`
+  — id 중복이면 `dup`, 아니면 append 후 `received_at`↑ 정렬, `MAX_THREAD`건 초과분을 오래된 것부터 아카이브(`rolled`).
+  `merge_tweet` 은 하위호환 별칭. `sweep_expired` → **메시지별** 만료 아카이브, 스레드 비면 키 제거.
+- **번역**: `text_ko`. `handlers` 가 파이프라인 말단에서 자동 번역, 실패 시 `needs_tl=true` 플래그 →
+  다음 `/tick` `_translate_sweep` 이 재시도. 운영자 `/translate tweet` 는 즉시.
+- **개인 예고 → preview 승격**: `xtweet.parse_schedule`(`配信` 계열 + 날짜/URL 게이트) →
+  `merge_personal_schedule(prev_items, inc, now_iso) -> (items, changed)` (같은 방송 upsert, `source:"personal"`).
+  날짜가 명시 안 돼 있어도 `今日`류(당일) + `明日`류(`xrelay._TOMORROW_WORD` 재사용, +1일)
+  키워드 + 시각이 함께 있으면 그 날짜로 게이트 통과 (v3.4.5 핫픽스 — "明日22:00" 형태가
+  날짜 없음으로 걸러지던 것).
+  `apply_overrides(new_items, prev_items, now_iso)` — (v3.7.1 재작성·연결) `handlers._run` 이 커밋 루프에서
+  `build_preview` 직후(suppress/edit_lock 반영 전) 호출. `build_preview` 는 `info_source ∈ (personal, x-relay)`
+  아이템의 `scheduled_start` 를 안 덮고 `api_start_seen` 만 매 tick API 값으로 갱신하므로, 아이템 `b` 와
+  이전 아이템 `pb` 를 비교해: `info_source ∉ (personal, x-relay)` · `time_tbd` · 둘 중 하나의
+  `api_start_seen` 없음(처음 관측) → 그대로 / `|b.api_start_seen − pb.api_start_seen| ≤ 60초` → 트윗값 유지 /
+  60초 초과(스트림 예약 실제 수정) → `scheduled_start = api_start_seen`, `info_source="api"`, `info_at=now`
+  (이후 tick 은 API 값으로 계속 갱신). 이 tick 의 wake 예약은 override 전 시각 기준 — 다음 light tick(≤10분)에 재계산.
+  (v3.7.1 이전에는 정의만 있고 어디서도 호출되지 않았다.)
+  (v4.7.2) 보호 출처가 `preview.PROTECTED_TIME_SOURCES` = personal · x-relay · **manual** 로 늘고, 자동 수정 권한이 수동이면 API 가 바뀌어도 그대로(아래).
+
+### 예고 자동 수정 권한 · 운영자 지정 시각 (v4.7.2)
+
+계기(2026-10-23 리츠): ① 「予定変更💥 …明日の夜23:30からに変更」(자기 21:00 예고 트윗을 인용)가 본문에 `配信` 이 없어 변경 판정 게이트에서 끝났다(LLM 미호출).
+② 운영자가 관리 페이지에서 그 예고(영상 有, `info_source="api"`)를 23:30 으로 고쳤는데 3분 뒤 수집(`preview_build`)이 YouTube 예약 시각(옛 21:00)으로 덮었다.
+이 절은 D27(2026-10-01 「YouTube API 가 진실」)을 바꾼다 — 운영자 · 트윗이 정한 시각은 **YouTube 예약 시각이 실제로 바뀔 때(60초 넘게)만** API 를 따른다.
+
+- **자동 수정 권한** `auto_edit`(preview 아이템 필드): `x_yt`(X&YT, 기본 — 필드 없음 · 모르는 값도 이것, 저장 안 함) · `yt`(YT) · `manual`(수동). 헬퍼 `preview.auto_edit_level` · `allows_tweet_edit`(x_yt) · `allows_api_time`(yt · x_yt).
+  권한은 **예정 시각 · 취소(삭제)** 에만 적용 — 상태 전이(live 감지 · 종료) · 제목 · 썸네일은 권한과 무관하게 지금처럼.
+
+  | 경로 | x_yt | yt | manual |
+  |---|---|---|---|
+  | 수집 `preview_build`(영상 有 항목) | 출처가 보호 출처가 아니면 API 로 덮음 | 같음 | 덮지 않음 |
+  | `xtweet.apply_overrides`(보호 출처의 API 실제 변화) | API 승 | API 승 | 그대로 |
+  | 트윗 예고 upsert `merge_personal_schedule` | 갱신 | 안 함 | 안 함 |
+  | 트윗 속 영상 URL 확정 `merge_video_confirmed` | 출처별(아래) | 출처별 | 안 함 |
+  | 공식 스케줄 재공지 `xrelay.merge_announced` | 영상 없는 항목은 통째로 교체(기존) | 보조 필드만 | 보조 필드만 |
+  | 변경 · 취소 판정 후보 `_change_candidates` | 후보 | 빠짐(Groq 안 씀) | 빠짐 |
+
+- **운영자 지정 시각**: `_apply_preview_edit` 가 `date` 를 고치면 `info_source` = ctx 의 값 또는 `"manual"`(관리 페이지 · 텔레그램 수정), `info_at = now`.
+  LLM 변경 판정이 옮긴 시각은 `"personal"`, 1회 동작의 YouTube 반영은 `"api"`. 영상 없는 예고는 `expires_at` 도 새 시각으로 다시 계산(안 하면 옛 시각 + 3h 에 지워진다).
+- `merge_video_confirmed` 의 시각: x-relay = 덮지 않음 · manual = YouTube 예약 시각이 실제로 바뀌었을 때만 · personal = API 를 처음 볼 때(`api_start_seen` 없음) 또는 실제로 바뀌었을 때만 ·
+  그 밖 = API. 실제로 바뀌어 덮은 manual · personal 은 `info_source="api"` 로.
+- **변경 판정 게이트**(`telegram_app._maybe_broadcast_change`, 개인 트윗마다): 본문에 `配信` · 또는 변경어(`_CHANGE_WORD_RE` = 変更 · 延期 · 中止 · 休み · おやすみ · お休み · 見送 · ずら · 遅ら · 遅れ ·
+  リスケ · 取りやめ · キャンセル · 休配 등) · 또는 인용문 속 영상 id 가 이 멤버 판정 후보의 `video_id`. 후보(권한 x_yt 인 활성 예고)가 없으면 LLM 을 부르지 않는다.
+  인용문은 `llm.broadcast_change_targets(quote_ja=…)` 로 본문 뒤에 참고용(600자)으로 붙고, 판단 기록 `input` 에도 남아 재판단 때 쓰인다.
+- **관리 페이지 「자동 수정 권한」**(예고 편집 팝업 맨 아래 구역): 점 3개 슬라이더 [수동 · YT · X&YT] + 켜짐 표시 2칸(X 트윗 판정 · YouTube 예약 시각) + 단계별 동작 설명(Groq 횟수) + 이 예고에 연결된 트윗.
+  목록 카드엔 기본이 아닐 때 「권한: 수동 / YT」 배지. API `edit_preview` 의 patch 키 `auto_edit`.
+- **1회 동작**(권한을 바꿔 저장했을 때만, `telegram_app._auto_edit_once` — 결과 한 줄이 저장 토스트에):
+  manual = 아무것도 안 함 · yt = YouTube 예약 시각으로 바로 맞춤 ·
+  x_yt = **연결된 트윗**(`_linked_tweets`: 그 멤버의 tweets.json 중 예고 출처 트윗 `src_url` 이거나 본문 · 인용문에 영상 id 가 든 것, 최근 4건)을 묶어 LLM 1회로 판정해 취소 · 변경을 먼저 반영,
+  반영이 없으면 YouTube 예약 시각이 실제로 바뀐 경우(직전 관측 `api_start_seen` 대비 60초 넘게)에만 따른다 — 트윗이 옮긴 시각을 YouTube 의 옛 예약 시각으로 되돌리지 않기 위함.
+
+---
+
+## 6-4. 계약 J — `banners.json` / `banners_archive.json` (data 브랜치, v4a)
+
+게임 계정(`bang_dream_on`)이 알리는 **행사**(챌린지 라이브 등)와 딸린 **가챠**를 소식 란 맨 위 카드로 보이는 데이터. `banners.py`.
+용어: `docs/TERMINOLOGY.md` 「행사 배너 용어」. 설계 배경: `ref/v4a/v4a_event_banner_design.md`.
+
+- `banners.json` = `{ generated_at, banners[] }`. 행사 항목:
+  `id`(`bn_<이름 키 해시>` — 날짜가 바뀌어도 안 변함)·`name_ja`·`name_ko`·`match_keys[]`(소식과 겹침 판정용 정규화 이름)·
+  `image_urls[]`(링크만 저장 · 최대 6)·`start_at`·`end_at`(UTC ISO — **둘 다 필수**)·`start_time_tbd?`(날짜만 알려진 시작)·
+  `hold`(`null` 또는 `{anchor, until}` — 보류 시작 때 표시한 개최일 · +15일)·`gachas[]`·`src_ids[]`(근거 트윗 id)·
+  `first_seen`·`last_updated`·`gacha_only?`(v4.5.10 — `true` = 이벤트 없이 열린 한시 가챠의 **가챠 단독 배너**, 이름 = 가챠 제목 · 하위 가챠 블록 없음. 프론트는 이 값을 안 본다).
+  가챠: `{id, title_ja, title_ko, image_urls[], start_at|null, end_at|null}` — 기간이 `null` 이면 행사와 같음(표시도 생략).
+- **저장하지 않는 값**: 표시 상태는 현재 시각으로 파생(`banners.derive`) — `hold`(보류, `hold.until` 전) · `announced`(시작 전) · `live`(진행 중) ·
+  `gone`(종료 · 보류 만료 · 종료일 없음). `gone` 은 `sweep` 이 `banners_archive.json` 으로 옮긴다. 프론트(`banners.js`)도 같은 규칙으로 숨긴다.
+- **올리지 않는 경우**: 기간이 120일 초과(상시 의심, 저장도 안 함) · 같은 행사의 새 사실 없는 재공지 · (v4.5.10) 미션 · 로그인 보너스 · 캠페인 · 시리얼 코드 등 이벤트 · 가챠가 아닌 게임 소식(버림) ·
+  게임 밖 행사(소식으로). 밴드 · 멤버는 따지지 않는다(v4.3.3).
+  **종료일이 없는 행사는 화면에 안 올린다** — 다만 시작 · 종료가 글 여러 개에 나뉘어 오므로(09-24 글은 시작만, 09-30 글은 종료만 — 실측) 하나만 알면 **대기**
+  (`derive` = `pending`)로 저장해 두고 나머지가 채워지면 올린다. 대기는 LLM 에게는 기존 행사로 보이고(`for_llm`), 30일 갱신이 없으면 정리된다.
+- **이미지**: 링크만 저장한다(자체 복사 안 함). **X 트윗에서 걸린 이미지 중 행사 키비주얼(로고 · 일러스트 · 개최기간만 있는 온전한 그림)만 쓴다**(2026-10-02 운영자 결정).
+  소개 카드 · 방송 화면 캡처 · **가챠 이미지는 쓰지 않는다**(공식 가챠 이미지는 정사각형뿐이고 필수도 아님). 나무위키 등 출처가 불분명한 배너는 쓰지 않는다.
+  (v4.5.10) **게임 안의 일을 알리는 글**(판정 1단계)에 첨부 이미지가 있으면 비전(`vision.read_cards`, qwen3.8-27b — Groq 비전 모델은 이것과 제한 프리뷰 하나뿐이라 **폴백 없음**,
+  요청당 이미지 3장 · 장당 입력 2048 토큰 · ITPM 7000 이라 429 는 안내 시간만큼 기다려 재시도)으로 카드 속 글자(개최기간은 본문이 아니라 이미지에만 있는 경우가 실측으로 있었다)를 읽어 2단계 추출에 넘긴다.
+  **본문이 정본, 이미지 글자는 보조**(본문에 없는 정보만 채운다 · 같은 정보는 본문 표기 — 2026-10-21 운영자 지시).
+  `image_roles` 로 이미지마다 event/gacha/none 을 정하고 **event 만 저장**한다. 소개 카드 표지(「イベント情報」 「紹介」 「あらすじ」 등)가 글자에 있으면 코드가 event 를
+  none 으로 돌린다(`telegram_app._filter_banner_roles`). 용도를 못 정했으면 이미지를 안 붙인다. 최대 4장을 읽고 항목당 6장까지 저장.
+  프론트는 여러 장이면 5초 머문 뒤 다음 이미지가 오른쪽으로 밀려 들어오는 한 방향 슬라이드를 무한 반복(호버 중 멈춤).
+- **관리 페이지 수정(2026-10-02)**: 행사 수정 창에서 이름(한글 · 원문) · 시작 · 종료 · **행사 이미지 링크**(한 줄에 하나, 최대 6장, http(s) 만, 비우면 이미지 없음 — 자체 업로드 없음, 입력하면 미리보기) ·
+  **가챠 한글 제목 · 가챠 기간**(시작 · 종료, 비우면 「행사와 같음」, 종료가 시작보다 앞서면 거절) · 보류 해제를 고친다(`admin_api.edit_banner` → `banners.edit_banner`).
+  트윗 · 소식은 팬 화면이 이미지를 직접 쓰지 않아(트윗은 X 공식 카드, 소식은 이미지 없음) 이미지 수정 항목이 없다.
+- **가챠**: 행사 카드 안에 딸린 하위 블록(이미지 없음). `start_at`/`end_at` 이 `null` 이면 행사와 같다는 뜻 — 프론트는 행사와 같은 부분은 적지 않고 다른 부분만 적는다.
+- **카드 디자인(확정, 2026-10-02 — 아티팩트 「행사 배너 절충안 상세」)**: 흐린 행사 이미지 배경 + 절취선으로 나뉜 [이미지 | 정보]. 정보 칸 순서 = 행사 제목(한글, 작은 원제) · 날짜(원제와 같은 작은 글씨) →
+  딸린 가챠(「함께 진행」 유리 패널) → 종료 일정 박스(행사 종료 / 가챠 종료) → 진행 막대. 모바일(≤640px)은 이미지가 맨 위에 꽉 차고 절취선은 가로.
+- **탭 + 카드 1장 (PC, 2026-10-17 사용자 확정 — 아티팩트 「행사 배너 E안 확정 시안」)**: PC 는 행사가 2개 이상이면 위에 **탭 줄**, 아래에 **선택한 카드 1장**만 보인다(나머지 카드는 DOM 에 있되 CSS 로 숨김 —
+  `.bnr.has-tabs > .bnr__card:not([data-active="true"])`). 탭 1칸 = 상태 점 · 「상태 · 남은 시간」(`_tabRemain` — 카드 말풍선 · 칩과 같은 기준: 달력 D-n, 당일은 시간 · 분, 개최 전은 「D-n 개최」) · 행사 이름.
+  **탭 순서 = 시작 시각순**(`visibleBanners` 그대로, 같으면 id). **처음 열리는 탭 = 가장 급한 행사**(`RANK`: urgent → warn → live → sched → done → hold, 같은 급은 앞쪽).
+  탭은 **한 번에 3개**(`TAB_VISIBLE`)만 보이고, 4개 이상이면 양옆 화살표로 **한 칸씩** 이동(끝에서는 그쪽 화살표 비활성). 탭을 고르거나 ←/→ 키로 옮기면 선택한 탭이 보이는 자리로 자동 이동. 행사가 1개면 탭 줄 없음.
+  선택(`_sel` = 선택한 행사 id · 탭 줄 위치)은 모듈 상태라 폴링으로 다시 그려져도 유지되고, 선택한 행사가 사라지면 가장 급한 행사로 되돌아간다. 탭을 바꾸면 다시 그리지 않고 표시만 바꾸며,
+  카드 높이가 달라지므로 `mew:banners-resize` 이벤트로 소식 목록(`notices.js`)이 펼침 높이를 다시 잰다.
+  **모바일(≤640px, v4.3.6)도 탭 + 카드 1장**. 화살표(`.bnr__arrow`)는 숨기고 탭 줄(`.bnr__tabvp`)을 가로 스크롤한다 — 터치는 브라우저 기본 스와이프(`overflow-x:auto` + `scroll-snap-type:x mandatory`), 마우스는 `banners.js` `_wireTabScroll` 의 포인터 드래그(5px 넘게 움직이면 드래그, 드래그 끝의 클릭은 탭 선택으로 치지 않음).
+  탭 폭 `min(58%, 220px)`(다음 탭이 살짝 보이게), 높이 44px 이상, 오른쪽 끝 흐림(`.bnr__tabbar::after`)은 끝에 닿으면(`.at-end`) 사라진다. 탭 줄 아래 점 표시(`.bnr__dots`)로 현재 위치를 알린다(모바일만). 탭을 고르면 그 탭이 보이게 스크롤(`scrollTo`, 움직임 줄이기면 즉시), 다시 그려질 때도 고른 탭 위치로 맞춘다. PC 의 3개 단위 화살표 이동(`TAB_VISIBLE`)은 PC 전용.
+  이미지 칸 폭 `min(42%, 440px)`(전엔 `min(44%, 300px)`).
+  **배너 드래그 (v4.6.4)**: 배너가 2개 이상이면 카드 영역을 좌우로 끌어(손가락 · 마우스, PC · 모바일) 옆 배너로 넘긴다(`banners.js` `_wireCardDrag`). 가로 이동이 세로보다 클 때만 드래그,
+  카드 폭의 15%(`DRAG_RATIO`) 이상 끌거나 빠르게 튕기면(`FLICK_V` 0.5px/ms) 넘김 — 왼쪽으로 끌면 다음. 넘길 때는 탭 선택과 같은 `select` 를 써서 탭 · 점 · 탭 줄 · 펼침 높이가 따라온다.
+  처음/끝에서는 저항만(고무줄), `touch-action: pan-y`(세로 스크롤 유지), 드래그 끝의 클릭은 무시, 움직임 줄이기면 애니메이션 없이 바로.
+- **표시 상태(`banners.derive` · 프론트 `bannerInfo` 가 같은 규칙)**: `hold`(보류) · `announced`/`sched`(개최 전 — **종료일을 몰라도 올린다**, 시작 일시를 굵게 먼저 알림, 종료는 「미정」) · `live` ·
+  `warn`(먼저 끝나는 종료까지 **달력 기준 D-3 이내**, 노랑) · `urgent`(먼저 끝나는 종료를 넘김, 늦은 종료만 남음, 빨강) · `done`(행사 · 가챠 모두 종료 — **종료일 자정(KST)까지 회색 「종료」로 표시**) ·
+  `gone`(자정 뒤 — 내림) · `pending`(시작을 모르거나, 종료를 모르는데 이미 시작 — 안 올림). **D-n 은 한국 시간 달력 날짜 차이**(시간 올림 아님), 종료 당일은 남은 시간(60분 안이면 분).
+- **진행 막대**: 시작 → 행사 · 가챠 중 **늦은 종료를 100%**로, 먼저 끝나는 종료 시점에 점선(막대 세로 폭 안), 점선~100% 는 `///` 무늬. 말풍선 꼬리는 막대의 현재 위치(채움 끝):
+  노랑 구간 「(먼저 끝나는 쪽) 종료까지 D-n」 · 빨강 구간 「(늦게 끝나는 쪽) 종료까지 D-n」 — 두 구간 모두 달력 D-n, 종료 당일만 시간(60분 안이면 분).
+  평소(청록)는 말풍선 없이 날짜 줄 끝에 칩 문구, 개최 전은 「개최까지 D-n」 말풍선(종료일 미정이면 칩 문구).
+  행사 · 가챠 중 **어느 쪽이 먼저 끝나도 같은 규칙**이다 — 영화 「prima aurora」 공개 기념(10/16~11/19, 가챠만 10/25 까지)은 가챠가 먼저 끝나 점선 뒤 25일이 빨강 + 「행사 종료까지 D-n」.
+  **(v4.6.0 변경)** ① 빨강 구간 문구가 항상 「n시간」이던 것을 D-n 으로(점선 뒤가 길면 「588시간」이 됐다) ② 「이벤트」 표기를 「행사」로 통일 ③ 모양 — 동그란 손잡이를 없애고 둥근 막대(12px) 하나,
+  `///` 무늬는 지난 구간(채움) 위에도 보이고, 점선은 막대 위아래로 삐져나오지 않으면서 밝은 칸 / 어두운 칸이 번갈아 어느 바탕에서도 보인다. 디자인 = 목업 아티팩트 「v4.6.0 테마 목업」(진행 막대 상태별).
+- **행사 판정 (v4.5.10 — 2026-10-21 운영자 확정 기준)**: LLM 은 두 가지만 하고, 배너를 어떻게 할지는 코드가 정한다(전엔 `llm.banner_judge` 한 번에 「행사인가 · 무엇을 할까 ·
+  기존 어느 배너인가 · 소식인가」를 다 물어 같은 글에도 답이 흔들렸다 — 경위 `ref/v4.5.9/`).
+  - 기준: **1순위 = 인게임 이벤트**(게임 속 인물들의 스토리가 있는 이벤트, 예: 챌린지 라이브) + 그 가챠 · **2순위 = 가챠**(인게임 이벤트 없이 다른 행사로 열린 한시 가챠 — 가챠 단독 배너) ·
+    **게임 밖 행사 = 소식**(타 기업 · 장소 콜라보 · 오프라인 행사 · 굿즈 등 유저 대상 일반 행사) · **미션 · 로그인 보너스 · 캠페인 등 = 버림**(이 앱은 유메미타 활동 소식이 목적이라 게임 잡소식을 채우지 않는다).
+  - ① `llm.banner_scope(text)` → `{scope: in_game|outside, evidence[], reason}`. 근거는 원문에서 그대로 복사한 구절 **목록**(한 구절이면 떨어진 줄을 이어 붙여 실패했다), 원문에 없으면 다시 묻는다.
+    `outside` → `_banner_ingest_core` 가 배너를 건드리지 않고 소식 파이프라인(`_maybe_auto_notice`)으로.
+  - ② `in_game` 이면 이미지 글자를 읽고 `llm.banner_extract(text, posted_jst, images_ocr)` → `{items: [{kind: event|gacha, status: normal|postponed|cancelled, title_ja, title_ko,
+    start_jst, end_jst}], image_roles, reason}` — **적힌 그대로 옮겨 적기만**. 제목은 본문에 있어야 하고 「…」 안쪽 · 본문 표기로 맞춘다(`_banner_title`).
+    날짜는 **그 항목 자기 근거 구절**(`start_evidence` · `end_evidence`)에 적혀 있어야 한다(`_jst_in_evidence` — 날짜 · 시각, 明日 등은 게시일 기준). 3회 다시 묻고도 안 되면 그 날짜만 비운다
+    (실측: AtoZ 가챠 종료에 이벤트 종료를 빌려 씀). event 는 제목 앞 40자 · 뒤 20자 안에 「イベント」가 있어야 한다(`_near_event_word` — 실측: 13th☆LIVE 「DIMENSIONAL OVERLAP」 공연 이름을 이벤트로 뽑음).
+  - ③ 커밋 때(`_commit_banner`, 지금 배너 상태로) `banners.plan_post` → `apply_post`:
+    이벤트 = 이름(포함 관계까지, `_similar`) 또는 **같은 시작 시각**의 이벤트 배너가 있으면 그 배너 갱신, 없고 시작 일자가 적혀 있으면 새 배너(종료는 나중 글 · 이미지로 채움 — 개최 전 공지는 종료 미정으로 표시),
+    시작도 기존 배너도 없으면 버림 — **같은 이벤트를 별도 배너로 올리지 않는다**(운영자 요구).
+    가챠 = 같은 이름의 가챠 · 가챠 단독 배너 갱신 → 같은 글의 이벤트 → **시작 시각이 같은 이벤트**(날짜만이면 같은 날 시작) → 시각까지 있는 시작 **+ 종료가 적혀 있으면** 가챠 단독 배너(`gacha_only`) → 그 밖 버림((v4.6.2 운영자 결정) 종료가 없는 가챠 = 상시 가챠일 수 있어 가챠 단독 배너로 올리지 않는다 — 행사 배너는 한정 기간의 이벤트 + 가챠를 보여 주는 곳. 이벤트 배너는 그대로 시작만으로 올린다).
+    기간이 겹치는 것만으로는 붙이지 않는다(옛 `_gacha_host` — 영화 기념 Ave Mujica 가챠가 サイドスロー 에 붙었다). 가챠 단독 배너가 먼저 있고 같은 시작의 이벤트가 오면 이벤트 밑으로 합친다.
+    (v4.5.11) 가챠 단독 배너도 이미지를 쓴다 — 이벤트 단계가 없는 글이면 이미지 용도를 가챠 단독 단계에 넘기고, 배너에 이미지가 아직 없을 때만 용도 none 을 뺀 이미지를 붙인다(판정이 없으면 걸린 이미지 그대로).
+    프론트는 가챠 단독 배너를 「가챠」로 적고(카드 머리 · 종료 박스 · 말풍선 · 탭) 카드 · 탭에 종류 배지(행사 / 가챠)를 붙인다.
+    종류 색(A안): 카드 테두리 · 막대 채움 · 종료 박스 윗선(`data-kind`) · 딸린 가챠 패널 · 고른 탭 = 행사 하늘 / 가챠 분홍, 점선 뒤 무늬 = 늦게 끝나는 쪽 색(`data-late`). 상태 색은 상태 표시 · 말풍선 · 탭 머리에.
+    `status` postponed / cancelled 는 찾은 배너를 보류 / 취소(`hold` / `cancel`). 이미지 용도는 첫 이벤트 단계에만.
+  - 한 글이 여러 배너를 바꾸면 `undo = {"type": "restore_banner", "items": [...]}` — `banners.restore` 가 거꾸로 한 번에 푼다(합쳐져 사라진 가챠 단독 배너는 `was_removed` 로 되살림).
+  - (v4.5.9 이미지 판독 예비, §8.17) ②의 이미지 읽기는 `_ocr_banner_images_ex` — 호출 실패(429 · 5xx)면 본문만으로 계속하고 커밋 뒤 「이미지 판독 대기」에 적는다. 운영자가 허가한 판독은
+    같은 글을 다시 이 경로로 돌린다(주입된 글자 `_OCR_OVERRIDE` 를 비전 대신 쓰고, 「이미 반영한 글」 검사를 건너뛰는 `apply_post(check_dup=False)`).
+  - 사용자 판단(관리 페이지 「행사로 올림(직접 입력)」 · 「소식으로 올림」)은 옛 단일 판정 형식(`{action, event, gacha …}` → `apply_judgement`) 그대로.
+  - 시각은 LLM 이 JST 문자열로 주고 코드가 UTC 로 바꾼다. LLM 5회 실패 → 등록하지 않음(소식과 반대 기본값) + monitor `err`. 같은 글(tweet id) 재전송은 `dup`.
+  - 검증: 실측 14건(이벤트 개최 예고 · 스토리 예고 · 보상 · 가챠 · SSR 소개 · 미션패스 · 로그인 보너스 · 한정 미션 · 영화 기념 가챠 · JR 콜라보)을 시간순으로 이어 돌려 기대와 대조(devpapers `ref/v4.5.9/`).
+- **날짜 근거 확인 (v4.5.3)**: 이미 있는 날짜(행사 시작 · 종료, 가챠 시작 · 종료)를 **바꿀 때는** 새 날짜가 그 글의 본문 또는 첨부 이미지 OCR 글자에
+  실제로 적혀 있어야 한다(`banners.date_evidenced` — 「10月28日」 「10/28」 「10.28」 또는 本日 · 今日 · 今夜 · このあと · まもなく · 明日 가 게시일 기준으로 그 날짜를 가리킴). 없으면 기존 값을 유지하고 상세에 「근거 없는 날짜 변경 무시: …」를 남긴다.
+  날짜만 있는 값(「10月18日より」 → 00:00 · 시각 미정)은 같은 날의 시각까지 아는 값을 덮지 않는다. 비어 있던 날짜 채우기 · 새 행사 · 운영자 판단(글자 없음)은 그대로.
+  근거 글자는 `telegram_app._prepare_banner` 가 `post["text"]`(본문 + OCR) · `post["posted_at"]` 로 넘긴다. (v4.5.10 부터 판정 LLM 에 현재 배너 목록을 보여 주지 않는다 — `for_llm` 은 쓰지 않음.)
+  계기: 2026-10-19 날짜 없는 가챠 소개 글 3건(「10月18日より開催中 … SSR … 紹介」)이 가챠 기간(10/18 15:00 ~ 10/28 14:59)을 행사 종료(10/26 14:59) · 10/18 00:00 으로 덮었다.
+  가챠 종료와 행사 종료의 관계는 고정 규칙이 아니다(이 행사는 가챠가 이틀 늦게 끝남) — 날짜는 공지 · 이미지에 적힌 것만 쓴다.
+- **대상 (v4.3.3)**: 게임 계정이 알리는 행사 · 가챠 **전부**(밴드 · 멤버 무관). (v4.5.10 에 가챠 처리는 위 「행사 판정」 ③으로 바뀜 — `_gacha_host` 는 `apply_judgement` 안에 남아 있지만 v4.5.10 경로 · 사용자 판단 경로 모두 가챠만 온 판정을 넘기지 않아 쓰이지 않는다.)
+- 되돌리기: `_llm_record(kind="banner_judge", undo={"type":"restore_banner", …})` — 변경 전 항목 스냅샷으로 복원, 새로 만든 항목이면 삭제. (v4.5.10) 여러 배너면 `items`.
+- 소식과의 중복 방지: 게임 계정 글은 소식 경로를 타지 않고, 다른 계정 글이라도 활성 · 보관 행사의 `match_keys` 가 본문에 들어 있으면 소식으로 올리지 않는다(`banners.covers_text`).
+
+---
+
+## 7. 직렬화 / 시간 규칙 (전 모듈 공통)
+
+- JSON 저장: `json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"` (끝 개행 1개).
+  `gh_store._serialize` / `store.save_json_if_changed` 동일. 어기면 불필요한 커밋 발생.
+- ISO 파싱: `datetime.fromisoformat(s.replace("Z", "+00:00"))`, 항상 tz-aware UTC.
+- ISO 출력: `dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`.
+- 시각 비교·산술은 전부 UTC. KST 변환은 프론트 `time.js` 전담.
+
+---
+
+## 8. 백엔드 모듈 (`src/backend/`)
+
+### 8.0 재사용 (`src/collector/` — 수정 금지, import)
+
+- `rss.py` — `fetch_rss_video_ids`, `fetch_all_rss_video_ids` (쿼터 0).
+- `youtube.py` — `VideoInfo`(dataclass: `video_id, channel_id, title, thumbnail, live_state, scheduled_start,
+  actual_start, actual_end, concurrent_viewers`), `YouTubeClient`(`videos_list` / `search_upcoming` /
+  `channels_list`, `quota_used` 카운터).
+- `config.py` — `load_channels()`, `channel_url(handle)`.
+- (삭제) `reconcile.py`/`store.py` — v1 잔재, v3 무의존이라 2026-10-20 삭제(현행 판정은 포크한 `preview_build.py`). v1 실행기 `main.py` 와 GitHub Actions `collect.yml` 도 같은 날 삭제 — 한 번도 수동 실행된 적 없고, 결과를 받던 코드 저장소 `data` 브랜치도 같은 날 삭제, 기록 = 태그 `archive/data-2026-09-15`.
+
+### 8.1 `preview.py` (순수 — 네트워크·파일·시계 금지, `now_iso` 인자)
+
+```python
+def default_preview() -> dict
+def new_id(channel_key, first_seen_iso) -> str                    # "pv_" + sha1[:8]
+def make_item(*, channel_key, state, source, now_iso, **fields) -> dict   # 스키마 기본값 + expires_at 계산
+def match_item(items, inc, *, superscede_sec=45*60) -> dict | None       # §1-1
+def sort_items(items) -> list                                     # 정렬 규칙
+def promote_state(item) -> str                                    # §1-2 → "announced" | "upcoming"
+def set_state(item, new_state, now_iso) -> dict                   # 사본 + state/state_since/last_updated
+def to_archive_record(item, now_iso) -> dict                      # + archived_at
+```
+
+### 8.2 `statemachine.py` (순수) — §5
+
+`Tick(next_state, next_check_at, log)` dataclass + `derive(...)`. FSM 규칙·상수는 §5.
+
+### 8.3 `preview_build.py` (순수)
+
+```python
+def build_preview(channels_cfg, videos, prev_preview, now_iso, *, avatars=None, ytnotif_items=None)
+    -> (new_preview, transitions: list[str], wakes: dict[video_id→iso], gone_items: list[dict])
+def build_archive_appends(prev_archive, gone_items, now_iso) -> (new_archive, changed)
+```
+
+`reconcile.build_schedule` 포크. 흐름:
+1. **채널 블록** — avatar carry-over (baseline 만 `channels_list`, light 는 이전 값).
+2. **videos.list 결과** — video_id 로 prev 아이템 매칭 → 필드 갱신(`info_source` 가 personal/x-relay 면
+   `scheduled_start` 는 안 덮고 `api_start_seen` 만 기록). 신규는 `make_item(state="announced")` →
+   `promote_state`. `live_state=="live"` → state="live"+actual_start. `"none"` && state=="live" → `end`.
+   각 아이템 `statemachine.derive` 적용 → 전이 로그 + `next_state=="none"` 은 `gone_items` 로.
+   채널이 `config/channels.json` 미등록이어도(예: 외부 굿즈 판매사 채널) **이미 추적 중이던
+   아이템**(video_id 매칭)이면 enrich 를 계속한다(v3.1.17) — 신규 발견인데 채널 미상인 것만
+   스킵. 예전엔 채널 미상이면 무조건 스킵해서, 이미 반영해둔 외부 채널 합동방송이 다음
+   tick 에 이 video_id 를 후보로 다시 잡자마자 섹션 2 도 "이미 처리됨"으로 오판해 통째로
+   사라지는(archive 도 안 되는) 버그가 있었다(실측: 리미스타 채널 합동 생중계).
+3. **prev 아이템 중 이번 videos 에 없던 것** —
+   · video_id 有: removed 유예(`STALE_REMOVE_SEC` 6.5h). 유예 중 carry + FSM, 경과 시 removed.
+   · video_id 無 (announced 자리표시): 참여자 채널에 실물 ±45분(v3.8.10, 구 ±4h) → supersede + `_carry_collab`.
+     `expires_at` 도달 / `first_seen`+18h(시각 없음) → gone. 아니면 FSM(assumed-live·지각강등).
+4. **ytnotif 머지** — video_id 로 `items` 직접 스캔(ytnotif 는 channel_key 없음). `reminder`/`sub_start` →
+   매칭 아이템 live 승격, `tunein` → scheduled_start 보강. 미매칭+채널미상은 skip
+   (다음 tick 이 videos.list 후보로 흡수. 회원전용 자동카드는 `INGEST_YT_ENABLED` 뒤).
+5. 정렬 후 반환.
+
+### 8.4 `llm.py`
+
+```python
+DEFAULT_MODEL = "openai/gpt-oss-120b"; FALLBACK_MODEL = "openai/gpt-oss-20b"   # llama-3.3-70b-versatile 은 이 계정에서 404
+class LLMClient(api_key, *, model=DEFAULT_MODEL, fallback=FALLBACK_MODEL, session=None, timeout=20.0):
+    def notice_title(body_no_date_url, *, lang_hint="ja") -> {"title_ja","title_ko"} | None
+    def translate(text_ja) -> str | None
+    def participation(text_ja, *, member_name) -> bool | None          # (v3.6) 외부 채널 URL 참여판정
+    def announces_own_broadcast(text_ja, unit_name) -> bool | None     # (v3.6) 텍스트 예고 최종확인 (v4.5.5 근거 필수 · last_reason)
+    def duplicate_notice(new_text, candidates) -> str | None           # (v3.7) 같은 날짜 소식 의미 중복판정
+```
+
+- Groq REST (`https://api.groq.com/openai/v1/chat/completions`). `reasoning_effort="low"`, `temperature=0`.
+  구조화 출력이 필요한 호출만 `response_format: json_schema`(strict), `translate` 는 자유 텍스트.
+- api_key 비면 disabled → 모든 호출 None. `_call_groq`: 5xx·타임아웃(20초) → 1초·2초 대기하며 최대 3회 시도,
+  그 외 상태(400 등)는 즉시 None. 메인 실패 시 폴백 모델로 같은 호출. 판정 함수 8개(`participation` · `announces_own_broadcast` ·
+  `collab_partners` · `broadcast_change_targets` · `duplicate_notice` · `banner_scope` · `banner_extract` · (v4.6.2) `notice_timing`)는 **답이 틀렸을 때만**(JSON 깨짐 · 필드 없음 · 근거 없음)
+  (메인→폴백) 쌍을 최대 5회 다시 묻는다.
+- **(v4.6.1) 429 — 다시 보내지 않고 그 모델을 한동안 막는다.** `_call_groq` 가 429 를 받으면 재시도 · 대기 없이 None 을 돌려주고, 그 프로세스에서 그 모델을
+  일일 한도(429 본문에 `per day` · `(TPD)` · `(RPD)`)면 1시간(`DAILY_BLOCK_SEC`), 분당 한도면 Groq 가 알려 준 대기 시간(`retry-after` 헤더 → 본문 「try again in …」 →
+  없으면 60초, 1~600초) 동안 부르지 않는다(`_RATE_BLOCK`, 상태 = `llm.rate_block_state()`). 막힌 모델은 요청 없이 바로 None.
+  판정 함수의 다시 묻기도 호출 실패(429 · 5xx · 네트워크 · 막힘)면 바로 끝낸다 — 판정 1건이 보내는 요청은 429 일 때 모델마다 1번(전엔 최대 30번 =
+  다시 묻기 5회 × 두 모델 × `_call_groq` 3번). 모델별로 막는 이유: 한도가 모델마다 따로인지 공식 문서로 확인하지 못해, 주 모델이 막혀도 폴백 모델은 한 번 불러 본다.
+  호출이 막혀 실패한 경우의 처리는 원래 실패와 같다(번역 = `needs_tl` 로 다음 수집 때 다시 · 판정 = 각 호출부의 실패 처리). 같은 방식의 비전 쪽 차단은 §8.17.
+  계기: 2026-10-21 실측 스크립트 · 운영 재시도가 겹쳐 운영 번역이 429 로 실패(Cloud Run 「Groq 429 … 재시도」 72줄 · 「번역 없음」 12줄, 22:10~23:40 KST).
+- **(v4.5.5) `announces_own_broadcast` 근거 필수**: 출력 `{announces, evidence, reason}` — `evidence` = 원문에서 그대로 복사한 구절, `reason` = 한 문장.
+  근거가 비었거나(reason 5자 미만) 원문에 없는 구절이면(`llm.evidence_in_text` — NFKC 후 글자 · 숫자만 비교, 기호 · 장식 문자 무시) **그 판정을 받지 않고**
+  「바로 전 답은 근거가 없었다」를 붙여 다시 묻는다(5회 안, 5회 모두 그러면 None → 미등록 + monitor err). 통과한 근거는 `last_reason` →
+  LLM 판단 기록(`own_broadcast`)의 reason 「… (근거: 「…」)」. 프롬프트: 방송 **주제는 따지지 않음**(게임 · 굿즈 소개 · 라이브 회고 · 발표 · 朝活 등),
+  플랫폼이 없으면 본인 유튜브 방송, false = 후기 · 감사 · **연기 · 취소 · 휴방(새 날짜가 있어도 — 일정 변경은 `broadcast_change_targets` 가 처리)** · 방송 아닌 일정 · 타인 홍보 · 타 플랫폼 · 날짜 없는 언급.
+- (v3.7.1) 제어 채널의 `telegram_app._make_llm_client()` 도 기본값을 이 두 상수로 쓴다(환경변수
+  `GROQ_MODEL`/`GROQ_MODEL_FALLBACK` 이 있으면 우선). 이전엔 폴백 기본값이 404 모델이었다.
+- 환각 가드: 출력 비었거나 입력 길이 3배 초과 → None (기본선, 배포 후 실측 보강).
+- **용어집(`GLOSSARY`, v3.1.14)**: 고유명사가 호출마다 다르게 번역되는 문제(실측: 그룹명
+  "夢限大みゅーたいぷ"가 "꿈한계대 뮤타입"/"꿈꾸다"/"유메미타" 등으로 매번 달라짐) 대응.
+  프롬프트 지시만으론 불충분(실측상 무시하고 의역하는 사례 있음) → `_mask_glossary`가
+  입력 중 등록된 원문을 `@@GLOSSARYn@@` 토큰으로 바꿔 LLM 이 못 건드리게 막고,
+  `_unmask_glossary`가 응답에서 그 토큰을 고정값으로 복원(`notice_title`은 `title_ja`→원문,
+  `title_ko`→고정 한국어역 각각 복원; `translate`는 한국어역만). preview/notice/tweet
+  번역 전부 이 경로를 거치므로 용어집 항목은 어디서든 동일하게 고정된다. 현재 등록:
+  `{"夢限大みゅーたいぷ": "무겐다이 뮤타입", "バンドリ": "뱅드림"}` (v3.1.15 — "バンドリ"가
+  "밴드리"로 오역되던 것 추가 등록). 등록값에 구두점(느낌표 등)은 넣지 않는다 — 원문에
+  있으면 번역에도 그대로 남으므로("バンドリ！" → "뱅드림！"/"뱅드림!") 용어 자체만 고정하면
+  충분하다. 토큰이 영숫자에 바로 들러붙으면(예: "バンドリ13th") LLM 이 뒤 문장을 통째로
+  미번역으로 남기는 사례가 있어 그 경우만 공백을 끼워 넣는다.
+
+**(v3.1.8) `translate()` 반복 압축** — 짧은 단위(1~6자)가 8회 이상 연속 반복되는 입력
+(`_REPEAT_RE`, 예: "もぐもぐもぐ…" 의성어)은 그대로 보내면 LLM 이 반복 루프에 빠져 수백~
+수천자를 토해내고 환각 가드에 매번 걸린다(`temperature=0`이라 재시도해도 항상 같은 실패
+반복 — 버그리포트 20260913 #3). `_translate_repeated`가 반복을 감지하면 단위를
+`_translate_repeat_unit(unit, count)`로 번역(맨입으로 넘기면 문맥 없어 오역되기 쉬워
+"반복 횟수·의성어/의태어" 문맥을 프롬프트에 명시 — 실측: `もぐ` 단독 요청 시 "몰입"
+오역, 반복 문맥 제공 시 "우걱"으로 정확) 후 그 결과를 `count`번 반복, 나머지(`remainder`)는
+`_translate_once`로 따로 번역해 이어붙인다.
+
+**(v3.1.9) 장음부호 늘려쓰기 정규화 + `max_tokens` 상한** — `_REPEAT_RE`는 문자열 맨 앞의
+**단일 유닛** 반복만 잡아서, "おーまーーたーーせーーーしーーーーました"처럼 글자마다
+다른 길이로 장음부호(ー/ｰ/〜/～)가 흩어져 끼어드는 늘려쓰기 강조체는 못 잡는다(버그리포트
+20260913 #4, 실측: 204자 입력 → 2035자 응답, 환각 가드에 매번 걸림). `translate()` 진입 시
+`_normalize_stretch()`로 장음부호류 연속 2회+ 를 1회로 접은 뒤 `_REPEAT_RE`/`_translate_once`
+로 넘긴다. 표적을 장음부호류로 좁힌 이유 — 아무 문자나 2연속 접으면 "宮永ののか"(멤버명
+자체의 반복 글자) → "宮永のか", "かわいい" → "かわい", URL(`https://www.`→`htps:/w.`)까지
+깨진다(실측 후 표적 축소). 추가로 `_call_groq` payload에 `max_tokens = max(200, len(prompt)//2)`
+를 상한선으로 걸어, 정규화를 뚫는 미지 패턴이 또 나와도 API 단에서 조기 절단되게 함(2중 방어).
+
+**(v4.5.7) 반각 가나 · 가나 잔존 재요청** — 미야코 트윗 「🍭ﾍﾟﾛｷｬﾝ」 이 번역되지 않고 남았다(실측: 수정 전 3/3 잔존). 원인은 둘이다 — ① 모델이 반각 가타카나를 이모티콘 · 효과음처럼 보고 그대로 둠 ② 번역 뒤 가나 잔존 검사 `_KANA_RE` 가 전각(U+3040~30FF)만 봐서 경고도 없었음.
+대응: `translate()` 진입 때 `_widen_halfwidth_kana()` 가 반각 가나 구간(`[ｦ-ﾟ]+`)만 NFKC 로 전각화(「ﾍﾟﾛｷｬﾝ」→「ペロキャン」 — ！ ～ 등 다른 문자는 불변, 모델에 보내는 문장에만 적용하고 저장 원문은 그대로) · 프롬프트 규칙 2 에 「이모지 옆 짧은 가타카나 단어 · 말장난 · 줄임말도 뜻이 분명하면 뜻으로, 불분명하면 한국어 독음으로(ペロキャン→페로캔)」 · `_KANA_RE` 를 반각 가나(U+FF66~FF9F)까지 확대 · 번역에 가나가 남으면 `_retranslate_residual()` 이 남은 글자를 짚어 **1회 재요청**(가나가 줄 때만 채택, 실패 · 환각 · 안 줄면 이전 결과 유지 + 기존 「부분 번역 의심」 WARN). 실측(Groq gpt-oss-120b): 수정 후 「ﾍﾟﾛｷｬﾝ」→「페로캔」 4/4, 「ﾊｯ」「ﾏﾃﾞ」 문장 퇴행 없음.
+참고: 메인 모델이 429 로 폴백 모델(20b)로 넘어가면 반각 가나를 더 자주 남긴다(수정 전 실측: 「ﾊｯ」 · 「ﾏﾃﾞ」 잔존 · 「마데」 직역).
+### 8.5 `ytnotif.py` (순수)
+
+`parse_yt_notif(nx: dict, now_iso) -> dict | None`. `pde_noti_pkg != com.google.android.youtube` /
+`::SUMMARY::` 태그 / slot_key 11자 아님 / 빈 제목 → None. `chime.thread_id` 접두어로 종류 분기 후
+제목 필드 선택: `TUNEIN`→`android.text`, `REMINDER`→`android.title`, `SUBSCRIPTION_LIVESTREAM_START`→`android.text`.
+제목 앞 `🔴 ` 만 제거(`【…】` 는 유튜브 제목 관용 접두라 보존). `video_id`=slot_key, url/thumbnail 조립.
+`scheduled_start`: TUNEIN → `now+30분`+`time_approx=True`, 그 외 → `now`. 반환 dict: `{video_id, url,
+thumbnail, title, kind(tunein|reminder|sub_start), scheduled_start, time_approx, source:"yt-notif"}`.
+
+**(v3.7.3) 회원 전용 라이브** — 위 `parse_yt_notif` 은 `chime.*` dict 입력용이고 `/ingest` 에 연결돼 있지 않다
+(v3.8.4 이후도 그대로 — 이 함수 자체는 안 쓰이는 self-test 전용, 아래 `parse_public_live_relay` 가 실전 파서).
+실제 업스트림은 유튜브 알림을 폼 `source=yt&video_id&title&kind&tag` 로 중계한다(`ref/v3_automate_wire.md` —
+`chime.thread_id` 에 "LIVESTREAM" 이 있으면 종류 불문 전부 이 폼으로 옴). `parse_member_live_relay(form,
+channels_cfg)` 는 `kind` 에 `NOTIFICATION_TYPE_SPONSORSHIPS_LIVESTREAM_START` 가 있고 `title`
+(`"<채널 표시명> / <그룹명> 실시간 스트리밍 시작: <영상 제목>"`) 앞부분이 5인 `channels.json` `name` 과 일치할 때만
+`{channel_key, title, tag}` 를 반환(`video_id` 는 `default` 라 무시). `ytdlp_probe.find_member_live(channel_id, title)`
+이 streams 탭(`--flat-playlist`)에서 `subscriber_only` + (`is_live`|`is_upcoming`) 를 제목 일치→is_live 1건 순으로
+골라 `{video_id, url}` (상한 6초, 쿠키 있으면 쿠키→쿠키 없이 폴백). `telegram_app._handle_member_live_start` 가
+조립해 `/write` 잡 `yt_member_live_commit`(`_commit_yt_member_live` → 순수 `xtweet.merge_member_live`: 자리표시
+승격 / 신규 생성 / noop)로 반영. 항상 200.
+
+**(v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START(일반 채널)** — 09-22 09:33 千石ユノ TUNEIN 알림이
+`parse_member_live_relay` 의 kind 필터에 안 걸려 조용히 무시된 게 발단. `parse_public_live_relay(form,
+channels_cfg=None) -> dict | None` 이 같은 폼에서 이 세 kind 를 파싱한다: `video_id`(=`chime.slot_key`,
+공개 채널이면 실측상 항상 실제 11자 ID)가 유효하면 `resolved=True` — `_handle_yt_relay` 는 이때 preview.json
+을 직접 안 건드리고 `_enqueue_wake_now(video_id, now)` 만 호출한다. 나머지(승격 판정·DM·모니터로그·다음
+wake 예약)는 전부 기존 `/wake`(`handlers._run`) 파이프라인이 처리 — `build_preview` 섹션 1 이 신규
+video_id 도 그대로 `videos.list` 후보에 넣고, 없던 아이템이면 `make_item(state="announced")` →
+`promote_state` 가 필드(scheduled_start·title·thumbnail·url·video_id)가 다 갖춰진 즉시 upcoming 으로
+승격한다(announced 단계를 거칠 필요 없음). `video_id` 가 `"default"`(회원전용 추정, placeholder — 실물
+ID 미상)면 `resolved=False`: TUNEIN 은 이 포맷이 실제로 오는지 미확인이고 videos.list 로도 확정 불가해
+오판 위험이 커서 승격 보류(무시, 기존 10분 light tick 안전망에 맡김), REMINDER/SUB_START 는 회원전용
+라이브 시작과 같은 포맷으로 보고 `_handle_member_live_start`(위 문단) 로 위임한다.
+
+### 8.6 `vxtwitter.py`
+
+`fetch_tweet(tweet_id, *, session=None, timeout=8.0, base=cfg.vxtwitter_base) -> dict | None`
+(`GET {base}/i/status/{id}`. 비200·타임아웃·JSON 오류 → None + warning).
+`extract(j) -> {text, media: [url...], urls: [expanded...], yt_video_id: str|None}` —
+`youtube.com/(watch\?v=|live/)` · `youtu.be/` 뒤 11자 추출. 서드파티 무료 서비스 → 실패 시 조용히 skip.
+
+**(v3.1.7) 원문 우선순위 — vxtwitter 정본 우선, 폰 원문은 폴백** —
+`telegram_app._recover_raw_via_vxtwitter(raw, tag)`. 안드로이드 알림은 "축약본"(contentText)과
+"전체본"(bigText) 두 필드가 있는데, 폰(Automate)이 축약본만 읽어오면 말줄임표(…)도 깨진 문자도
+없이 **완결된 문장처럼 보이는 상태로 조용히 잘려서** 온다(실측: 문단 9개짜리 트윗이 앞 3개
+문단·125자만 옴 — 버그리포트 20260913 #2). 이런 "조용한 잘림"은 텍스트 패턴만으로는 감지가
+불가능하다 — 그래서 손상/잘림을 감지해 사후 복구하는 방식(v3.1.6, 폐기)이 아니라, **`tag`에서
+tweet id 를 뽑을 수 있으면 무조건 vxtwitter 를 먼저 조회해 그 `text`를 정본으로 쓰고, 실패
+(조회 안 됨·id 없음·network/404)할 때만 폰이 보낸 `raw`로 폴백**한다. 소식(`xnotice`)·
+스케줄(`xrelay`)·개인트윗(`xtweet`) 모든 하위 파이프라인 **이전**에 태워서 항상 최선의 원문을
+넘긴다. 기존 `_expand_truncated_yt`(URL만 복구, `_maybe_personal_schedule` 직전 2차 안전망)와
+별개 경로 — 이쪽이 먼저 돌아 raw 를 이미 온전하게 만들어놓으므로 대개 no-op.
+
+### 8.7 `gh_store.py` — GitHub Contents API
+
+`GitHubStore(token, repo, branch="data", *, session=None, timeout=15.0)`. `read_json(path) -> (data|None, sha|None)`.
+`write_json(path, data, *, prev_sha, message) -> (bool, sha|None)` — 현재 원격 재조회해 내용 동일이면 PUT 안 함;
+`prev_sha` 와 현재 sha 다르면 `ConflictError`(다른 내용 커밋됨). 409/422 → `ConflictError`. 네트워크만 재시도.
+
+### 8.8 `tasks.py` + `oidc.py`
+
+`TaskQueue(*, project, location, queue, target_url, invoker_sa)` — `enqueue_wake(video_id, iso)` (path `/wake`),
+`enqueue_tick(mode, iso)` (path `/tick`). 태스크 이름의 분버킷(epoch//60)으로 dedupe(`AlreadyExists` 무시).
+`oidc.verify_request(headers, *, expected_audience, expected_sa=None)` — Bearer JWT 검증. `ALLOW_UNAUTH=="1"` 이면 통과.
+
+### 8.9 `handlers.py` — `tick(mode)` / `wake(video_id)`
+
+`_run(mode, woken_video_id)` 흐름:
+1. **control 가드**: `is_paused` 면 healthcheck 핑만 + `{"paused": True}` 반환.
+2. `_pv0 = preview.json` 읽기 → 후보 video_id = `_tracked_unresolved_ids(_pv0)`(video_id 있고 state ∈
+   announced~end) ∪ woken ∪ (tick 이면) RSS 전부 — (v4.5.0) `WEBSUB_REPLACE_RSS=1` 의 light 틱은 RSS 를 빼고 추적 중인 영상만(`handlers._poll_plan`).
+3. `YouTubeClient` — `channels_list`(baseline 만), `videos_list(sorted(후보))`.
+4. **커밋 루프 (최대 2회, ConflictError 재계산)**:
+   a. `prev_preview` / `prev_archive` + sha 재읽기.
+   b. `new_preview, transitions, wakes, gone_items = build_preview(cfg, videos, prev_preview, now_iso, avatars=avatars)`.
+   c. `admin_state` 읽어 `suppress`/`edit_lock` 반영(차단 url 제외, 락 id prev 유지).
+   b′. (v3.7.1) `xtweet.apply_overrides(new.items, prev.items, now)` (§6-3). 실패 시 경고 후 원래 items.
+   d. `_stable_view` 동일하면 volatile 필드와 `generated_at` 을 이전 값으로 동결 → 커밋 안 함(v3.2.2, heartbeat 없음).
+   e. `build_archive_appends` → `preview_archive.json`(변경 시).
+   f. `gh.write_json("preview.json", …, prev_sha=pv_sha)`. `ConflictError` → a 재시도, 2회째 실패 → 예외.
+5. **Cloud Tasks**: `wakes` → `enqueue_wake`. `transitions` 에 `"→end"` 있으면 `enqueue_tick("light", now+20분)`.
+   video_id 없는 announced 예고 시각(지금~+3h) → `_scheduled_wake_times` → `enqueue_tick("light", ss)`.
+   (뒤 두 개는 light tick 3h 시절 도입한 보정 — 10분 tick 과 겹치지만 무해해 유지.)
+6. **LLM 번역 sweep** (tick 만): `_translate_sweep` — `notices.json`/`tweets.json`/`preview.json`(v3.1.13,
+   방송 제목 `title`→`title_ko`) 의 `needs_tl` 행 재번역.
+7. **Telegram diff**: `notify.diff_events(_pv0.items, new_preview.items, transitions, channels, now)` →
+   레벨 게이팅 후 개별 전송 + `summary`(detail).
+8. **모니터 로그** (v3.7.1): preview 전이 이벤트 + tick/wake 이벤트를 모아 `monitor_log.log_events` **1회**(커밋 최대 1개).
+   tick/wake 이벤트는 `_should_log_run` — preview/archive 변경 · enqueue 오류 · 전이 이벤트 ≥1 · 번역 반영 ≥1 중
+   하나라도 참일 때만 싣는다(변화 없는 실행은 기록 안 함 → `/monitor` 의 quota·호출 수는 "기록된 실행" 기준).
+9. 성공 끝 healthcheck GET. 예외 → `notify.error_text` 후 re-raise.
+
+반환 dict: `{mode, woken, candidates, videos, preview_changed, archive_changed, archived,
+preview_items, state_counts, wakes, enqueued, enqueue_errors, translated, quota_used, log}`.
+
+### 8.10 `notify.py`
+
+```python
+class Telegram(token, chat_id, *, session=None, timeout=10.0)   # 비면 disabled
+@dataclass
+class Event: kind; channel_ko; title; text   # kind: announced|upcoming|live_start|live_end|demote
+def diff_events(prev_items, new_items, transitions, channels_cfg, now_iso) -> list[Event]
+def allows(level, kind) -> bool                                  # §6 표
+def summary_text(result, now_iso) -> str                        # D(요약)
+def error_text(where, exc) -> str
+```
+
+`diff_events` 순수. 첫실행 가드: `prev_items` None/빈 리스트면 `announced` 이벤트 생성 안 함. `id`(또는
+video_id)로 인덱싱. `announced`(new 등장) / `upcoming`(announced→upcoming) / `live_start`(*→live,
+lateness=actual_start−scheduled_start) / `live_end`(live→end) / `demote`(`transitions` 에 `watching-demote` 토큰).
+
+### 8.11 `telegram_app.py` — 공개 webhook 서비스
+
+Flask. 엔트리포인트 `src.backend.telegram_app:app`. `ALLOW_UNAUTH=1`. 라우트 `POST /telegram` · `POST /ingest` · `GET /` · (self-reply) `POST /gap-check` · `POST /gap-fill` — 뒤의 두 개만 `oidc.verify_request(force=True)` 로 **강제 검증**(audience = `ADMIN_BASE_URL`, 발급자 = `INVOKER_SA`, 설정 없으면 거절).
+
+**`/gap-check`** (상시 조사, 매분): 5명 목록 조회 → 후보 → 보충 작업 적재. 본체 `_gap_check_run` · `_gap_check_core`(주입식, self-test 용). 상세 = 계약 I「빠진 트윗 보충 · 자기 답글」.
+**`/gap-fill`** (보충 작업 1건): 본체 `_gap_fill_one`. 원글 사슬 → 글 자신을 `_maybe_personal_tweet(origin="gapfill")`. 실패해도 200.
+`/ingest` 의 개인 트윗 분기는 더 이상 빠진 트윗 보충을 부르지 않는다(명세 §4-3).
+
+**`/telegram`**: `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 검증. 항상 **200**, 응답은 `sendMessage` 별도.
+followup 소진 순서: del/undo (y/N/terminate) → `_handle_ingest_followup` → `_handle_member_followup` →
+`_handle_notice_followup` → `_handle_notice_edit_followup` → `_handle_op_followup`(pending_op) → 명령 디스패치.
+
+**{cmd}×{contents} 격자** — `_split_contents(arg)`: 첫 토큰이 `preview|notice|tweet` 면 그것, 아니면
+`preview`(+ 전체를 sub-arg. `/list arale` 하위호환).
+
+| 명령 | preview | notice | tweet |
+|---|---|---|---|
+| `/list <c> [rest]` | 5인 살아있는 아이템(state announced~end) 유닛별 idx | `/notice-list` | 배지 떠 있는 유닛 트윗 |
+| `/ingest <c>` | `pending_ingest` 슬롯 → 원문/파일 → `xrelay.parse` → `merge_announced` | `pending_notice` → `xnotice`+`notices.merge_notice` | `pending_op` → 유닛→원문 → `_maybe_personal_tweet` |
+| `/edit <c>` | `pending_op` 마법사 (유닛→idx→필드/값 반복→`done`, `edit_lock`, 답한 필드만 patch, tick 충돌 알림) | `/notice-edit` 재사용 (제목→날짜→URL) | 유닛→원문 → `merge_tweet` 교체 |
+
+`/edit preview` 로 `state` 를 바꾸면(예: 긴급 종료 처리) 라벨만 바뀌는 게 아니라
+`_activate_state_edit`(v3.1.17)이 그 상태에 맞는 실제 로직을 마저 이행한다 — 안 하면
+FSM 파생·Cloud Tasks wake 재예약·archive 반영이 전혀 안 일어나 다음 tick(당시 최대 3h)까지
+방치되는 문제가 있었다. `state_since` 도 이 시점으로 리셋한다(안 하면 오래된 state_since
+때문에 end→none 30분 판정이 리셋 없이 즉시 발동할 수 있음). 목표 상태별 동작:
+- `"none"` — preview.json 에서 즉시 제거 + `preview_archive.json` 에 기록(FSM 의
+  end→none 전이와 동일 취급).
+- `video_id` 있음(live/end/watching/upcoming — API 로 실물 검증 가능) — 메인 서비스
+  `/wake` 를 OIDC 로 호출해 실제 상태로 재확인 + Cloud Tasks wake 재예약까지 그쪽에
+  맡긴다(운영자가 잘못 짚었어도 API 확인 결과가 우선하므로 안전).
+- `video_id` 없음(announced 자리표시) — API 로 검증할 게 없으므로 로컬에서
+  `statemachine.derive()` 1회만 돌려 리셋된 `state_since` 기준으로 다음 체크를 재계산.
+| `/del <c> …` | `<유닛> <idx>` → 확인 `(terminate/y/N)`. terminate = 삭제 + `add_suppress(url, 12h)` | `/notice-del <id\|번호>` | `<유닛>` → 슬롯 제거 |
+| `/undo` | 직전 mutating 명령 1건(계통 무관 단일 슬롯). 2단계 확인 + sha 2중 가드. `undo.path` 로 3파일 복원 |
+| `/translate <notice\|tweet>` | 미번역 행 전부 `*_ko` 채움(원문 보존). `GROQ_API_KEY` 필요. 수동 명령 — 자동 sweep 과 별개 |
+
+일반: `/status`(v3 양식 — preview 6상태 카운트·notice·tweet·마지막 sync·LLM 큐=`needs_tl` 행 수) ·
+`/pause` · `/resume`(paused=false + 메인 `/tick` OIDC 호출) · `/log [detail|normal|simple]`.
+별칭 유지: `/notice` `/notice-list`(`/notices`) `/notice-del`(`/ndel`) `/notice-edit`(`/nedit`) `/add`.
+
+**`/ingest`** (X 릴레이): `X-Ingest-Secret` 헤더. 본문 form/JSON `text`(필수)/`title`/`template`/`tag`.
+`xtweet.route_by_title(title)` → 개인 5인이면 `_maybe_personal_tweet`(→ `tweets.json` + 예고면 preview
+승격 — 준비/커밋 분리는 §8.14) 후 즉시 200. 테스트 부계정(`INGEST_TEST_TITLES`, 기본 `jehy`)은 `force_echo`. 공식·미매칭은
+`_maybe_auto_notice` → `xrelay.parse` → `merge_announced` → `preview.json`. `INGEST_ECHO`/`INGEST_DRY_RUN`
+이면 저장 안 하고 회신 + 스케줄 트윗은 `ingest_queue.json` 버퍼(실배포 전환 시 첫 `/ingest` 에서 drain).
+
+### 8.12 `config.py`
+
+`load_config()` — `ALLOW_UNAUTH != "1"` 이면 `_REQUIRED`(GITHUB_TOKEN, GITHUB_REPO, YOUTUBE_API_KEY,
+GCP_PROJECT, GCP_LOCATION, TASKS_QUEUE, SERVICE_URL, INVOKER_SA) 필수. 선택:
+`DATA_BRANCH`(기본 "data"), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET`,
+`HEALTHCHECK_URL`, `MAIN_SERVICE_URL`, `INGEST_SECRET`, `INGEST_ECHO`, `INGEST_DRY_RUN`,
+`INGEST_TEST_TITLES`, **`GROQ_API_KEY`**, **`GROQ_MODEL`**(기본 `openai/gpt-oss-120b`),
+**`GROQ_MODEL_FALLBACK`**(기본 `openai/gpt-oss-20b`), **`VXTWITTER_BASE`**(기본
+`https://api.vxtwitter.com`), **`INGEST_YT_ENABLED`**(기본 `""` — `"1"` 이어야 ytnotif 라우팅),
+`HEALTHCHECKS_IO_READONLEY_TOKEN`(`/monitor` 백엔드 상태 조회용 healthchecks.io read-only 키 — 이름의
+`READONLEY` 는 오타지만 운영 Secret 이름이라 유지. 비면 해당 패널만 비활성).
+
+### 8.13 `app.py` (비공개, OIDC)
+
+`@app.post("/tick")` → `oidc.verify_request` → `handlers.tick(mode="light" 기본)`.
+`@app.post("/wake")` → video_id 필수(없으면 400) → `handlers.wake(vid)`.
+`@app.post("/write")` (v3.7) → body `{kind, args}` → `writers.dispatch(kind, gh, args)` (알 수 없는 kind 400).
+`@app.post("/daily")` (self-reply D6 · 명세 §4-6, Scheduler `mewtype-daily` KST 06:00) → ① `DAILY_QUEUE` 에 그날 **06:10 `/monitor`** · **06:20 `/websub-renew`** 태스크를 먼저 예약(이름 `daily-monitor-<분>` · `daily-websub-renew-<분>` — 날짜로 고정이라 재시도해도 두 번 안 만든다) → ② `handlers.tick("baseline")` 그대로(일시정지 가드 포함). 예약 실패는 tick 을 막지 않고 응답 500 + 운영자 알림 1회(Scheduler 재시도). `/monitor`·`/websub-renew` 본문은 그대로.
+`@app.post("/monitor")` (v3.5, v3.8.9 개편) → (핫픽스 archive-split) 먼저 **보관함 정리**(§8.18, 실패해도 다음 단계 계속) → **매일**(monitor_auto 와 무관) `monitor_snapshot.run_daily`:
+전일(06:00 KST 경계) 하루치를 `monitoring/days/{날짜}.json` 에 굳히고 `monitoring/summary.json` 에 요약 한 줄을
+추가(요약 = `{"triggers","events"}`, 그날 이벤트 로그 파일이 없으면 숫자 대신 `{"no_log": true}`). 백필:
+`backfill_complete` 가 false 면 `monitoring/` 의 `events-*.jsonl` 목록으로 로그 파일이 있는 과거 날짜만 채우고,
+이후엔 마지막 요약 날짜 다음 날~전날 누락분을 채운다(실행당 최대 10일, 남으면 다음 실행이 이어서).
+외부 조회(healthchecks.io 다운 구간·Vercel 배포 시도 수) 실패/키 없음은 `null` 로 저장(조회 여부를 데이터에 남김).
+Vercel 수치(`vercelDeploys = {total, production, preview, error}`)는 Vercel REST API `/v6/deployments`
+(Secret `VERCEL_TOKEN`)로 그날 06:00~익일 06:00 KST 배포 시도를 센다 — Hobby 하루 100회 한도엔 브랜치·성공
+여부 무관하게 다 잡히므로 total 기준.
+표시: Vercel 은 "확인 불가", 백엔드 상태는 기존 합의대로 다운 없음=정상으로 그리고 툴팁에 "미조회"만 밝힌다
+(healthchecks.io 를 날짜마다 몰아 부르지 않기 위한 근사). 스냅샷엔 `snapshotAt`(조회 시각)·`hasLog` 동봉. 이어서 `monitoring/latest.html`(전날 상세 +
+전 기간 잔디)을 커밋하고, `monitor_auto` 가 켜져 있을 때만 "오늘의 멤버 현황"(멤버별 트윗 수집 ✓/✕ · 라이브 구간 ·
+소식 등록 성공/실패) **텍스트 DM**. v3.8.8 까지의 일간/월간(매월 1일)/연간(1월 1일) HTML 자동 DM 은 폐지(수동
+`/monitor [--monthly|--yearly|날짜]` 는 그대로 HTML).
+제어 채널(`telegram_app`)의 `@app.get("/monitor-live")` (v3.7.2) → 웹 `monitor.html` 이 부르는 읽기 전용 공개
+라우트. (v3.8.9) **전 기간(all) 리포트** — 상세는 "오늘"(가장 최근 06:00 KST~지금)만 즉석 생성(60초 캐시), 지난
+날짜는 `summary.json`(10분 캐시)로 잔디만 그린다(오늘 칸은 실시간 값). `@app.get("/monitor-live.json")` 은 같은
+데이터(60초 자가갱신 폴링용). `@app.get("/monitor-live/day.json?date=YYYY-MM-DD")` (v3.8.9) → 잔디 칸 클릭 시 지난
+날짜 상세: 스냅샷이 있으면 그대로(메모리 캐시, 불변), 없으면 이벤트 로그에서 즉석 계산(저장 안 함, `snapshotAt:
+null`, 10분 캐시). 오늘 이후 날짜는 400. 모두 CORS `*`, 실패 시 500 — `monitor.html` 이 `latest.html` 로 폴백.
+`@app.get("/")` → "ok" (`/healthz` 는 GFE 가 가로챔).
+(v3.8.9) 제어 채널 웹훅 `/telegram` 은 요청마다 모니터 로그 `flow="cmd"` 1줄(`who`=명령어, `detail`=원문 120자 —
+`/` 로 시작 안 하는 후속 입력은 12자 이하 한 줄만, 그 외 글자 수만, `reply`=마지막 응답 DM 첫 줄, `result`=응답
+DM 문구 기반 근사: 예외·⚠️/❌ → err, "사용법"·응답 누락 → degraded, 그 외 ok) → 웹 monitor 타임라인 "💬 운영자
+명령" 행(트리거와 백엔드 상태 사이).
+(v3.8.9) `POST /ingest` 는 알림 1건마다(403 제외) 모니터 로그 `flow="upstream"` 1줄(`source`=x|yt, `who`=
+`android.title`, `detail`=응답 본문에서 읽은 갈래, `result`=HTTP 4xx/5xx 또는 ok=false → err, 그 외 ok) → 웹 monitor
+"🛰️ 업스트림 감지" 행(백엔드 상태 바로 위, 구 "X 예고 릴레이" 행 대체)과 트리거 📥 의 기준.
+(v3.8.9a) 하루치 상세의 `upstream`·`cmd` 는 실제 기록 + 그날 첫 실제 기록 이전 시각의 **복원분**(`derived: true`,
+`monitor_report._derive_upstream`/`_derive_cmd`)을 합친 것 — 업스트림은 `/ingest` 한 요청의 기록 규칙대로(개인 트윗 =
+(ts, 멤버) 1건, 공식 = 최종 relay `mode: …` 1줄 1건 + 같은 초 소식 부착, `mode: yt-member-live` = YouTube 1건), 명령은
+ops·`/del`·`/edit` preview 기록·via=ops 인입에서. via 없는 옛 기록·`[백필]` 기록·로그 없는 요청은 복원하지 않는다.
+트리거 📥 = `upstream` 건수. 그날 이벤트가 전부 `[백필]`(실시간 모니터링 2026-09-15 이전)이면 상세에 `backfillOnly: true`,
+요약 항목은 `{"backfill_only": true, "events": N}` — 트리거 수를 단정하지 않는다(잔디 `?`).
+예외 → 500 + `notify.error_text` DM. `PermissionError` → 403.
+
+### 8.14 write-queue — `writers.py` / `writeclient.py` (v3.7, v3.7.1 A-1)
+
+GitHub Contents API 의 PUT 은 파일이 아니라 **브랜치 HEAD 단위**로 충돌한다(다른 파일이라도 읽은 뒤
+다른 커밋이 끼면 409). 제어 채널(`mewtype-telegram`, 동시 처리 80)의 콘텐츠 쓰기를 백엔드
+(`--concurrency=1 --max-instances=1`)의 `POST /write` 로 보내 한 줄로 세운다.
+
+- `writeclient.call_write(kind, *, gh=None, label=None, **args) -> dict` — `MAIN_SERVICE_URL` 이 있으면 OIDC
+  id token 으로 `POST {MAIN_SERVICE_URL}/write` 동기 호출(타임아웃 60초, 2초 넘으면 `"⏳ 처리 대기 중…
+  [{label}]{kind}"` DM 1회 — `label` 생략 시 `args["action"]` 폴백), 없으면 같은 프로세스에서
+  `writers.dispatch`(로컬 개발·self-test). (v3.8.4) 대기 DM 이 나갔으면 종료 시 짝이 되는 완료(`✅`)/
+  실패(`⚠️`) DM 도 보낸다 — 2초 안에 끝나면(대기 DM 자체가 없으면) 지금처럼 아무 것도 안 보냄. 비200 →
+  `WriteError`.
+- `writers.dispatch(kind, gh, args)` — kind → `telegram_app` 의 커밋 함수(지연 import). 등록 kind:
+  `merge_rows` `remove_broadcast` `apply_notice` `notice_sweep` `notice_del_commit` `notice_edit_commit`
+  `personal_tweet` `tweet_sweep` `tweet_del_commit` `url_confirmed_commit` `yt_member_live_commit`(v3.7.3)
+  `undo_restore` `apply_preview_edit` `ingest_queue_push` `ingest_queue_drain`.
+  (v3.8.4) TUNEIN/REMINDER/SUBSCRIPTION_LIVESTREAM_START(video_id 실물 확보) 경로는 이 큐를 안 탄다 —
+  `/write` 커밋이 아니라 `_enqueue_wake_now` 로 기존 `/wake` 를 깨우는 신호만 보낸다(§8.5 참고).
+- **(v3.7.1) A-1 — 외부 호출은 제어 채널, `/write` 잡은 커밋만.** 잡 함수는 GitHub 읽기·쓰기(+ undo 스냅샷,
+  모니터 로그, 텔레그램 DM, Cloud Tasks enqueue)만 하고 외부 LLM·`videos.list`·vxtwitter·비전 OCR 은 부르지
+  않는다. 제어 채널이 먼저 준비해 결과를 JSON 인자로 넘긴다:
+
+  | 경로 | 제어 채널(준비) | `/write` 잡(커밋) |
+  |---|---|---|
+  | 소식 | `_prepare_notice` — `xnotice.parse`, 비전 OCR, 제목추출 LLM, `notices.json` 읽어 사본으로 `merge_notice` → `added` 면 중복판정 LLM → `{parsed, tl, dup_id}` | `apply_notice` → `_commit_notice` — merge, `dup_id` 있으면 `merge_into`(→updated), 번역 반영 또는 `needs_tl`, undo |
+  | 개인 트윗 | `_prepare_personal_tweet` — vxtwitter 미디어, `xtweet.parse`, 스냅샷으로 `merge_thread` → 변화 있을 때만 본문·인용 번역 → `{parsed, text_src, text_ko, quote_src, quote_ko}` | `personal_tweet` → `_commit_personal_tweet` — merge, `row.text == text_src` 일 때만 `text_ko` 반영(아니면 `needs_tl`), sweep, 모니터 로그 → `{mode, n_thread, needs_tl}` |
+  | 개인 예고(URL) | `_maybe_url_confirmed_schedule` — `videos.list`, 본인/타멤버 채널이면 `find_guest_members`(v3.8.3, 제목·원문의 다른 멤버 정식 표기 → `collab_with`), 외부 채널이면 참여판정 LLM, `build_item_from_video` | `url_confirmed_commit` → `_url_confirmed_commit` — `merge_video_confirmed`(v3.8.3: `collab_with` 추가만), undo, **`_enqueue_wake_now`**(제어 채널 서비스엔 Cloud Tasks env 가 없어 반드시 백엔드) |
+  | 개인 예고(텍스트) | `parse_schedule` + `announces_own_broadcast` LLM | `merge_rows`(`merge_fn="personal_schedule"`) |
+
+  `_maybe_personal_tweet` 는 제어 채널 오케스트레이터(준비 → `personal_tweet` 잡 → DM → `_maybe_personal_schedule`).
+  준비 시점 스냅샷 기준이라, 준비~커밋 사이 같은 날짜 소식이 새로 들어오면 중복판정에서 빠져 새 소식으로
+  등록될 수 있다(LLM 실패 시와 같은 안전한 기본값).
+- **남는 한계**: 모니터 로그(notice/relay/ops)·`admin_state.json` 마법사 단계·`control.json`·`/translate`·
+  `/monitor` 의 `latest.html` 은 여전히 제어 채널이 직접 커밋 → 큐 잡과 409 가능(잡은 최신 재조회 후 1회 재시도).
+
+### 8.15 신곡 자동 감지 · 곡 관리 — `songs.py` + `handlers._detect_new_songs` + 어드민 음반 탭 API (v4.2.0)
+
+곡은 그룹 공식 채널이 아니라 **뮤타입 음원 채널**(YouTube 가 음원 배포로 자동 만든 채널 「`Mugendai MewType - Topic`」, `UCeXzCxZsDcaF5xI68fK5owA`)에 올라온다 — 방송이 아니라 `preview.json` · FSM(`preview_build`)과 무관하므로
+방송 파이프라인에 끼우지 않고 별도 경로로 둔다. `config/channels.json` 최상위 `song_feeds`(`channels` 와 별개 키 — 방송 쪽이 읽지 않음)에 채널을 둔다.
+
+**곡 문서 `songs.json`**(data 브랜치) = `{"songs": [...], "rejected": [...], "seen": [...]}` — 프론트 플레이어는 `songs` 만 읽는다.
+- 곡: `{id(video_id), title, kind(original|cover), who, date, reading, added_at?, manual?, edited_at?, needs_reading?, reading_manual?}`.
+  `needs_reading` = 외부 LLM 독음을 아직 못 채운 곡(다음 tick 이 재시도) · `reading_manual` = 운영자가 직접 정한 독음(LLM 이 덮지 않음) · `edited_at` = 운영자 수정 시각(반려가 덮어 지우지 않는 근거).
+- `rejected`: 삭제 · 반려한 곡 `{id, name_key, title, ts, by}`. **RSS 최근 15건에 곡이 남아 있어도 다시 등록되지 않게 한다**(영상 ID · 곡명 키 둘 다). 차단 해제 가능(최대 500건).
+- `seen`: 이미 판단 기록을 남긴 「곡명 중복 건너뜀」 `{id, reason, ts}`(같은 건너뜀을 tick 마다 다시 기록하지 않게, 최근 200건).
+
+**감지**(① 매 `/tick` — light 10분 · baseline 06:00 JST, 실제 배포 Cloud Scheduler 값 · wake 제외. ② (v4.5.0) PubSub 알림 — 아래 §8.16. `WEBSUB_REPLACE_RSS=1` 이면 light 틱은 건너뛰고 baseline 만): `song_feeds` 의 RSS(쿼터 0)를 읽고 `songs.json` 과 비교해 **즉시 등록**(승인 대기 없음).
+- **규칙**(운영자 결정 2026-10-06): ① **곡명이 이미 있으면 등록 안 함**(영상 ID 가 달라도 — 앨범마다 같은 곡이 새 영상으로 올라온다) · 곡명 비교는 NFKC · 대소문자 · 공백 · 꼬리표 무시
+  ② 제목 끝 **「(Cover)」**(대소문자 · 전각 괄호 무관)가 있으면 `cover`, 없으면 `original`. 다른 표기(「(Solo)」 등)에 대한 규칙은 두지 않는다 ③ `feat.` 곡은 등록 안 함
+  ④ 같은 곡명이 한 묶음에 여럿이면 먼저 올라온 영상 하나만 ⑤ 반려 목록(`rejected`)에 있는 영상 · 곡명은 등록 안 함 ⑥ `who="group"`, `date`=공개 시각의 KST 날짜.
+  건너뜀 사유는 `name_dup`(어느 곡과 같은지 `dup_of`) · `feat` · `id_dup` · `rejected` 로 구분해 돌려준다(`find_new_songs` → `(새 곡, 건너뜀)`).
+- **독음은 외부 LLM(Groq)이 쓴다**(`llm.song_reading` — 일본어는 히라가나, 영문 곡명은 가타카나 발음. 가나 · 영숫자 외 응답은 버림). 실패하면 `reading=""` + `needs_reading=True` 로 남아
+  **이후 tick 이 재시도**(tick 당 최대 3건, 신곡 + 재시도 합산). 운영자가 독음을 직접 고치면 `reading_manual` 이 돼 LLM 이 덮지 않고, 독음을 비우거나 「독음 다시 만들기」를 하면 LLM 이 다시 쓴다.
+- **판단 기록 · 이벤트**: 등록 1곡 = `llm_actions.json`(ops) 기록 `song_register`(`by="rule"`, undo = `{type:"remove_song", id, title, added_at}`, input = RSS 항목 스냅샷),
+  곡명 중복 건너뜀 1건 = `song_skip`(검토용, undo 없음, `seen` 으로 한 번만). 둘 다 작업 탭 「LLM 판단」에 보이고 반려할 수 있다. 모니터 이벤트 `flow="song"`
+  (`action` = added · skipped · reading · rss_empty — 어드민 조작은 `via="ops"` 로 edited · deleted · added_manual · unblocked · rejected · reading_regen)가 같은 이벤트 로그(보관 · 스냅샷 · 리포트 전 기간)에 쌓여 리포트 타임라인 「🎵 신곡 감지」 레인에 점으로 나온다.
+  RSS 가 비어 있으면(조회 실패 포함) 그 시간의 첫 tick(분 < 10)에만 degraded 이벤트 1건 — 시간당 1회. 상세 상태는 어드민이 「지금 RSS 조회」로 본다(`songs_status`).
+- **쓰기 경로**: 감지 쪽은 tick 안에서 gh 로 **직접** 쓴다(`/write` 자기 호출은 `concurrency=1` 교착 — `record_video_releases` 와 같은 방식; 한 tick 에 songs.json 1번 + 판단 기록 1번(배치) + 이벤트 1번 이하,
+  기록은 songs.json 쓰기 **성공 뒤에만**). 어드민 편집은 `/write` 직렬화(writers kind `song_edit` → `telegram_app._song_edit_commit`, sha 충돌 재시도 4회). 외부 LLM 호출은 호출부가 먼저(A-1).
+- **안전**: `songs.json` 이 없으면(시드 전) 새로 만들지 않고 건너뜀. 쓰기 충돌(409)은 다음 tick 이 같은 RSS 로 다시 계산. **어떤 실패도 tick 을 막지 않는다.** 한계: RSS 는 최근 15건 — 한 번에 15곡을 넘는 버스트는 고려하지 않음.
+
+**어드민 화면**(`admin_static/admin.html`, 목업 `ref/v4.2_admin_mockup.html`): **현황 탭**(세부 탭 예고 | 소식 | 트윗 — 소식 세부 탭은 행사 배너 + 소식이 한 목록 칸, 행사(b)·소식(n)은 상세창을 같이 쓰므로 선택 · 펼침을 목록 칸 전체 기준으로 하나만 유지) ·
+**음반 탭**(신곡 감지 상태 카드 · 곡 목록 · 수정 · 삭제 · 직접 추가 · 차단 목록/해제 — 시드 전에는 쓰기 버튼 비활성) · 작업 탭 신곡 판단(`llmKindLabel` · `undoDescribe` · `buildDecideForm` 신곡 양식, 재판단 버튼 없음).
+곡 직접 추가는 제목 · 날짜를 비워 두면 `add_song` 이 RSS → YouTube API 순으로 채운다(별도 「불러오기」 호출 없음).
+
+**어드민 API**(`admin_api` · 계약 `ref/v4.2_admin_api_contract.md`): 읽기 `list_songs`(곡 · 차단 목록 · 카운트 · 한글 독음 미리보기) · `songs_status`(시드 여부 · **지금 RSS 조회**(쿼터 0) · 등록 예정/건너뜀 dry-run · 최근 `song` 이벤트 7일),
+쓰기 `edit_song` · `delete_song`(= 삭제 + 재등록 차단) · `add_song`(YouTube URL/ID → RSS → videos.list 순으로 제목 · 날짜를 채워 보고, 안 되면 직접 입력 · 곡명 중복은 force) · `unblock_song` · `regenerate_song_reading`(독음 다시 만들기).
+**작업 탭 반려**: `song_register` 반려 = 목록에서 지우고 `rejected` 에 추가(그때 등록한 그대로일 때만 — 운영자가 그 뒤 수정했으면 건너뜀) → 사용자 판단 = 다른 값(제목 · 구분 · 부른 사람 · 날짜)으로 다시 등록.
+`song_skip` 반려 → 사용자 판단 = **강제 등록**(곡명이 같아도 다른 곡). 규칙 판단이라 **LLM 재판단은 없다**(`llm_review_options.rejudge=false`, 요청하면 오류).
+- self-test: `python -m src.backend.songs`(60건 — 분류 · 곡명 키 · 실제 RSS 발췌 `fixtures/topic_feed.sample.xml` 감지 · 건너뜀 사유 · 삭제 · 차단 · 해제 · 수정 · 직접 추가 · 독음 채우기 · 가나→한글),
+  `python -m src.backend.handlers`(`_detect_new_songs` 가짜 gh · 가짜 LLM — 등록 · 판단 기록 · 이벤트 · 멱등 · 반려 재등록 차단 · LLM 재시도 · 시드 전/충돌/예외),
+  `python -m src.backend.admin_api`(로컬 저장소 통합 흐름 — 감지 → 반려 → 재감지 안 됨 → 사용자 판단 재등록 → 삭제 · 차단 해제 · 직접 추가 · 수정 · LLM 독음 실패 재시도 · 재요청).
+
+---
+
+### 8.16 PubSub(WebSub) 수신 — `websub.py` + `handlers.detect_songs_from_push` (v4.5.0, 버스트 대비 v4.5.2)
+
+YouTube 채널 피드의 변경(새 영상 · 예약 생성 · 제목/설명 수정)을 허브(`pubsubhubbub.appspot.com`)가 우리 주소로 **POST** 해 준다 — RSS 폴링 없이 약 1분 안에 발견.
+(WebSub = 옛 PubSubHubbub, 웹훅 방식. GCP Cloud Pub/Sub 과는 다른 서비스.) 시험 결과 · 설계 배경 `ref/pubsub_probe/PUBSUB_VS_POLLING.md`.
+
+**구독 대상**(`websub.subscriptions`): 멤버 5명의 채널 + 뮤타입 음원 채널(`song_feeds`). 그룹 공식 채널은 RSS 와 같은 이유로 제외(노래 영상이 합동 방송으로 올라옴).
+구독 이름 = 멤버 키(`arale` …) · `song-<song_feeds.key>`. 콜백 주소 = `<접수 서비스 URL>/websub/<이름>`.
+
+**콜백**(접수 서비스 `mewtype-telegram`, `websub.register_callbacks`):
+- `GET /websub/<이름>` — 허브 검증. `hub.mode`(subscribe|unsubscribe) · `hub.topic`(우리 채널의 피드 주소) · `hub.challenge` 를 확인하고 challenge 를 그대로 돌려준다. 이벤트 `action=verify` 기록.
+- `POST /websub/<이름>` — 알림(Atom). **인증 = `X-Hub-Signature`**(`<algo>=<hex>`, `hub.secret` 으로 만든 본문 HMAC — sha1/256/384/512, 상수 시간 비교). 서명이 없거나 틀리면 **2xx 로 받고 무시**
+  (WebSub 규약 — 허브 재시도 방지), 이벤트 `action=reject` 는 프로세스당 10분에 한 번만. 비밀 `WEBSUB_SECRET`(Secret Manager) 이 없으면 503.
+  - 멤버 채널 → **영상 ID 만** 쓴다: **즉시 확인 1건**을 PubSub 전용 큐(`WEBSUB_QUEUE`, 아래)에 예약(Cloud Tasks `/wake`, 본문에 `websub: {who, title, attempt:1}`. 이름이 영상 ID + 분이라 같은 분의 같은 알림은 흡수). 판정은 wake 의 `videos.list` 가 한다 — 알림 본문은 판정에 안 쓴다.
+    (v4.5.2) 「2분 뒤 한 번 더」는 쓰기 서비스가 건다 — 첫 확인에서 `videos.list` 가 그 영상을 아직 모를 때만(신규 영상 반영 지연) `WAKE_RETRY_SEC`(120초) 뒤 `attempt:2` 를 같은 큐에 예약하고, 두 번째에도 없으면 더 걸지 않고 warn 으로 기록(`handlers._websub_followup`). v4.5.0 은 접수 서비스가 알림마다 두 번을 무조건 걸었다.
+  - 뮤타입 음원 채널 → 본문 항목(`video_id` · `title` · `published`, RSS 항목과 같은 필드)을 쓰기 작업 `song_push` 로 PubSub 전용 큐에 적재 → `handlers.detect_songs_from_push` → `_detect_new_songs(via="push")`.
+    곡명이 이미 있으면 건너뛰므로 같은 알림이 여러 번 와도 한 번만 등록. 쓰기 충돌 · 독음 작성 실패는 예외로 던져 Cloud Tasks 가 재시도(최대 5회), 그래도 안 되면 일일 baseline 이 안전망.
+  - 예약 · 적재가 실패하면 **503** 으로 응답해 허브가 알림을 다시 보내게 한다(이벤트 `notify_fail`). 삭제 알림(tombstone)은 서비스 로그로만 남긴다. 항목의 채널 ID 가 구독 채널과 다르면 무시.
+  - (v4.5.2) **알림 POST 는 커밋 없이 응답한다** — 수신 기록 `notify` 는 그 확인(또는 `song_push`)을 처리하는 **쓰기 서비스**가 남긴다. 쓰기 서비스는 한 번에 하나만 처리하므로 `monitoring` 브랜치 커밋이 서로 부딪히지 않는다.
+    v4.5.0 은 접수 서비스가 알림마다 커밋해, 10건 이상이 몰리면 같은 이벤트 파일에 동시 커밋이 몰려 충돌 · 응답 지연(최대 약 25초) · 기록 유실이 났다(스테이징 실측, `docs/VERSION.md` v4.5.2).
+    접수 쪽 커밋은 드문 경우(서명 불일치 `reject` — 10분에 한 번 · 예약 실패 `notify_fail`)만 남았다.
+
+**PubSub 전용 큐 `WEBSUB_QUEUE`**(v4.5.2, 운영 `mewtype-websub` · 스테이징 `mewtype-websub-stage`, `deploy/setup.sh` 가 만든다): 동시 1건 · 초당 0.2건(5초에 1건) · 쓰기 서비스가 바빠 거절(429)하면 5초부터 다시(최대 20회).
+쓰기 서비스(동시 1건)가 PubSub 확인으로 쉬지 않고 바빠지지 않게 해 그 틈으로 접수 서비스의 동기 쓰기(트윗 저장 등)가 들어가게 하려는 것. 단 Cloud Tasks 가 순간 허용량(burst)을 10 으로 자동 설정해 **처음 10건 정도는 제한 없이 연달아** 나간다(실측: 12건이 약 3.5초 간격) —
+버스트 개선의 대부분은 큐 속도보다 접수 커밋 제거와 확인 횟수 절반에서 왔다. 큐가 없으면(env 미설정 · 로컬 시험판) 기본 큐로 예약한다. 예고를 지울 때의 예약 취소(`apply.cancel_video_checks`)는 이 큐의 `wake-<영상>-` 도 지운다.
+
+**구독 갱신**(쓰기 서비스 `POST /websub-renew`, Cloud Scheduler 매일 KST 06:20, OIDC): 6개(멤버 5 + 뮤타입 음원 채널 1) 구독 전부 `hub.mode=subscribe`(`hub.verify=async` · `hub.lease_seconds=432000`=5일 · `hub.secret`)를 다시 보낸다(멱등 — 임대 갱신).
+허브가 곧바로 검증 GET 을 보내고 콜백이 `verify` 를 기록한다 — **`verify` 가 로그에 보이면 구독이 살아 있다**. 갱신 잡은 갱신 **전에** 최근 3일 `flow=websub` 이벤트를 읽어 `verify` 가
+36시간 넘게 없는 구독을 찾아 DM 한다(이전 `renew` 기록이 없으면 첫 실행이라 판정 불가). 요청 실패(202/204 아님)도 DM. 결과는 이벤트 `action=renew`(문제가 있으면 warn).
+
+**모니터 이벤트 `flow="websub"`**: `verify` · `notify`(영상 ID · 제목 · 확인 결과 — 쓰기 서비스가 기록, v4.5.2) · `renew` · `reject` · `notify_fail`. 웹 monitor 리포트에는 아직 레인이 없다(이벤트 로그 파일에서 본다).
+(v4.5.2) `notify` 는 `merge_key`(`websub-notify:<영상>`)로 **같은 영상이 10분 안에 또 오면 새 줄 대신 기존 줄의 `count` 를 올리고 `last_ts` · `detail` 을 갱신**한다(`monitor_log._apply_merges`). 같은 분의 반복은 Cloud Tasks 이름 중복으로 확인 자체가 1번이라 count 에도 1번으로 잡힌다(매 알림은 접수 서비스 Cloud Run 로그 「PubSub 알림」 줄).
+`flow="song"` 의 `added` 이벤트에 `via`(tick|baseline|push)가 붙는다 — **`WEBSUB_REPLACE_RSS=1` 인데 `via=baseline` 으로 곡이 등록되면 푸시가 못 잡았다는 뜻이라 warn** (추가 감시 없이 푸시 실패를 알아채는 장치).
+
+**RSS 대체 스위치 `WEBSUB_REPLACE_RSS`**(쓰기 서비스 env, 기본 0): 0 = 알림도 받고 폴링도 그대로(이중 운영 · 롤백). 1 = 10분 light 틱이 RSS · 신곡 감지를 생략하고(`handlers._poll_plan`),
+이미 추적 중인 영상의 재확인만 한다. **일일 baseline(JST 06:00)은 RSS · 신곡 감지를 그대로 해 안전망**으로 남는다. 켜기 전에 `verify` 기록으로 구독이 살아 있는지 확인할 것.
+
+**검증되지 않은 가정**: ① 허브가 `hub.secret` 을 준 구독의 알림에 `X-Hub-Signature` 를 실제로 보내는지(시험기는 서명 없이 구독해 헤더를 기록한 적이 없다 — 첫 실알림에서 `reject`(헤더 없음)가 뜨면 이 가정이 틀린 것),
+② 허브가 허용하는 최대 임대, ③ 허브의 재시도 정책, ④ 뮤타입 음원 채널(자동 생성 채널)이 푸시를 실제로 보내는지(시험 기간 신곡 없음). ④ 는 baseline 안전망이 받아 주고 `via=baseline` warn 으로 드러난다.
+
+### 8.17 이미지 판독 대기 · 예비 판독(Cloud Vision) — `cloudvision.py` + `telegram_app._ocr_pending_*` + 관리 페이지 작업 탭 (v4.5.9)
+
+Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면**(429 · 5xx · 네트워크 — 「글자 없음 · NONE」은 실패가 아님) 자동 경로는 지금처럼 본문만으로 처리를 계속하고,
+그 글을 **이미지 판독 대기**(ops `ocr_pending.json`)에 적어 운영자에게 DM 한다. 운영자가 관리 페이지 작업 탭 「확인 필요」 하위 탭의 「이미지 판독 대기」 카드에서 허가하면
+**예비 판독 = Google Cloud Vision 텍스트 감지**로 읽어 같은 경로를 다시 탄다. **Cloud Vision 은 자동으로 부르지 않는다**(2026-10-21 운영자 결정).
+계기: 2026-10-21 실험이 같은 키(조직 단위 한도)의 Groq 비전 일일 토큰 200,000 을 193,767 까지 써서 운영 OCR 이 막힐 뻔했다. Groq 비전에는 쓸 수 있는 다른 모델이 없다
+(문서상 qwen3.8-27b 와 제한 프리뷰뿐, 옛 폴백 qwen3.6-27b 는 404 — 기본 폴백 제거).
+
+- **대상**: 행사 카드 OCR(`_prepare_banner` → `kind=banner`) · 그룹 영상 참여 멤버 OCR(`_ocr_cast_keys` 상태 `failed` → `_record_group_pending` → `kind=cast_group`).
+  소식 참여 멤버 OCR(`_maybe_tag_cast_participants`)은 제외 — 대상 계정(`bang_dream_on`) 글이 v4a 부터 소식 경로를 안 타고, `participants` 도 화면에서 안 쓴다.
+- **일일 한도 429**: `vision._call` 이 본문의 `per day` · `(TPD)` · `(RPD)` 를 보면 재시도 · 대기 없이 실패하고, 그 프로세스에서 1시간(`DAILY_BLOCK_SEC`) 동안 Groq 비전을 부르지 않는다(`groq_vision_state`).
+- **ops `ocr_pending.json`** = `{items[], usage{"YYYY-MM": 건수}, groq{state, at}, last_dm_at}`. 항목 = `{id, kind, status: pending|done, acct, tag|video_id, tweet_url, raw|title,
+  media[], reason, current(본문만으로 처리한 결과), created_at, last_seen, (처리 뒤) done_at, engine, units, result, ocr_preview, note}`. 같은 글 · 같은 영상의 대기는 한 줄(갱신).
+  48시간 지나면 정리. 쓰기 = 적용 큐 작업 `ocr_pending`(`_ocr_pending_commit` op add · update · remove · reserve · dm_mark). DM 은 1시간에 한 번(`_OCR_DM_GAP_SEC`), 알림 레벨과 무관.
+- **월 상한**: Cloud Vision 에는 월 할당량이 없어(분당만) 앱이 센다 — 허가 때 `reserve`(이미지 수만큼 이번 달 `usage` 에 먼저 더함, `cloudvision.MONTHLY_CAP`=900 을 넘으면 거절) 뒤에 호출.
+  요금(2026-10-21 공식): 이미지 1장 = 1단위, 월 1,000단위 무료, 넘으면 1,000단위당 $1.50.
+- **허가 뒤 다시 처리**(`_ocr_fallback_apply`): 행사 배너 = 판독 글자를 `_OCR_OVERRIDE` 로 주입해 `_banner_ingest_core` 를 다시 돌린다(같은 글이라도 `recheck` 로 「이미 반영한 글」 검사를 건너뜀 —
+  `apply_judgement(check_dup=False)` — v4.5.10 부터 `apply_post(check_dup=False)`, 판단 기록 사유에 「[이미지 판독 Cloud Vision]」, 반려 가능). 그룹 영상 = 판독 글자에서 5인 **정식 이름**(`xrelay.FORMAL_NAME_TO_KEY`, 곡 크레디트 줄 제외)을
+  찾아 확인 대기 항목의 제안 멤버로 넣는다(확정은 지금처럼 예고 탭). 「Groq 로 다시」(마지막 실패 1시간 뒤부터)는 같은 처리를 Groq 비전으로.
+- **관리 API**: `list_ocr_pending`(읽기) · `read_ocr_pending(item_id, engine=cloud|groq)` · `dismiss_ocr_pending(item_id)`. 작업 탭 버튼 배지 = 대기 건수(1분마다 갱신).
+- **첫 입장 팝업**: 대기가 있으면 관리 페이지에 들어올 때 「지금 확인해 주셔야 할 작업이 있습니다」 → 「지금 확인하기」 = 작업 탭 「확인 필요」 하위 탭. 「다시 보지 않기」는 그 로그인 세션 동안만(세션별 CSRF 토큰의 짧은 해시를 `localStorage` `mew.admin.attnHide` 에), 배지는 그대로.
+
+**작업 탭 구성 (v4.5.9, 운영자가 고른 시안 D — 아티팩트 「작업 탭 재구성 시안」)**: ① 요약 카드 3장(확인 필요 · 시스템 = 지금 상태 타일 중 가장 나쁜 것 · 다음 예정 = 첫 예약 + 예약 · 번역 대기 · 오늘 실패, 누르면 그 하위 탭) ② 하위 탭 [타임라인 · 확인 필요 · 예약·대기 · 시스템 상태](`#jobs-tab[data-sub]`) ③ 타임라인 = 흐름(경로 재생) · 자동 처리(배포판 = 이벤트 로그) · 내 조작(`list_history`)을 시간순 한 줄로, 시간대 머리줄(「오늘 16시」)로 묶고 칩 [전체 · 알림 · 방송 확인 · 자동 처리 · 내 조작 · LLM 판단 · 멈춤·진행 중 · 실패만]. 로컬은 관리 조작도 흐름이 되므로 흐름에 관리 조작이 있으면 내 조작은 빼 겹치지 않게 한다. 흐름을 누르면 PC 넓은 화면(≥1100px)은 오른쪽 상세, 좁으면 그 줄 아래로 펼침. 옛 「최근 자동 처리」 · 「내가 한 조작」 칸은 타임라인으로 합쳤다.
+- **배포**: `vision.googleapis.com` 활성화 · 접수 서비스 실행 계정(INVOKER_SA)에 `roles/serviceusage.serviceUsageConsumer`(`deploy/setup.sh`). 키 없음(서비스 계정 인증).
+
+### 8.18 보관함 정리 — 캐시 보관함 · 일자 보관함 (`archive_rotate.py`, 핫픽스 archive-split)
+
+- **왜**: GitHub Contents API 는 1MB 넘는 파일을 기본 형식으로 읽으면 내용을 비워 준다 → `gh_store.read_json` 예외 → 그 파일을 읽는 저장이 전부 실패.
+  `tweet_archive.json` 이 888,969B(2026-10-26)로 11-03 전후 넘을 참이었다(개인 트윗 저장 중단).
+- **캐시 보관함**(운영 경로가 읽는 최근분 — 파일 이름 그대로)과 **일자 보관함**(보존용 — 웹 모니터 지난 날짜 조회 · 분석만 읽음):
+
+| 캐시 | 남기는 기준 | 일자 보관함(날짜 = KST) | 비고 |
+|---|---|---|---|
+| `tweet_archive.json`(data) | 게시 7일 | `tweet_archive/YYYY-MM-DD.json`(게시일) | 계약 I |
+| `notice_archive.json`(data) | 보관 시각 · 행사 날짜 중 늦은 것 30일 | `notice_archive/YYYY-MM-DD.json`(처음 받은 날) + `notice_archive/index.json` | 계약 H |
+| `llm_actions.json`(ops) | 판단 시각 21일 | `llm_actions/YYYY-MM-DD.json`(판단 날) | 관리 페이지 반려 · 재판단 유효기간 |
+| `preview_archive.json`(data) | 보관 시각 7일 (v4.9.6) | `preview_archive/YYYY-MM-DD.json`(보관한 날) | 계약 B. 일자 파일 안 같은 기록 = id + 보관 시각(다시 보관된 같은 예고도 둘 다 남김) |
+
+- **보관함 정리**: `apply.run_snapshot`(백엔드 `/monitor`, 매일 KST 06:10 · 일시정지와 무관) → `archive_rotate.run_all`. 대상마다 ① 기준보다 오래된 항목을 날짜별로 묶어
+  ② 일자 파일에 id 로 합쳐 쓰고(이미 있는 id 는 그대로 — 두 번 돌려도 같음) ③ (소식) 색인 ④ 캐시에서 뺀다. 중간에 실패해도 양쪽에 남을 뿐 잃지 않는다. 캐시 쓰기 충돌 → 다시 읽어 재계산.
+  - 한 번에 쓰는 일자 파일 = 대상마다 3개(`MAX_FILES_PER_RUN`) — 백엔드는 한 번에 한 요청이라 이 작업 동안 `/write` 가 기다린다. 넘는 날짜는 다음 날.
+  - 크기 안전장치: 캐시가 800KB(`CACHE_LIMIT_BYTES`)를 넘으면 기간 안이라도 오래된 날짜부터 더 옮긴다. 그래도 넘거나 실패하면 운영자 DM.
+  - 모니터 `flow="archive"`(옮긴 게 있을 때만 1건/대상: ok · 크기 초과 남음 warn · 실패 err). 웹 모니터 타임라인에는 아직 레인이 없다(이벤트 로그에만).
+- **LLM 판단 기록**: 덧붙일 때 300건으로 자르던 것을 없앴다(전엔 넘는 판단이 사라졌다 — 이제 정리가 일자 파일로 옮긴다). 관리 페이지 「LLM 판단」은 캐시 전부를 보이고,
+  판단 후 21일(`archive_rotate.LLM_KEEP_DAYS`)이 지난 판단은 반려 · 재판단 · 사용자 판단을 서버가 거절한다(화면에도 판단마다 가능 기한 · 안내 문구).
+- **웹 모니터 지난 날짜**(`telegram_app._monitor_past_day` → `monitor_report.extend_lookup_for_day`): 캐시에서 못 찾은 트윗은 그날 · 다음 날 · 트윗 id 의 게시일 일자 파일에서,
+  소식은 색인으로 날짜를 찾아 그 일자 파일에서 찾는다(최대 6개씩, 실패하면 팝업만 덜 자세해짐).
+  (v4.9.6) 예고는 표에 없는 구간 id 가 있을 때만 그날부터 사흘 뒤까지 4개 일자 파일에서 찾는다(보관은 방송이 끝나거나 빠진 뒤라 그날 이후) — 보관이 한참 뒤인 예고(준영구 대기소 프레임 등)는 못 찾을 수 있다.
+- **저장 라우팅**: `storage.OPS_PREFIXES = ("llm_actions/",)` — LLM 일자 파일도 ops 브랜치로.
+- **첫 이전**: `scripts/split_archives.py --data <data 체크아웃> --ops <ops 체크아웃> [--dry-run]` — 밀린 분량을 같은 기준으로 한 번에 나누고 전후 id 집합을 비교(잃음 · 중복 0 이 아니면 안 씀),
+  결과는 git 으로 브랜치마다 커밋 1개. Contents API 로 하나씩 쓰면 GitHub 콘텐츠 생성 속도 제한에 걸리고 운영 쓰기와 다툰다.
+- (v4.9.6) 예고 보관함도 대상이 됐다(10-29 기준 136건 · 약 160KB, 2027년 중반 1MB 예상). 첫 이전도 같은 스크립트(예고 136건 → 캐시 18건 + 일자 파일 41개, dry-run 잃음 · 중복 0).
+- 범위 밖: `banners_archive.json` 도 상한이 없다 — 커지면 같은 방식으로. `notice_archive/index.json` 은 1년 약 180KB 로 자란다(몇 년 뒤 연도별로 나눌 것).
+- self-test: `python -m src.backend.archive_rotate`.
+
+## 9. 프론트엔드 모듈 (`src/frontend/`)
+
+- **index.html**: `<head>` 에 `<meta name="color-scheme" content="dark light">` + 테마 결정 인라인 스크립트(아래) + css(맨 끝 `theme.css`) +
+  Vercel Web Analytics(아래) + `<script type="module" src="js/main.js">`. body 는 `#notice` + `#board` + `#player-dock` + `#pager-dots` + `#foot`.
+- **밝게 / 어둡게 테마 (v4.6.0 — 그 전엔 어둡게 전용).** 테마 = `<html data-theme="light|dark">`.
+  - **처음 정하기**: head 인라인 스크립트가 CSS 보다 먼저 정한다(첫 화면이 다른 테마로 깜빡이지 않게) — 저장된 선택(`localStorage` `theme`)이 있으면 그것,
+    없으면 기기 설정(`prefers-color-scheme: light` 면 밝게, 그 밖은 어둡게). 저장소를 못 쓰는 환경(시크릿 모드 등)은 기기 설정만 따른다.
+  - **전환 버튼**(`js/theme.js` `themeButton`): 소식 막대(`.ntc__bar`)의 **마지막 칸**(▾ 오른쪽, 같은 높이 · 같은 세로 구분선). 아이콘 = 지금 테마(어둡게 = 달, 밝게 = 해 — BPM 테마 토글과 같은 방식).
+    누르면 반대 테마로 바꾸고 그 선택을 저장(다음 방문에도 유지). 버튼은 한 번만 만들고 `notices.js` 가 막대를 다시 그릴 때마다(75초 폴링 · 소식 0건 막대 포함) 같은 버튼을 옮겨 붙인다.
+    소식 막대 · 펼친 목록 폭은 v4.5.x 와 같다(버튼이 막대 안 한 칸을 쓰고 티커 글자 자리만 그만큼 줄어든다, 모바일은 ▾ · 전환 두 칸을 2.25rem 으로 좁힘).
+  - **기기 설정 따라가기**: 한 번도 직접 고르지 않았으면 기기 설정이 바뀔 때 화면도 따라 바뀐다(`initTheme`). 직접 고른 뒤에는 그 선택이 우선.
+  - **색**: 각 css 의 `:root` 토큰이 어둡게 값(기본), `css/theme.css` 의 `:root[data-theme="light"]` 가 밝게 값으로 덮는다(디자인 = 목업 아티팩트 「v4.6.0 테마 목업」 밝게 A — BPM 톤:
+    배경 #f5f4fb · 카드 #fff · 글자 #232436). 멤버 레인 색(아바타 평균색) · 트윗 시트(멤버 색) · 썸네일 위 덮개는 두 테마 공통.
+    X 공식 카드도 같은 테마로 불러오고(`tweets.js` `_embedSrc` 의 `theme=`), 테마를 바꾸면 열린 카드를 다시 불러온다(`mew:theme` 이벤트).
+    노노카 지각 이스터에그(`king.css`)의 무대 그림은 자체 어두운 배경이라 두 테마 공통. (v4.5.8) 카드 · 팝업 본문 위 대신의 말 글자 · 단계 테두리는 테마를 따른다 —
+    `king.css` 토큰 `--k-ink-kick` · `--k-ink` · `--k-ink-gold-kick` · `--k-ink-gold` · `--k-edge-lo` · `--k-edge`(어둡게 = 은빛 · 연금색), 밝게 값은 `theme.css`(진한 쇠색 · 진한 금색). 밝은 바탕에서 은빛 글자가 안 보였다.
+  - 바꾸는 순간에만 배경 · 글자 · 테두리 색이 0.3초에 걸쳐 바뀐다(`html.theme-anim`, 움직임 줄이기 설정이면 즉시).
+  - **브라우저 자동 어둡게(삼성 인터넷 · Chrome Android force-dark)는 계속 끈다** — `color-scheme` 메타가 dark 를 포함하고 `:root` 의 `color-scheme` 이 테마를 따른다.
+    선언이 없으면 기기 다크 모드에서 투명 섞기 색(헤더 그라데이션 · 트윗 시트)이 이중 처리돼 뭉개진다.
+- **방문 통계 (v4.5.4, v4.6.0 Claude 접속 제외)**: Vercel Web Analytics 스크립트. **주소에 `?va=claude` 가 붙은 탭은 통계를 보내지 않는다** — 공식 `beforeSend`(null 반환)로 막고,
+  표시는 그 탭의 `sessionStorage`(`va-skip`)에 남아 같은 탭에서 새로고침 · 이동해도 계속 빠진다. 같은 브라우저의 다른 탭(운영자 접속)은 그대로 집계된다.
+  Claude 가 운영 사이트를 브라우저로 열 때 이 표시를 붙인다(CLAUDE.md). 그 전(10-16 · 10-19, Chrome 접속 4회)은 집계에 들어가 있다.
+- **css/**: `reset` · `layout`(`#board` ≥1100px `grid-template-columns:repeat(5,1fr)`, <1100px 가로 스크롤 · 공통 색 토큰) ·
+  `card`(6상태 클래스 §3, mobile @media 파일 끝) · `timetable` · `king` · `player` · `playerpop` · `notices` · `banners` · `tweets` · `theme`(v4.6.0, 맨 끝 — 밝게 값 · 전환 버튼).
+- **js/theme.js** — (v4.6.0) 위 「밝게 / 어둡게 테마」. `themeButton()` · `initTheme()` · `currentTheme()` · `THEME_EVENT`(`mew:theme`).
+- **js/config.js** — `PREVIEW_URL`(raw githubusercontent data/preview.json), `ARCHIVE_URL`(v4.1.0), `NOTICES_URL`, `TWEETS_URL`,
+  `POLL_MS=75000`, `COUNTDOWN_TICK_MS=60000`, `FETCH_TIMEOUT_MS=8000`, `FALLBACK_CHANNEL_ORDER`, `FALLBACK_CHANNELS`.
+- **js/time.js** — 계약 D. 순수, DOM 접근 없음. selfcheck: `time.selfcheck.mjs`.
+- **js/api.js** — `fetchPreview(url)`: AbortController + `FETCH_TIMEOUT_MS`, `cache:"no-store"`. `{ok,data|error}`.
+- **js/render.js** — `renderBoard(boardEl, preview, nowMs, archive)` (계약 C 전체 재구성. 알 수 없는 channel_key 무시. **v4.1.0**: PC = 타임테이블 + 이후 예고, 모바일 = 1명씩 슬라이드),
+  `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
+- **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
+  `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로 붙인다. **PC(≥768px)는 버튼이 없다** — 플레이어가 `#player-dock`(보드 아래)에 상시 표시된다(아래). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다(모바일 모달).
+  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
+    프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
+- **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
+  `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
+- **js/king.js** + **css/king.css** — (v4.3.1) 노노카 지각 이스터에그. 위 「노노카 지각 이스터에그 (v4.3.1)」. `timetable.js` 가 `decorateBlock` · `decoratePopup` · `decorateCard` 를 호출. selfcheck: `king.selfcheck.mjs`.
+- **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
+  마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+  **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어
+  (브라우저 스펙상 보장 안 됨) — `visibilitychange`(visible 전이) + `pageshow`(`persisted`,
+  bfcache 복원) 리스너로 포그라운드 복귀 시 `poll`+`pollNotices`+`pollTweets` 즉시 재실행.
+  없으면 복귀 직후 오래된 `lastSchedule` 로 카운트다운을 계산해 이미 끝난 방송이
+  "OOO시간 지각"처럼 잘못 보이다가 다음 정기 poll(최대 `POLL_MS`) 이 돼야 정정됐음.
+- **js/notices.js** + **css/notices.css** — `NOTICES_URL` 75초 폴링 → `#notice` 소식판. 아래 「소식판 (v4.6.4)」.
+  (v4.6.3 까지: 한 줄 티커 + 펼친 목록, 제목을 `[번역]　—　[원문]` 으로 이어 marquee — v4.6.4 에서 없앰.)
+- **js/tweets.js** + **js/tweetlogic.js** + **css/tweets.css** — `TWEETS_URL` 75초 폴링. 보드의 아바타 · 이름 · 트윗 배지(`.lane__tw`)를 누르면 **트윗 시트**가 열린다(아래 「트윗 시트 (self-reply 핫픽스)」).
+  트윗 배지: 안 읽음 1건 = 빈 원, 2건+ = 숫자 원, 모두 읽음 = 표시 없음. 색 = `--tw-badge-bg`(v4.9.6 청록 → 빨강 `var(--color-live)`, 글자 흰색 · 펄스 글로우도 같은 색). (v4.9.6) 트윗이 있는 멤버의 아바타 링 `.has-tweet` 은 없앴다.
+  `expires_at` 이 지난 메시지는 빼고, 게시 시각순으로 최대 `MAX_THREAD`(=50)건을 보여 준다. 트윗 없는 네임플레이트는 흔들기 + 「OO의 새 트윗이 아직 없어요」(`_noTweet`).
+- **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
+
+### 트윗 시트 (self-reply 핫픽스) — `tweets.js` · `tweetlogic.js` · `css/tweets.css`
+
+설계 정본 = devpapers `ref/self-reply/ui_spec.md`(결정 U1~U9, §3 지킬 것) · 확정 시안 `ui_prototype.html`. 시트 하나를 `document.body` 에 두고 JS 가 만든다(`createElement` · `textContent` 만, innerHTML 금지).
+
+- **DOM(클래스 계약 — 이름을 바꾸면 여기 먼저)**: `.tws-scrim`(바깥 어둠, 클릭 = 닫기) · `section.tws[role=dialog][aria-modal=true][aria-labelledby=tws-nm]` > `.tws__rz--t`(PC 위 가장자리 손잡이, v4.9.1) · `.tws__grab`(폰 손잡이) · `.tws__head`(v4.9.5 — **한 줄**: `nav.tws__members` · `.tws__seg`(번역 | 원문, 알약 `.tws__seg-pill`) · 화면 낭독용 시트 이름 `#tws-nm`(안 보임). 닫기 단추 `.tws__close` · 「@핸들 · 최근 48시간」 줄은 없앴다 — 닫기 = 바깥 누르기 · Esc · 폰 끌어 내리기, 핸들은 번역 카드마다 있고 지금 멤버 칩 `title` 에도). `nav.tws__members` = 칩 `.tws__chip` ×5(순서 = `channel_order`): 얼굴 `.tws__chip-av`(32px, 네임플레이트 `.lane__avatar` 와 같은 이미지 + 레인 색 테두리, 글 없는 멤버는 흐림 · 회색 기운) · 짧은 이름 `.tws__chip-nm`(「유노」, **지금 멤버 칩에만 보임** — 다른 멤버는 얼굴만, 이름은 `aria-label` · `title`). 칩이 한 줄에 다 안 들어가면(폰 360px 이하) 칩 줄 안에서 옆으로 밀린다 · 새 글 수 `b`(얼굴 오른쪽 위) + 지금 멤버 알약 `.tws__mpill`. (v4.9.5 운영자 D안 — 시트 머리 줄 아바타 · 이름을 없애고 칩 줄 + 번역 · 원문을 한 줄로 합쳐 트윗 칸을 세로로 넓혔다(폰 머리 높이 50px). 같은 얼굴이 머리 줄 · 칩 · 글마다 겹쳐 3번 넘게 보이던 것. 번역 면 머리 줄(아바타 · 이름 · 핸들)은 그대로) · `.tws__feed`(`.tws__new` 「여기부터 새 글」 · `.tws-chain[role=group]` 글타래 · `article.tws-tw`) · `.tws__newchip`(「새 글 N개 ↓」) · `.tws__fab`(v4.9.1 ↓ 동그라미 > `.tws__fab-in` · 수 `.tws__fab-n`) · `.tws__hint`(원문 면 첫 안내 한 줄) · `.tws__live`(v4.9.1 화면 낭독기용 상태 한 문장, 안 보임) · `.tws__rz--b`(PC 아래 가장자리 손잡이 > 높이 말풍선 `.tws__hread`).
+- **글 한 개 (v4.9.3)**: `article.tws-tw` > `.tws-tw__track`(두 면을 **같은 칸에 겹친다**, `display: grid`) > `.tws-tw__face.is-front` / `.is-back`(번역 면 · 원문 면) · `.tws-tw__dots`. 글 위 시각 줄(옛 `.tws-tw__meta` · `.tws-tw__time` · `button.tws-tw__media`)과 첨부 줄(`button.tws-att`)은 없앴다.
+  - **번역 면** `.tws-ko` = X 카드와 같은 뼈대(아래 「두 면 위치 맞추기」): `.tws-ko__head`(아바타 `.tws-ko__av` · 이름 `.tws-ko__nm` · `.tws-ko__hd`「@핸들」 · 오른쪽 `.tws-ko__tag`「번역」) · `.tws-ko__re`(자기 답글이면 「↩ 이어서 · N분 뒤」 한 줄 — X 카드의 「@핸들 님에게 보내는 답글」 줄 자리) · `p.tws-ko__txt`(번역 본문) · `.tws-md`(미디어 격자) · `.tws-ko__q`(인용 상자 > `.tws-ko__qi`(`b.tws-ko__qh`「인용한 글」 · `.tws-ko__qt` 인용 번역) · 인용 `.tws-md`) · `.tws-ko__foot`(`.tws-ko__time` 시각 · `a.tws-tw__open`「𝕏에서 원문」).
+  - **원문 면** = X 카드 `.lane__thread__xcard` 공용 + 트윗 시트에만 덮개 `.tws-xcover` · 영상 칸 글로우 `.tws-glow`.
+  - **미디어 격자** `.tws-md.g1~g4` > `.tws-md__cell`(사진 = `div[role=img]` 안에 `<img referrerpolicy="no-referrer">` — v4.9.11, X 이미지 서버가 외부 Referer 를 거부, 영상 = `button.is-video` > `.tws-md__play` ▶, 5개 이상이면 넷째 칸 `.tws-md__more`「+N」).
+  - 피드에는 날짜가 바뀌는 곳마다 `.tws__day`(「10월 28일 (화)」 구분선)가 들어간다. 원문 높이를 재는 숨은 칸 `.tws__measure` 가 시트 안에 하나 있다.
+- **X 카드 덮개 (v4.9.1 PC · 마우스 → v4.9.4 폰 · 터치에도)**: X 카드는 iframe 이라 그 위에서 누른 마우스 · 손가락을 바깥이 받지 못해 카드 위에서 옆으로 밀 수 없었다. (v4.9.4) v4.9.3 에서 글 위 시각 줄(손가락 손잡이)을 없앤 뒤로 폰 원문 면에서는 아래 점 줄만 밀 수 있어 「원문 카드에서 좌우로 밀리지 않는다」가 됐다 — 덮개를 모든 기기에 씌운다(`touch-action: pan-y` 라 세로로 밀면 피드가 스크롤된다). 카드 머리(작성자 줄, `--xhead` 64px — 실측 작성자 줄 약 55px · 본문 73px부터) 아래를 투명한 `.tws-xcover` 로 덮어 밀기 손잡이로 쓴다. 끌지 않고 한 번 누르면 그 카드에 `.is-live`(덮개가 비키고 「카드 조작 중」 표시 · 테두리) → 다음 누름은 카드로(영상 재생 · 링크), 마우스가 카드를 벗어나거나 카드 밖을 누르거나(v4.9.4, 폰) 번역 면으로 돌아오면 다시 덮인다. 영상 칸으로 넘어올 때는 미리 비켜 둔다. 「X에서 보기」 대체 링크가 떠 있으면 덮지 않는다. 원문 면 첫 안내 한 줄 = 「카드를 옆으로 밀면 번역으로 돌아와요. 카드 속 영상 · 링크는 한 번 누른 뒤 다시 누르세요.」 소식 팝업의 X 카드에는 없다.
+- **면**: 글 하나에 번역 면 · 원문 면 중 한 번에 한 면만 칸 전체 폭. 머리 줄 「번역 · 원문」 탭 = 모든 글 한꺼번에(저장값 `mew:tllang` 을 그대로 이어받음). 글 하나만 = 옆으로 밀기(마우스 끌기 · 트랙패드 · 터치 · ←/→). 영상 칸 = 그 글만 원문 면(아래 「미디어」).
+  (v4.9.3) **겹쳐 밀기**: 두 면은 같은 칸에 겹쳐 있고 뒤 면은 `opacity: 0` · `pointer-events: none` · `aria-hidden` · `inert` 로 **제자리에** 둔다 — 그래야 번역 면을 보는 동안에도 X 카드가 그려지고 높이 신호를 보낸다(10-28 운영 실측: 옆으로 밀어 둔 카드는 신호가 오지 않아 410 → 647px 처럼 넘길 때 커졌다). 바꿀 때 앞 면만 `translateX(±40%)` + 투명도 0 으로 300ms 밀려 나가고 뒤 면이 드러난다. 끄는 중엔 앞 면이 손을 따라가며 흐려지고 25% 를 넘겨 놓으면 넘어간다. 못 넘기면 제자리로 튕긴다. 더 갈 면이 없는 쪽은 고무줄(최대 24px). 입력 = 마우스(글 어디서나, PC 덮개 위 포함) · 터치(번역 면 · 점 줄 · (v4.9.4) 원문 카드 덮개 위, `touch-action: pan-y` + pointer 끌기 — 덮개가 없는 카드 머리 줄 위는 iframe 이 가져간다) · 트랙패드 가로(`wheel` `deltaX` 누적 60px, 넘긴 뒤 400ms 쉼) · ←/→.
+- **열기 · 닫기**: 보드 클릭 위임(트윗이 있는 멤버만). 폰(`max-width: 767px`) = 아래 시트(높이 86%), 손잡이 · 머리 줄을 아래로 끌어 닫기(`sheetdrag.js` `wireSheetDrag`). PC(768px 이상) = 가운데 팝업 540px, 바깥 클릭 · Esc 로 닫기(v4.9.5 부터 ✕ 단추 없음), 끌어 닫기 없음. (v4.9.1) 높이 = `mew:twh`(사용자가 정한 값, px) → 없으면 창의 90%(창 - 16px 넘으면 줄여 씀, 최소 360px). 머리 줄(버튼 · 탭 밖)을 잡아 옮긴다(`--tx` · `--ty`, 머리 줄은 늘 창 안 · 가로 80px 이상 창 안, 열 때마다 가운데로 — 위치는 기억 안 함). 위 · 아래 가장자리(`.tws__rz`, 커서 ns-resize, 올리면 가운데 막대)를 끌면 높이가 2 × 끈 거리만큼 바뀌어 위아래가 대칭으로 움직이고(가운데 기준), 끄는 동안 「높이 Npx · 창의 N%」, 놓으면 저장. 가장자리 더블클릭 = 저장값 지우고 90%. 옮기기 · 늘이기 중엔 `.is-geo`(전환 없음). 창 크기가 바뀌면 높이 · 위치를 창 안으로 다시 맞추고, 폰 폭으로 넘어가면 PC 값을 지운다.
+  **스크롤 잠금**(`body.tw-modal-open`): 스크롤바가 보이면 잠그는 동안 `html.tw-gutter`(`scrollbar-gutter: stable`)로 그 자리를 비워 둬 배경이 옆으로 밀리지 않는다(v4.9.1 — 전엔 열 때 오른쪽, 닫을 때 왼쪽으로 스크롤바 폭만큼 움직였다). 비운 자리는 바깥 어둠이 덮지 못하므로 어둠이 덮은 바탕과 같은 색(`--color-bg` 45% + 검정)으로 칠한다. 스크롤바가 화면 위에 겹치는 환경(폰 · macOS)은 폭이 0 이라 할 일 없음. PC 호버 미리보기 · 여러 개 고정은 없다. 폭 경계를 넘나들어도 닫지 않고 모양만 바뀐다(CSS 미디어 쿼리).
+  닫을 때 · 멤버를 바꿀 때 그 멤버 글을 읽음 처리(`mew:twread`, 4일 보존) — 보드 배지가 줄어들며 사라진다. 닫으면 X 카드 iframe 을 지운다(`_stopCards`).
+- **목록 규칙**(`tweetlogic.js`, DOM 없음 · selfcheck C1~C9): `chains()` = `reply_to_id` 가 목록 안 글이면 같은 글타래(뿌리까지), 글타래 안은 게시 시각순, 글타래 자리 = 가장 늦은 글 시각(끌어올리기). 원글이 목록에 없으면 답글은 혼자. 순환은 혼자 처리(무한 반복 없음). `reply_to_id` 없는 옛 데이터는 게시 시각순 그대로. 2분 묶음은 없다.
+  `reconcileUnits(옛 글타래 id 들, 새 글타래 id 들)`(v4.9.1, selfcheck C9) = 새 글만 끼울 계획. 옛 글타래가 하나도 빠짐없이 새 글타래 하나의 앞부분(같은 뿌리 · 같은 순서 · 뒤에만 덧붙음)이면 새 글타래마다 `{ from, add, keep }`, 아니면 `null`. `keep` = 옛 순서를 지키는 가장 긴 줄에 든 글타래(나머지만 옮긴다).
+  시각(v4.9.3 — 메신저처럼 한 번만): 번역 면 바닥 줄 `.tws-ko__time` = `HH:MM`(KST), 올리면 `M/D HH:MM · N분 전`(`title`), 게시 시각을 모르면 `HH:MM 등록`. 날짜는 `.tws__day` 구분선(글타래 자리 = 가장 늦은 글의 KST 날짜). 답글 간격은 `.tws-ko__re`「↩ 이어서 · 「N분 / N시간 M분 / N일 뒤」」.
+  「여기부터 새 글」 = 첫 안 읽은 글 앞(답글이면 글타래 안). 표시만 하고 스크롤 목표로는 쓰지 않는다(v4.9.3).
+  **스크롤 자리(v4.9.3)**: 시트를 열 때 · 연 뒤 멤버에 처음 들어갈 때 = 맨 아래. 연 동안 멤버별 자리를 기억(`{ id: 위 가장자리에 걸친 글, off }` 또는 맨 아래)했다가 그 멤버로 돌아오면 그 자리(글이 없어졌으면 맨 아래). 닫으면 잊는다. 계산은 `tweetlogic.restoreTarget`.
+- **미디어 (v4.9.3, 10-28 운영자 법률 재검토)**: 번역 면에 본문 · 인용 글의 사진 · 영상(썸네일)을 그린다. 조건 = ① X 원문 카드가 함께 있을 것(원문 면) ② 작성자 이름 · 핸들 · 작성 시각 · 원본 링크가 보일 것(시트 머리 줄 · 번역 면 머리 줄 · 바닥 줄) ③ 내려받기 막기. 원문 **텍스트**는 번역 면에 그리지 않는다(원문 높이를 재는 숨은 칸에만 넣는다).
+  - 사진 = `media` · `quote.media` 중 영상 썸네일이 아닌 URL, 영상 = URL 에 `video_thumb` 또는 `amplify` 포함(`tweetlogic.mediaItems`). 그림 주소는 `name=small` 로 요청(`smallUrl`).
+  - 격자 = X 카드 실측 규칙(10-28, 카드 폭 362 · 512 · 548px 에서 같음): 2 · 3 · 4칸 = 묶음 전체 16:9(2칸 좌우 · 3칸 왼쪽 큰 칸 + 오른쪽 위아래 · 4칸 2×2, 사진 · 영상 섞여도 같음), 1칸 = 원래 비율이되 세로로 길면 정사각형으로 가운데를 자른다(크기는 `new Image()` 로 읽는다, 읽기 전 16:9). 칸 사이 2px · 묶음 테두리 1px · 모서리 12px. 인용 상자 안 격자는 상자 아래에 가장자리까지 붙인다(테두리 · 모서리 없음). X 는 글 하나에 최대 4개(「+N」은 만일을 위한 처리). 계산 = `gridOf` · `singleRatio` · `mediaBoxH`.
+  - **내려받기 막기**: `<img>` 대신 `background-image`(우클릭 「이미지 저장」 메뉴 없음), 격자에서 `contextmenu` · `dragstart` 막기, `user-select: none` · `-webkit-touch-callout: none`. 개발자 도구 · 화면 캡처는 막을 수 없다.
+  - **누르기**: 사진 칸은 누르지 않는다(보기만). 영상 칸(▶)만 `button` — 누르면 그 글만 원문 면으로 넘기고, 300ms 뒤 X 카드 위 **같은 영상 칸 자리**에 글로우(`.tws-glow`, 멤버 색 `--m` 1.5px 테 + 8px 번짐, 최고 불투명도 0.8, 650ms 한 번)를 겹쳐 그린다(누름은 통과). 그 카드 덮개를 미리 비켜 둔다(`.is-live`, v4.9.4 부터 폰도) — 다음 한 번 누름이 바로 카드 영상 재생에 닿는다. 카드 안 영상을 우리가 대신 재생시킬 수는 없다(다른 사이트 iframe).
+- **두 면 위치 맞추기 (v4.9.3)**: 번역 면을 X 카드와 같은 뼈대 · 치수로 그려, 넘겨도 사진 · 인용 · 시각이 같은 자리에 오게 한다. X 카드 실측(10-28, 폭과 무관): 테두리 1px · 안쪽 위 12 / 옆 16px · 머리 줄 48px · 12px 뒤 (답글이면 24px 줄 뒤) 본문(20px/24px) · 12px 뒤 미디어 · 12px 뒤 인용 상자(1px 테두리 · 12px 여백 · 이름 줄 26px · 인용 본문 15px/20px · 12px 뒤 미디어를 아래에 붙임) · 8px 뒤 시각 줄 20px · 그 아래 100px(반응 · 답글 버튼 — 7개 글에서 모두 같음).
+  - 번역 본문 · 인용 번역 칸은 **원문 높이만큼 자리를 잡는다**(`min-height`). 원문 높이는 ① 숨은 칸 `.tws__measure`(X 카드와 같은 시스템 글꼴 · 크기 · 폭)에 원문을 넣어 잰 값, ② X 카드 높이 신호가 오면 「카드 높이 − 본문 밖 고정 치수」로 거꾸로 계산한 본문 높이(`tweetlogic.xTextH`)로 바꾼다. 번역이 원문보다 길면 그만큼 아래 칸이 내려간다(카드는 줄일 수 없다). 영상 글로우 자리는 이 차이만큼 빼서 카드 쪽 자리로 맞춘다.
+  - 카드 자리 높이도 같은 계산(`predictCardH`)으로 잡는다(전엔 `estimateCardH` 어림 — 소식 팝업은 그대로 어림).
+- **X 카드 불러오기**: 글(`article.tws-tw`)이 피드 화면 근처(위아래 한 화면)에 들어올 때 `_loadCard`(번역 면 그림도 이때 넣는다). 자리 높이는 `predictCardH`(트윗 시트) · `estimateCardH`(소식 팝업) → 높이 신호가 오면 그 값. (v4.9.3) 두 면을 겹친 뒤로는 번역 면을 보는 동안에도 화면 근처 카드가 실제로 그려진다(그리는 부담이 늘었다).
+- **폴링**: 75초마다 `renderTweets`. 열린 시트는 **멤버 칩 새 글 수를 늘 맞춘다**(v4.9.1 — 전엔 보고 있는 멤버 글이 그대로면 다른 칩 수도 안 바뀌었다; 늘어난 칩은 숫자가 톡 커지고 「유노 새 글 4개」를 `.tws__live` 로 알림). 글 목록은 표시 서명(`sigOf`: id · 번역 · 인용 번역 · reply_to_id)이 바뀐 때만 손댄다:
+  (v4.9.1) **새 글만 끼우기**(`_patchFeed`) — `reconcileUnits`(아래 「목록 규칙」)가 계획을 세우면 이미 그린 글(X 카드 iframe 포함)은 그대로 두고 새 글 · 글타래만 넣는다. 이미 있던 글은 시각 줄 · 번역 · 인용 번역 · 원문 링크만 제자리에서 고친다. 글 하나였던 자리에 답글이 붙으면 그 글을 새 글타래 묶음으로 옮기고(그 카드만 다시 불러와짐), 옛 글에 답글이 와 글타래가 끝으로 끌어올려지면 그 글타래만 옮긴다. 계획이 안 서면(글이 빠짐 · 글타래 안에 끼어듦 · 뿌리가 바뀜 · 첨부 수나 인용 유무가 바뀜) 예전처럼 다시 그린다(면 · 스크롤 위치 유지). 모든 메시지가 사라지면 닫는다.
+  **새 글 도착**(v4.9.1): 갱신 직전 피드가 맨 아래(24px 이내)였으면 새 글이 아래에서 36px 떠오르며(`.is-arriving` 560ms) 들어오고 피드가 부드럽게 맨 아래로 따라간다. 아니면 화면 아래쪽에 들어온 새 글 수를 오른쪽 아래 **↓ 동그라미**(`.tws__fab`, 44px · 멤버 글자색 바탕 · 빨간 수)에 띄운다. (v4.9.3) 새 글이 없어도 피드가 맨 아래에서 160px 넘게 올라가 있으면 숫자 · 흔들기 없이 「맨 아래로」 동그라미가 뜨고, 160px 안으로 오면 사라진다(`tweetlogic.fabMode`). 새 글이 있을 때는 — 2.8초마다 한 번 약하게 흔들리고(옅은 테가 퍼지고 화살표가 아래로 툭) 올리면 멈춤, 수가 늘면 숫자가 톡. 누르거나 직접 맨 아래까지 내려오면 기다리던 글 테두리가 한 번 빛나고(`.is-fresh`) 동그라미는 사라진다. 화면 안에 끼어든 새 글은 그 자리에서 떠오른다. 동그라미가 떠 있는 동안 「새 글 N개 ↓」 칩은 숨긴다. 글 수 · 이름은 `.tws__live` 한 문장으로 알림. 움직임 줄이기면 떠오르기 · 흔들기 · 빛내기 대신 투명도만.
+- **색**: 바탕 = 멤버 레인 색(`--lane-color`, 없으면 `#3a3a3e`), 글자 = 검정(`#17171b`) · 흰색 중 대비가 큰 쪽(`inkFor`), 번역 칸 = 글자 반대쪽으로 섞은 `--paper`(`paperFor`). 멤버를 바꾸면 `@property --m · --mi` 로 500ms 동안 넘어간다.
+- **움직임**: A1 엿보기(처음 두 번, `mew:twpeek`) · A2 끄는 중 점 · 25% 넘으면 진동 · A3 끝 고무줄 · A4 머리 줄 알약 · A5 칩 알약 · 칩 줄 끌기 · B1 영상 칸 → 원문 + 같은 칸 글로우(v4.9.3) · B2 PC 열기 320ms · 닫기 210ms · B3 폰 끌기 · 배경 옅어짐 · B4 「여기부터 새 글」 선 · 배지 사라짐 · B5 X 카드 자리 쉬머(`.lane__thread__xskel`) · C1 글타래 세로줄 · C2 「새 글 ↓」 칩 · C3 피드 끝 흐림 · C4 키보드 포커스. 움직임 줄이기면 이동 · 크기는 끄고 색 · 투명도만.
+- **저장 키**: `mew:twread`(읽음, 4일) · `mew:tllang`(면, 기존 키 그대로) · `mew:twpeek`(엿보기 횟수, 새 키) · `mew:twh`(v4.9.1 PC 팝업 높이 px). 모두 try/catch.
+- **지운 것**(v4.8.6 까지의 말풍선 · 토스트): `.lane__bubble*` · `.tw-toast*` · `.tw-backdrop` · `.lane__thread__grp/__unit/__msg/__t/__quote`, PC 호버 미리보기 · 여러 개 고정, 2분 묶음.
+- **남긴 것**: `.lane__thread__xcard`(· `__embed` · `__xskel` · `__xlink`) · `.lane__tw` · `.is-nope` · `.tw-nope` 와 그 코드. 소식 팝업(`notices.js`)도 같은 X 카드를 쓴다(`makeXCard` · `loadXCards` · `stopXCards`).
+- **v4.9.1 확인 · 미확인**: 로컬(실제 data 의 tweets.json + 시험 글을 덧붙여 다시 읽기, PC Chrome 1718×1304 · 390px 틀)에서 확인 — 열고 닫을 때 보드 위치 그대로(스크롤바 10px) · 높이 = 창의 90% · 머리 줄 옮기기 · 위 가장자리 끌기로 높이 1174 → 918px(가운데 그대로) · 저장 후 다시 열면 918px · 카드 덮개 위 끌기로 번역 면 · 한 번 누르면 「카드 조작 중」 → 카드 밖으로 나가면 풀림 · 맨 아래에서 새 글 → 맨 아래 유지 · 위로 올려 둔 채 새 글 2개 → ↓ 동그라미 「2」 → 누르면 맨 아래 · 동그라미 사라짐 · 다른 멤버 칩 3 → 4 · 새 글을 끼워도 기존 X 카드 iframe 유지 · 폰 폭에선 손잡이 · 덮개 없음 · 시트 86%. **미확인**: 실제 X 카드 안 영상 재생(덮개를 비킨 뒤) · 밝게 테마의 비운 스크롤바 자리 색 · 움직임 줄이기 · 실기기 터치 · 운영 폴링 중 실제 새 글(글타래 끌어올리기 포함). 떠오르는 움직임 자체는 자동 확인이 어려워 눈으로 확인 필요.
+- **v4.9.3 확인 · 미확인**: 로컬(운영 data 사본 + 실제 X 글 7개를 시험 글로 덧붙임 — 영상 1 · 영상 3+사진 1 · 사진 4 · 인용 사진 3 · 사진 1+인용 사진 2 · 세로 사진 1 · 자기 답글, PC Chrome 팝업 폭 502px · 390px 틀)에서 확인 — 열면 맨 아래(scrollTop = 최대) · 다른 멤버 처음 = 맨 아래 · 올려 둔 멤버로 돌아오면 같은 글이 위 가장자리 · 번역 면을 보는 동안에도 화면 안 X 카드 높이 신호가 옴(뒤 면 `inert` 상태에서도) · 카드 높이 어림(숨은 칸) vs 실제: 8개 중 7개 0~3px, 1개 23px(본문 원문 한 줄 더 셈 — 신호가 오면 거꾸로 계산으로 정확) · 두 면을 반투명으로 겹쳐 눈으로 비교: 머리 줄 · 본문 시작 · 4칸 격자 · 인용 상자 · 인용 사진 · 시각 줄이 같은 자리(PC 502px · 폰 348px) · 영상 칸 누름 → 원문 면 + 글로우 자리 = 누른 칸 자리(0px) · PC 덮개 비킴 · 사진 칸 우클릭 막힘(`defaultPrevented`) · 사진은 `div[role=img]` 배경 그림(`name=small`) · 날짜 구분선 2개(10월 27일 (화) · 10월 28일 (수)) · ↓ 동그라미: 맨 아래 = 없음, 100px 위 = 없음, 400px 위 = 「맨 아래로」(숫자 없음), 누르면 맨 아래(6315px 위에서 눌러도 바닥까지 — 내려가며 카드가 커져도 끝에서 한 번 더 맞춤). selfcheck tweetlogic 85건(C10~C15 새로) · 다른 프론트 selfcheck 5개 통과. **미확인**: 실기기 터치 밀기 · 진동 · iOS 길게 누르기 메뉴 · 트랙패드 가로 넘기기 · 밝게 테마 · 움직임 줄이기 · 운영 폴링 중 실제 새 글 · 아주 가로로 긴 사진(파노라마)의 X 카드 높이 한계 · 영상이 섞인 묶음 모서리 16px 조건 · 인용 글에 미디어가 없을 때 아래 여백(12px 로 가정) · 인용 본문은 숨은 칸으로만 재므로(거꾸로 계산 없음) 줄바꿈이 다르면 인용 사진이 어긋날 수 있음 · X 가 긴 URL 을 「…」로 줄이는 규칙(숨은 칸은 원문 그대로 잰다).
+- **미확인(10-27 기준)**: 실기기 터치 · 진동 · 밝게 테마 · 움직임 줄이기 · 시트 끌기 — 운영자 브라우저 확인 전. `css/reset.css` 의 선택 허용 목록에 옛 클래스 `.lane__thread__msg`(번역 글 선택)가 남아 있다 — 새 번역 글(`.tws-ko__txt` · `.tws-ko__q`)로 바꿔야 터치 기기에서 복사가 된다(범위 밖이라 이번 핫픽스에서는 안 건드림).
+
+### 소식판 (v4.6.4) — `notices.js` · `css/notices.css`
+
+2026-10-22 운영자 확정(시안 아티팩트 「소식 팝업 카드」 · 「소식판 시안」). 경계 = 767px(이하 모바일).
+- **PC = 날짜별 묶음**: 접힌 막대 = [램프] [분류별 건수 칩] [오늘 n · 7일 안 n] [5초마다 넘어가는 티커] [▾] [테마]
+  ((v4.7.5) 모바일과 같은 분류 칩을 PC 에도 — 누르면 그 분류로 펼침, 「소식」 글자는 PC 에서도 숨김). 티커 한 줄 = D-day · 분류 아이콘 · 제목 · 날짜(요일) 시각.
+  **티커 제목을 누르면 링크로 가지 않고** 목록을 펼쳐 그 소식 팝업을 고정해 연다. 펼침 = 행사 배너 → 분류 칩(스크롤해도 위에 붙음) + [한글 | 원문] → 날짜 묶음
+  (날짜 칸 한 줄 「10/24 (토) [D-day]」, 소식 줄 = 시각 · 분류 아이콘 · 제목 / 분류 이름 · 이날까지 · 출처). 날짜 없는 소식은 「날짜 미정」 묶음.
+- **모바일 = 칩 + 카드**: 접힌 막대 = 움직이지 않는 분류별 건수 칩(누르면 그 분류로 펼침).
+  (v4.7.5, PC · 모바일 공통) **새 소식 점** — 오늘(KST) 들어온 소식(`first_seen` 의 KST 날짜 = 오늘)이 있는 분류의 칩 오른쪽 위에 빨간 점. 그날 자정이 지나면 꺼진다. 펼침 = 「분류 n건」 + [한글 | 원문] / 밑줄 탭 / 카드 1열
+  ([분류 아이콘] [제목 / D-day · 분류 · 날짜(요일) · 시각]).
+- **제목**: PC · 모바일 모두 **15.5px 한 줄, 넘치면 말줄임(…)**. marquee · 글꼴 줄이기 없음(10-22 운영자 결정 — 글꼴 크기가 들쭉날쭉하고 marquee 가 많아 읽기 어려웠다).
+  잘린 제목 전체는 소식 팝업 카드에서 본다.
+- **분류 탭**(`CATS` · `_cats`): [전체] + 6분류(라이브공연 · 오프라인행사 · 음원·굿즈 · 방송 · Our Notes · 기타), 0건 분류는 숨김(전체는 항상, 고른 분류가 0건이 되면 전체로).
+  (v4.7.0) 한 소식은 자기 분류 탭 모두에 나오고 건수도 분류마다 센다. 분류 이름 칸은 「라이브공연 · 음원·굿즈」 처럼 모두, 아이콘은 그 탭의 분류(전체면 첫 분류).
+  `categories` 가 없는 옛 줄은 바꿔 읽는다 — 계약 H 「옛 분류」.
+- **라이브공연 탭 — 공연별 묶음** (v4.7.0): 분류 줄에 [공연별 | 날짜순](`localStorage` `mew.notice.liveview`, 기본 공연별). 공연별 = `live_name` 으로 묶는다(전각/반각 · 대소문자 · 공백 · 괄호 · 구두점 무시, `_liveKey`).
+  묶음 머리 = [공연일 타일(월 · 일 · 요일)] [공연 이름(묶음 안에서 가장 많이 나온 표기) / 소식 n건] [D-day] [›] — 공연일 = 묶음 안 `live_date` 중 가장 많이 나온 값, **D-day 는 공연일 기준**(지난 공연 「종료 · D+n」, 없으면 「공연일 미정」).
+  하위 소식 = 들여 쓴 어두운 칸의 작은 줄(날짜 · 시각 · 제목 · 라이브공연 외 분류 칩) — 머리와 구분되게(10-23 운영자 지적). 순서 = 다가오는 공연(공연일 순) → 공연일 미정 → 지난 공연(최근 순, 처음엔 접힘) → 「그 밖의 공연 소식」(공연 이름 없음).
+  머리를 누르면 접기/펼치기(이번 방문 동안 기억). 하위 소식 줄을 누르면 다른 탭과 같은 소식 팝업 카드(PC) · 시트(모바일). 날짜순 = 다른 탭과 같은 목록 + 줄마다 공연 이름 꼬리표.
+- **공연별 묶음 유지 · 지난 소식** (v4.7.1, 2026-10-23 운영자): 공연별 묶음은 **공연일 + 7일의 24:00(KST)** 까지 남는다(하위 소식 기간이 더 늦으면 그때까지,
+  공연일이 없는 묶음은 하위 소식 중 가장 늦은 기간까지 = 전과 같음). 묶음이 내려가기 전엔 하위 소식을 하나씩 내리지 않는다 — 자기 기간(`expires_at`)이 지난
+  하위 소식은 **지난 소식**으로 남아 글자가 어둡게(밝게 테마에선 옅게) 보이고(`.ntc__lrow.is-past`, 점은 속 빈 원), 팝업 카드 D-day 자리에 「지난 소식」.
+  지난 소식은 **공연별 묶음 안에서만** 보인다 — 전체 · 다른 분류 탭 · 라이브공연 날짜순 · PC 티커 · 「오늘 n · 7일 안 n」 · 분류 칩 숫자에는 넣지 않는다
+  (지난 소식만 남아도 라이브공연 탭은 숨지 않고, 모바일 머리 숫자는 「라이브공연 n건 · 지난 m」).
+  백엔드 `notices.live_holds` · `sweep_expired` 와 프론트 `_liveHolds` · `_visible` 이 같은 규칙(묶음 열쇠 = 라이브공연 분류 + 공연 이름 정규화, 공연일 = 묶음 안 최빈값). 저장된 `expires_at` 은 고치지 않는다.
+  공연 이름이 없는 라이브공연 소식(「그 밖의 공연 소식」)과 다른 분류는 전처럼 자기 기간에 내려간다. 이미 지난 날짜로 **새로 들어오는** 글은 전처럼 안 올린다.
+- **언어**: [한글 | 원문] 한 번에 한 언어, 기본 한글, `localStorage` `mew.notice.lang`(트윗 번역 설정과 별개). 한글 제목이 없으면 원문.
+- **소식 팝업 카드** — 트윗 시트와 같은 방식:
+  - PC: 소식 줄 **호버 = 잠깐 열림**(팝업으로 옮겨도 유지 · 떠나면 닫힘, 닫기는 160ms 미룸), **클릭 = 고정**(한 번에 1개, 같은 줄 다시 클릭 · ✕ · Esc · 바깥 클릭으로 닫힘, 고정 중 호버 무시).
+    `.ntc__pop`(#notice 안 · 목록 밖, z-index 43 — 펼친 목록 42 · 플레이어 도크 40 위). 아래 공간이 모자라면 위로, 화면 안으로 맞춤, 꼬리, 목록 스크롤 · 창 크기 변화에 따라감.
+  - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). ✕ · 배경 · Esc · 손잡이 줄 아래로 끌기(아래 「마이크로 인터랙션」)로 닫힘, 열린 동안 body 스크롤 잠금. 손잡이 줄은 맨 위 고정 · 내용만 스크롤. 시트 안을 눌러도 소식 목록은 안 닫힌다.
+  - 내용: 분류 · D-day · 날짜(요일, 마감이면 〜) · 시각 · 출처 / 전체 제목(언어 전환 따름) / **번역 본문(`body_ko`, 없으면 「번역 준비 중…」)** / **X 공식 트윗 카드** / 「자세히 보기 ↗」(`url`) · 「원문 트윗 ↗」(`tweet_url`, http(s)만).
+    **원문 모드에서도 본문 원문(`body_raw`)은 우리가 그리지 않는다**(v3.8.0 법률 자문 — 원문 · 이미지는 X 카드가 보여 준다, 트윗 시트와 같은 원칙). PC = 본문 | X 카드(280px) 2열, 모바일 = 1열.
+  - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 시트와 같은 코드 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.
+  - 소식 줄 · 카드는 링크가 아니라 버튼(`role=button` · `tabindex=0` · `aria-haspopup=dialog`, Enter/Space 로 열기, 키보드로 닫으면 포커스가 그 줄로).
+  - 75초 폴링으로 다시 그릴 때: 고정 팝업 · 시트는 같은 소식이 남아 있으면 유지(내용이 바뀌면 다시 채움), 없으면 닫음. 호버 팝업은 닫음.
+- **펼친 목록 높이**: 행사 배너 + 분류 줄 + 소식 영역(`LIST_CAP` PC 420 · 모바일 460px 상한), 전체는 화면 높이 70% 상한. 펼친 목록 z-index 42(v4.6.3 까지 30 — PC 플레이어 도크(40)의 YouTube 화면 밑으로 들어가던 것을 고침).
+- 데이터 주입: 템플릿 + `_esc` · `_attr` 이스케이프(v2 부터의 방식 그대로), 링크는 http(s)만.
+
+### 마이크로 인터랙션 (v4.8.0, 2026-10-24) — `sheetdrag.js` 외
+
+직관성이 떨어지는 조작에 붙인 작은 보조 동작. 시안 = 아티팩트 「유메미타 마이크로 인터랙션」(claude.ai/artifact/TUtSrJjBmNjxYJEFNQoxq3, 10-24 운영자 검토 반영 2판).
+검토에서 뺀 것: 곡 담기 날아가기(지금의 배지 맥박으로 충분 · `pulseBadge`) · 하단 디스클레이머 2초 표시(통보용) · 행사 배너 끌기 단서(PC 는 버튼 조작).
+진동(`navigator.vibrate`)은 안드로이드에서만 울린다 — iOS 는 화면 변화만. 움직임 줄이기 설정이면 움직임은 빼고 상태 변화만 남긴다.
+
+- **끌어 닫기 (공용 `js/sheetdrag.js` `wireSheetDrag`)**: 손잡이를 닫는 방향으로 끌면 시트가 손을 따라오고 배경이 옅어진다. **닫힘 선**(시트 높이 30%, 최대 150px)을 넘으면
+  시트에 `.is-armed`(손잡이 막대가 길어지고 강조색) + 진동 14ms(물러나면 풀리며 6ms). 놓았을 때 닫힘 선을 넘었거나 빠르게 튕겼으면(0.55px/ms · 24px 이상) 닫고, 아니면
+  `.is-spring` 으로 튕겨 돌아간다. 반대 방향은 22px 까지만 버틴다. 닫을 땐 인라인 transform 을 지운 뒤 시트의 원래 닫기를 불러 원래 닫힘 전환이 끌던 자리에서 이어진다.
+  - **소식 시트**(`notices.js _sheetEnsure`): 손잡이 줄 `.ntc-sheet__grabz`(22px)를 아래로. **손잡이 줄은 시트 맨 위에 고정**되고 내용 `.ntc-sheet__in` 만 스크롤한다
+    (전엔 `.ntc-sheet` 전체가 스크롤 상자라 내용을 내리면 손잡이도 같이 올라갔다 — 10-24 운영자 지적). 내용이 손잡이 밑으로 지나가면 `.is-scrolled` 경계선.
+  - **트윗 시트**(폰, `tweets.js _ensureSheet`): 아래에서 올라오므로 **아래로 끌어 닫는다**(`dir: "down"`). 손잡이 = `.tws__grab` + 머리 줄 `.tws__head`(버튼 · 탭 위에서는 끌기 안 함). PC 는 끌어 닫기 없음.
+  - **플레이어 시트**(모바일, `player.js`): 머리줄 `.mp-pop__head`(모바일에만 손잡이 막대 `.mp-pop__grab`)를 아래로. 내리면 `closePlayer` 와 같다(재생 계속 · 플로팅으로).
+    끄는 동안 · 튕겨 돌아가는 동안 `followFrame` 으로 YouTube 프레임이 재생부 자리를 따라온다. PC 도크에는 해당 없음.
+- **트윗 없는 네임플레이트**(`tweets.js _noTweet`): 트윗이 없는 멤버의 아바타 · 이름(`lane__link` · PC `tt__who`)을 누르면 고개를 젓듯 흔들리고(`.is-nope`) 그 위에
+  「(이름)의 새 트윗이 아직 없어요」(`.tw-nope`)가 1.7초 떴다 사라진다. 진동 8ms. 트윗 목록을 받기 전에는 띄우지 않는다. 이후 예고 열(`data-no-badge`)은 그대로 무반응.
+- **반복 · 셔플 상태 말풍선**(`player.js sayCtl`): 누르면 그 버튼 위에 바뀐 상태 + 다음 동작(「한 곡 반복 / 다시 누르면 전체 반복」 · 「셔플 켜짐 / 이전 · 다음이 무작위 곡으로」)이 1.8초.
+  반복 아이콘은 한 바퀴 돌고, 셔플 버튼은 한 번 눌렸다 튄다.
+- **재생목록 빼기 · 비우기**(`player.js removeAnimated` · `clearQueue`): ✕ 는 그 줄이 접히며 빠진다. 「비우기」는 줄들이 차례로 떨어진 뒤 비우고 재생목록 칸 아래에
+  **되돌리기 알림**(`.mp-undo`, 5초 — 밑줄이 줄어든다)을 띄운다. 되돌리면 비운 곡들을 원래 순서대로 앞에 다시 넣는다(비운 뒤 새로 담은 곡은 그 뒤에 남는다).
+- **밀어서 빼기**(모바일 767px 이하, `player.js initQueueSwipe`): 재생목록 줄 = 밑판 `.mp-q__under`(빨강 「빼기」) 위에 윗판 `.mp-q__fg`. 윗판을 왼쪽으로 밀면 밑판이 드러나고,
+  줄 폭의 35%를 넘으면 휴지통이 커지며 진동 10ms. 놓으면 빠지고, 덜 밀었으면 튕겨 돌아온다. 세로가 더 크면 목록 스크롤. 민 뒤의 click 은 곡 재생으로 치지 않는다. ✕ 도 그대로.
+- **재생 위치 막대 손가락 끌기**(`player.js previewDrag`): 손가락(마우스 아님)으로 끄는 동안만 손잡이 `.mp-track__th` 가 커지고, 손가락 위 30px 에 시간 말풍선 `.mp-track__tip`.
+  1분 단위를 지날 때마다 진동 4ms. 마우스는 그대로(손이 막대를 가리지 않으므로).
+- **PC 손잡이 더블클릭 첫 안내**(`player.js showGripTip`): PC 플로팅 프레임 손잡이에 처음 마우스를 올릴 때 「더블클릭하면 아래 플레이어로 이동합니다」(`.mp-coach`, 두 번 톡톡 표시)가
+  4초 뜬다. **이 브라우저에서 처음 한 번만**(10-24 운영자 결정) — 띄운 순간 `localStorage` `mew.tip.grip-dblclick` 에 기록, 안내를 보기 전에 더블클릭 · ▴ 로 이미 옮겨 봤어도 기록한다.
+  저장소를 못 쓰면(시크릿 창 · 차단) 이 페이지를 연 동안 한 번만. 프레임이 재생부로 들어가면 닫힌다.
+- **타임테이블 넘침 표시**(PC, `timetable.js wireOverflow`): 편성 레일 `.tt__scroll` 이 가로로 넘치면 넘친 쪽 끝을 흐리게 지우고(`mask-image`, `--ml` · `--mr`) 그쪽 가장자리에
+  화살표 버튼 `.tt__arr`(누르면 320px 이동). 처음 한 번은 오른쪽 화살표가 세 번 까딱인다(페이지를 연 동안 1회). 끝까지 밀면 그쪽 흐림 · 화살표가 없어진다.
+  (시안 1판의 가장자리 그림자는 어두운 화면에서 안 보였다 — 10-24 운영자 지적)
+- **멤버 슬라이드**(모바일, `render.js initMobileCarousel`): 다른 멤버로 넘어가면 아래 점이 살짝 커지며 링이 한 번 굵어지고(`.dot--pop` — v4.8.4 부터 1.1배 + 링 2px → 3px, 위로 들지 않음. 점 띠 `--m-dots` 44px 밖으로 나가 보드를 덮지 않게, 최대 약 40px) 진동 6ms.
+  **첫 방문 힌트** — 이 브라우저에서 처음 한 번만(`mew.tip.lane-swipe`, 직접 넘겨 봐도 기록) 레인 전체가 왼쪽으로 44px 밀렸다 돌아오고 다음 멤버 레인이 잠깐 밝아진다(`.lane--peek`).
+  **놓은 뒤 이어 미끄러지기**(마우스 드래그) — 놓으면 놓은 자리에서 감속하며 가장 가까운 멤버로(빠르게 튕겼으면 다음 멤버로) 이동하고, 스냅(`board--dragging` 이 끄고 있음)은
+  미끄러짐이 끝난 뒤에 다시 켠다. 전엔 놓자마자 스냅을 켜서 브라우저 스냅이 툭 끌어당겼다(10-24 운영자 지적). 손가락 스와이프는 그대로 브라우저 스냅.
+- **확인한 것**(2026-10-24, 로컬 서버 + 운영 데이터 사본, 데스크톱 Chrome · 폭 980px / 500px): 위 항목 전부 동작 — 모바일 쪽은 가짜 터치 이벤트로 확인했다.
+  **미확인**: 실기기 터치 · 진동 · iOS · 밝게 테마 · 움직임 줄이기. 테스트 중 플레이어 시트가 한 번 저절로 열려 있었는데 같은 순서로 두 번 해도 재현되지 않았다(원인 확인 필요).
+
+### 프론트 풋터 — 버전 버튼 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `index.html` · `main.js initVersionButton` · `css/layout.css`
+
+- **마크업**: 오른쪽 끝 「ver. ♾️」 = `span.foot-ver-wrap` > `button#foot-version.foot-ver`(알약형 28px — 푸터 높이 45px 유지, 글자 0.75rem 600, 테두리 `--color-border`, 바탕 `--color-hover`, hover 시 테두리 `--mp-accent` · 바탕 `--color-raised`) + 말풍선 `#foot-ver-pop.foot-ver__pop[role=tooltip][hidden]`(「현재 버전」 · 버전 · 날짜). `aria-describedby="foot-ver-pop"`. id `foot-version` 은 디스클레이머 위치 계산(`positionDisclaimerPopup`, 버튼 rect 로 재므로 그대로 동작)과 빠른 탭 이스터에그가 쓴다.
+- **값**: `config.js` `APP_VERSION` · `APP_DATE` 를 `initVersionButton` 이 `textContent` 로 채운다. 버전 올릴 때 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 6).
+- **동작**: 마우스(`pointerType=mouse`) — 올리면(`pointerenter`) 2초 동안 아래 막대(`.foot-ver__bar`, 높이 2px, `--hold` 시간만큼 `scaleX 0→1`) 차오르고 말풍선 표시, 나가면 숨김. 터치 · 펜 — `pointerdown` 0.6초 길게 누르면 같은 말풍선, 그 전에 `pointerup`/`pointercancel` 또는 10px 넘게 움직이면 취소. 말풍선은 손을 뗀 뒤 3초 뒤 숨김, 다른 곳을 누르면 바로 숨김. 키보드 — `:focus-visible` 일 때만 포커스 2초 뒤 표시(마우스 · 탭으로 생긴 포커스는 안 띄운다), 포커스 이탈 · Esc 숨김.
+- **이스터에그 연결**: 빠른 탭 15번(`initMonitorTapEasterEgg`, 5초 창)은 그대로. 길게 눌러 말풍선이 뜬 **직후의 click 1회**는 세지 않는다(`versionIgnoreClick` — 터치 길게 누르기로 뜬 경우만, 마우스 호버로 뜬 뒤의 click 은 센다).
+- **글자 · 메뉴**: `user-select:none` · `-webkit-touch-callout:none` · `touch-action:manipulation`, `contextmenu` 취소.
+- **움직임**: 말풍선 등장 0.26s(`foot-ver-in`), 막대 채움 = `--hold`. `prefers-reduced-motion` 이면 전환 · 등장 애니메이션 없음.
+- 하단 디스클레이머(`initDisclaimerHover`, 위 「하단 디스클레이머 팝업」)와는 별개 요소다.
+
+### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` 만
+
+- **구성**: 맨 위 막대 44px(「운영 모니터」 · 「사이트 기록 초기화」 버튼, 색은 이 페이지 안에 직접 적음 — 토큰 없음). 그 아래 iframe 높이 `calc(100% − 44px)`. iframe 로딩 · `latest.html` 폴백 · 30분 안전망 코드는 바꾸지 않았다.
+- **확인 창**: 네이티브 `<dialog>`(`showModal`) — Esc 로 닫힘, 바깥(어둠) 클릭으로도 닫힘(`e.target === dialog`). 취소 · 되돌리기 두 버튼. 본문 문구는 시안 그대로(「처음 방문했을 때처럼 되돌릴까요?」 · 들은 곡 · 읽은 트윗 · 화면 설정 · 처음 안내 4줄).
+- **동작**: 「되돌리기」 → `localStorage.clear()`. **같은 주소(= 사이트)** 라 메인 사이트의 저장값도 전부 지워진다. `sessionStorage` 는 건드리지 않는다(`va-skip` 등 이 탭 안에서만 쓰는 값은 남는다). 성공하면 아래 가운데 알림 「처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.」 5초, 저장소를 못 쓰면(예외) 「이 브라우저에서는 기록을 지울 수 없어요.」. 이미 열린 사이트 탭은 새로고침 전까지 옛 값을 쓸 수 있다.
+- **지워지는 localStorage 키**(코드 `localStorage` 전수 확인, 2026-10-25): `ymmt_listened`(들은 곡 — 랜덤플리 오마카세의 A · B 묶음) · `mew:twread`(읽은 트윗) · `mew:tllang`(트윗 번역 언어 — 기본 한글) · `theme`(밝게 · 어둡게 — 없으면 기기 설정) · `mew.board.view`(PC 보기 방식 테이블 · 카드) · `mew.player.media`(음원 · MV) · `mew.notice.lang`(소식 제목 언어) · `mew.notice.liveview`(라이브공연 보기 방식) · `mew.tip.grip-dblclick` · `mew.tip.mv-mode` · `mew.tip.lane-swipe`(처음 안내 — 한 번씩 다시 보인다).
+- 백엔드 · 관리 페이지 · 텔레그램은 바뀌지 않는다(`monitor_report.py` 무수정).
+
+### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
+
+「CD + 음표 >」 버튼(`mew:player-open`)으로 여는 **YouTube 곡 플레이어**. 곡 목록은 **data 브랜치 `songs.json`**(`SONGS_URL` — 신곡 자동 감지가 등록, 어드민 음반 탭에서 수정 · 삭제 · 직접 추가, 아래 §8.15)을 먼저 읽고,
+없으면(시드 전 · 로컬 개발) 프론트에 같이 배포되는 정적 `assets/songs.json`(`SONGS_FALLBACK_URL`, `scripts/build_songs_json.py` 로 생성)으로 폴백한다.
+곡 레코드: `{id(video_id), title, kind(original|cover), who(멤버 키|group), date, reading(가나 독음, 없으면 ""), added_at?(자동 등록분)}` — YouTube 에서 얻는 값만. **솔로 구분은 없다**(솔로도 cover — 운영자 결정 2026-10-06, 정규 규칙은 제목 끝 「(Cover)」 하나뿐).
+BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필요하고 플레이어가 쓰지 않아 **일부러 제외**. (별칭 기능은 2026-10-07 에 없앴다 — 곡 줄의 「✎ 별칭」 버튼 · `localStorage` 저장 모두 제거.)
+
+**곡 데이터의 출처와 갱신**: 초기 데이터(시드)는 BPM 프로젝트(`bandori-playlist-maker-data` 저장소 `origin/data` 의 `data/songs_master.csv`)의 곡 목록에 YouTube 업로드 시각을 붙인
+`ref/player/songs_release.json`(65곡, 조사 보고 `docs/yumemita_player/REPORT.md` @devpapers)에서 `python scripts/build_songs_json.py` 로 만든 `assets/songs.json` 이다(64곡 — 두 번 들어 있던 「オリオンをなぞる」 중 `ekZUC5KaJFw` 1건을 2026-10-08 에 직접 지웠다. `config/songs_seed.json` 도 같음).
+출시일(`date`)은 **공식 발매일이 아니라 영상 업로드 시각**(KST 날짜)이다 — 뮤타입 음원 채널의 음원은 MV 공개일과 다를 수 있다. 이후 신곡은 BPM 프로젝트의 `/update-new-songs` 와 **무관하게**
+백엔드가 뮤타입 음원 채널(PubSub 알림 · 일일 RSS 확인)에서 자동 감지해 data 브랜치 `songs.json` 에 등록한다(§8.15). **운영 전 시드 필요**: data 브랜치에 `songs.json` 이 없으면 자동 등록은 아무것도 하지 않는다 —
+`assets/songs.json` 을 data 브랜치 `songs.json` 으로 올려 시드한다(운영자 작업, 아직 하지 않음).
+
+- **재생**: YouTube IFrame Player API(`https://www.youtube.com/iframe_api`, 처음 열 때 로드)의 임베드 프레임만 쓴다. **광고 건너뛰기 없음** — 광고는 프레임 안에서 YouTube 가 처리.
+  (개발자 정책 III.I.5 광고 수정·차단 금지 · III.I.9 백그라운드 플레이어 금지 · 필수 최소 기능 200×200, 프레임 앞 오버레이 금지.)
+  오류(임베드 제한 등)면 「YouTube 에서 보기」 링크를 보여준다.
+- **곡 목록 | 재생목록 탭**(v4.2.1~v4.2.2, 2026-10-09): 아래(모바일) / 오른쪽(PC) 한 칸을 탭 바(`.mp-tabs`)로 나눠 쓴다 — 곡 목록(`.mp-lib`)과 재생목록(`.mp-q`, 탭 패널 `.mp-qpanel` 안)은 한쪽만 보여 서로 밀지 않는다.
+  재생목록 탭에는 곡 수 배지(곡을 추가하면 펄스, 탭은 자동 전환 안 함). 재생부(`.mp-stage`)는 영상 · 곡 정보 · 컨트롤뿐이라 PC 도크(높이 700px)에서 영상을 칸 폭 가득(최대 720px)으로 쓴다. 곡 줄의 「재생목록 N번」 뱃지는 여러 번 쌓여도 「N번 외 K」로 글자 수 상한. 모바일은 위(재생부) 고정 + 아래 탭 한 칸만 스크롤.
+- **재생목록**(2026-10-07~08): 오른쪽 곡 목록의 곡을 **누르면 재생목록(재생부 아래 「재생목록」 칸 — 움푹 패인 우물 모양)의 맨 뒤에 쌓인다. 같은 곡을 또 눌러도 또 쌓인다(빠지지 않음, 곡 줄에는 「재생목록 1·3번」)**.
+  **재생목록이 비어 있다가 처음 들어가는 곡은 쌓이면서 바로 재생**하고, 이후 곡은 쌓기만 한다. 재생 버튼은 멈춰 있고 지금 곡이 재생목록에서 고른 것이 아니면 1번부터 시작한다.
+  같은 곡이 여러 번 있을 수 있어 「지금 곡」은 곡 id 가 아니라 **재생목록 위치(`st.qi`, 0부터, -1 = 재생목록에서 고른 곡이 아님)** 로 추적한다. 재생목록 칸의 곡을 누르면 그 위치로 이동·재생, ✕ 로 빼기(지금 곡을 빼면 끝까지 재생 후 멈춤), 「비우기」로 전체 삭제.
+  곡이 끝나면 **재생목록의 다음 위치로 넘어가고, 마지막이면 멈춘다**(`cueVideoById` 로 첫 화면 복귀 — 추천 영상으로 안 넘어가게). 재생목록이 비어 있으면 한 곡만 재생하고 멈춘다.
+  이전·다음 버튼은 재생목록이 있으면 그 안에서(끝에서 처음으로 순환, 셔플이면 무작위), 없으면 현재 검색·정렬 결과 순서. 재생목록은 저장하지 않는다(새로고침하면 비워짐).
+  플로팅 상태의 손잡이 줄 제목은 재생목록에서 고른 곡이면 「<곡명> (n/m)」(곡명만 말줄임, `(n/m)` 은 항상 보임).
+- **랜덤플리 오마카세**(v4.5.6, 2026-10-19): 컨트롤 오른쪽 「🎁 랜덤플리 오마카세」(`.mp-oma`) → 말풍선(`.mp-bubble`, 칩 [전체 / 오리지널 / 커버] + 곡 수). 칩 = 그 종류의 **모든 곡**(검색 · 정렬 무시, `s.kind`)으로 `st.queue` 를 **덮어쓰고** `playQueueAt(0)` 으로 바로 재생(재생 시작은 클릭 직후). 셔플 토글과는 별개. 반영 직후 **재생목록 탭으로 자동 이동**(`setTab("queue")`).
+  **순서(v4.8.1)** = `songs.js omakaseOrder(ids, 기록, 오늘 KST)`. 곡을 A(7일 동안 안 들은 곡 — 기록 없음 · 마지막 재생 7일 이상 전 · 날짜가 이상한 기록)와 B(7일 이내에 들었던 곡, 오늘 = 0일 ~ 6일 전)로 나눠 각각 Fisher–Yates 로 섞고,
+  **재생목록 자동 포커스(v4.8.2)** = 재생 중인 곡(`st.qi`)이 바뀌면 `player.js focusQueueCur` 가 그 줄을 목록 보이는 영역 위 1/3 지점으로 `scrollTo`(부드럽게, 움직임 줄이기면 즉시). 위 12% ~ 아래 88% 안이면 가만히 두고, 사용자가 목록을 직접 스크롤(wheel · touchmove)한 뒤 4초는 건너뛴다(줄을 눌러 바꾼 경우 제외). 재생목록 탭을 열 때도 한 번. 위치는 `getBoundingClientRect` 로 잰다.
+  A 곡 사이 틈(n−1칸)을 앞에서부터 보며 틈마다 B 의 다음 곡을 확률 `OMA_MIX`(50%)로 끼운다. 떨어지면 그 B 곡은 건너뛰고 다음 틈엔 B 의 다음 곡. 틈을 다 봤거나 B 를 다 쓰면 끼워지지 못한 B 를 섞인 순서대로 맨 뒤에 붙인다.
+  첫 곡은 A 가 있으면 늘 A, A 가 없으면 B 만 섞인 순서(= v4.8.0 까지의 완전 무작위). `OMA_RECENT_DAYS` = 7. 확률 판정은 `Math.random() < x`.
+  **들은 곡 기록** = localStorage `ymmt_listened` `{곡 id: "YYYY-MM-DD"(KST)}` — `onYtState` 가 `PLAYING` 을 받을 때 곡을 고른 뒤 처음 한 번 적는다(`listenedId`, `selectSong` 에서 비움 — 일시정지 후 재생 · 한 곡 반복은 다시 안 적음). 오마카세 곡만이 아니라 플레이어에서 재생한 모든 곡. 기록 초기화 없음. 저장소를 못 쓰면 기록 없이(전부 A) 동작.
+  연출 = 0.62초 뒤섞임(`.rolling` — 흔들림 · 🎁 회전 · 글자 순서 섞기) → 5초 쿨타임(`.cooldown::after` — 반투명 막이 버튼을 덮고 **오른쪽 끝부터 왼쪽으로 걷힘**, `scaleX` 1→0, 클릭 시점부터 5초 · 그동안 `disabled`). 모션 줄이기면 연출 없이 5초 잠금만. 곡이 없으면(목록 로드 실패) 비활성. 말풍선은 바깥 클릭 · Esc 로 닫힘(Esc 가 팝업까지 닫지 않음).
+  컨트롤 5개 + 오마카세 버튼은 한 줄에 **가운데 정렬**(말풍선도 버튼 가운데 기준). 좁은 화면(≤480px)은 컨트롤 아래 줄 전체 폭.
+- **반복**(BPM 프로젝트 `playbar.js` 와 같은 3단계, 2026-10-07): 반복 버튼을 누를 때마다 **꺼짐 → 한 곡 → 전체 → 꺼짐**. 한 곡 = 같은 곡을 처음부터 다시(버튼 안 글자 「1」), 전체 = 재생목록 마지막 곡 뒤에 1번으로(「A」).
+  자동 넘김과 순환은 **재생목록 안의 곡**에만 적용된다(재생목록 밖 곡은 전체 반복이어도 끝나면 멈춤).
+- **팝업 ↔ 플로팅**: 프레임 요소(`.mp-frame`)는 한 번 만들고 **옮기지 않는다**(옮기면 iframe 이 다시 로드돼 재생이 끊김). 팝업이 열려 있으면 JS 가 재생부 자리(`.mp-slot`)에 맞춰 위치·크기를 주고,
+  내리면 `.is-float`(오른쪽 아래, 356×200 — 높이 200 이 최소 요건) 로 남는다. 손잡이 줄(`.mp-grip`)은 프레임 **바깥 위**에 붙는다 — 끌어서 이동 · 더블클릭 = 팝업으로 · ▴ 열기 · ✕ 정지하고 치움.
+  프레임은 재생을 한 번이라도 시작했을 때만 남는다. 모바일은 하단 도트 띠(푸터 45 + 도트 44) 위, PC 는 고정 푸터 위.
+- **가장자리 넣기**(v4.7.6, 모바일만 — `tuckable()` = 767px 이하 · 도크 없음): 플로팅 창의 손잡이 줄을 잡고 화면 왼쪽 · 오른쪽 끝을 넘어 더 밀면 창이 가장자리에 들어간다.
+  ① 창 끝이 화면 끝에 닿으면 화면 끝 **빛 띠**(`.mp-edge`, z-index 46)가 열리고 짧게 진동(6ms) ② 더 밀면 창이 저항을 받으며 최대 44px(`TUCK_PUSH`) 밀려 들어가고 살짝 작아진다(최대 3.5%), 빛 띠가 넓어진다
+  ③ 끝에 닿은 뒤 56px(`TUCK_ARM`) 더 밀면 「다 참」 — 진동(14ms) · 창 테두리 빛 · 빛 띠 안 화살표. 80% 아래로 물러나야 풀린다 ④ 다 찬 채 놓으면 넣기(`tuckFrame`), 그 전에 놓으면 끝자리로 튕겨 나온다.
+  안내 문구는 띄우지 않는다 — 빛 띠 · 저항 · 진동이 그 역할(운영자 결정 2026-10-24). 진동은 `navigator.vibrate` 가 있는 기기만(iPhone Safari 없음).
+  넣은 상태(`st.tuck` = "l" | "r"): 영상 끝 **14px**(`TUCK_VIS`) + 손잡이 탭 **24px**(`TUCK_TAB`, `.mp-ftab` — 프레임 안 영상 **옆** 칸이라 영상을 덮지 않음, 화살표 · 재생 중 막대 · ⠿)만 화면에 남는다.
+  **넣은 동안 재생은 계속**(운영자 결정 2026-10-24). 손잡이 줄 버튼(이전 · 다음 · ▴ · ✕)은 눌리지 않는다(`pointer-events: none` + `inert`) — 그 자리를 누르면 손잡이를 누른 것과 같다.
+  꺼내기: 탭 · 보이는 손잡이 조각을 누르거나 바깥으로 44px(`TUCK_PULL`) 넘게 끌면 화면 끝에서 16px 안쪽 자리로 튕겨 나온다(덜 끌면 제자리). 위아래로 끌면 높이만 옮긴다. 키보드 = 탭에서 Enter · Space.
+  넣은 채 팝업을 열었다 닫으면 넣은 상태로 돌아온다. ✕ · PC 도크 전환 · 폭이 768px 이상이 되면 풀린다. 움직임 줄이기 설정이면 전환 없이 바로 바뀐다. 시안 = 아티팩트 「플레이어 가장자리 넣기」(claude.ai/artifact/EMA8RZuS7aDJ4pQAVXaBpW).
+  **정책**: 넣은 상태는 보이는 영상이 14px 라 「플레이어 보이는 크기 200×200 이상」 요건을 그 동안 채우지 않는다 — 운영자 판단으로 넣었고, YouTube 정책 위반 여부는 확인하지 않았다(아래 6번과 같은 성격).
+- **신곡 NEW**(2026-10-08): 곡의 **발매일(`date`) +14일까지**(그날 포함, KST)가 신곡이다(`songs.js isNewSong`). 발매일 전 날짜는 신곡이 아니다. 등록 시각(`added_at`)은 쓰지 않는다 — 2026-10-08 오전까지는 `added_at` 기준 7일이었으나 발매일 +14일로 바꿨다(운영자 결정). 시드 곡도 최근 14일 안에 발매됐으면 신곡이다.
+  첫 시드 후 첫 tick 에 한꺼번에 등록되는 과거 곡(10곡)도 모두 신곡이 된다. 표시: ① CD 버튼 오른쪽 위 `NEW` 배지(`playerbtn.js initNewSongBadge` 가 페이지 로드 때 곡 목록을 읽어 `<html data-new-song>` 를 켜고 CSS 가 PC · 모바일 버튼에 그림) ② 곡 줄 · 재생 중 곡 제목 옆 `NEW` 알약 ③ 필터 「신곡」 버튼(신곡만).
+  **신곡은 정렬과 무관하게 항상 목록 맨 위, 최신 순**(발매일 내림차순 → 등록 시각 → 곡명) — 나머지만 고른 정렬대로. NEW 표시에는 광택 + 맥박 애니메이션(움직임 줄이기 설정이면 멈춤).
+- **한글 음차 표시**(2026-10-07): 곡명에 일본어(가나·한자)가 있고 독음이 있는 곡만, 곡 줄과 재생 중 곡 정보의 **날짜 줄 아래**에 한글 음차를 한 줄 보인다(`songs.js displayKo`). 영문 곡명 · 독음 없는 곡은 표시 없음. **가나 독음 자체는 화면에 보이지 않는다**(검색 · 이름순 정렬에만 쓴다).
+  변환(`kanaToHangul`)은 단순화 규칙이다 — 조사 は 도 「하」, 작은 모음(ゥ ェ …)은 지운다(`トゥ`→토).
+- **검색**(`songs.js`): 곡명 · 독음(가나 + 자동 변환한 한글)을 한 번에 부분 일치. 대소문자 · 전각 무시, 가타카나 = 히라가나, 한글은 초성 평음화(ㅋ=ㄱ ㅌ=ㄷ ㅍ=ㅂ ㅊ=ㅈ)로 표기 차이를 흡수.
+  가나 → 한글 변환은 외래어 표기법을 단순화한 것(`kanaToHangul`: 어두 か·た행 가·다, ん=ㄴ · っ=ㅅ 받침, 장음 생략, 조사 は 도 글자 그대로 「하」). 부른 사람 · 종류 · 날짜는 검색 대상 아님(종류는 필터 버튼).
+- **정렬**: 이름순(독음 있으면 독음, 없으면 곡명, `localeCompare("ja")`) · 날짜순(같은 날은 곡명순). 기본 날짜 내림차순.
+- **하단 디스클레이머 팝업**(v4.5.7): 마우스를 `.fdisc` 에 **2초 유지해야** 열린다(`main.js initDisclaimerHover` 가 `.is-open` 부착 · 2초 전에 벗어나면 취소). 열린 뒤엔 `.fdisc`/팝업 위에 있는 동안 유지, 벗어나면 0.3초 뒤 닫음(`.fdisc` 와 팝업 사이 틈을 지나 GitHub Issues 링크로 갈 수 있게). 포커스(클릭 · 키보드 · 터치 탭)는 CSS `:focus`/`:focus-within` 으로 **즉시** 열린다(터치는 호버가 없음). Esc 로 닫힘. 호버 중 흐르는 문구는 바로 멈춤(읽기용).
+- **z-index**: 도트 띠 25 < 플로팅 프레임 45 < 가장자리 빛 띠 46(v4.7.6) < 손잡이 첫 안내 `.mp-coach` 47 < 디스클레이머 팝업(`#foot`) 50 < 팝업 배경 800 < 팝업 안 프레임 810 < 트윗 시트 900.
+- selfcheck: `songs.selfcheck.mjs`(변환 · 정규화 · 검색 · 정렬 · 강조 구간 · 종류 30건). **보류**: 곡명 한글 해석 검색.
+
+**확인 필요 · 미정 (2026-10-06 구현 시점)** — 임의로 넘겨짚지 않고 남겨 둔 것:
+1. **시드 · 첫 실행**: data 브랜치에 `songs.json` 이 없어서 자동 등록이 아직 동작하지 않는다(시드 전 = 건너뜀). 시드 뒤 **첫 tick 은 뮤타입 음원 채널 RSS 최근 15건 중 곡명이 없는 곡을 한꺼번에 등록**한다 —
+   2026-10-06 RSS 기준 10곡(`TearJerker` · `Face The Next` · `一番のひかり` · `うちゅうのふしぎ` · `夢はトゥルーエンド！` · `in my words` · `愛は衝動` · `にこいちミライ` · `唱`(cover) · `夢我夢中`).
+   BPM 보고서가 「분류 불명 9곡」으로 보류했던 곡들이 규칙대로 original 로 들어가므로, 시드 전에 포함해도 되는지 운영자 확인이 필요하다. 신곡에 필요한 값은 RSS 만으로 얻는다(제목 · 공개 시각 · 구분) — `videos.list` 쿼터 0.
+2. **독음 15곡은 예시 — 운영자 검수 필요**. 나머지 50곡은 독음이 없어 독음(가나·한글) 검색이 안 된다. 채우는 방법(직접 입력 / 자동 생성)은 미정. `scripts/build_songs_json.py` 의 `READ` 에 있다.
+3. **이름순 정렬 한계**: 독음이 있으면 독음, 없으면 곡명(한자 · 기호 포함)으로 정렬해 섞여 보인다. 독음이 전 곡에 채워지면 해소.
+4. **미분류 9곡 · `feat.`**: 미분류 9곡 중 뮤타입 음원 채널에 있는 곡은 위 1항대로 자동 등록 대상이다. `feat.` 곡은 자동 등록 · 시드에서 모두 제외(`songs.py` · `build_songs_json.py`). 피드 15건을 넘는 버스트는 아직 고려하지 않았다.
+5. **미검증(헤드리스 Chrome 에서 영상이 검은 화면이라 못 본 것)**: 실제 영상 재생 · 임베드 제한 영상의 오류 안내(`onError`) · 재생/일시정지 상태 동기화(`onStateChange`) · 모바일 실제 터치(손잡이 드래그 · 더블탭 → 팝업). 실기기 확인 필요.
+6. **정책 해석**: 「팝업을 내려도 재생 유지」를 위해 프레임을 항상 보이게 두는 것은 III.I.9(백그라운드 플레이어 금지)와 최소 200×200 요건의 **원문을 근거로 한 해석**이다. 플로팅 프레임의 허용 여부를 YouTube 에 문의해 확인한 것은 아니다.
+7. **✕(정지하고 치우기) 버튼**은 목업에 없던 추가 기능이다 — 플로팅 프레임이 높이 200px 로 화면을 계속 차지해 치울 방법이 필요하다고 판단. 유지 여부는 운영자 확인.
+8. **새 용어 미등재**: 「플로팅 프레임」 · 「별칭」 · 「독음」 · 「손잡이 줄」 은 `docs/TERMINOLOGY.md` 에 아직 없다(임의로 추가하지 않음 — 운영자와 정한 뒤 등재).
+9. **멤버 표시 분류 규칙**: 곡의 `who` 는 업로드 채널명으로 정한다(멤버 이름 일·영문 모두 인식, 「`Yuno Sengoku - Topic`」 같은 자동 생성 아티스트 채널 포함, 그 밖은 `group`). 멤버별 곡 수는 그룹 28 · 아라레 11 · 유노 8 · 미야코 7 · 리츠 6 · 노노카 5.
+   한 곡이 여러 멤버의 곡인지(참여 멤버)는 데이터에 없다.
+
+#### 음원 · MV 전환 (v4.8.3, 2026-10-25 — 브랜치 `hotfix/player-mv`, 병합 · 배포 전, 실기기 미확인)
+
+- **데이터 필드**(`songs.json` 곡 항목, 모두 선택): `alt`(같은 소리의 다른 음원 영상 ID 목록 — 앨범 · c/w 수록본) · `mv`(MV 영상 ID 목록) · `singers`(부른 멤버 키 목록 — 여럿이 부른 곡만). `id` 는 여전히 **곡을 구별하는 값**(재생목록 · 들은 곡 기록 · 선택 상태). 영상 ID = `^[\\w-]{11}$`.
+  `songs.js prepareSong` 이 배열이 아니면 `[]`, 형식이 아닌 ID · 중복을 빼고, `alt` 에서는 대표 `id` 도 뺀다. `singers` 는 문자열만.
+- **후보 순서**(`songs.js mediaCandidates(song, mode, rand)`): 음원 모드 = [대표 `id`, `alt…`] 을 섞은 순서. MV 모드 = `mv` 를 섞은 뒤 음원 순서(폴백). 두 경우 모두 중복은 한 번만. 고를 때마다(곡을 누를 때 · 다시 고를 때) 무작위.
+  첫 후보 = `st.vid`(지금 프레임의 영상), 나머지 = `st.cands`. `st.curId`(곡 id)는 곡 식별용으로 그대로 — YouTube 호출(`loadVideoById` · `cueVideoById` · `seekTo` · 오류 링크 · 프레임 ✕)은 전부 `st.vid`.
+- **[음원 | MV] 전환 (v4.8.4 — 스위치)**: 재생부 곡 정보 줄(`.mp-song`) 오른쪽 **버튼 하나** `button.mp-media[role=switch][aria-checked]`(MV 모드면 `aria-checked="true"` · 클래스 `.is-mv`, 「MV 로 보기」). 안에 손잡이 `i.mp-media__thumb`(칸 하나 크기 accent 배경, `.is-mv` 면 `translateX(72px)`, 0.34s) + 라벨 `span.mp-media__lab--a`(음표 아이콘 · 「음원」) · `--m`(화면 아이콘 · 「MV」). 두 칸 각 72px · 높이 42px(테두리 포함) · 패딩 3px. **어디를 눌러도 반대 모드**(`setMedia(st.media === "mv" ? "audio" : "mv")`). 누르는 동안 `scale(.96)`, 선택된 쪽 아이콘 `scale(1.18)`. 움직임 줄이기면 전환 없음. 저장 = localStorage `mew.player.media` = `audio` | `mv`, 기본 `audio`. (v4.8.3 까지는 `div.mp-media[role=group]` 안 `button.mp-media__b[aria-pressed]` 2개였다.)
+  **영상이 재생 중이거나 중간까지 들었으면(`st.playing` 또는 `st.pos > 0`) 그 영상은 바꾸지 않고** 「다음 영상부터 MV로 재생됩니다.」 / 「다음 영상부터 음원으로 재생됩니다.」를 2.6초 띄운다(운영자 결정 2026-10-25) — 다음에 고르는 곡부터 새 모드. 아직 틀지 않은 곡(처음 화면)이면 지금 곡에 MV 가 있을 때만 그 모드로 바로 다시 불러 둔다(`selectSong(st.curId, false, st.qi)`).
+- **전환 버튼 아래 말풍선**(`div.mp-mvtip[role=status]`, `showMediaTip(main, sub, ms)`): 전환 버튼 아래 오른쪽 정렬, 위로 꼬리, `pointer-events: none`(영상 위는 덮지 않는다). **MV 로 처음 바꿀 때** 안내 「MV가 있는 곡은 MV로, 없는 곡은 음원으로 보여줘요」를 한 번(localStorage `mew.tip.mv-mode` = 「1」, `GRIP_TIP_KEY` 와 같은 방식 — 저장소를 못 쓰면 이 페이지를 연 동안 한 번) 4.5초. 재생 중 전환과 겹치면 「다음 영상부터 …」 아래 둘째 줄(작게)로 함께 4.5초.
+- **재생 불가 판정**(`player.js onUnplayable`): ① 원인 = (a) `onError` 전부(코드 2 · 5 · 100 · 101 · 150 등) (b) 감시 타이머 — 자동 재생을 요청해 올린 뒤(곡 선택 · ▶ 버튼) PLAYING 이 한 번도 없고 `getDuration()` 이 0 이면: **프리미어 대기**(`getVideoData().isPremiere`)는 **2초**(`WATCH_FAST_MS`, 운영자 결정 2026-10-25 — 8초는 너무 길다), 그 밖은 **8초**(`WATCH_MS`). **BUFFERING 으로는 감시를 풀지 않는다** — 프리미어 대기 영상도 잠깐 BUFFERING 을 거친다(2026-10-25 실측: 夢我夢中 MV `c_T1QlWWsOE` = 상태 -1 · 길이 0 · `getVideoData().isPremiere` true). cue 만 하는 경우는 감시 안 함. 영상이 바뀌면 타이머는 취소(`watch` 토큰 비교).
+  **불러 두기만 한 곡**(페이지를 열 때 첫 곡 등, autoplay=false)은 후보가 모두 재생 불가여도 안내 · 넘김 없이 둔다(`deadId`) — 사용자가 ▶ 를 누르면 그 곡을 자동 재생으로 다시 골라 아래 ② · ③ 을 탄다. (전엔 첫 화면에서 재생 불가가 나면 누르지도 않은 다음 곡이 자동 재생됐다 — 검증 중 발견해 수정.)
+  ② `st.cands` 가 남았으면 다음 후보를 `st.vid` 로 **문구 없이** 다시 올린다(같은 autoplay). ③ 다 떨어지면 안내 → **3초**(`SKIP_MS`) 뒤 다음 곡. 다음 곡은 ENDED 와 같은 `nextInQueue()`(재생목록 안: 셔플 · 다음 · 전체 반복) — **한 곡 반복은 무시**. 재생목록 밖(`qi < 0`)이면 목록의 다음 곡(셔플이면 지금 곡 말고 무작위 — 이전 · 다음 버튼의 목록 규칙과 같다). 넘어갈 곡이 없으면 「이 곡은 지금 재생이 불가능해요.」만 3초 보이고 멈춘다.
+  ④ `st.error` · `.mp-err`(「YouTube 에서 보기」)는 `code === "api"`(플레이어 API 로드 실패)일 때만.
+  연속으로 넘긴 횟수 `skipRun` 이 곡 수(재생목록 안이면 재생목록 곡 수, 밖이면 목록 곡 수)를 넘으면 멈춘다 — 전체 반복 재생목록이 전부 재생 불가일 때 무한 순환 방지. 재생이 시작되면 0 으로 돌아가고, 사용자가 곡을 직접 고르면 다시 센다.
+- **검증(2026-10-25, 로컬 서버 + Chrome, 운영 곡 목록에 스크립트를 적용한 임시 데이터)**: PC 도크 · 모바일 시트 · 플로팅 창 · 밝게 테마. MV 모드 夢我夢中 → 프리미어 화면 약 2초(2041ms) → 음원 `Fp2a-MhCFVw` 재생 · 재생 중 전환 → 영상 그대로(같은 영상 · 재생 위치 이어짐) + 「다음 영상부터 …」 안내, 다음 곡(오리온)은 새 모드(MV `ekZUC5KaJFw`) · MV 재생(오리온 `ekZUC5KaJFw`) 중 음원 전환 → `1_WyE1U0f4E` 이어서 재생 · 존재하지 않는 ID 의 가짜 곡 → 안내 → 다음 곡(플로팅이면 창 위) · MV 모드 + 랜덤플리 오마카세 13곡(다음 버튼 9 · 곡 끝 4) — MV 있는 곡은 MV, 없는 곡은 음원, 전환 버튼 · 저장값은 MV 유지 · 唱 2곡 표시 「夢限大みゅーたいぷ」 / 「아라레, 리츠」. 미확인: 실기기(모바일 자동 재생 차단 상태의 감시 판정), 관리 페이지 저장 end-to-end.
+- **안내 UI**(`div.mp-skip[role=status]`): 「!」 원 아이콘 + 문구 + 아래 3초 동안 줄어드는 막대(`mp-undo-drain`). 자리(`placeSkip`): 팝업 · PC 도크 — 재생부 안 `.mp-err` 바로 위 흐름. **플로팅 창** — `body` 로 옮겨 `position: fixed`, 창의 손잡이 줄 바로 위 8px(영상 위는 덮지 않는다). `layoutFrame` 끝에서 매번 자리를 맞춘다. 움직임 줄이기면 애니메이션 없음. 색은 `--color-late`.
+- **곡 목록 「MV」 표시**: `songRow` 의 `.mp-item__sub` 날짜 뒤 `span.mp-mvtag`(테두리 accent 55%, 0.6rem 굵게). 재생목록 줄에는 안 붙인다.
+- **부른 사람 표시**(v4.8.3 — `player.js memberList` · `memberNodes`): `singers` 가 있으면 `who` 대신 그 멤버들. 점은 멤버마다 하나, 이름은 **쉼표로 잇는다**(「아라레, 리츠」). 없으면 `who` 하나. 재생부 메타와 곡 목록 줄 둘 다.
+- **그룹 명의 표시 이름**(v4.8.3): `memberOf("group")` 의 이름이 「그룹」 → 「夢限大みゅーたいぷ」. 점 색(`--color-collab`)은 그대로. 팬 화면의 `memberOf` 를 쓰는 곳 전부에 적용된다. 관리 페이지(admin.html)의 멤버 선택 칸 글자는 그대로.
+- **관리 페이지**(`admin.html` 곡 수정 창, `sgEditor`): 날짜 아래 「다른 음원 영상」 · 「MV 영상」 textarea(줄마다 하나 · 주소 또는 영상 ID). 저장 때 줄로 나눠 바뀐 것만 `patch.alt` / `patch.mv` 로 보낸다(빈 목록 = 키 삭제). 백엔드: `songs.py EDITABLE` 에 두 키, `normalize_media(patch, song)` 가 URL 도 받아 ID 로 바꾸고 잘못된 ID · 중복 제거 · `alt` 에서 대표 id 제거 · `alt`/`mv` 겹침 오류(바뀌지 않는 쪽은 곡의 기존 값과 비교). `telegram_app._song_edit_commit` 은 patch 를 그대로 `songs.edit_song` 에 넘긴다(수정 없음).
+- **데이터 반영**: `python scripts/apply_song_media.py <입력 songs.json> [<출력>]` — 표(`MEDIA`)의 `id` 와 같은 곡에 `alt` · `mv` 를 넣고(이미 있으면 덮어씀, 빈 목록은 키를 넣지 않음), NEW 곡(唱, `zVdR0urFjnc`, 歌ってみた 별개 곡 · `singers`: arale·ritsu)을 같은 id 가 없을 때만 맨 뒤에 추가. 표에 있는데 문서에 없는 id 는 건너뛰고 수를 출력. 두 번 돌려도 같은 결과(멱등). 이 저장소에서는 `src/frontend/assets/songs.json` · `config/songs_seed.json` 을 갱신(시드 · 폴백 — 같은 내용). **운영 data 브랜치(`songs.json`)는 이 커밋으로 바뀌지 않는다** — 운영자 승인 뒤 데이터 저장소에서 같은 스크립트로 갱신해 data 브랜치에 커밋한다. 표의 4곡(TedsUWY90Vs · eZG4sXy0zPM · tRS9u2YlqdM · Fp2a-MhCFVw)은 현재 시드에 없어 건너뛴다(정상).
+- **歌ってみた 기준**: 「歌ってみた」 표시가 붙은 영상은 그 자체로 한 곡이다 — MV 로 묶지 않고 별개 곡으로 둔다(唱 2024, 표시는 「아라레, 리츠」).
+- **AMV 기준 (v4.9.2, 2026-10-27 운영자 확정)**: AMV(애니메이션 MV — 곡에 애니 그림을 붙인 영상)도 `mv` 에 넣는다. v4.8.3 조사는 그룹 공식 채널의 「Official Music Video」 만 봐서 BanG Dream Channel☆ 에 올라온 애니 영상이 빠졌다(愛は衝動 이 MV 모드에서 음원으로 나오던 원인).
+  넣는 것: TV 애니 「バンドリ！ ゆめ∞みた」 삽입곡 영상(BanG Dream Channel☆ — 愛は衝動 `5NZp6NKhhlQ` · in my words `keIRgf-YfSI` · Face The Next `vuMUMWARZ4g` · 一番のひかり `JfeX3ABTBUs` · TearJerker `s3egp9Y1DTU`(잘린 버전 143초 / 음원 178초지만 넣음)) ·
+  그룹 채널 미니 애니(✞animaるパーティ✞ `tYrOQycCOBY` · エンプティパペット `c5h6SU7A5v8` · 限界現実サバイブ天使 `v9yaFY20KgM` · ビッグマウス `DZpTjwXFt7U` · 夢現妄想世界 `GGxlbJQ23h0` — 드라마 부분이 있어 음원의 1.5~2배 길이, 기존 Official MV 와 함께 무작위).
+  넣지 않는 것: TV 사이즈(90초) 크레딧 없는 OP · ED 영상(ゆめ∞みた OP · ED, ヴァンガード ED 真夜中遊園地) · にこいちミライ 미니 애니 주제가(30초) · 라이브 영상. 이미 있던 AMV: チューニング(`rkpYy32ik7E` · `QARyadS-0zY`).
+  표 = `scripts/apply_song_media.py` `MEDIA`. MV 가 여럿이면 `mediaCandidates` 가 고를 때마다 섞는다(코드 변경 없음).
+- **localStorage 키 2개**: `mew.player.media`(영상 종류) · `mew.tip.mv-mode`(MV 안내를 봤는지). 둘 다 이 브라우저에만 남는다.
+
+---
+
+## 10. Telegram 모니터링·제어 — 결정 사항
+
+- **인바운드는 별도 공개 서비스** `mewtype-telegram`(같은 이미지, 다른 엔트리포인트). 인증 =
+  `X-Telegram-Bot-Api-Secret-Token` + `chat.id` 허용목록. 아웃바운드 알림은 메인이 직접.
+- **pause = 완전 중단 + resume 시 full heal**: `/resume` 이 `paused=false` 쓰고 곧바로 메인 `tick("light")` 1회.
+- **tick 요약(D)은 변경 있을 때만**. `announced/upcoming/live_start/live_end/demote` 는 항상 개별 전송(레벨 게이팅).
+- **다운 감지 = healthchecks.io**: 메인 `/tick` 성공 끝에 `HEALTHCHECK_URL` GET. grace 초과 시 알림.
+- 메시지 포맷은 한국어 HTML parse_mode. 명령 상세: `docs/plan/v3_telegram_controller.md`.
+
+---
+
+## 11. 사각지대 보정
+
+방송 패턴 실측(`ref/broadcast-patterns.md`)으로 드러난 케이스. 상세: `docs/SCHEDULE.md`.
+
+| # | 사각지대 | 보정 | 위치 |
+|---|---|---|---|
+| 1 | tick/wake 동시 실행 시 낡은 payload 로 덮어써 전이 유실 | `ConflictError` + 1회 재계산 재시도 | `gh_store.py`, `handlers.py` |
+| 2 | `videos.list` 일시 누락·"공개→회원전용" 전환을 즉시 removed 처리 | `last_updated` 기준 `STALE_REMOVE_SEC`(6.5h) 유예 | `preview_build.py` |
+| 3 | 방송 종료 직후 시작하는 짧은 다음 방송을 (당시) 3h tick 간격에 놓침 | `→end` 전이 시 `now+20분` 후속 `light` tick 1개(분버킷 dedupe). v3.6 light 10분 이후엔 겹치지만 유지 | `handlers.py` |
+| 4 | video_id 못 얻은 채 예정 시각 지난 announced/upcoming | `assumed_live` + `now − ss ≥ 90분` → `none` (FSM) | `statemachine.py` |
+| 5 | (v4.5.0) PubSub 알림이 안 와서(허브 장애 · 구독 끊김) 새 영상을 못 찾음 | 일일 baseline RSS 가 안전망(대체 모드에서도 유지) · 구독 갱신 잡이 허브 검증 기록으로 끊긴 구독 DM · 음원 채널은 `via=baseline` warn | `websub.py`, `handlers.py` |
+
+**커버 못 하는 것**: 회원 전용 방송은 RSS·`search.list` 에 안 떠서 발견 불가 — `INGEST_YT_ENABLED` +
+업스트림 YouTube 알림 중계가 유일한 경로(트리거 조건 미충족 — `docs/plan/v3_draft.md`).
+
+---
+
+## 12. 인프라 / 배포
+
+`requirements.txt`: `requests>=2.31`, `flask>=3.0`, `gunicorn>=21`, `google-cloud-tasks>=2.16`,
+`google-auth>=2.28`. (Groq·vxtwitter 는 `requests` 재사용 — 추가 의존 없음.)
+
+`Dockerfile` (레포 루트): `python:3.12-slim` + `pip install -r src/backend/requirements.txt` + `COPY src config`.
+`CMD` = `gunicorn ... src.backend.app:app`. `mewtype-telegram` 은 `--command=gunicorn
+--args=...,src.backend.telegram_app:app` 로 엔트리포인트만 교체.
+
+`deploy/` (값은 `deploy/env.sh` = 루트 `.env` 매핑, gitignore):
+- `setup.sh` — API·SA 2개·IAM·Cloud Tasks 큐·Secret (`YOUTUBE_API_KEY`, `GITHUB_TOKEN`,
+  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `INGEST_SECRET`, **`GROQ_API_KEY`**,
+  `HEALTHCHECKS_IO_READONLEY_TOKEN`(v3.7.1 추가), **`WEBSUB_SECRET`**(v4.5.0 — 허브 서명 키, 값이 없으면 임의 생성)) + (v4.5.2) PubSub 전용 큐 `WEBSUB_QUEUE`(기본 `mewtype-websub`, 동시 1 · 초당 0.2). (self-reply) 보충 작업 큐 `GAPFILL_QUEUE`(기본 `mewtype-gapfill`, 동시 1 · 3회) · 일일 묶음 예약 큐 `DAILY_QUEUE`(기본 `mewtype-daily`, 동시 1 · 4회 · 30~300초). 멱등.
+- `deploy.sh` — `gcloud run deploy mewtype-backend --source . --no-allow-unauthenticated --service-account RUNTIME_SA`
+  + secrets/env. `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN` 은 Secret 이 있을 때만 마운트(v3.7.1 — 전엔
+  healthchecks Secret 을 무조건 마운트해 새 프로젝트에서 첫 배포가 실패). 배포 후 `SERVICE_URL` env 재설정.
+  (v4.5.0) `WEBSUB_SECRET`(Secret, 있을 때만) · `WEBSUB_CALLBACK_BASE`(접수 서비스 URL — 배포 때 조회, 접수 서비스를 **먼저** 배포) · `WEBSUB_REPLACE_RSS`(기본 0) · (v4.5.2) `WEBSUB_QUEUE`(PubSub 확인 재예약용) env.
+- `scheduler.sh` — (self-reply D6, 2026-10-27 이후) 3잡: `mewtype-light`(`*/10 * * * *` Etc/UTC → 쓰기 `/tick`) · `mewtype-daily`(`0 6 * * *` Asia/Seoul → 쓰기 `/daily`) · `mewtype-gapcheck`(`* * * * *` Etc/UTC → 접수 `/gap-check`, audience = 접수 서비스 주소). 옛 `mewtype-baseline` · `mewtype-monitor` · `mewtype-websub-renew` 은 새 잡을 만든 뒤 지운다. **STAGE=1 이면 아무것도 안 하고 끝남**(D10). **KST 05:50~06:30 에는 거부**(일일 묶음 잡 · 예약과 겹침). OIDC.
+- `deploy_telegram.sh` — 같은 소스 + telegram 엔트리포인트 + `--allow-unauthenticated --service-account INVOKER_SA`
+  `ALLOW_UNAUTH=1` + `MAIN_SERVICE_URL`(write-queue·`/resume`). `GROQ_API_KEY`·`HEALTHCHECKS_IO_READONLEY_TOKEN`
+  (조건부) + `INGEST_YT_ENABLED` env. (v4.5.0) `WEBSUB_SECRET`(조건부 — 없으면 `/websub/*` 는 503) · (v4.5.2) `WEBSUB_QUEUE`(알림 확인 · 신곡 등록 예약 큐 — 큐가 없으면 예약 실패 → 503 이라 `setup.sh` 로 **먼저** 만든다). (v3.7.3) Secret `YT_COOKIES` 가 있으면 `/secrets/yt-cookies.txt` 로 마운트 +
+  `YT_COOKIES_FILE` env(회원 전용 라이브 yt-dlp 조회용, 없어도 동작). **`writers.py` 등 공통 코드를 바꾸면 두 서비스 모두 재배포.**
+- `telegram_webhook.sh` — `setWebhook`.
+
+**Cloud Run/Scheduler/Tasks 는 같은 리전**(`asia-northeast1`). OIDC audience = 서비스 `status.url`.
+`mewtype-telegram` 은 `INVOKER_SA` 로 실행해야 `/resume` 의 메인 `/tick` 호출이 통과.
+`--concurrency=1 --max-instances=1` 로 `data` 브랜치 쓰기 직렬화.
+
+---
+
+## 13. `config/channels.json` 확정본
+
+```json
+{
+  "channel_order": ["arale", "yuno", "nonoka", "ritsu", "miyako"],
+  "channels": {
+    "arale":  { "name": "仲町あられ -Nakamachi Arale-",  "name_ko": "나카마치 아라레", "channel_id": "UCWfF0DB6m_t2CE3KcOOOX7g", "handle": "arale_yumemita" },
+    "yuno":   { "name": "千石ユノ -Sengoku Yuno-",       "name_ko": "센고쿠 유노",   "channel_id": "UC99kOG6_9RD0mR3OG4EOfxw", "handle": "yuno_yumemita" },
+    "nonoka": { "name": "宮永ののか -Miyanaga Nonoka-",   "name_ko": "미야나가 노노카", "channel_id": "UCGeCnpimiSN5rgiKbJzHd3A", "handle": "nonoka_yumemita" },
+    "ritsu":  { "name": "峰月律 -Minetsuki Ritsu-",       "name_ko": "미네츠키 리츠",  "channel_id": "UCxc0MrPoACKTFlV24GqX2sg", "handle": "ritsu_yumemita" },
+    "miyako": { "name": "藤都子 -Fuji Miyako-",           "name_ko": "후지 미야코",   "channel_id": "UCZXxRYaP7mfuglPnptnBBCA", "handle": "miyako_yumemita" },
+    "group":  { "name": "夢限大みゅーたいぷ(グループ公式)", "name_ko": "무겐다이 뮤타입 그룹 공식", "channel_id": "UCxL_Vlnhfo46sN6vPHR_4hA", "handle": "BDP_yumemita", "is_group": true }
+  }
+}
+```
+
++ 각 채널 `x_names[]` (트윗 표시명 매칭용, `xtweet.route_by_title`). `channel_url` 은
+`https://www.youtube.com/@{handle}` 로 코드 파생. **채널 추가/변경은 이 파일 한 곳만.**
+`group` 은 `channel_order` 밖 — RSS/`videos.list` 폴링 대상이지만 전용 레인은 없다(§1-3-1).
+
+
+### 생일 음악 인트로 추가 연출 (추가 지시 1)
+
+첫 곡 최초 재생에만 6.3~7.2초 유노·데크 스포트라이트를 켜고 17.14~18.14초에 제거한다. 태양은 지평선 아래에서 10초부터 smoothstep으로 상승해 16.9초에 목표 위치에 도달한다. 일출 중 halo 박 버스트는 숨기고 17.14초에 태양 중심에서 0.5초 동안 화면 끝까지 밝기 파면이 전파된다. 기존 감쇠·3겹 링을 유지한다. 모션 줄이기는 최종 태양 위치에 정지하고 조명·파면 없이 단순 페이드한다. 실제 Chromium 검증은 `scripts/verify_birthday_addendum.py`, 후속 최적화·검증 결과는 handoff REPORT.md의 「3차 결과」를 따른다.

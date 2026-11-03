@@ -1,0 +1,17 @@
+{
+  "CLAUDE.md": "9b9625090ae5a2b119a92aeaf28ce5cdf3c683aae5ade1cb2f7a05de03728924",
+  "docs/BIRTHDAY_SKIN.md": "27efd4436dbd5cfce9828b5251c1da2ff42e0002e4e54777241c7e29aa6ef1c5",
+  "docs/SPEC.md": "89c68ad04cee84edac179a99f4fdb6ea09ce5928f972960f55b3c02d0326ac80",
+  "docs/VERSION.md": "27fb13e875933f3a3da0f1d458bdaca3e302a7e8256499b2872f217ba6f2ba98",
+  "scripts/verify_birthday_gapless.py": "cddc3877e7eb00fd7e629cd2e46dad67cfad14cf7a40bf567b8f205f8d8691d9",
+  "scripts/verify_birthday_lifecycle.py": "ea61f3b10f57ffc490d786c26576f525bb9bca1f704fb150d7f49c83fdb43aac",
+  "scripts/verify_birthday_performance.py": "97932c248619c10e4b95acd405328c87b39b47721ce233b7add7f15c8df2da0a",
+  "src/frontend/js/bdayaudio.js": "b0b36c605164291ae205e4bc17b1ef5c8fe5e47925edd1ea785a7a8074368f85",
+  "src/frontend/js/bdaylogic.js": "801c861914889ce44188523ec39fb8b9f2c7b70244c9ab582fd0d288b3b67617",
+  "src/frontend/js/bdaymusic.selfcheck.mjs": "35b0de008c2ec01bd37a79ea082a0b98dfb974b0e49f65251cf72b7c408418bf",
+  "src/frontend/js/bdayscene-yuno.js": "e9f946a9086845c6ab8d960776487af974cf964450c41d74fd6aa3f54793fb1a",
+  "scripts/verify_birthday_music.py": "f39f854d0009960f11114ee049ea2829a9307028aebf7f51a48222df3461e9a4",
+  "docs/BIRTHDAY_MUSIC_SCENE_VERIFICATION.md": "21532f3de0088a692fcea476ab7542fc159a83bdf2df7ca555ecef47837e503c",
+  "scripts/verify_birthday_addendum.py": "a453cae42a1733bde5e829b9211a049de3f508b0516d8298d5d78453cb4fd46d",
+  "src/frontend/js/bdayplayer.js": "f617e6861d1e51230168313b24b69846d0f21cca386f8b6e19147f013dc16ddf"
+}

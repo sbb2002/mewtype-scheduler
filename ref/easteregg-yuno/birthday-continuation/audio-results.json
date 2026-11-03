@@ -1,0 +1,300 @@
+{
+  "initial": {
+    "dead": false,
+    "context": "running",
+    "blobURLs": 2,
+    "listeners": 0,
+    "volume": 0.30000001192092896,
+    "engine": "buffer",
+    "scheduled": [
+      {
+        "i": 0,
+        "start": 0.432,
+        "end": 214.8135,
+        "offset": 0.432
+      },
+      {
+        "i": 1,
+        "start": 214.8135,
+        "end": 428.827,
+        "offset": 0
+      },
+      {
+        "i": 0,
+        "start": 428.827,
+        "end": 643.6405,
+        "offset": 0
+      }
+    ],
+    "transitions": [],
+    "timer": true,
+    "handover": true
+  },
+  "boundary-0": {
+    "index": 1,
+    "count": 7680,
+    "bad": 0,
+    "maxError": 1.8626451509656805e-10,
+    "rmsError": 2.106487073816419e-11,
+    "diagnostics": {
+      "dead": false,
+      "context": "running",
+      "blobURLs": 2,
+      "listeners": 0,
+      "volume": 0.30000001192092896,
+      "engine": "buffer",
+      "scheduled": [
+        {
+          "i": 1,
+          "start": 0.8706666666666649,
+          "end": 214.88416666666666,
+          "offset": 0
+        },
+        {
+          "i": 0,
+          "start": 214.88416666666666,
+          "end": 429.6976666666667,
+          "offset": 0
+        },
+        {
+          "i": 1,
+          "start": 429.6976666666667,
+          "end": 643.7111666666667,
+          "offset": 0
+        }
+      ],
+      "transitions": [
+        {
+          "from": 0,
+          "to": 1,
+          "end": 0.8706666666666649,
+          "start": 0.8706666666666649,
+          "gap": 0
+        }
+      ],
+      "timer": true,
+      "handover": false
+    }
+  },
+  "boundary-1": {
+    "index": 0,
+    "count": 7679,
+    "bad": 0,
+    "maxError": 3.725290301931361e-10,
+    "rmsError": 3.424444047995053e-11,
+    "diagnostics": {
+      "dead": false,
+      "context": "running",
+      "blobURLs": 2,
+      "listeners": 0,
+      "volume": 0.30000001192092896,
+      "engine": "buffer",
+      "scheduled": [
+        {
+          "i": 0,
+          "start": 1.7906666666666808,
+          "end": 216.60416666666669,
+          "offset": 0
+        },
+        {
+          "i": 1,
+          "start": 216.60416666666669,
+          "end": 430.61766666666665,
+          "offset": 0
+        },
+        {
+          "i": 0,
+          "start": 430.61766666666665,
+          "end": 645.4311666666666,
+          "offset": 0
+        }
+      ],
+      "transitions": [
+        {
+          "from": 0,
+          "to": 1,
+          "end": 0.8706666666666649,
+          "start": 0.8706666666666649,
+          "gap": 0
+        },
+        {
+          "from": 1,
+          "to": 0,
+          "end": 1.7906666666666808,
+          "start": 1.7906666666666808,
+          "gap": 0
+        }
+      ],
+      "timer": true,
+      "handover": false
+    }
+  },
+  "boundary-2": {
+    "index": 1,
+    "count": 7679,
+    "bad": 0,
+    "maxError": 1.8626451509656805e-10,
+    "rmsError": 2.106579761092299e-11,
+    "diagnostics": {
+      "dead": false,
+      "context": "running",
+      "blobURLs": 2,
+      "listeners": 0,
+      "volume": 0.30000001192092896,
+      "engine": "buffer",
+      "scheduled": [
+        {
+          "i": 1,
+          "start": 2.7106666666666683,
+          "end": 216.72416666666666,
+          "offset": 0
+        },
+        {
+          "i": 0,
+          "start": 216.72416666666666,
+          "end": 431.53766666666667,
+          "offset": 0
+        },
+        {
+          "i": 1,
+          "start": 431.53766666666667,
+          "end": 645.5511666666666,
+          "offset": 0
+        }
+      ],
+      "transitions": [
+        {
+          "from": 0,
+          "to": 1,
+          "end": 0.8706666666666649,
+          "start": 0.8706666666666649,
+          "gap": 0
+        },
+        {
+          "from": 1,
+          "to": 0,
+          "end": 1.7906666666666808,
+          "start": 1.7906666666666808,
+          "gap": 0
+        },
+        {
+          "from": 0,
+          "to": 1,
+          "end": 2.7106666666666683,
+          "start": 2.7106666666666683,
+          "gap": 0
+        }
+      ],
+      "timer": true,
+      "handover": false
+    }
+  },
+  "paused": {
+    "dead": false,
+    "context": "running",
+    "blobURLs": 2,
+    "listeners": 0,
+    "volume": 0.30000001192092896,
+    "engine": "buffer",
+    "scheduled": [],
+    "transitions": [
+      {
+        "from": 0,
+        "to": 1,
+        "end": 0.8706666666666649,
+        "start": 0.8706666666666649,
+        "gap": 0
+      },
+      {
+        "from": 1,
+        "to": 0,
+        "end": 1.7906666666666808,
+        "start": 1.7906666666666808,
+        "gap": 0
+      },
+      {
+        "from": 0,
+        "to": 1,
+        "end": 2.7106666666666683,
+        "start": 2.7106666666666683,
+        "gap": 0
+      }
+    ],
+    "timer": false,
+    "handover": false
+  },
+  "seek": 110.125,
+  "racing_select": {
+    "index": 0,
+    "time": 0,
+    "d": {
+      "dead": false,
+      "context": "running",
+      "blobURLs": 2,
+      "listeners": 0,
+      "volume": 0.30000001192092896,
+      "engine": "buffer",
+      "scheduled": [],
+      "transitions": [
+        {
+          "from": 0,
+          "to": 1,
+          "end": 0.8706666666666649,
+          "start": 0.8706666666666649,
+          "gap": 0
+        },
+        {
+          "from": 1,
+          "to": 0,
+          "end": 1.7906666666666808,
+          "start": 1.7906666666666808,
+          "gap": 0
+        },
+        {
+          "from": 0,
+          "to": 1,
+          "end": 2.7106666666666683,
+          "start": 2.7106666666666683,
+          "gap": 0
+        }
+      ],
+      "timer": false,
+      "handover": false
+    }
+  },
+  "destroy": {
+    "dead": true,
+    "context": null,
+    "blobURLs": 0,
+    "listeners": 0,
+    "volume": null,
+    "engine": "buffer",
+    "scheduled": [],
+    "transitions": [
+      {
+        "from": 0,
+        "to": 1,
+        "end": 0.8706666666666649,
+        "start": 0.8706666666666649,
+        "gap": 0
+      },
+      {
+        "from": 1,
+        "to": 0,
+        "end": 1.7906666666666808,
+        "start": 1.7906666666666808,
+        "gap": 0
+      },
+      {
+        "from": 0,
+        "to": 1,
+        "end": 2.7106666666666683,
+        "start": 2.7106666666666683,
+        "gap": 0
+      }
+    ],
+    "timer": false,
+    "handover": false
+  },
+  "errors": []
+}
