@@ -29,7 +29,7 @@
 
 - **사이트 코드(이 브랜치)**: `src/frontend/js/birthday.js`(판정, 순수) · `birthdayui.js`(화면·수명) · `bdayscene-yuno.js`(Canvas) · `bdaysign.js`(사인) · `bdaylogic.js`(순수 계산) · `bdayaudio.js`(음원) · `bdayplayer.js`(인트로·컨트롤) · `bdayguard.js`(억제) · `css/birthday.css`/`bdayplayer.css` · `assets/birthday/` · `config.js`(날짜·켜짐 여부). `fixtures/bdayscene-yuno.html`은 무음의 곡 시계 장면 시험 화면이며, `fixtures/validate-bdayscene-yuno.cjs`는 새 Python 검증 3개를 호출한다. 과거 `bdaybeat.js`·`bdayscene-yuno.css`는 회귀 자료로 보존되며 실행 앱에서는 로드하지 않는다.
 - **시제품 · 제작 원본(브랜치 `easteregg/birthday-skin`, `easteregg/birthday/`)**: `birthday_bg_v2~v16.html`(단일 HTML 시제품, **v16 = 5명 최신본**), `assets5/`(부위 PNG · WebP · `rigs*.json` · 빌드 `build_v*.py` · 프롬프트 `*_prompt.txt` · 검증 `validate_v*.cjs`), `briefs/`(**Codex 에게 보낸 지시서 = 운영자 요구의 원문 기록**, `feedback7~20.md`), `design_notes.md`(Codex 의 설계 · 검증 기록), `HANDOFF.md`(제작 경위 · 디자인 결정). 로컬 위치(운영자 PC): `…/mewtype-scheduler-worktrees/v4/easteregg-birthday-skin/easteregg/birthday/`.
-- **제3자 참고 이미지**(나무위키 · 클라우드프론트 · 디시콘 도트)는 저작권상 저장소에 없다. 운영자 PC 의 `…/mewtype-scheduler-worktrees/devpapers/ref/birthday-easteregg-handoff/` · 그 워크트리의 `refs7/`(미커밋)에만 있다. 필요하면 운영자에게 파일을 요청한다.
+- **제3자 참고 이미지**(나무위키 · 클라우드프론트 · 디시콘 도트)는 저작권상 저장소에 없다. 운영자 PC 의 `…/mewtype-scheduler-worktrees/v4/easteregg-birthday-skin/easteregg/birthday/refs7/`(미커밋)에만 있다. 다시 모으는 검색어는 devpapers `ref/easteregg-common/birthday-skin-handoff/birthday/refs/README.md`. 필요하면 운영자에게 파일을 요청한다.
 
 ## 3. 멤버 한 명을 사이트에 올리는 절차
 
@@ -118,7 +118,7 @@ Chrome 확대 확인: `mcp__claude-in-chrome__computer` 의 `zoom` · `javascrip
 
 바닥 띠는 열마다 그라데이션을 만들지 않고 파면별 그라데이션을 공유한다. 오로라는 두 색 그라데이션을 좌표 변환으로 재사용한다. 조명은 화면 크기가 바뀔 때만 캐시하고 캐릭터 조명과 점등 파면은 별도 Canvas의 최종 CSS 밝기로 합성해 색의 중간 클리핑을 피한다. 밝기 곡선은 인계 지시에 따라 양 끝 값과 quadratic ease-out으로 통일했다. 성능 검사는 `verify_birthday_performance.py --headed`, 출력 샘플 검사는 `verify_birthday_gapless.py`. 두 곡 디코드는 48kHz·스테레오에서 약 157MiB의 PCM 메모리를 사용하며 destroy 시 예약 소스·타이머·버퍼·blob을 해제한다. 메모리 부족/디코드 실패 시 스트리밍을 유지한다.
 
-최종 성능 표·통과 범위·실기기 미확인 목록은 [3차 검증](BIRTHDAY_MUSIC_SCENE_VERIFICATION.md)을 따른다. GPU 환경의 600프레임 평균·p95·최대는 모두 8ms 이내(최대 4.8ms)였다. 소프트웨어는 평균 17.38~32.81ms이고 실제 iPhone은 미확인이므로 실기기 검증까지 모두 통과한 것으로 처리하지 않는다.
+최종 성능 표·통과 범위·실기기 미확인 목록은 3차 검증(devpapers `ref/easteregg-yuno/docs/BIRTHDAY_MUSIC_SCENE_VERIFICATION.md`)을 따른다. GPU 환경의 600프레임 평균·p95·최대는 모두 8ms 이내(최대 4.8ms)였다. 소프트웨어는 평균 17.38~32.81ms이고 실제 iPhone은 미확인이므로 실기기 검증까지 모두 통과한 것으로 처리하지 않는다.
 
 ### 모니터에서 시험 화면 열기 (2026-11-01)
 
