@@ -76,6 +76,7 @@
     <div id="selinfo">없음</div>
     <div class="row"><button id="matRock">전체 바위</button><button id="matSlick">전체 미끄러움</button></div>
     <div class="row"><button id="dup">복제<kbd>Ctrl+D</kbd></button><button id="del">삭제<kbd>Del</kbd></button></div>
+    <div class="row"><button id="rotL">↺ 15° 회전<kbd>Q</kbd></button><button id="rotR">↻ 15° 회전<kbd>E</kbd></button></div>
 
     <h2>레벨</h2>
     <input type="text" id="name" placeholder="레벨 이름" maxlength="80">
@@ -105,6 +106,7 @@
       <li>휠 = 확대 · 축소, 가운데/오른쪽 버튼 끌기 또는 Space + 끌기 = 화면 이동</li>
       <li>다각형: 클릭으로 꼭짓점, 첫 점 클릭 또는 Enter 로 닫기, Backspace = 마지막 점 취소, Esc = 그리기 취소</li>
       <li>선택: 지형을 끌어 옮기기, 꼭짓점 끌기, 변 더블클릭 = 꼭짓점 추가, 꼭짓점 고르고 Del = 꼭짓점 삭제</li>
+      <li>회전: 지형을 고르면 위쪽에 둥근 손잡이가 생긴다. 끌어 돌린다(격자 맞춤이 켜져 있으면 15° 씩, Alt = 자유롭게). Q · E = 15° 씩, Shift+Q · E = 1° 씩. 지형을 감싸는 사각형 가운데를 축으로 돈다</li>
       <li>곡선: 지형을 고르면 변마다 가운데에 작은 주황 원이 생긴다. 끌면 그 변이 휘고(곡선이 그 점을 지난다), 더블클릭하면 다시 곧게</li>
       <li>원 그리기: 가운데에서 끌어 반지름을 정한다(꼭짓점 8개 + 곡선 변)</li>
       <li>재질 칠하기: 변 클릭 = 그 변만 바위 ↔ 미끄러움, 지형 안쪽 클릭 = 지형 전체</li>
@@ -199,6 +201,29 @@
     for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, m = a + Math.PI / 8; pts.push([Math.round(c[0] + r * Math.cos(a)), Math.round(c[1] + r * Math.sin(a))]); curve[i] = [Math.round(c[0] + r * k * Math.cos(m)), Math.round(c[1] + r * k * Math.sin(m))]; }
     return { mat: "rock", pts, curve };
   }
+  // 회전 — 지형을 감싸는 사각형 가운데를 축으로, 꼭짓점과 곡선 조절점을 함께 돌린다. 좌표는 0.1u 로 반올림(격자에는 맞추지 않는다)
+  // 각도는 화면 기준 시계 방향이 + (y 가 아래로 +)
+  const ROT_STEP = 15;
+  function polyCenter(poly) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of L.flattenPoly(poly).pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    return { c: [(x0 + x1) / 2, (y0 + y1) / 2], top: y0 };
+  }
+  function rotatePts(pts, c, deg) {
+    const a = deg * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a), r1 = (v) => Math.round(v * 10) / 10;
+    return pts.map(([x, y]) => [r1(c[0] + (x - c[0]) * cs - (y - c[1]) * sn), r1(c[1] + (x - c[0]) * sn + (y - c[1]) * cs)]);
+  }
+  function applyRotation(poly, origPts, origCurve, c, deg) {
+    poly.pts = rotatePts(origPts, c, deg);
+    if (origCurve) { const ks = Object.keys(origCurve), rp = rotatePts(ks.map((k) => origCurve[k]), c, deg); poly.curve = Object.fromEntries(ks.map((k, i) => [k, rp[i]])); }
+  }
+  // 회전 손잡이 = 지형 위쪽 가운데에서 화면 36px 위
+  function rotHandle(poly) { const { c, top } = polyCenter(poly); const [hx, hy] = toS(c[0], top); return { base: [hx, hy], at: [hx, hy - 36], c }; }
+  function rotHandleAt(s) { return sel.poly !== null && dist(rotHandle(level.polys[sel.poly]).at, s) <= 9; }
+  function rotateSel(deg) {
+    if (sel.poly === null) return;
+    change(() => { const poly = level.polys[sel.poly]; applyRotation(poly, clone(poly.pts), clone(poly.curve || null), polyCenter(poly).c, deg); });
+  }
   const goalCorner = (s) => { const g = level.goal; if (!g) return null; const cs = [[g.x0, g.y0, "x0", "y0"], [g.x1, g.y0, "x1", "y0"], [g.x1, g.y1, "x1", "y1"], [g.x0, g.y1, "x0", "y1"]]; return cs.find((c) => dist(toS(c[0], c[1]), s) <= 9) || null; };
   const inGoalRect = (w) => level.goal && w[0] > level.goal.x0 && w[0] < level.goal.x1 && w[1] > level.goal.y0 && w[1] < level.goal.y1;
 
@@ -234,6 +259,11 @@
     if (e.button !== 0) return;
     const before = snap();
     if (tool === "select") {
+      if (rotHandleAt(s)) {
+        const poly = level.polys[sel.poly], { c } = rotHandle(poly);
+        drag = { kind: "rotate", c, a0: Math.atan2(w[1] - c[1], w[0] - c[0]), orig: clone(poly.pts), origCurve: clone(poly.curve || null), deg: 0, before };
+        return;
+      }
       const vi = sel.poly !== null ? vertexAt(s, sel.poly) : -1;
       if (vi >= 0) { sel.vertex = vi; drag = { kind: "vertex", before }; draw(); return; }
       const hi = midHandleAt(s);
@@ -265,6 +295,12 @@
     if (drag) {
       if (drag.kind === "pan") { view.cx = drag.c0[0] - (mouse[0] - drag.s0[0]) / view.z; view.cy = drag.c0[1] - (mouse[1] - drag.s0[1]) / view.z; }
       else if (drag.kind === "vertex") level.polys[sel.poly].pts[sel.vertex] = snW(w);
+      else if (drag.kind === "rotate") {
+        let deg = (Math.atan2(w[1] - drag.c[1], w[0] - drag.c[0]) - drag.a0) * 180 / Math.PI;
+        deg = ((deg + 540) % 360) - 180;
+        deg = snapOn() ? Math.round(deg / ROT_STEP) * ROT_STEP : Math.round(deg);
+        drag.deg = deg; applyRotation(level.polys[sel.poly], drag.orig, drag.origCurve, drag.c, deg);
+      }
       else if (drag.kind === "poly") {
         const d = L.sub(snW(w), drag.w0), poly = level.polys[sel.poly];
         poly.pts = drag.orig.map((q) => [q[0] + d[0], q[1] + d[1]]);
@@ -352,6 +388,7 @@
     }
     if (e.key === "Escape") { sel = { poly: null, vertex: null }; refresh(); return; }
     if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
+    if ((k === "q" || k === "e") && sel.poly !== null) { rotateSel((k === "e" ? 1 : -1) * (e.shiftKey ? 1 : ROT_STEP)); return; }
     const map = { v: "select", p: "poly", r: "rect", m: "paint", s: "start", g: "goal", c: "circle" };
     if (map[k]) setTool(map[k]);
     else if (k === "f") { fit(); draw(); }
@@ -408,6 +445,16 @@
           if (curved) { const [a, b] = edgeEnds(poly, i), c = toS(...poly.curve[i]); ctx.strokeStyle = "rgba(255,159,67,.35)"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...c); ctx.lineTo(...toS(...b)); ctx.stroke(); ctx.setLineDash([]); }
         });
         poly.pts.forEach((q, i) => { const [x, y] = toS(...q); ctx.fillStyle = i === sel.vertex ? "#ffd166" : "#fff"; ctx.strokeStyle = "#1b2440"; ctx.lineWidth = 1.5; ctx.fillRect(x - 4, y - 4, 8, 8); ctx.strokeRect(x - 4, y - 4, 8, 8); });
+        // 회전 손잡이 — 돌리는 중이면 축(+)과 각도도 보인다
+        const rh = drag?.kind === "rotate" ? { ...rotHandle(poly), c: drag.c } : rotHandle(poly), [hx, hy] = rh.at;
+        ctx.strokeStyle = "#7fd1ff"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(...rh.base); ctx.lineTo(hx, hy); ctx.stroke();
+        ctx.beginPath(); ctx.arc(hx, hy, 6, 0, Math.PI * 2); ctx.fillStyle = "#1b2440"; ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(hx, hy, 3, -Math.PI * 0.9, Math.PI * 0.4); ctx.stroke();
+        if (drag?.kind === "rotate") {
+          const [cx, cy] = toS(...drag.c);
+          ctx.beginPath(); ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy); ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6); ctx.stroke();
+          ctx.fillStyle = "#7fd1ff"; ctx.fillText(`${drag.deg > 0 ? "+" : ""}${drag.deg}°`, hx + 10, hy - 6);
+        }
       }
       ctx.lineCap = "butt";
     });
@@ -474,7 +521,7 @@
     $("selinfo").textContent = p
       ? `지형 ${sel.poly + 1} · 꼭짓점 ${p.pts.length}개 · ${p.mat === "slick" ? "미끄러움" : "바위"}${p.edgeMat ? ` (다른 재질 변 ${Object.keys(p.edgeMat).length}개)` : ""}${p.curve ? ` · 곡선 변 ${Object.keys(p.curve).length}개` : ""}${sel.vertex !== null ? ` · 꼭짓점 ${sel.vertex + 1} 선택` : ""}`
       : "없음 — 선택 도구로 지형을 누르세요";
-    for (const id of ["matRock", "matSlick", "dup", "del"]) $(id).disabled = !p;
+    for (const id of ["matRock", "matSlick", "dup", "del", "rotL", "rotR"]) $(id).disabled = !p;
     $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length;
     if (document.activeElement !== $("name")) $("name").value = level.name;
     const goalH = level.goal ? ` · 골인 높이 ${(-level.goal.y1 / 100).toFixed(1)}m` : "";
@@ -587,6 +634,7 @@
   $("matRock").addEventListener("click", () => change(() => { const p = level.polys[sel.poly]; p.mat = "rock"; delete p.edgeMat; }));
   $("matSlick").addEventListener("click", () => change(() => { const p = level.polys[sel.poly]; p.mat = "slick"; delete p.edgeMat; }));
   $("dup").addEventListener("click", duplicate);
+  $("rotL").addEventListener("click", () => rotateSel(-ROT_STEP)); $("rotR").addEventListener("click", () => rotateSel(ROT_STEP));
   $("del").addEventListener("click", () => { sel.vertex = null; deleteSelection(); });
   $("undo").addEventListener("click", undo); $("redo").addEventListener("click", redo);
   $("play").addEventListener("click", play);
