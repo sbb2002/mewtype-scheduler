@@ -3,9 +3,9 @@ const hash=n=>{const x=Math.sin(n*127.1+19.73)*43758.5453;return x-Math.floor(x)
 const palettes=[['#ff70b6','#85f9ff'],['#c99cff','#ffda7a'],['#ff997c','#fff1ce']];
 export const SHELL_LIFE=3.35; // 발사(0.65초) + 폭발 2.7초.
 // 폭죽 한 발. out 에 입자를 더한다. age = 발사 뒤 시간.
-function addShell(out,age,h,view,{seed,salt,small,reduced,budget,count}){
+function addShell(out,age,h,view,{seed,salt,small,reduced,budget,count,scale=1}){
  const {particles,rockets}=out,style=Math.floor(h(1)*3),colors=palettes[Math.floor(h(2)*3)];
- const radius=Math.min(view.width*.14,view.height*.22)*(style===1?.85:1),margin=radius+12;
+ const radius=Math.min(view.width*.14,view.height*.22)*(style===1?.85:1)*scale,margin=radius+12,dot=scale>1?1.35:scale<1?.85:1;
  const x=view.left+margin+Math.max(0,view.width-2*margin)*h(3),y=view.top+margin+Math.max(0,view.height-2*margin)*h(4);
  if(!reduced&&age<.65&&particles.length+rockets.length<budget){
   const u=age/.65,floor=view.top+view.height,bend=(h(5)-.5)*radius;
@@ -18,7 +18,7 @@ function addShell(out,age,h,view,{seed,salt,small,reduced,budget,count}){
   const fall=reduced?0:radius*t*t*(style===1?.16:.07),px=x+Math.cos(a)*r,py=y+Math.sin(a)*r*(style===1?.75:1)+fall;
   const tail=radius*(.12+.1*t)*alpha;
   particles.push({x:px,y:py,tx:reduced?px:px-Math.cos(a)*tail,ty:reduced?py:py-Math.sin(a)*tail-fall*.18,
-   color:i%7===0?'#fff9ed':colors[style===2?i%2:i%5===0?1:0],alpha:reduced?Math.sin(age/SHELL_LIFE*Math.PI)*.55:alpha*.95,radius:reduced?1.6:1.2+hash(i+seed)*1.1});
+   color:i%7===0?'#fff9ed':colors[style===2?i%2:i%5===0?1:0],alpha:reduced?Math.sin(age/SHELL_LIFE*Math.PI)*.55:alpha*.95,radius:reduced?1.6:(1.2+hash(i+seed)*1.1)*dot});
  }
 }
 // until = 토글을 끈 시각. 그 뒤로는 새로 쏘지 않고 이미 쏜 폭죽만 끝까지 그린다.
@@ -47,6 +47,26 @@ export function fireworkSalvo(age,seed,view,{small=false,budget=small?700:1400}=
  for(let j=0;j<shells;j++){
   const shell=age-j*.1+.65;if(shell<.65||shell>SHELL_LIFE)continue;
   addShell(out,shell,n=>hash(seed+j*97+n*31),view,{seed,salt:j*71,small,budget});
+ }
+ return out;
+}
+// 밤 풍경(감사 카드 닫기 · 유노 버튼)의 작은 폭죽. 시작부터 until(사인 · YMMT 가 사라지기 시작하는 때)까지 천천히 한 발씩 쏜다.
+// until 뒤로는 새로 쏘지 않고, 이미 쏜 폭죽은 끝까지 그린다. time = 장면 시작 뒤 시간(결정적).
+export const POP_EVERY=.9;
+export function fireworkPopcorn(time,seed,view,{small=false,budget=small?420:720,until=Infinity}={}){
+ const out={particles:[],rockets:[]},last=Math.floor(time/POP_EVERY);
+ for(let k=Math.max(0,last-Math.ceil(SHELL_LIFE/POP_EVERY)-1);k<=last;k++){
+  const launch=k*POP_EVERY+hash(seed+k*13)*.35,age=time-launch;if(launch>until||age<0||age>SHELL_LIFE)continue;
+  addShell(out,age,n=>hash(seed+k*701+n*31),view,{seed,salt:k*17,small,budget,count:small?26:38,scale:.55});
+ }
+ return out;
+}
+// 밤 풍경에서 사인 · YMMT 가 완성되어 번쩍이는 순간의 큰 폭죽. 발사 없이 바로 터진다(일반 사인 완성 폭죽 fireworkSalvo 대신).
+export function fireworkBig(age,seed,view,{small=false,budget=small?700:1400}={}){
+ const out={particles:[],rockets:[]},shells=small?3:5;
+ for(let j=0;j<shells;j++){
+  const shell=age-j*.14+.65;if(shell<.65||shell>SHELL_LIFE)continue;
+  addShell(out,shell,n=>hash(seed+j*131+n*31),view,{seed,salt:j*53,small,budget,count:small?90:150,scale:1.6});
  }
  return out;
 }

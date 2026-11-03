@@ -11,7 +11,9 @@ export function signDrawOrder(strokes){
  const y=[...[...arm].reverse(),...arm.slice(1,joint+1),...tail];
  return [strokes[0],strokes[1],y,strokes[3],strokes[4],...strokes.slice(5,8),...strokes.slice(9)];
 }
-export function createSkySign({djClamp15,djEase15,skyStar,skyUFO}){
+// UFO 가장자리 빛이 UFO 가 사라진 자리에 남아 옅어지는 시간 상수(초). 밝기 = exp(-경과/HALO_TAU), HALO_LIFE 뒤엔 그리지 않는다.
+export const HALO_TAU=.35,HALO_LIFE=HALO_TAU*5;
+export function createSkySign({djClamp15,djEase15,skyStar,skyUFO,skyHalo}){
 const [SKY_SIGN_DATA,SKY_SIGN_WIDTHS]=decodeSign();
 const skySign=(()=>{
  const strokes=SKY_SIGN_DATA.map(s=>s.map(([x,y])=>[55+x*500,30+y*500*255/374]));
@@ -42,6 +44,8 @@ function skySignDraw(c,f,age){
  c.save();c.translate(55,30);c.scale(.88,.88);c.translate(-55,-30);skySignDrawOriginal(c,f,age);c.restore();
 }
 function skySignDrawOriginal(c,f,age){
+ // f.speed = 사인 긋는 속도 배율(밤 풍경 1.3). 긋는 구간만 빨라지고 등장 · 완성 뒤 시간은 그대로라, 바깥 시각을 원래 시각표로 옮겨 그린다.
+ {const k=f.speed||1,T=skySign.T,I=skySign.INTRO;if(k!==1)age=age<=I?age:age<=I+T/k?I+(age-I)*k:age+T-T/k}
  const reveal=f.reveal,rs=age-reveal,INTRO=skySign.INTRO;
  // 등장 연출: 시작 위치에 노란 별이 먼저 나타나고(INTRO 동안), 별이 가장 밝을 때 UFO 가 그 자리에서 나타나 사인을 그리기 시작한다.
  {const p0=skySign.segs[0].a;if(age>=0&&age<=1.0)skyStar(c,p0[0],p0[1],age/1.0,777,1)}
@@ -69,6 +73,9 @@ function skySignDrawOriginal(c,f,age){
  skySign.segs.forEach((sg,i)=>{if(sg.pen)return;const st=age-sg.start;if(st>=0&&st<=1.0)skyStar(c,sg.a[0],sg.a[1],st/1.0,i+1,.42)});
  // 첫 시작을 제외한 모든 새 획의 시작점: UFO 가 나타나기 직전에 작은 별이 먼저 떠서 '여기서 다시 등장한다'는 느낌을 준다.
  skySign.segs.forEach((sg,i)=>{if(sg.pen)return;const st=age-(sg.start+(sg.end-sg.start)*.25);if(st>=0&&st<=1.0)skyStar(c,sg.b[0],sg.b[1],st/1.0,i+501,.42)});
+ // UFO 가장자리 빛(사인 궤적과 같은 붉은 분홍). 펜 들기로 숨거나 다 그리고 사라지면 그 자리에서 지수적으로 옅어진다.
+ for(const sg of skySign.segs){if(sg.pen||age<sg.start)continue;const d=age-sg.start;if(d<HALO_LIFE)skyHalo(c,sg.a[0],sg.a[1],54,Math.exp(-d/HALO_TAU),'#ff488d')}
+ if(age>f.flight-.07){const d=age-(f.flight-.07);if(d<HALO_LIFE){const p=skySignPos(skySign.T);skyHalo(c,p[0],p[1],54,Math.exp(-d/HALO_TAU),'#ff488d',Math.sin(p[2])*.16)}}
  if(age>f.flight){if(age<=f.flight+1.3){const p=skySignPos(skySign.T);skyStar(c,p[0],p[1],(age-f.flight)/1.3,999)}return}
  const [x,y,angle]=skySignPos(age);
  // 현재 구간이 펜 들기이면: 앞 45% = 끝점에서 별 글로우로 반짝이며 사라짐, 뒤 35% = 다음 시작점에서 다시 나타남
@@ -78,9 +85,10 @@ function skySignDrawOriginal(c,f,age){
   const q=djClamp15((age-seg.start)/(seg.end-seg.start));
   if(q<.45)return;
   if(q<.65)return;
-  alpha*=djEase15((q-.65)/.35);c.save();c.translate(seg.b[0],seg.b[1]);c.rotate(Math.sin(angle)*.16);c.globalAlpha=alpha;c.shadowColor='#ff488d';c.shadowBlur=7;c.drawImage(skyUFO,-27,-27,54,54);c.restore();return;
+  alpha*=djEase15((q-.65)/.35);skyHalo(c,seg.b[0],seg.b[1],54,alpha,'#ff488d',Math.sin(angle)*.16);c.save();c.translate(seg.b[0],seg.b[1]);c.rotate(Math.sin(angle)*.16);c.globalAlpha=alpha;c.drawImage(skyUFO,-27,-27,54,54);c.restore();return;
  }
- c.save();c.translate(x,y);c.rotate(Math.sin(angle)*.16);c.globalAlpha=alpha;c.shadowColor='#ff488d';c.shadowBlur=7;c.drawImage(skyUFO,-27,-27,54,54);c.restore();
+ if(age<=f.flight-.07)skyHalo(c,x,y,54,alpha,'#ff488d',Math.sin(angle)*.16);
+ c.save();c.translate(x,y);c.rotate(Math.sin(angle)*.16);c.globalAlpha=alpha;c.drawImage(skyUFO,-27,-27,54,54);c.restore();
 }
 
 

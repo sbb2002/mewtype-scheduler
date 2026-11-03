@@ -14,6 +14,8 @@ const EFFECTS=[
 ];
 const SPEAKER_BODY='M3 7.5v5h3l4.5 3.5V4L6 7.5z',SPEAKER_ON=SPEAKER_BODY+'M13 7.5a3.5 3.5 0 0 1 0 5M15.2 5a7 7 0 0 1 0 10',SPEAKER_OFF=SPEAKER_BODY+'M3 3l14 14';
 // 짧게 누름 = tap, 0.2초 이상 눌렀다 뗌 = hold. down 은 누르는 순간(박자에 맞춰야 하는 효과용).
+// 패널 확장: 「너의 턴이야」 뒤 1초 · 밤 풍경이 끝나고 대사가 못 나오면 7초 뒤 · 반짝임 표시 유지 시간.
+const EXPAND_AFTER_TURN_MS=1000,EXPAND_FALLBACK_MS=7000,FRESH_MS=2800;
 const HOLD_MS=200,HOLD_HELP={fireworks:'폭죽 — 클릭 1발 · 길게 누르면 연속 켜기/끄기',pulse:'태양 펄스 — 클릭 1파 · 누르고 있으면 박마다 파동 · 떼면 다음 박에 큰 펄스',sign:'YMMT 별자리 — 길게 누르면 유노 사인'};
 function holdable(b,{down,tap,hold,charge,cancel},signal){
  let timer=0,charged=false,active=false;
@@ -35,7 +37,7 @@ function setTransportIcon(svg,name){
 function transportIcon(name){const svg=icon(TRANSPORT_ICONS[name]);svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('class','bday-transport-icon');svg.setAttribute('focusable','false');setTransportIcon(svg,name);return svg}
 export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
-  let dead=false,raf=0,idle=0,intro=true,lastIndex=-1,ready=false,starting=false,unsub;
+  let dead=false,raf=0,idle=0,intro=true,lastIndex=-1,ready=false,starting=false,unsub,expandPending=false,expandTimer=0,freshTimer=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text)n.textContent=text;return n};
   const shell=el('div','bday-music');shell.id='bday-music';
   const bar=el('div','bday-music__bar');bar.setAttribute('role','group');bar.setAttribute('aria-label','생일 음악');
@@ -65,11 +67,11 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   // 유노 얼굴 = 큰 밤 풍경 다시 보기(이름은 감사 카드 버튼과 같은 「이 순간 간직하기」, v4.11.8). 재생 중에는 효과 버튼을 잠시 잠근다(켜 둔 토글은 그대로).
   const grand=button('effect grand','이 순간 간직하기','',()=>scene.grandShow()),face=new Image();
   face.src=new URL('../assets/birthday/yuno/head_open.webp',import.meta.url).href;face.alt='';face.draggable=false;grand.append(face);effects.append(grand);
-  scene.onGrand(on=>{for(const b of effects.querySelectorAll('button'))b.disabled=on;shell.toggleAttribute('data-grand',on)});
+  scene.onGrand(on=>{for(const b of effects.querySelectorAll('button'))b.disabled=on;shell.toggleAttribute('data-grand',on);
+   // 밤 풍경이 끝났는데 「너의 턴이야」 가 못 나오면(음소거 등) 패널을 너무 오래 숨기지 않는다.
+   if(!on&&expandPending){clearTimeout(expandTimer);expandTimer=setTimeout(expandPanel,EXPAND_FALLBACK_MS)}});
   bar.append(effects);
   const scan=el('span','bday-panel-scan');scan.setAttribute('aria-hidden','true');bar.append(scan);
-  bar.addEventListener('animationend',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
-  bar.addEventListener('animationcancel',e=>{if(e.target===scan)shell.removeAttribute('data-fresh-unlock')},{signal});
   bar.addEventListener('click',e=>e.stopPropagation(),{signal});
   shell.append(bar,title,disc,prompt);document.body.append(shell);
   const drag=mountBirthdayPlayerDrag({bar,grip,shell,title,disc});
@@ -81,9 +83,12 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   }
   unsub=audio.subscribe(update);update();scene.setClock(()=>audio.clock());scene.setIntro(()=>intro&&!reduced());
   // 보상 전 · 인트로 중에는 이전/다음 곡이 화면 · 포커스 · 키보드 어디에도 없다.
-  function syncReward(){const on=reward.unlocked&&!intro;prev.hidden=next.hidden=effects.hidden=!on;shell.toggleAttribute('data-unlocked',on)}
-  const reward=mountBirthdayReward({audio,onUnlock:()=>{if(!reduced())shell.setAttribute('data-fresh-unlock','');syncReward()}});syncReward();
-  const story=mountBirthdayStory({audio,scene,shell,reduced,reward});
+  // 보상 패널 확장(v4.11.9 운영자 지시): 감사 카드 → 「이 순간 간직하기」 → 밤 풍경 → 「너의 턴이야」 대사가 뜬 1초 뒤에 넓힌다.
+  // 카드 흐름이 없으면(카드가 안 뜬 해제) 바로 넓힌다. 넓힐 때 새 버튼이 한 번 반짝인다(css data-fresh-unlock, FRESH_MS 뒤 해제).
+  function syncReward(){const on=reward.unlocked&&!intro&&!expandPending;prev.hidden=next.hidden=effects.hidden=!on;shell.toggleAttribute('data-unlocked',on)}
+  function expandPanel(){if(dead)return;expandPending=false;clearTimeout(expandTimer);clearTimeout(freshTimer);if(!reduced()){shell.setAttribute('data-fresh-unlock','');freshTimer=setTimeout(()=>shell.removeAttribute('data-fresh-unlock'),FRESH_MS)}syncReward()}
+  const reward=mountBirthdayReward({audio,onUnlock:()=>{if(story?.holdsPanel()){expandPending=true;syncReward();if(!story.cardOpen()&&!shell.hasAttribute('data-grand'))expandTimer=setTimeout(expandPanel,EXPAND_FALLBACK_MS);return}expandPanel()}});syncReward();
+  const story=mountBirthdayStory({audio,scene,shell,reduced,reward,onTurn:()=>{if(expandPending){clearTimeout(expandTimer);expandTimer=setTimeout(expandPanel,EXPAND_AFTER_TURN_MS)}}});
   function wake(){shell.classList.remove('idle');clearTimeout(idle);idle=setTimeout(()=>shell.classList.add('idle'),5000)}
   for(const type of ['pointermove','pointerdown','keydown'])document.addEventListener(type,wake,{signal});wake();
   document.addEventListener('keydown',e=>{
@@ -104,5 +109,5 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
   }
   document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else if(intro&&!raf&&!dead)raf=requestAnimationFrame(tick)},{signal});
   root.setAttribute('data-bday-intro','');setFull(true);raf=requestAnimationFrame(tick);start();
-  return {shell,get intro(){return intro},destroy(){dead=true;cancelAnimationFrame(raf);clearTimeout(idle);reward.destroy();story.destroy();drag.destroy();events.abort();unsub();shell.remove();host.style.filter='';for(const k of ['data-bday-intro','data-bday-started','data-bday-revealed'])root.removeAttribute(k)}};
+  return {shell,get intro(){return intro},destroy(){dead=true;cancelAnimationFrame(raf);clearTimeout(idle);clearTimeout(expandTimer);clearTimeout(freshTimer);reward.destroy();story.destroy();drag.destroy();events.abort();unsub();shell.remove();host.style.filter='';for(const k of ['data-bday-intro','data-bday-started','data-bday-revealed'])root.removeAttribute(k)}};
 }

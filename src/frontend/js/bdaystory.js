@@ -1,7 +1,7 @@
 import { birthdayStoryCue, lowStoryBox, STORY_TURN, STORY_NUDGE, SILENT_NUDGE_MS } from './bdaystorylogic.js';
 import { sceneLayout } from './bdaylogic.js';
 
-export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
+export function mountBirthdayStory({audio,scene,shell,reduced,reward,onTurn=()=>{}}){
  const root=document.documentElement,abort=new AbortController(),signal=abort.signal;
  const message=document.createElement('div');message.className='bday-story';message.setAttribute('aria-hidden','true');
  const stars=document.createElement('div');stars.className='bday-story__stars';
@@ -30,7 +30,7 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
   if(!silent)silentMs=0;else if(!audio.paused&&lastPaint)silentMs+=Math.min(now-lastPaint,500);lastPaint=now;
   if(special&&now>=special.until)special=null;
   if(!special&&shown&&!busy&&card.hidden){
-   if(turnPending&&reward.unlocked&&!silent){turnPending=false;special={id:'turn',text:STORY_TURN,until:now+6500}}
+   if(turnPending&&reward.unlocked&&!silent){turnPending=false;special={id:'turn',text:STORY_TURN,until:now+6500};onTurn()}
    else if(!nudged&&silentMs>=SILENT_NUDGE_MS){nudged=true;special={id:'nudge',text:STORY_NUDGE,until:now+5500}}
    if(special){clearTimeout(specialTimer);specialTimer=setTimeout(wake,special.until-now+20)}
   }
@@ -70,5 +70,6 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else wake()},{signal});
  const observer=new MutationObserver(wake);observer.observe(root,{attributes:true,attributeFilter:['data-bday-full','data-bday-revealed','data-bday-intro']});
  wake();
- return {destroy(){dead=true;clearTimeout(leaving);clearTimeout(specialTimer);cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
+ // 카드가 떠 있거나 · 카드를 닫고 밤 풍경 · 「너의 턴이야」 를 기다리는 동안은 보상 패널 확장을 미룬다(bdayplayer).
+ return {holdsPanel(){return !card.hidden||cardPending||turnPending||!!leaving},cardOpen(){return !card.hidden||cardPending||!!leaving},destroy(){dead=true;clearTimeout(leaving);clearTimeout(specialTimer);cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
 }

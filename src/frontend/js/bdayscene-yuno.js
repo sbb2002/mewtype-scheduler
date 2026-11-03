@@ -1,7 +1,7 @@
-import { fireworkFrame, fireworkShot, fireworkSalvo, drawFireworkFrame, drawSpark, SHELL_LIFE, SALVO_LIFE } from './bdayfireworks.js';
+import { fireworkFrame, fireworkShot, fireworkSalvo, fireworkPopcorn, fireworkBig, drawFireworkFrame, drawSpark, SHELL_LIFE, SALVO_LIFE } from './bdayfireworks.js';
 import { createBirthdayBackdrop } from './bdaybackdrop.js';
 // 정본 prototype_v12.html에서 수식·상수를 이식. 카메라/드롭/사인 폭만 정본 명세대로 변경.
-import { createSkySign } from './bdaysign.js';
+import { createSkySign, HALO_TAU, HALO_LIFE } from './bdaysign.js';
 import { sceneLayout, introScene, introBrightness, fitSkySign, grandLayout, ymmtLetters, ymmtTilt, fitYmmtRotation } from './bdaylogic.js';
 import { backgroundStars, backgroundFireworks, backgroundMeteors, createAmbientTimeline, ambientVisibility } from './bdaystars.js';
 export function mountYunoScene(host,opts={}) {
@@ -211,7 +211,20 @@ const skyModes=new WeakMap();
 const skyForcedMode=new URLSearchParams(location.search).get('ufo');
 function skyMode(T){return skyModes.get(T)||(['sign','zig'].includes(skyForcedMode)?skyForcedMode:(skyHash(429+SKY_SALT*7)<.5)===(T.bpm===100)?'sign':'zig')} // 두 곡이 서로 반대라 한 바퀴에 사인이 꼭 한 번 나온다.
 // 사인은 성능 때문에 품질을 낮추지 않는다. 사인의 별은 원래 그림자 그대로 그린다.
-const {skySign,skySignPos,skySignDraw}=createSkySign({djClamp15,djEase15,skyStar:(...args)=>skyStar(...args.slice(0,6),SKY_STAR_Y,SKY_STAR_EDGE,true),skyUFO});
+const {skySign,skySignPos,skySignDraw}=createSkySign({djClamp15,djEase15,skyStar:(...args)=>skyStar(...args.slice(0,6),SKY_STAR_Y,SKY_STAR_EDGE,true),skyUFO,skyHalo:(...args)=>skyHalo(...args)});
+// UFO 가장자리 빛: UFO 그림의 실루엣을 색마다 한 번 흐리게 구워 두고 복사한다(매 프레임 shadowBlur 를 쓰지 않는다). size = UFO 한 변.
+const haloCache=new Map();
+function skyHalo(c,x,y,size,alpha,color,angle=0){
+ if(alpha<.01||!skyUFO.complete||!skyUFO.naturalWidth)return;
+ let cv=haloCache.get(color);
+ // 256 칸 가운데 96 칸에 UFO, 둘레 80 칸이 빛. 흐림을 겹쳐 가장자리는 진하고 바깥은 넓게 번진다. 더하기 합성이라 밤하늘 위에서 빛처럼 보인다.
+ if(!cv){cv=document.createElement('canvas');cv.width=cv.height=256;const g=cv.getContext('2d');g.shadowColor=color;g.shadowOffsetX=1000;for(const blur of [48,24,10,10]){g.shadowBlur=blur;g.drawImage(skyUFO,80-1000,80,96,96)}haloCache.set(color,cv)}
+ const a=c.globalAlpha,half=size*128/96;c.save();c.translate(x,y);c.rotate(angle);c.globalAlpha=a*Math.min(1,alpha);c.globalCompositeOperation='lighter';c.drawImage(cv,-half,-half,half*2,half*2);c.restore();
+}
+// 밤 풍경(감사 카드 닫기 · 유노 버튼)의 사인은 긋는 속도를 30% 높인다(운영자 지시 v4.11.9). 완성 시각은 그만큼 당겨진다.
+const GRAND_SIGN_SPEED=1.3,signShift=f=>f.speed?skySign.T*(1-1/f.speed):0;
+// 일반 유성우 토글 한 회차 길이(초). 유성 생성 간격을 30% 늘리며 1.6 → 2.08.
+const SHOWER_PERIOD=2.08;
 let skyRoutineAlpha=1;
 const SIGN_TILT=4*Math.PI/180,SIGN_BURST=8; // SIGN_BURST = 사인 완성 뒤 무지개 유성 · 혜성이 쏟아지는 시간.
 const tiltSign=(c,angle)=>{c.translate(305,202.5);c.rotate(angle);c.translate(-305,-202.5)};
@@ -405,11 +418,14 @@ function skyUfos(c,t,events=skyPlan(TRK).ufos){
   if(f.type===1){
    if(f.mode==='sign'){const fit=f.fit||fitSkySign(skyViewport,portrait,f.place);c.save();c.translate(fit.x,fit.y);c.scale(fit.scale,fit.scale);tiltSign(c,f.tilt);skySignDraw(c,f,age);c.restore();continue}
    skyTrail(c,ta=>point(skyZig(f,ta/f.flight)),age,f.flight);
+   // UFO 가장자리 빛 = 궤적과 같은 푸른색. 사라지기 시작한 뒤에는 마지막 자리에서 지수적으로 옅어진다.
+   {const fadeAt=f.flight-.09,d=age-fadeAt;if(d<HALO_LIFE){const [hx,hy,ha]=point(skyZig(f,Math.min(age,f.flight)/f.flight));skyHalo(c,hx,hy,54,skyRoutineAlpha*(d>0?Math.exp(-d/HALO_TAU):djEase15(age/.09)),C,Math.sin(ha)*.16)}}
    if(age>f.flight){if(age<=f.flight+1.3){const p=point(f.zig.pts.at(-1));skyStar(c,p[0],p[1],(age-f.flight)/1.3,998)}continue}
    for(let j=0;j<0;j++){const ta=age-.22*(1-j/26),tb=age-.22*(1-(j+1)/26);if(ta<0)continue;const a=skyZig(f,ta/f.flight),b=skyZig(f,tb/f.flight);c.globalAlpha=skyRoutineAlpha*.55*(j/26)**1.4*env(age,f.flight,.09);c.strokeStyle=j<13?V:C;c.lineWidth=2.8;c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke()}
-   const [x,y,angle]=point(skyZig(f,age/f.flight));c.save();c.translate(x,y);c.rotate(Math.sin(angle)*.16);c.globalAlpha=skyRoutineAlpha*env(age,f.flight,.09);c.shadowColor=P;c.shadowBlur=7;c.drawImage(skyUFO,-27,-27,54,54);c.restore();
+   const [x,y,angle]=point(skyZig(f,age/f.flight));c.save();c.translate(x,y);c.rotate(Math.sin(angle)*.16);c.globalAlpha=skyRoutineAlpha*env(age,f.flight,.09);c.drawImage(skyUFO,-27,-27,54,54);c.restore();
   }else{
    skyTrail(c,ta=>{const q=skyUfo2(f,ta);return point([q.x,q.y])},age,life);
+   {const fadeAt=life-.65,d=age-fadeAt;if(d<HALO_LIFE){const q=skyUfo2(f,Math.min(age,life)),m=point([q.x,q.y]);skyHalo(c,m[0],m[1],62,skyRoutineAlpha*(d>0?Math.exp(-d/HALO_TAU):djEase15(age/.65)),C,q.tilt)}}
    if(age>life)continue;
    const pos={...skyUfo2(f,age)},alpha=env(age,life,.65),mapped=point([pos.x,pos.y]);pos.x=mapped[0];pos.y=mapped[1];
    if(pos.scanning){
@@ -423,7 +439,7 @@ function skyUfos(c,t,events=skyPlan(TRK).ufos){
      c.translate(0,bottom);c.scale(1,.07);c.fillStyle=glow;c.fillRect(base-width,-width,width*2,width*2);c.restore();
     }
    }
-   c.save();c.globalAlpha=skyRoutineAlpha*alpha;c.translate(pos.x,pos.y);c.rotate(pos.tilt);c.shadowColor=P;c.shadowBlur=7;c.drawImage(skyUFO,-31,-31,62,62);c.restore();
+   c.save();c.globalAlpha=skyRoutineAlpha*alpha;c.translate(pos.x,pos.y);c.rotate(pos.tilt);c.drawImage(skyUFO,-31,-31,62,62);c.restore();
   }
  }
   c.restore();
@@ -603,8 +619,8 @@ function floorWave(c,type,t){
    const left=room-frame.particles.length-frame.rockets.length,count=Math.max(24,Math.min(small?56:96,Math.floor(left/Math.max(1,shots.length))));
    for(const shot of shots){const one=fireworkShot(wall-shot.start,shot.seed,skyViewport,{small,reduced:still,budget:Math.max(0,room-frame.particles.length-frame.rockets.length),count});frame.particles.push(...one.particles);frame.rockets.push(...one.rockets)}
    toggleParticles=frame.particles.length+frame.rockets.length;c.save();c.beginPath();c.rect(skyViewport.left,skyViewport.top,skyViewport.width,skyViewport.height);c.clip();drawFireworkFrame(c,frame);c.restore()}
-  if(toggles.shower){const {start,stopAt}=toggles.shower,t=wall-start,cut=age=>stopAt?age-(wall-stopAt):Infinity,shower=age=>skyExtra('shower',age,{cut:cut(age)});
-   shower(still?1:t%1.6);if(!still&&t>=1.6)shower(t%1.6+1.6);if(!still&&t%18<8)skyExtra('comet',t%18,{cut:cut(t%18)})}
+  if(toggles.shower){const {start,stopAt}=toggles.shower,t=wall-start,cut=age=>stopAt?age-(wall-stopAt):Infinity,shower=(age,salt)=>skyExtra('shower',age,{cut:cut(age),salt});
+   const P=SHOWER_PERIOD,n=Math.floor(t/P);shower(still?1:t%P,n);if(!still&&t>=P)shower(t%P+P,n-1);if(!still&&t%18<8)skyExtra('comet',t%18,{cut:cut(t%18)})}
  }
  function manualFlight(kind){
   const seed=Math.floor(Math.random()*1000000),sign=kind==='sign',flight=sign?skySign.T+skySign.INTRO:4.25,reveal=flight+.92,fade=sign?5.5:0;
@@ -639,17 +655,21 @@ function floorWave(c,type,t){
  const ymmtShape=ymmtLetters(SKY_SALT),ymmtAngle=ymmtTilt(SKY_SALT);
  // 감사 카드를 닫은 뒤의 큰 장면: UFO 가 사인을 그리는 동안 별자리 · 유성우 · 혜성을 함께 그린다.
  // 사인은 원래 이벤트와 같은 skyUfos 경로이고 자리만 grandLayout 을 따른다. 장면은 사인 완성 뒤 쏟아지는 유성까지 이어진다.
+ // 폭죽(v4.11.9 운영자 지시): 시작부터 작은 폭죽이 천천히 터지고, 사인 · YMMT 가 번쩍이는 순간 큰 폭죽, 둘이 사라지기 시작하면 새 폭죽은 멈추고 이미 터진 것만 끝까지 남는다.
  function skyGrand(age){
-  const layout=grandLayout(skyViewport,activeLayout?.portrait);
-  skyExtra('comet',age);if(age<12)skyExtra('shower',age%4);skyExtra('rainbow',Math.max(0,age-.3));
-  if(still)skyExtra('constellation',4,{box:layout.ymmt});else if(age<manual.f.end)skyExtra('ymmt-sync',age,{box:layout.ymmt,f:manual.f,signScale:layout.sign.scale});
-  skyUfos(c,still?manual.f.reveal+.5:age,[{...manual.f,fit:layout.sign}]);signBurst(age-manual.f.reveal);
+  const layout=grandLayout(skyViewport,activeLayout?.portrait),f=manual.f,R=f.reveal-signShift(f),small=host.clientWidth<700;
+  skyExtra('comet',age);if(age<12)skyExtra('shower',age%4,{salt:Math.floor(age/4)});skyExtra('rainbow',Math.max(0,age-.3));
+  if(still)skyExtra('constellation',4,{box:layout.ymmt});else if(age<R+f.fade)skyExtra('ymmt-sync',age,{box:layout.ymmt,f:{...f,reveal:R},signScale:layout.sign.scale,rate:f.speed});
+  if(!still){const frame=fireworkPopcorn(age,SKY_SALT*31+7,skyViewport,{small,budget:(small?420:720)*quality,until:grandFireStop(f)}),v=skyViewport;c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();drawFireworkFrame(c,frame);c.restore()}
+  skyUfos(c,still?f.reveal+.5:age,[{...f,fit:layout.sign}]);signBurst(age-R,true);
  }
+ // 사인 · YMMT 가 사라지기 시작하는 때(완성 뒤 fade-1.1초) = 작은 폭죽을 그만 쏘는 때.
+ const grandFireStop=f=>f.reveal-signShift(f)+f.fade-1.1;
  // 사인이 완성되는 순간(age=0)부터 YMMT 완성처럼 무지개 유성 · 혜성을 쏟는다. 모션 줄이기에서는 그리지 않는다.
- function signBurst(age){
+ function signBurst(age,big=false){
   if(still||age<0||age>=SIGN_BURST)return;
   skyExtra('rainbow',age,{thin:.7});skyExtra('comet',age);
-  if(age<SALVO_LIFE){const frame=fireworkSalvo(age,TRK.bpm+SKY_SALT,skyViewport,{small:host.clientWidth<700,budget:(host.clientWidth<700?700:1400)*quality}),v=skyViewport;c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();drawFireworkFrame(c,frame);c.restore()}
+  if(age<SALVO_LIFE){const opt={small:host.clientWidth<700,budget:(host.clientWidth<700?700:1400)*quality},frame=big?fireworkBig(age,TRK.bpm+SKY_SALT,skyViewport,opt):fireworkSalvo(age,TRK.bpm+SKY_SALT,skyViewport,opt),v=skyViewport;c.save();c.beginPath();c.rect(v.left,v.top,v.width,v.height);c.clip();drawFireworkFrame(c,frame);c.restore()}
  }
  // 버튼 태양 펄스. 고정 이벤트를 막지 않고 유노 뒤 하늘에 겹쳐 그린다.
  function drawPulses(wall){
@@ -676,11 +696,13 @@ function floorWave(c,type,t){
   const tall=activeLayout?.portrait,x=v.left+v.width*.5,y=v.top+v.height*(tall?.27:.35);
   if(kind==='shower'||kind==='rainbow'){
    // 무지개 유성우 = 별자리가 완성되는 순간부터 쏟아지는 빛깔별 유성. 일반 유성우와 그리기를 공유한다.
-   const rainbow=kind==='rainbow',count=rainbow?(small?44:52):(small?5:9),gap=rainbow?(small?.12:.1):(small?.23:.19);
+   // 일반 유성우(v4.11.9 운영자 지시): 하늘 전체에 고르게 흩고(R2 저불일치 수열로 중점을 고른다), 생성 간격을 30% 늘렸다. salt = 회차 — 회차마다 다른 자리.
+   const rainbow=kind==='rainbow',count=rainbow?(small?44:52):(small?5:9),gap=rainbow?(small?.12:.1):(small?.3:.25),salt=rainbow?0:Math.round(opt.salt??0),frac=n=>n-Math.floor(n);
    for(let i=0;i<count;i++){
-    const h=k=>skyHash(i*71+k*149+TRK.bpm),delay=i*gap+h(1)*.14,duration=.85+h(2)*.55;
+    const id=i+salt*count,h=k=>skyHash(id*71+k*149+TRK.bpm),delay=i*gap+h(1)*.14,duration=.85+h(2)*.55;
     const a=age-delay;if(a<0||a>duration||delay>(opt.cut??Infinity)||skyHash(i*13+5)>quality*(opt.thin??1))continue;const u=still?.5:a/duration;
-    const dx=v.width*(.4+.28*h(3)),dy=v.height*(.22+.19*h(4))*(tall?.6:1),sx=v.left+v.width*(.32+.73*h(5)),sy=v.top+v.height*(.02+.25*h(6));
+    const dx=v.width*(.4+.28*h(3)),dy=v.height*(.22+.19*h(4))*(tall?.6:1);
+    const sx=rainbow?v.left+v.width*(.32+.73*h(5)):v.left+v.width*(.06+.88*frac(.5+id*.7548776662+h(5)*.08))+dx*.5,sy=rainbow?v.top+v.height*(.02+.25*h(6)):v.top+v.height*(.05+.8*frac(.5+id*.569840291+h(6)*.08))-dy*.5;
     const px=sx-dx*u,py=sy+dy*u,tail=(rainbow?.26:.12+.12*h(7))*(small?.75:1),tx=px+dx*tail,ty=py-dy*tail;
     const opacity=Math.sin(u*Math.PI)*(rainbow?.95:.4+.55*h(8)),g=c.createLinearGradient(tx,ty,px,py),hue=Math.round(i*137.5)%360;
     if(rainbow){g.addColorStop(0,`hsla(${hue},100%,62%,0)`);g.addColorStop(.6,`hsla(${hue},100%,68%,.8)`);g.addColorStop(1,`hsl(${hue},100%,88%)`)}else{g.addColorStop(0,'#72aaff00');g.addColorStop(.65,'#7fcfff70');g.addColorStop(1,'#e6fcff')}
@@ -708,7 +730,7 @@ function floorWave(c,type,t){
    if(rise>0&&rs<fade){const {glow,core}=ymmtNeon(opt.signScale*.88/box.scale);c.globalAlpha=Math.min(1,.95*rise*decay);c.drawImage(glow,-20,-20,360,120);c.globalAlpha=Math.min(1,.5*pop*rise*decay);c.drawImage(glow,-20,-20,360,120);c.globalAlpha=Math.min(1,rise*decay);c.drawImage(core,-20,-20,360,120)}
    // 별은 선과 네온보다 앞에 둔다.
    let n=0;c.fillStyle='#c3edff';
-   for(const {points} of ymmtShape)for(const [a,b] of points){const born=n++*.065;if(age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff',false,true);c.globalAlpha=decay*ymmtDotIn(age-born);c.beginPath();c.arc(a,b,3.5,0,Math.PI*2);c.fill()}
+   for(const {points} of ymmtShape)for(const [a,b] of points){const born=n++*.065/(opt.rate||1);if(age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff',false,true);c.globalAlpha=decay*ymmtDotIn(age-born);c.beginPath();c.arc(a,b,3.5,0,Math.PI*2);c.fill()}
   }else if(kind==='constellation'){
    const box=fitYmmtRotation(opt.box||{cx:x,cy:y,scale:Math.min(v.width*.8/355,v.height*.48/120)},ymmtAngle),scale=box.scale,alpha=Math.min(1,(9-age)/1.6),flash=still?0:Math.sin(Math.PI*djClamp15((age-7)/.4));
    c.translate(box.cx,box.cy);c.rotate(box.angle);c.scale(scale,scale);c.translate(-157.5,-40);c.strokeStyle='#65baff';c.fillStyle='#c3edff';c.shadowColor='#329dff';c.shadowBlur=12;c.lineWidth=2;
@@ -780,7 +802,7 @@ function floorWave(c,type,t){
   if(introActive()&&!still&&t>=17.14&&t<17.69){const u=(t-17.14)/.55;c.save();sunTransform(c);for(let j=0;j<3;j++){c.strokeStyle=[P,V,C][j];c.globalAlpha=(1-u)*.9;c.lineWidth=7-j;c.beginPath();c.arc(850,267,100+500*u-j*18,0,Math.PI*2);c.stroke()}c.restore()}
   if(!hasManual()){c.save();if(routineAlpha<1)c.filter=`opacity(${routineAlpha})`;skyUfos(c,t);
    const age=t-skyPlanNow.constellation;if(skyPlanNow.constellation!==null&&age>=0&&age<9){if(age>=1.85&&age<8.3)skyExtra('rainbow',age-1.85);skyExtra('constellation',age)}
-   for(const birth of skyPlanNow.showers)if(t>=birth&&t<birth+5)skyExtra('shower',t-birth);
+   for(const birth of skyPlanNow.showers)if(t>=birth&&t<birth+5)skyExtra('shower',t-birth,{salt:birth});
    const fixed=skyPlanNow.ufos[0];if(fixed.mode==='sign')signBurst(t-fixed.birth-fixed.reveal);c.restore();
   }
   if(manual?.kind==='grand')skyGrand(wall-manual.start);
@@ -837,8 +859,8 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
  return {signBusy(t){if(!TRK||hasManual())return false;const f=skyPlan(TRK).ufos[0];return f.mode==='sign'&&t>=f.birth&&t<f.birth+f.reveal+SIGN_BURST},
   skyBusy(t){if(!TRK)return false;const plan=skyPlan(TRK),f=plan.ufos[0],a=plan.constellation;return hasManual()||(f.mode==='sign'&&t>=f.birth&&t<f.birth+f.reveal+SIGN_BURST)||(a!==null&&t>=a&&t<a+9)},
   setEyesClosed(value){yunoEyesClosed=!!value;lastT=null;resume()},onGrand(fn){grandListener=fn},
-  grandShow(){if(dead||document.hidden)return;grandListener?.(true);pulseHolding=false;pendingBig=null;const f=manualFlight('sign'),preview=grandLayout(skyViewport,activeLayout?.portrait);ymmtNeon(preview.sign.scale*.88/fitYmmtRotation(preview.ymmt,ymmtAngle).scale); // 네온을 미리 구워 번쩍이는 순간에 끊기지 않게 한다.
-   manualEffects.delete('sign');manual={kind:'grand',start:performance.now()/1000,dur:f.reveal+SIGN_BURST,f};parts=[];lastT=null;if(!still){const r=host.getBoundingClientRect();[[.5,.28,'#ff477d'],[.42,.2,'#6ee7f9'],[.58,.2,'#ffd36b'],[.5,.14,'#c4a1ff']].forEach(([x,y,color],j)=>{for(let i=0;i<70;i++){const a=i*Math.PI/35,v=(50+Math.random()*90)*Math.max(.8,Math.min(1.4,r.width/900));parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%3?color:'#fff9ec',r:1.1+Math.random()*1.8,delay:j*.08,life:2.2})}});lastFrame=performance.now()}resume()},triggerManual(kind){
+  grandShow(){if(dead||document.hidden)return;grandListener?.(true);pulseHolding=false;pendingBig=null;const f={...manualFlight('sign'),speed:GRAND_SIGN_SPEED},preview=grandLayout(skyViewport,activeLayout?.portrait);ymmtNeon(preview.sign.scale*.88/fitYmmtRotation(preview.ymmt,ymmtAngle).scale); // 네온을 미리 구워 번쩍이는 순간에 끊기지 않게 한다.
+   manualEffects.delete('sign');manual={kind:'grand',start:performance.now()/1000,dur:Math.max(f.reveal-signShift(f)+SIGN_BURST,grandFireStop(f)+.35+SHELL_LIFE),f};parts=[];lastT=null;if(!still){const r=host.getBoundingClientRect();[[.5,.28,'#ff477d'],[.42,.2,'#6ee7f9'],[.58,.2,'#ffd36b'],[.5,.14,'#c4a1ff']].forEach(([x,y,color],j)=>{for(let i=0;i<70;i++){const a=i*Math.PI/35,v=(50+Math.random()*90)*Math.max(.8,Math.min(1.4,r.width/900));parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%3?color:'#fff9ec',r:1.1+Math.random()*1.8,delay:j*.08,life:2.2})}});lastFrame=performance.now()}resume()},triggerManual(kind){
    if(dead||document.hidden||!['fireworks','ufo','sign','ymmt','shower','shot','pulse','pulse-big'].includes(kind))return;
    const now=performance.now()/1000;
    // 폭죽 단발 = 쿨타임 0.1초. 고정 이벤트를 막지 않는다.

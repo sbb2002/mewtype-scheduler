@@ -77,14 +77,30 @@
 @keyframes bday-letter-light{from{opacity:0;filter:blur(4px);transform:translateY(5px);text-shadow:0 0 22px #9dfaff}65%{opacity:1;text-shadow:0 0 16px #c4fbff}to{opacity:1;filter:blur(0);transform:none}}
 .bday-memory h2{font-family:system-ui,sans-serif;letter-spacing:.06em;color:#defaff;text-shadow:0 0 16px #70dfff66}
 .bday-memory{border-color:#85eaff66;box-shadow:0 0 35px #64dfff1c,0 16px 48px #0008}
-.bday-panel-scan{position:absolute;inset:6px auto 6px 0;width:2px;border-radius:2px;opacity:0;pointer-events:none;background:#ddffff;box-shadow:0 0 10px 3px #77efff,0 0 22px 7px #cf83ff66}
+/* v4.11.9 확장 연출(신스웨이브): 분홍 · 하늘색으로 갈라진 주사선이 왼쪽에서 오른쪽으로 훑고, 패널 테두리는 네온관처럼 깜빡이며 켜진다(분홍 → 하늘색),
+   새로 생긴 버튼은 주사선이 지나갈 때 색이 좌우로 갈라지며(색수차) 한 번 번쩍인다. 색 = 장면의 P #ff488d · C #8ae3e2 · V #7844ba. */
+.bday-panel-scan{position:absolute;inset:4px auto 4px 0;width:3px;border-radius:2px;opacity:0;pointer-events:none;background:linear-gradient(#ffd6ea,#ff488d 45%,#8ae3e2);box-shadow:-4px 0 10px 1px #ff488dcc,4px 0 10px 1px #8ae3e2cc,0 0 26px 8px #7844ba88}
 [data-fresh-unlock] .bday-panel-scan{animation:bday-panel-scan 1.2s ease-in-out}
-[data-fresh-unlock] .bday-music__bar::before{content:"";position:absolute;inset:-1px;z-index:-1;border:1px solid #91fbff;border-radius:inherit;background:#0b1927;pointer-events:none;animation:bday-panel-grow .65s cubic-bezier(.16,1,.3,1)}
+[data-fresh-unlock] .bday-music__bar::before{content:"";position:absolute;inset:-1px;z-index:-1;border:1px solid #ff488d;border-radius:inherit;background:#0b1927;pointer-events:none;animation:bday-panel-grow .65s cubic-bezier(.16,1,.3,1)}
 [data-fresh-unlock] .bday-effects{animation:bday-separator-light 1s ease-out}
-[data-fresh-unlock] .bday-effects .effect{animation:bday-effect-arrive .4s ease-out both;animation-delay:.35s}
-[data-fresh-unlock] .bday-effects .effect:nth-child(2){animation-delay:.44s}
-[data-fresh-unlock] .bday-effects .effect:nth-child(3){animation-delay:.53s}
-[data-fresh-unlock] .bday-effects .effect:nth-child(4){animation-delay:.62s}
+[data-fresh-unlock] .bday-effects .effect{animation:bday-effect-arrive .4s ease-out both,bday-chroma-glint .8s ease-out both;animation-delay:.35s,.6s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(2){animation-delay:.44s,.72s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(3){animation-delay:.53s,.84s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(4){animation-delay:.62s,.96s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(5){animation-delay:.71s,1.08s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(6){animation-delay:.8s,1.2s}
+[data-fresh-unlock] .bday-music__bar>.prev{animation:bday-chroma-glint .8s ease-out .3s both}
+[data-fresh-unlock] .bday-music__bar>.next{animation:bday-chroma-glint .8s ease-out .5s both}
+[data-fresh-unlock] .bday-music__bar{animation:bday-neon-ignite 1.9s linear both}
+@keyframes bday-chroma-glint{0%{box-shadow:0 0 0 0 #ff488d00;filter:none}22%{box-shadow:-3px 0 0 #ff488dd9,3px 0 0 #8ae3e2d9,inset 0 0 0 1px #ffe3f1,0 0 20px 5px #ff488d70;filter:brightness(1.9) saturate(1.4)}50%{box-shadow:-1px 0 0 #ff488d80,1px 0 0 #8ae3e280,inset 0 0 0 1px #8ae3e2,0 0 14px 3px #8ae3e260;filter:brightness(1.3)}100%{box-shadow:0 0 0 0 #8ae3e200;filter:none}}
+/* 네온관 점등: 짧게 두 번 깜빡인 뒤 분홍으로 켜지고, 하늘색으로 식으며 평소 테두리로 돌아간다. */
+@keyframes bday-neon-ignite{
+ 0%,5%,11%,17%{border-color:#ff488d40;box-shadow:0 0 22px #43cbd32b,0 8px 28px #0008}
+ 3%,8%{border-color:#ff488d;box-shadow:0 0 0 1px #ff488d,0 0 18px 4px #ff488d77,0 8px 28px #0008}
+ 14%{border-color:#ff7fbf;box-shadow:0 0 0 1px #ff488d,0 0 22px 5px #ff488d88,0 8px 28px #0008}
+ 24%{border-color:#ffb3d6;box-shadow:0 0 0 1px #ff488d,0 0 30px 8px #ff488d99,0 0 64px 16px #7844ba66,0 8px 28px #0008}
+ 55%{border-color:#8ae3e2;box-shadow:0 0 0 1px #8ae3e2,0 0 26px 6px #8ae3e280,0 0 54px 14px #7844ba55,0 8px 28px #0008}
+ 100%{border-color:#8ae3e288;box-shadow:0 0 22px #43cbd32b,0 8px 28px #0008}}
 @keyframes bday-panel-grow{from{transform:scaleX(.62);opacity:.2;box-shadow:0 0 0 #6cfaff}60%{box-shadow:0 0 24px #6cfaff55}to{transform:scaleX(1);opacity:1}}
 @keyframes bday-panel-scan{0%{left:8%;opacity:0}20%{opacity:.85}85%{opacity:.6}100%{left:96%;opacity:0}}
 @keyframes bday-separator-light{0%,25%{border-color:transparent}55%{border-color:#e1ffff;filter:drop-shadow(0 0 5px #76faff)}100%{border-color:#8ae3e266;filter:none}}
@@ -93,7 +109,7 @@
 .bday-story.is-reduced .bday-story__glyph{animation:bday-letter-fade .5s ease-out both!important;filter:none;transform:none}
 @media(prefers-reduced-motion:reduce){
  [data-fresh-unlock] .bday-panel-scan,[data-fresh-unlock] .bday-music__bar::before{display:none;animation:none!important}
- [data-fresh-unlock] .bday-effects,[data-fresh-unlock] .bday-effects .effect{animation:none!important;filter:none;transform:none}
+ [data-fresh-unlock] .bday-effects,[data-fresh-unlock] .bday-effects .effect,[data-fresh-unlock] .bday-music__bar,[data-fresh-unlock] .bday-music__bar>.prev,[data-fresh-unlock] .bday-music__bar>.next{animation:none!important;filter:none;transform:none}
  .bday-story .bday-story__glyph{animation:bday-letter-fade .5s ease-out both!important;filter:none;transform:none}
  .bday-story{transition:opacity .5s ease!important}
 }
