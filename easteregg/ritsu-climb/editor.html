@@ -189,7 +189,7 @@
       <table>
         <tr><td>클릭</td><td>지형 하나 고르기</td></tr>
         <tr><td>Shift + 클릭</td><td>더하기 · 빼기</td></tr>
-        <tr><td>빈 곳 끌기</td><td>범위 선택(걸친 지형 모두) · Shift = 더하기</td></tr>
+        <tr><td>빈 곳 끌기</td><td>범위 선택(완전히 들어온 지형만) · Shift = 더하기</td></tr>
         <tr><td>Ctrl+A · Esc</td><td>모두 선택 · 선택 풀기</td></tr>
       </table>
       <h4>고른 지형 바꾸기</h4>
@@ -376,18 +376,8 @@
     for (const k of ["nw", "ne", "se", "sw", "n", "e", "s", "w"]) if (dist(hs[k], s) <= 7) return k;
     return null;
   }
-  // 범위 선택 — 사각형에 걸친 지형(꼭짓점이 안에 있거나, 사각형 귀퉁이가 지형 안이거나, 변이 엇갈림)
-  function segCross(a, b, c, d) {
-    const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
-    return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
-  }
-  function polyHitsRect(poly, r) {
-    const pts = L.flattenPoly(poly).pts, cs = [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]];
-    if (pts.some(([x, y]) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1)) return true;
-    if (cs.some((c) => L.inside(c, pts))) return true;
-    for (let i = 0; i < pts.length; i++) for (let j = 0; j < 4; j++) if (segCross(pts[i], pts[(i + 1) % pts.length], cs[j], cs[(j + 1) % 4])) return true;
-    return false;
-  }
+  // 범위 선택 — 사각형 안에 완전히 들어온 지형만(곡선은 쪼갠 모양 기준). 일부만 걸친 큰 벽 · 바닥은 잡지 않는다(운영자 요청 2026-11-03)
+  const polyInRect = (poly, r) => L.flattenPoly(poly).pts.every(([x, y]) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
 
   // ── 복사 · 잘라내기 · 붙이기 · 복제 · 지우기 ──────────────
   // 붙여 넣을 지형은 브라우저 저장소(KEY_CLIP)에도 둬서 같은 주소의 다른 탭 · 다른 레벨에서도 붙일 수 있다
@@ -567,7 +557,7 @@
     if (d.kind === "marquee") {
       if (dist(d.s0, d.s1) >= 4) {
         const [a, b] = [toW(...d.s0), toW(...d.s1)], r = { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
-        const hits = level.polys.map((p, i) => (polyHitsRect(p, r) ? i : -1)).filter((i) => i >= 0);
+        const hits = level.polys.map((p, i) => (polyInRect(p, r) ? i : -1)).filter((i) => i >= 0);
         setSel([...d.base, ...hits]);
       }
       refresh(); return;
