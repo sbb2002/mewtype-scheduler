@@ -310,8 +310,8 @@
   if (qs.get("test") === "1") {
     let raw = null; try { raw = JSON.parse(localStorage.getItem("climb-editor-test")); } catch {}
     if (raw) useLevel(raw, "편집기 시험"); else help.textContent = "편집기에서 넘긴 레벨이 없습니다 — 편집기의 「시험 플레이」로 여세요";
-  } else if (levelFile && /^[\w.-]+\.json$/.test(levelFile)) {
-    fetch(`levels/${levelFile}`).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  } else if (levelFile && /^[\w가-힣.-]+\.json$/.test(levelFile)) {   // 편집기는 한글 이름으로도 저장한다
+    fetch(`levels/${encodeURIComponent(levelFile)}`).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then((raw) => useLevel(raw, levelFile)).catch((e) => { help.textContent = `levels/${levelFile} 를 못 읽었습니다(${e.message})`; });
   }
   // ?replay=1 — 검증 봇의 완주 조작(route.json, sim.cjs 로 생성)을 그대로 재생해 보여 준다(기본 코스 전용)
