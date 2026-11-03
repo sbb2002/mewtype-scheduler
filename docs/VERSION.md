@@ -23,7 +23,7 @@ CLAUDE.md 상단 「현재 버전」 줄 · 이 문서 두 절을 **같이** 고
 
 | 태그 | 커밋 | 시각(KST) | 들어온 브랜치 | 진입 방식 | 판단 메모 |
 |---|---|---|---|---|---|
-| v4.11.9 | `849039b` | 2026-11-03 13:03 | `hotfix/yuno-story-arc` | 병합 커밋 | 프론트만 · 일반 패치 · PR #146(PR #145 문서도 같은 자리에서 병합) · Vercel 프로덕션 success(`Hrz2ZfdoKmiah9HAJRfqcogFzuQf`) · 운영 config.js v4.11.9 · bdaystorylogic.js 확인 · 실기기 미확인 |
+| v4.11.9 | `849039b` | 2026-11-03 13:03 | `hotfix/yuno-story-arc` | 병합 커밋 | 프론트만 · 일반 패치 · PR #146(PR #145 문서도 같은 자리에서 병합) · Vercel 프로덕션 success(`Hrz2ZfdoKmiah9HAJRfqcogFzuQf`) · 운영 config.js v4.11.9 · bdaystorylogic.js 확인 · 실기기 미확인 · **같은 번호 추가 병합** `0f0f6f9`(2026-11-03 14:28, `hotfix/yuno-sky-effects`, PR #148 — 운영자 지시로 버전업 · 태그 이동 없음, Vercel 프로덕션 success `8NDVR6W1BqDXRKQj3dwVF6TRtpHM`, 운영 파일 4개 확인) |
 | v4.11.8 | `2ab5f3a` | 2026-11-03 01:13 | `hotfix/yuno-birthday-script` | 병합 커밋 | 프론트만 · 운영자 지정 핫픽스 등급(일반 패치) · PR #143 · PR 미리보기 Vercel success · 운영 배포는 이 세션에서 확인 못 함(vercel.app 접속 차단) |
 | v4.11.7 | `5574cc3` | 2026-11-02 17:19 | `patch/ui-ux-improvision` | 병합 커밋 | 프론트만 · 운영자 지정 일반 패치 · PR #141 · Vercel 프로덕션 success(`mewtype-scheduler-nvv1xwe4o-sbb2002`) · 운영 화면 확인 |
 | v4.11.6 | `278cbc0` | 2026-11-02 10:46 | `hotfix/mobile-player-tabs` | 병합 커밋 | 프론트만 · 운영자 지정 일반 패치 · PR #139 · Vercel 프로덕션 success(`mewtype-scheduler-7l0wjsmqj-sbb2002`) · 운영 파일 3개 일치 |
