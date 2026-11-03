@@ -1,4 +1,5 @@
-import { birthdayStoryCue, STORY_TURN, STORY_NUDGE, SILENT_NUDGE_MS } from './bdaystorylogic.js';
+import { birthdayStoryCue, lowStoryBox, STORY_TURN, STORY_NUDGE, SILENT_NUDGE_MS } from './bdaystorylogic.js';
+import { sceneLayout } from './bdaylogic.js';
 
 export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const root=document.documentElement,abort=new AbortController(),signal=abort.signal;
@@ -13,6 +14,13 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
  const close=document.createElement('button');close.type='button';close.textContent='이 순간 간직하기';
  card.append(ornament,title,note,signature,close);shell.append(message,card);
  let raf=0,leaving=0,dead=false,key='',finale=false,finished=false,cardPending=false,special=null,specialTimer=0,turnPending=false,nudged=false,silentMs=0,lastPaint=0;
+ function placeLow(on){
+  message.classList.toggle('is-low',!!on);for(const k of ['top','bottom','left','right','width','transform-origin'])message.style.removeProperty(k);if(!on)return;
+  const w=shell.clientWidth||innerWidth,h=shell.clientHeight||innerHeight,b=lowStoryBox(w,h,sceneLayout(w,h));
+  if(b.mode==='side'){message.style.left=b.left+'px';message.style.right='auto';message.style.width=b.width+'px';message.style.top=b.centerY+'px'}
+  else{message.style.top='auto';message.style.bottom=b.bottom+'px'}
+  message.dataset.low=b.mode;
+ }
  function visible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-revealed')}
  function introVisible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-intro')}
  function paint(){
@@ -27,13 +35,20 @@ export function mountBirthdayStory({audio,scene,shell,reduced,reward}){
    if(special){clearTimeout(specialTimer);specialTimer=setTimeout(wake,special.until-now+20)}
   }
   // 해금 뒤에는 곡 대사가 없다. 무음이면 말하지 않는다.
-  const talk=!reward.unlocked,cue=!shown?null:special||(talk&&!silent&&!busy?birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro')):null),next=cue?.id||'';
+  // 사인 중에는 sign 문구가 있는 대사만 사인을 피해 낮게 뜬다(별자리 · 수동 효과 중에는 그대로 쉰다).
+  const talk=!reward.unlocked,base=!shown||special||!talk||silent?null:birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro'));
+  const cue=!shown?null:special||(base&&!busy?base:base?.sign&&scene.signBusy?.(time)?{...base,id:base.id+':sign',text:base.sign,low:true}:null),next=cue?.id||'';
   if(next!==key){
    key=next;message.classList.remove('is-visible');
    if(cue){
-    text.replaceChildren();text.setAttribute('aria-label',cue.text);text.style.setProperty('--story-tilt',reduced()?'0deg':((Math.random()*2-1)*2.5).toFixed(2)+'deg');let typed=0;message.classList.toggle('is-reduced',reduced());
+    const plain=cue.text.replace(/ \/\/ /g,' ');
+    text.replaceChildren();text.setAttribute('aria-label',plain);text.style.setProperty('--story-tilt',reduced()?'0deg':((Math.random()*2-1)*2.5).toFixed(2)+'deg');let typed=0;message.classList.toggle('is-reduced',reduced());placeLow(cue.low);
     `“${cue.text}”`.split('\n').forEach((line,row)=>{const span=document.createElement('span');span.className='bday-story__line';span.setAttribute('aria-hidden','true');
-     Array.from(line).forEach((char,i)=>{const glyph=document.createElement('span');glyph.textContent=char;glyph.className='bday-story__glyph';glyph.style.setProperty('--arrival',(row*.3+typed++*.065)+'s');span.append(glyph)});text.append(span)});
+     // 「 // 」 가 있는 줄은 조각마다 끊기지 않게 묶어, 좁을 때 그 자리에서만 줄이 나뉘게 한다.
+     const parts=line.split(' // ');
+     parts.forEach((part,p)=>{const box=parts.length>1?document.createElement('span'):span;if(box!==span){box.className='bday-story__part';span.append(box)}if(p)span.insertBefore(document.createTextNode(' '),box);
+      Array.from(part).forEach(char=>{const glyph=document.createElement('span');glyph.textContent=char;glyph.className='bday-story__glyph';glyph.style.setProperty('--arrival',(row*.3+typed++*.065)+'s');box.append(glyph)})});
+     text.append(span)});
     stars.textContent=cue.stars?'✦ '.repeat(cue.stars).trim():'';message.classList.add('is-visible');
    }
   }

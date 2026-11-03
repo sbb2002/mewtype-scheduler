@@ -313,13 +313,17 @@ function paintAurora(c,t){
 }
 // 별: 아라레처럼 노란색 · 무작위 각도로 틀어져 있고 사라지는 동안 천천히 회전한다. seed 로 각도·회전 방향이 결정(시간의 결정적 함수).
 const SKY_STAR_Y='#ffd23f',SKY_STAR_EDGE='#ff9f1c';
-function skyStar(c,x,y,u,seed=0,scale=1,color=SKY_STAR_Y,edge=SKY_STAR_EDGE,shadow=false){
+// clean = 테두리 · 번짐 없이 면만 칠한다(YMMT 별자리의 푸른 별, v4.11.9 운영자 지시 — 굵은 테두리가 보였다).
+function skyStar(c,x,y,u,seed=0,scale=1,color=SKY_STAR_Y,edge=SKY_STAR_EDGE,shadow=false,clean=false){
  u=djClamp15(u);const h=k=>skyHash(seed*131+k*17+SKY_SALT*3),rot=h(1)*Math.PI*2+(h(2)<.5?-1:1)*u*1.1; // 사라지는 동안 약 63° 회전
  const a=Math.sin(Math.PI*u)**.6*(1-.35*u),r=(12+38*djEase15(Math.min(1,u*1.4)))*scale;
  c.save();c.translate(x,y);c.rotate(rot);c.fillStyle=c.strokeStyle=color;c.lineJoin='round';if(shadow){c.globalAlpha=a;c.shadowColor=color;c.shadowBlur=26*scale+4}c.beginPath();
  for(let i=0;i<8;i++){const ang=i*Math.PI/4-Math.PI/2,rr=i%2?r*.24:r;i?c.lineTo(Math.cos(ang)*rr,Math.sin(ang)*rr):c.moveTo(Math.cos(ang)*rr,Math.sin(ang)*rr)}
+ if(clean){c.closePath();c.shadowBlur=0;c.globalAlpha=a;c.fill();c.restore();return}
  c.closePath();if(shadow){c.fill();c.shadowBlur=0}else{c.globalAlpha=a*.14;c.lineWidth=20*scale+4;c.stroke();c.globalAlpha=a*.28;c.lineWidth=9*scale+2;c.stroke();c.globalAlpha=a;c.fill()}c.strokeStyle=edge;c.lineWidth=1.6*Math.max(.6,scale);c.stroke();c.restore();
 }
+// YMMT 점: 푸른 별(0.55초)이 투명하게 사라지는 후반부터 0.45초에 걸쳐 서서히 나타난다(전엔 0.2초 뒤 0.125초 만에 켜졌다).
+const ymmtDotIn=since=>djEase15(djClamp15((since-.3)/.45));
 // UFO 궤적 잔상: 지나온 경로 전체를 DECAY 초에 걸쳐 천천히 옅어지게 남긴다(UFO 가 사라진 뒤에도 남음).
 const SKY_TRAIL_DECAY=9,TOGGLE_TAIL=3.4; // TOGGLE_TAIL = 토글을 끈 뒤 이미 나온 효과가 끝나는 데 걸리는 시간.
 function skyTrail(c,fn,age,tmax){
@@ -704,7 +708,7 @@ function floorWave(c,type,t){
    if(rise>0&&rs<fade){const {glow,core}=ymmtNeon(opt.signScale*.88/box.scale);c.globalAlpha=Math.min(1,.95*rise*decay);c.drawImage(glow,-20,-20,360,120);c.globalAlpha=Math.min(1,.5*pop*rise*decay);c.drawImage(glow,-20,-20,360,120);c.globalAlpha=Math.min(1,rise*decay);c.drawImage(core,-20,-20,360,120)}
    // 별은 선과 네온보다 앞에 둔다.
    let n=0;c.fillStyle='#c3edff';
-   for(const {points} of ymmtShape)for(const [a,b] of points){const born=n++*.065;if(age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff');c.globalAlpha=decay*Math.max(0,Math.min(1,(age-born-.2)*8));c.beginPath();c.arc(a,b,3.5,0,Math.PI*2);c.fill()}
+   for(const {points} of ymmtShape)for(const [a,b] of points){const born=n++*.065;if(age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff',false,true);c.globalAlpha=decay*ymmtDotIn(age-born);c.beginPath();c.arc(a,b,3.5,0,Math.PI*2);c.fill()}
   }else if(kind==='constellation'){
    const box=fitYmmtRotation(opt.box||{cx:x,cy:y,scale:Math.min(v.width*.8/355,v.height*.48/120)},ymmtAngle),scale=box.scale,alpha=Math.min(1,(9-age)/1.6),flash=still?0:Math.sin(Math.PI*djClamp15((age-7)/.4));
    c.translate(box.cx,box.cy);c.rotate(box.angle);c.scale(scale,scale);c.translate(-157.5,-40);c.strokeStyle='#65baff';c.fillStyle='#c3edff';c.shadowColor='#329dff';c.shadowBlur=12;c.lineWidth=2;
@@ -712,7 +716,7 @@ function floorWave(c,type,t){
      c.globalAlpha=alpha*(still?1:Math.min(1,(age-1.6)/.4));c.beginPath();path.forEach((p,i)=>i?c.lineTo(...points[p]):c.moveTo(...points[p]));c.stroke();
      if(pop>0){c.save();c.globalAlpha=pop*.75;c.strokeStyle='#e6faff';c.shadowColor='#7fcaff';c.shadowBlur=25;c.lineWidth=2+pop*4;c.stroke();c.restore()}
      if(flash>0){c.save();c.lineJoin='round';c.lineCap='round';c.globalAlpha=flash;c.strokeStyle='#1e86ff';c.shadowColor='#1e86ff';c.shadowBlur=40;c.lineWidth=2+flash*9;c.stroke();c.strokeStyle='#62b8ff';c.shadowBlur=14;c.lineWidth=2+flash*3;c.stroke();c.restore()}}
-    for(const [a,b] of points){const born=n++*.065;if(!still&&age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff');c.globalAlpha=alpha*(still?1:Math.max(0,Math.min(1,(age-born-.2)*8)));c.beginPath();c.arc(a,b,3.5+flash*3,0,Math.PI*2);c.fill()}}
+    for(const [a,b] of points){const born=n++*.065;if(!still&&age>=born&&age<born+.55)skyStar(c,a,b,(age-born)/.55,n+40,.3,'#6fbcff','#e6f5ff',false,true);c.globalAlpha=alpha*(still?1:ymmtDotIn(age-born));c.beginPath();c.arc(a,b,3.5+flash*3,0,Math.PI*2);c.fill()}}
   }
   c.restore();
  }
@@ -830,7 +834,8 @@ sc.save();const top=spotTop,g=sc.createLinearGradient(0,top,0,610);g.addColorSto
  const observer=new IntersectionObserver(es=>{visible=es[0].isIntersecting;if(!visible){cancelAnimationFrame(raf);raf=0}else resume()});observer.observe(canvas);
  document.addEventListener('visibilitychange',visibility);window.addEventListener('resize',resize);window.visualViewport?.addEventListener('resize',resize);
  whenReady.then(()=>{if(!dead){draw(0);resume()}}).catch(()=>{});
- return {skyBusy(t){if(!TRK)return false;const plan=skyPlan(TRK),f=plan.ufos[0],a=plan.constellation;return hasManual()||(f.mode==='sign'&&t>=f.birth&&t<f.birth+f.reveal+SIGN_BURST)||(a!==null&&t>=a&&t<a+9)},
+ return {signBusy(t){if(!TRK||hasManual())return false;const f=skyPlan(TRK).ufos[0];return f.mode==='sign'&&t>=f.birth&&t<f.birth+f.reveal+SIGN_BURST},
+  skyBusy(t){if(!TRK)return false;const plan=skyPlan(TRK),f=plan.ufos[0],a=plan.constellation;return hasManual()||(f.mode==='sign'&&t>=f.birth&&t<f.birth+f.reveal+SIGN_BURST)||(a!==null&&t>=a&&t<a+9)},
   setEyesClosed(value){yunoEyesClosed=!!value;lastT=null;resume()},onGrand(fn){grandListener=fn},
   grandShow(){if(dead||document.hidden)return;grandListener?.(true);pulseHolding=false;pendingBig=null;const f=manualFlight('sign'),preview=grandLayout(skyViewport,activeLayout?.portrait);ymmtNeon(preview.sign.scale*.88/fitYmmtRotation(preview.ymmt,ymmtAngle).scale); // 네온을 미리 구워 번쩍이는 순간에 끊기지 않게 한다.
    manualEffects.delete('sign');manual={kind:'grand',start:performance.now()/1000,dur:f.reveal+SIGN_BURST,f};parts=[];lastT=null;if(!still){const r=host.getBoundingClientRect();[[.5,.28,'#ff477d'],[.42,.2,'#6ee7f9'],[.58,.2,'#ffd36b'],[.5,.14,'#c4a1ff']].forEach(([x,y,color],j)=>{for(let i=0;i<70;i++){const a=i*Math.PI/35,v=(50+Math.random()*90)*Math.max(.8,Math.min(1.4,r.width/900));parts.push({x:r.width*x,y:r.height*y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,age:0,color:i%3?color:'#fff9ec',r:1.1+Math.random()*1.8,delay:j*.08,life:2.2})}});lastFrame=performance.now()}resume()},triggerManual(kind){
