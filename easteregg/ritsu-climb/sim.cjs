@@ -1,10 +1,9 @@
-// 오르기 시험판 물리 검증 — proto.html 의 climb-logic 블록만 떼어 Node 에서 돌린다.
+// 오르기 시험판 물리 검증 — climb-logic.js(게임 · 편집기와 같은 물리 코드)를 Node 에서 돌린다.
 // 실행: node sim.cjs            → 합격 기준 1~7 검사(명세 §10)
 //       node sim.cjs route 파일 → 완주 봇의 단계별 목표(want)를 JSON 으로 저장(브라우저 재생용)
 // 봇 조작은 사람 손을 흉내 낸 것이다. 물리 계산은 proto.html 과 같은 코드를 쓴다.
 const fs = require("fs"), path = require("path");
-const html = fs.readFileSync(path.join(__dirname, "proto.html"), "utf8");
-const src = html.match(/<script id="climb-logic">([\s\S]*?)<\/script>/)[1];
+const src = fs.readFileSync(path.join(__dirname, "climb-logic.js"), "utf8");
 const L = new Function("module", src + "\nreturn ClimbLogic;")({});
 module.exports = L;
 if (require.main !== module) return;
@@ -89,6 +88,15 @@ const out = [];
 const check = (no, name, ok, detail) => { out.push(ok); console.log(`${ok ? "통과" : "실패"}  ${no}. ${name} — ${detail}`); };
 const inside = (pt) => polys.some((poly) => { let c = false; const pts = poly.pts; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const [xi, yi] = pts[i], [xj, yj] = pts[j]; if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c; } return c; });
 
+{ // 0. 페이지 스크립트 문법 · 기본 코스 레벨 검사(편집기와 같은 검사)
+  const bad = [];
+  for (const f of ["proto.html", "editor.html"]) {
+    const page = fs.readFileSync(path.join(__dirname, f), "utf8");
+    for (const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) { try { new Function(m[1]); } catch (e) { bad.push(`${f}: ${e.message}`); } }
+  }
+  const warns = L.checkLevel(L.normalizeLevel(JSON.parse(JSON.stringify(L.COURSE))).level, P);
+  check(0, "문법 · 기본 코스 검사", !bad.length && !warns.length, bad.length ? bad.join(" / ") : `스크립트 문법 이상 없음 · 기본 코스 경고 ${warns.length}건`);
+}
 { // 1. 버티기
   const S = L.makeState(L.COURSE, P); mv(S, 90, 22, 0, 1); mv(S, 0, 100, 1, 1);
   const a = [...S.p]; let dev = 0; for (let i = 0; i < 360; i++) { tick(S); dev = Math.max(dev, L.len(L.sub(S.p, a))); }

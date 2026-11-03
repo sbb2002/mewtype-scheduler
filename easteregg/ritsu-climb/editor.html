@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>레벨 편집기</title>
+<style>
+  :root {
+    --bg: #1b2440; --panel: #121a30; --line: rgba(255,255,255,.14); --text: #e8ecf6; --muted: #9aa6c2;
+    --accent: #ffd166; --danger: #ff6b6b; --rock: #5b6475; --rock-edge: #2d3340; --slick: #9fd8ff; --slick-edge: #3d8fc4; --body: #6296ec;
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; font-size: 13px; }
+  #app { display: flex; height: 100%; }
+  #wrap { position: relative; flex: 1; min-width: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #coord { position: absolute; left: 44px; bottom: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(10,16,32,.6); font-variant-numeric: tabular-nums; pointer-events: none; }
+  #toolname { position: absolute; left: 10px; top: 8px; padding: 4px 9px; border-radius: 6px; background: rgba(10,16,32,.6); pointer-events: none; }
+  aside { width: 300px; flex: none; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 12px; box-sizing: border-box; }
+  h1 { font-size: 16px; margin: 0 0 10px; }
+  h2 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 14px 0 6px; }
+  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  button { font: inherit; color: var(--text); background: #222c4a; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; cursor: pointer; text-align: left; }
+  button:hover { border-color: rgba(255,255,255,.35); }
+  button.on { background: #36406a; border-color: var(--accent); }
+  button.wide { width: 100%; margin-bottom: 5px; }
+  button.primary { background: #3a4f8f; text-align: center; }
+  button:disabled { opacity: .4; cursor: default; }
+  kbd { float: right; color: var(--muted); font-family: inherit; font-size: 11px; }
+  label.chk { display: flex; gap: 6px; align-items: center; margin: 4px 0; cursor: pointer; }
+  input[type=text] { width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: #0d1426; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  .row { display: flex; gap: 5px; margin-bottom: 5px; }
+  .row button { flex: 1; text-align: center; }
+  #selinfo { color: var(--muted); margin-bottom: 6px; line-height: 1.5; }
+  #warns { list-style: none; margin: 0; padding: 0; }
+  #warns li { margin-bottom: 4px; }
+  #warns button { width: 100%; font-size: 12px; line-height: 1.4; }
+  #warns .err { border-color: rgba(255,107,107,.6); }
+  #warns .ok { color: #8fe3a8; padding: 4px 0; }
+  .help { color: var(--muted); line-height: 1.6; font-size: 12px; margin: 0; padding-left: 16px; }
+  #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); max-width: 70vw; padding: 8px 14px; border-radius: 8px;
+    background: #0d1426; border: 1px solid var(--accent); opacity: 0; transition: opacity .3s; pointer-events: none; white-space: pre-line; }
+  #toast.on { opacity: 1; }
+  #narrow { display: none; position: fixed; inset: 0; background: var(--bg); place-items: center; text-align: center; padding: 24px; }
+  @media (max-width: 899px) { #narrow { display: grid; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="wrap"><canvas id="cv"></canvas><div id="toolname"></div><div id="coord"></div></div>
+  <aside>
+    <h1>레벨 편집기</h1>
+    <h2>도구</h2>
+    <div class="tools" id="tools">
+      <button data-tool="select">선택 · 이동<kbd>V</kbd></button>
+      <button data-tool="poly">다각형 그리기<kbd>P</kbd></button>
+      <button data-tool="rect">사각형 그리기<kbd>R</kbd></button>
+      <button data-tool="paint">재질 칠하기<kbd>M</kbd></button>
+      <button data-tool="start">출발점<kbd>S</kbd></button>
+      <button data-tool="goal">골인 영역<kbd>G</kbd></button>
+    </div>
+    <label class="chk"><input type="checkbox" id="snap" checked> 격자 맞춤 10u (Alt = 잠시 끔)</label>
+    <label class="chk"><input type="checkbox" id="reach"> 커서에 몸통 · 팔 길이 원</label>
+
+    <h2>선택한 지형</h2>
+    <div id="selinfo">없음</div>
+    <div class="row"><button id="matRock">전체 바위</button><button id="matSlick">전체 미끄러움</button></div>
+    <div class="row"><button id="dup">복제<kbd>Ctrl+D</kbd></button><button id="del">삭제<kbd>Del</kbd></button></div>
+
+    <h2>레벨</h2>
+    <input type="text" id="name" placeholder="레벨 이름" maxlength="80">
+    <div style="height:6px"></div>
+    <button class="wide primary" id="play">시험 플레이 (새 탭) <kbd>T</kbd></button>
+    <div class="row"><button id="undo">되돌리기<kbd>Ctrl+Z</kbd></button><button id="redo">다시<kbd>Ctrl+Y</kbd></button></div>
+    <div class="row"><button id="export">파일로 저장</button><button id="import">파일 불러오기</button></div>
+    <div class="row"><button id="fit">전체 보기<kbd>F</kbd></button><button id="reset">기본 코스</button><button id="clear">새로</button></div>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+    <div id="stats" style="color:var(--muted);margin-top:4px"></div>
+
+    <h2>검사</h2>
+    <ul id="warns"></ul>
+
+    <h2>조작</h2>
+    <ul class="help">
+      <li>휠 = 확대 · 축소, 가운데/오른쪽 버튼 끌기 또는 Space + 끌기 = 화면 이동</li>
+      <li>다각형: 클릭으로 꼭짓점, 첫 점 클릭 또는 Enter 로 닫기, Backspace = 마지막 점 취소, Esc = 그리기 취소</li>
+      <li>선택: 지형을 끌어 옮기기, 꼭짓점 끌기, 변 더블클릭 = 꼭짓점 추가, 꼭짓점 고르고 Del = 꼭짓점 삭제</li>
+      <li>재질 칠하기: 변 클릭 = 그 변만 바위 ↔ 미끄러움, 지형 안쪽 클릭 = 지형 전체</li>
+      <li>출발점 = 몸통이 놓이는 중심, 골인 영역 = 몸통 중심이 1초 머물면 골인</li>
+      <li>작업은 이 브라우저에 자동 저장된다. 다른 PC · 파일로 남기려면 「파일로 저장」</li>
+    </ul>
+  </aside>
+</div>
+<div id="toast"></div>
+<div id="narrow"><div><h1>PC 화면용 편집기입니다</h1><p>폭 900px 이상인 창에서 열어 주세요.</p></div></div>
+
+<script src="climb-logic.js"></script>
+<script>
+(() => {
+  const L = ClimbLogic, P = L.DEFAULTS;
+  const KEY_SAVE = "climb-editor-level", KEY_TEST = "climb-editor-test";
+  const $ = (id) => document.getElementById(id);
+  const cv = $("cv"), ctx = cv.getContext("2d");
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const rectPoly = (x0, y0, x1, y1) => ({ mat: "rock", pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
+
+  // ── 레벨 · 저장 · 되돌리기 ───────────────────────────
+  const defaultLevel = () => L.normalizeLevel({ ...clone(L.COURSE), name: "기본 코스" }).level;
+  const emptyLevel = () => ({ version: 1, name: "", start: [0, -28], goal: null, polys: [rectPoly(-600, 0, 600, 200)] });
+  function loadSaved() { try { const raw = JSON.parse(localStorage.getItem(KEY_SAVE)); return raw ? L.normalizeLevel(raw).level : null; } catch { return null; } }
+  function persist() { try { localStorage.setItem(KEY_SAVE, JSON.stringify(level)); } catch {} }
+  let level = loadSaved() || defaultLevel();
+  let undoStack = [], redoStack = [];
+  const snap = () => JSON.stringify(level);
+  function pushUndo(before) { if (before === snap()) return; undoStack.push(before); if (undoStack.length > 300) undoStack.shift(); redoStack = []; persist(); refresh(); }
+  function change(fn) { const before = snap(); fn(); pushUndo(before); }
+  function undo() { if (!undoStack.length) return; redoStack.push(snap()); level = JSON.parse(undoStack.pop()); sel = { poly: null, vertex: null }; persist(); refresh(); }
+  function redo() { if (!redoStack.length) return; undoStack.push(snap()); level = JSON.parse(redoStack.pop()); sel = { poly: null, vertex: null }; persist(); refresh(); }
+
+  // ── 화면 ────────────────────────────────────────────
+  let W = 0, H = 0, dpr = 1, view = { cx: 0, cy: -500, z: 0.5 };
+  const toS = (x, y) => [W / 2 + (x - view.cx) * view.z, H / 2 + (y - view.cy) * view.z];
+  const toW = (sx, sy) => [view.cx + (sx - W / 2) / view.z, view.cy + (sy - H / 2) / view.z];
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    dpr = Math.min(2, devicePixelRatio || 1); W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  }
+  function fit() {
+    const xs = [level.start[0]], ys = [level.start[1]];
+    for (const p of level.polys) for (const [x, y] of p.pts) { xs.push(x); ys.push(y); }
+    if (level.goal) { xs.push(level.goal.x0, level.goal.x1); ys.push(level.goal.y0, level.goal.y1); }
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    view.cx = (x0 + x1) / 2; view.cy = (y0 + y1) / 2;
+    view.z = Math.max(0.05, Math.min(3, Math.min(W / (x1 - x0 + 200), H / (y1 - y0 + 200))));
+  }
+
+  // ── 도구 · 선택 · 입력 상태 ──────────────────────────
+  const TOOL_NAMES = { select: "선택 · 이동", poly: "다각형 그리기", rect: "사각형 그리기", paint: "재질 칠하기", start: "출발점", goal: "골인 영역" };
+  let tool = "select", sel = { poly: null, vertex: null }, draft = [], drag = null, mouse = [0, 0], altKey = false, spaceKey = false, warnings = [];
+  const snapOn = () => $("snap").checked && !altKey;
+  const sn = (v) => (snapOn() ? Math.round(v / 10) * 10 : Math.round(v));
+  const snW = (w) => [sn(w[0]), sn(w[1])];
+  function setTool(t) { tool = t; draft = []; for (const b of document.querySelectorAll("#tools button")) b.classList.toggle("on", b.dataset.tool === t); $("toolname").textContent = TOOL_NAMES[t]; draw(); }
+
+  // 화면 px 기준 맞히기
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  function segDistS(p, a, b) { const ab = [b[0] - a[0], b[1] - a[1]], t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / (ab[0] ** 2 + ab[1] ** 2 || 1))); return [dist(p, [a[0] + ab[0] * t, a[1] + ab[1] * t]), t]; }
+  function vertexAt(s, pi) { const poly = level.polys[pi]; if (!poly) return -1; return poly.pts.findIndex((q) => dist(toS(...q), s) <= 8); }
+  function edgeAt(s, maxPx = 7) {
+    let best = null;
+    level.polys.forEach((poly, pi) => poly.pts.forEach((a, i) => {
+      const b = poly.pts[(i + 1) % poly.pts.length], [d] = segDistS(s, toS(...a), toS(...b));
+      if (d <= maxPx && (!best || d < best.d - (pi === sel.poly ? 2 : 0))) best = { poly: pi, edge: i, d };
+    }));
+    return best;
+  }
+  function polyAt(w) { for (let i = level.polys.length - 1; i >= 0; i--) if (L.inside(w, level.polys[i].pts)) return i; return -1; }
+  const goalCorner = (s) => { const g = level.goal; if (!g) return null; const cs = [[g.x0, g.y0, "x0", "y0"], [g.x1, g.y0, "x1", "y0"], [g.x1, g.y1, "x1", "y1"], [g.x0, g.y1, "x0", "y1"]]; return cs.find((c) => dist(toS(c[0], c[1]), s) <= 9) || null; };
+  const inGoalRect = (w) => level.goal && w[0] > level.goal.x0 && w[0] < level.goal.x1 && w[1] > level.goal.y0 && w[1] < level.goal.y1;
+
+  // 꼭짓점을 넣고 빼면 변 번호가 밀리므로 변 재질(edgeMat)을 같이 고친다
+  function insertVertex(pi, edge, w) {
+    const poly = level.polys[pi]; poly.pts.splice(edge + 1, 0, w);
+    if (poly.edgeMat) { const em = {}; for (const [k, v] of Object.entries(poly.edgeMat)) { const i = +k; if (i < edge) em[i] = v; else if (i === edge) { em[i] = v; em[i + 1] = v; } else em[i + 1] = v; } poly.edgeMat = em; }
+  }
+  function removeVertex(pi, vi) {
+    const poly = level.polys[pi]; if (poly.pts.length <= 3) return false;
+    poly.pts.splice(vi, 1);
+    if (poly.edgeMat) { const em = {}; for (const [k, v] of Object.entries(poly.edgeMat)) { const i = +k; if (i < vi) em[i] = v; else if (i > vi) em[i - 1] = v; } poly.edgeMat = em; if (!Object.keys(em).length) delete poly.edgeMat; }
+    return true;
+  }
+  function setEdgeMat(poly, i, mat) { if (mat === poly.mat) { if (poly.edgeMat) { delete poly.edgeMat[i]; if (!Object.keys(poly.edgeMat).length) delete poly.edgeMat; } } else (poly.edgeMat ||= {})[i] = mat; }
+  const edgeMatOf = (poly, i) => poly.edgeMat?.[i] ?? poly.mat;
+  function closeDraft() {
+    if (draft.length < 3) { toast("꼭짓점이 3개 이상이어야 닫을 수 있습니다"); return; }
+    change(() => { level.polys.push({ mat: "rock", pts: draft.map((q) => [...q]) }); sel = { poly: level.polys.length - 1, vertex: null }; });
+    draft = [];
+  }
+
+  cv.addEventListener("contextmenu", (e) => e.preventDefault());
+  cv.addEventListener("pointerdown", (e) => {
+    const s = [e.offsetX, e.offsetY], w = toW(...s);
+    cv.setPointerCapture(e.pointerId);
+    if (e.button === 1 || e.button === 2 || spaceKey) { drag = { kind: "pan", s0: s, c0: [view.cx, view.cy] }; return; }
+    if (e.button !== 0) return;
+    const before = snap();
+    if (tool === "select") {
+      const vi = sel.poly !== null ? vertexAt(s, sel.poly) : -1;
+      if (vi >= 0) { sel.vertex = vi; drag = { kind: "vertex", before }; draw(); return; }
+      if (dist(toS(...level.start), s) <= P.R * view.z + 4) { drag = { kind: "start", before }; return; }
+      const gc = goalCorner(s); if (gc) { drag = { kind: "goalCorner", c: gc, before }; return; }
+      const ed = edgeAt(s), pi = ed ? ed.poly : polyAt(w);
+      if (pi >= 0) { sel = { poly: pi, vertex: null }; drag = { kind: "poly", w0: snW(w), orig: clone(level.polys[pi].pts), before }; refresh(); return; }
+      if (inGoalRect(w)) { drag = { kind: "goal", w0: snW(w), orig: { ...level.goal }, before }; return; }
+      sel = { poly: null, vertex: null }; refresh();
+    } else if (tool === "poly") {
+      const p = snW(w);
+      if (draft.length >= 3 && dist(toS(...draft[0]), s) <= 10) closeDraft();
+      else if (!draft.length || dist(draft[draft.length - 1], p) > 0) draft.push(p);
+      draw();
+    } else if (tool === "rect") drag = { kind: "rect", w0: snW(w) };
+    else if (tool === "goal") drag = { kind: "goalNew", w0: snW(w) };
+    else if (tool === "start") change(() => { level.start = snW(w); });
+    else if (tool === "paint") {
+      const ed = edgeAt(s, 9);
+      if (ed) change(() => { const poly = level.polys[ed.poly]; setEdgeMat(poly, ed.edge, edgeMatOf(poly, ed.edge) === "slick" ? "rock" : "slick"); });
+      else { const pi = polyAt(w); if (pi >= 0) change(() => { const poly = level.polys[pi]; poly.mat = poly.mat === "slick" ? "rock" : "slick"; delete poly.edgeMat; }); }
+    }
+  });
+  cv.addEventListener("pointermove", (e) => {
+    mouse = [e.offsetX, e.offsetY]; altKey = e.altKey;
+    const w = toW(...mouse);
+    if (drag) {
+      if (drag.kind === "pan") { view.cx = drag.c0[0] - (mouse[0] - drag.s0[0]) / view.z; view.cy = drag.c0[1] - (mouse[1] - drag.s0[1]) / view.z; }
+      else if (drag.kind === "vertex") level.polys[sel.poly].pts[sel.vertex] = snW(w);
+      else if (drag.kind === "poly") { const d = L.sub(snW(w), drag.w0); level.polys[sel.poly].pts = drag.orig.map((q) => [q[0] + d[0], q[1] + d[1]]); }
+      else if (drag.kind === "start") level.start = snW(w);
+      else if (drag.kind === "goal") { const d = L.sub(snW(w), drag.w0), o = drag.orig; level.goal = { x0: o.x0 + d[0], y0: o.y0 + d[1], x1: o.x1 + d[0], y1: o.y1 + d[1] }; }
+      else if (drag.kind === "goalCorner") { const p = snW(w); level.goal[drag.c[2]] = p[0]; level.goal[drag.c[3]] = p[1]; }
+    }
+    draw();
+  });
+  // 끌기 끝 — 손을 뗐을 때뿐 아니라 입력이 끊겼을 때(창 밖 · 포인터 취소)도 마지막 커서 자리로 마무리한다
+  function endDrag(sx, sy) {
+    if (!drag) return;
+    const w = snW(toW(sx, sy)), d = drag; drag = null;
+    if (d.kind === "rect" || d.kind === "goalNew") {
+      const x0 = Math.min(d.w0[0], w[0]), x1 = Math.max(d.w0[0], w[0]), y0 = Math.min(d.w0[1], w[1]), y1 = Math.max(d.w0[1], w[1]);
+      if (x1 - x0 < 10 || y1 - y0 < 10) { toast("너무 작습니다 — 끌어서 그리세요"); draw(); return; }
+      if (d.kind === "rect") change(() => { level.polys.push(rectPoly(x0, y0, x1, y1)); sel = { poly: level.polys.length - 1, vertex: null }; });
+      else change(() => { level.goal = { x0, y0, x1, y1 }; });
+      return;
+    }
+    if (d.kind === "goalCorner") { const g = level.goal; level.goal = { x0: Math.min(g.x0, g.x1), y0: Math.min(g.y0, g.y1), x1: Math.max(g.x0, g.x1), y1: Math.max(g.y0, g.y1) }; }
+    if (d.before) pushUndo(d.before); else draw();
+  }
+  cv.addEventListener("pointerup", (e) => endDrag(e.offsetX, e.offsetY));
+  cv.addEventListener("pointercancel", () => endDrag(...mouse));
+  cv.addEventListener("lostpointercapture", () => endDrag(...mouse));
+  cv.addEventListener("dblclick", (e) => {
+    if (tool !== "select" || sel.poly === null) return;
+    const s = [e.offsetX, e.offsetY], poly = level.polys[sel.poly];
+    let hit = null;
+    poly.pts.forEach((a, i) => { const [d, t] = segDistS(s, toS(...a), toS(...poly.pts[(i + 1) % poly.pts.length])); if (d <= 7 && t > 0.02 && t < 0.98 && (!hit || d < hit.d)) hit = { i, d }; });
+    if (hit) change(() => { insertVertex(sel.poly, hit.i, snW(toW(...s))); sel.vertex = hit.i + 1; });
+  });
+  cv.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const before = toW(e.offsetX, e.offsetY);
+    view.z = Math.max(0.05, Math.min(5, view.z * Math.pow(1.0015, -e.deltaY)));
+    const after = toW(e.offsetX, e.offsetY);
+    view.cx += before[0] - after[0]; view.cy += before[1] - after[1];
+    draw();
+  }, { passive: false });
+
+  function deleteSelection() {
+    if (sel.poly === null) return;
+    if (sel.vertex !== null) {
+      change(() => { if (!removeVertex(sel.poly, sel.vertex)) toast("꼭짓점이 3개뿐이라 지울 수 없습니다 — 지형을 지우려면 꼭짓점 선택을 풀고 Del"); sel.vertex = null; });
+    } else change(() => { level.polys.splice(sel.poly, 1); sel = { poly: null, vertex: null }; });
+  }
+  function duplicate() { if (sel.poly === null) return; change(() => { const c = clone(level.polys[sel.poly]); c.pts = c.pts.map((q) => [q[0] + 40, q[1] - 40]); level.polys.push(c); sel = { poly: level.polys.length - 1, vertex: null }; }); }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.target instanceof HTMLInputElement) return;
+    altKey = e.altKey;
+    const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+    if (e.key === " ") { spaceKey = true; cv.style.cursor = "grab"; e.preventDefault(); return; }
+    if (ctrl && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+    if (ctrl && k === "y") { e.preventDefault(); redo(); return; }
+    if (ctrl && k === "d") { e.preventDefault(); duplicate(); return; }
+    if (ctrl) return;
+    if (tool === "poly" && draft.length) {
+      if (e.key === "Enter") { closeDraft(); return; }
+      if (e.key === "Backspace") { draft.pop(); draw(); e.preventDefault(); return; }
+      if (e.key === "Escape") { draft = []; draw(); return; }
+    }
+    if (e.key === "Escape") { sel = { poly: null, vertex: null }; refresh(); return; }
+    if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); deleteSelection(); return; }
+    const map = { v: "select", p: "poly", r: "rect", m: "paint", s: "start", g: "goal" };
+    if (map[k]) setTool(map[k]);
+    else if (k === "f") { fit(); draw(); }
+    else if (k === "t") play();
+  });
+  window.addEventListener("keyup", (e) => { altKey = e.altKey; if (e.key === " ") { spaceKey = false; cv.style.cursor = ""; } });
+
+  // ── 그리기 ──────────────────────────────────────────
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#1b2440"; ctx.fillRect(0, 0, W, H);
+    // 격자: 10u(가까울 때) · 100u(1m) · 바닥 높이 0 선
+    const [wx0, wy0] = toW(0, 0), [wx1, wy1] = toW(W, H);
+    const lines = (stepU, color) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath();
+      for (let x = Math.ceil(wx0 / stepU) * stepU; x <= wx1; x += stepU) { const sx = Math.round(toS(x, 0)[0]) + .5; ctx.moveTo(sx, 0); ctx.lineTo(sx, H); }
+      for (let y = Math.ceil(wy0 / stepU) * stepU; y <= wy1; y += stepU) { const sy = Math.round(toS(0, y)[1]) + .5; ctx.moveTo(0, sy); ctx.lineTo(W, sy); }
+      ctx.stroke();
+    };
+    if (10 * view.z >= 8) lines(10, "rgba(255,255,255,.04)");
+    lines(100, "rgba(255,255,255,.09)");
+    const y0s = toS(0, 0)[1]; ctx.strokeStyle = "rgba(255,209,102,.35)"; ctx.beginPath(); ctx.moveTo(0, y0s); ctx.lineTo(W, y0s); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.font = "11px system-ui, sans-serif";
+    const lab = view.z * 100 >= 40 ? 100 : view.z * 500 >= 40 ? 500 : 1000;
+    for (let y = Math.ceil(wy0 / lab) * lab; y <= wy1; y += lab) ctx.fillText(`${(-y / 100).toFixed(0)}m`, 4, toS(0, y)[1] - 3);
+
+    // 골인
+    if (level.goal) {
+      const g = level.goal, [a, b] = toS(g.x0, g.y0), [c, d] = toS(g.x1, g.y1);
+      ctx.fillStyle = "rgba(255,209,102,.15)"; ctx.fillRect(a, b, c - a, d - b);
+      ctx.strokeStyle = "#ffd166"; ctx.setLineDash([6, 4]); ctx.strokeRect(a, b, c - a, d - b); ctx.setLineDash([]);
+      ctx.fillStyle = "#ffd166"; ctx.fillText("골인", a + 4, b + 13);
+      if (tool === "select") for (const [x, y] of [[a, b], [c, b], [c, d], [a, d]]) ctx.fillRect(x - 3, y - 3, 6, 6);
+    }
+    // 지형
+    const hoverEdge = tool === "paint" && !drag ? edgeAt(mouse, 9) : null;
+    level.polys.forEach((poly, pi) => {
+      ctx.beginPath(); poly.pts.forEach((q, i) => { const s = toS(...q); i ? ctx.lineTo(...s) : ctx.moveTo(...s); }); ctx.closePath();
+      ctx.fillStyle = poly.mat === "slick" ? "#9fd8ff" : "#5b6475"; ctx.fill();
+      ctx.strokeStyle = poly.mat === "slick" ? "#3d8fc4" : "#2d3340"; ctx.lineWidth = 2; ctx.stroke();
+      poly.pts.forEach((a, i) => {
+        const m = edgeMatOf(poly, i), b = poly.pts[(i + 1) % poly.pts.length];
+        if (m === "slick" && poly.mat !== "slick") { ctx.strokeStyle = "#9fd8ff"; ctx.lineWidth = Math.max(4, 8 * view.z); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...toS(...b)); ctx.stroke(); }
+        if (m === "rock" && poly.mat === "slick") { ctx.strokeStyle = "#5b6475"; ctx.lineWidth = Math.max(4, 8 * view.z); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...toS(...b)); ctx.stroke(); }
+        if (hoverEdge && hoverEdge.poly === pi && hoverEdge.edge === i) { ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(...toS(...a)); ctx.lineTo(...toS(...b)); ctx.stroke(); }
+      });
+      if (pi === sel.poly) {
+        ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; ctx.setLineDash([5, 3]);
+        ctx.beginPath(); poly.pts.forEach((q, i) => { const s = toS(...q); i ? ctx.lineTo(...s) : ctx.moveTo(...s); }); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+        poly.pts.forEach((q, i) => { const [x, y] = toS(...q); ctx.fillStyle = i === sel.vertex ? "#ffd166" : "#fff"; ctx.strokeStyle = "#1b2440"; ctx.lineWidth = 1.5; ctx.fillRect(x - 4, y - 4, 8, 8); ctx.strokeRect(x - 4, y - 4, 8, 8); });
+      }
+      ctx.lineCap = "butt";
+    });
+    // 얇은 곳 표시
+    for (const w of warnings) for (const t of w.thin || []) {
+      const [x, y] = toS(...t.at); ctx.strokeStyle = "#ff6b6b"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, Math.max(5, t.thickness / 2 * view.z), 0, Math.PI * 2); ctx.stroke();
+    }
+    // 출발점(몸통 + 팔 길이)
+    const [sx, sy] = toS(...level.start);
+    ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(sx, sy, P.L_MAX * view.z, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "#6296ec"; ctx.strokeStyle = "#1f3f7a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sx, sy, P.R * view.z, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.fillText("출발", sx + P.R * view.z + 4, sy + 4);
+    // 그리는 중인 다각형 · 사각형
+    const mw = snW(toW(...mouse)), ms = toS(...mw);
+    if (tool === "poly" && draft.length) {
+      ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; ctx.beginPath();
+      draft.forEach((q, i) => { const s = toS(...q); i ? ctx.lineTo(...s) : ctx.moveTo(...s); }); ctx.lineTo(...ms); ctx.stroke();
+      draft.forEach((q, i) => { const [x, y] = toS(...q); ctx.fillStyle = i === 0 ? "#ffd166" : "#fff"; ctx.beginPath(); ctx.arc(x, y, i === 0 ? 6 : 3.5, 0, Math.PI * 2); ctx.fill(); });
+    }
+    if (drag && (drag.kind === "rect" || drag.kind === "goalNew")) {
+      const [a, b] = toS(...drag.w0); ctx.strokeStyle = drag.kind === "rect" ? "#fff" : "#ffd166"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+      ctx.strokeRect(a, b, ms[0] - a, ms[1] - b); ctx.setLineDash([]);
+      ctx.fillStyle = "#fff"; ctx.fillText(`${Math.abs(mw[0] - drag.w0[0])} × ${Math.abs(mw[1] - drag.w0[1])}u`, ms[0] + 8, ms[1] - 8);
+    }
+    // 커서 도우미: 몸통 · 팔 길이 원
+    if ($("reach").checked && !drag) {
+      ctx.strokeStyle = "rgba(98,150,236,.9)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(...ms, P.R * view.z, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(...ms, P.L_MAX * view.z, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(...ms, P.L_MIN * view.z, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (tool !== "select" && !drag) { ctx.fillStyle = "#ffd166"; ctx.fillRect(ms[0] - 2, ms[1] - 2, 4, 4); }
+    $("coord").textContent = `x ${mw[0]} · y ${mw[1]}u (높이 ${(-mw[1] / 100).toFixed(2)}m) · 확대 ${(view.z * 100).toFixed(0)}%`;
+  }
+
+  // ── 패널 ────────────────────────────────────────────
+  function refresh() {
+    warnings = L.checkLevel(level, P);
+    const box = $("warns"); box.replaceChildren();
+    if (!warnings.length) { const li = document.createElement("li"); li.className = "ok"; li.textContent = "문제 없음"; box.appendChild(li); }
+    for (const w of warnings) {
+      const li = document.createElement("li"), b = document.createElement("button");
+      b.textContent = `${w.level} · ${w.text}`; if (w.level === "오류") b.className = "err";
+      b.addEventListener("click", () => { view.cx = w.at[0]; view.cy = w.at[1]; view.z = Math.max(view.z, 0.8); draw(); });
+      li.appendChild(b); box.appendChild(li);
+    }
+    const p = sel.poly !== null ? level.polys[sel.poly] : null;
+    $("selinfo").textContent = p
+      ? `지형 ${sel.poly + 1} · 꼭짓점 ${p.pts.length}개 · ${p.mat === "slick" ? "미끄러움" : "바위"}${p.edgeMat ? ` (다른 재질 변 ${Object.keys(p.edgeMat).length}개)` : ""}${sel.vertex !== null ? ` · 꼭짓점 ${sel.vertex + 1} 선택` : ""}`
+      : "없음 — 선택 도구로 지형을 누르세요";
+    for (const id of ["matRock", "matSlick", "dup", "del"]) $(id).disabled = !p;
+    $("undo").disabled = !undoStack.length; $("redo").disabled = !redoStack.length;
+    if (document.activeElement !== $("name")) $("name").value = level.name;
+    const goalH = level.goal ? ` · 골인 높이 ${(-level.goal.y1 / 100).toFixed(1)}m` : "";
+    $("stats").textContent = `지형 ${level.polys.length}개 · 출발 높이 ${(-(level.start[1] + P.R) / 100).toFixed(1)}m${goalH}`;
+    draw();
+  }
+
+  let toastT = 0;
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 3200); }
+  // 확인 창 대신 같은 버튼을 3초 안에 한 번 더 누르게 한다
+  function twoStep(btn, label, fn) {
+    let armed = 0;
+    btn.addEventListener("click", () => {
+      if (armed) { clearTimeout(armed); armed = 0; btn.textContent = label; fn(); return; }
+      btn.textContent = "한 번 더 누르면 바뀜"; armed = setTimeout(() => { armed = 0; btn.textContent = label; }, 3000);
+    });
+  }
+
+  function play() {
+    const { level: lv } = L.normalizeLevel(clone(level));
+    try { localStorage.setItem(KEY_TEST, JSON.stringify(lv)); } catch { toast("브라우저 저장소를 쓸 수 없어 시험 플레이를 못 엽니다"); return; }
+    if (warnings.some((w) => w.level === "오류")) toast("오류가 있는 채로 엽니다 — 충돌이 이상할 수 있습니다");
+    window.open("proto.html?test=1", "climb-test");
+  }
+  function exportFile() {
+    const name = (level.name || "level").replace(/[^\w가-힣-]+/g, "_").slice(0, 40) || "level";
+    const blob = new Blob([JSON.stringify(level, null, 2) + "\n"], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${name}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast(`${name}.json 으로 저장했습니다\n게임에서 열려면 levels/ 폴더에 넣고 proto.html?level=${name}.json`);
+  }
+  $("file").addEventListener("change", () => {
+    const f = $("file").files[0]; if (!f) return;
+    f.text().then((txt) => {
+      let raw; try { raw = JSON.parse(txt); } catch { toast("JSON 파일이 아닙니다"); return; }
+      const { level: lv, errors } = L.normalizeLevel(raw);
+      if (!lv) { toast(errors.join("\n")); return; }
+      change(() => { level = lv; sel = { poly: null, vertex: null }; }); fit(); draw();
+      toast(errors.length ? `불러왔습니다 — 주의:\n${errors.join("\n")}` : `${f.name} 을 불러왔습니다`);
+    }).finally(() => { $("file").value = ""; });
+  });
+
+  for (const b of document.querySelectorAll("#tools button")) b.addEventListener("click", () => setTool(b.dataset.tool));
+  $("matRock").addEventListener("click", () => change(() => { const p = level.polys[sel.poly]; p.mat = "rock"; delete p.edgeMat; }));
+  $("matSlick").addEventListener("click", () => change(() => { const p = level.polys[sel.poly]; p.mat = "slick"; delete p.edgeMat; }));
+  $("dup").addEventListener("click", duplicate);
+  $("del").addEventListener("click", () => { sel.vertex = null; deleteSelection(); });
+  $("undo").addEventListener("click", undo); $("redo").addEventListener("click", redo);
+  $("play").addEventListener("click", play);
+  $("export").addEventListener("click", exportFile);
+  $("import").addEventListener("click", () => $("file").click());
+  $("fit").addEventListener("click", () => { fit(); draw(); });
+  twoStep($("reset"), "기본 코스", () => { change(() => { level = defaultLevel(); sel = { poly: null, vertex: null }; }); fit(); draw(); });
+  twoStep($("clear"), "새로", () => { change(() => { level = emptyLevel(); sel = { poly: null, vertex: null }; }); fit(); draw(); });
+  let nameBefore = null;
+  $("name").addEventListener("focus", () => { nameBefore = snap(); });
+  $("name").addEventListener("input", () => { level.name = $("name").value.slice(0, 80); persist(); });
+  $("name").addEventListener("change", () => { if (nameBefore) pushUndo(nameBefore); nameBefore = null; });
+
+  window.addEventListener("resize", () => { resize(); draw(); });
+  resize(); fit(); setTool("select"); refresh();
+  window.__editor = { get level() { return level; }, set level(v) { level = v; refresh(); }, view, refresh, get warnings() { return warnings; } };   // 검증용
+})();
+</script>
+</body>
+</html>

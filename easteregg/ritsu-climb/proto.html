@@ -65,179 +65,7 @@
 <div class="goal" id="goal"><div><h2>골인!</h2><p id="goaltext"></p><button id="again" type="button">처음부터</button></div></div>
 <div class="foot">비공식 팬 제작 · 움직임 시험판 · 공식과 무관</div>
 
-<!-- 물리 계산 — DOM 을 쓰지 않는 순수 함수 묶음. 사이트 이식 때 모듈로 옮기고, 시험 스크립트가 이 블록만 떼어 Node 에서 돌린다 -->
-<script id="climb-logic">
-const ClimbLogic = (() => {
-  // 조정값 시작값 — 명세 §7
-  const DEFAULTS = {
-    R: 28, TIP_R: 6, L_MIN: 40, L_MAX: 150,
-    GRAVITY: 1800, AIR_DRAG: 0.15,
-    TOOL_SPEED: 1600, BODY_SHARE: 1.0, MAX_BODY_SPEED: 1400,
-    TIP_FRICTION_ROCK: 4.0, TIP_FRICTION_SLICK: 0.3,
-    BODY_FRICTION_ROCK: 0.8, BODY_FRICTION_SLICK: 0.05,
-    ITER: 4,
-  };
-  const DT = 1 / 120;
-
-  // 시험 코스 — 좌표 단위 u, y 는 아래가 +. 출발 바닥 윗면 = y 0. 벽은 전부 두께 60u 이상의 닫힌 다각형
-  const rect = (x0, y0, x1, y1, mat = "rock") => ({ mat, pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
-  const COURSE = {
-    start: [-450, -28],
-    polys: [
-      rect(-1000, -2200, -700, 400),            // 왼쪽 경계 벽
-      rect(700, -2200, 1000, 400),              // 오른쪽 경계 벽
-      rect(-700, 0, 700, 400),                  // ① 출발 바닥
-      rect(-150, -70, 700, 0),                  // ① 계단 1
-      rect(150, -150, 700, -70),                // ① 계단 2
-      rect(400, -290, 700, -230),               // ② 걸기용 턱(오른쪽 벽에서 튀어나옴, 아래가 비어 있음)
-      // ③ 굴뚝 기둥 — 오른쪽 벽과의 틈 90u = 몸통 지름 × 1.6
-      // ④ 되돌림 길 1: 기둥 윗면 = 미끄러운 비탈(왼쪽으로 오르막, 변 2 만 slick). 미끄러지면 굴뚝으로 빠져 ②의 턱까지 떨어진다
-      { mat: "rock", edgeMat: { 2: "slick" }, pts: [[380, -400], [610, -400], [610, -1000], [380, -1100]] },
-      rect(500, -1095, 560, -1015),             // ④ 비탈 중간의 바위 손잡이(도구를 걸 곳)
-      // ⑤ 꼭대기 바닥 — 가운데 구멍(80u, 몸통보다 넓다) = 되돌림 길 2: 빠지면 출발 바닥까지 떨어진다
-      rect(-20, -1100, 380, -1040),
-      rect(-700, -1100, -100, -1040),
-      rect(-360, -1340, -260, -1100),           // ⑤ 몸통보다 높은 벽(240u) — 튕기기로 넘는다
-    ],
-    goal: { x0: -700, y0: -1230, x1: -380, y1: -1100 },   // ⑥ 골인 영역
-  };
-
-  const add = (a, b) => [a[0] + b[0], a[1] + b[1]];
-  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
-  const mul = (a, s) => [a[0] * s, a[1] * s];
-  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
-  const len = (a) => Math.hypot(a[0], a[1]);
-  function clampLen(v, max) { const l = len(v); return l > max ? mul(v, max / l) : v; }
-  function clampRange(v, lo, hi, fallback) {
-    const l = len(v);
-    if (l < 1e-6) return mul(fallback, lo / (len(fallback) || 1));
-    if (l < lo) return mul(v, lo / l);
-    if (l > hi) return mul(v, hi / l);
-    return v;
-  }
-
-  function inside(pt, pts) {
-    let c = false;
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      const [xi, yi] = pts[i], [xj, yj] = pts[j];
-      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c;
-    }
-    return c;
-  }
-  function closestOnSeg(p, a, b) {
-    const ab = sub(b, a), t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / dot(ab, ab)));
-    return add(a, mul(ab, t));
-  }
-
-  /** 원(중심 c, 반지름 r)이 파고든 다각형마다 접촉 하나 — n = 밀어낼 방향(바깥), depth = 파고든 깊이 */
-  function contacts(c, r, polys) {
-    const out = [];
-    for (const poly of polys) {
-      const pts = poly.pts;
-      let best = Infinity, cp = null, edge = 0;
-      for (let i = 0; i < pts.length; i++) {
-        const q = closestOnSeg(c, pts[i], pts[(i + 1) % pts.length]);
-        const d = len(sub(c, q));
-        if (d < best) { best = d; cp = q; edge = i; }
-      }
-      const isIn = inside(c, pts);
-      if (!isIn && best >= r) continue;
-      let n;
-      if (best < 1e-9) n = [0, -1];
-      else n = isIn ? mul(sub(cp, c), 1 / best) : mul(sub(c, cp), 1 / best);
-      // 재질은 다각형 단위(mat), 특정 변만 다르면 edgeMat[변 번호] — 얇은 쐐기 다각형을 따로 두지 않으려고
-      out.push({ n, depth: isIn ? r + best : r - best, mat: poly.edgeMat?.[edge] ?? poly.mat });
-    }
-    return out;
-  }
-
-  /** 면 마찰 — 이번 단계에 면을 따라 미끄러진 거리(from → to)를 mu × 깊이 만큼 되돌린다. 되돌린 벡터를 돌려준다 */
-  function friction(from, to, n, depth, mu) {
-    const delta = sub(to, from);
-    const t = sub(delta, mul(n, dot(delta, n)));
-    const tl = len(t), lim = mu * depth;
-    if (tl < 1e-9) return [0, 0];
-    return tl <= lim ? mul(t, -1) : mul(t, -lim / tl);
-  }
-
-  function makeState(course = COURSE, P = DEFAULTS) {
-    const p = [...course.start];
-    const d = [90, 22];
-    return { p, v: [0, 0], d, want: [...d], qPrev: add(p, d), tipHit: null, bodyHit: null, t: 0 };
-  }
-
-  const muTip = (P, mat) => mat === "slick" ? P.TIP_FRICTION_SLICK : P.TIP_FRICTION_ROCK;
-  const muBody = (P, mat) => mat === "slick" ? P.BODY_FRICTION_SLICK : P.BODY_FRICTION_ROCK;
-
-  /** 물리 한 단계(dt) — 명세 §5.3 순서 그대로 */
-  function step(S, P, polys, dt = DT) {
-    const p0 = S.p;
-    // 1. 중력 · 공기 저항 → 몸통 예측 위치
-    let v = [S.v[0], S.v[1] + P.GRAVITY * dt];
-    v = mul(v, Math.exp(-P.AIR_DRAG * dt));
-    let ph = add(p0, mul(v, dt));
-    // 2. 도구 상대 위치를 목표 쪽으로, 한 단계 최대 TOOL_SPEED × dt 만큼만
-    const want = clampRange(S.want, P.L_MIN, P.L_MAX, S.d);
-    //    각도 · 길이로 나눠 옮긴다 — 직선으로 옮기면 목표가 몸통 반대편일 때 도구가 몸통을 못 넘어간다
-    const l0 = len(S.d), a0 = Math.atan2(S.d[1], S.d[0]);
-    const lw = len(want), aw = Math.atan2(want[1], want[0]);
-    let da = aw - a0;
-    da -= Math.PI * 2 * Math.round(da / (Math.PI * 2));
-    let dl = lw - l0;
-    const move = Math.hypot(l0 * da, dl), maxMove = P.TOOL_SPEED * dt;
-    if (move > maxMove) { da *= maxMove / move; dl *= maxMove / move; }
-    let d = [Math.cos(a0 + da) * (l0 + dl), Math.sin(a0 + da) * (l0 + dl)];
-    d = clampRange(d, P.L_MIN, P.L_MAX, S.d);
-    // 2-1. 몸통 자체의 움직임(중력 · 관성)만 면 마찰을 받는다.
-    //      도구가 끌어 옮기는 몸통은 마찰로 막지 않는다 — 막으면 벽에 낀 몸통이 도구보다 세져 굴뚝을 못 오른다
-    let tipHit = null, bodyHit = null;
-    for (const c of contacts(ph, P.R, polys)) {
-      ph = add(ph, mul(c.n, c.depth));
-      ph = add(ph, friction(p0, ph, c.n, c.depth, muBody(P, c.mat)));
-      bodyHit = c;
-    }
-    // 3. 도구 끝 충돌 → 반동을 몸통에 → 몸통 충돌(밀어내기만), ITER 회 반복
-    for (let k = 0; k < P.ITER; k++) {
-      let q = add(ph, d);
-      let e = [0, 0];
-      for (const c of contacts(q, P.TIP_R, polys)) {
-        const push = mul(c.n, c.depth);
-        q = add(q, push); e = add(e, push);
-        const f = friction(S.qPrev, q, c.n, c.depth, muTip(P, c.mat));
-        q = add(q, f); e = add(e, f);
-        tipHit = c;
-      }
-      ph = add(ph, mul(e, P.BODY_SHARE));
-      for (const c of contacts(ph, P.R, polys)) { ph = add(ph, mul(c.n, c.depth)); bodyHit = c; }
-    }
-    // 4. 몸통 이동 상한(튕기기 상한) → 한 번 더 몸통 충돌 → 고친 위치에서 속도
-    ph = add(p0, clampLen(sub(ph, p0), P.MAX_BODY_SPEED * dt));
-    for (const c of contacts(ph, P.R, polys)) { ph = add(ph, mul(c.n, c.depth)); bodyHit = c; }
-    // 5. 도구 끝이 끝내 못 간 자리는 실제 위치로 맞춘다(몸통도 도구도 막혔을 때 떨림 방지).
-    //    밀려난 끝이 팔 길이 한계를 넘으면 끝을 되돌리지 않고 몸통을 끌어온다 — 끝을 되돌리면 지형 안으로 다시 들어간다
-    let q = add(ph, d);
-    for (const c of contacts(q, P.TIP_R, polys)) q = add(q, mul(c.n, c.depth));
-    const r = sub(q, ph), rl = len(r);
-    if (rl > P.L_MAX || rl < P.L_MIN) {
-      ph = sub(q, mul(r, (rl > P.L_MAX ? P.L_MAX : P.L_MIN) / (rl || 1)));
-      for (const c of contacts(ph, P.R, polys)) { ph = add(ph, mul(c.n, c.depth)); bodyHit = c; }
-    }
-    S.v = mul(sub(ph, p0), 1 / dt);
-    S.p = ph;
-    S.d = sub(q, S.p);
-    S.qPrev = q;
-    S.tipHit = tipHit; S.bodyHit = bodyHit;
-    S.t += dt;
-    return S;
-  }
-
-  const inGoal = (S, g = COURSE.goal) => S.p[0] > g.x0 && S.p[0] < g.x1 && S.p[1] > g.y0 && S.p[1] < g.y1;
-
-  return { DEFAULTS, DT, COURSE, makeState, step, contacts, inGoal, clampRange, add, sub, mul, len };
-})();
-if (typeof module !== "undefined") module.exports = ClimbLogic;
-</script>
-
+<script src="climb-logic.js"></script>
 <script>
 (() => {
   const L = ClimbLogic;
@@ -245,7 +73,7 @@ if (typeof module !== "undefined") module.exports = ClimbLogic;
   const DEBUG = qs.get("debug") === "1";
   const REL = qs.get("input") === "rel";
   const P = { ...L.DEFAULTS };
-  const polys = L.COURSE.polys;
+  let LEVEL = L.COURSE, polys = LEVEL.polys, lowest = L.lowestY(LEVEL), levelName = "";
   const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
   const hud = document.getElementById("hud"), help = document.getElementById("help");
   const goalEl = document.getElementById("goal"), goalText = document.getElementById("goaltext");
@@ -263,7 +91,7 @@ if (typeof module !== "undefined") module.exports = ClimbLogic;
   }
 
   function reset() {
-    S = L.makeState(L.COURSE, P);
+    S = L.makeState(LEVEL, P);
     started = 0; falls = 0; highSince = S.p[1]; best = 0; goalT = 0; done = false; feedQ = [];
     goalEl.classList.remove("on");
     if (!REL) pointer = null;
@@ -331,11 +159,16 @@ if (typeof module !== "undefined") module.exports = ClimbLogic;
     for (let y = ((oy % step) + step) % step; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
     ctx.stroke();
     // 골인 깃발
-    const gl = L.COURSE.goal, [fx, fy] = toScreen(gl.x0 + 60, gl.y1);
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 90 * scale); ctx.stroke();
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent");
-    ctx.beginPath(); ctx.moveTo(fx, fy - 90 * scale); ctx.lineTo(fx + 50 * scale, fy - 75 * scale); ctx.lineTo(fx, fy - 60 * scale); ctx.fill();
+    const gl = LEVEL.goal;
+    if (gl) {
+      const [gx0, gy0] = toScreen(gl.x0, gl.y0), [gx1, gy1] = toScreen(gl.x1, gl.y1);
+      ctx.fillStyle = "rgba(255,209,102,.12)"; ctx.fillRect(gx0, gy0, gx1 - gx0, gy1 - gy0);
+      const [fx, fy] = toScreen((gl.x0 + gl.x1) / 2, gl.y1);
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 90 * scale); ctx.stroke();
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath(); ctx.moveTo(fx, fy - 90 * scale); ctx.lineTo(fx + 50 * scale, fy - 75 * scale); ctx.lineTo(fx, fy - 60 * scale); ctx.fill();
+    }
     // 지형
     for (const poly of polys) {
       ctx.beginPath();
@@ -386,7 +219,9 @@ if (typeof module !== "undefined") module.exports = ClimbLogic;
       if (S.p[1] - highSince > 500) falls++;
       highSince = S.p[1] - highSince > 500 ? S.p[1] : Math.min(highSince, S.p[1]);
     }
-    if (!done && L.inGoal(S)) {
+    // 지형 맨 아래보다 1500u(15m) 넘게 떨어지면(바닥 없는 레벨) 출발점에서 다시 — 떨어진 횟수 1회
+    if (S.p[1] > lowest + 1500) { S = L.makeState(LEVEL, P); falls++; highSince = S.p[1]; return; }
+    if (!done && L.inGoal(S, LEVEL.goal)) {
       goalT += dt;
       if (goalT >= 1) {
         done = true;
@@ -394,11 +229,11 @@ if (typeof module !== "undefined") module.exports = ClimbLogic;
         goalText.textContent = `걸린 시간 ${Math.floor(sec / 60)}분 ${(sec % 60).toFixed(1)}초 · 떨어진 횟수 ${falls}회`;
         goalEl.classList.add("on");
       }
-    } else if (!L.inGoal(S)) goalT = 0;
+    } else if (!L.inGoal(S, LEVEL.goal)) goalT = 0;
   }
   function updateHud() {
     const sec = started && !done ? (performance.now() - started) / 1000 : 0;
-    hud.textContent = `높이 ${heightM(S.p[1]).toFixed(1)}m · 최고 ${best.toFixed(1)}m\n떨어짐 ${falls}회${started && !done ? ` · ${sec.toFixed(0)}초` : ""}`;
+    hud.textContent = `${levelName ? levelName + "\n" : ""}높이 ${heightM(S.p[1]).toFixed(1)}m · 최고 ${best.toFixed(1)}m\n떨어짐 ${falls}회${started && !done ? ` · ${sec.toFixed(0)}초` : ""}`;
     hud.style.whiteSpace = "pre";
   }
 
@@ -462,8 +297,24 @@ if (typeof module !== "undefined") module.exports = ClimbLogic;
     : (touch ? "화면을 누른 채 움직이면 도구 끝이 손가락 쪽으로 갑니다 · 손을 떼도 그대로 유지" : "마우스를 움직이면 도구 끝이 커서 쪽으로 갑니다");
   window.addEventListener("resize", resize);
   resize(); reset();
-  // ?replay=1 — 검증 봇의 완주 조작(route.json, sim.cjs 로 생성)을 그대로 재생해 보여 준다
-  if (qs.get("replay") === "1") fetch("route.json").then((r) => r.json()).then((a) => { feedQ = a; help.textContent = "검증 봇의 완주 조작을 재생하는 중"; }).catch(() => {});
+  // 레벨 고르기: ?test=1 = 편집기의 「시험 플레이」가 넘긴 레벨(브라우저 저장소) · ?level=이름.json = levels/ 폴더의 파일 · 없으면 기본 코스
+  function useLevel(raw, label) {
+    const { level, errors } = L.normalizeLevel(raw);
+    if (!level) { help.textContent = `레벨을 못 읽었습니다: ${errors.join(" · ")}`; return; }
+    LEVEL = level; polys = level.polys; lowest = L.lowestY(level); levelName = label + (level.name ? ` · ${level.name}` : "");
+    reset();
+    if (errors.length) help.textContent = `레벨 주의: ${errors.join(" · ")}`;
+  }
+  const levelFile = qs.get("level");
+  if (qs.get("test") === "1") {
+    let raw = null; try { raw = JSON.parse(localStorage.getItem("climb-editor-test")); } catch {}
+    if (raw) useLevel(raw, "편집기 시험"); else help.textContent = "편집기에서 넘긴 레벨이 없습니다 — 편집기의 「시험 플레이」로 여세요";
+  } else if (levelFile && /^[\w.-]+\.json$/.test(levelFile)) {
+    fetch(`levels/${levelFile}`).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then((raw) => useLevel(raw, levelFile)).catch((e) => { help.textContent = `levels/${levelFile} 를 못 읽었습니다(${e.message})`; });
+  }
+  // ?replay=1 — 검증 봇의 완주 조작(route.json, sim.cjs 로 생성)을 그대로 재생해 보여 준다(기본 코스 전용)
+  if (qs.get("replay") === "1" && !levelFile && qs.get("test") !== "1") fetch("route.json").then((r) => r.json()).then((a) => { feedQ = a; help.textContent = "검증 봇의 완주 조작을 재생하는 중"; }).catch(() => {});
   window.__climb = { get S() { return S; }, P, L, reset, get falls() { return falls; }, get done() { return done; }, feed: (arr) => { feedQ = arr.slice(); }, get left() { return feedQ.length; } };   // 검증용 — sim.cjs route 로 만든 조작을 단계마다 하나씩 넣는다
   requestAnimationFrame(frame);
 })();
