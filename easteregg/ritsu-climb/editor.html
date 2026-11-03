@@ -542,22 +542,45 @@
     if (warnings.some((w) => w.level === "오류")) toast("오류가 있는 채로 엽니다 — 충돌이 이상할 수 있습니다");
     window.open("proto.html?test=1", "climb-test");
   }
-  function exportFile() {
-    const name = (level.name || "level").replace(/[^\w가-힣-]+/g, "_").slice(0, 40) || "level";
-    const blob = new Blob([JSON.stringify(level, null, 2) + "\n"], { type: "application/json" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${name}.json`; a.click();
+  // 저장 · 불러오기 위치를 맞춘다 — Chrome · Edge 의 파일 창(File System Access API)은 같은 id 를 쓰는 창끼리 마지막 폴더를 함께 기억한다.
+  // 그래서 「파일로 저장」 · 「파일 불러오기」가 늘 같은 폴더(마지막으로 저장하거나 불러온 곳)에서 열린다. 브라우저를 껐다 켜도 유지.
+  // 이 API 가 없는 브라우저(Firefox · Safari)는 예전처럼 내려받기 폴더에 저장하고 브라우저 기본 창으로 불러온다
+  const FILE_PICKER = { id: "climb-levels", types: [{ description: "레벨 JSON", accept: { "application/json": [".json"] } }] };
+  const hasPicker = typeof window.showSaveFilePicker === "function" && typeof window.showOpenFilePicker === "function";
+  const levelFileName = () => `${(level.name || "level").replace(/[^\w가-힣-]+/g, "_").slice(0, 40) || "level"}.json`;
+  const levelJson = () => JSON.stringify(level, null, 2) + "\n";
+  async function exportFile() {
+    const name = levelFileName();
+    if (hasPicker) {
+      let handle;
+      try { handle = await window.showSaveFilePicker({ ...FILE_PICKER, suggestedName: name }); } catch (e) { if (e.name !== "AbortError") toast(`저장 창을 열지 못했습니다(${e.message})`); return; }
+      try { const w = await handle.createWritable(); await w.write(levelJson()); await w.close(); }
+      catch (e) { toast(`저장하지 못했습니다(${e.message})`); return; }
+      toast(`${handle.name} 으로 저장했습니다\n「파일 불러오기」도 이 폴더에서 열립니다 · 게임 폴더의 levels/ 에 저장하면 proto.html?level=${handle.name}`);
+      return;
+    }
+    const blob = new Blob([levelJson()], { type: "application/json" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    toast(`${name}.json 으로 저장했습니다\n게임에서 열려면 levels/ 폴더에 넣고 proto.html?level=${name}.json`);
+    toast(`${name} 으로 내려받기 폴더에 저장했습니다\n게임에서 열려면 levels/ 폴더에 넣고 proto.html?level=${name}`);
+  }
+  function loadLevelText(txt, fileName) {
+    let raw; try { raw = JSON.parse(txt); } catch { toast("JSON 파일이 아닙니다"); return; }
+    const { level: lv, errors } = L.normalizeLevel(raw);
+    if (!lv) { toast(errors.join("\n")); return; }
+    change(() => { level = lv; sel = { poly: null, vertex: null }; }); fit(); draw();
+    toast(errors.length ? `불러왔습니다 — 주의:\n${errors.join("\n")}` : `${fileName} 을 불러왔습니다`);
+  }
+  async function importFile() {
+    if (!hasPicker) { $("file").click(); return; }
+    let handles;
+    try { handles = await window.showOpenFilePicker({ ...FILE_PICKER, multiple: false }); } catch (e) { if (e.name !== "AbortError") toast(`불러오기 창을 열지 못했습니다(${e.message})`); return; }
+    const f = await handles[0].getFile();
+    loadLevelText(await f.text(), f.name);
   }
   $("file").addEventListener("change", () => {
     const f = $("file").files[0]; if (!f) return;
-    f.text().then((txt) => {
-      let raw; try { raw = JSON.parse(txt); } catch { toast("JSON 파일이 아닙니다"); return; }
-      const { level: lv, errors } = L.normalizeLevel(raw);
-      if (!lv) { toast(errors.join("\n")); return; }
-      change(() => { level = lv; sel = { poly: null, vertex: null }; }); fit(); draw();
-      toast(errors.length ? `불러왔습니다 — 주의:\n${errors.join("\n")}` : `${f.name} 을 불러왔습니다`);
-    }).finally(() => { $("file").value = ""; });
+    f.text().then((txt) => loadLevelText(txt, f.name)).finally(() => { $("file").value = ""; });
   });
 
   for (const b of document.querySelectorAll("#tools button")) b.addEventListener("click", () => setTool(b.dataset.tool));
@@ -568,7 +591,7 @@
   $("undo").addEventListener("click", undo); $("redo").addEventListener("click", redo);
   $("play").addEventListener("click", play);
   $("export").addEventListener("click", exportFile);
-  $("import").addEventListener("click", () => $("file").click());
+  $("import").addEventListener("click", importFile);
   $("fit").addEventListener("click", () => { fit(); draw(); });
   twoStep($("reset"), "기본 코스", () => { change(() => { level = defaultLevel(); sel = { poly: null, vertex: null }; }); fit(); draw(); });
   twoStep($("clear"), "새로", () => { change(() => { level = emptyLevel(); sel = { poly: null, vertex: null }; }); fit(); draw(); });
