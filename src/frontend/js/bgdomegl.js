@@ -37,9 +37,10 @@ const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime
 // bgspeed = 0 이면 bgtime 시각에 멈춘다(장면 고정 확인용)
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
-// 확인용(?bgdebug 와 함께): bgsize = 해 · 달 크기 시안 — now(지금: 지름 해 2.4° · 달 3.2°) | real(실제 0.53°) | double(실제의 2배 1.06°)
+// 해 · 달 원반 = 실제 각지름(약 0.53°)이 기본(11-05 운영자 확정). 크기감은 원반이 아니라 번짐 · 빛줄기가 만든다 — ref/bg-dome/codex_luminary_method.md
+// 확인용(?bgdebug 와 함께): bgsize = 옛 크기 비교 — now(옛 기본: 지름 해 2.4° · 달 3.2°) | real(실제, 기본) | double(실제의 2배 1.06°)
 //   | window(실제 0.53° + 바깥 보기 화면 폭을 폰이 눈에 차지하는 각도 약 12.4° 로 — 폰이 「창문」처럼 실제 하늘과 1:1)
-const SIZE_MODE = DEBUG && ["now", "real", "double", "window"].includes(QS.get("bgsize")) ? QS.get("bgsize") : "now";
+const SIZE_MODE = DEBUG && ["now", "real", "double", "window"].includes(QS.get("bgsize")) ? QS.get("bgsize") : "real";
 const SUN_MOON_R = { now: [1.2, 1.6], real: [0.2665, 0.2590], double: [0.533, 0.518], window: [0.2665, 0.2590] }[SIZE_MODE];   // 각반지름(도) [해, 달]
 const WINDOW_HFOV = 12.4;   // 도 — 폭 약 6.5cm 화면을 30cm 에서 볼 때(추정값, 기기 · 습관마다 다르다)
 const MOON_TEST = DEBUG && QS.get("bgmoon") != null && Number.isFinite(Number(QS.get("bgmoon"))) ? ((Number(QS.get("bgmoon")) % 1) + 1) % 1 : null;
