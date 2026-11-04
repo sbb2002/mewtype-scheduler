@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>바깥 보기 장면 확인</title>
+<style>
+  :root { --bg: #0f1020; --card: #1b1d36; --fg: #eef0ff; --sub: #a9adcf; --acc: #7fe3ff; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 4px 0 8px; }
+  p { color: var(--sub); margin: 0 0 12px; font-size: 13px; }
+  h2 { font-size: 14px; color: var(--acc); margin: 18px 0 8px; }
+  a { display: block; background: var(--card); color: var(--fg); text-decoration: none; padding: 12px 14px; border-radius: 10px; margin: 0 0 8px; }
+  a span { display: block; color: var(--sub); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>바깥 보기 — 장면 고정 확인</h1>
+<p>모든 장면에서 해와 달을 보이는 자리에 고정했습니다(시각도 멈춤). 처음 한 번은 테마 버튼(소식 막대 마지막 칸)을 길게 눌러 「바깥 보기」를 고르고 위치 · 방향 권한을 허용해 주세요. 레인을 위로 튕겨 걷으면 하늘만 보입니다. 각 장면 아래에 어느 쪽을 보면 되는지 적었습니다.</p>
+<p>달은 시험용으로 위상과 자리를 따로 정해 비춥니다(밝은 쪽이 실제 해 방향과 꼭 맞지는 않을 수 있습니다).</p>
+
+<h2>낮 (서울 2026-11-05 시각, 해 · 달 고정)</h2>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T07:15:00%2B09:00&bgsunalt=2&bgsunaz=110&bgmoon=0.85&bgmoonalt=35&bgmoonaz=150">동틀 때<span>해: 고도 2° · 방위 110°(동남동) / 그믐달: 고도 35° · 방위 150°(남동)</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T12:20:00%2B09:00&bgsunalt=37&bgsunaz=180&bgmoon=0.27&bgmoonalt=30&bgmoonaz=100">정오<span>해: 고도 37° · 방위 180°(남) / 낮달(상현 무렵): 고도 30° · 방위 100°(동)</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T17:15:00%2B09:00&bgsunalt=2&bgsunaz=248&bgmoon=0.15&bgmoonalt=25&bgmoonaz=215">해 질 때<span>해: 고도 2° · 방위 248°(서남서) / 초승달: 고도 25° · 방위 215°(남서)</span></a>
+
+<h2>밤 — 달 위상 (달: 고도 35° · 방위 180° 정남)</h2>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0&bgmoonalt=35&bgmoonaz=180">삭(새달)<span>위상 0 — 어두운 면만(밤하늘보다 살짝 어둡게)</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.125&bgmoonalt=35&bgmoonaz=180">초승달<span>위상 0.125 — 오른쪽이 가늘게 밝음</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.25&bgmoonalt=35&bgmoonaz=180">상현<span>위상 0.25 — 오른쪽 절반</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.375&bgmoonalt=35&bgmoonaz=180">차오르는 볼록달<span>위상 0.375</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.5&bgmoonalt=35&bgmoonaz=180">보름<span>위상 0.5 — 둥근 달</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.625&bgmoonalt=35&bgmoonaz=180">이지러지는 볼록달<span>위상 0.625</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.75&bgmoonalt=35&bgmoonaz=180">하현<span>위상 0.75 — 왼쪽 절반</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.875&bgmoonalt=35&bgmoonaz=180">그믐달<span>위상 0.875 — 왼쪽이 가늘게 밝음</span></a>
+
+<h2>저고도 해 (낮달 함께)</h2>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T17:15:00%2B09:00&bgsunalt=1&bgsunaz=250&bgmoon=0.2&bgmoonalt=30&bgmoonaz=200">해 고도 1°<span>해: 방위 250°(서남서) / 달: 고도 30° · 방위 200°</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T16:30:00%2B09:00&bgsunalt=5&bgsunaz=240&bgmoon=0.2&bgmoonalt=30&bgmoonaz=190">해 고도 5°<span>해: 방위 240°(남서) / 달: 고도 30° · 방위 190°</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T14:00:00%2B09:00&bgsunalt=20&bgsunaz=210&bgmoon=0.25&bgmoonalt=35&bgmoonaz=120">해 고도 20°<span>해: 방위 210°(남남서) — 해를 화면 가장자리에 두면 고스트가 반대쪽에 / 달: 고도 35° · 방위 120°</span></a>
+
+<h2>저고도 달 (밤)</h2>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.5&bgmoonalt=1&bgmoonaz=180">보름달 고도 1° — 정남<span>지평선에 걸린 주황 달</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.5&bgmoonalt=5&bgmoonaz=180">보름달 고도 5° — 정남<span>노르스름한 낮은 달</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.5&bgmoonalt=20&bgmoonaz=180">보름달 고도 20° — 정남</a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.5&bgmoonalt=60&bgmoonaz=180">보름달 고도 60° — 정남<span>높은 달(비교)</span></a>
+
+<h2>크기 비교 (bgsize)</h2>
+<p>now = 옛 크기 · real = 실제 0.53°(지금 기본) · double = 실제의 2배 · window = 폰을 창문처럼</p>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.375&bgmoonalt=35&bgmoonaz=180&bgsize=now">볼록달 — 옛 크기<span>정남 고도 35°</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.375&bgmoonalt=35&bgmoonaz=180&bgsize=double">볼록달 — 실제의 2배<span>정남 고도 35°</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-06T01:00:00%2B09:00&bgmoon=0.375&bgmoonalt=35&bgmoonaz=180&bgsize=window">볼록달 — 창문<span>정남 고도 35°</span></a>
+<a href="./?bgdebug&bgspeed=0&bgtime=2026-11-05T12:20:00%2B09:00&bgsunalt=37&bgsunaz=180&bgmoon=0.27&bgmoonalt=30&bgmoonaz=100&bgsize=now">정오 해 — 옛 크기<span>해: 정남 고도 37° / 달: 동쪽 고도 30°</span></a>
+</body>
+</html>
