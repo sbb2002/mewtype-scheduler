@@ -1,6 +1,7 @@
 // 생일 음악 두 곡 완곡 판정과 보상 해제 기억.
 // 완곡 = 그 곡의 98% 이상을 소리를 켜고 재생했고(탐색으로 건너뛴 구간 · 반복 재생 · 볼륨 0 · 음소거 구간은 세지 않음) 곡 끝에서 소리가 켜진 채 다음 곡으로 넘어감.
-export const REWARD_KEY='bday-yuno-controls-unlocked-v1';
+import { REWARD_KEY, loadUnlocked, browserStorage } from './birthday.js';
+export { REWARD_KEY, loadUnlocked };
 const MIN_COVERAGE=.98,CARD_COVERAGE=.96,MAX_STEP=1.5,END_MARGIN=2;
 
 export function createListenTracker(trackCount=2){
@@ -27,18 +28,17 @@ export function createListenTracker(trackCount=2){
   };
 }
 
-export function loadUnlocked(storage){try{return storage.getItem(REWARD_KEY)==='1'}catch{return false}}
 export function saveUnlocked(storage){try{storage.setItem(REWARD_KEY,'1')}catch{}}
 
 // 저장이 막혀도 이번 방문에는 해제 상태가 유지된다.
 export function mountBirthdayReward({audio,onUnlock=()=>{}}){
   const tracker=createListenTracker();
-  let unlocked=loadUnlocked(localStorage),timer=0;
+  const storage=browserStorage();let unlocked=loadUnlocked(storage),timer=0;
   function tick(){
     const a=audio.audio;tracker.update({index:audio.index,time:a.currentTime,duration:a.duration,paused:audio.paused,silent:audio.silent});
     if(!tracker.complete())return;
     clearInterval(timer);timer=0;
-    if(!unlocked){unlocked=true;saveUnlocked(localStorage);onUnlock()}
+    if(!unlocked){unlocked=true;saveUnlocked(storage);onUnlock()}
   }
   // 탭을 숨겨도 음악은 계속되므로 RAF 가 아니라 타이머로 잰다.
   timer=setInterval(tick,250);

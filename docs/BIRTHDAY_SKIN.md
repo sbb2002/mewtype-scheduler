@@ -4,7 +4,7 @@
 
 음악 장면 후속 구현(v4.11.0, 2026-11-01 병합·배포 완료): 유노는 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md` 정본 v12의 Canvas 렌더러로 교체했다. 기존 v16/SVG 제작법은 아래의 **다른 멤버 원본을 찾는 참고**이며 현재 유노 실행 방식이 아니다. `bdaybeat.js`와 v16 fixture/self-check는 예전 박 계산의 회귀 검증용으로 보존하고 실행 장면에서는 import하지 않는다. 정적 HTML의 예전 장면 CSS 연결도 제거했다.
 
-유노의 현재 흐름은 매 방문 Noctural Run 0초 → 밝기 .03~.30 → 17.14초 첫 드럼에서 2.4 → 18.64초 정상 밝기 → 19초부터 컨트롤 공개다. 자동재생 거부 시 첫 탭으로 시작한다. 기존 4.5초 자동 보기는 없어졌고, 일반 화면에서도 음악은 이어진다. 음악·박 지도·사인·부위 이미지는 생일 판정 뒤 동적 로드한다. 음원 원본 2개는 `assets/birthday/bgm/`, 박 지도 JSON/uint8는 `beat/`, UFO는 `ufo.png`에 있다. 사인은 별도 이미지 파일이 없다.
+유노의 현재 흐름은 매 방문(두 곡 완곡 보상을 받은 브라우저는 인트로 없이 일반 화면으로 바로 — v4.11.10) Noctural Run 0초 → 밝기 .03~.30 → 17.14초 첫 드럼에서 2.4 → 18.64초 정상 밝기 → 19초부터 컨트롤 공개다. 자동재생 거부 시 첫 탭으로 시작한다. 기존 4.5초 자동 보기는 없어졌고, 일반 화면에서도 음악은 이어진다. 음악·박 지도·사인·부위 이미지는 생일 판정 뒤 동적 로드한다. 음원 원본 2개는 `assets/birthday/bgm/`, 박 지도 JSON/uint8는 `beat/`, UFO는 `ufo.png`에 있다. 사인은 별도 이미지 파일이 없다.
 
 검증 스크립트는 `scripts/verify_birthday_music.py`(앱·배치·밝기), `scripts/verify_birthday_lifecycle.py`(실제 자동재생 거부·터치·종료·자정·정리), `scripts/compare_birthday_pixels.py`(정본 함수와 7개 시각 비교), 순수 검증은 `bdaymusic.selfcheck.mjs`다. 캡처·수치는 작업 지시의 저장소 밖 `handoff/verify/`에만 쓴다. 생성 스크립트 `scripts/port_birthday_scene.py`는 정본 자료가 있는 운영자 PC에서만 재실행 가능하다.
 

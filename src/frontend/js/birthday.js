@@ -35,6 +35,13 @@ export function pickBirthdayScene(nowMs, search, birthdays, enabled) {
   return key && enabled && enabled[key] ? key : null;
 }
 
+// 생일 음악 완곡 보상 해제 기억(localStorage). 쓰기 · 완곡 판정은 bdayreward.js — 읽기만 여기 두는 이유:
+// 보상을 받은 방문자는 인트로를 건너뛰고 일반 화면으로 바로 연다(v4.11.10). 그 판정을 생일 장면 모듈을 불러오기 전에 해야 화면이 한 번 전체 화면으로 덮였다 풀리지 않는다.
+export const REWARD_KEY = "bday-yuno-controls-unlocked-v1";
+// localStorage 는 이름을 읽는 순간 예외가 날 수 있다(사이트 데이터 차단 등) — 그럴 땐 null. loadUnlocked(null) = false.
+export function browserStorage() { try { return globalThis.localStorage || null; } catch { return null; } }
+export function loadUnlocked(storage) { try { return storage.getItem(REWARD_KEY) === "1"; } catch { return false; } }
+
 /** 다음 KST 자정까지 남은 ms (자정 넘김 때 다시 판정하려고 타이머를 맞추는 데 쓴다) */
 export function msToNextKstMidnight(nowMs) {
   const shifted = nowMs + KST_OFFSET_MS;
