@@ -7,6 +7,8 @@ const YAW_FREEZE = 78 * DEG;   // 폰을 거의 눕히거나 세워 하늘 · �
 
 let on = false, have = false, needBase = true;
 let yawAcc = 0, lastYaw = null, rawPitch = 0, baseYaw = 0, basePitch = 0;
+// 절대 방위(바깥 보기) — 북쪽 = 0, 동쪽 = +π/2
+let absOn = false, absHave = false, absYaw = 0, absPitch = 0;
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -17,8 +19,27 @@ export function forwardOf(alpha, beta, gamma) {
   return [-ca * sg - sa * sb * cg, -sa * sg + ca * sb * cg, -cb * cg];
 }
 
+function setAbsolute(alpha, beta, gamma) {
+  const [fx, fy, fz] = forwardOf(alpha, beta, gamma);
+  const pitch = Math.asin(Math.max(-1, Math.min(1, fz)));
+  if (Math.abs(pitch) < YAW_FREEZE) absYaw = Math.atan2(fx, fy);
+  absPitch = pitch;
+  absHave = true;
+}
+
+/** 안드로이드(크롬 계열): alpha 가 북쪽 기준인 별도 이벤트 */
+function onAbsolute(e) {
+  if (e.alpha == null || e.beta == null || e.gamma == null) return;
+  setAbsolute(e.alpha, e.beta, e.gamma);
+}
+
 function onOrient(e) {
   if (e.alpha == null || e.beta == null || e.gamma == null) return;
+  if (absOn) {
+    // iOS: webkitCompassHeading(북 기준 시계 방향 방위)로 alpha 를 북쪽 기준으로 바꾼다. 일부 브라우저는 이 이벤트 자체가 절대값(absolute = true)
+    if (typeof e.webkitCompassHeading === "number" && e.webkitCompassHeading >= 0) setAbsolute(360 - e.webkitCompassHeading, e.beta, e.gamma);
+    else if (e.absolute === true) setAbsolute(e.alpha, e.beta, e.gamma);
+  }
   const [fx, fy, fz] = forwardOf(e.alpha, e.beta, e.gamma);
   const pitch = Math.asin(Math.max(-1, Math.min(1, fz)));
   if (Math.abs(pitch) < YAW_FREEZE) {
@@ -37,6 +58,17 @@ export function startGyro() {
   on = true;
   window.addEventListener("deviceorientation", onOrient);
 }
+
+/** 바깥 보기용 절대 방위 듣기 시작 */
+export function startAbsolute() {
+  startGyro();
+  if (absOn) return;
+  absOn = true;
+  if ("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute", onAbsolute);
+}
+
+/** 보는 방향의 실제 방위 { yaw: 북 = 0 · 동 = +π/2, pitch } — 나침반 값이 아직 없으면 null */
+export function gyroAbs() { return absHave ? { yaw: absYaw, pitch: absPitch } : null; }
 
 /** 지금 폰 자세를 새 기준(정면)으로 삼는다 */
 export function rebase() { baseYaw = yawAcc; basePitch = rawPitch; }

@@ -283,3 +283,24 @@ html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
 .bgvw__label { font-size: 14px; font-weight: 600; }
 .bgvw__sub { grid-column: 2; font-size: 12px; color: var(--color-text-muted); line-height: 1.4; }
 @media (prefers-reduced-motion: reduce) { .bgvw { transition: none; } }
+.bgvw-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--m-foot, 44px) + 56px);
+  z-index: 976;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.bgvw-toast.is-on { opacity: 1; transform: translate(-50%, 0); }

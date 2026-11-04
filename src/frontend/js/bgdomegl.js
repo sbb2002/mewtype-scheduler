@@ -10,7 +10,8 @@
 // 비용: 카메라가 안 움직이면 구름 흐름만 초당 6번 다시 그린다. 화면 갱신은 평소 30fps · 레인을 걷은 「배경 보기」(html.bg-peek) 중 60fps.
 // 평소엔 폰을 돌린 양의 35% 만 따라 돈다(카드를 보는 중엔 배경이 크게 휘돌지 않게). 해상도는 기기 배율 1.5 까지만.
 
-import { startGyro, gyroView, rebase } from "./bggyro.js";
+import { startGyro, gyroView, rebase, startAbsolute, gyroAbs } from "./bggyro.js";
+import { BGVIEW_EVENT } from "./bgview.js";
 
 const DEG = Math.PI / 180;
 const EYE = [0, 0.24, -0.42];          // 돔(반지름 1) 안 눈 위치 — bgdome.js 와 같다
@@ -327,6 +328,9 @@ export function createDomeGL(host, isPaused) {
   let W = 0, H = 0, dpr = 1, focal = 1, cx = 0, cy = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, gain = GAIN_IDLE, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let raf = 0, stopped = true, settling = false, lastShake = 0, theme = null, t0 = performance.now();
+  // 바깥 보기: 장면 +z = 북, +x = 동. 카메라 좌우 = 실제 방위, 위아래 = 실제 기울기(기준 자세 · 35% 축소 없음). 나침반이 없으면 남쪽을 본다
+  let outdoor = false;
+  const OUT_DEFAULT_YAW = Math.PI;
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -446,11 +450,19 @@ export function createDomeGL(host, isPaused) {
 
   function updateView(dt, now) {
     const peek = document.documentElement.classList.contains("bg-peek");
-    gain += ((peek ? GAIN_PEEK : GAIN_IDLE) - gain) * (1 - Math.exp(-dt / 0.35));
-    if (settling) rebase();   // 섞이는 동안은 매번 지금 자세를 정면으로 → 화면이 천천히 정면으로 돌아온다
-    const g = gyroView();
-    const tYaw = g ? g.yaw * gain : 0;
-    const tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, BASE_PITCH + (g ? g.pitch * gain : 0)));
+    gain += ((peek || outdoor ? GAIN_PEEK : GAIN_IDLE) - gain) * (1 - Math.exp(-dt / 0.35));
+    let tYaw, tPitch;
+    if (outdoor) {
+      const a = gyroAbs();
+      const target = a ? a.yaw : OUT_DEFAULT_YAW;
+      tYaw = yaw + Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw));   // 북쪽(±180°)을 넘을 때 한 바퀴 돌지 않게
+      tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, a ? a.pitch : BASE_PITCH));
+    } else {
+      if (settling) rebase();   // 섞이는 동안은 매번 지금 자세를 정면으로 → 화면이 천천히 정면으로 돌아온다
+      const g = gyroView();
+      tYaw = g ? g.yaw * gain : 0;
+      tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, BASE_PITCH + (g ? g.pitch * gain : 0)));
+    }
     const k = 1 - Math.exp(-dt / (settling ? 0.55 : 0.08));
     yaw += (tYaw - yaw) * k;
     pitch += (tPitch - pitch) * k;
@@ -486,6 +498,13 @@ export function createDomeGL(host, isPaused) {
   canvas.addEventListener("webglcontextrestored", () => {
     try { init(); resize(window.innerWidth, window.innerHeight); if (!isPaused()) start(); } catch { /* 복구 실패 — 마지막 화면 없이 바탕색만 */ }
   });
+  document.addEventListener(BGVIEW_EVENT, (e) => {
+    outdoor = e.detail === "outdoor";
+    settling = false;
+    if (outdoor) startAbsolute();
+    else { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); rebase(); }   // 실내로 돌아오면 지금 자세가 정면
+    lastGL = 0;
+  });
   new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
   function resize(w, h) {
@@ -509,7 +528,7 @@ export function createDomeGL(host, isPaused) {
   function shake(power = 1) {
     if (stopped) return;
     lastShake = performance.now();
-    settling = true;
+    settling = !outdoor;   // 바깥 보기는 정면이 실제 방위라 기준을 옮기지 않는다(무늬만 섞인다)
     for (const p of pieces) {
       const u = randUnit(), sp = rnd(0.35, 0.95) * power;
       for (let i = 0; i < 3; i++) p.v[i] += u[i] * sp;
@@ -521,7 +540,7 @@ export function createDomeGL(host, isPaused) {
 
   // 확인용(?bgdebug) — 콘솔에서 보는 방향 · 섞임 상태를 읽는다
   if (new URLSearchParams(window.location.search).has("bgdebug")) {
-    window.__bgdome = { get state() { return { yaw: yaw / DEG, pitch: pitch / DEG, gain, settling, stopped, gyro: gyroView(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { outdoor, yaw: yaw / DEG, pitch: pitch / DEG, gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
