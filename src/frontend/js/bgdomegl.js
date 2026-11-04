@@ -280,6 +280,9 @@ void main() {
   float b = dot(E, d), c = dot(E, E) - 1.0;
   vec3 q = E + (-b + sqrt(max(b * b - c, 0.0))) * d;
   float pwq = length(fwidth(q)) * 0.75;
+  // 바닥 원판(돔 아래쪽) 덮임 비율 — q.y 는 바닥 가장자리(q.y = 0)를 지나며 연속이라 픽셀 폭으로 나눠 경계를 섞는다(계단 현상 방지).
+  // 분기 밖에서 fwidth 를 구해 둔다(분기 안 도함수는 정의되지 않음).
+  float floorK = clamp(0.5 - q.y / max(fwidth(q.y), 1e-6), 0.0, 1.0);
 
   // ── 유리 + 하늘
   vec3 col = sky(d, 1.0 / (uF * uDpr));   // 기기 픽셀 하나의 각도
@@ -306,7 +309,7 @@ void main() {
   // 반광택 코팅: 넓은 하늘 반사와 미세한 표면 결. 픽셀보다 작은 결은 소거한다.
   float grazing = 1.0 - max(-d.y, 0.0);
   float fresnel = 0.035 + 0.24 * grazing * grazing * grazing * grazing * grazing;
-  if (q.y < 0.0) {
+  if (floorK > 0.0) {
     fc += uSkyBase * fresnel * uFloorRefl;
     float grain = sin(dot(P, vec2(213.0, 147.0))) + sin(dot(P, vec2(-157.0, 241.0)));
     fc *= 1.0 + 0.009 * grain * (1.0 - smoothstep(0.4, 1.1, pw * 300.0));
@@ -331,7 +334,7 @@ void main() {
     float tAxis = -dot(o, d.xz) / dxz2;
 
     // 도함수는 위에서 구해 두므로 하늘 픽셀의 바닥 재질 계산은 생략해도 안전하다.
-    if (q.y < 0.0) {
+    if (floorK > 0.0) {
       vec2 v = P - cc;
       float dd = length(v);
 
@@ -393,7 +396,7 @@ void main() {
   fc += uRim * cover(abs(r - 0.975), pw, 0.45 * uDpr) * 0.25;
   fc = fc / (vec3(1.0) + fc);   // 렌즈와 금속의 밝기 차를 남기는 바닥 전용 톤 매핑
 
-  vec3 outc = q.y < 0.0 ? fc : col;
+  vec3 outc = mix(col, fc, floorK);
   outc += (vec3(1.0) - outc) * (vec3(1.0) - exp(-beam));   // 하늘/돔 앞에도 빛기둥을 합성한다
   outc += (h2(gl_FragCoord.xy) - 0.5) / 255.0;   // 그라데이션 띠 방지
   outColor = vec4(outc, 1.0);
