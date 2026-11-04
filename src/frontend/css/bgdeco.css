@@ -192,6 +192,20 @@
 }
 @keyframes bgdm-cloud-flow { to { transform: translateX(-1280px); } }
 #bgdeco .bgdm-dome { position: absolute; inset: 0; }
+/* WebGL 장면(js/bgdomegl.js) — 하늘 · 격자 · 바닥을 캔버스 한 장에, 공중 무늬는 그 위 SVG 조각(transform 만 바뀐다) */
+#bgdeco .bgdm-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#bgdeco .bgdm-air { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+#bgdeco .bgdm-air__piece {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  overflow: visible;
+  opacity: .88;
+  will-change: transform;
+}
+:root[data-theme="light"] #bgdeco .bgdm-air__piece { opacity: .95; }
 #bgdeco .bgdm-grid {
   fill: none;
   stroke: #fff;

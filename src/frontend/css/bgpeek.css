@@ -1,0 +1,96 @@
+/* bgpeek.css — (bg-dome 시험) 폰 전용 「배경 보기」. 동작은 js/bgpeek.js.
+   ① 예고 레인(카드가 놓이는 판)을 반투명하게 — 머리줄(이름표)과 카드 자체는 그대로 불투명.
+   ② 레인에서 위로 튕기면(html.bg-peek) 화면 구역이 가까운 가장자리로 걷힌다 — 소식 막대 · 레인 = 위, 멤버 점 띠 · 푸터 · 떠 있는 플레이어 = 아래.
+   ③ 걷힌 동안 화면 어디든 누르면(#bg-peek-catch) 제자리로 돌아온다.
+   움직임은 transform 대신 개별 속성 translate 를 쓴다 — 플레이어 프레임 등이 인라인 transform 을 쓰고 있어 겹쳐도 덮어쓰지 않게.
+   birthday.css 의 opacity 전환(온전히 보기)보다 뒤에 읽혀야 해서 index.html 맨 끝에 둔다 — 그래서 transition 에 opacity 도 같이 적는다. */
+
+@media (max-width: 767px) {
+  :root {
+    --bgp-lane-alpha: 46%;                              /* 레인 판의 불투명도(나머지는 배경이 흐리게 비친다) */
+    --bgp-head-alpha: 70%;                              /* 머리줄(이름표) — 카드가 밑으로 지나가도 이름이 읽히게 조금 더 진하게 */
+    --bgp-blur: blur(16px) saturate(1.45);              /* 유리 뒤 배경을 흐리고 채도를 살린다 */
+    --bgp-edge: rgba(255, 255, 255, 0.16);              /* 유리 테두리 */
+    --bgp-shine: rgba(255, 255, 255, 0.14);             /* 윗변 안쪽 하이라이트 */
+    --bgp-drop: rgba(0, 0, 0, 0.28);
+  }
+  :root[data-theme="light"] {
+    --bgp-lane-alpha: 52%;
+    --bgp-head-alpha: 74%;
+    --bgp-edge: rgba(255, 255, 255, 0.6);
+    --bgp-shine: rgba(255, 255, 255, 0.7);
+    --bgp-drop: rgba(120, 40, 80, 0.14);
+  }
+  :root {
+    --bgp-out: 560ms cubic-bezier(0.32, 0.72, 0, 1);    /* 걷힐 때 — 빠르게 출발해 가장자리에서 미끄러지듯 */
+    --bgp-in: 520ms cubic-bezier(0.2, 0.8, 0.2, 1);     /* 돌아올 때 — 부드럽게 감속해 제자리에 안착 */
+  }
+
+  /* ① 유리 레인(글래스모피즘) — 반투명 바탕 + 뒤 배경 흐림 + 밝은 테두리 · 윗변 하이라이트. 무한 회전용 복제 레인(.lane--clone)도 같은 규칙.
+     카드(.tcard) 자체는 불투명 그대로 — 글자 대비를 지킨다 */
+  #board .lane {
+    background-color: color-mix(in srgb, var(--color-bg-secondary) var(--bgp-lane-alpha), transparent);
+    -webkit-backdrop-filter: var(--bgp-blur);
+    backdrop-filter: var(--bgp-blur);
+    border-color: var(--bgp-edge);
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 var(--bgp-shine), 0 10px 28px -8px var(--bgp-drop);
+  }
+  #board .lane .lane__header {
+    background-color: color-mix(in srgb, var(--color-bg-secondary) var(--bgp-head-alpha), transparent);
+    -webkit-backdrop-filter: var(--bgp-blur);
+    backdrop-filter: var(--bgp-blur);
+    border-bottom-color: var(--bgp-edge);
+  }
+  /* 라이브 레인은 padding-box 그라데이션으로 바탕을 칠하므로 그 바탕만 반투명 값으로 바꾼다(테두리 · 글로우는 timetable.css 그대로) */
+  #board .lane.lane--live:not(.tt__lane):not(.lane--later) {
+    background:
+      linear-gradient(color-mix(in srgb, var(--color-bg-secondary) var(--bgp-lane-alpha), transparent), color-mix(in srgb, var(--color-bg-secondary) var(--bgp-lane-alpha), transparent)) padding-box,
+      linear-gradient(180deg, var(--color-live), color-mix(in srgb, var(--color-live) 35%, var(--color-border)) 14%, var(--color-border) 32%) border-box;
+  }
+
+  /* ② 걷히기 · 돌아오기 — 평소에는 translate 0 이라 아무 영향 없다 */
+  html #notice, html #board, html #pager-dots, html #foot, html #player-frame {
+    transition: translate var(--bgp-in), opacity var(--bgp-in);
+  }
+  html #board { transition-delay: 50ms; }               /* 돌아올 때는 가장자리 것들이 먼저, 레인이 살짝 늦게 내려와 앉는다 */
+
+  html.bg-peek #notice, html.bg-peek #board, html.bg-peek #pager-dots, html.bg-peek #foot, html.bg-peek #player-frame {
+    transition: translate var(--bgp-out), opacity var(--bgp-out);
+    pointer-events: none;
+  }
+  html.bg-peek #board { transition-delay: 0ms; }        /* 걷힐 때는 튕긴 레인이 먼저 */
+  html.bg-peek #notice, html.bg-peek #pager-dots, html.bg-peek #foot, html.bg-peek #player-frame { transition-delay: 40ms; }
+
+  html.bg-peek #notice { translate: 0 calc(-100% - var(--gap) - 12px); opacity: 0; }
+  html.bg-peek #board { translate: 0 -100dvh; opacity: 0; }
+  html.bg-peek #pager-dots { translate: 0 calc(100% + var(--m-foot) + 12px); opacity: 0; }
+  html.bg-peek #foot { translate: 0 calc(100% + 12px); opacity: 0; }
+  html.bg-peek #player-frame { translate: 0 100dvh; opacity: 0; }
+
+  /* ③ 걷힌 동안 화면 전체를 덮는 투명 판 — 누르면 돌아온다. 밑의 카드 · 링크가 눌리지 않게 막는 역할도 한다 */
+  #bg-peek-catch {
+    position: fixed;
+    inset: 0;
+    z-index: 970;                                       /* 네트워크 안내(960) · 길게 눌러 복사 안내(959) 위 */
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  #bg-peek-catch[hidden] { display: none; }
+  #bg-peek-catch:focus { outline: none; }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  /* 움직임 줄이기: 미끄러지지 않고 짧게 사라졌다 나타난다 */
+  html #notice, html #board, html #pager-dots, html #foot, html #player-frame,
+  html.bg-peek #notice, html.bg-peek #board, html.bg-peek #pager-dots, html.bg-peek #foot, html.bg-peek #player-frame {
+    transition: opacity 180ms linear;
+    transition-delay: 0ms;
+  }
+  html.bg-peek #notice, html.bg-peek #board, html.bg-peek #pager-dots, html.bg-peek #foot, html.bg-peek #player-frame { translate: none; opacity: 0; }
+}

@@ -50,6 +50,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 socketserver.ThreadingTCPServer.allow_reuse_address = True
+# 대기열 기본값 5 는 tailscale serve(HTTP/2 로 파일을 한꺼번에 요청) 앞에서 넘쳐 연결이 거부된다 → 일부 CSS · main.js 를 못 받아 화면이 비었다(2026-11-04)
+socketserver.ThreadingTCPServer.request_queue_size = 128
 with socketserver.ThreadingTCPServer((HOST, PORT), functools.partial(Handler, directory=str(ROOT))) as server:
     print(f"http://{HOST}:{PORT}/", flush=True)
     server.serve_forever()

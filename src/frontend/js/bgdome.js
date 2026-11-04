@@ -36,8 +36,8 @@ export function domeGeometry(W, H) {
   }
   const samples = (n, fn) => Array.from({ length: n + 1 }, (_, i) => fn(i / n));
   const latitudes = [18, 40, 62].map((lat) => path(samples(360, (t) => project(lat * DEG, (-180 + t * 360) * DEG))));
-  // 경도선은 맨 위 위도선에서 멈춘다 — 극점 한 곳으로 모이면 방사형 빛살처럼 보인다
-  const longitudes = Array.from({ length: 12 }, (_, i) => path(samples(120, (t) => project(t * 62 * DEG, i * 30 * DEG))));
+  // 경도선은 천정까지 잇는다(2026-11-04 운영자 결정 — 11-02 의 「62°에서 멈춤」을 거뒀다)
+  const longitudes = Array.from({ length: 12 }, (_, i) => path(samples(150, (t) => project(t * 90 * DEG, i * 30 * DEG))));
   // 앞쪽 적도가 돔과 바닥의 접점이다. 같은 투영으로 격자 끝과 정확히 맞춘다.
   const rimPoints = samples(240, (t) => project(0, (-88 + t * 176) * DEG));
   const rim = path(rimPoints);

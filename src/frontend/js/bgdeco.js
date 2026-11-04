@@ -7,6 +7,8 @@
 import { layout, scribblePath, makeBody, impulse, step, shakePower, SHAKE_GAP_MS } from "./bglogic.js";
 import { buildVirtualScene, observeMemberAccent } from "./bgvirtual.js";
 import { buildDomeScene } from "./bgdome.js";
+import { createDomeGL } from "./bgdomegl.js";
+import { startGyro } from "./bggyro.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const RAD2DEG = 180 / Math.PI;
@@ -21,6 +23,7 @@ const variant = ["a", "b", "c", "d"].includes(requested) ? requested : null;
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 let scene = null, momentT = 0, momentEndT = 0;
 let sensorArmed = false, sensorAsked = false;
+let domeGL = null, domeGLTried = false;   // ?bg=d 의 WebGL 장면(자이로 둘러보기). 못 만들면 SVG 장면
 const paused = () => document.hidden || reduce() || document.documentElement.hasAttribute("data-bday");
 const reduce = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -54,7 +57,16 @@ function build() {
   cancelAnimationFrame(raf); raf = 0;
   if (svg) svg.remove();
   if (variant === "d") {
-    // 구름은 재생 위치를 유지하고, 정지된 유리만 현재 화면 크기로 다시 투영한다.
+    // WebGL 장면이 어떤 이유로든 실패하면 페이지 전체가 멈추지 않게 SVG 장면으로 물러난다
+    if (!domeGLTried) {
+      domeGLTried = true;
+      try { domeGL = createDomeGL(host, paused); } catch (err) { console.warn("[bgdome] WebGL 장면 생성 실패 — SVG 로 그린다", err); domeGL = null; }
+    }
+    if (domeGL) {
+      try { svg = null; items = []; bodies = []; els = []; domeGL.resize(W, H); return; }
+      catch (err) { console.warn("[bgdome] WebGL 그리기 실패 — SVG 로 그린다", err); domeGL.destroy?.(); domeGL = null; }
+    }
+    // (WebGL2 를 못 쓰는 기기) 구름은 재생 위치를 유지하고, 정지된 유리만 현재 화면 크기로 다시 투영한다.
     scene = buildDomeScene(host, W, H);
     ({ svg, items, els } = scene);
     bodies = items.map((it) => ({ ...makeBody(it, W, H), home: true, m: it.u * 1.5 }));
@@ -116,6 +128,7 @@ function frame(t) {
 
 /** 흔들기 — power 는 shakePower() 값(기본 1). 연속으로 불러도 속도가 쌓인다. */
 export function shake(power = 1) {
+  if (domeGL) { if (!paused()) domeGL.shake(power); return; }
   if (!svg || paused()) return;
   const now = performance.now();
   if (now - lastShake < SHAKE_GAP_MS) return;
@@ -146,6 +159,7 @@ function scheduleMoment() {
 function syncMotion() {
   const stop = paused();
   host.classList.toggle("bgd-paused", stop);
+  if (domeGL) { domeGL.setPaused(stop); if (!stop) enableSensor(); return; }
   if (stop) {
     cancelAnimationFrame(raf); raf = 0;
     clearTimeout(momentT); clearTimeout(momentEndT);
@@ -167,14 +181,20 @@ function onMotion(ev) {
 /** 센서 켜기. iOS 는 사용자 동작 안에서 권한을 물어야 해서 첫 터치 때 한 번 요청한다. 안드로이드 · 데스크톱은 바로 듣는다(데스크톱은 이벤트가 안 온다). */
 function enableSensor() {
   if (sensorOn || sensorArmed || sensorAsked || typeof DeviceMotionEvent === "undefined") return;
-  const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); };
+  const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); if (domeGL) startGyro(); };
   if (typeof DeviceMotionEvent.requestPermission !== "function") { attach(); return; }
   sensorArmed = true;
   const ask = () => {
     if (paused()) return;
     document.removeEventListener("pointerup", ask, true);
     sensorArmed = false; sensorAsked = true;
-    DeviceMotionEvent.requestPermission().then((r) => { if (r === "granted") attach(); }).catch(() => {});   // 거절 · 실패하면 흔들기만 없다
+    // iOS: 흔들기(devicemotion)와 둘러보기(deviceorientation) 권한을 같은 터치 안에서 함께 묻는다
+    const ori = domeGL && typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"
+      ? DeviceOrientationEvent.requestPermission().catch(() => "denied") : Promise.resolve("granted");
+    DeviceMotionEvent.requestPermission().then((r) => {
+      if (r === "granted") { sensorOn = true; window.addEventListener("devicemotion", onMotion); }
+    }).catch(() => {});   // 거절 · 실패하면 흔들기만 없다
+    ori.then((r) => { if (r === "granted" && domeGL) startGyro(); });
   };
   document.addEventListener("pointerup", ask, true);
 }
