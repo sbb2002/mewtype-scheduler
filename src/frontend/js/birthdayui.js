@@ -4,11 +4,12 @@
 //
 // 「온전히 보기」: 🎂 버튼 하나 → 화려한 폭죽과 함께 화면 UI 를 부드럽게 숨기고 장면만 보여 준다(다시 누르기 · Esc · 빈 곳 누르기로 복귀).
 // 방문마다 곡 0초에서 인트로를 시작하고 첫 드럼 뒤 음악 컨트롤을 공개한다.
+// 단, 두 곡 완곡 보상을 이미 받은 브라우저는 인트로 없이 일반 화면(유리 패널 + 배경 장면)으로 바로 연다(v4.11.10 운영자 지시) — 🎂 로 들어가면 보상 패널이 이미 열려 있다.
 // 버튼 위치: 기본 = 오른쪽, 세로 73% 쯤(운영자가 정한 자리 — DEFAULT_POS. 멤버 줄 · 풋터 아래로는 못 내려간다). 0.5초 꾹 누르면 끌어서 옮길 수 있고, 놓으면 가까운 왼쪽/오른쪽 가장자리에 붙는다.
 // 위치만 localStorage "bday-btn" 에 저장한다(생일 스킨이 뜬 날에만 쓰인다).
 
 import { BIRTHDAYS, BIRTHDAY_SCENES_ENABLED, FALLBACK_CHANNELS } from "./config.js";
-import { pickBirthdayScene, msToNextKstMidnight } from "./birthday.js";
+import { pickBirthdayScene, msToNextKstMidnight, loadUnlocked, browserStorage } from "./birthday.js";
 import { handOffMainMusic, mainMusicActive } from "./musicpriority.js";
 
 // 장면이 완성된 멤버만 등록한다(config.js BIRTHDAY_SCENES_ENABLED 와 같이 켠다)
@@ -209,8 +210,8 @@ function setup(k) {
   document.body.prepend(host);
   document.documentElement.setAttribute("data-bday", k);
   buildUi(k);
-  document.documentElement.setAttribute('data-bday-intro','');
-  setFull(true);
+  const skipIntro = loadUnlocked(browserStorage());   // 보상을 받은 방문자 = 인트로 생략, 일반 화면 그대로
+  if (!skipIntro) { document.documentElement.setAttribute('data-bday-intro',''); setFull(true); }
   musicCss=el('link',{rel:'stylesheet',href:new URL('../css/bdayplayer.css',import.meta.url).href});document.head.append(musicCss);
   Promise.all([load(),import('./bdayaudio.js'),import('./bdayplayer.js'),import('./bdayguard.js')]).then(async ([mount,a,p,g]) => {
     if (mySeq !== seq || !host) return;       // 그새 정리됐으면(자정 · 끄기) 무시
@@ -222,7 +223,7 @@ function setup(k) {
     music=audio;scene.setTrack(await audio.beat);
     await scene.whenReady;
     if(mySeq!==seq)return;
-    player=p.mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced});
+    player=p.mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced,skipIntro});
     guard=g.mountBirthdayGuard([host,ui,player.shell]);guard.setActive(fullView);
   }).catch((e) => {
     console.error("[birthday]", e);

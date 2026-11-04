@@ -35,9 +35,9 @@ function setTransportIcon(svg,name){
  svg.firstChild.setAttribute('transform',name==='play'?'translate(0.6666667 0)':'translate(0 0)');
 }
 function transportIcon(name){const svg=icon(TRANSPORT_ICONS[name]);svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('class','bday-transport-icon');svg.setAttribute('focusable','false');setTransportIcon(svg,name);return svg}
-export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
+export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced,skipIntro=false}) {
   const events=new AbortController(),signal=events.signal,root=document.documentElement;
-  let dead=false,raf=0,idle=0,intro=true,lastIndex=-1,ready=false,starting=false,unsub,expandPending=false,expandTimer=0,freshTimer=0;
+  let dead=false,raf=0,idle=0,intro=!skipIntro,lastIndex=-1,ready=false,starting=false,unsub,expandPending=false,expandTimer=0,freshTimer=0;
   const el=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text)n.textContent=text;return n};
   const shell=el('div','bday-music');shell.id='bday-music';
   const bar=el('div','bday-music__bar');bar.setAttribute('role','group');bar.setAttribute('aria-label','생일 음악');
@@ -96,9 +96,13 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
     const action={' ':()=>audio.toggle(),ArrowLeft:reward.unlocked?()=>audio.previous():null,ArrowRight:reward.unlocked?()=>audio.next():null,ArrowUp:()=>audio.setVolume(audio.volume+.05),ArrowDown:()=>audio.setVolume(audio.volume-.05),m:()=>audio.mute(),M:()=>audio.mute()}[e.key];
     if(action){e.preventDefault();Promise.resolve(action()).catch(()=>{prompt.hidden=false})}
   },{signal});
-  async function start(){if(starting||dead)return;starting=true;try{audio.audio.currentTime=0;await audio.play();if(dead)return;prompt.hidden=true;ready=true;root.setAttribute('data-bday-started','')}catch(e){if(!dead){prompt.hidden=false;if(e.name!=='NotAllowedError')prompt.textContent='탭하여 다시 시작 ♪'}}finally{starting=false}}
+  async function start(){if(starting||dead)return;starting=true;try{audio.audio.currentTime=0;await audio.play();if(dead)return;prompt.hidden=true;ready=true;root.setAttribute('data-bday-started','')}catch(e){if(!dead&&!skipIntro){prompt.hidden=false;if(e.name!=='NotAllowedError')prompt.textContent='탭하여 다시 시작 ♪'}}finally{starting=false}}
   const first=e=>{if(!ready&&prompt.hidden===false){if(e.type==='keydown'&&!['Enter',' '].includes(e.key))return;e.preventDefault();e.stopPropagation();start()}};
-  document.addEventListener('pointerdown',first,{signal,capture:true});document.addEventListener('keydown',first,{signal,capture:true});
+  // 인트로를 건너뛴 방문(보상 받음)은 일반 화면이라 「탭하여 시작」 을 띄우지 않는다. 자동재생이 막혔으면 첫 조작에 음악을 켜되 그 조작은 가로채지 않는다(카드 누르기 등 그대로).
+  // 터치는 손가락을 뗄 때 사용자 조작으로 인정되는 브라우저가 있어 pointerup 에서도 한 번 더 시도한다.
+  const quiet=()=>{if(!ready&&!starting&&!dead)start()};
+  if(skipIntro)for(const type of ['pointerdown','pointerup','keydown'])document.addEventListener(type,quiet,{signal,capture:true});
+  else{document.addEventListener('pointerdown',first,{signal,capture:true});document.addEventListener('keydown',first,{signal,capture:true})}
   function tick(){
     raf=0;
     if(dead)return;
@@ -108,6 +112,8 @@ export function mountBirthdayPlayer(audio,scene,host,ui,{setFull,reduced}) {
     if(intro&&!document.hidden)raf=requestAnimationFrame(tick);
   }
   document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else if(intro&&!raf&&!dead)raf=requestAnimationFrame(tick)},{signal});
-  root.setAttribute('data-bday-intro','');setFull(true);raf=requestAnimationFrame(tick);start();
+  if(skipIntro){root.setAttribute('data-bday-revealed','');scene.setBrightness(1);host.style.filter=''}
+  else{root.setAttribute('data-bday-intro','');setFull(true);raf=requestAnimationFrame(tick)}
+  start();
   return {shell,get intro(){return intro},destroy(){dead=true;cancelAnimationFrame(raf);clearTimeout(idle);clearTimeout(expandTimer);clearTimeout(freshTimer);reward.destroy();story.destroy();drag.destroy();events.abort();unsub();shell.remove();host.style.filter='';for(const k of ['data-bday-intro','data-bday-started','data-bday-revealed'])root.removeAttribute(k)}};
 }
