@@ -52,11 +52,12 @@ export function sunPosition(date, lat, lon) {
 export function moonPosition(date, lat, lon) {
   const lw = RAD * -lon, phi = RAD * lat, d = toDays(+date);
   const c = moonCoords(d), H = siderealTime(d, lw) - c.ra;
-  let h = altitude(H, phi, c.dec);
+  const geometricAlt = altitude(H, phi, c.dec);
+  let h = geometricAlt;
   const parallactic = Math.atan2(Math.sin(H), Math.tan(phi) * Math.cos(c.dec) - Math.sin(c.dec) * Math.cos(H));
   h += refraction(h);
   const azS = azimuthS(H, phi, c.dec);
-  return { alt: h, az: toNorthAz(azS), azS, dist: c.dist, parallactic };
+  return { alt: h, apparentAlt: h, geometricAlt, az: toNorthAz(azS), azS, dist: c.dist, parallactic };
 }
 
 /** 달 밝은 면 { fraction(0 ~ 1), phase(0 = 삭 · 0.5 = 망), angle(밝은 쪽 가장자리 방향) } — 위치와 무관(지구 어디서나 같다) */

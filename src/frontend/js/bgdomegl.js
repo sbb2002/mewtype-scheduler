@@ -13,7 +13,7 @@
 import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
 import { BGVIEW_EVENT } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
-import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial } from "./bgastro.js";
+import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
 const DEG = Math.PI / 180;
 // 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
@@ -44,8 +44,19 @@ const SIZE_MODE = DEBUG && ["now", "real", "double", "window"].includes(QS.get("
 const SUN_MOON_R = { now: [1.2, 1.6], real: [0.2665, 0.2590], double: [0.533, 0.518], window: [0.2665, 0.2590] }[SIZE_MODE];   // 각반지름(도) [해, 달]
 const WINDOW_HFOV = 12.4;   // 도 — 폭 약 6.5cm 화면을 30cm 에서 볼 때(추정값, 기기 · 습관마다 다르다)
 const MOON_TEST = DEBUG && QS.get("bgmoon") != null && Number.isFinite(Number(QS.get("bgmoon"))) ? ((Number(QS.get("bgmoon")) % 1) + 1) % 1 : null;
+// Debug (bgdebug): bgsunalt/bgmoonalt = apparent degrees; bgsunaz/bgmoonaz = azimuth degrees clockwise from north.
+// bgcloud = fixed density 0..1; bglight=disc|bloom|rays|full isolates stages. bgspeed=0 freezes clouds too.
+const debugNumber = (key) => DEBUG && !NORMAL && QS.has(key) && Number.isFinite(Number(QS.get(key))) ? Number(QS.get(key)) : null;
+const AIR = { pressure: 1, aerosol: 0.05, alpha: 1.3 }; // Design atmosphere, not measured weather.
+const EXPOSURE = { sun: 40, moon: 1 }; // Separate from optical depth.
+const airMass = (h) => { h = Math.max(0, Math.min(90, h)); return 1 / (Math.sin(h * DEG) + 0.50572 * Math.pow(h + 6.07995, -1.6364)); };
+// Relative linear-light RGB at 60 degrees; preserve attenuation as well as channel ratios.
+const transmission = (h) => [650, 550, 450].map(w => Math.exp(-(airMass(h) - airMass(60)) *
+  (0.10 * AIR.pressure * Math.pow(550 / w, 4) + AIR.aerosol * Math.pow(550 / w, AIR.alpha))));
+// Artistic exposure compensation preserves extinction hue without losing low luminaries.
+const exposedHue = (rgb) => rgb.map(v => v / Math.max(...rgb, 1e-6));
 const T_REAL0 = Date.now();
-const nowMs = () => (Number.isFinite(T_START) ? T_START + (Date.now() - T_REAL0) * T_SPEED : Date.now());
+const nowMs = () => (Number.isFinite(T_START) ? T_START : T_REAL0) + (Date.now() - T_REAL0) * T_SPEED;
 
 // 바깥 보기 하늘 단계 — 해 고도(도)가 이 값일 때 그 이미지 한 벌. 사이 값은 이웃 두 벌을 섞는다. 노을 한 벌을 해 뜰 때도 같이 쓴다
 // 해가 올라가는 중이면 노을(twilight) 자리에 여명(dawn)을 쓴다(2026-11-04 운영자 지시 — 해 뜰 때 · 질 때 색감이 다르다).
@@ -85,6 +96,8 @@ uniform vec4 uSunShape, uMoonShape;   // 천체 접평면의 위쪽 방향(xyz),
 uniform vec3 uSunCol, uSunGlow, uSunHorizon, uMoonCol;
 uniform vec4 uSunAir;   // 근접 번짐, 구름 산란, 저고도 온기, 원반 노출
 uniform vec4 uSolar;   // 낮 산란, 지평 대기광, 해 가시성, 천정의 깊이
+uniform vec4 uFlare;
+uniform vec3 uSunTrans; uniform vec4 uOptics; uniform float uCloudTest;
 uniform vec4 uLunar;   // 달 가시성, 원반 불투명도, 빛 번짐 지수, 빛 번짐 세기
 uniform float uMoonLight, uStarGain, uEarthshine;
 uniform mat3 uEqM;
@@ -118,10 +131,52 @@ vec3 discTangent(vec3 d, vec3 center, vec4 shape, float radius) {
   float scale = 1.0 - 0.175 * shape.w + 0.04 * shape.w * clamp(y / radius, -1.0, 1.0);
   return t + shape.xyz * (y / scale - y);
 }
-// 번짐은 원반보다 완만하게 눌리고 가로로 살짝 퍼진다. 원반 밖에서도 분모가 작아지지 않는다.
-float discGlow(float facing, vec3 d, vec4 shape) {
-  float y = dot(d, shape.xyz);
-  return clamp(facing + shape.w * (0.06 * (1.0 - facing * facing) - 0.26 * y * y), 0.0, 1.0);
+// Gaussian sigma in radians, using chord squared (stable near a tiny disc).
+float angularBloom(float facing, float sigma) {
+  return exp(-max(2.0 * (1.0 - facing), 0.0) / (2.0 * sigma * sigma));
+}
+float cloudAtSun() {
+  if (uCloudTest >= 0.0) return uCloudTest;
+  float el = asin(clamp(uSunDir.y, -1.0, 1.0));
+  vec2 uv = vec2(atan(uSunDir.x, uSunDir.z) / TAU * 3.0 + uTime / 1280.0,
+    clamp((70.0 * D - el) / (82.0 * D), 0.002, 0.998));
+  float a = textureLod(uCloud, uv, 0.0).a;
+  if (uMix > 0.0) a = mix(a, textureLod(uCloud2, uv, 0.0).a, uMix);
+  return a;
+}
+// Lens layer after foreground, before HUD/dither. Occlusion is sampled at the source.
+vec3 solarOptics(vec3 col, vec2 p) {
+  if (uFlare.z <= 0.0 || uOptics.w < 0.5) return col;
+  vec2 source = uFlare.xy, offset = source - uC;
+  float clear = 1.0 - cloudAtSun();
+  float gain = uFlare.z * clear * clear;
+  float view = uFlare.w;
+  vec2 v = (p - source) / uF;
+  float rho = length(v), pixel = 1.0 / (uF * uDpr);
+  float rays = 0.0;
+  if (rho > 0.45 * D && rho < 18.0 * D) {
+    float phi = atan(v.y, v.x);
+    // cos(8 phi) has eight positive lobes; fixed phase, no temporal noise.
+    float exponent = min(3.0, pow(rho / (4.0 * pixel), 2.0));
+    float lobe = pow(max(0.0, cos(8.0 * (phi - 0.13))), exponent);
+    rays = lobe * exp(-pow(rho / (uOptics.y * D), 2.0)) * smoothstep(0.45 * D, 0.9 * D, rho);
+  }
+  vec3 light = uSunTrans * (rays * uOptics.z * view);
+  if (uOptics.w > 1.5) {
+    light += uSunTrans * (0.025 * exp(-pow(rho / (6.0 * D), 2.0)) * view);
+    float separation = smoothstep(0.0, 5.0 * D, length(offset) / uF);
+    for (int j = 0; j < 3; j++) {
+      float k = j == 0 ? -0.25 : (j == 1 ? -0.65 : -1.1);
+      float radius = (j == 0 ? 0.65 : (j == 1 ? 1.0 : 1.5)) * D;
+      vec2 g = (p - uC - k * offset) / uF;
+      float r2 = dot(g, g) / (radius * radius);
+      if (r2 > 18.0) continue;
+      float ghost = exp(-0.5 * r2);
+      vec3 tint = j == 0 ? vec3(0.55, 0.8, 0.45) : (j == 1 ? vec3(0.35, 0.65, 0.85) : vec3(0.65, 0.8, 0.4));
+      light += tint * uSunTrans * ghost * 0.025 * separation;
+    }
+  }
+  return (col + light * gain) / (1.0 + max(light.r, max(light.g, light.b)) * gain);
 }
 
 // 달: 각반지름 uMoonR. 복원한 구면에서 해 방향을 써 위상 · 표면도 함께 눌린다.
@@ -150,7 +205,7 @@ float moonDisc(vec3 t, float facing, float pxAng) {
   return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
 }
 
-vec3 sky(vec3 d, float pxAng) {
+vec3 sky(vec3 d, float pxAng, vec2 discPx) {
   float el = asin(clamp(d.y, -1.0, 1.0));
   float u = atan(d.x, d.z) / TAU * 3.0;
   float v = clamp((70.0 * D - el) / (82.0 * D), 0.002, 0.998);
@@ -159,7 +214,7 @@ vec3 sky(vec3 d, float pxAng) {
   vec4 B = uMix > 0.0 ? skySet(uSky2, uCloud2, uSkyM2, uSkyO2, uCldM2, uCldO2, u, v, el) : A;
   vec3 c = mix(A.rgb, B.rgb, uMix);
   if (uOut < 0.5) return c;
-  float cloud = mix(A.a, B.a, uMix);
+  float cloud = uCloudTest >= 0.0 ? uCloudTest * uCldA : mix(A.a, B.a, uMix);
   float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
 
   float sd = dot(d, uSunDir), md = max(dot(d, uMoonDir), 0.0);
@@ -202,36 +257,33 @@ vec3 sky(vec3 d, float pxAng) {
   // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
   vec3 mt = discTangent(d, uMoonDir, uMoonShape, uMoonR);
   float mf = dot(d, uMoonDir);
-  vec4 m = moon(mt, mf, pxAng);
+  vec4 m = moon(mt, mf, discPx.y);
   float mvis = above * uLunar.x * (1.0 - 0.85 * cloud);
-  c = mix(c, c * 0.62, moonDisc(mt, mf, pxAng) * uEarthshine * mvis);   // 어두운 면 = 그 자리 하늘색을 살짝 어둡게(고정색이 아니라 하늘에 맞춘다) — 밤에만
+  c = mix(c, c * 0.62, moonDisc(mt, mf, discPx.y) * uEarthshine * mvis);   // 어두운 면 = 그 자리 하늘색을 살짝 어둡게(고정색이 아니라 하늘에 맞춘다) — 밤에만
   c = mix(c, m.rgb, m.a * uLunar.y * mvis);
-  c += uMoonCol * pow(discGlow(md, d, uMoonShape), uLunar.z) * uLunar.w * mvis;
+  c += uMoonCol * angularBloom(md, uLunar.z * D) * uLunar.w * mvis;
+  // 바깥쪽 넓고 옅은 광륜(11-05 Claude 조정) — 낮은 달을 원반 크기 그대로 두고도 「크게 · 따뜻하게」 찾을 수 있게. 폭 = 안쪽의 3배
+  c += uMoonCol * angularBloom(md, uLunar.z * 3.0 * D) * uLunar.w * 0.32 * mvis;
 
   // Disc radius stays selectable; angular bloom supplies the apparent photographic size.
   float sunR = sin(uSunR);
-  float sr;
-  if (uSunShape.w > 0.0) sr = length(discTangent(d, uSunDir, uSunShape, sunR)) / sunR;
-  else sr = sqrt(max(2.0 * (1.0 - sd), 0.0)) / sunR;
-  float disc = clamp((1.0 - sr) * sunR / pxAng + 0.5, 0.0, 1.0) * step(0.0, sd);
-  float limb = smoothstep(0.35, 1.0, sr);
-  vec3 core = vec3(1.0);
+  float sr = length(discTangent(d, uSunDir, uSunShape, sunR)) / sunR;
+  float disc = clamp((1.0 - sr) * sunR / discPx.x + 0.5, 0.0, 1.0) * step(0.0, sd);
+
   // 구름 알파는 합성 강도를 뺀 밀도로 복원한다. 짙은 구름은 직사광을 가리고 산란광은 남긴다.
   float density = clamp(cloud / max(uCldA, 0.001), 0.0, 1.0);
   float direct = (1.0 - density) * (1.0 - density);
-  float sg = discGlow(max(sd, 0.0), d, uSunShape);
-  float inner = pow(sg, mix(360.0, 260.0, warm));
-  float scatter = pow(sg, mix(80.0, 48.0, warm));
-  float outer = pow(sg, mix(24.0, 12.0, warm));
-  // Smooth overlapping tails, independent of disc radius; thin cloud edges retain scattered light.
+  // Weak low-altitude width correction is artistic, independent of extinction and disc radius.
+  float inner = angularBloom(sd, mix(1.4, 1.9, warm) * D);
+  float scatter = angularBloom(sd, mix(3.6, 4.8, warm) * D);
+  float outer = angularBloom(sd, mix(7.0, 8.5, warm) * D);
   float edge = 4.0 * density * (1.0 - density);
-  float corona = inner * uSunAir.x * (1.0 - 0.92 * density) * uSolar.z;
-  float halo = scatter * uSunAir.y * (0.65 + 0.55 * edge) * (1.0 - 0.55 * density) * uSolar.z;
-  float air = outer * (0.10 + 0.55 * warm) * max(uSolar.z, uSolar.y);
-  vec3 light = core * mix(uSunAir.w, 1.8, limb) * disc * direct * uSolar.z * above
-    + mix(vec3(1.0, 0.995, 0.98), uSunCol, 0.32 * warm) * corona
-    + uSunGlow * (halo + air);   // 대기 산란은 지평선 아래까지 연결하고 원반만 above로 가린다.
-  // 공통 분모로 빛의 색 비율을 유지한다. 채널별 흰색 포화를 피하고 사진의 구름 계조도 남긴다.
+  float corona = inner * uSunAir.x * (1.0 - 0.92 * density);
+  float halo = scatter * uSunAir.y * (0.65 + 0.55 * edge) * (1.0 - 0.55 * density);
+  vec3 light = mix(uSunTrans, vec3(1.0), 0.90) * uSunAir.w * disc * direct * above * uSolar.z
+    + (mix(uSunTrans, vec3(1.0), 0.88) * corona
+    + mix(uSunTrans, vec3(1.0), 0.70 - 0.35 * warm) * halo
+    + uSunTrans * outer * 0.10 * step(0.001, uSunAir.x)) * uSolar.z * smoothstep(-uSunR, uSunR, uSunDir.y);
   c = (c + light) / (1.0 + max(light.r, max(light.g, light.b)));
   return c;
 }
@@ -283,7 +335,14 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
   float halo = exp(-e * e / 32.0);
   float bloom = exp(-e / 10.0);
   float shade = exp(-e * e / 288.0);
-  float sunFade = mix(1.0, 0.20, smoothstep(cos(6.0 * D), cos(2.0 * D), dot(ray, uSunDir)) * uSolar.z);
+  // Project the glyph center and bodies into the camera plane: fade the whole glyph,
+  // including its shadow and glow, before they can cover a nearby luminary.
+  vec3 glyph = vec3(sin(a) * cos(8.0 * D), sin(8.0 * D), cos(a) * cos(8.0 * D));
+  vec2 gp = vec2(dot(glyph, uRight), dot(glyph, uUp)) / max(dot(glyph, uFwd), 0.01);
+  vec2 sp = vec2(dot(uSunDir, uRight), dot(uSunDir, uUp)) / max(dot(uSunDir, uFwd), 0.01);
+  vec2 mp = vec2(dot(uMoonDir, uRight), dot(uMoonDir, uUp)) / max(dot(uMoonDir, uFwd), 0.01);
+  float sunFade = mix(1.0, smoothstep(55.0, 140.0, length(gp - sp) * uF), uSolar.z * step(0.0, dot(uSunDir, uFwd)));
+  sunFade *= mix(1.0, smoothstep(45.0, 100.0, length(gp - mp) * uF), uLunar.x * step(0.0, dot(uMoonDir, uFwd)));
   float flick = 0.95 + 0.05 * sin(uTime * 7.3 + cardinal * 1.7) * sin(uTime * 2.1);   // 아주 옅은 네온 떨림
   vec3 hue = id < 0.5 ? vec3(1.0, 0.055, 0.075) : vec3(0.53, 0.94, 1.0);
   float dayK = uSolar.x;   // 낮일수록 그늘을 조금 더
@@ -305,7 +364,11 @@ void main() {
   float floorK = clamp(0.5 - q.y / max(fwidth(q.y), 1e-6), 0.0, 1.0);
 
   // ── 유리 + 하늘
-  vec3 col = sky(d, 1.0 / (uF * uDpr));   // 기기 픽셀 하나의 각도
+  // Directional distance derivatives before any non-uniform branch; stable tangent lengths for small discs.
+  vec2 discDistance = vec2(length(discTangent(d, uSunDir, uSunShape, sin(uSunR))),
+    length(discTangent(d, uMoonDir, uMoonShape, uMoonR)));
+  vec2 discPx = max(fwidth(discDistance), vec2(1e-6));
+  vec3 col = sky(d, 1.0 / (uF * uDpr), discPx);   // 기기 픽셀 하나의 각도
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
   float dLat = min(min(abs(lat - 18.0 * D), abs(lat - 40.0 * D)), abs(lat - 62.0 * D));
@@ -317,7 +380,6 @@ void main() {
   float r1 = abs(lon + 71.0 * D) * cl, r2 = abs(lon - 69.0 * D) * cl;
   float refl = (exp(-pow(r1 / 0.045, 2.0)) + exp(-pow(r2 / 0.045, 2.0))) * smoothstep(8.0 * D, 20.0 * D, lat) * (1.0 - smoothstep(70.0 * D, 84.0 * D, lat));
   col = mix(col, vec3(1.0), refl * uReflA);
-  if (uOut > 0.5) col = compassHUD(col, d, asin(clamp(d.y, -1.0, 1.0)), atan(d.x, d.z), 1.0 / (uF * uDpr));
 
   // ── 바닥(공연 무대 원판)
   float tf = E.y / max(-d.y, 1e-3);
@@ -418,6 +480,11 @@ void main() {
 
   vec3 outc = mix(col, fc, floorK);
   outc += (vec3(1.0) - outc) * (vec3(1.0) - exp(-beam));   // 하늘/돔 앞에도 빛기둥을 합성한다
+  if (uOut > 0.5) {
+    outc = solarOptics(outc, p);
+    vec3 hud = compassHUD(outc, d, asin(clamp(d.y, -1.0, 1.0)), atan(d.x, d.z), 1.0 / (uF * uDpr));
+    outc = mix(hud, outc, floorK);
+  }
   outc += (h2(gl_FragCoord.xy) - 0.5) / 255.0;   // 그라데이션 띠 방지
   outColor = vec4(outc, 1.0);
 }`;
@@ -696,7 +763,7 @@ export function createDomeGL(host, isPaused) {
   function chooseSets() {
     let a = "day", b = null, mix = 0;
     if (astro) {
-      const alt = astro.sunAlt / DEG;
+      const alt = astro.sunGeometricAlt / DEG;
       a = SKY_KEYS[0].name;
       if (alt <= SKY_KEYS[3].alt) a = "night";
       else if (alt < SKY_KEYS[0].alt) {
@@ -730,14 +797,21 @@ export function createDomeGL(host, isPaused) {
     const t = new Date(nowMs());
     const sun = sunPosition(t, site.lat, site.lon), moon = moonPosition(t, site.lat, site.lon);
     const later = sunPosition(new Date(+t + 5 * 60000), site.lat, site.lon).alt;
-    const earlier = sunPosition(new Date(+t - 5 * 60000), site.lat, site.lon).alt;
     const rising = later > sun.alt;   // 이미지 선택은 그대로, 5분 뒤가 더 높으면 아침
     const smooth = (a, b, x) => { const v = Math.min(1, Math.max(0, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
-    const blend = (a, b, v) => a.map((c, i) => c + (b[i] - c) * v);
-    const alt = sun.alt / DEG;
+    // Twilight uses geometric sun altitude; disc position, airmass and empirical squash use apparent altitude.
+    sun.geometricAlt = sun.alt;
+    sun.apparentAlt = sun.alt + refraction(sun.alt);
+    moon.apparentAlt = moon.alt; // Already refracted by moonPosition, never add twice.
+    for (const [name, body] of [["sun", sun], ["moon", moon]]) {
+      const h = debugNumber("bg" + name + "alt"), az = debugNumber("bg" + name + "az");
+      if (h != null) body.apparentAlt = Math.max(-90, Math.min(90, h)) * DEG;
+      if (az != null) body.az = az * DEG;
+    }
+    if (debugNumber("bgsunalt") != null) sun.geometricAlt = sun.apparentAlt - refraction(sun.apparentAlt);
+    const alt = sun.geometricAlt / DEG;
     const night = 1 - smooth(-12, -6, alt);
     // 남중 전후에도 색을 매끄럽게 잇는다. 이미지의 아침 · 저녁 판정과 별개로 앞뒤 5분 고도차를 쓴다
-    const dawn = smooth(-0.04, 0.04, (later - earlier) / DEG);
     const day = smooth(-2, 12, alt), warm = 1 - smooth(10, 28, alt);
     // 오늘 적위로 남중 고도를 구한다. 계절마다 달라지는 최고 고도에 맞춰 천정의 파랑을 깊게 한다
     const phi = site.lat * DEG;
@@ -746,36 +820,43 @@ export function createDomeGL(host, isPaused) {
     const noon = smooth(0.78, 0.995, Math.max(0, Math.sin(sun.alt)) / Math.max(0.05, Math.sin(maxAlt))) * day;
     const dusk = smooth(-12, -2, alt) * (1 - smooth(4, 16, alt));
     // 흰금색 핵을 둘러싼 노란 테. 여명은 복숭아 · 연금, 일몰은 짙은 금빛 산란광이다.
-    const sunLow = blend([1, 0.81, 0.38], [1, 0.85, 0.59], dawn);
-    const sunHigh = blend([1, 0.985, 0.955], [1, 0.96, 0.88], (1 - dawn) * (1 - noon) * 0.3);
-    const sunCol = blend(sunHigh, sunLow, warm);
-    const sunGlow = blend([1, 0.97, 0.9], blend([1, 0.74, 0.23], [1, 0.81, 0.52], dawn), warm);
+    const sunTrans = transmission(sun.apparentAlt / DEG);
+    const sunCol = exposedHue(sunTrans), sunGlow = sunCol;
     let moonSun = dirOf(sun.alt, sun.az), fraction = moonIllumination(t).fraction;
     if (MOON_TEST != null) {
       // 위상 p → 해-달 이각 ψ = 2πp. 차오르는 동안(p < 0.5) 해는 달의 서쪽 — 북반구에서 오른쪽이 밝다
-      moon.alt = 35 * DEG; moon.az = Math.PI;
+      moon.apparentAlt = (debugNumber("bgmoonalt") ?? 35) * DEG; moon.az = (debugNumber("bgmoonaz") ?? 180) * DEG;
+      moon.alt = moon.apparentAlt;
       const m = dirOf(moon.alt, moon.az), up = [0, 1, 0];
       const w = [up[1] * m[2] - up[2] * m[1], up[2] * m[0] - up[0] * m[2], up[0] * m[1] - up[1] * m[0]];   // up × m = 달 자리의 서쪽
       const wl = Math.hypot(...w), psi = 2 * Math.PI * MOON_TEST;
-      moonSun = m.map((c, i) => Math.cos(psi) * c + Math.sin(psi) * w[i] / wl);
+      moonSun = m.map((c, i) => Math.cos(psi) * c + Math.sin(psi) * w[i] / Math.max(wl, 1e-6));
       fraction = (1 - Math.cos(psi)) / 2;
     }
-    const moonAlt = moon.alt / DEG;
+    sun.alt = sun.apparentAlt; moon.alt = moon.apparentAlt;
+    const moonAlt = moon.apparentAlt / DEG;
     const moonUp = smooth(-2, 0.3, moonAlt), moonLow = 1 - smooth(0, 24, moonAlt);
     const moonContrast = 1 - smooth(-8, 10, alt);
     const moonLight = night * fraction * fraction * moonUp * smooth(0, 50, moonAlt);
-    const moonCol = blend(blend([0.94, 0.965, 1], [1, 0.62, 0.28], moonLow), [0.89, 0.945, 1], day * 0.8);
-    astro = { sunAlt: sun.alt, sunAz: sun.az, moonAlt: moon.alt, moonAz: moon.az, rising, fraction, noon, moonLight, time: t.toISOString() };
+    const moonCol = exposedHue(transmission(moonAlt)).map((v, i) =>
+      (v * (1 - 0.12 * moonLow) + 0.12 * moonLow) * [0.94, 0.965, 1][i] * EXPOSURE.moon);
+    astro = { sunGeometricAlt: sun.geometricAlt, moonGeometricAlt: moon.geometricAlt, sunAlt: sun.alt, sunAz: sun.az, moonAlt: moon.alt, moonAz: moon.az, rising, fraction, noon, moonLight, time: t.toISOString() };
     gl.uniform1f(U.uOut, 1);
     gl.uniform1f(U.uNight, night);
     gl.uniform3fv(U.uSunCol, sunCol);
     gl.uniform3fv(U.uSunGlow, sunGlow);
-    gl.uniform4f(U.uSunAir, 14 + 4 * warm, 0.85 + 0.8 * warm * (1 - 0.18 * dawn), warm, 32 + 8 * warm);
+    const stage = DEBUG && !NORMAL ? QS.get("bglight") : null;
+    gl.uniform3fv(U.uSunTrans, sunCol);
+    gl.uniform1f(U.uCloudTest, debugNumber("bgcloud") == null ? -1 : Math.max(0, Math.min(1, debugNumber("bgcloud"))));
+    gl.uniform4f(U.uSunAir, stage === "disc" ? 0 : 18 + 8 * warm, stage === "disc" ? 0 : 4.5 + 2 * warm, warm, EXPOSURE.sun);
+    gl.uniform4f(U.uOptics, smooth(-SUN_MOON_R[0], 0.3, sun.alt / DEG),
+      2 + 3 * smooth(0, 30, sun.alt / DEG), 0.1 + 0.9 * smooth(0, 30, sun.alt / DEG),
+      stage === "disc" || stage === "bloom" ? 0 : stage === "rays" ? 1 : 2);
     gl.uniform3fv(U.uSunHorizon, [Math.sin(sun.az), 0, Math.cos(sun.az)]);
     gl.uniform4f(U.uSolar, day, dusk, smooth(-1.5, 0.5, alt), day * (0.045 + 0.055 * noon));
     gl.uniform3fv(U.uMoonCol, moonCol);
-    gl.uniform4f(U.uLunar, moonUp, 0.22 + 0.78 * moonContrast, 900 - 660 * moonLow,
-      Math.pow(fraction, 0.7) * moonContrast * (0.055 + 0.085 * moonLow));
+    gl.uniform4f(U.uLunar, moonUp, 0.22 + 0.78 * moonContrast, 0.45 + 0.75 * moonLow,   // 안쪽 광륜 σ(도): 높을 때 0.45 → 지평선 1.2
+      Math.pow(fraction, 0.7) * moonContrast * (0.05 + 0.55 * moonLow));
     gl.uniform1f(U.uMoonLight, moonLight);
     gl.uniform1f(U.uStarGain, night * (1 - 0.68 * moonLight));
     gl.uniform1f(U.uEarthshine, night * (0.72 + 0.12 * (1 - fraction)));
@@ -822,7 +903,24 @@ export function createDomeGL(host, isPaused) {
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR;
-    gl.uniform1f(U.uTime, (performance.now() - t0) / 1000);
+    gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
+    // Camera/source-only optics terms computed once per draw, rather than once per fragment.
+    if (astro) {
+      const s = dirOf(astro.sunAlt, astro.sunAz), z = dot3(s, B.fwd);
+      const smooth = (a, b, x) => { const v = Math.max(0, Math.min(1, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
+      let sx = cx, sy = cy, gain = 0, view = 0;
+      if (z > 0.05) {
+        const F = outdoor ? focalOut : focal;
+        sx += F * dot3(s, B.right) / z; sy -= F * dot3(s, B.up) / z;
+        const outside = Math.hypot(Math.max(-sx, sx - W, 0), Math.max(-sy, sy - H, 0));
+        const es = dot3(EYE, s), qy = EYE[1] + (-es + Math.sqrt(Math.max(es * es - dot3(EYE, EYE) + 1, 0))) * s[1];
+        const R = SUN_MOON_R[0] * DEG;
+        gain = (1 - smooth(0, 8 * DEG, Math.atan(outside / F))) * smooth(0.05, 0.3, z)
+          * smooth(-R, R, s[1]) * smooth(-R, R, qy) * smooth(-SUN_MOON_R[0], 0.3, astro.sunAlt / DEG);
+        view = 0.75 + 0.25 * Math.exp(-Math.pow(Math.acos(Math.max(0, Math.min(1, z))) / (12 * DEG), 2));
+      }
+      gl.uniform4f(U.uFlare, sx, sy, gain, view);
+    }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     drawnYaw = yaw; drawnPitch = pitch; lastGL = performance.now();
   }
