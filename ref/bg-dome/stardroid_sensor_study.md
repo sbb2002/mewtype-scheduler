@@ -67,6 +67,29 @@ GPL 이라 코드를 옮겨 오지 않고 방법만 참고한다.
 
 주변 철근 · 전자기기 때문에 생기는 수십 도 오차는 **외부 기준(실제 해 · 달) 없이는 자동으로 없앨 수 없다** — Stardroid 도 같은 결론이다.
 
+## 6. 배포판 APK 대조 — rea 로 디컴파일 (2026-11-04)
+
+공개 소스와 실제 배포된 앱이 같은 방식으로 도는지 확인했다.
+
+- 대상: GitHub 릴리스 `v2.2.0` 의 `app-gms-release.apk`(Play 스토어용 gms 빌드, 2026-10-22, SHA-256 `93b79815…61772`).
+  **Play 스토어가 실제로 내려 주는 APK 와 같은 바이트인지는 확인 못 했다** — Play 는 AAB 를 구글 키로 다시 서명해 쪼개 내려 주므로 폰에서 직접 뽑아야 대조된다.
+- 도구: rea 6.5.0 + JADX 엔진 `jadx-headless-mcp 0.7.1`(SHA-256 이 rea 가 감사해 둔 값 `6e5eacf5…ff75` 와 일치). APK 는 실행하지 않았다(정적 분석).
+- R8 난독화로 클래스 이름이 지워져 있어, 대상 클래스는 직접 만든 dex 스캐너로 찾았다(특정 문자열 · Android API 를 부르는 메서드 찾기 — rea 가 아님). 디컴파일은 rea `inspect-android-method` 로 했다.
+
+| 배포판 클래스 | 대응하는 소스 | 확인한 것 |
+|---|---|---|
+| `t9.y` 생성자 | `SensorOrientationSource` | `getDefaultSensor(11)` = ROTATION_VECTOR · `(1)` 가속도계 · `(2)` 자력계. **GAME_ROTATION_VECTOR(15) 는 안 부른다** |
+| `t9.x` · `t9.v` `onSensorChanged` | 같은 파일의 fused 경로(지도용 · 진단용) | 회전 벡터 → 필터 → `getRotationMatrixFromVector` → 화면 회전 반영 |
+| `t9.d.b` | `OneEuroQuaternionSmoother.update` | 쿼터니언 One Euro. 속도 미분 차단 주파수 1Hz(`0.159 = 1/2π`), 차단 = 최소값 + β × (속도 − 문턱). 샘플 간격이 1초 넘으면 다시 시작 |
+| `ga.r3.o` | `MapViewModel` 의 local frame 갱신 | 보정이 켜져 있으면 `GeomagneticField(위도, 경도, 0, 시각).getDeclination()` + 사용자 방위 보정. **편각은 같은 위치 · 하루 안이면 캐시** |
+| `ba.y.v` | 진단 화면 값 | 편각 + 사용자 보정을 따로 보여 줌 |
+| `u9.u` 정적 초기화 | `DataStoreSettings` 키 | `sensor_azimuth_adjustment` · `sensor_altitude_adjustment` · `dont_show_calibration_dialog` · `last_calibration_warning` |
+| `t9.n.a` | `SensorManagerStatusSource` | 정확도 감시용 센서 1 · 2 · 4 · 11 · 5 |
+
+- 결론: 배포판의 센서 경로는 공개 소스와 같다. **소스에 없는 자동 정렬 같은 숨은 기능은 이 경로에서 보이지 않았다.**
+  단, 찾은 범위는 위 문자열 · API 를 쓰는 메서드뿐이다 — 다른 경로로 숨긴 코드까지 없다는 증명은 아니다.
+- 소스(`master 0d957f1`)와 APK(`v2.2.0`) 사이 63 커밋에서 센서 쪽 바뀐 파일은 둘(`GeomagneticDeclinationSource.kt` · `SensorManagerStatusSource.kt`)이다. 둘 다 파일 안 선언을 옮긴 것뿐이라 동작은 같다.
+
 ## 출처
 
 - Stardroid: `stardroid-v2/docs/design/sensor-correction-model.md` · `camera-ar-mode.md`, `stardroid-v1/docs/design/sensors.md`, `stardroid-v1/specs/sensors/orientation.md`, `troubleshooting.md`, 위 표의 Kotlin 파일들
