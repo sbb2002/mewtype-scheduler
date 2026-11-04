@@ -89,7 +89,7 @@ python scripts/serve_local.py 8102                  # http://localhost:8102/src/
   desktop-68v1g6c 는 Tailscale Serve 로 `https://desktop-68v1g6c.taila8a0a6.ts.net/` → `127.0.0.1:8102` 를 열었다(`tailscale serve --bg --https=443 http://127.0.0.1:8102`, 끄기 = `tailscale serve reset`).
   다른 PC 는 그 PC 에서 Serve 를 켜거나, 안드로이드 크롬의 `chrome://flags` 「Insecure origins treated as secure」에 주소를 넣는다. Serve 주의: Funnel(인터넷 공개)은 켜지 않는다, 기기 · 테일넷 이름이 인증서 공개 기록에 남는다.
 - `serve_local.py` 대기열을 128 로 올린 이유: Serve 가 HTTP/2 로 파일을 한꺼번에 요청하면 기본 대기열 5 가 넘쳐 `main.js` 를 못 받고 화면이 하단 바만 남았다(11-04 실제 발생).
-- 주소 옵션(`?bg=d` 와 함께): `&bgdebug` = 콘솔 경고 · `window.__bgdome.state`(보는 방향 · 하늘 벌 · 해 · 달 고도). `&bgdebug&bgtime=2026-11-04T17:25:00%2B09:00` = 시각 지정, `&bgspeed=600` = 배속.
+- 주소 옵션(`?bg=d` 와 함께): `&bgdebug` = 콘솔 경고(3초마다 센서 · 방향 · 해 위치 — 오류 비콘 서버로 폰 값을 PC 에서 받을 수 있다) · `window.__bgdome.state`(보는 방향 · 하늘 벌 · 해 · 달 고도). `&bgdebug&bgtime=2026-11-04T17:25:00%2B09:00` = 시각 지정, `&bgspeed=600` = 배속.
 - 시험 시각(서울 37.57 · 126.98): 11-04 12:20 남중(남) · 17:25 해 질 녘(서 ≈ -111°) · 17:52 박명 · 11-05 02:44 달 뜸(동 ≈ 86°) · 05:30 밤(달 113° · 31°) · 06:50 여명(동 ≈ 107°).
 - PC 에서 폰 흉내: 390px iframe 에 같은 출처로 띄우고 `DeviceOrientationEvent` · `deviceorientationabsolute` 이벤트를 보낸다(방위 az 를 보려면 alpha = -az, beta = 90 + 올려 보는 각). 위치는 iframe 의 `navigator.geolocation` · `permissions.query` 를 덮어쓰고 `bgview.js` 의 `setBgView("outdoor")`. Chrome 156 은 `DeviceMotionEvent.requestPermission` 이 있어 흔들기는 화면을 한 번 누른(pointerup) 뒤에 켜진다.
   자동 조작 브라우저는 rAF 가 크게 느려져 **움직임의 부드러움은 판단할 수 없다** — 최종 상태만 본다.
