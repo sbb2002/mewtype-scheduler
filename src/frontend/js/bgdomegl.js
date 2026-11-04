@@ -12,6 +12,8 @@
 
 import { startGyro, gyroView, rebase, startAbsolute, gyroAbs } from "./bggyro.js";
 import { BGVIEW_EVENT } from "./bgview.js";
+import { outdoorSite } from "./bgsite.js";
+import { sunPosition, moonPosition, dirOf, horizonToEquatorial } from "./bgastro.js";
 
 const DEG = Math.PI / 180;
 const EYE = [0, 0.24, -0.42];          // 돔(반지름 1) 안 눈 위치 — bgdome.js 와 같다
@@ -20,7 +22,23 @@ const GAIN_IDLE = 0.35, GAIN_PEEK = 1;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
 const CLOUD_MS = 160;                  // 카메라가 멈춰 있을 때 구름 흐름 다시 그리기 간격
 const MAX_DPR = 1.5;
-const DEBUG = new URLSearchParams(window.location.search).has("bgdebug");
+const QS = new URLSearchParams(window.location.search);
+const DEBUG = QS.has("bgdebug");
+// 확인용(?bgdebug 와 함께): bgtime = 시작 시각(ISO), bgspeed = 시간 배속 — 노을 · 밤을 기다리지 않고 본다
+const T_START = DEBUG && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
+const T_SPEED = DEBUG && QS.get("bgspeed") ? Number(QS.get("bgspeed")) || 1 : 1;
+const T_REAL0 = Date.now();
+const nowMs = () => (Number.isFinite(T_START) ? T_START + (Date.now() - T_REAL0) * T_SPEED : Date.now());
+
+// 바깥 보기 하늘 단계 — 해 고도(도)가 이 값일 때 그 이미지 한 벌. 사이 값은 이웃 두 벌을 섞는다. 노을 한 벌을 해 뜰 때도 같이 쓴다
+const SKY_KEYS = [{ name: "day", alt: 8 }, { name: "twilight", alt: 0 }, { name: "bluehour", alt: -6 }, { name: "night", alt: -12 }];
+const SKY_FILES = {
+  day: ["../assets/bg/dome-sky.webp", "../assets/bg/dome-clouds.webp"],
+  twilight: ["../assets/bg/sky-twilight.webp", "../assets/bg/clouds-twilight.webp"],
+  bluehour: ["../assets/bg/sky-bluehour.webp", "../assets/bg/clouds-bluehour.webp"],
+  night: ["../assets/bg/sky-night.webp", "../assets/bg/clouds-night.webp"],
+};
+const ASTRO_MS = 1000;   // 해 · 달 위치 다시 계산 간격
 
 const VS = `#version 300 es
 in vec2 aPos;
@@ -31,8 +49,15 @@ precision highp float;
 uniform vec2 uRes; uniform float uDpr; uniform vec2 uC; uniform float uF;
 uniform vec3 uFwd, uRight, uUp;
 uniform float uTime, uTex;
-uniform sampler2D uSky, uCloud;
-uniform mat3 uSkyM; uniform vec3 uSkyO; uniform mat3 uCldM; uniform vec3 uCldO; uniform float uCldA;
+// 하늘 이미지 두 벌(A · B)을 uMix 로 섞는다 — 실내 = 낮 한 벌. 바깥 보기 = 해 고도에 따라 낮 · 노을 · 박명 · 밤 중 이웃한 두 벌
+uniform sampler2D uSky, uCloud, uSky2, uCloud2;
+uniform mat3 uSkyM; uniform vec3 uSkyO; uniform mat3 uCldM; uniform vec3 uCldO;
+uniform mat3 uSkyM2; uniform vec3 uSkyO2; uniform mat3 uCldM2; uniform vec3 uCldO2;
+uniform float uCldA, uMix;
+// 바깥 보기: 해 · 달 방향(장면 벡터 [동, 위, 북]), 해 고도(라디안), 밤 정도(별), 지평 → 적도 회전(별이 실제처럼 돈다)
+uniform float uOut, uSunAlt, uNight;
+uniform vec3 uSunDir, uMoonDir;
+uniform mat3 uEqM;
 uniform vec3 uSkyBase; uniform float uGridA, uReflA;
 uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
@@ -41,21 +66,96 @@ const float TAU = 6.2831853, D = 0.01745329;
 const vec3 E = vec3(0.0, 0.24, -0.42);
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 // 거리 d(세계 단위)인 선의 덮임 — pw = 픽셀 하나의 세계 크기, halfPx = 선 반폭(기기 픽셀)
 float cover(float d, float pw, float halfPx) { return clamp(halfPx - d / pw + 0.5, 0.0, 1.0); }
 
-vec3 sky(vec3 d) {
+// 하늘 한 벌: 먼 하늘(불투명) + 가까운 구름(투명) 합성. 이미지 위 끝 위는 하늘 평균색, 아래 끝 아래는 지평선 평균색
+vec4 skySet(sampler2D s, sampler2D cl, mat3 M, vec3 O, mat3 CM, vec3 CO, float u, float v, float el) {
+  vec3 c = clamp(M * textureLod(s, vec2(u + uTime / 2844.444, v), 0.0).rgb + O, 0.0, 1.0);
+  vec4 n = textureLod(cl, vec2(u + uTime / 1280.0, v), 0.0);
+  c = mix(c, clamp(CM * n.rgb + CO, 0.0, 1.0), n.a * uCldA);
+  vec3 z = clamp(M * textureLod(s, vec2(0.5, 0.03), 7.0).rgb + O, 0.0, 1.0);
+  vec3 hz = clamp(M * textureLod(s, vec2(u, 0.97), 6.0).rgb + O, 0.0, 1.0);
+  c = mix(c, hz, smoothstep(-2.0 * D, -11.0 * D, el));
+  return vec4(mix(c, z, smoothstep(50.0 * D, 84.0 * D, el)), n.a * uCldA);   // a = 가까운 구름이 가린 정도(별 · 달을 가린다)
+}
+
+// 달: 장면에 맞춰 실제보다 크게(각반지름 1.6°). 밝은 면은 해 방향에서 구하므로 위상 · 기울기가 저절로 맞는다
+vec4 moon(vec3 d, float pxAng) {
+  const float R = 1.6 * D;
+  vec3 t = d - uMoonDir * dot(d, uMoonDir);
+  float rr = length(t) / R;
+  float a = clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, dot(d, uMoonDir));
+  if (a <= 0.0) return vec4(0.0);
+  vec3 k = t / R;
+  vec3 n = k - uMoonDir * sqrt(max(1.0 - dot(k, k), 0.0));   // 보이는 반구의 표면 법선(관측자 쪽)
+  float lit = smoothstep(-0.03, 0.06, dot(n, uSunDir));
+  // 바다(어두운 무늬): 표면 위치로 만든 부드러운 얼룩 — 달 자체에 붙어 있다
+  vec3 s = n * 3.1;
+  float maria = h3(floor(s)) * 0.5 + h3(floor(s * 2.0)) * 0.3 + h3(floor(s * 4.0)) * 0.2;
+  maria = smoothstep(0.35, 0.8, maria);
+  float limb = 0.82 + 0.18 * sqrt(max(1.0 - rr * rr, 0.0));
+  vec3 col = vec3(0.97, 0.95, 0.9) * (1.0 - 0.22 * maria) * limb;
+  return vec4(col, a * lit);   // a = 밝은 면만. 어두운 면은 sky() 가 밤에만 옅게(지구 반사광) 칠한다
+}
+float moonDisc(vec3 d, float pxAng) {
+  const float R = 1.6 * D;
+  float rr = length(d - uMoonDir * dot(d, uMoonDir)) / R;
+  return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, dot(d, uMoonDir));
+}
+
+vec3 sky(vec3 d, float pxAng) {
   float el = asin(clamp(d.y, -1.0, 1.0));
   float u = atan(d.x, d.z) / TAU * 3.0;
   float v = clamp((70.0 * D - el) / (82.0 * D), 0.002, 0.998);
   if (uTex < 0.5) return uSkyBase;
-  vec3 c = clamp(uSkyM * textureLod(uSky, vec2(u + uTime / 2844.444, v), 0.0).rgb + uSkyO, 0.0, 1.0);
-  vec4 n = textureLod(uCloud, vec2(u + uTime / 1280.0, v), 0.0);
-  c = mix(c, clamp(uCldM * n.rgb + uCldO, 0.0, 1.0), n.a * uCldA);
-  vec3 z = clamp(uSkyM * textureLod(uSky, vec2(0.5, 0.03), 7.0).rgb + uSkyO, 0.0, 1.0);
-  vec3 hz = clamp(uSkyM * textureLod(uSky, vec2(u, 0.97), 6.0).rgb + uSkyO, 0.0, 1.0);   // 이미지 아래끝보다 낮은 쪽 = 지평선 평균색(끝줄이 세로로 늘어나 보이지 않게)
-  c = mix(c, hz, smoothstep(-2.0 * D, -11.0 * D, el));
-  return mix(c, z, smoothstep(50.0 * D, 84.0 * D, el));
+  vec4 A = skySet(uSky, uCloud, uSkyM, uSkyO, uCldM, uCldO, u, v, el);
+  vec4 B = uMix > 0.0 ? skySet(uSky2, uCloud2, uSkyM2, uSkyO2, uCldM2, uCldO2, u, v, el) : A;
+  vec3 c = mix(A.rgb, B.rgb, uMix);
+  if (uOut < 0.5) return c;
+  float cloud = mix(A.a, B.a, uMix);
+  float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
+
+  // 별: 하늘에 고정된 적도 좌표의 3D 격자에 하나씩. 밤 정도 · 구름으로 흐려진다
+  if (uNight > 0.0) {
+    vec3 e = uEqM * d * 70.0;
+    vec3 cell = floor(e);
+    float h = h3(cell);
+    if (h > 0.9) {
+      vec3 sp = normalize(cell + 0.5 + (vec3(h3(cell + 1.7), h3(cell + 3.1), h3(cell + 5.3)) - 0.5) * 0.6) * 70.0;
+      float px = 70.0 * pxAng;
+      float mag = (h - 0.9) * 10.0;
+      float tw = 0.8 + 0.2 * sin(uTime * (1.5 + 3.0 * h) + h * 60.0);
+      float star = clamp((0.7 + 0.6 * mag) - length(e - sp) / px, 0.0, 1.0) * (0.35 + 0.65 * mag) * tw;
+      c += vec3(0.95, 0.93, 1.0) * star * uNight * (1.0 - cloud) * above;
+    }
+  }
+
+  // 노을 · 여명: 해가 지평선 근처일 때, 해 방위 쪽 지평선을 따뜻하게. 반대쪽은 그대로(푸르게 남는다)
+  float g = max(dot(normalize(vec3(d.x, 0.0, d.z) + 1e-4), normalize(vec3(uSunDir.x, 0.0, uSunDir.z) + 1e-4)), 0.0);
+  float dusk = smoothstep(-12.0 * D, -2.0 * D, uSunAlt) * (1.0 - smoothstep(4.0 * D, 16.0 * D, uSunAlt));
+  float low = exp(-max(el, 0.0) / (14.0 * D));
+  c += vec3(1.0, 0.5, 0.3) * pow(g, 3.0) * low * dusk * 0.45;
+  c += vec3(1.0, 0.72, 0.45) * pow(max(dot(d, uSunDir), 0.0), 40.0) * dusk * 0.3;
+
+  // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
+  vec4 m = moon(d, pxAng);
+  float mvis = above * (1.0 - 0.85 * cloud);
+  c = mix(c, vec3(0.05, 0.06, 0.09), moonDisc(d, pxAng) * uNight * 0.85 * mvis);   // 어두운 면(밤에만 보인다 — 낮엔 하늘이 비친다)
+  c = mix(c, m.rgb, m.a * mix(0.55, 1.0, uNight) * mvis);
+  c += vec3(0.75, 0.78, 0.9) * pow(max(dot(d, uMoonDir), 0.0), 900.0) * 0.25 * uNight * mvis;
+
+  // 해: 낮엔 흰빛, 지평선 가까이 내려오면 붉게. 빛 번짐 포함
+  float sd = dot(d, uSunDir);
+  float sunUp = smoothstep(-1.0 * D, 1.0 * D, uSunAlt + 0.5 * D);
+  float warm = 1.0 - smoothstep(0.0, 15.0 * D, uSunAlt);
+  vec3 sunCol = mix(vec3(1.0, 0.98, 0.92), vec3(1.0, 0.5, 0.28), warm);
+  float disc = clamp((1.2 * D - acos(clamp(sd, -1.0, 1.0))) / pxAng + 0.5, 0.0, 1.0);
+  float halo = pow(max(sd, 0.0), 300.0) * 0.5 + pow(max(sd, 0.0), 30.0) * 0.1;
+  c = mix(c, sunCol, disc * sunUp * above * (1.0 - 0.6 * cloud));
+  c += sunCol * halo * sunUp * above;
+  return c;
 }
 
 void main() {
@@ -68,7 +168,7 @@ void main() {
   float pwq = length(fwidth(q)) * 0.75;
 
   // ── 유리 + 하늘
-  vec3 col = sky(d);
+  vec3 col = sky(d, 1.0 / (uF * uDpr));   // 기기 픽셀 하나의 각도
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
   float dLat = min(min(abs(lat - 18.0 * D), abs(lat - 40.0 * D)), abs(lat - 62.0 * D));
@@ -324,7 +424,7 @@ export function createDomeGL(host, isPaused) {
   const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: "low-power" });
   if (!gl) return null;
 
-  let prog = null, U = {}, texSky = null, texCloud = null, texReady = 0;
+  let prog = null, U = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
   let W = 0, H = 0, dpr = 1, focal = 1, cx = 0, cy = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, gain = GAIN_IDLE, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let raf = 0, stopped = true, settling = false, lastShake = 0, theme = null, t0 = performance.now();
@@ -370,35 +470,106 @@ export function createDomeGL(host, isPaused) {
     const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
     U = {};
     for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(prog, i).name; U[name] = gl.getUniformLocation(prog, name); }
-    gl.uniform1i(U.uSky, 0);
-    gl.uniform1i(U.uCloud, 1);
-    texReady = 0;
-    texSky = loadTex(0, "../assets/bg/dome-sky.webp");
-    texCloud = loadTex(1, "../assets/bg/dome-clouds.webp");
+    gl.uniform1i(U.uSky, 0); gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uSky2, 2); gl.uniform1i(U.uCloud2, 3);
+    gl.uniform1f(U.uMix, 0); gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0);
+    gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
+    sets = {}; slotA = slotB = null; astro = null;
+    loadSet("day");
     theme = null;
   }
 
-  function loadTex(unit, rel) {
-    const tex = gl.createTexture();
-    const img = new Image();
-    img.decoding = "async";
-    img.onload = () => {
-      if (gl.isContextLost()) return;
-      gl.activeTexture(gl.TEXTURE0 + unit);
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.generateMipmap(gl.TEXTURE_2D);   // 천정 평균색(가장 작은 단계)용. 본 샘플은 0단계만 써서 경도 이음매에 줄이 안 생긴다
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      const err = gl.getError();
-      if (err || DEBUG) console.warn(`[bgdome] 구름 이미지 ${rel} ${img.naturalWidth}x${img.naturalHeight} glError=${err} max=${gl.getParameter(gl.MAX_TEXTURE_SIZE)}`);
-      if (++texReady === 2) { gl.uniform1f(U.uTex, 1); draw(); if (DEBUG) console.warn(`[bgdome] 구름 준비 끝 glError=${gl.getError()}`); }
-    };
-    img.onerror = () => console.warn(`[bgdome] 구름 이미지를 못 받음 ${rel}`);
-    img.src = new URL(rel, import.meta.url).href;
-    return tex;
+  /** 하늘 한 벌(하늘 · 구름 두 장)을 받아 GPU 에 올린다. 다 받으면 ready */
+  function loadSet(name) {
+    if (sets[name]) return sets[name];
+    const set = sets[name] = { name, sky: gl.createTexture(), cloud: gl.createTexture(), left: 2, ready: false };
+    const [skyRel, cloudRel] = SKY_FILES[name];
+    for (const [tex, rel] of [[set.sky, skyRel], [set.cloud, cloudRel]]) {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => {
+        if (gl.isContextLost()) return;
+        gl.activeTexture(gl.TEXTURE7);   // 올리는 동안만 빈 칸(7)을 쓴다 — 0 ~ 3 칸의 연결을 건드리지 않게
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.generateMipmap(gl.TEXTURE_2D);   // 천정 · 지평선 평균색(작은 단계)용. 본 샘플은 0단계만 써서 경도 이음매에 줄이 안 생긴다
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const err = gl.getError();
+        if (err || DEBUG) console.warn(`[bgdome] 하늘 이미지 ${rel} ${img.naturalWidth}x${img.naturalHeight} glError=${err}`);
+        if (--set.left === 0) {
+          set.ready = true;
+          slotA = slotB = null;   // 다음 그리기에서 다시 고른다
+          if (name === "day") gl.uniform1f(U.uTex, 1);
+          draw();
+        }
+      };
+      img.onerror = () => console.warn(`[bgdome] 하늘 이미지를 못 받음 ${rel}`);
+      img.src = new URL(rel, import.meta.url).href;
+    }
+    return set;
+  }
+
+  /** 낮 한 벌만 테마 색 보정(실내와 같은 분홍 톤)을 받고, 노을 · 박명 · 밤은 그린 색 그대로 */
+  function setUniforms(set, slot) {
+    const t = THEMES[theme || "dark"];
+    const m3 = (M) => new Float32Array([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]);   // 열 우선
+    const I = [[1, 0, 0], [0, 1, 0], [0, 0, 1]], Z = [0, 0, 0];
+    const day = set.name === "day";
+    const sfx = slot === 0 ? "" : "2";
+    gl.uniformMatrix3fv(U["uSkyM" + sfx], false, m3(day ? t.skyM : I)); gl.uniform3fv(U["uSkyO" + sfx], day ? t.skyO : Z);
+    gl.uniformMatrix3fv(U["uCldM" + sfx], false, m3(day ? t.cldM : I)); gl.uniform3fv(U["uCldO" + sfx], day ? t.cldO : Z);
+    gl.activeTexture(gl.TEXTURE0 + slot * 2); gl.bindTexture(gl.TEXTURE_2D, set.sky);
+    gl.activeTexture(gl.TEXTURE1 + slot * 2); gl.bindTexture(gl.TEXTURE_2D, set.cloud);
+  }
+
+  /** 지금 그릴 두 벌(A · B)과 섞는 비율. 아직 안 받은 벌은 받는 동안 받아 둔 쪽으로 대신한다 */
+  function chooseSets() {
+    let a = "day", b = null, mix = 0;
+    if (astro) {
+      const alt = astro.sunAlt / DEG;
+      if (alt <= SKY_KEYS[3].alt) a = "night";
+      else if (alt < SKY_KEYS[0].alt) {
+        for (let i = 0; i < 3; i++) {
+          const k0 = SKY_KEYS[i], k1 = SKY_KEYS[i + 1];
+          if (alt <= k0.alt && alt > k1.alt) { a = k0.name; b = k1.name; mix = (k0.alt - alt) / (k0.alt - k1.alt); break; }
+        }
+      }
+    }
+    for (const n of [a, b]) if (n) loadSet(n);
+    const ready = (n) => n && sets[n] && sets[n].ready;
+    if (!ready(a)) { a = ready(b) ? b : "day"; b = null; mix = 0; }
+    if (b && !ready(b)) { b = null; mix = 0; }
+    if (a !== slotA) setUniforms(sets[a], 0);
+    if (b && b !== slotB) setUniforms(sets[b], 1);
+    slotA = a; slotB = b;
+    gl.uniform1f(U.uMix, b ? mix : 0);
+  }
+
+  /** 바깥 보기: 실제 시각 · 위치로 해 · 달 · 별 방향을 다시 구한다 */
+  function updateAstro(force) {
+    const site = outdoorSite();
+    if (!outdoor || !site) {
+      if (astro) { astro = null; gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0); lastGL = 0; }
+      return;
+    }
+    const now = performance.now();
+    if (!force && now - lastAstro < ASTRO_MS) return;
+    lastAstro = now;
+    const t = new Date(nowMs());
+    const sun = sunPosition(t, site.lat, site.lon), moon = moonPosition(t, site.lat, site.lon);
+    astro = { sunAlt: sun.alt, sunAz: sun.az, moonAlt: moon.alt, moonAz: moon.az, time: t.toISOString() };
+    const alt = sun.alt / DEG;
+    const night = Math.min(1, Math.max(0, (-6 - alt) / 6));
+    gl.uniform1f(U.uOut, 1);
+    gl.uniform1f(U.uSunAlt, sun.alt);
+    gl.uniform1f(U.uNight, night * night * (3 - 2 * night));
+    gl.uniform3fv(U.uSunDir, dirOf(sun.alt, sun.az));
+    gl.uniform3fv(U.uMoonDir, dirOf(moon.alt, moon.az));
+    const M = horizonToEquatorial(t, site.lat, site.lon);
+    gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]));
+    lastGL = 0;
   }
 
   function applyTheme() {
@@ -406,9 +577,8 @@ export function createDomeGL(host, isPaused) {
     if (name === theme) return;
     theme = name;
     const t = THEMES[name];
-    const m3 = (M) => new Float32Array([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]);   // 열 우선
-    gl.uniformMatrix3fv(U.uSkyM, false, m3(t.skyM)); gl.uniform3fv(U.uSkyO, t.skyO);
-    gl.uniformMatrix3fv(U.uCldM, false, m3(t.cldM)); gl.uniform3fv(U.uCldO, t.cldO); gl.uniform1f(U.uCldA, 0.5);
+    gl.uniform1f(U.uCldA, 0.5);
+    slotA = slotB = null;   // 낮 한 벌의 색 보정이 테마마다 달라 다시 건다
     gl.uniform3fv(U.uSkyBase, t.skyBase); gl.uniform1f(U.uGridA, t.gridA); gl.uniform1f(U.uReflA, t.reflA);
     for (const k of ["floorIn", "floorOut", "pad", "glow", "rim"]) gl.uniform3fv(U["u" + k[0].toUpperCase() + k.slice(1)], t[k]);
     gl.uniform1f(U.uFloorRefl, t.floorRefl); gl.uniform1f(U.uLightK, t.lightK);
@@ -423,6 +593,8 @@ export function createDomeGL(host, isPaused) {
   function draw() {
     if (gl.isContextLost() || !W) return;
     applyTheme();
+    updateAstro(false);
+    chooseSets();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform1f(U.uTime, (performance.now() - t0) / 1000);
@@ -503,7 +675,8 @@ export function createDomeGL(host, isPaused) {
     settling = false;
     if (outdoor) startAbsolute();
     else { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); rebase(); }   // 실내로 돌아오면 지금 자세가 정면
-    lastGL = 0;
+    updateAstro(true);
+    draw();
   });
   new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
@@ -540,7 +713,7 @@ export function createDomeGL(host, isPaused) {
 
   // 확인용(?bgdebug) — 콘솔에서 보는 방향 · 섞임 상태를 읽는다
   if (new URLSearchParams(window.location.search).has("bgdebug")) {
-    window.__bgdome = { get state() { return { outdoor, yaw: yaw / DEG, pitch: pitch / DEG, gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
