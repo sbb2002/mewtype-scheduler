@@ -9,6 +9,8 @@ let on = false, have = false, needBase = true;
 let yawAcc = 0, lastYaw = null, rawPitch = 0, baseYaw = 0, basePitch = 0;
 // 절대 방위(바깥 보기) — 북쪽 = 0, 동쪽 = +π/2
 let absOn = false, absHave = false, absYaw = 0, absPitch = 0;
+// 확인용 — 어떤 이벤트가 몇 번 왔고 마지막 값이 무엇인지(bgdomegl.js 가 ?bgdebug 일 때 서버로 보고)
+export const gyroDebug = { orient: 0, absolute: 0, compass: 0, absFlag: 0, last: null, lastAbs: null };
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -29,11 +31,17 @@ function setAbsolute(alpha, beta, gamma) {
 
 /** 안드로이드(크롬 계열): alpha 가 북쪽 기준인 별도 이벤트 */
 function onAbsolute(e) {
+  gyroDebug.absolute++;
+  gyroDebug.lastAbs = [e.alpha, e.beta, e.gamma].map((v) => (v == null ? null : Math.round(v)));
   if (e.alpha == null || e.beta == null || e.gamma == null) return;
   setAbsolute(e.alpha, e.beta, e.gamma);
 }
 
 function onOrient(e) {
+  gyroDebug.orient++;
+  if (typeof e.webkitCompassHeading === "number") gyroDebug.compass++;
+  if (e.absolute === true) gyroDebug.absFlag++;
+  gyroDebug.last = [e.alpha, e.beta, e.gamma, e.webkitCompassHeading].map((v) => (v == null ? null : Math.round(v)));
   if (e.alpha == null || e.beta == null || e.gamma == null) return;
   if (absOn) {
     // iOS: webkitCompassHeading(북 기준 시계 방향 방위)로 alpha 를 북쪽 기준으로 바꾼다. 일부 브라우저는 이 이벤트 자체가 절대값(absolute = true)

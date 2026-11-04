@@ -64,7 +64,11 @@ async function choose(value) {
   const { result, before } = await acquireSite();
   await ori;   // 방향 센서를 거절해도 위치가 있으면 바깥 하늘은 그린다(방향만 고정)
   busy = false;
-  if (result === "ok") { setBgView("outdoor"); toast("바깥 보기 — 폰을 들어 실제 하늘 쪽을 둘러보세요", 3200); return; }
+  if (result === "ok") {
+    setBgView("outdoor");
+    toast("바깥 보기 — 폰을 세워 하늘을 비추면 실제 자리에 해 · 달이 보여요. 레인을 위로 튕겨 걷으면 가리는 것 없이 볼 수 있어요.", 6500);
+    return;
+  }
   setBgView("indoor");
   if (result === "denied") {
     toast(before === "denied"

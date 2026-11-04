@@ -10,7 +10,7 @@
 // 비용: 카메라가 안 움직이면 구름 흐름만 초당 6번 다시 그린다. 화면 갱신은 평소 30fps · 레인을 걷은 「배경 보기」(html.bg-peek) 중 60fps.
 // 평소엔 폰을 돌린 양의 35% 만 따라 돈다(카드를 보는 중엔 배경이 크게 휘돌지 않게). 해상도는 기기 배율 1.5 까지만.
 
-import { startGyro, gyroView, rebase, startAbsolute, gyroAbs } from "./bggyro.js";
+import { startGyro, gyroView, rebase, startAbsolute, gyroAbs, gyroDebug } from "./bggyro.js";
 import { BGVIEW_EVENT } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial } from "./bgastro.js";
@@ -464,7 +464,7 @@ export function createDomeGL(host, isPaused) {
   if (!gl) return null;
 
   let prog = null, U = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
-  let W = 0, H = 0, dpr = 1, focal = 1, cx = 0, cy = 0, phone = true;
+  let W = 0, H = 0, dpr = 1, focal = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, gain = GAIN_IDLE, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let raf = 0, stopped = true, settling = false, lastShake = 0, theme = null, t0 = performance.now();
   // 바깥 보기: 장면 +z = 북, +x = 동. 카메라 좌우 = 실제 방위, 위아래 = 실제 기울기(기준 자세 · 35% 축소 없음). 나침반이 없으면 남쪽을 본다
@@ -754,6 +754,10 @@ export function createDomeGL(host, isPaused) {
   });
   document.addEventListener(BGVIEW_EVENT, (e) => {
     outdoor = e.detail === "outdoor";
+    // 기준점(폰 뒷면 방향이 맺히는 자리): 실내 = 테두리가 화면 아래에 오도록 위쪽 40% 쯤, 바깥 = 화면 정가운데
+    // — 바깥 보기는 실제 기울기를 그대로 쓰므로(AR 처럼) 폰을 해 쪽으로 겨누면 해가 한가운데 와야 한다(2026-11-04 운영자 지시)
+    cy = outdoor ? H / 2 : cyIndoor;
+    if (W) gl.uniform2f(U.uC, cx, cy);
     settling = false;
     if (outdoor) startAbsolute();
     else { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); rebase(); }   // 실내로 돌아오면 지금 자세가 정면
@@ -772,7 +776,8 @@ export function createDomeGL(host, isPaused) {
     const c = Math.cos(BASE_PITCH), s = Math.sin(BASE_PITCH), eyeY = EYE[1], eyeZ = EYE[2];
     const rimY = H - (phone ? 68 : 130);
     cx = W / 2;
-    cy = rimY - focal * (eyeY * c + (1 - eyeZ) * s) / (-eyeY * s + (1 - eyeZ) * c);
+    cyIndoor = rimY - focal * (eyeY * c + (1 - eyeZ) * s) / (-eyeY * s + (1 - eyeZ) * c);
+    cy = outdoor ? H / 2 : cyIndoor;
     gl.uniform2f(U.uRes, canvas.width, canvas.height); gl.uniform1f(U.uDpr, dpr);
     gl.uniform2f(U.uC, cx, cy); gl.uniform1f(U.uF, focal);
     draw();
@@ -795,6 +800,17 @@ export function createDomeGL(host, isPaused) {
 
   // 확인용(?bgdebug) — 콘솔에서 보는 방향 · 섞임 상태를 읽는다
   if (new URLSearchParams(window.location.search).has("bgdebug")) {
+    // 폰에서 3초마다 상태를 경고 로그로 남긴다(확인용 서버의 오류 비콘이 PC 로 넘긴다)
+    setInterval(() => {
+      const r = (v) => (v == null ? null : Math.round(v / DEG));
+      const site = outdoorSite();
+      console.warn("[bgdome] 상태 " + JSON.stringify({
+        outdoor, site: !!site, view: [r(yaw), r(pitch)],
+        abs: gyroAbs() && [r(gyroAbs().yaw), r(gyroAbs().pitch)],
+        sun: astro && [r(astro.sunAz), r(astro.sunAlt)], moon: astro && [r(astro.moonAz), r(astro.moonAlt)],
+        sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
+      }));
+    }, 3000);
     window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
