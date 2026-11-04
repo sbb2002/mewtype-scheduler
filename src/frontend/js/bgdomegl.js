@@ -61,6 +61,7 @@ uniform float uCldA, uMix;
 // 바깥 보기: 해 · 달 방향(장면 벡터 [동, 위, 북]), 밤 정도(별), 지평 → 적도 회전(별이 실제처럼 돈다)
 uniform float uOut, uNight;
 uniform vec3 uSunDir, uMoonDir;
+uniform vec4 uSunShape, uMoonShape;   // 천체 접평면의 위쪽 방향(xyz), 지평선 눌림 세기(w)
 // 고도 · 남중 · 위상에 따른 색과 세기는 JS 에서 초당 한 번만 계산한다
 uniform vec3 uSunCol, uSunGlow, uHorizonCol, uSunHorizon, uMoonCol;
 uniform vec4 uSolar;   // 낮 산란, 노을 띠, 해 가시성, 천정의 깊이
@@ -90,12 +91,24 @@ vec4 skySet(sampler2D s, sampler2D cl, mat3 M, vec3 O, mat3 CM, vec3 CO, float u
   return vec4(mix(c, z, smoothstep(50.0 * D, 84.0 * D, el)), n.a * uCldA);   // a = 가까운 구름이 가린 정도(별 · 달을 가린다)
 }
 
-// 달: 장면에 맞춰 실제보다 크게(각반지름 1.6°). 밝은 면은 해 방향에서 구하므로 위상 · 기울기가 저절로 맞는다
-vec4 moon(vec3 d, float pxAng) {
+// 눌린 접평면 좌표를 원래 원반으로 되돌린다. 아래쪽은 조금 더 들고, 중심과 가로 지름은 유지한다.
+vec3 discTangent(vec3 d, vec3 center, vec4 shape, float radius) {
+  vec3 t = d - center * dot(d, center);
+  float y = dot(t, shape.xyz);
+  float scale = 1.0 - 0.175 * shape.w + 0.04 * shape.w * clamp(y / radius, -1.0, 1.0);
+  return t + shape.xyz * (y / scale - y);
+}
+// 번짐은 원반보다 완만하게 눌리고 가로로 살짝 퍼진다. 원반 밖에서도 분모가 작아지지 않는다.
+float discGlow(float facing, vec3 d, vec4 shape) {
+  float y = dot(d, shape.xyz);
+  return clamp(facing + shape.w * (0.06 * (1.0 - facing * facing) - 0.26 * y * y), 0.0, 1.0);
+}
+
+// 달: 장면에 맞춰 실제보다 크게(각반지름 1.6°). 복원한 구면에서 해 방향을 써 위상 · 표면도 함께 눌린다.
+vec4 moon(vec3 t, float facing, float pxAng) {
   const float R = 1.6 * D;
-  vec3 t = d - uMoonDir * dot(d, uMoonDir);
   float rr = length(t) / R;
-  float a = clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, dot(d, uMoonDir));
+  float a = clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
   if (a <= 0.0) return vec4(0.0);
   vec3 k = t / R;
   vec3 n = k - uMoonDir * sqrt(max(1.0 - dot(k, k), 0.0));   // 보이는 반구의 표면 법선(관측자 쪽)
@@ -108,10 +121,10 @@ vec4 moon(vec3 d, float pxAng) {
   vec3 col = uMoonCol * (1.0 - 0.22 * maria) * limb;
   return vec4(col, a * lit);   // a = 밝은 면만. 어두운 면은 sky() 가 밤에만 옅게(지구 반사광) 칠한다
 }
-float moonDisc(vec3 d, float pxAng) {
+float moonDisc(vec3 t, float facing, float pxAng) {
   const float R = 1.6 * D;
-  float rr = length(d - uMoonDir * dot(d, uMoonDir)) / R;
-  return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, dot(d, uMoonDir));
+  float rr = length(t) / R;
+  return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
 }
 
 vec3 sky(vec3 d, float pxAng) {
@@ -161,15 +174,22 @@ vec3 sky(vec3 d, float pxAng) {
   c += (1.0 - c) * uSunGlow * pow(forward, 40.0) * uSolar.y * 0.22 * above;
 
   // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
-  vec4 m = moon(d, pxAng);
+  vec3 mt = discTangent(d, uMoonDir, uMoonShape, 1.6 * D);
+  float mf = dot(d, uMoonDir);
+  vec4 m = moon(mt, mf, pxAng);
   float mvis = above * uLunar.x * (1.0 - 0.85 * cloud);
-  c = mix(c, vec3(0.025, 0.034, 0.055), moonDisc(d, pxAng) * uEarthshine * mvis);   // 초승 · 그믐의 지구 반사광도 밤에만 보인다
+  c = mix(c, vec3(0.025, 0.034, 0.055), moonDisc(mt, mf, pxAng) * uEarthshine * mvis);   // 초승 · 그믐의 지구 반사광도 밤에만 보인다
   c = mix(c, m.rgb, m.a * uLunar.y * mvis);
-  c += uMoonCol * pow(md, uLunar.z) * uLunar.w * mvis;
+  c += uMoonCol * pow(discGlow(md, d, uMoonShape), uLunar.z) * uLunar.w * mvis;
 
   // 원반 각반지름은 1.2° 그대로. 빛 번짐만 원반보다 조금 따뜻하고 넓다
-  float disc = clamp((1.2 * D - acos(clamp(sd, -1.0, 1.0))) / pxAng + 0.5, 0.0, 1.0);
-  float halo = pow(max(sd, 0.0), 300.0) * 0.5 + pow(max(sd, 0.0), 30.0) * 0.1;
+  float disc;
+  if (uSunShape.w > 0.0) {
+    vec3 st = discTangent(d, uSunDir, uSunShape, 1.2 * D);
+    disc = clamp((sin(1.2 * D) - length(st)) / pxAng + 0.5, 0.0, 1.0) * step(0.0, sd);
+  } else disc = clamp((1.2 * D - acos(clamp(sd, -1.0, 1.0))) / pxAng + 0.5, 0.0, 1.0);
+  float sg = discGlow(max(sd, 0.0), d, uSunShape);
+  float halo = pow(sg, 300.0) * 0.5 + pow(sg, 30.0) * 0.1;
   c = mix(c, uSunCol, disc * uSolar.z * above * (1.0 - 0.6 * cloud));
   c += (1.0 - c) * uSunGlow * halo * uSolar.z * above;
   return c;
@@ -620,6 +640,13 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uEarthshine, night * (0.72 + 0.12 * (1 - fraction)));
     gl.uniform3fv(U.uSunDir, dirOf(sun.alt, sun.az));
     gl.uniform3fv(U.uMoonDir, dirOf(moon.alt, moon.az));
+    // 고도 5° 이상은 원, 지평선에서는 세로/가로 약 0.83. 방향 · 세기는 픽셀마다가 아니라 초당 한 번 구한다.
+    const shape = (key, body) => {
+      const sa = Math.sin(body.alt), ca = Math.cos(body.alt);
+      gl.uniform4f(U[key], -sa * Math.sin(body.az), ca, -sa * Math.cos(body.az), 1 - smooth(0, 5, body.alt / DEG));
+    };
+    shape("uSunShape", sun);
+    shape("uMoonShape", moon);
     const M = horizonToEquatorial(t, site.lat, site.lon);
     gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]));
     lastGL = 0;
