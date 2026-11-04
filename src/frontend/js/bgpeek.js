@@ -45,6 +45,7 @@ function hide() {
 
 function show() {
   if (!peeking) return;
+  if (root.dataset.bgPinch) return;   // 두 손가락 줌(bgdomegl.js) 중 · 직후의 click 은 되돌리기가 아니다
   peeking = false;
   root.classList.remove("bg-peek");
   setInert(false);

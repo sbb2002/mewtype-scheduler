@@ -18,7 +18,12 @@ import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial
 const DEG = Math.PI / 180;
 // 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
 // 머리 위를 봐도 돔 꼭대기가 북쪽 29° 에 보였고 동 · 서 경도선이 23° 씩 북쪽으로 쏠렸다). 수평이 중심이면 경도선 = 실제 방위선, 돔 꼭대기 = 천정.
-const EYE = [0, 0.24, 0];
+const EYE0 = [0, 0.24, 0];
+// 줌(11-04 운영자 요청): 「배경 보기」(html.bg-peek) 중 두 손가락으로 오므리면 보는 방향의 반대쪽으로 r 만큼 물러서고(넓게), 벌리면 r 이 줄어 중심으로 돌아온다(크게).
+// 눈 = EYE0 − r · (보는 방향의 수평 성분), 높이는 그대로. r 은 0 ~ ZOOM_R_MAX(돔 반지름 1). 새로고침하면 0(중심).
+const ZOOM_R_MAX = 0.6;
+const ZOOM_PER_SCREEN = 1.5;   // 두 손가락 거리가 화면 폭만큼 줄면 r 이 이만큼 는다
+const EYE = EYE0.slice();      // 지금 눈 위치 — 프레임마다 갱신
 const BASE_PITCH = 28 * DEG;
 const GAIN_IDLE = 0.35, GAIN_PEEK = 1;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
@@ -78,7 +83,7 @@ uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
-const vec3 E = vec3(0.0, 0.24, 0.0);   // = EYE
+uniform vec3 E;   // 눈 위치 = EYE(줌으로 움직인다)
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
@@ -537,6 +542,7 @@ export function createDomeGL(host, isPaused) {
   let prog = null, U = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
   let W = 0, H = 0, dpr = 1, focal = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, gain = GAIN_IDLE, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
+  let zoomR = 0, zoomT = 0, drawnR = NaN, pinch = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
   let raf = 0, stopped = true, settling = false, lastShake = 0, theme = null, t0 = performance.now();
   // 바깥 보기: 장면 +z = 북, +x = 동. 카메라 좌우 = 실제 방위, 위아래 = 실제 기울기(기준 자세 · 35% 축소 없음). 나침반이 없으면 남쪽을 본다
   let outdoor = false;
@@ -750,6 +756,7 @@ export function createDomeGL(host, isPaused) {
     chooseSets();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
+    gl.uniform3fv(U.E, EYE); drawnR = zoomR;
     gl.uniform1f(U.uTime, (performance.now() - t0) / 1000);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     drawnYaw = yaw; drawnPitch = pitch; lastGL = performance.now();
@@ -791,8 +798,37 @@ export function createDomeGL(host, isPaused) {
     const k = 1 - Math.exp(-dt / (settling ? 0.55 : 0.08));
     yaw += (tYaw - yaw) * k;
     pitch += (tPitch - pitch) * k;
+    if (!peek && !pinch) zoomT = 0;   // 배경 보기를 닫으면 중심으로 돌아온다
+    zoomR += (zoomT - zoomR) * (1 - Math.exp(-dt / 0.12));
+    if (Math.abs(zoomT - zoomR) < 1e-4) zoomR = zoomT;
+    EYE[0] = EYE0[0] - zoomR * Math.sin(yaw);
+    EYE[2] = EYE0[2] - zoomR * Math.cos(yaw);
     return peek;
   }
+
+  // 두 손가락 줌 — 배경 보기 중에만(그 밖엔 카드 · 페이지 조작이 우선). 브라우저 확대를 막으려 passive: false
+  const touchDist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  const pinchMark = (on) => { if (on) document.documentElement.dataset.bgPinch = "1"; else delete document.documentElement.dataset.bgPinch; };
+  let pinchEndT = 0;
+  window.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 2 || !document.documentElement.classList.contains("bg-peek")) return;
+    pinch = { d0: Math.max(1, touchDist(e)), r0: zoomT };
+    clearTimeout(pinchEndT);
+    pinchMark(true);   // bgpeek.js 가 이 표시가 있는 동안 「누르면 되돌아가기」를 하지 않는다
+  }, { passive: true });
+  window.addEventListener("touchmove", (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    const r = pinch.r0 + (pinch.d0 - touchDist(e)) / Math.max(1, W) * ZOOM_PER_SCREEN;
+    zoomT = Math.max(0, Math.min(ZOOM_R_MAX, r));
+  }, { passive: false });
+  const endPinch = (e) => {
+    if (!pinch || e.touches.length >= 2) return;
+    pinch = null;
+    pinchEndT = setTimeout(() => pinchMark(false), 450);   // 손을 뗄 때 따라오는 click 까지 막는다
+  };
+  window.addEventListener("touchend", endPinch, { passive: true });
+  window.addEventListener("touchcancel", endPinch, { passive: true });
 
   function frame(t) {
     raf = 0;
@@ -806,7 +842,7 @@ export function createDomeGL(host, isPaused) {
     const moving = stepPieces(pieces, dt);
     if (settling && !moving && t - lastShake > 400) settling = false;   // 다 가라앉았다 — 이 자세가 새 기준으로 남는다
     placePieces();
-    if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) > 2e-4 || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
+    if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) + Math.abs(zoomR - drawnR) > 2e-4 || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -844,7 +880,7 @@ export function createDomeGL(host, isPaused) {
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 기존 SVG 투영(bgdome.js domeGeometry)과 같은 초점 · 중심 — 정면에서 보면 테두리가 같은 자리
     focal = phone ? W * 1.25 : W * 0.76;
-    const c = Math.cos(BASE_PITCH), s = Math.sin(BASE_PITCH), eyeY = EYE[1], eyeZ = EYE[2];
+    const c = Math.cos(BASE_PITCH), s = Math.sin(BASE_PITCH), eyeY = EYE0[1], eyeZ = EYE0[2];   // 실내 구도는 줌 0(중심) 기준
     const rimY = H - (phone ? 68 : 130);
     cx = W / 2;
     cyIndoor = rimY - focal * (eyeY * c + (1 - eyeZ) * s) / (-eyeY * s + (1 - eyeZ) * c);
@@ -882,7 +918,7 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
-    window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, eye: EYE.slice(), gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
