@@ -10,7 +10,7 @@
 //  - 프레임 요소는 한 번 만들면 옮기지 않는다(옮기면 iframe 이 다시 로드돼 재생이 끊긴다). 팝업 ↔ 플로팅은 CSS 위치만 바꾼다.
 // 재생목록: 목록의 곡을 누르면 재생목록에 순서대로 쌓이고(같은 곡도 여러 번 쌓인다), 재생은 1번부터 순서대로 이어진다.
 // (v4.11.6) 재생이 끝나 멈춘 뒤 곡을 담으면 그 곡을 바로 재생한다 — 재생목록이 비어 있을 때와 같다(st.ended).
-// (v4.11.6) 모바일은 프레임 아래 한 칸을 재생 · 곡 찾기 · 재생목록 세 탭으로 나눈다. PC 는 예전 그대로 재생부 + 곡 목록 | 재생목록 두 칸.
+// (v4.11.6) 모바일은 프레임 아래 한 칸을 재생 바 · 곡 찾기 · 재생목록 세 탭으로 나눈다. PC 는 예전 그대로 재생부 + 곡 찾기 | 재생목록 두 칸.
 // 곡이 끝나면 재생목록의 다음 곡으로 넘어가고, 마지막이면 멈춘다. 재생목록 밖의 곡은 끝나면 멈춘다(추천 영상으로 넘어가지 않게 처음 화면으로 되돌림).
 // 반복(BPM 과 같은 3단계): 꺼짐 → 한 곡(같은 곡 처음부터) → 전체(마지막 곡 뒤에 1번으로).
 // 데이터는 textContent / createElement 로만 주입한다(XSS 방어, innerHTML 금지).
@@ -63,7 +63,7 @@ const st = {
   closing: false,     // 모바일 시트가 내려가는 중 — 끝날 때까지 프레임은 재생부 자리를 따른다
   dock: null,         // PC 하단 도크 컨테이너(#player-dock). 있으면 팝업 본체가 거기 상시 표시된다
   slotVisible: false, // 도크의 재생부가 화면에 보이는가
-  tab: "songs",       // 아래 영역 탭 — "play"(모바일만) | "songs"(곡 찾기 · PC 곡 목록) | "queue" (팝업을 다시 열어도 유지)
+  tab: "songs",       // 아래 영역 탭 — "play"(재생 바 · 모바일만) | "songs"(곡 찾기) | "queue" (팝업을 다시 열어도 유지)
   shuffle: false,
   repeat: "off",      // "off" | "one" | "all" — 버튼을 누를 때마다 순환 (BPM 과 같다)
   queue: [],          // 재생목록 — 곡 id 를 쌓은 순서대로(같은 곡을 여러 번 쌓을 수 있다)
@@ -134,6 +134,7 @@ const ICONS = {
   repeat: ["M7 7h10v3l4-4-4-4v3H5v6h2zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2z"],
   note: ["M9 18V4.6L20 2.6V16H18V5.9L11 7.2V18Z", "M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z", "M20 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"],   // (v4.8.3) 음표 — 채운 모양 세 조각
   film: ["M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9.5 9v6l5-3z"],   // (v4.8.3) 화면 + 재생 삼각형(evenodd 로 뚫는다)
+  list: ["M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z"],   // (v4.12.0) 재생목록 탭 — 채운 막대 3개
   search: null,
 };
 const EVENODD = new Set(["film"]);
@@ -707,7 +708,8 @@ function omakase(kind) {
   st.played = new Set();
   st.qi = -1;
   playQueueAt(0);
-  setTab("queue");   // 만든 재생목록을 바로 보여준다 (모바일 탭 — PC 는 두 칸이 같이 보여 영향 없음)
+  // (v4.12.0) 모바일은 재생 바 탭으로(운영자 결정 2026-11-04). PC 는 재생 바 탭이 없어 예전처럼 재생목록을 보여 준다
+  setTab(isPhone() ? "play" : "queue");
   pulseBadge();
   // 연출: 뒤섞임 → 5초 쿨타임 파이
   const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -791,10 +793,13 @@ function build() {
     el.undo,
   );
   // (v4.11.6) .mp-play = 곡 정보 · 컨트롤. PC 는 display:contents 라 재생부 그대로, 모바일은 「재생」 탭 패널이 된다
+  // (v4.12.0) 재생 바 탭 아래 「다음 곡」 3줄 — 모바일에서만 보인다(paintNext)
+  el.next = h("section", { class: "mp-next", "aria-label": "다음 곡" });
   el.play = h("div", { class: "mp-play", id: "mp-panel-play" },
     h("div", { class: "mp-song" }, h("div", { class: "mp-song__txt" }, el.sTitle, el.sMeta, el.sKo), el.media, el.mvTip),
     h("div", { class: "mp-bar" }, el.cur, el.track, el.dur),
     h("div", { class: "mp-ctl" }, el.ctlTip, h("div", { class: "mp-grp" }, el.bShuffle, iconBtn("prev", "이전 곡", "mp-btn", () => go(-1)), el.bPlay, iconBtn("next", "다음 곡", "mp-btn", () => go(1)), el.bRepeat), el.omaWrap),
+    el.next,
     el.err,
   );
   el.stage = h("section", { class: "mp-stage" }, el.slot, el.play);
@@ -815,12 +820,13 @@ function build() {
     el.count,
   );
 
-  // 탭 — PC: 곡 목록 | 재생목록(배지 = 재생목록 곡 수, 오른쪽 칸). 모바일(v4.11.6): 재생 | 곡 찾기 | 재생목록 — 프레임 아래 한 칸을 세 탭이 나눠 쓴다.
+  // 탭 — PC: 곡 찾기 | 재생목록(배지 = 재생목록 곡 수, 오른쪽 칸). 모바일(v4.11.6): 재생 바 | 곡 찾기 | 재생목록 — 프레임 아래 한 칸을 세 탭이 나눠 쓴다.
   el.badge = h("span", { class: "mp-badge", text: "0" });
-  el.tabSongs = h("button", { type: "button", class: "mp-tab", role: "tab", id: "mp-tab-songs", "aria-controls": "mp-panel-songs", on: { click: () => setTab("songs"), keydown: onTabKey } },
-    h("span", { class: "mp-pc-only", text: "곡 목록" }), h("span", { class: "mp-m-only", text: "곡 찾기" }));
-  el.tabPlay = h("button", { type: "button", class: "mp-tab mp-tab--play", role: "tab", id: "mp-tab-play", "aria-controls": "mp-panel-play", text: "재생", on: { click: () => setTab("play"), keydown: onTabKey } });   // 모바일에서만 보인다
-  el.tabQueue = h("button", { type: "button", class: "mp-tab", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", on: { click: () => setTab("queue"), keydown: onTabKey } }, "재생목록 ", el.badge);
+  el.tabSongs = h("button", { type: "button", class: "mp-tab mp-tab--songs", role: "tab", id: "mp-tab-songs", "aria-controls": "mp-panel-songs", on: { click: () => setTab("songs"), keydown: onTabKey } },
+    icon("search", "mp-ico mp-tab__ico"), "곡 찾기");   // (v4.12.0) PC · 모바일 같은 이름
+  el.tabPlay = h("button", { type: "button", class: "mp-tab mp-tab--play", role: "tab", id: "mp-tab-play", "aria-controls": "mp-panel-play", text: "재생 바", on: { click: () => setTab("play"), keydown: onTabKey } });   // 모바일에서만 보인다
+  el.tabQueue = h("button", { type: "button", class: "mp-tab mp-tab--queue", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", on: { click: () => setTab("queue"), keydown: onTabKey } },
+    icon("list", "mp-ico mp-tab__ico"), "재생목록 ", el.badge);   // (v4.12.0) 앞에 목록 아이콘
   el.tabBar = h("div", { class: "mp-tabs", role: "tablist", "aria-label": "플레이어 보기" }, el.tabPlay, el.tabSongs, el.tabQueue);
   el.qPanel = h("div", { class: "mp-qpanel", id: "mp-panel-queue", hidden: true }, el.qBox);
   el.panels = h("div", { class: "mp-panels" }, el.lib, el.qPanel);
@@ -888,7 +894,7 @@ function build() {
   paintTabs();
 }
 
-/** 지금 보여 줄 탭 — 「재생」 탭은 모바일에만 있다. PC 폭이면 곡 목록으로 본다(값은 지우지 않아 폭이 돌아오면 다시 재생 탭). */
+/** 지금 보여 줄 탭 — 「재생 바」 탭은 모바일에만 있다. PC 폭이면 곡 찾기로 본다(값은 지우지 않아 폭이 돌아오면 다시 재생 바 탭). */
 const shownTab = () => (st.tab === "play" && !isPhone() ? "songs" : st.tab);
 
 /** 탭 상태 반영 — 선택된 탭의 패널만 보인다. 재생 탭 패널(.mp-play)은 CSS 가 data-tab 으로 가른다(PC 에서는 늘 보여야 해서 hidden 을 쓰지 않는다). */
@@ -989,6 +995,7 @@ function paintControls() {
   el.bRepeat.title = lab;
   const t = el.bRepeat.querySelector(".mp-rpt");
   if (t) t.textContent = rp === "one" ? "1" : rp === "all" ? "A" : "";
+  paintNext();   // (v4.12.0) 셔플 · 반복이 바뀌면 다음 곡 칸도 따라간다
 }
 
 let qUserAt = 0;       // 사용자가 재생목록을 직접 스크롤한 마지막 시각 — 이후 4초는 자동 포커스를 건너뛴다
@@ -1014,11 +1021,19 @@ function focusQueueCur() {
 function paintQueue() {
   if (!built) return;
   el.badge.textContent = String(st.queue.length);
-  el.qCount.textContent = st.queue.length ? `${st.queue.length}곡` : "";
-  el.qClear.hidden = !st.queue.length;
+  el.qCount.textContent = `${st.queue.length}곡`;   // (v4.12.0) 0곡도 표시
+  el.qClear.hidden = false;
+  el.qClear.disabled = !st.queue.length;
   if (!st.queue.length) {
-    el.qList.replaceChildren(h("li", { class: "mp-q__empty", text: "곡을 누르면 여기에 쌓입니다. 재생은 1번부터 순서대로 이어집니다." }));
+    // (v4.12.0) 빈 재생목록도 곡 줄과 같은 모양 — 자리 줄 3개 + 안내 한 줄.
+    // 자리 줄에는 .mp-q__fg · .mp-q__x · data-i 를 쓰지 않는다 — 밀어서 빼기(initQueueSwipe)가 .mp-q__fg 를 잡아 곡을 지울 수 있다.
+    const ph = (n, text) => h("li", { class: "mp-q__item is-ph", "aria-hidden": n > 1 ? "true" : null },
+      h("div", { class: "mp-q__phrow" },
+        h("div", { class: "mp-q__main" }, h("span", { class: "mp-mono mp-q__n", text: String(n) }), h("span", { class: "mp-q__title", text }))));
+    el.qList.replaceChildren(ph(1, "곡 찾기에서 곡을 누르면 여기에 쌓입니다"), ph(2, ""), ph(3, ""),
+      h("li", { class: "mp-q__empty", text: "재생은 1번부터 순서대로 이어집니다." }));
     qFocusKey = null;
+    paintNext();
     return;
   }
   el.qList.replaceChildren(...st.queue.map((id, i) => {
@@ -1035,6 +1050,81 @@ function paintQueue() {
         h("button", { type: "button", class: "mp-q__x", "aria-label": `${s.title} 재생목록에서 빼기`, title: "빼기", text: "✕", on: { click: (e) => removeAnimated(i, e.currentTarget.closest("li")) } })));
   }));
   focusQueueCur();
+  paintNext();
+}
+
+// ── (v4.12.0) 재생 바 탭 — 「다음 곡」 3줄 ─────────────────────────────
+/** 다음 곡 3줄 계산. rows 는 항상 3개, rows[0] 이 「바로 다음」. 화면 표시용이라 상태를 바꾸지 않는다.
+ *  Row = {kind:"song", i, id, label?} | {kind:"mystery"} | {kind:"note", text, sub?} | {kind:"blank"}. */
+function upNext() {
+  const blank = { kind: "blank" };
+  const len = st.queue.length;
+  if (!len) return { head: "다음 곡", rows: [{ kind: "note", text: "곡 찾기에서 곡을 누르면 여기에 이어집니다" }, blank, blank] };
+  if (st.qi < 0) return { head: "다음 곡", rows: [{ kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "재생목록의 곡을 누르면 거기서부터 이어집니다" }, blank, blank] };
+  // 지금 곡 뒤 k 번째 칸 — 재생목록 안이면 곡, 넘치면 전체 반복일 때만 감아서 넣는다. 없으면 null.
+  const pos = (k) => {
+    const j = st.qi + k;
+    if (j < len) return { kind: "song", i: j, id: st.queue[j] };
+    if (st.repeat === "all") return { kind: "song", i: j % len, id: st.queue[j % len] };
+    return null;
+  };
+  if (st.repeat === "one") {
+    const rest = [1, 2].map((k) => (st.shuffle ? { kind: "mystery" } : (pos(k) || blank)));
+    return { head: "다음 곡 · 한 곡 반복", rows: [{ kind: "song", i: st.qi, id: st.queue[st.qi], label: "반복" }, ...rest] };
+  }
+  if (st.shuffle) {
+    if (!queueHasNext()) return { head: "다음 곡 · 셔플", rows: [{ kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "전체 반복을 켜면 1번부터 다시" }, blank, blank] };
+    const remain = st.queue.filter((_, k) => k !== st.qi && !st.played.has(k)).length;
+    const n = st.repeat === "all" ? 3 : Math.min(3, remain);
+    return { head: "다음 곡 · 셔플", rows: [1, 2, 3].map((k) => (k <= n ? { kind: "mystery" } : blank)) };
+  }
+  const rows = [];
+  let stopped = false;
+  for (let k = 1; k <= 3; k++) {
+    if (stopped) { rows.push(blank); continue; }
+    const r = pos(k);
+    if (r) { rows.push(r); continue; }
+    stopped = true;
+    rows.push(k === 1 ? { kind: "note", text: "이 곡이 끝나면 멈춥니다", sub: "전체 반복을 켜면 1번부터 다시" } : { kind: "note", text: "여기서 멈춥니다" });
+  }
+  const head = `다음 곡 · 재생목록 ${st.qi + 1}/${len}` + (st.repeat === "all" ? " · 전체 반복" : "");
+  return { head, rows };
+}
+
+/** 다음 곡 칸 그리기 — 모바일 재생 바 탭 안에서만 보인다(CSS). */
+function paintNext() {
+  if (!built) return;
+  const { head, rows } = upNext();
+  const blankRow = (first) => h("div", { class: "mp-next__row is-blank" + (first ? " is-first" : "") },
+    h("span", { class: "mp-next__lab", text: "·" }), h("span", { class: "mp-next__t", text: "—" }));
+  el.next.replaceChildren(
+    h("div", { class: "mp-next__head", text: head }),
+    ...rows.map((row, k) => {
+      const first = k === 0;
+      const cls = "mp-next__row" + (first ? " is-first" : "");
+      if (row.kind === "song") {
+        const s = st.songs.find((x) => x.id === row.id);
+        if (!s) return blankRow(first);
+        return h("button", { type: "button", class: cls, "aria-label": `${s.title} 재생`, on: { click: () => playQueueAt(row.i) } },
+          h("span", { class: "mp-next__lab", text: row.label || (first ? "다음" : String(row.i + 1)) }),
+          h("span", { class: "mp-next__t", text: s.title }),
+          first ? h("span", { class: "mp-next__m" }, ...memberNodes(s), KIND_LABEL[s.kind] || s.kind) : null);
+      }
+      if (row.kind === "mystery") {
+        return h("div", { class: cls + " is-mystery" },
+          h("span", { class: "mp-next__lab", text: first ? "다음" : "?" }),
+          h("span", { class: "mp-next__t", text: "?????" }),
+          first ? h("span", { class: "mp-next__m", text: "셔플 — 곡이 끝날 때 무작위로 고릅니다" }) : null);
+      }
+      if (row.kind === "note") {
+        return h("div", { class: cls + " is-note" },
+          h("span", { class: "mp-next__lab", text: first ? "끝" : "·" }),
+          h("span", { class: "mp-next__t", text: row.text }),
+          row.sub ? h("span", { class: "mp-next__m", text: row.sub }) : null);
+      }
+      return blankRow(first);
+    }),
+  );
 }
 
 function paintGrip() {
