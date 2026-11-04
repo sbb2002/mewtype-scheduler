@@ -207,28 +207,28 @@ vec3 sky(vec3 d, float pxAng) {
   c = mix(c, m.rgb, m.a * uLunar.y * mvis);
   c += uMoonCol * pow(discGlow(md, d, uMoonShape), uLunar.z) * uLunar.w * mvis;
 
-  // 각반지름 1.2°와 지평선 눌림 유지. 흰금색 핵 → 노란 테, 번짐은 원반 밖으로 이어진다.
+  // Disc radius stays selectable; angular bloom supplies the apparent photographic size.
   float sunR = sin(uSunR);
   float sr;
   if (uSunShape.w > 0.0) sr = length(discTangent(d, uSunDir, uSunShape, sunR)) / sunR;
   else sr = sqrt(max(2.0 * (1.0 - sd), 0.0)) / sunR;
   float disc = clamp((1.0 - sr) * sunR / pxAng + 0.5, 0.0, 1.0) * step(0.0, sd);
   float limb = smoothstep(0.35, 1.0, sr);
-  vec3 core = mix(mix(vec3(1.0, 0.985, 0.94), vec3(1.0, 0.975, 0.87), warm), uSunCol, limb);
+  vec3 core = vec3(1.0);
   // 구름 알파는 합성 강도를 뺀 밀도로 복원한다. 짙은 구름은 직사광을 가리고 산란광은 남긴다.
   float density = clamp(cloud / max(uCldA, 0.001), 0.0, 1.0);
   float direct = (1.0 - density) * (1.0 - density);
   float sg = discGlow(max(sd, 0.0), d, uSunShape);
-  float inner = pow(sg, mix(1800.0, 450.0, warm));
-  float scatter = pow(sg, mix(180.0, 48.0, warm));
-  float outer = pow(sg, mix(48.0, 12.0, warm));
-  // 저고도에서 반치폭 약 3° / 10° / 20°. 얇은 구름 가장자리를 밝히고 짙은 구름은 직사만 가린다.
+  float inner = pow(sg, mix(360.0, 260.0, warm));
+  float scatter = pow(sg, mix(80.0, 48.0, warm));
+  float outer = pow(sg, mix(24.0, 12.0, warm));
+  // Smooth overlapping tails, independent of disc radius; thin cloud edges retain scattered light.
   float edge = 4.0 * density * (1.0 - density);
-  float corona = inner * uSunAir.x * (1.0 - 0.75 * density) * uSolar.z;
-  float halo = scatter * uSunAir.y * (0.65 + 0.55 * edge) * uSolar.z;
-  float air = outer * (0.045 + 0.6 * warm) * max(uSolar.z, uSolar.y);
+  float corona = inner * uSunAir.x * (1.0 - 0.92 * density) * uSolar.z;
+  float halo = scatter * uSunAir.y * (0.65 + 0.55 * edge) * (1.0 - 0.55 * density) * uSolar.z;
+  float air = outer * (0.10 + 0.55 * warm) * max(uSolar.z, uSolar.y);
   vec3 light = core * mix(uSunAir.w, 1.8, limb) * disc * direct * uSolar.z * above
-    + mix(uSunGlow, vec3(1.0, 0.92, 0.68), 0.72 * warm) * corona
+    + mix(vec3(1.0, 0.995, 0.98), uSunCol, 0.32 * warm) * corona
     + uSunGlow * (halo + air);   // 대기 산란은 지평선 아래까지 연결하고 원반만 above로 가린다.
   // 공통 분모로 빛의 색 비율을 유지한다. 채널별 흰색 포화를 피하고 사진의 구름 계조도 남긴다.
   c = (c + light) / (1.0 + max(light.r, max(light.g, light.b)));
@@ -770,7 +770,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uNight, night);
     gl.uniform3fv(U.uSunCol, sunCol);
     gl.uniform3fv(U.uSunGlow, sunGlow);
-    gl.uniform4f(U.uSunAir, 0.5 + 1.9 * warm, 0.12 + 0.8 * warm * (1 - 0.18 * dawn), warm, 18 + 8 * warm);
+    gl.uniform4f(U.uSunAir, 14 + 4 * warm, 0.85 + 0.8 * warm * (1 - 0.18 * dawn), warm, 32 + 8 * warm);
     gl.uniform3fv(U.uSunHorizon, [Math.sin(sun.az), 0, Math.cos(sun.az)]);
     gl.uniform4f(U.uSolar, day, dusk, smooth(-1.5, 0.5, alt), day * (0.045 + 0.055 * noon));
     gl.uniform3fv(U.uMoonCol, moonCol);
