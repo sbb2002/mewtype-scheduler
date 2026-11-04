@@ -18,7 +18,7 @@ const YAW_FREEZE = 78 * DEG;   // 폰을 거의 눕히거나 세워 하늘 · �
 const FRESH_MS = 1000;         // 윗순위 원천이 이 시간 안에 값을 줬으면 아랫순위 값은 버린다
 const OFFSET_TTL_MS = 3 * 3600 * 1000;   // 수동 보정 수명 — 주변 철근 · 전자기기 오차는 자리마다 달라 오래 두면 오히려 틀린다
 
-let on = false, have = false, needBase = true;
+let on = false, have = false, needBase = true, tiltX = 0, tiltY = 1;
 let yawAcc = 0, lastYaw = null, rawPitch = 0, baseYaw = 0, basePitch = 0;
 // 절대 방위(바깥 보기, 자북 기준) — 북쪽 = 0, 동쪽 = +π/2
 let absOn = false, absHave = false, absYaw = 0, absPitch = 0;
@@ -78,6 +78,10 @@ function onOrient(e) {
     if (typeof e.webkitCompassHeading === "number" && e.webkitCompassHeading >= 0) takeAbsolute(forwardOf(360 - e.webkitCompassHeading, e.beta, e.gamma), "ios");
     else if (e.absolute === true) takeAbsolute(forwardOf(e.alpha, e.beta, e.gamma), "flag");
   }
+  // 화면 기울임(roll) 재료 — 회전 행렬에서 폰 오른쪽(x) · 위쪽(y) 축의 「세계 위」 성분. 오일러 각 꼬임과 무관하다(bggyro.selfcheck.mjs)
+  const cb = Math.cos(e.beta * DEG);
+  tiltX = cb * Math.sin(e.gamma * DEG);   // = −(폰 오른쪽 축의 위 성분): 오른쪽이 내려가면 +
+  tiltY = Math.sin(e.beta * DEG);         // = 폰 위쪽 축의 위 성분: 세워 들면 1
   const [fx, fy, fz] = forwardOf(e.alpha, e.beta, e.gamma);
   const pitch = Math.asin(Math.max(-1, Math.min(1, fz)));
   if (Math.abs(pitch) < YAW_FREEZE) {
@@ -188,6 +192,13 @@ export function gyroAbs() { return absHave ? { yaw: wrap(absYaw + declination() 
 
 /** 지금 폰 자세를 새 기준(정면)으로 삼는다 */
 export function rebase() { baseYaw = yawAcc; basePitch = rawPitch; }
+
+/** 화면 기울임 { roll: 오른쪽이 내려가면 + (라디안), upright: 0 ~ 1 } — 핸들 돌리듯 옆으로 기울인 각도.
+ *  upright = 화면 평면 안의 중력 세기(세워 들면 1, 눕히면 0) — 눕혀 들면 roll 이 의미 없으니 부르는 쪽이 세기를 줄인다. 센서 값이 없으면 null */
+export function gyroTilt() {
+  if (!have) return null;
+  return { roll: Math.atan2(tiltX, tiltY), upright: Math.min(1, Math.hypot(tiltX, tiltY)) };
+}
 
 /** 기준에서 돈 양 { yaw, pitch } — 센서 값이 아직 없으면 null */
 export function gyroView() { return have ? { yaw: yawAcc - baseYaw, pitch: rawPitch - basePitch } : null; }

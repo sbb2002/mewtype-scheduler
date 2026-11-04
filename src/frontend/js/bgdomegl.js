@@ -10,7 +10,7 @@
 // 비용: 카메라가 안 움직이면 구름 흐름만 초당 6번 다시 그린다. 화면 갱신은 평소 30fps · 레인을 걷은 「배경 보기」(html.bg-peek) 중 60fps.
 // 평소엔 폰을 돌린 양의 35% 만 따라 돈다(카드를 보는 중엔 배경이 크게 휘돌지 않게). 해상도는 기기 배율 1.5 까지만.
 
-import { startGyro, gyroView, rebase, startAbsolute, gyroAbs, gyroDebug } from "./bggyro.js";
+import { startGyro, gyroView, rebase, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
 import { BGVIEW_EVENT } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial } from "./bgastro.js";
@@ -36,6 +36,8 @@ const DEBUG = QS.has("bgdebug");
 const NORMAL = QS.get("bg") === "normal";
 const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
 const T_SPEED = DEBUG && !NORMAL && QS.get("bgspeed") ? Number(QS.get("bgspeed")) || 1 : 1;
+// 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
+const MOON_TEST = DEBUG && QS.get("bgmoon") != null && Number.isFinite(Number(QS.get("bgmoon"))) ? ((Number(QS.get("bgmoon")) % 1) + 1) % 1 : null;
 const T_REAL0 = Date.now();
 const nowMs = () => (Number.isFinite(T_START) ? T_START + (Date.now() - T_REAL0) * T_SPEED : Date.now());
 
@@ -69,7 +71,7 @@ uniform mat3 uSkyM2; uniform vec3 uSkyO2; uniform mat3 uCldM2; uniform vec3 uCld
 uniform float uCldA, uMix;
 // 바깥 보기: 해 · 달 방향(장면 벡터 [동, 위, 북]), 밤 정도(별), 지평 → 적도 회전(별이 실제처럼 돈다)
 uniform float uOut, uNight;
-uniform vec3 uSunDir, uMoonDir;
+uniform vec3 uSunDir, uMoonDir, uMoonSun;   // uMoonSun = 달을 비추는 해 방향(평소 = uSunDir, 위상 시험 때만 다름)
 uniform vec4 uSunShape, uMoonShape;   // 천체 접평면의 위쪽 방향(xyz), 지평선 눌림 세기(w)
 // 고도 · 남중 · 위상에 따른 색과 세기는 JS 에서 초당 한 번만 계산한다
 uniform vec3 uSunCol, uSunGlow, uSunHorizon, uMoonCol;
@@ -122,7 +124,7 @@ vec4 moon(vec3 t, float facing, float pxAng) {
   if (a <= 0.0) return vec4(0.0);
   vec3 k = t / R;
   vec3 n = k - uMoonDir * sqrt(max(1.0 - dot(k, k), 0.0));   // 보이는 반구의 표면 법선(관측자 쪽)
-  float lit = smoothstep(-0.03, 0.06, dot(n, uSunDir));
+  float lit = smoothstep(-0.03, 0.06, dot(n, uMoonSun));
   // 바다(어두운 무늬): 표면 위치로 만든 부드러운 얼룩 — 달 자체에 붙어 있다
   vec3 s = n * 3.1;
   float maria = h3(floor(s)) * 0.5 + h3(floor(s * 2.0)) * 0.3 + h3(floor(s * 4.0)) * 0.2;
@@ -238,7 +240,7 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
   vec2 p = vec2((lon - a) * cos(8.0 * D), lat - 8.0 * D) / size;
   // Use continuous sphere derivatives: the nearest-meridian chart jumps at 45 degrees.
   float px = max(glassPx / size, 1e-5);
-  if (abs(p.x) > 0.68 + 8.0 * px || abs(p.y) > 0.66 + 8.0 * px) return col;
+  if (abs(p.x) > 0.68 + 28.0 * uDpr * px || abs(p.y) > 0.66 + 28.0 * uDpr * px) return col;   // 블룸이 다 사그라드는 거리까지(잘린 네모 테두리 방지)
   float id = mod(cardinal + 4.0, 4.0);
   vec2 bl = vec2(-0.30, -0.5), tl = vec2(-0.30, 0.5);
   vec2 br = vec2(0.30, -0.5), tr = vec2(0.30, 0.5);
@@ -262,14 +264,17 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
   float ticks = hudSegment(vec2(abs(p.x), p.y), vec2(0.48, -0.10), vec2(0.48, 0.10));
   ink = min(ink, ticks);
   float distPx = ink / px;
-  float core = cover(ink, px, 0.65 * uDpr);
+  float core = cover(ink, px, 0.9 * uDpr);   // 획 반폭(기기 픽셀) — 11-04 「약간 더 두껍게」 0.65 → 0.9
   float halo = exp(-distPx * distPx / (10.0 * uDpr * uDpr));
-  float outline = cover(ink, px, 2.1 * uDpr);
+  // 네온 글로우(11-04 운영자): 글자 색 그대로, 약하게 — 획 둘레 좁은 번짐 + 옅은 블룸을 더하기로 얹는다.
+  float bloom = exp(-distPx / (6.0 * uDpr));
+  float outline = cover(ink, px, 2.4 * uDpr);
   float sunFade = mix(1.0, 0.20, smoothstep(cos(6.0 * D), cos(2.0 * D), dot(ray, uSunDir)) * uSolar.z);
+  float flick = 0.95 + 0.05 * sin(uTime * 7.3 + cardinal * 1.7) * sin(uTime * 2.1);   // 아주 옅은 네온 떨림
   vec3 hue = id < 0.5 ? vec3(1.0, 0.055, 0.075) : vec3(0.53, 0.94, 1.0);
-  col = mix(col, vec3(0.012, 0.025, 0.045), outline * 0.62 * sunFade);
-  col = mix(col, hue, halo * 0.24 * sunFade);
-  return mix(col, hue, core * 0.94 * sunFade);
+  col = mix(col, vec3(0.012, 0.025, 0.045), outline * 0.5 * sunFade);   // 밝은 낮 하늘에서도 읽히게 어두운 테
+  col += hue * (halo * 0.18 + bloom * 0.06) * sunFade * flick;
+  return mix(col, hue, core * 0.92 * sunFade);
 }
 
 void main() {
@@ -479,10 +484,15 @@ function placeFromEye(yaw, el, dist) {
 // 물리 상수(세계 단위 = 돔 반지름 1, 초)
 const WANDER = 0.012, WANDER_PULL = 0.35, DRAG_IDLE = 0.6, DRAG_FAST = 1.5, FAST = 0.06;
 const R_DOME = 0.9, Y_MIN = 0.06, EYE_GAP = 0.28, PIECE_R = 0.035, BOUNCE = 0.8;
+// UFO 기울임(11-04 운영자 요청): 폰을 세워 정면을 볼 때 핸들 돌리듯 옆으로 기울이면 하늘(카메라)은 그대로, 무늬만 낮아진 쪽으로 살살 쓸려 내려온다.
+// 가속도 = TILT_G · (sin|roll| − sin 3°) · 세움 정도 — 화면 오른쪽(수평) 방향 + 그 1/4 만큼 아래. 3° 안쪽 손떨림은 무시.
+// 빠르면 DRAG_FAST 가 걸려 쓸려 가는 속도는 초당 0.04 ~ 0.06(돔 반지름 1 기준) 언저리에서 멈춘다 — 「살살」.
+const TILT_G = 0.1, TILT_DEAD = Math.sin(3 * Math.PI / 180), TILT_DOWN = 0.25;
 
-function stepPieces(ps, dt) {
+function stepPieces(ps, dt, tiltA) {
   let moving = false;
   for (const p of ps) {
+    if (tiltA) for (let i = 0; i < 3; i++) p.v[i] += tiltA[i] * dt;
     // 무작위 표류: 가속도 자체가 천천히 바뀐다(관성 있는 떠다님)
     // (가속도 표준편차 ≈ WANDER → 평소 속도 ≈ 0.02/s, 폰 화면에서 초당 십여 px)
     const sd = WANDER * Math.sqrt(2 * WANDER_PULL * dt) * 3.46;   // 균등 난수(-.5~.5)의 표준편차 1/√12 보정
@@ -701,7 +711,17 @@ export function createDomeGL(host, isPaused) {
     const sunHigh = blend([1, 0.985, 0.955], [1, 0.96, 0.88], (1 - dawn) * (1 - noon) * 0.3);
     const sunCol = blend(sunHigh, sunLow, warm);
     const sunGlow = blend([1, 0.97, 0.9], blend([1, 0.74, 0.23], [1, 0.81, 0.52], dawn), warm);
-    const moonAlt = moon.alt / DEG, fraction = moonIllumination(t).fraction;
+    let moonSun = dirOf(sun.alt, sun.az), fraction = moonIllumination(t).fraction;
+    if (MOON_TEST != null) {
+      // 위상 p → 해-달 이각 ψ = 2πp. 차오르는 동안(p < 0.5) 해는 달의 서쪽 — 북반구에서 오른쪽이 밝다
+      moon.alt = 35 * DEG; moon.az = Math.PI;
+      const m = dirOf(moon.alt, moon.az), up = [0, 1, 0];
+      const w = [up[1] * m[2] - up[2] * m[1], up[2] * m[0] - up[0] * m[2], up[0] * m[1] - up[1] * m[0]];   // up × m = 달 자리의 서쪽
+      const wl = Math.hypot(...w), psi = 2 * Math.PI * MOON_TEST;
+      moonSun = m.map((c, i) => Math.cos(psi) * c + Math.sin(psi) * w[i] / wl);
+      fraction = (1 - Math.cos(psi)) / 2;
+    }
+    const moonAlt = moon.alt / DEG;
     const moonUp = smooth(-2, 0.3, moonAlt), moonLow = 1 - smooth(0, 24, moonAlt);
     const moonContrast = 1 - smooth(-8, 10, alt);
     const moonLight = night * fraction * fraction * moonUp * smooth(0, 50, moonAlt);
@@ -722,6 +742,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uEarthshine, night * (0.72 + 0.12 * (1 - fraction)));
     gl.uniform3fv(U.uSunDir, dirOf(sun.alt, sun.az));
     gl.uniform3fv(U.uMoonDir, dirOf(moon.alt, moon.az));
+    gl.uniform3fv(U.uMoonSun, moonSun);
     // 고도 5° 이상은 원, 지평선에서는 세로/가로 약 0.83. 방향 · 세기는 픽셀마다가 아니라 초당 한 번 구한다.
     const shape = (key, body) => {
       const sa = Math.sin(body.alt), ca = Math.cos(body.alt);
@@ -833,6 +854,18 @@ export function createDomeGL(host, isPaused) {
   window.addEventListener("touchend", endPinch, { passive: true });
   window.addEventListener("touchcancel", endPinch, { passive: true });
 
+  // 기울임 → 무늬에 줄 가속도(세계 좌표). roll 은 0.15초 저역 통과로 손떨림을 거른다
+  let rollS = 0;
+  function tiltAccel(dt) {
+    const tl = gyroTilt();
+    const target = tl ? tl.roll * tl.upright : 0;
+    rollS += (target - rollS) * (1 - Math.exp(-dt / 0.15));
+    const s = Math.sign(rollS) * Math.max(0, Math.abs(Math.sin(rollS)) - TILT_DEAD) * TILT_G;
+    if (!s) return null;
+    const B = basis();   // right = 화면 오른쪽의 수평 방향(카메라는 기울지 않는다)
+    return [B.right[0] * s, -Math.abs(s) * TILT_DOWN, B.right[2] * s];
+  }
+
   function frame(t) {
     raf = 0;
     if (stopped) return;
@@ -842,7 +875,7 @@ export function createDomeGL(host, isPaused) {
     const dt = Math.min(0.05, (t - tPrev) / 1000 || 0.016);
     tPrev = t;
     updateView(dt, t);
-    const moving = stepPieces(pieces, dt);
+    const moving = stepPieces(pieces, dt, tiltAccel(dt));
     if (settling && !moving && t - lastShake > 400) settling = false;   // 다 가라앉았다 — 이 자세가 새 기준으로 남는다
     placePieces();
     if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) + Math.abs(zoomR - drawnR) > 2e-4 || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();

@@ -40,6 +40,22 @@ for (const [al, be, ga] of [[0, 0, 0], [0, 90, 0], [30, 80, 5], [200, 95, -10], 
 }
 check("쿼터니언 = 오일러 각(뒷면 방향)", worst < 1e-12, `최대 차 ${worst.toExponential(1)}`);
 
+// ①-2 화면 기울임(roll) = 회전 행렬에서 직접 구한 값(폰 오른쪽 축 · 위쪽 축의 「세계 위」 성분)과 같은지
+const rotate = (q, v) => { const p = qmul(qmul(q, [v[0], v[1], v[2], 0]), [-q[0], -q[1], -q[2], q[3]]); return p.slice(0, 3); };
+let worstRoll = 0;
+g.startGyro();
+for (const [al, be, ga] of [[0, 90, 0], [40, 80, 15], [200, 70, -25], [10, 100, 30], [300, 60, 20], [123, 45, -60]]) {
+  listeners.deviceorientation({ alpha: al, beta: be, gamma: ga });
+  const q = eulerQ(al, be, ga), xw = rotate(q, [1, 0, 0]), yw = rotate(q, [0, 1, 0]);
+  const want = Math.atan2(-xw[2], yw[2]);
+  worstRoll = Math.max(worstRoll, Math.abs(g.gyroTilt().roll - want));
+}
+check("화면 기울임 = 회전 행렬 기준", worstRoll < 1e-9, `최대 차 ${worstRoll.toExponential(1)}`);
+listeners.deviceorientation({ alpha: 0, beta: 60, gamma: 20 });   // W3C: gamma + = 오른쪽이 내려감
+check("오른쪽을 내리면 roll +", g.gyroTilt().roll > 0);
+listeners.deviceorientation({ alpha: 0, beta: 90, gamma: 0 });
+check("세워 들면 roll 0 · upright 1", Math.abs(g.gyroTilt().roll) < 1e-9 && Math.abs(g.gyroTilt().upright - 1) < 1e-9);
+
 // 위치를 받고 바깥 보기 시작
 await acquireSite();
 g.startAbsolute();
