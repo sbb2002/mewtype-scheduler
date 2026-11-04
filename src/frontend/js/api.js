@@ -16,15 +16,28 @@ export async function fetchPreview(url) {
     });
 
     if (!response.ok) {
+      // (v4.11.7) status 를 담아 서버 오류와 네트워크 실패를 가른다
       return {
         ok: false,
+        status: response.status,
         error: new Error(`HTTP ${response.status}`)
       };
     }
 
-    const data = await response.json();
+    // (v4.11.7) 응답은 받았는데 JSON 파싱이 깨진 경우도 서버 쪽 문제로 본다
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseErr) {
+      return {
+        ok: false,
+        status: response.status,
+        error: parseErr instanceof Error ? parseErr : new Error(String(parseErr))
+      };
+    }
     return { ok: true, data };
   } catch (err) {
+    // (v4.11.7) 연결 실패 · 시간 초과는 status 가 없다 (네트워크 쪽)
     return {
       ok: false,
       error: err instanceof Error ? err : new Error(String(err))

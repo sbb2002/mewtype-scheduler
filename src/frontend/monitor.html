@@ -45,9 +45,23 @@
              animation: dlg-in .28s cubic-bezier(.25, 1.5, .45, 1); }
     .toast[hidden] { display: none; }
     @keyframes dlg-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+    /* 숨은 생일 진입: 방향을 인식한 변과 명령이 준비된 초기화 버튼을 밝힌다. */
+    #reset-dlg[open] .dlg-in { touch-action: none; user-select: none; -webkit-user-select: none; }
+    #reset-dlg::after { content: ""; position: absolute; pointer-events: none; opacity: 0; border-radius: 4px;
+                         background: #8ae3e2; box-shadow: 0 0 8px #8ae3e2, 0 0 18px #ff488d; transition: opacity .12s; }
+    #reset-dlg[data-bday-edge]::after { opacity: 1; }
+    #reset-dlg[data-bday-edge="U"]::after { top: 3px; left: 14px; right: 14px; height: 3px; }
+    #reset-dlg[data-bday-edge="D"]::after { bottom: 3px; left: 14px; right: 14px; height: 3px; }
+    #reset-dlg[data-bday-edge="L"]::after { left: 3px; top: 14px; bottom: 14px; width: 3px; }
+    #reset-dlg[data-bday-edge="R"]::after { right: 3px; top: 14px; bottom: 14px; width: 3px; }
+    .rb.bday-armed { color: #ffb9d4; border-color: #ff68a0; box-shadow: 0 0 9px #ff488d, 0 0 18px #7844ba;
+                     animation: bday-ready 1.5s ease-in-out infinite alternate; }
+    @keyframes bday-ready { to { box-shadow: 0 0 14px #ff488d, 0 0 24px #8ae3e2; } }
     @media (prefers-reduced-motion: reduce) {
       #reset-dlg[open], .toast { animation: none; }
       .rb { transition: none; }
+      .rb.bday-armed { animation: none; }
+      #reset-dlg::after { transition: none; }
     }
   </style>
 </head>
@@ -119,7 +133,7 @@
 
     // (v4.8.4) 사이트 기록 초기화 — 이 주소(= 사이트)의 localStorage 전부를 지운다. 같은 주소라 메인 사이트의 저장값도 함께 지워진다.
     // 지우는 키: ymmt_listened(들은 곡) · mew:twread(읽은 트윗) · mew:tllang(번역 언어) · theme(밝기) · mew.board.view(보기 방식)
-    //   · mew.player.media(음원/MV) · mew.notice.lang · mew.notice.liveview · mew.tip.*(처음 안내). sessionStorage 는 건드리지 않는다.
+    //   · mew.player.media(음원/MV) · mew.notice.lang · mew.notice.liveview · mew.tip.*(처음 안내) · 생일 이스터에그의 bday-yuno-controls-unlocked-v1(보상 해제) · bday-vol(볼륨) · bday-btn(🎂 위치). sessionStorage 는 건드리지 않는다.
     var resetDlg = document.getElementById("reset-dlg");
     var toastEl = document.getElementById("toast");
     var toastT = 0;
@@ -142,6 +156,10 @@
       }
       toast("처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.");
     });
+  </script>
+  <script type="module">
+    import { mountMonitorBirthday } from './js/monitorbirthday.js';
+    mountMonitorBirthday();
   </script>
 </body>
 </html>

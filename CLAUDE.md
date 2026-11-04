@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 보여주는 반응형 정적 웹사이트. 팬이 사이트에 방문하면 누가 언제 방송하는지, 지금 라이브 중인지,
 어느 주소로 가면 되는지 한눈에 확인한다.
 
-**현재 버전 = v4.9.12 (일반 패치, 2026-10-30)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
+**현재 버전 = v4.11.11 (일반 패치, 2026-11-04)** — `README.md` 「현재 버전」 줄과 같다. 버전마다 git 태그 `vX.Y.Z`
 (`git describe --tags`). 버전별로 무엇이 바뀌었는지 · 배포 리비전 · 롤백 대상은 **`docs/VERSION.md`**(맨 위 태그 대조표 + 버전별 상세)가 정본이다 —
 이 파일에는 버전 이력을 쌓지 않는다(아래 「버전 올릴 때 할 일」).
 
@@ -45,6 +45,8 @@ devpapers 문서는 `git show origin/devpapers:docs/ARCHITECTURE.md` 로 읽거�
 | 현행 구현 명세 — 계약 A~J(데이터 스키마) · 백엔드 모듈(§8) · 프론트 모듈(§9) · 인프라(§12) | `docs/SPEC.md` (main) |
 | 용어 기준 | `docs/TERMINOLOGY.md` (main) |
 | 버전별 변경 · 태그 대조표 · 배포 리비전 · 롤백 | `docs/VERSION.md` (main) |
+| **생일 스킨 — 나머지 멤버를 이어서 만드는 법 · Codex 와 협업하는 법 · 운영자 디자인 결정** | `docs/BIRTHDAY_SKIN.md` (main) · 제작 원본 · 시제품 = 브랜치 `easteregg/birthday-skin` |
+| 끝난 생일 이스터에그 자료(멤버별 인계 · 검증 기록 · 대사표 · 음원 원본) · 5명 공통 제작 묶음 | `ref/easteregg-<멤버>/`(유노 = `ref/easteregg-yuno/`) · `ref/easteregg-common/` (devpapers) — 멤버마다 따로 둬서 섞지 않는다(2026-11-03 운영자 확정) |
 | `/ingest` 분기 흐름(소식 · 스케줄 · 개인 트윗) | `docs/INGEST_FLOW.md` (main) |
 | 폰 Automate 배선 · v4 한눈에 보기 | `docs/v4_AUTOMATE_WIRE.md` · `docs/v4_PAMPHLET.html` (main) |
 | 에러 버스 봉투 스키마 · 예시(발신기 self-test 가 읽음) | `docs/bus/` (main) |
@@ -133,10 +135,17 @@ src/
       render.js timetable.js   # 보드 — PC 오늘 타임테이블 · 카드 보기 / 모바일 오늘 카드 + 이후 예고
       notices.js banners.js tweets.js   # 소식판 · 행사 배너 · 멤버 트윗 시트
       tweetlogic.js    # 트윗 시트 순수 로직(글타래 · 글자색 · 시각 표기 · 미디어 격자 · X 카드 치수로 두 면 위치 맞추기) — DOM 없음
+      musicpriority.js  # 유메미타 재생 중 생일 BGM 일시정지·재시작 차단
       player.js playerbtn.js songs.js   # YouTube 곡 플레이어(첫 클릭 때 동적 import)
       king.js          # 노노카 지각 이스터에그
       theme.js sheetdrag.js   # 밝게/어둡게 전환 · 시트/토스트 끌어 닫기
+      longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 · 첫 안내 말풍선
+      netrecover.js    # 조회 실패 복구 상태 기계 — 재시도 뒤에도 실패하면 화면 중앙 안내
       bgdeco.js bglogic.js   # 배경 장식 — 분홍 → 파랑 톤 + 떠다니는 로고 도형 · 폰 흔들면 흩어짐(bglogic = 순수 로직 · 물리, css/bgdeco.css)
+      birthdayui.js birthday.js   # KST 생일 판정 · 유리 패널 · 🎂 끌기 · 음악 인트로 수명 관리
+      bdayscene-yuno.js bdaysign.js bdaylogic.js   # 정본 v12 Canvas 장면과 일출·조명 인트로 · 인코딩 사인 · 순수 계산
+      bdayaudio.js bdayplayer.js bdayplayerdrag.js bdayguard.js bdaystars.js   # 생일에만 로드하는 음원 · 컨트롤 · 복사 억제
+      bdaystory.js bdaystorylogic.js bdayreward.js   # 곡 시각별 유노 문구 · 감사 카드 · 두 곡 완곡 판정과 보상 해제 기억
       *.selfcheck.mjs  # 순수 로직 self-check
   collector/           # v1 순수 모듈 — config · rss · youtube 를 백엔드가 import 재사용
   bus/                 # 에러 버스 발신기 — MEW_BUS_DIR 없으면 no-op(배포판은 미설정)
@@ -157,7 +166,7 @@ src/
     push_monitor.py    # 미사용 — 삭제 후보
 config/channels.json   # 채널 단일 소스 — channel_order(5인) · channels(5인 + group) · song_feeds · game_accounts
 deploy/                # gcloud 배포 스크립트(README.md). env.sh 는 루트 .env 매핑(gitignore)
-scripts/               # 일회성 데이터 스크립트(곡 목록 생성 · 곡 미디어 적용 · 모니터 백필)
+scripts/               # 일회성 데이터 스크립트(곡 목록 생성 · 곡 미디어 적용 · 모니터 백필) · 로컬 서버 serve_local.py · 브라우저 검증
 fixtures/              # self-test · 프론트 개발용 샘플
 Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 ```
@@ -169,7 +178,7 @@ Dockerfile             # python:3.12-slim + gunicorn, 두 서비스 공유
 # Windows 콘솔은 PYTHONIOENCODING=utf-8 권장
 python -m src.backend.<모듈>         # self-test 있는 모듈: src/backend 전부(app · local_runner 제외 — 서버 · 러너를 띄운다) + src.collector.rss · src.collector.youtube · src.bus.conform · src.bus.publisher
 python -m src.backend.vision --live  # 실제 Groq 비전 호출(GROQ_API_KEY + fixtures/awarnoutz_cast.jpg 있을 때만)
-node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · render · songs · time · timetable · tweetlogic)
+node src/frontend/js/<이름>.selfcheck.mjs   # 프론트 순수 로직(king · longcopy · netrecover · render · songs · time · timetable · tweetlogic)
 
 # 백엔드 배포 (gcloud 로그인 + deploy/env.sh 필요. 상세: deploy/README.md) — 배포는 운영자 결정
 bash deploy/setup.sh          # API·SA·IAM·Cloud Tasks 큐·Secret (멱등)
@@ -178,8 +187,8 @@ bash deploy/deploy_telegram.sh && bash deploy/telegram_webhook.sh   # mewtype-te
 bash deploy/scheduler.sh      # 스케줄러 3잡(light · daily · gapcheck) — KST 05:50~06:30 에는 거부, STAGE=1 이면 아무것도 안 함 (URL 불변이면 생략 가능)
 # writers.py · telegram_app.py 등 두 서비스 공통 코드를 바꾸면 deploy.sh + deploy_telegram.sh 둘 다
 
-# 프론트 로컬 (저장소 루트에서 — fixture 상대경로 유지 위해)
-python -m http.server 8099           # http://localhost:8099/src/frontend/
+# 프론트 로컬 — /data/*.json 만 운영 데이터 저장소에서 받아 넘긴다(그냥 http.server 는 데이터 404)
+python scripts/serve_local.py 8099   # http://localhost:8099/src/frontend/
 # fixture 로 보려면 src/frontend/js/config.js 의 PREVIEW_URL 을 주석 처리된 fixture 줄로 교체
 ```
 
@@ -194,6 +203,8 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 - **준영구 「대기소 · 프리챗 · 굿즈안내」 프레임**(`upcoming` 인데 예정 시각이 1~2년 뒤)이 섞여 들어온다 — 필터 없이 노출(보류 결정). 그래서 날짜 표기에 연도를 생략하지 않는다.
 - **폰 알림 원문은 조용히 잘릴 수 있다** — Automate 리스너가 축약본(`contentText`)만 넘기면 말줄임표 없이 완결된 문장처럼 잘려 온다(버그리포트 20260913 #2).
   그래서 tweet id 가 있으면 vxtwitter 결과를 정본으로 쓴다(`telegram_app._recover_raw_via_vxtwitter`, SPEC §8.6). vxtwitter 가 죽으면 잘림이 재발할 수 있다.
+- **X 이미지(`pbs.twimg.com`)는 외부 Referer 를 거부한다**(2026-10-30, v4.9.11) — 트윗 번역 면 사진을 `<img referrerpolicy="no-referrer">` 로 그려 우회 중이다.
+  CSS 배경 그림 · 전역 `<meta name="referrer">` 로 바꾸면 다시 깨진다(전역은 YouTube 임베드도 건드린다). 사진이 안 나오면 `docs/SPEC.md` 「X 이미지 Referer 거부」 의 진단 순서를 따를 것.
 - **OIDC**: audience = 서비스 `status.url`. `mewtype-telegram` 은 INVOKER_SA 로 실행해야 메인 `/tick` 호출이 통과한다.
   gcloud `--args` 는 값이 `-` 로 시작하면 `--args=...` 형태로 붙인다.
 - **Claude 가 운영 사이트를 브라우저로 열 때는 주소에 `?va=claude` 를 붙인다** (2026-10-19 사용자 요청) — 그 탭은 방문 통계에서 빠진다(탭 단위, 새 탭마다 다시).
@@ -205,6 +216,7 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
 
 - **등급 (2026-10-27 사용자 확정)**: `vX.Y.Z` = **메이저 · 마이너 · 일반 패치**.
   - **일반 패치(Z)** — 버그 수정 · 작은 조정. **핫픽스는 일반 패치에 속한다.** `main` 의 가장 최근 X.Y 에 이어 붙인다(2026-10-22 — v4.6.0 뒤 = v4.6.1).
+    **기존 메인 콘텐츠의 UI 를 고치는 정도는 화면 부품이 새로 생겨도 일반 패치**(2026-11-04 운영자 판정 — 플레이어 탭 정리 · 다음 곡 칸 = v4.11.11).
   - **마이너(Y)** — **새 요소가 추가되는** 변경(새 화면 부품 · 새 기능). 버그를 고치려다 새 요소가 들어가도 마이너(첫 적용 = 자기 답글 보충 + 트윗 시트, 2026-10-27).
   - **메이저(X)** — **대규모 변화(인프라 포함)**.
   - 등급이 애매하면 Claude 가 근거를 들어 제안하고 운영자가 정한다. 그 전 규칙(핫픽스 = Z · 기능 = Y, 옛 마이너 줄기에 잇기 — v3.8.10 · v4.5.6~v4.5.11)으로 붙인 번호 · 태그는 그대로 둔다.
@@ -237,3 +249,5 @@ python -m http.server 8099           # http://localhost:8099/src/frontend/
   큰 버전 = 들어갈 줄기(지금 `main` = v4). `devpapers` 는 `mewtype-scheduler-worktrees/devpapers`.
 - `.agents/` · `.claude/` · `skills-lock.json`(운영자 PC 의 Claude 스킬 설치분)은 `.gitignore` 로 뺀다.
 - 병합이 끝난 워크트리는 지운다(`git worktree remove`).
+
+생일 음악 후속 구현은 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md`와 `docs/BIRTHDAY_SKIN.md`를 따른다. 첫 스트리밍 뒤 Web Audio 예약 재생으로 전환한다. 성능은 GPU/소프트웨어를 구분하고 실제 iPhone Safari는 별도 확인한다. 2026-11-01 운영자 병합·배포 승인으로 v4.11.0을 적용했다. 실기기 확인 결과는 별도로 기록한다.

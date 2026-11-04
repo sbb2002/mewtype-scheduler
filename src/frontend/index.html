@@ -31,8 +31,11 @@
   <link rel="stylesheet" href="css/notices.css">
   <link rel="stylesheet" href="css/banners.css">
   <link rel="stylesheet" href="css/tweets.css">
+  <link rel="stylesheet" href="css/longcopy.css">
   <link rel="stylesheet" href="css/bgdeco.css">
-  <link rel="stylesheet" href="css/theme.css"><!-- 맨 마지막 — 밝게 값이 위 파일들의 :root 토큰을 덮는다 -->
+  <link rel="stylesheet" href="css/theme.css"><!-- 밝게 값이 위 파일들의 :root 토큰을 덮는다 -->
+  <!-- (v4.10.0) 생일 스킨 — 유리 패널 · 컨트롤 · 온전히 보기. html[data-bday] 일 때만 작동하므로 평소엔 아무 영향 없다. 맨 마지막(theme.css 의 밝게 값 위에서 덮어야 함) -->
+  <link rel="stylesheet" href="css/birthday.css">
   <!-- (v4.5.4) Vercel Web Analytics — 쿠키 없는 익명 방문 통계(하단 디스클레이머에 고지). 정적 HTML 방식이라 패키지 없이 스크립트만.
        /_vercel/insights/* 경로는 Vercel 이 배포에 붙여 준다(프로젝트에서 Analytics 활성화 — 2026-09-07). 로컬 서버에선 404 라 수집 안 됨 -->
   <script>
@@ -73,7 +76,6 @@
           <li>삭제 요청이 있으면 예고 없이 서비스가 중단될 수 있습니다. 문의·삭제 요청은 <a href="https://github.com/sbb2002/mewtype-scheduler/issues" target="_blank" rel="noopener">GitHub Issues</a>로 받습니다.</li>
         </ul>
       </div>
-      <span id="foot-status" hidden>업데이트 지연</span>
       <span class="foot-ver-wrap">
         <!-- (v4.8.4) 버전 버튼 — 말풍선 동작은 js/main.js initVersionButton. id 는 디스클레이머 위치 계산 · 빠른 탭 이스터에그가 쓴다 -->
         <button type="button" id="foot-version" class="foot-ver" aria-label="현재 버전 보기" aria-describedby="foot-ver-pop">ver. <span class="foot-ver__inf" aria-hidden="true">♾️</span><i class="foot-ver__bar" aria-hidden="true"></i></button>

@@ -1,0 +1,75 @@
+import { birthdayStoryCue, lowStoryBox, STORY_TURN, STORY_NUDGE, SILENT_NUDGE_MS } from './bdaystorylogic.js';
+import { sceneLayout } from './bdaylogic.js';
+
+export function mountBirthdayStory({audio,scene,shell,reduced,reward,onTurn=()=>{}}){
+ const root=document.documentElement,abort=new AbortController(),signal=abort.signal;
+ const message=document.createElement('div');message.className='bday-story';message.setAttribute('aria-hidden','true');
+ const stars=document.createElement('div');stars.className='bday-story__stars';
+ const text=document.createElement('div');text.className='bday-story__text';message.append(stars,text);
+ const card=document.createElement('section');card.className='bday-memory';card.hidden=true;card.setAttribute('aria-label','생일 밤의 감사 카드');
+ const ornament=document.createElement('div');ornament.className='bday-memory__stars';ornament.textContent='✦  ✧  ✦';ornament.setAttribute('aria-hidden','true');
+ const title=document.createElement('h2');title.textContent='“......고마워”';
+ const note=document.createElement('p');note.textContent='“생일 같은 거 별거 아니라고 생각했는데,\n오늘은 의외로 나쁘지 않았어.\n나중에 YUNO\'s PARTY Lv.3도 와줘. 기다릴게.”';
+ const signature=document.createElement('p');signature.className='bday-memory__signature';signature.textContent='— yuno';
+ const close=document.createElement('button');close.type='button';close.textContent='이 순간 간직하기';
+ card.append(ornament,title,note,signature,close);shell.append(message,card);
+ let raf=0,leaving=0,dead=false,key='',finale=false,finished=false,cardPending=false,special=null,specialTimer=0,turnPending=false,nudged=false,silentMs=0,lastPaint=0;
+ function placeLow(on){
+  message.classList.toggle('is-low',!!on);for(const k of ['top','bottom','left','right','width','transform-origin'])message.style.removeProperty(k);if(!on)return;
+  const w=shell.clientWidth||innerWidth,h=shell.clientHeight||innerHeight,b=lowStoryBox(w,h,sceneLayout(w,h));
+  if(b.mode==='side'){message.style.left=b.left+'px';message.style.right='auto';message.style.width=b.width+'px';message.style.top=b.centerY+'px'}
+  else{message.style.top='auto';message.style.bottom=b.bottom+'px'}
+  message.dataset.low=b.mode;
+ }
+ function visible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-revealed')}
+ function introVisible(){return root.hasAttribute('data-bday-full')&&root.hasAttribute('data-bday-intro')}
+ function paint(){
+  if(dead)return;
+  const index=audio.index,time=audio.audio.currentTime,now=performance.now(),silent=audio.silent,shown=visible()||introVisible(),busy=scene.skyBusy?.(time);
+  // 무음 시간은 재생 중에만 잰다. 탭이 숨겨진 동안은 프레임이 없어 세지 않는다.
+  if(!silent)silentMs=0;else if(!audio.paused&&lastPaint)silentMs+=Math.min(now-lastPaint,500);lastPaint=now;
+  if(special&&now>=special.until)special=null;
+  if(!special&&shown&&!busy&&card.hidden){
+   if(turnPending&&reward.unlocked&&!silent){turnPending=false;special={id:'turn',text:STORY_TURN,until:now+6500};onTurn()}
+   else if(!nudged&&silentMs>=SILENT_NUDGE_MS){nudged=true;special={id:'nudge',text:STORY_NUDGE,until:now+5500}}
+   if(special){clearTimeout(specialTimer);specialTimer=setTimeout(wake,special.until-now+20)}
+  }
+  // 해금 뒤에는 곡 대사가 없다. 무음이면 말하지 않는다.
+  // 사인 중에는 sign 문구가 있는 대사만 사인을 피해 낮게 뜬다(별자리 · 수동 효과 중에는 그대로 쉰다).
+  const talk=!reward.unlocked,base=!shown||special||!talk||silent?null:birthdayStoryCue(index,time,root.hasAttribute('data-bday-intro'));
+  const cue=!shown?null:special||(base&&!busy?base:base?.sign&&scene.signBusy?.(time)?{...base,id:base.id+':sign',text:base.sign,low:true}:null),next=cue?.id||'';
+  if(next!==key){
+   key=next;message.classList.remove('is-visible');
+   if(cue){
+    const plain=cue.text.replace(/ \/\/ /g,' ');
+    text.replaceChildren();text.setAttribute('aria-label',plain);text.style.setProperty('--story-tilt',reduced()?'0deg':((Math.random()*2-1)*2.5).toFixed(2)+'deg');let typed=0;message.classList.toggle('is-reduced',reduced());placeLow(cue.low);
+    `“${cue.text}”`.split('\n').forEach((line,row)=>{const span=document.createElement('span');span.className='bday-story__line';span.setAttribute('aria-hidden','true');
+     // 「 // 」 가 있는 줄은 조각마다 끊기지 않게 묶어, 좁을 때 그 자리에서만 줄이 나뉘게 한다.
+     const parts=line.split(' // ');
+     parts.forEach((part,p)=>{const box=parts.length>1?document.createElement('span'):span;if(box!==span){box.className='bday-story__part';span.append(box)}if(p)span.insertBefore(document.createTextNode(' '),box);
+      Array.from(part).forEach(char=>{const glyph=document.createElement('span');glyph.textContent=char;glyph.className='bday-story__glyph';glyph.style.setProperty('--arrival',(row*.3+typed++*.065)+'s');box.append(glyph)})});
+     text.append(span)});
+    stars.textContent=cue.stars?'✦ '.repeat(cue.stars).trim():'';message.classList.add('is-visible');
+   }
+  }
+  // 퇴장도 곡 시각으로 계산해 탐색 후 같은 상태를 재현한다.
+  if(cue)message.style.setProperty('--story-fade',String(Math.min(1,((cue.until?(cue.until-now)/1000:cue.end-time))/.8)));
+  if(index===1&&time>=209&&!finale&&!audio.paused&&visible()){
+   finale=true;if(!reduced())scene.finale();
+  }
+  if(index===1&&time>=212.8&&!finished&&!audio.paused&&reward.cardReady()){finished=true;cardPending=true}
+  if(cardPending&&visible()){card.hidden=false;cardPending=false;message.classList.remove('is-visible')}
+  card.inert=!visible();card.setAttribute('aria-hidden',String(!visible()||card.hidden));
+ }
+ function frame(){raf=0;paint();if(!dead&&!audio.paused&&!document.hidden)raf=requestAnimationFrame(frame)}
+ function wake(){if(dead)return;paint();if(!raf&&!audio.paused&&!document.hidden)raf=requestAnimationFrame(frame)}
+ // 닫기 = 카드가 빛으로 터져 사라지고 큰 장면이 시작된다. 모션 줄이기는 바로 닫는다.
+ close.addEventListener('click',e=>{e.stopPropagation();if(leaving)return;turnPending=true;scene.grandShow?.();if(reduced()){card.hidden=true;return}leaving=setTimeout(()=>{leaving=0;card.hidden=true;card.classList.remove('is-leaving')},760);card.classList.add('is-leaving')},{signal});
+ card.addEventListener('click',e=>e.stopPropagation(),{signal});
+ const unsubscribe=audio.subscribe(wake);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else wake()},{signal});
+ const observer=new MutationObserver(wake);observer.observe(root,{attributes:true,attributeFilter:['data-bday-full','data-bday-revealed','data-bday-intro']});
+ wake();
+ // 카드가 떠 있거나 · 카드를 닫고 밤 풍경 · 「너의 턴이야」 를 기다리는 동안은 보상 패널 확장을 미룬다(bdayplayer).
+ return {holdsPanel(){return !card.hidden||cardPending||turnPending||!!leaving},cardOpen(){return !card.hidden||cardPending||!!leaving},destroy(){dead=true;clearTimeout(leaving);clearTimeout(specialTimer);cancelAnimationFrame(raf);unsubscribe();observer.disconnect();abort.abort();message.remove();card.remove()}};
+}

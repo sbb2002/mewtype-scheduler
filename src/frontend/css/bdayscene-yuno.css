@@ -1,0 +1,21 @@
+/* Approved v16 artwork. No site UI rules; all selectors are scene-local. */
+.bdayscene{position:absolute;inset:0;overflow:hidden;isolation:isolate;background:#170725;pointer-events:none}
+.bdayscene>svg,.bdayscene>canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.bdayscene .raster-rig{position:relative;width:240px;height:280px;overflow:visible;pointer-events:none;transform-origin:50% 229px}
+.bdayscene .raster-rig img{position:absolute;display:block;max-width:none;pointer-events:none;user-select:none;-webkit-user-drag:none}
+.bdayscene .rig-head{position:absolute;transform-origin:50% 88%;overflow:visible}
+.bdayscene .rig-head img{inset:0;width:100%;height:100%}
+.bdayscene .rig-open{opacity:1;animation:bdayscene-yuno-open 7.6s linear -.7s infinite}
+.bdayscene .rig-closed{opacity:0;animation:bdayscene-yuno-close 7.6s linear -.7s infinite}
+.bdayscene .rig-ear-l{transform-origin:28% 45%}
+.bdayscene .rig-ear-r{transform-origin:72% 45%}
+.bdayscene .rig-tail{transform-origin:15% 75%}
+.bdayscene .rig-arm8_l,.bdayscene .rig-arm8_r{transform-origin:var(--shoulder)}
+.bdayscene .rig-body{clip-path:polygon(25% 0,75% 0,75% 28%,78% 66%,100% 85%,100% 100%,0 100%,0 85%,22% 66%,25% 28%)}
+.bdayscene .spin{transform-box:fill-box;transform-origin:center}
+.bdayscene.is-still *{animation-play-state:paused!important}
+@keyframes bdayscene-yuno-open{0%,44.4%,46.4%,100%{opacity:1}44.5%,46.3%{opacity:0}}
+@keyframes bdayscene-yuno-close{0%,44.4%,46.4%,100%{opacity:0}44.5%,46.3%{opacity:1}}
+@media(max-width:900px){.bdayscene .grain{opacity:.04}.bdayscene .foreground-blur{filter:none}}
+@media(max-width:540px){.bdayscene .grain{display:none}}
+@media(prefers-reduced-motion:reduce){.bdayscene *{animation:none!important;transition:none!important}.bdayscene .rig-open{opacity:1}.bdayscene .rig-closed{opacity:0}}

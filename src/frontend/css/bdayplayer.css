@@ -1,0 +1,221 @@
+/* 생일 당일에만 연결되는 음악 UI. */
+.bday-music{position:fixed;inset:0;z-index:58;pointer-events:none;color:white;font:13px system-ui;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;--bday-safe-top:env(safe-area-inset-top,0px);--bday-safe-right:env(safe-area-inset-right,0px);--bday-safe-bottom:env(safe-area-inset-bottom,0px);--bday-safe-left:env(safe-area-inset-left,0px)}
+.bday-music__bar{position:absolute;display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:rgba(18,12,28,.55);border:1px solid #ffffff29;backdrop-filter:blur(12px) saturate(1.2);box-shadow:0 6px 24px #0007;left:50%;bottom:calc(9.5% + env(safe-area-inset-bottom));opacity:0;visibility:hidden;transform:translate(-50%,12px);transition:opacity .6s ease .6s,transform .6s ease .6s,background-color .18s ease;pointer-events:none}
+[data-bday-full][data-bday-revealed] .bday-music__bar{opacity:1;visibility:visible;transform:translate(-50%,0);pointer-events:auto}
+.bday-music__bar.is-positioned{left:var(--bday-player-x);top:var(--bday-player-y);bottom:auto;transition:opacity .18s ease,background-color .18s ease;transform:translateY(12px)}
+[data-bday-full][data-bday-revealed] .bday-music__bar.is-positioned{transform:none}
+[data-bday-full][data-bday-revealed] .bday-music__bar.is-dragging{opacity:1;box-shadow:0 6px 24px #0007,0 0 0 2px #8ae3e288}
+.bday-grip{flex:0 0 28px;width:28px;height:40px;display:grid;place-items:center;padding:0;border:0;border-radius:10px;background:#ffffff0c;color:#e5e4ec;cursor:grab;touch-action:none}
+.bday-grip:hover{background:#ffffff24}.bday-grip:active,.is-dragging .bday-grip{cursor:grabbing}.bday-grip:focus-visible{outline:2px solid #8ae3e2;outline-offset:3px}
+.bday-grip__dots{display:grid;grid-template-columns:repeat(2,3px);gap:3px;pointer-events:none}.bday-grip__dots i{width:3px;height:3px;border-radius:50%;background:currentColor}
+.bday-ib{width:34px;height:34px;border-radius:50%;border:0;background:transparent;color:#fff;display:grid;place-items:center;cursor:pointer;position:relative;overflow:hidden;transition:transform .16s,background .18s;font-size:16px}
+.bday-ib[hidden]{display:none}
+.bday-ib:hover{background:#ffffff24;transform:scale(1.1)}.bday-ib:active{transform:scale(.88)}.bday-ib:focus-visible,.bday-volume input:focus-visible{outline:2px solid #8ae3e2;outline-offset:3px}
+.bday-ib.pp{width:40px;height:40px;background:radial-gradient(circle closest-side,#ff488d 98%,transparent 100%);color:#2a0a1c;padding:0;line-height:0}.bday-ib.prev:active{translate:-3px}.bday-ib.next:active{translate:3px}
+.bday-transport-icon{display:block;width:18px;height:18px;fill:currentColor;stroke:none;pointer-events:none}
+.bday-ripple{position:absolute;inset:4px;border-radius:50%;background:white;opacity:.5;animation:bday-ripple .5s ease-out forwards;pointer-events:none}@keyframes bday-ripple{from{transform:scale(0)}to{transform:scale(3.2);opacity:0}}
+.bday-volume{position:relative;display:flex;align-items:center;margin-left:4px}.bday-volume input{appearance:none;width:92px;height:4px;border-radius:3px;background:linear-gradient(90deg,#8ae3e2 var(--v,30%),#ffffff38 var(--v,30%));cursor:pointer}
+.bday-volume input::-webkit-slider-thumb{appearance:none;width:12px;height:12px;border-radius:50%;background:white;transition:.15s}.bday-volume input:hover::-webkit-slider-thumb,.bday-volume input:active::-webkit-slider-thumb{transform:scale(1.35);box-shadow:0 0 0 6px #8ae3e233}
+.bday-volume input::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:white}.bday-vtip{position:absolute;bottom:22px;left:30%;font-size:11px;background:#000b;border-radius:6px;padding:2px 6px;opacity:0}.bday-volume:hover .bday-vtip,.bday-volume:focus-within .bday-vtip{opacity:1}
+.bday-music__title{position:absolute;right:3%;bottom:calc(3.4% + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;font-weight:600;text-shadow:0 1px 8px #000c;opacity:0;transition:opacity .6s ease .8s}
+.bday-eq{display:flex;gap:2px;align-items:flex-end;height:14px}.bday-eq i{width:3px;background:#8ae3e2;border-radius:1px;height:4px;animation:bday-eq .9s ease-in-out infinite;animation-play-state:paused}.playing .bday-eq i{animation-play-state:running}.bday-eq i:nth-child(2){animation-delay:-.3s}.bday-eq i:nth-child(3){animation-delay:-.6s}.bday-eq i:nth-child(4){animation-delay:-.15s}@keyframes bday-eq{50%{height:14px}}
+.bday-music__disc{position:absolute;left:0;right:0;bottom:calc(1.6% + env(safe-area-inset-bottom));text-align:center;font-size:11px;color:#fff;opacity:0;text-shadow:0 1px 6px #000;transition:opacity .8s ease 1.1s}
+[data-bday-full][data-bday-revealed] .bday-music__title{opacity:1}[data-bday-full][data-bday-revealed] .bday-music__disc{opacity:.65}[data-bday-full][data-bday-revealed] .idle .bday-music__bar{opacity:.55}
+.bday-start{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:0;background:transparent;color:white;font:14px system-ui;cursor:pointer;pointer-events:auto;animation:bday-prompt 1.6s ease-in-out infinite}.bday-start[hidden]{display:none}@keyframes bday-prompt{50%{opacity:.55}}
+@media(hover:hover) and (pointer:fine){[data-bday-full][data-bday-revealed] .bday-music__bar:hover{background:#120c1c;opacity:1;transition-delay:0s}}
+[data-bday-intro] #bday-ui,[data-bday-intro] #bday-greet{visibility:hidden}
+#bday-bg canvas{pointer-events:none;user-select:none;-webkit-touch-callout:none}
+@media(max-width:700px),(pointer:coarse){.bday-volume{display:none}.bday-music__bar{bottom:calc(110px + env(safe-area-inset-bottom));padding:5px 8px;gap:2px}.bday-music__title{right:calc(14px + env(safe-area-inset-right));bottom:calc(64px + env(safe-area-inset-bottom));max-width:calc(100% - 28px - env(safe-area-inset-left) - env(safe-area-inset-right));font-size:12px;text-align:right}.bday-music__disc{bottom:calc(38px + env(safe-area-inset-bottom));font-size:9.5px}.bday-music .bday-ib{min-width:34px}}
+@media(max-width:700px),(pointer:coarse){.bday-eq{flex-shrink:0}.bday-track{overflow-wrap:anywhere}}
+@media(prefers-reduced-motion:reduce){.bday-music *{animation:none!important;transition:none!important}}
+
+/* 짧은 이야기와 감상 기념 카드: 화면 안에서 줄바꿈하고 하단 음악 UI는 비워 둔다. */
+.bday-story{position:absolute;left:max(20px,env(safe-area-inset-left));right:max(20px,env(safe-area-inset-right));top:clamp(24px,18vh,150px);text-align:center;opacity:0;transform:translateY(6px);transition:opacity 1.2s ease,transform 1.2s ease;text-shadow:0 2px 5px #000,0 0 20px #000;visibility:hidden}
+[data-bday-full][data-bday-revealed] .bday-story{visibility:visible}
+.bday-story.is-visible{opacity:1;transform:none}
+.bday-story__text{max-width:34rem;margin:auto;font-size:clamp(17px,4.6vw,28px);font-weight:650;line-height:1.65;white-space:pre-line;overflow-wrap:anywhere;text-wrap:balance;color:#fff2e6}
+.bday-story__stars{min-height:1.6em;font-size:clamp(17px,4vw,25px);letter-spacing:.35em;color:#ffdc9b;text-shadow:0 0 14px #ffc88b80}
+.bday-memory{position:absolute;box-sizing:border-box;left:50%;top:max(14px,8vh);transform:translateX(-50%);width:min(440px,calc(100% - 40px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-height:calc(100% - 160px - 8vh - env(safe-area-inset-bottom));overflow:auto;padding:clamp(18px,4vw,32px);border:1px solid #ffe0b657;border-radius:22px;text-align:center;color:#fff3e3;background:linear-gradient(145deg,#29142ef5,#140d24f5);box-shadow:0 0 38px #ff9aca24,0 16px 48px #0008;pointer-events:auto;animation:bday-memory-in 1.8s ease both;overflow-wrap:anywhere}
+.bday-memory[hidden],:root:not([data-bday-full]) .bday-memory{display:none}
+.bday-memory h2{font-size:clamp(21px,5.5vw,32px);line-height:1.4;margin:10px 0 16px;text-wrap:balance}
+.bday-memory p{font-size:clamp(14px,3.7vw,17px);line-height:1.8;white-space:pre-line;margin:12px 0}
+.bday-memory__stars{font-size:26px;color:#ffdc9b;letter-spacing:.3em}
+.bday-memory p.bday-memory__signature{font-size:13px;color:#ffc2dc}
+.bday-memory button{max-width:100%;padding:10px 18px;margin-top:10px;border:1px solid #ffe0b657;border-radius:999px;background:#ffe3b915;color:#fff3e3;font:inherit;cursor:pointer;white-space:normal}
+.bday-memory button:focus-visible{outline:2px solid #8ae3e2;outline-offset:3px}
+@keyframes bday-memory-in{from{opacity:0}to{opacity:1}}
+@media(max-height:500px){.bday-story{top:18px}.bday-story__text{font-size:17px;line-height:1.4}.bday-memory{top:12px;max-height:calc(100% - 132px);padding:10px 16px;border-radius:15px}.bday-memory__stars{font-size:15px}.bday-memory h2{font-size:20px;margin:4px 0}.bday-memory p{font-size:12px;line-height:1.4;margin:5px 0}.bday-memory button{padding:6px 14px;margin-top:4px;font-size:12px}}
+@media(prefers-reduced-motion:reduce){.bday-story{transform:none;transition:opacity .5s ease}.bday-memory{animation:none}}
+
+/* 보상 패널: 좁은 화면에서는 효과 행을 분리한다. */
+.bday-effects{display:flex;gap:4px;border-left:1px solid #8ae3e266;padding-left:10px;margin-left:4px}
+.bday-effects[hidden]{display:none}
+.bday-effects .effect[aria-pressed="true"]{background:#3de9ed30;border-color:#8afaff;color:#e5ffff;box-shadow:inset 0 0 0 1px #85faff99,0 0 13px #60eaff55}
+.bday-effects .effect[aria-pressed="true"]::after{content:"";position:absolute;bottom:3px;width:12px;height:2px;background:#b7ffff;border-radius:2px;box-shadow:0 0 6px #7cffff}
+.bday-effects .effect{width:auto;min-width:44px;padding:0 8px;border-radius:8px;font:600 12px system-ui;color:#bafaff;background:#8ae3e20d;white-space:nowrap;flex-shrink:0}
+[data-unlocked] .bday-music__bar{border-color:#8ae3e288;border-radius:18px;box-shadow:0 0 22px #43cbd32b,0 8px 28px #0008}
+@media(min-width:701px) and (pointer:fine){.bday-music__bar{bottom:calc(max(70px,9.5%) + env(safe-area-inset-bottom))}}
+.bday-music__bar{z-index:2}
+/* 작은 화면의 우측 닫기 버튼과 패널 모서리가 겹치지 않게 여백을 남긴다. */
+@media(max-width:380px){[data-unlocked] .bday-music__bar:not(.is-positioned){left:calc(50% - 22px);width:calc(100% - 88px);max-width:260px}[data-unlocked] .bday-effects .effect{min-width:48px;padding:0 6px}}
+
+@media(max-width:700px),(pointer:coarse){[data-unlocked] .bday-music__bar{flex-wrap:wrap;width:260px;box-sizing:border-box;justify-content:center}.bday-effects{flex-basis:100%;justify-content:center;border-left:0;border-top:1px solid #8ae3e244;padding:6px 0 0;margin:2px 0 0}.bday-effects .effect{height:36px;min-width:52px}}
+[data-unlocked] .bday-memory{max-height:calc(100% - 210px - 8vh)}
+@media(max-height:500px){[data-unlocked] .bday-memory{top:10px;max-height:calc(100% - 170px)}}
+
+/* 네온 편지: 줄과 글자의 빛이 순서대로 차오르며 읽을 시간을 남긴다. */
+.bday-story{transform:none;transition:opacity .8s ease}
+.bday-story.is-visible{opacity:var(--story-fade,1)}
+.bday-story__text{font-family:system-ui,"Apple SD Gothic Neo",sans-serif;font-weight:800;letter-spacing:.055em;color:#ddfbff;text-shadow:0 2px 3px #080415,0 0 12px #5ddfff66,2px 0 20px #c76dff44}
+.bday-story__line{display:block;white-space:normal}
+.bday-story__part{display:inline-block;white-space:nowrap}
+/* 사인 중 낮게 뜨는 대사 — 위치는 bdaystory.js 가 장면 배치로 계산한다. 가로 화면은 유노 왼쪽 하늘에 세로 가운데 맞춤. */
+.bday-story.is-low[data-low=side]{translate:0 -50%;text-align:left}
+.bday-story.is-low[data-low=side] .bday-story__text{margin:0}
+.bday-story__glyph{display:inline-block;white-space:pre;animation:bday-letter-light .65s ease-out var(--arrival) both}
+.bday-story__stars{color:#a8efff;text-shadow:0 0 16px #5ddfff80}
+@keyframes bday-letter-light{from{opacity:0;filter:blur(4px);transform:translateY(5px);text-shadow:0 0 22px #9dfaff}65%{opacity:1;text-shadow:0 0 16px #c4fbff}to{opacity:1;filter:blur(0);transform:none}}
+.bday-memory h2{font-family:system-ui,sans-serif;letter-spacing:.06em;color:#defaff;text-shadow:0 0 16px #70dfff66}
+.bday-memory{border-color:#85eaff66;box-shadow:0 0 35px #64dfff1c,0 16px 48px #0008}
+/* v4.11.9 확장 연출(신스웨이브): 분홍 · 하늘색으로 갈라진 주사선이 왼쪽에서 오른쪽으로 훑고, 패널 테두리는 네온관처럼 깜빡이며 켜진다(분홍 → 하늘색),
+   새로 생긴 버튼은 주사선이 지나갈 때 색이 좌우로 갈라지며(색수차) 한 번 번쩍인다. 색 = 장면의 P #ff488d · C #8ae3e2 · V #7844ba. */
+.bday-panel-scan{position:absolute;inset:4px auto 4px 0;width:3px;border-radius:2px;opacity:0;pointer-events:none;background:linear-gradient(#ffd6ea,#ff488d 45%,#8ae3e2);box-shadow:-4px 0 10px 1px #ff488dcc,4px 0 10px 1px #8ae3e2cc,0 0 26px 8px #7844ba88}
+[data-fresh-unlock] .bday-panel-scan{animation:bday-panel-scan 1.2s ease-in-out}
+[data-fresh-unlock] .bday-music__bar::before{content:"";position:absolute;inset:-1px;z-index:-1;border:1px solid #ff488d;border-radius:inherit;background:#0b1927;pointer-events:none;animation:bday-panel-grow .65s cubic-bezier(.16,1,.3,1)}
+[data-fresh-unlock] .bday-effects{animation:bday-separator-light 1s ease-out}
+[data-fresh-unlock] .bday-effects .effect{animation:bday-effect-arrive .4s ease-out both,bday-chroma-glint .8s ease-out both;animation-delay:.35s,.6s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(2){animation-delay:.44s,.72s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(3){animation-delay:.53s,.84s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(4){animation-delay:.62s,.96s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(5){animation-delay:.71s,1.08s}
+[data-fresh-unlock] .bday-effects .effect:nth-child(6){animation-delay:.8s,1.2s}
+[data-fresh-unlock] .bday-music__bar>.prev{animation:bday-chroma-glint .8s ease-out .3s both}
+[data-fresh-unlock] .bday-music__bar>.next{animation:bday-chroma-glint .8s ease-out .5s both}
+[data-fresh-unlock] .bday-music__bar{animation:bday-neon-ignite 1.9s linear both}
+@keyframes bday-chroma-glint{0%{box-shadow:0 0 0 0 #ff488d00;filter:none}22%{box-shadow:-3px 0 0 #ff488dd9,3px 0 0 #8ae3e2d9,inset 0 0 0 1px #ffe3f1,0 0 20px 5px #ff488d70;filter:brightness(1.9) saturate(1.4)}50%{box-shadow:-1px 0 0 #ff488d80,1px 0 0 #8ae3e280,inset 0 0 0 1px #8ae3e2,0 0 14px 3px #8ae3e260;filter:brightness(1.3)}100%{box-shadow:0 0 0 0 #8ae3e200;filter:none}}
+/* 네온관 점등: 짧게 두 번 깜빡인 뒤 분홍으로 켜지고, 하늘색으로 식으며 평소 테두리로 돌아간다. */
+@keyframes bday-neon-ignite{
+ 0%,5%,11%,17%{border-color:#ff488d40;box-shadow:0 0 22px #43cbd32b,0 8px 28px #0008}
+ 3%,8%{border-color:#ff488d;box-shadow:0 0 0 1px #ff488d,0 0 18px 4px #ff488d77,0 8px 28px #0008}
+ 14%{border-color:#ff7fbf;box-shadow:0 0 0 1px #ff488d,0 0 22px 5px #ff488d88,0 8px 28px #0008}
+ 24%{border-color:#ffb3d6;box-shadow:0 0 0 1px #ff488d,0 0 30px 8px #ff488d99,0 0 64px 16px #7844ba66,0 8px 28px #0008}
+ 55%{border-color:#8ae3e2;box-shadow:0 0 0 1px #8ae3e2,0 0 26px 6px #8ae3e280,0 0 54px 14px #7844ba55,0 8px 28px #0008}
+ 100%{border-color:#8ae3e288;box-shadow:0 0 22px #43cbd32b,0 8px 28px #0008}}
+@keyframes bday-panel-grow{from{transform:scaleX(.62);opacity:.2;box-shadow:0 0 0 #6cfaff}60%{box-shadow:0 0 24px #6cfaff55}to{transform:scaleX(1);opacity:1}}
+@keyframes bday-panel-scan{0%{left:8%;opacity:0}20%{opacity:.85}85%{opacity:.6}100%{left:96%;opacity:0}}
+@keyframes bday-separator-light{0%,25%{border-color:transparent}55%{border-color:#e1ffff;filter:drop-shadow(0 0 5px #76faff)}100%{border-color:#8ae3e266;filter:none}}
+@keyframes bday-effect-arrive{from{opacity:0;transform:translateY(6px);filter:brightness(2)}to{opacity:1;transform:none;filter:brightness(1)}}
+@keyframes bday-letter-fade{from{opacity:0}to{opacity:1}}
+.bday-story.is-reduced .bday-story__glyph{animation:bday-letter-fade .5s ease-out both!important;filter:none;transform:none}
+@media(prefers-reduced-motion:reduce){
+ [data-fresh-unlock] .bday-panel-scan,[data-fresh-unlock] .bday-music__bar::before{display:none;animation:none!important}
+ [data-fresh-unlock] .bday-effects,[data-fresh-unlock] .bday-effects .effect,[data-fresh-unlock] .bday-music__bar,[data-fresh-unlock] .bday-music__bar>.prev,[data-fresh-unlock] .bday-music__bar>.next{animation:none!important;filter:none;transform:none}
+ .bday-story .bday-story__glyph{animation:bday-letter-fade .5s ease-out both!important;filter:none;transform:none}
+ .bday-story{transition:opacity .5s ease!important}
+}
+
+/* 유노 색 · 한 글자씩 등장: 색은 --yuno-ink 하나만 바꾸면 된다. 어두운 윤곽으로 분홍 하늘 위에서도 읽히게 한다. */
+.bday-music{--yuno-ink:#ffb4d2;--yuno-glow:#ff488d}
+[data-bday-full][data-bday-intro] .bday-story{visibility:visible}
+.bday-story__text{color:var(--yuno-ink);transform:rotate(var(--story-tilt,0deg));text-shadow:0 1px 2px #12041c,0 0 3px #12041c,0 2px 8px #12041ccc,0 0 18px color-mix(in srgb,var(--yuno-glow) 45%,transparent)}
+.bday-story__glyph{animation:bday-letter-type .34s ease-out var(--arrival) both}
+.bday-story__stars{color:var(--yuno-ink);text-shadow:0 1px 2px #12041c,0 0 14px var(--yuno-glow)}
+.bday-memory h2{color:var(--yuno-ink);text-shadow:0 0 16px color-mix(in srgb,var(--yuno-glow) 50%,transparent)}
+.bday-memory{border-color:color-mix(in srgb,var(--yuno-ink) 45%,transparent)}
+.bday-memory p.bday-memory__signature{color:var(--yuno-ink)}
+@keyframes bday-letter-type{from{opacity:0;transform:translateY(3px)}60%{opacity:1;filter:brightness(1.35)}to{opacity:1;transform:none}}
+.bday-story.is-reduced .bday-story__glyph{animation:none!important;opacity:1}
+@media(prefers-reduced-motion:reduce){.bday-story__glyph{animation:none}}
+.bday-effects .effect{min-width:40px;width:40px;padding:0}
+.bday-effects .effect svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+@media(max-width:700px),(pointer:coarse){.bday-effects .effect{min-width:44px;width:44px;height:36px}}
+
+/* 감사 카드 퇴장: 빛이 차오른 뒤 부풀며 흩어진다. .bday-memory 의 transform 은 가운데 정렬이라 scale 속성을 따로 쓴다. */
+.bday-memory.is-leaving{pointer-events:none;animation:bday-memory-out .76s cubic-bezier(.3,0,.2,1) forwards}
+@keyframes bday-memory-out{0%{opacity:1;scale:1;filter:brightness(1)}35%{opacity:1;scale:.97;filter:brightness(2.4);box-shadow:0 0 60px 18px color-mix(in srgb,var(--yuno-glow) 70%,transparent),0 0 120px 40px #8ae3e255}100%{opacity:0;scale:1.5;filter:brightness(4) blur(14px)}}
+
+/* 유노 얼굴 버튼 · 큰 장면 재생 중 잠금 */
+.bday-effects .effect img{width:27px;height:auto;display:block;pointer-events:none;-webkit-user-drag:none}
+.bday-effects .effect:disabled{opacity:.32;cursor:default;transform:none}
+[data-grand] .bday-effects .grand:disabled{opacity:1;box-shadow:0 0 12px var(--yuno-glow)}
+@media(max-width:380px){[data-unlocked] .bday-effects .effect{min-width:40px;width:40px;padding:0}}
+
+/* 모바일 제어 바는 안내 문구 바로 위까지 내려 유노 얼굴을 가리지 않는다. */
+@media(max-width:700px),(pointer:coarse){
+.bday-music__bar{bottom:calc(60px + env(safe-area-inset-bottom));row-gap:0}
+.bday-effects{padding-top:3px;margin-top:1px}
+.bday-effects .effect{height:32px}
+}
+
+/* 볼륨 슬라이더는 기기와 상관없이 기본 제공한다. 음소거 버튼은 슬라이더 바로 왼쪽의 스피커 도형이다. */
+.bday-ib.mute svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+@media(max-width:700px),(pointer:coarse){.bday-volume{display:block;flex:0 1 72px;min-width:48px;width:72px}.bday-volume input{width:100%}[data-unlocked] .bday-volume{flex:1 1 40px;width:auto}}
+
+/* 좁은 화면도 재생 줄 한 줄에 슬라이더까지 담는다. */
+@media(max-width:380px){.bday-grip{width:22px}.bday-ib.prev,.bday-ib.next{width:28px}.bday-music .bday-ib.prev,.bday-music .bday-ib.next{min-width:28px}[data-unlocked] .bday-volume{min-width:36px}}
+
+/* 길게 누르는 효과 버튼: 브라우저 길게 누름 메뉴 · 글자 선택을 끈다. */
+.bday-effects .effect{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+
+/* 박자 패드: 연타 영역은 움직이지 않고 폭죽·펄스의 위치를 고정한다. */
+.bday-grip{flex-basis:44px;width:44px}
+.bday-volume input{height:24px;background-size:100% 4px;background-repeat:no-repeat;background-position:center}
+.bday-music .bday-ib{min-width:44px;width:44px;flex-shrink:0}
+.bday-effects{display:grid;grid-template-columns:56px 56px repeat(4,44px);align-items:center;gap:4px;flex-shrink:0}
+.bday-music .bday-effects .effect{width:44px;min-width:44px;height:36px;padding:0;transform:none;transition:background .12s,box-shadow .12s,filter .12s}
+.bday-music .bday-effects .fireworks,.bday-music .bday-effects .pulse{width:56px;height:40px;border:1px solid #ffc98a44;box-sizing:border-box;background:#ffb46c12;color:#ffdfb5}
+.bday-music .bday-effects .pulse{border-color:#8ae3e266;background:#67e5ee16;color:#baffff}
+.bday-effects .fireworks svg,.bday-effects .pulse svg{width:23px;height:23px}
+.bday-effects .effect:hover{transform:none;filter:brightness(1.18)}
+.bday-effects .effect:active{transform:none;box-shadow:inset 0 0 14px #8ae3e244;filter:brightness(1.4)}
+.bday-effects .effect[data-charging]::before{content:"";position:absolute;bottom:0;left:2px;right:2px;height:3px;border-radius:2px;background:#9cffff;box-shadow:0 0 7px #8affff;transform-origin:left;animation:bday-hold-fill .2s linear forwards;pointer-events:none}
+.bday-effects .effect[data-charged]{box-shadow:inset 0 0 0 1px #ffe7a8,0 0 10px #ffdc8a66;background:#ffd48b2b;color:#fff2cb}
+.bday-effects .effect[data-charged]::before{animation:none;transform:scaleX(1);background:#fff0c7;box-shadow:0 0 9px #ffda7a}
+@keyframes bday-hold-fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media(max-width:700px),(pointer:coarse){
+ [data-unlocked] .bday-music__bar{display:grid;grid-template-columns:repeat(5,44px) minmax(44px,1fr);grid-template-rows:32px 44px;column-gap:2px;row-gap:4px;padding:3px 8px;width:min(360px,calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-width:none;box-sizing:border-box}
+ [data-unlocked] .bday-music__bar:not(.is-positioned){left:50%;width:min(360px,calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));max-width:none}
+ [data-unlocked] .bday-grip{width:44px;height:32px}
+ [data-unlocked] .bday-music__bar>.bday-ib{width:44px;min-width:44px;height:32px}
+ [data-unlocked] .bday-volume{display:flex;align-items:center;width:100%;min-width:44px;height:32px;margin:0}
+ [data-unlocked] .bday-volume input{box-sizing:border-box;width:100%;min-width:0;margin:0}
+ [data-unlocked] .bday-effects{grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:minmax(44px,1fr) repeat(4,44px) minmax(44px,1fr);grid-template-rows:44px;gap:2px;align-items:center;flex-basis:auto;width:100%;min-width:0;height:44px;margin:0;padding:0;border:0}
+ [data-unlocked] .bday-effects .effect{width:100%;min-width:44px;height:44px}
+ [data-unlocked] .bday-effects .fireworks{grid-column:1;grid-row:1}
+ [data-unlocked] .bday-effects .ufo{grid-column:2;grid-row:1}
+ [data-unlocked] .bday-effects .sign{grid-column:3;grid-row:1}
+ [data-unlocked] .bday-effects .shower{grid-column:4;grid-row:1}
+ [data-unlocked] .bday-effects .grand{grid-column:5;grid-row:1}
+ [data-unlocked] .bday-effects .pulse{grid-column:6;grid-row:1}
+}
+@media(prefers-reduced-motion:reduce){
+ .bday-effects .effect[data-charging]::before{animation:none;transform:scaleX(.5)}
+ .bday-effects .effect[data-charged]::before{transform:scaleX(1)}
+}
+/* 낮은 터치 가로 화면은 한 줄로 접어 얼굴 아래를 비우고 두 박자 패드를 양 끝에 둔다. */
+@media(min-width:701px) and (max-height:500px) and (pointer:coarse){
+ [data-unlocked] .bday-music__bar{display:flex;flex-wrap:nowrap;gap:2px;height:54px;padding:6px 8px;width:max-content;max-width:calc(100vw - 24px)}
+ [data-unlocked] .bday-music__bar:not(.is-positioned){width:max-content;max-width:calc(100vw - 24px)}
+ [data-unlocked] .bday-effects{display:contents}
+ .bday-music[data-unlocked] .bday-effects .effect{width:44px;height:36px;flex:0 0 44px}
+ .bday-music[data-unlocked] .bday-effects .fireworks,.bday-music[data-unlocked] .bday-effects .pulse{width:56px;height:40px;flex-basis:56px}
+ [data-unlocked] .bday-grip{order:1;height:40px;flex:0 0 44px}
+ [data-unlocked] .bday-music__bar>.prev{order:2;height:34px}
+ [data-unlocked] .bday-music__bar>.pp{order:3;height:40px}
+ [data-unlocked] .bday-music__bar>.next{order:4;height:34px}
+ [data-unlocked] .bday-music__bar>.mute{order:5;height:34px}
+ [data-unlocked] .bday-volume{order:6;flex:0 0 72px;width:72px}
+ [data-unlocked] .bday-effects .fireworks{order:0}
+ [data-unlocked] .bday-effects .ufo{order:7}
+ [data-unlocked] .bday-effects .sign{order:8}
+ [data-unlocked] .bday-effects .shower{order:9}
+ [data-unlocked] .bday-effects .grand{order:10}
+ [data-unlocked] .bday-effects .pulse{order:11}
+}
+
+/* SUNO 안내는 좌하단, 곡 제목은 우하단 모서리 — 같은 줄에 둔다. 좁은 화면은 곡 제목을 한 줄로 고정하고, 남는 폭이 모자라면 안내가 두 줄이 된다. */
+.bday-music__disc{left:calc(14px + env(safe-area-inset-left));right:auto;bottom:calc(14px + env(safe-area-inset-bottom));text-align:left}
+.bday-music__title{right:calc(14px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom))}
+@media(max-width:700px),(pointer:coarse){.bday-music__disc{bottom:calc(12px + env(safe-area-inset-bottom));max-width:calc(100% - 180px - env(safe-area-inset-left) - env(safe-area-inset-right))}.bday-music__title{bottom:calc(10px + env(safe-area-inset-bottom));white-space:nowrap}}
+/* 360px 폰에서도 안내가 한 줄에 들어가도록 재생 막대 표시를 뺀다. 그보다 좁으면 안내가 고르게 두 줄이 된다. */
+@media(max-width:380px){.bday-eq{display:none}.bday-music__disc{max-width:calc(100% - 150px - env(safe-area-inset-left) - env(safe-area-inset-right));text-wrap:balance}}

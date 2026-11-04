@@ -1,0 +1,52 @@
+/* (v4.11.5) 길게 눌러 주소 복사 — 누름 · 채움 · 튐은 시안 1안, 알림은 2안. 동작 = js/longcopy.js, 명세 = docs/SPEC.md 「길게 눌러 주소 복사」 */
+.lc { isolation: isolate; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.card.lc { position: relative; transition: transform .2s, box-shadow .2s, scale var(--lc-t, .12s) ease-out; }   /* 카드 호버의 transition 을 잃지 않게 이어 적는다 */
+.tcard.lc, .tt-blk.lc { transition: scale var(--lc-t, .12s) ease-out; }
+.lc.is-press { scale: .985; }
+.lc.is-fill { --lc-t: .35s; scale: .965; }
+.wk2__dot.lc.is-press, .wk2__dot.lc.is-fill { scale: 1; }   /* 점은 작아서 줄이지 않고 바깥 링으로 보여 준다 */
+.lc.is-done { animation: lc-pop .28s cubic-bezier(.25, 1.55, .45, 1); }
+
+/* 채움 — 누른 자리에서 부품 전체로 번지는 멤버 색 */
+.lc-wash { position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit; background: color-mix(in srgb, var(--lane-color, var(--color-collab)) 46%, transparent); clip-path: circle(0 at var(--x) var(--y)); }
+.lc-wash.is-run { clip-path: circle(var(--r) at var(--x) var(--y)); transition: clip-path .35s cubic-bezier(.3, .1, .5, 1); }
+.lc-wash.is-out { opacity: 0; transition: opacity .16s ease-out; }
+.lc-wash.is-flash { clip-path: none; opacity: 0; transition: opacity .34s ease-out; }
+
+/* 점의 링 — 시트(800) · 카드 팝업(900) 위 */
+.lc-ring { position: fixed; z-index: 959; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; }
+.lc-ring circle { fill: none; stroke: var(--lane-color, var(--color-collab)); stroke-width: 3.5; stroke-linecap: round; stroke-dasharray: 113.1; stroke-dashoffset: 113.1; transform: rotate(-90deg); transform-origin: center; }
+.lc-ring.is-run circle { stroke-dashoffset: 0; transition: stroke-dashoffset .35s linear; }
+.lc-ring.is-out { opacity: 0; transition: opacity .14s; }
+
+/* 알림 */
+.lc-toast { position: fixed; z-index: 960; left: 0; top: 0; max-width: min(320px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 11px 14px 11px 10px; border: 1px solid var(--color-collab); border-radius: 10px; background: var(--color-bg-secondary); color: var(--color-text); box-shadow: 0 4px 14px var(--shadow-pop); font-family: inherit; font-size: 0.85rem; font-weight: 600; line-height: 1.5; pointer-events: none; animation: lc-in .18s ease-out both; }
+.lc-toast small { display: block; font-size: 0.72rem; font-weight: 400; color: var(--color-text-muted); }
+.lc-toast svg { flex: none; width: 28px; height: 28px; padding: 4px; border-radius: 8px; background: color-mix(in srgb, var(--color-collab) 13%, var(--color-bg-secondary)); color: var(--color-collab); }
+.lc-toast path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lc-toast.is-wait { border-style: dashed; border-color: var(--color-late); }
+.lc-toast.is-wait svg { color: var(--color-late); background: color-mix(in srgb, var(--color-late) 12%, var(--color-bg-secondary)); }
+.lc-toast.is-fail { border-color: var(--color-text-muted); }
+.lc-toast.is-fail svg { color: var(--color-text); background: var(--color-tag-bg); }
+.lc-toast.is-out { animation: lc-off .18s ease-in both; }
+
+/* 첫 안내 말풍선 — 알림과 같은 패널, 꼬리는 카드 가운데(--tail) */
+.lc-tip { position: fixed; z-index: 955; left: 0; top: 0; max-width: calc(100vw - 24px); padding: 8px 12px; border: 1px solid var(--color-collab); border-radius: 10px; background: var(--color-bg-secondary); color: var(--color-text); box-shadow: 0 4px 14px var(--shadow-pop); font-size: 0.8rem; font-weight: 600; line-height: 1.4; white-space: nowrap; pointer-events: none; animation: lc-in .18s ease-out both; }
+.lc-tip::after { content: ""; position: absolute; left: var(--tail, 50%); bottom: -6px; width: 10px; height: 10px; margin-left: -5px; border: solid var(--color-collab); border-width: 0 1px 1px 0; background: var(--color-bg-secondary); transform: rotate(45deg); }
+.lc-tip.is-below::after { bottom: auto; top: -6px; border-width: 1px 0 0 1px; }
+.lc-tip.is-out { animation: lc-off .18s ease-in both; }
+
+.lc-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.lc-hidden-input { position: fixed; top: 0; left: 0; opacity: 0; font-size: 16px; }   /* 16px — iOS 가 입력칸에 확대하지 않게 */
+
+@keyframes lc-pop { from { scale: .965; } 60% { scale: 1.018; } to { scale: 1; } }
+@keyframes lc-in { from { opacity: 0; transform: translateY(5px); } }
+@keyframes lc-off { to { opacity: 0; transform: translateY(-3px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .lc, .lc.is-press, .lc.is-fill { --lc-t: 0s; scale: 1; }
+  .lc.is-done { animation: none; }
+  .lc-wash.is-run { clip-path: none; transition: none; opacity: .5; }
+  .lc-ring.is-run circle { transition: none; }
+  .lc-toast, .lc-toast.is-out, .lc-tip, .lc-tip.is-out { animation: none; }
+}

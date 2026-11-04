@@ -16,6 +16,8 @@
 
 import { formatKST } from "./time.js";
 import { KING_KEY, KING_RING_LATE, decorateBlock, decoratePopup, decorateCard } from "./king.js";   // (v4.3.1) 노노카 지각 이스터에그
+import { markCopy } from "./longcopy.js";   // (v4.11.5) 길게 눌러 주소 복사
+import { MEMBER_DOT_COLORS } from "./config.js";   // (v4.11.7) 이후 예고 점의 멤버 색(어둡게 · 밝게)
 
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
@@ -423,6 +425,7 @@ function blockEl(entry, state, ctx, geo, rowKey) {
   b.appendChild(tx);
 
   wirePop(b, entry, state, ctx, rowKey);   // (v4.9.6) 팝업 연결은 이 블록 · 이후 예고 점이 함께 쓴다
+  markCopy(b, it, (ctx.channels[it.channel_key] || {}).channel_url, state, entry.start);
   if (rowKey === KING_KEY) decorateBlock(b, entry, state);   // (v4.3.1) 노노카 본인 행의 블록에만
   return b;
 }
@@ -847,7 +850,7 @@ export function buildTimetable(ctx) {
     s.append(el("i", cls), document.createTextNode(text));
     legend.appendChild(s);
   }
-  legend.appendChild(el("span", "", "블록을 누르면 카드 팝업 (영상 이동은 팝업에서)"));
+  legend.appendChild(el("span", "", "블록을 누르면 카드 팝업 (영상 이동은 팝업에서) · 길게 누르면 주소 복사"));
   return sec;
 }
 
@@ -911,6 +914,7 @@ function todayCard(entry, state, ctx, big, laneKey) {
   const a = el("a", `tcard tcard--${state}` + (big ? " tcard--big" : ""));
   const url = hasVideo(it) && it.url ? it.url : (ctx.channels[it.channel_key] || {}).channel_url || "#";
   a.href = url; a.target = "_blank"; a.rel = "noopener";
+  markCopy(a, it, (ctx.channels[it.channel_key] || {}).channel_url, state, entry.start);
   a.dataset.start = String(entry.start);
   a.dataset.iso = new Date(entry.start).toISOString();
   a.dataset.state = state;
@@ -1064,6 +1068,12 @@ function fillDot(node, keys, f) {
   for (const k of keys) {
     const seg = el("span", "wk2__seg");
     seg.dataset.channel = k;
+    // (v4.11.7) 멤버 고정 색을 조각에 넣는다 — 표에 없는 키는 넣지 않고 --lane-color 로 둔다
+    const dc = MEMBER_DOT_COLORS[k];
+    if (dc) {
+      seg.style.setProperty("--dot-d", dc.dark);
+      seg.style.setProperty("--dot-l", dc.light);
+    }
     shape.appendChild(seg);
   }
   node.appendChild(shape);
@@ -1096,6 +1106,7 @@ function wkDot(entry, ctx) {
   const names = keys.map((k) => shortName(ctx.channels[k])).join(", ");
   b.setAttribute("aria-label", `${tbd ? "시각 미정" : hm(entry.start)} ${names}${it.membership ? " · 회원 전용" : ""} · ${titleText(it, ctx)}`);
   wirePop(b, entry, entry.state, ctx, it.channel_key, true);
+  markCopy(b, it, (ctx.channels[it.channel_key] || {}).channel_url);
   return b;
 }
 

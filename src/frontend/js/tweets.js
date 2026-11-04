@@ -18,6 +18,7 @@ import { FALLBACK_CHANNELS, FALLBACK_CHANNEL_ORDER } from "./config.js";
 import { THEME_EVENT, currentTheme } from "./theme.js";
 import { wireSheetDrag, vibrate } from "./sheetdrag.js";
 import * as L from "./tweetlogic.js";
+import { copyNow } from "./longcopy.js";   // (v4.11.7) 트윗 주소 복사
 
 const RKEY = "mew:twread";
 const TLANG_KEY = "mew:tllang";
@@ -180,6 +181,22 @@ function _lanes(ck) {
 // 원문 앵커: 메시지 URL → 없으면 X 프로필(x.com/<handle>) → 둘 다 없으면 비활성. 유튜브로는 안 감.
 function _srcUrl(m) {
   return m.url || (m.handle ? "https://x.com/" + m.handle : "");
+}
+/** (v4.11.7) 번역 면 머리 줄 오른쪽 「URL 복사」 — 누르면 원문 트윗 주소를 복사하고 잠깐 결과를 보여 준다. 주소가 없는 글은 비활성 */
+function _copyBtn(m) {
+  const LABEL = "URL 복사";
+  let timer = 0;
+  const b = _el("button", { cls: "tws-ko__copy", text: LABEL, attrs: { type: "button", "aria-label": "이 트윗의 주소 복사" }, on: { click: async (e) => {
+    e.stopPropagation();
+    const u = _srcUrl(m);
+    if (!u) return;
+    const ok = await copyNow(u);
+    b.textContent = ok ? "복사됨" : "복사 실패";
+    clearTimeout(timer);
+    timer = setTimeout(() => { b.textContent = LABEL; }, 1500);
+  } } });
+  b.disabled = !_srcUrl(m);
+  return b;
 }
 function _setSrc(el, m) {
   const u = _srcUrl(m);
@@ -678,7 +695,7 @@ function _article(m, prev, isRoot, unread, now) {
       _el("div", { cls: "tws-ko__nm", text: meta0.name_ko || ck }),
       _el("div", { cls: "tws-ko__hd", text: m.handle ? "@" + m.handle : "" }),
     ]),
-    _el("span", { cls: "tws-ko__tag", text: "번역" }),
+    _copyBtn(m),   // (v4.11.7) 옛 「번역」 표시 자리 — 원문 트윗 주소 복사
   ]);
   const koKids = [head];
   if (m.reply_to_id) {   // X 카드의 「@핸들 님에게 보내는 답글」 줄 자리 — 바로 위 글과의 간격을 쓴다

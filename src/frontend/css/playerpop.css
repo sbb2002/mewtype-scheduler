@@ -14,6 +14,9 @@
   --mp-float-w: 356px;
   --mp-float-h: 200px;   /* YouTube 임베드 최소 200×200 */
   --mp-foot: 45px;       /* 고정 푸터(#foot) 높이 — 플로팅 프레임이 푸터에 가려지지 않게 */
+  --mp-tab-play: #f29ac0;    /* (v4.11.11) 재생 바 탭 — 배경 분홍 톤 */
+  --mp-tab-songs: #8ec5f0;   /* (v4.11.11) 곡 찾기 탭 — 배경 파랑 톤 */
+  --mp-tab-queue: var(--mp-accent);   /* (v4.11.11) 재생목록 탭 — 보라(재생목록 색조와 같다) */
 }
 
 html.mp-lock { overflow: hidden; }
@@ -56,6 +59,8 @@ html.mp-lock { overflow: hidden; }
   padding: 10px 14px;
   border-bottom: 1px solid var(--color-border);
 }
+/* (v4.11.6) 곡 줄 · 탭처럼 PC 와 모바일 글이 다른 곳 */
+.mp-m-only { display: none; }
 .mp-pop__title { flex: 1; min-width: 0; font-size: 0.9rem; font-weight: 700; }
 .mp-x {
   padding: 5px 11px;
@@ -91,6 +96,7 @@ html.mp-lock { overflow: hidden; }
 }
 .mp-song__title { font-size: 1.1rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
 /* (v4.8.3) 곡 정보 줄 — 왼쪽 제목 · 메타 · 한글, 오른쪽 [음원 | MV] 전환. 모바일에서도 같은 줄, 제목은 줄바꿈 */
+.mp-play { display: contents; }   /* (v4.11.6) PC: 재생부에 그대로 녹아든다. 모바일: 「재생」 탭 패널 */
 .mp-song { position: relative; display: flex; align-items: flex-start; gap: 10px; }
 .mp-song__txt { flex: 1; min-width: 0; }
 /* (v4.8.4) [음원 | MV] 스위치 — 버튼 하나(role=switch). 두 칸 각 72px · 높이 42px(테두리 포함) · 패딩 3px.
@@ -133,8 +139,8 @@ html.mp-lock { overflow: hidden; }
 }
 .mp-mvtip.is-on { animation: mp-mvtip 4.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
 @keyframes mp-mvtip { 0% { opacity: 0; transform: translateY(-6px); } 8% { opacity: 1; transform: none; } 85% { opacity: 1; } 100% { opacity: 0; } }
-.mp-song__ko { margin-top: 2px; font-size: 0.74rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
-.mp-song__meta { margin-top: 4px; font-size: 0.74rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mp-song__ko { margin-top: 2px; font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.mp-song__meta { margin-top: 4px; font-size: 0.75rem; line-height: 1.5; color: var(--color-text-muted); overflow-wrap: anywhere; }
 .mp-dot {
   display: inline-block;
   width: 9px;
@@ -212,7 +218,7 @@ html.mp-lock { overflow: hidden; }
 .mp-oma {
   position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 6px;
   height: 40px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 20px;
-  background: var(--mp-panel-2); font-size: 0.74rem; font-weight: 700; white-space: nowrap; cursor: pointer;
+  background: var(--mp-panel-2); font-size: 0.75rem; font-weight: 700; white-space: nowrap; cursor: pointer;
 }
 .mp-oma:hover:not(:disabled) { border-color: var(--mp-accent); color: var(--mp-accent); }
 .mp-oma:disabled { cursor: default; }
@@ -257,14 +263,14 @@ html.mp-lock { overflow: hidden; }
   .mp-oma-wrap { flex: 1 0 100%; }
   .mp-oma { width: 100%; justify-content: center; }
 }
-.mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.76rem; color: var(--color-late); }
+.mp-err { padding: 8px 10px; border: 1px solid var(--color-late); border-radius: 8px; font-size: 0.75rem; color: var(--color-late); }
 .mp-err[hidden] { display: none; }
 .mp-err a { text-decoration: underline; }
 /* (v4.8.3) 재생 불가 안내 — 아이콘 · 문구 · 아래 3초 동안 줄어드는 막대. 플로팅 창이면 .is-fixed 로 창 바로 위에 뜬다(js/player.js placeSkip) */
 .mp-skip {
   position: relative; display: flex; align-items: center; gap: 9px; padding: 8px 12px 10px; overflow: hidden;
   border-radius: 10px; background: var(--color-raised); border: 1px solid var(--color-late); color: var(--color-text);
-  font-size: 0.76rem; line-height: 1.4; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  font-size: 0.75rem; line-height: 1.4; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 .mp-skip[hidden] { display: none; }
 .mp-skip.is-fixed { position: fixed; z-index: 47; margin: 0; max-width: calc(100vw - 16px); }
@@ -293,7 +299,6 @@ html.mp-lock { overflow: hidden; }
 .mp-q__count { color: var(--color-text-muted); font-size: 0.7rem; }
 .mp-q__head .mp-link { margin-left: auto; font-size: 0.7rem; }
 .mp-q__list { list-style: none; margin: 4px 0 0; padding: 0; overflow-y: auto; min-height: 0; max-height: 220px; display: grid; grid-auto-rows: max-content; }
-.mp-q__empty { padding: 10px 4px; font-size: 0.7rem; line-height: 1.5; color: var(--color-text-muted); }
 /* 재생목록 줄 = 밑판(.mp-q__under 「빼기」) 위에 윗판(.mp-q__fg). 모바일에서 윗판을 왼쪽으로 밀어 뺀다(js/player.js initQueueSwipe).
    윗판이 밑판을 가리도록 우물 바탕을 칠하고, 밑판은 미는 동안(.is-swiping)만 보인다. --p = 빼기 선까지 민 비율(0~1) */
 .mp-q__item { position: relative; border-radius: 6px; overflow: hidden; }
@@ -313,7 +318,6 @@ html.mp-lock { overflow: hidden; }
 .mp-q__item.is-armed .mp-q__under svg { transform: scale(1.35); }
 @media (max-width: 767px) { .mp-q__fg { touch-action: pan-y; } }
 .mp-q__main { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; padding: 6px 8px; text-align: left; color: var(--color-text); font-size: 0.78rem; min-width: 0; }
-.mp-q__n { text-align: right; font-size: 0.7rem; color: var(--color-text-muted); }
 .mp-q__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-q__x { padding: 4px 8px; margin-right: 4px; font-size: 0.7rem; color: var(--color-text-muted); }
 .mp-q__x:hover { color: var(--color-text); }
@@ -339,10 +343,18 @@ html.mp-lock { overflow: hidden; }
   flex: 1; min-width: 0; padding: 11px 8px;
   border: 0; border-bottom: 2px solid transparent; border-radius: 0;
   background: transparent;
-  font-size: 0.84rem; font-weight: 600; color: var(--color-text-muted);
+  font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted);
 }
-.mp-pop .mp-tab[aria-selected="true"] { color: var(--color-text); border-bottom-color: var(--mp-accent); }
-.mp-pop .mp-tab:focus-visible { outline: 2px solid var(--mp-accent); outline-offset: -3px; }
+/* (v4.11.11) 탭마다 색 — 선택된 탭은 제 색으로 글자 · 밑줄 · 옅은 바탕을 칠한다 */
+.mp-pop .mp-tab { --mp-tab-c: var(--mp-accent); }
+.mp-pop .mp-tab--play { --mp-tab-c: var(--mp-tab-play); }
+.mp-pop .mp-tab--songs { --mp-tab-c: var(--mp-tab-songs); }
+.mp-pop .mp-tab--queue { --mp-tab-c: var(--mp-tab-queue); }
+.mp-pop .mp-tab[aria-selected="true"] { color: var(--mp-tab-c); border-bottom-color: var(--mp-tab-c); background: color-mix(in srgb, var(--mp-tab-c) 10%, transparent); }
+.mp-pop .mp-tab { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.mp-tab__ico { width: 14px; height: 14px; flex: none; }
+.mp-pop .mp-tab--play { display: none; }   /* 「재생 바」 탭은 모바일에서만 — 위 display 규칙보다 뒤에 둬야 PC 에서 숨는다 */
+.mp-pop .mp-tab:focus-visible { outline: 2px solid var(--mp-tab-c); outline-offset: -3px; }
 .mp-badge {
   display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 6px; margin-left: 5px;
   border-radius: 999px; background: var(--mp-accent); color: var(--mp-accent-fg);
@@ -358,6 +370,24 @@ html.mp-lock { overflow: hidden; }
 .mp-q__list { flex: 1; max-height: none; }   /* 재생목록 탭: 칸을 채우고 그 안에서 스크롤 */
 .mp-qpanel[hidden], .mp-lib[hidden] { display: none; }
 
+/* (v4.11.11) 재생목록 = 보라 색조 — 곡 찾기와 한눈에 구별. 곡 찾기는 중성 그대로 */
+.mp-q { --mp-q-bg: color-mix(in srgb, var(--mp-accent) 9%, var(--mp-well)); background: var(--mp-q-bg); }
+.mp-q__fg { background: var(--mp-q-bg); }   /* 곡 줄 윗판도 같은 색조 — 우물 바탕과 줄무늬가 지지 않게(밑판을 가리는 역할은 그대로) */
+.mp-q__head { margin: -8px -6px 0 -10px; padding: 8px 10px 7px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--mp-accent) 18%, var(--mp-well)); border-bottom-color: color-mix(in srgb, var(--mp-accent) 30%, transparent); }
+.mp-qpanel .mp-q__head { border-radius: 0; }
+.mp-q__head::before { content: ""; width: 14px; height: 14px; flex: none; background: var(--mp-accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z'/%3E%3C/svg%3E") center/contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z'/%3E%3C/svg%3E") center/contain no-repeat; }
+.mp-q__n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--mp-accent) 20%, transparent); color: var(--color-text); text-align: center; }
+.mp-q__head .mp-link:disabled { opacity: 0.35; text-decoration: none; cursor: default; }
+/* (v4.11.11) 빈 재생목록 자리 줄 — 곡 줄과 같은 높이 · 칸 */
+.mp-q__item.is-ph .mp-q__phrow { color: var(--color-text-muted); }
+.mp-q__item.is-ph .mp-q__title { border: 1px dashed var(--color-border); border-radius: 6px; padding: 3px 8px; min-height: 1.45em; font-size: 0.72rem; }
+.mp-q__item.is-ph:nth-child(2) { opacity: 0.55; }
+.mp-q__item.is-ph:nth-child(3) { opacity: 0.3; }
+.mp-q__empty { padding: 10px 4px; font-size: 0.7rem; line-height: 1.5; color: var(--color-text-muted); text-align: center; }
+
+/* (v4.11.11) 다음 곡 칸 — PC 에서는 숨기고 모바일 재생 바 탭에서만 보인다(아래 모바일 블록) */
+.mp-next { display: none; }
+
 /* ── 목록부 ───────────────────────────────────────────────────────── */
 .mp-lib { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .mp-tools { display: grid; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--color-border); }
@@ -370,6 +400,9 @@ html.mp-lock { overflow: hidden; }
   border-radius: 8px;
   background: var(--color-bg);
 }
+.mp-srow { display: flex; gap: 6px; min-width: 0; }
+.mp-srow .mp-search { flex: 1; min-width: 0; }
+.mp-search-x { display: none; flex: none; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.8rem; }   /* 모바일 검색 중에만 */
 .mp-search:focus-within { border-color: var(--mp-accent); }
 .mp-search input {
   flex: 1;
@@ -391,6 +424,7 @@ html.mp-lock { overflow: hidden; }
   color: var(--color-text-muted);
 }
 .mp-sort button { border-radius: 6px; padding: 3px 8px; }
+.mp-sort .mp-sort__cycle { display: none; }   /* 모바일 전용 순환 버튼 */
 .mp-chips button[aria-pressed="true"] { border-color: var(--mp-accent); color: var(--mp-accent); background: color-mix(in srgb, var(--mp-accent) 12%, transparent); }
 .mp-sort button[aria-pressed="true"] { border-color: var(--mp-accent); color: var(--color-text); }
 
@@ -560,26 +594,77 @@ html.mp-lock { overflow: hidden; }
   .mp-pop { height: 94%; border-radius: 14px 14px 0 0; transform: translateY(100%); transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .mp-scrim.is-open .mp-pop { transform: none; }
   /* (마이크로 인터랙션) 머리줄을 아래로 끌어 내린다(js/sheetdrag.js). 머리줄 맨 위 가운데에 손잡이 막대 — 닫힘 선을 넘으면 길어지고 강조색 */
-  .mp-pop__head { position: relative; padding-top: 18px; touch-action: none; cursor: grab; }
+  .mp-pop__head { position: relative; padding: 13px 14px 4px; touch-action: none; cursor: grab; }
+  .mp-x { display: none; }   /* (v4.11.7) 폰: 「내리기」 버튼 대신 머리줄을 끌어 내린다 — PC 는 그대로 */
+  .mp-pop:focus, .mp-pop:focus-visible { outline: none; }   /* 시트 자체에 포커스해도 윤곽선이 시트 전체에 안 보이게 */
   .mp-pop__grab {
-    position: absolute; top: 7px; left: 50%; translate: -50% 0; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border);
+    position: absolute; top: 5px; left: 50%; translate: -50% 0; width: 40px; height: 4px; border-radius: 2px; background: var(--color-border);
     transition: width 0.22s cubic-bezier(0.25, 1.55, 0.45, 1), height 0.18s, background 0.18s;
   }
   .mp-pop.is-armed .mp-pop__grab { width: 58px; height: 5px; background: var(--mp-accent); }
   .mp-pop.is-dragging { transition: none; }
   .mp-pop.is-dragging .mp-pop__head { cursor: grabbing; }
   .mp-pop.is-spring { transition: transform 0.44s cubic-bezier(0.25, 1.55, 0.45, 1); }
-  /* 본문은 스크롤하지 않는다. 재생부는 위에 고정(flex none), 아래 탭 패널 한 칸만 남은 높이를 받아 그 안에서 스크롤 */
+  /* (v4.11.6) 본문은 스크롤하지 않는다. 위에서부터 프레임 자리 · 탭 바 · 안내 · 탭 패널 한 칸. stage · side 상자를 풀어(display:contents) 순서를 order 로 잡는다.
+     프레임 자리는 어느 탭에서든 그대로다 — 프레임은 숨기지도 덮지도 않는다(YouTube 정책) */
   .mp-pop__body { display: flex; flex-direction: column; overflow: hidden; }
-  .mp-side { flex: 1; }
-  .mp-stage { flex: none; gap: 6px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--color-border); overflow: visible; }
-  .mp-lib { height: auto; }
-  .mp-lib .mp-tools { gap: 6px; padding: 8px 12px; }
-  .mp-lib .mp-count { padding: 4px 12px; }
-  /* 곡 목록 탭: 검색 · 필터(.mp-tools)까지 곡 줄과 한 덩어리로 스크롤한다 — 고정 높이가 모자란 폰(세로 700px 대)에서도 곡 줄이 보이게 */
-  .mp-lib { overflow-y: auto; overscroll-behavior: contain; }
-  .mp-lib .mp-list { flex: none; overflow: visible; }
-  .mp-lib .mp-tools { border-top: 0; }
+  .mp-stage, .mp-side { display: contents; }
+  .mp-slot { order: 1; width: calc(100% - 24px); margin: 8px 12px 0; }
+  .mp-tabs { order: 2; margin-top: 4px; }
+  .mp-pop .mp-tab { padding: 10px 6px; }
+  .mp-pop .mp-tab--play { display: inline-flex; }
+  .mp-side > .mp-err, .mp-side > .mp-skip { order: 3; flex: none; margin: 6px 12px 0; }
+  .mp-play { order: 4; display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; padding: 12px; overflow-y: auto; overscroll-behavior: contain; }
+  .mp-panels { order: 4; }
+  .mp-pop[data-tab="play"] .mp-panels, .mp-pop:not([data-tab="play"]) .mp-play { display: none; }
+  .mp-pc-only { display: none; }
+  .mp-m-only { display: inline; }
+  /* (v4.11.11) 재생 바 탭 아래 다음 곡 3줄 — 첫 줄(바로 다음)은 크고 또렷하게, 나머지 두 줄은 작고 흐리게 */
+  .mp-next { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--color-border); }
+  .mp-next__head { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0.02em; }
+  .mp-next__row { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 10px; align-items: center; width: 100%; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--color-text-muted); font-size: 0.8rem; text-align: left; }
+  button.mp-next__row:hover { background: var(--mp-panel-2); }
+  .mp-next__lab { grid-row: span 2; justify-self: center; font-size: 0.68rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mp-next__t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mp-next__m { grid-column: 2; overflow: hidden; font-size: 0.68rem; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
+  .mp-next__row.is-first { padding: 9px 10px; border-radius: 10px; color: var(--color-text); background: color-mix(in srgb, var(--mp-accent) 16%, var(--color-bg-secondary)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mp-accent) 40%, transparent); }
+  .mp-next__row.is-first .mp-next__lab { padding: 3px 6px; border-radius: 6px; background: var(--mp-accent); color: var(--mp-accent-fg); font-weight: 800; }
+  .mp-next__row.is-first .mp-next__t { font-size: 0.95rem; font-weight: 700; }
+  .mp-next__row.is-first.is-note, .mp-next__row.is-first.is-blank { background: transparent; box-shadow: none; border: 1px dashed var(--color-border); color: var(--color-text-muted); }
+  .mp-next__row.is-first.is-note .mp-next__lab { background: var(--color-border); color: var(--color-text); }
+  .mp-next__row.is-first.is-note .mp-next__t { font-size: 0.85rem; font-weight: 600; }
+  .mp-next__row.is-blank:not(.is-first) { opacity: 0.45; }
+  .mp-next__row.is-mystery .mp-next__t { letter-spacing: 0.15em; }
+  .mp-next__row .mp-dot { margin-right: 3px; }
+  /* 곡 찾기 탭: 검색 · 필터 줄은 위에 붙고 곡 줄만 지나간다 */
+  .mp-lib { height: auto; overflow-y: auto; overscroll-behavior: contain; }
+  .mp-lib .mp-tools { position: sticky; top: 0; z-index: 2; gap: 6px; padding: 8px 12px; background: var(--color-bg-secondary); }
+  .mp-lib .mp-list { flex: none; overflow: visible; padding: 2px 8px; }
+  .mp-lib .mp-count { padding: 4px 12px; border-top: 0; }
+  .mp-search input { padding: 6px 0; }
+  .mp-row2 { flex-wrap: nowrap; gap: 6px; }
+  .mp-chips { flex: 1; flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .mp-chips::-webkit-scrollbar { display: none; }
+  .mp-chips button { flex: none; }
+  .mp-sort { flex: none; }
+  .mp-sort .mp-sort__lab, .mp-sort .mp-sort__opt { display: none; }
+  .mp-sort .mp-sort__cycle { display: block; color: var(--color-text); }
+  /* 곡 줄 50px 두 줄: 곡명 / 독음 · 멤버 · 종류 · 날짜 · MV */
+  .mp-item__main { position: relative; grid-template-columns: 22px minmax(0, 1fr); height: 48px; padding: 0 6px; }
+  .mp-item__n { font-size: 0.75rem; font-weight: 400; }
+  .mp-item__body { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 6px; align-items: center; }
+  .mp-item__title { grid-column: 1 / -1; overflow: hidden; font-size: 0.875rem; text-overflow: ellipsis; white-space: nowrap; }
+  .mp-item__ko { grid-row: 2; grid-column: 1; max-width: 11rem; margin: 0; overflow: hidden; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+  .mp-item__sub { grid-row: 2; grid-column: 2; flex-wrap: nowrap; gap: 6px; min-width: 0; margin: 0; overflow: hidden; font-size: 0.72rem; white-space: nowrap; }
+  .mp-item__sub:last-child { grid-column: 1 / -1; }   /* 독음이 없는 곡 */
+  .mp-item__sub > * { flex: none; }
+  .mp-item__sub .mp-dot { margin-right: 0; }
+  .mp-item.has-q .mp-item__main { padding-right: 52px; }
+  .mp-item .mp-q-badge { position: absolute; top: 50%; right: 8px; translate: 0 -50%; }
+  /* 검색 모드: 키보드가 올라와도 결과가 보이게 탭 · 칩을 접고 「취소」를 띄운다(js/player.js enterSearch). --mp-kb = 키보드가 가린 높이 */
+  .mp-pop.is-search .mp-tabs, .mp-pop.is-search .mp-row2 { display: none; }
+  .mp-pop.is-search .mp-search-x { display: block; }
+  .mp-pop.is-search .mp-lib { padding-bottom: var(--mp-kb, 0px); }
   .mp-frame.is-float { bottom: calc(var(--m-foot, 45px) + var(--m-dots, 44px) + 8px); }
 }
 
@@ -591,7 +676,7 @@ html.mp-lock { overflow: hidden; }
 .mp-undo {
   position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 4; display: flex; align-items: center; gap: 10px; overflow: hidden;
   padding: 8px 12px 10px; border-radius: 10px; background: var(--color-raised); border: 1px solid var(--color-raised-edge);
-  font-size: 0.76rem; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  font-size: 0.75rem; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 .mp-undo[hidden] { display: none; }
 .mp-undo span { flex: 1; min-width: 0; }

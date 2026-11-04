@@ -52,9 +52,36 @@ export const SONGS_FALLBACK_URL = "assets/songs.json";
 
 // (v4.8.4) 현재 버전 · 날짜 — 하단 「ver.」 버튼 말풍선에 보인다(js/main.js initVersionButton).
 // 버전을 올릴 때 이 두 값도 같이 고친다(CLAUDE.md 「버전 올릴 때 할 일」 6번 · README · VERSION.md 와 맞춘다).
-export const APP_VERSION = "v4.9.12";
-export const APP_DATE = "2026-10-30";
+export const APP_VERSION = "v4.11.11";
+export const APP_DATE = "2026-11-04";
 
+// (v4.10.0) 멤버 생일 — KST 달력 날짜(MM-DD). 생일 당일 00:00~24:00(KST)에 배경이 그 멤버의 생일 스킨으로 바뀐다(js/birthday.js · birthdayui.js).
+// 일본 표준시와 한국 표준시는 UTC+9 로 같아 날짜가 어긋나지 않는다. 운영자 교차 확인 완료(2026-10-30).
+export const BIRTHDAYS = {
+  arale: "08-16",
+  yuno: "11-04",
+  nonoka: "04-17",
+  ritsu: "02-07",
+  miyako: "09-19"
+};
+// 장면(생일 스킨)이 완성돼 켜진 멤버. 나머지는 날짜만 등록해 두고 보강이 끝나면 true 로 켠다 — js/birthdayui.js SCENE_LOADERS 에 장면 모듈도 같이 등록.
+export const BIRTHDAY_SCENES_ENABLED = {
+  arale: false,
+  yuno: true,
+  nonoka: false,
+  ritsu: false,
+  miyako: false
+};
+
+// (v4.11.7) 이후 예고 점의 멤버 색 — 기준 = 나무위키 멤버 문서의 이미지 컬러(유노 #ff6688 · 노노카 #ffaacc · 리츠 #5588dd · 미야코 #9977dd).
+// 리츠 · 미야코는 색약에서 겹치지 않게 명도를 조정했고, 밝게 색은 같은 색조에서 계산했다. 아라레는 표에 넣지 않아 --lane-color(아바타 평균색)를 쓴다(운영자 결정).
+// js/timetable.js fillDot 이 조각마다 --dot-d · --dot-l 로 넣고, css/timetable.css 가 골라 쓴다. 지난 방송은 점 전체 불투명도 0.5.
+export const MEMBER_DOT_COLORS = {
+  yuno:   { dark: "#FF6688", light: "#D02F5D" },
+  nonoka: { dark: "#FFC4DC", light: "#E293B6" },
+  ritsu:  { dark: "#6296EC", light: "#588EE8" },
+  miyako: { dark: "#8C69CE", light: "#805BC4" }
+};
 export const POLL_MS = 75000;
 export const COUNTDOWN_TICK_MS = 60000;
 export const FETCH_TIMEOUT_MS = 8000;

@@ -53,6 +53,8 @@ src/
       theme.js         # 밝게/어둡게 전환
       bgdeco.js bglogic.js   # (v4.9.8) 배경 장식 — 아래 「배경 장식」
       sheetdrag.js     # 시트 끌어 닫기 공용(트윗 시트 · 소식 시트 · 플레이어 시트)
+      longcopy.js      # 카드 · 블록 · 점을 길게 눌러 주소 복사 + 첫 안내 말풍선(css/longcopy.css)
+      netrecover.js    # 조회 실패 복구 상태 기계(재시도 · 안내 판단, DOM 없음) — main.js 가 연결
       *.selfcheck.mjs  # king · render · songs · time · timetable 순수 로직 점검(node 로 실행)
   collector/           # v1 순수 모듈 — config/rss/youtube 는 백엔드가 import 재사용.
     rss.py youtube.py  #   (v1 실행기 main.py · reconcile.py · store.py 는 2026-10-20 삭제)
@@ -365,18 +367,19 @@ API 재구성이 `scheduled_start` 를 덮지 않으므로(§1-3-1·v2.8.1 overr
    - **한 상자**: 펼치면 접기 버튼(위만 둥글게) + `.tt-later`(아래만 둥글게, 같은 바탕 · 테두리)가 한 영역으로 보인다. 두 표(`.wk2__panel`)는 그 안에서 한 단계 깊은 바탕(`--color-bg`).
    - **점 범례** `ul.wk2__legend`(먼 미래 표 아래, `.wk2__col`): 견본 점(`span.wk2__dot`, 누를 수 없음 — 표의 점과 같은 `fillDot`)을 글머리표로 한 작은 글자 3열 —
      방송 1건 · 멤버 색 / 합동 / 방송 중 / 지난 방송 / 시각 미정 / 회원 전용. 견본 색 = 멤버 순서상 첫 · 둘째 멤버.
+   - **점 색**(v4.11.7): 멤버별 고정색 `config.js MEMBER_DOT_COLORS`(어둡게 · 밝게 2색, 유노 · 노노카 · 리츠 · 미야코. 아라레는 표에 없어 `--lane-color`(아바타 평균색)를 쓴다 — 운영자 결정, 기준 = 나무위키 멤버 문서의 이미지 컬러(아라레 #ffdd33 · 유노 #ff6688 · 노노카 #ffaacc · 리츠 #5588dd · 미야코 #9977dd). 어둡게 예고는 이 값을 쓰되 파랑 · 보라가 색약에서 겹치지 않게 리츠 · 미야코 명도만 조정, 밝게 · 종료 색은 같은 색조에서 조정). `fillDot` 이 `.wk2__seg` 에 넣는다. 레인 헤더 · 하단 멤버 점의 `--lane-color` 와 별개다. 지난 방송 = 점 전체 불투명도 0.5(예전과 같은 방식).
    카드 보기 · 모바일의 이후 예고는 그대로(멤버별 `.lane__later` 목록 + 멤버별 건수 버튼).
    - **모바일 「표」 버튼 · 시트**(v4.9.6, `js/weekpop.js`): 모바일은 카드 구성이라 위 두 표가 없으므로, 하단 멤버 아이콘 줄(`#pager-dots`) **오른쪽 끝**(플레이어 버튼 반대편)에
      같은 모양의 버튼 `button.player-btn.week-btn`(표 + 점 + `>` 아이콘, 신곡 NEW 배지 · 플레이어 이름은 안 붙음)을 둔다. 누르면 바텀 시트(`.wk-scrim > .wk-sheet`, 높이 최대 88%)에
-     같은 `buildLaterTables` 를 **세로로**(이번주 → 먼 미래 → 범례 2열) 그린다. 열 때마다 마지막 보드 데이터(`renderBoard` → `setWeekData`)로 새로 그리고, 점 색은 `#board` 멤버 레인의 `--lane-color` 를 옮겨 온다.
-     닫기 = 「닫기」 · 바깥 누르기 · Esc(둘 다 카드 팝업이 떠 있으면 팝업만 — v4.9.7 바깥 누르기도) · 머리줄 끌어 내리기(`sheetdrag`). 카드 팝업은 시트 위(`html.wk-lock .tt-pop` z-index 900), 시트를 스크롤하면 닫힌다.
+     같은 `buildLaterTables` 를 **세로로**(이번주 → 먼 미래 → 범례 2열) 그린다. 열 때마다 마지막 보드 데이터(`renderBoard` → `setWeekData`)로 새로 그린다.
+     닫기 = 바깥 누르기 · Esc(둘 다 카드 팝업이 떠 있으면 팝업만 — v4.9.7 바깥 누르기도) · 머리줄 끌어 내리기(`sheetdrag`). (v4.11.7) 「닫기」 버튼은 없앴다 — 손잡이와 기능이 겹친다. 카드 팝업은 시트 위(`html.wk-lock .tt-pop` z-index 900), 시트를 스크롤하면 닫힌다.
 
 **모바일 (<768px)** — 현행 1명씩 가로 슬라이드(`initMobileCarousel`, 스냅 · 무한 회전 · 하단 도트) 그대로. 레인 하나 = `lane__header`(트윗 배지 포함) + `.tt-today`(오늘 카드 `.tcard`) +
 `.tt-fold` + `.lane__later`. (v4.9.6) 카드 묶음 순서 = **종료 → 방송 중 → 오늘 예정 → 내일 구분선 `.tt-today__div`(「내일 예고 · 10/31(토) 04:00 ~」, 내일 예정이 있을 때만) → 내일 예정** —
 화면 넘기기 없이 한 줄로 다 보여 준다(PC 카드 보기도 같음). 오늘 것이 0건이고 내일이 있으면 「오늘 남은 예고가 없습니다.」 + 구분선 + 내일 카드. 크게 보이는 첫 카드 = 종료가 아닌 첫 카드(없으면 내일 첫 카드).
 머리 메타 = `10/29(목) 04:00 ~ 익일 04:00 · 예정 n · 방송 중 n · 종료 n · 내일 n`(0건 항목은 생략). 오늘 카드: 예정 = 카운트다운 링(1시간 넘게 남으면 24시간 기준으로 차오름 · (v4.5.8) 1시간 이내는 노랑 분 단위 링이 0분까지 닳음 — 아래 「타이머 링」, **이미지가 아니라 제목 영역 오른쪽**, 영역 높이에 맞춘 크기), 방송 중 = `LIVE` 알약 + 빨간 테두리 + **경과 링**(제목 영역 오른쪽, 12시부터 시계방향으로 60분간 채워지고 다음 60분은 같은 방향으로 비워지는 2시간 주기 반복 · 글자 "N분" + "방송중", 시작 = `actual_start`, 1분 틱이 갱신 · `@property --p` 로 부드럽게 보간), 종료 = 회색 + `종료` 알약.
 **지금 보는 레인만 동작**: `render.js initMobileCarousel` 가 현재 슬라이드에만 `.lane--active` 를 주고 나머지(클론 포함)는 `inert` 로 **동작만** 막는다(겉모양 · 스크롤바는 그대로 — `overflow:hidden` 으로 숨기면 스크롤바 폭만큼 카드가 움찔거려 쓰지 않음) — 옆에 비쳐 보이는 레인의 스크롤 · 클릭이 반응하지 않는다(드래그/스와이프 시작점으로는 보드가 받음).
-하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. (v4.9.6) 방송 중인 멤버의 점은 `.dot--live`(흐리지 않고 빨간 링).
+(v4.11.7) 사용자가 넘긴 멤버를 `localStorage` `mew.lane.last`(채널 키)에 기억해 다음 방문에 그 멤버부터 보여 준다. 기록이 없으면 첫 멤버. 하단 페이지 도트(`#pager-dots .dot`)는 멤버 프로필 이미지(레인 아바타와 같은 이미지)로 그린다. (v4.9.6) 방송 중인 멤버의 점은 `.dot--live`(흐리지 않고 빨간 링).
 **라이브 레인 효과**(v4.9.6): `renderBoard` 가 레인을 다 만든 뒤(캐러셀 클론 복제 전) `classify().live` 의 참여 멤버(합동 포함, `itemKeys`) 레인 `.lane[data-channel]` 에
 `.lane--live` → **그 멤버 예고판(레인) 테두리**가 빨갛게 + 느린 호흡 글로우(움직임 줄이기면 정적). **카드 보기(PC 5열) · 모바일 레인에만** 보인다 — 테이블 보기(멤버 칸 `.tt__lane` · 이후 예고 `.lane--later`)는 라이브 블록이 이미 보여 주므로 CSS 가 뺀다(`:not(.tt__lane):not(.lane--later)`). 아바타 자체에는 효과를 두지 않는다(운영자 10-29).
 **탭 제목 라이브 표시**(v4.9.6): 라이브가 1건 이상이면 `document.title` = `🔴 LIVE n · <원래 제목>`(n = `classify().live.length`, 합동 1건 = 1), 0건이면 원래 제목(`render.applyLiveTitle`, 처음 제목을 한 번 읽어 둠). 펼침 상태가 `#board` 클래스라 캐러셀 클론 레인도 같이 열리고 닫힌다.
@@ -424,6 +427,30 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
   `requestAnimationFrame` 이 매 프레임 마찰로 감속 · 벽 반사(속도 80%) · 장식끼리 탄성 충돌(원 근사, 반발 0.85)을 계산하며 벽 · 충돌 때 회전이 붙는다. 120ms 간격까지 연속 입력을 받고 속도는 쌓이되 상한 = 짧은 변 × 6/초. 모두 멈추면 프레임 반복도 멈춘다.
   흩어진 자리는 새로고침 · 크기 큰 변화(가로 변경 · 높이 150px 이상) 전까지 유지한다. iOS 는 첫 터치(`pointerup`) 때 `DeviceMotionEvent.requestPermission()` 을 한 번 묻고 거절 · 실패하면 흔들기만 없다. 움직임 줄이기 설정이면 흔들기도 끈다.
 - **self-check**: `node src/frontend/js/bglogic.selfcheck.mjs` (배치 · 센서 세기 · 물리 · 충돌).
+
+### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js` · `bdaystory.js` · `bdayreward.js`
+
+감상 이야기 · 완곡 보상 · 수동 효과(v4.11.3) 계약은 `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md` 맨 끝 절을 따른다.
+
+멤버 생일 **당일(KST 00:00 ~ 익일 00:00)** 에 화면 뒤 배경을 그 멤버의 생일 장면(AI 생성 일러스트 + 모션)으로 바꾼다. 평소(해당 없는 날)에는 아무 코드도 장면을 불러오지 않는다. 데이터를 받지 않는 순수 클라이언트 기능.
+
+- **생일 데이터**: `config.js` 의 `BIRTHDAYS`(`{키: "MM-DD"}`, KST 달력 날짜) — 아라레 08-16 · 노노카 04-17 · 리츠 02-07 · 미야코 09-19 · 유노 11-04(운영자 교차 확인 2026-10-30). 백엔드는 생일을 쓰지 않아 `config/channels.json` 이 아니라 프론트 상수에 둔다. `BIRTHDAY_SCENES_ENABLED`(`{키: bool}`)는 **장면이 완성돼 켜진 멤버** — 지금 `yuno` 만 true, 나머지 4명은 날짜만 등록(꺼 둠). 켜려면 이 값과 `birthdayui.js` 의 `SCENE_LOADERS` 에 장면 모듈을 같이 등록.
+- **판정(`birthday.js`, 순수 · DOM 없음)**: `kstMonthDay(nowMs)`(UTC+9 로 달력 날짜 읽기) · `birthdayMemberAt` · `overrideMember`(시험용 `?bday=<멤버키>`, 장면이 켜진 멤버만) · `pickBirthdayScene`(강제 표시 → 오늘 생일 → 없으면 null) · `msToNextKstMidnight`. self-check `node src/frontend/js/birthday.selfcheck.mjs`(경계 KST 23:59:59 / 00:00:00 · 윤년 · 연말 포함). 운영 사이트에서 시험할 때는 `?bday=yuno&va=claude`.
+- **화면(`birthdayui.js`)**: `main.js` `DOMContentLoaded` 의 `initBirthday()`. 판정이 멤버를 정하면 `<html data-bday="<멤버>">` · `<div id="bday-bg">`(장면 호스트, `position: fixed; inset: 0; z-index: -1`) · 컨트롤 `#bday-ui` · 인사 `#bday-greet`(v4.11.11 `z-index: -1` — 장면 바로 위 · 화면 요소 뒤, 방송 예고를 덮지 않는다) 를 붙이고 장면 모듈을 **그때 처음** `import()` 한다. 자정(KST) 직후 · 탭이 다시 보일 때 재판정(`msToNextKstMidnight` 타이머 + `visibilitychange`)해 날이 바뀌면 정리한다. 장면 로드 실패 시 평소 화면 그대로(콘솔 오류만). `data-bday` 가 있으면 평소 배경 장식(`#bgdeco`)은 숨긴다.
+- **장면 모듈 계약**: `mountYunoScene(host, opts) → { setStill, celebrate, finale, destroy, whenReady, setClock, setTrack, setLayout, setIntro, setBrightness }`. 유노는 정본 `prototype_v12.html`의 Canvas 수식을 사용한다. `setClock(fn)`은 평활한 곡 시각, `setTrack(track)`은 디코딩된 박 지도를 받는다. 유노·데크는 x=600 중심. 가로는 1200×760 cover, 세로는 가로 820단위·지평선 68%, 태양 1.45/1.6배, 사인은 늘린 하늘 중앙에 화면 폭 85%로 배치한다. `visualViewport` 크기 변화·탭 숨김·화면 밖 정지를 처리한다. 모션 줄이기에서는 0초 정지 프레임. 기존 `celebrate/finale` 계약은 유지하되 기존 전환 폭죽의 색·수식·지연을 유지한다. 부위 webp 9개와 UFO만 실제 이미지로 요청하고, 사인은 벡터를 합성한다. `innerHTML`을 사용하지 않는다.
+- **유리 패널**(`css/birthday.css`): `html[data-bday]` 일 때 `.lane` · `.lane__header` · `.card` · `.vt` · `.tt__scroll` · `.tt-fold` · `.ntc__bar` · `#foot` · `#board > .tt-later` 의 바탕을 반투명(`--bday-glass`: 어둡게 `rgba(18,18,24,.58)` · 밝게 `rgba(255,255,255,.7)`) + `backdrop-filter: blur(10px)` 로 바꾼다. 팝업 · 시트는 불투명 그대로. 이 규칙은 `theme.css` 뒤에 불러온다.
+- **컨트롤(`#bday-ui`)**: 🎂로 「온전히 보기」를 전환한다. 일반 화면에는 생일 음악 재생 버튼을 두지 않고, 생일 전체 화면의 플레이바에서만 음악을 조작한다. 일반 화면으로 돌아가도 음악 재생은 유지하며 생일 음악 단축키는 전체 화면에서만 처리한다. 기존 🎂 꾹 누르기·위치 저장은 유지한다.
+- **생일 연출 후속(v4.11.2)**: 19초 공개 뒤 두 줄 시차 등장·금빛/분홍빛 글로우, 4.8초 후 2.8초 페이드아웃. 배경의 작은 별과 간헐적 폭죽은 곡 시각을 따르고 모션 줄이기에서는 생략한다. 모바일 태양 펄스는 확장 하늘까지 퍼지고 UFO·궤적은 실제 모바일 하늘에 매핑한다. 유메미타 플레이어가 재생/버퍼링하면 생일 BGM을 정지하고 수동 재개 전까지 유지한다. 상세 = `docs/BIRTHDAY_SKIN.md` v4.11.2 절.
+- **생일 플레이바 보완(v4.11.1, 운영자 지정 핫픽스)**: 왼쪽 끝의 6점 손잡이로 마우스/한 손가락 드래그한다. 재생·이전/다음·음소거·볼륨은 이동 동작을 시작하지 않는다. 화면 가장자리·안전영역·하단 SUNO 안내를 피하도록 제한하고 창/주소창 크기가 바뀌면 다시 제한한다. 모바일 곡 제목은 우하단에 고정하고 플레이바가 제목·하단 안내 위에서 멈추도록 제한한다(v4.11.2). 이동 위치는 이번 방문의 전체 화면 재진입까지 유지하며 새 방문은 기본 위치다. 손잡이에 포커스를 두면 방향키로 8px(Shift 32px), Home으로 기본 위치 복원도 가능하다. 마우스 호버 중에만 플레이바 바탕/불투명도를 100%로 하고, 벗어나면 기존 반투명·5초 유휴 표시를 유지한다. 인사말은 영문 800·이름/날짜 700 굵기와 확대 글자/그림자로 대비를 높인다. 인트로 공개는 19초로 유지하고, 인사말은 시차 등장·빛 연출 후 4.8초부터 2.8초 동안 사라진다(v4.11.2).
+  - **기본 위치**: 오른쪽 가장자리, 세로 화면 높이의 73%(`DEFAULT_POS` — 운영자가 직접 정한 자리, 2026-10-31). 모바일 멤버 줄(`#pager-dots` — CD · 타임테이블 버튼이 있는 줄)과 풋터 위로는 내려가지 못한다(`limits()` 가 두 요소의 `getBoundingClientRect().top` 으로 계산, 크기 변화는 `ResizeObserver(body)` · `resize` 로 따라간다)라 겹치지 않는다.
+  - **끌어서 옮기기**: 0.5초(`HOLD_MS`) 꾹 누르면 끌기 모드 — 고리가 0.5초 동안 차오르고(손가락이 10px 넘게 움직이면 취소) → 진동(지원 기기) + 버튼이 커지며 빛나고 살짝 흔들림 + 「옮길 곳에 놓으세요」 말풍선 → 끄는 동안 움직이는 방향으로 기울어짐 → 놓으면 가까운 왼쪽/오른쪽 가장자리에 스프링으로 붙고(짓눌렸다 튀어 오르는 안착 모션) 짧은 진동. 끌기를 마친 손가락 뗌은 클릭으로 세지 않는다. 위치(`{side, ratio}`)만 `localStorage "bday-btn"` 에 저장(생일 스킨이 뜬 날에만 쓰임). 멤버 줄 · 풋터 아래로는 놓을 수 없게 제한. 키보드는 Enter/Space 로 전환만(끌기는 포인터 전용).
+- **온전히 보기·인트로**: `html[data-bday-full]`은 기존 화면을 투명하게 하고 `inert`를 건다. 방문마다 Noctural Run 0초에서 시작한다(저장하지 않음). 단 두 곡 완곡 보상을 받은 브라우저는 인트로 없이 일반 화면으로 바로 연다(v4.11.10, `docs/BIRTHDAY_MUSIC_SCENE_SPEC.md` 「보상을 받은 방문자」). 자동재생이 거부되면 암전 가운데 「탭하여 시작 ♪」만 표시하고 첫 조작에서 재생한다. 인계의 곡선 충돌 해결 지시에 따라 밝기는 0→3초에 .03→.30, 17.14→18.64초에 2.4→1.0으로 quadratic ease-out한다. 3~17.14초는 .30이다. 따라서 1.5초 .2325, 17.2초 2.29024이며 기존 선형 표본은 현재 곡선의 검증 기준으로 쓰지 않는다. 기본 장면·유노 조명·점등 전파는 별도 Canvas의 최종 CSS 밝기로 합성한다. 부모에서 다시 감쇠해 색이 회색으로 클리핑되는 중간 합성을 피한다. 첫 드럼 17.14초에 태양에서 0.55초 링 3개, 19초 이후 컨트롤·제목·SUNO 안내를 순서대로 공개한다. 인트로 중 복귀는 막고 이후 🎂·Esc·빈 곳 클릭으로 복귀한다. 일반 화면으로 돌아와도 음악은 계속된다.
+- **음악**: `bdayaudio.js`는 Noctural Run ↔ Midnight Groove를 교대로 재생하고 최초에는 `audio.currentTime`, 버퍼 전환 뒤에는 `AudioContext.currentTime`에 LAT=.02 평활화를 적용한다. 첫 곡을 스트리밍하면서 두 곡의 blob·박 지도를 선로딩·디코드하고 같은 컨텍스트 시각에 스트림 Gain과 버퍼 출력을 교체한다. 이후 현재 곡과 다음 두 곡의 AudioBufferSource를 종료 시각에 이어 예약하므로 메인 스레드의 ended 처리 지연이 곡 경계에 공백을 만들지 않는다. 제목·박 지도·장면 시계도 같은 예약 시각에서 바뀐다. 일시정지·탐색·곡 선택은 예약을 취소하고 다시 잡는다. Web Audio/디코드 불가 시 스트리밍으로 대체하며 이 경로는 무공백을 보장하지 않는다. Web Audio GainNode 기본 .3, 저장 키 `bday-vol`. 미디어 요소 volume은 1로 두어 이중 감쇠를 방지한다. 생일 전체 화면에서만 Space/좌우/상하/M 단축키, 모바일 슬라이더 숨김·음소거를 지원한다. 음원은 원본 약 10MB, 박 지도는 JSON 메타데이터와 uint8 `.bin`으로 저장한다.
+- **모션 안전**: `prefers-reduced-motion`이면 장면은 정지하고 인트로는 .03→1 단순 페이드이며 번쩍임·링·UI 애니메이션을 생략한다. 일반 모드에서는 첫 드럼에서만 밝기 상승이 있다.
+- **복사 억제**: `bdaysign.js`의 인코딩된 좌표를 디코딩해 Canvas에 그린다. 완성 사인은 5.5초 표시한다. 전체 보기에서 contextmenu·dragstart·일부 개발 도구 단축키를 억제하고 해당 캔버스 인스턴스의 `toDataURL/toBlob/getImageData`를 빈 결과로 대체했다가 복구한다. 이는 **우연한 가져가기를 어렵게 하는 장벽**이며 암호화·접근 통제가 아니다. 개발자 도구·스크린샷·음원 다운로드는 막을 수 없다.
+- **자정 전환**: 생일 00:00 에 사이트를 보고 있으면 그 자리에서 장면이 켜진다. 유메미타 플레이어가 재생 중이면 2.5초에 걸쳐 소리를 줄이며 생일 음악과 겹친 뒤 일시정지하고 볼륨을 되돌린다(`handOffMainMusic`). 곡 · 재생목록 · 재생 위치는 유지한다. 모바일 팝업은 내린다. 숨은 탭은 음악을 듣는 중일 때만 바로 켜고, 아니면 돌아왔을 때 켠다. 생일이 끝나는 00:00 에는 켜져 있는 장면을 내리지 않는다 — 새로고침하면 사라지고, 다음 날 들어온 사람에게는 뜨지 않는다.
+- **정리·검증**: 장면을 정리할 때 장면·음악·플레이어·가드를 정리하고 fetch 중단·AudioContext 종료·blob 해제를 수행한다. `destroyBirthday()`는 공통 재판정 리스너와 자정 타이머까지 제거한다. self-check와 `scripts/verify_birthday_*.py`, `scripts/compare_birthday_pixels.py`로 실제 Chromium을 검증한다. 그라데이션 재사용·조명 캐시·캐릭터/파면의 CSS 합성 레이어 분리로 프레임 비용을 줄였다. GPU 가속과 SwiftShader를 구분한 측정은 `scripts/verify_birthday_performance.py`, 실제 출력 샘플의 곡 경계 검증은 `scripts/verify_birthday_gapless.py`로 실행한다. 성능 수치는 CPU에서 Canvas 명령을 제출한 비용이며 GPU 완료 시각을 뜻하지 않는다. 실제 iPhone Safari 음향·자동재생·안전영역·주소창 검증은 남아 있다.
+- **디스클레이머**: 장면 이미지는 AI 생성 팬 제작물이다 — 기존 풋터 디스클레이머(「비공식 팬 메이드 프로젝트」)가 그대로 적용된다. 제작 원본 · 경위는 브랜치 `easteregg/birthday-skin` 의 `easteregg/birthday/`(HANDOFF.md).
 
 ### 노노카 지각 이스터에그 (v4.3.1) — `king.js` · `css/king.css`
 
@@ -1402,13 +1429,17 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   `renderFooter`, `updateCountdowns`. selfcheck: `render.selfcheck.mjs`(순수 헬퍼 `bucketOf`/`laneKeys`).
 - **js/playerbtn.js** + **css/player.css** — (v4.2.0) 「CD + 음표 >」 버튼. `createPlayerButton(cls)` — 모바일은 `render.js initMobileCarousel` 이 `#pager-dots` 에
   `.player-btn--dock`(화면 왼쪽 끝 절대 위치)으로 붙인다. **PC(≥768px)는 버튼이 없다** — 플레이어가 `#player-dock`(보드 아래)에 상시 표시된다(아래). 클릭 시 `mew:player-open` 이벤트를 발행하고, `main.js` 가 받아 `player.js` 를 **처음 눌렀을 때만** 동적 import 해 `openPlayer()` 를 부른다(모바일 모달).
-  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
+  - **PC 하단 도크**: `index.html` 의 `#player-dock`(≥768px 에서만 표시). `main.js syncPlayerDock` 이 도크가 화면 400px 안으로 오면 그때 `player.js` 를 import 해 `mountDock(dock)` — 팝업 본체(`.mp-pop`)를 도크로 옮기고 `.mp-pop--dock`(모달 아님, 내리기 버튼 숨김 — (v4.11.7) 폰 시트에서도 숨김, 끌어 내리기 · 바깥 누르기로 닫는다). 767px 아래로 가면 `unmountDock()` 으로 모달 배경에 되돌린다.
     프레임(iframe)은 옮기지 않고 재생부(`.mp-slot`) 위에 문서 좌표(absolute, z-index 40 — 고정 푸터 아래)로 겹치며 `dockSync`(rAF)가 레이아웃 변동을 따라간다. **재생부가 화면 밖으로 나가면(`IntersectionObserver`) 재생 중인 프레임은 오른쪽 아래 플로팅**으로 남고, 플로팅의 ▴ · 더블클릭은 도크로 스크롤한다(`openPlayer`).
 - **js/timetable.js** + **css/timetable.css** — (v4.1.0) 위 「타임테이블 · 이후 예고」. `dayWindow` · `classify` · `buildTimetable` · `buildTodayCards` ·
   `buildFoldButton` · `tickTimetable` · `applyTimetableMarquees` · `closeCardPop`. selfcheck: `timetable.selfcheck.mjs`.
+- **js/netrecover.js** — (v4.11.7) 아래 js/main.js 「조회 실패 복구」의 순수 상태 기계. `createNetRecovery` · `RETRY_DELAYS_MS` · `ONLINE_DELAY_MS`. selfcheck: `netrecover.selfcheck.mjs`.
+- **폰 터치 영역**(v4.11.7, `css/layout.css` 767px 이하): 보이는 크기는 그대로 두고 투명 가상 요소로 누르는 범위만 넓힌다 — 멤버 점 40×44 · 플레이어 · 표 버튼 세로 44 · YouTube · X 44×32 · 트윗 배지 사방 8px · 소식 칩 세로 34(막대 `overflow: hidden` 까지).
+- **js/longcopy.js** + **css/longcopy.css** — (v4.11.5) 아래 「길게 눌러 주소 복사」. `markCopy` · `copyTarget` · `pickTipTarget` · `tipPosition` · `initLongCopy` · `maybeShowCopyTip`. selfcheck: `longcopy.selfcheck.mjs`.
 - **js/king.js** + **css/king.css** — (v4.3.1) 노노카 지각 이스터에그. 위 「노노카 지각 이스터에그 (v4.3.1)」. `timetable.js` 가 `decorateBlock` · `decoratePopup` · `decorateCard` 를 호출. selfcheck: `king.selfcheck.mjs`.
 - **js/main.js** — `poll()` → `fetchPreview(PREVIEW_URL)` → 성공 시 `renderBoard`+`renderFooter`, 실패 시
-  마지막 데이터 유지 + `{stale:true}`. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+  마지막 데이터 유지 + 아래 「조회 실패 복구」. + `pollNotices` + `pollTweets` + 카운트다운 틱.
+  **조회 실패 복구**(v4.11.7, `js/netrecover.js` 순수 상태 기계 + `netrecover.selfcheck.mjs`): 앱 복귀 직후처럼 인터넷이 살아 있어도 조회가 잠깐 실패할 수 있어 바로 알리지 않는다. `preview` 조회 실패 → 3초 · 8초 뒤 전체 재조회 → 그래도 실패하면 **화면 중앙 안내** `#net-alert`(화면을 막지 않음, `pointer-events: none`, z-index 960). 문구 = 연결 실패 · 시간 초과 「네트워크가 불안정하여 최신정보를 업데이트하지 못했어요.」, 서버 오류 응답 「최신정보를 업데이트하지 못했어요.」. 탭이 숨겨진 동안은 안내 · 재시도를 하지 않는다(복귀 때 재조회). `online` 이벤트 5초 뒤 재조회하며 페이지 전체를 새로 고치지는 않는다(플레이어 재생 유지). 조회가 성공하면 안내가 사라진다. 소식 · 트윗 · 배너는 실패해도 지난 데이터를 유지한다(읽던 시트가 닫히지 않음). 소식을 한 번도 못 불러왔으면 막대에 「소식을 불러오지 못했어요」. 옛 푸터 「업데이트 지연」(`#foot-status`)은 없앴다.
   **(v3.1.5)** 모바일에서 백그라운드 동안 `setInterval` 폴링이 멈추거나 크게 스로틀링될 수 있어
   (브라우저 스펙상 보장 안 됨) — `visibilitychange`(visible 전이) + `pageshow`(`persisted`,
   bfcache 복원) 리스너로 포그라운드 복귀 시 `poll`+`pollNotices`+`pollTweets` 즉시 재실행.
@@ -1421,13 +1452,31 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
   `expires_at` 이 지난 메시지는 빼고, 게시 시각순으로 최대 `MAX_THREAD`(=50)건을 보여 준다. 트윗 없는 네임플레이트는 흔들기 + 「OO의 새 트윗이 아직 없어요」(`_noTweet`).
 - **js/player.js** + **js/songs.js** + **css/playerpop.css** + **assets/songs.json** — (v4.2.0) 플레이어. 아래 「플레이어 (v4.2.0)」.
 
+### X 이미지 Referer 거부 — 장애 기록 · 진단 순서 (v4.9.11, 2026-10-30)
+
+- **증상**: 트윗 시트 번역 면(`.tws-ko`) 사진 칸이 비어 보인다(칸 틀 · 비율은 그대로, 그림만 없음). 그 전까지는 잘 나왔다 — 운영자 관찰로는 이날 17시(KST) 전엔 보였고 그 뒤 새로 받는 그림부터 안 나왔다(이미 받아 둔 그림은 폰 캐시 때문에 계속 보였던 것으로 **추정** — 미검증).
+- **원인(실측)**: `pbs.twimg.com` 이 `Referer` 가 X 계열이 아닌 이미지 요청에 `351 Forbidden`(`text/html`)을 준다.
+  curl 실측 — Referer 없음 · `https://x.com/` · `https://twitter.com/` = 200, 우리 도메인 · `example.com` · `google.com` · `foo.vercel.app` = 351(`tweets.json` 사진 12장 전부, 10-28 게시분 포함). 이미지 URL · 데이터는 정상이었다.
+  X 개발자 포럼에 같은 증상(351, 해결 = `referrerpolicy="no-referrer"`)의 글이 있다(devcommunity.x.com「Avatars and header images obtained via OAuth cannot be loaded」). X 공식 문서에서 이 규칙을 설명한 곳은 찾지 못했다 — **언제 생겼는지 · 고정 규칙인지 모른다.**
+- **수정**: `tweets.js` `_paintGrid` 가 칸마다 `<img referrerpolicy="no-referrer" draggable="false" alt="" decoding="async">` 를 넣는다(`.tws-md__cell > img`, `object-fit: cover`). 1칸 비율을 읽는 `new Image()` 도 `referrerPolicy = "no-referrer"`.
+  이전(v4.9.3~v4.9.10)에는 CSS 배경 그림이었다 — **배경 그림은 Referer 정책을 줄 수 없어** 되돌리면 같은 문제가 난다. `banners.js` 의 행사 배너 그림은 처음부터 같은 속성을 쓴다.
+- **하지 말 것**: 전역 `<meta name="referrer" content="no-referrer">` — YouTube 임베드 플레이어가 Referer 를 필요로 한다.
+- **다시 안 나올 때 진단 순서**:
+  1. `tweets.json` 의 사진 주소 하나를 골라 `curl -s -o /dev/null -w "%{http_code}
+" "<주소>?name=small"` (Referer 없음) 과 `curl -e https://mewtype-schduler.vercel.app/ ...` 를 비교한다.
+     둘 다 200 이면 이미지 서버 문제가 아니다(브라우저 확장 · Firefox 추적 방지 · 이미지 삭제 등). **Referer 없음도 막히면 `no-referrer` 우회가 더는 안 통하는 것** — 아래 대안으로.
+  2. 브라우저 개발자 도구 Network 에서 사진 요청의 상태 · Content-Type 을 본다(351 · `text/html` 이면 이 건과 같다).
+  3. 폰만 안 나오면 사이트 데이터(캐시)를 지우고 다시 열어 본다 — 옛 그림은 캐시로 보이고 새 그림만 안 나오는 식으로 가려질 수 있다.
+- **막힌 뒤 대안(결정 미정 — 운영자 판단)**: ① 실패 칸에 「사진을 불러오지 못했어요 · 원문에서 보기」 표시(프론트만) ② 서버가 최근 사진을 주기적으로 Referer 없이 요청해 실패하면 텔레그램 알림 ③ 그림을 우리 쪽에 보관 · 중계(저장 · 저작권 부담 — 「X 카드 + 번역만, 재조립 금지」 방향과 충돌 가능).
+  지금은 ① ② 도 **구현하지 않았다**(실패해도 조용히 빈 칸 — 운영자가 눈으로 봐야 안다).
+
 ### 트윗 시트 (self-reply 핫픽스) — `tweets.js` · `tweetlogic.js` · `css/tweets.css`
 
 설계 정본 = devpapers `ref/self-reply/ui_spec.md`(결정 U1~U9, §3 지킬 것) · 확정 시안 `ui_prototype.html`. 시트 하나를 `document.body` 에 두고 JS 가 만든다(`createElement` · `textContent` 만, innerHTML 금지).
 
 - **DOM(클래스 계약 — 이름을 바꾸면 여기 먼저)**: `.tws-scrim`(바깥 어둠, 클릭 = 닫기) · `section.tws[role=dialog][aria-modal=true][aria-labelledby=tws-nm]` > `.tws__rz--t`(PC 위 가장자리 손잡이, v4.9.1) · `.tws__grab`(폰 손잡이) · `.tws__head`(v4.9.5 — **한 줄**: `nav.tws__members` · `.tws__seg`(번역 | 원문, 알약 `.tws__seg-pill`) · 화면 낭독용 시트 이름 `#tws-nm`(안 보임). 닫기 단추 `.tws__close` · 「@핸들 · 최근 48시간」 줄은 없앴다 — 닫기 = 바깥 누르기 · Esc · 폰 끌어 내리기, 핸들은 번역 카드마다 있고 지금 멤버 칩 `title` 에도). `nav.tws__members` = 칩 `.tws__chip` ×5(순서 = `channel_order`): 얼굴 `.tws__chip-av`(32px, 네임플레이트 `.lane__avatar` 와 같은 이미지 + 레인 색 테두리, 글 없는 멤버는 흐림 · 회색 기운) · 짧은 이름 `.tws__chip-nm`(「유노」, **지금 멤버 칩에만 보임** — 다른 멤버는 얼굴만, 이름은 `aria-label` · `title`). 칩이 한 줄에 다 안 들어가면(폰 360px 이하) 칩 줄 안에서 옆으로 밀린다 · 새 글 수 `b`(얼굴 오른쪽 위) + 지금 멤버 알약 `.tws__mpill`. (v4.9.5 운영자 D안 — 시트 머리 줄 아바타 · 이름을 없애고 칩 줄 + 번역 · 원문을 한 줄로 합쳐 트윗 칸을 세로로 넓혔다(폰 머리 높이 50px). 같은 얼굴이 머리 줄 · 칩 · 글마다 겹쳐 3번 넘게 보이던 것. 번역 면 머리 줄(아바타 · 이름 · 핸들)은 그대로) · `.tws__feed`(`.tws__new` 「여기부터 새 글」 · `.tws-chain[role=group]` 글타래 · `article.tws-tw`) · `.tws__newchip`(「새 글 N개 ↓」) · `.tws__fab`(v4.9.1 ↓ 동그라미 > `.tws__fab-in` · 수 `.tws__fab-n`) · `.tws__hint`(원문 면 첫 안내 한 줄) · `.tws__live`(v4.9.1 화면 낭독기용 상태 한 문장, 안 보임) · `.tws__rz--b`(PC 아래 가장자리 손잡이 > 높이 말풍선 `.tws__hread`).
 - **글 한 개 (v4.9.3)**: `article.tws-tw` > `.tws-tw__track`(두 면을 **같은 칸에 겹친다**, `display: grid`) > `.tws-tw__face.is-front` / `.is-back`(번역 면 · 원문 면) · `.tws-tw__dots`. 글 위 시각 줄(옛 `.tws-tw__meta` · `.tws-tw__time` · `button.tws-tw__media`)과 첨부 줄(`button.tws-att`)은 없앴다.
-  - **번역 면** `.tws-ko` = X 카드와 같은 뼈대(아래 「두 면 위치 맞추기」): `.tws-ko__head`(아바타 `.tws-ko__av` · 이름 `.tws-ko__nm` · `.tws-ko__hd`「@핸들」 · 오른쪽 `.tws-ko__tag`「번역」) · `.tws-ko__re`(자기 답글이면 「↩ 이어서 · N분 뒤」 한 줄 — X 카드의 「@핸들 님에게 보내는 답글」 줄 자리) · `p.tws-ko__txt`(번역 본문) · `.tws-md`(미디어 격자) · `.tws-ko__q`(인용 상자 > `.tws-ko__qi`(`b.tws-ko__qh`「인용한 글」 · `.tws-ko__qt` 인용 번역) · 인용 `.tws-md`) · `.tws-ko__foot`(`.tws-ko__time` 시각 · `a.tws-tw__open`「𝕏에서 원문」).
+  - **번역 면** `.tws-ko` = X 카드와 같은 뼈대(아래 「두 면 위치 맞추기」): `.tws-ko__head`(아바타 `.tws-ko__av` · 이름 `.tws-ko__nm` · `.tws-ko__hd`「@핸들」 · 오른쪽 `button.tws-ko__copy`「URL 복사」(v4.11.7 — 옛 「번역」 표시 자리, 원문 트윗 주소 복사 후 1.5초 「복사됨」)) · `.tws-ko__re`(자기 답글이면 「↩ 이어서 · N분 뒤」 한 줄 — X 카드의 「@핸들 님에게 보내는 답글」 줄 자리) · `p.tws-ko__txt`(번역 본문) · `.tws-md`(미디어 격자) · `.tws-ko__q`(인용 상자 > `.tws-ko__qi`(`b.tws-ko__qh`「인용한 글」 · `.tws-ko__qt` 인용 번역) · 인용 `.tws-md`) · `.tws-ko__foot`(`.tws-ko__time` 시각 · `a.tws-tw__open`「𝕏에서 원문」).
   - **원문 면** = X 카드 `.lane__thread__xcard` 공용 + 트윗 시트에만 덮개 `.tws-xcover` · 영상 칸 글로우 `.tws-glow`.
   - **미디어 격자** `.tws-md.g1~g4` > `.tws-md__cell`(사진 = `div[role=img]` 안에 `<img referrerpolicy="no-referrer">` — v4.9.11, X 이미지 서버가 외부 Referer 를 거부, 영상 = `button.is-video` > `.tws-md__play` ▶, 5개 이상이면 넷째 칸 `.tws-md__more`「+N」).
   - 피드에는 날짜가 바뀌는 곳마다 `.tws__day`(「10월 28일 (화)」 구분선)가 들어간다. 원문 높이를 재는 숨은 칸 `.tws__measure` 가 시트 안에 하나 있다.
@@ -1493,14 +1542,29 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **소식 팝업 카드** — 트윗 시트와 같은 방식:
   - PC: 소식 줄 **호버 = 잠깐 열림**(팝업으로 옮겨도 유지 · 떠나면 닫힘, 닫기는 160ms 미룸), **클릭 = 고정**(한 번에 1개, 같은 줄 다시 클릭 · ✕ · Esc · 바깥 클릭으로 닫힘, 고정 중 호버 무시).
     `.ntc__pop`(#notice 안 · 목록 밖, z-index 43 — 펼친 목록 42 · 플레이어 도크 40 위). 아래 공간이 모자라면 위로, 화면 안으로 맞춤, 꼬리, 목록 스크롤 · 창 크기 변화에 따라감.
-  - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). ✕ · 배경 · Esc · 손잡이 줄 아래로 끌기(아래 「마이크로 인터랙션」)로 닫힘, 열린 동안 body 스크롤 잠금. 손잡이 줄은 맨 위 고정 · 내용만 스크롤. 시트 안을 눌러도 소식 목록은 안 닫힌다.
+  - 모바일: 카드 탭 = body 에 붙인 **아래 시트**(`.ntc-sheet` z 901 · 배경 `.ntc-scrim` 900, 트윗 시트와 같은 층). 배경 · Esc · 손잡이 줄 아래로 끌기(아래 「마이크로 인터랙션」)로 닫힘(v4.11.7 ✕ 없앰 — 손잡이와 기능이 겹친다, PC 팝업 ✕ 는 유지), 열린 동안 body 스크롤 잠금. 손잡이 줄은 맨 위 고정 · 내용만 스크롤. 시트 안을 눌러도 소식 목록은 안 닫힌다.
   - 내용: 분류 · D-day · 날짜(요일, 마감이면 〜) · 시각 · 출처 / 전체 제목(언어 전환 따름) / **번역 본문(`body_ko`, 없으면 「번역 준비 중…」)** / **X 공식 트윗 카드** / 「자세히 보기 ↗」(`url`) · 「원문 트윗 ↗」(`tweet_url`, http(s)만).
     **원문 모드에서도 본문 원문(`body_raw`)은 우리가 그리지 않는다**(v3.8.0 법률 자문 — 원문 · 이미지는 X 카드가 보여 준다, 트윗 시트와 같은 원칙). PC = 본문 | X 카드(280px) 2열, 모바일 = 1열.
   - X 카드는 `tweets.js` 의 `makeXCard` · `loadXCards` · `stopXCards`(트윗 시트와 같은 코드 — 테마 전환 · 높이 신호 · 15초 실패 링크 같음). 호버 팝업은 **0.5초 머물러야** 카드를 불러오고(`PEEK_CARD_MS`), 고정 · 시트는 바로. 닫으면 iframe 제거.
   - 소식 줄 · 카드는 링크가 아니라 버튼(`role=button` · `tabindex=0` · `aria-haspopup=dialog`, Enter/Space 로 열기, 키보드로 닫으면 포커스가 그 줄로).
   - 75초 폴링으로 다시 그릴 때: 고정 팝업 · 시트는 같은 소식이 남아 있으면 유지(내용이 바뀌면 다시 채움), 없으면 닫음. 호버 팝업은 닫음.
+- **행사 배너 표시 탭**(v4.11.7): 펼친 목록의 행사 · 가챠 배너(`.ntc__banners`)는 [전체] · Our Notes(`game`) 탭에서만 보이고, 다른 분류 탭에서는 숨긴다.
 - **펼친 목록 높이**: 행사 배너 + 분류 줄 + 소식 영역(`LIST_CAP` PC 420 · 모바일 460px 상한), 전체는 화면 높이 70% 상한. 펼친 목록 z-index 42(v4.6.3 까지 30 — PC 플레이어 도크(40)의 YouTube 화면 밑으로 들어가던 것을 고침).
 - 데이터 주입: 템플릿 + `_esc` · `_attr` 이스케이프(v2 부터의 방식 그대로), 링크는 http(s)만.
+
+### 길게 눌러 주소 복사 (v4.11.5, 2026-11-02) — `longcopy.js` · `css/longcopy.css`
+
+오늘 카드(`.tcard`) · 이후 예고 카드(`.card`) · 타임테이블 블록(`.tt-blk`) · 표의 점(`button.wk2__dot`, 범례 견본 제외)을 PC · 모바일에서 길게 누르면 주소를 복사한다. 시안 = 아티팩트 1안(누름 애니메이션) · 2안(알림) — 운영자가 둘을 합치라고 정함.
+
+- **표시**: 부품을 만들 때 `markCopy` 가 `data-copy-url` · `data-copy-kind`(`video` | `channel`) · `data-copy-state` · `data-copy-start` 와 `.lc` 를 붙인다. 누름 처리는 document 위임이라 75초 재렌더 · 캐러셀 복제본에도 그대로 동작한다.
+- **복사할 주소** `copyTarget`: `video_id` 와 http(s) `url` 이 다 있으면 영상 주소, 아니면 채널 주소(알림 둘째 줄 「아직 영상 주소가 없어요」). 쓸 주소가 없으면 대상에서 뺀다.
+- **시간**: 500ms 누르면 복사. 0.15초 전에는 살짝 눌림만, 0.15초부터 **채움***이 번진다. 8px 넘게 움직이면 취소(스크롤 · 끌기). 짧게 누르면 원래 동작(링크 · 카드 팝업) 그대로. 복사 뒤 따라오는 click 1회는 막는다. 터치 중 시스템 메뉴는 막고, PC 우클릭은 그대로 둔다. `.lc` 위에서는 글자 드래그 선택이 안 된다.
+- **애니메이션**: 눌림 `scale` .985 → .965, 놓일 때 튐(`lc-pop`), 채움 = 누른 자리에서 부품 전체로 번지는 멤버 색(`--lane-color` 46%, 없으면 `--color-collab`). 점은 작아서 줄이지 않고 바깥 링(`.lc-ring`)을 그린다. 진동 14ms(안드로이드만). 움직임 줄이기 설정이면 크기 변화 · 튐을 빼고 채움은 반투명 면으로 바로 보인다.
+- **알림** `.lc-toast`: 패널형(1.6초). 누른 부품 위 · 아래에 두되 제목 · 시각 · 링 · 배지 · 자물쇠 · 호버 팝업과 겹치면 가까운 빈자리로 옮긴다. z-index 960(시트 800 · 카드 팝업 900 위). 스크린리더용 `.lc-live` 에 같은 문구를 넣는다.
+- **복사 경로**: `navigator.clipboard.writeText` → 실패하면 숨은 입력칸 + `execCommand("copy")` → 그래도 실패하고 아직 누르는 중이면 「손을 떼면 복사돼요」 후 손을 뗄 때(터치는 `touchend`) 다시 시도 → 마지막 실패는 「주소를 복사하지 못했어요」.
+- **첫 안내 말풍선** `.lc-tip`(「길게 누르면 주소가 복사돼요」): 처음 온 사람에게 보드를 그린 0.9초 뒤 카드 하나에 띄운다. 고르는 순서 `pickTipTarget` = 지금 화면에 실제로 보이는 카드 · 블록 중 **멤버 순서(아라레 먼저) → 방송 중 → 가장 가까운 예정 → 가장 최근 종료**. 카드가 없으면 뜨지 않고, 다음 그리기 · 스크롤 때 다시 찾는다. 6초 · 아무 곳이나 누르기 · 카드가 화면 밖으로 나가면 닫힌다. 떠 있는 동안 카드를 따라가고, 보드가 다시 그려지면 같은 규칙으로 다시 고른다. 한 번 뜨거나 직접 길게 눌러 복사하면 `localStorage` `mew.tip.long-copy` 에 기록해 사이트 기록 초기화 전까지 다시 안 띄운다.
+
+* 채움 = 길게 누르는 동안 누른 자리에서 부품 전체로 번지는 멤버 색.
 
 ### 마이크로 인터랙션 (v4.8.0, 2026-10-24) — `sheetdrag.js` 외
 
@@ -1549,12 +1613,15 @@ Groq 비전(`vision.py`, `qwen/qwen3.8-27b`)이 이미지를 **읽지 못하면*
 - **움직임**: 말풍선 등장 0.26s(`foot-ver-in`), 막대 채움 = `--hold`. `prefers-reduced-motion` 이면 전환 · 등장 애니메이션 없음.
 - 하단 디스클레이머(`initDisclaimerHover`, 위 「하단 디스클레이머 팝업」)와는 별개 요소다.
 
-### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` 만
+### 운영 모니터 `monitor.html` — 사이트 기록 초기화 (v4.8.4, 2026-10-25 — 브랜치 `hotfix/footer-version-reset`, 병합 · 배포 전, 실기기 미확인) — `src/frontend/monitor.html` · `js/monitorbirthday*.js`
 
 - **구성**: 맨 위 막대 44px(「운영 모니터」 · 「사이트 기록 초기화」 버튼, 색은 이 페이지 안에 직접 적음 — 토큰 없음). 그 아래 iframe 높이 `calc(100% − 44px)`. iframe 로딩 · `latest.html` 폴백 · 30분 안전망 코드는 바꾸지 않았다.
 - **확인 창**: 네이티브 `<dialog>`(`showModal`) — Esc 로 닫힘, 바깥(어둠) 클릭으로도 닫힘(`e.target === dialog`). 취소 · 되돌리기 두 버튼. 본문 문구는 시안 그대로(「처음 방문했을 때처럼 되돌릴까요?」 · 들은 곡 · 읽은 트윗 · 화면 설정 · 처음 안내 4줄).
 - **동작**: 「되돌리기」 → `localStorage.clear()`. **같은 주소(= 사이트)** 라 메인 사이트의 저장값도 전부 지워진다. `sessionStorage` 는 건드리지 않는다(`va-skip` 등 이 탭 안에서만 쓰는 값은 남는다). 성공하면 아래 가운데 알림 「처음 상태로 되돌렸어요. 사이트를 열어 둔 창이 있다면 새로고침해 주세요.」 5초, 저장소를 못 쓰면(예외) 「이 브라우저에서는 기록을 지울 수 없어요.」. 이미 열린 사이트 탭은 새로고침 전까지 옛 값을 쓸 수 있다.
 - **지워지는 localStorage 키**(코드 `localStorage` 전수 확인, 2026-10-25): `ymmt_listened`(들은 곡 — 랜덤플리 오마카세의 A · B 묶음) · `mew:twread`(읽은 트윗) · `mew:tllang`(트윗 번역 언어 — 기본 한글) · `theme`(밝게 · 어둡게 — 없으면 기기 설정) · `mew.board.view`(PC 보기 방식 테이블 · 카드) · `mew.player.media`(음원 · MV) · `mew.notice.lang`(소식 제목 언어) · `mew.notice.liveview`(라이브공연 보기 방식) · `mew.tip.grip-dblclick` · `mew.tip.mv-mode` · `mew.tip.lane-swipe`(처음 안내 — 한 번씩 다시 보인다).
+- **모니터 생일 진입 명령**(후속 추가 2026-11-01): 초기화 확인창의 버튼을 제외한 안쪽에서 마우스 왼쪽 드래그 또는 한 손가락 터치를 시작해 창 밖으로 `↑↑↓↓←→←→` 순서로 밀어낸다. 한 번 누르고 뗄 때 한 방향만 입력한다. 마우스는 실제 이동 24px 이상·창 밖 12px 이상에서 인식한다. 모바일은 팝업 안쪽에서 36px 이상 움직이고 주축 이동이 다른 축의 1.25배 이상이면 인식하므로 화면 밖으로 밀 필요가 없다. 입력을 인식하면 해당 변이 즉시 시안/분홍빛으로 빛난다(손을 뗀 뒤 450ms 유지). 모서리는 먼저 통과한 변으로 계산한다. 8방향을 마치면 상단 초기화 버튼이 빛나며 확인창이 닫힌다. 이때 APP는 A, EXT는 B로 잠시 이름만 바꾸고 두 탭을 빛나게 한다. 다음 입력인 B(EXT)를 더 강하게 표시하고 누르면 A(APP)가 더 강해진다. 이어 B(EXT) → A(APP)를 차례로 누르면 같은 창의 `./?bday=yuno`로 이동한다(`va` 쿼리는 있으면 유지). 생일이 아닌 날에도 유노 인트로를 시험할 수 있다.
+- **진입 명령 수명·안전**: 상태는 메모리에만 둔다. 잘못된 방향은 다음 ↑↑ 접두사부터 다시 인식하고, 준비 뒤 잘못 누른 탭·30초 무입력·확인창 다시 열기·취소/Esc·탭 숨김·페이지 이탈에서는 초기화한다. 진입 입력은 저장값을 지우지 않으며 드래그 뒤의 호환 click도 소비한다. 완료·취소·만료·틀린 탭에서는 APP/EXT 이름과 기존 접근성 이름·너비를 복원하고 강조 스타일을 제거한다. iframe 교체 시에도 준비 상태의 A/B 이름과 강조를 새 문서에 적용한다. 기존 되돌리기는 명시적으로 버튼을 클릭했을 때만 실행된다. Pointer Events/캡처와 `touch-action:none`으로 마우스·모바일 터치를 처리하고 다중 터치·pointercancel은 현재 동작을 버린다. 동작 줄이기에서는 가장자리 표시를 유지하되 버튼 점멸은 생략한다.
+- **iframe 탭 연결**: 같은 출처를 상속하는 srcdoc 문서에 클릭을 위임한다. 라이브/스냅샷·30분 안전망 교체 시 새 문서에 다시 연결하고 이전 문서 리스너는 중단한다. 리포트·서버에 postMessage 코드나 새 API를 추가하지 않는다. `monitorbirthday.selfcheck.mjs`와 `scripts/verify_monitor_birthday.py`로 순서·드래그/터치·초기화 버튼·폴백/재로딩을 검사한다.
 - 백엔드 · 관리 페이지 · 텔레그램은 바뀌지 않는다(`monitor_report.py` 무수정).
 
 ### 플레이어 (v4.2.0) — `player.js` · `songs.js` · `css/playerpop.css` · `assets/songs.json`
@@ -1574,14 +1641,24 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
   (개발자 정책 III.I.5 광고 수정·차단 금지 · III.I.9 백그라운드 플레이어 금지 · 필수 최소 기능 200×200, 프레임 앞 오버레이 금지.)
   오류(임베드 제한 등)면 「YouTube 에서 보기」 링크를 보여준다.
 - **곡 목록 | 재생목록 탭**(v4.2.1~v4.2.2, 2026-10-09): 아래(모바일) / 오른쪽(PC) 한 칸을 탭 바(`.mp-tabs`)로 나눠 쓴다 — 곡 목록(`.mp-lib`)과 재생목록(`.mp-q`, 탭 패널 `.mp-qpanel` 안)은 한쪽만 보여 서로 밀지 않는다.
-  재생목록 탭에는 곡 수 배지(곡을 추가하면 펄스, 탭은 자동 전환 안 함). 재생부(`.mp-stage`)는 영상 · 곡 정보 · 컨트롤뿐이라 PC 도크(높이 700px)에서 영상을 칸 폭 가득(최대 720px)으로 쓴다. 곡 줄의 「재생목록 N번」 뱃지는 여러 번 쌓여도 「N번 외 K」로 글자 수 상한. 모바일은 위(재생부) 고정 + 아래 탭 한 칸만 스크롤.
+  재생목록 탭에는 곡 수 배지(곡을 추가하면 펄스, 탭은 자동 전환 안 함). 재생부(`.mp-stage`)는 영상 · 곡 정보 · 컨트롤뿐이라 PC 도크(높이 700px)에서 영상을 칸 폭 가득(최대 720px)으로 쓴다. 곡 줄의 「재생목록 N번」 뱃지는 여러 번 쌓여도 「N번 외 K」로 글자 수 상한(모바일은 곡 줄 오른쪽 끝에 「N번」).
+- **모바일 3탭**(v4.11.6, 767px 이하): 프레임 아래 한 칸을 **재생 바 | 곡 찾기 | 재생목록** 탭으로 나눈다(v4.11.11 이름 「재생」 → 「재생 바」). PC 는 예전 두 칸 그대로(「재생 바」 탭 없음). 곡 목록 탭 이름은 v4.11.11 부터 PC 도 「곡 찾기」.
+  **탭 색**(v4.11.11): 고른 탭은 글자 · 밑줄 · 옅은 바탕을 탭마다 다른 색으로 — 재생 바 `--mp-tab-play`(분홍) · 곡 찾기 `--mp-tab-songs`(파랑) · 재생목록 `--mp-tab-queue`(= `--mp-accent` 보라). 밝게 값은 theme.css. 곡 찾기 · 재생목록 탭에는 아이콘(돋보기 · 목록).
+  **재생목록 색조**(v4.11.11, PC · 모바일): 재생목록 우물(`.mp-q`)에만 보라 색조(바탕 · 머리줄 띠 · 번호 동그라미). 곡 찾기는 중성 그대로 — 두 탭이 비슷해 헷갈리던 것을 가른다.
+  **빈 재생목록**(v4.11.11): 곡이 있을 때와 같은 머리줄(「0곡」 · 흐린 「비우기」)과 같은 높이의 자리 줄 3개(1번 줄 = 「곡 찾기에서 곡을 누르면 여기에 쌓입니다」) + 「재생은 1번부터 순서대로 이어집니다.」. 자리 줄에는 `.mp-q__fg` 가 없어 밀어서 빼기가 걸리지 않는다.
+  **다음 곡 칸**(v4.11.11, 모바일 재생 바 탭만, `player.js upNext` · `paintNext`, `.mp-next`): 컨트롤 아래 3줄. 첫 줄 = 바로 다음 곡(보라 칸 · 「다음」 딱지 · 곡명 크게 · 멤버 · 종류), 둘째 · 셋째 줄 = 재생목록 번호 + 곡명(작고 흐리게). 곡 줄을 누르면 그 재생목록 위치로 이동 · 재생(`playQueueAt`).
+  순서대로 = 지금 위치 다음 3곡(전체 반복이면 끝에서 1번으로 감아서) · 다음이 없으면 「이 곡이 끝나면 멈춥니다」 · 한 곡 반복 = 첫 줄이 지금 곡(「반복」) · **셔플 = 「?????」**(셔플은 곡이 끝날 때 고르므로 미리 정하지 않는다 — 운영자 결정 2026-11-04, 누를 수 없음) · 재생목록이 비었거나 지금 곡이 재생목록 밖 = 안내 한 줄. PC 는 재생목록이 옆에 늘 보여 칸을 숨긴다.
+  프레임 자리(`.mp-slot`)는 어느 탭에서든 같다 — 프레임을 숨기거나 덮지 않는다. 곡 정보 · 컨트롤은 `.mp-play`(PC = `display:contents`, 모바일 = 재생 바 탭 패널), 어느 탭인지는 `.mp-pop[data-tab]`(`play` · `songs` · `queue`, `player.js paintTabs`). 처음엔 곡 찾기 탭이고 시트를 다시 열어도 마지막 탭을 유지한다.
+  곡 찾기 · 재생목록 탭에는 재생 조작이 없다 — 재생 · 정지 · 셔플 · 반복 · 재생 위치 · 음원/MV · 오마카세는 재생 바 탭에서. 재생 불가 안내(`.mp-skip`) · 오류(`.mp-err`)는 재생 바 탭이 아니면 탭 바 아래로 옮겨 보이게 한다(`placeSkip`).
+  곡 줄은 72px → 50px 두 줄(곡명 / 독음 · 멤버 · 종류 · 날짜 `26.09` · MV, 그룹은 「그룹」). 검색 · 필터 줄(`.mp-tools`)은 위에 붙고 곡 줄만 지나간다. 정렬은 칩 줄 끝 버튼 하나(`.mp-sort__cycle`)로 날짜↓ → 날짜↑ → 이름↑ → 이름↓ 순환.
+  **검색 모드**(`.mp-pop.is-search`): 검색창을 누르면 탭 바 · 칩 줄을 접고 「취소」(`.mp-search-x`)를 띄운다. `--mp-kb` = 키보드가 가린 높이(`visualViewport`), 그만큼 결과 칸 아래를 띄운다. 글자가 남아 있으면 키보드가 닫혀도 유지하고 「취소」로만 나간다(곡을 누르는 순간 줄이 밀리지 않게). 빈 검색창을 벗어나면 저절로 복귀.
 - **재생목록**(2026-10-07~08): 오른쪽 곡 목록의 곡을 **누르면 재생목록(재생부 아래 「재생목록」 칸 — 움푹 패인 우물 모양)의 맨 뒤에 쌓인다. 같은 곡을 또 눌러도 또 쌓인다(빠지지 않음, 곡 줄에는 「재생목록 1·3번」)**.
-  **재생목록이 비어 있다가 처음 들어가는 곡은 쌓이면서 바로 재생**하고, 이후 곡은 쌓기만 한다. 재생 버튼은 멈춰 있고 지금 곡이 재생목록에서 고른 것이 아니면 1번부터 시작한다.
+  **재생목록이 비어 있거나 재생이 끝나 멈춰 있으면(`st.ended`, v4.11.6) 쌓인 곡을 바로 재생**하고, 그 밖에는 쌓기만 한다 — 재생 중 · 일시정지 중에는 쌓기만. `st.ended` 는 마지막 곡이 끝나 멈췄을 때 · 재생목록 밖 곡이 끝났을 때 · 넘어갈 곡 없이 재생 불가로 멈췄을 때 켜지고, 재생이 다시 시작되거나 곡을 고르면 꺼진다. 재생 버튼은 멈춰 있고 지금 곡이 재생목록에서 고른 것이 아니면 1번부터 시작한다.
   같은 곡이 여러 번 있을 수 있어 「지금 곡」은 곡 id 가 아니라 **재생목록 위치(`st.qi`, 0부터, -1 = 재생목록에서 고른 곡이 아님)** 로 추적한다. 재생목록 칸의 곡을 누르면 그 위치로 이동·재생, ✕ 로 빼기(지금 곡을 빼면 끝까지 재생 후 멈춤), 「비우기」로 전체 삭제.
   곡이 끝나면 **재생목록의 다음 위치로 넘어가고, 마지막이면 멈춘다**(`cueVideoById` 로 첫 화면 복귀 — 추천 영상으로 안 넘어가게). 재생목록이 비어 있으면 한 곡만 재생하고 멈춘다.
   이전·다음 버튼은 재생목록이 있으면 그 안에서(끝에서 처음으로 순환, 셔플이면 무작위), 없으면 현재 검색·정렬 결과 순서. 재생목록은 저장하지 않는다(새로고침하면 비워짐).
   플로팅 상태의 손잡이 줄 제목은 재생목록에서 고른 곡이면 「<곡명> (n/m)」(곡명만 말줄임, `(n/m)` 은 항상 보임).
-- **랜덤플리 오마카세**(v4.5.6, 2026-10-19): 컨트롤 오른쪽 「🎁 랜덤플리 오마카세」(`.mp-oma`) → 말풍선(`.mp-bubble`, 칩 [전체 / 오리지널 / 커버] + 곡 수). 칩 = 그 종류의 **모든 곡**(검색 · 정렬 무시, `s.kind`)으로 `st.queue` 를 **덮어쓰고** `playQueueAt(0)` 으로 바로 재생(재생 시작은 클릭 직후). 셔플 토글과는 별개. 반영 직후 **재생목록 탭으로 자동 이동**(`setTab("queue")`).
+- **랜덤플리 오마카세**(v4.5.6, 2026-10-19): 컨트롤 오른쪽 「🎁 랜덤플리 오마카세」(`.mp-oma`) → 말풍선(`.mp-bubble`, 칩 [전체 / 오리지널 / 커버] + 곡 수). 칩 = 그 종류의 **모든 곡**(검색 · 정렬 무시, `s.kind`)으로 `st.queue` 를 **덮어쓰고** `playQueueAt(0)` 으로 바로 재생(재생 시작은 클릭 직후). 셔플 토글과는 별개. 반영 직후 **모바일은 재생 바 탭으로 자동 이동**(v4.11.11, `setTab(isPhone() ? "play" : "queue")` — PC 는 재생 바 탭이 없어 예전처럼 재생목록 탭).
   **순서(v4.8.1)** = `songs.js omakaseOrder(ids, 기록, 오늘 KST)`. 곡을 A(7일 동안 안 들은 곡 — 기록 없음 · 마지막 재생 7일 이상 전 · 날짜가 이상한 기록)와 B(7일 이내에 들었던 곡, 오늘 = 0일 ~ 6일 전)로 나눠 각각 Fisher–Yates 로 섞고,
   **재생목록 자동 포커스(v4.8.2)** = 재생 중인 곡(`st.qi`)이 바뀌면 `player.js focusQueueCur` 가 그 줄을 목록 보이는 영역 위 1/3 지점으로 `scrollTo`(부드럽게, 움직임 줄이기면 즉시). 위 12% ~ 아래 88% 안이면 가만히 두고, 사용자가 목록을 직접 스크롤(wheel · touchmove)한 뒤 4초는 건너뛴다(줄을 눌러 바꾼 경우 제외). 재생목록 탭을 열 때도 한 번. 위치는 `getBoundingClientRect` 로 잰다.
   A 곡 사이 틈(n−1칸)을 앞에서부터 보며 틈마다 B 의 다음 곡을 확률 `OMA_MIX`(50%)로 끼운다. 떨어지면 그 B 곡은 건너뛰고 다음 틈엔 B 의 다음 곡. 틈을 다 봤거나 B 를 다 쓰면 끼워지지 못한 B 를 섞인 순서대로 맨 뒤에 붙인다.
@@ -1737,3 +1814,8 @@ BPM · 키 · energy · valence 는 오디오 분석(GPU, 메인 로컬)이 필�
 + 각 채널 `x_names[]` (트윗 표시명 매칭용, `xtweet.route_by_title`). `channel_url` 은
 `https://www.youtube.com/@{handle}` 로 코드 파생. **채널 추가/변경은 이 파일 한 곳만.**
 `group` 은 `channel_order` 밖 — RSS/`videos.list` 폴링 대상이지만 전용 레인은 없다(§1-3-1).
+
+
+### 생일 음악 인트로 추가 연출 (추가 지시 1)
+
+첫 곡 최초 재생에만 6.3~7.2초 유노·데크 스포트라이트를 켜고 17.14~18.14초에 제거한다. 태양은 지평선 아래에서 10초부터 smoothstep으로 상승해 16.9초에 목표 위치에 도달한다. 일출 중 halo 박 버스트는 숨기고 17.14초에 태양 중심에서 0.5초 동안 화면 끝까지 밝기 파면이 전파된다. 기존 감쇠·3겹 링을 유지한다. 모션 줄이기는 최종 태양 위치에 정지하고 조명·파면 없이 단순 페이드한다. 실제 Chromium 검증은 `scripts/verify_birthday_addendum.py`, 후속 최적화·검증 결과는 handoff REPORT.md의 「3차 결과」를 따른다.
