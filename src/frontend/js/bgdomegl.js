@@ -15,6 +15,8 @@ import { BGVIEW_EVENT } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
+import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
+
 const DEG = Math.PI / 180;
 // 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
 // 머리 위를 봐도 돔 꼭대기가 북쪽 29° 에 보였고 동 · 서 경도선이 23° 씩 북쪽으로 쏠렸다). 수평이 중심이면 경도선 = 실제 방위선, 돔 꼭대기 = 천정.
@@ -30,6 +32,7 @@ const CLOUD_MS = 160;                  // 카메라가 멈춰 있을 때 구름 
 const MAX_DPR = 1.5;
 const QS = new URLSearchParams(window.location.search);
 const DEBUG = QS.has("bgdebug");
+const GROUND = groundWorld(QS, DEBUG);
 // 확인용(?bgdebug 와 함께): bgtime = 시작 시각(ISO), bgspeed = 시간 배속 — 노을 · 밤을 기다리지 않고 본다
 // ?bg=normal(운영자 명명) = 가속 없이 지금 시각 — 이 두 값을 주소에 같이 붙여도 무시한다
 const NORMAL = QS.get("bg") === "normal";
@@ -144,12 +147,23 @@ float cloudAtSun() {
   if (uMix > 0.0) a = mix(a, textureLod(uCloud2, uv, 0.0).a, uMix);
   return a;
 }
+${groundShader}
+
 // Lens layer after foreground, before HUD/dither. Occlusion is sampled at the source.
 vec3 solarOptics(vec3 col, vec2 p) {
   if (uFlare.z <= 0.0 || uOptics.w < 0.5) return col;
   vec2 source = uFlare.xy, offset = source - uC;
   float clear = 1.0 - cloudAtSun();
-  float gain = uFlare.z * clear * clear;
+  float pixelWidth = 1.0 / (uF * uDpr);
+  float sourceVisible = 0.0;
+  // Disc-area quadrature shares exactly the same terrain mask as visible pixels.
+  for (int j = 0; j < 9; j++) {
+    float x = float(j % 3 - 1) * uSunR * .65, y = float(j / 3 - 1) * uSunR * .65;
+    vec3 right = normalize(cross(vec3(0,1,0), uSunDir) + vec3(.00001,0,0));
+    vec3 up = cross(uSunDir,right);
+    sourceVisible += 1.0 - groundGeometry(normalize(uSunDir + x * right + y * up), pixelWidth).x;
+  }
+  float gain = uFlare.z * clear * clear * sourceVisible / 9.0;
   float view = uFlare.w;
   vec2 v = (p - source) / uF;
   float rho = length(v), pixel = 1.0 / (uF * uDpr);
@@ -283,7 +297,7 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx) {
   vec3 light = mix(uSunTrans, vec3(1.0), 0.90) * uSunAir.w * disc * direct * above * uSolar.z
     + (mix(uSunTrans, vec3(1.0), 0.88) * corona
     + mix(uSunTrans, vec3(1.0), 0.70 - 0.35 * warm) * halo
-    + uSunTrans * outer * 0.10 * step(0.001, uSunAir.x)) * uSolar.z * smoothstep(-uSunR, uSunR, uSunDir.y);
+    + uSunTrans * outer * 0.10 * step(0.001, uSunAir.x)) * uSolar.z * smoothstep(-.06, -.04, uSunDir.y);
   c = (c + light) / (1.0 + max(light.r, max(light.g, light.b)));
   return c;
 }
@@ -368,7 +382,10 @@ void main() {
   vec2 discDistance = vec2(length(discTangent(d, uSunDir, uSunShape, sin(uSunR))),
     length(discTangent(d, uMoonDir, uMoonShape, uMoonR)));
   vec2 discPx = max(fwidth(discDistance), vec2(1e-6));
-  vec3 col = sky(d, 1.0 / (uF * uDpr), discPx);   // 기기 픽셀 하나의 각도
+  float groundPixel = 1.0 / (uF * uDpr);
+  vec4 geometry = groundGeometry(d, groundPixel);
+  vec3 col = sky(d, groundPixel, discPx);   // 기기 픽셀 하나의 각도
+  if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
   float dLat = min(min(abs(lat - 18.0 * D), abs(lat - 40.0 * D)), abs(lat - 62.0 * D));
@@ -641,6 +658,7 @@ export function createDomeGL(host, isPaused) {
   let raf = 0, stopped = true, lastShake = 0, theme = null, t0 = performance.now();
   // 장면 +z = 북, +x = 동. 바깥 보기 = 실제 시각 · 위치의 하늘(해 · 달 · 별 · 방위 글자). 시선은 두 보기가 같다
   let outdoor = false;
+  let releaseGround = null;
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -685,6 +703,11 @@ export function createDomeGL(host, isPaused) {
     gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0); moonTex = null;
+    if (releaseGround) releaseGround();
+    releaseGround = createGroundTextures(gl, GROUND);
+    gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
+    gl.uniform1f(U.uGroundAlbedoOn, 0);
+    gl.uniform1f(U.uGroundKind, GROUND.index); gl.uniform1f(U.uGroundAlt, GROUND.altitude);
     sets = {}; slotA = slotB = null; astro = null;
     loadSet("day");
     theme = null;
@@ -835,7 +858,7 @@ export function createDomeGL(host, isPaused) {
     }
     sun.alt = sun.apparentAlt; moon.alt = moon.apparentAlt;
     const moonAlt = moon.apparentAlt / DEG;
-    const moonUp = smooth(-2, 0.3, moonAlt), moonLow = 1 - smooth(0, 24, moonAlt);
+    const moonUp = smooth(-4, -3, moonAlt), moonLow = 1 - smooth(0, 24, moonAlt);
     const moonContrast = 1 - smooth(-8, 10, alt);
     const moonLight = night * fraction * fraction * moonUp * smooth(0, 50, moonAlt);
     const moonCol = exposedHue(transmission(moonAlt)).map((v, i) =>
@@ -849,15 +872,16 @@ export function createDomeGL(host, isPaused) {
     gl.uniform3fv(U.uSunTrans, sunCol);
     gl.uniform1f(U.uCloudTest, debugNumber("bgcloud") == null ? -1 : Math.max(0, Math.min(1, debugNumber("bgcloud"))));
     gl.uniform4f(U.uSunAir, stage === "disc" ? 0 : 18 + 8 * warm, stage === "disc" ? 0 : 4.5 + 2 * warm, warm, EXPOSURE.sun);
-    gl.uniform4f(U.uOptics, smooth(-SUN_MOON_R[0], 0.3, sun.alt / DEG),
+    gl.uniform4f(U.uOptics, smooth(-4, -3, sun.alt / DEG),
       2 + 3 * smooth(0, 30, sun.alt / DEG), 0.1 + 0.9 * smooth(0, 30, sun.alt / DEG),
       stage === "disc" || stage === "bloom" ? 0 : stage === "rays" ? 1 : 2);
     gl.uniform3fv(U.uSunHorizon, [Math.sin(sun.az), 0, Math.cos(sun.az)]);
-    gl.uniform4f(U.uSolar, day, dusk, smooth(-1.5, 0.5, alt), day * (0.045 + 0.055 * noon));
+    gl.uniform4f(U.uSolar, day, dusk, smooth(-4, -3, sun.alt / DEG), day * (0.045 + 0.055 * noon));
     gl.uniform3fv(U.uMoonCol, moonCol);
     gl.uniform4f(U.uLunar, moonUp, 0.22 + 0.78 * moonContrast, 0.45 + 0.75 * moonLow,   // 안쪽 광륜 σ(도): 높을 때 0.45 → 지평선 1.2
       Math.pow(fraction, 0.7) * moonContrast * (0.05 + 0.55 * moonLow));
     gl.uniform1f(U.uMoonLight, moonLight);
+    gl.uniform1f(U.uGroundMoonLight, night * fraction * fraction * moonUp);
     gl.uniform1f(U.uStarGain, night * (1 - 0.68 * moonLight));
     gl.uniform1f(U.uEarthshine, night * (0.72 + 0.12 * (1 - fraction)));
     gl.uniform3fv(U.uSunDir, dirOf(sun.alt, sun.az));
@@ -913,10 +937,8 @@ export function createDomeGL(host, isPaused) {
         const F = outdoor ? focalOut : focal;
         sx += F * dot3(s, B.right) / z; sy -= F * dot3(s, B.up) / z;
         const outside = Math.hypot(Math.max(-sx, sx - W, 0), Math.max(-sy, sy - H, 0));
-        const es = dot3(EYE, s), qy = EYE[1] + (-es + Math.sqrt(Math.max(es * es - dot3(EYE, EYE) + 1, 0))) * s[1];
-        const R = SUN_MOON_R[0] * DEG;
         gain = (1 - smooth(0, 8 * DEG, Math.atan(outside / F))) * smooth(0.05, 0.3, z)
-          * smooth(-R, R, s[1]) * smooth(-R, R, qy) * smooth(-SUN_MOON_R[0], 0.3, astro.sunAlt / DEG);
+          * smooth(-4 * DEG, -3 * DEG, s[1]);
         view = 0.75 + 0.25 * Math.exp(-Math.pow(Math.acos(Math.max(0, Math.min(1, z))) / (12 * DEG), 2));
       }
       gl.uniform4f(U.uFlare, sx, sy, gain, view);
@@ -1016,7 +1038,7 @@ export function createDomeGL(host, isPaused) {
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
-    if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) + Math.abs(zoomR - drawnR) > 2e-4 || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
+    if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) + Math.abs(zoomR - drawnR) > 2e-4 || (pitch - Math.atan((H - cy) / (outdoor ? focalOut : focal)) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -1087,13 +1109,13 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
-    window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); canvas.remove(); air.remove(); },
+    destroy() { stop(); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); },
   };
 }
