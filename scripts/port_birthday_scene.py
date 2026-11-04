@@ -100,7 +100,7 @@ assets = ROOT / 'src/frontend/assets/birthday'
 (assets / 'bgm').mkdir(exist_ok=True)
 (assets / 'beat').mkdir(exist_ok=True)
 tracks=json.loads((HANDOFF / 'beatdata.json').read_text(encoding='utf8'))
-music=Path(r'C:\Users\User\Documents\pyworks\mewtype-scheduler-worktrees\devpapers\ref\bgm_easteregg_birthday')
+music=Path(r'C:\Users\User\Documents\pyworks\mewtype-scheduler-worktrees\devpapers\ref\easteregg-yuno\bgm')
 for key,name in [('noctural','Noctural Run'),('midnight','Midnight Groove')]:
     track=dict(tracks[key]);bands=base64.b64decode(track.pop('bands'))
     (assets / 'beat' / (key+'.bin')).write_bytes(bands)

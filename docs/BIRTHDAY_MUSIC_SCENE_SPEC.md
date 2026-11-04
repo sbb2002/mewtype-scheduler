@@ -15,7 +15,7 @@
 | `yuno_parts_ref/` | 유노 부위 webp(이미 `assets/birthday/yuno/` 에 있음) |
 | `plan_mockup.html` | PC · 모바일 UI 시안(컨트롤 · 제목 · 디스클레이머 배치, 마이크로인터랙션 동작) |
 | `pc_sign.jpg` `m2_sign.jpg` | PC · 모바일 완성 화면 캡처(기준 이미지) |
-| 음원 | `C:\Users\User\Documents\pyworks\mewtype-scheduler-worktrees\devpapers\ref\bgm_easteregg_birthday\Noctural Run.mp3` · `Midnight Groove.mp3` |
+| 음원 | 원본 devpapers `ref/easteregg-yuno/bgm/Noctural Run.mp3` · `Midnight Groove.mp3`(사이트 사본 = `src/frontend/assets/birthday/bgm/noctural.mp3` · `midnight.mp3`, 같은 파일) |
 
 사인 벡터 데이터(`SKY_SIGN_DATA`, `SKY_SIGN_WIDTHS`)는 `prototype_v12.html` 안에 있다.
 
