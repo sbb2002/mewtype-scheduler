@@ -19,7 +19,8 @@ const REBUILD_DH = 150;       // 높이만 이만큼 이상 바뀌면 다시 그
 let host = null, svg = null, items = [], bodies = [], els = [];
 let W = 0, H = 0, raf = 0, tPrev = 0, lastShake = 0, rebuildT = 0, sensorOn = false;
 const requested = new URLSearchParams(window.location.search).get("bg");
-// (bg-dome) 기본 배경 = UFO 돔(d) — 2026-11-04 운영자 지시. 옛 배경(v4.9.8 분홍 → 파랑 톤 + 로고 도형)은 ?bg=classic, 시안은 ?bg=a · b · c
+// (bg-dome) 기본 배경 = UFO 돔(d) — 2026-11-04 운영자 지시. ?bg=normal = 같은 돔을 「가속 없이 지금 시각」으로만(확인용 bgtime · bgspeed 무시).
+// 옛 배경(v4.9.8 분홍 → 파랑 톤 + 로고 도형)은 ?bg=classic, 시안은 ?bg=a · b · c
 const variant = requested === "classic" ? null : ["a", "b", "c", "d"].includes(requested) ? requested : "d";
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 let scene = null, momentT = 0, momentEndT = 0;

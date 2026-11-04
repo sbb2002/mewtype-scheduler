@@ -25,8 +25,10 @@ const MAX_DPR = 1.5;
 const QS = new URLSearchParams(window.location.search);
 const DEBUG = QS.has("bgdebug");
 // 확인용(?bgdebug 와 함께): bgtime = 시작 시각(ISO), bgspeed = 시간 배속 — 노을 · 밤을 기다리지 않고 본다
-const T_START = DEBUG && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
-const T_SPEED = DEBUG && QS.get("bgspeed") ? Number(QS.get("bgspeed")) || 1 : 1;
+// ?bg=normal(운영자 명명) = 가속 없이 지금 시각 — 이 두 값을 주소에 같이 붙여도 무시한다
+const NORMAL = QS.get("bg") === "normal";
+const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
+const T_SPEED = DEBUG && !NORMAL && QS.get("bgspeed") ? Number(QS.get("bgspeed")) || 1 : 1;
 const T_REAL0 = Date.now();
 const nowMs = () => (Number.isFinite(T_START) ? T_START + (Date.now() - T_REAL0) * T_SPEED : Date.now());
 
