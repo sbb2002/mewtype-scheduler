@@ -5,7 +5,7 @@
 ## 지금 상태 한눈에
 
 - 브랜치 `feat/bg-dome`(원격 푸시됨), 워크트리 `mewtype-scheduler-worktrees/v4/feat-bg-dome`. `main` v4.11.7 위에서 갈라졌다(그 뒤 main 은 v4.11.11 — 병합 전에 main 을 받아 충돌을 봐야 한다).
-- **운영에는 아직 없다.** 주소에 `?bg=d` 를 붙여야 보인다. 병합 · 배포는 운영자 결정.
+- **운영에는 아직 없다.** 이 브랜치에서는 돔이 **기본 배경**이다(11-04 운영자 지시, 커밋 `4f1bd0b`). 옛 배경 = `?bg=classic`, 시안 = `?bg=a · b · c`. 병합 · 배포는 운영자 결정.
 - 버전: 병합되면 **v4.12.0(마이너)** — 운영자 확정(2026-11-04).
 - 운영자는 폰(안드로이드 10 · 삼성 인터넷 30)으로 확인한다. 둘러보기 · 흔들기 · 바닥 · 바깥 보기 하늘을 폰에서 확인했고, 부드러움 · 회전 폭 · 흔들기 세기 · 발열은 「써 보면서 알려 주겠다」(답 대기).
 
@@ -72,7 +72,7 @@
 ## 병합 전 정리 (운영자가 병합을 정하면)
 
 1. `?bgdebug` 진단 코드 정리: `bgdomegl.js` 의 `DEBUG` 경고 로그 · `window.__bgdome` · `bgtime/bgspeed`(시각 지정을 남길지는 운영자에게 물어도 됨).
-2. `?bg=d` 를 기본으로 할지 결정 → 시안 a · b · c · `js/bgvirtual.js` · 옛 도형 코드 정리, `bglogic.selfcheck` 갱신.
+2. 돔은 이미 기본(11-04). 남은 것 = 시안 a · b · c · `js/bgvirtual.js` · 옛 배경(`?bg=classic`) 코드를 남길지 지울지 운영자에게 묻고 정리, `bglogic.selfcheck` 갱신.
 3. `docs/SPEC.md` 「배경 장식」(계약 변경은 SPEC 먼저) · `docs/VERSION.md` · README · CLAUDE.md 현재 버전 · `config.js` APP_VERSION — CLAUDE.md 「버전 올릴 때 할 일」. CLAUDE.md 모듈 목록에 새 파일(bgdomegl · bggyro · bgpeek · bgview · bgsite · bgastro) 추가.
 4. **`config.js` 의 `BIRTHDAY_SCENES_ENABLED.yuno` 를 `true` 로** — 11-04 PC(desktop-68v1g6c)에서 유노 생일 시험용으로 꺼 둔 **커밋 안 된 로컬 수정**이다. 다른 PC 에는 없다. 커밋에 섞이지 않게 주의.
 5. main 을 받아 충돌 확인(main 은 v4.11.11 까지 나갔다).
