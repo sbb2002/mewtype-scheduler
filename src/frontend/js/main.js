@@ -6,6 +6,7 @@ import { initNewSongBadge, PLAYER_BUTTON_EVENT } from "./playerbtn.js";
 import { initTheme } from "./theme.js";
 import { initBgDeco } from "./bgdeco.js";
 import { initBgPeek } from "./bgpeek.js";
+import { initBgView } from "./bgview.js";
 import { initBirthday } from "./birthdayui.js";
 import { initLongCopy, maybeShowCopyTip } from "./longcopy.js";
 import { createNetRecovery } from "./netrecover.js";   // (v4.11.7) 네트워크 실패 재시도 · 안내
@@ -397,6 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLongCopy();   // (v4.11.5) 카드 · 블록 · 점을 길게 눌러 주소 복사
   initBgPeek();   // (bg-dome 시험) 폰에서 레인을 위로 튕기면 배경만 보기 — 누르면 복귀
   initBgDeco();   // (v4.9.8) 배경 장식 — 분홍 → 파랑 톤 · 떠다니는 로고 도형 · 폰을 흔들면 흩어짐
+  initBgView();   // (bg-dome 시험) 밝게/어둡게 버튼 길게 누르기 → 배경 보기(실내만 / 바깥) 팝업
   initTheme();   // (v4.6.0) 밝게/어둡게 — 직접 고른 적 없으면 기기 설정 변경을 따라간다. 버튼은 소식 막대 마지막 칸(notices.js)
   initMonitorEasterEgg();
   initMonitorTapEasterEgg();

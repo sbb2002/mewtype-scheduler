@@ -233,3 +233,53 @@
 /* D 시험안: 구름 위에 바로 놓이는 작은 글자는 흐린 글자색으로 읽히지 않아 본문색을 쓴다 */
 html:has(#bgdeco[data-variant="d"]) .tt__meta,
 html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
+
+/* (bg-dome 시험) 배경 보기 팝업 — 밝게/어둡게 버튼을 길게 누르면 버튼 아래에 뜬다. 동작은 js/bgview.js */
+.ntc__theme { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.bgvw {
+  position: fixed;
+  z-index: 975;
+  width: min(300px, calc(100vw - 16px));
+  padding: 6px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  transform-origin: top right;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.bgvw.is-open { opacity: 1; transform: none; }
+.bgvw[hidden] { display: none; }
+.bgvw__head { padding: 6px 10px 4px; font-size: 12px; color: var(--color-text-muted); }
+.bgvw__opt {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  column-gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.bgvw__opt:hover { background: var(--color-hover); }
+.bgvw__opt::before {   /* 고른 쪽 표시(라디오 점) */
+  content: "";
+  grid-row: 1 / 3;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-text-muted);
+  box-sizing: border-box;
+}
+.bgvw__opt[aria-checked="true"]::before { border-color: var(--color-collab); background: radial-gradient(circle, var(--color-collab) 0 3px, transparent 3.5px); }
+.bgvw__label { font-size: 14px; font-weight: 600; }
+.bgvw__sub { grid-column: 2; font-size: 12px; color: var(--color-text-muted); line-height: 1.4; }
+@media (prefers-reduced-motion: reduce) { .bgvw { transition: none; } }
