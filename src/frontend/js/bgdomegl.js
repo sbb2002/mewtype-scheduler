@@ -240,7 +240,7 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
   vec2 p = vec2((lon - a) * cos(8.0 * D), lat - 8.0 * D) / size;
   // Use continuous sphere derivatives: the nearest-meridian chart jumps at 45 degrees.
   float px = max(glassPx / size, 1e-5);
-  if (abs(p.x) > 0.68 + 28.0 * uDpr * px || abs(p.y) > 0.66 + 28.0 * uDpr * px) return col;   // 블룸이 다 사그라드는 거리까지(잘린 네모 테두리 방지)
+  if (abs(p.x) > 0.68 + 40.0 * uDpr * px || abs(p.y) > 0.66 + 40.0 * uDpr * px) return col;   // 블룸이 다 사그라드는 거리까지(잘린 네모 테두리 방지)
   float id = mod(cardinal + 4.0, 4.0);
   vec2 bl = vec2(-0.30, -0.5), tl = vec2(-0.30, 0.5);
   vec2 br = vec2(0.30, -0.5), tr = vec2(0.30, 0.5);
@@ -264,17 +264,21 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
   float ticks = hudSegment(vec2(abs(p.x), p.y), vec2(0.48, -0.10), vec2(0.48, 0.10));
   ink = min(ink, ticks);
   float distPx = ink / px;
-  float core = cover(ink, px, 0.9 * uDpr);   // 획 반폭(기기 픽셀) — 11-04 「약간 더 두껍게」 0.65 → 0.9
-  float halo = exp(-distPx * distPx / (10.0 * uDpr * uDpr));
-  // 네온 글로우(11-04 운영자): 글자 색 그대로, 약하게 — 획 둘레 좁은 번짐 + 옅은 블룸을 더하기로 얹는다.
-  float bloom = exp(-distPx / (6.0 * uDpr));
-  float outline = cover(ink, px, 2.4 * uDpr);
+  // 획 반폭(기기 픽셀) — 11-04 0.65 → 0.9 → 1.4(「더 두껍게」)
+  float core = cover(ink, px, 1.4 * uDpr);
+  // 글로우(11-04 운영자): 글자 색 그대로, 테두리처럼 보이지 않게 경계 없는 넓은 번짐만 — 가우스 번짐(σ ≈ 4px) + 더 넓은 블룸(꼬리 ≈ 10px).
+  // 어두운 테는 「테두리 같다」 해서 뺐다. 대신 아주 넓고 옅은 그늘(σ ≈ 12px)로 밝은 낮 하늘에서 글자가 묻히지 않게 한다(경계가 생기지 않는다).
+  float e = max(distPx - 1.4 * uDpr, 0.0) / uDpr;   // 획 바깥으로부터의 거리(CSS 픽셀)
+  float halo = exp(-e * e / 32.0);
+  float bloom = exp(-e / 10.0);
+  float shade = exp(-e * e / 288.0);
   float sunFade = mix(1.0, 0.20, smoothstep(cos(6.0 * D), cos(2.0 * D), dot(ray, uSunDir)) * uSolar.z);
   float flick = 0.95 + 0.05 * sin(uTime * 7.3 + cardinal * 1.7) * sin(uTime * 2.1);   // 아주 옅은 네온 떨림
   vec3 hue = id < 0.5 ? vec3(1.0, 0.055, 0.075) : vec3(0.53, 0.94, 1.0);
-  col = mix(col, vec3(0.012, 0.025, 0.045), outline * 0.5 * sunFade);   // 밝은 낮 하늘에서도 읽히게 어두운 테
-  col += hue * (halo * 0.18 + bloom * 0.06) * sunFade * flick;
-  return mix(col, hue, core * 0.92 * sunFade);
+  float dayK = uSolar.x;   // 낮일수록 그늘을 조금 더
+  col = mix(col, col * 0.55, shade * (0.12 + 0.18 * dayK) * sunFade);
+  col += hue * (halo * 0.38 + bloom * 0.16) * sunFade * flick;
+  return mix(col, hue, core * 0.95 * sunFade);
 }
 
 void main() {
