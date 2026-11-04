@@ -9,7 +9,7 @@
 
 import { themeButton } from "./theme.js";
 import { acquireSite, geoPermission, outdoorSite } from "./bgsite.js";
-import { rawHeading, setHeadingOffset, headingOffsetDeg } from "./bggyro.js";
+import { rawHeading, setHeadingOffset, headingOffsetDeg, declinationDeg, OFFSET_TTL_HOURS } from "./bggyro.js";
 import { sunPosition, moonPosition } from "./bgastro.js";
 
 export const BGVIEW_EVENT = "mew:bgview";   // detail = "indoor" | "outdoor"
@@ -99,13 +99,17 @@ function syncPop(value = bgView()) {
   // 방향 맞추기는 바깥 보기일 때만
   const cal = pop.querySelector(".bgvw__cal");
   cal.hidden = value !== "outdoor";
+  // 진북 보정(편각)은 자동 — 얼마나 더하고 있는지 보여 준다
+  const dec = declinationDeg();
+  pop.querySelector(".bgvw__fix .bgvw__sub").textContent = "실제 해(밤엔 달)를 폰으로 겨눈 채 누르세요"
+    + (dec == null ? "" : ` · 진북 보정 ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° 는 자동`);
   const off = Math.round(headingOffsetDeg());
   const reset = pop.querySelector(".bgvw__reset");
   reset.hidden = !off;
-  reset.querySelector(".bgvw__sub").textContent = `지금 보정 ${off > 0 ? "+" : ""}${off}°`;
+  reset.querySelector(".bgvw__sub").textContent = `지금 보정 ${off > 0 ? "+" : ""}${off}° · 다른 장소이거나 ${OFFSET_TTL_HOURS}시간 지나면 저절로 지워져요`;
 }
 
-/** 방향 맞추기: 사용자가 실제 해(없으면 달)를 겨누고 누른 순간, 계산 방위와 나침반 방위의 차이를 보정으로 기억한다 */
+/** 방향 맞추기: 사용자가 실제 해(없으면 달)를 겨누고 누른 순간, 계산 방위와 나침반 방위(진북 보정 뒤)의 차이를 보정으로 기억한다 */
 function calibrate() {
   const site = outdoorSite(), raw = rawHeading();
   if (!site || raw == null) { toast("나침반 값이 아직 없어요. 폰을 조금 움직인 뒤 다시 눌러 주세요.", 4000); return; }
@@ -117,7 +121,7 @@ function calibrate() {
   if (target == null) { toast("지금은 해와 달이 모두 지평선 아래라 맞출 수 없어요.", 4500); return; }
   setHeadingOffset(target - raw);
   const off = Math.round(headingOffsetDeg());
-  toast(`${name} 쪽으로 방향을 맞췄어요 (보정 ${off > 0 ? "+" : ""}${off}°). 이 기기에 기억해 둘게요.`, 4500);
+  toast(`${name} 쪽으로 방향을 맞췄어요 (보정 ${off > 0 ? "+" : ""}${off}°). 이 자리에서 ${OFFSET_TTL_HOURS}시간 동안 기억해 둘게요.`, 4500);
 }
 
 function buildPop() {
