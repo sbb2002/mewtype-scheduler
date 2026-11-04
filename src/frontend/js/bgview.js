@@ -18,7 +18,7 @@ const HOLD_MS = 500;    // 주소 복사(longcopy.js)와 같은 길이
 const MOVE_PX = 10;
 
 const OPTIONS = [
-  { value: "indoor", label: "실내만 보기", sub: "돔 안에서 둘러보기 · 흔들면 지금 방향이 정면" },
+  { value: "indoor", label: "실내만 보기", sub: "돔 안의 분홍 하늘 · 폰을 돌리는 대로 둘러보기" },
   { value: "outdoor", label: "바깥 보기", sub: "실제 방위 · 시간의 하늘과 해 · 달 (위치 권한 필요)" },
 ];
 

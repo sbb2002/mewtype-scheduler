@@ -201,4 +201,4 @@ export function gyroTilt() {
 }
 
 /** 기준에서 돈 양 { yaw, pitch } — 센서 값이 아직 없으면 null */
-export function gyroView() { return have ? { yaw: yawAcc - baseYaw, pitch: rawPitch - basePitch } : null; }
+export function gyroView() { return have ? { yaw: yawAcc - baseYaw, pitch: rawPitch - basePitch, rawPitch } : null; }

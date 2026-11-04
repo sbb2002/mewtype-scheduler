@@ -8,9 +8,9 @@
 // 평소엔 천천히 떠다니고(관성 있는 무작위 표류), 흔들면 튀어 나가 벽 · 바닥 · 서로에 부딪히며 섞인다. 다 가라앉으면 그때 폰 자세를 새 정면으로 삼는다.
 //
 // 비용: 카메라가 안 움직이면 구름 흐름만 초당 6번 다시 그린다. 화면 갱신은 평소 30fps · 레인을 걷은 「배경 보기」(html.bg-peek) 중 60fps.
-// 평소엔 폰을 돌린 양의 35% 만 따라 돈다(카드를 보는 중엔 배경이 크게 휘돌지 않게). 해상도는 기기 배율 1.5 까지만.
+// 시선은 실내 · 바깥 모두 폰이 실제로 향한 방향 그대로(updateView). 해상도는 기기 배율 1.5 까지만.
 
-import { startGyro, gyroView, rebase, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
+import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
 import { BGVIEW_EVENT } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial } from "./bgastro.js";
@@ -25,7 +25,6 @@ const ZOOM_R_MAX = 0.6;
 const ZOOM_PER_SCREEN = 1.5;   // 두 손가락 거리가 화면 폭만큼 줄면 r 이 이만큼 는다
 const EYE = EYE0.slice();      // 지금 눈 위치 — 프레임마다 갱신
 const BASE_PITCH = 28 * DEG;
-const GAIN_IDLE = 0.35, GAIN_PEEK = 1;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
 const CLOUD_MS = 160;                  // 카메라가 멈춰 있을 때 구름 흐름 다시 그리기 간격
 const MAX_DPR = 1.5;
@@ -569,12 +568,11 @@ export function createDomeGL(host, isPaused) {
 
   let prog = null, U = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
   let W = 0, H = 0, dpr = 1, focal = 1, focalOut = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
-  let yaw = 0, pitch = BASE_PITCH, gain = GAIN_IDLE, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
+  let yaw = 0, pitch = BASE_PITCH, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let zoomR = 0, zoomT = 0, drawnR = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
-  let raf = 0, stopped = true, settling = false, lastShake = 0, theme = null, t0 = performance.now();
-  // 바깥 보기: 장면 +z = 북, +x = 동. 카메라 좌우 = 실제 방위, 위아래 = 실제 기울기(기준 자세 · 35% 축소 없음). 나침반이 없으면 남쪽을 본다
+  let raf = 0, stopped = true, lastShake = 0, theme = null, t0 = performance.now();
+  // 장면 +z = 북, +x = 동. 바깥 보기 = 실제 시각 · 위치의 하늘(해 · 달 · 별 · 방위 글자). 시선은 두 보기가 같다
   let outdoor = false;
-  const OUT_DEFAULT_YAW = Math.PI;
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -847,22 +845,21 @@ export function createDomeGL(host, isPaused) {
     }
   }
 
+  // 시선(11-05 운영자 「바깥 · 실내 시선 통일 — 바꿀 때마다 돌아가서 어색」): 두 보기 모두 폰이 실제로 향한 방향 그대로(AR 방식).
+  //   방위 = 나침반 절대 방위(bggyro.gyroAbs — 진북 · 편각 · 보정 포함), 나침반이 없으면 자이로 상대 방위. 기울기 = 중력으로 잰 실제 기울기.
+  //   기준점 = 화면 정가운데. 센서가 하나도 없으면(PC 등) 옛 실내 구도(위로 28° · 테두리가 화면 아래)로 고정.
+  //   그래서 보기를 바꿔도 화면이 돌지 않는다. 옛 실내 보기의 「35% 만 따라 돌기 · 흔들면 지금 방향이 정면」은 없앴다(흔들면 무늬만 섞인다).
   function updateView(dt, now) {
     const peek = document.documentElement.classList.contains("bg-peek");
-    gain += ((peek || outdoor ? GAIN_PEEK : GAIN_IDLE) - gain) * (1 - Math.exp(-dt / 0.35));
-    let tYaw, tPitch;
-    if (outdoor) {
-      const a = gyroAbs();
-      const target = a ? a.yaw : OUT_DEFAULT_YAW;
-      tYaw = yaw + Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw));   // 북쪽(±180°)을 넘을 때 한 바퀴 돌지 않게
-      tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, a ? a.pitch : BASE_PITCH));
-    } else {
-      if (settling) rebase();   // 섞이는 동안은 매번 지금 자세를 정면으로 → 화면이 천천히 정면으로 돌아온다
-      const g = gyroView();
-      tYaw = g ? g.yaw * gain : 0;
-      tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, BASE_PITCH + (g ? g.pitch * gain : 0)));
-    }
-    const k = 1 - Math.exp(-dt / (settling ? 0.55 : 0.08));
+    const a = gyroAbs(), g = gyroView();
+    let target = yaw, tPitch = BASE_PITCH;
+    if (a) { target = a.yaw; tPitch = a.pitch; }
+    else if (g) { target = g.yaw; tPitch = g.rawPitch; }
+    const sensed = !!(a || g), wantCy = sensed ? H / 2 : cyIndoor;
+    if (W && Math.abs(wantCy - cy) > 0.5) { cy = wantCy; gl.uniform2f(U.uC, cx, cy); drawnYaw = NaN; }
+    const tYaw = yaw + Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw));   // 북쪽(±180°)을 넘을 때 한 바퀴 돌지 않게
+    tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, tPitch));
+    const k = 1 - Math.exp(-dt / 0.08);
     yaw += (tYaw - yaw) * k;
     pitch += (tPitch - pitch) * k;
     if (!peek && !pinch) zoomT = 0;   // 배경 보기를 닫으면 중심으로 돌아온다
@@ -919,7 +916,6 @@ export function createDomeGL(host, isPaused) {
     tPrev = t;
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
-    if (settling && !moving && t - lastShake > 400) settling = false;   // 다 가라앉았다 — 이 자세가 새 기준으로 남는다
     placePieces();
     if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) + Math.abs(zoomR - drawnR) > 2e-4 || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
     raf = requestAnimationFrame(frame);
@@ -928,7 +924,7 @@ export function createDomeGL(host, isPaused) {
   function start() {
     if (!stopped) return;
     stopped = false;
-    startGyro();
+    startAbsolute();   // 두 보기 모두 실제 방위를 쓴다(자이로 듣기도 같이 시작)
     tPrev = lastFrame = performance.now();
     raf = requestAnimationFrame(frame);
   }
@@ -940,13 +936,8 @@ export function createDomeGL(host, isPaused) {
   });
   document.addEventListener(BGVIEW_EVENT, (e) => {
     outdoor = e.detail === "outdoor";
-    // 기준점(폰 뒷면 방향이 맺히는 자리): 실내 = 테두리가 화면 아래에 오도록 위쪽 40% 쯤, 바깥 = 화면 정가운데
-    // — 바깥 보기는 실제 기울기를 그대로 쓰므로(AR 처럼) 폰을 해 쪽으로 겨누면 해가 한가운데 와야 한다(2026-11-04 운영자 지시)
-    cy = outdoor ? H / 2 : cyIndoor;
-    if (W) { gl.uniform2f(U.uC, cx, cy); gl.uniform1f(U.uF, outdoor ? focalOut : focal); }
-    settling = false;
-    if (outdoor) startAbsolute();
-    else { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); rebase(); }   // 실내로 돌아오면 지금 자세가 정면
+    // 시선 · 기준점은 두 보기가 같다(updateView) — 여기서는 화면 폭 각도만(시안 bgsize=window 일 때만 바깥이 다르다)
+    if (W) gl.uniform1f(U.uF, outdoor ? focalOut : focal);
     updateAstro(true);
     draw();
   });
@@ -964,7 +955,7 @@ export function createDomeGL(host, isPaused) {
     const rimY = H - (phone ? 68 : 130);
     cx = W / 2;
     cyIndoor = rimY - focal * (eyeY * c + (1 - eyeZ) * s) / (-eyeY * s + (1 - eyeZ) * c);
-    cy = outdoor ? H / 2 : cyIndoor;
+    cy = gyroAbs() || gyroView() ? H / 2 : cyIndoor;
     gl.uniform2f(U.uRes, canvas.width, canvas.height); gl.uniform1f(U.uDpr, dpr);
     gl.uniform2f(U.uC, cx, cy); gl.uniform1f(U.uF, outdoor ? focalOut : focal);
     draw();
@@ -975,7 +966,6 @@ export function createDomeGL(host, isPaused) {
   function shake(power = 1) {
     if (stopped) return;
     lastShake = performance.now();
-    settling = !outdoor;   // 바깥 보기는 정면이 실제 방위라 기준을 옮기지 않는다(무늬만 섞인다)
     for (const p of pieces) {
       const u = randUnit(), sp = rnd(0.35, 0.95) * power;
       for (let i = 0; i < 3; i++) p.v[i] += u[i] * sp;
@@ -998,7 +988,7 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
-    window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, eye: EYE.slice(), gain, settling, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
