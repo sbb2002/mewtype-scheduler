@@ -13,7 +13,7 @@ function sv(tag, attrs, parent) {
 export function domeGeometry(W, H) {
   const phone = W <= 767;
   const focal = phone ? W * 1.25 : W * 0.76;
-  const pitch = 28 * DEG, eyeY = 0.24, eyeZ = -0.42;
+  const pitch = 28 * DEG, eyeY = 0.24, eyeZ = 0;   // 눈 = 돔 중심 위 0.24 (bgdomegl.js EYE 와 같다)
   const c = Math.cos(pitch), s = Math.sin(pitch);
   const rimY = H - (phone ? 68 : 130);
   const centerY = rimY - focal * (eyeY * c + (1 - eyeZ) * s) / (-eyeY * s + (1 - eyeZ) * c);

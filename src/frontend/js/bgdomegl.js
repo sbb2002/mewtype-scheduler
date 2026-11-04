@@ -16,7 +16,9 @@ import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial } from "./bgastro.js";
 
 const DEG = Math.PI / 180;
-const EYE = [0, 0.24, -0.42];          // 돔(반지름 1) 안 눈 위치 — bgdome.js 와 같다
+// 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
+// 머리 위를 봐도 돔 꼭대기가 북쪽 29° 에 보였고 동 · 서 경도선이 23° 씩 북쪽으로 쏠렸다). 수평이 중심이면 경도선 = 실제 방위선, 돔 꼭대기 = 천정.
+const EYE = [0, 0.24, 0];
 const BASE_PITCH = 28 * DEG;
 const GAIN_IDLE = 0.35, GAIN_PEEK = 1;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
@@ -76,7 +78,7 @@ uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
-const vec3 E = vec3(0.0, 0.24, -0.42);
+const vec3 E = vec3(0.0, 0.24, 0.0);   // = EYE
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
@@ -216,6 +218,55 @@ vec3 sky(vec3 d, float pxAng) {
   return c;
 }
 
+// Thin monoline glyphs on the glass, in an inward-readable east/up chart.
+float hudSegment(vec2 p, vec2 a, vec2 b) {
+  vec2 v = b - a;
+  return length(p - a - v * clamp(dot(p - a, v) / dot(v, v), 0.0, 1.0));
+}
+vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
+  // Select only the closest cardinal meridian; no four-glyph pixel loop.
+  float cardinal = floor(lon / (90.0 * D) + 0.5);
+  float a = cardinal * (90.0 * D);
+  // 시선 방향(하늘) 기준 고도 8° · 방위 0/90/180/270° 에 둔다 — 눈 높이 때문에 생기는 돔 유리의 고도 시차 없이 실제 방위 · 고도에 놓인다.
+  // 글자 높이 0.0615 rad(약 3.5°) = 390px 폰에서 약 30 CSS px.
+  float size = 0.0615;
+  vec2 p = vec2((lon - a) * cos(8.0 * D), lat - 8.0 * D) / size;
+  // Use continuous sphere derivatives: the nearest-meridian chart jumps at 45 degrees.
+  float px = max(glassPx / size, 1e-5);
+  if (abs(p.x) > 0.68 + 8.0 * px || abs(p.y) > 0.66 + 8.0 * px) return col;
+  float id = mod(cardinal + 4.0, 4.0);
+  vec2 bl = vec2(-0.30, -0.5), tl = vec2(-0.30, 0.5);
+  vec2 br = vec2(0.30, -0.5), tr = vec2(0.30, 0.5);
+  float ink;
+  if (id < 0.5) { // N
+    ink = min(hudSegment(p, bl, tl), min(hudSegment(p, tl, br), hudSegment(p, br, tr)));
+  } else if (id < 1.5) { // E
+    ink = min(hudSegment(p, bl, tl), min(hudSegment(p, tl, tr),
+      min(hudSegment(p, vec2(-0.30, 0.0), vec2(0.22, 0.0)), hudSegment(p, bl, br))));
+  } else if (id < 2.5) { // S: clipped corners keep the stencil light and readable.
+    ink = min(hudSegment(p, tr, vec2(-0.20, 0.5)), hudSegment(p, vec2(-0.20, 0.5), vec2(-0.30, 0.35)));
+    ink = min(ink, hudSegment(p, vec2(-0.30, 0.35), vec2(-0.30, 0.10)));
+    ink = min(ink, hudSegment(p, vec2(-0.30, 0.10), vec2(0.30, -0.10)));
+    ink = min(ink, hudSegment(p, vec2(0.30, -0.10), vec2(0.30, -0.35)));
+    ink = min(ink, hudSegment(p, vec2(0.30, -0.35), vec2(0.20, -0.5)));
+    ink = min(ink, hudSegment(p, vec2(0.20, -0.5), bl));
+  } else { // W
+    ink = min(hudSegment(p, tl, vec2(-0.19, -0.5)), hudSegment(p, vec2(-0.19, -0.5), vec2(0.0, 0.12)));
+    ink = min(ink, min(hudSegment(p, vec2(0.0, 0.12), vec2(0.19, -0.5)), hudSegment(p, vec2(0.19, -0.5), tr)));
+  }
+  float ticks = hudSegment(vec2(abs(p.x), p.y), vec2(0.48, -0.10), vec2(0.48, 0.10));
+  ink = min(ink, ticks);
+  float distPx = ink / px;
+  float core = cover(ink, px, 0.65 * uDpr);
+  float halo = exp(-distPx * distPx / (10.0 * uDpr * uDpr));
+  float outline = cover(ink, px, 2.1 * uDpr);
+  float sunFade = mix(1.0, 0.20, smoothstep(cos(6.0 * D), cos(2.0 * D), dot(ray, uSunDir)) * uSolar.z);
+  vec3 hue = id < 0.5 ? vec3(1.0, 0.055, 0.075) : vec3(0.53, 0.94, 1.0);
+  col = mix(col, vec3(0.012, 0.025, 0.045), outline * 0.62 * sunFade);
+  col = mix(col, hue, halo * 0.24 * sunFade);
+  return mix(col, hue, core * 0.94 * sunFade);
+}
+
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
   vec3 d = normalize(uFwd + uRight * (p.x - uC.x) / uF + uUp * (uC.y - p.y) / uF);
@@ -238,6 +289,7 @@ void main() {
   float r1 = abs(lon + 71.0 * D) * cl, r2 = abs(lon - 69.0 * D) * cl;
   float refl = (exp(-pow(r1 / 0.045, 2.0)) + exp(-pow(r2 / 0.045, 2.0))) * smoothstep(8.0 * D, 20.0 * D, lat) * (1.0 - smoothstep(70.0 * D, 84.0 * D, lat));
   col = mix(col, vec3(1.0), refl * uReflA);
+  if (uOut > 0.5) col = compassHUD(col, d, asin(clamp(d.y, -1.0, 1.0)), atan(d.x, d.z), 1.0 / (uF * uDpr));
 
   // ── 바닥(공연 무대 원판)
   float tf = E.y / max(-d.y, 1e-3);
