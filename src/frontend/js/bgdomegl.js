@@ -35,7 +35,8 @@ const DEBUG = QS.has("bgdebug");
 // ?bg=normal(운영자 명명) = 가속 없이 지금 시각 — 이 두 값을 주소에 같이 붙여도 무시한다
 const NORMAL = QS.get("bg") === "normal";
 const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
-const T_SPEED = DEBUG && !NORMAL && QS.get("bgspeed") ? Number(QS.get("bgspeed")) || 1 : 1;
+// bgspeed = 0 이면 bgtime 시각에 멈춘다(장면 고정 확인용)
+const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
 // 확인용(?bgdebug 와 함께): bgsize = 해 · 달 크기 시안 — now(지금: 지름 해 2.4° · 달 3.2°) | real(실제 0.53°) | double(실제의 2배 1.06°)
 //   | window(실제 0.53° + 바깥 보기 화면 폭을 폰이 눈에 차지하는 각도 약 12.4° 로 — 폰이 「창문」처럼 실제 하늘과 1:1)
