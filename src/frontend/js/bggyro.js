@@ -75,8 +75,28 @@ export function startAbsolute() {
   if ("ondeviceorientationabsolute" in window) window.addEventListener("deviceorientationabsolute", onAbsolute);
 }
 
-/** 보는 방향의 실제 방위 { yaw: 북 = 0 · 동 = +π/2, pitch } — 나침반 값이 아직 없으면 null */
-export function gyroAbs() { return absHave ? { yaw: absYaw, pitch: absPitch } : null; }
+// 방위 보정(라디안) — 폰 나침반은 실내 철근 · 전자기기 · 자기 편각 때문에 수십 도 틀어질 수 있다(11-04 운영자 실측 40 ~ 50°).
+// 사용자가 실제 해 · 달을 겨누고 「방향 맞추기」를 누르면 그 차이를 이 기기에 기억한다(bgview.js).
+const OFFSET_KEY = "bgheading";
+let headingOffset = 0;
+try { headingOffset = Number(localStorage.getItem(OFFSET_KEY)) || 0; } catch { /* 저장소 없음 */ }
+
+export const headingOffsetDeg = () => headingOffset / DEG;
+
+/** 보정 저장 — rad = 더할 각도. 0 이면 보정 지우기 */
+export function setHeadingOffset(rad) {
+  headingOffset = wrap(rad);
+  try {
+    if (headingOffset) localStorage.setItem(OFFSET_KEY, String(headingOffset));
+    else localStorage.removeItem(OFFSET_KEY);
+  } catch { /* 저장 못 해도 지금은 적용 */ }
+}
+
+/** 보정 전 나침반 방위(라디안) — 보정값을 새로 구할 때 쓴다. 나침반 값이 없으면 null */
+export function rawHeading() { return absHave ? absYaw : null; }
+
+/** 보는 방향의 실제 방위 { yaw: 북 = 0 · 동 = +π/2, pitch } (보정 포함) — 나침반 값이 아직 없으면 null */
+export function gyroAbs() { return absHave ? { yaw: wrap(absYaw + headingOffset), pitch: absPitch } : null; }
 
 /** 지금 폰 자세를 새 기준(정면)으로 삼는다 */
 export function rebase() { baseYaw = yawAcc; basePitch = rawPitch; }
