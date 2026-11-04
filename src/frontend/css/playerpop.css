@@ -14,9 +14,9 @@
   --mp-float-w: 356px;
   --mp-float-h: 200px;   /* YouTube 임베드 최소 200×200 */
   --mp-foot: 45px;       /* 고정 푸터(#foot) 높이 — 플로팅 프레임이 푸터에 가려지지 않게 */
-  --mp-tab-play: #f29ac0;    /* (v4.12.0) 재생 바 탭 — 배경 분홍 톤 */
-  --mp-tab-songs: #8ec5f0;   /* (v4.12.0) 곡 찾기 탭 — 배경 파랑 톤 */
-  --mp-tab-queue: var(--mp-accent);   /* (v4.12.0) 재생목록 탭 — 보라(재생목록 색조와 같다) */
+  --mp-tab-play: #f29ac0;    /* (v4.11.11) 재생 바 탭 — 배경 분홍 톤 */
+  --mp-tab-songs: #8ec5f0;   /* (v4.11.11) 곡 찾기 탭 — 배경 파랑 톤 */
+  --mp-tab-queue: var(--mp-accent);   /* (v4.11.11) 재생목록 탭 — 보라(재생목록 색조와 같다) */
 }
 
 html.mp-lock { overflow: hidden; }
@@ -345,7 +345,7 @@ html.mp-lock { overflow: hidden; }
   background: transparent;
   font-size: 0.85rem; font-weight: 600; color: var(--color-text-muted);
 }
-/* (v4.12.0) 탭마다 색 — 선택된 탭은 제 색으로 글자 · 밑줄 · 옅은 바탕을 칠한다 */
+/* (v4.11.11) 탭마다 색 — 선택된 탭은 제 색으로 글자 · 밑줄 · 옅은 바탕을 칠한다 */
 .mp-pop .mp-tab { --mp-tab-c: var(--mp-accent); }
 .mp-pop .mp-tab--play { --mp-tab-c: var(--mp-tab-play); }
 .mp-pop .mp-tab--songs { --mp-tab-c: var(--mp-tab-songs); }
@@ -370,7 +370,7 @@ html.mp-lock { overflow: hidden; }
 .mp-q__list { flex: 1; max-height: none; }   /* 재생목록 탭: 칸을 채우고 그 안에서 스크롤 */
 .mp-qpanel[hidden], .mp-lib[hidden] { display: none; }
 
-/* (v4.12.0) 재생목록 = 보라 색조 — 곡 찾기와 한눈에 구별. 곡 찾기는 중성 그대로 */
+/* (v4.11.11) 재생목록 = 보라 색조 — 곡 찾기와 한눈에 구별. 곡 찾기는 중성 그대로 */
 .mp-q { --mp-q-bg: color-mix(in srgb, var(--mp-accent) 9%, var(--mp-well)); background: var(--mp-q-bg); }
 .mp-q__fg { background: var(--mp-q-bg); }   /* 곡 줄 윗판도 같은 색조 — 우물 바탕과 줄무늬가 지지 않게(밑판을 가리는 역할은 그대로) */
 .mp-q__head { margin: -8px -6px 0 -10px; padding: 8px 10px 7px; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--mp-accent) 18%, var(--mp-well)); border-bottom-color: color-mix(in srgb, var(--mp-accent) 30%, transparent); }
@@ -378,14 +378,14 @@ html.mp-lock { overflow: hidden; }
 .mp-q__head::before { content: ""; width: 14px; height: 14px; flex: none; background: var(--mp-accent); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z'/%3E%3C/svg%3E") center/contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z'/%3E%3C/svg%3E") center/contain no-repeat; }
 .mp-q__n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in srgb, var(--mp-accent) 20%, transparent); color: var(--color-text); text-align: center; }
 .mp-q__head .mp-link:disabled { opacity: 0.35; text-decoration: none; cursor: default; }
-/* (v4.12.0) 빈 재생목록 자리 줄 — 곡 줄과 같은 높이 · 칸 */
+/* (v4.11.11) 빈 재생목록 자리 줄 — 곡 줄과 같은 높이 · 칸 */
 .mp-q__item.is-ph .mp-q__phrow { color: var(--color-text-muted); }
 .mp-q__item.is-ph .mp-q__title { border: 1px dashed var(--color-border); border-radius: 6px; padding: 3px 8px; min-height: 1.45em; font-size: 0.72rem; }
 .mp-q__item.is-ph:nth-child(2) { opacity: 0.55; }
 .mp-q__item.is-ph:nth-child(3) { opacity: 0.3; }
 .mp-q__empty { padding: 10px 4px; font-size: 0.7rem; line-height: 1.5; color: var(--color-text-muted); text-align: center; }
 
-/* (v4.12.0) 다음 곡 칸 — PC 에서는 숨기고 모바일 재생 바 탭에서만 보인다(아래 모바일 블록) */
+/* (v4.11.11) 다음 곡 칸 — PC 에서는 숨기고 모바일 재생 바 탭에서만 보인다(아래 모바일 블록) */
 .mp-next { display: none; }
 
 /* ── 목록부 ───────────────────────────────────────────────────────── */
@@ -619,7 +619,7 @@ html.mp-lock { overflow: hidden; }
   .mp-pop[data-tab="play"] .mp-panels, .mp-pop:not([data-tab="play"]) .mp-play { display: none; }
   .mp-pc-only { display: none; }
   .mp-m-only { display: inline; }
-  /* (v4.12.0) 재생 바 탭 아래 다음 곡 3줄 — 첫 줄(바로 다음)은 크고 또렷하게, 나머지 두 줄은 작고 흐리게 */
+  /* (v4.11.11) 재생 바 탭 아래 다음 곡 3줄 — 첫 줄(바로 다음)은 크고 또렷하게, 나머지 두 줄은 작고 흐리게 */
   .mp-next { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--color-border); }
   .mp-next__head { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); letter-spacing: 0.02em; }
   .mp-next__row { display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 10px; align-items: center; width: 100%; padding: 4px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--color-text-muted); font-size: 0.8rem; text-align: left; }

@@ -134,7 +134,7 @@ const ICONS = {
   repeat: ["M7 7h10v3l4-4-4-4v3H5v6h2zM17 17H7v-3l-4 4 4 4v-3h12v-6h-2z"],
   note: ["M9 18V4.6L20 2.6V16H18V5.9L11 7.2V18Z", "M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z", "M20 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"],   // (v4.8.3) 음표 — 채운 모양 세 조각
   film: ["M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM9.5 9v6l5-3z"],   // (v4.8.3) 화면 + 재생 삼각형(evenodd 로 뚫는다)
-  list: ["M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z"],   // (v4.12.0) 재생목록 탭 — 채운 막대 3개
+  list: ["M4 5h16v2H4zM4 11h11v2H4zM4 17h8v2H4z"],   // (v4.11.11) 재생목록 탭 — 채운 막대 3개
   search: null,
 };
 const EVENODD = new Set(["film"]);
@@ -708,7 +708,7 @@ function omakase(kind) {
   st.played = new Set();
   st.qi = -1;
   playQueueAt(0);
-  // (v4.12.0) 모바일은 재생 바 탭으로(운영자 결정 2026-11-04). PC 는 재생 바 탭이 없어 예전처럼 재생목록을 보여 준다
+  // (v4.11.11) 모바일은 재생 바 탭으로(운영자 결정 2026-11-04). PC 는 재생 바 탭이 없어 예전처럼 재생목록을 보여 준다
   setTab(isPhone() ? "play" : "queue");
   pulseBadge();
   // 연출: 뒤섞임 → 5초 쿨타임 파이
@@ -793,7 +793,7 @@ function build() {
     el.undo,
   );
   // (v4.11.6) .mp-play = 곡 정보 · 컨트롤. PC 는 display:contents 라 재생부 그대로, 모바일은 「재생」 탭 패널이 된다
-  // (v4.12.0) 재생 바 탭 아래 「다음 곡」 3줄 — 모바일에서만 보인다(paintNext)
+  // (v4.11.11) 재생 바 탭 아래 「다음 곡」 3줄 — 모바일에서만 보인다(paintNext)
   el.next = h("section", { class: "mp-next", "aria-label": "다음 곡" });
   el.play = h("div", { class: "mp-play", id: "mp-panel-play" },
     h("div", { class: "mp-song" }, h("div", { class: "mp-song__txt" }, el.sTitle, el.sMeta, el.sKo), el.media, el.mvTip),
@@ -823,10 +823,10 @@ function build() {
   // 탭 — PC: 곡 찾기 | 재생목록(배지 = 재생목록 곡 수, 오른쪽 칸). 모바일(v4.11.6): 재생 바 | 곡 찾기 | 재생목록 — 프레임 아래 한 칸을 세 탭이 나눠 쓴다.
   el.badge = h("span", { class: "mp-badge", text: "0" });
   el.tabSongs = h("button", { type: "button", class: "mp-tab mp-tab--songs", role: "tab", id: "mp-tab-songs", "aria-controls": "mp-panel-songs", on: { click: () => setTab("songs"), keydown: onTabKey } },
-    icon("search", "mp-ico mp-tab__ico"), "곡 찾기");   // (v4.12.0) PC · 모바일 같은 이름
+    icon("search", "mp-ico mp-tab__ico"), "곡 찾기");   // (v4.11.11) PC · 모바일 같은 이름
   el.tabPlay = h("button", { type: "button", class: "mp-tab mp-tab--play", role: "tab", id: "mp-tab-play", "aria-controls": "mp-panel-play", text: "재생 바", on: { click: () => setTab("play"), keydown: onTabKey } });   // 모바일에서만 보인다
   el.tabQueue = h("button", { type: "button", class: "mp-tab mp-tab--queue", role: "tab", id: "mp-tab-queue", "aria-controls": "mp-panel-queue", on: { click: () => setTab("queue"), keydown: onTabKey } },
-    icon("list", "mp-ico mp-tab__ico"), "재생목록 ", el.badge);   // (v4.12.0) 앞에 목록 아이콘
+    icon("list", "mp-ico mp-tab__ico"), "재생목록 ", el.badge);   // (v4.11.11) 앞에 목록 아이콘
   el.tabBar = h("div", { class: "mp-tabs", role: "tablist", "aria-label": "플레이어 보기" }, el.tabPlay, el.tabSongs, el.tabQueue);
   el.qPanel = h("div", { class: "mp-qpanel", id: "mp-panel-queue", hidden: true }, el.qBox);
   el.panels = h("div", { class: "mp-panels" }, el.lib, el.qPanel);
@@ -995,7 +995,7 @@ function paintControls() {
   el.bRepeat.title = lab;
   const t = el.bRepeat.querySelector(".mp-rpt");
   if (t) t.textContent = rp === "one" ? "1" : rp === "all" ? "A" : "";
-  paintNext();   // (v4.12.0) 셔플 · 반복이 바뀌면 다음 곡 칸도 따라간다
+  paintNext();   // (v4.11.11) 셔플 · 반복이 바뀌면 다음 곡 칸도 따라간다
 }
 
 let qUserAt = 0;       // 사용자가 재생목록을 직접 스크롤한 마지막 시각 — 이후 4초는 자동 포커스를 건너뛴다
@@ -1021,11 +1021,11 @@ function focusQueueCur() {
 function paintQueue() {
   if (!built) return;
   el.badge.textContent = String(st.queue.length);
-  el.qCount.textContent = `${st.queue.length}곡`;   // (v4.12.0) 0곡도 표시
+  el.qCount.textContent = `${st.queue.length}곡`;   // (v4.11.11) 0곡도 표시
   el.qClear.hidden = false;
   el.qClear.disabled = !st.queue.length;
   if (!st.queue.length) {
-    // (v4.12.0) 빈 재생목록도 곡 줄과 같은 모양 — 자리 줄 3개 + 안내 한 줄.
+    // (v4.11.11) 빈 재생목록도 곡 줄과 같은 모양 — 자리 줄 3개 + 안내 한 줄.
     // 자리 줄에는 .mp-q__fg · .mp-q__x · data-i 를 쓰지 않는다 — 밀어서 빼기(initQueueSwipe)가 .mp-q__fg 를 잡아 곡을 지울 수 있다.
     const ph = (n, text) => h("li", { class: "mp-q__item is-ph", "aria-hidden": n > 1 ? "true" : null },
       h("div", { class: "mp-q__phrow" },
@@ -1053,7 +1053,7 @@ function paintQueue() {
   paintNext();
 }
 
-// ── (v4.12.0) 재생 바 탭 — 「다음 곡」 3줄 ─────────────────────────────
+// ── (v4.11.11) 재생 바 탭 — 「다음 곡」 3줄 ─────────────────────────────
 /** 다음 곡 3줄 계산. rows 는 항상 3개, rows[0] 이 「바로 다음」. 화면 표시용이라 상태를 바꾸지 않는다.
  *  Row = {kind:"song", i, id, label?} | {kind:"mystery"} | {kind:"note", text, sub?} | {kind:"blank"}. */
 function upNext() {
