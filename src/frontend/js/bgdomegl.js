@@ -65,8 +65,9 @@ uniform float uOut, uNight;
 uniform vec3 uSunDir, uMoonDir;
 uniform vec4 uSunShape, uMoonShape;   // 천체 접평면의 위쪽 방향(xyz), 지평선 눌림 세기(w)
 // 고도 · 남중 · 위상에 따른 색과 세기는 JS 에서 초당 한 번만 계산한다
-uniform vec3 uSunCol, uSunGlow, uHorizonCol, uSunHorizon, uMoonCol;
-uniform vec4 uSolar;   // 낮 산란, 노을 띠, 해 가시성, 천정의 깊이
+uniform vec3 uSunCol, uSunGlow, uSunHorizon, uMoonCol;
+uniform vec4 uSunAir;   // 근접 번짐, 구름 산란, 저고도 온기, 원반 노출
+uniform vec4 uSolar;   // 낮 산란, 지평 대기광, 해 가시성, 천정의 깊이
 uniform vec4 uLunar;   // 달 가시성, 원반 불투명도, 빛 번짐 지수, 빛 번짐 세기
 uniform float uMoonLight, uStarGain, uEarthshine;
 uniform mat3 uEqM;
@@ -170,10 +171,13 @@ vec3 sky(vec3 d, float pxAng) {
     }
   }
 
-  // 여명은 맑은 복숭아 · 연금, 일몰은 구리 · 진홍. 지평선의 얇은 띠가 가장 짙다
-  float band = g * g * g * low * uSolar.y * above;
-  c += (1.0 - c) * uHorizonCol * band * (0.65 + 0.35 * low);
-  c += (1.0 - c) * uSunGlow * pow(forward, 40.0) * uSolar.y * 0.22 * above;
+  // 해 쪽 사진의 라벤더를 호박빛으로 물들인다. 지평선 양쪽으로 이어져 수평 띠가 생기지 않는다.
+  float warm = uSunAir.z;
+  float horizonAir = g * g * g * g * exp(-el * el / (22.0 * D * 22.0 * D));
+  float golden = horizonAir * uSolar.y * warm;
+  float skyLuma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  vec3 amber = mix(uSunGlow, uSunCol, 0.32);
+  c = mix(c, amber * (0.72 + 0.3 * skyLuma), golden * 0.64);
 
   // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
   vec3 mt = discTangent(d, uMoonDir, uMoonShape, 1.6 * D);
@@ -184,16 +188,31 @@ vec3 sky(vec3 d, float pxAng) {
   c = mix(c, m.rgb, m.a * uLunar.y * mvis);
   c += uMoonCol * pow(discGlow(md, d, uMoonShape), uLunar.z) * uLunar.w * mvis;
 
-  // 원반 각반지름은 1.2° 그대로. 빛 번짐만 원반보다 조금 따뜻하고 넓다
-  float disc;
-  if (uSunShape.w > 0.0) {
-    vec3 st = discTangent(d, uSunDir, uSunShape, 1.2 * D);
-    disc = clamp((sin(1.2 * D) - length(st)) / pxAng + 0.5, 0.0, 1.0) * step(0.0, sd);
-  } else disc = clamp((1.2 * D - acos(clamp(sd, -1.0, 1.0))) / pxAng + 0.5, 0.0, 1.0);
+  // 각반지름 1.2°와 지평선 눌림 유지. 흰금색 핵 → 노란 테, 번짐은 원반 밖으로 이어진다.
+  const float sunR = sin(1.2 * D);
+  float sr;
+  if (uSunShape.w > 0.0) sr = length(discTangent(d, uSunDir, uSunShape, sunR)) / sunR;
+  else sr = sqrt(max(2.0 * (1.0 - sd), 0.0)) / sunR;
+  float disc = clamp((1.0 - sr) * sunR / pxAng + 0.5, 0.0, 1.0) * step(0.0, sd);
+  float limb = smoothstep(0.35, 1.0, sr);
+  vec3 core = mix(mix(vec3(1.0, 0.985, 0.94), vec3(1.0, 0.975, 0.87), warm), uSunCol, limb);
+  // 구름 알파는 합성 강도를 뺀 밀도로 복원한다. 짙은 구름은 직사광을 가리고 산란광은 남긴다.
+  float density = clamp(cloud / max(uCldA, 0.001), 0.0, 1.0);
+  float direct = (1.0 - density) * (1.0 - density);
   float sg = discGlow(max(sd, 0.0), d, uSunShape);
-  float halo = pow(sg, 300.0) * 0.5 + pow(sg, 30.0) * 0.1;
-  c = mix(c, uSunCol, disc * uSolar.z * above * (1.0 - 0.6 * cloud));
-  c += (1.0 - c) * uSunGlow * halo * uSolar.z * above;
+  float inner = pow(sg, mix(1800.0, 450.0, warm));
+  float scatter = pow(sg, mix(180.0, 48.0, warm));
+  float outer = pow(sg, mix(48.0, 12.0, warm));
+  // 저고도에서 반치폭 약 3° / 10° / 20°. 얇은 구름 가장자리를 밝히고 짙은 구름은 직사만 가린다.
+  float edge = 4.0 * density * (1.0 - density);
+  float corona = inner * uSunAir.x * (1.0 - 0.75 * density) * uSolar.z;
+  float halo = scatter * uSunAir.y * (0.65 + 0.55 * edge) * uSolar.z;
+  float air = outer * (0.045 + 0.6 * warm) * max(uSolar.z, uSolar.y);
+  vec3 light = core * mix(uSunAir.w, 1.8, limb) * disc * direct * uSolar.z * above
+    + mix(uSunGlow, vec3(1.0, 0.92, 0.68), 0.72 * warm) * corona
+    + uSunGlow * (halo + air);   // 대기 산란은 지평선 아래까지 연결하고 원반만 above로 가린다.
+  // 공통 분모로 빛의 색 비율을 유지한다. 채널별 흰색 포화를 피하고 사진의 구름 계조도 남긴다.
+  c = (c + light) / (1.0 + max(light.r, max(light.g, light.b)));
   return c;
 }
 
@@ -609,18 +628,18 @@ export function createDomeGL(host, isPaused) {
     const night = 1 - smooth(-12, -6, alt);
     // 남중 전후에도 색을 매끄럽게 잇는다. 이미지의 아침 · 저녁 판정과 별개로 앞뒤 5분 고도차를 쓴다
     const dawn = smooth(-0.04, 0.04, (later - earlier) / DEG);
-    const day = smooth(-2, 12, alt), warm = 1 - smooth(0, 22, alt);
+    const day = smooth(-2, 12, alt), warm = 1 - smooth(10, 28, alt);
     // 오늘 적위로 남중 고도를 구한다. 계절마다 달라지는 최고 고도에 맞춰 천정의 파랑을 깊게 한다
     const phi = site.lat * DEG;
     const dec = Math.asin(Math.max(-1, Math.min(1, Math.sin(phi) * Math.sin(sun.alt) + Math.cos(phi) * Math.cos(sun.alt) * Math.cos(sun.az))));
     const maxAlt = Math.PI / 2 - Math.abs(phi - dec);
     const noon = smooth(0.78, 0.995, Math.max(0, Math.sin(sun.alt)) / Math.max(0.05, Math.sin(maxAlt))) * day;
     const dusk = smooth(-12, -2, alt) * (1 - smooth(4, 16, alt));
-    const sunLow = blend([1, 0.34, 0.12], [1, 0.71, 0.44], dawn);
+    // 흰금색 핵을 둘러싼 노란 테. 여명은 복숭아 · 연금, 일몰은 짙은 금빛 산란광이다.
+    const sunLow = blend([1, 0.81, 0.38], [1, 0.85, 0.59], dawn);
     const sunHigh = blend([1, 0.985, 0.955], [1, 0.96, 0.88], (1 - dawn) * (1 - noon) * 0.3);
     const sunCol = blend(sunHigh, sunLow, warm);
-    const sunGlow = blend(blend([1, 0.9, 0.72], [1, 0.96, 0.85], dawn), sunLow, warm * 0.8);
-    const horizon = blend([0.32, 0.29, 0.48], blend([1, 0.3, 0.13], [1, 0.71, 0.49], dawn), smooth(-10, 0, alt));
+    const sunGlow = blend([1, 0.97, 0.9], blend([1, 0.74, 0.23], [1, 0.81, 0.52], dawn), warm);
     const moonAlt = moon.alt / DEG, fraction = moonIllumination(t).fraction;
     const moonUp = smooth(-2, 0.3, moonAlt), moonLow = 1 - smooth(0, 24, moonAlt);
     const moonContrast = 1 - smooth(-8, 10, alt);
@@ -631,7 +650,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uNight, night);
     gl.uniform3fv(U.uSunCol, sunCol);
     gl.uniform3fv(U.uSunGlow, sunGlow);
-    gl.uniform3fv(U.uHorizonCol, horizon.map((c) => c * (0.34 - 0.1 * dawn)));
+    gl.uniform4f(U.uSunAir, 0.5 + 1.9 * warm, 0.12 + 0.8 * warm * (1 - 0.18 * dawn), warm, 18 + 8 * warm);
     gl.uniform3fv(U.uSunHorizon, [Math.sin(sun.az), 0, Math.cos(sun.az)]);
     gl.uniform4f(U.uSolar, day, dusk, smooth(-1.5, 0.5, alt), day * (0.045 + 0.055 * noon));
     gl.uniform3fv(U.uMoonCol, moonCol);
