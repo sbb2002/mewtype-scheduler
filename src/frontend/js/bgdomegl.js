@@ -37,6 +37,11 @@ const NORMAL = QS.get("bg") === "normal";
 const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
 const T_SPEED = DEBUG && !NORMAL && QS.get("bgspeed") ? Number(QS.get("bgspeed")) || 1 : 1;
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
+// 확인용(?bgdebug 와 함께): bgsize = 해 · 달 크기 시안 — now(지금: 지름 해 2.4° · 달 3.2°) | real(실제 0.53°) | double(실제의 2배 1.06°)
+//   | window(실제 0.53° + 바깥 보기 화면 폭을 폰이 눈에 차지하는 각도 약 12.4° 로 — 폰이 「창문」처럼 실제 하늘과 1:1)
+const SIZE_MODE = DEBUG && ["now", "real", "double", "window"].includes(QS.get("bgsize")) ? QS.get("bgsize") : "now";
+const SUN_MOON_R = { now: [1.2, 1.6], real: [0.2665, 0.2590], double: [0.533, 0.518], window: [0.2665, 0.2590] }[SIZE_MODE];   // 각반지름(도) [해, 달]
+const WINDOW_HFOV = 12.4;   // 도 — 폭 약 6.5cm 화면을 30cm 에서 볼 때(추정값, 기기 · 습관마다 다르다)
 const MOON_TEST = DEBUG && QS.get("bgmoon") != null && Number.isFinite(Number(QS.get("bgmoon"))) ? ((Number(QS.get("bgmoon")) % 1) + 1) % 1 : null;
 const T_REAL0 = Date.now();
 const nowMs = () => (Number.isFinite(T_START) ? T_START + (Date.now() - T_REAL0) * T_SPEED : Date.now());
@@ -71,7 +76,9 @@ uniform mat3 uSkyM2; uniform vec3 uSkyO2; uniform mat3 uCldM2; uniform vec3 uCld
 uniform float uCldA, uMix;
 // 바깥 보기: 해 · 달 방향(장면 벡터 [동, 위, 북]), 밤 정도(별), 지평 → 적도 회전(별이 실제처럼 돈다)
 uniform float uOut, uNight;
-uniform vec3 uSunDir, uMoonDir, uMoonSun;   // uMoonSun = 달을 비추는 해 방향(평소 = uSunDir, 위상 시험 때만 다름)
+uniform vec3 uSunDir, uMoonDir, uMoonSun;
+uniform float uSunR, uMoonR;   // 각반지름(라디안)
+uniform sampler2D uMoonTex; uniform float uMoonTexOn; uniform vec2 uMoonRot;   // 달 앞면 사진(NASA LRO) · 받았는지 · 북쪽 기울기(cos, sin)   // uMoonSun = 달을 비추는 해 방향(평소 = uSunDir, 위상 시험 때만 다름)
 uniform vec4 uSunShape, uMoonShape;   // 천체 접평면의 위쪽 방향(xyz), 지평선 눌림 세기(w)
 // 고도 · 남중 · 위상에 따른 색과 세기는 JS 에서 초당 한 번만 계산한다
 uniform vec3 uSunCol, uSunGlow, uSunHorizon, uMoonCol;
@@ -116,25 +123,28 @@ float discGlow(float facing, vec3 d, vec4 shape) {
   return clamp(facing + shape.w * (0.06 * (1.0 - facing * facing) - 0.26 * y * y), 0.0, 1.0);
 }
 
-// 달: 장면에 맞춰 실제보다 크게(각반지름 1.6°). 복원한 구면에서 해 방향을 써 위상 · 표면도 함께 눌린다.
+// 달: 각반지름 uMoonR. 복원한 구면에서 해 방향을 써 위상 · 표면도 함께 눌린다.
+// 표면 = NASA LRO 컬러 지도로 만든 앞면 사진(assets/bg/moon-near.webp, 북쪽 위). 달의 북쪽은 하늘의 북극 쪽으로 기울인다(시각각).
 vec4 moon(vec3 t, float facing, float pxAng) {
-  const float R = 1.6 * D;
+  float R = uMoonR;
   float rr = length(t) / R;
   float a = clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
   if (a <= 0.0) return vec4(0.0);
   vec3 k = t / R;
   vec3 n = k - uMoonDir * sqrt(max(1.0 - dot(k, k), 0.0));   // 보이는 반구의 표면 법선(관측자 쪽)
-  float lit = smoothstep(-0.03, 0.06, dot(n, uMoonSun));
-  // 바다(어두운 무늬): 표면 위치로 만든 부드러운 얼룩 — 달 자체에 붙어 있다
-  vec3 s = n * 3.1;
-  float maria = h3(floor(s)) * 0.5 + h3(floor(s * 2.0)) * 0.3 + h3(floor(s * 4.0)) * 0.2;
-  maria = smoothstep(0.35, 0.8, maria);
+  // 명암 경계: 실제 달처럼 부드럽게(경계 폭 약 ±8°) — 밝은 면이 하늘색으로 서서히 사라진다
+  float ns = dot(n, uMoonSun);
+  float lit = smoothstep(-0.10, 0.16, ns) * (0.55 + 0.45 * smoothstep(0.0, 0.5, ns));
+  vec3 up = uMoonShape.xyz, right = cross(up, uMoonDir);
+  vec2 sp = vec2(dot(k, right), dot(k, up));
+  vec2 lu = vec2(sp.x * uMoonRot.x - sp.y * uMoonRot.y, sp.x * uMoonRot.y + sp.y * uMoonRot.x);   // 화면 → 달 좌표(북쪽 위)
+  float alb = uMoonTexOn > 0.5 ? texture(uMoonTex, vec2(0.5 + 0.5 * lu.x, 0.5 - 0.5 * lu.y)).r / 0.4875 : 1.0;   // 평균 1 로 맞춤
   float limb = 0.82 + 0.18 * sqrt(max(1.0 - rr * rr, 0.0));
-  vec3 col = uMoonCol * (1.0 - 0.22 * maria) * limb;
-  return vec4(col, a * lit);   // a = 밝은 면만. 어두운 면은 sky() 가 밤에만 옅게(지구 반사광) 칠한다
+  vec3 col = uMoonCol * mix(1.0, alb, 0.85) * limb;
+  return vec4(col, a * lit);   // a = 밝은 면만. 어두운 면은 sky() 가 하늘색을 살짝 어둡게(지구 반사광) 한다
 }
 float moonDisc(vec3 t, float facing, float pxAng) {
-  const float R = 1.6 * D;
+  float R = uMoonR;
   float rr = length(t) / R;
   return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
 }
@@ -189,16 +199,16 @@ vec3 sky(vec3 d, float pxAng) {
   c = mix(c, amber * (0.72 + 0.3 * skyLuma), golden * 0.64);
 
   // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
-  vec3 mt = discTangent(d, uMoonDir, uMoonShape, 1.6 * D);
+  vec3 mt = discTangent(d, uMoonDir, uMoonShape, uMoonR);
   float mf = dot(d, uMoonDir);
   vec4 m = moon(mt, mf, pxAng);
   float mvis = above * uLunar.x * (1.0 - 0.85 * cloud);
-  c = mix(c, vec3(0.025, 0.034, 0.055), moonDisc(mt, mf, pxAng) * uEarthshine * mvis);   // 초승 · 그믐의 지구 반사광도 밤에만 보인다
+  c = mix(c, c * 0.62, moonDisc(mt, mf, pxAng) * uEarthshine * mvis);   // 어두운 면 = 그 자리 하늘색을 살짝 어둡게(고정색이 아니라 하늘에 맞춘다) — 밤에만
   c = mix(c, m.rgb, m.a * uLunar.y * mvis);
   c += uMoonCol * pow(discGlow(md, d, uMoonShape), uLunar.z) * uLunar.w * mvis;
 
   // 각반지름 1.2°와 지평선 눌림 유지. 흰금색 핵 → 노란 테, 번짐은 원반 밖으로 이어진다.
-  const float sunR = sin(1.2 * D);
+  float sunR = sin(uSunR);
   float sr;
   if (uSunShape.w > 0.0) sr = length(discTangent(d, uSunDir, uSunShape, sunR)) / sunR;
   else sr = sqrt(max(2.0 * (1.0 - sd), 0.0)) / sunR;
@@ -557,9 +567,9 @@ export function createDomeGL(host, isPaused) {
   if (!gl) return null;
 
   let prog = null, U = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
-  let W = 0, H = 0, dpr = 1, focal = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
+  let W = 0, H = 0, dpr = 1, focal = 1, focalOut = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, gain = GAIN_IDLE, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
-  let zoomR = 0, zoomT = 0, drawnR = NaN, pinch = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
+  let zoomR = 0, zoomT = 0, drawnR = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
   let raf = 0, stopped = true, settling = false, lastShake = 0, theme = null, t0 = performance.now();
   // 바깥 보기: 장면 +z = 북, +x = 동. 카메라 좌우 = 실제 방위, 위아래 = 실제 기울기(기준 자세 · 35% 축소 없음). 나침반이 없으면 남쪽을 본다
   let outdoor = false;
@@ -606,9 +616,34 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1i(U.uSky, 0); gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uSky2, 2); gl.uniform1i(U.uCloud2, 3);
     gl.uniform1f(U.uMix, 0); gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0);
     gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
+    gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
+    gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0); moonTex = null;
     sets = {}; slotA = slotB = null; astro = null;
     loadSet("day");
     theme = null;
+  }
+
+  /** 달 앞면 사진(바깥 보기에서 처음 쓸 때 한 번) — 4번 칸. 못 받으면 무늬 없는 달로 그린다 */
+  function loadMoonTex() {
+    if (moonTex) return;
+    moonTex = gl.createTexture();
+    const img = new Image();
+    img.decoding = "async";
+    img.onload = () => {
+      if (gl.isContextLost()) return;
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, moonTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.generateMipmap(gl.TEXTURE_2D);   // 달이 몇 픽셀일 때 반짝이지 않게
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.uniform1f(U.uMoonTexOn, 1);
+      draw();
+    };
+    img.onerror = () => console.warn("[bgdome] 달 사진을 못 받음");
+    img.src = new URL("../assets/bg/moon-near.webp", import.meta.url).href;
   }
 
   /** 하늘 한 벌(하늘 · 구름 두 장)을 받아 GPU 에 올린다. 다 받으면 ready */
@@ -747,6 +782,8 @@ export function createDomeGL(host, isPaused) {
     gl.uniform3fv(U.uSunDir, dirOf(sun.alt, sun.az));
     gl.uniform3fv(U.uMoonDir, dirOf(moon.alt, moon.az));
     gl.uniform3fv(U.uMoonSun, moonSun);
+    gl.uniform2f(U.uMoonRot, Math.cos(moon.parallactic), Math.sin(moon.parallactic));
+    loadMoonTex();
     // 고도 5° 이상은 원, 지평선에서는 세로/가로 약 0.83. 방향 · 세기는 픽셀마다가 아니라 초당 한 번 구한다.
     const shape = (key, body) => {
       const sa = Math.sin(body.alt), ca = Math.cos(body.alt);
@@ -797,9 +834,10 @@ export function createDomeGL(host, isPaused) {
       let show = z > 0.05;
       let sx = 0, sy = 0, s = 0;
       if (show) {
-        sx = cx + focal * dot3(q, B.right) / z;
-        sy = cy - focal * dot3(q, B.up) / z;
-        s = focal * base * p.size / z / BOX;
+        const F = outdoor ? focalOut : focal;
+        sx = cx + F * dot3(q, B.right) / z;
+        sy = cy - F * dot3(q, B.up) / z;
+        s = F * base * p.size / z / BOX;
         const m = BOX * s;
         show = sx > -m && sx < W + m && sy > -m && sy < H + m;
       }
@@ -904,7 +942,7 @@ export function createDomeGL(host, isPaused) {
     // 기준점(폰 뒷면 방향이 맺히는 자리): 실내 = 테두리가 화면 아래에 오도록 위쪽 40% 쯤, 바깥 = 화면 정가운데
     // — 바깥 보기는 실제 기울기를 그대로 쓰므로(AR 처럼) 폰을 해 쪽으로 겨누면 해가 한가운데 와야 한다(2026-11-04 운영자 지시)
     cy = outdoor ? H / 2 : cyIndoor;
-    if (W) gl.uniform2f(U.uC, cx, cy);
+    if (W) { gl.uniform2f(U.uC, cx, cy); gl.uniform1f(U.uF, outdoor ? focalOut : focal); }
     settling = false;
     if (outdoor) startAbsolute();
     else { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); rebase(); }   // 실내로 돌아오면 지금 자세가 정면
@@ -920,13 +958,14 @@ export function createDomeGL(host, isPaused) {
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 기존 SVG 투영(bgdome.js domeGeometry)과 같은 초점 · 중심 — 정면에서 보면 테두리가 같은 자리
     focal = phone ? W * 1.25 : W * 0.76;
+    focalOut = SIZE_MODE === "window" ? (W / 2) / Math.tan(WINDOW_HFOV / 2 * DEG) : focal;
     const c = Math.cos(BASE_PITCH), s = Math.sin(BASE_PITCH), eyeY = EYE0[1], eyeZ = EYE0[2];   // 실내 구도는 줌 0(중심) 기준
     const rimY = H - (phone ? 68 : 130);
     cx = W / 2;
     cyIndoor = rimY - focal * (eyeY * c + (1 - eyeZ) * s) / (-eyeY * s + (1 - eyeZ) * c);
     cy = outdoor ? H / 2 : cyIndoor;
     gl.uniform2f(U.uRes, canvas.width, canvas.height); gl.uniform1f(U.uDpr, dpr);
-    gl.uniform2f(U.uC, cx, cy); gl.uniform1f(U.uF, focal);
+    gl.uniform2f(U.uC, cx, cy); gl.uniform1f(U.uF, outdoor ? focalOut : focal);
     draw();
     placePieces();
   }

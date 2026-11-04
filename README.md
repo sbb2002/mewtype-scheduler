@@ -175,3 +175,11 @@ Secret Manager: `GROQ_API_KEY`(번역 · 판정 LLM) · `WEBSUB_SECRET`(PubSub �
 
 공개 메타데이터를 활용한다. YouTube 썸네일은 `i.ytimg.com` 핫링크를 쓰고, 트윗은 X 공식 임베드로 표시한다. 번역은 비공식 팬 번역이며 AI(Groq)가 만든다.
 삭제 · 문의 요청은 [GitHub Issues](https://github.com/sbb2002/mewtype-scheduler/issues) 로 받는다.
+
+### 사용한 공개 자료
+
+- **달 표면 사진** (`src/frontend/assets/bg/moon-near.webp`, 배경 「바깥 보기」의 달) — NASA's Scientific Visualization Studio,
+  [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720) 의 LRO(Lunar Reconnaissance Orbiter) 컬러 지도 `lroc_color_poles_1k.jpg` 를
+  지구에서 보이는 앞면 원반(128px, 회색조)으로 다시 투영했다. NASA 자료는 미국 저작권 대상이 아니다(NASA 미디어 이용 지침).
+- **세계 자기 모델 WMM2025** (`src/frontend/js/bgmag.js`, 나침반 진북 보정) — NOAA NCEI · 영국 BGS,
+  [World Magnetic Model](https://www.ncei.noaa.gov/products/world-magnetic-model) 계수(미국 정부 공개 자료).
