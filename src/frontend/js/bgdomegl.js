@@ -42,7 +42,7 @@ const SKY_FILES = {
   bluehour: ["../assets/bg/sky-bluehour.webp", "../assets/bg/clouds-bluehour.webp"],
   night: ["../assets/bg/sky-night.webp", "../assets/bg/clouds-night.webp"],
 };
-const ASTRO_MS = 1000;   // 해 · 달 위치 다시 계산 간격
+const ASTRO_MS = T_SPEED > 1 ? 0 : 1000;   // 해 · 달 위치 다시 계산 간격(실제 속도면 1초 — 해는 1분에 0.25°쯤만 움직인다. 배속 확인 중엔 매 프레임)
 
 const VS = `#version 300 es
 in vec2 aPos;
@@ -733,7 +733,7 @@ export function createDomeGL(host, isPaused) {
     const moving = stepPieces(pieces, dt);
     if (settling && !moving && t - lastShake > 400) settling = false;   // 다 가라앉았다 — 이 자세가 새 기준으로 남는다
     placePieces();
-    if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) > 2e-4 || t - lastGL > CLOUD_MS) draw();
+    if (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch) > 2e-4 || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
     raf = requestAnimationFrame(frame);
   }
 
