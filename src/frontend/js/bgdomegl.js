@@ -51,7 +51,23 @@ const CLOUD_SEED = (() => {
 // 방문마다 뽑는다(저장 안 함). ?bgdebug&bgindoor=pink|space 로 고정, bgwarp=<초> 로 워프 진행 시점 고정(캡처용).
 const INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : (Math.random() < 0.2 ? "space" : "pink"); })();
 const WARP_FIXED = DEBUG && QS.get("bgwarp") != null && Number.isFinite(Number(QS.get("bgwarp"))) ? Number(QS.get("bgwarp")) : null;
-const WARP_S = 60, WARP_EASE = 10;
+// (11-05 3차 운영자) 항해 시나리오 — 우주 배경이 뽑히면 일반 우주 · 성간 이동 중 하나로 시작(반반).
+//   일반 우주로 시작: 20% 「출발」 = 20초 머문 뒤 1분에 걸쳐 0 → 0.99c 가속(그 뒤 0.99c 유지), 80% = 계속 정지.
+//   성간 이동으로 시작: 20% 「도착」 = 0.99c 로 20초 뒤 1분에 걸쳐 0.99c → 0 감속(그 뒤 정지), 80% 「등속」 = 0.7c.
+// ?bgdebug&bgvoyage=rest|depart|cruise|arrive 로 고정, bgwarp=<초> 로 진행 시점 고정.
+const VOYAGE = (() => {
+  const q = DEBUG ? QS.get("bgvoyage") : null;
+  if (["rest", "depart", "cruise", "arrive"].includes(q)) return q;
+  return Math.random() < 0.5 ? (Math.random() < 0.2 ? "depart" : "rest") : (Math.random() < 0.2 ? "arrive" : "cruise");
+})();
+function voyageBeta(sec) {
+  const ss = (x) => { const v = Math.min(1, Math.max(0, x)); return v * v * (3 - 2 * v); };
+  if (VOYAGE === "rest") return 0;
+  if (VOYAGE === "cruise") return 0.7;
+  if (VOYAGE === "depart") return 0.99 * ss((sec - 20) / 60);
+  return 0.99 * (1 - ss((sec - 20) / 60));   // arrive
+}
+const VOYAGE_END = VOYAGE === "depart" || VOYAGE === "arrive" ? 83 : 0;   // 이 뒤로는 속도가 그대로
 // (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · eso = ESO/S. Brunier 은하수 파노라마(대안) · shader = 그려 만든 우주(나).
 // 딥필드 = 웹 망원경 SMACS 0723(NASA, ESA, CSA, STScI). 평가용 이미지는 assets/bg/eval/(저장소에 올리지 않음). ?bgdebug&bgspace=map|eso|shader&bgdeep=0|1
 const SPACE_MODE = (() => { const q = DEBUG ? QS.get("bgspace") : null; return q === "eso" || q === "shader" ? q : "map"; })();
@@ -287,8 +303,7 @@ float moonDisc(vec3 t, float facing, float pxAng) {
 
 
 // (11-05 운영자) 실내 무작위 배경 「우주」 — 성간 이동(워프) 1분 뒤 일반 우주로. 이미지 없이 셰이더만.
-// uSpace.x = 우주 배경 켬, .y = 워프 세기(1 → 0, 감속 동안 줄어듦), .z = 워프 진행 시간(초), .w = 우주 별 밝기(0 → 1).
-// 워프 축 uWarpDir = 돔 정면 지평선. 별은 축에서 바깥으로 흐르며(로그 극좌표 스크롤) 궤적을 남긴다.
+// uSpace.x = 우주 배경 켬, .y = 속도 β(v/c), .z = 지나가는 별 스크롤 누적 거리, .w = 지금 스크롤 속도. 진행 방향 uWarpDir = 돔 정면 지평선.
 // 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게. 광행차로 별이 앞쪽에 몰린다.
 uniform vec4 uSpace; uniform vec3 uWarpDir;
 // (11-05 2차) 우주 배경 비교용: uSpaceTex = (하늘 지도 켬, 딥필드 켬, 지도 종류 1 = NASA 별 지도 · 2 = ESO 은하수, 지도 노출).
@@ -378,37 +393,53 @@ vec3 spaceBase(vec3 d, float pxAng) {
   }
   return c;
 }
-// 성간 이동: 빛 궤적은 적게, 더 빠르게, 길게(유노 생일 장면의 UFO 궤적처럼 밝은 머리 + 길게 옅어지는 꼬리 + 번짐).
-// 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게.
-vec3 warpStars(vec3 d, float pxAng, float k, float t) {
-  vec3 F = uWarpDir, A = normalize(cross(abs(F.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0), F)), B = cross(F, A);
-  float cth = clamp(dot(d, F), -1.0, 1.0), th = acos(cth);
-  float ph = atan(dot(d, B), dot(d, A));
-  float s = log(tan(max(th, 1e-3) * 0.5));
-  float lanes = 110.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
-  vec3 c = vec3(0);
-  for (int j = 0; j < 2; j++) {            // 겹치는 두 줄(같은 차선에서 위상이 다른 별)
-    float hl = h1(lane * 1.37 + 3.0 + float(j) * 17.0);
-    float y = s * 0.55 - t * (1.0 + 1.2 * hl) + hl * 41.0 + float(j) * 0.5;
-    float cell = floor(y), fy = fract(y), hs = h2(vec2(lane + float(j) * 911.0, cell));
-    if (hs < 0.62) continue;
-    float len = mix(0.04, 0.92, k);
-    float head = 0.96, u = clamp((fy - (head - len)) / max(len, 1e-3), 0.0, 1.0);
-    float body = fy < head ? pow(u, 2.2) : 1.0 - smoothstep(head, head + 0.02, fy);
-    float lw = max(pxAng / max(sin(th) * TAU / lanes, 1e-4), 0.03);
-    float core = exp(-fx * fx / (lw * lw)), glow = exp(-fx * fx / (16.0 * lw * lw)) * 0.28;
-    float b = body * (core + glow) * (0.5 + 0.5 * hs) * smoothstep(0.03, 0.35, th);
-    vec3 blue = vec3(0.42, 0.62, 1.0), white = vec3(0.96, 0.96, 1.0), red = vec3(1.0, 0.38, 0.24);
-    vec3 dop = mix(blue, white, smoothstep(0.2, 1.0, th));
-    dop = mix(dop, red, smoothstep(1.3, 2.4, th));
-    c += dop * b * 1.8;
-  }
-  c += vec3(0.08, 0.14, 0.32) * k * exp(-th * th / 0.03);
-  return c;
+// (11-05 3차) 상대론적 성간 이동 — 운영자 시나리오(출발 가속 · 0.7c 등속 · 도착 감속)의 속도 β 로 하늘 전체를 바꾼다.
+// 광행차: 정지 좌표계 방향 θ' 의 별이 cosθ = (cosθ' + β)/(1 + β cosθ') 로 앞쪽에 몰린다(픽셀마다 역변환해 정지 좌표계 하늘을 읽음).
+// 도플러: D = 1/(γ(1 − β cosθ)) — 앞은 푸르고 밝게, 뒤는 붉고 어둡게. 색은 흑체 온도 T → D·T 로 옮기고, 밝기는 D³(빛 몰림)를 톤 매핑.
+// 가까이 지나가는 별의 궤적 = 유노 생일 장면 UFO 궤적처럼 밝은 머리 + 9초에 걸쳐 선형으로 옅어지는 꼬리 + 넓은 번짐.
+vec3 bbColor(float T) {   // 흑체 색(Tanner Helland 근사, 1000 ~ 40000K), 최대 성분 1
+  float x = clamp(T, 1000.0, 40000.0) / 100.0;
+  float r = x <= 66.0 ? 1.0 : clamp(1.29293618606 * pow(x - 60.0, -0.1332047592), 0.0, 1.0);
+  float g = x <= 66.0 ? clamp(0.39008157876 * log(x) - 0.63184144378, 0.0, 1.0) : clamp(1.12989086089 * pow(x - 60.0, -0.0755148492), 0.0, 1.0);
+  float b = x >= 66.0 ? 1.0 : (x <= 19.0 ? 0.0 : clamp(0.54320678911 * log(x - 10.0) - 1.19625408914, 0.0, 1.0));
+  return vec3(r, g, b) * smoothstep(400.0, 1400.0, T);   // 1000K 아래는 사실상 안 보인다
+}
+vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta, float dist) {
+  float s = log(tan(max(acos(cr), 1e-3) * 0.5));
+  float lanes = 64.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
+  float hl = h1(lane * 1.37 + 3.0);
+  if (hl < 0.68) return vec3(0);   // 궤적은 적게(약 20줄)
+  float speed = 0.8 + 0.8 * h1(lane * 7.1);                    // 별마다 거리가 달라 지나가는 빠르기가 다르다
+  float P = 12.0, head = mod(dist * speed + hl * 97.0, P) - 6.0; // 머리 위치(로그 극좌표 s), 앞(−)에서 뒤(+)로
+  float behind = mod(head - s + P, P);                           // 머리에서 꼬리 쪽으로 떨어진 거리
+  float age = behind / max(uSpace.w * speed, 1e-3);              // uSpace.w = 지금 s 스크롤 속도(1/초)
+  float k = 1.0 - age / 9.0;                                     // UFO 궤적과 같은 9초 선형 감쇠
+  if (k <= 0.0) return vec3(0);
+  float lw = max(pxRest / max(sqrt(max(1.0 - cr * cr, 1e-6)) * TAU / lanes, 1e-4), 0.025);
+  float core = exp(-fx * fx / (lw * lw)), glow = exp(-fx * fx / (14.0 * lw * lw)) * 0.3;
+  float headDot = exp(-behind * behind / 0.002) * 1.5;
+  float T = 5200.0 + 6000.0 * h1(lane * 3.3);
+  // 궤적 밝기는 D^1.5 로만 — 앞쪽이 하얗게 포화되지 않고 도플러 색(앞 파랑 · 뒤 빨강)이 남게. 축 바로 앞은 옅게(바퀴살처럼 모이지 않게).
+  return bbColor(T * D) * (k * k * (core + glow) + headDot * core) * min(pow(D, 1.5), 12.0) * 0.5 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr);
 }
 vec3 spaceSky(vec3 d, float pxAng) {
-  vec3 c = spaceBase(d, pxAng) * uSpace.w;
-  if (uSpace.y > 0.001) c += warpStars(d, pxAng, uSpace.y, uSpace.z) * smoothstep(0.0, 0.15, uSpace.y + 0.15 * (1.0 - uSpace.w));
+  float beta = uSpace.y;
+  if (beta < 1e-4) return spaceBase(d, pxAng);
+  vec3 F = uWarpDir, A = normalize(cross(abs(F.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0), F)), B = cross(F, A);
+  float g = inversesqrt(1.0 - beta * beta);
+  float co = clamp(dot(d, F), -1.0, 1.0);
+  float cr = (co - beta) / (1.0 - beta * co);                     // 정지 좌표계에서의 cosθ'
+  vec3 perp = d - F * co; float pl = length(perp); vec3 pn = pl > 1e-6 ? perp / pl : A;
+  vec3 dr = F * cr + pn * sqrt(max(0.0, 1.0 - cr * cr));
+  float D = 1.0 / (g * (1.0 - beta * co));                        // 도플러 인자(관측 방향 기준)
+  float pxRest = pxAng * D;                                       // 앞쪽은 정지 좌표계 하늘이 압축돼 한 픽셀이 더 넓은 하늘을 덮는다
+  vec3 base = spaceBase(dr, pxRest);
+  vec3 shift = bbColor(6500.0 * D) / bbColor(6500.0);
+  vec3 c = base * shift * min(D * D * D, 60.0);
+  float ph = atan(dot(d, B), dot(d, A));
+  c += passingStars(F, cr, ph, pxRest, D, beta, uSpace.z);
+  float m = max(c.r, max(c.g, c.b));
+  c = mix(c, c * (1.0 - exp(-m * 1.15)) / max(m, 1e-4), smoothstep(0.0, 0.1, beta));  // 색을 지키는 톤 매핑 — 앞쪽 몰린 빛이 하얗게 날아가지 않게
   return c;
 }
 vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
@@ -1303,11 +1334,12 @@ export function createDomeGL(host, isPaused) {
     if (INDOOR_BG === "space" && !outdoor) {
       const now = performance.now();
       if (spaceT0 === null) { spaceT0 = now; warpLast = now; }
-      const el = WARP_FIXED != null ? WARP_FIXED : reducedMotion.matches ? WARP_S : (now - spaceT0) / 1000;
-      const ss = (a, b, x) => { const v = Math.min(1, Math.max(0, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
-      const k = 1 - ss(WARP_S - WARP_EASE, WARP_S, el), stars = ss(WARP_S - WARP_EASE, WARP_S + 2, el);
-      if (WARP_FIXED != null) warpDist = el * 2.4; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * 2.4 * (0.12 + 0.88 * k); warpLast = now; }
-      gl.uniform4f(U.uSpace, 1, k, warpDist, Math.max(stars, 0.12));
+      const el = WARP_FIXED != null ? WARP_FIXED : (now - spaceT0) / 1000;
+      // 모션 줄이기: 별이 흐르지 않는 정지 우주(속도 0)로만.
+      const beta = reducedMotion.matches ? 0 : voyageBeta(el);
+      const scroll = 0.45 + 1.6 * beta;                       // 지나가는 별의 흐름 빠르기(로그 극좌표 s / 초)
+      if (WARP_FIXED != null) warpDist = el * scroll; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now; }
+      gl.uniform4f(U.uSpace, 1, beta, warpDist, scroll);
       loadSpaceTex();
       gl.uniform1i(U.uSpaceMap, 13); gl.uniform1i(U.uSpaceDeep, 14);
       // 13 · 14번 칸에는 지형의 정수 질감(RGB16UI)이 남아 있을 수 있다 — float 표본기로 읽으면 그리기가 통째로 실패하므로
@@ -1472,7 +1504,7 @@ export function createDomeGL(host, isPaused) {
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
-    if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && performance.now() - spaceT0 < (WARP_S + 3) * 1000 && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
+    if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && (voyageBeta((performance.now() - spaceT0) / 1000) > 0 || performance.now() - spaceT0 < VOYAGE_END * 1000) && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
     raf = requestAnimationFrame(frame);
   }
 
