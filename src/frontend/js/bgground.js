@@ -1,6 +1,8 @@
 // Seeded ground data. All distances/heights are km; approved outdoor imagery loads on demand.
 // Debug-only URL controls: ?bgdebug&bgground=city|mountain|sea&bgseed=integer&bgalt=1|2|3.
 // Overrides never overwrite the first-visit world. bgspeed=0 also freezes the 64s animation loop.
+import { createTerrain, terrainShader } from "./bgterrain.js";
+
 export function groundWorld(qs, debug) {
   let saved;
   try { saved = Number(localStorage.getItem("bg-ground-seed-v1")); } catch (_) { /* private storage */ }
@@ -15,7 +17,7 @@ export function groundWorld(qs, debug) {
   return { seed, kind, index: kinds.indexOf(kind), altitude: debug && ["1", "2", "3"].includes(qs.get("bgalt")) ? Number(qs.get("bgalt")) : 2 };
 }
 
-export function createGroundTextures(gl, world) {
+export function createGroundTextures(gl, world, changed) {
   let state = world.seed;
   const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
   const N = 512, P = 2048, tile = new Uint8Array(N * N * 4), ridge = new Uint8Array(P * 4 * 4);
@@ -97,7 +99,9 @@ export function createGroundTextures(gl, world) {
   // Unit 7 starts neutral; setAlbedo uploads the selected approved photo later.
   upload(7, 1, 1, new Uint8Array([128, 128, 128, 255]), false);
   gl.activeTexture(gl.TEXTURE0);
-  const destroy = () => textures.forEach(t => gl.deleteTexture(t));
+  const terrain = world.kind === "mountain" ? createTerrain(gl, world, changed) : null;
+  const destroy = () => { terrain?.destroy(); textures.forEach(t => gl.deleteTexture(t)); };
+  destroy.terrain = terrain;
   destroy.setAlbedo = image => {
     // Mountain crop excludes the eastern city strip; never enlarge the source.
     const width = world.kind === "mountain" ? Math.floor(image.width * 5 / 6) : image.width;
@@ -219,6 +223,10 @@ export function createGroundTextures(gl, world) {
     for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) {
       const ray = direction.map((v, i) => v + radius * .65 * (x * right[i] + y * up[i]));
       const length = Math.hypot(...ray); for (let i = 0; i < 3; i++) ray[i] /= length;
+      if (terrain?.ready) {
+        visible += clamp(.5 + (Math.asin(ray[1]) - terrain.horizon(Math.atan2(ray[0], ray[2]), Math.asin(ray[1]))) / pixel);
+        continue;
+      }
       let mask = clamp(.5 + (dip - ray[1]) / pixel);
       const b = (GR + alt) * ray[1], c = alt * (2 * GR + alt);
       let distance = c / Math.max(-b + Math.sqrt(Math.max(b * b - c, 0)), .001);
@@ -319,9 +327,18 @@ float ridgeHeight(float az, int layer) {
   vec4 h = textureLod(uGroundRidge, vec2(az / TAU, (float(layer) + .5) / 4.0), 0.0);
   return dot(h.rg, vec2(65280.0, 255.0)) * (4.0 / 65535.0);
 }
+// Prototypes allow the shared geometry to use the mountain-only baked path.
+#if GROUND_OUTDOOR
+vec4 terrainGeometry(vec3 ray, float pixel);
+vec3 terrainSurface(vec3 ray, vec4 geometry, float pixel);
+uniform float uTerrainOn;
+#endif
 // Shared geometry for surface, celestial occultation, and lens source visibility.
 // External origin is independent of dome E/zoom. Three radial distance belts, no raymarch.
 vec4 groundGeometry(vec3 ray, float pixel) {
+#if GROUND_OUTDOOR
+  if (uGroundKind > .5 && uGroundKind < 1.5 && uTerrainOn > .5) return terrainGeometry(ray, pixel);
+#endif
   // Conservative bound: no surface or ridge can reach above this elevation.
   float top = uGroundKind < .5 ? (.28 - uGroundAlt) / 65.0 : (3.5 - uGroundAlt) / 12.0;
   if (ray.y > max(top, 0.0) + pixel) return vec4(0, 300, -1, 1);
@@ -362,6 +379,7 @@ vec3 groundAir(vec3 ray) {
   float forward = pow(max(dot((vec3(ray.x, 0, ray.z) / max(length(ray.xz), .00001)), uSunHorizon), 0.0), 4.0);
   return mix(air, uSunGlow * (.72 + .3 * dot(air, vec3(.2126,.7152,.0722))), forward * uSolar.y * uSunAir.z * .64);
 }
+${terrainShader}
 ${groundIndoorSurface}
 // Three translated photo charts on a 16km triangular lattice. The hash changes
 // per world vertex: there is no exact 8km repeated photograph or checkerboard.
@@ -381,6 +399,9 @@ vec4 cityPhoto(sampler2D tex, vec2 uv) {
 }
 vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
   if (uOut < .5) return groundSurfaceIndoor(ray, geometry, pixel);
+#if GROUND_OUTDOOR
+  if (uGroundKind > .5 && uGroundKind < 1.5 && uTerrainOn > .5) return terrainSurface(ray, geometry, pixel);
+#endif
   vec3 pos = vec3(0, GR + uGroundAlt, 0) + ray * geometry.y;
   vec3 n = normalize(pos), v = -ray;
   vec2 uv = pos.xz / (uGroundKind < .5 ? 8.0 : 32.0);

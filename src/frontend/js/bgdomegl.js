@@ -258,6 +258,11 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   if (uOut < 0.5) return c;
   float cloud = uCloudTest >= 0.0 ? uCloudTest * uCldA : mix(A.a, B.a, uMix);
   float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
+#if GROUND_OUTDOOR
+  // At altitude the true horizon is below zero. The baked terrain/sphere masks
+  // the source; the old zero-degree cutoff would erase the sun before sunset.
+  if (uGroundKind > .5 && uGroundKind < 1.5 && uTerrainOn > .5) above = 1.0;
+#endif
 
   float sd = dot(d, uSunDir), md = max(dot(d, uMoonDir), 0.0);
   float g = max(dot(vec3(d.x, 0.0, d.z) / max(length(d.xz), 1e-4), uSunHorizon), 0.0);
@@ -760,6 +765,7 @@ export function createDomeGL(host, isPaused) {
   function init() {
     programs = {};
     makeProgram(false); makeProgram(true);
+    if (GROUND.kind === "mountain") makeProgram(true, true);
     prog = programs[outdoor ? "outdoor" : "indoor"].program;
     U = programs[outdoor ? "outdoor" : "indoor"].uniforms;
     gl.useProgram(prog);
@@ -771,13 +777,13 @@ export function createDomeGL(host, isPaused) {
     moonTex = null; albedoLoading = albedoOn = false; textureEpoch++;
     themeFrame = null; themeStart = -Infinity;
     if (releaseGround) releaseGround();
-    releaseGround = createGroundTextures(gl, GROUND);
+    releaseGround = createGroundTextures(gl, GROUND, () => { lastGL = 0; draw(); });
     sets = {}; slotA = slotB = null; astro = null;
     loadSet("day");
     theme = null;
   }
 
-  function makeProgram(outside) {
+  function makeProgram(outside, terrain = false) {
     prog = gl.createProgram();
     gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
     // Each program carries only its ground material. Switching copies uniforms
@@ -785,6 +791,11 @@ export function createDomeGL(host, isPaused) {
     let fragment = FS.replace("if (uOut < .5) return groundSurfaceIndoor(ray, geometry, pixel);",
       outside ? "" : "return groundSurfaceIndoor(ray, geometry, pixel);");
     fragment = fragment.replace("precision highp float;", `precision highp float;\n#define GROUND_OUTDOOR ${outside ? 1 : 0}`);
+    if (terrain) {
+      // Compile away the fallback ridge/material path. Keeping both in one
+      // fragment program increases register pressure even after the bake.
+      fragment = fragment.replace("uniform float uTerrainOn;", "const float uTerrainOn = 1.0;");
+    }
     // Keep the indoor arithmetic identical to the original uniform path;
     // constant-folded sphere geometry can move a final 8-bit rounding boundary.
     if (!outside) fragment = fragment.replace(
@@ -806,13 +817,16 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
     gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1);
     gl.uniform1i(U.uGroundIndoorTile, 10);
+    gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
+    gl.uniform1i(U.uTerrainDetail, 13); gl.uniform1i(U.uTerrainDetailNormal, 14); gl.uniform1i(U.uTerrainShadow, 15);
+    gl.uniform1f(U.uTerrainOn, 0); gl.uniform1f(U.uTerrainDetailOn, 0);
     if (!outside) { gl.uniform1f(U.uGroundKind, GROUND.index); gl.uniform1f(U.uGroundAlt, GROUND.altitude); }
     gl.uniform1f(U.uGroundAlbedoOn, 0);
-    programs[outside ? "outdoor" : "indoor"] = { program: prog, uniforms: U };
+    programs[terrain ? "terrain" : outside ? "outdoor" : "indoor"] = { program: prog, uniforms: U };
   }
 
   function useViewProgram() {
-    const target = programs[outdoor ? "outdoor" : "indoor"];
+    const target = programs[outdoor ? (releaseGround?.terrain?.ready ? "terrain" : "outdoor") : "indoor"];
     if (target.program === prog) return;
     gl.useProgram(target.program);
     for (let i = 0; i < gl.getProgramParameter(target.program, gl.ACTIVE_UNIFORMS); i++) {
@@ -1027,6 +1041,13 @@ export function createDomeGL(host, isPaused) {
     if (!outdoor || GROUND.kind === "sea" || albedoLoading) return;
     albedoLoading = true;
     const epoch = textureEpoch;
+    if (releaseGround.terrain) {
+      releaseGround.terrain.start().then(() => {
+        if (epoch !== textureEpoch || gl.isContextLost()) return;
+        albedoOn = true; lastGL = 0; draw();
+      }).catch(() => { /* failed DEM/Worker keeps the original mountain */ });
+      return;
+    }
     const img = new Image(); img.decoding = "async";
     img.onload = () => {
       if (epoch !== textureEpoch || gl.isContextLost()) return;
@@ -1071,7 +1092,7 @@ export function createDomeGL(host, isPaused) {
   }
 
   function draw() {
-    if (gl.isContextLost() || !W) return;
+    if (gl.isContextLost() || !W || releaseGround?.terrain?.uploading) return;
     useViewProgram();
     applyTheme();
     updateAstro(false);
@@ -1083,6 +1104,8 @@ export function createDomeGL(host, isPaused) {
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele;
     gl.uniform1f(U.uF, viewFocal());
+    if (outdoor && releaseGround.terrain) releaseGround.terrain.view(U, yaw, pitch,
+      2 * Math.atan(W / (2 * viewFocal())), 2 * Math.atan(H / (2 * viewFocal())), tele, W, H);
     gl.uniform2f(U.uTele, 1, 1);
     gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
     gl.uniform1f(U.uMoonCue, 0);
@@ -1125,7 +1148,7 @@ export function createDomeGL(host, isPaused) {
       // Meter only a visible source inside the frame; fading at its edges avoids exposure jumps.
       const meter = (alt, az, radius) => {
         const v = dirOf(alt, az), z = dot3(v, B.fwd);
-        if (z <= 0 || alt < -radius) return 0;
+        if (z <= 0 || (!releaseGround.terrain?.ready && alt < -radius)) return 0;
         const F = viewFocal(), x = cx + F * dot3(v, B.right) / z, y = cy - F * dot3(v, B.up) / z;
         const edge = Math.min(x, W - x, y, H - y);
         return smooth(-F * radius, F * radius + 20, edge) * smooth(3, 24, F * radius * 2);
@@ -1313,7 +1336,7 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
-    window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, moonDiameterCSS: SIZE_MODE === "eye" ? MOON_CSS_DIAMETER * tele : 2 * viewFocal() * SUN_MOON_R[1] * DEG, themeProgress: Math.min(1,(performance.now()-themeStart)/THEME_MS), albedoOn, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, moonDiameterCSS: SIZE_MODE === "eye" ? MOON_CSS_DIAMETER * tele : 2 * viewFocal() * SUN_MOON_R[1] * DEG, themeProgress: Math.min(1,(performance.now()-themeStart)/THEME_MS), albedoOn, terrain: releaseGround.terrain?.metrics, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
