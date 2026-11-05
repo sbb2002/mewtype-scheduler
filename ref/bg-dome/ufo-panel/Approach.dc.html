@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>콘솔로 다가가기</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#07060f}
+@keyframes holoFlick{0%,46%,52%,100%{opacity:.95}48%{opacity:.45}50%{opacity:.85}}
+@keyframes beamPulse{0%,100%{opacity:.55}50%{opacity:1}}
+@keyframes hintBob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-4px)}}
+.holo{animation:holoFlick 3.2s infinite}
+.beam{animation:beamPulse 2.4s ease-in-out infinite}
+.hint{animation:hintBob 2s ease-in-out infinite}
+
+/* ── 조작 패널 등장 · 퇴장 — 광선 한 줄 → 위아래로 열림 → 색 갈라짐 글리치 → 내용이 차례로 켜짐. 퇴장은 거꾸로.
+   transform · opacity · clip-path 만 움직인다(합성 위주). --spd = 확인용 배속(1 = 실제) */
+.hudbox{--spd:1}
+.clipw{position:relative}
+.hud.idle .clipw,.hud.idle .scanln{opacity:0;visibility:hidden}
+.hud.off{pointer-events:none}
+.hud.on .clipw{animation:hudIn calc(.6s * var(--spd)) cubic-bezier(.2,.8,.2,1) both}
+.hud.off .clipw{animation:hudOut calc(.45s * var(--spd)) cubic-bezier(.5,0,.8,.4) both}
+@keyframes hudIn{
+  0%{clip-path:inset(50% 0 50% 0);opacity:0;transform:none}
+  18%{clip-path:inset(49.6% 0 49.6% 0);opacity:1}
+  58%{clip-path:inset(0 0 0 0);transform:none}
+  63%{transform:translateX(-5px) skewX(-4deg);opacity:.55}
+  68%{transform:translateX(4px);opacity:1}
+  73%{transform:translateX(-2px);opacity:.8}
+  78%,100%{clip-path:inset(0 0 0 0);transform:none;opacity:1}
+}
+@keyframes hudOut{
+  0%{clip-path:inset(0 0 0 0);transform:none;opacity:1}
+  10%{transform:translateX(4px) skewX(3deg);opacity:.5}
+  18%{transform:translateX(-3px);opacity:1}
+  24%{transform:none}
+  72%{clip-path:inset(49.6% 0 49.6% 0);opacity:1}
+  100%{clip-path:inset(50% 0 50% 0);opacity:0}
+}
+/* 광선 — 등장 때 가운데에서 좌우로 그어지고, 퇴장 때 다시 점으로 */
+.scanln{position:absolute;left:0;right:0;top:50%;height:2px;margin-top:-1px;background:#ffe2f1;box-shadow:0 0 6px #ff6fb5,0 0 14px #4fe3ff,0 0 26px rgba(79,227,255,.6);transform-origin:50% 50%;pointer-events:none}
+.hud.on .scanln{animation:lineIn calc(.6s * var(--spd)) ease-out both}
+.hud.off .scanln{animation:lineOut calc(.45s * var(--spd)) ease-in both}
+@keyframes lineIn{0%{transform:scaleX(0);opacity:1}18%{transform:scaleX(1);opacity:1}55%{opacity:.9}70%,100%{transform:scaleX(1);opacity:0}}
+@keyframes lineOut{0%,60%{transform:scaleX(1);opacity:0}70%{opacity:1}92%{transform:scaleX(.03);opacity:1}100%{transform:scaleX(0);opacity:0}}
+/* 색 갈라짐(분홍 · 시안 테두리가 어긋나 번쩍) */
+.chroma{position:absolute;inset:0;pointer-events:none;opacity:0}
+.chroma.p{border:1px solid #ff3d9a;transform:translate(-4px,1px)}
+.chroma.c{border:1px solid #4fe3ff;transform:translate(4px,-1px)}
+.hud.on .chroma{animation:chromaIn calc(.6s * var(--spd)) linear both}
+.hud.off .chroma{animation:chromaOut calc(.45s * var(--spd)) linear both}
+@keyframes chromaIn{0%,58%{opacity:0}62%{opacity:1}67%{opacity:0}71%{opacity:.8}76%,100%{opacity:0}}
+@keyframes chromaOut{0%{opacity:0}6%{opacity:1}12%{opacity:0}16%{opacity:.7}22%,100%{opacity:0}}
+/* 내용 — 차례로 켜짐 · 머리글은 한 글자씩 */
+.stg{opacity:0}
+.hud.on .stg{animation:itemIn calc(.28s * var(--spd)) ease-out both;animation-delay:calc((.36s + var(--i) * .06s) * var(--spd))}
+.hud.off .stg{animation:itemOut calc(.12s * var(--spd)) ease-in both}
+@keyframes itemIn{0%{opacity:0;transform:translateX(-10px)}60%{opacity:1}70%{opacity:.4}100%{opacity:1;transform:none}}
+@keyframes itemOut{0%{opacity:1}100%{opacity:0;transform:translateX(6px)}}
+.type{display:inline-block}
+.hud.on .type{animation:typeIn calc(.36s * var(--spd)) steps(11) both;animation-delay:calc(.3s * var(--spd))}
+@keyframes typeIn{0%{clip-path:inset(0 100% 0 0)}100%{clip-path:inset(0 0 0 0)}}
+/* 모서리 꺾쇠 — 마지막에 바깥에서 조여 들어옴 */
+.brk{position:absolute;width:14px;height:14px;border-color:#4fe3ff;border-style:solid;opacity:0;pointer-events:none}
+.brk.tl{left:-6px;top:-6px;border-width:2px 0 0 2px}.brk.tr{right:-6px;top:-6px;border-width:2px 2px 0 0}
+.brk.bl{left:-6px;bottom:-6px;border-width:0 0 2px 2px}.brk.br{right:-6px;bottom:-6px;border-width:0 2px 2px 0}
+.hud.on .brk{animation:brkIn calc(.3s * var(--spd)) cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(.5s * var(--spd))}
+.hud.off .brk{animation:brkOut calc(.12s * var(--spd)) linear both}
+@keyframes brkIn{0%{opacity:0;transform:scale(1.6)}100%{opacity:1;transform:none}}
+@keyframes brkOut{0%{opacity:1}100%{opacity:0}}
+
+.mt{display:grid;grid-template-columns:36px 1fr;align-items:center;gap:10px;padding:8px 10px;background:rgba(18,16,40,.55);border:1px solid rgba(120,200,255,.22);clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+.mt.is-on{background:rgba(255,95,170,.14);border-color:#ff6fb5}
+.mi{width:36px;height:36px;display:grid;place-items:center;border:1px solid rgba(79,227,255,.35)}
+.ctl{display:flex;align-items:center;gap:8px}
+.pbtn{min-width:44px;min-height:44px;display:grid;place-items:center;background:rgba(10,8,26,.8);border:1px solid rgba(79,227,255,.6);color:#4fe3ff;cursor:pointer;font:inherit;font-size:12px;padding:0 8px}
+.pbtn.is-on{border-color:#ffd27a;color:#ffd27a}
+.pbtn:focus-visible,input[type=range]:focus-visible{outline:2px solid #4fe3ff;outline-offset:2px}
+input[type=range]{flex:1;min-width:0;accent-color:#ff6fb5;height:44px;margin:0}
+@media (prefers-reduced-motion: reduce){
+  .holo,.beam,.hint{animation:none}
+  .hud.on .clipw,.hud.on .stg,.hud.on .type,.hud.on .brk{animation:fadeOnly .2s both}
+  .hud.off .clipw{animation:fadeOff .15s both}
+  .hud .scanln,.hud .chroma{animation:none;opacity:0}
+}
+@keyframes fadeOnly{0%{opacity:0}100%{opacity:1}}
+@keyframes fadeOff{0%{opacity:1}100%{opacity:0}}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;font-family:'Noto Sans KR',system-ui,sans-serif;color:#eef6ff;background:#1c1535">
+
+  <!-- 하늘 · 돔 격자(덜 다가온다 — 멀리 있으니까) -->
+  <div style="position:absolute;inset:0;transform-origin:195px 520px;transform:scale({{skyScale}})">
+    <div style="position:absolute;inset:-40px;background:linear-gradient(180deg,#f6b6d6 0%,#f9cde2 44%,#eab0d4 56%,#2f2350 56.2%,#1c1535 100%)"></div>
+    <svg width="390" height="844" viewBox="0 0 390 844" aria-hidden="true" style="position:absolute;inset:0">
+      <g fill="none" stroke="#ffffff" stroke-opacity=".3" stroke-width="1">
+        <path d="M-40 160 Q195 80 430 160"></path><path d="M-40 330 Q195 270 430 330"></path>
+        <path d="M195 0 L195 440"></path><path d="M70 0 Q100 230 40 440"></path><path d="M320 0 Q290 230 350 440"></path>
+      </g>
+    </svg>
+  </div>
+
+  <!-- 무대 · 콘솔(많이 다가온다) -->
+  <div style="position:absolute;inset:0;transform-origin:195px 575px;transform:translateY({{stageY}}px) scale({{stageScale}})">
+    <svg width="390" height="844" viewBox="0 0 390 844" aria-hidden="true" style="position:absolute;inset:0;overflow:visible">
+      <ellipse cx="195" cy="600" rx="230" ry="120" fill="#3a2a66" stroke="#6b55b0" stroke-opacity=".6"></ellipse>
+      <ellipse cx="195" cy="600" rx="150" ry="70" fill="none" stroke="#8a74d6" stroke-opacity=".35"></ellipse>
+      <g fill="#ffd9a0" fill-opacity=".9">
+        <polygon points="195,522 203,528 200,537 190,537 187,528"></polygon>
+        <polygon points="320,570 328,576 325,585 315,585 312,576"></polygon>
+        <polygon points="270,668 278,674 275,683 265,683 262,674"></polygon>
+        <polygon points="120,668 128,674 125,683 115,683 112,674"></polygon>
+        <polygon points="70,570 78,576 75,585 65,585 62,576"></polygon>
+      </g>
+      <path class="beam" d="M168 548 L146 462 L244 462 L222 548 Z" fill="#4fe3ff" fill-opacity=".09"></path>
+      <ellipse cx="195" cy="612" rx="34" ry="11" fill="#120e26" stroke="#4fe3ff" stroke-opacity=".7"></ellipse>
+      <path d="M175 612 L180 580 L210 580 L215 612 Z" fill="#1a1436" stroke="#4fe3ff" stroke-opacity=".5"></path>
+      <ellipse cx="195" cy="612" rx="34" ry="11" fill="none" stroke="#ff6fb5" stroke-opacity=".6">
+        <animate attributeName="rx" values="34;44;34" dur="2.4s" repeatCount="indefinite"></animate>
+        <animate attributeName="stroke-opacity" values=".6;0;.6" dur="2.4s" repeatCount="indefinite"></animate>
+      </ellipse>
+      <g class="holo">
+        <path d="M160 578 L230 578 L222 548 L168 548 Z" fill="#4fe3ff" fill-opacity=".22" stroke="#4fe3ff" stroke-width="1.5"></path>
+        <g stroke="#bff6ff" stroke-opacity=".8" stroke-width="1">
+          <path d="M174 570 H192"></path><path d="M172 562 H206"></path><path d="M176 555 H200"></path>
+        </g>
+        <rect x="166" y="548" width="58" height="1.6" fill="#ffffff" fill-opacity=".7">
+          <animate attributeName="y" values="549;576;549" dur="2.2s" repeatCount="indefinite"></animate>
+        </rect>
+      </g>
+      <circle cx="214" cy="566" r="3" fill="#ff6fb5">
+        <animate attributeName="fill-opacity" values="1;.2;1" dur="1.2s" repeatCount="indefinite"></animate>
+      </circle>
+    </svg>
+  </div>
+
+  <!-- 안내(멀리 있을 때만) -->
+  <div class="hint" style="position:absolute;left:50%;top:704px;display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(10,8,26,.72);border:1px solid rgba(79,227,255,.45);font-size:13px;white-space:nowrap;opacity:{{hintOpacity}};transition:opacity .3s">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4fe3ff" stroke-width="1.6" aria-hidden="true"><path d="M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4"></path></svg>
+    <span>두 손가락으로 벌려 가운데로 다가가 보세요</span>
+  </div>
+
+  <!-- 조작 패널 -->
+  <div class="hud hudbox {{hudCls}}" style="position:absolute;left:24px;right:24px;top:180px;--spd:{{spd}}">
+    <div class="clipw">
+      <div style="position:relative;padding:14px;background:rgba(10,8,26,.8);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(79,227,255,.55);box-shadow:0 0 32px rgba(79,227,255,.2);clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px));display:flex;flex-direction:column;gap:8px">
+        <span class="type" style="font-family:'Chakra Petch',monospace;font-size:11px;font-weight:600;letter-spacing:.18em;color:#4fe3ff;align-self:flex-start">UFO CONTROL</span>
+        <span class="stg" style="--i:0;font-size:16px;font-weight:700">어디로 갈까요?</span>
+        <div class="mt is-on stg" style="--i:1">
+          <span class="mi"><svg width="22" height="22" viewBox="0 0 24 24" fill="#ff8cc6" stroke="#ff6fb5" stroke-width="1.4" aria-hidden="true"><path d="M6.5 17.5h11a3.5 3.5 0 0 0 .4-7A5 5 0 0 0 8.3 9.4 4 4 0 0 0 6.5 17.5Z"></path></svg></span>
+          <span style="font-size:14px;font-weight:700">버츄얼 스페이스</span>
+        </div>
+        <div class="mt stg" style="--i:2">
+          <span class="mi"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><ellipse cx="12" cy="12" rx="10.5" ry="3.4" transform="rotate(-18 12 12)" stroke="#e8c58a" stroke-width="1.5"></ellipse><circle cx="12" cy="12" r="5.6" fill="#d9a85e" stroke="#f3d39b" stroke-width="1"></circle><path d="M2.3 15.1C5 15.6 10 14.6 15 12.9s7-3.4 6.7-4.6" stroke="#e8c58a" stroke-width="1.5"></path></svg></span>
+          <span style="font-size:14px;font-weight:700">초행성X로의 여행</span>
+        </div>
+        <div class="mt stg" style="--i:3">
+          <span class="mi"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#2a6fd1"></circle><path d="M7.2 5.6c1.6-.6 3.1-.3 3.6.8.4 1-.9 1.4-.7 2.5.2 1 1.6 1 1.5 2.3-.1 1.2-1.6 1.2-2.3 2.4-.6 1-.1 2.6-1 3-.9.3-1.6-1-2-2.4-.4-1.5-1.6-2-1.8-3.4-.2-1.6.9-4.4 2.7-5.2Z" fill="#5fd08a"></path><path d="M14.4 4.4c1.5.2 3.4 1.4 4.4 3-.9.3-1.8-.3-2.6.3-.8.6-.2 1.8-1.2 2.1-1 .3-1.6-.8-1.4-2 .2-1.3-.6-2.5.8-3.4Z" fill="#5fd08a"></path></svg></span>
+          <span style="font-size:14px;font-weight:700">지구</span>
+        </div>
+        <div style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px)"></div>
+      </div>
+      <span class="chroma p"></span><span class="chroma c"></span>
+    </div>
+    <span class="brk tl"></span><span class="brk tr"></span><span class="brk bl"></span><span class="brk br"></span>
+    <span class="scanln"></span>
+  </div>
+
+  <!-- 확인용 조작(실제 화면엔 없음) -->
+  <div style="position:absolute;left:12px;right:12px;bottom:12px;padding:8px 10px;background:rgba(5,4,12,.85);border:1px dashed rgba(255,210,122,.6);display:flex;flex-direction:column;gap:4px">
+    <div style="display:flex;justify-content:space-between;font-family:'Chakra Petch',monospace;font-size:11px;color:#ffd27a;letter-spacing:.06em">
+      <span>확인용 — 실제 화면엔 없음</span><span>r {{rText}} · 패널 {{hudText}}</span>
+    </div>
+    <div class="ctl">
+      <button type="button" class="pbtn" onClick="{{toggle}}" aria-label="{{playLabel}}">
+        <sc-if value="{{playing}}" hint-placeholder-val="{{ true }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14"></rect><rect x="14" y="5" width="4" height="14"></rect></svg>
+        </sc-if>
+        <sc-if value="{{paused}}" hint-placeholder-val="{{ false }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5v14l12-7z"></path></svg>
+        </sc-if>
+      </button>
+      <button type="button" class="pbtn {{slowCls}}" onClick="{{toggleSlow}}" aria-pressed="{{slow}}">느리게 ×4</button>
+      <label for="rng" style="font-size:12px;color:#a9bad0;white-space:nowrap">거리</label>
+      <input id="rng" type="range" min="0" max="40" step="1" value="{{rInt}}" onChange="{{scrub}}">
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { r: 0.4, hud: false, ever: false, playing: true, slow: false }; this.t0 = Date.now(); this.timer = null; }
+  componentDidMount() { this.timer = setInterval(() => this.step(), 33); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  setR(r) {
+    const hud = r < 0.12 ? true : r > 0.18 ? false : this.state.hud;   // 나타남 0.12 · 사라짐 0.18
+    this.setState({ r, hud, ever: this.state.ever || hud });
+  }
+  step() {
+    if (!this.state.playing) return;
+    // 한 바퀴: 다가가기 3초 → 머물기 → 물러나기 1.5초 → 쉬기(느리게일 땐 머무는 시간을 늘려 등장 · 퇴장이 끝까지 보이게)
+    const hold = this.state.slow ? 4 : 2, rest = this.state.slow ? 2.5 : 0.8;
+    const T = 3 + hold + 1.5 + rest;
+    const t = ((Date.now() - this.t0) / 1000) % T;
+    const ease = (x) => x * x * (3 - 2 * x);
+    let r;
+    if (t < 3) r = 0.4 * (1 - ease(t / 3));
+    else if (t < 3 + hold) r = 0;
+    else if (t < 4.5 + hold) r = 0.4 * ease((t - 3 - hold) / 1.5);
+    else r = 0.4;
+    this.setR(r);
+  }
+  renderVals() {
+    const { r, hud, ever, playing, slow } = this.state;
+    const k = 1 - r / 0.4;
+    return {
+      skyScale: (1 + 0.25 * k).toFixed(3),
+      stageScale: (1 + 2.4 * k).toFixed(3),
+      stageY: (-150 * k).toFixed(1),
+      hintOpacity: Math.max(0, 1 - k * 2.5).toFixed(2),
+      hudCls: !ever ? 'idle' : hud ? 'on' : 'off',
+      spd: slow ? 4 : 1, slow, slowCls: slow ? 'is-on' : '',
+      rText: r.toFixed(2), hudText: hud ? 'ON' : 'OFF', rInt: Math.round(r * 100),
+      playing, paused: !playing, playLabel: playing ? '일시정지' : '재생',
+      toggle: () => { if (!this.state.playing) this.t0 = Date.now(); this.setState({ playing: !this.state.playing }); },
+      toggleSlow: () => { this.t0 = Date.now(); this.setState({ slow: !this.state.slow, playing: true }); },
+      scrub: (e) => { this.setState({ playing: false }); this.setR(Number(e.target.value) / 100); },
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>워프 기어 패널</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=Noto+Sans+KR:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#07060f}
+.gbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:52px;padding:6px 0;background:rgba(18,16,40,.6);border:1px solid rgba(120,200,255,.25);color:#eef6ff;font:inherit;cursor:pointer;clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px));-webkit-tap-highlight-color:transparent}
+.gbtn:hover{background:rgba(30,26,64,.75)}
+.gbtn:focus-visible{outline:2px solid #4fe3ff;outline-offset:2px}
+.gbtn .g{font-family:'Chakra Petch',monospace;font-size:18px;font-weight:700;line-height:1}
+.gbtn .v{font-family:'Chakra Petch',monospace;font-size:11px;color:#a9bad0}
+.gbtn.is-on{background:rgba(79,227,255,.16);border-color:#4fe3ff;box-shadow:inset 0 0 14px rgba(79,227,255,.25)}
+.gbtn.is-on .g{color:#4fe3ff}
+.gbtn.red{border-color:rgba(255,77,109,.45);background:rgba(60,10,26,.5)}
+.gbtn.red .v{color:#ff9fb1}
+.gbtn.red.is-on{background:rgba(255,61,90,.2);border-color:#ff3d5a;box-shadow:inset 0 0 16px rgba(255,61,90,.35)}
+.gbtn.red.is-on .g{color:#ff6d86}
+/* 좌석벨트 표시등 — 평소엔 꺼진 채 보이고, 떨림이 있는 동안 켜지고, 떨림이 끝나면 잠깐 깜빡이다 꺼진다 */
+/* 좌석벨트 표시등 — 실제 여객기 천장 표시등(알약 모양 어두운 렌즈 · 호박색 「두 손이 버클을 채우는」 그림 · 초록 삽입 화살표 ◀)을 따라 그렸다.
+   테두리만 패널에 맞춰 남색 금속 + 옅은 시안 테. 꺼짐 = 그림이 렌즈에 거의 묻힘 · 켜짐 = 호박색 발광 · 깜빡임 = 0.5초 켜짐 / 0.5초 꺼짐 */
+.belt{position:absolute;left:0;top:2px;width:72px;height:30px;box-sizing:border-box;padding:3px;border-radius:15px;background:linear-gradient(180deg,#3b4250,#1d212b);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(79,227,255,.25),0 0 0 1px rgba(79,227,255,.22),0 2px 4px rgba(0,0,0,.6)}
+.belt .lens{position:relative;display:block;width:100%;height:100%;border-radius:12px;background:linear-gradient(180deg,#24262d,#191a20);box-shadow:inset 0 1px 3px rgba(0,0,0,.8);overflow:hidden}
+.belt .pic{position:absolute;inset:0;display:grid;place-items:center}
+.belt .pic svg{width:62px;height:21px}
+.belt .off{color:#33353d;--g:#33353d}
+.belt .lit{opacity:0;color:#ffb21e;--g:#39e07a;filter:drop-shadow(0 0 1.5px rgba(255,190,60,.9)) drop-shadow(0 0 4px rgba(255,160,30,.45))}
+.belt.on .lit{opacity:1}
+.belt.blink .lit{animation:beltBlink 1s steps(1,end) infinite}
+@keyframes beltBlink{0%,100%{opacity:1}50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.belt.blink .lit{animation:none;opacity:1}}
+.gbtn.tgt{border-style:dashed;border-color:#ffd27a;animation:tgtBlink .8s ease-in-out infinite}
+@keyframes tgtBlink{0%,100%{opacity:1}50%{opacity:.55}}
+@media (prefers-reduced-motion: reduce){.gbtn.tgt{animation:none}}
+</style>
+</helmet>
+<div style="position:relative;width:342px;box-sizing:border-box;padding:14px 14px 12px;font-family:'Noto Sans KR',system-ui,sans-serif;color:#eef6ff;background:rgba(10,8,26,.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid {{frameColor}};box-shadow:0 0 28px {{frameGlow}};clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px));display:flex;flex-direction:column;gap:10px;transform:translate({{sx}}px,{{sy}}px)">
+  <div style="position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px)"></div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-family:'Chakra Petch',monospace;font-size:11px;font-weight:600;letter-spacing:.18em;color:#ff8cc6">WARP DRIVE</span>
+      <span style="font-size:16px;font-weight:700">성간 이동 기어</span>
+    </div>
+    <span style="font-family:'Chakra Petch',monospace;font-size:11px;letter-spacing:.1em;color:{{stateColor}};border:1px solid {{stateColor}};padding:3px 7px">{{stateText}}</span>
+  </div>
+
+  <!-- 속도계 -->
+  <div style="position:relative;height:166px;display:flex;justify-content:center">
+    <div class="belt {{beltCls}}" role="status" aria-label="{{beltAria}}">
+      <span class="lens">
+        <span class="pic off"><svg viewBox="0 0 120 40" aria-hidden="true">
+          <defs>
+            <g id="beltHand">
+              <path d="M12 4 L25 1.5 Q29 1 31 4 L38 12 Q41 15 39.5 19 L38.5 31 Q37.5 35.5 33 34.5 L26 32.5 Q22 31.5 21 27 L19 18 Q15.5 11.5 12 4 Z"></path>
+              <path d="M35 11.5 L44 12.5 Q46.5 13.5 45 16.5 L38 17.5 Z"></path>
+            </g>
+            <g id="beltFing" fill="none" stroke-linecap="round"><path d="M30 33.5 L31 27.5 M34 34.5 L35 28 M37.5 33 L38 27"></path></g>
+            <g id="beltPic">
+              <g fill="currentColor">
+                <rect x="3" y="18" width="32" height="1.8"></rect><rect x="3" y="21" width="32" height="1.8"></rect><rect x="3" y="24" width="32" height="1.8"></rect><rect x="3" y="27" width="32" height="1.8"></rect>
+                <rect x="37" y="15" width="17" height="15" rx="2"></rect>
+                <path fill-rule="evenodd" d="M70 15h14v14H70z M72.6 17.6v8.8h8.8v-8.8z M75 20h4v4h-4z"></path>
+                <rect x="96" y="14" width="22" height="1.8"></rect><rect x="96" y="17" width="22" height="1.8"></rect><rect x="96" y="20" width="22" height="1.8"></rect><rect x="96" y="23" width="22" height="1.8"></rect>
+              </g>
+              <g fill="currentColor" stroke="#1d1e24" stroke-width="1.6" stroke-linejoin="round"><use href="#beltHand"></use></g>
+              <g stroke="#1d1e24" stroke-width="1.2"><use href="#beltFing"></use></g>
+              <g transform="translate(126 0) scale(-1 1)">
+                <g fill="currentColor" stroke="#1d1e24" stroke-width="1.6" stroke-linejoin="round"><use href="#beltHand"></use></g>
+                <g stroke="#1d1e24" stroke-width="1.2"><use href="#beltFing"></use></g>
+              </g>
+              <path d="M66 15.5 L66 28.5 L58.5 22 Z" fill="var(--g)"></path>
+            </g>
+          </defs>
+          <use href="#beltPic"></use>
+        </svg></span>
+        <span class="pic lit"><svg viewBox="0 0 120 40" aria-hidden="true"><use href="#beltPic"></use></svg></span>
+      </span>
+    </div>
+    <svg width="236" height="122" viewBox="0 0 236 122" aria-hidden="true" style="position:absolute;top:0">
+      <path d="M18 112 A100 100 0 0 1 218 112" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="10"></path>
+      <path d="M207.1 66.6 A100 100 0 0 1 218 112" fill="none" stroke="rgba(255,61,90,.35)" stroke-width="10"></path>
+      <path d="M18 112 A100 100 0 0 1 218 112" fill="none" stroke="{{arcColor}}" stroke-width="10" pathLength="100" stroke-dasharray="{{arcDash}}" style="filter:drop-shadow(0 0 4px {{arcColor}})"></path>
+      <g stroke="#a9bad0" stroke-width="1.5">
+        <path d="M18 112h10"></path><path d="M47 41l7 7"></path><path d="M118 12v10"></path><path d="M189 41l-7 7"></path><path d="M218 112h-10"></path>
+      </g>
+      <text x="206" y="48" fill="#ff6d86" font-family="Chakra Petch, monospace" font-size="9" letter-spacing="1">RED</text>
+    </svg>
+    <div style="position:absolute;left:50%;top:28px;width:3px;height:84px;margin-left:-1.5px;background:#ff6fb5;box-shadow:0 0 8px #ff6fb5;transform-origin:50% 100%;transform:rotate({{needleDeg}}deg)"></div>
+    <div style="position:absolute;left:50%;top:105px;width:14px;height:14px;margin-left:-7px;background:#0a081a;border:2px solid #ff6fb5;border-radius:50%"></div>
+    <div style="position:absolute;top:124px;display:flex;flex-direction:column;align-items:center">
+      <span style="font-family:'Chakra Petch',monospace;font-size:30px;font-weight:700;line-height:1;color:{{readColor}}">{{betaText}}</span>
+      <span style="font-size:11px;color:#a9bad0;margin-top:3px">광속 비율</span>
+    </div>
+  </div>
+
+  <!-- 기어 -->
+  <div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px">
+    <span style="grid-column:5 / span 2;font-family:'Chakra Petch',monospace;font-size:10px;letter-spacing:.14em;color:#ff6d86;text-align:center;border-top:2px solid #ff3d5a;padding-top:3px">REDZONE</span>
+    <sc-for list="{{gears}}" as="g" hint-placeholder-count="6">
+      <button type="button" class="gbtn {{g.cls}}" onClick="{{g.shift}}" aria-pressed="{{g.on}}" aria-label="{{g.aria}}">
+        <span class="g">{{g.label}}</span>
+        <span class="v">{{g.val}}</span>
+      </button>
+    </sc-for>
+  </div>
+
+  <p style="margin:0;font-size:12px;color:#a9bad0;line-height:1.4">기어는 한 단씩 차례로 올라가고 내려가요(N → 3 이면 1 · 2 를 거쳐서). 단마다 처음엔 세게, 갈수록 부드럽게. 레드존(4 · 5단)은 천천히 올라가며 점점 떨리고, 거기서 내리면 급제동해요. 멈춘 뒤에도 잔진동이 잠깐 남아요. N 이면 멈추고 패널이 닫혀요.</p>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startGear":{"editor":null},"onBeta":{"editor":null},"onStop":{"editor":null},"$preview":{"width":342,"height":380}}'>
+// 속도 모형(시안 — 실제 구현에서도 같은 식을 쓴다)
+//   목표로 다가가는 지수 접근: beta += (목표 − beta) · (1 − e^(−dt/τ)) → 처음 세게, 갈수록 완만(로그 모양).
+//   (자세한 식은 tick() 위 주석) 보통(≤ 3단) τ 0.3초 · 레드존 가속(4 · 5단으로 올릴 때) τ 1.6초 + 서서히 커지는 약한 떨림 · 레드존(β ≥ 0.85)에서 내릴 때 τ 0.16초 급제동 + 센 떨림.
+//   어느 쪽이든 끝나면 잔진동이 남았다가 잦아든다. 떨림에 맞춰 폰 진동(안드로이드).
+class Component extends DCLogic {
+  // 단계 넘기: N → 3 이면 1 → 2 → 3 을 차례로 거친다(걸리는 시간 = 단계 수에 비례). stage = 지금 맞추러 가는 단
+  constructor(p) {
+    super(p);
+    const g = p.startGear ?? 3, start = p.startGear != null ? 0 : g;
+    this.state = { gear: g, stage: start, beta: [0, .3, .6, .8, .9, .99][start], mode: 'idle', sx: 0, sy: 0 };
+    this.timer = null; this.last = 0; this.amp = 0; this.vibAcc = 0;
+  }
+  componentDidMount() { if (this.props.startGear != null) this.shiftTo(this.props.startGear); }
+  componentWillUnmount() { clearInterval(this.timer); try { navigator.vibrate && navigator.vibrate(0); } catch (e) {} const ac = this.ac; if (ac) setTimeout(() => { try { ac.close(); } catch (e) {} }, 1800); }   // 마지막 「띠」이 끝난 뒤 닫는다
+  // 기내 차임 「띵」 — 음원 파일 없이 Web Audio 로 합성(맑은 종소리: 기음 + 약한 배음, 짧게 올라 1.5초에 걸쳐 잦아듦)
+  ding() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!this.ac) this.ac = new AC();
+      const ac = this.ac;
+      if (ac.state === 'suspended') ac.resume();
+      const t = ac.currentTime, out = ac.createGain();
+      out.gain.value = 0.22; out.connect(ac.destination);
+      [[1174.7, 1], [2349.3, 0.22], [3524, 0.07]].forEach(([f, g], k) => {
+        const o = ac.createOscillator(), e = ac.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        e.gain.setValueAtTime(0.0001, t);
+        e.gain.exponentialRampToValueAtTime(g, t + 0.006);
+        e.gain.exponentialRampToValueAtTime(0.0001, t + (k ? 0.7 : 1.5));
+        o.connect(e); e.connect(out); o.start(t); o.stop(t + 1.6);
+      });
+    } catch (e) { /* 소리를 못 내는 환경 — 표시등만 */ }
+  }
+  shiftTo(i) {
+    if (this.ac && this.ac.state === 'suspended') this.ac.resume();   // 누른 순간에 소리 권한을 깨워 둔다
+    this.setState({ gear: i, mode: i === this.state.gear && this.state.mode === 'idle' ? 'idle' : 'go' });
+    if (!this.timer) { this.last = Date.now(); this.timer = setInterval(() => this.tick(), 33); }
+  }
+  // 움직임(시안 — 실제 구현도 같은 식):
+  //   중간 단 = 멈칫하지 않고 일정한 빠르기로 통과(한 단 폭 ÷ τ 의 속도) → 걸리는 시간이 단 수에 비례
+  //   목표 단 = 지수 접근 beta += (목표 − beta)(1 − e^(−dt/τ)) — 들어설 때 속도가 중간 단과 같아 이음매가 없고, 끝에서만 완만히 멈춘다
+  //   τ: 보통 0.3초 · 레드존(4 · 5단)으로 올라갈 때 1.6초 · 레드존(β ≥ 0.85)에서 내려갈 때 0.16초
+  tick() {
+    const V = [0, .3, .6, .8, .9, .99];
+    const now = Date.now(), dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
+    const s = this.state, goal = V[s.gear];
+    let b = s.beta, mode = s.mode, stage = s.stage;
+    if (mode !== 'idle') {
+      const up = goal > b;
+      // 다음에 지날 단(가는 방향으로 바로 다음 경계)
+      let next = s.gear;
+      if (up) { for (let k = 0; k <= s.gear; k++) if (V[k] > b + 1e-6) { next = k; break; } }
+      else { for (let k = 5; k >= s.gear; k--) if (V[k] < b - 1e-6) { next = k; break; } }
+      const prev = up ? next - 1 : next + 1;
+      const red = up ? next >= 4 : b >= 0.85;
+      mode = up ? (red ? 'redAccel' : 'accel') : (red ? 'redDecel' : 'decel');
+      const tau = up ? (red ? 1.6 : 0.3) : (red ? 0.16 : 0.3);
+      if (next === s.gear) {
+        b += (goal - b) * (1 - Math.exp(-dt / tau));
+        if (Math.abs(goal - b) < 0.003) { b = goal; mode = 'idle'; }
+      } else {
+        const rate = Math.abs(V[next] - V[prev]) / tau;
+        b = up ? Math.min(goal, b + rate * dt) : Math.max(goal, b - rate * dt);
+      }
+      stage = next;
+    }
+    const left = Math.abs(goal - b);
+    // 떨림 세기(px) — 목표 세기를 향해 부드럽게 따라간다(포락선):
+    //   레드존 가속 = 목표 1.8, 시작은 서서히(τ 0.7초) · 급제동 = 목표 최대 5(남은 감속량 비례), 바로(τ 0.06초)
+    //   끝나면 목표 0, 잔진동이 서서히 잦아듦(τ 0.9초)
+    let want = 0, att = 0.9;
+    if (mode === 'redAccel') { want = 1.8; att = 0.7; }
+    if (mode === 'redDecel') { want = 1.5 + 3.5 * Math.min(1, left / 0.3); att = 0.06; }
+    this.amp += (want - this.amp) * (1 - Math.exp(-dt / att));
+    if (want === 0 && this.amp < 0.05) this.amp = 0;
+    const a = this.amp, sx = a ? (Math.random() - 0.5) * 2 * a : 0, sy = a ? (Math.random() - 0.5) * 1.2 * a : 0;
+    // 폰 진동 — 세기를 직접 못 정하니 0.12초마다 짧게, 떨림이 셀수록 길게 울린다(안드로이드만 · iOS 사파리는 진동 API 가 없다)
+    this.vibAcc += dt;
+    if (a > 0.3 && this.vibAcc > 0.12) { this.vibAcc = 0; try { navigator.vibrate && navigator.vibrate(Math.round(4 + a * 6)); } catch (e) {} }
+    // 좌석벨트 표시등: 떨림이 있으면 켜짐 → 떨림이 다 잦아들면 1.6초 깜빡인 뒤 꺼짐
+    //   켜질 때 · 꺼질 때 「띵」(실제 기내도 표시등이 바뀔 때마다 한 번 울린다)
+    let belt = s.belt || 'off';
+    if (this.amp > 0) { if (belt === 'off') this.ding(); belt = 'on'; this.beltUntil = 0; }
+    else if (belt === 'on') { belt = 'blink'; this.beltUntil = now + 1600; }
+    else if (belt === 'blink' && now >= this.beltUntil) { belt = 'off'; this.ding(); }
+    const done = mode === 'idle' && this.amp === 0 && belt !== 'blink';   // 속도도 맞고 잔진동도 다 잦아들고 표시등도 꺼짐
+    if (done) { clearInterval(this.timer); this.timer = null; }
+    this.setState({ beta: b, mode, stage, sx, sy, belt });
+    if (this.props.onBeta) this.props.onBeta(b, sx, sy);
+    if (done && s.gear === 0 && this.props.onStop) this.props.onStop();
+  }
+  renderVals() {
+    const V = [0, .3, .6, .8, .9, .99];
+    const { gear, stage, beta, mode, sx, sy } = this.state;
+    const red = beta >= 0.85, gl = (k) => (k === 0 ? 'N' : String(k));
+    const ST = { go: ['ACCEL', '#4fe3ff'], accel: ['ACCEL', '#4fe3ff'], decel: ['DECEL', '#4fe3ff'], redAccel: ['REDLINE', '#ff6d86'], redDecel: ['BRAKE!', '#ff6d86'], idle: [gear === 0 ? 'IDLE' : red ? 'CRUISE · RED' : 'CRUISE', red ? '#ff6d86' : '#ffd27a'] }[mode];
+    const moving = mode !== 'idle';
+    return {
+      gears: V.map((v, i) => ({
+        label: gl(i), val: i === 0 ? '0' : '.' + String(Math.round(v * 100)).padStart(2, '0'),
+        on: i === gear,
+        // 지금 맞추는 단 = 불 켜짐 · 고른 단(아직 도착 전) = 점선 깜빡임
+        cls: (i >= 4 ? 'red ' : '') + ((moving ? i === stage : i === gear) ? 'is-on ' : '') + (moving && i === gear && i !== stage ? 'tgt' : ''),
+        shift: () => this.shiftTo(i),
+        aria: i === 0 ? '중립 — 멈춤' : i + '단 — 광속의 ' + Math.round(v * 100) + '%' + (i >= 4 ? ' (레드존)' : ''),
+      })),
+      betaText: beta.toFixed(2) + 'c',
+      needleDeg: (-90 + beta * 180).toFixed(1),
+      arcDash: (beta * 100).toFixed(1) + ' 100',
+      arcColor: red ? '#ff3d5a' : '#4fe3ff',
+      readColor: red ? '#ff8a9c' : '#eef6ff',
+      frameColor: red ? 'rgba(255,61,90,.7)' : 'rgba(79,227,255,.55)',
+      frameGlow: red ? 'rgba(255,61,90,.3)' : 'rgba(79,227,255,.2)',
+      beltCls: this.state.belt === 'on' ? 'on' : this.state.belt === 'blink' ? 'blink' : '',
+      beltAria: this.state.belt === 'off' || !this.state.belt ? '좌석벨트 표시등 꺼짐' : '좌석벨트를 매 주세요',
+      stateText: moving && stage !== gear ? ST[0] + ' ' + gl(stage) + '›' + gl(gear) : ST[0], stateColor: ST[1],
+      sx: sx.toFixed(1), sy: sy.toFixed(1),
+    };
+  }
+}
+</script>
+</body>
+</html>
