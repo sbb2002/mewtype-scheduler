@@ -75,10 +75,31 @@ const SKY_FILES = {
   night: ["../assets/bg/sky-night.webp", "../assets/bg/clouds-night.webp"],
 };
 const ASTRO_MS = T_SPEED > 1 ? 0 : 1000;   // 해 · 달 위치 다시 계산 간격(실제 속도면 1초 — 해는 1분에 0.25°쯤만 움직인다. 배속 확인 중엔 매 프레임)
+// World kind is fixed until navigation. Specialize away the other two materials
+// and their texture/BRDF paths instead of carrying uniform branches per pixel.
+const GROUND_SHADER = groundShader.replace("uniform float uGroundKind, uGroundAlt,",
+  `const float uGroundKind = ${GROUND.index}.0, uGroundAlt = ${GROUND.altitude}.0;\nuniform float`);
 
 const VS = `#version 300 es
+precision highp float;
 in vec2 aPos;
-void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+uniform sampler2D uCloud, uCloud2;
+uniform vec3 uSunDir, uMoonDir;
+uniform float uTime, uMix, uCloudTest;
+flat out vec2 vSourceClear;
+float sourceClear(vec3 dir) {
+  if (uCloudTest >= 0.0) return 1.0 - uCloudTest;
+  vec2 uv = vec2(atan(dir.x, dir.z) / 6.2831853 * 3.0 + uTime / 1280.0,
+    clamp((70.0 * .01745329 - asin(clamp(dir.y,-1.0,1.0))) / (82.0 * .01745329), .002, .998));
+  float a = textureLod(uCloud, uv, 0.0).a;
+  if (uMix > 0.0) a = mix(a, textureLod(uCloud2, uv, 0.0).a, uMix);
+  return 1.0 - a;
+}
+void main() {
+  gl_Position = vec4(aPos, 0.0, 1.0);
+  // Only three vertices sample each source's cloud, independently of the view.
+  vSourceClear = vec2(sourceClear(uSunDir), sourceClear(uMoonDir));
+}`;
 
 const FS = `#version 300 es
 precision highp float;
@@ -105,6 +126,8 @@ uniform vec3 uSunTrans; uniform vec4 uOptics; uniform float uCloudTest;
 uniform vec4 uLunar;   // 달 가시성, 원반 불투명도, 빛 번짐 지수, 빛 번짐 세기
 uniform float uMoonLight, uStarGain, uEarthshine;
 uniform vec2 uTele; // background exposure, solar exposure
+uniform float uMoonCue;
+flat in vec2 vSourceClear;
 uniform mat3 uEqM;
 uniform vec3 uSkyBase; uniform float uGridA, uReflA;
 uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
@@ -141,31 +164,16 @@ float angularBloom(float facing, float sigma) {
   return exp(-max(2.0 * (1.0 - facing), 0.0) / (2.0 * sigma * sigma));
 }
 float cloudAtSun() {
-  if (uCloudTest >= 0.0) return uCloudTest;
-  float el = asin(clamp(uSunDir.y, -1.0, 1.0));
-  vec2 uv = vec2(atan(uSunDir.x, uSunDir.z) / TAU * 3.0 + uTime / 1280.0,
-    clamp((70.0 * D - el) / (82.0 * D), 0.002, 0.998));
-  float a = textureLod(uCloud, uv, 0.0).a;
-  if (uMix > 0.0) a = mix(a, textureLod(uCloud2, uv, 0.0).a, uMix);
-  return a;
+  return 1.0 - vSourceClear.x;
 }
-${groundShader}
+${GROUND_SHADER}
 
 // Lens layer after foreground, before HUD/dither. Occlusion is sampled at the source.
 vec3 solarOptics(vec3 col, vec2 p) {
   if (uFlare.z <= 0.0 || uOptics.w < 0.5) return col;
   vec2 source = uFlare.xy, offset = source - uC;
   float clear = 1.0 - cloudAtSun();
-  float pixelWidth = 1.0 / (uF * uDpr);
-  float sourceVisible = 0.0;
-  // Disc-area quadrature shares exactly the same terrain mask as visible pixels.
-  for (int j = 0; j < 9; j++) {
-    float x = float(j % 3 - 1) * uSunR * .65, y = float(j / 3 - 1) * uSunR * .65;
-    vec3 right = normalize(cross(vec3(0,1,0), uSunDir) + vec3(.00001,0,0));
-    vec3 up = cross(uSunDir,right);
-    sourceVisible += 1.0 - groundGeometry(normalize(uSunDir + x * right + y * up), pixelWidth).x;
-  }
-  float gain = uFlare.z * clear * clear * sourceVisible / 9.0;
+  float gain = uFlare.z * clear * clear * uGroundSourceVisibility.x;
   float view = uFlare.w;
   vec2 v = (p - source) / uF;
   float rho = length(v), pixel = 1.0 / (uF * uDpr);
@@ -277,7 +285,9 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx) {
   vec4 m = moon(mt, mf, discPx.y);
   float mvis = above * uLunar.x * (1.0 - clamp(cloud / max(uCldA, 0.001), 0.0, 1.0));
   c = mix(c, c * 0.62, moonDisc(mt, mf, discPx.y) * uEarthshine * mvis);   // 어두운 면 = 그 자리 하늘색을 살짝 어둡게(고정색이 아니라 하늘에 맞춘다) — 밤에만
-  c = mix(c, m.rgb, m.a * uLunar.y * mvis);
+  // Contrast only inside the existing disc coverage. No extra angular extent;
+  // fades out when the physical disc already resolves in the telephoto view.
+  c = mix(c, m.rgb * (1.0 + 1.1 * uMoonCue), m.a * uLunar.y * mvis);
   c += uMoonCol * angularBloom(md, uLunar.z * D) * uLunar.w * mvis;
   // Broad halo remains subtle at high altitude; near the horizon its gain falls to 0.003.
   c += uMoonCol * angularBloom(md, uLunar.z * 3.0 * D) * uLunar.w * 0.32 * mvis;
@@ -387,9 +397,21 @@ void main() {
     length(discTangent(d, uMoonDir, uMoonShape, uMoonR)));
   vec2 discPx = max(fwidth(discDistance), vec2(1e-6));
   float groundPixel = 1.0 / (uF * uDpr);
+#if GROUND_OUTDOOR
+  vec3 col = vec3(0);
+  if (floorK < 1.0) {
+    vec4 geometry = groundGeometry(d, groundPixel);
+    if (geometry.x >= 1.0) col = groundSurface(d, geometry, groundPixel);
+    else {
+      col = sky(d, groundPixel, discPx);
+      if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
+    }
+  }
+#else
   vec4 geometry = groundGeometry(d, groundPixel);
-  vec3 col = sky(d, groundPixel, discPx);   // 기기 픽셀 하나의 각도
+  vec3 col = sky(d, groundPixel, discPx);
   if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
+#endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
   float dLat = min(min(abs(lat - 18.0 * D), abs(lat - 40.0 * D)), abs(lat - 62.0 * D));
@@ -655,7 +677,7 @@ export function createDomeGL(host, isPaused) {
   const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: "low-power" });
   if (!gl) return null;
 
-  let prog = null, U = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
+  let prog = null, U = {}, programs = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
   let W = 0, H = 0, dpr = 1, focal = 1, focalOut = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let zoomR = 0, zoomT = 0, zoomPath = 0, tele = 1, drawnTele = NaN, drawnR = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
@@ -692,18 +714,42 @@ export function createDomeGL(host, isPaused) {
 
 
   function init() {
-    prog = gl.createProgram();
-    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
-    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FS));
-    gl.bindAttribLocation(prog, 0, "aPos");
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
+    programs = {};
+    makeProgram(false); makeProgram(true);
+    prog = programs[outdoor ? "outdoor" : "indoor"].program;
+    U = programs[outdoor ? "outdoor" : "indoor"].uniforms;
     gl.useProgram(prog);
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    moonTex = null;
+    if (releaseGround) releaseGround();
+    releaseGround = createGroundTextures(gl, GROUND);
+    sets = {}; slotA = slotB = null; astro = null;
+    loadSet("day");
+    theme = null;
+  }
+
+  function makeProgram(outside) {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VS));
+    // Each program carries only its ground material. Switching copies uniforms
+    // once per view change, never per frame; textures and vertex storage are shared.
+    let fragment = FS.replace("if (uOut < .5) return groundSurfaceIndoor(ray, geometry, pixel);",
+      outside ? "" : "return groundSurfaceIndoor(ray, geometry, pixel);");
+    fragment = fragment.replace("precision highp float;", `precision highp float;\n#define GROUND_OUTDOOR ${outside ? 1 : 0}`);
+    // Keep the indoor arithmetic identical to the original uniform path;
+    // constant-folded sphere geometry can move a final 8-bit rounding boundary.
+    if (!outside) fragment = fragment.replace(
+      `const float uGroundKind = ${GROUND.index}.0, uGroundAlt = ${GROUND.altitude}.0;`,
+      "uniform float uGroundKind, uGroundAlt;");
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, fragment));
+    gl.bindAttribLocation(prog, 0, "aPos");
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || "link");
+    gl.useProgram(prog);
     const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
     U = {};
     for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(prog, i).name; U[name] = gl.getUniformLocation(prog, name); }
@@ -711,15 +757,32 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uMix, 0); gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0);
     gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
-    gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0); moonTex = null;
-    if (releaseGround) releaseGround();
-    releaseGround = createGroundTextures(gl, GROUND);
+    gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
+    gl.uniform1i(U.uGroundMotion, 8);
+    gl.uniform1i(U.uGroundIndoorTile, 10);
+    if (!outside) { gl.uniform1f(U.uGroundKind, GROUND.index); gl.uniform1f(U.uGroundAlt, GROUND.altitude); }
     gl.uniform1f(U.uGroundAlbedoOn, 0);
-    gl.uniform1f(U.uGroundKind, GROUND.index); gl.uniform1f(U.uGroundAlt, GROUND.altitude);
-    sets = {}; slotA = slotB = null; astro = null;
-    loadSet("day");
-    theme = null;
+    programs[outside ? "outdoor" : "indoor"] = { program: prog, uniforms: U };
+  }
+
+  function useViewProgram() {
+    const target = programs[outdoor ? "outdoor" : "indoor"];
+    if (target.program === prog) return;
+    gl.useProgram(target.program);
+    for (let i = 0; i < gl.getProgramParameter(target.program, gl.ACTIVE_UNIFORMS); i++) {
+      const { name, type } = gl.getActiveUniform(target.program, i);
+      if (U[name] == null) continue;
+      const value = gl.getUniform(prog, U[name]), location = target.uniforms[name];
+      if (type === gl.FLOAT) gl.uniform1f(location, value);
+      else if (type === gl.FLOAT_VEC2) gl.uniform2fv(location, value);
+      else if (type === gl.FLOAT_VEC3) gl.uniform3fv(location, value);
+      else if (type === gl.FLOAT_VEC4) gl.uniform4fv(location, value);
+      else if (type === gl.FLOAT_MAT3) gl.uniformMatrix3fv(location, false, value);
+      else if (type === gl.SAMPLER_2D || type === gl.INT) gl.uniform1i(location, value);
+    }
+    prog = target.program; U = target.uniforms;
+    slotA = slotB = null;
   }
 
   /** 달 앞면 사진(바깥 보기에서 처음 쓸 때 한 번) — 4번 칸. 못 받으면 무늬 없는 달로 그린다 */
@@ -755,7 +818,7 @@ export function createDomeGL(host, isPaused) {
       img.decoding = "async";
       img.onload = () => {
         if (gl.isContextLost()) return;
-        gl.activeTexture(gl.TEXTURE7);   // 올리는 동안만 빈 칸(7)을 쓴다 — 0 ~ 3 칸의 연결을 건드리지 않게
+        gl.activeTexture(gl.TEXTURE9);   // Temporary upload unit; preserve ground/albedo units 5..8.
         gl.bindTexture(gl.TEXTURE_2D, tex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
         gl.generateMipmap(gl.TEXTURE_2D);   // 천정 · 지평선 평균색(작은 단계)용. 본 샘플은 0단계만 써서 경도 이음매에 줄이 안 생긴다
@@ -934,6 +997,7 @@ export function createDomeGL(host, isPaused) {
 
   function draw() {
     if (gl.isContextLost() || !W) return;
+    useViewProgram();
     applyTheme();
     updateAstro(false);
     chooseSets();
@@ -943,10 +1007,22 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uF, viewFocal());
     gl.uniform2f(U.uTele, 1, 1);
     gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
+    gl.uniform1f(U.uMoonCue, 0);
+    gl.uniform2f(U.uGroundSourceVisibility, 1, 1);
     // Camera/source-only optics terms computed once per draw, rather than once per fragment.
     if (astro) {
       const s = dirOf(astro.sunAlt, astro.sunAz), z = dot3(s, B.fwd);
       const smooth = (a, b, x) => { const v = Math.max(0, Math.min(1, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
+      if (outdoor) {
+        const pixel = 1 / (viewFocal() * dpr);
+        gl.uniform2f(U.uGroundSourceVisibility,
+          releaseGround.sourceVisibility(s, SUN_MOON_R[0] * DEG, pixel),
+          releaseGround.sourceVisibility(dirOf(astro.moonAlt, astro.moonAz), SUN_MOON_R[1] * DEG, pixel));
+        const cue = DEBUG && QS.get("bgmooncues") === "0" ? 0 :
+          (1 - smooth(6, 12, 2 * viewFocal() * SUN_MOON_R[1] * DEG)) *
+          (1 - smooth(8, 14, astro.moonAlt / DEG));
+        gl.uniform1f(U.uMoonCue, cue);
+      }
       let sx = cx, sy = cy, gain = 0, view = 0;
       if (z > 0.05) {
         const F = viewFocal();
@@ -1092,6 +1168,7 @@ export function createDomeGL(host, isPaused) {
   });
   document.addEventListener(BGVIEW_EVENT, (e) => {
     outdoor = e.detail === "outdoor";
+    useViewProgram();
     // 시선 · 기준점은 두 보기가 같다(updateView) — 여기서는 화면 폭 각도만(시안 bgsize=window 일 때만 바깥이 다르다)
     if (W) gl.uniform1f(U.uF, viewFocal());
     updateAstro(true);
