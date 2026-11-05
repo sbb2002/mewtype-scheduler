@@ -39,6 +39,14 @@ const GROUND = groundWorld(QS, DEBUG);
 const NORMAL = QS.get("bg") === "normal";
 const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime")) : NaN;
 // bgspeed = 0 이면 bgtime 시각에 멈춘다(장면 고정 확인용)
+// (11-05) 방문마다 구름 배치 무작위(저장 안 함). ?bgdebug&bgcloudseed=0 이면 예전 그대로, 정수면 고정 배치(캡처 비교용).
+const CLOUD_SEED = (() => {
+  const q = DEBUG ? QS.get("bgcloudseed") : null;
+  if (q === "0") return [0, 0, 0];
+  let s = q != null && /^\d+$/.test(q) ? Number(q) >>> 0 : (crypto.getRandomValues(new Uint32Array(1))[0] || 1);
+  const r = () => { s = Math.imul(s ^ (s >>> 15), 0x2c1b3c6d) >>> 0; s ^= s >>> 12; return (s >>> 0) / 4294967296; };
+  return [r(), r(), 0.35 + 0.45 * r()];
+})();
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
 // 달 기본 = CSS reference pixel 기준 육안 크기 × 배율(11-05). 해는 기존 투영 그대로.
@@ -90,12 +98,22 @@ uniform sampler2D uCloud, uCloud2;
 uniform vec3 uSunDir, uMoonDir;
 uniform float uTime, uMix, uCloudTest;
 flat out vec2 vSourceClear;
+// (11-05 운영자) 구름이 항상 같은 무늬 → 방문마다 무작위: 같은 구름 사진을 두 번(한 번은 좌우 뒤집어) 다른 자리 · 속도로 읽어 겹친다.
+// uCloudSeed = (첫 겹 자리, 둘째 겹 자리, 둘째 겹 세기). 둘째 겹 세기 0 이면 예전과 같다.
+uniform vec3 uCloudSeed;
+vec4 cloudAt(sampler2D cl, float u, float v) {
+  vec4 a = textureLod(cl, vec2(u + uCloudSeed.x * 3.0 + uTime / 1280.0, v), 0.0);
+  if (uCloudSeed.z <= 0.0) return a;
+  vec4 b = textureLod(cl, vec2(-u + uCloudSeed.x * 7.0 + uTime / 1730.0, v), 0.0);
+  float wb = b.a * uCloudSeed.z, w = a.a + wb;
+  return vec4(w > 1e-4 ? (a.rgb * a.a + b.rgb * wb) / w : a.rgb, 1.0 - (1.0 - a.a) * (1.0 - wb));
+}
 float sourceClear(vec3 dir) {
   if (uCloudTest >= 0.0) return 1.0 - uCloudTest;
-  vec2 uv = vec2(atan(dir.x, dir.z) / 6.2831853 * 3.0 + uTime / 1280.0,
-    clamp((70.0 * .01745329 - asin(clamp(dir.y,-1.0,1.0))) / (82.0 * .01745329), .002, .998));
-  float a = textureLod(uCloud, uv, 0.0).a;
-  if (uMix > 0.0) a = mix(a, textureLod(uCloud2, uv, 0.0).a, uMix);
+  float cu = atan(dir.x, dir.z) / 6.2831853 * 3.0,
+    cv = clamp((70.0 * .01745329 - asin(clamp(dir.y,-1.0,1.0))) / (82.0 * .01745329), .002, .998);
+  float a = cloudAt(uCloud, cu, cv).a;
+  if (uMix > 0.0) a = mix(a, cloudAt(uCloud2, cu, cv).a, uMix);
   return 1.0 - a;
 }
 void main() {
@@ -150,9 +168,20 @@ float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.54
 float cover(float d, float pw, float halfPx) { return clamp(halfPx - d / pw + 0.5, 0.0, 1.0); }
 
 // 하늘 한 벌: 먼 하늘(불투명) + 가까운 구름(투명) 합성. 이미지 위 끝 위는 하늘 평균색, 아래 끝 아래는 지평선 평균색
+// (11-05 운영자) 구름이 항상 같은 무늬 → 방문마다 무작위: 같은 구름 사진을 두 번(한 번은 좌우 뒤집어) 다른 자리 · 속도로 읽어 겹친다.
+// uCloudSeed = (첫 겹 자리, 둘째 겹 자리, 둘째 겹 세기). 둘째 겹 세기 0 이면 예전과 같다.
+uniform vec3 uCloudSeed;
+vec4 cloudAt(sampler2D cl, float u, float v) {
+  vec4 a = textureLod(cl, vec2(u + uCloudSeed.x * 3.0 + uTime / 1280.0, v), 0.0);
+  if (uCloudSeed.z <= 0.0) return a;
+  vec4 b = textureLod(cl, vec2(-u + uCloudSeed.x * 7.0 + uTime / 1730.0, v), 0.0);
+  float wb = b.a * uCloudSeed.z, w = a.a + wb;
+  return vec4(w > 1e-4 ? (a.rgb * a.a + b.rgb * wb) / w : a.rgb, 1.0 - (1.0 - a.a) * (1.0 - wb));
+}
 vec4 skySet(sampler2D s, sampler2D cl, mat3 M, vec3 O, mat3 CM, vec3 CO, float u, float v, float el) {
-  vec3 c = clamp(M * textureLod(s, vec2(u + uTime / 2844.444, v), 0.0).rgb + O, 0.0, 1.0);
-  vec4 n = textureLod(cl, vec2(u + uTime / 1280.0, v), 0.0);
+  // 하늘 사진에도 구름 결이 들어 있어 같은 무작위 자리만큼 돌린다(둘째 겹 세기 > 0 일 때만 — 0 이면 예전 그대로).
+  vec3 c = clamp(M * textureLod(s, vec2(u + (uCloudSeed.z > 0.0 ? uCloudSeed.y * 3.0 : 0.0) + uTime / 2844.444, v), 0.0).rgb + O, 0.0, 1.0);
+  vec4 n = cloudAt(cl, u, v);
   c = mix(c, clamp(CM * n.rgb + CO, 0.0, 1.0), n.a * uCldA);
   vec3 z = clamp(M * textureLod(s, vec2(0.5, 0.03), 7.0).rgb + O, 0.0, 1.0);
   vec3 hz = clamp(M * textureLod(s, vec2(u, 0.97), 6.0).rgb + O, 0.0, 1.0);
@@ -273,7 +302,11 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   float forward = max(sd, 0.0);
   c += (vec3(0.72, 0.85, 1.0) - c) * uSolar.x * (0.04 + 0.22 * forward * forward + 0.1 * g * low) * clear;
   // 달 없는 밤의 사진 바탕은 더 어두운 남청색. 박명 이미지가 섞이는 -6° ~ -12°와 같은 곡선이다
-  c = mix(c, c * vec3(0.42, 0.54, 0.82), uNight);
+  // (11-05 운영자) 밤하늘 발색이 너무 짙다 → 실제 밤처럼 어둡게, 색감은 약간만: 채도를 크게 줄이고 남색으로 어둡게,
+  // 지평선 근처만 옅은 도시 불빛 번짐(따뜻한 회색)을 남긴다.
+  float nl = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  vec3 nightC = mix(vec3(nl), c, 0.45) * vec3(0.30, 0.36, 0.58) + vec3(0.020, 0.017, 0.015) * exp(-max(el, 0.0) / (9.0 * D));
+  c = mix(c, nightC, uNight);
   // 달이 높고 보름에 가까울수록 밤하늘을 남청색으로 아주 조금 들어 올린다
   c += vec3(0.024, 0.041, 0.085) * uMoonLight * (0.45 + 0.55 * md * md) * (1.0 - 0.65 * cloud) * above;
 
@@ -811,6 +844,7 @@ export function createDomeGL(host, isPaused) {
     for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(prog, i).name; U[name] = gl.getUniformLocation(prog, name); }
     gl.uniform1i(U.uSky, 0); gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uSky2, 2); gl.uniform1i(U.uCloud2, 3);
     gl.uniform1f(U.uMix, 0); gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0);
+    gl.uniform3f(U.uCloudSeed, ...CLOUD_SEED);
     gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
