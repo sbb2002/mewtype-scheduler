@@ -195,3 +195,11 @@ html.theme-vt::view-transition-new(root) { animation: theme-vt-in 0.9s cubic-bez
 @media (prefers-reduced-motion: reduce) {
   .ntc__theme svg { transition: none; }
 }
+
+/* Keep the live dome out of the root crossfade; cards/sheets retain their path. */
+@supports (view-transition-name: bg-dome) {
+  #bgdeco { view-transition-name: bg-dome; }
+  ::view-transition-group(bg-dome) { animation: none; }
+  ::view-transition-old(bg-dome) { display: none; }
+  ::view-transition-new(bg-dome) { animation: none; mix-blend-mode: normal; }
+}

@@ -41,11 +41,14 @@ const T_START = DEBUG && !NORMAL && QS.get("bgtime") ? Date.parse(QS.get("bgtime
 // bgspeed = 0 이면 bgtime 시각에 멈춘다(장면 고정 확인용)
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
-// 해 · 달 원반 = 실제 각지름(약 0.53°)이 기본(11-05 운영자 확정). 크기감은 원반이 아니라 번짐 · 빛줄기가 만든다 — ref/bg-dome/codex_luminary_method.md
+// 달 기본 = CSS reference pixel 기준 육안 크기 × 배율(11-05). 해는 기존 투영 그대로.
 // 확인용(?bgdebug 와 함께): bgsize = 옛 크기 비교 — now(옛 기본: 지름 해 2.4° · 달 3.2°) | real(실제, 기본) | double(실제의 2배 1.06°)
 //   | window(실제 0.53° + 바깥 보기 화면 폭을 폰이 눈에 차지하는 각도 약 12.4° 로 — 폰이 「창문」처럼 실제 하늘과 1:1)
-const SIZE_MODE = DEBUG && ["now", "real", "double", "window"].includes(QS.get("bgsize")) ? QS.get("bgsize") : "real";
-const SUN_MOON_R = { now: [1.2, 1.6], real: [0.2665, 0.2590], double: [0.533, 0.518], window: [0.2665, 0.2590] }[SIZE_MODE];   // 각반지름(도) [해, 달]
+const SIZE_MODE = DEBUG && ["now", "real", "double", "window"].includes(QS.get("bgsize")) ? QS.get("bgsize") : "eye";
+// CSS reference pixel: 0.0213 degrees. Optical sun and debug comparisons stay unchanged.
+const MOON_CSS_DIAMETER = 0.53 / 0.0213;
+const THEME_MS = 840;
+const SUN_MOON_R = { eye: [0.2665, 0.265], now: [1.2, 1.6], real: [0.2665, 0.2590], double: [0.533, 0.518], window: [0.2665, 0.2590] }[SIZE_MODE];   // 각반지름(도) [해, 달]
 const WINDOW_HFOV = 12.4;   // 도 — 폭 약 6.5cm 화면을 30cm 에서 볼 때(추정값, 기기 · 습관마다 다르다)
 const MOON_TEST = DEBUG && QS.get("bgmoon") != null && Number.isFinite(Number(QS.get("bgmoon"))) ? ((Number(QS.get("bgmoon")) % 1) + 1) % 1 : null;
 // Debug (bgdebug): bgsunalt/bgmoonalt = apparent degrees; bgsunaz/bgmoonaz = azimuth degrees clockwise from north.
@@ -127,6 +130,11 @@ uniform vec4 uLunar;   // 달 가시성, 원반 불투명도, 빛 번짐 지수,
 uniform float uMoonLight, uStarGain, uEarthshine;
 uniform vec2 uTele; // background exposure, solar exposure
 uniform float uMoonCue;
+uniform vec2 uMoonAxis;
+uniform vec4 uMoonScreen; // CSS center, radius, screen-size mode (front hemisphere only)
+uniform sampler2D uThemeFrame;
+uniform float uThemeProgress; // 1 = inactive; no snapshot lookup at rest
+
 flat in vec2 vSourceClear;
 uniform mat3 uEqM;
 uniform vec3 uSkyBase; uniform float uGridA, uReflA;
@@ -203,6 +211,16 @@ vec3 solarOptics(vec3 col, vec2 p) {
   return (col + light * gain) / (1.0 + max(light.r, max(light.g, light.b)) * gain);
 }
 
+// Screen-size moon keeps its astronomical center; only its disc footprint is distorted.
+vec3 moonTangent(vec3 d, vec2 p) {
+  if (uMoonScreen.w < .5) return discTangent(d, uMoonDir, uMoonShape, uMoonR);
+  vec2 k = (p - uMoonScreen.xy) * vec2(1,-1) / max(uMoonScreen.z, .001);
+  vec3 up = uMoonShape.xyz, right = cross(up,uMoonDir);
+  vec2 axis = uMoonAxis;
+  vec2 sp = vec2(dot(k,axis),dot(k,vec2(-axis.y,axis.x)));
+  float scale = 1.0 - .175 * uMoonShape.w + .04 * uMoonShape.w * clamp(sp.y,-1.0,1.0);
+  return uMoonR * (right * sp.x + up * sp.y / scale);
+}
 // 달: 각반지름 uMoonR. 복원한 구면에서 해 방향을 써 위상 · 표면도 함께 눌린다.
 // 표면 = NASA LRO 컬러 지도로 만든 앞면 사진(assets/bg/moon-near.webp, 북쪽 위). 달의 북쪽은 하늘의 북극 쪽으로 기울인다(시각각).
 vec4 moon(vec3 t, float facing, float pxAng) {
@@ -229,7 +247,7 @@ float moonDisc(vec3 t, float facing, float pxAng) {
   return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
 }
 
-vec3 sky(vec3 d, float pxAng, vec2 discPx) {
+vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   float el = asin(clamp(d.y, -1.0, 1.0));
   float u = atan(d.x, d.z) / TAU * 3.0;
   float v = clamp((70.0 * D - el) / (82.0 * D), 0.002, 0.998);
@@ -280,17 +298,18 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx) {
 
   // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
   c *= uTele.x;
-  vec3 mt = discTangent(d, uMoonDir, uMoonShape, uMoonR);
+  vec3 mt = moonTangent(d, p);
   float mf = dot(d, uMoonDir);
   vec4 m = moon(mt, mf, discPx.y);
-  float mvis = above * uLunar.x * (1.0 - clamp(cloud / max(uCldA, 0.001), 0.0, 1.0));
+  float mvis = (uMoonScreen.w > .5 ? 1.0 : above) * uLunar.x * (1.0 - clamp(cloud / max(uCldA, 0.001), 0.0, 1.0));
   c = mix(c, c * 0.62, moonDisc(mt, mf, discPx.y) * uEarthshine * mvis);   // 어두운 면 = 그 자리 하늘색을 살짝 어둡게(고정색이 아니라 하늘에 맞춘다) — 밤에만
   // Contrast only inside the existing disc coverage. No extra angular extent;
   // fades out when the physical disc already resolves in the telephoto view.
   c = mix(c, m.rgb * (1.0 + 1.1 * uMoonCue), m.a * uLunar.y * mvis);
-  c += uMoonCol * angularBloom(md, uLunar.z * D) * uLunar.w * mvis;
+  float moonFacing = uMoonScreen.w > .5 ? max(0.0, 1.0 - dot(mt,mt) * .5) : md;
+  c += uMoonCol * angularBloom(moonFacing, uLunar.z * D) * uLunar.w * mvis;
   // Broad halo remains subtle at high altitude; near the horizon its gain falls to 0.003.
-  c += uMoonCol * angularBloom(md, uLunar.z * 3.0 * D) * uLunar.w * 0.32 * mvis;
+  c += uMoonCol * angularBloom(moonFacing, uLunar.z * 3.0 * D) * uLunar.w * 0.32 * mvis;
 
   // Physical angular radius is unchanged by the camera focal length.
   float sunR = sin(uSunR);
@@ -370,7 +389,7 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
   vec2 sp = vec2(dot(uSunDir, uRight), dot(uSunDir, uUp)) / max(dot(uSunDir, uFwd), 0.01);
   vec2 mp = vec2(dot(uMoonDir, uRight), dot(uMoonDir, uUp)) / max(dot(uMoonDir, uFwd), 0.01);
   float sunFade = mix(1.0, smoothstep(55.0, 140.0, length(gp - sp) * uF), uSolar.z * step(0.0, dot(uSunDir, uFwd)));
-  sunFade *= mix(1.0, smoothstep(45.0, 100.0, length(gp - mp) * uF), uLunar.x * step(0.0, dot(uMoonDir, uFwd)));
+  sunFade *= mix(1.0, smoothstep(45.0 + uMoonScreen.z, 100.0 + uMoonScreen.z, length(gp - mp) * uF), uLunar.x * step(0.0, dot(uMoonDir, uFwd)));
   float flick = 0.95 + 0.05 * sin(uTime * 7.3 + cardinal * 1.7) * sin(uTime * 2.1);   // 아주 옅은 네온 떨림
   vec3 hue = id < 0.5 ? vec3(1.0, 0.055, 0.075) : vec3(0.53, 0.94, 1.0);
   float dayK = uSolar.x;   // 낮일수록 그늘을 조금 더
@@ -394,7 +413,7 @@ void main() {
   // ── 유리 + 하늘
   // Directional distance derivatives before any non-uniform branch; stable tangent lengths for small discs.
   vec2 discDistance = vec2(length(discTangent(d, uSunDir, uSunShape, sin(uSunR))),
-    length(discTangent(d, uMoonDir, uMoonShape, uMoonR)));
+    length(moonTangent(d, p)));
   vec2 discPx = max(fwidth(discDistance), vec2(1e-6));
   float groundPixel = 1.0 / (uF * uDpr);
 #if GROUND_OUTDOOR
@@ -403,13 +422,13 @@ void main() {
     vec4 geometry = groundGeometry(d, groundPixel);
     if (geometry.x >= 1.0) col = groundSurface(d, geometry, groundPixel);
     else {
-      col = sky(d, groundPixel, discPx);
+      col = sky(d, groundPixel, discPx, p);
       if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
     }
   }
 #else
   vec4 geometry = groundGeometry(d, groundPixel);
-  vec3 col = sky(d, groundPixel, discPx);
+  vec3 col = sky(d, groundPixel, discPx, p);
   if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
 #endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
@@ -529,6 +548,28 @@ void main() {
     outc = mix(hud, outc, floorK);
   }
   outc += (h2(gl_FragCoord.xy) - 0.5) / 255.0;   // 그라데이션 띠 방지
+  // One captured frame, no extra render pass. Quantized glass faces sweep from
+  // the crown, counterclockwise in the visible screen, with a narrow neon scan.
+  if (uThemeProgress < 1.0) {
+    float row = lat > 62.0*D ? 0.0 : (lat > 40.0*D ? 1.0 : (lat > 18.0*D ? 2.0 : 3.0));
+    float faceLon = (floor(lon/(30.0*D)) + .5) * 30.0*D;
+    float faceLat = (row < .5 ? 76.0 : (row < 1.5 ? 51.0 : (row < 2.5 ? 29.0 : 9.0))) * D;
+    vec3 face = vec3(sin(faceLon)*cos(faceLat),sin(faceLat),cos(faceLon)*cos(faceLat)) - E;
+    vec2 faceP = uC + uF * vec2(dot(face,uRight),-dot(face,uUp)) / max(dot(face,uFwd),.01);
+    vec3 zenith = vec3(0,1,0)-E;
+    vec2 crown = uC + uF * vec2(dot(zenith,uRight),-dot(zenith,uUp)) / max(dot(zenith,uFwd),.01);
+    crown = clamp(crown,vec2(0),uRes/uDpr);
+    vec2 v = faceP-crown;
+    float sector = floor(mod(atan(-v.x,-v.y)+TAU,TAU)/TAU*12.0)/12.0;
+    float delay = row*.105 + sector*.49;
+    float local = (uThemeProgress-delay)/.17;
+    float reveal = smoothstep(0.0,1.0,local);
+    vec3 old = texture(uThemeFrame,gl_FragCoord.xy/uRes).rgb;
+    outc = mix(old,outc,reveal);
+    float edge = max(0.0,1.0-abs(local-.5)*2.0);
+    float scan = step(.91,fract(p.y*.125 + uThemeProgress*9.0));
+    outc += mix(vec3(.12,.85,1),vec3(1,.16,.64),sector) * edge * (.08 + 2.4*grid + .16*scan) * (1.0-floorK);
+  }
   outColor = vec4(outc, 1.0);
 }`;
 
@@ -684,7 +725,9 @@ export function createDomeGL(host, isPaused) {
   let raf = 0, stopped = true, lastShake = 0, theme = null, t0 = performance.now();
   // 장면 +z = 북, +x = 동. 바깥 보기 = 실제 시각 · 위치의 하늘(해 · 달 · 별 · 방위 글자). 시선은 두 보기가 같다
   let outdoor = false;
-  let releaseGround = null;
+  let releaseGround = null, albedoLoading = false, albedoOn = false, textureEpoch = 0;
+  let themeFrame = null, themeStart = -Infinity;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -724,7 +767,8 @@ export function createDomeGL(host, isPaused) {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    moonTex = null;
+    moonTex = null; albedoLoading = albedoOn = false; textureEpoch++;
+    themeFrame = null; themeStart = -Infinity;
     if (releaseGround) releaseGround();
     releaseGround = createGroundTextures(gl, GROUND);
     sets = {}; slotA = slotB = null; astro = null;
@@ -760,6 +804,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
     gl.uniform1i(U.uGroundMotion, 8);
+    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     if (!outside) { gl.uniform1f(U.uGroundKind, GROUND.index); gl.uniform1f(U.uGroundAlt, GROUND.altitude); }
     gl.uniform1f(U.uGroundAlbedoOn, 0);
@@ -977,9 +1022,39 @@ export function createDomeGL(host, isPaused) {
     lastGL = 0;
   }
 
+  // Fetch only the selected outdoor material. A failed upload keeps procedural ground.
+  function loadGroundAlbedo() {
+    if (!outdoor || GROUND.kind === "sea" || albedoLoading) return;
+    albedoLoading = true;
+    const epoch = textureEpoch;
+    const img = new Image(); img.decoding = "async";
+    img.onload = () => {
+      if (epoch !== textureEpoch || gl.isContextLost()) return;
+      try {
+        releaseGround.setAlbedo(img);
+        albedoOn = true; lastGL = 0; draw();
+      } catch (_) { albedoOn = false; }
+    };
+    img.onerror = () => { /* procedural material remains available */ };
+    img.src = new URL("../assets/bg/ground-" + GROUND.kind + "-albedo.webp", import.meta.url).href;
+  }
+
   function applyTheme() {
     const name = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
     if (name === theme) return;
+    if (theme && !reducedMotion.matches && W && !isPaused()) {
+      gl.drawArrays(gl.TRIANGLES, 0, 3); // refresh the non-preserved backbuffer before copying
+      // Repeated toggles capture the currently visible mixture, avoiding a jump.
+      if (!themeFrame) themeFrame = gl.createTexture();
+      gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, themeFrame);
+      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, 0, 0, canvas.width, canvas.height, 0);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      themeStart = performance.now();
+      gl.activeTexture(gl.TEXTURE0);
+    } else themeStart = -Infinity;
     theme = name;
     const t = THEMES[name];
     gl.uniform1f(U.uCldA, 0.5);
@@ -1001,6 +1076,9 @@ export function createDomeGL(host, isPaused) {
     applyTheme();
     updateAstro(false);
     chooseSets();
+    loadGroundAlbedo();
+    gl.uniform1f(U.uGroundAlbedoOn, outdoor && albedoOn ? 1 : 0);
+    gl.uniform1f(U.uThemeProgress, reducedMotion.matches ? 1 : Math.min(1, (performance.now()-themeStart)/THEME_MS));
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele;
@@ -1008,6 +1086,17 @@ export function createDomeGL(host, isPaused) {
     gl.uniform2f(U.uTele, 1, 1);
     gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
     gl.uniform1f(U.uMoonCue, 0);
+    let moonRadius = SUN_MOON_R[1] * DEG;
+    if (astro && SIZE_MODE === "eye") {
+      const m = dirOf(astro.moonAlt,astro.moonAz), z = dot3(m,B.fwd);
+      const radius = MOON_CSS_DIAMETER * tele / 2;
+      const right = [Math.cos(astro.moonAz),0,-Math.sin(astro.moonAz)];
+      const ax = dot3(right,B.right), ay = dot3(right,B.up), len = Math.hypot(ax,ay) || 1;
+      gl.uniform2f(U.uMoonAxis,ax/len,ay/len);
+      moonRadius = Math.atan(radius/viewFocal());
+      gl.uniform4f(U.uMoonScreen, cx+viewFocal()*dot3(m,B.right)/Math.max(z,.001),
+        cy-viewFocal()*dot3(m,B.up)/Math.max(z,.001), radius, z > 0 ? 1 : 0);
+    } else gl.uniform4f(U.uMoonScreen,0,0,0,0);
     gl.uniform2f(U.uGroundSourceVisibility, 1, 1);
     // Camera/source-only optics terms computed once per draw, rather than once per fragment.
     if (astro) {
@@ -1017,9 +1106,9 @@ export function createDomeGL(host, isPaused) {
         const pixel = 1 / (viewFocal() * dpr);
         gl.uniform2f(U.uGroundSourceVisibility,
           releaseGround.sourceVisibility(s, SUN_MOON_R[0] * DEG, pixel),
-          releaseGround.sourceVisibility(dirOf(astro.moonAlt, astro.moonAz), SUN_MOON_R[1] * DEG, pixel));
+          releaseGround.sourceVisibility(dirOf(astro.moonAlt, astro.moonAz), moonRadius, pixel));
         const cue = DEBUG && QS.get("bgmooncues") === "0" ? 0 :
-          (1 - smooth(6, 12, 2 * viewFocal() * SUN_MOON_R[1] * DEG)) *
+          (1 - smooth(6, 12, 2 * viewFocal() * moonRadius)) *
           (1 - smooth(8, 14, astro.moonAlt / DEG));
         gl.uniform1f(U.uMoonCue, cue);
       }
@@ -1043,7 +1132,7 @@ export function createDomeGL(host, isPaused) {
       };
       if (outdoor && tele > 1) {
         const sunMeter = meter(astro.sunAlt, astro.sunAz, SUN_MOON_R[0] * DEG);
-        const moonMeter = meter(astro.moonAlt, astro.moonAz, SUN_MOON_R[1] * DEG) * Math.sqrt(astro.fraction);
+        const moonMeter = meter(astro.moonAlt, astro.moonAz, moonRadius) * Math.sqrt(astro.fraction);
         gl.uniform2f(U.uTele, 1 - 0.94 * Math.max(sunMeter, moonMeter), 1 / (1 + 28 * sunMeter));
       }
     }
@@ -1149,7 +1238,7 @@ export function createDomeGL(host, isPaused) {
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
-    if ((Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
+    if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -1175,8 +1264,11 @@ export function createDomeGL(host, isPaused) {
     draw();
   });
   new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  function finishThemeMotion() { themeStart = -Infinity; draw(); }
+  reducedMotion.addEventListener("change", finishThemeMotion);
 
   function resize(w, h) {
+    themeStart = -Infinity;
     W = w; H = h; phone = W <= 767;
     dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
@@ -1221,13 +1313,13 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
-    window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
+    window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, moonDiameterCSS: SIZE_MODE === "eye" ? MOON_CSS_DIAMETER * tele : 2 * viewFocal() * SUN_MOON_R[1] * DEG, themeProgress: Math.min(1,(performance.now()-themeStart)/THEME_MS), albedoOn, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
 
   return {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); },
   };
 }

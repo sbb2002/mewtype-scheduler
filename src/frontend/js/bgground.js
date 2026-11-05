@@ -1,4 +1,4 @@
-// Seeded ground data. All distances/heights are km; no downloaded imagery.
+// Seeded ground data. All distances/heights are km; approved outdoor imagery loads on demand.
 // Debug-only URL controls: ?bgdebug&bgground=city|mountain|sea&bgseed=integer&bgalt=1|2|3.
 // Overrides never overwrite the first-visit world. bgspeed=0 also freezes the 64s animation loop.
 export function groundWorld(qs, debug) {
@@ -114,12 +114,73 @@ export function createGroundTextures(gl, world) {
   if (indoorTile !== tile) upload(10, N, N, indoorTile, true);
   else { gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, groundTile); }
   upload(8, M, 128, traffic, true);
-  // Approved future albedo: replace unit 7 with seamless natural-color sRGB RGB,
-  // mipmapped REPEAT, 8km tile (city) / 32km (mountain). Shader decodes sRGB;
-  // set uGroundAlbedoOn=1. No baked sunlight, shadows, labels, clouds or night lights.
+  // Unit 7 starts neutral; setAlbedo uploads the selected approved photo later.
   upload(7, 1, 1, new Uint8Array([128, 128, 128, 255]), false);
   gl.activeTexture(gl.TEXTURE0);
   const destroy = () => textures.forEach(t => gl.deleteTexture(t));
+  destroy.setAlbedo = image => {
+    // Mountain crop excludes the eastern city strip; never enlarge the source.
+    const width = world.kind === "mountain" ? Math.floor(image.width * 5 / 6) : image.width;
+    const height = image.height, canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image,0,0,width,height,0,0,width,height);
+    const pixels = ctx.getImageData(0,0,width,height), src = pixels.data;
+    // Local luminance integral: remove 45% of broad baked illumination while
+    // retaining roofs/forest color and some relief. This is an albedo estimate.
+    const stride = width+1, sum = new Float64Array(stride*(height+1));
+    for (let y=0;y<height;y++) {
+      let row=0;
+      for (let x=0;x<width;x++) {
+        const i=(y*width+x)*4;
+        row += .2126*src[i]+.7152*src[i+1]+.0722*src[i+2];
+        sum[(y+1)*stride+x+1]=sum[y*stride+x+1]+row;
+      }
+    }
+    const mean = sum[height*stride+width]/(width*height), out = new Uint8Array(src.length);
+    for(let y=0;y<height;y++) for(let x=0;x<width;x++) {
+      const x0=Math.max(0,x-64),x1=Math.min(width,x+65),y0=Math.max(0,y-64),y1=Math.min(height,y+65);
+      const local=(sum[y1*stride+x1]-sum[y0*stride+x1]-sum[y1*stride+x0]+sum[y0*stride+x0])/((x1-x0)*(y1-y0));
+      const gain=Math.max(.72,Math.min(1.45,Math.pow(mean/Math.max(local,8),.45)));
+      const i=(y*width+x)*4;
+      for(let c=0;c<3;c++) out[i+c]=Math.min(255,src[i+c]*gain);
+      out[i+3]=255;
+    }
+    // NAIP quarter-tile joins inferred from the supplied geographic crop:
+    // longitude -104.9375, latitude 39.75 within [-104.977,-104.883,39.694,39.766].
+    // Match strip means with bounded scalar gains (preserve hue and detail).
+    if (world.kind === "city") {
+      const jx=Math.round(width*.0395/.094), jy=Math.round(height*.016/.072);
+      const meanBox=(x0,y0,x1,y1)=>{
+        let total=0,count=0;
+        for(let y=y0;y<y1;y+=2)for(let x=x0;x<x1;x+=2){const i=(y*width+x)*4;total+=.2126*out[i]+.7152*out[i+1]+.0722*out[i+2];count++;}
+        return Math.max(8,total/count);
+      };
+      const lr=(y0,y1)=>Math.log(meanBox(jx-20,y0,jx,y1)/meanBox(jx,y0,jx+20,y1));
+      const tb=(x0,x1)=>Math.log(meanBox(x0,jy-20,x1,jy)/meanBox(x0,jy,x1,jy+20));
+      const top=lr(0,jy),left=tb(0,jx);
+      const gains=[0,top,left,(top+tb(jx,width)+left+lr(jy,height))*.5];
+      const center=gains.reduce((a,b)=>a+b,0)/4;
+      for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+        const gain=Math.exp(Math.max(-.08,Math.min(.08,gains[(y>=jy?2:0)+(x>=jx?1:0)]-center)));
+        const i=(y*width+x)*4;
+        for(let c=0;c<3;c++)out[i+c]=Math.min(255,out[i+c]*gain);
+      }
+    }
+    // Wrapped edge crossfade on both axes; exact edge pair agreement, same size.
+    for(const vertical of [true,false]) {
+      const length=vertical?width:height, across=vertical?height:width, band=32;
+      const copy=out.slice();
+      for(let b=0;b<across;b++)for(let a=0;a<band;a++) {
+        const i=(vertical?b*width+a:a*width+b)*4;
+        const j=(vertical?b*width+length-1-a:(length-1-a)*width+b)*4;
+        const weight=.5*(1-a/band)*(1-a/band);
+        for(let c=0;c<3;c++){out[i+c]=copy[i+c]*(1-weight)+copy[j+c]*weight;out[j+c]=copy[j+c]*(1-weight)+copy[i+c]*weight;}
+      }
+    }
+    upload(7,width,height,out,true);
+    gl.activeTexture(gl.TEXTURE0);
+  };
   // Match the shader's LINEAR wrapped ridge samples, including the RG encoding.
   const ridgeAt = (az, layer) => {
     const x = az / (Math.PI * 2) * P - .5, left = Math.floor(x), f = x - left;
@@ -354,7 +415,14 @@ vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
       + vec3(.9,.88,.68) * dot(data.gb, head) * 1.6
       + vec3(.8,.11,.035) * dot(data.gb, tail) * .95) * night;
   }
-  if (uGroundAlbedoOn > .5 && uGroundKind < 1.5) albedo = pow(textureLod(uGroundAlbedo, uv, lod).rgb, vec3(2.2));
+  if (uGroundAlbedoOn > .5 && uGroundKind < 1.5) {
+    // Photo resolution is twice the procedural tile; the cropped mountain
+    // covers 26.67km east-west. Ridge UV uses only the rural cropped texture.
+    vec2 photoUV = uv;
+    if (uGroundKind > .5 && geometry.z < 0.0) photoUV.x *= 1.2;
+    vec3 photo = pow(textureLod(uGroundAlbedo, photoUV, lod+1.0).rgb,vec3(2.2));
+    albedo = mix(albedo,photo,.84);
+  }
   float diffuse = max(dot(n,uSunDir),0.0);
   vec3 surface = albedo * (.055 + day * (.42 + .75 * diffuse)) + emission;
   if (uOut < .5) {
