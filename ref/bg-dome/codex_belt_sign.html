@@ -1,0 +1,101 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>좌석벨트 표시등 · WARP DRIVE</title><style>
+.belt{position:absolute;left:0;top:2px;width:64px;height:40px;box-sizing:border-box;padding:3px;isolation:isolate;background:linear-gradient(150deg,#516070,#263044 48%,#141526);clip-path:polygon(0 0,calc(100% - 6px) 0,100% 6px,100% 100%,6px 100%,0 calc(100% - 6px));box-shadow:inset 0 1px 0 #7692a1,inset 0 -1px 0 #4fe3ff40}
+.belt::before{content:"";position:absolute;inset:1px;background:#111023;z-index:-1;clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100% - 5px))}
+.belt .belt-lens{position:relative;display:grid;place-items:center;width:100%;height:100%;overflow:hidden;background:#0b0c14;border:1px solid #4fe3ff30;box-sizing:border-box;box-shadow:inset 0 2px 4px #000a;clip-path:polygon(0 0,calc(100% - 3px) 0,100% 3px,100% 100%,3px 100%,0 calc(100% - 3px))}
+.belt .belt-lens::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(170deg,#eef6ff09,transparent 48%),repeating-linear-gradient(0deg,#eef6ff03 0 1px,transparent 1px 3px)}
+.belt .belt-symbol{position:absolute;width:54px;height:28px;color:#677078}
+.belt .belt-lit{position:absolute;inset:0;display:grid;place-items:center;opacity:0;background:radial-gradient(ellipse,#ffd27a20,transparent 80%)}
+.belt .belt-lit .belt-symbol{color:#ffe4a3;filter:drop-shadow(0 0 1px #ffd27a) drop-shadow(0 0 3px #ffb84d70)}
+.belt.on .belt-lit{opacity:1}
+
+.belt.blink .belt-lit{animation:belt-sign-pulse 1s steps(1,end) infinite}
+@keyframes belt-sign-pulse{0%,100%{opacity:1}50%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.belt.blink .belt-lit{animation:none;opacity:1}}
+*{box-sizing:border-box}body{margin:0;background:#07060f;color:#eef6ff;font:14px system-ui,sans-serif}main{max-width:1160px;margin:auto;padding:32px 24px 48px}h1{font-size:25px;margin:8px 0 12px}p{color:#a9bad0;line-height:1.7}.eyebrow{color:#ff6fb5;letter-spacing:.18em;font:11px monospace}.states{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.card{min-width:0;padding:12px 10px;background:rgba(10,8,26,.82);border:1px solid #4fe3ff30}h3{font-size:12px;font-weight:500;color:#a9bad0;margin:0 0 16px}.sample{position:relative;width:64px;height:40px;margin:auto}.sample .belt{top:0}.large{height:140px;display:grid;place-items:center;margin-top:24px;border-top:1px solid #4fe3ff18}.large .sample{transform:scale(3)}h2{font-size:16px;margin:32px 0 14px}.panel{position:relative;width:342px;max-width:100%;padding:14px 14px 12px;background:rgba(10,8,26,.82);border:1px solid #4fe3ff8c;clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px))}.panel:after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,#ffffff08 0 1px,transparent 1px 3px)}.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.head strong{display:block;font-size:16px;margin-top:2px}.badge{border:1px solid #ff6d86;color:#ff6d86;padding:3px 7px;font:11px monospace}.gauge{height:166px;position:relative;display:flex;justify-content:center}.dial{position:absolute;top:0}.needle{position:absolute;left:50%;top:28px;width:3px;height:84px;margin-left:-1.5px;background:#ff6fb5;box-shadow:0 0 8px #ff6fb5;transform-origin:50% 100%;transform:rotate(72deg)}.hub{position:absolute;top:105px;left:calc(50% - 7px);width:14px;height:14px;border:2px solid #ff6fb5;border-radius:50%;background:#0a081a}.read{position:absolute;top:124px;text-align:center;font:700 30px/1 monospace;color:#ff8a9c}.read small{display:block;color:#a9bad0;font:11px system-ui;margin-top:3px}button{font:13px system-ui;color:#eef6ff;border:1px solid #4fe3ff70;background:#15152a;padding:10px 16px;cursor:pointer}button:focus-visible{outline:2px solid #4fe3ff;outline-offset:3px}.context{display:flex;gap:24px;align-items:center;flex-wrap:wrap}.instructions{max-width:450px}.note{font-size:12px}.measure{font:10px monospace;color:#a9bad0;text-align:center;margin:12px 0 0}@media(max-width:600px){main{padding:24px 12px}.states{gap:6px}.card{padding:12px 4px}.large{height:140px;overflow:auto;justify-content:start;padding-left:4px}.large .sample{width:192px;height:120px;transform:none;margin:0}.large .belt{transform:scale(3);transform-origin:top left}.zoom-hint{display:block}}</style><main><span class="eyebrow">UFO DOME / CABIN SIGNAL</span><h1>좌석벨트 착용 표시등</h1><p>PSU 표시창의 벨트·버클·삽입 화살표를 남보라 HUD 안으로.<br>따뜻한 호박빛 그림과 차가운 시안 테두리를 분리했습니다.</p><h2>세 상태 · 64 × 40px / 3배 확대</h2><div class="states"><section class="card"><h3>01 · 꺼짐</h3><div class="sample"><div class="belt" role="status" aria-label="좌석벨트 표시등 꺼짐"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div></div><div class="measure">1× / 64 × 40</div><div class="large"><div class="sample"><div class="belt" role="status" aria-label="좌석벨트 표시등 꺼짐"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div></div></div><div class="measure">3× / 192 × 120</div></section><section class="card"><h3>02 · 켜짐</h3><div class="sample"><div class="belt on" role="status" aria-label="좌석벨트를 매 주세요"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div></div><div class="measure">1× / 64 × 40</div><div class="large"><div class="sample"><div class="belt on" role="status" aria-label="좌석벨트를 매 주세요"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div></div></div><div class="measure">3× / 192 × 120</div></section><section class="card"><h3>03 · 깜빡임</h3><div class="sample"><div class="belt blink" role="status" aria-label="좌석벨트를 매 주세요"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div></div><div class="measure">1× / 64 × 40</div><div class="large"><div class="sample"><div class="belt blink" role="status" aria-label="좌석벨트를 매 주세요"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div></div></div><div class="measure">3× / 192 × 120</div></section></div><p class="note">깜빡임 비교 표본은 반복합니다. 390px에서는 확대 표본 각각을 가로 스크롤할 수 있습니다.</p><h2>패널 안에서 · 실제 크기</h2><div class="context"><section class="panel" aria-label="워프 기어 패널 배치 확인"><div class="head"><div><span class="eyebrow">WARP DRIVE</span><strong>성간 이동 기어</strong></div><span class="badge">REDLINE</span></div><div class="gauge"><div class="belt on" role="status" aria-label="좌석벨트를 매 주세요"><span class="belt-lens"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg><span class="belt-lit"><svg class="belt-symbol" width="54" height="28" viewBox="0 0 54 28" aria-hidden="true" focusable="false"><g fill="currentColor">
+<path d="M1 5 13 9 11 15 0 12zM53 5 41 9 43 15 54 12z"/>
+<path fill-rule="evenodd" d="M13 8h13v13H13z M16 11v7h7v-7z"/>
+<path d="M31 12h10v6H31v-2h-3v-2h3z"/>
+<path d="M3 16 8 14 12 16 14 21 20 23 19 26 11 24 7 20 3 20zM51 16 46 14 42 16 40 21 34 23 35 26 43 24 47 20 51 20z"/>
+<path d="M22 3h9V1l5 4-5 4V7h-9z"/>
+</g></svg></span></span></div><svg class="dial" width="236" height="122" viewBox="0 0 236 122" aria-hidden="true"><path d="M18 112 A100 100 0 0 1 218 112" fill="none" stroke="#ffffff20" stroke-width="10"/><path d="M18 112 A100 100 0 0 1 218 112" fill="none" stroke="#4fe3ff" stroke-width="10" pathLength="100" stroke-dasharray="78 100"/><path d="M207.1 66.6 A100 100 0 0 1 218 112" fill="none" stroke="#ff3d5a" stroke-width="10"/><g stroke="#a9bad0" stroke-width="1.5"><path d="M18 112h10M47 41l7 7M118 12v10M189 41l-7 7M218 112h-10"/></g><text x="206" y="48" fill="#ff6d86" font-family="monospace" font-size="9">RED</text></svg><div class="needle"></div><div class="hub"></div><div class="read">0.90c<small>광속 비율</small></div></div></section><div class="instructions"><button type="button" id="replay">종료 시퀀스 재생 · 1.6초</button><p id="feedback" aria-live="polite">켜짐 · 버튼을 누르면 깜빡인 뒤 꺼집니다.</p><p class="note">동작 줄이기 설정에서는 1.6초간 켜진 뒤 꺼집니다.<br>머리글·속도계는 원본 치수와 색을 따른 정적 표본입니다. 외부 글꼴 대신 시스템 글꼴을 사용합니다.</p></div></div></main><script>
+const sign=document.querySelector('.gauge .belt'),feedback=document.querySelector('#feedback');let timer;
+document.querySelector('#replay').addEventListener('click',()=>{clearTimeout(timer);sign.classList.remove('on','blink');void sign.offsetWidth;sign.classList.add('blink');sign.setAttribute('aria-label','좌석벨트를 매 주세요');feedback.textContent='종료 예고 · 1.6초';timer=setTimeout(()=>{sign.classList.remove('blink');sign.setAttribute('aria-label','좌석벨트 표시등 꺼짐');feedback.textContent='좌석벨트 표시등 꺼짐';},1600);});
+</script></html>
