@@ -51,7 +51,11 @@ const CLOUD_SEED = (() => {
 // 방문마다 뽑는다(저장 안 함). ?bgdebug&bgindoor=pink|space 로 고정, bgwarp=<초> 로 워프 진행 시점 고정(캡처용).
 const INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : (Math.random() < 0.2 ? "space" : "pink"); })();
 const WARP_FIXED = DEBUG && QS.get("bgwarp") != null && Number.isFinite(Number(QS.get("bgwarp"))) ? Number(QS.get("bgwarp")) : null;
-const WARP_S = 60, WARP_EASE = 10;   // 워프 60초, 마지막 10초 감속하며 일반 우주로
+const WARP_S = 60, WARP_EASE = 10;
+// (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · eso = ESO/S. Brunier 은하수 파노라마(대안) · shader = 그려 만든 우주(나).
+// 딥필드 = 웹 망원경 SMACS 0723(NASA, ESA, CSA, STScI). 평가용 이미지는 assets/bg/eval/(저장소에 올리지 않음). ?bgdebug&bgspace=map|eso|shader&bgdeep=0|1
+const SPACE_MODE = (() => { const q = DEBUG ? QS.get("bgspace") : null; return q === "eso" || q === "shader" ? q : "map"; })();
+const SPACE_DEEP = !(DEBUG && QS.get("bgdeep") === "0");   // 워프 60초, 마지막 10초 감속하며 일반 우주로
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
 // 달 기본 = CSS reference pixel 기준 육안 크기 × 배율(11-05). 해는 기존 투영 그대로.
@@ -287,8 +291,16 @@ float moonDisc(vec3 t, float facing, float pxAng) {
 // 워프 축 uWarpDir = 돔 정면 지평선. 별은 축에서 바깥으로 흐르며(로그 극좌표 스크롤) 궤적을 남긴다.
 // 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게. 광행차로 별이 앞쪽에 몰린다.
 uniform vec4 uSpace; uniform vec3 uWarpDir;
-vec3 spaceStars(vec3 d, float pxAng) {
-  vec3 c = vec3(0.004, 0.005, 0.010) + vec3(0.010, 0.006, 0.016) * pow(max(1.0 - abs(d.y - 0.15), 0.0), 6.0);   // 아주 옅은 띠(은하수 느낌)
+// (11-05 2차) 우주 배경 비교용: uSpaceTex = (하늘 지도 켬, 딥필드 켬, 지도 종류 1 = NASA 별 지도 · 2 = ESO 은하수, 지도 노출).
+// 지도는 등장방형(equirect) — 13번 칸, 딥필드 사진 — 14번 칸(실내에서는 지형 확대 조각 칸이 비어 있다).
+uniform sampler2D uSpaceMap, uSpaceDeep; uniform vec4 uSpaceTex; uniform vec2 uSpaceMapSize;
+float vnoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+             mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+vec3 spaceStars(vec3 d, float pxAng, float gain) {
+  vec3 c = vec3(0);
   for (int k = 0; k < 2; k++) {
     float sc = k == 0 ? 60.0 : 140.0;
     vec3 e = d * sc, cell = floor(e);
@@ -301,34 +313,101 @@ vec3 spaceStars(vec3 d, float pxAng) {
       c += tint * s * (k == 0 ? 1.4 : 0.8);
     }
   }
+  return c * gain;
+}
+// 몽환적인 은하 무리 — 허블 딥필드처럼 여기저기 작은 은하(타원 · 나선, 주황 핵 · 푸른 팔). 실제 크기와 무관한 연출.
+vec3 galaxies(vec3 d, float pxAng) {
+  vec3 c = vec3(0);
+  for (int k = 0; k < 2; k++) {
+    float sc = k == 0 ? 22.0 : 55.0;
+    vec3 e = d * sc, cell = floor(e);
+    float h = h3(cell + 7.3 + float(k) * 3.1);
+    if (h < (k == 0 ? 0.62 : 0.72)) continue;
+    vec3 sp = normalize(cell + 0.5 + (vec3(h3(cell + 2.1), h3(cell + 4.7), h3(cell + 6.9)) - 0.5) * 0.5);
+    vec3 A = normalize(cross(abs(sp.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0), sp)), B = cross(sp, A);
+    vec3 q = d - sp * dot(d, sp);
+    float rot = h3(cell + 8.8) * TAU, cr = cos(rot), sr = sin(rot);
+    vec2 uv = vec2(dot(q, A), dot(q, B)); uv = vec2(cr * uv.x - sr * uv.y, sr * uv.x + cr * uv.y);
+    float size = (k == 0 ? 0.0045 : 0.0022) * (0.5 + 1.2 * h3(cell + 1.1)), ell = 0.25 + 0.75 * h3(cell + 5.5);
+    uv /= max(size, pxAng * 0.7);
+    vec2 w = vec2(uv.x, uv.y / ell);
+    float r = length(w);
+    if (r > 6.0) continue;
+    float core = exp(-r * r * 3.0), halo = exp(-r * 1.3) * 0.45;
+    float spiral = h3(cell + 3.3) > 0.45 ? 1.0 : 0.0;
+    float arm = spiral * pow(0.5 + 0.5 * sin(2.0 * atan(w.y, w.x) - 3.2 * log(r + 0.05)), 3.0) * exp(-r * 0.9) * 0.9;
+    vec3 warm = mix(vec3(1.0, 0.72, 0.45), vec3(1.0, 0.9, 0.75), h3(cell + 9.9));
+    vec3 cool = mix(vec3(0.55, 0.7, 1.0), vec3(0.85, 0.6, 1.0), h3(cell + 4.4));
+    float bright = (k == 0 ? 0.5 : 0.3) * (0.4 + 0.6 * h);
+    c += (warm * core + mix(warm, cool, 0.6) * halo + cool * arm) * bright;
+  }
   return c;
 }
+vec3 nebula(vec3 d) {
+  float n = vnoise(d * 2.2) * 0.55 + vnoise(d * 5.1 + 3.0) * 0.3 + vnoise(d * 11.0 + 7.0) * 0.15;
+  float m = vnoise(d * 1.7 + 11.0);
+  return mix(vec3(0.18, 0.06, 0.28), vec3(0.04, 0.12, 0.26), m) * pow(max(n - 0.42, 0.0) * 2.2, 2.0) * 0.35;
+}
+vec3 spaceBase(vec3 d, float pxAng) {
+  vec3 c = vec3(0.004, 0.005, 0.010);
+  if (uSpaceTex.x > 0.5) {
+    // 등장방형 지도. 경계선(경도 ±180°)에서 밉맵이 튀지 않게 픽셀 크기로 직접 고른다.
+    float lon = atan(d.x, d.z), lat = asin(clamp(d.y, -1.0, 1.0));
+    float lod = max(0.0, log2(pxAng * uSpaceMapSize.x / TAU));
+    vec3 m = textureLod(uSpaceMap, vec2(0.5 - lon / TAU, 0.5 - lat / 3.14159265), lod).rgb;
+    c += pow(m, vec3(2.2)) * uSpaceTex.w;
+  } else {
+    c += nebula(d) + vec3(0.010, 0.006, 0.016) * pow(max(1.0 - abs(d.y - 0.15), 0.0), 6.0);
+  }
+  c += spaceStars(d, pxAng, uSpaceTex.x > 0.5 ? 0.6 : 1.0) + galaxies(d, pxAng);
+  if (uSpaceTex.y > 0.5) {
+    // 딥필드 사진 한 장 — 정면 오른쪽 위에 크게(가로 약 34°), 가장자리는 서서히 녹아든다. 검은 바탕이라 더한다.
+    vec3 C = normalize(vec3(0.42, 0.36, 0.83)), A = normalize(cross(vec3(0, 1, 0), C)), B = cross(C, A);
+    float cz = dot(d, C);
+    if (cz > 0.5) {
+      vec2 tp = vec2(dot(d, A), dot(d, B)) / cz;
+      float half_ = tan(17.0 * D);
+      vec2 uv = 0.5 + tp / (2.0 * half_);
+      if (all(greaterThan(uv, vec2(0))) && all(lessThan(uv, vec2(1)))) {
+        float lod = max(0.0, log2(pxAng * 1960.0 / (2.0 * half_)));
+        vec3 g = pow(textureLod(uSpaceDeep, vec2(uv.x, 1.0 - uv.y), lod).rgb, vec3(2.2));
+        vec2 e = min(uv, 1.0 - uv);
+        c += g * smoothstep(0.0, 0.18, min(e.x, e.y)) * 0.9;
+      }
+    }
+  }
+  return c;
+}
+// 성간 이동: 빛 궤적은 적게, 더 빠르게, 길게(유노 생일 장면의 UFO 궤적처럼 밝은 머리 + 길게 옅어지는 꼬리 + 번짐).
+// 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게.
 vec3 warpStars(vec3 d, float pxAng, float k, float t) {
   vec3 F = uWarpDir, A = normalize(cross(abs(F.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0), F)), B = cross(F, A);
   float cth = clamp(dot(d, F), -1.0, 1.0), th = acos(cth);
   float ph = atan(dot(d, B), dot(d, A));
-  float s = log(tan(max(th, 1e-3) * 0.5));          // 로그 극좌표: 축에서 바깥으로 갈수록 커진다
-  float lanes = 300.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
-  float hl = h1(lane * 1.37 + 3.0);
-  float y = s * 2.2 - t * (0.9 + 1.4 * hl) + hl * 41.0;   // t = 적분한 이동 거리(감속해도 별이 뒤로 튀지 않게)
-  float cell = floor(y), fy = fract(y), hs = h2(vec2(lane, cell));
+  float s = log(tan(max(th, 1e-3) * 0.5));
+  float lanes = 110.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
   vec3 c = vec3(0);
-  if (hs > 0.45) {
-    float len = mix(0.05, 0.85, k) * (0.6 + 0.4 * h2(vec2(cell, lane)));   // 감속하면 궤적이 짧아져 점이 된다
-    float head = 0.92, tail = smoothstep(head - len, head, fy) * (1.0 - smoothstep(head, head + 0.03, fy));
-    float lw = max(pxAng / max(sin(th) * TAU / lanes, 1e-4), 0.06);            // 화면 1px 굵기(차선 단위)
-    float across = exp(-fx * fx / (lw * lw));
-    float b = tail * across * (0.35 + 0.65 * hs) * (0.4 + 0.6 * smoothstep(0.02, 0.4, th));
-    vec3 blue = vec3(0.45, 0.65, 1.0), white = vec3(0.95, 0.95, 1.0), red = vec3(1.0, 0.42, 0.28);
-    vec3 dop = mix(blue, white, smoothstep(0.15, 0.9, th));
-    dop = mix(dop, red, smoothstep(1.4, 2.4, th));
-    c += dop * b * 1.4;
+  for (int j = 0; j < 2; j++) {            // 겹치는 두 줄(같은 차선에서 위상이 다른 별)
+    float hl = h1(lane * 1.37 + 3.0 + float(j) * 17.0);
+    float y = s * 0.55 - t * (1.0 + 1.2 * hl) + hl * 41.0 + float(j) * 0.5;
+    float cell = floor(y), fy = fract(y), hs = h2(vec2(lane + float(j) * 911.0, cell));
+    if (hs < 0.62) continue;
+    float len = mix(0.04, 0.92, k);
+    float head = 0.96, u = clamp((fy - (head - len)) / max(len, 1e-3), 0.0, 1.0);
+    float body = fy < head ? pow(u, 2.2) : 1.0 - smoothstep(head, head + 0.02, fy);
+    float lw = max(pxAng / max(sin(th) * TAU / lanes, 1e-4), 0.03);
+    float core = exp(-fx * fx / (lw * lw)), glow = exp(-fx * fx / (16.0 * lw * lw)) * 0.28;
+    float b = body * (core + glow) * (0.5 + 0.5 * hs) * smoothstep(0.03, 0.35, th);
+    vec3 blue = vec3(0.42, 0.62, 1.0), white = vec3(0.96, 0.96, 1.0), red = vec3(1.0, 0.38, 0.24);
+    vec3 dop = mix(blue, white, smoothstep(0.2, 1.0, th));
+    dop = mix(dop, red, smoothstep(1.3, 2.4, th));
+    c += dop * b * 1.8;
   }
-  c += vec3(0.10, 0.16, 0.35) * k * exp(-th * th / 0.02);   // 진행 방향의 푸른 빛
+  c += vec3(0.08, 0.14, 0.32) * k * exp(-th * th / 0.03);
   return c;
 }
 vec3 spaceSky(vec3 d, float pxAng) {
-  vec3 c = spaceStars(d, pxAng) * uSpace.w;
+  vec3 c = spaceBase(d, pxAng) * uSpace.w;
   if (uSpace.y > 0.001) c += warpStars(d, pxAng, uSpace.y, uSpace.z) * smoothstep(0.0, 0.15, uSpace.y + 0.15 * (1.0 - uSpace.w));
   return c;
 }
@@ -824,7 +903,26 @@ export function createDomeGL(host, isPaused) {
   let releaseGround = null, albedoLoading = false, albedoOn = false, textureEpoch = 0;
   let themeFrame = null, themeStart = -Infinity;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let spaceT0 = null, warpLast = 0, warpDist = 0;   // 실내 우주 배경의 워프 시작 · 적분 거리
+  let spaceT0 = null, warpLast = 0, warpDist = 0;
+  const spaceTex = { map: null, deep: null, blank: null, mapW: 1, loading: false };
+  function loadSpaceTex() {
+    if (spaceTex.loading) return; spaceTex.loading = true;
+    const load = (name, key, unit) => {
+      const img = new Image(); img.decoding = "async";
+      img.onload = () => {
+        if (gl.isContextLost()) return;
+        const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "map" ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        spaceTex[key] = tex; if (key === "map") spaceTex.mapW = img.width; draw();
+      };
+      img.onerror = () => console.warn("[bgdome] 우주 사진을 못 받음", name);
+      img.src = new URL("../assets/bg/eval/" + name, import.meta.url).href;
+    };
+    if (SPACE_MODE !== "shader") load(SPACE_MODE === "eso" ? "space-eso.jpg" : "space-starmap.jpg", "map", 13);
+    if (SPACE_DEEP) load("space-deep.jpg", "deep", 14);
+  }   // 실내 우주 배경의 워프 시작 · 적분 거리
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -1196,6 +1294,8 @@ export function createDomeGL(host, isPaused) {
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele;
     gl.uniform1f(U.uF, viewFocal());
+    // 실내 우주가 13 · 14번 칸에 float 질감을 꽂았다면 바깥 지형(정수 표본기) 전에 비운다 — 확대 조각이 있으면 view() 가 다시 꽂는다.
+    if (outdoor && spaceTex.blank) { gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, null); gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, null); }
     if (outdoor && releaseGround.terrain) releaseGround.terrain.view(U, yaw, pitch,
       2 * Math.atan(W / (2 * viewFocal())), 2 * Math.atan(H / (2 * viewFocal())), tele, W, H);
     gl.uniform2f(U.uTele, 1, 1);
@@ -1206,8 +1306,17 @@ export function createDomeGL(host, isPaused) {
       const el = WARP_FIXED != null ? WARP_FIXED : reducedMotion.matches ? WARP_S : (now - spaceT0) / 1000;
       const ss = (a, b, x) => { const v = Math.min(1, Math.max(0, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
       const k = 1 - ss(WARP_S - WARP_EASE, WARP_S, el), stars = ss(WARP_S - WARP_EASE, WARP_S + 2, el);
-      if (WARP_FIXED != null) warpDist = el * 1.6; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * 1.6 * (0.15 + 0.85 * k); warpLast = now; }
+      if (WARP_FIXED != null) warpDist = el * 2.4; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * 2.4 * (0.12 + 0.88 * k); warpLast = now; }
       gl.uniform4f(U.uSpace, 1, k, warpDist, Math.max(stars, 0.12));
+      loadSpaceTex();
+      gl.uniform1i(U.uSpaceMap, 13); gl.uniform1i(U.uSpaceDeep, 14);
+      // 13 · 14번 칸에는 지형의 정수 질감(RGB16UI)이 남아 있을 수 있다 — float 표본기로 읽으면 그리기가 통째로 실패하므로
+      // 사진이 아직 없으면 1×1 검정을 꽂아 둔다.
+      if (!spaceTex.blank) { spaceTex.blank = gl.createTexture(); gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.blank); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255])); }
+      gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.map || spaceTex.blank);
+      gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, spaceTex.deep || spaceTex.blank);
+      gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
+      gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
       gl.uniform3f(U.uWarpDir, 0, 0.05, 0.99875);
     } else gl.uniform4f(U.uSpace, 0, 0, 0, 0);
     gl.uniform1f(U.uMoonCue, 0);
