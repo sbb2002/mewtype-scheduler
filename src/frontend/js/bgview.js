@@ -7,14 +7,14 @@
 // 이미 거절된 상태면 브라우저가 다시 묻지 않으므로 「브라우저 설정에서 허용」으로 안내한다. 위치를 못 받으면(신호 없음 · 시간 초과)도 실내 보기로 되돌린다.
 // 다음 방문엔 저장된 값이 바깥 보기이고 권한이 이미 허용돼 있을 때만 조용히 위치를 받아 바깥 보기로 연다(그 밖은 실내 보기).
 //
-// 방위 보정은 두 보기 공통(2026-11-05 운영자 「실내 보기도 바깥 보기와 같은 방위 보정」) — 시선이 둘 다 실제 방위라서(bgdomegl.js updateView).
-// 진북 보정(편각) · 수동 보정은 위치가 있어야 계산되므로, 실내 보기라도 위치 권한이 이미 허용돼 있으면 조용히 위치를 받아 둔다(새로 묻지 않는다).
-// 실내 보기에서 「방향 맞추기」를 누르면 그때 위치를 묻는다(해 · 달 위치 계산에 필요). 거절해도 실내 보기는 그대로 — 보정만 못 한다.
+// 방위 보정은 두 보기 공통(2026-11-05 운영자) — 시선이 둘 다 실제 방위라서(bgdomegl.js updateView).
+// 진북 보정(편각)은 위치가 있어야 계산되므로, 실내 보기라도 위치 권한이 이미 허용돼 있으면 조용히 위치를 받아 둔다(새로 묻지 않는다).
+// 수동 「방향 맞추기」는 없앴다(2026-11-05 운영자 「방송 확인 앱이지 별자리 앱이 아니다 — 기능만 복잡해진다」).
+// 남은 오차는 폰의 나침반 자체 보정(8자 그리기)에 맡기고, 팝업에 안내 한 줄만 둔다.
 
 import { themeButton } from "./theme.js";
-import { acquireSite, geoPermission, outdoorSite } from "./bgsite.js";
-import { rawHeading, setHeadingOffset, headingOffsetDeg, declinationDeg, OFFSET_TTL_HOURS } from "./bggyro.js";
-import { sunPosition, moonPosition } from "./bgastro.js";
+import { acquireSite, geoPermission } from "./bgsite.js";
+import { declinationDeg } from "./bggyro.js";
 
 export const BGVIEW_EVENT = "mew:bgview";   // detail = "indoor" | "outdoor"
 const KEY = "bgview";
@@ -105,45 +105,10 @@ const domeReady = () => !!document.querySelector("#bgdeco .bgdm-gl");
 function syncPop(value = bgView()) {
   if (!pop) return;
   for (const b of pop.querySelectorAll(".bgvw__opt")) b.setAttribute("aria-checked", String(b.dataset.value === value));
-  // 방향 맞추기 — 두 보기 공통(시선이 둘 다 실제 방위)
-  // 진북 보정(편각)은 자동 — 얼마나 더하고 있는지 보여 준다
+  // 방향 안내 — 진북 보정(편각)은 자동이라 얼마나 더하고 있는지만 덧붙인다
   const dec = declinationDeg();
-  pop.querySelector(".bgvw__fix .bgvw__sub").textContent = "실제 해(밤엔 달)를 폰으로 겨눈 채 누르세요"
-    + (dec == null ? "" : ` · 진북 보정 ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° 는 자동`);
-  const off = Math.round(headingOffsetDeg());
-  const reset = pop.querySelector(".bgvw__reset");
-  reset.hidden = !off;
-  reset.querySelector(".bgvw__sub").textContent = `지금 보정 ${off > 0 ? "+" : ""}${off}° · 다른 장소이거나 ${OFFSET_TTL_HOURS}시간 지나면 저절로 지워져요`;
-}
-
-/** 방향 맞추기: 사용자가 실제 해(없으면 달)를 겨누고 누른 순간, 계산 방위와 나침반 방위(진북 보정 뒤)의 차이를 보정으로 기억한다 */
-async function calibrate() {
-  if (busy) return;
-  if (!outdoorSite()) {
-    // 실내 보기에서 처음 맞출 때 — 해 · 달 위치를 계산하려면 위치가 필요하다. 겨누는 자세가 흐트러지지 않게 받은 뒤 다시 누르게 한다
-    busy = true;
-    toast("위치를 확인하는 중…", 0);
-    const { result, before } = await acquireSite();
-    busy = false;
-    if (result === "ok") { syncPop(); toast("위치를 받았어요. 실제 해(밤엔 달)를 다시 겨눈 채 「방향 맞추기」를 눌러 주세요.", 5000); }
-    else if (result === "denied") toast(before === "denied"
-      ? "방향 맞추기는 위치 권한이 있어야 해요. 브라우저 설정의 사이트 권한에서 위치를 허용해 주세요."
-      : "방향 맞추기는 위치 권한을 허용해야 쓸 수 있어요.", 5000);
-    else if (result === "unsupported") toast("이 브라우저는 위치를 알려 주지 않아 방향을 맞출 수 없어요.", 5000);
-    else toast("위치를 가져오지 못했어요. 잠시 뒤 다시 눌러 주세요.", 5000);
-    return;
-  }
-  const site = outdoorSite(), raw = rawHeading();
-  if (raw == null) { toast("나침반 값이 아직 없어요. 폰을 조금 움직인 뒤 다시 눌러 주세요.", 4000); return; }
-  const now = new Date(), RAD = Math.PI / 180;
-  const sun = sunPosition(now, site.lat, site.lon), moon = moonPosition(now, site.lat, site.lon);
-  let target = null, name = "";
-  if (sun.alt > -1 * RAD) { target = sun.az; name = "해"; }
-  else if (moon.alt > 0) { target = moon.az; name = "달"; }
-  if (target == null) { toast("지금은 해와 달이 모두 지평선 아래라 맞출 수 없어요.", 4500); return; }
-  setHeadingOffset(target - raw);
-  const off = Math.round(headingOffsetDeg());
-  toast(`${name} 쪽으로 방향을 맞췄어요 (보정 ${off > 0 ? "+" : ""}${off}°). 이 자리에서 ${OFFSET_TTL_HOURS}시간 동안 기억해 둘게요.`, 4500);
+  pop.querySelector(".bgvw__note").textContent = "방향이 어긋나면 폰으로 공중에 8자를 몇 번 그려 주세요."
+    + (dec == null ? "" : ` 진북 보정 ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° 는 자동이에요.`);
 }
 
 function buildPop() {
@@ -172,28 +137,10 @@ function buildPop() {
     b.addEventListener("click", () => { close(); choose(o.value); });
     pop.appendChild(b);
   }
-  // 방향 맞추기(두 보기 공통) — 나침반 오차 보정
-  const cal = document.createElement("div");
-  cal.className = "bgvw__cal";
-  const mk = (cls, label, sub, fn) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `bgvw__act ${cls}`;
-    b.setAttribute("role", "menuitem");
-    const t = document.createElement("span");
-    t.className = "bgvw__label";
-    t.textContent = label;
-    const u = document.createElement("span");
-    u.className = "bgvw__sub";
-    u.textContent = sub;
-    b.append(t, u);
-    b.addEventListener("click", () => { close(); fn(); });
-    cal.appendChild(b);
-    return b;
-  };
-  mk("bgvw__fix", "방향 맞추기", "실제 해(밤엔 달)를 폰으로 겨눈 채 누르세요", calibrate);
-  mk("bgvw__reset", "보정 지우기", "", () => { setHeadingOffset(0); toast("방향 보정을 지웠어요.", 3000); });
-  pop.appendChild(cal);
+  // 방향 안내(두 보기 공통, 누르는 칸 아님) — 글은 syncPop 이 채운다
+  const note = document.createElement("p");
+  note.className = "bgvw__note";
+  pop.appendChild(note);
   document.body.appendChild(pop);
 }
 

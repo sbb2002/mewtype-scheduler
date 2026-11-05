@@ -7,7 +7,8 @@
 //   ① 방위 원천 = 자이로 · 가속도계 · 자력계를 OS 가 섞은 값만 쓴다. 자력계 없이 자이로만 쌓은 값은 돌릴수록 오차가 쌓인다(11-04 운영자 실측 증상).
 //      우선순위: AbsoluteOrientationSensor(쿼터니언*) → deviceorientationabsolute → iOS webkitCompassHeading → absolute 표시만 붙은 deviceorientation(마지막 수단).
 //   ② 진북 보정 = 자북 방위 + 편각(bgmag.js WMM2025, 위치 · 날짜마다 자동 계산).
-//   ③ 수동 보정(「방향 맞추기」) = 남은 오차만 더한다. 맞춘 장소 · 시각을 같이 저장하고, 다른 장소이거나 OFFSET_TTL_MS 가 지나면 버린다.
+//   ③ 수동 보정(「방향 맞추기」)은 없앴다(11-05 운영자 — 방송 확인 앱에 기능만 복잡해진다). 남은 오차는 폰의 나침반 자체 보정(8자)에 맡긴다.
+//      그때 저장하던 키(bgheading · bgheading2)는 불러올 때 지운다.
 //   * 쿼터니언 = 3D 회전을 각도 셋 대신 숫자 넷으로 나타내는 방식. 폰을 세울 때 생기는 각도 꼬임이 없다
 
 import { outdoorSite } from "./bgsite.js";
@@ -16,7 +17,6 @@ import { declinationRad } from "./bgmag.js";
 const DEG = Math.PI / 180;
 const YAW_FREEZE = 78 * DEG;   // 폰을 거의 눕히거나 세워 하늘 · 바닥을 수직으로 보면 좌우 방향이 정의되지 않아 흔들린다 → 그 동안은 좌우를 붙잡아 둔다
 const FRESH_MS = 1000;         // 윗순위 원천이 이 시간 안에 값을 줬으면 아랫순위 값은 버린다
-const OFFSET_TTL_MS = 3 * 3600 * 1000;   // 수동 보정 수명 — 주변 철근 · 전자기기 오차는 자리마다 달라 오래 두면 오히려 틀린다
 
 let on = false, have = false, needBase = true, tiltX = 0, tiltY = 1;
 let yawAcc = 0, lastYaw = null, rawPitch = 0, baseYaw = 0, basePitch = 0;
@@ -27,7 +27,7 @@ const lastAt = { sensor: -1e9, event: -1e9, ios: -1e9, flag: -1e9 };
 // 확인용 — 어떤 원천이 몇 번 왔고 마지막 값이 무엇인지(bgdomegl.js 가 ?bgdebug 일 때 콘솔에 3초마다 찍는다)
 export const gyroDebug = {
   orient: 0, absolute: 0, compass: 0, absFlag: 0, sensor: 0, sensorErr: null,
-  src: null, decl: null, offset: null, last: null, lastAbs: null,
+  src: null, decl: null, last: null, lastAbs: null,
 };
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -145,50 +145,11 @@ function declination() {
 /** 지금 적용 중인 편각(도) — 위치를 아직 모르면 null */
 export const declinationDeg = () => (outdoorSite() ? declination() / DEG : null);
 
-// ── 수동 보정(「방향 맞추기」, bgview.js) — { rad, lat, lon, at } 를 기기에 기억한다.
-// 옛 키 "bgheading"(편각까지 섞인 값, 장소 · 시각 없음)은 의미가 달라 읽지 않고 지운다.
-const OFFSET_KEY = "bgheading2";
-let manual = null;
-try {
-  localStorage.removeItem("bgheading");
-  const v = JSON.parse(localStorage.getItem(OFFSET_KEY) || "null");
-  if (v && Number.isFinite(v.rad) && Number.isFinite(v.lat) && Number.isFinite(v.lon) && Number.isFinite(v.at)) manual = v;
-} catch { /* 저장소 없음 · 깨진 값 */ }
+// 없앤 수동 보정이 기기에 남긴 값 정리 — 남겨 둬도 읽지 않지만 저장소를 비워 둔다
+try { localStorage.removeItem("bgheading"); localStorage.removeItem("bgheading2"); } catch { /* 저장소 없음 */ }
 
-function dropManual(why) {
-  manual = null;
-  gyroDebug.offset = why;
-  try { localStorage.removeItem(OFFSET_KEY); } catch { /* 저장 못 함 */ }
-}
-
-/** 지금 유효한 수동 보정(라디안). 다른 장소이거나 오래됐으면 이 자리에서 버리고 0 */
-function manualOffset() {
-  if (!manual) return 0;
-  const site = outdoorSite();
-  if (!site) return 0;   // 위치를 받기 전엔 판단 보류(적용도 안 함)
-  if (site.lat !== manual.lat || site.lon !== manual.lon) { dropManual("다른 장소라 버림"); return 0; }
-  if (Date.now() - manual.at > OFFSET_TTL_MS) { dropManual("오래돼 버림"); return 0; }
-  gyroDebug.offset = Math.round(manual.rad / DEG);
-  return manual.rad;
-}
-
-export const headingOffsetDeg = () => manualOffset() / DEG;
-export const OFFSET_TTL_HOURS = OFFSET_TTL_MS / 3600000;
-
-/** 보정 저장 — rad = 더할 각도(편각을 뺀 나머지). 0 이면 보정 지우기. 위치를 모르면 저장하지 않는다 */
-export function setHeadingOffset(rad) {
-  const site = outdoorSite();
-  const r = wrap(rad);
-  if (!r || !site) { dropManual(null); return; }
-  manual = { rad: r, lat: site.lat, lon: site.lon, at: Date.now() };
-  try { localStorage.setItem(OFFSET_KEY, JSON.stringify(manual)); } catch { /* 저장 못 해도 지금은 적용 */ }
-}
-
-/** 수동 보정 전 방위(진북 기준, 라디안) — 보정값을 새로 구할 때 쓴다. 나침반 값이 없으면 null */
-export function rawHeading() { return absHave ? wrap(absYaw + declination()) : null; }
-
-/** 보는 방향의 실제 방위 { yaw: 진북 = 0 · 동 = +π/2, pitch } (편각 · 수동 보정 포함) — 나침반 값이 아직 없으면 null */
-export function gyroAbs() { return absHave ? { yaw: wrap(absYaw + declination() + manualOffset()), pitch: absPitch } : null; }
+/** 보는 방향의 실제 방위 { yaw: 진북 = 0 · 동 = +π/2, pitch } (편각 포함) — 나침반 값이 아직 없으면 null */
+export function gyroAbs() { return absHave ? { yaw: wrap(absYaw + declination()), pitch: absPitch } : null; }
 
 /** 지금 폰 자세를 새 기준(정면)으로 삼는다 */
 export function rebase() { baseYaw = yawAcc; basePitch = rawPitch; }

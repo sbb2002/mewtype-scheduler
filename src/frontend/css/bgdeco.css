@@ -304,19 +304,5 @@ html:has(#bgdeco[data-variant="d"]) .tt__legend { color: var(--color-text); }
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .bgvw-toast.is-on { opacity: 1; transform: translate(-50%, 0); }
-.bgvw__cal { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--color-border); }
-.bgvw__cal[hidden], .bgvw__act[hidden] { display: none; }
-.bgvw__act {
-  display: grid;
-  width: 100%;
-  padding: 9px 10px 9px 36px;
-  text-align: left;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  cursor: pointer;
-  font: inherit;
-}
-.bgvw__act:hover { background: var(--color-hover); }
-.bgvw__act .bgvw__sub { grid-column: 1; }
+/* 방향 안내(누르는 칸 아님) — 어긋나면 8자 보정 */
+.bgvw__note { margin-top: 4px; padding: 8px 10px 4px; border-top: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-muted); line-height: 1.4; }

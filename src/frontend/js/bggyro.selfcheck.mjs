@@ -1,5 +1,5 @@
 // bggyro.selfcheck.mjs — node src/frontend/js/bggyro.selfcheck.mjs
-// 바깥 보기 방위: ① 쿼터니언 계산 = 오일러 각 계산 ② 원천 우선순위 ③ 진북 보정(편각) ④ 수동 보정의 장소 · 시간 만료.
+// 방위: ① 쿼터니언 계산 = 오일러 각 계산 ② 원천 우선순위 · 진북 보정(편각) ③ 없앤 수동 보정 값 정리.
 // 브라우저 대신 가짜 window · navigator · localStorage · 센서를 깔고 모듈을 불러온다.
 
 const store = new Map();
@@ -81,31 +81,14 @@ check("센서가 끊기면 이벤트 사용, 그동안 absolute 표시값은 무
 fakeNow += 1500;   // 이벤트도 끊김
 listeners.deviceorientation({ alpha: east[0], beta: east[1], gamma: east[2], absolute: true });
 check("윗순위가 다 끊기면 absolute 표시값 사용(마지막 수단)", g.gyroDebug.src === "flag" && near(g.gyroAbs().yaw, 90 * DEG + dec, 1e-9));
+
+// ③ 없앤 수동 보정 — 남아 있던 값은 지우고 적용하지 않는다(새로고침 흉내 = 모듈 다시 불러오기)
+store.set("bgheading2", JSON.stringify({ rad: 12 * DEG, lat: 37.6, lon: 127, at: Date.now() }));
+const g2 = await import("./bggyro.js?reload");
+g2.startAbsolute();
 fakeNow += 10;
 sensorInst.emit(eulerQ(...north));
-
-// ③ · ④ 수동 보정
-check("수동 보정 전 방위 = 자북 + 편각", near(g.rawHeading(), dec, 1e-9));
-g.setHeadingOffset(12 * DEG);
-check("수동 보정 적용", near(g.gyroAbs().yaw, dec + 12 * DEG, 1e-9) && Math.round(g.headingOffsetDeg()) === 12);
-check("수동 보정에 장소 · 시각 저장", (() => { const v = JSON.parse(store.get("bgheading2")); return v.lat === 37.6 && v.lon === 127 && Number.isFinite(v.at); })());
-const saved = JSON.parse(store.get("bgheading2"));
-store.set("bgheading2", JSON.stringify({ ...saved, at: Date.now() - 3.1 * 3600 * 1000 }));
-const g2 = await import("./bggyro.js?expire");   // 새로고침 흉내(모듈 다시 불러오기 — bgsite 의 위치는 그대로)
-g2.startAbsolute();
-sensorInst.emit(eulerQ(...north));
-check("3시간 넘은 보정은 버림", g2.headingOffsetDeg() === 0 && !store.has("bgheading2") && g2.gyroDebug.offset === "오래돼 버림");
-
-store.set("bgheading2", JSON.stringify({ ...saved, at: Date.now() }));
-const g3 = await import("./bggyro.js?fresh");
-g3.startAbsolute();
-sensorInst.emit(eulerQ(...north));
-check("새로고침 뒤에도 같은 장소 · 3시간 안이면 유지", Math.round(g3.headingOffsetDeg()) === 12);
-pos = { latitude: 35.7, longitude: 139.7 };
-await acquireSite();
-check("다른 장소면 버림", g3.headingOffsetDeg() === 0 && !store.has("bgheading2") && g3.gyroDebug.offset === "다른 장소라 버림");
-g3.setHeadingOffset(0);
-check("보정 지우기", g3.headingOffsetDeg() === 0);
+check("옛 수동 보정(bgheading2) 지우고 적용 안 함", !store.has("bgheading2") && near(g2.gyroAbs().yaw, dec, 1e-9));
 
 if (fail) { console.log(`\n${fail}건 실패`); process.exit(1); }
 console.log("\n전부 통과");
