@@ -47,6 +47,11 @@ const CLOUD_SEED = (() => {
   const r = () => { s = Math.imul(s ^ (s >>> 15), 0x2c1b3c6d) >>> 0; s ^= s >>> 12; return (s >>> 0) / 4294967296; };
   return [r(), r(), 0.35 + 0.45 * r()];
 })();
+// (11-05 운영자) 실내 배경 무작위 — 분홍 구름이 기본(이 사이트의 얼굴), 가끔 「우주」(성간 이동 1분 뒤 일반 우주).
+// 방문마다 뽑는다(저장 안 함). ?bgdebug&bgindoor=pink|space 로 고정, bgwarp=<초> 로 워프 진행 시점 고정(캡처용).
+const INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : (Math.random() < 0.2 ? "space" : "pink"); })();
+const WARP_FIXED = DEBUG && QS.get("bgwarp") != null && Number.isFinite(Number(QS.get("bgwarp"))) ? Number(QS.get("bgwarp")) : null;
+const WARP_S = 60, WARP_EASE = 10;   // 워프 60초, 마지막 10초 감속하며 일반 우주로
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
 // 달 기본 = CSS reference pixel 기준 육안 크기 × 배율(11-05). 해는 기존 투영 그대로.
@@ -276,6 +281,57 @@ float moonDisc(vec3 t, float facing, float pxAng) {
   return clamp((1.0 - rr) * R / pxAng + 0.5, 0.0, 1.0) * step(0.0, facing);
 }
 
+
+// (11-05 운영자) 실내 무작위 배경 「우주」 — 성간 이동(워프) 1분 뒤 일반 우주로. 이미지 없이 셰이더만.
+// uSpace.x = 우주 배경 켬, .y = 워프 세기(1 → 0, 감속 동안 줄어듦), .z = 워프 진행 시간(초), .w = 우주 별 밝기(0 → 1).
+// 워프 축 uWarpDir = 돔 정면 지평선. 별은 축에서 바깥으로 흐르며(로그 극좌표 스크롤) 궤적을 남긴다.
+// 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게. 광행차로 별이 앞쪽에 몰린다.
+uniform vec4 uSpace; uniform vec3 uWarpDir;
+vec3 spaceStars(vec3 d, float pxAng) {
+  vec3 c = vec3(0.004, 0.005, 0.010) + vec3(0.010, 0.006, 0.016) * pow(max(1.0 - abs(d.y - 0.15), 0.0), 6.0);   // 아주 옅은 띠(은하수 느낌)
+  for (int k = 0; k < 2; k++) {
+    float sc = k == 0 ? 60.0 : 140.0;
+    vec3 e = d * sc, cell = floor(e);
+    float h = h3(cell + float(k) * 19.7);
+    if (h > (k == 0 ? 0.93 : 0.965)) {
+      vec3 sp = normalize(cell + 0.5 + (vec3(h3(cell + 1.7), h3(cell + 3.1), h3(cell + 5.3)) - 0.5) * 0.6) * sc;
+      float mag = (h - 0.93) * 14.0;
+      float s = clamp(0.9 - length(e - sp) / (sc * pxAng), 0.0, 1.0) * (0.25 + 0.75 * mag);
+      vec3 tint = mix(vec3(1.0, 0.78, 0.6), vec3(0.7, 0.82, 1.0), h3(cell + 9.1));
+      c += tint * s * (k == 0 ? 1.4 : 0.8);
+    }
+  }
+  return c;
+}
+vec3 warpStars(vec3 d, float pxAng, float k, float t) {
+  vec3 F = uWarpDir, A = normalize(cross(abs(F.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0), F)), B = cross(F, A);
+  float cth = clamp(dot(d, F), -1.0, 1.0), th = acos(cth);
+  float ph = atan(dot(d, B), dot(d, A));
+  float s = log(tan(max(th, 1e-3) * 0.5));          // 로그 극좌표: 축에서 바깥으로 갈수록 커진다
+  float lanes = 300.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
+  float hl = h1(lane * 1.37 + 3.0);
+  float y = s * 2.2 - t * (0.9 + 1.4 * hl) + hl * 41.0;   // t = 적분한 이동 거리(감속해도 별이 뒤로 튀지 않게)
+  float cell = floor(y), fy = fract(y), hs = h2(vec2(lane, cell));
+  vec3 c = vec3(0);
+  if (hs > 0.45) {
+    float len = mix(0.05, 0.85, k) * (0.6 + 0.4 * h2(vec2(cell, lane)));   // 감속하면 궤적이 짧아져 점이 된다
+    float head = 0.92, tail = smoothstep(head - len, head, fy) * (1.0 - smoothstep(head, head + 0.03, fy));
+    float lw = max(pxAng / max(sin(th) * TAU / lanes, 1e-4), 0.06);            // 화면 1px 굵기(차선 단위)
+    float across = exp(-fx * fx / (lw * lw));
+    float b = tail * across * (0.35 + 0.65 * hs) * (0.4 + 0.6 * smoothstep(0.02, 0.4, th));
+    vec3 blue = vec3(0.45, 0.65, 1.0), white = vec3(0.95, 0.95, 1.0), red = vec3(1.0, 0.42, 0.28);
+    vec3 dop = mix(blue, white, smoothstep(0.15, 0.9, th));
+    dop = mix(dop, red, smoothstep(1.4, 2.4, th));
+    c += dop * b * 1.4;
+  }
+  c += vec3(0.10, 0.16, 0.35) * k * exp(-th * th / 0.02);   // 진행 방향의 푸른 빛
+  return c;
+}
+vec3 spaceSky(vec3 d, float pxAng) {
+  vec3 c = spaceStars(d, pxAng) * uSpace.w;
+  if (uSpace.y > 0.001) c += warpStars(d, pxAng, uSpace.y, uSpace.z) * smoothstep(0.0, 0.15, uSpace.y + 0.15 * (1.0 - uSpace.w));
+  return c;
+}
 vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   float el = asin(clamp(d.y, -1.0, 1.0));
   float u = atan(d.x, d.z) / TAU * 3.0;
@@ -284,7 +340,7 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   vec4 A = skySet(uSky, uCloud, uSkyM, uSkyO, uCldM, uCldO, u, v, el);
   vec4 B = uMix > 0.0 ? skySet(uSky2, uCloud2, uSkyM2, uSkyO2, uCldM2, uCldO2, u, v, el) : A;
   vec3 c = mix(A.rgb, B.rgb, uMix);
-  if (uOut < 0.5) return c;
+  if (uOut < 0.5) return uSpace.x > 0.5 ? spaceSky(d, pxAng) : c;
   float cloud = uCloudTest >= 0.0 ? uCloudTest * uCldA : mix(A.a, B.a, uMix);
   float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
 #if GROUND_OUTDOOR
@@ -468,7 +524,8 @@ void main() {
 #else
   vec4 geometry = groundGeometry(d, groundPixel);
   vec3 col = sky(d, groundPixel, discPx, p);
-  if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
+  // 우주 배경에는 땅이 없다 — 지평선 아래도 별.
+  if (geometry.x > 0.0 && uSpace.x < 0.5) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
 #endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
@@ -767,6 +824,7 @@ export function createDomeGL(host, isPaused) {
   let releaseGround = null, albedoLoading = false, albedoOn = false, textureEpoch = 0;
   let themeFrame = null, themeStart = -Infinity;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let spaceT0 = null, warpLast = 0, warpDist = 0;   // 실내 우주 배경의 워프 시작 · 적분 거리
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -1142,6 +1200,16 @@ export function createDomeGL(host, isPaused) {
       2 * Math.atan(W / (2 * viewFocal())), 2 * Math.atan(H / (2 * viewFocal())), tele, W, H);
     gl.uniform2f(U.uTele, 1, 1);
     gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
+    if (INDOOR_BG === "space" && !outdoor) {
+      const now = performance.now();
+      if (spaceT0 === null) { spaceT0 = now; warpLast = now; }
+      const el = WARP_FIXED != null ? WARP_FIXED : reducedMotion.matches ? WARP_S : (now - spaceT0) / 1000;
+      const ss = (a, b, x) => { const v = Math.min(1, Math.max(0, (x - a) / (b - a))); return v * v * (3 - 2 * v); };
+      const k = 1 - ss(WARP_S - WARP_EASE, WARP_S, el), stars = ss(WARP_S - WARP_EASE, WARP_S + 2, el);
+      if (WARP_FIXED != null) warpDist = el * 1.6; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * 1.6 * (0.15 + 0.85 * k); warpLast = now; }
+      gl.uniform4f(U.uSpace, 1, k, warpDist, Math.max(stars, 0.12));
+      gl.uniform3f(U.uWarpDir, 0, 0.05, 0.99875);
+    } else gl.uniform4f(U.uSpace, 0, 0, 0, 0);
     gl.uniform1f(U.uMoonCue, 0);
     let moonRadius = SUN_MOON_R[1] * DEG;
     if (astro && SIZE_MODE === "eye") {
@@ -1295,7 +1363,7 @@ export function createDomeGL(host, isPaused) {
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
-    if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor)) draw();
+    if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && performance.now() - spaceT0 < (WARP_S + 3) * 1000 && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
     raf = requestAnimationFrame(frame);
   }
 
