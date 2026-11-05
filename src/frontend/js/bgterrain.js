@@ -350,13 +350,20 @@ vec3 terrainSurface(vec3 ray, vec4 geometry, float pixel) {
   }
   if(uGroundMoonLight>.001) moon=max(dot(n,uMoonDir),0.0)*mix(1.0,terrainShadow(terrainHit.xy,uMoonDir,.02),terrainPhoto)*vSourceClear.y;
   vec3 skyCol=mix(vec3(.30,.36,.46),vec3(.30,.24,.30),uSolar.y);   // 낮 = 푸른 하늘빛, 노을 = 보랏빛
-  vec3 ambient=skyCol*sky*(.5+.5*n.y)*(.75-.45*low)+uSunCol*.04*(1.0-n.y);
-  vec3 light=vec3(.016)+uSolar.x*(ambient+uSunCol*1.75*sun)+uGroundMoonLight*(vec3(.035,.045,.065)*sky+uMoonCol*.30*moon);
+  // 하늘빛 = 지금 지평선 하늘색(groundAir)을 섞어 — 노을 · 박명에 하늘이 밝으면 그늘진 산도 그만큼 밝다.
+  vec3 ambient=(skyCol*.45+air*.75)*sky*(.5+.5*n.y)*(.85-.25*low)+uSunCol*.08*(1.0-n.y);
+  // 하늘빛은 해가 낮아도 오래 남는다(sqrt) — 역광인 저녁 산이 시커멓지 않게.
+  vec3 light=vec3(.016)+sqrt(uSolar.x)*ambient+uSolar.x*uSunCol*1.75*sun+uGroundMoonLight*(vec3(.035,.045,.065)*sky+uMoonCol*.30*moon);
+  // (11-05 운영자) 산이 시커멓게 보인다 → 실제 산처럼 녹색으로. Landsat 8월 사진은 마른 올리브 · 갈색(평균 sRGB 68 · 68 · 52)이라
+  // 채도를 올리고 초록 쪽으로 틀어 숲 색을 살리고, 노출을 올린다. 평지(사진 밖)는 그대로.
+  float lum=dot(albedo,vec3(.2126,.7152,.0722));
+  vec3 forest=max(mix(vec3(lum),albedo,1.35)*vec3(.80,1.18,.72),0.0);
+  albedo=mix(albedo,forest,terrainPhoto)*mix(1.0,2.2,terrainPhoto);
   vec3 surface=albedo*light;
   // 해 쪽 공기: 해를 향해 볼수록 멀리 있는 능선 사이 공기가 해 색으로 번진다(낮은 해일수록).
   float fwd=max(dot(ray,uSunDir),0.0);
   vec3 airSun=air+uSunCol*uSolar.x*low*.35*pow(fwd,6.0);
-  surface=mix(airSun,surface,exp(-geometry.y*.014));
+  surface=mix(airSun,surface,exp(-geometry.y*.010));   // 원경 공기 조금 옅게 — 푸른 회색이 산 색을 덮었다
   return mix(plain,surface,terrainBlend);
 }
 #endif
