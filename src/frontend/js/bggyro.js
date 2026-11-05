@@ -2,8 +2,8 @@
 // 보는 방향 = 폰 뒷면이 향하는 쪽. 좌우(yaw)는 나침반처럼 오른쪽으로 돌면 +, 위아래(pitch)는 위로 들면 +. 화면 기울임(roll)은 쓰지 않는다 — 배경이 기우뚱하면 어지럽다.
 // 센서는 HTTPS(보안 연결)에서만 온다. 값이 한 번도 안 오면 gyroView() · gyroAbs() 가 null 이고 화면은 고정이다.
 //
-// 실내 보기 = 기준 자세에서 얼마나 돌았는지(상대값, deviceorientation). 바깥 보기 = 실제 방위(절대값).
-// 바깥 보기 방위는 Stardroid(옛 Google Sky Map)와 같은 순서로 구한다 — ref/bg-dome/stardroid_sensor_study.md:
+// 두 보기(실내 · 바깥) 모두 실제 방위(gyroAbs, 절대값)를 쓴다(11-05 시선 통일 · 방위 보정 통일). 기준 자세에서 돈 양(gyroView, 상대값)은 나침반 값이 없을 때의 대체.
+// 방위는 Stardroid(옛 Google Sky Map)와 같은 순서로 구한다 — ref/bg-dome/stardroid_sensor_study.md:
 //   ① 방위 원천 = 자이로 · 가속도계 · 자력계를 OS 가 섞은 값만 쓴다. 자력계 없이 자이로만 쌓은 값은 돌릴수록 오차가 쌓인다(11-04 운영자 실측 증상).
 //      우선순위: AbsoluteOrientationSensor(쿼터니언*) → deviceorientationabsolute → iOS webkitCompassHeading → absolute 표시만 붙은 deviceorientation(마지막 수단).
 //   ② 진북 보정 = 자북 방위 + 편각(bgmag.js WMM2025, 위치 · 날짜마다 자동 계산).

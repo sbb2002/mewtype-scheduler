@@ -6,6 +6,10 @@
 // 바깥 보기는 위치 권한이 있어야 쓴다(2026-11-04 운영자 결정): 고르는 순간 권한을 묻고, 거절하면 실내 보기로 되돌리며 안내한다.
 // 이미 거절된 상태면 브라우저가 다시 묻지 않으므로 「브라우저 설정에서 허용」으로 안내한다. 위치를 못 받으면(신호 없음 · 시간 초과)도 실내 보기로 되돌린다.
 // 다음 방문엔 저장된 값이 바깥 보기이고 권한이 이미 허용돼 있을 때만 조용히 위치를 받아 바깥 보기로 연다(그 밖은 실내 보기).
+//
+// 방위 보정은 두 보기 공통(2026-11-05 운영자 「실내 보기도 바깥 보기와 같은 방위 보정」) — 시선이 둘 다 실제 방위라서(bgdomegl.js updateView).
+// 진북 보정(편각) · 수동 보정은 위치가 있어야 계산되므로, 실내 보기라도 위치 권한이 이미 허용돼 있으면 조용히 위치를 받아 둔다(새로 묻지 않는다).
+// 실내 보기에서 「방향 맞추기」를 누르면 그때 위치를 묻는다(해 · 달 위치 계산에 필요). 거절해도 실내 보기는 그대로 — 보정만 못 한다.
 
 import { themeButton } from "./theme.js";
 import { acquireSite, geoPermission, outdoorSite } from "./bgsite.js";
@@ -85,8 +89,13 @@ async function choose(value) {
 
 /** 지난번에 바깥 보기였고 권한이 그대로면 조용히 다시 연다 */
 async function restore() {
-  if (bgView() !== "outdoor") return;
-  if (await geoPermission() !== "granted") { setBgView("indoor"); return; }
+  const granted = await geoPermission() === "granted";
+  if (bgView() !== "outdoor") {
+    // 실내 보기 — 이미 허용된 위치만 조용히 받아 방위 보정(편각 · 수동 보정)에 쓴다. 못 받아도 그대로 실내 보기
+    if (granted) { await acquireSite(); syncPop(); }
+    return;
+  }
+  if (!granted) { setBgView("indoor"); return; }
   const { result } = await acquireSite();
   setBgView(result === "ok" ? "outdoor" : "indoor");
 }
@@ -96,9 +105,7 @@ const domeReady = () => !!document.querySelector("#bgdeco .bgdm-gl");
 function syncPop(value = bgView()) {
   if (!pop) return;
   for (const b of pop.querySelectorAll(".bgvw__opt")) b.setAttribute("aria-checked", String(b.dataset.value === value));
-  // 방향 맞추기는 바깥 보기일 때만
-  const cal = pop.querySelector(".bgvw__cal");
-  cal.hidden = value !== "outdoor";
+  // 방향 맞추기 — 두 보기 공통(시선이 둘 다 실제 방위)
   // 진북 보정(편각)은 자동 — 얼마나 더하고 있는지 보여 준다
   const dec = declinationDeg();
   pop.querySelector(".bgvw__fix .bgvw__sub").textContent = "실제 해(밤엔 달)를 폰으로 겨눈 채 누르세요"
@@ -110,9 +117,24 @@ function syncPop(value = bgView()) {
 }
 
 /** 방향 맞추기: 사용자가 실제 해(없으면 달)를 겨누고 누른 순간, 계산 방위와 나침반 방위(진북 보정 뒤)의 차이를 보정으로 기억한다 */
-function calibrate() {
+async function calibrate() {
+  if (busy) return;
+  if (!outdoorSite()) {
+    // 실내 보기에서 처음 맞출 때 — 해 · 달 위치를 계산하려면 위치가 필요하다. 겨누는 자세가 흐트러지지 않게 받은 뒤 다시 누르게 한다
+    busy = true;
+    toast("위치를 확인하는 중…", 0);
+    const { result, before } = await acquireSite();
+    busy = false;
+    if (result === "ok") { syncPop(); toast("위치를 받았어요. 실제 해(밤엔 달)를 다시 겨눈 채 「방향 맞추기」를 눌러 주세요.", 5000); }
+    else if (result === "denied") toast(before === "denied"
+      ? "방향 맞추기는 위치 권한이 있어야 해요. 브라우저 설정의 사이트 권한에서 위치를 허용해 주세요."
+      : "방향 맞추기는 위치 권한을 허용해야 쓸 수 있어요.", 5000);
+    else if (result === "unsupported") toast("이 브라우저는 위치를 알려 주지 않아 방향을 맞출 수 없어요.", 5000);
+    else toast("위치를 가져오지 못했어요. 잠시 뒤 다시 눌러 주세요.", 5000);
+    return;
+  }
   const site = outdoorSite(), raw = rawHeading();
-  if (!site || raw == null) { toast("나침반 값이 아직 없어요. 폰을 조금 움직인 뒤 다시 눌러 주세요.", 4000); return; }
+  if (raw == null) { toast("나침반 값이 아직 없어요. 폰을 조금 움직인 뒤 다시 눌러 주세요.", 4000); return; }
   const now = new Date(), RAD = Math.PI / 180;
   const sun = sunPosition(now, site.lat, site.lon), moon = moonPosition(now, site.lat, site.lon);
   let target = null, name = "";
@@ -150,7 +172,7 @@ function buildPop() {
     b.addEventListener("click", () => { close(); choose(o.value); });
     pop.appendChild(b);
   }
-  // 방향 맞추기(바깥 보기 전용) — 나침반 오차 보정
+  // 방향 맞추기(두 보기 공통) — 나침반 오차 보정
   const cal = document.createElement("div");
   cal.className = "bgvw__cal";
   const mk = (cls, label, sub, fn) => {
