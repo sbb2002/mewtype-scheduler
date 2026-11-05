@@ -172,7 +172,22 @@ uniform vec4 uFlare;
 uniform vec3 uSunTrans; uniform vec4 uOptics; uniform float uCloudTest;
 uniform vec4 uLunar;   // 달 가시성, 원반 불투명도, 빛 번짐 지수, 빛 번짐 세기
 uniform float uMoonLight, uStarGain, uEarthshine;
+// (11-05) 달빛 하늘 밝기 — Krisciunas & Schaefer 1991(PASP 103, 1033). uMoonKS.x = I*·10^(−0.4kX(Z달))·(달 떠 있음)/B어두운하늘(59.2 nL = 21.9 mag/arcsec²),
+// .y = V 소광 계수 k. 픽셀마다 산란 f(ρ) · 시선 공기질량을 곱하면 「어두운 하늘 대비 달빛」 배율 − 1. 조사 · 계획 = devpapers ref/bg-dome/moonlight_plan.md.
+uniform vec2 uMoonKS;
+float moonSkyGain(vec3 d) {   // = B달 / B어두운하늘
+  if (uMoonKS.x <= 0.0) return 0.0;
+  float rho = max(degrees(acos(clamp(dot(d, uMoonDir), -1.0, 1.0))), 10.0);   // 10° 안은 모형 범위 밖 — 원반 · 광륜이 맡는다
+  float cr = cos(radians(rho));
+  float f = 229086.8 * (1.06 + cr * cr) + pow(10.0, 6.15 - rho / 40.0);
+  float cz = max(d.y, 0.02), X = inversesqrt(1.0 - 0.96 * (1.0 - cz * cz));
+  return f * uMoonKS.x * (1.0 - pow(10.0, -0.4 * uMoonKS.y * X));
+}
 uniform vec2 uTele; // background exposure, solar exposure
+// (11-05) 확대 시 주변이 어두워지는 실제 광학 — 가상 쌍안경 · 망원경(구경 70mm)의 사출동 = 구경 / 배율.
+// 사출동이 눈동자보다 작아지면 넓게 퍼진 대상(하늘 · 땅)의 표면 밝기 = (사출동 / 눈동자)², 별(점광원)은 밝기 유지 · 오히려 더 많이 보인다.
+// uPupil.x = 표면 밝기 배율(≤ 1), .y = 별이 더 보이는 등급(2.5 log10 min(배율², (구경/눈동자)²)).
+uniform vec2 uPupil;
 uniform float uMoonCue;
 uniform vec2 uMoonAxis;
 uniform vec4 uMoonScreen; // CSS center, radius, screen-size mode (front hemisphere only)
@@ -451,7 +466,7 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   vec4 A = skySet(uSky, uCloud, uSkyM, uSkyO, uCldM, uCldO, u, v, el);
   vec4 B = uMix > 0.0 ? skySet(uSky2, uCloud2, uSkyM2, uSkyO2, uCldM2, uCldO2, u, v, el) : A;
   vec3 c = mix(A.rgb, B.rgb, uMix);
-  if (uOut < 0.5) return uSpace.x > 0.5 ? spaceSky(d, pxAng) : c;
+  if (uOut < 0.5) return (uSpace.x > 0.5 ? spaceSky(d, pxAng) : c) * uPupil.x;
   float cloud = uCloudTest >= 0.0 ? uCloudTest * uCldA : mix(A.a, B.a, uMix);
   float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
 #if GROUND_OUTDOOR
@@ -475,7 +490,11 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   vec3 nightC = mix(vec3(nl), c, 0.45) * vec3(0.30, 0.36, 0.58) + vec3(0.020, 0.017, 0.015) * exp(-max(el, 0.0) / (9.0 * D));
   c = mix(c, nightC, uNight);
   // 달이 높고 보름에 가까울수록 밤하늘을 남청색으로 아주 조금 들어 올린다
-  c += vec3(0.024, 0.041, 0.085) * uMoonLight * (0.45 + 0.55 * md * md) * (1.0 - 0.65 * cloud) * above;
+  // 달빛: 밝기 배율 M = 1 + B달/B어두운하늘(보름 · 고도 45° 천정 ≈ 31배, 달 쪽 ≈ 63배, 반달 ≈ 4배, 초승 ≈ 1.3배).
+  // 눈은 로그로 느끼므로 등급 차 Δm = 2.5 log10 M(0 ~ 약 4.5)만큼 삭 하늘에서 「달빛 회청색」 쪽으로(구름 결은 남기고 같이 밝힘).
+  float moonDm = 2.5 * log(1.0 + moonSkyGain(d)) / 2.302585;
+  float moonLift = clamp(moonDm / 4.5, 0.0, 1.0) * uNight * above;
+  c = c * (1.0 + 0.9 * moonLift) + vec3(0.12, 0.15, 0.21) * 0.7 * moonLift * (1.0 - 0.4 * cloud);
 
   // 별: 하늘에 고정된 적도 좌표의 3D 격자에 하나씩. 밤 정도 · 구름으로 흐려진다
   if (uNight > 0.0) {
@@ -488,8 +507,9 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
       float mag = (h - 0.9) * 10.0;
       float tw = 0.8 + 0.2 * sin(uTime * (1.5 + 3.0 * h) + h * 60.0);
       float star = clamp((0.7 + 0.6 * mag) - length(e - sp) / px, 0.0, 1.0) * (0.35 + 0.65 * mag) * tw;
-      float moonGlare = 1.0 - uMoonLight * md * md * 0.65;
-      c += vec3(0.95, 0.93, 1.0) * star * uStarGain * moonGlare * (1.0 - cloud) * above;
+      // 하늘이 밝아진 만큼 어두운 별부터 사라진다(한계 등급이 Δm 만큼 올라감). mag 0 = 가장 어두운 별 · 1 = 가장 밝은 별.
+      float limit = clamp(moonDm / 4.5, 0.0, 1.0) * 0.92 - uPupil.y / 5.0 * 0.5;   // 확대하면(망원) 더 어두운 별까지 보인다
+      c += vec3(0.95, 0.93, 1.0) * star * uStarGain * smoothstep(limit - 0.08, limit + 0.06, mag) * (1.0 + 0.12 * uPupil.y) * (1.0 - cloud) * above;
     }
   }
 
@@ -502,7 +522,7 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   c = mix(c, amber * (0.72 + 0.3 * skyLuma), golden * 0.64);
 
   // 달(구름 뒤) — 낮엔 옅게, 밤엔 또렷하게 + 둘레 빛
-  c *= uTele.x;
+  c *= uTele.x * uPupil.x;   // 광원 노출(확대해 달 · 해가 화면을 채울 때) × 사출동 표면 밝기
   vec3 mt = moonTangent(d, p);
   float mf = dot(d, uMoonDir);
   vec4 m = moon(mt, mf, discPx.y);
@@ -626,17 +646,17 @@ void main() {
   vec3 col = vec3(0);
   if (floorK < 1.0) {
     vec4 geometry = groundGeometry(d, groundPixel);
-    if (geometry.x >= 1.0) col = groundSurface(d, geometry, groundPixel);
+    if (geometry.x >= 1.0) col = groundSurface(d, geometry, groundPixel) * uPupil.x;
     else {
       col = sky(d, groundPixel, discPx, p);
-      if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
+      if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel) * uPupil.x, geometry.x);
     }
   }
 #else
   vec4 geometry = groundGeometry(d, groundPixel);
   vec3 col = sky(d, groundPixel, discPx, p);
   // 우주 배경에는 땅이 없다 — 지평선 아래도 별.
-  if (geometry.x > 0.0 && uSpace.x < 0.5) col = mix(col, groundSurface(d, geometry, groundPixel), geometry.x);
+  if (geometry.x > 0.0 && uSpace.x < 0.5) col = mix(col, groundSurface(d, geometry, groundPixel) * uPupil.x, geometry.x);
 #endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
@@ -1031,7 +1051,9 @@ export function createDomeGL(host, isPaused) {
     U = {};
     for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(prog, i).name; U[name] = gl.getUniformLocation(prog, name); }
     gl.uniform1i(U.uSky, 0); gl.uniform1i(U.uCloud, 1); gl.uniform1i(U.uSky2, 2); gl.uniform1i(U.uCloud2, 3);
-    gl.uniform1f(U.uMix, 0); gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0);
+    gl.uniform1f(U.uMix, 0); gl.uniform1f(U.uOut, 0); gl.uniform1f(U.uNight, 0); gl.uniform2f(U.uPupil, 1, 0);
+    // 우주 사진 표본기: 실내만 13 · 14번 칸. 바깥 프로그램에서는 지형 정수 표본기(13번)와 겹치면 그리기가 통째로 실패하므로 0번(같은 float 종류)에.
+    gl.uniform1i(U.uSpaceMap, outside ? 0 : 13); gl.uniform1i(U.uSpaceDeep, outside ? 0 : 14);
     gl.uniform3f(U.uCloudSeed, ...CLOUD_SEED);
     gl.uniformMatrix3fv(U.uEqM, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]));
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
@@ -1054,6 +1076,8 @@ export function createDomeGL(host, isPaused) {
     for (let i = 0; i < gl.getProgramParameter(target.program, gl.ACTIVE_UNIFORMS); i++) {
       const { name, type } = gl.getActiveUniform(target.program, i);
       if (U[name] == null) continue;
+      // 우주 사진 표본기의 칸은 프로그램마다 다르다(실내 13 · 14, 바깥 0) — 옮겨 쓰면 바깥에서 지형 정수 표본기와 겹쳐 그리기가 실패한다.
+      if (name === "uSpaceMap" || name === "uSpaceDeep") continue;
       const value = gl.getUniform(prog, U[name]), location = target.uniforms[name];
       if (type === gl.FLOAT) gl.uniform1f(location, value);
       else if (type === gl.FLOAT_VEC2) gl.uniform2fv(location, value);
@@ -1219,7 +1243,7 @@ export function createDomeGL(host, isPaused) {
     const moonCol = moonHue.map((v, i) =>
       (v * (1 - moonWarm * 0.62) + [1, 0.29, 0.025][i] * moonWarm * 0.62) *
       [0.94, 0.965, 1][i] * EXPOSURE.moon);
-    astro = { sunGeometricAlt: sun.geometricAlt, moonGeometricAlt: moon.geometricAlt, sunAlt: sun.alt, sunAz: sun.az, moonAlt: moon.alt, moonAz: moon.az, rising, fraction, noon, moonLight, time: t.toISOString() };
+    astro = { night, sunGeometricAlt: sun.geometricAlt, moonGeometricAlt: moon.geometricAlt, sunAlt: sun.alt, sunAz: sun.az, moonAlt: moon.alt, moonAz: moon.az, rising, fraction, noon, moonLight, time: t.toISOString() };
     gl.uniform1f(U.uOut, 1);
     gl.uniform1f(U.uNight, night);
     gl.uniform3fv(U.uSunCol, sunCol);
@@ -1238,8 +1262,18 @@ export function createDomeGL(host, isPaused) {
       0.22 + 0.23 * (1 - moonWarm),
       Math.pow(fraction, 0.7) * moonContrast * (0.003 + 0.047 * (1 - moonWarm)));
     gl.uniform1f(U.uMoonLight, moonLight);
-    gl.uniform1f(U.uGroundMoonLight, night * fraction * fraction * moonUp);
-    gl.uniform1f(U.uStarGain, night * (1 - 0.68 * moonLight));
+    // 달빛 모형 입력: 위상각 α(fraction = (1 + cos α)/2), 달 V 등급(K&S 식 9), 대기 밖 조도(식 8), 달까지 소광(식 3 공기질량).
+    {
+      const K = 0.20, alpha = Math.acos(Math.max(-1, Math.min(1, 2 * fraction - 1))) / DEG;
+      const m = -12.73 + 0.026 * alpha + 4e-9 * alpha ** 4, Istar = 10 ** (-0.4 * (m + 16.57));
+      const air = (altDeg) => { const z = (90 - Math.max(altDeg, 0)) * DEG; return 1 / Math.sqrt(1 - 0.96 * Math.sin(z) ** 2); };
+      const up = smooth(-2, 0, moonAlt), ext = 10 ** (-0.4 * K * air(moonAlt));
+      gl.uniform2f(U.uMoonKS, Istar * ext * up / 59.2, K);
+      // 지형 달빛 = 지면 조도 비율(달 등급 · 소광 · sin 고도), 보름 · 고도 45° = 1(반달 ≈ 0.12, 지평선 보름 ≈ 0.01 — Seidelmann 1992 표와 같은 꼴).
+      const full45 = 10 ** (-0.4 * (-12.73 + 16.57)) * 10 ** (-0.4 * K * air(45)) * Math.sin(45 * DEG);
+      gl.uniform1f(U.uGroundMoonLight, night * Math.min(1.4, Istar * ext * Math.sin(Math.max(moonAlt, 0) * DEG) / full45) * up);
+    }
+    gl.uniform1f(U.uStarGain, night);   // 달빛에 따른 별 줄임은 셰이더가 픽셀마다(한계 등급)
     gl.uniform1f(U.uEarthshine, night * (0.72 + 0.12 * (1 - fraction)));
     gl.uniform3fv(U.uSunDir, dirOf(sun.alt, sun.az));
     gl.uniform3fv(U.uMoonDir, dirOf(moon.alt, moon.az));
@@ -1331,6 +1365,14 @@ export function createDomeGL(host, isPaused) {
     if (outdoor && releaseGround.terrain) releaseGround.terrain.view(U, yaw, pitch,
       2 * Math.atan(W / (2 * viewFocal())), 2 * Math.atan(H / (2 * viewFocal())), tele, W, H);
     gl.uniform2f(U.uTele, 1, 1);
+    {
+      // 사출동 광학: 구경 70mm, 눈동자 = 밝은 곳 3mm ~ 어둠 적응 7mm(바깥 = 밤 정도, 실내 = 우주면 어둠 · 분홍이면 밝음).
+      const APERTURE = 70, dark = outdoor ? (astro ? astro.night ?? 0 : 0) : (INDOOR_BG === "space" ? 1 : 0);
+      const pupil = 3 + 4 * dark, exitPupil = APERTURE / Math.max(tele, 1);
+      const surface = tele <= 1 ? 1 : Math.min(1, (exitPupil / pupil) ** 2);
+      const starGain = Math.min(tele * tele, (APERTURE / pupil) ** 2);
+      gl.uniform2f(U.uPupil, surface, tele <= 1 ? 0 : 2.5 * Math.log10(starGain));
+    }
     gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
     if (INDOOR_BG === "space" && !outdoor) {
       const now = performance.now();
@@ -1342,7 +1384,6 @@ export function createDomeGL(host, isPaused) {
       if (WARP_FIXED != null) warpDist = el * scroll; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now; }
       gl.uniform4f(U.uSpace, 1, beta, warpDist, scroll);
       loadSpaceTex();
-      gl.uniform1i(U.uSpaceMap, 13); gl.uniform1i(U.uSpaceDeep, 14);
       // 13 · 14번 칸에는 지형의 정수 질감(RGB16UI)이 남아 있을 수 있다 — float 표본기로 읽으면 그리기가 통째로 실패하므로
       // 사진이 아직 없으면 1×1 검정을 꽂아 둔다.
       if (!spaceTex.blank) { spaceTex.blank = gl.createTexture(); gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.blank); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255])); }
