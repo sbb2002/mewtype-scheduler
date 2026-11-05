@@ -37,7 +37,8 @@ export function createGroundTextures(gl, world) {
       const a = Math.PI * 2 * (u * 7 + v * 13), b = Math.PI * 2 * (u * 19 - v * 5);
       tile[i] = 128 + 58 * Math.sin(a) + 26 * Math.sin(b);
       tile[i + 1] = 128 + 50 * Math.cos(a) - 31 * Math.cos(b);
-      tile[i + 2] = h * 255; tile[i + 3] = 255;
+      tile[i + 2] = h * 255;
+      tile[i + 3] = 255 * (.5 + .5 * Math.sin(Math.PI*2*(u*3+v*5)) * Math.sin(Math.PI*2*(u*4-v*2)));
     } else if (world.kind === "mountain") {
       tile[i] = h * 255; tile[i + 1] = Math.max(0, Math.min(255, 128 + dx * 1800));
       tile[i + 2] = Math.max(0, Math.min(255, 128 + dy * 1800)); tile[i + 3] = noise(u, v, 4) * 255;
@@ -50,15 +51,12 @@ export function createGroundTextures(gl, world) {
       indoorTile[i] = (road ? .13 : .28 + block * .26 + indoorRoof) * 255;
       indoorTile[i + 1] = district * 255; indoorTile[i + 2] = road ? 255 : 0;
       indoorTile[i + 3] = road && ((x + y * 3) % 11 < 2) ? 230 : 0;
-      const roof = Math.sin(rx * 31) * Math.sin(ry * 23) > -.25 ? .025 : -.02;
-      tile[i] = (road ? .13 : .28 + block * .26 + roof) * 255;
-      if (district > .72) tile[i] *= .65;
-      const streetX = by % 4 === 0 ? 1 : .3 + .5 * block;
-      const streetY = bx % 5 === 0 ? 1 : .3 + .5 * district;
-      tile[i + 1] = Math.min(ry, 1 - ry) < .035 ? streetX * 255 : 0;
-      tile[i + 2] = Math.min(rx, 1 - rx) < .035 ? streetY * 255 : 0;
-      // Fixed lamps, with mipmaps preserving average radiance at subpixel sizes.
-      tile[i + 3] = road && ((x + y * 3) % 11 < 2) ? 230 * (.45 + .55 * district) : 0;
+      // Outdoor fallback has no block/road lattice. Indoor bytes above stay exact.
+      const hash = Math.imul((x + y * N) ^ world.seed, 1597334677) >>> 0;
+      const lamp = h < .58 && hash / 4294967296 < .055 ? 100 + (hash >>> 24) * .55 : 0;
+      tile[i] = hash & 256 ? lamp : 0;
+      tile[i + 1] = hash & 256 ? 0 : lamp;
+      tile[i + 2] = h * 255; tile[i + 3] = 255;
     }
   }
   for (let layer = 0; layer < 4; layer++) {
@@ -78,27 +76,8 @@ export function createGroundTextures(gl, world) {
       ridge[i + 2] = 128 + 85 * Math.sin(a * 47 + phases[0]); ridge[i + 3] = 255;
     }
   }
-  // Road-specific traffic strips: R headlights, G tail lights. Every four rows
-  // repeat the same strip so mip filtering preserves radiance across road indices.
-  const M = 1024, traffic = new Uint8Array(M * 128 * 4);
-  for (let road = 0; road < 32; road++) {
-    const density = 5 + Math.floor(random() * 29);
-    for (let lane = 0; lane < 2; lane++) {
-      const count = Math.max(2, Math.round(density * (.45 + random() * .8)));
-      for (let car = 0; car < count; car++) {
-        const center = random() * M, strength = .45 + random() * .55;
-        for (let dx = -3; dx <= 3; dx++) {
-          const x = (Math.floor(center) + dx + M) % M;
-          const light = Math.round(255 * strength * Math.exp(-Math.pow((dx + .5 - center % 1) / 1.1, 2)));
-          for (let row = 0; row < 4; row++) {
-            const i = ((road * 4 + row) * M + x) * 4 + lane;
-            traffic[i] = Math.max(traffic[i], light);
-          }
-        }
-      }
-    }
-  }
   const textures = [];
+  const anisotropy = gl.getExtension("EXT_texture_filter_anisotropic");
   function upload(unit, width, height_, data, mip) {
     const texture = gl.createTexture(); textures.push(texture);
     gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -108,12 +87,13 @@ export function createGroundTextures(gl, world) {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     if (mip) gl.generateMipmap(gl.TEXTURE_2D);
+    if (anisotropy && world.kind === "city" && (unit === 5 || unit === 7))
+      gl.texParameterf(gl.TEXTURE_2D,anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(8,gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
     return texture;
   }
   const groundTile = upload(5, N, N, tile, true); upload(6, P, 4, ridge, false);
   if (indoorTile !== tile) upload(10, N, N, indoorTile, true);
   else { gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, groundTile); }
-  upload(8, M, 128, traffic, true);
   // Unit 7 starts neutral; setAlbedo uploads the selected approved photo later.
   upload(7, 1, 1, new Uint8Array([128, 128, 128, 255]), false);
   gl.activeTexture(gl.TEXTURE0);
@@ -126,6 +106,45 @@ export function createGroundTextures(gl, world) {
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(image,0,0,width,height,0,0,width,height);
     const pixels = ctx.getImageData(0,0,width,height), src = pixels.data;
+    if (world.kind === "city") {
+      const lights = new Uint8Array(src.length);
+      let lamps = 0;
+      // Photo-derived likelihood, not a surveyed road/building segmentation.
+      // Vegetation and blue/dark water stay unlit; gray roofs/roads seed tiny lamps.
+      for (let y=0;y<height;y++) for (let x=0;x<width;x++) {
+        const i=(y*width+x)*4, r=src[i], g=src[i+1], b=src[i+2];
+        const hi=Math.max(r,g,b),lo=Math.min(r,g,b),l=.2126*r+.7152*g+.0722*b;
+        const green=Math.max(0,Math.min(1,(g-Math.max(r,b)*1.04)/18));
+        const water=l<65 && b>r*.95 && b>g*.95 ? 1 : 0;
+        const neutral=Math.max(0,1-(hi-lo)/Math.max(hi,1)*3.2);
+        const built=neutral * Math.max(0,Math.min(1,(l-42)/45)) * (1-green) * (1-water);
+        lights[i+2]=built*255; lights[i+3]=255;
+      }
+      const dirs=[1,0,0,1,1,1,1,-1];
+      const at=(x,y)=>lights[(((y+height)%height)*width+(x+width)%width)*4+2]/255;
+      for(let y=0;y<height;y++)for(let x=0;x<width;x++) {
+        const i=(y*width+x)*4, built=lights[i+2]/255;
+        if(built<.04)continue;
+        let road=0;
+        // Coherent narrow gray runs favor roads over broad gray roofs. The four
+        // directions are image evidence, not a generated world road lattice.
+        for(let axis=0;axis<8;axis+=2) {
+          const dx=dirs[axis],dy=dirs[axis+1];
+          const along=Math.min(at(x+dx*4,y+dy*4),at(x-dx*4,y-dy*4),at(x+dx*2,y+dy*2),at(x-dx*2,y-dy*2));
+          const across=(at(x-dy*2,y+dx*2)+at(x+dy*2,y-dx*2))*.5;
+          road=Math.max(road,along*(1-across*.8));
+        }
+        road*=built;
+        let hash=Math.imul((x+y*width)^world.seed,1597334677)>>>0;
+        hash=Math.imul(hash^(hash>>>16),2246822519)>>>0;
+        if(hash/4294967296 < .06*built+.3*road) {
+          const strength=75+((hash>>>8)&255)*.35+road*180;
+          lights[i+(hash&512?0:1)]=Math.min(255,strength); lamps++;
+        }
+      }
+      upload(5,width,height,lights,true);
+      gl.deleteTexture(groundTile); textures.splice(textures.indexOf(groundTile),1);
+    }
     // Local luminance integral: remove 45% of broad baked illumination while
     // retaining roofs/forest color and some relief. This is an albedo estimate.
     const stride = width+1, sum = new Float64Array(stride*(height+1));
@@ -203,7 +222,7 @@ export function createGroundTextures(gl, world) {
       let mask = clamp(.5 + (dip - ray[1]) / pixel);
       const b = (GR + alt) * ray[1], c = alt * (2 * GR + alt);
       let distance = c / Math.max(-b + Math.sqrt(Math.max(b * b - c, 0)), .001);
-      if (world.index < 2) {
+      if (world.index === 1) {
         const az = Math.atan2(ray[0], ray[2]), h = Math.max(Math.hypot(ray[0], ray[2]), .0001);
         for (let i = 2; i >= 0; i--) {
           const r = (world.index === 0 ? [8, 22, 65] : [12, 35, 80])[i];
@@ -290,9 +309,11 @@ vec3 groundSurfaceIndoor(vec3 ray, vec4 geometry, float pixel) {
 `;
 
 export const groundShader = `
-uniform sampler2D uGroundTile, uGroundRidge, uGroundAlbedo, uGroundMotion, uGroundIndoorTile;
+uniform sampler2D uGroundTile, uGroundRidge, uGroundAlbedo, uGroundIndoorTile;
 uniform float uGroundKind, uGroundAlt, uGroundAlbedoOn, uGroundMoonLight;
 uniform vec2 uGroundSourceVisibility;
+vec3 groundDx, groundDy;
+vec2 cityDx, cityDy;
 const float GR = 6371.0;
 float ridgeHeight(float az, int layer) {
   vec4 h = textureLod(uGroundRidge, vec2(az / TAU, (float(layer) + .5) / 4.0), 0.0);
@@ -312,7 +333,11 @@ vec4 groundGeometry(vec3 ray, float pixel) {
   // Rationalized near root avoids cancellation looking straight down.
   float distance = c / max(-b + root, .001);
   float selected = -1.0, edgeCoverage = 1.0;
+#if GROUND_OUTDOOR
+  if (uGroundKind > .5 && uGroundKind < 1.5) {
+#else
   if (uGroundKind < 1.5) {
+#endif
     float az = atan(ray.x, ray.z), horizontal = max(length(ray.xz), .0001);
     for (int i = 2; i >= 0; i--) {
       float r = uGroundKind < .5 ? (i == 0 ? 8.0 : (i == 1 ? 22.0 : 65.0)) : (i == 0 ? 12.0 : (i == 1 ? 35.0 : 80.0));
@@ -338,11 +363,31 @@ vec3 groundAir(vec3 ray) {
   return mix(air, uSunGlow * (.72 + .3 * dot(air, vec3(.2126,.7152,.0722))), forward * uSolar.y * uSunAir.z * .64);
 }
 ${groundIndoorSurface}
+// Three translated photo charts on a 16km triangular lattice. The hash changes
+// per world vertex: there is no exact 8km repeated photograph or checkerboard.
+vec4 cityPhoto(sampler2D tex, vec2 uv) {
+  vec2 cell=floor(uv*.5), f=fract(uv*.5);
+  vec2 a=cell, b=cell+vec2(1,0), c=cell+vec2(0,1);
+  vec3 w=vec3(1.0-f.x-f.y,f.x,f.y);
+  if (f.x+f.y>1.0) { a=cell+vec2(1); w=vec3(f.x+f.y-1.0,1.0-f.y,1.0-f.x); }
+  // Drop negligible contributions continuously before normalization. Large
+  // coherent regions need one chart, retaining full filtering of the visible lights.
+  w=max(w*w*w-vec3(.01),vec3(0)); w/=dot(w,vec3(1));
+  vec4 color=vec4(0);
+  if(w.x>0.0)color+=textureGrad(tex,uv+vec2(h2(a),h2(a+71.7)),cityDx,cityDy)*w.x;
+  if(w.y>0.0)color+=textureGrad(tex,uv+vec2(h2(b),h2(b+71.7)),cityDx,cityDy)*w.y;
+  if(w.z>0.0)color+=textureGrad(tex,uv+vec2(h2(c),h2(c+71.7)),cityDx,cityDy)*w.z;
+  return color;
+}
 vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
   if (uOut < .5) return groundSurfaceIndoor(ray, geometry, pixel);
   vec3 pos = vec3(0, GR + uGroundAlt, 0) + ray * geometry.y;
   vec3 n = normalize(pos), v = -ray;
   vec2 uv = pos.xz / (uGroundKind < .5 ? 8.0 : 32.0);
+  // Analytic sphere Jacobian from ray derivatives computed before divergence.
+  float plane=min(dot(n,ray),-.001);
+  cityDx=(geometry.y*(groundDx-ray*dot(n,groundDx)/plane)).xz/8.0;
+  cityDy=(geometry.y*(groundDy-ray*dot(n,groundDy)/plane)).xz/8.0;
   // Derivatives from the ray footprint, not a discontinuous longitude or selected belt.
   float footprint = min(8.0, pixel * geometry.y / max(abs(dot(n, ray)), .025));
   float lod = max(0.0, log2(512.0 * footprint / (uGroundKind < .5 ? 8.0 : 32.0)));
@@ -352,7 +397,7 @@ vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
     lod = max(0.0,log2(pixel * geometry.y * 512.0 / 3.5));
   }
   vec4 data = vec4(0);
-  if (uGroundKind < 1.5) data = textureLod(uGroundTile, uv, lod);
+  if (uGroundKind > .5 && uGroundKind < 1.5) data = textureLod(uGroundTile, uv, lod);
   float day = uOut > .5 ? uSolar.x : .65;
   float night = uOut > .5 ? max(uNight, 1.0 - day) : .15;
   vec3 albedo, emission = vec3(0);
@@ -365,7 +410,13 @@ vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
     n = normalize(n + vec3((slope.x - 1.0) * .16, 0, (slope.y - 1.0) * .16));
     float swellLod = max(0.0, log2(512.0 * footprint / 12.0));
     float swell = textureLod(uGroundTile, pos.xz / 12.0 + vec2(phase, -phase), swellLod).b;
-    float glint = .2 + .8 * smoothstep(.32,.72,swell);
+    float patchLod=max(0.0,log2(512.0*footprint/5.0));
+    vec4 facets=textureLod(uGroundTile,pos.xz/5.0+vec2(phase,-phase),patchLod);
+    // Travelling, irregular facets split the existing source column. Both fields
+    // wrap after exactly 64s; mipmaps suppress distant temporal sparkle.
+    float glint=(.2+.8*smoothstep(.32,.72,swell))
+      *(.12+2.0*smoothstep(.36,.65,facets.b*.45+facets.a*.55));
+    n=normalize(n+vec3((facets.b-.5)*.025,0,(facets.a-.5)*.025));
     float fresnel = .02 + .98 * pow(1.0 - max(dot(n,v), 0.0), 5.0);
     albedo = mix(vec3(.012,.045,.055), groundAir(ray) * .65, fresnel);
     for (int i = 0; i < 2; i++) {
@@ -400,28 +451,19 @@ vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
       albedo = mix(albedo, vec3(.62,.65,.64), smoothstep(2.45,3.1,elevation) * smoothstep(.6,.9,h/3.5));
     }
   } else {
-    albedo = vec3(data.r) * vec3(.85,.88,.86);
-    // Lamps almost fixed. Subpixel texture features converge to their mip average.
-    float shimmer = 1.0 + .018 * sin(uTime * TAU / 16.0 + uv.x * TAU);
-    // 8km / 512s = 15.6m/s traffic; loop closes without a jump.
-    float phase = mod(uTime, 512.0) / 512.0;
-    float trafficLod = max(0.0, lod + 1.0);
-    vec2 rows = (floor(fract(uv.yx) * 32.0 + .5) + .5) / 32.0;
-    vec2 head = vec2(textureLod(uGroundMotion, vec2(uv.x - phase, rows.x), trafficLod).r,
-      textureLod(uGroundMotion, vec2(uv.y - phase, rows.y + .5), trafficLod).r);
-    vec2 tail = vec2(textureLod(uGroundMotion, vec2(uv.x + phase, rows.x), trafficLod).g,
-      textureLod(uGroundMotion, vec2(uv.y + phase, rows.y + .5), trafficLod).g);
-    emission = (vec3(1.0,.68,.34) * (data.a * 3.2 * shimmer + (data.g + data.b) * .05)
-      + vec3(.9,.88,.68) * dot(data.gb, head) * 1.6
-      + vec3(.8,.11,.035) * dot(data.gb, tail) * .95) * night;
+    vec4 lamps=cityPhoto(uGroundTile,uv);
+    albedo=vec3(.08,.085,.085);
+    float shimmer=1.0+.012*sin(uTime*TAU/16.0+uv.x*1.7+uv.y*.8);
+    emission=(vec3(1.0,.43,.12)*lamps.r+vec3(.78,.87,1.0)*lamps.g)*6.5*night*shimmer;
   }
-  if (uGroundAlbedoOn > .5 && uGroundKind < 1.5) {
+  float photoGain=uGroundKind<.5 ? smoothstep(.005,.08,day) : 1.0;
+  if (uGroundAlbedoOn > .5 && uGroundKind < 1.5 && photoGain>.001) {
     // Photo resolution is twice the procedural tile; the cropped mountain
     // covers 26.67km east-west. Ridge UV uses only the rural cropped texture.
     vec2 photoUV = uv;
     if (uGroundKind > .5 && geometry.z < 0.0) photoUV.x *= 1.2;
-    vec3 photo = pow(textureLod(uGroundAlbedo, photoUV, lod+1.0).rgb,vec3(2.2));
-    albedo = mix(albedo,photo,.84);
+    vec3 photo = pow((uGroundKind < .5 ? cityPhoto(uGroundAlbedo,uv) : textureLod(uGroundAlbedo,photoUV,lod+1.0)).rgb,vec3(2.2));
+    albedo = mix(albedo,photo,.84*photoGain);
   }
   float diffuse = max(dot(n,uSunDir),0.0);
   vec3 surface = albedo * (.055 + day * (.42 + .75 * diffuse)) + emission;

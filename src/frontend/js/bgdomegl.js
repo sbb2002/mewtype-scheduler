@@ -416,6 +416,7 @@ void main() {
     length(moonTangent(d, p)));
   vec2 discPx = max(fwidth(discDistance), vec2(1e-6));
   float groundPixel = 1.0 / (uF * uDpr);
+  groundDx=dFdx(d); groundDy=dFdy(d);
 #if GROUND_OUTDOOR
   vec3 col = vec3(0);
   if (floorK < 1.0) {
@@ -803,7 +804,6 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
-    gl.uniform1i(U.uGroundMotion, 8);
     gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     if (!outside) { gl.uniform1f(U.uGroundKind, GROUND.index); gl.uniform1f(U.uGroundAlt, GROUND.altitude); }
