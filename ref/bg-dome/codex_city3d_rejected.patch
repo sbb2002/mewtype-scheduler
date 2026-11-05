@@ -1,0 +1,548 @@
+diff --git a/src/frontend/js/bgdomegl.js b/src/frontend/js/bgdomegl.js
+index deb1bb8..77a7513 100644
+--- a/src/frontend/js/bgdomegl.js
++++ b/src/frontend/js/bgdomegl.js
+@@ -261,7 +261,7 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
+ #if GROUND_OUTDOOR
+   // At altitude the true horizon is below zero. The baked terrain/sphere masks
+   // the source; the old zero-degree cutoff would erase the sun before sunset.
+-  if (uGroundKind > .5 && uGroundKind < 1.5 && uTerrainOn > .5) above = 1.0;
++  if (uGroundKind < 1.5 && uTerrainOn > .5) above = 1.0;
+ #endif
+ 
+   float sd = dot(d, uSunDir), md = max(dot(d, uMoonDir), 0.0);
+@@ -765,7 +765,7 @@ export function createDomeGL(host, isPaused) {
+   function init() {
+     programs = {};
+     makeProgram(false); makeProgram(true);
+-    if (GROUND.kind === "mountain") makeProgram(true, true);
++    if (GROUND.kind !== "sea") makeProgram(true, true);
+     prog = programs[outdoor ? "outdoor" : "indoor"].program;
+     U = programs[outdoor ? "outdoor" : "indoor"].uniforms;
+     gl.useProgram(prog);
+@@ -790,7 +790,7 @@ export function createDomeGL(host, isPaused) {
+     // once per view change, never per frame; textures and vertex storage are shared.
+     let fragment = FS.replace("if (uOut < .5) return groundSurfaceIndoor(ray, geometry, pixel);",
+       outside ? "" : "return groundSurfaceIndoor(ray, geometry, pixel);");
+-    fragment = fragment.replace("precision highp float;", `precision highp float;\n#define GROUND_OUTDOOR ${outside ? 1 : 0}`);
++    fragment = fragment.replace("precision highp float;", `precision highp float;\n#define GROUND_OUTDOOR ${outside ? 1 : 0}\n#define GROUND_CITY ${GROUND.kind === "city" ? 1 : 0}`);
+     if (terrain) {
+       // Compile away the fallback ridge/material path. Keeping both in one
+       // fragment program increases register pressure even after the bake.
+diff --git a/src/frontend/js/bgground.js b/src/frontend/js/bgground.js
+index 1a938fe..2c51fed 100644
+--- a/src/frontend/js/bgground.js
++++ b/src/frontend/js/bgground.js
+@@ -99,7 +99,7 @@ export function createGroundTextures(gl, world, changed) {
+   // Unit 7 starts neutral; setAlbedo uploads the selected approved photo later.
+   upload(7, 1, 1, new Uint8Array([128, 128, 128, 255]), false);
+   gl.activeTexture(gl.TEXTURE0);
+-  const terrain = world.kind === "mountain" ? createTerrain(gl, world, changed) : null;
++  const terrain = world.kind !== "sea" ? createTerrain(gl, world, changed, () => { gl.deleteTexture(groundTile); textures.splice(textures.indexOf(groundTile), 1); }) : null;
+   const destroy = () => { terrain?.destroy(); textures.forEach(t => gl.deleteTexture(t)); };
+   destroy.terrain = terrain;
+   destroy.setAlbedo = image => {
+@@ -337,7 +337,7 @@ uniform float uTerrainOn;
+ // External origin is independent of dome E/zoom. Three radial distance belts, no raymarch.
+ vec4 groundGeometry(vec3 ray, float pixel) {
+ #if GROUND_OUTDOOR
+-  if (uGroundKind > .5 && uGroundKind < 1.5 && uTerrainOn > .5) return terrainGeometry(ray, pixel);
++  if (uGroundKind < 1.5 && uTerrainOn > .5) return terrainGeometry(ray, pixel);
+ #endif
+   // Conservative bound: no surface or ridge can reach above this elevation.
+   float top = uGroundKind < .5 ? (.28 - uGroundAlt) / 65.0 : (3.5 - uGroundAlt) / 12.0;
+@@ -400,7 +400,7 @@ vec4 cityPhoto(sampler2D tex, vec2 uv) {
+ vec3 groundSurface(vec3 ray, vec4 geometry, float pixel) {
+   if (uOut < .5) return groundSurfaceIndoor(ray, geometry, pixel);
+ #if GROUND_OUTDOOR
+-  if (uGroundKind > .5 && uGroundKind < 1.5 && uTerrainOn > .5) return terrainSurface(ray, geometry, pixel);
++  if (uGroundKind < 1.5 && uTerrainOn > .5) return terrainSurface(ray, geometry, pixel);
+ #endif
+   vec3 pos = vec3(0, GR + uGroundAlt, 0) + ray * geometry.y;
+   vec3 n = normalize(pos), v = -ray;
+diff --git a/src/frontend/js/bgterrain.js b/src/frontend/js/bgterrain.js
+index af06779..92e83c8 100644
+--- a/src/frontend/js/bgterrain.js
++++ b/src/frontend/js/bgterrain.js
+@@ -1,6 +1,7 @@
+-// A finite Front Range patch, seen from one stationary eye. No repeated DEM/photo.
++// Finite Front Range / photo-derived city, seen from one stationary eye.
+ // Heavy work, including photo de-lighting, lives in a disposable inline Worker.
+-// GPU storage: base 2048x640x12 B, two 512x1024x12 B detail slots, 256 KiB horizons.
++// RGB16UI coordinates/distance + RGBA8 normals: 10 B/texel, no precision loss.
++// City: 1536x384 base + one detail; mountain: 2048x640 + two details.
+ const RAD = Math.PI / 180, TAU = Math.PI * 2;
+ const BASE = { az: Math.PI, el: -32 * RAD, da: Math.PI, de: 40 * RAD, w: 2048, h: 640 };
+ 
+@@ -67,7 +68,7 @@ function terrainWorker() {
+   }
+   function bake(q) {
+     const start = performance.now(), { w, h, az, el, da, de } = q;
+-    const geometry = new Uint16Array(w * h * 4), normal = new Uint8Array(w * h * 4), skyline = new Float32Array(w);
++    const geometry = new Uint16Array(w * h * 3), normal = new Uint8Array(w * h * 4), skyline = new Float32Array(w);
+     const step = q.detail ? .006 : .025;
+     for (let col = 0; col < w; col++) {
+       const a = az + (col + .5) / w * da, sx = Math.sin(a), sz = Math.cos(a);
+@@ -85,8 +86,9 @@ function terrainWorker() {
+         const len = Math.hypot(nx, 1, nz); nx /= len; nz /= len;
+         // UNORM16 UVs retain sub-metre coordinates at x30; half floats would
+         // quantize the photo into ~13m blocks. Distance has 5m precision.
+-        geometry[i] = Math.round(clamp(x / W, 0, 1) * 65535); geometry[i + 1] = Math.round(clamp(1 - z / H, 0, 1) * 65535);
+-        geometry[i + 2] = Math.round(Math.hypot(r, yy) * 200); geometry[i + 3] = 1;
++        const j = (y * w + col) * 3;
++        geometry[j] = Math.round(clamp(x / W, 0, 1) * 65535); geometry[j + 1] = Math.round(clamp(1 - z / H, 0, 1) * 65535);
++        geometry[j + 2] = Math.round(Math.hypot(r, yy) * 200);
+         normal[i] = Math.round((nx * .5 + .5) * 255); normal[i + 1] = Math.round((nz * .5 + .5) * 255);
+         // Blend the photo to lowland at every finite edge; never crossfade opposite edges.
+         normal[i + 2] = Math.round(smooth(Math.min(x, W - x, z, H - z) / .8) * weight(x, z) * 255); normal[i + 3] = 255;
+@@ -107,7 +109,7 @@ function terrainWorker() {
+       skyline[col] = edge;
+       // Extend the last valid texel above the silhouette, preventing sky texels
+       // from bleeding into the finite-disk antialiasing at the mountain edge.
+-      if (last !== null) for (let y = row; y < h; y++) { const i = (y * w + col) * 4; geometry.set(geometry.subarray(last, last + 4), i); normal.set(normal.subarray(last, last + 4), i); }
++      if (last !== null) for (let y = row; y < h; y++) { const i = (y * w + col) * 4; geometry.set(geometry.subarray(last / 4 * 3, last / 4 * 3 + 3), i / 4 * 3); normal.set(normal.subarray(last, last + 4), i); }
+     }
+     return { ...q, geometry, normal, skyline, cpu: performance.now() - start };
+   }
+@@ -128,15 +130,237 @@ function terrainWorker() {
+   };
+ }
+ 
+-export function createTerrain(gl, world, changed) {
++// Photo-derived oriented footprints, not a regular parcel grid. The same bake
++// protocol/controller is used by both worlds; no geometry is traced per frame.
++function cityWorker() {
++  const R = 6371, W = 8.04, H = 8.01, N = 1024, T = Math.PI * 2;
++  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
++  let eyeX, eyeZ, altitude, seed, buildings = [], bins = new Map(), seen, stamp = 0;
++  const hash = i => { let h = Math.imul(i ^ seed, 1597334677); h = Math.imul(h ^ h >>> 16, 2246822519); return (h >>> 0) / 4294967296; };
++  const key = (x, z) => Math.floor(x * 4) + ',' + Math.floor(z * 4);
++  function add(x, z, a, b, angle, height, virtual = false) {
++    const c = Math.cos(angle), s = Math.sin(angle), id = buildings.length;
++    buildings.push({ x, z, a, b, c, s, height, virtual });
++    const radius = Math.hypot(a, b);
++    for (let j = Math.floor((z - radius) * 4); j <= Math.floor((z + radius) * 4); j++)
++      for (let i = Math.floor((x - radius) * 4); i <= Math.floor((x + radius) * 4); i++) {
++        const k = i + ',' + j; if (!bins.has(k)) bins.set(k, []); bins.get(k).push(id);
++      }
++  }
++  function classify(src) {
++    const built = new Float32Array(N * N), mask = new Uint8Array(N * N), lights = new Uint8Array(N * N * 4);
++    const integral = new Float32Array((N + 1) ** 2), stride = N + 1;
++    for (let y = 0; y < N; y++) {
++      let row = 0;
++      for (let x = 0; x < N; x++) {
++        const k = y * N + x, i = k * 4, r = src[i], g = src[i + 1], b = src[i + 2];
++        const hi = Math.max(r, g, b), lo = Math.min(r, g, b), l = .2126 * r + .7152 * g + .0722 * b;
++        const green = clamp((g - Math.max(r, b) * 1.04) / 18, 0, 1), water = l < 65 && b > r * .95 && b > g * .95;
++        built[k] = Math.max(0, 1 - (hi - lo) / Math.max(hi, 1) * 3.2) * clamp((l - 42) / 45, 0, 1) * (1 - green) * (1 - water);
++        // Bright connected roofs separate from most asphalt; elongated remnants
++        // are rejected below. Green/water pixels never enter a footprint.
++        mask[k] = built[k] > .52 && l > 96 ? 1 : 0;
++        row += built[k]; integral[(y + 1) * stride + x + 1] = integral[y * stride + x + 1] + row;
++        lights[i + 2] = built[k] * 255; lights[i + 3] = 255;
++      }
++    }
++    const at = (x, y) => built[clamp(y, 0, N - 1) * N + clamp(x, 0, N - 1)];
++    const dirs = [1, 0, 0, 1, 1, 1, 1, -1];
++    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
++      const k = y * N + x, v = built[k]; if (v < .04) continue;
++      let road = 0;
++      for (let axis = 0; axis < 8; axis += 2) {
++        const dx = dirs[axis], dy = dirs[axis + 1];
++        const along = Math.min(at(x + dx * 4, y + dy * 4), at(x - dx * 4, y - dy * 4), at(x + dx * 2, y + dy * 2), at(x - dx * 2, y - dy * 2));
++        const across = (at(x - dy * 2, y + dx * 2) + at(x + dy * 2, y - dx * 2)) * .5;
++        road = Math.max(road, along * (1 - across * .8));
++      }
++      road *= v;
++      if (hash(k) < .06 * v + .3 * road) lights[k * 4 + (hash(k + 73) < .5 ? 0 : 1)] = Math.min(255, 75 + hash(k + 17) * 89 + road * 180);
++    }
++    const queue = new Int32Array(N * N), floors = [0, 0, 0]; let rejected = 0;
++    for (let k = 0; k < mask.length; k++) {
++      if (mask[k] !== 1) continue;
++      let end = 1, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
++      queue[0] = k; mask[k] = 2;
++      for (let j = 0; j < end; j++) {
++        const p = queue[j], x = p % N, y = Math.floor(p / N); sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
++        for (const q of [x > 0 ? p - 1 : -1, x < N - 1 ? p + 1 : -1, p - N, p + N]) if (q >= 0 && q < mask.length && mask[q] === 1) { mask[q] = 2; queue[end++] = q; }
++      }
++      if (end < 2 || end > 800) { rejected++; continue; }
++      const mx = sx / end, my = sy / end, angle = .5 * Math.atan2(2 * (sxy / end - mx * my), sxx / end - mx * mx - syy / end + my * my);
++      const c = Math.cos(angle), s = Math.sin(angle); let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
++      for (let j = 0; j < end; j++) { const x = queue[j] % N - mx, y = Math.floor(queue[j] / N) - my, u = c * x + s * y, v = -s * x + c * y; u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
++      const a = u1 - u0 + .8, b = v1 - v0 + .8;
++      if (Math.max(a / b, b / a) > 4 || end / (a * b) < .48) { rejected++; continue; }
++      // Keep the oriented rectangle only when its entire interior has dry gray
++      // evidence. This conservative guard also excludes lawns beside a roof.
++      let valid = true;
++      for (let y = Math.max(0, Math.floor(my - a - b)); valid && y <= Math.min(N - 1, my + a + b); y++)
++        for (let x = Math.max(0, Math.floor(mx - a - b)); x <= Math.min(N - 1, mx + a + b); x++) {
++          if (Math.abs(c * (x - mx) + s * (y - my)) < a * .43 && Math.abs(-s * (x - mx) + c * (y - my)) < b * .43 && built[y * N + x] < .25) { valid = false; break; }
++        }
++      if (!valid) { rejected++; continue; }
++      const x0 = clamp(Math.floor(mx - 24), 0, N), x1 = clamp(Math.ceil(mx + 25), 0, N), y0 = clamp(Math.floor(my - 24), 0, N), y1 = clamp(Math.ceil(my + 25), 0, N);
++      const density = (integral[y1 * stride + x1] - integral[y0 * stride + x1] - integral[y1 * stride + x0] + integral[y0 * stride + x0]) / ((x1 - x0) * (y1 - y0));
++      const r = hash(k), commercial = end > 8 && density > .22, tall = commercial && end > 16 && density > .24 && r < .08;
++      const count = tall ? 18 + Math.floor(hash(k + 19) * 37) : commercial ? 4 + Math.floor(r * 9) : 1 + Math.floor(r * 3);
++      floors[tall ? 2 : commercial ? 1 : 0]++;
++      add((mx + .5) / N * W, (1 - (my + .5) / N) * H, a * W / N * .46, b * H / N * .46, -angle, count * .0032);
++    }
++    const measured = buildings.length;
++    // Beyond the finite photo: unique seeded regional settlements, sampled
++    // dimensions, irregular cluster positions. No copied photo, angular belts,
++    // or parcel lattice. This is explicitly an invented continuation.
++    for (let cluster = 0; cluster < 13; cluster++) {
++      const cx = -4 - hash(cluster + 80001) * 88, cz = (hash(cluster + 81001) - .5) * 130;
++      for (let j = 0; j < 450; j++) {
++        const k = 90000 + cluster * 2000 + j * 4, a = hash(k) * T, radius = Math.sqrt(-2 * Math.log(Math.max(.0001, hash(k + 1)))) * (1.5 + hash(cluster + 82001) * 5);
++        const x = cx + Math.cos(a) * radius, z = cz + Math.sin(a) * radius;
++        if (x > -.8 || Math.abs(z) > 110) continue;
++        const model = buildings[Math.floor(hash(k + 2) * measured)]; if (!model) continue;
++        const tower = radius < 1.8 && hash(k + 3) < .07;
++        add(x, z, tower ? .018 + hash(k + 5) * .024 : model.a, tower ? .016 + hash(k + 6) * .025 : model.b, hash(k + 7) * .5 + cluster * .37, tower ? .10 + hash(k + 8) * .23 : model.height, true);
++      }
++    }
++    seen = new Uint32Array(buildings.length);
++    return { lights, stats: { photo: measured, virtual: buildings.length - measured, floors, rejected, seed, maxHeight: Math.max(...buildings.map(b => b.height)), shadowCue: false } };
++  }
++  function relight(image) {
++    const stride = N + 1, sum = new Float64Array(stride * stride);
++    for (let y = 0; y < N; y++) {
++      let row = 0;
++      for (let x = 0; x < N; x++) { const i = (y * N + x) * 4; row += .2126 * image[i] + .7152 * image[i + 1] + .0722 * image[i + 2]; sum[(y + 1) * stride + x + 1] = sum[y * stride + x + 1] + row; }
++    }
++    const mean = sum[N * stride + N] / (N * N), src = image.slice();
++    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
++      const x0 = Math.max(0, x - 64), x1 = Math.min(N, x + 65), y0 = Math.max(0, y - 64), y1 = Math.min(N, y + 65);
++      const local = (sum[y1 * stride + x1] - sum[y0 * stride + x1] - sum[y1 * stride + x0] + sum[y0 * stride + x0]) / ((x1 - x0) * (y1 - y0));
++      const gain = clamp(Math.pow(mean / Math.max(local, 8), .45), .72, 1.45), i = (y * N + x) * 4;
++      for (let c = 0; c < 3; c++) image[i + c] = Math.min(255, src[i + c] * gain);
++    }
++    // Preserve 3b's bounded NAIP quarter-strip equalization, without its
++    // wrapped edge blend: this photograph has finite geographic edges.
++    const jx = Math.round(N * .0395 / .094), jy = Math.round(N * .016 / .072);
++    const box = (x0, y0, x1, y1) => { let sum = 0, count = 0; for (let y = y0; y < y1; y += 2) for (let x = x0; x < x1; x += 2) { const i = (y * N + x) * 4; sum += .2126 * image[i] + .7152 * image[i + 1] + .0722 * image[i + 2]; count++; } return Math.max(8, sum / count); };
++    const lr = (y0, y1) => Math.log(box(jx - 20, y0, jx, y1) / box(jx, y0, jx + 20, y1));
++    const tb = (x0, x1) => Math.log(box(x0, jy - 20, x1, jy) / box(x0, jy, x1, jy + 20));
++    const top = lr(0, jy), left = tb(0, jx), gains = [0, top, left, (top + tb(jx, N) + left + lr(jy, N)) * .5], center = gains.reduce((a, b) => a + b, 0) / 4;
++    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const gain = Math.exp(clamp(gains[(y >= jy ? 2 : 0) + (x >= jx ? 1 : 0)] - center, -.08, .08)), i = (y * N + x) * 4; for (let c = 0; c < 3; c++) image[i + c] = Math.min(255, image[i + c] * gain); }
++  }
++  function shadows() {
++    const n = 128, roof = new Float32Array(n * n), out = new Uint8Array(n * n * 16);
++    for (const b of buildings) if (!b.virtual) {
++      const x = clamp(Math.floor(b.x / W * n), 0, n - 1), y = clamp(Math.floor((1 - b.z / H) * n), 0, n - 1); roof[y * n + x] = Math.max(roof[y * n + x], b.height);
++    }
++    for (let a = 0; a < 16; a++) for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
++      let h = 0;
++      for (let r = 1; r < 100; r = r * 1.12 + .3) {
++        const xx = Math.round(x + Math.sin(a * T / 16) * r), yy = Math.round(y - Math.cos(a * T / 16) * r);
++        if (xx < 0 || xx >= n || yy < 0 || yy >= n) break;
++        h = Math.max(h, Math.atan2(roof[yy * n + xx] - roof[y * n + x], r * W / n));
++      }
++      out[(a * n + y) * n + x] = Math.round(h / (Math.PI / 2) * 255);
++    }
++    return out;
++  }
++  function bake(q) {
++    const start = performance.now(), { w, h, az, el, da, de } = q;
++    const geometry = new Uint16Array(w * h * 3), normal = new Uint8Array(w * h * 4), skyline = new Float32Array(w);
++    const pixel = q.detail ? Math.min(da / w, de / h) : 43.6 / 390 * Math.PI / 180;
++    let retained = 0;
++    for (let col = 0; col < w; col++) {
++      const a = az + (col + .5) / w * da, sx = Math.sin(a), sz = Math.cos(a), events = []; stamp++;
++      // Spatial bins cull footprint tests. Exact oriented slab intersections
++      // retain continuous wall positions at x30 (no raster/voxel stair edges).
++      let gx = Math.floor(eyeX * 4), gz = Math.floor(eyeZ * 4), r = 0;
++      const dx = sx >= 0 ? 1 : -1, dz = sz >= 0 ? 1 : -1;
++      let tx = Math.abs(sx) < 1e-9 ? Infinity : ((gx + (dx > 0 ? 1 : 0)) / 4 - eyeX) / sx;
++      let tz = Math.abs(sz) < 1e-9 ? Infinity : ((gz + (dz > 0 ? 1 : 0)) / 4 - eyeZ) / sz;
++      while (r < 160) {
++        for (const id of bins.get(gx + ',' + gz) || []) {
++          if (seen[id] === stamp) continue; seen[id] = stamp;
++          const b = buildings[id], ox = (eyeX - b.x) * b.c + (eyeZ - b.z) * b.s, oz = -(eyeX - b.x) * b.s + (eyeZ - b.z) * b.c;
++          const vx = sx * b.c + sz * b.s, vz = -sx * b.s + sz * b.c;
++          let lo = 0, hi = 160, nx = 0, nz = 0;
++          for (const [o, v, extent, xx, zz] of [[ox, vx, b.a, b.c, b.s], [oz, vz, b.b, -b.s, b.c]]) {
++            if (Math.abs(v) < 1e-10) { if (Math.abs(o) > extent) hi = -1; }
++            else { const p = (-extent - o) / v, q = (extent - o) / v, near = Math.min(p, q); if (near > lo) { lo = near; nx = -Math.sign(v) * xx; nz = -Math.sign(v) * zz; } hi = Math.min(hi, Math.max(p, q)); }
++          }
++          const angle = Math.atan2(b.height - altitude - lo * lo / (2 * R), lo) - Math.atan2(-altitude - lo * lo / (2 * R), lo);
++          if (hi > lo && angle >= pixel) { events.push({ r: lo, id, enter: true, nx, nz }, { r: hi, id, enter: false }); retained++; }
++        }
++        if (tx < tz) { r = tx; tx += .25 / Math.abs(sx); gx += dx; } else { r = tz; tz += .25 / Math.abs(sz); gz += dz; }
++      }
++      events.sort((a, b) => a.r - b.r); events.push({ r: 160, id: -1 });
++      let row = 0, edge = -Math.PI / 2, last = -1, prevR = 0, current = -1;
++      const active = new Set();
++      function store(y, rr, height, nx, nz, type) {
++        const x = eyeX + sx * rr, z = eyeZ + sz * rr, j = (y * w + col) * 3, i = (y * w + col) * 4;
++        geometry[j] = Math.round(clamp(x / W, 0, 1) * 65535); geometry[j + 1] = Math.round(clamp(1 - z / H, 0, 1) * 65535);
++        geometry[j + 2] = Math.min(65535, Math.round(Math.hypot(rr, height - altitude - rr * rr / (2 * R)) * 400));
++        normal[i] = Math.round((nx * .5 + .5) * 255); normal[i + 1] = Math.round((nz * .5 + .5) * 255);
++        normal[i + 2] = Math.round(clamp(Math.min(x, W - x, z, H - z) / .24, 0, 1) * 255); normal[i + 3] = type;
++        last = y;
++      }
++      function plane(to) {
++        const height = current < 0 ? 0 : buildings[current].height, end = Math.min(to, Math.sqrt(2 * R * (altitude - height)));
++        const top = Math.atan2(height - altitude - end * end / (2 * R), end);
++        while (row < h && el + (row + .5) / h * de <= top) {
++          const t = Math.tan(el + (row + .5) / h * de), delta = altitude - height;
++          const rr = 2 * delta / (-t + Math.sqrt(Math.max(0, t * t - 2 * delta / R)));
++          if (rr >= prevR - 1e-7 && rr <= to + 1e-7) store(row, rr, height, 0, 0, current < 0 ? 0 : 1);
++          row++;
++        }
++        edge = Math.max(edge, top);
++      }
++      for (const e of events) {
++        plane(e.r); prevR = e.r;
++        if (e.id < 0) break;
++        if (e.enter) active.add(e.id); else active.delete(e.id);
++        const old = current; current = -1;
++        for (const id of active) if (current < 0 || buildings[id].height > buildings[current].height) current = id;
++        if (current >= 0 && buildings[current].height > (old < 0 ? 0 : buildings[old].height)) {
++          const top = Math.atan2(buildings[current].height - altitude - e.r * e.r / (2 * R), e.r);
++          while (row < h && el + (row + .5) / h * de <= top) {
++            const hh = altitude + Math.tan(el + (row + .5) / h * de) * e.r + e.r * e.r / (2 * R);
++            store(row++, e.r, hh, e.nx, e.nz, 2);
++          }
++          edge = Math.max(edge, top);
++        }
++      }
++      skyline[col] = edge;
++      if (last >= 0) for (let y = row; y < h; y++) { geometry.set(geometry.subarray((last * w + col) * 3, (last * w + col) * 3 + 3), (y * w + col) * 3); normal.set(normal.subarray((last * w + col) * 4, (last * w + col) * 4 + 4), (y * w + col) * 4); }
++    }
++    return { ...q, geometry, normal, skyline, cpu: performance.now() - start, retained };
++  }
++  onmessage = async ({ data: q }) => {
++    try {
++      if (q.type !== 'init') { const result = bake(q); postMessage({ ...result, type: 'detail' }, [result.geometry.buffer, result.normal.buffer, result.skyline.buffer]); return; }
++      const start = performance.now(), response = await fetch(q.photoURL); if (!response.ok) throw Error('city ' + response.status);
++      const bitmap = await createImageBitmap(await response.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
++      const canvas = new OffscreenCanvas(N, N), ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.drawImage(bitmap, 0, 0); bitmap.close();
++      const image = new Uint8Array(ctx.getImageData(0, 0, N, N).data), decoded = performance.now();
++      seed = q.seed; altitude = q.altitude; eyeX = W + 28; eyeZ = H * (.35 + hash(737) * .3);
++      const { lights, stats } = classify(image); relight(image);
++      const classified = performance.now(), shadow = shadows(), baked = performance.now(), result = bake(q.base);
++      postMessage({ ...result, type: 'base', image, lights, shadow, buildings: stats, eye: [eyeX, altitude, eyeZ], extent: [W, H], datum: 0,
++        wall: performance.now() - start, phases: { fetchDecode: decoded - start, classify: classified - decoded, shadow: baked - classified } },
++      [result.geometry.buffer, result.normal.buffer, result.skyline.buffer, image.buffer, lights.buffer, shadow.buffer]);
++    } catch (e) { postMessage({ type: 'error', message: String(e) }); }
++  };
++}
++
++export function createTerrain(gl, world, changed, releaseTile) {
++  const city = world.kind === 'city', base = city ? { az: Math.PI, el: -32 * RAD, da: Math.PI, de: 32 * RAD, w: 1536, h: 384 } : BASE;
+   let worker, dead = false, ready = false, failed = false, pending = false, uploading = false, pendingStart = 0, timer = 0, wanted, motion = 0, selected, serial = 0;
+   const textures = [], cache = [], metrics = { base: null, details: [], detailCount: 0, uploads: [], uploadTotal: 0, mainTasks: [], cacheBytes: 0, failed: null };
+   let skyline, promise, resolveStart, rejectStart;
+   function upload(unit, w, h, data, half = false, linear = false, channels = 4) {
+     const t = performance.now(), tex = gl.createTexture(); textures.push(tex);
+     gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
+-    gl.texImage2D(gl.TEXTURE_2D, 0, half === 'uint' ? gl.RGBA16UI : half === 'float' ? gl.R32F : channels === 1 ? gl.R8 : gl.RGBA8, w, h, 0,
+-      half === 'uint' ? gl.RGBA_INTEGER : channels === 1 ? gl.RED : gl.RGBA, half === 'uint' ? gl.UNSIGNED_SHORT : half === 'float' ? gl.FLOAT : gl.UNSIGNED_BYTE, data);
++    gl.texImage2D(gl.TEXTURE_2D, 0, half === 'uint' ? gl.RGB16UI : half === 'float' ? gl.R32F : channels === 1 ? gl.R8 : gl.RGBA8, w, h, 0,
++      half === 'uint' ? gl.RGB_INTEGER : channels === 1 ? gl.RED : gl.RGBA, half === 'uint' ? gl.UNSIGNED_SHORT : half === 'float' ? gl.FLOAT : gl.UNSIGNED_BYTE, data);
+     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, linear ? gl.LINEAR : gl.NEAREST);
+     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, linear ? gl.LINEAR : gl.NEAREST);
+     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+@@ -146,7 +370,7 @@ export function createTerrain(gl, world, changed) {
+     if (metrics.uploads.length > 64) metrics.uploads.shift(); return tex;
+   }
+   // Valid sampler bindings before first bake; the existing terrain remains visible.
+-  for (const unit of [8, 11, 12, 13, 14, 15]) upload(unit, 1, 1, unit === 11 || unit === 13 ? new Uint16Array(4) : new Uint8Array(4), unit === 11 || unit === 13 ? 'uint' : false);
++  for (const unit of [8, 11, 12, 13, 14, 15]) upload(unit, 1, 1, unit === 11 || unit === 13 ? new Uint16Array(3) : new Uint8Array(4), unit === 11 || unit === 13 ? 'uint' : false);
+   function remove(tex) { gl.deleteTexture(tex); const i = textures.indexOf(tex); if (i >= 0) textures.splice(i, 1); }
+   function afterGPU(run) {
+     // Texture mutation can otherwise wait synchronously for an older draw on
+@@ -168,20 +392,20 @@ export function createTerrain(gl, world, changed) {
+   function schedule() {
+     if (timer || !ready || pending || !wanted || wanted.zoom < 3 || cache.some(q => contains(q, wanted))) return;
+     const a = (wanted.az % TAU + TAU) % TAU;
+-    if ((a + wanted.da / 2 < Math.PI && a - wanted.da / 2 > 0) || wanted.el > 8 * RAD || wanted.el + wanted.de < -32 * RAD) return;
++    if ((a + wanted.da / 2 < Math.PI && a - wanted.da / 2 > 0) || wanted.el > (city ? 0 : 8) * RAD || wanted.el + wanted.de < -32 * RAD) return;
+     timer = setTimeout(() => {
+       timer = 0;
+       if (dead || performance.now() - motion < 110) { schedule(); return; }
+       pending = true;
+       pendingStart = performance.now();
+       worker.postMessage({ type: 'bake', detail: true, id: ++serial, az: wanted.az - wanted.da * .6, el: wanted.el - wanted.de * .1, da: wanted.da * 1.2, de: wanted.de * 1.2,
+-        w: Math.min(2048, 2 ** Math.ceil(Math.log2(wanted.width * 1.2))), h: Math.min(2048, 2 ** Math.ceil(Math.log2(wanted.height * 1.2))) });
++        w: Math.min(city ? 512 : 2048, 2 ** Math.ceil(Math.log2(wanted.width * 1.2))), h: Math.min(city ? 1024 : 2048, 2 ** Math.ceil(Math.log2(wanted.height * 1.2))) });
+     }, 120);
+   }
+   function start() {
+     if (promise) return promise;
+     promise = new Promise((resolve, reject) => { resolveStart = resolve; rejectStart = reject; });
+-    const url = URL.createObjectURL(new Blob(['(' + terrainWorker.toString() + ')()'], { type: 'text/javascript' }));
++    const url = URL.createObjectURL(new Blob(['(' + (city ? cityWorker : terrainWorker).toString() + ')()'], { type: 'text/javascript' }));
+     const began = performance.now();
+     const fail = message => { if (dead) return; failed = true; metrics.failed = message; worker?.terminate(); clearTimeout(timer); rejectStart(Error(message)); if (ready) changed(); };
+     try {
+@@ -195,40 +419,42 @@ export function createTerrain(gl, world, changed) {
+           // Upload separate textures in separate tasks: the expensive computation and
+           // photo correction are already off the main thread.
+           const jobs = [
+-            () => { upload(11, q.w, q.h, q.geometry, 'uint'); }, () => { upload(12, q.w, q.h, q.normal, false, true); },
++            () => { upload(11, q.w, q.h, q.geometry, 'uint'); }, () => { upload(12, q.w, q.h, q.normal, false, !city); },
+             () => { upload(15, 128, 2048, q.shadow, false, true, 1); },
+             () => {
+-              upload(7, 853, 1024, q.image, false, true);
++              upload(7, city ? 1024 : 853, 1024, q.image, false, true);
+               gl.activeTexture(gl.TEXTURE7); gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.activeTexture(gl.TEXTURE0);
+             },
+-            () => { const h = new Float32Array(q.w * 2); h.set(q.skyline); upload(8, q.w, 2, h, 'float', false, 1); },
++            ...(city ? [() => { upload(5, 1024, 1024, q.lights, false, true); releaseTile?.(); gl.activeTexture(gl.TEXTURE5); gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.activeTexture(gl.TEXTURE0); }] : []),
++            () => { const h = new Float32Array(Math.max(q.w, 2048) * 2); h.set(q.skyline); upload(8, Math.max(q.w, 2048), 2, h, 'float', false, 1); },
+           ];
+           const next = () => {
+             if (dead || gl.isContextLost()) return;
+             if (jobs.length) { const begin = performance.now(); jobs.shift()(); metrics.mainTasks.push(performance.now() - begin); setTimeout(next, 0); }
+-            else { ready = true; uploading = false; metrics.base = { worker: q.wall, bake: q.cpu, wall: performance.now() - began, phases: q.phases, eye: q.eye, extent: q.extent, datum: q.datum }; resolveStart(); changed(); schedule(); }
++            else { ready = true; uploading = false; metrics.base = { worker: q.wall, bake: q.cpu, wall: performance.now() - began, phases: q.phases, eye: q.eye, extent: q.extent, datum: q.datum, buildings: q.buildings }; resolveStart(); changed(); schedule(); }
+           };
+           afterGPU(next);
+         } else {
+           const tile = { az: q.az, el: q.el, da: q.da, de: q.de, w: q.w, h: q.h };
+           tile.skyline = q.skyline;
+           afterGPU(() => {
++            if (city) { for (const old of cache.splice(0)) { remove(old.geometry); remove(old.normal); } selected = null; }
+             tile.geometry = upload(13, q.w, q.h, q.geometry, 'uint');
+             setTimeout(() => {
+               if (dead || gl.isContextLost()) return;
+-              tile.normal = upload(14, q.w, q.h, q.normal, false, true); cache.unshift(tile);
++              tile.normal = upload(14, q.w, q.h, q.normal, false, !city); cache.unshift(tile);
+               if (cache.length > 2) { const old = cache.pop(); remove(old.geometry); remove(old.normal); }
+-              metrics.details.push({ cpu: q.cpu, wall: performance.now() - pendingStart, az: q.az, el: q.el, da: q.da, de: q.de });
+-              metrics.cacheBytes = cache.reduce((sum, tile) => sum + tile.w * tile.h * 12, 0);
++              metrics.details.push({ cpu: q.cpu, wall: performance.now() - pendingStart, az: q.az, el: q.el, da: q.da, de: q.de, retained: q.retained });
++              metrics.cacheBytes = cache.reduce((sum, tile) => sum + tile.w * tile.h * 10, 0);
+               metrics.detailCount++; if (metrics.details.length > 32) metrics.details.shift();
+               pending = false; uploading = false; selected = null; changed(); schedule();
+             }, 0);
+           });
+         }
+       };
+-      worker.postMessage({ type: 'init', base: BASE, altitude: world.altitude, seed: world.seed,
++      worker.postMessage({ type: 'init', base, altitude: world.altitude, seed: world.seed,
+         heightURL: new URL('../assets/bg/ground-mountain-height.webp', import.meta.url).href,
+-        photoURL: new URL('../assets/bg/ground-mountain-albedo.webp', import.meta.url).href });
++        photoURL: new URL('../assets/bg/ground-' + (city ? 'city' : 'mountain') + '-albedo.webp', import.meta.url).href });
+     } catch (e) { URL.revokeObjectURL(url); fail(String(e)); }
+     return promise;
+   }
+@@ -246,14 +472,16 @@ export function createTerrain(gl, world, changed) {
+       });
+       const dip = -Math.acos(6371 / (6371 + world.altitude));
+       if (tile) { const x = (a - tile.az + TAU) % TAU / tile.da * tile.w - .5, l = Math.floor(x), f = x - l; return Math.max(dip, tile.skyline[Math.max(0, l)] * (1 - f) + tile.skyline[Math.min(tile.w - 1, l + 1)] * f); }
+-      const x = (a - Math.PI) / Math.PI * BASE.w - .5, l = Math.floor(x), f = x - l;
+-      return Math.max(dip, skyline[Math.max(0, l)] * (1 - f) + skyline[Math.min(BASE.w - 1, l + 1)] * f);
++      const x = (a - Math.PI) / Math.PI * base.w - .5, l = Math.floor(x), f = x - l;
++      return Math.max(dip, skyline[Math.max(0, l)] * (1 - f) + skyline[Math.min(base.w - 1, l + 1)] * f);
+     },
+     view(U, az, el, hfov, vfov, zoom, width, height) {
+       if (failed || !ready) { gl.uniform1f(U.uTerrainOn, 0); return; }
+       az = (az % TAU + TAU) % TAU;
+       gl.uniform1f(U.uTerrainOn, 1);
+-      const v = { az, el: el - vfov / 2, da: hfov, de: vfov, zoom, width: Math.min(width, 1706), height: Math.min(height, 1706) };
++      if (city) gl.uniform2f(U.uTerrainEye, metrics.base.eye[0], metrics.base.eye[2]);
++      // City has a hard 512x1024 detail budget, including large displays.
++      const v = { az, el: el - vfov / 2, da: hfov, de: vfov, zoom, width: Math.min(width, city ? 426 : 1706), height: Math.min(height, city ? 853 : 1706) };
+       if (!wanted || Math.abs(az - wanted.az) + Math.abs(el - wanted.el - wanted.de / 2) + Math.abs(hfov - wanted.da) > hfov * .005) motion = performance.now();
+       wanted = v;
+       const tile = zoom >= 3 && cache.find(q => contains(q, v));
+@@ -278,14 +506,15 @@ uniform highp usampler2D uTerrainGeometry, uTerrainDetail;
+ uniform sampler2D uTerrainNormal, uTerrainDetailNormal, uTerrainSkyline, uTerrainShadow;
+ uniform float uTerrainDetailOn;
+ uniform vec4 uTerrainDetailRect;
+-vec4 terrainHit; vec3 terrainN; float terrainPhoto, terrainBlend, terrainBaseDistance;
+-vec4 terrainDecode(uvec4 data) { return vec4(vec2(data.rg)/65535.0,float(data.b)*.005,float(data.a)); }
++uniform vec2 uTerrainEye;
++vec4 terrainHit; vec3 terrainN; float terrainPhoto, terrainBlend, terrainBaseDistance, terrainType;
++vec4 terrainDecode(uvec4 data) { return vec4(vec2(data.rg)/65535.0,float(data.b)*(GROUND_CITY == 1 ? .0025 : .005),data.b > 0u ? 1.0 : 0.0); }
+ float terrainEdge(float x, int row, int width) {
+   float f=x*float(width)-.5; int l=int(floor(f));
+   return mix(texelFetch(uTerrainSkyline,ivec2(clamp(l,0,width-1),row),0).r,texelFetch(uTerrainSkyline,ivec2(clamp(l+1,0,width-1),row),0).r,fract(f));
+ }
+ vec4 terrainGeometry(vec3 ray, float pixel) {
+-  if(ray.y>.139174) return vec4(0,300,-2,1);
++  if(ray.y>(GROUND_CITY == 1 ? 0.0 : .139174)) return vec4(0,300,-2,1);
+   float az = mod(atan(ray.x,ray.z) + TAU, TAU), el = asin(clamp(ray.y,-1.0,1.0));
+   float dip = -acos(GR / (GR + uGroundAlt));
+   float b = (GR + uGroundAlt) * ray.y, c = uGroundAlt * (2.0 * GR + uGroundAlt);
+@@ -294,7 +523,7 @@ vec4 terrainGeometry(vec3 ray, float pixel) {
+   float edge = dip;
+   vec4 hit=vec4(0), norm=vec4(.5,.5,0,1);
+   if (az >= 3.14159265) {
+-    vec2 uv=vec2((az-3.14159265)/3.14159265,(el+.55850536)/.69813170);
++    vec2 uv=vec2((az-3.14159265)/3.14159265, GROUND_CITY == 1 ? (el+.55850536)/.55850536 : (el+.55850536)/.69813170);
+     float dx=mod(az-uTerrainDetailRect.x+TAU,TAU);
+     vec2 fine=vec2(dx,el-uTerrainDetailRect.y)/uTerrainDetailRect.zw;
+     if(uTerrainDetailOn>.5 && min(fine.x,fine.y)>=0.0 && max(fine.x,fine.y)<=1.0) {
+@@ -302,16 +531,16 @@ vec4 terrainGeometry(vec3 ray, float pixel) {
+       if(el>max(edge,dip)+pixel*.5) return vec4(0,300,-2,1);
+       hit=terrainDecode(textureLod(uTerrainDetail,fine,0.0)); norm=textureLod(uTerrainDetailNormal,fine,0.0);
+     } else {
+-      edge=terrainEdge(uv.x,0,2048);
++      edge=terrainEdge(uv.x,0,GROUND_CITY == 1 ? 1536 : 2048);
+       if(el>max(edge,dip)+pixel*.5) return vec4(0,300,-2,1);
+       hit=terrainDecode(textureLod(uTerrainGeometry,uv,0.0)); norm=textureLod(uTerrainNormal,uv,0.0);
+     }
+-    if(hit.a>.5 && el<=edge+pixel*.5 && (el>=-.55850536 && el<=.13962634) && (ray.y>sin(dip) || hit.z<distance)) {
++    if(hit.a>.5 && el<=edge+pixel*.5 && (GROUND_CITY == 1 ? (el>=-.55850536 && el<=0.0) : (el>=-.55850536 && el<=.13962634)) && (GROUND_CITY == 1 || ray.y>sin(dip) || hit.z<distance)) {
+       distance=hit.z; terrainBlend=clamp(.5+(edge-el)/pixel,0.0,1.0);
+     }
+     else {hit=vec4(0);norm=vec4(.5,.5,0,1);}
+   }
+-  terrainHit=hit; terrainPhoto=norm.b;
++  terrainHit=hit; terrainPhoto=norm.b; terrainType=norm.a*255.0;
+   vec2 slope=norm.rg*2.0-1.0; terrainN=normalize(vec3(slope.x,sqrt(max(.001,1.0-dot(slope,slope))),slope.y));
+   return vec4(clamp(.5+(max(edge,dip)-el)/pixel,0.0,1.0),distance,-2,1);
+ }
+@@ -326,6 +555,39 @@ vec3 terrainSurface(vec3 ray, vec4 geometry, float pixel) {
+   vec3 air=groundAir(ray), lowland=vec3(.075,.105,.067);
+   vec3 plain=mix(air,lowland*(.018+uSolar.x*.65+uGroundMoonLight*.05),exp(-terrainBaseDistance*.014));
+   if(terrainBlend<=0.0) return plain;
++#if GROUND_CITY
++  vec3 n=terrainN;
++  vec2 world=uTerrainEye+ray.xz*geometry.y;
++  vec2 uv=terrainHit.xy;
++  float footprint=pixel*geometry.y/max(abs(dot(n,ray)),.08);
++  float lod=max(0.0,log2(1024.0*footprint/8.0));
++  float wall=step(1.5,terrainType);
++  vec3 photo=pow(textureLod(uGroundAlbedo,uv,lod).rgb,vec3(2.2));
++  vec3 albedo=mix(vec3(.095,.103,.092),photo,terrainPhoto*.85);
++  // Wall color follows its roof, with a high ambient floor for the photographic
++  // shadows already in the source. Vertical windows use metres, never angular rows.
++  albedo=mix(albedo,albedo*.64+vec3(.028,.025,.021),wall);
++  float sun=max(dot(n,uSunDir),0.0), moon=max(dot(n,uMoonDir),0.0);
++  float shade=mix(1.0,terrainShadow(uv,uSunDir),terrainPhoto*(1.0-wall));
++  vec3 light=vec3(.018)+uSolar.x*(vec3(.40)+uSunCol*.70*sun*shade*vSourceClear.x)
++    +uGroundMoonLight*(vec3(.035,.045,.065)+uMoonCol*.28*moon*vSourceClear.y);
++  vec4 lamps=textureLod(uGroundTile,uv,lod);
++  float night=max(uNight,1.0-uSolar.x);
++  vec3 emission=(vec3(1,.43,.12)*lamps.r+vec3(.78,.87,1)*lamps.g)*6.5*terrainPhoto*(1.0-wall);
++  float elevation=max(0.0,uGroundAlt+ray.y*geometry.y+dot(ray.xz,ray.xz)*geometry.y*geometry.y/(2.0*GR));
++  vec2 meters=vec2((world.x*n.z-world.y*n.x)*1000.0,elevation*1000.0);
++  vec2 win=meters/vec2(4.3,3.2), cell=floor(win), f=fract(win);
++  float occupied=step(.43,h2(cell+floor(world*19.0)));
++  float window=step(.18,f.x)*step(f.x,.72)*step(.22,f.y)*step(f.y,.68)*occupied;
++  float resolved=1.0-smoothstep(.0015,.008,footprint);
++  emission+=vec3(1,.65,.31)*wall*mix(.045,window*.8,resolved);
++  // A faint, nonperiodic lowland continuation, with no repeated photograph.
++  float district=h2(floor(world*.18));
++  float point=step(.997,h2(floor(world*95.0)))*smoothstep(.6,.9,district);
++  emission+=vec3(.8,.59,.35)*point*(1.0-terrainPhoto)*(1.0-wall);
++  vec3 surface=mix(air,albedo*light+emission*night,exp(-geometry.y*mix(.018,.011,night)));
++  return mix(plain,surface,terrainBlend);
++#else
+   vec3 n=terrainN;
+   float lod=max(0.0,log2(1024.0*pixel*geometry.y/(32.0*max(abs(dot(n,ray)),.04))));
+   vec3 albedo=lowland;
+@@ -337,6 +599,7 @@ vec3 terrainSurface(vec3 ray, vec4 geometry, float pixel) {
+   vec3 light=vec3(.018)+uSolar.x*(vec3(.38)+uSunCol*.78*sun)+uGroundMoonLight*(vec3(.035,.045,.065)+uMoonCol*.28*moon);
+   vec3 surface=mix(air,albedo*light,exp(-geometry.y*.014));
+   return mix(plain,surface,terrainBlend);
++#endif
+ }
+ #endif
+ `;
