@@ -28,19 +28,19 @@ function terrainWorker() {
     ctx.drawImage(image, 0, 0); image.close();
     return ctx.getImageData(0, 0, c.width, c.height);
   }
+  // (11-05 Claude) 촬영 때 지형 음영 지우기 — 지형 보정(C-correction).
+  // Landsat 9 LC09_L2SP_033033_20240831 촬영 순간 해 = 방위 143.82° · 고도 54.33°(STAC view:sun_*).
+  // 사진 ≈ 바탕색 × (cosI + C), 평지 = 바탕색 × (cos(천정각) + C) → 바탕색 비율 = (sin 고도 + C) / (cosI + C).
+  // C(산란광 비율)가 그늘 속 픽셀을 나눌 때 잡음이 커지는 것을 막고, 이득도 0.7 ~ 1.9 로 묶는다.
+  const CAPTURE = { az: 143.82 * D, el: 54.33 * D }, C = .45;
   function photo(data) {
-    const w = 853, h = data.height, src = data.data, stride = w + 1, sum = new Float64Array(stride * (h + 1));
-    for (let y = 0; y < h; y++) {
-      let row = 0;
-      for (let x = 0; x < w; x++) { const i = (y * data.width + x) * 4; row += .2126 * src[i] + .7152 * src[i + 1] + .0722 * src[i + 2]; sum[(y + 1) * stride + x + 1] = sum[y * stride + x + 1] + row; }
-    }
-    const mean = sum[h * stride + w] / (w * h), out = new Uint8Array(w * h * 4);
+    const w = 853, h = data.height, src = data.data, out = new Uint8Array(w * h * 4), eps = .045;
+    const lx = Math.sin(CAPTURE.az) * Math.cos(CAPTURE.el), ly = Math.sin(CAPTURE.el), lz = Math.cos(CAPTURE.az) * Math.cos(CAPTURE.el);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const x0 = Math.max(0, x - 64), x1 = Math.min(w, x + 65), y0 = Math.max(0, y - 64), y1 = Math.min(h, y + 65);
-      const local = (sum[y1 * stride + x1] - sum[y0 * stride + x1] - sum[y1 * stride + x0] + sum[y0 * stride + x0]) / ((x1 - x0) * (y1 - y0));
-      // Broad photographic shade is compressed; new direct light has a large
-      // ambient floor, so the remaining photographic shadows aren't multiplied black.
-      const gain = clamp(Math.pow(mean / Math.max(local, 8), .65), .65, 1.65), i = (y * w + x) * 4, j = (y * data.width + x) * 4;
+      const px = (x + .5) / w * W, pz = (1 - (y + .5) / h) * H;
+      const nx = -(height(px + eps, pz) - height(px - eps, pz)) / (2 * eps), nz = -(height(px, pz + eps) - height(px, pz - eps)) / (2 * eps);
+      const cosI = (nx * lx + ly + nz * lz) / Math.hypot(nx, 1, nz);
+      const gain = clamp((ly + C) / (Math.max(cosI, 0) + C), .7, 1.9), i = (y * w + x) * 4, j = (y * data.width + x) * 4;
       for (let c = 0; c < 3; c++) out[i + c] = Math.min(255, src[j + c] * gain);
       out[i + 3] = 255;
     }
@@ -315,27 +315,48 @@ vec4 terrainGeometry(vec3 ray, float pixel) {
   vec2 slope=norm.rg*2.0-1.0; terrainN=normalize(vec3(slope.x,sqrt(max(.001,1.0-dot(slope,slope))),slope.y));
   return vec4(clamp(.5+(max(edge,dip)-el)/pixel,0.0,1.0),distance,-2,1);
 }
-float terrainShadow(vec2 uv, vec3 light) {
+// (11-05 Claude) 그림자 경계 폭 soft(rad)는 해 고도에 따라 넓어진다 — 낮은 해일수록 길고 부드러운 그림자.
+float terrainShadow(vec2 uv, vec3 light, float soft) {
   float dir=mod(atan(light.x,light.z)+TAU,TAU)/TAU*16.0, a=floor(dir), f=fract(dir);
   vec2 p=clamp(uv,vec2(.5/128.0),vec2(1.0-.5/128.0));
   float h0=textureLod(uTerrainShadow,vec2(p.x,(p.y+a)/16.0),0.0).r;
   float h1=textureLod(uTerrainShadow,vec2(p.x,(p.y+mod(a+1.0,16.0))/16.0),0.0).r;
-  return smoothstep(-.012,.012,asin(clamp(light.y,-1.0,1.0))-mix(h0,h1,f)*1.57079633);
+  return smoothstep(-soft,soft,asin(clamp(light.y,-1.0,1.0))-mix(h0,h1,f)*1.57079633);
+}
+// 하늘이 보이는 정도(sky view) — 같은 horizon map 의 4방위 평균 지평선 각. 계곡 · 골짜기는 하늘빛을 덜 받는다.
+float terrainSky(vec2 uv) {
+  vec2 p=clamp(uv,vec2(.5/128.0),vec2(1.0-.5/128.0));
+  float h=0.0;
+  for(int k=0;k<4;k++) h+=textureLod(uTerrainShadow,vec2(p.x,(p.y+float(k*4))/16.0),0.0).r;
+  return clamp(1.0-1.6*sin(h*.25*1.57079633),.4,1.0);
 }
 vec3 terrainSurface(vec3 ray, vec4 geometry, float pixel) {
-  vec3 air=groundAir(ray), lowland=vec3(.075,.105,.067);
+  vec3 air=groundAir(ray), lowland=vec3(.082,.084,.062);   // (11-05) 8월 Front Range 동쪽 평지의 마른 풀빛 — 직사가 세져 진한 초록이 튀었다
   vec3 plain=mix(air,lowland*(.018+uSolar.x*.65+uGroundMoonLight*.05),exp(-terrainBaseDistance*.014));
   if(terrainBlend<=0.0) return plain;
   vec3 n=terrainN;
   float lod=max(0.0,log2(1024.0*pixel*geometry.y/(32.0*max(abs(dot(n,ray)),.04))));
   vec3 albedo=lowland;
   if(terrainPhoto>0.0) albedo=mix(lowland,pow(textureLod(uGroundAlbedo,terrainHit.xy,lod).rgb,vec3(2.2)),terrainPhoto);
-  // Bounded relighting preserves color/shadow detail in this daytime photograph.
-  float sun=0.0, moon=0.0;
-  if(uSolar.x>.001) sun=max(dot(n,uSunDir),0.0)*mix(1.0,terrainShadow(terrainHit.xy,uSunDir),terrainPhoto)*vSourceClear.x;
-  if(uGroundMoonLight>.001) moon=max(dot(n,uMoonDir),0.0)*mix(1.0,terrainShadow(terrainHit.xy,uMoonDir),terrainPhoto)*vSourceClear.y;
-  vec3 light=vec3(.018)+uSolar.x*(vec3(.38)+uSunCol*.78*sun)+uGroundMoonLight*(vec3(.035,.045,.065)+uMoonCol*.28*moon);
-  vec3 surface=mix(air,albedo*light,exp(-geometry.y*.014));
+  // (11-05 Claude) 사진은 Worker 에서 촬영 때 지형 음영을 지운 바탕색(C-correction)이라 여기서 새 해로 다시 칠한다.
+  // 빛 = 직사(해 고도 · 그림자) + 하늘빛(위에서, 하늘 보이는 정도) + 땅 반사(아래에서). 환경광을 줄여 빛 닿는 면이 도드라지게.
+  float low=1.0-smoothstep(.03,.5,uSunDir.y);   // 해가 낮을수록 1
+  float sun=0.0, moon=0.0, sky=mix(1.0,terrainSky(terrainHit.xy),terrainPhoto);
+  if(uSolar.x>.001) {
+    float ndl=dot(n,uSunDir);
+    float shade=mix(1.0,terrainShadow(terrainHit.xy,uSunDir,mix(.010,.040,low)),terrainPhoto);
+    // 낮은 해: 해를 향한 경사만 빛을 받고(대비 ↑) 능선 · 볕드는 면이 금빛으로 더 밝아진다.
+    sun=max(ndl,0.0)*shade*vSourceClear.x*(1.0+1.4*low*smoothstep(.1,.5,ndl));
+  }
+  if(uGroundMoonLight>.001) moon=max(dot(n,uMoonDir),0.0)*mix(1.0,terrainShadow(terrainHit.xy,uMoonDir,.02),terrainPhoto)*vSourceClear.y;
+  vec3 skyCol=mix(vec3(.30,.36,.46),vec3(.30,.24,.30),uSolar.y);   // 낮 = 푸른 하늘빛, 노을 = 보랏빛
+  vec3 ambient=skyCol*sky*(.5+.5*n.y)*(.75-.45*low)+uSunCol*.04*(1.0-n.y);
+  vec3 light=vec3(.016)+uSolar.x*(ambient+uSunCol*1.75*sun)+uGroundMoonLight*(vec3(.035,.045,.065)*sky+uMoonCol*.30*moon);
+  vec3 surface=albedo*light;
+  // 해 쪽 공기: 해를 향해 볼수록 멀리 있는 능선 사이 공기가 해 색으로 번진다(낮은 해일수록).
+  float fwd=max(dot(ray,uSunDir),0.0);
+  vec3 airSun=air+uSunCol*uSolar.x*low*.35*pow(fwd,6.0);
+  surface=mix(airSun,surface,exp(-geometry.y*.014));
   return mix(plain,surface,terrainBlend);
 }
 #endif
