@@ -1,5 +1,5 @@
 // Seeded ground data. All distances/heights are km; approved outdoor imagery loads on demand.
-// Debug-only URL controls: ?bgdebug&bgground=city|mountain|sea&bgseed=integer&bgalt=1|2|3.
+// Debug-only URL controls: ?bgdebug&bgground=city|mountain|sea&bgseed=integer&bgalt=1|2|3(기본 = 시드로 정한 1 · 2 · 3km).
 // Overrides never overwrite the first-visit world. bgspeed=0 also freezes the 64s animation loop.
 import { createTerrain, terrainShader } from "./bgterrain.js";
 
@@ -14,7 +14,10 @@ export function groundWorld(qs, debug) {
   const seed = Number.isSafeInteger(forced) ? forced >>> 0 : saved;
   const kinds = ["city", "mountain", "sea"];
   const kind = debug && kinds.includes(qs.get("bgground")) ? qs.get("bgground") : kinds[seed % 3];
-  return { seed, kind, index: kinds.indexOf(kind), altitude: debug && ["1", "2", "3"].includes(qs.get("bgalt")) ? Number(qs.get("bgalt")) : 2 };
+  // (11-05 운영자) 눈 고도도 첫 방문 시드로 1 · 2 · 3km 중 하나 — 시드가 기기에 저장되므로 재방문해도 같다.
+  // 종류(seed % 3)와 따로 놀게 seed / 3 을 쓴다. bgalt 디버그 강제값은 저장값을 바꾸지 않는다.
+  const altitude = debug && ["1", "2", "3"].includes(qs.get("bgalt")) ? Number(qs.get("bgalt")) : 1 + Math.floor(seed / 3) % 3;
+  return { seed, kind, index: kinds.indexOf(kind), altitude };
 }
 
 export function createGroundTextures(gl, world, changed) {
@@ -353,7 +356,8 @@ vec4 groundGeometry(vec3 ray, float pixel) {
 #if GROUND_OUTDOOR
   if (uGroundKind > .5 && uGroundKind < 1.5) {
 #else
-  if (uGroundKind < 1.5) {
+  // (11-05 운영자) 실내 보기(분홍 하늘)에서는 산을 그리지 않는다 — 산 풍경은 평평한 지평선. 도시 띠는 그대로.
+  if (uGroundKind < .5) {
 #endif
     float az = atan(ray.x, ray.z), horizontal = max(length(ray.xz), .0001);
     for (int i = 2; i >= 0; i--) {
