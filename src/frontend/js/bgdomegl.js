@@ -1742,7 +1742,14 @@ export function createDomeGL(host, isPaused) {
     return { fwd: [sy * cp, sp, cy_ * cp], right: r0, up: [-sy * sp, cp, -cy_ * sp], hright: r0 };
   }
   // 배경 그림을 읽을 때 돌릴 각(라디안) — 폰 기울임(rollS)의 반대. 분홍 구름 하늘(실내 분홍)은 0(운영자: 제외 · 판정 불필요)
-  const bgRoll = () => (!outdoor && INDOOR_BG !== "space" ? 0 : -rollS);
+  // (11-06 운영자) 손에 든 채 조금 돌아간 정도(≈ 5° 아래)는 거의 반응하지 않고, 일부러 기울였다고 볼 만큼(≈ 14° 넘게)이면 원래대로 그 각을 그대로 —
+  // 그 사이는 부드럽게 이어 준다(기울임 × smoothstep(5°, 14°, |기울임|)). 공중 무늬가 미끄러지는 기울기 가속(tiltAccel)은 그대로.
+  const ROLL_SOFT = 5 * DEG, ROLL_FULL = 14 * DEG;
+  const bgRoll = () => {
+    if (!outdoor && INDOOR_BG !== "space") return 0;
+    const t = Math.max(0, Math.min(1, (Math.abs(rollS) - ROLL_SOFT) / (ROLL_FULL - ROLL_SOFT)));
+    return -rollS * t * t * (3 - 2 * t);
+  };
 
   function draw() {
     if (gl.isContextLost() || !W || releaseGround?.terrain?.uploading) return;
