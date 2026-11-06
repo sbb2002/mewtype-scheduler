@@ -120,6 +120,8 @@ export function createUfoPanel() {
         tiles[k].setAttribute("aria-pressed", sel ? "true" : "false");
       }
     },
+    /** 하늘 전환(돔 재투영) 중 「송신 중」 — 판 · 칸 바탕을 옅게 해 뒤 하늘이 비치고, 고른 칸 테두리에 시안 선이 한 번 지나간다(css/bgpanel.css .is-tx) */
+    transmit(v) { root.classList.toggle("is-tx", v); },
     /** 안내 불투명도 0 ~ 1(0.02 이상 바뀔 때만 DOM 을 건드린다) */
     setHint(a) {
       if (Math.abs(a - hintA) < 0.02 && !(a === 0 && hintA !== 0)) return;

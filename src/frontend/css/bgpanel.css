@@ -170,6 +170,21 @@
 .ufo-note { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.4; color: #ffd27a; }
 .ufo-note[hidden] { display: none; }
 .ufo-tile:active { background: rgba(255, 95, 170, .22); }
+/* 하늘 전환 「송신 중」(ref/bg-dome/transition/AGREED.md) — js/bgdomegl.js 가 .is-tx 를 약 1초 켠다.
+   판 0.35 · 칸 바탕 0.15 · 글자 그대로, 뒤 흐림 끔(흐림 수치를 매 프레임 바꾸지 않고 켜고 끄기만). 고른 칸 테두리 위로 시안 선이 0.9초에 한 번 지나간다. */
+.ufo-card, .ufo-tile { transition: background-color .12s ease, border-color .15s, -webkit-backdrop-filter .12s, backdrop-filter .12s; }
+.ufo-hud.is-tx .ufo-card { background: rgba(10, 8, 26, .35); -webkit-backdrop-filter: none; backdrop-filter: none; transition-duration: .08s; }
+.ufo-hud.is-tx .ufo-tile { background: rgba(18, 16, 40, .15); transition-duration: .08s; }
+.ufo-hud.is-tx .ufo-tile.is-on { background: rgba(255, 95, 170, .12); }
+.ufo-hud.is-tx .ufo-tile__text { text-shadow: 0 0 6px rgba(6, 4, 18, .9); }
+.ufo-tile::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.ufo-hud.is-tx .ufo-tile.is-on::after {
+  border: 1px solid var(--ufo-cyan);
+  -webkit-mask: linear-gradient(90deg, transparent 0 40%, #000 48% 52%, transparent 60% 100%) 0 0 / 300% 100% no-repeat;
+  mask: linear-gradient(90deg, transparent 0 40%, #000 48% 52%, transparent 60% 100%) 0 0 / 300% 100% no-repeat;
+  animation: ufo-tx-run .9s cubic-bezier(.45, 0, .25, 1) both;
+}
+@keyframes ufo-tx-run { 0% { opacity: 1; -webkit-mask-position: 100% 0; mask-position: 100% 0; } 90% { opacity: 1; } 100% { opacity: 0; -webkit-mask-position: 0 0; mask-position: 0 0; } }
 .ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(79, 227, 255, .18); padding-top: 8px; }
 
 /* ── 멀리 있을 때 안내 */
@@ -189,6 +204,7 @@
   .ufo-hud.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-hud.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
   .ufo-hud.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
   .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }
+  .ufo-hud.is-tx .ufo-tile.is-on::after { animation: none; opacity: 0; }
 }
 @keyframes ufo-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
 @keyframes ufo-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }

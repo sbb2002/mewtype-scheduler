@@ -55,13 +55,6 @@ html.bg-wipe::view-transition-old(root) {
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   animation: bg-wipe-down 1.6s cubic-bezier(0.45, 0, 0.25, 1) both;
 }
-/* UFO 조작 패널 · 안내 말은 하늘과 같이 걷히지 않고 그대로 떠 있는다(고른 칸 표시도 바로 바뀐다) — 따로 떼어 살아 있는 화면만 보인다 */
-html.bg-wipe .ufo-hud { view-transition-name: ufo-hud; }
-html.bg-wipe .ufo-hint { view-transition-name: ufo-hint; }
-html.bg-wipe::view-transition-old(ufo-hud), html.bg-wipe::view-transition-old(ufo-hint) { display: none; }
-html.bg-wipe::view-transition-group(ufo-hud), html.bg-wipe::view-transition-group(ufo-hint),
-html.bg-wipe::view-transition-new(ufo-hud), html.bg-wipe::view-transition-new(ufo-hint) { animation: none; mix-blend-mode: normal; }
-
 /* 시험안 전용. 쿼리가 없으면 기존 규칙만 적용된다. */
 #bgdeco[data-variant] {
   --bgv-accent: #ff7788;

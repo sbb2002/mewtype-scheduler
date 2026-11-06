@@ -59,9 +59,9 @@ function chooseTheme(value) {
 
 // (11-06 운영자 「촥 바뀌지 말고 위에서부터 서서히」) 배경을 바꿀 때 옛 화면을 한 장으로 찍어 두고(View Transitions),
 // 그 사진이 위에서부터 아래로 부드럽게 걷히며 새 배경이 드러난다. 모양은 bgdeco.css 의 html.bg-wipe.
-// 쓰는 곳 = UFO 조작 패널의 하늘 고르기(버츄얼 스페이스 · 초행성X · 지구 — bgdomegl.js · 아래 choose) · 테마 팝업(기본 · UFO · 생일).
+// 쓰는 곳 = 테마 팝업(기본 · UFO · 생일)만. UFO 조작 패널의 하늘 고르기는 돔 셰이더의 「재투영」 전환(bgdomegl.js beginSky).
 // 지원하지 않는 브라우저 · 움직임 줄이기 설정이면 예전처럼 바로 바뀐다.
-export function wipeDown(change) {
+function wipeDown(change) {
   const root = document.documentElement;
   const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (!document.startViewTransition || reduce) { change(); return; }
@@ -119,7 +119,7 @@ async function choose(value) {
   await ori;   // 방향 센서를 거절해도 위치가 있으면 바깥 하늘은 그린다(방향만 고정)
   busy = false;
   if (result === "ok") {
-    wipeDown(() => setBgView("outdoor"));   // 위치를 받은 뒤에 걷기 시작한다(권한 묻는 동안은 지금 하늘 그대로)
+    setBgView("outdoor");   // 위치를 받은 뒤에 바꾼다 — 배경 보기 중이면 돔이 「재투영」 전환을 한다(bgdomegl.js beginSky)
     toast("바깥 보기 — 폰을 세워 하늘을 비추면 실제 자리에 해 · 달이 보여요. 레인을 위로 튕겨 걷으면 가리는 것 없이 볼 수 있어요.", 6500);
     return;
   }

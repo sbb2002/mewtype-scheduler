@@ -11,7 +11,7 @@
 // 시선은 실내 · 바깥 모두 폰이 실제로 향한 방향 그대로(updateView). 해상도는 기기 배율 1.5 까지만.
 
 import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
-import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView, wipeDown } from "./bgview.js";
+import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
@@ -201,6 +201,10 @@ uniform vec2 uMoonAxis;
 uniform vec4 uMoonScreen; // CSS center, radius, screen-size mode (front hemisphere only)
 uniform sampler2D uThemeFrame;
 uniform float uThemeProgress; // 1 = inactive; no snapshot lookup at rest
+// (11-06) 하늘 전환 「돔 재투영」(ref/bg-dome/transition/AGREED.md) — 밝게/어둡게와 같은 직전 화면 사진(uThemeFrame)을 쓴다.
+// uSkyFx = (하강 진행 0..1 · 그 뒤 잔광, 음수 = 꺼짐, 진행 선 세기, 점무늬 띠 세기, 분홍 잔광 세기)
+// uSkyFx2 = (경계 시작 위도, 끝 위도(라디안), 단축 완료 0..1, 잔광 남은 비율 1..0)
+uniform vec4 uSkyFx, uSkyFx2;
 
 flat in vec2 vSourceClear;
 uniform mat3 uEqM;
@@ -209,6 +213,7 @@ uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
+const float BAYER4[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);   // 4×4 Bayer — 점을 켜는 고정 순서
 uniform vec3 E;   // 눈 위치 = EYE(줌으로 움직인다)
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -672,6 +677,7 @@ void main() {
 #endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
+  float latW = max(fwidth(lat), 1e-6);   // 하늘 전환 경계의 픽셀 폭(분기 밖에서 구한다)
   float dLat = min(min(abs(lat - 18.0 * D), abs(lat - 40.0 * D)), abs(lat - 62.0 * D));
   float dLon = abs(mod(lon + 15.0 * D, 30.0 * D) - 15.0 * D) * cl;
   float hw = 0.525 * uDpr;
@@ -808,6 +814,29 @@ void main() {
     float edge = max(0.0,1.0-abs(local-.5)*2.0);
     float scan = step(.91,fract(p.y*.125 + uThemeProgress*9.0));
     outc += mix(vec3(.12,.85,1),vec3(1,.16,.64),sector) * edge * (.08 + 2.4*grid + .16*scan) * (1.0-floorK);
+  }
+  // 하늘 전환 「돔 재투영」: 천정 쪽에서 위도를 따라 휘는 경계 한 줄이 돔 가장자리로 내려온다. 지나간 쪽 = 새 하늘.
+  // 경계 근처만 화면 좌표 4×4 Bayer 점무늬(칸 3 CSS px — 고정 순서라 점마다 한 번만 바뀐다)로 옛/새를 섞는다.
+  // 바닥은 경계가 고리에 닿을 때 함께 바뀌고(세 목적지 모두 같은 무대 바닥), 선 · 잔광은 돔 쪽에만.
+  if (uSkyFx.x >= 0.0) {
+    float colJ = fract(sin(floor((lon + TAU * .5) / (30.0 * D)) * 12.9898) * 43758.5453) * .028;   // 경도 칸마다 0~25ms 차이
+    float tc = clamp((uSkyFx.x - colJ) / .972, 0.0, 1.0);
+    tc = tc * tc * (3.0 - 2.0 * tc);
+    float bl = mix(uSkyFx2.x, uSkyFx2.y, tc);
+    float le = mix(lat, uSkyFx2.y + 2.0 * D, floorK);
+    float s = clamp((le - bl) / (mix(1.2, 7.0, uSkyFx.z) * D), 0.0, 1.0);
+    vec2 bc = mod(floor(p / 3.0), 4.0);
+    float reveal = step((BAYER4[int(bc.y) * 4 + int(bc.x)] + .5) / 16.0, s);
+    vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
+    float dome = 1.0 - floorK;
+    float dpx = (le - bl) / latW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
+    float lineK = (1.0 - smoothstep(.9, 1.0, uSkyFx.x)) * dome * uSkyFx.y;
+    res *= 1.0 - .22 * exp(min(dpx, 0.0) / 9.0) * step(dpx, 0.0) * lineK;   // 선 바로 앞(옛 쪽)을 살짝 어둡게 — 밝은 구름 위에서도 선이 읽히게
+    vec3 cyan = vec3(.31, .89, 1.0);
+    res += (mix(cyan, vec3(1.0, .95, .85), .35) * exp(-dpx * dpx) * .9 + cyan * exp(-abs(dpx) / 7.0) * .35) * lineK;
+    float glow = uSkyFx.w * uSkyFx2.w * dome * reveal;
+    res += vec3(1.0, .44, .71) * (.14 * exp(-max(dpx, 0.0) / 60.0) + 1.6 * grid) * glow;   // 지나간 쪽 이음선 · 가장자리에 분홍 잔광
+    outc = mix(res, outc, uSkyFx2.z);
   }
   outColor = vec4(outc, 1.0);
 }`;
@@ -1013,28 +1042,30 @@ export function createDomeGL(host, isPaused) {
   const ufoPanel = createUfoPanel();
   const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
-  // (11-06 운영자) 하늘이 확 바뀌지 않고 위에서부터 서서히 걷히며 바뀐다(bgview.js wipeDown).
-  // 초행성X 는 우주 사진을 다 받은 뒤에 걷기 시작한다 — 안 그러면 빈 하늘이 드러났다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
+  // (11-06 운영자) 하늘은 「돔 재투영」으로 바뀐다(아래 beginSky — 두 이벤트 듣기에서 바꾸기 직전에 시작).
+  // 초행성X 는 우주 사진을 다 받은 뒤에 시작한다 — 안 그러면 빈 하늘이 맺혔다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
+  // 누른 순간 8ms 진동 한 번(배경 보기 열 때와 같은 값), 같은 칸 재선택은 없음.
   let picking = false;
+  const buzz = () => { if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate(8); } catch { /* 미지원 */ } };
   ufoPanel.onPick(async (key) => {
-    if (key === "earth") { if (!outdoor) chooseBgView("outdoor"); return; }   // 위치를 받은 뒤 bgview.js 가 걷는다
+    if (key === "earth") { if (!outdoor) { buzz(); chooseBgView("outdoor"); } return; }   // 위치를 받은 뒤 BGVIEW_EVENT 에서 시작
     if (picking || (key === INDOOR_BG && !outdoor)) return;
     picking = true;
+    buzz();
     if (key === "space" && !outdoor) {
       spacePreload = true;
       await Promise.race([loadSpaceTex(), new Promise((r) => setTimeout(r, 4000))]);
       spacePreload = false;
     }
-    wipeDown(() => {
-      if (key !== INDOOR_BG) setIndoorBg(key);
-      if (outdoor) setBgView("indoor");
-    });
+    if (key !== INDOOR_BG) setIndoorBg(key);
+    if (outdoor) setBgView("indoor");
     picking = false;
   });
   let spacePreload = false;
   document.addEventListener(BGINDOOR_EVENT, (e) => {
     const v = e.detail === "space" ? "space" : "pink";
     if (v === INDOOR_BG) return;
+    if (!outdoor) beginSky(v);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     INDOOR_BG = v;
     spaceT0 = null; warpDist = 0;   // 우주에 새로 들어간다
     draw();
@@ -1116,7 +1147,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
-    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1);
+    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
     gl.uniform1i(U.uTerrainDetail, 13); gl.uniform1i(U.uTerrainDetailNormal, 14); gl.uniform1i(U.uTerrainShadow, 15);
@@ -1374,21 +1405,55 @@ export function createDomeGL(host, isPaused) {
     img.src = new URL("../assets/bg/ground-" + GROUND.kind + "-albedo.webp", import.meta.url).href;
   }
 
+  /** 지금 화면을 9번 칸 사진으로 복사(밝게/어둡게 · 하늘 전환 공용). 되풀이하면 지금 보이는 섞인 화면을 찍어 끊김이 없다 */
+  function captureFrame() {
+    gl.drawArrays(gl.TRIANGLES, 0, 3); // refresh the non-preserved backbuffer before copying
+    if (!themeFrame) themeFrame = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, themeFrame);
+    gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, 0, 0, canvas.width, canvas.height, 0);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  // ── 하늘 전환 「돔 재투영」(ref/bg-dome/transition/AGREED.md) — 조작 패널에서 하늘을 바꿀 때(배경 보기 중)만.
+  // 하강 900ms + 잔광 200ms. 시점이 6° 넘게 돌거나 · 두 손가락 줌 · 화면 크기 변경이면 남은 것을 150ms 안에 지운다. 움직임 줄이기면 없음.
+  // 확인용: ?bgdebug&bgskyslow=10 이면 10배 느리게(시간 조정 시험)
+  const SKY_SLOW = (() => { const v = DEBUG ? Number(QS.get("bgskyslow")) : NaN; return Number.isFinite(v) && v > 0 ? v : 1; })();
+  const SKY_DESC_MS = 900 * SKY_SLOW, SKY_MS = 1100 * SKY_SLOW, SKY_TX_OFF_MS = 980 * SKY_SLOW, SKY_SHORT_MS = 150, SKY_END_LAT = -4 * DEG;
+  // 목적지별 (진행 선, 점무늬 띠, 분홍 잔광) — 초행성X = 선이 또렷, 지구 = 점무늬 · 잔광 가장 약하게, 버츄얼 스페이스 = 잔광 조금 더
+  const SKY_FX = { space: [1.3, 1, 0.8], earth: [1, 0.45, 0.35], pink: [1, 1, 1.3] };
+  let sky = null;
+  function beginSky(dest) {
+    if (reducedMotion.matches || !W || isPaused() || gl.isContextLost() || !prog || !document.documentElement.classList.contains("bg-peek")) return;
+    captureFrame();
+    themeStart = -Infinity;
+    // 천정이 화면 밖이면 경계가 보이는 돔 위쪽 조금 위에서 시작한다(안 보이는 곳에서 시간을 쓰지 않게)
+    const top = pitch + Math.atan(cy / viewFocal());
+    sky = { t0: performance.now(), fx: SKY_FX[dest] || SKY_FX.pink, yaw, pitch, startLat: Math.max(12 * DEG, Math.min(92 * DEG, top + 8 * DEG)), shortAt: null, shortMs: SKY_SHORT_MS, tx: true };
+    ufoPanel.transmit(true);
+  }
+  function endSky() { if (!sky) return; sky = null; ufoPanel.transmit(false); }
+  function shortenSky(now) { if (!sky || sky.shortAt != null) return; sky.shortAt = now; sky.shortMs = Math.max(1, Math.min(SKY_SHORT_MS, SKY_MS - (now - sky.t0))); }
+  function skyUniforms() {
+    if (!sky) { gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); return; }
+    const now = performance.now(), el = now - sky.t0;
+    const force = sky.shortAt == null ? 0 : Math.min(1, (now - sky.shortAt) / sky.shortMs);
+    if (el >= SKY_MS || force >= 1) { endSky(); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); return; }
+    if (sky.tx && el >= SKY_TX_OFF_MS) { sky.tx = false; ufoPanel.transmit(false); }   // 마지막 120ms 에 패널 바탕 복귀
+    gl.uniform4f(U.uSkyFx, el / SKY_DESC_MS, ...sky.fx);
+    gl.uniform4f(U.uSkyFx2, sky.startLat, SKY_END_LAT, force, el < SKY_DESC_MS ? 1 : 1 - (el - SKY_DESC_MS) / (SKY_MS - SKY_DESC_MS));
+  }
+
   function applyTheme() {
     const name = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
     if (name === theme) return;
     if (theme && !reducedMotion.matches && W && !isPaused()) {
-      gl.drawArrays(gl.TRIANGLES, 0, 3); // refresh the non-preserved backbuffer before copying
-      // Repeated toggles capture the currently visible mixture, avoiding a jump.
-      if (!themeFrame) themeFrame = gl.createTexture();
-      gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, themeFrame);
-      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, 0, 0, canvas.width, canvas.height, 0);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      captureFrame();
+      endSky();   // 하늘 전환 중이었으면 지금 보이는 섞인 화면을 사진으로 이어받고 그쪽은 끝낸다
       themeStart = performance.now();
-      gl.activeTexture(gl.TEXTURE0);
     } else themeStart = -Infinity;
     theme = name;
     const t = THEMES[name];
@@ -1414,6 +1479,7 @@ export function createDomeGL(host, isPaused) {
     loadGroundAlbedo();
     gl.uniform1f(U.uGroundAlbedoOn, outdoor && albedoOn ? 1 : 0);
     gl.uniform1f(U.uThemeProgress, reducedMotion.matches ? 1 : Math.min(1, (performance.now()-themeStart)/THEME_MS));
+    skyUniforms();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele;
@@ -1635,7 +1701,12 @@ export function createDomeGL(host, isPaused) {
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
     updateUfo(peek);
-    if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && (voyageBeta((performance.now() - spaceT0) / 1000) > 0 || performance.now() - spaceT0 < VOYAGE_END * 1000) && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
+    if (sky && sky.shortAt == null) {
+      // 옛 하늘은 정지 사진이라 시점이 크게 움직이면 새 장면과 어긋난다 → 남은 것을 짧게 지운다(판정은 한 번)
+      const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
+      if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
+    }
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && (voyageBeta((performance.now() - spaceT0) / 1000) > 0 || performance.now() - spaceT0 < VOYAGE_END * 1000) && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -1653,7 +1724,9 @@ export function createDomeGL(host, isPaused) {
     try { init(); resize(window.innerWidth, window.innerHeight); if (!isPaused()) start(); } catch { /* 복구 실패 — 마지막 화면 없이 바탕색만 */ }
   });
   document.addEventListener(BGVIEW_EVENT, (e) => {
-    outdoor = e.detail === "outdoor";
+    const next = e.detail === "outdoor";
+    if (next !== outdoor) beginSky(next ? "earth" : INDOOR_BG);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
+    outdoor = next;
     useViewProgram();
     // 시선 · 기준점은 두 보기가 같다(updateView) — 여기서는 화면 폭 각도만(시안 bgsize=window 일 때만 바깥이 다르다)
     if (W) gl.uniform1f(U.uF, viewFocal());
@@ -1666,6 +1739,7 @@ export function createDomeGL(host, isPaused) {
 
   function resize(w, h) {
     themeStart = -Infinity;
+    endSky();   // 화면 크기가 바뀌면 옛 사진이 맞지 않는다 — 바로 끝
     W = w; H = h; phone = W <= 767;
     dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
