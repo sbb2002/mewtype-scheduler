@@ -143,7 +143,25 @@
   box-shadow: 0 0 0 1px rgba(255, 111, 181, .15), 0 0 32px rgba(79, 227, 255, .18);
   clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
 }
-.ufo-scan { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px); }
+/* (11-06 운영자 「주사선과 스캔라인」) 주사선 = 3px 마다 가는 가로줄(밝은 줄 + 옅은 어두운 줄로 화면 결이 보이게),
+   스캔라인 = 시안 빛 띠가 위에서 아래로 훑고 지나감(3.6초마다 한 번, 지나가는 데 1.4초). 글자보다 뒤(카드 맨 앞 자식)라 읽기를 방해하지 않는다. */
+.ufo-scan {
+  position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+  background: repeating-linear-gradient(0deg, rgba(160, 235, 255, .06) 0 1px, rgba(0, 0, 0, .14) 1px 2px, transparent 2px 3px);
+}
+.ufo-head, .ufo-list, .ufo-foot { position: relative; }   /* 절대 위치인 주사선 층보다 위에 그려지게 */
+.ufo-scan::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 72px; opacity: 0;
+  background: linear-gradient(180deg, transparent, rgba(79, 227, 255, .07) 55%, rgba(190, 245, 255, .28) 92%, rgba(255, 255, 255, .5) 96%, transparent);
+  box-shadow: 0 1px 10px rgba(79, 227, 255, .25);
+}
+.ufo-hud.is-on .ufo-scan::after { animation: ufo-scanline 3.6s linear .7s infinite; }
+@keyframes ufo-scanline {
+  0% { transform: translateY(-80px); opacity: 0; }
+  4% { opacity: 1; }
+  38% { opacity: 1; }
+  39%, 100% { transform: translateY(var(--ufo-scan-h, 520px)); opacity: 0; }
+}
 .ufo-mono { font-family: var(--ufo-mono); }
 .ufo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .ufo-head__l { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
@@ -201,6 +219,7 @@
   #bgdeco .bgcs-holo, #bgdeco .bgcs-beam, .ufo-hint { animation: none; }
   .ufo-hud.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-hud.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
   .ufo-hud.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
-  .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }}
+  .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }
+  .ufo-hud.is-on .ufo-scan::after { animation: none; }}
 @keyframes ufo-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
 @keyframes ufo-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }
