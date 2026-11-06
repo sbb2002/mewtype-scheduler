@@ -1207,13 +1207,12 @@ export function createDomeGL(host, isPaused) {
 
   // ── 성간 이동(3단계, 계획 ufo_panel_impl_plan.md 0번 2) ─────────────────────────────
   // 시작: 초행성X(실내 우주)에 들어갈 때마다 10%(하늘 전환이 끝난 뒤 판정 · 기억된 우주로 방문할 때도) · 조작 패널 초행성X 칸 1초 길게 누르기.
-  // 시작하면 일반 우주(N)에서 1.5초 머문 뒤 자동으로 1단(0.30c). 그 뒤는 기어 패널(bggear.js)로 사용자가 조작 — 옛 「1분 뒤 저절로 끝남」은 없다.
-  // N 으로 멈추면 · WARP(레드존 + 좌석벨트 표시등 꺼짐) 점프 연출이 끝나면 · 우주를 떠나면 끝(기어 패널 닫힘).
+  // 시작하면 N(정지)에서 기다린다 — 자동 1단 없음(운영자 11-06). 출발 · 변속은 기어 패널(bggear.js)로 사용자가 — 옛 「1분 뒤 저절로 끝남」도 없다.
+  // 끝 = WARP(레드존 + 좌석벨트 표시등 꺼짐) 점프 연출이 끝나면 · 우주를 떠나면(기어 패널 닫힘). N 으로 멈춰도 끝나지 않는다(운영자 11-06).
   // 기어 패널은 배경 보기 중에만 보이고(조작 패널 문턱과 별개), 그 밖에선 우주만 계속 달린다.
   const gear = createGearPanel({
     onGear(i) {
       if (!star || star.frame) return;
-      if (i === 0 && !star.st.moved) { endStar(); return; }   // 자동 1단 전에 N = 바로 멈춤
       buzz(); shiftGear(star.st, i);
     },
     onWarp() {
@@ -1275,7 +1274,7 @@ export function createDomeGL(host, isPaused) {
   }
   function startStar() {
     if (star) return;
-    star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null, axis: randUnit(), nextDeep: pickOtherDeep() };
+    star = { st: createWarp(), jump: null, frame: null, axis: randUnit(), nextDeep: pickOtherDeep() };
     loadDeep(star.nextDeep);   // 워프로 도착할 때 쓸 사진을 미리 받아 둔다
     warpDist = 0;
     ufoPanel.setWarping(true);
@@ -1322,7 +1321,6 @@ export function createDomeGL(host, isPaused) {
     // 속도 모형은 실제 지난 시간으로(프레임이 느려도 기어 시간이 늘어지지 않게, 탭 숨김 뒤 한꺼번에 뛰지 않게 0.25초까지)
     const dt = Math.min(0.25, Math.max(0, now - (star.lastT ?? now)) / 1000); star.lastT = now;
     if (!star.jump) {
-      if (!st.moved && now >= star.autoAt) shiftGear(st, 1);
       for (let left = dt; left > 1e-6; left -= 1 / 60) { const d = tickWarp(st, Math.min(left, 1 / 60), now); if (d) sound.ding(); }   // 표시등이 켜지고 꺼질 때 「띵」   // 잘게 나눠(느린 프레임에서도 같은 움직임) — 「띵」 · 진동 · 흔들림은 4단계
       // N 으로 멈춰도(v = 0) 성간 이동은 끝나지 않는다(운영자 11-06) — 끝 = WARP 점프 · 하늘 바꾸기(우주를 떠남)뿐. 기어 패널도 그대로 남아 다시 출발할 수 있다
       star.frame = null;

@@ -12,14 +12,14 @@ export const GEAR_BETA = [0, 0.3, 0.6, 0.8, 0.9, 0.99];
 export const RED_BETA = 0.85;
 
 export function createWarp() {
-  return { gear: 0, stage: 0, beta: 0, mode: "idle", amp: 0, belt: "off", beltUntil: 0, moved: false };
+  return { gear: 0, stage: 0, beta: 0, mode: "idle", amp: 0, belt: "off", beltUntil: 0 };
 }
 
 /** 기어 바꾸기(0 = N). 같은 단을 다시 고르면 그대로 */
 export function shiftGear(st, i) {
   const g = Math.max(0, Math.min(5, i | 0));
   if (g === st.gear && st.mode === "idle") return st;
-  st.gear = g; st.mode = "go"; st.moved = true;
+  st.gear = g; st.mode = "go";
   return st;
 }
 
