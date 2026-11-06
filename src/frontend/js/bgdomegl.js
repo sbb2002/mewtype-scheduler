@@ -19,6 +19,7 @@ import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
+import * as sound from "./bgsound.js";
 import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
 const DEG = Math.PI / 180;
@@ -1163,7 +1164,7 @@ export function createDomeGL(host, isPaused) {
   // 초행성X 는 우주 사진을 다 받은 뒤에 시작한다 — 안 그러면 빈 하늘이 맺혔다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
   // 누른 순간 8ms 진동 한 번(배경 보기 열 때와 같은 값), 같은 칸 재선택은 없음.
   let picking = false;
-  const buzz = () => { if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate(8); } catch { /* 미지원 */ } };
+  const buzz = () => { sound.wake(); if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate(8); } catch { /* 미지원 */ } };   // 누르는 손길 = 소리 권한도 깨운다(bgsound.js)
   // (11-06 운영자) 고른 뒤 준비(우주 사진 · 위치) → 전환이 끝날 때까지 하늘 칸은 비활성. 준비 중엔 칸이 흐려지고, 전환 중엔 패널이 꺼져 있다.
   ufoPanel.onPick(pickSky);
   async function pickSky(key) {
@@ -1213,6 +1214,7 @@ export function createDomeGL(host, isPaused) {
       buzz();
       captureFrame(); themeStart = -Infinity; endSky();   // B 연출의 「옛 화면」 사진
       star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
+      sound.jump(star.jump.kind);   // 연출 시간표(A 0.62초 섬광 · C 0.7초 충격파)에 맞춘 점프 소리
     },
   });
   let star = null, pendingHold = false, shaking = false;
@@ -1227,6 +1229,21 @@ export function createDomeGL(host, isPaused) {
     gear.shake(r() * a, r() * a * 0.6);
     ufoPanel.el.style.transform = ufoPanel.on ? `translate(${(r() * a).toFixed(1)}px, ${(r() * a * 0.6).toFixed(1)}px)` : "";
   }
+  // ── 4단계(11-06): 돔 흔들림 · 폰 진동 · 소리
+  // 돔 흔들림 = 좌석벨트 표시등이 켜진 동안 시선(yaw · pitch)에 작은 무작위 흔들림(떨림 세기 비례, 최대 약 0.35°), 깜빡일 땐 아주 약하게. 움직임 줄이기면 없음.
+  let shYaw = 0, shPitch = 0;
+  // 폰 진동(운영자 11-06 「가속도가 높을수록 잦게, 0 에 가까우면 드물게」) = 속도 변화율 |dβ/dt| 로 간격 · 길이를 정한다.
+  //   세게 가속 · 제동(≈ 0.5c/초 이상) = 0.07초마다 20ms, 약할수록 간격이 길어져 최대 0.6초마다 6ms, 거의 0 이면 울리지 않는다. 안드로이드만(iOS 사파리는 진동 없음).
+  let accS = 0, lastBeta = 0, vibAt = 0;
+  function vibrateByAccel(now, dt, beta) {
+    const acc = dt > 0 ? Math.abs(beta - lastBeta) / dt : 0; lastBeta = beta;
+    accS += (acc - accS) * (1 - Math.exp(-dt / 0.12));
+    if (!navigator.vibrate || reducedMotion.matches) return;
+    const k = Math.min(1, accS / 0.5);
+    if (k < 0.06 || now < vibAt) return;   // 목표 속도에 거의 다 와 가는 꼬리(≈ 0.03c/초 아래)는 울리지 않는다
+    vibAt = now + 600 - 530 * k;
+    try { navigator.vibrate(Math.round(6 + 14 * k)); } catch { /* 미지원 */ }
+  }
   function startStar() {
     if (star) return;
     star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null, axis: randUnit(), nextDeep: pickOtherDeep() };
@@ -1238,7 +1255,8 @@ export function createDomeGL(host, isPaused) {
     pendingHold = false;
     if (!star) return;
     star = null;
-    shakePanels(null);
+    shakePanels(null); shYaw = shPitch = 0; accS = 0; lastBeta = 0;
+    sound.stopEngine();
     gear.show(false, how);   // 성간 이동이 끝나면 하늘 전환처럼(흰 띠 + 도트) 사라진다
     ufoPanel.el.style.transform = "";
     ufoPanel.setWarping(false); ufoPanel.setRed(false);
@@ -1277,7 +1295,7 @@ export function createDomeGL(host, isPaused) {
     const dt = Math.min(0.25, Math.max(0, now - (star.lastT ?? now)) / 1000); star.lastT = now;
     if (!star.jump) {
       if (!st.moved && now >= star.autoAt) shiftGear(st, 1);
-      for (let left = dt; left > 1e-6; left -= 1 / 60) tickWarp(st, Math.min(left, 1 / 60), now);   // 잘게 나눠(느린 프레임에서도 같은 움직임) — 「띵」 · 진동 · 흔들림은 4단계
+      for (let left = dt; left > 1e-6; left -= 1 / 60) { const d = tickWarp(st, Math.min(left, 1 / 60), now); if (d) sound.ding(); }   // 표시등이 켜지고 꺼질 때 「띵」   // 잘게 나눠(느린 프레임에서도 같은 움직임) — 「띵」 · 진동 · 흔들림은 4단계
       if (stoppedAtN(st)) { endStar(); return; }
       star.frame = null;
       if (st.beta > 0 && !reducedMotion.matches) spaceRot = mulRot(axisRot(star.axis, dt * 0.03 * (0.45 + 1.6 * st.beta) * st.beta), spaceRot);   // 달린 만큼 하늘이 조금씩 돈다
@@ -1298,6 +1316,11 @@ export function createDomeGL(host, isPaused) {
     if (peek) gear.update(st, !!star.frame, beta);
     ufoPanel.setRed(beta >= 0.85);
     shakePanels(star.frame ? null : st);
+    sound.engine(beta, star.frame ? 0 : st.amp);
+    vibrateByAccel(now, dt, beta);
+    if (star.jump && !star.jump.buzzed && star.jump.arrived && navigator.vibrate && !reducedMotion.matches) { star.jump.buzzed = true; try { navigator.vibrate([45, 35, 70]); } catch { /* 미지원 */ } }   // 점프 도착 순간 쾅
+    const sa = reducedMotion.matches || star.frame ? 0 : st.belt === "on" ? 0.0012 * (1 + st.amp) : st.belt === "blink" ? 0.0004 : 0;
+    shYaw = sa ? (Math.random() - 0.5) * 2 * sa : 0; shPitch = sa ? (Math.random() - 0.5) * 1.4 * sa : 0;
   }
   function jumpUniforms() {
     const f = star?.frame;
@@ -1737,7 +1760,7 @@ export function createDomeGL(host, isPaused) {
 
   // 카메라 축(기울지 않음 — 폰 기울임은 배경 그림에만, 셰이더 uBgRoll · bgRoll()). hright = 수평 오른쪽(= right).
   function basis() {
-    const cy_ = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy_ = Math.cos(yaw + shYaw), sy = Math.sin(yaw + shYaw), cp = Math.cos(pitch + shPitch), sp = Math.sin(pitch + shPitch);   // sh* = 레드존 돔 흔들림(4단계)
     const r0 = [cy_, 0, -sy];
     return { fwd: [sy * cp, sp, cy_ * cp], right: r0, up: [-sy * sp, cp, -cy_ * sp], hright: r0 };
   }
