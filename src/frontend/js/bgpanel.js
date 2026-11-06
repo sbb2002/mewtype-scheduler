@@ -120,8 +120,10 @@ export function createUfoPanel() {
         tiles[k].setAttribute("aria-pressed", sel ? "true" : "false");
       }
     },
-    /** 하늘 전환(돔 재투영) 중 「송신 중」 — 판 · 칸 바탕을 옅게 해 뒤 하늘이 비치고, 고른 칸 테두리에 시안 선이 한 번 지나간다(css/bgpanel.css .is-tx) */
+    /** 하늘 전환(돔 재투영) 중 — 패널을 빠르게 투명하게(css/bgpanel.css .is-tx). 끄고 켜기(set)는 bgdomegl.js 가 따로 한다 */
     transmit(v) { root.classList.toggle("is-tx", v); },
+    /** 하늘을 고른 뒤 준비(우주 사진 · 위치) 중 — 칸을 비활성(누를 수 없고 흐리게) */
+    setBusy(v) { for (const k in tiles) tiles[k].disabled = v; },
     /** 안내 불투명도 0 ~ 1(0.02 이상 바뀔 때만 DOM 을 건드린다) */
     setHint(a) {
       if (Math.abs(a - hintA) < 0.02 && !(a === 0 && hintA !== 0)) return;

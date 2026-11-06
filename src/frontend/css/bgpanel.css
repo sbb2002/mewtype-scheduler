@@ -51,10 +51,17 @@
 #bgdeco .bgcs[hidden] { display: none; }
 #bgdeco .bgcs > svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: visible; will-change: transform; }
 #bgdeco .bgcs-await { animation: bgcs-idle 3.8s ease-in-out infinite; }
+/* 활성(조작 패널이 떠 있는 동안, js/bgconsole.js setActive) — 화면 뒤로 시안 빛이 번지고 유리에 옅은 시안 막. 켜질 때 한 번 번쩍한 뒤 은은하게 숨 쉰다 */
+#bgdeco .bgcs-glow, #bgdeco .bgcs-lit { opacity: 0; transition: opacity .35s ease; }
+#bgdeco .bgcs.is-active .bgcs-glow { opacity: .85; animation: bgcs-glow-in .6s ease-out, bgcs-glow-breathe 2.6s ease-in-out .6s infinite; }
+#bgdeco .bgcs.is-active .bgcs-lit { opacity: .22; }
+@keyframes bgcs-glow-in { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: .85; } }
+@keyframes bgcs-glow-breathe { 0%, 100% { opacity: .85; } 50% { opacity: .55; } }
 @keyframes bgcs-idle { 0%, 100% { opacity: .45; } 50% { opacity: .95; } }
 @media (prefers-reduced-motion: reduce) {
   #bgdeco .bgcs { transition: none; }
   #bgdeco .bgcs-await { animation: none; opacity: .8; }
+  #bgdeco .bgcs.is-active .bgcs-glow { animation: none; }
 }
 
 /* ── 화면 패널(화면 가운데 고정). #bg-peek-catch(970) 위라 패널을 눌러도 배경 보기가 닫히지 않는다 */
@@ -170,21 +177,12 @@
 .ufo-note { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.4; color: #ffd27a; }
 .ufo-note[hidden] { display: none; }
 .ufo-tile:active { background: rgba(255, 95, 170, .22); }
-/* 하늘 전환 「송신 중」(ref/bg-dome/transition/AGREED.md) — js/bgdomegl.js 가 .is-tx 를 약 1초 켠다.
-   판 0.35 · 칸 바탕 0.15 · 글자 그대로, 뒤 흐림 끔(흐림 수치를 매 프레임 바꾸지 않고 켜고 끄기만). 고른 칸 테두리 위로 시안 선이 1.4초에 한 번 지나간다. */
-.ufo-card, .ufo-tile { transition: background-color .12s ease, border-color .15s, -webkit-backdrop-filter .12s, backdrop-filter .12s; }
-.ufo-hud.is-tx .ufo-card { background: rgba(10, 8, 26, .35); -webkit-backdrop-filter: none; backdrop-filter: none; transition-duration: .08s; }
-.ufo-hud.is-tx .ufo-tile { background: rgba(18, 16, 40, .15); transition-duration: .08s; }
-.ufo-hud.is-tx .ufo-tile.is-on { background: rgba(255, 95, 170, .12); }
-.ufo-hud.is-tx .ufo-tile__text { text-shadow: 0 0 6px rgba(6, 4, 18, .9); }
-.ufo-tile::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; }
-.ufo-hud.is-tx .ufo-tile.is-on::after {
-  border: 1px solid var(--ufo-cyan);
-  -webkit-mask: linear-gradient(90deg, transparent 0 40%, #000 48% 52%, transparent 60% 100%) 0 0 / 300% 100% no-repeat;
-  mask: linear-gradient(90deg, transparent 0 40%, #000 48% 52%, transparent 60% 100%) 0 0 / 300% 100% no-repeat;
-  animation: ufo-tx-run 1.4s cubic-bezier(.45, 0, .25, 1) both;   /* 돔 하강(bgdomegl.js SKY_DESC_MS)과 같은 길이 */
-}
-@keyframes ufo-tx-run { 0% { opacity: 1; -webkit-mask-position: 100% 0; mask-position: 100% 0; } 90% { opacity: 1; } 100% { opacity: 0; -webkit-mask-position: 0 0; mask-position: 0 0; } }
+/* 하늘 전환 중(js/bgdomegl.js 가 .is-tx) — 패널을 0.15초에 빠르게 투명하게 해 잠시 끈다(11-06 운영자, 처음 합의한 「송신 중 반투명」 대신).
+   bgdomegl.js 가 그동안 set(false) 로 패널을 끄고, 전환이 끝나면 set(true) 로 다가갔을 때와 같은 등장 연출(ufo-hud-in)이 다시 나온다. */
+.ufo-hud { transition: opacity .15s ease; }
+.ufo-tile:disabled { cursor: default; opacity: .55; }
+.ufo-tile.is-on:disabled { opacity: 1; }   /* 고른 칸은 「준비 중」 표시가 보이게 그대로 */
+.ufo-hud.is-tx { opacity: 0; }
 .ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(79, 227, 255, .18); padding-top: 8px; }
 
 /* ── 멀리 있을 때 안내 */
@@ -203,8 +201,6 @@
   #bgdeco .bgcs-holo, #bgdeco .bgcs-beam, .ufo-hint { animation: none; }
   .ufo-hud.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-hud.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
   .ufo-hud.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
-  .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }
-  .ufo-hud.is-tx .ufo-tile.is-on::after { animation: none; opacity: 0; }
-}
+  .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }}
 @keyframes ufo-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
 @keyframes ufo-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }

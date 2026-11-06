@@ -822,7 +822,7 @@ void main() {
     float tc = clamp((uSkyFx.x - colJ) / .972, 0.0, 1.0);
     tc = tc * tc * (3.0 - 2.0 * tc);
     float bl = mix(uSkyFx2.x, uSkyFx2.y, tc);
-    float le = mix(lat, uSkyFx2.y + 2.0 * D, floorK);
+    float le = mix(lat, -2.0 * D, floorK);   // 바닥은 경계가 지평선 바로 아래(−2°)를 지날 때 바뀐다
     float s = clamp((le - bl) / (mix(1.2, 7.0, uSkyFx.z) * D), 0.0, 1.0);
     // 점 한 칸 6 CSS px(11-06 운영자 「도트를 더 크게」 — 처음 3px). 칸마다 고정된 무작위 문턱(11-06 운영자 「같은 무늬가 반복돼 보인다 → 랜덤」
     // — 처음엔 4×4 Bayer 라 12px 마다 같은 무늬가 찍혀 보였다). 문턱이 칸마다 고정이라 점은 한 번만 바뀌고 반짝이지 않는다.
@@ -830,6 +830,7 @@ void main() {
     vec3 hq = fract(vec3(cell.xyx) * vec3(.1031, .1030, .0973));
     hq += dot(hq, hq.yzx + 33.33);
     float reveal = step(.01 + .98 * fract((hq.x + hq.y) * hq.z), s);   // 문턱 0.01~0.99 — 문턱이 0 인 칸이 경계 앞(옛 하늘)에 미리 박히지 않게
+    reveal = mix(reveal, smoothstep(0.0, 1.0, s), floorK);   // 바닥(무대 원판)은 점으로 깨지지 않게 부드럽게 — 지구는 바닥 조명이 달라 점이 보였다(11-06)
     vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
     float dome = 1.0 - floorK;
     float dpx = (le - bl) / latW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
@@ -1052,11 +1053,17 @@ export function createDomeGL(host, isPaused) {
   // 누른 순간 8ms 진동 한 번(배경 보기 열 때와 같은 값), 같은 칸 재선택은 없음.
   let picking = false;
   const buzz = () => { if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate(8); } catch { /* 미지원 */ } };
+  // (11-06 운영자) 고른 뒤 준비(우주 사진 · 위치) → 전환이 끝날 때까지 하늘 칸은 비활성. 준비 중엔 칸이 흐려지고, 전환 중엔 패널이 꺼져 있다.
   ufoPanel.onPick(async (key) => {
-    if (key === "earth") { if (!outdoor) { buzz(); chooseBgView("outdoor"); } return; }   // 위치를 받은 뒤 BGVIEW_EVENT 에서 시작
-    if (picking || (key === INDOOR_BG && !outdoor)) return;
-    picking = true;
-    buzz();
+    if (picking || sky) return;
+    if (key === "earth") {
+      if (outdoor) return;
+      picking = true; ufoPanel.setBusy(true); buzz();
+      try { await chooseBgView("outdoor"); } finally { picking = false; ufoPanel.setBusy(false); }   // 위치를 받으면 BGVIEW_EVENT 에서 전환 시작
+      return;
+    }
+    if (key === INDOOR_BG && !outdoor) return;
+    picking = true; ufoPanel.setBusy(true); buzz();
     if (key === "space" && !outdoor) {
       spacePreload = true;
       await Promise.race([loadSpaceTex(), new Promise((r) => setTimeout(r, 4000))]);
@@ -1064,7 +1071,7 @@ export function createDomeGL(host, isPaused) {
     }
     if (key !== INDOOR_BG) setIndoorBg(key);
     if (outdoor) setBgView("indoor");
-    picking = false;
+    picking = false; ufoPanel.setBusy(false);
   });
   let spacePreload = false;
   document.addEventListener(BGINDOOR_EVENT, (e) => {
@@ -1428,10 +1435,13 @@ export function createDomeGL(host, isPaused) {
   // 확인용: ?bgdebug&bgskyslow=10 이면 10배 느리게(시간 조정 시험)
   const SKY_SLOW = (() => { const v = DEBUG ? Number(QS.get("bgskyslow")) : NaN; return Number.isFinite(v) && v > 0 ? v : 1; })();
   // (11-06 운영자 「좀 느리게」) 하강 900 → 1400ms, 잔광 200 → 250ms
-  const SKY_DESC_MS = 1400 * SKY_SLOW, SKY_MS = 1650 * SKY_SLOW, SKY_TX_OFF_MS = 1530 * SKY_SLOW, SKY_SHORT_MS = 150, SKY_END_LAT = -4 * DEG;
+  const SKY_DESC_MS = 1400 * SKY_SLOW, SKY_MS = 1650 * SKY_SLOW, SKY_SHORT_MS = 150, SKY_HOLD_MAX_MS = 4000;
+  // 경계 끝 위도 = 점무늬 띠 폭(셰이더 mix(1.2°, 7°, 점무늬 세기)) + 4° 만큼 지평선 아래 — 하강이 끝날 때 돔 가장자리 · 바닥까지 모두 새 장면이 돼 있어야 한다.
+  // (11-06 버그: 끝을 −4° 로 두어 가장자리 · 바닥이 점무늬로 반쯤 남았다가 끝에서 툭 바뀌었다 — 바닥이 다른 지구에서 「깨져 보임」)
+  const skyEndLat = (fx) => -((1.2 + 5.8 * fx[1]) + 4) * DEG;
   // 목적지별 (진행 선, 점무늬 띠, 분홍 잔광) — 초행성X = 선이 또렷, 지구 = 점무늬 · 잔광 가장 약하게, 버츄얼 스페이스 = 잔광 조금 더
   const SKY_FX = { space: [1.3, 1, 0.8], earth: [1, 0.45, 0.35], pink: [1, 1, 1.3] };
-  let sky = null;
+  let sky = null, panelResume = false;
   function beginSky(dest) {
     if (reducedMotion.matches || !W || isPaused() || gl.isContextLost() || !prog || !document.documentElement.classList.contains("bg-peek")) return;
     captureFrame();
@@ -1446,7 +1456,8 @@ export function createDomeGL(host, isPaused) {
       const b = dot3(EYE, u), c = dot3(EYE, EYE) - 1, t = -b + Math.sqrt(Math.max(b * b - c, 0));
       topLat = Math.max(topLat, Math.asin(Math.max(-1, Math.min(1, EYE[1] + t * u[1]))));
     }
-    sky = { t0: performance.now(), fx: SKY_FX[dest] || SKY_FX.pink, yaw, pitch, startLat: Math.min(94 * DEG, topLat + 6 * DEG), shortAt: null, shortMs: SKY_SHORT_MS, tx: true };
+    sky = { t0: performance.now(), fx: SKY_FX[dest] || SKY_FX.pink, yaw, pitch, startLat: Math.min(94 * DEG, topLat + 6 * DEG), shortAt: null, shortMs: SKY_SHORT_MS, held: 0 };
+    panelResume = panelResume || ufoPanel.on;
     ufoPanel.transmit(true);
   }
   function endSky() { if (!sky) return; sky = null; ufoPanel.transmit(false); }
@@ -1456,9 +1467,8 @@ export function createDomeGL(host, isPaused) {
     const now = performance.now(), el = now - sky.t0;
     const force = sky.shortAt == null ? 0 : Math.min(1, (now - sky.shortAt) / sky.shortMs);
     if (el >= SKY_MS || force >= 1) { endSky(); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); return; }
-    if (sky.tx && el >= SKY_TX_OFF_MS) { sky.tx = false; ufoPanel.transmit(false); }   // 마지막 120ms 에 패널 바탕 복귀
     gl.uniform4f(U.uSkyFx, el / SKY_DESC_MS, ...sky.fx);
-    gl.uniform4f(U.uSkyFx2, sky.startLat, SKY_END_LAT, force, el < SKY_DESC_MS ? 1 : 1 - (el - SKY_DESC_MS) / (SKY_MS - SKY_DESC_MS));
+    gl.uniform4f(U.uSkyFx2, sky.startLat, skyEndLat(sky.fx), force, el < SKY_DESC_MS ? 1 : 1 - (el - SKY_DESC_MS) / (SKY_MS - SKY_DESC_MS));
   }
 
   function applyTheme() {
@@ -1653,7 +1663,9 @@ export function createDomeGL(host, isPaused) {
       }, B);
     }
     if (peek && !ufoArmed && zoomR >= PANEL_OFF_R) ufoArmed = true;
-    const want = peek && ufoArmed && (ufoPanel.on ? zoomR <= PANEL_OFF_R && tele <= 1.02 : zoomR < PANEL_ON_R && tele <= 1.001);
+    // 하늘 전환 중에는 패널을 끈다(칸도 눌리지 않음 — inert). 끝나면 다가갔을 때와 같은 등장 연출로 다시 뜬다(11-06 운영자)
+    // 전환 전에 떠 있었으면 끝난 뒤 「사라짐」 문턱으로 다시 판정한다(나타남 문턱이 더 좁아 제자리인데 안 뜨는 일이 없게)
+    const want = !sky && peek && ufoArmed && (ufoPanel.on || panelResume ? zoomR <= PANEL_OFF_R && tele <= 1.02 : zoomR < PANEL_ON_R && tele <= 1.001);
     if (want) {
       ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
@@ -1661,6 +1673,8 @@ export function createDomeGL(host, isPaused) {
       ufoPanel.setChip("space", loading ? "불러오는 중…" : "길게 누르면 워프");
     }
     ufoPanel.set(want);
+    ufoConsole.setActive(want);   // 패널이 떠 있는 동안 바닥 제어 장치 화면에 불
+    if (!sky) panelResume = false;
     ufoPanel.setHint(peek ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0);
   }
   function hideUfo() { ufoPanel.set(false); ufoPanel.setHint(0); ufoConsole.setVisible(false); }
@@ -1715,6 +1729,13 @@ export function createDomeGL(host, isPaused) {
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
     updateUfo(peek);
+    // 지형 질감을 올리는 동안은 그리기를 쉬어(draw 첫 줄) 화면이 멈춘다 — 그동안 하늘 전환 시계도 멈춰, 반쯤 섞인 화면에서 끝나 버리지 않게(처음 지구를 고를 때)
+    // 길어야 4초까지만 멈춰 기다리고, 그 뒤엔 그냥 끝낸다(패널이 돌아오지 못하는 일이 없게)
+    if (sky && releaseGround?.terrain?.uploading) {
+      sky.held += dt * 1000;
+      if (sky.held > SKY_HOLD_MAX_MS) endSky();
+      else { sky.t0 += dt * 1000; if (sky.shortAt != null) sky.shortAt += dt * 1000; }
+    }
     if (sky && sky.shortAt == null) {
       // 옛 하늘은 정지 사진이라 시점이 크게 움직이면 새 장면과 어긋난다 → 남은 것을 짧게 지운다(판정은 한 번)
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));

@@ -41,6 +41,8 @@ function floorSvg() {
   ]);
 }
 
+const SCREEN_D = "M43 31 H117 Q129 31 132 42 L137 57 Q140 68 126 71 Q80 82 34 71 Q20 68 23 57 L28 42 Q31 31 43 31Z";   // 유리 화면 윤곽
+
 function standSvg() {
   const [x, y, w, h] = STAND_VB;
   return el("svg", { viewBox: `${x} ${y} ${w} ${h}`, width: BOX, height: BOX * h / w, class: "bgcs-stand", "aria-hidden": "true" }, [
@@ -58,6 +60,8 @@ function standSvg() {
         el("stop", { offset: "0", "stop-color": "var(--bgcs-screen-top)" }),
         el("stop", { offset: "1", "stop-color": "var(--bgcs-screen-bottom)" }),
       ]),
+      // 가까이 가서 조작 패널이 뜨면 화면이 켜진 듯 빛난다(11-06 운영자) — 흐린 빛 판(.bgcs-glow)과 화면 위 시안 막(.bgcs-lit), css/bgpanel.css
+      el("filter", { id: "bgcs-blur", x: "-40%", y: "-60%", width: "180%", height: "220%" }, [el("feGaussianBlur", { stdDeviation: "9" })]),
       el("linearGradient", { id: "bgcs-orbit" }, [
         el("stop", { offset: "0", "stop-color": "var(--bgcs-rose)" }),
         el("stop", { offset: "1", "stop-color": "var(--bgcs-cream)" }),
@@ -74,7 +78,9 @@ function standSvg() {
     el("path", { d: "M20 72 Q80 96 140 72", fill: "none", stroke: "var(--bgcs-metal-dark)", "stroke-width": "1.3", opacity: ".65" }),
     el("rect", { x: "69", y: "20", width: "22", height: "4", rx: "2", fill: "var(--bgcs-metal-light)" }),
     // 넓은 유리 화면: 별 항로와 작은 계기. 읽을 수 없는 글자 · 주사선 · 깜빡임은 두지 않는다.
-    el("path", { d: "M43 31 H117 Q129 31 132 42 L137 57 Q140 68 126 71 Q80 82 34 71 Q20 68 23 57 L28 42 Q31 31 43 31Z", fill: "url(#bgcs-screen)", stroke: "var(--bgcs-metal-dark)", "stroke-width": "2" }),
+    el("path", { class: "bgcs-glow", d: SCREEN_D, fill: "#5fe6ff", stroke: "#5fe6ff", "stroke-width": "14", "stroke-linejoin": "round", filter: "url(#bgcs-blur)" }),
+    el("path", { d: SCREEN_D, fill: "url(#bgcs-screen)", stroke: "var(--bgcs-metal-dark)", "stroke-width": "2" }),
+    el("path", { class: "bgcs-lit", d: SCREEN_D, fill: "#4fe3ff" }),
     el("path", { d: "M39 35 H119", fill: "none", stroke: "var(--bgcs-glass)", "stroke-width": "1.5", "stroke-linecap": "round", opacity: ".45" }),
     el("ellipse", { cx: "61", cy: "53", rx: "24", ry: "13", fill: "none", stroke: "url(#bgcs-orbit)", "stroke-width": "1.3", transform: "rotate(-18 61 53)", opacity: ".75" }),
     el("path", { d: "M61 40 L65 48 L74 49 L67 55 L69 64 L61 60 L53 64 L55 55 L48 49 L57 48Z", fill: "var(--bgcs-cream)", stroke: "var(--bgcs-rose)", "stroke-width": "1.3", "stroke-linejoin": "round" }),
@@ -139,7 +145,10 @@ export function createConsole(layer) {
   }
   let project = null;
 
+  let active = false;
   return {
+    /** 조작 패널이 떠 있는 동안 화면에 불(글로우) */
+    setActive(on) { if (on !== active) { active = on; root.classList.toggle("is-active", on); } },
     setVisible(on) {
       if (on === visible) return;
       visible = on;
