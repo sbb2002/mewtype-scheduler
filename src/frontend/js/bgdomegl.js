@@ -865,6 +865,7 @@ void main() {
   }
   // 워프 점프 — 진행 방향이 화면에 맺히는 점(uJump3.xy)을 중심으로 한 고리 · 섬광. 우주 속도(β)는 JS 시간표가 uSpace 로 따로 넘긴다.
   if (uJump.x > 0.5) {
+    vec3 preJ = outc;   // 게이트 그래픽(B 재투영 · C 터널 · 충격 고리)은 바닥 원판 뒤에 — 바닥을 뚫고 보이지 않게(운영자 11-06). 섬광은 화면 전체
     vec2 jv = p - uJump3.xy; float jr = length(jv);
     vec3 cyanJ = vec3(.31, .89, 1.0), pinkJ = vec3(1.0, .44, .71);
     if (uJump2.z >= 0.0) {
@@ -905,6 +906,7 @@ void main() {
       float k2 = exp(-pow(d2 / w2, 2.0)) + exp(-abs(d2) / (w2 * 2.5)) * .4;
       outc += (c1 * k1 + c2 * k2 * .8) * uJump.z;
     }
+    outc = mix(outc, preJ, floorK);
     outc = mix(outc, vec3(1.0), clamp(uJump2.x, 0.0, 1.0));
     outc = mix(outc, vec3(1.0, .16, .27), clamp(uJump2.y, 0.0, 1.0));
   }
@@ -1219,7 +1221,6 @@ export function createDomeGL(host, isPaused) {
       buzz();
       captureFrame(); themeStart = -Infinity; endSky();   // B 연출의 「옛 화면」 사진
       star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
-      sound.jump(star.jump.kind);   // 연출 시간표(A 0.62초 섬광 · C 0.7초 충격파)에 맞춘 점프 소리
     },
   });
   let star = null, pendingHold = false, shaking = false;
