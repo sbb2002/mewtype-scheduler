@@ -328,7 +328,7 @@ float moonDisc(vec3 t, float facing, float pxAng) {
 
 
 // (11-05 운영자) 실내 무작위 배경 「우주」 — 성간 이동(워프) 1분 뒤 일반 우주로. 이미지 없이 셰이더만.
-// uSpace.x = 우주 배경 켬, .y = 속도 β(v/c), .z = 지나가는 별 스크롤 누적 거리, .w = 지금 스크롤 속도. 진행 방향 uWarpDir = 돔 정면 지평선.
+// uSpace.x = 우주 배경 켬, .y = 속도 β(v/c), .z = 별 정지계에서 배가 나아간 누적 거리 ∫γβ dτ, .w = 지금 고유 속도 γβ. 진행 방향 uWarpDir = 여행마다 무작위(randWarpDir).
 // 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게. 광행차로 별이 앞쪽에 몰린다.
 uniform vec4 uSpace; uniform vec3 uWarpDir;
 // (11-06 운영자) 지나가는 별 궤적 수 = 속도에 따라(기어 N 0 · 1단 6 · 2단 12 · 3단 18 · 4단 26 · 5단 36, 사이는 이어서). 소수 부분 = 막 나타나는 줄의 밝기
@@ -441,23 +441,36 @@ vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta,
   // 순번 < uTrailN 인 칸만 궤적, 경계 칸은 소수 부분만큼 옅게 → 속도가 오르내리면 한 줄씩 서서히 나타나고 사라진다. 픽셀마다 자기 칸 하나만 계산해 줄 수와 비용은 거의 무관
   float rank = mod(lane * 37.0, 64.0), show = clamp(uTrailN - rank, 0.0, 1.0);
   if (show <= 0.0) return vec3(0);
-  float speed = 0.8 + 0.8 * h1(lane * 7.1);                    // 별마다 거리가 달라 지나가는 빠르기가 다르다
-  float P = 12.0, head = mod(dist * speed + hl * 97.0, P) - 6.0; // 머리 위치(로그 극좌표 s), 앞(−)에서 뒤(+)로
-  float behind = mod(head - s + P, P);                           // 머리에서 꼬리 쪽으로 떨어진 거리
-  float age = behind / max(uSpace.w * speed, 1e-3);              // uSpace.w = 지금 s 스크롤 속도(1/초)
+  // (11-06 운영자 「궤적 속도가 늘 일정 — 특수 상대론으로」) 별 정지 좌표계의 실제 기하로 머리 위치 · 빠르기 · 꼬리 길이를 정한다.
+  //   칸마다 별 하나가 진행 축에서 수직 거리 b 에 있고, 축 방향으로 간격 L 마다 되풀이된다(정지계 값).
+  //   dist = 정지계에서 배가 나아간 거리 X = ∫γβ c dτ(τ = 배 고유 시간 — JS 가 uSpace.z 로 누적) → 별의 축 방향 상대 위치 ξ = X − x₀.
+  //   정지계 방향: cot θ' = −ξ/b 이므로 로그 극좌표 s' = ln tan(θ'/2) = asinh(ξ/b) (정확한 식). 광행차는 tan(θ/2) = √((1−β)/(1+β)) tan(θ'/2),
+  //   즉 s 를 통째로 밀 뿐이라 픽셀마다 역변환한 cr(정지계) 로 그대로 비교하면 된다.
+  //   → 겉보기 각속도 dθ'/dτ = γβc · sin²θ' / b: 옆을 지날 때 가장 빠르고 앞 · 뒤에선 느리며, 속도(γβ)에 비례해 빨라진다.
+  //   길이 수축: 배가 보면 별 간격이 L/γ 로 줄고 βc 로 지나가므로 고유 시간 1초에 γβ/L 개 — X 를 γβ 로 쌓는 것과 같다.
+  float b = 0.35 + 0.65 * h1(lane * 7.1);                        // 수직 거리(정지계, 단위 = 광초 × K) — 가까운 별일수록 빨리 휙 지나간다
+  float L = 24.0 * b;                                            // 축 방향 간격 → 보이는 범위 s' = ±asinh(12)(θ' ≈ 4.8° ~ 175°). 0.8c 까지는 9초 꼬리가 다음 별에 닿지 않아 머리가 따로 보이고, 더 빠르면 이어진 선(워프 줄무늬)
+  float xh = mod(dist - hl * 97.0, L) - 0.5 * L;                 // 머리(지금 별)의 ξ, 앞(−)에서 뒤(+)로
+  float xp = b * sinh(s);                                        // 이 픽셀 방향의 ξ
+  if (abs(xp) > 0.5 * L) return vec3(0);
+  float behind = mod(xh - xp, L);                                // 별이 이 방향을 지난 뒤 배가 더 나아간 정지계 거리
+  float age = behind / max(uSpace.w, 0.05);                      // 그 사이 고유 시간(초) — uSpace.w = 지금 γβ
   float k = 1.0 - age / 9.0;                                     // UFO 궤적과 같은 9초 선형 감쇠
   if (k <= 0.0) return vec3(0);
+  float dsH = asinh(xh / b) - s;                                 // 머리까지의 로그 극좌표 거리(머리 점 모양)
+  // 밝기 = 점광원 복사속 D⁴/r²(r = 정지계 거리 = b·cosh s') 를 눈의 밝기 감각으로 압축(지수 0.4 — 전 D^1.5 와 비슷한 대비), 옆을 지나는 b = 0.6 별 = 1
+  float lum = min(pow(pow(D, 4.0) / (b * b * cosh(s) * cosh(s)) * 0.36, 0.4), 12.0) * smoothstep(0.5 * L, 0.4 * L, xp);
   float lw = max(pxRest / max(sqrt(max(1.0 - cr * cr, 1e-6)) * TAU / lanes, 1e-4), 0.025);
   // (11-06 운영자 「궤적이 너무 안 보인다 — 글로우를 더, 도플러 색도」) 심 + 넓은 번짐 두 겹(전엔 한 겹 0.3)
   float core = exp(-fx * fx / (lw * lw)), glow = exp(-fx * fx / (36.0 * lw * lw)) * 0.6 + exp(-fx * fx / (150.0 * lw * lw)) * 0.14;
-  float headDot = exp(-behind * behind / 0.002) * 1.5;
+  float headDot = exp(-dsH * dsH / 0.002) * 1.5;
   float T = 5200.0 + 6000.0 * h1(lane * 3.3);
-  // 궤적 밝기는 D^1.5 로만 — 앞쪽이 하얗게 포화되지 않고 도플러 색(앞 파랑 · 뒤 빨강)이 남게. 축 바로 앞은 옅게(바퀴살처럼 모이지 않게).
+  // 궤적 밝기는 위 lum(D⁴/r² 압축) — 앞쪽이 하얗게 포화되지 않고 도플러 색(앞 파랑 · 뒤 빨강)이 남게. 축 바로 앞은 옅게(바퀴살처럼 모이지 않게).
   // 도플러 색을 또렷하게: 흑체 색 T·D(앞 = 푸름, 뒤 = 붉음)의 채도를 올리고, 다가오는 쪽(D > 1)은 청보라 · 멀어지는 쪽(D < 1)은 주홍으로 조금 더 민다
   vec3 dc = bbColor(T * D);
   dc = clamp(mix(vec3(dot(dc, vec3(0.3, 0.5, 0.2))), dc, 1.9), 0.0, 1.0);
   dc *= mix(vec3(1.0), vec3(0.62, 0.78, 1.35), smoothstep(1.0, 4.0, D)) * mix(vec3(1.0), vec3(1.35, 0.7, 0.45), smoothstep(1.0, 0.35, D));
-  return dc * (k * k * (core + glow) + headDot * core) * min(pow(D, 1.5), 12.0) * 1.1 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr) * show;
+  return dc * (k * k * (core + glow) + headDot * core) * lum * 1.1 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr) * show;
 }
 vec3 spaceSky(vec3 d, float pxAng) {
   float beta = uSpace.y;
@@ -1141,6 +1154,13 @@ export function createDomeGL(host, isPaused) {
   //   워프 점프는 순간 이동이라 도착 순간 완전히 무작위 방향 + 다른 사진으로 바뀐다.
   let spaceRot = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   const randUnit = () => { const z = Math.random() * 2 - 1, a = Math.random() * 2 * Math.PI, r = Math.sqrt(1 - z * z); return [r * Math.cos(a), z, r * Math.sin(a)]; };
+  // (11-06 운영자 「성간 이동이 늘 같은 방향」) 진행 방향(uWarpDir)도 여행마다 무작위 — 방위 0~360° 아무 데나, 고도 3°~45°
+  //   (바닥 아래로 가면 빛이 몰리는 앞쪽 · 점프 중심이 바닥에 가려지므로 위 반구, 머리 꼭대기 근처는 피함). 전엔 늘 돔 정면 지평선(고도 ≈ 2.9°).
+  const WARP_DIR0 = [0, 0.05, 0.99875];
+  const randWarpDir = () => {
+    const az = Math.random() * 2 * Math.PI, el = (3 + Math.random() * 42) * Math.PI / 180, c = Math.cos(el);
+    return [c * Math.sin(az), Math.sin(el), c * Math.cos(az)];
+  };
   function axisRot(ax, ang) {   // 열 우선
     const [x, y, z] = ax, c = Math.cos(ang), s = Math.sin(ang), t = 1 - c;
     return [t * x * x + c, t * x * y + s * z, t * x * z - s * y, t * x * y - s * z, t * y * y + c, t * y * z + s * x, t * x * z + s * y, t * y * z - s * x, t * z * z + c];
@@ -1224,6 +1244,7 @@ export function createDomeGL(host, isPaused) {
     },
   });
   let star = null, pendingHold = false, shaking = false;
+  const warpDir = () => (star && star.dir) || WARP_DIR0;   // 지금 여행의 진행 방향(없으면 옛 정면 지평선)
   // 흔들기(11-06 운영자): 좌석벨트 표시등이 켜져 있으면(레드존 가속 · 급제동) 두 패널이 빠르게 흔들리고(세기 = 모형의 떨림 amp 비례), 깜빡일 땐 아주 약하게.
   // 매 프레임 무작위 위치(시안 Gear.dc.html 의 패널 떨림과 같은 방식). 움직임 줄이기면 없음.
   function shakePanels(st) {
@@ -1274,7 +1295,7 @@ export function createDomeGL(host, isPaused) {
   }
   function startStar() {
     if (star) return;
-    star = { st: createWarp(), jump: null, frame: null, axis: randUnit(), nextDeep: pickOtherDeep() };
+    star = { st: createWarp(), jump: null, frame: null, axis: randUnit(), dir: randWarpDir(), nextDeep: pickOtherDeep() };
     loadDeep(star.nextDeep);   // 워프로 도착할 때 쓸 사진을 미리 받아 둔다
     warpDist = 0;
     ufoPanel.setWarping(true);
@@ -1309,7 +1330,7 @@ export function createDomeGL(host, isPaused) {
   // 점프 연출의 중심 = 진행 방향(uWarpDir)이 화면에 맺히는 점. 뒤를 보고 있으면 화면 가운데
   function jumpCenter() {
     // 배경이 기울임만큼 돌아 보이므로(uBgRoll) 진행 방향 점도 화면 가운데 둘레로 같이 돈다
-    const B = basis(), w0 = [0, 0.05, 0.99875], z = dot3(w0, B.fwd), F = viewFocal();
+    const B = basis(), w0 = warpDir(), z = dot3(w0, B.fwd), F = viewFocal();
     if (z < 0.2) return [W / 2, H / 2];
     const x0 = F * dot3(w0, B.right) / z, y0 = F * dot3(w0, B.up) / z, a = -bgRoll(), ca = Math.cos(a), sa = Math.sin(a);
     const x = cx + x0 * ca - y0 * sa, y = cy - (x0 * sa + y0 * ca);
@@ -1842,14 +1863,15 @@ export function createDomeGL(host, isPaused) {
       const now = performance.now();
       // 속도 β = 성간 이동의 기어 모형(bgwarp.js) · 워프 점프 중엔 그 연출 시간표. 성간 이동이 아니면 정지. 모션 줄이기: 별이 흐르지 않는 정지 우주(속도 0)로만.
       const beta = reducedMotion.matches || !star ? 0 : star.frame ? star.frame.beta : star.st.beta;
-      const scroll = 0.45 + 1.6 * beta;                       // 지나가는 별의 흐름 빠르기(로그 극좌표 s / 초)
-      warpDist += Math.min(0.1, Math.max(0, now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now;
-      gl.uniform4f(U.uSpace, 1, beta, warpDist, scroll);
+      // 고유 속도 γβ(정지계 거리 / 배 고유 시간) — 별 정지계에서 배가 나아간 거리를 쌓는다(passingStars 의 특수 상대론 궤적, 셰이더 주석)
+      const gb = beta > 0 ? beta / Math.sqrt(1 - Math.min(beta, 0.99999) ** 2) : 0;
+      warpDist += Math.min(0.1, Math.max(0, now - warpLast) / 1000) * gb; warpLast = now;
+      gl.uniform4f(U.uSpace, 1, beta, warpDist, gb);
       gl.uniform1f(U.uTrailN, trailCount(beta));
       loadSpaceTex();
       gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
       gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
-      gl.uniform3f(U.uWarpDir, 0, 0.05, 0.99875);
+      gl.uniform3f(U.uWarpDir, ...warpDir());
       gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array(spaceRot));
       gl.uniform2f(U.uDeepShape, DEEP_SET[deepIdx].asp, DEEP_SET[deepIdx].w);
     } else gl.uniform4f(U.uSpace, 0, 0, 0, 0);
