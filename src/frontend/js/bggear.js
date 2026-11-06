@@ -118,7 +118,7 @@ export function createGearPanel({ onGear, onWarp }) {
   return {
     get shown() { return shown; },
     remove() { root.remove(); },
-    /** 보이기 · 숨기기. 숨길 때 animate 면 도트 + 흰 선으로 사라진다(움직임 줄이기면 바로) */
+    /** 보이기 · 숨기기. 숨길 때 animate = true 면 도트 + 흰 선으로 사라지고(움직임 줄이기면 바로), "fade" 면 0.15초에 꺼진다(하늘을 바꿀 때) */
     show(on, animate = false) {
       if (on === shown) return;
       shown = on;
@@ -131,7 +131,8 @@ export function createGearPanel({ onGear, onWarp }) {
       root.inert = true; root.setAttribute("aria-hidden", "true");
       if (root.contains(document.activeElement)) document.activeElement.blur();
       const hide = () => { if (shown) return; leaving = false; root.hidden = true; root.classList.remove("is-on"); reset(); };
-      if (animate && !root.hidden && !leaving && !matchMedia("(prefers-reduced-motion: reduce)").matches) { leaving = true; root.style.transform = ""; dissolve(root, wline, hide); } else hide();
+      if (animate === "fade" && !root.hidden) { leaving = true; root.classList.add("is-tx"); setTimeout(() => { root.classList.remove("is-tx"); hide(); }, 160); }   // 하늘을 바꿀 때 — 조작 패널과 함께 0.15초에 꺼짐
+      else if (animate && !root.hidden && !leaving && !matchMedia("(prefers-reduced-motion: reduce)").matches) { leaving = true; root.style.transform = ""; dissolve(root, wline, hide); } else hide();
     },
     /** 흔들기(px) — 좌석벨트 표시등이 켜지면 빠르고 세게, 깜빡일 땐 약하게(bgdomegl.js 가 매 프레임) */
     shake(dx, dy) { if (!leaving) root.style.transform = dx || dy ? `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)` : ""; },

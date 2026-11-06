@@ -330,6 +330,8 @@ uniform vec4 uSpace; uniform vec3 uWarpDir;
 // (11-05 2차) 우주 배경 비교용: uSpaceTex = (하늘 지도 켬, 딥필드 켬, 지도 종류 1 = NASA 별 지도 · 2 = ESO 은하수, 지도 노출).
 // 지도는 등장방형(equirect) — 13번 칸, 딥필드 사진 — 14번 칸(실내에서는 지형 확대 조각 칸이 비어 있다).
 uniform sampler2D uSpaceMap, uSpaceDeep; uniform vec4 uSpaceTex; uniform vec2 uSpaceMapSize;
+// (11-06) uSpaceRot = 우주 바탕(지도 · 별 · 은하 · 사진) 방향 — 성간 이동으로 달린 만큼 돌고, 워프 점프면 무작위로. uDeepShape = 큰 사진의 (가로 ÷ 세로, 가로 픽셀)
+uniform mat3 uSpaceRot; uniform vec2 uDeepShape;
 float vnoise(vec3 p) {
   vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
@@ -403,9 +405,9 @@ vec3 spaceBase(vec3 d, float pxAng) {
     if (cz > 0.5) {
       vec2 tp = vec2(dot(d, A), dot(d, B)) / cz;
       float half_ = tan(17.0 * D);
-      vec2 uv = 0.5 + tp / (2.0 * half_);
+      vec2 uv = 0.5 + tp / (2.0 * vec2(half_, half_ / max(uDeepShape.x, 0.1)));   // 사진 가로세로 비율대로
       if (all(greaterThan(uv, vec2(0))) && all(lessThan(uv, vec2(1)))) {
-        float lod = max(0.0, log2(pxAng * 1960.0 / (2.0 * half_)));
+        float lod = max(0.0, log2(pxAng * uDeepShape.y / (2.0 * half_)));
         vec3 g = pow(textureLod(uSpaceDeep, vec2(uv.x, 1.0 - uv.y), lod).rgb, vec3(2.2));
         vec2 e = min(uv, 1.0 - uv);
         c += g * smoothstep(0.0, 0.18, min(e.x, e.y)) * 0.9;
@@ -429,7 +431,7 @@ vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta,
   float s = log(tan(max(acos(cr), 1e-3) * 0.5));
   float lanes = 64.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
   float hl = h1(lane * 1.37 + 3.0);
-  if (hl < 0.68) return vec3(0);   // 궤적은 적게(약 20줄)
+  if (hl < 0.58) return vec3(0);   // 궤적은 적게(약 27줄)
   float speed = 0.8 + 0.8 * h1(lane * 7.1);                    // 별마다 거리가 달라 지나가는 빠르기가 다르다
   float P = 12.0, head = mod(dist * speed + hl * 97.0, P) - 6.0; // 머리 위치(로그 극좌표 s), 앞(−)에서 뒤(+)로
   float behind = mod(head - s + P, P);                           // 머리에서 꼬리 쪽으로 떨어진 거리
@@ -437,15 +439,20 @@ vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta,
   float k = 1.0 - age / 9.0;                                     // UFO 궤적과 같은 9초 선형 감쇠
   if (k <= 0.0) return vec3(0);
   float lw = max(pxRest / max(sqrt(max(1.0 - cr * cr, 1e-6)) * TAU / lanes, 1e-4), 0.025);
-  float core = exp(-fx * fx / (lw * lw)), glow = exp(-fx * fx / (14.0 * lw * lw)) * 0.3;
+  // (11-06 운영자 「궤적이 너무 안 보인다 — 글로우를 더, 도플러 색도」) 심 + 넓은 번짐 두 겹(전엔 한 겹 0.3)
+  float core = exp(-fx * fx / (lw * lw)), glow = exp(-fx * fx / (36.0 * lw * lw)) * 0.6 + exp(-fx * fx / (150.0 * lw * lw)) * 0.14;
   float headDot = exp(-behind * behind / 0.002) * 1.5;
   float T = 5200.0 + 6000.0 * h1(lane * 3.3);
   // 궤적 밝기는 D^1.5 로만 — 앞쪽이 하얗게 포화되지 않고 도플러 색(앞 파랑 · 뒤 빨강)이 남게. 축 바로 앞은 옅게(바퀴살처럼 모이지 않게).
-  return bbColor(T * D) * (k * k * (core + glow) + headDot * core) * min(pow(D, 1.5), 12.0) * 0.5 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr);
+  // 도플러 색을 또렷하게: 흑체 색 T·D(앞 = 푸름, 뒤 = 붉음)의 채도를 올리고, 다가오는 쪽(D > 1)은 청보라 · 멀어지는 쪽(D < 1)은 주홍으로 조금 더 민다
+  vec3 dc = bbColor(T * D);
+  dc = clamp(mix(vec3(dot(dc, vec3(0.3, 0.5, 0.2))), dc, 1.9), 0.0, 1.0);
+  dc *= mix(vec3(1.0), vec3(0.62, 0.78, 1.35), smoothstep(1.0, 4.0, D)) * mix(vec3(1.0), vec3(1.35, 0.7, 0.45), smoothstep(1.0, 0.35, D));
+  return dc * (k * k * (core + glow) + headDot * core) * min(pow(D, 1.5), 12.0) * 1.1 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr);
 }
 vec3 spaceSky(vec3 d, float pxAng) {
   float beta = uSpace.y;
-  if (beta < 1e-4) return spaceBase(d, pxAng);
+  if (beta < 1e-4) return spaceBase(uSpaceRot * d, pxAng);
   vec3 F = uWarpDir, A = normalize(cross(abs(F.y) < 0.9 ? vec3(0, 1, 0) : vec3(1, 0, 0), F)), B = cross(F, A);
   float g = inversesqrt(1.0 - beta * beta);
   float co = clamp(dot(d, F), -1.0, 1.0);
@@ -454,7 +461,7 @@ vec3 spaceSky(vec3 d, float pxAng) {
   vec3 dr = F * cr + pn * sqrt(max(0.0, 1.0 - cr * cr));
   float D = 1.0 / (g * (1.0 - beta * co));                        // 도플러 인자(관측 방향 기준)
   float pxRest = pxAng * D;                                       // 앞쪽은 정지 좌표계 하늘이 압축돼 한 픽셀이 더 넓은 하늘을 덮는다
-  vec3 base = spaceBase(dr, pxRest);
+  vec3 base = spaceBase(uSpaceRot * dr, pxRest);
   vec3 shift = bbColor(6500.0 * D) / bbColor(6500.0);
   vec3 c = base * shift * min(D * D * D, 60.0);
   float ph = atan(dot(d, B), dot(d, A));
@@ -1041,7 +1048,7 @@ export function createDomeGL(host, isPaused) {
   let prog = null, U = {}, programs = {}, sets = {}, slotA = null, slotB = null, lastAstro = 0, astro = null;
   let W = 0, H = 0, dpr = 1, focal = 1, focalOut = 1, cx = 0, cy = 0, cyIndoor = 0, phone = true;
   let yaw = 0, pitch = BASE_PITCH, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
-  let zoomR = 0, zoomT = 0, zoomPath = 0, tele = 1, drawnTele = NaN, drawnR = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
+  let zoomR = 0, zoomT = 0, zoomPath = 0, tele = 1, drawnTele = NaN, drawnR = NaN, drawnRoll = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
   let raf = 0, stopped = true, lastShake = 0, theme = null, t0 = performance.now();
   // 장면 +z = 북, +x = 동. 바깥 보기 = 실제 시각 · 위치의 하늘(해 · 달 · 별 · 방위 글자). 시선은 두 보기가 같다
   let outdoor = false;
@@ -1067,6 +1074,7 @@ export function createDomeGL(host, isPaused) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "map" ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         spaceTex[key] = tex; if (key === "map") spaceTex.mapW = img.width;
+        if (key === "deep") { deepTex.set(0, tex); deepIdx = 0; }
         if (outdoor) releaseGround?.terrain?.rebind?.();   // 그사이 바깥(지형)으로 바뀌었으면 13 · 14번 칸을 지형 것으로 되돌린다
         gl.activeTexture(gl.TEXTURE0); draw();
       };
@@ -1077,6 +1085,58 @@ export function createDomeGL(host, isPaused) {
     if (SPACE_DEEP) load("space-deep.jpg", "deep", 14);
     return spaceTex.ready;
   }   // 실내 우주 배경의 워프 시작 · 적분 거리
+
+  // (11-06 운영자) 워프로 도착하면 다른 우주 풍경 — 크게 보이는 사진 한 장(딥필드 자리, 14번 칸)을 무작위로 바꾼다.
+  // 퍼블릭 도메인(NASA · Hubble · Webb) 사진, 운영자가 모은 주소에서 받은 것(assets/bg/eval — 평가용, 저장소에 올리지 않음). asp = 가로 ÷ 세로, w = 가로 픽셀.
+  const DEEP_SET = [
+    { name: "space-deep.jpg", w: 1960, asp: 1 },              // 웹 망원경 SMACS 0723 딥필드
+    { name: "space-earthrise.jpg", w: 960, asp: 1 },          // 아폴로 8 「지구돋이」
+    { name: "space-crab.jpg", w: 960, asp: 1 },               // 게 성운
+    { name: "space-orion.jpg", w: 960, asp: 1 },              // 오리온 성운
+    { name: "space-pillars.jpg", w: 1280, asp: 1280 / 1335 }, // 창조의 기둥
+    { name: "space-tarantula.jpg", w: 1280, asp: 1.25 },      // 타란툴라 성운
+  ];
+  const deepTex = new Map(), deepLoading = new Map();
+  let deepIdx = 0;
+  function loadDeep(i) {
+    if (deepTex.has(i)) return Promise.resolve(true);
+    if (deepLoading.has(i)) return deepLoading.get(i);
+    const p = new Promise((res) => {
+      const img = new Image(); img.decoding = "async";
+      img.onload = () => {
+        if (gl.isContextLost()) { res(false); return; }
+        const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        deepTex.set(i, tex);
+        if (outdoor) releaseGround?.terrain?.rebind?.();   // 14번 칸을 바깥 지형 것으로 되돌린다(실내면 draw 가 매번 다시 꽂는다)
+        gl.activeTexture(gl.TEXTURE0);
+        res(true);
+      };
+      img.onerror = () => { console.warn("[bgdome] 우주 사진을 못 받음", DEEP_SET[i].name); res(false); };
+      img.src = new URL("../assets/bg/eval/" + DEEP_SET[i].name, import.meta.url).href;
+    });
+    deepLoading.set(i, p);
+    return p;
+  }
+  function setDeep(i) { if (deepTex.has(i)) { deepIdx = i; spaceTex.deep = deepTex.get(i); } }
+  const pickOtherDeep = () => { const k = Math.floor(Math.random() * (DEEP_SET.length - 1)); return k >= deepIdx ? k + 1 : k; };
+
+  // 우주 바탕의 방향(돌림 행렬, 열 우선 3×3 — uSpaceRot). (11-06 운영자 「N 이나 워프 뒤 늘 같은 풍경은 어색」)
+  //   성간 이동 중엔 여행마다 무작위로 고른 축을 중심으로 달린 거리만큼 조금씩 돌아(전속력 약 2.5°/초) 멈춘 곳의 하늘이 매번 달라지고,
+  //   워프 점프는 순간 이동이라 도착 순간 완전히 무작위 방향 + 다른 사진으로 바뀐다.
+  let spaceRot = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const randUnit = () => { const z = Math.random() * 2 - 1, a = Math.random() * 2 * Math.PI, r = Math.sqrt(1 - z * z); return [r * Math.cos(a), z, r * Math.sin(a)]; };
+  function axisRot(ax, ang) {   // 열 우선
+    const [x, y, z] = ax, c = Math.cos(ang), s = Math.sin(ang), t = 1 - c;
+    return [t * x * x + c, t * x * y + s * z, t * x * z - s * y, t * x * y - s * z, t * y * y + c, t * y * z + s * x, t * x * z + s * y, t * y * z - s * x, t * z * z + c];
+  }
+  function mulRot(a, b) {   // a · b(열 우선)
+    const o = new Array(9);
+    for (let col = 0; col < 3; col++) for (let row = 0; row < 3; row++) o[col * 3 + row] = a[row] * b[col * 3] + a[3 + row] * b[col * 3 + 1] + a[6 + row] * b[col * 3 + 2];
+    return o;
+  }
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
   const air = document.createElement("div");
@@ -1128,7 +1188,7 @@ export function createDomeGL(host, isPaused) {
     INDOOR_BG = v;
     warpDist = 0;
     if (outdoor) { /* 바깥 보기 중 실내 값만 바뀜 — 실내로 돌아올 때 판정 */ }
-    else if (v === "space") spaceEntered(); else endStar();
+    else if (v === "space") spaceEntered(); else endStar("fade");
     draw();
   }, { signal: life.signal });
 
@@ -1164,16 +1224,17 @@ export function createDomeGL(host, isPaused) {
   }
   function startStar() {
     if (star) return;
-    star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null };
+    star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null, axis: randUnit(), nextDeep: pickOtherDeep() };
+    loadDeep(star.nextDeep);   // 워프로 도착할 때 쓸 사진을 미리 받아 둔다
     warpDist = 0;
     ufoPanel.setWarping(true);
   }
-  function endStar() {
+  function endStar(how = true) {   // how = 기어 패널이 사라지는 방식(true = 도트 + 흰 선, "fade" = 하늘을 바꿀 때 조작 패널과 함께 빠르게)
     pendingHold = false;
     if (!star) return;
     star = null;
     shakePanels(null);
-    gear.show(false, true);   // 성간 이동이 끝나면 하늘 전환처럼(흰 띠 + 도트) 사라진다
+    gear.show(false, how);   // 성간 이동이 끝나면 하늘 전환처럼(흰 띠 + 도트) 사라진다
     ufoPanel.el.style.transform = "";
     ufoPanel.setWarping(false); ufoPanel.setRed(false);
     draw();
@@ -1212,9 +1273,16 @@ export function createDomeGL(host, isPaused) {
       for (let left = dt; left > 1e-6; left -= 1 / 60) tickWarp(st, Math.min(left, 1 / 60), now);   // 잘게 나눠(느린 프레임에서도 같은 움직임) — 「띵」 · 진동 · 흔들림은 4단계
       if (stoppedAtN(st)) { endStar(); return; }
       star.frame = null;
+      if (st.beta > 0 && !reducedMotion.matches) spaceRot = mulRot(axisRot(star.axis, dt * 0.03 * (0.45 + 1.6 * st.beta) * st.beta), spaceRot);   // 달린 만큼 하늘이 조금씩 돈다
     } else {
       const t = (now - star.jump.t0) / SKY_SLOW;   // 확인용 ?bgdebug&bgskyslow=N 이면 N 배 느리게
       if (t >= JUMP_MS[star.jump.kind]) { endStar(); return; }
+      // 순간 이동 — A 섬광 · C 충격파 순간, B 는 시작부터(고리 안쪽이 도착한 곳). 하늘 방향은 완전히 무작위, 사진은 미리 받아 둔 다른 것
+      if (!star.jump.arrived && t >= { A: 620, B: 0, C: 700 }[star.jump.kind]) {
+        star.jump.arrived = true;
+        spaceRot = axisRot(randUnit(), Math.random() * 2 * Math.PI);
+        setDeep(star.nextDeep);
+      }
       const c = jumpCenter(), maxR = Math.hypot(Math.max(c[0], W - c[0]), Math.max(c[1], H - c[1])) + 40;
       star.frame = { ...jumpFrame(star.jump.kind, t, maxR), c, maxR };
     }
@@ -1310,6 +1378,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
     gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0); gl.uniform4f(U.uJump, 0, 0, 0, 0);
+    gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1])); gl.uniform2f(U.uDeepShape, 1, 1960);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
     gl.uniform1i(U.uTerrainDetail, 13); gl.uniform1i(U.uTerrainDetailNormal, 14); gl.uniform1i(U.uTerrainShadow, 15);
@@ -1659,9 +1728,18 @@ export function createDomeGL(host, isPaused) {
     lastGL = 0;
   }
 
+  // 카메라 축. (11-06 운영자 「폰을 기울여도 배경은 눈으로 보기에 기울지 않게」) 화면 기울임(roll)만큼 카메라를 반대로 돌린다 —
+  // 폰 오른쪽이 내려가면 화면의 오른쪽 · 위쪽 축도 같이 돌아 세계의 수평선은 실제 수평 그대로 보인다. 셰이더 · 공중 무늬 · 콘솔이 모두 이 축을 쓴다.
+  // hright = 기울임과 무관한 수평 오른쪽(바닥 콘솔 놓기 · 무늬 기울기 가속도용). roll = rollS(아래 tiltAccel, 0.15초 저역 통과, 눕혀 들면 0 쪽으로).
   function basis() {
     const cy_ = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-    return { fwd: [sy * cp, sp, cy_ * cp], right: [cy_, 0, -sy], up: [-sy * sp, cp, -cy_ * sp] };
+    const r0 = [cy_, 0, -sy], u0 = [-sy * sp, cp, -cy_ * sp], cr = Math.cos(rollS), sr = Math.sin(rollS);
+    return {
+      fwd: [sy * cp, sp, cy_ * cp],
+      right: [r0[0] * cr - u0[0] * sr, r0[1] * cr - u0[1] * sr, r0[2] * cr - u0[2] * sr],
+      up: [u0[0] * cr + r0[0] * sr, u0[1] * cr + r0[1] * sr, u0[2] * cr + r0[2] * sr],
+      hright: r0,
+    };
   }
 
   function draw() {
@@ -1677,7 +1755,7 @@ export function createDomeGL(host, isPaused) {
     jumpUniforms();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
-    gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele;
+    gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele; drawnRoll = rollS;
     gl.uniform1f(U.uF, viewFocal());
     // 실내 우주가 13 · 14번 칸에 float 질감을 꽂았다면 바깥 지형(정수 표본기) 전에 비운다 — 확대 조각이 있으면 view() 가 다시 꽂는다.
     if (outdoor && spaceTex.blank) { gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, null); gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, null); }
@@ -1704,6 +1782,8 @@ export function createDomeGL(host, isPaused) {
       gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
       gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
       gl.uniform3f(U.uWarpDir, 0, 0.05, 0.99875);
+      gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array(spaceRot));
+      gl.uniform2f(U.uDeepShape, DEEP_SET[deepIdx].asp, DEEP_SET[deepIdx].w);
     } else gl.uniform4f(U.uSpace, 0, 0, 0, 0);
     // (11-06 수정) 실내 프로그램의 우주 표본기(13 · 14번, float)는 분홍 하늘일 때도 활성이다. 산 장소 기기는 그 칸에 지형의 정수 질감(RGBA16UI)이
     // 꽂혀 있어 float 표본기와 종류가 어긋나면 그리기가 통째로 실패(하늘 · 바닥 검정)하므로, 실내는 매번 우주 사진 또는 1×1 검정을 꽂는다.
@@ -1784,7 +1864,7 @@ export function createDomeGL(host, isPaused) {
         show = sx > -m && sx < W + m && sy > -m && sy < H + m;
       }
       if (show !== p.shown) { p.el.style.visibility = show ? "" : "hidden"; p.shown = show; }
-      if (show) p.el.style.transform = `translate3d(${(sx - BOX / 2).toFixed(1)}px,${(sy - BOX / 2).toFixed(1)}px,0) scale(${s.toFixed(3)}) rotate(${(p.th / DEG).toFixed(1)}deg)`;
+      if (show) p.el.style.transform = `translate3d(${(sx - BOX / 2).toFixed(1)}px,${(sy - BOX / 2).toFixed(1)}px,0) scale(${s.toFixed(3)}) rotate(${((p.th - rollS) / DEG).toFixed(1)}deg)`;   // 화면 기울임만큼 무늬도 반대로(세계 기준 자세 유지)
     }
   }
 
@@ -1829,7 +1909,7 @@ export function createDomeGL(host, isPaused) {
       ufoConsole.place((w) => {
         const q = sub(w, EYE), z = dot3(q, B.fwd);
         return z < 0.03 ? null : [cx + F * dot3(q, B.right) / z, cy - F * dot3(q, B.up) / z, z];
-      }, B);
+      }, { right: B.hright });   // 콘솔은 바닥에 서 있으니 놓는 방향은 수평 오른쪽(투영은 기울임 포함)
     }
     if (peek && !ufoArmed && zoomR >= PANEL_OFF_R) ufoArmed = true;
     // 하늘 전환 중에는 패널을 끈다(칸도 눌리지 않음 — inert). 끝나면 다가갔을 때와 같은 등장 연출로 다시 뜬다(11-06 운영자)
@@ -1882,8 +1962,8 @@ export function createDomeGL(host, isPaused) {
     rollS += (target - rollS) * (1 - Math.exp(-dt / 0.15));
     const s = Math.sign(rollS) * Math.max(0, Math.abs(Math.sin(rollS)) - TILT_DEAD) * TILT_G;
     if (!s) return null;
-    const B = basis();   // right = 화면 오른쪽의 수평 방향(카메라는 기울지 않는다)
-    return [B.right[0] * s, -Math.abs(s) * TILT_DOWN, B.right[2] * s];
+    const B = basis();   // hright = 화면 오른쪽의 수평 방향
+    return [B.hright[0] * s, -Math.abs(s) * TILT_DOWN, B.hright[2] * s];
   }
 
   function frame(t) {
@@ -1911,7 +1991,7 @@ export function createDomeGL(host, isPaused) {
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
       if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
     }
-    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0))) draw();
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0))) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -1933,7 +2013,7 @@ export function createDomeGL(host, isPaused) {
     const changed = next !== outdoor;
     if (changed) beginSky(next ? "earth" : INDOOR_BG);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     outdoor = next;
-    if (changed) { if (next) endStar(); else if (INDOOR_BG === "space") spaceEntered(); }   // 지구로 나가면 성간 이동 끝 · 우주로 돌아오면 진입 판정
+    if (changed) { if (next) endStar("fade"); else if (INDOOR_BG === "space") spaceEntered(); }   // 지구로 나가면 성간 이동 끝 · 우주로 돌아오면 진입 판정
     useViewProgram();
     // 시선 · 기준점은 두 보기가 같다(updateView) — 여기서는 화면 폭 각도만(시안 bgsize=window 일 때만 바깥이 다르다)
     if (W) gl.uniform1f(U.uF, viewFocal());

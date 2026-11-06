@@ -252,6 +252,7 @@
   max-width: 420px; margin: 0 auto; font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
 }
 .ufo-gear[hidden] { display: none; }
+.ufo-gear.is-tx { opacity: 0; transition: opacity .15s ease; }   /* 하늘을 바꿀 때 조작 패널과 함께 꺼짐 */
 .ugr-card {
   position: relative; display: flex; flex-direction: column; gap: 4px; padding: 9px 12px 8px;
   background: rgba(10, 8, 26, .82); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);

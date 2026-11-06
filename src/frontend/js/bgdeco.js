@@ -9,6 +9,7 @@ import { buildVirtualScene, observeMemberAccent } from "./bgvirtual.js";
 import { buildDomeScene } from "./bgdome.js";
 import { createDomeGL } from "./bgdomegl.js";
 import { startGyro } from "./bggyro.js";
+import { startLevel } from "./bglevel.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const RAD2DEG = 180 / Math.PI;
@@ -189,7 +190,8 @@ function onMotion(ev) {
 /** 센서 켜기. iOS 는 사용자 동작 안에서 권한을 물어야 해서 첫 터치 때 한 번 요청한다. 안드로이드 · 데스크톱은 바로 듣는다(데스크톱은 이벤트가 안 온다). */
 function enableSensor() {
   if (sensorOn || sensorArmed || sensorAsked || typeof DeviceMotionEvent === "undefined") return;
-  const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); if (domeGL) startGyro(); };
+  // 자세 센서(startGyro)는 테마와 상관없이 켠다 — 기울여도 배경이 수평을 지키게(bglevel.js, 11-06 운영자 「모든 테마」)
+  const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); startGyro(); };
   if (typeof DeviceMotionEvent.requestPermission !== "function") { attach(); return; }
   sensorArmed = true;
   const ask = () => {
@@ -197,12 +199,12 @@ function enableSensor() {
     document.removeEventListener("pointerup", ask, true);
     sensorArmed = false; sensorAsked = true;
     // iOS: 흔들기(devicemotion)와 둘러보기(deviceorientation) 권한을 같은 터치 안에서 함께 묻는다
-    const ori = domeGL && typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"
+    const ori = typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"
       ? DeviceOrientationEvent.requestPermission().catch(() => "denied") : Promise.resolve("granted");
     DeviceMotionEvent.requestPermission().then((r) => {
       if (r === "granted") { sensorOn = true; window.addEventListener("devicemotion", onMotion); }
     }).catch(() => {});   // 거절 · 실패하면 흔들기만 없다
-    ori.then((r) => { if (r === "granted" && domeGL) startGyro(); });
+    ori.then((r) => { if (r === "granted") startGyro(); });
   };
   document.addEventListener("pointerup", ask, true);
 }
@@ -237,6 +239,8 @@ export function initBgDeco() {
   host.setAttribute("aria-hidden", "true");
   document.body.prepend(host);
   build();
+  startLevel();   // 기본 · 생일 배경의 수평 맞추기(돔은 bgdomegl.js 가 직접)
+  enableSensor();   // 생일 화면으로 시작해 배경 움직임이 멈춰 있어도 기울기 센서는 켠다
   if (variant && variant !== "d") observeMemberAccent(host);
   window.addEventListener("resize", () => {
     clearTimeout(rebuildT);
