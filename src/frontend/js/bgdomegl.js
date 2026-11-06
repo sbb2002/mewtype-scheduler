@@ -435,7 +435,7 @@ vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta,
   float s = log(tan(max(acos(cr), 1e-3) * 0.5));
   float lanes = 64.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
   float hl = h1(lane * 1.37 + 3.0);
-  if (hl < 0.58) return vec3(0);   // 궤적은 적게(약 27줄)
+  if (hl < 0.58) return vec3(0);   // 64 줄 중 약 31 줄(전엔 0.68 로 약 27 줄). 픽셀마다 자기 줄 하나만 계산해 줄 수와 비용은 거의 무관
   float speed = 0.8 + 0.8 * h1(lane * 7.1);                    // 별마다 거리가 달라 지나가는 빠르기가 다르다
   float P = 12.0, head = mod(dist * speed + hl * 97.0, P) - 6.0; // 머리 위치(로그 극좌표 s), 앞(−)에서 뒤(+)로
   float behind = mod(head - s + P, P);                           // 머리에서 꼬리 쪽으로 떨어진 거리
