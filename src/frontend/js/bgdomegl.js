@@ -19,6 +19,7 @@ import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
+import { attachSwipe, flyOut } from "./bgdeck.js";
 import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
 const DEG = Math.PI / 180;
@@ -1150,9 +1151,32 @@ export function createDomeGL(host, isPaused) {
       star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
     },
   });
-  let star = null, pendingHold = false, gearH = -1;
+  let star = null, pendingHold = false, deckFront = "gear";
+  // 두 패널이 다 떠 있으면 카드 두 장으로 겹친다 — 처음엔 기어가 앞, 앞 카드를 좌우로 밀면 서로 바뀐다(bgdeck.js, 11-06 운영자)
+  const bothCards = () => gear.shown && ufoPanel.on;
+  const swapDeck = (dir) => {
+    if (!bothCards()) return;
+    flyOut(deckFront === "gear" ? gear.el : ufoPanel.el, dir);
+    deckFront = deckFront === "gear" ? "ufo" : "gear";
+    applyDeck();
+  };
+  let deckKey = "";
+  function applyDeck() {
+    const both = bothCards();
+    gear.setBack(both && deckFront === "ufo");
+    ufoPanel.setBack(both && deckFront === "gear");
+    const key = `${both}|${deckFront}`;
+    if (!both || key === deckKey) { deckKey = key; return; }
+    deckKey = key;
+    // 뒤 카드가 앞 카드보다 짧아도 위로 26px 삐져나와 「뒤에 한 장 더 있다」가 보이게 — 둘 다 화면 가운데 기준, 뒤 카드는 0.92 배
+    const front = deckFront === "gear" ? gear.el : ufoPanel.el, back = deckFront === "gear" ? ufoPanel.el : gear.el;
+    back.style.setProperty("--back-y", (0.46 * back.offsetHeight - front.offsetHeight / 2 - 26).toFixed(0) + "px");
+  }
+  attachSwipe(gear.el, { canSwipe: () => bothCards() && deckFront === "gear", onSwipe: swapDeck });
+  attachSwipe(ufoPanel.el, { canSwipe: () => bothCards() && deckFront === "ufo", onSwipe: swapDeck, onDragStart: () => ufoPanel.cancelHold() });
   function startStar() {
     if (star) return;
+    deckFront = "gear";
     star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null };
     warpDist = 0;
     ufoPanel.setWarping(true);
@@ -1161,11 +1185,10 @@ export function createDomeGL(host, isPaused) {
     pendingHold = false;
     if (!star) return;
     star = null;
-    gear.show(false); setGearH(0);
+    gear.show(false); applyDeck();
     ufoPanel.setWarping(false); ufoPanel.setRed(false);
     draw();
   }
-  function setGearH(px) { if (px !== gearH) { gearH = px; document.documentElement.style.setProperty("--ufo-gear-h", px ? px + 12 + "px" : "0px"); } }
   /** 실내 우주에 들어왔다 — 하늘 전환 중이면 끝난 뒤에 판정 */
   function spaceEntered() {
     const decide = () => {
@@ -1210,7 +1233,7 @@ export function createDomeGL(host, isPaused) {
     gear.show(peek);
     if (peek) gear.update(st, !!star.frame, beta);
     ufoPanel.setRed(beta >= 0.85);
-    setGearH(peek ? gear.height() : 0);
+    applyDeck();
   }
   function jumpUniforms() {
     const f = star?.frame;
@@ -1988,6 +2011,6 @@ export function createDomeGL(host, isPaused) {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); document.documentElement.style.removeProperty("--ufo-gear-h"); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }

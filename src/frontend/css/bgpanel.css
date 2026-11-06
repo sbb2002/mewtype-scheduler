@@ -240,13 +240,24 @@
 .ufo-hud.is-red .ufo-card { border-color: rgba(255, 61, 90, .7); box-shadow: 0 0 0 1px rgba(255, 61, 90, .2), 0 0 32px rgba(255, 61, 90, .32); }
 .ufo-hud.is-red .ufo-brk { border-color: #ff3d5a; }
 .ufo-hud.is-red .ufo-head__tag { color: #ff6d86; }
-/* 기어 패널이 떠 있으면 조작 패널은 그 위쪽 남은 자리의 가운데로(시안 Main.dc.html 「warp 면 위로」) — 높이는 js 가 --ufo-gear-h 로 */
-.ufo-hud { top: calc((100% - var(--ufo-gear-h, 0px)) / 2); transition: opacity .15s ease, top .35s cubic-bezier(.2, .8, .2, 1); }
+/* ── 성간 이동 중 두 패널 = 카드 두 장(js/bgdeck.js, 11-06 운영자 「기어 패널이 앞 · 조작 패널은 뒤 · 좌우로 밀면 카드 섞듯」)
+   같은 자리(화면 가운데)에 겹치고, 뒤 카드는 위로 조금 삐져나와 작고 어둡게(누를 수 없음). 앞 카드를 밀면 손가락을 따라 기울며 끌리고(--dx),
+   충분히 밀면 그 방향으로 빠져나갔다가(.is-out 0.2초) 뒤로 들어가고, 뒤 카드는 앞으로 올라온다. */
+.ufo-hud, .ufo-gear {
+  --dx: 0px; --dir: 1;
+  transform: translateX(var(--dx)) rotate(calc(var(--dx) * .025deg));
+  transition: opacity .15s ease, transform .32s cubic-bezier(.2, .8, .2, 1), filter .32s;
+}
+.ufo-hud.is-dragging, .ufo-gear.is-dragging { transition: none; }
+.ufo-hud.is-back, .ufo-gear.is-back { z-index: 974; transform: translateY(var(--back-y, -22px)) scale(.92);   /* --back-y = 앞 카드 위로 26px 삐져나오게(js 가 두 카드 높이로 계산) */ opacity: .62; filter: brightness(.75); pointer-events: none; }
+.ufo-hud.is-out, .ufo-gear.is-out { z-index: 977; transform: translateX(calc(var(--dir) * 78%)) rotate(calc(var(--dir) * 9deg)); opacity: .85; transition-duration: .2s; transition-timing-function: cubic-bezier(.5, 0, .9, .5); }
+.ufo-hud.is-tx { opacity: 0; }
+.ufo-hud *, .ufo-gear * { touch-action: none; }   /* 가로로 미는 손가락을 브라우저가 가로채지 않게(누르기 · 길게 누르기는 그대로) */
 
-/* ── 워프 기어 패널(js/bggear.js, 시안 Gear.dc.html) — 배경 보기 중 성간 이동이면 화면 아래 */
+/* ── 워프 기어 패널(js/bggear.js, 시안 Gear.dc.html) — 배경 보기 중 성간 이동이면 조작 패널과 같은 자리(가운데) */
 .ufo-gear {
-  position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); z-index: 975;
-  max-width: 360px; margin: 0 auto; font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
+  position: fixed; left: 24px; right: 24px; top: 50%; translate: 0 -50%; z-index: 975;
+  max-width: 420px; margin: 0 auto; font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
 }
 .ufo-gear[hidden] { display: none; }
 .ufo-gear.is-on .ugr-card { animation: ufo-hud-in .6s cubic-bezier(.2, .8, .2, 1) both; }

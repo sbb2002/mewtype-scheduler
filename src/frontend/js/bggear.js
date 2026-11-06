@@ -83,12 +83,19 @@ export function createGearPanel({ onGear, onWarp }) {
   const set = (k, v, fn) => { if (last[k] !== v) { last[k] = v; fn(v); } };
   return {
     get shown() { return shown; },
-    height() { return shown ? root.offsetHeight : 0; },
+    /** 카드 겹치기(bgdeck.js)용 — 패널 바깥 틀 */
+    get el() { return root; },
+    /** 뒤 카드로(작고 어둡게, 누를 수 없음) */
+    setBack(v) {
+      if (root.classList.contains("is-back") === v) return;
+      root.classList.toggle("is-back", v);
+      root.inert = !shown || v;
+    },
     remove() { root.remove(); },
     show(on) {
       if (on === shown) return;
       shown = on;
-      root.hidden = !on; root.inert = !on; root.setAttribute("aria-hidden", on ? "false" : "true");
+      root.hidden = !on; root.inert = !on || root.classList.contains("is-back"); root.setAttribute("aria-hidden", on ? "false" : "true");
       root.classList.toggle("is-on", on);
       if (!on && root.contains(document.activeElement)) document.activeElement.blur();
     },
