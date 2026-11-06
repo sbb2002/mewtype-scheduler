@@ -1232,6 +1232,27 @@ export function createDomeGL(host, isPaused) {
   // ── 4단계(11-06): 돔 흔들림 · 폰 진동 · 소리
   // 돔 흔들림 = 좌석벨트 표시등이 켜진 동안 시선(yaw · pitch)에 작은 무작위 흔들림(떨림 세기 비례, 최대 약 0.35°), 깜빡일 땐 아주 약하게. 움직임 줄이기면 없음.
   let shYaw = 0, shPitch = 0;
+  // 경보(11-06 운영자 「5단에서 흔들림으로 좌석벨트 표시등이 켜지면 바닥 조명을 빨갛게 · 화면에 사이렌」): 5단 + 표시등 켜짐 동안 alarmK 0 → 1(0.25초로 부드럽게).
+  //   바닥 조명(렌즈 · 빛기둥 · 테두리) = 테마 색 → 붉은빛(초당 1.6 번 맥동), 화면 = 회전하는 붉은 경광등 빛줄기 + 맥동하는 붉은 가장자리(.ufo-siren, css/bgpanel.css).
+  let alarmK = 0, alarmDrawn = 0;
+  const siren = document.createElement("div"); siren.className = "ufo-siren"; siren.setAttribute("aria-hidden", "true"); siren.hidden = true;
+  siren.append(document.createElement("i"), document.createElement("b"));
+  document.body.appendChild(siren);
+  function updateAlarm(dt) {
+    const want = star && !star.frame && star.st.gear === 5 && star.st.belt === "on" ? 1 : 0;
+    alarmK += (want - alarmK) * (1 - Math.exp(-dt / 0.25));
+    if (alarmK < 0.002 && !want) alarmK = 0;
+    const peekNow = document.documentElement.classList.contains("bg-peek");
+    siren.hidden = !(alarmK > 0 && peekNow);
+    if (!siren.hidden) siren.style.opacity = alarmK.toFixed(3);
+  }
+  function floorLights() {
+    if (!(alarmK > 0) && !alarmDrawn) return;
+    const t = THEMES[theme || "dark"], k = alarmK, pulse = reducedMotion.matches ? 1 : 0.62 + 0.38 * Math.sin(performance.now() / 1000 * 2 * Math.PI * 1.6);
+    const red = { pad: [1.0, 0.24, 0.2], glow: [1.0, 0.12, 0.1], rim: [1.0, 0.3, 0.26] };
+    for (const key of ["pad", "glow", "rim"]) gl.uniform3fv(U["u" + key[0].toUpperCase() + key.slice(1)], t[key].map((c, i) => c + (red[key][i] * (key === "rim" ? 1 : pulse) - c) * k));
+    alarmDrawn = k;
+  }
   // 폰 진동(운영자 11-06 「가속도가 높을수록 잦게, 0 에 가까우면 드물게」) = 속도 변화율 |dβ/dt| 로 간격 · 길이를 정한다.
   //   세게 가속 · 제동(≈ 0.5c/초 이상) = 0.07초마다 20ms, 약할수록 간격이 길어져 최대 0.6초마다 6ms, 거의 0 이면 울리지 않는다. 안드로이드만(iOS 사파리는 진동 없음).
   let accS = 0, lastBeta = 0, vibAt = 0;
@@ -1787,6 +1808,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uThemeProgress, reducedMotion.matches ? 1 : Math.min(1, (performance.now()-themeStart)/THEME_MS));
     skyUniforms();
     jumpUniforms();
+    floorLights();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele; drawnRoll = rollS;
@@ -2016,6 +2038,7 @@ export function createDomeGL(host, isPaused) {
     placePieces();
     updateUfo(peek);
     updateStar(performance.now(), dt, peek);
+    updateAlarm(dt);
     // 지형 질감을 올리는 동안은 그리기를 쉬어(draw 첫 줄) 화면이 멈춘다 — 그동안 하늘 전환 시계도 멈춰, 반쯤 섞인 화면에서 끝나 버리지 않게(처음 지구를 고를 때)
     // 길어야 4초까지만 멈춰 기다리고, 그 뒤엔 그냥 끝낸다(패널이 돌아오지 못하는 일이 없게)
     if (sky && releaseGround?.terrain?.uploading) {
@@ -2028,7 +2051,7 @@ export function createDomeGL(host, isPaused) {
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
       if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
     }
-    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0))) draw();
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -2117,6 +2140,6 @@ export function createDomeGL(host, isPaused) {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); siren.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }
