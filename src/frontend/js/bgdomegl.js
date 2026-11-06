@@ -16,6 +16,8 @@ import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
 import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
+import { createConsole } from "./bgconsole.js";
+import { createUfoPanel } from "./bgpanel.js";
 
 const DEG = Math.PI / 180;
 // 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
@@ -26,6 +28,9 @@ const EYE0 = [0, 0.24, 0];
 // Signed pinch path: 0..0.6 = retreat; -1..0 = logarithmic 30x..1x telephoto.
 const ZOOM_R_MAX = 0.6;
 const ZOOM_PER_SCREEN = 1.5;   // 두 손가락 거리가 화면 폭만큼 줄면 r 이 이만큼 는다
+// (11-06 운영자 「제안대로」) UFO 조작 패널 — 배경 보기는 뒤로 물러난 자리에서 시작하고, 가운데 콘솔로 다가가면 패널이 뜬다.
+// 문턱은 히스테리시스(나타남 · 사라짐 값이 다름), 망원(×1 초과)이면 숨김. 값은 폰에서 만져 보고 조정.
+const PEEK_START_R = 0.4, PANEL_ON_R = 0.12, PANEL_OFF_R = 0.18;
 const EYE = EYE0.slice();      // 지금 눈 위치 — 프레임마다 갱신
 const BASE_PITCH = 28 * DEG;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
@@ -988,6 +993,9 @@ export function createDomeGL(host, isPaused) {
   magnification.style.cssText = "position:absolute;right:18px;top:calc(env(safe-area-inset-top, 0px) + 22px);pointer-events:none;color:rgba(190,224,239,.65);font:12px ui-monospace,monospace;letter-spacing:.08em;text-shadow:0 0 8px #9ac6df;display:none";
   host.appendChild(magnification);
   const viewFocal = () => (outdoor ? focalOut : focal) * tele;
+  const ufoConsole = createConsole(air);   // 공중 무늬보다 먼저 붙여 무늬가 콘솔 앞을 지나가게
+  const ufoPanel = createUfoPanel();
+  let wasPeek = false, ufoArmed = false;   // 열린 직후 물러나는 동안(r 0 → 0.4)엔 패널이 번쩍 뜨지 않게 — 다 물러났거나 손가락으로 줌하면 켠다
 
   // 조각 배치 — 처음 보는 정면에 몇 개는 꼭 보이게
   const pieces = Array.from({ length: N_PIECES }, (_, i) => {
@@ -1486,6 +1494,8 @@ export function createDomeGL(host, isPaused) {
     yaw += (tYaw - yaw) * k;
     pitch += (tPitch - pitch) * k;
     if (!peek) { zoomT = 0; pinch = null; }   // 배경 보기를 닫으면 중심으로 돌아온다
+    else if (!wasPeek) { zoomT = PEEK_START_R; ufoArmed = false; }  // 열 때는 뒤로 물러난 자리에서(가운데 콘솔이 앞에 보이게) — 부드럽게 물러난다
+    wasPeek = peek;
     zoomPath += (zoomT - zoomPath) * (1 - Math.exp(-dt / 0.12));
     if (Math.abs(zoomT - zoomPath) < 1e-5) zoomPath = zoomT;
     zoomR = Math.max(0, zoomPath);
@@ -1497,6 +1507,24 @@ export function createDomeGL(host, isPaused) {
     EYE[2] = EYE0[2] - zoomR * Math.cos(yaw);
     return peek;
   }
+
+  // 조작 콘솔(바닥) · 패널(화면) — 콘솔은 배경 보기 중에만 그리고, 패널은 문턱을 넘을 때만 클래스를 바꾼다(매 프레임 DOM 갱신 없음)
+  function updateUfo(peek) {
+    ufoConsole.setVisible(peek);
+    if (peek) {
+      const B = basis(), F = viewFocal();
+      ufoConsole.place((w) => {
+        const q = sub(w, EYE), z = dot3(q, B.fwd);
+        return z < 0.03 ? null : [cx + F * dot3(q, B.right) / z, cy - F * dot3(q, B.up) / z, z];
+      }, B);
+    }
+    if (peek && !ufoArmed && (zoomR >= PANEL_OFF_R || pinch)) ufoArmed = true;
+    const want = peek && ufoArmed && (ufoPanel.on ? zoomR <= PANEL_OFF_R && tele <= 1.02 : zoomR < PANEL_ON_R && tele <= 1.001);
+    if (want && !ufoPanel.on) ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");
+    ufoPanel.set(want);
+    ufoPanel.setHint(peek ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0);
+  }
+  function hideUfo() { ufoPanel.set(false); ufoPanel.setHint(0); ufoConsole.setVisible(false); }
 
   // 두 손가락 줌 — 배경 보기 중에만(그 밖엔 카드 · 페이지 조작이 우선). 브라우저 확대를 막으려 passive: false
   const touchDist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -1546,6 +1574,7 @@ export function createDomeGL(host, isPaused) {
     updateView(dt, t);
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
+    updateUfo(peek);
     if ((!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && (voyageBeta((performance.now() - spaceT0) / 1000) > 0 || performance.now() - spaceT0 < VOYAGE_END * 1000) && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
     raf = requestAnimationFrame(frame);
   }
@@ -1557,7 +1586,7 @@ export function createDomeGL(host, isPaused) {
     tPrev = lastFrame = performance.now();
     raf = requestAnimationFrame(frame);
   }
-  function stop() { stopped = true; cancelAnimationFrame(raf); raf = 0; }
+  function stop() { stopped = true; cancelAnimationFrame(raf); raf = 0; hideUfo(); }
 
   canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); stop(); });
   canvas.addEventListener("webglcontextrestored", () => {
@@ -1628,6 +1657,6 @@ export function createDomeGL(host, isPaused) {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); },
   };
 }

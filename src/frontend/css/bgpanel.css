@@ -1,0 +1,155 @@
+/* bgpanel.css — (bg-dome) UFO 조작 패널(js/bgpanel.js) · 바닥 콘솔(js/bgconsole.js).
+   정본 = devpapers ref/bg-dome/ufo-panel/Main.dc.html(칸) · Approach.dc.html(등장 · 퇴장 · 콘솔 움직임).
+   등장(0.6초) = 광선 한 줄 → 위아래로 열림 → 흔들림 · 색 갈라짐 → 머리글 타이핑 · 칸 차례로 → 모서리 꺾쇠. 퇴장(0.45초) = 거꾸로.
+   transform · opacity · clip-path 만 움직인다. 시안의 Chakra Petch 글꼴은 사이트가 웹 글꼴을 받지 않아 시스템 고정폭으로 대신한다. */
+
+:root {
+  --ufo-cyan: #4fe3ff;
+  --ufo-pink: #ff6fb5;
+  --ufo-ink: #eef6ff;
+  --ufo-sub: #a9bad0;
+  --ufo-mono: "Chakra Petch", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+/* ── 바닥 콘솔(배경 층 안, 누르기 통과) */
+#bgdeco .bgcs { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease; }
+#bgdeco .bgcs.is-on { opacity: 1; }
+#bgdeco .bgcs[hidden] { display: none; }
+#bgdeco .bgcs > svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: visible; will-change: transform; }
+#bgdeco .bgcs-holo { animation: ufo-holo 3.2s infinite; }
+#bgdeco .bgcs-beam { animation: ufo-beam 2.4s ease-in-out infinite; }
+@keyframes ufo-holo { 0%, 46%, 52%, 100% { opacity: .95; } 48% { opacity: .45; } 50% { opacity: .85; } }
+@keyframes ufo-beam { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+
+/* ── 화면 패널(화면 가운데 고정). #bg-peek-catch(970) 위라 패널을 눌러도 배경 보기가 닫히지 않는다 */
+.ufo-hud {
+  position: fixed;
+  left: 24px;
+  right: 24px;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 975;
+  max-width: 420px;
+  margin: 0 auto;
+  font-family: "Noto Sans KR", system-ui, sans-serif;
+  color: var(--ufo-ink);
+}
+.ufo-hud.is-idle { visibility: hidden; pointer-events: none; }
+.ufo-hud.is-off { pointer-events: none; }
+.ufo-clip { position: relative; }
+.ufo-hud.is-on .ufo-clip { animation: ufo-hud-in .6s cubic-bezier(.2, .8, .2, 1) both; }
+.ufo-hud.is-off .ufo-clip { animation: ufo-hud-out .45s cubic-bezier(.5, 0, .8, .4) both; }
+@keyframes ufo-hud-in {
+  0% { clip-path: inset(50% 0 50% 0); opacity: 0; transform: none; }
+  18% { clip-path: inset(49.6% 0 49.6% 0); opacity: 1; }
+  58% { clip-path: inset(0 0 0 0); transform: none; }
+  63% { transform: translateX(-5px) skewX(-4deg); opacity: .55; }
+  68% { transform: translateX(4px); opacity: 1; }
+  73% { transform: translateX(-2px); opacity: .8; }
+  78%, 100% { clip-path: inset(0 0 0 0); transform: none; opacity: 1; }
+}
+@keyframes ufo-hud-out {
+  0% { clip-path: inset(0 0 0 0); transform: none; opacity: 1; }
+  10% { transform: translateX(4px) skewX(3deg); opacity: .5; }
+  18% { transform: translateX(-3px); opacity: 1; }
+  24% { transform: none; }
+  72% { clip-path: inset(49.6% 0 49.6% 0); opacity: 1; }
+  100% { clip-path: inset(50% 0 50% 0); opacity: 0; }
+}
+.ufo-line {
+  position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; opacity: 0; pointer-events: none;
+  background: #ffe2f1; box-shadow: 0 0 6px var(--ufo-pink), 0 0 14px var(--ufo-cyan), 0 0 26px rgba(79, 227, 255, .6);
+}
+.ufo-hud.is-on .ufo-line { animation: ufo-line-in .6s ease-out both; }
+.ufo-hud.is-off .ufo-line { animation: ufo-line-out .45s ease-in both; }
+@keyframes ufo-line-in { 0% { transform: scaleX(0); opacity: 1; } 18% { transform: scaleX(1); opacity: 1; } 55% { opacity: .9; } 70%, 100% { transform: scaleX(1); opacity: 0; } }
+@keyframes ufo-line-out { 0%, 60% { transform: scaleX(1); opacity: 0; } 70% { opacity: 1; } 92% { transform: scaleX(.03); opacity: 1; } 100% { transform: scaleX(0); opacity: 0; } }
+.ufo-chroma { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.ufo-chroma--p { border: 1px solid #ff3d9a; transform: translate(-4px, 1px); }
+.ufo-chroma--c { border: 1px solid var(--ufo-cyan); transform: translate(4px, -1px); }
+.ufo-hud.is-on .ufo-chroma { animation: ufo-chroma-in .6s linear both; }
+.ufo-hud.is-off .ufo-chroma { animation: ufo-chroma-out .45s linear both; }
+@keyframes ufo-chroma-in { 0%, 58% { opacity: 0; } 62% { opacity: 1; } 67% { opacity: 0; } 71% { opacity: .8; } 76%, 100% { opacity: 0; } }
+@keyframes ufo-chroma-out { 0% { opacity: 0; } 6% { opacity: 1; } 12% { opacity: 0; } 16% { opacity: .7; } 22%, 100% { opacity: 0; } }
+.ufo-stg { opacity: 0; }
+.ufo-hud.is-on .ufo-stg { animation: ufo-item-in .28s ease-out both; animation-delay: calc(.36s + var(--i, 0) * .06s); }
+.ufo-hud.is-off .ufo-stg { animation: ufo-item-out .12s ease-in both; }
+@keyframes ufo-item-in { 0% { opacity: 0; transform: translateX(-10px); } 60% { opacity: 1; } 70% { opacity: .4; } 100% { opacity: 1; transform: none; } }
+@keyframes ufo-item-out { 0% { opacity: 1; } 100% { opacity: 0; transform: translateX(6px); } }
+.ufo-type { display: inline-block; }
+.ufo-hud.is-on .ufo-type { animation: ufo-type-in .36s steps(11) .3s both; }
+@keyframes ufo-type-in { 0% { clip-path: inset(0 100% 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+.ufo-brk { position: absolute; width: 14px; height: 14px; border-color: var(--ufo-cyan); border-style: solid; opacity: 0; pointer-events: none; }
+.ufo-brk--tl { left: -6px; top: -6px; border-width: 2px 0 0 2px; }
+.ufo-brk--tr { right: -6px; top: -6px; border-width: 2px 2px 0 0; }
+.ufo-brk--bl { left: -6px; bottom: -6px; border-width: 0 0 2px 2px; }
+.ufo-brk--br { right: -6px; bottom: -6px; border-width: 0 2px 2px 0; }
+.ufo-hud.is-on .ufo-brk { animation: ufo-brk-in .3s cubic-bezier(.2, .8, .2, 1) .5s both; }
+.ufo-hud.is-off .ufo-brk { animation: ufo-brk-out .12s linear both; }
+@keyframes ufo-brk-in { 0% { opacity: 0; transform: scale(1.6); } 100% { opacity: 1; transform: none; } }
+@keyframes ufo-brk-out { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+.ufo-card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px;
+  background: rgba(10, 8, 26, .78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(79, 227, 255, .55);
+  box-shadow: 0 0 0 1px rgba(255, 111, 181, .15), 0 0 32px rgba(79, 227, 255, .18);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+}
+.ufo-scan { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .03) 0 1px, transparent 1px 3px); }
+.ufo-mono { font-family: var(--ufo-mono); }
+.ufo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ufo-head__l { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.ufo-head__tag { font-size: 11px; font-weight: 600; letter-spacing: .18em; color: var(--ufo-cyan); }
+.ufo-head__title { font-size: 17px; font-weight: 700; }
+.ufo-list { display: flex; flex-direction: column; gap: 8px; }
+.ufo-tile {
+  position: relative;
+  display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px;
+  width: 100%; min-height: 64px; padding: 10px 12px; box-sizing: border-box;
+  background: rgba(18, 16, 40, .55);
+  border: 1px solid rgba(120, 200, 255, .22);
+  color: var(--ufo-ink); text-align: left; font: inherit; cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  transition: background .15s, border-color .15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none; -webkit-user-select: none;
+}
+.ufo-tile.is-on { background: rgba(255, 95, 170, .14); border-color: var(--ufo-pink); box-shadow: inset 0 0 18px rgba(255, 111, 181, .18); }
+.ufo-tile:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 2px; }
+.ufo-tile__ico { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid rgba(79, 227, 255, .35); }
+.ufo-tile.is-on .ufo-tile__ico { border-color: var(--ufo-pink); }
+.ufo-tile__text { display: flex; flex-direction: column; min-width: 0; }
+.ufo-tile__lbl { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.ufo-tile__sub { font-size: 12px; color: var(--ufo-sub); line-height: 1.35; margin-top: 2px; }
+.ufo-tile__led { width: 8px; height: 8px; border: 1px solid #5c6b85; }
+.ufo-tile.is-on .ufo-tile__led { background: var(--ufo-pink); border-color: var(--ufo-pink); box-shadow: 0 0 8px var(--ufo-pink); }
+.ufo-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.ufo-chip { font-family: var(--ufo-mono); font-size: 10px; letter-spacing: .06em; color: var(--ufo-cyan); border: 1px solid rgba(79, 227, 255, .4); padding: 1px 5px; }
+.ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(79, 227, 255, .18); padding-top: 8px; }
+
+/* ── 멀리 있을 때 안내 */
+.ufo-hint {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); z-index: 975;
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px; white-space: nowrap;
+  font: 13px "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
+  background: rgba(10, 8, 26, .72); border: 1px solid rgba(79, 227, 255, .45);
+  pointer-events: none; opacity: 0; visibility: hidden;
+  transform: translateX(-50%);
+  animation: ufo-hint-bob 2s ease-in-out infinite;
+}
+@keyframes ufo-hint-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, -4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  #bgdeco .bgcs-holo, #bgdeco .bgcs-beam, .ufo-hint { animation: none; }
+  .ufo-hud.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-hud.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
+  .ufo-hud.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
+  .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }
+}
+@keyframes ufo-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes ufo-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }
