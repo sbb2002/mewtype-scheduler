@@ -1,16 +1,16 @@
 // bgconsole.js — (bg-dome) UFO 무대 가운데 바닥에 놓인 「조작 콘솔」. 그리는 곳 = bgdomegl.js 의 공중 무늬 층(.bgdm-air).
 // 셰이더가 아니라 SVG 두 장을 3D 투영해 얹는다(셰이더 비용 0, 운영자 11-06 「제안대로」):
-//   ① 바닥 무늬(받침 고리 · 파동) = 바닥 평면(y = 0)의 정사각형 → 화면 사각형으로 원근 사상(CSS matrix3d)
-//   ② 몸체 · 홀로그램 · 빛기둥 = 무대 중심에 세운 세로 판(카메라 오른쪽 방향 × 세계 위쪽)을 같은 방식으로 사상
-// 모양 · 움직임 정본 = devpapers ref/bg-dome/ufo-panel/Approach.dc.html(홀로그램 깜빡임 · 주사선 · 빛기둥 맥동 · 받침 파동 · 상태등).
+//   ① 바닥 무늬(받침 고리 · 유도 호) = 바닥 평면(y = 0)의 정사각형 → 화면 사각형으로 원근 사상(CSS matrix3d)
+//   ② 몸체 · 별 항로 화면 = 무대 중심에 세운 세로 판(카메라 오른쪽 방향 × 세계 위쪽)을 같은 방식으로 사상
+// 크림색 비행접시 조종대: 무대 조명의 티타늄 테 · 크림색 렌즈와 연결한다. 대기 표시는 CSS opacity만 맥동.
 // 모든 SVG 는 고정 그림이라 createElementNS 로 만든다(데이터 주입 없음).
 
 const NS = "http://www.w3.org/2000/svg";
 
 // 세계 크기(돔 반지름 = 1, 눈 높이 0.24). 폰에서 만져 보고 조정할 값.
-const FLOOR_HALF = 0.15;            // 바닥 무늬 정사각형 반 변
-const STAND_W = 0.132;              // 세로 판 폭(SVG 110 단위)
-const STAND_VB = [140, 455, 110, 160];   // 세로 판 SVG viewBox — 아래 끝(y 615)이 바닥
+const FLOOR_HALF = 0.105;           // 바닥 무늬 정사각형 반 변
+const STAND_W = 0.16;               // 세로 판 폭(SVG 160 단위)
+const STAND_VB = [0, 0, 160, 132];  // 발 끝 y=129, 아래 3단위는 기존 투영의 바닥 밑 여백
 const STAND_U = STAND_W / STAND_VB[2];   // SVG 1 단위 = 세계 길이
 const STAND_H = STAND_VB[3] * STAND_U;
 const BOX = 200;                    // 두 SVG 의 CSS 크기(px, 사상 전) — 정사각 · 세로 판 모두 이 폭
@@ -21,40 +21,76 @@ function el(tag, attrs, kids) {
   if (kids) for (const c of kids) e.appendChild(c);
   return e;
 }
-const anim = (attr, values, dur) => el("animate", { attributeName: attr, values, dur, repeatCount: "indefinite" });
-
 function floorSvg() {
   // viewBox −100 … 100 = 세계 ±FLOOR_HALF. 위(−y) = 세계 +z 쪽이 아니라 「사각형 꼭짓점 순서」로 맞춘다(아래 place 참고)
   return el("svg", { viewBox: "-100 -100 200 200", width: BOX, height: BOX, class: "bgcs-floor", "aria-hidden": "true" }, [
     el("defs", {}, [
       el("radialGradient", { id: "bgcs-glow" }, [
-        el("stop", { offset: "0", "stop-color": "#4fe3ff", "stop-opacity": ".34" }),
-        el("stop", { offset: ".55", "stop-color": "#ff6fb5", "stop-opacity": ".12" }),
-        el("stop", { offset: "1", "stop-color": "#ff6fb5", "stop-opacity": "0" }),
+        el("stop", { offset: "0", "stop-color": "var(--bgcs-lilac)", "stop-opacity": ".32" }),
+        el("stop", { offset: ".5", "stop-color": "var(--bgcs-lilac)", "stop-opacity": ".14" }),
+        el("stop", { offset: "1", "stop-color": "var(--bgcs-lilac)", "stop-opacity": "0" }),
       ]),
     ]),
     el("circle", { r: "98", fill: "url(#bgcs-glow)" }),
-    el("circle", { r: "78", fill: "none", stroke: "#8a74d6", "stroke-opacity": ".45", "stroke-width": "1.2" }),
-    el("circle", { r: "56", fill: "none", stroke: "#4fe3ff", "stroke-opacity": ".55", "stroke-width": "1.4", "stroke-dasharray": "6 5" }),
-    el("circle", { r: "30", fill: "#120e26", stroke: "#4fe3ff", "stroke-opacity": ".75", "stroke-width": "1.6" }),
-    // 받침 파동 — 고리가 퍼지며 옅어진다(Approach.dc.html 의 rx 34 → 44 를 원 반지름으로)
-    el("circle", { r: "30", fill: "none", stroke: "#ff6fb5", "stroke-width": "1.6" }, [anim("r", "30;62;30", "2.4s"), anim("stroke-opacity", ".7;0;.7", "2.4s")]),
+    el("circle", { r: "53", fill: "var(--bgcs-pad)", "fill-opacity": ".7", stroke: "var(--bgcs-metal)", "stroke-width": "1.8", "stroke-opacity": ".65" }),
+    el("circle", { r: "47", fill: "none", stroke: "var(--bgcs-lilac)", "stroke-width": "2", "stroke-opacity": ".6" }),
+    // 원 전체가 번쩍이거나 퍼지지 않고, 앞쪽 두 호가 천천히 숨을 쉰다.
+    el("path", { class: "bgcs-await", d: "M-77 12 A78 78 0 0 0 -40 67 M40 67 A78 78 0 0 0 77 12", fill: "none", stroke: "var(--bgcs-rose)", "stroke-width": "2.4", "stroke-linecap": "round" }),
+    el("path", { d: "M-18 84 Q0 89 18 84", fill: "none", stroke: "var(--bgcs-cream)", "stroke-width": "3", "stroke-linecap": "round", opacity: ".7" }),
+    el("ellipse", { cy: "4", rx: "36", ry: "24", fill: "var(--bgcs-shadow)", opacity: ".45" }),
   ]);
 }
 
 function standSvg() {
   const [x, y, w, h] = STAND_VB;
   return el("svg", { viewBox: `${x} ${y} ${w} ${h}`, width: BOX, height: BOX * h / w, class: "bgcs-stand", "aria-hidden": "true" }, [
-    el("path", { class: "bgcs-beam", d: "M168 548 L146 462 L244 462 L222 548 Z", fill: "#4fe3ff", "fill-opacity": ".09" }),
-    el("path", { d: "M175 612 L180 580 L210 580 L215 612 Z", fill: "#1a1436", stroke: "#4fe3ff", "stroke-opacity": ".55" }),
-    el("g", { class: "bgcs-holo" }, [
-      el("path", { d: "M160 578 L230 578 L222 548 L168 548 Z", fill: "#4fe3ff", "fill-opacity": ".22", stroke: "#4fe3ff", "stroke-width": "1.5" }),
-      el("g", { stroke: "#bff6ff", "stroke-opacity": ".8", "stroke-width": "1" }, [
-        el("path", { d: "M174 570 H192" }), el("path", { d: "M172 562 H206" }), el("path", { d: "M176 555 H200" }),
+    el("defs", {}, [
+      el("linearGradient", { id: "bgcs-shell", x2: "0%", y2: "100%" }, [
+        el("stop", { offset: "0", "stop-color": "var(--bgcs-shell-top)" }),
+        el("stop", { offset: "1", "stop-color": "var(--bgcs-shell-bottom)" }),
       ]),
-      el("rect", { x: "166", y: "549", width: "58", height: "1.6", fill: "#ffffff", "fill-opacity": ".7" }, [anim("y", "549;576;549", "2.2s")]),
+      el("linearGradient", { id: "bgcs-trim", x2: "0%", y2: "100%" }, [
+        el("stop", { offset: "0", "stop-color": "var(--bgcs-metal-light)" }),
+        el("stop", { offset: ".45", "stop-color": "var(--bgcs-metal)" }),
+        el("stop", { offset: "1", "stop-color": "var(--bgcs-metal-dark)" }),
+      ]),
+      el("linearGradient", { id: "bgcs-screen", x2: "0%", y2: "100%" }, [
+        el("stop", { offset: "0", "stop-color": "var(--bgcs-screen-top)" }),
+        el("stop", { offset: "1", "stop-color": "var(--bgcs-screen-bottom)" }),
+      ]),
+      el("linearGradient", { id: "bgcs-orbit" }, [
+        el("stop", { offset: "0", "stop-color": "var(--bgcs-rose)" }),
+        el("stop", { offset: "1", "stop-color": "var(--bgcs-cream)" }),
+      ]),
     ]),
-    el("circle", { cx: "214", cy: "566", r: "3", fill: "#ff6fb5" }, [anim("fill-opacity", "1;.2;1", "1.2s")]),
+    // 발 끝은 기존 place()의 viewBox 아래 3단위에 맞춘다. 전체를 정면 윤곽으로 그린다.
+    el("path", { d: "M51 119 Q80 112 109 119 Q119 122 116 126 Q80 132 44 126 Q41 122 51 119Z", fill: "url(#bgcs-trim)", stroke: "var(--bgcs-metal-dark)", "stroke-width": "1.2" }),
+    el("path", { d: "M63 84 H97 L101 116 Q80 124 59 116Z", fill: "url(#bgcs-shell)", stroke: "var(--bgcs-metal)", "stroke-width": "1.5" }),
+    el("path", { d: "M73 94 H87 L89 113 Q80 116 71 113Z", fill: "var(--bgcs-metal)", opacity: ".65" }),
+    el("path", { d: "M57 124 Q80 127 103 124", fill: "none", stroke: "var(--bgcs-cream)", "stroke-width": "1.5", "stroke-linecap": "round" }),
+    // 가로로 넓고 둥근 크림색 외피 + 아래 티타늄 띠. 원근 사다리꼴 대신 정면 윤곽.
+    el("path", { d: "M22 40 Q27 24 49 24 H111 Q133 24 138 40 L149 61 Q155 78 132 86 Q80 102 28 86 Q5 78 11 61Z", fill: "url(#bgcs-trim)", stroke: "var(--bgcs-metal-dark)", "stroke-width": "1.8" }),
+    el("path", { d: "M23 39 Q28 23 49 23 H111 Q132 23 137 39 L147 59 Q151 70 130 77 Q80 91 30 77 Q9 70 13 59Z", fill: "url(#bgcs-shell)", stroke: "var(--bgcs-metal-light)", "stroke-width": "1.5" }),
+    el("path", { d: "M20 72 Q80 96 140 72", fill: "none", stroke: "var(--bgcs-metal-dark)", "stroke-width": "1.3", opacity: ".65" }),
+    el("rect", { x: "69", y: "20", width: "22", height: "4", rx: "2", fill: "var(--bgcs-metal-light)" }),
+    // 넓은 유리 화면: 별 항로와 작은 계기. 읽을 수 없는 글자 · 주사선 · 깜빡임은 두지 않는다.
+    el("path", { d: "M43 31 H117 Q129 31 132 42 L137 57 Q140 68 126 71 Q80 82 34 71 Q20 68 23 57 L28 42 Q31 31 43 31Z", fill: "url(#bgcs-screen)", stroke: "var(--bgcs-metal-dark)", "stroke-width": "2" }),
+    el("path", { d: "M39 35 H119", fill: "none", stroke: "var(--bgcs-glass)", "stroke-width": "1.5", "stroke-linecap": "round", opacity: ".45" }),
+    el("ellipse", { cx: "61", cy: "53", rx: "24", ry: "13", fill: "none", stroke: "url(#bgcs-orbit)", "stroke-width": "1.3", transform: "rotate(-18 61 53)", opacity: ".75" }),
+    el("path", { d: "M61 40 L65 48 L74 49 L67 55 L69 64 L61 60 L53 64 L55 55 L48 49 L57 48Z", fill: "var(--bgcs-cream)", stroke: "var(--bgcs-rose)", "stroke-width": "1.3", "stroke-linejoin": "round" }),
+    el("circle", { class: "bgcs-await", cx: "82", cy: "46", r: "3", fill: "var(--bgcs-rose)", stroke: "var(--bgcs-cream)", "stroke-width": "1" }),
+    el("g", { fill: "none", stroke: "var(--bgcs-glass)", "stroke-width": "2", "stroke-linecap": "round" }, [
+      el("path", { d: "M98 44 H118 M98 50 H110", opacity: ".65" }),
+      el("path", { d: "M99 63 V59 M107 63 V56 M115 63 V53" }),
+    ]),
+    // 세 개의 촉각 버튼과 오른쪽 대기등. 멀리서는 큰 별, 가까이서는 조작부가 읽힌다.
+    el("g", { stroke: "var(--bgcs-metal-dark)", "stroke-width": "1" }, [
+      el("ellipse", { cx: "48", cy: "78", rx: "4.5", ry: "2.8", fill: "var(--bgcs-rose)" }),
+      el("ellipse", { cx: "63", cy: "81", rx: "4.5", ry: "2.8", fill: "var(--bgcs-cream)" }),
+      el("ellipse", { cx: "78", cy: "82", rx: "4.5", ry: "2.8", fill: "var(--bgcs-mint)" }),
+    ]),
+    el("rect", { x: "99", y: "77", width: "15", height: "4", rx: "2", fill: "var(--bgcs-metal-dark)" }),
+    el("path", { class: "bgcs-await", d: "M102 79 H111", stroke: "var(--bgcs-cream)", "stroke-width": "2", "stroke-linecap": "round" }),
   ]);
 }
 

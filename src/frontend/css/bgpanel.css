@@ -11,15 +11,49 @@
   --ufo-mono: "Chakra Petch", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-/* ── 바닥 콘솔(배경 층 안, 누르기 통과) */
-#bgdeco .bgcs { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease; }
+/* ── 바닥 콘솔: 크림색 비행접시 조종대. 화면 패널의 --ufo-* 색과 독립. */
+#bgdeco .bgcs {
+  --bgcs-cream: #fff0d7;
+  --bgcs-rose: #ffb3cd;
+  --bgcs-lilac: #b39ce8;
+  --bgcs-mint: #bce5cf;
+  --bgcs-shell-top: #fff1dc;
+  --bgcs-shell-bottom: #d9cadc;
+  --bgcs-metal-light: #e4deed;
+  --bgcs-metal: #a5a1bf;
+  --bgcs-metal-dark: #6d6487;
+  --bgcs-screen-top: #40334f;
+  --bgcs-screen-bottom: #756284;
+  --bgcs-glass: #e5d5f5;
+  --bgcs-pad: #30293f;
+  --bgcs-shadow: #171423;
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease;
+}
+:root[data-theme="light"] #bgdeco .bgcs {
+  --bgcs-cream: #fff4df;
+  --bgcs-rose: #f6a4c1;
+  --bgcs-lilac: #c2a7ed;
+  --bgcs-mint: #b0d9c2;
+  --bgcs-shell-top: #fff7e9;
+  --bgcs-shell-bottom: #e2d6e4;
+  --bgcs-metal-light: #f1eaf3;
+  --bgcs-metal: #b4a9c5;
+  --bgcs-metal-dark: #7c6d8b;
+  --bgcs-screen-top: #58425f;
+  --bgcs-screen-bottom: #95768e;
+  --bgcs-glass: #f6e3f5;
+  --bgcs-pad: #45394f;
+  --bgcs-shadow: #292235;
+}
 #bgdeco .bgcs.is-on { opacity: 1; }
 #bgdeco .bgcs[hidden] { display: none; }
 #bgdeco .bgcs > svg { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: visible; will-change: transform; }
-#bgdeco .bgcs-holo { animation: ufo-holo 3.2s infinite; }
-#bgdeco .bgcs-beam { animation: ufo-beam 2.4s ease-in-out infinite; }
-@keyframes ufo-holo { 0%, 46%, 52%, 100% { opacity: .95; } 48% { opacity: .45; } 50% { opacity: .85; } }
-@keyframes ufo-beam { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+#bgdeco .bgcs-await { animation: bgcs-idle 3.8s ease-in-out infinite; }
+@keyframes bgcs-idle { 0%, 100% { opacity: .45; } 50% { opacity: .95; } }
+@media (prefers-reduced-motion: reduce) {
+  #bgdeco .bgcs { transition: none; }
+  #bgdeco .bgcs-await { animation: none; opacity: .8; }
+}
 
 /* ── 화면 패널(화면 가운데 고정). #bg-peek-catch(970) 위라 패널을 눌러도 배경 보기가 닫히지 않는다 */
 .ufo-hud {
