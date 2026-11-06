@@ -213,7 +213,6 @@ uniform vec3 uFloorIn, uFloorOut, uPad, uGlow, uRim;
 uniform float uFloorRefl, uLightK;
 out vec4 outColor;
 const float TAU = 6.2831853, D = 0.01745329;
-const float BAYER4[16] = float[16](0., 8., 2., 10., 12., 4., 14., 6., 3., 11., 1., 9., 15., 7., 13., 5.);   // 4×4 Bayer — 점을 켜는 고정 순서
 uniform vec3 E;   // 눈 위치 = EYE(줌으로 움직인다)
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -816,7 +815,7 @@ void main() {
     outc += mix(vec3(.12,.85,1),vec3(1,.16,.64),sector) * edge * (.08 + 2.4*grid + .16*scan) * (1.0-floorK);
   }
   // 하늘 전환 「돔 재투영」: 천정 쪽에서 위도를 따라 휘는 경계 한 줄이 돔 가장자리로 내려온다. 지나간 쪽 = 새 하늘.
-  // 경계 근처만 화면 좌표 4×4 Bayer 점무늬(칸 6 CSS px — 고정 순서라 점마다 한 번만 바뀐다)로 옛/새를 섞는다.
+  // 경계 근처만 화면 좌표 점무늬(칸 6 CSS px, 칸마다 고정 무작위 문턱 — 점마다 한 번만 바뀐다)로 옛/새를 섞는다.
   // 바닥은 경계가 고리에 닿을 때 함께 바뀌고(세 목적지 모두 같은 무대 바닥), 선 · 잔광은 돔 쪽에만.
   if (uSkyFx.x >= 0.0) {
     float colJ = fract(sin(floor((lon + TAU * .5) / (30.0 * D)) * 12.9898) * 43758.5453) * .028;   // 경도 칸마다 0~25ms 차이
@@ -825,8 +824,12 @@ void main() {
     float bl = mix(uSkyFx2.x, uSkyFx2.y, tc);
     float le = mix(lat, uSkyFx2.y + 2.0 * D, floorK);
     float s = clamp((le - bl) / (mix(1.2, 7.0, uSkyFx.z) * D), 0.0, 1.0);
-    vec2 bc = mod(floor(p / 6.0), 4.0);   // 점 한 칸 6 CSS px(11-06 운영자 「도트를 더 크게」 — 처음 3px)
-    float reveal = step((BAYER4[int(bc.y) * 4 + int(bc.x)] + .5) / 16.0, s);
+    // 점 한 칸 6 CSS px(11-06 운영자 「도트를 더 크게」 — 처음 3px). 칸마다 고정된 무작위 문턱(11-06 운영자 「같은 무늬가 반복돼 보인다 → 랜덤」
+    // — 처음엔 4×4 Bayer 라 12px 마다 같은 무늬가 찍혀 보였다). 문턱이 칸마다 고정이라 점은 한 번만 바뀌고 반짝이지 않는다.
+    vec2 cell = floor(p / 6.0);
+    vec3 hq = fract(vec3(cell.xyx) * vec3(.1031, .1030, .0973));
+    hq += dot(hq, hq.yzx + 33.33);
+    float reveal = step(fract((hq.x + hq.y) * hq.z), s);
     vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
     float dome = 1.0 - floorK;
     float dpx = (le - bl) / latW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
