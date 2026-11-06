@@ -471,7 +471,11 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
   vec4 A = skySet(uSky, uCloud, uSkyM, uSkyO, uCldM, uCldO, u, v, el);
   vec4 B = uMix > 0.0 ? skySet(uSky2, uCloud2, uSkyM2, uSkyO2, uCldM2, uCldO2, u, v, el) : A;
   vec3 c = mix(A.rgb, B.rgb, uMix);
+#if GROUND_OUTDOOR
+  if (uOut < 0.5) return c * uPupil.x;   // 바깥 프로그램에는 우주 표본기를 넣지 않는다(표본기 16개 한도 — 아래 makeProgram 주석)
+#else
   if (uOut < 0.5) return (uSpace.x > 0.5 ? spaceSky(d, pxAng) : c) * uPupil.x;
+#endif
   float cloud = uCloudTest >= 0.0 ? uCloudTest * uCldA : mix(A.a, B.a, uMix);
   float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
 #if GROUND_OUTDOOR
@@ -972,7 +976,9 @@ export function createDomeGL(host, isPaused) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "map" ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        spaceTex[key] = tex; if (key === "map") spaceTex.mapW = img.width; draw();
+        spaceTex[key] = tex; if (key === "map") spaceTex.mapW = img.width;
+        if (outdoor) releaseGround?.terrain?.rebind?.();   // 그사이 바깥(지형)으로 바뀌었으면 13 · 14번 칸을 지형 것으로 되돌린다
+        gl.activeTexture(gl.TEXTURE0); draw();
       };
       img.onerror = () => console.warn("[bgdome] 우주 사진을 못 받음", name);
       img.src = new URL("../assets/bg/eval/" + name, import.meta.url).href;
@@ -1044,6 +1050,11 @@ export function createDomeGL(host, isPaused) {
       // Compile away the fallback ridge/material path. Keeping both in one
       // fragment program increases register pressure even after the bake.
       fragment = fragment.replace("uniform float uTerrainOn;", "const float uTerrainOn = 1.0;");
+    } else {
+      // (11-06 수정) 실내 · 지형 없는 바깥 프로그램은 지형을 쓰지 않는다(terrain.view 는 지형 프로그램에서만 1) — 상수 0 으로 지형 경로와
+      // 표본기 6개를 컴파일에서 빼낸다. 안 빼면 산 장소 기기에서 실내 = 하늘 4 · 달 · 테마 · 우주 2 · 바닥 4 · 지형 6 = 18 개로
+      // 폰 · PC 흔한 한도(MAX_TEXTURE_IMAGE_UNITS 16)를 넘어 WebGL 이 통째로 실패했다(11-05 우주 배경 추가 뒤부터).
+      fragment = fragment.replace("uniform float uTerrainOn;", "const float uTerrainOn = 0.0;");
     }
     // Keep the indoor arithmetic identical to the original uniform path;
     // constant-folded sphere geometry can move a final 8-bit rounding boundary.
@@ -1079,6 +1090,7 @@ export function createDomeGL(host, isPaused) {
 
   function useViewProgram() {
     const target = programs[outdoor ? (releaseGround?.terrain?.ready ? "terrain" : "outdoor") : "indoor"];
+    if (target === programs.terrain) releaseGround?.terrain?.rebind?.();   // 실내가 13 · 14번 칸에 꽂은 우주 · 검정 질감을 지형 것으로
     if (target.program === prog) return;
     gl.useProgram(target.program);
     for (let i = 0; i < gl.getProgramParameter(target.program, gl.ACTIVE_UNIFORMS); i++) {
@@ -1392,15 +1404,19 @@ export function createDomeGL(host, isPaused) {
       if (WARP_FIXED != null) warpDist = el * scroll; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now; }
       gl.uniform4f(U.uSpace, 1, beta, warpDist, scroll);
       loadSpaceTex();
-      // 13 · 14번 칸에는 지형의 정수 질감(RGB16UI)이 남아 있을 수 있다 — float 표본기로 읽으면 그리기가 통째로 실패하므로
-      // 사진이 아직 없으면 1×1 검정을 꽂아 둔다.
-      if (!spaceTex.blank) { spaceTex.blank = gl.createTexture(); gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.blank); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255])); }
-      gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.map || spaceTex.blank);
-      gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, spaceTex.deep || spaceTex.blank);
       gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
       gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
       gl.uniform3f(U.uWarpDir, 0, 0.05, 0.99875);
     } else gl.uniform4f(U.uSpace, 0, 0, 0, 0);
+    // (11-06 수정) 실내 프로그램의 우주 표본기(13 · 14번, float)는 분홍 하늘일 때도 활성이다. 산 장소 기기는 그 칸에 지형의 정수 질감(RGBA16UI)이
+    // 꽂혀 있어 float 표본기와 종류가 어긋나면 그리기가 통째로 실패(하늘 · 바닥 검정)하므로, 실내는 매번 우주 사진 또는 1×1 검정을 꽂는다.
+    // 지형 프로그램으로 돌아갈 때는 useViewProgram 이 terrain.rebind() 로 되돌린다.
+    if (!outdoor) {
+      if (!spaceTex.blank) { spaceTex.blank = gl.createTexture(); gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.blank); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255])); }
+      gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, spaceTex.map || spaceTex.blank);
+      gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, spaceTex.deep || spaceTex.blank);
+      gl.activeTexture(gl.TEXTURE0);
+    }
     gl.uniform1f(U.uMoonCue, 0);
     let moonRadius = SUN_MOON_R[1] * DEG;
     if (astro && SIZE_MODE === "eye") {

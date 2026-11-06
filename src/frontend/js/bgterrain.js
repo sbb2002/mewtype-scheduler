@@ -146,7 +146,8 @@ export function createTerrain(gl, world, changed) {
     if (metrics.uploads.length > 64) metrics.uploads.shift(); return tex;
   }
   // Valid sampler bindings before first bake; the existing terrain remains visible.
-  for (const unit of [8, 11, 12, 13, 14, 15]) upload(unit, 1, 1, unit === 11 || unit === 13 ? new Uint16Array(4) : new Uint8Array(4), unit === 11 || unit === 13 ? 'uint' : false);
+  const placeholder = {};
+  for (const unit of [8, 11, 12, 13, 14, 15]) placeholder[unit] = upload(unit, 1, 1, unit === 11 || unit === 13 ? new Uint16Array(4) : new Uint8Array(4), unit === 11 || unit === 13 ? 'uint' : false);
   function remove(tex) { gl.deleteTexture(tex); const i = textures.indexOf(tex); if (i >= 0) textures.splice(i, 1); }
   function afterGPU(run) {
     // Texture mutation can otherwise wait synchronously for an older draw on
@@ -248,6 +249,12 @@ export function createTerrain(gl, world, changed) {
       if (tile) { const x = (a - tile.az + TAU) % TAU / tile.da * tile.w - .5, l = Math.floor(x), f = x - l; return Math.max(dip, tile.skyline[Math.max(0, l)] * (1 - f) + tile.skyline[Math.min(tile.w - 1, l + 1)] * f); }
       const x = (a - Math.PI) / Math.PI * BASE.w - .5, l = Math.floor(x), f = x - l;
       return Math.max(dip, skyline[Math.max(0, l)] * (1 - f) + skyline[Math.min(BASE.w - 1, l + 1)] * f);
+    },
+    /** 13 · 14번 칸을 지형 것으로 되돌린다 — 실내 프로그램이 그 칸에 우주 사진(float)을 꽂아 쓰므로 지형 프로그램으로 돌아올 때 부른다(11-06) */
+    rebind() {
+      gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, selected ? selected.geometry : placeholder[13]);
+      gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, selected ? selected.normal : placeholder[14]);
+      gl.activeTexture(gl.TEXTURE0);
     },
     view(U, az, el, hfov, vfov, zoom, width, height) {
       if (failed || !ready) { gl.uniform1f(U.uTerrainOn, 0); return; }

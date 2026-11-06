@@ -69,7 +69,9 @@ function build() {
       catch (err) { console.warn("[bgdome] WebGL 그리기 실패 — SVG 로 그린다", err); domeGL.destroy?.(); domeGL = null; }
     }
     // (WebGL2 를 못 쓰는 기기) 구름은 재생 위치를 유지하고, 정지된 유리만 현재 화면 크기로 다시 투영한다.
-    scene = buildDomeScene(host, W, H);
+    // SVG 장면까지 실패해도 페이지(레인 · 소식) 초기화는 계속돼야 한다 — 그때는 배경색만
+    try { scene = buildDomeScene(host, W, H); }
+    catch (err) { console.warn("[bgdome] SVG 장면도 실패 — 배경색만", err); scene = null; svg = null; items = []; bodies = []; els = []; return; }
     ({ svg, items, els } = scene);
     bodies = items.map((it) => ({ ...makeBody(it, W, H), home: true, m: it.u * 1.5 }));
     host.appendChild(svg);
