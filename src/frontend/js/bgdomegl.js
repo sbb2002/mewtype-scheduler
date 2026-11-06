@@ -11,7 +11,7 @@
 // 시선은 실내 · 바깥 모두 폰이 실제로 향한 방향 그대로(updateView). 해상도는 기기 배율 1.5 까지만.
 
 import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
-import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView } from "./bgview.js";
+import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView, wipeDown } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
@@ -968,12 +968,18 @@ export function createDomeGL(host, isPaused) {
   let themeFrame = null, themeStart = -Infinity;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let spaceT0 = null, warpLast = 0, warpDist = 0;
-  const spaceTex = { map: null, deep: null, blank: null, mapW: 1, loading: false };
+  const spaceTex = { map: null, deep: null, blank: null, mapW: 1, loading: false, ready: null };
+  /** 우주 사진을 받는다(한 번만). 돌려주는 약속 = 사진이 다 올라갔거나 실패했을 때 풀린다 — 패널에서 고를 때 다 받은 뒤 걷기 시작하려고 */
   function loadSpaceTex() {
-    if (spaceTex.loading) return; spaceTex.loading = true;
+    if (spaceTex.loading) return spaceTex.ready; spaceTex.loading = true;
+    let left = (SPACE_MODE !== "shader" ? 1 : 0) + (SPACE_DEEP ? 1 : 0), settle;
+    spaceTex.ready = new Promise((res) => { settle = res; });
+    const one = () => { if (--left <= 0) settle(); };
+    if (left <= 0) settle();
     const load = (name, key, unit) => {
       const img = new Image(); img.decoding = "async";
       img.onload = () => {
+        one();
         if (gl.isContextLost()) return;
         const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); gl.generateMipmap(gl.TEXTURE_2D);
@@ -983,11 +989,12 @@ export function createDomeGL(host, isPaused) {
         if (outdoor) releaseGround?.terrain?.rebind?.();   // 그사이 바깥(지형)으로 바뀌었으면 13 · 14번 칸을 지형 것으로 되돌린다
         gl.activeTexture(gl.TEXTURE0); draw();
       };
-      img.onerror = () => console.warn("[bgdome] 우주 사진을 못 받음", name);
+      img.onerror = () => { one(); console.warn("[bgdome] 우주 사진을 못 받음", name); };
       img.src = new URL("../assets/bg/eval/" + name, import.meta.url).href;
     };
     if (SPACE_MODE !== "shader") load(SPACE_MODE === "eso" ? "space-eso.jpg" : "space-starmap.jpg", "map", 13);
     if (SPACE_DEEP) load("space-deep.jpg", "deep", 14);
+    return spaceTex.ready;
   }   // 실내 우주 배경의 워프 시작 · 적분 거리
   try { init(); } catch (err) { console.warn("[bgdome] WebGL 초기화 실패 — SVG 로 그린다", err); return null; }
 
@@ -1006,11 +1013,25 @@ export function createDomeGL(host, isPaused) {
   const ufoPanel = createUfoPanel();
   const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
-  ufoPanel.onPick((key) => {
-    if (key === "earth") { if (!outdoor) chooseBgView("outdoor"); return; }
-    if (key !== INDOOR_BG) setIndoorBg(key);
-    if (outdoor) setBgView("indoor");
+  // (11-06 운영자) 하늘이 확 바뀌지 않고 위에서부터 서서히 걷히며 바뀐다(bgview.js wipeDown).
+  // 초행성X 는 우주 사진을 다 받은 뒤에 걷기 시작한다 — 안 그러면 빈 하늘이 드러났다가 사진이 툭 나타난다(받는 동안 칸에 「불러오는 중…」, 길어야 4초).
+  let picking = false;
+  ufoPanel.onPick(async (key) => {
+    if (key === "earth") { if (!outdoor) chooseBgView("outdoor"); return; }   // 위치를 받은 뒤 bgview.js 가 걷는다
+    if (picking || (key === INDOOR_BG && !outdoor)) return;
+    picking = true;
+    if (key === "space" && !outdoor) {
+      spacePreload = true;
+      await Promise.race([loadSpaceTex(), new Promise((r) => setTimeout(r, 4000))]);
+      spacePreload = false;
+    }
+    wipeDown(() => {
+      if (key !== INDOOR_BG) setIndoorBg(key);
+      if (outdoor) setBgView("indoor");
+    });
+    picking = false;
   });
+  let spacePreload = false;
   document.addEventListener(BGINDOOR_EVENT, (e) => {
     const v = e.detail === "space" ? "space" : "pink";
     if (v === INDOOR_BG) return;
@@ -1556,7 +1577,7 @@ export function createDomeGL(host, isPaused) {
     if (want) {
       ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
-      const loading = INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map;
+      const loading = spacePreload || (INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map);
       ufoPanel.setChip("space", loading ? "불러오는 중…" : "길게 누르면 워프");
     }
     ufoPanel.set(want);
