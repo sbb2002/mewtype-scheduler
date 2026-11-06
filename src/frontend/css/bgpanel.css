@@ -147,7 +147,7 @@
 .ufo-frame__line { fill: none; stroke: rgba(160, 242, 255, .9); stroke-width: 1.2; transition: stroke .3s; }
 @keyframes ufo-frame-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
 .ufo-holo.is-red .ufo-frame { filter: drop-shadow(0 0 2px rgba(255, 61, 90, .95)) drop-shadow(0 0 8px rgba(255, 61, 90, .6)) drop-shadow(0 0 20px rgba(255, 61, 90, .35)); }
-.ufo-holo.is-red .ufo-frame__line { stroke: rgba(255, 150, 170, .95); }
+.ufo-holo.is-red .ufo-frame__line { stroke: rgba(255, 64, 88, .98); stroke-width: 1.4; }   /* 레드존 = 또렷한 빨간 선(11-06 운영자 — 전엔 분홍빛 흰색이라 빨강으로 안 보였다) */
 /* (11-06 운영자 「주사선과 스캔라인」 → 「조금 더 잘 보이게 · 스캔라인은 천천히」) 주사선 = 3px 마다 가는 가로줄(밝은 줄 + 어두운 줄),
    스캔라인 = 시안 빛 띠가 위에서 아래로 훑고 지나감(6초마다 한 번, 지나가는 데 약 3.3초). 글자보다 뒤(카드 맨 앞 자식)라 읽기를 방해하지 않는다. */
 .ufo-scan {

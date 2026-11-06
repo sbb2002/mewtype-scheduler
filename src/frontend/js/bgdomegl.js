@@ -331,6 +331,8 @@ float moonDisc(vec3 t, float facing, float pxAng) {
 // uSpace.x = 우주 배경 켬, .y = 속도 β(v/c), .z = 지나가는 별 스크롤 누적 거리, .w = 지금 스크롤 속도. 진행 방향 uWarpDir = 돔 정면 지평선.
 // 색 = 상대론적 도플러: 진행 방향(축 가까이)은 푸르게, 옆은 흰색, 뒤쪽일수록 붉게. 광행차로 별이 앞쪽에 몰린다.
 uniform vec4 uSpace; uniform vec3 uWarpDir;
+// (11-06 운영자) 지나가는 별 궤적 수 = 속도에 따라(기어 N 0 · 1단 6 · 2단 12 · 3단 18 · 4단 26 · 5단 36, 사이는 이어서). 소수 부분 = 막 나타나는 줄의 밝기
+uniform float uTrailN;
 // (11-05 2차) 우주 배경 비교용: uSpaceTex = (하늘 지도 켬, 딥필드 켬, 지도 종류 1 = NASA 별 지도 · 2 = ESO 은하수, 지도 노출).
 // 지도는 등장방형(equirect) — 13번 칸, 딥필드 사진 — 14번 칸(실내에서는 지형 확대 조각 칸이 비어 있다).
 uniform sampler2D uSpaceMap, uSpaceDeep; uniform vec4 uSpaceTex; uniform vec2 uSpaceMapSize;
@@ -435,7 +437,10 @@ vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta,
   float s = log(tan(max(acos(cr), 1e-3) * 0.5));
   float lanes = 64.0, fi = (ph / TAU + 0.5) * lanes, lane = floor(fi), fx = fract(fi) - 0.5;
   float hl = h1(lane * 1.37 + 3.0);
-  if (hl < 0.58) return vec3(0);   // 64 줄 중 약 31 줄(전엔 0.68 로 약 27 줄). 픽셀마다 자기 줄 하나만 계산해 줄 수와 비용은 거의 무관
+  // 나타나는 차례 = 64 칸을 37 씩 건너뛰며 매긴 순번(37 은 64 와 서로소라 겹치지 않는 고정 순서 — 늘 같은 줄이 먼저, 화면 둘레에 고루 퍼짐).
+  // 순번 < uTrailN 인 칸만 궤적, 경계 칸은 소수 부분만큼 옅게 → 속도가 오르내리면 한 줄씩 서서히 나타나고 사라진다. 픽셀마다 자기 칸 하나만 계산해 줄 수와 비용은 거의 무관
+  float rank = mod(lane * 37.0, 64.0), show = clamp(uTrailN - rank, 0.0, 1.0);
+  if (show <= 0.0) return vec3(0);
   float speed = 0.8 + 0.8 * h1(lane * 7.1);                    // 별마다 거리가 달라 지나가는 빠르기가 다르다
   float P = 12.0, head = mod(dist * speed + hl * 97.0, P) - 6.0; // 머리 위치(로그 극좌표 s), 앞(−)에서 뒤(+)로
   float behind = mod(head - s + P, P);                           // 머리에서 꼬리 쪽으로 떨어진 거리
@@ -452,7 +457,7 @@ vec3 passingStars(vec3 F, float cr, float ph, float pxRest, float D, float beta,
   vec3 dc = bbColor(T * D);
   dc = clamp(mix(vec3(dot(dc, vec3(0.3, 0.5, 0.2))), dc, 1.9), 0.0, 1.0);
   dc *= mix(vec3(1.0), vec3(0.62, 0.78, 1.35), smoothstep(1.0, 4.0, D)) * mix(vec3(1.0), vec3(1.35, 0.7, 0.45), smoothstep(1.0, 0.35, D));
-  return dc * (k * k * (core + glow) + headDot * core) * min(pow(D, 1.5), 12.0) * 1.1 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr);
+  return dc * (k * k * (core + glow) + headDot * core) * min(pow(D, 1.5), 12.0) * 1.1 * smoothstep(0.03, 0.2, beta) * smoothstep(0.995, 0.93, cr) * show;
 }
 vec3 spaceSky(vec3 d, float pxAng) {
   float beta = uSpace.y;
@@ -1786,6 +1791,12 @@ export function createDomeGL(host, isPaused) {
     const r0 = [cy_, 0, -sy];
     return { fwd: [sy * cp, sp, cy_ * cp], right: r0, up: [-sy * sp, cp, -cy_ * sp], hright: r0 };
   }
+  // 별 궤적 수(운영자 11-06 확정) — 기어 단의 속도에서 N 0 · 0.30c 6 · 0.60c 12 · 0.80c 18 · 0.90c 26 · 0.99c 36, 그 사이는 직선으로 이어 속도를 따라 한 줄씩
+  const TRAIL_AT = [[0, 0], [0.3, 6], [0.6, 12], [0.8, 18], [0.9, 26], [0.99, 36]];
+  function trailCount(b) {
+    for (let i = 1; i < TRAIL_AT.length; i++) { const [b0, n0] = TRAIL_AT[i - 1], [b1, n1] = TRAIL_AT[i]; if (b <= b1) return n0 + (n1 - n0) * Math.max(0, (b - b0) / (b1 - b0)); }
+    return 36;
+  }
   // 배경 그림을 읽을 때 돌릴 각(라디안) — 폰 기울임(rollS)의 반대. 분홍 구름 하늘(실내 분홍)은 0(운영자: 제외 · 판정 불필요)
   // (11-06 운영자 의도) 수평 가까이 든 채 기울이면 배경은 수평에서 「조금만」 기울고(보정이 대부분 잡아 줌), 45° 넘게 확연히 돌리면 배경도 폰과 함께
   // 그 기울기를 그대로 따라간다(보정 없음). 눈에 보이는 배경 기울기 = 폰 기울기 × g, g = 0.2 + 0.8 · smoothstep(0°, 45°, |기울임|)
@@ -1836,6 +1847,7 @@ export function createDomeGL(host, isPaused) {
       const scroll = 0.45 + 1.6 * beta;                       // 지나가는 별의 흐름 빠르기(로그 극좌표 s / 초)
       warpDist += Math.min(0.1, Math.max(0, now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now;
       gl.uniform4f(U.uSpace, 1, beta, warpDist, scroll);
+      gl.uniform1f(U.uTrailN, trailCount(beta));
       loadSpaceTex();
       gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
       gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
