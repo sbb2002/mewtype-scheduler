@@ -30,7 +30,8 @@ const ZOOM_R_MAX = 0.6;
 const ZOOM_PER_SCREEN = 1.5;   // 두 손가락 거리가 화면 폭만큼 줄면 r 이 이만큼 는다
 // (11-06 운영자 「제안대로」) UFO 조작 패널 — 배경 보기는 뒤로 물러난 자리에서 시작하고, 가운데 콘솔로 다가가면 패널이 뜬다.
 // 문턱은 히스테리시스(나타남 · 사라짐 값이 다름), 망원(×1 초과)이면 숨김. 값은 폰에서 만져 보고 조정.
-const PEEK_START_R = 0.4, PANEL_ON_R = 0.12, PANEL_OFF_R = 0.18;
+// 11-06 운영자 「인식 범위가 너무 좁다 — 2배로」: 0.12 · 0.18 → 0.24 · 0.36(시작 0.4 보다 안쪽이라 열자마자 뜨지는 않는다).
+const PEEK_START_R = 0.4, PANEL_ON_R = 0.24, PANEL_OFF_R = 0.36;
 const EYE = EYE0.slice();      // 지금 눈 위치 — 프레임마다 갱신
 const BASE_PITCH = 28 * DEG;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
