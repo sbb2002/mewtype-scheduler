@@ -828,7 +828,8 @@ void main() {
     tc = tc * tc * (3.0 - 2.0 * tc);
     float bl = mix(uSkyFx2.x, uSkyFx2.y, tc);
     float le = mix(skyPos, uSkyDir.x < .5 ? -2.0 * D : (uSkyDir.x < 1.5 ? 2.0 * D : skyPos), floorK);
-    float s = clamp((le - bl) / (mix(1.2, 7.0, uSkyFx.z) * D), 0.0, 1.0);
+    float bandW = mix(1.2, 7.0, uSkyFx.z) * D;
+    float s = clamp((le - bl) / bandW, 0.0, 1.0);
     // 점 한 칸 6 CSS px(11-06 운영자 「도트를 더 크게」 — 처음 3px). 칸마다 고정된 무작위 문턱(11-06 운영자 「같은 무늬가 반복돼 보인다 → 랜덤」
     // — 처음엔 4×4 Bayer 라 12px 마다 같은 무늬가 찍혀 보였다). 문턱이 칸마다 고정이라 점은 한 번만 바뀌고 반짝이지 않는다.
     vec2 cell = floor(p / 6.0);
@@ -840,10 +841,10 @@ void main() {
     reveal = mix(reveal, smoothstep(0.0, 1.0, s), floorK);   // 바닥(무대 원판)은 점으로 깨지지 않게 부드럽게 — 지구는 바닥 조명이 달라 점이 보였다(11-06)
     vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
     float dome = 1.0 - floorK;
-    float dpx = (le - bl) / skyW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
+    // 흰 선 = 「여기까지 전환 완료」(11-06 운영자) — 점무늬 띠의 뒤 끝(s = 1, 점이 다 나타난 곳)에 둔다. 점무늬가 앞서 가고 선이 뒤따른다(경도 방향도 같다).
+    float dpx = (le - bl - bandW) / skyW / uDpr;              // 선까지 CSS px(+ = 전환이 끝난 쪽)
     // 경도 방향은 천정 근처에서 경도가 한 점에 모여 픽셀당 각도가 커진다 — 거기선 선을 그리지 않는다(흰 덩어리 방지)
     float lineK = (1.0 - smoothstep(.9, 1.0, uSkyFx.x)) * dome * uSkyFx.y * (1.0 - smoothstep(.5 * D, 2.0 * D, skyW));
-    res *= 1.0 - .22 * exp(min(dpx, 0.0) / 9.0) * step(dpx, 0.0) * lineK;   // 선 바로 앞(옛 쪽)을 살짝 어둡게 — 밝은 구름 위에서도 선이 읽히게
     vec3 cyan = vec3(.31, .89, 1.0);
     // (11-06 운영자 「흰 선을 도트보다 앞으로 · 글로우와 두께를 더」 → 「흰 띠 두께 4배」) 빛 번짐을 먼저 더하고, 흰 심(약 16 CSS px)은 덮어 그려 점무늬 위에 선다
     res += cyan * (exp(-abs(dpx) / 28.0) * .55 + exp(-abs(dpx) / 12.0) * .45) * lineK;
