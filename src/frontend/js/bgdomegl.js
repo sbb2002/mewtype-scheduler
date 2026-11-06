@@ -829,16 +829,16 @@ void main() {
     vec2 cell = floor(p / 6.0);
     vec3 hq = fract(vec3(cell.xyx) * vec3(.1031, .1030, .0973));
     hq += dot(hq, hq.yzx + 33.33);
-    float reveal = step(fract((hq.x + hq.y) * hq.z), s);
+    float reveal = step(.01 + .98 * fract((hq.x + hq.y) * hq.z), s);   // 문턱 0.01~0.99 — 문턱이 0 인 칸이 경계 앞(옛 하늘)에 미리 박히지 않게
     vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
     float dome = 1.0 - floorK;
     float dpx = (le - bl) / latW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
     float lineK = (1.0 - smoothstep(.9, 1.0, uSkyFx.x)) * dome * uSkyFx.y;
     res *= 1.0 - .22 * exp(min(dpx, 0.0) / 9.0) * step(dpx, 0.0) * lineK;   // 선 바로 앞(옛 쪽)을 살짝 어둡게 — 밝은 구름 위에서도 선이 읽히게
     vec3 cyan = vec3(.31, .89, 1.0);
-    // (11-06 운영자 「흰 선을 도트보다 앞으로 · 글로우와 두께를 더」) 빛 번짐을 먼저 더하고, 흰 심(약 4 CSS px)은 덮어 그려 점무늬 위에 선다
-    res += cyan * (exp(-abs(dpx) / 16.0) * .55 + exp(-abs(dpx) / 5.0) * .45) * lineK;
-    res = mix(res, vec3(1.0, .97, .92), (1.0 - smoothstep(1.4, 2.6, abs(dpx))) * .95 * min(lineK, 1.0));
+    // (11-06 운영자 「흰 선을 도트보다 앞으로 · 글로우와 두께를 더」 → 「흰 띠 두께 4배」) 빛 번짐을 먼저 더하고, 흰 심(약 16 CSS px)은 덮어 그려 점무늬 위에 선다
+    res += cyan * (exp(-abs(dpx) / 28.0) * .55 + exp(-abs(dpx) / 12.0) * .45) * lineK;
+    res = mix(res, vec3(1.0, .97, .92), (1.0 - smoothstep(6.5, 9.5, abs(dpx))) * .95 * min(lineK, 1.0));
     float glow = uSkyFx.w * uSkyFx2.w * dome * reveal;
     res += vec3(1.0, .44, .71) * (.14 * exp(-max(dpx, 0.0) / 60.0) + 1.6 * grid) * glow;   // 지나간 쪽 이음선 · 가장자리에 분홍 잔광
     outc = mix(res, outc, uSkyFx2.z);
@@ -1436,9 +1436,17 @@ export function createDomeGL(host, isPaused) {
     if (reducedMotion.matches || !W || isPaused() || gl.isContextLost() || !prog || !document.documentElement.classList.contains("bg-peek")) return;
     captureFrame();
     themeStart = -Infinity;
-    // 천정이 화면 밖이면 경계가 보이는 돔 위쪽 조금 위에서 시작한다(안 보이는 곳에서 시간을 쓰지 않게)
-    const top = pitch + Math.atan(cy / viewFocal());
-    sky = { t0: performance.now(), fx: SKY_FX[dest] || SKY_FX.pink, yaw, pitch, startLat: Math.max(12 * DEG, Math.min(92 * DEG, top + 8 * DEG)), shortAt: null, shortMs: SKY_SHORT_MS, tx: true };
+    // (11-06 운영자 「시야 밖 위쪽에서부터」) 화면 위 가장자리(왼 · 가운데 · 오른쪽)가 닿는 돔 위도 중 가장 높은 것보다 조금 위에서 시작한다
+    // — 경계가 화면 밖에서 들어와 위에서 아래로 지나간다(천정이 보이면 천정 너머에서). 셰이더와 같은 투영(눈 EYE → 단위 구).
+    const B = basis(), F = viewFocal();
+    let topLat = -90 * DEG;
+    for (const x of [0, W / 2, W]) {
+      const d = B.fwd.map((f, i) => f + B.right[i] * (x - cx) / F + B.up[i] * cy / F);
+      const n = Math.hypot(...d), u = d.map((v) => v / n);
+      const b = dot3(EYE, u), c = dot3(EYE, EYE) - 1, t = -b + Math.sqrt(Math.max(b * b - c, 0));
+      topLat = Math.max(topLat, Math.asin(Math.max(-1, Math.min(1, EYE[1] + t * u[1]))));
+    }
+    sky = { t0: performance.now(), fx: SKY_FX[dest] || SKY_FX.pink, yaw, pitch, startLat: Math.min(94 * DEG, topLat + 6 * DEG), shortAt: null, shortMs: SKY_SHORT_MS, tx: true };
     ufoPanel.transmit(true);
   }
   function endSky() { if (!sky) return; sky = null; ufoPanel.transmit(false); }
