@@ -4,7 +4,7 @@
 // 고정 문구 · 그림만 쓰고 모두 createElement(NS) · textContent 로 만든다(innerHTML 금지).
 // 예전 큰 속도계 · 카드 겹치기 안 = 브랜치 test/bg-dome-deck-v52.
 
-import { GEAR_BETA, isRed, warpReady } from "./bgwarp.js";
+import { GEAR_BETA, isRed, warpReady, gearPos } from "./bgwarp.js";
 import { holoParts } from "./bgpanel.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -142,7 +142,7 @@ export function createGearPanel({ onGear, onWarp }) {
       const beta = jumping ? jumpBeta : st.beta, red = jumping ? beta >= 0.85 : isRed(st), moving = st.mode !== "idle";
       set("red", red, (v) => root.classList.toggle("is-red", v));
       set("beta", beta.toFixed(2), (v) => { read.textContent = v + "c"; });
-      set("fill", (beta / 0.99 * 100).toFixed(1), (v) => { fill.style.width = v + "%"; });
+      set("fill", (gearPos(beta) * 20).toFixed(1), (v) => { fill.style.width = v + "%"; });   // 채움 끝 = 지금 속도의 단 위치(눈금과 같은 눈금자)
       set("gear", st.gear, (v) => { thumb.style.left = v * 20 + "%"; thumb.textContent = v ? String(v) : "N"; track.setAttribute("aria-valuenow", String(v)); });
       const gl = (k) => (k === 0 ? "N" : String(k));
       const ST = { go: "ACCEL", accel: "ACCEL", decel: "DECEL", redAccel: "REDLINE", redDecel: "BRAKE!", idle: st.gear === 0 ? "IDLE" : red ? "CRUISE·RED" : "CRUISE" };

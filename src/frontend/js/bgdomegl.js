@@ -1283,7 +1283,6 @@ export function createDomeGL(host, isPaused) {
     if (!star) return;
     star = null;
     shakePanels(null); shYaw = shPitch = 0; accS = 0; lastBeta = 0;
-    sound.stopEngine();
     gear.show(false, how);   // 성간 이동이 끝나면 하늘 전환처럼(흰 띠 + 도트) 사라진다
     ufoPanel.el.style.transform = "";
     ufoPanel.setWarping(false); ufoPanel.setRed(false);
@@ -1343,7 +1342,6 @@ export function createDomeGL(host, isPaused) {
     if (peek) gear.update(st, !!star.frame, beta);
     ufoPanel.setRed(beta >= 0.85);
     shakePanels(star.frame ? null : st);
-    sound.engine(beta, star.frame ? 0 : st.amp);
     vibrateByAccel(now, dt, beta);
     if (star.jump && !star.jump.buzzed && star.jump.arrived && navigator.vibrate && !reducedMotion.matches) { star.jump.buzzed = true; try { navigator.vibrate([45, 35, 70]); } catch { /* 미지원 */ } }   // 점프 도착 순간 쾅
     const sa = reducedMotion.matches || star.frame ? 0 : st.belt === "on" ? 0.0012 * (1 + st.amp) : st.belt === "blink" ? 0.0004 : 0;

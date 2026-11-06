@@ -24,6 +24,13 @@ export function shiftGear(st, i) {
 }
 
 export const isRed = (st) => st.beta >= RED_BETA;
+
+/** 속도 β → 레일 위 단 위치(0 = N ~ 5). 눈금이 단마다 같은 간격이라 β 를 단 사이에서 선형으로 옮긴다 — a단 속도면 정확히 a단 눈금(운영자 11-06 버그: 옛 β/0.99 채움은 a + 약 0.5단에 섰다) */
+export function gearPos(beta) {
+  const V = GEAR_BETA, b = Math.max(0, Math.min(V[5], beta));
+  for (let k = 0; k < 5; k++) if (b <= V[k + 1]) return k + (b - V[k]) / (V[k + 1] - V[k]);
+  return 5;
+}
 export const warpReady = (st) => isRed(st) && st.belt === "off";
 
 /** dt 초만큼 진행. 돌려주는 값 = 「띵」을 울릴 일("on" | "off" | null) */

@@ -1,12 +1,12 @@
 // bgsound.js — (bg-dome 4단계) 성간 이동 소리 — 음원 파일 없이 Web Audio 로 합성(외부 파일 · 라이브러리 없음).
 //   · ding()        좌석벨트 표시등이 켜지고 꺼질 때 기내 차임 「띵」(시안 Gear.dc.html 그대로: 기음 + 약한 배음, 1.5초에 걸쳐 잦아듦)
-//   · engine(β, a)  성간 이동 중 낮게 깔리는 엔진 울림 — 빠를수록 음이 높고 밝아지고, 레드존 떨림(a)이 있으면 맥놀이처럼 출렁인다
+//   (엔진 울림은 뺐다 — 운영자 11-06 「가속 시 엔진 소리 거슬림」)
 //   · alarm(k)      5단 경보 사이렌(아래)
 //   · jump(kind)    워프 점프 소리 — A 섬광 돌파(빨려 드는 바람 → 쾅) · B 홀로그램 재투영(디지털 반짝임이 쓸려 내려감) · C 터널 급제동(쿵쿵 터널 → 끼익 제동)
 // 브라우저는 사용자가 누른 뒤에만 소리를 낸다 — wake() 를 누르는 손길(기어 · WARP · 길게 누르기)에서 부른다. 탭이 숨으면 멈춘다.
 // 유메미타 플레이어와 겹쳐도 된다(운영자 11-06 계획서 0번 4). 소리 크기는 전체 0.35 로 낮게.
 
-let ac = null, master = null, eng = null;
+let ac = null, master = null;
 const AC = () => window.AudioContext || window.webkitAudioContext;
 
 /** 누르는 손길 안에서 부른다 — 처음이면 만들고, 잠들어 있으면 깨운다 */
@@ -37,36 +37,6 @@ export function ding() {
     o.type = "sine"; o.frequency.value = f; env(e, t, g, 0.006, k ? 0.7 : 1.5);
     o.connect(e); e.connect(out); o.start(t); o.stop(t + 1.6);
   });
-}
-
-/** 엔진 울림 — β = 속도(0 ~ 0.99), amp = 레드존 떨림 세기(0 ~ 5). β 0 이면 서서히 꺼진다 */
-export function engine(beta, amp) {
-  if (!ready()) return;
-  const t = ac.currentTime;
-  if (!eng && beta > 0.01) {
-    const g = ac.createGain(); g.gain.value = 0.0001;
-    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 2;
-    const o1 = ac.createOscillator(), o2 = ac.createOscillator(); o1.type = "sawtooth"; o2.type = "triangle";
-    const trem = ac.createGain(); trem.gain.value = 1;
-    const lfo = ac.createOscillator(), lfoG = ac.createGain(); lfo.frequency.value = 7; lfoG.gain.value = 0; lfo.connect(lfoG); lfoG.connect(trem.gain);
-    o1.connect(lp); o2.connect(lp); lp.connect(trem); trem.connect(g); g.connect(master);
-    o1.start(); o2.start(); lfo.start();
-    eng = { g, lp, o1, o2, lfoG, lfo };
-  }
-  if (!eng) return;
-  const b = Math.max(0, Math.min(0.99, beta));
-  eng.o1.frequency.setTargetAtTime(38 + 70 * b, t, 0.15);
-  eng.o2.frequency.setTargetAtTime(76.5 + 150 * b * b, t, 0.15);
-  eng.lp.frequency.setTargetAtTime(160 + 2200 * b * b, t, 0.2);
-  eng.lfoG.gain.setTargetAtTime(Math.min(0.45, amp * 0.09), t, 0.1);
-  eng.g.gain.setTargetAtTime(b > 0.01 ? 0.05 + 0.13 * b : 0.0001, t, b > 0.01 ? 0.25 : 0.5);
-  if (b <= 0.01 && !eng.stopAt) { eng.stopAt = t + 2.5; const e = eng; setTimeout(() => { if (eng === e && e.stopAt) stopEngine(); }, 2600); }
-  if (b > 0.01) eng.stopAt = 0;
-}
-export function stopEngine() {
-  if (!eng) return;
-  const e = eng; eng = null;
-  try { e.g.gain.setTargetAtTime(0.0001, ac.currentTime, 0.3); setTimeout(() => { try { e.o1.stop(); e.o2.stop(); e.lfo.stop(); e.g.disconnect(); } catch { /* 이미 멈춤 */ } }, 1500); } catch { /* 없음 */ }
 }
 
 /** 워프 점프 소리(점프 연출 bgwarp.js jumpFrame 시간표에 맞춤 — A 620ms 섬광 · C 700ms 충격파) */

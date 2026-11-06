@@ -1,8 +1,17 @@
 // bgwarp.selfcheck.mjs — node src/frontend/js/bgwarp.selfcheck.mjs
-import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, isRed, GEAR_BETA, jumpFrame, JUMP_MS, pickJump, decelBeta } from "./bgwarp.js";
+import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, isRed, GEAR_BETA, jumpFrame, JUMP_MS, pickJump, decelBeta, gearPos } from "./bgwarp.js";
 
 let fail = 0;
 const ok = (c, m) => { if (!c) { fail++; console.error("FAIL", m); } };
+
+// 레일 위치: a단 속도 = 정확히 a단 눈금(운영자 11-06 버그), 단 사이는 선형, 범위 밖은 끝에 붙음
+{
+  GEAR_BETA.forEach((v, a) => ok(Math.abs(gearPos(v) - a) < 1e-9, `gearPos(${v}) = ${a}단 ` + gearPos(v)));
+  ok(Math.abs(gearPos(0.85) - 3.5) < 1e-9, "레드존 문턱 0.85 = 3.5단 " + gearPos(0.85));
+  ok(gearPos(-1) === 0 && gearPos(1.2) === 5, "범위 밖");
+  let prev = -1, mono = true; for (let b = 0; b <= 0.99; b += 0.001) { const p = gearPos(b); if (p < prev) mono = false; prev = p; }
+  ok(mono, "β 가 늘면 위치도 는다");
+}
 const run = (st, sec, t0 = 0) => { let t = t0; const dt = 1 / 60; for (let i = 0; i < sec * 60; i++) { t += dt * 1000; tickWarp(st, dt, t); } return t; };
 
 // N → 3 은 1 · 2 를 차례로 지난다
