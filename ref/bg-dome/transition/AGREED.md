@@ -38,3 +38,9 @@
 - (정리) Claude 의 「지구는 바닥까지 걷힘」은 철회 — 지구 장면도 무대 바닥 · 조종대가 남는 현재 구조와 어긋남(코드로 확인).
 - (보류) 테마 팝업(기본 · UFO · 생일)까지 같은 언어로 바꾸는 것 — 규모가 다른 동작이고 UFO 특징이 다른 테마로 번진다. 지금 걷기를 유지하고, 돔 재투영을 폰에서 본 뒤 UFO 진입 · 이탈과 함께 검토.
 - 3단계 메모: 우주 출발 시계 · 10% 판정은 `spaceT0`(첫 그리기)가 아니라 「우주 진입 전환 완료」에 연결. 지구 → 우주 복귀도 같은 기준.
+
+## 구현 (11-06 운영자 「좋아」 → feat/bg-dome)
+- 셰이더: `bgdomegl.js` 마지막 색 합성(uSkyFx · uSkyFx2, BAYER4). JS: `beginSky` · `skyUniforms` · `shortenSky` · `endSky`, 시작 = BGINDOOR · BGVIEW 이벤트에서 바꾸기 직전(배경 보기 중일 때만).
+- 패널 「송신 중」 = `bgpanel.js` transmit · `bgpanel.css` .is-tx. 테마 팝업은 기존 View Transitions 걷기 유지(`bgview.js` wipeDown).
+- 확인용 느리게: `?bgdebug&bgskyslow=12`(12배). 전환 중 캡처 = `reproject_mid_v1.png`(분홍 → 초행성X, 12배 느리게, PC 폰 흉내).
+- 남은 확인: S23 실기기 프레임 · 시작 순간 끊김, 지구 전환(위치 권한 필요 — PC 미확인), 진행 선 두께 · 점무늬 띠 폭 체감.
