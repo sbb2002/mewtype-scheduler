@@ -69,8 +69,6 @@ export function tickWarp(st, dt, nowMs) {
   return ding;
 }
 
-/** N 으로 멈춰 다 잦아들었나(속도 0 · 떨림 0 · 표시등 꺼짐) — 그러면 기어 패널을 닫는다 */
-export const stoppedAtN = (st) => st.moved && st.gear === 0 && st.mode === "idle" && st.amp === 0 && st.belt === "off";
 
 // ── 워프 점프(WARP 버튼) — 세 연출을 같은 확률로(운영자 11-06 「모두 채택 · 같은 확률」). B 는 멈칫 없이 바로 급제동(운영자).
 //   시간(ms)은 시안 WarpJump_mock_v1 그대로. 셰이더에 넘길 값을 시간표로 계산한다.

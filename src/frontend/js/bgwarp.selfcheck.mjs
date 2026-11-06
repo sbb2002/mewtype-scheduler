@@ -1,5 +1,5 @@
 // bgwarp.selfcheck.mjs — node src/frontend/js/bgwarp.selfcheck.mjs
-import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, isRed, GEAR_BETA, jumpFrame, JUMP_MS, pickJump, decelBeta, gearPos } from "./bgwarp.js";
+import { createWarp, shiftGear, tickWarp, warpReady, isRed, GEAR_BETA, jumpFrame, JUMP_MS, pickJump, decelBeta, gearPos } from "./bgwarp.js";
 
 let fail = 0;
 const ok = (c, m) => { if (!c) { fail++; console.error("FAIL", m); } };
@@ -53,11 +53,12 @@ const run = (st, sec, t0 = 0) => { let t = t0; const dt = 1 / 60; for (let i = 0
   ok(!early, "가속 중 워프 불가");
   ok(st.beta === 0.99 && warpReady(st), "결국 0.99c · 워프 가능");
 }
-// N 으로 멈추면 stoppedAtN
+// N 으로 멈추면 속도 0 · 떨림 0 · 표시등 꺼짐(성간 이동은 끝나지 않는다 — 운영자 11-06), 다시 기어를 넣으면 출발
 {
-  const st = createWarp(); shiftGear(st, 2); let t = run(st, 3); shiftGear(st, 0); run(st, 6, t);
-  ok(stoppedAtN(st), "N 정지");
-  ok(!stoppedAtN(createWarp()), "처음(움직인 적 없음)은 정지 아님");
+  const st = createWarp(); shiftGear(st, 2); let t = run(st, 3); shiftGear(st, 0); t = run(st, 6, t);
+  ok(st.beta === 0 && st.mode === "idle" && st.amp === 0 && st.belt === "off", "N 정지");
+  shiftGear(st, 1); run(st, 3, t);
+  ok(Math.abs(st.beta - GEAR_BETA[1]) < 1e-9, "N 정지 뒤 다시 1단 " + st.beta);
 }
 // 점프: 세 연출 모두 끝에 속도 0 근처 · done · 같은 확률 고르기
 {

@@ -20,7 +20,7 @@ import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
 import * as sound from "./bgsound.js";
-import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
+import { createWarp, shiftGear, tickWarp, warpReady, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
 const DEG = Math.PI / 180;
 // 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
@@ -1324,7 +1324,7 @@ export function createDomeGL(host, isPaused) {
     if (!star.jump) {
       if (!st.moved && now >= star.autoAt) shiftGear(st, 1);
       for (let left = dt; left > 1e-6; left -= 1 / 60) { const d = tickWarp(st, Math.min(left, 1 / 60), now); if (d) sound.ding(); }   // 표시등이 켜지고 꺼질 때 「띵」   // 잘게 나눠(느린 프레임에서도 같은 움직임) — 「띵」 · 진동 · 흔들림은 4단계
-      if (stoppedAtN(st)) { endStar(); return; }
+      // N 으로 멈춰도(v = 0) 성간 이동은 끝나지 않는다(운영자 11-06) — 끝 = WARP 점프 · 하늘 바꾸기(우주를 떠남)뿐. 기어 패널도 그대로 남아 다시 출발할 수 있다
       star.frame = null;
       if (st.beta > 0 && !reducedMotion.matches) spaceRot = mulRot(axisRot(star.axis, dt * 0.03 * (0.45 + 1.6 * st.beta) * st.beta), spaceRot);   // 달린 만큼 하늘이 조금씩 돈다
     } else {
