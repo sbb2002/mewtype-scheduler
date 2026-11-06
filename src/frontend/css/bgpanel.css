@@ -80,8 +80,8 @@
 .ufo-hud.is-idle { visibility: hidden; pointer-events: none; }
 .ufo-hud.is-off { pointer-events: none; }
 .ufo-clip { position: relative; }
-.ufo-hud.is-on .ufo-clip { animation: ufo-hud-in .6s cubic-bezier(.2, .8, .2, 1) both; }
-.ufo-hud.is-off .ufo-clip { animation: ufo-hud-out .45s cubic-bezier(.5, 0, .8, .4) both; }
+.ufo-holo.is-on .ufo-clip { animation: ufo-hud-in .6s cubic-bezier(.2, .8, .2, 1) both; }
+.ufo-holo.is-off .ufo-clip { animation: ufo-hud-out .45s cubic-bezier(.5, 0, .8, .4) both; }
 @keyframes ufo-hud-in {
   0% { clip-path: inset(50% 0 50% 0); opacity: 0; transform: none; }
   18% { clip-path: inset(49.6% 0 49.6% 0); opacity: 1; }
@@ -89,10 +89,10 @@
   63% { transform: translateX(-5px) skewX(-4deg); opacity: .55; }
   68% { transform: translateX(4px); opacity: 1; }
   73% { transform: translateX(-2px); opacity: .8; }
-  78%, 100% { clip-path: inset(0 0 0 0); transform: none; opacity: 1; }
+  78%, 100% { clip-path: inset(-40px); transform: none; opacity: 1; }   /* 다 열린 뒤엔 바깥 40px 까지 — 테두리 글로우(.ufo-frame)가 잘리지 않게 */
 }
 @keyframes ufo-hud-out {
-  0% { clip-path: inset(0 0 0 0); transform: none; opacity: 1; }
+  0% { clip-path: inset(-40px); transform: none; opacity: 1; }
   10% { transform: translateX(4px) skewX(3deg); opacity: .5; }
   18% { transform: translateX(-3px); opacity: 1; }
   24% { transform: none; }
@@ -103,15 +103,15 @@
   position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; opacity: 0; pointer-events: none;
   background: #ffe2f1; box-shadow: 0 0 6px var(--ufo-pink), 0 0 14px var(--ufo-cyan), 0 0 26px rgba(79, 227, 255, .6);
 }
-.ufo-hud.is-on .ufo-line { animation: ufo-line-in .6s ease-out both; }
-.ufo-hud.is-off .ufo-line { animation: ufo-line-out .45s ease-in both; }
+.ufo-holo.is-on .ufo-line { animation: ufo-line-in .6s ease-out both; }
+.ufo-holo.is-off .ufo-line { animation: ufo-line-out .45s ease-in both; }
 @keyframes ufo-line-in { 0% { transform: scaleX(0); opacity: 1; } 18% { transform: scaleX(1); opacity: 1; } 55% { opacity: .9; } 70%, 100% { transform: scaleX(1); opacity: 0; } }
 @keyframes ufo-line-out { 0%, 60% { transform: scaleX(1); opacity: 0; } 70% { opacity: 1; } 92% { transform: scaleX(.03); opacity: 1; } 100% { transform: scaleX(0); opacity: 0; } }
 .ufo-chroma { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
 .ufo-chroma--p { border: 1px solid #ff3d9a; transform: translate(-4px, 1px); }
 .ufo-chroma--c { border: 1px solid var(--ufo-cyan); transform: translate(4px, -1px); }
-.ufo-hud.is-on .ufo-chroma { animation: ufo-chroma-in .6s linear both; }
-.ufo-hud.is-off .ufo-chroma { animation: ufo-chroma-out .45s linear both; }
+.ufo-holo.is-on .ufo-chroma { animation: ufo-chroma-in .6s linear both; }
+.ufo-holo.is-off .ufo-chroma { animation: ufo-chroma-out .45s linear both; }
 @keyframes ufo-chroma-in { 0%, 58% { opacity: 0; } 62% { opacity: 1; } 67% { opacity: 0; } 71% { opacity: .8; } 76%, 100% { opacity: 0; } }
 @keyframes ufo-chroma-out { 0% { opacity: 0; } 6% { opacity: 1; } 12% { opacity: 0; } 16% { opacity: .7; } 22%, 100% { opacity: 0; } }
 .ufo-stg { opacity: 0; }
@@ -127,8 +127,8 @@
 .ufo-brk--tr { right: -6px; top: -6px; border-width: 2px 2px 0 0; }
 .ufo-brk--bl { left: -6px; bottom: -6px; border-width: 0 0 2px 2px; }
 .ufo-brk--br { right: -6px; bottom: -6px; border-width: 0 2px 2px 0; }
-.ufo-hud.is-on .ufo-brk { animation: ufo-brk-in .3s cubic-bezier(.2, .8, .2, 1) .5s both; }
-.ufo-hud.is-off .ufo-brk { animation: ufo-brk-out .12s linear both; }
+.ufo-holo.is-on .ufo-brk { animation: ufo-brk-in .3s cubic-bezier(.2, .8, .2, 1) .5s both; }
+.ufo-holo.is-off .ufo-brk { animation: ufo-brk-out .12s linear both; }
 @keyframes ufo-brk-in { 0% { opacity: 0; transform: scale(1.6); } 100% { opacity: 1; transform: none; } }
 @keyframes ufo-brk-out { 0% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -139,28 +139,33 @@
   background: rgba(10, 8, 26, .78);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(79, 227, 255, .55);
-  box-shadow: 0 0 0 1px rgba(255, 111, 181, .15), 0 0 32px rgba(79, 227, 255, .18);
+  border: 1px solid transparent;   /* 테두리 · 글로우는 .ufo-frame(SVG)이 그린다 — 카드의 clip-path 가 box-shadow 를 잘라 버려서 */
   clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
 }
-/* (11-06 운영자 「주사선과 스캔라인」) 주사선 = 3px 마다 가는 가로줄(밝은 줄 + 옅은 어두운 줄로 화면 결이 보이게),
-   스캔라인 = 시안 빛 띠가 위에서 아래로 훑고 지나감(3.6초마다 한 번, 지나가는 데 1.4초). 글자보다 뒤(카드 맨 앞 자식)라 읽기를 방해하지 않는다. */
+/* 홀로그램 테두리(조작 · 기어 패널 공용, js holoParts) — 시안 선 + 바깥으로 번지는 푸른 글로우, 은은하게 숨 쉰다. 레드존이면 빨강 */
+.ufo-frame { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; filter: drop-shadow(0 0 2px rgba(79, 227, 255, .95)) drop-shadow(0 0 8px rgba(79, 227, 255, .6)) drop-shadow(0 0 20px rgba(79, 227, 255, .35)); animation: ufo-frame-breathe 3.2s ease-in-out infinite; transition: filter .3s; }
+.ufo-frame__line { fill: none; stroke: rgba(160, 242, 255, .9); stroke-width: 1.2; transition: stroke .3s; }
+@keyframes ufo-frame-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+.ufo-holo.is-red .ufo-frame { filter: drop-shadow(0 0 2px rgba(255, 61, 90, .95)) drop-shadow(0 0 8px rgba(255, 61, 90, .6)) drop-shadow(0 0 20px rgba(255, 61, 90, .35)); }
+.ufo-holo.is-red .ufo-frame__line { stroke: rgba(255, 150, 170, .95); }
+/* (11-06 운영자 「주사선과 스캔라인」 → 「조금 더 잘 보이게 · 스캔라인은 천천히」) 주사선 = 3px 마다 가는 가로줄(밝은 줄 + 어두운 줄),
+   스캔라인 = 시안 빛 띠가 위에서 아래로 훑고 지나감(6초마다 한 번, 지나가는 데 약 3.3초). 글자보다 뒤(카드 맨 앞 자식)라 읽기를 방해하지 않는다. */
 .ufo-scan {
   position: absolute; inset: 0; pointer-events: none; overflow: hidden;
-  background: repeating-linear-gradient(0deg, rgba(160, 235, 255, .06) 0 1px, rgba(0, 0, 0, .14) 1px 2px, transparent 2px 3px);
+  background: repeating-linear-gradient(0deg, rgba(160, 235, 255, .1) 0 1px, rgba(0, 0, 0, .22) 1px 2px, transparent 2px 3px);
 }
 .ufo-head, .ufo-list, .ufo-foot { position: relative; }   /* 절대 위치인 주사선 층보다 위에 그려지게 */
 .ufo-scan::after {
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 72px; opacity: 0;
-  background: linear-gradient(180deg, transparent, rgba(79, 227, 255, .07) 55%, rgba(190, 245, 255, .28) 92%, rgba(255, 255, 255, .5) 96%, transparent);
-  box-shadow: 0 1px 10px rgba(79, 227, 255, .25);
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 90px; opacity: 0;
+  background: linear-gradient(180deg, transparent, rgba(79, 227, 255, .12) 50%, rgba(190, 245, 255, .42) 90%, rgba(255, 255, 255, .72) 96%, transparent);
+  box-shadow: 0 2px 14px rgba(79, 227, 255, .4);
 }
-.ufo-hud.is-on .ufo-scan::after { animation: ufo-scanline 3.6s linear .7s infinite; }
+.ufo-holo.is-on .ufo-scan::after { animation: ufo-scanline 6s linear .7s infinite; }
 @keyframes ufo-scanline {
-  0% { transform: translateY(-80px); opacity: 0; }
-  4% { opacity: 1; }
-  38% { opacity: 1; }
-  39%, 100% { transform: translateY(var(--ufo-scan-h, 520px)); opacity: 0; }
+  0% { transform: translateY(-100px); opacity: 0; }
+  3% { opacity: 1; }
+  54% { opacity: 1; }
+  55%, 100% { transform: translateY(var(--ufo-scan-h, 520px)); opacity: 0; }
 }
 .ufo-mono { font-family: var(--ufo-mono); }
 .ufo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -217,10 +222,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   #bgdeco .bgcs-holo, #bgdeco .bgcs-beam, .ufo-hint { animation: none; }
-  .ufo-hud.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-hud.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
-  .ufo-hud.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
-  .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }
-  .ufo-hud.is-on .ufo-scan::after { animation: none; }
+  .ufo-holo.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-holo.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
+  .ufo-holo.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
+  .ufo-holo .ufo-line, .ufo-holo .ufo-chroma { animation: none; opacity: 0; }
+  .ufo-holo.is-on .ufo-scan::after { animation: none; }
   .ufo-tile__fill.is-full, .ugr-belt[data-state="blink"] .is-lit { animation: none; }
 }
 @keyframes ufo-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
@@ -236,22 +241,24 @@
 @keyframes ufo-fill-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
 /* 성간 이동 레드존(β ≥ 0.85) — 조작 패널의 시안 테 · 글로우 · 꺾쇠가 빨갛게(11-06 운영자). 기어 패널(.ufo-gear.is-red)도 같은 색 */
-.ufo-card { transition: border-color .3s, box-shadow .3s; }
-.ufo-hud.is-red .ufo-card { border-color: rgba(255, 61, 90, .7); box-shadow: 0 0 0 1px rgba(255, 61, 90, .2), 0 0 32px rgba(255, 61, 90, .32); }
-.ufo-hud.is-red .ufo-brk { border-color: #ff3d5a; }
+.ufo-holo.is-red .ufo-brk { border-color: #ff3d5a; }
 .ufo-hud.is-red .ufo-head__tag { color: #ff6d86; }
 /* ── 성간 이동 중 두 패널 = 카드 두 장(js/bgdeck.js, 11-06 운영자 「기어 패널이 앞 · 조작 패널은 뒤 · 좌우로 밀면 카드 섞듯」)
-   같은 자리(화면 가운데)에 겹치고, 뒤 카드는 위로 조금 삐져나와 작고 어둡게(누를 수 없음). 앞 카드를 밀면 손가락을 따라 기울며 끌리고(--dx),
-   충분히 밀면 그 방향으로 빠져나갔다가(.is-out 0.2초) 뒤로 들어가고, 뒤 카드는 앞으로 올라온다. */
+   같은 자리(화면 가운데)에 겹치고, 뒤 카드는 위로 조금 삐져나와 작고 어둡게(누를 수 없음 = 비활성). 앞 카드를 밀면 손가락을 따라 기울며 끌린다(--dx).
+   충분히 밀면(js swapDeck — Web Animations): 앞 카드 = 민 방향으로 빠졌다가 뒤로 들어가며 어두워지고, 뒤 카드 = 반대 방향으로 빠졌다가 앞으로 오며 밝아진다. */
 .ufo-hud, .ufo-gear {
-  --dx: 0px; --dir: 1;
+  --dx: 0px;
   transform: translateX(var(--dx)) rotate(calc(var(--dx) * .025deg));
   transition: opacity .15s ease, transform .32s cubic-bezier(.2, .8, .2, 1), filter .32s;
 }
 .ufo-hud.is-dragging, .ufo-gear.is-dragging { transition: none; }
-.ufo-hud.is-back, .ufo-gear.is-back { z-index: 974; transform: translateY(var(--back-y, -22px)) scale(.92);   /* --back-y = 앞 카드 위로 26px 삐져나오게(js 가 두 카드 높이로 계산) */ opacity: .62; filter: brightness(.75); pointer-events: none; }
-.ufo-hud.is-out, .ufo-gear.is-out { z-index: 977; transform: translateX(calc(var(--dir) * 78%)) rotate(calc(var(--dir) * 9deg)); opacity: .85; transition-duration: .2s; transition-timing-function: cubic-bezier(.5, 0, .9, .5); }
+.ufo-hud.is-back, .ufo-gear.is-back { z-index: 974; transform: translateY(var(--back-y, -22px)) scale(.92);   /* --back-y = 앞 카드 위로 26px 삐져나오게(js 가 두 카드 높이로 계산) */ opacity: .62; filter: brightness(.6); pointer-events: none; }
 .ufo-hud.is-tx { opacity: 0; }
+/* 뒤로 간 카드는 테두리 글로우를 줄인다(11-06 운영자) · 겹쳐 있을 때 앞 카드 바탕을 진하게 — 뒤 카드 글자가 비쳐 섞이지 않게 */
+.ufo-holo.is-back .ufo-frame { filter: drop-shadow(0 0 2px rgba(79, 227, 255, .35)); animation: none; opacity: .55; }
+.ufo-holo.is-back .ufo-frame__line { stroke: rgba(160, 242, 255, .45); }
+.ufo-holo.is-red.is-back .ufo-frame { filter: drop-shadow(0 0 2px rgba(255, 61, 90, .35)); }
+.ufo-holo.in-deck:not(.is-back) :is(.ufo-card, .ugr-card) { background: rgba(10, 8, 26, .93); }
 .ufo-hud *, .ufo-gear * { touch-action: none; }   /* 가로로 미는 손가락을 브라우저가 가로채지 않게(누르기 · 길게 누르기는 그대로) */
 
 /* ── 워프 기어 패널(js/bggear.js, 시안 Gear.dc.html) — 배경 보기 중 성간 이동이면 조작 패널과 같은 자리(가운데) */
@@ -260,15 +267,13 @@
   max-width: 420px; margin: 0 auto; font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
 }
 .ufo-gear[hidden] { display: none; }
-.ufo-gear.is-on .ugr-card { animation: ufo-hud-in .6s cubic-bezier(.2, .8, .2, 1) both; }
+/* 카드 바탕 · 모서리는 조작 패널(.ufo-card)과 같게 — 테두리 · 글로우 · 주사선 · 스캔라인 · 등장 연출은 공용 홀로그램 틀(.ufo-holo, js holoParts) */
 .ugr-card {
   position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 10px;
-  background: rgba(10, 8, 26, .82); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 1px solid rgba(79, 227, 255, .55); box-shadow: 0 0 28px rgba(79, 227, 255, .2);
-  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
-  transition: border-color .3s, box-shadow .3s;
+  background: rgba(10, 8, 26, .78); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1px solid transparent;
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
 }
-.ufo-gear.is-red .ugr-card { border-color: rgba(255, 61, 90, .7); box-shadow: 0 0 28px rgba(255, 61, 90, .3); }
 .ugr-head, .ugr-meter, .ugr-grid, .ugr-warp { position: relative; }
 .ugr-head { display: flex; align-items: center; justify-content: space-between; }
 .ugr-head__l { display: flex; flex-direction: column; gap: 1px; }
@@ -325,6 +330,6 @@
 .ugr-warp:disabled { cursor: default; color: #7f90a8; background: rgba(18, 16, 40, .6); border-color: rgba(120, 200, 255, .2); box-shadow: none; animation: none; }
 @keyframes ugr-warp-ready { 0%, 100% { box-shadow: 0 0 16px rgba(255, 61, 90, .5), inset 0 0 12px rgba(255, 61, 90, .3); } 50% { box-shadow: 0 0 26px rgba(255, 61, 90, .8), inset 0 0 18px rgba(255, 61, 90, .45); } }
 @media (prefers-reduced-motion: reduce) {
-  .ufo-gear.is-on .ugr-card { animation: ufo-fade-in .2s both; }
+  .ufo-frame { animation: none; }
   .ugr-gbtn.is-tgt, .ugr-warp { animation: none; }
 }

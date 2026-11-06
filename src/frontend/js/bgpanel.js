@@ -46,6 +46,30 @@ const TILES = [
   { key: "earth", label: "지구", sub: "당신이 있는 곳일지도?", chips: ["해", "달", "별", "실제 자리"] },
 ];
 
+/**
+ * 홀로그램 카드 틀(조작 패널 · 워프 기어 패널 공용, 11-06 운영자 「두 UI 테두리 · 주사선 · 스캔라인을 같게, 테두리는 푸른 글로우」).
+ * card(모서리 잘린 카드 — 주사선 층 .ufo-scan 을 맨 앞 자식으로) 를 받아 바깥 틀 자식들을 돌려준다:
+ *   .ufo-clip(등장 · 퇴장 연출) = card + 빛나는 테두리 SVG(.ufo-frame) + 색 갈라짐 두 겹, 모서리 꺾쇠 넷, 등장 광선.
+ * 테두리를 SVG 로 따로 그리는 까닭: 카드는 clip-path 로 모서리를 자르는데 그러면 카드 자신의 box-shadow 글로우도 잘려 안 보인다.
+ * SVG 는 카드 크기를 따라 모서리 잘린 윤곽을 다시 그리고(ResizeObserver), CSS drop-shadow 로 바깥에 번진다.
+ */
+export function holoParts(card) {
+  const line = s("path", { class: "ufo-frame__line" });
+  const frame = s("svg", { class: "ufo-frame", "aria-hidden": "true" }, [line]);
+  const fit = () => {
+    const w = card.offsetWidth, hh = card.offsetHeight;
+    if (!w || !hh) return;
+    frame.setAttribute("width", w); frame.setAttribute("height", hh); frame.setAttribute("viewBox", `0 0 ${w} ${hh}`);
+    line.setAttribute("d", `M.6 .6 H${w - 18} L${w - .6} 18 V${hh - .6} H18 L.6 ${hh - 18} Z`);
+  };
+  if (typeof ResizeObserver === "function") new ResizeObserver(fit).observe(card); else requestAnimationFrame(fit);
+  return [
+    h("div", "ufo-clip", [card, frame, h("span", "ufo-chroma ufo-chroma--p"), h("span", "ufo-chroma ufo-chroma--c")]),
+    h("span", "ufo-brk ufo-brk--tl"), h("span", "ufo-brk ufo-brk--tr"), h("span", "ufo-brk ufo-brk--bl"), h("span", "ufo-brk ufo-brk--br"),
+    h("span", "ufo-line"),
+  ];
+}
+
 /** 패널을 만든다. set(on) = 등장 · 퇴장, setCurrent(key) = 지금 배경 칸에 불. */
 export function createUfoPanel() {
   const tiles = {}, firstChip = {}, chipBase = {}, subEl = {};
@@ -110,12 +134,7 @@ export function createUfoPanel() {
   foot.style.setProperty("--i", "4");
 
   const card = h("div", "ufo-card", [h("div", "ufo-scan"), head, list, foot]);
-  const clip = h("div", "ufo-clip", [card, h("span", "ufo-chroma ufo-chroma--p"), h("span", "ufo-chroma ufo-chroma--c")]);
-  const root = h("div", "ufo-hud is-idle", [
-    clip,
-    h("span", "ufo-brk ufo-brk--tl"), h("span", "ufo-brk ufo-brk--tr"), h("span", "ufo-brk ufo-brk--bl"), h("span", "ufo-brk ufo-brk--br"),
-    h("span", "ufo-line"),
-  ], { role: "dialog", "aria-label": "UFO 조작 패널", "aria-hidden": "true" });
+  const root = h("div", "ufo-hud ufo-holo is-idle", holoParts(card), { role: "dialog", "aria-label": "UFO 조작 패널", "aria-hidden": "true" });
   root.inert = true;
   document.body.appendChild(root);
 

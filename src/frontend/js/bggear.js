@@ -4,6 +4,7 @@
 // 시안과 달라진 것: 설명 문단은 화면이 좁아 뺐다 · 속도계를 조금 줄였다 · 맨 아래에 WARP 버튼(운영자 11-06 — 레드존 + 좌석벨트 표시등 꺼짐이면 켜짐).
 
 import { GEAR_BETA, isRed, warpReady } from "./bgwarp.js";
+import { holoParts } from "./bgpanel.js";
 
 const NS = "http://www.w3.org/2000/svg";
 function h(tag, cls, kids, attrs) {
@@ -75,7 +76,8 @@ export function createGearPanel({ onGear, onWarp }) {
   const warp = h("button", "ufo-mono ugr-warp", ["WARP"], { type: "button", disabled: "" });
   warp.addEventListener("click", () => { if (!warp.disabled) onWarp(); });
   const card = h("div", "ugr-card", [h("div", "ufo-scan"), head, meter, grid, warp]);
-  const root = h("div", "ufo-gear", [card], { role: "group", "aria-label": "성간 이동 기어", "aria-hidden": "true" });
+  // 테두리 · 주사선 · 스캔라인 · 등장 연출은 조작 패널과 같은 홀로그램 카드 틀(bgpanel.js holoParts)
+  const root = h("div", "ufo-gear ufo-holo", holoParts(card), { role: "group", "aria-label": "성간 이동 기어", "aria-hidden": "true" });
   root.hidden = true; root.inert = true;
   document.body.appendChild(root);
 

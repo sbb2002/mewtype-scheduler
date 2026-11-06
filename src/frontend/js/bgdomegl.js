@@ -19,7 +19,7 @@ import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
-import { attachSwipe, flyOut } from "./bgdeck.js";
+import { attachSwipe, shuffleCards } from "./bgdeck.js";
 import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
 const DEG = Math.PI / 180;
@@ -1154,17 +1154,20 @@ export function createDomeGL(host, isPaused) {
   let star = null, pendingHold = false, deckFront = "gear";
   // 두 패널이 다 떠 있으면 카드 두 장으로 겹친다 — 처음엔 기어가 앞, 앞 카드를 좌우로 밀면 서로 바뀐다(bgdeck.js, 11-06 운영자)
   const bothCards = () => gear.shown && ufoPanel.on;
-  const swapDeck = (dir) => {
+  const swapDeck = (dir, dx = 0) => {
     if (!bothCards()) return;
-    flyOut(deckFront === "gear" ? gear.el : ufoPanel.el, dir);
+    const front = deckFront === "gear" ? gear.el : ufoPanel.el, back = deckFront === "gear" ? ufoPanel.el : gear.el;
+    const backYBack = parseFloat(back.style.getPropertyValue("--back-y")) || -22;
     deckFront = deckFront === "gear" ? "ufo" : "gear";
-    applyDeck();
+    applyDeck();   // 클래스 · 새 --back-y 를 먼저 붙이고(끝 모습), 움직임은 그 위에 덧씌운다
+    shuffleCards(front, back, dir, dx, parseFloat(front.style.getPropertyValue("--back-y")) || -22, backYBack);
   };
   let deckKey = "";
   function applyDeck() {
     const both = bothCards();
     gear.setBack(both && deckFront === "ufo");
     ufoPanel.setBack(both && deckFront === "gear");
+    for (const el of [gear.el, ufoPanel.el]) if (el.classList.contains("in-deck") !== both) el.classList.toggle("in-deck", both);
     const key = `${both}|${deckFront}`;
     if (!both || key === deckKey) { deckKey = key; return; }
     deckKey = key;
