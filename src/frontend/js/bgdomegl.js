@@ -18,6 +18,8 @@ import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial
 import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
+import { createGearPanel } from "./bggear.js";
+import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
 const DEG = Math.PI / 180;
 // 돔(반지름 1) 안 눈 위치 [동, 위, 북] — bgdome.js 와 같다. 수평은 돔 중심(0, 0), 높이 0.24(11-04 운영자 결정 — 전엔 남쪽 0.42 에 있어
@@ -54,28 +56,14 @@ const CLOUD_SEED = (() => {
   return [r(), r(), 0.35 + 0.45 * r()];
 })();
 // (11-05 운영자) 실내 배경 무작위 — 분홍 구름이 기본(이 사이트의 얼굴), 가끔 「우주」(성간 이동 1분 뒤 일반 우주).
-// 방문마다 뽑는다(저장 안 함). ?bgdebug&bgindoor=pink|space 로 고정, bgwarp=<초> 로 워프 진행 시점 고정(캡처용).
+// 방문마다 뽑는다(저장 안 함). ?bgdebug&bgindoor=pink|space 로 고정.
 // (11-06 운영자) 방문마다 무작위는 없앴다 — UFO 조작 패널에서 고른 값을 기기에 기억(bgview.js indoorBg), 처음은 분홍. 디버그 bgindoor 가 우선.
 let INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : indoorBg(); })();
-const WARP_FIXED = DEBUG && QS.get("bgwarp") != null && Number.isFinite(Number(QS.get("bgwarp"))) ? Number(QS.get("bgwarp")) : null;
-// (11-05 3차 운영자) 항해 시나리오 — 우주 배경이 뽑히면 일반 우주 · 성간 이동 중 하나로 시작(반반).
-//   일반 우주로 시작: 20% 「출발」 = 20초 머문 뒤 1분에 걸쳐 0 → 0.99c 가속(그 뒤 0.99c 유지), 80% = 계속 정지.
-//   성간 이동으로 시작: 20% 「도착」 = 0.99c 로 20초 뒤 1분에 걸쳐 0.99c → 0 감속(그 뒤 정지), 80% 「등속」 = 0.7c.
-// ?bgdebug&bgvoyage=rest|depart|cruise|arrive 로 고정, bgwarp=<초> 로 진행 시점 고정.
-const VOYAGE = (() => {
-  const q = DEBUG ? QS.get("bgvoyage") : null;
-  if (["rest", "depart", "cruise", "arrive"].includes(q)) return q;
-  // (11-06 운영자) 무작위 항해 시나리오는 없앤다 — 평소 우주는 정지. 성간 이동(10% · 길게 누르기 · 워프 기어)은 조작 패널 3단계에서.
-  return "rest";
-})();
-function voyageBeta(sec) {
-  const ss = (x) => { const v = Math.min(1, Math.max(0, x)); return v * v * (3 - 2 * v); };
-  if (VOYAGE === "rest") return 0;
-  if (VOYAGE === "cruise") return 0.7;
-  if (VOYAGE === "depart") return 0.99 * ss((sec - 20) / 60);
-  return 0.99 * (1 - ss((sec - 20) / 60));   // arrive
-}
-const VOYAGE_END = VOYAGE === "depart" || VOYAGE === "arrive" ? 83 : 0;   // 이 뒤로는 속도가 그대로
+// (11-06 운영자) 옛 무작위 항해 시나리오(출발 · 등속 · 도착 · 1분 뒤 끝남)는 없앴다 — 평소 우주는 정지.
+// 성간 이동 = 우주에 들어갈 때 10% 또는 조작 패널 초행성X 칸 1초 길게 누르기 → 워프 기어 패널(bggear.js · 속도 모형 bgwarp.js, 아래 「성간 이동」).
+// 확인용(?bgdebug): bgstar = 우주에 들어가면 항상 성간 이동 · bgjump=A|B|C = 워프 점프 연출 고정 · bgstarrate=<0~1> = 자동 시작 확률.
+const STAR_RATE = (() => { const v = DEBUG ? Number(QS.get("bgstarrate")) : NaN; return DEBUG && QS.has("bgstar") ? 1 : Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.1; })();
+const JUMP_FIXED = DEBUG && ["A", "B", "C"].includes(QS.get("bgjump")) ? QS.get("bgjump") : null;
 // (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · eso = ESO/S. Brunier 은하수 파노라마(대안) · shader = 그려 만든 우주(나).
 // 딥필드 = 웹 망원경 SMACS 0723(NASA, ESA, CSA, STScI). 평가용 이미지는 assets/bg/eval/(저장소에 올리지 않음). ?bgdebug&bgspace=map|eso|shader&bgdeep=0|1
 // (11-05 운영자) 가 · 나 · 대안 모두 쓴다 — 방문마다 셋 중 하나(같은 확률).
@@ -206,6 +194,10 @@ uniform float uThemeProgress; // 1 = inactive; no snapshot lookup at rest
 // uSkyFx2 = (경계 시작 위도, 끝 위도(라디안), 단축 완료 0..1, 잔광 남은 비율 1..0)
 uniform vec4 uSkyFx, uSkyFx2;
 uniform vec4 uSkyDir;   // (방향 0 아래 · 1 위 · 2 경도 반시계, 기준 경도, 화면 오른쪽 부호, -)
+// (11-06 3단계) 워프 점프 연출(bgwarp.js jumpFrame — A 섬광 돌파 · B 홀로그램 재투영 · C 터널 급제동). 화면 좌표(CSS px) 덧그림.
+// uJump = (종류 0 꺼짐 · 1 A · 2 B · 3 C, 충격 고리 반지름, 세기, 굵기) · uJump2 = (흰 섬광, 붉은 섬광, B 재투영 고리 반지름(음수 = 없음), B 바깥 방사 번짐)
+// uJump3 = (중심 x, y, 화면 끝까지 반지름, -) · uJump4 = (C 터널 위상(음수 = 없음), 터널 세기, -, -)
+uniform vec4 uJump, uJump2, uJump3, uJump4;
 
 flat in vec2 vSourceClear;
 uniform mat3 uEqM;
@@ -853,6 +845,51 @@ void main() {
     res += vec3(1.0, .44, .71) * (.14 * exp(-max(dpx, 0.0) / 60.0) + 1.6 * grid) * glow;   // 지나간 쪽 이음선 · 가장자리에 분홍 잔광
     outc = mix(res, outc, uSkyFx2.z);
   }
+  // 워프 점프 — 진행 방향이 화면에 맺히는 점(uJump3.xy)을 중심으로 한 고리 · 섬광. 우주 속도(β)는 JS 시간표가 uSpace 로 따로 넘긴다.
+  if (uJump.x > 0.5) {
+    vec2 jv = p - uJump3.xy; float jr = length(jv);
+    vec3 cyanJ = vec3(.31, .89, 1.0), pinkJ = vec3(1.0, .44, .71);
+    if (uJump2.z >= 0.0) {
+      // B: 흰 고리가 퍼진다 — 안쪽 = 이미 감속 중인 우주, 바깥 = 누른 순간의 레드존 화면(가운데로 방사 번짐 — 계속 달리는 듯), 고리 바로 바깥 띠는 도트로 걷힌다.
+      // 흰 선 = 「여기까지 완료」(띠의 안쪽 끝) — 하늘 전환과 같은 말투
+      float R = uJump2.z, bandJ = 46.0;
+      vec3 oldJ = vec3(0);
+      for (int i = 0; i < 6; i++) {
+        vec2 q = uJump3.xy + jv * (1.0 - float(i) * .035 * uJump2.w);
+        oldJ += texture(uThemeFrame, vec2(q.x * uDpr, uRes.y - q.y * uDpr) / uRes).rgb;
+      }
+      oldJ /= 6.0;
+      vec2 cellJ = floor(p / 6.0);
+      vec3 hj = fract(vec3(cellJ.xyx) * vec3(.1031, .1030, .0973)); hj += dot(hj, hj.yzx + 33.33);
+      float thJ = .01 + .64 * fract((hj.x + hj.y) * hj.z);
+      float revJ = smoothstep(thJ, thJ + .35, clamp((R + bandJ - jr) / bandJ, 0.0, 1.0));
+      outc = mix(oldJ, outc, revJ);
+      float dl = jr - R;
+      outc += pinkJ * .22 * exp(min(dl, 0.0) / 40.0) * step(dl, 0.0);
+      outc += cyanJ * (exp(-abs(dl) / 28.0) * .55 + exp(-abs(dl) / 12.0) * .45);
+      outc = mix(outc, vec3(1.0, .97, .92), (1.0 - smoothstep(6.5, 9.5, abs(dl))) * .95);
+    }
+    if (uJump4.x >= 0.0) {
+      // C 터널: 시안 · 분홍 고리 9 개가 가운데서 바깥으로 달린다(바깥으로 갈수록 굵고 옅게)
+      for (int i = 0; i < 9; i++) {
+        float ph = fract(uJump4.x + float(i) / 9.0), rr = ph * ph * uJump3.z, w = 1.0 + 5.0 * ph;
+        float k = exp(-pow((jr - rr) / w, 2.0)) + exp(-abs(jr - rr) / (w * 3.0)) * .4;
+        outc += (mod(float(i), 2.0) < .5 ? cyanJ : pinkJ) * k * uJump4.y * (1.0 - ph) * .9;
+      }
+    }
+    if (uJump.z > 0.0) {
+      // 충격 고리 — A = 시안 + 안쪽 분홍, C = 붉은색 + 안쪽 호박색
+      float w = uJump.w, d1 = jr - uJump.y;
+      float k1 = exp(-pow(d1 / w, 2.0)) + exp(-abs(d1) / (w * 2.5)) * .5;
+      bool isA = uJump.x < 1.5;
+      vec3 c1 = isA ? cyanJ : vec3(1.0, .24, .35), c2 = isA ? pinkJ : vec3(1.0, .82, .48);
+      float d2 = isA ? jr - (uJump.y - 18.0) : jr - uJump.y * .82, w2 = isA ? w * .6 : 4.0;
+      float k2 = exp(-pow(d2 / w2, 2.0)) + exp(-abs(d2) / (w2 * 2.5)) * .4;
+      outc += (c1 * k1 + c2 * k2 * .8) * uJump.z;
+    }
+    outc = mix(outc, vec3(1.0), clamp(uJump2.x, 0.0, 1.0));
+    outc = mix(outc, vec3(1.0, .16, .27), clamp(uJump2.y, 0.0, 1.0));
+  }
   outColor = vec4(outc, 1.0);
 }`;
 
@@ -1011,7 +1048,7 @@ export function createDomeGL(host, isPaused) {
   let releaseGround = null, albedoLoading = false, albedoOn = false, textureEpoch = 0;
   let themeFrame = null, themeStart = -Infinity;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let spaceT0 = null, warpLast = 0, warpDist = 0;
+  let warpLast = 0, warpDist = 0;   // 실내 우주 별 흐름의 누적 거리
   const spaceTex = { map: null, deep: null, blank: null, mapW: 1, loading: false, ready: null };
   /** 우주 사진을 받는다(한 번만). 돌려주는 약속 = 사진이 다 올라갔거나 실패했을 때 풀린다 — 패널에서 고를 때 다 받은 뒤 걷기 시작하려고 */
   function loadSpaceTex() {
@@ -1063,7 +1100,8 @@ export function createDomeGL(host, isPaused) {
   let picking = false;
   const buzz = () => { if (navigator.vibrate && !reducedMotion.matches) try { navigator.vibrate(8); } catch { /* 미지원 */ } };
   // (11-06 운영자) 고른 뒤 준비(우주 사진 · 위치) → 전환이 끝날 때까지 하늘 칸은 비활성. 준비 중엔 칸이 흐려지고, 전환 중엔 패널이 꺼져 있다.
-  ufoPanel.onPick(async (key) => {
+  ufoPanel.onPick(pickSky);
+  async function pickSky(key) {
     if (picking || sky) return;
     if (key === "earth") {
       if (outdoor) return;
@@ -1081,16 +1119,107 @@ export function createDomeGL(host, isPaused) {
     if (key !== INDOOR_BG) setIndoorBg(key);
     if (outdoor) setBgView("indoor");
     picking = false; ufoPanel.setBusy(false);
-  });
+  }
   let spacePreload = false;
   document.addEventListener(BGINDOOR_EVENT, (e) => {
     const v = e.detail === "space" ? "space" : "pink";
     if (v === INDOOR_BG) return;
     if (!outdoor) beginSky(v);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     INDOOR_BG = v;
-    spaceT0 = null; warpDist = 0;   // 우주에 새로 들어간다
+    warpDist = 0;
+    if (outdoor) { /* 바깥 보기 중 실내 값만 바뀜 — 실내로 돌아올 때 판정 */ }
+    else if (v === "space") spaceEntered(); else endStar();
     draw();
   }, { signal: life.signal });
+
+  // ── 성간 이동(3단계, 계획 ufo_panel_impl_plan.md 0번 2) ─────────────────────────────
+  // 시작: 초행성X(실내 우주)에 들어갈 때마다 10%(하늘 전환이 끝난 뒤 판정 · 기억된 우주로 방문할 때도) · 조작 패널 초행성X 칸 1초 길게 누르기.
+  // 시작하면 일반 우주(N)에서 1.5초 머문 뒤 자동으로 1단(0.30c). 그 뒤는 기어 패널(bggear.js)로 사용자가 조작 — 옛 「1분 뒤 저절로 끝남」은 없다.
+  // N 으로 멈추면 · WARP(레드존 + 좌석벨트 표시등 꺼짐) 점프 연출이 끝나면 · 우주를 떠나면 끝(기어 패널 닫힘).
+  // 기어 패널은 배경 보기 중에만 보이고(조작 패널 문턱과 별개), 그 밖에선 우주만 계속 달린다.
+  const gear = createGearPanel({
+    onGear(i) {
+      if (!star || star.frame) return;
+      if (i === 0 && !star.st.moved) { endStar(); return; }   // 자동 1단 전에 N = 바로 멈춤
+      buzz(); shiftGear(star.st, i);
+    },
+    onWarp() {
+      if (!star || star.frame || !warpReady(star.st)) return;
+      buzz();
+      captureFrame(); themeStart = -Infinity; endSky();   // B 연출의 「옛 화면」 사진
+      star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
+    },
+  });
+  let star = null, pendingHold = false, gearH = -1;
+  function startStar() {
+    if (star) return;
+    star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null };
+    warpDist = 0;
+    ufoPanel.setWarping(true);
+  }
+  function endStar() {
+    pendingHold = false;
+    if (!star) return;
+    star = null;
+    gear.show(false); setGearH(0);
+    ufoPanel.setWarping(false); ufoPanel.setRed(false);
+    draw();
+  }
+  function setGearH(px) { if (px !== gearH) { gearH = px; document.documentElement.style.setProperty("--ufo-gear-h", px ? px + 12 + "px" : "0px"); } }
+  /** 실내 우주에 들어왔다 — 하늘 전환 중이면 끝난 뒤에 판정 */
+  function spaceEntered() {
+    const decide = () => {
+      if (outdoor || INDOOR_BG !== "space") return;
+      if (pendingHold) { pendingHold = false; startStar(); }
+      else if (!reducedMotion.matches && Math.random() < STAR_RATE) startStar();
+    };
+    if (sky) sky.onDone = decide; else decide();
+  }
+  // 초행성X 칸 1초 길게 누르기 — 이미 우주면 바로, 아니면 우주로 바꾼 뒤(전환이 끝나면) 시작
+  ufoPanel.onHold(() => {
+    if (star || picking || sky) return;
+    buzz();
+    if (!outdoor && INDOOR_BG === "space") { startStar(); return; }
+    pendingHold = true;
+    pickSky("space");
+  });
+  // 점프 연출의 중심 = 진행 방향(uWarpDir)이 화면에 맺히는 점. 뒤를 보고 있으면 화면 가운데
+  function jumpCenter() {
+    const B = basis(), d = [0, 0.05, 0.99875], z = dot3(d, B.fwd), F = viewFocal();
+    if (z < 0.2) return [W / 2, H / 2];
+    const x = cx + F * dot3(d, B.right) / z, y = cy - F * dot3(d, B.up) / z;
+    return [Math.max(-W * 0.5, Math.min(W * 1.5, x)), Math.max(-H * 0.5, Math.min(H * 1.5, y))];
+  }
+  function updateStar(now, _dt, peek) {
+    if (!star) return;
+    const st = star.st;
+    // 속도 모형은 실제 지난 시간으로(프레임이 느려도 기어 시간이 늘어지지 않게, 탭 숨김 뒤 한꺼번에 뛰지 않게 0.25초까지)
+    const dt = Math.min(0.25, Math.max(0, now - (star.lastT ?? now)) / 1000); star.lastT = now;
+    if (!star.jump) {
+      if (!st.moved && now >= star.autoAt) shiftGear(st, 1);
+      for (let left = dt; left > 1e-6; left -= 1 / 60) tickWarp(st, Math.min(left, 1 / 60), now);   // 잘게 나눠(느린 프레임에서도 같은 움직임) — 「띵」 · 진동 · 흔들림은 4단계
+      if (stoppedAtN(st)) { endStar(); return; }
+      star.frame = null;
+    } else {
+      const t = (now - star.jump.t0) / SKY_SLOW;   // 확인용 ?bgdebug&bgskyslow=N 이면 N 배 느리게
+      if (t >= JUMP_MS[star.jump.kind]) { endStar(); return; }
+      const c = jumpCenter(), maxR = Math.hypot(Math.max(c[0], W - c[0]), Math.max(c[1], H - c[1])) + 40;
+      star.frame = { ...jumpFrame(star.jump.kind, t, maxR), c, maxR };
+    }
+    const beta = star.frame ? star.frame.beta : st.beta;
+    gear.show(peek);
+    if (peek) gear.update(st, !!star.frame, beta);
+    ufoPanel.setRed(beta >= 0.85);
+    setGearH(peek ? gear.height() : 0);
+  }
+  function jumpUniforms() {
+    const f = star?.frame;
+    if (!f || reducedMotion.matches) { gl.uniform4f(U.uJump, 0, 0, 0, 0); return; }
+    gl.uniform4f(U.uJump, { A: 1, B: 2, C: 3 }[star.jump.kind], f.ring.r, f.ring.alpha, f.ring.width);
+    gl.uniform4f(U.uJump2, f.flash, f.red, f.repro, f.blur);
+    gl.uniform4f(U.uJump3, f.c[0], f.c[1], f.maxR, 0);
+    gl.uniform4f(U.uJump4, f.tunnel, f.tunnelA, 0, 0);
+  }
   let wasPeek = false, ufoArmed = false;   // 열린 직후 물러나는 동안(r 0 → 0.4)엔 패널이 번쩍 뜨지 않게 — 다 물러났거나 손가락으로 줌하면 켠다
 
   // 조각 배치 — 처음 보는 정면에 몇 개는 꼭 보이게
@@ -1168,7 +1297,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
-    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0);
+    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0); gl.uniform4f(U.uJump, 0, 0, 0, 0);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
     gl.uniform1i(U.uTerrainDetail, 13); gl.uniform1i(U.uTerrainDetailNormal, 14); gl.uniform1i(U.uTerrainShadow, 15);
@@ -1488,7 +1617,7 @@ export function createDomeGL(host, isPaused) {
     panelResume = panelResume || ufoPanel.on;
     ufoPanel.transmit(true);
   }
-  function endSky() { if (!sky) return; sky = null; ufoPanel.transmit(false); }
+  function endSky() { if (!sky) return; const done = sky.onDone; sky = null; ufoPanel.transmit(false); if (done) done(); }   // onDone = 우주 진입 판정(성간 이동 10% · 길게 누르기)
   function shortenSky(now) { if (!sky || sky.shortAt != null) return; sky.shortAt = now; sky.shortMs = Math.max(1, Math.min(SKY_SHORT_MS, SKY_MS - (now - sky.t0))); }
   function skyUniforms() {
     if (!sky) { gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); return; }
@@ -1533,6 +1662,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uGroundAlbedoOn, outdoor && albedoOn ? 1 : 0);
     gl.uniform1f(U.uThemeProgress, reducedMotion.matches ? 1 : Math.min(1, (performance.now()-themeStart)/THEME_MS));
     skyUniforms();
+    jumpUniforms();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele;
@@ -1553,12 +1683,10 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uTime, T_SPEED === 0 ? 0 : (performance.now() - t0) / 1000);
     if (INDOOR_BG === "space" && !outdoor) {
       const now = performance.now();
-      if (spaceT0 === null) { spaceT0 = now; warpLast = now; }
-      const el = WARP_FIXED != null ? WARP_FIXED : (now - spaceT0) / 1000;
-      // 모션 줄이기: 별이 흐르지 않는 정지 우주(속도 0)로만.
-      const beta = reducedMotion.matches ? 0 : voyageBeta(el);
+      // 속도 β = 성간 이동의 기어 모형(bgwarp.js) · 워프 점프 중엔 그 연출 시간표. 성간 이동이 아니면 정지. 모션 줄이기: 별이 흐르지 않는 정지 우주(속도 0)로만.
+      const beta = reducedMotion.matches || !star ? 0 : star.frame ? star.frame.beta : star.st.beta;
       const scroll = 0.45 + 1.6 * beta;                       // 지나가는 별의 흐름 빠르기(로그 극좌표 s / 초)
-      if (WARP_FIXED != null) warpDist = el * scroll; else { warpDist += Math.min(0.1, (now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now; }
+      warpDist += Math.min(0.1, Math.max(0, now - warpLast) / 1000) * scroll * (beta > 0 ? 1 : 0); warpLast = now;
       gl.uniform4f(U.uSpace, 1, beta, warpDist, scroll);
       loadSpaceTex();
       gl.uniform4f(U.uSpaceTex, spaceTex.map ? 1 : 0, spaceTex.deep ? 1 : 0, SPACE_MODE === "eso" ? 2 : 1, SPACE_MODE === "eso" ? 1.8 : 1.5);
@@ -1699,7 +1827,7 @@ export function createDomeGL(host, isPaused) {
       ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
       const loading = spacePreload || (INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map);
-      ufoPanel.setChip("space", loading ? "불러오는 중…" : "길게 누르면 워프");
+      if (!star) ufoPanel.setChip("space", loading ? "불러오는 중…" : "길게 누르면 워프");   // 성간 이동 중엔 「성간 이동 중」(bgpanel setWarping)
     }
     ufoPanel.set(want);
     ufoConsole.setActive(want);   // 패널이 떠 있는 동안 바닥 제어 장치 화면에 불
@@ -1758,6 +1886,7 @@ export function createDomeGL(host, isPaused) {
     const moving = stepPieces(pieces, dt, tiltAccel(dt));
     placePieces();
     updateUfo(peek);
+    updateStar(performance.now(), dt, peek);
     // 지형 질감을 올리는 동안은 그리기를 쉬어(draw 첫 줄) 화면이 멈춘다 — 그동안 하늘 전환 시계도 멈춰, 반쯤 섞인 화면에서 끝나 버리지 않게(처음 지구를 고를 때)
     // 길어야 4초까지만 멈춰 기다리고, 그 뒤엔 그냥 끝낸다(패널이 돌아오지 못하는 일이 없게)
     if (sky && releaseGround?.terrain?.uploading) {
@@ -1770,7 +1899,7 @@ export function createDomeGL(host, isPaused) {
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
       if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
     }
-    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (INDOOR_BG === "space" && !outdoor && WARP_FIXED == null && !reducedMotion.matches && spaceT0 !== null && (voyageBeta((performance.now() - spaceT0) / 1000) > 0 || performance.now() - spaceT0 < VOYAGE_END * 1000) && t - lastGL > 1000 / (peek ? 60 : 30) - 2)) draw();
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0))) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -1789,8 +1918,10 @@ export function createDomeGL(host, isPaused) {
   });
   document.addEventListener(BGVIEW_EVENT, (e) => {
     const next = e.detail === "outdoor";
-    if (next !== outdoor) beginSky(next ? "earth" : INDOOR_BG);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
+    const changed = next !== outdoor;
+    if (changed) beginSky(next ? "earth" : INDOOR_BG);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     outdoor = next;
+    if (changed) { if (next) endStar(); else if (INDOOR_BG === "space") spaceEntered(); }   // 지구로 나가면 성간 이동 끝 · 우주로 돌아오면 진입 판정
     useViewProgram();
     // 시선 · 기준점은 두 보기가 같다(updateView) — 여기서는 화면 폭 각도만(시안 bgsize=window 일 때만 바깥이 다르다)
     if (W) gl.uniform1f(U.uF, viewFocal());
@@ -1850,11 +1981,13 @@ export function createDomeGL(host, isPaused) {
     }, 3000);
     window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, moonDiameterCSS: SIZE_MODE === "eye" ? MOON_CSS_DIAMETER * tele : 2 * viewFocal() * SUN_MOON_R[1] * DEG, themeProgress: Math.min(1,(performance.now()-themeStart)/THEME_MS), albedoOn, terrain: releaseGround.terrain?.metrics, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
+  // 기억된 우주(초행성X)로 방문했으면 여기서도 10% 판정(바깥 보기 복원으로 곧 지구가 되면 BGVIEW 에서 끝낸다)
+  if (INDOOR_BG === "space" && !outdoor) spaceEntered();
 
   return {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); document.documentElement.style.removeProperty("--ufo-gear-h"); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }

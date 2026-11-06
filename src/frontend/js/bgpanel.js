@@ -1,7 +1,7 @@
 // bgpanel.js — (bg-dome) 배경 보기 중 UFO 가운데 콘솔에 다가가면 화면 가운데에 뜨는 「UFO CONTROL」 조작 패널. 모양 = css/bgpanel.css.
 // 디자인 · 움직임 정본 = devpapers ref/bg-dome/ufo-panel/Main.dc.html(칸 · 문구 · 아이콘) + Approach.dc.html(등장 · 퇴장 연출).
 // 언제 뜨는지는 bgdomegl.js 가 정한다(뒤로 물러선 거리 r 의 문턱 — 나타남 0.12 · 사라짐 0.18, 망원이면 숨김). 여기는 모양과 on/off 만.
-// 2단계(11-06): 칸을 누르면 onPick 으로 알린다(배경 바꾸기는 bgdomegl.js). 초행성X 길게 누르기 · 워프 기어는 3단계.
+// 2단계(11-06): 칸을 누르면 onPick 으로 알린다(배경 바꾸기는 bgdomegl.js). 3단계(11-06): 초행성X 칸 1초 길게 누르기 = onHold(성간 이동), 워프 기어 패널은 bggear.js.
 // 고정 문구 · 아이콘만 쓰고 모두 createElement · textContent 로 만든다(innerHTML 금지).
 
 const NS = "http://www.w3.org/2000/svg";
@@ -48,19 +48,53 @@ const TILES = [
 
 /** 패널을 만든다. set(on) = 등장 · 퇴장, setCurrent(key) = 지금 배경 칸에 불. */
 export function createUfoPanel() {
-  const tiles = {}, firstChip = {};
-  let pick = null, current = null;
+  const tiles = {}, firstChip = {}, chipBase = {}, subEl = {};
+  let pick = null, hold = null, current = null;
+  // 3단계: 초행성X 칸 1초 길게 누르기 = 성간 이동(시안 Main.dc.html chargeLoop — 1초에 차고, 떼면 0.25초에 빠짐, 다 차면 hold()).
+  let charge = 0, holding = false, chargeRaf = 0, chargeLast = 0, eatClick = false, warping = false;
+  const fill = h("span", "ufo-tile__fill");
+  const showChip = (key) => { const c = firstChip[key]; if (!c) return; const text = key === "space" && charge > 0 && !warping ? `충전 ${Math.round(charge * 100)}%` : chipBase[key]; if (c.textContent !== text) c.textContent = text; };
+  function chargeLoop(now) {
+    chargeRaf = 0;
+    const dt = Math.min(0.25, (now - chargeLast) / 1000); chargeLast = now;
+    charge = holding ? charge + dt / 1.0 : charge - dt / 0.25;
+    if (charge >= 1 && holding) {
+      charge = 0; holding = false; eatClick = true;   // 다 찼다 — 뒤따르는 click(떼기)은 고르기로 치지 않는다
+      fill.style.transform = "scaleX(0)"; showChip("space");
+      if (hold) hold();
+      return;
+    }
+    if (charge <= 0) charge = 0;
+    fill.style.transform = `scaleX(${charge.toFixed(3)})`;
+    showChip("space");
+    if (holding || charge > 0) chargeRaf = requestAnimationFrame(chargeLoop);
+  }
   const list = h("div", "ufo-list");
   TILES.forEach((t, i) => {
-    const text = h("span", "ufo-tile__text", [h("span", "ufo-tile__lbl", [t.label]), h("span", "ufo-tile__sub", [t.sub])]);
+    const sub = h("span", "ufo-tile__sub", [t.sub]);
+    subEl[t.key] = sub;
+    const text = h("span", "ufo-tile__text", [h("span", "ufo-tile__lbl", [t.label]), sub]);
     if (t.chips.length) {
       const chips = t.chips.map((c) => h("span", "ufo-chip", [c]));
-      firstChip[t.key] = chips[0];
+      firstChip[t.key] = chips[0]; chipBase[t.key] = t.chips[0];
       text.append(h("span", "ufo-chips", chips));
     }
-    const b = h("button", "ufo-tile ufo-stg", [h("span", "ufo-tile__ico", [ICONS[t.key]()]), text, h("span", "ufo-tile__led")], { type: "button", "aria-pressed": "false" });
+    const b = h("button", "ufo-tile ufo-stg", [...(t.key === "space" ? [fill] : []), h("span", "ufo-tile__ico", [ICONS[t.key]()]), text, h("span", "ufo-tile__led")], { type: "button", "aria-pressed": "false" });
     b.style.setProperty("--i", String(i + 1));
-    b.addEventListener("click", () => { if (on && pick) pick(t.key); });
+    b.addEventListener("click", () => { if (eatClick) { eatClick = false; return; } if (on && pick) pick(t.key); });
+    if (t.key === "space") {
+      b.addEventListener("contextmenu", (e) => e.preventDefault());   // 길게 누를 때 폰 기본 메뉴 막기
+      b.addEventListener("pointerdown", (e) => {
+        if (!on || b.disabled || warping || !hold) return;
+        eatClick = false; holding = true;
+        try { b.setPointerCapture(e.pointerId); } catch { /* 캡처 못 함 */ }
+        if (!chargeRaf) { chargeLast = performance.now(); chargeRaf = requestAnimationFrame(chargeLoop); }
+      });
+      const release = () => { if (!holding) return; holding = false; if (!chargeRaf) { chargeLast = performance.now(); chargeRaf = requestAnimationFrame(chargeLoop); } };
+      b.addEventListener("pointerup", release);
+      b.addEventListener("pointercancel", release);
+      b.addEventListener("lostpointercapture", release);
+    }
     tiles[t.key] = b;
     list.append(b);
   });
@@ -108,8 +142,23 @@ export function createUfoPanel() {
     },
     /** 칸을 누르면 부를 함수(key = "pink" | "space" | "earth") */
     onPick(fn) { pick = fn; },
-    /** 칸의 첫 표시(칩) 글 바꾸기 — 같은 글이면 건드리지 않는다 */
-    setChip(key, text) { const c = firstChip[key]; if (c && c.textContent !== text) c.textContent = text; },
+    /** 칸의 첫 표시(칩) 글 바꾸기 — 같은 글이면 건드리지 않는다(초행성X 는 충전 중이면 「충전 N%」가 앞선다) */
+    setChip(key, text) { chipBase[key] = text; showChip(key); },
+    /** 초행성X 칸 1초 길게 누르기가 다 찼을 때 부를 함수 */
+    onHold(fn) { hold = fn; },
+    /** 성간 이동 중 표시 — 초행성X 칸이 꽉 찬 채 맥박 · 설명 「메롱이다, 그럼 바이바이!」(시안) · 칩 「성간 이동 중」 */
+    setWarping(v) {
+      if (v === warping) return;
+      warping = v;
+      if (v) { holding = false; charge = 0; }
+      fill.classList.toggle("is-full", v);
+      fill.style.transform = v ? "scaleX(1)" : "scaleX(0)";
+      subEl.space.textContent = v ? "메롱이다, 그럼 바이바이!" : TILES[1].sub;
+      chipBase.space = v ? "성간 이동 중" : TILES[1].chips[0];
+      showChip("space");
+    },
+    /** 성간 이동 레드존 — 시안 글로우를 빨갛게(css .is-red) */
+    setRed(v) { if (root.classList.contains("is-red") !== v) root.classList.toggle("is-red", v); },
     setCurrent(key) {
       if (key === current) return;
       current = key;

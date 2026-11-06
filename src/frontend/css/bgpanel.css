@@ -220,6 +220,100 @@
   .ufo-hud.is-on .ufo-clip, .ufo-hud.is-on .ufo-stg, .ufo-hud.is-on .ufo-type, .ufo-hud.is-on .ufo-brk { animation: ufo-fade-in .2s both; }
   .ufo-hud.is-off .ufo-clip { animation: ufo-fade-out .15s both; }
   .ufo-hud .ufo-line, .ufo-hud .ufo-chroma { animation: none; opacity: 0; }
-  .ufo-hud.is-on .ufo-scan::after { animation: none; }}
+  .ufo-hud.is-on .ufo-scan::after { animation: none; }
+  .ufo-tile__fill.is-full, .ugr-belt[data-state="blink"] .is-lit { animation: none; }
+}
 @keyframes ufo-fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
 @keyframes ufo-fade-out { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ── 3단계: 초행성X 칸 길게 누르기 충전(시안 Main.dc.html .fill) — 1초에 왼쪽 → 오른쪽으로 차고, 떼면 0.25초에 빠진다 */
+.ufo-tile > span:not(.ufo-tile__fill) { position: relative; }
+.ufo-tile__fill {
+  position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(0); pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 111, 181, .06), rgba(255, 111, 181, .34) calc(100% - 3px), #ffb3da calc(100% - 3px));
+}
+.ufo-tile__fill.is-full { background: rgba(255, 111, 181, .22); animation: ufo-fill-pulse 1.4s ease-in-out infinite; }
+@keyframes ufo-fill-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* 성간 이동 레드존(β ≥ 0.85) — 조작 패널의 시안 테 · 글로우 · 꺾쇠가 빨갛게(11-06 운영자). 기어 패널(.ufo-gear.is-red)도 같은 색 */
+.ufo-card { transition: border-color .3s, box-shadow .3s; }
+.ufo-hud.is-red .ufo-card { border-color: rgba(255, 61, 90, .7); box-shadow: 0 0 0 1px rgba(255, 61, 90, .2), 0 0 32px rgba(255, 61, 90, .32); }
+.ufo-hud.is-red .ufo-brk { border-color: #ff3d5a; }
+.ufo-hud.is-red .ufo-head__tag { color: #ff6d86; }
+/* 기어 패널이 떠 있으면 조작 패널은 그 위쪽 남은 자리의 가운데로(시안 Main.dc.html 「warp 면 위로」) — 높이는 js 가 --ufo-gear-h 로 */
+.ufo-hud { top: calc((100% - var(--ufo-gear-h, 0px)) / 2); transition: opacity .15s ease, top .35s cubic-bezier(.2, .8, .2, 1); }
+
+/* ── 워프 기어 패널(js/bggear.js, 시안 Gear.dc.html) — 배경 보기 중 성간 이동이면 화면 아래 */
+.ufo-gear {
+  position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); z-index: 975;
+  max-width: 360px; margin: 0 auto; font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
+}
+.ufo-gear[hidden] { display: none; }
+.ufo-gear.is-on .ugr-card { animation: ufo-hud-in .6s cubic-bezier(.2, .8, .2, 1) both; }
+.ugr-card {
+  position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 10px;
+  background: rgba(10, 8, 26, .82); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1px solid rgba(79, 227, 255, .55); box-shadow: 0 0 28px rgba(79, 227, 255, .2);
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+  transition: border-color .3s, box-shadow .3s;
+}
+.ufo-gear.is-red .ugr-card { border-color: rgba(255, 61, 90, .7); box-shadow: 0 0 28px rgba(255, 61, 90, .3); }
+.ugr-head, .ugr-meter, .ugr-grid, .ugr-warp { position: relative; }
+.ugr-head { display: flex; align-items: center; justify-content: space-between; }
+.ugr-head__l { display: flex; flex-direction: column; gap: 1px; }
+.ugr-tag { font-size: 11px; font-weight: 600; letter-spacing: .18em; color: #ff8cc6; }
+.ugr-title { font-size: 15px; font-weight: 700; }
+.ugr-chip { font-size: 11px; letter-spacing: .1em; padding: 3px 7px; border: 1px solid currentColor; color: #ffd27a; }
+.ugr-chip[data-tone="go"] { color: var(--ufo-cyan); }
+.ugr-chip[data-tone="red"] { color: #ff6d86; }
+.ugr-meter { height: 150px; display: flex; justify-content: center; }
+.ugr-dial { position: absolute; top: 0; }
+.ugr-arc { stroke: var(--ufo-cyan); filter: drop-shadow(0 0 4px var(--ufo-cyan)); }
+.ufo-gear.is-red .ugr-arc { stroke: #ff3d5a; filter: drop-shadow(0 0 4px #ff3d5a); }
+.ugr-needle { position: absolute; left: 50%; top: 28px; width: 3px; height: 84px; margin-left: -1.5px; background: #ff6fb5; box-shadow: 0 0 8px #ff6fb5; transform-origin: 50% 100%; transform: rotate(-90deg); }
+.ugr-hub { position: absolute; left: 50%; top: 105px; width: 14px; height: 14px; margin-left: -7px; background: #0a081a; border: 2px solid #ff6fb5; border-radius: 50%; box-sizing: border-box; }
+.ugr-readout { position: absolute; top: 120px; display: flex; flex-direction: column; align-items: center; }
+.ugr-read { font-size: 24px; font-weight: 700; line-height: 1; color: var(--ufo-ink); }
+.ufo-gear.is-red .ugr-read { color: #ff8a9c; }
+.ugr-unit { font-size: 10px; color: var(--ufo-sub); margin-top: 2px; }
+/* 좌석벨트 표시등 — 시안 그대로(꺼짐 = 렌즈에 묻힘 · 켜짐 = 호박색 · 깜빡임 = 0.5초 켜짐 / 0.5초 꺼짐) */
+.ugr-belt { position: absolute; left: 0; top: 2px; width: 72px; height: 30px; box-sizing: border-box; padding: 3px; border-radius: 15px; background: linear-gradient(180deg, #3b4250, #1d212b); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(79,227,255,.25), 0 0 0 1px rgba(79,227,255,.22), 0 2px 4px rgba(0,0,0,.6); }
+.ugr-belt__lens { position: relative; display: block; width: 100%; height: 100%; border-radius: 12px; background: linear-gradient(180deg, #24262d, #191a20); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); overflow: hidden; }
+.ugr-belt__pic { position: absolute; inset: 0; display: grid; place-items: center; }
+.ugr-belt__pic svg { width: 62px; height: 21px; }
+.ugr-belt__pic.is-off { color: #33353d; --g: #33353d; }
+.ugr-belt__pic.is-lit { opacity: 0; color: #ffb21e; --g: #39e07a; filter: drop-shadow(0 0 1.5px rgba(255,190,60,.9)) drop-shadow(0 0 4px rgba(255,160,30,.45)); }
+.ugr-belt[data-state="on"] .is-lit { opacity: 1; }
+.ugr-belt[data-state="blink"] .is-lit { animation: ugr-belt-blink 1s steps(1, end) infinite; }
+@keyframes ugr-belt-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.ugr-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.ugr-redzone { grid-column: 5 / span 2; font-size: 10px; letter-spacing: .14em; color: #ff6d86; text-align: center; border-top: 2px solid #ff3d5a; padding-top: 3px; }
+.ugr-gbtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 48px; padding: 5px 0;
+  background: rgba(18, 16, 40, .6); border: 1px solid rgba(120, 200, 255, .25); color: var(--ufo-ink); font: inherit; cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.ugr-gbtn:disabled { cursor: default; opacity: .5; }
+.ugr-g { font-size: 17px; font-weight: 700; line-height: 1; }
+.ugr-v { font-size: 10px; color: var(--ufo-sub); }
+.ugr-gbtn.is-on { background: rgba(79, 227, 255, .16); border-color: var(--ufo-cyan); box-shadow: inset 0 0 14px rgba(79, 227, 255, .25); }
+.ugr-gbtn.is-on .ugr-g { color: var(--ufo-cyan); }
+.ugr-gbtn.is-red { border-color: rgba(255, 77, 109, .45); background: rgba(60, 10, 26, .5); }
+.ugr-gbtn.is-red .ugr-v { color: #ff9fb1; }
+.ugr-gbtn.is-red.is-on { background: rgba(255, 61, 90, .2); border-color: #ff3d5a; box-shadow: inset 0 0 16px rgba(255, 61, 90, .35); }
+.ugr-gbtn.is-red.is-on .ugr-g { color: #ff6d86; }
+.ugr-gbtn.is-tgt { border-style: dashed; border-color: #ffd27a; animation: ugr-tgt 0.8s ease-in-out infinite; }
+@keyframes ugr-tgt { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.ugr-warp {
+  min-height: 44px; font-size: 15px; font-weight: 700; letter-spacing: .3em; color: #fff; cursor: pointer;
+  background: rgba(255, 61, 90, .22); border: 1px solid #ff3d5a; box-shadow: 0 0 16px rgba(255, 61, 90, .5), inset 0 0 12px rgba(255, 61, 90, .3);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; animation: ugr-warp-ready 1.2s ease-in-out infinite;
+}
+.ugr-warp:disabled { cursor: default; color: #7f90a8; background: rgba(18, 16, 40, .6); border-color: rgba(120, 200, 255, .2); box-shadow: none; animation: none; }
+@keyframes ugr-warp-ready { 0%, 100% { box-shadow: 0 0 16px rgba(255, 61, 90, .5), inset 0 0 12px rgba(255, 61, 90, .3); } 50% { box-shadow: 0 0 26px rgba(255, 61, 90, .8), inset 0 0 18px rgba(255, 61, 90, .45); } }
+@media (prefers-reduced-motion: reduce) {
+  .ufo-gear.is-on .ugr-card { animation: ufo-fade-in .2s both; }
+  .ugr-gbtn.is-tgt, .ugr-warp { animation: none; }
+}
