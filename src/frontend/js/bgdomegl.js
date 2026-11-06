@@ -1742,13 +1742,16 @@ export function createDomeGL(host, isPaused) {
     return { fwd: [sy * cp, sp, cy_ * cp], right: r0, up: [-sy * sp, cp, -cy_ * sp], hright: r0 };
   }
   // 배경 그림을 읽을 때 돌릴 각(라디안) — 폰 기울임(rollS)의 반대. 분홍 구름 하늘(실내 분홍)은 0(운영자: 제외 · 판정 불필요)
-  // (11-06 운영자) 손에 든 채 조금 돌아간 정도(≈ 5° 아래)는 거의 반응하지 않고, 일부러 기울였다고 볼 만큼(≈ 14° 넘게)이면 원래대로 그 각을 그대로 —
-  // 그 사이는 부드럽게 이어 준다(기울임 × smoothstep(5°, 14°, |기울임|)). 공중 무늬가 미끄러지는 기울기 가속(tiltAccel)은 그대로.
-  const ROLL_SOFT = 5 * DEG, ROLL_FULL = 14 * DEG;
+  // (11-06 운영자) 손에 든 채 조금 돌아간 정도는 거의 반응하지 않고, 일부러 기울였다고 볼 만큼이면 원래 민감도(폰이 1° 돌면 배경도 1°)로 —
+  // 단 「툭툭 끊기는 느낌」이 없어야 한다(운영자). 그래서 각을 직접 곱하지 않고 「민감도」를 0 → 1 로 부드럽게 올린다:
+  //   민감도 = smoothstep(3°, 10°, |기울임|), 배경 각 = 그 민감도를 기울임에 대해 적분한 값 → 배경이 폰보다 빨리 도는 구간이 없다(변화율 ≤ 1, 이음매 없음).
+  //   3° 아래 = 0 · 10° 넘으면 1:1(대신 약 6.5° 늦게 따라감). 시간 쪽 떨림은 rollS 의 0.15초 저역 통과가 거른다.
+  const ROLL_SOFT = 3 * DEG, ROLL_FULL = 10 * DEG;
   const bgRoll = () => {
     if (!outdoor && INDOOR_BG !== "space") return 0;
-    const t = Math.max(0, Math.min(1, (Math.abs(rollS) - ROLL_SOFT) / (ROLL_FULL - ROLL_SOFT)));
-    return -rollS * t * t * (3 - 2 * t);
+    const a = Math.abs(rollS), w = ROLL_FULL - ROLL_SOFT, t = Math.max(0, Math.min(1, (a - ROLL_SOFT) / w));
+    const eff = a >= ROLL_FULL ? a - ROLL_SOFT - w / 2 : w * (t * t * t - t * t * t * t / 2);   // ∫ smoothstep = t³ − t⁴/2
+    return -Math.sign(rollS) * eff;
   };
 
   function draw() {
