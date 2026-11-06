@@ -66,7 +66,7 @@ let INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q =
 const STAR_RATE = (() => { const v = DEBUG ? Number(QS.get("bgstarrate")) : NaN; return DEBUG && QS.has("bgstar") ? 1 : Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.1; })();
 const JUMP_FIXED = DEBUG && ["A", "B", "C"].includes(QS.get("bgjump")) ? QS.get("bgjump") : null;
 // (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · eso = ESO/S. Brunier 은하수 파노라마(대안) · shader = 그려 만든 우주(나).
-// 딥필드 = 웹 망원경 SMACS 0723(NASA, ESA, CSA, STScI). 평가용 이미지는 assets/bg/eval/(저장소에 올리지 않음). ?bgdebug&bgspace=map|eso|shader&bgdeep=0|1
+// 딥필드 = 웹 망원경 SMACS 0723(NASA, ESA, CSA, STScI). 이미지 = assets/bg/space/(출처 · 이용 조건 = assets/bg/README.md). ?bgdebug&bgspace=map|eso|shader&bgdeep=0|1
 // (11-05 운영자) 가 · 나 · 대안 모두 쓴다 — 방문마다 셋 중 하나(같은 확률).
 const SPACE_MODE = (() => { const q = DEBUG ? QS.get("bgspace") : null; return ["map", "eso", "shader"].includes(q) ? q : ["map", "eso", "shader"][Math.floor(Math.random() * 3)]; })();
 const SPACE_DEEP = !(DEBUG && QS.get("bgdeep") === "0");   // 워프 60초, 마지막 10초 감속하며 일반 우주로
@@ -1090,22 +1090,22 @@ export function createDomeGL(host, isPaused) {
         gl.activeTexture(gl.TEXTURE0); draw();
       };
       img.onerror = () => { one(); console.warn("[bgdome] 우주 사진을 못 받음", name); };
-      img.src = new URL("../assets/bg/eval/" + name, import.meta.url).href;
+      img.src = new URL("../assets/bg/space/" + name, import.meta.url).href;
     };
-    if (SPACE_MODE !== "shader") load(SPACE_MODE === "eso" ? "space-eso.jpg" : "space-starmap.jpg", "map", 13);
-    if (SPACE_DEEP) load("space-deep.jpg", "deep", 14);
+    if (SPACE_MODE !== "shader") load(SPACE_MODE === "eso" ? "space-eso.webp" : "space-starmap.webp", "map", 13);
+    if (SPACE_DEEP) load("space-deep.webp", "deep", 14);
     return spaceTex.ready;
   }   // 실내 우주 배경의 워프 시작 · 적분 거리
 
   // (11-06 운영자) 워프로 도착하면 다른 우주 풍경 — 크게 보이는 사진 한 장(딥필드 자리, 14번 칸)을 무작위로 바꾼다.
-  // 퍼블릭 도메인(NASA · Hubble · Webb) 사진, 운영자가 모은 주소에서 받은 것(assets/bg/eval — 평가용, 저장소에 올리지 않음). asp = 가로 ÷ 세로, w = 가로 픽셀.
+  // 퍼블릭 도메인(NASA · Hubble · Webb) 사진 — 운영자가 모은 주소(출처 · 가공 = assets/bg/README.md). asp = 가로 ÷ 세로, w = 가로 픽셀.
   const DEEP_SET = [
-    { name: "space-deep.jpg", w: 1960, asp: 1 },              // 웹 망원경 SMACS 0723 딥필드
-    { name: "space-earthrise.jpg", w: 960, asp: 1 },          // 아폴로 8 「지구돋이」
-    { name: "space-crab.jpg", w: 960, asp: 1 },               // 게 성운
-    { name: "space-orion.jpg", w: 960, asp: 1 },              // 오리온 성운
-    { name: "space-pillars.jpg", w: 1280, asp: 1280 / 1335 }, // 창조의 기둥
-    { name: "space-tarantula.jpg", w: 1280, asp: 1.25 },      // 타란툴라 성운
+    { name: "space-deep.webp", w: 1280, asp: 1 },              // 웹 망원경 SMACS 0723 딥필드
+    { name: "space-earthrise.webp", w: 960, asp: 1 },          // 아폴로 8 「지구돋이」
+    { name: "space-crab.webp", w: 960, asp: 1 },               // 게 성운
+    { name: "space-orion.webp", w: 960, asp: 1 },              // 오리온 성운
+    { name: "space-pillars.webp", w: 1280, asp: 1280 / 1335 }, // 창조의 기둥
+    { name: "space-tarantula.webp", w: 1280, asp: 1.25 },      // 타란툴라 성운
   ];
   const deepTex = new Map(), deepLoading = new Map();
   let deepIdx = 0;
@@ -1126,7 +1126,7 @@ export function createDomeGL(host, isPaused) {
         res(true);
       };
       img.onerror = () => { console.warn("[bgdome] 우주 사진을 못 받음", DEEP_SET[i].name); res(false); };
-      img.src = new URL("../assets/bg/eval/" + DEEP_SET[i].name, import.meta.url).href;
+      img.src = new URL("../assets/bg/space/" + DEEP_SET[i].name, import.meta.url).href;
     });
     deepLoading.set(i, p);
     return p;
@@ -1435,7 +1435,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
     gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0); gl.uniform4f(U.uJump, 0, 0, 0, 0); gl.uniform1f(U.uBgRoll, 0);
-    gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1])); gl.uniform2f(U.uDeepShape, 1, 1960);
+    gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1])); gl.uniform2f(U.uDeepShape, 1, 1280);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
     gl.uniform1i(U.uTerrainDetail, 13); gl.uniform1i(U.uTerrainDetailNormal, 14); gl.uniform1i(U.uTerrainShadow, 15);
