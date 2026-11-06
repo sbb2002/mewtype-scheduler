@@ -171,7 +171,7 @@
 .ufo-note[hidden] { display: none; }
 .ufo-tile:active { background: rgba(255, 95, 170, .22); }
 /* 하늘 전환 「송신 중」(ref/bg-dome/transition/AGREED.md) — js/bgdomegl.js 가 .is-tx 를 약 1초 켠다.
-   판 0.35 · 칸 바탕 0.15 · 글자 그대로, 뒤 흐림 끔(흐림 수치를 매 프레임 바꾸지 않고 켜고 끄기만). 고른 칸 테두리 위로 시안 선이 0.9초에 한 번 지나간다. */
+   판 0.35 · 칸 바탕 0.15 · 글자 그대로, 뒤 흐림 끔(흐림 수치를 매 프레임 바꾸지 않고 켜고 끄기만). 고른 칸 테두리 위로 시안 선이 1.4초에 한 번 지나간다. */
 .ufo-card, .ufo-tile { transition: background-color .12s ease, border-color .15s, -webkit-backdrop-filter .12s, backdrop-filter .12s; }
 .ufo-hud.is-tx .ufo-card { background: rgba(10, 8, 26, .35); -webkit-backdrop-filter: none; backdrop-filter: none; transition-duration: .08s; }
 .ufo-hud.is-tx .ufo-tile { background: rgba(18, 16, 40, .15); transition-duration: .08s; }
@@ -182,7 +182,7 @@
   border: 1px solid var(--ufo-cyan);
   -webkit-mask: linear-gradient(90deg, transparent 0 40%, #000 48% 52%, transparent 60% 100%) 0 0 / 300% 100% no-repeat;
   mask: linear-gradient(90deg, transparent 0 40%, #000 48% 52%, transparent 60% 100%) 0 0 / 300% 100% no-repeat;
-  animation: ufo-tx-run .9s cubic-bezier(.45, 0, .25, 1) both;
+  animation: ufo-tx-run 1.4s cubic-bezier(.45, 0, .25, 1) both;   /* 돔 하강(bgdomegl.js SKY_DESC_MS)과 같은 길이 */
 }
 @keyframes ufo-tx-run { 0% { opacity: 1; -webkit-mask-position: 100% 0; mask-position: 100% 0; } 90% { opacity: 1; } 100% { opacity: 0; -webkit-mask-position: 0 0; mask-position: 0 0; } }
 .ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(79, 227, 255, .18); padding-top: 8px; }

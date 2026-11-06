@@ -816,7 +816,7 @@ void main() {
     outc += mix(vec3(.12,.85,1),vec3(1,.16,.64),sector) * edge * (.08 + 2.4*grid + .16*scan) * (1.0-floorK);
   }
   // 하늘 전환 「돔 재투영」: 천정 쪽에서 위도를 따라 휘는 경계 한 줄이 돔 가장자리로 내려온다. 지나간 쪽 = 새 하늘.
-  // 경계 근처만 화면 좌표 4×4 Bayer 점무늬(칸 3 CSS px — 고정 순서라 점마다 한 번만 바뀐다)로 옛/새를 섞는다.
+  // 경계 근처만 화면 좌표 4×4 Bayer 점무늬(칸 6 CSS px — 고정 순서라 점마다 한 번만 바뀐다)로 옛/새를 섞는다.
   // 바닥은 경계가 고리에 닿을 때 함께 바뀌고(세 목적지 모두 같은 무대 바닥), 선 · 잔광은 돔 쪽에만.
   if (uSkyFx.x >= 0.0) {
     float colJ = fract(sin(floor((lon + TAU * .5) / (30.0 * D)) * 12.9898) * 43758.5453) * .028;   // 경도 칸마다 0~25ms 차이
@@ -825,7 +825,7 @@ void main() {
     float bl = mix(uSkyFx2.x, uSkyFx2.y, tc);
     float le = mix(lat, uSkyFx2.y + 2.0 * D, floorK);
     float s = clamp((le - bl) / (mix(1.2, 7.0, uSkyFx.z) * D), 0.0, 1.0);
-    vec2 bc = mod(floor(p / 3.0), 4.0);
+    vec2 bc = mod(floor(p / 6.0), 4.0);   // 점 한 칸 6 CSS px(11-06 운영자 「도트를 더 크게」 — 처음 3px)
     float reveal = step((BAYER4[int(bc.y) * 4 + int(bc.x)] + .5) / 16.0, s);
     vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
     float dome = 1.0 - floorK;
@@ -1419,10 +1419,11 @@ export function createDomeGL(host, isPaused) {
   }
 
   // ── 하늘 전환 「돔 재투영」(ref/bg-dome/transition/AGREED.md) — 조작 패널에서 하늘을 바꿀 때(배경 보기 중)만.
-  // 하강 900ms + 잔광 200ms. 시점이 6° 넘게 돌거나 · 두 손가락 줌 · 화면 크기 변경이면 남은 것을 150ms 안에 지운다. 움직임 줄이기면 없음.
+  // 하강 1400ms + 잔광 250ms(합의안 900 + 200 → 운영자 「좀 느리게」). 시점이 6° 넘게 돌거나 · 두 손가락 줌 · 화면 크기 변경이면 남은 것을 150ms 안에 지운다. 움직임 줄이기면 없음.
   // 확인용: ?bgdebug&bgskyslow=10 이면 10배 느리게(시간 조정 시험)
   const SKY_SLOW = (() => { const v = DEBUG ? Number(QS.get("bgskyslow")) : NaN; return Number.isFinite(v) && v > 0 ? v : 1; })();
-  const SKY_DESC_MS = 900 * SKY_SLOW, SKY_MS = 1100 * SKY_SLOW, SKY_TX_OFF_MS = 980 * SKY_SLOW, SKY_SHORT_MS = 150, SKY_END_LAT = -4 * DEG;
+  // (11-06 운영자 「좀 느리게」) 하강 900 → 1400ms, 잔광 200 → 250ms
+  const SKY_DESC_MS = 1400 * SKY_SLOW, SKY_MS = 1650 * SKY_SLOW, SKY_TX_OFF_MS = 1530 * SKY_SLOW, SKY_SHORT_MS = 150, SKY_END_LAT = -4 * DEG;
   // 목적지별 (진행 선, 점무늬 띠, 분홍 잔광) — 초행성X = 선이 또렷, 지구 = 점무늬 · 잔광 가장 약하게, 버츄얼 스페이스 = 잔광 조금 더
   const SKY_FX = { space: [1.3, 1, 0.8], earth: [1, 0.45, 0.35], pink: [1, 1, 1.3] };
   let sky = null;
