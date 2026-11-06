@@ -1244,6 +1244,7 @@ export function createDomeGL(host, isPaused) {
     if (alarmK < 0.002 && !want) alarmK = 0;
     const peekNow = document.documentElement.classList.contains("bg-peek");
     siren.hidden = !(alarmK > 0 && peekNow);
+    sound.alarm(alarmK);   // 경보음도 같은 세기로(bgsound.js) — 배경 보기가 아니어도 성간 이동 중이면 들린다
     if (!siren.hidden) siren.style.opacity = alarmK.toFixed(3);
   }
   function floorLights() {
