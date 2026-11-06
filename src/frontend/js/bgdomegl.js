@@ -19,7 +19,6 @@ import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
-import { attachSwipe, shuffleCards } from "./bgdeck.js";
 import { createWarp, shiftGear, tickWarp, warpReady, stoppedAtN, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
 const DEG = Math.PI / 180;
@@ -1151,35 +1150,20 @@ export function createDomeGL(host, isPaused) {
       star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
     },
   });
-  let star = null, pendingHold = false, deckFront = "gear";
-  // 두 패널이 다 떠 있으면 카드 두 장으로 겹친다 — 처음엔 기어가 앞, 앞 카드를 좌우로 밀면 서로 바뀐다(bgdeck.js, 11-06 운영자)
-  const bothCards = () => gear.shown && ufoPanel.on;
-  const swapDeck = (dir, dx = 0) => {
-    if (!bothCards()) return;
-    const front = deckFront === "gear" ? gear.el : ufoPanel.el, back = deckFront === "gear" ? ufoPanel.el : gear.el;
-    const backYBack = parseFloat(back.style.getPropertyValue("--back-y")) || -22;
-    deckFront = deckFront === "gear" ? "ufo" : "gear";
-    applyDeck();   // 클래스 · 새 --back-y 를 먼저 붙이고(끝 모습), 움직임은 그 위에 덧씌운다
-    shuffleCards(front, back, dir, dx, parseFloat(front.style.getPropertyValue("--back-y")) || -22, backYBack);
-  };
-  let deckKey = "";
-  function applyDeck() {
-    const both = bothCards();
-    gear.setBack(both && deckFront === "ufo");
-    ufoPanel.setBack(both && deckFront === "gear");
-    for (const el of [gear.el, ufoPanel.el]) if (el.classList.contains("in-deck") !== both) el.classList.toggle("in-deck", both);
-    const key = `${both}|${deckFront}`;
-    if (!both || key === deckKey) { deckKey = key; return; }
-    deckKey = key;
-    // 뒤 카드가 앞 카드보다 짧아도 위로 26px 삐져나와 「뒤에 한 장 더 있다」가 보이게 — 둘 다 화면 가운데 기준, 뒤 카드는 0.92 배
-    const front = deckFront === "gear" ? gear.el : ufoPanel.el, back = deckFront === "gear" ? ufoPanel.el : gear.el;
-    back.style.setProperty("--back-y", (0.46 * back.offsetHeight - front.offsetHeight / 2 - 26).toFixed(0) + "px");
+  let star = null, pendingHold = false, shaking = false;
+  // 흔들기(11-06 운영자): 좌석벨트 표시등이 켜져 있으면(레드존 가속 · 급제동) 두 패널이 빠르게 흔들리고(세기 = 모형의 떨림 amp 비례), 깜빡일 땐 아주 약하게.
+  // 매 프레임 무작위 위치(시안 Gear.dc.html 의 패널 떨림과 같은 방식). 움직임 줄이기면 없음.
+  function shakePanels(st) {
+    let a = 0;
+    if (!reducedMotion.matches && st) a = st.belt === "on" ? 2.2 + 1.2 * st.amp : st.belt === "blink" ? 0.7 : 0;
+    if (!a) { if (shaking) { shaking = false; gear.shake(0, 0); ufoPanel.el.style.transform = ""; } return; }
+    shaking = true;
+    const r = () => (Math.random() - 0.5) * 2;
+    gear.shake(r() * a, r() * a * 0.6);
+    ufoPanel.el.style.transform = ufoPanel.on ? `translate(${(r() * a).toFixed(1)}px, ${(r() * a * 0.6).toFixed(1)}px)` : "";
   }
-  attachSwipe(gear.el, { canSwipe: () => bothCards() && deckFront === "gear", onSwipe: swapDeck });
-  attachSwipe(ufoPanel.el, { canSwipe: () => bothCards() && deckFront === "ufo", onSwipe: swapDeck, onDragStart: () => ufoPanel.cancelHold() });
   function startStar() {
     if (star) return;
-    deckFront = "gear";
     star = { st: createWarp(), autoAt: performance.now() + 1500, jump: null, frame: null };
     warpDist = 0;
     ufoPanel.setWarping(true);
@@ -1188,7 +1172,9 @@ export function createDomeGL(host, isPaused) {
     pendingHold = false;
     if (!star) return;
     star = null;
-    gear.show(false); applyDeck();
+    shakePanels(null);
+    gear.show(false, true);   // 성간 이동이 끝나면 하늘 전환처럼(흰 띠 + 도트) 사라진다
+    ufoPanel.el.style.transform = "";
     ufoPanel.setWarping(false); ufoPanel.setRed(false);
     draw();
   }
@@ -1233,10 +1219,10 @@ export function createDomeGL(host, isPaused) {
       star.frame = { ...jumpFrame(star.jump.kind, t, maxR), c, maxR };
     }
     const beta = star.frame ? star.frame.beta : st.beta;
-    gear.show(peek);
+    gear.show(peek);   // 배경 보기 중이면 성간 이동 동안 늘 화면 아래에(조작 패널 문턱과 별개)
     if (peek) gear.update(st, !!star.frame, beta);
     ufoPanel.setRed(beta >= 0.85);
-    applyDeck();
+    shakePanels(star.frame ? null : st);
   }
   function jumpUniforms() {
     const f = star?.frame;

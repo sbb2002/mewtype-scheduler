@@ -243,93 +243,62 @@
 /* 성간 이동 레드존(β ≥ 0.85) — 조작 패널의 시안 테 · 글로우 · 꺾쇠가 빨갛게(11-06 운영자). 기어 패널(.ufo-gear.is-red)도 같은 색 */
 .ufo-holo.is-red .ufo-brk { border-color: #ff3d5a; }
 .ufo-hud.is-red .ufo-head__tag { color: #ff6d86; }
-/* ── 성간 이동 중 두 패널 = 카드 두 장(js/bgdeck.js, 11-06 운영자 「기어 패널이 앞 · 조작 패널은 뒤 · 좌우로 밀면 카드 섞듯」)
-   같은 자리(화면 가운데)에 겹치고, 뒤 카드는 위로 조금 삐져나와 작고 어둡게(누를 수 없음 = 비활성). 앞 카드를 밀면 손가락을 따라 기울며 끌린다(--dx).
-   충분히 밀면(js swapDeck — Web Animations): 앞 카드 = 민 방향으로 빠졌다가 뒤로 들어가며 어두워지고, 뒤 카드 = 반대 방향으로 빠졌다가 앞으로 오며 밝아진다. */
-.ufo-hud, .ufo-gear {
-  --dx: 0px;
-  transform: translateX(var(--dx)) rotate(calc(var(--dx) * .025deg));
-  transition: opacity .15s ease, transform .32s cubic-bezier(.2, .8, .2, 1), filter .32s;
-}
-.ufo-hud.is-dragging, .ufo-gear.is-dragging { transition: none; }
-.ufo-hud.is-back, .ufo-gear.is-back { z-index: 974; transform: translateY(var(--back-y, -22px)) scale(.92);   /* --back-y = 앞 카드 위로 26px 삐져나오게(js 가 두 카드 높이로 계산) */ opacity: .62; filter: brightness(.6); pointer-events: none; }
 .ufo-hud.is-tx { opacity: 0; }
-/* 뒤로 간 카드는 테두리 글로우를 줄인다(11-06 운영자) · 겹쳐 있을 때 앞 카드 바탕을 진하게 — 뒤 카드 글자가 비쳐 섞이지 않게 */
-.ufo-holo.is-back .ufo-frame { filter: drop-shadow(0 0 2px rgba(79, 227, 255, .35)); animation: none; opacity: .55; }
-.ufo-holo.is-back .ufo-frame__line { stroke: rgba(160, 242, 255, .45); }
-.ufo-holo.is-red.is-back .ufo-frame { filter: drop-shadow(0 0 2px rgba(255, 61, 90, .35)); }
-.ufo-holo.in-deck:not(.is-back) :is(.ufo-card, .ugr-card) { background: rgba(10, 8, 26, .93); }
-.ufo-hud *, .ufo-gear * { touch-action: none; }   /* 가로로 미는 손가락을 브라우저가 가로채지 않게(누르기 · 길게 누르기는 그대로) */
 
-/* ── 워프 기어 패널(js/bggear.js, 시안 Gear.dc.html) — 배경 보기 중 성간 이동이면 조작 패널과 같은 자리(가운데) */
+/* ── 워프 기어 패널(js/bggear.js) — 컴팩트 스로틀형(11-06 운영자 채택 = 시안 B). 배경 보기 중 성간 이동이면 화면 아래에 늘, 조작 패널은 그대로.
+   테두리 · 주사선 · 스캔라인 · 등장 연출 = 공용 홀로그램 틀(.ufo-holo). 끝나면 흰 띠 + 도트로 사라진다(js dissolve). 흔들림 = js 가 transform 을 매 프레임 */
 .ufo-gear {
-  position: fixed; left: 24px; right: 24px; top: 50%; translate: 0 -50%; z-index: 975;
+  position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); z-index: 975;
   max-width: 420px; margin: 0 auto; font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
 }
 .ufo-gear[hidden] { display: none; }
-/* 카드 바탕 · 모서리는 조작 패널(.ufo-card)과 같게 — 테두리 · 글로우 · 주사선 · 스캔라인 · 등장 연출은 공용 홀로그램 틀(.ufo-holo, js holoParts) */
 .ugr-card {
-  position: relative; display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 10px;
-  background: rgba(10, 8, 26, .78); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  position: relative; display: flex; flex-direction: column; gap: 4px; padding: 9px 12px 8px;
+  background: rgba(10, 8, 26, .82); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   border: 1px solid transparent;
   clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
 }
-.ugr-head, .ugr-meter, .ugr-grid, .ugr-warp { position: relative; }
-.ugr-head { display: flex; align-items: center; justify-content: space-between; }
-.ugr-head__l { display: flex; flex-direction: column; gap: 1px; }
-.ugr-tag { font-size: 11px; font-weight: 600; letter-spacing: .18em; color: #ff8cc6; }
-.ugr-title { font-size: 15px; font-weight: 700; }
-.ugr-chip { font-size: 11px; letter-spacing: .1em; padding: 3px 7px; border: 1px solid currentColor; color: #ffd27a; }
+.ugr-top, .ugr-track, .ugr-labels { position: relative; }
+.ugr-top { display: flex; align-items: center; gap: 8px; }
+.ugr-sp { flex: 1; }
+.ugr-read { font-size: 22px; font-weight: 700; line-height: 1; color: var(--ufo-ink); font-variant-numeric: tabular-nums; }
+.ufo-gear.is-red .ugr-read { color: #ff8a9c; }
+.ugr-chip { font-size: 10px; letter-spacing: .1em; padding: 2px 6px; border: 1px solid currentColor; color: #ffd27a; white-space: nowrap; }
 .ugr-chip[data-tone="go"] { color: var(--ufo-cyan); }
 .ugr-chip[data-tone="red"] { color: #ff6d86; }
-.ugr-meter { height: 150px; display: flex; justify-content: center; }
-.ugr-dial { position: absolute; top: 0; }
-.ugr-arc { stroke: var(--ufo-cyan); filter: drop-shadow(0 0 4px var(--ufo-cyan)); }
-.ufo-gear.is-red .ugr-arc { stroke: #ff3d5a; filter: drop-shadow(0 0 4px #ff3d5a); }
-.ugr-needle { position: absolute; left: 50%; top: 28px; width: 3px; height: 84px; margin-left: -1.5px; background: #ff6fb5; box-shadow: 0 0 8px #ff6fb5; transform-origin: 50% 100%; transform: rotate(-90deg); }
-.ugr-hub { position: absolute; left: 50%; top: 105px; width: 14px; height: 14px; margin-left: -7px; background: #0a081a; border: 2px solid #ff6fb5; border-radius: 50%; box-sizing: border-box; }
-.ugr-readout { position: absolute; top: 120px; display: flex; flex-direction: column; align-items: center; }
-.ugr-read { font-size: 24px; font-weight: 700; line-height: 1; color: var(--ufo-ink); }
-.ufo-gear.is-red .ugr-read { color: #ff8a9c; }
-.ugr-unit { font-size: 10px; color: var(--ufo-sub); margin-top: 2px; }
-/* 좌석벨트 표시등 — 시안 그대로(꺼짐 = 렌즈에 묻힘 · 켜짐 = 호박색 · 깜빡임 = 0.5초 켜짐 / 0.5초 꺼짐) */
-.ugr-belt { position: absolute; left: 0; top: 2px; width: 72px; height: 30px; box-sizing: border-box; padding: 3px; border-radius: 15px; background: linear-gradient(180deg, #3b4250, #1d212b); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(79,227,255,.25), 0 0 0 1px rgba(79,227,255,.22), 0 2px 4px rgba(0,0,0,.6); }
-.ugr-belt__lens { position: relative; display: block; width: 100%; height: 100%; border-radius: 12px; background: linear-gradient(180deg, #24262d, #191a20); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); overflow: hidden; }
+/* 스로틀 레일: 오른쪽 두 칸(4 · 5단 = 60% ~ 100%)이 붉은 레드존, 채움 = 지금 속도, 손잡이 = 고른 단(가는 중이면 점선 깜빡) */
+.ugr-track { margin: 12px 13px 2px; height: 6px; background: rgba(255, 255, 255, .1); border-radius: 3px; cursor: pointer; touch-action: none; }
+.ugr-track:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 8px; }
+.ugr-track.is-locked { cursor: default; opacity: .6; }
+.ugr-redrail { position: absolute; top: 0; bottom: 0; left: 60%; right: 0; background: rgba(255, 61, 90, .35); border-radius: 0 3px 3px 0; }
+.ugr-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ufo-cyan); box-shadow: 0 0 6px var(--ufo-cyan); border-radius: 3px; }
+.ufo-gear.is-red .ugr-fill { background: #ff3d5a; box-shadow: 0 0 6px #ff3d5a; }
+.ugr-det { position: absolute; top: 50%; width: 2px; height: 12px; margin: -6px 0 0 -1px; background: rgba(169, 186, 208, .6); }
+.ugr-thumb { position: absolute; top: 50%; left: 0; width: 26px; height: 26px; margin: -13px 0 0 -13px; box-sizing: border-box; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--ufo-ink); background: #0a081a; border: 2px solid var(--ufo-pink); border-radius: 50%; box-shadow: 0 0 8px var(--ufo-pink); transition: left .2s cubic-bezier(.2, .8, .2, 1); }
+.ugr-thumb.is-tgt { border-style: dashed; border-color: #ffd27a; animation: ugr-tgt .8s ease-in-out infinite; }
+@keyframes ugr-tgt { 0%, 100% { opacity: 1; } 50% { opacity: .6; } }
+.ugr-labels { display: flex; justify-content: space-between; margin: 6px 7px 0; font-size: 10px; font-weight: 600; color: #7f90a8; }
+.ugr-labels .is-red { color: #ff6d86; }
+/* 좌석벨트 표시등 — 시안 그림 그대로 작게(꺼짐 = 렌즈에 묻힘 · 켜짐 = 호박색 · 깜빡임 = 0.5초 켜짐 / 0.5초 꺼짐) */
+.ugr-belt { flex: none; width: 50px; height: 22px; box-sizing: border-box; padding: 2px; border-radius: 11px; background: linear-gradient(180deg, #3b4250, #1d212b); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 0 0 1px rgba(79,227,255,.22), 0 2px 4px rgba(0,0,0,.6); }
+.ugr-belt__lens { position: relative; display: block; width: 100%; height: 100%; border-radius: 9px; background: linear-gradient(180deg, #24262d, #191a20); box-shadow: inset 0 1px 3px rgba(0,0,0,.8); overflow: hidden; }
 .ugr-belt__pic { position: absolute; inset: 0; display: grid; place-items: center; }
-.ugr-belt__pic svg { width: 62px; height: 21px; }
+.ugr-belt__pic svg { width: 42px; height: 14px; }
 .ugr-belt__pic.is-off { color: #33353d; --g: #33353d; }
 .ugr-belt__pic.is-lit { opacity: 0; color: #ffb21e; --g: #39e07a; filter: drop-shadow(0 0 1.5px rgba(255,190,60,.9)) drop-shadow(0 0 4px rgba(255,160,30,.45)); }
 .ugr-belt[data-state="on"] .is-lit { opacity: 1; }
 .ugr-belt[data-state="blink"] .is-lit { animation: ugr-belt-blink 1s steps(1, end) infinite; }
 @keyframes ugr-belt-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-.ugr-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-.ugr-redzone { grid-column: 5 / span 2; font-size: 10px; letter-spacing: .14em; color: #ff6d86; text-align: center; border-top: 2px solid #ff3d5a; padding-top: 3px; }
-.ugr-gbtn {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 48px; padding: 5px 0;
-  background: rgba(18, 16, 40, .6); border: 1px solid rgba(120, 200, 255, .25); color: var(--ufo-ink); font: inherit; cursor: pointer;
-  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
-  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-}
-.ugr-gbtn:disabled { cursor: default; opacity: .5; }
-.ugr-g { font-size: 17px; font-weight: 700; line-height: 1; }
-.ugr-v { font-size: 10px; color: var(--ufo-sub); }
-.ugr-gbtn.is-on { background: rgba(79, 227, 255, .16); border-color: var(--ufo-cyan); box-shadow: inset 0 0 14px rgba(79, 227, 255, .25); }
-.ugr-gbtn.is-on .ugr-g { color: var(--ufo-cyan); }
-.ugr-gbtn.is-red { border-color: rgba(255, 77, 109, .45); background: rgba(60, 10, 26, .5); }
-.ugr-gbtn.is-red .ugr-v { color: #ff9fb1; }
-.ugr-gbtn.is-red.is-on { background: rgba(255, 61, 90, .2); border-color: #ff3d5a; box-shadow: inset 0 0 16px rgba(255, 61, 90, .35); }
-.ugr-gbtn.is-red.is-on .ugr-g { color: #ff6d86; }
-.ugr-gbtn.is-tgt { border-style: dashed; border-color: #ffd27a; animation: ugr-tgt 0.8s ease-in-out infinite; }
-@keyframes ugr-tgt { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 .ugr-warp {
-  min-height: 44px; font-size: 15px; font-weight: 700; letter-spacing: .3em; color: #fff; cursor: pointer;
-  background: rgba(255, 61, 90, .22); border: 1px solid #ff3d5a; box-shadow: 0 0 16px rgba(255, 61, 90, .5), inset 0 0 12px rgba(255, 61, 90, .3);
-  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  min-height: 34px; padding: 0 14px; font-size: 13px; font-weight: 700; letter-spacing: .24em; color: #fff; cursor: pointer;
+  background: rgba(255, 61, 90, .22); border: 1px solid #ff3d5a; box-shadow: 0 0 12px rgba(255, 61, 90, .55);
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
   -webkit-tap-highlight-color: transparent; touch-action: manipulation; animation: ugr-warp-ready 1.2s ease-in-out infinite;
 }
 .ugr-warp:disabled { cursor: default; color: #7f90a8; background: rgba(18, 16, 40, .6); border-color: rgba(120, 200, 255, .2); box-shadow: none; animation: none; }
-@keyframes ugr-warp-ready { 0%, 100% { box-shadow: 0 0 16px rgba(255, 61, 90, .5), inset 0 0 12px rgba(255, 61, 90, .3); } 50% { box-shadow: 0 0 26px rgba(255, 61, 90, .8), inset 0 0 18px rgba(255, 61, 90, .45); } }
+@keyframes ugr-warp-ready { 0%, 100% { box-shadow: 0 0 12px rgba(255, 61, 90, .55); } 50% { box-shadow: 0 0 22px rgba(255, 61, 90, .85); } }
+/* 사라질 때 지나가는 흰 띠(js dissolve) — 하늘 전환의 「여기까지 완료」 선과 같은 모양 */
+.ugr-wline { position: absolute; height: 12px; margin-top: -6px; border-radius: 6px; pointer-events: none; opacity: 0; background: #fff8ee; box-shadow: 0 0 8px var(--ufo-cyan), 0 0 22px rgba(79, 227, 255, .7); }
 @media (prefers-reduced-motion: reduce) {
-  .ufo-frame { animation: none; }
-  .ugr-gbtn.is-tgt, .ugr-warp { animation: none; }
+  .ugr-thumb.is-tgt, .ugr-warp, .ufo-frame { animation: none; }
 }

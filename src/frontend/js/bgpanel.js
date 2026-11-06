@@ -155,7 +155,7 @@ export function createUfoPanel() {
       root.classList.remove("is-idle");
       root.classList.toggle("is-on", v);
       root.classList.toggle("is-off", !v);
-      root.inert = !v || root.classList.contains("is-back");
+      root.inert = !v;
       root.setAttribute("aria-hidden", v ? "false" : "true");
       if (!v && root.contains(document.activeElement)) document.activeElement.blur();
     },
@@ -176,17 +176,8 @@ export function createUfoPanel() {
       chipBase.space = v ? "성간 이동 중" : TILES[1].chips[0];
       showChip("space");
     },
-    /** 카드 겹치기(bgdeck.js)용 — 패널 바깥 틀 */
+    /** 패널 바깥 틀(흔들기 — bgdomegl.js shakePanels) */
     get el() { return root; },
-    /** 뒤 카드로(작고 어둡게, 누를 수 없음) · 길게 누르던 충전은 취소 */
-    setBack(v) {
-      if (root.classList.contains("is-back") === v) return;
-      root.classList.toggle("is-back", v);
-      root.inert = !on || v;
-      if (v) this.cancelHold();
-    },
-    /** 길게 누르기 충전 취소(카드를 옆으로 밀기 시작하면) */
-    cancelHold() { if (holding || charge > 0) { holding = false; charge = 0; fill.style.transform = "scaleX(0)"; showChip("space"); } },
     /** 성간 이동 레드존 — 시안 글로우를 빨갛게(css .is-red) */
     setRed(v) { if (root.classList.contains("is-red") !== v) root.classList.toggle("is-red", v); },
     setCurrent(key) {
