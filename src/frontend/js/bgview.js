@@ -1,7 +1,7 @@
-// bgview.js — (bg-dome 시험) 배경 보는 방식 고르기: 「실내만 보기」 / 「바깥 보기」.
-// 밝게/어둡게 버튼(theme.js, 소식 막대 마지막 칸)을 길게 누르면 버튼 아래에 작은 팝업이 뜬다. 짧게 누르면 지금처럼 테마만 바뀐다.
+// bgview.js — (bg-dome 시험) 배경 고르기.
+// ① 밝게/어둡게 버튼(theme.js, 소식 막대 마지막 칸)을 길게 누르면 「배경 테마」 팝업(기본 · UFO · 생일) — 11-06 운영자. 짧게 누르면 지금처럼 밝기만 바뀐다.
+// ② UFO 테마 안의 실내(버츄얼 스페이스 · 초행성X) · 바깥(지구) 고르기는 UFO 조작 패널(bgpanel.js)이 아래 setIndoorBg · chooseBgView 를 부른다.
 // 고른 값은 이 기기에 기억(localStorage "bgview")하고 BGVIEW_EVENT 로 알린다 — 배경(bgdomegl.js)이 듣는다.
-// 팝업은 WebGL 돔 배경(기본 배경)이 떠 있을 때만 연다(?bg=classic · 시안 · WebGL 을 못 쓰는 기기는 제외). 다른 배경에서는 길게 눌러도 보통 누르기와 같다(테마 전환).
 //
 // 바깥 보기는 위치 권한이 있어야 쓴다(2026-11-04 운영자 결정): 고르는 순간 권한을 묻고, 거절하면 실내 보기로 되돌리며 안내한다.
 // 이미 거절된 상태면 브라우저가 다시 묻지 않으므로 「브라우저 설정에서 허용」으로 안내한다. 위치를 못 받으면(신호 없음 · 시간 초과)도 실내 보기로 되돌린다.
@@ -15,6 +15,8 @@
 import { themeButton } from "./theme.js";
 import { acquireSite, geoPermission } from "./bgsite.js";
 import { declinationDeg } from "./bggyro.js";
+import { bgTheme, setBgTheme } from "./bgdeco.js";
+import { birthdayToday, birthdayOn, setBirthdayOn } from "./birthdayui.js";
 
 export const BGVIEW_EVENT = "mew:bgview";   // detail = "indoor" | "outdoor"
 const KEY = "bgview";
@@ -34,10 +36,24 @@ export function setIndoorBg(v) {
 const HOLD_MS = 500;    // 주소 복사(longcopy.js)와 같은 길이
 const MOVE_PX = 10;
 
-const OPTIONS = [
-  { value: "indoor", label: "실내만 보기", sub: "돔 안의 분홍 하늘 · 폰을 돌리는 대로 둘러보기" },
-  { value: "outdoor", label: "바깥 보기", sub: "실제 방위 · 시간의 하늘과 해 · 달 (위치 권한 필요)" },
-];
+// (11-06 운영자) 길게 누르기 팝업 = 「배경 테마」 고르기. 실내 · 바깥(버츄얼 스페이스 · 초행성X · 지구)은 UFO 조작 패널(bgpanel.js)로 옮겼다.
+// 생일 칸은 생일 이스터에그가 켜지는 날에만. 시작 우선순위 = 생일 > 기억한 테마 > UFO.
+function themeOptions() {
+  const b = birthdayToday();
+  return [
+    { value: "classic", label: "기본", sub: "분홍 · 파랑 바탕에 떠다니는 도형" },
+    { value: "dome", label: "UFO", sub: "돔 안에서 둘러보기 · 가운데 조종대로 하늘 고르기" },
+    ...(b ? [{ value: "birthday", label: "생일", sub: b.label }] : []),
+  ];
+}
+const currentTheme = () => (birthdayOn() ? "birthday" : bgTheme());
+
+function chooseTheme(value) {
+  if (value === currentTheme()) return;
+  if (value === "birthday") { setBirthdayOn(true); return; }
+  if (birthdayOn()) setBirthdayOn(false);
+  setBgTheme(value);
+}
 
 let pop = null, press = null, eatClick = false, toastEl = null, toastT = 0, busy = false;
 
@@ -116,28 +132,31 @@ async function restore() {
   setBgView(result === "ok" ? "outdoor" : "indoor");
 }
 
-const domeReady = () => !!document.querySelector("#bgdeco .bgdm-gl");
-
-function syncPop(value = bgView()) {
+function syncPop() {
   if (!pop) return;
-  for (const b of pop.querySelectorAll(".bgvw__opt")) b.setAttribute("aria-checked", String(b.dataset.value === value));
-  // 방향 안내 — 진북 보정(편각)은 자동이라 얼마나 더하고 있는지만 덧붙인다
+  const cur = currentTheme();
+  for (const b of pop.querySelectorAll(".bgvw__opt")) b.setAttribute("aria-checked", String(b.dataset.value === cur));
+  // 방향 안내(UFO 테마일 때만) — 진북 보정(편각)은 자동이라 얼마나 더하고 있는지만 덧붙인다
+  const note = pop.querySelector(".bgvw__note");
+  note.hidden = cur !== "dome";
   const dec = declinationDeg();
-  pop.querySelector(".bgvw__note").textContent = "방향이 어긋나면 폰으로 공중에 8자를 몇 번 그려 주세요."
+  note.textContent = "방향이 어긋나면 폰으로 공중에 8자를 몇 번 그려 주세요."
     + (dec == null ? "" : ` 진북 보정 ${dec > 0 ? "+" : ""}${dec.toFixed(1)}° 는 자동이에요.`);
 }
 
+/** 팝업을 만든다 — 생일 칸이 날마다 달라지므로 열 때마다 새로 */
 function buildPop() {
+  pop?.remove();
   pop = document.createElement("div");
   pop.className = "bgvw";
   pop.setAttribute("role", "menu");
-  pop.setAttribute("aria-label", "배경 보기");
+  pop.setAttribute("aria-label", "배경 테마");
   pop.hidden = true;
   const head = document.createElement("div");
   head.className = "bgvw__head";
-  head.textContent = "배경 보기";
+  head.textContent = "배경 테마";
   pop.appendChild(head);
-  for (const o of OPTIONS) {
+  for (const o of themeOptions()) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "bgvw__opt";
@@ -150,10 +169,9 @@ function buildPop() {
     s.className = "bgvw__sub";
     s.textContent = o.sub;
     b.append(t, s);
-    b.addEventListener("click", () => { close(); choose(o.value); });
+    b.addEventListener("click", () => { close(); chooseTheme(o.value); });
     pop.appendChild(b);
   }
-  // 방향 안내(두 보기 공통, 누르는 칸 아님) — 글은 syncPop 이 채운다
   const note = document.createElement("p");
   note.className = "bgvw__note";
   pop.appendChild(note);
@@ -172,7 +190,7 @@ function place() {
 }
 
 function open() {
-  if (!pop) buildPop();
+  buildPop();
   syncPop();
   pop.hidden = false;
   place();
@@ -202,7 +220,6 @@ export function initBgView() {
     q.t = setTimeout(() => {
       if (press !== q) return;
       press = null;
-      if (!domeReady()) return;
       eatClick = true;   // 손을 뗄 때 오는 click 은 테마 전환으로 치지 않는다
       open();
     }, HOLD_MS);

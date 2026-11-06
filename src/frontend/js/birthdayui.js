@@ -257,8 +257,25 @@ const MUSIC_FADE_MS = 2500;   // 생일이 시작될 때 유메미타 플레이�
 /** 지금 생일 장면을 보여 줄지 다시 판정한다 — 자정을 넘기거나 잠들었다 깬 뒤에도 맞게.
  * 켜는 쪽: 생일 00:00 에 화면을 보고 있으면 그 자리에서 장면을 띄운다. 숨은 탭은 음악을 듣는 중일 때만 바로 띄우고, 아니면 돌아왔을 때 띄운다.
  * 끄는 쪽: 생일이 끝나도 이미 켜진 장면은 내리지 않는다. 새로고침하면 판정에 걸려 사라지고, 다음 날 들어온 사람에게는 뜨지 않는다. */
+// (bg-dome, 11-06 운영자) 테마 버튼 길게 누르기로 생일 테마를 끄고 다른 배경을 고를 수 있다 — 그 방문 동안만(새로고침하면 생일이 다시 우선).
+let userOff = false;
+
+/** 오늘 생일 테마가 있으면 { key, label }(라벨 = 「유노 생일」 같은 팝업 표시용), 없으면 null */
+export function birthdayToday() {
+  const k = pickBirthdayScene(Date.now(), location.search, BIRTHDAYS, BIRTHDAY_SCENES_ENABLED);
+  return k ? { key: k, label: memberName(k) + " 생일 · " + dateLabel(k) } : null;
+}
+/** 생일 테마가 지금 켜져 있나 */
+export function birthdayOn() { return !!key; }
+/** 생일 테마 켜고 끄기(테마 고르기 팝업). 끄면 이 방문 동안 자정 · 탭 복귀 재판정으로도 다시 켜지지 않는다 */
+export function setBirthdayOn(on) {
+  userOff = !on;
+  if (!on) { if (key) teardown(); return; }
+  evaluate();
+}
+
 function evaluate() {
-  const want = pickBirthdayScene(Date.now(), location.search, BIRTHDAYS, BIRTHDAY_SCENES_ENABLED);
+  const want = userOff ? null : pickBirthdayScene(Date.now(), location.search, BIRTHDAYS, BIRTHDAY_SCENES_ENABLED);
   if (want && want !== key && (!document.hidden || mainMusicActive())) {
     if (key) teardown();
     handOffMainMusic(MUSIC_FADE_MS);

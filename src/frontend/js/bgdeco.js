@@ -21,7 +21,11 @@ let W = 0, H = 0, raf = 0, tPrev = 0, lastShake = 0, rebuildT = 0, sensorOn = fa
 const requested = new URLSearchParams(window.location.search).get("bg");
 // (bg-dome) 기본 배경 = UFO 돔(d) — 2026-11-04 운영자 지시. ?bg=normal = 같은 돔을 「가속 없이 지금 시각」으로만(확인용 bgtime · bgspeed 무시).
 // 옛 배경(v4.9.8 분홍 → 파랑 톤 + 로고 도형)은 ?bg=classic, 시안은 ?bg=a · b · c
-const variant = requested === "classic" ? null : ["a", "b", "c", "d"].includes(requested) ? requested : "d";
+// (11-06 운영자) 테마 버튼 길게 누르기로 「기본(main 의 배경) · UFO 돔 · 생일」 중 고른다 — 고른 값은 기기에 기억(localStorage "bgtheme").
+// 주소에 ?bg= 가 있으면 그게 우선(시험용).
+const BGTHEME_KEY = "bgtheme";
+function storedTheme() { try { return localStorage.getItem(BGTHEME_KEY) === "classic" ? "classic" : "dome"; } catch { return "dome"; } }
+let variant = requested === "classic" ? null : ["a", "b", "c", "d"].includes(requested) ? requested : storedTheme() === "classic" ? null : "d";
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 let scene = null, momentT = 0, momentEndT = 0;
 let sensorArmed = false, sensorAsked = false;
@@ -201,6 +205,28 @@ function enableSensor() {
     ori.then((r) => { if (r === "granted" && domeGL) startGyro(); });
   };
   document.addEventListener("pointerup", ask, true);
+}
+
+/** 지금 배경 테마 — "dome"(UFO 돔) | "classic"(main 의 배경) | 시안 a · b · c */
+export function bgTheme() { return variant === "d" ? "dome" : variant || "classic"; }
+
+/** 배경 테마 바꾸기(테마 버튼 길게 누르기 팝업). 기억하고 그 자리에서 다시 그린다. */
+export function setBgTheme(kind) {
+  const next = kind === "classic" ? null : "d";
+  try { localStorage.setItem(BGTHEME_KEY, next ? "dome" : "classic"); } catch { /* 저장 못 함 */ }
+  if (!host || next === variant) return;
+  if (domeGL) { domeGL.destroy?.(); domeGL = null; }
+  domeGLTried = false;
+  cancelAnimationFrame(raf); raf = 0;
+  clearTimeout(momentT); clearTimeout(momentEndT);
+  delete host.dataset.event;
+  if (svg) { svg.remove(); svg = null; }
+  host.querySelector(".bgdm-sky")?.remove();   // SVG 돔 장면(WebGL 대체)의 구름 층
+  scene = null; items = []; bodies = []; els = [];
+  variant = next;
+  if (variant) host.dataset.variant = variant; else delete host.dataset.variant;
+  build();
+  syncMotion();
 }
 
 export function initBgDeco() {

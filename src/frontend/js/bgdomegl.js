@@ -1004,6 +1004,7 @@ export function createDomeGL(host, isPaused) {
   const viewFocal = () => (outdoor ? focalOut : focal) * tele;
   const ufoConsole = createConsole(air);   // 공중 무늬보다 먼저 붙여 무늬가 콘솔 앞을 지나가게
   const ufoPanel = createUfoPanel();
+  const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
   ufoPanel.onPick((key) => {
     if (key === "earth") { if (!outdoor) chooseBgView("outdoor"); return; }
@@ -1016,7 +1017,7 @@ export function createDomeGL(host, isPaused) {
     INDOOR_BG = v;
     spaceT0 = null; warpDist = 0;   // 우주에 새로 들어간다
     draw();
-  });
+  }, { signal: life.signal });
   let wasPeek = false, ufoArmed = false;   // 열린 직후 물러나는 동안(r 0 → 0.4)엔 패널이 번쩍 뜨지 않게 — 다 물러났거나 손가락으로 줌하면 켠다
 
   // 조각 배치 — 처음 보는 정면에 몇 개는 꼭 보이게
@@ -1573,21 +1574,21 @@ export function createDomeGL(host, isPaused) {
     ufoArmed = true;   // 손가락으로 줌을 시작하면 그때부터는 문턱대로 패널을 띄운다
     clearTimeout(pinchEndT);
     pinchMark(true);   // bgpeek.js 가 이 표시가 있는 동안 「누르면 되돌아가기」를 하지 않는다
-  }, { passive: true });
+  }, { passive: true, signal: life.signal });
   window.addEventListener("touchmove", (e) => {
     if (!pinch || e.touches.length !== 2) return;
     e.preventDefault();
     const distance = touchDist(e);
     zoomT = Math.max(-1, Math.min(ZOOM_R_MAX, zoomT + (pinch.distance - distance) / Math.max(1, W) * ZOOM_PER_SCREEN));
     pinch.distance = distance;
-  }, { passive: false });
+  }, { passive: false, signal: life.signal });
   const endPinch = (e) => {
     if (!pinch || e.touches.length >= 2) return;
     pinch = null;
     pinchEndT = setTimeout(() => pinchMark(false), 450);   // 손을 뗄 때 따라오는 click 까지 막는다
   };
-  window.addEventListener("touchend", endPinch, { passive: true });
-  window.addEventListener("touchcancel", endPinch, { passive: true });
+  window.addEventListener("touchend", endPinch, { passive: true, signal: life.signal });
+  window.addEventListener("touchcancel", endPinch, { passive: true, signal: life.signal });
 
   // 기울임 → 무늬에 줄 가속도(세계 좌표). roll 은 0.15초 저역 통과로 손떨림을 거른다
   let rollS = 0;
@@ -1637,8 +1638,8 @@ export function createDomeGL(host, isPaused) {
     if (W) gl.uniform1f(U.uF, viewFocal());
     updateAstro(true);
     draw();
-  });
-  new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }, { signal: life.signal });
+  const themeObs = new MutationObserver(() => draw()); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   function finishThemeMotion() { themeStart = -Infinity; draw(); }
   reducedMotion.addEventListener("change", finishThemeMotion);
 
@@ -1695,6 +1696,6 @@ export function createDomeGL(host, isPaused) {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }
