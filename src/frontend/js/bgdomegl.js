@@ -205,6 +205,7 @@ uniform float uThemeProgress; // 1 = inactive; no snapshot lookup at rest
 // uSkyFx = (하강 진행 0..1 · 그 뒤 잔광, 음수 = 꺼짐, 진행 선 세기, 점무늬 띠 세기, 분홍 잔광 세기)
 // uSkyFx2 = (경계 시작 위도, 끝 위도(라디안), 단축 완료 0..1, 잔광 남은 비율 1..0)
 uniform vec4 uSkyFx, uSkyFx2;
+uniform vec4 uSkyDir;   // (방향 0 아래 · 1 위 · 2 경도 반시계, 기준 경도, 화면 오른쪽 부호, -)
 
 flat in vec2 vSourceClear;
 uniform mat3 uEqM;
@@ -676,7 +677,9 @@ void main() {
 #endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
-  float latW = max(fwidth(lat), 1e-6);   // 하늘 전환 경계의 픽셀 폭(분기 밖에서 구한다)
+  // 하늘 전환 경계가 움직이는 좌표 — uSkyDir.x 0 = 위도(아래로), 1 = −위도(위로), 2 = 기준 경도에서 잰 각(화면 오른쪽이 + 가 되게 uSkyDir.z 로 부호)
+  float skyPos = uSkyDir.x < .5 ? lat : (uSkyDir.x < 1.5 ? -lat : uSkyDir.z * (mod(lon - uSkyDir.y + TAU * 1.5, TAU) - TAU * .5));
+  float skyW = max(fwidth(skyPos), 1e-6);   // 경계의 픽셀 폭(분기 밖에서 구한다)
   float dLat = min(min(abs(lat - 18.0 * D), abs(lat - 40.0 * D)), abs(lat - 62.0 * D));
   float dLon = abs(mod(lon + 15.0 * D, 30.0 * D) - 15.0 * D) * cl;
   float hw = 0.525 * uDpr;
@@ -814,27 +817,32 @@ void main() {
     float scan = step(.91,fract(p.y*.125 + uThemeProgress*9.0));
     outc += mix(vec3(.12,.85,1),vec3(1,.16,.64),sector) * edge * (.08 + 2.4*grid + .16*scan) * (1.0-floorK);
   }
-  // 하늘 전환 「돔 재투영」: 천정 쪽에서 위도를 따라 휘는 경계 한 줄이 돔 가장자리로 내려온다. 지나간 쪽 = 새 하늘.
+  // 하늘 전환 「돔 재투영」: 돔을 따라 휘는 경계 한 줄이 지나가고, 지나간 쪽 = 새 하늘.
+  // 방향(11-06 운영자 「반대로 위로 · 경도 반시계로도」) = uSkyDir.x 0 위도 아래로 · 1 위도 위로 · 2 경도 반시계(화면 오른쪽 → 왼쪽). 경계 좌표 skyPos 는 위에서 구했다.
   // 경계 근처만 화면 좌표 점무늬(칸 6 CSS px, 칸마다 고정 무작위 문턱 — 점마다 한 번만 바뀐다)로 옛/새를 섞는다.
-  // 바닥은 경계가 고리에 닿을 때 함께 바뀌고(세 목적지 모두 같은 무대 바닥), 선 · 잔광은 돔 쪽에만.
+  // 바닥은 위도 방향이면 경계가 지평선(∓2°)을 지날 때, 경도 방향이면 제 경도에서 함께 바뀌고(세 목적지 모두 같은 무대 바닥), 선 · 잔광은 돔 쪽에만.
   if (uSkyFx.x >= 0.0) {
-    float colJ = fract(sin(floor((lon + TAU * .5) / (30.0 * D)) * 12.9898) * 43758.5453) * .028;   // 경도 칸마다 0~25ms 차이
+    float lane = uSkyDir.x < 1.5 ? floor((lon + TAU * .5) / (30.0 * D)) : floor((lat + TAU * .25) / (15.0 * D)) + 40.0;
+    float colJ = fract(sin(lane * 12.9898) * 43758.5453) * .028;   // 경도 칸(경도 방향이면 위도 띠)마다 0~40ms 차이
     float tc = clamp((uSkyFx.x - colJ) / .972, 0.0, 1.0);
     tc = tc * tc * (3.0 - 2.0 * tc);
     float bl = mix(uSkyFx2.x, uSkyFx2.y, tc);
-    float le = mix(lat, -2.0 * D, floorK);   // 바닥은 경계가 지평선 바로 아래(−2°)를 지날 때 바뀐다
+    float le = mix(skyPos, uSkyDir.x < .5 ? -2.0 * D : (uSkyDir.x < 1.5 ? 2.0 * D : skyPos), floorK);
     float s = clamp((le - bl) / (mix(1.2, 7.0, uSkyFx.z) * D), 0.0, 1.0);
     // 점 한 칸 6 CSS px(11-06 운영자 「도트를 더 크게」 — 처음 3px). 칸마다 고정된 무작위 문턱(11-06 운영자 「같은 무늬가 반복돼 보인다 → 랜덤」
     // — 처음엔 4×4 Bayer 라 12px 마다 같은 무늬가 찍혀 보였다). 문턱이 칸마다 고정이라 점은 한 번만 바뀌고 반짝이지 않는다.
     vec2 cell = floor(p / 6.0);
     vec3 hq = fract(vec3(cell.xyx) * vec3(.1031, .1030, .0973));
     hq += dot(hq, hq.yzx + 33.33);
-    float reveal = step(.01 + .98 * fract((hq.x + hq.y) * hq.z), s);   // 문턱 0.01~0.99 — 문턱이 0 인 칸이 경계 앞(옛 하늘)에 미리 박히지 않게
+    // (11-06 운영자 「도트가 바로 나타나지 말고 서서히」) 점마다 띠 폭의 35% 동안 옅게 → 진하게. 문턱 0.01~0.65 라 띠 끝(s = 1)에서 모두 다 나타나 있다
+    float th = .01 + .64 * fract((hq.x + hq.y) * hq.z);
+    float reveal = smoothstep(th, th + .35, s);
     reveal = mix(reveal, smoothstep(0.0, 1.0, s), floorK);   // 바닥(무대 원판)은 점으로 깨지지 않게 부드럽게 — 지구는 바닥 조명이 달라 점이 보였다(11-06)
     vec3 res = mix(texture(uThemeFrame, gl_FragCoord.xy / uRes).rgb, outc, reveal);
     float dome = 1.0 - floorK;
-    float dpx = (le - bl) / latW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
-    float lineK = (1.0 - smoothstep(.9, 1.0, uSkyFx.x)) * dome * uSkyFx.y;
+    float dpx = (le - bl) / skyW / uDpr;                      // 경계까지 CSS px(+ = 새 하늘 쪽)
+    // 경도 방향은 천정 근처에서 경도가 한 점에 모여 픽셀당 각도가 커진다 — 거기선 선을 그리지 않는다(흰 덩어리 방지)
+    float lineK = (1.0 - smoothstep(.9, 1.0, uSkyFx.x)) * dome * uSkyFx.y * (1.0 - smoothstep(.5 * D, 2.0 * D, skyW));
     res *= 1.0 - .22 * exp(min(dpx, 0.0) / 9.0) * step(dpx, 0.0) * lineK;   // 선 바로 앞(옛 쪽)을 살짝 어둡게 — 밝은 구름 위에서도 선이 읽히게
     vec3 cyan = vec3(.31, .89, 1.0);
     // (11-06 운영자 「흰 선을 도트보다 앞으로 · 글로우와 두께를 더」 → 「흰 띠 두께 4배」) 빛 번짐을 먼저 더하고, 흰 심(약 16 CSS px)은 덮어 그려 점무늬 위에 선다
@@ -1159,7 +1167,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
-    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0);
+    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
     gl.uniform1i(U.uTerrainDetail, 13); gl.uniform1i(U.uTerrainDetailNormal, 14); gl.uniform1i(U.uTerrainShadow, 15);
@@ -1441,22 +1449,41 @@ export function createDomeGL(host, isPaused) {
   const skyEndLat = (fx) => -((1.2 + 5.8 * fx[1]) + 4) * DEG;
   // 목적지별 (진행 선, 점무늬 띠, 분홍 잔광) — 초행성X = 선이 또렷, 지구 = 점무늬 · 잔광 가장 약하게, 버츄얼 스페이스 = 잔광 조금 더
   const SKY_FX = { space: [1.3, 1, 0.8], earth: [1, 0.45, 0.35], pink: [1, 1, 1.3] };
-  let sky = null, panelResume = false;
+  let sky = null, panelResume = false, lastSkyMode = 0;
   function beginSky(dest) {
     if (reducedMotion.matches || !W || isPaused() || gl.isContextLost() || !prog || !document.documentElement.classList.contains("bg-peek")) return;
     captureFrame();
     themeStart = -Infinity;
-    // (11-06 운영자 「시야 밖 위쪽에서부터」) 화면 위 가장자리(왼 · 가운데 · 오른쪽)가 닿는 돔 위도 중 가장 높은 것보다 조금 위에서 시작한다
-    // — 경계가 화면 밖에서 들어와 위에서 아래로 지나간다(천정이 보이면 천정 너머에서). 셰이더와 같은 투영(눈 EYE → 단위 구).
-    const B = basis(), F = viewFocal();
-    let topLat = -90 * DEG;
-    for (const x of [0, W / 2, W]) {
-      const d = B.fwd.map((f, i) => f + B.right[i] * (x - cx) / F + B.up[i] * cy / F);
+    // 화면 가장자리 9 점이 닿는 돔 점(위도 · 경도) — 셰이더와 같은 투영(눈 EYE → 단위 구). 경계가 늘 시야 밖에서 들어와 시야 밖으로 나가게 시작 · 끝을 잡는다(11-06 운영자 「시야 밖에서부터」).
+    const B = basis(), F = viewFocal(), fx = SKY_FX[dest] || SKY_FX.pink, band = (1.2 + 5.8 * fx[1]) * DEG;
+    const domeAt = (x, y) => {
+      const d = B.fwd.map((f, i) => f + B.right[i] * (x - cx) / F + B.up[i] * (cy - y) / F);
       const n = Math.hypot(...d), u = d.map((v) => v / n);
       const b = dot3(EYE, u), c = dot3(EYE, EYE) - 1, t = -b + Math.sqrt(Math.max(b * b - c, 0));
-      topLat = Math.max(topLat, Math.asin(Math.max(-1, Math.min(1, EYE[1] + t * u[1]))));
+      const q = [EYE[0] + t * u[0], EYE[1] + t * u[1], EYE[2] + t * u[2]];
+      return { lat: Math.asin(Math.max(-1, Math.min(1, q[1]))), lon: Math.atan2(q[0], q[2]) };
+    };
+    const pts = [];
+    for (const y of [0, H / 2, H]) for (const x of [0, W / 2, W]) pts.push({ x, ...domeAt(x, y) });
+    const topLat = Math.max(...pts.map((q) => q.lat));
+    // (11-06 운영자 「위도 위로 · 경도 반시계로도」) 방향은 매번 무작위(바로 앞과 같은 방향은 피한다): 0 위도 아래로 · 1 위도 위로 · 2 경도 반시계(화면 오른쪽 → 왼쪽)
+    let mode = Math.floor(Math.random() * 2);
+    mode = mode >= lastSkyMode ? mode + 1 : mode;
+    const forced = DEBUG ? Number(QS.get("bgskydir")) : NaN;   // 확인용 ?bgdebug&bgskydir=0|1|2
+    if ([0, 1, 2].includes(forced)) mode = forced;
+    lastSkyMode = mode;
+    let start, end, lonC = 0, side = 1;
+    if (mode === 0) { start = Math.min(94 * DEG, topLat + 6 * DEG); end = skyEndLat(fx); }
+    else if (mode === 1) { start = 3 * DEG; end = -(Math.min(90 * DEG, topLat) + band + 4 * DEG); }   // −위도 좌표: 바닥(+2°) 바로 아래에서 출발해 화면 맨 위 너머까지
+    else {
+      const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+      lonC = domeAt(W / 2, H / 2).lon;
+      side = wrap(domeAt(W, H / 2).lon - lonC) >= 0 ? 1 : -1;   // 화면 오른쪽이 + 가 되게
+      const off = pts.map((q) => side * wrap(q.lon - lonC));
+      start = Math.min(170 * DEG, Math.max(...off) + 6 * DEG);
+      end = -(Math.min(170 * DEG, -Math.min(...off)) + band + 6 * DEG);
     }
-    sky = { t0: performance.now(), fx: SKY_FX[dest] || SKY_FX.pink, yaw, pitch, startLat: Math.min(94 * DEG, topLat + 6 * DEG), shortAt: null, shortMs: SKY_SHORT_MS, held: 0 };
+    sky = { t0: performance.now(), fx, yaw, pitch, start, end, dir: [mode, lonC, side, 0], shortAt: null, shortMs: SKY_SHORT_MS, held: 0 };
     panelResume = panelResume || ufoPanel.on;
     ufoPanel.transmit(true);
   }
@@ -1468,7 +1495,8 @@ export function createDomeGL(host, isPaused) {
     const force = sky.shortAt == null ? 0 : Math.min(1, (now - sky.shortAt) / sky.shortMs);
     if (el >= SKY_MS || force >= 1) { endSky(); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); return; }
     gl.uniform4f(U.uSkyFx, el / SKY_DESC_MS, ...sky.fx);
-    gl.uniform4f(U.uSkyFx2, sky.startLat, skyEndLat(sky.fx), force, el < SKY_DESC_MS ? 1 : 1 - (el - SKY_DESC_MS) / (SKY_MS - SKY_DESC_MS));
+    gl.uniform4f(U.uSkyDir, ...sky.dir);
+    gl.uniform4f(U.uSkyFx2, sky.start, sky.end, force, el < SKY_DESC_MS ? 1 : 1 - (el - SKY_DESC_MS) / (SKY_MS - SKY_DESC_MS));
   }
 
   function applyTheme() {
