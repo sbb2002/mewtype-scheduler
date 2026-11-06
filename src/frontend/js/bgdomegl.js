@@ -833,7 +833,9 @@ void main() {
     float lineK = (1.0 - smoothstep(.9, 1.0, uSkyFx.x)) * dome * uSkyFx.y;
     res *= 1.0 - .22 * exp(min(dpx, 0.0) / 9.0) * step(dpx, 0.0) * lineK;   // 선 바로 앞(옛 쪽)을 살짝 어둡게 — 밝은 구름 위에서도 선이 읽히게
     vec3 cyan = vec3(.31, .89, 1.0);
-    res += (mix(cyan, vec3(1.0, .95, .85), .35) * exp(-dpx * dpx) * .9 + cyan * exp(-abs(dpx) / 7.0) * .35) * lineK;
+    // (11-06 운영자 「흰 선을 도트보다 앞으로 · 글로우와 두께를 더」) 빛 번짐을 먼저 더하고, 흰 심(약 4 CSS px)은 덮어 그려 점무늬 위에 선다
+    res += cyan * (exp(-abs(dpx) / 16.0) * .55 + exp(-abs(dpx) / 5.0) * .45) * lineK;
+    res = mix(res, vec3(1.0, .97, .92), (1.0 - smoothstep(1.4, 2.6, abs(dpx))) * .95 * min(lineK, 1.0));
     float glow = uSkyFx.w * uSkyFx2.w * dome * reveal;
     res += vec3(1.0, .44, .71) * (.14 * exp(-max(dpx, 0.0) / 60.0) + 1.6 * grid) * glow;   // 지나간 쪽 이음선 · 가장자리에 분홍 잔광
     outc = mix(res, outc, uSkyFx2.z);
