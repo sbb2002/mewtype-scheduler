@@ -1,7 +1,7 @@
 // bgpanel.js — (bg-dome) 배경 보기 중 UFO 가운데 콘솔에 다가가면 화면 가운데에 뜨는 「UFO CONTROL」 조작 패널. 모양 = css/bgpanel.css.
 // 디자인 · 움직임 정본 = devpapers ref/bg-dome/ufo-panel/Main.dc.html(칸 · 문구 · 아이콘) + Approach.dc.html(등장 · 퇴장 연출).
 // 언제 뜨는지는 bgdomegl.js 가 정한다(뒤로 물러선 거리 r 의 문턱 — 나타남 0.12 · 사라짐 0.18, 망원이면 숨김). 여기는 모양과 on/off 만.
-// 1단계(11-06): 칸을 눌러도 아직 배경이 바뀌지 않는다 — 지금 배경 칸에 불만 들어온다.
+// 2단계(11-06): 칸을 누르면 onPick 으로 알린다(배경 바꾸기는 bgdomegl.js). 초행성X 길게 누르기 · 워프 기어는 3단계.
 // 고정 문구 · 아이콘만 쓰고 모두 createElement · textContent 로 만든다(innerHTML 금지).
 
 const NS = "http://www.w3.org/2000/svg";
@@ -48,16 +48,25 @@ const TILES = [
 
 /** 패널을 만든다. set(on) = 등장 · 퇴장, setCurrent(key) = 지금 배경 칸에 불. */
 export function createUfoPanel() {
-  const tiles = {};
+  const tiles = {}, firstChip = {};
+  let pick = null, current = null;
   const list = h("div", "ufo-list");
   TILES.forEach((t, i) => {
     const text = h("span", "ufo-tile__text", [h("span", "ufo-tile__lbl", [t.label]), h("span", "ufo-tile__sub", [t.sub])]);
-    if (t.chips.length) text.append(h("span", "ufo-chips", t.chips.map((c) => h("span", "ufo-chip", [c]))));
+    if (t.chips.length) {
+      const chips = t.chips.map((c) => h("span", "ufo-chip", [c]));
+      firstChip[t.key] = chips[0];
+      text.append(h("span", "ufo-chips", chips));
+    }
     const b = h("button", "ufo-tile ufo-stg", [h("span", "ufo-tile__ico", [ICONS[t.key]()]), text, h("span", "ufo-tile__led")], { type: "button", "aria-pressed": "false" });
     b.style.setProperty("--i", String(i + 1));
+    b.addEventListener("click", () => { if (on && pick) pick(t.key); });
     tiles[t.key] = b;
     list.append(b);
   });
+  // 지구를 고를 때 위치 권한을 묻는다는 안내(시안 Main.dc.html — 지구 칸 아래)
+  const earthNote = h("p", "ufo-note", ["위치 권한을 물어요 — 거절하면 지금 배경에 남아요."]);
+  list.append(earthNote);
 
   const head = h("div", "ufo-head", [
     h("div", "ufo-head__l", [h("span", "ufo-mono ufo-type ufo-head__tag", ["UFO CONTROL"]), h("span", "ufo-stg ufo-head__title", ["어디로 갈까요?"])]),
@@ -97,7 +106,14 @@ export function createUfoPanel() {
       root.setAttribute("aria-hidden", v ? "false" : "true");
       if (!v && root.contains(document.activeElement)) document.activeElement.blur();
     },
+    /** 칸을 누르면 부를 함수(key = "pink" | "space" | "earth") */
+    onPick(fn) { pick = fn; },
+    /** 칸의 첫 표시(칩) 글 바꾸기 — 같은 글이면 건드리지 않는다 */
+    setChip(key, text) { const c = firstChip[key]; if (c && c.textContent !== text) c.textContent = text; },
     setCurrent(key) {
+      if (key === current) return;
+      current = key;
+      earthNote.hidden = key === "earth";   // 이미 지구면 권한 안내가 필요 없다
       for (const k in tiles) {
         const sel = k === key;
         tiles[k].classList.toggle("is-on", sel);

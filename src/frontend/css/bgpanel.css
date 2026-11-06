@@ -165,6 +165,9 @@
 .ufo-tile.is-on .ufo-tile__led { background: var(--ufo-pink); border-color: var(--ufo-pink); box-shadow: 0 0 8px var(--ufo-pink); }
 .ufo-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .ufo-chip { font-family: var(--ufo-mono); font-size: 10px; letter-spacing: .06em; color: var(--ufo-cyan); border: 1px solid rgba(79, 227, 255, .4); padding: 1px 5px; }
+.ufo-note { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.4; color: #ffd27a; }
+.ufo-note[hidden] { display: none; }
+.ufo-tile:active { background: rgba(255, 95, 170, .22); }
 .ufo-foot { display: flex; justify-content: space-between; font-size: 10px; letter-spacing: .12em; color: #7f90a8; border-top: 1px solid rgba(79, 227, 255, .18); padding-top: 8px; }
 
 /* ── 멀리 있을 때 안내 */

@@ -11,7 +11,7 @@
 // 시선은 실내 · 바깥 모두 폰이 실제로 향한 방향 그대로(updateView). 해상도는 기기 배율 1.5 까지만.
 
 import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
-import { BGVIEW_EVENT } from "./bgview.js";
+import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView } from "./bgview.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
@@ -55,7 +55,8 @@ const CLOUD_SEED = (() => {
 })();
 // (11-05 운영자) 실내 배경 무작위 — 분홍 구름이 기본(이 사이트의 얼굴), 가끔 「우주」(성간 이동 1분 뒤 일반 우주).
 // 방문마다 뽑는다(저장 안 함). ?bgdebug&bgindoor=pink|space 로 고정, bgwarp=<초> 로 워프 진행 시점 고정(캡처용).
-const INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : (Math.random() < 0.2 ? "space" : "pink"); })();
+// (11-06 운영자) 방문마다 무작위는 없앴다 — UFO 조작 패널에서 고른 값을 기기에 기억(bgview.js indoorBg), 처음은 분홍. 디버그 bgindoor 가 우선.
+let INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : indoorBg(); })();
 const WARP_FIXED = DEBUG && QS.get("bgwarp") != null && Number.isFinite(Number(QS.get("bgwarp"))) ? Number(QS.get("bgwarp")) : null;
 // (11-05 3차 운영자) 항해 시나리오 — 우주 배경이 뽑히면 일반 우주 · 성간 이동 중 하나로 시작(반반).
 //   일반 우주로 시작: 20% 「출발」 = 20초 머문 뒤 1분에 걸쳐 0 → 0.99c 가속(그 뒤 0.99c 유지), 80% = 계속 정지.
@@ -64,7 +65,8 @@ const WARP_FIXED = DEBUG && QS.get("bgwarp") != null && Number.isFinite(Number(Q
 const VOYAGE = (() => {
   const q = DEBUG ? QS.get("bgvoyage") : null;
   if (["rest", "depart", "cruise", "arrive"].includes(q)) return q;
-  return Math.random() < 0.5 ? (Math.random() < 0.2 ? "depart" : "rest") : (Math.random() < 0.2 ? "arrive" : "cruise");
+  // (11-06 운영자) 무작위 항해 시나리오는 없앤다 — 평소 우주는 정지. 성간 이동(10% · 길게 누르기 · 워프 기어)은 조작 패널 3단계에서.
+  return "rest";
 })();
 function voyageBeta(sec) {
   const ss = (x) => { const v = Math.min(1, Math.max(0, x)); return v * v * (3 - 2 * v); };
@@ -1002,6 +1004,19 @@ export function createDomeGL(host, isPaused) {
   const viewFocal = () => (outdoor ? focalOut : focal) * tele;
   const ufoConsole = createConsole(air);   // 공중 무늬보다 먼저 붙여 무늬가 콘솔 앞을 지나가게
   const ufoPanel = createUfoPanel();
+  // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
+  ufoPanel.onPick((key) => {
+    if (key === "earth") { if (!outdoor) chooseBgView("outdoor"); return; }
+    if (key !== INDOOR_BG) setIndoorBg(key);
+    if (outdoor) setBgView("indoor");
+  });
+  document.addEventListener(BGINDOOR_EVENT, (e) => {
+    const v = e.detail === "space" ? "space" : "pink";
+    if (v === INDOOR_BG) return;
+    INDOOR_BG = v;
+    spaceT0 = null; warpDist = 0;   // 우주에 새로 들어간다
+    draw();
+  });
   let wasPeek = false, ufoArmed = false;   // 열린 직후 물러나는 동안(r 0 → 0.4)엔 패널이 번쩍 뜨지 않게 — 다 물러났거나 손가락으로 줌하면 켠다
 
   // 조각 배치 — 처음 보는 정면에 몇 개는 꼭 보이게
@@ -1535,9 +1550,14 @@ export function createDomeGL(host, isPaused) {
         return z < 0.03 ? null : [cx + F * dot3(q, B.right) / z, cy - F * dot3(q, B.up) / z, z];
       }, B);
     }
-    if (peek && !ufoArmed && (zoomR >= PANEL_OFF_R || pinch)) ufoArmed = true;
+    if (peek && !ufoArmed && zoomR >= PANEL_OFF_R) ufoArmed = true;
     const want = peek && ufoArmed && (ufoPanel.on ? zoomR <= PANEL_OFF_R && tele <= 1.02 : zoomR < PANEL_ON_R && tele <= 1.001);
-    if (want && !ufoPanel.on) ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");
+    if (want) {
+      ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
+      // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
+      const loading = INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map;
+      ufoPanel.setChip("space", loading ? "불러오는 중…" : "길게 누르면 워프");
+    }
     ufoPanel.set(want);
     ufoPanel.setHint(peek ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0);
   }
@@ -1550,6 +1570,7 @@ export function createDomeGL(host, isPaused) {
   window.addEventListener("touchstart", (e) => {
     if (e.touches.length !== 2 || !document.documentElement.classList.contains("bg-peek")) return;
     pinch = { distance: touchDist(e) };
+    ufoArmed = true;   // 손가락으로 줌을 시작하면 그때부터는 문턱대로 패널을 띄운다
     clearTimeout(pinchEndT);
     pinchMark(true);   // bgpeek.js 가 이 표시가 있는 동안 「누르면 되돌아가기」를 하지 않는다
   }, { passive: true });

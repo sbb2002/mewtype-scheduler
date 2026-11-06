@@ -18,6 +18,19 @@ import { declinationDeg } from "./bggyro.js";
 
 export const BGVIEW_EVENT = "mew:bgview";   // detail = "indoor" | "outdoor"
 const KEY = "bgview";
+// (11-06 운영자) 실내 배경 = 버츄얼 스페이스(분홍 구름, "pink") · 초행성X(우주, "space"). UFO 조작 패널에서 고르고 이 기기에 기억한다.
+// 처음(기억 없음)은 분홍 — 옛 「방문마다 20% 우주」는 없앴다.
+export const BGINDOOR_EVENT = "mew:bgindoor";   // detail = "pink" | "space"
+const INDOOR_KEY = "bgindoor";
+
+export function indoorBg() {
+  try { return localStorage.getItem(INDOOR_KEY) === "space" ? "space" : "pink"; } catch { return "pink"; }
+}
+export function setIndoorBg(v) {
+  const value = v === "space" ? "space" : "pink";
+  try { localStorage.setItem(INDOOR_KEY, value); } catch { /* 저장 못 함 */ }
+  document.dispatchEvent(new CustomEvent(BGINDOOR_EVENT, { detail: value }));
+}
 const HOLD_MS = 500;    // 주소 복사(longcopy.js)와 같은 길이
 const MOVE_PX = 10;
 
@@ -60,6 +73,9 @@ function askOrientation() {
   if (DOE && typeof DOE.requestPermission === "function") return DOE.requestPermission().catch(() => "denied");
   return Promise.resolve("granted");
 }
+
+/** 바깥(지구) · 실내 고르기 — UFO 조작 패널도 이걸 부른다. 바깥은 위치 권한을 묻고, 거절 · 실패면 실내(지금 실내 배경 그대로)에 남는다 */
+export function chooseBgView(value) { return choose(value); }
 
 async function choose(value) {
   if (value !== "outdoor") { setBgView("indoor"); return; }
