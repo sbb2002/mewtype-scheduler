@@ -11,39 +11,41 @@
   --ufo-mono: "Chakra Petch", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-/* ── 바닥 콘솔: 크림색 비행접시 조종대. 화면 패널의 --ufo-* 색과 독립. */
+/* ── 바닥 콘솔: 비행접시 조종대. 화면 패널의 --ufo-* 색과 독립.
+   색은 무대에 맞춘다(11-06 운영자 「이질감」): 어두운 자두색 바닥 위에서 몸체도 같은 계열로 어둡게 두고,
+   위쪽 면만 무대 조명을 받은 듯 밝게, 분홍 돔 빛이 테에 비친 듯 장밋빛을 섞는다. 밝은 색은 화면 속 별 · 버튼 등 「빛나는 것」만. */
 #bgdeco .bgcs {
-  --bgcs-cream: #fff0d7;
-  --bgcs-rose: #ffb3cd;
-  --bgcs-lilac: #b39ce8;
-  --bgcs-mint: #bce5cf;
-  --bgcs-shell-top: #fff1dc;
-  --bgcs-shell-bottom: #d9cadc;
-  --bgcs-metal-light: #e4deed;
-  --bgcs-metal: #a5a1bf;
-  --bgcs-metal-dark: #6d6487;
-  --bgcs-screen-top: #40334f;
-  --bgcs-screen-bottom: #756284;
-  --bgcs-glass: #e5d5f5;
-  --bgcs-pad: #30293f;
-  --bgcs-shadow: #171423;
+  --bgcs-cream: #f7dbe6;
+  --bgcs-rose: #e98ab3;
+  --bgcs-lilac: #a184c6;
+  --bgcs-mint: #96c9b8;
+  --bgcs-shell-top: #9c7c99;
+  --bgcs-shell-bottom: #3d3046;
+  --bgcs-metal-light: #c9a9c0;
+  --bgcs-metal: #6f5a78;
+  --bgcs-metal-dark: #241c2c;
+  --bgcs-screen-top: #1b1422;
+  --bgcs-screen-bottom: #3e2840;
+  --bgcs-glass: #e7b9d2;
+  --bgcs-pad: #1f1828;
+  --bgcs-shadow: #0d0a12;
   position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease;
 }
 :root[data-theme="light"] #bgdeco .bgcs {
-  --bgcs-cream: #fff4df;
-  --bgcs-rose: #f6a4c1;
-  --bgcs-lilac: #c2a7ed;
-  --bgcs-mint: #b0d9c2;
-  --bgcs-shell-top: #fff7e9;
-  --bgcs-shell-bottom: #e2d6e4;
-  --bgcs-metal-light: #f1eaf3;
-  --bgcs-metal: #b4a9c5;
-  --bgcs-metal-dark: #7c6d8b;
-  --bgcs-screen-top: #58425f;
-  --bgcs-screen-bottom: #95768e;
-  --bgcs-glass: #f6e3f5;
-  --bgcs-pad: #45394f;
-  --bgcs-shadow: #292235;
+  --bgcs-cream: #fbe4ec;
+  --bgcs-rose: #f095bb;
+  --bgcs-lilac: #b398d6;
+  --bgcs-mint: #a3d3c2;
+  --bgcs-shell-top: #b693b0;
+  --bgcs-shell-bottom: #4f4058;
+  --bgcs-metal-light: #dcbdd2;
+  --bgcs-metal: #857090;
+  --bgcs-metal-dark: #30263a;
+  --bgcs-screen-top: #241b2c;
+  --bgcs-screen-bottom: #4d3450;
+  --bgcs-glass: #f0c6dc;
+  --bgcs-pad: #2a2233;
+  --bgcs-shadow: #120e18;
 }
 #bgdeco .bgcs.is-on { opacity: 1; }
 #bgdeco .bgcs[hidden] { display: none; }
