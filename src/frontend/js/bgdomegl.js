@@ -198,6 +198,9 @@ uniform vec4 uSkyDir;   // (방향 0 아래 · 1 위 · 2 경도 반시계, 기�
 // uJump = (종류 0 꺼짐 · 1 A · 2 B · 3 C, 충격 고리 반지름, 세기, 굵기) · uJump2 = (흰 섬광, 붉은 섬광, B 재투영 고리 반지름(음수 = 없음), B 바깥 방사 번짐)
 // uJump3 = (중심 x, y, 화면 끝까지 반지름, -) · uJump4 = (C 터널 위상(음수 = 없음), 터널 세기, -, -)
 uniform vec4 uJump, uJump2, uJump3, uJump4;
+// (11-06 운영자 「폰을 기울여도 시선 카메라가 아니라 배경 그림만 수평을 지키게 — 분홍 구름은 제외」) 배경(우주 · 바깥 하늘 · 지형)을 볼 때만
+// 시선 방향을 정면 축 둘레로 uBgRoll(라디안) 돌려 읽는다. 돔 유리 격자 · 바닥 · 콘솔 · 공중 무늬는 그대로(카메라는 기울지 않음). 분홍 구름이면 0.
+uniform float uBgRoll;
 
 flat in vec2 vSourceClear;
 uniform mat3 uEqM;
@@ -642,6 +645,8 @@ vec3 compassHUD(vec3 col, vec3 ray, float lat, float lon, float glassPx) {
 void main() {
   vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
   vec3 d = normalize(uFwd + uRight * (p.x - uC.x) / uF + uUp * (uC.y - p.y) / uF);
+  vec3 db = d;   // 배경을 읽는 방향(기울임 보정) — 로드리게스 회전, 축 = 정면
+  if (uBgRoll != 0.0) { float cR = cos(uBgRoll), sR = sin(uBgRoll); db = d * cR + cross(uFwd, d) * sR + uFwd * dot(uFwd, d) * (1.0 - cR); }
 
   // 돔(단위 구) 안쪽에서 나가는 점
   float b = dot(E, d), c = dot(E, E) - 1.0;
@@ -653,26 +658,26 @@ void main() {
 
   // ── 유리 + 하늘
   // Directional distance derivatives before any non-uniform branch; stable tangent lengths for small discs.
-  vec2 discDistance = vec2(length(discTangent(d, uSunDir, uSunShape, sin(uSunR))),
-    length(moonTangent(d, p)));
+  vec2 discDistance = vec2(length(discTangent(db, uSunDir, uSunShape, sin(uSunR))),
+    length(moonTangent(db, p)));
   vec2 discPx = max(fwidth(discDistance), vec2(1e-6));
   float groundPixel = 1.0 / (uF * uDpr);
-  groundDx=dFdx(d); groundDy=dFdy(d);
+  groundDx=dFdx(db); groundDy=dFdy(db);
 #if GROUND_OUTDOOR
   vec3 col = vec3(0);
   if (floorK < 1.0) {
-    vec4 geometry = groundGeometry(d, groundPixel);
-    if (geometry.x >= 1.0) col = groundSurface(d, geometry, groundPixel) * uPupil.x;
+    vec4 geometry = groundGeometry(db, groundPixel);
+    if (geometry.x >= 1.0) col = groundSurface(db, geometry, groundPixel) * uPupil.x;
     else {
-      col = sky(d, groundPixel, discPx, p);
-      if (geometry.x > 0.0) col = mix(col, groundSurface(d, geometry, groundPixel) * uPupil.x, geometry.x);
+      col = sky(db, groundPixel, discPx, p);
+      if (geometry.x > 0.0) col = mix(col, groundSurface(db, geometry, groundPixel) * uPupil.x, geometry.x);
     }
   }
 #else
-  vec4 geometry = groundGeometry(d, groundPixel);
-  vec3 col = sky(d, groundPixel, discPx, p);
+  vec4 geometry = groundGeometry(db, groundPixel);
+  vec3 col = sky(db, groundPixel, discPx, p);
   // 우주 배경에는 땅이 없다 — 지평선 아래도 별.
-  if (geometry.x > 0.0 && uSpace.x < 0.5) col = mix(col, groundSurface(d, geometry, groundPixel) * uPupil.x, geometry.x);
+  if (geometry.x > 0.0 && uSpace.x < 0.5) col = mix(col, groundSurface(db, geometry, groundPixel) * uPupil.x, geometry.x);
 #endif
   float lat = asin(clamp(q.y, -1.0, 1.0)), cl = cos(lat);
   float lon = atan(q.x, q.z);
@@ -1258,9 +1263,11 @@ export function createDomeGL(host, isPaused) {
   });
   // 점프 연출의 중심 = 진행 방향(uWarpDir)이 화면에 맺히는 점. 뒤를 보고 있으면 화면 가운데
   function jumpCenter() {
-    const B = basis(), d = [0, 0.05, 0.99875], z = dot3(d, B.fwd), F = viewFocal();
+    // 배경이 기울임만큼 돌아 보이므로(uBgRoll) 진행 방향 점도 화면 가운데 둘레로 같이 돈다
+    const B = basis(), w0 = [0, 0.05, 0.99875], z = dot3(w0, B.fwd), F = viewFocal();
     if (z < 0.2) return [W / 2, H / 2];
-    const x = cx + F * dot3(d, B.right) / z, y = cy - F * dot3(d, B.up) / z;
+    const x0 = F * dot3(w0, B.right) / z, y0 = F * dot3(w0, B.up) / z, a = -bgRoll(), ca = Math.cos(a), sa = Math.sin(a);
+    const x = cx + x0 * ca - y0 * sa, y = cy - (x0 * sa + y0 * ca);
     return [Math.max(-W * 0.5, Math.min(W * 1.5, x)), Math.max(-H * 0.5, Math.min(H * 1.5, y))];
   }
   function updateStar(now, _dt, peek) {
@@ -1377,7 +1384,7 @@ export function createDomeGL(host, isPaused) {
     gl.uniform1f(U.uSunR, SUN_MOON_R[0] * DEG); gl.uniform1f(U.uMoonR, SUN_MOON_R[1] * DEG);
     gl.uniform1i(U.uMoonTex, 4); gl.uniform1f(U.uMoonTexOn, 0);
     gl.uniform1i(U.uGroundTile, 5); gl.uniform1i(U.uGroundRidge, 6); gl.uniform1i(U.uGroundAlbedo, 7);
-    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0); gl.uniform4f(U.uJump, 0, 0, 0, 0);
+    gl.uniform1i(U.uThemeFrame, 9); gl.uniform1f(U.uThemeProgress, 1); gl.uniform4f(U.uSkyFx, -1, 0, 0, 0); gl.uniform4f(U.uSkyDir, 0, 0, 1, 0); gl.uniform4f(U.uJump, 0, 0, 0, 0); gl.uniform1f(U.uBgRoll, 0);
     gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1])); gl.uniform2f(U.uDeepShape, 1, 1960);
     gl.uniform1i(U.uGroundIndoorTile, 10);
     gl.uniform1i(U.uTerrainSkyline, 8); gl.uniform1i(U.uTerrainGeometry, 11); gl.uniform1i(U.uTerrainNormal, 12);
@@ -1728,19 +1735,14 @@ export function createDomeGL(host, isPaused) {
     lastGL = 0;
   }
 
-  // 카메라 축. (11-06 운영자 「폰을 기울여도 배경은 눈으로 보기에 기울지 않게」) 화면 기울임(roll)만큼 카메라를 반대로 돌린다 —
-  // 폰 오른쪽이 내려가면 화면의 오른쪽 · 위쪽 축도 같이 돌아 세계의 수평선은 실제 수평 그대로 보인다. 셰이더 · 공중 무늬 · 콘솔이 모두 이 축을 쓴다.
-  // hright = 기울임과 무관한 수평 오른쪽(바닥 콘솔 놓기 · 무늬 기울기 가속도용). roll = rollS(아래 tiltAccel, 0.15초 저역 통과, 눕혀 들면 0 쪽으로).
+  // 카메라 축(기울지 않음 — 폰 기울임은 배경 그림에만, 셰이더 uBgRoll · bgRoll()). hright = 수평 오른쪽(= right).
   function basis() {
     const cy_ = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const r0 = [cy_, 0, -sy], u0 = [-sy * sp, cp, -cy_ * sp], cr = Math.cos(rollS), sr = Math.sin(rollS);
-    return {
-      fwd: [sy * cp, sp, cy_ * cp],
-      right: [r0[0] * cr - u0[0] * sr, r0[1] * cr - u0[1] * sr, r0[2] * cr - u0[2] * sr],
-      up: [u0[0] * cr + r0[0] * sr, u0[1] * cr + r0[1] * sr, u0[2] * cr + r0[2] * sr],
-      hright: r0,
-    };
+    const r0 = [cy_, 0, -sy];
+    return { fwd: [sy * cp, sp, cy_ * cp], right: r0, up: [-sy * sp, cp, -cy_ * sp], hright: r0 };
   }
+  // 배경 그림을 읽을 때 돌릴 각(라디안) — 폰 기울임(rollS)의 반대. 분홍 구름 하늘(실내 분홍)은 0(운영자: 제외 · 판정 불필요)
+  const bgRoll = () => (!outdoor && INDOOR_BG !== "space" ? 0 : -rollS);
 
   function draw() {
     if (gl.isContextLost() || !W || releaseGround?.terrain?.uploading) return;
@@ -1756,6 +1758,7 @@ export function createDomeGL(host, isPaused) {
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
     gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele; drawnRoll = rollS;
+    gl.uniform1f(U.uBgRoll, bgRoll());
     gl.uniform1f(U.uF, viewFocal());
     // 실내 우주가 13 · 14번 칸에 float 질감을 꽂았다면 바깥 지형(정수 표본기) 전에 비운다 — 확대 조각이 있으면 view() 가 다시 꽂는다.
     if (outdoor && spaceTex.blank) { gl.activeTexture(gl.TEXTURE13); gl.bindTexture(gl.TEXTURE_2D, null); gl.activeTexture(gl.TEXTURE14); gl.bindTexture(gl.TEXTURE_2D, null); }
@@ -1864,7 +1867,7 @@ export function createDomeGL(host, isPaused) {
         show = sx > -m && sx < W + m && sy > -m && sy < H + m;
       }
       if (show !== p.shown) { p.el.style.visibility = show ? "" : "hidden"; p.shown = show; }
-      if (show) p.el.style.transform = `translate3d(${(sx - BOX / 2).toFixed(1)}px,${(sy - BOX / 2).toFixed(1)}px,0) scale(${s.toFixed(3)}) rotate(${((p.th - rollS) / DEG).toFixed(1)}deg)`;   // 화면 기울임만큼 무늬도 반대로(세계 기준 자세 유지)
+      if (show) p.el.style.transform = `translate3d(${(sx - BOX / 2).toFixed(1)}px,${(sy - BOX / 2).toFixed(1)}px,0) scale(${s.toFixed(3)}) rotate(${(p.th / DEG).toFixed(1)}deg)`;
     }
   }
 
