@@ -39,6 +39,23 @@
   #bgdeco .bgd-fl { animation: none; }
 }
 
+/* (bg-dome) 배경 테마 바꾸기 = 위에서부터 걷히기(js/bgview.js wipeDown 이 html.bg-wipe 를 켠다).
+   옛 화면 사진(old)을 새 화면(new, 살아 있는 화면) 위에 두고, 위가 투명 · 아래가 불투명인 마스크를 위에서 아래로 내린다.
+   마스크 높이 = 화면 3배, 경계(45~55% = 화면 0.3배 폭의 부드러운 띠)가 화면 위 바깥 → 아래 바깥으로 지나간다.
+   평소에는 배경(#bgdeco)을 따로 떼어 찍지만(theme.css), 이때는 배경째 한 장으로 찍어야 함께 걷힌다. */
+html.bg-wipe #bgdeco { view-transition-name: none; }
+@keyframes bg-wipe-down { from { -webkit-mask-position: 0 100%; mask-position: 0 100%; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
+html.bg-wipe::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.bg-wipe::view-transition-old(root) {
+  z-index: 1;
+  mix-blend-mode: normal;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 45%, #000 55%);
+  mask-image: linear-gradient(to bottom, transparent 45%, #000 55%);
+  -webkit-mask-size: 100% 300%; mask-size: 100% 300%;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  animation: bg-wipe-down 1.6s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+
 /* 시험안 전용. 쿼리가 없으면 기존 규칙만 적용된다. */
 #bgdeco[data-variant] {
   --bgv-accent: #ff7788;

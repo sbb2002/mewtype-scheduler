@@ -50,9 +50,24 @@ const currentTheme = () => (birthdayOn() ? "birthday" : bgTheme());
 
 function chooseTheme(value) {
   if (value === currentTheme()) return;
-  if (value === "birthday") { setBirthdayOn(true); return; }
-  if (birthdayOn()) setBirthdayOn(false);
-  setBgTheme(value);
+  wipeDown(() => {
+    if (value === "birthday") { setBirthdayOn(true); return; }
+    if (birthdayOn()) setBirthdayOn(false);
+    setBgTheme(value);
+  });
+}
+
+// (11-06 운영자 「촥 바뀌지 말고 위에서부터 서서히」) 테마를 바꿀 때 옛 화면을 한 장으로 찍어 두고(View Transitions),
+// 그 사진이 위에서부터 아래로 부드럽게 걷히며 새 테마가 드러난다. 모양은 bgdeco.css 의 html.bg-wipe.
+// 지원하지 않는 브라우저 · 움직임 줄이기 설정이면 예전처럼 바로 바뀐다.
+function wipeDown(change) {
+  const root = document.documentElement;
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || reduce) { change(); return; }
+  root.classList.add("bg-wipe");
+  const vt = document.startViewTransition(change);
+  const done = () => root.classList.remove("bg-wipe");
+  vt.finished.then(done, done);
 }
 
 let pop = null, press = null, eatClick = false, toastEl = null, toastT = 0, busy = false;
