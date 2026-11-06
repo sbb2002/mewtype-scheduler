@@ -30,5 +30,14 @@ USGS 3DEP 메타데이터는 데이터를 가공한 사용자에게 「가공 �
 | `space-pillars.webp` | File:Pillars_of_creation_2014_HST_WFC3-UVIS_full-res_denoised.jpg — NASA, ESA, Hubble Heritage Team (STScI/AURA) | 퍼블릭 도메인 | 1280px 판을 WebP 품질 84 |
 | `space-tarantula.webp` | File:A_New_View_of_the_Tarantula_Nebula.jpg — NASA | 퍼블릭 도메인 | 1280px 판을 WebP 품질 76 |
 
+## 효과음(`sfx/`, 성간 이동)
+
+Freesound 의 공개 미리듣기 파일(MP3)을 받아 잘라 다시 저장했다(2026-11-06). 둘 다 **CC0**(이용 조건 없음, 출처 표시 의무 없음 — 각 페이지의 라이선스 칸 확인).
+
+| 파일 | 원본 | 조건 | 가공 |
+|---|---|---|---|
+| `alarm.wav` | 「Digital Alarm Loop.wav」 by bbrocer — https://freesound.org/people/bbrocer/sounds/389511/ | CC0 | 앞 0.242초(원본 길이)만 48kHz 16비트 모노 WAV 로 — 반복 재생 때 빈틈이 없게 |
+| `warp-jump.m4a` | 「Warp Speed.wav」 by DylanTheFish — https://freesound.org/people/DylanTheFish/sounds/454683/ | CC0 | 12.8 ~ 17.3초(소리가 가장 큰 14.0초 앞뒤)를 잘라 앞 0.03초 · 끝 0.8초 페이드, AAC 96kbps |
+
 - **화면 출처 표시가 아직 없다**: `space-eso`(CC BY 4.0) · `space-starmap`(Gaia CC BY-NC) 는 조건상 출처를 보여야 한다. 운영자 계획(11-05) = 그 자료가 화면에 보일 때만 시선에 고정된 아주 작은 홀로그램 글씨로 — 아직 구현 전(devpapers `ref/bg-dome/SCENARIOS.md` 3절).
 - 위키미디어 5장의 라이선스 확인 기록 = devpapers `ref/bg-dome/space_images_license.md`. 앞의 세 장(starmap · eso · deep)은 원본 페이지 주소가 기록에 없어 병합 전에 다시 찾아 적을 것.

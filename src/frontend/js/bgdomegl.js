@@ -1221,6 +1221,7 @@ export function createDomeGL(host, isPaused) {
       buzz();
       captureFrame(); themeStart = -Infinity; endSky();   // B 연출의 「옛 화면」 사진
       star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
+      sound.jump(star.jump.kind);   // 음원의 절정이 도착 순간(A 0.62초 섬광 · B 바로 · C 0.7초 충격파)에 오게(bgsound.js)
     },
   });
   let star = null, pendingHold = false, shaking = false;

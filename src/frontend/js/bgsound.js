@@ -1,13 +1,25 @@
-// bgsound.js — (bg-dome 4단계) 성간 이동 소리 — 음원 파일 없이 Web Audio 로 합성(외부 파일 · 라이브러리 없음).
-//   · ding()        좌석벨트 표시등이 켜지고 꺼질 때 기내 차임 「띵」(시안 Gear.dc.html 그대로: 기음 + 약한 배음, 1.5초에 걸쳐 잦아듦)
-//   (엔진 울림은 뺐다 — 운영자 11-06 「가속 시 엔진 소리 거슬림」)
-//   · alarm(k)      5단 경보 사이렌(아래)
-//   (워프 점프 합성음도 뺐다 — 운영자 11-06 「촌스러움」. 음원으로 바꿀 후보 조사 중)
+// bgsound.js — (bg-dome 4단계) 성간 이동 소리 — Web Audio.
+//   · ding()        좌석벨트 표시등이 켜지고 꺼질 때 기내 차임 「띵」(합성, 시안 Gear.dc.html 그대로: 기음 + 약한 배음, 1.5초에 걸쳐 잦아듦)
+//   · alarm(k)      5단 경보음 — 음원 assets/bg/sfx/alarm.wav 를 끊김 없이 반복(아래)
+//   · jump(kind)    워프 점프 — 음원 assets/bg/sfx/warp-jump.m4a 의 절정이 도착 순간에 오게(아래)
+//   (엔진 울림 · 합성 사이렌 · 합성 점프음은 뺐다 — 운영자 11-06 「거슬림」 · 「마음에 안 듦」 · 「촌스러움」. 음원 출처 = assets/bg/README.md)
 // 브라우저는 사용자가 누른 뒤에만 소리를 낸다 — wake() 를 누르는 손길(기어 · WARP · 길게 누르기)에서 부른다. 탭이 숨으면 멈춘다.
+// 음원은 wake() 때 한 번 받아 풀어 둔다(합쳐 약 80KB). 아직 못 받았으면 그 소리만 조용히 건너뛴다.
 // 유메미타 플레이어와 겹쳐도 된다(운영자 11-06 계획서 0번 4). 소리 크기는 전체 0.35 로 낮게.
 
 let ac = null, master = null;
 const AC = () => window.AudioContext || window.webkitAudioContext;
+const SRC = { alarm: new URL("../assets/bg/sfx/alarm.wav", import.meta.url).href, jump: new URL("../assets/bg/sfx/warp-jump.m4a", import.meta.url).href };
+const buf = {};   // 이름 → AudioBuffer(받는 중이면 Promise)
+
+function load(name) {
+  if (buf[name]) return;
+  buf[name] = fetch(SRC[name]).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)))
+    .then((a) => new Promise((ok, no) => ac.decodeAudioData(a, ok, no)))   // 옛 Safari 는 콜백 형태만
+    .then((b) => { buf[name] = b; }, () => { setTimeout(() => { if (!(buf[name] instanceof AudioBuffer)) buf[name] = null; }, 10000); });   // 실패하면 10초 뒤 다시 받을 수 있게
+}
+const ready = () => ac && ac.state === "running";
+const got = (name) => (buf[name] instanceof AudioBuffer ? buf[name] : null);
 
 /** 누르는 손길 안에서 부른다 — 처음이면 만들고, 잠들어 있으면 깨운다 */
 export function wake() {
@@ -18,9 +30,9 @@ export function wake() {
       document.addEventListener("visibilitychange", () => { if (!ac) return; if (document.hidden) ac.suspend(); else ac.resume(); });
     }
     if (ac.state === "suspended" && !document.hidden) ac.resume();
+    load("alarm"); load("jump");
   } catch { ac = null; }
 }
-const ready = () => ac && ac.state === "running";
 
 function env(g, t, peak, a, dec) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); }
 
@@ -34,24 +46,34 @@ export function ding() {
   });
 }
 
-// 경보음(11-06 운영자 「경보음도」) — 5단 + 좌석벨트 표시등 켜짐 경보(bgdomegl.js alarmK)와 같이 커지고 작아진다.
-// 오르내리는 사이렌: 톱니파 두 개(살짝 어긋나게)를 띠 거름에 통과, 음 높이가 600 ↔ 900Hz 를 1.25초 주기로 부드럽게 오르내린다(화면 붉은 가장자리 맥동과 같은 박자).
+// 경보음(운영자 11-06 — Freesound 후보 중 「Digital Alarm Loop」 고름) — 5단 + 좌석벨트 표시등 켜짐 경보(bgdomegl.js alarmK)와 같이 커지고 작아진다.
+// 0.24초짜리 한 음 삐삐음을 끊김 없이 반복(WAV 라 앞뒤 빈틈 없음). 음량은 낮게(운영자 「모두 볼륨 낮춰」) — 원음 평균 −31.5dB × 0.6 × 전체 0.35.
+const ALARM_GAIN = 0.6;
 let siren = null;
 export function alarm(k) {
   if (!ready()) return;
   const t = ac.currentTime;
   if (!siren && k > 0.01) {
-    const g = ac.createGain(); g.gain.value = 0.0001;
-    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 900; bp.Q.value = 0.9;
-    const o1 = ac.createOscillator(), o2 = ac.createOscillator(); o1.type = o2.type = "sawtooth"; o1.frequency.value = 750; o2.frequency.value = 750; o2.detune.value = 9;
-    const lfo = ac.createOscillator(), depth = ac.createGain(); lfo.frequency.value = 0.8; depth.gain.value = 150;
-    lfo.connect(depth); depth.connect(o1.frequency); depth.connect(o2.frequency);
-    o1.connect(bp); o2.connect(bp); bp.connect(g); g.connect(master);
-    o1.start(); o2.start(); lfo.start();
-    siren = { g, o1, o2, lfo };
+    const b = got("alarm"); if (!b) return;
+    const g = ac.createGain(); g.gain.value = 0.0001; g.connect(master);
+    const s = ac.createBufferSource(); s.buffer = b; s.loop = true; s.connect(g); s.start();
+    siren = { g, s };
   }
   if (!siren) return;
-  siren.g.gain.setTargetAtTime(k > 0.01 ? 0.035 * k : 0.0001, t, 0.12);   // 0.11 → 0.035(약 −10dB, 운영자 11-06 「사이렌 마음에 안 듦 — 일단 낮춰」. 음원으로 바꿀 후보 조사 중)
-  if (k <= 0.01 && !siren.stopAt) { siren.stopAt = 1; const s = siren; setTimeout(() => { if (siren === s && s.stopAt) { siren = null; try { s.o1.stop(); s.o2.stop(); s.lfo.stop(); s.g.disconnect(); } catch { /* 이미 */ } } }, 1500); }
+  siren.g.gain.setTargetAtTime(k > 0.01 ? ALARM_GAIN * k : 0.0001, t, 0.12);
+  if (k <= 0.01 && !siren.stopAt) { siren.stopAt = 1; const s = siren; setTimeout(() => { if (siren === s && s.stopAt) { siren = null; try { s.s.stop(); s.g.disconnect(); } catch { /* 이미 */ } } }, 1500); }
   if (k > 0.01) siren.stopAt = 0;
+}
+
+// 워프 점프(운영자 11-06 — 「Warp Speed」 고름, 절정만 잘라 빠르게 페이드 인). warp-jump.m4a = 원본 12.8 ~ 17.3초(4.5초): 소리가 차오르다 1.2초 지점(원본 14.0초)에서
+// 가장 크고, 그 뒤 잦아든다(끝 0.8초 페이드 아웃은 파일에 넣어 둠). 절정을 점프 「도착」 순간(bgwarp.jumpFrame — A 0.62초 섬광 · B 바로 · C 0.7초 충격파)에 맞추려고
+// 연출마다 파일의 다른 지점부터 틀고, 시작은 0.12초 페이드 인으로 부드럽게 든다.
+const JUMP_PEAK = 1.2, JUMP_ARRIVE = { A: 0.62, B: 0, C: 0.7 }, JUMP_FADE = 0.12, JUMP_GAIN = 0.3;
+export function jump(kind) {
+  if (!ready()) return;
+  const b = got("jump"); if (!b) return;
+  const t = ac.currentTime, off = Math.max(0, JUMP_PEAK - (JUMP_ARRIVE[kind] ?? 0));
+  const g = ac.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(JUMP_GAIN, t + JUMP_FADE); g.connect(master);
+  const s = ac.createBufferSource(); s.buffer = b; s.connect(g); s.start(t, off);
+  s.onended = () => { try { g.disconnect(); } catch { /* 이미 */ } };
 }
