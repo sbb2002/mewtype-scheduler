@@ -1,0 +1,248 @@
+<title>돔 시선 HUD 5안</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 설명 + 폰 시안 5장 카드 그리드. 단일 다크 세계(우주 돔)로 고정 */
+:root{
+  --bg:#050818; --panel:#0b1230; --ink:#eef6ff; --sub:#a9bad0;
+  --cyan:#4fe3ff; --pink:#ff6fb5; --cream:#f3e6c8; --line:rgba(79,227,255,.22);
+  --mono:"Chakra Petch",ui-monospace,Consolas,monospace;
+  --sans:"Noto Sans KR",system-ui,sans-serif;
+  color-scheme:dark;
+}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+  padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1240px;margin:0 auto;display:grid;gap:28px}
+header{display:grid;gap:10px;max-width:760px}
+h1{font:600 28px/1.15 var(--mono);letter-spacing:.04em;margin:0;text-wrap:balance}
+header p{margin:0;color:var(--sub);line-height:1.65;font-size:15px}
+.base{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.chip{font:500 11px var(--mono);letter-spacing:.06em;color:var(--cyan);border:1px solid rgba(79,227,255,.4);padding:3px 8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:20px}
+.card{display:grid;grid-template-columns:minmax(0,200px) minmax(0,1fr);gap:18px;background:var(--panel);border:1px solid var(--line);padding:16px;align-items:start}
+@media (max-width:420px){.card{grid-template-columns:1fr}.phone{max-width:220px;margin:0 auto}}
+.phone{position:relative;aspect-ratio:1/2;border-radius:22px;overflow:hidden;border:1px solid rgba(238,246,255,.18);
+  background:
+   radial-gradient(60% 30% at 70% 88%,rgba(255,111,181,.28),transparent 70%),
+   radial-gradient(80% 50% at 20% 20%,rgba(79,227,255,.12),transparent 70%),
+   linear-gradient(#050818,#0a1033 55%,#1a1040)}
+.phone canvas,.phone svg{position:absolute;inset:0;width:100%;height:100%}
+.meta{display:grid;gap:10px;min-width:0}
+.meta h2{margin:0;font:600 17px var(--mono);letter-spacing:.03em}
+.meta .tag{font:500 11px var(--mono);color:var(--pink);letter-spacing:.1em}
+.meta p{margin:0;font-size:13.5px;line-height:1.6;color:var(--sub)}
+.meta ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+.meta li{font-size:12px;color:var(--ink);border:1px solid var(--line);padding:2px 7px}
+.meta dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px}
+.meta dt{color:var(--cyan);font-family:var(--mono)}
+.meta dd{margin:0;color:var(--sub)}
+.note{font-size:12.5px;color:var(--sub);line-height:1.6;max-width:760px}
+svg text{font-family:var(--mono)}
+.sweep{transform-origin:100px 300px;animation:sw 4s linear infinite}
+@keyframes sw{to{transform:rotate(360deg)}}
+.pulse{transform-box:fill-box;transform-origin:center;animation:pl 1.6s ease-out infinite}
+@keyframes pl{0%{transform:scale(.6);opacity:.9}100%{transform:scale(2.6);opacity:0}}
+.dwell{animation:dw 3.2s ease-in-out infinite}
+@keyframes dw{0%{stroke-dashoffset:var(--c)}70%,100%{stroke-dashoffset:0}}
+.tagfade{animation:tf 3.2s ease-in-out infinite}
+@keyframes tf{0%,60%{opacity:0;transform:translateY(4px)}80%,100%{opacity:1;transform:none}}
+.blink{animation:bk 1.2s steps(2) infinite}
+@keyframes bk{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.sweep,.pulse,.dwell,.tagfade,.blink{animation:none}.tagfade{opacity:1}.dwell{stroke-dashoffset:0}}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>돔 시선 HUD · 5안 + 혼합 F안</h1>
+  <p>배경 보기(위로 플릭)에서 폰 화면에 고정되어 시선을 따라다니는 HUD입니다. 돔의 우주선 조종석 설정에 맞춰, 가운데는 비우고 가장자리와 얇은 링에 정보를 둡니다. 아래 수치는 모두 예시이고, 시계와 방위만 움직입니다.</p>
+  <div class="base">
+    <span class="chip">공통 후보 정보</span>
+    <span class="chip">방위 HDG</span><span class="chip">고도 ALT</span><span class="chip">배율 ×</span><span class="chip">중심 거리 r</span>
+    <span class="chip">현재 하늘</span><span class="chip">KST 시각</span><span class="chip">워프 속도 · 기어</span><span class="chip">다음 방송</span>
+  </div>
+</header>
+<div class="grid" id="grid"></div>
+<p class="note">정보 우선순위 제안: 1순위 방위 · 고도 · 배율(몸의 방향 감각), 2순위 현재 하늘 · 시각, 3순위 사이트 본업인 방송 정보(라이브 수 · 다음 예고 카운트다운), 워프 중에만 속도 · 기어. 한 안에 다 넣지 않고, 안마다 다른 조합을 보여 줍니다. 고르신 뒤 켜고 끄는 항목은 조작 패널에 둘 수 있습니다.</p>
+</div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const P=(a)=>a.join('');
+const cy='#4fe3ff',pk='#ff6fb5',cr='#f3e6c8',sub='#a9bad0',ink='#eef6ff';
+const T=(x,y,s,o={})=>`<text x="${x}" y="${y}" font-size="${o.s||7}" fill="${o.c||cy}" text-anchor="${o.a||'start'}" letter-spacing="${o.ls||.6}" ${o.id?`id="${o.id}"`:''} ${o.w?`font-weight="${o.w}"`:''}>${s}</text>`;
+
+/* 별 캔버스 */
+function stars(el){
+  const c=document.createElement('canvas');c.width=200;c.height=400;const g=c.getContext('2d');
+  let s=7;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+  for(let i=0;i<110;i++){g.fillStyle=`rgba(238,246,255,${.2+r()*.7})`;const z=r()<.1?1.4:.7;g.fillRect(r()*200,r()*400,z,z)}
+  el.prepend(c);
+}
+
+/* A. 조종석 레티클 */
+function hudA(){
+  let tape='';for(let d=0;d<=360;d+=5){const x=d*4;const big=d%15===0;
+    tape+=`<line x1="${x}" x2="${x}" y1="${big?0:3}" y2="6" stroke="${cy}" stroke-width=".6"/>`;
+    if(big){const l={0:'N',90:'E',180:'S',270:'W',360:'N'}[d];tape+=T(x,15,l||d,{a:'middle',s:l?8:6,c:l?pk:sub})}}
+  let lad='';[-20,-10,10,20].forEach(p=>{const y=200-p*3.2;
+    lad+=`<path d="M52 ${y}h12 M136 ${y}h12" stroke="${cy}" stroke-width=".7" opacity=".8"/>`+T(48,y+2.3,Math.abs(p),{a:'end',s:6,c:sub})+T(152,y+2.3,Math.abs(p),{s:6,c:sub})});
+  return `<svg viewBox="0 0 200 400">
+  <g transform="translate(100,38)"><clipPath id="ca"><rect x="-70" y="-6" width="140" height="26"/></clipPath>
+   <g clip-path="url(#ca)"><g id="tapeA">${tape}</g></g>
+   <path d="M0 -8 l-3 -5 h6z" fill="${pk}"/></g>
+  ${T(100,66,'HDG 142°',{a:'middle',s:9,w:600,id:'hdgA',c:ink})}
+  <circle cx="100" cy="200" r="20" fill="none" stroke="${cy}" stroke-width=".8"/>
+  <path d="M100 172v14M100 214v14M72 200h14M114 200h14" stroke="${cy}" stroke-width=".8"/>
+  <circle cx="100" cy="200" r="1.4" fill="${pk}"/>
+  ${lad}
+  <path d="M18 120v160" stroke="${cy}" stroke-width=".5" opacity=".5"/>${T(14,118,'ALT',{a:'end',s:6,c:sub})}${T(14,290,'+38°',{a:'end',s:8,c:ink,w:600})}
+  <path d="M182 120v160" stroke="${cy}" stroke-width=".5" opacity=".5"/>${T(186,118,'ZOOM',{s:6,c:sub})}${T(186,290,'×1.0',{s:8,c:ink,w:600})}
+  ${T(100,372,'SKY · 초행성X',{a:'middle',s:7.5,c:sub})}</svg>`;
+}
+
+/* B. 시선 링 */
+function hudB(){
+  let tk='';for(let i=0;i<72;i++){const a=i*5,big=i%6===0;
+    tk+=`<line x1="100" x2="100" y1="${big?132:135}" y2="140" stroke="${big?cy:sub}" stroke-width="${big?.9:.5}" transform="rotate(${a} 100 200)" opacity="${big?1:.6}"/>`}
+  const C=2*Math.PI*52;
+  return `<svg viewBox="0 0 200 400">
+  <g>${tk}</g>
+  ${T(100,128,'N',{a:'middle',s:8,c:pk,w:600})}
+  <circle cx="100" cy="200" r="52" fill="none" stroke="rgba(79,227,255,.18)" stroke-width="2.4"/>
+  <circle class="dwell" style="--c:${C}" cx="100" cy="200" r="52" fill="none" stroke="${cy}" stroke-width="2.4" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 100 200)" stroke-linecap="butt"/>
+  <circle cx="100" cy="200" r="1.6" fill="${pk}"/>
+  <path d="M100 190v6M100 204v6M90 200h6M104 200h6" stroke="${cy}" stroke-width=".6" opacity=".8"/>
+  <path d="M40 200a60 60 0 0 1 0-0.1" stroke="none"/>
+  ${T(100,210+88,'142° · +38° · ×1.0',{a:'middle',s:7,c:sub})}
+  <g class="tagfade">
+   <path d="M100 254v22h34" fill="none" stroke="${cy}" stroke-width=".7"/>
+   <rect x="134" y="262" width="52" height="26" fill="rgba(5,8,24,.7)" stroke="${cy}" stroke-width=".7"/>
+   ${T(138,272,'ORION',{s:7,c:ink,w:600})}${T(138,283,'오리온자리 · 3°',{s:6,c:sub})}</g>
+  ${T(100,50,'머무르면 이름표',{a:'middle',s:6.5,c:sub})}</svg>`;
+}
+
+/* C. 코너 브래킷 텔레메트리 */
+function hudC(){
+  const br=(x,y,sx,sy)=>`<path d="M${x} ${y+sy*14}V${y}h${sx*14}" fill="none" stroke="${cy}" stroke-width="1.2" transform=""/>`;
+  return `<svg viewBox="0 0 200 400">
+  ${br(10,16,1,1)}${br(190,16,-1,1)}${br(10,384,1,-1)}${br(190,384,-1,-1)}
+  ${T(18,30,'SKY',{s:6,c:sub})}${T(18,41,'초행성X',{s:9,c:ink,w:600})}${T(18,52,'HDG 142°  ALT +38°',{s:6,c:cy})}
+  ${T(182,30,'KST',{a:'end',s:6,c:sub})}${T(182,41,'--:--:--',{a:'end',s:10,c:ink,w:600,id:'clkC'})}${T(182,52,'×1.0 · r 0.12',{a:'end',s:6,c:cy})}
+  <path d="M92 200h16M100 192v16" stroke="${cy}" stroke-width=".8" opacity=".7"/>
+  ${T(18,350,'SPEED',{s:6,c:sub})}${T(18,364,'0.60c',{s:11,c:ink,w:600})}
+  <g transform="translate(18,370)">${[0,1,2,3,4].map(i=>`<rect x="${i*8}" y="0" width="6" height="3" fill="${i<3?cy:'rgba(79,227,255,.2)'}"/>`).join('')}</g>
+  ${T(182,350,'NEXT',{a:'end',s:6,c:sub})}${T(182,364,'02:14:09',{a:'end',s:11,c:pk,w:600})}${T(182,376,'예고 · 20:00',{a:'end',s:6,c:sub})}
+  </svg>`;
+}
+
+/* D. 방송 신호 레이더 */
+function hudD(){
+  const b=[[0.6,25,0],[0.8,95,0],[0.5,160,1],[0.9,215,0],[0.7,300,0]];
+  let bl='';b.forEach(([r,a,live],i)=>{const x=100+Math.sin(a*Math.PI/180)*r*44,y=300-Math.cos(a*Math.PI/180)*r*44;
+    bl+=live?`<circle class="pulse" cx="${x}" cy="${y}" r="2.4" fill="${pk}"/><circle cx="${x}" cy="${y}" r="2.4" fill="${pk}"/>`:`<circle cx="${x}" cy="${y}" r="1.7" fill="${cy}" opacity=".7"/>`});
+  return `<svg viewBox="0 0 200 400">
+  ${T(100,34,'● LIVE 1   ◌ 예고 2',{a:'middle',s:7.5,c:ink,w:600})}
+  <path d="M92 200h16M100 192v16" stroke="${cy}" stroke-width=".8" opacity=".6"/>
+  <g>${[44,29,14].map(r=>`<circle cx="100" cy="300" r="${r}" fill="none" stroke="${cy}" stroke-width=".5" opacity=".45"/>`).join('')}
+   <path d="M100 256v88M56 300h88" stroke="${cy}" stroke-width=".4" opacity=".35"/>
+   <g class="sweep"><path d="M100 300L100 256A44 44 0 0 1 124 263Z" fill="${cy}" opacity=".18"/><line x1="100" y1="300" x2="100" y2="256" stroke="${cy}" stroke-width=".8"/></g>
+   ${bl}</g>
+  ${T(100,252,'N',{a:'middle',s:6,c:pk})}
+  ${T(100,358,'다음 방송',{a:'middle',s:6,c:sub})}${T(100,372,'02:14:09',{a:'middle',s:12,c:pk,w:600})}
+  ${T(100,52,'멤버 5명의 방향 = 하늘 위 자리',{a:'middle',s:5.5,c:sub})}</svg>`;
+}
+
+/* E. 캐노피 가장자리 계기 */
+function hudE(){
+  let tk='';for(let i=-20;i<=20;i++){const a=i*3.2;const big=i%5===0;
+    tk+=`<line x1="100" x2="100" y1="${big?335:338}" y2="344" stroke="${cr}" stroke-width="${big?.9:.5}" transform="rotate(${a} 100 520)" opacity="${big?1:.6}"/>`}
+  const vt=(x,l)=>{let s='';for(let y=120;y<=280;y+=10){s+=`<line x1="${x}" x2="${x+(y%40===0?7:4)*l}" y1="${y}" y2="${y}" stroke="${cr}" stroke-width=".6" opacity=".75"/>`}return s};
+  return `<svg viewBox="0 0 200 400">
+  <rect x="3" y="3" width="194" height="394" rx="20" fill="none" stroke="${cr}" stroke-width="1.2" opacity=".55"/>
+  <rect x="7" y="7" width="186" height="386" rx="17" fill="none" stroke="${cr}" stroke-width=".4" opacity=".4"/>
+  <path d="M30 20h140" stroke="${cr}" stroke-width=".6" opacity=".6"/>
+  ${T(30,32,'KST',{s:6,c:sub})}${T(170,32,'--:--',{a:'end',s:9,c:cr,w:600,id:'clkE'})}
+  <circle cx="100" cy="30" r="2.2" fill="${pk}" class="blink"/>
+  <g>${tk}</g><path d="M100 330l-3-6h6z" fill="${pk}"/>
+  ${T(100,362,'142°',{a:'middle',s:12,c:cr,w:600})}${T(100,376,'HDG · 초행성X',{a:'middle',s:6,c:sub})}
+  <g>${vt(14,1)}</g>${T(14,112,'ALT',{s:6,c:sub})}<path d="M14 189h14l-3 3v-6z" fill="${pk}"/>${T(14,292,'+38°',{s:7.5,c:cr,w:600})}
+  <g>${vt(186,-1)}</g>${T(186,112,'ZOOM',{a:'end',s:6,c:sub})}<path d="M186 211h-14l3 3v-6z" fill="${pk}"/>${T(186,292,'×1.0',{a:'end',s:7.5,c:cr,w:600})}
+  <path d="M94 200h12M100 194v12" stroke="${cr}" stroke-width=".7" opacity=".7"/></svg>`;
+}
+
+/* F. A+B 혼합: B의 시선 링을 중심, A의 방위 테이프와 옆 눈금을 바깥에 */
+function hudF(){
+  let tape='';for(let d=0;d<=360;d+=5){const x=d*4,big=d%15===0;
+    tape+=`<line x1="${x}" x2="${x}" y1="${big?0:3}" y2="6" stroke="${cy}" stroke-width=".6"/>`;
+    if(big){const l={0:'N',90:'E',180:'S',270:'W',360:'N'}[d];tape+=T(x,15,l||d,{a:'middle',s:l?8:6,c:l?pk:sub})}}
+  let tk='';for(let i=0;i<72;i++){const a=i*5,big=i%6===0;
+    tk+=`<line x1="100" x2="100" y1="${big?142:145}" y2="150" stroke="${big?cy:sub}" stroke-width="${big?.9:.5}" transform="rotate(${a} 100 200)" opacity="${big?1:.6}"/>`}
+  const C=2*Math.PI*44;
+  const sc=(x,s)=>{let o='';for(let y=130;y<=270;y+=10){o+=`<line x1="${x}" x2="${x+(y%30===0?6:3)*s}" y1="${y}" y2="${y}" stroke="${cy}" stroke-width=".5" opacity=".6"/>`}return o};
+  return `<svg viewBox="0 0 200 400">
+  <g transform="translate(100,34)"><clipPath id="cf"><rect x="-70" y="-6" width="140" height="26"/></clipPath>
+   <g clip-path="url(#cf)"><g id="tapeF">${tape}</g></g><path d="M0 -8 l-3 -5 h6z" fill="${pk}"/></g>
+  ${T(100,62,'HDG 142°',{a:'middle',s:9,w:600,id:'hdgF',c:ink})}
+  <g>${tk}</g>${T(100,138,'N',{a:'middle',s:8,c:pk,w:600})}
+  <circle cx="100" cy="200" r="44" fill="none" stroke="rgba(79,227,255,.18)" stroke-width="2.4"/>
+  <circle class="dwell" style="--c:${C}" cx="100" cy="200" r="44" fill="none" stroke="${cy}" stroke-width="2.4" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 100 200)"/>
+  <circle cx="100" cy="200" r="1.6" fill="${pk}"/>
+  <path d="M100 192v5M100 203v5M92 200h5M103 200h5" stroke="${cy}" stroke-width=".6" opacity=".8"/>
+  <g class="tagfade"><path d="M100 246v26h30" fill="none" stroke="${cy}" stroke-width=".7"/>
+   <rect x="130" y="260" width="54" height="26" fill="rgba(5,8,24,.7)" stroke="${cy}" stroke-width=".7"/>
+   ${T(134,270,'ORION',{s:7,c:ink,w:600})}${T(134,281,'오리온자리 · 3°',{s:6,c:sub})}</g>
+  <path d="M14 120v160" stroke="${cy}" stroke-width=".5" opacity=".5"/>${sc(14,1)}${T(14,114,'ALT',{s:6,c:sub})}${T(14,292,'+38°',{s:8,c:ink,w:600})}
+  <path d="M186 120v160" stroke="${cy}" stroke-width=".5" opacity=".5"/>${sc(186,-1)}${T(186,114,'ZOOM',{a:'end',s:6,c:sub})}${T(186,292,'×1.0',{a:'end',s:8,c:ink,w:600})}
+  ${T(14,338,'SPEED',{s:6,c:sub})}${T(14,350,'0.60c',{s:10,c:ink,w:600})}${T(14,360,'GEAR 3',{s:6,c:cy})}
+  ${T(186,338,'NEXT',{a:'end',s:6,c:sub})}${T(186,350,'02:14:09',{a:'end',s:10,c:pk,w:600})}${T(186,360,'예고 20:00',{a:'end',s:6,c:sub})}
+  ${T(100,382,'초행성X · KST --:--:--',{a:'middle',s:6.5,c:sub,id:'clkF'})}</svg>`;
+}
+
+const DEFS=[
+ {k:'A',t:'조종석 레티클',tag:'FIGHTER HUD',fn:hudA,
+  d:'비행 계기판의 정석. 위쪽 방위 테이프가 시선에 맞춰 흐르고, 양옆 피치 사다리로 고개 각도를 읽습니다.',
+  info:['방위 테이프','고도 사다리','배율','현재 하늘'],
+  pro:'방향 감각이 가장 직관적. 가운데 링이 시선 중심을 알려 줌',con:'가운데에 선이 있어 별 구경에는 방해될 수 있음'},
+ {k:'B',t:'시선 링',tag:'GAZE RING',fn:hudB,
+  d:'시선 중심에 가는 나침반 링 하나. 시선을 머무르면 링이 차오르고 별자리 이름표가 열립니다.',
+  info:['나침반 링','머무름 게이지','시선 대상 이름표','방위 · 고도 · 배율'],
+  pro:'천문 이벤트 계획(시선 머무름 → 이름표)과 바로 이어짐. 가장 조용함',con:'평소에는 정보량이 적음'},
+ {k:'C',t:'코너 텔레메트리',tag:'CORNER BRACKETS',fn:hudC,
+  d:'네 모서리에 브래킷과 숫자 블록. 조작 패널(UFO CONTROL)의 사이버펑크 홀로그램과 같은 결입니다.',
+  info:['현재 하늘','KST 시계','워프 속도 · 기어','다음 방송 카운트다운'],
+  pro:'정보량이 가장 많고 가운데 시야가 완전히 비어 있음',con:'모서리를 읽으려면 시선이 이동함'},
+ {k:'D',t:'방송 신호 레이더',tag:'BROADCAST RADAR',fn:hudD,
+  d:'사이트 본업을 HUD로. 멤버 5명이 레이더 위 신호점이고, 라이브 중인 멤버는 분홍색으로 맥동합니다.',
+  info:['멤버 5명 신호점','LIVE · 예고 수','다음 방송 카운트다운','북쪽 기준'],
+  pro:'이 사이트만의 HUD. 팬이 배경을 보다가 방송 상황도 앎',con:'방송 데이터를 하늘 방향에 대응시키는 규칙이 필요함'},
+ {k:'E',t:'캐노피 계기판',tag:'COCKPIT BEZEL',fn:hudE,
+  d:'UFO 조종대의 크림색 베젤을 시야 테두리로. 아래 호 눈금이 방위, 양옆 세로 눈금이 고도와 배율입니다.',
+  info:['아래 호 방위','고도 눈금','배율 눈금','KST 시계'],
+  pro:'Codex 콘솔과 색이 맞아 세계관이 하나로 이어짐. 가운데 완전히 비움',con:'테두리가 화면을 조금 줄여 보이게 함'},
+ {k:'F',t:'링 + 방위 테이프',tag:'A × B HYBRID',fn:hudF,
+  d:'B의 시선 링을 중심에 두고, A의 방위 테이프를 위에, 고도·배율 눈금을 양옆에 둡니다. A의 가운데 피치 사다리는 뺐고 눈금이 그 역할을 합니다.',
+  info:['방위 테이프','시선 링 + 머무름 게이지','시선 대상 이름표','고도·배율 눈금','하늘 · KST','워프 속도 · 기어','다음 방송'],
+  pro:'A의 방향 감각과 B의 조용한 중심을 함께 가짐. 모든 정보 수용',con:'아래 두 모서리와 하단 줄이 빽빽해 글자 크기에 여유가 적음'}
+];
+const grid=document.getElementById('grid');
+DEFS.forEach(d=>{
+  const c=document.createElement('article');c.className='card';
+  c.innerHTML=`<div class="phone">${d.fn()}</div><div class="meta"><span class="tag">${d.k} · ${d.tag}</span><h2>${d.t}</h2><p>${d.d}</p><ul>${d.info.map(i=>`<li>${i}</li>`).join('')}</ul><dl><dt>장점</dt><dd>${d.pro}</dd><dt>단점</dt><dd>${d.con}</dd></dl></div>`;
+  grid.appendChild(c);stars(c.querySelector('.phone'));
+});
+/* 움직임: 시계 · 방위 */
+let h=142;
+function tick(){
+  const n=new Date(Date.now()+9*3600e3),p=v=>String(v).padStart(2,'0');
+  const hm=`${p(n.getUTCHours())}:${p(n.getUTCMinutes())}`;
+  const cc=document.getElementById('clkC'),ce=document.getElementById('clkE');
+  if(cc)cc.textContent=hm+':'+p(n.getUTCSeconds());if(ce)ce.textContent=hm;
+  const cf=document.getElementById('clkF');if(cf)cf.textContent='초행성X · KST '+hm+':'+p(n.getUTCSeconds());
+}
+tick();setInterval(tick,1000);
+const tapes=['A','F'].map(k=>[document.getElementById('tape'+k),document.getElementById('hdg'+k)]);
+const setH=()=>tapes.forEach(([t,x])=>{t.setAttribute('transform',`translate(${-h*4},0)`);x.textContent=`HDG ${Math.round(h)}°`});
+if(!matchMedia('(prefers-reduced-motion:reduce)').matches){
+  (function f(t){h=142+Math.sin(t/2500)*18;setH();requestAnimationFrame(f)})(0);
+}else{setH()}
+</script>

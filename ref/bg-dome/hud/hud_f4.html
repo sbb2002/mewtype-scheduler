@@ -1,0 +1,283 @@
+<title>돔 시선 HUD F4안</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 왼쪽 조작 가능한 폰, 오른쪽 이동 · 해금 현황 · 옵션 · 앨범. 단일 다크 세계 */
+:root{
+  --bg:#050818; --panel:#0b1230; --ink:#eef6ff; --sub:#a9bad0;
+  --cyan:#4fe3ff; --pink:#ff6fb5; --red:#ff4d5e; --line:rgba(79,227,255,.22);
+  --mono:"Chakra Petch",ui-monospace,Consolas,monospace;
+  --sans:"Noto Sans KR",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+  padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:24px}
+h1{font:600 26px/1.2 var(--mono);letter-spacing:.04em;margin:0;text-wrap:balance}
+header p{margin:8px 0 0;color:var(--sub);line-height:1.65;font-size:14.5px;max-width:720px}
+.stage{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:640px){.stage{grid-template-columns:1fr}.phoneBox{margin:0 auto}}
+.phoneBox{width:260px;max-width:100%}
+.phone{position:relative;width:260px;height:520px;max-width:100%;border-radius:24px;overflow:hidden;border:1px solid rgba(238,246,255,.2);background:#050818;touch-action:none;user-select:none;cursor:grab}
+.phone:active{cursor:grabbing}
+.inner{position:absolute;inset:0}
+.inner canvas,.inner svg.hud,.tint,.flash,.redge{position:absolute;inset:0;width:100%;height:100%}
+.inner svg.hud,.tint,.flash,.redge{pointer-events:none}
+.tint{opacity:0}.flash{background:#fff;opacity:0}
+.redge{box-shadow:inset 0 0 36px 6px rgba(255,77,94,.75);opacity:0}
+svg text{font-family:var(--mono)}
+#ring{transition:opacity .25s}
+#foot{transition:opacity .2s}
+.pick{position:absolute;left:12px;right:12px;bottom:78px;display:grid;gap:8px;opacity:0;transform:translateY(10px);pointer-events:none;transition:opacity .22s,transform .22s}
+.pick.on{opacity:1;transform:none;pointer-events:auto}
+.pick .k{font:500 9.5px var(--mono);letter-spacing:.14em;color:var(--pink)}
+.pick h3{margin:0;font:700 22px/1.1 var(--sans);color:var(--ink);text-shadow:0 0 14px rgba(79,227,255,.55)}
+.pick .to{margin:0;font:500 11px var(--mono);color:var(--cyan);letter-spacing:.06em}
+.pick .no{margin:0;font-size:11px;color:var(--pink)}
+.gauges{display:flex;gap:16px}
+.g{display:flex;align-items:center;gap:6px;font:500 9px var(--mono);color:var(--sub);letter-spacing:.1em}
+.g i{display:flex;gap:2px}.g i s{width:9px;height:5px;background:rgba(79,227,255,.2)}.g i s.on{background:var(--cyan);box-shadow:0 0 4px var(--cyan)}
+.stamp{position:absolute;right:0;top:-58px;width:58px;height:58px;border:2px solid var(--pink);border-radius:50%;display:grid;place-items:center;text-align:center;font:600 8px/1.2 var(--mono);color:var(--pink);letter-spacing:.08em;transform:rotate(-14deg);opacity:0}
+.stamp::after{content:"";position:absolute;inset:-6px;border:1px solid var(--pink);border-radius:50%;opacity:.5}
+.stamp.go{animation:st .55s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes st{0%{opacity:0;transform:rotate(-30deg) scale(2.6)}60%{opacity:1}100%{opacity:1;transform:rotate(-14deg) scale(1)}}
+.btns{display:flex;gap:8px}
+.btns button{flex:1;font:600 12px var(--mono);letter-spacing:.08em;padding:9px 6px;cursor:pointer;color:var(--ink);background:rgba(5,8,24,.7);border:0;
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.btns button.w{background:linear-gradient(90deg,rgba(79,227,255,.38),rgba(79,227,255,.12));box-shadow:inset 0 0 0 1px var(--cyan)}
+.btns button.s{box-shadow:inset 0 0 0 1px var(--pink);background:rgba(255,111,181,.12)}
+.btns button:disabled{opacity:.35;cursor:default}
+.chip{position:absolute;right:8px;top:48px;font:500 10px var(--mono);color:var(--pink);background:rgba(5,8,24,.6);border:1px solid rgba(255,111,181,.4);padding:2px 6px}
+.toast{position:absolute;left:0;right:0;top:92px;text-align:center;font:600 13px var(--mono);letter-spacing:.14em;color:var(--ink);text-shadow:0 0 12px var(--cyan);opacity:0;transition:opacity .3s}
+.side{display:grid;gap:18px;min-width:0}
+.side h2{margin:0 0 8px;font:600 13px var(--mono);letter-spacing:.1em;color:var(--pink)}
+.targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px}
+.targets button{display:grid;gap:2px;text-align:left;background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:8px 10px;font:inherit;cursor:pointer}
+.targets button:hover,.targets button:focus-visible{border-color:var(--cyan);outline:none}
+.targets b{font-size:13px}.targets span{font:500 10.5px var(--mono);color:var(--sub)}
+.dest{display:grid;gap:6px}
+.dest div{display:flex;justify-content:space-between;gap:10px;border:1px solid var(--line);padding:8px 10px;font-size:13px;color:var(--sub)}
+.dest div.on{color:var(--ink);border-color:var(--cyan)}
+.dest span{font:500 11px var(--mono)}
+.opt{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--sub)}
+.opt input{accent-color:#4fe3ff}
+.album{display:flex;flex-wrap:wrap;gap:14px;min-height:120px;padding:12px;border:1px dashed var(--line)}
+.album p{margin:auto;color:var(--sub);font-size:12.5px}
+.pol{width:96px;background:#f1ede4;padding:6px 6px 16px;transform:rotate(var(--r));box-shadow:0 6px 14px rgba(0,0,0,.5);color:#2a2a35}
+.pol img{display:block;width:84px;height:84px;max-width:100%;background:#050818}
+.pol span{display:block;margin-top:5px;font:600 11px var(--sans);text-align:center}
+.hint{font-size:12.5px;color:var(--sub);line-height:1.6;margin:0}
+.rd{font:600 13px var(--mono);color:var(--cyan)}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>돔 시선 HUD · F4안</h1>
+  <p>시선을 고정해 대상을 찾으면 새 목적지가 해금되고, [워프]를 누르면 3초 안에 그 테마로 날아갑니다. 지구에서는 오리온 대성운, 딥필드 우주에서는 블랙홀이 목적지 열쇠입니다. 나머지 대상은 [찍기]로 앨범에 남깁니다. 폰을 끌어서 하늘을 돌려 보세요.</p>
+</header>
+<div class="stage">
+  <div class="phoneBox"><div class="phone" id="phone"><div class="inner" id="inner">
+    <canvas id="sky" width="520" height="1040"></canvas>
+    <div class="tint" id="tint"></div>
+    <svg class="hud" viewBox="0 0 200 400" id="hudsvg"></svg>
+    <div class="chip" id="chip">◉ 0</div>
+    <div class="toast" id="toast"></div>
+    <div class="pick" id="pick">
+      <div class="stamp" id="stamp">UN<br>LOCKED</div>
+      <div class="k" id="pk"></div><h3 id="pn"></h3><p class="to" id="pto" hidden></p>
+      <div class="gauges" id="gauges"></div><p class="no" id="pno" hidden>지금은 지평선 아래라 보이지 않습니다.</p>
+      <div class="btns"><button class="w" id="bw" type="button">◈ 워프</button><button class="s" id="bs" type="button">◉ 찍기</button></div>
+    </div>
+    <div class="redge" id="redge"></div><div class="flash" id="flash"></div>
+  </div></div></div>
+  <div class="side">
+    <section><h2>지금 있는 곳 · <span id="here" class="rd">지구</span></h2><div class="targets" id="targets"></div></section>
+    <section><h2>목적지 해금</h2><div class="dest" id="dest"></div>
+      <p class="hint" style="margin-top:8px">워프 소요 시간 <span class="rd" id="wt">-</span></p></section>
+    <section><h2>옵션</h2><label class="opt"><input type="checkbox" id="assist" checked> 시야 보정(대상 범위 안에서 움직임 둔하게)</label></section>
+    <section><h2>앨범</h2><div class="album" id="album"><p>찍은 사진이 여기에 모입니다.</p></div></section>
+  </div>
+</div>
+</div>
+
+<script>
+const cy='#4fe3ff',pk='#ff6fb5',sub='#a9bad0',ink='#eef6ff',rd='#ff4d5e';
+const U=3.2;
+const T=(x,y,s,o={})=>`<text x="${x}" y="${y}" font-size="${o.s||7}" fill="${o.c||cy}" text-anchor="${o.a||'start'}" letter-spacing=".6" ${o.id?`id="${o.id}"`:''} ${o.w?`font-weight="${o.w}"`:''}>${s}</text>`;
+const THEMES={
+ earth:{name:'지구',start:{H:130,A:30},ground:true,sky:['#050818','#0a1033','#1d1244'],targets:[
+  {id:'m42',n:'오리온 대성운',k:'NEBULA',h:208,a:32,tol:6,draw:'neb',col:'255,111,181',unlock:'deep',dist:5,br:3},
+  {id:'moon',n:'달',k:'MOON',h:120,a:24,tol:5,draw:'moon',col:'244,236,214',dist:1,br:5},
+  {id:'gany',n:'가니메데',k:'MOON · JUPITER',h:155,a:41,tol:2.5,draw:'gany',col:'255,200,120',dist:4,br:2},
+  {id:'sirius',n:'시리우스',k:'STAR',h:178,a:22,tol:3,draw:'star',col:'170,210,255',dist:3,br:5},
+  {id:'venus',n:'금성',k:'PLANET',h:60,a:-4,tol:3,draw:'venus',col:'255,240,170',below:true,dist:2,br:5}]},
+ deep:{name:'딥필드 우주',start:{H:60,A:34},ground:false,sky:['#02030a','#0a0420','#150a2c'],targets:[
+  {id:'pillars',n:'창조의 기둥',k:'NEBULA',h:95,a:30,tol:6,draw:'pillars',col:'230,150,90',dist:5,br:2},
+  {id:'m87',n:'M87 블랙홀',k:'BLACK HOLE',h:250,a:42,tol:4,draw:'bh',col:'255,160,60',unlock:'earth',dist:5,br:1},
+  {id:'tarantula',n:'타란툴라 성운',k:'NEBULA',h:330,a:22,tol:6,draw:'tara',col:'200,110,255',dist:5,br:3}]}
+};
+const unlocked=new Set(),taken=new Set();
+let theme='earth';
+const TG=()=>THEMES[theme].targets;
+const stars=[];{let s=11;const r=()=>(s=(s*16807)%2147483647)/2147483647;for(let i=0;i<460;i++)stars.push([r()*360,-10+r()*95,.3+r()*r()*1.1,.25+r()*.65])}
+const streaks=[];{let s=5;const r=()=>(s=(s*16807)%2147483647)/2147483647;for(let i=0;i<70;i++)streaks.push([r()*6.283,.4+r()*.6,.3+r()*.7])}
+const BETA=[0,.3,.6,.8,.9,.99];
+
+let tape='';for(let d=-90;d<=450;d+=5){const x=d*U,big=d%15===0,dm=((d%360)+360)%360;
+  tape+=`<line x1="${x}" x2="${x}" y1="${big?0:3}" y2="6" stroke="${cy}" stroke-width=".6"/>`;
+  if(big){const l={0:'N',90:'E',180:'S',270:'W'}[dm];tape+=T(x,15,l||dm,{a:'middle',s:l?8:6,c:l?pk:sub})}}
+let tk='';for(let i=0;i<72;i++){const a=i*5,big=i%6===0;
+  tk+=`<line x1="100" x2="100" y1="${big?142:145}" y2="150" stroke="${big?cy:sub}" stroke-width="${big?.9:.5}" transform="rotate(${a} 100 200)" opacity="${big?1:.6}"/>`}
+const C=2*Math.PI*44;
+const sc=(x,s)=>{let o='';for(let y=130;y<=270;y+=10)o+=`<line x1="${x}" x2="${x+(y%30===0?6:3)*s}" y1="${y}" y2="${y}" stroke="${cy}" stroke-width=".5" opacity=".6"/>`;return o};
+let gear='';for(let i=0;i<=5;i++){const x=20+i*32;gear+=`<line x1="${x}" x2="${x}" y1="348" y2="356" stroke="${i>=4?rd:cy}" stroke-width="1"/>`+T(x,367,i?i:'N',{a:'middle',s:6.5,c:i>=4?rd:sub})}
+document.getElementById('hudsvg').innerHTML=`
+ <g transform="translate(100,34)"><clipPath id="cf"><rect x="-70" y="-6" width="140" height="26"/></clipPath>
+  <g clip-path="url(#cf)"><g id="tape">${tape}</g></g><path d="M0 -8 l-3 -5 h6z" fill="${pk}"/></g>
+ ${T(100,62,'HDG 0°',{a:'middle',s:9,w:600,id:'hdg',c:ink})}
+ <g id="ring" opacity="0"><g>${tk}</g>${T(100,138,'N',{a:'middle',s:8,c:pk,w:600})}
+  <circle cx="100" cy="200" r="44" fill="none" stroke="rgba(79,227,255,.18)" stroke-width="2.4"/>
+  <circle id="arc" cx="100" cy="200" r="44" fill="none" stroke="${cy}" stroke-width="2.4" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 100 200)"/>
+  ${T(100,262,'0%',{a:'middle',s:8,c:ink,w:600,id:'pct'})}</g>
+ <circle cx="100" cy="200" r="1.6" fill="${pk}"/>
+ <path d="M100 192v5M100 203v5M92 200h5M103 200h5" stroke="${cy}" stroke-width=".6" opacity=".8"/>
+ <g id="lock" opacity="0"><path d="M-9 -4v-5h5M9 -4v-5h-5M-9 4v5h5M9 4v5h-5" fill="none" stroke="${pk}" stroke-width="1"/></g>
+ <g id="vf" opacity="0"><path id="vfp" d="" fill="none" stroke="#fff" stroke-width="1.4"/></g>
+ <path d="M14 120v160" stroke="${cy}" stroke-width=".5" opacity=".5"/>${sc(14,1)}${T(14,114,'ALT',{s:6,c:sub})}${T(14,292,'+0°',{s:8,c:ink,w:600,id:'alt'})}
+ <path d="M186 120v160" stroke="${cy}" stroke-width=".5" opacity=".5"/>${sc(186,-1)}${T(186,114,'ZOOM',{a:'end',s:6,c:sub})}${T(186,292,'×1.0',{a:'end',s:8,c:ink,w:600})}
+ <g id="foot">${T(186,338,'NEXT',{a:'end',s:6,c:sub})}${T(186,350,'02:14:09',{a:'end',s:10,c:pk,w:600})}${T(186,360,'예고 20:00',{a:'end',s:6,c:sub})}
+  ${T(14,338,'SKY',{s:6,c:sub})}${T(14,350,'지구',{s:8,c:ink,w:600,id:'skyname'})}${T(100,382,'KST --:--:--',{a:'middle',s:6.5,c:sub,id:'clk'})}</g>
+ <g id="gear" opacity="0">${T(20,336,'WARP',{s:7,c:ink,w:600})}${T(180,336,'0.00c',{a:'end',s:8,c:ink,w:600,id:'beta'})}
+  <rect x="20" y="351" width="160" height="2" fill="rgba(79,227,255,.2)"/><rect x="148" y="351" width="32" height="2" fill="rgba(255,77,94,.35)"/>
+  <rect id="gfill" x="20" y="350.5" width="0" height="3" fill="${cy}"/><circle id="gthumb" cx="20" cy="352" r="3" fill="${pk}"/>${gear}</g>`;
+const $=id=>document.getElementById(id);
+
+let H=130,A=30,focus=null,hitNow=null,dwell=0,cardT=null,nav=null,revealT=0,warp=null,shut=null,toastT=0,beta=0;
+const wrap=d=>((d+540)%360)-180;
+const sx=t=>100+wrap(t.h-H)*U, sy=t=>200-(t.a-A)*U;
+
+const ph=$('phone');let drag=null;
+ph.addEventListener('pointerdown',e=>{if(e.target.closest('button')||warp)return;drag={x:e.clientX,y:e.clientY};nav=null;ph.setPointerCapture(e.pointerId)});
+ph.addEventListener('pointermove',e=>{if(!drag)return;const k=(hitNow&&$('assist').checked?.4:1)/(U*ph.clientWidth/200);
+  H=(H-(e.clientX-drag.x)*k+360)%360;A=Math.max(-12,Math.min(80,A+(e.clientY-drag.y)*k));drag={x:e.clientX,y:e.clientY}});
+['pointerup','pointercancel'].forEach(n=>ph.addEventListener(n,()=>drag=null));
+
+function buildSide(){
+  $('here').textContent=THEMES[theme].name;
+  const tl=$('targets');tl.innerHTML='';
+  TG().forEach(t=>{const b=document.createElement('button');b.type='button';
+    b.innerHTML=`<b>${t.n}</b><span>${t.k}${t.unlock?' · ★':''}</span>`;b.onclick=()=>{if(warp)return;nav={t,from:{H,A},t0:performance.now()}};tl.appendChild(b)});
+  $('dest').innerHTML=['deep','earth'].map(k=>`<div class="${unlocked.has(k)?'on':''}">${THEMES[k].name}<span>${unlocked.has(k)?'해금됨':'잠김 · '+(k==='deep'?'지구에서 오리온 대성운':'우주에서 M87 블랙홀')}</span></div>`).join('')}
+buildSide();
+
+const seg=n=>'<i>'+[1,2,3,4,5].map(i=>`<s class="${i<=n?'on':''}"></s>`).join('')+'</i>';
+function pickShow(t){cardT=t;const p=$('pick');
+  if(!t){p.classList.remove('on');$('stamp').classList.remove('go');return}
+  revealT=performance.now();
+  const ul=!!t.unlock,first=ul&&!unlocked.has(t.unlock);
+  $('pk').textContent=ul?(first?'NEW DESTINATION':'DESTINATION'):t.k;$('pn').textContent=t.n;
+  $('pto').hidden=!ul;if(ul)$('pto').textContent='→ '+THEMES[t.unlock].name;
+  $('gauges').innerHTML=ul?'':`<div class="g">DIST ${seg(t.dist)}</div><div class="g">MAG ${seg(t.br)}</div>`;
+  $('pno').hidden=!t.below;
+  $('bw').style.display=ul?'':'none';$('bs').style.display=ul?'none':'';
+  $('bs').disabled=!!t.below||taken.has(t.id);$('bs').textContent=taken.has(t.id)?'◉ 찍음':'◉ 찍기';
+  $('tint').style.background=`radial-gradient(circle at 50% 50%,rgba(${t.col},.55),rgba(${t.col},.12) 55%,transparent 80%)`;
+  if(first){unlocked.add(t.unlock);buildSide();const s=$('stamp');s.classList.remove('go');void s.offsetWidth;s.classList.add('go')}
+  p.classList.add('on')}
+$('bw').onclick=()=>{if(!cardT||warp||!cardT.unlock)return;warp={to:cardT.unlock,t0:performance.now(),sw:false};pickShow(null)};
+$('bs').onclick=()=>{if(!cardT||shut||taken.has(cardT.id))return;shut={t:cardT,t0:performance.now(),done:false};click()};
+let sfx=null;
+function click(){try{sfx=sfx||new (window.AudioContext||window.webkitAudioContext)();const n=sfx.sampleRate*.07,b=sfx.createBuffer(1,n,sfx.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3);const s=sfx.createBufferSource();s.buffer=b;const f=sfx.createBiquadFilter();f.type='highpass';f.frequency.value=1800;const gn=sfx.createGain();gn.gain.value=.25;s.connect(f).connect(gn).connect(sfx.destination);s.start()}catch(e){}}
+
+const cv=$('sky'),g=cv.getContext('2d');
+function glow(x,y,r,c){const q=g.createRadialGradient(x,y,0,x,y,r);q.addColorStop(0,c);q.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=q;g.beginPath();g.arc(x,y,r,0,7);g.fill()}
+function drawTarget(t,x,y,boost){
+  g.save();g.translate(x,y);x=0;y=0;const d=t.draw;
+  if(d==='neb'){glow(x,y,15,'rgba(255,111,181,.55)');glow(x+3,y-2,10,'rgba(79,227,255,.45)');glow(x,y,4,'rgba(255,255,255,.9)')}
+  else if(d==='moon'){g.fillStyle='#f4ecd6';g.beginPath();g.arc(x,y,6.5,0,7);g.fill();g.fillStyle='rgba(120,110,95,.45)';[[-2,-2,1.8],[2,1,1.4],[-1,3,1]].forEach(([a,b,r])=>{g.beginPath();g.arc(x+a,y+b,r,0,7);g.fill()});glow(x,y,13,'rgba(244,236,214,.25)')}
+  else if(d==='gany'){glow(x-7,y+1,6,'rgba(255,240,210,.7)');g.fillStyle='#fff3d8';g.beginPath();g.arc(x-7,y+1,2.4,0,7);g.fill();g.fillStyle='#d9e6ff';[[0,0,1.2],[-14,1,.8],[7,-1,.8]].forEach(([a,b,r])=>{g.beginPath();g.arc(x+a,y+b,r,0,7);g.fill()})}
+  else if(d==='star'){glow(x,y,8,'rgba(190,220,255,.6)');g.fillStyle='#fff';g.beginPath();g.arc(x,y,1.7,0,7);g.fill();g.strokeStyle='rgba(200,225,255,.7)';g.lineWidth=.5;g.beginPath();g.moveTo(x-6,y);g.lineTo(x+6,y);g.moveTo(x,y-6);g.lineTo(x,y+6);g.stroke()}
+  else if(d==='venus'){glow(x,y,8,'rgba(255,245,200,.6)');g.fillStyle='#fffbe0';g.beginPath();g.arc(x,y,2.4,0,7);g.fill()}
+  else if(d==='pillars'){glow(x,y,20,'rgba(230,120,70,.35)');g.fillStyle='rgba(120,60,40,.9)';[[-8,6,5,18],[0,10,6,24],[8,4,4,14]].forEach(([a,b,w,h])=>{g.beginPath();g.moveTo(x+a-w/2,y+b);g.quadraticCurveTo(x+a,y+b-h,x+a+w/2,y+b);g.fill()});glow(x,y-8,6,'rgba(255,200,120,.5)')}
+  else if(d==='bh'){glow(x,y,16,'rgba(255,150,50,.4)');g.strokeStyle='rgba(255,190,100,.95)';g.lineWidth=1.6;g.beginPath();g.ellipse(x,y,9,3.2,-.3,0,7);g.stroke();g.fillStyle='#000';g.beginPath();g.arc(x,y,4,0,7);g.fill();g.strokeStyle='rgba(255,230,180,.8)';g.lineWidth=.6;g.beginPath();g.arc(x,y,4.6,0,7);g.stroke()}
+  else if(d==='tara'){glow(x,y,20,'rgba(200,100,255,.45)');glow(x-5,y+3,12,'rgba(255,100,170,.45)');glow(x+6,y-4,9,'rgba(100,200,255,.4)');glow(x,y,3,'rgba(255,255,255,.9)')}
+  if(boost>0)glow(x,y,10+boost*14,`rgba(${t.col},${.5*boost})`);
+  g.restore()}
+const ease=k=>k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+const lerp=(a,b,k)=>a+(b-a)*k;
+function gearPos(b){for(let i=1;i<=5;i++)if(b<=BETA[i])return i-1+(b-BETA[i-1])/(BETA[i]-BETA[i-1]);return 5}
+
+function frame(now){
+  const dt=Math.min(64,now-(frame.t||now));frame.t=now;
+  if(nav){const k=Math.min(1,(now-nav.t0)/1200),e=ease(k);
+    H=(nav.from.H+wrap(nav.t.h-nav.from.H)*e+360)%360;A=nav.from.A+(nav.t.a-nav.from.A)*e;if(k>=1)nav=null}
+  /* 워프: 1.2초 풀악셀 → 점프 → 1초 급제동. 총 2.4초 */
+  let flash=0,wp=0,shake=0;
+  if(warp){const k=(now-warp.t0)/1000;
+    if(k<1.2){const tgt=BETA[Math.min(5,1+Math.floor(k/.24))];beta+= (tgt-beta)*Math.min(1,dt/120);wp=ease(k/1.2);shake=wp}
+    else{beta+=(0-beta)*Math.min(1,dt/110);wp=Math.max(0,1-(k-1.3)/1.1);shake=Math.max(0,1-(k-1.2)/.5)*1.2}
+    flash=k<1.2?Math.max(0,(k-1.0)/.2):Math.max(0,1-(k-1.2)/.5);
+    if(k>=1.25&&!warp.sw){warp.sw=true;theme=warp.to;H=THEMES[theme].start.H;A=THEMES[theme].start.A;nav=null;focus=null;hitNow=null;dwell=0;buildSide();
+      $('skyname').textContent=THEMES[theme].name;$('toast').textContent='ARRIVED · '+THEMES[theme].name;toastT=now}
+    if(k>=2.4){$('wt').textContent=((now-warp.t0)/1000).toFixed(1)+'초';warp=null;beta=0}
+  }else beta=0;
+  const wg=!!warp;
+  $('gear').setAttribute('opacity',wg?1:0);$('foot').setAttribute('opacity',wg?0:1);
+  if(wg){const gp=gearPos(beta);$('gfill').setAttribute('width',gp*32);$('gthumb').setAttribute('cx',20+gp*32);$('beta').textContent=beta.toFixed(2)+'c'}
+  $('redge').style.opacity=wg&&beta>=.85?.5+.4*Math.sin(now/90):0;
+  $('inner').style.transform=shake>0?`translate(${(Math.random()-.5)*3*shake}px,${(Math.random()-.5)*3*shake}px)`:'';
+  $('toast').style.opacity=(toastT&&now-toastT<1600)?1:0;
+  const th=THEMES[theme];
+  g.setTransform(2.6,0,0,2.6,0,0);g.clearRect(0,0,200,400);
+  const gr=g.createLinearGradient(0,0,0,400);gr.addColorStop(0,th.sky[0]);gr.addColorStop(.6,th.sky[1]);gr.addColorStop(1,th.sky[2]);g.fillStyle=gr;g.fillRect(0,0,200,400);
+  stars.forEach(([h,a,r,al])=>{const x=100+wrap(h-H)*U,y=200-(a-A)*U;if(x<-3||x>203||y<-3||y>403)return;g.fillStyle=`rgba(238,246,255,${al})`;g.fillRect(x,y,r,r)});
+  const rv=(now-revealT)/1000;
+  TG().forEach(t=>{const x=sx(t),y=sy(t);if(x>-30&&x<230&&y>-30&&y<430){
+    const bo=(cardT===t)?Math.max(0,1-rv/1.4)*(1+Math.sin(rv*14)*.3):0;drawTarget(t,x,y,Math.max(0,bo))}});
+  if(cardT&&rv<1.2){const x=sx(cardT),y=sy(cardT),k=rv/1.2;g.strokeStyle=`rgba(${cardT.col},${.8*(1-k)})`;g.lineWidth=1.2;g.beginPath();g.arc(x,y,4+k*60,0,7);g.stroke()}
+  if(th.ground){const hy=200+A*U;if(hy<420){const gg=g.createLinearGradient(0,hy,0,hy+60);gg.addColorStop(0,'rgba(40,20,60,.96)');gg.addColorStop(1,'rgba(8,6,22,.98)');g.fillStyle=gg;g.fillRect(0,hy,200,400-hy+60);
+    g.strokeStyle='rgba(255,111,181,.55)';g.lineWidth=.7;g.beginPath();g.moveTo(0,hy);g.lineTo(200,hy);g.stroke()}}
+  if(warp&&wp>0){g.lineCap='round';streaks.forEach(([a,r0,w])=>{const r1=8+r0*120*wp,r2=r1+wp*60*w;g.strokeStyle=`rgba(${a>3?'160,200,255':'255,190,230'},${.75*wp*w})`;g.lineWidth=.5+w*.8;
+      g.beginPath();g.moveTo(100+Math.cos(a)*r1,200+Math.sin(a)*r1);g.lineTo(100+Math.cos(a)*r2,200+Math.sin(a)*r2);g.stroke()})}
+  /* 시선 판정 */
+  let hit=null,best=1e9;if(!warp)TG().forEach(t=>{const d=Math.hypot(wrap(t.h-H),t.a-A);if(d<t.tol&&d<best){best=d;hit=t}});
+  hitNow=hit;
+  if(hit){if(focus!==hit){focus=hit;dwell=0}dwell=Math.min(1.15,dwell+dt/2000)}
+  else if(focus){dwell-=dt/3000;if(dwell<=0){focus=null;dwell=0}}
+  const v=Math.min(1,dwell);
+  $('ring').setAttribute('opacity',focus&&!warp?1:0);
+  $('arc').setAttribute('stroke-dashoffset',C*(1-v));$('pct').textContent=Math.round(v*100)+'%';
+  const lk=$('lock');if(hit&&!warp){lk.setAttribute('opacity',1);lk.setAttribute('transform',`translate(${sx(hit)},${sy(hit)})`)}else lk.setAttribute('opacity',0);
+  if(focus&&v>=1&&hit&&cardT!==hit&&!warp)pickShow(hit);
+  if(cardT&&(!focus||focus!==cardT||dwell<.6||warp)){pickShow(null)}
+  $('tint').style.opacity=cardT?Math.max(0,1-rv/1.6)*.9:0;
+  /* 셔터 */
+  const vf=$('vf');
+  if(shut){const k=(now-shut.t0)/1000;
+    if(k<.3){const s=70-44*ease(k/.3);vf.setAttribute('opacity',1);const cx=100,cyy=200,e=14,pp=(a,b)=>`M${cx+a*s} ${cyy+b*s-b*e}v${b*e}h${-a*e}`;
+      $('vfp').setAttribute('d',pp(1,1)+pp(-1,1)+pp(1,-1)+pp(-1,-1))}
+    else vf.setAttribute('opacity',Math.max(0,1-(k-.3)/.4));
+    if(k>=.3&&!shut.done){shut.done=true;flash=Math.max(flash,1);snap(shut.t)}
+    if(k>=.3)flash=Math.max(flash,Math.max(0,1-(k-.3)/.25));
+    if(k>=.8)shut=null}else vf.setAttribute('opacity',0);
+  $('flash').style.opacity=Math.min(1,flash);
+  $('tape').setAttribute('transform',`translate(${-H*U},0)`);$('hdg').textContent=`HDG ${Math.round(H)}°`;
+  $('alt').textContent=(A>=0?'+':'')+Math.round(A)+'°';
+  requestAnimationFrame(frame)}
+function snap(t){
+  taken.add(t.id);$('chip').textContent=`◉ ${taken.size}`;$('bs').disabled=true;$('bs').textContent='◉ 찍음';
+  const o=document.createElement('canvas');o.width=o.height=168;const c=o.getContext('2d');
+  c.drawImage(cv,(100-35)*2.6,(200-35)*2.6,70*2.6,70*2.6,0,0,168,168);
+  const n=new Date(Date.now()+9*36e5),p=v=>String(v).padStart(2,'0');
+  const al=$('album');if(!al.querySelector('.pol'))al.innerHTML='';
+  const d=document.createElement('div');d.className='pol';d.style.setProperty('--r',(Math.random()*8-4).toFixed(1)+'deg');
+  const im=document.createElement('img');im.alt=t.n;im.src=o.toDataURL('image/png');
+  const s=document.createElement('span');s.textContent=t.n;
+  d.append(im,s);al.appendChild(d)}
+requestAnimationFrame(frame);
+function tick(){const n=new Date(Date.now()+9*36e5),p=v=>String(v).padStart(2,'0');
+  $('clk').textContent=`KST ${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}`}
+tick();setInterval(tick,1000);
+</script>
