@@ -1,0 +1,172 @@
+diff --git a/src/frontend/js/bgdomegl.js b/src/frontend/js/bgdomegl.js
+index d0717fc..c2a2b2e 100644
+--- a/src/frontend/js/bgdomegl.js
++++ b/src/frontend/js/bgdomegl.js
+@@ -21,7 +21,7 @@ import { createUfoPanel } from "./bgpanel.js";
+ import { createGearPanel } from "./bggear.js";
+ import { loadUnlock, saveUnlock, has as unlocked, chooserItems, randomDest, arrive, placeInfo, keyOfIdx, unlockAll, emptyState, onFound, ZODIAC, MOON, GUIDE } from "./bgunlock.js";
+ import { createHud } from "./bghud.js";
+-import { dirFromAzAlt, toSpace, toDome, aimSpace, sepDeg, photoDir, moonFrame, levelSpace } from "./bghudlogic.js";
++import { dirFromAzAlt, toSpace, toDome, aimSpace, sepDeg, photoDir, moonFrame, moonSphere, levelSpace } from "./bghudlogic.js";
+ import { createFx } from "./bgfx.js";
+ import { MEMBER_DOT_COLORS } from "./config.js";
+ import * as sound from "./bgsound.js";
+@@ -345,6 +345,7 @@ uniform mat3 uSpaceRot; uniform vec2 uDeepShape;
+ // (11-09 운영자) 달 궤도 = 달 지표면이 화면 아래를 가득 채운다. uMoonOn = 켬, uMoonN = 지평선 평면의 위쪽(우주 좌표 — 사진의 수평선에 맞춤), uMoonT = 평면 위 한 축.
+ // 사진 가장자리의 투명 그라데이션 대신, 지평선 아래는 사진 맨 아래 지표 띠를 원근대로 이어 붙여 그린다.
+ uniform float uMoonOn; uniform vec3 uMoonN; uniform vec3 uMoonT;
++uniform vec3 uMoonC; uniform vec4 uMoonG; uniform vec3 uMoonS;   // 달 구면: 중심 방향 · (가장자리 cos, 중심 거리 L, 0, 0) · 태양 방향
+ float vnoise(vec3 p) {
+   vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+   return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),
+@@ -399,6 +400,65 @@ vec3 nebula(vec3 d) {
+   float m = vnoise(d * 1.7 + 11.0);
+   return mix(vec3(0.18, 0.06, 0.28), vec3(0.04, 0.12, 0.26), m) * pow(max(n - 0.42, 0.0) * 2.2, 2.0) * 0.35;
+ }
++// ── 달 궤도(Claude 안): 구면 월면 + 절차적 크레이터 ────────────────────────────────
++// 관측자는 달 위 낮은 궤도(구 밖, 반지름 1 기준 높이 uMoonG.y - 1). 가장자리는 구의 실루엣이라 곡면이고, 지표 높이는 3층 크레이터(분석적 기울기) +
++// 큰 알베도 얼룩 + 입자. 낮은 태양각 + Lommel–Seeliger 확산광. 픽셀 크기보다 작은 층은 진폭을 0 으로 줄인다(줌 · 원경에서 반짝임 방지).
++vec2 mh2(vec2 p) { vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.xx + q.yz) * q.zy); }
++vec3 craterLayer(vec2 p, float scale, float seed) {   // 돌려줌 = (높이, 기울기 x, 기울기 y) — 단위는 셀 길이
++  vec2 q = p * scale, ip = floor(q); vec3 acc = vec3(0.0);
++  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
++    vec2 id = ip + vec2(float(i), float(j)), h = mh2(id + seed);
++    if (h.x < 0.38) continue;
++    vec2 c = id + 0.18 + 0.64 * mh2(id * 1.7 + seed + 3.1), dv = q - c, hr = mh2(id + seed + 9.0);
++    float rad = mix(0.2, 0.5, hr.x * hr.x), r = length(dv) / rad;
++    if (r > 2.2) continue;
++    float depth = (0.25 + 0.5 * h.y) * rad * mix(1.0, 0.22, mh2(id * 3.3 + seed).x);   // 오래된 것은 얕게
++    float w = 0.18, e = exp(-(r - 1.0) * (r - 1.0) / (w * w));
++    float hh = (r < 1.0 ? -depth * (1.0 - r * r) : 0.0) + depth * 0.3 * e;
++    float dd = (r < 1.0 ? 2.0 * depth * r : 0.0) + depth * 0.3 * (-2.0 * (r - 1.0) / (w * w)) * e;
++    acc += vec3(hh, dd * dv / (max(length(dv), 1e-4) * rad));
++  }
++  return acc;
++}
++float moonSurface(vec3 d, float pxAng, out vec3 col) {
++  col = vec3(0.0);
++  float ca = dot(d, uMoonC), sa = sqrt(max(1.0 - uMoonC.y * 0.0 - ca * ca, 0.0));
++  float cov = smoothstep(uMoonG.x - pxAng * 0.7, uMoonG.x + pxAng * 0.7, ca);   // 가장자리 안티에일리어싱
++  if (cov <= 0.0) return 0.0;
++  vec3 Cc = uMoonC * uMoonG.y;
++  float b = dot(d, Cc), q = dot(Cc, Cc) - 1.0, dl = max(b * b - q, 1e-5);
++  float t = q / (b + sqrt(dl));
++  vec3 Nr = normalize(d * t - Cc), V = -d;
++  float nv = max(dot(Nr, V), 0.04), foot = pxAng * t / nv;   // 픽셀이 월면에서 차지하는 길이
++  // 지표 좌표 — 별 아래 점(−c) 기준 등거리 평면(가장자리 쪽은 자연스럽게 눌려 보임)
++  vec3 T1 = normalize(cross(uMoonC, uMoonN)), T2 = cross(uMoonC, T1);
++  float th = acos(clamp(-dot(Nr, uMoonC), -1.0, 1.0));
++  vec2 pp = vec2(dot(Nr, T1), dot(Nr, T2));
++  vec2 p2 = pp / max(length(pp), 1e-5) * th;
++  // 높이 = 3층 크레이터
++  vec3 acc = vec3(0.0);
++  const vec3 LAY[3] = vec3[3](vec3(12.0, 1.0, 0.5), vec3(38.0, 7.0, 0.6), vec3(120.0, 13.0, 0.55));   // (규모, 시드, 세기)
++  for (int k = 0; k < 3; k++) {
++    float sc = LAY[k].x, fd = smoothstep(foot * 2.0, foot * 6.0, 0.28 / sc);
++    if (fd <= 0.0) continue;
++    acc += craterLayer(p2, sc, LAY[k].y) * LAY[k].z * fd * vec3(1.0, sc, sc) / sc;   // 높이는 월면 길이 단위 · 기울기는 무차원
++  }
++  vec3 T1p = normalize(T1 - Nr * dot(T1, Nr)), T2p = normalize(T2 - Nr * dot(T2, Nr));
++  vec3 Nm = normalize(Nr - (T1p * acc.y + T2p * acc.z) * 1.15);
++  float fr = smoothstep(foot * 2.0, foot * 8.0, 0.02);   // 중간 크기 울퉁불퉁 — 깨끗한 그릇만 늘어선 느낌을 깬다
++  Nm = normalize(Nm + 0.16 * fr * (vec3(vnoise(Nr * 55.0), vnoise(Nr * 55.0 + 7.0), vnoise(Nr * 55.0 + 13.0)) - 0.5) + 0.07 * (vec3(vnoise(Nr * 190.0), vnoise(Nr * 190.0 + 5.0), vnoise(Nr * 190.0 + 11.0)) - 0.5) * smoothstep(foot * 2.0, foot * 6.0, 0.006));
++  // 알베도: 큰 얼룩(바다 · 고지) + 입자
++  float alb = 0.62 + 0.26 * vnoise(Nr * 5.0 + 3.0) + 0.1 * vnoise(Nr * 22.0);
++  vec2 gr = mh2(floor(p2 * 900.0));
++  alb *= 1.0 + (gr.x - 0.5) * 0.45 * smoothstep(foot * 2.0, foot * 0.3, 0.0011);
++  alb *= 1.0 + 1.4 * clamp(acc.x * 6.0, -0.2, 0.0);   // 분지 바닥은 살짝 어둡게
++  float nl = max(dot(Nm, uMoonS), 0.0), nvm = max(dot(Nm, V), 0.03);
++  float ls = nl / (nl + nvm) * 2.0;                   // Lommel–Seeliger
++  vec3 earthDir = normalize(uMoonC * -0.2 + uMoonN * 0.8);
++  vec3 shine = vec3(0.45, 0.62, 1.0) * 0.022 * (0.4 + 0.6 * max(dot(Nm, earthDir), 0.0));   // 지구빛(그림자에 푸르게 남음)
++  col = alb * ls * vec3(1.0, 0.975, 0.93) * 0.40 + shine;
++  return cov;
++}
+ vec3 spaceBase(vec3 d, float pxAng) {
+   vec3 c = vec3(0.004, 0.005, 0.010);
+   if (uSpaceTex.x > 0.5) {
+@@ -411,23 +471,9 @@ vec3 spaceBase(vec3 d, float pxAng) {
+     c += nebula(d) + vec3(0.010, 0.006, 0.016) * pow(max(1.0 - abs(d.y - 0.15), 0.0), 6.0);
+   }
+   c += spaceStars(d, pxAng, uSpaceTex.x > 0.5 ? 0.6 : 1.0) + galaxies(d, pxAng);
+-  float moonHn = uMoonOn > 0.5 ? dot(d, uMoonN) : 1.0;   // 달 궤도: 지평선 평면 기준 높이(양수 = 위)
+-  vec3 moonG = vec3(0.0); float moonW = 0.0;              // 지평선 아래 지표면 색 · 비중 — 맨 끝에서 별 · 은하 위로 덮는다
+-  if (uMoonOn > 0.5 && moonHn < 0.004) {
+-    float dn = max(-moonHn, 0.0006);
+-    vec3 P = d / dn;                                   // 눈 높이 1 에서 바닥 평면까지 간 점
+-    vec2 gq = vec2(dot(P, uMoonT), dot(P, cross(uMoonN, uMoonT)) * 12.0) * 0.9 + vec2(0.37, 0.0);   // 띠(가로 960 : 세로 약 77 = 12 : 1)를 정사각으로 펴지 않게 세로를 12 배 촘촘히
+-    vec2 gm = abs(mod(gq, 2.0) - 1.0);                 // 거울 반복 — 이음매 없이 이어 붙임
+-    vec2 gq2 = vec2(gq.x * 0.61 + gq.y * 0.05, gq.y * 0.53 - gq.x * 0.04 * 12.0) + vec2(0.71, 0.33);   // 크기 · 기울기가 다른 두 번째 층 — 같은 무늬가 격자처럼 되풀이되는 것을 깬다
+-    vec2 gm2 = abs(mod(gq2, 2.0) - 1.0);
+-    float lodG = clamp(log2(max(1.0, pxAng / (dn * dn) * 0.9 * uDeepShape.y)), 0.0, 4.0);
+-    vec3 g1 = textureLod(uSpaceDeep, vec2(gm.x, mix(0.915, 0.985, gm.y)), lodG).rgb;
+-    vec3 g2 = textureLod(uSpaceDeep, vec2(gm2.x, mix(0.915, 0.985, gm2.y)), lodG).rgb;
+-    float lum = dot(0.5 * (g1 + g2), vec3(0.3, 0.59, 0.11));
+-    vec3 gs = pow(vec3(lum), vec3(2.2)) * vec3(1.0, 0.97, 0.92);   // 회색 월면(사진 띠의 푸른 얼룩은 버린다)
+-    moonG = gs * mix(0.55, 1.0, smoothstep(0.0, 0.3, dn)) * 1.5;   // 멀수록 조금 어둡게
+-    moonW = smoothstep(0.002, -0.002, moonHn);
+-  }
++  float moonHn = uMoonOn > 0.5 ? dot(d, uMoonN) : 1.0;   // 사진 수평선 평면(사진 속 월면을 지우는 용도)
++  vec3 moonG = vec3(0.0); float moonW = 0.0;              // 달 구면 색 · 비중 — 맨 끝에서 별 · 은하 · 사진 위로 덮는다
++  if (uMoonOn > 0.5) moonW = moonSurface(d, pxAng, moonG);
+   if (uSpaceTex.y > 0.5) {
+     // 딥필드 사진 한 장 — 정면 오른쪽 위에 크게(가로 약 34°), 가장자리는 서서히 녹아든다. 검은 바탕이라 더한다.
+     vec3 C = normalize(vec3(0.42, 0.36, 0.83)), A = normalize(cross(vec3(0, 1, 0), C)), B = cross(C, A);
+@@ -1291,7 +1337,7 @@ export function createDomeGL(host, isPaused) {
+   //   딥필드 · 달 궤도 = 셰이더의 큰 사진 자리(우주 좌표 C = (0.42, 0.36, 0.83), 가로 약 34°) — 사진 자체가 대상(달 궤도는 그 사진 속 지구).
+   //   지구(바깥) = 이번 단계엔 대상 없음. 위치 · 허용 각은 시안(F5) 값에서 정한 예시.
+   const PHOTO_C = (() => { const v = [0.42, 0.36, 0.83], l = Math.hypot(...v); return v.map((x) => x / l); })();
+-  const MOON_F = moonFrame(PHOTO_C), MOON_RISE = 26;
++  const MOON_F = moonFrame(PHOTO_C), MOON_S = moonSphere(PHOTO_C, 0.03), MOON_RISE = 26;
+   let lastPhotoAz = 0;
+   /**
+    * 딥필드 · 달 궤도 사진을 놓는다(운영자 11-09 「첫 시선 방향은 랜덤, 단 UFO 방향을 고려해 시선이 닿을 수 있는 곳」) — 방위는 0 ~ 360° 무작위,
+@@ -2054,7 +2100,7 @@ export function createDomeGL(host, isPaused) {
+       if (deepIdx >= 0) gl.uniform2f(U.uDeepShape, DEEP_SET[deepIdx].asp, DEEP_SET[deepIdx].w);
+       const moonOn = deepIdx === MOON.idx && !!spaceTex.deep;   // 달 궤도 = 지표면이 아래를 가득(셰이더 uMoon*)
+       gl.uniform1f(U.uMoonOn, moonOn ? 1 : 0);
+-      if (moonOn) { gl.uniform3f(U.uMoonN, ...MOON_F.N); gl.uniform3f(U.uMoonT, ...MOON_F.T); }
++      if (moonOn) { gl.uniform3f(U.uMoonN, ...MOON_F.N); gl.uniform3f(U.uMoonT, ...MOON_F.T); gl.uniform3f(U.uMoonC, ...MOON_S.c); gl.uniform4f(U.uMoonG, MOON_S.cos, MOON_S.L, 0, 0); gl.uniform3f(U.uMoonS, ...MOON_S.S); }
+     } else { gl.uniform4f(U.uSpace, 0, 0, 0, 0); gl.uniform1f(U.uMoonOn, 0); }
+     // (11-06 수정) 실내 프로그램의 우주 표본기(13 · 14번, float)는 분홍 하늘일 때도 활성이다. 산 장소 기기는 그 칸에 지형의 정수 질감(RGBA16UI)이
+     // 꽂혀 있어 float 표본기와 종류가 어긋나면 그리기가 통째로 실패(하늘 · 바닥 검정)하므로, 실내는 매번 우주 사진 또는 1×1 검정을 꽂는다.
+diff --git a/src/frontend/js/bghudlogic.js b/src/frontend/js/bghudlogic.js
+index 2e68925..5419774 100644
+--- a/src/frontend/js/bghudlogic.js
++++ b/src/frontend/js/bghudlogic.js
+@@ -138,3 +138,20 @@ export function levelSpace(m0, n, c, azDeg) {
+   const dc = toDome(m1, c), cur = Math.atan2(dc[0], dc[2]);
+   return yawSpace(m1, azDeg * DEG - cur);
+ }
++
++/**
++ * (달 궤도 · Claude 안) 사진의 수평선 점 H0(가운데 열의 지평선)을 지나는 달 구면. 관측자는 구 밖 높이 h(반지름 1 기준)에 있고,
++ * 달 중심 방향 c = 하늘에서 달 가장자리(limb)가 H0 에서 moonFrame.T 방향으로 뻗는 작은 원의 중심. 우주 좌표.
++ * 돌려줌 = { c 달 중심 방향, cos 가장자리 코사인, L 중심까지 거리(R=1), up H0 에서의 위쪽, T 가장자리 접선, S 태양 방향 }
++ */
++export function moonSphere(C, h = 0.07) {
++  const { N, T } = moonFrame(C);
++  const A = norm3(cross3([0, 1, 0], C)), B = cross3(C, A);
++  const H0 = norm3([C[0] - 0.1758 * B[0], C[1] - 0.1758 * B[1], C[2] - 0.1758 * B[2]]);
++  const k = N[0] * H0[0] + N[1] * H0[1] + N[2] * H0[2];
++  const up = norm3([N[0] - k * H0[0], N[1] - k * H0[1], N[2] - k * H0[2]]);
++  const L = 1 + h, sinA = 1 / L, cosA = Math.sqrt(1 - sinA * sinA);
++  const c = norm3([H0[0] * cosA - up[0] * sinA, H0[1] * cosA - up[1] * sinA, H0[2] * cosA - up[2] * sinA]);
++  const S = norm3([-T[0] * 0.9 + up[0] * 0.42 + H0[0] * 0.1, -T[1] * 0.9 + up[1] * 0.42 + H0[1] * 0.1, -T[2] * 0.9 + up[2] * 0.42 + H0[2] * 0.1]);
++  return { c, cos: cosA, L, up, T, S, H0 };
++}
+diff --git a/src/frontend/js/bghudlogic.selfcheck.mjs b/src/frontend/js/bghudlogic.selfcheck.mjs
+index 08d6a41..c44c4bc 100644
+--- a/src/frontend/js/bghudlogic.selfcheck.mjs
++++ b/src/frontend/js/bghudlogic.selfcheck.mjs
+@@ -87,3 +87,10 @@ console.log("bghudlogic self-check ok");
+   assert.ok(near(azAltOf(cd)[0], 123, 1e-4), "사진 방위 = 요청값");
+   assert.ok(azAltOf(cd)[1] > 5 && azAltOf(cd)[1] < 15, "사진 중심이 지평선 위 약 10°");
+ }
++{
++  const { moonSphere } = await import("./bghudlogic.js");
++  const C = [0.42, 0.36, 0.83], l = Math.hypot(...C), Cn = C.map((x) => x / l), m = moonSphere(Cn);
++  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
++  assert.ok(near(dot(m.H0, m.c), m.cos, 1e-9), "H0 는 달 가장자리 위");
++  assert.ok(dot(m.up, m.H0) < 1e-9 && Math.abs(Math.hypot(...m.c) - 1) < 1e-9, "up ⟂ H0 · c 단위");
++}
