@@ -404,43 +404,87 @@ vec3 orbitHash(vec3 p) {
   p += dot(p,p.yxz+33.33);
   return fract((p.xxy+p.yxx)*p.zyx);
 }
-// Height, analytic derivatives and a local crater-wall shadow. World-fixed hashes,
-// not repeated image strips. A 3x3 neighborhood includes every jittered crater.
-vec4 orbitCraters(vec2 p, float scale, float footprint, float seed) {
-  vec2 q = p * scale, cell = floor(q);
+// Unit-radius crater profile with the full derivative of its broken rim.
+vec3 orbitProfile(vec2 v, float seed) {
+  float len = max(length(v),0.00001), angle = atan(v.y,v.x);
+  float phase = angle*5.0+seed*37.0, phase2 = angle*11.0+seed*81.0;
+  float warp = 1.0+0.045*sin(phase)+0.025*sin(phase2);
+  float angular = 0.225*cos(phase)+0.275*cos(phase2);
+  float r = len*warp;
+  vec2 dr = warp*v/len + angular*vec2(-v.y,v.x)/len;
+  float bowl = max(1.0-r*r,0.0), depth = mix(0.12,0.23,seed);
+  float rim = exp(-pow((r-0.96)/0.085,2.0));
+  float height = -depth*bowl*bowl + 0.060*rim;
+  float deriv = (r < 1.0 ? 4.0*depth*r*bowl : 0.0)
+              - 0.120*(r-0.96)/0.007225*rim;
+  return vec3(height,deriv*dr);
+}
+// Light direction is expressed in the SAME metric-adjusted tangent frame as
+// height. Both sunlight and earthlight use this rim/receiver intersection.
+float orbitRimVisibility(vec2 v, vec3 profile, float footprint, vec3 light) {
+  // xy is a normalized ray and z its rise per angular-coordinate unit.
+  // Prepared once per pixel, not normalized again in every crater candidate.
+  if (light.z <= 0.0) return 0.0;
+  vec2 direction = light.xy;
+  float along = dot(v,direction), r2 = dot(v,v);
+  float disc = 0.9216-r2+along*along;
+  if (disc < 0.0) return 1.0;
+  float root = sqrt(disc), nearHit = -along-root, farHit = -along+root;
+  float hit = nearHit > 0.0 ? nearHit : farHit;
+  if (hit <= 0.0) return 1.0;
+  // Bound exterior shadow reach to the existing 3x3 neighborhood, not the
+  // surface profile support. Interior receivers still see the far rim.
+  if (r2 > 1.0 && hit > 0.60) return 1.0;
+  // Mean crest height of orbitProfile. A circular crest proxy keeps both
+  // light tests analytic: no second terrain search or trigonometric profile.
+  float rimHeight = 0.060;
+  float rise = light.z;
+  float clearance = profile.x + hit*rise - rimHeight;
+  float edgeSlope = max(profile.y,rise);
+  float aa = max(0.5*footprint*edgeSlope,0.000002);
+  return smoothstep(-aa,aa,clearance);
+}
+// Same 4 x 3x3 searches as before: no second height-field search or march.
+vec4 orbitCraters(vec2 p, float scale, float footprint, float seed,
+                  vec2 viewTan, vec3 sun, vec3 earth, out vec2 indirect) {
+  vec2 q = p*scale, cell = floor(q);
   vec3 field = vec3(0.0); float shade = 1.0;
-  float lod = 1.0 - smoothstep(0.10, 0.65, footprint * scale);
+  indirect = vec2(1.0);
+  float lod = 1.0-smoothstep(0.10,0.65,footprint*scale);
   if (lod < 0.001) return vec4(0,0,0,1);
-  const vec2 sun = vec2(-0.894427, -0.447214);
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec2 id = cell + vec2(float(x), float(y));
+  for (int y=-1; y<=1; y++) for (int x=-1; x<=1; x++) {
+    vec2 id = cell+vec2(float(x),float(y));
     vec3 rnd = orbitHash(vec3(id,seed));
-    float h = rnd.x;
-    if (h > 0.79) continue; // Leave irregular plains between impacts.
-    vec2 center = id + 0.2 + 0.6 * rnd.xy;
-    float radius = mix(0.17, 0.42, rnd.z);
-    vec2 v = (q - center) / radius;
-    if (dot(v,v) > 2.11) continue; // Cull before the costly rim trigonometry.
-    float angle = atan(v.y,v.x);
-    float ragged = 1.0 + 0.045*sin(angle*5.0+h*37.0) + 0.025*sin(angle*11.0+h*81.0);
-    float r = length(v) * ragged;
-    if (r > 1.35) continue;
-    float bowl = max(1.0 - r*r, 0.0);
-    float depth = mix(0.12, 0.23, h);
-    float rim = exp(-pow((r - 0.96) / 0.12, 2.0));
-    float height = -depth * bowl*bowl + 0.034 * rim;
-    float deriv = (r < 1.0 ? 4.0 * depth * r * bowl : 0.0)
-                - 0.068 * (r - 0.96) / 0.0144 * rim;
-    field += vec3(height * radius / scale, deriv * v / max(r, 0.001));
-    // Ray to the sun-facing rim in this crater's local cross section.
-    float along = dot(v, sun);
-    float wall = -along + sqrt(max(1.0 - dot(v,v) + along*along, 0.0));
-    // Retain Codex's long local wall-shadow calibration; scene-wide exposure
-    // and the broad solar elevation are adapted separately below.
-    float visible = smoothstep(-0.018, 0.035, height + wall * 0.21 - 0.035);
-    shade = min(shade, mix(1.0, visible, 1.0 - smoothstep(0.85, 1.04, r)));
+    if (rnd.x > 0.79) continue;
+    vec2 center = id+0.2+0.6*rnd.xy;
+    float radius = mix(0.17,0.42,rnd.z);
+    vec2 v = (q-center)/radius;
+    if (dot(v,v) > 2.56) continue;
+    vec3 profile = vec3(0.0);
+    // Outside the material support, retain ONLY the cheap external-shadow
+    // test. Do not evaluate rim trigonometry on the surrounding empty plain.
+    if (dot(v,v) < 1.96) {
+      float r0 = length(v), bowl0 = max(1.0-dot(v,v),0.0);
+      float initialHeight = -mix(0.12,0.23,rnd.x)*bowl0*bowl0
+                          +0.060*exp(-pow((r0-0.96)/0.085,2.0));
+      // One local analytic correction in this already-selected candidate.
+      // The shared macro displacement is applied before the search.
+      vec2 delta = -viewTan*initialHeight;
+      delta /= max(1.0,length(delta)/0.28);
+      v += delta;
+      profile = orbitProfile(v,rnd.x);
+      field += vec3(profile.x*radius/scale,profile.yz);
+    }
+    float fp = footprint*scale/radius;
+    // Share the receiver slope magnitude between the two light tests.
+    vec3 receiver = vec3(profile.x,length(profile.yz),0.0);
+    shade = min(shade,orbitRimVisibility(v,receiver,fp,sun));
+    indirect.x = min(indirect.x,orbitRimVisibility(v,receiver,fp,earth));
+    // Cavity occlusion belongs ONLY to indirect light, not solar visibility.
+    indirect.y = min(indirect.y,1.0-0.25*clamp(-profile.x/mix(0.12,0.23,rnd.x),0.0,1.0));
   }
-  return vec4(field * lod, mix(1.0, shade, lod));
+  indirect = mix(vec2(1.0),indirect,lod);
+  return vec4(field*lod,mix(1.0,shade,lod));
 }
 // Filtered value-noise gradient: fine regolith roughness, fixed on the globe.
 vec3 orbitRough(vec2 p) {
@@ -450,15 +494,48 @@ vec3 orbitRough(vec2 p) {
   return vec3(mix(mix(a,b,u.x),mix(c,e,u.x),u.y),
     du.x*mix(b-a,e-c,u.y),du.y*mix(c-a,e-b,u.x));
 }
+// Two fixed low-frequency octaves: hills plus a rounded ridge. Returns
+// radial height and derivatives with respect to angular surface coordinates.
+vec3 orbitMacro(vec2 p) {
+  const mat2 rot = mat2(0.8,-0.6,0.6,0.8);
+  vec3 hills = orbitRough(p*3.5+vec2(1.7,3.1));
+  vec3 ridge = orbitRough(rot*p*8.0+vec2(8.3,2.9));
+  float signedRidge = 2.0*ridge.x-1.0;
+  float ridgeRoot = sqrt(signedRidge*signedRidge+0.012);
+  float h = 0.010*(hills.x-0.5)+0.004*(0.50-ridgeRoot);
+  vec2 grad = hills.yz*0.035 - transpose(rot)*ridge.yz*(0.064*signedRidge/ridgeRoot);
+  return vec3(h,grad);
+}
 vec3 orbitSurface(vec3 n, float t, vec3 d, float pxAng) {
-  vec3 T = uMoonT, B = cross(uMoonN, T);
-  vec2 p = vec2(atan(dot(n,T), dot(n,uMoonN)), asin(clamp(dot(n,B),-1.0,1.0)));
-  float fp = pxAng * t / max(abs(dot(n,d)), 0.035);
-  vec4 a = orbitCraters(p, 11.0, fp, 21.0);
-  vec4 b = orbitCraters(p, 34.0, fp, 53.0);
-  vec4 c = orbitCraters(p, 103.0, fp, 97.0);
-  vec4 f = orbitCraters(p, 337.0, fp, 131.0);
-  vec2 slope = a.yz + b.yz * 0.65 + c.yz * 0.38 + f.yz * 0.20;
+  vec3 T = uMoonT, B = cross(uMoonN,T);
+  vec2 p0 = vec2(atan(dot(n,T),dot(n,uMoonN)),asin(clamp(dot(n,B),-1.0,1.0)));
+  float cosLat = max(sqrt(max(1.0-pow(dot(n,B),2.0),0.0)),0.20);
+  vec3 tx = normalize(T*dot(n,uMoonN)-uMoonN*dot(n,T));
+  vec3 ty = normalize(cross(n,tx));
+  vec2 metric = vec2(1.0/cosLat,1.0);
+  float incidence = max(dot(-d,n),0.18);
+  vec2 viewTan = vec2(dot(d,tx),dot(d,ty))*metric/incidence;
+  float fp = pxAng*t/max(abs(dot(n,d)),0.035)/cosLat;
+  vec3 macroField = orbitMacro(p0);
+  float macroH = macroField.x;
+  vec2 macroSlope = macroField.yz;
+  vec3 sun = normalize((-T*0.894427-B*0.447214)*0.925+uMoonN*0.380);
+  vec3 earthDir = normalize(vec3(0.42,0.36,0.83));
+  vec2 sunUV = vec2(dot(sun,tx),dot(sun,ty))*metric;
+  vec2 earthUV = vec2(dot(earthDir,tx),dot(earthDir,ty))*metric;
+  vec3 localSun = vec3(sunUV,dot(sun,n)-dot(macroSlope,sunUV))/max(length(sunUV),0.0001);
+  vec3 localEarth = vec3(earthUV,dot(earthDir,n)-dot(macroSlope,earthUV))/max(length(earthUV),0.0001);
+  vec2 p = p0-viewTan*macroH;
+  vec2 ai,bi,ci,fi;
+  vec4 a = orbitCraters(p,11.0,fp,21.0,viewTan,localSun,localEarth,ai);
+  vec4 b = orbitCraters(p,34.0,fp,53.0,viewTan,localSun,localEarth,bi);
+  vec4 c = orbitCraters(p,103.0,fp,97.0,viewTan,localSun,localEarth,ci);
+  vec4 f = orbitCraters(p,337.0,fp,131.0,viewTan,localSun,localEarth,fi);
+  float height = macroH+a.x+b.x*0.65+c.x*0.38+f.x*0.20;
+  // A single common summed-height material-coordinate offset. Crater walls
+  // already receive their local analytic correction inside the original loop.
+  p = p0-viewTan*height;
+  vec2 slope = macroSlope+a.yz+b.yz*0.65+c.yz*0.38+f.yz*0.20;
   vec3 rough = orbitRough(p*470.0);
   vec3 fine = orbitRough(p*1550.0);
   slope += rough.yz*0.19*(1.0-smoothstep(0.15,0.7,fp*470.0));
@@ -472,23 +549,17 @@ vec3 orbitSurface(vec3 n, float t, vec3 d, float pxAng) {
   }
   float dustLod = 1.0-smoothstep(0.12,0.65,fp*67000.0);
   if (dustLod > 0.001) slope += orbitRough(p*67000.0).yz*0.07*dustLod;
-  vec3 tx = normalize(T - n * dot(n,T));
-  vec3 ty = normalize(cross(n, tx));
-  if (dot(ty,B) < 0.0) ty = -ty;
-  vec3 normal = normalize(n - tx*slope.x - ty*slope.y);
-  // agy exposure palette and ~22.3 degree sun, on the original Codex frame.
-  // Keep the projected azimuth used by orbitCraters' wall-shadow direction.
-  vec3 sun = normalize((-T*0.894427 - B*0.447214)*0.925 + uMoonN*0.380);
+  vec3 normal = normalize(n-tx*slope.x*metric.x-ty*slope.y);
   float diffuse = max(dot(normal,sun),0.0);
-  float craterVisibility = min(a.w, min(b.w, mix(1.0,c.w,0.65)));
-  float shadow = mix(0.14,1.0,craterVisibility);
-  shadow *= mix(0.42,1.0,smoothstep(-0.05,0.14,diffuse));
-  // LS preserves illuminated detail toward the curved limb without flattening
-  // the original crater normals or lifting the entire picture with a gray veil.
+  float shadow = min(a.w,min(b.w,min(c.w,f.w)));
   float nv = clamp(dot(normal,-d),0.045,1.0);
   float lommel = (diffuse+0.06)/max(diffuse+nv*0.75+0.06,0.08);
   float slopeBoost = clamp(diffuse/0.380,0.45,1.85);
-  float directLit = lommel * mix(1.02,0.62+0.40*slopeBoost,0.72) * shadow;
+  float directLit = lommel*mix(1.02,0.62+0.40*slopeBoost,0.72)*shadow;
+  // Solar visibility is allowed to reach zero. Earthlight has its own blocker
+  // test and cavity AO, so a dark crater is never refilled by a solar floor.
+  float earthVisibility = min(ai.x,min(bi.x,min(ci.x,fi.x)));
+  float cavityAO = min(ai.y,min(bi.y,min(ci.y,fi.y)));
   float macro = vnoise(n*19.0 + 7.0) * 0.65 + vnoise(n*53.0) * 0.35;
   float grainLod = 1.0-smoothstep(0.2,0.8,fp*1200.0);
   float grain = (fine.x-0.5)*grainLod;
@@ -498,7 +569,7 @@ vec3 orbitSurface(vec3 n, float t, vec3 d, float pxAng) {
   vec3 albedo = mix(vec3(0.33,0.325,0.295),vec3(0.44,0.432,0.396),highland);
   albedo *= 0.92 + 0.16*macro + grain*0.10 + (grit.x-0.5)*0.12*gritLod;
   float earthFacing = clamp(0.6+0.4*dot(normal,normalize(vec3(0.42,0.36,0.83))),0.0,1.0);
-  vec3 earthShine = vec3(0.20,0.30,0.46)*(0.068+0.045*earthFacing);
+  vec3 earthShine = vec3(0.20,0.30,0.46)*(0.068+0.045*earthFacing)*cavityAO*mix(0.18,1.0,earthVisibility);
   // agy uses 1.18; compensate here for retaining the deeper Codex wall shadows.
   vec3 sunlight = vec3(1.02,1.00,0.94)*directLit*1.32;
   return albedo*(sunlight + earthShine*(1.0-0.65*directLit));
