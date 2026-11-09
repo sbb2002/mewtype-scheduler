@@ -1,6 +1,6 @@
 // bgunlock.selfcheck.mjs — node src/frontend/js/bgunlock.selfcheck.mjs
 import assert from "node:assert/strict";
-import { emptyState, parseState, legacyUnlocks, unlock, has, arrive, randomDest, chooserItems, allDeepVisited, unlockAll, loadUnlock, saveUnlock, keyOfIdx, DEEP_FIELDS } from "./bgunlock.js";
+import { emptyState, parseState, legacyUnlocks, unlock, has, arrive, randomDest, chooserItems, allDeepVisited, unlockAll, loadUnlock, saveUnlock, keyOfIdx, DEEP_FIELDS, onFound, ZODIAC } from "./bgunlock.js";
 
 // 저장 글 읽기 — 틀린 값은 버린다
 {
@@ -62,3 +62,19 @@ assert.equal(keyOfIdx(1), "moon");
 assert.equal(keyOfIdx(0), "smacs");
 assert.equal(keyOfIdx(-1), null);
 console.log("bgunlock self-check ok");
+// 찾기 규칙
+{
+  const s = emptyState();
+  let r = onFound(s, { id: "saturn", unlock: "space" });
+  assert.ok(r.fresh && r.k === "NEW" && has(s, "space") && r.toast);
+  r = onFound(s, { id: "saturn", unlock: "space" });
+  assert.ok(!r.fresh && r.k === "" && !r.toast, "다시 잡으면 이름만");
+  for (const z of ZODIAC.slice(0, 4)) { r = onFound(s, { id: z.id, zod: true, who: z.who }); assert.equal(r.k, "별자리"); assert.ok(!has(s, "light")); }
+  r = onFound(s, { id: ZODIAC[4].id, zod: true, who: ZODIAC[4].who });
+  assert.ok(has(s, "light") && r.toast === "별빛 조명 열림");
+  r = onFound(s, { id: "earthT", unlock: "earth" });
+  assert.ok(has(s, "earth") && has(s, "ymmt") && has(s, "freenav"));
+  r = onFound(s, { id: "d_crab" });
+  assert.ok(r.fresh && r.k === "" && !r.toast);
+}
+console.log("bgunlock onFound ok");

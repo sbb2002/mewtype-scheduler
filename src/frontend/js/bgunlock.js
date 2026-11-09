@@ -107,3 +107,36 @@ export function loadUnlock(storage) {
 export function saveUnlock(storage, s) {
   try { storage.setItem(KEY, JSON.stringify({ v: 1, unl: s.unl, vis: s.vis, found: s.found, seen: s.seen })); return true; } catch { return false; }
 }
+
+// ── 찾기(2단계, 시선 HUD bghud.js) ────────────────────────────────────────────
+/** 멤버 탄생 별자리 다섯(config.js BIRTHDAYS 의 생일 → 황도 12궁, 운영자 11-09). 모양은 단순화한 예시 — 별 오프셋 [방위°, 고도°] · 선 [i, j] */
+export const ZODIAC = [
+  { id: "z_arale", n: "사자자리", who: "아라레", S: [[0, 0], [1, 4], [3, 7], [6, 7], [7, 4], [-7, 2], [-13, 0], [-8, -2]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 0]] },
+  { id: "z_yuno", n: "전갈자리", who: "유노", S: [[-8, 6], [-7, 3], [-6, 0], [-3, -2], [0, -3], [3, -4], [6, -3], [8, -1], [7, 2]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8]] },
+  { id: "z_nonoka", n: "양자리", who: "노노카", S: [[-6, -1], [-1, 1], [2, 2], [5, 4]], L: [[0, 1], [1, 2], [2, 3]] },
+  { id: "z_ritsu", n: "물병자리", who: "리츠", S: [[-8, 4], [-4, 5], [0, 3], [2, 0], [1, -4], [4, -6], [-2, -2], [-5, -5]], L: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [3, 6], [6, 7]] },
+  { id: "z_miyako", n: "처녀자리", who: "미야코", S: [[0, 0], [-4, 3], [-8, 5], [3, 4], [6, 8], [-1, -4], [2, -8], [-5, -1]], L: [[0, 1], [1, 2], [0, 3], [3, 4], [0, 5], [5, 6], [1, 7]] },
+];
+const UNLOCK_MSG = {
+  space: { to: "→ 조작 패널에 초행성X로의 여행이 열렸어요", toast: "초행성X로의 여행 열림" },
+  hold: { to: "→ 초행성X 칸을 길게 눌러 성간 이동", toast: "성간 이동 열림" },
+  earth: { to: "→ 조작 패널에 지구가 열렸어요", toast: "지구 열림 · 보상: YMMT 별자리 · 자유 항해" },
+};
+/**
+ * 대상을 잡았다(시선 링 100%). t = { id, unlock?("space" | "hold" | "earth"), zod?(별자리면 true), who? }.
+ * 돌려줌 = { fresh(처음 찾음), k(카드 위 작은 글 — "NEW" · "별자리" · ""), to(카드 아래 줄 — 없으면 ""), toast(알림 — 없으면 ""), changed(저장 필요) }.
+ * 지구를 찾으면 지구와 함께 마지막 보상(ymmt · freenav)도 열린다. 별자리 다섯을 다 찾으면 별빛 조명.
+ */
+export function onFound(s, t) {
+  const fresh = find(s, t.id);
+  const r = { fresh, k: "", to: "", toast: "", changed: fresh };
+  if (t.unlock) {
+    const opened = unlock(s, t.unlock);
+    if (t.unlock === "earth") { unlock(s, "ymmt"); unlock(s, "freenav"); }
+    if (opened) { r.k = "NEW"; r.to = UNLOCK_MSG[t.unlock].to; r.toast = UNLOCK_MSG[t.unlock].toast; r.changed = true; }
+  } else if (t.zod && fresh) {
+    r.k = "별자리"; r.to = `${t.who}의 탄생 별자리`;
+    if (ZODIAC.every((z) => s.found.includes(z.id)) && unlock(s, "light")) { r.to += " · 별빛 조명이 열렸어요"; r.toast = "별빛 조명 열림"; }
+  }
+  return r;
+}

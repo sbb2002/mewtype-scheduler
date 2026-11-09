@@ -19,7 +19,9 @@ import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
-import { loadUnlock, saveUnlock, has as unlocked, chooserItems, randomDest, arrive, placeInfo, keyOfIdx, unlockAll, emptyState } from "./bgunlock.js";
+import { loadUnlock, saveUnlock, has as unlocked, chooserItems, randomDest, arrive, placeInfo, keyOfIdx, unlockAll, emptyState, onFound, ZODIAC } from "./bgunlock.js";
+import { createHud } from "./bghud.js";
+import { dirFromAzAlt, toSpace, toDome, aimSpace } from "./bghudlogic.js";
 import * as sound from "./bgsound.js";
 import { createWarp, shiftGear, tickWarp, warpReady, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
@@ -1201,6 +1203,57 @@ export function createDomeGL(host, isPaused) {
   applyLocks();
   /** 지금 있는 곳 — "earth" 바깥 · "pink" 버츄얼 스페이스 · "space" 기본 우주(사진 없음) · 딥필드 키 · "moon" */
   const placeKey = () => (outdoor ? "earth" : INDOOR_BG !== "space" ? "pink" : keyOfIdx(deepIdx) || "space");
+  const PLACE_NAME = { earth: "지구", pink: "버츄얼 스페이스", space: "기본 우주" };
+  const placeName = (k) => PLACE_NAME[k] || placeInfo(k)?.name || "";
+
+  // ── 시선 HUD(해금 2단계, bghud.js · 디자인 = F5 시안) ─────────────────────────────
+  // 배경 보기 중 화면에 고정. 대상을 2초 바라보면 잡히고, 잡히면 해금(bgunlock.onFound) · 알림 · 정보 카드. [＋ 확대] = 망원 ×6(두 손가락 벌리기와 같은 줌).
+  const hud = createHud({
+    onLock(t) {
+      const r = onFound(unlockS, t);
+      if (r.changed) persistUnlock();
+      if (r.toast) ufoPanel.toast(r.toast);
+      return r;
+    },
+    // 줌 경로 −1 ~ 0 = 망원 ×30 ~ ×1(updateView). 원래대로 = 확대 전 자리(배경 보기는 뒤로 물러난 자리에서 시작한다).
+    // 확대 · 되돌리기 동안(1.2초)은 줌 경로가 콘솔 가까이를 지나도 조작 패널을 띄우지 않는다 — 띄우면 HUD 가 꺼졌다 켜져 잡힘이 풀린다
+    onZoom(x) {
+      if (x <= 1) zoomT = hudZoomFrom ?? 0;
+      else { if (zoomT >= 0) hudZoomFrom = zoomT; zoomT = -Math.log(x) / Math.log(30); }
+      hudZoomAt = performance.now(); buzz();
+    },
+  });
+  let hudZoomFrom = null, hudZoomAt = -Infinity;
+  // 대상 — 하늘마다 처음 HUD 를 볼 때 그때 시선 방향(방위)을 기준으로 놓는다(처음 찾기 쉽게 — 토성 표식은 정면에서 22° 옆, 운영자 「처음 보는 방향 가까이」).
+  //   버츄얼 스페이스 = 돔에 고정. 기본 우주 = 우주 좌표에 붙여 성간 이동 · 워프로 하늘이 돌면 같이 돈다(셰이더 spaceBase(uSpaceRot · d) 와 같은 좌표).
+  //   딥필드 · 달 궤도 = 셰이더의 큰 사진 자리(우주 좌표 C = (0.42, 0.36, 0.83), 가로 약 34°) — 사진 자체가 대상(달 궤도는 그 사진 속 지구).
+  //   지구(바깥) = 이번 단계엔 대상 없음. 위치 · 허용 각은 시안(F5) 값에서 정한 예시.
+  const PHOTO_C = (() => { const v = [0.42, 0.36, 0.83], l = Math.hypot(...v); return v.map((x) => x / l); })();
+  const hudSets = {};
+  function hudTargets(place) {
+    if (place === "earth") return [];
+    let set = hudSets[place];
+    if (!set) {
+      const y0 = yaw / DEG;
+      let list;
+      if (place === "pink") list = [{ id: "saturn", n: "토성 표식", unlock: "space", draw: "saturn", col: "232,197,138", tol: 6, d: dirFromAzAlt(y0 + 22, 24) }];
+      else if (place === "space") {
+        list = [{ id: "neb", n: "성운", unlock: "hold", draw: "neb", col: "255,111,181", tol: 5, d: dirFromAzAlt(y0 + 32, 22) }];
+        ZODIAC.forEach((z, i) => {
+          const az = y0 + 95 + i * 55, alt = 24 + (i % 2) * 14;
+          list.push({ id: z.id, n: z.n, zod: true, who: z.who, draw: "zod", col: "79,227,255", tol: 8, d: dirFromAzAlt(az, alt), S: z.S.map(([dh, da]) => dirFromAzAlt(az + dh, alt + da)), lines: z.L });
+        });
+        for (const t of list) { t.s = toSpace(spaceRot, t.d); if (t.S) t.sS = t.S.map((d) => toSpace(spaceRot, d)); }
+      } else list = [place === "moon" ? { id: "earthT", n: "지구", unlock: "earth", draw: "photo", col: "120,180,255", tol: 14, s: PHOTO_C } : { id: "d_" + place, n: placeName(place), draw: "photo", col: "200,160,255", tol: 14, s: PHOTO_C, noBeacon: true }];
+      set = hudSets[place] = list;
+    }
+    for (const t of set) {
+      t.dir = t.s ? toDome(spaceRot, t.s) : t.d;
+      if (t.sS) t.stars = t.sS.map((x) => toDome(spaceRot, x)); else if (t.S) t.stars = t.S;
+      t.found = unlockS.found.includes(t.id);
+    }
+    return set;
+  }
   const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
   // (11-06 운영자) 하늘은 「돔 재투영」으로 바뀐다(아래 beginSky — 두 이벤트 듣기에서 바꾸기 직전에 시작).
@@ -1384,6 +1437,9 @@ export function createDomeGL(host, isPaused) {
       if (!star.jump.arrived && t >= { A: 620, B: 0, C: 700 }[star.jump.kind]) {
         star.jump.arrived = true;
         spaceRot = axisRot(randUnit(), Math.random() * 2 * Math.PI);
+        // (해금 2단계) 사진이 있는 곳(딥필드 · 달 궤도)이면 그 사진이 지금 보는 방향 근처(방위 ±40°, 고도 18 ~ 40°)에 오게 돌림을 맞춘다 — 전엔 발밑에 가 보이지 않기도 했다
+        if (star.nextDeep >= 0) spaceRot = aimSpace(spaceRot, PHOTO_C, dirFromAzAlt(yaw / DEG + (Math.random() * 80 - 40), 18 + Math.random() * 22));
+        if (star.dest === "space") delete hudSets.space;   // 기본 우주로 돌아오면 못 찾은 대상을 지금 시선 기준으로 다시 놓는다
         setDeep(star.nextDeep);
         const got = arrive(unlockS, star.dest);   // (11-09 해금) 처음 간 딥필드 = 워프 목적지에 추가, 다섯 곳 뒤 달 궤도 = 해금
         if (got) { persistUnlock(); ufoPanel.toast(got === "moon" ? "달 궤도 도착 — 워프 목적지에 추가" : `새 딥필드 · ${placeInfo(star.dest).name} — 워프 목적지에 추가`); }
@@ -2016,7 +2072,7 @@ export function createDomeGL(host, isPaused) {
     if (Math.abs(zoomT - zoomPath) < 1e-5) zoomPath = zoomT;
     zoomR = Math.max(0, zoomPath);
     tele = Math.pow(30, Math.max(0, -zoomPath));
-    magnification.style.display = peek && tele > 1.02 ? "" : "none";
+    magnification.style.display = "none";   // (해금 2단계) 배율은 시선 HUD 오른쪽 ZOOM 눈금이 보여 준다
     const label = `\u00d7${tele < 10 ? tele.toFixed(1).replace(/\.0$/, "") : Math.round(tele)}`;
     if (magnification.textContent !== label) magnification.textContent = label;
     EYE[0] = EYE0[0] - zoomR * Math.sin(yaw);
@@ -2037,7 +2093,8 @@ export function createDomeGL(host, isPaused) {
     if (peek && !ufoArmed && zoomR >= PANEL_OFF_R) ufoArmed = true;
     // 하늘 전환 중에는 패널을 끈다(칸도 눌리지 않음 — inert). 끝나면 다가갔을 때와 같은 등장 연출로 다시 뜬다(11-06 운영자)
     // 전환 전에 떠 있었으면 끝난 뒤 「사라짐」 문턱으로 다시 판정한다(나타남 문턱이 더 좁아 제자리인데 안 뜨는 일이 없게)
-    const want = !sky && peek && ufoArmed && (ufoPanel.on || panelResume ? zoomR <= PANEL_OFF_R && tele <= 1.02 : zoomR < PANEL_ON_R && tele <= 1.001);
+    const hudZooming = performance.now() - hudZoomAt < 1200;   // 시선 HUD [＋ 확대] · [－ 원래대로] 전환 중
+    const want = !sky && peek && ufoArmed && !hudZooming && (ufoPanel.on || panelResume ? zoomR <= PANEL_OFF_R && tele <= 1.02 : zoomR < PANEL_ON_R && tele <= 1.001);
     if (want) {
       ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
@@ -2048,9 +2105,23 @@ export function createDomeGL(host, isPaused) {
     ufoPanel.set(want);
     ufoConsole.setActive(want);   // 패널이 떠 있는 동안 바닥 제어 장치 화면에 불
     if (!sky) panelResume = false;
-    ufoPanel.setHint(peek ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0);
+    ufoPanel.setHint(peek && !hud.cardOn ? Math.max(0, Math.min(1, 1 - 2.5 * (1 - zoomR / PEEK_START_R))) : 0);   // 시선 HUD 카드가 뜬 동안은 숨김(겹침)
   }
-  function hideUfo() { ufoPanel.set(false); ufoPanel.setHint(0); ufoConsole.setVisible(false); }
+  function hideUfo() { ufoPanel.set(false); ufoPanel.setHint(0); ufoConsole.setVisible(false); hud.update({ active: false }); }
+  /** 시선 HUD — 배경 보기 중, 조작 패널 · 하늘 전환이 없을 때. 성간 이동 중엔 눈금만(잡기 없음) */
+  function updateHud(peek, dt) {
+    const active = peek && !ufoPanel.on && !sky;
+    if (!active) { hud.update({ active: false }); return; }
+    const B = basis(), F = viewFocal(), a = -bgRoll(), ca = Math.cos(a), sa = Math.sin(a);
+    const project = (d) => {   // 방향 → 화면(CSS px). 배경이 기울임만큼 돌아 보이므로 같이 돌린다(jumpCenter 와 같은 식)
+      const z = dot3(d, B.fwd);
+      if (z < 0.05) return null;
+      const x0 = F * dot3(d, B.right) / z, y0 = F * dot3(d, B.up) / z;
+      return [cx + x0 * ca - y0 * sa, cy - (x0 * sa + y0 * ca)];
+    };
+    const place = placeKey();
+    hud.update({ active: true, interact: !star, dt, yawDeg: yaw / DEG, pitchDeg: pitch / DEG, tele, ppd: F * Math.tan(DEG), fwd: B.fwd, project, targets: hudTargets(place), sky: placeName(place) });
+  }
 
   // 두 손가락 줌 — 배경 보기 중에만(그 밖엔 카드 · 페이지 조작이 우선). 브라우저 확대를 막으려 passive: false
   const touchDist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -2105,6 +2176,7 @@ export function createDomeGL(host, isPaused) {
     placePieces();
     updateUfo(peek);
     updateStar(performance.now(), dt, peek);
+    updateHud(peek, dt);
     updateAlarm(dt);
     // 지형 질감을 올리는 동안은 그리기를 쉬어(draw 첫 줄) 화면이 멈춘다 — 그동안 하늘 전환 시계도 멈춰, 반쯤 섞인 화면에서 끝나 버리지 않게(처음 지구를 고를 때)
     // 길어야 4초까지만 멈춰 기다리고, 그 뒤엔 그냥 끝낸다(패널이 돌아오지 못하는 일이 없게)
@@ -2153,6 +2225,7 @@ export function createDomeGL(host, isPaused) {
 
   function resize(w, h) {
     themeStart = -Infinity;
+    hud.resize(w, h);
     endSky();   // 화면 크기가 바뀌면 옛 사진이 맞지 않는다 — 바로 끝
     W = w; H = h; phone = W <= 767;
     dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
@@ -2198,7 +2271,7 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
-    window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); } };
+    window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); }, get hud() { return hud.debug; }, get targets() { return hudTargets(placeKey()).map((t) => ({ id: t.id, az: +(Math.atan2(t.dir[0], t.dir[2]) / DEG).toFixed(1), alt: +(Math.asin(t.dir[1]) / DEG).toFixed(1) })); } };
     window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, moonDiameterCSS: SIZE_MODE === "eye" ? MOON_CSS_DIAMETER * tele : 2 * viewFocal() * SUN_MOON_R[1] * DEG, themeProgress: Math.min(1,(performance.now()-themeStart)/THEME_MS), albedoOn, terrain: releaseGround.terrain?.metrics, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
   // 기억된 우주(초행성X)로 방문했으면 여기서도 진입 판정(?bgdebug&bgstar 확인용 — 평소엔 자동 시작 없음)
@@ -2208,6 +2281,6 @@ export function createDomeGL(host, isPaused) {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); siren.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); siren.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }

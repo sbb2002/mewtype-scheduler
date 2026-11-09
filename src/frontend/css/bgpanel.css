@@ -329,7 +329,7 @@
 @keyframes ufo-nudge { 0%, 100% { box-shadow: none; } 40% { box-shadow: 0 0 0 2px var(--ufo-pink), 0 0 18px rgba(255, 111, 181, .55); } }
 
 .ufo-toast {
-  position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); z-index: 978; translate: -50% 0;
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 138px); z-index: 978; translate: -50% 0;   /* 시선 HUD 의 HDG 아래 */
   max-width: calc(100vw - 32px); padding: 7px 14px; pointer-events: none;
   font: 600 13px/1.4 "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink); text-align: center; letter-spacing: .02em;
   background: rgba(5, 8, 24, .78); border: 1px solid rgba(79, 227, 255, .45); box-shadow: 0 0 14px rgba(79, 227, 255, .25);
@@ -356,3 +356,32 @@
 .ugc-item.is-here { cursor: default; opacity: .55; }
 .ugc-cancel { justify-content: center; font-size: 12px; letter-spacing: .14em; color: var(--ufo-sub); border-color: rgba(169, 186, 208, .3); }
 @media (prefers-reduced-motion: reduce) { .ufo-tile.is-nope, .ufo-tile.is-nudge { animation: none; } .ufo-toast { transition: none; } }
+
+/* ── (11-09 해금 2단계) 시선 HUD — js/bghud.js, 디자인 = F5 시안. 돔(배경) 위 · 조작 패널(975) 아래. 누르기는 카드만 받는다 */
+.bghud { position: fixed; inset: 0; z-index: 972; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .25s ease, visibility 0s linear .25s; }
+.bghud.is-on { opacity: 1; visibility: visible; transition: opacity .25s ease; }
+.bghud-sky, .bghud-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.bghud-svg text { font-family: var(--ufo-mono); }
+.bghud-probe { position: absolute; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; }
+.bghud-card {
+  position: absolute; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 136px); z-index: 1;
+  max-width: 420px; margin: 0 auto; display: grid; gap: 8px; pointer-events: none;
+  opacity: 0; transform: translateY(10px); transition: opacity .22s ease, transform .22s ease;
+  font-family: "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink);
+}
+.bghud-card.is-on { opacity: 1; transform: none; pointer-events: auto; }
+.bghud-k { display: flex; align-items: center; gap: 6px; min-height: 12px; font: 500 9.5px var(--ufo-mono); letter-spacing: .14em; color: var(--ufo-pink); }
+.bghud-star { width: 12px; height: 12px; background: var(--ufo-pink); clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); filter: drop-shadow(0 0 4px var(--ufo-pink)); }
+.bghud-star[hidden] { display: none; }
+.bghud-card h3 { margin: 0; font: 700 22px/1.1 "Noto Sans KR", system-ui, sans-serif; text-shadow: 0 0 14px rgba(79, 227, 255, .55), 0 1px 3px #000; }
+.bghud-to { margin: 0; font: 500 11px var(--ufo-mono); color: var(--ufo-cyan); letter-spacing: .04em; text-shadow: 0 1px 3px #000; }
+.bghud-to[hidden] { display: none; }
+.bghud-btns { display: flex; gap: 8px; }
+.bghud-btn {
+  flex: 1; padding: 9px 6px; border: 0; cursor: pointer; color: var(--ufo-ink); font: 600 12px var(--ufo-mono); letter-spacing: .08em;
+  background: rgba(255, 111, 181, .12); box-shadow: inset 0 0 0 1px var(--ufo-pink);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+.bghud-btn:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 2px; }
+.bghud-hn { margin: 0; font-size: 10.5px; color: var(--ufo-sub); text-shadow: 0 1px 3px #000; }
+@media (prefers-reduced-motion: reduce) { .bghud, .bghud.is-on, .bghud-card { transition: none; } }
