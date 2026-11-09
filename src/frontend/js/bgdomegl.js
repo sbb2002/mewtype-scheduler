@@ -435,6 +435,8 @@ vec4 orbitCraters(vec2 p, float scale, float footprint, float seed) {
     // Ray to the sun-facing rim in this crater's local cross section.
     float along = dot(v, sun);
     float wall = -along + sqrt(max(1.0 - dot(v,v) + along*along, 0.0));
+    // Retain Codex's long local wall-shadow calibration; scene-wide exposure
+    // and the broad solar elevation are adapted separately below.
     float visible = smoothstep(-0.018, 0.035, height + wall * 0.21 - 0.035);
     shade = min(shade, mix(1.0, visible, 1.0 - smoothstep(0.85, 1.04, r)));
   }
@@ -474,17 +476,32 @@ vec3 orbitSurface(vec3 n, float t, vec3 d, float pxAng) {
   vec3 ty = normalize(cross(n, tx));
   if (dot(ty,B) < 0.0) ty = -ty;
   vec3 normal = normalize(n - tx*slope.x - ty*slope.y);
-  vec3 sun = normalize(-T*0.88 - B*0.44 + uMoonN*0.22);
+  // agy exposure palette and ~22.3 degree sun, on the original Codex frame.
+  // Keep the projected azimuth used by orbitCraters' wall-shadow direction.
+  vec3 sun = normalize((-T*0.894427 - B*0.447214)*0.925 + uMoonN*0.380);
   float diffuse = max(dot(normal,sun),0.0);
-  float shadow = min(a.w, min(b.w, mix(1.0,c.w,0.65)));
+  float craterVisibility = min(a.w, min(b.w, mix(1.0,c.w,0.65)));
+  float shadow = mix(0.14,1.0,craterVisibility);
+  shadow *= mix(0.42,1.0,smoothstep(-0.05,0.14,diffuse));
+  // LS preserves illuminated detail toward the curved limb without flattening
+  // the original crater normals or lifting the entire picture with a gray veil.
+  float nv = clamp(dot(normal,-d),0.045,1.0);
+  float lommel = (diffuse+0.06)/max(diffuse+nv*0.75+0.06,0.08);
+  float slopeBoost = clamp(diffuse/0.380,0.45,1.85);
+  float directLit = lommel * mix(1.02,0.62+0.40*slopeBoost,0.72) * shadow;
   float macro = vnoise(n*19.0 + 7.0) * 0.65 + vnoise(n*53.0) * 0.35;
   float grainLod = 1.0-smoothstep(0.2,0.8,fp*1200.0);
   float grain = (fine.x-0.5)*grainLod;
-  float albedo = 0.72 + 0.44*macro + grain*0.10 + (grit.x-0.5)*0.12*gritLod;
-  float earthlight = 0.004 + 0.008*max(dot(normal,normalize(vec3(0.42,0.36,0.83))),0.0);
-  vec3 lit = vec3(0.76,0.75,0.71) * diffuse * shadow * 0.82;
-  vec3 bounce = vec3(0.64,0.73,0.90) * earthlight;
-  return albedo * (lit + bounce);
+  // Reuse the two existing world-space noise samples: no additional noise,
+  // crater candidates, ray steps, or texture lookups for the brighter palette.
+  float highland = smoothstep(0.30,0.67,macro);
+  vec3 albedo = mix(vec3(0.33,0.325,0.295),vec3(0.44,0.432,0.396),highland);
+  albedo *= 0.92 + 0.16*macro + grain*0.10 + (grit.x-0.5)*0.12*gritLod;
+  float earthFacing = clamp(0.6+0.4*dot(normal,normalize(vec3(0.42,0.36,0.83))),0.0,1.0);
+  vec3 earthShine = vec3(0.20,0.30,0.46)*(0.068+0.045*earthFacing);
+  // agy uses 1.18; compensate here for retaining the deeper Codex wall shadows.
+  vec3 sunlight = vec3(1.02,1.00,0.94)*directLit*1.32;
+  return albedo*(sunlight + earthShine*(1.0-0.65*directLit));
 }
 vec3 moonOrbit(vec3 d, float pxAng) {
   vec3 photoC = normalize(vec3(0.42,0.36,0.83));
@@ -499,7 +516,9 @@ vec3 moonOrbit(vec3 d, float pxAng) {
   float cover = smoothstep(-width,width,edge);
   vec3 sky = vec3(0.00012,0.00015,0.00022);
   if (cover < 0.999) {
-    sky += spaceStars(d,pxAng,0.10);
+    // cos(78 + 18 degrees): fade star exposure with no per-pixel acos.
+    float skyExposure = 1.0-smoothstep(-0.10452846,ca,mu);
+    sky += spaceStars(d,pxAng,0.6*(0.35+0.65*skyExposure));
     vec3 A = normalize(cross(vec3(0,1,0),photoC)), B = cross(photoC,A);
     float z = dot(d,photoC);
     if (z > 0.5) {
