@@ -57,7 +57,8 @@
 
 ## 해금 시나리오 합의안 (2026-11-09, 운영자 확정 전)
 
-출발점 = 운영자 초안 `docs/plan/bg-dome/hud_implementation.md`(작성 중, 미커밋). Claude · Codex · agy 의견 원문 = 이 PC `_local/hud_f5/scenario_*.md`.
+출발점 = 운영자 초안 `docs/plan/bg-dome/hud_implementation.md`. Claude · Codex · agy 의견 원문 = 이 PC `_local/hud_f5/scenario_*.md`.
+**→ 운영자 결정(11-09)을 반영한 정본은 `docs/plan/bg-dome/hud_implementation.md`** — 길게 누르기 = 성간 이동(딥필드 해금 뒤) + 워프 목적지 고르기, 지구 = 「달에서 본 지구」 하늘에서 지구 찾기, 마지막 보상 = 세 안 모두, 모두 열기 = 모니터링 페이지 지뢰찾기. 아래 표는 합의 당시 기록이다.
 
 | 단계 | 하늘 | 찾을 것(하나만) | 왜 거기 있나 | 열리는 것 |
 |---|---|---|---|---|
