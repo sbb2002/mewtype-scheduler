@@ -55,6 +55,8 @@
   - (a) 찾은 대상 위치로 포커스 · 확대 = **나침반 요소와 겹쳐 미결, 보류 가능.**
   - (b) 요소를 발견하면 테마로 워프 = 자동으로 기어 5단까지 풀악셀 뒤 성간 이동 연출, **3초 안에 끝낼 것**(F4 시안 2.4초).
 
+> **11-09 구현 끝** — 실제 브랜치 `feat/bg-dome` `a087e8f` 에 해금 시나리오 + 시선 HUD(F5 디자인) 1 ~ 3단계. 진행 · 구현 판단 = `docs/plan/bg-dome/hud_implementation.md`, 인계 = `ref/bg-dome/HANDOFF.md`, 체험 아티팩트 = https://claude.ai/artifact/3WzzJ8zpX7XNowHNQCZsjz
+
 ## 해금 시나리오 합의안 (2026-11-09, 운영자 확정 전)
 
 출발점 = 운영자 초안 `docs/plan/bg-dome/hud_implementation.md`. Claude · Codex · agy 의견 원문 = 이 PC `_local/hud_f5/scenario_*.md`.

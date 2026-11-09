@@ -1,0 +1,243 @@
+<title>돔 해금 여정</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 레이아웃: 위 = 이 문서로 체험하는 법 + 해금 사슬, 아래 = 시간순 장(章) 세로 타임라인(왼쪽 번호 레일 + 할 일 · 열림 · 실제 화면 캡처).
+   캡처가 전부 어두운 하늘이라 HUD 와 같은 어두운 세계 하나로 고정. */
+:root{
+  --bg:#050818; --panel:#0b1230; --ink:#eef6ff; --sub:#a9bad0; --line:rgba(79,227,255,.2);
+  --cyan:#4fe3ff; --pink:#ff6fb5; --gold:#e8c58a; --warn:#ffd27a;
+  --disp:"Chakra Petch",ui-monospace,Consolas,monospace;
+  --sans:"Noto Sans KR",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.65 var(--sans);
+  padding-block:36px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:34px}
+header{display:grid;gap:10px}
+.eyebrow{font:600 12px var(--disp);letter-spacing:.18em;color:var(--pink)}
+h1{margin:0;font:600 32px/1.15 var(--disp);letter-spacing:.03em;text-wrap:balance}
+header p{margin:0;color:var(--sub);max-width:70ch}
+code{font:500 12.5px ui-monospace,Consolas,monospace;color:var(--cyan);background:rgba(79,227,255,.08);padding:1px 5px;border-radius:3px;word-break:break-all}
+.how{display:grid;gap:10px;padding:16px 18px;border:1px solid var(--line);background:var(--panel)}
+.how h2,.notes h2{margin:0;font:600 13px var(--disp);letter-spacing:.14em;color:var(--pink)}
+.how ol,.notes ul{margin:0;padding-left:20px;color:var(--sub);display:grid;gap:4px}
+.how b,.notes b{color:var(--ink);font-weight:500}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;padding:14px;border:1px solid var(--line);background:var(--panel)}
+.chain .n{font:600 12.5px var(--sans);padding:5px 9px;border:1px solid var(--line);white-space:nowrap}
+.chain .n.k{border-color:var(--cyan);color:var(--cyan)}
+.chain .n.r{border-color:var(--pink);color:var(--pink)}
+.chain .a{color:var(--sub);font:600 12px var(--disp)}
+.chain .side{flex-basis:100%;margin-top:6px;font-size:12.5px;color:var(--sub);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tl{display:grid}
+.ch{display:grid;grid-template-columns:44px minmax(0,1fr);gap:0 18px;position:relative;padding-bottom:40px}
+.ch::before{content:"";position:absolute;left:21px;top:44px;bottom:0;width:1px;background:var(--line)}
+.ch:last-child::before{display:none}
+.no{width:44px;height:44px;display:grid;place-items:center;font:600 15px var(--disp);color:var(--cyan);border:1px solid var(--cyan);
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);background:var(--bg)}
+.ch.opt .no{color:var(--gold);border-color:var(--gold)}
+.body{min-width:0;display:grid;gap:10px}
+.ch h2{margin:8px 0 0;font:700 20px/1.3 var(--sans);text-wrap:balance}
+.tag{display:inline-block;margin-left:8px;font:600 11px var(--disp);letter-spacing:.12em;color:var(--gold);vertical-align:middle}
+.ch p{margin:0;color:var(--sub);max-width:66ch}
+.ch p b{color:var(--ink);font-weight:500}
+.do{display:grid;gap:3px;margin:0;padding:10px 12px;border-left:2px solid var(--cyan);background:rgba(79,227,255,.05);color:var(--ink);font-size:14px;max-width:66ch}
+.do span{font:600 11px var(--disp);letter-spacing:.14em;color:var(--cyan)}
+.opens{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.opens span{font:600 12px var(--sans);padding:3px 9px;color:var(--bg);background:var(--cyan)}
+.opens span.r{background:var(--pink)}
+.opens em{font:500 12px var(--disp);font-style:normal;letter-spacing:.1em;color:var(--sub)}
+.shots{display:flex;flex-wrap:wrap;gap:14px}
+figure{margin:0;display:grid;gap:6px;width:210px;max-width:100%}
+figure.wide{width:520px}
+figure img{display:block;width:100%;height:auto;border-radius:16px;border:1px solid rgba(238,246,255,.16);background:#000}
+figure.wide img{border-radius:8px}
+figcaption{font-size:12px;color:var(--sub);line-height:1.45}
+.notes{display:grid;gap:10px;padding:16px 18px;border:1px solid rgba(255,210,122,.35);background:rgba(255,210,122,.04)}
+.notes h2{color:var(--warn)}
+@media (max-width:520px){figure{width:calc(50% - 7px)} figure.wide{width:100%} h1{font-size:26px}}
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">BG-DOME · 해금 시나리오 · feat/bg-dome a087e8f</span>
+  <h1>분홍 구름에서 지구까지</h1>
+  <p>배경 보기를 처음 연 사람이 시간 순서대로 무엇을 찾고, 그때마다 무엇이 열리는지입니다. 모든 사진은 <b>실제 브랜치 코드</b>를 폰 크기(390 × 760)로 띄워 찍었습니다. 폰 센서와 터치는 가짜 입력으로 흉내 냈습니다. 각 장의 「할 일」을 순서대로 따라가면 직접 체험할 수 있습니다.</p>
+</header>
+
+<section class="how">
+  <h2>체험하는 법</h2>
+  <ol>
+    <li>이 PC(desktop-68v1g6c)에서 <code>python scripts/serve_local.py 8102</code>(워크트리 <code>mewtype-scheduler-worktrees/v4/feat-bg-dome</code>) → <code>tailscale serve --bg --https=443 http://127.0.0.1:8102</code>. 폰에서 <code>https://desktop-68v1g6c.taila8a0a6.ts.net/src/frontend/?bgdebug&amp;bgunlock=reset</code> 을 엽니다. 센서는 HTTPS 에서만 동작합니다.</li>
+    <li>이 브랜치에선 <b>UFO 돔</b>이 기본 배경입니다(다른 테마면 테마 버튼 길게 누르기 → UFO). 예고 레인을 맨 아래까지 내린 뒤 <b>위로 튕기면</b> 배경 보기가 열립니다.</li>
+    <li><b>조작 패널</b> = 두 손가락으로 벌려 가운데 바닥 조종대로 다가가기. 닫기 = 오므리기. 대상은 <b>폰을 그쪽으로 돌려 2초 바라보기</b>로 잡습니다.</li>
+    <li>처음부터 다시: 주소 끝 <code>bgunlock=reset</code>. 전부 열린 상태로 보기: <code>bgunlock=all</code>. 지금 상태 보기(PC 콘솔): <code>__bgunlock.state</code>.</li>
+  </ol>
+</section>
+
+<div class="chain" aria-label="해금 순서 요약">
+  <span class="n">버츄얼 스페이스</span><span class="a">→ 토성 표식 →</span>
+  <span class="n k">초행성X</span><span class="a">→ 성운 →</span>
+  <span class="n k">성간 이동</span><span class="a">→ 무작위 워프 ×n →</span>
+  <span class="n k">딥필드 5곳</span><span class="a">→ 한 번 더 →</span>
+  <span class="n k">달 궤도</span><span class="a">→ 지구 →</span>
+  <span class="n k">지구 테마</span><span class="a">+</span>
+  <span class="n r">YMMT 별자리 · 자유 항해</span>
+  <span class="side">곁가지(초행성X 뒤 언제든): 기본 우주의 멤버 탄생 별자리 5개 → <span class="n r">별빛 조명</span> · 기기를 바꿨다면: 모니터링 페이지 지뢰찾기 → 모두 열기</span>
+</div>
+
+<div class="tl">
+
+  <section class="ch">
+    <div class="no">1</div>
+    <div class="body">
+      <h2>첫 실행 — 분홍 구름 속</h2>
+      <p>배경 보기를 열면 <b>시선 HUD</b>가 뜹니다. 위 방위 테이프의 분홍 점이 못 찾은 대상 쪽이고, 양옆은 ALT · ZOOM 눈금, 아래는 하늘 이름과 시각입니다. 조작 패널을 열면 초행성X · 지구 칸이 잠겨 있고, 설명 자리에 다음 할 일이 적혀 있습니다.</p>
+      <p class="do"><span>할 일</span>배경 보기를 열고 둘러본 뒤, 두 손가락으로 벌려 조작 패널을 열어 잠긴 칸을 눌러 보기(살짝 흔들리기만 함).</p>
+      <div class="opens"><em>열림</em><span>버츄얼 스페이스</span></div>
+      <div class="shots">
+        <figure><img src="img/c01.png" alt="분홍 하늘 위 시선 HUD, 오른쪽에 토성 표식, 방위 테이프에 분홍 점" width="389" height="759"><figcaption>첫 화면 — 오른쪽의 토성 표식, 테이프의 분홍 점</figcaption></figure>
+        <figure><img src="img/c02.png" alt="조작 패널, 초행성X와 지구 칸 자물쇠" width="389" height="759"><figcaption>잠긴 칸 — 「구름 속 토성을 찾아봐」</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">2</div>
+    <div class="body">
+      <h2>토성 표식을 바라보기</h2>
+      <p>처음 보는 방향에서 22° 옆에 떠 있습니다. 2초 바라보면 링이 차고 잡히며, 화면이 대상 색으로 잠깐 물들고 위에 알림이, 아래에 카드가 뜹니다.</p>
+      <p class="do"><span>할 일</span>폰을 토성 쪽으로 돌려 가운데 십자에 맞추고 2초 기다리기. 카드의 [＋ 확대]도 눌러 보기(×6, 다시 누르면 원래대로).</p>
+      <div class="opens"><em>열림</em><span>초행성X로의 여행</span></div>
+      <div class="shots">
+        <figure><img src="img/c03.png" alt="토성 표식이 잡힌 화면, NEW 카드와 알림" width="389" height="759"><figcaption>「→ 조작 패널에 초행성X로의 여행이 열렸어요」</figcaption></figure>
+        <figure><img src="img/c04.png" alt="조작 패널, 초행성X 칸 잠금 해제" width="389" height="759"><figcaption>초행성X 칸이 열림(아직 누르기만)</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">3</div>
+    <div class="body">
+      <h2>기본 우주로 가출, 성운 찾기</h2>
+      <p>초행성X 칸을 누르면 큰 사진이 없는 <b>기본 우주</b>로 갑니다. 이 하늘에 빛 무리(성운)와 멤버 별자리 다섯이 있고, 하늘과 함께 돕니다.</p>
+      <p class="do"><span>할 일</span>조작 패널 → 초행성X 누르기 → 오므려 배경 보기 → 분홍 점을 따라 성운(처음 방향에서 32° 옆)을 2초 바라보기.</p>
+      <div class="opens"><em>열림</em><span>초행성X 길게 누르기 = 성간 이동</span></div>
+      <div class="shots">
+        <figure><img src="img/c05.png" alt="기본 우주 하늘과 시선 HUD" width="389" height="759"><figcaption>기본 우주</figcaption></figure>
+        <figure><img src="img/c06.png" alt="성운 카드, 초행성X 칸을 길게 눌러 성간 이동" width="389" height="759"><figcaption>「→ 초행성X 칸을 길게 눌러 성간 이동」</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch opt">
+    <div class="no">✦</div>
+    <div class="body">
+      <h2>곁가지: 멤버 탄생 별자리<span class="tag">언제든 · 순서 자유</span></h2>
+      <p>기본 우주에서 처음 방향 +95° 부터 55° 간격으로 다섯 개 — 아라레 사자자리 · 유노 전갈자리 · 노노카 양자리 · 리츠 물병자리 · 미야코 처녀자리. 잡으면 선이 그어지고, 다섯 번째에서 <b>별빛 조명</b>이 열려 화면 아래에 멤버 5색이 은은하게 비칩니다.</p>
+      <p class="do"><span>할 일</span>기본 우주를 한 바퀴 돌며 별자리 다섯 잡기 → 조작 패널의 「별빛 조명 끄기 · 켜기」 눌러 보기.</p>
+      <div class="opens"><em>열림</em><span class="r">별빛 조명</span></div>
+      <div class="shots">
+        <figure><img src="img/c07.png" alt="사자자리 카드, 아라레의 탄생 별자리" width="389" height="759"><figcaption>사자자리 — 「아라레의 탄생 별자리」</figcaption></figure>
+        <figure><img src="img/c08.png" alt="처녀자리 카드, 별빛 조명이 열렸어요, 아래에 멤버 색 빛" width="389" height="759"><figcaption>다섯 번째 — 「· 별빛 조명이 열렸어요」</figcaption></figure>
+        <figure><img src="img/c09.png" alt="조작 패널, 길게 눌러 성간 이동 칩과 별빛 조명 끄기 버튼" width="389" height="759"><figcaption>패널 — 칸 반짝임 안내 · 별빛 조명 칸</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">4</div>
+    <div class="body">
+      <h2>성간 이동 — 레드존까지</h2>
+      <p>초행성X 칸을 1초 길게 누르면 아래에 워프 기어가 뜹니다(10% 자동 시작은 없앴습니다). 4 · 5단 레드존에 올라 좌석벨트 표시등이 꺼지면 <b>WARP</b>가 켜집니다.</p>
+      <p class="do"><span>할 일</span>초행성X 칸 길게 누르기 → 오므려 배경 보기 → 기어를 4단 이상으로 → WARP 가 켜질 때까지 기다리기.</p>
+      <div class="shots">
+        <figure><img src="img/c10.png" alt="성간 이동 시작, 조작 패널과 기어 N" width="389" height="759"><figcaption>길게 누른 직후 — 기어 N</figcaption></figure>
+        <figure><img src="img/c11.png" alt="4단 0.90c 레드존, WARP 켜짐" width="389" height="759"><figcaption>4단 레드존 — WARP 켜짐</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">5</div>
+    <div class="body">
+      <h2>첫 워프는 어디로 갈지 모른다</h2>
+      <p>가 본 딥필드가 없으니 창 없이 <b>무작위</b> 딥필드로 점프합니다. 도착하면 그 사진이 보는 쪽 근처에 오고, 「새 딥필드 · OO — 워프 목적지에 추가」 알림이 뜹니다. 사진 자체를 바라보면 이름 카드가 뜹니다.</p>
+      <p class="do"><span>할 일</span>WARP 누르기 → 도착한 사진 바라보기.</p>
+      <div class="opens"><em>열림</em><span>딥필드 1곳</span></div>
+      <div class="shots">
+        <figure><img src="img/c12.png" alt="창조의 기둥 딥필드 도착, 사진이 정면에" width="389" height="759"><figcaption>창조의 기둥 도착(이번엔 이 사진)</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">6</div>
+    <div class="body">
+      <h2>워프 목적지 고르기</h2>
+      <p>가 본 곳이 생기면 WARP 를 누를 때 창이 뜹니다 — 무작위 · 가 본 딥필드 · (딥필드에 있으면) 기본 우주로. <b>취소하면 아무 일도 없습니다.</b> 무작위는 가 본 곳도 다시 나와서, 다섯 곳을 다 모으려면 여러 번(평균 약 11번) 날아야 합니다.</p>
+      <p class="do"><span>할 일</span>다시 성간 이동 → WARP → 취소도 눌러 보고, 무작위로 계속 날아 다섯 곳 모으기.</p>
+      <div class="opens"><em>열림</em><span>나머지 딥필드(무작위로 하나씩)</span></div>
+      <div class="shots">
+        <figure><img src="img/c13.png" alt="워프 목적지 창: 무작위, 창조의 기둥 지금 여기, 기본 우주로, 취소" width="389" height="759"><figcaption>실제 워프 목적지 창</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">7</div>
+    <div class="body">
+      <h2>다섯 곳 뒤, 달 궤도에서 지구 찾기</h2>
+      <p>딥필드 다섯 곳을 다 가 본 뒤 무작위 워프를 한 번 더 하면 <b>달 궤도</b>(지구돋이 사진)에 도착합니다. 테이프의 분홍 점을 따라 사진 속 지구를 바라보면 마지막 해금 — <b>지구</b>와 보상 둘이 함께 열립니다.</p>
+      <p class="do"><span>할 일</span>달 궤도 도착 알림 확인 → 분홍 점 쪽으로 돌아 지구 사진을 2초 바라보기.</p>
+      <div class="opens"><em>열림</em><span>달 궤도</span><span>지구 테마</span><span class="r">YMMT 별자리</span><span class="r">자유 항해</span></div>
+      <div class="shots">
+        <figure><img src="img/c14.png" alt="달 궤도 도착, 왼쪽 테이프에 꺾쇠" width="389" height="759"><figcaption>달 궤도 도착 — 사진은 왼쪽(꺾쇠)</figcaption></figure>
+        <figure><img src="img/c15.png" alt="지구 사진에 시선 링, NEW 지구 카드" width="389" height="759"><figcaption>「→ 조작 패널에 지구가 열렸어요」</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch">
+    <div class="no">8</div>
+    <div class="body">
+      <h2>보상 — 자유 항해 · YMMT 별자리</h2>
+      <p>조작 패널에 <b>FULL NAV</b> 와 <b>자유 항해</b> 목록이 생깁니다 — 가 본 딥필드 · 달 궤도로 워프 없이 바로. 지구 칸(위치 권한)으로 나가면 지구 하늘 높이(처음 방향 +40°, 고도 50°)에 <b>YMMT 별자리</b>가 처음 한 번 3초 동안 그려지고, 그 뒤 옅게 남습니다.</p>
+      <p class="do"><span>할 일</span>조작 패널 → 자유 항해에서 한 곳 눌러 보기 → 지구 칸 → 위로 올려다보며 YMMT 찾기.</p>
+      <div class="shots">
+        <figure><img src="img/c16.png" alt="FULL NAV 배지와 자유 항해 목록이 있는 조작 패널" width="389" height="759"><figcaption>FULL NAV · 자유 항해</figcaption></figure>
+        <figure><img src="img/c17.png" alt="지구 저녁 하늘 높이 YMMT 글자 별자리" width="389" height="759"><figcaption>지구 하늘의 YMMT(이미 본 뒤라 옅게)</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="ch opt">
+    <div class="no">⛭</div>
+    <div class="body">
+      <h2>기기를 바꿨다면 — 모니터링 페이지 지뢰찾기<span class="tag">모두 열기</span></h2>
+      <p>모니터링 페이지(<code>/src/frontend/monitor.html</code>)의 「사이트 기록 초기화」 창을 바깥으로 ↑↑↓↓←→←→ 밀어내면, 전체 추이 잔디 그리드가 <b>5 × 7 붉은 지뢰찾기</b>로 바뀝니다. 누르기 = 열기, 길게 누르기 = 깃발(3개까지, 맞았는지는 다 맞을 때까지 숨김). 깃발 3개가 모두 지뢰 위면 배경 해금이 전부 열리고 안내 창이 뜹니다. 지뢰를 누르면 폭발 효과 뒤 처음으로 — 다시 하려면 입력을 처음부터. 방향 뒤 B · A 는 지금처럼 생일 이스터에그입니다.</p>
+      <p class="do"><span>할 일</span>모니터링 페이지에서 입력 → 지뢰찾기 풀기(또는 일부러 터뜨려 보기) → 메인으로 돌아가 패널 확인.</p>
+      <div class="shots">
+        <figure class="wide"><img src="img/c18.png" alt="잔디 그리드 자리의 5 × 7 지뢰찾기, 숫자와 깃발" width="1017" height="478"><figcaption>지뢰찾기 — 남은 깃발 2 / 3</figcaption></figure>
+        <figure class="wide"><img src="img/c19.png" alt="배경 테마 이스터에그를 모두 열었어요 안내 창" width="1017" height="478"><figcaption>성공 — 안내 창, 판은 잔디 그리드로 돌아감</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<section class="notes">
+  <h2>코멘트에 참고할 것 — 구현하며 정한 것 · 알려진 점</h2>
+  <ul>
+    <li><b>대상 자리</b>: 그 하늘에서 처음 HUD 를 볼 때의 방향 기준(토성 +22° · 성운 +32° · 별자리 +95° 부터 55° 간격). 기본 우주로 워프해 돌아오면 못 찾은 것만 다시 놓습니다.</li>
+    <li><b>딥필드 · 달 궤도</b>: 큰 사진 자체가 대상(허용 14°). 워프 도착 때 사진이 보는 방향 ±40°, 고도 18 ~ 40° 에 오게 맞춥니다(전엔 발밑에 가기도 했음).</li>
+    <li><b>성운이 작고 흐립니다</b>(성운 카드 캡처) — 디자인 단계에서 손볼 후보.</li>
+    <li><b>별빛 조명 색</b>: 유노 · 노노카 · 리츠 · 미야코 = 예고 점 멤버 색, <b>아라레는 표에 없어 임시 노랑</b> — 정해 주세요.</li>
+    <li><b>HUD 아래 NEXT(다음 방송)</b> 는 방송 데이터 연결이 필요해 빼고 지금 시각(NOW)을 넣었습니다.</li>
+    <li><b>지구(바깥) 하늘</b>엔 아직 찾을 대상이 없습니다(YMMT 는 장식). 달 · 행성 확대 대상은 후보.</li>
+    <li>F5 시안의 <b>손떨림 거르기</b>는 넣지 않았습니다 — 실제 돔이 이미 센서를 부드럽게 다듬습니다. 폰에서 조준이 흔들리면 알려 주세요.</li>
+    <li>모든 확인은 PC 의 폰 흉내로 했습니다. <b>S23 · 삼성 인터넷 실측은 아직</b>입니다.</li>
+  </ul>
+</section>
+</div>
