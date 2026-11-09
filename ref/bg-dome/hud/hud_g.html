@@ -1,0 +1,416 @@
+<title>돔 시선 HUD G안</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600&display=swap">
+<style>
+/* 레이아웃: 왼쪽 = 폰(끌기 = 자이로 흉내, 휠 · 두 손가락 = 핀치), 오른쪽 = 세 에이전트 합의 · 확인용 조작.
+   단일 어두운 세계(돔 안 밤하늘)로 고정 — 운영 HUD 는 언제나 하늘 위에 뜨므로 밝은 테마를 두지 않는다.
+   HUD 색 = 바닥 조종대(크림 · 장밋빛 · 라일락), 시안은 포착 · 워프 순간에만. 글꼴 = 운영과 같은 시스템 글꼴. */
+:root{
+  --bg:#120d18; --panel:#1b1422; --line:rgba(247,219,230,.14);
+  --cream:#f7dbe6; --rose:#ff6fb5; --lilac:#a184c6; --cyan:#4fe3ff; --red:#ff4d5e; --plum:#1b1422;
+  --ink:#fff5fa; --sub:#bba9c2;
+  --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:system-ui,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+  --disp:"Chakra Petch",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);
+  padding-block:32px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1000px;margin:0 auto;display:grid;gap:24px}
+h1{font:600 26px/1.2 var(--disp);letter-spacing:.04em;margin:0;text-wrap:balance}
+h1 span{color:var(--rose)}
+header p{margin:8px 0 0;color:var(--sub);line-height:1.65;font-size:14.5px;max-width:700px}
+.stage{display:grid;grid-template-columns:280px minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:680px){.stage{grid-template-columns:1fr}.phoneBox{margin:0 auto}}
+.phoneBox{width:280px;max-width:100%;display:grid;gap:10px}
+.phone{position:relative;width:280px;max-width:100%;aspect-ratio:1/2;border-radius:26px;overflow:hidden;
+  border:1px solid rgba(247,219,230,.22);background:#070614;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}
+.phone:active{cursor:grabbing}
+.inner{position:absolute;inset:0}
+.inner canvas,.fx{position:absolute;inset:0;width:100%;height:100%}
+.fx{pointer-events:none;opacity:0}
+#flash{background:#fff}
+#redge{box-shadow:inset 0 0 40px 6px rgba(255,77,94,.75)}
+.cap{font:500 11px/1.5 var(--sans);color:var(--sub);text-align:center;margin:0}
+
+/* 하단 한 줄 정보(평소) */
+.rest{position:absolute;left:10px;right:10px;bottom:12px;display:flex;justify-content:space-between;gap:8px;pointer-events:none;transition:opacity .25s}
+.rest span{font:500 10px/1 var(--mono);color:var(--cream);background:rgba(27,20,34,.62);padding:5px 7px;border-radius:3px;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.rest b{color:var(--rose);font-weight:600}
+
+/* 행동 막대 — 조작 패널(bgpanel)의 홀로그램 문법: 잘린 모서리 · 주사선 · 꺾쇠 · 가운데에서 위아래로 열림 */
+.act{position:absolute;left:14px;right:14px;bottom:44px;display:grid;gap:5px;justify-items:center;pointer-events:none}
+.act button{pointer-events:auto;position:relative;min-width:150px;padding:10px 16px;border:0;cursor:pointer;
+  font:600 13px/1 var(--sans);letter-spacing:.02em;color:var(--ink);
+  background:repeating-linear-gradient(0deg,rgba(255,111,181,.10) 0 1px,transparent 1px 3px),linear-gradient(180deg,rgba(60,32,66,.86),rgba(27,20,34,.9));
+  box-shadow:inset 0 0 0 1px rgba(247,219,230,.55),0 0 18px rgba(255,111,181,.25);
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
+.act button.key{box-shadow:inset 0 0 0 1px var(--cyan),0 0 20px rgba(79,227,255,.35)}
+.act button:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.act small{font:500 10px var(--sans);color:var(--sub);text-shadow:0 1px 3px #000}
+.act.on button{animation:holo .32s cubic-bezier(.2,.9,.3,1) both}
+.act.on small{animation:fade .4s .2s both}
+@keyframes holo{0%{clip-path:polygon(0 50%,100% 50%,100% 50%,0 50%);filter:drop-shadow(-2px 0 0 rgba(79,227,255,.8)) drop-shadow(2px 0 0 rgba(255,111,181,.8))}
+  60%{filter:drop-shadow(-1px 0 0 rgba(79,227,255,.6)) drop-shadow(1px 0 0 rgba(255,111,181,.6))}
+  100%{clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);filter:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.toast{position:absolute;left:0;right:0;top:74px;text-align:center;font:600 12px var(--sans);letter-spacing:.06em;color:var(--ink);
+  text-shadow:0 0 10px var(--rose),0 1px 3px #000;opacity:0;transition:opacity .3s;pointer-events:none}
+
+/* 오른쪽 */
+.side{display:grid;gap:22px;min-width:0}
+.side h2{margin:0 0 10px;font:600 13px var(--disp);letter-spacing:.12em;color:var(--rose)}
+.tbl{overflow-x:auto;border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;font-size:13px;line-height:1.55}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+th{font:600 11px var(--disp);letter-spacing:.1em;color:var(--sub);background:var(--panel)}
+td:first-child{white-space:nowrap;color:var(--cream);font-weight:600}
+td:last-child{color:var(--sub);font-size:12px;white-space:nowrap}
+.ctl{display:grid;gap:10px}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.row button{font:500 12px var(--sans);color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:6px 10px;cursor:pointer}
+.row button:hover,.row button:focus-visible{border-color:var(--rose);outline:none}
+.row button.got{border-color:rgba(255,111,181,.6)}
+.row button.got::after{content:" ✦";color:var(--rose)}
+.opt{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--sub)}
+.opt input{accent-color:#ff6fb5}
+.state{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--sub)}
+.state b{color:var(--ink);font-weight:600}
+ul.todo{margin:0;padding-left:18px;color:var(--sub);font-size:13px;line-height:1.7}
+ul.todo b{color:var(--cream);font-weight:600}
+@media (prefers-reduced-motion:reduce){.act.on button,.act.on small{animation:none}}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>돔 시선 HUD · <span>G안</span></h1>
+  <p>폰을 돌려 하늘에서 대상을 찾고, 잠시 바라보면 잡힙니다. 행성 · 별자리 같은 대상은 확대해서 보고, 목적지 열쇠(지구에서는 오리온 대성운, 딥필드에서는 M87 블랙홀)는 워프로 그 하늘에 갑니다. 화면을 끌면 폰을 돌리는 것과 같고, 휠이나 두 손가락 벌리기가 핀치입니다.</p>
+</header>
+<div class="stage">
+  <div class="phoneBox">
+    <div class="phone" id="phone"><div class="inner" id="inner">
+      <canvas id="sky"></canvas>
+      <div class="fx" id="tint"></div>
+      <canvas id="hud"></canvas>
+      <div class="toast" id="toast"></div>
+      <div class="rest" id="rest"><span>다음 방송 <b>20:00</b></span><span id="clk">KST --:--</span></div>
+      <div class="act" id="act" hidden><button type="button" id="ab"></button><small id="ah"></small></div>
+      <div class="fx" id="redge"></div><div class="fx" id="flash"></div>
+    </div></div>
+    <p class="cap">대상 위치 · 다음 방송 시각은 예시입니다.</p>
+  </div>
+
+  <div class="side">
+    <section>
+      <h2>세 에이전트 의견을 합친 결정</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>항목</th><th>F5</th><th>출처</th></tr></thead>
+        <tbody>
+          <tr><td>색</td><td>크림 · 장밋빛이 주색, 라일락은 보조선. 시안은 포착 · 워프 순간에만, 빨강은 워프 레드존에만.</td><td>셋 다</td></tr>
+          <tr><td>평소 화면</td><td>위쪽 방위 호와 가운데 작은 점만 옅게. 대상 가까이 가면 깨어난다.</td><td>Codex · agy</td></tr>
+          <tr><td>잡기</td><td>가만히 바라보기(1.6초, 예시). 새 손동작을 만들지 않는다.</td><td>셋 다</td></tr>
+          <tr><td>흔들림</td><td>대상 근처에서 손떨림만 걸러 낸다. 감도를 낮추지 않아 실제 방향과 어긋나지 않는다.</td><td>Codex</td></tr>
+          <tr><td>보상 · 워프</td><td>열쇠 대상은 [워프]를 눌러야 출발, 2.4초 안에 도착. 자동 출발 없음.</td><td>셋 다</td></tr>
+          <tr><td>보상 · 확대</td><td>[확대] 또는 두 손가락 벌리기. 시작할 때 한 번만 대상을 가운데로 옮기고, 그 뒤로는 폰 방향 그대로. 크게 돌리면 풀린다.</td><td>Codex + agy 절충</td></tr>
+          <tr><td>힌트</td><td>방위 호 위의 별빛 점(못 찾은 대상), 가까워지면 대상이 반짝인다. 글 · 목록 없음.</td><td>agy · Codex · Claude</td></tr>
+          <tr><td>이름</td><td>대상 옆 이름표 한 줄 + 아래 행동 버튼 하나. 처음 열린 목적지엔 작은 별.</td><td>Codex · agy</td></tr>
+          <tr><td>뺀 것</td><td>거리 · 밝기 막대, 영문 분류, 퍼센트, UNLOCKED 도장, 찍기 · 앨범, 링 속 N과 조밀한 눈금, 양옆 긴 눈금(배율은 바뀔 때만).</td><td>셋 다</td></tr>
+          <tr><td>그림 소재</td><td>이미지 생성은 쓰지 않았다. 벡터 · 캔버스로 충분하다는 데 셋 다 동의.</td><td>Codex · agy</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section class="ctl">
+      <h2>확인용 조작 (시안 전용)</h2>
+      <div class="state"><span>지금 하늘 <b id="here">지구</b></span><span>열린 목적지 <b id="unl">없음</b></span></div>
+      <div class="row" id="targets"></div>
+      <label class="opt"><input type="checkbox" id="tremor" checked> 손떨림 흉내 (걸러지는지 보기)</label>
+      <label class="opt"><input type="checkbox" id="rm"> 움직임 줄이기 (워프를 짧은 전환으로)</label>
+    </section>
+
+    <section>
+      <h2>남은 결정</h2>
+      <ul class="todo">
+        <li><b>해금 짝</b> — 어떤 대상이 어떤 하늘을 여는지 전체, 생일 테마 포함 여부.</li>
+        <li><b>기본 하늘 3개</b>도 해금 대상인지 (지금 안 = 처음부터 열림).</li>
+        <li><b>가로 화면</b> — 행동 버튼을 옆으로 옮기는 안(Codex). 시안에는 없다.</li>
+        <li><b>진동</b> — 안드로이드에서만 동작. 시안은 화면으로만 보여 준다.</li>
+        <li><b>S23 · 삼성 인터넷 실측</b> — 하단 바 높이 변화, 실제 자이로 손떨림 정도.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+</div>
+
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+const CR='247,219,230',RO='255,111,181',LI='161,132,198',CY='79,227,255',RD='255,77,94';
+const SANS=getComputedStyle(document.documentElement).getPropertyValue('--sans').trim();
+const MONO=getComputedStyle(document.documentElement).getPropertyValue('--mono').trim();
+const U=3.2; // 배율 1 에서 1° 당 화면 단위(가로 200 단위 ≈ 62°)
+const wrap=d=>((d%360)+540)%360-180;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const ease=k=>k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+
+/* 대상 — 위치 · 허용 각도는 예시 */
+const ORION=[[-6,9],[6,8],[-3,0],[0,-.6],[3,-1.2],[-5,-9],[6,-8],[0,13]];
+const ORION_L=[[0,1],[0,2],[1,4],[2,3],[3,4],[2,5],[4,6],[0,7],[1,7]];
+const THEMES={
+  earth:{name:'지구',start:[186,26],ground:true,sky:['#06061a','#140f33','#3a1e46'],targets:[
+    {id:'m42',n:'오리온 대성운',h:209,a:29,tol:5,draw:'neb',col:'255,111,181',unlock:'deep'},
+    {id:'orion',n:'오리온자리',h:216,a:42,tol:6,draw:'const',col:'200,220,255'},
+    {id:'moon',n:'달',h:150,a:22,tol:5,draw:'moon',col:'244,236,214'},
+    {id:'jup',n:'목성',h:170,a:40,tol:3.5,draw:'jup',col:'255,214,160'},
+    {id:'sirius',n:'시리우스',h:196,a:14,tol:3,draw:'star',col:'190,220,255'},
+    {id:'venus',n:'금성',h:120,a:-5,tol:3,draw:'venus',col:'255,240,170'}]},
+  deep:{name:'딥필드 우주',start:[70,30],ground:false,sky:['#04030c','#0d0626','#1c0b30'],targets:[
+    {id:'pillars',n:'창조의 기둥',h:95,a:30,tol:6,draw:'pillars',col:'230,150,90'},
+    {id:'m87',n:'M87 블랙홀',h:40,a:38,tol:4,draw:'bh',col:'255,160,60',unlock:'earth'},
+    {id:'tara',n:'타란툴라 성운',h:130,a:20,tol:6,draw:'tara',col:'200,110,255'}]}
+};
+let theme='earth';
+const TG=()=>THEMES[theme].targets;
+const found=new Set(),unlocked=new Set();
+
+const stars=[];{let s=11;const r=()=>(s=(s*16807)%2147483647)/2147483647;for(let i=0;i<520;i++)stars.push([r()*360,-8+r()*96,.3+r()*r()*1.1,.2+r()*.65])}
+const streaks=[];{let s=5;const r=()=>(s=(s*16807)%2147483647)/2147483647;for(let i=0;i<70;i++)streaks.push([r()*6.283,.4+r()*.6,.3+r()*.7])}
+const BETA=[0,.3,.6,.8,.9,.99];
+
+/* 상태 */
+let rawH=186,rawA=26,H=186,A=26,Z=1,oH=0,oA=0;
+let focus=null,dwell=0,lock=null,lockT=0,leftT=0,zoomT=null,anchor=null,anim=null,nav=null,warp=null,beta=0;
+let firstHint=true,hintT=0,unlockT=0,zoomShowT=0,toastT=0,tintT=0,tintCol='255,111,181',wake=0;
+
+/* 캔버스 */
+const ph=$('phone'),sky=$('sky'),hud=$('hud'),g=sky.getContext('2d'),h=hud.getContext('2d');
+let S=1,cssK=1;
+function fit(){const r=ph.getBoundingClientRect(),d=Math.min(3,window.devicePixelRatio||1);
+  for(const c of [sky,hud]){c.width=Math.round(r.width*d);c.height=Math.round(r.height*d)}
+  S=sky.width/200;cssK=r.width/200}
+fit();addEventListener('resize',fit);
+
+/* 입력: 한 손가락 끌기 = 폰 돌리기, 두 손가락 · 휠 = 핀치 */
+const pts=new Map();let pinch0=null;
+const pdist=()=>{const a=[...pts.values()];return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+ph.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;try{ph.setPointerCapture(e.pointerId)}catch(_){}
+  pts.set(e.pointerId,{x:e.clientX,y:e.clientY});nav=null;if(pts.size===2)pinch0={d:pdist(),z:Z}});
+ph.addEventListener('pointermove',e=>{const p=pts.get(e.pointerId);if(!p)return;
+  if(pts.size===1&&!warp){const k=1/(U*Z*cssK);rawH=(rawH-(e.clientX-p.x)*k+360)%360;rawA=clamp(rawA+(e.clientY-p.y)*k,-15,85)}
+  p.x=e.clientX;p.y=e.clientY;if(pts.size===2&&pinch0)pinchTo(pinch0.z*pdist()/pinch0.d)});
+['pointerup','pointercancel'].forEach(n=>ph.addEventListener(n,e=>{pts.delete(e.pointerId);if(pts.size<2)pinch0=null}));
+ph.addEventListener('wheel',e=>{e.preventDefault();if(!warp)pinchTo(Z*Math.exp(-e.deltaY*.0016))},{passive:false});
+
+function pinchTo(z){z=clamp(z,1,30);
+  // 잡힌 일반 대상에서 벌리기 시작 = 확대 보상(한 번만 가운데로)
+  if(z>Z&&lock&&!lock.unlock&&zoomT!==lock)startZoom(lock,false);
+  anim&&anim.z&&(anim.z=null);Z=z;zoomShowT=performance.now();
+  if(Z<1.3&&zoomT)endZoom(false)}
+function startZoom(t,withZ){const now=performance.now();zoomT=t;anchor=[H,A];
+  anim={t0:now,dur:1000,o0:[oH,oA],o1:[wrap(t.h-H),t.a-A],z:withZ?[Z,Math.max(Z,6)]:null};zoomShowT=now;showAct()}
+function endZoom(withZ){const now=performance.now();zoomT=null;anchor=null;
+  anim={t0:now,dur:700,o0:[oH,oA],o1:[0,0],z:withZ&&Z>1?[Z,1]:null};zoomShowT=now;showAct()}
+
+/* 행동 막대 */
+const act=$('act'),ab=$('ab'),ah=$('ah');
+function showAct(){
+  if(!lock||warp){act.hidden=true;act.classList.remove('on');return}
+  const was=!act.hidden;act.hidden=false;
+  if(lock.unlock){ab.className='key';ab.textContent='◈ 워프 · '+THEMES[lock.unlock].name;ah.textContent='누르면 3초 안에 이동합니다'}
+  else if(zoomT===lock){ab.className='';ab.textContent='－ 원래대로';ah.textContent='폰을 크게 돌려도 풀립니다'}
+  else{ab.className='';ab.textContent='＋ 확대';ah.textContent='두 손가락으로 벌려도 됩니다'}
+  if(!was){act.classList.remove('on');void act.offsetWidth;act.classList.add('on')}}
+ab.addEventListener('click',()=>{if(!lock||warp)return;
+  if(lock.unlock){startWarp(lock.unlock);return}
+  if(zoomT===lock)endZoom(true);else startZoom(lock,true)});
+
+function lockOn(t,now){lock=t;lockT=now;leftT=0;
+  if(!found.has(t.id)){found.add(t.id);tintT=now;tintCol=t.col;buildSide()}
+  if(t.unlock&&!unlocked.has(t.unlock)){unlocked.add(t.unlock);unlockT=now;buildSide()}
+  showAct()}
+function release(){lock=null;if(zoomT)endZoom(true);showAct()}
+
+function startWarp(to){const rm=$('rm').checked;warp={to,t0:performance.now(),sw:false,rm};lock=null;focus=null;dwell=0;showAct()}
+
+/* 오른쪽 */
+function buildSide(){
+  $('here').textContent=THEMES[theme].name;
+  $('unl').textContent=unlocked.size?[...unlocked].map(k=>THEMES[k].name).join(' · '):'없음';
+  const box=$('targets');box.textContent='';
+  TG().forEach(t=>{const b=document.createElement('button');b.type='button';b.textContent=t.n+(t.unlock?' (열쇠)':'')+(t.a<0?' (지평선 아래)':'');
+    if(found.has(t.id))b.className='got';
+    b.onclick=()=>{if(warp)return;if(zoomT)endZoom(true);nav={from:[rawH,rawA],to:[t.h,Math.max(t.a,4)],t0:performance.now()}};box.appendChild(b)})}
+buildSide();
+
+/* 그리기 도우미 */
+function glow(c,x,y,r,col){const q=c.createRadialGradient(x,y,0,x,y,r);q.addColorStop(0,col);q.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=q;c.beginPath();c.arc(x,y,r,0,7);c.fill()}
+let cH=0,cA=0;
+const px=(hh,aa)=>[100+wrap(hh-cH)*U*Z,200-(aa-cA)*U*Z];
+function drawTarget(t,x,y,now){
+  const k=Math.pow(Math.min(Z,10),.75);g.save();g.translate(x,y);g.scale(k,k);const d=t.draw;
+  if(d==='neb'){glow(g,0,0,15,'rgba(255,111,181,.5)');glow(g,3,-2,10,'rgba(161,132,198,.5)');glow(g,0,0,4,'rgba(255,255,255,.9)')}
+  else if(d==='moon'){g.fillStyle='#f4ecd6';g.beginPath();g.arc(0,0,6.5,0,7);g.fill();g.fillStyle='rgba(120,110,95,.45)';[[-2,-2,1.8],[2,1,1.4],[-1,3,1]].forEach(([a,b,r])=>{g.beginPath();g.arc(a,b,r,0,7);g.fill()});glow(g,0,0,13,'rgba(244,236,214,.22)')}
+  else if(d==='jup'){glow(g,0,0,7,'rgba(255,220,170,.55)');g.fillStyle='#f3d9b0';g.beginPath();g.arc(0,0,2.6,0,7);g.fill();g.fillStyle='rgba(170,120,80,.6)';g.fillRect(-2.5,-.6,5,.5);g.fillRect(-2.4,.6,4.8,.4);
+    g.fillStyle='#e8eeff';[[-7,.3,.55],[-4.4,-.2,.5],[5,.2,.6],[9,-.1,.5]].forEach(([a,b,r])=>{g.beginPath();g.arc(a,b,r,0,7);g.fill()})}
+  else if(d==='star'){glow(g,0,0,8,'rgba(190,220,255,.6)');g.fillStyle='#fff';g.beginPath();g.arc(0,0,1.7,0,7);g.fill()}
+  else if(d==='venus'){glow(g,0,0,8,'rgba(255,245,200,.6)');g.fillStyle='#fffbe0';g.beginPath();g.arc(0,0,2.4,0,7);g.fill()}
+  else if(d==='pillars'){glow(g,0,0,20,'rgba(230,120,70,.35)');g.fillStyle='rgba(120,60,40,.9)';[[-8,6,5,18],[0,10,6,24],[8,4,4,14]].forEach(([a,b,w,hh])=>{g.beginPath();g.moveTo(a-w/2,b);g.quadraticCurveTo(a,b-hh,a+w/2,b);g.fill()});glow(g,0,-8,6,'rgba(255,200,120,.5)')}
+  else if(d==='bh'){glow(g,0,0,16,'rgba(255,150,50,.4)');g.strokeStyle='rgba(255,190,100,.95)';g.lineWidth=1.6;g.beginPath();g.ellipse(0,0,9,3.2,-.3,0,7);g.stroke();g.fillStyle='#000';g.beginPath();g.arc(0,0,4,0,7);g.fill();g.strokeStyle='rgba(255,230,180,.8)';g.lineWidth=.6;g.beginPath();g.arc(0,0,4.6,0,7);g.stroke()}
+  else if(d==='tara'){glow(g,0,0,20,'rgba(200,100,255,.45)');glow(g,-5,3,12,'rgba(255,100,170,.45)');glow(g,6,-4,9,'rgba(100,200,255,.4)');glow(g,0,0,3,'rgba(255,255,255,.9)')}
+  g.restore()}
+function drawOrion(t,now){
+  const P=ORION.map(([dh,da])=>px(t.h+dh,t.a+da));
+  const on=lock===t?Math.min(1,(now-lockT)/800):found.has(t.id)?.3:0;
+  if(on>0){g.strokeStyle=`rgba(${CR},${lock===t?.75:.25})`;g.lineWidth=.6;g.lineCap='round';
+    const n=ORION_L.length*on;ORION_L.forEach(([a,b],i)=>{if(i>=n)return;const f=Math.min(1,n-i);g.beginPath();g.moveTo(P[a][0],P[a][1]);g.lineTo(P[a][0]+(P[b][0]-P[a][0])*f,P[a][1]+(P[b][1]-P[a][1])*f);g.stroke()})}
+  const k=Math.pow(Math.min(Z,10),.4);
+  P.forEach(([x,y],i)=>{const r=(i===0||i===6?1.5:1.05)*k;glow(g,x,y,r*4,i===0?'rgba(255,190,150,.5)':'rgba(190,215,255,.45)');g.fillStyle='#fff';g.beginPath();g.arc(x,y,r*.6,0,7);g.fill()})}
+
+/* 프레임 */
+let last=0;
+function frame(now){
+  const dt=Math.min(64,now-(last||now));last=now;
+
+  if(nav){const k=Math.min(1,(now-nav.t0)/1100),e=ease(k);rawH=(nav.from[0]+wrap(nav.to[0]-nav.from[0])*e+360)%360;rawA=nav.from[1]+(nav.to[1]-nav.from[1])*e;if(k>=1)nav=null}
+
+  // 손떨림 흉내 → 대상 근처면 손떨림만 걸러 냄(지수 평활, 느리게 따라올 뿐 결국 같은 방향)
+  const tr=$('tremor').checked&&!nav?1:0;
+  const gH=rawH+tr*(Math.sin(now/170)*.4+Math.sin(now/97+1)*.28+Math.sin(now/43)*.14);
+  const gA=rawA+tr*(Math.sin(now/150+2)*.32+Math.sin(now/71)*.22+Math.sin(now/37+.5)*.1);
+  const steady=(focus||lock)&&!warp;
+  const al=1-Math.exp(-dt/(steady?380:35));
+  H=(H+wrap(gH-H)*al+360)%360;A+= (gA-A)*al;
+
+  if(anim){const k=Math.min(1,(now-anim.t0)/anim.dur),e=ease(k);oH=anim.o0[0]+(anim.o1[0]-anim.o0[0])*e;oA=anim.o0[1]+(anim.o1[1]-anim.o0[1])*e;
+    if(anim.z)Z=anim.z[0]+(anim.z[1]-anim.z[0])*e;if(k>=1)anim=null}
+  if(zoomT&&anchor&&Math.hypot(wrap(H-anchor[0]),A-anchor[1])>10)endZoom(true); // 크게 돌리면 풀림
+
+  /* 워프 — 1.2초 풀악셀 → 점프 → 1초 급제동(총 2.4초). 움직임 줄이기 = 0.7초 전환 */
+  let flash=0,wp=0,shake=0,red=0;
+  if(warp){const k=(now-warp.t0)/1000;
+    if(warp.rm){flash=k<.35?k/.35:Math.max(0,1-(k-.35)/.35);if(k>=.35&&!warp.sw)arrive();if(k>=.7)warp=null}
+    else{
+      if(k<1.2){const tgt=BETA[Math.min(5,1+Math.floor(k/.24))];beta+=(tgt-beta)*Math.min(1,dt/120);wp=ease(k/1.2);shake=wp}
+      else{beta+=(0-beta)*Math.min(1,dt/110);wp=Math.max(0,1-(k-1.3)/1.1);shake=Math.max(0,1-(k-1.2)/.5)*1.2}
+      flash=k<1.2?Math.max(0,(k-1)/.2):Math.max(0,1-(k-1.2)/.5);red=beta>=.85?.5+.4*Math.sin(now/90):0;
+      if(k>=1.25&&!warp.sw)arrive();if(k>=2.4){warp=null;beta=0}}
+  }else beta=0;
+  function arrive(){warp.sw=true;theme=warp.to;const s=THEMES[theme].start;rawH=H=s[0];rawA=A=s[1];Z=1;oH=oA=0;zoomT=null;anchor=null;anim=null;nav=null;
+    focus=null;dwell=0;lock=null;buildSide();$('toast').textContent='도착 · '+THEMES[theme].name;toastT=now}
+  $('flash').style.background=warp&&warp.rm?'#1b1422':'#fff';
+  $('flash').style.opacity=Math.min(1,flash);$('redge').style.opacity=red;
+  $('inner').style.transform=shake>0?`translate(${(Math.random()-.5)*3*shake}px,${(Math.random()-.5)*3*shake}px)`:'';
+  $('toast').style.opacity=toastT&&now-toastT<1800?1:0;
+  $('rest').style.opacity=warp||lock?0:1;
+
+  cH=(H+oH+360)%360;cA=A+oA;
+  const th=THEMES[theme];
+
+  /* 하늘 */
+  g.setTransform(S,0,0,S,0,0);g.clearRect(0,0,200,400);
+  const gr=g.createLinearGradient(0,0,0,400);gr.addColorStop(0,th.sky[0]);gr.addColorStop(.55,th.sky[1]);gr.addColorStop(1,th.sky[2]);g.fillStyle=gr;g.fillRect(0,0,200,400);
+  if(!th.ground){glow(g,...px(60,45),90*Math.min(Z,3),'rgba(120,50,160,.18)');glow(g,...px(200,20),80*Math.min(Z,3),'rgba(255,111,181,.10)')}
+  const sk=Math.pow(Math.min(Z,6),.35);
+  stars.forEach(([sh,sa,r,a])=>{const [x,y]=px(sh,sa);if(x<-3||x>203||y<-3||y>403)return;g.fillStyle=`rgba(255,245,250,${a})`;g.fillRect(x,y,r*sk,r*sk)});
+  // 돔 유리 격자(방위 30° · 고도 30/60°)
+  g.strokeStyle=`rgba(${LI},.10)`;g.lineWidth=.5;
+  for(let az=0;az<360;az+=30){const [x]=px(az,0);if(x>-2&&x<202){g.beginPath();g.moveTo(x,0);g.lineTo(x,400);g.stroke()}}
+  [30,60].forEach(a=>{const y=px(0,a)[1];if(y>-2&&y<402){g.beginPath();g.moveTo(0,y);g.lineTo(200,y);g.stroke()}});
+  TG().forEach(t=>{const [x,y]=px(t.h,t.a);if(x<-60||x>260||y<-60||y>460)return;
+    if(t.draw==='const')drawOrion(t,now);else drawTarget(t,x,y,now);
+    // 가까워지면 못 찾은 대상이 반짝임(힌트)
+    const d=Math.hypot(wrap(t.h-cH),t.a-cA);
+    if(!found.has(t.id)&&d<15&&!warp&&!(th.ground&&t.a<0)){const tw=(1-d/15)*(.5+.5*Math.sin(now/140+t.h));g.strokeStyle=`rgba(${RO},${.8*tw})`;g.lineWidth=.6;
+      const s=5+4*tw;g.beginPath();g.moveTo(x-s,y);g.lineTo(x+s,y);g.moveTo(x,y-s);g.lineTo(x,y+s);g.stroke()}});
+  if(th.ground){const hy=px(0,0)[1];if(hy<420){const gg=g.createLinearGradient(0,hy,0,hy+70);gg.addColorStop(0,'rgba(58,30,70,.97)');gg.addColorStop(1,'rgba(18,12,26,.99)');g.fillStyle=gg;g.fillRect(0,hy,200,Math.max(0,400-hy)+70);
+    g.strokeStyle=`rgba(${RO},.5)`;g.lineWidth=.7;g.beginPath();g.moveTo(0,hy);g.lineTo(200,hy);g.stroke()}}
+  if(warp&&wp>0){g.lineCap='round';streaks.forEach(([a,r0,w])=>{const r1=8+r0*120*wp,r2=r1+wp*60*w;g.strokeStyle=`rgba(${a>3?'247,219,230':'255,140,200'},${.75*wp*w})`;g.lineWidth=.5+w*.8;
+    g.beginPath();g.moveTo(100+Math.cos(a)*r1,200+Math.sin(a)*r1);g.lineTo(100+Math.cos(a)*r2,200+Math.sin(a)*r2);g.stroke()})}
+
+  /* 시선 판정 — 화면 가운데 */
+  let hit=null,best=1e9;
+  if(!warp)TG().forEach(t=>{if(th.ground&&t.a<0)return;const d=Math.hypot(wrap(t.h-cH),t.a-cA);if(d<t.tol&&d<best){best=d;hit=t}});
+  if(hit&&!lock){if(focus!==hit){focus=hit;dwell=0;if(firstHint){hintT=now;firstHint=false}}dwell=Math.min(1,dwell+dt/1600);if(dwell>=1)lockOn(hit,now)}
+  else if(!hit&&focus&&!lock){dwell-=dt/2500;if(dwell<=0){focus=null;dwell=0}}
+  if(lock){const d=Math.hypot(wrap(lock.h-cH),lock.a-cA);
+    if(hit&&hit!==lock){release();focus=hit;dwell=0}
+    else if(d>15){leftT+=dt;if(leftT>3000){release();focus=null;dwell=0}}else leftT=0}
+
+  /* 깨어남 정도: 대상 근처 · 포착 중이면 1, 평소 0.4 */
+  let near=0;TG().forEach(t=>{if(found.has(t.id)&&!lock)return;const d=Math.hypot(wrap(t.h-cH),t.a-cA);near=Math.max(near,1-clamp((d-4)/18,0,1))});
+  const wTarget=warp?1:Math.max(.4,focus||lock?1:near);wake+=(wTarget-wake)*Math.min(1,dt/250);
+
+  /* HUD */
+  h.setTransform(S,0,0,S,0,0);h.clearRect(0,0,200,400);
+  // 위쪽 방위 호 — ±60° 를 돔 테두리처럼 휜 호에
+  const arcY=x=>26+Math.pow((x-100)/82,2)*14,DX=1.36;
+  h.globalAlpha=wake;h.lineCap='round';
+  h.strokeStyle=`rgba(${CR},.35)`;h.lineWidth=.6;h.beginPath();for(let x=18;x<=182;x+=2){const y=arcY(x);x===18?h.moveTo(x,y):h.lineTo(x,y)}h.stroke();
+  for(let d=Math.ceil((cH-60)/5)*5;d<=cH+60;d+=5){const x=100+wrap(d-cH)*DX;if(x<18||x>182)continue;const y=arcY(x),dm=((d%360)+360)%360,big=dm%15===0;
+    const edge=1-Math.pow(Math.abs(x-100)/82,3);h.strokeStyle=`rgba(${CR},${(big?.75:.35)*edge})`;h.lineWidth=big?.8:.5;h.beginPath();h.moveTo(x,y-(big?4:2));h.lineTo(x,y);h.stroke();
+    if(big){const L={0:'N',90:'E',180:'S',270:'W'}[dm];h.font=`600 ${L?7.5:5.5}px ${MONO}`;h.textAlign='center';h.fillStyle=L?`rgba(${RO},${edge})`:`rgba(${CR},${.6*edge})`;h.fillText(L||dm,x,y-6)}}
+  h.fillStyle=`rgb(${RO})`;h.beginPath();h.moveTo(100,arcY(100)+2.5);h.lineTo(97,arcY(100)+7);h.lineTo(103,arcY(100)+7);h.fill();
+  // 별빛 점 — 아직 못 찾은 대상의 방위(지평선 아래는 속 빈 점)
+  if(!warp)TG().forEach(t=>{if(found.has(t.id))return;const dh=wrap(t.h-cH);const out=Math.abs(dh)>58;const x=100+clamp(dh,-58,58)*DX,y=arcY(x)+1.2;
+    const d=Math.hypot(dh,t.a-cA),pr=.35+.65*(1-clamp(d/60,0,1)),below=th.ground&&t.a<0;
+    h.save();h.translate(x,y);h.rotate(Math.PI/4);
+    if(below){h.strokeStyle=`rgba(${LI},.7)`;h.lineWidth=.6;h.strokeRect(-1.4,-1.4,2.8,2.8)}
+    else{h.fillStyle=`rgba(${RO},${pr})`;h.shadowColor=`rgba(${RO},${pr})`;h.shadowBlur=4*pr;h.fillRect(-1.5,-1.5,3,3)}
+    h.restore();if(out&&!below){h.fillStyle=`rgba(${RO},${pr})`;h.font=`600 5px ${MONO}`;h.textAlign='center';h.fillText(dh<0?'‹':'›',x+(dh<0?-5:5),y+1.8)}});
+  // 방위 · 고도 한 줄
+  h.font=`500 6.5px ${MONO}`;h.textAlign='center';h.fillStyle=`rgba(${CR},.8)`;
+  h.fillText(`${String(Math.round(cH)%360).padStart(3,'0')}°  ·  ALT ${cA>=0?'+':''}${Math.round(cA)}°`,100,arcY(100)+17);
+  h.globalAlpha=1;
+
+  // 배율 — 바뀔 때만(1.4초) 또는 확대 중
+  const zs=now-zoomShowT<1400||Z>1.05;if(zs&&!warp){const za=Z>1.05?.9:Math.max(0,1-(now-zoomShowT-900)/500);
+    h.globalAlpha=za;h.strokeStyle=`rgba(${CR},.4)`;h.lineWidth=.5;h.beginPath();h.arc(100,200,92,-.28,.28);h.stroke();
+    const zk=Math.log(Z)/Math.log(30),za2=-.28+.56*(1-zk);h.fillStyle=`rgb(${RO})`;h.beginPath();h.arc(100+92*Math.cos(za2),200+92*Math.sin(za2),1.6,0,7);h.fill();
+    h.font=`600 7px ${MONO}`;h.textAlign='right';h.fillStyle=`rgb(${CR})`;h.fillText('×'+Z.toFixed(Z<10?1:0),186,186);h.globalAlpha=1}
+
+  // 가운데 점 + 시선 링(끊어진 호 4개)
+  if(!warp){h.globalAlpha=Math.max(.45,wake);h.fillStyle=`rgb(${RO})`;h.beginPath();h.arc(100,200,1.3,0,7);h.fill();
+    h.strokeStyle=`rgba(${CR},.6)`;h.lineWidth=.5;[[0,-1],[0,1],[-1,0],[1,0]].forEach(([a,b])=>{h.beginPath();h.moveTo(100+a*4,200+b*4);h.lineTo(100+a*7,200+b*7);h.stroke()});h.globalAlpha=1;
+    const show=focus||lock;if(show){h.globalAlpha=zoomT&&zoomT===lock?.3:1;const R=30,C=2*Math.PI*R,seg=C/4;
+      h.setLineDash([seg-7,7]);h.lineDashOffset=-3.5;h.lineWidth=1.6;h.strokeStyle=`rgba(${CR},.22)`;h.beginPath();h.arc(100,200,R,-Math.PI/2,Math.PI*1.5);h.stroke();
+      const v=lock?1:dwell,lk=lock?Math.max(0,1-(now-lockT)/600):0;
+      h.strokeStyle=lk>0?`rgba(${CY},${.6+.4*lk})`:`rgb(${RO})`;h.shadowColor=h.strokeStyle;h.shadowBlur=lock?6:3;
+      if(v>0){h.beginPath();h.arc(100,200,R,-Math.PI/2,-Math.PI/2+Math.PI*2*v);h.stroke()}
+      h.setLineDash([]);h.shadowBlur=0;h.globalAlpha=1;
+      if(now-hintT<2200&&hintT){h.globalAlpha=Math.min(1,(2200-(now-hintT))/400);h.font=`500 7px ${SANS}`;h.textAlign='center';h.fillStyle=`rgb(${CR})`;h.fillText('잠시 바라보기',100,246);h.globalAlpha=1}}}
+
+  // 포착 — 대상 꺾쇠 + 옆 이름표(+ 처음 열린 목적지엔 작은 별)
+  if(lock&&!warp){const [x,y]=px(lock.h,lock.a);const k=Math.min(1,(now-lockT)/250),s=(lock.draw==='const'?20:11)*Math.max(1,Math.pow(Math.min(Z,10),.6))*(1.6-.6*k);
+    const lk=Math.max(0,1-(now-lockT)/600);h.strokeStyle=lk>0?`rgba(${CY},${.5+.5*lk})`:`rgba(${CR},.9)`;h.lineWidth=.9;
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([a,b])=>{h.beginPath();h.moveTo(x+a*s,y+b*(s-4));h.lineTo(x+a*s,y+b*s);h.lineTo(x+a*(s-4),y+b*s);h.stroke()});
+    h.font=`600 9px ${SANS}`;const tw=h.measureText(lock.n).width;let lx=x+s+6,ly=y-s+4;if(lx+tw+8>196){lx=x-s-6-tw-4}lx=clamp(lx,4,196-tw-8);ly=clamp(ly,70,330);
+    h.globalAlpha=k;h.fillStyle='rgba(27,20,34,.72)';h.fillRect(lx-3,ly-9,tw+8,13);h.fillStyle=`rgb(${RO})`;h.fillRect(lx-3,ly-9,1.2,13);
+    h.fillStyle='#fff5fa';h.textAlign='left';h.fillText(lock.n,lx+2,ly+.5);
+    if(lock.unlock){const sx=lx+tw+12,sy=ly-3,u=unlockT?clamp((now-unlockT)/400,0,1):1,pop=u<1?1+.8*Math.sin(u*Math.PI):1;
+      h.save();h.translate(sx,sy);h.scale(pop,pop);h.beginPath();for(let i=0;i<8;i++){const r=i%2?1.6:4.2,a=i*Math.PI/4-Math.PI/2;h.lineTo(Math.cos(a)*r,Math.sin(a)*r)}h.closePath();
+      h.fillStyle=`rgb(${RO})`;h.shadowColor=`rgb(${RO})`;h.shadowBlur=6;h.fill();h.restore();
+      if(unlockT&&now-unlockT<1800){h.globalAlpha=Math.min(1,(1800-(now-unlockT))/400);h.font=`600 6.5px ${SANS}`;h.fillStyle=`rgb(${RO})`;h.fillText('새 목적지',lx+2,ly+12)}}
+    h.globalAlpha=1}
+
+  // 처음 발견 때만 대상 색으로 돔이 옅게 물듦(1초)
+  const ti=tintT?Math.max(0,1-(now-tintT)/1000):0;$('tint').style.opacity=ti*.8;
+  if(ti>0)$('tint').style.background=`radial-gradient(circle at 50% 50%,rgba(${tintCol},.35),rgba(${tintCol},.08) 55%,transparent 80%)`;
+
+  // 워프 중 하단 = 기어 레일(평소 정보 자리 대신)
+  if(warp&&!warp.rm){let gp=5;for(let i=1;i<=5;i++)if(beta<=BETA[i]){gp=i-1+(beta-BETA[i-1])/(BETA[i]-BETA[i-1]);break}
+    const X=i=>28+i*28.8;h.fillStyle='rgba(27,20,34,.6)';h.fillRect(16,334,168,40);
+    h.font=`600 7px ${MONO}`;h.textAlign='left';h.fillStyle=`rgb(${CR})`;h.fillText('WARP',28,346);h.textAlign='right';h.fillText(beta.toFixed(2)+'c',172,346);
+    h.fillStyle=`rgba(${CR},.2)`;h.fillRect(X(0),354,X(5)-X(0),2);h.fillStyle=`rgba(${RD},.4)`;h.fillRect(X(4),354,X(5)-X(4),2);
+    h.fillStyle=`rgb(${RO})`;h.fillRect(X(0),353.5,gp*28.8,3);h.beginPath();h.arc(X(0)+gp*28.8,355,3,0,7);h.fill();
+    h.font=`600 6px ${MONO}`;h.textAlign='center';for(let i=0;i<=5;i++){h.fillStyle=i>=4?`rgb(${RD})`:`rgba(${CR},.7)`;h.fillText(i?i:'N',X(i),367)}}
+
+  requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+
+function tick(){const n=new Date(Date.now()+9*36e5),p=v=>String(v).padStart(2,'0');$('clk').textContent=`KST ${p(n.getUTCHours())}:${p(n.getUTCMinutes())}`}
+tick();setInterval(tick,10000);
+})();
+</script>
