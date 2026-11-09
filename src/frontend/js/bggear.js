@@ -112,12 +112,39 @@ export function createGearPanel({ onGear, onWarp }) {
   root.hidden = true; root.inert = true;
   document.body.appendChild(root);
 
+  // (11-09 해금) 워프 목적지 고르기 — WARP 를 누르면 기어 패널 위에 홀로그램 카드로 뜬다. 고르지 않거나 취소 · 바깥 누르기 = 아무 일도 없음.
+  const chList = h("div", "ugc-list");
+  const chCancel = h("button", "ufo-mono ugc-cancel", ["취소"], { type: "button" });
+  const chCard = h("div", "ugc-card", [h("div", "ufo-scan"), h("div", "ufo-head", [h("div", "ufo-head__l", [h("span", "ufo-mono ufo-head__tag", ["WARP"]), h("span", "ufo-head__title", ["워프 목적지"])])]), chList, chCancel]);
+  const chooser = h("div", "ufo-chooser ufo-holo", holoParts(chCard), { role: "dialog", "aria-label": "워프 목적지" });
+  const chScrim = h("div", "ufo-chooser-scrim");
+  chooser.hidden = chScrim.hidden = true;
+  document.body.append(chScrim, chooser);
+  let chPick = null;
+  const closeChooser = () => { if (chooser.hidden) return; chooser.hidden = chScrim.hidden = true; chooser.classList.remove("is-on"); chPick = null; };
+  chCancel.addEventListener("click", closeChooser);
+  chScrim.addEventListener("click", closeChooser);
+
   let shown = false, leaving = false, last = {};
   const set = (k, v, fn) => { if (last[k] !== v) { last[k] = v; fn(v); } };
   function reset() { root.style.webkitMaskImage = root.style.maskImage = "none"; wline.style.opacity = "0"; root.style.transform = ""; }
   return {
     get shown() { return shown; },
-    remove() { root.remove(); },
+    remove() { root.remove(); chooser.remove(); chScrim.remove(); },
+    /** 워프 목적지 고르기 창 — items = bgunlock.chooserItems 결과, onPick(key) = 고름(창은 닫힌다). 지금 있는 곳(here)은 누를 수 없다 */
+    openChooser(items, onPick) {
+      chList.replaceChildren(...items.map((it) => {
+        const b = h("button", "ugc-item" + (it.here ? " is-here" : ""), [h("span", "ugc-name", [it.name]), ...(it.here ? [h("span", "ufo-chip", ["지금 여기"])] : [])], { type: "button" });
+        if (it.here) b.disabled = true;
+        b.addEventListener("click", () => { const fn = chPick; closeChooser(); if (fn) fn(it.key); });
+        return b;
+      }));
+      chPick = onPick;
+      chooser.hidden = chScrim.hidden = false;
+      chooser.classList.remove("is-on"); void chooser.offsetWidth; chooser.classList.add("is-on");
+    },
+    closeChooser,
+    get choosing() { return !chooser.hidden; },
     /** 보이기 · 숨기기. 숨길 때 animate = true 면 도트 + 흰 선으로 사라지고(움직임 줄이기면 바로), "fade" 면 0.15초에 꺼진다(하늘을 바꿀 때) */
     show(on, animate = false) {
       if (on === shown) return;
@@ -129,6 +156,7 @@ export function createGearPanel({ onGear, onWarp }) {
         return;
       }
       root.inert = true; root.setAttribute("aria-hidden", "true");
+      closeChooser();   // 기어 패널이 사라지면 고르기 창도
       if (root.contains(document.activeElement)) document.activeElement.blur();
       const hide = () => { if (shown) return; leaving = false; root.hidden = true; root.classList.remove("is-on"); reset(); };
       if (animate === "fade" && !root.hidden) { leaving = true; root.classList.add("is-tx"); setTimeout(() => { root.classList.remove("is-tx"); hide(); }, 160); }   // 하늘을 바꿀 때 — 조작 패널과 함께 0.15초에 꺼짐

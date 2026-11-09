@@ -19,6 +19,7 @@ import { groundWorld, createGroundTextures, groundShader } from "./bgground.js";
 import { createConsole } from "./bgconsole.js";
 import { createUfoPanel } from "./bgpanel.js";
 import { createGearPanel } from "./bggear.js";
+import { loadUnlock, saveUnlock, has as unlocked, chooserItems, randomDest, arrive, placeInfo, keyOfIdx, unlockAll, emptyState } from "./bgunlock.js";
 import * as sound from "./bgsound.js";
 import { createWarp, shiftGear, tickWarp, warpReady, pickJump, jumpFrame, JUMP_MS } from "./bgwarp.js";
 
@@ -61,15 +62,14 @@ const CLOUD_SEED = (() => {
 // (11-06 운영자) 방문마다 무작위는 없앴다 — UFO 조작 패널에서 고른 값을 기기에 기억(bgview.js indoorBg), 처음은 분홍. 디버그 bgindoor 가 우선.
 let INDOOR_BG = (() => { const q = DEBUG ? QS.get("bgindoor") : null; return q === "space" || q === "pink" ? q : indoorBg(); })();
 // (11-06 운영자) 옛 무작위 항해 시나리오(출발 · 등속 · 도착 · 1분 뒤 끝남)는 없앴다 — 평소 우주는 정지.
-// 성간 이동 = 우주에 들어갈 때 10% 또는 조작 패널 초행성X 칸 1초 길게 누르기 → 워프 기어 패널(bggear.js · 속도 모형 bgwarp.js, 아래 「성간 이동」).
+// 성간 이동 = 조작 패널 초행성X 칸 1초 길게 누르기(성운을 찾아 해금한 뒤, bgunlock.js — 11-09 진입 10% 자동 시작은 끔) → 워프 기어 패널(bggear.js · 속도 모형 bgwarp.js, 아래 「성간 이동」).
 // 확인용(?bgdebug): bgstar = 우주에 들어가면 항상 성간 이동 · bgjump=A|B|C = 워프 점프 연출 고정 · bgstarrate=<0~1> = 자동 시작 확률.
-const STAR_RATE = (() => { const v = DEBUG ? Number(QS.get("bgstarrate")) : NaN; return DEBUG && QS.has("bgstar") ? 1 : Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.1; })();
+const STAR_RATE = (() => { const v = DEBUG ? Number(QS.get("bgstarrate")) : NaN; return DEBUG && QS.has("bgstar") ? 1 : Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0; })();   // (11-09 운영자) 진입 10% 자동 시작은 끔 — 성간 이동은 해금 뒤 길게 누르기로만
 const JUMP_FIXED = DEBUG && ["A", "B", "C"].includes(QS.get("bgjump")) ? QS.get("bgjump") : null;
 // (11-05 2차, 비교용) 우주 바탕: map = NASA SVS Deep Star Maps 2020(가) · eso = ESO/S. Brunier 은하수 파노라마(대안) · shader = 그려 만든 우주(나).
-// 딥필드 = 웹 망원경 SMACS 0723(NASA, ESA, CSA, STScI). 이미지 = assets/bg/space/(출처 · 이용 조건 = assets/bg/README.md). ?bgdebug&bgspace=map|eso|shader&bgdeep=0|1
+// 우주 사진 = assets/bg/space/(출처 · 이용 조건 = assets/bg/README.md). ?bgdebug&bgspace=map|eso|shader. (11-09 해금) 기본 우주엔 큰 사진이 없고, 딥필드 · 달 궤도는 워프로 가서 본다(bgunlock.js)
 // (11-05 운영자) 가 · 나 · 대안 모두 쓴다 — 방문마다 셋 중 하나(같은 확률).
 const SPACE_MODE = (() => { const q = DEBUG ? QS.get("bgspace") : null; return ["map", "eso", "shader"].includes(q) ? q : ["map", "eso", "shader"][Math.floor(Math.random() * 3)]; })();
-const SPACE_DEEP = !(DEBUG && QS.get("bgdeep") === "0");   // 워프 60초, 마지막 10초 감속하며 일반 우주로
 const T_SPEED = (() => { const v = DEBUG && !NORMAL && QS.get("bgspeed") != null ? Number(QS.get("bgspeed")) : NaN; return Number.isFinite(v) && v >= 0 ? v : 1; })();
 // 확인용(?bgdebug 와 함께): bgmoon = 달 위상 0 ~ 1(0 삭 · 0.25 상현 · 0.5 망 · 0.75 하현) — 달을 정남 고도 35° 에 두고 그 위상으로 비춘다(실제 해 위치는 그대로)
 // 달 기본 = CSS reference pixel 기준 육안 크기 × 배율(11-05). 해는 기존 투영 그대로.
@@ -1086,7 +1086,7 @@ export function createDomeGL(host, isPaused) {
   /** 우주 사진을 받는다(한 번만). 돌려주는 약속 = 사진이 다 올라갔거나 실패했을 때 풀린다 — 패널에서 고를 때 다 받은 뒤 걷기 시작하려고 */
   function loadSpaceTex() {
     if (spaceTex.loading) return spaceTex.ready; spaceTex.loading = true;
-    let left = (SPACE_MODE !== "shader" ? 1 : 0) + (SPACE_DEEP ? 1 : 0), settle;
+    let left = SPACE_MODE !== "shader" ? 1 : 0, settle;   // (11-09) 딥필드 사진은 기본 우주에 없다 — 워프로 그곳에 갈 때 loadDeep
     spaceTex.ready = new Promise((res) => { settle = res; });
     const one = () => { if (--left <= 0) settle(); };
     if (left <= 0) settle();
@@ -1100,7 +1100,6 @@ export function createDomeGL(host, isPaused) {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, key === "map" ? gl.REPEAT : gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         spaceTex[key] = tex; if (key === "map") spaceTex.mapW = img.width;
-        if (key === "deep") { deepTex.set(0, tex); deepIdx = 0; }
         if (outdoor) releaseGround?.terrain?.rebind?.();   // 그사이 바깥(지형)으로 바뀌었으면 13 · 14번 칸을 지형 것으로 되돌린다
         gl.activeTexture(gl.TEXTURE0); draw();
       };
@@ -1108,7 +1107,6 @@ export function createDomeGL(host, isPaused) {
       img.src = new URL("../assets/bg/space/" + name, import.meta.url).href;
     };
     if (SPACE_MODE !== "shader") load(SPACE_MODE === "eso" ? "space-eso.webp" : "space-starmap.webp", "map", 13);
-    if (SPACE_DEEP) load("space-deep.webp", "deep", 14);
     return spaceTex.ready;
   }   // 실내 우주 배경의 워프 시작 · 적분 거리
 
@@ -1123,7 +1121,7 @@ export function createDomeGL(host, isPaused) {
     { name: "space-tarantula.webp", w: 1280, asp: 1.25 },      // 타란툴라 성운
   ];
   const deepTex = new Map(), deepLoading = new Map();
-  let deepIdx = 0;
+  let deepIdx = -1;   // 지금 보이는 큰 사진(DEEP_SET 번호), -1 = 없음(기본 우주). (11-09 해금) 딥필드 · 달 궤도 = 사진이 보이는 우주
   function loadDeep(i) {
     if (deepTex.has(i)) return Promise.resolve(true);
     if (deepLoading.has(i)) return deepLoading.get(i);
@@ -1146,8 +1144,7 @@ export function createDomeGL(host, isPaused) {
     deepLoading.set(i, p);
     return p;
   }
-  function setDeep(i) { if (deepTex.has(i)) { deepIdx = i; spaceTex.deep = deepTex.get(i); } }
-  const pickOtherDeep = () => { const k = Math.floor(Math.random() * (DEEP_SET.length - 1)); return k >= deepIdx ? k + 1 : k; };
+  function setDeep(i) { if (i < 0) { deepIdx = -1; spaceTex.deep = null; } else if (deepTex.has(i)) { deepIdx = i; spaceTex.deep = deepTex.get(i); } }
 
   // 우주 바탕의 방향(돌림 행렬, 열 우선 3×3 — uSpaceRot). (11-06 운영자 「N 이나 워프 뒤 늘 같은 풍경은 어색」)
   //   성간 이동 중엔 여행마다 무작위로 고른 축을 중심으로 달린 거리만큼 조금씩 돌아(전속력 약 2.5°/초) 멈춘 곳의 하늘이 매번 달라지고,
@@ -1185,6 +1182,25 @@ export function createDomeGL(host, isPaused) {
   const viewFocal = () => (outdoor ? focalOut : focal) * tele;
   const ufoConsole = createConsole(air);   // 공중 무늬보다 먼저 붙여 무늬가 콘솔 앞을 지나가게
   const ufoPanel = createUfoPanel();
+  // ── 해금(11-09, bgunlock.js · 계획 devpapers docs/plan/bg-dome/hud_implementation.md) ─────────────
+  // 첫 실행은 버츄얼 스페이스만. 초행성X · 지구 칸은 잠기고, 길게 누르기(성간 이동)는 성운을 찾은 뒤. 확인용 ?bgdebug&bgunlock=all|reset
+  const store = (() => { try { return window.localStorage; } catch { return null; } })() || { getItem: () => null, setItem: () => {} };
+  const unlockS = (() => {
+    const q = DEBUG ? QS.get("bgunlock") : null;
+    if (q === "reset") { const e = emptyState(); saveUnlock(store, e); return e; }
+    const s = loadUnlock(store);
+    if (q === "all") { unlockAll(s); saveUnlock(store, s); }
+    return s;
+  })();
+  function persistUnlock() { saveUnlock(store, unlockS); applyLocks(); }
+  function applyLocks() {
+    ufoPanel.setLocked("space", !unlocked(unlockS, "space"), "「구름 속 토성을 찾아봐」");
+    ufoPanel.setLocked("earth", !unlocked(unlockS, "earth"), "「우주에서 귀환 신호 수신 중」");
+    ufoPanel.setHoldable(unlocked(unlockS, "hold"));
+  }
+  applyLocks();
+  /** 지금 있는 곳 — "earth" 바깥 · "pink" 버츄얼 스페이스 · "space" 기본 우주(사진 없음) · 딥필드 키 · "moon" */
+  const placeKey = () => (outdoor ? "earth" : INDOOR_BG !== "space" ? "pink" : keyOfIdx(deepIdx) || "space");
   const life = new AbortController();   // 테마를 바꿔 장면을 없앨 때(destroy) 문서 · 창 리스너를 한꺼번에 뗀다
   // 패널에서 고르기(2단계): 버츄얼 스페이스 · 초행성X = 실내 배경, 지구 = 바깥 보기(위치 권한 — 거절 · 실패면 지금 배경에 남는다)
   // (11-06 운영자) 하늘은 「돔 재투영」으로 바뀐다(아래 beginSky — 두 이벤트 듣기에서 바꾸기 직전에 시작).
@@ -1220,6 +1236,7 @@ export function createDomeGL(host, isPaused) {
     if (!outdoor) beginSky(v);   // 바꾸기 전 화면을 찍는다(배경 보기 중일 때만)
     INDOOR_BG = v;
     warpDist = 0;
+    if (v === "space") setDeep(-1);   // (11-09 해금) 패널로 들어오는 초행성X = 늘 사진 없는 기본 우주. 딥필드 · 달 궤도는 워프로만
     if (outdoor) { /* 바깥 보기 중 실내 값만 바뀜 — 실내로 돌아올 때 판정 */ }
     else if (v === "space") spaceEntered(); else endStar("fade");
     draw();
@@ -1235,15 +1252,29 @@ export function createDomeGL(host, isPaused) {
       if (!star || star.frame) return;
       buzz(); shiftGear(star.st, i);
     },
+    // (11-09 해금) WARP = 워프 목적지 고르기. 가 본 딥필드가 없으면(처음) 창 없이 무작위. 고르지 않거나 취소하면 아무 일도 없다(bggear.js 창)
     onWarp() {
-      if (!star || star.frame || !warpReady(star.st)) return;
+      if (!star || star.frame || star.jump || !warpReady(star.st) || gear.choosing) return;
       buzz();
-      captureFrame(); themeStart = -Infinity; endSky();   // B 연출의 「옛 화면」 사진
-      star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
-      sound.jump(star.jump.kind);   // 음원의 절정이 도착 순간(A 0.62초 섬광 · B 바로 · C 0.7초 충격파)에 오게(bgsound.js)
+      const cur = placeKey(), items = chooserItems(unlockS, cur);
+      if (!items) { jumpTo(randomDest(unlockS, cur)); return; }
+      gear.openChooser(items, (k) => jumpTo(k === "random" ? randomDest(unlockS, placeKey()) : k));
     },
   });
   let star = null, pendingHold = false, shaking = false;
+  /** 정한 곳으로 워프 점프 — dest = 딥필드 키 · "moon" · "space"(기본 우주, 사진 없음). 사진을 받은 뒤 출발(이미 받았으면 바로) */
+  function jumpTo(dest) {
+    if (!star || star.frame || star.jump) return;
+    const idx = dest === "space" ? -1 : (placeInfo(dest)?.idx ?? -1);
+    star.dest = dest; star.nextDeep = idx;
+    const go = () => {
+      if (!star || star.jump || star.dest !== dest || !warpReady(star.st)) return;   // 받는 사이 속도가 레드존 밖으로 떨어졌으면 출발하지 않는다
+      captureFrame(); themeStart = -Infinity; endSky();   // B 연출의 「옛 화면」 사진
+      star.jump = { kind: JUMP_FIXED || pickJump(), t0: performance.now() };
+      sound.jump(star.jump.kind);   // 음원의 절정이 도착 순간(A 0.62초 섬광 · B 바로 · C 0.7초 충격파)에 오게(bgsound.js)
+    };
+    if (idx < 0) go(); else loadDeep(idx).then(go);
+  }
   const warpDir = () => (star && star.dir) || WARP_DIR0;   // 지금 여행의 진행 방향(없으면 옛 정면 지평선)
   // 흔들기(11-06 운영자): 좌석벨트 표시등이 켜져 있으면(레드존 가속 · 급제동) 두 패널이 빠르게 흔들리고(세기 = 모형의 떨림 amp 비례), 깜빡일 땐 아주 약하게.
   // 매 프레임 무작위 위치(시안 Gear.dc.html 의 패널 떨림과 같은 방식). 움직임 줄이기면 없음.
@@ -1295,8 +1326,7 @@ export function createDomeGL(host, isPaused) {
   }
   function startStar() {
     if (star) return;
-    star = { st: createWarp(), jump: null, frame: null, axis: randUnit(), dir: randWarpDir(), nextDeep: pickOtherDeep() };
-    loadDeep(star.nextDeep);   // 워프로 도착할 때 쓸 사진을 미리 받아 둔다
+    star = { st: createWarp(), jump: null, frame: null, axis: randUnit(), dir: randWarpDir(), nextDeep: -1, dest: null };
     warpDist = 0;
     ufoPanel.setWarping(true);
   }
@@ -1321,7 +1351,8 @@ export function createDomeGL(host, isPaused) {
   }
   // 초행성X 칸 1초 길게 누르기 — 이미 우주면 바로, 아니면 우주로 바꾼 뒤(전환이 끝나면) 시작
   ufoPanel.onHold(() => {
-    if (star || picking || sky) return;
+    if (star || picking || sky || !unlocked(unlockS, "hold")) return;
+    if (!unlockS.seen.holdNotice) { unlockS.seen.holdNotice = true; persistUnlock(); }   // 한 번 써 보면 안내 끝
     buzz();
     if (!outdoor && INDOOR_BG === "space") { startStar(); return; }
     pendingHold = true;
@@ -1354,6 +1385,8 @@ export function createDomeGL(host, isPaused) {
         star.jump.arrived = true;
         spaceRot = axisRot(randUnit(), Math.random() * 2 * Math.PI);
         setDeep(star.nextDeep);
+        const got = arrive(unlockS, star.dest);   // (11-09 해금) 처음 간 딥필드 = 워프 목적지에 추가, 다섯 곳 뒤 달 궤도 = 해금
+        if (got) { persistUnlock(); ufoPanel.toast(got === "moon" ? "달 궤도 도착 — 워프 목적지에 추가" : `새 딥필드 · ${placeInfo(star.dest).name} — 워프 목적지에 추가`); }
       }
       const c = jumpCenter(), maxR = Math.hypot(Math.max(c[0], W - c[0]), Math.max(c[1], H - c[1])) + 40;
       star.frame = { ...jumpFrame(star.jump.kind, t, maxR), c, maxR };
@@ -1873,7 +1906,7 @@ export function createDomeGL(host, isPaused) {
       gl.uniform2f(U.uSpaceMapSize, spaceTex.mapW, spaceTex.mapW / 2);
       gl.uniform3f(U.uWarpDir, ...warpDir());
       gl.uniformMatrix3fv(U.uSpaceRot, false, new Float32Array(spaceRot));
-      gl.uniform2f(U.uDeepShape, DEEP_SET[deepIdx].asp, DEEP_SET[deepIdx].w);
+      if (deepIdx >= 0) gl.uniform2f(U.uDeepShape, DEEP_SET[deepIdx].asp, DEEP_SET[deepIdx].w);
     } else gl.uniform4f(U.uSpace, 0, 0, 0, 0);
     // (11-06 수정) 실내 프로그램의 우주 표본기(13 · 14번, float)는 분홍 하늘일 때도 활성이다. 산 장소 기기는 그 칸에 지형의 정수 질감(RGBA16UI)이
     // 꽂혀 있어 float 표본기와 종류가 어긋나면 그리기가 통째로 실패(하늘 · 바닥 검정)하므로, 실내는 매번 우주 사진 또는 1×1 검정을 꽂는다.
@@ -2009,7 +2042,8 @@ export function createDomeGL(host, isPaused) {
       ufoPanel.setCurrent(outdoor ? "earth" : INDOOR_BG === "space" ? "space" : "pink");   // 바뀔 때만 DOM 을 건드린다(bgpanel.js)
       // 우주 사진은 처음 고를 때 받는다 — 받는 동안 칸에 표시(그려 만든 우주 모드는 사진이 없다)
       const loading = spacePreload || (INDOOR_BG === "space" && !outdoor && SPACE_MODE !== "shader" && !spaceTex.map);
-      if (!star) ufoPanel.setChip("space", loading ? "불러오는 중…" : "길게 누르면 워프");   // 성간 이동 중엔 「성간 이동 중」(bgpanel setWarping)
+      if (!star) ufoPanel.setChip("space", loading ? "불러오는 중…" : unlocked(unlockS, "hold") ? "길게 눌러 성간 이동" : "");   // 성간 이동 중엔 「성간 이동 중」(bgpanel setWarping). 해금 전엔 칩 없음
+      if (!ufoPanel.on && unlocked(unlockS, "hold") && !unlockS.seen.holdNotice) ufoPanel.nudge("space");   // (해금) 길게 누르기가 열린 뒤 처음 몇 번 — 패널이 뜰 때 칸이 반짝여 알려 준다
     }
     ufoPanel.set(want);
     ufoConsole.setActive(want);   // 패널이 떠 있는 동안 바닥 제어 장치 화면에 불
@@ -2164,9 +2198,10 @@ export function createDomeGL(host, isPaused) {
         sets: slotA + (slotB ? ">" + slotB : ""), ev: gyroDebug, scr: (screen.orientation && screen.orientation.angle) ?? window.orientation ?? null,
       }));
     }, 3000);
+    window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); } };
     window.__bgdome = { get state() { return { ground: GROUND, astro, sets: slotA + (slotB ? "→" + slotB : ""), outdoor, yaw: yaw / DEG, pitch: pitch / DEG, zoom: zoomR, magnification: tele, moonDiameterCSS: SIZE_MODE === "eye" ? MOON_CSS_DIAMETER * tele : 2 * viewFocal() * SUN_MOON_R[1] * DEG, themeProgress: Math.min(1,(performance.now()-themeStart)/THEME_MS), albedoOn, terrain: releaseGround.terrain?.metrics, zoomTarget: zoomT, eye: EYE.slice(), cy, stopped, gyro: gyroView(), abs: gyroAbs(), speed: Math.max(...pieces.map((p) => len3(p.v))) }; } };
   }
-  // 기억된 우주(초행성X)로 방문했으면 여기서도 10% 판정(바깥 보기 복원으로 곧 지구가 되면 BGVIEW 에서 끝낸다)
+  // 기억된 우주(초행성X)로 방문했으면 여기서도 진입 판정(?bgdebug&bgstar 확인용 — 평소엔 자동 시작 없음)
   if (INDOOR_BG === "space" && !outdoor) spaceEntered();
 
   return {

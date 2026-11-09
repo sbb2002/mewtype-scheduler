@@ -76,6 +76,9 @@ export function createUfoPanel() {
   let pick = null, hold = null, current = null;
   // 3단계: 초행성X 칸 1초 길게 누르기 = 성간 이동(시안 Main.dc.html chargeLoop — 1초에 차고, 떼면 0.25초에 빠짐, 다 차면 hold()).
   let charge = 0, holding = false, chargeRaf = 0, chargeLast = 0, eatClick = false, warping = false;
+  // (11-09 해금, bgunlock.js) 잠긴 칸 = 누르면 살짝 흔들리기만 하고, 설명 자리에 다음에 할 일 한 줄. 초행성X 길게 누르기는 성운을 찾기 전엔 꺼져 있다(누르기만).
+  const locked = {}, lockHint = {};
+  let holdable = true;
   const fill = h("span", "ufo-tile__fill");
   const showChip = (key) => { const c = firstChip[key]; if (!c) return; const text = key === "space" && charge > 0 && !warping ? `충전 ${Math.round(charge * 100)}%` : chipBase[key]; if (c.textContent !== text) c.textContent = text; };
   function chargeLoop(now) {
@@ -105,11 +108,15 @@ export function createUfoPanel() {
     }
     const b = h("button", "ufo-tile ufo-stg", [...(t.key === "space" ? [fill] : []), h("span", "ufo-tile__ico", [ICONS[t.key]()]), text, h("span", "ufo-tile__led")], { type: "button", "aria-pressed": "false" });
     b.style.setProperty("--i", String(i + 1));
-    b.addEventListener("click", () => { if (eatClick) { eatClick = false; return; } if (on && pick) pick(t.key); });
+    b.addEventListener("click", () => {
+      if (eatClick) { eatClick = false; return; }
+      if (locked[t.key]) { b.classList.remove("is-nope"); void b.offsetWidth; b.classList.add("is-nope"); return; }   // 잠김 — 살짝 흔들림만
+      if (on && pick) pick(t.key);
+    });
     if (t.key === "space") {
       b.addEventListener("contextmenu", (e) => e.preventDefault());   // 길게 누를 때 폰 기본 메뉴 막기
       b.addEventListener("pointerdown", (e) => {
-        if (!on || b.disabled || warping || !hold) return;
+        if (!on || b.disabled || warping || !hold || !holdable || locked.space) return;   // 성운을 찾기 전엔 길게 눌러도 누르기와 같다
         eatClick = false; holding = true;
         try { b.setPointerCapture(e.pointerId); } catch { /* 캡처 못 함 */ }
         if (!chargeRaf) { chargeLast = performance.now(); chargeRaf = requestAnimationFrame(chargeLoop); }
@@ -144,11 +151,14 @@ export function createUfoPanel() {
     h("span", null, ["두 손가락으로 벌려 가운데로 다가가 보세요"]),
   ], { "aria-hidden": "true" });
   document.body.appendChild(hint);
+  const toastEl = h("div", "ufo-toast", [], { role: "status", "aria-live": "polite" });
+  document.body.appendChild(toastEl);
+  let toastT = 0;
 
   let on = false, hintA = -1;
   return {
     get on() { return on; },
-    remove() { root.remove(); hint.remove(); },
+    remove() { root.remove(); hint.remove(); toastEl.remove(); clearTimeout(toastT); },
     set(v) {
       if (v === on) return;
       on = v;
@@ -183,7 +193,7 @@ export function createUfoPanel() {
     setCurrent(key) {
       if (key === current) return;
       current = key;
-      earthNote.hidden = key === "earth";   // 이미 지구면 권한 안내가 필요 없다
+      earthNote.hidden = key === "earth" || !!locked.earth;   // 이미 지구면(또는 지구가 잠겼으면) 권한 안내가 필요 없다
       for (const k in tiles) {
         const sel = k === key;
         tiles[k].classList.toggle("is-on", sel);
@@ -194,6 +204,30 @@ export function createUfoPanel() {
     transmit(v) { root.classList.toggle("is-tx", v); },
     /** 하늘을 고른 뒤 준비(우주 사진 · 위치) 중 — 칸을 비활성(누를 수 없고 흐리게) */
     setBusy(v) { for (const k in tiles) tiles[k].disabled = v; },
+    /** (해금) 칸 잠금 — 잠기면 설명 자리에 hint(다음에 할 일), 칩 숨김, 자물쇠 표시. 같은 값이면 건드리지 않는다 */
+    setLocked(key, v, hint = "") {
+      if (!tiles[key] || (locked[key] === v && lockHint[key] === hint)) return;
+      locked[key] = v; lockHint[key] = hint;
+      tiles[key].classList.toggle("is-locked", v);
+      tiles[key].setAttribute("aria-disabled", v ? "true" : "false");
+      if (!(key === "space" && warping)) subEl[key].textContent = v ? hint : TILES.find((t) => t.key === key).sub;
+      if (key === "earth") earthNote.hidden = v || current === "earth";
+    },
+    /** (해금) 초행성X 길게 누르기 가능 여부. 꺼지면 칩도 숨긴다 */
+    setHoldable(v) {
+      holdable = v;
+      tiles.space.classList.toggle("no-hold", !v);
+      if (!v && holding) { holding = false; charge = 0; fill.style.transform = "scaleX(0)"; }
+    },
+    /** (해금) 길게 누르기가 처음 열린 뒤 한 번 — 초행성X 칸이 두 번 반짝인다 */
+    nudge(key) { const b = tiles[key]; if (!b) return; b.classList.remove("is-nudge"); void b.offsetWidth; b.classList.add("is-nudge"); },
+    get holdable() { return holdable; },
+    /** (해금) 화면 위쪽에 잠깐 뜨는 한 줄 알림(해금 · 도착). 2.2초, 새 알림이 오면 바꿔 쓴다 */
+    toast(text) {
+      toastEl.textContent = text;
+      toastEl.classList.remove("is-on"); void toastEl.offsetWidth; toastEl.classList.add("is-on");
+      clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("is-on"), 2200);
+    },
     /** 안내 불투명도 0 ~ 1(0.02 이상 바뀔 때만 DOM 을 건드린다) */
     setHint(a) {
       if (Math.abs(a - hintA) < 0.02 && !(a === 0 && hintA !== 0)) return;
