@@ -342,8 +342,7 @@ uniform float uTrailN;
 uniform sampler2D uSpaceMap, uSpaceDeep; uniform vec4 uSpaceTex; uniform vec2 uSpaceMapSize;
 // (11-06) uSpaceRot = 우주 바탕(지도 · 별 · 은하 · 사진) 방향 — 성간 이동으로 달린 만큼 돌고, 워프 점프면 무작위로. uDeepShape = 큰 사진의 (가로 ÷ 세로, 가로 픽셀)
 uniform mat3 uSpaceRot; uniform vec2 uDeepShape;
-// (11-09 운영자) 달 궤도 = 달 지표면이 화면 아래를 가득 채운다. uMoonOn = 켬, uMoonN = 지평선 평면의 위쪽(우주 좌표 — 사진의 수평선에 맞춤), uMoonT = 평면 위 한 축.
-// 사진 가장자리의 투명 그라데이션 대신, 지평선 아래는 사진 맨 아래 지표 띠를 원근대로 이어 붙여 그린다.
+// Lunar orbit: shared photo frame; no extra texture units. Surface is a ray-hit sphere.
 uniform float uMoonOn; uniform vec3 uMoonN; uniform vec3 uMoonT;
 float vnoise(vec3 p) {
   vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -399,7 +398,131 @@ vec3 nebula(vec3 d) {
   float m = vnoise(d * 1.7 + 11.0);
   return mix(vec3(0.18, 0.06, 0.28), vec3(0.04, 0.12, 0.26), m) * pow(max(n - 0.42, 0.0) * 2.2, 2.0) * 0.35;
 }
+// Polynomial cell hash avoids dozens of transcendental hashes per lunar pixel.
+vec3 orbitHash(vec3 p) {
+  p = fract(p*vec3(0.1031,0.1030,0.0973));
+  p += dot(p,p.yxz+33.33);
+  return fract((p.xxy+p.yxx)*p.zyx);
+}
+// Height, analytic derivatives and a local crater-wall shadow. World-fixed hashes,
+// not repeated image strips. A 3x3 neighborhood includes every jittered crater.
+vec4 orbitCraters(vec2 p, float scale, float footprint, float seed) {
+  vec2 q = p * scale, cell = floor(q);
+  vec3 field = vec3(0.0); float shade = 1.0;
+  float lod = 1.0 - smoothstep(0.10, 0.65, footprint * scale);
+  if (lod < 0.001) return vec4(0,0,0,1);
+  const vec2 sun = vec2(-0.894427, -0.447214);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 id = cell + vec2(float(x), float(y));
+    vec3 rnd = orbitHash(vec3(id,seed));
+    float h = rnd.x;
+    if (h > 0.79) continue; // Leave irregular plains between impacts.
+    vec2 center = id + 0.2 + 0.6 * rnd.xy;
+    float radius = mix(0.17, 0.42, rnd.z);
+    vec2 v = (q - center) / radius;
+    if (dot(v,v) > 2.11) continue; // Cull before the costly rim trigonometry.
+    float angle = atan(v.y,v.x);
+    float ragged = 1.0 + 0.045*sin(angle*5.0+h*37.0) + 0.025*sin(angle*11.0+h*81.0);
+    float r = length(v) * ragged;
+    if (r > 1.35) continue;
+    float bowl = max(1.0 - r*r, 0.0);
+    float depth = mix(0.12, 0.23, h);
+    float rim = exp(-pow((r - 0.96) / 0.12, 2.0));
+    float height = -depth * bowl*bowl + 0.034 * rim;
+    float deriv = (r < 1.0 ? 4.0 * depth * r * bowl : 0.0)
+                - 0.068 * (r - 0.96) / 0.0144 * rim;
+    field += vec3(height * radius / scale, deriv * v / max(r, 0.001));
+    // Ray to the sun-facing rim in this crater's local cross section.
+    float along = dot(v, sun);
+    float wall = -along + sqrt(max(1.0 - dot(v,v) + along*along, 0.0));
+    float visible = smoothstep(-0.018, 0.035, height + wall * 0.21 - 0.035);
+    shade = min(shade, mix(1.0, visible, 1.0 - smoothstep(0.85, 1.04, r)));
+  }
+  return vec4(field * lod, mix(1.0, shade, lod));
+}
+// Filtered value-noise gradient: fine regolith roughness, fixed on the globe.
+vec3 orbitRough(vec2 p) {
+  vec2 i=floor(p), f=fract(p), u=f*f*(3.0-2.0*f), du=6.0*f*(1.0-f);
+  float a=orbitHash(vec3(i,17)).x, b=orbitHash(vec3(i+vec2(1,0),17)).x;
+  float c=orbitHash(vec3(i+vec2(0,1),17)).x, e=orbitHash(vec3(i+vec2(1,1),17)).x;
+  return vec3(mix(mix(a,b,u.x),mix(c,e,u.x),u.y),
+    du.x*mix(b-a,e-c,u.y),du.y*mix(c-a,e-b,u.x));
+}
+vec3 orbitSurface(vec3 n, float t, vec3 d, float pxAng) {
+  vec3 T = uMoonT, B = cross(uMoonN, T);
+  vec2 p = vec2(atan(dot(n,T), dot(n,uMoonN)), asin(clamp(dot(n,B),-1.0,1.0)));
+  float fp = pxAng * t / max(abs(dot(n,d)), 0.035);
+  vec4 a = orbitCraters(p, 11.0, fp, 21.0);
+  vec4 b = orbitCraters(p, 34.0, fp, 53.0);
+  vec4 c = orbitCraters(p, 103.0, fp, 97.0);
+  vec4 f = orbitCraters(p, 337.0, fp, 131.0);
+  vec2 slope = a.yz + b.yz * 0.65 + c.yz * 0.38 + f.yz * 0.20;
+  vec3 rough = orbitRough(p*470.0);
+  vec3 fine = orbitRough(p*1550.0);
+  slope += rough.yz*0.19*(1.0-smoothstep(0.15,0.7,fp*470.0));
+  slope += fine.yz*0.09*(1.0-smoothstep(0.15,0.7,fp*1550.0));
+  // Sub-meter detail appears only when its footprint is resolved at telephoto.
+  float gritLod = 1.0-smoothstep(0.12,0.65,fp*18000.0);
+  vec3 grit = vec3(0.5,0,0);
+  if (gritLod > 0.001) {
+    grit = orbitRough(p*18000.0);
+    slope += grit.yz*0.16*gritLod;
+  }
+  float dustLod = 1.0-smoothstep(0.12,0.65,fp*67000.0);
+  if (dustLod > 0.001) slope += orbitRough(p*67000.0).yz*0.07*dustLod;
+  vec3 tx = normalize(T - n * dot(n,T));
+  vec3 ty = normalize(cross(n, tx));
+  if (dot(ty,B) < 0.0) ty = -ty;
+  vec3 normal = normalize(n - tx*slope.x - ty*slope.y);
+  vec3 sun = normalize(-T*0.88 - B*0.44 + uMoonN*0.22);
+  float diffuse = max(dot(normal,sun),0.0);
+  float shadow = min(a.w, min(b.w, mix(1.0,c.w,0.65)));
+  float macro = vnoise(n*19.0 + 7.0) * 0.65 + vnoise(n*53.0) * 0.35;
+  float grainLod = 1.0-smoothstep(0.2,0.8,fp*1200.0);
+  float grain = (fine.x-0.5)*grainLod;
+  float albedo = 0.72 + 0.44*macro + grain*0.10 + (grit.x-0.5)*0.12*gritLod;
+  float earthlight = 0.004 + 0.008*max(dot(normal,normalize(vec3(0.42,0.36,0.83))),0.0);
+  vec3 lit = vec3(0.76,0.75,0.71) * diffuse * shadow * 0.82;
+  vec3 bounce = vec3(0.64,0.73,0.90) * earthlight;
+  return albedo * (lit + bounce);
+}
+vec3 moonOrbit(vec3 d, float pxAng) {
+  vec3 photoC = normalize(vec3(0.42,0.36,0.83));
+  vec3 H = normalize(photoC - uMoonN*dot(photoC,uMoonN));
+  // Angular radius 78 degrees: a broad lunar limb, tangent to the source
+  // photo's measured horizon at H. The whole scene is oriented by placePhoto.
+  const float ca = 0.20791169, sa = 0.97814760;
+  vec3 axis = H*ca - uMoonN*sa;
+  vec3 center = axis/sa;
+  float mu = dot(d,axis), edge = mu-ca;
+  float width = max(pxAng*sa,0.000001);
+  float cover = smoothstep(-width,width,edge);
+  vec3 sky = vec3(0.00012,0.00015,0.00022);
+  if (cover < 0.999) {
+    sky += spaceStars(d,pxAng,0.10);
+    vec3 A = normalize(cross(vec3(0,1,0),photoC)), B = cross(photoC,A);
+    float z = dot(d,photoC);
+    if (z > 0.5) {
+      vec2 uv = 0.5 + vec2(dot(d,A),dot(d,B))/z/(2.0*tan(17.0*D));
+      // Full opaque Earth disc, including its unlit part: stars cannot leak
+      // through the original photograph's black night-side pixels.
+      float earth = 1.0-smoothstep(0.076-pxAng,0.076+pxAng,length(uv-vec2(0.568,0.461)));
+      if (earth > 0.0) {
+        float lod = max(0.0,log2(pxAng*uDeepShape.y/(2.0*tan(17.0*D))));
+        vec3 photo = pow(textureLod(uSpaceDeep,vec2(uv.x,1.0-uv.y),lod).rgb,vec3(2.2));
+        sky = mix(sky,photo*0.95,earth);
+      }
+    }
+  }
+  if (cover <= 0.0) return sky;
+  float b = dot(d,center), q = dot(center,center)-1.0;
+  float delta = max(b*b-q,0.0);
+  float t = q/max(b+sqrt(delta),0.00001);
+  vec3 n = normalize(t*d-center);
+  return mix(sky,orbitSurface(n,t,d,pxAng),cover);
+}
 vec3 spaceBase(vec3 d, float pxAng) {
+  if (uMoonOn > 0.5) return moonOrbit(d, pxAng);
   vec3 c = vec3(0.004, 0.005, 0.010);
   if (uSpaceTex.x > 0.5) {
     // 등장방형 지도. 경계선(경도 ±180°)에서 밉맵이 튀지 않게 픽셀 크기로 직접 고른다.
@@ -411,23 +534,6 @@ vec3 spaceBase(vec3 d, float pxAng) {
     c += nebula(d) + vec3(0.010, 0.006, 0.016) * pow(max(1.0 - abs(d.y - 0.15), 0.0), 6.0);
   }
   c += spaceStars(d, pxAng, uSpaceTex.x > 0.5 ? 0.6 : 1.0) + galaxies(d, pxAng);
-  float moonHn = uMoonOn > 0.5 ? dot(d, uMoonN) : 1.0;   // 달 궤도: 지평선 평면 기준 높이(양수 = 위)
-  vec3 moonG = vec3(0.0); float moonW = 0.0;              // 지평선 아래 지표면 색 · 비중 — 맨 끝에서 별 · 은하 위로 덮는다
-  if (uMoonOn > 0.5 && moonHn < 0.004) {
-    float dn = max(-moonHn, 0.0006);
-    vec3 P = d / dn;                                   // 눈 높이 1 에서 바닥 평면까지 간 점
-    vec2 gq = vec2(dot(P, uMoonT), dot(P, cross(uMoonN, uMoonT)) * 12.0) * 0.9 + vec2(0.37, 0.0);   // 띠(가로 960 : 세로 약 77 = 12 : 1)를 정사각으로 펴지 않게 세로를 12 배 촘촘히
-    vec2 gm = abs(mod(gq, 2.0) - 1.0);                 // 거울 반복 — 이음매 없이 이어 붙임
-    vec2 gq2 = vec2(gq.x * 0.61 + gq.y * 0.05, gq.y * 0.53 - gq.x * 0.04 * 12.0) + vec2(0.71, 0.33);   // 크기 · 기울기가 다른 두 번째 층 — 같은 무늬가 격자처럼 되풀이되는 것을 깬다
-    vec2 gm2 = abs(mod(gq2, 2.0) - 1.0);
-    float lodG = clamp(log2(max(1.0, pxAng / (dn * dn) * 0.9 * uDeepShape.y)), 0.0, 4.0);
-    vec3 g1 = textureLod(uSpaceDeep, vec2(gm.x, mix(0.915, 0.985, gm.y)), lodG).rgb;
-    vec3 g2 = textureLod(uSpaceDeep, vec2(gm2.x, mix(0.915, 0.985, gm2.y)), lodG).rgb;
-    float lum = dot(0.5 * (g1 + g2), vec3(0.3, 0.59, 0.11));
-    vec3 gs = pow(vec3(lum), vec3(2.2)) * vec3(1.0, 0.97, 0.92);   // 회색 월면(사진 띠의 푸른 얼룩은 버린다)
-    moonG = gs * mix(0.55, 1.0, smoothstep(0.0, 0.3, dn)) * 1.5;   // 멀수록 조금 어둡게
-    moonW = smoothstep(0.002, -0.002, moonHn);
-  }
   if (uSpaceTex.y > 0.5) {
     // 딥필드 사진 한 장 — 정면 오른쪽 위에 크게(가로 약 34°), 가장자리는 서서히 녹아든다. 검은 바탕이라 더한다.
     vec3 C = normalize(vec3(0.42, 0.36, 0.83)), A = normalize(cross(vec3(0, 1, 0), C)), B = cross(C, A);
@@ -440,11 +546,10 @@ vec3 spaceBase(vec3 d, float pxAng) {
         float lod = max(0.0, log2(pxAng * uDeepShape.y / (2.0 * half_)));
         vec3 g = pow(textureLod(uSpaceDeep, vec2(uv.x, 1.0 - uv.y), lod).rgb, vec3(2.2));
         vec2 e = min(uv, 1.0 - uv);
-        c += g * smoothstep(0.0, 0.18, uMoonOn > 0.5 ? min(e.x, 0.5) : min(e.x, e.y)) * 0.9 * (uMoonOn > 0.5 ? smoothstep(-0.002, 0.002, moonHn) : 1.0);   // 달 궤도는 지평선 위만 사진, 아래는 위의 지표
+        c += g * smoothstep(0.0, 0.18, min(e.x, e.y)) * 0.9;
       }
     }
   }
-  c = mix(c, moonG, moonW);
   return c;
 }
 // (11-05 3차) 상대론적 성간 이동 — 운영자 시나리오(출발 가속 · 0.7c 등속 · 도착 감속)의 속도 β 로 하늘 전체를 바꾼다.
@@ -528,7 +633,9 @@ vec3 sky(vec3 d, float pxAng, vec2 discPx, vec2 p) {
 #if GROUND_OUTDOOR
   if (uOut < 0.5) return c * uPupil.x;   // 바깥 프로그램에는 우주 표본기를 넣지 않는다(표본기 16개 한도 — 아래 makeProgram 주석)
 #else
-  if (uOut < 0.5) return (uSpace.x > 0.5 ? spaceSky(d, pxAng) : c) * uPupil.x;
+  // Lunar visit keeps photographic exposure at telephoto: the small virtual
+  // telescope exit pupil otherwise makes its extended terrain almost black at x30.
+  if (uOut < 0.5) return (uSpace.x > 0.5 ? spaceSky(d, pxAng) : c) * (uMoonOn > 0.5 ? 1.0 : uPupil.x);
 #endif
   float cloud = uCloudTest >= 0.0 ? uCloudTest * uCldA : mix(A.a, B.a, uMix);
   float above = smoothstep(-0.004, 0.006, d.y);   // 지평선 아래(돔 벽 너머)에는 해 · 달 · 별이 없다
@@ -1291,7 +1398,7 @@ export function createDomeGL(host, isPaused) {
   //   딥필드 · 달 궤도 = 셰이더의 큰 사진 자리(우주 좌표 C = (0.42, 0.36, 0.83), 가로 약 34°) — 사진 자체가 대상(달 궤도는 그 사진 속 지구).
   //   지구(바깥) = 이번 단계엔 대상 없음. 위치 · 허용 각은 시안(F5) 값에서 정한 예시.
   const PHOTO_C = (() => { const v = [0.42, 0.36, 0.83], l = Math.hypot(...v); return v.map((x) => x / l); })();
-  const MOON_F = moonFrame(PHOTO_C), MOON_RISE = 26;
+  const MOON_F = moonFrame(PHOTO_C), MOON_RISE = 29;
   let lastPhotoAz = 0;
   /**
    * 딥필드 · 달 궤도 사진을 놓는다(운영자 11-09 「첫 시선 방향은 랜덤, 단 UFO 방향을 고려해 시선이 닿을 수 있는 곳」) — 방위는 0 ~ 360° 무작위,
@@ -1300,7 +1407,7 @@ export function createDomeGL(host, isPaused) {
   function placePhoto(idx) {
     const az = Math.random() * 360; lastPhotoAz = az;
     if (idx === MOON.idx) {
-      // 돔 테두리(UFO 바닥)가 지평선 둘레를 가리므로, 지표면이 유리창에 보이게 평면을 사진 쪽으로 MOON_RISE° 들어 올린다 — 사진 방향에선 지평선이 그만큼 높아 지표면이 아래를 가득 채우고 지구는 그 위에
+      // 구면 월면의 중앙 접선과 사진 지구를 함께 회전한다. 돔 아래 유리창을 월면으로 채운다.
       spaceRot = levelSpace(spaceRot, MOON_F.N, PHOTO_C, az);
       spaceRot = aimSpace(spaceRot, MOON_F.N, dirFromAzAlt(az + 180, 90 - MOON_RISE));
     }
@@ -2150,7 +2257,7 @@ export function createDomeGL(host, isPaused) {
     if (a) { target = a.yaw; tPitch = a.pitch; }
     else if (g) { target = g.yaw; tPitch = g.rawPitch; }
     if (dbgView) { target = dbgView[0] * DEG; tPitch = dbgView[1] * DEG; }   // 확인용(?bgdebug) __bgview(방위°, 고도°)
-    const sensed = !!(a || g), wantCy = sensed ? H / 2 : cyIndoor;
+    const sensed = !!(a || g || dbgView), wantCy = sensed ? H / 2 : cyIndoor;
     if (W && Math.abs(wantCy - cy) > 0.5) { cy = wantCy; gl.uniform2f(U.uC, cx, cy); drawnYaw = NaN; }
     const tYaw = yaw + Math.atan2(Math.sin(target - yaw), Math.cos(target - yaw));   // 북쪽(±180°)을 넘을 때 한 바퀴 돌지 않게
     tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, tPitch));
