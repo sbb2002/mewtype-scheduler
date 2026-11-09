@@ -80,9 +80,20 @@ function onTouchEnd(e) {
   hide();
 }
 
+// (11-09 운영자) 예고 메인 화면(보드 · 공지 · 하단 등 기본 요소)은 두 손가락 확대 · 축소를 하지 않는다. 배경 보기의 줌은 돔 안에서만(bgdomegl.js) —
+// 배경 모드에서 줌을 했어도 페이지 요소는 절대 커지지 않는다. 안드로이드는 viewport 메타(user-scalable=no), iOS 사파리는 메타를 무시해서 제스처 이벤트로 막는다.
+function blockPageZoom() {
+  const stop = (e) => e.preventDefault();
+  document.addEventListener("gesturestart", stop, { passive: false });
+  document.addEventListener("gesturechange", stop, { passive: false });
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });   // PC 트랙패드 · ctrl+휠 확대
+}
+
 export function initBgPeek() {
   const board = document.getElementById("board");
   if (!board || catcher) return;
+  blockPageZoom();
   catcher = document.createElement("button");
   catcher.type = "button";
   catcher.id = "bg-peek-catch";

@@ -76,6 +76,11 @@ export function createHud({ onLock, onZoom }) {
   const kStar = h("span", "bghud-star"), kText = h("span"), name = h("h3"), toLine = h("p", "bghud-to"), zoomBtn = h("button", "bghud-btn", ["＋ 확대"], { type: "button" }), hintLine = h("p", "bghud-hn");
   const card = h("div", "bghud-card", [h("div", "bghud-k", [kStar, kText]), name, toLine, h("div", "bghud-btns", [zoomBtn]), hintLine]);
   root.append(card);
+  // (11-09 운영자) 좌하단 맥박 신호 표시기 — 못 찾은 대상에 가까울수록 맥박이 빨라지고, 색은 빨강 → 주황 → 노랑 → 초록 → 파랑으로
+  const pulseDot = h("i"), pulseRing = h("b"), pulseLbl = h("span", null, ["SIGNAL"]);
+  const pulse = h("div", "bghud-pulse", [h("div", "bghud-pulse__o", [pulseRing, pulseDot]), pulseLbl]);
+  root.append(pulse);
+  let pulsePh = 0, focusK = 0, burstT = 0, burstCol = "79,227,255", sparks = [];
   let curTele = 1;
   zoomBtn.addEventListener("click", () => onZoom(curTele > 1.5 ? 1 : 6));
   document.body.appendChild(root);
@@ -105,6 +110,11 @@ export function createHud({ onLock, onZoom }) {
     toLine.textContent = info.to || ""; toLine.hidden = !info.to;
     card.classList.add("is-on");
     if (info.fresh) { tintT = revealT; tintCol = t.col || "79,227,255"; }
+    // (11-09 운영자 「해금 이펙트가 심심함」) 해금 · 탐험 완료는 즉시 터지는 연출 — 겹겹 고리 + 사방으로 튀는 불꽃 + 화면 섬광
+    if (info.fresh && info.guide) {
+      burstT = revealT; burstCol = t.col || "79,227,255";
+      sparks = Array.from({ length: 44 }, (_, i) => ({ a: (i / 44) * Math.PI * 2 + Math.random() * 0.2, v: 0.5 + Math.random() * 0.9, l: 6 + Math.random() * 14 }));
+    }
   }
   function hideCard() { if (!cardFor) return; cardFor = null; card.classList.remove("is-on"); }
 
@@ -120,6 +130,9 @@ export function createHud({ onLock, onZoom }) {
       g.restore();
     } else if (t.draw === "neb") {
       glow(x, y, 15 * k, "rgba(255,111,181,.55)"); glow(x + 3 * k, y - 2 * k, 10 * k, "rgba(79,227,255,.45)"); glow(x, y, 4 * k, "rgba(255,255,255,.9)");
+    } else if (t.draw === "feat") {
+      // 딥필드 · 달 궤도 사진 속 표식 — 찾기 전엔 사진 그대로(그림 없음), 찾은 뒤엔 옅은 고리
+      if (t.found) { g.strokeStyle = `rgba(${t.col || "200,160,255"},.6)`; g.lineWidth = 0.8 * unit; g.beginPath(); g.arc(x, y, 6 * k, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, 9 * k, 0, 7); g.globalAlpha = 0.3; g.stroke(); g.globalAlpha = 1; }
     } else if (t.draw === "ymmt" && t.stars) {
       // (3단계 보상) YMMT 별자리 — 처음 한 번 anim 0 → 1 동안 선이 차례로 그어지고(유노 생일 장면과 같은 글자 모양), 그 뒤엔 옅게 늘 있다
       const P = t.stars.map((d) => project(d)), a = t.anim ?? 1, strong = a < 1;
@@ -165,6 +178,27 @@ export function createHud({ onLock, onZoom }) {
       g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
       const tint = tintT ? Math.max(0, 1 - (now - tintT) / 1600) : 0;
       if (tint > 0) { const q = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7); q.addColorStop(0, `rgba(${tintCol},${0.4 * tint})`); q.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = q; g.fillRect(0, 0, W, H); }
+      // (11-09 운영자) 대상에 시선이 잡히면(링이 차는 동안 · 잡힌 뒤) 옅은 그라데이션 필터로 「이곳을 보고 있음」을 알린다 — 둘레가 살짝 어두워지고 대상 둘레가 은은히 물든다
+      const fo = f.interact ? (st.lock || st.focus) : null, foP = fo ? f.project(fo.dir) : null;
+      focusK += ((foP ? (st.lock ? 1 : 0.35 + 0.65 * st.v) : 0) - focusK) * (1 - Math.exp(-f.dt / 0.18));
+      if (focusK > 0.01) {
+        const cx0 = foP ? foP[0] : W / 2, cy0 = foP ? foP[1] : H / 2, col = (fo && fo.col) || "79,227,255";
+        const vg = g.createRadialGradient(cx0, cy0, Math.min(W, H) * 0.12, cx0, cy0, Math.max(W, H) * 0.85);
+        vg.addColorStop(0, "rgba(4,8,24,0)"); vg.addColorStop(1, `rgba(4,8,24,${0.34 * focusK})`);
+        g.fillStyle = vg; g.fillRect(0, 0, W, H);
+        const gl2 = g.createRadialGradient(cx0, cy0, 0, cx0, cy0, 120 * unit);
+        gl2.addColorStop(0, `rgba(${col},${0.2 * focusK})`); gl2.addColorStop(1, `rgba(${col},0)`);
+        g.fillStyle = gl2; g.fillRect(cx0 - 130 * unit, cy0 - 130 * unit, 260 * unit, 260 * unit);
+      }
+      // 해금 · 탐험 완료 연출(1.8초)
+      const bu = burstT ? (now - burstT) / 1800 : 2;
+      if (bu < 1) {
+        const bx = W / 2, by = H / 2, R = Math.hypot(W, H) * 0.55;
+        const fl = Math.max(0, 1 - bu / 0.28); if (fl > 0) { g.fillStyle = `rgba(${burstCol},${0.42 * fl})`; g.fillRect(0, 0, W, H); }
+        for (let r = 0; r < 3; r++) { const u = Math.min(1, Math.max(0, (bu - r * 0.12) / 0.7)); if (u <= 0 || u >= 1) continue; const e = 1 - (1 - u) * (1 - u); g.strokeStyle = `rgba(${r === 1 ? "255,255,255" : burstCol},${0.85 * (1 - u)})`; g.lineWidth = (3 - r) * unit; g.beginPath(); g.arc(bx, by, e * R, 0, 7); g.stroke(); }
+        g.lineCap = "round"; g.lineWidth = 0.9 * unit;
+        for (const sp of sparks) { const u = Math.min(1, bu / 0.85), e = 1 - (1 - u) * (1 - u), r0 = e * R * 0.8 * sp.v, r1 = r0 + sp.l * unit * (1 - u); g.strokeStyle = `rgba(255,255,255,${0.9 * (1 - u)})`; g.beginPath(); g.moveTo(bx + Math.cos(sp.a) * r0, by + Math.sin(sp.a) * r0); g.lineTo(bx + Math.cos(sp.a) * r1, by + Math.sin(sp.a) * r1); g.stroke(); }
+      }
       const k = Math.pow(Math.min(f.tele, 10), 0.75) * unit;
       const rv = (now - revealT) / 1000;
       for (const t of f.targets) {
@@ -193,7 +227,7 @@ export function createHud({ onLock, onZoom }) {
       if (lt) {
         const p = f.project(lt.dir);
         if (p) {
-          const s = (lt.draw === "zod" ? 22 : lt.draw === "photo" ? 30 : 10) * Math.max(1, Math.pow(Math.min(f.tele, 10), 0.6)) * unit, a = 5 * unit;
+          const s = (lt.draw === "zod" ? 22 : lt.draw === "photo" ? 30 : lt.draw === "feat" ? 12 : 10) * Math.max(1, Math.pow(Math.min(f.tele, 10), 0.6)) * unit, a = 5 * unit;
           g.strokeStyle = PK; g.lineWidth = 1 * unit * 0.8;
           for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(p[0] + sx * s, p[1] + sy * (s - a)); g.lineTo(p[0] + sx * s, p[1] + sy * s); g.lineTo(p[0] + sx * (s - a), p[1] + sy * s); g.stroke(); }
         }
@@ -220,6 +254,20 @@ export function createHud({ onLock, onZoom }) {
         if (L) bedge.appendChild(sv("path", { d: "M-76 6l-4 3 4 3", fill: "none", stroke: PK, "stroke-width": ".9" }));
         if (R) bedge.appendChild(sv("path", { d: "M76 6l4 3-4 3", fill: "none", stroke: PK, "stroke-width": ".9" }));
       });
+      // ── 맥박 신호(좌하단): 못 찾은 가장 가까운 대상까지 각도 → 빠르기 · 색
+      let near = Infinity;
+      if (f.interact && !cardFor) for (const t of f.targets) { if (t.found || t.noBeacon || t.below) continue; near = Math.min(near, Math.max(0, sepDeg(f.fwd, t.dir) - (t.tol || 0))); }
+      const pOn = near < Infinity;
+      set("pulseOn", pOn, (v) => pulse.classList.toggle("is-on", v));
+      if (pOn) {
+        const kk = 1 - Math.min(1, near / 90), rate = 0.6 + 4.4 * kk * kk;   // 멀면 초당 0.6 번 · 코앞이면 5 번
+        pulsePh += f.dt * rate;
+        const ph = pulsePh % 1, beat = Math.exp(-ph * 7) + 0.55 * Math.exp(-Math.pow((ph - 0.22) * 9, 2));   // 쿵 · 딱 두 박
+        const hue = Math.round(215 * kk);   // 0 빨강 → 30 주황 → 55 노랑 → 120 초록 → 215 파랑(가까울수록)
+        pulse.style.setProperty("--pc", `hsl(${hue} 95% 58%)`);
+        pulseDot.style.transform = `scale(${(0.8 + 0.45 * beat).toFixed(2)})`;
+        pulseRing.style.transform = `scale(${(1 + 1.6 * ph).toFixed(2)})`; pulseRing.style.opacity = (0.7 * (1 - ph)).toFixed(2);
+      }
       // ── ALT · ZOOM 눈금(화면과 함께 움직임 — F5)
       const ppdU = f.ppd / unit, stp = [0.1, 0.2, 0.5, 1, 2, 5].find((s) => s * ppdU >= 10) || 5, m = stp === 5 ? 3 : 5;
       set("alt", `${f.pitchDeg.toFixed(2)}|${ppdU.toFixed(3)}`, () => {

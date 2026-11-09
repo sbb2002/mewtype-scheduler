@@ -108,3 +108,33 @@ export function mulM(a, b) {
 }
 /** 우주 돌림 m0 을 고쳐 우주 방향 s 가 돔 방향 t 에 맺히게 한다(toDome(결과, s) = t) — 워프 도착 때 사진이 보이는 자리에 오게 */
 export function aimSpace(m0, s, t) { return mulM(m0, rotFromTo(t, toDome(m0, s))); }
+
+// ── 딥필드 사진 속 한 점 · 달 궤도 지평선(11-09 운영자 코멘트) ─────────────────────────────
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm3 = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
+/** 사진 한 장(셰이더 spaceBase 의 큰 사진 — 가로 약 34°, 중심 C)에서 그림 좌표(u 0~1 왼 → 오, v 0~1 위 → 아래)의 우주 방향. asp = 가로 ÷ 세로 */
+export function photoDir(C, u, v, asp = 1) {
+  const A = norm3(cross3([0, 1, 0], C)), B = cross3(C, A), half = Math.tan(17 * DEG);
+  const tx = (u - 0.5) * 2 * half, ty = ((1 - v) - 0.5) * 2 * half / Math.max(asp, 0.1);
+  return norm3([C[0] + tx * A[0] + ty * B[0], C[1] + tx * A[1] + ty * B[1], C[2] + tx * A[2] + ty * B[2]]);
+}
+/**
+ * 달 궤도 사진(아폴로 8 「지구돋이」)의 지평선 평면 — N = 위쪽(사진 수평선이 d·N = 0), T = 평면 위 한 축(모두 우주 좌표).
+ * 사진의 수평선은 가운데에서 중심 아래 약 10° · 오른쪽으로 갈수록 낮아진다(측정: 왼쪽 끝 v 0.733 → 오른쪽 끝 0.854).
+ */
+export function moonFrame(C) {
+  const A = norm3(cross3([0, 1, 0], C)), B = cross3(C, A);
+  const N = norm3([0.121 * A[0] + B[0] + 0.1758 * C[0], 0.121 * A[1] + B[1] + 0.1758 * C[1], 0.121 * A[2] + B[2] + 0.1758 * C[2]]);
+  return { N, T: norm3(cross3(N, C)) };
+}
+/** 돔 위(y 축) 둘레로 방위를 delta(라디안) 더하는 돌림을 우주 돌림 m 에 반영 — toDome(결과, s) = 방위가 delta 늘어난 toDome(m, s) */
+export function yawSpace(m, delta) {
+  const c = Math.cos(delta), s = Math.sin(delta);
+  return mulM(m, [c, 0, s, 0, 1, 0, -s, 0, c]);   // (R 의 전치 — 열 우선)
+}
+/** 우주 방향 n 을 돔 위(+y)에 놓고, 우주 방향 c 의 방위가 azDeg 가 되게 — 달 궤도 지표면이 늘 아래에 오게 */
+export function levelSpace(m0, n, c, azDeg) {
+  const m1 = aimSpace(m0, n, [0, 1, 0]);
+  const dc = toDome(m1, c), cur = Math.atan2(dc[0], dc[2]);
+  return yawSpace(m1, azDeg * DEG - cur);
+}

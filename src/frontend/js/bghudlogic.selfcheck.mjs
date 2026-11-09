@@ -72,3 +72,18 @@ const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
   }
 }
 console.log("bghudlogic self-check ok");
+// 사진 속 점 · 달 궤도 지평선
+{
+  const { photoDir, moonFrame, levelSpace } = await import("./bghudlogic.js");
+  const C = [0.42, 0.36, 0.83], l = Math.hypot(...C), Cn = C.map((x) => x / l);
+  assert.ok(sepDeg(photoDir(Cn, 0.5, 0.5), Cn) < 1e-6, "사진 가운데 = C");
+  assert.ok(sepDeg(photoDir(Cn, 0.5, 0.5), photoDir(Cn, 0.9, 0.5)) > 10, "옆으로 갈수록 떨어짐");
+  const { N, T } = moonFrame(Cn);
+  assert.ok(Math.abs(N[0] * T[0] + N[1] * T[1] + N[2] * T[2]) < 1e-9, "N ⟂ T");
+  const m0 = [0.36, 0.48, -0.8, -0.8, 0.6, 0, 0.48, 0.64, 0.6];   // 직교 행렬(열 우선) 하나
+  const m = levelSpace(m0, N, Cn, 123);
+  const up = toDome(m, N), cd = toDome(m, Cn);
+  assert.ok(near(up[1], 1, 1e-6), "지평선 위쪽 = 돔 위");
+  assert.ok(near(azAltOf(cd)[0], 123, 1e-4), "사진 방위 = 요청값");
+  assert.ok(azAltOf(cd)[1] > 5 && azAltOf(cd)[1] < 15, "사진 중심이 지평선 위 약 10°");
+}

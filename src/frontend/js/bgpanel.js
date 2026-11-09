@@ -4,6 +4,8 @@
 // 2단계(11-06): 칸을 누르면 onPick 으로 알린다(배경 바꾸기는 bgdomegl.js). 3단계(11-06): 초행성X 칸 1초 길게 누르기 = onHold(성간 이동), 워프 기어 패널은 bggear.js.
 // 고정 문구 · 아이콘만 쓰고 모두 createElement · textContent 로 만든다(innerHTML 금지).
 
+import { dissolve } from "./bggear.js";   // (11-09) 안내가 사라질 때 테마의 도트 + 흰 선 연출
+
 const NS = "http://www.w3.org/2000/svg";
 
 function h(tag, cls, kids, attrs) {
@@ -161,15 +163,25 @@ export function createUfoPanel() {
     s("svg", { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "#4fe3ff", "stroke-width": "1.6", "aria-hidden": "true" }, [s("path", { d: "M8 8 4 4M4 4v4M4 4h4M16 16l4 4M20 20v-4M20 20h-4" })]),
     h("span", null, ["두 손가락으로 벌려 가운데로 다가가 보세요"]),
   ], { "aria-hidden": "true" });
+  const hintLine = h("span", "ugr-wline");   // 사라질 때 지나가는 흰 선(bggear.js dissolve)
+  hint.append(hintLine);
   document.body.appendChild(hint);
+  // (11-09 해금) 안내 카드 — 해금 · 탐험 완료 뒤 이동 방법을 알려 준다. 눌러서 닫거나 10초 뒤 저절로 사라진다
+  const guideTit = h("p", "ufo-mono ufo-guide__tit"), guideHow = h("p", "ufo-guide__how");
+  const guideEl = h("div", "ufo-guide", [h("div", "ufo-scan"), guideTit, guideHow, h("p", "ufo-mono ufo-guide__x", ["눌러서 닫기"])], { role: "status", "aria-live": "polite" });
+  guideEl.hidden = true;
+  document.body.appendChild(guideEl);
+  let guideT = 0;
+  const closeGuide = () => { clearTimeout(guideT); guideEl.classList.remove("is-on"); setTimeout(() => { if (!guideEl.classList.contains("is-on")) guideEl.hidden = true; }, 350); };
+  guideEl.addEventListener("click", closeGuide);
   const toastEl = h("div", "ufo-toast", [], { role: "status", "aria-live": "polite" });
   document.body.appendChild(toastEl);
   let toastT = 0;
 
-  let on = false, hintA = -1;
+  let on = false, hintA = -1, hintGone = false;
   return {
     get on() { return on; },
-    remove() { root.remove(); hint.remove(); toastEl.remove(); clearTimeout(toastT); },
+    remove() { root.remove(); hint.remove(); toastEl.remove(); guideEl.remove(); clearTimeout(toastT); clearTimeout(guideT); },
     set(v) {
       if (v === on) return;
       on = v;
@@ -256,8 +268,21 @@ export function createUfoPanel() {
       toastEl.classList.remove("is-on"); void toastEl.offsetWidth; toastEl.classList.add("is-on");
       clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove("is-on"), 2200);
     },
+    /** (11-09) 해금 안내 카드 — g = { title, how }. ms 뒤 저절로 닫힘(기본 10초) */
+    guide(g, ms = 10000) {
+      guideTit.textContent = g.title; guideHow.textContent = g.how;
+      guideEl.hidden = false; guideEl.classList.remove("is-on"); void guideEl.offsetWidth; guideEl.classList.add("is-on");
+      clearTimeout(guideT); guideT = setTimeout(closeGuide, ms);
+    },
+    /** (11-09 운영자) 「두 손가락으로 벌려…」 안내를 테마에 맞게(도트 + 흰 선) 지운다. done = 다 사라진 뒤 */
+    dissolveHint(done) {
+      hintGone = true; hint.style.animation = "none"; hint.style.opacity = "1"; hint.style.visibility = "visible";
+      const fin = () => { hint.style.visibility = "hidden"; hint.style.opacity = "0"; hint.style.webkitMaskImage = hint.style.maskImage = "none"; hintLine.style.opacity = "0"; if (done) done(); };
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) fin(); else dissolve(hint, hintLine, fin);
+    },
     /** 안내 불투명도 0 ~ 1(0.02 이상 바뀔 때만 DOM 을 건드린다) */
     setHint(a) {
+      if (hintGone) return;
       if (Math.abs(a - hintA) < 0.02 && !(a === 0 && hintA !== 0)) return;
       hintA = a;
       hint.style.opacity = a.toFixed(2);

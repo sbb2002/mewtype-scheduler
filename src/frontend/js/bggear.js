@@ -51,7 +51,7 @@ function beltSign() {
 // 캔버스로 만든 마스크를 매 프레임 바꾼다(패널이 작아 싸다). 흰 띠 = 「여기까지 사라짐」(도트 띠의 뒤 끝).
 const CELL = 6;
 const cellHash = (x, y) => { const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); };
-function dissolve(root, line, done) {
+export function dissolve(root, line, done) {
   const PAD = 30, w = root.offsetWidth + PAD * 2, hh = root.offsetHeight + PAD * 2;
   const mc = document.createElement("canvas"); mc.width = w; mc.height = hh;
   const mx = mc.getContext("2d"), t0 = performance.now(), T = 1100, band = 0.45;

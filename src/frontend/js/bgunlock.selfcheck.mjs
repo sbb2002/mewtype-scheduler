@@ -1,6 +1,6 @@
 // bgunlock.selfcheck.mjs — node src/frontend/js/bgunlock.selfcheck.mjs
 import assert from "node:assert/strict";
-import { emptyState, parseState, legacyUnlocks, unlock, has, arrive, randomDest, chooserItems, allDeepVisited, unlockAll, loadUnlock, saveUnlock, keyOfIdx, DEEP_FIELDS, onFound, ZODIAC, ALL_FIND_IDS, unlockAllStored } from "./bgunlock.js";
+import { explore, emptyState, parseState, legacyUnlocks, unlock, has, arrive, randomDest, chooserItems, allDeepVisited, unlockAll, loadUnlock, saveUnlock, keyOfIdx, DEEP_FIELDS, onFound, ZODIAC, ALL_FIND_IDS, unlockAllStored } from "./bgunlock.js";
 
 // 저장 글 읽기 — 틀린 값은 버린다
 {
@@ -30,8 +30,9 @@ assert.deepEqual(legacyUnlocks("pink", null), ["space", "hold", "earth"]);
   for (let i = 0; i < 500; i++) seen.add(randomDest(s, "crab"));
   assert.ok(!seen.has("crab") && seen.size === 4 && !seen.has("moon"));
   // 도착 기록
-  assert.equal(arrive(s, "crab"), "deep");
-  assert.equal(arrive(s, "crab"), null);
+  assert.equal(arrive(s, "crab"), null, "도착만으로는 가 본 곳이 아니다");
+  assert.equal(explore(s, "crab"), true);
+  assert.equal(explore(s, "crab"), false);
   const items = chooserItems(s, "crab");
   assert.deepEqual(items.map((x) => x.key), ["random", "crab", "space"]);
   assert.equal(items[1].here, true);
@@ -40,9 +41,10 @@ assert.deepEqual(legacyUnlocks("pink", null), ["space", "hold", "earth"]);
 // 다섯 곳을 다 가 보면 무작위 = 달 궤도, 도착하면 달 궤도 해금 → 다음 무작위는 다시 딥필드
 {
   const s = emptyState();
-  for (const d of DEEP_FIELDS) arrive(s, d.key);
+  for (const d of DEEP_FIELDS) explore(s, d.key);
   assert.ok(allDeepVisited(s));
   assert.equal(randomDest(s, "tara"), "moon");
+  assert.deepEqual(chooserItems(s, "tara").slice(0, 2).map((x) => x.key), ["moon", "smacs"], "무작위 자리를 달 궤도가 대신한다");
   assert.equal(arrive(s, "moon"), "moon");
   assert.equal(arrive(s, "moon"), null);
   assert.notEqual(randomDest(s, "moon"), "moon");
@@ -61,6 +63,12 @@ assert.deepEqual(legacyUnlocks("pink", null), ["space", "hold", "earth"]);
 assert.equal(keyOfIdx(1), "moon");
 assert.equal(keyOfIdx(0), "smacs");
 assert.equal(keyOfIdx(-1), null);
+{
+  const s = emptyState();
+  const r = onFound(s, { id: "x_crab", explore: "crab" });
+  assert.ok(r.fresh && r.k === "탐험 완료" && s.vis.includes("crab") && r.guide);
+  assert.ok(!onFound(s, { id: "x_crab", explore: "crab" }).toast);
+}
 console.log("bgunlock self-check ok");
 // 찾기 규칙
 {

@@ -6,7 +6,7 @@
 //   τ: 보통 0.3초 · 레드존(4 · 5단)으로 올라갈 때 1.6초 · 레드존(β ≥ 0.85)에서 내려갈 때 0.16초(급제동).
 // 떨림 세기 amp(px, 패널 흔들기 · 폰 진동 · 돔 흔들기는 4단계) — 레드존 가속 목표 1.8(τ 0.7초) · 급제동 목표 최대 5(τ 0.06초) · 끝나면 0 으로(τ 0.9초).
 // 좌석벨트 표시등: 떨림이 있으면 켜짐 → 다 잦아들면 1.6초 깜빡인 뒤 꺼짐. 켜질 때 · 꺼질 때 「띵」 신호(ding)를 돌려준다(소리는 4단계).
-// 워프 버튼: 레드존(β ≥ 0.85)이고 표시등이 꺼져 있으면 쓸 수 있다(운영자 11-06).
+// 워프 버튼: 5단 기어에 닿았고 표시등이 꺼져 있으면 쓸 수 있다(운영자 11-09 — 전엔 레드존 4 · 5단).
 
 export const GEAR_BETA = [0, 0.3, 0.6, 0.8, 0.9, 0.99];
 export const RED_BETA = 0.85;
@@ -31,7 +31,7 @@ export function gearPos(beta) {
   for (let k = 0; k < 5; k++) if (b <= V[k + 1]) return k + (b - V[k]) / (V[k + 1] - V[k]);
   return 5;
 }
-export const warpReady = (st) => isRed(st) && st.belt === "off";
+export const warpReady = (st) => st.gear === 5 && st.beta >= GEAR_BETA[5] - 0.01 && st.belt === "off";   // (11-09 운영자) 워프 조건 = 5단 기어(속도가 5단에 닿고 좌석벨트 표시등이 꺼진 뒤)
 
 /** dt 초만큼 진행. 돌려주는 값 = 「띵」을 울릴 일("on" | "off" | null) */
 export function tickWarp(st, dt, nowMs) {
