@@ -1396,12 +1396,19 @@ export function createDomeGL(host, isPaused) {
   const defs = GRADS.map((g, i) => `<linearGradient id="bgdm-pg${i}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${g[0]}"/><stop offset="1" stop-color="${g[1]}"/></linearGradient>`).join("");
   air.innerHTML = `<svg style="position:absolute;width:0;height:0" aria-hidden="true"><defs>${defs}</defs></svg>`;   // 고정 문자열(데이터 아님)
   host.appendChild(canvas);
+  // (운영자 11-10 「레이싱 게임식 가속감」) 방사형 블러 층 — 그려 둔 돔 화면을 겹겹이 키워 덧그린다(줌 블러). CSS 마스크로 가운데는 비운다
+  const zblur = document.createElement("canvas");
+  zblur.className = "bgdm-zblur"; zblur.setAttribute("aria-hidden", "true");
+  const zg = zblur.getContext("2d");
+  host.appendChild(zblur);
   host.appendChild(air);
   const magnification = document.createElement("span");
   magnification.setAttribute("aria-hidden", "true");
   magnification.style.cssText = "position:absolute;right:18px;top:calc(env(safe-area-inset-top, 0px) + 22px);pointer-events:none;color:rgba(190,224,239,.65);font:12px ui-monospace,monospace;letter-spacing:.08em;text-shadow:0 0 8px #9ac6df;display:none";
   host.appendChild(magnification);
-  const viewFocal = () => (outdoor ? focalOut : focal) * tele;
+  // 워프 가속 연출(레이싱 게임 기법): FOV 확장 · 방사형 블러 · 카메라 당김. 값은 모두 0 ~ 1 안팎, 성간 이동 속도(β) + 변속 · 점프 순간의 킥으로 정한다.
+  let fovK = 0, pullK = 0, blurK = 0, fxKick = 0, fxGear = 0, drawnFov = NaN, zblurOn = false;
+  const viewFocal = () => (outdoor ? focalOut : focal) * tele / (1 + 0.85 * fovK);   // 시야각이 넓어지면 초점거리가 줄어든다
   const ufoConsole = createConsole(air);   // 공중 무늬보다 먼저 붙여 무늬가 콘솔 앞을 지나가게
   const ufoPanel = createUfoPanel();
   // ── 해금(11-09, bgunlock.js · 계획 devpapers docs/plan/bg-dome/hud_implementation.md) ─────────────
@@ -1741,6 +1748,53 @@ export function createDomeGL(host, isPaused) {
     if (star.jump && !star.jump.buzzed && star.jump.arrived && navigator.vibrate && !reducedMotion.matches) { star.jump.buzzed = true; try { navigator.vibrate([45, 35, 70]); } catch { /* 미지원 */ } }   // 점프 도착 순간 쾅
     const sa = reducedMotion.matches || star.frame ? 0 : st.belt === "on" ? 0.0012 * (1 + st.amp) : st.belt === "blink" ? 0.0004 : 0;
     shYaw = sa ? (Math.random() - 0.5) * 2 * sa : 0; shPitch = sa ? (Math.random() - 0.5) * 1.4 * sa : 0;
+  }
+  const smooth01 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  /**
+   * 속도감 연출 한 걸음. 목표 = 속도 s(β 0.25 → 0.99) + 킥(변속 · 워프 점프 순간 1 → 0.7초에 걸쳐 사라짐).
+   *  · FOV 확장(Forza 식 속도 연동 FOV) — 초점거리를 줄여 시야를 넓힘
+   *  · 카메라 당김(부스트 때 카메라가 뒤로 빠졌다 돌아옴) — 눈 위치를 뒤로(EYE)
+   *  · 방사형 블러(Burnout · NFS 식) — 화면 가장자리로 갈수록 번짐
+   * 움직임 줄이기(prefers-reduced-motion)면 전부 끈다.
+   */
+  function updateWarpFx(dt) {
+    const calm = reducedMotion.matches || !star;
+    let s = 0;
+    if (!calm) {
+      const beta = star.frame ? star.frame.beta : star.st.beta;
+      s = smooth01(0.25, 0.99, beta);
+      const g = star.st.gear;
+      if (g > fxGear) fxKick = Math.max(fxKick, 0.8 + 0.04 * g);   // 기어를 올릴 때 한 번 당겨진다
+      fxGear = g;
+      if (star.jump && !star.jump.fxKicked) { star.jump.fxKicked = true; fxKick = 1.4; }   // 워프 점프 순간 크게
+    } else fxGear = 0;
+    fxKick *= Math.exp(-dt / 0.7);
+    if (fxKick < 0.005) fxKick = 0;
+    const k = 1 - Math.exp(-dt / 0.22);
+    fovK += ((calm ? 0 : Math.min(1.4, s + 0.5 * fxKick)) - fovK) * k;
+    pullK += ((calm ? 0 : 0.04 * s + 0.09 * Math.min(1.4, fxKick)) - pullK) * k;
+    blurK += ((calm ? 0 : Math.min(1, 0.85 * s + 0.5 * fxKick)) - blurK) * k;
+    if (fovK < 0.002 && calm) fovK = 0;
+    if (pullK < 0.0005 && calm) pullK = 0;
+    if (blurK < 0.01 && calm) blurK = 0;
+  }
+  /** 방사형 블러 — 방금 그린 돔 화면을 가운데를 기준으로 조금씩 키워 옅게 겹쳐 그린다(draw 끝에서) */
+  function zoomBlur() {
+    if (blurK < 0.02) {
+      if (zblurOn) { zg.clearRect(0, 0, zblur.width, zblur.height); zblur.style.opacity = "0"; zblurOn = false; }
+      return;
+    }
+    if (zblur.width !== canvas.width || zblur.height !== canvas.height) { zblur.width = canvas.width; zblur.height = canvas.height; }
+    zblurOn = true; zblur.style.opacity = "1";
+    zg.clearRect(0, 0, zblur.width, zblur.height);
+    const mx = cx * dpr, my = cy * dpr;
+    for (let i = 1; i <= 5; i++) {
+      const sc = 1 + i * 0.045 * blurK;
+      zg.save(); zg.globalAlpha = (0.34 * blurK) / Math.sqrt(i);
+      zg.translate(mx, my); zg.scale(sc, sc); zg.translate(-mx, -my);
+      zg.drawImage(canvas, 0, 0);
+      zg.restore();
+    }
   }
   function jumpUniforms() {
     const f = star?.frame;
@@ -2217,7 +2271,7 @@ export function createDomeGL(host, isPaused) {
     floorLights();
     const B = basis();
     gl.uniform3fv(U.uFwd, B.fwd); gl.uniform3fv(U.uRight, B.right); gl.uniform3fv(U.uUp, B.up);
-    gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele; drawnRoll = rollS;
+    gl.uniform3fv(U.E, EYE); drawnR = zoomR; drawnTele = tele; drawnRoll = rollS; drawnFov = fovK;
     gl.uniform1f(U.uBgRoll, bgRoll());
     gl.uniform1f(U.uF, viewFocal());
     // 실내 우주가 13 · 14번 칸에 float 질감을 꽂았다면 바깥 지형(정수 표본기) 전에 비운다 — 확대 조각이 있으면 view() 가 다시 꽂는다.
@@ -2315,6 +2369,7 @@ export function createDomeGL(host, isPaused) {
     }
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     drawnYaw = yaw; drawnPitch = pitch; lastGL = performance.now();
+    zoomBlur();
   }
 
   function placePieces() {
@@ -2365,8 +2420,8 @@ export function createDomeGL(host, isPaused) {
     magnification.style.display = "none";   // (해금 2단계) 배율은 시선 HUD 오른쪽 ZOOM 눈금이 보여 준다
     const label = `\u00d7${tele < 10 ? tele.toFixed(1).replace(/\.0$/, "") : Math.round(tele)}`;
     if (magnification.textContent !== label) magnification.textContent = label;
-    EYE[0] = EYE0[0] - zoomR * Math.sin(yaw);
-    EYE[2] = EYE0[2] - zoomR * Math.cos(yaw);
+    EYE[0] = EYE0[0] - (zoomR + pullK) * Math.sin(yaw);   // pullK = 워프 카메라 당김
+    EYE[2] = EYE0[2] - (zoomR + pullK) * Math.cos(yaw);
     return peek;
   }
 
@@ -2490,6 +2545,7 @@ export function createDomeGL(host, isPaused) {
     placePieces();
     updateUfo(peek);
     updateStar(performance.now(), dt, peek);
+    updateWarpFx(dt);
     updateHud(peek, dt);
     updateStarlight(peek);
     updateAlarm(dt);
@@ -2505,7 +2561,7 @@ export function createDomeGL(host, isPaused) {
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
       if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
     }
-    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn) draw();
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn || fovK !== drawnFov || blurK > 0 || zblurOn) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -2587,6 +2643,8 @@ export function createDomeGL(host, isPaused) {
       }));
     }, 3000);
     window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); }, get hud() { return hud.debug; }, get targets() { return hudTargets(placeKey()).map((t) => ({ id: t.id, az: +(Math.atan2(t.dir[0], t.dir[2]) / DEG).toFixed(1), alt: +(Math.asin(t.dir[1]) / DEG).toFixed(1) })); } };
+    window.__bggear = (i) => { if (!star) startStar(); shiftGear(star.st, i); return { fovK, pullK, blurK, kick: fxKick }; };   // 확인용 — 성간 이동을 시작하고 기어를 바꿈
+    window.__bgfx = () => ({ fovK, pullK, blurK, kick: fxKick, beta: star ? star.st.beta : null });
     window.__bgplaceAz = () => lastPhotoAz;
     window.__bgview = (az, alt) => { dbgView = az == null ? null : [az, alt]; };
     window.__bgplace = (key) => { const info = placeInfo(key); if (!info) return; loadDeep(info.idx).then(() => { setDeep(info.idx); placePhoto(info.idx); draw(); }); };   // 확인용 — 딥필드 · 달 궤도 바로 보기(?bgdebug&bgindoor=space 와 함께)
