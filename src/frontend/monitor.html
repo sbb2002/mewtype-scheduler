@@ -81,6 +81,7 @@
         <dt>읽은 트윗</dt><dd>다시 새 글로 보여요</dd>
         <dt>화면 설정</dt><dd>밝기 · 보기 방식 · 음원/MV · 번역이 처음대로예요</dd>
         <dt>처음 안내</dt><dd>한 번씩 다시 보여요</dd>
+        <dt>배경 보기</dt><dd>열어 둔 하늘을 다시 찾아야 해요</dd>
       </dl>
       <div class="dlg-btns">
         <button type="button" class="db" id="reset-cancel">취소</button>
@@ -133,7 +134,8 @@
 
     // (v4.8.4) 사이트 기록 초기화 — 이 주소(= 사이트)의 localStorage 전부를 지운다. 같은 주소라 메인 사이트의 저장값도 함께 지워진다.
     // 지우는 키: ymmt_listened(들은 곡) · mew:twread(읽은 트윗) · mew:tllang(번역 언어) · theme(밝기) · mew.board.view(보기 방식)
-    //   · mew.player.media(음원/MV) · mew.notice.lang · mew.notice.liveview · mew.tip.*(처음 안내) · 생일 이스터에그의 bday-yuno-controls-unlocked-v1(보상 해제) · bday-vol(볼륨) · bday-btn(🎂 위치). sessionStorage 는 건드리지 않는다.
+    //   · mew.player.media(음원/MV) · mew.notice.lang · mew.notice.liveview · mew.tip.*(처음 안내) · 생일 이스터에그의 bday-yuno-controls-unlocked-v1(보상 해제) · bday-vol(볼륨) · bday-btn(🎂 위치)
+    //   · 배경 보기의 bgunlock(해금 · bg-dome) · bgindoor · bgview(고른 하늘). sessionStorage 는 건드리지 않는다.
     var resetDlg = document.getElementById("reset-dlg");
     var toastEl = document.getElementById("toast");
     var toastT = 0;

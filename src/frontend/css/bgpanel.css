@@ -385,3 +385,24 @@
 .bghud-btn:focus-visible { outline: 2px solid var(--ufo-cyan); outline-offset: 2px; }
 .bghud-hn { margin: 0; font-size: 10.5px; color: var(--ufo-sub); text-shadow: 0 1px 3px #000; }
 @media (prefers-reduced-motion: reduce) { .bghud, .bghud.is-on, .bghud-card { transition: none; } }
+
+/* ── (11-09 해금 3단계) 보상 — FULL NAV · 별빛 조명 칸 · 자유 항해 · 별빛 조명(화면 아래 멤버 5색) */
+.ufo-head { position: relative; }
+.ufo-fullnav { position: absolute; right: 0; top: 0; font-size: 10px; letter-spacing: .14em; color: var(--ufo-pink); border: 1px solid var(--ufo-pink); padding: 1px 6px; box-shadow: 0 0 8px rgba(255, 111, 181, .4); }
+.ufo-fullnav[hidden], .ufo-extra-btn[hidden], .ufo-navbox[hidden] { display: none; }
+.ufo-extra-btn { width: 100%; padding: 8px 10px; font-size: 12px; letter-spacing: .1em; color: var(--ufo-ink); background: rgba(11, 18, 48, .6); border: 1px solid rgba(255, 111, 181, .45); cursor: pointer; }
+.ufo-extra-btn[aria-pressed="false"] { border-color: rgba(169, 186, 208, .35); color: var(--ufo-sub); }
+.ufo-navbox { display: grid; gap: 6px; }
+.ufo-navtit { margin: 0; font-size: 10.5px; letter-spacing: .16em; color: var(--ufo-pink); }
+.ufo-nav { display: flex; flex-wrap: wrap; gap: 6px; }
+.ufo-nav__it { padding: 6px 9px; font: 600 12px "Noto Sans KR", system-ui, sans-serif; color: var(--ufo-ink); background: rgba(11, 18, 48, .7); border: 1px solid rgba(79, 227, 255, .35); cursor: pointer; }
+.ufo-nav__it.is-here { opacity: .5; cursor: default; }
+.bg-starlight {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 32vh; z-index: 971; pointer-events: none; opacity: 0; transition: opacity .6s ease;
+  background: linear-gradient(90deg, var(--sl1), var(--sl2), var(--sl3), var(--sl4), var(--sl5));
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, .55) 35%, transparent 100%); mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, .55) 35%, transparent 100%);
+  mix-blend-mode: screen;
+}
+.bg-starlight.is-on { opacity: .34; animation: bg-starlight 6s ease-in-out infinite; }
+@keyframes bg-starlight { 0%, 100% { opacity: .26; } 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .bg-starlight.is-on { animation: none; } }

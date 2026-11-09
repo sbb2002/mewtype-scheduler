@@ -1,4 +1,5 @@
 import { advanceMonitorBirthday, dialogDirection } from './monitorbirthdaylogic.js';
+import { createMines } from './monitorminesui.js';
 
 export function mountMonitorBirthday() {
   const dialog=document.getElementById('reset-dlg'),open=document.getElementById('reset-open');
@@ -6,6 +7,8 @@ export function mountMonitorBirthday() {
   const events=new AbortController(),signal=events.signal;
   let progress=0,gesture=null,expiry=0,edgeTimer=0,closeTimer=0,suppressClick=false,frameEvents=null;
   let tabHints=[],hintStyle=null;
+  // (11-09 배경 해금 「모두 열기」) 방향 8개 직후 잔디 그리드 → 5 × 7 지뢰찾기. 폭발이 끝나면 처음으로(진행도 되돌림)
+  const mines=createMines(frame,{onEnd:()=>reset()});
 
   function restoreTabHints(){
     for(const saved of tabHints){
@@ -47,7 +50,7 @@ export function mountMonitorBirthday() {
   }
   function reset(){
     progress=0;clearTimeout(expiry);expiry=0;clearTimeout(closeTimer);closeTimer=0;
-    open.classList.remove('bday-armed');cancelGesture();clearEdge();restoreTabHints();
+    open.classList.remove('bday-armed');cancelGesture();clearEdge();restoreTabHints();mines.hide();
   }
   function input(value){
     progress=advanceMonitorBirthday(progress,value);
@@ -59,7 +62,9 @@ export function mountMonitorBirthday() {
       const va=new URLSearchParams(location.search).get('va');if(va)url.searchParams.set('va',va);
       reset();location.assign(url.href);return;
     }
-    if(progress)expiry=setTimeout(reset,30000);
+    if(progress===8&&!mines.active)mines.show();
+    if(progress<8&&mines.active)mines.hide();
+    if(progress&&!mines.active)expiry=setTimeout(reset,30000);   // 지뢰찾기 중엔 30초 자동 되돌리기를 멈춘다
     if(progress===8){
       // pointerup 뒤 호환 click이 먼저 소모되도록 확인창은 다음 이벤트 턴에 닫는다.
       closeTimer=setTimeout(()=>{closeTimer=0;if(dialog.open&&progress>=8)dialog.close()},0);
@@ -115,6 +120,7 @@ export function mountMonitorBirthday() {
         if(tab)input(tab.id==='tabBtnExt'?'EXT':'APP');
       },{signal:frameEvents.signal});
       updateTabHints();
+      if(mines.active||progress>=8){mines.hide();if(progress>=8&&progress<10)mines.show()}   // 리포트를 다시 불러오면 판도 새 문서에
     }catch{/* 외부 출처 iframe으로 바뀌면 숨은 진입만 비활성화한다. */}
   }
   frame.addEventListener('load',attachFrame,{signal});attachFrame();

@@ -120,6 +120,13 @@ export function createHud({ onLock, onZoom }) {
       g.restore();
     } else if (t.draw === "neb") {
       glow(x, y, 15 * k, "rgba(255,111,181,.55)"); glow(x + 3 * k, y - 2 * k, 10 * k, "rgba(79,227,255,.45)"); glow(x, y, 4 * k, "rgba(255,255,255,.9)");
+    } else if (t.draw === "ymmt" && t.stars) {
+      // (3단계 보상) YMMT 별자리 — 처음 한 번 anim 0 → 1 동안 선이 차례로 그어지고(유노 생일 장면과 같은 글자 모양), 그 뒤엔 옅게 늘 있다
+      const P = t.stars.map((d) => project(d)), a = t.anim ?? 1, strong = a < 1;
+      g.strokeStyle = `rgba(79,227,255,${strong ? 0.8 : 0.32})`; g.lineWidth = (strong ? 0.8 : 0.55) * unit; g.lineCap = "round";
+      const n = t.lines.length * a;
+      t.lines.forEach(([i, j], q) => { if (q >= n || !P[i] || !P[j]) return; const f = Math.min(1, n - q); g.beginPath(); g.moveTo(P[i][0], P[i][1]); g.lineTo(P[i][0] + (P[j][0] - P[i][0]) * f, P[i][1] + (P[j][1] - P[i][1]) * f); g.stroke(); });
+      for (const q of P) { if (!q) continue; glow(q[0], q[1], (strong ? 5 : 3.5) * unit, `rgba(255,190,230,${strong ? 0.6 : 0.35})`); g.fillStyle = "#fff"; g.beginPath(); g.arc(q[0], q[1], 0.7 * unit, 0, 7); g.fill(); }
     } else if (t.draw === "zod" && t.stars) {
       const P = t.stars.map((d) => project(d));
       const on = cardFor === t ? Math.min(1, (now - revealT) / 800) : t.found ? 1 : 0;

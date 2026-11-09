@@ -132,10 +132,21 @@ export function createUfoPanel() {
   // 지구를 고를 때 위치 권한을 묻는다는 안내(시안 Main.dc.html — 지구 칸 아래)
   const earthNote = h("p", "ufo-note", ["위치 권한을 물어요 — 거절하면 지금 배경에 남아요."]);
   list.append(earthNote);
+  // (11-09 해금 3단계) 보상 칸 — 별빛 조명 켜고 끄기(멤버 별자리 5개) · 자유 항해(지구까지 연 뒤 — 가 본 딥필드 · 달 궤도로 바로)
+  const lightBtn = h("button", "ufo-mono ufo-extra-btn", ["별빛 조명 끄기"], { type: "button", "aria-pressed": "true" });
+  const navList = h("div", "ufo-nav");
+  const navBox = h("div", "ufo-navbox", [h("p", "ufo-mono ufo-navtit", ["자유 항해"]), navList]);
+  lightBtn.hidden = true; navBox.hidden = true;
+  list.append(lightBtn, navBox);
+  let onLight = null, onNav = null, lightOn = true;
+  lightBtn.addEventListener("click", () => { if (on && onLight) onLight(!lightOn); });
 
   const head = h("div", "ufo-head", [
     h("div", "ufo-head__l", [h("span", "ufo-mono ufo-type ufo-head__tag", ["UFO CONTROL"]), h("span", "ufo-stg ufo-head__title", ["어디로 갈까요?"])]),
   ]);
+  const fullNav = h("span", "ufo-mono ufo-fullnav", ["FULL NAV"]);
+  fullNav.hidden = true;
+  head.append(fullNav);
   head.querySelector(".ufo-head__title").style.setProperty("--i", "0");
   const foot = h("div", "ufo-mono ufo-foot ufo-stg", [h("span", null, ["오므리면 닫힘"]), h("span", null, ["SYS · OK"])]);
   foot.style.setProperty("--i", "4");
@@ -222,6 +233,23 @@ export function createUfoPanel() {
     /** (해금) 길게 누르기가 처음 열린 뒤 한 번 — 초행성X 칸이 두 번 반짝인다 */
     nudge(key) { const b = tiles[key]; if (!b) return; b.classList.remove("is-nudge"); void b.offsetWidth; b.classList.add("is-nudge"); },
     get holdable() { return holdable; },
+    /** (3단계) 별빛 조명 칸 — v = null 이면 숨김(아직 안 열림), true · false = 지금 켜짐 · 꺼짐. fn(바꿀 값) */
+    setLight(v, fn) { if (fn) onLight = fn; lightBtn.hidden = v === null; if (v !== null) { lightOn = v; lightBtn.textContent = v ? "별빛 조명 끄기" : "별빛 조명 켜기"; lightBtn.setAttribute("aria-pressed", v ? "true" : "false"); } },
+    /** (3단계) 자유 항해 — items = [{ key, name, here }] 또는 null(아직 안 열림). FULL NAV 표시도 같이. fn(key) */
+    setFreeNav(items, fn) {
+      if (fn) onNav = fn;
+      fullNav.hidden = !items; navBox.hidden = !items || !items.length;
+      if (!items) return;
+      const sig = items.map((it) => it.key + (it.here ? "*" : "")).join(",");
+      if (navList.dataset.sig === sig) return;
+      navList.dataset.sig = sig;
+      navList.replaceChildren(...items.map((it) => {
+        const b = h("button", "ufo-nav__it" + (it.here ? " is-here" : ""), [it.name], { type: "button" });
+        if (it.here) b.disabled = true;
+        b.addEventListener("click", () => { if (on && onNav) onNav(it.key); });
+        return b;
+      }));
+    },
     /** (해금) 화면 위쪽에 잠깐 뜨는 한 줄 알림(해금 · 도착). 2.2초, 새 알림이 오면 바꿔 쓴다 */
     toast(text) {
       toastEl.textContent = text;

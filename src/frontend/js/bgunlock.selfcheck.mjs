@@ -1,6 +1,6 @@
 // bgunlock.selfcheck.mjs — node src/frontend/js/bgunlock.selfcheck.mjs
 import assert from "node:assert/strict";
-import { emptyState, parseState, legacyUnlocks, unlock, has, arrive, randomDest, chooserItems, allDeepVisited, unlockAll, loadUnlock, saveUnlock, keyOfIdx, DEEP_FIELDS, onFound, ZODIAC } from "./bgunlock.js";
+import { emptyState, parseState, legacyUnlocks, unlock, has, arrive, randomDest, chooserItems, allDeepVisited, unlockAll, loadUnlock, saveUnlock, keyOfIdx, DEEP_FIELDS, onFound, ZODIAC, ALL_FIND_IDS, unlockAllStored } from "./bgunlock.js";
 
 // 저장 글 읽기 — 틀린 값은 버린다
 {
@@ -78,3 +78,12 @@ console.log("bgunlock self-check ok");
   assert.ok(r.fresh && r.k === "" && !r.toast);
 }
 console.log("bgunlock onFound ok");
+{
+  const mem = {}, st = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => { mem[k] = v; } };
+  assert.ok(unlockAllStored(st));
+  const s = loadUnlock(st);
+  assert.equal(s.unl.length, 7);
+  assert.ok(ALL_FIND_IDS.every((id) => s.found.includes(id)) && allDeepVisited(s));
+  assert.ok(parseState('{"seen":{"lightOff":true}}').seen.lightOff);
+}
+console.log("bgunlock all-stored ok");

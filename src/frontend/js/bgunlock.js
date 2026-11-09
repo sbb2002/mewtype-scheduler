@@ -40,7 +40,7 @@ export function parseState(text) {
   if (Array.isArray(o.unl)) s.unl = o.unl.filter((k) => UNLOCKS.includes(k));
   if (Array.isArray(o.vis)) s.vis = o.vis.filter((k, i, a) => DEEP_FIELDS.some((d) => d.key === k) && a.indexOf(k) === i);
   if (Array.isArray(o.found)) s.found = o.found.filter((k) => typeof k === "string").slice(0, 64);
-  if (o.seen && typeof o.seen === "object") for (const k of ["holdNotice", "locAsked", "ymmtShown"]) if (o.seen[k] === true) s.seen[k] = true;
+  if (o.seen && typeof o.seen === "object") for (const k of ["holdNotice", "locAsked", "ymmtShown", "lightOff"]) if (o.seen[k] === true) s.seen[k] = true;   // lightOff = 별빛 조명을 끔(3단계)
   return s;
 }
 
@@ -140,3 +140,8 @@ export function onFound(s, t) {
   }
   return r;
 }
+
+/** 찾을 수 있는 대상 id 전부 — 모두 열기(모니터링 페이지 지뢰찾기)가 found 를 채울 때 */
+export const ALL_FIND_IDS = ["saturn", "neb", "earthT", ...ZODIAC.map((z) => z.id)];
+/** 모두 열기 — 기기 저장까지(모니터링 페이지에서 부른다). 돌려줌 = 저장 성공 */
+export function unlockAllStored(storage) { const s = loadUnlock(storage); unlockAll(s, ALL_FIND_IDS); return saveUnlock(storage, s); }
