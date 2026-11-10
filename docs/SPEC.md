@@ -448,7 +448,12 @@ PC(≥768px)에서만 **보기 방식 탭 `.vt` [테이블 | 카드]** 가 「�
 - **지구(바깥 보기)**: 폰이 기울어도 배경은 반대로 같은 각만큼 돌려 늘 수평(UFO 무늬만 기울어 보임).
 - **페이지 확대 차단**(`bgpeek.js` `blockPageZoom` + viewport `user-scalable=no`): 예고 메인 화면 · 기본 요소는 두 손가락으로 확대 · 축소되지 않는다. 배경 보기의 줌은 돔 안에서만.
 - **모니터링 페이지**(`monitorbirthday.js` · `monitormines*.js`): 방향 8개를 모으면 지뢰찾기, 성공 시 「모두 열기」(해금 전부). 확인용 훅 = `?bgdebug` 에서만 `__bgplace(키)` · `__bgview(방위, 고도)` · `__bggear(기어)` · `__bgfx()` · `__bgunlock`.
-- **미확인 · 한계**: 달 궤도 월면 · 가속 연출의 GPU 비용은 S23 에서 끊김 없음만 확인(그 밖 기기 미확인). 월면은 절차 생성이라 실제 지형이 아니며 먼 산맥의 정확한 투영 그림자 · 실루엣 변위는 없다.
+- **쓸 때만 불러오기**(11-10, `bgdeco.js`): `bgdomegl.js`(+ 하위 모듈)는 동적 `import()` — 돔 테마이고 생일 장면이 꺼져 있을 때만 받는다. classic · 생일 날엔 받지도 만들지도 않고, 생일을 끄거나 테마를 돔으로 바꾸면 그때 받는다. 받는 동안은 SVG 돔 장면(`bgdome.js`, WebGL2 없는 기기의 대체 장면과 같음)을 먼저 그린다.
+- **성능 등급**(11-10, `bgtier.js` 순수 판정 · `localStorage "bgtier"`): 주소 `?bgtier=low|high|reset` → 기기 기억 → 없으면 high 로 시작해 **배경 보기 중 rAF 간격을 실측**(첫 1.5초 버림, 2초 이상 모이면 평균 45fps 미만 또는 50ms 넘는 프레임 10% 초과 = low).
+  high = 지금 그대로. **low** = 해상도 상한 1.0(high 1.5) · 배경 보기도 30fps · **예고보드 상태(배경 보기 아님)에선 rAF 를 멈추고 마지막 화면 유지**(구름 · 시선 · 공중 무늬 · 기울임 정지, 성간 이동은 멈춰 두고 경보음 끔). 하늘 전환 · 테마 전환 · 점프 연출은 끝까지 돈다. 쉬는 동안에도 크기 · 테마 · 하늘 · 사진 도착 · 라이브 변화면 한 번 그린다. 확인용 `?bgdebug` `__bgtier`.
+- **라이브 조명**(11-10, `bglive.js` 순수 · 셰이더 `uLiveCol[5]` · `uLiveK[5]`): 바닥 매립 조명 0 ~ 4번 = `channel_order` 순서(0번 = 정면(북) 쪽, 위에서 볼 때 시계 방향, `a = i·72° + 17.8°`). 평소 = 테마 색 그대로. 멤버가 라이브(`state === "live"` 항목의 `channel_key` + `collab_with`, `assumed_live` · `end` 제외)면 그 조명이 멤버 색(`config.js MEMBER_LIGHT_COLORS` — 별빛 조명과 공유, 아라레 = 임시 노랑)으로 2.8초 주기 점멸.
+  high · 배경 보기 = 점멸(약 10fps 로 다시 그림), low · 예고보드 · 움직임 줄이기 = 멤버 색으로 켜 두기만. 경보 빨강이 우선. `main.js` `poll()` 이 `publishLive()` 로 매번 알린다(`bg:live` 이벤트, 마지막 값 보관). 확인용 `?bgdebug` `__bglive(["yuno", …] | null)`.
+- **미확인 · 한계**: 달 궤도 월면 · 가속 연출의 GPU 비용은 S23 에서 끊김 없음만 확인(그 밖 기기 미확인). 성능 등급 · 라이브 조명은 창 없는 크롬(CPU 제한 ×1 · ×3 · ×6)으로만 확인 — 실기기 · 실제 라이브 데이터 미확인(devpapers `ref/bg-dome/perf/PERF_2026-11-10.md` 「11-10 후속」). 월면은 절차 생성이라 실제 지형이 아니며 먼 산맥의 정확한 투영 그림자 · 실루엣 변위는 없다.
 
 ### 생일 스킨 — `birthday.js` · `birthdayui.js` · `bdayscene-yuno.js` · `bdayaudio.js` · `bdayplayer.js` · `bdaysign.js` · `bdayguard.js` · `bdaystory.js` · `bdayreward.js`
 
