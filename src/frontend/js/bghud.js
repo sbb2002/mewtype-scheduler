@@ -26,8 +26,6 @@ function h(tag, cls, kids, attrs) {
   if (kids) for (const c of kids) e.append(c);
   return e;
 }
-// (피드백 P1) 1 미만 구간 눈금 추가 — 물러선 구간의 표시 배율 zv(×1.0 → ×0.4)용
-const ZT = [0.4, 0.5, 0.6, 0.8, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30], ZM = [0.45, 0.55, 0.7, 0.9, 1.25, 1.75, 2.5, 3.5, 4.5, 6, 8.5, 12.5, 17.5, 25];
 
 /**
  * HUD 를 만든다. onLock(t) = 대상이 잡힘 → { k, to, fresh } 를 돌려준다(해금 · 저장 · 알림은 부르는 쪽),
@@ -65,33 +63,27 @@ export function createHud({ onLock, onZoom }) {
     const isMid = x === 0, isNear = Math.abs(x) === 6;
     arch.appendChild(sv("circle", { cx: x, cy: (-13 + 0.012 * x * x).toFixed(2), r: 0.9, fill: isMid ? VAL : CY, opacity: isMid ? 1 : isNear ? 0.6 : 0.25 }));
   }
-  // (피드백 P2-3) 마스크를 둘로 — 위(눈금 선 y −6 ~ 7)는 좌우 흐림만, 아래(숫자 줄 y 7 ~ 20)는 가운데 구멍(x −14 ~ 14)을 낸다
+  // (피드백 P2-3 → Q1-1) 테이프 마스크는 하나 — 좌우 끝 흐림만(가운데 구멍 없음). 눈금 · 숫자는 가운데에서도 각도 칸 뒤로 지나간다
   const tapeWrap = sv("g", {}, [
     sv("defs", null, [
       sv("linearGradient", { id: clipId + "g", x1: -70, x2: 70, y1: 0, y2: 0, gradientUnits: "userSpaceOnUse" }, [
         sv("stop", { offset: 0, "stop-color": "#fff", "stop-opacity": 0 }), sv("stop", { offset: 0.2, "stop-color": "#fff" }),
         sv("stop", { offset: 0.8, "stop-color": "#fff" }), sv("stop", { offset: 1, "stop-color": "#fff", "stop-opacity": 0 }),
       ]),
-      sv("linearGradient", { id: clipId + "h", x1: -70, x2: 70, y1: 0, y2: 0, gradientUnits: "userSpaceOnUse" }, [
-        sv("stop", { offset: 0, "stop-color": "#fff", "stop-opacity": 0 }), sv("stop", { offset: 0.14, "stop-color": "#fff" }),
-        sv("stop", { offset: 0.29, "stop-color": "#fff" }), sv("stop", { offset: 0.34, "stop-color": "#fff", "stop-opacity": 0 }),
-        sv("stop", { offset: 0.66, "stop-color": "#fff", "stop-opacity": 0 }), sv("stop", { offset: 0.71, "stop-color": "#fff" }),
-        sv("stop", { offset: 0.86, "stop-color": "#fff" }), sv("stop", { offset: 1, "stop-color": "#fff", "stop-opacity": 0 }),
-      ]),
-      sv("mask", { id: clipId }, [
-        sv("rect", { x: -70, y: -6, width: 140, height: 13, fill: `url(#${clipId}g)` }),
-        sv("rect", { x: -70, y: 7, width: 140, height: 13, fill: `url(#${clipId}h)` }),
-      ]),
+      sv("mask", { id: clipId }, [sv("rect", { x: -70, y: -6, width: 140, height: 26, fill: `url(#${clipId}g)` })]),
     ]),
-    sv("g", { mask: `url(#${clipId})` }, [tape, bcn]),
+    sv("g", { mask: `url(#${clipId})` }, [tape]),
     bedge,
     arch,
   ]);
   // (제안 A-2 · B-1) 방위 숫자는 3자리 고정 — 칸을 둘러싼 챔퍼 베젤 안에
   // (합집합 S11 · 피드백 P2-2) 가운데 각도 칸 = 챔퍼 채운 상자(CSS .hud-cell, 30 × 13) + 어두운 숫자 「040°」(9.5 · 700). 테이프 숫자 줄 한가운데. 방위 라벨은 없앰
-  const hdgCell = sv("path", { d: "M-13 -9H13L15 -7V2L13 4H-13L-15 2V-7Z", class: "hud-cell" });
-  const hdg = txt(0, 1, "000°", { a: "middle", s: 9.5, w: 700, c: "#06121c", ls: ".3", cls: "nostroke" });   // 셀 위 글자는 #06121c — hud-v 글로우 미적용
+  // (피드백 Q1-4) 칸 아래를 1.5 늘려 숫자 상자(테이프 y ~17.5)를 덮고, 글자는 칸 가운데(y 1.6)에 맞춘다
+  const hdgCell = sv("path", { d: "M-13 -9H13L15 -7V3.5L13 5.5H-13L-15 3.5V-7Z", class: "hud-cell" });
+  const hdg = txt(0, 1.6, "000°", { a: "middle", s: 9.5, w: 700, c: "#06121c", ls: ".3", cls: "nostroke" });   // 셀 위 글자는 #06121c — hud-v 글로우 미적용
   const hdgG = sv("g", {}, [hdgCell, hdg]);
+  // (피드백 Q1-5) 못 찾은 대상 마름모는 각도 칸 위에 그린다 — 테이프와 같은 좌표 · 같은 좌우 흐림 마스크
+  const bcnG = sv("g", { mask: `url(#${clipId})` }, [bcn]);
   // (제안 A-1 · 14) 중앙 링 — 방위(N) 제거: 링은 2초 관측 진행만, 방향은 위 테이프가 맡는다. 12개 짧은 기준 눈금 + 얇은 점선 링
   // (합집합 S2 · S5) 링 겹 — 안 실선 r22 · 트랙 r28 + 진행 호 · 대시 r33 · 바깥 점 r38. 부분 눈금은 상 · 하 · 좌 · 우 네 곳에만(r41 ~ 44, 곳마다 7개 · 5° 간격)
   const partTicks = sv("g");
@@ -144,7 +136,7 @@ export function createHud({ onLock, onZoom }) {
   // (합집합 S18) 아래 줄 — 라벨 SKY · KST(4단계) · 하늘 이름(한글 8 · 600 · VAL) · 시각 HH:MM(8 · 600 · VAL · 글로우)
   const skyName = txt(14, 0, "", { s: 8, c: VAL, w: 600, cls: "ko" }), clock = txt(186, 0, "--:--", { a: "end", s: 8, c: VAL, w: 600, cls: "hud-v" });
   const foot = sv("g", {}, [txt(14, -12, "SKY", { s: 5, c: MID, cls: "lab" }), skyName, txt(186, -12, "KST", { a: "end", s: 5, c: MID, cls: "lab" }), clock]);
-  svg.append(tapeWrap, hdgG, ring, reticle, sides, foot);
+  svg.append(tapeWrap, hdgG, bcnG, ring, reticle, sides, foot);   // (피드백 Q1-3) 그리는 순서: 테이프 → 각도 칸 → 대상 마름모
 
   // ── 정보 카드(F5 .pick) ──
   // (합집합 S19 · S20 · S22 · S23) 카드 = 머리띠(TARGET 캡션 + 칩) · 본문 · 우상 · 좌하 십자 표식(ㄱ자 꺾쇠는 CSS ::before · ::after)
@@ -178,6 +170,7 @@ export function createHud({ onLock, onZoom }) {
     foot.style.display = H < 500 ? "none" : "";   // (제안 3-6) 낮은 화면 — 하늘 · 시각 줄을 접는다
     const t0 = 34 + safeTop / unit;
     tapeWrap.setAttribute("transform", `translate(100,${t0.toFixed(2)})`);
+    bcnG.setAttribute("transform", `translate(100,${t0.toFixed(2)})`);
     hdgG.setAttribute("transform", `translate(100,${(t0 + 13).toFixed(2)})`);   // (피드백 P2-2) 테이프 숫자 줄 한가운데
     last = {};
   }
@@ -381,11 +374,13 @@ export function createHud({ onLock, onZoom }) {
         set("bars", 1 + Math.round(kk * 4), (n) => bars.forEach((b, i) => b.classList.toggle("on", i < n)));
       }
       // ── ALT · ZOOM 눈금(화면과 함께 움직임 — F5)
-      const ppdU = f.ppd / unit, stp = [0.1, 0.2, 0.5, 1, 2, 5].find((s) => s * ppdU >= 10) || 5, m = stp === 5 ? 3 : 5;
+      // (피드백 Q2-1 · Q2-2) 눈금 간격 = 눈금 사이가 3.5 단위 이상이 되는 가장 작은 간격. 큰 눈금은 5번째마다(고정)
+      const ppdU = f.ppd / unit, stp = [0.1, 0.2, 0.5, 1, 2, 5, 10].find((s) => s * ppdU >= 3.5) || 10, m = 5;
       // (합집합 S13 · S16 · S17) 눈금은 선만(숫자 없음 · 0° 만 PK) · 큰 8 · 작은 4 · 채운 구간(±52 로 자름) · 부호 + 2자리 · 잔상 갱신
       set("alt", `${f.pitchDeg.toFixed(2)}|${ppdU.toFixed(3)}`, () => {
         clear(altl);
-        for (let i = Math.floor((f.pitchDeg - 90 / ppdU) / stp); i * stp <= f.pitchDeg + 90 / ppdU; i++) {
+        // (피드백 Q2-3) 그리는 범위는 레일 안(y −52 ~ 52 — 여유를 두어 ±54)만
+        for (let i = Math.floor((f.pitchDeg - 54 / ppdU) / stp); i * stp <= f.pitchDeg + 54 / ppdU; i++) {
           const r = i * stp, yy = -(r - f.pitchDeg) * ppdU, big = ((i % m) + m) % m === 0, zero = i === 0;
           altl.appendChild(sv("line", { x1: 14, x2: big ? 22 : 18, y1: yy.toFixed(2), y2: yy.toFixed(2), stroke: zero ? PK : CY, "stroke-width": big ? ".7" : ".4", opacity: big ? ".9" : ".5" }));
         }
@@ -399,8 +394,15 @@ export function createHud({ onLock, onZoom }) {
       set("zm", zv.toFixed(3), () => {
         clear(zml);
         const lz = Math.log(zv), K = 60, zy = (z) => -(Math.log(z) - lz) * K;
-        for (const z of ZM) { const yy = zy(z); if (yy > -90 && yy < 90) zml.appendChild(sv("line", { x1: 186, x2: 182, y1: yy.toFixed(2), y2: yy.toFixed(2), stroke: CY, "stroke-width": ".4", opacity: ".5" })); }
-        for (const z of ZT) { const yy = zy(z); if (yy < -90 || yy > 90) continue; zml.appendChild(sv("line", { x1: 186, x2: 178, y1: yy.toFixed(2), y2: yy.toFixed(2), stroke: CY, "stroke-width": ".7", opacity: ".9" })); }
+        // (피드백 Q2-4 · Q2-5 · Q2-6) 로그 등간격 눈금: 간격 d = 3.5 / K (y 로 3.5 단위). i 번째 눈금 z = exp(i·d), 위치 yy = −(i·d − ln zv)·K
+        // 큰 눈금은 i 가 5의 배수, i = 0(×1 자리)은 분홍. 0.4 미만 · 30 초과 구간은 그리지 않는다(여기가 표시 끝)
+        const dl = 3.5 / K, iLo = Math.ceil((lz - 54 / K) / dl), iHi = Math.floor((lz + 54 / K) / dl);
+        for (let i = iLo; i <= iHi; i++) {
+          const z = Math.exp(i * dl);
+          if (z < 0.4 || z > 30) continue;
+          const yy = -(i * dl - lz) * K, big = ((i % 5) + 5) % 5 === 0, zero = i === 0;
+          zml.appendChild(sv("line", { x1: 186, x2: big ? 178 : 182, y1: yy.toFixed(2), y2: yy.toFixed(2), stroke: zero ? PK : CY, "stroke-width": big ? ".7" : ".4", opacity: big ? ".9" : ".5" }));
+        }
         const zs = "×" + zv.toFixed(1).padStart(4, "0");   // 「×00.6」 「×01.0」 「×06.0」 — 숫자 4글자 고정
         zmVal.textContent = zs;
         zmFill.setAttribute("y2", Math.max(-52, Math.min(52, zy(1))).toFixed(2));   // ×1 위치 ↔ 현재(y 0)

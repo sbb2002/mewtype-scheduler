@@ -373,7 +373,7 @@
 /* (화면 확인 후) 밝은 하늘에서도 글자가 읽히게 어두운 외곽선 — 필터 대신 stroke. 셀 안 숫자 · 잔상은 제외 */
 .bghud-svg text { paint-order: stroke fill; stroke: rgba(4, 8, 24, .6); stroke-width: .7px; stroke-linejoin: round; }
 .bghud-svg text.nostroke { stroke: none; }
-.bghud-svg .hud-cell { fill: rgba(79, 227, 255, .92); filter: drop-shadow(0 0 2.5px rgba(79, 227, 255, .6)); }
+.bghud-svg .hud-cell { fill: #4fe3ff; filter: drop-shadow(0 0 2.5px rgba(79, 227, 255, .6)); }
 .bghud-probe { position: absolute; top: 0; left: 0; width: 0; height: env(safe-area-inset-top, 0px); visibility: hidden; }
 .bghud-card {
   position: absolute; left: 14px; right: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 136px); z-index: 1;
