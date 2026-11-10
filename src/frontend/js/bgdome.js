@@ -41,8 +41,13 @@ export function domeGeometry(W, H) {
   // 앞쪽 적도가 돔과 바닥의 접점이다. 같은 투영으로 격자 끝과 정확히 맞춘다.
   const rimPoints = samples(240, (t) => project(0, (-88 + t * 176) * DEG));
   const rim = path(rimPoints);
-  const first = rimPoints[0], last = rimPoints.at(-1);
-  const floor = `${rim} L${last[0].toFixed(2)},${H + 200} L${first[0].toFixed(2)},${H + 200} Z`;
+  // (bg-dome, 11-10) 끝 경도(±88°)는 눈 높이 기준으로 근평면(depth < 0.06) 아래라 null 이 될 수 있다.
+  // 양 끝 대신 null 이 아닌 첫 점 · 마지막 점을 쓴다. 유효 점이 하나도 없으면 바닥 면은 그리지 않는다.
+  const validRim = rimPoints.filter(Boolean);
+  const first = validRim[0], last = validRim.at(-1);
+  const floor = first && last
+    ? `${rim} L${last[0].toFixed(2)},${H + 200} L${first[0].toFixed(2)},${H + 200} Z`
+    : "";
   const reflections = [-71, 69].map((lon) => path(samples(120, (t) => project((8 + t * 76) * DEG, lon * DEG))));
   return { latitudes, longitudes, rim, floor, reflections };
 }

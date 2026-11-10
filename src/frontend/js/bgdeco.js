@@ -7,7 +7,6 @@
 import { layout, scribblePath, makeBody, impulse, step, shakePower, SHAKE_GAP_MS } from "./bglogic.js";
 import { buildVirtualScene, observeMemberAccent } from "./bgvirtual.js";
 import { buildDomeScene } from "./bgdome.js";
-import { createDomeGL } from "./bgdomegl.js";
 import { startGyro } from "./bggyro.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -30,7 +29,10 @@ const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 let scene = null, momentT = 0, momentEndT = 0;
 let sensorArmed = false, sensorAsked = false;
 let domeGL = null, domeGLTried = false;   // ?bg=d 의 WebGL 장면(자이로 둘러보기). 못 만들면 SVG 장면
+let domeGLImport = null;                  // (bg-dome, 11-10) bgdomegl.js 동적 import Promise — 한 번만 시작한다
 const paused = () => document.hidden || reduce() || document.documentElement.hasAttribute("data-bday");
+/** (bg-dome, 11-10) WebGL 돔을 지금 불러와도 되나 — 돔 테마이고 생일 장면이 꺼져 있어야 한다 */
+const wantsDomeGL = () => variant === "d" && !document.documentElement.hasAttribute("data-bday");
 const reduce = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function sv(tag, attrs, parent) {
@@ -58,27 +60,59 @@ function shape(it, grad, parent) {
   return sv("rect", { ...common, x: x - u * 0.75, y: y - u * 0.75, width: u * 1.5, height: u * 1.5, rx: 3, fill: `url(#${grad})` }, parent);   // gem(마름모)
 }
 
+/** (bg-dome, 11-10) SVG 돔 장면 — WebGL 을 못 쓰는 기기 · 불러오는 동안 · 생일 중에 그린다. 구름은 재생 위치를 유지하고, 정지된 유리만 현재 화면 크기로 다시 투영한다. */
+function buildFallbackDome() {
+  // SVG 장면까지 실패해도 페이지(레인 · 소식) 초기화는 계속돼야 한다 — 그때는 배경색만
+  try { scene = buildDomeScene(host, W, H); }
+  catch (err) { console.warn("[bgdome] SVG 장면도 실패 — 배경색만", err); scene = null; svg = null; items = []; bodies = []; els = []; return; }
+  ({ svg, items, els } = scene);
+  bodies = items.map((it) => ({ ...makeBody(it, W, H), home: true, m: it.u * 1.5 }));
+  host.appendChild(svg);
+}
+
+/** (bg-dome, 11-10) WebGL 돔 모듈(bgdomegl.js)은 쓸 때만 불러온다. 돔 테마가 아니거나 생일 장면이 켜져 있으면 안 부른다.
+ * 불러오기는 한 번만 시작한다. 불러오기 · 만들기가 실패하면 SVG 장면을 그대로 두고, 테마를 다시 고르기 전까지 다시 만들지 않는다. */
+function loadDomeGL() {
+  if (domeGL || domeGLTried || !wantsDomeGL()) return;
+  if (!domeGLImport) domeGLImport = import("./bgdomegl.js");
+  domeGLImport.then(({ createDomeGL }) => {
+    // 불러오는 사이 테마가 바뀌었거나 생일이 켜졌으면 만들지 않는다(다시 맞을 때 syncMotion 이 다시 부른다)
+    if (domeGL || domeGLTried || !wantsDomeGL()) return;
+    domeGLTried = true;
+    try {
+      domeGL = createDomeGL(host, paused);
+      if (!domeGL) return;   // WebGL2 를 못 쓰는 기기 → SVG 장면 유지
+      domeGL.resize(W, H);
+    } catch (err) {
+      console.warn("[bgdome] WebGL 장면 생성 실패 — SVG 로 그린다", err);
+      domeGL?.destroy?.(); domeGL = null;
+      return;
+    }
+    // WebGL 장면이 준비됐으니 SVG 장면을 걷는다
+    if (svg) svg.remove();
+    svg = null; scene = null; items = []; bodies = []; els = [];
+    host.querySelector(".bgdm-sky")?.remove();
+    cancelAnimationFrame(raf); raf = 0;
+    if (sensorOn) startGyro();   // 흔들기 권한이 먼저 왔다면 둘러보기도 지금 켠다
+    syncMotion();
+  }, (err) => {
+    domeGLTried = true;   // 모듈을 못 받으면 이 방문 동안 다시 시도하지 않는다
+    console.warn("[bgdome] WebGL 모듈 불러오기 실패 — SVG 로 그린다", err);
+  });
+}
+
 function build() {
   W = window.innerWidth; H = window.innerHeight;
   cancelAnimationFrame(raf); raf = 0;
   if (svg) svg.remove();
   if (variant === "d") {
-    // WebGL 장면이 어떤 이유로든 실패하면 페이지 전체가 멈추지 않게 SVG 장면으로 물러난다
-    if (!domeGLTried) {
-      domeGLTried = true;
-      try { domeGL = createDomeGL(host, paused); } catch (err) { console.warn("[bgdome] WebGL 장면 생성 실패 — SVG 로 그린다", err); domeGL = null; }
-    }
+    // WebGL 장면이 이미 있으면 크기만 다시 맞춘다. 실패하면 페이지가 멈추지 않게 SVG 장면으로 물러난다
     if (domeGL) {
       try { svg = null; items = []; bodies = []; els = []; domeGL.resize(W, H); return; }
       catch (err) { console.warn("[bgdome] WebGL 그리기 실패 — SVG 로 그린다", err); domeGL.destroy?.(); domeGL = null; }
     }
-    // (WebGL2 를 못 쓰는 기기) 구름은 재생 위치를 유지하고, 정지된 유리만 현재 화면 크기로 다시 투영한다.
-    // SVG 장면까지 실패해도 페이지(레인 · 소식) 초기화는 계속돼야 한다 — 그때는 배경색만
-    try { scene = buildDomeScene(host, W, H); }
-    catch (err) { console.warn("[bgdome] SVG 장면도 실패 — 배경색만", err); scene = null; svg = null; items = []; bodies = []; els = []; return; }
-    ({ svg, items, els } = scene);
-    bodies = items.map((it) => ({ ...makeBody(it, W, H), home: true, m: it.u * 1.5 }));
-    host.appendChild(svg);
+    buildFallbackDome();
+    loadDomeGL();
     return;
   }
   if (variant) {
@@ -167,6 +201,8 @@ function scheduleMoment() {
 function syncMotion() {
   const stop = paused();
   host.classList.toggle("bgd-paused", stop);
+  // (bg-dome, 11-10) 생일이 꺼진 뒤(data-bday 제거)나 돔 테마로 막 바뀐 뒤엔 여기서 WebGL 을 부른다 — 생일 중이면 loadDomeGL 이 막는다
+  if (!domeGL && variant === "d") loadDomeGL();
   if (domeGL) { domeGL.setPaused(stop); if (!stop) enableSensor(); return; }
   if (stop) {
     cancelAnimationFrame(raf); raf = 0;
@@ -189,7 +225,8 @@ function onMotion(ev) {
 /** 센서 켜기. iOS 는 사용자 동작 안에서 권한을 물어야 해서 첫 터치 때 한 번 요청한다. 안드로이드 · 데스크톱은 바로 듣는다(데스크톱은 이벤트가 안 온다). */
 function enableSensor() {
   if (sensorOn || sensorArmed || sensorAsked || typeof DeviceMotionEvent === "undefined") return;
-  const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); if (domeGL) startGyro(); };
+  // (bg-dome, 11-10) 둘러보기 권한 조건은 WebGL 생성 여부가 아니라 돔 테마 여부 — WebGL 모듈이 아직 안 와도 첫 터치 때 권한을 물어야 한다
+  const attach = () => { sensorOn = true; window.addEventListener("devicemotion", onMotion); if (variant === "d") startGyro(); };
   if (typeof DeviceMotionEvent.requestPermission !== "function") { attach(); return; }
   sensorArmed = true;
   const ask = () => {
@@ -197,12 +234,12 @@ function enableSensor() {
     document.removeEventListener("pointerup", ask, true);
     sensorArmed = false; sensorAsked = true;
     // iOS: 흔들기(devicemotion)와 둘러보기(deviceorientation) 권한을 같은 터치 안에서 함께 묻는다
-    const ori = domeGL && typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"
+    const ori = variant === "d" && typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"
       ? DeviceOrientationEvent.requestPermission().catch(() => "denied") : Promise.resolve("granted");
     DeviceMotionEvent.requestPermission().then((r) => {
       if (r === "granted") { sensorOn = true; window.addEventListener("devicemotion", onMotion); }
     }).catch(() => {});   // 거절 · 실패하면 흔들기만 없다
-    ori.then((r) => { if (r === "granted" && domeGL) startGyro(); });
+    ori.then((r) => { if (r === "granted" && variant === "d") startGyro(); });
   };
   document.addEventListener("pointerup", ask, true);
 }
