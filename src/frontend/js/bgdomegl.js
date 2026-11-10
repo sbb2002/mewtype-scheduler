@@ -7,11 +7,12 @@
 // 공중 무늬(고리 · 별 · 지그재그 · 점 · 물결 · 반짝이)는 SVG 조각을 3D 위치에서 화면으로 투영해 transform 만 바꾼다(합성만 일어나 싸다).
 // 평소엔 천천히 떠다니고(관성 있는 무작위 표류), 흔들면 튀어 나가 벽 · 바닥 · 서로에 부딪히며 섞인다. 다 가라앉으면 그때 폰 자세를 새 정면으로 삼는다.
 //
-// 비용: 카메라가 안 움직이면 구름 흐름만 초당 6번 다시 그린다. 화면 갱신은 평소 30fps · 레인을 걷은 「배경 보기」(html.bg-peek) 중 60fps.
+// 비용: 카메라가 안 움직이면 구름 흐름만 초당 6번 다시 그린다. 화면 갱신은 평소 30fps · 레인을 걷은 「배경 보기」(html.bg-peek) 중 60fps. (bg-dome, 11-10) 낮은 성능 등급이면 배경 보기도 30fps, 예고보드 상태에선 돌림을 멈춘다(bgtier.js · wantsLoop).
 // 시선은 실내 · 바깥 모두 폰이 실제로 향한 방향 그대로(updateView). 해상도는 기기 배율 1.5 까지만.
 
 import { gyroView, startAbsolute, gyroAbs, gyroDebug, gyroTilt } from "./bggyro.js";
 import { BGVIEW_EVENT, BGINDOOR_EVENT, indoorBg, setIndoorBg, setBgView, chooseBgView } from "./bgview.js";
+import { resolveTier, judge, readStoredTier, writeStoredTier, clearStoredTier } from "./bgtier.js";
 import { outdoorSite } from "./bgsite.js";
 import { sunPosition, moonPosition, moonIllumination, dirOf, horizonToEquatorial, refraction } from "./bgastro.js";
 
@@ -45,6 +46,7 @@ const BASE_PITCH = 28 * DEG;
 const PITCH_MIN = -55 * DEG, PITCH_MAX = 88 * DEG;
 const CLOUD_MS = 160;                  // 카메라가 멈춰 있을 때 구름 흐름 다시 그리기 간격
 const MAX_DPR = 1.5;
+const LOW_DPR = 1;                     // (bg-dome, 11-10) 낮은 성능 등급의 해상도 상한(high = MAX_DPR)
 const QS = new URLSearchParams(window.location.search);
 const DEBUG = QS.has("bgdebug");
 const GROUND = groundWorld(QS, DEBUG);
@@ -1298,6 +1300,13 @@ export function createDomeGL(host, isPaused) {
   let yaw = 0, pitch = BASE_PITCH, drawnYaw = NaN, drawnPitch = NaN, lastGL = 0, lastFrame = 0, tPrev = 0;
   let zoomR = 0, zoomT = 0, zoomPath = 0, tele = 1, drawnTele = NaN, drawnR = NaN, drawnRoll = NaN, pinch = null, moonTex = null;   // 줌(뒤로 물러선 거리) — 지금 값 · 목표 · 마지막으로 그린 값 · 두 손가락 시작 상태
   let raf = 0, stopped = true, lastShake = 0, theme = null, t0 = performance.now();
+  // (bg-dome, 11-10) 성능 등급 — 주소(?bgtier) → 이 기기에 기억한 값 → 없으면 high 로 시작하고 배경 보기 중 실측(measuring). 순수 판정은 bgtier.js
+  if (QS.get("bgtier") === "reset") clearStoredTier();
+  const tierPick = resolveTier(window.location.search, readStoredTier());
+  let tier = tierPick.tier, measuring = tierPick.measure;
+  let tierSamples = [], tierLastT = 0;   // 실측 표본(rAF 간격 ms) · 직전 rAF 시각
+  const isLow = () => tier === "low";
+  const frameGap = (peek) => 1000 / (isLow() ? 30 : peek ? 60 : 30);   // (bg-dome, 11-10) 화면 갱신 간격 — 낮은 등급은 배경 보기도 30fps
   // 장면 +z = 북, +x = 동. 바깥 보기 = 실제 시각 · 위치의 하늘(해 · 달 · 별 · 방위 글자). 시선은 두 보기가 같다
   let outdoor = false;
   let releaseGround = null, albedoLoading = false, albedoOn = false, textureEpoch = 0;
@@ -1358,6 +1367,7 @@ export function createDomeGL(host, isPaused) {
         deepTex.set(i, tex);
         if (outdoor) releaseGround?.terrain?.rebind?.();   // 14번 칸을 바깥 지형 것으로 되돌린다(실내면 draw 가 매번 다시 꽂는다)
         gl.activeTexture(gl.TEXTURE0);
+        redrawIfResting();   // 쉬는 중이면 도착한 사진을 바로 그린다
         res(true);
       };
       img.onerror = () => { console.warn("[bgdome] 우주 사진을 못 받음", DEEP_SET[i].name); res(false); };
@@ -2539,11 +2549,51 @@ export function createDomeGL(host, isPaused) {
     return [B.hright[0] * s, -Math.abs(s) * TILT_DOWN, B.hright[2] * s];
   }
 
+  // (bg-dome, 11-10) 돌림 조건 — high 는 항상 돈다(지금과 같다). 낮은 등급은 배경 보기 중 · 진행 중 연출(하늘 전환 · 성간 이동 · 경보 · 테마 전환 등)이 있을 때만 돈다.
+  // 예고보드 상태에서 낮은 등급이 쉬면 rAF 를 걸지 않는다 — 배경 보기가 열리면 클래스 변화(MutationObserver → syncLoop)가 다시 건다.
+  function wantsLoop(peek = document.documentElement.classList.contains("bg-peek")) {
+    if (stopped) return false;
+    if (!isLow() || peek) return true;
+    // 성간 이동은 워프를 눌러야 끝나므로 「이동 중」 자체로는 돌지 않는다 — 점프 연출(star.jump) 중일 때만. 경보(alarmK)도 성간 이동 상태라 뺀다
+    return !!(sky || (star && star.jump) || blurK > 0 || fxKick > 0 || zblurOn || fovK !== drawnFov || performance.now() - themeStart < THEME_MS || (T_SPEED > 1 && outdoor));
+  }
+  // 쉬러 들어가기 전 마지막 한 번(낮은 등급 · 예고보드): 시점 · 줌을 최종 자리까지 시간 건너뛰기로 맞추고, 예고보드용 UI 를 끄고, 한 번 그린다(돌아가는 과정은 생략)
+  function settle() {
+    const now = performance.now();
+    for (let i = 0; i < 240; i++) updateView(1 / 60, now);
+    updateUfo(false); updateHud(false, 0); updateStarlight(false);
+    sound.alarm(0); siren.hidden = true;   // 쉬는 동안 경보음이 마지막 세기로 남지 않게 — 다시 돌면 updateAlarm 이 세기를 되살린다(bgsound.js alarm)
+    draw();
+  }
+  // (bg-dome, 11-10) 쉬는 중(rAF 없음, 낮은 등급)에 사진 · 텍스처가 도착하면 한 번 그린다. 돌고 있으면 다음 프레임이 그린다
+  function redrawIfResting() { if (!raf && !stopped && isLow()) draw(); }
+  // 돌림 상태 맞추기 — 돌아야 하는데 rAF 가 없으면 건다(이미 돌고 있으면 그대로)
+  function syncLoop() {
+    if (raf || !wantsLoop()) return;
+    tPrev = lastFrame = performance.now();
+    raf = requestAnimationFrame(frame);
+  }
+  // (bg-dome, 11-10) 성능 실측 — 등급이 아직 없을 때만, 배경 보기 중 · 탭이 보일 때의 rAF 간격을 모은다. 판정 뒤엔 저장하고 등급을 적용한다
+  function measureTier(t) {
+    if (!measuring) return;
+    if (!document.documentElement.classList.contains("bg-peek") || document.hidden) { tierSamples = []; tierLastT = 0; return; }   // 배경 보기를 닫거나 탭이 가려지면 그 회차 표본은 버린다
+    if (tierLastT) tierSamples.push(t - tierLastT);
+    tierLastT = t;
+    const verdict = judge(tierSamples);
+    if (verdict == null) return;
+    measuring = false; tierSamples = [];
+    tier = verdict;
+    writeStoredTier(verdict);
+    if (isLow()) resize(window.innerWidth, window.innerHeight);   // 해상도 상한이 바뀌었으니 다시 맞춘다
+  }
+
   function frame(t) {
     raf = 0;
     if (stopped) return;
+    measureTier(t);
     const peek = document.documentElement.classList.contains("bg-peek");
-    if (t - lastFrame < 1000 / (peek ? 60 : 30) - 2) { raf = requestAnimationFrame(frame); return; }
+    if (!wantsLoop(peek)) { if (isLow()) settle(); return; }   // 낮은 등급 · 쉬는 상태로 들어간다(마지막 한 번 맞춘 뒤 rAF 를 걸지 않는다)
+    if (t - lastFrame < frameGap(peek) - 2) { raf = requestAnimationFrame(frame); return; }
     lastFrame = t;
     const dt = Math.min(0.05, (t - tPrev) / 1000 || 0.016);
     tPrev = t;
@@ -2568,7 +2618,7 @@ export function createDomeGL(host, isPaused) {
       const dYaw = Math.abs(Math.atan2(Math.sin(yaw - sky.yaw), Math.cos(yaw - sky.yaw)));
       if (dYaw + Math.abs(pitch - sky.pitch) > 6 * DEG || pinch || !peek) shortenSky(performance.now());
     }
-    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > 1000 / (peek ? 60 : 30) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn || fovK !== drawnFov || blurK > 0 || zblurOn) draw();
+    if (sky || (!reducedMotion.matches && t - themeStart < THEME_MS) || (Math.abs(yaw - drawnYaw) + Math.abs(pitch - drawnPitch)) * tele + Math.abs(zoomR - drawnR) + Math.abs(tele - drawnTele) + Math.abs(rollS - drawnRoll) > 2e-4 || (pitch - Math.atan((H - cy) / viewFocal()) < (GROUND.kind === "mountain" ? 12 * DEG : 0) && t - lastGL > frameGap(peek) - 2) || t - lastGL > CLOUD_MS || (T_SPEED > 1 && outdoor) || (star && !reducedMotion.matches && (star.frame || star.st.beta > 0)) || alarmK > 0 || alarmDrawn || fovK !== drawnFov || blurK > 0 || zblurOn) draw();
     raf = requestAnimationFrame(frame);
   }
 
@@ -2576,8 +2626,8 @@ export function createDomeGL(host, isPaused) {
     if (!stopped) return;
     stopped = false;
     startAbsolute();   // 두 보기 모두 실제 방위를 쓴다(자이로 듣기도 같이 시작)
-    tPrev = lastFrame = performance.now();
-    raf = requestAnimationFrame(frame);
+    syncLoop();
+    if (!raf && isLow()) settle();   // 낮은 등급 · 예고보드 상태로 다시 시작하면 돌지 않으니 현재 자리를 한 번 그린다
   }
   function stop() { stopped = true; cancelAnimationFrame(raf); raf = 0; hideUfo(); }
 
@@ -2596,8 +2646,11 @@ export function createDomeGL(host, isPaused) {
     if (W) gl.uniform1f(U.uF, viewFocal());
     updateAstro(true);
     draw();
+    syncLoop();   // 낮은 등급 · 예고보드 상태에서도 하늘 전환이 끝까지 돌도록
   }, { signal: life.signal });
-  const themeObs = new MutationObserver(() => draw()); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  const themeObs = new MutationObserver(() => { draw(); syncLoop(); }); themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  // (bg-dome, 11-10) 배경 보기 진입 · 해제(클래스 변화) — 낮은 등급이 쉬고 있었으면 다시 돌리고, 나가면 다음 프레임에서 마지막 한 번 맞춘 뒤 쉰다
+  const peekObs = new MutationObserver(() => syncLoop()); peekObs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   function finishThemeMotion() { themeStart = -Infinity; draw(); }
   reducedMotion.addEventListener("change", finishThemeMotion);
 
@@ -2606,7 +2659,7 @@ export function createDomeGL(host, isPaused) {
     hud.resize(w, h);
     endSky();   // 화면 크기가 바뀌면 옛 사진이 맞지 않는다 — 바로 끝
     W = w; H = h; phone = W <= 767;
-    dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    dpr = Math.min(window.devicePixelRatio || 1, isLow() ? LOW_DPR : MAX_DPR);   // (bg-dome, 11-10) 낮은 등급은 해상도 1배
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     gl.viewport(0, 0, canvas.width, canvas.height);
     // 기존 SVG 투영(bgdome.js domeGeometry)과 같은 초점 · 중심 — 정면에서 보면 테두리가 같은 자리
@@ -2650,6 +2703,7 @@ export function createDomeGL(host, isPaused) {
       }));
     }, 3000);
     window.__bgunlock = { get state() { return JSON.parse(JSON.stringify(unlockS)); }, get place() { return placeKey(); }, get hud() { return hud.debug; }, get targets() { return hudTargets(placeKey()).map((t) => ({ id: t.id, az: +(Math.atan2(t.dir[0], t.dir[2]) / DEG).toFixed(1), alt: +(Math.asin(t.dir[1]) / DEG).toFixed(1) })); } };
+    window.__bgtier = { get tier() { return tier; }, get measuring() { return measuring; }, get samples() { return tierSamples.length; } };   // (bg-dome, 11-10) 확인용 — 지금 등급 · 실측 중 · 표본 수
     window.__bggear = (i) => { if (!star) startStar(); shiftGear(star.st, i); return { fovK, pullK, blurK, kick: fxKick }; };   // 확인용 — 성간 이동을 시작하고 기어를 바꿈
     window.__bgfx = () => ({ fovK, pullK, blurK, kick: fxKick, beta: star ? star.st.beta : null });
     window.__bgplaceAz = () => lastPhotoAz;
@@ -2664,6 +2718,7 @@ export function createDomeGL(host, isPaused) {
     resize,
     shake,
     setPaused(stop_) { if (stop_) stop(); else start(); },
-    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); fx.remove(); starlight.remove(); siren.remove(); life.abort(); themeObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
+    redraw() { draw(); },   // (bg-dome, 11-10) 정지 상태에서도 현재 자리를 한 번 그린다(낮은 등급 조명 색 바뀜 등)
+    destroy() { stop(); reducedMotion.removeEventListener("change", finishThemeMotion); textureEpoch++; if (themeFrame) gl.deleteTexture(themeFrame); if (releaseGround) releaseGround(); canvas.remove(); air.remove(); magnification.remove(); ufoPanel.remove(); gear.remove(); hud.remove(); fx.remove(); starlight.remove(); siren.remove(); life.abort(); themeObs.disconnect(); peekObs.disconnect(); try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* 이미 잃음 */ } },
   };
 }
