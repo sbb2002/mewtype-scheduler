@@ -9,8 +9,6 @@ import { pickHit, sepDeg, createDwell, stepDwell, resetDwell, beacons } from "./
 const NS = "http://www.w3.org/2000/svg";
 const CY = "#4fe3ff", PK = "#ff6fb5", SUB = "#a9bad0", INK = "#eef6ff";
 const U = 3.2;   // 방위 테이프 1° 당 단위(F5 와 같음, 화면 폭 200 단위)
-const REDUCE = window.matchMedia("(prefers-reduced-motion: reduce)");
-const HUD_MAX_W = 440;   // 계기 폭 상한(px) — 넓은 화면에서 눈금이 화면을 덮지 않게(제안 A-1)
 function sv(tag, attrs, kids) {
   const e = document.createElementNS(NS, tag);
   if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -32,12 +30,10 @@ const ZT = [1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 30], ZM = [1.25, 1.75, 2.5, 3.5, 
  * onZoom(x) = [＋ 확대] · [－ 원래대로](x = 망원 배율, 1 = 원래대로).
  */
 export function createHud({ onLock, onZoom }) {
-  // (제안 E-3) 루트는 보조기기에 열어 두고, 장식 캔버스 · 그림만 숨긴다 — 「＋ 확대」 버튼이 읽히게
-  const root = h("div", "bghud");
+  const root = h("div", "bghud", [], { "aria-hidden": "true" });
   const cv = h("canvas", "bghud-sky");
-  cv.setAttribute("aria-hidden", "true");
   const g = cv.getContext("2d");
-  const svg = sv("svg", { class: "bghud-svg", preserveAspectRatio: "xMidYMin meet", "aria-hidden": "true" });
+  const svg = sv("svg", { class: "bghud-svg", preserveAspectRatio: "xMidYMin meet" });
   root.append(cv, svg);
 
   // ── SVG 부품(한 번 만들고 매 프레임 속성만) ──
@@ -49,59 +45,43 @@ export function createHud({ onLock, onZoom }) {
   }
   const clipId = "bghud-cf" + Math.random().toString(36).slice(2, 7);
   const bcn = sv("g"), bedge = sv("g");
-  // (제안 A-2) 테이프 양끝을 칼로 자르지 않고 마스크로 흐리게 — 가운데 80%만 선명
   const tapeWrap = sv("g", {}, [
-    sv("defs", null, [
-      sv("linearGradient", { id: clipId + "g", x1: -70, x2: 70, y1: 0, y2: 0, gradientUnits: "userSpaceOnUse" }, [
-        sv("stop", { offset: 0, "stop-color": "#fff", "stop-opacity": 0 }), sv("stop", { offset: 0.2, "stop-color": "#fff" }),
-        sv("stop", { offset: 0.8, "stop-color": "#fff" }), sv("stop", { offset: 1, "stop-color": "#fff", "stop-opacity": 0 }),
-      ]),
-      sv("mask", { id: clipId }, [sv("rect", { x: -70, y: -6, width: 140, height: 26, fill: `url(#${clipId}g)` })]),
-    ]),
-    sv("g", { mask: `url(#${clipId})` }, [tape, bcn]),
+    sv("clipPath", { id: clipId }, [sv("rect", { x: -70, y: -6, width: 140, height: 26 })]),
+    sv("g", { "clip-path": `url(#${clipId})` }, [tape, bcn]),
     bedge,
     sv("path", { d: "M0 -8 l-3 -5 h6z", fill: PK }),
   ]);
-  // (제안 A-2 · B-1) 방위 숫자는 3자리 고정 — 칸을 둘러싼 챔퍼 베젤 안에
-  const hdgBox = sv("path", { d: "M-30 -10 H30 L34 -6 V4 L30 8 H-30 L-34 4 V-6 Z", fill: "rgba(4,8,24,.55)", stroke: PK, "stroke-width": ".6" });
-  const hdg = txt(0, 0, "방위 000°", { a: "middle", s: 8.5, w: 700, c: INK });
-  const hdgG = sv("g", {}, [hdgBox, hdg]);
-  // (제안 A-1 · 14) 중앙 링 — 방위(N) 제거: 링은 2초 관측 진행만, 방향은 위 테이프가 맡는다. 12개 짧은 기준 눈금 + 얇은 점선 링
+  const hdg = txt(100, 0, "HDG 0°", { a: "middle", s: 9, w: 600, c: INK });
   const ringTicks = sv("g");
-  for (let i = 0; i < 12; i++) ringTicks.appendChild(sv("line", { x1: 0, x2: 0, y1: -42, y2: -37, stroke: CY, "stroke-width": ".8", transform: `rotate(${i * 30})` }));
-  const dashRing = sv("circle", { cx: 0, cy: 0, r: 33, fill: "none", stroke: CY, "stroke-width": ".6", "stroke-dasharray": "4 8", opacity: ".55" });
-  const C = 2 * Math.PI * 28;
-  const arc = sv("circle", { cx: 0, cy: 0, r: 28, fill: "none", stroke: CY, "stroke-width": "2", "stroke-dasharray": C, "stroke-dashoffset": C, transform: "rotate(-90)" });
-  const ringHint = txt(0, 42, "잠시 바라보기", { a: "middle", s: 7, c: INK });
-  ringHint.setAttribute("class", "ko");
-  const ringIn = sv("g", {}, [ringTicks, sv("circle", { cx: 0, cy: 0, r: 28, fill: "none", stroke: "rgba(79,227,255,.18)", "stroke-width": "2" }), dashRing, arc]);
-  const ring = sv("g", { opacity: 0 }, [ringIn, ringHint]);
+  for (let i = 0; i < 72; i++) { const big = i % 6 === 0; ringTicks.appendChild(sv("line", { x1: 0, x2: 0, y1: big ? -58 : -55, y2: -50, stroke: big ? CY : SUB, "stroke-width": big ? ".9" : ".5", transform: `rotate(${i * 5})`, opacity: big ? 1 : 0.6 })); }
+  const C = 2 * Math.PI * 44;
+  const arc = sv("circle", { cx: 0, cy: 0, r: 44, fill: "none", stroke: CY, "stroke-width": "2.4", "stroke-dasharray": C, "stroke-dashoffset": C, transform: "rotate(-90)" });
+  const ringHint = txt(0, 62, "잠시 바라보기", { a: "middle", s: 7, c: INK });
+  const ring = sv("g", { opacity: 0 }, [ringTicks, txt(0, -62, "N", { a: "middle", s: 8, c: PK, w: 600 }), sv("circle", { cx: 0, cy: 0, r: 44, fill: "none", stroke: "rgba(79,227,255,.18)", "stroke-width": "2.4" }), arc, ringHint]);
   const reticle = sv("g", {}, [sv("circle", { cx: 0, cy: 0, r: 1.6, fill: PK }), sv("path", { d: "M0 -8v5M0 3v5M-8 0h5M3 0h5", stroke: CY, "stroke-width": ".6", opacity: ".8" })]);
   const altClip = "bghud-al" + clipId, zmClip = "bghud-zm" + clipId;
   const altl = sv("g"), zml = sv("g");
-  // (제안 A-4 · B-1) 고도 · 배율 눈금은 짧게(104 단위), 라벨은 한글, 현재값은 숫자 칸을 넓혀 굵게
-  const altVal = txt(14, 0, "+0°", { s: 8.5, c: INK, w: 700 }), zmVal = txt(186, 0, "×1.0", { a: "end", s: 8.5, c: INK, w: 700 });
+  const altVal = txt(14, 0, "+0°", { s: 8, c: INK, w: 600 }), zmVal = txt(186, 0, "×1.0", { a: "end", s: 8, c: INK, w: 600 });
   const sides = sv("g", {}, [
-    sv("clipPath", { id: altClip }, [sv("rect", { x: 0, y: -52, width: 44, height: 104 })]),
-    sv("clipPath", { id: zmClip }, [sv("rect", { x: 156, y: -52, width: 44, height: 104 })]),
-    sv("path", { d: "M14 -52v104", stroke: CY, "stroke-width": ".5", opacity: ".5" }), sv("g", { "clip-path": `url(#${altClip})` }, [altl]), sv("path", { d: "M12 0l-4 -2.6v5.2z", fill: PK }), txt(14, -58, "고도", { s: 6, c: SUB }), altVal,
-    sv("path", { d: "M186 -52v104", stroke: CY, "stroke-width": ".5", opacity: ".5" }), sv("g", { "clip-path": `url(#${zmClip})` }, [zml]), sv("path", { d: "M188 0l4 -2.6v5.2z", fill: PK }), txt(186, -58, "배율", { a: "end", s: 6, c: SUB }), zmVal,
+    sv("clipPath", { id: altClip }, [sv("rect", { x: 0, y: -80, width: 44, height: 160 })]),
+    sv("clipPath", { id: zmClip }, [sv("rect", { x: 156, y: -80, width: 44, height: 160 })]),
+    sv("path", { d: "M14 -80v160", stroke: CY, "stroke-width": ".5", opacity: ".5" }), sv("g", { "clip-path": `url(#${altClip})` }, [altl]), sv("path", { d: "M12 0l-4 -2.6v5.2z", fill: PK }), txt(14, -86, "ALT", { s: 6, c: SUB }), altVal,
+    sv("path", { d: "M186 -80v160", stroke: CY, "stroke-width": ".5", opacity: ".5" }), sv("g", { "clip-path": `url(#${zmClip})` }, [zml]), sv("path", { d: "M188 0l4 -2.6v5.2z", fill: PK }), txt(186, -86, "ZOOM", { a: "end", s: 6, c: SUB }), zmVal,
   ]);
-  const skyName = txt(14, 0, "", { s: 8, c: INK, w: 600 }), clock = txt(186, 0, "--:--", { a: "end", s: 6.5, c: SUB });
-  skyName.setAttribute("class", "ko");
-  const foot = sv("g", {}, [txt(14, -12, "하늘", { s: 6, c: SUB }), skyName, txt(186, -12, "시각", { a: "end", s: 6, c: SUB }), clock]);
-  svg.append(tapeWrap, hdgG, ring, reticle, sides, foot);
+  const skyName = txt(14, 0, "", { s: 8, c: INK, w: 600 }), clock = txt(186, 0, "KST --:--:--", { a: "end", s: 6.5, c: SUB });
+  const foot = sv("g", {}, [txt(14, -12, "SKY", { s: 6, c: SUB }), skyName, txt(186, -12, "NOW", { a: "end", s: 6, c: SUB }), clock]);
+  svg.append(tapeWrap, hdg, ring, reticle, sides, foot);
 
   // ── 정보 카드(F5 .pick) ──
   const kStar = h("span", "bghud-star"), kText = h("span"), name = h("h3"), toLine = h("p", "bghud-to"), zoomBtn = h("button", "bghud-btn", ["＋ 확대"], { type: "button" }), hintLine = h("p", "bghud-hn");
   const card = h("div", "bghud-card", [h("div", "bghud-k", [kStar, kText]), name, toLine, h("div", "bghud-btns", [zoomBtn]), hintLine]);
   root.append(card);
   // (11-09 운영자) 좌하단 맥박 신호 표시기 — 못 찾은 대상에 가까울수록 맥박이 빨라지고, 색은 빨강 → 주황 → 노랑 → 초록 → 파랑으로
-  const pulseDot = h("i"), pulseRing = h("b"), pulseRing2 = h("b"), pulseLbl = h("span", null, ["신호"]);
-  const pulse = h("div", "bghud-pulse", [h("div", "bghud-pulse__o", [pulseRing, pulseRing2, pulseDot]), pulseLbl]);
+  const pulseDot = h("i"), pulseRing = h("b"), pulseLbl = h("span", null, ["SIGNAL"]);
+  const pulse = h("div", "bghud-pulse", [h("div", "bghud-pulse__o", [pulseRing, pulseDot]), pulseLbl]);
   root.append(pulse);
   let pulsePh = 0, focusK = 0, burstT = 0, burstCol = "79,227,255", sparks = [];
-  let curTele = 1, ringInT = 0;
+  let curTele = 1;
   zoomBtn.addEventListener("click", () => onZoom(curTele > 1.5 ? 1 : 6));
   document.body.appendChild(root);
 
@@ -112,14 +92,11 @@ export function createHud({ onLock, onZoom }) {
     W = w; H = hh; dpr = Math.min(window.devicePixelRatio || 1, 2);
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     safeTop = probe.offsetHeight || 0;
-    const sw = Math.min(W, HUD_MAX_W);   // 계기 폭 상한 — 가운데 정렬
-    unit = sw / 200; VH = H / unit;
-    svg.style.width = sw + "px"; svg.style.left = ((W - sw) / 2) + "px"; svg.style.right = "auto";
+    unit = W / 200; VH = H / unit;
     svg.setAttribute("viewBox", `0 0 200 ${VH.toFixed(2)}`);
-    foot.style.display = H < 500 ? "none" : "";   // (제안 3-6) 낮은 화면 — 하늘 · 시각 줄을 접는다
     const t0 = 34 + safeTop / unit;
     tapeWrap.setAttribute("transform", `translate(100,${t0.toFixed(2)})`);
-    hdgG.setAttribute("transform", `translate(100,${(t0 + 28).toFixed(2)})`);
+    hdg.setAttribute("y", (t0 + 28).toFixed(2));
     last = {};
   }
   const set = (k, v, fn) => { if (last[k] !== v) { last[k] = v; fn(v); } };
@@ -217,10 +194,10 @@ export function createHud({ onLock, onZoom }) {
       const bu = burstT ? (now - burstT) / 1800 : 2;
       if (bu < 1) {
         const bx = W / 2, by = H / 2, R = Math.hypot(W, H) * 0.55;
-        const fl = REDUCE.matches ? 0 : Math.max(0, 1 - bu / 0.28); if (fl > 0) { g.fillStyle = `rgba(${burstCol},${0.42 * fl})`; g.fillRect(0, 0, W, H); }
+        const fl = Math.max(0, 1 - bu / 0.28); if (fl > 0) { g.fillStyle = `rgba(${burstCol},${0.42 * fl})`; g.fillRect(0, 0, W, H); }
         for (let r = 0; r < 3; r++) { const u = Math.min(1, Math.max(0, (bu - r * 0.12) / 0.7)); if (u <= 0 || u >= 1) continue; const e = 1 - (1 - u) * (1 - u); g.strokeStyle = `rgba(${r === 1 ? "255,255,255" : burstCol},${0.85 * (1 - u)})`; g.lineWidth = (3 - r) * unit; g.beginPath(); g.arc(bx, by, e * R, 0, 7); g.stroke(); }
         g.lineCap = "round"; g.lineWidth = 0.9 * unit;
-        for (const sp of REDUCE.matches ? [] : sparks) { const u = Math.min(1, bu / 0.85), e = 1 - (1 - u) * (1 - u), r0 = e * R * 0.8 * sp.v, r1 = r0 + sp.l * unit * (1 - u); g.strokeStyle = `rgba(255,255,255,${0.9 * (1 - u)})`; g.beginPath(); g.moveTo(bx + Math.cos(sp.a) * r0, by + Math.sin(sp.a) * r0); g.lineTo(bx + Math.cos(sp.a) * r1, by + Math.sin(sp.a) * r1); g.stroke(); }
+        for (const sp of sparks) { const u = Math.min(1, bu / 0.85), e = 1 - (1 - u) * (1 - u), r0 = e * R * 0.8 * sp.v, r1 = r0 + sp.l * unit * (1 - u); g.strokeStyle = `rgba(255,255,255,${0.9 * (1 - u)})`; g.beginPath(); g.moveTo(bx + Math.cos(sp.a) * r0, by + Math.sin(sp.a) * r0); g.lineTo(bx + Math.cos(sp.a) * r1, by + Math.sin(sp.a) * r1); g.stroke(); }
       }
       const k = Math.pow(Math.min(f.tele, 10), 0.75) * unit;
       const rv = (now - revealT) / 1000;
@@ -250,27 +227,20 @@ export function createHud({ onLock, onZoom }) {
       if (lt) {
         const p = f.project(lt.dir);
         if (p) {
-          // (제안 D-2) 바라보는 동안 꺾쇠가 바깥에서 조여들고(시안 시작 → 대상 둘레), 잡히면 핑크로 바뀐다
-          const base = (lt.draw === "zod" ? 22 : lt.draw === "photo" ? 30 : lt.draw === "feat" ? 12 : 10) * Math.max(1, Math.pow(Math.min(f.tele, 10), 0.6)) * unit;
-          const ease = 1 - Math.pow(1 - (st.lock ? 1 : st.v), 3), s = base * (1.45 - 0.45 * ease), a = 5 * unit;
-          g.strokeStyle = st.lock ? PK : CY; g.lineWidth = 1 * unit * 0.8;
+          const s = (lt.draw === "zod" ? 22 : lt.draw === "photo" ? 30 : lt.draw === "feat" ? 12 : 10) * Math.max(1, Math.pow(Math.min(f.tele, 10), 0.6)) * unit, a = 5 * unit;
+          g.strokeStyle = PK; g.lineWidth = 1 * unit * 0.8;
           for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(p[0] + sx * s, p[1] + sy * (s - a)); g.lineTo(p[0] + sx * s, p[1] + sy * s); g.lineTo(p[0] + sx * (s - a), p[1] + sy * s); g.stroke(); }
         }
       }
       // ── 링
       const v = st.lock ? 1 : st.v;
-      // (제안 D-1) 링이 켜질 때 0.35초 동안 1.18 → 1 로 수축하며 대상에 달라붙고, 점선 링은 천천히 돈다(움직임 줄이기면 정지)
-      set("ringOn", !!(st.focus || st.lock) && f.interact, (on) => { ring.setAttribute("opacity", on ? 1 : 0); if (on) ringInT = now; });
-      const sc = REDUCE.matches ? 1 : 1 + 0.18 * Math.max(0, 1 - (now - ringInT) / 350);
-      ringIn.setAttribute("transform", `scale(${sc.toFixed(3)})`);
-      if (!REDUCE.matches && (st.focus || st.lock)) dashRing.setAttribute("transform", `rotate(${((now * 0.02) % 360).toFixed(1)})`);
-      set("ringT", cy.toFixed(1), (yy) => { ring.setAttribute("transform", `translate(100,${yy})`); reticle.setAttribute("transform", `translate(100,${yy})`); sides.setAttribute("transform", `translate(0,${yy})`); foot.setAttribute("transform", `translate(0,${(Number(yy) + 116).toFixed(1)})`); altVal.setAttribute("y", 60); zmVal.setAttribute("y", 60); });
+      set("ringOn", !!(st.focus || st.lock) && f.interact, (on) => ring.setAttribute("opacity", on ? 1 : 0));
+      set("ringT", cy.toFixed(1), (yy) => { ring.setAttribute("transform", `translate(100,${yy})`); reticle.setAttribute("transform", `translate(100,${yy})`); sides.setAttribute("transform", `translate(0,${yy})`); foot.setAttribute("transform", `translate(0,${(Number(yy) + 116).toFixed(1)})`); altVal.setAttribute("y", 92); zmVal.setAttribute("y", 92); });
       set("arc", (C * (1 - v)).toFixed(1), (o) => arc.setAttribute("stroke-dashoffset", o));
       set("hint", hintT && now - hintT < 2200 ? Math.min(1, (2200 - (now - hintT)) / 400).toFixed(2) : "0", (o) => ringHint.setAttribute("opacity", o));
       // ── 방위 테이프 · 힌트 점
       const yaw = ((f.yawDeg % 360) + 360) % 360;
-      const yq = Math.round(yaw / 0.15) * 0.15;   // (제안 D · E) 0.15° 데드밴드 — 손떨림에 테이프 숫자가 떨지 않게
-      set("tape", yq.toFixed(2), (y) => { tape.setAttribute("transform", `translate(${(-y * U).toFixed(2)},0)`); hdg.textContent = `방위 ${String(Math.round(y) % 360).padStart(3, "0")}°`; });
+      set("tape", yaw.toFixed(1), (y) => { tape.setAttribute("transform", `translate(${(-y * U).toFixed(1)},0)`); hdg.textContent = `HDG ${Math.round(y) % 360}°`; });
       const bs = beacons(yaw, f.fwd, f.targets, 21);
       const bKey = bs.map((b) => `${b.dx.toFixed(1)},${b.alpha.toFixed(2)},${b.below ? 1 : 0}`).join("|");
       set("bcn", bKey, () => {
@@ -292,15 +262,11 @@ export function createHud({ onLock, onZoom }) {
       if (pOn) {
         const kk = 1 - Math.min(1, near / 90), rate = 0.6 + 4.4 * kk * kk;   // 멀면 초당 0.6 번 · 코앞이면 5 번
         pulsePh += f.dt * rate;
-        const ph = pulsePh % 1, beat = REDUCE.matches ? 0.5 : Math.exp(-ph * 7) + 0.55 * Math.exp(-Math.pow((ph - 0.22) * 9, 2));   // 쿵 · 딱 두 박(움직임 줄이기면 정지)
+        const ph = pulsePh % 1, beat = Math.exp(-ph * 7) + 0.55 * Math.exp(-Math.pow((ph - 0.22) * 9, 2));   // 쿵 · 딱 두 박
         const hue = Math.round(215 * (1 - kk));   // 0 빨강 → 30 주황 → 55 노랑 → 120 초록 → 215 파랑(멀수록). kk 는 가까울수록 1 이라 뒤집어 쓴다
         pulse.style.setProperty("--pc", `hsl(${hue} 95% 58%)`);
         pulseDot.style.transform = `scale(${(0.8 + 0.45 * beat).toFixed(2)})`;
-        // (제안 D-3) 가까우면(20° 안) 두 번째 파동이 반 박자 늦게 겹쳐 퍼진다(소나 핑). 글자로도 거리를 준다
-        const ph2 = (ph + 0.5) % 1, near20 = near < 20 ? 1 : 0;
-        pulseRing.style.transform = `scale(${(1 + 1.6 * ph).toFixed(2)})`; pulseRing.style.opacity = REDUCE.matches ? "0.5" : (0.7 * (1 - ph)).toFixed(2);
-        pulseRing2.style.transform = `scale(${(1 + 1.6 * ph2).toFixed(2)})`; pulseRing2.style.opacity = REDUCE.matches ? "0" : (near20 * 0.5 * (1 - ph2)).toFixed(2);
-        set("pulseTxt", Math.round(near), (d) => { pulseLbl.textContent = `신호 · ${d}°`; });
+        pulseRing.style.transform = `scale(${(1 + 1.6 * ph).toFixed(2)})`; pulseRing.style.opacity = (0.7 * (1 - ph)).toFixed(2);
       }
       // ── ALT · ZOOM 눈금(화면과 함께 움직임 — F5)
       const ppdU = f.ppd / unit, stp = [0.1, 0.2, 0.5, 1, 2, 5].find((s) => s * ppdU >= 10) || 5, m = stp === 5 ? 3 : 5;
@@ -324,9 +290,9 @@ export function createHud({ onLock, onZoom }) {
       });
       // ── 아래 SKY · 시각(카드가 뜨면 숨김)
       set("sky", f.sky, (s) => { skyName.textContent = s; });
-      set("foot", !cardFor, (on) => { foot.setAttribute("opacity", on ? 1 : 0); });   // 카드가 떠도 고도 · 배율 숫자는 남긴다(제안 A-4 — 배율을 계속 보게). 하늘 · 시각 줄만 카드 때 접는다
+      set("foot", !cardFor, (on) => { foot.setAttribute("opacity", on ? 1 : 0); altVal.setAttribute("opacity", on ? 1 : 0); zmVal.setAttribute("opacity", on ? 1 : 0); });   // 카드가 뜨면 아래 정보 · 배율 숫자를 숨긴다(F5)
       const sec = Math.floor(Date.now() / 1000);
-      if (sec !== clockS) { clockS = sec; const n = new Date(Date.now() + 9 * 36e5), p = (x) => String(x).padStart(2, "0"); clock.textContent = `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}`; }
+      if (sec !== clockS) { clockS = sec; const n = new Date(Date.now() + 9 * 36e5), p = (x) => String(x).padStart(2, "0"); clock.textContent = `KST ${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}`; }
     },
   };
 }
