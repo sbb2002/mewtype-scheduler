@@ -1,0 +1,233 @@
+[
+  {
+    "kind": "city",
+    "rate": 1,
+    "outdoor": true,
+    "fps": 56.1,
+    "p95": 33.3,
+    "glFps": 56.3,
+    "busy": 0.45,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "city",
+    "rate": 1.5,
+    "outdoor": true,
+    "fps": 55.3,
+    "p95": 33.3,
+    "glFps": 55.3,
+    "busy": 0.72,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "city",
+    "rate": 2,
+    "outdoor": true,
+    "fps": 53.1,
+    "p95": 33.4,
+    "glFps": 53.1,
+    "busy": 0.9,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "city",
+    "rate": 3,
+    "outdoor": true,
+    "fps": 40.4,
+    "p95": 50,
+    "glFps": 40.4,
+    "busy": 0.99,
+    "ltN": 12,
+    "ltMs": 669
+  },
+  {
+    "kind": "city",
+    "rate": 4,
+    "outdoor": true,
+    "fps": 31.3,
+    "p95": 66.7,
+    "glFps": 31.5,
+    "busy": 0.99,
+    "ltN": 16,
+    "ltMs": 1042
+  },
+  {
+    "kind": "city",
+    "rate": 6,
+    "outdoor": true,
+    "fps": 14.5,
+    "p95": 116.6,
+    "glFps": 14.6,
+    "busy": 0.99,
+    "ltN": 66,
+    "ltMs": 4849
+  },
+  {
+    "kind": "city",
+    "rate": 8,
+    "outdoor": true,
+    "fps": 14,
+    "p95": 116.6,
+    "glFps": 14.1,
+    "busy": 0.99,
+    "ltN": 86,
+    "ltMs": 5817
+  },
+  {
+    "kind": "mountain",
+    "rate": 1,
+    "outdoor": true,
+    "fps": 58.8,
+    "p95": 16.8,
+    "glFps": 59,
+    "busy": 0.41,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "mountain",
+    "rate": 1.5,
+    "outdoor": true,
+    "fps": 54.3,
+    "p95": 33.3,
+    "glFps": 54.3,
+    "busy": 0.72,
+    "ltN": 1,
+    "ltMs": 59
+  },
+  {
+    "kind": "mountain",
+    "rate": 2,
+    "outdoor": true,
+    "fps": 55.8,
+    "p95": 33.3,
+    "glFps": 55.8,
+    "busy": 0.8,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "mountain",
+    "rate": 3,
+    "outdoor": true,
+    "fps": 47.1,
+    "p95": 33.4,
+    "glFps": 47.1,
+    "busy": 0.99,
+    "ltN": 3,
+    "ltMs": 157
+  },
+  {
+    "kind": "mountain",
+    "rate": 4,
+    "outdoor": true,
+    "fps": 35.3,
+    "p95": 50,
+    "glFps": 35.3,
+    "busy": 0.99,
+    "ltN": 13,
+    "ltMs": 743
+  },
+  {
+    "kind": "mountain",
+    "rate": 6,
+    "outdoor": true,
+    "fps": 20.8,
+    "p95": 66.9,
+    "glFps": 20.9,
+    "busy": 0.99,
+    "ltN": 27,
+    "ltMs": 1735
+  },
+  {
+    "kind": "mountain",
+    "rate": 8,
+    "outdoor": true,
+    "fps": 14.9,
+    "p95": 100,
+    "glFps": 15.1,
+    "busy": 0.99,
+    "ltN": 92,
+    "ltMs": 5841
+  },
+  {
+    "kind": "sea",
+    "rate": 1,
+    "outdoor": true,
+    "fps": 58.1,
+    "p95": 16.8,
+    "glFps": 58.3,
+    "busy": 0.42,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "sea",
+    "rate": 1.5,
+    "outdoor": true,
+    "fps": 56.7,
+    "p95": 17,
+    "glFps": 56.7,
+    "busy": 0.66,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "sea",
+    "rate": 2,
+    "outdoor": true,
+    "fps": 56.2,
+    "p95": 33.3,
+    "glFps": 56.2,
+    "busy": 0.8,
+    "ltN": 0,
+    "ltMs": 0
+  },
+  {
+    "kind": "sea",
+    "rate": 3,
+    "outdoor": true,
+    "fps": 46.1,
+    "p95": 33.4,
+    "glFps": 46.1,
+    "busy": 0.99,
+    "ltN": 6,
+    "ltMs": 358
+  },
+  {
+    "kind": "sea",
+    "rate": 4,
+    "outdoor": true,
+    "fps": 34.9,
+    "p95": 50,
+    "glFps": 35.1,
+    "busy": 0.99,
+    "ltN": 12,
+    "ltMs": 727
+  },
+  {
+    "kind": "sea",
+    "rate": 6,
+    "outdoor": true,
+    "fps": 21.1,
+    "p95": 66.7,
+    "glFps": 21.3,
+    "busy": 0.99,
+    "ltN": 26,
+    "ltMs": 1633
+  },
+  {
+    "kind": "sea",
+    "rate": 8,
+    "outdoor": true,
+    "fps": 14.8,
+    "p95": 99.9,
+    "glFps": 14.9,
+    "busy": 0.99,
+    "ltN": 92,
+    "ltMs": 5997
+  }
+]
